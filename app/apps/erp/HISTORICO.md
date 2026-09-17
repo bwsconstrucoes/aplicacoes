@@ -21,6 +21,42 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### O DOCUMENTO LIDO AGORA ABRE OS CAMPOS QUE A IA NÃO ACHOU (sem migração)
+
+14/09/2026, o dono importando um contrato para criar obra: *"ele fez a leitura,
+ok, só que aí não aparece o campo de vigência. E quando eu boto criar obra e
+arquivar, aparece 'contrato da obra vence, informe até quando vale' (…) não tem
+opção, não aparece o campo, ele leu o contrato, talvez não leu essa informação,
+e não permite avançar porque ela é obrigatória. Aí era para abrir os campos,
+né?"*
+
+**Era exatamente isso, e o fluxo ficava trancado.** A tela mandava para o
+servidor só o que a leitura tinha achado. Contrato que não escreve a vigência
+dentro do texto — e há muitos — batia na recusa do arquivamento (a regra é
+antiga e está certa: tipo que vence exige até quando vale, senão a agenda não
+avisa) **sem ter onde digitar a data cobrada**. Não havia saída pela tela.
+
+O que mudou, nas três telas que leem documento (ficha da obra, obra nova pelo
+documento, documento do colaborador):
+
+- **"Datas do documento" aparece sempre** — emissão, "vale até" e competência —,
+  preenchida com o que a leitura achou e **editável**. O que o tipo exige vem
+  marcado com `*`, e falta de data obrigatória é avisada ALI, antes de mandar,
+  em vez de virar recusa no fim.
+- **Os campos de cadastro que vieram vazios abrem numa gaveta** ("Preencher o
+  que o documento não disse"). Antes, campo sem resposta simplesmente não
+  existia na tela. Nada ali entra marcado: o que não for digitado continua
+  vazio.
+- **"Vale até" espelha no "Fim da vigência"** do cadastro da obra, porque num
+  contrato são a mesma data. Digitar duas vezes é convite a digitar diferente,
+  e aí a agenda e a ficha da obra passariam a discordar.
+
+⚠️ **No colaborador foram só as datas**, não a gaveta de campos: ali o
+preenchimento tem a trava do CPF (documento de pessoa errada preenchendo
+cadastro vai parar em holerite) e campos que se resolvem por nome, como a
+função. Abrir a gaveta ali pede cuidado próprio — ficou de fora, de propósito.
+
+
 ### A 069 ALINHA O ÍNDICE COM O BOLETIM DO DONO — e ele precisa informar UM número
 
 Publicada a 068, o dono olhou a tela e disse: *"apareceram os índices, mas os

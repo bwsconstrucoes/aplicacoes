@@ -770,6 +770,40 @@ O que ainda **não** responde:
   da tela ficam plausíveis e errados. O reajuste continua certo — ele não usa o
   número absoluto —, mas a conferência visual passa a mentir.
 
+## 3n. O documento arquivado e o que ele deixou em branco
+
+Em 14/09/2026 as telas que leem documento passaram a **abrir os campos que a
+leitura não achou** — as datas do documento e os campos de cadastro sem
+resposta. Antes, o que a IA não extraía não existia na tela.
+
+Perguntas que passam a funcionar:
+
+- OK **Quais documentos estão sem data de validade?** — hoje nenhum de tipo que
+  vence: a tela não deixa arquivar sem ela.
+- OK **Quais obras estão sem fim de vigência no cadastro?** 🔒 (escopo por obra)
+- OK **O que vence nos próximos 30 dias?** — já existia, e agora tem menos buraco,
+  porque a data deixou de depender de a IA tê-la encontrado.
+- OK **Quem informou esta data: o documento ou uma pessoa?** — a origem da
+  leitura fica registrada com o documento.
+
+⚠️ **Palavra ambígua: "vigência".** São duas datas próximas e diferentes:
+
+- **a validade do DOCUMENTO** — até quando o papel vale, e é dela que sai o
+  aviso da agenda;
+- **o fim da vigência da OBRA** — campo do cadastro, que é o que o contrato
+  determina.
+  Num contrato de obra as duas coincidem, e a tela espelha uma na outra. Em
+  aditivo NÃO coincidem: o aditivo estende a vigência da obra sem mudar a
+  validade do contrato original.
+
+O que ainda **não** responde:
+
+- FALTA **"Este contrato tem reajuste, e por qual índice?"** respondido a partir
+  do documento sozinho. O campo *Índice de reajuste* existe no cadastro da obra
+  e o contrato pode preenchê-lo, mas quando o contrato descreve a fórmula em
+  texto corrido a leitura não converte isso em regra de cálculo — quem decide
+  data-base, índice e periodicidade continua sendo uma pessoa.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

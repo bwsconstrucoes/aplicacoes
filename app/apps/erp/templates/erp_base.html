@@ -789,6 +789,110 @@ async function api(url, opcoes) {
 }
 
 // ---------------------------------------------------------------------------
+// O DOCUMENTO LIDO: AS DATAS E OS CAMPOS QUE FALTARAM
+//
+// 14/09/2026, o dono tentando criar uma obra a partir de um contrato: *"ele fez
+// a leitura, ok, só que aí não aparece o campo de vigência. E quando eu boto
+// criar obra e arquivar, aparece 'contrato da obra vence, informe até quando
+// vale' (…) não tem opção, não aparece o campo, ele leu o contrato, talvez não
+// leu essa informação, e não permite avançar porque ela é obrigatória. Aí era
+// para abrir os campos, né?"*
+//
+// Estava exatamente assim: a tela mandava o que a IA tinha achado e nada mais.
+// Contrato que não escreve a vigência dentro do texto — e há muitos — batia na
+// recusa do arquivamento sem ter onde digitar a data que estava sendo cobrada.
+//
+// Daqui para a frente as datas do documento aparecem SEMPRE, preenchidas com o
+// que a leitura achou e editáveis; e o que o tipo de documento preencheria no
+// cadastro, mas ninguém tem, aparece em branco para quem sabe digitar.
+// ---------------------------------------------------------------------------
+function blocoDeDatasDoDocumento(prefixo, g){
+  const falta = g.tipo_vence && !g.validade;
+  const faltaComp = g.tipo_por_competencia && !g.competencia;
+  return `
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+         ${falta || faltaComp ? "border-left:4px solid var(--vermelho);" : ""} margin-top:12px">
+      <div style="padding:10px 12px 0"><b>Datas do documento</b>
+        <small style="color:var(--tinta-suave)"> — o que a leitura achou; corrija
+          ou preencha o que faltou</small></div>
+      <div class="form-grade" style="padding:8px 12px 12px">
+        <div class="campo"><label>Emissão</label>
+          <input id="${prefixo}-dt-emissao" type="date" value="${escapar(g.emissao || "")}"></div>
+        ${g.tipo_vence ? `<div class="campo"><label>Vale até *</label>
+          <input id="${prefixo}-dt-validade" type="date" value="${escapar(g.validade || "")}"
+            oninput="espelharValidadeNaVigencia(this)"></div>` : ""}
+        ${g.tipo_por_competencia ? `<div class="campo"><label>Competência (mês) *</label>
+          <input id="${prefixo}-dt-comp" type="month" value="${escapar(g.competencia || "")}"></div>` : ""}
+      </div>
+      ${falta ? `<div class="aviso erro" style="margin:0 12px 12px">
+        <b>O documento não diz até quando vale.</b> Informe aqui: sem essa data o
+        sistema não tem como avisar antes do vencimento — que é metade do valor
+        de guardá-lo. Num contrato de obra, é o fim da vigência.</div>` : ""}
+      ${faltaComp ? `<div class="aviso erro" style="margin:0 12px 12px">
+        <b>Falta a competência</b> — o mês a que este documento se refere.</div>` : ""}
+    </div>`;
+}
+
+// Devolve {ok, dados} ou {ok:false, erro} — a tela decide onde mostrar o recado.
+function datasDoDocumento(prefixo, g){
+  const pegar = id => { const e = els(id); return e ? (e.value || "").trim() : ""; };
+  const emissao = pegar(prefixo + "-dt-emissao");
+  const validade = g.tipo_vence ? pegar(prefixo + "-dt-validade") : "";
+  const comp = g.tipo_por_competencia ? pegar(prefixo + "-dt-comp") : "";
+  if (g.tipo_vence && !validade) {
+    return {ok: false, erro: "Informe até quando o documento vale — está logo "
+            + "acima, em “Datas do documento”."};
+  }
+  if (g.tipo_por_competencia && !comp) {
+    return {ok: false, erro: "Informe a competência (o mês) do documento."};
+  }
+  if (emissao && validade && validade < emissao) {
+    return {ok: false, erro: "A validade está antes da emissão. Confira as duas."};
+  }
+  return {ok: true, dados: {emissao: emissao, validade: validade, competencia: comp}};
+}
+
+// As linhas dos campos que ficaram SEM resposta — em branco, para digitar.
+// Digitar marca a caixinha sozinho: quem preencheu quer que valha.
+function linhasDeCamposVazios(vazios, attrMarca, attrValor){
+  return (vazios || []).map(x => `
+    <tr>
+      <td style="width:34px"><input type="checkbox" ${attrMarca}="${escapar(x.campo)}"></td>
+      <td>${escapar(x.rotulo)}</td>
+      <td><input ${attrValor}="${escapar(x.campo)}" value=""
+           placeholder="${escapar(x.feitio === "data" ? "AAAA-MM-DD" : "")}"
+           oninput="marcarCampoDigitado(this, '${attrMarca}', '${escapar(x.campo)}')"
+           style="width:100%; padding:5px 8px; border:1px solid var(--borda-forte);
+                  border-radius:6px; font-size:13px"></td>
+    </tr>`).join("");
+}
+
+// Num contrato de obra, "até quando vale" e "fim da vigência" são a MESMA
+// data — uma no documento, outra no cadastro. Digitar duas vezes a mesma coisa
+// é convite a digitar diferente, e aí o aviso da agenda e a ficha da obra
+// passam a discordar. Preenche o do cadastro, se estiver vazio e à vista.
+function espelharValidadeNaVigencia(entrada){
+  const valor = (entrada.value || "").trim();
+  if (!valor) return;
+  ["data-valor", "data-nvalor"].forEach(attr => {
+    const alvo = document.querySelector(`[${attr}="vigencia_fim"]`);
+    if (!alvo || alvo.value.trim()) return;
+    alvo.value = valor;
+    const marca = attr === "data-valor" ? "data-campo" : "data-ncampo";
+    const cx = document.querySelector(`[${marca}="vigencia_fim"]`);
+    if (cx && !cx.disabled) cx.checked = true;
+    // Abre a gaveta: preencher escondido é o mesmo que preencher sem avisar.
+    const gaveta = alvo.closest("details");
+    if (gaveta) gaveta.open = true;
+  });
+}
+
+function marcarCampoDigitado(entrada, attrMarca, campo){
+  const cx = document.querySelector(`[${attrMarca}="${campo}"]`);
+  if (cx) cx.checked = !!entrada.value.trim();
+}
+
+// ---------------------------------------------------------------------------
 // A GAVETA DE FILTROS DO CELULAR
 //
 // No computador nada disto acontece: o estilo mantém o botão invisível acima

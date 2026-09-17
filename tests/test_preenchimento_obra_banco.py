@@ -394,3 +394,83 @@ def test_a_previa_do_nome_e_a_mesma_que_vai_ser_guardada(app_real, cenario, monk
               "campos": json.dumps({})},
         content_type="multipart/form-data").get_json()["documento"]["nome"]
     assert previa == guardado == "MATRICULA-CEI-CNO_ESCPLANALTO_2026-03-10.pdf"
+
+
+# ---------------------------------------------------------------------------
+# 7. O QUE O DOCUMENTO NÃO DISSE — ABRIR O CAMPO, EM VEZ DE TRANCAR
+#
+# 14/09/2026, o dono tentando criar uma obra a partir de um contrato: *"ele fez
+# a leitura, ok, só que não aparece o campo de vigência (…) e quando eu boto
+# criar obra e arquivar, aparece 'contrato da obra vence, informe até quando
+# vale' (…) não tem opção, não aparece o campo. Aí era para abrir os campos,
+# né?"*
+#
+# Antes, o que a leitura não achava simplesmente não existia na tela: contrato
+# que não escreve a vigência dentro do texto (e há muitos) batia na recusa do
+# arquivamento sem ter onde digitar a data cobrada. Agora os campos sem
+# resposta voltam em branco, para a pessoa preencher.
+# ---------------------------------------------------------------------------
+def test_campo_que_a_leitura_nao_achou_volta_em_branco(cenario):
+    """O caso exato do relato: contrato sem vigência escrita."""
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"contrato": "CT 014/2026",
+                                   "cliente": "MUNICÍPIO DE X"}))
+    vazios = {c["campo"]: c for c in r["campos_vazios"]}
+    assert "vigencia_fim" in vazios, "é o campo que travava o arquivamento"
+    assert "vigencia_inicio" in vazios
+    assert vazios["vigencia_fim"]["rotulo"] == "Fim da vigência"
+    assert vazios["vigencia_fim"]["feitio"] == "data"
+
+
+def test_o_que_a_leitura_achou_nao_aparece_em_branco(cenario):
+    """Senão o mesmo campo viria duas vezes, e a pessoa escolheria no escuro."""
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"contrato": "CT 014/2026",
+                                   "vigencia_fim": "2027-12-31"}))
+    achados = {c["campo"] for c in r["campos"]}
+    vazios = {c["campo"] for c in r["campos_vazios"]}
+    assert "vigencia_fim" in achados
+    assert "vigencia_fim" not in vazios
+    assert not (achados & vazios), "um campo está de um lado OU do outro"
+
+
+def test_campo_ja_preenchido_no_cadastro_nao_volta_em_branco(cenario):
+    """Preencher de novo o que já está lá é convite a divergir."""
+    s, obra = cenario["s"], cenario["obra"]
+    obra.vigencia_fim = date(2027, 6, 30)
+    s.flush()
+    r = preenchimento.sugerir_para_obra(
+        s, obra.id, "CONTRATO-OBRA", _leitura("CONTRATO-OBRA", {}))
+    assert "vigencia_fim" not in {c["campo"] for c in r["campos_vazios"]}
+
+
+def test_tipo_que_nao_alimenta_cadastro_nao_abre_campo_nenhum(cenario):
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "DIARIO-OBRA",
+        _leitura("DIARIO-OBRA", {"valor_contrato": "1000"}))
+    assert r["campos_vazios"] == []
+
+
+def test_a_obra_nova_abre_todos_os_campos_do_tipo(cenario):
+    """Obra que ainda vai nascer: o que a leitura não trouxe está todo vazio."""
+    r = preenchimento.sugerir_para_nova_obra(
+        cenario["s"], "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"objeto": "CONSTRUÇÃO DE CRECHE"}))
+    vazios = {c["campo"] for c in r["campos_vazios"]}
+    assert "vigencia_fim" in vazios and "valor_contrato" in vazios
+    assert "objeto" not in vazios, "esse a leitura trouxe"
+
+
+def test_o_campo_aberto_e_gravavel_pelo_mesmo_caminho(cenario):
+    """De nada adianta abrir o campo se ele não passar pela trava do tipo."""
+    s, obra = cenario["s"], cenario["obra"]
+    r = preenchimento.sugerir_para_obra(
+        s, obra.id, "CONTRATO-OBRA", _leitura("CONTRATO-OBRA", {}))
+    campo = r["campos_vazios"][0]["campo"]
+    preenchimento.aplicar_na_obra(s, obra.id, {"vigencia_fim": "2028-03-31"},
+                                  tipo_codigo="CONTRATO-OBRA",
+                                  usuario=cenario["admin"])
+    assert obra.vigencia_fim == date(2028, 3, 31)
+    assert campo in preenchimento.POR_TIPO["CONTRATO-OBRA"]
