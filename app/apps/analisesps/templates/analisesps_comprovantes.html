@@ -159,11 +159,13 @@
               <b>Parado há {{ lote.parado_ha }} minuto(s).</b>
               {% if lote.situacao == 'ESPERANDO' %}
                 Este lote entrou na fila e ninguém começou a processar.
-                Aperte <b>"Retomar a fila agora"</b>, aqui em cima.
+                Use <b>"Processar de novo"</b>, aqui embaixo — ou
+                <b>"Retomar a fila agora"</b>, lá em cima, que vale para
+                todos de uma vez.
               {% else %}
                 O processamento começou e parou no meio — costuma ser o serviço
-                do Render reiniciando. Arraste o PDF de novo: o que já baixou
-                não baixa duas vezes.
+                do Render reiniciando. Use <b>"Processar de novo"</b>, aqui
+                embaixo: o que já baixou não baixa duas vezes.
               {% endif %}
             </p>
           {% else %}
@@ -175,6 +177,37 @@
               {% endif %}
             </p>
           {% endif %}
+        {% endif %}
+
+        {# ---------------------------------------------------------------
+           PROCESSAR DE NOVO — 17/09/2026.
+
+           *"Às vezes os comprovantes não baixam por algum motivo. Eu queria,
+           a partir da tela, poder reenviar um comprovante. (…) Opa, esqueci
+           algum detalhe — o título não está no [Omie]."*
+
+           É o caso de todo dia: não baixou porque o título ainda não existe
+           no Omie, ou faltou um dado no card. A pessoa conserta LÁ e quer
+           tentar de novo — sem ter de achar o PDF e arrastar outra vez.
+
+           ⚠️ APARECE SÓ QUANDO HÁ O QUE REPROCESSAR: lote terminado (pronto
+           ou falhado) ou parado. Num lote que está trabalhando agora, o botão
+           convidaria a atropelar o próprio processamento.
+
+           Formulário comum, não `fetch`: é botão de destravar, e tem de
+           funcionar mesmo se o JavaScript não carregar. --------------- #}
+        {% if pode_operar and (lote.situacao in ('PRONTO', 'FALHOU')
+                               or lote.parece_parado) %}
+          <form method="post" style="margin-top:10px"
+                action="{{ url_for('analisesps.reprocessar_comprovante') }}">
+            <input type="hidden" name="lote" value="{{ lote.id }}">
+            <button class="btn secundario" type="submit">
+              Processar de novo</button>
+            <small class="cartao-dica" style="margin-left:8px">
+              Para quando o motivo foi resolvido fora daqui — o título entrou
+              no Omie, o card foi completado. Não baixa nada duas vezes: o que
+              já foi baixado é reconhecido e marcado como duplicado.</small>
+          </form>
         {% endif %}
       </details>
     {% endfor %}
