@@ -21,6 +21,39 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### UM CADASTRO, UMA PORTA — o documento é atalho DENTRO do formulário
+
+17/09/2026, depois de eu ter posto um botão "Cadastrar pelo Cartão CNPJ" ao lado
+do "+ Nova empresa (digitando)":
+
+> *"Não gostei da opção 'cadastrar pelo Cartão CNPJ'. Em nova empresa não
+> precisa colocar 'digitando'. Você abre os campos da empresa normal, mas DENTRO
+> do cadastro a opção de adicionar o Cartão CNPJ, da mesma forma que a gente
+> trabalha (…) igual. Senão não fica intuitivo o uso do sistema. Quando eu
+> cadastro a obra, dentro do cadastro já tem a opção de adicionar o contrato e
+> fazer a leitura; aqui tem que ser da mesma forma. **Isso tem que replicar para
+> todas as outras áreas — o funcionamento do sistema tem que ser similar.**"*
+
+**Esta é uma regra de desenho, não um ajuste de tela.** Vale para todo cadastro
+novo daqui para a frente:
+
+> Um cadastro tem **uma porta**: o formulário com os campos. O documento que
+> preenche esses campos é um **atalho DENTRO dele** — um bloco no topo,
+> "jogue o documento aqui" —, nunca um segundo botão ao lado. Dois caminhos
+> paralelos para a mesma coisa obrigam a pessoa a escolher antes de saber a
+> diferença, e é aí que o sistema deixa de ser intuitivo.
+
+Onde está: `abrirCadastroDeEmpresa`, no `erp_base.html` — uma função só, usada
+pela tela de Empresas e pela criação de obra. Ela monta **diálogo próprio**
+(`dlg-empresa`) de propósito: quando é chamada de dentro da criação da obra, o
+diálogo da obra está aberto e não pode ser substituído — o que a pessoa
+preencheu lá se perderia.
+
+Com arquivo lido, a empresa nasce E o cartão fica arquivado nela, na mesma
+transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho:
+escolhe se tem o papel à mão.
+
+
 ### A EMPRESA NASCE DO CARTÃO CNPJ (sem migração)
 
 **Onde fica o botão, corrigido em seguida:** ele nasceu só no caminho da nova

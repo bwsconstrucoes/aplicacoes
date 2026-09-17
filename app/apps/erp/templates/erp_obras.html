@@ -958,15 +958,8 @@ function campoDeEmpresa(escolhida){
           <option value="">escolha…</option>${opcoes}
         </select>
         <button class="btn secundario" type="button"
-                onclick="cadastrarEmpresaNaHora()">+ Digitar</button>
+                onclick="cadastrarEmpresaNaHora()">+ Nova empresa</button>
       </div>
-      <div style="display:flex; gap:6px; align-items:center; margin-top:6px">
-        <input type="file" id="emp-cartao" accept=".pdf,.png,.jpg,.jpeg,.webp"
-               style="font-size:12px">
-        <button class="btn secundario" type="button"
-                onclick="empresaPeloCartao()">Ler o Cartão CNPJ</button>
-      </div>
-      <div id="emp-cartao-msg"></div>
       ${EMPRESAS_DA_CASA.length ? "" : `<div class="dica" style="color:var(--vermelho)">
         <b>Nenhuma empresa cadastrada.</b> A empresa vem antes da obra — é por
         ela que saem a nota fiscal, o e-mail da cotação e a tributação.
@@ -974,95 +967,21 @@ function campoDeEmpresa(escolhida){
     </div>`;
 }
 
-// A EMPRESA SAI DO CARTÃO CNPJ. Dono, 17/09/2026: *"e eu conseguiria cadastrá-la
-// a partir do Cartão CNPJ?"*. Sai: o comprovante da Receita traz razão social,
-// nome fantasia, CNPJ e endereço — digitar de novo o que está no papel é
-// trabalho que o sistema faz melhor. Digitar continua valendo, para quem não
-// tem o arquivo à mão.
-async function cadastrarEmpresaNaHora(){
-  const escolha = await perguntar({
-    titulo: "Cadastrar empresa",
-    textoOk: "Digitar",
-    aviso: "Tem o <b>Cartão CNPJ</b> em PDF? Feche isto e use o botão "
-         + "<b>“Ler o Cartão CNPJ”</b> logo abaixo do campo de empresa — o "
-         + "sistema lê e preenche tudo. Aqui é para digitar à mão.",
-    campos: [
-      {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3},
-      {nome: "cnpj", rotulo: "CNPJ", obrigatorio: true},
-      {nome: "nome_fantasia", rotulo: "Nome curto (como aparece nas telas)"},
-    ]});
-  const r = escolha;
-  if (!r) return;
-  try {
-    const d = await api("/erp/api/empresas", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body: JSON.stringify(r)});
+// A empresa se cadastra pelo MESMO formulário de toda parte — campos normais,
+// com a leitura do Cartão CNPJ dentro (`abrirCadastroDeEmpresa`, no base). Uma
+// porta só, em qualquer tela: foi o que o dono pediu em 17/09/2026.
+function cadastrarEmpresaNaHora(){
+  abrirCadastroDeEmpresa(async (empresa) => {
     await carregarEmpresas();
     const campo = els("obra-empresa");
     if (campo) {
       campo.innerHTML = `<option value="">escolha…</option>` + EMPRESAS_DA_CASA.map(e =>
         `<option value="${e.id}">${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
-      campo.value = String(d.id);
+      campo.value = String(empresa.id);
     }
-    aviso("dlg-msg", "Empresa cadastrada e já escolhida para esta obra.", "ok");
-  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
-}
-
-async function empresaPeloCartao(){
-  const arq = els("emp-cartao").files[0];
-  if (!arq) { aviso("emp-cartao-msg", "Escolha o arquivo do Cartão CNPJ.", "alerta"); return; }
-  aviso("emp-cartao-msg", "Lendo o Cartão CNPJ…", "info");
-  try {
-    const fd = new FormData();
-    fd.append("arquivo", arq);
-    fd.append("dica", "é o Cartão CNPJ (comprovante de inscrição) da empresa");
-    const lido = await api("/erp/api/empresas/documento/ler", {method:"POST", body: fd});
-    const c = lido.cadastro;
-    if (c.ja_cadastrada) {
-      aviso("emp-cartao-msg", `Esta empresa já está cadastrada:
-        <b>${escapar(c.ja_cadastrada.nome)}</b>. Escolha-a na lista acima.`, "alerta");
-      return;
-    }
-    // O que foi lido vai para uma conferência — ninguém grava cadastro no
-    // escuro, e o Cartão CNPJ às vezes vem escaneado torto.
-    const valores = {};
-    (c.campos || []).forEach(x => { valores[x.campo] = x.valor; });
-    const r = await perguntar({
-      titulo: "Confere o que o Cartão CNPJ diz?",
-      textoOk: "Cadastrar empresa",
-      aviso: (c.avisos || []).join(" ") || "Corrija o que estiver errado antes de gravar.",
-      campos: [
-        {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3,
-         valor: valores.razao_social || ""},
-        {nome: "cnpj", rotulo: "CNPJ", obrigatorio: true, valor: valores.cnpj || ""},
-        {nome: "nome_fantasia", rotulo: "Nome curto", valor: valores.nome_fantasia || ""},
-        {nome: "logradouro", rotulo: "Logradouro", largura: 2, valor: valores.logradouro || ""},
-        {nome: "numero", rotulo: "Número", valor: valores.numero || ""},
-        {nome: "bairro", rotulo: "Bairro", valor: valores.bairro || ""},
-        {nome: "municipio", rotulo: "Município", valor: valores.municipio || ""},
-        {nome: "uf", rotulo: "UF", valor: valores.uf || ""},
-        {nome: "cep", rotulo: "CEP", valor: valores.cep || ""},
-      ]});
-    if (!r) return;
-
-    const envio = new FormData();
-    envio.append("arquivo", arq);
-    envio.append("tipo", lido.sugestao.tipo_codigo || "CARTAO-CNPJ");
-    envio.append("campos", JSON.stringify(r));
-    ["emissao","texto","resumo","referencia"].forEach(k => {
-      if (lido.sugestao[k]) envio.append(k, lido.sugestao[k]);
-    });
-    const d = await api("/erp/api/empresas/documento", {method:"POST", body: envio});
-    await carregarEmpresas();
-    const campo = els("obra-empresa");
-    if (campo) {
-      campo.innerHTML = `<option value="">escolha…</option>` + EMPRESAS_DA_CASA.map(e =>
-        `<option value="${e.id}">${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
-      campo.value = String(d.empresa.id);
-    }
-    aviso("emp-cartao-msg", `Empresa <b>${escapar(d.empresa.nome)}</b> cadastrada,
-      já escolhida para esta obra, e o Cartão CNPJ guardado nela como
-      <b class="mono">${escapar(d.documento.nome)}</b>.`, "ok");
-  } catch(e){ aviso("emp-cartao-msg", e.message, "erro"); }
+    aviso("dlg-msg", `Empresa <b>${escapar(empresa.nome)}</b> cadastrada e já
+      escolhida para esta obra.`, "ok");
+  });
 }
 
 const BLOCOS_NOVA_OBRA = [
