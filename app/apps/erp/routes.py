@@ -1925,6 +1925,91 @@ def api_empresas():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+# ---------------------------------------------------------------------------
+# A EMPRESA QUE NASCE DO CARTÃO CNPJ
+#
+# Dono, 17/09/2026: *"e eu conseguiria cadastrá-la a partir do Cartão CNPJ?"*.
+# Mesmo caminho da obra que nasce do contrato: lê, mostra o que entendeu, cria e
+# arquiva o documento na empresa — tudo na mesma transação.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/empresas/documento/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_nova_empresa_documento_ler():
+    """Lê o Cartão CNPJ e diz que empresa ele criaria. Não grava nada."""
+    from app.apps.erp.core.arquivo import leitura, preenchimento
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402).
+    _exigir_saldo_de_ia()
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            sugestao = leitura.sugerir(
+                s, conteudo, f.filename or "arquivo",
+                dica=(request.form.get("dica") or ""),
+                extracao=preenchimento.instrucao_de_extracao_empresa(),
+                dono_e_novo=True)
+            sugestao["nome_original"] = f.filename or "arquivo"
+            # O nome do arquivo depende da empresa, que ainda não existe.
+            sugestao["nome_sugerido"] = ""
+            cadastro = preenchimento.sugerir_para_nova_empresa(
+                s, sugestao.get("tipo_codigo") or "", sugestao)
+        return jsonify({"ok": True, "sugestao": sugestao, "cadastro": cadastro})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/empresas: falha ao ler o documento")
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
+
+
+@bp.route("/erp/api/empresas/documento", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_nova_empresa_documento():
+    """Cria a empresa a partir do documento lido e arquiva o documento nela.
+
+    Na MESMA transação: empresa criada com o cartão perdido, ou cartão guardado
+    numa empresa que não chegou a existir, seriam os dois piores resultados.
+    """
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.cadastros import empresas as svc_emp
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    tipo = (request.form.get("tipo") or "").strip().upper()
+    campos = json.loads(request.form.get("campos") or "{}")
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            empresa = svc_emp.criar(s, campos, usuario)
+            s.flush()
+            d = svc_arq.arquivar(
+                s, f.read(), f.filename or "arquivo",
+                tipo_codigo=tipo or "CARTAO-CNPJ", empresa_id=empresa.id,
+                referencia=(request.form.get("referencia") or ""),
+                emissao=(date.fromisoformat(request.form["emissao"])
+                         if (request.form.get("emissao") or "").strip() else None),
+                texto=(request.form.get("texto") or ""),
+                resumo=(request.form.get("resumo") or ""),
+                origem="IA", usuario=usuario)
+            linha = svc_arq.ler(s, d)
+            criada = {"id": empresa.id, "razao_social": empresa.razao_social,
+                      "nome": empresa.nome_fantasia or empresa.razao_social,
+                      "cnpj": empresa.cnpj}
+            s.commit()
+        return jsonify({"ok": True, "empresa": criada, "documento": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/empresas: falha ao criar empresa a partir de documento")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/empresas/<int:empresa_id>", methods=["PATCH"])
 @login_obrigatorio
 @permissao("configurar")
@@ -6091,6 +6176,7 @@ def api_nova_obra_documento():
                             "em dois e nenhum relatório fecha."}), 400
 
             obra = svc_obra.criar(s, {"codigo": codigo, "nome": nome,
+                                      "empresa_id": request.form.get("empresa_id"),
                                       "origem": "DOCUMENTO"}, usuario)
             s.flush()
             d = svc_arq.arquivar(

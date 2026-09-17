@@ -144,6 +144,10 @@ function alertas(o){
   // Pedido do dono, 17/09/2026: *"é importante se tem alguém responsável pela
   // obra ou não, porque enquanto não tem, ninguém pode fazer nada"*. Entra em
   // primeiro lugar na lista — é o que trava o resto.
+  // Sem empresa não sai nota, nem cotação, nem tributação — é o primeiro de
+  // todos (dono, 17/09/2026: *"é prioritário esse cadastro, anterior inclusive
+  // à obra, porque eu tenho que associar"*).
+  if (!o.empresa_id) a.unshift({t:"Sem empresa", c:"bloqueado"});
   if (o.tem_responsavel === false) a.unshift({t:"Sem responsável", c:"bloqueado"});
   if (!o.aliquota_iss) a.push({t:"Sem ISS", c:"bloqueado"});
   if (!o.cno) a.push({t:"Sem CNO", c:"outro"});
@@ -920,9 +924,152 @@ let NOVA_DOC = null;          // a leitura conferida, esperando confirmação
 // grade lisa viram parede — e porque o dono estranhou, com razão, não achar o
 // ENDEREÇO: *"é um campo importantíssimo"*. Ele não estava faltando, estava
 // só na ficha da obra; agora está nos dois lugares.
+// ---------------------------------------------------------------------------
+// A EMPRESA DA OBRA
+//
+// Dono, 17/09/2026: *"eu cadastrei obra, mas não vinculei à empresa. Então eu
+// acho que é prioritário esse cadastro, anterior inclusive à obra, porque eu
+// tenho que associar."* O campo não existia na criação — a obra nascia solta, e
+// isso só aparecia depois, quando a nota não saía ou a cotação não tinha de
+// qual e-mail sair.
+//
+// Cadastrar a empresa aqui mesmo evita o beco: quem está criando a obra não
+// precisa sair, ir a Configurações, cadastrar e voltar do começo.
+// ---------------------------------------------------------------------------
+let EMPRESAS_DA_CASA = [];
+
+async function carregarEmpresas(){
+  try {
+    const d = await api("/erp/api/empresas");
+    EMPRESAS_DA_CASA = d.empresas || [];
+  } catch(e){ EMPRESAS_DA_CASA = []; }
+  return EMPRESAS_DA_CASA;
+}
+
+function campoDeEmpresa(escolhida){
+  const opcoes = EMPRESAS_DA_CASA.map(e =>
+    `<option value="${e.id}" ${String(e.id) === String(escolhida) ? "selected" : ""}
+      >${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
+  return `
+    <div class="campo" style="grid-column:span 2">
+      <label>Empresa *</label>
+      <div style="display:flex; gap:6px">
+        <select id="obra-empresa" style="flex:1">
+          <option value="">escolha…</option>${opcoes}
+        </select>
+        <button class="btn secundario" type="button"
+                onclick="cadastrarEmpresaNaHora()">+ Digitar</button>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center; margin-top:6px">
+        <input type="file" id="emp-cartao" accept=".pdf,.png,.jpg,.jpeg,.webp"
+               style="font-size:12px">
+        <button class="btn secundario" type="button"
+                onclick="empresaPeloCartao()">Ler o Cartão CNPJ</button>
+      </div>
+      <div id="emp-cartao-msg"></div>
+      ${EMPRESAS_DA_CASA.length ? "" : `<div class="dica" style="color:var(--vermelho)">
+        <b>Nenhuma empresa cadastrada.</b> A empresa vem antes da obra — é por
+        ela que saem a nota fiscal, o e-mail da cotação e a tributação.
+        Cadastre em "+ Nova".</div>`}
+    </div>`;
+}
+
+// A EMPRESA SAI DO CARTÃO CNPJ. Dono, 17/09/2026: *"e eu conseguiria cadastrá-la
+// a partir do Cartão CNPJ?"*. Sai: o comprovante da Receita traz razão social,
+// nome fantasia, CNPJ e endereço — digitar de novo o que está no papel é
+// trabalho que o sistema faz melhor. Digitar continua valendo, para quem não
+// tem o arquivo à mão.
+async function cadastrarEmpresaNaHora(){
+  const escolha = await perguntar({
+    titulo: "Cadastrar empresa",
+    textoOk: "Digitar",
+    aviso: "Tem o <b>Cartão CNPJ</b> em PDF? Feche isto e use o botão "
+         + "<b>“Ler o Cartão CNPJ”</b> logo abaixo do campo de empresa — o "
+         + "sistema lê e preenche tudo. Aqui é para digitar à mão.",
+    campos: [
+      {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3},
+      {nome: "cnpj", rotulo: "CNPJ", obrigatorio: true},
+      {nome: "nome_fantasia", rotulo: "Nome curto (como aparece nas telas)"},
+    ]});
+  const r = escolha;
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/empresas", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(r)});
+    await carregarEmpresas();
+    const campo = els("obra-empresa");
+    if (campo) {
+      campo.innerHTML = `<option value="">escolha…</option>` + EMPRESAS_DA_CASA.map(e =>
+        `<option value="${e.id}">${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
+      campo.value = String(d.id);
+    }
+    aviso("dlg-msg", "Empresa cadastrada e já escolhida para esta obra.", "ok");
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+async function empresaPeloCartao(){
+  const arq = els("emp-cartao").files[0];
+  if (!arq) { aviso("emp-cartao-msg", "Escolha o arquivo do Cartão CNPJ.", "alerta"); return; }
+  aviso("emp-cartao-msg", "Lendo o Cartão CNPJ…", "info");
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("dica", "é o Cartão CNPJ (comprovante de inscrição) da empresa");
+    const lido = await api("/erp/api/empresas/documento/ler", {method:"POST", body: fd});
+    const c = lido.cadastro;
+    if (c.ja_cadastrada) {
+      aviso("emp-cartao-msg", `Esta empresa já está cadastrada:
+        <b>${escapar(c.ja_cadastrada.nome)}</b>. Escolha-a na lista acima.`, "alerta");
+      return;
+    }
+    // O que foi lido vai para uma conferência — ninguém grava cadastro no
+    // escuro, e o Cartão CNPJ às vezes vem escaneado torto.
+    const valores = {};
+    (c.campos || []).forEach(x => { valores[x.campo] = x.valor; });
+    const r = await perguntar({
+      titulo: "Confere o que o Cartão CNPJ diz?",
+      textoOk: "Cadastrar empresa",
+      aviso: (c.avisos || []).join(" ") || "Corrija o que estiver errado antes de gravar.",
+      campos: [
+        {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3,
+         valor: valores.razao_social || ""},
+        {nome: "cnpj", rotulo: "CNPJ", obrigatorio: true, valor: valores.cnpj || ""},
+        {nome: "nome_fantasia", rotulo: "Nome curto", valor: valores.nome_fantasia || ""},
+        {nome: "logradouro", rotulo: "Logradouro", largura: 2, valor: valores.logradouro || ""},
+        {nome: "numero", rotulo: "Número", valor: valores.numero || ""},
+        {nome: "bairro", rotulo: "Bairro", valor: valores.bairro || ""},
+        {nome: "municipio", rotulo: "Município", valor: valores.municipio || ""},
+        {nome: "uf", rotulo: "UF", valor: valores.uf || ""},
+        {nome: "cep", rotulo: "CEP", valor: valores.cep || ""},
+      ]});
+    if (!r) return;
+
+    const envio = new FormData();
+    envio.append("arquivo", arq);
+    envio.append("tipo", lido.sugestao.tipo_codigo || "CARTAO-CNPJ");
+    envio.append("campos", JSON.stringify(r));
+    ["emissao","texto","resumo","referencia"].forEach(k => {
+      if (lido.sugestao[k]) envio.append(k, lido.sugestao[k]);
+    });
+    const d = await api("/erp/api/empresas/documento", {method:"POST", body: envio});
+    await carregarEmpresas();
+    const campo = els("obra-empresa");
+    if (campo) {
+      campo.innerHTML = `<option value="">escolha…</option>` + EMPRESAS_DA_CASA.map(e =>
+        `<option value="${e.id}">${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
+      campo.value = String(d.empresa.id);
+    }
+    aviso("emp-cartao-msg", `Empresa <b>${escapar(d.empresa.nome)}</b> cadastrada,
+      já escolhida para esta obra, e o Cartão CNPJ guardado nela como
+      <b class="mono">${escapar(d.documento.nome)}</b>.`, "ok");
+  } catch(e){ aviso("emp-cartao-msg", e.message, "erro"); }
+}
+
 const BLOCOS_NOVA_OBRA = [
   ["Identificação", [
     {id:"codigo", rot:"Código *", dica:"ESCPE18"},
+    // A EMPRESA da obra: é por ela que saem nota, cotação e tributação.
+    {id:"empresa_id", rot:"Empresa *", empresa:true},
     {id:"nome", rot:"Nome *", largo:true},
     {id:"cliente", rot:"Contratante"},
     {id:"cnpj_cliente", rot:"CNPJ do contratante"},
@@ -1042,8 +1189,11 @@ function formProjeto(p){
 
 els("btn-projetos").addEventListener("click", abrirProjetos);
 
-els("btn-nova").addEventListener("click", () => {
+els("btn-nova").addEventListener("click", async () => {
   NOVA_DOC = null;
+  // As empresas ANTES de desenhar: os dois modos têm o select, e select vazio
+  // faria parecer que não há empresa cadastrada.
+  await carregarEmpresas();
   els("dlg-titulo").textContent = "Nova obra";
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
@@ -1068,13 +1218,14 @@ function modoNovaObra(modo){
       ${BLOCOS_NOVA_OBRA.map(([titulo, campos], i) => `
         <h4 ${i ? 'style="margin-top:14px"' : 'style="margin-top:0"'}>${titulo}</h4>
         <div class="form-grade">
-          ${campos.map(c=>`
+          ${campos.map(c=> c.empresa ? campoDeEmpresa() : `
             <div class="campo" ${c.largo?'style="grid-column:span 2"':""}>
               <label>${c.rot}</label>
               <input id="n-${c.id}" ${c.dica?`placeholder="${c.dica}"`:""}
                 ${c.tam?`maxlength="${c.tam}"`:""}></div>`).join("")}
         </div>`).join("")}
-      <div class="cartao-dica">Só o <b>código</b> e o <b>nome</b> são obrigatórios;
+      <div class="cartao-dica">Só o <b>código</b>, o <b>nome</b> e a <b>empresa</b>
+        são obrigatórios;
         o resto pode entrar agora ou depois. O que não cabe aqui — vigência,
         data-base, índice de reajuste, ART, responsável técnico, seguro,
         retenção, aditivos e a tributação inteira — fica na ficha da obra, que
@@ -1107,7 +1258,10 @@ function modoNovaObra(modo){
 
 async function criarObraNaMao(){
   const corpo = {};
-  CAMPOS_NOVA_OBRA.forEach(c => { corpo[c.id] = (els("n-"+c.id).value || "").trim(); });
+  CAMPOS_NOVA_OBRA.forEach(c => {
+    const el = c.empresa ? els("obra-empresa") : els("n-" + c.id);
+    if (el) corpo[c.id] = (el.value || "").trim();
+  });
   const b = els("n-salvar");
   b.disabled = true;
   try {
@@ -1200,6 +1354,7 @@ function desenharLeituraDeObraNova(){
               ${escapar(codigosRecentes().join(", "))}</small>` : ""}</div>
       <div class="campo" style="grid-column:span 2"><label>Nome da obra *</label>
         <input id="nd-nome" value="${escapar(c.nome_sugerido || "")}"></div>
+      ${campoDeEmpresa()}
     </div>
     <div class="cartao-dica">O código é convenção da casa — não sai de documento
       nenhum, e é por isso que o sistema pergunta em vez de inventar.</div>
@@ -1266,6 +1421,11 @@ async function criarObraDoDocumento(){
   if (!codigo || !nome) {
     aviso("nd-msg", "Preencha o código e o nome da obra.", "erro"); return;
   }
+  const empresa = (els("obra-empresa").value || "").trim();
+  if (!empresa && EMPRESAS_DA_CASA.length) {
+    aviso("nd-msg", "Escolha a empresa da obra — é por ela que saem a nota "
+      + "fiscal, o e-mail da cotação e a tributação.", "erro"); return;
+  }
   const campos = {};
   document.querySelectorAll("[data-ncampo]:checked").forEach(cx => {
     const campo = cx.dataset.ncampo;
@@ -1284,6 +1444,7 @@ async function criarObraDoDocumento(){
     fd.append("arquivo", arq);
     fd.append("tipo", g.tipo_codigo);
     fd.append("codigo", codigo); fd.append("nome", nome);
+    if (empresa) fd.append("empresa_id", empresa);
     // As datas saem da TELA: a leitura pode não ter achado, e aí é a pessoa
     // que informa — antes era aqui que o fluxo travava.
     ["referencia","texto","resumo"].forEach(k => { if (g[k]) fd.append(k, g[k]); });

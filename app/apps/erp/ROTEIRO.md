@@ -507,6 +507,19 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       mais antigo guardado), porque o Banco Central só republica a variação. A
       RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
 
+- [x] **A EMPRESA NASCE DO CARTÃO CNPJ** — FEITO em 17/09/2026. **Sem
+      migração.** O PDF do comprovante da Receita preenche razão social, nome
+      fantasia, CNPJ e endereço; a pessoa confere, a empresa é criada e o cartão
+      fica arquivado nela. CNPJ repetido e situação não-ATIVA viram aviso antes
+      de gravar. Inscrição estadual/municipal não são pedidas à IA — não estão
+      no cartão.
+
+- [x] **A EMPRESA VEM ANTES DA OBRA** — FEITO em 17/09/2026. **Sem migração.**
+      O dono cadastrou obra e ela nasceu sem empresa: `obras.criar()` nunca leu
+      `empresa_id`. Agora é campo obrigatório na criação (digitando e pelo
+      documento), com "+ Nova" para cadastrar a empresa na hora; casa sem
+      empresa nenhuma não trava a primeira obra; e a lista marca "Sem empresa".
+
 - [x] **ÁRVORE DE PASTAS NO DRIVE, E A DATA DO DOCUMENTO CORRIGÍVEL** — FEITO
       em 17/09/2026. **TRAZ A MIGRAÇÃO 070.** O dono ligou o Drive e pediu a
       organização: `Obras/<código - nome>` e `Arquivo/<gaveta>`. Pasta que já

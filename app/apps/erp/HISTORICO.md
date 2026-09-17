@@ -21,6 +21,63 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### A EMPRESA NASCE DO CARTÃO CNPJ (sem migração)
+
+17/09/2026, completando o pedido anterior: *"e eu conseguiria cadastrá-la a
+partir do Cartão CNPJ?"*.
+
+Consegue. No campo de empresa da nova obra há **"Ler o Cartão CNPJ"**: joga o
+PDF, o sistema lê razão social, nome fantasia, CNPJ e endereço, **mostra para
+conferir**, cria a empresa, **arquiva o cartão dentro dela** e já a escolhe para
+a obra — tudo numa transação só. Digitar continua valendo, no "+ Digitar", para
+quem não tem o arquivo à mão.
+
+Três cuidados que valem a pena conhecer:
+
+- **CNPJ já cadastrado é avisado ANTES**, não na hora de gravar: descobrir
+  depois de conferir tudo faz perder o trabalho.
+- **Situação cadastral diferente de ATIVA vira aviso** — empresa baixada não
+  emite nota, e é melhor saber antes de montar obra em cima dela.
+- **Inscrição estadual e municipal não são pedidas à IA**: elas não estão no
+  Cartão CNPJ (são de outros órgãos), e inventar inscrição é pior que deixar em
+  branco. Continuam sendo preenchidas à mão em Configurações → Empresas.
+
+### INCIDENTE: um teste do Análise de SPs quebrava sozinho e travava publicação
+
+`test_o_arquivo_guardado_NAO_e_legivel` comparava `b"BWS" not in <cifrado>`. O
+cifrado é base64 com nonce novo a cada chamada — três letras aparecem por acaso
+mais cedo ou mais tarde, e aconteceu no meio de uma publicação do ERP. Passou a
+conferir trechos do PRÓPRIO certificado (24 bytes do começo, do meio e do fim),
+que é o que realmente se quer provar. **Teste que falha sem defeito nenhum é
+pior que teste nenhum**: ensina a equipe a rodar de novo até passar.
+
+
+### A EMPRESA VEM ANTES DA OBRA — e o campo simplesmente não era lido (sem migração)
+
+17/09/2026: *"eu cadastrei obra, mas não vinculei à empresa. Então eu acho que é
+prioritário esse cadastro, anterior inclusive à obra, porque eu tenho que
+associar."*
+
+**O defeito era meu, e era feio:** `obras.criar()` nunca leu `empresa_id`. A
+coluna existia no banco, a ficha da obra mostrava o campo, mas **toda obra
+nascia solta** — por qualquer porta, digitando ou pelo contrato. Só aparecia
+depois, quando a nota não saía, a cotação não sabia de qual e-mail sair ou a
+tributação não existia.
+
+O que mudou:
+
+- **Empresa é campo obrigatório na criação**, nos dois modos (digitando e pelo
+  documento), com um botão **"+ Nova"** que cadastra a empresa na hora (razão
+  social, CNPJ, nome curto) e já a escolhe — sem sair da tela e recomeçar.
+- **Casa sem empresa nenhuma não trava a primeira obra**: exigir o que não
+  existe seria um beco sem saída. Aí vale o aviso.
+- **A lista de obras marca "Sem empresa"** em vermelho, à frente de tudo — as
+  obras que já nasceram soltas aparecem ali para serem consertadas pela ficha.
+
+⚠️ **As obras já criadas continuam sem empresa até alguém ligar.** Elas estão
+listadas em Configurações → Empresas ("obras sem empresa") e marcadas no painel.
+
+
 ### O DRIVE FOI LIGADO EM PRODUÇÃO, E AGORA TEM ÁRVORE DE PASTAS (migração 070)
 
 17/09/2026, o dono: *"quanto ao Drive, eu marquei aqui guardar os documentos

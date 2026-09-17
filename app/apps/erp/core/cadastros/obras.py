@@ -60,7 +60,26 @@ def criar(s: Session, dados: dict[str, Any], usuario: Optional[Usuario]) -> Obra
         raise ErroValidacao("Código e nome da obra são obrigatórios.")
     if s.scalars(select(Obra).where(Obra.codigo == codigo)).first():
         raise ErroValidacao(f"Já existe obra com o código {codigo}.")
-    obra = Obra(codigo=codigo, nome=nome,
+
+    # A EMPRESA VEM ANTES DA OBRA (17/09/2026). O dono: *"eu cadastrei obra,
+    # mas não vinculei à empresa. Então eu acho que é prioritário esse cadastro,
+    # anterior inclusive à obra, porque eu tenho que associar."*
+    #
+    # E ele está certo por um motivo prático: sem empresa, a obra não emite
+    # nota, não manda cotação (o e-mail sai pela conta da empresa) e não tem
+    # tributação. Antes o campo simplesmente não era lido aqui — a obra nascia
+    # solta e ninguém percebia até faltar alguma dessas três coisas.
+    from app.apps.erp.db.models.cadastros import Empresa
+    empresa_id = dados.get("empresa_id")
+    empresa_id = int(empresa_id) if str(empresa_id or "").strip().isdigit() else None
+    if empresa_id is not None and s.get(Empresa, empresa_id) is None:
+        raise ErroValidacao("Empresa não encontrada.")
+    if empresa_id is None and s.scalars(select(Empresa).limit(1)).first() is not None:
+        raise ErroValidacao(
+            "Escolha a empresa da obra. É por ela que saem a nota fiscal, o "
+            "e-mail da cotação e a tributação — obra sem empresa trava as três.")
+
+    obra = Obra(codigo=codigo, nome=nome, empresa_id=empresa_id,
                 cno=(dados.get("cno") or "").strip() or None,
                 municipio=(dados.get("municipio") or "").strip() or None,
                 uf=(dados.get("uf") or "").strip().upper() or None,
