@@ -20,9 +20,9 @@
                 {% for _, campo in colunas %}
                   {% set v = i.get(campo) %}
                   <td class="cortar" title="{{ v }}">
-                    {% if campo == 'id' and v %}
+                    {% if campo == 'SP' and v %}
                       <a href="{{ url_for('analisesps.detalhe', sp_id=v) }}">{{ v }}</a>
-                    {% elif campo == 'alertas' and v %}
+                    {% elif campo == 'Alertas' and v %}
                       <span class="selo falha">{{ v if v is string else v|join(' · ') }}</span>
                     {% else %}{{ v if v is not none else '' }}{% endif %}
                   </td>
@@ -84,15 +84,14 @@
 {% endif %}
 
 {% if resultado %}
-  {{ tabela('Boletos', resultado.boletos, [
-      ('Alertas','alertas'), ('Empresa','empresa'), ('Conta','conta_debito'),
-      ('Valor','valor'), ('SP','id'), ('Credor','credor'),
-      ('Cód. barras','codigo_barras'), ('Diferença','diff')]) }}
+  {# ⚠️ AS COLUNAS VÊM DO MÓDULO, e não escritas aqui. Elas estavam escritas
+     aqui com nomes técnicos ('valor', 'credor') enquanto a linha é montada com
+     nomes em português ("Valor (Bradesco)", "Credor (SP)"): nenhuma chave
+     batia, e a tela mostrava "47 operação(ões)" com 47 linhas EM BRANCO.
+     Campo que aparece em dois arquivos vira dois nomes diferentes. #}
+  {{ tabela('Boletos', resultado.boletos, colunas_boleto) }}
 
-  {{ tabela('Pix e transferências', resultado.pix, [
-      ('Alertas','alertas'), ('Empresa','empresa'), ('Conta','conta_debito'),
-      ('Valor','valor'), ('Nome no banco','nome'), ('SP','id'),
-      ('Credor','credor'), ('Classificação','classe'), ('Confiança','conf')]) }}
+  {{ tabela('Pix e transferências', resultado.pix, colunas_pix) }}
 
   <p class="cartao-dica">
     Uma operação sem SP encontrada não quer dizer pagamento indevido — pode ser

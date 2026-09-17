@@ -4125,6 +4125,753 @@ mais simples que existe: *"deixa eu ver os dados"*.
   de ver. Se ele quiser baixar, é acrescentar.
 
 ---
+
+### Quinquagésima segunda leva (14/09) — ⚠️ a busca na Receita andou, e parou em dois pontos novos
+
+Publicadas na `main` antes desta: as levas 49, 50 e 51 (`64d8cf0`).
+
+#### 1. ⚠️ OS DOIS DEFEITOS QUE A PRODUÇÃO ACUSOU — e o rastro funcionou
+
+Com o certificado finalmente abrindo (o conserto do base64), a busca foi
+adiante. O dono mandou a coluna nova de Configurações, e ela entregou os dois
+erros com todas as letras:
+
+    00079526000109  Notas (NF-e)   'TransmissaoSOAP' object does not support
+                                   the context manager protocol
+    00079526000109  Fretes (CT-e)  403 Client Error: Forbidden for url:
+                                   https://www1.cte.fazenda.gov.br/…
+
+**É a prova de que o rastro da falha (leva 49) valeu a pena.** Sem ele, a tela
+continuaria dizendo "a busca nunca rodou" e estes dois defeitos seguiriam
+invisíveis.
+
+**Os dois são da MESMA FAMÍLIA do base64: usar a biblioteca de um jeito que ela
+não suporta, com a mensagem apontando para outro lugar.**
+
+**NF-e.** O código fazia `with TransmissaoSOAP(...)`. A classe **não** é um
+gerenciador de contexto — quem é o método `cliente()` dela, que o serviço chama
+por dentro. O `with` estourava ANTES de qualquer conversa com a Receita.
+
+**CT-e.** O pedido é montado à mão (a biblioteca não cobre CT-e) e era postado
+pela `session` que a `TransmissaoSOAP` guarda — que é uma sessão **comum**. O
+certificado só é preso a ela dentro do `cliente()`, que grava chave e
+certificado em arquivos temporários. Postando pela sessão crua, a Receita via
+um visitante sem identidade e respondia **403**. Agora usa `ArquivoCertificado`,
+o mesmo caminho que a biblioteca usa por dentro.
+
+⚠️ **O teste NÃO prova que a busca funciona** — não há certificado nem saída
+para a SEFAZ aqui. Ele prova que o código chama a biblioteca do jeito que ela
+pede, e crava os dois pontos exatos. Os dois defeitos eram de CHAMADA, não de
+rede, e é isso que dá para travar daqui.
+
+#### 2. A planilha saiu do menu e virou visão da Documentação Fiscal
+
+*"Está lá 'ver os dados', está muito solto, não tem vínculo com nada. Está ruim
+da forma que está. Aqui tem 'por lançamento', 'por nota' — aí você colocar aqui
+dentro. E 'ver os dados' também está foda, tem que ter uma nomenclatura
+melhor."*
+
+**Ele está certo nas duas coisas, e as duas são a mesma:** a tela nasceu **sem
+contexto**. Ela é da Documentação Fiscal — é ali que ele está quando quer
+conferir o dado cru contra o que a tela de trabalho está afirmando. Solta no
+menu de cima, virava destino sem volta e sem parentesco.
+
+E o nome não dizia nada: "ver os dados" pode ser qualquer coisa. Agora usa a
+palavra que ELE usa o tempo todo — **planilha**.
+
+A barra da Documentação Fiscal passou a ter **quatro visões**, com as duas
+famílias separadas por um traço:
+
+    Por lançamento | Por nota  ┊  Planilha das SPs | Planilha das notas
+    └─ trabalho ─────────────┘   └─ ver, sem nada para clicar ───────┘
+
+⚠️ **A barra virou UM arquivo só** (`analisesps_fiscal_visoes.html`). Eram
+cópias, uma por tela — e foi exatamente por isso que a visão nova nasceu órfã
+da primeira vez: quem estivesse na tela de fora não tinha como descobrir que
+ela existe. Há teste cravando que nenhuma tela desenha a barra por conta
+própria.
+
+- `/analisesps/planilha` continua existindo, redirecionando — ele pode ter
+  guardado nos favoritos, e quebrar em silêncio seria pior do que não ter
+  mudado.
+- Há teste garantindo que o texto "Ver os dados" não sobrou em template nenhum.
+
+#### O que foi verificado
+
+- A aplicação sobe (18 blueprints).
+- No Chromium: as quatro visões aparecem nas quatro telas, cada uma com a sua
+  acesa, **nenhum erro de console**, e o endereço antigo caindo no lugar certo.
+
+#### O que NÃO foi verificado
+
+- **A busca na Receita continua sem rodar de verdade daqui.** Os dois consertos
+  são certos no ponto do defeito, mas o próximo clique em produção pode revelar
+  um terceiro ponto atrás deles — foi assim nas duas últimas vezes.
+- Nada rodou contra a base de produção.
+- As quatro visões não foram vistas em celular estreito: a barra tem agora
+  quatro itens e pode quebrar.
+
+---
+
+### Quinquagésima terceira leva (15/09) — o porquê do Omie, o corte de 2026 na planilha e o quadro por categoria
+
+**Publicada na `main` em 15/09/2026 (`b9080c2`), junto com a leva 52.**
+
+#### 1. ⚠️ "Baixa na planilha e não baixa no Omie" — e a recusa de trocar o remendo pela causa
+
+*"Você marcar a planilha só depois do Omie confirmar NÃO é resolver a causa
+raiz. A causa raiz é saber POR QUE não está baixando no Omie, porque se eu
+estou mandando pra baixar é pra baixar."*
+
+Ele está certo, e a correção é de método: a primeira proposta era **esconder o
+sintoma** (só marcar a planilha quando o Omie confirmasse), o que deixaria o
+mesmo título sem baixa no Omie — só que agora em silêncio nos dois lados.
+
+O que a tela passou a fazer é **contar o que o Omie respondeu**. Cada
+comprovante guarda a conversa passo a passo, com a frase de recusa do próprio
+Omie (`faultstring`), e a tela mostra isso num link — "o que o Omie respondeu,
+passo a passo". Migração **013** (`conversa_omie TEXT`).
+
+⚠️ **A causa raiz continua EM ABERTO**, e isso é o que uma sessão nova precisa
+saber: sem a frase do Omie, qualquer conserto aqui é chute. A suspeita
+registrada — não comprovada — é que o `baixabradesco` manda uma **alteração no
+título antes da baixa** apoiado na ideia de que "o Omie aceita repetição sem
+reclamar", que nunca foi verificada. **Só o texto da conversa decide.**
+
+#### 2. A Planilha das SPs passou a respeitar o corte de 2026
+
+*"Eu fiz um filtro nelas pra exibir só o que é vencimento em 2026 ou pago em
+2026. Aplique essa mesma [regra] lá. Porque só me interessa 2026, que é o lucro
+real; antes era lucro presumido, não preciso dessa informação."*
+
+O corte já valia na Documentação Fiscal e a planilha nova nascera sem ele — duas
+telas do mesmo módulo dizendo números diferentes. Agora o corte é o mesmo, dito
+na tela (não escondido) e com um "mostrar tudo" para o caso pontual.
+
+#### 3. O quadro por categoria, com valores e com clique
+
+*"A parte de KPI, pra eu saber quanto tem analisado, quanto não tem, quanto tem
+nota, quanto tem contrato, quanto é fundo fixo, quanto está sem informação
+nenhuma — isso em valores. E era interessante o KPI direcionar pra uma tela com
+as informações."*
+
+Quantidade **e valor** por categoria, barra proporcional, ordenado pelo valor, e
+cada linha é um filtro: clicar leva à lista daquela categoria.
+
+⚠️ **Defeito meu, pego pela suíte antes de sair:** o quadro foi montado DENTRO
+do `try` da listagem. Uma falha nele apagava a tela inteira. Regra que fica:
+**o acessório não pode derrubar o principal** — cada bloco de enfeite tem o seu
+próprio `try`, com teste cravando isso.
+
+---
+
+### Quinquagésima quarta leva (15/09) — as DUAS seleções da tela de credores
+
+*"Você propõe qual selecionar pra poder equalizar o nome do fornecedor, só que
+da lista às vezes tem grupos de SPs que eu não quero alterar. Ou seja, tem que
+ter duas seleções: a do nome, e em quais grupos vamos aplicar."*
+
+**A tela fazia só metade da pergunta.** A bolinha escolhia o nome e, decidido
+isso, TODAS as SPs daquele CNPJ eram reescritas. Só que o nome certo para o CNPJ
+pode conviver com um grupo de SPs que não pertence àquele fornecedor — é o caso
+do **CNPJ digitado errado**, o que esta tela mais erra. Reescrever aquele grupo
+**apaga a única pista do erro**: depois disso as SPs erradas ficam idênticas às
+certas e ninguém mais as acha.
+
+Já havia a exclusão **SP a SP**, dentro da janela do "ver as SPs" (leva 50). Ela
+resolve o mesmo caso no tamanho errado: quatro cliques, e só para quem lembrar
+de abrir a janela. O grupo é a unidade que ele enxerga na lista.
+
+Agora cada escrita é uma linha com caixa própria, recuada debaixo do nome:
+
+    ( ) LOCADORA DO VALE LTDA        37 SP(s)
+        [x] LOCADORA DO VALE LTDA    31 SP(s)   ver as SPs
+        [x] LOCADORA DO VALE          6 SP(s)   ver as SPs
+    ( ) TRANSPORTES XYZ               4 SP(s)
+        [ ] TRANSPORTES XYZ           4 SP(s)   ver as SPs   ← fica como está
+
+**As duas seleções somam:** dá para desmarcar o grupo inteiro e ainda tirar uma
+SP avulsa de um grupo que ficou ligado. O aviso ao lado do botão conta as duas
+separadas — somar num número só contaria duas vezes a SP tirada a dedo de um
+grupo ligado.
+
+#### Decisões de desenho, com o motivo
+
+- **Dois campos por fornecedor**, e não um: o escondido (`grupo-<documento>`)
+  diz quais grupos a tela mostrou, a caixa (`aplicar-<documento>`) diz quais
+  ficaram ligados. Caixa desmarcada **não é enviada pelo navegador** — sem a
+  lista do que existia, o servidor não teria como distinguir "ele desmarcou" de
+  "esta tela é antiga e não manda isso". Tela que não manda grupo nenhum
+  continua reescrevendo tudo, como sempre.
+- **Nomeado por fornecedor** porque a pilha do "resolve sozinho" manda vários
+  no mesmo envio, e dois fornecedores diferentes podem ter a mesma escrita. Uma
+  lista única faria a exclusão de um calar a do outro. Há teste cravando isso.
+- **Vale nas duas pilhas.** Na do "resolve sozinho" a caixa importa até mais:
+  ela é aplicada em bloco, sem ninguém olhar linha a linha.
+- **Funciona sem JavaScript.** As caixas são HTML puro; quem lê o que ficou
+  marcado é a rota. O JavaScript só conta o que ficou de fora e apaga o grupo
+  que já está com o nome escolhido (aquele em que desmarcar não teria efeito
+  nenhum — e a pergunta "desmarquei e não aconteceu nada, quebrou?" seria certa).
+
+#### O que foi verificado
+
+- Seis testes novos com Postgres de verdade: grupo desmarcado não é reescrito;
+  as duas exclusões somam; o caminho inteiro pela rota; a exclusão não vaza
+  entre fornecedores; tela sem grupos continua reescrevendo tudo; a tela desenha
+  as duas seleções.
+- Suíte inteira verde.
+
+#### O que NÃO foi verificado
+
+- **Não foi exercitado com a base de produção** — aqui não há base real, e o
+  dono ainda não apertou "Aplicar atualizações do banco".
+- A tela não foi vista em celular estreito: a linha do grupo é recuada e pode
+  apertar em tela pequena.
+
+---
+
+### Quinquagésima quinta leva (15/09) — ⚠️ o EVENTO que passava por nota e prendia a busca
+
+**A busca na Receita FUNCIONOU pela primeira vez** — os consertos das levas 50
+e 52 pegaram. E o primeiro dia de funcionamento entregou o defeito seguinte,
+que só aparece com documento de verdade. O dono mandou a coluna de
+Configurações:
+
+    BWSPE   tentou e NÃO conseguiu — invalid input syntax for type date: ""
+            LINE 1: ... ('35260505061744000130550010001835971000670305', '', …
+    BWSSP   0 documento(s) · faltam 1130 para buscar
+    BWS     tentou e NÃO conseguiu — invalid input syntax for type numeric: ""
+            LINE 1: ...01365678191', '2026-06-16', '579630', '', 'CT-e', '', …
+
+**A causa:** a Receita entrega, no MESMO lote das notas, os **eventos** ligados
+a elas — cancelamento, carta de correção, ciência da operação. Todo evento
+carrega o `chNFe`/`chCTe` **da nota a que se refere**, e nenhum tem data de
+emissão nem valor. O teste em `ler_documento` era só o tamanho da chave: 44
+dígitos, logo é nota. O evento passava, chegava à gravação com `''` nas duas
+colunas que TÊM TIPO (`emissao DATE`, `valor NUMERIC`) e o Postgres recusava.
+
+**E o pior não era a linha perdida, era o travamento:** o ponteiro do "até onde
+já li" só anda DEPOIS da gravação. Com o lote morrendo no banco, a busca
+recomeçava do mesmo NSU a cada rodada, para sempre. Era isso que ele via como
+"tentou e NÃO conseguiu" duas vezes seguidas com a mesma mensagem.
+
+#### Os três consertos, em camadas
+
+1. **O evento é reconhecido** (`tpEvento`/`descEvento`/`nSeqEvento`) e não vira
+   nota. ⚠️ O teste antigo cobria só o evento SEM chave — era esse o buraco.
+2. **O evento de cancelamento vira notícia**, e não lixo: marca a nota que já
+   está aqui como Cancelada. É a informação mais importante que esta busca
+   traz — despesa paga contra documento que não existe mais. Ele **não cria**
+   nota a partir do evento: sem emitente, valor e data seria uma linha fantasma.
+3. **Vazio nunca chega a coluna com tipo** (`_linha_de_nota`, na gravação), e o
+   lote que ainda assim falhar é regravado **um a um**, com rollback entre as
+   tentativas — uma linha ruim não leva as outras quarenta e nove. O que não
+   entrou é contado e aparece na tela, e **o ponteiro anda**.
+
+**A regra que fica:** *nada que venha de fora pode travar o ponteiro*. Perder
+um documento estranho com recado visível é barato; parar a busca inteira é
+caro e silencioso.
+
+#### O que foi verificado
+
+- Oito testes novos (três sem banco, cinco com Postgres de verdade), inclusive
+  o caso exato da produção: lote com nota + evento → a nota entra, o evento
+  não, e o ponteiro avança.
+- Suíte inteira verde.
+
+#### O que NÃO foi verificado
+
+- **Contra a Receita de verdade, não.** Vale o mesmo de sempre: aqui não há
+  certificado nem saída para a SEFAZ. O próximo clique em produção é a prova.
+- O BWSSP não estava travado — está andando (faltavam 1.130 documentos). Ele
+  consome até ~1.000 por rodada, então são poucas rodadas.
+
+---
+
+### Quinquagésima sexta leva (15/09) — a busca FUNCIONOU, e "para onde foram as notas?"
+
+**A prova chegou.** Depois do conserto do evento, o dono mandou a tela de
+Configurações:
+
+    BWSPE   112 documento(s)   15/09/2026 às 11:14
+    BWSSP     0 documento(s)   15/09/2026 às 11:14 · faltam 1030 para buscar
+    BWS      35 documento(s)   15/09/2026 às 11:14
+
+Ou seja: **147 documentos entraram pela busca automática**, pela primeira vez
+desde que este caminho foi escrito. E a pergunta seguinte dele é a boa:
+
+> *"Como é que eu sei que eu estou visualizando essas notas que foram baixadas?
+> (…) Eu só não sei pra onde é que elas estão indo. E se estão indo pra algum
+> canto que é, onde é esse canto que eu não estou enxergando direito."*
+
+**Ele está certo, e o buraco é de desenho:** a nota entra por DUAS portas — o
+relatório do FSist e a busca na Receita — e as duas gravavam na mesma tabela
+sem deixar dito qual trouxe a linha. As 147 de hoje eram indistinguíveis das
+que já estavam ali. A busca podia estar funcionando perfeitamente e ele
+continuaria sem ter como saber.
+
+#### O que mudou
+
+- **Migração 014**: coluna `origem` em `notas_fiscais`, com três valores —
+  `receita`, `fsist`, `receita+fsist`. ⚠️ A segunda porta **não apaga** a
+  primeira: soma. Se apagasse, o relatório do FSist (que roda a cada
+  sincronização, depois da busca) zeraria o rastro da Receita em todas as
+  notas — e a pergunta voltaria sem resposta na semana seguinte.
+- **Duas colunas novas na frente da tabela**, antes da chave: "De onde veio" e
+  "Entrou aqui em". A chave tem 44 dígitos; qualquer coluna depois dela só
+  aparece rolando a tabela para o lado, e resposta que precisa de rolagem é
+  resposta que não se acha.
+- **Recorte por origem** na Planilha das notas: todas / só as da busca / só as
+  do relatório. "Da Receita" inclui a que veio pelas duas — ela também foi
+  trazida pela busca.
+- **A data virou dd/mm/aaaa.** Estava saindo no formato do banco
+  (2026-06-18), porque a célula do tipo "data" era escrita crua. Pedido dele
+  na mesma mensagem.
+- **O evento aparece na contagem:** "0 documento(s)" agora vem acompanhado de
+  "N evento(s) da Receita (cancelamento, carta de correção) — não são notas".
+  Sem isso, uma rodada inteira de eventos se lê como "não veio nada".
+- **Recado da Receita deixou de ser pintado de vermelho.** Qualquer recado
+  virava alarme — inclusive "Nenhuma nota nova desde a última consulta", que é
+  a resposta boa. Alarme que toca no dia normal é alarme que se aprende a
+  ignorar.
+- **Configurações soma as duas buscas** (notas e fretes) por CNPJ. Mostrava só
+  uma delas: o "112" que ele leu era de uma linha só.
+
+⚠️ **A janela entre publicar e apertar o botão** vale aqui também: a coluna
+`origem` nasce na migração 014, e o código sobe antes. Tanto a gravação quanto
+a tela perguntam se a coluna existe (`tem_coluna`) e seguem sem ela. **Há teste
+que derruba a coluna de propósito** e exige que a busca e a tela continuem de
+pé.
+
+#### O que fica em aberto
+
+- **Por que a BWSSP traz 0 documentos** com 1.030 na fila. Ela não está
+  travada — o ponteiro anda —, mas em duas rodadas andou 100 NSUs e trouxe
+  nenhuma nota. Pode ser lote só de eventos, pode ser a Receita pedindo para
+  esperar. A partir desta leva a tela mostra a frase dela; é o que decide.
+
+---
+
+### Quinquagésima sétima leva (15/09) — o recorte que devolvia vazio nos dois lados
+
+Minutos depois de aplicar a migração 014, o dono voltou:
+
+> *"Tem algo errado com a atualização do banco agora. Se eu boto todas,
+> aparecem as notas aqui, seis mil e tantas. Se eu clico só as da Receita, não
+> aparece nada. Se eu clico só as do relatório, não aparece nada."*
+
+**Não estava errado, mas estava inútil — e para quem usa é a mesma coisa.** A
+coluna `origem` nasceu vazia para as 6 mil notas que já existiam, porque vazio
+é honesto: ninguém registrou por onde elas entraram. Só que **uma tela com dois
+recortes que não devolvem nada não se lê como "ainda não sei"; lê-se como
+"quebrou"** — e a leitura dele é a que vale.
+
+**A lição, que vale para a próxima coluna nova:** recorte novo sobre dado
+antigo nasce vazio, e isso tem de ser tratado NA MESMA LEVA — ou com
+preenchimento do passado, ou com o número à vista dizendo quantas são. Publicar
+o recorte e deixar a explicação para a conversa é transferir para ele o
+trabalho de descobrir que não está quebrado.
+
+#### O que mudou
+
+- **Migração 015 preenche o passado até onde dá para afirmar.** A busca na
+  Receita **não preenche o destinatário** (o resumo dela não traz); o relatório
+  do FSist preenche. Então destinatário preenchido é **certeza** de relatório.
+  ⚠️ **A regra só anda para um lado de propósito**: destinatário vazio fica
+  vazio MESMO. No pior caso ela deixa de marcar — não mente. Chutar faria a
+  tela responder com confiança uma pergunta que ninguém sabe responder.
+- **O número vem junto do recorte**, antes do clique: "todas (6.132) · busca na
+  Receita (147) · relatório do FSist (5.961) · entraram antes deste controle
+  (24)". A soma dos três fecha com o total — é isso que faz a tela merecer
+  confiança.
+- **Quarto recorte, para as que não têm origem registrada.** Sem ele, a maior
+  parte da base não teria onde aparecer e a conta não fecharia.
+- **Recorte vazio explica-se**: "Nenhuma nota com este recorte. As que entraram
+  antes de 15/09/2026 estão em 'entraram antes deste controle'."
+
+#### O que NÃO foi verificado
+
+- **Quanto do passado a migração 015 vai marcar na base de verdade** depende de
+  o relatório do FSist dele ter trazido a coluna do destinatário. Se não tiver,
+  aquelas notas ficam em "entraram antes deste controle" — visíveis e
+  contadas, mas sem origem. Elas ganham a marca na próxima passagem de
+  qualquer uma das duas portas.
+- Nada rodou contra a base de produção.
+
+#### Ficou pendente de perguntar
+
+Ele começou uma frase e trocou de assunto: *"era interessante também uns,
+nessa tela aqui na parte superior…"* — provavelmente totalizadores no alto da
+Planilha das notas, como o quadro por categoria da tela de lançamentos. **Não
+foi feito porque não dá para adivinhar o que ele quer somar.** Perguntar.
+
+---
+
+### Quinquagésima oitava leva (15/09) — os totalizadores das notas, e o que só o dono sabia
+
+Duas coisas, uma dele e uma minha.
+
+#### 1. O que o dono sabe e o banco não
+
+> *"Em relação às notas, só pra explicar: tudo que já tem, que foi importado, é
+> tudo da planilha. Só não foi importado em relatório dentro do Análise de
+> SPs."*
+
+Isso é informação que **nenhuma consulta produz**. A migração 015 tinha marcado
+só o que dava para afirmar pelo dado (destinatário preenchido); o resto ficou
+vazio porque o banco não sabia. Agora sabe, porque ele contou.
+
+**Migração 016**, com a data como linha divisória — e ela é defensável: a busca
+na Receita **nunca gravou uma nota antes de 15/09/2026** (todas as tentativas
+anteriores falharam, e o próprio ponteiro registra isso):
+
+    entrou ANTES de 15/09/2026      →  'fsist'    (o dono afirma)
+    entrou HOJE, sem destinatário   →  'receita'  (só a busca grava assim)
+
+O único caso que pode errar é uma nota que o relatório tenha trazido HOJE sem
+destinatário — janela de horas, e o erro se conserta sozinho na próxima
+passagem do relatório (vira 'receita+fsist').
+
+**Também entrou o índice que faltava** para a pergunta "esta nota tem
+lançamento?": o índice existente era sobre a coluna crua e a consulta usa
+`regexp_replace`, então o Postgres varria o diário inteiro a cada pergunta. Com
+o KPI novo isso passaria a rodar a cada abertura da tela.
+
+#### 2. Os totalizadores do alto
+
+*"Seriam os KPIs aí lá em cima, os totalizadores. Ficaria legal."*
+
+Cinco números, cada um clicável (menos o total): **Notas**, **Sem lançamento**,
+**Autorizadas**, **Canceladas**, **Fretes (CT-e)** — quantidade e valor.
+
+- **"Sem lançamento" é a pergunta de dinheiro desta tela**: documento emitido
+  contra a empresa que nenhuma SP declarou. Canceladas ficam fora da conta,
+  pela mesma regra da visão "notas sem lançamento" — as duas têm de concordar.
+- **O quadro conta sobre o MESMO recorte da lista** (busca e origem), por um
+  filtro montado num lugar só (`recorte_das_notas`). Se cada lado montasse o
+  seu, bastaria um ganhar condição nova para o quadro dizer "12 canceladas" e a
+  lista mostrar outra coisa.
+- O que o quadro MEDE (situação, sem lançamento) não entra na conta dele,
+  senão cada número mediria a si mesmo.
+
+⚠️ **Defeito meu, pego na primeira olhada no navegador:** criei um cartão de
+KPI do zero — e o módulo **já tem** o componente (`.kpis/.kpi/.kpi-rotulo/
+.kpi-valor`, usado em seis telas). O cartão novo nasceu torto na hora, porque
+já existia um `a.kpi { display: block }` no arquivo. Componente repetido não é
+só código a mais: é um jeito de a mesma tela ficar diferente de si mesma no
+próximo ajuste. Agora usa o componente e o mesmo modificador (`fiscal-kpis`)
+que tira o azul de link dos números.
+
+#### O que foi verificado
+
+- Suíte inteira verde; seis testes novos com Postgres de verdade, inclusive o
+  que exige que a cancelada NÃO entre em "sem lançamento" e o que derruba o
+  quadro de propósito para garantir que a tela continua de pé.
+- No Chromium, com 40 notas semeadas: os cinco números batem com a base
+  (40 / 34 / 35 / 5 / 8), cada clique recorta a lista, e não há erro de
+  console.
+
+#### O que NÃO foi verificado
+
+- O custo do "sem lançamento" na base de verdade (6 mil notas × 59 mil SPs).
+  O índice novo é exatamente o que essa consulta pede, mas a medição só dá
+  para fazer lá.
+
+---
+
+### Quinquagésima nona leva (15/09) — "diz 112 documentos, mas só tem nove notas"
+
+> *"Em Configurações diz 112 documentos na BWSPE e 36 na BWS Construções.
+> Quando eu vou na planilha das notas, busca na Receita, só tem nove. E é tudo
+> coisa de frete. (…) Tá estranho, como se tivesse alguma coisa equivocada."*
+
+**Os dois números estão certos e medem coisas diferentes** — e a tela não
+dizia isso, que é o defeito de verdade:
+
+- **"documentos"** é o que a Receita ENTREGOU. Ela reentrega o histórico
+  inteiro a cada varredura, do NSU zero em diante.
+- **"notas da busca"** é o que virou linha NOVA aqui. A maior parte do que a
+  Receita manda já estava na base pelo relatório do FSist: a nota é
+  confirmada, não criada — e continua marcada como do relatório, que foi quem
+  a trouxe primeiro.
+
+#### O que mudou
+
+- **A busca passa a dizer os três números que faltavam**, no recado que
+  aparece em Doc. Fiscal › Por nota (coluna Situação): quantos documentos
+  recebeu, **quantos eram nota nova aqui**, quantos já estavam, de que tipo
+  (NF-e / CT-e) e **de que período de emissão**. É com o período que dá para
+  responder "a Receita já me entregou as notas do dia 9 ao 14?" sem adivinhar.
+- **"Documentos" virou "Documentos recebidos"** nas duas telas, com um
+  parágrafo explicando a diferença.
+- **O que a leitura não reconhece é contado**, em vez de sumir. Se a Receita
+  mandar um formato novo, ele aparece como "⚠️ N documento(s) que não consegui
+  ler" em vez de virar silêncio.
+
+#### ⚠️ E um defeito de verdade, achado no caminho
+
+**A segunda porta apagava o que a primeira sabia.** As duas entregam campos
+diferentes da mesma nota: o resumo da Receita não traz destinatário nem as
+NF-e de dentro do CT-e; o relatório do FSist traz. A gravação escrevia
+`EXCLUDED.<campo>` puro — ou seja, **vazio por cima do preenchido** — toda vez
+que a busca reentregava uma nota que o relatório já tinha trazido.
+
+Isso derrubava justamente o campo usado pelas migrações 015 e 016 para saber
+de onde a nota veio. Agora **campo que chega vazio não sobrescreve**; só o
+`status` manda sempre, porque precisa poder virar "Cancelada".
+
+Junto veio o cuidado que isso exige: a condição de "mudou alguma coisa"
+compara contra **o valor que de fato será gravado**, e não contra o que
+chegou. Sem isso, uma nota cujo valor a Receita não manda entraria em "mudou"
+a cada rodada e seria regravada para sempre — o caminho exato das 14,3 milhões
+de gravações inúteis de 10/09.
+
+#### O que continua em aberto
+
+- **As NF-e emitidas entre 9 e 14/09 não estão na base.** O relatório do FSist
+  dele vai até 8/09, e a busca trouxe nesse período só CT-e. Não dá para saber
+  daqui se a Receita ainda não as distribuiu ou se a leitura as descartou — a
+  próxima rodada responde, porque o recado agora diz tipo e período do que
+  veio.
+
+---
+
+### Sexagésima leva (15/09) — ⚠️ a tela do Bradesco mostrava 47 linhas EM BRANCO
+
+O dono colou o resultado da conferência e ele fala por si: *"47 operação(ões)"*
+seguidas de quarenta e sete linhas sem **nenhuma** célula preenchida. O mesmo
+nos oito Pix.
+
+**A CAUSA:** a linha da conferência é um dicionário com chaves **em
+português** — `"Valor (Bradesco)"`, `"Credor (SP)"`, `"SP"` — e o template
+pedia chaves **técnicas** — `valor`, `credor`, `id`. Nenhuma batia, e no Jinja
+uma chave que não existe vira vazio em silêncio. O contador vinha do
+`len()` da lista, e por isso continuava certo: a tela parecia funcionando.
+
+**⚠️ POR QUE A SUÍTE NÃO PEGOU — e esta é a parte que interessa para a próxima
+vez.** O teste da tela dublava `cruzar_tudo` e devolvia um dicionário com as
+chaves **que o template queria**. Ou seja: ele provava que o template desenha o
+que recebe, e **não** que recebe o que o código produz. O dublê escondia
+exatamente o defeito que existia.
+
+    # o que o teste mandava            # o que a produção mandava
+    {"valor": "6.750,00",              {"Valor (Bradesco)": "6.750,00",
+     "credor": "ACME"}                  "Credor (SP)": "ACME"}
+
+**O conserto, em três partes:**
+
+1. **As colunas saíram do template e foram morar em `bradesco.py`**
+   (`COLUNAS_BOLETO`, `COLUNAS_PIX`), ao lado da função que monta a linha.
+   Nome de campo que aparece em dois arquivos vira dois nomes diferentes no dia
+   em que um dos dois mudar.
+2. **Teste que percorre cada coluna** e exige que a chave exista na linha de
+   verdade.
+3. **Teste de ponta a ponta, sem dublê nenhum**: cola o texto do Bradesco,
+   cruza de verdade e confere que a célula aparece preenchida — e confere pelo
+   que **não** está no texto colado (o credor, a validação), porque o texto
+   volta dentro da caixa de digitação e procurar pelo valor no HTML daria certo
+   mesmo com a tabela vazia. A primeira versão deste teste passou sem provar
+   nada justamente por isso.
+
+**A tela ganhou colunas que já existiam no dado e não apareciam:** validação,
+vencimento, status de pagamento e o nº da SP como o banco o leu (separado do
+nº da SP que a conferência encontrou) — o que permite ver o caso em que os
+dois diferem.
+
+---
+
+### Sexagésima primeira leva (16/09) — ⚠️ o QUARTO defeito da NF-e, e a tela que não dizia nada
+
+#### 1. `invalid literal for int() with base 10: 'PE'`
+
+Da tela dele, nas **três** empresas, em toda NF-e. A biblioteca faz
+`self.uf = int(uf)` no construtor: ela quer o **código do IBGE** (26), não a
+sigla. O código já existia neste módulo — era usado só na montagem do pedido de
+CT-e — e faltava neste caminho.
+
+**É o quarto defeito da mesma família**, e vale anotar o padrão: usar a
+biblioteca de um jeito que ela não aceita, com a mensagem apontando para outro
+lugar. Os quatro, em ordem: certificado entregue sem base64 → `with` numa classe
+que não é gerenciador de contexto → CT-e postado sem o certificado → UF como
+sigla. **Cada um só apareceu depois que o anterior foi corrigido**, porque o
+primeiro erro escondia o seguinte.
+
+⚠️ **E a conclusão que isso obriga:** a NF-e **nunca funcionou**. Os "112
+documentos" e os "36" que a tela mostrava eram **CT-e** — o que explica, sem
+mistério nenhum, por que as nove notas trazidas pela busca eram todas de frete.
+
+#### 2. A falha estava à vista e não se chamava falha
+
+O caminho que trata erro na consulta gravava a mensagem como **recado comum**.
+A tela então mostrava "ainda há lote para buscar" com o erro do Python
+pendurado ao lado, como se fosse informação. Agora esse caminho usa
+`registrar_falha`, e a linha aparece como **"tentou e NÃO conseguiu"**.
+
+Junto: **"em dia" passou a ser sobre a fila da Receita**, e não sobre haver
+recado. A tela dizia "Falta buscar: —" e, na célula ao lado, "ainda há lote
+para buscar". Duas células da mesma linha se contradizendo fazem quem lê
+desconfiar da tela inteira — com razão.
+
+#### 3. ⚠️ A tela que dizia "Disparado" e nunca mais dizia nada
+
+> *"Quando clicamos em buscar não vemos em canto nenhum se a busca está de
+> fato acontecendo, apenas uma mensagem dizendo que está sendo buscado. É ruim
+> isso, ainda mais que não tá funcionando ainda de fato."*
+
+**A CAUSA, e ela é sutil:** a tela só se recarregava depois de ter **visto** a
+tarefa rodando, e perguntava de quatro em quatro segundos. Uma rodada **curta**
+— e a busca estava falhando rápido, justamente por causa do defeito da UF —
+começa e termina **entre duas perguntas**. A tela nunca via nada, nunca
+recarregava, e ficava para sempre com "Disparado" na cara dele, mostrando o
+resultado da rodada **anterior** (a de 13/09, com o certificado ainda
+quebrado). Ou seja: **quanto mais rápido falhava, menos a tela contava**.
+
+Agora há **dois** jeitos de saber que acabou, e basta um: ter visto rodando, ou
+o carimbo da última execução concluída ter mudado desde o clique. E pergunta de
+segundo em segundo nos primeiros quinze segundos. Se em um minuto não vir nada,
+**diz isso** em vez de girar para sempre.
+
+#### 4. O botão que ele mandou tirar
+
+> *"Pra que diabo serve o botão 'Ler a aba do FSist na planilha'? Não tem
+> sentido isso. Vou importar o relatório no sistema."*
+
+Saiu do meio do trabalho fiscal. Era o caminho de antes de existir o formulário
+de subir o arquivo; manter os dois lado a lado obriga quem usa a escolher entre
+duas portas para a mesma coisa, e a certa depende de alguém ter colado o
+relatório numa aba antes. A varredura das planilhas de apoio **continua** em
+Configurações e na sincronização automática — saiu o atalho, não a função.
+
+#### O que NÃO foi verificado
+
+- **A NF-e contra a Receita de verdade.** O conserto é certo no ponto do erro
+  (a biblioteca faz `int(uf)`, e agora recebe `26`), mas o histórico desta
+  busca diz que **cada conserto revelou o próximo**. Só o clique em produção
+  responde.
+
+---
+
+### Sexagésima segunda leva (16/09) — a NF-e sai da biblioteca
+
+Quinto defeito seguido no mesmo caminho, e o último veio de dentro da própria
+`erpbrasil`:
+
+    name 'distDFeInt' is not defined
+
+**A causa, e ela é do tipo que não dá para consertar de fora:** a biblioteca
+importa os onze módulos de XML dentro de um `with suppress(ImportError)`. Se
+qualquer um deles falhar no ambiente, **os nomes simplesmente não existem** — e
+o erro não aparece na hora da importação, aparece lá na frente, na hora de
+usar, com uma mensagem que fala de outra coisa. Daqui não dá nem para saber
+qual dos onze falha no Render.
+
+**A decisão:** a NF-e passou a ser montada à mão, como o CT-e — que funciona em
+produção há dias e foi quem trouxe os 112 documentos. O envelope é o mesmo, com
+outro namespace e outro endereço; dez linhas que dá para ler inteiras. O pedido
+de distribuição **não é assinado**: quem autentica é o certificado da conexão.
+
+**O que continua na biblioteca é o que importa:** abrir o certificado A1. Essa
+é a parte difícil e perigosa (chave privada, formatos, senha), e ela faz isso
+há anos para muita gente.
+
+**A série inteira, para não se repetir** — cinco defeitos, cada um escondendo
+o próximo, todos no mesmo caminho e nenhum visível daqui:
+
+    1. certificado entregue sem base64        → "certificado ou senha inválida"
+    2. `with` numa classe que não é gerenciador → "does not support the
+                                                  context manager protocol"
+    3. CT-e postado sem o certificado         → 403 Forbidden
+    4. UF como sigla, não como código         → invalid literal for int(): 'PE'
+    5. import engolido dentro da biblioteca   → name 'distDFeInt' is not defined
+
+A lição: **dependência que só falha no ambiente do cliente custa uma ida e
+volta por defeito.** Quando o pedaço que ela faz é pequeno e legível — um
+envelope XML —, escrever à mão sai mais barato do que depurar às cegas. Quando
+é grande e perigoso — abrir a chave privada —, não sai.
+
+#### O que NÃO foi verificado
+
+- **A NF-e contra a Receita de verdade, de novo.** Aqui não há certificado nem
+  saída para a SEFAZ. O que os testes provam é que o envelope vai com o CNPJ, o
+  NSU, a UF como número, o namespace da NF-e e o certificado preso à conexão —
+  os cinco pontos onde já deu errado.
+
+---
+
+### ✔ A BUSCA NA RECEITA FUNCIONOU (15/09, 23:33) — a prova, para não se perder
+
+A linha que o dono mandou da tela, e ela encerra cinco dias de conserto em
+série:
+
+    00079526000109  Notas (NF-e)  501 documento(s) recebido(s) da Receita ·
+                                  15 nota(s) nova(s) aqui ·
+                                  486 já estava(m) na base · 501 NF-e ·
+                                  emissão de 15/06/2026 a 15/09/2026 ·
+                                  202 evento(s), que não são notas
+
+**O que isso prova, ponto a ponto:**
+
+- O envelope montado à mão **é aceito** pela Receita (o caminho da biblioteca
+  nunca chegou a falar com ela).
+- O certificado na conexão **autentica** — sem ele seria 403.
+- A leitura separa **nota de evento**: 501 notas e 202 eventos vieram no mesmo
+  lote, e os eventos não viraram linha (era o defeito que travava o ponteiro).
+- A gravação distingue **nova de já conhecida**: 15 contra 486.
+- E responde a dúvida dele de 15/09: **as NF-e de setembro existiam** — a
+  emissão vai até o dia 15. Elas não apareciam porque a NF-e nunca tinha
+  funcionado; o que a busca trazia era só CT-e.
+
+**As outras duas empresas levaram `cStat 656` ("consumo indevido")** na mesma
+rodada: a Receita bloqueia por cerca de uma hora quem consulta demais em pouco
+tempo, e elas foram consultadas várias vezes seguidas durante a depuração. Não
+é defeito, e a próxima rodada resolve sozinha.
+
+⚠️ **O que isso deixa como risco, e ainda NÃO foi tratado:** nada impede clicar
+"Buscar notas na Receita" cinco vezes seguidas e levar o bloqueio de novo — o
+sistema consulta mesmo quando o ponteiro já está no fim da fila. Uma trava
+simples (não perguntar de novo, para um CNPJ já em dia, antes de passar uma
+hora) evitaria isso. **Fica proposto, não feito.**
+
+---
+
+### Sexagésima terceira leva (16/09) — ⚠️ a coluna que ainda não existe derrubou a BAIXA
+
+Relato do dono, com o lote inteiro recusado:
+
+    column "conversa_omie" of relation "comprovantes_item" does not exist
+
+**É a regra deste repositório, quebrada por mim.** A coluna nasce na migração
+013; o código sobe para o Render **antes** de alguém apertar "Aplicar
+atualizações do banco". Nessa janela, todo comprovante arrastado **falhava por
+inteiro** — não é que ficasse sem a conversa do Omie: a baixa não acontecia.
+
+Pior: **a LEITURA tinha a proteção e a GRAVAÇÃO não.** Eu protegi o lado que só
+mostraria menos informação e deixei desprotegido o lado que perde trabalho. A
+proteção vale para os dois lados, e o lado da escrita é o que importa mais.
+
+Agora a gravação pergunta se a coluna existe (`tem_coluna`, o mesmo caminho do
+`origem` nas notas) e grava sem ela quando não existe. **Há teste que derruba a
+coluna de propósito** e exige que o comprovante ainda baixe.
+
+#### E o lote que ficava "ainda processando" para sempre
+
+Na mesma tela, dois lotes de 07:47 e um de 09:37 do dia anterior diziam *"Ainda
+processando — as linhas vão aparecendo"*. Não estavam processando: um estava na
+fila sem ninguém ter começado, os outros morreram no meio.
+
+- A tela passa a dizer **há quanto tempo** e, passados 15 minutos, **que está
+  parado** — com o motivo provável, que é diferente para cada caso (ninguém
+  começou × o serviço reiniciou no meio).
+- E ganhou o **botão que a mensagem prometia**: "Retomar a fila agora". Ele é
+  um formulário comum, não `fetch`, de propósito — é o botão de destravar, e
+  tem de funcionar mesmo se o JavaScript não carregar.
+
+⚠️ **O que continua pendente e é do dono:** apertar "Aplicar atualizações do
+banco". Sem isso a baixa funciona, mas a conversa com o Omie **não fica
+guardada** — e é ela que responde por que o Omie recusa, que é a investigação
+em aberto desde 14/09.
+
+---
 ---
 
 ## Regras que não se discutem

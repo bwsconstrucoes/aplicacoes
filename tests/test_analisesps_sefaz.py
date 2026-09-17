@@ -112,6 +112,87 @@ def test_evento_no_meio_do_lote_NAO_vira_nota():
     assert sefaz.ler_documento("<qualquerCoisa/>") is None
 
 
+# ---------------------------------------------------------------------------
+# ⚠️ O EVENTO QUE PASSAVA POR NOTA — o defeito que a produção acusou em
+# 15/09/2026, no primeiro dia em que a busca funcionou de verdade:
+#
+#     invalid input syntax for type date: ""
+#     invalid input syntax for type numeric: ""
+#
+# O cancelamento, a carta de correção e a ciência da operação vêm no MESMO lote
+# das notas e carregam o `chNFe` DA NOTA a que se referem. O teste de então era
+# só o tamanho da chave — e o evento, que não tem data de emissão nem valor,
+# chegava ao banco e estourava as duas colunas com tipo. O lote inteiro morria,
+# e como o ponteiro só anda depois da gravação, a busca ficava presa no mesmo
+# lote, repetindo o mesmo erro a cada rodada.
+# ---------------------------------------------------------------------------
+def evento(ch=None, tipo="110111", descricao="Cancelamento"):
+    """Um evento como a Receita manda: COM a chave da nota, sem data e sem
+    valor. É esta forma que derrubava a gravação."""
+    ch = ch or chave()
+    return (f'<procEventoNFe><evento><infEvento><CNPJ>{CREDOR}</CNPJ>'
+            f"<chNFe>{ch}</chNFe><tpEvento>{tipo}</tpEvento>"
+            f"<nSeqEvento>1</nSeqEvento><dhEvento>2026-09-15T09:00:00-03:00</dhEvento>"
+            f"<detEvento><descEvento>{descricao}</descEvento></detEvento>"
+            "</infEvento></evento></procEventoNFe>")
+
+
+def test_evento_COM_A_CHAVE_DA_NOTA_nao_vira_nota():
+    """⚠️ Era exatamente este o caso que passava: chave de 44 dígitos, e nada
+    mais do que uma nota precisa."""
+    assert sefaz.ler_documento(evento()) is None
+    assert sefaz.ler_documento(evento(tipo="110110",
+                                      descricao="Carta de Correcao")) is None
+
+
+def test_o_evento_e_LIDO_e_nao_jogado_fora():
+    """O cancelamento é a notícia mais importante que esta busca traz: despesa
+    paga contra documento que não existe mais."""
+    lido = sefaz.ler_evento(evento())
+    assert lido["chave"] == chave() and lido["cancela"] is True
+    # A carta de correção NÃO cancela nada.
+    assert sefaz.ler_evento(
+        evento(tipo="110110", descricao="Carta de Correcao"))["cancela"] is False
+
+
+def test_a_resposta_separa_NOTA_de_EVENTO():
+    """Os dois vêm no mesmo lote e seguem caminhos diferentes: a nota é
+    gravada, o evento corrige o status de uma nota que já está aqui."""
+    lida = sefaz._ler_resposta(resposta([resumo_nfe(), evento()]))
+    assert len(lida["documentos"]) == 1
+    assert len(lida["eventos"]) == 1
+    assert lida["eventos"][0]["cancela"] is True
+
+
+def test_o_que_NAO_DA_PARA_LER_e_contado_em_vez_de_sumir():
+    """⚠️ Se um dia a Receita mandar um formato que esta leitura não conhece,
+    sem este número ele sumiria em silêncio — e a tela diria "recebi tudo"
+    tendo jogado fora metade."""
+    bruto = (f"<retDistDFeInt><cStat>138</cStat><ultNSU>3</ultNSU>"
+             f"<maxNSU>3</maxNSU>"
+             f"<docZip>nao-e-base64-valido!!</docZip>"
+             f"<docZip>{_zipado('<coisaNova><x>1</x></coisaNova>')}</docZip>"
+             f"<docZip>{_zipado(resumo_nfe())}</docZip></retDistDFeInt>")
+    lida = sefaz._ler_resposta(bruto)
+    assert len(lida["documentos"]) == 1
+    # Os dois caem no mesmo balde, e está certo assim: o `docZip` que não é
+    # gzip válido é lido como texto puro (há documento que chega assim), então
+    # ele não estoura — chega até a leitura e não vira nem nota nem evento.
+    assert lida["ilegiveis"] + lida["nao_reconhecidos"] == 2
+
+
+def test_o_resumo_da_rodada_separa_RECEBIDO_de_NOVO():
+    """*"Diz 112 documentos; na planilha só tem nove."* Os dois números estão
+    certos: a Receita reentrega o histórico inteiro."""
+    frase = sefaz._resumo_da_rodada(112, 9, {"NF-e": 103, "CT-e": 9},
+                                    ["2026-09-01", "2026-09-15"], 40)
+    assert "112 documento(s) recebido(s)" in frase
+    assert "9 nota(s) nova(s)" in frase
+    assert "103 já estava(m) na base" in frase
+    assert "103 NF-e" in frase and "9 CT-e" in frase
+    assert "emissão de 01/09/2026 a 15/09/2026" in frase
+
+
 def test_documento_ilegivel_nao_derruba_o_lote_inteiro():
     """Um documento torto não pode fazer perder os outros quarenta e nove."""
     bruto = (f"<retDistDFeInt><cStat>138</cStat><ultNSU>2</ultNSU>"
@@ -120,6 +201,86 @@ def test_documento_ilegivel_nao_derruba_o_lote_inteiro():
              f"<docZip>{_zipado(resumo_nfe())}</docZip></retDistDFeInt>")
     lida = sefaz._ler_resposta(bruto)
     assert len(lida["documentos"]) == 1
+
+
+def _envelope_espiao(monkeypatch, alvo):
+    """Troca a conexão por um espião e devolve o que seria postado."""
+    import erpbrasil.assinatura.certificado as cert_mod
+    from app.apps.analisesps import sefaz as s
+
+    class CertFalso:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return ("/tmp/chave.pem", "/tmp/cert.pem")
+
+        def __exit__(self, *a):
+            return False
+
+    class RespostaFalsa:
+        text = "<retDistDFeInt><cStat>137</cStat></retDistDFeInt>"
+
+        def raise_for_status(self):
+            return None
+
+    class SessaoFalsa:
+        cert = None
+
+        def post(self, url, data=None, timeout=None, headers=None):
+            alvo["url"] = url
+            alvo["pedido"] = data.decode("utf-8")
+            alvo["cert"] = self.cert
+            return RespostaFalsa()
+
+    import requests
+    monkeypatch.setattr(cert_mod, "ArquivoCertificado", CertFalso)
+    monkeypatch.setattr(requests, "Session", lambda: SessaoFalsa())
+    monkeypatch.setattr(s, "_certificado", lambda cnpj: object())
+
+
+def test_a_NFE_e_pedida_SEM_a_biblioteca(monkeypatch):
+    """⚠️ Quinto defeito seguido neste caminho, e o último foi da própria
+    biblioteca: *"name 'distDFeInt' is not defined"*.
+
+    Ela importa os módulos do XML dentro de um `with suppress(ImportError)`: se
+    qualquer um falhar no ambiente, os nomes não existem e o erro só aparece na
+    hora de usar. O caminho de CT-e, montado à mão, funciona em produção há
+    dias — a NF-e passa a ser montada do mesmo jeito."""
+    import inspect
+
+    from app.apps.analisesps import sefaz as s
+
+    fonte = inspect.getsource(s._consultar_nfe)
+    assert "erpbrasil.edoc.nfe" not in fonte, (
+        "voltou a depender da biblioteca justamente no caminho que ela quebrou")
+
+    alvo = {}
+    _envelope_espiao(monkeypatch, alvo)
+    s._consultar_nfe("10.656.452/0078-69", "30")
+
+    assert "NFeDistribuicaoDFe" in alvo["url"]
+    assert "<CNPJ>10656452007869</CNPJ>" in alvo["pedido"]
+    assert "<ultNSU>000000000000030</ultNSU>" in alvo["pedido"]
+    # A UF vai como NÚMERO — foi o defeito anterior, e ele não pode voltar.
+    assert "<cUFAutor>26</cUFAutor>" in alvo["pedido"]
+    assert 'xmlns="http://www.portalfiscal.inf.br/nfe"' in alvo["pedido"]
+    # ⚠️ E O CERTIFICADO VAI NA CONEXÃO — sem ele a Receita responde 403, que
+    # foi exatamente o que aconteceu com o CT-e em 14/09.
+    assert alvo["cert"] == ("/tmp/chave.pem", "/tmp/cert.pem")
+
+
+def test_o_CTE_continua_com_o_envelope_dele(monkeypatch):
+    """Os dois são pedidos separados, com namespace e endereço próprios.
+    Trocar um pelo outro devolveria "documento não localizado" para sempre."""
+    from app.apps.analisesps import sefaz as s
+
+    alvo = {}
+    _envelope_espiao(monkeypatch, alvo)
+    s._consultar_cte("10656452007869", "7")
+
+    assert "CTeDistribuicaoDFe" in alvo["url"]
+    assert 'xmlns="http://www.portalfiscal.inf.br/cte"' in alvo["pedido"]
 
 
 # ---------------------------------------------------------------------------

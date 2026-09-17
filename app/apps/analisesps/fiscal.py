@@ -2279,6 +2279,13 @@ def notas_por_dia(dias: int = 14) -> list:
 # As colunas da nota, na ordem em que ele lê no FSist: o que identifica
 # primeiro (chave, número, série), depois o dinheiro, depois quem emitiu.
 COLUNAS_DA_NOTA_NA_TELA = [
+    # ⚠️ ESTAS DUAS VÊM NA FRENTE, e não no fim como o resto. Elas respondem à
+    # pergunta que fez esta tela existir — *"como é que eu sei que eu estou
+    # visualizando essas notas que foram baixadas?"* — e a chave de acesso tem
+    # 44 dígitos: qualquer coisa depois dela exige rolar a tabela para o lado.
+    # Resposta que só aparece depois de rolar é resposta que não se acha.
+    ("origem", "De onde veio", "origem"),
+    ("importada_em", "Entrou aqui em", "momento"),
     ("chave", "Chave de acesso", "texto"),
     ("numero", "Número", "texto"),
     ("serie", "Série", "texto"),
@@ -2292,18 +2299,114 @@ COLUNAS_DA_NOTA_NA_TELA = [
     ("destinatario", "Destinatário", "texto"),
     ("destinatario_doc", "CNPJ do destinatário", "texto"),
     ("chaves_nfe", "NF-e dentro do CT-e", "texto"),
-    ("importada_em", "Entrou aqui em", "momento"),
 ]
+
+# Como a origem é escrita na tela. O banco guarda a palavra curta; aqui ela
+# vira frase, porque "fsist" não quer dizer nada para quem só usa o sistema.
+ROTULOS_DE_ORIGEM = {
+    "receita": "🔎 busca na Receita",
+    "fsist": "📄 relatório do FSist",
+    "receita+fsist": "🔎 Receita + 📄 FSist",
+    "": "— entrou antes deste controle",
+}
 
 POR_PAGINA_PLANILHA = 200
 
 
-def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
-                   pagina: int = 1) -> tuple[list, int]:
-    """As notas como uma planilha: todas, todas as colunas, sem recorte."""
-    from .db import consultar, consultar_um
+def colunas_da_nota_na_tela() -> list:
+    """As colunas da planilha de notas que o banco REALMENTE tem hoje.
+
+    ⚠️ A coluna `origem` nasce na migração 014, e o código sobe para o Render
+    antes de alguém apertar "Aplicar atualizações do banco". Pedir uma coluna
+    que ainda não existe derrubaria a tela inteira nessa janela."""
+    from .db import tem_coluna
+
+    if tem_coluna("notas_fiscais", "origem"):
+        return COLUNAS_DA_NOTA_NA_TELA
+    return [c for c in COLUNAS_DA_NOTA_NA_TELA if c[0] != "origem"]
+
+
+def contagem_por_origem() -> dict:
+    """Quantas notas por porta de entrada — o número em cima de cada recorte.
+
+    ⚠️ O RECORTE PRECISA DIZER QUANTAS TEM ANTES DE SER CLICADO. Reclamação do
+    dono em 15/09/2026: *"se eu boto todas, aparecem seis mil e tantas; se eu
+    clico só as da Receita, não aparece nada; se eu clico só as do relatório,
+    não aparece nada."* Ele leu como defeito, e a leitura é justa: um recorte
+    que devolve vazio sem avisar não se distingue de uma tela quebrada.
+
+    Com o número ao lado, "0" deixa de ser surpresa — e a conta fecha com o
+    total, que é o que faz a tela merecer confiança."""
+    from .db import consultar_um, tem_coluna
+
+    if not tem_coluna("notas_fiscais", "origem"):
+        return {}
+    try:
+        linha = consultar_um(
+            "SELECT count(*), "
+            # `lower()` na coluna, e não LIKE cru: no Postgres o LIKE
+            # distingue maiúscula, e há teste de portabilidade cravando isto.
+            "       count(*) FILTER (WHERE lower(origem) LIKE '%receita%'), "
+            "       count(*) FILTER (WHERE lower(origem) LIKE '%fsist%'), "
+            "       count(*) FILTER (WHERE coalesce(origem, '') = '') "
+            "  FROM analisesps.notas_fiscais")
+    except Exception:  # noqa: BLE001 — a conta é acessório: não derruba a tela
+        logger.exception("Análise de SPs: não consegui contar a origem das notas")
+        return {}
+    if not linha:
+        return {}
+    return {"": int(linha[0] or 0), "receita": int(linha[1] or 0),
+            "fsist": int(linha[2] or 0), "sem": int(linha[3] or 0)}
+
+
+# ---------------------------------------------------------------------------
+# O RECORTE DA TELA DAS NOTAS — um lugar só
+#
+# A lista e o quadro do alto TÊM DE OLHAR O MESMO PEDAÇO DA BASE. Se cada um
+# montasse o seu filtro, bastaria um deles ganhar uma condição nova para o
+# quadro dizer "12 canceladas" e a lista mostrar outra coisa — e aí a tela
+# inteira perde a confiança de quem lê. A lição é da tela de lançamentos, onde
+# o quadro por categoria e a lista já compartilham o filtro pelo mesmo motivo.
+# ---------------------------------------------------------------------------
+# Nota que a conciliação ainda não casou com lançamento nenhum. As CANCELADAS
+# ficam fora: nota cancelada sem despesa é o esperado, não um achado — é a
+# mesma regra da visão "notas sem lançamento", e as duas têm de concordar.
+SQL_SEM_LANCAMENTO = (
+    "upper(trim(coalesce(status, ''))) <> 'CANCELADA' "
+    "   AND NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+    "                    WHERE regexp_replace(coalesce(a.chave, ''), "
+    "                                         '\\D', '', 'g') "
+    "                          = notas_fiscais.chave)")
+
+
+def recorte_das_notas(busca: str = "", origem: str = "", situacao: str = "",
+                      sem_lancamento: bool = False) -> tuple[str, tuple]:
+    """O WHERE da tela das notas, montado uma vez e usado pelos dois lados."""
+    from .db import tem_coluna
 
     onde, params = [], []
+    filtro = str(origem or "").strip().lower()
+    if filtro and tem_coluna("notas_fiscais", "origem"):
+        if filtro == "sem":
+            # AS QUE ENTRARAM ANTES DESTE CONTROLE. Elas existem, são a maior
+            # parte da base, e precisam de um lugar onde apareçam — senão a
+            # soma dos recortes não bate com o total e a tela parece quebrada.
+            onde.append("coalesce(origem, '') = ''")
+        else:
+            # "receita" alcança também a nota que veio pelas DUAS portas: ela
+            # também foi trazida pela busca, e escondê-la responderia errado à
+            # pergunta "o que o certificado me trouxe?".
+            onde.append("lower(origem) LIKE ?")
+            params.append(f"%{filtro}%")
+
+    qual = str(situacao or "").strip().upper()
+    if qual:
+        onde.append("upper(trim(coalesce(status, ''))) = ?")
+        params.append(qual)
+
+    if sem_lancamento:
+        onde.append(SQL_SEM_LANCAMENTO)
+
     termo = str(busca or "").strip()
     if termo:
         alvo = ("lower(coalesce(chave,'') || ' ' || coalesce(numero,'') || ' ' "
@@ -2314,24 +2417,119 @@ def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
             params.append("%" + pedaco.replace("\\", "\\\\")
                           .replace("%", "\\%").replace("_", "\\_") + "%")
     where = (" WHERE " + " AND ".join(onde)) if onde else ""
+    return where, tuple(params)
+
+
+def quadro_das_notas(busca: str = "", origem: str = "") -> list:
+    """Os totalizadores do alto da planilha das notas.
+
+    Pedido do dono em 15/09/2026: *"seriam os KPIs aí lá em cima, os
+    totalizadores. Ficaria legal."*
+
+    ⚠️ CONTA SOBRE O MESMO RECORTE DA LISTA (busca e origem), senão o quadro
+    diria uma coisa e a lista, outra — e a tela perderia a confiança de quem
+    lê. A situação e o "sem lançamento" NÃO entram aqui de propósito: eles são
+    o que o quadro MEDE, e medir dentro do próprio filtro daria sempre o total.
+
+    Cada linha vira um clique que recorta a lista. Pedido dele desde o quadro
+    por categoria: *"era interessante inclusive desse KPI ele direcionar pra
+    uma tela com as informações."*
+
+    Devolve uma lista de {chave, rotulo, quantas, valor, filtro, dica}."""
+    from .db import consultar_um
+
+    where, params = recorte_das_notas(busca, origem)
+    try:
+        linha = consultar_um(
+            "SELECT count(*), coalesce(sum(valor), 0), "
+            "       count(*) FILTER (WHERE upper(trim(coalesce(status,''))) "
+            "                              = 'CANCELADA'), "
+            "       coalesce(sum(valor) FILTER (WHERE "
+            "         upper(trim(coalesce(status,''))) = 'CANCELADA'), 0), "
+            # ⚠️ `upper()` NA MESMA LINHA do LIKE, e um `%` só: o LIKE do
+            # Postgres distingue caixa (e o tipo chega "CT-e" ou "CTe"
+            # conforme a porta por onde a nota entrou), e quem dobra o `%`
+            # para o psycopg2 é o tradutor de marcadores, não este código.
+            "       count(*) FILTER (WHERE upper(coalesce(tipo,'')) LIKE '%CT%'), "
+            "       coalesce(sum(valor) FILTER "
+            "         (WHERE upper(coalesce(tipo,'')) LIKE '%CT%'), 0) "
+            "  FROM analisesps.notas_fiscais" + where, params)
+    except Exception:  # noqa: BLE001 — o quadro é acessório; a lista é a tela
+        logger.exception("Análise de SPs: falhou montar o quadro das notas")
+        return []
+    if not linha:
+        return []
+
+    total, valor, canceladas, valor_cancelado, fretes, valor_frete = (
+        int(linha[0] or 0), linha[1] or 0, int(linha[2] or 0), linha[3] or 0,
+        int(linha[4] or 0), linha[5] or 0)
+
+    # A NOTA SEM LANÇAMENTO é a pergunta de dinheiro desta tela: documento
+    # emitido contra a empresa que ninguém lançou como despesa. Vai numa
+    # consulta à parte porque é a única que olha o diário.
+    sem_where, sem_params = recorte_das_notas(busca, origem,
+                                              sem_lancamento=True)
+    try:
+        sem = consultar_um(
+            "SELECT count(*), coalesce(sum(valor), 0) "
+            "  FROM analisesps.notas_fiscais" + sem_where, sem_params)
+        sem_quantas, sem_valor = int(sem[0] or 0), sem[1] or 0
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou contar as notas sem lançamento")
+        sem_quantas, sem_valor = 0, 0
+
+    return [
+        {"chave": "todas", "rotulo": "Notas", "quantas": total,
+         "valor": valor, "filtro": {},
+         "dica": "tudo o que este recorte alcança"},
+        {"chave": "sem_lancamento", "rotulo": "Sem lançamento",
+         "quantas": sem_quantas, "valor": sem_valor,
+         "filtro": {"sem_lancamento": "1"}, "alerta": sem_quantas > 0,
+         "dica": "nota emitida contra a empresa que nenhuma SP declarou — "
+                 "canceladas não contam"},
+        {"chave": "autorizadas", "rotulo": "Autorizadas",
+         "quantas": total - canceladas, "valor": (valor or 0) - (valor_cancelado or 0),
+         "filtro": {"situacao": "AUTORIZADA"},
+         "dica": "válidas na Receita"},
+        {"chave": "canceladas", "rotulo": "Canceladas",
+         "quantas": canceladas, "valor": valor_cancelado,
+         "filtro": {"situacao": "CANCELADA"}, "alerta": canceladas > 0,
+         "dica": "se alguma tiver despesa paga atrás, é problema fiscal"},
+        {"chave": "fretes", "rotulo": "Fretes (CT-e)", "quantas": fretes,
+         "valor": valor_frete, "filtro": {},
+         "dica": "o resto são notas de mercadoria e serviço (NF-e)"},
+    ]
+
+
+def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
+                   pagina: int = 1, origem: str = "", situacao: str = "",
+                   sem_lancamento: bool = False) -> tuple[list, int]:
+    """As notas como uma planilha: todas, todas as colunas, sem recorte.
+
+    `origem` recorta por onde a nota entrou — pergunta do dono em 15/09/2026:
+    *"como é que eu sei que eu estou visualizando essas notas que foram
+    baixadas? (…) eu só não sei pra onde é que elas estão indo."*"""
+    from .db import consultar, consultar_um
+
+    colunas = colunas_da_nota_na_tela()
+    where, params = recorte_das_notas(busca, origem, situacao, sem_lancamento)
 
     # ⚠️ Lista fechada, como do outro lado: nome de coluna vindo do endereço
     # nunca entra no SQL.
-    permitidas = {c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA}
+    permitidas = {c for c, _, _ in colunas}
     coluna = ordem if ordem in permitidas else "emissao"
     sentido = "DESC NULLS LAST" if desc else "ASC NULLS LAST"
 
     pagina = max(1, int(pagina or 1))
-    campos = ", ".join(c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA)
+    campos = ", ".join(c for c, _, _ in colunas)
     linhas = consultar(
         f"SELECT {campos} FROM analisesps.notas_fiscais{where} "
         f" ORDER BY {coluna} {sentido}, chave "
         " LIMIT ? OFFSET ?",
-        tuple(params) + (POR_PAGINA_PLANILHA,
-                         (pagina - 1) * POR_PAGINA_PLANILHA))
+        params + (POR_PAGINA_PLANILHA,
+                  (pagina - 1) * POR_PAGINA_PLANILHA))
     total = consultar_um(
-        f"SELECT count(*) FROM analisesps.notas_fiscais{where}",
-        tuple(params))[0]
+        f"SELECT count(*) FROM analisesps.notas_fiscais{where}", params)[0]
 
-    nomes = [c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA]
+    nomes = [c for c, _, _ in colunas]
     return [dict(zip(nomes, linha)) for linha in linhas], int(total or 0)

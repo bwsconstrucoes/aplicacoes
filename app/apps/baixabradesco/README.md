@@ -287,7 +287,7 @@ Falha de aviso nunca derruba a baixa: ela já aconteceu.
 | `BAIXABRADESCO_SECRET` | senha das rotas | **as rotas ficam abertas** |
 | `BAIXABRADESCO_DEBUG` | devolve o rastro do erro na resposta | erro sai só com a mensagem |
 | `GOOGLE_CREDENTIALS_BASE64` | acesso às planilhas | nada funciona |
-| `OMIE_BWS_APP_KEY` / `OMIE_BWS_APP_SECRET` | acesso ao Omie (o Make normalmente manda as chaves no próprio pedido) | a baixa no Omie falha |
+| `OMIE_KEY` / `OMIE_SECRET` | acesso ao Omie. **São estes os nomes no Render.** `OMIE_BWS_APP_KEY`/`OMIE_BWS_APP_SECRET` são apelidos antigos, também aceitos. Pelo Make as chaves vêm no próprio pedido; pela tela do Análise de SPs, vêm daqui | a baixa no Omie para antes de começar, dizendo qual variável falta |
 | `PIPEFY_API_TOKEN` | acesso ao Pipefy | o card não é atualizado |
 | `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` / `DROPBOX_REFRESH_TOKEN` | guardar o comprovante | o comprovante não é salvo |
 | `ZAPI_INSTANCE_ID` / `ZAPI_API_TOKEN` / `ZAPI_CLIENT_TOKEN` | WhatsApp | o aviso é pulado |

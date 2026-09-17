@@ -613,36 +613,151 @@ COLUNAS_DAS_NOTAS = {
 COLUNAS_OBRIGATORIAS_DAS_NOTAS = ["chave"]
 
 
+CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
+               "emitente_doc", "emitente", "emitente_uf", "destinatario_doc",
+               "destinatario", "chaves_nfe")
+
+# ---------------------------------------------------------------------------
+# DE ONDE VEIO A NOTA — migração 014, 15/09/2026
+#
+# *"Como é que eu sei que eu estou visualizando essas notas que foram baixadas?
+# (…) Eu só não sei pra onde é que elas estão indo."*
+#
+# A nota chega por duas portas — o relatório do FSist e a busca na Receita — e
+# as duas gravavam na mesma tabela sem dizer qual trouxe a linha. Com isso, a
+# busca podia estar funcionando perfeitamente e ele continuaria sem ter como
+# saber.
+#
+# A MESMA NOTA COSTUMA VIR PELAS DUAS, e é por isso que a segunda porta não
+# apaga a primeira: soma. Uma nota 'receita' que depois aparece no relatório
+# vira 'receita+fsist', e não 'fsist'.
+ORIGEM_RECEITA = "receita"
+ORIGEM_FSIST = "fsist"
+
+# ⚠️ QUEM CHEGA DEPOIS NÃO APAGA O QUE O OUTRO SABIA — 15/09/2026
+#
+# As duas portas entregam campos DIFERENTES da mesma nota: o resumo da Receita
+# não traz destinatário nem as NF-e de dentro do CT-e; o relatório do FSist
+# traz. Com `EXCLUDED.<campo>` puro, a segunda passagem gravava VAZIO por cima
+# do que a primeira tinha preenchido — e o destinatário, que é justamente o
+# sinal usado para saber de onde a nota veio, sumia sozinho.
+#
+# Por isso: campo que chega VAZIO não sobrescreve; campo preenchido manda. O
+# `status` é a exceção de propósito — ele tem de poder virar "Cancelada", e
+# sempre chega preenchido pelas duas portas.
+def _fica_o_preenchido(campo: str) -> str:
+    return (f"  {campo} = CASE WHEN coalesce(EXCLUDED.{campo}, '') <> '' "
+            f"                 THEN EXCLUDED.{campo} "
+            f"                 ELSE notas_fiscais.{campo} END")
+
+
+_SET_COMUM = ", ".join([
+    # Data e valor são colunas com tipo: vazio ali é NULO, e nulo não apaga.
+    "  emissao = coalesce(EXCLUDED.emissao, notas_fiscais.emissao)",
+    "  valor = coalesce(EXCLUDED.valor, notas_fiscais.valor)",
+    "  status = EXCLUDED.status",
+    "  tipo = EXCLUDED.tipo",
+    _fica_o_preenchido("numero"),
+    _fica_o_preenchido("serie"),
+    _fica_o_preenchido("emitente_doc"),
+    _fica_o_preenchido("emitente"),
+    _fica_o_preenchido("emitente_uf"),
+    _fica_o_preenchido("destinatario_doc"),
+    _fica_o_preenchido("destinatario"),
+    _fica_o_preenchido("chaves_nfe"),
+    "  importada_em = now()",
+])
+
+# ⚠️ COMPARA CONTRA O VALOR QUE DE FATO SERÁ GRAVADO, e não contra o que
+# chegou. Sem isto, uma nota cujo valor a Receita não manda entraria em
+# "mudou" a cada rodada e seria regravada para sempre — o caminho exato das
+# 14,3 milhões de gravações inúteis de 10/09.
+_MUDOU_ALGO = (
+    " notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
+    "    OR notas_fiscais.valor IS DISTINCT FROM "
+    "       coalesce(EXCLUDED.valor, notas_fiscais.valor) "
+    "    OR notas_fiscais.numero IS DISTINCT FROM "
+    "       (CASE WHEN coalesce(EXCLUDED.numero, '') <> '' "
+    "             THEN EXCLUDED.numero ELSE notas_fiscais.numero END) "
+    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM "
+    "       (CASE WHEN coalesce(EXCLUDED.emitente_doc, '') <> '' "
+    "             THEN EXCLUDED.emitente_doc "
+    "             ELSE notas_fiscais.emitente_doc END)")
+
+# SÓ REGRAVA O QUE MUDOU DE VERDADE. Regravar com o mesmo valor deixa lixo no
+# banco (foi o que rendeu 14,3 milhões de gravações inúteis em 10/09) — e ainda
+# estragaria a contagem de "quantas mudaram", que é como se descobre uma nota
+# que voltou cancelada.
 SQL_NOTA = (
     "INSERT INTO analisesps.notas_fiscais "
     "  (chave, emissao, numero, serie, tipo, valor, status, "
     "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
     "   destinatario, chaves_nfe) "
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-    "ON CONFLICT (chave) DO UPDATE SET "
-    "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
-    "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
-    "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
-    "  emitente_doc = EXCLUDED.emitente_doc, "
-    "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
-    "  destinatario_doc = EXCLUDED.destinatario_doc, "
-    "  destinatario = EXCLUDED.destinatario, "
-    "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now() "
-    # SÓ REGRAVA O QUE MUDOU DE VERDADE. Regravar com o mesmo valor deixa lixo
-    # no banco (foi o que rendeu 14,3 milhões de gravações inúteis em 10/09) —
-    # e, aqui, ainda estragaria a contagem de "quantas mudaram", que é como se
-    # descobre uma nota que voltou cancelada.
-    " WHERE notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
-    "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
-    "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
-    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc")
+    "ON CONFLICT (chave) DO UPDATE SET " + _SET_COMUM +
+    " WHERE" + _MUDOU_ALGO)
 
-CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
-               "emitente_doc", "emitente", "emitente_uf", "destinatario_doc",
-               "destinatario", "chaves_nfe")
+SQL_NOTA_COM_ORIGEM = (
+    "INSERT INTO analisesps.notas_fiscais "
+    "  (chave, emissao, numero, serie, tipo, valor, status, "
+    "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
+    "   destinatario, chaves_nfe, origem) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+    "ON CONFLICT (chave) DO UPDATE SET " + _SET_COMUM + ", "
+    "  origem = CASE WHEN notas_fiscais.origem IN ('', EXCLUDED.origem) "
+    "                THEN EXCLUDED.origem ELSE 'receita+fsist' END "
+    # Regrava também quando a ORIGEM passa a ser outra — é a única forma de a
+    # nota que já estava aqui aprender que a Receita também a trouxe. Acontece
+    # UMA vez por nota e por porta; depois disso a condição para de valer, e o
+    # banco não engorda de gravação inútil.
+    " WHERE" + _MUDOU_ALGO +
+    "    OR notas_fiscais.origem NOT IN ('receita+fsist', EXCLUDED.origem)")
 
 
-def _gravar_notas(conn, registros) -> int:
+# As duas colunas da tabela de notas que TÊM TIPO: `emissao` é DATE e `valor`
+# é NUMERIC. Texto vazio não é data nem número — é o erro que a produção
+# acusou em 15/09/2026 (`invalid input syntax for type date: ""`). As outras
+# colunas são TEXT NOT NULL DEFAULT '', e para elas o vazio é o valor certo.
+CAMPOS_COM_TIPO = {"emissao": formatos.para_data, "valor": formatos.para_numero}
+
+
+def _linha_de_nota(registro) -> tuple | None:
+    """Um registro virando a tupla que vai para o banco, com os tipos certos.
+
+    ⚠️ VAZIO VIRA NULO nas duas colunas com tipo. A planilha já passava por
+    aqui convertida; a busca na Receita entregava texto cru, e bastou um
+    documento sem valor para o lote inteiro morrer — e, pior, para o ponteiro
+    parar de andar, prendendo a busca no mesmo lote.
+
+    Devolve None para o que não é nota: sem chave de 44 dígitos não há
+    identidade, e gravar seria criar linha que ninguém consegue achar."""
+    from . import fiscal
+
+    if isinstance(registro, (tuple, list)):
+        valores = dict(zip(CAMPOS_NOTA, registro))
+    else:
+        valores = {c: registro.get(c, "") for c in CAMPOS_NOTA}
+
+    if len(fiscal.so_digitos(valores.get("chave"))) != 44:
+        return None
+
+    saida = []
+    for campo in CAMPOS_NOTA:
+        valor = valores.get(campo)
+        converter = CAMPOS_COM_TIPO.get(campo)
+        if converter is None:
+            saida.append("" if valor is None else str(valor).strip())
+        elif isinstance(valor, str) or valor is None:
+            # Só o texto passa pela conversão. O que já vem tipado (a leitura
+            # da planilha entrega `date` e `Decimal`) segue direto — reconverter
+            # data já convertida daria None e apagaria o que estava certo.
+            saida.append(converter(valor))
+        else:
+            saida.append(valor)
+    return tuple(saida)
+
+
+def _gravar_notas(conn, registros, origem: str = "") -> int:
     """Grava um lote de notas. DUAS ORIGENS, UM CAMINHO SÓ.
 
     A nota chega por dois lugares — o relatório do FSist, colado na aba, e a
@@ -651,15 +766,54 @@ def _gravar_notas(conn, registros) -> int:
     diferente conforme a porta por onde entrou.
 
     Aceita tupla (como vem da leitura da planilha) ou dicionário (como vem da
-    Receita) — o que muda é de onde veio, não o que se grava."""
+    Receita) — o que muda é de onde veio, não o que se grava.
+
+    Devolve QUANTAS FORAM GRAVADAS, que pode ser menos do que o que entrou:
+    quem chama usa a diferença para dizer na tela que o lote veio com coisa
+    que não dava para guardar."""
     if not registros:
         return 0
-    linhas = [r if isinstance(r, (tuple, list))
-              else tuple(r.get(c, "") for c in CAMPOS_NOTA)
-              for r in registros]
-    conn.executemany(SQL_NOTA, linhas)
-    conn.commit()
-    return len(linhas)
+    linhas = [l for l in (_linha_de_nota(r) for r in registros) if l]
+    recusadas = len(registros) - len(linhas)
+    if recusadas:
+        logger.warning("Análise de SPs: %d registro(s) de nota sem chave "
+                       "válida — não gravados.", recusadas)
+    if not linhas:
+        return 0
+
+    # ⚠️ A COLUNA PODE AINDA NÃO EXISTIR. O código sobe para o Render antes de
+    # alguém apertar "Aplicar atualizações do banco" — e uma gravação que
+    # exigisse a coluna nova pararia a busca de notas e a importação do FSist
+    # nessa janela. Sem a coluna, grava como antes: a nota entra, só não fica
+    # dito de onde veio.
+    from .db import tem_coluna
+
+    com_origem = bool(origem) and tem_coluna("notas_fiscais", "origem")
+    sql = SQL_NOTA_COM_ORIGEM if com_origem else SQL_NOTA
+    if com_origem:
+        linhas = [tuple(l) + (origem,) for l in linhas]
+    try:
+        conn.executemany(sql, linhas)
+        conn.commit()
+        return len(linhas)
+    except Exception:  # noqa: BLE001
+        # ⚠️ UMA LINHA RUIM NÃO PODE LEVAR O LOTE INTEIRO. Depois do erro a
+        # transação está abortada no Postgres: sem o rollback, toda tentativa
+        # seguinte falha por causa da primeira.
+        logger.exception("Análise de SPs: o lote de notas não entrou de uma "
+                         "vez; tentando uma a uma")
+        conn.rollback()
+        gravadas = 0
+        for linha in linhas:
+            try:
+                conn.executemany(sql, [linha])
+                conn.commit()
+                gravadas += 1
+            except Exception:  # noqa: BLE001
+                conn.rollback()
+                logger.exception("Análise de SPs: nota recusada pelo banco "
+                                 "(chave %s)", linha[0] if linha else "?")
+        return gravadas
 
 
 def sincronizar_notas_fiscais(anotar=None) -> dict:
@@ -754,7 +908,7 @@ def sincronizar_notas_fiscais(anotar=None) -> dict:
         linha = cur.fetchone() or [0, None]
         antes, comeco = linha[0], linha[1]
         cur.close()
-        _gravar_notas(conn, registros)
+        _gravar_notas(conn, registros, origem=ORIGEM_FSIST)
         cur = conn.execute(
             "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
             "  FROM analisesps.notas_fiscais", (comeco,))
@@ -1320,7 +1474,7 @@ def importar_notas_de_arquivo(conteudo: bytes, nome: str) -> dict:
         linha = cur.fetchone() or [0, None]
         antes, comeco = linha[0], linha[1]
         cur.close()
-        _gravar_notas(conn, registros)
+        _gravar_notas(conn, registros, origem=ORIGEM_FSIST)
         cur = conn.execute(
             "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
             "  FROM analisesps.notas_fiscais", (comeco,))

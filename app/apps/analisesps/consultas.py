@@ -538,6 +538,20 @@ def _condicoes(f: dict) -> tuple[list[str], list]:
         if chave in SITUACOES_FISCAIS:
             onde.append(SITUACOES_FISCAIS[chave])
 
+    # FILTRAR POR UMA CATEGORIA, que é o clique no quadro por categoria.
+    # *"Era interessante esse KPI direcionar pra uma tela com as informações:
+    # eu clicar e mostrar 'olha, essas aqui são as de fundo fixo', aí a
+    # lista."* O nome vem do endereço, então entra como PARÂMETRO — nunca
+    # costurado no texto do SQL.
+    categorias = [str(c) for c in (f.get("categoria") or []) if str(c).strip()]
+    if categorias:
+        marcas = ",".join(["?"] * len(categorias))
+        onde.append(f"trim({SQL_DOC_FISCAL}) IN ({marcas})")
+        params.extend(categorias)
+    # E o clique na pilha do "(sem informação)", que é a ausência de categoria.
+    if f.get("sem_categoria"):
+        onde.append(f"trim({SQL_DOC_FISCAL}) = ''")
+
     # O ESCOPO DA DOCUMENTAÇÃO FISCAL. Só entra quando a tela pede — em
     # Solicitações ele veria menos SPs do que a planilha tem, e aí a conta dele
     # não fecharia com a SPsBD.
@@ -1378,11 +1392,33 @@ POR_PAGINA_PLANILHA = 200
 
 
 def planilha_sps(busca: str = "", ordem: str = "id", desc: bool = False,
-                 pagina: int = 1) -> tuple[list, int]:
-    """As SPs como a planilha mostra: todas as colunas, na ordem dela."""
+                 pagina: int = 1, tudo: bool = False) -> tuple[list, int]:
+    """As SPs como a planilha mostra: todas as colunas, na ordem dela.
+
+    ⚠️ SÓ DE 2026 EM DIANTE, por padrão — e isto mudou de ideia por decisão
+    DELE, em 14/09/2026:
+
+    *"Lembra que eu fiz um filtro pra exibir lá na parte do confronto só o que
+    é vencimento em 2026 ou pago em 2026? Então eu quero que você aplique esse
+    mesmo filtro lá. Porque só me interessa 2026, porque é o lucro real; antes
+    era lucro presumido, então não preciso dessa informação."*
+
+    Quando esta tela nasceu eu deixei o escopo de fora de propósito, com teste
+    e tudo: o argumento era que "a planilha mostra a planilha", e esconder
+    linhas faria a conta dele não fechar com a SPsBD. O argumento estava certo
+    no geral e ERRADO no caso dele — o que ele confere é 2026, porque é o que
+    o regime tributário torna relevante. Quem decide isso é ele.
+
+    `tudo=True` traz o resto de volta, e a tela tem a caixa: esconder sem volta
+    seria trocar um problema por outro."""
     from .db import consultar, consultar_um
 
     onde, params = [], []
+    if not tudo:
+        # O MESMO CORTE DE ANO da Documentação Fiscal, e sai do MESMO lugar —
+        # duas cópias divergiriam no dia em que o ano mudasse.
+        onde.append(SQL_ANO_FISCAL)
+        params.extend([ANO_FISCAL_MINIMO, ANO_FISCAL_MINIMO])
     termo = str(busca or "").strip()
     if termo:
         # A MESMA BUSCA LIVRE DAS OUTRAS TELAS, para não haver duas ideias de
@@ -1418,3 +1454,55 @@ def planilha_sps(busca: str = "", ordem: str = "id", desc: bool = False,
 
     nomes = [c for c, _, _, _ in COLUNAS_DA_PLANILHA]
     return [dict(zip(nomes, linha)) for linha in linhas], int(total or 0)
+
+
+# ===========================================================================
+# O QUADRO POR CATEGORIA — quantas SPs e QUANTO DINHEIRO em cada uma
+#
+# Pedido do dono em 14/09/2026: *"a parte de KPI, pra eu saber quanto tem
+# analisado, quanto não tem, quanto tem nota, quanto tem de contrato, quanto é
+# fundo fixo, quanto está sem informação nenhuma — quanto isso em VALORES, né?
+# Quanto está pra ser resolvido. E era interessante esse KPI direcionar pra
+# uma tela com as informações: eu clicar e mostrar 'olha, essas aqui são as de
+# fundo fixo', aí a lista."*
+#
+# ⚠️ O QUE ISTO TEM QUE OS TOTALIZADORES DE CIMA NÃO TÊM: **valor**. Os que já
+# existiam contam SPs — "faltam 4.000" —, e 4.000 SPs de R$ 50,00 e 4.000 de
+# R$ 50.000,00 são problemas de tamanhos completamente diferentes. Sem o
+# dinheiro ao lado, o número não diz por onde começar, que é justamente a
+# pergunta dele.
+#
+# UMA CONSULTA SÓ, agrupando pela categoria. Uma consulta por categoria seriam
+# 22 varreduras da base num banco de um décimo de núcleo.
+#
+# E CADA LINHA É UM ATALHO: clicar filtra a lista por aquela categoria. Ver um
+# número e ter de ir procurá-lo no filtro seria meio caminho — é a mesma regra
+# dos totalizadores de cima.
+# ===========================================================================
+# O rótulo do "vazio". Não é uma categoria do Pipefy: é a ausência de uma, e é
+# a pilha que interessa mais.
+SEM_CATEGORIA = "(sem informação)"
+
+
+def quadro_por_categoria(f: dict) -> list[dict]:
+    """Por categoria de documentação: quantas SPs e quanto em dinheiro."""
+    from .db import consultar
+
+    where, params = _where(f)
+    linhas = consultar(
+        f"SELECT trim({SQL_DOC_FISCAL}) AS categoria, "
+        "        count(*), coalesce(sum(valor_num), 0) "
+        f"  FROM analisesps.sps{where} "
+        " GROUP BY 1 ORDER BY 3 DESC", tuple(params))
+
+    saida = []
+    for categoria, quantas, valor in linhas:
+        nome = (categoria or "").strip()
+        saida.append({
+            "categoria": nome,
+            "rotulo": nome or SEM_CATEGORIA,
+            "vazia": not nome,
+            "quantas": int(quantas or 0),
+            "valor": valor or 0,
+        })
+    return saida

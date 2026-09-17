@@ -159,15 +159,22 @@ def test_o_arquivo_usa_o_MESMO_mapeamento_de_colunas_da_aba():
         "a gravação tem de ser a mesma das notas vindas da Receita e da aba")
 
 
-def test_o_botao_da_aba_DIZ_que_le_a_aba():
-    """*"Cadê a opção de incluir o arquivo? De onde vai tirar essa informação,
-    se eu não estou nem colocando?"* Botão que pede um arquivo e não tem onde
-    pôr é botão que mente."""
+def test_o_botao_da_aba_do_FSIST_SAIU_do_trabalho_fiscal():
+    """⚠️ Decisão do dono em 16/09/2026: *"pra que diabo serve o botão 'Ler a
+    aba do FSist na planilha'? Não tem sentido isso. Vou importar o relatório
+    no sistema."*
+
+    O teste anterior exigia o contrário — que o botão existisse e dissesse que
+    lê uma aba. Ele nasceu de uma cobrança ANTERIOR dele (*"cadê a opção de
+    incluir o arquivo?"*), respondida na época renomeando o botão. Agora a
+    resposta é melhor: o arquivo sobe direto, e a porta duplicada saiu.
+
+    A função continua existindo — em Configurações e na sincronização
+    automática. O que saiu foi o atalho no meio do trabalho fiscal."""
     from app.apps.analisesps import web
 
-    acao = next(a for a in web.ACOES_FISCAIS if a["modo"] == "apoios")
-    assert "aba" in acao["rotulo"].lower()
-    assert "planilha" in acao["ajuda"].lower()
+    assert not [a for a in web.ACOES_FISCAIS if a["modo"] == "apoios"], (
+        "o botão da aba voltou para o meio do trabalho fiscal")
 
 
 def test_a_planilha_e_lida_EM_FLUXO_e_com_teto():
