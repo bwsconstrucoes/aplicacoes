@@ -443,20 +443,31 @@ def gerar_linhas_fato(conn):
 # A classificacao e por PADRAO no nome da categoria (case-insensitive, sem exigir
 # acento). Ajuste as listas abaixo se o plano financeiro usar outros nomes: o
 # a tabela `fato`, as telas e as exportacoes leem todos daqui.
+# A ORDEM DESTE DICIONARIO E A REGRA. O casamento e por PEDACO do nome, e o
+# primeiro que casar ganha — entao o mais especifico tem de vir primeiro.
+#
+# Aprendido do jeito caro em 17/09/2026: "Devolucao de Aportes BWS" contem
+# "aportes bws" dentro dele. Com o aporte listado antes, a DEVOLUCAO era
+# classificada como APORTE — e entrava no bloco com o sinal trocado, sem
+# ninguem perceber. Devolucao vem primeiro por isso.
+#
+# Os quatro nomes que o dono cadastrou no plano financeiro do OMIE (17/09/2026):
+#   Aportes BWS, Aportes Parceiros, Devolucao de Aportes, Devolucao de Aportes BWS
 TIPOS_APORTE = {
-    # dinheiro que ENTRA na obra vindo de socio/parceiro
-    "Aporte de Parceiro": ["aporte parceiro", "aportes parceiro", "aporte de parceiro",
+    # DEVOLUCAO PRIMEIRO — ver a nota acima.
+    "Devolução de Aporte": ["devolucao de aportes bws", "devolucao de aporte",
+                            "devolucao aporte", "devolucoes de aporte",
+                            "devolucao de aportes"],
+    # dinheiro que ENTRA na obra vindo de socio/parceiro de fora
+    "Aporte de Parceiro": ["aportes parceiros", "aporte parceiro",
+                           "aportes parceiro", "aporte de parceiro",
                            "aportes de parceiro"],
     # dinheiro proprio da BWS alocado a uma obra/parceria
-    "Aporte BWS": ["aporte bws", "aportes bws", "aporte b w s"],
-    # devolucao do aporte ao socio/parceiro
-    "Devolução de Aporte": ["devolucao de aporte", "devolucao aporte",
-                            "devolucoes de aporte", "devolucao de aportes"],
+    "Aporte BWS": ["aportes bws", "aporte bws", "aporte b w s"],
     # distribuicao de resultado
     "Dividendos": ["dividendo", "distribuicao de lucro", "distribuicao de lucros"],
 }
-# Qualquer categoria com estas palavras entra no bloco de aportes mesmo que nao
-# case com nenhum tipo acima (vira "Outros aportes"), para nada passar batido.
+
 _APORTE_GENERICO = ["aporte", "aportes"]
 
 # Tipos que compoem o SALDO de aporte do socio/parceiro.
@@ -465,28 +476,22 @@ _APORTE_GENERICO = ["aporte", "aportes"]
 # capital — abater o dividendo do saldo faria parecer que o socio retirou o
 # aporte, o que nao ocorreu. Ele continua exibido, num quadro separado.
 #
-# "APORTE BWS" TAMBEM FICA DE FORA, e este e o motivo mais importante da lista.
-# Explicado pelo dono em 17/09/2026:
+# O QUE SEPARA O APORTE DE VERDADE DO ESPELHO NAO E O NOME, E O SENTIDO DO
+# DINHEIRO. Desenho lancado pelo dono no OMIE em 17/09/2026:
 #
-#   Quando a BWS poe dinheiro numa obra, ele sai da conta da MATRIZ e entra na
-#   conta da OBRA. As duas contas sao da BWS. Para isso nao virar "mera
-#   transferencia", sao lancados DOIS registros no OMIE:
-#     - na conta de origem (matriz):  categoria "Aporte BWS", valor negativo
-#     - na conta da obra:             categoria "Aporte de Parceiro", positivo
-#   porque, para aquela obra, a BWS e parceira como qualquer outra.
+#   BWS manda para a obra:  saida da MATRIZ  "Aportes BWS"            (negativo)
+#                           entrada na OBRA  "Aportes BWS"            (positivo)
+#   O dinheiro da BWS volta: saida da OBRA   "Devolucao de Aportes"   (negativo)
+#                           entrada MATRIZ   "Devolucao de Aportes BWS" (positivo)
+#   Parceiro aporta:        entrada na OBRA  "Aportes Parceiros"      (positivo)
+#   Parceiro recebe:        saida da OBRA    "Devolucao de Aportes"   (negativo)
 #
-# O APORTE DE VERDADE E O LADO QUE ENTRA NA OBRA. O registro da matriz e a
-# origem do dinheiro, nao um segundo aporte — e muito menos uma devolucao.
-#
-# Contando os dois, o bloco fazia duas bobagens de uma vez: inflava o Aportado
-# e, pior, somava o lado negativo como se fosse DEVOLUCAO. Na tela do dono a BWS
-# aparecia com aportado 1.677.455,70 e devolvido o MESMO valor, ao centavo —
-# saldo zero. O painel dizia que a BWS nao tinha nada aplicado na obra, quando
-# tinha 1,67 milhao.
-#
-# Os lancamentos de "Aporte BWS" seguem visiveis no Explorador, no fluxo de
-# caixa e na lista de lancamentos do proprio bloco. So deixam de CONTAR aqui.
-TIPOS_NO_SALDO = {"Aporte de Parceiro", "Devolução de Aporte", "Outros aportes"}
+# Os dois lados usam o MESMO nome no caso da BWS. Entao o nome nao distingue: o
+# que distingue e para onde o dinheiro foi. APORTE so conta quando ENTRA na obra;
+# DEVOLUCAO so conta quando SAI. O lado da matriz tem sempre o sinal contrario e
+# fica de fora sozinho — sem o painel precisar saber qual conta e qual.
+TIPOS_NO_SALDO = {"Aporte de Parceiro", "Aporte BWS", "Devolução de Aporte",
+                  "Outros aportes"}
 
 
 def _sem_acento(texto):
