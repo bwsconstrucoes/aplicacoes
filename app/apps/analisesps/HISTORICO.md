@@ -4953,6 +4953,144 @@ números batam.
 comportamento antigo — e a tela continua de pé. Há teste que derruba a coluna.
 
 ---
+
+### Sexagésima sexta leva (17/09) — ⚠️ a ciência da operação: o módulo passou a ESCREVER na Receita
+
+> *"Tem como visualizar fácil a partir da tela de associação, clicar e ver a
+> nota fiscal? (…) E se esse PDF não pudesse ser gerado de imediato, que
+> ficasse um processamento após a baixa das notas, baixando, gerando esses PDFs
+> e salvando no Google Drive. Que tal fazer assim?"*
+
+E, no dia seguinte, a autorização com todas as letras: **"Pode baixar as notas
+dando essa ciência."**
+
+#### ⚠️ Leia isto antes de mexer: este é o ÚNICO ponto do módulo que não é leitura
+
+Tudo que o Análise de SPs fazia com a Receita era **perguntar**. A ciência da
+operação (evento 210210) é **declarar**: um XML assinado com o certificado A1
+da BWS, que entra no histórico daquela nota na Receita **para sempre** e não
+tem como ser desfeito. Quem for mexer aqui precisa saber que erro nesta parte
+não se conserta com um `UPDATE`.
+
+Por isso o desenho todo é conservador, e cada trava abaixo existe por um
+motivo:
+
+- **É modo próprio, com botão próprio** ("Dar ciência e baixar as notas"), e o
+  texto de ajuda do botão diz, sem enfeite, que ele escreve no sistema fiscal.
+  Não pega carona na busca de notas — quem quer só olhar continua só olhando.
+- **Nunca é automático.** A busca na Receita roda sozinha com a tela aberta; a
+  ciência, não. Declarar em nome da empresa sem ninguém ter pedido seria o
+  avesso do que o dono autorizou.
+- **40 notas por rodada** (`ANALISESPS_CIENCIAS_POR_RODADA`). A Receita bloqueia
+  por consumo indevido — já aconteceu com dois CNPJs em 15/09 — e ciência é
+  escrita, que pesa mais que leitura.
+- **Cada tentativa fica registrada** (`nota_evento`): quando foi, o que a
+  Receita respondeu, o código, o motivo nas palavras dela e o protocolo. Sem
+  isso ninguém responde "por que a BWS deu ciência nesta nota?" seis meses
+  depois.
+- **Não repete.** A chave primária é (chave, tipo): nota que já tem evento não
+  entra na fila de novo. A Receita recusa a segunda ciência (código 573), e
+  insistir é o caminho do bloqueio.
+- **Só o que faz sentido manifestar:** modelo 55 (NF-e), emitida há menos de
+  90 dias (fora disso a Receita não aceita mais), não cancelada, sem evento
+  anterior, sem XML já guardado, e com destinatário de 14 dígitos — a ciência
+  é do destinatário, e sem saber por qual CNPJ assinar não há o que enviar.
+
+#### ⚠️ Ciência hoje, documento na PRÓXIMA rodada — e a tela diz isso
+
+Esta é a parte que mais confunde, e não é defeito nosso: a distribuição entrega
+o **resumo** da nota (chave, emitente, valor, situação). O **XML completo** só é
+liberado ao destinatário **depois** da ciência — e aparece num lote seguinte da
+distribuição, não na hora.
+
+Quem apertar o botão e for procurar o arquivo no mesmo minuto não vai achar. Por
+isso o recado do fim da tarefa diz, com todas as letras, que o XML de cada nota
+chega na próxima busca na Receita. Sem essa frase, todo mundo conclui que
+falhou.
+
+#### É XML, não PDF — e a diferença importa
+
+O dono pediu PDF. **Está guardando XML**, e a troca é consciente:
+
+- **o que tem valor fiscal é o XML.** O DANFE é a representação imprimível
+  dele; quem guarda documento, guarda o XML.
+- **gerar DANFE exigiria biblioteca nova**, e não foi introduzida (regra da
+  casa: dependência nova se avisa antes). A tabela `nota_arquivo` já tem a
+  coluna `tipo` (`'xml'` | `'pdf'`) justamente para o dia em que houver PDF —
+  os dois convivem sem migração nova.
+
+**Enquanto isso, o XML abre.** O navegador mostra o conteúdo; quem quiser DANFE
+bonito joga o arquivo em qualquer visualizador de NF-e da internet.
+
+#### Onde o arquivo mora
+
+No **Drive**, o mesmo caminho que já guarda comprovante e BeeVale — no banco
+fica só o endereço. Um XML tem de 10 a 50 KB; seis mil notas seriam centenas de
+megabytes num Postgres de 0,25 GB de RAM que já morreu de memória uma vez
+(`CONTEXTO.md` §9).
+
+`DRIVE_FOLDER_NOTAS` separa as notas dos comprovantes, para quem quiser; sem
+ela vale a pasta geral. **Continua valendo a armadilha da cota**: tem de ser
+Drive Compartilhado, senão o Google recusa (ver `drive.py`).
+
+#### A tela de associação mostra a chave, e o número vira link
+
+Na tela das notas, cada uma agora mostra a **chave de acesso** e o número vira
+link, com três estados possíveis:
+
+- **arquivo guardado** → clica e abre o XML no Drive;
+- **ciência dada, documento a caminho** → diz isso, com a data da ciência;
+- **nada ainda** → fica só o número, como era.
+
+#### Como saber que a ciência funcionou
+
+A Receita **não avisa** que aceitou: ela simplesmente passa a entregar o XML.
+Por isso o recado da **busca de notas** agora conta também quantos documentos
+inteiros foram guardados no Drive naquela rodada. É esse número, na busca
+seguinte à ciência, que responde "valeu a pena?" — e o registro em
+`nota_evento` responde "o que a Receita disse em cada nota".
+
+#### Dois defeitos que a suíte pegou antes de publicar, e valem registro
+
+1. **`disparo` não existia dentro de `executar_trabalho()`.** A etapa nova
+   passava adiante o nome de quem disparou usando uma variável que só existe na
+   função de fora — o que teria estourado com `NameError` **na primeira vez que
+   o botão fosse apertado**, e só no processo separado, onde o erro é mais
+   difícil de ver. Quem pegou foi o `test_nomes_indefinidos`, que lê o código
+   procurando exatamente isso. É a segunda vez que esse teste paga o próprio
+   custo.
+2. **`lxml` importado direto sem estar declarado.** Já vinha instalado (é
+   dependência do `erpbrasil`), então funcionava aqui e funcionaria no ar — até
+   o dia em que o `erpbrasil` mudasse de dependência e derrubasse o módulo por
+   um motivo sem relação nenhuma. Declarado.
+
+#### Os testes da tela renderizam de verdade — a lição do Bradesco
+
+Os três estados do número da nota são conferidos sobre o **HTML que sai**, com
+o dado entrando pelo mesmo caminho da tela — não sobre o texto do template.
+
+É a lição de 16/09, e vale repetir porque foi cara: lá o teste dublava a função
+que monta as linhas e afirmava sobre as chaves que **o próprio teste** tinha
+inventado. A tabela chegava em branco na produção e a suíte continuava verde.
+Teste que inventa o dado de entrada só prova que o teste concorda consigo
+mesmo.
+
+#### O que NÃO foi verificado
+
+- **A ciência contra a Receita de verdade.** Nesta máquina não existe o
+  certificado A1 da BWS, e ele não vai ser trazido para cá — ver a decisão de
+  15/09. O envelope, a assinatura, a leitura da resposta e todas as travas
+  estão cobertos por teste; o que só a produção responde é se a Receita aceita.
+  **A primeira vez tem de ser olhada**, e o registro em `nota_evento` é
+  justamente o que permite olhar.
+- **A subida do XML no Drive** também não foi exercitada de verdade aqui — ela
+  usa o mesmo caminho do BeeVale, que já funciona no ar.
+
+⚠️ **Pendente do dono: apertar "Aplicar atualizações do banco".** As migrações
+013 a 017 estão à espera. Sem a 017 as duas tabelas não existem — e aí a
+ciência não tem onde registrar nem onde guardar o endereço do arquivo.
+
+---
 ---
 
 ## Regras que não se discutem

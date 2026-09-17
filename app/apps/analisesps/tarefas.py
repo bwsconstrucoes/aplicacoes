@@ -57,6 +57,10 @@ MODOS = {
     "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
     "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
     "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
+    # ⚠️ ESTE MODO ESCREVE NO SISTEMA FISCAL. Ver o comentário em `sefaz.py`:
+    # a ciência é uma declaração assinada em nome da empresa, autorizada pelo
+    # dono em 17/09/2026. É o único modo deste módulo que não é leitura.
+    "notas_ciencia": "Dar ciência na Receita e baixar o XML das notas",
 }
 
 # QUAIS MODOS APARECEM EM CONFIGURAÇÕES, e quais são trabalho fiscal.
@@ -84,6 +88,7 @@ ETAPAS = {
     "fiscal": ["fiscal"],
     "fiscal_ia": ["fiscal_ia"],
     "notas_receita": ["notas_receita"],
+    "notas_ciencia": ["notas_ciencia"],
 }
 
 
@@ -283,9 +288,11 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 (execucao_id,))
             linha = cur.fetchone()
             cur.close()
-        automatica = bool(linha) and str(linha[0] or "") == "tela aberta"
+        quem_disparou = str((linha or [""])[0] or "")
+        automatica = quem_disparou == "tela aberta"
     except Exception:  # noqa: BLE001 — na dúvida, trata como pedido de gente
         logger.exception("Análise de SPs: não consegui saber quem disparou")
+        quem_disparou = ""
         automatica = False
 
     def anotar(etapa: str, progresso: str = "") -> None:
@@ -401,13 +408,44 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 # e as outras cinco linhas sumiam — foi assim que o erro da UF
                 # ficou escondido atrás do "0 nota(s)".
                 novas = sum(int(p.get("novas") or 0) for p in b.get("por_cnpj", []))
+                # ⚠️ QUANTOS DOCUMENTOS INTEIROS CHEGARAM — 17/09/2026. É o
+                # retorno da ciência dada na rodada anterior, e é a única forma
+                # de saber que ela funcionou: a Receita não avisa, ela
+                # simplesmente passa a entregar o XML. Sem este número, quem
+                # deu ciência não descobre se valeu.
+                guardados = sum(int(p.get("xmls_guardados") or 0)
+                                for p in b.get("por_cnpj", []))
                 falhas = [f"{p['cnpj'][:8]}… {p['tipo']}: {p['erro']}"
                           for p in b.get("por_cnpj", []) if p.get("erro")]
                 recado_apoios[0] = (
                     f"{b.get('trazidas', 0)} documento(s) recebido(s) da "
                     f"Receita, {novas} nota(s) nova(s)"
+                    + (f", {guardados} documento(s) inteiro(s) guardado(s) no "
+                       "Drive" if guardados else "")
                     + (f" — {b['erro']}" if b.get("erro") else "")
                     + (" — FALHOU em: " + "; ".join(falhas[:4]) if falhas else ""))
+
+            elif etapa == "notas_ciencia":
+                # NO PROCESSO SEPARADO como tudo que fala com fora: é uma ida à
+                # Receita por nota, com assinatura digital em cada uma.
+                mudar_etapa("dando ciência nas notas na Receita")
+                from . import notas_arquivo as _notas_arquivo
+                c = _notas_arquivo.manifestar_pendentes(
+                    anotar, quem=quem_disparou or "manual")
+                total_linhas[0] = c.get("manifestadas", 0)
+                # ⚠️ O RECADO DIZ O QUE VEM DEPOIS. A ciência não traz o
+                # documento na hora: ela LIBERA o documento, que chega no
+                # próximo lote da distribuição. Sem essa frase, quem clica acha
+                # que falhou.
+                recado_apoios[0] = (
+                    f"{c.get('manifestadas', 0)} nota(s) com ciência dada"
+                    + (f", {c['ja_existiam']} já tinham" if c.get("ja_existiam")
+                       else "")
+                    + (f", {c['falhas']} recusada(s)" if c.get("falhas") else "")
+                    + (f" (de {c['olhadas']} olhadas)" if c.get("olhadas") else "")
+                    + (f" — {c['erro']}" if c.get("erro") else "")
+                    + ". O XML de cada uma chega na PRÓXIMA busca na Receita, "
+                      "e é guardado no Drive.")
 
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
@@ -479,7 +517,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
         duracao = (agora() - inicio).total_seconds()
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
-                    "notas_receita"):
+                    "notas_receita", "notas_ciencia"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]
@@ -649,7 +687,8 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
 
 # Os modos que a tela de Documentação Fiscal dispara. O resultado do último de
 # cada um é mostrado lá — ver `ultimas_por_tipo`.
-MODOS_FISCAIS = ["notas_receita", "apoios", "fiscal_ia", "fiscal", "fila"]
+MODOS_FISCAIS = ["notas_receita", "notas_ciencia", "apoios", "fiscal_ia",
+                 "fiscal", "fila"]
 
 
 def ultimo_fim() -> str:

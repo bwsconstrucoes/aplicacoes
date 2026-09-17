@@ -6333,3 +6333,313 @@ def test_SEM_a_migracao_012_a_tela_de_notas_continua_de_pe(banco_analisesps):
     _, quantas = fiscal.notas_orfas()
     assert quantas == 1, "sem a coluna, vale o diário — e a tela não pode cair"
     db_analisesps.esquecer_colunas()
+
+
+# ---------------------------------------------------------------------------
+# A CIÊNCIA DA OPERAÇÃO, com banco de verdade — 17/09/2026
+#
+# ⚠️ Estes testes existem para travar o que NUNCA pode acontecer numa escrita
+# fiscal: declarar duas vezes, fora do prazo, em nota cancelada, ou sem saber
+# quem é o destinatário.
+# ---------------------------------------------------------------------------
+def _nota_para_ciencia(chave, emissao, destinatario="10656452007869",
+                       status="Autorizada", modelo="55"):
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.notas_fiscais "
+            "  (chave, emissao, numero, tipo, valor, status, emitente_doc, "
+            "   destinatario_doc) "
+            "VALUES (?, ?, '1', 'NF-e', 100.00, ?, ?, ?)",
+            (chave, emissao, status, CREDOR_CNPJ, destinatario))
+        conn.commit()
+
+
+@pytest.mark.banco
+def test_so_entram_NFE_recentes_nao_canceladas_e_com_destinatario(
+        banco_analisesps):
+    """Os quatro cortes, cada um evitando uma chamada que seria recusada."""
+    from app.apps.analisesps import notas_arquivo
+
+    boa = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    velha = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    cancelada = _chave(CREDOR_CNPJ, "550010000333333333333333")
+    sem_dono = _chave(CREDOR_CNPJ, "550010000444444444444444")
+    frete = _chave(CREDOR_CNPJ, "570010000555555555555555")
+
+    _nota_para_ciencia(boa, "2026-09-10")
+    _nota_para_ciencia(velha, "2026-01-10")            # fora dos 90 dias
+    _nota_para_ciencia(cancelada, "2026-09-10", status="Cancelada")
+    _nota_para_ciencia(sem_dono, "2026-09-10", destinatario="")
+    _nota_para_ciencia(frete, "2026-09-10")            # CT-e: não tem ciência
+
+    pendentes = [n["chave"] for n in notas_arquivo.notas_para_manifestar()]
+
+    assert pendentes == [boa], f"entrou o que não devia: {pendentes}"
+
+
+@pytest.mark.banco
+def test_nota_JA_MANIFESTADA_nao_volta_para_a_fila(banco_analisesps):
+    """⚠️ A segunda ciência é recusada pela Receita, e insistir é o caminho do
+    bloqueio por consumo indevido — que já aconteceu com dois CNPJs em 15/09."""
+    from app.apps.analisesps import notas_arquivo
+
+    chave = _chave(CREDOR_CNPJ)
+    _nota_para_ciencia(chave, "2026-09-10")
+    notas_arquivo.registrar_evento(
+        chave, {"ok": True, "codigo": "135", "motivo": "registrado"}, "rotina")
+
+    assert notas_arquivo.notas_para_manifestar() == []
+
+
+@pytest.mark.banco
+def test_ate_a_ciencia_RECUSADA_tira_a_nota_da_fila(banco_analisesps):
+    """Recusa também é resposta: repetir daria a mesma recusa e gastaria
+    chamada. Quem precisar reenviar apaga o registro — de propósito, para ser
+    um ato consciente."""
+    from app.apps.analisesps import notas_arquivo
+
+    chave = _chave(CREDOR_CNPJ)
+    _nota_para_ciencia(chave, "2026-09-10")
+    notas_arquivo.registrar_evento(
+        chave, {"ok": False, "codigo": "596", "motivo": "Prazo expirado"}, "x")
+
+    assert notas_arquivo.notas_para_manifestar() == []
+
+
+@pytest.mark.banco
+def test_a_tentativa_fica_REGISTRADA_com_o_que_a_Receita_disse(banco_analisesps):
+    """⚠️ Sem o registro, ninguém consegue responder "por que a BWS deu ciência
+    nesta nota?" seis meses depois."""
+    from app.apps.analisesps import notas_arquivo
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    notas_arquivo.registrar_evento(chave, {
+        "ok": True, "codigo": "135",
+        "motivo": "Evento registrado e vinculado a NF-e",
+        "protocolo": "135260000123456"}, "MARCELO")
+
+    linha = consultar_um(
+        "SELECT ok, codigo, motivo, protocolo, quem "
+        "  FROM analisesps.nota_evento WHERE chave = ? AND tipo = '210210'",
+        (chave,))
+    assert linha[0] is True and linha[1] == "135"
+    assert "vinculado" in linha[2] and linha[3] == "135260000123456"
+    assert linha[4] == "MARCELO"
+
+
+@pytest.mark.banco
+def test_a_ciencia_manifesta_UMA_POR_VEZ_e_com_teto(banco_analisesps,
+                                                    monkeypatch):
+    """A Receita limita consultas seguidas, e esta é uma ESCRITA."""
+    from app.apps.analisesps import notas_arquivo, sefaz
+
+    for i in range(5):
+        _nota_para_ciencia(_chave(CREDOR_CNPJ, f"55001000011111111111111{i}"),
+                           "2026-09-10")
+
+    chamadas = []
+    monkeypatch.setattr(sefaz, "configurado", lambda: True)
+    monkeypatch.setattr(sefaz, "manifestar_ciencia",
+                        lambda cnpj, chave: chamadas.append(chave) or {
+                            "ok": True, "codigo": "135", "motivo": "ok"})
+
+    resultado = notas_arquivo.manifestar_pendentes(limite=3)
+
+    assert len(chamadas) == 3, "o teto por rodada não foi respeitado"
+    assert resultado["manifestadas"] == 3
+
+
+@pytest.mark.banco
+def test_quem_declara_e_o_DESTINATARIO_da_nota(banco_analisesps, monkeypatch):
+    """⚠️ A ciência vai assinada pelo certificado do CNPJ que RECEBEU a nota.
+    Mandar pelo CNPJ errado é declarar em nome de quem não recebeu."""
+    from app.apps.analisesps import notas_arquivo, sefaz
+
+    chave = _chave(CREDOR_CNPJ)
+    _nota_para_ciencia(chave, "2026-09-10", destinatario="00079526000370")
+
+    usados = []
+    monkeypatch.setattr(sefaz, "configurado", lambda: True)
+    monkeypatch.setattr(sefaz, "manifestar_ciencia",
+                        lambda cnpj, ch: usados.append(cnpj) or {
+                            "ok": True, "codigo": "135", "motivo": "ok"})
+
+    notas_arquivo.manifestar_pendentes()
+
+    assert usados == ["00079526000370"]
+
+
+@pytest.mark.banco
+def test_a_nota_trazida_pela_BUSCA_guarda_QUEM_a_recebeu(banco_analisesps,
+                                                         monkeypatch):
+    """A distribuição só entrega documento de interesse daquele CNPJ — então o
+    destinatário é ele. Sem isso não há como dar ciência: o resumo da Receita
+    não traz esse campo."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+    sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)
+
+    assert consultar_um("SELECT destinatario_doc FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "10656452007869"
+
+
+# ---------------------------------------------------------------------------
+# O documento inteiro chegando e sendo guardado — 17/09/2026
+#
+# É a entrega que o dono pediu ("clicar e ver a nota fiscal"), e o pedaço que
+# só acontece DEPOIS da ciência: a Receita passa a entregar o `nfeProc` no
+# lugar do resumo. Se este caminho falhar, a ciência terá sido dada à toa.
+# ---------------------------------------------------------------------------
+def _nfe_inteira(chave, valor="269.00"):
+    """O documento completo, como a distribuição entrega depois da ciência.
+
+    O que o separa do resumo é o `infNFe` — é por ele que o código reconhece
+    "isto é a nota, não a fichinha dela"."""
+    return (f'<nfeProc><NFe><infNFe Id="NFe{chave}" versao="4.00">'
+            f"<ide><nNF>1430</nNF><serie>1</serie>"
+            f"<dhEmi>2026-09-10T10:00:00-03:00</dhEmi></ide>"
+            f"<emit><CNPJ>{CREDOR_CNPJ}</CNPJ><xNome>SERTAO</xNome></emit>"
+            f"<total><ICMSTot><vNF>{valor}</vNF></ICMSTot></total>"
+            f"</infNFe></NFe><protNFe><infProt><chNFe>{chave}</chNFe>"
+            f"<cStat>100</cStat></infProt></protNFe></nfeProc>")
+
+
+@pytest.mark.banco
+def test_o_documento_INTEIRO_que_chega_vai_para_o_Drive(banco_analisesps,
+                                                        monkeypatch):
+    """Depois da ciência a Receita entrega o `nfeProc`. É ele que a
+    contabilidade guarda — antes de 17/09 ele era lido, resumido e jogado
+    fora."""
+    from app.apps.analisesps import drive, notas_arquivo, sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    subidas = []
+
+    def fingir_subida(conteudo, nome, pasta, mime):
+        subidas.append({"nome": nome, "mime": mime, "bytes": len(conteudo),
+                        "conteudo": conteudo.decode("utf-8")})
+        return {"id": "arq1", "link": "https://drive.exemplo/arq1"}
+
+    monkeypatch.setattr(drive, "subir_arquivo", fingir_subida)
+    monkeypatch.setattr(notas_arquivo, "_pasta_do_drive", lambda: "PASTA")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_nfe_inteira(chave)])))
+
+    sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)
+
+    # Subiu como XML, com a chave no nome — quem procurar no Drive acha.
+    assert len(subidas) == 1, f"subidas: {subidas}"
+    assert subidas[0]["nome"] == f"{chave}.xml"
+    assert subidas[0]["mime"] == "text/xml"
+    assert "<infNFe" in subidas[0]["conteudo"], "subiu o resumo, não a nota"
+
+    # E o endereço ficou no banco, que é o que a tela lê.
+    assert consultar_um("SELECT tipo, link FROM analisesps.nota_arquivo "
+                        " WHERE chave = ?", (chave,)) == (
+        "xml", "https://drive.exemplo/arq1")
+
+
+@pytest.mark.banco
+def test_o_RESUMO_nao_e_guardado_como_se_fosse_a_nota(banco_analisesps,
+                                                      monkeypatch):
+    """⚠️ Guardar o resumo no lugar da nota é pior do que não guardar nada:
+    quem abrisse o arquivo encontraria oito campos onde esperava o
+    documento."""
+    from app.apps.analisesps import drive, notas_arquivo, sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(drive, "subir_arquivo", lambda *a, **k: (_ for _ in ()
+                        ).throw(AssertionError("não devia ter subido nada")))
+    monkeypatch.setattr(notas_arquivo, "_pasta_do_drive", lambda: "PASTA")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+
+    # A nota é gravada normalmente — o que não acontece é a subida.
+    assert sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)["trazidas"] == 1
+    assert consultar_um("SELECT count(*) FROM analisesps.nota_arquivo "
+                        " WHERE chave = ?", (chave,))[0] == 0
+
+
+@pytest.mark.banco
+def test_o_mesmo_XML_nao_sobe_duas_vezes(banco_analisesps, monkeypatch):
+    """O documento não muda, e cada subida é uma ida ao Google. A segunda
+    rodada da busca traria o mesmo lote se o ponteiro não tivesse andado."""
+    from app.apps.analisesps import drive, notas_arquivo
+
+    chave = _chave(CREDOR_CNPJ)
+    subidas = []
+    monkeypatch.setattr(drive, "subir_arquivo",
+                        lambda *a, **k: (subidas.append(1),
+                                         {"id": "arq1", "link": "L"})[1])
+    monkeypatch.setattr(notas_arquivo, "_pasta_do_drive", lambda: "PASTA")
+
+    primeira = notas_arquivo.guardar_xml(chave, _nfe_inteira(chave))
+    segunda = notas_arquivo.guardar_xml(chave, _nfe_inteira(chave))
+
+    assert primeira["ok"] and not primeira["ja_tinha"]
+    assert segunda["ok"] and segunda["ja_tinha"]
+    assert len(subidas) == 1, "subiu de novo o que já estava guardado"
+
+
+@pytest.mark.banco
+def test_o_Drive_fora_do_ar_NAO_derruba_a_busca(banco_analisesps, monkeypatch):
+    """Perder o arquivo é chato e se refaz na rodada seguinte; perder a nota e
+    o ponteiro é caro. A ordem de prejuízo decide quem protege quem."""
+    from app.apps.analisesps import drive, notas_arquivo, sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(drive, "subir_arquivo", lambda *a, **k: (_ for _ in ()
+                        ).throw(drive.ErroDoDrive("cota da conta de serviço")))
+    monkeypatch.setattr(notas_arquivo, "_pasta_do_drive", lambda: "PASTA")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_nfe_inteira(chave)])))
+
+    resultado = sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)
+
+    assert resultado["trazidas"] == 1, "a nota tinha de ter sido gravada"
+    assert not resultado.get("erro"), f"a busca falhou: {resultado.get('erro')}"
+    assert consultar_um("SELECT count(*) FROM analisesps.nota_arquivo "
+                        " WHERE chave = ?", (chave,))[0] == 0
+
+
+@pytest.mark.banco
+def test_SEM_a_migracao_017_nenhuma_ciencia_e_enviada(banco_analisesps,
+                                                      monkeypatch):
+    """⚠️ O caso mais perigoso deste módulo inteiro, e é por isso que tem teste.
+
+    O código sobe para o Render ANTES de o dono apertar "Aplicar atualizações
+    do banco" — sempre. Nessa janela, `nota_evento` ainda não existe. Se a
+    seleção ignorasse isso, cada clique no botão mandaria ciência para a
+    Receita SEM CONSEGUIR REGISTRAR NADA: declaração irreversível em nome da
+    empresa, repetida a cada clique, sem rastro nenhum.
+
+    A trava não é um `if`: é o próprio `NOT EXISTS` da seleção, que consulta a
+    tabela. Sem ela, a consulta falha e a fila volta vazia — nada é enviado."""
+    from app.apps.analisesps import notas_arquivo, sefaz
+
+    _nota_para_ciencia(_chave(CREDOR_CNPJ), "2026-09-10")
+    assert notas_arquivo.notas_para_manifestar(), "a nota devia estar na fila"
+
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("DROP TABLE analisesps.nota_evento")
+        conn.commit()
+
+    monkeypatch.setattr(sefaz, "configurado", lambda: True)
+    monkeypatch.setattr(sefaz, "manifestar_ciencia", lambda *a, **k: (
+        _ for _ in ()).throw(AssertionError(
+            "mandou ciência para a Receita sem ter onde registrar")))
+
+    assert notas_arquivo.notas_para_manifestar() == []
+    assert notas_arquivo.manifestar_pendentes()["manifestadas"] == 0

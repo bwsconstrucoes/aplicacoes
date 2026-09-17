@@ -757,7 +757,8 @@ def _linha_de_nota(registro) -> tuple | None:
     return tuple(saida)
 
 
-def _gravar_notas(conn, registros, origem: str = "") -> int:
+def _gravar_notas(conn, registros, origem: str = "",
+                  destinatario: str = "") -> int:
     """Grava um lote de notas. DUAS ORIGENS, UM CAMINHO SÓ.
 
     A nota chega por dois lugares — o relatório do FSist, colado na aba, e a
@@ -773,6 +774,23 @@ def _gravar_notas(conn, registros, origem: str = "") -> int:
     que não dava para guardar."""
     if not registros:
         return 0
+    # ⚠️ QUEM RECEBEU A NOTA, quando quem trouxe sabe — 17/09/2026.
+    #
+    # A distribuição da Receita só entrega documentos de interesse DAQUELE
+    # CNPJ: se a busca do CNPJ X trouxe a nota, o destinatário é o X. O resumo
+    # não traz esse campo, e sem ele duas coisas ficam impossíveis: saber de
+    # onde a nota veio (as migrações 015/016) e, principalmente, **dar ciência**
+    # — quem declara é o destinatário, com o certificado dele.
+    #
+    # Só preenche quando está vazio: o relatório do FSist traz o campo, e o que
+    # veio de lá manda.
+    so_digitos_dest = "".join(c for c in str(destinatario or "") if c.isdigit())
+    if so_digitos_dest:
+        registros = [
+            (r if isinstance(r, (tuple, list))
+             else {**r, "destinatario_doc": (r.get("destinatario_doc")
+                                             or so_digitos_dest)})
+            for r in registros]
     linhas = [l for l in (_linha_de_nota(r) for r in registros) if l]
     recusadas = len(registros) - len(linhas)
     if recusadas:

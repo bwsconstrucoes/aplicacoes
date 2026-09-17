@@ -80,6 +80,46 @@ URL_NFE_DISTRIBUICAO = (
     if AMBIENTE == "1" else
     "https://hom.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx")
 
+# ---------------------------------------------------------------------------
+# A CIÊNCIA DA OPERAÇÃO — 17/09/2026
+#
+# Autorizada pelo dono com todas as letras: *"pode baixar as notas dando essa
+# ciência"*, depois de eu explicar o que ela é.
+#
+# ⚠️ ISTO NÃO É LEITURA. É uma declaração ASSINADA com o certificado A1, em
+# nome da BWS, que fica no histórico daquela nota na Receita para sempre. É o
+# único ponto deste módulo que ESCREVE no sistema fiscal — todo o resto lê.
+#
+# Por que ela existe: a distribuição entrega o RESUMO da nota (chave, emitente,
+# valor, situação). O XML completo — o documento de verdade, o que a
+# contabilidade guarda — só é liberado ao destinatário DEPOIS da ciência. Sem
+# ela, não há o que baixar nem o que mostrar na tela.
+#
+# Três limites que vêm da própria regra, e estão no código porque esquecer
+# qualquer um deles custa dinheiro ou bloqueio:
+#
+#   1. PRAZO: a ciência só é aceita dentro de ~90 dias da emissão.
+#   2. UMA VEZ SÓ: a segunda ciência da mesma nota é recusada, e insistir é o
+#      caminho para o bloqueio por consumo indevido.
+#   3. QUEM DECLARA É O DESTINATÁRIO: o evento vai assinado pelo certificado do
+#      CNPJ que recebeu a nota, não por qualquer um dos três.
+URL_NFE_EVENTO = (
+    "https://www1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx"
+    if AMBIENTE == "1" else
+    "https://hom.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx")
+
+# Ciência da Operação. Os outros três (confirmação, desconhecimento, operação
+# não realizada) NÃO são feitos por aqui: eles afirmam coisas sobre o negócio
+# que só uma pessoa pode afirmar. A ciência diz apenas "recebi o aviso".
+EVENTO_CIENCIA = "210210"
+DESCRICAO_CIENCIA = "Ciencia da Operacao"
+
+# 91 é o Ambiente Nacional, que é quem recebe a manifestação do destinatário.
+ORGAO_NACIONAL = "91"
+
+# Dias de emissão dentro dos quais a Receita ainda aceita a ciência.
+DIAS_PARA_CIENCIA = 90
+
 
 class SemCertificado(RuntimeError):
     """Falta o certificado A1 — não é falha, é configuração que não foi feita."""
@@ -540,6 +580,125 @@ def _consultar_cte(cnpj: str, desde_nsu: str) -> dict:
     return _ler_resposta(resposta.text)
 
 
+def _agora_iso() -> str:
+    """A hora com fuso, no formato que a Receita exige (-03:00)."""
+    from .horario import agora
+    return agora().strftime("%Y-%m-%dT%H:%M:%S-03:00")
+
+
+def montar_evento_ciencia(cnpj: str, chave: str, quando: str = "") -> tuple:
+    """O XML do evento de ciência, SEM assinatura ainda. Devolve (xml, id).
+
+    Montado à mão pelo mesmo motivo da distribuição: são vinte linhas de
+    estrutura fixa, e a biblioteca que faria isso já nos custou cinco defeitos
+    em série. O que fica com ela é a assinatura — essa sim é onde errar é fácil
+    e o erro volta como "rejeitado" sem dizer por quê.
+
+    O `Id` tem forma obrigatória: "ID" + tipo do evento + chave + sequência com
+    dois dígitos. Errar isso faz a Receita rejeitar com uma mensagem que fala
+    de outra coisa."""
+    chave = re.sub(r"\D", "", str(chave or ""))
+    if len(chave) != 44:
+        raise ValueError(f"Chave de acesso inválida: {chave!r}")
+    somente_digitos = re.sub(r"\D", "", str(cnpj or ""))
+    id_evento = f"ID{EVENTO_CIENCIA}{chave}01"
+    xml = (
+        f'<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">'
+        f'<infEvento Id="{id_evento}">'
+        f"<cOrgao>{ORGAO_NACIONAL}</cOrgao>"
+        f"<tpAmb>{AMBIENTE}</tpAmb>"
+        f"<CNPJ>{somente_digitos}</CNPJ>"
+        f"<chNFe>{chave}</chNFe>"
+        f"<dhEvento>{quando or _agora_iso()}</dhEvento>"
+        f"<tpEvento>{EVENTO_CIENCIA}</tpEvento>"
+        f"<nSeqEvento>1</nSeqEvento>"
+        f"<verEvento>1.00</verEvento>"
+        f'<detEvento versao="1.00">'
+        f"<descEvento>{DESCRICAO_CIENCIA}</descEvento>"
+        f"</detEvento>"
+        f"</infEvento>"
+        f"</evento>")
+    return xml, id_evento
+
+
+def _assinar(xml: str, id_evento: str, cnpj: str) -> str:
+    """Assina o evento com o certificado A1 do CNPJ.
+
+    A ASSINATURA FICA COM A BIBLIOTECA, e é de propósito: é a parte onde errar
+    é fácil (canonicalização, algoritmo, referência) e o erro volta como
+    "rejeitado" sem explicação. O envelope é nosso; a assinatura é dela."""
+    from erpbrasil.assinatura.assinatura import Assinatura
+    from lxml import etree
+
+    elemento = etree.fromstring(xml.encode("utf-8"))
+    assinado = Assinatura(_certificado(cnpj)).assina_xml2(elemento, id_evento)
+    if isinstance(assinado, bytes):
+        assinado = assinado.decode("utf-8")
+    return assinado.replace("\n", "").replace("\r", "")
+
+
+def manifestar_ciencia(cnpj: str, chave: str) -> dict:
+    """Declara ciência da operação de UMA nota. Devolve o que a Receita disse.
+
+    ⚠️ ESCREVE NO SISTEMA FISCAL. Ver o bloco de comentário no alto do arquivo:
+    é declaração assinada em nome da empresa, não leitura.
+
+    Devolve {'ok', 'codigo', 'motivo', 'protocolo'} — sempre, inclusive quando
+    falha. Quem chama grava isso no banco: sem o registro, ninguém consegue
+    responder "por que a BWS deu ciência nesta nota?" seis meses depois."""
+    import requests
+    from erpbrasil.assinatura.certificado import ArquivoCertificado
+
+    xml, id_evento = montar_evento_ciencia(cnpj, chave)
+    assinado = _assinar(xml, id_evento, cnpj)
+
+    pedido = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">'
+        "<soap12:Body>"
+        '<nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/'
+        'NFeRecepcaoEvento4">'
+        '<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">'
+        "<idLote>1</idLote>"
+        + assinado +
+        "</envEvento>"
+        "</nfeDadosMsg></soap12:Body></soap12:Envelope>")
+
+    with ArquivoCertificado(_certificado(cnpj), "w") as (arquivo_chave, cert):
+        sessao = requests.Session()
+        sessao.cert = (arquivo_chave, cert)
+        resposta = sessao.post(
+            URL_NFE_EVENTO, data=pedido.encode("utf-8"), timeout=60,
+            headers={"Content-Type": "application/soap+xml; charset=utf-8"})
+    resposta.raise_for_status()
+    return ler_resposta_do_evento(resposta.text)
+
+
+def ler_resposta_do_evento(texto: str) -> dict:
+    """O que a Receita respondeu ao evento, em campos.
+
+    ⚠️ "JÁ EXISTE" NÃO É ERRO. O código 573 ("Duplicidade de evento") significa
+    que a ciência daquela nota já foi dada — o resultado prático é o mesmo, e
+    tratar como falha faria a rotina tentar de novo para sempre."""
+    codigo = _tag(texto, "cStat")
+    motivo = _tag(texto, "xMotivo")
+    # O cStat do lote vem primeiro e é sobre o LOTE ("Lote processado"); o que
+    # interessa é o do evento, que vem dentro de `infEvento`. Quando os dois
+    # existem, o último é o do evento.
+    todos = re.findall(r"<cStat[^>]*>([^<]*)</cStat>", texto)
+    motivos = re.findall(r"<xMotivo[^>]*>([^<]*)</xMotivo>", texto)
+    if len(todos) > 1:
+        codigo, motivo = todos[-1].strip(), (motivos[-1].strip()
+                                             if motivos else motivo)
+    return {
+        "ok": codigo in ("135", "136", "573"),
+        "ja_existia": codigo == "573",
+        "codigo": codigo,
+        "motivo": motivo,
+        "protocolo": _tag(texto, "nProt"),
+    }
+
+
 def _codigo_uf(sigla: str) -> str:
     """O código que a Receita usa para o estado. PE é 26."""
     return {"AC": "12", "AL": "27", "AM": "13", "AP": "16", "BA": "29",
@@ -559,6 +718,7 @@ def _ler_resposta(bruto) -> dict:
     texto = bruto if isinstance(bruto, str) else _como_texto(bruto)
     motivo = _tag(texto, "xMotivo") or _tag(texto, "cStat")
     documentos, eventos = [], []
+    completos: dict = {}
     ilegiveis, nem_nota_nem_evento = 0, 0
     for compactado in re.findall(r"<docZip[^>]*>([^<]+)</docZip>", texto):
         try:
@@ -567,6 +727,16 @@ def _ler_resposta(bruto) -> dict:
             # gravada, o evento corrige o status de uma nota que já está aqui.
             lido = ler_documento(xml)
             evento = ler_evento(xml) if lido is None else None
+            # ⚠️ O XML INTEIRO SÓ CHEGA DEPOIS DA CIÊNCIA — e quando chega, é
+            # ESTE o documento que a contabilidade guarda. Antes de 17/09/2026
+            # ele era lido, resumido em oito campos e JOGADO FORA; o resumo
+            # servia para conciliar e o documento se perdia.
+            #
+            # "Inteiro" se reconhece por `infNFe`: o resumo (`resNFe`) não o
+            # tem. Guardar o resumo como se fosse a nota seria pior do que não
+            # guardar nada.
+            if lido and "<infNFe" in xml:
+                completos[lido["chave"]] = xml
         except Exception:  # noqa: BLE001 — um documento torto não derruba o lote
             logger.exception("Análise de SPs: documento ilegível no lote")
             ilegiveis += 1
@@ -588,6 +758,9 @@ def _ler_resposta(bruto) -> dict:
         "maior_nsu": _tag(texto, "maxNSU"),
         "documentos": documentos,
         "eventos": eventos,
+        # {chave: xml} das notas que vieram INTEIRAS. Quem guarda é o laço, que
+        # tem banco e Drive à mão; aqui só se separa.
+        "completos": completos,
         "ilegiveis": ilegiveis,
         "nao_reconhecidos": nem_nota_nem_evento,
     }
@@ -619,6 +792,12 @@ RECADOS = {
         "A Receita pediu para esperar — foram consultas demais em pouco tempo. "
         "A próxima rodada tenta de novo; não há nada a fazer."),
 }
+
+
+def _notas_arquivo():
+    """Importado aqui dentro para não criar dependência circular no import."""
+    from . import notas_arquivo
+    return notas_arquivo
 
 
 def _quantas_notas() -> int:
@@ -695,6 +874,7 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
     resumo_tipos: dict = {}
     datas: list = []
     perdidos = 0
+    guardados = 0
 
     for _ in range(LOTES_POR_RODADA):
         anotar("buscando notas na Receita",
@@ -729,10 +909,23 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
             try:
                 with conexao() as conn:
                     gravadas = _gravar_notas(conn, documentos,
-                                             origem=ORIGEM_RECEITA)
+                                             origem=ORIGEM_RECEITA,
+                                             destinatario=cnpj)
                     canceladas = aplicar_cancelamentos(conn, eventos)
                 recusadas = max(0, len(documentos) - gravadas)
                 trazidas += gravadas
+                # O DOCUMENTO INTEIRO VAI PARA O DRIVE. Falhar aqui não pode
+                # derrubar a busca: perder o arquivo é chato e se refaz; perder
+                # a nota e o ponteiro é caro.
+                for chave_nota, xml_inteiro in (
+                        resposta.get("completos") or {}).items():
+                    try:
+                        if _notas_arquivo().guardar_xml(
+                                chave_nota, xml_inteiro).get("ok"):
+                            guardados += 1
+                    except Exception:  # noqa: BLE001
+                        logger.exception("Análise de SPs: falhou guardar o XML "
+                                         "da nota %s", chave_nota)
             except Exception as e:  # noqa: BLE001
                 logger.exception("Análise de SPs: falhou gravar o lote de %s",
                                  cnpj)
@@ -789,8 +982,10 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
                         _resumo_da_rodada(trazidas, novas, resumo_tipos, datas,
                                           eventos_vistos, perdidos), 0)
     logger.info("Análise de SPs: Receita — %s de %s: %d documento(s), %d nota(s) "
-                "nova(s), em %d lote(s).", tipo, cnpj, trazidas, novas, lotes)
-    return {"trazidas": trazidas, "novas": novas, "lotes": lotes, "erro": ""}
+                "nova(s), %d XML guardado(s), em %d lote(s).",
+                tipo, cnpj, trazidas, novas, guardados, lotes)
+    return {"trazidas": trazidas, "novas": novas, "lotes": lotes,
+            "xmls_guardados": guardados, "erro": ""}
 
 
 def buscar_tudo(anotar=None) -> dict:

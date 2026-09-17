@@ -1584,3 +1584,13 @@ td.credor-grupos { margin: 0; }
 .planilha-cartao .kpis { margin-top: 10px; }
 .planilha-cartao .kpi-sub { line-height: 1.35; }
 .planilha-cartao .kpi-sub b { color: var(--tinta); font-family: var(--fonte-dados); }
+
+/* A CHAVE DE ACESSO embaixo do numero da nota — 17/09/2026. *"Tem como
+   visualizar facil a partir da tela de associacao, clicar e ver a nota
+   fiscal?"* Ela tem 44 digitos e nao pode empurrar a coluna: quebra onde der,
+   em fonte de dado, e o titulo mostra inteira ao passar o mouse. */
+.nota-chave {
+  display: block; font-family: var(--fonte-dados); font-size: 10.5px;
+  line-height: 1.25; word-break: break-all; color: var(--tinta-suave);
+  max-width: 22ch;
+}

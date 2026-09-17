@@ -78,12 +78,23 @@ def _explicar(resposta) -> str:
 
 
 def subir_xlsx(conteudo: bytes, nome: str, pasta_id: str) -> dict:
+    """Sobe uma planilha. Ver `subir_arquivo` — é o mesmo caminho."""
+    return subir_arquivo(conteudo, nome, pasta_id, MIME_XLSX)
+
+
+def subir_arquivo(conteudo: bytes, nome: str, pasta_id: str,
+                  mime: str = MIME_XLSX) -> dict:
     """Cria o arquivo na pasta, libera por link e devolve {'id', 'link'}.
 
     São três chamadas, e as três podem falhar por motivos diferentes — por
     isso cada uma tem a sua mensagem. Um arquivo que sobe mas não fica público
     é pior do que um que não sobe: o link vai para o card do Pipefy e quem
-    clica recebe "sem permissão", sem saber por quê."""
+    clica recebe "sem permissão", sem saber por quê.
+
+    ⚠️ O TIPO DO ARQUIVO É PARÂMETRO desde 17/09/2026: além das planilhas,
+    agora sobe o **XML da nota fiscal** baixado da Receita. Era `subir_xlsx`
+    com o tipo fixo, e um XML subindo como planilha abriria quebrado no Drive.
+    """
     if not str(pasta_id or "").strip():
         raise ErroDoDrive(
             "A pasta do Drive não está configurada. Defina DRIVE_FOLDER_ID "
@@ -95,7 +106,7 @@ def subir_xlsx(conteudo: bytes, nome: str, pasta_id: str) -> dict:
     resposta = sessao.post(
         "https://www.googleapis.com/drive/v3/files", params=todos_os_drives,
         json={"name": nome, "parents": [str(pasta_id).strip()],
-              "mimeType": MIME_XLSX}, timeout=60)
+              "mimeType": mime}, timeout=60)
     if resposta.status_code >= 300:
         raise ErroDoDrive("Não consegui criar o arquivo no Drive. "
                           + _explicar(resposta))
@@ -107,7 +118,7 @@ def subir_xlsx(conteudo: bytes, nome: str, pasta_id: str) -> dict:
     resposta = sessao.patch(
         f"https://www.googleapis.com/upload/drive/v3/files/{arquivo_id}",
         params={"uploadType": "media", **todos_os_drives},
-        headers={"Content-Type": MIME_XLSX}, data=conteudo, timeout=180)
+        headers={"Content-Type": mime}, data=conteudo, timeout=180)
     if resposta.status_code >= 300:
         raise ErroDoDrive("O arquivo foi criado, mas o conteúdo não subiu. "
                           + _explicar(resposta))

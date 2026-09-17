@@ -1912,6 +1912,15 @@ ACOES_FISCAIS = [
     {"modo": "notas_receita", "rotulo": "Buscar notas na Receita",
      "ajuda": "Baixa da Receita as NF-e e CT-e emitidas contra os CNPJs que "
               "têm certificado guardado. Continua de onde parou da última vez."},
+    # ⚠️ O ÚNICO BOTÃO DESTE MÓDULO QUE ESCREVE NO SISTEMA FISCAL. A ajuda diz
+    # isso com todas as letras, de propósito: quem aperta precisa saber que
+    # está declarando algo em nome da empresa, e não só lendo.
+    {"modo": "notas_ciencia", "rotulo": "Dar ciência e baixar as notas",
+     "ajuda": "Declara na Receita, assinado com o certificado da empresa, que "
+              "a BWS tomou ciência das notas emitidas contra ela — é o que "
+              "libera o XML de cada nota. O documento chega na PRÓXIMA busca e "
+              "é guardado no Drive. Vale só para NF-e dos últimos 90 dias, uma "
+              "vez por nota."},
     # ⚠️ O BOTÃO DA ABA DO FSIST SAIU DAQUI — 16/09/2026, pedido do dono:
     # *"pra que diabo serve o botão 'Ler a aba do FSist na planilha'? Não tem
     # sentido isso. Vou importar o relatório no sistema."*
@@ -2255,6 +2264,13 @@ def tela_fiscal():
             # a tela não abria.
             orfas = [n for n in notas if n.get("orfa")]
             candidatas = fiscal.sps_possiveis_das_notas(orfas)
+            # O DOCUMENTO DA NOTA e a ciência, numa consulta só para a página.
+            # Uma por nota seriam 200 idas ao banco — a mesma lição que já
+            # custou 28 segundos de tela nesta mesma lista.
+            from . import notas_arquivo
+            chaves_da_pagina = [n.get("chave") for n in notas]
+            arquivos_da_nota = notas_arquivo.arquivos_das_notas(chaves_da_pagina)
+            ciencia_da_nota = notas_arquivo.ciencia_das_notas(chaves_da_pagina)
             for nota in notas:
                 todas = candidatas.get(
                     fiscal.so_digitos(nota.get("chave")), [])
@@ -2268,6 +2284,7 @@ def tela_fiscal():
             erro = None
         except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
             logger.exception("Análise de SPs: falhou listar as notas")
+            arquivos_da_nota, ciencia_da_nota = {}, {}
             notas, resumo_notas, erro = [], {"quantidade": 0, "total": 0,
                                              "sem_lancamento": 0}, (
                 "Esta tela precisa da atualização do banco. Vá em "
@@ -2288,6 +2305,7 @@ def tela_fiscal():
             "analisesps_fiscal_notas.html", aba="fiscal", base=base,
             notas=notas, total=total, erro=erro, pagina=pagina,
             resumo_notas=resumo_notas, por_dia=por_dia,
+            arquivos_da_nota=arquivos_da_nota, ciencia_da_nota=ciencia_da_nota,
             filtros_nota=filtros_nota,
             grupos_de_nota=fiscal.GRUPOS_DE_NOTA,
             frases_da_nota=fiscal.FRASE_DA_NOTA,

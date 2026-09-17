@@ -195,6 +195,13 @@ seria ou perdido, ou versionado por engano.
 Opcionais, com valor embutido: `ANALISESPS_SHEET_SPS`,
 `ANALISESPS_SHEET_FISCAL`, `ANALISESPS_SHEET_CREDENCIAIS`.
 
+Opcionais da ciência da operação (17/09/2026), as duas com padrão sensato:
+
+| Variável | Para quê |
+|---|---|
+| `DRIVE_FOLDER_NOTAS` | pasta do Drive só para os XMLs das notas. Sem ela, valem a pasta geral (`DRIVE_FOLDER_ID`) e a que estiver colada na tela de credenciais. ⚠️ Tem de ser **Drive Compartilhado** — ver `drive.py` |
+| `ANALISESPS_CIENCIAS_POR_RODADA` | quantas notas recebem ciência por vez (padrão **40**). Subir esse número aproxima do bloqueio por consumo indevido da Receita |
+
 ## Qual versão está no ar
 
 `GET /analisesps/saude` responde o commit publicado (`RENDER_GIT_COMMIT`) e
