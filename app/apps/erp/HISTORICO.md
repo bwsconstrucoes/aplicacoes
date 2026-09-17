@@ -54,6 +54,29 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### AGUARDANDO DECISÃO: o módulo de ACOMPANHAMENTO (desenho pronto, nada construído)
+
+17/09/2026, o dono pediu a gestão burocrática da obra — aditivo de prazo,
+apostilamento, licença vencendo, protocolo —, que hoje ele faz no Pipefy
+("protocolo e medições"). **O desenho inteiro está em `ACOMPANHAMENTO.md`** e
+está registrado na fila do `ROTEIRO.md`. Nada foi construído: ele precisa
+decidir o formato primeiro.
+
+As três exigências dele mandam no desenho, e quem pegar isto não pode perder de
+vista: **rápido de alimentar** (andamento é uma frase e enter, ou ninguém
+lança), **não travado** (ele citou o SEI como contraexemplo) e **responder "o
+que está pendente"** para quem assume o assunto de alguém de férias.
+
+A decisão que mais pesa, e é dele: **data para desligar o quadro do Pipefy**.
+Manter os dois em paralelo é o pior resultado possível — informação pela metade
+é pior que informação nenhuma, porque quem bate o olho acredita nela.
+
+**Por que havia obra sem empresa** — ele explicou, e não era defeito de dado:
+*"isso é porque foi criado primeiro a obra e depois a empresa"*. O conserto já
+existe (campo Empresa na aba Cadastro da ficha); falta ele passar nas obras
+antigas.
+
+
 ### TRÊS ACERTOS DE USO, 17/09/2026 (sem migração)
 
 Os três saíram do dono usando o sistema, não de backlog.
