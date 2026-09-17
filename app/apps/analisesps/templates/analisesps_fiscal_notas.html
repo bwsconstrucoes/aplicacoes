@@ -381,7 +381,53 @@
           {% for n in notas %}
             <tr class="{{ 'com-risco' if n.status|upper == 'CANCELADA' }}">
               <td>{{ n.emissao|data_br }}</td>
-              <td class="id">{{ n.numero }}{% if n.serie %}<small>/{{ n.serie }}</small>{% endif %}</td>
+              {# ---------------------------------------------------------
+                 ⚠️ O NÚMERO ABRE A NOTA. Pedido do dono em 16/09/2026: *"tem
+                 como visualizar fácil a partir da tela de associação, clicar e
+                 ver a nota fiscal?"*
+
+                 Três estados, e cada um diz o que dá para fazer:
+
+                   · documento guardado  → link para o XML no Drive;
+                   · ciência já dada     → "o documento chega na próxima busca";
+                   · nada ainda          → a chave, para copiar e conferir.
+
+                 Dizer qual dos três é o que evita o clique inútil. #}
+              <td class="id">
+                {% set arq = arquivos_da_nota.get(n.chave) or {} %}
+                {% set ciencia = ciencia_da_nota.get(n.chave) %}
+                {% if arq.get('xml') %}
+                  {# ⚠️ ABRE A NOTA LIDA, NÃO O XML CRU — 17/09/2026. Antes o
+                     link ia direto para o arquivo no Drive, e quem clicava
+                     recebia uma tela de etiquetas. *"Não tem problema abrir o
+                     XML em tela. Abre num modal?"* Abre: o modal mostra a nota
+                     desenhada, e de lá sai o PDF.
+
+                     Continua sendo link de verdade — ctrl+clique abre a página
+                     inteira em nova aba. #}
+                  <a href="{{ url_for('analisesps.nota_documento',
+                                      chave=n.chave) }}"
+                     data-nota="{{ url_for('analisesps.nota_documento',
+                                           chave=n.chave) }}"
+                     data-numero="{{ n.numero }}"
+                     title="Abre a nota fiscal">{{ n.numero }}</a>
+                {% else %}
+                  {{ n.numero }}
+                {% endif %}
+                {%- if n.serie %}<small>/{{ n.serie }}</small>{% endif %}
+                <br>
+                <small class="cartao-dica nota-chave"
+                       title="{{ n.chave }}">{{ n.chave }}</small>
+                {% if arq.get('xml') %}
+                  <small class="etiqueta boa">documento guardado</small>
+                {% elif ciencia and ciencia.ok %}
+                  <small class="cartao-dica">ciência dada — o documento chega
+                    na próxima busca</small>
+                {% elif ciencia %}
+                  <small class="etiqueta ruim" title="{{ ciencia.motivo }}">a
+                    Receita recusou a ciência</small>
+                {% endif %}
+              </td>
               <td>{{ n.emitente }}<br>
                 <small class="cartao-dica">{{ n.emitente_doc }}
                   {%- if n.emitente_uf %} · {{ n.emitente_uf }}{% endif %}</small></td>
@@ -525,6 +571,7 @@
 </div>
 
 {% include "analisesps_ficha_modal.html" %}
+{% include "analisesps_nota_modal.html" %}
 
 <div id="fiscal-config" hidden
      data-url-mao="{{ url_for('analisesps.decidir_fiscal_a_mao') }}"

@@ -1,0 +1,24 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Nota {{ nota.numero }} — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   A NOTA COMO PÁGINA INTEIRA — o destino de quem abre em nova aba.
+
+   O modal é o caminho de todo dia; esta página existe para ctrl+clique, para
+   mandar o endereço a alguém e para o navegador que não tem `<dialog>`. O
+   miolo é o MESMO arquivo dos outros dois lugares.
+--------------------------------------------------------------------------- #}
+{% block conteudo %}
+<div class="cartao">
+  {% include "analisesps_nota.html" %}
+</div>
+
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
+  <a class="btn" target="_blank" rel="noopener"
+     href="{{ url_for('analisesps.nota_documento', chave=nota.chave,
+                      imprimir=1) }}">Salvar em PDF / Imprimir</a>
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.tela_fiscal', visao='notas') }}">Voltar</a>
+</div>
+{% endblock %}

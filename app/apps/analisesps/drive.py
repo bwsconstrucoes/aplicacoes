@@ -78,12 +78,23 @@ def _explicar(resposta) -> str:
 
 
 def subir_xlsx(conteudo: bytes, nome: str, pasta_id: str) -> dict:
+    """Sobe uma planilha. Ver `subir_arquivo` — é o mesmo caminho."""
+    return subir_arquivo(conteudo, nome, pasta_id, MIME_XLSX)
+
+
+def subir_arquivo(conteudo: bytes, nome: str, pasta_id: str,
+                  mime: str = MIME_XLSX) -> dict:
     """Cria o arquivo na pasta, libera por link e devolve {'id', 'link'}.
 
     São três chamadas, e as três podem falhar por motivos diferentes — por
     isso cada uma tem a sua mensagem. Um arquivo que sobe mas não fica público
     é pior do que um que não sobe: o link vai para o card do Pipefy e quem
-    clica recebe "sem permissão", sem saber por quê."""
+    clica recebe "sem permissão", sem saber por quê.
+
+    ⚠️ O TIPO DO ARQUIVO É PARÂMETRO desde 17/09/2026: além das planilhas,
+    agora sobe o **XML da nota fiscal** baixado da Receita. Era `subir_xlsx`
+    com o tipo fixo, e um XML subindo como planilha abriria quebrado no Drive.
+    """
     if not str(pasta_id or "").strip():
         raise ErroDoDrive(
             "A pasta do Drive não está configurada. Defina DRIVE_FOLDER_ID "
@@ -95,7 +106,7 @@ def subir_xlsx(conteudo: bytes, nome: str, pasta_id: str) -> dict:
     resposta = sessao.post(
         "https://www.googleapis.com/drive/v3/files", params=todos_os_drives,
         json={"name": nome, "parents": [str(pasta_id).strip()],
-              "mimeType": MIME_XLSX}, timeout=60)
+              "mimeType": mime}, timeout=60)
     if resposta.status_code >= 300:
         raise ErroDoDrive("Não consegui criar o arquivo no Drive. "
                           + _explicar(resposta))
@@ -107,7 +118,7 @@ def subir_xlsx(conteudo: bytes, nome: str, pasta_id: str) -> dict:
     resposta = sessao.patch(
         f"https://www.googleapis.com/upload/drive/v3/files/{arquivo_id}",
         params={"uploadType": "media", **todos_os_drives},
-        headers={"Content-Type": MIME_XLSX}, data=conteudo, timeout=180)
+        headers={"Content-Type": mime}, data=conteudo, timeout=180)
     if resposta.status_code >= 300:
         raise ErroDoDrive("O arquivo foi criado, mas o conteúdo não subiu. "
                           + _explicar(resposta))
@@ -124,6 +135,30 @@ def subir_xlsx(conteudo: bytes, nome: str, pasta_id: str) -> dict:
     logger.info("Análise de SPs: '%s' subiu no Drive (%s).", nome, arquivo_id)
     return {"id": arquivo_id,
             "link": f"https://drive.google.com/uc?export=download&id={arquivo_id}"}
+
+
+def baixar_arquivo(arquivo_id: str) -> bytes:
+    """O conteúdo de um arquivo que este módulo subiu. Levanta `ErroDoDrive`.
+
+    Pela conta de serviço, e não pelo link público: o link existe para quem
+    abre no navegador; aqui quem lê é o servidor, que já tem credencial. Assim
+    a leitura continua funcionando no dia em que a pasta deixar de ser
+    aberta por link — e um arquivo com acesso restrito não vira tela quebrada.
+    """
+    arquivo_id = str(arquivo_id or "").strip()
+    if not arquivo_id:
+        raise ErroDoDrive("Nenhum arquivo informado.")
+    sessao = _sessao()
+    try:
+        resposta = sessao.get(
+            f"https://www.googleapis.com/drive/v3/files/{arquivo_id}",
+            params={"alt": "media", "supportsAllDrives": "true"}, timeout=60)
+    except Exception as e:  # noqa: BLE001 — rede caiu; a tela tem de dizer
+        raise ErroDoDrive(f"Não consegui falar com o Drive: {e}") from e
+    if resposta.status_code >= 300:
+        raise ErroDoDrive("Não consegui baixar o arquivo do Drive. "
+                          + _explicar(resposta))
+    return resposta.content
 
 
 def conferir_pasta(pasta_id: str) -> dict:

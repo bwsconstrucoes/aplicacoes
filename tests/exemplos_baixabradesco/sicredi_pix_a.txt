@@ -1,0 +1,21 @@
+Comprovante de Pagamento Pix
+Valor: R$ 7.300,00
+Realizado em: 17/09/2026 - 08:23:50
+Solicitante: SOLICITANTE EXEMPLO DA SILVA
+Cooperativa e conta origem: 2205/99999-9
+Nome do destinatário: FORNECEDOR EXEMPLO LTDA
+CNPJ do destinatário: 55.666.777/0001-88
+Instituição do destinatário: BCO SANTANDER BRASIL S.A.
+Nome do pagador: Empresa Exemplo Engenharia Ltda
+CNPJ do pagador: 11.222.333/0001-44
+Instituição do pagador: BANCO COOPERATIVO SICREDI S.A.
+ID da transação: E0000000000000000000001AAAAAAAAA
+Dados gerais:
+Valor original: R$ 7.300,00
+Autenticação Eletrônica: E000.0000.0000.0000.0000.001A.AAAA.AAAA
+Número de Controle: 90000000001
+Emitido em: 17/09/2026 - 08:23:54
+* A transação acima foi realizada no nosso Aplicativo Sicredi conforme as condições especificadas neste comprovante.
+* Os dados digitados são de responsabilidade do usuário.
+Serviços por telefone 3003 4770 (Capitais e Regiões Metropolitanas) / 0800 724 4770 (Demais Regiões)
+SAC 0800 724 7220 / Ouvidoria 0800 646 25 19

@@ -664,9 +664,76 @@ def processar_um(lote_id: int, anotar=None) -> dict:
     return {"ok": True, "paginas": paginas, "contagem": contagem}
 
 
+# Quanto tempo sem terminar até um lote ser considerado abandonado. Um PDF de
+# cinquenta páginas leva poucos minutos; quinze é folgado.
+MINUTOS_PARA_ABANDONADO = 15
+
+
+def destravar_parados(minutos: int = MINUTOS_PARA_ABANDONADO) -> dict:
+    """Devolve à fila os lotes que começaram e pararam no meio.
+
+    ⚠️ ISTO É O QUE FALTAVA NO BOTÃO "Retomar a fila agora". Relato do dono em
+    16/09/2026: *"clico nele e nada acontece"*.
+
+    E não acontecia mesmo: retomar só pegava lote em ESPERANDO, e o lote dele
+    estava em RODANDO — o processo tinha começado e morrido no meio (o serviço
+    do Render reinicia de tempos em tempos). Um lote em RODANDO ficava assim
+    PARA SEMPRE: nenhum processo o retomava, e nenhum botão o alcançava.
+
+    Dois destinos, conforme o arquivo ainda exista:
+
+      - **arquivo no disco** → volta para ESPERANDO e é reprocessado. O que já
+        baixou no Omie é reconhecido como duplicado e não baixa duas vezes.
+      - **arquivo sumiu** (o contêiner reiniciou e levou o disco) → é marcado
+        como FALHOU, dizendo que o PDF precisa ser arrastado de novo. Deixar em
+        RODANDO seria mentir que ainda está trabalhando."""
+    import os
+
+    from .db import conexao, consultar
+
+    try:
+        parados = consultar(
+            "SELECT id, caminho, arquivo FROM analisesps.comprovantes_lote "
+            " WHERE situacao = 'RODANDO' "
+            "   AND recebido_em < now() - (? || ' minutes')::interval "
+            " ORDER BY id", (str(int(minutos)),))
+    except Exception:  # noqa: BLE001 — banco fora do ar
+        logger.exception("Análise de SPs: não consegui procurar lotes parados")
+        return {"devolvidos": 0, "sem_arquivo": 0}
+
+    devolvidos, sem_arquivo = 0, 0
+    for lote_id, caminho, nome in parados:
+        existe = bool(caminho) and os.path.exists(caminho)
+        with conexao() as conn:
+            if existe:
+                conn.execute(
+                    "UPDATE analisesps.comprovantes_lote "
+                    "   SET situacao = 'ESPERANDO' WHERE id = ?", (lote_id,))
+                devolvidos += 1
+            else:
+                conn.execute(
+                    "UPDATE analisesps.comprovantes_lote SET situacao = 'FALHOU', "
+                    "  erro = ?, terminado_em = now() WHERE id = ?",
+                    ("O processamento parou no meio e o arquivo não está mais "
+                     "no servidor (o serviço reiniciou). Arraste o PDF de novo "
+                     "— o que já tiver sido baixado não baixa duas vezes.",
+                     lote_id))
+                sem_arquivo += 1
+            conn.commit()
+        logger.warning("Análise de SPs: lote %s (%s) estava parado — %s.",
+                       lote_id, nome,
+                       "devolvido à fila" if existe else "sem arquivo, falhou")
+    return {"devolvidos": devolvidos, "sem_arquivo": sem_arquivo}
+
+
 def processar_pendentes(anotar=None) -> dict:
-    """Drena a fila de lotes ESPERANDO. É o que o processo separado chama."""
+    """Drena a fila de lotes ESPERANDO. É o que o processo separado chama.
+
+    ⚠️ ANTES DE DRENAR, DESTRAVA O QUE FICOU PELO CAMINHO. Sem isto, um lote
+    que morreu no meio nunca mais era tocado por ninguém."""
     from .db import consultar
+
+    destravados = destravar_parados()
 
     esperando = consultar(
         "SELECT id FROM analisesps.comprovantes_lote "
@@ -678,7 +745,9 @@ def processar_pendentes(anotar=None) -> dict:
             feitos += 1
         else:
             falhas += 1
-    return {"lotes": feitos, "falhas": falhas}
+    return {"lotes": feitos, "falhas": falhas,
+            "destravados": destravados["devolvidos"],
+            "sem_arquivo": destravados["sem_arquivo"]}
 
 
 # ---------------------------------------------------------------------------

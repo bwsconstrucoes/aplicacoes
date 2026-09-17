@@ -1584,3 +1584,145 @@ td.credor-grupos { margin: 0; }
 .planilha-cartao .kpis { margin-top: 10px; }
 .planilha-cartao .kpi-sub { line-height: 1.35; }
 .planilha-cartao .kpi-sub b { color: var(--tinta); font-family: var(--fonte-dados); }
+
+/* A CHAVE DE ACESSO embaixo do numero da nota — 17/09/2026. *"Tem como
+   visualizar facil a partir da tela de associacao, clicar e ver a nota
+   fiscal?"* Ela tem 44 digitos e nao pode empurrar a coluna: quebra onde der,
+   em fonte de dado, e o titulo mostra inteira ao passar o mouse. */
+.nota-chave {
+  display: block; font-family: var(--fonte-dados); font-size: 10.5px;
+  line-height: 1.25; word-break: break-all; color: var(--tinta-suave);
+  max-width: 22ch;
+}
+
+/* ---------------------------------------------------------------------------
+   A NOTA FISCAL LIDA DO XML — 17/09/2026.
+
+   *"Não tem problema abrir o XML em tela. Abre num modal? E desse modal
+   poderia exportar em PDF?"*
+
+   ⚠️ ESTE BLOCO TEM DE FUNCIONAR NOS TRES LUGARES: no modal, na pagina
+   inteira e NO PAPEL. O papel e o mais exigente — cor de fundo nao imprime
+   em impressora comum, entao nada aqui pode depender de fundo para ser
+   legivel: o que separa um bloco do outro e a LINHA, nao a cor.
+--------------------------------------------------------------------------- */
+.modal-nota { max-width: 960px; width: 94vw; }
+
+/* O "Salvar em PDF" e um <a>, e no cabecalho azul ele herdava cara de LINK
+   sublinhado ao lado do "Fechar", que e botao. Dois controles lado a lado com
+   aparencias diferentes fazem parecer que fazem coisas de peso diferente — e
+   aqui os dois sao a mesma coisa: um botao. */
+.modal-nota .modal-cab .btn {
+  text-decoration: none; font-weight: 700; white-space: nowrap;
+}
+/* E ele ganha contorno: sem nenhum, "Salvar em PDF" ficava sendo texto solto
+   ao lado de um botao branco, e nao parecia clicavel. E ele e justamente o que
+   a pessoa veio fazer aqui. */
+.modal-nota .modal-cab #nota-modal-pdf {
+  background: transparent; color: var(--branco);
+  border: 1px solid rgba(255, 255, 255, .55); padding: 6px 14px;
+}
+.modal-nota .modal-cab #nota-modal-pdf:hover {
+  background: rgba(255, 255, 255, .14); border-color: var(--branco);
+}
+
+.nota-doc { font-size: 13.5px; line-height: 1.45; }
+
+.nota-doc-aviso {
+  border: 1px solid var(--borda); border-left: 4px solid #b45309;
+  padding: 9px 12px; margin-bottom: 14px; font-size: 12.5px;
+  border-radius: 4px;
+}
+
+.nota-doc-topo {
+  display: flex; gap: 18px; justify-content: space-between;
+  align-items: flex-start; border-bottom: 2px solid var(--tinta);
+  padding-bottom: 12px; margin-bottom: 12px;
+}
+.nota-doc-emitente h2 { margin: 0 0 3px; font-size: 17px; }
+.nota-doc-emitente p { margin: 1px 0; font-size: 12.5px; }
+.nota-doc-fantasia { color: var(--tinta-suave); }
+
+/* O selo do numero: e o que a pessoa procura primeiro ao pegar o papel. */
+.nota-doc-selo {
+  display: flex; flex-direction: column; align-items: flex-end;
+  border: 1px solid var(--tinta); border-radius: 4px; padding: 8px 12px;
+  min-width: 170px; text-align: right;
+}
+.nota-doc-selo-titulo { font-size: 10px; letter-spacing: .06em; }
+.nota-doc-selo-numero {
+  font-size: 21px; font-weight: 700; font-family: var(--fonte-dados);
+}
+.nota-doc-selo-serie, .nota-doc-selo-situacao {
+  font-size: 11.5px; color: var(--tinta-suave);
+}
+
+.nota-doc-chave {
+  border: 1px solid var(--borda); border-radius: 4px; padding: 7px 10px;
+  margin-bottom: 12px;
+}
+.nota-doc-chave code {
+  font-family: var(--fonte-dados); font-size: 13px; letter-spacing: .02em;
+  word-break: break-all;
+}
+
+.nota-doc-rotulo {
+  display: block; font-size: 10px; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--tinta-suave);
+}
+
+.nota-doc-linha {
+  display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px;
+  font-size: 12.5px;
+}
+
+.nota-doc-bloco { margin-bottom: 14px; }
+.nota-doc-bloco h3 {
+  margin: 0 0 6px; font-size: 12px; letter-spacing: .05em;
+  text-transform: uppercase; border-bottom: 1px solid var(--borda);
+  padding-bottom: 3px;
+}
+.nota-doc-bloco p { margin: 2px 0; font-size: 12.5px; }
+
+.nota-doc-itens { width: 100%; border-collapse: collapse; font-size: 12px; }
+.nota-doc-itens th, .nota-doc-itens td {
+  border: 1px solid var(--borda); padding: 4px 6px; text-align: left;
+  vertical-align: top;
+}
+.nota-doc-itens th { font-weight: 600; font-size: 10.5px; }
+.nota-doc-itens .num { text-align: right; font-family: var(--fonte-dados);
+                       white-space: nowrap; }
+.nota-doc-itens .id { font-family: var(--fonte-dados); white-space: nowrap; }
+
+.nota-doc-totais { border-collapse: collapse; font-size: 12.5px;
+                   margin-left: auto; min-width: 260px; }
+.nota-doc-totais th, .nota-doc-totais td {
+  border: 1px solid var(--borda); padding: 4px 9px;
+}
+.nota-doc-totais th { text-align: left; font-weight: 500; }
+.nota-doc-totais td { text-align: right; font-family: var(--fonte-dados); }
+.nota-doc-total-final th, .nota-doc-total-final td {
+  font-weight: 700; font-size: 14px;
+}
+
+.nota-doc-itens-rolagem { overflow-x: auto; }
+
+.nota-doc-observacao { white-space: pre-wrap; font-size: 12px; }
+
+/* NO CELULAR. A nota nasceu para papel A4, e 390px e menos de um terco disso.
+   O que muda: o cabecalho deixa de ser duas colunas lado a lado (o selo do
+   numero ia para baixo do nome do emitente e apertava os dois), e a tabela de
+   totais deixa de ter largura minima de 260px, que sozinha estourava a tela. */
+@media (max-width: 560px) {
+  .nota-doc-topo { flex-direction: column; align-items: stretch; }
+  .nota-doc-selo { align-items: flex-start; text-align: left; min-width: 0; }
+  .nota-doc-totais { min-width: 0; width: 100%; }
+  .nota-doc-chave code { font-size: 12px; }
+}
+
+/* No papel: tinta preta em fundo branco, e a tabela sem depender de cor. */
+@media print {
+  .nota-doc-aviso { border-left-color: #000; }
+  .nota-doc-itens th, .nota-doc-itens td,
+  .nota-doc-totais th, .nota-doc-totais td { border-color: #666; }
+}

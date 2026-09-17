@@ -236,9 +236,17 @@ def extract_identificador(text: str) -> str:
     """
     patterns = [
         r'Identificador\s*:?\s*([A-Za-z0-9]{8,})',
+        # Sicredi Pix: o melhor identificador que existe no papel.
+        r'ID\s+da\s+transa[cç][aã]o\s*:?\s*([A-Za-z0-9]{8,})',
+        # Sicredi: a autenticação vem com pontos e muda a cada pagamento.
+        r'Autentica[cç][aã]o\s+Eletr[oô]nica\s*:?\s*([A-Za-z0-9.]{8,})',
         r'N[úu]mero\s+de\s+Autentica[cç][aã]o\s*:?\s*([A-Za-z0-9]{6,})',
         r'Comprovante\s+de\s+Dep[óo]sito\s+n[ºo°]\s*:?\s*(\d{6,})',
         r'Documento\s*:?\s*(\d{4,})',
+        # Os dois formatos de "controle" ficam por último: no Bradesco ele é do
+        # lote inteiro. No Sicredi muda a cada pagamento, mas ali a autenticação
+        # já resolveu antes de chegar aqui.
+        r'N[úu]mero\s+de\s+Controle\s*:?\s*([\d\.]{6,})',
         r'N[°º]\s*de\s*controle\s*:?\s*([\d\.]{6,})',
     ]
     for p in patterns:

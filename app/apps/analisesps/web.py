@@ -17,6 +17,7 @@ import os
 
 from flask import (Blueprint, Response, redirect, render_template, request,
                    session, url_for)
+from markupsafe import escape
 
 from . import auth
 from . import preferencias
@@ -679,6 +680,80 @@ def detalhe(sp_id):
 
 
 # ---------------------------------------------------------------------------
+# VER A NOTA FISCAL — 17/09/2026
+#
+# *"Não tem problema abrir o XML em tela. Abre num modal? E desse modal poderia
+# exportar em PDF?"*
+#
+# ⚠️ O PDF É O NAVEGADOR IMPRIMINDO, e é o melhor dos dois mundos: não entra
+# biblioteca nova no serviço (a regra da casa), e quem imprime escolhe margem,
+# tamanho e se quer papel ou arquivo. `?imprimir=1` abre a mesma leitura numa
+# página limpa, já chamando a caixa de impressão.
+#
+# ⚠️ E NÃO É UM DANFE OFICIAL — ver o comentário no alto de `nfe_leitura.py`.
+# A tela diz isso em letras, porque quem recebe um papel com cara de nota
+# fiscal supõe que ele vale como uma.
+# ---------------------------------------------------------------------------
+@bp.route("/nota/<chave>")
+@exige_consulta
+def nota_documento(chave):
+    """A nota fiscal desenhada a partir do XML guardado.
+
+    Três respostas, e cada uma para um lugar: `?modal=1` devolve só o miolo,
+    para o modal abrir por cima da lista sem perder a rolagem; `?imprimir=1`
+    devolve a página limpa que chama a impressão; sem nada, a página inteira,
+    que é o que abre em nova aba."""
+    import re
+
+    from . import nfe_leitura, notas_arquivo
+    from .drive import ErroDoDrive
+
+    pedaco = bool(request.args.get("modal"))
+    imprimir = bool(request.args.get("imprimir"))
+
+    def recado(mensagem, classe="erro", codigo=200):
+        """O mesmo problema, dito no formato que quem pediu sabe mostrar."""
+        if pedaco:
+            return f'<div class="aviso {classe}">{escape(mensagem)}</div>', codigo
+        return render_template("analisesps_erro.html",
+                               titulo="Nota fiscal",
+                               mensagem=mensagem), codigo
+
+    # ⚠️ A CONFERÊNCIA DA CHAVE É AQUI, na entrada, e não lá dentro: endereço
+    # com chave inventada não pode virar consulta ao banco nem ida ao Drive.
+    # Quem varre números não descobre nada e não custa nada ao serviço.
+    if len(re.sub(r"\D", "", str(chave or ""))) != 44:
+        return recado("Chave de acesso inválida — ela tem 44 números.",
+                      codigo=404)
+
+    try:
+        xml = notas_arquivo.baixar_xml(chave)
+    except notas_arquivo.SemDocumento as e:
+        # ⚠️ NÃO É ERRO, é o estado normal antes da ciência. Dizer "deu erro"
+        # aqui mandaria alguém procurar defeito onde só falta esperar.
+        return recado(str(e), classe="")
+    except ValueError as e:
+        return recado(str(e), codigo=404)
+    except ErroDoDrive as e:
+        logger.exception("Análise de SPs: falhou buscar o XML da nota")
+        return recado(f"Não consegui buscar o arquivo da nota. {e}")
+
+    try:
+        nota = nfe_leitura.ler(xml)
+    except nfe_leitura.XmlIlegivel as e:
+        return recado(str(e), classe="")
+
+    if pedaco:
+        return render_template("analisesps_nota.html", nota=nota,
+                               imprimir=False)
+    if imprimir:
+        return render_template("analisesps_nota_impressa.html", nota=nota)
+    return render_template("analisesps_nota_pagina.html", aba="fiscal",
+                           perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+                           nome=auth.nome_atual(), nota=nota)
+
+
+# ---------------------------------------------------------------------------
 # Exportação — CSV, do jeito que o Excel em português abre certo
 # ---------------------------------------------------------------------------
 @bp.route("/exportar")
@@ -1266,9 +1341,18 @@ def sincronizar():
     # funcionar mesmo quando o JavaScript não carregou (é o botão de destravar).
     if request.form.get("modo") and "application/json" not in (
             request.headers.get("Accept") or ""):
-        aviso = ("Retomando a fila. As linhas vão aparecendo aqui embaixo."
-                 if resultado.get("ok")
-                 else f"Não consegui disparar: {resultado.get('erro', '')}")
+        # ⚠️ O AVISO TEM DE DIZER SE COMEÇOU MESMO. *"Clico nele e nada
+        # acontece"* — e quando outra tarefa já estava rodando, o disparo era
+        # recusado e a tela não contava.
+        if resultado.get("ok"):
+            aviso = ("Retomando a fila. Os lotes parados voltam para a fila e "
+                     "são processados — acompanhe aqui embaixo, a tela se "
+                     "atualiza sozinha.")
+        else:
+            aviso = ("Não consegui começar agora: "
+                     + (resultado.get("erro") or "motivo desconhecido")
+                     + ". Se já há uma tarefa rodando, espere ela terminar e "
+                       "tente de novo.")
         return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
     return resultado
 
@@ -1903,6 +1987,15 @@ ACOES_FISCAIS = [
     {"modo": "notas_receita", "rotulo": "Buscar notas na Receita",
      "ajuda": "Baixa da Receita as NF-e e CT-e emitidas contra os CNPJs que "
               "têm certificado guardado. Continua de onde parou da última vez."},
+    # ⚠️ O ÚNICO BOTÃO DESTE MÓDULO QUE ESCREVE NO SISTEMA FISCAL. A ajuda diz
+    # isso com todas as letras, de propósito: quem aperta precisa saber que
+    # está declarando algo em nome da empresa, e não só lendo.
+    {"modo": "notas_ciencia", "rotulo": "Dar ciência e baixar as notas",
+     "ajuda": "Declara na Receita, assinado com o certificado da empresa, que "
+              "a BWS tomou ciência das notas emitidas contra ela — é o que "
+              "libera o XML de cada nota. O documento chega na PRÓXIMA busca e "
+              "é guardado no Drive. Vale só para NF-e dos últimos 90 dias, uma "
+              "vez por nota."},
     # ⚠️ O BOTÃO DA ABA DO FSIST SAIU DAQUI — 16/09/2026, pedido do dono:
     # *"pra que diabo serve o botão 'Ler a aba do FSist na planilha'? Não tem
     # sentido isso. Vou importar o relatório no sistema."*
@@ -2246,6 +2339,13 @@ def tela_fiscal():
             # a tela não abria.
             orfas = [n for n in notas if n.get("orfa")]
             candidatas = fiscal.sps_possiveis_das_notas(orfas)
+            # O DOCUMENTO DA NOTA e a ciência, numa consulta só para a página.
+            # Uma por nota seriam 200 idas ao banco — a mesma lição que já
+            # custou 28 segundos de tela nesta mesma lista.
+            from . import notas_arquivo
+            chaves_da_pagina = [n.get("chave") for n in notas]
+            arquivos_da_nota = notas_arquivo.arquivos_das_notas(chaves_da_pagina)
+            ciencia_da_nota = notas_arquivo.ciencia_das_notas(chaves_da_pagina)
             for nota in notas:
                 todas = candidatas.get(
                     fiscal.so_digitos(nota.get("chave")), [])
@@ -2259,6 +2359,7 @@ def tela_fiscal():
             erro = None
         except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
             logger.exception("Análise de SPs: falhou listar as notas")
+            arquivos_da_nota, ciencia_da_nota = {}, {}
             notas, resumo_notas, erro = [], {"quantidade": 0, "total": 0,
                                              "sem_lancamento": 0}, (
                 "Esta tela precisa da atualização do banco. Vá em "
@@ -2279,6 +2380,7 @@ def tela_fiscal():
             "analisesps_fiscal_notas.html", aba="fiscal", base=base,
             notas=notas, total=total, erro=erro, pagina=pagina,
             resumo_notas=resumo_notas, por_dia=por_dia,
+            arquivos_da_nota=arquivos_da_nota, ciencia_da_nota=ciencia_da_nota,
             filtros_nota=filtros_nota,
             grupos_de_nota=fiscal.GRUPOS_DE_NOTA,
             frases_da_nota=fiscal.FRASE_DA_NOTA,

@@ -4872,6 +4872,370 @@ guardada** — e é ela que responde por que o Omie recusa, que é a investigaç
 em aberto desde 14/09.
 
 ---
+
+### Sexagésima quarta leva (16/09) — ⚠️ a baixa no Omie FUNCIONOU, e o botão que não retomava
+
+#### ✔ A prova
+
+O dono, depois de publicada a correção do nome da credencial: **"deu certo"**.
+A baixa no Omie voltou a acontecer pela tela do Análise de SPs. A causa era o
+nome da variável (`OMIE_KEY`/`OMIE_SECRET` no servidor, e este robô procurando
+só `OMIE_BWS_APP_KEY`) — ver `baixabradesco/HISTORICO.md`, 16/09.
+
+#### O botão "Retomar a fila agora" não retomava
+
+*"Clico nele e nada acontece. Como zerar ele ou fazer com que ele retome
+mesmo?"*
+
+**E não acontecia mesmo.** Retomar só pegava lote em **ESPERANDO**, e o dele
+estava em **RODANDO** — tinha começado e morrido no meio (o serviço do Render
+reinicia de tempos em tempos). Um lote em RODANDO ficava assim **para sempre**:
+nenhum processo o retomava, nenhum botão o alcançava, e a tela dizia que estava
+parado sem oferecer saída de verdade.
+
+Agora, antes de drenar a fila, o sistema **destrava o que ficou pelo caminho** —
+lotes em RODANDO parados há mais de 15 minutos:
+
+- **arquivo ainda no disco** → volta para ESPERANDO e é reprocessado (o que já
+  baixou no Omie é reconhecido como duplicado e não baixa duas vezes);
+- **arquivo sumiu** (o contêiner reiniciou e levou o disco) → vira FALHOU com o
+  motivo escrito e o pedido de arrastar o PDF de novo. **Deixar em RODANDO
+  seria mentir que ainda está trabalhando** — e era isso que acontecia.
+
+⚠️ **Lote recém-começado NÃO é destravado.** Destravar o que está trabalhando
+agora seria processá-lo duas vezes ao mesmo tempo. Há teste cravando os três
+casos.
+
+**E o botão passou a dizer o que fez.** Quando outra tarefa já está rodando, o
+disparo é recusado — e a tela não contava nada, o que era metade do "nada
+acontece". Agora responde: *"Não consegui começar agora: já está rodando."*
+
+---
+
+### Sexagésima quinta leva (16/09) — "já associada" tinha dois significados, e a tela só conhecia um
+
+> *"Tava associando as notas e estranhei a quantidade. Quando abri algumas,
+> muitas eram notas que já haviam sido associadas na planilha. Não era pra
+> precisar fazer de novo."*
+
+**Ele está certo, e o defeito é conceitual.** Uma nota pode já ter dono de duas
+formas:
+
+1. **pelo diário deste módulo** (`sp_fiscal_analise.chave`) — a associação
+   feita AQUI, guardando a chave de acesso inteira;
+2. **pelo card** (`sps.nf` → coluna gerada `nf_num`) — o **número da nota** que
+   a equipe escreveu na coluna "Nº NF" da SPsBD, muito antes desta tela
+   existir. **É a maior parte do trabalho já feito.**
+
+A tela só olhava a primeira. Resultado: mandava refazer o que já estava feito —
+exatamente o que ela existe para evitar. E pior do que o trabalho repetido é o
+risco: associar de novo uma nota que já tem dono cria a chance de apontá-la
+para a SP errada.
+
+⚠️ **Número sozinho não basta**, e é por isso que a regra tem duas partes:
+"nota 1430" existe em dezenas de fornecedores. A conferência exige o **mesmo
+emitente** (raiz do CNPJ, 8 dígitos) **e** o mesmo número, sem zeros à esquerda
+e sem pontuação — o mesmo par que a conciliação já usa como sinal forte. Com
+raiz diferente, a nota continua órfã, que é o certo.
+
+**O par (raiz, nf_num) é exatamente o índice composto da migração 012**, então a
+conta nova não custa varredura.
+
+#### E as TRÊS perguntas viraram uma
+
+"Esta nota tem lançamento?" era perguntada em três lugares — a lista, o quadro
+do alto e a visão das órfãs — e cada um perguntava do seu jeito. Três respostas
+diferentes na mesma tela é o caminho mais curto para ninguém acreditar em
+nenhuma. Agora as três chamam a mesma função, e há teste exigindo que os três
+números batam.
+
+⚠️ **A coluna `nf_num` nasce na migração 012.** Sem ela, vale só o diário — o
+comportamento antigo — e a tela continua de pé. Há teste que derruba a coluna.
+
+---
+
+### Sexagésima sexta leva (17/09) — ⚠️ a ciência da operação: o módulo passou a ESCREVER na Receita
+
+> *"Tem como visualizar fácil a partir da tela de associação, clicar e ver a
+> nota fiscal? (…) E se esse PDF não pudesse ser gerado de imediato, que
+> ficasse um processamento após a baixa das notas, baixando, gerando esses PDFs
+> e salvando no Google Drive. Que tal fazer assim?"*
+
+E, no dia seguinte, a autorização com todas as letras: **"Pode baixar as notas
+dando essa ciência."**
+
+#### ⚠️ Leia isto antes de mexer: este é o ÚNICO ponto do módulo que não é leitura
+
+Tudo que o Análise de SPs fazia com a Receita era **perguntar**. A ciência da
+operação (evento 210210) é **declarar**: um XML assinado com o certificado A1
+da BWS, que entra no histórico daquela nota na Receita **para sempre** e não
+tem como ser desfeito. Quem for mexer aqui precisa saber que erro nesta parte
+não se conserta com um `UPDATE`.
+
+Por isso o desenho todo é conservador, e cada trava abaixo existe por um
+motivo:
+
+- **É modo próprio, com botão próprio** ("Dar ciência e baixar as notas"), e o
+  texto de ajuda do botão diz, sem enfeite, que ele escreve no sistema fiscal.
+  Não pega carona na busca de notas — quem quer só olhar continua só olhando.
+- **Nunca é automático.** A busca na Receita roda sozinha com a tela aberta; a
+  ciência, não. Declarar em nome da empresa sem ninguém ter pedido seria o
+  avesso do que o dono autorizou.
+- **40 notas por rodada** (`ANALISESPS_CIENCIAS_POR_RODADA`). A Receita bloqueia
+  por consumo indevido — já aconteceu com dois CNPJs em 15/09 — e ciência é
+  escrita, que pesa mais que leitura.
+- **Cada tentativa fica registrada** (`nota_evento`): quando foi, o que a
+  Receita respondeu, o código, o motivo nas palavras dela e o protocolo. Sem
+  isso ninguém responde "por que a BWS deu ciência nesta nota?" seis meses
+  depois.
+- **Não repete.** A chave primária é (chave, tipo): nota que já tem evento não
+  entra na fila de novo. A Receita recusa a segunda ciência (código 573), e
+  insistir é o caminho do bloqueio.
+- **Só o que faz sentido manifestar:** modelo 55 (NF-e), emitida há menos de
+  90 dias (fora disso a Receita não aceita mais), não cancelada, sem evento
+  anterior, sem XML já guardado, e com destinatário de 14 dígitos — a ciência
+  é do destinatário, e sem saber por qual CNPJ assinar não há o que enviar.
+
+#### ⚠️ Ciência hoje, documento na PRÓXIMA rodada — e a tela diz isso
+
+Esta é a parte que mais confunde, e não é defeito nosso: a distribuição entrega
+o **resumo** da nota (chave, emitente, valor, situação). O **XML completo** só é
+liberado ao destinatário **depois** da ciência — e aparece num lote seguinte da
+distribuição, não na hora.
+
+Quem apertar o botão e for procurar o arquivo no mesmo minuto não vai achar. Por
+isso o recado do fim da tarefa diz, com todas as letras, que o XML de cada nota
+chega na próxima busca na Receita. Sem essa frase, todo mundo conclui que
+falhou.
+
+#### É XML, não PDF — e a diferença importa
+
+O dono pediu PDF. **Está guardando XML**, e a troca é consciente:
+
+- **o que tem valor fiscal é o XML.** O DANFE é a representação imprimível
+  dele; quem guarda documento, guarda o XML.
+- **gerar DANFE exigiria biblioteca nova**, e não foi introduzida (regra da
+  casa: dependência nova se avisa antes). A tabela `nota_arquivo` já tem a
+  coluna `tipo` (`'xml'` | `'pdf'`) justamente para o dia em que houver PDF —
+  os dois convivem sem migração nova.
+
+**Enquanto isso, o XML abre.** O navegador mostra o conteúdo; quem quiser DANFE
+bonito joga o arquivo em qualquer visualizador de NF-e da internet.
+
+#### Onde o arquivo mora
+
+No **Drive**, o mesmo caminho que já guarda comprovante e BeeVale — no banco
+fica só o endereço. Um XML tem de 10 a 50 KB; seis mil notas seriam centenas de
+megabytes num Postgres de 0,25 GB de RAM que já morreu de memória uma vez
+(`CONTEXTO.md` §9).
+
+`DRIVE_FOLDER_NOTAS` separa as notas dos comprovantes, para quem quiser; sem
+ela vale a pasta geral. **Continua valendo a armadilha da cota**: tem de ser
+Drive Compartilhado, senão o Google recusa (ver `drive.py`).
+
+#### A tela de associação mostra a chave, e o número vira link
+
+Na tela das notas, cada uma agora mostra a **chave de acesso** e o número vira
+link, com três estados possíveis:
+
+- **arquivo guardado** → clica e abre o XML no Drive;
+- **ciência dada, documento a caminho** → diz isso, com a data da ciência;
+- **nada ainda** → fica só o número, como era.
+
+#### Como saber que a ciência funcionou
+
+A Receita **não avisa** que aceitou: ela simplesmente passa a entregar o XML.
+Por isso o recado da **busca de notas** agora conta também quantos documentos
+inteiros foram guardados no Drive naquela rodada. É esse número, na busca
+seguinte à ciência, que responde "valeu a pena?" — e o registro em
+`nota_evento` responde "o que a Receita disse em cada nota".
+
+#### Dois defeitos que a suíte pegou antes de publicar, e valem registro
+
+1. **`disparo` não existia dentro de `executar_trabalho()`.** A etapa nova
+   passava adiante o nome de quem disparou usando uma variável que só existe na
+   função de fora — o que teria estourado com `NameError` **na primeira vez que
+   o botão fosse apertado**, e só no processo separado, onde o erro é mais
+   difícil de ver. Quem pegou foi o `test_nomes_indefinidos`, que lê o código
+   procurando exatamente isso. É a segunda vez que esse teste paga o próprio
+   custo.
+2. **`lxml` importado direto sem estar declarado.** Já vinha instalado (é
+   dependência do `erpbrasil`), então funcionava aqui e funcionaria no ar — até
+   o dia em que o `erpbrasil` mudasse de dependência e derrubasse o módulo por
+   um motivo sem relação nenhuma. Declarado.
+
+#### Os testes da tela renderizam de verdade — a lição do Bradesco
+
+Os três estados do número da nota são conferidos sobre o **HTML que sai**, com
+o dado entrando pelo mesmo caminho da tela — não sobre o texto do template.
+
+É a lição de 16/09, e vale repetir porque foi cara: lá o teste dublava a função
+que monta as linhas e afirmava sobre as chaves que **o próprio teste** tinha
+inventado. A tabela chegava em branco na produção e a suíte continuava verde.
+Teste que inventa o dado de entrada só prova que o teste concorda consigo
+mesmo.
+
+#### O que NÃO foi verificado
+
+- **A ciência contra a Receita de verdade.** Nesta máquina não existe o
+  certificado A1 da BWS, e ele não vai ser trazido para cá — ver a decisão de
+  15/09. O envelope, a assinatura, a leitura da resposta e todas as travas
+  estão cobertos por teste; o que só a produção responde é se a Receita aceita.
+  **A primeira vez tem de ser olhada**, e o registro em `nota_evento` é
+  justamente o que permite olhar.
+- **A subida do XML no Drive** também não foi exercitada de verdade aqui — ela
+  usa o mesmo caminho do BeeVale, que já funciona no ar.
+
+⚠️ **Pendente do dono: apertar "Aplicar atualizações do banco".** As migrações
+013 a 017 estão à espera. Sem a 017 as duas tabelas não existem — e aí a
+ciência não tem onde registrar nem onde guardar o endereço do arquivo.
+
+---
+
+### Sexagésima sétima leva (17/09) — a nota fiscal na tela, e o PDF que sai do navegador
+
+> *"Não tem problema abrir o XML em tela. Abre num modal? E desse modal poderia
+> exportar em PDF? Que tal?"*
+
+A proposta dele resolveu o problema que eu tinha deixado em aberto na leva
+anterior — e resolveu melhor do que a minha ideia.
+
+#### O PDF sai do NAVEGADOR, e é por isso que não entrou biblioteca nenhuma
+
+Eu tinha dito que o PDF exigiria dependência nova. Exigiria, **se o servidor
+fosse gerar o PDF**. Não é: a folha de impressão é uma página HTML limpa, e
+quem transforma em PDF é a caixa de impressão do navegador, onde "Salvar como
+PDF" é um destino como qualquer impressora.
+
+Três vantagens, e a terceira não é pequena:
+
+- **nenhuma dependência nova** — a regra da casa, e este serviço já morreu de
+  falta de memória uma vez;
+- **sai melhor**: quem imprime escolhe margem, tamanho do papel, e se quer
+  papel ou arquivo;
+- **funciona igual no computador e no celular**, sem código separado.
+
+#### ⚠️ O QUE SAI NÃO É UM DANFE OFICIAL, e o papel diz isso no alto
+
+O DANFE tem forma definida pela Receita e vale como documento auxiliar de
+circulação de mercadoria. O que sai daqui é uma **leitura do XML**: os mesmos
+dados, organizados para conferir, arquivar e imprimir. **Não serve para
+acompanhar carga na estrada.**
+
+O aviso fica na primeira linha, não no rodapé, e sai impresso junto — porque
+quem recebe um papel com cara de nota fiscal supõe que ele vale como uma. O que
+tem valor fiscal continua sendo o XML, guardado no Drive.
+
+#### O que mudou na tela de associação
+
+O número da nota **abria o XML cru no Drive** — quem clicava recebia uma tela de
+etiquetas, que não é "ver a nota fiscal". Agora abre o **modal**, com a nota
+desenhada: emitente, destinatário, chave em blocos de quatro, mercadorias com
+quantidade e valor, totais, transporte e informações complementares.
+
+Reusa o mesmo modal que a ficha da SP já usava desde a conversão — não foi
+criado nada novo. Continua sendo link de verdade: ctrl+clique abre a página
+inteira em nova aba.
+
+#### Três cuidados que o leitor do XML tem, e o motivo de cada um
+
+1. **O total da nota é o `vNF`, não a soma dos itens.** Na nota de exemplo os
+   itens somam 3.250 e a nota vale 3.400 — a diferença é o frete. Um papel que
+   dissesse 3.250 seria o defeito mais caro possível aqui: passa despercebido
+   justamente por parecer razoável.
+2. **O que a nota não informou fica vazio, não vira zero.** "Não informou
+   seguro" e "o seguro é zero" são coisas diferentes; escrever R$ 0,00 onde não
+   houve informação é inventar dado. A linha some.
+3. **O resumo não é desenhado como se fosse a nota.** O `resNFe` tem oito
+   campos e nenhuma mercadoria — desenhá-lo daria uma folha quase vazia com cara
+   de nota fiscal. A recusa é explícita, e diz o que fazer: o documento chega na
+   próxima busca, depois da ciência.
+
+#### Conferido num navegador de verdade
+
+Não só por teste: a página, o modal e o PDF foram abertos no Chromium, com uma
+NF-e de oito itens.
+
+- **O PDF saiu com 2 páginas**, com o aviso, a nota inteira e **sem a barra de
+  botões** — um botão "Imprimir" impresso dentro do próprio PDF seria
+  constrangedor, e é o tipo de coisa que só aparece depois de imprimir.
+- **O modal abriu, carregou a nota e o botão de PDF apontou para a nota certa.**
+  Zero erro de JavaScript no console.
+- **No celular (390px) a página rolava para o lado** — a tabela de nove colunas
+  empurrava tudo, e o aviso e os totais saíam do campo de visão junto. Medido:
+  583px de conteúdo para 390px de tela. Agora a rolagem está presa na tabela, o
+  selo do número vai para baixo do emitente e a página mede 390 contra 390. Há
+  teste exigindo o envelope de rolagem — e outro exigindo que ele **não** valha
+  no papel, onde cortaria as últimas colunas do PDF sem ninguém perceber.
+
+#### Detalhe pequeno que valeu o conserto
+
+No cabeçalho do modal, "Salvar em PDF" era um `<a>` e ficava como texto solto ao
+lado do "Fechar", que é botão. Dois controles lado a lado com aparências
+diferentes fazem parecer que têm pesos diferentes — e o de PDF é justamente o
+que a pessoa veio fazer ali. Ganhou contorno.
+
+#### O que ficou de fora
+
+- **O DANFE oficial**, com código de barras e faixas na posição que a Receita
+  exige. Exigiria biblioteca nova, e não foi introduzida. A tabela
+  `nota_arquivo` já prevê o tipo `pdf` para o dia em que houver.
+- **A leitura de CT-e** (frete). O leitor entende NF-e; um CT-e cai na recusa
+  explicada. As notas de frete continuam aparecendo na lista, só não abrem
+  desenhadas.
+
+---
+
+### Sexagésima oitava leva (17/09) — o filtro funcionava; o que faltava era VER
+
+> *"Se eu botar por categoria, quando eu clico em 'sem informação', não era
+> para filtrar eles na listagem abaixo? Porque aí eu já ia trabalhando neles."*
+
+#### ⚠️ Antes de mexer, foi conferido — e o filtro JÁ funcionava
+
+Vale registrar o caminho, porque quase virou um conserto do que não estava
+quebrado. Com Postgres de verdade e navegador de verdade, clicar em "(sem
+informação)" **derrubava a lista de 6 SPs para 3**, e pelo totalizador
+"Categoria vazia" também. O quadro e a lista contam pela mesma expressão SQL,
+então não têm como divergir.
+
+**A primeira versão do teste "provou" um defeito que não existia**, e o motivo
+merece ficar escrito: a categoria **não é coluna da SP** — mora em
+`analisesps.sp_fiscal`, que vem da planilha de apoio. Pôr `doc_fiscal` no
+registro da SP não grava em lugar nenhum. As seis SPs ficaram todas sem
+categoria e o filtro, corretamente, devolveu as seis. Parecia defeito; era
+semeadura errada.
+
+**A lição, que vale para a próxima:** teste que reproduz uma queixa precisa
+provar primeiro que o cenário foi montado — aqui, que o quadro enxerga **duas**
+categorias. Sem isso, "o filtro não filtrou" pode ser só "não havia o que
+filtrar".
+
+#### O que estava errado de verdade: a distância
+
+Entre o topo da página e a lista há os totalizadores, o quadro por categoria, o
+parágrafo da reconferência e o bloco "Trazer, ler e gravar" — **quase duas
+telas**. O clique recarregava a página **no topo**, onde tudo parecia igual ao
+que era antes. Quem clicava concluía que não tinha acontecido nada, e não
+rolava para conferir.
+
+Agora os atalhos que **mudam a lista** — o quadro por categoria e os
+totalizadores do alto — apontam para o bloco da lista, que ganhou nome
+(`id="lancamentos"`). O navegador cai direto nela, já filtrada.
+
+Medido num navegador a 1440×800: antes a página ficava em **0px**; agora para
+em **802px**, com a primeira linha da lista à vista. É literalmente o *"aí eu já
+ia trabalhando neles"* do pedido.
+
+#### Três testes, e cada um trava uma metade
+
+1. **o recorte alcança a lista** — as SPs com categoria não aparecem;
+2. **o quadro e a lista contam a mesma coisa** — se divergissem, o quadro diria
+   "3" e a lista traria outra quantidade, e não haveria como saber qual dos
+   dois está certo;
+3. **o atalho leva até a lista** — que é a correção desta leva.
+
+---
 ---
 
 ## Regras que não se discutem
