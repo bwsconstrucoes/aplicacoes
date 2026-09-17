@@ -240,6 +240,33 @@
   </table>
 </div>
 
+{# ============ ACHAR O QUE ESTÁ SEM CLASSIFICAÇÃO ============ #}
+{% if not base_vazia %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Achar o que está sem classificação</h3></div>
+  <p class="cartao-dica">
+    Atalhos para o Explorador, já filtrado. De lá você corrige direto na lista —
+    clicando na Categoria ou na Obra de cada linha, ou marcando várias e mudando
+    todas de uma vez.
+  </p>
+  <div class="tabela-barra" style="border:0; padding-left:0; gap:10px; flex-wrap:wrap">
+    <a class="btn" style="text-decoration:none"
+       href="{{ url_for('painel.explorador', obra=sem_obra) }}">
+      Sem obra (não apropriado)</a>
+    <a class="btn" style="text-decoration:none"
+       href="{{ url_for('painel.explorador', categoria=sem_categoria) }}">
+      Sem categoria</a>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ url_for('painel.explorador', obra=sem_obra, categoria=sem_categoria) }}">
+      Sem obra E sem categoria</a>
+  </div>
+  <p class="cartao-dica">
+    O terceiro atalho traz só o que está sem os dois — costuma ser o pior caso,
+    e é por onde vale começar.
+  </p>
+</div>
+{% endif %}
+
 {# ============ AS CONFERÊNCIAS, SÓ QUANDO ALGUÉM PEDE ============ #}
 {% if not base_vazia and not conferir and not conferencia %}
 <div class="cartao" style="margin-top:14px">
@@ -444,6 +471,49 @@
     </div>
   </details>
   {% endif %}
+</div>
+{% endif %}
+
+{# ========== AS OBSERVAÇÕES DOS TÍTULOS CHEGARAM? ========== #}
+{% if observacoes %}
+<div class="cartao" style="margin-top:14px;
+     border-left:4px solid {{ 'var(--verde)' if observacoes.pct > 80 else 'var(--ambar)' }}">
+  <div class="cartao-cab"><h3>Observações dos títulos</h3></div>
+  <div class="aviso {{ 'ok' if observacoes.pct > 80 else 'info' }}">
+    <b>{{ '{:,}'.format(observacoes.com_obs).replace(',', '.') }}</b> de
+    <b>{{ '{:,}'.format(observacoes.total).replace(',', '.') }}</b> títulos têm a
+    observação do OMIE — <b>{{ observacoes.pct }}%</b>.
+  </div>
+  <p class="cartao-dica">
+    A observação <b>não vem junto</b> com a lista de títulos do OMIE: ela só
+    chega consultando <b>um título por vez</b>. São mais de cem mil consultas
+    para as contas a pagar, o que leva horas — por isso é feito por um trabalho
+    separado, à mão, e não pela atualização da madrugada.
+    {% if observacoes.pct <= 80 %}
+    <br><b>Enquanto isso, a maioria das linhas do painel aparece sem a
+    observação</b>, mesmo tendo uma no OMIE.
+    {% endif %}
+  </p>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Tipo</th>
+          <th class="sem-ordem direita">Títulos</th>
+          <th class="sem-ordem direita">Com observação</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for n in observacoes.por_natureza %}
+        <tr>
+          <td>{{ n.natureza }}</td>
+          <td class="dados direita">{{ '{:,}'.format(n.total).replace(',', '.') }}</td>
+          <td class="dados direita">{{ '{:,}'.format(n.com_obs).replace(',', '.') }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
 

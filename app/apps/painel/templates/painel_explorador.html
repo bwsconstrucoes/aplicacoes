@@ -185,6 +185,9 @@
             <th class="sem-ordem">Obra</th>
             <th class="sem-ordem">Cliente ou Fornecedor</th>
             <th class="sem-ordem">Documento</th>
+            <th class="sem-ordem">Conta corrente</th>
+            <th class="sem-ordem">Vencimento</th>
+            <th class="sem-ordem">Pagamento</th>
             <th class="sem-ordem">Situação</th>
             <th class="sem-ordem direita">Pago/Receb.</th>
             <th class="sem-ordem direita">A pagar/receb.</th>
@@ -216,8 +219,13 @@
               <span class="novo oculto" data-novo></span>
             </td>
             <td class="desc">{{ l.razao_social or '—' }}
-              {% if l.observacao %}<small>{{ l.observacao[:60] }}</small>{% endif %}</td>
+              {# A observacao INTEIRA. Cortar em 60 letras escondia justamente o
+                 que identifica o lancamento na hora de achar ele no OMIE. #}
+              {% if l.observacao %}<small>{{ l.observacao }}</small>{% endif %}</td>
             <td class="dados">{{ l.numero_documento or '—' }}</td>
+            <td class="desc">{{ l.conta_corrente or '—' }}</td>
+            <td class="dados">{{ l.data_vencimento.strftime('%d/%m/%Y') if l.data_vencimento else '—' }}</td>
+            <td class="dados">{{ l.data_pagamento.strftime('%d/%m/%Y') if l.data_pagamento else '—' }}</td>
             <td><small>{{ l.situacao or '—' }}</small></td>
             <td class="dados direita {{ classe_valor(l.pago_recebido) }}">
               {{ brl(l.pago_recebido) if l.pago_recebido else '—' }}</td>
@@ -301,5 +309,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('painel.static', filename='explorador.js') }}"></script>
+<script src="{{ estatico('explorador.js') }}"></script>
 {% endblock %}

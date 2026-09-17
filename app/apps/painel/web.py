@@ -25,6 +25,11 @@ from . import auth
 
 logger = logging.getLogger("painel.web")
 
+# Hora em que este processo nasceu. Serve de versao quando nao ha commit
+# publicado (rodando no PC), para o navegador nao guardar arquivo velho.
+import time as _time
+_NASCIMENTO = _time.time()
+
 bp = Blueprint("painel", __name__,
                url_prefix="/painel",
                template_folder="templates",
@@ -106,16 +111,34 @@ def _ajudantes_de_template():
             args[chave] = [valor]
         return url_for("painel.baixar", assunto=assunto, **args)
 
-    def com_filtros(rota):
-        """Link de aba levando os filtros da barra lateral junto.
+    def estatico(nome):
+        """Endereço do arquivo estático COM a versão publicada no fim.
+
+        É o que deixa o navegador guardar por um ano sem risco de ficar com
+        arquivo velho: publicar muda o endereço."""
+        return url_for("painel.static", filename=nome) + "?v=" + _versao_publicada()
+
+    def com_filtros(rota, **extras):
+        """Link de tela levando os filtros da barra lateral junto.
 
         Estar filtrado numa obra e trocar de tela nao pode jogar o filtro fora:
         quem esta olhando uma obra no DRE quer os lancamentos DAQUELA obra no
-        Analitico, nao a base inteira."""
+        Analitico, nao a base inteira.
+
+        Vale para as ABAS do topo e para qualquer link que va de uma tela a
+        outra — inclusive entrar num detalhe e voltar. Em 17/09/2026 o dono
+        topou com isso: estava na obra Mercado Barbalha na Receita de Obra,
+        entrou numa medicao, clicou em "Voltar as medicoes", e a obra tinha
+        sumido do filtro. Quem esta analisando UMA obra nao quer voltar para a
+        base inteira.
+
+        `extras` leva o que for do proprio link (a medicao, a medida), sem
+        atropelar o filtro."""
         args = {c: request.args.getlist(c) for c in
                 ("ano", "projeto", "obra") if request.args.getlist(c)}
         if request.args.get("trf"):
             args["trf"] = "1"
+        args.update(extras)
         return url_for(rota, **args)
 
     def cronometro():
@@ -131,7 +154,23 @@ def _ajudantes_de_template():
 
     return {"brl": brl, "classe_valor": classe_valor, "com_filtros": com_filtros,
             "cronometro": cronometro, "link_baixar": link_baixar,
-            "link_analitico": link_analitico, "pagina_link": pagina_link}
+            "link_analitico": link_analitico, "pagina_link": pagina_link,
+            "estatico": estatico}
+
+
+@bp.after_request
+def _guardar_estaticos(resposta):
+    """Manda o navegador GUARDAR estilo e scripts, em vez de perguntar sempre.
+
+    Só vale para os arquivos servidos por este blueprint, e só quando o endereço
+    traz a versão (`?v=`) — que é o que garante que publicar derruba o que está
+    guardado. Sem a versão, nada muda: é o caso de alguém abrir o arquivo na mão.
+
+    Tela do painel NUNCA é guardada: ela mostra número, e número velho é pior
+    que tela lenta."""
+    if request.endpoint == "painel.static" and request.args.get("v"):
+        resposta.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resposta
 
 
 @bp.errorhandler(Exception)
@@ -199,6 +238,29 @@ def saude():
 # ---------------------------------------------------------------------------
 # Filtros da barra lateral
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Arquivos estaticos: o navegador guardava NADA
+# ---------------------------------------------------------------------------
+# Ate 17/09/2026 o painel mandava `Cache-Control: no-cache` no estilo e nos
+# scripts. Isso faz o navegador PERGUNTAR AO SERVIDOR por cada um deles em toda
+# tela aberta — tres idas e vindas extras por tela, so para ouvir "nao mudou".
+#
+# Custa duas coisas, e a segunda e pior: o tempo da viagem ate o Render, e a
+# cota do `--max-requests` do gunicorn, que reinicia o servico a cada ~150
+# requisicoes. Contando os estaticos, o reinicio chegava tres vezes mais cedo —
+# e enquanto ele acontece, com um worker so, TODO MUNDO espera.
+#
+# Agora o navegador guarda por um ano, e o endereco carrega a versao publicada.
+# Publicar muda o endereco, o arquivo novo desce na hora, e nada fica velho.
+
+def _versao_publicada() -> str:
+    """O commit no ar, ou a hora do processo quando nao houver (PC do dono)."""
+    import os
+    commit = (os.getenv("RENDER_GIT_COMMIT", "")
+              or os.getenv("SOURCE_VERSION", "")).strip()
+    return (commit[:12] if commit else str(int(_NASCIMENTO)))
+
+
 def _filtros_do_pedido():
     from .consultas import Filtros
     anos = [int(a) for a in request.args.getlist("ano") if str(a).strip().isdigit()]
@@ -1099,7 +1161,7 @@ def configuracoes():
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
-        conferencia = sumidos = aportes_conf = None
+        conferencia = sumidos = aportes_conf = observacoes = None
         conferir = False
     else:
         from . import consultas
@@ -1120,11 +1182,12 @@ def configuracoes():
         # em 14/09/2026 e a tela parou de abrir para o dono no mesmo dia.
         conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
-        conferencia = sumidos = aportes_conf = None
+        conferencia = sumidos = aportes_conf = observacoes = None
         if not vazia and (conferir or procurado is not None):
             conferencia = consultas.conferencia_do_pago()
             sumidos = consultas.titulos_que_sumiram(procurado)
             aportes_conf = consultas.conferencia_dos_aportes()
+            observacoes = consultas.cobertura_das_observacoes()
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1132,10 +1195,13 @@ def configuracoes():
         base_vazia=vazia,
         primeira=request.args.get("primeira") == "1",
         etapas=etapas,
+        sem_obra=consultas.SEM_OBRA if not estado_migracoes["pendentes"] else "",
+        sem_categoria=consultas.SEM_CATEGORIA if not estado_migracoes["pendentes"] else "",
         conferir=conferir,
         conferencia=conferencia,
         sumidos=sumidos,
         aportes_conf=aportes_conf,
+        observacoes=observacoes,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
     )

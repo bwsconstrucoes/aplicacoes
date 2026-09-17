@@ -8,9 +8,22 @@
 </h2>
 
 <p style="margin:-6px 0 14px">
-  <a href="{{ url_for('painel.receita') }}" class="btn secundario"
+  <a href="{{ com_filtros('painel.receita') }}" class="btn secundario"
      style="text-decoration:none; display:inline-block">← Voltar às medições</a>
 </p>
+
+{# Esta tela esconde a barra de filtros — ela é sobre UMA medição. Mas o filtro
+   continua valendo, e voltar leva ele junto. Sem mostrar isso aqui, quem entra
+   filtrado numa obra não tem como saber se vai voltar para a obra ou para a
+   base inteira. #}
+{% if selecao.anos or selecao.projetos or selecao.obras %}
+<div class="chips" style="margin:-6px 0 14px">
+  <span class="cartao-dica" style="margin:0 6px 0 0">Filtro mantido:</span>
+  {% for a in selecao.anos %}<span class="chip">Ano: {{ a }}</span>{% endfor %}
+  {% for pr in selecao.projetos %}<span class="chip">Projeto: {{ pr }}</span>{% endfor %}
+  {% for o in selecao.obras %}<span class="chip">Obra: {{ o }}</span>{% endfor %}
+</div>
+{% endif %}
 
 {% if not recebimentos %}
   <div class="vazio">

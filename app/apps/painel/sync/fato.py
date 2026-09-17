@@ -459,13 +459,34 @@ TIPOS_APORTE = {
 # case com nenhum tipo acima (vira "Outros aportes"), para nada passar batido.
 _APORTE_GENERICO = ["aporte", "aportes"]
 
-# Tipos que compoem o SALDO de aporte do socio/parceiro. Dividendo fica de fora
-# de proposito: e distribuicao de LUCRO, nao devolucao de capital — abater o
-# dividendo do saldo faria parecer que o socio retirou o aporte, o que nao ocorreu.
-# Ele continua sendo exibido, num quadro separado. Para somar tudo num numero so,
-# inclua "Dividendos" no conjunto abaixo.
-TIPOS_NO_SALDO = {"Aporte de Parceiro", "Aporte BWS", "Devolução de Aporte",
-                  "Outros aportes"}
+# Tipos que compoem o SALDO de aporte do socio/parceiro.
+#
+# DIVIDENDO fica de fora de proposito: e distribuicao de LUCRO, nao devolucao de
+# capital — abater o dividendo do saldo faria parecer que o socio retirou o
+# aporte, o que nao ocorreu. Ele continua exibido, num quadro separado.
+#
+# "APORTE BWS" TAMBEM FICA DE FORA, e este e o motivo mais importante da lista.
+# Explicado pelo dono em 17/09/2026:
+#
+#   Quando a BWS poe dinheiro numa obra, ele sai da conta da MATRIZ e entra na
+#   conta da OBRA. As duas contas sao da BWS. Para isso nao virar "mera
+#   transferencia", sao lancados DOIS registros no OMIE:
+#     - na conta de origem (matriz):  categoria "Aporte BWS", valor negativo
+#     - na conta da obra:             categoria "Aporte de Parceiro", positivo
+#   porque, para aquela obra, a BWS e parceira como qualquer outra.
+#
+# O APORTE DE VERDADE E O LADO QUE ENTRA NA OBRA. O registro da matriz e a
+# origem do dinheiro, nao um segundo aporte — e muito menos uma devolucao.
+#
+# Contando os dois, o bloco fazia duas bobagens de uma vez: inflava o Aportado
+# e, pior, somava o lado negativo como se fosse DEVOLUCAO. Na tela do dono a BWS
+# aparecia com aportado 1.677.455,70 e devolvido o MESMO valor, ao centavo —
+# saldo zero. O painel dizia que a BWS nao tinha nada aplicado na obra, quando
+# tinha 1,67 milhao.
+#
+# Os lancamentos de "Aporte BWS" seguem visiveis no Explorador, no fluxo de
+# caixa e na lista de lancamentos do proprio bloco. So deixam de CONTAR aqui.
+TIPOS_NO_SALDO = {"Aporte de Parceiro", "Devolução de Aporte", "Outros aportes"}
 
 
 def _sem_acento(texto):
