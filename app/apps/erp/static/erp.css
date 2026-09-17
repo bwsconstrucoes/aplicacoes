@@ -55,8 +55,14 @@ a { color: var(--azul-claro); }
   display: flex; align-items: center; gap: 14px; padding: 0 16px;
   border-bottom: 3px solid var(--amarelo);
 }
-.topo-marca { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* A marca NÃO disputa espaço com os botões de módulo: ela encolhe primeiro.
+   Dono, 17/09/2026: *"quando está apertado lá em cima (…) o nome ERP BWS
+   Financeiro fica se batendo com o botão Financeiro"*. Abaixo de 1100px o
+   texto sai e fica só o brasão, que já leva de volta para os módulos. */
+.topo-marca { display: flex; align-items: center; gap: 12px; min-width: 0;
+  flex: 0 0 auto; overflow: hidden; }
 .topo-brasao {
+  flex: 0 0 auto;                 /* o brasão NÃO encolhe: cortado vira "BW" */
   width: 36px; height: 36px; border-radius: 8px; background: var(--amarelo);
   display: grid; place-items: center; color: var(--azul); font-weight: 900;
   font-size: 12px; letter-spacing: .02em;
@@ -91,13 +97,30 @@ a { color: var(--azul-claro); }
 .topo-aba:hover { background: rgba(255,255,255,.08); color: #fff; }
 .topo-aba.ativa { background: rgba(255,255,255,.14); color: #fff; box-shadow: inset 0 -3px 0 var(--amarelo); }
 .topo-direita { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* ---------- todas as telas numa lista, quando não cabem na faixa ---------- */
+.abas-lista-caixa { position: relative; flex: 0 0 auto; }
+.abas-lista {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60;
+  min-width: 210px; max-height: 70vh; overflow-y: auto;
+  background: var(--branco); border-radius: 10px; padding: 6px;
+  box-shadow: 0 10px 28px rgba(11,44,92,.28);
+}
+.abas-lista-item {
+  display: block; padding: 9px 12px; border-radius: 7px; font-size: 14px;
+  font-weight: 600; color: var(--tinta); text-decoration: none; white-space: nowrap;
+}
+.abas-lista-item:hover { background: #F2F5FA; }
+.abas-lista-item.ativa { background: var(--azul); color: #fff; }
 .topo-meta { font-size: 11.5px; opacity: .85; text-align: right; line-height: 1.25; white-space: nowrap; }
 .topo-btn {
   background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); color: #fff;
   border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 13px; font-weight: 600;
   display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+  white-space: nowrap;            /* "Minha conta" quebrava em duas linhas */
 }
 .topo-btn:hover { background: rgba(255,255,255,.18); }
+.so-estreito { display: none; }   /* o par curto de "Minha conta", só no apertado */
 
 /* ---------- seletor de módulos: separa as áreas do sistema ---------- */
 .modulos {
@@ -368,7 +391,11 @@ a { color: var(--azul-claro); }
 .kpi:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(11,44,92,.14); }
 .kpi.ativo { outline: 2px solid var(--azul-claro); }
 .kpi-rotulo { font-size: 11.5px; color: var(--tinta-suave); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
-.kpi-valor { font-size: 24px; font-weight: 800; font-family: var(--fonte-dados); line-height: 1.15; margin-top: 4px; }
+/* Valor grande em caixinha estreita passava da borda, e os centavos saíam
+   da tela (dono, 17/09/2026). Agora quebra em vez de vazar — e o JS
+   encolhe a fonte conforme o tamanho do número (`kpiDinheiro`). */
+.kpi-valor { font-size: 24px; font-weight: 800; font-family: var(--fonte-dados);
+  line-height: 1.15; margin-top: 4px; overflow-wrap: anywhere; }
 .kpi-sub { font-size: 12px; color: var(--tinta-suave); margin-top: 2px; }
 .kpi.verde { border-left-color: var(--verde); }
 .kpi.vermelho { border-left-color: var(--vermelho); }
@@ -572,6 +599,15 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
    a pessoa não perder de vista de qual linha está lendo o número. Transformar
    tabela em cartão é outra etapa, e só para as telas que se opera de pé.
    ================================================================== */
+/* Faixa apertada de notebook: a marca vira só o brasão, e o topo respira.
+   Não é celular — é a janela de 1000px em que o dono trabalha. */
+@media (max-width: 1100px) {
+  .topo-marca > div:last-child { display: none; }
+  .topo { gap: 10px; }
+  .so-largo { display: none; }    /* "Minha conta" vira "Conta" */
+  .so-estreito { display: inline; }
+}
+
 @media (max-width: 720px) {
 
   /* 1. A barra de cima rola DENTRO DELA, e não empurra mais a página. */
@@ -583,6 +619,8 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   .topo::-webkit-scrollbar { display: none; }
   .topo > * { flex: 0 0 auto; }            /* ninguém encolhe: quem sobra, rola */
   .topo-meta { display: none; }            /* nome e perfil: cabem em Sair */
+  /* No celular "Minha conta" vira só o ícone, para não empurrar o Sair. */
+  .topo-btn.so-icone span { display: none; }
   .topo-abas { border-left: 0; padding-left: 0; }
   .modulos { margin-left: 0; }
 

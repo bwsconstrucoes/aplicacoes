@@ -47,8 +47,32 @@
     </nav>
   </div>
 
+  {# TODAS AS TELAS NUMA LISTA, quando elas não cabem na faixa.
+     Dono, 17/09/2026: *"quando a tela fica menor, os submenus ficam
+     escondidos"*. Rolar de lado só serve para quem sabe que há mais coisa à
+     direita — e quem não sabe, não procura. Este botão aparece sozinho quando
+     sobra aba fora da vista, e abre a lista inteira em coluna. #}
+  {% if abas %}
+  <div class="abas-lista-caixa oculto" id="abas-lista-caixa">
+    <button class="topo-btn" id="btn-abas-lista" type="button"
+            aria-haspopup="true" aria-expanded="false">Telas ▾</button>
+    <div class="abas-lista oculto" id="abas-lista">
+      {% for chave, rotulo, rota in abas %}
+        <a class="abas-lista-item {% if chave == aba_ativa %}ativa{% endif %}"
+           href="{{ url_for(rota) }}">{{ rotulo }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="topo-direita">
-    <div class="topo-meta">{{ usuario_nome }}<br>{{ usuario_perfil }}</div>
+    {# O NOME LEVA À PRÓPRIA CONTA. Antes era só um rótulo, e quem queria trocar
+       a senha não tinha por onde começar a procurar (dono, 17/09/2026). #}
+    <a class="topo-meta" href="{{ url_for('erp.pagina_meu_cadastro') }}"
+       style="color:inherit; text-decoration:none" title="Minha conta e senha"
+       >{{ usuario_nome }}<br>{{ usuario_perfil }}</a>
+    <a class="topo-btn" href="{{ url_for('erp.pagina_meu_cadastro') }}"
+       title="Minha conta, senha e chave Pix"><span class="so-largo">Minha conta</span><span class="so-estreito">Conta</span></a>
     <a class="topo-btn" href="{{ url_for('erp.sair') }}">Sair</a>
   </div>
 </header>
@@ -789,6 +813,67 @@ async function api(url, opcoes) {
 }
 
 // ---------------------------------------------------------------------------
+// DINHEIRO DENTRO DA CAIXINHA DO KPI
+//
+// 17/09/2026: *"o valor em contratos vigentes no KPI está extrapolando a
+// caixinha — os centavos estão passando da tela"*. Milhão com centavos não cabe
+// em 19px numa coluna estreita. A fonte encolhe conforme o tamanho do número,
+// em vez de o número sair pela borda.
+// ---------------------------------------------------------------------------
+function kpiDinheiro(texto){
+  const n = String(texto).length;
+  const tam = n > 17 ? 14 : n > 14 ? 16 : n > 11 ? 18 : 20;
+  return `<div class="kpi-valor" style="font-size:${tam}px">${texto}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// O HISTÓRICO EM PORTUGUÊS, NÃO EM JSON
+//
+// 17/09/2026, o dono colando o que via na tela: *"no histórico, a forma que ele
+// grava as informações fica num JSON meio esquisito"* —
+//   {"arquivo":"MATRICULA-CEI-CNO_ESCPE18_900271283773_2026-01-21.pdf","categoria":"OUTRO","co…
+// A trilha de auditoria guarda um objeto, e isso está certo: objeto se consulta.
+// Quem estava errado era a TELA, que despejava o objeto cru e cortava no meio
+// da palavra. Aqui ele vira frase, com nome em português e valor no formato
+// daqui; o que é técnico (identificadores, hash, texto do documento) fica fora.
+// ---------------------------------------------------------------------------
+const ROTULOS_DETALHE = {
+  arquivo: "arquivo", nome: "nome", tipo: "tipo", categoria: "categoria",
+  descricao: "descrição", competencia: "competência", emissao: "emissão",
+  validade: "vale até", referencia: "referência", valor: "valor",
+  valor_contrato: "valor do contrato", vigencia_inicio: "início da vigência",
+  vigencia_fim: "fim da vigência", prazo_execucao_dias: "prazo (dias)",
+  dias: "dias", numero: "número", mudancas: "mudou", obra: "obra",
+  codigo: "código", motivo: "motivo", observacao: "observação",
+  situacao: "situação", status: "situação", de: "de", para: "para",
+  guardado_em: "guardado em", tamanho_kb: "tamanho", origem: "origem",
+  numero_indice: "número-índice", quantidade: "quantidade",
+};
+const DETALHE_TECNICO = ["_id", "id", "hash", "sha", "token", "texto"];
+
+function detalheEmPortugues(detalhe){
+  if (!detalhe || typeof detalhe !== "object") return escapar(String(detalhe ?? ""));
+  const pedacos = [];
+  Object.entries(detalhe).forEach(([chave, valor]) => {
+    if (DETALHE_TECNICO.some(t => chave === t || chave.endsWith(t))) return;
+    if (valor === null || valor === undefined || valor === "") return;
+    const rot = ROTULOS_DETALHE[chave] || chave.replace(/_/g, " ");
+    pedacos.push(`<b>${escapar(rot)}</b> ${valorDeDetalhe(valor)}`);
+  });
+  return pedacos.join(" · ") || "—";
+}
+
+function valorDeDetalhe(v){
+  if (Array.isArray(v)) return v.map(valorDeDetalhe).join("; ");
+  if (v && typeof v === "object") return detalheEmPortugues(v);
+  if (typeof v === "boolean") return v ? "sim" : "não";
+  const t = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return escapar(dataBR(t));
+  if (/^-?\d+\.\d{2}$/.test(t)) return escapar(numero(t));
+  return escapar(t.length > 70 ? t.slice(0, 70) + "…" : t);
+}
+
+// ---------------------------------------------------------------------------
 // O DOCUMENTO LIDO: AS DATAS E OS CAMPOS QUE FALTARAM
 //
 // 14/09/2026, o dono tentando criar uma obra a partir de um contrato: *"ele fez
@@ -816,7 +901,16 @@ function blocoDeDatasDoDocumento(prefixo, g, d){
   const extras = (d.extras || []).map(x => `
     <div class="campo"><label>${escapar(x.rotulo)}</label>
       <input id="${prefixo}-dt-x-${escapar(x.campo)}" type="date"
-             value="${escapar(x.valor || "")}"></div>`).join("");
+             value="${escapar(x.valor || "")}"
+             oninput="recalcularDiasDaVigencia('${prefixo}')"></div>`).join("");
+  // A CONTA SAI SOZINHA. O dono, 17/09/2026: *"foi detectada a vigência, mas o
+  // sistema não calculou. Como ele já sabe a quantidade de dias, dá para
+  // calcular a partir do início — eu coloco o início e ele já me diz o final"*.
+  // Era isso: a conta só rodava se alguém digitasse no campo de dias. Agora
+  // roda ao abrir a leitura e sempre que a data de partida mudar.
+  if (d.aceita_dias && d.dias && !valor) {
+    setTimeout(() => recalcularDiasDaVigencia(prefixo), 0);
+  }
   return `
     <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
          ${falta || faltaComp ? "border-left:4px solid var(--vermelho);" : ""} margin-top:12px">
@@ -826,7 +920,8 @@ function blocoDeDatasDoDocumento(prefixo, g, d){
       <div class="form-grade" style="padding:8px 12px 12px">
         <div class="campo"><label>${d.campo_validade === "vigencia_fim"
             ? "Assinatura" : "Emissão"}</label>
-          <input id="${prefixo}-dt-emissao" type="date" value="${escapar(emissao)}"></div>
+          <input id="${prefixo}-dt-emissao" type="date" value="${escapar(emissao)}"
+            oninput="recalcularDiasDaVigencia('${prefixo}')"></div>
         ${extras}
         ${g.tipo_vence ? `<div class="campo"><label>${escapar(rotulo)} *</label>
           <input id="${prefixo}-dt-validade" type="date" value="${escapar(valor)}"
@@ -978,8 +1073,33 @@ function marcarCampoDigitado(entrada, attrMarca, campo){
     caixa.classList.toggle("tem-mais", folga - abas.scrollLeft > 4);
     caixa.classList.toggle("tem-antes", abas.scrollLeft > 4);
   };
-  abas.addEventListener("scroll", marcar, {passive: true});
-  window.addEventListener("resize", marcar);
+  // O botão "Telas" acompanha a sombra: existe sobra escondida, existe botão.
+  const caixaLista = document.getElementById("abas-lista-caixa");
+  const marcarComBotao = () => {
+    marcar();
+    if (caixaLista) {
+      const sobra = abas.scrollWidth - abas.clientWidth > 4;
+      caixaLista.classList.toggle("oculto", !sobra);
+    }
+  };
+  abas.addEventListener("scroll", marcarComBotao, {passive: true});
+  window.addEventListener("resize", marcarComBotao);
+  setTimeout(marcarComBotao, 0);
+
+  const botao = document.getElementById("btn-abas-lista");
+  const lista = document.getElementById("abas-lista");
+  if (botao && lista) {
+    botao.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const abrindo = lista.classList.contains("oculto");
+      lista.classList.toggle("oculto", !abrindo);
+      botao.setAttribute("aria-expanded", abrindo ? "true" : "false");
+    });
+    document.addEventListener("click", () => {
+      lista.classList.add("oculto");
+      botao.setAttribute("aria-expanded", "false");
+    });
+  }
   abas.addEventListener("wheel", ev => {
     if (Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
     abas.scrollLeft += ev.deltaY;

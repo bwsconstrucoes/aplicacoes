@@ -91,7 +91,9 @@
   <div class="tabela-barra"><span class="resumo" id="resumo"></span></div>
   <div class="tabela-rolagem">
     <table><thead><tr>
-      <th>Documento</th><th>Tipo</th><th>De quem</th><th>Competência</th>
+      {# O TIPO VEM PRIMEIRO: é o que a pessoa procura. O nome do arquivo é
+         detalhe (dono, 17/09/2026). #}
+      <th>Documento</th><th>Arquivo</th><th>De quem</th><th>Competência</th>
       <th>Emissão</th><th>Validade</th><th>Situação</th><th></th>
     </tr></thead><tbody id="corpo"></tbody></table>
   </div>
@@ -317,10 +319,11 @@ function desenhar(){
     const detalhe = d.situacao === "VENCIDO" ? `há ${Math.abs(dias)} dia(s)`
                   : d.situacao === "VENCENDO" ? `em ${dias} dia(s)` : "";
     return `<tr>
-      <td><a href="/erp/anexo/${d.anexo_id}" target="_blank" class="mono">${d.nome}</a>
+      <td><b>${d.tipo_nome}</b></td>
+      <td class="desc"><a href="/erp/anexo/${d.anexo_id}" target="_blank"
+          class="mono" style="font-size:12px">${d.nome}</a>
         ${d.nome_original && d.nome_original !== d.nome
           ? `<br><small>enviado como ${d.nome_original}</small>` : ""}</td>
-      <td>${d.tipo_nome}</td>
       <td>${d.dono || "—"}</td>
       <td>${d.competencia ? d.competencia.split("-").reverse().join("/") : "—"}</td>
       <td>${dataBR(d.emissao)}</td>

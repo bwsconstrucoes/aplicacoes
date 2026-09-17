@@ -507,6 +507,15 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       mais antigo guardado), porque o Banco Central só republica a variação. A
       RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
 
+- [x] **NOVE ACERTOS DE USO E A TROCA DA PRÓPRIA SENHA** — FEITO em 17/09/2026.
+      **Sem migração.** Pedidos do dono com o sistema aberto: a vigência em dias
+      calculando sozinha; o TIPO do documento em destaque no lugar do nome do
+      arquivo; o histórico em português no lugar do JSON cru; valor do contrato
+      no formato daqui; nome da obra deixando de aparecer duas vezes; KPI que
+      não estoura; topo apertado sem colisão e com o botão **Telas ▾**; aviso
+      de obra **sem responsável**; e **Minha conta**, onde cada um troca a
+      própria senha (exigindo a atual). Sete testes com banco só para a senha.
+
 - [x] **AS DATAS DO DOCUMENTO NUM LUGAR SÓ, E VIGÊNCIA EM DIAS** — FEITO em
       14/09/2026. **Sem migração.** O dono, vendo a primeira versão: *"você tá
       me cobrando data do documento em cima e a informação da vigência embaixo,

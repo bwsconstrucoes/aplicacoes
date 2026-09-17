@@ -21,6 +21,44 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### NOVE ACERTOS DE USO, PEDIDOS OLHANDO A TELA (17/09/2026, sem migração)
+
+Tudo do mesmo dia, com o dono usando o sistema e apontando o que incomodava:
+
+1. **A vigência em dias não calculava sozinha.** *"Foi detectada a vigência,
+   mas o sistema não calculou. Como ele já sabe a quantidade de dias, dá para
+   calcular a partir do início."* A conta só rodava se alguém digitasse no
+   campo de dias; agora roda ao abrir a leitura e sempre que a data de partida
+   muda.
+2. **Destaque invertido no documento.** *"Está dando muito destaque ao nome do
+   arquivo e não ao tipo de documento."* Na aba Documentos da obra e na tela do
+   Arquivo, o TIPO vem primeiro, em negrito; o nome do arquivo é o detalhe.
+3. **O "Outro" que ele via não era o tipo**, era a `categoria_anexo` — campo
+   antigo do anexo (nota/boleto/comprovante/outro), que vale OUTRO para todo
+   documento arquivado pelo catálogo. Ela saiu da coluna que dizia "Tipo".
+4. **Histórico em JSON cru.** A trilha guarda objeto (e deve guardar); a TELA é
+   que despejava `{"arquivo":"…","categoria":"OUTRO","co…` cortado no meio.
+   Agora vira frase em português (`detalheEmPortugues`, no `erp_base.html`).
+5. **Valor do contrato sem formato.** Aparecia "1500000.00" na ficha da obra;
+   agora aparece 1.500.000,00 e volta a número na gravação.
+6. **Nome da obra repetido na lista.** Obra criada pelo contrato nasce com o
+   objeto como nome — e a linha mostrava a mesma frase duas vezes. Agora só
+   aparece o que o objeto diz ALÉM do nome.
+7. **KPI estourando a caixinha.** *"Os centavos estão passando da tela."* A
+   fonte do valor encolhe conforme o tamanho do número.
+8. **Topo apertado.** A marca "ERP BWS · Financeiro" batia no botão do módulo;
+   abaixo de 1100px sobra só o brasão. E as abas que não cabem agora têm o
+   botão **Telas ▾**, que abre todas numa lista — *"quando a tela fica menor,
+   os submenus ficam escondidos"*.
+9. **Não havia como trocar a própria senha.** *"Eu não encontrei."* Não
+   existia mesmo: só ADMIN trocava, pelo cadastro de operadores. Agora há
+   **Minha conta** no topo, com troca de senha exigindo a senha atual — sem
+   isso, computador destravado vira conta tomada. Sete testes com banco.
+
+Também novo: a lista de obras marca **"Sem responsável"** em vermelho, à frente
+dos outros avisos — pedido dele: *"enquanto não tem, ninguém pode fazer nada"*.
+
+
 ### AS DATAS DO DOCUMENTO: UM LUGAR SÓ, COM O NOME DO NEGÓCIO (sem migração)
 
 Segunda rodada, no mesmo dia, depois que ele viu a primeira versão:
