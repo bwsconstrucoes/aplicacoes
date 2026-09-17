@@ -87,10 +87,10 @@
     <div class="tabela-barra">
       <button class="btn">Recalcular</button>
       <a class="btn secundario" style="text-decoration:none"
-         href="{{ url_for('painel.prestacao_cenarios', medida=medida) }}">↩ Voltar ao que está gravado</a>
+         href="{{ com_filtros('painel.prestacao_cenarios', medida=medida) }}">↩ Voltar ao que está gravado</a>
       <span class="espaco"></span>
       <a class="btn secundario" style="text-decoration:none"
-         href="{{ url_for('painel.prestacao_contas', medida=medida) }}">Prestação de Contas</a>
+         href="{{ com_filtros('painel.prestacao_contas', medida=medida) }}">Prestação de Contas</a>
     </div>
     {% endif %}
   </div>

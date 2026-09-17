@@ -21,7 +21,210 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 A 068 — o botão tem de ser apertado junto com a publicação
+### O DRIVE FOI LIGADO EM PRODUÇÃO, E AGORA TEM ÁRVORE DE PASTAS (migração 070)
+
+17/09/2026, o dono: *"quanto ao Drive, eu marquei aqui guardar os documentos
+novos no Drive. Eu já cliquei aqui, mover os antigos para o Drive. Aí você
+reorganiza, faz um jeito de organizar dentro dessa estrutura. É importante,
+senão fica bagunçado. E a gente não ocupa espaço na base de dados, que é o mais
+importante. (…) Só tem que ter cuidado para não excluir."*
+
+**Ele ligou o Drive antes de a árvore existir** — então há arquivos que subiram
+direto para a pasta raiz configurada. O botão **"Organizar nas pastas"**, em
+Configurações → Documentos, arruma isso aos poucos (50 por vez; rode de novo
+para continuar).
+
+A estrutura:
+
+    <pasta configurada>
+      ├── Obras
+      │     └── ESCPE18 - Escola Planalto      (uma por obra, código e nome)
+      └── Arquivo
+            └── Empresas · Pessoas · Fornecedores · Financeiro · Diversos
+
+Três decisões que ficam de pé:
+
+- **Pasta com o nome certo que já exista é REUSADA.** Se ele criar "Obras" à
+  mão, o sistema entra nela. Duas pastas com o mesmo nome é o começo de
+  documento sumido.
+- **Nada é apagado, nunca.** Reorganizar MOVE — no Drive, mover é trocar o pai
+  do arquivo: mesmo id, mesmo histórico, link não quebra. Foi o cuidado que ele
+  pediu com todas as letras.
+- **Falha do Drive não impede guardar.** Se a árvore não puder ser montada, o
+  arquivo vai para a pasta raiz; se o Drive estiver fora, vai para o banco e o
+  botão de mover leva depois.
+
+⚠️ **A tabela `drive_pastas` é um caderninho, não a verdade.** Apagar uma linha
+dela não apaga nada no Drive — só faz o sistema procurar (ou criar) de novo.
+
+### E O DOCUMENTO COM DATA ERRADA AGORA SE CORRIGE NA TELA DO ARQUIVO
+
+*"Eu vi um contrato que está dando que está vencido, mas na verdade está vencido
+porque eu escrevi a validade errado. Eu queria daqui ir para o cadastro e editar
+isso direto, como se fosse um pulo."*
+
+Duas coisas na linha do documento, para quem pode arquivar: **Datas**, que abre
+emissão, validade, competência e referência (com as travas: tipo que vence não
+fica sem validade, e validade não cai antes da emissão), e **Ver a obra**, que
+pula direto para a ficha. A correção fica na trilha com o antes e o depois.
+
+
+### NOVE ACERTOS DE USO, PEDIDOS OLHANDO A TELA (17/09/2026, sem migração)
+
+Tudo do mesmo dia, com o dono usando o sistema e apontando o que incomodava:
+
+1. **A vigência em dias não calculava sozinha.** *"Foi detectada a vigência,
+   mas o sistema não calculou. Como ele já sabe a quantidade de dias, dá para
+   calcular a partir do início."* A conta só rodava se alguém digitasse no
+   campo de dias; agora roda ao abrir a leitura e sempre que a data de partida
+   muda.
+2. **Destaque invertido no documento.** *"Está dando muito destaque ao nome do
+   arquivo e não ao tipo de documento."* Na aba Documentos da obra e na tela do
+   Arquivo, o TIPO vem primeiro, em negrito; o nome do arquivo é o detalhe.
+3. **O "Outro" que ele via não era o tipo**, era a `categoria_anexo` — campo
+   antigo do anexo (nota/boleto/comprovante/outro), que vale OUTRO para todo
+   documento arquivado pelo catálogo. Ela saiu da coluna que dizia "Tipo".
+4. **Histórico em JSON cru.** A trilha guarda objeto (e deve guardar); a TELA é
+   que despejava `{"arquivo":"…","categoria":"OUTRO","co…` cortado no meio.
+   Agora vira frase em português (`detalheEmPortugues`, no `erp_base.html`).
+5. **Valor do contrato sem formato.** Aparecia "1500000.00" na ficha da obra;
+   agora aparece 1.500.000,00 e volta a número na gravação.
+6. **Nome da obra repetido na lista.** Obra criada pelo contrato nasce com o
+   objeto como nome — e a linha mostrava a mesma frase duas vezes. Agora só
+   aparece o que o objeto diz ALÉM do nome.
+7. **KPI estourando a caixinha.** *"Os centavos estão passando da tela."* A
+   fonte do valor encolhe conforme o tamanho do número.
+8. **Topo apertado.** A marca "ERP BWS · Financeiro" batia no botão do módulo;
+   abaixo de 1100px sobra só o brasão. E as abas que não cabem agora têm o
+   botão **Telas ▾**, que abre todas numa lista — *"quando a tela fica menor,
+   os submenus ficam escondidos"*.
+9. **Não havia como trocar a própria senha.** *"Eu não encontrei."* Não
+   existia mesmo: só ADMIN trocava, pelo cadastro de operadores. Agora há
+   **Minha conta** no topo, com troca de senha exigindo a senha atual — sem
+   isso, computador destravado vira conta tomada. Sete testes com banco.
+
+Também novo: a lista de obras marca **"Sem responsável"** em vermelho, à frente
+dos outros avisos — pedido dele: *"enquanto não tem, ninguém pode fazer nada"*.
+
+
+### AS DATAS DO DOCUMENTO: UM LUGAR SÓ, COM O NOME DO NEGÓCIO (sem migração)
+
+Segunda rodada, no mesmo dia, depois que ele viu a primeira versão:
+
+> *"Aí tem início da vigência, fim da vigência. Tá invertido, tá ano-traço-mês-
+> traço-dia. Tem que ser no formato Brasil, né? Outra coisa: lá em cima tem
+> datas do documento, emissão e vale até. Aí tá conflitante com a informação lá
+> de baixo, que é vigência. Tá meio esquisito. Você tá me cobrando data do
+> documento em cima e a informação da vigência embaixo. E tem nomenclaturas
+> diferentes. Não está direito não aqui."*
+
+> *"A vigência, muitas vezes, é colocada em dias (…) deveria poder colocar a
+> data exata, que tem contrato que tem a data exata, ou então a quantidade de
+> dias. E essas informações existiam no documento que eu li, não sei por que
+> não foi identificado: tem a data de assinatura do contrato, no final, e a
+> quantidade de dias de vigência, que no caso é 365."*
+
+Três defeitos, os três reais:
+
+1. **Data pedida em formato de banco.** Os campos abertos eram caixa de texto
+   com "AAAA-MM-DD". Viraram **campo de data** de verdade — o navegador mostra
+   no formato do país (dd/mm/aaaa no computador dele).
+2. **A mesma data perguntada duas vezes, com nomes diferentes.** Num contrato,
+   "até quando o documento vale" e "fim da vigência" **são a mesma data**. Agora
+   a validade do documento **sobe** para o bloco de datas com o nome do negócio
+   (Assinatura · Início da vigência · Fim da vigência) e some da lista de baixo.
+   O de-para está em `VALIDADE_E_O_CAMPO`, no `preenchimento.py`: contrato →
+   `vigencia_fim`, seguro → `seguro_vigencia_fim`. Tipo sem campo equivalente
+   (certidão, licença) continua dizendo "Vale até" — inventar nome seria pior.
+3. **A leitura não achava o que estava no documento, e havia motivo.** Duas
+   causas, não azar:
+   - **não existia campo para vigência em DIAS.** Os campos eram
+     `vigencia_inicio`, `vigencia_fim` e `prazo_execucao_dias` — e prazo de
+     execução é outro número. Contrato que diz "vigência de 365 dias" não tinha
+     onde ser guardado, e a instrução manda deixar vazio em vez de inventar
+     (comportamento certo, campo faltando). Agora existe `vigencia_dias`;
+   - **"emissão" não é palavra de contrato.** A data existe no FECHO, por
+     extenso ("Recife, 12 de fevereiro de 2026"), sem rótulo. A instrução agora
+     diz isso com todas as letras, e pede `data_assinatura`.
+
+**O prazo em dias é meio de ENTRADA, não dado novo:** dias + data de partida dão
+a data final, e é a data final que fica guardada e vira aviso. A tela mostra a
+conta ("365 dias a partir de 12/02/2026 dão 12/02/2027") para alguém conferir —
+número que vira data sem conferência é erro esperando acontecer. Guardar também
+o número 365 exigiria coluna nova; o que foi digitado fica na trilha de
+auditoria do preenchimento. ⚠️ **A contagem do dia inicial varia por contrato**,
+e a tela avisa: há contrato que conta o próprio dia da assinatura.
+
+### O DOCUMENTO LIDO AGORA ABRE OS CAMPOS QUE A IA NÃO ACHOU (sem migração)
+
+14/09/2026, o dono importando um contrato para criar obra: *"ele fez a leitura,
+ok, só que aí não aparece o campo de vigência. E quando eu boto criar obra e
+arquivar, aparece 'contrato da obra vence, informe até quando vale' (…) não tem
+opção, não aparece o campo, ele leu o contrato, talvez não leu essa informação,
+e não permite avançar porque ela é obrigatória. Aí era para abrir os campos,
+né?"*
+
+**Era exatamente isso, e o fluxo ficava trancado.** A tela mandava para o
+servidor só o que a leitura tinha achado. Contrato que não escreve a vigência
+dentro do texto — e há muitos — batia na recusa do arquivamento (a regra é
+antiga e está certa: tipo que vence exige até quando vale, senão a agenda não
+avisa) **sem ter onde digitar a data cobrada**. Não havia saída pela tela.
+
+O que mudou, nas três telas que leem documento (ficha da obra, obra nova pelo
+documento, documento do colaborador):
+
+- **"Datas do documento" aparece sempre** — emissão, "vale até" e competência —,
+  preenchida com o que a leitura achou e **editável**. O que o tipo exige vem
+  marcado com `*`, e falta de data obrigatória é avisada ALI, antes de mandar,
+  em vez de virar recusa no fim.
+- **Os campos de cadastro que vieram vazios abrem numa gaveta** ("Preencher o
+  que o documento não disse"). Antes, campo sem resposta simplesmente não
+  existia na tela. Nada ali entra marcado: o que não for digitado continua
+  vazio.
+- **"Vale até" espelha no "Fim da vigência"** do cadastro da obra, porque num
+  contrato são a mesma data. Digitar duas vezes é convite a digitar diferente,
+  e aí a agenda e a ficha da obra passariam a discordar.
+
+⚠️ **No colaborador foram só as datas**, não a gaveta de campos: ali o
+preenchimento tem a trava do CPF (documento de pessoa errada preenchendo
+cadastro vai parar em holerite) e campos que se resolvem por nome, como a
+função. Abrir a gaveta ali pede cuidado próprio — ficou de fora, de propósito.
+
+
+### A 069 ALINHA O ÍNDICE COM O BOLETIM DO DONO — e ele precisa informar UM número
+
+Publicada a 068, o dono olhou a tela e disse: *"apareceram os índices, mas os
+números estão diferentes do que eu costumo ver. Veja o de 08/2026:
+305,943822."*
+
+**Ele estava certo, e o número não estava errado — estava noutra régua.** O
+Banco Central republica só a VARIAÇÃO mensal do INCC-DI (série 192); a série do
+número-índice da FGV é licenciada. Então o sistema acumula o índice sozinho, e
+acumular obriga a escolher onde a contagem começa: começava em **100 no mês
+mais antigo guardado (01/2010)**. Com essa régua, 08/2026 dá 305,943822 — o
+custo da construção multiplicado por 3,059 desde janeiro de 2010. O boletim
+dele usa outra base e mostra outro número para o mesmo mês.
+
+A 069 resolve **sem inventar número**: na tela de índices ele digita o índice de
+**um** mês, como o boletim dele mostra, e a série inteira se desloca para bater
+— para a frente multiplicando pelas variações, para trás dividindo.
+
+- **Nenhum reajuste muda de valor.** O fator é índice final ÷ índice inicial, e
+  essa divisão dá o mesmo resultado em qualquer régua. Há teste com banco de
+  verdade cobrando exatamente isso (`tests/test_indice_ancora_banco.py`).
+- **Uma âncora por índice**, de propósito: duas que não fechem entre si
+  partiriam a série em dois trechos incompatíveis, e o fator entre meses de
+  lados diferentes sairia errado com cara de certo.
+- **O que o sistema não consegue conferir:** se alguém digitar o número de um
+  INCC diferente (o -M em vez do -DI), a tela fica plausível e errada. O
+  reajuste continua certo — ele não usa o número absoluto —, mas a conferência
+  visual passa a mentir.
+
+**Pendente do lado dele:** informar esse número. Enquanto não informar, a tela
+diz com todas as letras que a régua é a do sistema e não a do boletim.
+
+
+### TRAZ AS MIGRAÇÕES 061 A 069 — o botão tem de ser apertado junto com a publicação
 
 **Publicado na `main` em 14/09/2026** (commit `726a985`, autorizado pelo dono:
 *"eu falei ajusta e já publica"*). O Render já subiu o código; o botão

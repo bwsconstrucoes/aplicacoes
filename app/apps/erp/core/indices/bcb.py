@@ -40,7 +40,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
-from app.apps.erp.db.models.cadastros import IndiceEconomico
+from app.apps.erp.db.models.cadastros import IndiceAncora, IndiceEconomico
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +227,78 @@ def lancar_manual(s: Session, *, codigo: str, competencia: date, variacao_pct: A
 BASE_DO_NUMERO_INDICE = Decimal("100")
 
 
+def ancora_de(s: Session, codigo: str = PADRAO) -> Optional[IndiceAncora]:
+    """O ponto de referência do número-índice, se alguém já informou um."""
+    return s.get(IndiceAncora, (codigo or PADRAO).strip().upper())
+
+
+def definir_ancora(s: Session, *, codigo: str = PADRAO, competencia: date,
+                   numero_indice: Any, observacao: str = "",
+                   usuario=None) -> IndiceAncora:
+    """Pendura a série inteira num número oficial.
+
+    O DONO, em 14/09/2026, vendo a coluna nova: *"apareceram os índices, mas os
+    números estão diferentes do que eu costumo ver — veja o de 08/2026,
+    305,943822"*.
+
+    O número não estava errado: estava noutra base (100 em 01/2010, o mês mais
+    antigo guardado). Aqui ele informa o número que o boletim publica para um
+    mês, e a régua inteira se desloca para bater com o papel que ele tem na mão.
+    As variações não mudam, então **nenhum reajuste já calculado muda de valor**
+    — o fator é razão entre dois meses, e razão não sente mudança de base.
+    """
+    codigo = (codigo or PADRAO).strip().upper()
+    if codigo not in CATALOGO:
+        raise ErroValidacao(f"Índice desconhecido: {codigo}.")
+    quando = _mes(competencia)
+    valor = _dec(numero_indice)
+    if valor <= 0:
+        raise ErroValidacao("O número-índice tem de ser maior que zero.")
+
+    # A âncora precisa cair num mês que a tabela tem; senão não há por onde
+    # propagar, e o número informado ficaria pendurado no vazio.
+    tem_o_mes = s.get(IndiceEconomico, (codigo, quando))
+    if tem_o_mes is None:
+        raise ErroValidacao(
+            f"Não tenho o mês {quando.strftime('%m/%Y')} na tabela do {codigo}. "
+            f"Atualize a tabela (ou lance esse mês à mão) antes de usá-lo como "
+            f"referência.")
+
+    linha = s.get(IndiceAncora, codigo)
+    if linha is None:
+        linha = IndiceAncora(codigo=codigo, competencia=quando,
+                             numero_indice=valor,
+                             observacao=(observacao or "").strip() or None,
+                             definido_por=usuario.id if usuario else None)
+        s.add(linha)
+    else:
+        linha.competencia = quando
+        linha.numero_indice = valor
+        linha.observacao = (observacao or "").strip() or None
+        linha.definido_por = usuario.id if usuario else None
+    s.flush()
+    recalcular_numeros(s, codigo)
+    registrar_evento(s, "indice", 0, "INDICE_ANCORADO", {
+        "codigo": codigo, "competencia": quando.isoformat(),
+        "numero_indice": str(valor), "observacao": observacao},
+        usuario.id if usuario else None)
+    return linha
+
+
+def limpar_ancora(s: Session, *, codigo: str = PADRAO, usuario=None) -> bool:
+    """Tira o ponto de referência: a série volta a 100 no mês mais antigo."""
+    codigo = (codigo or PADRAO).strip().upper()
+    linha = s.get(IndiceAncora, codigo)
+    if linha is None:
+        return False
+    s.delete(linha)
+    s.flush()
+    recalcular_numeros(s, codigo)
+    registrar_evento(s, "indice", 0, "INDICE_ANCORA_REMOVIDA", {"codigo": codigo},
+                     usuario.id if usuario else None)
+    return True
+
+
 def recalcular_numeros(s: Session, codigo: str = PADRAO) -> int:
     """Refaz o número-índice da série inteira, do mês mais velho para o novo.
 
@@ -236,13 +308,17 @@ def recalcular_numeros(s: Session, codigo: str = PADRAO) -> int:
 
         índice do mês = índice do mês anterior × (1 + variação/100)
 
-    com **base 100 no mês mais antigo guardado**.
+    **Onde a régua começa** depende de haver ou não uma âncora (migração 069):
 
-    ⚠️ **O número absoluto não é o do boletim da FGV** — a base é outra. O que é
-    idêntico, e é o que vale, é a RAZÃO entre dois meses: dividir o índice final
-    pelo inicial dá o mesmo fator de reajuste da planilha. Reproduzir o número
-    da FGV exigiria a série do número-índice deles, que é licenciada; o Banco
-    Central republica só a variação.
+    - com âncora, o mês informado recebe exatamente o número oficial que a
+      pessoa digitou, e os outros saem dele — para a frente multiplicando pelas
+      variações, para trás dividindo. É o que faz o número bater com o boletim;
+    - sem âncora, **base 100 no mês mais antigo guardado**, como era antes.
+
+    ⚠️ Sem âncora, o número absoluto NÃO é o do boletim da FGV — a base é outra.
+    O que é idêntico nos dois casos, e é o que vale, é a RAZÃO entre dois meses:
+    dividir o índice final pelo inicial dá o mesmo fator de reajuste da
+    planilha. Trocar a base não mexe em reajuste nenhum já calculado.
 
     **Refaz a série toda, e não só o mês novo**, de propósito: o Banco Central
     revisa variação passada, e um mês revisado desloca todos os seguintes. Meia
@@ -257,13 +333,43 @@ def recalcular_numeros(s: Session, codigo: str = PADRAO) -> int:
     if not linhas:
         return 0
 
-    # Acumula em precisão cheia e guarda arredondado: arredondar a cada passo
-    # empurraria o erro para a frente, mês após mês.
+    ancora = s.get(IndiceAncora, codigo)
+    partida = 0
     corrente = BASE_DO_NUMERO_INDICE
-    for i, linha in enumerate(linhas):
-        if i:
-            corrente *= (Decimal(1) + _dec(linha.variacao_pct) / 100)
-        linha.numero_indice = corrente.quantize(Decimal("0.000001"))
+    if ancora is not None:
+        for i, linha in enumerate(linhas):
+            if linha.competencia == ancora.competencia:
+                partida, corrente = i, _dec(ancora.numero_indice)
+                break
+        else:
+            # A âncora aponta para um mês que sumiu da tabela. Não dá para
+            # inventar onde ela cairia: volta para a base 100 e diz no log, em
+            # vez de espalhar um número deslocado pela série inteira.
+            logger.warning("ERP/índices: a âncora de %s é de %s, mês que não "
+                           "está na tabela — usando base 100.", codigo,
+                           ancora.competencia)
+            partida, corrente = 0, BASE_DO_NUMERO_INDICE
+
+    # Do mês da âncora para a frente. Acumula em precisão cheia e guarda
+    # arredondado: arredondar a cada passo empurraria o erro para a frente.
+    valor = corrente
+    for i in range(partida, len(linhas)):
+        if i > partida:
+            valor *= (Decimal(1) + _dec(linhas[i].variacao_pct) / 100)
+        linhas[i].numero_indice = valor.quantize(Decimal("0.000001"))
+
+    # E do mês da âncora para trás, desfazendo a variação de cada mês: o índice
+    # do mês anterior é o deste dividido pela variação DESTE mês.
+    valor = corrente
+    for i in range(partida - 1, -1, -1):
+        divisor = Decimal(1) + _dec(linhas[i + 1].variacao_pct) / 100
+        if divisor == 0:      # queda de 100% num mês não existe; guarda a casa
+            raise ErroValidacao(
+                f"Variação de -100% em {linhas[i + 1].competencia.strftime('%m/%Y')} "
+                f"impede refazer a série para trás.")
+        valor /= divisor
+        linhas[i].numero_indice = valor.quantize(Decimal("0.000001"))
+
     s.flush()
     return len(linhas)
 
@@ -277,13 +383,25 @@ def listar(s: Session, codigo: str = PADRAO, *, limite: int = 60) -> dict[str, A
     mais_velho = s.scalars(select(IndiceEconomico.competencia).where(
         IndiceEconomico.codigo == codigo)
         .order_by(IndiceEconomico.competencia.asc()).limit(1)).first()
+    ancora = s.get(IndiceAncora, codigo)
     return {
         "codigo": codigo,
         "nome": CATALOGO.get(codigo, (0, codigo))[1],
         # Sem dizer a base, o número-índice vira um número solto: quem comparar
         # com o boletim da FGV vai achar que está errado.
-        "base_do_numero": (f"100,000000 em {mais_velho.strftime('%m/%Y')}"
-                           if mais_velho else ""),
+        "base_do_numero": (
+            (f"{_num_br(ancora.numero_indice)} em "
+             f"{ancora.competencia.strftime('%m/%Y')}, informado por você")
+            if ancora is not None else
+            (f"100,000000 em {mais_velho.strftime('%m/%Y')} — a régua do "
+             f"sistema, não a do boletim" if mais_velho else "")),
+        # A âncora aberta, para a tela poder mostrar e deixar trocar.
+        "ancora": ({"competencia": ancora.competencia.isoformat(),
+                    "numero_indice": float(ancora.numero_indice),
+                    "observacao": ancora.observacao or "",
+                    "definido_em": (ancora.definido_em.isoformat()
+                                    if ancora.definido_em else None)}
+                   if ancora is not None else None),
         "serie": CATALOGO.get(codigo, (0, ""))[0],
         "meses": [{"competencia": i.competencia.isoformat(),
                    "variacao_pct": float(i.variacao_pct),
@@ -299,6 +417,11 @@ def listar(s: Session, codigo: str = PADRAO, *, limite: int = 60) -> dict[str, A
         # existe, então "em dia" é ter o mês ANTERIOR.
         "em_dia": bool(linhas and linhas[0].competencia >= _mes_anterior(date.today())),
     }
+
+
+def _num_br(v: Any) -> str:
+    """Número com seis casas e vírgula, do jeito que se lê no boletim."""
+    return f"{Decimal(str(v)):,.6f}".replace(",", "@").replace(".", ",").replace("@", ".")
 
 
 def _mes_anterior(d: date) -> date:

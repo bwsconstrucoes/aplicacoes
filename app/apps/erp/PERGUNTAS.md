@@ -740,14 +740,77 @@ ordem de grandeza:
 - **a variação do mês** — 0,42%, que é o que o Banco Central publica;
 - **o número-índice** — 105,403139, que só serve dividido por outro.
 
-E uma ressalva que o sistema diz na tela: **o número-índice daqui não é o do
-boletim da FGV**, porque a base é outra. A divisão entre dois meses é que é
-igual — e é ela que vale.
+⚠️ **Palavra ambígua: "a régua".** No mesmo dia 14/09/2026, vendo a coluna
+nova, o dono disse: *"apareceram os índices, mas os números estão diferentes do
+que eu costumo ver — veja o de 08/2026, 305,943822"*. O número estava certo e
+noutra base. Desde então a tabela pode ser **alinhada ao boletim dele**: ele
+informa o índice de UM mês, como o boletim mostra, e a série inteira se desloca.
+
+Perguntas que isso acrescenta:
+
+- OK **A tabela do INCC está alinhada com o meu boletim?** — a tela de índices
+  diz qual régua está valendo e de onde veio o número.
+- OK **Quem alinhou a tabela, quando, e com qual número?** — fica na auditoria.
+- OK **Alinhar a tabela muda algum reajuste já calculado?** — não muda, e há
+  teste cobrando isso: o fator é razão entre dois meses, e razão não sente
+  mudança de base.
 
 O que ainda **não** responde:
 
 - FALTA **"Qual o índice publicado pela FGV neste mês?"** — a série do
   número-índice da FGV é licenciada; o Banco Central republica só a variação.
+  O alinhamento resolve a leitura (os números passam a bater), mas quem informa
+  o ponto de partida é uma pessoa, com o boletim na mão.
+- FALTA **"O número que está na tela ainda bate com o boletim de hoje?"** — o
+  sistema não tem como conferir sozinho contra a FGV. Se o Banco Central
+  revisar uma variação passada, a série inteira se desloca a partir da âncora,
+  e só quem olha o boletim percebe.
+- ⚠️ **Marcar a régua com o índice ERRADO não é detectável pelo sistema.** Se
+  alguém digitar o número de um INCC diferente (o -M em vez do -DI), os números
+  da tela ficam plausíveis e errados. O reajuste continua certo — ele não usa o
+  número absoluto —, mas a conferência visual passa a mentir.
+
+## 3n. O documento arquivado e o que ele deixou em branco
+
+Em 14/09/2026 as telas que leem documento passaram a **abrir os campos que a
+leitura não achou** — as datas do documento e os campos de cadastro sem
+resposta. Antes, o que a IA não extraía não existia na tela.
+
+Perguntas que passam a funcionar:
+
+- OK **Quais documentos estão sem data de validade?** — hoje nenhum de tipo que
+  vence: a tela não deixa arquivar sem ela.
+- OK **Quais obras estão sem fim de vigência no cadastro?** 🔒 (escopo por obra)
+- OK **O que vence nos próximos 30 dias?** — já existia, e agora tem menos buraco,
+  porque a data deixou de depender de a IA tê-la encontrado.
+- OK **Quem informou esta data: o documento ou uma pessoa?** — a origem da
+  leitura fica registrada com o documento.
+
+⚠️ **Palavra ambígua: "vigência".** São duas datas próximas e diferentes:
+
+- **a validade do DOCUMENTO** — até quando o papel vale, e é dela que sai o
+  aviso da agenda;
+- **o fim da vigência da OBRA** — campo do cadastro, que é o que o contrato
+  determina.
+  Num contrato de obra as duas coincidem, e por isso a tela pergunta **uma vez
+  só**, com o nome do negócio. Em aditivo NÃO coincidem: o aditivo estende a
+  vigência da obra sem mudar a validade do contrato original.
+
+⚠️ **Palavra ambígua: "prazo".** Também são dois números diferentes, e trocá-los
+dá data errada com cara de certa:
+
+- **prazo de VIGÊNCIA** — por quanto tempo o contrato vale (365 dias, por
+  exemplo). Vira a data final;
+- **prazo de EXECUÇÃO** — por quanto tempo há obra para fazer. Costuma ser
+  menor, e não define até quando o contrato vale.
+
+O que ainda **não** responde:
+
+- FALTA **"Este contrato tem reajuste, e por qual índice?"** respondido a partir
+  do documento sozinho. O campo *Índice de reajuste* existe no cadastro da obra
+  e o contrato pode preenchê-lo, mas quando o contrato descreve a fórmula em
+  texto corrido a leitura não converte isso em regra de cálculo — quem decide
+  data-base, índice e periodicidade continua sendo uma pessoa.
 
 ## 4. Como esta lista vira código
 

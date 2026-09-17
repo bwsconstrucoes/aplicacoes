@@ -1333,6 +1333,55 @@ class IndiceEconomico(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class DrivePasta(Base):
+    """Onde cada pasta da árvore do Drive foi parar (migração 070).
+
+    Pedido do dono em 17/09/2026: a documentação organizada em
+    `Obras/<código da obra>` e `Arquivo/<...>`, para achar no computador sem
+    depender do ERP — e para o banco parar de carregar arquivo.
+
+    Guarda o id porque o Drive identifica pasta por id, não por caminho: se
+    alguém renomear a pasta lá, isto continua valendo. Apagar uma linha daqui
+    não apaga nada no Drive; só faz o sistema procurar (ou criar) de novo.
+    """
+    __tablename__ = "drive_pastas"
+
+    chave: Mapped[str] = mapped_column(Text, primary_key=True)
+    file_id: Mapped[str] = mapped_column(Text, nullable=False)
+    nome: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class IndiceAncora(Base):
+    """O ponto de referência do número-índice (migração 069).
+
+    O Banco Central republica só a VARIAÇÃO mensal, então o sistema acumula o
+    número-índice sozinho — e acumular exige escolher onde a régua começa. Sem
+    esta linha, a régua começa em 100 no mês mais antigo guardado, e o número
+    de cada mês não bate com o do boletim, que usa outra base.
+
+    Aqui fica o número oficial de UM mês, digitado de um boletim ou de um
+    contrato. A série inteira é recalculada a partir dele: para a frente
+    multiplicando pelas variações, para trás dividindo. As variações não mudam
+    — muda só o ponto de partida.
+
+    Uma âncora por índice, de propósito: duas que não fechem entre si partiriam
+    a série em dois trechos incompatíveis, e o fator entre meses de lados
+    diferentes sairia errado com cara de certo.
+    """
+    __tablename__ = "indices_ancora"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    competencia: Mapped[date] = mapped_column(Date, nullable=False)
+    numero_indice: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    # De onde veio o número, escrito por quem digitou.
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    definido_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    definido_por: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+
 class EmpresaCertificado(Base):
     """O certificado digital A1 da empresa (migração 053).
 

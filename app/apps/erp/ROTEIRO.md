@@ -507,6 +507,54 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       mais antigo guardado), porque o Banco Central só republica a variação. A
       RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
 
+- [x] **ÁRVORE DE PASTAS NO DRIVE, E A DATA DO DOCUMENTO CORRIGÍVEL** — FEITO
+      em 17/09/2026. **TRAZ A MIGRAÇÃO 070.** O dono ligou o Drive e pediu a
+      organização: `Obras/<código - nome>` e `Arquivo/<gaveta>`. Pasta que já
+      existe é reusada; reorganizar MOVE e **nunca apaga**; falha do Drive cai
+      na raiz, e falha total cai no banco. Botão "Organizar nas pastas" em
+      Configurações → Documentos, 50 por vez. Na tela do Arquivo, **Datas**
+      corrige emissão/validade/competência e **Ver a obra** pula para a ficha.
+
+- [x] **NOVE ACERTOS DE USO E A TROCA DA PRÓPRIA SENHA** — FEITO em 17/09/2026.
+      **Sem migração.** Pedidos do dono com o sistema aberto: a vigência em dias
+      calculando sozinha; o TIPO do documento em destaque no lugar do nome do
+      arquivo; o histórico em português no lugar do JSON cru; valor do contrato
+      no formato daqui; nome da obra deixando de aparecer duas vezes; KPI que
+      não estoura; topo apertado sem colisão e com o botão **Telas ▾**; aviso
+      de obra **sem responsável**; e **Minha conta**, onde cada um troca a
+      própria senha (exigindo a atual). Sete testes com banco só para a senha.
+
+- [x] **AS DATAS DO DOCUMENTO NUM LUGAR SÓ, E VIGÊNCIA EM DIAS** — FEITO em
+      14/09/2026. **Sem migração.** O dono, vendo a primeira versão: *"você tá
+      me cobrando data do documento em cima e a informação da vigência embaixo,
+      e tem nomenclaturas diferentes"*, e *"a vigência muitas vezes é colocada
+      em dias"*. A validade do documento subiu para o bloco de datas com o nome
+      do negócio (Assinatura · Início · Fim da vigência) e saiu da lista de
+      baixo; dá para informar a data OU o prazo em dias, com a conta à vista;
+      campo de data virou calendário, no formato do Brasil. A leitura passou a
+      perguntar por `vigencia_dias` e pela data de assinatura no FECHO — era por
+      isso que ela não achava o que estava no documento.
+
+- [x] **O DOCUMENTO LIDO ABRE OS CAMPOS QUE FALTARAM** — FEITO em 14/09/2026.
+      **Sem migração.** O dono, importando um contrato: *"não aparece o campo de
+      vigência (…) não permite avançar porque ela é obrigatória. Aí era para
+      abrir os campos, né?"*. As datas do documento passam a aparecer sempre e
+      editáveis, e os campos de cadastro sem resposta abrem numa gaveta.
+      "Vale até" espelha no fim da vigência da obra — no contrato é a mesma data.
+      ⚠️ **No colaborador foram só as datas**: lá o preenchimento tem a trava do
+      CPF e campos resolvidos por nome, e abrir a gaveta pede cuidado próprio.
+
+- [x] **ALINHAR O ÍNDICE COM O BOLETIM** — FEITO em 14/09/2026.
+      **TRAZ A MIGRAÇÃO 069.** O dono, vendo a coluna acima: *"apareceram os
+      índices, mas os números estão diferentes do que eu costumo ver — veja o
+      de 08/2026, 305,943822"*. Estava certo, e noutra régua. Agora ele informa
+      o índice de UM mês, como o boletim mostra, e a série inteira se desloca —
+      para a frente multiplicando, para trás dividindo. **Nenhum reajuste muda
+      de valor**, e há teste com banco de verdade cobrando isso.
+      ⚠️ **Só bate se for o MESMO índice.** Digitar o número de um INCC
+      diferente (o -M no lugar do -DI) deixa a tela plausível e errada; o
+      reajuste continua certo, porque não usa o número absoluto.
+
 - [x] **UMA CONTA DE E-MAIL SERVINDO VÁRIAS EMPRESAS** — FEITO em 14/09/2026.
       **TRAZ A MIGRAÇÃO 067.** Pergunta do dono: manter um e-mail principal e
       mandar em nome das outras empresas. A empresa passa a poder usar a conta

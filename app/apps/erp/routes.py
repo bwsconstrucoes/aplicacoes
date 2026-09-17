@@ -2644,6 +2644,40 @@ def api_perguntar_documentos():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/documentos/<int:documento_id>/datas", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_documento_corrigir_datas(documento_id: int):
+    """Corrige as datas de um documento já arquivado.
+
+    Dono, 17/09/2026: *"eu vi um contrato que está dando que está vencido, mas
+    na verdade está vencido porque eu escrevi a validade errado"*. Sem isto, uma
+    data digitada errada ficava errada para sempre — e o aviso de vencimento
+    junto com ela, o que ensina a equipe a ignorar aviso.
+
+    A ação é `arquivar`, a mesma de guardar o documento, e por dentro ainda
+    passa por `exigir_documento_no_escopo`: ter a ação não é alcançar ESTE
+    documento. Fora do recorte responde "não encontrado", nunca "sem permissão".
+    """
+    from app.apps.erp.core.arquivo import service as svc_arq
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_arq.exigir_documento_no_escopo(s, usuario, documento_id)
+            doc = svc_arq.corrigir_datas(
+                s, documento_id, emissao=d.get("emissao"),
+                validade=d.get("validade"), competencia=d.get("competencia"),
+                referencia=d.get("referencia"), usuario=usuario)
+            linha = svc_arq.ler(s, doc)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/documentos/<int:documento_id>/perguntar", methods=["POST"])
 @login_obrigatorio
 @permissao("ver_arquivo")
@@ -5407,6 +5441,25 @@ def api_anexos_mover():
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/anexos/armazenamento/reorganizar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_anexos_reorganizar():
+    """Põe na pasta certa o que já está no Drive fora do lugar (migração 070).
+
+    Move, nunca copia e nunca apaga: no Drive, mover é trocar o pai do arquivo
+    — o id, o histórico e o link continuam os mesmos.
+    """
+    from app.apps.erp.core.documentos.armazenamento import reorganizar_no_drive
+    try:
+        with get_session() as s:
+            r = reorganizar_no_drive(s, limite=int(request.args.get("limite", 50)))
+            s.commit()
+        return jsonify({"ok": True, "dados": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 # ---------------------------------------------------------------------------
 # O CRUZAMENTO DE NOTAS FISCAIS
 #
@@ -6580,6 +6633,38 @@ def api_indices_lancar():
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/indices/ancora", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_indices_ancora():
+    """Pendura a série no número oficial de um mês — ou tira a âncora.
+
+    O número-índice é acumulado pelo sistema a partir da variação, e acumular
+    exige escolher onde a régua começa. Sem isso o número não bate com o do
+    boletim, e o dono não tem como conferir (migração 069).
+    """
+    from app.apps.erp.core.indices import bcb
+    d = request.get_json(silent=True) or {}
+    codigo = (d.get("codigo") or bcb.PADRAO)
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            if d.get("remover"):
+                bcb.limpar_ancora(s, codigo=codigo, usuario=u)
+            else:
+                mes = (d.get("competencia") or "").strip()
+                bcb.definir_ancora(
+                    s, codigo=codigo,
+                    competencia=date.fromisoformat(mes + "-01" if len(mes) == 7
+                                                   else mes),
+                    numero_indice=d.get("numero_indice"),
+                    observacao=d.get("observacao") or "", usuario=u)
+            s.commit()
+        return jsonify({"ok": True})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/contratos/<int:contrato_id>/reajuste")
 @login_obrigatorio
 @permissao("ver_contratos")
@@ -7589,7 +7674,7 @@ def api_listar_obras():
     from app.apps.erp.core.auth.permissoes import (
         obras_de_registro_sem_autor, obras_do_usuario,
     )
-    from app.apps.erp.db.models.cadastros import Obra, ObraAditivo
+    from app.apps.erp.db.models.cadastros import Obra, ObraAditivo, UsuarioObra
     from app.apps.erp.db.models.financeiro import EspecieTitulo, Rateio, Titulo
     try:
         with get_session() as s:
@@ -7639,6 +7724,16 @@ def api_listar_obras():
                 destino = recebidos if especie == EspecieTitulo.RECEBER else gastos
                 destino[obra_id] = float(total or 0)
 
+            # QUEM RESPONDE POR CADA OBRA. Pedido do dono em 17/09/2026:
+            # *"é interessante dar destaque a se tem alguém responsável pela
+            # obra ou não, porque enquanto não tem, ninguém pode fazer nada"*.
+            # Uma consulta só para todas as obras da tela.
+            com_responsavel = {
+                oid for (oid,) in s.execute(
+                    select(UsuarioObra.obra_id).where(
+                        UsuarioObra.obra_id.in_(ids),
+                        UsuarioObra.responsavel.is_(True)).distinct())}
+
             fases = dict(FASES_OBRA)
             hoje = date.today()
             linhas = []
@@ -7672,6 +7767,7 @@ def api_listar_obras():
                     "seguro_vigencia_fim": (o.seguro_vigencia_fim.isoformat()
                                             if o.seguro_vigencia_fim else None),
                     "cno": o.cno, "art_rrt": o.art_rrt,
+                    "tem_responsavel": o.id in com_responsavel,
                     "conta_bancaria_id": o.conta_bancaria_id,
                     # O projeto que agrupa a obra (migração 066): vira filtro
                     # na tela e coluna no relatório somado por projeto.
@@ -8357,6 +8453,52 @@ def api_periodo():
 @permissao("ver_erp")
 def pagina_meu_cadastro():
     return render_template("erp_meu_cadastro.html", **_contexto("prestacao"))
+
+
+@bp.route("/erp/api/minha-senha", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_minha_senha():
+    """A pessoa troca a PRÓPRIA senha.
+
+    Dono, 17/09/2026: *"eu sou um usuário, e se eu quiser alterar a minha senha
+    de usuário, onde é que eu consigo fazer isso? Eu não encontrei"*. Não dava:
+    só um ADMIN trocava senha, pelo cadastro de operadores — o que obriga a
+    pessoa a contar a senha nova para alguém, ou a ficar com a que recebeu.
+
+    Exige a senha ATUAL. Sem isso, um computador deixado destravado vira conta
+    tomada: quem passasse pela mesa trocaria a senha e fecharia o dono para
+    fora. A troca fica na trilha de auditoria — sem a senha, obviamente.
+    """
+    from app.apps.erp.core.auth.service import gerar_hash, verificar_senha
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    d = request.get_json(silent=True) or {}
+    atual = (d.get("senha_atual") or "").strip()
+    nova = (d.get("senha_nova") or "").strip()
+    repetida = (d.get("senha_repetida") or "").strip()
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if not verificar_senha(atual, usuario.senha_hash or ""):
+                return jsonify({"ok": False,
+                                "erro": "A senha atual não confere."}), 400
+            if nova != repetida:
+                return jsonify({"ok": False,
+                                "erro": "A nova senha e a repetição estão diferentes."}), 400
+            if nova == atual:
+                return jsonify({"ok": False,
+                                "erro": "A nova senha é igual à atual."}), 400
+            try:
+                usuario.senha_hash = gerar_hash(nova)
+            except ValueError as e:
+                return jsonify({"ok": False, "erro": str(e)}), 400
+            registrar_evento(s, "usuario", usuario.id, "SENHA_TROCADA_PELO_PROPRIO",
+                             {"origem": "tela Minha conta"}, usuario.id)
+            s.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("ERP: falha ao trocar a própria senha")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/api/meu-cadastro", methods=["GET", "POST"])

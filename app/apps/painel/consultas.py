@@ -21,7 +21,14 @@ PAG = "2. Contas a Pagar"
 
 # "Foi pago?" nao e "tem data": um titulo em aberto tambem tem data (a de
 # vencimento). Quem responde e o texto da situacao, como no painel antigo.
-PAGO = "situacao ~* '(pago|recebido|conciliado)'"
+# "Foi pago" — a MESMA regra de sempre, só que calculada pelo banco na gravação
+# em vez de linha a linha em toda consulta. A coluna `pago` nasce na migração
+# 009 com exatamente esta expressão; trocar aqui não muda número nenhum, muda
+# QUANDO a conta é feita.
+#
+# Medido em 17/09/2026, numa base de 144 mil linhas, na consulta do ano do DRE:
+# 112 ms com a expressão, 29 ms com a coluna. Era 71% do tempo de cada tela.
+PAGO = "pago"
 # Imposto retido na fonte: o cliente reteve, nao virou caixa da BWS. Entra na
 # receita bruta e sai da liquida.
 RETIDO = "categoria ILIKE '%Retido%'"
@@ -292,6 +299,9 @@ SEM_OBRA = "(não apropriado)"
 # Mesmo padrao do SEM_OBRA: um rotulo so, em toda a tela, para o que
 # nao tem fornecedor — senao filtrar por ele vira adivinhacao.
 SEM_FORNECEDOR = "(sem fornecedor)"
+# Mesmo padrao: um rotulo so para o que nao tem categoria. Sem ele, "achar o que
+# esta sem classificacao" — que e o trabalho do Explorador — dependia de sorte.
+SEM_CATEGORIA = "(sem categoria)"
 OBRA_OU_SEM = f"COALESCE(NULLIF(TRIM(departamento),''), '{SEM_OBRA}')"
 
 ENCARGO = f"CASE WHEN {PAGO} THEN (juros + multa) ELSE 0 END"
@@ -1375,7 +1385,7 @@ def opcoes_do_explorador() -> dict:
         return {
             "analises": _distintos("analise"),
             "grupos": _distintos("grupo"),
-            "categorias": _distintos("categoria"),
+            "categorias": _distintos("categoria", SEM_CATEGORIA),
             "obras": _distintos("departamento", SEM_OBRA),
             "projetos": _distintos("projeto"),
             "contas": _distintos("conta_corrente"),
@@ -1424,6 +1434,11 @@ COLUNAS_DO_EXPLORADOR = (
     "codigo_lancamento", "data", "tipo", "analise", "grupo", "categoria",
     "codigo_categoria", "departamento", "projeto", "razao_social",
     "numero_documento", "conta_corrente", "situacao",
+    # As duas datas separadas: e com elas que se acha o lancamento no OMIE.
+    # A coluna `data` e a DERIVADA (pagamento se quitado, senao vencimento) e
+    # sozinha nao diz qual das duas e — o que atrapalha justamente quem esta
+    # conferindo o painel contra o OMIE lado a lado.
+    "data_vencimento", "data_pagamento",
     "pago_recebido", "a_pagar_receber", "observacao",
 )
 
@@ -1476,13 +1491,21 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
         condicoes.append("analise = ANY(?)")
         params.append(analises)
 
-    for campo, coluna in (("grupos", "grupo"), ("categorias", "categoria"),
+    for campo, coluna in (("grupos", "grupo"),
                           ("projetos", "projeto"), ("contas", "conta_corrente"),
                           ("situacoes", "situacao")):
         escolhidos = [v for v in pedido.get(campo) or [] if v]
         if escolhidos:
             condicoes.append(f"TRIM(COALESCE({coluna},'')) = ANY(?)")
             params.append(escolhidos)
+
+    # A categoria tem rotulo proprio para o vazio, como a obra: e o que permite
+    # PEDIR o que esta sem classificacao, em vez de procurar por sorte.
+    categorias = [c for c in pedido.get("categorias") or [] if c]
+    if categorias:
+        condicoes.append(
+            f"COALESCE(NULLIF(TRIM(categoria),''), '{SEM_CATEGORIA}') = ANY(?)")
+        params.append(categorias)
 
     obras = [o for o in pedido.get("obras") or [] if o]
     if obras:
@@ -1689,6 +1712,35 @@ def conferencia_do_pago() -> dict:
     return {"linhas": quantos or 0, "titulos": titulos or 0,
             "valor": float(valor or 0), "situacoes": situacoes,
             "categorias": categorias, "ao_contrario": ao_contrario or 0}
+
+
+def cobertura_das_observacoes() -> dict:
+    """Quantos títulos têm a observação do OMIE, e quantos não têm.
+
+    A observação NÃO vem na listagem do OMIE: ela só chega consultando um título
+    por vez — ~116 mil chamadas para contas a pagar, horas de trabalho. Isso é
+    feito por um script separado, à mão (`backfill_observacoes`).
+
+    O dono desconfiou disso em 17/09/2026 — "as observações dos títulos,
+    completos, não estão vindo para o painel" — e estava certo. Sem este número
+    na tela, a única forma de saber era ler o código."""
+    (total, com_obs, tentados) = consultar(
+        """SELECT COUNT(*),
+                  COUNT(*) FILTER (WHERE TRIM(COALESCE(observacao,'')) <> ''),
+                  COUNT(*) FILTER (WHERE observacao_sync IS NOT NULL)
+             FROM titulos
+            WHERE UPPER(COALESCE(status_titulo,'')) <> 'CANCELADO'""")[0]
+    por_natureza = [{"natureza": "A pagar" if n == "P" else "A receber",
+                     "total": t, "com_obs": c}
+                    for n, t, c in consultar(
+        """SELECT natureza, COUNT(*),
+                  COUNT(*) FILTER (WHERE TRIM(COALESCE(observacao,'')) <> '')
+             FROM titulos
+            WHERE UPPER(COALESCE(status_titulo,'')) <> 'CANCELADO'
+            GROUP BY 1 ORDER BY 1""")]
+    return {"total": total or 0, "com_obs": com_obs or 0,
+            "tentados": tentados or 0, "por_natureza": por_natureza,
+            "pct": round((com_obs or 0) * 100 / (total or 1), 1)}
 
 
 def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:

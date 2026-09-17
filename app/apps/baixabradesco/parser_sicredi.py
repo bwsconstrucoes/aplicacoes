@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from .models import ExtractedReceipt
 from .utils import normalize_text, only_digits, money_to_decimal, decimal_to_br, clean_account, as_string
-from .parser_bradesco import receipt_recusado
+from .parser_bradesco import extract_identificador, receipt_recusado
 
 
 def is_sicredi(text: str) -> bool:
@@ -54,6 +54,9 @@ def parse_sicredi_text(filename: str, page: int, text: str,
     r.codigo_barras    = extract_codigo_barras(text)
     r.nome_recebedor   = extract_nome_recebedor(text)
     r.descricao        = extract_descricao(text)
+    # Sem isto, dois comprovantes Sicredi diferentes pareciam o mesmo pagamento
+    # e o desempate por lote se recusava a distribuí-los.
+    r.identificador    = extract_identificador(text)
 
     if 'boleto' in norm or 'codigo de barras' in norm:
         r.tipo_comprovante = 'boleto'

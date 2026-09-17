@@ -128,3 +128,71 @@ def test_comprovante_recusado_do_sicredi_continua_barrado():
     r = parse_sicredi_text('sicredi.pdf', 1, texto)
     assert r.tipo_comprovante == 'operacao_nao_realizada'
     assert r.valor_pago == ''
+
+
+# ── Dois Pix do Sicredi, mesmo valor, pagamentos diferentes ───────────────────
+#
+# Caso real, 17/09/2026: dois Pix de R$ 7.300,00 para duas SPs de mesmo valor,
+# as duas agendadas. O desempate por lote se recusou a distribuir, dizendo que
+# "parecem ser o MESMO pagamento (identificador repetido ou ausente)".
+#
+# Estava ausente, e a culpa era de dois descuidos somados:
+#   1. o leitor do Sicredi nunca preenchia o identificador — quando o liguei, em
+#      13/09, esqueci de levar esse campo junto;
+#   2. mesmo se preenchesse, os rótulos do Sicredi ("ID da transação",
+#      "Autenticação Eletrônica", "Número de Controle") não estavam na lista de
+#      onde procurar — ela conhecia só os do Bradesco.
+
+def le(nome):
+    texto = (EXEMPLOS / nome).read_text(encoding='utf-8')
+    return parse_sicredi_text(nome, 1, texto)
+
+
+def test_o_leitor_do_sicredi_preenche_o_identificador():
+    assert le('sicredi_pix_a.txt').identificador
+
+
+def test_dois_pix_diferentes_tem_identificadores_diferentes():
+    a, b = le('sicredi_pix_a.txt'), le('sicredi_pix_b.txt')
+    assert a.valor_pago == b.valor_pago == '7.300,00'
+    assert a.identificador != b.identificador
+
+
+def test_prefere_o_id_da_transacao(): 
+    """É o identificador canônico do Pix — melhor que autenticação ou controle."""
+    assert le('sicredi_pix_a.txt').identificador.startswith('E00000000000000000000')
+
+
+@pytest.mark.parametrize('rotulo,esperado', [
+    ('ID da transação: E4118009220260917112335INPrdDqZr', 'E4118009220260917112335INPrdDqZr'),
+    ('Autenticação Eletrônica: E411.8009.2202.6091.7112.335I.NPrd.DqZr',
+     'E411.8009.2202.6091.7112.335I.NPrd.DqZr'),
+    ('Número de Controle: 14807610737', '14807610737'),
+])
+def test_conhece_os_rotulos_do_sicredi(rotulo, esperado):
+    from app.apps.baixabradesco.parser_bradesco import extract_identificador
+    assert extract_identificador(rotulo) == esperado
+
+
+def test_os_dois_sao_distribuidos_entre_as_duas_sps():
+    """Ponta a ponta com os dois comprovantes reais e as duas SPs do dono."""
+    from app.apps.baixabradesco.core import resolver_empates_do_lote
+    from app.apps.baixabradesco.models import MatchResult
+
+    candidatas = [
+        SpRecord(row_number=1, id='1445859706', valor_total='7.300,00',
+                 status_pgt='Pagar', status_agendamento='agendado'),
+        SpRecord(row_number=2, id='1445866267', valor_total='7.300,00',
+                 status_pgt='Pagar', status_agendamento='agendado'),
+    ]
+    lote = [
+        {'page_num': 1, 'rec': le('sicredi_pix_a.txt'),
+         'match': MatchResult(status='pendente_validacao', metodo='valor_conta_agendado',
+                              candidatos=candidatas)},
+        {'page_num': 2, 'rec': le('sicredi_pix_b.txt'),
+         'match': MatchResult(status='pendente_validacao', metodo='valor_conta_agendado',
+                              candidatos=candidatas)},
+    ]
+
+    assert resolver_empates_do_lote(lote) == 2
+    assert sorted(i['match'].id for i in lote) == ['1445859706', '1445866267']
