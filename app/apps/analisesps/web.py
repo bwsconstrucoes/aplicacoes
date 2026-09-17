@@ -3131,6 +3131,53 @@ def enviar_comprovantes():
     return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
 
 
+@bp.route("/comprovantes/reprocessar", methods=["POST"])
+@exige_operador
+def reprocessar_comprovante():
+    """Manda UM lote para a fila de novo, sem precisar achar o PDF outra vez.
+
+    Pedido do dono em 17/09/2026: *"às vezes os comprovantes não baixam por
+    algum motivo. Eu queria, a partir da tela, poder reenviar um comprovante.
+    (…) Opa, esqueci algum detalhe — o título não está no [Omie]."*
+
+    É o caso de todo dia: não baixou porque o título ainda não existe no Omie,
+    ou faltou um dado no card. A pessoa conserta lá e aperta aqui.
+
+    ⚠️ FORMULÁRIO COMUM, não `fetch`, pelo mesmo motivo do botão "Retomar a
+    fila": é botão de destravar, e tem de funcionar mesmo se o JavaScript não
+    carregar."""
+    from . import comprovantes, tarefas
+
+    try:
+        lote_id = int(request.form.get("lote") or 0)
+    except ValueError:
+        lote_id = 0
+    if not lote_id:
+        return redirect(url_for("analisesps.tela_comprovantes",
+                                aviso="Não entendi qual comprovante reenviar."))
+
+    resultado = comprovantes.reprocessar_lote(lote_id)
+    if not resultado.get("ok"):
+        return redirect(url_for("analisesps.tela_comprovantes",
+                                aviso=resultado.get("erro", "Não deu para "
+                                                    "reenviar este lote.")))
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    disparo = tarefas.disparar("comprovantes", disparo=quem or "reprocessar")
+    nome = resultado.get("arquivo") or f"lote {lote_id}"
+    # ⚠️ O RECADO DIZ O QUE ACONTECEU DE VERDADE. Quando outra tarefa já está
+    # rodando o disparo é recusado, e o lote fica na fila para a próxima — foi
+    # metade do "clico e nada acontece" de 16/09. Fingir que já começou seria
+    # repetir o mesmo engano.
+    if disparo.get("ok"):
+        aviso = (f"{nome} voltou para a fila e já está sendo processado. "
+                 "O que já tinha baixado no Omie não baixa duas vezes.")
+    else:
+        aviso = (f"{nome} voltou para a fila. Ainda não começou porque já há "
+                 "outra tarefa rodando — ele entra assim que ela terminar.")
+    return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
+
+
 @bp.route("/api/comprovantes/estado")
 @exige_consulta
 def estado_comprovantes():

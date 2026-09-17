@@ -5236,6 +5236,77 @@ ia trabalhando neles"* do pedido.
 3. **o atalho leva até a lista** — que é a correção desta leva.
 
 ---
+
+### Sexagésima nona leva (17/09) — reenviar um comprovante, e o aviso que não saía
+
+Duas queixas do dono, no mesmo pedido, e as duas se resolvem no mesmo lugar.
+
+#### 1. "Poder reenviar um comprovante a partir da tela"
+
+> *"Às vezes os comprovantes não baixam por algum motivo. (…) Permitir o
+> reenvio de algo que a gente não baixou. Opa, esqueci algum detalhe — o título
+> não está no [Omie]."*
+
+É o caso de todo dia: o comprovante não baixa porque **o título ainda não
+existe no Omie**, ou faltou um dado no card. A pessoa conserta **lá** e quer
+tentar de novo. Até agora o único caminho era achar o PDF e arrastar outra vez.
+
+Cada lote ganhou **"Processar de novo"**. Aparece só onde há o que
+reprocessar — lote terminado (pronto ou falhado) ou parado; num lote que está
+trabalhando agora o botão convidaria a atropelar o próprio processamento.
+
+⚠️ **Os itens antigos são apagados ao reprocessar, e isso não é detalhe.** Eles
+são gravados com `INSERT` simples, **sem chave única**. Reprocessar sem limpar
+mostraria **cada página duas vezes** na tela — e quem olhasse concluiria que o
+comprovante foi baixado em dobro. O que já baixou no Omie continua baixado: é
+reconhecido como duplicado e não baixa de novo, a mesma promessa que o botão
+"Retomar a fila" já fazia.
+
+⚠️ **Sem o PDF não há o que reprocessar.** O contêiner do Render reinicia e leva
+o disco junto. Nesse caso o lote é **encerrado** dizendo isso, em vez de voltar
+para uma fila onde falharia de novo a cada rodada.
+
+#### 2. ⚠️ O aviso de "lote parado" que não saía — e a causa
+
+> *"Uma coisa que está aparecendo lá e não sai é um retomar fila. Não sei por
+> que está com aquela pendência e está assim."*
+
+**Achado, e é um defeito de verdade.** O aviso da tela acende para lote parado
+em **ESPERANDO ou RODANDO** (`parece_parado`), mas o destravamento
+(`destravar_parados`) só alcançava **RODANDO**.
+
+Resultado: um lote que ficou em **ESPERANDO sem o PDF no disco** — o contêiner
+reiniciou entre o envio e o processamento — era escolhido pela fila a cada
+rodada, falhava ao abrir o arquivo, e **o aviso acendia de novo na rodada
+seguinte, para sempre**. O botão fazia exatamente o que devia; era a lista que
+nunca esvaziava. Apertar não adiantava, e não havia como adivinhar por quê.
+
+Agora as duas situações entram no destravamento: com arquivo, volta para a
+fila; sem arquivo, é encerrado com o motivo escrito. **O que não pode é ficar
+preso.**
+
+⚠️ **E a trava do outro lado:** lote recém-solto **não** é destravado. Os 15
+minutos protegem quem acabou de chegar — encerrar um lote antes de alguém
+sequer tentar processá-lo seria trocar um defeito por outro pior. Há teste
+cravando isso.
+
+#### Conferido num navegador
+
+Com um lote terminado trazendo exatamente o caso dele — *"Título não encontrado
+no Omie. Inclua o título primeiro."* — e um lote preso há quatro horas. Os dois
+botões aparecem, o clique devolve o lote à fila, e o recado diz o que
+aconteceu de verdade: se a fila começou agora, ou se ficou esperando outra
+tarefa terminar. Zero erro de JavaScript.
+
+#### Uma armadilha de teste que vale registrar
+
+O teste da tela falhou por um motivo que não tinha nada a ver com o botão:
+**sem nenhuma SP na base, TODA tela do módulo devolve "a base ainda não foi
+carregada"** e não chega a desenhar os lotes. Teste de tela deste módulo
+precisa semear ao menos uma SP, senão falha por motivo errado — e faz perder
+tempo procurando no lugar errado.
+
+---
 ---
 
 ## Regras que não se discutem

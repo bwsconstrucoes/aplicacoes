@@ -6772,3 +6772,223 @@ def test_o_atalho_da_categoria_LEVA_ate_a_lista(banco_analisesps, monkeypatch):
         "o atalho da categoria voltou a largar a pessoa no topo da página")
     assert "fiscais=sem_marcacao#lancamentos" in html, (
         "o totalizador voltou a largar a pessoa no topo da página")
+
+
+# ---------------------------------------------------------------------------
+# REENVIAR UM COMPROVANTE, E O AVISO QUE NÃO SAÍA — 17/09/2026
+#
+# > *"Às vezes os comprovantes não baixam por algum motivo. Eu queria, a partir
+# > da tela, poder reenviar um comprovante. (…) Opa, esqueci algum detalhe — o
+# > título não está no [Omie]."*
+#
+# > *"Uma coisa que está aparecendo lá e não sai é um retomar fila. Não sei por
+# > que está com aquela pendência e está assim."*
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_reprocessar_devolve_o_lote_a_fila_sem_o_PDF_de_novo(banco_analisesps,
+                                                             monkeypatch,
+                                                             tmp_path):
+    """O caso de todo dia: não baixou porque o título não estava no Omie. A
+    pessoa cria o título lá e aperta aqui — sem procurar o PDF outra vez."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(2), "sicredi.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'PRONTO', levas_feitas = 1, "
+                     "       terminado_em = now() WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    resultado = comprovantes.reprocessar_lote(lote_id)
+
+    assert resultado["ok"] is True
+    assert resultado["situacao_anterior"] == "PRONTO"
+    linha = consultar_um(
+        "SELECT situacao, levas_feitas, erro, terminado_em "
+        "  FROM analisesps.comprovantes_lote WHERE id = ?", (lote_id,))
+    assert linha[0] == "ESPERANDO", "não voltou para a fila"
+    assert linha[1] == 0, "as levas feitas não foram zeradas — recomeçaria pelo meio"
+    assert linha[3] is None, "continuou marcado como terminado"
+
+
+@pytest.mark.banco
+def test_reprocessar_APAGA_as_linhas_velhas_e_nao_duplica_a_tela(
+        banco_analisesps, monkeypatch, tmp_path):
+    """⚠️ Os itens são gravados com INSERT simples, sem chave única.
+    Reprocessar sem limpar mostraria CADA PÁGINA DUAS VEZES — e quem olhasse
+    concluiria que o comprovante foi baixado em dobro."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(2), "duas.pdf", "p", "P")
+    with conexao() as conn:
+        comprovantes._gravar_itens(conn, lote_id, [
+            {"pagina": 1, "situacao": "BAIXADO", "sp_id": "111"},
+            {"pagina": 2, "situacao": "NAO_LOCALIZADO", "motivo": "sem SP"}])
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'PRONTO' WHERE id = ?", (lote_id,))
+        conn.commit()
+    assert consultar_um("SELECT count(*) FROM analisesps.comprovantes_item "
+                        " WHERE lote_id = ?", (lote_id,))[0] == 2
+
+    comprovantes.reprocessar_lote(lote_id)
+
+    assert consultar_um("SELECT count(*) FROM analisesps.comprovantes_item "
+                        " WHERE lote_id = ?", (lote_id,))[0] == 0, (
+        "as linhas velhas ficaram; a tela mostraria cada página duas vezes")
+
+
+@pytest.mark.banco
+def test_reprocessar_SEM_o_PDF_encerra_em_vez_de_prometer(banco_analisesps,
+                                                          monkeypatch,
+                                                          tmp_path):
+    """Sem o arquivo não há o que reprocessar. Devolver à fila faria ele
+    falhar de novo a cada rodada — e o aviso acenderia para sempre."""
+    import os
+
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "sumiu.pdf", "p", "P")
+    caminho = consultar_um("SELECT caminho FROM analisesps.comprovantes_lote "
+                           " WHERE id = ?", (lote_id,))[0]
+    os.remove(caminho)
+
+    resultado = comprovantes.reprocessar_lote(lote_id)
+
+    assert resultado["ok"] is False
+    assert resultado["sem_arquivo"] is True
+    assert "arraste o arquivo de novo" in resultado["erro"].lower()
+    situacao, erro = consultar_um(
+        "SELECT situacao, erro FROM analisesps.comprovantes_lote "
+        " WHERE id = ?", (lote_id,))
+    assert situacao == "FALHOU", "ficou preso na fila sem ter o que processar"
+    assert "não está mais no servidor" in erro
+
+
+@pytest.mark.banco
+def test_o_lote_ESPERANDO_SEM_ARQUIVO_para_de_acender_o_aviso_para_sempre(
+        banco_analisesps, monkeypatch, tmp_path):
+    """⚠️ ESTE É O AVISO QUE NÃO SAÍA — a queixa de 17/09/2026.
+
+    O aviso da tela acende para lote parado em ESPERANDO **ou** RODANDO, mas o
+    destravamento só alcançava RODANDO. Um lote que ficou em ESPERANDO sem o
+    PDF no disco era escolhido pela fila a cada rodada, falhava ao abrir o
+    arquivo, e o aviso acendia de novo na rodada seguinte — para sempre. O
+    botão fazia o que devia; era a lista que nunca esvaziava."""
+    import os
+
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "preso.pdf", "p", "P")
+    caminho = consultar_um("SELECT caminho FROM analisesps.comprovantes_lote "
+                           " WHERE id = ?", (lote_id,))[0]
+    os.remove(caminho)
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'ESPERANDO', "
+                     "       recebido_em = now() - interval '5 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    # Antes da correção isto devolvia zero e o lote continuava ESPERANDO.
+    resultado = comprovantes.destravar_parados()
+
+    assert resultado["sem_arquivo"] == 1
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "FALHOU"
+    # E o aviso da tela apaga, que é o que ele pediu.
+    lote = [l for l in comprovantes.historico() if l["id"] == lote_id][0]
+    assert not lote["parece_parado"], "o aviso continuaria aceso"
+
+
+@pytest.mark.banco
+def test_lote_RECEM_CHEGADO_nao_e_destravado_por_engano(banco_analisesps,
+                                                        monkeypatch, tmp_path):
+    """⚠️ A trava do outro lado. Agora que ESPERANDO entra no destravamento, um
+    lote que acabou de ser solto não pode ser encerrado antes de alguém sequer
+    tentar processá-lo."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "agorinha.pdf", "p", "P")
+
+    resultado = comprovantes.destravar_parados()
+
+    assert resultado["sem_arquivo"] == 0
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "ESPERANDO"
+
+
+@pytest.mark.banco
+def test_o_botao_de_reenvio_aparece_na_tela_do_lote_que_falhou(banco_analisesps,
+                                                              monkeypatch,
+                                                              tmp_path):
+    """De nada adianta a rota existir se a tela não oferece o caminho."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao
+
+    from app.apps.analisesps import colunas, sincronizacao
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "falhou.pdf", "p", "P")
+    with conexao() as conn:
+        # ⚠️ A BASE PRECISA TER SP. Sem nenhuma, TODA tela do módulo devolve
+        # "a base ainda não foi carregada" e não chega a desenhar os lotes —
+        # foi assim que este teste falhou na primeira escrita, e a falha não
+        # tinha nada a ver com o botão.
+        registro = {c: "" for c in colunas.CHAVES}
+        registro.update({"id": "1400000001", "credor": "FULANO",
+                         "valor": "10,00"})
+        sincronizacao.gravar_registros(conn, [registro])
+        sincronizacao._anotar_a_base_em_dia(conn)
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'FALHOU', erro = 'deu ruim' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as s:
+        s["analisesps_perfil"] = "operador"
+        s["analisesps_nome"] = "Marcelo"
+    html = cliente.get("/analisesps/comprovantes").get_data(as_text=True)
+
+    assert "Processar de novo" in html
+    assert "/analisesps/comprovantes/reprocessar" in html
+    assert f'name="lote" value="{lote_id}"' in html
+
+
+@pytest.mark.banco
+def test_quem_so_CONSULTA_nao_reenvia_comprovante(banco_analisesps,
+                                                  monkeypatch, tmp_path):
+    """Reenviar dispara baixa no Omie de verdade — não é ação de quem só olha."""
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "x.pdf", "p", "P")
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_CONSULTA", "so-olha")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as s:
+        s["analisesps_perfil"] = "consulta"
+        s["analisesps_nome"] = "Visitante"
+
+    resposta = cliente.post("/analisesps/comprovantes/reprocessar",
+                            data={"lote": lote_id})
+
+    # O guarda do módulo manda para a entrada; o que não pode é passar.
+    assert resposta.status_code in (302, 401, 403), (
+        f"quem só consulta conseguiu reenviar (HTTP {resposta.status_code})")
+    if resposta.status_code == 302:
+        destino = resposta.headers.get("Location", "")
+        assert "reprocessar" not in destino

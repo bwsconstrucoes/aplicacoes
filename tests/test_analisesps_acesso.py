@@ -151,6 +151,8 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/conferir-drive"),
     ("POST", "/analisesps/api/pasta-drive"),
     ("POST", "/analisesps/api/pessoas"),
+    # Reenviar um comprovante dispara baixa no Omie de verdade — 17/09/2026.
+    ("POST", "/analisesps/comprovantes/reprocessar"),
     ("GET", "/analisesps/sair"),
 ]
 
