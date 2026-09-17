@@ -23,6 +23,12 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ### A EMPRESA NASCE DO CARTÃO CNPJ (sem migração)
 
+**Onde fica o botão, corrigido em seguida:** ele nasceu só no caminho da nova
+obra, e o dono foi procurar no lugar óbvio — *"estou na tela da nova empresa mas
+não tem como adicionar o cartão CNPJ"*. Agora está nos DOIS: em **Configurações
+→ Empresas**, na barra da lista ("Cadastrar pelo Cartão CNPJ", ao lado de
+"+ Nova empresa (digitando)"), e no campo de empresa da nova obra.
+
 17/09/2026, completando o pedido anterior: *"e eu conseguiria cadastrá-la a
 partir do Cartão CNPJ?"*.
 

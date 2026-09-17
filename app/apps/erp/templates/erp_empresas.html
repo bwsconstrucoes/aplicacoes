@@ -46,7 +46,13 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
-    <button class="btn" id="btn-nova">+ Nova empresa</button>
+    {# O CARTÃO CNPJ CADASTRA A EMPRESA. Dono, 17/09/2026: *"estou na tela da
+       nova empresa, mas não tem como adicionar o cartão CNPJ"*. Estava só no
+       caminho da nova obra — e este aqui é o lugar natural de procurar. #}
+    <input type="file" id="emp-cartao" accept=".pdf,.png,.jpg,.jpeg,.webp"
+           style="font-size:12px; max-width:230px">
+    <button class="btn amarelo" id="btn-cartao">Cadastrar pelo Cartão CNPJ</button>
+    <button class="btn" id="btn-nova">+ Nova empresa (digitando)</button>
   </div>
   <div class="tabela-rolagem">
     <table><thead><tr>
@@ -701,6 +707,73 @@ els("btn-limpar").addEventListener("click", () => {
   ["f-inativas", "f-sem-conta", "f-sem-logo"].forEach(id => els(id).checked = false);
   desenhar();
 });
+// ---------------------------------------------------------------------------
+// A EMPRESA QUE NASCE DO CARTÃO CNPJ
+//
+// O comprovante da Receita traz razão social, nome fantasia, CNPJ e endereço.
+// O sistema lê, MOSTRA PARA CONFERIR (cartão escaneado torto acontece), cria a
+// empresa e guarda o próprio cartão arquivado dentro dela.
+// ---------------------------------------------------------------------------
+async function empresaPeloCartao(){
+  const arq = els("emp-cartao").files[0];
+  if (!arq) { aviso("mensagem", "Escolha antes o arquivo do Cartão CNPJ.", "alerta"); return; }
+  const b = els("btn-cartao");
+  b.disabled = true; b.textContent = "Lendo…";
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("dica", "é o Cartão CNPJ (comprovante de inscrição) da empresa");
+    const lido = await api("/erp/api/empresas/documento/ler", {method:"POST", body: fd});
+    const c = lido.cadastro;
+    if (c.ja_cadastrada) {
+      aviso("mensagem", `Esta empresa já está cadastrada:
+        <b>${escapar(c.ja_cadastrada.nome)}</b> (${escapar(c.ja_cadastrada.cnpj)}).`, "alerta");
+      b.disabled = false; b.textContent = "Cadastrar pelo Cartão CNPJ";
+      return;
+    }
+    const v = {};
+    (c.campos || []).forEach(x => { v[x.campo] = x.valor; });
+    const r = await perguntar({
+      titulo: "Confere o que o Cartão CNPJ diz?",
+      textoOk: "Cadastrar empresa",
+      aviso: (c.avisos || []).join(" ")
+           || "Corrija o que estiver errado antes de gravar. O CNPJ não muda depois.",
+      campos: [
+        {nome: "cnpj", rotulo: "CNPJ", obrigatorio: true, largura: 2, valor: v.cnpj || ""},
+        {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3,
+         valor: v.razao_social || ""},
+        {nome: "nome_fantasia", rotulo: "Nome fantasia", largura: 2, valor: v.nome_fantasia || ""},
+        {nome: "logradouro", rotulo: "Logradouro", largura: 2, valor: v.logradouro || ""},
+        {nome: "numero", rotulo: "Número", valor: v.numero || ""},
+        {nome: "complemento", rotulo: "Complemento", valor: v.complemento || ""},
+        {nome: "bairro", rotulo: "Bairro", largura: 2, valor: v.bairro || ""},
+        {nome: "municipio", rotulo: "Cidade", largura: 2, valor: v.municipio || ""},
+        {nome: "uf", rotulo: "UF", valor: v.uf || ""},
+        {nome: "cep", rotulo: "CEP", valor: v.cep || ""},
+        {nome: "telefone", rotulo: "Telefone", valor: v.telefone || ""},
+        {nome: "email", rotulo: "E-mail", largura: 2, valor: v.email || ""},
+      ]});
+    if (!r) { b.disabled = false; b.textContent = "Cadastrar pelo Cartão CNPJ"; return; }
+
+    const envio = new FormData();
+    envio.append("arquivo", arq);
+    envio.append("tipo", lido.sugestao.tipo_codigo || "CARTAO-CNPJ");
+    envio.append("campos", JSON.stringify(r));
+    ["emissao","texto","resumo","referencia"].forEach(k => {
+      if (lido.sugestao[k]) envio.append(k, lido.sugestao[k]);
+    });
+    const d = await api("/erp/api/empresas/documento", {method:"POST", body: envio});
+    els("emp-cartao").value = "";
+    aviso("mensagem", `Empresa <b>${escapar(d.empresa.nome)}</b> cadastrada, e o
+      Cartão CNPJ guardado nela como <b class="mono">${escapar(d.documento.nome)}</b>.
+      Configure agora a conta de e-mail.`, "ok");
+    await carregar();
+    abrir(d.empresa.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Cadastrar pelo Cartão CNPJ";
+}
+
+els("btn-cartao").addEventListener("click", empresaPeloCartao);
 els("btn-nova").addEventListener("click", novaEmpresa);
 
 carregar();
