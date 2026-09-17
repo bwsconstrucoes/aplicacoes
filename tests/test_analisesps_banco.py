@@ -6643,3 +6643,132 @@ def test_SEM_a_migracao_017_nenhuma_ciencia_e_enviada(banco_analisesps,
 
     assert notas_arquivo.notas_para_manifestar() == []
     assert notas_arquivo.manifestar_pendentes()["manifestadas"] == 0
+
+
+# ---------------------------------------------------------------------------
+# O CLIQUE NO QUADRO POR CATEGORIA — 17/09/2026
+#
+# > *"Se eu botar por categoria, quando eu clico em 'sem informação', não era
+# > para filtrar eles na listagem abaixo? Porque aí eu já ia trabalhando
+# > neles."*
+#
+# ⚠️ O FILTRO JÁ FUNCIONAVA — conferido num navegador de verdade antes de
+# mexer em qualquer coisa: clicar derrubava a lista de 6 SPs para 3. O que
+# faltava era VER: a lista fica duas telas abaixo, e o clique devolvia a
+# pessoa ao topo da página, onde tudo parecia igual.
+#
+# Estes testes travam as duas metades: que o recorte alcança a lista, e que o
+# atalho aponta para ela.
+# ---------------------------------------------------------------------------
+def _sp_fiscal(sp_id, credor, valor, categoria=""):
+    from app.apps.analisesps import colunas
+    r = {c: "" for c in colunas.CHAVES}
+    r.update({"id": sp_id, "credor": credor, "valor": valor,
+              "documento": "29.066.773/0001-52", "tipo_despesa": "Ferramentas"})
+    return r, categoria
+
+
+def _semear_categorias(registros):
+    """Grava as SPs e a documentação fiscal de cada uma.
+
+    ⚠️ A CATEGORIA NÃO É COLUNA DA SP: mora em `analisesps.sp_fiscal`, que vem
+    da planilha de apoio. Pôr `doc_fiscal` no registro da SP não a grava em
+    lugar nenhum — foi assim que a primeira versão deste teste "provou" um
+    defeito que não existia, porque as seis SPs ficaram todas sem categoria e
+    o filtro, corretamente, devolveu as seis."""
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        sincronizacao.gravar_registros(conn, [r for r, _ in registros])
+        sincronizacao._anotar_a_base_em_dia(conn)
+        for r, categoria in registros:
+            if categoria:
+                conn.execute(
+                    "INSERT INTO analisesps.sp_fiscal (sp_id, doc_fiscal) "
+                    "VALUES (?, ?)", (r["id"], categoria))
+        conn.commit()
+
+
+@pytest.mark.banco
+def test_o_clique_em_SEM_INFORMACAO_filtra_a_lista_de_lancamentos(
+        banco_analisesps, monkeypatch):
+    """O recorte do quadro alcança a lista — não só o quadro."""
+    _semear_categorias([
+        _sp_fiscal("1000000001", "ALFA SEM DOC", "100,00"),
+        _sp_fiscal("1000000002", "BETA SEM DOC", "200,00"),
+        _sp_fiscal("1000000003", "GAMA COM NFE", "300,00", "NF-e (Mercadoria)"),
+        _sp_fiscal("1000000004", "DELTA COM RECIBO", "400,00", "Recibo"),
+    ])
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as s:
+        s["analisesps_perfil"] = "operador"
+        s["analisesps_nome"] = "Marcelo"
+
+    html = cliente.get("/analisesps/fiscal?f=1&sem_categoria=1"
+                       ).get_data(as_text=True)
+
+    assert "ALFA SEM DOC" in html and "BETA SEM DOC" in html
+    assert "GAMA COM NFE" not in html, "trouxe SP que TEM categoria"
+    assert "DELTA COM RECIBO" not in html, "trouxe SP que TEM categoria"
+    # E a tela diz, em português, que está mostrando um recorte — senão a lista
+    # menor parece base menor.
+    assert "Mostrando as SPs da categoria" in html
+
+
+@pytest.mark.banco
+def test_o_quadro_e_a_lista_contam_a_MESMA_coisa(banco_analisesps, monkeypatch):
+    """⚠️ Se o quadro somasse por um critério e a lista filtrasse por outro,
+    ele diria "3" e a lista mostraria outra quantidade — e não haveria como
+    desconfiar de qual dos dois está certo."""
+    from app.apps.analisesps import consultas
+
+    _semear_categorias([
+        _sp_fiscal("1000000001", "ALFA SEM DOC", "100,00"),
+        _sp_fiscal("1000000002", "BETA SEM DOC", "200,00"),
+        _sp_fiscal("1000000003", "GAMA COM NFE", "300,00", "NF-e (Mercadoria)"),
+    ])
+
+    quadro = consultas.quadro_por_categoria({"escopo_fiscal": True})
+    vazia = [c for c in quadro if c["vazia"]]
+    assert len(vazia) == 1, f"o quadro não separou a pilha vazia: {quadro}"
+
+    lista = consultas.listar({"escopo_fiscal": True, "sem_categoria": True})
+    assert vazia[0]["quantas"] == len(lista) == 2, (
+        f"o quadro diz {vazia[0]['quantas']} e a lista traz {len(lista)}")
+
+
+@pytest.mark.banco
+def test_o_atalho_da_categoria_LEVA_ate_a_lista(banco_analisesps, monkeypatch):
+    """⚠️ A metade que faltava, e a queixa dele: o filtro funcionava, mas o
+    clique devolvia a pessoa ao TOPO da página. Entre o topo e a lista há os
+    totalizadores, o quadro, o parágrafo da reconferência e o bloco de ações —
+    quase duas telas. Quem clicava via tudo igual e concluía que não tinha
+    acontecido nada.
+
+    Conferido num navegador em 17/09/2026: sem a âncora a página ficava em 0px;
+    com ela, para em 802px, com a primeira linha da lista à vista."""
+    _semear_categorias([
+        _sp_fiscal("1000000001", "ALFA SEM DOC", "100,00"),
+        _sp_fiscal("1000000002", "BETA COM NFE", "200,00", "NF-e (Mercadoria)"),
+    ])
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as s:
+        s["analisesps_perfil"] = "operador"
+        s["analisesps_nome"] = "Marcelo"
+
+    html = cliente.get("/analisesps/fiscal?f=1").get_data(as_text=True)
+
+    # O bloco da lista precisa ter nome, senão não há para onde apontar.
+    assert 'id="lancamentos"' in html
+    # E os atalhos que mudam a lista apontam para ele: o quadro por categoria
+    # e os totalizadores do alto.
+    assert "sem_categoria=1#lancamentos" in html, (
+        "o atalho da categoria voltou a largar a pessoa no topo da página")
+    assert "fiscais=sem_marcacao#lancamentos" in html, (
+        "o totalizador voltou a largar a pessoa no topo da página")

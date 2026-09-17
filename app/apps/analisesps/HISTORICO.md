@@ -5185,6 +5185,57 @@ que a pessoa veio fazer ali. Ganhou contorno.
   desenhadas.
 
 ---
+
+### Sexagésima oitava leva (17/09) — o filtro funcionava; o que faltava era VER
+
+> *"Se eu botar por categoria, quando eu clico em 'sem informação', não era
+> para filtrar eles na listagem abaixo? Porque aí eu já ia trabalhando neles."*
+
+#### ⚠️ Antes de mexer, foi conferido — e o filtro JÁ funcionava
+
+Vale registrar o caminho, porque quase virou um conserto do que não estava
+quebrado. Com Postgres de verdade e navegador de verdade, clicar em "(sem
+informação)" **derrubava a lista de 6 SPs para 3**, e pelo totalizador
+"Categoria vazia" também. O quadro e a lista contam pela mesma expressão SQL,
+então não têm como divergir.
+
+**A primeira versão do teste "provou" um defeito que não existia**, e o motivo
+merece ficar escrito: a categoria **não é coluna da SP** — mora em
+`analisesps.sp_fiscal`, que vem da planilha de apoio. Pôr `doc_fiscal` no
+registro da SP não grava em lugar nenhum. As seis SPs ficaram todas sem
+categoria e o filtro, corretamente, devolveu as seis. Parecia defeito; era
+semeadura errada.
+
+**A lição, que vale para a próxima:** teste que reproduz uma queixa precisa
+provar primeiro que o cenário foi montado — aqui, que o quadro enxerga **duas**
+categorias. Sem isso, "o filtro não filtrou" pode ser só "não havia o que
+filtrar".
+
+#### O que estava errado de verdade: a distância
+
+Entre o topo da página e a lista há os totalizadores, o quadro por categoria, o
+parágrafo da reconferência e o bloco "Trazer, ler e gravar" — **quase duas
+telas**. O clique recarregava a página **no topo**, onde tudo parecia igual ao
+que era antes. Quem clicava concluía que não tinha acontecido nada, e não
+rolava para conferir.
+
+Agora os atalhos que **mudam a lista** — o quadro por categoria e os
+totalizadores do alto — apontam para o bloco da lista, que ganhou nome
+(`id="lancamentos"`). O navegador cai direto nela, já filtrada.
+
+Medido num navegador a 1440×800: antes a página ficava em **0px**; agora para
+em **802px**, com a primeira linha da lista à vista. É literalmente o *"aí eu já
+ia trabalhando neles"* do pedido.
+
+#### Três testes, e cada um trava uma metade
+
+1. **o recorte alcança a lista** — as SPs com categoria não aparecem;
+2. **o quadro e a lista contam a mesma coisa** — se divergissem, o quadro diria
+   "3" e a lista traria outra quantidade, e não haveria como saber qual dos
+   dois está certo;
+3. **o atalho leva até a lista** — que é a correção desta leva.
+
+---
 ---
 
 ## Regras que não se discutem
