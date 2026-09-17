@@ -137,6 +137,30 @@ def subir_arquivo(conteudo: bytes, nome: str, pasta_id: str,
             "link": f"https://drive.google.com/uc?export=download&id={arquivo_id}"}
 
 
+def baixar_arquivo(arquivo_id: str) -> bytes:
+    """O conteúdo de um arquivo que este módulo subiu. Levanta `ErroDoDrive`.
+
+    Pela conta de serviço, e não pelo link público: o link existe para quem
+    abre no navegador; aqui quem lê é o servidor, que já tem credencial. Assim
+    a leitura continua funcionando no dia em que a pasta deixar de ser
+    aberta por link — e um arquivo com acesso restrito não vira tela quebrada.
+    """
+    arquivo_id = str(arquivo_id or "").strip()
+    if not arquivo_id:
+        raise ErroDoDrive("Nenhum arquivo informado.")
+    sessao = _sessao()
+    try:
+        resposta = sessao.get(
+            f"https://www.googleapis.com/drive/v3/files/{arquivo_id}",
+            params={"alt": "media", "supportsAllDrives": "true"}, timeout=60)
+    except Exception as e:  # noqa: BLE001 — rede caiu; a tela tem de dizer
+        raise ErroDoDrive(f"Não consegui falar com o Drive: {e}") from e
+    if resposta.status_code >= 300:
+        raise ErroDoDrive("Não consegui baixar o arquivo do Drive. "
+                          + _explicar(resposta))
+    return resposta.content
+
+
 def conferir_pasta(pasta_id: str) -> dict:
     """Olha a pasta SEM escrever nada: existe? é de Drive Compartilhado?
 

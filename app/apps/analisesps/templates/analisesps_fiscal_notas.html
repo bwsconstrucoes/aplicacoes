@@ -397,8 +397,20 @@
                 {% set arq = arquivos_da_nota.get(n.chave) or {} %}
                 {% set ciencia = ciencia_da_nota.get(n.chave) %}
                 {% if arq.get('xml') %}
-                  <a href="{{ arq['xml'] }}" target="_blank" rel="noopener"
-                     title="Abre o XML da nota, guardado no Drive">{{ n.numero }}</a>
+                  {# ⚠️ ABRE A NOTA LIDA, NÃO O XML CRU — 17/09/2026. Antes o
+                     link ia direto para o arquivo no Drive, e quem clicava
+                     recebia uma tela de etiquetas. *"Não tem problema abrir o
+                     XML em tela. Abre num modal?"* Abre: o modal mostra a nota
+                     desenhada, e de lá sai o PDF.
+
+                     Continua sendo link de verdade — ctrl+clique abre a página
+                     inteira em nova aba. #}
+                  <a href="{{ url_for('analisesps.nota_documento',
+                                      chave=n.chave) }}"
+                     data-nota="{{ url_for('analisesps.nota_documento',
+                                           chave=n.chave) }}"
+                     data-numero="{{ n.numero }}"
+                     title="Abre a nota fiscal">{{ n.numero }}</a>
                 {% else %}
                   {{ n.numero }}
                 {% endif %}
@@ -559,6 +571,7 @@
 </div>
 
 {% include "analisesps_ficha_modal.html" %}
+{% include "analisesps_nota_modal.html" %}
 
 <div id="fiscal-config" hidden
      data-url-mao="{{ url_for('analisesps.decidir_fiscal_a_mao') }}"

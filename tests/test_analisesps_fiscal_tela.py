@@ -1212,12 +1212,23 @@ def test_a_CHAVE_aparece_na_linha_da_nota(app_fiscal, monkeypatch):
 
 
 def test_com_o_XML_guardado_o_NUMERO_vira_link(app_fiscal, monkeypatch):
-    """A entrega pedida: clicar e ver a nota."""
+    """A entrega pedida: clicar e ver a nota.
+
+    ⚠️ MUDOU EM 17/09/2026, e a mudança é o pedido dele: *"não tem problema
+    abrir o XML em tela. Abre num modal?"*
+
+    Antes o link ia DIRETO para o arquivo no Drive — quem clicasse recebia uma
+    tela de etiquetas de XML, que não é "ver a nota fiscal". Agora aponta para
+    a rota que desenha a nota, e o clique abre o modal."""
     html = _tela_de_notas(
         app_fiscal, monkeypatch,
         arquivos={CHAVE_ACME: {"xml": "https://drive.exemplo/nota123"}})
-    assert "https://drive.exemplo/nota123" in html, "o link para o XML sumiu"
     assert "documento guardado" in html
+    assert f"/analisesps/nota/{CHAVE_ACME}" in html, (
+        "o número da nota parou de levar à nota")
+    assert 'data-nota=' in html, "sem isto o clique não abre o modal"
+    assert "https://drive.exemplo/nota123" not in html, (
+        "voltou a mandar quem clica para o XML cru do Drive")
 
 
 def test_com_a_CIENCIA_dada_a_tela_diz_que_o_documento_ESTA_A_CAMINHO(

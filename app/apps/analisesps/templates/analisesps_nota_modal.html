@@ -1,0 +1,74 @@
+{# ---------------------------------------------------------------------------
+   O MODAL DA NOTA FISCAL — 17/09/2026.
+
+   *"Não tem problema abrir o XML em tela. Abre num modal? E desse modal
+   poderia exportar em PDF?"*
+
+   Mesmo desenho do modal da ficha da SP, que já existia — e pelo mesmo motivo:
+   quem está conferindo trinta notas não pode perder a rolagem, o filtro nem a
+   marcação para olhar uma. O conteúdo vem do servidor na hora do clique; não
+   há trinta notas escondidas no HTML da lista.
+
+   ⚠️ O BOTÃO DE PDF SAI DAQUI E ABRE OUTRA ABA, de propósito. Mandar imprimir
+   de dentro de um `<dialog>` é traiçoeiro: alguns navegadores imprimem a
+   página de baixo, outros imprimem o modal cortado na altura da tela. A aba
+   nova tem a folha limpa e o resultado é o mesmo em todo navegador.
+--------------------------------------------------------------------------- #}
+<dialog id="nota-modal" class="modal-ficha modal-nota">
+  <div class="modal-cab">
+    <span id="nota-modal-titulo">Nota fiscal</span>
+    <span style="display:flex; gap:8px">
+      <a class="btn" id="nota-modal-pdf" target="_blank" rel="noopener"
+         href="#">Salvar em PDF</a>
+      <button class="btn secundario" id="nota-modal-fechar"
+              title="Fecha (Esc)">Fechar</button>
+    </span>
+  </div>
+  <div class="modal-corpo" id="nota-modal-corpo">
+    <p class="cartao-dica">Carregando…</p>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  const modal = document.getElementById("nota-modal");
+  const corpo = document.getElementById("nota-modal-corpo");
+  const titulo = document.getElementById("nota-modal-titulo");
+  const pdf = document.getElementById("nota-modal-pdf");
+  // Navegador sem <dialog>: o link continua sendo um link de verdade e abre a
+  // página inteira. Ninguém fica sem ver a nota por causa disto.
+  if (!modal || !modal.showModal) return;
+
+  async function abrir(url, numero) {
+    titulo.textContent = numero ? ("Nota " + numero) : "Nota fiscal";
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    // O botão de PDF aponta para a MESMA nota, na folha de impressão.
+    pdf.href = url + (url.includes("?") ? "&" : "?") + "imprimir=1";
+    modal.showModal();
+    try {
+      const r = await fetch(url + (url.includes("?") ? "&" : "?") + "modal=1");
+      // ⚠️ 404 e 200 trazem HTML dos dois jeitos: a resposta já vem com o
+      // recado pronto em português. Jogar fora o corpo e escrever "HTTP 404"
+      // trocaria uma frase que explica por um número que não explica nada.
+      corpo.innerHTML = await r.text();
+    } catch (e) {
+      corpo.innerHTML = '<div class="aviso erro">Não consegui abrir a nota: '
+                        + e + '</div>';
+    }
+  }
+
+  document.querySelectorAll("a[data-nota]").forEach(link => {
+    link.addEventListener("click", e => {
+      // Ctrl/cmd/shift e botão do meio continuam abrindo em nova aba, que é o
+      // certo para um link de verdade.
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+      e.preventDefault();
+      abrir(link.dataset.nota, link.dataset.numero || "");
+    });
+  });
+
+  document.getElementById("nota-modal-fechar")
+          .addEventListener("click", () => modal.close());
+  modal.addEventListener("click", e => { if (e.target === modal) modal.close(); });
+})();
+</script>

@@ -17,6 +17,7 @@ import os
 
 from flask import (Blueprint, Response, redirect, render_template, request,
                    session, url_for)
+from markupsafe import escape
 
 from . import auth
 from . import preferencias
@@ -676,6 +677,80 @@ def detalhe(sp_id):
                            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual(),
                            **contexto)
+
+
+# ---------------------------------------------------------------------------
+# VER A NOTA FISCAL — 17/09/2026
+#
+# *"Não tem problema abrir o XML em tela. Abre num modal? E desse modal poderia
+# exportar em PDF?"*
+#
+# ⚠️ O PDF É O NAVEGADOR IMPRIMINDO, e é o melhor dos dois mundos: não entra
+# biblioteca nova no serviço (a regra da casa), e quem imprime escolhe margem,
+# tamanho e se quer papel ou arquivo. `?imprimir=1` abre a mesma leitura numa
+# página limpa, já chamando a caixa de impressão.
+#
+# ⚠️ E NÃO É UM DANFE OFICIAL — ver o comentário no alto de `nfe_leitura.py`.
+# A tela diz isso em letras, porque quem recebe um papel com cara de nota
+# fiscal supõe que ele vale como uma.
+# ---------------------------------------------------------------------------
+@bp.route("/nota/<chave>")
+@exige_consulta
+def nota_documento(chave):
+    """A nota fiscal desenhada a partir do XML guardado.
+
+    Três respostas, e cada uma para um lugar: `?modal=1` devolve só o miolo,
+    para o modal abrir por cima da lista sem perder a rolagem; `?imprimir=1`
+    devolve a página limpa que chama a impressão; sem nada, a página inteira,
+    que é o que abre em nova aba."""
+    import re
+
+    from . import nfe_leitura, notas_arquivo
+    from .drive import ErroDoDrive
+
+    pedaco = bool(request.args.get("modal"))
+    imprimir = bool(request.args.get("imprimir"))
+
+    def recado(mensagem, classe="erro", codigo=200):
+        """O mesmo problema, dito no formato que quem pediu sabe mostrar."""
+        if pedaco:
+            return f'<div class="aviso {classe}">{escape(mensagem)}</div>', codigo
+        return render_template("analisesps_erro.html",
+                               titulo="Nota fiscal",
+                               mensagem=mensagem), codigo
+
+    # ⚠️ A CONFERÊNCIA DA CHAVE É AQUI, na entrada, e não lá dentro: endereço
+    # com chave inventada não pode virar consulta ao banco nem ida ao Drive.
+    # Quem varre números não descobre nada e não custa nada ao serviço.
+    if len(re.sub(r"\D", "", str(chave or ""))) != 44:
+        return recado("Chave de acesso inválida — ela tem 44 números.",
+                      codigo=404)
+
+    try:
+        xml = notas_arquivo.baixar_xml(chave)
+    except notas_arquivo.SemDocumento as e:
+        # ⚠️ NÃO É ERRO, é o estado normal antes da ciência. Dizer "deu erro"
+        # aqui mandaria alguém procurar defeito onde só falta esperar.
+        return recado(str(e), classe="")
+    except ValueError as e:
+        return recado(str(e), codigo=404)
+    except ErroDoDrive as e:
+        logger.exception("Análise de SPs: falhou buscar o XML da nota")
+        return recado(f"Não consegui buscar o arquivo da nota. {e}")
+
+    try:
+        nota = nfe_leitura.ler(xml)
+    except nfe_leitura.XmlIlegivel as e:
+        return recado(str(e), classe="")
+
+    if pedaco:
+        return render_template("analisesps_nota.html", nota=nota,
+                               imprimir=False)
+    if imprimir:
+        return render_template("analisesps_nota_impressa.html", nota=nota)
+    return render_template("analisesps_nota_pagina.html", aba="fiscal",
+                           perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+                           nome=auth.nome_atual(), nota=nota)
 
 
 # ---------------------------------------------------------------------------

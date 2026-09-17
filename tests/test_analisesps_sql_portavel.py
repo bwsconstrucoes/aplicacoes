@@ -547,6 +547,12 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # requirements (é dependência do erpbrasil), mas agora é importado
         # DIRETO pelo `sefaz.py` — então precisa estar declarado aqui.
         "lxml": "lxml",
+        # Escapar o texto do recado que a tela da nota fiscal monta à mão.
+        # ⚠️ Declarado como "flask" DE PROPÓSITO, e não como pacote próprio: o
+        # markupsafe é o que o Jinja usa para escapar, e o Flask não funciona
+        # sem ele. Enquanto houver Flask no requirements, ele está lá. Pedir
+        # uma linha só para ele daria a impressão de que é escolha nossa.
+        "markupsafe": "flask",
         # A cifra que protege o certificado no banco, e a leitura do
         # .pfx. Já vinha instalada como dependência de outras, mas
         # agora é usada DIRETO — então tem de estar declarada.

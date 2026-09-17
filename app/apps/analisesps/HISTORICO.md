@@ -5091,6 +5091,100 @@ mesmo.
 ciência não tem onde registrar nem onde guardar o endereço do arquivo.
 
 ---
+
+### Sexagésima sétima leva (17/09) — a nota fiscal na tela, e o PDF que sai do navegador
+
+> *"Não tem problema abrir o XML em tela. Abre num modal? E desse modal poderia
+> exportar em PDF? Que tal?"*
+
+A proposta dele resolveu o problema que eu tinha deixado em aberto na leva
+anterior — e resolveu melhor do que a minha ideia.
+
+#### O PDF sai do NAVEGADOR, e é por isso que não entrou biblioteca nenhuma
+
+Eu tinha dito que o PDF exigiria dependência nova. Exigiria, **se o servidor
+fosse gerar o PDF**. Não é: a folha de impressão é uma página HTML limpa, e
+quem transforma em PDF é a caixa de impressão do navegador, onde "Salvar como
+PDF" é um destino como qualquer impressora.
+
+Três vantagens, e a terceira não é pequena:
+
+- **nenhuma dependência nova** — a regra da casa, e este serviço já morreu de
+  falta de memória uma vez;
+- **sai melhor**: quem imprime escolhe margem, tamanho do papel, e se quer
+  papel ou arquivo;
+- **funciona igual no computador e no celular**, sem código separado.
+
+#### ⚠️ O QUE SAI NÃO É UM DANFE OFICIAL, e o papel diz isso no alto
+
+O DANFE tem forma definida pela Receita e vale como documento auxiliar de
+circulação de mercadoria. O que sai daqui é uma **leitura do XML**: os mesmos
+dados, organizados para conferir, arquivar e imprimir. **Não serve para
+acompanhar carga na estrada.**
+
+O aviso fica na primeira linha, não no rodapé, e sai impresso junto — porque
+quem recebe um papel com cara de nota fiscal supõe que ele vale como uma. O que
+tem valor fiscal continua sendo o XML, guardado no Drive.
+
+#### O que mudou na tela de associação
+
+O número da nota **abria o XML cru no Drive** — quem clicava recebia uma tela de
+etiquetas, que não é "ver a nota fiscal". Agora abre o **modal**, com a nota
+desenhada: emitente, destinatário, chave em blocos de quatro, mercadorias com
+quantidade e valor, totais, transporte e informações complementares.
+
+Reusa o mesmo modal que a ficha da SP já usava desde a conversão — não foi
+criado nada novo. Continua sendo link de verdade: ctrl+clique abre a página
+inteira em nova aba.
+
+#### Três cuidados que o leitor do XML tem, e o motivo de cada um
+
+1. **O total da nota é o `vNF`, não a soma dos itens.** Na nota de exemplo os
+   itens somam 3.250 e a nota vale 3.400 — a diferença é o frete. Um papel que
+   dissesse 3.250 seria o defeito mais caro possível aqui: passa despercebido
+   justamente por parecer razoável.
+2. **O que a nota não informou fica vazio, não vira zero.** "Não informou
+   seguro" e "o seguro é zero" são coisas diferentes; escrever R$ 0,00 onde não
+   houve informação é inventar dado. A linha some.
+3. **O resumo não é desenhado como se fosse a nota.** O `resNFe` tem oito
+   campos e nenhuma mercadoria — desenhá-lo daria uma folha quase vazia com cara
+   de nota fiscal. A recusa é explícita, e diz o que fazer: o documento chega na
+   próxima busca, depois da ciência.
+
+#### Conferido num navegador de verdade
+
+Não só por teste: a página, o modal e o PDF foram abertos no Chromium, com uma
+NF-e de oito itens.
+
+- **O PDF saiu com 2 páginas**, com o aviso, a nota inteira e **sem a barra de
+  botões** — um botão "Imprimir" impresso dentro do próprio PDF seria
+  constrangedor, e é o tipo de coisa que só aparece depois de imprimir.
+- **O modal abriu, carregou a nota e o botão de PDF apontou para a nota certa.**
+  Zero erro de JavaScript no console.
+- **No celular (390px) a página rolava para o lado** — a tabela de nove colunas
+  empurrava tudo, e o aviso e os totais saíam do campo de visão junto. Medido:
+  583px de conteúdo para 390px de tela. Agora a rolagem está presa na tabela, o
+  selo do número vai para baixo do emitente e a página mede 390 contra 390. Há
+  teste exigindo o envelope de rolagem — e outro exigindo que ele **não** valha
+  no papel, onde cortaria as últimas colunas do PDF sem ninguém perceber.
+
+#### Detalhe pequeno que valeu o conserto
+
+No cabeçalho do modal, "Salvar em PDF" era um `<a>` e ficava como texto solto ao
+lado do "Fechar", que é botão. Dois controles lado a lado com aparências
+diferentes fazem parecer que têm pesos diferentes — e o de PDF é justamente o
+que a pessoa veio fazer ali. Ganhou contorno.
+
+#### O que ficou de fora
+
+- **O DANFE oficial**, com código de barras e faixas na posição que a Receita
+  exige. Exigiria biblioteca nova, e não foi introduzida. A tabela
+  `nota_arquivo` já prevê o tipo `pdf` para o dia em que houver.
+- **A leitura de CT-e** (frete). O leitor entende NF-e; um CT-e cai na recusa
+  explicada. As notas de frete continuam aparecendo na lista, só não abrem
+  desenhadas.
+
+---
 ---
 
 ## Regras que não se discutem

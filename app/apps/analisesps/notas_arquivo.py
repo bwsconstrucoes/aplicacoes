@@ -44,6 +44,14 @@ MIME_XML = "text/xml"
 CIENCIAS_POR_RODADA = int(os.getenv("ANALISESPS_CIENCIAS_POR_RODADA", "40"))
 
 
+class SemDocumento(LookupError):
+    """A nota existe, mas o documento dela ainda não. NÃO é erro.
+
+    É o estado normal de toda nota antes da ciência, e a tela precisa dizer
+    isso com outras palavras que não "deu erro" — senão quem lê vai procurar
+    defeito onde só falta esperar a rodada seguinte."""
+
+
 def _pasta_do_drive() -> str:
     """A pasta onde os XMLs ficam.
 
@@ -109,6 +117,35 @@ def guardar_xml(chave: str, xml: str) -> dict:
         conn.commit()
     logger.info("Análise de SPs: XML da nota %s guardado no Drive.", chave)
     return {"ok": True, "link": subiu.get("link", ""), "ja_tinha": False}
+
+
+def baixar_xml(chave: str) -> str:
+    """O XML guardado daquela nota, como texto. Levanta se não houver.
+
+    Quem chama é a tela que abre a nota: ela precisa distinguir "ainda não
+    tenho o documento" (que é o normal antes da ciência) de "tenho, mas não
+    consegui buscar" — e as duas frases são diferentes para quem lê."""
+    from .db import consultar_um
+    from . import drive
+
+    chave = re.sub(r"\D", "", str(chave or ""))
+    if len(chave) != 44:
+        raise ValueError("Chave de acesso inválida.")
+    try:
+        linha = consultar_um(
+            "SELECT arquivo_id, link FROM analisesps.nota_arquivo "
+            " WHERE chave = ? AND tipo = 'xml'", (chave,))
+    except Exception as e:  # noqa: BLE001 — migração 017 ainda não aplicada
+        logger.exception("Análise de SPs: não consegui ler o arquivo da nota")
+        raise drive.ErroDoDrive(
+            "Esta tela precisa da atualização do banco. Vá em Configurações e "
+            "aperte \"Aplicar atualizações do banco\".") from e
+    if not linha or not linha[0]:
+        raise SemDocumento(
+            "O documento desta nota ainda não chegou. A Receita só entrega a "
+            "nota inteira depois da ciência da operação — e ela chega na busca "
+            "seguinte, não na hora.")
+    return drive.baixar_arquivo(linha[0]).decode("utf-8", errors="replace")
 
 
 def arquivos_das_notas(chaves: list) -> dict:
