@@ -676,3 +676,37 @@ SP já Pago na planilha. Quem dependia do índice era o comprovante sem número
 publicado, reenviar os comprovantes delas deve resolver — e é a primeira coisa a
 conferir.
 
+### 17/09/2026 — dois Pix diferentes que o robô achou que eram o mesmo
+
+Dois Pix do Sicredi de R$ 7.300,00, para duas SPs de mesmo valor, as duas
+agendadas (1445859706 e 1445866267). O desempate por lote recusou distribuir:
+*"parecem ser o MESMO pagamento (identificador repetido ou ausente)"*.
+
+Estava **ausente**, e eram dois descuidos somados, os dois meus:
+
+1. **O leitor do Sicredi nunca preenchia o identificador.** Quando o liguei, em
+   13/09, levei os campos de valor, data, conta e SP — e esqueci esse. Ele só
+   existia no leitor do Bradesco.
+2. **Mesmo preenchendo, os rótulos do Sicredi não estavam na lista.** Ela
+   conhecia "Identificador", "Documento" e "N° de controle" (Bradesco). O
+   Sicredi escreve **"ID da transação"**, **"Autenticação Eletrônica"** (com
+   pontos) e **"Número de Controle"** (por extenso, sem o símbolo de grau).
+
+**Como ficou:** o leitor do Sicredi preenche o identificador, e a lista passou a
+conhecer os três rótulos. O "ID da transação" vem primeiro — é o identificador
+canônico do Pix.
+
+⚠️ **Os dois rótulos de "controle" continuam por último**, e por um motivo que
+não é óbvio: no **Bradesco** o número de controle é do **lote inteiro** e se
+repete entre as páginas; no **Sicredi** ele muda a cada pagamento. Mesma palavra,
+semânticas opostas. Deixá-los no fim faz o Sicredi ser resolvido antes pela
+autenticação, e o Bradesco continuar caindo no "Documento", que é o dele por
+pagamento.
+
+**A trava funcionou como devia.** Ela recusou distribuir porque não conseguia
+provar que eram pagamentos diferentes — e era exatamente o que não dava para
+provar. O defeito estava na leitura, não na regra.
+
+**Verificado** com os dois comprovantes reais, guardados anonimizados: os
+identificadores saem diferentes e as duas SPs são distribuídas.
+**Não verificado:** não passou por produção.
