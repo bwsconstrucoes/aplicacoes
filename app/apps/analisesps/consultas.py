@@ -248,26 +248,199 @@ SITUACOES_FISCAIS = {
         "         WHERE a.sp_id = sps.id AND a.origem = 'PIPEFY')"),
     "com_anexo": "trim(coalesce(anexo_link,'')) <> ''",
     "sem_anexo": "trim(coalesce(anexo_link,'')) = ''",
+    # -----------------------------------------------------------------------
+    # A CONFIANÇA DO QUE ESTÁ GRAVADO — pedido do dono em 13/09/2026:
+    # *"deveria poder filtrar por confiança"*.
+    #
+    # ⚠️ E É PRECISO DIZER DE QUAL CONFIANÇA SE ESTÁ FALANDO, porque existem
+    # DUAS na tela e confundi-las daria um filtro que mente:
+    #
+    #   1. A que está GRAVADA no diário — a da IA, e a da proposta que alguém
+    #      já aprovou. Vive no banco, então dá para filtrar a base inteira.
+    #      É esta.
+    #   2. A do par que o sistema calcula AO ABRIR a tela, para a linha que
+    #      ainda não foi decidida. Ela não existe no banco: nasce e morre a
+    #      cada abertura, e só para as 200 linhas da página. Filtrar por ela
+    #      responderia "nesta página", que parece certo e não é.
+    #
+    # Os nomes na tela dizem "do que está gravado" justamente para não haver
+    # engano. Passar a segunda para o banco exige a varredura da base inteira
+    # em processo separado — está oferecido ao dono e ainda sem resposta.
+    # -----------------------------------------------------------------------
+    "confianca_alta": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id AND a.confianca >= 80)"),
+    "confianca_media": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id "
+        "           AND a.confianca >= 60 AND a.confianca < 80)"),
+    "confianca_baixa": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id "
+        "           AND a.confianca > 0 AND a.confianca < 60)"),
+    "sem_confianca": (
+        "NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "             WHERE a.sp_id = sps.id AND a.confianca > 0)"),
 }
 
-# Como cada recorte aparece na tela, na ordem em que o dono trabalha: primeiro
-# o que falta, depois o que está errado, depois o que já foi feito.
-ROTULOS_FISCAIS = [
-    ("sem_marcacao", "Sem documentação"),
-    ("provavel_erro", "Provavelmente errado"),
-    ("sem_chave", "Sem chave de acesso"),
-    ("com_chave", "Com chave de acesso"),
-    ("ja_marcado", "Já categorizado"),
-    ("na_fila_ia", "Na fila da IA"),
-    ("lida_ia", "Lido pela IA"),
-    ("decidida_por_pessoa", "Decidido por pessoa"),
-    ("decidida_pelo_sistema", "Decidido pelo sistema"),
-    ("veio_do_card", "Já veio preenchido do card"),
-    ("confirmada", "Confirmado, falta gravar no card"),
-    ("escrita", "Já gravado no card"),
-    ("com_anexo", "Com anexo"),
-    ("sem_anexo", "Sem anexo"),
+# ---------------------------------------------------------------------------
+# COMO OS RECORTES APARECEM NA TELA — em grupos, e com o nome do DADO
+#
+# Refeito em 13/09/2026 depois de ele usar: *"a nomenclatura dos filtros tá
+# estranha, a compreensão tá ruim, muito ruim mesmo. Eu não consigo filtrar
+# como eu faria numa planilha facilmente. Não dá nem pra entender o que estamos
+# filtrando, quais dados."*
+#
+# Ele está certo, e o erro era de nome, não de função: "Sem documentação",
+# "Já categorizado", "Com chave de acesso" e "Confirmado" estavam numa lista
+# corrida, sem dizer de QUE COLUNA cada um fala. Numa planilha ele filtra
+# clicando no cabeçalho da coluna — sabe exatamente o que está recortando.
+#
+# ENTÃO OS RECORTES PASSAM A VIR EM GRUPOS, e o título do grupo é o nome do
+# dado. "A categoria (coluna 'Está como')" diz, sozinho, o que as duas opções
+# abaixo dele fazem. Cada opção ainda traz uma linha explicando, para o caso de
+# o título não bastar.
+# ---------------------------------------------------------------------------
+GRUPOS_DE_RECORTE = [
+    ("A categoria — é a coluna \"Está como\"", [
+        ("sem_marcacao", "Está vazia",
+         "nenhuma categoria, nem daqui nem do card do Pipefy"),
+        ("ja_marcado", "Está preenchida",
+         "tem categoria, seja qual for"),
+    ]),
+    ("A nota fiscal", [
+        ("com_chave", "Tem chave de acesso",
+         "os 44 números que identificam a nota"),
+        ("sem_chave", "Não tem chave de acesso",
+         "pode ter categoria e mesmo assim não ter nota apontada"),
+        ("provavel_erro", "Parece errada",
+         "nota cancelada, ou categoria que afirma nota sem haver chave, "
+         "ou chave emitida por outro CNPJ"),
+    ]),
+    ("Quem preencheu", [
+        ("decidida_por_pessoa", "Uma pessoa, aqui",
+         "alguém digitou ou confirmou nesta tela"),
+        ("decidida_pelo_sistema", "O sistema",
+         "proposta aprovada ou leitura por IA"),
+        ("veio_do_card", "Já veio do card",
+         "estava no Pipefy antes desta tela existir"),
+    ]),
+    ("Em que pé está o trabalho", [
+        ("na_fila_ia", "Esperando a IA ler o anexo", ""),
+        ("lida_ia", "A IA já leu", ""),
+        ("confirmada", "Confirmado aqui, falta ir para o card", ""),
+        ("escrita", "Já gravado no card do Pipefy", ""),
+    ]),
+    ("A confiança do que está gravado", [
+        ("confianca_alta", "Alta — 80% ou mais",
+         "a IA ou a conciliação gravaram com pouca dúvida"),
+        ("confianca_media", "Média — de 60% a 79%",
+         "acima do corte para propor, mas vale conferir"),
+        ("confianca_baixa", "Baixa — abaixo de 60%",
+         "gravado, mas com dúvida; é onde olhar primeiro"),
+        ("sem_confianca", "Sem confiança gravada",
+         "nunca foi decidido, ou veio pronto do card"),
+    ]),
+    ("O anexo da SP", [
+        ("com_anexo", "Tem anexo", "dá para mandar para a IA ler"),
+        ("sem_anexo", "Não tem anexo",
+         "sem anexo, a IA não tem o que ler"),
+    ]),
 ]
+
+# A lista corrida, que é o que a barra antiga usava e o painel ainda usa.
+ROTULOS_FISCAIS = [(chave, rotulo)
+                   for _, itens in GRUPOS_DE_RECORTE
+                   for chave, rotulo, _ in itens]
+
+# O nome de cada recorte numa frase só, para a tela poder dizer em português o
+# que está filtrando agora. Sem isto, quem chega numa tela filtrada por outra
+# pessoa (ou por si mesmo ontem) não tem como saber o que está vendo.
+FRASE_DO_RECORTE = {
+    "sem_marcacao": "a categoria está vazia",
+    "ja_marcado": "a categoria está preenchida",
+    "com_chave": "tem chave de acesso",
+    "sem_chave": "não tem chave de acesso",
+    "provavel_erro": "a nota parece errada",
+    "decidida_por_pessoa": "quem preencheu foi uma pessoa",
+    "decidida_pelo_sistema": "quem preencheu foi o sistema",
+    "veio_do_card": "já veio preenchido do card",
+    "na_fila_ia": "está esperando a IA ler o anexo",
+    "lida_ia": "a IA já leu",
+    "confirmada": "está confirmado aqui e falta ir para o card",
+    "escrita": "já foi gravado no card",
+    "com_anexo": "tem anexo",
+    "sem_anexo": "não tem anexo",
+    "confianca_alta": "a confiança gravada é 80% ou mais",
+    "confianca_media": "a confiança gravada é de 60% a 79%",
+    "confianca_baixa": "a confiança gravada é menor que 60%",
+    "sem_confianca": "não há confiança gravada",
+}
+
+
+# ===========================================================================
+# O QUE A DOCUMENTAÇÃO FISCAL NEM DEVE OLHAR — pedido do dono em 13/09/2026
+#
+# Três cortes que valem para a tela inteira, e não são "mais um filtro": são o
+# tamanho do universo. Fora deles, o painel conta trabalho que ninguém vai
+# fazer, e "faltam 4.000" vira um número que ninguém acredita.
+#
+# 1. *"Os registros da documentação fiscal não devem retornar apenas os dados
+#    do que venceu em 2026 ou do que foi pago em 2026, o restante ignorar."*
+#
+#    ⚠️ ESCOLHI **2026 EM DIANTE**, e não "só 2026", e a diferença importa: com
+#    "= 2026" a tela esvaziaria sozinha na virada do ano, sem ninguém mexer em
+#    nada e sem aviso nenhum. Com ">= 2026" o atraso velho fica de fora — que é
+#    o que ele pediu — e a tela continua funcionando em 2027. Se ele quiser
+#    mesmo só o ano corrente, é trocar uma linha.
+#
+# 2. *"A princípio tudo que está com o Status Pgt = Cancelado não deveria ser
+#    exibido, somente se colocássemos para exibir."* — some por padrão, com
+#    uma caixa para trazer de volta.
+#
+# 3. *"Não deve ser exibido registros que contenham no Tipo de Despesa a
+#    informação '(TRF)'."* — transferência não gera documento fiscal, e este
+#    não tem caixa nenhuma: é sempre fora.
+#
+# POR QUE AQUI DENTRO, e não no `listar`: o painel, a lista e a paginação
+# passam todos por `_condicoes`. Um corte aplicado em dois dos três daria de
+# novo o defeito de 13/09 — o painel dizendo "3 já categorizados" e a linha
+# mostrando "—".
+# ===========================================================================
+ANO_FISCAL_MINIMO = 2026
+
+# O ano é lido do VENCIMENTO **ou** do PAGAMENTO: a SP vencida em dezembro de
+# 2025 e paga em janeiro de 2026 é trabalho de 2026 e tem de aparecer.
+#
+# ⚠️ A SP SEM DATA NENHUMA FICA. Ela não é "velha" — ela é *sem data*, e são
+# coisas diferentes. O pedido foi deixar de fora o atraso antigo; uma SP que
+# não diz quando vence não prova ser antiga, e sumir com ela seria tirar da
+# conta um trabalho que ninguém mais veria. Some em silêncio é o defeito que
+# esta tela já teve duas vezes.
+#
+# Se em produção aparecer muita SP sem data, isto vira decisão do dono — e aí
+# a linha muda para excluir. Hoje ela aparece.
+SQL_ANO_FISCAL = (
+    "(extract(year from vencimento_d) >= ? "
+    " OR extract(year from data_pagamento_d) >= ? "
+    " OR (vencimento_d IS NULL AND data_pagamento_d IS NULL))")
+
+SQL_NAO_CANCELADA = "lower(btrim(coalesce(status_pgt,''))) <> 'cancelado'"
+
+# `(TRF)` marca transferência entre contas da empresa. Casa sem diferenciar
+# maiúscula, e o `%` dos dois lados porque a marca vem no meio do texto
+# ("Mat. Construção (TRF)").
+SQL_SEM_TRF = "coalesce(tipo_despesa,'') NOT ILIKE ?"
+MARCA_TRF = "%(TRF)%"
+
+
+def condicoes_do_escopo_fiscal(mostrar_canceladas: bool = False):
+    """Os três cortes da tela fiscal, em SQL e parâmetros."""
+    onde = [SQL_ANO_FISCAL, SQL_SEM_TRF]
+    params: list = [ANO_FISCAL_MINIMO, ANO_FISCAL_MINIMO, MARCA_TRF]
+    if not mostrar_canceladas:
+        onde.append(SQL_NAO_CANCELADA)
+    return onde, params
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +538,29 @@ def _condicoes(f: dict) -> tuple[list[str], list]:
         if chave in SITUACOES_FISCAIS:
             onde.append(SITUACOES_FISCAIS[chave])
 
+    # FILTRAR POR UMA CATEGORIA, que é o clique no quadro por categoria.
+    # *"Era interessante esse KPI direcionar pra uma tela com as informações:
+    # eu clicar e mostrar 'olha, essas aqui são as de fundo fixo', aí a
+    # lista."* O nome vem do endereço, então entra como PARÂMETRO — nunca
+    # costurado no texto do SQL.
+    categorias = [str(c) for c in (f.get("categoria") or []) if str(c).strip()]
+    if categorias:
+        marcas = ",".join(["?"] * len(categorias))
+        onde.append(f"trim({SQL_DOC_FISCAL}) IN ({marcas})")
+        params.extend(categorias)
+    # E o clique na pilha do "(sem informação)", que é a ausência de categoria.
+    if f.get("sem_categoria"):
+        onde.append(f"trim({SQL_DOC_FISCAL}) = ''")
+
+    # O ESCOPO DA DOCUMENTAÇÃO FISCAL. Só entra quando a tela pede — em
+    # Solicitações ele veria menos SPs do que a planilha tem, e aí a conta dele
+    # não fecharia com a SPsBD.
+    if f.get("escopo_fiscal"):
+        cortes, valores = condicoes_do_escopo_fiscal(
+            bool(f.get("mostrar_canceladas")))
+        onde.extend(cortes)
+        params.extend(valores)
+
     # Períodos e faixa de valor.
     for campo, coluna, operador in (
             ("periodo_ini", "vencimento_d", ">="),
@@ -408,6 +604,44 @@ def resumo(f: dict) -> dict:
             "quantidade_pagar": linha[2], "total_pagar": linha[3]}
 
 
+# As mesmas regras dos recortes, escritas sobre uma LINHA JÁ MONTADA em vez de
+# subconsulta por linha. Ver `painel_fiscal` para o porquê — e para o teste que
+# impede as duas de divergirem.
+_PAINEL_COLUNAS = f"""
+    SELECT sps.id, sps.valor_num, sps.anexo_link, sps.documento,
+           coalesce(nullif(btrim(coalesce(a.documentacao, '')), ''),
+                    btrim(coalesce(x.doc_fiscal, ''))) AS doc,
+           regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') AS chave_lim,
+           coalesce(a.situacao, '') AS situacao,
+           coalesce(a.origem, '') AS origem,
+           a.escrita_em
+      FROM analisesps.sps
+      LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = sps.id
+      LEFT JOIN analisesps.sp_fiscal x ON x.sp_id = sps.id
+"""
+
+_PAINEL_REGRAS = {
+    "sem_marcacao": "btrim(doc) = ''",
+    "ja_marcado": "btrim(doc) <> ''",
+    "com_chave": "length(chave_lim) = 44",
+    "sem_chave": "length(chave_lim) <> 44",
+    "na_fila_ia": "situacao = 'NA_FILA_IA'",
+    "confirmada": "situacao = 'CONFIRMADA' AND escrita_em IS NULL",
+    "escrita": "situacao = 'ESCRITA'",
+    "sem_anexo": "btrim(coalesce(anexo_link, '')) = ''",
+    "provavel_erro": f"""(
+        EXISTS (SELECT 1 FROM analisesps.notas_fiscais n
+                 WHERE n.chave = chave_lim
+                   AND upper(coalesce(n.status, '')) = 'CANCELADA')
+     OR (btrim(doc) IN ({_LISTA_EXIGEM_NOTA}) AND chave_lim = '')
+     OR (length(chave_lim) = 44
+         AND length(regexp_replace(coalesce(documento, ''), '\\D', '', 'g')) = 14
+         AND substring(chave_lim from 7 for 14)
+             <> regexp_replace(coalesce(documento, ''), '\\D', '', 'g'))
+    )""",
+}
+
+
 def painel_fiscal(f: dict) -> dict:
     """Os totalizadores da Documentação Fiscal, sobre TUDO que o filtro alcança.
 
@@ -416,15 +650,25 @@ def painel_fiscal(f: dict) -> dict:
     o que que não está faltando, onde é que eu tenho que focar"*. Sem eles a
     tela é uma lista para rolar — a palavra dele foi ingerível.
 
-    UMA CONSULTA SÓ, com `FILTER`: sete contagens em sete consultas seriam sete
-    varreduras da base num banco que tem um décimo de um núcleo (o incidente de
-    10/09). E os números saem dos MESMOS pedaços de SQL que os filtros usam,
-    então clicar num total leva exatamente às linhas que ele contou."""
+    UMA CONSULTA SÓ, com `FILTER`: nove contagens em nove consultas seriam nove
+    varreduras da base num banco que tem um décimo de um núcleo.
+
+    ⚠️ E AS REGRAS SÃO ESCRITAS DE OUTRO JEITO AQUI, DE PROPÓSITO. Os recortes
+    do filtro são subconsultas correlacionadas — certas, e o índice as resolve
+    linha a linha. Repetir nove delas na MESMA varredura custava caro: medido
+    em 13/09/2026 com 59.000 SPs, **1,18 segundo** nesta máquina, que é bem
+    mais rápida que o banco do Render. Aqui as duas tabelas entram por JUNÇÃO,
+    uma vez, e as contagens leem colunas já prontas.
+
+    O RISCO DISSO É ÓBVIO — duas escritas da mesma regra divergindo — e é por
+    isso que `test_o_painel_e_o_filtro_CONCORDAM_sempre` existe, com banco de
+    verdade, comparando cada contagem com o filtro correspondente. Sem esse
+    teste, esta otimização não valeria o preço."""
     from .db import consultar_um
     where, params = _where(f)
 
     def conta(chave):
-        return f"count(*) FILTER (WHERE {SITUACOES_FISCAIS[chave]})"
+        return f"count(*) FILTER (WHERE {_PAINEL_REGRAS[chave]})"
 
     linha = consultar_um(
         "SELECT count(*), "
@@ -437,8 +681,8 @@ def painel_fiscal(f: dict) -> dict:
         f"       {conta('escrita')}, "
         f"       {conta('sem_anexo')}, "
         "       coalesce(sum(valor_num) FILTER "
-        f"               (WHERE {SITUACOES_FISCAIS['sem_marcacao']}), 0) "
-        f"  FROM analisesps.sps{where}", tuple(params))
+        f"               (WHERE {_PAINEL_REGRAS['sem_marcacao']}), 0) "
+        f"  FROM ({_PAINEL_COLUNAS}{where}) t", tuple(params))
 
     nomes = ["total", "sem_marcacao", "ja_marcado", "provavel_erro",
              "com_chave", "na_fila_ia", "confirmada", "escrita", "sem_anexo",
@@ -1110,3 +1354,155 @@ def aging_vencidos(f: dict, periodo: str = "tudo") -> list[dict]:
     achados = {r[0]: {"faixa": r[0], "quantidade": r[1], "total": r[2]}
                for r in linhas}
     return [achados[nome] for _, _, nome in FAIXAS_ATRASO if nome in achados]
+
+
+# ===========================================================================
+# A TELA DE VER — "similar ao que eu visualizo na planilha"
+#
+# Cobrança do dono em 13/09/2026, e ela é antiga: *"desde o começo eu pedi uma
+# tela simples pra poder visualizar similar ao que eu visualizo na planilha.
+# Uma tela das notas e outra tela dos registros com os dados que estamos
+# trabalhando. Similar à planilha. Mas até agora não foi entregue."*
+#
+# ELE ESTÁ CERTO, E O QUE FALTAVA NÃO ERA DADO — era a TELA. Tudo o que este
+# módulo tem são telas de TRABALHO: cada uma mostra um recorte, com painel,
+# proposta, botão de agir. Nenhuma responde à pergunta mais simples que
+# existe, que é *"deixa eu ver os dados"*.
+#
+# O QUE FAZ ESTA TELA SER "A PLANILHA" e não mais uma tela de trabalho:
+#
+#   1. TODAS AS COLUNAS, na ORDEM DA PLANILHA (A, B, C…), e não na ordem de
+#      uso. Ele lê a SPsBD por posição — a coluna "O" é o Status Pgt, e ele
+#      sabe disso de cor.
+#   2. A LETRA DA COLUNA no cabeçalho. É o detalhe que faz reconhecer.
+#   3. NADA DE AÇÃO. Sem propor, sem confirmar, sem marcar. Olhar não é mexer.
+#   4. Uma busca só, e ordenar clicando no cabeçalho — como numa planilha.
+#
+# NÃO REUSA `listar`: aquela traz um punhado de colunas escolhidas e ainda
+# calcula risco, atraso e agendamento por linha. Aqui é o contrário — tudo, e
+# sem conta nenhuma por cima.
+# ===========================================================================
+# As colunas da planilha, na ordem dela, tirando as fórmulas que não guardamos.
+COLUNAS_DA_PLANILHA = [
+    (c.chave, c.letra, c.rotulo, c.tipo) for c in colunas.GUARDADAS]
+
+# Quantas linhas por página. O mesmo teto das outras telas: 200 linhas é o que
+# o navegador desenha sem engasgar, e a base tem 59 mil.
+POR_PAGINA_PLANILHA = 200
+
+
+def planilha_sps(busca: str = "", ordem: str = "id", desc: bool = False,
+                 pagina: int = 1, tudo: bool = False) -> tuple[list, int]:
+    """As SPs como a planilha mostra: todas as colunas, na ordem dela.
+
+    ⚠️ SÓ DE 2026 EM DIANTE, por padrão — e isto mudou de ideia por decisão
+    DELE, em 14/09/2026:
+
+    *"Lembra que eu fiz um filtro pra exibir lá na parte do confronto só o que
+    é vencimento em 2026 ou pago em 2026? Então eu quero que você aplique esse
+    mesmo filtro lá. Porque só me interessa 2026, porque é o lucro real; antes
+    era lucro presumido, então não preciso dessa informação."*
+
+    Quando esta tela nasceu eu deixei o escopo de fora de propósito, com teste
+    e tudo: o argumento era que "a planilha mostra a planilha", e esconder
+    linhas faria a conta dele não fechar com a SPsBD. O argumento estava certo
+    no geral e ERRADO no caso dele — o que ele confere é 2026, porque é o que
+    o regime tributário torna relevante. Quem decide isso é ele.
+
+    `tudo=True` traz o resto de volta, e a tela tem a caixa: esconder sem volta
+    seria trocar um problema por outro."""
+    from .db import consultar, consultar_um
+
+    onde, params = [], []
+    if not tudo:
+        # O MESMO CORTE DE ANO da Documentação Fiscal, e sai do MESMO lugar —
+        # duas cópias divergiriam no dia em que o ano mudasse.
+        onde.append(SQL_ANO_FISCAL)
+        params.extend([ANO_FISCAL_MINIMO, ANO_FISCAL_MINIMO])
+    termo = str(busca or "").strip()
+    if termo:
+        # A MESMA BUSCA LIVRE DAS OUTRAS TELAS, para não haver duas ideias de
+        # "procurar" no mesmo módulo.
+        alvo = " || ' ' || ".join(f"lower(coalesce({c},''))" for c in CAMPOS_BUSCA)
+        for pedaco in [t.strip().lower() for t in termo.split(",") if t.strip()]:
+            onde.append(f"({alvo}) LIKE ?")
+            params.append(f"%{_como_texto_literal(pedaco)}%")
+    where = (" WHERE " + " AND ".join(onde)) if onde else ""
+
+    # ⚠️ A ORDENAÇÃO SAI DE UMA LISTA FECHADA, e nunca do que vem no endereço:
+    # costurar o nome da coluna dentro do SQL é o caminho conhecido para
+    # alguém mandar comando pela barra do navegador.
+    permitidas = {c for c, _, _, _ in COLUNAS_DA_PLANILHA}
+    coluna = ordem if ordem in permitidas else "id"
+    # Data e valor ordenam pela versão CONVERTIDA: ordenar "10/01/2026" como
+    # texto põe outubro antes de fevereiro, e aí a tela mente.
+    real = colunas.DERIVADAS_DATA.get(coluna, coluna)
+    if coluna == colunas.DERIVADA_VALOR[0]:
+        real = colunas.DERIVADA_VALOR[1]
+    sentido = "DESC NULLS LAST" if desc else "ASC NULLS LAST"
+
+    pagina = max(1, int(pagina or 1))
+    campos = ", ".join(f'"{c}"' for c, _, _, _ in COLUNAS_DA_PLANILHA)
+    linhas = consultar(
+        f'SELECT {campos} FROM analisesps.sps{where} '
+        f' ORDER BY "{real}" {sentido}, id '
+        " LIMIT ? OFFSET ?",
+        tuple(params) + (POR_PAGINA_PLANILHA,
+                         (pagina - 1) * POR_PAGINA_PLANILHA))
+    total = consultar_um(
+        f"SELECT count(*) FROM analisesps.sps{where}", tuple(params))[0]
+
+    nomes = [c for c, _, _, _ in COLUNAS_DA_PLANILHA]
+    return [dict(zip(nomes, linha)) for linha in linhas], int(total or 0)
+
+
+# ===========================================================================
+# O QUADRO POR CATEGORIA — quantas SPs e QUANTO DINHEIRO em cada uma
+#
+# Pedido do dono em 14/09/2026: *"a parte de KPI, pra eu saber quanto tem
+# analisado, quanto não tem, quanto tem nota, quanto tem de contrato, quanto é
+# fundo fixo, quanto está sem informação nenhuma — quanto isso em VALORES, né?
+# Quanto está pra ser resolvido. E era interessante esse KPI direcionar pra
+# uma tela com as informações: eu clicar e mostrar 'olha, essas aqui são as de
+# fundo fixo', aí a lista."*
+#
+# ⚠️ O QUE ISTO TEM QUE OS TOTALIZADORES DE CIMA NÃO TÊM: **valor**. Os que já
+# existiam contam SPs — "faltam 4.000" —, e 4.000 SPs de R$ 50,00 e 4.000 de
+# R$ 50.000,00 são problemas de tamanhos completamente diferentes. Sem o
+# dinheiro ao lado, o número não diz por onde começar, que é justamente a
+# pergunta dele.
+#
+# UMA CONSULTA SÓ, agrupando pela categoria. Uma consulta por categoria seriam
+# 22 varreduras da base num banco de um décimo de núcleo.
+#
+# E CADA LINHA É UM ATALHO: clicar filtra a lista por aquela categoria. Ver um
+# número e ter de ir procurá-lo no filtro seria meio caminho — é a mesma regra
+# dos totalizadores de cima.
+# ===========================================================================
+# O rótulo do "vazio". Não é uma categoria do Pipefy: é a ausência de uma, e é
+# a pilha que interessa mais.
+SEM_CATEGORIA = "(sem informação)"
+
+
+def quadro_por_categoria(f: dict) -> list[dict]:
+    """Por categoria de documentação: quantas SPs e quanto em dinheiro."""
+    from .db import consultar
+
+    where, params = _where(f)
+    linhas = consultar(
+        f"SELECT trim({SQL_DOC_FISCAL}) AS categoria, "
+        "        count(*), coalesce(sum(valor_num), 0) "
+        f"  FROM analisesps.sps{where} "
+        " GROUP BY 1 ORDER BY 3 DESC", tuple(params))
+
+    saida = []
+    for categoria, quantas, valor in linhas:
+        nome = (categoria or "").strip()
+        saida.append({
+            "categoria": nome,
+            "rotulo": nome or SEM_CATEGORIA,
+            "vazia": not nome,
+            "quantas": int(quantas or 0),
+            "valor": valor or 0,
+        })
+    return saida

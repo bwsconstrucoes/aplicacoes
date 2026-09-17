@@ -608,7 +608,7 @@ WhatsApp. Isso quer dizer que a perna do WhatsApp não está entregando — e qu
 já conversou com o robô. O campo `aviso` da resposta ao Make diz o motivo em uma
 linha; ninguém foi atrás ainda.
 
-### 13/09/2026 — a baixa pela metade que o reenvio não consertava
+### 13/09/2026 — a baixa pela metade que o reenvio não consertava (publicado, `c4c4724`)
 
 Pergunta do dono: *"se eu enviar um comprovante que já foi baixado, ele checa por
 onde? É conferido se a baixa está no Omie e na planilha? Às vezes falha um dos
@@ -649,7 +649,7 @@ responde bem.
 **Não verificado:** nada disso passou por produção. O caso exige que a gravação
 na planilha falhe de verdade, o que não dá para provocar daqui.
 
-### 13/09/2026 — a outra metade: planilha paga, Omie pendente, reenvio sem efeito
+### 13/09/2026 — a outra metade: planilha paga, Omie pendente, reenvio sem efeito (publicado, `c4c4724`)
 
 Na mesma conversa, o dono achou **duas SPs** com a planilha gravada por inteiro e
 o Omie **não** baixado — conferiu nas duas fontes. Reenviar o comprovante não
@@ -675,6 +675,95 @@ SP já Pago na planilha. Quem dependia do índice era o comprovante sem número
 **Não verificado:** as duas SPs do dono não foram consertadas por aqui. Depois de
 publicado, reenviar os comprovantes delas deve resolver — e é a primeira coisa a
 conferir.
+
+**Publicado em 13/09/2026 (`c4c4724`).** Junto veio da `main` um achado de outro
+chat que toca esta área: a tela de comprovantes do **Análise de SPs** chamava
+este robô **em modo de ensaio** — `modo_teste` é `True` por padrão quando o
+pedido não diz o contrário, e aquele pedido não dizia. Toda baixa feita por
+aquela tela desde a estreia foi simulação, e a tela ainda dizia "Baixado". O
+caminho do Make nunca foi afetado. Corrigido lá; fica registrado aqui porque o
+padrão perigoso é **deste** módulo.
+
+**Primeira coisa a conferir agora:** reenviar os comprovantes das duas SPs com
+planilha paga e Omie pendente. Devem concluir.
+
+---
+
+## 16/09/2026 — ⚠️ "A chave de acesso não está preenchida ou não é válida"
+
+**A frase que faltava há dois dias**, e ela é do Omie, num comprovante do Sicredi
+enviado pela tela do Análise de SPs:
+
+    Falha ao alterar título. Baixa cancelada.
+    O Omie respondeu: A chave de acesso não está preenchida ou não é válida.
+
+E a pergunta do dono, que é a que destrava: *"só não compreendo por que o
+baixabradesco no método anterior funciona e via Análise não."*
+
+**O robô é o MESMO. O que muda é de onde vem a chave de acesso do Omie:**
+
+- o **Make** manda `app_key` e `app_secret` **dentro do pedido**;
+- o pedido que sai do **Análise de SPs** não manda — ele conta com as variáveis
+  de ambiente do serviço.
+
+**E aqui está o defeito, que é de NOME e não de lógica** — confirmado pelo dono
+mandando a lista de variáveis do Render:
+
+| Onde | O que o código procurava | O que existe no Render |
+|---|---|---|
+| `painel`, `emissaonf` | `OMIE_KEY`, `OMIE_SECRET` (+ apelidos) | ✔ acha |
+| `baixabradesco` | **só** `OMIE_BWS_APP_KEY`/`SECRET` | ✘ não acha |
+
+Os outros dois módulos aceitam os dois apelidos **há meses**. Este aceitava só o
+antigo. Por isso o painel e a emissão de NF funcionavam com o Omie e este robô
+não — e pelo Make nunca apareceu, porque o Make manda a chave no pedido.
+
+Faltando a variável, o pedido saía com a chave **vazia**, e o Omie respondia
+*"A chave de acesso não está preenchida ou não é válida"*. "Chave de acesso",
+no vocabulário do Omie, é a **credencial da API** — não é a chave do título. A
+mensagem parecia falar do título, e a investigação olhou para o lado errado
+durante dois dias.
+
+⚠️ **E o `CONTEXTO.md` ajudou a esconder:** a seção 4.5 listava só
+`OMIE_BWS_APP_KEY`/`SECRET` como se fossem os nomes em uso. Corrigido junto.
+
+**A lição:** apelido de variável resolvido em três arquivos diferentes vira três
+regras diferentes no dia em que alguém cadastra a variável com um dos nomes. Há
+teste agora exigindo que os nomes aceitos aqui sejam os mesmos do painel.
+
+### Os quatro consertos
+
+1. **Sem credencial, não se manda nada.** A sequência para antes do primeiro
+   pedido e diz **qual variável falta**. Antes, mandava com a chave vazia e
+   colhia uma mensagem que falava de outra coisa.
+2. **Consulta que não deu certo interrompe.** Antes só interrompia com HTTP 500
+   ou faultcode `nao_encontrado` — e o Omie responde **200 com `faultstring`**
+   em vários casos. Esses passavam e iam alterar um título que ninguém
+   confirmou que existe.
+3. **A alteração só acontece se algo diverge de verdade.** O passo rodava
+   SEMPRE, apoiado num comentário que dizia *"verificação simplificada: tenta
+   sempre, Omie idempotente"* — suposição nunca verificada, e falsa: quando o
+   Omie recusa a alteração, a **baixa é cancelada**. Um passo que na maioria das
+   vezes não precisava acontecer estava impedindo o que precisava. Agora o
+   título consultado manda: valor e conta já certos, alteração pulada.
+   ⚠️ **Na dúvida, altera** — consulta incompleta volta ao comportamento antigo,
+   porque deixar de alterar um título que precisa seria baixar com valor errado.
+4. **O Omie manda na planilha e no card.** Eram marcados como pagos
+   **independente** do que o Omie respondesse — a dessincronia que o dono
+   relatou em 14/09 (*"baixam na planilha, mas não baixam no Omie"*). Agora: se
+   a baixa era para acontecer e não se confirmou, **não se marca nada**, e a
+   tela diz que não marcou. "Já estava pago no Omie" conta como confirmação.
+
+### A lição, e ela vale para o monorepo inteiro
+
+**Mensagem de terceiro não se lê pelo que ela parece dizer.** "Chave de acesso"
+podia ser a chave do título ou a credencial da API, e a diferença é tudo. O que
+resolveu foi a mesma coisa de sempre: **guardar a frase inteira do outro lado**
+e mostrá-la a quem pode agir.
+
+**Não verificado:** nada disto rodou contra o Omie de verdade — não há
+credencial neste ambiente. O que os testes provam é que, sem credencial, nenhum
+pedido sai; que consulta falha interrompe; e que título já certo não é alterado.
 
 ### 17/09/2026 — dois Pix diferentes que o robô achou que eram o mesmo
 
@@ -710,3 +799,4 @@ provar. O defeito estava na leitura, não na regra.
 **Verificado** com os dois comprovantes reais, guardados anonimizados: os
 identificadores saem diferentes e as duas SPs são distribuídas.
 **Não verificado:** não passou por produção.
+

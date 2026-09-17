@@ -323,6 +323,92 @@ def datas_do_lancamento(lancamento: dict) -> list:
     return saida
 
 
+# ===========================================================================
+# A NOTA PARCELADA — achado do dono em 13/09/2026, com o caso na mão
+#
+# Ele mandou o par inteiro:
+#
+#   SP 1441193033 · "Parcela 3/3" · Nº NF 1002924 · R$    696,34 · FRIGELAR
+#   Nota nº 1.002.924 ................................ R$  2.089,02 · FRIGELAR
+#
+# E 696,34 × 3 = 2.089,02, na casa do centavo. *"Veja que é uma nota parcelada,
+# com x parcelas, e que o registro deveria ser associado às demais parcelas."*
+#
+# O QUE O SISTEMA FAZIA: comparava R$ 696,34 com R$ 2.089,02, via diferença de
+# R$ 1.392,68 — muito acima da tolerância de dez reais — e não dava nenhum dos
+# 25 pontos do valor. Um par que qualquer pessoa fecha em dois segundos (mesmo
+# CNPJ, mesmo número de nota, valor que divide exato) ficava abaixo do corte de
+# 60 e nunca era proposto. Pior: a tela dizia "o valor é diferente", que é
+# verdade no número e MENTIRA no sentido — e essa é a pior espécie de erro,
+# porque tem cara de conferência feita.
+#
+# ⚠️ O CASAMENTO EXIGE A DIVISÃO EXATA, e não "mais ou menos". Aceitar folga
+# aqui casaria notas quaisquer: com 12 parcelas, qualquer valor entre X e X+10
+# viraria par. O centavo é o que separa "é a mesma nota" de "coincidência".
+# A folga de um centavo por parcela existe só para o arredondamento de verdade
+# (2.089,02 ÷ 3 dá exato; 100,00 ÷ 3 dá 33,33 + 33,33 + 33,34).
+# ===========================================================================
+_PARCELA = re.compile(r"^\s*(\d{1,3})\s*(?:/|\s+de\s+)\s*(\d{1,3})\s*$",
+                      re.IGNORECASE)
+
+# Teto de parcelas que o sistema aceita. Acima disso a divisão vira quase
+# sempre verdadeira por acaso, e o casamento deixa de significar alguma coisa.
+MAXIMO_DE_PARCELAS = 60
+
+
+def parcela_do_lancamento(lancamento: dict):
+    """(qual, de quantas) quando a SP é parcela de um pagamento maior.
+
+    Lê a coluna "Parcela" da planilha, que vem como "3/3" e, às vezes, como
+    "3 de 3". Devolve None quando não é parcelamento — inclusive no "1/1", que
+    é parcela única e não muda conta nenhuma."""
+    achado = _PARCELA.match(_texto(lancamento.get("parcela")))
+    if not achado:
+        return None
+    qual, de = int(achado.group(1)), int(achado.group(2))
+    if de <= 1 or qual < 1 or qual > de or de > MAXIMO_DE_PARCELAS:
+        return None
+    return (qual, de)
+
+
+def soma_das_parcelas(lancamento: dict):
+    """Quanto as parcelas somam juntas — o valor que a nota deveria ter."""
+    parcela = parcela_do_lancamento(lancamento)
+    valor = valor_do_lancamento(lancamento)
+    if not parcela or valor is None:
+        return None
+    return valor * parcela[1]
+
+
+def bate_como_parcela(lancamento: dict, nota: dict) -> dict:
+    """A nota é o total de que esta SP é uma parcela?
+
+    Devolve {} quando não é o caso — e um dicionário com a conta por extenso
+    quando é, porque é a conta que dá a quem confere o direito de discordar."""
+    parcela = parcela_do_lancamento(lancamento)
+    valor_sp = valor_do_lancamento(lancamento)
+    valor_nota = _para_numero(nota.get("valor"))
+    if not parcela or valor_sp is None or valor_nota is None:
+        return {}
+    if valor_sp <= 0 or valor_nota <= 0:
+        return {}
+
+    qual, de = parcela
+    # Um centavo por parcela é o arredondamento honesto de uma divisão que não
+    # fecha (100,00 ÷ 3). Mais do que isso já não é arredondamento.
+    if abs(valor_sp * de - valor_nota) > 0.01 * de:
+        return {}
+    return {"qual": qual, "de": de, "valor_parcela": valor_sp,
+            "total": valor_nota,
+            "conta": (f"parcela {qual}/{de} de {_moeda(valor_sp)} × {de} = "
+                      f"{_moeda(valor_sp * de)}, que é o valor da nota")}
+
+
+def _moeda(v) -> str:
+    return ("R$ " + f"{float(v):,.2f}").replace(",", "§").replace(
+        ".", ",").replace("§", ".")
+
+
 def pontuar(lancamento: dict, nota: dict) -> tuple[int, list]:
     """Quanto esta nota combina com este lançamento, e POR QUÊ.
 
@@ -346,7 +432,14 @@ def pontuar(lancamento: dict, nota: dict) -> tuple[int, list]:
     #    uma delas foi o defeito de 13/09/2026.
     valor_sp = valor_do_lancamento(lancamento)
     valor_nota = _para_numero(nota.get("valor"))
-    if valor_sp is not None and valor_nota is not None:
+    parcelado = bate_como_parcela(lancamento, nota)
+    if parcelado:
+        # VALE O MESMO QUE O VALOR IGUAL, e não menos: a divisão exata é uma
+        # coincidência bem menos provável do que dois valores iguais no mesmo
+        # fornecedor. Ver o bloco da nota parcelada acima.
+        pontos += PONTOS_VALOR_EXATO
+        porques.append("o valor fecha: " + parcelado["conta"])
+    elif valor_sp is not None and valor_nota is not None:
         diferenca = abs(valor_sp - valor_nota)
         if diferenca < 0.005:
             pontos += PONTOS_VALOR_EXATO
@@ -416,6 +509,24 @@ def melhor_nota(lancamento: dict, notas: list) -> dict:
     if empate:
         melhor["porques"] = melhor["porques"] + [
             "há outra nota quase tão parecida — confira antes de confirmar"]
+
+    # ⚠️ NOTA CANCELADA NUNCA VEM PROPOSTA, por mais que ela combine.
+    #
+    # Pedido do dono em 13/09/2026: *"quando tiver a nota cancelada na tela de
+    # associação, tem que deixar em vermelhinho o cancelado, pra a gente não
+    # associar a uma nota cancelada sem perceber."* A cor resolve para quem
+    # olha — e a marcação em lote existe justamente para quem NÃO olha linha a
+    # linha. Uma cancelada pré-marcada entraria no "Confirmar as marcadas" sem
+    # ninguém ver, que é o contrário do que ele pediu.
+    #
+    # Ela continua APARECENDO, e tem de aparecer: se aquela é mesmo a nota do
+    # lançamento, quem analisa precisa saber que ela foi cancelada — é problema
+    # fiscal, não informação a esconder. Só não vem decidida.
+    if melhor.get("nota") and _texto(
+            melhor["nota"].get("status")).upper() == "CANCELADA":
+        melhor["propoe"] = False
+        melhor["porques"] = melhor["porques"] + [
+            "NÃO marquei esta: nota cancelada é decisão de gente"]
     return melhor
 
 
@@ -930,29 +1041,312 @@ def notas_orfas(pagina: int = 1, por_pagina: int = 200) -> tuple:
     return notas, (total[0] if total else 0)
 
 
-def sps_possiveis_da_nota(nota: dict, quantas: int = 5) -> list:
-    """As SPs que PODEM ser desta nota — o caminho inverso da conciliação.
+# Quantas SPs de cada CNPJ são trazidas para depois escolher as melhores de
+# cada nota. Cinco aparecem na tela; buscar 25 dá margem para o desempate por
+# valor sem trazer a base inteira.
+SPS_POR_CNPJ = 25
 
-    Busca pelo CNPJ de quem emitiu, que é o credor do lançamento, e pelo valor.
-    Sem isso a segunda visão diria "esta nota está órfã" e pararia ali, o que é
-    meio caminho: quem vai resolver precisa de por onde começar."""
+_RAIZ_SQL = r"left(regexp_replace(coalesce(documento, ''), '\D', '', 'g'), 8)"
+
+# ⚠️ A CHAVE DA NOTA QUE ESTA SP JÁ TEM. Não é enfeite: é o que tira da fila o
+# trabalho já feito.
+#
+# Cobrança do dono em 13/09/2026, olhando a tela por nota: *"tem registro que
+# está aparecendo aqui que ele já tem nota fiscal, já é um registro que tem uma
+# nota fiscal associada anteriormente, e inclusive já tem o número da nota, já
+# está associado lá na planilha de documentação fiscal, ou seja, está tudo
+# identificado — e ele está colocando aqui como sugestão de uma nota pra
+# associar. Qual é o sentido disso?"*
+#
+# Não tinha sentido nenhum. A busca pegava TODAS as SPs do CNPJ e nunca
+# perguntava se aquela SP já tinha nota. Trabalho conferido voltava para a fila
+# disputando as cinco vagas com quem de fato está sem documento — e, pior,
+# ficava a um clique de receber uma SEGUNDA nota.
+#
+# O corte é pela CHAVE gravada no diário, e só por ela: chave gravada quer
+# dizer que esta SP já aponta para uma nota específica. O número da NF escrito
+# no card NÃO serve de corte — a SP que tem o número digitado mas nunca foi
+# associada é justamente a melhor candidata que existe, porque o número
+# confere. Cortar por ele esconderia o par mais fácil da base.
+_NOTA_DA_SP_SQL = "btrim(coalesce(a.chave, ''))"
+
+_CAMPOS_SP = ("s.id, s.credor, s.valor_num, s.vencimento_d, s.status_pgt, "
+              "s.nf, " + _NOTA_DA_SP_SQL + " AS nota_que_ja_tem")
+# Os mesmos campos já com nome, para o SELECT de fora da subconsulta.
+_CAMPOS_SP_NOMES = ("id, credor, valor_num, vencimento_d, status_pgt, nf, "
+                    "nota_que_ja_tem")
+_NOMES_SP = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf",
+             "nota_que_ja_tem"]
+
+# O diário entra por fora, com LEFT JOIN: SP sem linha no diário continua
+# aparecendo, com a chave vazia.
+_DE_SPS = ("analisesps.sps s "
+           " LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = s.id")
+
+# ⚠️ O MESMO ESCOPO DO OUTRO LADO DA TELA. A visão por nota oferece SPs para
+# associar; oferecer uma SP que a visão por lançamento esconde seria as duas
+# metades da mesma tela discordando — e, no caso da cancelada e da (TRF),
+# seria oferecer para associar exatamente o que não deve ser associado.
+#
+# Aqui NÃO há a caixa "trazer os cancelados": lá ela serve para conferir o que
+# aconteceu; aqui a lista é de proposta, e propor uma SP cancelada não tem uso
+# nenhum.
+def _escopo_das_candidatas() -> tuple[str, tuple]:
+    from . import consultas
+    onde, params = consultas.condicoes_do_escopo_fiscal(
+        mostrar_canceladas=False)
+    # As condições falam das colunas sem prefixo; com o LEFT JOIN não há
+    # ambiguidade, porque o diário não tem nenhuma dessas colunas.
+    return " AND ".join(onde), tuple(params)
+
+
+def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
+    """As SPs que PODEM ser de cada nota — o caminho inverso da conciliação.
+
+    ⚠️ DUAS CONSULTAS PARA A PÁGINA INTEIRA, e não uma por nota. Esta busca
+    nasceu dentro de um laço: 200 notas na tela viravam **200 consultas**, cada
+    uma varrendo as 59 mil SPs por uma expressão sem índice.
+
+    MEDIDO EM 13/09/2026, com 59.000 SPs e 4.000 notas: **28 segundos** só para
+    montar as candidatas — e isso nesta máquina, muito mais rápida que o banco
+    do Render (um décimo de um núcleo). Em produção a tela simplesmente não
+    abria, e foi assim que o dono relatou: *"a tela por nota não abre"*.
+
+    A primeira consulta pega as SPs de valor EXATAMENTE igual ao de alguma
+    nota — é o caso que fecha o par, e o que se perderia em qualquer recorte
+    por quantidade. A segunda pega as mais recentes de cada CNPJ, para haver o
+    que mostrar quando o valor não bate."""
     from .db import consultar
 
-    emitente = nota.get("emitente_doc") or emitente_da_chave(nota.get("chave"))
-    raiz = _raiz(emitente)
-    if not raiz:
-        return []
-    valor = _para_numero(nota.get("valor"))
-    linhas = consultar(
-        "SELECT id, credor, valor_num, vencimento_d, status_pgt, nf "
-        "  FROM analisesps.sps "
-        " WHERE left(regexp_replace(coalesce(documento, ''), '\\D', '', 'g'), 8) = ? "
-        " ORDER BY CASE WHEN valor_num = ? THEN 0 ELSE 1 END, vencimento_d DESC "
-        " LIMIT ?", (raiz, valor, int(quantas)))
-    nomes = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf"]
-    return [dict(zip(nomes, linha)) for linha in linhas]
+    if not notas:
+        return {}
+
+    # Cada nota, com a raiz do CNPJ de quem emitiu e o valor dela.
+    pedidos = []
+    for nota in notas:
+        emitente = nota.get("emitente_doc") or emitente_da_chave(nota.get("chave"))
+        raiz = _raiz(emitente)
+        if raiz:
+            pedidos.append((so_digitos(nota.get("chave")), raiz,
+                            _para_numero(nota.get("valor"))))
+    if not pedidos:
+        return {chave: [] for chave in
+                (so_digitos(n.get("chave")) for n in notas)}
+
+    raizes = sorted({r for _, r, _ in pedidos})
+    marcas = ",".join(["?"] * len(raizes))
+    escopo_sql, escopo_params = _escopo_das_candidatas()
+    por_raiz: dict = {}
+    # A nota inteira, para a conferência de cada candidata poder olhar o número
+    # e a data — e não só o valor.
+    por_chave = {so_digitos(n.get("chave")): n for n in notas}
+
+    def guardar(linha):
+        sp = dict(zip(_NOMES_SP, linha[:len(_NOMES_SP)]))
+        por_raiz.setdefault(linha[len(_NOMES_SP)], []).append(sp)
+
+    # 1. As de valor igual ao de alguma nota desta página. São as que fecham o
+    #    par, e é por elas que se começa a conferir.
+    valores = sorted({v for _, _, v in pedidos if v is not None})
+    if valores:
+        for linha in consultar(
+                f"SELECT {_CAMPOS_SP}, {_RAIZ_SQL} AS raiz "
+                f"  FROM {_DE_SPS} "
+                f" WHERE {_RAIZ_SQL} IN ({marcas}) "
+                f"   AND valor_num IN ({','.join(['?'] * len(valores))}) "
+                f"   AND {escopo_sql}",
+                tuple(raizes) + tuple(valores) + escopo_params):
+            guardar(linha)
+
+    # 2. As mais recentes de cada CNPJ, para haver o que mostrar quando o valor
+    #    não bate. `row_number()` faz o corte DENTRO do banco — trazer tudo e
+    #    cortar em Python seria carregar a base na memória de uma instância que
+    #    já morreu disso em julho.
+    for linha in consultar(
+            f"SELECT {_CAMPOS_SP_NOMES}, raiz FROM ("
+            f"  SELECT {_CAMPOS_SP}, {_RAIZ_SQL} AS raiz, "
+            f"         row_number() OVER (PARTITION BY {_RAIZ_SQL} "
+            "                             ORDER BY vencimento_d DESC NULLS LAST,"
+            "                                      id) AS n"
+            f"    FROM {_DE_SPS} WHERE {_RAIZ_SQL} IN ({marcas}) "
+            f"      AND {escopo_sql}) t "
+            " WHERE n <= ?",
+            tuple(raizes) + escopo_params + (int(SPS_POR_CNPJ),)):
+        guardar(linha)
+
+    # A escolha de cada nota: as de valor igual primeiro, sem repetir.
+    #
+    # ⚠️ E CADA CANDIDATA VAI COM O PORQUÊ ESCRITO. Cobrança do dono em
+    # 13/09/2026: *"você bota aqui a nota e bota 'mesmo valor'. Mas gera dúvida:
+    # você está comparando o mesmo valor de quê? Do mesmo fornecedor, do mesmo
+    # número de nota fiscal? Como é que você chegou a essa informação? Era
+    # interessante ampliar essa informação, mesmo que esse seja o critério, pelo
+    # menos para dar segurança a quem está fazendo essa associação."*
+    #
+    # Ele está certo, e "mesmo valor" sozinho é pior que nada: dá ar de
+    # conferência a uma coincidência. Duas notas do mesmo fornecedor no mesmo
+    # mês com o mesmo valor existem — e é exatamente aí que se associa a errada.
+    saida: dict = {}
+    for chave, raiz, valor in pedidos:
+        nota = por_chave.get(chave, {})
+        vistas, escolhidas, presas = set(), [], []
+        candidatas = sorted(
+            por_raiz.get(raiz, []),
+            key=lambda sp: 0 if (valor is not None
+                                 and _para_numero(sp.get("valor_num")) == valor)
+            else 1)
+        for sp in candidatas:
+            if sp["id"] in vistas:
+                continue
+            vistas.add(sp["id"])
+            ja = so_digitos(sp.get("nota_que_ja_tem"))
+            # Já aponta para ESTA mesma nota: não é sugestão, é o que já existe.
+            # Some da lista inteira — inclusive da lista das presas, porque
+            # nesse caso a nota nem órfã deveria estar.
+            if ja and ja == chave:
+                continue
+
+            # ⚠️ O SEGUNDO JEITO DE "JÁ ESTAR ASSOCIADO", e eu tinha feito só
+            # metade do conserto na leva anterior.
+            #
+            # Cobrança do dono, repetida em 13/09/2026: *"eu já havia comentado
+            # isso. Na tela por nota me aparece uma nota e vários registros pra
+            # eu associar. Só que tá aparecendo registro já associado, não tem
+            # sentido. A MENOS QUE A ASSOCIAÇÃO ESTEJA PROVAVELMENTE ERRADA."*
+            #
+            # Na primeira volta eu cortei só quem tem CHAVE gravada aqui. Mas o
+            # card do Pipefy tem o campo "Nº NF", e quando ele está preenchido
+            # com um número DIFERENTE do desta nota, aquela SP já está falada
+            # por outra nota — oferecê-la é oferecer trabalho já feito.
+            #
+            # O CARD COM O MESMO NÚMERO CONTINUA SENDO SUGESTÃO, e essa
+            # distinção é o coração da coisa: ali o número CONFIRMA o par, é a
+            # melhor candidata que existe. Cortar por "tem número" escondia o
+            # par mais fácil da base; não cortar por "tem número DIFERENTE"
+            # enchia a lista de trabalho já feito. São casos opostos.
+            #
+            # E a ressalva dele está atendida: nada some da tela. O que está
+            # falado por outra nota vai para o bloco à parte, com o motivo
+            # escrito — é lá que ele confere se a associação anterior estava
+            # errada.
+            numero_no_card = so_digitos(sp.get("nf")).lstrip("0")
+            outro_numero = bool(
+                numero_no_card
+                and not mesmo_numero_de_nota(sp.get("nf"), nota.get("numero")))
+
+            linha = dict(sp, ja_tem_nota=bool(ja) or outro_numero,
+                         porque_fora=(
+                             f"já aponta para a nota {ja[25:34].lstrip('0')}"
+                             if ja else
+                             (f"o card já diz Nº NF {_texto(sp.get('nf'))}"
+                              if outro_numero else "")),
+                         **_porque_esta_candidata(sp, nota))
+            if ja or outro_numero:
+                # Fica FORA das vagas. Vai no fim, marcada, só para a conta
+                # fechar na tela e para dar onde clicar e conferir — nunca
+                # como proposta.
+                if len(presas) < quantas:
+                    presas.append(linha)
+                continue
+            if len(escolhidas) < quantas:
+                escolhidas.append(linha)
+            # NÃO se para na primeira lista cheia: a varredura segue até o fim
+            # das 25 do CNPJ para a conta das "já com nota" fechar. Sem isso a
+            # tela mostraria cinco livres e nem contaria as presas, que é
+            # exatamente a informação que faltava.
+            if len(escolhidas) >= quantas and len(presas) >= quantas:
+                break
+        saida[chave] = escolhidas + presas
+    return saida
 
 
+# Quanto o valor pode diferir e ainda ser "perto" — o mesmo teto da conciliação
+# do outro lado. Dois números diferentes para a mesma ideia dariam telas que
+# discordam.
+def _porque_esta_candidata(sp: dict, nota: dict) -> dict:
+    """Por que ESTA SP é candidata a ESTA nota, item por item.
+
+    O que decide quem entra na lista é UM critério só — o CNPJ do emitente da
+    nota é o do credor da SP. Os demais são conferência, e é deles que vem a
+    segurança de quem clica em "associar": valor, número da nota digitado no
+    card e data compatível."""
+    valor_sp = valor_do_lancamento(sp)
+    valor_nota = _para_numero(nota.get("valor"))
+    diferenca = (abs(valor_sp - valor_nota)
+                 if valor_sp is not None and valor_nota is not None else None)
+
+    numero_nota = _texto(nota.get("numero"))
+    bate_numero = mesmo_numero_de_nota(sp.get("nf"), numero_nota)
+
+    emissao = _para_data(nota.get("emissao"))
+    bate_data = False
+    if emissao:
+        for _rotulo, alvo in datas_do_lancamento(sp):
+            if -DIAS_DEPOIS <= (alvo - emissao).days <= DIAS_ANTES:
+                bate_data = True
+                break
+
+    razoes = [{
+        "rotulo": "CNPJ do credor é o de quem emitiu",
+        "bate": True,          # é por isso que ela está na lista
+        "detalhe": _texto(sp.get("documento")) or _texto(nota.get("emitente_doc")),
+    }]
+
+    # A PARCELA ANTES DA COMPARAÇÃO CRUA. Sem isto a tela dizia "Valor
+    # DIFERENTE: a SP é R$ 696,34 e a nota R$ 2.089,02" — verdade no número e
+    # mentira no sentido, no caso que o dono mandou em 13/09/2026.
+    parcelado = bate_como_parcela(sp, nota)
+    if parcelado:
+        razoes.append({"rotulo": "Valor fecha (parcelado)", "bate": True,
+                       "detalhe": parcelado["conta"]})
+    elif diferenca is None:
+        razoes.append({"rotulo": "Valor", "bate": False,
+                       "detalhe": "não deu para comparar"})
+    elif diferenca < 0.005:
+        razoes.append({"rotulo": "Valor igual", "bate": True,
+                       "detalhe": f"os dois de R$ {valor_nota:,.2f}"
+                                  .replace(",", "X").replace(".", ",")
+                                  .replace("X", ".")})
+    else:
+        razoes.append({
+            "rotulo": "Valor DIFERENTE", "bate": False,
+            "detalhe": (f"a SP é R$ {valor_sp:,.2f} e a nota R$ {valor_nota:,.2f}"
+                        .replace(",", "X").replace(".", ",").replace("X", ".")),
+        })
+
+    razoes.append({
+        "rotulo": "Nº da nota no card",
+        "bate": bate_numero,
+        "detalhe": (f"os dois {numero_nota}" if bate_numero
+                    else (f"o card diz {_texto(sp.get('nf'))} e a nota é "
+                          f"{numero_nota}" if _texto(sp.get("nf"))
+                          else "o card está sem o nº da nota")),
+    })
+    razoes.append({
+        "rotulo": "Data compatível",
+        "bate": bate_data,
+        "detalhe": ("emissão perto do vencimento/pagamento" if bate_data
+                    else "a emissão não bate com as datas da SP"),
+    })
+
+    return {
+        "razoes": razoes,
+        # "Fecha o par pelo valor" passa a incluir o parcelado: é o mesmo
+        # significado para quem lê a tela, e o recorte "as que fecham" tem de
+        # trazê-las junto.
+        "valor_igual": bool(parcelado
+                            or (diferenca is not None and diferenca < 0.005)),
+        "parcelado": parcelado or None,
+        "confere": sum(1 for r in razoes if r["bate"]),
+        "de": len(razoes),
+    }
+
+
+def sps_possiveis_da_nota(nota: dict, quantas: int = 5) -> list:
+    """Uma nota só. Passa pelo MESMO caminho da página inteira, para as duas
+    não divergirem no dia em que a regra de escolha mudar."""
+    return sps_possiveis_das_notas([nota], quantas).get(
+        so_digitos(nota.get("chave")), [])
 # ---------------------------------------------------------------------------
 # OS NÚMEROS DO LADO DA NOTA
 #
@@ -991,9 +1385,15 @@ def painel_notas() -> dict:
         # Receita: é a mesma certeza que `categoria_da_chave` usa, e vale para
         # toda nota, tenha vindo por onde tiver vindo.
         "       count(*) FILTER (WHERE substring(chave from 21 for 2) = '57'), "
+        # ⚠️ O ALARME. Nota cancelada que JÁ está num lançamento — o fornecedor
+        # cancelou depois de a gente associar. Não aparece na lista de órfãs
+        # (ela não é órfã, está associada), e por isso ficava invisível
+        # justamente por estar "resolvida".
+        f"       count(*) FILTER (WHERE {SQL_CANCELADA_EM_USO}), "
         "       max(importada_em) "
         "  FROM analisesps.notas_fiscais")
-    nomes = ["total", "canceladas", "sem_lancamento", "ctes", "ultima"]
+    nomes = ["total", "canceladas", "sem_lancamento", "ctes",
+             "canceladas_em_uso", "ultima"]
     if not linha:
         return {n: 0 for n in nomes}
     return dict(zip(nomes, linha))
@@ -1071,8 +1471,157 @@ def decidir_a_mao(sp_id: str, documentacao: str, chave: str, quem: str,
     motivo = "informado à mão" + (" com a chave conferida" if limpa else "")
     guardar_decisao(sp_id, documentacao, limpa, motivo, 100, quem,
                     origem="PESSOA")
+
+    # AS DEMAIS PARCELAS DA MESMA NOTA. Só quando há CHAVE: sem nota apontada
+    # não há o que espalhar, e copiar categoria para outras SPs seria decidir
+    # por elas sem prova nenhuma.
+    #
+    # Cada irmã é gravada UMA A UMA pelo mesmo `guardar_decisao`, e não por um
+    # UPDATE em bloco: é ele que escreve o diário, a origem e o motivo. Um
+    # atalho aqui deixaria essas SPs sem rastro de quem decidiu.
+    irmas = []
+    if limpa and sp:
+        for outra in parcelas_irmas(dict(sp, id=sp_id)):
+            guardar_decisao(outra["id"], documentacao, limpa,
+                            f"mesma nota da parcela {_texto(sp.get('parcela'))}"
+                            f" da SP {sp_id}", 100, quem, origem="PESSOA")
+            irmas.append(str(outra["id"]))
+
     return {"sp_id": str(sp_id), "documentacao": documentacao, "chave": limpa,
-            "dedutivel": dedutivel(documentacao)}
+            "dedutivel": dedutivel(documentacao), "parcelas_irmas": irmas}
+
+
+# ===========================================================================
+# AS DEMAIS PARCELAS DA MESMA NOTA — *"o registro deveria ser associado às
+# demais parcelas"* (dono, 13/09/2026)
+#
+# Uma nota de R$ 2.089,02 paga em três vezes gera TRÊS SPs. Associar a nota a
+# uma só deixa as outras duas eternamente "sem documentação" — e o painel
+# passa a cobrar um trabalho que já foi feito.
+#
+# ⚠️ O LAÇO É APERTADO DE PROPÓSITO, e cada condição tira um jeito de errar:
+#
+#   • MESMO CNPJ — óbvio, e é o que impede pegar outro fornecedor.
+#   • MESMO Nº DE NOTA no card — é o laço forte. Sem ele, "parcela 2/3 de
+#     696,34" casaria com qualquer outro parcelamento de mesmo valor do mesmo
+#     credor, que num fornecedor de aluguel mensal é o caso comum.
+#   • MESMO DENOMINADOR — 2/3 é irmã de 3/3; 2/12 não é.
+#   • AINDA SEM CHAVE — irmã que já aponta para outra nota não é sobrescrita.
+#     Se alguém já decidiu diferente, quem decide o desempate é gente.
+#
+# SEM O Nº DA NOTA NO CARD, NÃO HÁ IRMÃ. Devolve vazio e a associação vale só
+# para a SP escolhida — é o caso em que adivinhar custaria caro e conferir
+# custa um clique.
+# ===========================================================================
+def parcelas_irmas(sp: dict) -> list:
+    """As outras parcelas do MESMO pagamento, ainda sem nota apontada."""
+    from .db import consultar
+
+    parcela = parcela_do_lancamento(sp)
+    numero = so_digitos(sp.get("nf")).lstrip("0")
+    documento = so_digitos(sp.get("documento"))
+    if not parcela or not numero or not documento:
+        return []
+
+    linhas = consultar(
+        "SELECT s.id, s.credor, s.valor_num, s.vencimento_d, s.parcela, s.nf "
+        "  FROM analisesps.sps s "
+        "  LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = s.id "
+        " WHERE left(regexp_replace(coalesce(s.documento,''), '\\D', '', 'g'), 8)"
+        "       = ? "
+        "   AND regexp_replace(coalesce(s.documento,''), '\\D', '', 'g') = ? "
+        "   AND ltrim(regexp_replace(coalesce(s.nf,''), '\\D', '', 'g'), '0') = ? "
+        "   AND s.id <> ? "
+        "   AND btrim(coalesce(a.chave, '')) = '' "
+        " ORDER BY s.vencimento_d NULLS LAST, s.id "
+        " LIMIT ?",
+        (documento[:8], documento, numero, str(sp.get("id")),
+         int(MAXIMO_DE_PARCELAS)))
+
+    campos = ["id", "credor", "valor_num", "vencimento_d", "parcela", "nf"]
+    irmas = []
+    for linha in linhas:
+        outra = dict(zip(campos, linha))
+        dela = parcela_do_lancamento(outra)
+        # Mesmo denominador: 2/3 é irmã de 3/3; 2/12 não é.
+        if dela and dela[1] == parcela[1]:
+            irmas.append(outra)
+    return irmas
+
+
+# ===========================================================================
+# O PANORAMA DAS PARCELAS — o que a janela "ver os dados" tem de DIZER ANTES
+#
+# Pergunta do dono em 13/09/2026, na tela "Por lançamento": *"clico em ver os
+# dados de uma sugestão. Claramente é a situação de parcelas que informei. Não
+# deveria haver uma associação com as outras parcelas pra vincular logo tudo?
+# Ou avisar que já tá associado com outras?"*
+#
+# Ele está apontando um buraco de INFORMAÇÃO, não de comportamento: gravar nas
+# irmãs já acontece desde a leva anterior — mas só se descobre DEPOIS de
+# clicar. Ação que alcança mais do que se vê tem de ser anunciada antes, não
+# explicada depois.
+#
+# ⚠️ ESTA FUNÇÃO NÃO ESCREVE NADA e mostra TODAS as irmãs, inclusive as que já
+# apontam para outra nota — que `parcelas_irmas` deixa de fora de propósito,
+# porque aquela é a lista de quem VAI ser gravado. Aqui a de fora é a
+# informação mais importante da tela: é ela que responde "já tá associado com
+# outras?".
+# ===========================================================================
+def panorama_das_parcelas(sp: dict, chave_em_questao: str = "") -> dict:
+    """Onde esta SP está dentro do parcelamento, e como estão as irmãs."""
+    from .db import consultar
+
+    parcela = parcela_do_lancamento(sp)
+    numero = so_digitos(sp.get("nf")).lstrip("0")
+    documento = so_digitos(sp.get("documento"))
+    if not parcela:
+        return {}
+    if not numero or not documento:
+        # É parcela, mas sem o nº da nota no card não há como achar as irmãs
+        # com segurança — e dizer isso é melhor do que calar.
+        return {"qual": parcela[0], "de": parcela[1], "irmas": [],
+                "sem_numero": True}
+
+    linhas = consultar(
+        "SELECT s.id, s.parcela, s.valor_num, s.vencimento_d, "
+        "       btrim(coalesce(a.chave, '')) "
+        "  FROM analisesps.sps s "
+        "  LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = s.id "
+        " WHERE left(regexp_replace(coalesce(s.documento,''), '\\D', '', 'g'), 8)"
+        "       = ? "
+        "   AND regexp_replace(coalesce(s.documento,''), '\\D', '', 'g') = ? "
+        "   AND ltrim(regexp_replace(coalesce(s.nf,''), '\\D', '', 'g'), '0') = ? "
+        "   AND s.id <> ? "
+        " ORDER BY s.vencimento_d NULLS LAST, s.id "
+        " LIMIT ?",
+        (documento[:8], documento, numero, str(sp.get("id")),
+         int(MAXIMO_DE_PARCELAS)))
+
+    esta = so_digitos(chave_em_questao)
+    irmas = []
+    for id_, parc, valor, vence, chave_dela in linhas:
+        dela = parcela_do_lancamento({"parcela": parc})
+        if not dela or dela[1] != parcela[1]:
+            continue
+        limpa = so_digitos(chave_dela)
+        if not limpa:
+            situacao = "livre"
+        elif esta and limpa == esta:
+            situacao = "mesma_nota"
+        else:
+            situacao = "outra_nota"
+        irmas.append({"id": str(id_), "parcela": _texto(parc),
+                      "valor": valor, "vencimento": vence,
+                      "situacao": situacao, "chave": limpa})
+
+    return {
+        "qual": parcela[0], "de": parcela[1], "irmas": irmas,
+        "sem_numero": False,
+        "livres": sum(1 for i in irmas if i["situacao"] == "livre"),
+        "mesma_nota": sum(1 for i in irmas if i["situacao"] == "mesma_nota"),
+        "outra_nota": sum(1 for i in irmas if i["situacao"] == "outra_nota"),
+    }
 
 
 def uma_nota(chave: str) -> dict:
@@ -1234,13 +1783,21 @@ def _conferir_regras(lancamento: dict, nota: dict) -> list:
     valor_nota = _para_numero(nota.get("valor"))
     diferenca = (abs(valor_sp - valor_nota)
                  if valor_sp is not None and valor_nota is not None else None)
+    # A CONTA DA PARCELA ENTRA AQUI TAMBÉM, e com o texto por extenso: esta é
+    # a tela em que ele vai conferir se concorda, e "696,34 × 3 = 2.089,02" é o
+    # que permite discordar com conhecimento de causa.
+    parcelado = bate_como_parcela(lancamento, nota)
     saida.append({
-        "chave": "valor", "rotulo": "Valor",
-        "bateu": diferenca is not None and diferenca < 0.005,
-        "quase": diferenca is not None and 0.005 <= diferenca <= TOLERANCIA_VALOR,
+        "chave": "valor",
+        "rotulo": ("Valor fecha como parcela" if parcelado else "Valor"),
+        "bateu": bool(parcelado) or (diferenca is not None
+                                     and diferenca < 0.005),
+        "quase": (not parcelado and diferenca is not None
+                  and 0.005 <= diferenca <= TOLERANCIA_VALOR),
         "pontos": PONTOS_VALOR_EXATO,
         "no_lancamento": valor_sp, "na_nota": valor_nota,
-        "diferenca": diferenca,
+        "diferenca": None if parcelado else diferenca,
+        "parcelado": parcelado.get("conta") if parcelado else "",
     })
 
     saida.append({
@@ -1365,6 +1922,9 @@ def comparar(lancamento: dict) -> dict:
             "situacao": _texto(diario.get("situacao")),
             "por": _texto(diario.get("decidida_por")),
             "motivo": _texto(diario.get("motivo")),
+            # A CONFIANÇA DE QUEM GRAVOU. Faltava, e é metade da resposta a
+            # *"o que foi que a IA disse?"*: 90% e 40% pedem reações opostas.
+            "confianca": int(diario.get("confianca") or 0),
         },
         "veredito": {
             "grupo": veredito.get("grupo"),
@@ -1381,3 +1941,595 @@ def comparar(lancamento: dict) -> dict:
         "olhadas": len(candidatas),
         "corte": CONFIANCA_PARA_PROPOR,
     }
+
+
+# ---------------------------------------------------------------------------
+# A LISTA DE TODAS AS NOTAS — o que existe, não só o que está órfão
+#
+# Pedido do dono em 13/09/2026: *"não consigo visualizar numa tela o que temos
+# de notas e o que não temos. Ver as notas do dia ou consultar as notas, ver as
+# informações do que foi emitido contra a BWS, conforme vemos no FSist e no
+# relatório que baixamos e como víamos na planilha."*
+#
+# A tela só tinha a lista das ÓRFÃS — as notas sem lançamento. É um recorte
+# útil e é só um recorte: quem quer conferir "chegou a nota da semana?" ou
+# "quantas vieram hoje?" não tinha onde olhar. Agora a lista é de tudo, e as
+# órfãs viram um filtro dela.
+# ---------------------------------------------------------------------------
+NOTAS_POR_PAGINA = 200
+
+SEM_LANCAMENTO_SQL = (
+    "NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+    "             WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+    "                   = notas_fiscais.chave)")
+
+# Os recortes da lista de notas. Mesma ideia da tela de lançamentos: o nome do
+# grupo diz de que dado se está falando.
+# O CNPJ DE QUEM EMITIU, com a coluna e, se ela vier vazia, a chave. Os dígitos
+# 7 a 20 são o emitente por definição da Receita — mais confiável que a coluna,
+# que chega com formatação variada.
+EMITENTE_DA_NOTA = ("coalesce(nullif(btrim(coalesce(emitente_doc, '')), ''), "
+                    "         substring(chave from 7 for 14))")
+
+# EXISTE UMA SP DO MESMO CNPJ COM O MESMO VALOR? É o par que se fecha sem
+# pensar — e o dono pediu o filtro em 13/09/2026: *"nessas que estão aqui já
+# verdinha pra associar (…) tem outra sim, o valor é diferente. Tem que ter um
+# tratamento aí."*
+SQL_TEM_SP_DE_VALOR_IGUAL = f"""
+EXISTS (SELECT 1 FROM analisesps.sps s
+         WHERE left(regexp_replace(coalesce(s.documento, ''), '\\D', '', 'g'), 8)
+               = left({EMITENTE_DA_NOTA}, 8)
+           AND s.valor_num = notas_fiscais.valor)"""
+
+SQL_TEM_SP_DO_CREDOR = f"""
+EXISTS (SELECT 1 FROM analisesps.sps s
+         WHERE left(regexp_replace(coalesce(s.documento, ''), '\\D', '', 'g'), 8)
+               = left({EMITENTE_DA_NOTA}, 8))"""
+
+# ⚠️ A NOTA CANCELADA QUE JÁ ESTÁ NUM LANÇAMENTO. É o caso que o dono descreveu
+# em 13/09/2026, e é o mais grave desta tela: *"imagina, o fornecedor emitiu e
+# cancelou a nota. E a gente associou, pagou, e a nota virou cancelada. A gente
+# tem que ter um local de visualização disso, facilmente poder tratar isso aí,
+# ligar pro fornecedor e pedir uma nova nota (…) é algo que tem que dar
+# destaque."*
+#
+# Ele está certo: despesa paga contra documento que não existe mais é problema
+# fiscal, e não se descobre olhando a lista de órfãs — a nota cancelada NÃO é
+# órfã, ela está associada. Ficava invisível justamente por estar resolvida.
+SQL_CANCELADA_EM_USO = (
+    "upper(btrim(coalesce(status, ''))) = 'CANCELADA' "
+    " AND EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+    "              WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+    "                    = notas_fiscais.chave)")
+
+GRUPOS_DE_NOTA = [
+    ("O lançamento", [
+        ("sem_lancamento", "Sem lançamento",
+         "nota emitida que não está em SP nenhuma"),
+        ("com_lancamento", "Já está num lançamento",
+         "a chave está gravada em alguma SP"),
+    ]),
+    ("O par com a SP", [
+        ("casa_valor", "Tem SP do mesmo valor",
+         "existe SP do mesmo CNPJ com o valor idêntico — é o par que fecha"),
+        ("sem_valor_igual", "Tem SP do credor, mas de outro valor",
+         "há SP daquele CNPJ e nenhuma com o mesmo valor; precisa de olho"),
+        ("sem_sp_do_credor", "Nenhuma SP daquele CNPJ",
+         "a despesa pode não ter sido lançada ainda"),
+    ]),
+    # ⚠️ O TÍTULO DIZ OS QUATRO ITENS, porque "3 de 4" sozinho não diz de quê.
+    # ⚠️ SÓ AS FAIXAS DE 75% PARA CIMA, e a ausência das outras é decisão
+    # medida, não esquecimento. "Confere em 2" e "confere só no CNPJ"
+    # perguntam por AUSÊNCIA — "o valor NÃO bate, o número NÃO bate" —, e
+    # ausência nenhum índice acha: deu 1,5 s aqui, com 59.000 SPs, o que no
+    # banco do Render (um décimo de um núcleo) é a tela que não abre. São,
+    # também, as faixas de menor uso: o trabalho dele é confirmar o que fecha,
+    # não varrer o que não fecha.
+    #
+    # Para tê-las é preciso guardar a conta do par no banco, numa varredura em
+    # processo separado — está oferecido ao dono e ainda sem resposta.
+    ("A qualidade do par — CNPJ, valor, nº da nota e data", [
+        ("confere_4", "Confere nos 4 (100%)",
+         "CNPJ, valor, nº da nota no card e data batem — é o par que fecha, "
+         "e é a pilha de confirmar em lote"),
+    ]),
+    ("A situação na Receita", [
+        ("autorizada", "Autorizada", ""),
+        ("cancelada", "Cancelada",
+         "documento que não existe mais; pagar contra ele é problema fiscal"),
+        ("cancelada_em_uso", "⚠️ Cancelada E já associada a uma SP",
+         "o fornecedor cancelou depois de a gente associar — pedir nota nova"),
+    ]),
+    ("O tipo de documento", [
+        ("nfe", "NF-e (mercadoria)", "modelo 55, lido de dentro da chave"),
+        ("cte", "CT-e (frete)", "modelo 57"),
+        ("nfce", "NFC-e (cupom)", "modelo 65"),
+    ]),
+]
+
+# ===========================================================================
+# FILTRAR PELA QUALIDADE DO PAR — *"deveria poder também filtrar pela nota de
+# associação: 1-4, 2-4, ou pelo percentual também"* (dono, 13/09/2026)
+#
+# A tela já mostrava, em cada candidata, "3 de 4 conferem". Ele quer filtrar
+# por esse número — e está certo: é ele que separa "confirmar em lote sem
+# medo" de "olhar um por um".
+#
+# ⚠️ FEITO NO BANCO, E NÃO NA PÁGINA, e essa é a decisão que importa. O "X de
+# 4" nasce em Python, ao desenhar cada linha — filtrar por ali responderia
+# "das 200 desta página", e a paginação passaria a mentir: ele veria "12 de
+# 4.000" e os 4.000 continuariam contando o que o filtro tirou.
+#
+# Então os mesmos quatro critérios foram reescritos em SQL, contra a nota:
+#
+#   1. EXISTE SP DO MESMO CNPJ ......... é o que põe a SP na lista, sempre vale
+#   2. do MESMO VALOR .................. `SQL_TEM_SP_DE_VALOR_IGUAL`
+#   3. com o MESMO Nº DE NOTA no card .. abaixo
+#   4. com DATA COMPATÍVEL ............. abaixo, a mesma janela da pontuação
+#
+# A conta é `1 + (2) + (3) + (4)`, de 1 a 4 — a mesma que a linha mostra. E o
+# recorte pega a MELHOR SP de cada nota (`EXISTS`), que é a que a tela propõe.
+# ===========================================================================
+# O Nº DA NOTA ESCRITO NO CARD, comparado sem zeros à esquerda e sem
+# pontuação — a planilha traz "1.002.924", "0001430" e "1430" para a mesma
+# coisa, e comparar o texto cru perderia o par mais fácil da base.
+# `s.nf_num` é COLUNA GERADA pelo banco (migração 012) — o mesmo
+# `ltrim(regexp_replace(...))`, só que calculado uma vez na gravação em vez de
+# 262 mil vezes por abertura de tela. Ver o comentário da migração.
+_SQL_NUMERO_DO_CARD = (
+    "s.nf_num = ltrim(regexp_replace(coalesce(notas_fiscais.numero,''), "
+    "                                '\\D', '', 'g'), '0') "
+    "AND s.nf_num <> ''")
+
+# A MESMA JANELA DE DATA DA PONTUAÇÃO (`DIAS_ANTES` / `DIAS_DEPOIS`). Dois
+# números diferentes para a mesma ideia dariam uma tela que discorda de si
+# mesma: o filtro traria a nota e a linha diria que a data não bate.
+_SQL_DATA_COMPATIVEL = (
+    "(s.vencimento_d IS NOT NULL AND notas_fiscais.emissao IS NOT NULL "
+    f" AND s.vencimento_d - notas_fiscais.emissao BETWEEN -{DIAS_DEPOIS} "
+    f"     AND {DIAS_ANTES})"
+    " OR (s.data_pagamento_d IS NOT NULL AND notas_fiscais.emissao IS NOT NULL "
+    f"     AND s.data_pagamento_d - notas_fiscais.emissao "
+    f"         BETWEEN -{DIAS_DEPOIS} AND {DIAS_ANTES})")
+
+
+# AS TRÊS CONFERÊNCIAS, cada uma como uma condição própria. O CNPJ não entra:
+# ele é o que põe a SP na lista, e vale sempre — é o "1" fixo da conta.
+_CONF_VALOR = "s.valor_num = notas_fiscais.valor"
+_CONF_NUMERO = _SQL_NUMERO_DO_CARD
+_CONF_DATA = "(" + _SQL_DATA_COMPATIVEL + ")"
+
+
+def _existe_sp(condicao: str) -> str:
+    """EXISTE SP deste CNPJ em que `condicao` é verdadeira?"""
+    return f"""
+EXISTS (SELECT 1 FROM analisesps.sps s
+         WHERE left(regexp_replace(coalesce(s.documento, ''), '\\D', '', 'g'), 8)
+               = left({EMITENTE_DA_NOTA}, 8)
+           AND ({condicao}))"""
+
+
+RECORTES_DE_NOTA = {
+    "sem_lancamento": SEM_LANCAMENTO_SQL,
+    "com_lancamento": "NOT (" + SEM_LANCAMENTO_SQL + ")",
+    "casa_valor": SQL_TEM_SP_DE_VALOR_IGUAL,
+    "sem_valor_igual": (SQL_TEM_SP_DO_CREDOR + " AND NOT ("
+                        + SQL_TEM_SP_DE_VALOR_IGUAL + ")"),
+    "sem_sp_do_credor": "NOT (" + SQL_TEM_SP_DO_CREDOR + ")",
+    "cancelada_em_uso": SQL_CANCELADA_EM_USO,
+    "autorizada": "upper(trim(coalesce(status,''))) <> 'CANCELADA'",
+    "cancelada": "upper(trim(coalesce(status,''))) = 'CANCELADA'",
+    "nfe": "substring(chave from 21 for 2) = '55'",
+    "cte": "substring(chave from 21 for 2) = '57'",
+    "nfce": "substring(chave from 21 for 2) = '65'",
+    # A QUALIDADE DO PAR, de 1 a 4 — ver o bloco acima.
+    # ⚠️ SÓ O RECORTE DE 100%, e a ausência dos outros é decisão MEDIDA.
+    #
+    # Pedido do dono em 13/09/2026: *"deveria poder também filtrar pela nota de
+    # associação: 1-4, 2-4, ou pelo percentual também"*. Construí as cinco
+    # faixas, medi as cinco, e só esta se paga.
+    #
+    # COM 59.000 SPs E 4.000 NOTAS, no pior caso (nenhuma SP casando, que é
+    # quando o EXISTS não tem como parar no meio):
+    #
+    #     confere nos 4 (100%) ............ 0,02 s
+    #     confere em 3 ou mais ............ 0,74 s por consulta
+    #     confere em exatamente 3 ......... 0,70 s por consulta
+    #
+    # E a tela roda a consulta DUAS VEZES — a contagem e a página —, então
+    # aqueles 0,74 s viram 1,5 s aqui. O banco do Render tem **um décimo de um
+    # núcleo**: ali isso é a tela que não abre, que é o defeito que já custou
+    # duas correções nesta mesma tela.
+    #
+    # POR QUE SÓ O DE 100% É RÁPIDO: ele é uma conjunção de igualdades, e o
+    # banco resolve pelo índice. Os outros perguntam "2 dos 3", e a pergunta
+    # tem um "ou" dentro — o EXPLAIN mostra o planejador desistindo dos índices
+    # e juntando a tabela inteira (262.497 pares avaliados). Tentei três
+    # caminhos — separar os EXISTS, pôr a condição necessária `(valor OU
+    # número)` na frente, e forçar subconsulta escalar — e nenhum passou de
+    # 0,6 s por consulta.
+    #
+    # O QUE DESTRAVA AS OUTRAS FAIXAS: guardar a conta do par no banco, numa
+    # varredura da base em processo separado. Está oferecido ao dono e ainda
+    # sem resposta — e é a mesma varredura que faria "o que o sistema está
+    # propondo" virar um totalizador de verdade.
+    "confere_4": _existe_sp(
+        f"{_CONF_VALOR} AND {_CONF_NUMERO} AND {_CONF_DATA}"),
+}
+
+FRASE_DA_NOTA = {
+    "sem_lancamento": "não está em lançamento nenhum",
+    "com_lancamento": "já está num lançamento",
+    "casa_valor": "tem SP do mesmo CNPJ e do mesmo valor",
+    "sem_valor_igual": "tem SP do credor, mas nenhuma do mesmo valor",
+    "sem_sp_do_credor": "não tem nenhuma SP daquele CNPJ",
+    "cancelada_em_uso": "está cancelada E já associada a uma SP",
+    "autorizada": "está autorizada",
+    "cancelada": "está cancelada",
+    "nfe": "é NF-e (mercadoria)",
+    "cte": "é CT-e (frete)",
+    "nfce": "é NFC-e (cupom)",
+    "confere_4": "tem SP que confere nos 4 itens (100%)",
+}
+
+
+def _where_das_notas(filtros: dict) -> tuple:
+    """Traduz os recortes da tela em SQL. Tudo entra como parâmetro."""
+    onde, params = [], []
+
+    for chave in (filtros.get("recortes") or []):
+        if chave in RECORTES_DE_NOTA:
+            onde.append("(" + RECORTES_DE_NOTA[chave] + ")")
+
+    busca = str(filtros.get("busca") or "").strip()
+    if busca:
+        # Número, chave, CNPJ ou nome do emitente — os quatro jeitos de
+        # procurar uma nota que alguém tem na mão.
+        alvo = ("lower(coalesce(numero,'') || ' ' || coalesce(chave,'') || ' ' "
+                "|| coalesce(emitente_doc,'') || ' ' || coalesce(emitente,''))")
+        for termo in [t.strip().lower() for t in busca.split(",") if t.strip()]:
+            onde.append(f"{alvo} LIKE ?")
+            params.append("%" + termo.replace("\\", "\\\\")
+                          .replace("%", r"\%").replace("_", r"\_") + "%")
+
+    for campo, operador in (("emissao_ini", ">="), ("emissao_fim", "<=")):
+        valor = filtros.get(campo)
+        if valor:
+            onde.append(f"emissao {operador} ?")
+            params.append(valor)
+
+    return (" WHERE " + " AND ".join(onde)) if onde else "", params
+
+
+def listar_notas(filtros: dict, pagina: int = 1) -> tuple:
+    """Uma página de notas, com o total e a soma. Três perguntas, uma varredura."""
+    from .db import consultar, consultar_um
+
+    where, params = _where_das_notas(filtros or {})
+    resumo = consultar_um(
+        "SELECT count(*), coalesce(sum(valor), 0), "
+        f"       count(*) FILTER (WHERE {SEM_LANCAMENTO_SQL}) "
+        f"  FROM analisesps.notas_fiscais{where}", tuple(params))
+
+    pagina = max(1, int(pagina or 1))
+    linhas = consultar(
+        "SELECT chave, emissao, numero, serie, valor, status, emitente_doc, "
+        "       emitente, emitente_uf, importada_em, "
+        f"       {SEM_LANCAMENTO_SQL} AS orfa, "
+        # EM QUAL SP ELA ESTÁ. Dizer só "já está num lançamento" é meio
+        # caminho: na nota cancelada, saber QUAL SP é o que permite agir — ver
+        # se foi paga e ligar para o fornecedor. Sem o número, ele teria de
+        # procurar a chave na outra tela.
+        "       (SELECT a.sp_id FROM analisesps.sp_fiscal_analise a "
+        "         WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+        "               = notas_fiscais.chave LIMIT 1) AS sp_id, "
+        "       (SELECT s.status_pgt FROM analisesps.sp_fiscal_analise a "
+        "          JOIN analisesps.sps s ON s.id = a.sp_id "
+        "         WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+        "               = notas_fiscais.chave LIMIT 1) AS sp_status "
+        f"  FROM analisesps.notas_fiscais{where} "
+        " ORDER BY emissao DESC NULLS LAST, numero DESC "
+        " LIMIT ? OFFSET ?",
+        tuple(params) + (NOTAS_POR_PAGINA, (pagina - 1) * NOTAS_POR_PAGINA))
+
+    nomes = ["chave", "emissao", "numero", "serie", "valor", "status",
+             "emitente_doc", "emitente", "emitente_uf", "importada_em", "orfa",
+             "sp_id", "sp_status"]
+    notas = []
+    for linha in linhas:
+        nota = dict(zip(nomes, linha))
+        nota["categoria"] = categoria_da_chave(nota["chave"])
+        notas.append(nota)
+
+    return notas, {
+        "quantidade": resumo[0] if resumo else 0,
+        "total": resumo[1] if resumo else 0,
+        "sem_lancamento": resumo[2] if resumo else 0,
+    }
+
+
+def notas_por_dia(dias: int = 14) -> list:
+    """Quantas notas entraram por dia de emissão, nos últimos dias.
+
+    Responde à pergunta que ele fez primeiro — *"ver as notas do dia"* — sem
+    obrigar a filtrar: o número de ontem ao lado do de hoje já diz se a busca
+    está trazendo coisa ou parou."""
+    from .db import consultar
+
+    linhas = consultar(
+        "SELECT emissao, count(*), coalesce(sum(valor), 0) "
+        "  FROM analisesps.notas_fiscais "
+        " WHERE emissao IS NOT NULL "
+        "   AND emissao >= (now() AT TIME ZONE 'America/Sao_Paulo')::date "
+        "                   - make_interval(days => ?) "
+        " GROUP BY emissao ORDER BY emissao DESC", (int(dias),))
+    return [{"dia": l[0], "quantas": l[1], "total": l[2]} for l in linhas]
+
+
+# ===========================================================================
+# A TELA DE VER AS NOTAS — o outro lado da cobrança de 13/09/2026
+#
+# *"Uma tela das notas e outra tela dos registros com os dados que estamos
+# trabalhando. Similar à planilha."*
+#
+# A tela "por nota" que existe é de TRABALHO: mostra as órfãs, propõe SPs,
+# associa. Esta aqui só MOSTRA — todas as notas, todas as colunas, sem recorte
+# e sem ação. Ver o bloco em `consultas.planilha_sps`.
+# ===========================================================================
+# As colunas da nota, na ordem em que ele lê no FSist: o que identifica
+# primeiro (chave, número, série), depois o dinheiro, depois quem emitiu.
+COLUNAS_DA_NOTA_NA_TELA = [
+    # ⚠️ ESTAS DUAS VÊM NA FRENTE, e não no fim como o resto. Elas respondem à
+    # pergunta que fez esta tela existir — *"como é que eu sei que eu estou
+    # visualizando essas notas que foram baixadas?"* — e a chave de acesso tem
+    # 44 dígitos: qualquer coisa depois dela exige rolar a tabela para o lado.
+    # Resposta que só aparece depois de rolar é resposta que não se acha.
+    ("origem", "De onde veio", "origem"),
+    ("importada_em", "Entrou aqui em", "momento"),
+    ("chave", "Chave de acesso", "texto"),
+    ("numero", "Número", "texto"),
+    ("serie", "Série", "texto"),
+    ("emissao", "Emissão", "data"),
+    ("valor", "Valor", "numero"),
+    ("status", "Situação", "texto"),
+    ("tipo", "Tipo", "texto"),
+    ("emitente", "Emitente", "texto"),
+    ("emitente_doc", "CNPJ do emitente", "texto"),
+    ("emitente_uf", "UF", "texto"),
+    ("destinatario", "Destinatário", "texto"),
+    ("destinatario_doc", "CNPJ do destinatário", "texto"),
+    ("chaves_nfe", "NF-e dentro do CT-e", "texto"),
+]
+
+# Como a origem é escrita na tela. O banco guarda a palavra curta; aqui ela
+# vira frase, porque "fsist" não quer dizer nada para quem só usa o sistema.
+ROTULOS_DE_ORIGEM = {
+    "receita": "🔎 busca na Receita",
+    "fsist": "📄 relatório do FSist",
+    "receita+fsist": "🔎 Receita + 📄 FSist",
+    "": "— entrou antes deste controle",
+}
+
+POR_PAGINA_PLANILHA = 200
+
+
+def colunas_da_nota_na_tela() -> list:
+    """As colunas da planilha de notas que o banco REALMENTE tem hoje.
+
+    ⚠️ A coluna `origem` nasce na migração 014, e o código sobe para o Render
+    antes de alguém apertar "Aplicar atualizações do banco". Pedir uma coluna
+    que ainda não existe derrubaria a tela inteira nessa janela."""
+    from .db import tem_coluna
+
+    if tem_coluna("notas_fiscais", "origem"):
+        return COLUNAS_DA_NOTA_NA_TELA
+    return [c for c in COLUNAS_DA_NOTA_NA_TELA if c[0] != "origem"]
+
+
+def contagem_por_origem() -> dict:
+    """Quantas notas por porta de entrada — o número em cima de cada recorte.
+
+    ⚠️ O RECORTE PRECISA DIZER QUANTAS TEM ANTES DE SER CLICADO. Reclamação do
+    dono em 15/09/2026: *"se eu boto todas, aparecem seis mil e tantas; se eu
+    clico só as da Receita, não aparece nada; se eu clico só as do relatório,
+    não aparece nada."* Ele leu como defeito, e a leitura é justa: um recorte
+    que devolve vazio sem avisar não se distingue de uma tela quebrada.
+
+    Com o número ao lado, "0" deixa de ser surpresa — e a conta fecha com o
+    total, que é o que faz a tela merecer confiança."""
+    from .db import consultar_um, tem_coluna
+
+    if not tem_coluna("notas_fiscais", "origem"):
+        return {}
+    try:
+        linha = consultar_um(
+            "SELECT count(*), "
+            # `lower()` na coluna, e não LIKE cru: no Postgres o LIKE
+            # distingue maiúscula, e há teste de portabilidade cravando isto.
+            "       count(*) FILTER (WHERE lower(origem) LIKE '%receita%'), "
+            "       count(*) FILTER (WHERE lower(origem) LIKE '%fsist%'), "
+            "       count(*) FILTER (WHERE coalesce(origem, '') = '') "
+            "  FROM analisesps.notas_fiscais")
+    except Exception:  # noqa: BLE001 — a conta é acessório: não derruba a tela
+        logger.exception("Análise de SPs: não consegui contar a origem das notas")
+        return {}
+    if not linha:
+        return {}
+    return {"": int(linha[0] or 0), "receita": int(linha[1] or 0),
+            "fsist": int(linha[2] or 0), "sem": int(linha[3] or 0)}
+
+
+# ---------------------------------------------------------------------------
+# O RECORTE DA TELA DAS NOTAS — um lugar só
+#
+# A lista e o quadro do alto TÊM DE OLHAR O MESMO PEDAÇO DA BASE. Se cada um
+# montasse o seu filtro, bastaria um deles ganhar uma condição nova para o
+# quadro dizer "12 canceladas" e a lista mostrar outra coisa — e aí a tela
+# inteira perde a confiança de quem lê. A lição é da tela de lançamentos, onde
+# o quadro por categoria e a lista já compartilham o filtro pelo mesmo motivo.
+# ---------------------------------------------------------------------------
+# Nota que a conciliação ainda não casou com lançamento nenhum. As CANCELADAS
+# ficam fora: nota cancelada sem despesa é o esperado, não um achado — é a
+# mesma regra da visão "notas sem lançamento", e as duas têm de concordar.
+SQL_SEM_LANCAMENTO = (
+    "upper(trim(coalesce(status, ''))) <> 'CANCELADA' "
+    "   AND NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+    "                    WHERE regexp_replace(coalesce(a.chave, ''), "
+    "                                         '\\D', '', 'g') "
+    "                          = notas_fiscais.chave)")
+
+
+def recorte_das_notas(busca: str = "", origem: str = "", situacao: str = "",
+                      sem_lancamento: bool = False) -> tuple[str, tuple]:
+    """O WHERE da tela das notas, montado uma vez e usado pelos dois lados."""
+    from .db import tem_coluna
+
+    onde, params = [], []
+    filtro = str(origem or "").strip().lower()
+    if filtro and tem_coluna("notas_fiscais", "origem"):
+        if filtro == "sem":
+            # AS QUE ENTRARAM ANTES DESTE CONTROLE. Elas existem, são a maior
+            # parte da base, e precisam de um lugar onde apareçam — senão a
+            # soma dos recortes não bate com o total e a tela parece quebrada.
+            onde.append("coalesce(origem, '') = ''")
+        else:
+            # "receita" alcança também a nota que veio pelas DUAS portas: ela
+            # também foi trazida pela busca, e escondê-la responderia errado à
+            # pergunta "o que o certificado me trouxe?".
+            onde.append("lower(origem) LIKE ?")
+            params.append(f"%{filtro}%")
+
+    qual = str(situacao or "").strip().upper()
+    if qual:
+        onde.append("upper(trim(coalesce(status, ''))) = ?")
+        params.append(qual)
+
+    if sem_lancamento:
+        onde.append(SQL_SEM_LANCAMENTO)
+
+    termo = str(busca or "").strip()
+    if termo:
+        alvo = ("lower(coalesce(chave,'') || ' ' || coalesce(numero,'') || ' ' "
+                "|| coalesce(emitente,'') || ' ' || coalesce(emitente_doc,'') "
+                "|| ' ' || coalesce(destinatario,''))")
+        for pedaco in [t.strip().lower() for t in termo.split(",") if t.strip()]:
+            onde.append(f"({alvo}) LIKE ?")
+            params.append("%" + pedaco.replace("\\", "\\\\")
+                          .replace("%", "\\%").replace("_", "\\_") + "%")
+    where = (" WHERE " + " AND ".join(onde)) if onde else ""
+    return where, tuple(params)
+
+
+def quadro_das_notas(busca: str = "", origem: str = "") -> list:
+    """Os totalizadores do alto da planilha das notas.
+
+    Pedido do dono em 15/09/2026: *"seriam os KPIs aí lá em cima, os
+    totalizadores. Ficaria legal."*
+
+    ⚠️ CONTA SOBRE O MESMO RECORTE DA LISTA (busca e origem), senão o quadro
+    diria uma coisa e a lista, outra — e a tela perderia a confiança de quem
+    lê. A situação e o "sem lançamento" NÃO entram aqui de propósito: eles são
+    o que o quadro MEDE, e medir dentro do próprio filtro daria sempre o total.
+
+    Cada linha vira um clique que recorta a lista. Pedido dele desde o quadro
+    por categoria: *"era interessante inclusive desse KPI ele direcionar pra
+    uma tela com as informações."*
+
+    Devolve uma lista de {chave, rotulo, quantas, valor, filtro, dica}."""
+    from .db import consultar_um
+
+    where, params = recorte_das_notas(busca, origem)
+    try:
+        linha = consultar_um(
+            "SELECT count(*), coalesce(sum(valor), 0), "
+            "       count(*) FILTER (WHERE upper(trim(coalesce(status,''))) "
+            "                              = 'CANCELADA'), "
+            "       coalesce(sum(valor) FILTER (WHERE "
+            "         upper(trim(coalesce(status,''))) = 'CANCELADA'), 0), "
+            # ⚠️ `upper()` NA MESMA LINHA do LIKE, e um `%` só: o LIKE do
+            # Postgres distingue caixa (e o tipo chega "CT-e" ou "CTe"
+            # conforme a porta por onde a nota entrou), e quem dobra o `%`
+            # para o psycopg2 é o tradutor de marcadores, não este código.
+            "       count(*) FILTER (WHERE upper(coalesce(tipo,'')) LIKE '%CT%'), "
+            "       coalesce(sum(valor) FILTER "
+            "         (WHERE upper(coalesce(tipo,'')) LIKE '%CT%'), 0) "
+            "  FROM analisesps.notas_fiscais" + where, params)
+    except Exception:  # noqa: BLE001 — o quadro é acessório; a lista é a tela
+        logger.exception("Análise de SPs: falhou montar o quadro das notas")
+        return []
+    if not linha:
+        return []
+
+    total, valor, canceladas, valor_cancelado, fretes, valor_frete = (
+        int(linha[0] or 0), linha[1] or 0, int(linha[2] or 0), linha[3] or 0,
+        int(linha[4] or 0), linha[5] or 0)
+
+    # A NOTA SEM LANÇAMENTO é a pergunta de dinheiro desta tela: documento
+    # emitido contra a empresa que ninguém lançou como despesa. Vai numa
+    # consulta à parte porque é a única que olha o diário.
+    sem_where, sem_params = recorte_das_notas(busca, origem,
+                                              sem_lancamento=True)
+    try:
+        sem = consultar_um(
+            "SELECT count(*), coalesce(sum(valor), 0) "
+            "  FROM analisesps.notas_fiscais" + sem_where, sem_params)
+        sem_quantas, sem_valor = int(sem[0] or 0), sem[1] or 0
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou contar as notas sem lançamento")
+        sem_quantas, sem_valor = 0, 0
+
+    return [
+        {"chave": "todas", "rotulo": "Notas", "quantas": total,
+         "valor": valor, "filtro": {},
+         "dica": "tudo o que este recorte alcança"},
+        {"chave": "sem_lancamento", "rotulo": "Sem lançamento",
+         "quantas": sem_quantas, "valor": sem_valor,
+         "filtro": {"sem_lancamento": "1"}, "alerta": sem_quantas > 0,
+         "dica": "nota emitida contra a empresa que nenhuma SP declarou — "
+                 "canceladas não contam"},
+        {"chave": "autorizadas", "rotulo": "Autorizadas",
+         "quantas": total - canceladas, "valor": (valor or 0) - (valor_cancelado or 0),
+         "filtro": {"situacao": "AUTORIZADA"},
+         "dica": "válidas na Receita"},
+        {"chave": "canceladas", "rotulo": "Canceladas",
+         "quantas": canceladas, "valor": valor_cancelado,
+         "filtro": {"situacao": "CANCELADA"}, "alerta": canceladas > 0,
+         "dica": "se alguma tiver despesa paga atrás, é problema fiscal"},
+        {"chave": "fretes", "rotulo": "Fretes (CT-e)", "quantas": fretes,
+         "valor": valor_frete, "filtro": {},
+         "dica": "o resto são notas de mercadoria e serviço (NF-e)"},
+    ]
+
+
+def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
+                   pagina: int = 1, origem: str = "", situacao: str = "",
+                   sem_lancamento: bool = False) -> tuple[list, int]:
+    """As notas como uma planilha: todas, todas as colunas, sem recorte.
+
+    `origem` recorta por onde a nota entrou — pergunta do dono em 15/09/2026:
+    *"como é que eu sei que eu estou visualizando essas notas que foram
+    baixadas? (…) eu só não sei pra onde é que elas estão indo."*"""
+    from .db import consultar, consultar_um
+
+    colunas = colunas_da_nota_na_tela()
+    where, params = recorte_das_notas(busca, origem, situacao, sem_lancamento)
+
+    # ⚠️ Lista fechada, como do outro lado: nome de coluna vindo do endereço
+    # nunca entra no SQL.
+    permitidas = {c for c, _, _ in colunas}
+    coluna = ordem if ordem in permitidas else "emissao"
+    sentido = "DESC NULLS LAST" if desc else "ASC NULLS LAST"
+
+    pagina = max(1, int(pagina or 1))
+    campos = ", ".join(c for c, _, _ in colunas)
+    linhas = consultar(
+        f"SELECT {campos} FROM analisesps.notas_fiscais{where} "
+        f" ORDER BY {coluna} {sentido}, chave "
+        " LIMIT ? OFFSET ?",
+        params + (POR_PAGINA_PLANILHA,
+                  (pagina - 1) * POR_PAGINA_PLANILHA))
+    total = consultar_um(
+        f"SELECT count(*) FROM analisesps.notas_fiscais{where}", params)[0]
+
+    nomes = [c for c, _, _ in colunas]
+    return [dict(zip(nomes, linha)) for linha in linhas], int(total or 0)

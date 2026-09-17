@@ -159,15 +159,23 @@ def comprimir(conteudo: bytes, nome_arquivo: str) -> tuple[bytes, str, bool]:
 # ocupar um pouco de banco é o menor dos males, e o trabalho de mudança leva
 # esse anexo para o Drive depois.
 # ---------------------------------------------------------------------------
-def _onde_guardar(s: Session, final: bytes, nome: str,
-                  mime: str) -> tuple[str, Optional[str], Optional[bytes]]:
-    """Devolve (guardado_em, drive_file_id, bytes_para_o_banco)."""
+def _onde_guardar(s: Session, final: bytes, nome: str, mime: str,
+                  entidade_tipo: str = "", entidade_id: int = 0
+                  ) -> tuple[str, Optional[str], Optional[bytes]]:
+    """Devolve (guardado_em, drive_file_id, bytes_para_o_banco).
+
+    A pasta sai da ÁRVORE (migração 070): documento de obra vai para
+    `Obras/<código - nome>`, o resto para `Arquivo/<gaveta>`. Se a árvore não
+    puder ser montada, cai na pasta raiz — guardar no lugar menos bonito é
+    melhor do que não guardar.
+    """
     from app.apps.erp.core.documentos import drive
     try:
         if not drive.ativo(s):
             return "BANCO", None, final
         cfg = drive.configuracao(s)
-        file_id = drive.enviar(final, nome, mime, pasta=cfg["pasta"],
+        destino = drive.pasta_de(s, entidade_tipo, entidade_id) or cfg["pasta"]
+        file_id = drive.enviar(final, nome, mime, pasta=destino,
                                impersonar=cfg["impersonar"])
         return "DRIVE", file_id, None
     except Exception as e:
@@ -216,7 +224,8 @@ def salvar(s: Session, conteudo: bytes, nome_arquivo: str, *,
         return ja
 
     final, mime, comprimido = comprimir(conteudo, nome_arquivo)
-    onde, file_id, bytes_no_banco = _onde_guardar(s, final, _nome_seguro(nome_arquivo), mime)
+    onde, file_id, bytes_no_banco = _onde_guardar(
+        s, final, _nome_seguro(nome_arquivo), mime, entidade_tipo, entidade_id)
     anexo = Anexo(
         entidade_tipo=entidade_tipo, entidade_id=entidade_id,
         nome_arquivo=_nome_seguro(nome_arquivo), dropbox_path=None,
@@ -312,6 +321,45 @@ def a_mover(s: Session) -> dict[str, Any]:
             "no_drive": int(no_drive)}
 
 
+def reorganizar_no_drive(s: Session, *, limite: int = 50) -> dict[str, Any]:
+    """Põe na pasta certa o que já está no Drive fora do lugar.
+
+    Existe porque o Drive foi ligado ANTES de a árvore existir (17/09/2026): o
+    que subiu nesse meio-tempo caiu todo na pasta raiz. Também serve depois,
+    quando uma obra nova aparece ou alguém mexe na organização.
+
+    **Move, não copia e nunca apaga** — o pedido do dono foi literal: *"só tem
+    que ter cuidado para não excluir"*. Mover no Drive é trocar o pai do
+    arquivo: o id não muda, o histórico não muda, o link não quebra.
+    """
+    from app.apps.erp.core.documentos import drive
+    cfg = drive.configuracao(s)
+    if not cfg["usavel"]:
+        raise ErroValidacao("Configure a pasta do Drive antes de reorganizar.")
+
+    fila = s.scalars(select(Anexo).where(
+        Anexo.guardado_em == "DRIVE", Anexo.drive_file_id.is_not(None))
+        .order_by(Anexo.id).limit(limite)).all()
+
+    movidos, ja_certos, falhas = 0, 0, []
+    for a in fila:
+        destino = drive.pasta_de(s, a.entidade_tipo, a.entidade_id)
+        if not destino:
+            continue
+        try:
+            if drive.mudar_de_pasta(a.drive_file_id, nova=destino,
+                                    impersonar=cfg["impersonar"]):
+                movidos += 1
+            else:
+                ja_certos += 1
+        except drive.ErroDrive as e:
+            falhas.append({"id": a.id, "erro": str(e)})
+    if movidos:
+        logger.info("ERP/anexo: %d arquivo(s) reorganizados no Drive", movidos)
+    return {"movidos": movidos, "ja_certos": ja_certos, "falhas": falhas,
+            "vistos": len(fila)}
+
+
 def mover_para_drive(s: Session, *, limite: int = 25) -> dict[str, Any]:
     """Leva até `limite` anexos do banco para o Drive. Devolve o que aconteceu."""
     from app.apps.erp.core.documentos import drive
@@ -328,9 +376,12 @@ def mover_para_drive(s: Session, *, limite: int = 25) -> dict[str, Any]:
             falhas.append({"id": a.id, "erro": "sem conteúdo no banco"})
             continue
         try:
+            # A pasta da ÁRVORE (migração 070), não a raiz: mover mil anexos
+            # para uma pasta só seria trocar banco cheio por pasta bagunçada.
+            destino = drive.pasta_de(s, a.entidade_tipo, a.entidade_id) or cfg["pasta"]
             file_id = drive.enviar(original, a.nome_arquivo,
                                    a.mime_type or "application/octet-stream",
-                                   pasta=cfg["pasta"], impersonar=cfg["impersonar"])
+                                   pasta=destino, impersonar=cfg["impersonar"])
         except drive.ErroDrive as e:
             falhas.append({"id": a.id, "erro": str(e)})
             continue

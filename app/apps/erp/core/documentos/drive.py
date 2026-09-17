@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from base64 import b64decode
 from typing import Any, Optional
 
@@ -128,6 +129,157 @@ def enviar(conteudo: bytes, nome: str, mime: str, *, pasta: str,
     except Exception as e:
         raise ErroDrive(f"Falha ao enviar para o Drive: {e}")
     return arquivo["id"]
+
+
+# ---------------------------------------------------------------------------
+# A ÁRVORE DE PASTAS (migração 070)
+#
+# PEDIDO DO DONO, 17/09/2026: *"a minha ideia é que tivesse tudo no Google
+# Drive, separado numa pasta de obra (…) tem a pasta Obras, aí tem as
+# subpastas. E aqueles outros documentos (…) salvar em outra pasta, tipo
+# Arquivo (…) é importante, senão fica bagunçado."*
+#
+#   <pasta configurada>
+#     ├── Obras
+#     │     ├── ESCPE18 - Escola Planalto
+#     │     └── CRECHEEUS26 - Creche do Eusébio
+#     └── Arquivo
+#           ├── Empresas · Pessoas · Fornecedores · Financeiro
+#
+# DUAS REGRAS QUE VALEM A PENA SABER:
+#
+#   1. **Pasta com o nome certo que já exista é REUSADA, não duplicada.** Se o
+#      dono criar "Obras" à mão, o sistema entra nela. Duas pastas com o mesmo
+#      nome é o começo de documento sumido.
+#   2. **Nada aqui apaga coisa alguma.** Reorganizar move (troca o pai); o
+#      arquivo continua o mesmo, com o mesmo id e o mesmo histórico. Ele pediu
+#      isso com todas as letras: *"só tem que ter cuidado para não excluir"*.
+# ---------------------------------------------------------------------------
+PASTA_OBRAS = "Obras"
+PASTA_ARQUIVO = "Arquivo"
+
+# entidade do anexo → onde ela mora dentro de "Arquivo"
+GAVETAS = {
+    "empresa": "Empresas",
+    "colaborador": "Pessoas",
+    "fornecedor": "Fornecedores",
+    "titulo": "Financeiro",
+    "pagamento": "Financeiro",
+    "movimentacao": "Financeiro",
+    "lote": "Financeiro",
+}
+
+
+def _limpo(nome: str) -> str:
+    """Nome de pasta sem o que atrapalha em pasta: barra, quebra e excesso."""
+    limpo = re.sub(r"[\\/\r\n\t]+", " ", (nome or "").strip())
+    limpo = re.sub(r"\s{2,}", " ", limpo)
+    return limpo[:120] or "Sem nome"
+
+
+def _pasta_guardada(s, chave: str) -> str:
+    from app.apps.erp.db.models.cadastros import DrivePasta
+    linha = s.get(DrivePasta, chave)
+    return linha.file_id if linha is not None else ""
+
+
+def _guardar_pasta(s, chave: str, file_id: str, nome: str) -> None:
+    from app.apps.erp.db.models.cadastros import DrivePasta
+    linha = s.get(DrivePasta, chave)
+    if linha is None:
+        s.add(DrivePasta(chave=chave, file_id=file_id, nome=nome))
+    else:
+        linha.file_id, linha.nome = file_id, nome
+    s.flush()
+
+
+def _procurar_pasta(svc, nome: str, pai: str) -> str:
+    """O id da pasta com este nome dentro do pai, se já existir."""
+    seguro = nome.replace("\\", "\\\\").replace("'", "\\'")
+    consulta = ("mimeType='application/vnd.google-apps.folder' and trashed=false "
+                f"and name='{seguro}' and '{pai}' in parents")
+    try:
+        r = svc.files().list(q=consulta, fields="files(id,name)", pageSize=5,
+                             supportsAllDrives=True,
+                             includeItemsFromAllDrives=True).execute()
+    except Exception as e:
+        raise ErroDrive(f"Falha ao procurar a pasta “{nome}” no Drive: {e}")
+    achados = r.get("files") or []
+    return achados[0]["id"] if achados else ""
+
+
+def garantir_pasta(s, *, chave: str, nome: str, pai: str,
+                   impersonar: str = "") -> str:
+    """O id da pasta `nome` dentro de `pai` — achando, criando ou lembrando."""
+    lembrada = _pasta_guardada(s, chave)
+    if lembrada:
+        return lembrada
+    svc = _servico(impersonar)
+    achada = _procurar_pasta(svc, nome, pai)
+    if not achada:
+        try:
+            achada = svc.files().create(
+                body={"name": nome, "parents": [pai],
+                      "mimeType": "application/vnd.google-apps.folder"},
+                fields="id", supportsAllDrives=True).execute()["id"]
+        except Exception as e:
+            raise ErroDrive(f"Falha ao criar a pasta “{nome}” no Drive: {e}")
+        logger.info("ERP/drive: pasta “%s” criada", nome)
+    _guardar_pasta(s, chave, achada, nome)
+    return achada
+
+
+def pasta_de(s, entidade_tipo: str, entidade_id: int) -> str:
+    """A pasta onde ESTE anexo deve ficar. Cria o caminho, se faltar.
+
+    Se qualquer passo falhar, devolve a pasta raiz configurada: guardar no
+    lugar menos bonito é melhor do que não guardar.
+    """
+    cfg = configuracao(s)
+    raiz = cfg["pasta"]
+    if not raiz:
+        return ""
+    try:
+        if entidade_tipo == "obra" and entidade_id:
+            from app.apps.erp.db.models.cadastros import Obra
+            obra = s.get(Obra, entidade_id)
+            if obra is None:
+                return raiz
+            pai = garantir_pasta(s, chave=f"raiz:{PASTA_OBRAS}", nome=PASTA_OBRAS,
+                                 pai=raiz, impersonar=cfg["impersonar"])
+            nome = _limpo(f"{obra.codigo} - {obra.nome}" if obra.nome else obra.codigo)
+            return garantir_pasta(s, chave=f"obra:{obra.id}", nome=nome, pai=pai,
+                                  impersonar=cfg["impersonar"])
+
+        gaveta = GAVETAS.get((entidade_tipo or "").lower(), "Diversos")
+        pai = garantir_pasta(s, chave=f"raiz:{PASTA_ARQUIVO}", nome=PASTA_ARQUIVO,
+                             pai=raiz, impersonar=cfg["impersonar"])
+        return garantir_pasta(s, chave=f"arquivo:{gaveta}", nome=gaveta, pai=pai,
+                              impersonar=cfg["impersonar"])
+    except ErroDrive as e:
+        logger.warning("ERP/drive: não deu para montar a pasta de %s %s (%s) — "
+                       "usando a pasta raiz", entidade_tipo, entidade_id, e)
+        return raiz
+
+
+def mudar_de_pasta(file_id: str, *, nova: str, impersonar: str = "") -> bool:
+    """Move o arquivo para outra pasta. NÃO copia e NÃO apaga nada.
+
+    Devolve True quando mudou de lugar, False quando já estava certo.
+    """
+    svc = _servico(impersonar)
+    try:
+        atual = svc.files().get(fileId=file_id, fields="parents",
+                                supportsAllDrives=True).execute()
+        pais = atual.get("parents") or []
+        if pais == [nova]:
+            return False
+        svc.files().update(fileId=file_id, addParents=nova,
+                           removeParents=",".join(pais), fields="id",
+                           supportsAllDrives=True).execute()
+    except Exception as e:
+        raise ErroDrive(f"Falha ao mover o arquivo no Drive: {e}")
+    return True
 
 
 def baixar(file_id: str, *, impersonar: str = "") -> bytes:

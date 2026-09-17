@@ -240,6 +240,61 @@ def _situacao_validade(d: Documento, hoje: date) -> tuple[str, Optional[int]]:
     return "VALIDO", dias
 
 
+def corrigir_datas(s: Session, documento_id: int, *, emissao: Any = "",
+                   validade: Any = "", competencia: Any = "",
+                   referencia: Optional[str] = None,
+                   usuario=None) -> Documento:
+    """Arruma as datas de um documento já arquivado.
+
+    Dono, 17/09/2026: *"eu vi um contrato que está dando que está vencido, mas
+    na verdade está vencido porque eu escrevi a validade errado. Eu queria daqui
+    ir (…) e editar isso direto"*. Não havia como: uma data digitada errada
+    ficava errada para sempre, e o aviso de vencimento junto com ela.
+
+    Só datas e referência. Trocar o TIPO ou o DONO é outra história — muda o
+    nome do arquivo, o escopo de quem vê e o lugar no Drive —, e por isso não
+    entra aqui de raspão.
+    """
+    d = s.get(Documento, documento_id)
+    if d is None:
+        raise ErroNaoEncontrado("Documento não encontrado.")
+
+    antes = {"emissao": str(d.emissao or ""), "validade": str(d.validade or ""),
+             "competencia": str(d.competencia or ""), "referencia": d.referencia or ""}
+
+    def _data(v):
+        v = (str(v or "")).strip()
+        return date.fromisoformat(v) if v else None
+
+    try:
+        nova_emissao = _data(emissao)
+        nova_validade = _data(validade)
+        comp = (str(competencia or "")).strip()
+        nova_comp = date.fromisoformat(comp + "-01") if len(comp) == 7 else _data(comp)
+    except ValueError:
+        raise ErroValidacao("Data inválida. Use o campo de calendário.")
+
+    if d.tipo is not None and d.tipo.vence and nova_validade is None:
+        raise ErroValidacao(
+            f"{d.tipo.nome} vence — a validade não pode ficar em branco. Sem ela "
+            f"o sistema não avisa antes do vencimento.")
+    if nova_emissao and nova_validade and nova_validade < nova_emissao:
+        raise ErroValidacao("A validade não pode ser anterior à emissão.")
+
+    d.emissao, d.validade, d.competencia = nova_emissao, nova_validade, nova_comp
+    if referencia is not None:
+        d.referencia = (referencia or "").strip()[:60] or None
+    s.flush()
+
+    registrar_evento(s, "documento", d.id, "DOCUMENTO_DATAS_CORRIGIDAS", {
+        "antes": antes,
+        "depois": {"emissao": str(d.emissao or ""), "validade": str(d.validade or ""),
+                   "competencia": str(d.competencia or ""),
+                   "referencia": d.referencia or ""}},
+        usuario.id if usuario else None)
+    return d
+
+
 def ler(s: Session, d: Documento, hoje: Optional[date] = None) -> dict[str, Any]:
     hoje = hoje or date.today()
     situacao, dias = _situacao_validade(d, hoje)

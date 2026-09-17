@@ -1,0 +1,89 @@
+{# Barra lateral do Explorador.
+
+   A barra padrão (`painel_filtros.html`) filtra por ano, projeto e obra, que é
+   o que as telas de análise precisam. Aqui a pergunta é outra — "onde está o
+   lançamento classificado errado?" — e por isso entram análise, grupo,
+   categoria, conta e situação, que nas outras telas não fariam falta.
+
+   As listas são as mesmas do resto do painel: busca sem acento, marcação de
+   vários, o que está marcado sobe para o topo. Antes de 13/09/2026 isto era um
+   punhado de caixas no alto da tela, onde escolher mais de um item exigia saber
+   segurar Ctrl — ou seja, não funcionava.
+#}
+{% from "painel_filtros_lista.html" import lista %}
+<form method="get" id="form-filtros">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ request.path }}">Limpar</a>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cont" style="padding-top:8px">
+      <div class="campo">
+        <label for="busca">Buscar</label>
+        <input id="busca" name="busca" type="search" value="{{ pedido.busca }}"
+               placeholder="valor, nº do título, fornecedor…">
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cont">
+      <div class="campo">
+        <label for="tipo">Tipo</label>
+        <select id="tipo" name="tipo">
+          <option value="">A pagar e a receber</option>
+          <option value="pagar" {% if pedido.tipo == 'pagar' %}selected{% endif %}>Só a pagar</option>
+          <option value="receber" {% if pedido.tipo == 'receber' %}selected{% endif %}>Só a receber</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="de">Data — de</label>
+        <input id="de" name="de" type="date" value="{{ pedido.de }}">
+      </div>
+      <div class="campo">
+        <label for="ate">Data — até</label>
+        <input id="ate" name="ate" type="date" value="{{ pedido.ate }}">
+      </div>
+    </div>
+  </div>
+
+  {{ lista('analise', 'Análise', opcoes.analises, pedido.analises) }}
+  {{ lista('grupo', 'Grupo', opcoes.grupos, pedido.grupos, com_busca=True) }}
+  {{ lista('categoria', 'Categoria', opcoes.categorias, pedido.categorias, com_busca=True) }}
+  {% if fornecedores.sem_recorte %}
+    <div class="filtro">
+      <div class="filtro-cab" style="cursor:default">Cliente ou Fornecedor</div>
+      <p class="cartao-dica" style="padding:0 6px 10px">
+        Escolha um filtro acima e aplique: a lista traz os fornecedores
+        <b>do que você estiver olhando</b>, não os milhares da base inteira.
+      </p>
+    </div>
+  {% else %}
+    {{ lista('fornecedor', 'Cliente ou Fornecedor', fornecedores.itens,
+             pedido.fornecedores, com_busca=True) }}
+    {% if fornecedores.cortou %}
+      <p class="cartao-dica" style="padding:0 6px 10px; margin-top:-6px">
+        Há mais fornecedores do que cabem na lista. Estreite o filtro, ou digite
+        o nome no campo <b>Buscar</b>, lá em cima.
+      </p>
+    {% endif %}
+  {% endif %}
+  {{ lista('obra', 'Obra', opcoes.obras, pedido.obras, com_busca=True) }}
+  {{ lista('projeto', 'Projeto', opcoes.projetos, pedido.projetos, com_busca=True) }}
+  {{ lista('conta', 'Conta corrente', opcoes.contas, pedido.contas, com_busca=True) }}
+  {{ lista('situacao', 'Situação', opcoes.situacoes, pedido.situacoes) }}
+
+  <div class="filtro aberto">
+    <div class="filtro-cont" style="padding-top:10px">
+      <p class="cartao-dica" style="margin:0 0 12px">
+        Nada marcado numa lista quer dizer <b>todos</b>. Esta tela mostra
+        <b>tudo</b> — inclusive as transferências entre contas, que as telas de
+        análise escondem. Para ver só um tipo, marque em <b>Análise</b>.
+      </p>
+      <button class="btn" type="submit" style="width:100%">Aplicar filtros</button>
+    </div>
+  </div>
+</form>
+
+<script src="{{ estatico('filtros.js') }}"></script>

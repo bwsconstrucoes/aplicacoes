@@ -613,36 +613,151 @@ COLUNAS_DAS_NOTAS = {
 COLUNAS_OBRIGATORIAS_DAS_NOTAS = ["chave"]
 
 
+CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
+               "emitente_doc", "emitente", "emitente_uf", "destinatario_doc",
+               "destinatario", "chaves_nfe")
+
+# ---------------------------------------------------------------------------
+# DE ONDE VEIO A NOTA — migração 014, 15/09/2026
+#
+# *"Como é que eu sei que eu estou visualizando essas notas que foram baixadas?
+# (…) Eu só não sei pra onde é que elas estão indo."*
+#
+# A nota chega por duas portas — o relatório do FSist e a busca na Receita — e
+# as duas gravavam na mesma tabela sem dizer qual trouxe a linha. Com isso, a
+# busca podia estar funcionando perfeitamente e ele continuaria sem ter como
+# saber.
+#
+# A MESMA NOTA COSTUMA VIR PELAS DUAS, e é por isso que a segunda porta não
+# apaga a primeira: soma. Uma nota 'receita' que depois aparece no relatório
+# vira 'receita+fsist', e não 'fsist'.
+ORIGEM_RECEITA = "receita"
+ORIGEM_FSIST = "fsist"
+
+# ⚠️ QUEM CHEGA DEPOIS NÃO APAGA O QUE O OUTRO SABIA — 15/09/2026
+#
+# As duas portas entregam campos DIFERENTES da mesma nota: o resumo da Receita
+# não traz destinatário nem as NF-e de dentro do CT-e; o relatório do FSist
+# traz. Com `EXCLUDED.<campo>` puro, a segunda passagem gravava VAZIO por cima
+# do que a primeira tinha preenchido — e o destinatário, que é justamente o
+# sinal usado para saber de onde a nota veio, sumia sozinho.
+#
+# Por isso: campo que chega VAZIO não sobrescreve; campo preenchido manda. O
+# `status` é a exceção de propósito — ele tem de poder virar "Cancelada", e
+# sempre chega preenchido pelas duas portas.
+def _fica_o_preenchido(campo: str) -> str:
+    return (f"  {campo} = CASE WHEN coalesce(EXCLUDED.{campo}, '') <> '' "
+            f"                 THEN EXCLUDED.{campo} "
+            f"                 ELSE notas_fiscais.{campo} END")
+
+
+_SET_COMUM = ", ".join([
+    # Data e valor são colunas com tipo: vazio ali é NULO, e nulo não apaga.
+    "  emissao = coalesce(EXCLUDED.emissao, notas_fiscais.emissao)",
+    "  valor = coalesce(EXCLUDED.valor, notas_fiscais.valor)",
+    "  status = EXCLUDED.status",
+    "  tipo = EXCLUDED.tipo",
+    _fica_o_preenchido("numero"),
+    _fica_o_preenchido("serie"),
+    _fica_o_preenchido("emitente_doc"),
+    _fica_o_preenchido("emitente"),
+    _fica_o_preenchido("emitente_uf"),
+    _fica_o_preenchido("destinatario_doc"),
+    _fica_o_preenchido("destinatario"),
+    _fica_o_preenchido("chaves_nfe"),
+    "  importada_em = now()",
+])
+
+# ⚠️ COMPARA CONTRA O VALOR QUE DE FATO SERÁ GRAVADO, e não contra o que
+# chegou. Sem isto, uma nota cujo valor a Receita não manda entraria em
+# "mudou" a cada rodada e seria regravada para sempre — o caminho exato das
+# 14,3 milhões de gravações inúteis de 10/09.
+_MUDOU_ALGO = (
+    " notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
+    "    OR notas_fiscais.valor IS DISTINCT FROM "
+    "       coalesce(EXCLUDED.valor, notas_fiscais.valor) "
+    "    OR notas_fiscais.numero IS DISTINCT FROM "
+    "       (CASE WHEN coalesce(EXCLUDED.numero, '') <> '' "
+    "             THEN EXCLUDED.numero ELSE notas_fiscais.numero END) "
+    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM "
+    "       (CASE WHEN coalesce(EXCLUDED.emitente_doc, '') <> '' "
+    "             THEN EXCLUDED.emitente_doc "
+    "             ELSE notas_fiscais.emitente_doc END)")
+
+# SÓ REGRAVA O QUE MUDOU DE VERDADE. Regravar com o mesmo valor deixa lixo no
+# banco (foi o que rendeu 14,3 milhões de gravações inúteis em 10/09) — e ainda
+# estragaria a contagem de "quantas mudaram", que é como se descobre uma nota
+# que voltou cancelada.
 SQL_NOTA = (
     "INSERT INTO analisesps.notas_fiscais "
     "  (chave, emissao, numero, serie, tipo, valor, status, "
     "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
     "   destinatario, chaves_nfe) "
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-    "ON CONFLICT (chave) DO UPDATE SET "
-    "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
-    "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
-    "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
-    "  emitente_doc = EXCLUDED.emitente_doc, "
-    "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
-    "  destinatario_doc = EXCLUDED.destinatario_doc, "
-    "  destinatario = EXCLUDED.destinatario, "
-    "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now() "
-    # SÓ REGRAVA O QUE MUDOU DE VERDADE. Regravar com o mesmo valor deixa lixo
-    # no banco (foi o que rendeu 14,3 milhões de gravações inúteis em 10/09) —
-    # e, aqui, ainda estragaria a contagem de "quantas mudaram", que é como se
-    # descobre uma nota que voltou cancelada.
-    " WHERE notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
-    "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
-    "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
-    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc")
+    "ON CONFLICT (chave) DO UPDATE SET " + _SET_COMUM +
+    " WHERE" + _MUDOU_ALGO)
 
-CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
-               "emitente_doc", "emitente", "emitente_uf", "destinatario_doc",
-               "destinatario", "chaves_nfe")
+SQL_NOTA_COM_ORIGEM = (
+    "INSERT INTO analisesps.notas_fiscais "
+    "  (chave, emissao, numero, serie, tipo, valor, status, "
+    "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
+    "   destinatario, chaves_nfe, origem) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+    "ON CONFLICT (chave) DO UPDATE SET " + _SET_COMUM + ", "
+    "  origem = CASE WHEN notas_fiscais.origem IN ('', EXCLUDED.origem) "
+    "                THEN EXCLUDED.origem ELSE 'receita+fsist' END "
+    # Regrava também quando a ORIGEM passa a ser outra — é a única forma de a
+    # nota que já estava aqui aprender que a Receita também a trouxe. Acontece
+    # UMA vez por nota e por porta; depois disso a condição para de valer, e o
+    # banco não engorda de gravação inútil.
+    " WHERE" + _MUDOU_ALGO +
+    "    OR notas_fiscais.origem NOT IN ('receita+fsist', EXCLUDED.origem)")
 
 
-def _gravar_notas(conn, registros) -> int:
+# As duas colunas da tabela de notas que TÊM TIPO: `emissao` é DATE e `valor`
+# é NUMERIC. Texto vazio não é data nem número — é o erro que a produção
+# acusou em 15/09/2026 (`invalid input syntax for type date: ""`). As outras
+# colunas são TEXT NOT NULL DEFAULT '', e para elas o vazio é o valor certo.
+CAMPOS_COM_TIPO = {"emissao": formatos.para_data, "valor": formatos.para_numero}
+
+
+def _linha_de_nota(registro) -> tuple | None:
+    """Um registro virando a tupla que vai para o banco, com os tipos certos.
+
+    ⚠️ VAZIO VIRA NULO nas duas colunas com tipo. A planilha já passava por
+    aqui convertida; a busca na Receita entregava texto cru, e bastou um
+    documento sem valor para o lote inteiro morrer — e, pior, para o ponteiro
+    parar de andar, prendendo a busca no mesmo lote.
+
+    Devolve None para o que não é nota: sem chave de 44 dígitos não há
+    identidade, e gravar seria criar linha que ninguém consegue achar."""
+    from . import fiscal
+
+    if isinstance(registro, (tuple, list)):
+        valores = dict(zip(CAMPOS_NOTA, registro))
+    else:
+        valores = {c: registro.get(c, "") for c in CAMPOS_NOTA}
+
+    if len(fiscal.so_digitos(valores.get("chave"))) != 44:
+        return None
+
+    saida = []
+    for campo in CAMPOS_NOTA:
+        valor = valores.get(campo)
+        converter = CAMPOS_COM_TIPO.get(campo)
+        if converter is None:
+            saida.append("" if valor is None else str(valor).strip())
+        elif isinstance(valor, str) or valor is None:
+            # Só o texto passa pela conversão. O que já vem tipado (a leitura
+            # da planilha entrega `date` e `Decimal`) segue direto — reconverter
+            # data já convertida daria None e apagaria o que estava certo.
+            saida.append(converter(valor))
+        else:
+            saida.append(valor)
+    return tuple(saida)
+
+
+def _gravar_notas(conn, registros, origem: str = "") -> int:
     """Grava um lote de notas. DUAS ORIGENS, UM CAMINHO SÓ.
 
     A nota chega por dois lugares — o relatório do FSist, colado na aba, e a
@@ -651,15 +766,54 @@ def _gravar_notas(conn, registros) -> int:
     diferente conforme a porta por onde entrou.
 
     Aceita tupla (como vem da leitura da planilha) ou dicionário (como vem da
-    Receita) — o que muda é de onde veio, não o que se grava."""
+    Receita) — o que muda é de onde veio, não o que se grava.
+
+    Devolve QUANTAS FORAM GRAVADAS, que pode ser menos do que o que entrou:
+    quem chama usa a diferença para dizer na tela que o lote veio com coisa
+    que não dava para guardar."""
     if not registros:
         return 0
-    linhas = [r if isinstance(r, (tuple, list))
-              else tuple(r.get(c, "") for c in CAMPOS_NOTA)
-              for r in registros]
-    conn.executemany(SQL_NOTA, linhas)
-    conn.commit()
-    return len(linhas)
+    linhas = [l for l in (_linha_de_nota(r) for r in registros) if l]
+    recusadas = len(registros) - len(linhas)
+    if recusadas:
+        logger.warning("Análise de SPs: %d registro(s) de nota sem chave "
+                       "válida — não gravados.", recusadas)
+    if not linhas:
+        return 0
+
+    # ⚠️ A COLUNA PODE AINDA NÃO EXISTIR. O código sobe para o Render antes de
+    # alguém apertar "Aplicar atualizações do banco" — e uma gravação que
+    # exigisse a coluna nova pararia a busca de notas e a importação do FSist
+    # nessa janela. Sem a coluna, grava como antes: a nota entra, só não fica
+    # dito de onde veio.
+    from .db import tem_coluna
+
+    com_origem = bool(origem) and tem_coluna("notas_fiscais", "origem")
+    sql = SQL_NOTA_COM_ORIGEM if com_origem else SQL_NOTA
+    if com_origem:
+        linhas = [tuple(l) + (origem,) for l in linhas]
+    try:
+        conn.executemany(sql, linhas)
+        conn.commit()
+        return len(linhas)
+    except Exception:  # noqa: BLE001
+        # ⚠️ UMA LINHA RUIM NÃO PODE LEVAR O LOTE INTEIRO. Depois do erro a
+        # transação está abortada no Postgres: sem o rollback, toda tentativa
+        # seguinte falha por causa da primeira.
+        logger.exception("Análise de SPs: o lote de notas não entrou de uma "
+                         "vez; tentando uma a uma")
+        conn.rollback()
+        gravadas = 0
+        for linha in linhas:
+            try:
+                conn.executemany(sql, [linha])
+                conn.commit()
+                gravadas += 1
+            except Exception:  # noqa: BLE001
+                conn.rollback()
+                logger.exception("Análise de SPs: nota recusada pelo banco "
+                                 "(chave %s)", linha[0] if linha else "?")
+        return gravadas
 
 
 def sincronizar_notas_fiscais(anotar=None) -> dict:
@@ -754,7 +908,7 @@ def sincronizar_notas_fiscais(anotar=None) -> dict:
         linha = cur.fetchone() or [0, None]
         antes, comeco = linha[0], linha[1]
         cur.close()
-        _gravar_notas(conn, registros)
+        _gravar_notas(conn, registros, origem=ORIGEM_FSIST)
         cur = conn.execute(
             "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
             "  FROM analisesps.notas_fiscais", (comeco,))
@@ -1147,3 +1301,191 @@ def referencias_rateio() -> dict:
         chave = "obras" if tipo == "obra" else "categorias"
         saida[chave].append({"nome": nome, "codigo": codigo})
     return saida
+
+
+# ---------------------------------------------------------------------------
+# O RELATÓRIO DO FSIST SUBIDO COMO ARQUIVO
+#
+# Reclamação do dono em 13/09/2026, e ela é justa: *"Importar relatório FSist —
+# e ele diz que vai rodar no sistema? E cadê a opção de incluir o arquivo? Como
+# é que ele vai rodar? De onde vai tirar essa informação, se eu não estou nem
+# colocando?"*
+#
+# O botão lia a aba "Relatório FSIST" da planilha de apoio — o fluxo antigo
+# dele, de colar o relatório lá. Funciona, e não era o que o nome prometia:
+# "importar relatório" pede um arquivo, e não havia onde pôr.
+#
+# AS DUAS PORTAS FICAM. Colar na aba continua valendo, porque é o hábito da
+# equipe; subir o arquivo entra porque é o caminho curto, e porque o relatório
+# antigo que ele quer trazer está em arquivo, não na planilha.
+#
+# E AS DUAS PASSAM PELO MESMO LUGAR: o mesmo mapeamento de colunas
+# (`COLUNAS_DAS_NOTAS`), a mesma procura de cabeçalho e a mesma gravação
+# (`_gravar_notas`). Um segundo caminho de leitura divergiria no dia em que o
+# FSist mudasse uma coluna de nome — e só um dos dois seria corrigido.
+# ---------------------------------------------------------------------------
+
+# Teto do arquivo. Um relatório do FSist com um ano de notas tem poucos MB; o
+# teto existe porque a instância divide 2 GB com 17 módulos e já morreu de
+# falta de memória em julho de 2026.
+MAXIMO_RELATORIO = 20 * 1024 * 1024      # 20 MB
+
+
+class ErroDeRelatorio(RuntimeError):
+    """Arquivo recusado, com a mensagem já pronta para a tela."""
+
+
+def _linhas_do_arquivo(conteudo: bytes, nome: str) -> list:
+    """O arquivo vira uma lista de linhas, cada uma uma lista de textos.
+
+    ACEITA OS TRÊS FORMATOS que o FSist exporta — .xlsx, .csv e .txt separado
+    por ponto e vírgula. Recusar um deles obrigaria a converter antes, que é
+    exatamente o trabalho manual que esta tela existe para tirar."""
+    nome = (nome or "").lower()
+
+    if nome.endswith((".xlsx", ".xlsm")):
+        import io as _io
+
+        from openpyxl import load_workbook
+        try:
+            livro = load_workbook(_io.BytesIO(conteudo), read_only=True,
+                                  data_only=True)
+        except Exception as e:  # noqa: BLE001
+            raise ErroDeRelatorio(
+                f"não consegui abrir a planilha: {e}") from e
+        aba = livro[livro.sheetnames[0]]
+        linhas = [["" if c is None else str(c).strip() for c in linha]
+                  for linha in aba.iter_rows(values_only=True)]
+        livro.close()
+        return linhas
+
+    if nome.endswith(".xls"):
+        raise ErroDeRelatorio(
+            "o formato .xls (Excel antigo) não é aceito. Abra no Excel e "
+            'salve como ".xlsx" ou ".csv" antes de subir.')
+
+    # TEXTO. O FSist exporta em português, e por isso a leitura tenta os dois
+    # jeitos de escrever acento que aparecem na prática — o arquivo salvo pelo
+    # Excel brasileiro não é UTF-8.
+    texto = None
+    for codificacao in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            texto = conteudo.decode(codificacao)
+            break
+        except UnicodeDecodeError:
+            continue
+    if texto is None:
+        raise ErroDeRelatorio(
+            "não consegui ler o arquivo como texto. Se ele for Excel, "
+            'salve como ".xlsx" antes de subir.')
+
+    import csv
+    import io as _io
+
+    # O SEPARADOR É DESCOBERTO, não presumido: o Excel brasileiro salva CSV com
+    # ponto e vírgula, e o de fora com vírgula. Presumir um dos dois faria o
+    # arquivo inteiro virar uma coluna só, e o recado seria "não achei a coluna
+    # Chave" — que manda procurar defeito no lugar errado.
+    amostra = texto[:4000]
+    separador = ";" if amostra.count(";") >= amostra.count(",") else ","
+    if amostra.count("\t") > max(amostra.count(";"), amostra.count(",")):
+        separador = "\t"
+    return [[str(c).strip() for c in linha]
+            for linha in csv.reader(_io.StringIO(texto), delimiter=separador)]
+
+
+def importar_notas_de_arquivo(conteudo: bytes, nome: str) -> dict:
+    """Lê um relatório do FSist subido pela tela e grava as notas.
+
+    Mesmo mapeamento de colunas, mesma procura de cabeçalho e mesma gravação da
+    leitura pela aba — ver o cabeçalho desta seção."""
+    from . import fiscal
+    from .db import conexao
+
+    if not conteudo:
+        raise ErroDeRelatorio("o arquivo chegou vazio.")
+    if len(conteudo) > MAXIMO_RELATORIO:
+        raise ErroDeRelatorio(
+            f"o arquivo tem {len(conteudo) // (1024 * 1024)} MB e o limite é "
+            f"{MAXIMO_RELATORIO // (1024 * 1024)} MB.")
+
+    valores = _linhas_do_arquivo(conteudo, nome)
+    if not valores:
+        raise ErroDeRelatorio("o arquivo não tem nenhuma linha.")
+
+    # O CABEÇALHO NÃO ESTÁ NA PRIMEIRA LINHA. No relatório do FSist a primeira
+    # é o título; procurar a linha que TEM a coluna "Chave" é mais robusto do
+    # que fixar o número.
+    linha_cab, indices = -1, {}
+    for i, linha in enumerate(valores[:10]):
+        normalizado = _normalizar_cabecalho(linha)
+        achados = {campo: achar_coluna(normalizado, nomes)
+                   for campo, nomes in COLUNAS_DAS_NOTAS.items()}
+        if all(achados.get(c) is not None
+               for c in COLUNAS_OBRIGATORIAS_DAS_NOTAS):
+            linha_cab, indices = i, achados
+            break
+
+    if linha_cab < 0:
+        olhadas = []
+        for linha in valores[:3]:
+            texto = ", ".join(str(x).strip() for x in linha if str(x).strip())
+            if texto:
+                olhadas.append(texto[:160])
+        raise ErroDeRelatorio(
+            'não achei a coluna "Chave" nas primeiras linhas do arquivo. '
+            "O que encontrei foi: " + (" | ".join(olhadas) or "(nada)")
+            + ". Confira se subiu o relatório certo.")
+
+    avisos = []
+    faltando = [c for c, i in indices.items() if i is None]
+    if faltando:
+        avisos.append("colunas não encontradas (segui sem elas): "
+                      + ", ".join(sorted(faltando)))
+
+    def pegar(linha, campo):
+        i = indices.get(campo)
+        return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+
+    registros, ignoradas = [], 0
+    for linha in valores[linha_cab + 1:]:
+        chave = fiscal.so_digitos(pegar(linha, "chave"))
+        if len(chave) != 44:
+            ignoradas += 1
+            continue
+        emitente_doc = (fiscal.so_digitos(pegar(linha, "emitente_doc"))
+                        or fiscal.emitente_da_chave(chave))
+        registros.append((
+            chave, formatos.para_data(pegar(linha, "emissao")),
+            pegar(linha, "numero"), pegar(linha, "serie"), pegar(linha, "tipo"),
+            formatos.para_numero(pegar(linha, "valor")),
+            pegar(linha, "status"), emitente_doc, pegar(linha, "emitente"),
+            pegar(linha, "emitente_uf"),
+            fiscal.so_digitos(pegar(linha, "destinatario_doc")),
+            pegar(linha, "destinatario"), pegar(linha, "chaves_nfe")))
+
+    if not registros:
+        raise ErroDeRelatorio(
+            f"achei o cabeçalho, mas nenhuma linha com chave de 44 números "
+            f"({ignoradas} linha(s) olhadas). Confira o arquivo.")
+
+    with conexao() as conn:
+        cur = conn.execute("SELECT count(*), now() FROM analisesps.notas_fiscais")
+        linha = cur.fetchone() or [0, None]
+        antes, comeco = linha[0], linha[1]
+        cur.close()
+        _gravar_notas(conn, registros, origem=ORIGEM_FSIST)
+        cur = conn.execute(
+            "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
+            "  FROM analisesps.notas_fiscais", (comeco,))
+        linha = cur.fetchone() or [0, 0]
+        depois, tocadas = linha[0], linha[1]
+        cur.close()
+
+    novas = depois - antes
+    logger.info("Análise de SPs: relatório %r — %d lidas, %d novas, %d "
+                "atualizadas, %d ignoradas.", nome, len(registros), novas,
+                max(0, tocadas - novas), ignoradas)
+    return {"lidas": len(registros), "novas": novas,
+            "atualizadas": max(0, tocadas - novas), "ignoradas": ignoradas,
+            "avisos": avisos}

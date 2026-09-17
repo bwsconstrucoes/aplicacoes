@@ -134,6 +134,105 @@ TIPOS_QUE_VIRAM_ADITIVO = ("ADITIVO",)
 
 
 # ---------------------------------------------------------------------------
+# A MESMA DATA NÃO SE PERGUNTA DUAS VEZES
+#
+# 14/09/2026, o dono olhando a tela nova: *"lá em cima tem datas do documento,
+# emissão e vale até. Aí tá conflitante com a informação lá de baixo, que é
+# vigência. Tá meio esquisito. Você tá me cobrando data do documento em cima e
+# a informação da vigência embaixo. E tem nomenclaturas diferentes."*
+#
+# Ele está certo, e o defeito é meu: num contrato de obra, "até quando o
+# documento vale" e "fim da vigência do contrato" **são a mesma data** — uma
+# escrita na língua do arquivo, outra na língua do cadastro. Perguntar as duas,
+# com nomes diferentes e em lugares diferentes, é pedir para alguém preencher
+# uma e esquecer a outra — e aí o aviso da agenda e a ficha da obra divergem.
+#
+# Aqui fica o de-para: para estes tipos, a validade do documento SOBE para o
+# bloco de datas com o nome do negócio, e o campo do cadastro sai da lista de
+# baixo. Uma pergunta só, um nome só.
+#
+# Tipo fora desta lista (certidão, licença) continua com "Vale até": não há
+# campo de cadastro correspondente, e inventar um nome seria pior.
+# ---------------------------------------------------------------------------
+VALIDADE_E_O_CAMPO: dict[str, str] = {
+    "CONTRATO-OBRA": "vigencia_fim",
+    "SEGURO": "seguro_vigencia_fim",
+}
+
+# Campos que andam JUNTO da data que subiu — o começo do que a outra termina.
+# Ficar um em cima e outro embaixo é a mesma confusão, do outro lado.
+COMPANHEIROS_DA_VALIDADE: dict[str, tuple[str, ...]] = {
+    "CONTRATO-OBRA": ("vigencia_inicio",),
+}
+
+
+def _bloco_de_datas(tipo: str, extraidos: dict[str, Any], dados: dict[str, Any],
+                    alvo) -> dict[str, Any]:
+    """O que o bloco de datas do topo mostra, já com o nome do negócio.
+
+    `valor` sai, em ordem: do que a leitura extraiu para o campo do cadastro;
+    da validade que ela leu no documento; do que já está no cadastro. `atual`
+    vai junto quando o cadastro já tem algo — a tela só troca o que está lá se
+    a pessoa disser, que é a regra da casa.
+    """
+    campo = VALIDADE_E_O_CAMPO.get(tipo, "")
+    bloco: dict[str, Any] = {
+        "campo_validade": campo,
+        "rotulo_validade": CAMPOS[campo][0] if campo else "Vale até",
+        "valor_validade": "",
+        "atual_validade": "",
+        "extras": [],
+        # A VIGÊNCIA EM DIAS (14/09/2026). O dono: *"a vigência, muitas vezes, é
+        # colocada em dias. A gente deveria poder colocar a data exata, que tem
+        # contrato que tem a data exata, ou então a quantidade de dias"*.
+        #
+        # É meio de ENTRADA, não dado novo: dias + data de partida dão a data
+        # final, e é a data final que vale no cadastro e no aviso. Guardar
+        # também o número exigiria coluna nova; o que foi digitado fica na
+        # trilha de auditoria do preenchimento.
+        "aceita_dias": tipo == "CONTRATO-OBRA",
+        "dias": "",
+        # A assinatura do contrato é a emissão dele. A leitura às vezes acha uma
+        # e não a outra — vale a que existir.
+        "emissao": (_converter("data", dados.get("emissao"))
+                    or _converter("data", extraidos.get("data_assinatura"))
+                    or ""),
+    }
+    if bloco["emissao"]:
+        bloco["emissao"] = bloco["emissao"].isoformat()
+    if not campo:
+        return bloco
+
+    dias = _inteiro(extraidos.get("vigencia_dias"))
+    bloco["dias"] = str(dias) if dias else ""
+
+    lido = _converter("data", extraidos.get(campo)) or _converter(
+        "data", dados.get("validade"))
+    atual = getattr(alvo, campo, None) if alvo is not None else None
+    bloco["valor_validade"] = (lido or atual).isoformat() if (lido or atual) else ""
+    bloco["atual_validade"] = atual.isoformat() if atual else ""
+
+    for outro in COMPANHEIROS_DA_VALIDADE.get(tipo, ()):
+        rotulo, feitio, _ = CAMPOS[outro]
+        v = _converter(feitio, extraidos.get(outro)) or (
+            getattr(alvo, outro, None) if alvo is not None else None)
+        bloco["extras"].append({
+            "campo": outro, "rotulo": rotulo, "feitio": feitio,
+            "valor": v.isoformat() if hasattr(v, "isoformat") else (v or ""),
+            "atual": (getattr(alvo, outro, None).isoformat()
+                      if alvo is not None and getattr(alvo, outro, None) else ""),
+        })
+    return bloco
+
+
+def _sem_os_que_subiram(tipo: str, lista: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Tira da lista de baixo o que já está sendo perguntado em cima."""
+    subiram = {VALIDADE_E_O_CAMPO.get(tipo, "")}
+    subiram.update(COMPANHEIROS_DA_VALIDADE.get(tipo, ()))
+    return [c for c in lista if c["campo"] not in subiram]
+
+
+# ---------------------------------------------------------------------------
 # O MESMO PRINCÍPIO, DO LADO DAS PESSOAS
 #
 # Pedido do dono na mesma mensagem de 10/09/2026: *"deveremos seguir pra parte
@@ -188,7 +287,9 @@ dela, dentro de "dados_extraidos". Campo que o documento não disser fica vazio 
 NUNCA deduza de outro documento nem invente:
 
  "dados_extraidos": {
-%s
+%s,
+  "vigencia_dias": "prazo de VIGÊNCIA em dias, quando o contrato disser o prazo em vez da data final (ex.: 'vigência de 365 dias'). Não confunda com o prazo de EXECUÇÃO das obras, que é outro número",
+  "data_assinatura": "AAAA-MM-DD, data em que o contrato foi assinado — costuma estar no FECHO do documento, logo antes das assinaturas, e às vezes só por extenso"
  },
  "aditivo": {
    "numero": "número do termo aditivo",
@@ -206,7 +307,14 @@ Regras da extração:
 - O CONTRATANTE é o órgão/empresa que CONTRATA. A construtora (BWS e afins) é a
   CONTRATADA — nunca a ponha no campo do contratante.
 - "aditivo" só quando o documento FOR um termo aditivo; nos outros, deixe vazio.
-- Prazo em meses: converta para dias (1 mês = 30 dias) e diga isso em observacoes.""" % (
+- Prazo em meses: converta para dias (1 mês = 30 dias) e diga isso em observacoes.
+- VIGÊNCIA: o contrato pode dizer a data final OU o prazo em dias ("vigência de 365
+  dias contados da assinatura"). Traga o que estiver escrito — se for o prazo, ponha
+  em "vigencia_dias" e deixe "vigencia_fim" VAZIO: quem faz a conta é o sistema, com
+  a data à vista de quem confere. Nunca calcule a data final você.
+- A data de assinatura quase nunca está num campo com rótulo: está no fecho ("Recife,
+  12 de fevereiro de 2026"), por extenso. Leia o fim do documento antes de dizer que
+  não há data.""" % (
         ",\n".join(linhas))
 
 
@@ -339,6 +447,31 @@ def _limpo_para_comparar(x: Any) -> str:
 # ---------------------------------------------------------------------------
 # Sugerir
 # ---------------------------------------------------------------------------
+def _vazios(permitidos, extraidos: dict[str, Any], alvo) -> list[dict[str, Any]]:
+    """Os campos que este tipo preenche e que continuam SEM resposta.
+
+    ⚠️ **Por que isto existe**, 14/09/2026: a leitura só devolvia o que achou no
+    documento. Contrato que não escreve a vigência (e há muitos) simplesmente
+    não mostrava o campo — e aí o arquivamento era recusado lá no fim, por
+    faltar justamente a data que a tela não deixava digitar. O dono ficou preso
+    nisso: *"não tem opção, não aparece o campo (…) aí era para abrir os
+    campos, né?"*.
+
+    Devolve em branco, para a tela oferecer. Nada aqui entra marcado: campo que
+    a pessoa não digitar continua vazio, como estava.
+    """
+    fora: list[dict[str, Any]] = []
+    for campo in permitidos:
+        rotulo, feitio, ajuda = CAMPOS[campo]
+        if _converter(feitio, extraidos.get(campo)) not in (None, ""):
+            continue                      # a leitura trouxe: já está na lista
+        if alvo is not None and getattr(alvo, campo, None) not in (None, ""):
+            continue                      # o cadastro já tem: não se mexe aqui
+        fora.append({"campo": campo, "rotulo": rotulo, "feitio": feitio,
+                     "ajuda": ajuda})
+    return fora
+
+
 def sugerir_para_obra(s: Session, obra_id: int, tipo_codigo: str,
                       dados: dict[str, Any]) -> dict[str, Any]:
     """O que este documento preencheria no cadastro da obra.
@@ -376,10 +509,17 @@ def sugerir_para_obra(s: Session, obra_id: int, tipo_codigo: str,
         })
 
     aditivo = _aditivo_sugerido(tipo_codigo, dados)
+    tipo_limpo = (tipo_codigo or "").strip().upper()
     return {
         "obra_id": obra.id, "obra": obra.codigo,
-        "tipo": (tipo_codigo or "").strip().upper(),
-        "campos": campos,
+        "tipo": tipo_limpo,
+        "campos": _sem_os_que_subiram(tipo_limpo, campos),
+        # O que este tipo de documento preencheria e ninguém tem ainda — nem a
+        # leitura achou, nem o cadastro tem. Vai em branco para a tela abrir.
+        "campos_vazios": _sem_os_que_subiram(
+            tipo_limpo, _vazios(permitidos, extraidos, obra)),
+        # As datas do topo, já com o nome do negócio.
+        "datas": _bloco_de_datas(tipo_limpo, extraidos, dados, obra),
         "aditivo": aditivo,
         "nada_a_preencher": not campos and aditivo is None,
         "tipo_nao_preenche": (tipo_codigo or "").strip().upper() not in POR_TIPO,
@@ -536,7 +676,11 @@ def sugerir_para_nova_obra(s: Session, tipo_codigo: str,
     return {
         "obra_id": None, "obra": "",
         "tipo": tipo,
-        "campos": campos,
+        "campos": _sem_os_que_subiram(tipo, campos),
+        # Obra que ainda vai nascer: tudo que a leitura não trouxe está vazio.
+        "campos_vazios": _sem_os_que_subiram(
+            tipo, _vazios(permitidos, extraidos, None)),
+        "datas": _bloco_de_datas(tipo, extraidos, dados, None),
         "aditivo": aditivo,
         "nome_sugerido": nome_de_obra_sugerido(extraidos),
         "parecidas": obras_parecidas(

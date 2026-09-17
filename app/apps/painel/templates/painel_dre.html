@@ -265,7 +265,7 @@
         {% for m in medicoes %}
         <tr>
           <td class="desc">
-            <a href="{{ url_for('painel.receita_detalhe', medicao=m.medicao) }}"
+            <a href="{{ com_filtros('painel.receita_detalhe', medicao=m.medicao) }}"
                title="Ver os recebimentos desta medição">{{ m.medicao }}</a>
             {% if m.data %}<small>{{ m.data.strftime('%d/%m/%Y') }}</small>{% endif %}
           </td>
@@ -494,8 +494,14 @@
     </table>
   </div>
   <p class="cartao-dica">
-    <b>Aporte BWS</b> é recurso próprio alocado à obra. <b>Aporte de Parceiro</b>
-    é dinheiro de terceiro. <b>Devolução</b> é o retorno ao aportador.
+    <b>Aporte de Parceiro</b> é dinheiro que entra na obra — de terceiro ou da
+    própria BWS, que para a obra é parceira como qualquer outro.
+    <b>Devolução</b> é o retorno ao aportador.<br>
+    <b>Não entra nesta conta o “Aporte BWS”</b>, que é o registro na conta da
+    matriz de onde o dinheiro saiu. Contar os dois lados dobraria o mesmo
+    dinheiro — e o lado da matriz, por ser negativo, aparecia aqui como se fosse
+    devolução. Esses lançamentos continuam à vista no Explorador, no Fluxo de
+    Caixa e na lista logo abaixo.
   </p>
 
   {% if aportes.dividendos %}

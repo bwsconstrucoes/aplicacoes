@@ -30,11 +30,37 @@
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
 {% if erro %}<div class="aviso atencao">{{ erro }}</div>{% endif %}
 
-{% set base_args = args.to_dict(flat=false) %}
-{% set _ = base_args.pop('grupo', None) %}
-{% set _ = base_args.pop('pagina', None) %}
-{% set _ = base_args.pop('fiscais', None) %}
-{% set _ = base_args.pop('visao', None) %}
+{# ---------------------------------------------------------------------------
+   DOIS CONJUNTOS DE PARÂMETROS, E MISTURÁ-LOS FOI UM DEFEITO DE VERDADE.
+
+   Ele achou usando, em 13/09/2026: *"se eu clico Sem documentação aparece
+   Proposta de correção 28, e aí se eu clico em cima de Proposta de correção 28,
+   ele filtra para apenas 2."*
+
+   A causa: havia UM conjunto de parâmetros só, e dele o recorte (`fiscais`)
+   era retirado — porque os totalizadores do alto precisam TROCAR o recorte ao
+   serem clicados. Só que as etiquetas de grupo usavam o mesmo conjunto, e por
+   isso clicar numa delas APAGAVA o recorte: voltava para a lista inteira, onde
+   aquele grupo tinha 2. O número mudava debaixo do dedo dele.
+
+   Agora são dois, com nomes que dizem para que servem:
+     • `args_troca_recorte` — sem o recorte, para os totalizadores o definirem;
+     • `args_mantem_tudo`   — com tudo, para quem só navega dentro do que já
+                               está filtrado (as etiquetas e a paginação).
+--------------------------------------------------------------------------- #}
+{% set args_mantem_tudo = args.to_dict(flat=false) %}
+{% set _ = args_mantem_tudo.pop('grupo', None) %}
+{% set _ = args_mantem_tudo.pop('pagina', None) %}
+{% set _ = args_mantem_tudo.pop('visao', None) %}
+
+{% set args_troca_recorte = args_mantem_tudo.copy() %}
+{% set _ = args_troca_recorte.pop('fiscais', None) %}
+{# A CATEGORIA SAI JUNTO, pelo mesmo motivo do `fiscais`: os atalhos que a
+   DEFINEM (o quadro por categoria, e o ✕ que a tira) precisam poder mandar o
+   valor novo. Deixá-la aqui faria o clique somar em vez de trocar — que foi
+   o defeito do "28 vira 2" de 13/09. #}
+{% set _ = args_troca_recorte.pop('categoria', None) %}
+{% set _ = args_troca_recorte.pop('sem_categoria', None) %}
 
 {# ---------------------------------------------------------------------------
    AS DUAS VISÕES, lado a lado e sempre visíveis.
@@ -44,13 +70,8 @@
    notas. E outra é: eu estou olhando para as notas e buscando o registro
    financeiro."* Antes a segunda era um link no meio da tela, fácil de não ver.
 --------------------------------------------------------------------------- #}
-<div class="fiscal-visoes">
-  <span class="fiscal-visao ativa">Por lançamento</span>
-  <a class="fiscal-visao"
-     href="{{ url_for('analisesps.tela_fiscal', **dict(base_args, visao='notas')) }}">
-    Por nota{% if painel.sem_lancamento %}
-      <b>{{ painel.sem_lancamento }}</b> sem lançamento{% endif %}</a>
-</div>
+{% from "analisesps_fiscal_visoes.html" import visoes %}
+{{ visoes('lancamento', args_mantem_tudo, painel.sem_lancamento or 0) }}
 
 {# ---------------------------------------------------------------------------
    OS TOTALIZADORES — a gestão que faltava.
@@ -71,7 +92,8 @@
   {% set ligado = chave in filtros.fiscais %}
   <a class="kpi {{ cor }} {{ 'ligado' if ligado }}"
      href="{{ url_for('analisesps.tela_fiscal',
-                      **dict(base_args, f=1, fiscais=[] if ligado else [chave])) }}"
+                      **dict(args_troca_recorte, f=1,
+                             fiscais=[] if ligado else [chave])) }}"
      title="{{ 'Clique para tirar este recorte' if ligado
                else 'Clique para ver só estas' }}">
     <div class="kpi-rotulo">{{ rotulo }}</div>
@@ -79,25 +101,146 @@
   </a>
 {% endmacro %}
 
+{# ---------------------------------------------------------------------------
+   O QUE ESTÁ FILTRADO AGORA, ESCRITO EM PORTUGUÊS.
+
+   *"Não dá nem pra entender o que estamos filtrando, quais dados."* Numa
+   planilha o funil fica desenhado no cabeçalho da coluna; aqui não havia nada
+   equivalente — as caixas marcadas ficam na barra lateral, fora do campo de
+   visão de quem olha a tabela. Esta linha é o cabeçalho que faltava.
+--------------------------------------------------------------------------- #}
+{# A CATEGORIA ESCOLHIDA NO QUADRO TAMBÉM APARECE AQUI. Ela é um recorte como
+   qualquer outro, e deixá-la de fora desta linha traria de volta exatamente a
+   reclamação que esta linha existe para resolver: *"não dá nem pra entender o
+   que estamos filtrando"*. #}
+{% if filtros.categoria or args.get('sem_categoria') == '1' %}
+  <div class="fiscal-recorte">
+    <b>Mostrando as SPs da categoria</b>
+    {% for c in filtros.categoria %}
+      <span class="recorte-marca">{{ c }}<a
+         href="{{ url_for('analisesps.tela_fiscal',
+                  **dict(args_troca_recorte, f=1, categoria=[])) }}"
+         title="Tirar este recorte">✕</a></span>
+    {% endfor %}
+    {% if args.get('sem_categoria') == '1' %}
+      <span class="recorte-marca">sem informação nenhuma<a
+         href="{{ url_for('analisesps.tela_fiscal',
+                  **dict(args_troca_recorte, f=1)) }}"
+         title="Tirar este recorte">✕</a></span>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if filtros.fiscais %}
+  <div class="fiscal-recorte">
+    <b>Mostrando as SPs em que</b>
+    {% for chave in filtros.fiscais %}
+      <span class="recorte-marca">{{ frases_do_recorte.get(chave, chave) }}<a
+         href="{{ url_for('analisesps.tela_fiscal', **dict(args_troca_recorte, f=1,
+                fiscais=filtros.fiscais|reject('equalto', chave)|list)) }}"
+         title="Tirar este recorte">✕</a></span>{% if not loop.last %}
+      <b>e</b>{% endif %}
+    {% endfor %}
+    <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal',
+         **dict(args_troca_recorte, f=1)) }}">limpar o recorte</a>
+  </div>
+{% endif %}
+
 <div class="kpis fiscal-kpis">
   <div class="kpi estatico">
     <div class="kpi-rotulo">No filtro</div>
     <div class="kpi-valor">{{ '{:,}'.format(painel.get('total') or 0)|replace(',', '.') }}</div>
     <div class="kpi-sub">SP(s)</div>
   </div>
-  {{ total('sem_marcacao', 'Sem documentação', 'ambar') }}
-  {{ total('provavel_erro', 'Provavelmente errado', 'vermelho') }}
-  {{ total('ja_marcado', 'Já categorizado', 'verde') }}
-  {{ total('confirmada', 'A gravar no card') }}
-  {{ total('na_fila_ia', 'Na fila da IA') }}
+  {# OS MESMOS NOMES DA BARRA DE FILTROS, palavra por palavra.
+
+     Eram diferentes ("Sem documentação" aqui, "Está vazia" lá) e isso era
+     metade da confusão: o número dizia uma coisa, o filtro dizia outra, e nada
+     indicava que eram a MESMA pergunta. Ao clicar no número, o recorte que
+     aparece escrito tem de ser reconhecível como o que ele acabou de apertar. #}
+  {{ total('sem_marcacao', 'Categoria vazia', 'ambar') }}
+  {{ total('provavel_erro', 'Nota parece errada', 'vermelho') }}
+  {{ total('ja_marcado', 'Categoria preenchida', 'verde') }}
+  {{ total('confirmada', 'Falta gravar no card') }}
+  {{ total('na_fila_ia', 'Esperando a IA') }}
   {{ total('sem_anexo', 'Sem anexo') }}
 </div>
 
 {% if painel.get('valor_sem_marcacao') %}
   <p class="cartao-dica" style="margin:-6px 2px 6px">
-    O que está sem documentação soma
+    O que está com a categoria vazia soma
     <b>{{ painel.valor_sem_marcacao|moeda }}</b>.
   </p>
+{% endif %}
+
+{# ---------------------------------------------------------------------------
+   O QUADRO POR CATEGORIA — quantas SPs e QUANTO DINHEIRO em cada uma.
+
+   *"A parte de KPI, pra eu saber quanto tem analisado, quanto não tem, quanto
+   tem nota, quanto tem de contrato, quanto é fundo fixo, quanto está sem
+   informação nenhuma — quanto isso em VALORES, né? Quanto está pra ser
+   resolvido. E era interessante esse KPI direcionar pra uma tela com as
+   informações: eu clicar e mostrar 'olha, essas aqui são as de fundo fixo',
+   aí a lista."* (dono, 14/09/2026)
+
+   ⚠️ O QUE ISTO TEM QUE OS NÚMEROS DE CIMA NÃO TÊM: **valor**. Aqueles contam
+   SPs — "faltam 4.000" —, e 4.000 SPs de R$ 50,00 e 4.000 de R$ 50.000,00 são
+   problemas de tamanhos completamente diferentes. Sem o dinheiro ao lado, o
+   número não diz por onde começar, que é exatamente a pergunta dele.
+
+   A BARRA É O GRÁFICO, e é proporcional ao VALOR, não à contagem — pelo mesmo
+   motivo. Desenhada com uma div e uma largura em porcentagem: gráfico de
+   verdade pediria uma biblioteca nova, e isto responde a pergunta inteira.
+
+   CADA LINHA É UM ATALHO: clicar filtra a lista por aquela categoria.
+--------------------------------------------------------------------------- #}
+{% if quadro_categorias %}
+  {% set maior = quadro_categorias|map(attribute='valor')|map('float')|max %}
+  {% set soma = quadro_categorias|map(attribute='valor')|map('float')|sum %}
+  <details class="quadro-categorias" {{ 'open' if filtros.categoria
+                                        or args.get('sem_categoria') }}>
+    <summary>
+      <b>Por categoria</b> — {{ quadro_categorias|length }} categoria(s),
+      {{ soma|moeda }} no total do filtro
+    </summary>
+    <table class="sps quadro-tabela">
+      <thead><tr>
+        <th>Categoria</th><th class="num">SPs</th><th class="num">Valor</th>
+        <th>Peso no valor</th>
+      </tr></thead>
+      <tbody>
+        {% for c in quadro_categorias %}
+          {% set ligada = (c.vazia and args.get('sem_categoria') == '1')
+                          or (not c.vazia and c.categoria in filtros.categoria) %}
+          <tr class="{{ 'ligada' if ligada }}">
+            <td>
+              <a href="{{ url_for('analisesps.tela_fiscal',
+                          **dict(args_troca_recorte, f=1,
+                                 categoria=([] if ligada or c.vazia
+                                            else [c.categoria]),
+                                 sem_categoria=(none if ligada or not c.vazia
+                                                else '1'))) }}"
+                 title="{{ 'Clique para tirar este recorte' if ligada
+                           else 'Clique para ver só estas' }}">
+                {{ c.rotulo }}</a>
+            </td>
+            <td class="num">{{ '{:,}'.format(c.quantas)|replace(',', '.') }}</td>
+            <td class="num">{{ c.valor|moeda }}</td>
+            <td class="peso">
+              <span class="peso-barra"
+                    style="width: {{ (c.valor|float / maior * 100)|round(1)
+                                     if maior else 0 }}%"></span>
+              <small>{{ (c.valor|float / soma * 100)|round(1) if soma else 0 }}%</small>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="cartao-dica">
+      Clique numa categoria para ver só as SPs dela. O total é o do filtro que
+      está valendo agora — mude o filtro e este quadro muda junto.
+    </p>
+  </details>
 {% endif %}
 
 {# ---------------------------------------------------------------------------
@@ -115,7 +258,7 @@
    parece a outra:
      • a lista é reconferida agora, mas só sobre os lançamentos desta página;
      • os três sintomas mais graves de erro antigo são varridos sobre a BASE
-       INTEIRA, e é isso que o número "Provavelmente errado" responde.
+       INTEIRA, e é isso que o número "Nota parece errada" responde.
 --------------------------------------------------------------------------- #}
 <p class="cartao-dica fiscal-conferencia">
   <b>Reconferido agora</b>, ao abrir esta tela: {{ linhas|length }} lançamento(s)
@@ -125,7 +268,7 @@
   O que está <b>fora desta página</b> é varrido pelo banco, sobre as
   {{ '{:,}'.format(painel.get('total') or 0)|replace(',', '.') }} SPs do filtro:
   é de lá que sai o número
-  <b>Provavelmente errado ({{ painel.get('provavel_erro') or 0 }})</b> —
+  <b>Nota parece errada ({{ painel.get('provavel_erro') or 0 }})</b> —
   nota cancelada, categoria que afirma nota sem haver chave, e chave emitida por
   outro CNPJ.
   Para forçar a conferência de registros escolhidos, marque-os e use
@@ -151,20 +294,7 @@
     <h3>Trazer, ler e gravar</h3>
     <small>uma de cada vez</small>
   </div>
-  <div class="fiscal-acoes-tarefa">
-    {% for a in acoes %}
-      <button class="btn secundario" data-modo="{{ a.modo }}"
-              title="{{ a.ajuda }}">{{ a.rotulo }}</button>
-    {% endfor %}
-  </div>
-  <div id="andamento-fiscal">
-    {% if andamento.rodando %}
-      <div class="aviso"><b>Rodando agora:</b> {{ andamento.detalhe.etapa }}
-        {% if andamento.detalhe.progresso %}— {{ andamento.detalhe.progresso }}{% endif %}
-        <br><small>Pode continuar trabalhando: isto roda no servidor.</small>
-      </div>
-    {% endif %}
-  </div>
+    {% include "analisesps_acoes_fiscais.html" %}
   <p class="cartao-dica">
     A Receita só devolve as notas recentes; o histórico antigo entra pelo
     relatório do FSist colado na planilha de apoio. As duas alimentam a mesma
@@ -183,17 +313,33 @@
      por isso dizem isso com todas as letras: a conciliação roda sobre a página
      carregada. Quem quer o número da base inteira usa os totalizadores acima,
      que vêm do banco. Deixar os dois sem rótulo faria parecer que discordam. #}
+  {# ---------------------------------------------------------------------
+     AS ETIQUETAS DA CONFERÊNCIA — e agora elas dizem de onde vem o número.
+
+     Eram a segunda metade da confusão: dois conjuntos de números na mesma
+     tela, um do banco (os totalizadores, sobre a base inteira) e outro da
+     conferência (estas, sobre os lançamentos carregados). Sem dizer qual é
+     qual, parecia que a tela discordava de si mesma.
+  --------------------------------------------------------------------- #}
   {% if contagem %}
+    <p class="cartao-dica" style="margin:10px 2px 4px">
+      Dos <b>{{ linhas|length }}</b> lançamento(s) carregados nesta página, a
+      conferência de agora separou assim:
+    </p>
     <div class="fiscal-grupos">
       <a class="etiqueta {{ 'ativa' if not grupo }}"
-         href="{{ url_for('analisesps.tela_fiscal', **base_args) }}">Tudo</a>
+         href="{{ url_for('analisesps.tela_fiscal', **args_mantem_tudo) }}">Tudo</a>
       {% for chave, rotulo, quantos in contagem %}
         <a class="etiqueta {{ 'boa' if chave == 'EM_DIA' else 'ruim' }} {{ 'ativa' if grupo == chave }}"
-           href="{{ url_for('analisesps.tela_fiscal', **dict(base_args, grupo=chave)) }}">
+           href="{{ url_for('analisesps.tela_fiscal', **dict(args_mantem_tudo, grupo=chave)) }}">
           {{ rotulo }}: {{ quantos }}</a>
       {% endfor %}
-      <small class="cartao-dica">nesta página</small>
     </div>
+    <p class="cartao-dica" style="margin:2px 2px 10px">
+      Estes números são só desta página. Os do alto vêm do banco e valem para
+      as {{ '{:,}'.format(painel.get('total') or 0)|replace(',', '.') }} SPs do
+      filtro inteiro — por isso são maiores.
+    </p>
   {% endif %}
 
   {% if pode_operar %}
@@ -242,7 +388,21 @@
         </thead>
         <tbody>
           {% for l in linhas %}
-            <tr class="{{ 'com-risco' if l.grupo in ('CRITICO', 'DUVIDA') }}">
+            {# DUPLO CLIQUE ABRE A FICHA POR CIMA DA LISTA, e o número da SP
+               vira um link discreto para o card do Pipefy.
+
+               Pedido do dono em 13/09/2026: *"eu acho que o certo é dois
+               clique na linha, abre o registro. E o linkzinho do card, aí abre
+               o card do Pipefy. (…) E não abrir direto, e sempre abrir modal,
+               porque aí você permanece na tela."*
+
+               Ele está certo e o que havia era incoerente: aqui o clique
+               abria o CARD, e na tela por nota abria o REGISTRO. Duas telas do
+               mesmo assunto com o clique fazendo coisas diferentes. Agora as
+               duas usam o mesmo modal que as Solicitações já usavam. #}
+            <tr class="{{ 'com-risco' if l.grupo in ('CRITICO', 'DUVIDA') }}"
+                data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.sp.id, origem='fiscal') }}"
+                data-id="{{ l.sp.id }}" title="Dois cliques abrem a ficha">
               <td class="sel">
                 {# MARCADA SÓ QUANDO NÃO HÁ DÚVIDA. É a diferença entre as duas
                    pilhas, e está aqui, num atributo — não no olho de quem lê.
@@ -259,14 +419,41 @@
                        data-anexo="{{ '1' if l.sp.anexo_link else '' }}">
               </td>
               <td class="id">
+                {{ l.sp.id }}
                 {% if l.sp.card_link %}
-                  <a href="{{ l.sp.card_link }}" target="_blank"
-                     rel="noopener">{{ l.sp.id }}</a>
-                {% else %}{{ l.sp.id }}{% endif %}
+                  <br><a class="link-card" href="{{ l.sp.card_link }}"
+                         target="_blank" rel="noopener"
+                         title="Abre o card no Pipefy, em outra aba">card ↗</a>
+                {% endif %}
               </td>
               <td>{{ l.sp.credor }}</td>
               <td class="num">{{ l.sp.valor_num|moeda }}</td>
-              <td>{{ l.analise.documentacao or '—' }}</td>
+              {# ---------------------------------------------------------
+                 O QUE A IA DISSE, na própria linha.
+
+                 Pergunta do dono em 13/09/2026: *"mandei pra IA e então, o que
+                 acontece? O que foi que a IA disse? O que foi sugerido? Ficou
+                 gravada essa informação onde?"*
+
+                 Ficou gravada desde sempre — no diário, com a categoria, a
+                 chave, a confiança e o MOTIVO escrito pela IA. Só que a tela
+                 não mostrava nada disso: nem quem preencheu, nem por quê. A
+                 informação existia e não existia para quem usa.
+              --------------------------------------------------------- #}
+              <td>{{ l.analise.documentacao or '—' }}
+                {% if l.analise.origem %}
+                  {% set quem_disse = {
+                       'IA': ('a IA leu o anexo', 'ia'),
+                       'PESSOA': ('uma pessoa informou aqui', 'pessoa'),
+                       'CONCILIACAO': ('o sistema conciliou', 'sistema'),
+                       'PIPEFY': ('já veio do card', 'card'),
+                     }.get(l.analise.origem, (l.analise.origem, '')) %}
+                  <br><span class="quem-disse {{ quem_disse[1] }}"
+                            title="{{ l.analise.motivo }}">{{ quem_disse[0] }}
+                    {%- if l.analise.confianca %} · {{ l.analise.confianca }}%{% endif %}
+                  </span>
+                {% endif %}
+              </td>
               <td><b>{{ l.documentacao or '—' }}</b></td>
               <td class="num">
                 {% if l.nota %}{{ l.confianca }}%{% else %}—{% endif %}
@@ -274,6 +461,19 @@
               <td class="cartao-dica">
                 {{ l.motivo }}
                 {% if l.nota %}
+                  {# ⚠️ NOTA CANCELADA EM VERMELHO, e não no meio do texto
+                     cinza. Pedido do dono em 13/09/2026: *"quando tiver a nota
+                     cancelada na tela de associação, tem que deixar em
+                     vermelhinho o cancelado, pra a gente não associar a uma
+                     nota cancelada sem perceber."*
+
+                     Ele está certo: a informação estava lá, no meio de uma
+                     linha cinza de oito palavras — que é o mesmo que não
+                     estar. #}
+                  {% if l.nota.status|upper == 'CANCELADA' %}
+                    <br><span class="etiqueta ruim">⚠️ esta nota está
+                      CANCELADA</span>
+                  {% endif %}
                   <br><small>nota {{ l.nota.numero }} ·
                     {{ l.nota.emitente }} · chave {{ l.chave or l.nota.chave }}</small>
                 {% endif %}
@@ -316,6 +516,8 @@
 
     {% set pag_args = args.to_dict(flat=false) %}
     {% set _ = pag_args.pop('pagina', None) %}
+    {# A paginação carrega TUDO: recorte, grupo e ordem. Perder qualquer um
+       deles ao virar a página é o mesmo defeito das etiquetas. #}
     <div class="paginacao">
       {{ primeira_linha }}–{{ ultima_linha }} de {{ resumo.quantidade }}
       {% if pagina > 1 %}
@@ -392,6 +594,8 @@
   </div>
 </dialog>
 {% endif %}
+
+{% include "analisesps_ficha_modal.html" %}
 
 <div id="fiscal-config" hidden
      data-url-confirmar="{{ url_for('analisesps.confirmar_fiscal') }}"

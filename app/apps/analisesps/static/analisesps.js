@@ -968,15 +968,42 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
   const painelAndamento = document.getElementById("andamento-fiscal");
   let relogio = null;
 
-  function acompanhar() {
+  /* ⚠️ COMO A TELA SABE QUE ACABOU — reescrito em 16/09/2026.
+
+     Reclamacao do dono: *"quando clicamos em buscar nao vemos em canto nenhum
+     se a busca esta de fato acontecendo, apenas uma mensagem dizendo que esta
+     sendo buscado. E ruim isso, ainda mais que nao ta funcionando ainda de
+     fato."*
+
+     A CAUSA: a tela so recarregava depois de ter VISTO a tarefa rodando, e
+     perguntava de quatro em quatro segundos. Uma rodada curta — e a busca
+     estava falhando rapido — comeca e termina entre duas perguntas. A tela
+     nunca via nada, nunca recarregava, e ficava para sempre com "Disparado" na
+     cara dele, mostrando o resultado da rodada ANTERIOR. Ou seja: a tela dizia
+     "disparei" e depois nao dizia mais nada, para sempre.
+
+     Agora ha DOIS jeitos de saber que acabou, e basta um deles:
+       1. a tarefa foi vista rodando e depois nao esta mais;
+       2. o carimbo da ultima tarefa concluida MUDOU desde o clique.
+
+     O segundo cobre a rodada curta, que era o caso. E a pergunta passa a ser
+     de segundo em segundo nos primeiros 15 segundos — depois disso, de quatro
+     em quatro, porque ai ja e tarefa longa e nao ha pressa. */
+  function acompanhar(fimAntes) {
     if (!painelAndamento || !config.dataset.urlAndamento) return;
     if (relogio) clearInterval(relogio);
-    // SO RECARREGA DEPOIS DE TER VISTO A TAREFA VIVA. Entre o clique e a
-    // tarefa aparecer no banco passa um instante; sem esta trava, a primeira
-    // resposta ("nao ha nada rodando") recarregaria a tela na hora e daria a
-    // impressao de que o botao nao fez nada.
     let viuRodando = false;
-    relogio = setInterval(async () => {
+    let voltas = 0;
+
+    function terminou() {
+      if (relogio) { clearInterval(relogio); relogio = null; }
+      painelAndamento.innerHTML =
+          '<div class="aviso"><b>Terminou.</b> Atualizando a tela…</div>';
+      location.reload();
+    }
+
+    async function perguntar() {
+      voltas += 1;
       try {
         const r = await fetch(config.dataset.urlAndamento);
         const d = await r.json();
@@ -985,18 +1012,41 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           painelAndamento.innerHTML =
               '<div class="aviso"><b>Rodando agora:</b> '
               + (d.etapa || "") + (d.progresso ? " — " + d.progresso : "")
+              + (d.visto_em ? ' <small>(sinal de vida: ' + d.visto_em
+                              + ')</small>' : "")
               + '<br><small>Pode continuar trabalhando: isto roda no servidor.'
               + '</small></div>';
-        } else if (viuRodando) {
-          // Terminou: a tela precisa ser relida, porque os numeros e a lista
-          // mudaram. Quem disparou uma busca de notas esta esperando
-          // justamente por isso.
-          clearInterval(relogio);
-          relogio = null;
-          location.reload();
+          return;
+        }
+        // Acabou de um dos dois jeitos.
+        if (viuRodando || (fimAntes !== undefined && d.ultimo_fim
+                           && d.ultimo_fim !== fimAntes)) {
+          terminou();
+          return;
+        }
+        // Ainda nao apareceu: entre o clique e a tarefa nascer passa um
+        // instante. Depois de um minuto sem sinal nenhum, para de perguntar e
+        // DIZ ISSO — ficar girando para sempre e o que ele reclamou.
+        if (voltas > 40) {
+          if (relogio) { clearInterval(relogio); relogio = null; }
+          painelAndamento.innerHTML =
+              '<div class="aviso atencao"><b>Disparei, mas nao vi a tarefa '
+              + 'comecar.</b><br><small>Pode ser que ela ja tenha terminado, ou '
+              + 'que o servidor esteja ocupado. Recarregue a tela para ver o '
+              + 'resultado; se nao mudar nada, me avise.</small></div>';
         }
       } catch (e) { /* rede oscilou; a proxima volta tenta de novo */ }
-    }, 4000);
+    }
+
+    perguntar();
+    relogio = setInterval(() => {
+      // Rapido no comeco (rodada curta), calmo depois (rodada longa).
+      if (voltas === 15) {
+        clearInterval(relogio);
+        relogio = setInterval(perguntar, 4000);
+      }
+      perguntar();
+    }, 1000);
   }
 
   document.querySelectorAll(".fiscal-acoes-tarefa button[data-modo]")
@@ -1007,6 +1057,12 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     b.disabled = true;
     const antes = b.textContent;
     b.textContent = "Disparando…";
+    // Qual era o carimbo da ultima tarefa concluida ANTES de disparar.
+    let fimAntesDoClique;
+    try {
+      const r0 = await fetch(config.dataset.urlAndamento);
+      fimAntesDoClique = (await r0.json()).ultimo_fim;
+    } catch (e) { /* sem isto ainda funciona pelo caminho 1 */ }
     try {
       const r = await fetch(config.dataset.urlTarefa, {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -1020,7 +1076,9 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
             + '<br><small>Pode continuar trabalhando: isto roda no servidor.'
             + '</small></div>';
       }
-      acompanhar();
+      // O carimbo de ANTES vai junto: e comparando com ele que a tela percebe
+      // uma rodada curta, que comeca e termina entre duas perguntas.
+      acompanhar(fimAntesDoClique);
     } catch (e) {
       alert("Nao consegui falar com o servidor: " + e);
     } finally {
@@ -1143,12 +1201,68 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
   // Do lado da NOTA. Passa pelo mesmo caminho da decisao a mao, entao a nota
   // associada some desta lista sozinha na proxima leitura — a lista de orfas e
   // "nota sem chave gravada em SP nenhuma".
+  /* =====================================================================
+     UM CLIQUE POR NOTA, SEM A PAGINA IR EMBORA — 13/09/2026
+
+     Reclamacao do dono, usando a tela: *"eu clico 'usar este'. Enquanto ele
+     esta pensando eu ja vou pra outro e clico em 'usar este'. So que parece
+     que so aceita o primeiro. A pagina vai la pra cima. Eu poderia ser rapido
+     se eu pudesse ir seguindo, clicar no outro, e nao ficar esse vai-e-volta
+     de pagina."*
+
+     A CAUSA ERA O `location.reload()`: recarregar mata as gravacoes que ainda
+     estao no ar (por isso "so aceita o primeiro") e joga a rolagem para o
+     topo de uma pagina de 200 linhas. Agora cada linha se resolve sozinha, no
+     lugar onde esta, e varias podem estar gravando ao mesmo tempo.
+
+     A PERGUNTA DE CONFIRMACAO E UMA SO, na primeira da sessao: ela existe
+     para explicar a regra (a categoria sai da chave, as parcelas irmas vao
+     junto), e repetir a explicacao a cada clique e exatamente o atrito que ele
+     esta pedindo para tirar. Depois da primeira, o clique dispara.
+  ===================================================================== */
+  let jaExplicou = false;
+
+  function marcarAssociada(botao, d) {
+    const caixa = botao.closest(".nota-candidata") || botao.parentNode;
+    const irmas = d.parcelas_irmas || [];
+    const linha = document.createElement("div");
+    linha.className = "associada-agora";
+    linha.textContent = "✔ associada à SP " + d.sp_id
+      + (d.documentacao ? " · " + d.documentacao : "")
+      + (irmas.length
+         ? " · e mais " + irmas.length + " parcela(s) da mesma nota: "
+           + irmas.join(", ")
+         : "");
+    /* A LINHA INTEIRA DA NOTA sai do caminho: associada, ela deixou de ser
+       orfa, e deixar as outras candidatas clicaveis convidaria a gravar uma
+       segunda nota na mesma SP. */
+    const tr = botao.closest("tr");
+    if (tr) {
+      tr.classList.add("nota-resolvida");
+      tr.querySelectorAll(".fiscal-associar").forEach(o => {
+        o.disabled = true;
+        o.textContent = "—";
+      });
+    }
+    caixa.appendChild(linha);
+  }
+
   document.querySelectorAll(".fiscal-associar").forEach(b =>
     b.addEventListener("click", async () => {
-      if (!confirm(`Associar esta nota a SP ${b.dataset.sp}`
-                   + ` (${b.dataset.credor})?\n\n`
-                   + `A categoria sai de dentro da propria chave. A gravacao `
-                   + `no card do Pipefy e o passo seguinte.`)) return;
+      if (!jaExplicou) {
+        if (!confirm(`Associar esta nota a SP ${b.dataset.sp}`
+                     + ` (${b.dataset.credor})?\n\n`
+                     + `A categoria sai de dentro da propria chave. A gravacao `
+                     + `no card do Pipefy e o passo seguinte.\n\n`
+                     + `Se a SP for parcela de um parcelamento, as demais `
+                     + `parcelas da MESMA nota (mesmo CNPJ e mesmo n° de nota `
+                     + `no card, ainda sem nota apontada) recebem a mesma `
+                     + `associacao.\n\n`
+                     + `Esta pergunta e so desta vez: daqui em diante o clique `
+                     + `grava direto, e cada linha mostra o resultado no lugar `
+                     + `onde esta.`)) return;
+        jaExplicou = true;
+      }
       b.disabled = true;
       const antes = b.textContent;
       b.textContent = "gravando…";
@@ -1158,13 +1272,26 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           body: JSON.stringify({sp: b.dataset.sp, chave: b.dataset.chave}),
         });
         const d = await r.json();
-        if (!d.ok) { alert(d.erro || "Nao consegui associar."); return; }
-        location.reload();
+        if (!d.ok) {
+          b.textContent = antes;
+          b.disabled = false;
+          /* O RECADO VAI NA LINHA, e nao num alerta: alerta bloqueia, e ele
+             esta clicando em varias ao mesmo tempo. */
+          const erro = document.createElement("div");
+          erro.className = "associada-erro";
+          erro.textContent = "✕ " + (d.erro || "Nao consegui associar.");
+          (b.closest(".nota-candidata") || b.parentNode).appendChild(erro);
+          return;
+        }
+        b.textContent = "associada";
+        marcarAssociada(b, d);
       } catch (e) {
-        alert("Nao consegui falar com o servidor: " + e);
-      } finally {
-        b.disabled = false;
         b.textContent = antes;
+        b.disabled = false;
+        const erro = document.createElement("div");
+        erro.className = "associada-erro";
+        erro.textContent = "✕ nao consegui falar com o servidor: " + e;
+        (b.closest(".nota-candidata") || b.parentNode).appendChild(erro);
       }
     }));
 })();
@@ -1378,9 +1505,12 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
   function ficha(titulo, campos) {
+    /* `c.html` chega do servidor JA ESCAPADO e ja com os enderecos virados em
+       link (o `com_links` do `formatos.py`, o mesmo da ficha da SP). Quando
+       ele nao vem — os campos da nota, que nao tem endereco —, escapa aqui. */
     return '<div class="prova-ficha"><h4>' + esc(titulo) + '</h4><dl>'
       + campos.map(c => '<dt>' + esc(c.rotulo) + '</dt><dd>'
-                        + (esc(c.valor) || "—") + '</dd>').join("")
+                        + (c.html || esc(c.valor) || "—") + '</dd>').join("")
       + '</dl></div>';
   }
 
@@ -1394,7 +1524,10 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
       if (r.chave === "valor") {
         lado = "SP " + dinheiro(r.no_lancamento) + " · nota "
              + dinheiro(r.na_nota)
-             + (r.diferenca ? " · diferenca " + dinheiro(r.diferenca) : "");
+             + (r.diferenca ? " · diferenca " + dinheiro(r.diferenca) : "")
+             /* A CONTA DA PARCELA POR EXTENSO. Sem ela a linha dizia
+                "SP 696,34 · nota 2.089,02" e parecia erro. */
+             + (r.parcelado ? " · " + esc(r.parcelado) : "");
       } else {
         lado = "SP: " + (esc(r.no_lancamento) || "—")
              + " · nota: " + (esc(r.na_nota) || "—");
@@ -1407,6 +1540,16 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     };
     return '<table class="prova-conta"><tbody>'
          + regras.map(linha).join("") + '</tbody></table>';
+  }
+
+  /* QUANTAS SPs O BOTAO VAI ALCANCAR — fica no rotulo, que e onde se olha
+     antes de clicar. Preenchido por `desenhar` a cada abertura. */
+  let quantasSPs = 1;
+
+  function rotuloDoBotao() {
+    return quantasSPs > 1
+      ? "Usar esta nota nas " + quantasSPs + " SPs do parcelamento"
+      : "Usar esta nota nesta SP";
   }
 
   function candidata(c, i, corte) {
@@ -1429,7 +1572,7 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
          // "discordo" em trabalho feito, em vez de reclamacao.
          + (config.dataset.urlMao
             ? '<button class="btn secundario prova-usar" data-chave="'
-              + esc(c.chave) + '">Usar esta nota nesta SP</button>' : "")
+              + esc(c.chave) + '">' + rotuloDoBotao() + "</button>" : "")
          + '</div>';
   }
 
@@ -1450,11 +1593,79 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
         + '</div>';
 
     if (j.documentacao || j.chave) {
+      /* ⚠️ O QUE A IA DISSE, POR EXTENSO. *"Mandei pra IA e entao, o que
+         acontece? O que foi que a IA disse? O que foi sugerido? Ficou gravada
+         essa informacao onde?"*
+
+         Ficou gravada desde sempre — no diario, com o MOTIVO escrito pela IA.
+         Esta janela mostrava a categoria e a chave e engolia justamente o
+         texto que responde "o que ela disse". */
+      const deQuem = {
+        IA: "a IA leu o anexo",
+        PESSOA: "uma pessoa informou aqui",
+        CONCILIACAO: "o sistema conciliou",
+        PIPEFY: "ja veio do card do Pipefy",
+      }[j.origem] || j.origem;
       html += '<div class="prova-diario">O que ja esta gravado: <b>'
            + (esc(j.documentacao) || "sem categoria") + '</b>'
            + (j.chave ? ' · chave ' + esc(j.chave) : "")
-           + (j.origem ? ' · origem ' + esc(j.origem) : "")
-           + (j.por ? ' · por ' + esc(j.por) : "") + '</div>';
+           + (deQuem ? ' · ' + esc(deQuem) : "")
+           + (j.confianca ? " · confianca " + j.confianca + "%" : "")
+           + (j.por ? ' · por ' + esc(j.por) : "")
+           + (j.motivo
+              ? '<div class="prova-motivo">' + esc(j.motivo) + "</div>" : "")
+           + '</div>';
+    }
+
+    /* =====================================================================
+       O PARCELAMENTO, DITO ANTES DO CLIQUE.
+
+       *"Claramente e a situacao de parcelas que informei. Nao deveria haver
+       uma associacao com as outras parcelas pra vincular logo tudo? Ou avisar
+       que ja ta associado com outras?"*
+
+       Gravar nas irmas ja acontecia — so que ele so descobria DEPOIS de
+       clicar. Acao que alcanca mais do que se ve tem de ser anunciada antes.
+    ===================================================================== */
+    const par = d.parcelas || {};
+    quantasSPs = 1 + (par.livres || 0);
+    if (par.de) {
+      let texto = "<b>Esta SP e a parcela " + par.qual + "/" + par.de
+                + " de um pagamento.</b> ";
+      if (par.sem_numero) {
+        texto += "O card esta SEM o n° da nota, e sem ele nao da para achar as "
+               + "outras parcelas com seguranca — esta associacao vale so para "
+               + "esta SP.";
+      } else if (!(par.irmas || []).length) {
+        texto += "Nao encontrei outra SP com o mesmo CNPJ e o mesmo n° de nota. "
+               + "Esta associacao vale so para esta SP.";
+      } else {
+        const partes = [];
+        if (par.livres) {
+          partes.push("<b>" + par.livres + "</b> ainda sem nota — "
+                      + "<b>vao receber esta mesma nota</b> quando voce gravar");
+        }
+        if (par.mesma_nota) {
+          partes.push("<b>" + par.mesma_nota + "</b> ja esta(o) com ESTA nota");
+        }
+        if (par.outra_nota) {
+          partes.push("<b>" + par.outra_nota + "</b> aponta(m) para OUTRA nota "
+                      + "— nao sera(ao) mexida(s)");
+        }
+        texto += "Achei outras " + par.irmas.length + ": " + partes.join("; ")
+               + ".";
+        texto += '<div class="prova-parcelas">'
+          + par.irmas.map(i => {
+            const comoEsta = i.situacao === "livre" ? "sem nota"
+                           : (i.situacao === "mesma_nota" ? "ja com esta nota"
+                              : "com OUTRA nota");
+            return '<span class="parcela-irma ' + i.situacao + '">SP '
+                 + esc(i.id) + " · parcela " + esc(i.parcela) + " · "
+                 + dinheiro(i.valor) + " · " + comoEsta + "</span>";
+          }).join("") + "</div>";
+      }
+      html += '<div class="aviso ' + (par.outra_nota ? "atencao" : "info")
+            + '">' + texto + "</div>";
     }
 
     html += ficha("O lançamento (a SP inteira)", d.lancamento || []);
@@ -1473,7 +1684,9 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
       b.addEventListener("click", async () => {
         if (!confirm("Gravar esta nota nesta SP?\n\nA categoria sai de dentro "
                      + "da propria chave. A gravacao no card do Pipefy e o "
-                     + "passo seguinte.")) return;
+                     + "passo seguinte.\n\nSe esta SP for parcela de um "
+                     + "parcelamento, as demais parcelas da MESMA nota "
+                     + "recebem a mesma associacao.")) return;
         b.disabled = true;
         try {
           const r = await fetch(config.dataset.urlMao, {
@@ -1482,7 +1695,24 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           });
           const resp = await r.json();
           if (!resp.ok) { alert(resp.erro || "Nao consegui gravar."); return; }
-          location.reload();
+          /* NADA DE `location.reload()`: aqui a janela esta aberta por cima de
+             uma lista de 200 linhas, e recarregar jogaria a rolagem para o
+             topo — a reclamacao dele em 13/09/2026. A janela diz o que gravou
+             e fica; a lista atras se atualiza quando ele quiser. */
+          const outras = resp.parcelas_irmas || [];
+          const feito = document.createElement("div");
+          feito.className = "associada-agora";
+          feito.textContent = "✔ gravada na SP " + resp.sp_id
+            + (resp.documentacao ? " · " + resp.documentacao : "")
+            + (outras.length
+               ? " · e mais " + outras.length + " parcela(s) da mesma nota: "
+                 + outras.join(", ")
+               : "");
+          b.replaceWith(feito);
+          corpo.querySelectorAll(".prova-usar").forEach(o => {
+            o.disabled = true;
+          });
+          return;
         } catch (e) {
           alert("Nao consegui falar com o servidor: " + e);
         } finally { b.disabled = false; }
@@ -1503,4 +1733,485 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
                         + 'servidor: ' + e + '</div>';
       }
     }));
+})();
+
+
+/* ---------------------------------------------------------------------------
+   TODO BOTAO QUE FAZ ALGUMA COISA TEM DE DIZER QUE ESTA FAZENDO.
+
+   Reclamacao do dono em 13/09/2026, e ele diz que e geral: *"eu estou vendo que
+   e muito comum acontecer isso: os botoes que deveriam, apos o clique,
+   determinar alguma acao, ou mostrar a acao que esta sendo executada, ele nao
+   mostra. Voce fica cego, sem saber se esta acontecendo alguma coisa ou nao."*
+
+   Ele tem razao, e o caso que mais dói e o do formulario que recarrega a
+   pagina: entre o clique e a tela voltar podem passar VARIOS SEGUNDOS — a
+   equalizacao de credor reescreve centenas de SPs, uma de cada vez, pelo mesmo
+   caminho que grava banco, fila, log e planilha. Nesse intervalo a tela fica
+   exatamente igual, e quem clicou conclui que o botao nao funcionou. Aí clica
+   de novo.
+
+   ESTE BLOCO NAO SABE O QUE CADA BOTAO FAZ, e nao precisa: ele so trata o
+   envio de formulario, que e o momento em que a pagina vai embora e nao volta
+   na hora. Um por um, cada tela teria de lembrar — e e por isso que este
+   defeito aparecia em tantos lugares.
+
+   O QUE ELE NAO FAZ: mexer em botao de JavaScript (os que chamam o servidor
+   por tras e ja tratam o proprio estado), nem em formulario de filtro, que se
+   reenvia sozinho a cada caixa marcada e ficaria piscando "Aguarde" o tempo
+   todo.
+--------------------------------------------------------------------------- */
+(function () {
+  const PALAVRA = "Aguarde…";
+
+  function ocupar(botao) {
+    if (!botao || botao.dataset.ocupado) return;
+    botao.dataset.ocupado = "1";
+    // A LARGURA E TRAVADA ANTES de trocar o texto: sem isso o botao encolhe ou
+    // cresce no meio do clique, e a tela "pula" na cara de quem apertou.
+    const caixa = botao.getBoundingClientRect();
+    if (caixa.width) botao.style.minWidth = Math.ceil(caixa.width) + "px";
+    botao.dataset.textoAntes = botao.textContent;
+    botao.textContent = PALAVRA;
+    botao.classList.add("ocupado");
+    // `disabled` num botao de submit CANCELA o envio em alguns navegadores se
+    // aplicado cedo demais; por isso o desligamento espera o proximo quadro.
+    setTimeout(() => { botao.disabled = true; }, 0);
+  }
+
+  document.addEventListener("submit", e => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    // Formulario de filtro se reenvia sozinho o tempo todo: marcaria "Aguarde"
+    // a cada caixa e viraria ruido.
+    if (form.id === "form-filtros" || form.dataset.semAguarde) return;
+    /* ⚠️ O BOTAO "FECHAR" DAS JANELAS NAO E UM ENVIO — E O DEFEITO QUE ESTE
+       BLOCO CRIOU no dia em que nasceu (13/09/2026).
+
+       `<form method="dialog">` e como o proprio navegador fecha um <dialog>:
+       ele dispara `submit`, mas NAO vai a lugar nenhum. Este bloco tratava
+       aquilo como ida ao servidor, trocava o "fechar" por "Aguarde…" e
+       desligava o botao. Como a janela e uma so e fica na pagina, da segunda
+       vez em diante ela abria SEM o fechar — preso em "Aguarde…" ate o
+       destravamento de um minuto.
+
+       Relato do dono: *"eu clico que ver os dados, da um bug, o link de fechar
+       nao aparece, fica em aguardando..."*. Era isto, e nao tinha a ver com o
+       tipo da sugestao. */
+    if ((form.getAttribute("method") || "").toLowerCase() === "dialog") return;
+    // O botao que de fato enviou, quando da para saber; senao, o primeiro.
+    const botao = (e.submitter && e.submitter.tagName === "BUTTON")
+        ? e.submitter
+        : form.querySelector("button[type=submit], button:not([type])");
+    ocupar(botao);
+
+    // REDE CAIU OU O SERVIDOR DEMOROU DEMAIS: o botao volta ao normal depois
+    // de um minuto. Deixar "Aguarde" para sempre numa tela que nao recarregou
+    // seria trocar um engano por outro.
+    setTimeout(() => {
+      if (!botao || !botao.dataset.ocupado) return;
+      botao.disabled = false;
+      botao.textContent = botao.dataset.textoAntes || botao.textContent;
+      botao.classList.remove("ocupado");
+      delete botao.dataset.ocupado;
+    }, 60000);
+  }, true);
+})();
+
+/* ==========================================================================
+   AS SPs POR TRÁS DE CADA NOME, na tela de credores.
+
+   Pedido do dono em 13/09/2026: *"eu estou diante de um determinado CNPJ, aí
+   aparecem várias opções (…) ele marca aqui uma, duas, três, quatro SPs que é
+   de uma outra locadora que não tem nada a ver, ou seja, aqui foi claramente
+   um erro. Só que a partir daqui eu não consigo ir a essas SPs que estão
+   erradas. Só pra poder confirmar se eu posso realmente aplicar ou não, eu
+   precisaria ver essas SPs e entender onde foi o erro."*
+
+   A tela pedia decisão e escondia o dado da decisão. Abre POR CIMA, como todo
+   o resto do módulo — sair da tela no meio de uma escolha perde a escolha.
+   ========================================================================== */
+(function () {
+  var cfg = document.getElementById("credores-config");
+  var caixa = document.getElementById("sps-do-nome");
+  if (!cfg || !caixa) { return; }
+  var titulo = document.getElementById("sps-do-nome-titulo");
+  var corpo = document.getElementById("sps-do-nome-corpo");
+
+  function escapar(t) {
+    var d = document.createElement("div");
+    d.textContent = t == null ? "" : String(t);
+    return d.innerHTML;
+  }
+
+  function desenhar(dados, nome) {
+    if (!dados.ok) {
+      corpo.innerHTML = '<p class="aviso">Não consegui buscar as SPs: '
+        + escapar(dados.erro || "erro desconhecido") + "</p>";
+      return;
+    }
+    var sps = dados.sps || [];
+    if (!sps.length) {
+      corpo.innerHTML = '<p class="cartao-dica">Nenhuma SP escrita com este '
+        + "nome. Se isso aparecer, a contagem da tela e a base discordam — "
+        + "vale avisar.</p>";
+      return;
+    }
+    /* ⚠️ A CAIXA DE MARCAR POR SP — *"as vezes nao queremos renomear todos os
+       lancamentos. O erro pode ter sido no CNPJ e nao somente o nome. Preciso
+       poder nao marcar algum."*
+
+       O caso que ele descreve e o que esta tela mais erra: quatro SPs com o
+       nome de uma locadora e o CNPJ de outra. Reescrever as quatro APAGA a
+       unica pista de que alguem digitou o CNPJ errado — depois disso elas
+       ficam identicas as certas e ninguem mais acha o erro. */
+    var linhas = sps.map(function (s) {
+      var fora = jaEstaDeFora(s.id);
+      return "<tr><td><input type=\"checkbox\" class=\"marcar-sp\" "
+        + 'data-sp="' + escapar(s.id) + '"' + (fora ? "" : " checked")
+        + ' title="Desmarque para NAO reescrever o nome desta SP"></td>'
+        + "<td class=\"id\">" + escapar(s.id) + "</td>"
+        + "<td>" + escapar(s.credor) + "</td>"
+        + "<td>" + escapar(s.valor) + "</td>"
+        + "<td>" + escapar(s.vencimento) + "</td>"
+        + "<td>" + escapar(s.status) + "</td>"
+        + "<td class=\"cartao-dica\">" + escapar(s.descricao) + "</td>"
+        + "<td>" + (s.card
+          ? '<a href="' + escapar(s.card) + '" target="_blank" rel="noopener">card</a>'
+          : "—") + "</td></tr>";
+    }).join("");
+    /* O TETO É DITO, e não escondido: uma lista cortada em silêncio faria a
+       conferência concluir o contrário do que os dados dizem. */
+    var aviso = sps.length >= (dados.teto || 50)
+      ? '<p class="cartao-dica">Mostrando as ' + sps.length
+        + " mais recentes. Há mais SPs com este nome.</p>"
+      : "";
+    corpo.innerHTML = '<p class="cartao-dica">' + sps.length
+      + " SP(s) escritas como <b>" + escapar(nome) + "</b>. "
+      + "<b>Desmarque</b> as que NÃO devem ser renomeadas — use isso quando "
+      + "desconfiar de que o erro foi no CNPJ, e não no nome.</p>"
+      + '<div style="max-height:60vh; overflow:auto">'
+      + '<table class="sps"><thead><tr><th></th><th>SP</th>'
+      + "<th>Credor escrito</th>"
+      + "<th>Valor</th><th>Vencimento</th><th>Pagamento</th><th>Descrição</th>"
+      + "<th>Card</th></tr></thead><tbody>" + linhas + "</tbody></table></div>"
+      + aviso;
+
+    corpo.querySelectorAll(".marcar-sp").forEach(function (caixa) {
+      caixa.addEventListener("change", function () {
+        marcar(caixa.dataset.sp, caixa.checked);
+      });
+    });
+  }
+
+  /* ONDE A EXCLUSÃO FICA GUARDADA: num <input hidden> DENTRO do formulário
+     daquele fornecedor. Assim ela viaja com o "Usar este" sem estado nenhum
+     em variável solta — fechar a janela, reabrir, recarregar: o que estiver no
+     formulário é o que vale. */
+  function formularioDo(documento) {
+    var campos = document.querySelectorAll('input[name="documento"]');
+    for (var i = 0; i < campos.length; i++) {
+      if (campos[i].value === documento) { return campos[i].closest("form"); }
+    }
+    return null;
+  }
+
+  var documentoAberto = "";
+
+  function jaEstaDeFora(spId) {
+    var f = formularioDo(documentoAberto);
+    if (!f) { return false; }
+    return !!f.querySelector('input[name="nao_reescrever"][value="'
+                             + spId + '"]');
+  }
+
+  function marcar(spId, entra) {
+    var f = formularioDo(documentoAberto);
+    if (!f) { return; }
+    var existente = f.querySelector('input[name="nao_reescrever"][value="'
+                                    + spId + '"]');
+    if (entra) {
+      if (existente) { existente.remove(); }
+    } else if (!existente) {
+      var campo = document.createElement("input");
+      campo.type = "hidden";
+      campo.name = "nao_reescrever";
+      campo.value = spId;
+      f.appendChild(campo);
+    }
+    avisarQuantasDeFora(f);
+  }
+
+  /* O QUE FICOU DE FORA APARECE NA TELA, ao lado do botão. Exclusão que só
+     existe dentro de uma janela fechada é exclusão que se esquece — e aí ele
+     clica em "Usar este" achando que vai renomear tudo.
+
+     Conta AS DUAS SELEÇÕES: o grupo inteiro que ele desmarcou na lista e a SP
+     avulsa que ele desmarcou dentro da janela. Elas são somadas SEPARADAS de
+     propósito — uma SP tirada a dedo de um grupo que ficou ligado seria
+     contada duas vezes se virassem um número só. */
+  function avisarQuantasDeFora(f) {
+    if (!f) { return; }
+    var avulsas = f.querySelectorAll('input[name="nao_reescrever"]').length;
+    var desmarcados = f.querySelectorAll(
+      'input[type=checkbox][name^="aplicar-"]:not(:checked)');
+    var spsDosGrupos = 0;
+    desmarcados.forEach(function (c) {
+      spsDosGrupos += parseInt(c.dataset.sps || "0", 10) || 0;
+    });
+    var recado = f.querySelector(".sps-de-fora");
+    if (!avulsas && !desmarcados.length) {
+      if (recado) { recado.remove(); }
+      return;
+    }
+    if (!recado) {
+      recado = document.createElement("span");
+      recado.className = "sps-de-fora";
+      var botao = f.querySelector("button[type=submit]");
+      if (botao) { botao.parentNode.insertBefore(recado, botao.nextSibling); }
+      else { f.appendChild(recado); }
+    }
+    var partes = [];
+    if (desmarcados.length) {
+      partes.push(desmarcados.length === 1
+        ? "1 grupo fora (" + spsDosGrupos + " SP(s))"
+        : desmarcados.length + " grupos fora (" + spsDosGrupos + " SP(s))");
+    }
+    if (avulsas) {
+      partes.push(avulsas === 1 ? "1 SP avulsa fora"
+                                : avulsas + " SPs avulsas fora");
+    }
+    recado.textContent = partes.join(" · ") + ": não serão renomeadas";
+  }
+
+  /* A SEGUNDA SELEÇÃO — quais grupos de SPs vão ser reescritos.
+
+     Pedido do dono em 15/09/2026: *"você propõe qual selecionar pra poder
+     equalizar o nome do fornecedor, só que da lista às vezes tem grupos de SPs
+     que eu não quero alterar. Ou seja, tem que ter duas seleções: a do nome, e
+     em quais grupos vamos aplicar."*
+
+     A caixa em si é HTML puro e funciona sem JavaScript nenhum — quem lê o que
+     ficou marcado é o servidor. O que este bloco faz é só o aviso: contar o que
+     ficou de fora, e apagar o grupo que já está com o nome escolhido. */
+  document.addEventListener("change", function (ev) {
+    var alvo = ev.target;
+    if (!alvo || !alvo.name) { return; }
+    if (alvo.type === "checkbox" && alvo.name.indexOf("aplicar-") === 0) {
+      avisarQuantasDeFora(alvo.closest("form"));
+    } else if (alvo.type === "radio" && alvo.name === "nome") {
+      apagarGrupoIgual(alvo.closest("form"));
+    }
+  });
+
+  /* O GRUPO QUE JÁ ESTÁ COM O NOME ESCOLHIDO não muda nada: aquelas SPs já
+     estão escritas assim. Deixar a caixa dele com cara de caixa comum convida
+     a pergunta "desmarquei e não aconteceu nada, está quebrado?". */
+  function apagarGrupoIgual(f) {
+    if (!f) { return; }
+    var escolhido = f.querySelector('input[name="nome"]:checked');
+    var nome = escolhido ? escolhido.value : "";
+    f.querySelectorAll(".credor-grupo").forEach(function (g) {
+      var caixa = g.querySelector('input[type=checkbox][name^="aplicar-"]');
+      var igual = caixa && caixa.value === nome;
+      g.classList.toggle("grupo-igual", !!igual);
+      var nota = g.querySelector(".grupo-nota");
+      if (igual && !nota) {
+        nota = document.createElement("span");
+        nota.className = "grupo-nota";
+        nota.textContent = "— já está com este nome";
+        g.appendChild(nota);
+      } else if (!igual && nota) {
+        nota.remove();
+      }
+    });
+  }
+
+  document.querySelectorAll("form.credor-caso").forEach(apagarGrupoIgual);
+
+  document.addEventListener("click", function (ev) {
+    var botao = ev.target.closest && ev.target.closest(".ver-sps-do-nome");
+    if (!botao) { return; }
+    /* O botão vive DENTRO do <label> da opção: sem isto, clicar em "ver as
+       SPs" marcaria o rádio daquela opção — a tela decidiria por ele só por
+       ele ter pedido para conferir. */
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    var nome = botao.dataset.nome || "";
+    documentoAberto = botao.dataset.documento || "";
+    titulo.textContent = "SPs escritas como “" + nome + "”";
+    corpo.innerHTML = '<p class="cartao-dica">Buscando…</p>';
+    if (typeof caixa.showModal === "function") { caixa.showModal(); }
+
+    var dados = new FormData();
+    dados.append("documento", botao.dataset.documento || "");
+    (botao.dataset.grafias || nome).split("\n").forEach(function (g) {
+      if (g.trim()) { dados.append("grafia", g); }
+    });
+
+    fetch(cfg.dataset.urlSps, {
+      method: "POST", body: dados, credentials: "same-origin"
+    }).then(function (r) { return r.json(); })
+      .then(function (d) { desenhar(d, nome); })
+      .catch(function (e) {
+        corpo.innerHTML = '<p class="aviso">Não consegui buscar as SPs: '
+          + escapar(e && e.message) + "</p>";
+      });
+  });
+})();
+
+/* ==========================================================================
+   "USAR ESTE" SEM A TELA SUBIR, NA TELA DE CREDORES.
+
+   Reclamacao do dono em 13/09/2026, com a tela ja publicada: *"clico usar
+   este, continua subindo a tela. Clico em dois e acho que ele somente resolve
+   um."*
+
+   A CAUSA: cada fornecedor e um `<form method="post">` proprio, e cada envio
+   era uma pagina inteira indo e voltando. Duas consequencias, e ele viu as
+   duas: a rolagem voltava para o topo de uma lista longa, e o segundo clique
+   ABORTAVA o primeiro, que ainda estava no ar — por isso "so resolve um".
+
+   Agora o envio vai por tras. Cada caso se resolve no lugar onde esta, e
+   varios podem estar gravando ao mesmo tempo.
+
+   SEM JAVASCRIPT A TELA CONTINUA FUNCIONANDO: o formulario e de verdade, o
+   metodo e POST de verdade, e a rota so responde diferente para quem manda o
+   cabecalho. Isto aqui e melhoria, nao a unica porta.
+   ========================================================================== */
+(function () {
+  var casos = document.querySelectorAll("form.credor-caso");
+  if (!casos.length) { return; }
+
+  function resolver(form, dados) {
+    var caixa = document.createElement("div");
+    caixa.className = "cartao credor-resolvido";
+    var nome = (dados.nomes && dados.nomes[0]) || "";
+    /* O QUE FICOU DE FORA VAI JUNTO NO RECADO. Ele desmarcou grupo e SP de
+       propósito, e o retorno tem de dizer que foi respeitado — senão a única
+       forma de conferir seria reabrir a tela e recontar. */
+    var deFora = dados.de_fora
+      ? " " + dados.de_fora + " SP(s) você deixou de fora — continuam como estão."
+      : "";
+    caixa.innerHTML = '<b>✔ ' + (nome ? nome.replace(/[<>&]/g, "") : "aplicado")
+      + "</b> <span class=\"cartao-dica\">— " + (dados.sps || 0)
+      + " SP(s) reescrita(s)." + deFora
+      + " A planilha é atualizada na próxima sincronização.</span>";
+    /* O bloco da Receita vem LOGO DEPOIS do formulario; some junto, senao
+       fica uma sugestao orfa embaixo de um caso ja decidido. */
+    var depois = form.nextElementSibling;
+    if (depois && depois.classList
+        && depois.classList.contains("consulta-receita")) {
+      depois.remove();
+    }
+    form.replaceWith(caixa);
+  }
+
+  casos.forEach(function (form) {
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var botao = form.querySelector("button[type=submit]");
+      if (botao) { botao.disabled = true; botao.textContent = "gravando…"; }
+
+      fetch(form.action, {
+        method: "POST",
+        body: new FormData(form),
+        credentials: "same-origin",
+        headers: {"X-Sem-Recarregar": "1"},
+      }).then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { throw new Error(d.erro || "não consegui gravar"); }
+          resolver(form, d);
+        })
+        .catch(function (e) {
+          if (botao) { botao.disabled = false; botao.textContent = "Usar este"; }
+          var erro = document.createElement("div");
+          erro.className = "associada-erro";
+          erro.textContent = "✕ " + (e && e.message ? e.message : e);
+          form.appendChild(erro);
+        });
+    });
+  });
+})();
+
+/* ==========================================================================
+   CONSULTAR O CNPJ NA RECEITA SEM A TELA SUBIR.
+
+   Reclamacao do dono em 13/09/2026: *"quando consulta o nome na Receita, a
+   tela sobe. O resultado deveria aparecer flutuante, ou de forma que nao mexa
+   na tela."*
+
+   A CAUSA: o botao era um envio de pagina inteira, e a resposta voltava como
+   um aviso no ALTO da tela. Ou seja: a resposta chegava longe da pergunta,
+   numa lista que pode ter dezenas de fornecedores, e ainda perdia o lugar onde
+   ele estava lendo.
+
+   Agora a consulta vai por tras e a resposta e escrita EXATAMENTE onde a
+   pergunta foi feita — logo acima do proprio botao. A rolagem nao se mexe.
+
+   SEM JAVASCRIPT CONTINUA FUNCIONANDO: o formulario e de verdade, e a rota so
+   responde diferente para quem manda o cabecalho.
+   ========================================================================== */
+(function () {
+  var formularios = document.querySelectorAll("form.consulta-form");
+  if (!formularios.length) { return; }
+
+  function limpo(t) {
+    var d = document.createElement("div");
+    d.textContent = t == null ? "" : String(t);
+    return d.innerHTML;
+  }
+
+  function escrever(form, d) {
+    /* Substitui a linha da Receita que ja exista para este fornecedor, em vez
+       de empilhar uma nova a cada "consultar de novo". */
+    var anterior = form.parentNode.querySelector(".consulta-receita");
+    var caixa = document.createElement("div");
+    var agora = new Date().toLocaleString("pt-BR");
+
+    if (!d.ok || d.erro_receita) {
+      caixa.className = "consulta-receita erro";
+      caixa.innerHTML = "<b>Receita:</b> "
+        + limpo(d.erro_receita || d.erro || "não consegui consultar")
+        + " <small>tentado em " + limpo(agora) + "</small>";
+    } else {
+      caixa.className = "consulta-receita";
+      caixa.innerHTML = "<b>Receita:</b> " + limpo(d.razao_social)
+        + (d.fantasia ? ' · fantasia "' + limpo(d.fantasia) + '"' : "")
+        + (d.situacao ? " · " + limpo(d.situacao) : "")
+        + (d.municipio ? " · " + limpo(d.municipio) + "/" + limpo(d.uf) : "")
+        + " <small>consultado em " + limpo(agora) + "</small>";
+    }
+
+    if (anterior) { anterior.replaceWith(caixa); }
+    else { form.parentNode.insertBefore(caixa, form); }
+  }
+
+  formularios.forEach(function (form) {
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var botao = form.querySelector("button[type=submit]");
+      var antes = botao ? botao.textContent : "";
+      if (botao) { botao.disabled = true; botao.textContent = "consultando…"; }
+
+      fetch(form.action, {
+        method: "POST",
+        body: new FormData(form),
+        credentials: "same-origin",
+        headers: {"X-Sem-Recarregar": "1"},
+      }).then(function (r) { return r.json(); })
+        .then(function (d) { escrever(form, d); })
+        .catch(function (e) {
+          escrever(form, {ok: false,
+                          erro: "não consegui falar com o servidor: " + e});
+        })
+        .then(function () {
+          if (botao) {
+            botao.disabled = false;
+            botao.textContent = "↻ consultar de novo";
+          }
+        });
+    });
+  });
 })();

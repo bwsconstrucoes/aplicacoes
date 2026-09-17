@@ -229,8 +229,11 @@ def _itens_visiveis(s: Session, usuario: Usuario) -> list[SuprimentoItem]:
 
 
 def _ve_tudo(s: Session, usuario: Usuario) -> bool:
-    from app.apps.erp.core.auth.permissoes import VE_TUDO
-    return usuario is not None and usuario.perfil in VE_TUDO
+    from app.apps.erp.core.auth.permissoes import ve_todas_as_obras
+    # Passou a perguntar ao CADASTRO da pessoa em 13/09/2026, e não ao cargo:
+    # quem enxerga todas as obras é escolha do operador, não herança do nome
+    # do perfil. Ver `core/auth/secoes.py`.
+    return usuario is not None and ve_todas_as_obras(usuario)
 
 
 def _pediu(s: Session, item: SuprimentoItem, usuario: Usuario) -> bool:

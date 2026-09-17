@@ -481,8 +481,15 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     # Para exportar a base larga a resposta continua sendo NÃO por aqui: é
     # exatamente o caminho que estourava a memória, e o CSV — que sai em
     # blocos — existe para isso.
+    # E a terceira exceção, de 13/09/2026: LER o relatório do FSist subido como
+    # arquivo. Aqui a preocupação com memória é legítima — o relatório pode ter
+    # milhares de linhas — e por isso a leitura é feita com `read_only=True`,
+    # que percorre o arquivo em vez de abri-lo inteiro, e com teto de 20 MB
+    # recusado antes de qualquer leitura. Sem as duas coisas, esta liberação
+    # não valeria.
     LIBERADO_EM = {"beevale.py": {"openpyxl"},
-                   "lote_excel.py": {"openpyxl"}}
+                   "lote_excel.py": {"openpyxl"},
+                   "sincronizacao.py": {"openpyxl"}}
 
     achados = []
     for caminho in _arquivos():

@@ -172,6 +172,9 @@ function desenharLeituraDaPessoa(id){
       ${(c.avisos || []).map(a => `<br>${escapar(a)}`).join("")}
       ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
     </div>
+
+    ${blocoDeDatasDoDocumento("pdoc", g, null)}
+
     ${c.tipo_nao_preenche
       ? `<div class="cartao-dica">Este tipo não alimenta o cadastro — vale pela
           VALIDADE, que já vira aviso na agenda. Vai ser só arquivado.</div>`
@@ -246,15 +249,19 @@ async function guardarDocumentoDaPessoa(id){
     if (entrada && entrada.value.trim()) campos[campo] = entrada.value.trim();
   });
 
+  const datas = datasDoDocumento("pdoc", g, null);
+  if (!datas.ok) { aviso("pdoc-msg", datas.erro, "erro"); return; }
+
   const b = els("btn-pdoc-guardar");
   b.disabled = true; b.textContent = "Guardando…";
   try {
     const fd = new FormData();
     fd.append("arquivo", arq);
     fd.append("tipo", g.tipo_codigo);
-    ["referencia","emissao","validade","competencia","texto","resumo"].forEach(k => {
-      if (g[k]) fd.append(k, g[k]);
-    });
+    // Datas pela TELA: CNH e ASO vencem, e quando a leitura não acha a data o
+    // arquivamento era recusado sem ter onde digitá-la.
+    ["referencia","texto","resumo"].forEach(k => { if (g[k]) fd.append(k, g[k]); });
+    Object.entries(datas.dados).forEach(([k, v]) => { if (v) fd.append(k, v); });
     fd.append("campos", JSON.stringify(campos));
     const d = await api(`/erp/api/colaboradores/${id}/documento`, {method:"POST", body: fd});
     let recado = `Guardado como <b class="mono">${escapar(d.documento.nome)}</b>.`;

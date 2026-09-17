@@ -46,6 +46,36 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "ver_erp":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
                         P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    # ---------------------------------------------------------------------
+    # AS TELAS QUE ANTES SÓ PEDIAM `ver_erp` (13/09/2026)
+    #
+    # Decisão do dono, com todas as letras: *"se a pessoa está liberada apenas
+    # pra visualizar lançamento financeiro, ela não tem que ver nada do
+    # suprimento. Não vai ver cadastro de suprimento, de insumo, pedidos de
+    # compra — ela não vai ver nada disso se eu não disponibilizar pra aquele
+    # perfil"*.
+    #
+    # Para uma área SUMIR do menu de quem não a tem, cada tela precisa de uma
+    # ação própria: `ver_erp` é a porta de entrada, e esconder por ela
+    # esconderia o ERP inteiro. Estas cinco nascem valendo para TODOS os
+    # cargos — ou seja, ninguém perde nada no dia da virada; o que muda é que
+    # agora dá para tirar, perfil a perfil, na tela.
+    # ---------------------------------------------------------------------
+    "ver_titulos":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    "ver_fundo_fixo":  {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    "ver_empreitas":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    "ver_obras":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    "ver_locacoes":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
     "lancar":          {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.LANCADOR,
                         P.DEPARTAMENTO_PESSOAL},
@@ -209,6 +239,11 @@ ACAO_ROTULOS = {
     "gerir_usuarios":       "Cadastrar e editar operadores",
     "ver_uso_da_equipe":    "Ver o trabalho da equipe no sistema",
     "ver_relatorios":       "Ver relatórios",
+    "ver_titulos":          "Ver a lista de solicitações de pagamento",
+    "ver_fundo_fixo":       "Ver o fundo fixo e o cartão",
+    "ver_empreitas":        "Ver as empreitas",
+    "ver_obras":            "Ver o painel de obras",
+    "ver_locacoes":         "Ver as locações de equipamento",
     "ver_pessoal":          "Ver despesas de colaborador",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
@@ -250,6 +285,11 @@ ROTULOS = {
 # erro — e não sobra ninguém para desfazer.
 PROTEGIDAS_DO_ADMIN = ("configurar", "gerir_usuarios", "ver_erp")
 
+# A porta de entrada do ERP. Mora em `core/auth/secoes.py` com o mesmo nome, e
+# é repetida aqui só para não fazer este módulo importar aquele em toda
+# decisão — se um dia mudar, muda nos dois (há teste cobrando a igualdade).
+ACAO_DE_ENTRADA = "ver_erp"
+
 
 def excecoes_do_usuario(usuario: Usuario) -> dict[str, bool]:
     """As marcações feitas no cadastro DESTA pessoa (ação → concedida).
@@ -280,7 +320,10 @@ def pode_com_banco(s: Session, usuario: Usuario, acao: str) -> bool:
     excecoes = excecoes_do_usuario(usuario)
     if not excecoes:
         excecoes = _excecoes_no_banco(s, usuario.id)
-    return decidir(usuario.perfil, acao, excecoes)
+    acoes = getattr(usuario, "acoes_do_perfil", None)
+    if acoes is None:
+        acoes = acoes_do_perfil_no_banco(s, usuario.id)
+    return decidir(usuario.perfil, acao, excecoes, acoes)
 
 
 def _excecoes_no_banco(s: Session, usuario_id: int) -> dict[str, bool]:
@@ -301,34 +344,90 @@ def _excecoes_no_banco(s: Session, usuario_id: int) -> dict[str, bool]:
     return {acao: bool(concedida) for acao, concedida in linhas}
 
 
-def pode(usuario: Usuario, acao: str) -> bool:
-    """Pode esta ação? O cargo decide; a marcação no cadastro corrige.
+def acoes_do_perfil_no_banco(s: Session, usuario_id: int) -> Optional[set[str]]:
+    """As ações que o PERFIL CADASTRADO desta pessoa concede (migração 065).
 
-    Ordem: o cargo dá a base, a exceção da pessoa vence, e o ADMIN não pode ser
-    trancado para fora das telas que consertam o sistema.
+    Devolve `None` quando não há o que ler — a tabela ainda não existe, ou a
+    pessoa não foi apontada para perfil nenhum. `None` quer dizer "não sei", e
+    aí vale a tabela em código, que é o comportamento de antes. Isso é o que
+    mantém o ERP de pé na janela entre a publicação e o aperto do botão que
+    aplica a migração — a armadilha conhecida deste repositório.
+
+    Note a diferença entre `None` e conjunto VAZIO: vazio quer dizer "perfil
+    cadastrado que não concede nada", e aí a pessoa não entra em lugar nenhum.
+    É o padrão NADA, e ele tem de ser respeitado.
+    """
+    from sqlalchemy import text as _text
+
+    try:
+        linhas = s.execute(_text(
+            "SELECT ps.secao, ps.nivel "
+            "  FROM usuarios u "
+            "  JOIN perfis p ON p.id = u.perfil_id AND p.ativo "
+            "  LEFT JOIN perfil_secoes ps ON ps.perfil_id = p.id "
+            " WHERE u.id = :i"), {"i": usuario_id}).all()
+    except Exception:
+        return None          # migração 065 ainda não aplicada
+    if not linhas:
+        return None          # sem perfil cadastrado: vale o cargo antigo
+    try:
+        marcacoes = {linha[0]: linha[1] for linha in linhas if linha[0]}
+    except (TypeError, IndexError, ValueError):
+        # Resposta com formato inesperado (a sessão dublada dos testes é um
+        # caso). "Não sei" é a resposta honesta, e ela cai no cargo antigo.
+        return None
+    from app.apps.erp.core.auth import secoes as cat
+    return cat.acoes_do_perfil(marcacoes)
+
+
+def pode(usuario: Usuario, acao: str) -> bool:
+    """Pode esta ação? O PERFIL decide; a marcação no cadastro corrige.
+
+    Ordem: o perfil dá a base, a exceção da pessoa vence, e o ADMIN não pode
+    ser trancado para fora das telas que consertam o sistema.
     """
     if usuario is None:
         return False
     excecoes = excecoes_do_usuario(usuario)
-    return decidir(usuario.perfil, acao, excecoes)
+    return decidir(usuario.perfil, acao, excecoes,
+                   getattr(usuario, "acoes_do_perfil", None))
 
 
-def decidir(perfil: PerfilUsuario, acao: str, excecoes: dict[str, bool]) -> bool:
+def decidir(perfil: PerfilUsuario, acao: str, excecoes: dict[str, bool],
+            acoes_do_perfil: Optional[set[str]] = None) -> bool:
     """A mesma decisão de `pode`, a partir de valores soltos.
 
     Existe porque a guarda que roda antes de toda rota lê perfil e exceções por
     SQL direto, sem carregar o objeto Usuario — ver a explicação em
     `routes._guarda_permissao`. Regra num lugar só: se mudar aqui, muda nos dois.
+
+    `acoes_do_perfil` é o conjunto vindo do PERFIL CADASTRADO (migração 065).
+    Quando é `None`, vale a tabela em código — o comportamento de antes, e o
+    que segura o sistema enquanto a migração não roda.
     """
     excecoes = excecoes or {}
-    base = perfil in PERMISSOES.get(acao, set())
+    # DESMARCAR "entrar no ERP" FECHA TUDO para esta pessoa.
+    #
+    # Enquanto quase toda tela era guardada por `ver_erp`, desmarcar a porta de
+    # entrada fechava o sistema na prática. Desde 13/09/2026 cada tela tem ação
+    # própria (foi o que fez a área sumir do menu de quem não a tem), e aí a
+    # caixinha passaria a fechar só as poucas telas que ainda pedem `ver_erp` —
+    # uma marcação que promete uma coisa e faz outra. Quem tira a porta de
+    # entrada está desligando a pessoa, e é isso que acontece.
+    #
+    # O ADMIN continua alcançando as telas que consertam o sistema: trancar a
+    # última pessoa que pode destrancar não é decisão, é acidente.
+    if excecoes.get(ACAO_DE_ENTRADA) is False:
+        return perfil is P.ADMIN and acao in PROTEGIDAS_DO_ADMIN
+    base = (acao in acoes_do_perfil if acoes_do_perfil is not None
+            else perfil in PERMISSOES.get(acao, set()))
     marcada = excecoes.get(acao)
     efetiva = base if marcada is None else bool(marcada)
     if not efetiva and acao in ACOES_IMPLICADAS and marcada is not True:
         # Desmarcar explicitamente continua valendo (marcada is False fecha),
         # mas quem NÃO tem marcação nenhuma ganha pela ação que já possui.
         if marcada is None:
-            efetiva = any(decidir(perfil, outra, excecoes)
+            efetiva = any(decidir(perfil, outra, excecoes, acoes_do_perfil)
                           for outra in ACOES_IMPLICADAS[acao])
     if not efetiva and perfil is P.ADMIN and acao in PROTEGIDAS_DO_ADMIN:
         return True
@@ -343,8 +442,23 @@ def exigir(usuario: Usuario, acao: str) -> None:
 
 
 # Perfis que enxergam a base inteira: nem escopo de obra, nem de autoria.
-VE_TUDO = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-           P.APROVADOR, P.CONSULTA)
+#
+# ENCOLHEU EM 12/09/2026, por decisão do dono: *"com exceção dos perfis de
+# diretoria e financeiro, o natural é visualizar somente as obras associadas no
+# cadastro do operador"*.
+#
+# Saíram daqui GESTOR_OBRA, APROVADOR e CONSULTA. Os três passaram a enxergar
+# **só as obras marcadas no cadastro deles** — como o supervisor de obra já
+# fazia. O gestor ver a empresa inteira contradizia o princípio que o dono
+# repetiu desde o começo, e ninguém tinha percebido porque o perfil funcionava.
+#
+# ⚠️ **CONSEQUÊNCIA OPERACIONAL, e ela morde:** gestor, aprovador ou consulta
+# SEM obra marcada no cadastro passa a não ver NADA. Não é defeito — é o padrão
+# NEGAR do ERP. Ao publicar isto, cada um desses operadores precisa ter as
+# obras dele marcadas em Configurações › Operadores.
+#
+# ADMIN continua vendo tudo: é quem configura o sistema e destrava os outros.
+VE_TUDO = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO)
 
 # ---------------------------------------------------------------------------
 # O DEPARTAMENTO PESSOAL enxerga por ASSUNTO, não por obra nem por autoria.
@@ -389,22 +503,89 @@ def escopo_visao(usuario: Usuario) -> EscopoVisao:
 
 
 def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
-    """Obras associadas a esta pessoa em usuario_obras."""
-    return [o.obra_id for o in s.scalars(
-        select(UsuarioObra).where(UsuarioObra.usuario_id == usuario.id)).all()]
+    """As obras que esta pessoa alcança — por OBRA, por PROJETO ou por EMPRESA.
+
+    Pedido do dono em 13/09/2026: *"a gente poder adicionar ao usuário a obra,
+    ou um projeto, ou todas as obras, ou uma empresa ou outra empresa"*.
+
+    Os três níveis se somam, e o conjunto é resolvido AQUI, na hora da
+    consulta — nunca copiado para `usuario_obras` no momento da marcação. É o
+    que faz obra nova, pendurada num projeto que a pessoa já tem, entrar
+    sozinha no alcance dela: ninguém precisa lembrar de voltar no cadastro.
+
+    A obra segue sendo a unidade do recorte, e por isso todo o resto do ERP
+    (títulos, notas, agenda, colaboradores, suprimentos) passou a obedecer
+    empresa e projeto sem uma linha a mais em cada lugar.
+    """
+    from sqlalchemy import text as _text
+
+    diretas = {o.obra_id for o in s.scalars(
+        select(UsuarioObra).where(UsuarioObra.usuario_id == usuario.id)).all()}
+    try:
+        herdadas = s.execute(_text(
+            "SELECT o.id FROM obras o "
+            " WHERE (o.projeto_id IS NOT NULL AND o.projeto_id IN ("
+            "         SELECT projeto_id FROM usuario_projetos WHERE usuario_id = :u))"
+            "    OR (o.empresa_id IS NOT NULL AND o.empresa_id IN ("
+            "         SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u))"),
+            {"u": usuario.id}).all()
+    except Exception:
+        # Migração 066 ainda não aplicada: vale só o que está marcado obra a
+        # obra, que é exatamente o comportamento de antes dela.
+        return sorted(diretas)
+    try:
+        return sorted(diretas | {linha[0] for linha in herdadas})
+    except (TypeError, IndexError):
+        return sorted(diretas)          # sessão dublada dos testes
+
+
+# Perfis presos SEMPRE às obras designadas — sem depender de marcação por
+# pessoa. Cresceu em 12/09/2026 com a decisão do dono (ver `VE_TUDO`): gestor,
+# aprovador e consulta entraram para cá.
+PRESOS_A_OBRA = (P.SUPERVISOR_OBRA, P.PARCEIRO, P.GESTOR_OBRA, P.APROVADOR,
+                 P.CONSULTA)
 
 
 def _ve_por_obra(usuario: Usuario) -> bool:
-    """Esta pessoa enxerga por OBRA (e não apenas o que ela mesma lançou)?"""
-    if usuario.perfil in (P.SUPERVISOR_OBRA, P.PARCEIRO):
+    """Esta pessoa enxerga por OBRA (e não apenas o que ela mesma lançou)?
+
+    Desde a migração 065 quem responde é o CADASTRO dela, não o cargo: o campo
+    "o que esta pessoa enxerga" passou a valer para todo mundo que não enxerga
+    todas as obras. Antes, cinco cargos enxergavam por obra por estarem numa
+    lista em código, e o campo do cadastro deles nem era lido — a migração
+    marca esses cinco como "tudo das obras designadas" para que ninguém perca
+    alcance no dia da virada.
+
+    Enquanto a migração não roda, a coluna não existe e vale a lista antiga.
+    """
+    if getattr(usuario, "ve_todas_as_obras", None) is not None:
+        return escopo_visao(usuario) is EscopoVisao.OBRAS_DESIGNADAS
+    if usuario.perfil in PRESOS_A_OBRA:
         return True
     return (usuario.perfil in ESCOPO_CONFIGURAVEL
             and escopo_visao(usuario) is EscopoVisao.OBRAS_DESIGNADAS)
 
 
+def ve_todas_as_obras(usuario: Usuario) -> bool:
+    """Esta pessoa enxerga TODAS as obras?
+
+    A resposta passou a morar no CADASTRO DELA em 13/09/2026 (migração 065),
+    por decisão do dono. Antes dependia do cargo, numa lista em código — e era
+    a causa de a mesma discussão voltar toda semana: para mudar quem enxerga o
+    quê era preciso mexer no código.
+
+    Enquanto a migração não roda, a coluna não existe e vale o cargo, como
+    antes: é o que segura o ERP na janela entre publicar e apertar o botão.
+    """
+    marcado = getattr(usuario, "ve_todas_as_obras", None)
+    if marcado is not None:
+        return bool(marcado)
+    return usuario.perfil in VE_TUDO
+
+
 def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     """IDs das obras que o usuário enxerga. None = todas."""
-    if usuario.perfil in VE_TUDO:
+    if ve_todas_as_obras(usuario):
         return None
     if _ve_por_obra(usuario):
         return _obras_designadas(s, usuario)
@@ -427,7 +608,7 @@ def obras_de_registro_sem_autor(s: Session, usuario: Usuario) -> Optional[list[i
 
     Devolve None só para quem enxerga tudo.
     """
-    if usuario.perfil in VE_TUDO:
+    if ve_todas_as_obras(usuario):
         return None
     return _obras_designadas(s, usuario)
 
@@ -484,7 +665,7 @@ def condicao_escopo_sql(s: Session, usuario: Usuario,
 
     `t` é o apelido da tabela de títulos na consulta que vai receber o pedaço.
     """
-    if usuario.perfil in VE_TUDO:
+    if ve_todas_as_obras(usuario):
         return "TRUE", {}
 
     if usuario.perfil == P.DEPARTAMENTO_PESSOAL:
@@ -512,7 +693,7 @@ def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:
     Um só caminho para listagem e detalhe: `pode_ver_titulo` passa por aqui,
     então mudar a regra muda os dois de uma vez.
     """
-    if usuario.perfil in VE_TUDO:
+    if ve_todas_as_obras(usuario):
         return stmt
     if usuario.perfil == P.DEPARTAMENTO_PESSOAL:
         return _escopo_do_pessoal(stmt)
@@ -719,7 +900,7 @@ def exigir_tarefa_no_escopo(s: Session, usuario: Usuario, tarefa_id: int):
     t = s.get(Tarefa, tarefa_id)
     if t is None:
         raise ErroNaoEncontrado("Trabalho não encontrado.")
-    if usuario.perfil in VE_TUDO or t.usuario_id == usuario.id:
+    if ve_todas_as_obras(usuario) or t.usuario_id == usuario.id:
         return t
     raise ErroNaoEncontrado("Trabalho não encontrado.")
 
@@ -733,8 +914,15 @@ def contexto_permissoes(s: Session, usuario: Usuario) -> dict[str, Any]:
         "pode": {acao: pode(usuario, acao) for acao in PERMISSOES},
         "excecoes": dict(excecoes_do_usuario(usuario)),
         "escopo_obras": obras,
+        # ⚠️ `obras is None` quer dizer DUAS coisas — "enxerga todas" e "não
+        # filtra por obra, filtra por autoria" —, e a frase antiga desempatava
+        # pelo cargo. Com o alcance vindo do cadastro isso passou a mentir:
+        # quem só vê os próprios lançamentos lia "todas as obras". Agora quem
+        # desempata são as mesmas funções que o SQL usa.
         "escopo_descricao": (
-            "todas as obras" if obras is None and usuario.perfil != P.ADMINISTRATIVO_OBRA
+            "todas as obras" if ve_todas_as_obras(usuario)
             else f"{len(obras)} obra(s) designada(s)" if obras
+            else "nenhuma obra marcada — peça para marcarem as suas"
+            if _ve_por_obra(usuario)
             else "apenas os lançamentos que você fez"),
     }

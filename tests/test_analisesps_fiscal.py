@@ -8,6 +8,8 @@ então a regra fica presa aqui, caso a caso.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
 from app.apps.analisesps import fiscal
@@ -1078,3 +1080,345 @@ def test_a_CONTA_ABERTA_e_a_pontuacao_concordam():
     somado = sum(r["pontos"] for r in fiscal._conferir_regras(da_lista, NOTA_DE_PROVA)
                  if r.get("bateu"))
     assert somado == pontos
+
+
+# ---------------------------------------------------------------------------
+# A NOTA CANCELADA NÃO PODE ENTRAR NA PILHA DO "APROVAR EM LOTE" — 13/09/2026
+#
+# *"Quando tiver a nota cancelada na tela de associação, tem que deixar em
+# vermelhinho o cancelado, pra a gente não associar a uma nota cancelada sem
+# perceber."*
+#
+# A cor resolve para quem olha. A marcação em lote existe justamente para quem
+# NÃO olha linha a linha — uma cancelada pré-marcada entraria no "Confirmar as
+# marcadas" sem ninguém ver.
+# ---------------------------------------------------------------------------
+def test_nota_CANCELADA_nunca_vem_proposta_por_mais_que_combine():
+    from app.apps.analisesps import fiscal
+
+    cancelada = dict(NOTA_DE_PROVA, status="Cancelada")
+    da_lista = {"id": "1", "documento": "29.066.773/0001-52", "credor": "ACME",
+                "valor_num": _Decimal("269.00"),
+                "vencimento_d": _dt.date(2026, 9, 10), "nf": "1430"}
+
+    # A mesma SP com a nota AUTORIZADA é proposta…
+    assert fiscal.melhor_nota(da_lista, [NOTA_DE_PROVA])["propoe"] is True
+    # …e com ela cancelada, não.
+    escolha = fiscal.melhor_nota(da_lista, [cancelada])
+    assert escolha["propoe"] is False
+
+
+def test_a_cancelada_continua_APARECENDO_e_diz_por_que_nao_foi_marcada():
+    """Esconder seria pior: se aquela é mesmo a nota do lançamento, quem analisa
+    PRECISA saber que ela foi cancelada — é problema fiscal, não informação a
+    esconder."""
+    from app.apps.analisesps import fiscal
+
+    cancelada = dict(NOTA_DE_PROVA, status="Cancelada")
+    escolha = fiscal.melhor_nota(
+        {"id": "1", "documento": "29.066.773/0001-52", "credor": "ACME",
+         "valor_num": _Decimal("269.00"), "nf": "1430"}, [cancelada])
+
+    assert escolha["nota"] is not None, "a nota sumiu da tela"
+    porques = " ".join(escolha["porques"])
+    assert "CANCELADA" in porques
+    assert "decisão de gente" in porques
+
+
+# ===========================================================================
+# A NOTA PARCELADA — o caso que o dono mandou em 13/09/2026, com os números
+#
+#   SP 1441193033 · "Parcela 3/3" · Nº NF 1002924 · R$    696,34 · FRIGELAR
+#   Nota nº 1.002.924 ................................ R$  2.089,02 · FRIGELAR
+#
+# 696,34 × 3 = 2.089,02. O sistema via diferença de R$ 1.392,68, não dava
+# nenhum dos 25 pontos do valor, e um par que qualquer pessoa fecha em dois
+# segundos nunca chegava ao corte de 60.
+# ===========================================================================
+FRIGELAR = "92660406000623"
+
+
+def _sp_frigelar(**extra):
+    base = {"id": "1441193033", "credor": "FRIGELAR COMERCIO LTDA",
+            "documento": "92.660.406/0006-23", "valor_num": 696.34,
+            "vencimento_d": dt.date(2026, 11, 30), "parcela": "3/3",
+            "nf": "1002924"}
+    base.update(extra)
+    return base
+
+
+def _nota_frigelar(**extra):
+    base = {"chave": "26260992660406000623550050010029241000204887",
+            "numero": "1002924", "valor": 2089.02, "status": "Autorizada",
+            "emitente_doc": FRIGELAR,
+            "emitente": "FRIGELAR COMERCIO E INDUSTRIA LTDA",
+            "emissao": dt.date(2026, 9, 1)}
+    base.update(extra)
+    return base
+
+
+def test_a_parcela_e_lida_em_todas_as_grafias_da_planilha():
+    from app.apps.analisesps import fiscal
+    assert fiscal.parcela_do_lancamento({"parcela": "3/3"}) == (3, 3)
+    assert fiscal.parcela_do_lancamento({"parcela": " 1 / 12 "}) == (1, 12)
+    assert fiscal.parcela_do_lancamento({"parcela": "3 de 3"}) == (3, 3)
+
+
+def test_parcela_UNICA_ou_sem_sentido_nao_e_parcelamento():
+    """"1/1" é parcela única e não muda conta nenhuma. "4/3" é lixo da
+    planilha, e tratar lixo como regra é como se casa a nota errada."""
+    from app.apps.analisesps import fiscal
+    assert fiscal.parcela_do_lancamento({"parcela": "1/1"}) is None
+    assert fiscal.parcela_do_lancamento({"parcela": "4/3"}) is None
+    assert fiscal.parcela_do_lancamento({"parcela": ""}) is None
+    assert fiscal.parcela_do_lancamento({"parcela": "à vista"}) is None
+    assert fiscal.parcela_do_lancamento({"parcela": "1/900"}) is None
+
+
+def test_o_caso_do_dono_FECHA_pela_conta_da_parcela():
+    from app.apps.analisesps import fiscal
+    bateu = fiscal.bate_como_parcela(_sp_frigelar(), _nota_frigelar())
+    assert bateu["qual"] == 3 and bateu["de"] == 3
+    assert "696,34" in bateu["conta"] and "2.089,02" in bateu["conta"]
+
+
+def test_o_caso_do_dono_passa_a_ser_PROPOSTO():
+    """Era o ponto todo: antes ficava abaixo do corte de 60 e nunca era
+    proposto, mesmo com CNPJ, número da nota e conta do valor fechando."""
+    from app.apps.analisesps import fiscal
+    pontos, porques = fiscal.pontuar(_sp_frigelar(), _nota_frigelar())
+    assert pontos >= fiscal.CONFIANCA_PARA_PROPOR
+    assert any("696,34" in p for p in porques)
+
+
+def test_a_divisao_tem_de_ser_EXATA_ate_o_centavo():
+    """⚠️ Folga aqui casaria notas quaisquer: com 12 parcelas, qualquer valor
+    numa faixa de dez reais viraria par. O centavo é o que separa "é a mesma
+    nota" de "coincidência"."""
+    from app.apps.analisesps import fiscal
+    assert fiscal.bate_como_parcela(
+        _sp_frigelar(), _nota_frigelar(valor=2100.00)) == {}
+    assert fiscal.bate_como_parcela(
+        _sp_frigelar(), _nota_frigelar(valor=2089.50)) == {}
+
+
+def test_a_divisao_que_NAO_FECHA_redonda_ainda_vale():
+    """100,00 em 3 vezes dá 33,33 + 33,33 + 33,34. Um centavo por parcela é
+    arredondamento de verdade, e recusar isso perderia o caso comum."""
+    from app.apps.analisesps import fiscal
+    sp = {"parcela": "1/3", "valor_num": 33.33}
+    assert fiscal.bate_como_parcela(sp, {"valor": 100.00})
+
+
+def test_a_SP_que_NAO_e_parcela_nao_ganha_nada_pela_conta():
+    """Sem a coluna Parcela preenchida, 696,34 contra 2.089,02 continua sendo
+    o que sempre foi: valor diferente."""
+    from app.apps.analisesps import fiscal
+    assert fiscal.bate_como_parcela(
+        _sp_frigelar(parcela=""), _nota_frigelar()) == {}
+    _, porques = fiscal.pontuar(_sp_frigelar(parcela=""), _nota_frigelar())
+    assert not any("×" in p for p in porques)
+
+
+def test_a_tela_EXPLICA_a_conta_em_vez_de_dizer_valor_diferente():
+    """Dizer "a SP é R$ 696,34 e a nota R$ 2.089,02" é verdade no número e
+    mentira no sentido — e é a pior espécie de erro, porque tem cara de
+    conferência feita."""
+    from app.apps.analisesps import fiscal
+    saida = fiscal._porque_esta_candidata(_sp_frigelar(), _nota_frigelar())
+    valor = next(r for r in saida["razoes"] if "Valor" in r["rotulo"])
+    assert valor["bate"] is True
+    assert "× 3" in valor["detalhe"]
+    assert saida["valor_igual"] is True
+
+
+def test_a_PROVA_mostra_a_conta_da_parcela():
+    from app.apps.analisesps import fiscal
+    regras = fiscal._conferir_regras(_sp_frigelar(), _nota_frigelar())
+    valor = next(r for r in regras if r["chave"] == "valor")
+    assert valor["bateu"] is True
+    assert "696,34" in valor["parcelado"]
+
+
+# ===========================================================================
+# A SENHA "CERTA" QUE NÃO ABRIA — 13/09/2026
+#
+# *"Suspeito que o certificado e a senha estejam corretos, mas a mensagem é de
+# certificado inválido ou senha. Existe algum canto que eu possa tirar essa
+# prova?"*
+#
+# A desconfiança tinha fundamento. MEDIDO com um .pfx de verdade: senha com
+# espaço no fim, espaço no começo e senha de verdade errada davam TODAS a mesma
+# mensagem. Quem copia a senha de um e-mail traz o espaço junto.
+# ===========================================================================
+def test_as_variacoes_da_senha_sao_do_TECLADO_e_nao_adivinhacao():
+    """⚠️ O que se tenta são FORMAS DA MESMA SENHA que o copiar-e-colar produz
+    sem a pessoa querer. Nenhuma delas abre um certificado de senha diferente —
+    o teste garante que não entrou nada parecido com "tentar variações"."""
+    from app.apps.analisesps import certificados
+
+    formas = dict((r, t) for r, t in certificados._senhas_a_tentar("  Ab1  "))
+    assert formas[""] == "  Ab1  ".encode("utf-8")
+    assert formas["sem os espaços das pontas"] == b"Ab1"
+    assert len(formas) == 2
+
+    # Sem espaço nas pontas, nada a variar.
+    assert len(certificados._senhas_a_tentar("Ab1")) == 1
+
+
+def test_senha_com_ACENTO_ganha_a_leitura_em_latin1():
+    """Alguns programas geram o .pfx com a senha em latin-1."""
+    from app.apps.analisesps import certificados
+
+    rotulos = [r for r, _ in certificados._senhas_a_tentar("Senhaç1")]
+    assert "lida como latin-1" in rotulos
+
+
+def test_senha_em_branco_tenta_o_certificado_SEM_SENHA():
+    """"Senha errada" para quem não digitou senha nenhuma é a mensagem mais
+    confusa de todas."""
+    from app.apps.analisesps import certificados
+
+    rotulos = [r for r, _ in certificados._senhas_a_tentar("")]
+    assert "sem senha" in rotulos
+
+
+def test_o_diagnostico_separa_ARQUIVO_ERRADO_de_SENHA_ERRADA():
+    """A mensagem antiga dizia as duas coisas ao mesmo tempo — e por isso não
+    dizia nenhuma. São problemas com soluções opostas."""
+    from app.apps.analisesps import certificados
+
+    pem = b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+    assert ".pem" in certificados._diagnostico(pem, "x", "")
+    assert "PDF" in certificados._diagnostico(b"%PDF-1.7 ...", "x", "")
+    assert "vazio" in certificados._diagnostico(b"", "x", "")
+    # Um .pfx de verdade começa com a SEQUENCE do ASN.1.
+    assert "SENHA" in certificados._diagnostico(b"\x30\x82\x09\x00", "abc", "")
+    assert "em branco" in certificados._diagnostico(b"\x30\x82\x09\x00", "", "")
+
+
+def test_conferir_um_arquivo_que_nao_e_certificado_NAO_LEVANTA_erro():
+    """A conferência devolve o diagnóstico; ela existe justamente para o caso
+    em que dá errado, e não pode explodir na cara de quem foi conferir."""
+    from app.apps.analisesps import certificados
+
+    r = certificados.conferir(b"%PDF-1.7 nada a ver", "seja la")
+    assert r["ok"] is False
+    assert "PDF" in r["motivo"]
+    assert r["e_pkcs12"] is False
+
+
+# ===========================================================================
+# ⚠️ O DEFEITO QUE MANTEVE A BUSCA NA RECEITA SEM FUNCIONAR — 13/09/2026
+#
+# Relato do dono, com a mensagem da tela na mão: *"o certificado continua em
+# falha: tentou e NÃO conseguiu — Certificado ou senha inválida. Ele pode ter
+# vencido."* E a desconfiança dele estava certa desde o começo: **a senha
+# estava certa e o certificado estava válido**.
+#
+# A CAUSA: o construtor da `erpbrasil`, ao receber `bytes`, chama
+# `base64.b64decode` em cima — ele assume que bytes significa "conteúdo em
+# base64". Mandando o `.pfx` cru, a biblioteca decodificava lixo e traduzia o
+# erro para "Certificado ou senha inválida!!!".
+#
+# A mensagem acusava a SENHA e o erro era de quem chamava. É o pior tipo de
+# defeito: manda procurar no lugar errado, e não há como desconfiar dele
+# olhando a tela.
+# ===========================================================================
+def test_o_certificado_vai_para_a_Receita_em_BASE64_e_nao_cru(monkeypatch):
+    """Cravado no ponto exato do engano: o que chega à biblioteca tem de ser o
+    conteúdo em base64. Um dia alguém "simplifica" isso de volta."""
+    import base64
+
+    from app.apps.analisesps import sefaz
+
+    recebido = {}
+
+    class CertificadoFalso:
+        def __init__(self, arquivo, senha):
+            recebido["arquivo"] = arquivo
+            recebido["senha"] = senha
+
+    bruto = b"\x30\x82\x0a\x00 conteudo binario do pfx"
+    monkeypatch.setattr(
+        "erpbrasil.assinatura.certificado.Certificado", CertificadoFalso)
+    monkeypatch.setattr(
+        "app.apps.analisesps.certificados.abrir_para_uso",
+        lambda cnpj: (bruto, "SenhaCerta"))
+
+    sefaz._certificado("10656452007869")
+
+    assert recebido["arquivo"] == base64.b64encode(bruto)
+    assert base64.b64decode(recebido["arquivo"]) == bruto
+    assert recebido["senha"] == "SenhaCerta"
+
+
+def test_a_falha_ao_abrir_para_a_Receita_vira_recado_com_o_que_fazer(
+        monkeypatch):
+    """Quando falhar de verdade, a mensagem tem de dizer o passo seguinte — e
+    agora ela não é mais disparada por um engano nosso."""
+    from app.apps.analisesps import sefaz
+
+    def explode(arquivo, senha):
+        raise ValueError("Certificado ou senha inválida!!!")
+
+    monkeypatch.setattr(
+        "erpbrasil.assinatura.certificado.Certificado", explode)
+    monkeypatch.setattr(
+        "app.apps.analisesps.certificados.abrir_para_uso",
+        lambda cnpj: (b"x", "y"))
+
+    with pytest.raises(sefaz.SemCertificado) as erro:
+        sefaz._certificado("10656452007869")
+    assert "Suba o novo em Configurações" in str(erro.value)
+
+
+# ===========================================================================
+# ⚠️ OS DOIS DEFEITOS QUE A PRODUÇÃO ACUSOU EM 14/09/2026
+#
+# Com o certificado já abrindo (o conserto do base64), a busca foi adiante e
+# parou em dois pontos — e os dois são da mesma família: usar a biblioteca de
+# um jeito que ela não suporta, com a mensagem apontando para outro lugar.
+#
+#   NF-e: "'TransmissaoSOAP' object does not support the context manager
+#          protocol" — a classe NÃO é um `with`; quem é o método `cliente()`
+#          dela. O erro estourava ANTES de qualquer conversa com a Receita.
+#
+#   CT-e: "403 Client Error: Forbidden" — a sessão que a classe guarda é
+#          COMUM; o certificado só é preso a ela dentro do `cliente()`.
+#          Postando pela sessão crua, a Receita via um visitante sem
+#          identidade e recusava.
+#
+# ⚠️ ESTE ARQUIVO NÃO PROVA QUE A BUSCA FUNCIONA — não há certificado nem
+# saída para a SEFAZ aqui. Ele prova que o código chama a biblioteca do jeito
+# que ela pede. É o que dá para travar daqui, e é melhor que nada: os dois
+# defeitos eram de CHAMADA, não de rede.
+# ===========================================================================
+def test_a_busca_de_NFe_NAO_usa_TransmissaoSOAP_como_context_manager():
+    """A classe não tem `__enter__`. Um `with` nela estoura antes de falar com
+    a Receita — e foi o que manteve a busca de NF-e parada."""
+    from erpbrasil.transmissao import TransmissaoSOAP
+
+    assert not hasattr(TransmissaoSOAP, "__enter__"), (
+        "a biblioteca passou a suportar `with` — reveja o comentário em "
+        "sefaz._consultar_nfe antes de mudar o código")
+
+    import inspect
+
+    from app.apps.analisesps import sefaz
+    fonte = inspect.getsource(sefaz._consultar_nfe)
+    assert "with TransmissaoSOAP" not in fonte
+
+
+def test_a_busca_de_CTe_manda_o_CERTIFICADO_na_conexao():
+    """Sem o certificado na conexão, a Receita responde 403 — foi o que ela
+    respondeu em produção. O `ArquivoCertificado` é o mesmo caminho que a
+    biblioteca usa por dentro."""
+    import inspect
+
+    from app.apps.analisesps import sefaz
+    fonte = inspect.getsource(sefaz._consultar_cte)
+    assert "ArquivoCertificado" in fonte
+    assert "sessao.cert" in fonte
+    # E NÃO pela sessão crua da TransmissaoSOAP, que é o defeito em pessoa.
+    assert 'getattr(transmissao, "session"' not in fonte

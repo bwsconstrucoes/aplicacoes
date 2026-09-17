@@ -84,7 +84,21 @@
 
   {% if certificados %}
     <table class="sps">
+      {# ⚠️ A COLUNA "A BUSCA" É O QUE FALTAVA, e o buraco era grande.
+
+         *"O certificado continua uma incógnita. Eu coloco o certificado, boto
+         a senha, ele aceita, eu acho que a senha está certa, o certificado
+         está válido. Mas simplesmente nada é feito, nada é executado, e eu não
+         sei o que está acontecendo."*
+
+         Ele estava certo em duas coisas ao mesmo tempo: (1) guardar o
+         certificado NÃO dispara busca nenhuma — é preciso apertar o botão na
+         Documentação Fiscal —, e a tela nunca disse isso; e (2) quando a busca
+         rodava e falhava, nada era escrito em lugar nenhum que ele visse.
+         Agora as duas coisas aparecem AQUI, na tela em que ele acabou de subir
+         o certificado e fica esperando. #}
       <thead><tr><th>Empresa</th><th>CNPJ</th><th>Vale até</th>
+                 <th>A busca na Receita</th>
                  <th>Quem subiu</th><th></th></tr></thead>
       <tbody>
         {% for c in certificados %}
@@ -98,6 +112,37 @@
               {% elif c.vencendo %}
                 <span class="etiqueta ruim">
                   vence em {{ c.dias_para_vencer }} dia(s)</span>
+              {% endif %}
+            </td>
+            <td>
+              {% set b = buscas_por_cnpj.get(c.cnpj) %}
+              {% if not b %}
+                <span class="etiqueta">nunca rodou</span>
+                <small class="cartao-dica">guardar o certificado não dispara a
+                  busca. Vá em
+                  <a href="{{ url_for('analisesps.tela_fiscal', visao='notas') }}">Documentação
+                  Fiscal › Por nota</a> e aperte "Buscar notas na Receita".</small>
+              {% elif b.falhou %}
+                <span class="etiqueta ruim">tentou e NÃO conseguiu</span>
+                <small class="cartao-dica">{{ b.consultado_em|momento_br }} —
+                  {{ b.motivo_da_falha }}</small>
+              {% else %}
+                {# "DOCUMENTO RECEBIDO" NÃO É "NOTA NOVA", e a palavra tinha
+                   de dizer isso: a Receita reentrega o histórico inteiro, e a
+                   maior parte do que ela manda já está aqui pelo relatório.
+                   *"Diz 112 documentos; na planilha só tem nove."* #}
+                <span class="etiqueta boa">{{ b.documentos or 0 }}
+                  documento(s) recebido(s)</span>
+                <small class="cartao-dica">última em
+                  {{ b.consultado_em|momento_br if b.consultado_em else '—' }}
+                  {%- if b.faltam %} · faltam {{ b.faltam }} para buscar{% endif %}</small>
+                {# O QUE A RECEITA DISSE, com as palavras dela — inclusive
+                   quando a notícia é boa. "0 documento(s)" sem explicação se lê
+                   como "não funcionou", e na maior parte das vezes quer dizer
+                   "não há nota nova". #}
+                {% if b.ultimo_recado %}
+                  <small class="cartao-dica">{{ b.ultimo_recado }}</small>
+                {% endif %}
               {% endif %}
             </td>
             <td>{{ c.subido_por or '—' }}</td>
@@ -146,6 +191,43 @@
         anterior, que é como se faz a troca anual.
       </p>
     </form>
+
+    {# -------------------------------------------------------------------
+       CONFERIR SEM GUARDAR — a prova que o dono pediu em 13/09/2026:
+       *"Suspeito que o certificado e a senha estejam corretos, mas a
+       mensagem é de certificado inválido ou senha. Existe algum canto que eu
+       possa tirar essa prova?"*
+
+       A desconfiança tinha fundamento, e a medição mostrou por quê: um espaço
+       colado junto com a senha dava EXATAMENTE a mesma mensagem de senha
+       errada. Quem copia a senha de um e-mail traz o espaço junto.
+
+       Aqui não guarda nada e não mexe no que já está guardado — dá para
+       experimentar à vontade.
+    ------------------------------------------------------------------- #}
+    <details class="conferir-cert">
+      <summary>O certificado não está sendo aceito? Confira aqui sem guardar</summary>
+      <p class="cartao-dica">
+        Isto só <b>tenta abrir</b> e conta o que aconteceu: se abriu, mostra o
+        titular, o CNPJ e a validade que estão <b>dentro</b> do arquivo. Se não
+        abriu, diz se o problema é o arquivo ou a senha.
+        <b>Não guarda nada</b> e não mexe no certificado que já está em uso.
+      </p>
+      <form method="post" enctype="multipart/form-data"
+            action="{{ url_for('analisesps.conferir_certificado') }}">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+          <label>
+            <span class="rotulo-campo">Arquivo (.pfx ou .p12)</span>
+            <input type="file" name="certificado" accept=".pfx,.p12" required>
+          </label>
+          <label>
+            <span class="rotulo-campo">Senha</span>
+            <input type="password" name="senha" autocomplete="off">
+          </label>
+          <button class="btn secundario" type="submit">Conferir</button>
+        </div>
+      </form>
+    </details>
   {% endif %}
 </div>
 

@@ -494,6 +494,47 @@ def _linha_pix(op, reg, classe, conf, alertas) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# ⚠️ AS COLUNAS DA TELA MORAM AQUI, ao lado de quem monta a linha — 15/09/2026
+#
+# Relato do dono: a tela do Bradesco, depois de "Conferir", mostrava
+# "47 operação(ões)" e **47 linhas inteiramente em branco**.
+#
+# A CAUSA: a linha é um dicionário com chaves em português ("Valor
+# (Bradesco)", "Credor (SP)"), e o template pedia chaves técnicas
+# ("valor", "credor"). Nenhuma batia, então toda célula saía vazia. O
+# contador vinha do tamanho da lista, e por isso continuava certo — o que
+# fazia a tela parecer funcionando.
+#
+# POR QUE NÃO FOI PEGO ANTES: o teste da tela dublava `cruzar_tudo` e
+# devolvia um dicionário com as chaves QUE O TEMPLATE QUERIA. Ele provava
+# que o template desenha o que recebe, e não que recebe o que o código
+# produz — o dublê escondia exatamente o defeito que existia.
+#
+# A LIÇÃO, e é por isso que estas listas ficam aqui e não no template:
+# nome de campo que aparece em dois arquivos diferentes vira dois nomes
+# diferentes no dia em que um dos dois mudar. Há teste percorrendo cada
+# coluna daqui e exigindo que a chave exista na linha de verdade.
+# ---------------------------------------------------------------------------
+COLUNAS_BOLETO = [
+    ("Alertas", "Alertas"), ("Empresa", "Empresa"),
+    ("Conta", "Conta (Bradesco)"), ("Valor", "Valor (Bradesco)"),
+    ("SP no banco", "SP (Bradesco)"), ("SP", "SP"),
+    ("Credor", "Credor (SP)"), ("Validação", "Validação"),
+    ("Cód. barras", "Cód. barras"), ("Vencimento", "Vencimento"),
+    ("Status Pgt", "Status Pgt"), ("Diferença", "Diferença"),
+]
+
+COLUNAS_PIX = [
+    ("Alertas", "Alertas"), ("Empresa", "Empresa"),
+    ("Conta", "Conta (Bradesco)"), ("Valor", "Valor (Bradesco)"),
+    ("Nome no banco", "Nome (Bradesco)"), ("SP", "SP"),
+    ("Credor", "Credor (SP)"), ("Classificação", "Classificação"),
+    ("Confiança", "Confiança"), ("Status Pgt", "Status Pgt"),
+    ("Diferença", "Diferença"),
+]
+
+
 # ---------- BOLETO / CONTA DE CONSUMO (nº da SP + código de barras) ----------
 
 def _linha_doc(op, reg, classe, conf, alertas) -> dict:
