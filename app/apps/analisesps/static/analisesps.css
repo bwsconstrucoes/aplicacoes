@@ -1473,3 +1473,114 @@ table.planilha td.num, table.planilha th.num {
   color: #94A3B8; font-weight: 600; font-size: 11px;
 }
 .planilha-vazio { color: #CBD5E1; }
+
+/* As duas visões de VER ficam separadas das duas de TRABALHAR: são coisas
+   diferentes, e a barra tem de mostrar isso sem precisar de legenda. */
+.fiscal-visoes .fiscal-visao.separa {
+  margin-left: 14px;
+  border-left: 1px solid var(--borda, #e2e8f0);
+  padding-left: 18px;
+}
+
+/* A CONVERSA COM O OMIE, atrás de um clique. Não é leitura do dia a dia — mas
+   quando faz falta, é a única coisa que responde "por que não baixou". */
+.conversa-omie { margin-top: 6px; }
+.conversa-omie > summary {
+  cursor: pointer; font-size: 12px; font-weight: 600;
+  color: var(--azul-claro, #2563eb);
+}
+.conversa-omie pre {
+  margin: 6px 0 0; padding: 8px 10px; border-radius: 6px;
+  background: #0F172A; color: #E2E8F0; font-size: 11.5px;
+  line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+  max-height: 280px; overflow: auto;
+}
+
+/* O corte de ano da planilha, dito na cara. Esconder linha sem avisar faria a
+   conta dele não fechar com a SPsBD, e ele não teria como saber por quê. */
+.planilha-escopo {
+  margin: 0 0 10px; padding: 6px 10px; border-radius: 6px;
+  background: #F1F5F9; color: #475569; font-size: 12.5px;
+}
+
+/* ==========================================================================
+   O QUADRO POR CATEGORIA — quantas SPs e QUANTO em cada uma.
+
+   A barra é proporcional ao VALOR, e não à contagem: 4.000 SPs de R$ 50,00 e
+   4.000 de R$ 50.000,00 são problemas de tamanhos diferentes, e é o dinheiro
+   que diz por onde começar.
+   ========================================================================== */
+.quadro-categorias { margin: 0 2px 14px; }
+.quadro-categorias > summary {
+  cursor: pointer; padding: 8px 10px; border-radius: 8px;
+  background: #F8FAFC; border: 1px solid var(--borda, #e2e8f0);
+  font-size: 13px; color: var(--tinta, #0f172a);
+}
+.quadro-categorias > summary b { color: var(--azul-claro, #2563eb); }
+.quadro-tabela { margin-top: 10px; font-size: 12.5px; }
+.quadro-tabela tr.ligada td { background: #EFF6FF; font-weight: 600; }
+.quadro-tabela td.peso { width: 34%; min-width: 160px; }
+.peso-barra {
+  display: inline-block; height: 9px; border-radius: 5px;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  vertical-align: middle; margin-right: 6px; min-width: 2px;
+}
+.quadro-tabela td.peso small { color: #64748b; }
+
+/* ==========================================================================
+   AS DUAS SELECOES DA TELA DE CREDORES — pedido do dono em 15/09/2026:
+   *"tem que ter duas selecoes: a do nome, e em quais grupos vamos aplicar."*
+
+   A bolinha responde "qual nome vale". A caixa responde "este grupo de SPs
+   deve ser reescrito". Ficam VISUALMENTE separadas, com o grupo recuado
+   debaixo do nome: sao perguntas diferentes, e misturar as duas na mesma
+   linha faria a caixa parecer um jeito de escolher o nome.
+   ========================================================================== */
+.credor-legenda { margin: 6px 0 4px; }
+.credor-opcao { flex-direction: column; align-items: stretch; }
+.credor-nome { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.credor-grupos { margin: 2px 0 6px 22px; }
+.credor-grupo {
+  display: flex; align-items: baseline; gap: 6px; cursor: pointer;
+  padding: 1px 0; font-size: 13px;
+}
+.credor-grupo input[type="checkbox"] { cursor: pointer; }
+.credor-grafia { color: #334155; }
+
+/* O GRUPO QUE JA ESTA COM O NOME ESCOLHIDO nao muda nada — a caixa dele nao
+   tem efeito nenhum. Marcar isso evita a pergunta "desmarquei e nao aconteceu
+   nada, esta quebrado?". Quem escreve a classe e o bloco de credores do JS,
+   a cada troca da bolinha. */
+.credor-grupo.grupo-igual { opacity: .55; }
+.credor-grupo.grupo-igual .credor-grafia { text-decoration: none; }
+.credor-grupo .grupo-nota { font-size: 12px; color: #64748b; }
+
+/* Na pilha do "resolve sozinho" os grupos moram dentro de uma celula da
+   tabela, sem o recuo — ali nao ha bolinha acima deles. */
+td.credor-grupos { margin: 0; }
+
+/* DE ONDE A NOTA VEIO — o recorte da planilha das notas. *"Como e que eu sei
+   que eu estou visualizando essas notas que foram baixadas?"* (15/09/2026) */
+.planilha-origem { margin: 6px 0 10px; font-size: 13px; }
+.planilha-origem .etiqueta { text-decoration: none; margin-right: 4px; }
+.planilha-origem .etiqueta.ativa { outline: 2px solid #1b6ec2; }
+.planilha-origem small { display: block; margin-top: 4px; }
+
+/* O recado da Receita que E problema, separado do que e so informacao. */
+.aviso-recado { color: #92400E; font-weight: 600; }
+
+/* OS TOTALIZADORES DO ALTO DA PLANILHA DAS NOTAS — *"seriam os KPIs ai la em
+   cima, os totalizadores"* (dono, 15/09/2026).
+
+   ⚠️ REUSA O COMPONENTE QUE JA EXISTE (.kpis/.kpi/.kpi-rotulo/.kpi-valor), o
+   mesmo das outras seis telas. A primeira versao criou um cartao proprio e
+   quebrou na hora: ja havia um `a.kpi { display: block }` no arquivo, e o
+   cartao novo nasceu com rotulo e numero na mesma linha. Componente repetido
+   nao e so codigo a mais — e um jeito de a mesma tela ficar diferente de si
+   mesma no proximo ajuste.
+
+   Aqui so fica o que este uso tem de proprio: a legenda comprida embaixo do
+   numero, que nas outras telas nao existe. */
+.planilha-cartao .kpis { margin-top: 10px; }
+.planilha-cartao .kpi-sub { line-height: 1.35; }
+.planilha-cartao .kpi-sub b { color: var(--tinta); font-family: var(--fonte-dados); }

@@ -1,0 +1,42 @@
+{# ---------------------------------------------------------------------------
+   AS VISÕES DA DOCUMENTAÇÃO FISCAL — uma lista só, usada pelas quatro telas.
+
+   ⚠️ POR QUE É UM ARQUIVO SÓ: eram cópias desta barra, uma por tela. No dia em
+   que uma visão nova entrasse — e entrou — ela apareceria só em algumas, e a
+   pessoa que estivesse na tela de fora não teria como descobrir que existe.
+
+   *"Está lá 'ver os dados', está muito solto, não tem vínculo com nada. Está
+   ruim da forma que está. Aqui tem 'por lançamento', 'por nota' — aí você
+   colocar aqui dentro. E 'ver os dados' também está foda, tem que ter uma
+   nomenclatura melhor."* (dono, 14/09/2026)
+
+   ELE ESTÁ CERTO NAS DUAS COISAS. A tela é da Documentação Fiscal: é ali que
+   ele está quando quer conferir o dado cru. E o nome não dizia nada — "ver os
+   dados" pode ser qualquer coisa. Agora usa a palavra que ELE usa: planilha.
+
+   AS DUAS FAMÍLIAS FICAM SEPARADAS na barra, de propósito: as duas primeiras
+   são de TRABALHO (recorte, proposta, botão de agir); as duas últimas são de
+   VER, e não têm nada para clicar.
+--------------------------------------------------------------------------- #}
+{% macro visoes(atual, args_base, orfas=0) %}
+  <div class="fiscal-visoes">
+    {% for chave, rotulo, classe in [
+         ('lancamento',  'Por lançamento', ''),
+         ('notas',       'Por nota', ''),
+         ('dados_sps',   'Planilha das SPs', 'separa'),
+         ('dados_notas', 'Planilha das notas', '')] %}
+      {% if chave == atual %}
+        <span class="fiscal-visao ativa {{ classe }}">{{ rotulo }}</span>
+      {% else %}
+        <a class="fiscal-visao {{ classe }}"
+           href="{{ url_for('analisesps.tela_fiscal',
+                    **dict(args_base,
+                           visao=(none if chave == 'lancamento' else chave))) }}">
+          {{ rotulo }}
+          {%- if chave == 'notas' and orfas %}
+            <b>{{ orfas }}</b> sem lançamento
+          {%- endif %}</a>
+      {% endif %}
+    {% endfor %}
+  </div>
+{% endmacro %}

@@ -213,9 +213,12 @@ CATALOGO += [
         "pergunta": "Quanto custou a obra — comprometido e executado?",
         "exemplos": ["quanto custou a obra Creche",
                      "qual o custo executado da Creche este ano",
+                     "quanto custou o projeto Creches 2026",
                      "quanto eu já comprometi nas obras"],
         "parametros": [
             _p("obra", "Obra", TEXTO, "em branco = todas"),
+            _p("projeto", "Projeto", TEXTO,
+               "soma as obras do projeto; em branco = obra a obra"),
             _p("competencia_de", "Competência de", TEXTO, "AAAA-MM, opcional"),
             _p("competencia_ate", "até", TEXTO, "AAAA-MM, opcional"),
         ],

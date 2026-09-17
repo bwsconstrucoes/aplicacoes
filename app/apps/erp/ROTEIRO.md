@@ -498,6 +498,102 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       no caso das notas está escrito que é de propósito. Recortar por obra é
       decisão de negócio, não correção.
 
+- [x] **O NÚMERO-ÍNDICE DO INCC, AO LADO DA VARIAÇÃO** — FEITO em 14/09/2026.
+      **TRAZ A MIGRAÇÃO 068.** Pedido do dono: *"a gente precisa do índice
+      mesmo, não só variação (…) qual índice inicial, qual índice final"*. A
+      coluna de percentual continua; a de índice tem seis casas. A previsão de
+      reajuste mostra a conta pelos dois caminhos.
+      ⚠️ **O número não é o do boletim da FGV** — a base é outra (100 no mês
+      mais antigo guardado), porque o Banco Central só republica a variação. A
+      RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
+
+- [x] **AS DATAS DO DOCUMENTO NUM LUGAR SÓ, E VIGÊNCIA EM DIAS** — FEITO em
+      14/09/2026. **Sem migração.** O dono, vendo a primeira versão: *"você tá
+      me cobrando data do documento em cima e a informação da vigência embaixo,
+      e tem nomenclaturas diferentes"*, e *"a vigência muitas vezes é colocada
+      em dias"*. A validade do documento subiu para o bloco de datas com o nome
+      do negócio (Assinatura · Início · Fim da vigência) e saiu da lista de
+      baixo; dá para informar a data OU o prazo em dias, com a conta à vista;
+      campo de data virou calendário, no formato do Brasil. A leitura passou a
+      perguntar por `vigencia_dias` e pela data de assinatura no FECHO — era por
+      isso que ela não achava o que estava no documento.
+
+- [x] **O DOCUMENTO LIDO ABRE OS CAMPOS QUE FALTARAM** — FEITO em 14/09/2026.
+      **Sem migração.** O dono, importando um contrato: *"não aparece o campo de
+      vigência (…) não permite avançar porque ela é obrigatória. Aí era para
+      abrir os campos, né?"*. As datas do documento passam a aparecer sempre e
+      editáveis, e os campos de cadastro sem resposta abrem numa gaveta.
+      "Vale até" espelha no fim da vigência da obra — no contrato é a mesma data.
+      ⚠️ **No colaborador foram só as datas**: lá o preenchimento tem a trava do
+      CPF e campos resolvidos por nome, e abrir a gaveta pede cuidado próprio.
+
+- [x] **ALINHAR O ÍNDICE COM O BOLETIM** — FEITO em 14/09/2026.
+      **TRAZ A MIGRAÇÃO 069.** O dono, vendo a coluna acima: *"apareceram os
+      índices, mas os números estão diferentes do que eu costumo ver — veja o
+      de 08/2026, 305,943822"*. Estava certo, e noutra régua. Agora ele informa
+      o índice de UM mês, como o boletim mostra, e a série inteira se desloca —
+      para a frente multiplicando, para trás dividindo. **Nenhum reajuste muda
+      de valor**, e há teste com banco de verdade cobrando isso.
+      ⚠️ **Só bate se for o MESMO índice.** Digitar o número de um INCC
+      diferente (o -M no lugar do -DI) deixa a tela plausível e errada; o
+      reajuste continua certo, porque não usa o número absoluto.
+
+- [x] **UMA CONTA DE E-MAIL SERVINDO VÁRIAS EMPRESAS** — FEITO em 14/09/2026.
+      **TRAZ A MIGRAÇÃO 067.** Pergunta do dono: manter um e-mail principal e
+      mandar em nome das outras empresas. A empresa passa a poder usar a conta
+      de outra, aparecendo com o remetente dela. ⚠️ **Metade disso é fora do
+      ERP:** o provedor só costuma aceitar remetente do MESMO domínio da conta
+      (um alias); outro domínio depende de SPF/DKIM no DNS daquele domínio. A
+      tela avisa, e o teste de envio é o que confirma.
+      **Falta:** a logo da empresa é guardada e não aparece em lugar nenhum —
+      nem no PDF dos relatórios, nem no e-mail da cotação. Esperando o dono
+      dizer onde quer.
+
+- [x] **PROJETO AGRUPA OBRAS, E O ALCANCE GANHA EMPRESA E PROJETO** — FEITO em
+      13/09/2026. **TRAZ A MIGRAÇÃO 066.** Pedido do dono: *"com projetos eu
+      faço uma associação de algumas obras (…) eu poder visualizar o projeto,
+      ou seja, o somatório daquelas obras"*.
+      1. **Obras › ▦ Projetos**: cria o projeto e escolhe as obras. Obra
+         pertence a um projeto só; a ficha da obra também escolhe o projeto.
+      2. **Relatórios**: agrupar por projeto e filtrar por projeto. Obra fora
+         de projeto vira a linha "Sem projeto", em vez de sumir.
+      3. **Assistente**: *"quanto custou o projeto X"* responde somado.
+      4. **Cadastro do operador**: marcar empresa(s), projeto(s) ou obra(s) —
+         as três alturas se somam, e obra nova num projeto marcado entra
+         sozinha no alcance.
+      **Falta do lado do dono:** criar os projetos e pendurar as obras.
+
+- [x] **O PERFIL ESCONDE A ÁREA QUE NÃO LIBERA** — FEITO em 13/09/2026, por
+      decisão do dono: *"se a pessoa está liberada apenas pra visualizar
+      lançamento financeiro, ela não tem que ver nada do suprimento"*. Sem
+      migração. Módulo, abas e a tela de início passam a mostrar só o que a
+      pessoa abre; cinco telas que só pediam "estar no ERP" ganharam ação
+      própria, todas liberadas para os perfis prontos — ninguém perde nada, e
+      agora dá para tirar perfil a perfil.
+
+- [x] **O PERFIL DE ACESSO VIRA CADASTRO — seções, níveis e obras por pessoa** —
+      FEITO em 13/09/2026. **TRAZ A MIGRAÇÃO 065** (duas tabelas novas e duas
+      colunas em `usuarios`; apertar o botão no mesmo momento da publicação).
+      Pedido do dono, no modelo do banco dele: cadastra-se o **perfil**, diz-se
+      o que ele abre em cada tela (**não acessa / só olhar / olhar e mexer**) e
+      a pessoa entra dentro do perfil — *"só que tem uma diferença, porque tem
+      a questão da obra"*: **as obras são do cadastro da pessoa**, não do
+      perfil.
+      1. Nova aba **Configurações › Perfis de acesso**: criar, editar e
+         arquivar perfil; 23 seções agrupadas por área, com a explicação do que
+         cada nível libera. Perfil novo **não abre nada**.
+      2. No cadastro do operador: o **perfil de acesso** e a marca **"todas as
+         obras da empresa"** ou **"só as marcadas"**. O cargo antigo fica como
+         herança, e decide só para quem ainda não tem perfil.
+      3. **Onze perfis prontos**, um por cargo de hoje, com exatamente as
+         mesmas permissões. O bloco do `.sql` é **gerado** a partir da tabela
+         de cargos, e a suíte com banco de verdade cobra a equivalência ação
+         por ação — a versão escrita à mão dava aprovação de pagamento a quem
+         hoje só confirma.
+      **Falta do lado do dono:** marcar as obras de cada operador antes de
+      desmarcar "todas as obras" de alguém — quem ficar sem obra marcada deixa
+      de ver lançamento nenhum.
+
 - [x] **O RECORTE POR OBRA VIRA O PADRÃO DO ERP, E NASCE O PERFIL PARCEIRO** —
       FEITO em 12/09/2026. **TRAZ A MIGRAÇÃO 063** (só acrescenta o cargo à
       lista; não mexe em dado e não pode falhar).

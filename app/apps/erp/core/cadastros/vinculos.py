@@ -143,3 +143,57 @@ def definir_responsaveis_da_obra(s: Session, obra_id: int,
                     "a obra por terem sido marcadas como responsáveis",
                     obra_id, len(ligados_agora))
     return {"responsaveis": sorted(quero), "passaram_a_enxergar": ligados_agora}
+
+
+# ---------------------------------------------------------------------------
+# O ALCANCE DITO NO NÍVEL DO PROJETO E DA EMPRESA (migração 066)
+#
+# Pedido do dono em 13/09/2026: *"a gente poder adicionar ao usuário a obra, ou
+# um projeto, ou todas as obras, ou uma empresa ou outra empresa"*.
+#
+# Ficam aqui, junto das obras, porque são a MESMA pergunta — "o que esta pessoa
+# alcança" —, dita em três alturas diferentes. Quem resolve as três numa lista
+# de obras é `permissoes._obras_designadas`, e é lá que a soma acontece, na
+# hora da consulta: obra nova dentro de um projeto já marcado entra sozinha.
+# ---------------------------------------------------------------------------
+def alcance_do_operador(s: Session, usuario_id: int) -> dict[str, list[int]]:
+    """O que está marcado no cadastro desta pessoa, por nível."""
+    from app.apps.erp.db.models.cadastros import UsuarioEmpresa, UsuarioProjeto
+
+    try:
+        projetos = [v.projeto_id for v in s.scalars(select(UsuarioProjeto).where(
+            UsuarioProjeto.usuario_id == usuario_id)).all()]
+        empresas = [v.empresa_id for v in s.scalars(select(UsuarioEmpresa).where(
+            UsuarioEmpresa.usuario_id == usuario_id)).all()]
+    except Exception:
+        logger.warning("ERP: alcance por projeto/empresa indisponível "
+                       "(migração 066 pendente?)")
+        return {"projetos": [], "empresas": []}
+    return {"projetos": sorted(projetos), "empresas": sorted(empresas)}
+
+
+def definir_alcance_do_operador(s: Session, usuario_id: int, *,
+                                projetos: Optional[Iterable[Any]] = None,
+                                empresas: Optional[Iterable[Any]] = None) -> None:
+    """Regrava o alcance por projeto e por empresa. `None` = não mexer."""
+    from app.apps.erp.db.models.cadastros import UsuarioEmpresa, UsuarioProjeto
+
+    if projetos is not None:
+        querem = set(_numeros(projetos))
+        atuais = {v.projeto_id: v for v in s.scalars(select(UsuarioProjeto).where(
+            UsuarioProjeto.usuario_id == usuario_id)).all()}
+        for projeto_id, linha in atuais.items():
+            if projeto_id not in querem:
+                s.delete(linha)
+        for projeto_id in querem - set(atuais):
+            s.add(UsuarioProjeto(usuario_id=usuario_id, projeto_id=projeto_id))
+    if empresas is not None:
+        querem = set(_numeros(empresas))
+        atuais = {v.empresa_id: v for v in s.scalars(select(UsuarioEmpresa).where(
+            UsuarioEmpresa.usuario_id == usuario_id)).all()}
+        for empresa_id, linha in atuais.items():
+            if empresa_id not in querem:
+                s.delete(linha)
+        for empresa_id in querem - set(atuais):
+            s.add(UsuarioEmpresa(usuario_id=usuario_id, empresa_id=empresa_id))
+    s.flush()

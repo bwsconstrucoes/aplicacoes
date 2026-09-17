@@ -205,6 +205,42 @@ def remover_logo(s: Session, empresa_id: int, usuario: Usuario) -> Empresa:
 # ---------------------------------------------------------------------------
 # A conta de envio
 # ---------------------------------------------------------------------------
+def _conta_emprestada(s: Session, empresa: Empresa, alvo: Any) -> Optional[int]:
+    """Valida "esta empresa usa a conta de qual outra" (migração 067).
+
+    Três recusas, e cada uma existe por um motivo que morde:
+
+    · **ela mesma** não é emprestar nada — é conta própria escrita errado;
+    · **quem já empresta** faria uma corrente, e corrente com um elo mexido em
+      outro dia é o "parou de mandar e ninguém sabe por quê";
+    · **conta incompleta** deixaria a empresa pendurada numa conta que não
+      manda — e o erro só apareceria na hora de disparar a cotação.
+    """
+    if alvo in (None, "", 0, "0"):
+        return None
+    try:
+        alvo_id = int(alvo)
+    except (TypeError, ValueError):
+        raise ErroValidacao("Empresa inválida para emprestar a conta de e-mail.")
+    if alvo_id == empresa.id:
+        raise ErroValidacao(
+            "Para usar a conta dela mesma, escolha “conta própria”.")
+    dona = s.get(Empresa, alvo_id)
+    if dona is None:
+        raise ErroValidacao("A empresa escolhida para emprestar a conta não existe.")
+    if getattr(dona, "conta_email_de_id", None):
+        raise ErroValidacao(
+            f"{dona.razao_social} também usa a conta de outra empresa. "
+            f"Escolha a empresa que tem a conta de verdade.")
+    pode, falta = conta_configurada(dona)
+    if not pode:
+        raise ErroValidacao(
+            f"A conta de {dona.razao_social} está incompleta — {falta} "
+            f"Complete a conta dela primeiro.")
+    return alvo_id
+
+
+
 def definir_conta_de_email(s: Session, empresa_id: int, dados: dict[str, Any],
                            usuario: Usuario) -> Empresa:
     """Servidor, porta, usuário, segurança e (opcionalmente) a senha.
@@ -214,6 +250,11 @@ def definir_conta_de_email(s: Session, empresa_id: int, dados: dict[str, Any],
     Isso evita o clássico "editei o telefone e apaguei a senha sem querer".
     """
     empresa = obter(s, empresa_id, travar=True)
+
+    # ---- "esta empresa usa a conta de outra" (migração 067)
+    if "conta_email_de_id" in dados:
+        alvo = dados.get("conta_email_de_id")
+        empresa.conta_email_de_id = _conta_emprestada(s, empresa, alvo)
 
     seguranca = _texto(dados.get("smtp_seguranca")).upper() or "STARTTLS"
     if seguranca not in SEGURANCAS:
@@ -306,7 +347,9 @@ def definir_empresa_da_obra(s: Session, obra_id: int,
 # Para a tela
 # ---------------------------------------------------------------------------
 def _resumo(s: Session, e: Empresa, obras_por_empresa: dict[int, int]) -> dict[str, Any]:
-    pode, falta = conta_configurada(e)
+    pode, falta = conta_configurada(e, s)
+    dona_id = getattr(e, "conta_email_de_id", None)
+    dona = s.get(Empresa, dona_id) if dona_id else None
     return {
         "id": e.id, "razao_social": e.razao_social,
         "nome_fantasia": e.nome_fantasia or "", "cnpj": e.cnpj,
@@ -324,6 +367,9 @@ def _resumo(s: Session, e: Empresa, obras_por_empresa: dict[int, int]) -> dict[s
         "smtp_remetente": e.smtp_remetente or "",
         "smtp_responder_para": e.smtp_responder_para or "",
         "tem_senha": bool(e.smtp_senha_cifrada),
+        # De quem é a conta por onde o e-mail sai (migração 067). Nulo = dela.
+        "conta_email_de_id": dona_id,
+        "conta_email_de_nome": (dona.razao_social if dona else ""),
         "conferido_em": (e.smtp_conferido_em.isoformat()
                          if e.smtp_conferido_em else None),
         "pode_enviar": pode, "o_que_falta": falta,

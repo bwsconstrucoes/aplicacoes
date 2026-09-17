@@ -614,6 +614,204 @@ O que ainda **nao** responde:
 - FALTA **"Quanto esta vencido ha mais de 60 dias?"** — o fluxo mostra o
   vencido num total so, sem faixas.
 
+## 3j. Perfil de acesso virou cadastro — e o que dá para perguntar sobre ele
+
+Em 13/09/2026 o **perfil deixou de ser um nome de cargo escrito em código** e
+virou **cadastro**, do jeito que o dono descreveu: cria-se o perfil, diz-se o
+que ele abre em cada tela (**não acessa / só olhar / olhar e mexer**), e a
+pessoa entra dentro do perfil. As **obras continuam sendo do cadastro da
+pessoa**, e não do perfil — foi a diferença que ele mesmo apontou.
+
+Perguntas que passam a funcionar:
+
+- OK **Quem está no perfil X?**
+- OK **O que este perfil abre, tela por tela?**
+- OK **Quantas pessoas ficariam sem acesso se eu arquivar este perfil?** — o
+  sistema recusa arquivar com gente dentro e diz quantas são.
+- OK **Quem enxerga TODAS as obras da empresa?** — é uma marca no cadastro de
+  cada pessoa, não mais uma lista em código.
+- OK **Quem está sem obra nenhuma marcada?** — essa pessoa não enxerga nada,
+  e quase sempre é cadastro pela metade.
+- OK **Fulano pode pagar? E por quê — veio do perfil ou foi marcado nele?**
+  ⚠️ **Depende de quem pergunta**: só quem cadastra operador alcança isso.
+
+Desde 13/09/2026 o perfil também **esconde a área que não libera**: quem não
+tem Suprimentos não vê o módulo, nem as abas dele, nem a tela de início
+oferecendo — decisão do dono, com estas palavras: *"se a pessoa está liberada
+apenas pra visualizar lançamento financeiro, ela não tem que ver nada do
+suprimento"*. Esconder não é a trava (a trava é a recusa da rota), é para o
+menu não oferecer o que vai responder "sem permissão".
+
+⚠️ **Palavra ambígua que entrou junto: "acesso".** Ela quer dizer duas coisas
+diferentes, e a resposta muda conforme a que se pediu:
+
+- **o que a pessoa FAZ** — vem do perfil (lançar, pagar, aprovar…);
+- **ONDE ela faz** — vem das obras marcadas no cadastro dela.
+
+Alguém pode ter o perfil mais completo da empresa e não enxergar lançamento
+nenhum, por não ter obra marcada. Não é defeito: é o padrão NEGAR.
+
+O que ainda **não** responde:
+
+- FALTA **"O que mudou no acesso de fulano no último mês?"** — cada mudança
+  fica registrada, mas não há pergunta pronta que leia esse histórico.
+- FALTA **"Este perfil está sobrando?"** — ninguém mede quais seções de um
+  perfil nunca foram usadas por quem está nele.
+
+## 3k. PROJETO: um punhado de obras olhado somado
+
+Em 13/09/2026 nasceu o **projeto**: um conjunto de obras que se olha junto.
+A hierarquia do sistema passou a ser **empresa › projeto › obra**, e obra sem
+projeto continua sendo o caso comum.
+
+Perguntas que passam a funcionar:
+
+- OK **Quanto custou o projeto Creches 2026?** — vem SOMADO, não obra a obra,
+  nas mesmas duas visões: comprometido e executado.
+- OK **Quanto cada projeto comprometeu no ano?**
+- OK **Quais obras estão no projeto X?**
+- OK **Qual obra está fora de qualquer projeto?**
+- OK **Quanto esta empresa do grupo gastou?** — já existia; agora convive com
+  o projeto na mesma tela de relatórios.
+
+⚠️ **Duas palavras para não confundir**, e a diferença muda o número:
+
+- **empresa** é o CNPJ que executa a obra;
+- **projeto** é um agrupamento que VOCÊ define, e pode até misturar obras de
+  empresas diferentes.
+
+Somar "projeto" achando que é "empresa" dá um número que parece certo e não é.
+Por isso a linha das obras sem projeto aparece com o nome **"Sem projeto"** —
+número que some é pior que número errado, porque ninguém procura o que não
+sabe que falta.
+
+O que ainda **não** responde:
+
+- FALTA **"Este projeto está dentro do orçamento?"** — continua faltando
+  orçamento, que é a resposta que mais muda uma decisão.
+- FALTA **"Qual o resultado do projeto?"** — depende de fechar a palavra
+  "resultado da obra", que segue indefinida.
+
+## 3l. De onde sai o e-mail de cada empresa
+
+Em 14/09/2026 uma empresa passou a poder **usar a conta de e-mail de outra**:
+o envio sai pela conta principal e aparece com o remetente de quem manda.
+
+Perguntas que passam a funcionar:
+
+- OK **Qual empresa manda e-mail por qual conta?**
+- OK **Alguma empresa está sem conta de e-mail?** — ela não dispara cotação, e
+  a tela de Empresas já conta quantas estão assim.
+- OK **Quando foi o último teste de envio que deu certo, por empresa?**
+- OK **O que falta na conta desta empresa?**
+
+⚠️ **Palavra ambígua: "o e-mail da empresa".** São três coisas diferentes, e
+confundi-las dá resposta errada com cara de certa:
+
+- **a conta que entra no servidor** (usuário e senha) — pode ser de outra
+  empresa;
+- **como aparece para quem recebe** (o remetente) — é sempre da empresa que
+  manda;
+- **o e-mail do cadastro**, que é só contato e não manda nada.
+
+O que ainda **não** responde:
+
+- FALTA **"Este e-mail chegou ou caiu no spam?"** — o ERP registra o que ele
+  entregou ao servidor; o que acontece depois é do provedor de quem recebe.
+- FALTA **"Este domínio está com SPF e DKIM certos?"** — é DNS, fora do ERP.
+  O que dá para fazer é mandar a mensagem de teste e olhar onde ela caiu.
+
+## 3m. O índice do reajuste, e não só a variação
+
+Em 14/09/2026 a tabela de índices ganhou o **número-índice** ao lado da
+variação mensal.
+
+Perguntas que passam a funcionar:
+
+- OK **Qual o índice do INCC em tal mês?**
+- OK **Qual o índice inicial e o final deste reajuste?** — a previsão da
+  medição mostra os dois e a divisão entre eles.
+- OK **De quanto foi o reajuste acumulado da data-base até aqui?**
+- OK **Quais meses faltam na tabela do INCC?**
+
+⚠️ **Palavra ambígua: "o índice".** São duas coisas, e confundi-las dá erro de
+ordem de grandeza:
+
+- **a variação do mês** — 0,42%, que é o que o Banco Central publica;
+- **o número-índice** — 105,403139, que só serve dividido por outro.
+
+⚠️ **Palavra ambígua: "a régua".** No mesmo dia 14/09/2026, vendo a coluna
+nova, o dono disse: *"apareceram os índices, mas os números estão diferentes do
+que eu costumo ver — veja o de 08/2026, 305,943822"*. O número estava certo e
+noutra base. Desde então a tabela pode ser **alinhada ao boletim dele**: ele
+informa o índice de UM mês, como o boletim mostra, e a série inteira se desloca.
+
+Perguntas que isso acrescenta:
+
+- OK **A tabela do INCC está alinhada com o meu boletim?** — a tela de índices
+  diz qual régua está valendo e de onde veio o número.
+- OK **Quem alinhou a tabela, quando, e com qual número?** — fica na auditoria.
+- OK **Alinhar a tabela muda algum reajuste já calculado?** — não muda, e há
+  teste cobrando isso: o fator é razão entre dois meses, e razão não sente
+  mudança de base.
+
+O que ainda **não** responde:
+
+- FALTA **"Qual o índice publicado pela FGV neste mês?"** — a série do
+  número-índice da FGV é licenciada; o Banco Central republica só a variação.
+  O alinhamento resolve a leitura (os números passam a bater), mas quem informa
+  o ponto de partida é uma pessoa, com o boletim na mão.
+- FALTA **"O número que está na tela ainda bate com o boletim de hoje?"** — o
+  sistema não tem como conferir sozinho contra a FGV. Se o Banco Central
+  revisar uma variação passada, a série inteira se desloca a partir da âncora,
+  e só quem olha o boletim percebe.
+- ⚠️ **Marcar a régua com o índice ERRADO não é detectável pelo sistema.** Se
+  alguém digitar o número de um INCC diferente (o -M em vez do -DI), os números
+  da tela ficam plausíveis e errados. O reajuste continua certo — ele não usa o
+  número absoluto —, mas a conferência visual passa a mentir.
+
+## 3n. O documento arquivado e o que ele deixou em branco
+
+Em 14/09/2026 as telas que leem documento passaram a **abrir os campos que a
+leitura não achou** — as datas do documento e os campos de cadastro sem
+resposta. Antes, o que a IA não extraía não existia na tela.
+
+Perguntas que passam a funcionar:
+
+- OK **Quais documentos estão sem data de validade?** — hoje nenhum de tipo que
+  vence: a tela não deixa arquivar sem ela.
+- OK **Quais obras estão sem fim de vigência no cadastro?** 🔒 (escopo por obra)
+- OK **O que vence nos próximos 30 dias?** — já existia, e agora tem menos buraco,
+  porque a data deixou de depender de a IA tê-la encontrado.
+- OK **Quem informou esta data: o documento ou uma pessoa?** — a origem da
+  leitura fica registrada com o documento.
+
+⚠️ **Palavra ambígua: "vigência".** São duas datas próximas e diferentes:
+
+- **a validade do DOCUMENTO** — até quando o papel vale, e é dela que sai o
+  aviso da agenda;
+- **o fim da vigência da OBRA** — campo do cadastro, que é o que o contrato
+  determina.
+  Num contrato de obra as duas coincidem, e por isso a tela pergunta **uma vez
+  só**, com o nome do negócio. Em aditivo NÃO coincidem: o aditivo estende a
+  vigência da obra sem mudar a validade do contrato original.
+
+⚠️ **Palavra ambígua: "prazo".** Também são dois números diferentes, e trocá-los
+dá data errada com cara de certa:
+
+- **prazo de VIGÊNCIA** — por quanto tempo o contrato vale (365 dias, por
+  exemplo). Vira a data final;
+- **prazo de EXECUÇÃO** — por quanto tempo há obra para fazer. Costuma ser
+  menor, e não define até quando o contrato vale.
+
+O que ainda **não** responde:
+
+- FALTA **"Este contrato tem reajuste, e por qual índice?"** respondido a partir
+  do documento sozinho. O campo *Índice de reajuste* existe no cadastro da obra
+  e o contrato pode preenchê-lo, mas quando o contrato descreve a fórmula em
+  texto corrido a leitura não converte isso em regra de cálculo — quem decide
+  data-base, índice e periodicidade continua sendo uma pessoa.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

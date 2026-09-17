@@ -140,20 +140,119 @@ ACOES_SEM_SP = {
 }
 
 
-def _omie_respondeu_ok(plano: dict) -> bool | None:
-    """O Omie confirmou a baixa? `None` quando não deu para saber.
+# ⚠️ O ROBÔ SEMPRE DISSE POR QUE NÃO BAIXOU — ERA ESTA TELA QUE JOGAVA FORA
+#
+# Relato do dono em 14/09/2026, com quatro páginas na mão: *"baixam na planilha
+# mas não baixam no Omie. Não tem sentido. (…) Por que que não está baixando no
+# sistema Omie?"* — e as quatro linhas diziam a mesma frase vazia: *"Não recebi
+# confirmação do Omie para esta baixa."*
+#
+# A FRASE ERA NOSSA, e escondia a resposta. O robô interrompe a sequência do
+# Omie em vários pontos, e em CADA UM ele escreve o motivo:
+#
+#     skip ......................... "Título já consta PAGO no Omie."
+#     abort ........................ "Título não encontrado no Omie. Inclua o
+#                                     título primeiro."
+#     abort_sem_credencial ......... "As credenciais do Omie não chegaram ao
+#                                     robô: falta OMIE_BWS_APP_KEY no servidor."
+#     abort_apos_alterar ........... "Falha ao alterar título. Baixa cancelada."
+#     abort_apos_transferencia ..... "Falha na transferência. Baixa cancelada."
+#     erro_baixa ................... "Falha ao lançar pagamento no Omie."
+#
+# Em TODOS eles não existe um passo `baixar` com `ok`, e a leitura antiga
+# devolvia "não sei" — a tela então imprimia a frase genérica e a explicação de
+# verdade morria dentro do JSON. Ele ficou dois dias procurando no lugar errado
+# porque a tela não contava o que já sabia.
+#
+# E os dois primeiros casos são OPOSTOS: "já estava pago" não é erro nenhum;
+# "título não encontrado" é trabalho para ele fazer no Omie. Tratar os dois com
+# a mesma frase é pior do que não dizer nada.
+def _leitura_do_omie(plano: dict) -> dict:
+    """O que o Omie respondeu, com o motivo que o próprio robô escreveu.
 
-    Os três estados são diferentes e a tela precisa deles: confirmou, recusou,
-    ou não há resposta nenhuma para ler (é o caso do ensaio, e o de uma ação
-    que não chama o Omie)."""
+    Devolve {'estado': …, 'motivo': …}. Os estados:
+      'confirmou'  — houve passo `baixar` e ele voltou ok;
+      'recusou'    — houve passo `baixar` e ele falhou;
+      'ja_pago'    — o título já constava PAGO (não é erro);
+      'parou'      — a sequência foi interrompida antes de baixar;
+      'nao_chamou' — não houve chamada nenhuma ao Omie."""
     passos = (plano.get("responses") or {}).get("omie")
     if not passos:
+        return {"estado": "nao_chamou", "motivo": ""}
+
+    def passo_de(nome):
+        for p in passos:
+            if _texto((p or {}).get("step")).lower() == nome:
+                return p or {}
         return None
+
+    # ⚠️ A CAMADA DE BAIXO: A FRASE DO PRÓPRIO OMIE.
+    #
+    # Cobrança do dono em 14/09/2026, e ela reenquadrou o problema: *"marcar a
+    # planilha só depois do Omie confirmar NÃO é resolver a causa raiz. A causa
+    # raiz é saber POR QUE não está baixando no Omie, porque se eu estou
+    # mandando pra baixar é pra baixar."*
+    #
+    # Ele está certo — e a resposta sempre esteve na mão. O Omie devolve o
+    # motivo em `faultstring` ("título já baixado", "conta corrente não
+    # encontrada", "valor maior que o saldo do título"…), e essa frase chega
+    # inteira até aqui dentro de `response.body`. O robô a resume num genérico
+    # "Falha ao lançar pagamento no Omie", e a tela mostrava o resumo.
+    #
+    # Resumo de erro é erro perdido. Quem vai agir precisa da frase do Omie.
+    def frase_do_omie(passo):
+        corpo = ((passo or {}).get("response") or {}).get("body") or {}
+        return (_texto(corpo.get("faultstring"))
+                or _texto(corpo.get("faultcode"))
+                or _texto(((passo or {}).get("response") or {}).get("raw"))[:200])
+
     baixas = [p for p in passos
               if _texto((p or {}).get("step")).lower() == "baixar"]
-    if not baixas:
-        return None
-    return any(((p or {}).get("response") or {}).get("ok") for p in baixas)
+    if baixas:
+        if any(((p or {}).get("response") or {}).get("ok") for p in baixas):
+            return {"estado": "confirmou", "motivo": ""}
+        # A FRASE DO OMIE PRIMEIRO, o resumo do robô depois. É a do Omie que
+        # diz o que fazer.
+        do_omie = frase_do_omie(baixas[-1])
+        resumo = _texto((passo_de("erro_baixa") or {}).get("motivo"))
+        return {"estado": "recusou",
+                "motivo": (f"O Omie respondeu: {do_omie}" if do_omie
+                           else resumo)}
+
+    if passo_de("skip"):
+        return {"estado": "ja_pago",
+                "motivo": _texto((passo_de("skip") or {}).get("motivo"))}
+
+    # Qualquer interrupção anterior à baixa. Aqui também vale a frase do Omie:
+    # o passo que falhou (consultar, alterar, transferir) traz a explicação
+    # dele, e o resumo do robô só diz que parou.
+    for nome, anterior in (("abort_sem_credencial", ""),
+                           ("abort", "consultar"),
+                           ("abort_apos_alterar", "alterar_se_necessario"),
+                           ("abort_apos_transferencia", "")):
+        parada = passo_de(nome)
+        if parada:
+            do_omie = frase_do_omie(passo_de(anterior)) if anterior else ""
+            resumo = _texto(parada.get("motivo"))
+            return {"estado": "parou",
+                    "motivo": (f"{resumo} O Omie respondeu: {do_omie}"
+                               if do_omie and resumo
+                               else (do_omie or resumo))}
+
+    # Último caso: a sequência acabou sem baixar e sem um passo de parada —
+    # o motivo, se houver, está no último passo que falhou.
+    falhos = [p for p in passos
+              if not ((p or {}).get("response") or {}).get("ok")
+              and (p or {}).get("response")]
+    if falhos:
+        do_omie = frase_do_omie(falhos[-1])
+        if do_omie:
+            return {"estado": "parou",
+                    "motivo": (f"O Omie respondeu, no passo "
+                               f"\"{_texto(falhos[-1].get('step'))}\": "
+                               f"{do_omie}")}
+
+    return {"estado": "parou", "motivo": ""}
 
 
 def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
@@ -185,10 +284,22 @@ def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
         return ERRO, ("O robô rodou em modo de ENSAIO e não gravou nada. "
                       "Nada foi baixado — reenvie este comprovante.")
 
-    confirmou = _omie_respondeu_ok(plano)
-    if confirmou is False:
-        return ERRO, ("O Omie não confirmou a baixa. Nada foi marcado como "
-                      "pago — este comprovante precisa ser reenviado.")
+    omie = _leitura_do_omie(plano)
+
+    # ⚠️ O QUE ACONTECEU COM A PLANILHA E COM O CARD, dito pelo próprio robô.
+    #
+    # Antes esta frase dizia "PODEM ter sido marcados", porque a planilha era
+    # atualizada sem esperar o Omie — e ninguém sabia. Desde 16/09/2026 o robô
+    # NÃO marca quando o Omie não confirma, e avisa que não marcou. Quando esse
+    # aviso vem, a frase deixa de ser "pode ser" e passa a ser certeza.
+    nao_marcou = _texto((plano.get("responses") or {}).get("nao_marcou"))
+    aviso_planilha = (
+        " " + nao_marcou if nao_marcou else
+        " ⚠️ A planilha e o card PODEM ter sido marcados como pagos mesmo "
+        "assim. Confira o título no Omie antes de reenviar.")
+
+    if omie["estado"] == "recusou":
+        return ERRO, (omie["motivo"] or "O Omie recusou a baixa.") + aviso_planilha
 
     if acao in ACOES_SEM_SP:
         # Baixa real, mas sem SP: dizer isso evita que ele vá procurar a SP na
@@ -196,13 +307,59 @@ def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
         return BAIXADO, (ACOES_SEM_SP[acao].capitalize()
                          + ". Não há SP para marcar como paga na planilha.")
 
-    if confirmou is None:
-        return ERRO, ("Não recebi confirmação do Omie para esta baixa. "
-                      "Confira na planilha antes de reenviar.")
+    # ⚠️ "JÁ ESTAVA PAGO" NÃO É ERRO, e chamar de erro faz ele reenviar um
+    # comprovante que não precisa — e reenviar é o caminho para pagar duas
+    # vezes. É a mesma família do "não juntar errado" da conciliação fiscal.
+    if omie["estado"] == "ja_pago":
+        return BAIXADO, (omie["motivo"]
+                         or "O título já constava PAGO no Omie.")
+
+    if omie["estado"] == "parou":
+        return ERRO, (omie["motivo"]
+                      or "A baixa parou antes de chegar ao Omie.") + aviso_planilha
+
+    if omie["estado"] == "nao_chamou":
+        return ERRO, ("O robô NÃO chegou a chamar o Omie para esta página"
+                      + (f" (ação: {acao})" if acao else "")
+                      + ". Nada foi baixado lá. Confira a planilha antes de "
+                      "reenviar.")
 
     # A PLANILHA É ATUALIZADA EM SEGUNDO PLANO pelo robô, então a resposta dele
     # não diz se ela já mudou. Não se promete o que não se sabe.
     return BAIXADO, "Baixa confirmada no Omie. A planilha é atualizada logo em seguida."
+
+
+# Quanto da conversa com o Omie fica guardado. Duas mil letras pegam os três
+# passos com folga; o que passar disso é repetição de cabeçalho.
+TETO_DA_CONVERSA = 4000
+
+
+def _conversa_com_o_omie(plano: dict) -> str:
+    """A sequência de passos do Omie em texto, para ler depois.
+
+    Guarda o passo, se deu certo, e a frase que o Omie respondeu. Não guarda o
+    pedido — ele tem o valor e a conta, e o que falta responder é o "por quê",
+    que vem na resposta."""
+    passos = ((plano or {}).get("responses") or {}).get("omie") or []
+    if not passos:
+        return ""
+
+    linhas = []
+    for p in passos:
+        p = p or {}
+        resposta = p.get("response") or {}
+        corpo = resposta.get("body") or {}
+        frase = (_texto(corpo.get("faultstring")) or _texto(corpo.get("faultcode"))
+                 or _texto(p.get("motivo")))
+        if "response" in p:
+            estado = "ok" if resposta.get("ok") else "FALHOU"
+            http = resposta.get("status")
+            linhas.append(f"{_texto(p.get('step'))}: {estado}"
+                          + (f" (HTTP {http})" if http else "")
+                          + (f" — {frase}" if frase else ""))
+        else:
+            linhas.append(f"{_texto(p.get('step'))}: {frase}")
+    return "\n".join(linhas)[:TETO_DA_CONVERSA]
 
 
 def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
@@ -220,13 +377,28 @@ def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
             pagina = int(recibo.get("page") or 0)
         except (TypeError, ValueError):
             pagina = 0
+        # ⚠️ A SP VEM DE DOIS LUGARES, e a tela lia só um. Relato do dono em
+        # 16/09/2026: a linha do erro mostrava "SP: —" e mandava "confira o
+        # título no Omie" — sem dizer QUAL título.
+        #
+        # O número que o comprovante traz impresso (`id_pipefy`) só existe em
+        # alguns bancos. O número que a conciliação ENCONTROU fica em
+        # `match.id`, e é justamente o que interessa quando algo deu errado:
+        # é por ele que se acha o título no Omie e o card no Pipefy.
+        achado = (bruto or {}).get("match") or {}
         linhas.append({
             "pagina": (primeira_pagina + pagina - 1) if pagina else None,
             "situacao": situacao,
-            "sp_id": _texto(recibo.get("id_pipefy")),
+            "sp_id": (_texto(recibo.get("id_pipefy"))
+                      or _texto(achado.get("id"))),
             "valor": _texto(recibo.get("valor_pago")),
             "recebedor": _texto(recibo.get("nome_recebedor"))[:120],
             "motivo": _texto(motivo)[:500],
+            # ⚠️ A CONVERSA COM O OMIE, GUARDADA. Ver a migração 013 e o
+            # `_conversa_com_o_omie`: enquanto a falha não deixava rastro, ela
+            # era invisível — foi assim com o certificado digital, dois dias
+            # antes, e a lição custou dois dias dele.
+            "conversa_omie": _conversa_com_o_omie(bruto),
         })
 
     for item in resposta.get("duplicados") or []:
@@ -369,14 +541,44 @@ def _mandar_ao_robo(pedaco: bytes, nome: str) -> dict:
 
 
 def _gravar_itens(conn, lote_id: int, linhas: list) -> None:
+    """Grava as linhas de uma leva.
+
+    ⚠️ SEM A COLUNA NOVA, GRAVA SEM ELA — e isto é a correção de um defeito meu,
+    relatado pelo dono em 16/09/2026 com o lote inteiro recusado:
+
+        column "conversa_omie" of relation "comprovantes_item" does not exist
+
+    A coluna nasce na migração 013, e **o código sobe para o Render antes de
+    alguém apertar "Aplicar atualizações do banco"**. Nessa janela, todo
+    comprovante arrastado falhava por inteiro — não é que ficasse sem a conversa
+    do Omie: a baixa não acontecia.
+
+    A LEITURA já tinha essa proteção; a GRAVAÇÃO não. É a regra do `CLAUDE.md`
+    que eu mesmo quebrei, e ela vale para os dois lados: enquanto a migração não
+    for aplicada, o sistema tem de funcionar **sem** a coluna, perdendo só o que
+    ela guarda."""
+    from .db import tem_coluna
+
+    tem_conversa = tem_coluna("comprovantes_item", "conversa_omie")
     for linha in linhas:
-        conn.execute(
-            "INSERT INTO analisesps.comprovantes_item "
-            "  (lote_id, pagina, situacao, sp_id, valor, recebedor, motivo) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (lote_id, linha.get("pagina"), linha.get("situacao", ""),
-             linha.get("sp_id", ""), linha.get("valor", ""),
-             linha.get("recebedor", ""), linha.get("motivo", "")))
+        if tem_conversa:
+            conn.execute(
+                "INSERT INTO analisesps.comprovantes_item "
+                "  (lote_id, pagina, situacao, sp_id, valor, recebedor, motivo, "
+                "   conversa_omie) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (lote_id, linha.get("pagina"), linha.get("situacao", ""),
+                 linha.get("sp_id", ""), linha.get("valor", ""),
+                 linha.get("recebedor", ""), linha.get("motivo", ""),
+                 linha.get("conversa_omie", "")))
+        else:
+            conn.execute(
+                "INSERT INTO analisesps.comprovantes_item "
+                "  (lote_id, pagina, situacao, sp_id, valor, recebedor, motivo) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (lote_id, linha.get("pagina"), linha.get("situacao", ""),
+                 linha.get("sp_id", ""), linha.get("valor", ""),
+                 linha.get("recebedor", ""), linha.get("motivo", "")))
     conn.commit()
 
 
@@ -508,13 +710,37 @@ def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
     for lote_id, situacao, quantos_ in contagens:
         por_lote.setdefault(lote_id, {})[situacao] = quantos_
 
+    # ⚠️ HÁ QUANTO TEMPO ESTÁ ASSIM. A tela dizia "Ainda processando — as linhas
+    # vão aparecendo" para um lote parado desde as 7h47 da manhã. Isso não é
+    # informação, é engano: quem lê fica esperando uma coisa que não vem.
+    #
+    # O lote pode ficar parado por dois motivos, e os dois acontecem: ninguém
+    # começou a processar (ESPERANDO), ou o processo morreu no meio (RODANDO e
+    # o serviço reiniciou). Em nenhum dos dois alguém vai contar sozinho.
+    from .horario import agora
+
+    agora_ = agora()
+
+    def _minutos(quando):
+        if not quando:
+            return None
+        try:
+            return int((agora_ - quando).total_seconds() // 60)
+        except Exception:  # noqa: BLE001 — carimbo estranho não derruba a tela
+            return None
+
     saida = []
     for l in lotes:
         contagem = por_lote.get(l[0], {})
+        parado_ha = _minutos(l[8]) if l[4] in ("ESPERANDO", "RODANDO") else None
         saida.append({
             "id": l[0], "arquivo": l[1], "quem": l[2], "paginas": l[3],
             "situacao": l[4], "levas": l[5], "levas_feitas": l[6],
             "erro": l[7], "recebido_em": l[8], "terminado_em": l[9],
+            "parado_ha": parado_ha,
+            # Quinze minutos é folgado: um PDF de cinquenta páginas leva
+            # poucos minutos. Passou disso sem terminar, alguma coisa houve.
+            "parece_parado": bool(parado_ha is not None and parado_ha >= 15),
             "contagem": [(s, ROTULOS.get(s, s), contagem[s])
                          for s in ORDEM if contagem.get(s)],
             "resolvidos": contagem.get(BAIXADO, 0) + contagem.get(DUPLICADO, 0),
@@ -532,12 +758,24 @@ def itens_do_lote(lote_id: int) -> list[dict]:
     from .db import consultar
 
     ordem = {s: n for n, s in enumerate(ORDEM)}
-    linhas = consultar(
-        "SELECT pagina, situacao, sp_id, valor, recebedor, motivo "
-        "  FROM analisesps.comprovantes_item WHERE lote_id = ? "
-        " ORDER BY pagina NULLS LAST", (lote_id,))
+    # A conversa com o Omie vem junto: é ela que responde "por que não baixou",
+    # e a tela a mostra escondida atrás de um clique — não é leitura do dia a
+    # dia, mas quando faz falta não pode estar noutro lugar.
+    try:
+        linhas = consultar(
+            "SELECT pagina, situacao, sp_id, valor, recebedor, motivo, "
+            "       conversa_omie "
+            "  FROM analisesps.comprovantes_item WHERE lote_id = ? "
+            " ORDER BY pagina NULLS LAST", (lote_id,))
+    except Exception:  # noqa: BLE001 — migração 013 ainda não aplicada
+        logger.exception("Análise de SPs: lendo os itens sem a conversa do Omie")
+        linhas = [tuple(l) + ("",) for l in consultar(
+            "SELECT pagina, situacao, sp_id, valor, recebedor, motivo "
+            "  FROM analisesps.comprovantes_item WHERE lote_id = ? "
+            " ORDER BY pagina NULLS LAST", (lote_id,))]
     itens = [{"pagina": l[0], "situacao": l[1], "rotulo": ROTULOS.get(l[1], l[1]),
-              "sp_id": l[2], "valor": l[3], "recebedor": l[4], "motivo": l[5]}
+              "sp_id": l[2], "valor": l[3], "recebedor": l[4], "motivo": l[5],
+              "conversa_omie": l[6] if len(l) > 6 else ""}
              for l in linhas]
     itens.sort(key=lambda i: (ordem.get(i["situacao"], 99),
                               i["pagina"] if i["pagina"] is not None else 10 ** 6))

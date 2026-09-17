@@ -349,7 +349,8 @@ def guardar_escolha(documento: str, nome: str, tipo: str, automatico: bool,
         conn.commit()
 
 
-def sps_para_reescrever(documento: str, nome: str, fora=()) -> list:
+def sps_para_reescrever(documento: str, nome: str, fora=(),
+                        grafias_fora=()) -> list:
     """Os IDs das SPs daquele CPF/CNPJ cujo credor está escrito diferente.
 
     COMPARA O TEXTO EXATO, e não a chave: o objetivo aqui é deixar a planilha
@@ -370,16 +371,34 @@ def sps_para_reescrever(documento: str, nome: str, fora=()) -> list:
     quatro ficam idênticas às certas.
 
     Por isso o que fica de fora fica ERRADO DE PROPÓSITO, à vista, esperando a
-    correção do número."""
+    correção do número.
+
+    ⚠️ `grafias_fora` SÃO OS GRUPOS INTEIROS QUE ELE DESMARCOU — a segunda
+    seleção da tela, pedida em 15/09/2026: *"você propõe qual selecionar pra
+    poder equalizar o nome do fornecedor, só que da lista às vezes tem grupos
+    de SPs que eu não quero alterar. Ou seja, tem que ter duas seleções: a do
+    nome, e em quais grupos vamos aplicar."*
+
+    É o mesmo motivo do `fora`, no tamanho certo. O caso que ele descreve —
+    quatro SPs com o nome de uma locadora e o CNPJ de outra — é um GRUPO
+    inteiro, não SPs soltas: desmarcá-las uma a uma dentro da janela dá o
+    mesmo resultado e cobra quatro cliques e a lembrança de abrir a janela.
+
+    As duas seleções somam: desmarcar o grupo tira todas as dele, e ainda dá
+    para tirar uma SP avulsa de um grupo que ficou marcado."""
     from .db import consultar
 
     linhas = consultar(
-        "SELECT id FROM analisesps.sps "
+        "SELECT id, trim(coalesce(credor, '')) FROM analisesps.sps "
         " WHERE regexp_replace(coalesce(documento, ''), '\\D', '', 'g') = ? "
         "   AND trim(coalesce(credor, '')) <> ? "
         "   AND trim(coalesce(credor, '')) <> ''", (so_digitos(documento), nome))
     deixar_de_fora = {str(i).strip() for i in (fora or ()) if str(i).strip()}
-    return [str(l[0]) for l in linhas if str(l[0]) not in deixar_de_fora]
+    grupos_de_fora = {str(g).strip() for g in (grafias_fora or ())
+                      if str(g).strip()}
+    return [str(l[0]) for l in linhas
+            if str(l[0]) not in deixar_de_fora
+            and str(l[1] or "").strip() not in grupos_de_fora]
 
 
 # ---------------------------------------------------------------------------

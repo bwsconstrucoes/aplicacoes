@@ -21,7 +21,155 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 A 064 — o botão tem de ser apertado junto com a publicação
+### AS DATAS DO DOCUMENTO: UM LUGAR SÓ, COM O NOME DO NEGÓCIO (sem migração)
+
+Segunda rodada, no mesmo dia, depois que ele viu a primeira versão:
+
+> *"Aí tem início da vigência, fim da vigência. Tá invertido, tá ano-traço-mês-
+> traço-dia. Tem que ser no formato Brasil, né? Outra coisa: lá em cima tem
+> datas do documento, emissão e vale até. Aí tá conflitante com a informação lá
+> de baixo, que é vigência. Tá meio esquisito. Você tá me cobrando data do
+> documento em cima e a informação da vigência embaixo. E tem nomenclaturas
+> diferentes. Não está direito não aqui."*
+
+> *"A vigência, muitas vezes, é colocada em dias (…) deveria poder colocar a
+> data exata, que tem contrato que tem a data exata, ou então a quantidade de
+> dias. E essas informações existiam no documento que eu li, não sei por que
+> não foi identificado: tem a data de assinatura do contrato, no final, e a
+> quantidade de dias de vigência, que no caso é 365."*
+
+Três defeitos, os três reais:
+
+1. **Data pedida em formato de banco.** Os campos abertos eram caixa de texto
+   com "AAAA-MM-DD". Viraram **campo de data** de verdade — o navegador mostra
+   no formato do país (dd/mm/aaaa no computador dele).
+2. **A mesma data perguntada duas vezes, com nomes diferentes.** Num contrato,
+   "até quando o documento vale" e "fim da vigência" **são a mesma data**. Agora
+   a validade do documento **sobe** para o bloco de datas com o nome do negócio
+   (Assinatura · Início da vigência · Fim da vigência) e some da lista de baixo.
+   O de-para está em `VALIDADE_E_O_CAMPO`, no `preenchimento.py`: contrato →
+   `vigencia_fim`, seguro → `seguro_vigencia_fim`. Tipo sem campo equivalente
+   (certidão, licença) continua dizendo "Vale até" — inventar nome seria pior.
+3. **A leitura não achava o que estava no documento, e havia motivo.** Duas
+   causas, não azar:
+   - **não existia campo para vigência em DIAS.** Os campos eram
+     `vigencia_inicio`, `vigencia_fim` e `prazo_execucao_dias` — e prazo de
+     execução é outro número. Contrato que diz "vigência de 365 dias" não tinha
+     onde ser guardado, e a instrução manda deixar vazio em vez de inventar
+     (comportamento certo, campo faltando). Agora existe `vigencia_dias`;
+   - **"emissão" não é palavra de contrato.** A data existe no FECHO, por
+     extenso ("Recife, 12 de fevereiro de 2026"), sem rótulo. A instrução agora
+     diz isso com todas as letras, e pede `data_assinatura`.
+
+**O prazo em dias é meio de ENTRADA, não dado novo:** dias + data de partida dão
+a data final, e é a data final que fica guardada e vira aviso. A tela mostra a
+conta ("365 dias a partir de 12/02/2026 dão 12/02/2027") para alguém conferir —
+número que vira data sem conferência é erro esperando acontecer. Guardar também
+o número 365 exigiria coluna nova; o que foi digitado fica na trilha de
+auditoria do preenchimento. ⚠️ **A contagem do dia inicial varia por contrato**,
+e a tela avisa: há contrato que conta o próprio dia da assinatura.
+
+### O DOCUMENTO LIDO AGORA ABRE OS CAMPOS QUE A IA NÃO ACHOU (sem migração)
+
+14/09/2026, o dono importando um contrato para criar obra: *"ele fez a leitura,
+ok, só que aí não aparece o campo de vigência. E quando eu boto criar obra e
+arquivar, aparece 'contrato da obra vence, informe até quando vale' (…) não tem
+opção, não aparece o campo, ele leu o contrato, talvez não leu essa informação,
+e não permite avançar porque ela é obrigatória. Aí era para abrir os campos,
+né?"*
+
+**Era exatamente isso, e o fluxo ficava trancado.** A tela mandava para o
+servidor só o que a leitura tinha achado. Contrato que não escreve a vigência
+dentro do texto — e há muitos — batia na recusa do arquivamento (a regra é
+antiga e está certa: tipo que vence exige até quando vale, senão a agenda não
+avisa) **sem ter onde digitar a data cobrada**. Não havia saída pela tela.
+
+O que mudou, nas três telas que leem documento (ficha da obra, obra nova pelo
+documento, documento do colaborador):
+
+- **"Datas do documento" aparece sempre** — emissão, "vale até" e competência —,
+  preenchida com o que a leitura achou e **editável**. O que o tipo exige vem
+  marcado com `*`, e falta de data obrigatória é avisada ALI, antes de mandar,
+  em vez de virar recusa no fim.
+- **Os campos de cadastro que vieram vazios abrem numa gaveta** ("Preencher o
+  que o documento não disse"). Antes, campo sem resposta simplesmente não
+  existia na tela. Nada ali entra marcado: o que não for digitado continua
+  vazio.
+- **"Vale até" espelha no "Fim da vigência"** do cadastro da obra, porque num
+  contrato são a mesma data. Digitar duas vezes é convite a digitar diferente,
+  e aí a agenda e a ficha da obra passariam a discordar.
+
+⚠️ **No colaborador foram só as datas**, não a gaveta de campos: ali o
+preenchimento tem a trava do CPF (documento de pessoa errada preenchendo
+cadastro vai parar em holerite) e campos que se resolvem por nome, como a
+função. Abrir a gaveta ali pede cuidado próprio — ficou de fora, de propósito.
+
+
+### A 069 ALINHA O ÍNDICE COM O BOLETIM DO DONO — e ele precisa informar UM número
+
+Publicada a 068, o dono olhou a tela e disse: *"apareceram os índices, mas os
+números estão diferentes do que eu costumo ver. Veja o de 08/2026:
+305,943822."*
+
+**Ele estava certo, e o número não estava errado — estava noutra régua.** O
+Banco Central republica só a VARIAÇÃO mensal do INCC-DI (série 192); a série do
+número-índice da FGV é licenciada. Então o sistema acumula o índice sozinho, e
+acumular obriga a escolher onde a contagem começa: começava em **100 no mês
+mais antigo guardado (01/2010)**. Com essa régua, 08/2026 dá 305,943822 — o
+custo da construção multiplicado por 3,059 desde janeiro de 2010. O boletim
+dele usa outra base e mostra outro número para o mesmo mês.
+
+A 069 resolve **sem inventar número**: na tela de índices ele digita o índice de
+**um** mês, como o boletim dele mostra, e a série inteira se desloca para bater
+— para a frente multiplicando pelas variações, para trás dividindo.
+
+- **Nenhum reajuste muda de valor.** O fator é índice final ÷ índice inicial, e
+  essa divisão dá o mesmo resultado em qualquer régua. Há teste com banco de
+  verdade cobrando exatamente isso (`tests/test_indice_ancora_banco.py`).
+- **Uma âncora por índice**, de propósito: duas que não fechem entre si
+  partiriam a série em dois trechos incompatíveis, e o fator entre meses de
+  lados diferentes sairia errado com cara de certo.
+- **O que o sistema não consegue conferir:** se alguém digitar o número de um
+  INCC diferente (o -M em vez do -DI), a tela fica plausível e errada. O
+  reajuste continua certo — ele não usa o número absoluto —, mas a conferência
+  visual passa a mentir.
+
+**Pendente do lado dele:** informar esse número. Enquanto não informar, a tela
+diz com todas as letras que a régua é a do sistema e não a do boletim.
+
+
+### TRAZ AS MIGRAÇÕES 061 A 069 — o botão tem de ser apertado junto com a publicação
+
+**Publicado na `main` em 14/09/2026** (commit `726a985`, autorizado pelo dono:
+*"eu falei ajusta e já publica"*). O Render já subiu o código; o botão
+**"Aplicar atualizações do banco"**, em Configurações do ERP, precisa ser
+apertado por um ADMIN. Enquanto não for, a coluna de índice não aparece e as
+telas de perfis/projetos não funcionam.
+
+A **068** acrescenta o **número-índice** à tabela de índices, ao lado da
+variação, e já preenche o que está guardado. Não tira nada: a coluna de
+percentual continua.
+
+
+A **067** deixa uma empresa **usar a conta de e-mail de outra**: uma coluna
+nova em `empresas`, sem mexer em dado nenhum. Quem já tem conta própria
+continua exatamente como está.
+
+
+A **066** cria o **PROJETO** (um conjunto de obras que se olha somado) e o
+**alcance do operador por empresa e por projeto**, além da obra. Acrescenta a
+tabela `projetos`, a coluna `obras.projeto_id` e duas tabelas de ligação. Não
+tira acesso de ninguém: sem projeto marcado, tudo segue como está.
+
+
+A **065** é a maior delas: o **perfil de acesso vira cadastro**. Cria as
+tabelas `perfis` e `perfil_secoes`, acrescenta duas colunas em `usuarios`
+(o perfil apontado e a marca "enxerga todas as obras") e deixa **onze perfis
+prontos**, um por cargo de hoje, com exatamente as mesmas permissões — ninguém
+ganha nem perde acesso no dia da virada, e há teste com banco de verdade
+cobrando isso ação por ação. ⚠️ **São colunas novas em `usuarios`**: entre
+publicar e apertar o botão, a tela de operadores falha. Apertar no mesmo
+momento fecha o buraco.
 
 A **064** acrescenta o limite de IA ao cadastro do operador e já deixa todo
 mundo com US$ 5,00. ⚠️ **É coluna nova em `usuarios`** — a armadilha conhecida
@@ -105,6 +253,315 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
 
 ---
 
+**Estado em 14/09/2026 (vigésima quarta entrega):** **o NÚMERO-ÍNDICE do INCC,
+ao lado da variação.** **TRAZ A MIGRAÇÃO 068.**
+
+### O pedido
+
+*"Você puxou e colocou a variação de um mês pro outro, mas a gente precisa do
+índice mesmo. Não só variação, porque normalmente a gente calcula através do
+índice (…) caso a gente queira saber qual índice inicial, qual índice final, a
+gente precisa visualizar eles dessa forma. (…) Pode manter a coluna de
+percentual, contanto que tenha também a de índice."*
+
+### Como ficou
+
+A tabela em **Configurações › Índices (INCC)** passou a ter a coluna
+**Índice**, com seis casas decimais, ao lado da variação — que ficou, como ele
+pediu. A previsão de reajuste também passou a mostrar a conta pelos índices:
+*"105,403139 ÷ 100,000000 = 1,054031"*, ao lado da conta por percentual.
+
+**De onde vem o número, e a ressalva que precisa estar escrita:** o Banco
+Central republica o INCC-DI como VARIAÇÃO mensal (série 192) — o número-índice
+da FGV é série licenciada, e não há como puxá-lo de graça. Então o índice é
+**acumulado pelo próprio sistema** a partir das variações, com **base 100 no
+mês mais antigo guardado**:
+
+> O número absoluto **não é igual ao do boletim da FGV**, porque a base é
+> outra. **A razão entre dois meses é idêntica** — e é ela que vira o fator de
+> reajuste (índice final ÷ índice inicial). A tela diz isso com todas as
+> letras, junto da base.
+
+### Duas decisões de engenharia que valem o registro
+
+1. **A série inteira é refeita a cada coleta ou lançamento**, e não só o mês
+   novo. O Banco Central revisa variação passada, e um mês revisado desloca
+   todos os seguintes: meia série atualizada daria, entre dois meses de lados
+   diferentes do remendo, um fator errado com cara de certo.
+2. **O acumulado é feito em precisão cheia e só o valor guardado é
+   arredondado.** Arredondar a cada passo empurraria o erro para a frente, mês
+   após mês.
+
+A migração já preenche o que está guardado, com a mesma conta escrita em SQL —
+conferida contra o cálculo do sistema, dígito por dígito.
+
+### Conferência
+
+- Suíte sem banco: passa.
+- `tests/test_numero_indice_banco.py`: 8 casos com Postgres de verdade, e o
+  que mais importa é o que prova que **índice final ÷ índice inicial dá
+  exatamente o mesmo fator** do acumulado por percentual.
+- Tela exercitada no navegador, com uma série de 12 meses.
+
+---
+
+**Estado em 14/09/2026 (vigésima terceira entrega):** **uma conta de e-mail
+pode servir várias empresas.** **TRAZ A MIGRAÇÃO 067.**
+
+### A pergunta do dono, e a resposta
+
+*"O ideal seria que a gente continuasse utilizando um e-mail principal para
+encaminhar de outras empresas, e de repente usar um alias — mas eu acho que
+não dá, né? (…) é e-mail da Locaweb."*
+
+**Dá, e metade disso é fora do ERP** — é a parte que precisa estar escrita,
+porque é onde a coisa falha em silêncio:
+
+- **o que o ERP faz:** a empresa deixa de ter conta própria e passa a usar a
+  de outra. O e-mail SAI pela conta principal (mesmo servidor, usuário e
+  senha) e APARECE com o remetente dela — "Como aparece" e "Responder para"
+  continuam sendo da empresa que está mandando;
+- **o que o ERP não faz:** o provedor aceitar um remetente de outro domínio.
+  Endereço do MESMO domínio (um alias) costuma passar direto; de domínio
+  diferente é recusado, ou chega marcado como spam, a menos que aquele
+  domínio autorize o servidor no DNS (SPF e DKIM). Isso se acerta na Locaweb.
+
+A tela diz isso com todas as letras no momento em que ele escolhe emprestar, e
+a recusa do servidor virou um recado que explica a causa em vez de despejar o
+erro do protocolo.
+
+### Como ficou
+
+Em **Configurações › Empresas › (empresa) › Conta de e-mail** há agora a
+escolha **"De onde sai o e-mail desta empresa"**: *conta própria* ou *usar a
+conta de <empresa>*. Emprestando, os campos de servidor, usuário e senha somem
+— não há o que preencher —, e a lista de empresas passa a mostrar "sai pela
+conta de X" em vez do usuário.
+
+**Três recusas no cadastro, cada uma por um motivo que morde:** apontar para si
+mesma (é conta própria escrita errado), apontar para quem também empresta
+(corrente com um elo mexido em outro dia é o "parou de mandar e ninguém sabe
+por quê") e apontar para conta incompleta (o erro só apareceria na hora de
+disparar a cotação).
+
+### Uma coisa que ele perguntou e ficou anotada
+
+**A logo da empresa é guardada e não é usada em lugar nenhum** além da própria
+tela de Empresas — nem no PDF dos relatórios, nem no e-mail da cotação. Ficou
+pronta a metade de guardar e faltou a de usar. Está na fila, esperando ele
+dizer onde quer.
+
+### Conferência
+
+- Suíte sem banco: passa.
+- `tests/test_conta_email_emprestada_banco.py`: 8 casos com Postgres de
+  verdade, inclusive o que confere que o cabeçalho da mensagem sai com o
+  remetente de quem manda, e não com o da conta que entrou no servidor.
+- Tela exercitada no navegador: escolher a conta emprestada, os campos
+  sumindo, o aviso aparecendo, salvar, e a lista mostrando "sai pela conta de".
+
+---
+
+**Estado em 13/09/2026 (vigésima segunda entrega):** **projeto agrupa obras, o
+alcance do operador ganha três alturas, e o perfil passa a ESCONDER a área que
+não libera.** **TRAZ A MIGRAÇÃO 066.**
+
+### O que o dono fechou, nas palavras dele
+
+*"Nós temos o perfil de acesso. O perfil vai dizer quais áreas do sistema
+aquela pessoa vai poder acessar, e se ela tem poderes apenas de visualização ou
+de edição. Aí nós teremos os usuários: eu associo ele a obras ou não — a uma
+obra, ou mais obras, ou a todas."*
+
+E acrescentou o que faltava:
+
+*"No cadastro das obras eu precisaria criar PROJETOS, porque com projetos eu
+faço uma associação de algumas obras e coloco todas dentro do projeto (…) tudo
+que eu for visualizar em relação a elas — relatórios, resultados, custos — eu
+poder visualizar o projeto, ou seja, o somatório daquelas obras. (…) E a gente
+poder adicionar ao usuário a obra, ou um projeto, ou todas as obras, ou uma
+empresa ou outra empresa."*
+
+E respondeu, de uma vez, a pergunta que voltava:
+
+*"Se a pessoa está liberada apenas pra visualizar lançamento financeiro, ela
+não tem que ver nada do suprimento. Não vai ver cadastro de suprimento, de
+insumo, pedidos de compra — não vai ver nada disso se eu não disponibilizar pra
+aquele perfil."*
+
+### Como ficou
+
+**1. Projeto.** Cadastro em **Obras › ▦ Projetos**: código, nome e quais obras
+entram. Obra pertence a **um** projeto só — em dois, o somatório contaria a
+mesma obra duas vezes. A obra também escolhe o projeto pela ficha dela. Nos
+relatórios entrou **agrupar por projeto** e **filtrar por projeto**; obra fora
+de projeto aparece numa linha chamada **"Sem projeto"**, em vez de sumir. O
+assistente responde *"quanto custou o projeto X"* somado, nas mesmas duas
+visões (comprometido e executado).
+
+**2. O alcance do operador tem três alturas, e elas se somam:** empresa,
+projeto e obra. **A obra continua sendo a unidade do recorte** — empresa e
+projeto são jeitos de NOMEAR um conjunto de obras, resolvido na hora da
+consulta. Duas consequências que valem o registro:
+
+- **obra nova dentro de um projeto já marcado entra sozinha** no alcance de
+  quem tem o projeto: ninguém precisa voltar no cadastro de cada pessoa;
+- **todo o recorte que já existia** (títulos, notas, agenda, colaboradores,
+  suprimentos) passou a obedecer empresa e projeto **sem uma linha a mais em
+  cada lugar**, porque tudo passa pela mesma função.
+
+**3. O perfil esconde a área.** O módulo, as abas e o cartão da tela de início
+somem para quem o perfil não libera. Para isso, cinco telas que só pediam
+"estar no ERP" ganharam **ação própria** (Solicitações, Fundo fixo, Empreitas,
+Painel de obras e Locações) — todas nascendo liberadas para os onze perfis
+prontos, ou seja, **ninguém perde nada**; o que muda é que agora dá para tirar,
+perfil a perfil, na tela. Esconder **não é a trava**: a trava continua sendo a
+recusa da rota, e a suíte prova as duas coisas.
+
+### Quatro coisas que apareceram no caminho
+
+1. **A tela de início contava a agenda para quem não tem agenda.** "2
+   obrigações vencidas" aparecia para um perfil que não abre a tela — e sem
+   poder fazer nada a respeito. Sumiu junto com o módulo.
+2. **O botão do módulo apontava para a primeira aba da lista**, que pode ser
+   justamente a que a pessoa não abre. Agora aponta para a primeira que ela
+   abre.
+3. **A lista de projetos não pode entregar o nome das obras.** Ela é aberta a
+   quem entra no ERP (o projeto é filtro de tela); quem é preso a uma obra não
+   tem por que saber o nome das outras. O detalhe, esse exige `configurar`.
+4. **Desmarcar "entrar no ERP" tinha deixado de fechar o ERP** — e isso foi a
+   suíte completa com banco que pegou, depois do commit. Enquanto quase toda
+   tela pedia `ver_erp`, tirar a porta de entrada fechava o sistema na prática;
+   com cada tela tendo ação própria, a caixinha passaria a fechar só as poucas
+   que ainda pedem `ver_erp`. Marcação que promete uma coisa e faz outra é pior
+   do que não existir: agora desmarcar a porta **desliga a pessoa**, e o ADMIN
+   continua alcançando as telas que consertam o sistema — trancar quem
+   destranca não é decisão, é acidente.
+
+### Conferência
+
+- Suíte sem banco: passa (inclusive duas travas estruturais novas — toda aba do
+  menu tem de ter ação própria, e o botão do módulo tem de levar a uma tela que
+  a pessoa abre).
+- `tests/test_projetos_e_alcance_banco.py`: 15 casos com Postgres de verdade,
+  entre eles o que prova que **obra nova no projeto entra sozinha** no alcance.
+- `tests/test_perfis_cadastro_banco.py`: 27 casos, dois deles novos —
+  perfil só de financeiro recebe 403 em Suprimentos, Obras e Configurações, e
+  não vê esses módulos no menu.
+- Telas exercitadas no navegador: criar projeto com obras, filtrar obras por
+  projeto, relatório somado por projeto, cadastro do operador com empresa e
+  projeto, e a comparação do menu entre o administrador e um perfil só de
+  financeiro.
+
+### O que fica pendente do lado do dono
+
+1. **Apertar "Aplicar atualizações do banco" no mesmo momento da publicação**
+   (migrações 061 a 066).
+2. **Criar os projetos** em Obras › ▦ Projetos e pendurar as obras.
+3. **Montar os perfis que ele descreveu** — administrador financeiro,
+   comprador, diretoria, diretoria de obras — e apontar cada operador para o
+   seu, marcando empresa, projeto ou obras.
+
+---
+
+**Estado em 13/09/2026 (vigésima primeira entrega):** **o perfil de acesso
+virou CADASTRO.** **TRAZ A MIGRAÇÃO 065.**
+
+### O que o dono pediu, e a reclamação junto
+
+*"Essa discussão sobre o que se pode visualizar, ela já foi discutida
+repetidamente (…) o operador, mais, ele não vai ter acesso a nada. Aí eu vou
+agregando ao cadastro dele possibilidades: somente leitura de alguma área,
+leitura e edição das áreas. Isso pra uma obra, pra várias obras, pra todas as
+obras. (…) Por exemplo, o Banco Bradesco: a gente tanto cadastra o usuário
+como cadastra perfil de uso. E dentro daquele perfil, eu incluo pessoas. (…)
+Só que tem uma diferença do Bradesco, porque tem a questão da obra, né? Quais
+obras a pessoa tem acesso? Então, não era pra gente estar discutindo tanto
+isso repetidamente."*
+
+Ele estava certo, e a causa da repetição era estrutural: **quem podia o quê
+estava colado ao NOME DO CARGO, escrito em código**. Toda vez que ele dizia
+"fulano tem de ver só a obra dele", a resposta era mexer no código e discutir
+cargo por cargo. Por isso a mudança não foi mais um remendo — foi trocar o
+modelo.
+
+### Como ficou
+
+- **Perfil é cadastro**, em Configurações › **Perfis de acesso**. Para cada
+  uma das 23 seções do sistema, o perfil escolhe **Não acessa**, **Só olhar**
+  ou **Olhar e mexer**. Perfil novo nasce sem abrir nada.
+- **As obras são do OPERADOR**, não do perfil — a diferença que ele apontou.
+  No cadastro da pessoa: *todas as obras da empresa* ou *só as marcadas*.
+  Duas pessoas do mesmo perfil alcançam obras diferentes.
+- **O cargo antigo continua na tabela e no modelo**, e decide para quem ainda
+  não tem perfil apontado. Ele sai numa migração futura, quando nada mais o
+  ler. Tirá-lo agora derrubaria o ERP na janela entre publicar e apertar o
+  botão — a armadilha conhecida desta casa.
+- As **marcações por pessoa** (migração 032) continuam valendo POR CIMA do
+  perfil: é o "fulano autoriza enquanto o diretor está de férias".
+
+### A guarda não foi reescrita, e isso é escolha
+
+As ações (`lancar`, `pagar`, `ver_arquivo`…) e a guarda de cada rota ficaram
+exatamente como estavam. O que mudou é de ONDE sai o conjunto de ações de uma
+pessoa: antes de uma tabela em código indexada pelo cargo, agora das seções do
+perfil dela. Reescrever a guarda seria trocar a peça mais perigosa do sistema
+com toda a suíte apoiada nela. Assim, se a camada nova tiver defeito, ela
+concede **de menos** (padrão NADA), nunca de mais.
+
+### O erro que a conferência pegou — e que teria ido para produção
+
+A primeira versão da migração tinha as seções de cada perfil **escritas à
+mão**. A conferência contra a tabela antiga, ação por ação, mostrou que ela
+teria:
+
+- dado **aprovação de pagamento ao supervisor de obras**, que hoje só
+  confirma (as duas coisas estavam na mesma seção — agora são duas);
+- dado **configuração do sistema e cadastro de operadores ao diretor
+  financeiro**, que hoje não tem;
+- **tirado** a agenda de obrigações de quase todo mundo, e as notas emitidas
+  do financeiro.
+
+O bloco do `.sql` passou a ser **gerado a partir da própria tabela de cargos**,
+e há teste com banco de verdade (`tests/test_perfis_cadastro_banco.py`)
+cobrando, para os 11 cargos e todas as ações, que o perfil pronto responda
+exatamente o mesmo que o cargo respondia. **Nenhum acesso muda no dia da
+virada.**
+
+### Duas armadilhas que apareceram no caminho
+
+1. **`ve_todas_as_obras` como NOT NULL quebrou o cadastro de operador novo.**
+   O ORM manda a coluna no INSERT mesmo sem valor, e batia na restrição. A
+   coluna passou a aceitar nulo — nulo quer dizer "ninguém disse", e aí vale o
+   cargo —, e a migração escreve a decisão de todo mundo, sem deixar nulo
+   nenhum. Só o teste com banco de verdade pega isso.
+2. **Uma seção do catálogo não concedia ação nenhuma** ("Painel de obras"):
+   apareceria na tela como se desse acesso, e não daria. Foi retirada — o
+   painel de obras hoje abre para quem entra no ERP, e o que ele edita está
+   sob "Configurações".
+
+### Conferência
+
+- Suíte completa sem banco: passa.
+- Testes com banco de verdade: os de escopo tiveram a especificação ajustada
+  ao modelo novo (o alcance agora vem do cadastro, não do cargo) e passam.
+- `tests/test_perfis_cadastro_banco.py`: 15 casos novos, inclusive os três que
+  provam que o cadastro **fecha** o que o cargo abria.
+
+### O que fica pendente do lado do dono
+
+1. **Apertar "Aplicar atualizações do banco" no mesmo momento da publicação.**
+   A 065 cria tabela e duas colunas em `usuarios`.
+2. **Decidir quando apertar o cinto das obras.** Hoje a migração mantém todo
+   mundo como está. A conta que ele pediu em 12/09 — *"com exceção dos perfis
+   de diretoria e financeiro, o natural é visualizar somente as obras
+   associadas"* — já está no cadastro de cada pessoa, mas **quem não tiver
+   obra marcada deixa de ver lançamento nenhum**. O caminho seguro é: marcar
+   as obras de cada operador em Configurações › Operadores e só depois
+   desmarcar "todas as obras" de quem não deve ter.
+
+---
+
 **Estado em 12/09/2026 (décima segunda entrega):** **teto de IA por pessoa**.
 **TRAZ A MIGRAÇÃO 064.**
 
@@ -165,6 +622,43 @@ Só duas coisas que a pessoa faz de propósito: **ler documento anexado**
 na pergunta com anexo) e **transcrever áudio**. Tudo o mais do ERP — telas,
 listas, relatórios, e as perguntas do assistente que o sistema calcula sobre o
 banco — **não consome nada**.
+
+---
+
+**Estado em 12/09/2026 (vigésima entrega):** **gestor, aprovador e consulta
+passam a enxergar só as obras deles.** Sem migração. ⚠️ **Exige ajuste de
+cadastro ANTES de publicar — ver abaixo.**
+
+### A decisão
+
+Palavras do dono: *"com exceção dos perfis de diretoria e financeiro, o natural
+é visualizar somente as obras associadas no cadastro do operador"*.
+
+Veio logo depois de eu apontar que o GESTOR_OBRA estava em `VE_TUDO` — coisa
+que apareceu por acaso, num teste meu que partiu do contrário e falhou.
+
+### O que mudou
+
+`VE_TUDO` encolheu de seis perfis para **três**: ADMIN, DIRETOR_FINANCEIRO e
+FINANCEIRO. Saíram GESTOR_OBRA, APROVADOR e CONSULTA, que entraram para a lista
+dos presos às obras designadas, junto com supervisor e parceiro.
+
+O ADMIN fica porque é quem configura o sistema e destrava os outros.
+
+### ⚠️ A CONSEQUÊNCIA OPERACIONAL, e ela morde
+
+**Gestor, aprovador ou consulta SEM obra marcada no cadastro passa a não ver
+quase nada** — sobra só o que a própria pessoa lançou, e quem nunca lançou vê
+uma tela vazia. Não é defeito: é o padrão NEGAR do ERP, dito em voz alta.
+
+**Antes de publicar, cada operador desses três perfis precisa ter as obras dele
+marcadas em Configurações › Operadores.** Foi avisado ao dono, com as duas
+opções (publicar e ajustar depois, ou ajustar antes e publicar sem ninguém
+sentir).
+
+Isso está testado: a tabela de escopo em `tests/test_escopo_banco.py` — que é a
+ESPECIFICAÇÃO do recorte, e não só um teste — ganhou o caso do
+`gestor_sem_obra` justamente para a consequência ficar visível a quem ler.
 
 ---
 

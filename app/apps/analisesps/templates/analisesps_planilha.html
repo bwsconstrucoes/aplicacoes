@@ -1,6 +1,6 @@
 {% extends "analisesps_base.html" %}
-{% block titulo %}Ver os dados{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
+{% block titulo %}Documentação Fiscal — a planilha{% endblock %}
+
 
 {# ---------------------------------------------------------------------------
    A TELA DE VER — "similar ao que eu visualizo na planilha".
@@ -24,35 +24,122 @@
      4. Uma busca só, e ordenar clicando no cabeçalho — como numa planilha.
      5. Cabeçalho e primeira coluna GRUDADOS, que é o "congelar painéis".
 --------------------------------------------------------------------------- #}
-{% macro aba_link(chave, rotulo) %}
-  <a class="planilha-aba {{ 'atual' if sub == chave }}"
-     href="{{ url_for('analisesps.tela_planilha', aba=chave, busca=busca or None) }}">{{ rotulo }}</a>
-{% endmacro %}
 
 {% block conteudo %}
+{% from "analisesps_fiscal_visoes.html" import visoes %}
+{% set args_mantem_tudo = args.to_dict(flat=false) %}
+{% set _ = args_mantem_tudo.pop('visao', None) %}
+{% set _ = args_mantem_tudo.pop('pagina', None) %}
+{{ visoes('dados_sps' if sub == 'lancamentos' else 'dados_notas',
+          args_mantem_tudo) }}
+
 <div class="cartao planilha-cartao">
   <div class="cartao-cab">
-    <h2>Ver os dados</h2>
-    <div class="planilha-abas">
-      {{ aba_link('lancamentos', 'Lançamentos (SPs)') }}
-      {{ aba_link('notas', 'Notas fiscais') }}
-    </div>
+    <h2>{{ 'Planilha das SPs' if sub == 'lancamentos'
+           else 'Planilha das notas' }}</h2>
   </div>
 
   <p class="cartao-dica">
-    É a planilha, do jeito que ela é: todas as colunas, na ordem dela, sem
-    recorte e <b>sem nada para clicar</b>. Para trabalhar, use
-    <a href="{{ url_for('analisesps.solicitacoes') }}">Solicitações</a> ou
-    <a href="{{ url_for('analisesps.tela_fiscal') }}">Doc. Fiscal</a>.
+    É a planilha, do jeito que ela é: todas as colunas, na ordem dela e
+    <b>sem nada para clicar</b>. Para trabalhar, volte em
+    <b>Por lançamento</b> ou <b>Por nota</b>, aqui em cima.
   </p>
+
+  {# ---------------------------------------------------------------------
+     O CORTE DE ANO, DITO NA CARA — e com volta.
+
+     *"Só me interessa 2026, porque é o lucro real; antes era lucro
+     presumido, então não preciso dessa informação."* (dono, 14/09/2026)
+
+     Fica escrito porque esta tela é a que ele usa para CONFERIR: se ela
+     esconde linha sem avisar, a conta dele deixa de fechar com a SPsBD e
+     ele não tem como saber por quê.
+  --------------------------------------------------------------------- #}
+  {% if sub == 'lancamentos' %}
+    <p class="planilha-escopo">
+      {% if tudo %}
+        Mostrando <b>tudo</b>, inclusive o que venceu e foi pago antes de
+        {{ ano_minimo }}.
+        <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal',
+             visao='dados_sps', busca=busca or None) }}">voltar para só
+          {{ ano_minimo }} em diante</a>
+      {% else %}
+        Mostrando só o que <b>vence</b> ou foi <b>pago de {{ ano_minimo }} em
+        diante</b> — é o que vale para o lucro real.
+        <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal',
+             visao='dados_sps', busca=busca or None, tudo='1') }}">mostrar
+          tudo</a>
+      {% endif %}
+    </p>
+  {% endif %}
 
   {% if erro %}
     <div class="aviso atencao">{{ erro }}</div>
   {% endif %}
 
+  {% if sub == 'notas' and quadro_notas %}
+    {# ---------------------------------------------------------------------
+       OS TOTALIZADORES DO ALTO. Pedido do dono em 15/09/2026: *"seriam os
+       KPIs aí lá em cima, os totalizadores. Ficaria legal."*
+
+       Cada número é um clique que recorta a lista logo abaixo — como no
+       quadro por categoria da tela de lançamentos: *"era interessante
+       inclusive desse KPI ele direcionar pra uma tela com as informações."*
+
+       Contam sobre o MESMO recorte da lista (busca e origem). O que o quadro
+       mede — situação e "sem lançamento" — fica de fora da conta, senão cada
+       número mediria a si mesmo.
+    --------------------------------------------------------------------- #}
+    {# `fiscal-kpis` é o MESMO modificador da tela de lançamentos: é ele que
+       tira o sublinhado e o azul de link dos cartões que são clicáveis. Sem
+       ele, os números saem com cara de link e a leitura fica poluída. #}
+    <div class="kpis fiscal-kpis">
+      {% for k in quadro_notas %}
+        {% set ligado = (k.filtro.get('situacao') and situacao == k.filtro.get('situacao'))
+                        or (k.filtro.get('sem_lancamento') and sem_lancamento) %}
+        {% set classes = ('ambar ' if k.alerta else '') ~ ('ligado' if ligado else '') %}
+        {% if k.filtro %}
+          <a class="kpi {{ classes }}"
+             title="{{ 'Clique para tirar este recorte' if ligado
+                       else 'Clique para ver só estas' }}"
+             href="{{ url_for('analisesps.tela_fiscal', visao='dados_notas',
+                              busca=busca or None, origem=origem or None,
+                              ordem=ordem, desc='1' if desc else '0',
+                              situacao=(none if ligado else k.filtro.get('situacao')),
+                              sem_lancamento=(none if ligado
+                                              else k.filtro.get('sem_lancamento'))) }}">
+            <div class="kpi-rotulo">{% if k.alerta %}⚠️ {% endif %}{{ k.rotulo }}</div>
+            <div class="kpi-valor">{{ '{:,}'.format(k.quantas)|replace(',', '.') }}</div>
+            <div class="kpi-sub"><b>{{ k.valor|moeda }}</b> · {{ k.dica }}</div>
+          </a>
+        {% else %}
+          <div class="kpi estatico {{ classes }}">
+            <div class="kpi-rotulo">{{ k.rotulo }}</div>
+            <div class="kpi-valor">{{ '{:,}'.format(k.quantas)|replace(',', '.') }}</div>
+            <div class="kpi-sub"><b>{{ k.valor|moeda }}</b> · {{ k.dica }}</div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% if situacao or sem_lancamento %}
+      <p class="cartao-dica">
+        Recorte ligado:
+        <b>{% if sem_lancamento %}só as sem lançamento{% else %}só as
+          {{ situacao|lower }}s{% endif %}</b>.
+        <a class="link-btn"
+           href="{{ url_for('analisesps.tela_fiscal', visao='dados_notas',
+                            busca=busca or None, origem=origem or None) }}">tirar
+          o recorte</a>
+      </p>
+    {% endif %}
+  {% endif %}
+
   <form method="get" class="planilha-busca" data-sem-aguarde="1">
-    <input type="hidden" name="aba" value="{{ sub }}">
+    <input type="hidden" name="visao"
+           value="{{ 'dados_sps' if sub == 'lancamentos'
+                     else 'dados_notas' }}">
     <input type="hidden" name="ordem" value="{{ ordem }}">
+    {% if tudo %}<input type="hidden" name="tudo" value="1">{% endif %}
     {% if desc %}<input type="hidden" name="desc" value="1">{% endif %}
     <div class="busca">
       <span class="lupa">⌕</span>
@@ -63,16 +150,67 @@
     <button class="btn secundario" type="submit">Procurar</button>
     {% if busca %}
       <a class="link-btn"
-         href="{{ url_for('analisesps.tela_planilha', aba=sub) }}">limpar</a>
+         href="{{ url_for('analisesps.tela_fiscal', visao=('dados_sps' if sub == 'lancamentos' else 'dados_notas')) }}">limpar</a>
     {% endif %}
     <span class="planilha-conta">
       {{ '{:,}'.format(total)|replace(',', '.') }} linha(s)
     </span>
   </form>
 
+  {% if sub == 'notas' %}
+    {# ---------------------------------------------------------------------
+       DE ONDE A NOTA VEIO. Pergunta do dono em 15/09/2026, no dia em que a
+       busca na Receita funcionou pela primeira vez: *"como é que eu sei que eu
+       estou visualizando essas notas que foram baixadas? (…) eu só não sei pra
+       onde é que elas estão indo."*
+
+       Ele está certo: a nota entra por duas portas e a tela não dizia por
+       qual. Trabalhando ou não, a busca ficava indistinguível.
+
+       "Da Receita" mostra também a que veio pelas DUAS — ela também foi
+       trazida pela busca, e escondê-la responderia errado à pergunta.
+    --------------------------------------------------------------------- #}
+    <p class="planilha-origem">
+      De onde veio:
+      {% for chave, rotulo in [('', 'todas'),
+                               ('receita', '🔎 busca na Receita'),
+                               ('fsist', '📄 relatório do FSist'),
+                               ('sem', '— entraram antes deste controle')] %}
+        {# ⚠️ O NÚMERO VEM JUNTO DO RECORTE, e não só depois do clique.
+           *"Se eu boto todas, aparecem seis mil e tantas; se eu clico só as da
+           Receita, não aparece nada."* Recorte que devolve vazio sem avisar
+           não se distingue de tela quebrada — e a soma dos três tem de fechar
+           com o total, senão a tela não merece confiança. #}
+        <a class="etiqueta {{ 'ativa' if origem == chave }}"
+           href="{{ url_for('analisesps.tela_fiscal', visao='dados_notas',
+                            busca=busca or None, ordem=ordem,
+                            desc='1' if desc else '0',
+                            origem=chave or None) }}">{{ rotulo }}{%
+          if contagem_origem %} ({{ '{:,}'.format(
+              contagem_origem.get(chave, 0))|replace(',', '.') }}){% endif %}</a>
+      {% endfor %}
+      <br>
+      <small class="cartao-dica">Para ver o que acabou de entrar, ordene pela
+        coluna <b>"Entrou aqui em"</b> — ela é a hora em que a nota chegou
+        aqui, e não a data de emissão.</small>
+      {% if contagem_origem and contagem_origem.get('sem') %}
+        <small class="cartao-dica">
+          <b>{{ '{:,}'.format(contagem_origem.get('sem'))|replace(',', '.') }}
+          nota(s) entraram antes de o sistema passar a registrar a porta de
+          entrada</b>, em 15/09/2026 — para elas não dá para afirmar de onde
+          vieram, e inventar seria pior. Cada uma ganha a marca na próxima vez
+          que a busca ou o relatório passar por ela.
+        </small>
+      {% endif %}
+    </p>
+  {% endif %}
+
   {% if not linhas %}
     <p class="cartao-dica">
-      {% if busca %}Nada encontrado com esse texto.
+      {% if origem %}Nenhuma nota com este recorte de origem.
+        {% if origem != 'sem' %}As que entraram antes de 15/09/2026 estão em
+          <b>"entraram antes deste controle"</b>.{% endif %}
+      {% elif busca %}Nada encontrado com esse texto.
       {% else %}Não há nada aqui ainda.{% endif %}
     </p>
   {% else %}
@@ -85,7 +223,7 @@
               <th class="{{ 'num' if tipo == 'numero' }}">
                 {# ORDENAR CLICANDO NO CABEÇALHO, como na planilha. O mesmo
                    clique inverte o sentido. #}
-                <a href="{{ url_for('analisesps.tela_planilha', aba=sub,
+                <a href="{{ url_for('analisesps.tela_fiscal', visao=('dados_sps' if sub == 'lancamentos' else 'dados_notas'),
                              busca=busca or None, ordem=chave,
                              desc='1' if virando else '0') }}"
                    title="Ordenar por {{ rotulo }}">
@@ -110,7 +248,11 @@
                   {%- elif tipo == 'numero' -%}
                     {{ v|moeda }}
                   {%- elif tipo == 'data' -%}
-                    {{ v }}
+                    {# dd/mm/aaaa, e não o formato do banco. *"A data está ano,
+                       mês, dia. Vamos colocar o contrário."* (15/09/2026) #}
+                    {{ v|data_br }}
+                  {%- elif tipo == 'origem' -%}
+                    {{ rotulos_de_origem.get(v, v) }}
                   {%- elif tipo == 'momento' -%}
                     {{ v|momento_br }}
                   {%- else -%}
@@ -131,11 +273,11 @@
       {{ '{:,}'.format(total)|replace(',', '.') }}
       {% if pagina > 1 %}
         <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_planilha', **dict(pag, pagina=pagina-1)) }}">‹ Anterior</a>
+           href="{{ url_for('analisesps.tela_fiscal', **dict(pag, pagina=pagina-1)) }}">‹ Anterior</a>
       {% endif %}
       {% if tem_proxima %}
         <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_planilha', **dict(pag, pagina=pagina+1)) }}">Próxima ›</a>
+           href="{{ url_for('analisesps.tela_fiscal', **dict(pag, pagina=pagina+1)) }}">Próxima ›</a>
       {% endif %}
     </div>
   {% endif %}

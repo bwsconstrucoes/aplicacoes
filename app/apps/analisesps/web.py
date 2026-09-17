@@ -144,10 +144,6 @@ TELAS = [
     ("relatorio",     "Relatório",     "analisesps.relatorio"),
     ("fiscal",        "Doc. Fiscal",   "analisesps.tela_fiscal"),
     ("agenda",        "Agenda",        "analisesps.tela_agenda"),
-    # A TELA DE VER entra AQUI, e não antes: a ordem até a Agenda é o caminho
-    # do dia dele, pedida com estas palavras — *"aí depois agenda, e pronto,
-    # aí pode seguir com os demais"*. Esta é "dos demais".
-    ("planilha",      "Ver os dados",  "analisesps.tela_planilha"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
@@ -1028,13 +1024,35 @@ def configuracoes():
     # Fica o pior caso de cada CNPJ (a falha manda sobre o sucesso): duas
     # linhas por CNPJ — NF-e e CT-e — e mostrar só a primeira esconderia
     # justamente a que deu errado.
+    #
+    # ⚠️ AS DUAS LINHAS SOMAM. São duas buscas por CNPJ — notas e fretes — e
+    # mostrar só uma delas fazia a tela informar menos do que sabe: o dono viu
+    # "112 documento(s)" quando o número era a soma das duas. A falha continua
+    # mandando sobre o sucesso na hora de dizer a situação.
     buscas_por_cnpj: dict = {}
     try:
         from . import sefaz
         for b in sefaz.estado_das_buscas():
             atual = buscas_por_cnpj.get(b["cnpj"])
-            if atual is None or (b.get("falhou") and not atual.get("falhou")):
-                buscas_por_cnpj[b["cnpj"]] = b
+            if atual is None:
+                buscas_por_cnpj[b["cnpj"]] = dict(b)
+                continue
+            atual["documentos"] = (atual.get("documentos") or 0) + (
+                b.get("documentos") or 0)
+            atual["faltam"] = (atual.get("faltam") or 0) + (b.get("faltam") or 0)
+            if b.get("consultado_em") and (
+                    not atual.get("consultado_em")
+                    or b["consultado_em"] > atual["consultado_em"]):
+                atual["consultado_em"] = b["consultado_em"]
+            # A pior situação das duas é a que aparece: uma busca que falhou
+            # não pode ficar escondida atrás da outra, que deu certo.
+            if b.get("falhou") and not atual.get("falhou"):
+                atual["falhou"] = True
+                atual["motivo_da_falha"] = b.get("motivo_da_falha", "")
+            if b.get("alerta"):
+                atual["alerta"] = True
+            if b.get("ultimo_recado") and not atual.get("ultimo_recado"):
+                atual["ultimo_recado"] = b["ultimo_recado"]
     except Exception:  # noqa: BLE001 — migração 008 ainda não aplicada
         logger.exception("Análise de SPs: não consegui ler o estado da busca")
 
@@ -1154,6 +1172,20 @@ def andamento():
         "etapa": detalhe.get("etapa"),
         "progresso": detalhe.get("progresso"),
         "visto_em": texto(detalhe.get("visto_em")) if detalhe else None,
+        # ⚠️ QUANDO A ÚLTIMA TAREFA TERMINOU — é isto que faz a tela perceber
+        # uma rodada CURTA. Reclamação do dono em 15/09/2026: *"quando clicamos
+        # em buscar não vemos em canto nenhum se a busca está de fato
+        # acontecendo, apenas uma mensagem dizendo que está sendo buscado."*
+        #
+        # A tela só se recarregava depois de ter VISTO a tarefa rodando, e ela
+        # perguntava de quatro em quatro segundos. Uma busca que falha rápido
+        # (foi o caso: a NF-e estourava na hora) começa e termina entre duas
+        # perguntas — a tela nunca via nada, nunca recarregava, e ficava para
+        # sempre com "Disparado" na cara dele, mostrando o resultado velho.
+        #
+        # Com este carimbo, terminar é visível mesmo sem nunca ter sido pega no
+        # meio: ele muda, a tela relê.
+        "ultimo_fim": tarefas.ultimo_fim(),
     }
 
 
@@ -1226,7 +1258,19 @@ def sincronizar():
                        "válido e sem sessão de Operador.")
         return {"ok": False, "erro": "Não autorizado."}, 403
 
-    return tarefas.disparar(modo, disparo=disparo)
+    resultado = tarefas.disparar(modo, disparo=disparo)
+
+    # ⚠️ FORMULÁRIO DE VERDADE VOLTA PARA A TELA, e não para um JSON na cara de
+    # quem apertou. As telas disparam por `fetch`, mas o botão de retomar a fila
+    # dos comprovantes é um formulário comum — de propósito, porque ele precisa
+    # funcionar mesmo quando o JavaScript não carregou (é o botão de destravar).
+    if request.form.get("modo") and "application/json" not in (
+            request.headers.get("Accept") or ""):
+        aviso = ("Retomando a fila. As linhas vão aparecendo aqui embaixo."
+                 if resultado.get("ok")
+                 else f"Não consegui disparar: {resultado.get('erro', '')}")
+        return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -1859,15 +1903,20 @@ ACOES_FISCAIS = [
     {"modo": "notas_receita", "rotulo": "Buscar notas na Receita",
      "ajuda": "Baixa da Receita as NF-e e CT-e emitidas contra os CNPJs que "
               "têm certificado guardado. Continua de onde parou da última vez."},
-    # O NOME DIZ DE ONDE ELE LÊ. Chamava-se "Importar o relatório do FSist", e
-    # o dono cobrou com razão: *"cadê a opção de incluir o arquivo? De onde vai
-    # tirar essa informação, se eu não estou nem colocando?"* Botão que pede um
-    # arquivo e não tem onde pôr é botão que mente. Para subir o arquivo há o
-    # formulário próprio, na tela das notas.
-    {"modo": "apoios", "rotulo": "Ler a aba do FSist na planilha",
-     "ajuda": "Lê a aba \"Relatório FSIST\" da planilha de apoio — o que "
-              "estiver colado lá. Para subir um arquivo, use \"Subir o "
-              "relatório do FSist\" na tela das notas."},
+    # ⚠️ O BOTÃO DA ABA DO FSIST SAIU DAQUI — 16/09/2026, pedido do dono:
+    # *"pra que diabo serve o botão 'Ler a aba do FSist na planilha'? Não tem
+    # sentido isso. Vou importar o relatório no sistema."*
+    #
+    # Ele está certo, e o motivo é de fluxo: ler uma aba da planilha era o
+    # caminho de antes de existir o formulário de subir o arquivo. Manter os
+    # dois lado a lado obriga quem usa a escolher entre duas portas para a
+    # mesma coisa — e a errada depende de alguém ter colado o relatório numa
+    # aba antes. Para subir o arquivo há "Subir o relatório do FSist", nesta
+    # mesma tela.
+    #
+    # A varredura das planilhas de apoio (que inclui aquela aba) CONTINUA
+    # existindo em Configurações e na sincronização automática: o que saiu foi
+    # o atalho no meio do trabalho fiscal, não a função.
     {"modo": "fiscal_ia", "rotulo": "Ler com IA os anexos escolhidos",
      "ajuda": "Só as SPs que você marcou. Cada leitura é cobrada."},
     {"modo": "fiscal", "rotulo": "Gravar no Pipefy o que foi confirmado",
@@ -2160,11 +2209,19 @@ def tela_fiscal():
     # trabalho que a lista não mostra.
     filtros["escopo_fiscal"] = True
     filtros["mostrar_canceladas"] = request.args.get("canceladas") == "1"
+    # O CLIQUE NO QUADRO POR CATEGORIA. Vem do endereço e entra como
+    # parâmetro; `sem_categoria` é a pilha do "(sem informação)".
+    filtros["categoria"] = request.args.getlist("categoria")
+    filtros["sem_categoria"] = request.args.get("sem_categoria") == "1"
     try:
         pagina = max(1, int(request.args.get("pagina", 1)))
     except ValueError:
         pagina = 1
     grupo = request.args.get("grupo") or ""
+
+    # AS VISÕES DE VER, dentro da Documentação Fiscal. Ver `_planilha_fiscal`.
+    if request.args.get("visao") in ("dados_sps", "dados_notas"):
+        return _planilha_fiscal(base, pagina)
 
     # A SEGUNDA VISÃO — nota → lançamento. É ela que fecha com a contabilidade:
     # *"se tem uma nota emitida, tem uma despesa para estar associada"*. Nota
@@ -2258,6 +2315,27 @@ def tela_fiscal():
             "Esta tela precisa da atualização do banco. Vá em Configurações e "
             f"aperte \"Aplicar atualizações do banco\". (detalhe: {e})")
 
+    # O QUADRO POR CATEGORIA, com o dinheiro ao lado da contagem. Ver
+    # `consultas.quadro_por_categoria`: é o "quanto isso em valores" dele.
+    #
+    # ⚠️ EM BLOCO PRÓPRIO, E ISSO NÃO É ZELO — foi defeito, pego pela suíte no
+    # mesmo dia em que o quadro nasceu. Ele estava DENTRO do try da lista, e
+    # uma falha aqui derrubava a TELA INTEIRA: a lista sumia, o painel sumia, e
+    # o recado dizia "esta tela precisa da atualização do banco" — que nem era
+    # verdade.
+    #
+    # A REGRA GERAL, e vale para o que vier depois: **o acessório não pode
+    # derrubar o principal**. O quadro é um extra; sem ele a tela continua
+    # fazendo o trabalho dela.
+    #
+    # ⚠️ Sai do MESMO filtro da lista, então o que o quadro soma e o que a
+    # lista mostra não têm como divergir.
+    try:
+        quadro_categorias = consultas.quadro_por_categoria(filtros)
+    except Exception:  # noqa: BLE001 — o quadro é extra; a lista não é
+        logger.exception("Análise de SPs: falhou o quadro por categoria")
+        quadro_categorias = []
+
     contagem = fiscal.contar_por_grupo(conciliadas)
     if grupo:
         conciliadas = [c for c in conciliadas if c["grupo"] == grupo]
@@ -2267,6 +2345,7 @@ def tela_fiscal():
         "analisesps_fiscal.html", aba="fiscal", base=base,
         linhas=conciliadas, contagem=contagem, grupo=grupo, erro=erro,
         resumo=resumo, filtros=filtros, args=request.args,
+        quadro_categorias=quadro_categorias,
         opcoes=_opcoes_dos_filtros(base.get("ultima")),
         pagina=pagina, por_pagina=consultas.POR_PAGINA,
         primeira_linha=(pagina - 1) * consultas.POR_PAGINA + 1,
@@ -2499,56 +2578,85 @@ def remover_certificado():
 # trabalho do dia. A barra de abas é para o que se abre todo dia; encher ela
 # com manutenção faria o que importa ficar mais longe. Chega-se aqui por
 # ===========================================================================
-# A TELA DE VER — "similar ao que eu visualizo na planilha"
+# A PLANILHA — dentro da Documentação Fiscal, e não solta no menu
 #
-# Cobrança do dono em 13/09/2026, e ela é antiga: *"desde o começo eu pedi uma
-# tela simples pra poder visualizar similar ao que eu visualizo na planilha.
-# Uma tela das notas e outra tela dos registros com os dados que estamos
-# trabalhando. (…) Mas até agora não foi entregue."*
+# Cobrança do dono em 13/09: *"desde o começo eu pedi uma tela simples pra
+# poder visualizar similar ao que eu visualizo na planilha."* Entregue no dia
+# seguinte — e ele olhou e disse o que faltava:
 #
-# Ele está certo. Todas as telas deste módulo são de TRABALHO — cada uma mostra
-# um recorte, com painel, proposta e botão de agir. Nenhuma respondia à
-# pergunta mais simples que existe: *"deixa eu ver os dados"*.
+#   *"Está lá 'ver os dados', está muito solto, não tem vínculo com nada. Está
+#   ruim da forma que está. Aqui tem 'por lançamento', 'por nota' — aí você
+#   colocar aqui dentro. E 'ver os dados' também está foda, tem que ter uma
+#   nomenclatura melhor."*
 #
-# É `@exige_consulta` de propósito: olhar não é mexer, e esta tela não tem uma
-# única ação. Quem só consulta entra.
+# ELE ESTÁ CERTO NAS DUAS COISAS, e as duas são a mesma: a tela nasceu **sem
+# contexto**. Ela é da Documentação Fiscal — é ali que ele está quando quer
+# conferir o dado cru contra o que a tela de trabalho está afirmando. Solta no
+# menu de cima, virava um destino sem volta e sem parentesco.
+#
+# E o nome não dizia nada: "ver os dados" pode ser qualquer coisa. Agora usa a
+# palavra que ELE usa o tempo todo — **planilha**.
+#
+# POR QUE É UMA FUNÇÃO, e não uma rota própria: as quatro visões dividem a
+# barra de filtros, a memória do filtro e a barra de visões. Rota separada
+# significaria manter tudo isso em dois lugares — e foi exatamente assim que a
+# tela ficou órfã da primeira vez.
 # ===========================================================================
-@bp.route("/planilha")
-@exige_consulta
-def tela_planilha():
-    """Os dados como a planilha mostra: tudo, sem recorte e sem ação."""
+def _planilha_fiscal(base, pagina: int):
+    """As duas visões de VER: todas as colunas, na ordem da planilha."""
     from . import consultas, fiscal
 
-    base = consultas.base_carregada()
-    if not base["pronta"]:
-        return render_template("analisesps_vazio.html", base=base,
-                               pode_operar=auth.pode_operar())
-
-    aba = "notas" if request.args.get("aba") == "notas" else "lancamentos"
+    sub = ("notas" if request.args.get("visao") == "dados_notas"
+           else "lancamentos")
     busca = (request.args.get("busca") or "").strip()
-    ordem = request.args.get("ordem") or ("emissao" if aba == "notas" else "id")
-    # O SENTIDO PADRÃO É DIFERENTE NAS DUAS ABAS, e isso é sobre como se lê:
-    # a nota mais recente é a que interessa primeiro (é a que acabou de
-    # chegar); a SP se lê do começo, pelo número, como na planilha. Só depois
-    # de ele clicar num cabeçalho o endereço passa a mandar.
+    ordem = request.args.get("ordem") or ("emissao" if sub == "notas" else "id")
+    # O SENTIDO PADRÃO É DIFERENTE NAS DUAS, e isso é sobre como se lê: a nota
+    # mais recente é a que interessa primeiro (acabou de chegar); a SP se lê do
+    # começo, pelo número, como na planilha.
     if "desc" in request.args:
         desc = request.args.get("desc") == "1"
     else:
-        desc = (aba == "notas")
-    try:
-        pagina = max(1, int(request.args.get("pagina", 1)))
-    except ValueError:
-        pagina = 1
+        desc = (sub == "notas")
+
+    # DE ONDE A NOTA VEIO, como recorte da tela. *"Como é que eu sei que eu
+    # estou visualizando essas notas que foram baixadas?"* — a pergunta só tem
+    # resposta se der para pedir "me mostre só o que a busca trouxe".
+    origem = (request.args.get("origem") or "").strip().lower()
+    if origem not in ("receita", "fsist", "sem"):
+        origem = ""
+    # O QUE O QUADRO DO ALTO RECORTA quando ele clica num número. Lista fechada:
+    # o que vem do endereço nunca vira SQL por conta própria.
+    situacao = (request.args.get("situacao") or "").strip().upper()
+    if situacao not in ("AUTORIZADA", "CANCELADA", "DENEGADA"):
+        situacao = ""
+    sem_lancamento = request.args.get("sem_lancamento") == "1"
+
+    # ⚠️ EM TRY PRÓPRIO: o acessório não pode derrubar o principal. A conta é
+    # enfeite; a lista é a tela.
+    contagem_origem, quadro_notas = {}, []
+    if sub == "notas":
+        try:
+            contagem_origem = fiscal.contagem_por_origem()
+        except Exception:  # noqa: BLE001
+            logger.exception("Análise de SPs: falhou contar a origem das notas")
+        try:
+            quadro_notas = fiscal.quadro_das_notas(busca, origem)
+        except Exception:  # noqa: BLE001
+            logger.exception("Análise de SPs: falhou montar o quadro das notas")
 
     erro, linhas, total = None, [], 0
     try:
-        if aba == "notas":
-            linhas, total = fiscal.planilha_notas(busca, ordem, desc, pagina)
+        if sub == "notas":
+            linhas, total = fiscal.planilha_notas(
+                busca, ordem, desc, pagina, origem=origem,
+                situacao=situacao, sem_lancamento=sem_lancamento)
             cabecalhos = [(c, "", r, t)
-                          for c, r, t in fiscal.COLUNAS_DA_NOTA_NA_TELA]
+                          for c, r, t in fiscal.colunas_da_nota_na_tela()]
             por_pagina = fiscal.POR_PAGINA_PLANILHA
         else:
-            linhas, total = consultas.planilha_sps(busca, ordem, desc, pagina)
+            linhas, total = consultas.planilha_sps(
+                busca, ordem, desc, pagina,
+                tudo=request.args.get("tudo") == "1")
             cabecalhos = consultas.COLUNAS_DA_PLANILHA
             por_pagina = consultas.POR_PAGINA_PLANILHA
     except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
@@ -2560,14 +2668,31 @@ def tela_planilha():
 
     ultima = (pagina - 1) * por_pagina + len(linhas)
     return render_template(
-        "analisesps_planilha.html", aba="planilha", sub=aba, base=base,
+        "analisesps_planilha.html", aba="fiscal", sub=sub, base=base,
         linhas=linhas, cabecalhos=cabecalhos, total=total, erro=erro,
-        busca=busca, ordem=ordem, desc=desc, pagina=pagina,
+        busca=busca, ordem=ordem, desc=desc, pagina=pagina, origem=origem,
+        rotulos_de_origem=fiscal.ROTULOS_DE_ORIGEM,
+        contagem_origem=contagem_origem, quadro_notas=quadro_notas,
+        situacao=situacao, sem_lancamento=sem_lancamento,
+        tudo=request.args.get("tudo") == "1",
+        ano_minimo=consultas.ANO_FISCAL_MINIMO,
         primeira_linha=(pagina - 1) * por_pagina + 1, ultima_linha=ultima,
         tem_proxima=ultima < total, args=request.args,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/planilha")
+@exige_consulta
+def tela_planilha():
+    """O endereço antigo, de quando a tela era solta no menu.
+
+    Fica só para não quebrar o que ele tiver guardado nos favoritos. Manda para
+    o lugar de verdade, dentro da Documentação Fiscal."""
+    destino = ("dados_notas" if request.args.get("aba") == "notas"
+               else "dados_sps")
+    return redirect(url_for("analisesps.tela_fiscal", visao=destino))
 
 
 # Configurações, onde a contagem aparece.
@@ -2728,8 +2853,28 @@ def aplicar_credor():
         nome = (nome or "").strip()
         if not nome:
             continue
+        # OS GRUPOS DE ESCRITA QUE ELE DESMARCOU — a segunda seleção da tela.
+        # *"Tem que ter duas seleções: a do nome, e em quais grupos vamos
+        # aplicar."* (15/09/2026)
+        #
+        # Vem NOMEADO POR FORNECEDOR (`grupo-<documento>`) porque a pilha do
+        # "resolve sozinho" manda vários fornecedores no mesmo envio: uma lista
+        # única faria a grafia de um calar a do outro sempre que dois
+        # fornecedores tivessem a mesma escrita.
+        #
+        # E vem em DOIS campos de propósito: o escondido diz quais grupos a
+        # tela mostrou, o marcado diz quais ele deixou ligados. Caixa
+        # desmarcada não é enviada pelo navegador — sem a lista do que existia,
+        # o servidor não teria como distinguir "ele desmarcou" de "a tela é
+        # antiga e não manda isso".
+        mostrados = [g for g in request.form.getlist(f"grupo-{documento}")
+                     if str(g).strip()]
+        marcados = {g for g in request.form.getlist(f"aplicar-{documento}")
+                    if str(g).strip()}
+        grupos_fora = [g for g in mostrados if g not in marcados]
         todas = credores.sps_para_reescrever(documento, nome)
-        ids = credores.sps_para_reescrever(documento, nome, fora=de_fora)
+        ids = credores.sps_para_reescrever(documento, nome, fora=de_fora,
+                                           grafias_fora=grupos_fora)
         ficaram_de_fora += len(todas) - len(ids)
         tipo = request.form.get(f"tipo-{documento}") or credores.DECIDIR
         if ids:
@@ -2939,6 +3084,11 @@ def tela_bradesco():
     return render_template(
         "analisesps_bradesco.html", aba="bradesco", base=base,
         colado=colado, resultado=resultado, erro=erro, foco=foco,
+        # As colunas vêm do módulo que monta a linha — ver o comentário grande
+        # em `bradesco.py`. Escritas no template, elas já divergiram uma vez e
+        # a tela ficou com 47 linhas em branco.
+        colunas_boleto=bradesco.COLUNAS_BOLETO,
+        colunas_pix=bradesco.COLUNAS_PIX,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
