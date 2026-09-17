@@ -6091,6 +6091,7 @@ def api_nova_obra_documento():
                             "em dois e nenhum relatório fecha."}), 400
 
             obra = svc_obra.criar(s, {"codigo": codigo, "nome": nome,
+                                      "empresa_id": request.form.get("empresa_id"),
                                       "origem": "DOCUMENTO"}, usuario)
             s.flush()
             d = svc_arq.arquivar(

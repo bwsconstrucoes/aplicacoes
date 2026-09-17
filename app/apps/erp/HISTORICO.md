@@ -21,6 +21,32 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### A EMPRESA VEM ANTES DA OBRA — e o campo simplesmente não era lido (sem migração)
+
+17/09/2026: *"eu cadastrei obra, mas não vinculei à empresa. Então eu acho que é
+prioritário esse cadastro, anterior inclusive à obra, porque eu tenho que
+associar."*
+
+**O defeito era meu, e era feio:** `obras.criar()` nunca leu `empresa_id`. A
+coluna existia no banco, a ficha da obra mostrava o campo, mas **toda obra
+nascia solta** — por qualquer porta, digitando ou pelo contrato. Só aparecia
+depois, quando a nota não saía, a cotação não sabia de qual e-mail sair ou a
+tributação não existia.
+
+O que mudou:
+
+- **Empresa é campo obrigatório na criação**, nos dois modos (digitando e pelo
+  documento), com um botão **"+ Nova"** que cadastra a empresa na hora (razão
+  social, CNPJ, nome curto) e já a escolhe — sem sair da tela e recomeçar.
+- **Casa sem empresa nenhuma não trava a primeira obra**: exigir o que não
+  existe seria um beco sem saída. Aí vale o aviso.
+- **A lista de obras marca "Sem empresa"** em vermelho, à frente de tudo — as
+  obras que já nasceram soltas aparecem ali para serem consertadas pela ficha.
+
+⚠️ **As obras já criadas continuam sem empresa até alguém ligar.** Elas estão
+listadas em Configurações → Empresas ("obras sem empresa") e marcadas no painel.
+
+
 ### O DRIVE FOI LIGADO EM PRODUÇÃO, E AGORA TEM ÁRVORE DE PASTAS (migração 070)
 
 17/09/2026, o dono: *"quanto ao Drive, eu marquei aqui guardar os documentos

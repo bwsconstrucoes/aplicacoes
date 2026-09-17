@@ -123,3 +123,63 @@ def test_o_banco_recusa_ligar_a_mesma_pessoa_duas_vezes_a_mesma_obra(cenario):
     with pytest.raises(IntegrityError):
         s.flush()
     s.rollback()
+
+
+# ---------------------------------------------------------------------------
+# A EMPRESA VEM ANTES DA OBRA
+#
+# 17/09/2026, o dono: *"eu cadastrei obra, mas não vinculei à empresa. Então eu
+# acho que é prioritário esse cadastro, anterior inclusive à obra, porque eu
+# tenho que associar."*
+#
+# Ele está certo por um motivo prático, e o defeito era meu: o campo existia no
+# banco mas NÃO ERA LIDO na criação — a obra nascia solta por qualquer porta, e
+# isso só aparecia quando a nota não saía, a cotação não tinha de qual e-mail
+# sair ou a tributação não existia.
+# ---------------------------------------------------------------------------
+def test_a_obra_nasce_ligada_a_empresa_escolhida(sessao_real):
+    from app.apps.erp.core.cadastros import obras as svc_obra
+    from app.apps.erp.db.models.cadastros import Empresa
+    s = sessao_real
+    emp = Empresa(razao_social="BWS Construções LTDA", nome_fantasia="BWS",
+                  cnpj="11222333000181", ativo=True)
+    s.add(emp)
+    s.flush()
+    obra = svc_obra.criar(s, {"codigo": "OBRA-EMP", "nome": "Obra com empresa",
+                              "empresa_id": emp.id}, None)
+    assert obra.empresa_id == emp.id
+
+
+def test_sem_escolher_empresa_a_obra_nao_e_criada(sessao_real):
+    """Com empresa cadastrada na casa, deixar em branco é engano, não escolha."""
+    from app.apps.erp.core.cadastros import obras as svc_obra
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+    from app.apps.erp.db.models.cadastros import Empresa
+    s = sessao_real
+    s.add(Empresa(razao_social="BWS Construções LTDA", nome_fantasia="BWS",
+                  cnpj="11222333000181", ativo=True))
+    s.flush()
+    with pytest.raises(ErroValidacao) as e:
+        svc_obra.criar(s, {"codigo": "OBRA-SEM", "nome": "Obra sem empresa"}, None)
+    assert "empresa" in str(e.value).lower()
+
+
+def test_empresa_inexistente_e_recusada(sessao_real):
+    from app.apps.erp.core.cadastros import obras as svc_obra
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+    from app.apps.erp.db.models.cadastros import Empresa
+    s = sessao_real
+    s.add(Empresa(razao_social="BWS Construções LTDA", nome_fantasia="BWS",
+                  cnpj="11222333000181", ativo=True))
+    s.flush()
+    with pytest.raises(ErroValidacao):
+        svc_obra.criar(s, {"codigo": "OBRA-X", "nome": "Obra",
+                           "empresa_id": 999999}, None)
+
+
+def test_casa_sem_empresa_nenhuma_nao_trava_a_primeira_obra(sessao_real):
+    """Sistema recém-instalado: exigir o que não existe seria um beco sem saída.
+    O aviso "Sem empresa" na lista cobra depois."""
+    from app.apps.erp.core.cadastros import obras as svc_obra
+    obra = svc_obra.criar(sessao_real, {"codigo": "PRIMEIRA", "nome": "Primeira obra"}, None)
+    assert obra.empresa_id is None
