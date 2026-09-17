@@ -1220,3 +1220,103 @@ def test_procurar_um_valor_tambem_roda(cliente_config, monkeypatch):
     monkeypatch.setattr(consultas, "conferencia_dos_aportes", lambda *a, **k: {})
     r = cliente_config.get("/painel/configuracoes?procurar=784.647,07")
     assert r.status_code == 200 and rodou
+
+
+# ===========================================================================
+# O filtro não pode sumir ao entrar num detalhe e voltar
+# ===========================================================================
+# 17/09/2026, o dono: estava filtrado na obra Mercado Barbalha, na Receita de
+# Obra; entrou numa medição; clicou em "Voltar às medições"; a obra tinha
+# sumido. "Ela tem que ser mantida, porque eu estou analisando ela."
+#
+# A causa: os dois links — o de entrar e o de voltar — montavam o endereço sem
+# levar os filtros da barra lateral. O ajudante que faz isso já existia e as
+# abas do topo já o usavam; esses links, não.
+
+def test_o_link_da_medicao_leva_o_filtro_junto(cliente_config):
+    """Entrar numa medição não pode jogar fora a obra que se está analisando."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET tipo = ?, medicao_rotulo = 'MEDICAO 1',"
+                     " pago_recebido = 5000 WHERE codigo_lancamento = 701", (REC,))
+        conn.commit()
+    consultas.esquecer_listas()
+    html = cliente_config.get("/painel/receita?obra=CASA").get_data(as_text=True)
+    links = [l for l in html.splitlines() if "/painel/receita/" in l and "href" in l]
+    assert links, "a tela não trouxe medição nenhuma para conferir"
+    for linha in links:
+        assert "obra=CASA" in linha, linha
+
+
+def test_voltar_da_medicao_traz_o_filtro_de_volta(cliente_config):
+    """O caminho exato que o dono percorreu."""
+    html = cliente_config.get(
+        "/painel/receita/(sem medição)?obra=CASA").get_data(as_text=True)
+    assert 'href="/painel/receita?obra=CASA"' in html, \
+        "o Voltar tem de devolver a pessoa à MESMA obra que ela estava vendo"
+
+
+def test_a_tela_da_medicao_mostra_que_o_filtro_continua_valendo(cliente_config):
+    """Essa tela esconde a barra lateral. Sem dizer que o filtro sobreviveu,
+    quem entrou filtrado não tem como saber para onde vai voltar."""
+    html = cliente_config.get(
+        "/painel/receita/(sem medição)?obra=CASA").get_data(as_text=True)
+    assert "Filtro mantido" in html and "Obra: CASA" in html
+
+
+def test_sem_filtro_a_tela_da_medicao_nao_inventa_aviso(cliente_config):
+    html = cliente_config.get("/painel/receita/(sem medição)").get_data(as_text=True)
+    assert "Filtro mantido" not in html
+
+
+# ===========================================================================
+# Achar o que está sem classificação
+# ===========================================================================
+# O dono, 17/09/2026: "eu queria poder visualizar com facilidade tudo que não
+# está apropriado em nenhum centro de custo e tudo que não tem nenhuma
+# categoria, para eu facilmente identificar e corrigir".
+
+def test_da_para_pedir_o_que_esta_sem_categoria(base_para_explorar):
+    """Antes só dava para pedir o que está sem OBRA. Sem categoria, não havia
+    como perguntar — e é metade do trabalho de saneamento."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET categoria = '' WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert consultas.SEM_CATEGORIA in consultas.opcoes_do_explorador()["categorias"]
+    assert _codigos({"categorias": [consultas.SEM_CATEGORIA]}) == {701}
+
+
+def test_configuracoes_tem_os_atalhos_do_saneamento(cliente_config):
+    html = cliente_config.get("/painel/configuracoes").get_data(as_text=True)
+    assert "Achar o que está sem classificação" in html
+    assert "Sem obra" in html and "Sem categoria" in html
+
+
+# ===========================================================================
+# O Explorador tem de dar para achar o lançamento no OMIE
+# ===========================================================================
+# "Tem que ter a conta que foi baixada, o dia, tudo certinho, se foi despesa ou
+# entrada — para eu ir em paralelo no OMIE e identificar com clareza."
+
+def test_a_lista_mostra_conta_corrente_e_as_duas_datas(cliente_config):
+    html = cliente_config.get("/painel/explorador?busca=FORNECEDOR").get_data(as_text=True)
+    for coluna in ("Conta corrente", "Vencimento", "Pagamento"):
+        assert f">{coluna}</th>" in html, coluna
+
+
+def test_a_observacao_aparece_inteira(cliente_config):
+    """Cortar em 60 letras escondia justamente o que identifica o lançamento."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    longa = "OBSERVACAO MUITO LONGA " * 6   # bem mais que 60 letras
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET observacao = ? WHERE codigo_lancamento = 701",
+                     (longa,))
+        conn.commit()
+    consultas.esquecer_listas()
+    html = cliente_config.get("/painel/explorador?busca=FORNECEDOR").get_data(as_text=True)
+    assert longa.strip() in html, "a observação tem de aparecer inteira"

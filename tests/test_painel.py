@@ -64,7 +64,10 @@ def test_consultas_do_painel_traduzem_sem_sobrar_marcador():
     assert "?" not in traduzida
     assert traduzida.count("%s") == 4          # 3 filtros + o tipo
     assert "'%%Retido%%'" not in traduzida     # esta consulta não usa retido
-    assert "~*" in traduzida                   # a regra de "foi pago" continua lá
+    # A regra de "foi pago" continua na consulta. Ela deixou de ser uma expressão
+    # avaliada linha a linha e virou a coluna `pago`, calculada pelo banco na
+    # gravação (migração 009, 17/09/2026): mesma regra, 71% menos tempo de tela.
+    assert "WHEN pago THEN" in traduzida
 
 
 # ===========================================================================

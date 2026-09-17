@@ -36,7 +36,7 @@
     </select>
   </div>
   <div class="espaco"></div>
-  <a class="btn secundario" href="{{ url_for('painel.prestacao_cenarios', medida=medida) }}"
+  <a class="btn secundario" href="{{ com_filtros('painel.prestacao_cenarios', medida=medida) }}"
      style="text-decoration:none; align-self:flex-end">Cenários de rateio</a>
   <a class="btn secundario" href="{{ url_for('painel.prestacao_parametros') }}"
      style="text-decoration:none; align-self:flex-end">Parâmetros e regras</a>

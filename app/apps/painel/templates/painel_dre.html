@@ -265,7 +265,7 @@
         {% for m in medicoes %}
         <tr>
           <td class="desc">
-            <a href="{{ url_for('painel.receita_detalhe', medicao=m.medicao) }}"
+            <a href="{{ com_filtros('painel.receita_detalhe', medicao=m.medicao) }}"
                title="Ver os recebimentos desta medição">{{ m.medicao }}</a>
             {% if m.data %}<small>{{ m.data.strftime('%d/%m/%Y') }}</small>{% endif %}
           </td>
