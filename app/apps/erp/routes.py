@@ -2644,6 +2644,40 @@ def api_perguntar_documentos():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/documentos/<int:documento_id>/datas", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_documento_corrigir_datas(documento_id: int):
+    """Corrige as datas de um documento já arquivado.
+
+    Dono, 17/09/2026: *"eu vi um contrato que está dando que está vencido, mas
+    na verdade está vencido porque eu escrevi a validade errado"*. Sem isto, uma
+    data digitada errada ficava errada para sempre — e o aviso de vencimento
+    junto com ela, o que ensina a equipe a ignorar aviso.
+
+    A ação é `arquivar`, a mesma de guardar o documento, e por dentro ainda
+    passa por `exigir_documento_no_escopo`: ter a ação não é alcançar ESTE
+    documento. Fora do recorte responde "não encontrado", nunca "sem permissão".
+    """
+    from app.apps.erp.core.arquivo import service as svc_arq
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_arq.exigir_documento_no_escopo(s, usuario, documento_id)
+            doc = svc_arq.corrigir_datas(
+                s, documento_id, emissao=d.get("emissao"),
+                validade=d.get("validade"), competencia=d.get("competencia"),
+                referencia=d.get("referencia"), usuario=usuario)
+            linha = svc_arq.ler(s, doc)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/documentos/<int:documento_id>/perguntar", methods=["POST"])
 @login_obrigatorio
 @permissao("ver_arquivo")
@@ -5401,6 +5435,25 @@ def api_anexos_mover():
     try:
         with get_session() as s:
             r = mover_para_drive(s, limite=int(request.args.get("limite", 25)))
+            s.commit()
+        return jsonify({"ok": True, "dados": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/anexos/armazenamento/reorganizar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_anexos_reorganizar():
+    """Põe na pasta certa o que já está no Drive fora do lugar (migração 070).
+
+    Move, nunca copia e nunca apaga: no Drive, mover é trocar o pai do arquivo
+    — o id, o histórico e o link continuam os mesmos.
+    """
+    from app.apps.erp.core.documentos.armazenamento import reorganizar_no_drive
+    try:
+        with get_session() as s:
+            r = reorganizar_no_drive(s, limite=int(request.args.get("limite", 50)))
             s.commit()
         return jsonify({"ok": True, "dados": r})
     except ErroValidacao as e:

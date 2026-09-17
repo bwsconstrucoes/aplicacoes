@@ -21,6 +21,54 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### O DRIVE FOI LIGADO EM PRODUÇÃO, E AGORA TEM ÁRVORE DE PASTAS (migração 070)
+
+17/09/2026, o dono: *"quanto ao Drive, eu marquei aqui guardar os documentos
+novos no Drive. Eu já cliquei aqui, mover os antigos para o Drive. Aí você
+reorganiza, faz um jeito de organizar dentro dessa estrutura. É importante,
+senão fica bagunçado. E a gente não ocupa espaço na base de dados, que é o mais
+importante. (…) Só tem que ter cuidado para não excluir."*
+
+**Ele ligou o Drive antes de a árvore existir** — então há arquivos que subiram
+direto para a pasta raiz configurada. O botão **"Organizar nas pastas"**, em
+Configurações → Documentos, arruma isso aos poucos (50 por vez; rode de novo
+para continuar).
+
+A estrutura:
+
+    <pasta configurada>
+      ├── Obras
+      │     └── ESCPE18 - Escola Planalto      (uma por obra, código e nome)
+      └── Arquivo
+            └── Empresas · Pessoas · Fornecedores · Financeiro · Diversos
+
+Três decisões que ficam de pé:
+
+- **Pasta com o nome certo que já exista é REUSADA.** Se ele criar "Obras" à
+  mão, o sistema entra nela. Duas pastas com o mesmo nome é o começo de
+  documento sumido.
+- **Nada é apagado, nunca.** Reorganizar MOVE — no Drive, mover é trocar o pai
+  do arquivo: mesmo id, mesmo histórico, link não quebra. Foi o cuidado que ele
+  pediu com todas as letras.
+- **Falha do Drive não impede guardar.** Se a árvore não puder ser montada, o
+  arquivo vai para a pasta raiz; se o Drive estiver fora, vai para o banco e o
+  botão de mover leva depois.
+
+⚠️ **A tabela `drive_pastas` é um caderninho, não a verdade.** Apagar uma linha
+dela não apaga nada no Drive — só faz o sistema procurar (ou criar) de novo.
+
+### E O DOCUMENTO COM DATA ERRADA AGORA SE CORRIGE NA TELA DO ARQUIVO
+
+*"Eu vi um contrato que está dando que está vencido, mas na verdade está vencido
+porque eu escrevi a validade errado. Eu queria daqui ir para o cadastro e editar
+isso direto, como se fosse um pulo."*
+
+Duas coisas na linha do documento, para quem pode arquivar: **Datas**, que abre
+emissão, validade, competência e referência (com as travas: tipo que vence não
+fica sem validade, e validade não cai antes da emissão), e **Ver a obra**, que
+pula direto para a ficha. A correção fica na trilha com o antes e o depois.
+
+
 ### NOVE ACERTOS DE USO, PEDIDOS OLHANDO A TELA (17/09/2026, sem migração)
 
 Tudo do mesmo dia, com o dono usando o sistema e apontando o que incomodava:

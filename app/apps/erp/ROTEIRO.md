@@ -507,6 +507,14 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       mais antigo guardado), porque o Banco Central só republica a variação. A
       RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
 
+- [x] **ÁRVORE DE PASTAS NO DRIVE, E A DATA DO DOCUMENTO CORRIGÍVEL** — FEITO
+      em 17/09/2026. **TRAZ A MIGRAÇÃO 070.** O dono ligou o Drive e pediu a
+      organização: `Obras/<código - nome>` e `Arquivo/<gaveta>`. Pasta que já
+      existe é reusada; reorganizar MOVE e **nunca apaga**; falha do Drive cai
+      na raiz, e falha total cai no banco. Botão "Organizar nas pastas" em
+      Configurações → Documentos, 50 por vez. Na tela do Arquivo, **Datas**
+      corrige emissão/validade/competência e **Ver a obra** pula para a ficha.
+
 - [x] **NOVE ACERTOS DE USO E A TROCA DA PRÓPRIA SENHA** — FEITO em 17/09/2026.
       **Sem migração.** Pedidos do dono com o sistema aberto: a vigência em dias
       calculando sozinha; o TIPO do documento em destaque no lugar do nome do

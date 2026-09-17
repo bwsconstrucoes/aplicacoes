@@ -227,8 +227,25 @@
     <span class="rotulo"><b>Guardar os documentos NOVOS no Drive</b> — os que já existem
       continuam onde estão até você mandar mover</span></label>
 
-  <div style="margin-top:12px">
+  {# A ÁRVORE DE PASTAS (migração 070). Dono, 17/09/2026: *"faz um jeito de
+     organizar dentro dessa estrutura, senão fica bagunçado. E a gente não ocupa
+     espaço na base de dados, que é o mais importante. Só tem que ter cuidado
+     para não excluir"*. #}
+  <div class="cartao-dica" style="margin-top:12px">
+    <b>Como fica organizado lá dentro:</b>
+    <div class="mono" style="font-size:12px; line-height:1.7; margin-top:4px">
+      pasta configurada acima<br>
+      ├── <b>Obras</b> → uma pasta por obra (código e nome)<br>
+      └── <b>Arquivo</b> → Empresas · Pessoas · Fornecedores · Financeiro
+    </div>
+    A pasta que já existir com esse nome é <b>reusada</b>, não duplicada. E
+    reorganizar <b>move</b> o arquivo: no Drive, mover é trocar a pasta —
+    nada é copiado e <b>nada é apagado</b>.
+  </div>
+
+  <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
     <button class="btn amarelo" id="btn-dr-mover">Mover documentos antigos para o Drive</button>
+    <button class="btn secundario" id="btn-dr-organizar">Organizar nas pastas</button>
     <div class="dica">Vai em lotes pequenos, e <b>confere cada arquivo no Drive antes de
       apagar do banco</b>. Pode apertar várias vezes: ele continua de onde parou.</div>
   </div>
@@ -1692,6 +1709,21 @@ els("btn-dr-mover") && els("btn-dr-mover").addEventListener("click", async (ev) 
     carregarAnexos();
   } catch(e){ aviso("dr-resultado", e.message, "erro"); }
   b.disabled = false; b.textContent = "Mover documentos antigos para o Drive";
+});
+
+els("btn-dr-organizar") && els("btn-dr-organizar").addEventListener("click", async (ev) => {
+  const b = ev.target; b.disabled = true; b.textContent = "Organizando…";
+  try {
+    const d = await api("/erp/api/anexos/armazenamento/reorganizar", {method:"POST"});
+    const r = d.dados;
+    const falhas = (r.falhas||[]).length
+      ? `<br>Não deu para mover ${r.falhas.length}: ${r.falhas.map(f=>`#${f.id} (${f.erro})`).join("; ")}`
+      : "";
+    aviso("dr-resultado", `${r.movidos} arquivo(s) foram para a pasta certa;
+      ${r.ja_certos} já estavam. Conferidos agora: ${r.vistos}. Rode de novo
+      para continuar de onde parou.${falhas}`, r.movidos ? "ok" : "alerta");
+  } catch(e){ aviso("dr-resultado", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Organizar nas pastas";
 });
 
 // ---------------------------------------------------------------------------

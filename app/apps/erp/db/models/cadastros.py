@@ -1333,6 +1333,26 @@ class IndiceEconomico(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class DrivePasta(Base):
+    """Onde cada pasta da árvore do Drive foi parar (migração 070).
+
+    Pedido do dono em 17/09/2026: a documentação organizada em
+    `Obras/<código da obra>` e `Arquivo/<...>`, para achar no computador sem
+    depender do ERP — e para o banco parar de carregar arquivo.
+
+    Guarda o id porque o Drive identifica pasta por id, não por caminho: se
+    alguém renomear a pasta lá, isto continua valendo. Apagar uma linha daqui
+    não apaga nada no Drive; só faz o sistema procurar (ou criar) de novo.
+    """
+    __tablename__ = "drive_pastas"
+
+    chave: Mapped[str] = mapped_column(Text, primary_key=True)
+    file_id: Mapped[str] = mapped_column(Text, nullable=False)
+    nome: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
 class IndiceAncora(Base):
     """O ponto de referência do número-índice (migração 069).
 
