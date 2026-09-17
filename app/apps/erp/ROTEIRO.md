@@ -507,6 +507,17 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       mais antigo guardado), porque o Banco Central só republica a variação. A
       RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
 
+- [x] **AS DATAS DO DOCUMENTO NUM LUGAR SÓ, E VIGÊNCIA EM DIAS** — FEITO em
+      14/09/2026. **Sem migração.** O dono, vendo a primeira versão: *"você tá
+      me cobrando data do documento em cima e a informação da vigência embaixo,
+      e tem nomenclaturas diferentes"*, e *"a vigência muitas vezes é colocada
+      em dias"*. A validade do documento subiu para o bloco de datas com o nome
+      do negócio (Assinatura · Início · Fim da vigência) e saiu da lista de
+      baixo; dá para informar a data OU o prazo em dias, com a conta à vista;
+      campo de data virou calendário, no formato do Brasil. A leitura passou a
+      perguntar por `vigencia_dias` e pela data de assinatura no FECHO — era por
+      isso que ela não achava o que estava no documento.
+
 - [x] **O DOCUMENTO LIDO ABRE OS CAMPOS QUE FALTARAM** — FEITO em 14/09/2026.
       **Sem migração.** O dono, importando um contrato: *"não aparece o campo de
       vigência (…) não permite avançar porque ela é obrigatória. Aí era para

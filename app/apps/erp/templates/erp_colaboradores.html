@@ -173,7 +173,7 @@ function desenharLeituraDaPessoa(id){
       ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
     </div>
 
-    ${blocoDeDatasDoDocumento("pdoc", g)}
+    ${blocoDeDatasDoDocumento("pdoc", g, null)}
 
     ${c.tipo_nao_preenche
       ? `<div class="cartao-dica">Este tipo não alimenta o cadastro — vale pela
@@ -249,7 +249,7 @@ async function guardarDocumentoDaPessoa(id){
     if (entrada && entrada.value.trim()) campos[campo] = entrada.value.trim();
   });
 
-  const datas = datasDoDocumento("pdoc", g);
+  const datas = datasDoDocumento("pdoc", g, null);
   if (!datas.ok) { aviso("pdoc-msg", datas.erro, "erro"); return; }
 
   const b = els("btn-pdoc-guardar");

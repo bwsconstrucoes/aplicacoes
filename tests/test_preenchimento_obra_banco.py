@@ -411,16 +411,20 @@ def test_a_previa_do_nome_e_a_mesma_que_vai_ser_guardada(app_real, cenario, monk
 # resposta voltam em branco, para a pessoa preencher.
 # ---------------------------------------------------------------------------
 def test_campo_que_a_leitura_nao_achou_volta_em_branco(cenario):
-    """O caso exato do relato: contrato sem vigência escrita."""
+    """O caso do relato: o contrato não diz, e mesmo assim dá para preencher.
+
+    (A vigência em si mudou de lugar depois — subiu para o bloco de datas, no
+    grupo 8. Aqui ficam os outros campos, que continuam na gaveta de baixo.)
+    """
     r = preenchimento.sugerir_para_obra(
         cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
         _leitura("CONTRATO-OBRA", {"contrato": "CT 014/2026",
                                    "cliente": "MUNICÍPIO DE X"}))
     vazios = {c["campo"]: c for c in r["campos_vazios"]}
-    assert "vigencia_fim" in vazios, "é o campo que travava o arquivamento"
-    assert "vigencia_inicio" in vazios
-    assert vazios["vigencia_fim"]["rotulo"] == "Fim da vigência"
-    assert vazios["vigencia_fim"]["feitio"] == "data"
+    assert "data_base_orcamento" in vazios, "trava o reajuste se faltar"
+    assert vazios["data_base_orcamento"]["rotulo"] == "Data-base do orçamento"
+    assert vazios["data_base_orcamento"]["feitio"] == "data"
+    assert "valor_contrato" in vazios
 
 
 def test_o_que_a_leitura_achou_nao_aparece_em_branco(cenario):
@@ -428,11 +432,11 @@ def test_o_que_a_leitura_achou_nao_aparece_em_branco(cenario):
     r = preenchimento.sugerir_para_obra(
         cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
         _leitura("CONTRATO-OBRA", {"contrato": "CT 014/2026",
-                                   "vigencia_fim": "2027-12-31"}))
+                                   "valor_contrato": "1500000.00"}))
     achados = {c["campo"] for c in r["campos"]}
     vazios = {c["campo"] for c in r["campos_vazios"]}
-    assert "vigencia_fim" in achados
-    assert "vigencia_fim" not in vazios
+    assert "valor_contrato" in achados
+    assert "valor_contrato" not in vazios
     assert not (achados & vazios), "um campo está de um lado OU do outro"
 
 
@@ -459,8 +463,9 @@ def test_a_obra_nova_abre_todos_os_campos_do_tipo(cenario):
         cenario["s"], "CONTRATO-OBRA",
         _leitura("CONTRATO-OBRA", {"objeto": "CONSTRUÇÃO DE CRECHE"}))
     vazios = {c["campo"] for c in r["campos_vazios"]}
-    assert "vigencia_fim" in vazios and "valor_contrato" in vazios
+    assert "valor_contrato" in vazios and "prazo_execucao_dias" in vazios
     assert "objeto" not in vazios, "esse a leitura trouxe"
+    assert "vigencia_fim" not in vazios, "a vigência subiu para o bloco de datas"
 
 
 def test_o_campo_aberto_e_gravavel_pelo_mesmo_caminho(cenario):
@@ -469,8 +474,108 @@ def test_o_campo_aberto_e_gravavel_pelo_mesmo_caminho(cenario):
     r = preenchimento.sugerir_para_obra(
         s, obra.id, "CONTRATO-OBRA", _leitura("CONTRATO-OBRA", {}))
     campo = r["campos_vazios"][0]["campo"]
+    assert campo in preenchimento.POR_TIPO["CONTRATO-OBRA"]
+    # E a data que subiu para o topo grava pelo MESMO caminho — é o que a tela
+    # faz ao juntá-la aos campos marcados.
     preenchimento.aplicar_na_obra(s, obra.id, {"vigencia_fim": "2028-03-31"},
                                   tipo_codigo="CONTRATO-OBRA",
                                   usuario=cenario["admin"])
     assert obra.vigencia_fim == date(2028, 3, 31)
-    assert campo in preenchimento.POR_TIPO["CONTRATO-OBRA"]
+
+
+# ---------------------------------------------------------------------------
+# 8. A MESMA DATA NÃO SE PERGUNTA DUAS VEZES — E VIGÊNCIA PODE VIR EM DIAS
+#
+# 14/09/2026, o dono olhando a tela: *"lá em cima tem datas do documento,
+# emissão e vale até. Aí tá conflitante com a informação lá de baixo, que é
+# vigência (…) e tem nomenclaturas diferentes. Não está direito não aqui."* E,
+# logo depois: *"a vigência, muitas vezes, é colocada em dias (…) a gente
+# deveria poder colocar a data exata (…) ou então a quantidade de dias. Essas
+# informações existiam no documento que eu li, não sei por que não foi
+# identificado: tem a data de assinatura no final e a quantidade de dias de
+# vigência, 365."*
+# ---------------------------------------------------------------------------
+def test_o_fim_da_vigencia_sobe_para_o_bloco_de_datas(cenario):
+    """Num contrato, "até quando vale" e "fim da vigência" são a mesma data."""
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"vigencia_fim": "2027-12-31"}))
+    assert r["datas"]["campo_validade"] == "vigencia_fim"
+    assert r["datas"]["rotulo_validade"] == "Fim da vigência"
+    assert r["datas"]["valor_validade"] == "2027-12-31"
+
+
+def test_a_data_que_subiu_nao_aparece_mais_embaixo(cenario):
+    """Era a queixa: a mesma data cobrada em dois lugares, com nomes diferentes."""
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"vigencia_fim": "2027-12-31"}))
+    de_baixo = {c["campo"] for c in r["campos"]} | {c["campo"] for c in r["campos_vazios"]}
+    assert "vigencia_fim" not in de_baixo
+    assert "vigencia_inicio" not in de_baixo, "o começo anda junto do fim"
+
+
+def test_o_inicio_da_vigencia_sobe_junto(cenario):
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"vigencia_inicio": "2026-02-12"}))
+    extras = {x["campo"]: x for x in r["datas"]["extras"]}
+    assert extras["vigencia_inicio"]["valor"] == "2026-02-12"
+    assert extras["vigencia_inicio"]["rotulo"] == "Início da vigência"
+
+
+def test_vigencia_em_dias_chega_para_a_tela_calcular(cenario):
+    """365 dias em vez da data final — o caso do contrato dele."""
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"vigencia_dias": "365",
+                                   "data_assinatura": "2026-02-12"}))
+    assert r["datas"]["dias"] == "365"
+    assert r["datas"]["aceita_dias"] is True
+    assert r["datas"]["valor_validade"] == "", "a data final não se inventa aqui"
+
+
+def test_a_assinatura_vira_a_emissao_do_contrato(cenario):
+    """A data está no fecho do documento, sem rótulo — e é a emissão dele."""
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"data_assinatura": "2026-02-12"}))
+    assert r["datas"]["emissao"] == "2026-02-12"
+
+
+def test_certidao_continua_dizendo_vale_ate(cenario):
+    """Tipo sem campo de cadastro equivalente não ganha nome inventado."""
+    r = preenchimento.sugerir_para_obra(
+        cenario["s"], cenario["obra"].id, "LICENCA", _leitura("LICENCA", {}))
+    assert r["datas"]["campo_validade"] == ""
+    assert r["datas"]["rotulo_validade"] == "Vale até"
+    assert r["datas"]["aceita_dias"] is False
+
+
+def test_o_que_ja_esta_no_cadastro_viaja_junto_para_a_tela_comparar(cenario):
+    """A regra da casa: não se troca o que alguém digitou sem dizer."""
+    s, obra = cenario["s"], cenario["obra"]
+    obra.vigencia_fim = date(2027, 6, 30)
+    s.flush()
+    r = preenchimento.sugerir_para_obra(
+        s, obra.id, "CONTRATO-OBRA", _leitura("CONTRATO-OBRA", {}))
+    assert r["datas"]["atual_validade"] == "2027-06-30"
+    assert r["datas"]["valor_validade"] == "2027-06-30"
+
+
+def test_a_obra_nova_tambem_junta_as_datas_em_cima(cenario):
+    r = preenchimento.sugerir_para_nova_obra(
+        cenario["s"], "CONTRATO-OBRA",
+        _leitura("CONTRATO-OBRA", {"vigencia_dias": "365"}))
+    assert r["datas"]["campo_validade"] == "vigencia_fim"
+    assert r["datas"]["dias"] == "365"
+    de_baixo = {c["campo"] for c in r["campos_vazios"]}
+    assert "vigencia_fim" not in de_baixo and "vigencia_inicio" not in de_baixo
+
+
+def test_a_extracao_pede_vigencia_em_dias_e_assinatura(cenario):
+    """Se a pergunta não existe, a resposta não vem — foi o que aconteceu."""
+    instrucao = preenchimento.instrucao_de_extracao()
+    assert "vigencia_dias" in instrucao
+    assert "data_assinatura" in instrucao
+    assert "FECHO" in instrucao, "é onde a data de assinatura costuma estar"

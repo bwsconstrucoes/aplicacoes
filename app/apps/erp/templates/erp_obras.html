@@ -237,7 +237,7 @@ function desenharLeituraDoDocumento(obraId){
       ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
     </div>
 
-    ${blocoDeDatasDoDocumento("doc", g)}
+    ${blocoDeDatasDoDocumento("doc", g, c.datas)}
 
     ${c.tipo_nao_preenche
       ? `<div class="cartao-dica">Este tipo de documento não alimenta o cadastro
@@ -325,8 +325,9 @@ async function guardarDocumentoDaObra(obraId){
     if (entrada && entrada.value.trim()) campos[campo] = entrada.value.trim();
   });
 
-  const datas = datasDoDocumento("doc", g);
+  const datas = datasDoDocumento("doc", g, DOC_LIDO.cadastro.datas);
   if (!datas.ok) { aviso("doc-msg", datas.erro, "erro"); return; }
+  Object.assign(campos, datas.campos);
 
   const b = els("btn-doc-guardar");
   b.disabled = true; b.textContent = "Guardando…";
@@ -1135,7 +1136,7 @@ function desenharLeituraDeObraNova(){
       ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
     </div>
 
-    ${blocoDeDatasDoDocumento("nd", g)}
+    ${blocoDeDatasDoDocumento("nd", g, c.datas)}
 
     ${p.length ? `<div class="aviso erro">
       <b>Atenção: isto pode já estar cadastrado.</b>
@@ -1229,8 +1230,9 @@ async function criarObraDoDocumento(){
     if (entrada && entrada.value.trim()) campos[campo] = entrada.value.trim();
   });
 
-  const datas = datasDoDocumento("nd", g);
+  const datas = datasDoDocumento("nd", g, NOVA_DOC.cadastro.datas);
   if (!datas.ok) { aviso("nd-msg", datas.erro, "erro"); return; }
+  Object.assign(campos, datas.campos);
 
   const b = els("nd-criar");
   b.disabled = true; b.textContent = "Criando…";

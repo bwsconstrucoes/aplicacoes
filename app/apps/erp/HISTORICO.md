@@ -21,6 +21,54 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### AS DATAS DO DOCUMENTO: UM LUGAR SÓ, COM O NOME DO NEGÓCIO (sem migração)
+
+Segunda rodada, no mesmo dia, depois que ele viu a primeira versão:
+
+> *"Aí tem início da vigência, fim da vigência. Tá invertido, tá ano-traço-mês-
+> traço-dia. Tem que ser no formato Brasil, né? Outra coisa: lá em cima tem
+> datas do documento, emissão e vale até. Aí tá conflitante com a informação lá
+> de baixo, que é vigência. Tá meio esquisito. Você tá me cobrando data do
+> documento em cima e a informação da vigência embaixo. E tem nomenclaturas
+> diferentes. Não está direito não aqui."*
+
+> *"A vigência, muitas vezes, é colocada em dias (…) deveria poder colocar a
+> data exata, que tem contrato que tem a data exata, ou então a quantidade de
+> dias. E essas informações existiam no documento que eu li, não sei por que
+> não foi identificado: tem a data de assinatura do contrato, no final, e a
+> quantidade de dias de vigência, que no caso é 365."*
+
+Três defeitos, os três reais:
+
+1. **Data pedida em formato de banco.** Os campos abertos eram caixa de texto
+   com "AAAA-MM-DD". Viraram **campo de data** de verdade — o navegador mostra
+   no formato do país (dd/mm/aaaa no computador dele).
+2. **A mesma data perguntada duas vezes, com nomes diferentes.** Num contrato,
+   "até quando o documento vale" e "fim da vigência" **são a mesma data**. Agora
+   a validade do documento **sobe** para o bloco de datas com o nome do negócio
+   (Assinatura · Início da vigência · Fim da vigência) e some da lista de baixo.
+   O de-para está em `VALIDADE_E_O_CAMPO`, no `preenchimento.py`: contrato →
+   `vigencia_fim`, seguro → `seguro_vigencia_fim`. Tipo sem campo equivalente
+   (certidão, licença) continua dizendo "Vale até" — inventar nome seria pior.
+3. **A leitura não achava o que estava no documento, e havia motivo.** Duas
+   causas, não azar:
+   - **não existia campo para vigência em DIAS.** Os campos eram
+     `vigencia_inicio`, `vigencia_fim` e `prazo_execucao_dias` — e prazo de
+     execução é outro número. Contrato que diz "vigência de 365 dias" não tinha
+     onde ser guardado, e a instrução manda deixar vazio em vez de inventar
+     (comportamento certo, campo faltando). Agora existe `vigencia_dias`;
+   - **"emissão" não é palavra de contrato.** A data existe no FECHO, por
+     extenso ("Recife, 12 de fevereiro de 2026"), sem rótulo. A instrução agora
+     diz isso com todas as letras, e pede `data_assinatura`.
+
+**O prazo em dias é meio de ENTRADA, não dado novo:** dias + data de partida dão
+a data final, e é a data final que fica guardada e vira aviso. A tela mostra a
+conta ("365 dias a partir de 12/02/2026 dão 12/02/2027") para alguém conferir —
+número que vira data sem conferência é erro esperando acontecer. Guardar também
+o número 365 exigiria coluna nova; o que foi digitado fica na trilha de
+auditoria do preenchimento. ⚠️ **A contagem do dia inicial varia por contrato**,
+e a tela avisa: há contrato que conta o próprio dia da assinatura.
+
 ### O DOCUMENTO LIDO AGORA ABRE OS CAMPOS QUE A IA NÃO ACHOU (sem migração)
 
 14/09/2026, o dono importando um contrato para criar obra: *"ele fez a leitura,

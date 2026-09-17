@@ -806,9 +806,17 @@ async function api(url, opcoes) {
 // que a leitura achou e editáveis; e o que o tipo de documento preencheria no
 // cadastro, mas ninguém tem, aparece em branco para quem sabe digitar.
 // ---------------------------------------------------------------------------
-function blocoDeDatasDoDocumento(prefixo, g){
-  const falta = g.tipo_vence && !g.validade;
+function blocoDeDatasDoDocumento(prefixo, g, d){
+  d = d || {};
+  const rotulo = d.rotulo_validade || "Vale até";
+  const valor = d.campo_validade ? (d.valor_validade || "") : (g.validade || "");
+  const emissao = d.emissao || g.emissao || "";
+  const falta = g.tipo_vence && !valor;
   const faltaComp = g.tipo_por_competencia && !g.competencia;
+  const extras = (d.extras || []).map(x => `
+    <div class="campo"><label>${escapar(x.rotulo)}</label>
+      <input id="${prefixo}-dt-x-${escapar(x.campo)}" type="date"
+             value="${escapar(x.valor || "")}"></div>`).join("");
   return `
     <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
          ${falta || faltaComp ? "border-left:4px solid var(--vermelho);" : ""} margin-top:12px">
@@ -816,40 +824,109 @@ function blocoDeDatasDoDocumento(prefixo, g){
         <small style="color:var(--tinta-suave)"> — o que a leitura achou; corrija
           ou preencha o que faltou</small></div>
       <div class="form-grade" style="padding:8px 12px 12px">
-        <div class="campo"><label>Emissão</label>
-          <input id="${prefixo}-dt-emissao" type="date" value="${escapar(g.emissao || "")}"></div>
-        ${g.tipo_vence ? `<div class="campo"><label>Vale até *</label>
-          <input id="${prefixo}-dt-validade" type="date" value="${escapar(g.validade || "")}"
-            oninput="espelharValidadeNaVigencia(this)"></div>` : ""}
+        <div class="campo"><label>${d.campo_validade === "vigencia_fim"
+            ? "Assinatura" : "Emissão"}</label>
+          <input id="${prefixo}-dt-emissao" type="date" value="${escapar(emissao)}"></div>
+        ${extras}
+        ${g.tipo_vence ? `<div class="campo"><label>${escapar(rotulo)} *</label>
+          <input id="${prefixo}-dt-validade" type="date" value="${escapar(valor)}"
+            oninput="recalcularDiasDaVigencia('${prefixo}', true)"></div>` : ""}
+        ${g.tipo_vence && d.aceita_dias ? `<div class="campo">
+          <label>ou prazo, em dias</label>
+          <input id="${prefixo}-dt-dias" inputmode="numeric" placeholder="365"
+            value="${escapar(d.dias || "")}"
+            oninput="recalcularDiasDaVigencia('${prefixo}')"></div>` : ""}
         ${g.tipo_por_competencia ? `<div class="campo"><label>Competência (mês) *</label>
           <input id="${prefixo}-dt-comp" type="month" value="${escapar(g.competencia || "")}"></div>` : ""}
       </div>
-      ${falta ? `<div class="aviso erro" style="margin:0 12px 12px">
-        <b>O documento não diz até quando vale.</b> Informe aqui: sem essa data o
-        sistema não tem como avisar antes do vencimento — que é metade do valor
-        de guardá-lo. Num contrato de obra, é o fim da vigência.</div>` : ""}
+      <div id="${prefixo}-dt-conta" class="cartao-dica" style="margin:0 12px 10px"></div>
+      ${falta ? `<div class="aviso erro" id="${prefixo}-dt-falta" style="margin:0 12px 12px">
+        <b>O documento não diz ${escapar(rotulo.toLowerCase())}.</b> Preencha a
+        data — ou o prazo em dias, que o sistema calcula a data e mostra aqui.
+        Sem ela o sistema não avisa antes do vencimento, que é metade do valor
+        de guardar o documento.</div>` : ""}
       ${faltaComp ? `<div class="aviso erro" style="margin:0 12px 12px">
         <b>Falta a competência</b> — o mês a que este documento se refere.</div>` : ""}
     </div>`;
 }
 
-// Devolve {ok, dados} ou {ok:false, erro} — a tela decide onde mostrar o recado.
-function datasDoDocumento(prefixo, g){
+// PRAZO EM DIAS → DATA FINAL, com a conta à vista.
+//
+// O dono, 14/09/2026: *"a vigência, muitas vezes, é colocada em dias. A gente
+// deveria poder colocar a data exata (…) ou então a quantidade de dias"*. É
+// isso: dois jeitos de dizer a mesma coisa. Quem digita dias vê a data que saiu
+// — número que vira data sem ninguém conferir é erro esperando acontecer.
+function recalcularDiasDaVigencia(prefixo, veioDaData){
+  const conta = els(prefixo + "-dt-conta");
+  const campoDias = els(prefixo + "-dt-dias");
+  const campoFim = els(prefixo + "-dt-validade");
+  if (!conta || !campoFim) return;
+  const sumirComOAviso = () => {
+    const av = els(prefixo + "-dt-falta");
+    if (av) av.hidden = !!campoFim.value;
+    // A tarja vermelha do cartão sai junto: cartão marcado como problema
+    // depois de resolvido é ruído, e ruído se aprende a ignorar.
+    const cartao = campoFim.closest(".cartao");
+    if (cartao) cartao.style.borderLeft = campoFim.value ? "" : "4px solid var(--vermelho)";
+  };
+  if (veioDaData) {                 // digitou a data: o prazo deixa de valer
+    if (campoDias) campoDias.value = "";
+    conta.innerHTML = "";
+    sumirComOAviso();
+    return;
+  }
+  const dias = parseInt((campoDias && campoDias.value || "").replace(/\D/g, ""), 10);
+  const partida = (els(prefixo + "-dt-x-vigencia_inicio") || {}).value
+               || (els(prefixo + "-dt-emissao") || {}).value || "";
+  if (!dias || !partida) {
+    conta.innerHTML = dias
+      ? `<b>Falta a data de partida</b> — preencha a assinatura ou o início da
+         vigência para os ${dias} dias virarem data.`
+      : "";
+    sumirComOAviso();
+    return;
+  }
+  const base = new Date(partida + "T12:00:00");
+  base.setDate(base.getDate() + dias);
+  const iso = base.toISOString().slice(0, 10);
+  campoFim.value = iso;
+  conta.innerHTML = `<b>${dias} dia(s)</b> a partir de ${dataBR(partida)}
+    dão <b>${dataBR(iso)}</b> — é essa data que fica guardada. Confira com o
+    contrato: há contrato que conta o próprio dia da assinatura.`;
+  sumirComOAviso();
+}
+
+// Devolve {ok, dados, campos} — as datas do documento e o que vai ao cadastro.
+function datasDoDocumento(prefixo, g, d){
+  d = d || {};
   const pegar = id => { const e = els(id); return e ? (e.value || "").trim() : ""; };
   const emissao = pegar(prefixo + "-dt-emissao");
   const validade = g.tipo_vence ? pegar(prefixo + "-dt-validade") : "";
   const comp = g.tipo_por_competencia ? pegar(prefixo + "-dt-comp") : "";
+  const rotulo = (d.rotulo_validade || "Vale até").toLowerCase();
   if (g.tipo_vence && !validade) {
-    return {ok: false, erro: "Informe até quando o documento vale — está logo "
-            + "acima, em “Datas do documento”."};
+    return {ok: false, erro: `Informe ${rotulo} — está logo acima, em “Datas do `
+            + `documento”. Dá para digitar a data ou o prazo em dias.`};
   }
   if (g.tipo_por_competencia && !comp) {
     return {ok: false, erro: "Informe a competência (o mês) do documento."};
   }
   if (emissao && validade && validade < emissao) {
-    return {ok: false, erro: "A validade está antes da emissão. Confira as duas."};
+    return {ok: false, erro: `A data de ${rotulo} está antes da assinatura. `
+            + "Confira as duas."};
   }
-  return {ok: true, dados: {emissao: emissao, validade: validade, competencia: comp}};
+  // O que também é campo do CADASTRO vai junto — é a mesma data, dita na outra
+  // língua, e é por isso que ela não é perguntada duas vezes.
+  const campos = {};
+  if (d.campo_validade && validade && validade !== d.atual_validade) {
+    campos[d.campo_validade] = validade;
+  }
+  (d.extras || []).forEach(x => {
+    const v = pegar(prefixo + "-dt-x-" + x.campo);
+    if (v && v !== x.atual) campos[x.campo] = v;
+  });
+  return {ok: true, dados: {emissao: emissao, validade: validade, competencia: comp},
+          campos: campos};
 }
 
 // As linhas dos campos que ficaram SEM resposta — em branco, para digitar.
@@ -860,31 +937,13 @@ function linhasDeCamposVazios(vazios, attrMarca, attrValor){
       <td style="width:34px"><input type="checkbox" ${attrMarca}="${escapar(x.campo)}"></td>
       <td>${escapar(x.rotulo)}</td>
       <td><input ${attrValor}="${escapar(x.campo)}" value=""
-           placeholder="${escapar(x.feitio === "data" ? "AAAA-MM-DD" : "")}"
+           ${x.feitio === "data" ? 'type="date"' : ""}
+           placeholder="${escapar(x.feitio === "dinheiro" || x.feitio === "percentual"
+                                  ? "0,00" : x.feitio === "inteiro" ? "0" : "")}"
            oninput="marcarCampoDigitado(this, '${attrMarca}', '${escapar(x.campo)}')"
            style="width:100%; padding:5px 8px; border:1px solid var(--borda-forte);
                   border-radius:6px; font-size:13px"></td>
     </tr>`).join("");
-}
-
-// Num contrato de obra, "até quando vale" e "fim da vigência" são a MESMA
-// data — uma no documento, outra no cadastro. Digitar duas vezes a mesma coisa
-// é convite a digitar diferente, e aí o aviso da agenda e a ficha da obra
-// passam a discordar. Preenche o do cadastro, se estiver vazio e à vista.
-function espelharValidadeNaVigencia(entrada){
-  const valor = (entrada.value || "").trim();
-  if (!valor) return;
-  ["data-valor", "data-nvalor"].forEach(attr => {
-    const alvo = document.querySelector(`[${attr}="vigencia_fim"]`);
-    if (!alvo || alvo.value.trim()) return;
-    alvo.value = valor;
-    const marca = attr === "data-valor" ? "data-campo" : "data-ncampo";
-    const cx = document.querySelector(`[${marca}="vigencia_fim"]`);
-    if (cx && !cx.disabled) cx.checked = true;
-    // Abre a gaveta: preencher escondido é o mesmo que preencher sem avisar.
-    const gaveta = alvo.closest("details");
-    if (gaveta) gaveta.open = true;
-  });
 }
 
 function marcarCampoDigitado(entrada, attrMarca, campo){

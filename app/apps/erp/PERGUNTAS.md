@@ -792,9 +792,17 @@ Perguntas que passam a funcionar:
   aviso da agenda;
 - **o fim da vigência da OBRA** — campo do cadastro, que é o que o contrato
   determina.
-  Num contrato de obra as duas coincidem, e a tela espelha uma na outra. Em
-  aditivo NÃO coincidem: o aditivo estende a vigência da obra sem mudar a
-  validade do contrato original.
+  Num contrato de obra as duas coincidem, e por isso a tela pergunta **uma vez
+  só**, com o nome do negócio. Em aditivo NÃO coincidem: o aditivo estende a
+  vigência da obra sem mudar a validade do contrato original.
+
+⚠️ **Palavra ambígua: "prazo".** Também são dois números diferentes, e trocá-los
+dá data errada com cara de certa:
+
+- **prazo de VIGÊNCIA** — por quanto tempo o contrato vale (365 dias, por
+  exemplo). Vira a data final;
+- **prazo de EXECUÇÃO** — por quanto tempo há obra para fazer. Costuma ser
+  menor, e não define até quando o contrato vale.
 
 O que ainda **não** responde:
 

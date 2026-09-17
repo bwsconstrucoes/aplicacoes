@@ -144,6 +144,12 @@ Responda SOMENTE com JSON válido, sem markdown e sem comentários:
 Regras:
 - Campo ausente = string vazia. Lista ausente = [].
 - Datas sempre AAAA-MM-DD. Se vier 15/03/26, entenda 2026-03-15.
+- CONTRATO: "emissao" é a data de ASSINATURA. Ela raramente tem rótulo — está no
+  FECHO do documento, antes das assinaturas, quase sempre por extenso ("Recife, 12
+  de fevereiro de 2026"). Leia o fim do documento antes de dizer que não tem data.
+- CONTRATO: "validade" é o fim da VIGÊNCIA, quando o contrato escrever a data. Se ele
+  disser só o prazo ("vigência de 365 dias"), deixe "validade" vazio e ponha o prazo
+  em "dados_extraidos.vigencia_dias" — a conta é do sistema, não sua.
 - CERTIDÃO: "validade" é a data de VALIDADE impressa, não a de emissão. Certidão sem
   validade impressa costuma valer 180 dias da emissão — diga isso em observacoes e
   deixe "validade" vazio, não invente.
