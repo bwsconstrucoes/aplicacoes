@@ -2729,6 +2729,39 @@ def api_perguntar_documentos():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/documentos/<int:documento_id>/arquivo", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_documento_substituir_arquivo(documento_id: int):
+    """Troca o ARQUIVO de um documento já arquivado, mantendo o registro.
+
+    Dono, 17/09/2026: *"anexei uma ART e depois percebi que era o documento
+    errado, e queria substituir"*. O tipo, o dono e as datas continuam; o
+    arquivo anterior é apagado e a trilha guarda o retrato dele.
+
+    Mesma ação de guardar (`arquivar`) e mesmo recorte por escopo: ter a ação
+    não é alcançar ESTE documento.
+    """
+    from app.apps.erp.core.arquivo import service as svc_arq
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo novo."}), 400
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_arq.exigir_documento_no_escopo(s, usuario, documento_id)
+            doc = svc_arq.substituir_arquivo(
+                s, documento_id, f.read(), f.filename or "arquivo",
+                motivo=(request.form.get("motivo") or ""), usuario=usuario)
+            linha = svc_arq.ler(s, doc)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/documentos/<int:documento_id>/datas", methods=["POST"])
 @login_obrigatorio
 @permissao("arquivar")
@@ -5086,6 +5119,22 @@ def api_obra(obra_id: int):
                 # projeto, que é o caso comum.
                 if "projeto_id" in d:
                     obra.projeto_id = int(d["projeto_id"]) if d["projeto_id"] else None
+                # A EMPRESA DA OBRA, editável DEPOIS de criada (17/09/2026):
+                # *"depois de criada a obra, tem como selecionar a empresa
+                # fácil?"*. Não tinha — o campo só existia na criação, e as
+                # obras que nasceram soltas não tinham conserto pela tela.
+                if "empresa_id" in d:
+                    from app.apps.erp.db.models.cadastros import Empresa
+                    novo_id = int(d["empresa_id"]) if d["empresa_id"] else None
+                    if novo_id is not None and s.get(Empresa, novo_id) is None:
+                        return jsonify({"ok": False,
+                                        "erro": "Empresa não encontrada."}), 400
+                    if novo_id != obra.empresa_id:
+                        registrar_evento(
+                            s, "obra", obra.id, "EMPRESA_DEFINIDA",
+                            {"de": obra.empresa_id, "para": novo_id},
+                            usuario.id if usuario else None)
+                    obra.empresa_id = novo_id
                 s.flush()
                 registrar_evento(s, "obra", obra.id, "ATUALIZADA",
                                  {"codigo": obra.codigo, "antes": antes}, usuario.id)
@@ -5102,7 +5151,7 @@ def api_obra(obra_id: int):
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 "iss_retido inss_retido aceita_deducao_material prazo_execucao_dias "
-                "conta_recebimento_id projeto_id").split()}
+                "conta_recebimento_id projeto_id empresa_id").split()}
             for campo in ("valor_contrato", "latitude", "longitude",
                           "aliquota_iss", "aliquota_iss_pct",
                           "pct_servico_iss", "pct_servico_inss"):

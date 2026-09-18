@@ -747,6 +747,22 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 17/09/2026 — um cadastro, uma porta (regra de desenho, atravessa áreas)
+
+O dono, ao ver dois botões para cadastrar empresa: *"não gostei (…) você abre os
+campos normal, mas DENTRO do cadastro a opção de adicionar o Cartão CNPJ (…)
+isso tem que replicar para todas as outras áreas — o funcionamento do sistema
+tem que ser similar"*.
+
+A regra ficou escrita no `CLAUDE.md`: **um cadastro tem uma porta** (o
+formulário), e o documento que o preenche é um atalho DENTRO dele, no topo,
+nunca um segundo botão ao lado. Dois caminhos paralelos obrigam a pessoa a
+escolher antes de saber a diferença — e é assim que um sistema deixa de ser
+intuitivo sem que ninguém consiga apontar onde.
+
+A peça compartilhada é `abrirCadastroDeEmpresa`, no `erp_base.html`.
+
+
 ### 17/09/2026 — um teste do Análise de SPs quebrava sozinho (atravessa áreas)
 
 `tests/test_analisesps_certificados.py::test_o_arquivo_guardado_NAO_e_legivel`

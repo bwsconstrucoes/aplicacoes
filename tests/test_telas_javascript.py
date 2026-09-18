@@ -195,6 +195,10 @@ def test_o_javascript_da_tela_e_valido(tela: Path):
 # Ids criados em tempo de execução (createElement) e não escritos como id="".
 IDS_CRIADOS_EM_CODIGO = {
     "dlg-pergunta",     # erp_base.html: a caixa de diálogo genérica
+    # erp_base.html: o cadastro de empresa, que precisa de diálogo PRÓPRIO —
+    # quando é chamado de dentro da criação de obra, o diálogo da obra já está
+    # aberto e não pode ser substituído.
+    "dlg-empresa",
 }
 
 

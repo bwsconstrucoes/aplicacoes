@@ -46,6 +46,9 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
+    {# UM BOTÃO SÓ. O Cartão CNPJ é atalho DENTRO do cadastro, não um caminho
+       paralelo — dono, 17/09/2026: *"aquele botão de cadastrar com cartão CNPJ
+       não tem sentido (…) o funcionamento do sistema tem que ser similar"*. #}
     <button class="btn" id="btn-nova">+ Nova empresa</button>
   </div>
   <div class="tabela-rolagem">
@@ -672,26 +675,15 @@ async function ligarObra(obraId){
 }
 
 async function novaEmpresa(){
-  const d = await perguntar({
-    titulo: "Nova empresa",
-    textoOk: "Cadastrar",
-    aviso: "O CNPJ não muda depois. Os dados de endereço e a conta de e-mail " +
-           "podem ser preenchidos em seguida, na ficha.",
-    campos: [
-      {nome: "cnpj", rotulo: "CNPJ", obrigatorio: true, largura: 2},
-      {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3},
-      {nome: "nome_fantasia", rotulo: "Nome fantasia", largura: 2},
-      {nome: "email", rotulo: "E-mail", largura: 2},
-      {nome: "municipio", rotulo: "Cidade", largura: 2},
-      {nome: "uf", rotulo: "UF"}]});
-  if (!d) return;
-  try {
-    const r = await api("/erp/api/empresas", {method: "POST",
-      headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
-    aviso("mensagem", "Empresa cadastrada. Configure agora a conta de e-mail.", "ok");
+  // O formulário é o mesmo em toda parte (`abrirCadastroDeEmpresa`, no base):
+  // campos da empresa com a leitura do Cartão CNPJ dentro.
+  abrirCadastroDeEmpresa(async (empresa, veioDeDocumento) => {
+    aviso("mensagem", `Empresa <b>${escapar(empresa.nome)}</b> cadastrada`
+      + (veioDeDocumento ? " e o Cartão CNPJ guardado nela" : "")
+      + ". Configure agora a conta de e-mail.", "ok");
     await carregar();
-    abrir(r.id);
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
+    abrir(empresa.id);
+  });
 }
 
 ["f-busca", "f-inativas", "f-sem-conta", "f-sem-logo"].forEach(id =>
