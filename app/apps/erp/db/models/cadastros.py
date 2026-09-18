@@ -1418,3 +1418,80 @@ class EmpresaCertificado(Base):
         BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# ACOMPANHAMENTO — a gestão burocrática da obra (migração 072)
+#
+# Pedido do dono em 17/09/2026, aprovado em 18/09. O desenho está em
+# `app/apps/erp/ACOMPANHAMENTO.md`, e a razão de cada campo (e de cada campo
+# que NÃO existe) está na própria migração.
+# ---------------------------------------------------------------------------
+class SituacaoProcesso(str, enum.Enum):
+    """Onde o assunto está, do ponto de vista de quem espera resposta.
+
+    Sete estados e nenhum deles trava o outro: pular, voltar e fechar fora de
+    ordem é permitido, porque o órgão não segue ordem nenhuma. Falta um que
+    NÃO está aqui de propósito — "parado" —, porque parado é conclusão do
+    sistema (dias sem andamento), não campo que alguém marca.
+    """
+    RASCUNHO = "RASCUNHO"
+    PROTOCOLADO = "PROTOCOLADO"
+    EM_ANALISE = "EM_ANALISE"
+    EXIGENCIA = "EXIGENCIA"
+    DEFERIDO = "DEFERIDO"
+    INDEFERIDO = "INDEFERIDO"
+    ARQUIVADO = "ARQUIVADO"
+
+
+class Processo(Base):
+    """Um assunto com começo, meio e fim, que corre fora da BWS."""
+    __tablename__ = "processos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    assunto: Mapped[str] = mapped_column(Text, nullable=False)
+    tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    empresa_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
+    orgao: Mapped[Optional[str]] = mapped_column(Text)
+    responsavel_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="RASCUNHO")
+    onde_esta: Mapped[Optional[str]] = mapped_column(Text)
+    protocolo: Mapped[Optional[str]] = mapped_column(Text)
+    protocolado_em: Mapped[Optional[date]] = mapped_column(Date)
+    previsao: Mapped[Optional[date]] = mapped_column(Date)
+    documento_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    encerrado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Processo {self.numero} {self.assunto!r} {self.situacao}>"
+
+
+class ProcessoAndamento(Base):
+    """A frase que alguém escreveu ao ligar para o órgão.
+
+    Data e autor entram sozinhos. Os três opcionais (onde está, previsão,
+    situação) existem para a MESMA frase mudar o estado do processo sem abrir
+    outro formulário — foi a exigência mais forte do dono sobre este módulo.
+    """
+    __tablename__ = "processo_andamentos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    processo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("processos.id", ondelete="CASCADE"), nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    onde_esta: Mapped[Optional[str]] = mapped_column(Text)
+    previsao: Mapped[Optional[date]] = mapped_column(Date)
+    situacao: Mapped[Optional[str]] = mapped_column(Text)
+    anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    por_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

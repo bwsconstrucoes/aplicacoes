@@ -1,6 +1,10 @@
 # ACOMPANHAMENTO — a gestão burocrática da obra (desenho, ainda não construído)
 
-> **Estado: APROVADO, em construção (pedaço 1).** O desenho abaixo foi
+> **Estado: PEDAÇO 1 CONSTRUÍDO em 18/09/2026** (migração 072) — processo,
+> andamento, situação com "parado" calculado, a tela "o que está pendente" e o
+> botão Assumir. Pedaços 2 e 3 continuam na fila (§11).
+>
+> **Estado anterior: APROVADO, em construção (pedaço 1).** O desenho abaixo foi
 > apresentado ao dono em 17/09/2026 e aprovado por ele em 18/09/2026, com duas
 > decisões que mudaram a §12: **nada de Pipefy, e nada de dado antigo de lá**.
 > Conforme for construído, o que valer vira `HISTORICO.md` e as perguntas vão

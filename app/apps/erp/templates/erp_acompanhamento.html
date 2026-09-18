@@ -1,0 +1,411 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Acompanhamento — ERP BWS{% endblock %}
+
+{# ACOMPANHAMENTO — a gestão burocrática da obra (migração 072).
+
+   Pedido do dono em 17/09/2026, aprovado em 18/09. O desenho inteiro está em
+   `app/apps/erp/ACOMPANHAMENTO.md`. O que manda nesta tela:
+
+   1. A ORDEM NÃO É POR DATA. É por quem está mais perto de virar problema:
+      exigência a responder, depois o que passou da previsão, depois o parado.
+      Quem assume o assunto de alguém que saiu de férias precisa que a PRIMEIRA
+      linha seja a que mais dói, não a mais antiga.
+
+   2. LANÇAR ANDAMENTO É UMA FRASE E ENTER. Se custar mais, ninguém lança — e
+      acompanhamento desatualizado é pior que nenhum, porque quem bate o olho
+      acredita nele.
+
+   3. O MOTIVO APARECE NA LINHA. Urgência sem motivo obriga a pessoa a abrir o
+      processo para descobrir por que ele está vermelho, que é exatamente o
+      trabalho que esta tela existe para evitar.
+
+   O dono pediu junto: *"é interessante também que tenha um visual agradável
+   das informações"*. Por isso a lista é de CARTÕES e não de linhas de tabela:
+   cada processo cabe num bloco que se lê de relance — assunto grande, motivo
+   em cor, o último andamento embaixo em letra menor. #}
+
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="assunto, órgão, protocolo…">
+  </div>
+  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
+  <div class="campo"><label>Responsável</label><select id="f-responsavel"></select></div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Tipo</span><span class="seta">▾</span></button>
+    <div class="filtro-cont" id="f-tipos"></div>
+  </div>
+  <label class="opcao" style="margin-top:10px"><input type="checkbox" id="f-encerrados">
+    <span class="rotulo">Ver também os encerrados</span></label>
+  <div class="dica" style="margin-top:6px">Deferido, indeferido e arquivado saem
+    da lista por padrão: o que já terminou não é pendência, e ocupar a tela com
+    isso é o caminho para você parar de olhar a tela.</div>
+
+  {% if pode.tocar_processo %}
+  <button class="btn amarelo" id="btn-novo" style="width:100%; margin-top:14px">
+    + Abrir um processo</button>
+  <div class="dica" style="margin-top:6px">Aditivo de prazo, apostilamento,
+    renovação de licença, protocolo — qualquer assunto que depende de terceiro.</div>
+  {% endif %}
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+<div class="kpis kpis-largos" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <span id="acoes-lote"></span>
+  </div>
+  <div id="lista" class="lista-processos"></div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" id="dlg-fechar">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+
+<style>
+/* OS CINCO QUADRINHOS EM UMA LINHA SÓ. Com a largura padrão eles quebravam
+   4 + 1, e um quadrinho sozinho na segunda linha parece erro de tela — além de
+   estragar a leitura de relance, que é a razão de eles existirem. */
+#kpis.kpis-largos { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+
+/* A LISTA DE CARTÕES. Cada processo é um bloco que se lê de relance: a faixa
+   colorida da esquerda diz a urgência antes de qualquer palavra ser lida. */
+.lista-processos { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.proc {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px;
+  align-items: start; background: var(--branco); border: 1px solid var(--borda);
+  border-left: 4px solid var(--cinza); border-radius: 10px; padding: 10px 12px;
+  cursor: pointer; transition: box-shadow .12s, transform .12s;
+}
+.proc:hover { box-shadow: 0 4px 14px rgba(11,44,92,.12); transform: translateY(-1px); }
+.proc.u-EXIGENCIA { border-left-color: var(--vermelho); }
+.proc.u-ATRASADO  { border-left-color: var(--vermelho); }
+.proc.u-PARADO    { border-left-color: var(--ambar); }
+.proc.u-PROXIMO   { border-left-color: var(--amarelo); }
+.proc.u-EM_DIA    { border-left-color: var(--verde); }
+.proc-assunto { font-weight: 700; font-size: 14px; line-height: 1.3; }
+.proc-linha { font-size: 12px; color: var(--tinta-suave); margin-top: 3px; }
+.proc-motivo { font-size: 12px; font-weight: 600; margin-top: 4px; }
+.proc.u-EXIGENCIA .proc-motivo, .proc.u-ATRASADO .proc-motivo { color: var(--vermelho); }
+.proc.u-PARADO .proc-motivo { color: var(--ambar); }
+.proc-num { font-family: var(--fonte-dados); font-size: 11px; color: var(--tinta-suave); }
+.proc-dir { text-align: right; font-size: 12px; color: var(--tinta-suave); white-space: nowrap; }
+.proc-marca { align-self: center; }
+/* O histórico do processo: uma linha por frase, com um fio ligando as datas. */
+.tempo { list-style: none; margin: 10px 0 0; padding: 0 0 0 14px;
+         border-left: 2px solid var(--borda); }
+.tempo li { position: relative; padding: 0 0 12px 12px; }
+.tempo li::before { content: ""; position: absolute; left: -21px; top: 4px;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--azul-claro); }
+.tempo .quando { font-family: var(--fonte-dados); font-size: 11.5px; color: var(--tinta-suave); }
+.tempo .frase { font-size: 13.5px; margin-top: 1px; }
+.tempo .extra { font-size: 12px; color: var(--tinta-suave); margin-top: 2px; }
+@media (max-width: 720px) {
+  .proc { grid-template-columns: auto 1fr; }
+  .proc-dir { grid-column: 2; text-align: left; }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PODE_TOCAR = {{ 'true' if pode.tocar_processo else 'false' }};
+let PROCESSOS = [], RESUMO = {}, TIPOS = {}, SITUACOES = {};
+let OBRAS = [], OPERADORES = [], FILTRO_URGENCIA = "";
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+// ------------------------------------------------------------------ carregar
+async function carregarApoio(){
+  try {
+    const [o, u] = await Promise.all([api("/erp/api/obras"), api("/erp/api/usuarios")]);
+    OBRAS = o.obras || [];
+    OPERADORES = (u.usuarios || []).filter(x => x.ativo);
+  } catch(e){ /* a tela funciona sem os filtros; não vale derrubá-la por isso */ }
+  els("f-obra").innerHTML = `<option value="">Todas as obras</option>` +
+    OBRAS.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+  els("f-responsavel").innerHTML = `<option value="">Qualquer pessoa</option>` +
+    OPERADORES.map(u => `<option value="${u.id}">${escapar(u.nome)}</option>`).join("");
+}
+
+async function carregar(){
+  const q = new URLSearchParams();
+  if (els("f-obra").value) q.set("obra_id", els("f-obra").value);
+  if (els("f-responsavel").value) q.set("responsavel_id", els("f-responsavel").value);
+  const tipo = marcado("tipo");
+  if (tipo) q.set("tipo", tipo);
+  if (els("f-encerrados").checked) q.set("encerrados", "1");
+  try {
+    const d = await api("/erp/api/acompanhamento?" + q.toString());
+    PROCESSOS = d.processos || []; RESUMO = d.resumo || {};
+    TIPOS = d.tipos || {}; SITUACOES = d.situacoes || {};
+    montarTipos();
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function marcado(nome){
+  const m = document.querySelector(`input[name="${nome}"]:checked`);
+  return m ? m.value : "";
+}
+
+function montarTipos(){
+  const antes = marcado("tipo");
+  els("f-tipos").innerHTML =
+    `<label class="opcao"><input type="radio" name="tipo" value="" ${antes?"":"checked"}>
+       <span class="rotulo">Todos</span></label>` +
+    Object.entries(TIPOS).map(([chave, t]) => `<label class="opcao">
+       <input type="radio" name="tipo" value="${escapar(chave)}" ${antes===chave?"checked":""}>
+       <span class="rotulo">${escapar(t.rotulo)}</span></label>`).join("");
+  document.querySelectorAll('#f-tipos input[name="tipo"]').forEach(r =>
+    r.addEventListener("change", carregar));
+}
+
+// ------------------------------------------------------------------ desenhar
+function nomeDaObra(id){
+  const o = OBRAS.find(x => x.id === id);
+  return o ? rotuloObra(o) : (id ? "obra " + id : "da empresa");
+}
+function nomeDoOperador(id){
+  const u = OPERADORES.find(x => x.id === id);
+  return u ? u.nome : (id ? "operador " + id : "sem responsável");
+}
+
+function visiveis(){
+  const b = (els("f-busca").value || "").toLowerCase().trim();
+  return PROCESSOS.filter(p => {
+    if (FILTRO_URGENCIA && p.urgencia !== FILTRO_URGENCIA) return false;
+    if (!b) return true;
+    return `${p.numero} ${p.assunto} ${p.orgao||""} ${p.protocolo||""} ${p.onde_esta||""}`
+      .toLowerCase().includes(b);
+  });
+}
+
+function desenhar(){
+  {# OS QUADRINHOS SÃO FILTRO, e não enfeite: bater o olho e clicar em
+     "exigência" é o gesto de quem acabou de assumir o trabalho de outro. #}
+  const quad = [
+    ["EXIGENCIA", "Exigência a responder", "vermelho"],
+    ["ATRASADO",  "Passou da previsão",    "vermelho"],
+    ["PARADO",    "Parado",                "ambar"],
+    ["PROXIMO",   "Previsão chegando",     "roxo"],
+    ["EM_DIA",    "Em dia",                "verde"],
+  ];
+  els("kpis").innerHTML = quad.map(([chave, rot, cor]) => `
+    <div class="kpi ${cor} ${FILTRO_URGENCIA===chave?"ativo":""}" data-urg="${chave}">
+      <div class="kpi-rotulo">${rot}</div>
+      <div class="kpi-valor">${RESUMO[chave] || 0}</div>
+    </div>`).join("");
+  document.querySelectorAll("[data-urg]").forEach(k => k.addEventListener("click", () => {
+    FILTRO_URGENCIA = FILTRO_URGENCIA === k.dataset.urg ? "" : k.dataset.urg;
+    desenhar();
+  }));
+
+  const l = visiveis();
+  els("vazio").classList.toggle("oculto", l.length > 0);
+  if (!l.length) els("vazio").innerHTML = PROCESSOS.length
+    ? "<b>Nada nestes filtros</b>"
+    : "<b>Nenhum processo em andamento</b>Abra o primeiro pelo botão à esquerda.";
+
+  els("lista").innerHTML = l.map(p => `
+    <div class="proc u-${p.urgencia}" data-proc="${p.id}">
+      ${PODE_TOCAR ? `<input type="checkbox" class="marca proc-marca" value="${p.id}">`
+                   : `<span></span>`}
+      <div>
+        <div class="proc-assunto">${escapar(p.assunto)}</div>
+        <div class="proc-linha">
+          <span class="proc-num">${escapar(p.numero)}</span> ·
+          ${escapar(p.tipo_rotulo)} · ${escapar(nomeDaObra(p.obra_id))}
+          ${p.orgao ? " · " + escapar(p.orgao) : ""}
+        </div>
+        ${p.motivo ? `<div class="proc-motivo">${escapar(p.motivo)}</div>` : ""}
+        ${p.onde_esta ? `<div class="proc-linha">está com: <b>${escapar(p.onde_esta)}</b></div>` : ""}
+      </div>
+      <div class="proc-dir">
+        <span class="selo ${p.urgencia==="EM_DIA"?"aprovado":p.urgencia==="PARADO"?"aguardando":"bloqueado"}"
+          >${escapar(p.situacao_rotulo)}</span>
+        <div style="margin-top:4px">${escapar(nomeDoOperador(p.responsavel_id))}</div>
+        <div>${p.previsao ? "previsto " + dataBR(p.previsao) : "sem previsão"}</div>
+      </div>
+    </div>`).join("");
+
+  document.querySelectorAll("[data-proc]").forEach(c => c.addEventListener("click", ev => {
+    if (ev.target.classList.contains("marca")) return;   // marcar não é abrir
+    abrir(+c.dataset.proc);
+  }));
+
+  els("resumo").innerHTML = `<b>${l.length}</b> processo(s) · `
+    + `<b>${PROCESSOS.filter(p => p.urgencia !== "EM_DIA").length}</b> pedindo atenção`;
+  els("acoes-lote").innerHTML = PODE_TOCAR
+    ? `<button class="btn secundario" id="btn-assumir">Assumir os marcados</button>` : "";
+  if (els("btn-assumir")) els("btn-assumir").addEventListener("click", assumirMarcados);
+}
+
+// -------------------------------------------------------------------- abrir
+async function abrir(id){
+  try {
+    const d = await api(`/erp/api/acompanhamento/${id}`);
+    const p = d.processo;
+    els("dlg-titulo").textContent = `${p.numero} — ${p.assunto}`;
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      ${p.motivo ? `<div class="aviso ${p.urgencia==="EM_DIA"?"info":"alerta"}">${escapar(p.motivo)}</div>` : ""}
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
+        <table><tbody>
+          <tr><td>O que é</td><td>${escapar(p.tipo_rotulo)}</td></tr>
+          <tr><td>Obra</td><td>${escapar(nomeDaObra(p.obra_id))}</td></tr>
+          <tr><td>Órgão</td><td>${escapar(p.orgao || "—")}</td></tr>
+          <tr><td>Responsável</td><td>${escapar(nomeDoOperador(p.responsavel_id))}</td></tr>
+          <tr><td>Situação</td><td>${escapar(p.situacao_rotulo)}</td></tr>
+          <tr><td>Está com</td><td>${escapar(p.onde_esta || "—")}</td></tr>
+          <tr><td>Protocolo</td><td class="dados">${escapar(p.protocolo || "—")}
+            ${p.protocolado_em ? " · " + dataBR(p.protocolado_em) : ""}</td></tr>
+          <tr><td>Previsão</td><td class="dados">${dataBR(p.previsao)}</td></tr>
+          <tr><td>Sem andamento há</td><td class="dados">${p.dias_parado} dia(s)</td></tr>
+        </tbody></table>
+      </div>
+
+      ${PODE_TOCAR ? `
+      {# A FRASE E ENTER. Os três campos de baixo são opcionais e mudam o
+         processo na MESMA frase — quem ligou para o órgão descobre as três
+         coisas de uma vez, e abrir outro formulário para cada uma é o jeito
+         de nenhuma ser registrada. #}
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+           border-left:4px solid var(--verde)">
+        <b>O que aconteceu?</b>
+        <input id="and-texto" placeholder="ex.: liguei, está com o fulano do jurídico"
+          style="width:100%; margin-top:8px; padding:9px 11px; font-size:14px;
+                 border:1px solid var(--borda-forte); border-radius:8px">
+        <div class="form-grade" style="margin-top:8px">
+          <div class="campo"><label>Passou a estar com</label>
+            <input id="and-onde" placeholder="setor ou pessoa"></div>
+          <div class="campo"><label>Prometeram para</label>
+            <input id="and-previsao" type="date"></div>
+          <div class="campo"><label>Situação</label>
+            <select id="and-situacao"><option value="">— não muda —</option>
+              ${Object.entries(d.situacoes).map(([c, r]) =>
+                `<option value="${escapar(c)}">${escapar(r)}</option>`).join("")}
+            </select></div>
+          <div class="campo" style="align-self:end">
+            <button class="btn" id="btn-and">Lançar</button></div>
+        </div>
+        <div class="cartao-dica">Data e autor entram sozinhos. Só a frase é
+          obrigatória — o resto é para quando você souber.</div>
+      </div>` : ""}
+
+      <h4>O que já aconteceu</h4>
+      ${p.andamentos.length ? `<ul class="tempo">${p.andamentos.map(a => `
+        <li><div class="quando">${escapar(a.em)} · ${escapar(nomeDoOperador(a.por_id))}</div>
+          <div class="frase">${escapar(a.texto)}</div>
+          ${(a.onde_esta || a.situacao || a.previsao) ? `<div class="extra">
+            ${a.onde_esta ? "passou a estar com <b>" + escapar(a.onde_esta) + "</b>" : ""}
+            ${a.situacao ? " · virou <b>" + escapar(a.situacao_rotulo) + "</b>" : ""}
+            ${a.previsao ? " · prometido para <b>" + dataBR(a.previsao) + "</b>" : ""}
+          </div>` : ""}
+        </li>`).join("")}</ul>`
+        : `<div class="cartao-dica">Nada lançado ainda. A primeira frase pode ser
+           o que você combinou ao abrir o processo.</div>`}`;
+    els("dlg").showModal();
+    if (PODE_TOCAR) {
+      els("btn-and").addEventListener("click", () => lancarAndamento(id));
+      els("and-texto").addEventListener("keydown", ev => {
+        if (ev.key === "Enter") lancarAndamento(id);
+      });
+      els("and-texto").focus();
+    }
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function lancarAndamento(id){
+  const texto = (els("and-texto").value || "").trim();
+  if (!texto) { aviso("dlg-msg", "Escreva o que aconteceu.", "erro"); return; }
+  try {
+    await api(`/erp/api/acompanhamento/${id}/andamento`, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({texto, onde_esta: els("and-onde").value,
+                            previsao: els("and-previsao").value,
+                            situacao: els("and-situacao").value})});
+    await abrir(id);          // o histórico se refaz com a frase nova em cima
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+// --------------------------------------------------------------- abrir novo
+async function novoProcesso(){
+  if (!OBRAS.length) await carregarApoio();
+  const r = await perguntar({
+    titulo: "Abrir um processo",
+    textoOk: "Abrir",
+    aviso: "Só o assunto, o tipo e a obra são obrigatórios. O resto entra "
+         + "conforme a coisa anda — exigir tudo agora faz você deixar para depois.",
+    campos: [
+      {nome: "assunto", rotulo: "Assunto", obrigatorio: true, largura: 6,
+       exemplo: "Aditivo de prazo nº 2"},
+      {nome: "tipo", rotulo: "O que é", tipo: "select", obrigatorio: true,
+       opcoes: Object.entries(TIPOS).map(([c, t]) => ({valor: c, rotulo: t.rotulo}))},
+      {nome: "obra_id", rotulo: "Obra", tipo: "select", obrigatorio: true,
+       opcoes: OBRAS.map(o => ({valor: String(o.id), rotulo: rotuloObra(o)}))},
+      {nome: "orgao", rotulo: "Órgão / destinatário",
+       exemplo: "ex.: Prefeitura de Eusébio"},
+      {nome: "previsao", rotulo: "Prometeram para", tipo: "date"},
+    ]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/acompanhamento", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({...r, obra_id: +r.obra_id})});
+    aviso("mensagem", `Processo ${d.numero} aberto.`, "ok");
+    await carregar();
+    abrir(d.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ------------------------------------------------- o botão do caso das férias
+async function assumirMarcados(){
+  const ids = [...document.querySelectorAll(".marca:checked")].map(c => +c.value);
+  if (!ids.length) { aviso("mensagem", "Marque os processos primeiro.", "erro"); return; }
+  const r = await perguntar({
+    titulo: `Passar ${ids.length} processo(s) para quem?`,
+    textoOk: "Passar",
+    aviso: "É o que se faz quando alguém sai de férias: a troca fica registrada "
+         + "em cada processo.",
+    campos: [{nome: "responsavel_id", rotulo: "Responsável", tipo: "select",
+              obrigatorio: true, largura: 6,
+              opcoes: OPERADORES.map(u => ({valor: String(u.id), rotulo: u.nome}))}]});
+  if (!r) return;
+  try {
+    const d = await api("/erp/api/acompanhamento/assumir", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ids, responsavel_id: +r.responsavel_id})});
+    aviso("mensagem", `${d.trocados} processo(s) passaram de responsável.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------- liga
+els("f-busca").addEventListener("input", desenhar);
+els("f-obra").addEventListener("change", carregar);
+els("f-responsavel").addEventListener("change", carregar);
+els("f-encerrados").addEventListener("change", carregar);
+els("btn-limpar").addEventListener("click", () => {
+  els("f-busca").value = ""; els("f-obra").value = ""; els("f-responsavel").value = "";
+  els("f-encerrados").checked = false; FILTRO_URGENCIA = "";
+  const todos = document.querySelector('#f-tipos input[value=""]');
+  if (todos) todos.checked = true;
+  carregar();
+});
+els("dlg-fechar").addEventListener("click", () => els("dlg").close());
+if (els("btn-novo")) els("btn-novo").addEventListener("click", novoProcesso);
+
+carregarApoio().then(carregar);
+</script>
+{% endblock %}
