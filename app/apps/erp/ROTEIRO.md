@@ -109,6 +109,27 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+### ACOMPANHAMENTO — a gestão burocrática da obra — pedido de 17/09/2026
+
+O dono pediu o que hoje ele faz no Pipefy ("protocolo e medições"), com um
+pouco de Asana e de SEI, **mas sem travar**: acompanhar aditivo de prazo,
+apostilamento, renovação de licença, protocolo — com andamento de uma linha
+("liguei, está com fulano no setor tal") e uma tela que responde "o que está
+pendente" para quem assume o assunto de alguém que saiu de férias.
+
+**O desenho completo está em `ACOMPANHAMENTO.md`**, apresentado a ele em
+17/09/2026 e aguardando a decisão sobre o formato. Resumo da proposta de
+entrega, em três pedaços:
+
+1. Processo + andamento + situação (com "parado" calculado) + a tela "o que está
+   pendente" + botão Assumir. Duas tabelas de migração. Já substitui o Pipefy.
+2. Modelos por tipo, previsão de publicação e aviso automático por WhatsApp.
+3. Ofício gerado e numerado, deferimento que propõe atualizar a vigência da
+   obra, e indicadores de demora por órgão.
+
+Decisão pendente do dono, e é a que mais importa: **data para desligar o quadro
+do Pipefy**. Manter os dois em paralelo é o pior resultado possível.
+
 ### O ASSISTENTE DE IA E O RELATÓRIO DE TRABALHO — pedidos de 10/09/2026
 
 Dois pedidos grandes que o dono fez na mesma conversa, e que valem juntos
