@@ -1287,6 +1287,69 @@ def api_suprimentos_planejamento_criar():
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/suprimentos/cobranca")
+@login_obrigatorio
+@permissao("comprar")
+def api_suprimentos_cobranca():
+    """O que o sistema ACHA que precisa ser cobrado — e nada mais que isso.
+
+    Ele sabe que o e-mail saiu e que nenhum preço foi lançado. Não sabe se o
+    fornecedor respondeu: pode ter respondido no WhatsApp. É por isso que a
+    resposta traz o PORQUÊ de cada linha e dois caminhos de saída.
+    """
+    from app.apps.erp.core.suprimentos import cobranca
+    with get_session() as s:
+        return jsonify({"ok": True, **cobranca.sugerir(s)})
+
+
+@bp.route("/erp/api/suprimentos/cobranca", methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_suprimentos_cobrar():
+    """Manda o lembrete para os fornecedores MARCADOS. Quem aperta é gente."""
+    from app.apps.erp.core.suprimentos import cobranca
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            r = cobranca.cobrar(s, d.get("colunas") or [], u,
+                                observacao=d.get("observacao") or "")
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/fornecedores/<int:coluna_id>/resposta",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_marcar_resposta(coluna_id: int):
+    """"Ele já respondeu, foi por fora" — ou "esse não vai cotar".
+
+    As duas tiram o fornecedor da cobrança, e são coisas diferentes na conta do
+    histórico: quem avisa que não vai cotar respondeu; quem some, não.
+    """
+    from app.apps.erp.core.suprimentos import cobranca
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            if d.get("sem_interesse"):
+                r = cobranca.marcar_sem_interesse(
+                    s, coluna_id, motivo=d.get("motivo") or "", usuario=u)
+            else:
+                r = cobranca.marcar_resposta(
+                    s, coluna_id, canal=d.get("canal") or "",
+                    quem=d.get("quem") or "", usuario=u)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
 @bp.route("/erp/api/suprimentos/fornecedores/equalizar", methods=["POST"])
 @login_obrigatorio
 @permissao("administrar_fornecedores")
@@ -1534,6 +1597,32 @@ def api_cotacao_precos(cotacao_id: int):
         raise
     except Exception as e:
         logger.exception("ERP/suprimentos: falha ao lançar preços")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/fornecedores/<int:coluna_id>/condicoes",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_condicoes(coluna_id: int):
+    """Grava pagamento, frete, desconto, entrega, prazo e validade da coluna.
+
+    É o destino do que a leitura da proposta sugeriu — depois de alguém olhar.
+    """
+    from app.apps.erp.core.suprimentos import cotacao as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            svc.atualizar_condicoes(s, coluna_id, d, atual)
+            s.commit()
+        return jsonify({"ok": True, "recado": "Condições gravadas."})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao gravar condições")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -1971,7 +2060,7 @@ def api_suprimentos_importar(tipo: str):
     """
     from app.apps.erp.core.comum.auditoria import registrar_evento
     from app.apps.erp.core.importadores import suprimentos as imp
-    if tipo not in ("fornecedores", "insumos"):
+    if tipo not in ("fornecedores", "insumos", "banco_precos"):
         return jsonify({"ok": False, "erro": "Tipo de carga desconhecido."}), 400
     arquivo = request.files.get("arquivo")
     if arquivo is None:
@@ -1983,7 +2072,15 @@ def api_suprimentos_importar(tipo: str):
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
-            if tipo == "fornecedores":
+            if tipo == "banco_precos":
+                # O HISTÓRICO DE PREÇOS antigo (18/09/2026). Vive em módulo
+                # próprio porque a regra de casar insumo é MAIS DURA aqui: um
+                # preço no insumo errado mente sobre quanto o material custa, e
+                # ninguém percebe.
+                from app.apps.erp.core.importadores import banco_precos as imp_bp
+                rel = (imp_bp.previa(s, conteudo) if simular
+                       else imp_bp.importar(s, conteudo, atual))
+            elif tipo == "fornecedores":
                 rel = imp.importar_fornecedores_csv(s, conteudo, atual, simular=simular)
             else:
                 # Criar categoria de insumo na carga é decisão do dono, marcada

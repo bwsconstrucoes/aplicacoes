@@ -950,11 +950,70 @@ mão), e o CONTATO com "recebe cotação" desmarcado. A resposta tem de dizer qu
 
 O que ainda **não** responde:
 
-- FALTA **"Qual fornecedor responde mais rápido?"** e **"quem deu o melhor
-  preço nesta categoria no último ano?"** — o dado existe (envios, propostas,
-  banco de preços), mas o indicador por fornecedor ainda não foi escrito. É o
-  que faria o disparo automático ordenar por RESULTADO em vez de por regra
-  fixa.
+- ~~FALTA "Qual fornecedor responde mais rápido?"~~ — **feito em 18/09/2026**,
+  ver 3r abaixo.
+
+## 3r. A cobrança sugerida, a proposta lida por inteiro e a memória do fornecedor
+
+Construído em 18/09/2026 (migrações 076 e 077).
+
+Perguntas que passam a funcionar:
+
+**Cobrança**
+
+- OK **O que eu preciso cobrar hoje?** 🔒 (escopo por obra) — cotação aberta,
+  e-mail enviado, mais de 2 dias sem preço lançado e sem marca de resposta.
+- OK **Há quantos dias este fornecedor está com a nossa cotação?**
+- OK **Quantas vezes já cobramos este fornecedor nesta cotação?**
+- OK **Quais fornecedores responderam por fora do e-mail?** — pelo canal
+  marcado (WhatsApp, telefone, pessoalmente).
+- OK **Quem avisou que não vai cotar, e por quê?**
+
+**Memória do fornecedor**
+
+- OK **Qual fornecedor responde mais rápido?** — média de dias entre o envio e
+  a resposta.
+- OK **Quem responde às nossas cotações e quem some?** — quantas de quantas.
+- OK **Quem entrega no prazo?** — previsão do pedido × data do recebimento,
+  contando só pedido que chegou INTEIRO.
+- OK **Por que o sistema sugeriu este fornecedor?** — a linha do porquê já vem
+  escrita na tela de planejamento.
+
+**Banco de preços**
+
+- OK **Qual foi o último preço deste insumo, e de quem?**
+- OK **Qual o menor preço deste insumo no último ano, e quem deu?**
+- OK **Quantas vezes cotamos este insumo no último ano?**
+- OK **Quanto este insumo variou de preço?** — menor, maior e média da janela.
+
+⚠️ **Palavra ambígua: "não respondeu".** O sistema **não sabe** se o fornecedor
+respondeu — sabe que nenhum preço foi lançado. Toda resposta sobre cobrança tem
+de dizer isso com estas palavras, porque a diferença é o WhatsApp do comprador.
+
+⚠️ **Palavra ambígua: "último preço".** São três: o último **cotado** (pode ter
+sido recusado), o último **comprado** (o que a empresa aceitou pagar) e o último
+**da planilha antiga** (importado, sem cotação no sistema). A resposta tem de
+dizer qual, e a origem está gravada (`origem` = SISTEMA ou PLANILHA).
+
+⚠️ **Palavra ambígua: "menor preço".** O menor da janela de **12 meses**, que é
+o que a tela mostra, não é o menor de todos os tempos. Preço de dois anos atrás
+não é referência — mas continua no banco e aparece no Banco de preços.
+
+⚠️ **Palavra ambígua: "bom fornecedor".** Pode ser o mais barato, o que responde
+mais rápido, o que entrega no prazo ou o que a empresa mais comprou. São quatro
+respostas diferentes e o sistema mede as quatro separadas.
+
+O que ainda **não** responde:
+
+- FALTA **"Quanto a gente economizou comprando do mais barato?"** — exigiria
+  comparar o preço fechado com as alternativas do mesmo mapa, e decidir o que
+  fazer quando não houve mapa (compra direta).
+- FALTA **"Este preço está caro?"** com resposta de sim/não — hoje o sistema
+  mostra os números e quem julga é o comprador. Um "está caro" automático
+  precisaria de correção pela inflação do período (o INCC já está no sistema) e
+  ainda assim erraria em material sazonal.
+- FALTA **"Quem deu o melhor preço nesta CATEGORIA no último ano?"** — o dado
+  existe, mas a soma por categoria (e não por insumo) ainda não foi escrita.
 
 ## 4. Como esta lista vira código
 

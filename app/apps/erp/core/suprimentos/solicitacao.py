@@ -294,6 +294,19 @@ def listar_itens(s: Session, usuario: Usuario, *, status: Optional[str] = None,
             if alvo not in campos.lower():
                 continue
         saida.append(linha)
+
+    # O PREÇO AO LADO DO ITEM (18/09/2026). Pedido do dono: *"na tela das
+    # solicitações já poder estar visualizando: ó, o insumo, onde está o último
+    # menor preço, qual o fornecedor, qual o valor"*.
+    #
+    # Vem DEPOIS do filtro e da busca, e de uma vez só para todos os itens que
+    # sobraram: perguntar o preço de cada linha enquanto a lista é montada
+    # significaria perguntar também pelas que a busca vai jogar fora.
+    from app.apps.erp.core.suprimentos import precos as svc_precos
+    referencia = svc_precos.resumo_por_insumo(
+        s, [l["insumo_id"] for l in saida if l.get("insumo_id")])
+    for linha in saida:
+        linha["preco_referencia"] = referencia.get(linha.get("insumo_id"))
     return saida
 
 
