@@ -171,31 +171,85 @@
 <div class="cartao">
   <div class="cartao-cab">
     <h3>3. A atualização da madrugada</h3>
-    <small>como deixar automático</small>
+    <small>como deixar automático, passo a passo</small>
   </div>
   <p style="font-size:13.5px; margin-top:0">
     O painel não tem relógio próprio de propósito: um agendador dentro do serviço
     gastaria memória e morreria a cada reinício do Render. Quem chama é um serviço
     de fora, o mesmo arranjo já usado pelo módulo do Bradesco.
   </p>
-  <p style="font-size:13.5px">
-    No <b>cron-job.org</b>, crie um job diário apontando para o endereço abaixo,
-    com método <b>POST</b> e este conteúdo. Troque
-    <code>SUA_PAINEL_SECRET</code> pelo valor que você cadastrou no Render.
-  </p>
-  <div class="campo">
-    <label>Endereço</label>
+
+  <div class="aviso {{ 'ok' if tem_secret else 'erro' }}">
+    {% if tem_secret %}
+      <b>Passo 1 pronto:</b> a variável <code>PAINEL_SECRET</code> está
+      configurada neste serviço.
+    {% else %}
+      <b>Passo 1, e sem ele nada funciona:</b> este serviço <b>não tem</b> a
+      variável <code>PAINEL_SECRET</code>. Cadastre-a nas <i>Settings →
+      Environment</i> do Render, com um valor qualquer que só você saiba, e
+      publique. Enquanto ela não existir, o agendador vai receber
+      “não autorizado”.
+    {% endif %}
+  </div>
+
+  <p style="font-size:13.5px"><b>Passo 2 — criar o job.</b>
+    No <b>cron-job.org</b> (ou qualquer agendador), crie um job com:</p>
+  <div class="tabela-rolagem">
+    <table>
+      <tbody>
+        <tr><td><b>Método</b></td><td class="dados">POST</td></tr>
+        <tr><td><b>Endereço</b></td>
+            <td class="dados">{{ url_for('painel.sincronizar', _external=True) }}</td></tr>
+        <tr><td><b>Cabeçalho</b></td>
+            <td class="dados">Content-Type: application/json</td></tr>
+        <tr><td><b>Corpo</b></td>
+            <td class="dados">{"secret": "SUA_PAINEL_SECRET", "modo": "rapida"}</td></tr>
+        <tr><td><b>Horário</b></td>
+            <td class="dados">03:00, fuso America/Sao_Paulo</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="campo" style="margin-top:10px">
+    <label>Endereço (clique para selecionar)</label>
     <input readonly value="{{ url_for('painel.sincronizar', _external=True) }}"
            onclick="this.select()">
   </div>
   <div class="campo" style="margin-top:10px">
-    <label>Corpo do pedido (JSON)</label>
+    <label>Corpo do pedido (clique para selecionar)</label>
     <textarea readonly onclick="this.select()">{"secret": "SUA_PAINEL_SECRET", "modo": "rapida"}</textarea>
-    <p class="dica">
-      Use <code>"modo": "completa"</code> uma vez por semana — é a versão que
-      também procura títulos apagados no OMIE, e demora bem mais.
-    </p>
   </div>
+
+  <p style="font-size:13.5px"><b>Passo 3 — testar antes de confiar.</b>
+    No cron-job.org, use o botão de <b>executar agora</b> e olhe a resposta:</p>
+  <div class="tabela-rolagem">
+    <table>
+      <thead><tr><th class="sem-ordem">O que voltar</th><th class="sem-ordem">O que significa</th></tr></thead>
+      <tbody>
+        <tr><td class="dados">{"ok": true, ...}</td>
+            <td>Funcionou. A atualização começou — acompanhe aqui nesta tela.</td></tr>
+        <tr><td class="dados">não tem PAINEL_SECRET</td>
+            <td>Falta o passo 1: cadastre a variável no Render e publique.</td></tr>
+        <tr><td class="dados">nenhum segredo foi enviado</td>
+            <td>O corpo não chegou. Confira o <code>Content-Type</code>.</td></tr>
+        <tr><td class="dados">não confere</td>
+            <td>O valor está diferente do cadastrado no Render.</td></tr>
+        <tr><td class="dados">Já existe uma atualização em andamento</td>
+            <td>Está tudo certo — só espere a que está rodando terminar.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    A resposta chega na hora: o trabalho continua em outro processo, então o
+    agendador não fica esperando e não dá “tempo esgotado”.<br>
+    <b>A prova final</b> é a linha “Última atualização” no alto desta tela — no
+    dia seguinte ela tem de dizer <b>automática</b>. Se disser manual, o job não
+    disparou.<br>
+    Use <code>"modo": "completa"</code> uma vez por semana: é a versão que também
+    procura títulos apagados no OMIE, e demora bem mais. O segredo também pode ir
+    no cabeçalho <code>X-Painel-Secret</code>, se o seu agendador não deixar
+    mandar corpo.
+  </p>
 </div>
 
 <!-- ===================== 4. PRESTAÇÃO DE CONTAS ===================== -->
