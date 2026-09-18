@@ -137,6 +137,10 @@ SECOES: list[dict[str, Any]] = [
     {"chave": "obr_agenda", "area": "Obras", "nome": "Agenda de obrigações",
      "explicacao": "vencimentos de certidão, seguro, ART e contrato",
      "ler": ["ver_agenda"], "editar": ["tratar_agenda"]},
+    {"chave": "obr_acompanhamento", "area": "Obras", "nome": "Acompanhamento",
+     "explicacao": ("processos que correm fora da BWS — aditivo, apostilamento, "
+                    "licença, protocolo — e o andamento de cada um"),
+     "ler": ["ver_acompanhamento"], "editar": ["tocar_processo"]},
     # ------------------------------------------------------------- Pessoal
     {"chave": "pes_despesas", "area": "Pessoal", "nome": "Despesas com colaborador",
      "explicacao": "diárias, produção e verbas",

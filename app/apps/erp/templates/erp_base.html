@@ -47,8 +47,32 @@
     </nav>
   </div>
 
+  {# TODAS AS TELAS NUMA LISTA, quando elas não cabem na faixa.
+     Dono, 17/09/2026: *"quando a tela fica menor, os submenus ficam
+     escondidos"*. Rolar de lado só serve para quem sabe que há mais coisa à
+     direita — e quem não sabe, não procura. Este botão aparece sozinho quando
+     sobra aba fora da vista, e abre a lista inteira em coluna. #}
+  {% if abas %}
+  <div class="abas-lista-caixa oculto" id="abas-lista-caixa">
+    <button class="topo-btn" id="btn-abas-lista" type="button"
+            aria-haspopup="true" aria-expanded="false">Telas ▾</button>
+    <div class="abas-lista oculto" id="abas-lista">
+      {% for chave, rotulo, rota in abas %}
+        <a class="abas-lista-item {% if chave == aba_ativa %}ativa{% endif %}"
+           href="{{ url_for(rota) }}">{{ rotulo }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="topo-direita">
-    <div class="topo-meta">{{ usuario_nome }}<br>{{ usuario_perfil }}</div>
+    {# O NOME LEVA À PRÓPRIA CONTA. Antes era só um rótulo, e quem queria trocar
+       a senha não tinha por onde começar a procurar (dono, 17/09/2026). #}
+    <a class="topo-meta" href="{{ url_for('erp.pagina_meu_cadastro') }}"
+       style="color:inherit; text-decoration:none" title="Minha conta e senha"
+       >{{ usuario_nome }}<br>{{ usuario_perfil }}</a>
+    <a class="topo-btn" href="{{ url_for('erp.pagina_meu_cadastro') }}"
+       title="Minha conta, senha e chave Pix"><span class="so-largo">Minha conta</span><span class="so-estreito">Conta</span></a>
     <a class="topo-btn" href="{{ url_for('erp.sair') }}">Sair</a>
   </div>
 </header>
@@ -789,6 +813,213 @@ async function api(url, opcoes) {
 }
 
 // ---------------------------------------------------------------------------
+// DINHEIRO DENTRO DA CAIXINHA DO KPI
+//
+// 17/09/2026: *"o valor em contratos vigentes no KPI está extrapolando a
+// caixinha — os centavos estão passando da tela"*. Milhão com centavos não cabe
+// em 19px numa coluna estreita. A fonte encolhe conforme o tamanho do número,
+// em vez de o número sair pela borda.
+// ---------------------------------------------------------------------------
+function kpiDinheiro(texto){
+  const n = String(texto).length;
+  const tam = n > 17 ? 14 : n > 14 ? 16 : n > 11 ? 18 : 20;
+  return `<div class="kpi-valor" style="font-size:${tam}px">${texto}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// O HISTÓRICO EM PORTUGUÊS, NÃO EM JSON
+//
+// 17/09/2026, o dono colando o que via na tela: *"no histórico, a forma que ele
+// grava as informações fica num JSON meio esquisito"* —
+//   {"arquivo":"MATRICULA-CEI-CNO_ESCPE18_900271283773_2026-01-21.pdf","categoria":"OUTRO","co…
+// A trilha de auditoria guarda um objeto, e isso está certo: objeto se consulta.
+// Quem estava errado era a TELA, que despejava o objeto cru e cortava no meio
+// da palavra. Aqui ele vira frase, com nome em português e valor no formato
+// daqui; o que é técnico (identificadores, hash, texto do documento) fica fora.
+// ---------------------------------------------------------------------------
+const ROTULOS_DETALHE = {
+  arquivo: "arquivo", nome: "nome", tipo: "tipo", categoria: "categoria",
+  descricao: "descrição", competencia: "competência", emissao: "emissão",
+  validade: "vale até", referencia: "referência", valor: "valor",
+  valor_contrato: "valor do contrato", vigencia_inicio: "início da vigência",
+  vigencia_fim: "fim da vigência", prazo_execucao_dias: "prazo (dias)",
+  dias: "dias", numero: "número", mudancas: "mudou", obra: "obra",
+  codigo: "código", motivo: "motivo", observacao: "observação",
+  situacao: "situação", status: "situação", de: "de", para: "para",
+  guardado_em: "guardado em", tamanho_kb: "tamanho", origem: "origem",
+  numero_indice: "número-índice", quantidade: "quantidade",
+};
+const DETALHE_TECNICO = ["_id", "id", "hash", "sha", "token", "texto"];
+
+function detalheEmPortugues(detalhe){
+  if (!detalhe || typeof detalhe !== "object") return escapar(String(detalhe ?? ""));
+  const pedacos = [];
+  Object.entries(detalhe).forEach(([chave, valor]) => {
+    if (DETALHE_TECNICO.some(t => chave === t || chave.endsWith(t))) return;
+    if (valor === null || valor === undefined || valor === "") return;
+    const rot = ROTULOS_DETALHE[chave] || chave.replace(/_/g, " ");
+    pedacos.push(`<b>${escapar(rot)}</b> ${valorDeDetalhe(valor)}`);
+  });
+  return pedacos.join(" · ") || "—";
+}
+
+function valorDeDetalhe(v){
+  if (Array.isArray(v)) return v.map(valorDeDetalhe).join("; ");
+  if (v && typeof v === "object") return detalheEmPortugues(v);
+  if (typeof v === "boolean") return v ? "sim" : "não";
+  const t = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return escapar(dataBR(t));
+  if (/^-?\d+\.\d{2}$/.test(t)) return escapar(numero(t));
+  return escapar(t.length > 70 ? t.slice(0, 70) + "…" : t);
+}
+
+// ---------------------------------------------------------------------------
+// CADASTRAR EMPRESA — UM CAMINHO SÓ, COM O DOCUMENTO DENTRO
+//
+// Dono, 17/09/2026: *"não gostei da opção 'cadastrar pelo Cartão CNPJ'. Em nova
+// empresa não precisa colocar 'digitando'. Você abre os campos da empresa
+// normal, mas DENTRO do cadastro a opção de adicionar o Cartão CNPJ, da mesma
+// forma que a gente trabalha (…) igual. Senão não fica intuitivo. Quando eu
+// cadastro a obra, dentro do cadastro já tem a opção de adicionar o contrato e
+// fazer a leitura; aqui tem que ser da mesma forma. Isso tem que replicar para
+// todas as outras áreas — o funcionamento do sistema tem que ser similar."*
+//
+// Ele está certo, e o princípio vale para o ERP inteiro: **um cadastro, uma
+// porta**. O documento é um ATALHO DENTRO do formulário, não um caminho
+// paralelo — quem tem o arquivo joga e confere; quem não tem, digita.
+//
+// Mora aqui, no base, porque duas telas usam (Empresas e a criação de obra) e
+// vai servir às próximas — o padrão é o mesmo em qualquer cadastro.
+// ---------------------------------------------------------------------------
+const CAMPOS_DA_EMPRESA = [
+  ["cnpj", "CNPJ *", 2], ["razao_social", "Razão social *", 4],
+  ["nome_fantasia", "Nome fantasia", 3], ["logradouro", "Logradouro", 3],
+  ["numero", "Número", 1], ["complemento", "Complemento", 2],
+  ["bairro", "Bairro", 2], ["municipio", "Cidade", 2], ["uf", "UF", 1],
+  ["cep", "CEP", 2], ["telefone", "Telefone", 2], ["email", "E-mail", 3],
+];
+
+function abrirCadastroDeEmpresa(aoCriar){
+  // Diálogo PRÓPRIO: quando isto é chamado de dentro da criação de obra, o
+  // diálogo da obra já está aberto e não pode ser substituído — o que a pessoa
+  // preencheu lá se perderia.
+  let dlg = els("dlg-empresa");
+  if (!dlg) {
+    dlg = document.createElement("dialog");
+    dlg.id = "dlg-empresa";
+    document.body.appendChild(dlg);
+  }
+  dlg.innerHTML = `
+    <div class="dlg-topo"><h3>Nova empresa</h3>
+      <button class="topo-btn" style="margin-left:auto" data-fechar>Fechar</button></div>
+    <div class="dlg-corpo">
+      <div id="emp-msg"></div>
+
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+           border-left:4px solid var(--verde); margin-bottom:14px">
+        <b>Jogue o Cartão CNPJ aqui — ele preenche os campos abaixo</b>
+        <div class="cartao-dica">O comprovante de inscrição da Receita traz razão
+          social, nome fantasia, CNPJ e endereço. O sistema lê e preenche; você
+          confere e corrige antes de gravar. O cartão fica guardado na empresa.</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px">
+          <input type="file" id="emp-arq" accept=".pdf,.png,.jpg,.jpeg,.webp">
+          <button class="btn" id="btn-emp-ler" type="button">Ler o documento</button>
+        </div>
+        <div id="emp-leitura"></div>
+      </div>
+
+      <div class="form-grade">
+        ${CAMPOS_DA_EMPRESA.map(([id, rot, larg]) => `
+          <div class="campo" style="grid-column:span ${larg}">
+            <label>${rot}</label><input id="emp-${id}"></div>`).join("")}
+      </div>
+      <div class="cartao-dica">O CNPJ não muda depois. Conta de e-mail, logo,
+        certificado e tributação ficam na ficha da empresa, logo após criar.</div>
+      <div style="margin-top:14px; display:flex; gap:8px">
+        <button class="btn" id="btn-emp-salvar" type="button">Cadastrar empresa</button>
+        <button class="btn secundario" data-fechar type="button">Cancelar</button>
+      </div>
+    </div>`;
+
+  let arquivoLido = null;      // o cartão que foi lido, para arquivar junto
+  let sugestao = {};
+
+  dlg.querySelectorAll("[data-fechar]").forEach(b =>
+    b.addEventListener("click", () => dlg.close()));
+
+  els("btn-emp-ler").addEventListener("click", async () => {
+    const arq = els("emp-arq").files[0];
+    if (!arq) { aviso("emp-msg", "Escolha o arquivo do Cartão CNPJ.", "alerta"); return; }
+    const b = els("btn-emp-ler");
+    b.disabled = true; b.textContent = "Lendo…";
+    try {
+      const fd = new FormData();
+      fd.append("arquivo", arq);
+      fd.append("dica", "é o Cartão CNPJ (comprovante de inscrição) da empresa");
+      const lido = await api("/erp/api/empresas/documento/ler", {method:"POST", body: fd});
+      const c = lido.cadastro;
+      sugestao = lido.sugestao || {};
+      if (c.ja_cadastrada) {
+        els("emp-leitura").innerHTML = `<div class="aviso erro">Esta empresa já
+          está cadastrada: <b>${escapar(c.ja_cadastrada.nome)}</b>
+          (${escapar(c.ja_cadastrada.cnpj)}).</div>`;
+        arquivoLido = null;
+      } else {
+        (c.campos || []).forEach(x => {
+          const campo = els("emp-" + x.campo);
+          if (campo) campo.value = x.valor;
+        });
+        arquivoLido = arq;
+        els("emp-leitura").innerHTML = `<div class="aviso ${(c.avisos||[]).length ? "alerta" : "ok"}"
+          >Preenchi o que o cartão diz — <b>confira antes de gravar</b>.
+          ${(c.avisos || []).map(escapar).join(" ")}</div>`;
+      }
+    } catch(e){ aviso("emp-msg", e.message, "erro"); }
+    b.disabled = false; b.textContent = "Ler o documento";
+  });
+
+  els("btn-emp-salvar").addEventListener("click", async () => {
+    const dados = {};
+    CAMPOS_DA_EMPRESA.forEach(([id]) => {
+      const v = (els("emp-" + id).value || "").trim();
+      if (v) dados[id] = v;
+    });
+    if (!dados.cnpj || !dados.razao_social) {
+      aviso("emp-msg", "CNPJ e razão social são obrigatórios.", "erro"); return;
+    }
+    const b = els("btn-emp-salvar");
+    b.disabled = true; b.textContent = "Cadastrando…";
+    try {
+      let criada;
+      if (arquivoLido) {
+        // Com o cartão em mãos, a empresa nasce E o documento fica arquivado
+        // nela — na mesma transação, como a obra que nasce do contrato.
+        const fd = new FormData();
+        fd.append("arquivo", arquivoLido);
+        fd.append("tipo", sugestao.tipo_codigo || "CARTAO-CNPJ");
+        fd.append("campos", JSON.stringify(dados));
+        ["emissao","texto","resumo","referencia"].forEach(k => {
+          if (sugestao[k]) fd.append(k, sugestao[k]);
+        });
+        const d = await api("/erp/api/empresas/documento", {method:"POST", body: fd});
+        criada = d.empresa;
+      } else {
+        const d = await api("/erp/api/empresas", {method:"POST",
+          headers:{"Content-Type":"application/json"}, body: JSON.stringify(dados)});
+        criada = {id: d.id, nome: dados.nome_fantasia || dados.razao_social,
+                  razao_social: dados.razao_social, cnpj: dados.cnpj};
+      }
+      dlg.close();
+      if (aoCriar) await aoCriar(criada, Boolean(arquivoLido));
+    } catch(e){ aviso("emp-msg", e.message, "erro"); }
+    b.disabled = false; b.textContent = "Cadastrar empresa";
+  });
+
+  dlg.showModal();
+  setTimeout(() => els("emp-arq") && els("emp-arq").focus(), 50);
+}
+
+// ---------------------------------------------------------------------------
 // O DOCUMENTO LIDO: AS DATAS E OS CAMPOS QUE FALTARAM
 //
 // 14/09/2026, o dono tentando criar uma obra a partir de um contrato: *"ele fez
@@ -816,7 +1047,16 @@ function blocoDeDatasDoDocumento(prefixo, g, d){
   const extras = (d.extras || []).map(x => `
     <div class="campo"><label>${escapar(x.rotulo)}</label>
       <input id="${prefixo}-dt-x-${escapar(x.campo)}" type="date"
-             value="${escapar(x.valor || "")}"></div>`).join("");
+             value="${escapar(x.valor || "")}"
+             oninput="recalcularDiasDaVigencia('${prefixo}')"></div>`).join("");
+  // A CONTA SAI SOZINHA. O dono, 17/09/2026: *"foi detectada a vigência, mas o
+  // sistema não calculou. Como ele já sabe a quantidade de dias, dá para
+  // calcular a partir do início — eu coloco o início e ele já me diz o final"*.
+  // Era isso: a conta só rodava se alguém digitasse no campo de dias. Agora
+  // roda ao abrir a leitura e sempre que a data de partida mudar.
+  if (d.aceita_dias && d.dias && !valor) {
+    setTimeout(() => recalcularDiasDaVigencia(prefixo), 0);
+  }
   return `
     <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
          ${falta || faltaComp ? "border-left:4px solid var(--vermelho);" : ""} margin-top:12px">
@@ -826,7 +1066,8 @@ function blocoDeDatasDoDocumento(prefixo, g, d){
       <div class="form-grade" style="padding:8px 12px 12px">
         <div class="campo"><label>${d.campo_validade === "vigencia_fim"
             ? "Assinatura" : "Emissão"}</label>
-          <input id="${prefixo}-dt-emissao" type="date" value="${escapar(emissao)}"></div>
+          <input id="${prefixo}-dt-emissao" type="date" value="${escapar(emissao)}"
+            oninput="recalcularDiasDaVigencia('${prefixo}')"></div>
         ${extras}
         ${g.tipo_vence ? `<div class="campo"><label>${escapar(rotulo)} *</label>
           <input id="${prefixo}-dt-validade" type="date" value="${escapar(valor)}"
@@ -978,8 +1219,33 @@ function marcarCampoDigitado(entrada, attrMarca, campo){
     caixa.classList.toggle("tem-mais", folga - abas.scrollLeft > 4);
     caixa.classList.toggle("tem-antes", abas.scrollLeft > 4);
   };
-  abas.addEventListener("scroll", marcar, {passive: true});
-  window.addEventListener("resize", marcar);
+  // O botão "Telas" acompanha a sombra: existe sobra escondida, existe botão.
+  const caixaLista = document.getElementById("abas-lista-caixa");
+  const marcarComBotao = () => {
+    marcar();
+    if (caixaLista) {
+      const sobra = abas.scrollWidth - abas.clientWidth > 4;
+      caixaLista.classList.toggle("oculto", !sobra);
+    }
+  };
+  abas.addEventListener("scroll", marcarComBotao, {passive: true});
+  window.addEventListener("resize", marcarComBotao);
+  setTimeout(marcarComBotao, 0);
+
+  const botao = document.getElementById("btn-abas-lista");
+  const lista = document.getElementById("abas-lista");
+  if (botao && lista) {
+    botao.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const abrindo = lista.classList.contains("oculto");
+      lista.classList.toggle("oculto", !abrindo);
+      botao.setAttribute("aria-expanded", abrindo ? "true" : "false");
+    });
+    document.addEventListener("click", () => {
+      lista.classList.add("oculto");
+      botao.setAttribute("aria-expanded", "false");
+    });
+  }
   abas.addEventListener("wheel", ev => {
     if (Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
     abas.scrollLeft += ev.deltaY;

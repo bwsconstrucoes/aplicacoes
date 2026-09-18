@@ -87,7 +87,8 @@ def _arquivo(nome="contrato.pdf"):
 def test_a_rota_antiga_de_configuracoes_nao_existe_mais(app_real, cenario):
     """Dois formulários faziam a mesma obra nascer diferente conforme a porta."""
     r = como(app_real, cenario["admin"].id).post(
-        "/erp/api/config/obra", json={"codigo": "X1", "nome": "Obra X"})
+        "/erp/api/config/obra", json={"codigo": "X1", "nome": "Obra X",
+                                  "empresa_id": cenario["empresa"].id})
 
     assert r.status_code == 404
 
@@ -95,6 +96,7 @@ def test_a_rota_antiga_de_configuracoes_nao_existe_mais(app_real, cenario):
 def test_criar_obra_pelo_painel_com_o_cadastro_inteiro(app_real, cenario):
     r = como(app_real, cenario["admin"].id).post("/erp/api/obras/nova", json={
         "codigo": "escpe18", "nome": "Escola do Eusébio",
+              "empresa_id": cenario["empresa"].id,
         "cliente": "MUNICIPIO DE EUSEBIO", "cnpj_cliente": "07705674000106",
         "contrato": "268/2025", "objeto": "CONSTRUCAO DE ESCOLA",
         "municipio": "EUSEBIO", "uf": "ce", "cno": "90.025.25410/76",
@@ -114,6 +116,7 @@ def test_o_endereco_entra_no_cadastro_direto(app_real, cenario):
     importantíssimo"*. Ele existia só na ficha; agora entra na criação."""
     r = como(app_real, cenario["admin"].id).post("/erp/api/obras/nova", json={
         "codigo": "ESCPE18", "nome": "Escola do Eusébio",
+              "empresa_id": cenario["empresa"].id,
         "cep": "61760-000", "endereco": "AVENIDA CENTRAL",
         "numero_endereco": "1500", "bairro": "CENTRO",
         "municipio": "EUSEBIO", "uf": "CE"})
@@ -128,7 +131,8 @@ def test_o_endereco_entra_no_cadastro_direto(app_real, cenario):
 
 def test_quem_nao_configura_nao_cria_obra(app_real, cenario):
     r = como(app_real, cenario["obreiro"].id).post(
-        "/erp/api/obras/nova", json={"codigo": "X1", "nome": "Obra X"})
+        "/erp/api/obras/nova", json={"codigo": "X1", "nome": "Obra X",
+                                  "empresa_id": cenario["empresa"].id})
 
     assert r.status_code == 403
     assert cenario["s"].query(Obra).count() == 0
@@ -136,8 +140,12 @@ def test_quem_nao_configura_nao_cria_obra(app_real, cenario):
 
 def test_codigo_repetido_e_recusado(app_real, cenario):
     c = como(app_real, cenario["admin"].id)
-    c.post("/erp/api/obras/nova", json={"codigo": "ESCPE18", "nome": "Escola"})
-    r = c.post("/erp/api/obras/nova", json={"codigo": "escpe18", "nome": "Outra"})
+    c.post("/erp/api/obras/nova", json={"codigo": "ESCPE18", "nome": "Escola",
+              "empresa_id": cenario["empresa"].id,
+                                        "empresa_id": cenario["empresa"].id})
+    r = c.post("/erp/api/obras/nova", json={"codigo": "escpe18", "nome": "Outra",
+              "empresa_id": cenario["empresa"].id,
+                      "empresa_id": cenario["empresa"].id})
 
     assert r.status_code == 400
     assert "ESCPE18" in r.get_json()["erro"]
@@ -152,7 +160,8 @@ def test_a_aliquota_de_iss_nasce_na_coluna_que_a_tributacao_le(app_real, cenario
     escrevia na outra, e a emissão automática lia justamente a que ninguém
     alimentava."""
     como(app_real, cenario["admin"].id).post("/erp/api/obras/nova", json={
-        "codigo": "ESCPE18", "nome": "Escola", "aliquota_iss_pct": "3,5"})
+        "codigo": "ESCPE18", "nome": "Escola",
+              "empresa_id": cenario["empresa"].id, "aliquota_iss_pct": "3,5"})
 
     obra = cenario["s"].query(Obra).one()
     assert obra.aliquota_iss_pct == Decimal("3.5000")
@@ -208,6 +217,7 @@ def test_o_documento_cria_a_obra_e_e_arquivado_nela(app_real, cenario, monkeypat
         "/erp/api/obras/documento",
         data={"arquivo": _arquivo(), "tipo": "CONTRATO-OBRA",
               "codigo": "ESCPE18", "nome": "Escola do Eusébio",
+              "empresa_id": cenario["empresa"].id,
               "emissao": "2026-03-10", "validade": "2027-03-09",
               "campos": json.dumps({"contrato": "268/2025",
                                     "valor_contrato": "1250000.00",
@@ -264,7 +274,8 @@ def test_campo_recusado_nao_deixa_obra_nem_documento_para_tras(app_transacional,
     r = como(app_transacional, cenario["admin"].id).post(
         "/erp/api/obras/documento",
         data={"arquivo": _arquivo(), "tipo": "SEGURO",
-              "codigo": "ESCPE18", "nome": "Escola", "validade": "2027-03-09",
+              "codigo": "ESCPE18", "nome": "Escola",
+              "empresa_id": cenario["empresa"].id, "validade": "2027-03-09",
               "campos": json.dumps({"valor_contrato": "9999999.00"})},
         content_type="multipart/form-data")
 
@@ -279,6 +290,7 @@ def test_sem_codigo_nao_se_cria_obra(app_real, cenario, monkeypatch):
     r = como(app_real, cenario["admin"].id).post(
         "/erp/api/obras/documento",
         data={"arquivo": _arquivo(), "tipo": "CONTRATO-OBRA", "nome": "Escola",
+              "empresa_id": cenario["empresa"].id,
               "campos": json.dumps({})},
         content_type="multipart/form-data")
 
@@ -291,7 +303,8 @@ def test_quem_nao_configura_nao_cria_obra_por_documento(app_real, cenario, monke
     r = como(app_real, cenario["obreiro"].id).post(
         "/erp/api/obras/documento",
         data={"arquivo": _arquivo(), "tipo": "CONTRATO-OBRA",
-              "codigo": "ESCPE18", "nome": "Escola", "campos": json.dumps({})},
+              "codigo": "ESCPE18", "nome": "Escola",
+              "empresa_id": cenario["empresa"].id, "campos": json.dumps({})},
         content_type="multipart/form-data")
 
     assert r.status_code == 403
@@ -370,6 +383,7 @@ def test_a_criacao_para_quando_a_obra_ja_existe(app_real, cenario, ja_existe,
         "/erp/api/obras/documento",
         data={"arquivo": _arquivo(), "tipo": "CONTRATO-OBRA",
               "codigo": "ESCPE18B", "nome": "Escola do Eusébio (2)",
+              "empresa_id": cenario["empresa"].id,
               "campos": json.dumps({"contrato": "268/2025"})},
         content_type="multipart/form-data")
 
@@ -389,6 +403,7 @@ def test_confirmando_que_e_outra_obra_a_criacao_segue(app_real, cenario, ja_exis
         "/erp/api/obras/documento",
         data={"arquivo": _arquivo(), "tipo": "CONTRATO-OBRA",
               "codigo": "ESCPE18B", "nome": "Escola do Eusébio (2)",
+              "empresa_id": cenario["empresa"].id,
               "confirmar_duplicada": "1", "validade": "2027-03-09",
               "campos": json.dumps({"contrato": "268/2025"})},
         content_type="multipart/form-data")

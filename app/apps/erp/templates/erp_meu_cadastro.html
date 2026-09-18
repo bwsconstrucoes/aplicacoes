@@ -2,8 +2,8 @@
 {% block titulo %}Meus dados — ERP BWS{% endblock %}
 {% block classe_corpo %}sem-filtros{% endblock %}
 {% block conteudo %}
-<h2>Meus dados de recebimento
-  <small>usados quando você pede reembolso de fundo fixo</small></h2>
+<h2>Minha conta
+  <small>a sua senha e os seus dados de recebimento</small></h2>
 <div id="mensagem"></div>
 <div class="cartao" style="max-width:640px">
   <div id="atual" class="cartao-dica">carregando…</div>
@@ -20,6 +20,27 @@
     troca de chave.</div>
   <div style="margin-top:12px"><button class="btn" id="salvar">Salvar chave</button></div>
 </div>
+
+{# TROCAR A PRÓPRIA SENHA. Dono, 17/09/2026: *"eu sou um usuário, e se eu
+   quiser alterar a minha senha, onde é que eu consigo fazer isso? Eu não
+   encontrei"*. Não existia: só um ADMIN trocava, pelo cadastro de operadores —
+   o que obriga a pessoa a dizer a senha nova para alguém. #}
+<h2 style="margin-top:22px">Minha senha</h2>
+<div class="cartao" style="max-width:640px">
+  <div id="msg-senha"></div>
+  <div class="form-grade">
+    <div class="campo" style="grid-column:span 3"><label>Senha atual *</label>
+      <input id="s-atual" type="password" autocomplete="current-password"></div>
+    <div class="campo"><label>Nova senha *</label>
+      <input id="s-nova" type="password" autocomplete="new-password"></div>
+    <div class="campo"><label>Repita a nova *</label>
+      <input id="s-rep" type="password" autocomplete="new-password"></div>
+  </div>
+  <div class="cartao-dica">No mínimo 8 caracteres. Pedimos a senha atual de
+    propósito: sem isso, quem passasse na sua mesa com o computador destravado
+    trocaria a sua senha e fecharia você para fora.</div>
+  <div style="margin-top:12px"><button class="btn" id="btn-senha">Trocar a senha</button></div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -34,6 +55,21 @@ async function carregar(){
     if (c.pix_chave) { els("chave").value = c.pix_chave; els("tipo").value = c.pix_tipo || "CPF"; }
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
+els("btn-senha").addEventListener("click", async () => {
+  const b = els("btn-senha");
+  b.disabled = true; b.textContent = "Trocando…";
+  try {
+    await api("/erp/api/minha-senha", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({senha_atual: els("s-atual").value,
+                            senha_nova: els("s-nova").value,
+                            senha_repetida: els("s-rep").value})});
+    ["s-atual","s-nova","s-rep"].forEach(i => els(i).value = "");
+    aviso("msg-senha", "Senha trocada. Ela já vale no próximo acesso.", "ok");
+  } catch(e){ aviso("msg-senha", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Trocar a senha";
+});
+
 els("salvar").addEventListener("click", async () => {
   try {
     const d = await api("/erp/api/meu-cadastro", {method:"POST",

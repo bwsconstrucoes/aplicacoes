@@ -1,0 +1,767 @@
+# ============================================================================
+# ERP — core/acompanhamento/processos.py
+# A gestão burocrática da obra: aditivo, apostilamento, licença, protocolo.
+#
+# PEDIDO DO DONO, 17/09/2026, aprovado em 18/09:
+#
+#   "Uma espécie de gerenciamento da parte documental, burocrática, de
+#   acompanhamento da obra — não da execução (…) acompanhar o andamento,
+#   alimentar do andamento: 'ó, eu liguei aqui e falei que fulano está em tal
+#   setor' (…) me lembrando um pouco do sistema SEI, MAS EU NÃO QUERO UMA
+#   COISA TRAVADA (…) imagina que uma pessoa saiu de férias: quem for fazer
+#   esse acompanhamento precisaria bater o olho e ver o que está pendente."
+#
+# O desenho inteiro está em `app/apps/erp/ACOMPANHAMENTO.md`. Três coisas
+# mandam neste arquivo, e é por elas que ele é curto:
+#
+# 1. LANÇAR ANDAMENTO É UMA FRASE. Nada obrigatório além do texto. Se custar
+#    mais, ninguém lança, e acompanhamento desatualizado é pior que nenhum.
+# 2. NADA TRAVA NADA. Não há transição proibida entre situações — o órgão não
+#    segue ordem, e obrigar ordem faria a pessoa mentir para o sistema.
+# 3. "PARADO" É CONCLUSÃO, NÃO CAMPO. Sai dos dias desde o último andamento.
+#    Campo de situação que depende de alguém lembrar de mexer estará errado.
+# ============================================================================
+from __future__ import annotations
+
+from datetime import date, datetime, timezone
+from typing import Any, Optional
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
+from app.apps.erp.db.models.cadastros import (
+    Empresa, Obra, Processo, ProcessoAndamento, ProcessoPasso, SituacaoProcesso,
+    Usuario,
+)
+
+# Os tipos de assunto, com o nome que a BWS usa e quantos dias sem andamento
+# fazem aquilo virar "parado".
+#
+# O prazo é POR TIPO porque a realidade é por tipo: licença ambiental dorme
+# semanas sem que isso signifique nada, e aditivo de prazo parado dez dias já
+# é problema. Um prazo único acenderia a luz nos dois lugares errados.
+# Junto vai a LISTA DE PASSOS que costuma ter aquele tipo. Ela é SUGESTÃO, e
+# não fluxo: cada passo é uma caixinha que a pessoa marca se quiser, em
+# qualquer ordem, e o processo fecha com passo em branco sem reclamar. Foi a
+# exigência mais forte do dono — *"não quero uma coisa travada"* —, e a
+# diferença entre sugerir e obrigar é justamente esta: a lista lembra o que
+# costuma faltar, sem impedir o caminho que o órgão inventou desta vez.
+TIPOS: dict[str, dict[str, Any]] = {
+    "ADITIVO_PRAZO": {
+        "rotulo": "Aditivo de prazo", "parado_em": 10,
+        "passos": ["Justificativa técnica do atraso", "Cronograma novo",
+                   "Ofício de solicitação", "Protocolo no órgão",
+                   "Parecer jurídico do órgão", "Assinatura do termo",
+                   "Publicação no diário oficial",
+                   "Atualizar a vigência da obra no ERP"]},
+    "ADITIVO_VALOR": {
+        "rotulo": "Aditivo de valor", "parado_em": 10,
+        "passos": ["Planilha do acréscimo", "Justificativa técnica",
+                   "Ofício de solicitação", "Protocolo no órgão",
+                   "Parecer jurídico do órgão", "Assinatura do termo",
+                   "Publicação no diário oficial",
+                   "Atualizar o valor do contrato no ERP"]},
+    "APOSTILAMENTO": {
+        "rotulo": "Apostilamento (reajuste)", "parado_em": 15,
+        "passos": ["Índice do período conferido", "Memória de cálculo",
+                   "Ofício de solicitação", "Protocolo no órgão",
+                   "Apostilamento publicado",
+                   "Lançar a medição de reajuste no ERP"]},
+    "LICENCA": {
+        "rotulo": "Licença ou autorização", "parado_em": 30,
+        "passos": ["Documentação da empresa", "Taxa paga",
+                   "Protocolo no órgão", "Vistoria", "Exigências respondidas",
+                   "Licença emitida", "Arquivar a licença no ERP"]},
+    "CERTIDAO": {
+        "rotulo": "Certidão", "parado_em": 15,
+        "passos": ["Pendência conferida", "Solicitação feita",
+                   "Certidão emitida", "Arquivar no ERP"]},
+    "CNO": {
+        "rotulo": "Matrícula CNO", "parado_em": 20,
+        "passos": ["Dados da obra conferidos", "Matrícula solicitada",
+                   "Matrícula emitida", "Arquivar e preencher o CNO da obra"]},
+    "ART": {
+        "rotulo": "ART / RRT", "parado_em": 15,
+        "passos": ["Responsável técnico definido", "ART preenchida",
+                   "Taxa paga", "ART registrada", "Arquivar no ERP"]},
+    "SEGURO": {
+        "rotulo": "Seguro-garantia", "parado_em": 15,
+        "passos": ["Cotação com a seguradora", "Apólice emitida",
+                   "Entrega ao contratante", "Arquivar no ERP"]},
+    "PROTOCOLO": {
+        "rotulo": "Protocolo de medição", "parado_em": 15,
+        "passos": ["Medição montada", "Documentação fiscal completa",
+                   "Protocolo no órgão", "Medição atestada",
+                   "Nota emitida", "Pagamento recebido"]},
+    "OUTRO": {"rotulo": "Outro assunto", "parado_em": 20, "passos": []},
+}
+
+
+def passos_do_tipo(tipo: str) -> list[str]:
+    return list(TIPOS.get((tipo or "").upper(), TIPOS["OUTRO"]).get("passos", []))
+
+SITUACOES: dict[str, str] = {
+    "RASCUNHO":    "Em preparo",
+    "PROTOCOLADO": "Protocolado",
+    "EM_ANALISE":  "Em análise",
+    "EXIGENCIA":   "Exigência a responder",
+    "DEFERIDO":    "Deferido / publicado",
+    "INDEFERIDO":  "Indeferido",
+    "ARQUIVADO":   "Arquivado",
+}
+
+# Situações em que o processo deixou de ser trabalho: não entram na lista de
+# pendências, não ficam "parados" e não cobram previsão.
+ENCERRADAS = {"DEFERIDO", "INDEFERIDO", "ARQUIVADO"}
+
+
+def _hoje() -> date:
+    return date.today()
+
+
+def _texto(valor: Any, campo: str, *, obrigatorio: bool = False,
+           maximo: int = 400) -> Optional[str]:
+    t = (valor or "").strip() if isinstance(valor, str) else ""
+    if not t:
+        if obrigatorio:
+            raise ErroValidacao(f"{campo} é obrigatório.")
+        return None
+    return t[:maximo]
+
+
+def _data(valor: Any, campo: str) -> Optional[date]:
+    if valor in (None, "", "null"):
+        return None
+    if isinstance(valor, date):
+        return valor
+    try:
+        return date.fromisoformat(str(valor)[:10])
+    except ValueError:
+        raise ErroValidacao(f"{campo} não é uma data válida.")
+
+
+def proximo_numero(s: Session) -> str:
+    """AC-000042 — curto o bastante para citar ao telefone e em ofício."""
+    numeros = []
+    for p in s.scalars(select(Processo)).all():
+        bruto = getattr(p, "numero", "") or ""
+        sufixo = bruto.split("-", 1)[1] if bruto.startswith("AC-") else ""
+        if sufixo.isdigit():
+            numeros.append(int(sufixo))
+    return f"AC-{(max(numeros) + 1) if numeros else 1:06d}"
+
+
+# ---------------------------------------------------------------------------
+# Abrir
+# ---------------------------------------------------------------------------
+def criar(s: Session, dados: dict[str, Any], usuario: Optional[Usuario]) -> Processo:
+    """Abre o processo. Obrigatórios: assunto, tipo e UM dono (obra ou empresa).
+
+    Nada mais. Órgão, responsável, prazo e protocolo entram conforme a coisa
+    anda — exigir tudo na abertura faz a pessoa deixar para abrir depois, e
+    depois é nunca.
+    """
+    assunto = _texto(dados.get("assunto"), "O assunto", obrigatorio=True)
+    tipo = (dados.get("tipo") or "OUTRO").strip().upper()
+    if tipo not in TIPOS:
+        raise ErroValidacao(f"Tipo de processo desconhecido: {tipo}.")
+
+    obra_id = dados.get("obra_id") or None
+    empresa_id = dados.get("empresa_id") or None
+    if bool(obra_id) == bool(empresa_id):
+        raise ErroValidacao("O processo é de UMA obra ou da empresa — escolha um "
+                            "dos dois.")
+    if obra_id and s.get(Obra, int(obra_id)) is None:
+        raise ErroValidacao("Obra não encontrada.")
+    if empresa_id and s.get(Empresa, int(empresa_id)) is None:
+        raise ErroValidacao("Empresa não encontrada.")
+
+    responsavel_id = dados.get("responsavel_id") or (usuario.id if usuario else None)
+    processo = Processo(
+        numero=proximo_numero(s),
+        assunto=assunto,
+        tipo=tipo,
+        obra_id=int(obra_id) if obra_id else None,
+        empresa_id=int(empresa_id) if empresa_id else None,
+        orgao=_texto(dados.get("orgao"), "O órgão"),
+        responsavel_id=int(responsavel_id) if responsavel_id else None,
+        situacao="RASCUNHO",
+        onde_esta=_texto(dados.get("onde_esta"), "Onde está"),
+        protocolo=_texto(dados.get("protocolo"), "O protocolo", maximo=80),
+        protocolado_em=_data(dados.get("protocolado_em"), "A data do protocolo"),
+        previsao=_data(dados.get("previsao"), "A previsão"),
+        documento_id=dados.get("documento_id") or None,
+        criado_por=usuario.id if usuario else None)
+    s.add(processo)
+    s.flush()
+    # A lista de sugestões nasce junto, do modelo do tipo. Nasce aqui e não na
+    # tela porque quem abre pelo celular, com pressa, é justamente quem mais
+    # precisa dela — e porque um passo acrescentado depois não some ao trocar
+    # de tipo: as linhas são do PROCESSO, não do modelo.
+    for ordem, texto in enumerate(passos_do_tipo(tipo)):
+        s.add(ProcessoPasso(processo_id=processo.id, texto=texto, ordem=ordem))
+    s.flush()
+    registrar_evento(s, "processo", processo.id, "PROCESSO_ABERTO", {
+        "numero": processo.numero, "assunto": assunto, "tipo": tipo,
+        "obra_id": processo.obra_id, "empresa_id": processo.empresa_id},
+        usuario.id if usuario else None)
+    return processo
+
+
+# ---------------------------------------------------------------------------
+# O andamento — o coração do módulo
+# ---------------------------------------------------------------------------
+def lancar_andamento(s: Session, processo_id: int, dados: dict[str, Any],
+                     usuario: Optional[Usuario]) -> ProcessoAndamento:
+    """Uma frase, e pronto. Data e autor entram sozinhos.
+
+    Os três opcionais (onde está, previsão, situação) mudam o processo na
+    MESMA frase — a pessoa que ligou para o órgão descobre as três coisas de
+    uma vez, e abrir outro formulário para cada uma é o jeito de nenhuma ser
+    registrada.
+    """
+    processo = s.get(Processo, processo_id)
+    if processo is None:
+        raise ErroValidacao("Processo não encontrado.")
+
+    texto = _texto(dados.get("texto"), "O andamento", obrigatorio=True, maximo=2000)
+    onde = _texto(dados.get("onde_esta"), "Onde está")
+    previsao = _data(dados.get("previsao"), "A previsão")
+    situacao = (dados.get("situacao") or "").strip().upper() or None
+    if situacao and situacao not in SITUACOES:
+        raise ErroValidacao(f"Situação desconhecida: {situacao}.")
+
+    andamento = ProcessoAndamento(
+        processo_id=processo.id, texto=texto, onde_esta=onde,
+        previsao=previsao, situacao=situacao,
+        anexo_id=dados.get("anexo_id") or None,
+        por_id=usuario.id if usuario else None)
+    s.add(andamento)
+
+    if onde:
+        processo.onde_esta = onde
+    if previsao:
+        processo.previsao = previsao
+    if situacao:
+        _mudar_situacao(processo, situacao)
+    processo.atualizado_em = datetime.now(timezone.utc)
+    s.flush()
+    registrar_evento(s, "processo", processo.id, "PROCESSO_ANDAMENTO", {
+        "numero": processo.numero, "texto": texto[:200],
+        "onde_esta": onde, "situacao": situacao,
+        "previsao": previsao.isoformat() if previsao else None},
+        usuario.id if usuario else None)
+    return andamento
+
+
+def _mudar_situacao(processo: Processo, situacao: str) -> None:
+    """Sem transição proibida: o órgão não segue ordem, e obrigar ordem faria a
+    pessoa mentir para o sistema. Encerrar carimba a data; reabrir a apaga."""
+    processo.situacao = situacao
+    if situacao in ENCERRADAS:
+        processo.encerrado_em = processo.encerrado_em or datetime.now(timezone.utc)
+    else:
+        processo.encerrado_em = None
+
+
+def atualizar(s: Session, processo_id: int, dados: dict[str, Any],
+              usuario: Optional[Usuario]) -> Processo:
+    """Os campos do cabeçalho: assunto, órgão, responsável, protocolo, previsão."""
+    processo = s.get(Processo, processo_id)
+    if processo is None:
+        raise ErroValidacao("Processo não encontrado.")
+
+    mudou: dict[str, Any] = {}
+    if "assunto" in dados:
+        processo.assunto = _texto(dados["assunto"], "O assunto", obrigatorio=True)
+        mudou["assunto"] = processo.assunto
+    if "tipo" in dados and dados["tipo"]:
+        tipo = str(dados["tipo"]).strip().upper()
+        if tipo not in TIPOS:
+            raise ErroValidacao(f"Tipo de processo desconhecido: {tipo}.")
+        processo.tipo = tipo
+        mudou["tipo"] = tipo
+    for campo, rotulo in (("orgao", "O órgão"), ("onde_esta", "Onde está")):
+        if campo in dados:
+            setattr(processo, campo, _texto(dados[campo], rotulo))
+            mudou[campo] = getattr(processo, campo)
+    if "protocolo" in dados:
+        processo.protocolo = _texto(dados["protocolo"], "O protocolo", maximo=80)
+        mudou["protocolo"] = processo.protocolo
+    for campo, rotulo in (("protocolado_em", "A data do protocolo"),
+                          ("previsao", "A previsão")):
+        if campo in dados:
+            setattr(processo, campo, _data(dados[campo], rotulo))
+            mudou[campo] = str(getattr(processo, campo) or "")
+    if "responsavel_id" in dados:
+        novo = dados["responsavel_id"] or None
+        if novo and s.get(Usuario, int(novo)) is None:
+            raise ErroValidacao("Operador não encontrado.")
+        processo.responsavel_id = int(novo) if novo else None
+        mudou["responsavel_id"] = processo.responsavel_id
+    if "situacao" in dados and dados["situacao"]:
+        situacao = str(dados["situacao"]).strip().upper()
+        if situacao not in SITUACOES:
+            raise ErroValidacao(f"Situação desconhecida: {situacao}.")
+        _mudar_situacao(processo, situacao)
+        mudou["situacao"] = situacao
+
+    processo.atualizado_em = datetime.now(timezone.utc)
+    s.flush()
+    if mudou:
+        registrar_evento(s, "processo", processo.id, "PROCESSO_ALTERADO",
+                         {"numero": processo.numero, **mudou},
+                         usuario.id if usuario else None)
+    return processo
+
+
+def assumir(s: Session, processo_ids: list[int], novo_responsavel_id: int,
+            usuario: Optional[Usuario]) -> int:
+    """Passa vários processos para uma pessoa de uma vez.
+
+    É o botão do caso das férias: quem entra no lugar de quem saiu não deveria
+    abrir um por um. A troca fica registrada em cada processo.
+    """
+    if s.get(Usuario, int(novo_responsavel_id)) is None:
+        raise ErroValidacao("Operador não encontrado.")
+    trocados = 0
+    for pid in processo_ids or []:
+        processo = s.get(Processo, int(pid))
+        if processo is None:
+            continue
+        antes = processo.responsavel_id
+        if antes == int(novo_responsavel_id):
+            continue
+        processo.responsavel_id = int(novo_responsavel_id)
+        processo.atualizado_em = datetime.now(timezone.utc)
+        registrar_evento(s, "processo", processo.id, "PROCESSO_ASSUMIDO",
+                         {"numero": processo.numero, "de": antes,
+                          "para": int(novo_responsavel_id)},
+                         usuario.id if usuario else None)
+        trocados += 1
+    s.flush()
+    return trocados
+
+
+# ---------------------------------------------------------------------------
+# "O que está pendente" — a tela que resolve o caso das férias
+# ---------------------------------------------------------------------------
+# A ordem NÃO é por data de criação: é por quem está mais perto de virar
+# problema. Quem assume o assunto de outro precisa que a primeira linha da tela
+# seja a que mais dói, e não a mais antiga.
+URGENCIAS = [
+    ("EXIGENCIA",  "exigência a responder", 0),
+    ("ATRASADO",   "passou da previsão",    1),
+    ("PARADO",     "parado",                2),
+    ("PROXIMO",    "previsão chegando",     3),
+    ("EM_DIA",     "em dia",                4),
+]
+URGENCIA_ORDEM = {chave: ordem for chave, _, ordem in URGENCIAS}
+URGENCIA_ROTULO = {chave: rotulo for chave, rotulo, _ in URGENCIAS}
+
+# Quantos dias antes da previsão a linha já acende. Uma semana é o que dá para
+# ligar para o órgão antes da data e ainda ter o que fazer.
+DIAS_DE_AVISO = 7
+
+
+def dias_parado(processo: Processo, ultimo: Optional[date], hoje: date) -> int:
+    """Dias desde o último andamento — ou desde a abertura, se não houve nenhum.
+
+    Processo aberto e nunca tocado é o caso que mais interessa, então a
+    abertura conta como a última movimentação.
+    """
+    partida = ultimo or (processo.criado_em.date()
+                         if getattr(processo, "criado_em", None) else hoje)
+    return max(0, (hoje - partida).days)
+
+
+def urgencia(processo: Processo, ultimo_andamento: Optional[date],
+             hoje: Optional[date] = None) -> dict[str, Any]:
+    """Como esta linha entra na fila, e por quê — dito em português.
+
+    O "por quê" viaja junto com a chave de propósito: a tela mostra o motivo, e
+    urgência sem motivo obriga quem lê a abrir o processo para descobrir, que é
+    exatamente o trabalho que esta tela existe para evitar.
+    """
+    hoje = hoje or _hoje()
+    parado = dias_parado(processo, ultimo_andamento, hoje)
+    teto = TIPOS.get(processo.tipo, TIPOS["OUTRO"])["parado_em"]
+
+    if processo.situacao in ENCERRADAS:
+        return {"chave": "EM_DIA", "rotulo": SITUACOES.get(processo.situacao, ""),
+                "motivo": "", "dias_parado": parado, "ordem": 9}
+    if processo.situacao == "EXIGENCIA":
+        return {"chave": "EXIGENCIA", "rotulo": URGENCIA_ROTULO["EXIGENCIA"],
+                "motivo": "o órgão pediu alguma coisa e ainda não foi respondido",
+                "dias_parado": parado, "ordem": URGENCIA_ORDEM["EXIGENCIA"]}
+    if processo.previsao and processo.previsao < hoje:
+        atraso = (hoje - processo.previsao).days
+        return {"chave": "ATRASADO", "rotulo": URGENCIA_ROTULO["ATRASADO"],
+                "motivo": f"prometeram para {processo.previsao.strftime('%d/%m')} "
+                          f"e já faz {atraso} dia(s)",
+                "dias_parado": parado, "ordem": URGENCIA_ORDEM["ATRASADO"]}
+    if parado >= teto:
+        return {"chave": "PARADO", "rotulo": URGENCIA_ROTULO["PARADO"],
+                "motivo": f"{parado} dias sem andamento "
+                          f"(para {TIPOS.get(processo.tipo, TIPOS['OUTRO'])['rotulo'].lower()} "
+                          f"o normal é até {teto})",
+                "dias_parado": parado, "ordem": URGENCIA_ORDEM["PARADO"]}
+    if processo.previsao and (processo.previsao - hoje).days <= DIAS_DE_AVISO:
+        faltam = (processo.previsao - hoje).days
+        return {"chave": "PROXIMO", "rotulo": URGENCIA_ROTULO["PROXIMO"],
+                "motivo": f"previsto para {processo.previsao.strftime('%d/%m')} "
+                          f"({faltam} dia(s))",
+                "dias_parado": parado, "ordem": URGENCIA_ORDEM["PROXIMO"]}
+    return {"chave": "EM_DIA", "rotulo": URGENCIA_ROTULO["EM_DIA"], "motivo": "",
+            "dias_parado": parado, "ordem": URGENCIA_ORDEM["EM_DIA"]}
+
+
+# ---------------------------------------------------------------------------
+# A lista
+# ---------------------------------------------------------------------------
+def _ultimo_andamento_por_processo(s: Session, ids: list[int]) -> dict[int, date]:
+    """Quando cada processo andou pela última vez.
+
+    Uma consulta para todos, e não uma por linha: a tela mostra dezenas de
+    processos, e uma ida ao banco por linha é o que faz uma tela boa ficar
+    lenta o bastante para ninguém abrir.
+    """
+    if not ids:
+        return {}
+    ultimos: dict[int, date] = {}
+    for a in s.scalars(select(ProcessoAndamento)).all():
+        if a.processo_id not in ids or a.em is None:
+            continue
+        quando = a.em.date() if hasattr(a.em, "date") else a.em
+        if a.processo_id not in ultimos or quando > ultimos[a.processo_id]:
+            ultimos[a.processo_id] = quando
+    return ultimos
+
+
+def _passos_por_processo(s: Session, ids: list[int]) -> dict[int, tuple[int, int]]:
+    """Quantos passos já foram marcados, e quantos são — para todos de uma vez.
+
+    Uma consulta para a lista inteira, e não uma por linha: é a diferença entre
+    a tela abrir e a tela demorar.
+    """
+    if not ids:
+        return {}
+    conta: dict[int, list[int]] = {}
+    for x in s.scalars(select(ProcessoPasso)).all():
+        if x.processo_id not in ids:
+            continue
+        par = conta.setdefault(x.processo_id, [0, 0])
+        par[1] += 1
+        if x.feito_em is not None:
+            par[0] += 1
+    return {k: (v[0], v[1]) for k, v in conta.items()}
+
+
+def listar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
+           obra_id: Optional[int] = None, responsavel_id: Optional[int] = None,
+           tipo: Optional[str] = None, incluir_encerrados: bool = False,
+           hoje: Optional[date] = None) -> dict[str, Any]:
+    """Os processos, ordenados por quem está mais perto de virar problema.
+
+    `obras_permitidas=None` significa "esta pessoa enxerga tudo". Lista vazia
+    significa "nenhuma obra designada" — e aí ela não vê nenhum processo, que é
+    o padrão NEGAR do ERP, não efeito colateral.
+
+    Processo da EMPRESA (certidão, alvará da sede) não é de obra nenhuma: só
+    aparece para quem enxerga a base inteira.
+    """
+    hoje = hoje or _hoje()
+    todos = list(s.scalars(select(Processo)).all())
+
+    if obras_permitidas is not None:
+        alcance = set(obras_permitidas)
+        todos = [p for p in todos if p.obra_id is not None and p.obra_id in alcance]
+    if obra_id:
+        todos = [p for p in todos if p.obra_id == int(obra_id)]
+    if responsavel_id:
+        todos = [p for p in todos if p.responsavel_id == int(responsavel_id)]
+    if tipo:
+        todos = [p for p in todos if p.tipo == tipo.strip().upper()]
+    if not incluir_encerrados:
+        todos = [p for p in todos if p.situacao not in ENCERRADAS]
+
+    ultimos = _ultimo_andamento_por_processo(s, [p.id for p in todos])
+    feitos = _passos_por_processo(s, [p.id for p in todos])
+    linhas = []
+    for p in todos:
+        u = urgencia(p, ultimos.get(p.id), hoje)
+        linhas.append({
+            "id": p.id, "numero": p.numero, "assunto": p.assunto,
+            "tipo": p.tipo,
+            "tipo_rotulo": TIPOS.get(p.tipo, TIPOS["OUTRO"])["rotulo"],
+            "obra_id": p.obra_id, "empresa_id": p.empresa_id,
+            "orgao": p.orgao, "onde_esta": p.onde_esta,
+            "protocolo": p.protocolo,
+            "responsavel_id": p.responsavel_id,
+            "situacao": p.situacao,
+            "situacao_rotulo": SITUACOES.get(p.situacao, p.situacao),
+            "previsao": p.previsao.isoformat() if p.previsao else None,
+            "urgencia": u["chave"], "urgencia_rotulo": u["rotulo"],
+            "motivo": u["motivo"], "dias_parado": u["dias_parado"],
+            "passos_feitos": feitos.get(p.id, (0, 0))[0],
+            "passos_total": feitos.get(p.id, (0, 0))[1]})
+
+    linhas.sort(key=lambda l: (URGENCIA_ORDEM.get(l["urgencia"], 9),
+                               -l["dias_parado"], l["numero"]))
+    resumo = {chave: sum(1 for l in linhas if l["urgencia"] == chave)
+              for chave, _, _ in URGENCIAS}
+    return {"processos": linhas, "resumo": resumo,
+            "pendentes": sum(v for k, v in resumo.items() if k != "EM_DIA")}
+
+
+def _oficios_do_processo(s: Session, processo_id: int) -> list[dict[str, Any]]:
+    """Import tardio de propósito: `oficios` importa este módulo de volta (ele
+    lança o andamento do ofício gerado), e no topo isso seria ciclo."""
+    from app.apps.erp.core.acompanhamento import oficios
+    return oficios.listar_do_processo(s, processo_id)
+
+
+def detalhe(s: Session, processo_id: int) -> dict[str, Any]:
+    """O processo e o histórico dele, do mais novo para o mais antigo."""
+    p = s.get(Processo, processo_id)
+    if p is None:
+        raise ErroValidacao("Processo não encontrado.")
+    # Desempata pelo id: dois andamentos lançados no mesmo segundo (acontece
+    # quando alguém cola duas frases seguidas) sairiam em ordem aleatória, e um
+    # histórico fora de ordem é pior que um histórico curto.
+    andamentos = sorted(
+        [a for a in s.scalars(select(ProcessoAndamento)).all()
+         if a.processo_id == p.id],
+        key=lambda a: (a.em or datetime.now(timezone.utc), a.id or 0),
+        reverse=True)
+    ultimo = andamentos[0].em.date() if andamentos and andamentos[0].em else None
+    u = urgencia(p, ultimo)
+    return {
+        "id": p.id, "numero": p.numero, "assunto": p.assunto, "tipo": p.tipo,
+        "tipo_rotulo": TIPOS.get(p.tipo, TIPOS["OUTRO"])["rotulo"],
+        "obra_id": p.obra_id, "empresa_id": p.empresa_id, "orgao": p.orgao,
+        "responsavel_id": p.responsavel_id, "situacao": p.situacao,
+        "situacao_rotulo": SITUACOES.get(p.situacao, p.situacao),
+        "onde_esta": p.onde_esta, "protocolo": p.protocolo,
+        "protocolado_em": p.protocolado_em.isoformat() if p.protocolado_em else None,
+        "previsao": p.previsao.isoformat() if p.previsao else None,
+        "documento_id": p.documento_id,
+        "urgencia": u["chave"], "urgencia_rotulo": u["rotulo"],
+        "motivo": u["motivo"], "dias_parado": u["dias_parado"],
+        "oficios": _oficios_do_processo(s, p.id),
+        "passos": [{"id": x.id, "texto": x.texto, "ordem": x.ordem,
+                    "feito": x.feito_em is not None,
+                    "feito_em": x.feito_em.strftime("%d/%m/%Y") if x.feito_em else "",
+                    "feito_por": x.feito_por}
+                   for x in passos_do_processo(s, p.id)],
+        "andamentos": [{
+            "id": a.id, "texto": a.texto, "onde_esta": a.onde_esta,
+            "previsao": a.previsao.isoformat() if a.previsao else None,
+            "situacao": a.situacao,
+            "situacao_rotulo": SITUACOES.get(a.situacao or "", ""),
+            "anexo_id": a.anexo_id, "por_id": a.por_id,
+            "em": a.em.strftime("%d/%m/%Y %H:%M") if a.em else ""}
+            for a in andamentos]}
+
+
+# ---------------------------------------------------------------------------
+# OS PASSOS — lembrete, nunca trava
+#
+# Nenhuma função aqui impede coisa alguma. Marcar, desmarcar, acrescentar e
+# apagar são livres, em qualquer ordem, e o processo fecha com passo em branco
+# sem reclamar. Se um dia alguém acrescentar uma validação aqui, o módulo terá
+# virado o SEI — que foi o contraexemplo que o dono deu.
+# ---------------------------------------------------------------------------
+def passos_do_processo(s: Session, processo_id: int) -> list[ProcessoPasso]:
+    return sorted([p for p in s.scalars(select(ProcessoPasso)).all()
+                   if p.processo_id == processo_id],
+                  key=lambda p: (p.ordem, p.id or 0))
+
+
+def marcar_passo(s: Session, passo_id: int, feito: bool,
+                 usuario: Optional[Usuario]) -> ProcessoPasso:
+    passo = s.get(ProcessoPasso, passo_id)
+    if passo is None:
+        raise ErroValidacao("Passo não encontrado.")
+    passo.feito_em = datetime.now(timezone.utc) if feito else None
+    passo.feito_por = (usuario.id if usuario else None) if feito else None
+    s.flush()
+    return passo
+
+
+def acrescentar_passo(s: Session, processo_id: int, texto: str,
+                      usuario: Optional[Usuario]) -> ProcessoPasso:
+    """O passo que só aquele órgão pede. Sem isto, a lista do modelo viraria
+    uma camisa de força com cara de ajuda."""
+    if s.get(Processo, processo_id) is None:
+        raise ErroValidacao("Processo não encontrado.")
+    limpo = _texto(texto, "O passo", obrigatorio=True, maximo=200)
+    ultimos = passos_do_processo(s, processo_id)
+    passo = ProcessoPasso(processo_id=processo_id, texto=limpo,
+                          ordem=(ultimos[-1].ordem + 1) if ultimos else 0)
+    s.add(passo)
+    s.flush()
+    return passo
+
+
+def apagar_passo(s: Session, passo_id: int) -> bool:
+    passo = s.get(ProcessoPasso, passo_id)
+    if passo is None:
+        return False
+    s.delete(passo)
+    s.flush()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# O DEFERIMENTO QUE FECHA O CICLO (pedaço 3)
+#
+# Um aditivo de prazo deferido muda a vigência da obra. Hoje isso depende de
+# alguém lembrar de ir ao cadastro e editar o campo — e é exatamente o alerta
+# "Vigência vencida" que aparece no painel de obras quando ninguém lembra.
+#
+# A REGRA QUE NÃO PODE SER QUEBRADA: o sistema PROPÕE, a pessoa confirma. Nunca
+# automático e calado. Mexer sozinho no prazo ou no valor de um contrato é
+# mexer em dinheiro, e um erro silencioso aqui só apareceria numa medição
+# recusada meses depois.
+# ---------------------------------------------------------------------------
+PROPOE_ADITIVO = {"ADITIVO_PRAZO", "ADITIVO_VALOR"}
+
+
+def proposta_de_deferimento(s: Session, processo_id: int) -> dict[str, Any]:
+    """O que o ERP sugere atualizar na obra, quando este processo é deferido.
+
+    Devolve `{"propoe": False}` quando não há o que propor — processo que não é
+    aditivo, processo sem obra, ou obra que já tem aditivo com esse número.
+    """
+    p = s.get(Processo, processo_id)
+    if p is None:
+        raise ErroValidacao("Processo não encontrado.")
+    if p.tipo not in PROPOE_ADITIVO or not p.obra_id:
+        return {"propoe": False}
+    obra = s.get(Obra, p.obra_id)
+    if obra is None:
+        return {"propoe": False}
+    return {
+        "propoe": True,
+        "processo_id": p.id,
+        "tipo": p.tipo,
+        "obra_id": obra.id,
+        "obra": f"{obra.codigo} — {obra.nome}",
+        "vigencia_atual": obra.vigencia_fim.isoformat() if obra.vigencia_fim else None,
+        "assunto": p.assunto,
+        # O NÚMERO do aditivo não é adivinhado: o termo assinado tem um número
+        # que só está no papel, e inventar "nº 3" porque existem dois é como se
+        # cria divergência com o contrato do órgão.
+        "numero_sugerido": "",
+        "o_que_muda": ("o fim da vigência da obra"
+                       if p.tipo == "ADITIVO_PRAZO" else "o valor do contrato"),
+    }
+
+
+def aplicar_deferimento(s: Session, processo_id: int, dados: dict[str, Any],
+                        usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Registra o aditivo na obra a partir do processo deferido.
+
+    Reusa `criar_aditivo`, que é quem já sabe somar valor vigente e mexer na
+    vigência — escrever isso de novo aqui faria duas verdades sobre o mesmo
+    contrato, e um dia elas discordariam.
+    """
+    from app.apps.erp.core.arquivo.preenchimento import criar_aditivo
+
+    p = s.get(Processo, processo_id)
+    if p is None:
+        raise ErroValidacao("Processo não encontrado.")
+    if p.tipo not in PROPOE_ADITIVO or not p.obra_id:
+        raise ErroValidacao("Este processo não vira aditivo de contrato.")
+
+    aditivo = criar_aditivo(s, p.obra_id, {
+        "numero": dados.get("numero"),
+        "tipo": "PRAZO" if p.tipo == "ADITIVO_PRAZO" else "VALOR",
+        "valor": dados.get("valor") or 0,
+        "dias": dados.get("dias") or 0,
+        "nova_vigencia_fim": dados.get("nova_vigencia_fim"),
+        "data_assinatura": dados.get("data_assinatura"),
+        "objeto": p.assunto,
+    }, usuario=usuario)
+
+    _mudar_situacao(p, "DEFERIDO")
+    p.atualizado_em = datetime.now(timezone.utc)
+    s.flush()
+    lancar_andamento(s, p.id, {
+        "texto": f"Deferido. Aditivo {aditivo.numero} registrado na obra"
+                 + (f", nova vigência até "
+                    f"{aditivo.nova_vigencia_fim.strftime('%d/%m/%Y')}."
+                    if aditivo.nova_vigencia_fim else ".")}, usuario)
+    registrar_evento(s, "processo", p.id, "PROCESSO_VIROU_ADITIVO", {
+        "numero": p.numero, "aditivo": aditivo.numero, "obra_id": p.obra_id},
+        usuario.id if usuario else None)
+    return {"aditivo_id": aditivo.id, "numero": aditivo.numero,
+            "nova_vigencia_fim": (aditivo.nova_vigencia_fim.isoformat()
+                                  if aditivo.nova_vigencia_fim else None)}
+
+
+# ---------------------------------------------------------------------------
+# QUANTO CADA ÓRGÃO DEMORA (pedaço 3)
+#
+# A pergunta que o dono sempre teve e nunca teve como responder: "esse cliente
+# demora quanto?". Com ela dá para prometer prazo com base em histórico em vez
+# de esperança, e para saber quando cutucar.
+#
+# DOIS CUIDADOS, e os dois são sobre não mentir:
+#
+#   · só entra processo ENCERRADO com protocolo e data de encerramento. O que
+#     está aberto ainda não demorou — ele está demorando, e misturar os dois
+#     puxaria a média para baixo justamente por causa dos que travaram;
+#   · a contagem de quantos processos entraram na média viaja junto. Média de
+#     um caso não é média, e sem o "de quantos" ninguém tem como saber disso.
+# ---------------------------------------------------------------------------
+def demora_por_orgao(s: Session, *, obras_permitidas: Optional[list[int]] = None,
+                     hoje: Optional[date] = None) -> dict[str, Any]:
+    hoje = hoje or _hoje()
+    todos = list(s.scalars(select(Processo)).all())
+    if obras_permitidas is not None:
+        alcance = set(obras_permitidas)
+        todos = [p for p in todos if p.obra_id is not None and p.obra_id in alcance]
+
+    grupos: dict[tuple[str, str], dict[str, Any]] = {}
+    for p in todos:
+        orgao = (p.orgao or "").strip() or "(sem órgão informado)"
+        chave = (orgao, p.tipo)
+        g = grupos.setdefault(chave, {
+            "orgao": orgao, "tipo": p.tipo,
+            "tipo_rotulo": TIPOS.get(p.tipo, TIPOS["OUTRO"])["rotulo"],
+            "encerrados": 0, "abertos": 0, "dias": []})
+        if p.situacao in ENCERRADAS and p.encerrado_em and p.protocolado_em:
+            fim = (p.encerrado_em.date() if hasattr(p.encerrado_em, "date")
+                   else p.encerrado_em)
+            dias = (fim - p.protocolado_em).days
+            if dias >= 0:
+                g["encerrados"] += 1
+                g["dias"].append(dias)
+        elif p.situacao not in ENCERRADAS:
+            g["abertos"] += 1
+
+    linhas = []
+    for g in grupos.values():
+        dias = sorted(g["dias"])
+        linhas.append({
+            "orgao": g["orgao"], "tipo": g["tipo"],
+            "tipo_rotulo": g["tipo_rotulo"],
+            "concluidos": len(dias),
+            "abertos": g["abertos"],
+            "media_dias": round(sum(dias) / len(dias)) if dias else None,
+            "menor": dias[0] if dias else None,
+            "maior": dias[-1] if dias else None,
+            # A frase existe para ninguém ler "média 4" de UM caso como se
+            # fosse regra. É o mesmo cuidado das respostas do assistente.
+            "confianca": ("sem processo concluído ainda" if not dias
+                          else "um caso só — não é média" if len(dias) == 1
+                          else f"{len(dias)} processos concluídos")})
+    linhas.sort(key=lambda l: (l["orgao"], l["tipo_rotulo"]))
+    return {"linhas": linhas,
+            "observacao": ("A conta usa só processos ENCERRADOS que têm data de "
+                           "protocolo. O que ainda está aberto aparece na coluna "
+                           "'em andamento' e fica de fora da média — senão os "
+                           "que travaram puxariam o número para baixo.")}

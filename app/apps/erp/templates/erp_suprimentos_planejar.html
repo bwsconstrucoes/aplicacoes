@@ -1,0 +1,258 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Planejar cotações — ERP BWS{% endblock %}
+
+{# O DISPARO AUTOMÁTICO DE COTAÇÃO.
+
+   Pedido do dono, 18/09/2026: *"o sistema já planeja um disparo de solicitação
+   de cotação (…) naquela tela eu estou visualizando o que vai ser disparado e
+   para quem vai ser disparado, e a partir dali eu posso editar (…) ele vai
+   apenas validar aquela sugestão do sistema, editar uma ou outra coisa e
+   disparar"*.
+
+   A LINHA QUE ESTA TELA NÃO CRUZA: o sistema faz o trabalho BRAÇAL — varrer o
+   que está pendente, agrupar o que se pede junto, achar quem vende — e para
+   aí. Montar a cotação é um clique; mandar o e-mail é outro, na tela de
+   Cotações. Entre "montei para você conferir" e "mandei sozinho" existe uma
+   diferença que vale a pena manter: o custo de uma sugestão ruim é desmarcar;
+   o de um disparo errado é o fornecedor bom parar de responder.
+
+   Cada sugestão carrega o PORQUÊ — "na mesma cidade da obra", "fábrica",
+   "⚠ sem e-mail". Lista sem motivo vira oráculo, e contra oráculo ninguém
+   discorda com fundamento. #}
+
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="insumo, obra, categoria…">
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Urgência</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="urg" value="" checked>
+        <span class="rotulo">Tudo</span></label>
+      <label class="opcao"><input type="radio" name="urg" value="ATRASADO">
+        <span class="rotulo">Só o atrasado</span></label>
+      <label class="opcao"><input type="radio" name="urg" value="ALTA">
+        <span class="rotulo">Atrasado e prioridade alta</span></label>
+    </div>
+  </div>
+  <div class="dica" style="margin-top:12px">O sistema agrupou por
+    <b>categoria</b> e por <b>município da obra</b>: cimento e luminária no
+    mesmo pedido voltam pela metade dos dois lados, e preço de duas pontas do
+    estado não é um preço só.</div>
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+<div class="kpis kpis-largos" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <button class="btn" id="btn-montar">Montar as cotações marcadas</button>
+  </div>
+  <div id="blocos" class="lista-blocos"></div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<style>
+.lista-blocos { display:flex; flex-direction:column; gap:10px; padding:10px; }
+.bloco { background:var(--branco); border:1px solid var(--borda);
+  border-left:4px solid var(--cinza); border-radius:10px; padding:12px 14px; }
+.bloco.u-ATRASADO { border-left-color: var(--vermelho); }
+.bloco.u-ALTA     { border-left-color: var(--ambar); }
+.bloco.u-MEDIA    { border-left-color: var(--amarelo); }
+.bloco.u-NORMAL   { border-left-color: var(--verde); }
+.bloco-cab { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.bloco-cab b { font-size:14.5px; }
+.bloco-motivo { font-size:12px; font-weight:600; }
+.bloco.u-ATRASADO .bloco-motivo { color:var(--vermelho); }
+.bloco.u-ALTA .bloco-motivo { color:var(--ambar); }
+.bloco-colunas { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:10px; }
+.bloco-colunas h5 { margin:0 0 4px; font-size:11.5px; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--tinta-suave); }
+.mini { font-size:12.5px; }
+.mini .opcao { padding:2px 0; }
+.porque { color:var(--tinta-suave); font-size:11.5px; }
+@media (max-width: 900px) { .bloco-colunas { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let PLANO = {blocos: [], itens_pendentes: 0, sem_categoria: []};
+// O que a PESSOA marcou. Começa igual à sugestão do sistema e diverge dela a
+// cada clique — é essa versão que vira cotação, nunca a sugerida.
+let ESCOLHA = {};
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregar(){
+  try {
+    PLANO = await api("/erp/api/suprimentos/planejamento");
+    ESCOLHA = {};
+    PLANO.blocos.forEach((b, i) => {
+      ESCOLHA[i] = {
+        itens: new Set(b.itens.map(x => x.item_id)),
+        fornecedores: new Set(b.fornecedores.filter(f => f.sugerido).map(f => f.id)),
+        titulo: `${b.categoria} — ${b.municipio}`,
+      };
+    });
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function marcado(nome){
+  const m = document.querySelector(`input[name="${nome}"]:checked`);
+  return m ? m.value : "";
+}
+
+function visiveis(){
+  const b = (els("f-busca").value || "").toLowerCase().trim();
+  const urg = marcado("urg");
+  return PLANO.blocos.map((bl, i) => ({bl, i})).filter(({bl}) => {
+    if (urg === "ATRASADO" && bl.urgencia !== "ATRASADO") return false;
+    if (urg === "ALTA" && !["ATRASADO","ALTA"].includes(bl.urgencia)) return false;
+    if (!b) return true;
+    const texto = `${bl.categoria} ${bl.municipio} ${bl.obras.join(" ")} `
+                + bl.itens.map(x => x.insumo).join(" ");
+    return texto.toLowerCase().includes(b);
+  });
+}
+
+function desenhar(){
+  const marcadosTotal = Object.values(ESCOLHA)
+    .filter(e => e.itens.size && e.fornecedores.size).length;
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Itens esperando cotação</div>
+      <div class="kpi-valor">${PLANO.itens_pendentes || 0}</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Cotações sugeridas</div>
+      <div class="kpi-valor">${PLANO.blocos.length}</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Prontas para montar</div>
+      <div class="kpi-valor">${marcadosTotal}</div></div>
+    ${PLANO.em_cotacao_aberta ? `
+      <div class="kpi estatico ambar"><div class="kpi-rotulo">Já numa cotação aberta</div>
+        <div class="kpi-valor">${PLANO.em_cotacao_aberta}</div>
+        <div class="kpi-sub">ficam de fora — cotar duas vezes dá dois preços</div></div>` : ""}
+    ${(PLANO.sem_categoria || []).length ? `
+      <div class="kpi estatico vermelho"><div class="kpi-rotulo">Sem categoria — ficam de fora</div>
+        <div class="kpi-valor">${PLANO.sem_categoria.length}</div>
+        <div class="kpi-sub">insumo sem categoria não acha fornecedor</div></div>` : ""}`;
+
+  const lista = visiveis();
+  els("vazio").classList.toggle("oculto", lista.length > 0);
+  if (!lista.length) els("vazio").innerHTML = PLANO.blocos.length
+    ? "<b>Nada nestes filtros</b>"
+    : "<b>Nada esperando cotação</b>Quando a obra pedir material, a sugestão aparece aqui.";
+
+  els("blocos").innerHTML = lista.map(({bl, i}) => `
+    <div class="bloco u-${bl.urgencia}">
+      <div class="bloco-cab">
+        <b>${escapar(bl.categoria)}</b>
+        <span class="selo outro">${escapar(bl.municipio)}</span>
+        <span class="proc-num">${bl.quantos_itens} item(ns)</span>
+        ${bl.motivo ? `<span class="bloco-motivo">${escapar(bl.motivo)}</span>` : ""}
+        <span class="espaco" style="flex:1"></span>
+        <input id="tit-${i}" value="${escapar(ESCOLHA[i].titulo)}"
+          style="min-width:260px; padding:5px 8px; font-size:12.5px;
+                 border:1px solid var(--borda-forte); border-radius:8px">
+      </div>
+      <div class="bloco-colunas">
+        <div>
+          <h5>O que vai ser cotado</h5>
+          <div class="mini">${bl.itens.map(x => `
+            <label class="opcao"><input type="checkbox" data-item="${i}:${x.item_id}"
+              ${ESCOLHA[i].itens.has(x.item_id) ? "checked" : ""}>
+              <span class="rotulo">${escapar(x.insumo)}
+                ${x.especificacao ? `<small> · ${escapar(x.especificacao)}</small>` : ""}
+                <small style="display:block" class="porque">${escapar(x.quantidade)}
+                  ${escapar(x.unidade)} · ${escapar(x.obra)}
+                  ${x.motivo ? ` · ${escapar(x.motivo)}` : ""}</small>
+              </span></label>`).join("")}</div>
+        </div>
+        <div>
+          <h5>Para quem pedir preço</h5>
+          <div class="mini">${bl.fornecedores.length ? bl.fornecedores.map(f => `
+            <label class="opcao"><input type="checkbox" data-forn="${i}:${f.id}"
+              ${ESCOLHA[i].fornecedores.has(f.id) ? "checked" : ""}>
+              <span class="rotulo">${escapar(f.nome_fantasia || f.razao_social)}
+                <small style="display:block" class="porque">${escapar(f.por_que)}
+                  ${f.municipio ? ` · ${escapar(f.municipio)}` : ""}</small>
+              </span></label>`).join("")
+            : `<div class="cartao-dica">Nenhum fornecedor cadastrado nesta
+               categoria. Cadastre em Cadastros › Fornecedores — sem isso não
+               há para quem pedir preço.</div>`}</div>
+        </div>
+      </div>
+    </div>`).join("");
+
+  document.querySelectorAll("[data-item]").forEach(c => c.addEventListener("change", ev => {
+    const [i, id] = ev.target.dataset.item.split(":").map(Number);
+    ev.target.checked ? ESCOLHA[i].itens.add(id) : ESCOLHA[i].itens.delete(id);
+    atualizarResumo();
+  }));
+  document.querySelectorAll("[data-forn]").forEach(c => c.addEventListener("change", ev => {
+    const [i, id] = ev.target.dataset.forn.split(":").map(Number);
+    ev.target.checked ? ESCOLHA[i].fornecedores.add(id) : ESCOLHA[i].fornecedores.delete(id);
+    atualizarResumo();
+  }));
+  lista.forEach(({i}) => {
+    const campo = els(`tit-${i}`);
+    if (campo) campo.addEventListener("input", () => { ESCOLHA[i].titulo = campo.value; });
+  });
+  atualizarResumo();
+}
+
+function atualizarResumo(){
+  const prontas = Object.values(ESCOLHA).filter(e => e.itens.size && e.fornecedores.size);
+  const itens = prontas.reduce((t, e) => t + e.itens.size, 0);
+  els("resumo").innerHTML = `<b>${prontas.length}</b> cotação(ões) prontas · `
+    + `<b>${itens}</b> item(ns) · os e-mails saem depois, na tela de Cotações`;
+}
+
+async function montar(){
+  const blocos = [];
+  PLANO.blocos.forEach((bl, i) => {
+    const e = ESCOLHA[i];
+    if (!e.itens.size || !e.fornecedores.size) return;
+    blocos.push({titulo: e.titulo, categoria: bl.categoria,
+                 itens: [...e.itens], fornecedores: [...e.fornecedores]});
+  });
+  if (!blocos.length)
+    return aviso("mensagem", "Marque ao menos um item e um fornecedor.", "erro");
+  els("btn-montar").disabled = true;
+  try {
+    const r = await api("/erp/api/suprimentos/planejamento", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({blocos})});
+    let recado = r.recado;
+    if (r.criadas.length) recado += "<br>" + r.criadas.map(c =>
+      `<b>${escapar(c.numero)}</b> ${escapar(c.titulo)} — ${c.itens} item(ns), `
+      + `${c.fornecedores} fornecedor(es)`).join("<br>");
+    if (r.falhas.length) recado += "<br><b>Não deu certo:</b> " + r.falhas.map(f =>
+      `${escapar(f.titulo)} — ${escapar(f.motivo)}`).join("; ");
+    aviso("mensagem", recado, r.falhas.length ? "alerta" : "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  els("btn-montar").disabled = false;
+}
+
+els("f-busca").addEventListener("input", desenhar);
+document.querySelectorAll('input[name="urg"]').forEach(r =>
+  r.addEventListener("change", desenhar));
+els("btn-limpar").addEventListener("click", () => {
+  els("f-busca").value = "";
+  const todos = document.querySelector('input[name="urg"][value=""]');
+  if (todos) todos.checked = true;
+  desenhar();
+});
+els("btn-montar").addEventListener("click", montar);
+
+carregar();
+</script>
+{% endblock %}

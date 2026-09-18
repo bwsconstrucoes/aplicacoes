@@ -118,17 +118,57 @@ function montarFiltros(){
   }));
 }
 
+// O QUE O OBJETO DIZ ALÉM DO NOME. A obra criada a partir do contrato nasce
+// com o objeto (ou a primeira frase dele) como nome — e aí a linha mostrava a
+// mesma frase duas vezes, uma grande e outra pequena embaixo. Devolve só o que
+// sobra; se não sobra nada, não se escreve nada.
+function restoDoObjeto(objeto, nome){
+  const limpo = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  const o = limpo(objeto), n = limpo(nome);
+  if (!o || o === n) return "";
+  if (!o.startsWith(n)) return objeto;
+  // O nome é o começo do objeto: mostra o rabicho, se valer a pena.
+  const sobra = (objeto || "").slice((nome || "").length).replace(/^[\s.;,–-]+/, "");
+  return sobra.length > 3 ? sobra : "";
+}
+
+// CADA ALERTA SABE ONDE SE RESOLVE. Pedido do dono, 17/09/2026: *"quando a
+// gente está naquelas tags de alerta do painel de obras (…) seria legal que a
+// partir dali eu já conseguisse clicar e ser direcionado para a área de anexar
+// o documento, se fosse o caso, ou para a área de atualizar (…) de uma forma
+// da gente ser redirecionado rápido e fácil para a tela apropriada"*.
+// Por isso cada alerta carrega `p` — a aba da ficha que resolve aquilo — e,
+// quando dá, `f`: o campo que recebe o cursor ao abrir.
+// 0 Resumo · 1 Cadastro · 2 Contrato · 3 Tributação · 4 Documentos · 5 Movimento
 function alertas(o){
   const a = [];
   if (o.vence_em_dias !== null && o.vence_em_dias <= 90)
     a.push({t: o.vence_em_dias < 0 ? "Vigência vencida" : `Vigência em ${o.vence_em_dias}d`,
-            c: o.vence_em_dias < 0 ? "bloqueado" : "aguardando"});
+            c: o.vence_em_dias < 0 ? "bloqueado" : "aguardando",
+            p: 2, f: "c-fim", q: "abrir o contrato e ajustar o fim da vigência"});
   if (o.reajuste_em_dias !== null && o.reajuste_em_dias <= 60)
     a.push({t: o.reajuste_em_dias < 0 ? "Reajuste vencido" : `Reajuste em ${o.reajuste_em_dias}d`,
-            c: "aguardando"});
-  if (!o.aliquota_iss) a.push({t:"Sem ISS", c:"bloqueado"});
-  if (!o.cno) a.push({t:"Sem CNO", c:"outro"});
-  if (o.gasto > o.recebido && o.recebido > 0) a.push({t:"Gasto > recebido", c:"bloqueado"});
+            c: "aguardando",
+            p: 2, f: "c-base", q: "abrir o contrato e conferir a data-base do reajuste"});
+  // Pedido do dono, 17/09/2026: *"é importante se tem alguém responsável pela
+  // obra ou não, porque enquanto não tem, ninguém pode fazer nada"*. Entra em
+  // primeiro lugar na lista — é o que trava o resto.
+  // Sem empresa não sai nota, nem cotação, nem tributação — é o primeiro de
+  // todos (dono, 17/09/2026: *"é prioritário esse cadastro, anterior inclusive
+  // à obra, porque eu tenho que associar"*).
+  if (!o.empresa_id) a.unshift({t:"Sem empresa", c:"bloqueado",
+    p: 1, f: "o-empresa", q: "escolher a empresa que assina esta obra"});
+  if (o.tem_responsavel === false) a.unshift({t:"Sem responsável", c:"bloqueado",
+    p: 1, f: "o-responsaveis", q: "marcar quem responde pela obra"});
+  if (!o.aliquota_iss) a.push({t:"Sem ISS", c:"bloqueado",
+    p: 3, f: "t-iss", q: "informar a alíquota de ISS do município"});
+  // A matrícula CNO chega como documento — jogar o papel preenche o número
+  // sozinho. Por isso o alerta leva aos Documentos, não ao campo.
+  if (!o.cno) a.push({t:"Sem CNO", c:"outro",
+    p: 4, f: "doc-arq", q: "jogar a matrícula CNO para ela preencher o cadastro"});
+  if (o.gasto > o.recebido && o.recebido > 0) a.push({t:"Gasto > recebido", c:"bloqueado",
+    p: 5, q: "ver o movimento da obra"});
   return a;
 }
 
@@ -163,13 +203,13 @@ function desenhar(){
       <div class="kpi-valor">${l.length}</div>
       <div class="kpi-sub">${l.filter(o=>o.fase==="EM_EXECUCAO").length} em execução</div></div>
     <div class="kpi estatico ciano"><div class="kpi-rotulo">Contratos vigentes</div>
-      <div class="kpi-valor" style="font-size:19px">${dinheiro(o=>o.valor_vigente)}</div>
+      ${kpiDinheiro(dinheiro(o=>o.valor_vigente))}
       <div class="kpi-sub">${veNumeros ? `${moeda(soma(o=>o.aditivos))} em aditivos`
         : "os valores são das obras designadas a você"}</div></div>
     <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
-      <div class="kpi-valor" style="font-size:19px">${dinheiro(o=>o.recebido)}</div></div>
+      ${kpiDinheiro(dinheiro(o=>o.recebido))}</div>
     <div class="kpi estatico ambar"><div class="kpi-rotulo">Gasto</div>
-      <div class="kpi-valor" style="font-size:19px">${dinheiro(o=>o.gasto)}</div></div>
+      ${kpiDinheiro(dinheiro(o=>o.gasto))}</div>
     <div class="kpi estatico vermelho"><div class="kpi-rotulo">Precisam de atenção</div>
       <div class="kpi-valor">${l.filter(o=>alertas(o).length).length}</div>
       <div class="kpi-sub">vigência, reajuste, fiscal</div></div>`;
@@ -180,7 +220,11 @@ function desenhar(){
   els("corpo").innerHTML = l.map(o=>`
     <tr style="cursor:pointer" data-obra="${o.id}">
       <td class="dados"><b>${o.codigo}</b></td>
-      <td class="desc">${o.nome}${o.objeto?`<small>${o.objeto}</small>`:""}</td>
+      {# Obra criada a partir do contrato nasce com o OBJETO como nome — e aí
+         nome e objeto eram a mesma frase, uma grande e outra pequena embaixo.
+         Parecia duplicado porque estava duplicado. #}
+      <td class="desc">${o.nome}${restoDoObjeto(o.objeto, o.nome)
+        ? `<small>${restoDoObjeto(o.objeto, o.nome)}</small>` : ""}</td>
       <td>${o.cliente||"—"}</td>
       <td><span class="selo ${o.fase==="EM_EXECUCAO"?"aprovado":o.fase.startsWith("CONCLUIDA")?"pago":"outro"}">${o.fase_rotulo}</span></td>
       <td class="direita dados">${o.numeros===false?"—":`${numero(o.valor_vigente)}${o.aditivos?`<small>+${numero(o.aditivos)}</small>`:""}`}</td>
@@ -188,10 +232,20 @@ function desenhar(){
       <td class="direita dados">${o.numeros===false?"—":numero(o.gasto)}</td>
       <td class="direita dados" style="color:${o.margem<0?"var(--vermelho)":"var(--verde)"}">${o.numeros===false?"—":numero(o.margem)}</td>
       <td class="dados ${o.vence_em_dias!==null && o.vence_em_dias<0?"atrasado":""}">${dataBR(o.vigencia_fim)}</td>
-      <td>${alertas(o).map(a=>`<span class="selo ${a.c}" style="margin-right:3px">${a.t}</span>`).join("")||"—"}</td>
+      <td>${alertas(o).map(a=>`<span class="selo ${a.c}" style="margin-right:3px;
+        cursor:pointer; text-decoration:underline dotted" data-alerta="${o.id}"
+        data-aba="${a.p}" data-foco="${a.f||""}"
+        title="Clique para ${a.q||"resolver"}">${a.t}</span>`).join("")||"—"}</td>
     </tr>`).join("");
   document.querySelectorAll("[data-obra]").forEach(tr =>
     tr.addEventListener("click", ()=>abrir(+tr.dataset.obra)));
+  {# O SELO DE ALERTA É UM ATALHO. Clicar nele abre a ficha já na aba que
+     resolve aquilo, com o cursor no campo. `stopPropagation` para não disparar
+     também o clique da linha, que abriria no Resumo. #}
+  document.querySelectorAll("[data-alerta]").forEach(s => s.addEventListener("click", ev => {
+    ev.stopPropagation();
+    abrir(+s.dataset.alerta, +s.dataset.aba, s.dataset.foco || null);
+  }));
   els("resumo").innerHTML = `<b>${l.length}</b> obra(s) · contrato vigente <b>${dinheiro(o=>o.valor_vigente)}</b>`;
 }
 
@@ -369,13 +423,13 @@ function mesPassado(){
 }
 
 // ------------------------------------------------------------------ detalhe
-async function abrir(id){
+async function abrir(id, aba=0, foco=null){
   const o = OBRAS.find(x=>x.id===id);
   els("dlg-titulo").textContent = `${o.codigo} — ${o.nome}`;
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
       ${["Resumo","Cadastro","Contrato","Tributação","Documentos","Movimento","Histórico"]
-        .map((t,i)=>`<button class="topo-aba ${i===0?"ativa":""}" data-painel="${i}">${t}</button>`).join("")}
+        .map((t,i)=>`<button class="topo-aba ${i===aba?"ativa":""}" data-painel="${i}">${t}</button>`).join("")}
     </div>
     <div id="painel"></div>`;
   document.querySelectorAll("[data-painel]").forEach(b => b.addEventListener("click", () => {
@@ -384,10 +438,35 @@ async function abrir(id){
     painel(+b.dataset.painel, id);
   }));
   els("dlg").showModal();
-  painel(0, id);
+  painel(aba, id, foco);
 }
 
-async function painel(i, id){
+// `foco` é o id do campo que recebe o cursor quando a ficha foi aberta pelo
+// clique num alerta — assim a pessoa cai em cima do que precisa preencher.
+// Troca a aba de dentro da própria ficha, deixando o botão de cima marcado.
+function trocarDeAba(i, id, foco=null){
+  document.querySelectorAll("[data-painel]").forEach(b =>
+    b.classList.toggle("ativa", +b.dataset.painel === i));
+  painel(i, id, foco);
+}
+
+function irPara(foco){
+  if (!foco) return;
+  const c = els(foco);
+  if (!c) return;
+  c.scrollIntoView({block:"center", behavior:"smooth"});
+  c.style.outline = "2px solid var(--azul)";
+  c.style.outlineOffset = "2px";
+  setTimeout(()=>{ c.style.outline = ""; }, 2500);
+  if (typeof c.focus === "function") try { c.focus({preventScroll:true}); } catch(e){}
+}
+
+async function painel(i, id, foco=null){
+  await desenharPainel(i, id);
+  irPara(foco);
+}
+
+async function desenharPainel(i, id){
   const o = OBRAS.find(x=>x.id===id);
   const alvo = els("painel");
   alvo.innerHTML = `<div class="cartao-dica">carregando…</div>`;
@@ -407,7 +486,9 @@ async function painel(i, id){
         <div class="kpi estatico ${o.margem<0?"vermelho":"verde"}"><div class="kpi-rotulo">Saldo</div>
           <div class="kpi-valor" style="font-size:17px">${o.numeros===false?"—":numero(o.margem)}</div></div>
       </div>
-      ${alertas(o).length?`<div class="aviso info">Atenção: ${alertas(o).map(a=>a.t).join(" · ")}</div>`:""}
+      ${alertas(o).length?`<div class="aviso info">Atenção:
+        ${alertas(o).map(a=>`<a href="#" data-ir="${a.p}" data-foco="${a.f||""}"
+          title="Clique para ${a.q||"resolver"}">${a.t}</a>`).join(" · ")}</div>`:""}
       <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
         <table><tbody>
           <tr><td>Cliente</td><td>${o.cliente||"—"}</td></tr>
@@ -437,11 +518,18 @@ async function painel(i, id){
         aviso("dlg-msg", "Fase registrada.", "ok"); carregar();
       } catch(e){ aviso("dlg-msg", e.message, "erro"); }
     });
+    {# A linha "Atenção" do Resumo leva para o mesmo lugar que o selo da
+       listagem — um alerta é um atalho, esteja ele onde estiver. #}
+    alvo.querySelectorAll("[data-ir]").forEach(l => l.addEventListener("click", ev => {
+      ev.preventDefault();
+      trocarDeAba(+l.dataset.ir, id, l.dataset.foco || null);
+    }));
     return;
   }
 
   if (i === 1 || i === 2 || i === 3) {   // cadastro / contrato / tributação
     const {obra: d} = await api(`/erp/api/obras/${id}`);
+    if (i === 1 && !EMPRESAS_DA_CASA.length) await carregarEmpresas();
     const campo = (rot, id_, val, tipo="text") =>
       `<div class="campo"><label>${rot}</label><input id="${id_}" type="${tipo}" value="${val??""}"></div>`;
     if (i === 1) {
@@ -460,6 +548,21 @@ async function painel(i, id){
           ${(CONTAS||[]).map(x=>`<option value="${x.id}" ${String(d.conta_bancaria_id)===String(x.id)?"selected":""}>${x.descricao}</option>`).join("")}
           </select><div class="dica">De onde saem os pagamentos desta obra — serve de
           filtro nas solicitações.</div></div>
+        {# A EMPRESA DA OBRA, editável aqui (17/09/2026). Antes só existia na
+           criação — e as obras que nasceram soltas, antes de o campo ser
+           obrigatório, não tinham como ser consertadas pela tela. #}
+        <div class="campo"><label>Empresa</label>
+          <div style="display:flex; gap:6px">
+            <select id="o-empresa" style="flex:1"><option value="">— sem empresa —</option>
+            ${(EMPRESAS_DA_CASA||[]).map(x=>`<option value="${x.id}"
+              ${String(d.empresa_id)===String(x.id)?"selected":""}
+              >${escapar(x.nome_fantasia || x.razao_social)}</option>`).join("")}
+            </select>
+            <button class="btn secundario" type="button"
+                    onclick="empresaNovaNaFicha()">+ Nova</button>
+          </div>
+          <div class="dica">É por ela que saem a nota fiscal, o e-mail da cotação
+            e a tributação. Obra sem empresa trava as três.</div></div>
         <div class="campo"><label>Projeto</label>
           <select id="o-projeto"><option value="">— sem projeto —</option>
           ${(PROJETOS||[]).map(x=>`<option value="${x.id}" ${String(d.projeto_id)===String(x.id)?"selected":""}>${escapar(x.codigo)} · ${escapar(x.nome)}</option>`).join("")}
@@ -486,14 +589,19 @@ async function painel(i, id){
         numero_endereco:"o-numero", bairro:"o-bairro", municipio:"o-municipio", uf:"o-uf",
         cep:"o-cep", cno:"o-cno", art_rrt:"o-art", responsavel_tecnico:"o-rt",
         engenheiro_fiscal:"o-fiscal", latitude:"o-lat", longitude:"o-lng",
-        conta_bancaria_id:"o-conta", projeto_id:"o-projeto"});
+        conta_bancaria_id:"o-conta", projeto_id:"o-projeto",
+        empresa_id:"o-empresa"});
       carregarResponsaveis(id);
       return;
     }
     if (i === 2) {
       alvo.innerHTML = `<div class="form-grade">
         ${campo("Nº do contrato","c-contrato",d.contrato)}
-        ${campo("Valor do contrato","c-valor",d.valor_contrato)}
+        {# Valor aparecia cru ("1500000.00"). O dono lê dinheiro no formato
+           daqui, e é assim que ele confere com o contrato. Na gravação volta a
+           número: `paraNumero` entende os dois jeitos. #}
+        ${campo("Valor do contrato","c-valor",
+                d.valor_contrato ? numero(d.valor_contrato) : "")}
         ${campo("Início da vigência","c-ini",d.vigencia_inicio,"date")}
         ${campo("Fim da vigência","c-fim",d.vigencia_fim,"date")}
         ${campo("Prazo de execução (dias)","c-prazo",d.prazo_execucao_dias)}
@@ -529,10 +637,14 @@ async function painel(i, id){
         <div class="campo" style="grid-column:span 2"><label>Objeto</label><input id="a-obj"></div>
         <div class="campo" style="align-self:end"><button class="btn secundario" id="a-salvar">Registrar aditivo</button></div>
       </div>`;
-      salvarObra(id, {contrato:"c-contrato", valor_contrato:"c-valor", vigencia_inicio:"c-ini",
+      salvarObra(id, {contrato:"c-contrato", vigencia_inicio:"c-ini",
         vigencia_fim:"c-fim", prazo_execucao_dias:"c-prazo", data_base_orcamento:"c-base",
         indice_reajuste:"c-indice", ordem_servico:"c-os", data_ordem_servico:"c-osdata",
-        seguro_garantia:"c-seguro", seguro_vigencia_fim:"c-segfim", caucao_pct:"c-caucao"});
+        seguro_garantia:"c-seguro", seguro_vigencia_fim:"c-segfim", caucao_pct:"c-caucao",
+        valor_contrato:"c-valor"},
+        // O valor aparece como "1.500.000,00" e sobe como número: é o mesmo
+        // campo, lido do jeito daqui e gravado do jeito do banco.
+        null, ["valor_contrato"]);
       els("a-salvar").addEventListener("click", async () => {
         try {
           await api(`/erp/api/obras/${id}/aditivos`, {method:"POST",
@@ -664,10 +776,19 @@ async function painel(i, id){
         <div class="cartao-dica">Vem em pasta compactada, com a lista do que falta
           dentro — e o que falta também aparece na Agenda.</div>
       </div>
-      <table><thead><tr><th>Documento</th><th>Tipo</th><th class="direita">Tamanho</th>
+      {# O QUE VEM PRIMEIRO É O QUE O DOCUMENTO É. Dono, 17/09/2026: *"aparece o
+         nome do arquivo e, pequenininho, matrícula CNO (…) está dando muito
+         destaque ao nome do arquivo e não ao tipo de documento, que documento é
+         aquele"*. Invertido: o tipo em cima, o arquivo embaixo.
+         A coluna "Tipo" mostrava a CATEGORIA DO ANEXO — que é outra coisa
+         (nota, boleto, comprovante, outro) e vale "Outro" para todo documento
+         arquivado pelo catálogo. Era ela que aparecia como "Outro" num
+         contrato. Agora só aparece quando diz alguma coisa. #}
+      <table><thead><tr><th>Documento</th><th>Arquivo</th><th class="direita">Tamanho</th>
         <th>Enviado</th><th></th></tr></thead><tbody>
-        ${d.anexos.map(a=>`<tr><td>${a.nome}${a.descricao?`<small>${a.descricao}</small>`:""}</td>
-          <td>${rotulo(a.categoria)}</td>
+        ${d.anexos.map(a=>`<tr>
+          <td><b>${a.descricao || rotulo(a.categoria) || "Documento"}</b></td>
+          <td class="desc"><small class="mono">${a.nome}</small></td>
           <td class="direita dados">${a.tamanho_kb} KB${a.comprimido?`<small>de ${a.original_kb}</small>`:""}</td>
           <td class="dados">${a.em}</td>
           <td><a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">Abrir</a></td></tr>`).join("")
@@ -719,7 +840,7 @@ async function painel(i, id){
     <h4>Alterações no cadastro</h4>
     <table><tbody>${hist.eventos.map(e=>`<tr><td class="dados">${e.quando}</td>
       <td><b>${rotulo(e.acao)}</b></td><td>${e.por}</td>
-      <td><small>${JSON.stringify(e.detalhe).slice(0,90)}</small></td></tr>`).join("")}</tbody></table>`;
+      <td><small>${detalheEmPortugues(e.detalhe)}</small></td></tr>`).join("")}</tbody></table>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -768,14 +889,17 @@ async function salvarResponsaveis(obraId){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
-function salvarObra(id, mapa, extras){
+function salvarObra(id, mapa, extras, emDinheiro){
   const b = els("o-salvar");
   if (!b) return;
   b.addEventListener("click", async () => {
     const corpo = {};
     Object.entries(mapa).forEach(([campo, elemento]) => {
       const el = els(elemento);
-      if (el) corpo[campo] = el.value;
+      if (!el) return;
+      // Campo de dinheiro é mostrado no formato daqui e gravado como número.
+      corpo[campo] = (emDinheiro || []).includes(campo)
+        ? paraNumero(el.value) : el.value;
     });
     if (extras) Object.assign(corpo, extras());
     try {
@@ -877,9 +1001,87 @@ let NOVA_DOC = null;          // a leitura conferida, esperando confirmação
 // grade lisa viram parede — e porque o dono estranhou, com razão, não achar o
 // ENDEREÇO: *"é um campo importantíssimo"*. Ele não estava faltando, estava
 // só na ficha da obra; agora está nos dois lugares.
+// ---------------------------------------------------------------------------
+// A EMPRESA DA OBRA
+//
+// Dono, 17/09/2026: *"eu cadastrei obra, mas não vinculei à empresa. Então eu
+// acho que é prioritário esse cadastro, anterior inclusive à obra, porque eu
+// tenho que associar."* O campo não existia na criação — a obra nascia solta, e
+// isso só aparecia depois, quando a nota não saía ou a cotação não tinha de
+// qual e-mail sair.
+//
+// Cadastrar a empresa aqui mesmo evita o beco: quem está criando a obra não
+// precisa sair, ir a Configurações, cadastrar e voltar do começo.
+// ---------------------------------------------------------------------------
+let EMPRESAS_DA_CASA = [];
+
+async function carregarEmpresas(){
+  try {
+    const d = await api("/erp/api/empresas");
+    EMPRESAS_DA_CASA = d.empresas || [];
+  } catch(e){ EMPRESAS_DA_CASA = []; }
+  return EMPRESAS_DA_CASA;
+}
+
+function campoDeEmpresa(escolhida){
+  const opcoes = EMPRESAS_DA_CASA.map(e =>
+    `<option value="${e.id}" ${String(e.id) === String(escolhida) ? "selected" : ""}
+      >${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
+  return `
+    <div class="campo" style="grid-column:span 2">
+      <label>Empresa *</label>
+      <div style="display:flex; gap:6px">
+        <select id="obra-empresa" style="flex:1">
+          <option value="">escolha…</option>${opcoes}
+        </select>
+        <button class="btn secundario" type="button"
+                onclick="cadastrarEmpresaNaHora()">+ Nova empresa</button>
+      </div>
+      ${EMPRESAS_DA_CASA.length ? "" : `<div class="dica" style="color:var(--vermelho)">
+        <b>Nenhuma empresa cadastrada.</b> A empresa vem antes da obra — é por
+        ela que saem a nota fiscal, o e-mail da cotação e a tributação.
+        Cadastre em "+ Nova".</div>`}
+    </div>`;
+}
+
+// A empresa se cadastra pelo MESMO formulário de toda parte — campos normais,
+// com a leitura do Cartão CNPJ dentro (`abrirCadastroDeEmpresa`, no base). Uma
+// porta só, em qualquer tela: foi o que o dono pediu em 17/09/2026.
+// A mesma porta da criação: cadastro completo com o Cartão CNPJ dentro.
+function empresaNovaNaFicha(){
+  abrirCadastroDeEmpresa(async (empresa) => {
+    await carregarEmpresas();
+    const campo = els("o-empresa");
+    if (campo) {
+      campo.innerHTML = `<option value="">— sem empresa —</option>`
+        + EMPRESAS_DA_CASA.map(e => `<option value="${e.id}"
+            >${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
+      campo.value = String(empresa.id);
+    }
+    aviso("dlg-msg", `Empresa <b>${escapar(empresa.nome)}</b> cadastrada e
+      escolhida. <b>Salve a obra</b> para gravar o vínculo.`, "ok");
+  });
+}
+
+function cadastrarEmpresaNaHora(){
+  abrirCadastroDeEmpresa(async (empresa) => {
+    await carregarEmpresas();
+    const campo = els("obra-empresa");
+    if (campo) {
+      campo.innerHTML = `<option value="">escolha…</option>` + EMPRESAS_DA_CASA.map(e =>
+        `<option value="${e.id}">${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
+      campo.value = String(empresa.id);
+    }
+    aviso("dlg-msg", `Empresa <b>${escapar(empresa.nome)}</b> cadastrada e já
+      escolhida para esta obra.`, "ok");
+  });
+}
+
 const BLOCOS_NOVA_OBRA = [
   ["Identificação", [
     {id:"codigo", rot:"Código *", dica:"ESCPE18"},
+    // A EMPRESA da obra: é por ela que saem nota, cotação e tributação.
+    {id:"empresa_id", rot:"Empresa *", empresa:true},
     {id:"nome", rot:"Nome *", largo:true},
     {id:"cliente", rot:"Contratante"},
     {id:"cnpj_cliente", rot:"CNPJ do contratante"},
@@ -999,8 +1201,11 @@ function formProjeto(p){
 
 els("btn-projetos").addEventListener("click", abrirProjetos);
 
-els("btn-nova").addEventListener("click", () => {
+els("btn-nova").addEventListener("click", async () => {
   NOVA_DOC = null;
+  // As empresas ANTES de desenhar: os dois modos têm o select, e select vazio
+  // faria parecer que não há empresa cadastrada.
+  await carregarEmpresas();
   els("dlg-titulo").textContent = "Nova obra";
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
@@ -1025,13 +1230,14 @@ function modoNovaObra(modo){
       ${BLOCOS_NOVA_OBRA.map(([titulo, campos], i) => `
         <h4 ${i ? 'style="margin-top:14px"' : 'style="margin-top:0"'}>${titulo}</h4>
         <div class="form-grade">
-          ${campos.map(c=>`
+          ${campos.map(c=> c.empresa ? campoDeEmpresa() : `
             <div class="campo" ${c.largo?'style="grid-column:span 2"':""}>
               <label>${c.rot}</label>
               <input id="n-${c.id}" ${c.dica?`placeholder="${c.dica}"`:""}
                 ${c.tam?`maxlength="${c.tam}"`:""}></div>`).join("")}
         </div>`).join("")}
-      <div class="cartao-dica">Só o <b>código</b> e o <b>nome</b> são obrigatórios;
+      <div class="cartao-dica">Só o <b>código</b>, o <b>nome</b> e a <b>empresa</b>
+        são obrigatórios;
         o resto pode entrar agora ou depois. O que não cabe aqui — vigência,
         data-base, índice de reajuste, ART, responsável técnico, seguro,
         retenção, aditivos e a tributação inteira — fica na ficha da obra, que
@@ -1064,7 +1270,10 @@ function modoNovaObra(modo){
 
 async function criarObraNaMao(){
   const corpo = {};
-  CAMPOS_NOVA_OBRA.forEach(c => { corpo[c.id] = (els("n-"+c.id).value || "").trim(); });
+  CAMPOS_NOVA_OBRA.forEach(c => {
+    const el = c.empresa ? els("obra-empresa") : els("n-" + c.id);
+    if (el) corpo[c.id] = (el.value || "").trim();
+  });
   const b = els("n-salvar");
   b.disabled = true;
   try {
@@ -1157,6 +1366,7 @@ function desenharLeituraDeObraNova(){
               ${escapar(codigosRecentes().join(", "))}</small>` : ""}</div>
       <div class="campo" style="grid-column:span 2"><label>Nome da obra *</label>
         <input id="nd-nome" value="${escapar(c.nome_sugerido || "")}"></div>
+      ${campoDeEmpresa()}
     </div>
     <div class="cartao-dica">O código é convenção da casa — não sai de documento
       nenhum, e é por isso que o sistema pergunta em vez de inventar.</div>
@@ -1223,6 +1433,11 @@ async function criarObraDoDocumento(){
   if (!codigo || !nome) {
     aviso("nd-msg", "Preencha o código e o nome da obra.", "erro"); return;
   }
+  const empresa = (els("obra-empresa").value || "").trim();
+  if (!empresa && EMPRESAS_DA_CASA.length) {
+    aviso("nd-msg", "Escolha a empresa da obra — é por ela que saem a nota "
+      + "fiscal, o e-mail da cotação e a tributação.", "erro"); return;
+  }
   const campos = {};
   document.querySelectorAll("[data-ncampo]:checked").forEach(cx => {
     const campo = cx.dataset.ncampo;
@@ -1241,6 +1456,7 @@ async function criarObraDoDocumento(){
     fd.append("arquivo", arq);
     fd.append("tipo", g.tipo_codigo);
     fd.append("codigo", codigo); fd.append("nome", nome);
+    if (empresa) fd.append("empresa_id", empresa);
     // As datas saem da TELA: a leitura pode não ter achado, e aí é a pessoa
     // que informa — antes era aqui que o fluxo travava.
     ["referencia","texto","resumo"].forEach(k => { if (g[k]) fd.append(k, g[k]); });

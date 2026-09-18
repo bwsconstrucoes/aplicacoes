@@ -109,6 +109,46 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+### DISPARO AUTOMÁTICO DE COTAÇÃO — o que falta depois do pedaço de 18/09/2026
+
+A tela **Planejar cotações** já monta o plano e vira cotação. O que o dono
+descreveu e ainda NÃO existe:
+
+- **Disparar os e-mails a partir do plano**, sem passar pela tela de Cotações.
+  Foi decisão minha manter o pedágio de um clique por cotação — vale rever
+  depois de ele usar, e a conversa é sobre confiança na sugestão, não sobre
+  dificuldade técnica.
+- **Aprender com o histórico:** quem respondeu rápido, quem deu o melhor preço
+  naquela categoria, quem ignorou as últimas três. Hoje a ordem é por regra
+  fixa (mesma cidade, porte); com histórico ela passaria a ser por resultado.
+  Precisa de meses de cotação no sistema para significar alguma coisa.
+- **Periodicidade:** rodar sozinho toda segunda e deixar o plano pronto.
+
+
+
+### ACOMPANHAMENTO — a gestão burocrática da obra — pedido de 17/09/2026
+
+O dono pediu o que hoje ele faz no Pipefy ("protocolo e medições"), com um
+pouco de Asana e de SEI, **mas sem travar**: acompanhar aditivo de prazo,
+apostilamento, renovação de licença, protocolo — com andamento de uma linha
+("liguei, está com fulano no setor tal") e uma tela que responde "o que está
+pendente" para quem assume o assunto de alguém que saiu de férias.
+
+**O desenho completo está em `ACOMPANHAMENTO.md`**, aprovado por ele em
+18/09/2026. Entrega em três pedaços:
+
+1. ✔ **PRONTO (18/09/2026, migração 072)** — processo + andamento + situação
+   (com "parado" calculado) + a tela "o que está pendente" + botão Assumir.
+2. ✔ **PRONTO (18/09/2026, migração 073)** — lista de passos sugeridos por
+   tipo (lembrete, nunca trava) e o processo travado entrando na Agenda.
+3. ✔ **PRONTO (18/09/2026, migração 074)** — ofício gerado e numerado por
+   empresa/ano, deferimento que registra o aditivo na obra (propõe, a pessoa
+   confirma) e o quadro de demora por órgão.
+
+Decisões tomadas por ele em 18/09: **nada de Pipefy** e **nada de importar dado
+antigo de lá** — o módulo nasce vazio e só recebe coisa nova. Falta só a **data
+de desligar** o quadro do Pipefy.
+
 ### O ASSISTENTE DE IA E O RELATÓRIO DE TRABALHO — pedidos de 10/09/2026
 
 Dois pedidos grandes que o dono fez na mesma conversa, e que valem juntos
@@ -506,6 +546,36 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       ⚠️ **O número não é o do boletim da FGV** — a base é outra (100 no mês
       mais antigo guardado), porque o Banco Central só republica a variação. A
       RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
+
+- [x] **A EMPRESA NASCE DO CARTÃO CNPJ** — FEITO em 17/09/2026. **Sem
+      migração.** O PDF do comprovante da Receita preenche razão social, nome
+      fantasia, CNPJ e endereço; a pessoa confere, a empresa é criada e o cartão
+      fica arquivado nela. CNPJ repetido e situação não-ATIVA viram aviso antes
+      de gravar. Inscrição estadual/municipal não são pedidas à IA — não estão
+      no cartão.
+
+- [x] **A EMPRESA VEM ANTES DA OBRA** — FEITO em 17/09/2026. **Sem migração.**
+      O dono cadastrou obra e ela nasceu sem empresa: `obras.criar()` nunca leu
+      `empresa_id`. Agora é campo obrigatório na criação (digitando e pelo
+      documento), com "+ Nova" para cadastrar a empresa na hora; casa sem
+      empresa nenhuma não trava a primeira obra; e a lista marca "Sem empresa".
+
+- [x] **ÁRVORE DE PASTAS NO DRIVE, E A DATA DO DOCUMENTO CORRIGÍVEL** — FEITO
+      em 17/09/2026. **TRAZ A MIGRAÇÃO 070.** O dono ligou o Drive e pediu a
+      organização: `Obras/<código - nome>` e `Arquivo/<gaveta>`. Pasta que já
+      existe é reusada; reorganizar MOVE e **nunca apaga**; falha do Drive cai
+      na raiz, e falha total cai no banco. Botão "Organizar nas pastas" em
+      Configurações → Documentos, 50 por vez. Na tela do Arquivo, **Datas**
+      corrige emissão/validade/competência e **Ver a obra** pula para a ficha.
+
+- [x] **NOVE ACERTOS DE USO E A TROCA DA PRÓPRIA SENHA** — FEITO em 17/09/2026.
+      **Sem migração.** Pedidos do dono com o sistema aberto: a vigência em dias
+      calculando sozinha; o TIPO do documento em destaque no lugar do nome do
+      arquivo; o histórico em português no lugar do JSON cru; valor do contrato
+      no formato daqui; nome da obra deixando de aparecer duas vezes; KPI que
+      não estoura; topo apertado sem colisão e com o botão **Telas ▾**; aviso
+      de obra **sem responsável**; e **Minha conta**, onde cada um troca a
+      própria senha (exigindo a atual). Sete testes com banco só para a senha.
 
 - [x] **AS DATAS DO DOCUMENTO NUM LUGAR SÓ, E VIGÊNCIA EM DIAS** — FEITO em
       14/09/2026. **Sem migração.** O dono, vendo a primeira versão: *"você tá

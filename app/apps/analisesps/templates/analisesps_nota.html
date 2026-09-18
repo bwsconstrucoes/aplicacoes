@@ -1,0 +1,197 @@
+{# ---------------------------------------------------------------------------
+   A NOTA FISCAL LIDA DO XML — 17/09/2026.
+
+   *"Não tem problema abrir o XML em tela. Abre num modal? E desse modal
+   poderia exportar em PDF?"*
+
+   O MESMO MIOLO SERVE AOS TRÊS LUGARES: o modal (por cima da lista), a página
+   inteira (nova aba) e a folha de impressão. Um arquivo só — se fossem três,
+   o dia em que um campo mudasse ele mudaria em um lugar e mentiria nos outros.
+
+   ⚠️ O AVISO DE QUE NÃO É DANFE É OBRIGATÓRIO E FICA NO ALTO. Quem recebe um
+   papel com cara de nota fiscal supõe que ele vale como uma — e este não vale:
+   o DANFE oficial tem forma definida pela Receita e acompanha mercadoria na
+   estrada. O que vale como documento é o XML, que está guardado no Drive.
+--------------------------------------------------------------------------- #}
+<div class="nota-doc">
+
+  <div class="nota-doc-aviso">
+    <b>Esta é a leitura do XML, não é um DANFE oficial.</b>
+    Serve para conferir, arquivar e imprimir. O documento que tem valor fiscal
+    é o XML guardado no Drive — este papel não substitui o DANFE que acompanha
+    mercadoria.
+  </div>
+
+  {# O CABEÇALHO: quem emitiu, o número e a situação. É o que responde "que
+     nota é esta?" antes de qualquer detalhe. #}
+  <div class="nota-doc-topo">
+    <div class="nota-doc-emitente">
+      <h2>{{ nota.emitente.nome }}</h2>
+      {% if nota.emitente.fantasia
+            and nota.emitente.fantasia != nota.emitente.nome %}
+        <p class="nota-doc-fantasia">{{ nota.emitente.fantasia }}</p>
+      {% endif %}
+      <p>{{ nota.emitente.doc }}{% if nota.emitente.ie %}
+         · IE {{ nota.emitente.ie }}{% endif %}</p>
+      {% if nota.emitente.endereco.linha %}
+        <p>{{ nota.emitente.endereco.linha }}</p>
+      {% endif %}
+      {% if nota.emitente.endereco.municipio %}
+        <p>{{ nota.emitente.endereco.municipio }}{% if
+           nota.emitente.endereco.uf %}/{{ nota.emitente.endereco.uf }}{% endif %}
+           {%- if nota.emitente.endereco.cep %} · {{ nota.emitente.endereco.cep }}
+           {%- endif %}</p>
+      {% endif %}
+    </div>
+    <div class="nota-doc-selo">
+      <span class="nota-doc-selo-titulo">NOTA FISCAL ELETRÔNICA</span>
+      <span class="nota-doc-selo-numero">Nº {{ nota.numero }}</span>
+      <span class="nota-doc-selo-serie">Série {{ nota.serie }}</span>
+      {% if nota.situacao %}
+        <span class="nota-doc-selo-situacao">{{ nota.situacao }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {# A CHAVE EM BLOCOS DE QUATRO: é assim que se confere dígito a dígito, e é
+     o único jeito de alguém bater este papel contra o portal da Receita. #}
+  <div class="nota-doc-chave">
+    <span class="nota-doc-rotulo">Chave de acesso</span>
+    <code>{{ nota.chave_bonita }}</code>
+  </div>
+
+  <div class="nota-doc-linha">
+    {% if nota.natureza %}
+      <div><span class="nota-doc-rotulo">Natureza da operação</span>
+        {{ nota.natureza }}</div>
+    {% endif %}
+    {% if nota.emissao %}
+      <div><span class="nota-doc-rotulo">Emissão</span>
+        {{ nota.emissao[:10]|data_br }}</div>
+    {% endif %}
+    {% if nota.saida %}
+      <div><span class="nota-doc-rotulo">Saída</span>
+        {{ nota.saida[:10]|data_br }}</div>
+    {% endif %}
+    {% if nota.protocolo %}
+      <div><span class="nota-doc-rotulo">Protocolo</span>
+        {{ nota.protocolo }}</div>
+    {% endif %}
+  </div>
+
+  {% if nota.destinatario.nome %}
+    <div class="nota-doc-bloco">
+      <h3>Destinatário</h3>
+      <p><b>{{ nota.destinatario.nome }}</b></p>
+      <p>{{ nota.destinatario.doc }}{% if nota.destinatario.ie %}
+         · IE {{ nota.destinatario.ie }}{% endif %}</p>
+      {% if nota.destinatario.endereco.linha %}
+        <p>{{ nota.destinatario.endereco.linha }}</p>
+      {% endif %}
+      {% if nota.destinatario.endereco.municipio %}
+        <p>{{ nota.destinatario.endereco.municipio }}{% if
+           nota.destinatario.endereco.uf %}/{{ nota.destinatario.endereco.uf }}
+           {%- endif %}
+           {%- if nota.destinatario.endereco.cep %}
+           · {{ nota.destinatario.endereco.cep }}{% endif %}</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if nota.itens %}
+    <div class="nota-doc-bloco">
+      <h3>Mercadorias e serviços</h3>
+      {# ⚠️ A ROLAGEM FICA NA TABELA, NÃO NA PÁGINA. São nove colunas; num
+         celular de 390px isso empurrava a página inteira para o lado, e aí o
+         cabeçalho, o aviso e os totais saíam do campo de visão junto. Preso
+         aqui, só a tabela anda — e no papel o envelope não existe. #}
+      <div class="nota-doc-itens-rolagem">
+      <table class="nota-doc-itens">
+        <thead>
+          <tr>
+            <th>#</th><th>Código</th><th>Descrição</th>
+            <th>NCM</th><th>CFOP</th><th>Un</th>
+            <th class="num">Qtd</th><th class="num">Unitário</th>
+            <th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in nota.itens %}
+            <tr>
+              <td>{{ item.numero }}</td>
+              <td class="id">{{ item.codigo }}</td>
+              <td>{{ item.descricao }}</td>
+              <td class="id">{{ item.ncm }}</td>
+              <td class="id">{{ item.cfop }}</td>
+              <td>{{ item.unidade }}</td>
+              <td class="num">{{ item.quantidade }}</td>
+              <td class="num">{{ item.valor_unitario|moeda }}</td>
+              <td class="num">{{ item.valor_total|moeda }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  {% endif %}
+
+  {# OS TOTAIS. Campo que a nota NÃO informou não vira "R$ 0,00": o leitor
+     devolve nada, e aqui a linha some. Escrever zero onde não houve
+     informação é inventar dado — ver `_numero` em `nfe_leitura.py`. #}
+  {% if nota.totais %}
+    <div class="nota-doc-bloco">
+      <h3>Totais</h3>
+      <table class="nota-doc-totais">
+        {% for rotulo, valor in [
+             ('Produtos', nota.totais.produtos),
+             ('Frete', nota.totais.frete),
+             ('Seguro', nota.totais.seguro),
+             ('Desconto', nota.totais.desconto),
+             ('Outras despesas', nota.totais.outras),
+             ('Base do ICMS', nota.totais.icms_base),
+             ('ICMS', nota.totais.icms),
+             ('IPI', nota.totais.ipi)] %}
+          {% if valor is not none %}
+            <tr><th>{{ rotulo }}</th>
+                <td class="num">{{ valor|moeda }}</td></tr>
+          {% endif %}
+        {% endfor %}
+        {% if nota.totais.nota is not none %}
+          <tr class="nota-doc-total-final">
+            <th>Total da nota</th>
+            <td class="num">{{ nota.totais.nota|moeda }}</td></tr>
+        {% endif %}
+      </table>
+    </div>
+  {% endif %}
+
+  {% if nota.transporte.modalidade or nota.transporte.transportador %}
+    <div class="nota-doc-bloco">
+      <h3>Transporte</h3>
+      {% if nota.transporte.modalidade %}
+        <p><span class="nota-doc-rotulo">Frete</span>
+          {{ nota.transporte.modalidade }}</p>
+      {% endif %}
+      {% if nota.transporte.transportador %}
+        <p>{{ nota.transporte.transportador }}
+          {%- if nota.transporte.transportador_doc %}
+          · {{ nota.transporte.transportador_doc }}{% endif %}
+          {%- if nota.transporte.placa %} · placa {{ nota.transporte.placa }}
+          {%- endif %}</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if nota.observacoes or nota.observacoes_fisco %}
+    <div class="nota-doc-bloco">
+      <h3>Informações complementares</h3>
+      {% if nota.observacoes %}
+        <p class="nota-doc-observacao">{{ nota.observacoes }}</p>
+      {% endif %}
+      {% if nota.observacoes_fisco %}
+        <p class="nota-doc-observacao">{{ nota.observacoes_fisco }}</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+</div>

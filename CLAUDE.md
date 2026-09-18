@@ -333,6 +333,35 @@ Ao acrescentar perguntas ali:
 - Registre também a pergunta que o sistema **ainda não consegue** responder, e
   o que falta. O assistente deve dizer "não sei, falta X" — nunca chutar.
 
+## Um cadastro, uma porta — o documento é atalho DENTRO do formulário
+
+Pedido do dono em 17/09/2026, depois de ver dois botões para cadastrar empresa
+("+ Nova empresa (digitando)" e "Cadastrar pelo Cartão CNPJ"):
+
+> *"Não gostei (…) você abre os campos da empresa normal, mas DENTRO do cadastro
+> a opção de adicionar o Cartão CNPJ, da mesma forma que a gente trabalha.
+> Senão não fica intuitivo o uso do sistema. Quando eu cadastro a obra, dentro
+> do cadastro já tem a opção de adicionar o contrato e fazer a leitura; aqui tem
+> que ser da mesma forma. **Isso tem que replicar para todas as outras áreas —
+> o funcionamento do sistema tem que ser similar.**"*
+
+A regra, para todo cadastro novo:
+
+- **Uma porta só:** o formulário com os campos. Nada de um botão "digitando" e
+  outro "pelo documento" lado a lado — isso obriga a pessoa a escolher um
+  caminho antes de saber a diferença entre eles.
+- **O documento entra DENTRO**, como um bloco no topo do formulário ("jogue o
+  documento aqui — ele preenche os campos abaixo"). Quem tem o arquivo joga e
+  confere; quem não tem, digita. A pessoa não escolhe caminho: escolhe se tem o
+  papel à mão.
+- **O que a leitura preenche fica editável e vai para conferência.** Nada é
+  gravado sem alguém olhar — documento escaneado torto acontece.
+- **Documento lido é arquivado no cadastro que ele criou**, na mesma transação.
+
+Já vale em: obra (contrato, matrícula CNO, ART, OS), colaborador e empresa
+(Cartão CNPJ — `abrirCadastroDeEmpresa`, no `erp_base.html`, usada pela tela de
+Empresas e pela criação de obra).
+
 ## Padrões que já existem — reusar, não recriar
 
 - Resposta JSON: `{'ok': True, ...}` / `{'ok': False, 'erro': '...'}`.

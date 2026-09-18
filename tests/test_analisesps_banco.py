@@ -1783,7 +1783,12 @@ def test_a_fila_pega_todos_os_lotes_esperando(banco_analisesps, monkeypatch,
     comprovantes.guardar(_pdf(1), "a.pdf", "p", "P")
     comprovantes.guardar(_pdf(1), "b.pdf", "p", "P")
 
-    assert comprovantes.processar_pendentes() == {"lotes": 2, "falhas": 0}
+    resultado = comprovantes.processar_pendentes()
+    assert resultado["lotes"] == 2 and resultado["falhas"] == 0
+    # `destravados`/`sem_arquivo` entraram em 16/09 — ver
+    # `test_processar_pendentes_DESTRAVA_antes_de_drenar`. Aqui não há lote
+    # parado, então os dois são zero.
+    assert resultado["destravados"] == 0 and resultado["sem_arquivo"] == 0
     assert all(l["situacao"] == "PRONTO" for l in comprovantes.historico())
 
 
@@ -6070,3 +6075,963 @@ def test_a_planilha_das_SPs_tem_VOLTA_para_mostrar_tudo(banco_analisesps):
             sp("2", credor="B", vencimento="10/09/2020")])
 
     assert consultas.planilha_sps(tudo=True)[1] == 2
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O BOTÃO "RETOMAR A FILA" QUE NÃO RETOMAVA — 16/09/2026
+#
+# *"Clico nele e nada acontece. Como zerar ele ou fazer com que ele retome
+# mesmo?"*
+#
+# E não acontecia mesmo: retomar só pegava lote em ESPERANDO, e o lote dele
+# estava em RODANDO — começou e morreu no meio (o serviço do Render reinicia de
+# tempos em tempos). Um lote em RODANDO ficava assim PARA SEMPRE: nenhum
+# processo o retomava, e nenhum botão o alcançava.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_lote_parado_em_RODANDO_volta_para_a_fila(banco_analisesps, monkeypatch,
+                                                  tmp_path):
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "parado.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'RODANDO', "
+                     "       recebido_em = now() - interval '3 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    resultado = comprovantes.destravar_parados()
+
+    assert resultado["devolvidos"] == 1
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "ESPERANDO"
+
+
+@pytest.mark.banco
+def test_lote_parado_SEM_o_arquivo_vira_falha_com_o_motivo(banco_analisesps,
+                                                           monkeypatch,
+                                                           tmp_path):
+    """O contêiner reinicia e leva o disco junto. Deixar em RODANDO seria
+    mentir que ainda está trabalhando."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "sumiu.pdf", "p", "P")
+    caminho = consultar_um("SELECT caminho FROM analisesps.comprovantes_lote "
+                           " WHERE id = ?", (lote_id,))[0]
+    __import__("os").remove(caminho)
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'RODANDO', "
+                     "       recebido_em = now() - interval '3 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    resultado = comprovantes.destravar_parados()
+
+    assert resultado["sem_arquivo"] == 1
+    situacao, erro = consultar_um(
+        "SELECT situacao, erro FROM analisesps.comprovantes_lote WHERE id = ?",
+        (lote_id,))
+    assert situacao == "FALHOU"
+    assert "Arraste o PDF de novo" in erro
+
+
+@pytest.mark.banco
+def test_lote_RECEM_comecado_NAO_e_destravado(banco_analisesps, monkeypatch,
+                                              tmp_path):
+    """Destravar um lote que está trabalhando agora seria processá-lo duas
+    vezes ao mesmo tempo."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "agora.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'RODANDO' WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    assert comprovantes.destravar_parados()["devolvidos"] == 0
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "RODANDO"
+
+
+@pytest.mark.banco
+def test_processar_pendentes_DESTRAVA_antes_de_drenar(banco_analisesps,
+                                                      monkeypatch, tmp_path):
+    """É o caminho que o botão dispara: sem destravar antes, o lote parado
+    continua invisível para a fila."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo",
+                        lambda pedaco, nome: {"planos": [
+                            {"match": {"status": "localizado", "id": "999"},
+                             "pode_executar": True, "receipt": {"page": 1}}]})
+    lote_id = comprovantes.guardar(_pdf(1), "parado.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'RODANDO', "
+                     "       recebido_em = now() - interval '3 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    resultado = comprovantes.processar_pendentes()
+
+    assert resultado["destravados"] == 1
+    assert resultado["lotes"] == 1, "destravou e não processou"
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "PRONTO"
+
+
+@pytest.mark.banco
+def test_o_botao_de_retomar_VOLTA_para_a_tela_e_nao_para_um_JSON(
+        banco_analisesps, monkeypatch):
+    """O botão é um formulário comum, de propósito: é o de destravar, e tem de
+    funcionar sem JavaScript. Mas formulário que responde JSON deixa a pessoa
+    olhando para um texto técnico — e foi parte do *"clico e nada acontece"*."""
+    from app.apps.analisesps import tarefas
+
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual": {"ok": True, "modo": modo})
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/api/sincronizar", data={"modo": "comprovantes"})
+
+    assert resposta.status_code == 302
+    assert "/analisesps/comprovantes" in resposta.headers["Location"]
+    assert "aviso=" in resposta.headers["Location"]
+
+
+@pytest.mark.banco
+def test_quando_ja_ha_tarefa_rodando_o_botao_DIZ_isso(banco_analisesps,
+                                                      monkeypatch):
+    """Recusa silenciosa é a pior das duas: ele clica, nada muda, e não sabe
+    por quê."""
+    from app.apps.analisesps import tarefas
+
+    semear([sp("1", credor="ACME", vencimento="10/09/2026", valor="100,00")])
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": {
+        "ok": False, "erro": "já está rodando"})
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/api/sincronizar", data={"modo": "comprovantes"},
+        follow_redirects=True)
+
+    corpo = resposta.get_data(as_text=True)
+    assert "Não consegui começar agora" in corpo
+    assert "já está rodando" in corpo
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ "JÁ ASSOCIADA" TEM DOIS SIGNIFICADOS — 16/09/2026
+#
+# *"Tava associando as notas e estranhei a quantidade. Quando abri algumas,
+# muitas eram notas que já haviam sido associadas na planilha. Não era pra
+# precisar fazer de novo."*
+#
+# Uma nota pode já ter dono de duas formas: pelo diário deste módulo (a chave
+# de acesso inteira) ou pelo CARD — o número da nota que a equipe escreveu na
+# coluna "Nº NF" da SPsBD, muito antes desta tela existir. A tela só olhava a
+# primeira, e mandava refazer o que já estava feito.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_nota_ja_apontada_PELO_CARD_nao_e_orfa(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)          # emitente = CREDOR_CNPJ
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    # A SP do MESMO fornecedor já diz, no card, que é a nota 1430.
+    semear([sp("1", credor="SERTAO", documento=CREDOR_CNPJ, nf="0001430",
+               vencimento="18/06/2026", valor="269,00")])
+
+    orfas, quantas = fiscal.notas_orfas()
+
+    assert quantas == 0, "mandou associar de novo uma nota que o card já aponta"
+    assert orfas == []
+
+
+@pytest.mark.banco
+def test_o_MESMO_numero_em_OUTRO_fornecedor_nao_conta(banco_analisesps):
+    """⚠️ Número sozinho não basta: "nota 1430" existe em dezenas de
+    fornecedores. Com raiz de CNPJ diferente, a nota continua órfã."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="OUTRA EMPRESA", documento="11222333000181",
+               nf="1430", vencimento="18/06/2026", valor="269,00")])
+
+    _, quantas = fiscal.notas_orfas()
+
+    assert quantas == 1, "sumiu uma nota órfã por causa de outro fornecedor"
+
+
+@pytest.mark.banco
+def test_o_numero_com_ZEROS_e_com_PONTO_e_o_mesmo_numero(banco_analisesps):
+    """A planilha traz "1.002.924", "0001430" e "1430" para a mesma coisa."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1002924", 500.00, CREDOR_CNPJ)
+    semear([sp("1", credor="SERTAO", documento=CREDOR_CNPJ, nf="1.002.924",
+               vencimento="18/06/2026", valor="500,00")])
+
+    _, quantas = fiscal.notas_orfas()
+
+    assert quantas == 0
+
+
+@pytest.mark.banco
+def test_a_LISTA_o_QUADRO_e_o_RECORTE_contam_a_mesma_coisa(banco_analisesps):
+    """⚠️ Três lugares perguntando "esta nota tem lançamento?" de jeitos
+    diferentes é três respostas diferentes na mesma tela."""
+    from app.apps.analisesps import fiscal
+
+    com_dono = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    orfa = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    _guardar_nota(com_dono, "1430", 269.00, CREDOR_CNPJ)
+    _guardar_nota(orfa, "9999", 100.00, CREDOR_CNPJ)
+    semear([sp("1", credor="SERTAO", documento=CREDOR_CNPJ, nf="1430",
+               vencimento="18/06/2026", valor="269,00")])
+
+    _, quantas_orfas = fiscal.notas_orfas()
+    _, resumo = fiscal.listar_notas({"recortes": []})
+    quadro = {k["chave"]: k for k in fiscal.quadro_das_notas()}
+    notas_do_recorte, _ = fiscal.listar_notas({"recortes": ["sem_lancamento"]})
+
+    assert quantas_orfas == 1
+    assert resumo["sem_lancamento"] == 1, "o resumo da lista discorda"
+    assert quadro["sem_lancamento"]["quantas"] == 1, "o quadro do alto discorda"
+    assert [n["chave"] for n in notas_do_recorte] == [orfa]
+
+
+@pytest.mark.banco
+def test_SEM_a_migracao_012_a_tela_de_notas_continua_de_pe(banco_analisesps):
+    """A coluna `nf_num` nasce na migração 012. Sem ela vale só o diário — o
+    comportamento antigo — e nada quebra."""
+    from app.apps.analisesps import db as db_analisesps
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        conn.execute("ALTER TABLE analisesps.sps DROP COLUMN nf_num")
+        conn.commit()
+    db_analisesps.esquecer_colunas()
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="SERTAO", documento=CREDOR_CNPJ, nf="1430",
+               vencimento="18/06/2026", valor="269,00")])
+
+    _, quantas = fiscal.notas_orfas()
+    assert quantas == 1, "sem a coluna, vale o diário — e a tela não pode cair"
+    db_analisesps.esquecer_colunas()
+
+
+# ---------------------------------------------------------------------------
+# A CIÊNCIA DA OPERAÇÃO, com banco de verdade — 17/09/2026
+#
+# ⚠️ Estes testes existem para travar o que NUNCA pode acontecer numa escrita
+# fiscal: declarar duas vezes, fora do prazo, em nota cancelada, ou sem saber
+# quem é o destinatário.
+# ---------------------------------------------------------------------------
+def _nota_para_ciencia(chave, emissao, destinatario="10656452007869",
+                       status="Autorizada", modelo="55"):
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.notas_fiscais "
+            "  (chave, emissao, numero, tipo, valor, status, emitente_doc, "
+            "   destinatario_doc) "
+            "VALUES (?, ?, '1', 'NF-e', 100.00, ?, ?, ?)",
+            (chave, emissao, status, CREDOR_CNPJ, destinatario))
+        conn.commit()
+
+
+@pytest.mark.banco
+def test_so_entram_NFE_recentes_nao_canceladas_e_com_destinatario(
+        banco_analisesps):
+    """Os quatro cortes, cada um evitando uma chamada que seria recusada."""
+    from app.apps.analisesps import notas_arquivo
+
+    boa = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    velha = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    cancelada = _chave(CREDOR_CNPJ, "550010000333333333333333")
+    sem_dono = _chave(CREDOR_CNPJ, "550010000444444444444444")
+    frete = _chave(CREDOR_CNPJ, "570010000555555555555555")
+
+    _nota_para_ciencia(boa, "2026-09-10")
+    _nota_para_ciencia(velha, "2026-01-10")            # fora dos 90 dias
+    _nota_para_ciencia(cancelada, "2026-09-10", status="Cancelada")
+    _nota_para_ciencia(sem_dono, "2026-09-10", destinatario="")
+    _nota_para_ciencia(frete, "2026-09-10")            # CT-e: não tem ciência
+
+    pendentes = [n["chave"] for n in notas_arquivo.notas_para_manifestar()]
+
+    assert pendentes == [boa], f"entrou o que não devia: {pendentes}"
+
+
+@pytest.mark.banco
+def test_nota_JA_MANIFESTADA_nao_volta_para_a_fila(banco_analisesps):
+    """⚠️ A segunda ciência é recusada pela Receita, e insistir é o caminho do
+    bloqueio por consumo indevido — que já aconteceu com dois CNPJs em 15/09."""
+    from app.apps.analisesps import notas_arquivo
+
+    chave = _chave(CREDOR_CNPJ)
+    _nota_para_ciencia(chave, "2026-09-10")
+    notas_arquivo.registrar_evento(
+        chave, {"ok": True, "codigo": "135", "motivo": "registrado"}, "rotina")
+
+    assert notas_arquivo.notas_para_manifestar() == []
+
+
+@pytest.mark.banco
+def test_ate_a_ciencia_RECUSADA_tira_a_nota_da_fila(banco_analisesps):
+    """Recusa também é resposta: repetir daria a mesma recusa e gastaria
+    chamada. Quem precisar reenviar apaga o registro — de propósito, para ser
+    um ato consciente."""
+    from app.apps.analisesps import notas_arquivo
+
+    chave = _chave(CREDOR_CNPJ)
+    _nota_para_ciencia(chave, "2026-09-10")
+    notas_arquivo.registrar_evento(
+        chave, {"ok": False, "codigo": "596", "motivo": "Prazo expirado"}, "x")
+
+    assert notas_arquivo.notas_para_manifestar() == []
+
+
+@pytest.mark.banco
+def test_a_tentativa_fica_REGISTRADA_com_o_que_a_Receita_disse(banco_analisesps):
+    """⚠️ Sem o registro, ninguém consegue responder "por que a BWS deu ciência
+    nesta nota?" seis meses depois."""
+    from app.apps.analisesps import notas_arquivo
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    notas_arquivo.registrar_evento(chave, {
+        "ok": True, "codigo": "135",
+        "motivo": "Evento registrado e vinculado a NF-e",
+        "protocolo": "135260000123456"}, "MARCELO")
+
+    linha = consultar_um(
+        "SELECT ok, codigo, motivo, protocolo, quem "
+        "  FROM analisesps.nota_evento WHERE chave = ? AND tipo = '210210'",
+        (chave,))
+    assert linha[0] is True and linha[1] == "135"
+    assert "vinculado" in linha[2] and linha[3] == "135260000123456"
+    assert linha[4] == "MARCELO"
+
+
+@pytest.mark.banco
+def test_a_ciencia_manifesta_UMA_POR_VEZ_e_com_teto(banco_analisesps,
+                                                    monkeypatch):
+    """A Receita limita consultas seguidas, e esta é uma ESCRITA."""
+    from app.apps.analisesps import notas_arquivo, sefaz
+
+    for i in range(5):
+        _nota_para_ciencia(_chave(CREDOR_CNPJ, f"55001000011111111111111{i}"),
+                           "2026-09-10")
+
+    chamadas = []
+    monkeypatch.setattr(sefaz, "configurado", lambda: True)
+    monkeypatch.setattr(sefaz, "manifestar_ciencia",
+                        lambda cnpj, chave: chamadas.append(chave) or {
+                            "ok": True, "codigo": "135", "motivo": "ok"})
+
+    resultado = notas_arquivo.manifestar_pendentes(limite=3)
+
+    assert len(chamadas) == 3, "o teto por rodada não foi respeitado"
+    assert resultado["manifestadas"] == 3
+
+
+@pytest.mark.banco
+def test_quem_declara_e_o_DESTINATARIO_da_nota(banco_analisesps, monkeypatch):
+    """⚠️ A ciência vai assinada pelo certificado do CNPJ que RECEBEU a nota.
+    Mandar pelo CNPJ errado é declarar em nome de quem não recebeu."""
+    from app.apps.analisesps import notas_arquivo, sefaz
+
+    chave = _chave(CREDOR_CNPJ)
+    _nota_para_ciencia(chave, "2026-09-10", destinatario="00079526000370")
+
+    usados = []
+    monkeypatch.setattr(sefaz, "configurado", lambda: True)
+    monkeypatch.setattr(sefaz, "manifestar_ciencia",
+                        lambda cnpj, ch: usados.append(cnpj) or {
+                            "ok": True, "codigo": "135", "motivo": "ok"})
+
+    notas_arquivo.manifestar_pendentes()
+
+    assert usados == ["00079526000370"]
+
+
+@pytest.mark.banco
+def test_a_nota_trazida_pela_BUSCA_guarda_QUEM_a_recebeu(banco_analisesps,
+                                                         monkeypatch):
+    """A distribuição só entrega documento de interesse daquele CNPJ — então o
+    destinatário é ele. Sem isso não há como dar ciência: o resumo da Receita
+    não traz esse campo."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+    sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)
+
+    assert consultar_um("SELECT destinatario_doc FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "10656452007869"
+
+
+# ---------------------------------------------------------------------------
+# O documento inteiro chegando e sendo guardado — 17/09/2026
+#
+# É a entrega que o dono pediu ("clicar e ver a nota fiscal"), e o pedaço que
+# só acontece DEPOIS da ciência: a Receita passa a entregar o `nfeProc` no
+# lugar do resumo. Se este caminho falhar, a ciência terá sido dada à toa.
+# ---------------------------------------------------------------------------
+def _nfe_inteira(chave, valor="269.00"):
+    """O documento completo, como a distribuição entrega depois da ciência.
+
+    O que o separa do resumo é o `infNFe` — é por ele que o código reconhece
+    "isto é a nota, não a fichinha dela"."""
+    return (f'<nfeProc><NFe><infNFe Id="NFe{chave}" versao="4.00">'
+            f"<ide><nNF>1430</nNF><serie>1</serie>"
+            f"<dhEmi>2026-09-10T10:00:00-03:00</dhEmi></ide>"
+            f"<emit><CNPJ>{CREDOR_CNPJ}</CNPJ><xNome>SERTAO</xNome></emit>"
+            f"<total><ICMSTot><vNF>{valor}</vNF></ICMSTot></total>"
+            f"</infNFe></NFe><protNFe><infProt><chNFe>{chave}</chNFe>"
+            f"<cStat>100</cStat></infProt></protNFe></nfeProc>")
+
+
+@pytest.mark.banco
+def test_o_documento_INTEIRO_que_chega_vai_para_o_Drive(banco_analisesps,
+                                                        monkeypatch):
+    """Depois da ciência a Receita entrega o `nfeProc`. É ele que a
+    contabilidade guarda — antes de 17/09 ele era lido, resumido e jogado
+    fora."""
+    from app.apps.analisesps import drive, notas_arquivo, sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    subidas = []
+
+    def fingir_subida(conteudo, nome, pasta, mime):
+        subidas.append({"nome": nome, "mime": mime, "bytes": len(conteudo),
+                        "conteudo": conteudo.decode("utf-8")})
+        return {"id": "arq1", "link": "https://drive.exemplo/arq1"}
+
+    monkeypatch.setattr(drive, "subir_arquivo", fingir_subida)
+    monkeypatch.setattr(notas_arquivo, "_pasta_do_drive", lambda: "PASTA")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_nfe_inteira(chave)])))
+
+    sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)
+
+    # Subiu como XML, com a chave no nome — quem procurar no Drive acha.
+    assert len(subidas) == 1, f"subidas: {subidas}"
+    assert subidas[0]["nome"] == f"{chave}.xml"
+    assert subidas[0]["mime"] == "text/xml"
+    assert "<infNFe" in subidas[0]["conteudo"], "subiu o resumo, não a nota"
+
+    # E o endereço ficou no banco, que é o que a tela lê.
+    assert consultar_um("SELECT tipo, link FROM analisesps.nota_arquivo "
+                        " WHERE chave = ?", (chave,)) == (
+        "xml", "https://drive.exemplo/arq1")
+
+
+@pytest.mark.banco
+def test_o_RESUMO_nao_e_guardado_como_se_fosse_a_nota(banco_analisesps,
+                                                      monkeypatch):
+    """⚠️ Guardar o resumo no lugar da nota é pior do que não guardar nada:
+    quem abrisse o arquivo encontraria oito campos onde esperava o
+    documento."""
+    from app.apps.analisesps import drive, notas_arquivo, sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(drive, "subir_arquivo", lambda *a, **k: (_ for _ in ()
+                        ).throw(AssertionError("não devia ter subido nada")))
+    monkeypatch.setattr(notas_arquivo, "_pasta_do_drive", lambda: "PASTA")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+
+    # A nota é gravada normalmente — o que não acontece é a subida.
+    assert sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)["trazidas"] == 1
+    assert consultar_um("SELECT count(*) FROM analisesps.nota_arquivo "
+                        " WHERE chave = ?", (chave,))[0] == 0
+
+
+@pytest.mark.banco
+def test_o_mesmo_XML_nao_sobe_duas_vezes(banco_analisesps, monkeypatch):
+    """O documento não muda, e cada subida é uma ida ao Google. A segunda
+    rodada da busca traria o mesmo lote se o ponteiro não tivesse andado."""
+    from app.apps.analisesps import drive, notas_arquivo
+
+    chave = _chave(CREDOR_CNPJ)
+    subidas = []
+    monkeypatch.setattr(drive, "subir_arquivo",
+                        lambda *a, **k: (subidas.append(1),
+                                         {"id": "arq1", "link": "L"})[1])
+    monkeypatch.setattr(notas_arquivo, "_pasta_do_drive", lambda: "PASTA")
+
+    primeira = notas_arquivo.guardar_xml(chave, _nfe_inteira(chave))
+    segunda = notas_arquivo.guardar_xml(chave, _nfe_inteira(chave))
+
+    assert primeira["ok"] and not primeira["ja_tinha"]
+    assert segunda["ok"] and segunda["ja_tinha"]
+    assert len(subidas) == 1, "subiu de novo o que já estava guardado"
+
+
+@pytest.mark.banco
+def test_o_Drive_fora_do_ar_NAO_derruba_a_busca(banco_analisesps, monkeypatch):
+    """Perder o arquivo é chato e se refaz na rodada seguinte; perder a nota e
+    o ponteiro é caro. A ordem de prejuízo decide quem protege quem."""
+    from app.apps.analisesps import drive, notas_arquivo, sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(drive, "subir_arquivo", lambda *a, **k: (_ for _ in ()
+                        ).throw(drive.ErroDoDrive("cota da conta de serviço")))
+    monkeypatch.setattr(notas_arquivo, "_pasta_do_drive", lambda: "PASTA")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_nfe_inteira(chave)])))
+
+    resultado = sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)
+
+    assert resultado["trazidas"] == 1, "a nota tinha de ter sido gravada"
+    assert not resultado.get("erro"), f"a busca falhou: {resultado.get('erro')}"
+    assert consultar_um("SELECT count(*) FROM analisesps.nota_arquivo "
+                        " WHERE chave = ?", (chave,))[0] == 0
+
+
+@pytest.mark.banco
+def test_SEM_a_migracao_017_nenhuma_ciencia_e_enviada(banco_analisesps,
+                                                      monkeypatch):
+    """⚠️ O caso mais perigoso deste módulo inteiro, e é por isso que tem teste.
+
+    O código sobe para o Render ANTES de o dono apertar "Aplicar atualizações
+    do banco" — sempre. Nessa janela, `nota_evento` ainda não existe. Se a
+    seleção ignorasse isso, cada clique no botão mandaria ciência para a
+    Receita SEM CONSEGUIR REGISTRAR NADA: declaração irreversível em nome da
+    empresa, repetida a cada clique, sem rastro nenhum.
+
+    A trava não é um `if`: é o próprio `NOT EXISTS` da seleção, que consulta a
+    tabela. Sem ela, a consulta falha e a fila volta vazia — nada é enviado."""
+    from app.apps.analisesps import notas_arquivo, sefaz
+
+    _nota_para_ciencia(_chave(CREDOR_CNPJ), "2026-09-10")
+    assert notas_arquivo.notas_para_manifestar(), "a nota devia estar na fila"
+
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("DROP TABLE analisesps.nota_evento")
+        conn.commit()
+
+    monkeypatch.setattr(sefaz, "configurado", lambda: True)
+    monkeypatch.setattr(sefaz, "manifestar_ciencia", lambda *a, **k: (
+        _ for _ in ()).throw(AssertionError(
+            "mandou ciência para a Receita sem ter onde registrar")))
+
+    assert notas_arquivo.notas_para_manifestar() == []
+    assert notas_arquivo.manifestar_pendentes()["manifestadas"] == 0
+
+
+# ---------------------------------------------------------------------------
+# O CLIQUE NO QUADRO POR CATEGORIA — 17/09/2026
+#
+# > *"Se eu botar por categoria, quando eu clico em 'sem informação', não era
+# > para filtrar eles na listagem abaixo? Porque aí eu já ia trabalhando
+# > neles."*
+#
+# ⚠️ O FILTRO JÁ FUNCIONAVA — conferido num navegador de verdade antes de
+# mexer em qualquer coisa: clicar derrubava a lista de 6 SPs para 3. O que
+# faltava era VER: a lista fica duas telas abaixo, e o clique devolvia a
+# pessoa ao topo da página, onde tudo parecia igual.
+#
+# Estes testes travam as duas metades: que o recorte alcança a lista, e que o
+# atalho aponta para ela.
+# ---------------------------------------------------------------------------
+def _sp_fiscal(sp_id, credor, valor, categoria=""):
+    from app.apps.analisesps import colunas
+    r = {c: "" for c in colunas.CHAVES}
+    r.update({"id": sp_id, "credor": credor, "valor": valor,
+              "documento": "29.066.773/0001-52", "tipo_despesa": "Ferramentas"})
+    return r, categoria
+
+
+def _semear_categorias(registros):
+    """Grava as SPs e a documentação fiscal de cada uma.
+
+    ⚠️ A CATEGORIA NÃO É COLUNA DA SP: mora em `analisesps.sp_fiscal`, que vem
+    da planilha de apoio. Pôr `doc_fiscal` no registro da SP não a grava em
+    lugar nenhum — foi assim que a primeira versão deste teste "provou" um
+    defeito que não existia, porque as seis SPs ficaram todas sem categoria e
+    o filtro, corretamente, devolveu as seis."""
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        sincronizacao.gravar_registros(conn, [r for r, _ in registros])
+        sincronizacao._anotar_a_base_em_dia(conn)
+        for r, categoria in registros:
+            if categoria:
+                conn.execute(
+                    "INSERT INTO analisesps.sp_fiscal (sp_id, doc_fiscal) "
+                    "VALUES (?, ?)", (r["id"], categoria))
+        conn.commit()
+
+
+@pytest.mark.banco
+def test_o_clique_em_SEM_INFORMACAO_filtra_a_lista_de_lancamentos(
+        banco_analisesps, monkeypatch):
+    """O recorte do quadro alcança a lista — não só o quadro."""
+    _semear_categorias([
+        _sp_fiscal("1000000001", "ALFA SEM DOC", "100,00"),
+        _sp_fiscal("1000000002", "BETA SEM DOC", "200,00"),
+        _sp_fiscal("1000000003", "GAMA COM NFE", "300,00", "NF-e (Mercadoria)"),
+        _sp_fiscal("1000000004", "DELTA COM RECIBO", "400,00", "Recibo"),
+    ])
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as s:
+        s["analisesps_perfil"] = "operador"
+        s["analisesps_nome"] = "Marcelo"
+
+    html = cliente.get("/analisesps/fiscal?f=1&sem_categoria=1"
+                       ).get_data(as_text=True)
+
+    assert "ALFA SEM DOC" in html and "BETA SEM DOC" in html
+    assert "GAMA COM NFE" not in html, "trouxe SP que TEM categoria"
+    assert "DELTA COM RECIBO" not in html, "trouxe SP que TEM categoria"
+    # E a tela diz, em português, que está mostrando um recorte — senão a lista
+    # menor parece base menor.
+    assert "Mostrando as SPs da categoria" in html
+
+
+@pytest.mark.banco
+def test_o_quadro_e_a_lista_contam_a_MESMA_coisa(banco_analisesps, monkeypatch):
+    """⚠️ Se o quadro somasse por um critério e a lista filtrasse por outro,
+    ele diria "3" e a lista mostraria outra quantidade — e não haveria como
+    desconfiar de qual dos dois está certo."""
+    from app.apps.analisesps import consultas
+
+    _semear_categorias([
+        _sp_fiscal("1000000001", "ALFA SEM DOC", "100,00"),
+        _sp_fiscal("1000000002", "BETA SEM DOC", "200,00"),
+        _sp_fiscal("1000000003", "GAMA COM NFE", "300,00", "NF-e (Mercadoria)"),
+    ])
+
+    quadro = consultas.quadro_por_categoria({"escopo_fiscal": True})
+    vazia = [c for c in quadro if c["vazia"]]
+    assert len(vazia) == 1, f"o quadro não separou a pilha vazia: {quadro}"
+
+    lista = consultas.listar({"escopo_fiscal": True, "sem_categoria": True})
+    assert vazia[0]["quantas"] == len(lista) == 2, (
+        f"o quadro diz {vazia[0]['quantas']} e a lista traz {len(lista)}")
+
+
+@pytest.mark.banco
+def test_o_atalho_da_categoria_LEVA_ate_a_lista(banco_analisesps, monkeypatch):
+    """⚠️ A metade que faltava, e a queixa dele: o filtro funcionava, mas o
+    clique devolvia a pessoa ao TOPO da página. Entre o topo e a lista há os
+    totalizadores, o quadro, o parágrafo da reconferência e o bloco de ações —
+    quase duas telas. Quem clicava via tudo igual e concluía que não tinha
+    acontecido nada.
+
+    Conferido num navegador em 17/09/2026: sem a âncora a página ficava em 0px;
+    com ela, para em 802px, com a primeira linha da lista à vista."""
+    _semear_categorias([
+        _sp_fiscal("1000000001", "ALFA SEM DOC", "100,00"),
+        _sp_fiscal("1000000002", "BETA COM NFE", "200,00", "NF-e (Mercadoria)"),
+    ])
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as s:
+        s["analisesps_perfil"] = "operador"
+        s["analisesps_nome"] = "Marcelo"
+
+    html = cliente.get("/analisesps/fiscal?f=1").get_data(as_text=True)
+
+    # O bloco da lista precisa ter nome, senão não há para onde apontar.
+    assert 'id="lancamentos"' in html
+    # E os atalhos que mudam a lista apontam para ele: o quadro por categoria
+    # e os totalizadores do alto.
+    assert "sem_categoria=1#lancamentos" in html, (
+        "o atalho da categoria voltou a largar a pessoa no topo da página")
+    assert "fiscais=sem_marcacao#lancamentos" in html, (
+        "o totalizador voltou a largar a pessoa no topo da página")
+
+
+# ---------------------------------------------------------------------------
+# REENVIAR UM COMPROVANTE, E O AVISO QUE NÃO SAÍA — 17/09/2026
+#
+# > *"Às vezes os comprovantes não baixam por algum motivo. Eu queria, a partir
+# > da tela, poder reenviar um comprovante. (…) Opa, esqueci algum detalhe — o
+# > título não está no [Omie]."*
+#
+# > *"Uma coisa que está aparecendo lá e não sai é um retomar fila. Não sei por
+# > que está com aquela pendência e está assim."*
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_reprocessar_devolve_o_lote_a_fila_sem_o_PDF_de_novo(banco_analisesps,
+                                                             monkeypatch,
+                                                             tmp_path):
+    """O caso de todo dia: não baixou porque o título não estava no Omie. A
+    pessoa cria o título lá e aperta aqui — sem procurar o PDF outra vez."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(2), "sicredi.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'PRONTO', levas_feitas = 1, "
+                     "       terminado_em = now() WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    resultado = comprovantes.reprocessar_lote(lote_id)
+
+    assert resultado["ok"] is True
+    assert resultado["situacao_anterior"] == "PRONTO"
+    linha = consultar_um(
+        "SELECT situacao, levas_feitas, erro, terminado_em "
+        "  FROM analisesps.comprovantes_lote WHERE id = ?", (lote_id,))
+    assert linha[0] == "ESPERANDO", "não voltou para a fila"
+    assert linha[1] == 0, "as levas feitas não foram zeradas — recomeçaria pelo meio"
+    assert linha[3] is None, "continuou marcado como terminado"
+
+
+@pytest.mark.banco
+def test_reprocessar_APAGA_as_linhas_velhas_e_nao_duplica_a_tela(
+        banco_analisesps, monkeypatch, tmp_path):
+    """⚠️ Os itens são gravados com INSERT simples, sem chave única.
+    Reprocessar sem limpar mostraria CADA PÁGINA DUAS VEZES — e quem olhasse
+    concluiria que o comprovante foi baixado em dobro."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(2), "duas.pdf", "p", "P")
+    with conexao() as conn:
+        comprovantes._gravar_itens(conn, lote_id, [
+            {"pagina": 1, "situacao": "BAIXADO", "sp_id": "111"},
+            {"pagina": 2, "situacao": "NAO_LOCALIZADO", "motivo": "sem SP"}])
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'PRONTO' WHERE id = ?", (lote_id,))
+        conn.commit()
+    assert consultar_um("SELECT count(*) FROM analisesps.comprovantes_item "
+                        " WHERE lote_id = ?", (lote_id,))[0] == 2
+
+    comprovantes.reprocessar_lote(lote_id)
+
+    assert consultar_um("SELECT count(*) FROM analisesps.comprovantes_item "
+                        " WHERE lote_id = ?", (lote_id,))[0] == 0, (
+        "as linhas velhas ficaram; a tela mostraria cada página duas vezes")
+
+
+@pytest.mark.banco
+def test_reprocessar_SEM_o_PDF_encerra_em_vez_de_prometer(banco_analisesps,
+                                                          monkeypatch,
+                                                          tmp_path):
+    """Sem o arquivo não há o que reprocessar. Devolver à fila faria ele
+    falhar de novo a cada rodada — e o aviso acenderia para sempre."""
+    import os
+
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "sumiu.pdf", "p", "P")
+    caminho = consultar_um("SELECT caminho FROM analisesps.comprovantes_lote "
+                           " WHERE id = ?", (lote_id,))[0]
+    os.remove(caminho)
+
+    resultado = comprovantes.reprocessar_lote(lote_id)
+
+    assert resultado["ok"] is False
+    assert resultado["sem_arquivo"] is True
+    assert "arraste o arquivo de novo" in resultado["erro"].lower()
+    situacao, erro = consultar_um(
+        "SELECT situacao, erro FROM analisesps.comprovantes_lote "
+        " WHERE id = ?", (lote_id,))
+    assert situacao == "FALHOU", "ficou preso na fila sem ter o que processar"
+    assert "não está mais no servidor" in erro
+
+
+@pytest.mark.banco
+def test_o_lote_ESPERANDO_SEM_ARQUIVO_para_de_acender_o_aviso_para_sempre(
+        banco_analisesps, monkeypatch, tmp_path):
+    """⚠️ ESTE É O AVISO QUE NÃO SAÍA — a queixa de 17/09/2026.
+
+    O aviso da tela acende para lote parado em ESPERANDO **ou** RODANDO, mas o
+    destravamento só alcançava RODANDO. Um lote que ficou em ESPERANDO sem o
+    PDF no disco era escolhido pela fila a cada rodada, falhava ao abrir o
+    arquivo, e o aviso acendia de novo na rodada seguinte — para sempre. O
+    botão fazia o que devia; era a lista que nunca esvaziava."""
+    import os
+
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "preso.pdf", "p", "P")
+    caminho = consultar_um("SELECT caminho FROM analisesps.comprovantes_lote "
+                           " WHERE id = ?", (lote_id,))[0]
+    os.remove(caminho)
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'ESPERANDO', "
+                     "       recebido_em = now() - interval '5 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    # Antes da correção isto devolvia zero e o lote continuava ESPERANDO.
+    resultado = comprovantes.destravar_parados()
+
+    assert resultado["sem_arquivo"] == 1
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "FALHOU"
+    # E o aviso da tela apaga, que é o que ele pediu.
+    lote = [l for l in comprovantes.historico() if l["id"] == lote_id][0]
+    assert not lote["parece_parado"], "o aviso continuaria aceso"
+
+
+@pytest.mark.banco
+def test_lote_RECEM_CHEGADO_nao_e_destravado_por_engano(banco_analisesps,
+                                                        monkeypatch, tmp_path):
+    """⚠️ A trava do outro lado. Agora que ESPERANDO entra no destravamento, um
+    lote que acabou de ser solto não pode ser encerrado antes de alguém sequer
+    tentar processá-lo."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "agorinha.pdf", "p", "P")
+
+    resultado = comprovantes.destravar_parados()
+
+    assert resultado["sem_arquivo"] == 0
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "ESPERANDO"
+
+
+@pytest.mark.banco
+def test_o_botao_de_reenvio_aparece_na_tela_do_lote_que_falhou(banco_analisesps,
+                                                              monkeypatch,
+                                                              tmp_path):
+    """De nada adianta a rota existir se a tela não oferece o caminho."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao
+
+    from app.apps.analisesps import colunas, sincronizacao
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "falhou.pdf", "p", "P")
+    with conexao() as conn:
+        # ⚠️ A BASE PRECISA TER SP. Sem nenhuma, TODA tela do módulo devolve
+        # "a base ainda não foi carregada" e não chega a desenhar os lotes —
+        # foi assim que este teste falhou na primeira escrita, e a falha não
+        # tinha nada a ver com o botão.
+        registro = {c: "" for c in colunas.CHAVES}
+        registro.update({"id": "1400000001", "credor": "FULANO",
+                         "valor": "10,00"})
+        sincronizacao.gravar_registros(conn, [registro])
+        sincronizacao._anotar_a_base_em_dia(conn)
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'FALHOU', erro = 'deu ruim' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as s:
+        s["analisesps_perfil"] = "operador"
+        s["analisesps_nome"] = "Marcelo"
+    html = cliente.get("/analisesps/comprovantes").get_data(as_text=True)
+
+    assert "Processar de novo" in html
+    assert "/analisesps/comprovantes/reprocessar" in html
+    assert f'name="lote" value="{lote_id}"' in html
+
+
+@pytest.mark.banco
+def test_quem_so_CONSULTA_nao_reenvia_comprovante(banco_analisesps,
+                                                  monkeypatch, tmp_path):
+    """Reenviar dispara baixa no Omie de verdade — não é ação de quem só olha."""
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "x.pdf", "p", "P")
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_CONSULTA", "so-olha")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as s:
+        s["analisesps_perfil"] = "consulta"
+        s["analisesps_nome"] = "Visitante"
+
+    resposta = cliente.post("/analisesps/comprovantes/reprocessar",
+                            data={"lote": lote_id})
+
+    # O guarda do módulo manda para a entrada; o que não pode é passar.
+    assert resposta.status_code in (302, 401, 403), (
+        f"quem só consulta conseguiu reenviar (HTTP {resposta.status_code})")
+    if resposta.status_code == 302:
+        destino = resposta.headers.get("Location", "")
+        assert "reprocessar" not in destino
+
+
+@pytest.mark.banco
+def test_SEM_a_migracao_a_ciencia_DIZ_o_que_falta_em_vez_de_zero(
+        banco_analisesps, monkeypatch):
+    """⚠️ ERRO EM SILÊNCIO, pego em 18/09/2026 pelo dono: *"não foi preciso
+    atualizar o banco, não pediu"*.
+
+    Sem a migração 017 a seleção falhava, era engolida, e a tarefa respondia
+    "0 nota(s) com ciência dada (de 0 olhadas)". Essa frase se lê como **"não
+    havia nada a fazer"** — e é outra coisa: "não consegui nem perguntar".
+    Quem apertasse o botão veria zero e concluiria que não havia nota
+    esperando, sem nunca descobrir que faltava um passo.
+
+    Agora diz o que falta, e diz o que fazer."""
+    from app.apps.analisesps import notas_arquivo, sefaz
+    from app.apps.analisesps.db import conexao
+
+    _nota_para_ciencia(_chave(CREDOR_CNPJ), "2026-09-10")
+    monkeypatch.setattr(sefaz, "configurado", lambda: True)
+    monkeypatch.setattr(sefaz, "manifestar_ciencia", lambda *a, **k: (
+        _ for _ in ()).throw(AssertionError("mandou ciência sem onde registrar")))
+
+    # Com as tabelas, a rotina trabalha normalmente.
+    assert not notas_arquivo.falta_a_atualizacao_do_banco()
+
+    with conexao() as conn:
+        conn.execute("DROP TABLE analisesps.nota_evento")
+        conn.commit()
+
+    assert notas_arquivo.falta_a_atualizacao_do_banco()
+    resultado = notas_arquivo.manifestar_pendentes()
+
+    assert resultado["manifestadas"] == 0
+    erro = resultado.get("erro") or ""
+    assert "atualização do banco" in erro, (
+        f"não disse o que falta; devolveu: {resultado!r}")
+    assert "Configurações" in erro, "não disse ONDE resolver"
+    # ⚠️ E avisa da armadilha que enganou o dono: a tela só conhece as
+    # atualizações do código JÁ PUBLICADO. Olhando antes de o Render terminar,
+    # ela diz "tudo em dia" porque o código velho nem sabe que elas existem.
+    assert "ainda não terminou" in erro, (
+        "não avisou que 'tudo em dia' pode ser publicação inacabada")

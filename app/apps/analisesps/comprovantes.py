@@ -664,9 +664,157 @@ def processar_um(lote_id: int, anotar=None) -> dict:
     return {"ok": True, "paginas": paginas, "contagem": contagem}
 
 
+# Quanto tempo sem terminar até um lote ser considerado abandonado. Um PDF de
+# cinquenta páginas leva poucos minutos; quinze é folgado.
+MINUTOS_PARA_ABANDONADO = 15
+
+
+def destravar_parados(minutos: int = MINUTOS_PARA_ABANDONADO) -> dict:
+    """Devolve à fila os lotes que começaram e pararam no meio.
+
+    ⚠️ ISTO É O QUE FALTAVA NO BOTÃO "Retomar a fila agora". Relato do dono em
+    16/09/2026: *"clico nele e nada acontece"*.
+
+    E não acontecia mesmo: retomar só pegava lote em ESPERANDO, e o lote dele
+    estava em RODANDO — o processo tinha começado e morrido no meio (o serviço
+    do Render reinicia de tempos em tempos). Um lote em RODANDO ficava assim
+    PARA SEMPRE: nenhum processo o retomava, e nenhum botão o alcançava.
+
+    Dois destinos, conforme o arquivo ainda exista:
+
+      - **arquivo no disco** → volta para ESPERANDO e é reprocessado. O que já
+        baixou no Omie é reconhecido como duplicado e não baixa duas vezes.
+      - **arquivo sumiu** (o contêiner reiniciou e levou o disco) → é marcado
+        como FALHOU, dizendo que o PDF precisa ser arrastado de novo. Deixar em
+        RODANDO seria mentir que ainda está trabalhando."""
+    import os
+
+    from .db import conexao, consultar
+
+    # ⚠️ ESPERANDO ENTRA JUNTO DESDE 17/09/2026, e é o aviso que não saía.
+    #
+    # Relato do dono: *"uma coisa que está aparecendo lá e não sai, é um
+    # retomar fila. Não sei por que está com aquela pendência e está assim."*
+    #
+    # O aviso da tela acende para lote parado em ESPERANDO **ou** em RODANDO
+    # (ver `parece_parado`), mas o destravamento só alcançava RODANDO. Um lote
+    # que ficou em ESPERANDO sem o PDF no disco — o contêiner reiniciou entre o
+    # envio e o processamento — era escolhido pela fila a cada rodada, falhava
+    # ao abrir o arquivo, e **o aviso acendia de novo na rodada seguinte, para
+    # sempre**. O botão fazia o que devia; era a lista que nunca esvaziava.
+    #
+    # As duas situações levam ao mesmo lugar: com arquivo, volta para a fila;
+    # sem arquivo, é encerrado dizendo isso. O que não pode é ficar preso.
+    try:
+        parados = consultar(
+            "SELECT id, caminho, arquivo FROM analisesps.comprovantes_lote "
+            " WHERE situacao IN ('RODANDO', 'ESPERANDO') "
+            "   AND recebido_em < now() - (? || ' minutes')::interval "
+            " ORDER BY id", (str(int(minutos)),))
+    except Exception:  # noqa: BLE001 — banco fora do ar
+        logger.exception("Análise de SPs: não consegui procurar lotes parados")
+        return {"devolvidos": 0, "sem_arquivo": 0}
+
+    devolvidos, sem_arquivo = 0, 0
+    for lote_id, caminho, nome in parados:
+        existe = bool(caminho) and os.path.exists(caminho)
+        with conexao() as conn:
+            if existe:
+                conn.execute(
+                    "UPDATE analisesps.comprovantes_lote "
+                    "   SET situacao = 'ESPERANDO' WHERE id = ?", (lote_id,))
+                devolvidos += 1
+            else:
+                conn.execute(
+                    "UPDATE analisesps.comprovantes_lote SET situacao = 'FALHOU', "
+                    "  erro = ?, terminado_em = now() WHERE id = ?",
+                    ("O processamento parou no meio e o arquivo não está mais "
+                     "no servidor (o serviço reiniciou). Arraste o PDF de novo "
+                     "— o que já tiver sido baixado não baixa duas vezes.",
+                     lote_id))
+                sem_arquivo += 1
+            conn.commit()
+        logger.warning("Análise de SPs: lote %s (%s) estava parado — %s.",
+                       lote_id, nome,
+                       "devolvido à fila" if existe else "sem arquivo, falhou")
+    return {"devolvidos": devolvidos, "sem_arquivo": sem_arquivo}
+
+
+def reprocessar_lote(lote_id: int) -> dict:
+    """Devolve UM lote à fila, para ser processado de novo do começo.
+
+    Pedido do dono em 17/09/2026: *"às vezes os comprovantes não baixam por
+    algum motivo. Eu queria, a partir da tela, poder reenviar um comprovante.
+    (…) permitir o reenvio de algo que a gente não baixou. Opa, esqueci algum
+    detalhe — o título não está no [Omie]."*
+
+    É o caso de todo dia: o comprovante não baixa porque o título ainda não
+    existe no Omie, ou está faltando um dado no card. A pessoa conserta **lá** e
+    quer tentar de novo — sem ter de achar o PDF e arrastar outra vez.
+
+    ⚠️ OS ITENS ANTIGOS SÃO APAGADOS, e isto não é detalhe: eles são gravados
+    com INSERT simples, sem chave única (`comprovantes_item`). Reprocessar sem
+    limpar mostraria **cada página duas vezes** na tela — e quem olhasse
+    concluiria que o comprovante foi baixado em dobro. O que foi baixado no
+    Omie continua baixado: ele é reconhecido como duplicado e não baixa de
+    novo. É a mesma promessa que o botão "Retomar a fila" já faz.
+
+    ⚠️ SEM O PDF NÃO HÁ O QUE REPROCESSAR. O contêiner do Render reinicia e
+    leva o disco junto. Nesse caso o lote é encerrado dizendo isso, em vez de
+    voltar para uma fila onde ele falharia de novo a cada rodada."""
+    import os
+
+    from .db import conexao, consultar_um
+
+    try:
+        linha = consultar_um(
+            "SELECT arquivo, caminho, situacao FROM analisesps.comprovantes_lote "
+            " WHERE id = ?", (int(lote_id),))
+    except Exception:  # noqa: BLE001 — banco fora do ar
+        logger.exception("Análise de SPs: não consegui ler o lote %s", lote_id)
+        return {"ok": False, "erro": "Não consegui falar com o banco agora."}
+    if not linha:
+        return {"ok": False, "erro": "Este lote não existe mais."}
+
+    nome, caminho, situacao = linha[0], linha[1], linha[2]
+    if not (caminho and os.path.exists(caminho)):
+        with conexao() as conn:
+            conn.execute(
+                "UPDATE analisesps.comprovantes_lote SET situacao = 'FALHOU', "
+                "  erro = ?, terminado_em = now() WHERE id = ?",
+                ("O PDF não está mais no servidor — o serviço reiniciou e o "
+                 "disco foi junto. Arraste o arquivo de novo; o que já baixou "
+                 "no Omie não baixa duas vezes.", int(lote_id)))
+            conn.commit()
+        return {"ok": False, "arquivo": nome, "sem_arquivo": True,
+                "erro": ("O PDF de %s não está mais no servidor. Arraste o "
+                         "arquivo de novo — o que já baixou não baixa duas "
+                         "vezes." % (nome or "este lote"))}
+
+    with conexao() as conn:
+        # ⚠️ Primeiro os itens, depois o lote: o inverso deixaria a tela um
+        # instante com o lote "esperando" e as linhas velhas ainda ali.
+        conn.execute("DELETE FROM analisesps.comprovantes_item "
+                     " WHERE lote_id = ?", (int(lote_id),))
+        conn.execute(
+            "UPDATE analisesps.comprovantes_lote "
+            "   SET situacao = 'ESPERANDO', levas_feitas = 0, erro = '', "
+            "       terminado_em = NULL "
+            " WHERE id = ?", (int(lote_id),))
+        conn.commit()
+    logger.info("Análise de SPs: lote %s (%r) voltou para a fila — estava %s.",
+                lote_id, nome, situacao)
+    return {"ok": True, "arquivo": nome, "situacao_anterior": situacao}
+
+
 def processar_pendentes(anotar=None) -> dict:
-    """Drena a fila de lotes ESPERANDO. É o que o processo separado chama."""
+    """Drena a fila de lotes ESPERANDO. É o que o processo separado chama.
+
+    ⚠️ ANTES DE DRENAR, DESTRAVA O QUE FICOU PELO CAMINHO. Sem isto, um lote
+    que morreu no meio nunca mais era tocado por ninguém."""
     from .db import consultar
+
+    destravados = destravar_parados()
 
     esperando = consultar(
         "SELECT id FROM analisesps.comprovantes_lote "
@@ -678,7 +826,9 @@ def processar_pendentes(anotar=None) -> dict:
             feitos += 1
         else:
             falhas += 1
-    return {"lotes": feitos, "falhas": falhas}
+    return {"lotes": feitos, "falhas": falhas,
+            "destravados": destravados["devolvidos"],
+            "sem_arquivo": destravados["sem_arquivo"]}
 
 
 # ---------------------------------------------------------------------------

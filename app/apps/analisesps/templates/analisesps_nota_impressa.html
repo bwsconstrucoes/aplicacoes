@@ -1,0 +1,75 @@
+{# ---------------------------------------------------------------------------
+   A NOTA NUMA FOLHA LIMPA, já chamando a impressão — 17/09/2026.
+
+   ⚠️ ESTE É O "EXPORTAR EM PDF" pedido pelo dono, e o desenho é de propósito:
+   quem gera o PDF é o NAVEGADOR. Na caixa de impressão, "Salvar como PDF" é
+   um destino como qualquer impressora.
+
+   Por que assim, e não gerando PDF no servidor:
+
+     · não entra biblioteca nova no serviço — a regra da casa, e este serviço
+       já morreu de falta de memória uma vez;
+     · sai melhor: quem imprime escolhe margem, tamanho do papel, e se quer
+       papel ou arquivo;
+     · funciona igual no computador e no celular.
+
+   Sem menu, sem barra, sem folha de estilo do sistema: só a nota. O que se vê
+   na tela é exatamente o que sai no papel.
+--------------------------------------------------------------------------- #}
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nota {{ nota.numero }} — {{ nota.emitente.nome }}</title>
+  <link rel="stylesheet"
+        href="{{ url_for('analisesps.static', filename='analisesps.css') }}">
+  <style>
+    /* A folha é branca e o texto é preto, na tela e no papel. A folha de
+       estilo do sistema tem fundo claro-acinzentado, que na impressão vira
+       uma mancha cinza em toda a página. */
+    body { background: #fff; color: #111; margin: 0;
+           font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .folha { max-width: 21cm; margin: 0 auto; padding: 18px; }
+    .barra-impressao {
+      display: flex; gap: 10px; align-items: center; justify-content: flex-end;
+      padding: 10px 18px; border-bottom: 1px solid #ddd; background: #f6f7f9;
+    }
+    .barra-impressao .aviso-atalho { margin-right: auto; color: #555;
+                                     font-size: 13px; }
+    /* ⚠️ NA IMPRESSÃO, A BARRA SOME. Ela existe só para quem fechou a caixa de
+       impressão sem querer e precisa chamar de novo — um botão "Imprimir"
+       impresso dentro do PDF seria constrangedor. */
+    @media print {
+      .barra-impressao { display: none !important; }
+      .folha { max-width: none; padding: 0; }
+      /* Uma linha de item não pode ser partida entre duas páginas: metade da
+         mercadoria numa folha e metade na outra é o tipo de defeito que só
+         aparece depois de impresso. */
+      /* O envelope de rolagem existe para a tela; no papel ele cortaria
+         a tabela na largura da folha em vez de deixar a tabela se ajustar. */
+      .nota-doc-itens-rolagem { overflow: visible !important; }
+      .nota-doc-itens tr { page-break-inside: avoid; }
+      .nota-doc-itens thead { display: table-header-group; }
+      .nota-doc-bloco { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="barra-impressao">
+    <span class="aviso-atalho">Na caixa de impressão, escolha
+      <b>“Salvar como PDF”</b> no destino.</span>
+    <button class="btn" onclick="window.print()">Imprimir / Salvar em PDF</button>
+  </div>
+  <div class="folha">
+    {% include "analisesps_nota.html" %}
+  </div>
+  <script>
+    // Chama a caixa de impressão sozinho: quem clicou em "Salvar em PDF" já
+    // disse o que queria, e um clique a mais para repetir o pedido é atrito.
+    // Depois de carregar tudo (as fontes e a folha de estilo), senão o papel
+    // sai com a página pela metade.
+    window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+  </script>
+</body>
+</html>

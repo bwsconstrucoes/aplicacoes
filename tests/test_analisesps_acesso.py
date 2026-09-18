@@ -81,6 +81,10 @@ def test_toda_rota_publica_tem_motivo_escrito(app):
 # ---------------------------------------------------------------------------
 # Sem login não se alcança nada
 # ---------------------------------------------------------------------------
+# Uma chave de acesso qualquer, com os 44 números que a rota exige. Só
+# serve de endereço: a rota recusa antes de procurar o arquivo.
+CHAVE_DE_EXEMPLO = "26260910656452007869550010000014301234567890"
+
 TODAS_AS_TELAS = [
     ("GET", "/analisesps/"),
     ("GET", "/analisesps/solicitacoes"),
@@ -95,6 +99,10 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/bradesco"),
     ("GET", "/analisesps/fiscal"),
     ("GET", "/analisesps/fiscal?visao=notas"),
+    # A nota fiscal desenhada a partir do XML — 17/09/2026. Traz CNPJ,
+    # endereço, mercadorias e valores: não é tela pública, e este inventário é
+    # o que garante que ninguém a deixe aberta sem querer.
+    ("GET", f"/analisesps/nota/{CHAVE_DE_EXEMPLO}"),
     ("POST", "/analisesps/api/fiscal/confirmar"),
     ("POST", "/analisesps/api/fiscal/ia"),
     ("POST", "/analisesps/api/fiscal/mao"),
@@ -143,6 +151,8 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/conferir-drive"),
     ("POST", "/analisesps/api/pasta-drive"),
     ("POST", "/analisesps/api/pessoas"),
+    # Reenviar um comprovante dispara baixa no Omie de verdade — 17/09/2026.
+    ("POST", "/analisesps/comprovantes/reprocessar"),
     ("GET", "/analisesps/sair"),
 ]
 
@@ -167,8 +177,9 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
         exigencia = getattr(funcao, "_analisesps_exigencia", None)
         if isinstance(exigencia, tuple) or regra.endpoint == auth.ENDPOINT_ESTILO:
             continue                          # pública, com motivo escrito
-        caminho = str(regra).replace("<sp_id>", "123").replace(
-            "<path:filename>", "x")
+        caminho = (str(regra).replace("<sp_id>", "123")
+                   .replace("<path:filename>", "x")
+                   .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)
     assert not faltando, (

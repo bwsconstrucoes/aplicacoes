@@ -1178,3 +1178,86 @@ def test_o_QUADRO_que_falha_NAO_derruba_a_tela(monkeypatch):
     assert "ACME MATERIAIS" in corpo
     # E o recado falso NÃO aparece: não é o banco que está desatualizado.
     assert "precisa da atualização do banco" not in corpo
+
+
+# ---------------------------------------------------------------------------
+# VER A NOTA A PARTIR DA TELA — 17/09/2026
+#
+# *"Tem como visualizar fácil a partir da tela de associação, clicar e ver a
+# nota fiscal?"*
+#
+# ⚠️ POR QUE ESTES TESTES RENDERIZAM DE VERDADE, em vez de olhar o texto do
+# template: a lição do Bradesco, em 16/09. Lá o teste dublava a função que
+# monta as linhas e afirmava sobre as chaves que o TESTE tinha inventado — a
+# tabela chegava em branco na produção e a suíte continuava verde. Aqui a
+# afirmação é sobre o HTML que sai, com o dado entrando pelo mesmo caminho da
+# tela.
+# ---------------------------------------------------------------------------
+def _tela_de_notas(app_fiscal, monkeypatch, arquivos=None, ciencia=None):
+    from app.apps.analisesps import notas_arquivo
+    monkeypatch.setattr(notas_arquivo, "arquivos_das_notas",
+                        lambda chaves: arquivos or {})
+    monkeypatch.setattr(notas_arquivo, "ciencia_das_notas",
+                        lambda chaves: ciencia or {})
+    resposta = entrar(app_fiscal).get("/analisesps/fiscal?f=1&visao=notas")
+    assert resposta.status_code == 200, "a tela das notas parou de abrir"
+    return resposta.get_data(as_text=True)
+
+
+def test_a_CHAVE_aparece_na_linha_da_nota(app_fiscal, monkeypatch):
+    """Sem ela não dá para conferir a nota em lugar nenhum — nem no portal da
+    Receita, nem num visualizador de DANFE."""
+    html = _tela_de_notas(app_fiscal, monkeypatch)
+    assert CHAVE_ACME in html, "a chave de acesso não apareceu na tela"
+
+
+def test_com_o_XML_guardado_o_NUMERO_vira_link(app_fiscal, monkeypatch):
+    """A entrega pedida: clicar e ver a nota.
+
+    ⚠️ MUDOU EM 17/09/2026, e a mudança é o pedido dele: *"não tem problema
+    abrir o XML em tela. Abre num modal?"*
+
+    Antes o link ia DIRETO para o arquivo no Drive — quem clicasse recebia uma
+    tela de etiquetas de XML, que não é "ver a nota fiscal". Agora aponta para
+    a rota que desenha a nota, e o clique abre o modal."""
+    html = _tela_de_notas(
+        app_fiscal, monkeypatch,
+        arquivos={CHAVE_ACME: {"xml": "https://drive.exemplo/nota123"}})
+    assert "documento guardado" in html
+    assert f"/analisesps/nota/{CHAVE_ACME}" in html, (
+        "o número da nota parou de levar à nota")
+    assert 'data-nota=' in html, "sem isto o clique não abre o modal"
+    assert "https://drive.exemplo/nota123" not in html, (
+        "voltou a mandar quem clica para o XML cru do Drive")
+
+
+def test_com_a_CIENCIA_dada_a_tela_diz_que_o_documento_ESTA_A_CAMINHO(
+        app_fiscal, monkeypatch):
+    """⚠️ A frase que evita o chamado. A Receita libera o XML só no lote
+    SEGUINTE — quem der ciência e for procurar o arquivo no mesmo minuto não
+    acha, e conclui que quebrou."""
+    html = _tela_de_notas(app_fiscal, monkeypatch,
+                          ciencia={CHAVE_ACME: {"ok": True, "motivo": "",
+                                                "enviado_em": None}})
+    assert "ciência dada" in html
+    assert "próxima busca" in html
+    assert "https://drive" not in html, "prometeu arquivo que não existe"
+
+
+def test_ciencia_RECUSADA_aparece_com_a_frase_da_Receita(app_fiscal,
+                                                         monkeypatch):
+    """Recusa silenciosa faria a nota parecer simplesmente esquecida."""
+    html = _tela_de_notas(
+        app_fiscal, monkeypatch,
+        ciencia={CHAVE_ACME: {"ok": False, "enviado_em": None,
+                              "motivo": "Rejeicao: Prazo de manifestacao"}})
+    assert "recusou a ciência" in html
+    assert "Prazo de manifestacao" in html, "sumiu o motivo da Receita"
+
+
+def test_SEM_nada_a_tela_continua_como_era(app_fiscal, monkeypatch):
+    """O caso de hoje, antes de a migração ser aplicada: nenhuma promessa."""
+    html = _tela_de_notas(app_fiscal, monkeypatch)
+    assert "documento guardado" not in html
+    assert "ciência dada" not in html
+    assert "recusou a ciência" not in html

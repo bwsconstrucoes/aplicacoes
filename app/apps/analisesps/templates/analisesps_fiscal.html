@@ -90,8 +90,11 @@
 --------------------------------------------------------------------------- #}
 {% macro total(chave, rotulo, cor='') %}
   {% set ligado = chave in filtros.fiscais %}
+  {# Cai na lista, pelo mesmo motivo do quadro por categoria (ver o `id`
+     "lancamentos" mais abaixo): o totalizador diz QUANTOS, e quem clica quer
+     ver QUAIS — que é onde o trabalho acontece, duas telas abaixo. #}
   <a class="kpi {{ cor }} {{ 'ligado' if ligado }}"
-     href="{{ url_for('analisesps.tela_fiscal',
+     href="{{ url_for('analisesps.tela_fiscal', _anchor='lancamentos',
                       **dict(args_troca_recorte, f=1,
                              fiscais=[] if ligado else [chave])) }}"
      title="{{ 'Clique para tirar este recorte' if ligado
@@ -214,7 +217,10 @@
                           or (not c.vazia and c.categoria in filtros.categoria) %}
           <tr class="{{ 'ligada' if ligada }}">
             <td>
+              {# `_anchor` leva direto à lista: sem isso o clique parecia
+                 não fazer nada, porque a lista fica duas telas abaixo. #}
               <a href="{{ url_for('analisesps.tela_fiscal',
+                          _anchor='lancamentos',
                           **dict(args_troca_recorte, f=1,
                                  categoria=([] if ligada or c.vazia
                                             else [c.categoria]),
@@ -303,7 +309,21 @@
 </div>
 {% endif %}
 
-<div class="cartao">
+{# ⚠️ ESTE BLOCO TEM NOME (`id`) DESDE 17/09/2026, e é por um motivo de uso,
+   não de estilo. Pedido do dono: *"quando eu clico em sem informação, não era
+   para filtrar eles na listagem abaixo? Porque aí eu já ia trabalhando
+   neles."*
+
+   O filtro SEMPRE funcionou — conferido num navegador: clicar em "(sem
+   informação)" derruba a lista de 6 para 3. O que não funcionava era VER isso:
+   os totalizadores, o quadro por categoria, o parágrafo da reconferência e o
+   bloco "Trazer, ler e gravar" somam quase duas telas, e a lista começa depois
+   de tudo isso. Quem clicava voltava para o TOPO da página, via a mesma coisa
+   de antes, e concluía que o clique não tinha feito nada.
+
+   Agora os atalhos que MUDAM A LISTA apontam para cá, e o navegador cai na
+   lista já filtrada — que é onde o trabalho acontece. #}
+<div class="cartao" id="lancamentos">
   <div class="cartao-cab">
     <h2>Lançamentos</h2>
     <small>{{ resumo.quantidade }} no filtro · mostrando {{ linhas|length }}</small>

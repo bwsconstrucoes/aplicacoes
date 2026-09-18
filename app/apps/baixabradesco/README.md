@@ -130,10 +130,14 @@ Três travas, e as três são necessárias:
 1. **Mesma quantidade dos dois lados.** Dois comprovantes para três SPs não
    distribui — sobraria uma SP paga sem ter sido.
 2. **Pagamentos comprovadamente diferentes.** Cada comprovante traz um
-   identificador próprio (o campo `Identificador` do Bradesco, ou o número do
-   documento). Se eles se repetem, é o mesmo comprovante mandado duas vezes, e
-   distribuir baixaria duas SPs para um pagamento só. Sem identificador, também
-   não distribui.
+   identificador próprio — no Bradesco o `Identificador` ou o `Documento`; no
+   Sicredi o `ID da transação`, a `Autenticação Eletrônica` ou o
+   `Número de Controle`. Se eles se repetem, é o mesmo comprovante mandado duas
+   vezes, e distribuir baixaria duas SPs para um pagamento só. Sem
+   identificador, também não distribui.
+   ⚠️ Os rótulos de "controle" ficam por último na busca: no Bradesco esse
+   número é do **lote inteiro** e se repete entre as páginas; no Sicredi muda a
+   cada pagamento. Mesma palavra, semânticas opostas.
 3. **Emparelhamento estável.** Página na ordem, SP na ordem — o mesmo lote
    reprocessado dá sempre o mesmo resultado.
 

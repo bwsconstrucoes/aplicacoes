@@ -747,6 +747,68 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 18/09/2026 — TUDO no ERP: nada de sistema paralelo, nada de dado antigo
+
+Ao aprovar o módulo de Acompanhamento (`app/apps/erp/ACOMPANHAMENTO.md`), o dono
+fechou duas questões que estavam em aberto desde o começo do projeto:
+
+> *"Não vamos usar nenhum outro recurso. A ideia é a gente fechar **100% toda a
+> movimentação da empresa no ERP**. E o que ele não estiver atendendo, a gente
+> vai ajustar para poder atender. Não vamos utilizar Pipe, **nem trazer dados
+> antigos de lá** — só as coisas novas mesmo."*
+
+**O que isso decide, e vale para toda área:**
+
+1. **Não existe convivência com ferramenta de fora.** Buraco no ERP não é motivo
+   para voltar ao Pipefy (nem a planilha, nem Asana): é motivo para ajustar o
+   ERP. Propor "enquanto isso, continue no X" deixou de ser uma saída aceitável.
+2. **Módulo novo nasce vazio.** Não se importa histórico do Pipefy. Isso poupa
+   importação suja e, mais importante, evita que a tela de pendências nasça
+   cheia de assunto que ninguém vai tocar — que é o jeito mais rápido de ela
+   perder credibilidade.
+3. **Migração de dado antigo continua valendo onde já existe** (fornecedores,
+   insumos, plano de contas, obras): a decisão é sobre o ACOMPANHAMENTO e sobre
+   ferramenta paralela, não sobre cadastro que o ERP precisa para funcionar.
+
+Junto veio uma exigência de forma que vale para tela nova: *"é interessante
+também que tenha um visual agradável das informações"*. Numa tela feita para ser
+olhada de relance, tabela crua não cumpre a função — a pessoa abre um por um e o
+módulo não trabalha.
+
+### 17/09/2026 — um cadastro, uma porta (regra de desenho, atravessa áreas)
+
+O dono, ao ver dois botões para cadastrar empresa: *"não gostei (…) você abre os
+campos normal, mas DENTRO do cadastro a opção de adicionar o Cartão CNPJ (…)
+isso tem que replicar para todas as outras áreas — o funcionamento do sistema
+tem que ser similar"*.
+
+A regra ficou escrita no `CLAUDE.md`: **um cadastro tem uma porta** (o
+formulário), e o documento que o preenche é um atalho DENTRO dele, no topo,
+nunca um segundo botão ao lado. Dois caminhos paralelos obrigam a pessoa a
+escolher antes de saber a diferença — e é assim que um sistema deixa de ser
+intuitivo sem que ninguém consiga apontar onde.
+
+A peça compartilhada é `abrirCadastroDeEmpresa`, no `erp_base.html`.
+
+
+### 17/09/2026 — um teste do Análise de SPs quebrava sozinho (atravessa áreas)
+
+`tests/test_analisesps_certificados.py::test_o_arquivo_guardado_NAO_e_legivel`
+conferia `b"BWS" not in <cifrado>`. O cifrado é base64 com nonce novo a cada
+chamada: três letras aparecem por acaso num texto desse tamanho mais cedo ou
+mais tarde — e apareceram, travando uma publicação do ERP que não tinha nada a
+ver com certificados.
+
+Passou a conferir **trechos do próprio certificado** (24 bytes do começo, do
+meio e do fim), que é o que o teste realmente quer provar: nenhum pedaço
+reconhecível sobrevive à cifra. A garantia continua de pé e o resultado deixa de
+depender de sorte.
+
+**A regra que fica:** teste que falha sem defeito nenhum é pior do que teste
+nenhum — ensina a equipe a rodar de novo até passar, e no dia do defeito de
+verdade ninguém acredita nele.
+
+
 > Lista para manter contexto de decisões já tomadas.
 
 - **2026-09-13 — PROJETO agrupa obras, e o alcance do operador tem três

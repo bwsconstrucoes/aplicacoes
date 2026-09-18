@@ -48,6 +48,7 @@ ROTULO_ORIGEM = {
     "CONTRATO": "Contrato",
     "CERTIFICADO": "Certificado digital",
     "DOCUMENTO": "Documento faltando",
+    "PROCESSO": "Processo travado",
     "MANUAL": "Anotação",
 }
 

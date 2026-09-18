@@ -89,9 +89,16 @@
 
 <div class="tabela-wrap">
   <div class="tabela-barra"><span class="resumo" id="resumo"></span></div>
+  {# O ARQUIVO DA TROCA. Fica aqui, escondido, em vez de nascer no JavaScript:
+     elemento que só existe em tempo de execução some da conferência das telas,
+     e é assim que um botão quebra sem ninguém ver. #}
+  <input type="file" id="troca-arq" hidden accept=".pdf,.png,.jpg,.jpeg,.webp">
+
   <div class="tabela-rolagem">
     <table><thead><tr>
-      <th>Documento</th><th>Tipo</th><th>De quem</th><th>Competência</th>
+      {# O TIPO VEM PRIMEIRO: é o que a pessoa procura. O nome do arquivo é
+         detalhe (dono, 17/09/2026). #}
+      <th>Documento</th><th>Arquivo</th><th>De quem</th><th>Competência</th>
       <th>Emissão</th><th>Validade</th><th>Situação</th><th></th>
     </tr></thead><tbody id="corpo"></tbody></table>
   </div>
@@ -317,22 +324,67 @@ function desenhar(){
     const detalhe = d.situacao === "VENCIDO" ? `há ${Math.abs(dias)} dia(s)`
                   : d.situacao === "VENCENDO" ? `em ${dias} dia(s)` : "";
     return `<tr>
-      <td><a href="/erp/anexo/${d.anexo_id}" target="_blank" class="mono">${d.nome}</a>
+      <td><b>${d.tipo_nome}</b></td>
+      <td class="desc"><a href="/erp/anexo/${d.anexo_id}" target="_blank"
+          class="mono" style="font-size:12px">${d.nome}</a>
         ${d.nome_original && d.nome_original !== d.nome
           ? `<br><small>enviado como ${d.nome_original}</small>` : ""}</td>
-      <td>${d.tipo_nome}</td>
       <td>${d.dono || "—"}</td>
       <td>${d.competencia ? d.competencia.split("-").reverse().join("/") : "—"}</td>
       <td>${dataBR(d.emissao)}</td>
       <td>${dataBR(d.validade)}</td>
       <td><span class="selo ${classe}">${texto}</span>
         ${detalhe ? `<br><small>${detalhe}</small>` : ""}</td>
+      {# DAQUI PARA O CADASTRO, E A DATA CORRIGIDA NA HORA. Dono, 17/09/2026:
+         *"eu vi um contrato que está dando que está vencido, mas na verdade
+         está vencido porque eu escrevi a validade errado. Eu queria daqui ir
+         para o cadastro e editar isso direto, como se fosse um pulo"*. #}
       <td style="white-space:nowrap">
+        ${PODE_ARQUIVAR ? `<button class="btn secundario" data-trocar="${d.id}"
+          data-dnome="${escapar(d.tipo_nome)}"
+          title="Anexou o arquivo errado? Troque sem perder o registro">Trocar arquivo</button>` : ""}
+        ${PODE_ARQUIVAR ? `<button class="btn secundario" data-datas="${d.id}"
+          data-emissao="${d.emissao||""}" data-validade="${d.validade||""}"
+          data-comp="${d.competencia||""}" data-ref="${escapar(d.referencia||"")}"
+          title="Corrigir emissão, validade e competência">Datas</button>` : ""}
+        ${d.obra_id ? `<a class="btn secundario" title="Abrir a ficha desta obra"
+          href="/erp/obras?obra=${d.obra_id}">Ver a obra</a>` : ""}
         <button class="btn secundario" data-perguntar="${d.id}" data-nome="${escapar(d.nome)}">Perguntar</button>
         {% if pode.encaminhar %}<button class="btn secundario" data-encaminhar="${d.id}">Enviar</button>{% endif %}
         ${PODE_ARQUIVAR ? `<button class="btn secundario" data-excluir="${d.id}">Excluir</button>` : ""}</td>
     </tr>`;
   }).join("");
+
+  // TROCAR O ARQUIVO ERRADO, sem perder o registro (dono, 17/09/2026).
+  document.querySelectorAll("[data-trocar]").forEach(b => b.addEventListener("click", () => {
+    const campo = els("troca-arq");
+    campo.value = "";
+    campo.dataset.doc = b.dataset.trocar;
+    campo.dataset.dnome = b.dataset.dnome;
+    campo.click();          // o seletor de arquivo do sistema, e só depois o motivo
+  }));
+
+  document.querySelectorAll("[data-datas]").forEach(b => b.addEventListener("click", async () => {
+    const resposta = await perguntar({
+      titulo: "Corrigir as datas do documento",
+      textoOk: "Corrigir",
+      aviso: "O aviso de vencimento sai daqui: data errada vira aviso errado, "
+           + "e aviso errado ensina a equipe a ignorar aviso.",
+      campos: [
+        {nome: "emissao", rotulo: "Emissão", tipo: "date", valor: b.dataset.emissao},
+        {nome: "validade", rotulo: "Vale até", tipo: "date", valor: b.dataset.validade},
+        {nome: "competencia", rotulo: "Competência (mês)", tipo: "month",
+         valor: b.dataset.comp},
+        {nome: "referencia", rotulo: "Referência", valor: b.dataset.ref},
+      ]});
+    if (!resposta) return;
+    try {
+      await api(`/erp/api/documentos/${b.dataset.datas}/datas`, {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify(resposta)});
+      aviso("mensagem", "Datas corrigidas. O aviso de vencimento acompanha.", "ok");
+      carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  }));
 
   document.querySelectorAll("[data-perguntar]").forEach(b => b.addEventListener("click", () => {
     abrirPergunta(b.dataset.perguntar, b.dataset.nome);
@@ -749,5 +801,37 @@ async function carregarBlocos(){
 }
 
 (async () => { await carregarListas(); await carregarBlocos(); carregar(); })();
+
+// TROCAR O ARQUIVO ERRADO, sem perder o registro (dono, 17/09/2026: *"anexei
+// uma ART e depois percebi que era o documento errado, e queria substituir"*).
+// O motivo é perguntado DEPOIS de escolher o arquivo: perguntar antes, sem a
+// pessoa ter visto qual arquivo escolheu, é pedir resposta no escuro.
+els("troca-arq").addEventListener("change", async () => {
+  const campo = els("troca-arq");
+  const arq = campo.files[0];
+  if (!arq) return;
+  const r = await perguntar({
+    titulo: "Trocar o arquivo do documento",
+    textoOk: "Trocar",
+    aviso: `Entra <b>${escapar(arq.name)}</b> no lugar do arquivo atual de `
+         + `<b>${escapar(campo.dataset.dnome || "documento")}</b>. O arquivo `
+         + `anterior é apagado; o registro, as datas e o vínculo com a obra `
+         + `continuam os mesmos, e a troca fica na trilha.`,
+    campos: [{nome: "motivo", rotulo: "Por que está trocando?", largura: 3,
+              exemplo: "era a ART de outra obra"}]});
+  if (!r) { campo.value = ""; return; }
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("motivo", r.motivo || "");
+    await api(`/erp/api/documentos/${campo.dataset.doc}/arquivo`,
+              {method:"POST", body: fd});
+    aviso("mensagem", "Arquivo trocado. O registro e as datas continuam os "
+          + "mesmos; a troca ficou na trilha.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  campo.value = "";
+});
+
 </script>
 {% endblock %}

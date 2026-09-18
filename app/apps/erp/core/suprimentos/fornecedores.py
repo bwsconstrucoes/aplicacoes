@@ -96,6 +96,14 @@ def _aplicar_campos_de_suprimentos(s: Session, forn: Fornecedor,
         forn.canais_cotacao = canais
         mudou["canais_cotacao"] = canais
 
+    if "cotacao_automatica" in dados:
+        # Pedido do dono: *"de repente eu tenho um fornecedor pequeno que eu
+        # não costumo mandar para cotar, ou foi uma compra única"*. Desligar
+        # tira da SUGESTÃO do disparo automático — não do cadastro, e não da
+        # cotação montada à mão.
+        forn.cotacao_automatica = dados.get("cotacao_automatica") is not False
+        mudou["cotacao_automatica"] = forn.cotacao_automatica
+
     if "categorias" in dados:
         mudou["categorias"] = definir_categorias(s, forn, dados.get("categorias") or [])
     return mudou
@@ -185,11 +193,46 @@ def acrescentar_contato(s: Session, fornecedor_id: int, dados: dict[str, Any],
         fornecedor_id=forn.id, nome=nome,
         funcao=_texto(dados.get("funcao")) or None,
         email=_texto(dados.get("email")) or None,
-        telefone=_texto(dados.get("telefone")) or None)
+        telefone=_texto(dados.get("telefone")) or None,
+        observacao=_texto(dados.get("observacao")) or None,
+        recebe_cotacao=dados.get("recebe_cotacao") is not False)
     s.add(contato)
     s.flush()
     registrar_evento(s, "fornecedor", forn.id, "CONTATO_ACRESCENTADO",
                      {"nome": nome}, usuario.id if usuario else None)
+    return contato
+
+
+def editar_contato(s: Session, contato_id: int, dados: dict[str, Any],
+                   usuario: Usuario) -> FornecedorContato:
+    """Corrigir o vendedor sem apagar e recriar.
+
+    Existe porque o campo mais usado aqui é a OBSERVAÇÃO — "atende o interior",
+    "só linha elétrica" —, e ela é descoberta com o tempo, não no cadastro.
+    """
+    contato = s.get(FornecedorContato, contato_id)
+    if contato is None:
+        raise ErroNaoEncontrado("Contato não encontrado.")
+    if "nome" in dados:
+        nome = _texto(dados.get("nome"))
+        if len(nome) < 3:
+            raise ErroValidacao("Diga o nome de quem responde por este fornecedor.")
+        contato.nome = nome
+    for campo in ("funcao", "email", "telefone", "observacao"):
+        if campo in dados:
+            setattr(contato, campo, _texto(dados.get(campo)) or None)
+    if not _texto(contato.email or "") and not _texto(contato.telefone or ""):
+        raise ErroValidacao(
+            f"Informe o e-mail ou o telefone de {contato.nome} — sem um dos "
+            f"dois não há como mandar cotação para essa pessoa.")
+    if "recebe_cotacao" in dados:
+        contato.recebe_cotacao = dados.get("recebe_cotacao") is not False
+    if "ativo" in dados:
+        contato.ativo = dados.get("ativo") is not False
+    s.flush()
+    registrar_evento(s, "fornecedor", contato.fornecedor_id, "CONTATO_EDITADO",
+                     {"contato_id": contato_id, "nome": contato.nome},
+                     usuario.id if usuario else None)
     return contato
 
 
@@ -219,7 +262,12 @@ def gerenciar(s: Session) -> dict[str, Any]:
     for c in s.scalars(select(FornecedorContato)).all():
         contatos.setdefault(c.fornecedor_id, []).append(
             {"id": c.id, "nome": c.nome, "funcao": c.funcao or "",
-             "email": c.email or "", "telefone": c.telefone or ""})
+             "email": c.email or "", "telefone": c.telefone or "",
+             # DO QUE ELE TRATA (migração 075): é o que diferencia dois
+             # vendedores do mesmo fornecedor.
+             "observacao": getattr(c, "observacao", None) or "",
+             "recebe_cotacao": getattr(c, "recebe_cotacao", True) is not False,
+             "ativo": getattr(c, "ativo", True) is not False})
 
     linhas = []
     for f in s.scalars(select(Fornecedor)).all():
@@ -239,6 +287,8 @@ def gerenciar(s: Session) -> dict[str, Any]:
             "categorias_ids": ids,
             "categorias": [categorias.get(i, "") for i in ids],
             "contatos": contatos.get(f.id, []),
+            "cotacao_automatica": getattr(f, "cotacao_automatica", True) is not False,
+            "situacao_rfb": getattr(f, "situacao_rfb", None) or "",
             "ativo": getattr(f, "ativo", True) is not False,
         })
     linhas.sort(key=lambda x: _chave(x["razao_social"]))
@@ -269,6 +319,12 @@ def gerenciar(s: Session) -> dict[str, Any]:
             "sem_contato": sum(1 for l in ativos if not l["contatos"]),
             "sem_email": sum(1 for l in ativos
                              if "EMAIL" in l["canais"] and not l["email"]),
+            # Quem está FORA do disparo automático. O número existe para a
+            # decisão ser visível: fornecedor desligado não some da tela, some
+            # da sugestão — e sem este contador ninguém lembraria disso.
+            "fora_do_automatico": sum(1 for l in ativos
+                                      if not l["cotacao_automatica"]),
+            "mais_de_um_contato": sum(1 for l in ativos if len(l["contatos"]) > 1),
             "por_porte": contagem_porte,
         },
     }
