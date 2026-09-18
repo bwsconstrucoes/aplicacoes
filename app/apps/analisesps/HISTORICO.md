@@ -5373,6 +5373,57 @@ realmente vazio — a tela diz "o lote está vazio" em vez de mostrar um título
 sem nada embaixo.
 
 ---
+
+### Septuagésima primeira leva (18/09) — "não pediu para atualizar o banco"
+
+> *"Não foi preciso atualizar o banco, não pediu."*
+
+Ele abriu Configurações depois da publicação e a tela não ofereceu nada para
+aplicar. Duas explicações possíveis, e as duas merecem registro.
+
+#### A explicação provável: a tela só conhece o código JÁ PUBLICADO
+
+A lista de atualizações pendentes é a comparação entre **os arquivos `.sql` que
+existem no código rodando** e a tabela de controle no banco. Se a tela é aberta
+**antes de o Render terminar de publicar**, o código antigo está no ar — e ele
+**nem sabe que as migrações 013 a 017 existem**. A tela então diz, com toda a
+sinceridade, que não há nada pendente.
+
+É uma armadilha de tempo, não um defeito: "tudo em dia" pode significar "tudo
+em dia" ou "ainda não sei o que existe", e as duas frases são idênticas na tela.
+
+#### ⚠️ O defeito de verdade que isso revelou: a ciência errava em SILÊNCIO
+
+Se ele tivesse apertado "Dar ciência e baixar as notas" sem a migração 017
+aplicada, a resposta seria:
+
+> *"0 nota(s) com ciência dada (de 0 olhadas)."*
+
+**Essa frase se lê como "não havia nada a fazer"** — e o que aconteceu foi
+outra coisa: a consulta falhou porque as tabelas não existem, a falha foi
+engolida, e a lista voltou vazia. Ele veria zero, concluiria que não há nota
+esperando ciência, e **nunca descobriria que faltava um passo**.
+
+É exatamente o defeito que o `CLAUDE.md` nomeia: *número errado com cara de
+certo é pior que resposta nenhuma*. A diferença entre apertar o botão que
+resolve e passar uma semana procurando defeito onde não há.
+
+Agora a rotina **confere as tabelas antes de tudo** e, faltando, responde o que
+falta, onde resolver — e avisa da armadilha de tempo acima, com todas as
+letras: *"se a tela disser que está tudo em dia, a publicação ainda não
+terminou"*.
+
+Na dúvida (banco fora do ar, pergunta não respondida) ela assume que **não**
+falta nada: assim o caminho normal segue e quem decide é a Receita, não um
+palpite nosso sobre o estado do banco.
+
+#### Como conferir que a 017 está mesmo aplicada
+
+Na tela de Configurações, na lista de atualizações **aplicadas**, tem de
+aparecer `017_nota_ciencia_e_arquivo.sql`. Estar ausente da lista de
+*pendentes* não basta — pode ser a versão velha ainda no ar.
+
+---
 ---
 
 ## Regras que não se discutem

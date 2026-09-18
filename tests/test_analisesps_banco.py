@@ -6992,3 +6992,46 @@ def test_quem_so_CONSULTA_nao_reenvia_comprovante(banco_analisesps,
     if resposta.status_code == 302:
         destino = resposta.headers.get("Location", "")
         assert "reprocessar" not in destino
+
+
+@pytest.mark.banco
+def test_SEM_a_migracao_a_ciencia_DIZ_o_que_falta_em_vez_de_zero(
+        banco_analisesps, monkeypatch):
+    """⚠️ ERRO EM SILÊNCIO, pego em 18/09/2026 pelo dono: *"não foi preciso
+    atualizar o banco, não pediu"*.
+
+    Sem a migração 017 a seleção falhava, era engolida, e a tarefa respondia
+    "0 nota(s) com ciência dada (de 0 olhadas)". Essa frase se lê como **"não
+    havia nada a fazer"** — e é outra coisa: "não consegui nem perguntar".
+    Quem apertasse o botão veria zero e concluiria que não havia nota
+    esperando, sem nunca descobrir que faltava um passo.
+
+    Agora diz o que falta, e diz o que fazer."""
+    from app.apps.analisesps import notas_arquivo, sefaz
+    from app.apps.analisesps.db import conexao
+
+    _nota_para_ciencia(_chave(CREDOR_CNPJ), "2026-09-10")
+    monkeypatch.setattr(sefaz, "configurado", lambda: True)
+    monkeypatch.setattr(sefaz, "manifestar_ciencia", lambda *a, **k: (
+        _ for _ in ()).throw(AssertionError("mandou ciência sem onde registrar")))
+
+    # Com as tabelas, a rotina trabalha normalmente.
+    assert not notas_arquivo.falta_a_atualizacao_do_banco()
+
+    with conexao() as conn:
+        conn.execute("DROP TABLE analisesps.nota_evento")
+        conn.commit()
+
+    assert notas_arquivo.falta_a_atualizacao_do_banco()
+    resultado = notas_arquivo.manifestar_pendentes()
+
+    assert resultado["manifestadas"] == 0
+    erro = resultado.get("erro") or ""
+    assert "atualização do banco" in erro, (
+        f"não disse o que falta; devolveu: {resultado!r}")
+    assert "Configurações" in erro, "não disse ONDE resolver"
+    # ⚠️ E avisa da armadilha que enganou o dono: a tela só conhece as
+    # atualizações do código JÁ PUBLICADO. Olhando antes de o Render terminar,
+    # ela diz "tudo em dia" porque o código velho nem sabe que elas existem.
+    assert "ainda não terminou" in erro, (
+        "não avisou que 'tudo em dia' pode ser publicação inacabada")
