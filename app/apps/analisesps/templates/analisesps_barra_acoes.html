@@ -103,7 +103,10 @@
       <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
     {% endif %}
     {% if origem == 'solicitacoes' and tela != 'codigos' %}
-      <a class="btn secundario" href="{{ url_for('analisesps.exportar', **args) }}">Exportar CSV</a>
+      {# Ver a explicação em `analisesps_relatorio.html`: `**args` perderia
+         todos os valores menos o primeiro de cada filtro. #}
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.exportar', **args.to_dict(flat=false)) }}">Exportar CSV</a>
     {% endif %}
   </div>
 </div>

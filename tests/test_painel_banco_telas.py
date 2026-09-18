@@ -1128,12 +1128,16 @@ def test_a_cascata_mostra_quanto_cada_corte_leva(base_de_aportes):
     from app.apps.painel import consultas
     passos = dict(consultas.conferencia_dos_aportes()["passos"])
 
-    # tudo: 100 + 200 + 400 + 50 (o dividendo) = 750 mil
-    assert passos["Tudo com categoria de aporte"]["devolvido"] == pytest.approx(750000)
-    # tirando dividendo: 700 mil, e o degrau declara ter levado 50
+    # 100 + 200 + 400 = 700 mil. O dividendo NAO entra aqui, e isso mudou em
+    # 17/09/2026: desde que o bloco passou a decidir pelo SENTIDO do dinheiro
+    # junto com o TIPO, "devolvido" só soma o que é devolução de aporte de
+    # verdade. Dividendo é distribuição de lucro — tem quadro próprio, e não
+    # aparece nem como aporte nem como devolução.
+    assert passos["Tudo com categoria de aporte"]["devolvido"] == pytest.approx(700000)
+    # por isso este degrau não tem mais o que levar do devolvido
     saldo = passos["Só o que entra no saldo (tira Dividendos)"]
     assert saldo["devolvido"] == pytest.approx(700000)
-    assert saldo["comeu_devolvido"] == pytest.approx(50000)
+    assert saldo["comeu_devolvido"] == pytest.approx(0)
     # tirando transferencia: 500 mil, o degrau levou 200
     trf = passos["Tirando transferências entre contas"]
     assert trf["devolvido"] == pytest.approx(500000)
@@ -1337,46 +1341,74 @@ def test_a_observacao_aparece_inteira(cliente_config):
 
 @pytest.fixture()
 def base_com_aporte_bws(painel_no_banco):
+    """Os quatro movimentos do plano financeiro, com os DOIS lados de cada um.
+
+    Desenho lançado pelo dono no OMIE em 17/09/2026, com os nomes exatos das
+    categorias que ele cadastrou lá."""
     from app.apps.painel import consultas
     from app.apps.painel.db import conexao
     with conexao() as conn:
         conn.execute("TRUNCATE TABLE fato")
-        for cod, categoria, quem, valor in (
-                # os dois lados do MESMO dinheiro da BWS
-                (801, "Aporte BWS", "BWS CONSTRUCOES LTDA (MATRIZ)", -100000),
-                (802, "Aporte de Parceiro", "BWS CONSTRUCOES LTDA (MATRIZ)", 100000),
-                # o parceiro de fora, que aporta e recebe uma devolução
-                (803, "Aporte de Parceiro", "MORAIS", 300000),
-                (804, "Devolução de Aportes", "MORAIS", -50000)):
+        for cod, categoria, conta, quem, valor in (
+            # 1) BWS manda 100 mil para a obra — MESMO nome dos dois lados
+            (801, "Aportes BWS", "MATRIZ 7011", "BWS (MATRIZ)", -100000),
+            (802, "Aportes BWS", "PARCERIA 22069", "BWS (MATRIZ)", 100000),
+            # 2) 30 mil da BWS voltam — nomes diferentes de cada lado
+            (803, "Devolução de Aportes", "PARCERIA 22069", "BWS (MATRIZ)", -30000),
+            (804, "Devolução de Aportes BWS", "MATRIZ 7011", "BWS (MATRIZ)", 30000),
+            # 3) o parceiro de fora aporta 300 mil (só na conta da parceria)
+            (805, "Aportes Parceiros", "PARCERIA 22069", "MORAIS", 300000),
+            # 4) e recebe 50 mil de volta
+            (806, "Devolução de Aportes", "PARCERIA 22069", "MORAIS", -50000),
+        ):
             conn.execute(
                 "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
-                " situacao_vencimento, categoria, departamento, razao_social,"
-                " data, ano, mes, pago_recebido, a_pagar_receber, juros, multa)"
+                " situacao_vencimento, categoria, conta_corrente, departamento,"
+                " razao_social, data, ano, mes, pago_recebido, a_pagar_receber,"
+                " juros, multa)"
                 " VALUES (?,'2. Contas a Pagar','Fluxo de Caixa','PAGO','Quitado',"
-                "         ?,'CASA',?,'2025-07-10',2025,7,?,0,0,0)",
-                (cod, categoria, quem, valor))
+                "         ?,?,'CASA',?,'2025-07-10',2025,7,?,0,0,0)",
+                (cod, categoria, conta, quem, valor))
         conn.commit()
     consultas.esquecer_listas()
     yield
 
 
-def test_a_bws_nao_aparece_devolvendo_o_proprio_aporte(base_com_aporte_bws):
-    from app.apps.painel import consultas
-    bloco = consultas.aportes(consultas.Filtros())
-    por_socio = {l["socio"]: l for l in bloco["por_socio"]}
-    bws = por_socio["BWS CONSTRUCOES LTDA (MATRIZ)"]
-    assert bws["aportado"] == pytest.approx(100000), "o aporte é o lado que ENTRA na obra"
-    assert bws["devolvido"] == pytest.approx(0), \
-        "o registro da conta da matriz não é devolução: é de onde o dinheiro saiu"
-    assert bws["saldo"] == pytest.approx(100000), \
-        "a BWS tem dinheiro aplicado na obra, e o painel tem de dizer isso"
+def test_devolucao_de_aportes_bws_nao_e_aporte(base_com_aporte_bws):
+    """O defeito silencioso: "Devolução de Aportes BWS" contém "aportes bws"
+    dentro dele. Com o aporte testado antes, a DEVOLUÇÃO virava APORTE — e
+    entrava no bloco com o sinal trocado, sem ninguém perceber."""
+    from app.apps.painel.sync.fato import classificar_aporte
+    assert classificar_aporte("Devolução de Aportes BWS") == "Devolução de Aporte"
+    assert classificar_aporte("Aportes BWS") == "Aporte BWS"
+    assert classificar_aporte("Aportes Parceiros") == "Aporte de Parceiro"
+    assert classificar_aporte("Devolução de Aportes") == "Devolução de Aporte"
 
 
-def test_a_devolucao_de_verdade_continua_contando(base_com_aporte_bws):
-    """Tirar o espelho não pode levar junto a devolução real."""
+def test_o_aporte_so_conta_quando_entra_na_obra(base_com_aporte_bws):
+    """Os dois lados do aporte da BWS usam o MESMO nome. O que distingue é para
+    onde o dinheiro foi: o que entra na obra é aporte; o que sai da matriz é o
+    registro de onde ele veio."""
     from app.apps.painel import consultas
-    bloco = consultas.aportes(consultas.Filtros())
-    morais = {l["socio"]: l for l in bloco["por_socio"]}["MORAIS"]
+    bws = {l["socio"]: l for l in
+           consultas.aportes(consultas.Filtros())["por_socio"]}["BWS (MATRIZ)"]
+    assert bws["aportado"] == pytest.approx(100000), "conta o lado que ENTRA, uma vez só"
+    assert bws["devolvido"] == pytest.approx(30000), "a devolução é a que SAI da obra"
+    assert bws["saldo"] == pytest.approx(70000)
+
+
+def test_a_devolucao_so_conta_quando_sai_da_obra(base_com_aporte_bws):
+    """"Devolução de Aportes BWS" entrando na matriz é positiva: é o espelho da
+    saída, e contá-la dobraria a devolução."""
+    from app.apps.painel import consultas
+    assert consultas.aportes(consultas.Filtros())["devolvido"] == \
+        pytest.approx(80000), "30 da BWS + 50 do parceiro, sem o espelho"
+
+
+def test_o_parceiro_de_fora_continua_certo(base_com_aporte_bws):
+    from app.apps.painel import consultas
+    morais = {l["socio"]: l for l in
+              consultas.aportes(consultas.Filtros())["por_socio"]}["MORAIS"]
     assert morais["aportado"] == pytest.approx(300000)
     assert morais["devolvido"] == pytest.approx(50000)
     assert morais["saldo"] == pytest.approx(250000)
@@ -1385,17 +1417,47 @@ def test_a_devolucao_de_verdade_continua_contando(base_com_aporte_bws):
 def test_os_totais_do_topo_param_de_dobrar(base_com_aporte_bws):
     from app.apps.painel import consultas
     bloco = consultas.aportes(consultas.Filtros())
-    assert bloco["aportado"] == pytest.approx(400000)    # 100 da BWS + 300 da Morais
-    assert bloco["devolvido"] == pytest.approx(50000)    # só a devolução de verdade
-    assert bloco["saldo"] == pytest.approx(350000)
+    assert bloco["aportado"] == pytest.approx(400000)   # 100 da BWS + 300 do parceiro
+    assert bloco["devolvido"] == pytest.approx(80000)   # 30 + 50
+    assert bloco["saldo"] == pytest.approx(320000)
 
 
 def test_o_lancamento_da_matriz_continua_a_vista(base_com_aporte_bws):
     """Ele deixa de CONTAR, não de existir — senão some rastro de dinheiro."""
     from app.apps.painel import consultas
-    linhas = consultas.lancamentos_de_aporte(consultas.Filtros())["linhas"]
-    tipos = {l["tipo"] for l in linhas}
-    assert "Aporte BWS" in tipos, "o registro da matriz tem de continuar listado"
-    # e com o valor dele, para não sumir rastro de dinheiro
-    bws = [l for l in linhas if l["tipo"] == "Aporte BWS"]
-    assert bws and bws[0]["valor"] == pytest.approx(-100000)
+    contas = {l["conta"] for l in
+              consultas.lancamentos_de_aporte(consultas.Filtros())["linhas"]}
+    assert "MATRIZ 7011" in contas, "os lançamentos da matriz continuam listados"
+
+
+def test_dividendo_nao_vira_devolucao_de_aporte(base_com_aporte_bws):
+    """Consequência da regra do sentido do dinheiro, e ela é desejada.
+
+    Antes o bloco decidia só pelo sinal: qualquer coisa negativa com categoria
+    de aporte virava "devolvido" — e o dividendo pago, que é negativo, entrava
+    ali. Dividendo é distribuição de LUCRO, não devolução de capital: abatê-lo
+    do saldo faria parecer que o sócio retirou o que colocou.
+
+    Ele tem quadro próprio na tela e continua aparecendo lá."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, conta_corrente, departamento,"
+            " razao_social, data, ano, mes, pago_recebido, a_pagar_receber,"
+            " juros, multa)"
+            " VALUES (900,'2. Contas a Pagar','Fluxo de Caixa','PAGO','Quitado',"
+            "         'Dividendos','PARCERIA 22069','CASA','MORAIS',"
+            "         '2025-07-10',2025,7,-70000,0,0,0)")
+        conn.commit()
+    consultas.esquecer_listas()
+    bloco = consultas.aportes(consultas.Filtros())
+    assert bloco["devolvido"] == pytest.approx(80000), \
+        "o dividendo de 70 mil não pode entrar no devolvido"
+    morais = {l["socio"]: l for l in bloco["por_socio"]}["MORAIS"]
+    assert morais["saldo"] == pytest.approx(250000), \
+        "nem abater o saldo de quem aportou"
+    # e continua visível no quadro próprio
+    divs = {l["socio"]: l for l in consultas.dividendos_por_socio(consultas.Filtros())}
+    assert divs["MORAIS"]["pago"] == pytest.approx(70000)
