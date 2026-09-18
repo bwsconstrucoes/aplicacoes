@@ -385,3 +385,88 @@ def test_ocorrencia_ja_vem_ajustada_ao_dia_util():
     datas = agenda.ocorrencias(compromisso, dt.date(2026, 9, 1),
                                dt.date(2026, 9, 30), set())
     assert datas == [dt.date(2026, 9, 7)]
+
+
+# ---------------------------------------------------------------------------
+# O CABEÇALHO ÓRFÃO — 18/09/2026
+#
+# > *"Eu pedi que quando eu removesse cancelados ou pagos de um lote e ele
+# > ficasse vazio, o cabeçalho limpasse. Mas até agora não funcionou."*
+#
+# ⚠️ NÃO FUNCIONAVA POR UM CAMINHO SÓ, e é isso que estes testes travam. A
+# remoção por status ("Remover pagos", "Remover cancelados") limpava o título
+# desde 11/09/2026. O "Remover" da barra do alto — marcar as linhas e tirar —
+# montava o texto à mão e guardava todo título, esvaziado ou não.
+#
+# O QUE FEZ O DEFEITO DURAR foi um comentário errado: o `remover_ids` dizia
+# "os títulos ficam (…) mesma decisão do `remover_por_status` ao lado", e a
+# decisão de lá é a OPOSTA. Quem fosse conferir encontrava uma justificativa
+# coerente para algo que ninguém tinha decidido.
+#
+# Por isso a regra é conferida NOS TRÊS CAMINHOS de uma vez: se um divergir de
+# novo, é aqui que aparece.
+# ---------------------------------------------------------------------------
+LOTE_DE_DOIS_GRUPOS = ("Novo Lote 2\n1409289355\n1409289356\n"
+                       "Novo Lote 1\n1409289353\n1409289354")
+
+
+def test_o_titulo_do_grupo_que_esvaziou_SAI_nos_tres_caminhos():
+    """Marcar as linhas, remover por status e remover duplicados têm de tratar
+    o cabeçalho órfão do mesmo jeito — senão a tela se contradiz conforme o
+    botão que a pessoa apertou."""
+    from app.apps.analisesps import lote
+
+    # 1) O "Remover" da barra: marcar as duas SPs do grupo 1.
+    por_marcacao, _ = lote.remover_ids(
+        LOTE_DE_DOIS_GRUPOS, ["1409289353", "1409289354"])
+
+    # 2) "Remover pagos": as mesmas duas, pelo status.
+    por_status, _ = lote.remover_por_status(
+        LOTE_DE_DOIS_GRUPOS, {"pago"},
+        {"1409289353": "Pago", "1409289354": "Pago",
+         "1409289355": "Pagar", "1409289356": "Pagar"})
+
+    # 3) "Remover duplicados": o grupo 1 repetindo o que o grupo 2 já tem.
+    repetido = ("Novo Lote 2\n1409289355\n1409289356\n"
+                "Novo Lote 1\n1409289355\n1409289356")
+    por_duplicidade, _ = lote.remover_duplicados(repetido)
+
+    for nome, saida in (("marcação", por_marcacao), ("status", por_status),
+                        ("duplicidade", por_duplicidade)):
+        assert "Novo Lote 1" not in saida, (
+            f"por {nome}: o grupo esvaziou e o cabeçalho ficou órfão")
+        assert "Novo Lote 2" in saida, (
+            f"por {nome}: sumiu o título de um grupo que ainda tem SP")
+
+
+def test_grupo_que_JA_ESTAVA_vazio_continua_nos_tres_caminhos():
+    """⚠️ A trava do outro lado, e ela importa: alguém escreveu aquele título
+    de propósito, para encher depois. Apagar o que a pessoa acabou de digitar
+    seria pior do que o cabeçalho sobrando."""
+    from app.apps.analisesps import lote
+
+    texto = "Para a semana que vem\nNovo Lote 1\n1409289353"
+
+    por_marcacao, _ = lote.remover_ids(texto, ["1409289353"])
+    por_status, _ = lote.remover_por_status(
+        texto, {"pago"}, {"1409289353": "Pago"})
+
+    for nome, saida in (("marcação", por_marcacao), ("status", por_status)):
+        assert "Para a semana que vem" in saida, (
+            f"por {nome}: apagou um título vazio que a pessoa tinha escrito")
+        assert "Novo Lote 1" not in saida, (
+            f"por {nome}: o grupo esvaziou agora e o cabeçalho ficou")
+
+
+def test_tirar_a_ULTIMA_SP_deixa_o_lote_realmente_vazio():
+    """Sem isto o lote fica com um título e nada embaixo, e a tela diz que há
+    um grupo quando não há nada para pagar."""
+    from app.apps.analisesps import lote
+
+    por_marcacao, _ = lote.remover_ids("Novo Lote 1\n1409289353",
+                                       ["1409289353"])
+    por_status, _ = lote.remover_por_status(
+        "Novo Lote 1\n1409289353", {"cancelado"}, {"1409289353": "Cancelado"})
+
+    assert por_marcacao.strip() == "", f"sobrou: {por_marcacao!r}"
+    assert por_status.strip() == "", f"sobrou: {por_status!r}"
