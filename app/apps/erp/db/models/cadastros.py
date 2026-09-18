@@ -339,6 +339,11 @@ class Fornecedor(Base):
         ARRAY(Text), nullable=False, default=list, server_default="{}")
     canais_cotacao: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=lambda: ["EMAIL"], server_default="{EMAIL}")
+    # Entra na sugestão do disparo automático (migração 075). Nasce LIGADO:
+    # desligar é decisão de quem conhece o fornecedor, e nascer desligado faria
+    # o disparo começar vazio sem ninguém entender por quê.
+    cotacao_automatica: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true")
 
     contas: Mapped[list["FornecedorConta"]] = relationship(
         back_populates="fornecedor", order_by="FornecedorConta.id")
@@ -754,6 +759,12 @@ class FornecedorContato(Base):
     funcao: Mapped[Optional[str]] = mapped_column(Text)
     email: Mapped[Optional[str]] = mapped_column(Text)
     telefone: Mapped[Optional[str]] = mapped_column(Text)
+    # DO QUE ELE TRATA (migração 075). É o campo que diferencia dois vendedores
+    # do mesmo fornecedor — "atende o interior", "só linha elétrica" — e sem
+    # ele o cadastro empurrava a pessoa a criar a empresa de novo só para
+    # guardar o segundo contato. Foi essa a origem de boa parte dos 126 CNPJs
+    # repetidos da planilha da BWS.
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
     recebe_cotacao: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -950,6 +961,10 @@ class CotacaoFornecedor(Base):
         BigInteger, ForeignKey("fornecedores.id"), nullable=False)
     contato_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("fornecedor_contatos.id"))
+    # Quem recebe ESTA cotação neste fornecedor (migração 075). Vazio = todos
+    # os contatos marcados para receber, que é o comportamento de antes.
+    contatos_ids: Mapped[list[int]] = mapped_column(
+        ARRAY(BigInteger), nullable=False, default=list, server_default="{}")
     condicao_pagamento_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("condicoes_pagamento.id"))
     entrega: Mapped[Optional[ModoEntrega]] = mapped_column(

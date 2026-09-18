@@ -244,20 +244,58 @@ def _assinatura(empresa: Empresa) -> list[str]:
     return linhas
 
 
-def destinos_do_fornecedor(s: Session, fornecedor_id: int) -> list[str]:
-    """Para onde a cotação vai: os contatos marcados para receber cotação e,
-    na falta deles, o e-mail do próprio fornecedor."""
+def contatos_do_fornecedor(s: Session, fornecedor_id: int) -> list[dict[str, Any]]:
+    """Os vendedores deste fornecedor, para a tela mostrar e deixar escolher.
+
+    Existe desde 18/09/2026, quando o dono explicou por que havia tanto CNPJ
+    repetido na planilha: *"tem fornecedores que têm mais de uma pessoa que
+    atende; um atende entregas num determinado estado, outro entrega outro (…)
+    quando o fornecedor tiver mais de um contato, vai ser necessário fazer essa
+    seleção, para quem vamos enviar"*.
+
+    Mandar para os três de uma vez não é neutro: o vendedor que não atende
+    aquela região responde "não é comigo" — e na terceira vez para de ler.
+    """
+    saida = []
+    for c in s.scalars(select(FornecedorContato)).all():
+        if c.fornecedor_id != fornecedor_id:
+            continue
+        if getattr(c, "ativo", True) is False:
+            continue
+        saida.append({
+            "id": c.id, "nome": c.nome, "funcao": c.funcao or "",
+            "email": _texto(c.email), "telefone": _texto(c.telefone),
+            "observacao": getattr(c, "observacao", None) or "",
+            # A marca do cadastro é a SUGESTÃO da tela; a escolha do disparo
+            # manda sobre ela.
+            "padrao": getattr(c, "recebe_cotacao", True) is not False,
+        })
+    return saida
+
+
+def destinos_do_fornecedor(s: Session, fornecedor_id: int,
+                           contatos_ids: Optional[list[int]] = None) -> list[str]:
+    """Para onde a cotação vai.
+
+    Com `contatos_ids`, vai para ESSES contatos — é a escolha feita no disparo.
+    Sem eles, vale a marca do cadastro (contatos que recebem cotação) e, na
+    falta de todos, o e-mail do próprio fornecedor.
+    """
+    escolhidos = {int(i) for i in (contatos_ids or [])}
     enderecos = []
     for c in s.scalars(select(FornecedorContato)).all():
         if c.fornecedor_id != fornecedor_id:
             continue
-        if getattr(c, "recebe_cotacao", True) is False:
-            continue
         if getattr(c, "ativo", True) is False:
+            continue
+        if escolhidos:
+            if c.id not in escolhidos:
+                continue
+        elif getattr(c, "recebe_cotacao", True) is False:
             continue
         if _texto(c.email):
             enderecos.append(_texto(c.email))
-    if not enderecos:
+    if not enderecos and not escolhidos:
         forn = s.get(Fornecedor, fornecedor_id)
         if forn is not None and _texto(forn.email):
             enderecos.append(_texto(forn.email))
@@ -290,12 +328,16 @@ def preparar(s: Session, cotacao_id: int) -> dict[str, Any]:
     destinatarios = []
     for coluna in colunas:
         forn = s.get(Fornecedor, coluna.fornecedor_id)
-        enderecos = destinos_do_fornecedor(s, coluna.fornecedor_id)
+        escolhidos = list(getattr(coluna, "contatos_ids", None) or [])
+        enderecos = destinos_do_fornecedor(s, coluna.fornecedor_id, escolhidos)
         ultimo = ultimo_por_coluna.get(coluna.id)
         destinatarios.append({
             "coluna_id": coluna.id, "fornecedor_id": coluna.fornecedor_id,
             "fornecedor": getattr(forn, "razao_social", ""),
             "para": enderecos,
+            # Os vendedores, para a tela deixar escolher quando há mais de um.
+            "contatos": contatos_do_fornecedor(s, coluna.fornecedor_id),
+            "contatos_escolhidos": escolhidos,
             "pode": bool(enderecos),
             "motivo": ("" if enderecos else
                        "sem e-mail no cadastro — corrija em Cadastros › "
@@ -343,6 +385,18 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
     colunas = [c for c in s.scalars(select(CotacaoFornecedor)).all()
                if c.cotacao_id == cotacao_id
                and (not escolhidas or c.id in escolhidas)]
+
+    # QUEM RECEBE, por fornecedor, escolhido nesta tela (migração 075). Fica
+    # GRAVADO na coluna antes do envio: o registro do que foi disparado tem de
+    # dizer para quem foi, e não só "para os contatos que na época estavam
+    # marcados" — a marca do cadastro muda, o histórico não pode mudar junto.
+    por_coluna = dados.get("contatos_por_coluna") or {}
+    if por_coluna:
+        for c in colunas:
+            ids = por_coluna.get(str(c.id), por_coluna.get(c.id))
+            if ids is not None:
+                c.contatos_ids = [int(x) for x in ids]
+        s.flush()
     if not colunas:
         raise ErroValidacao(
             "Nenhum fornecedor escolhido. Acrescente fornecedores ao mapa antes "
@@ -356,7 +410,9 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
     for coluna in sorted(colunas, key=lambda c: (c.ordem or 0, c.id or 0)):
         forn = s.get(Fornecedor, coluna.fornecedor_id)
         nome = getattr(forn, "razao_social", f"fornecedor {coluna.fornecedor_id}")
-        destinos = destinos_do_fornecedor(s, coluna.fornecedor_id)
+        # A escolha feita na tela do disparo manda sobre a marca do cadastro.
+        destinos = destinos_do_fornecedor(
+            s, coluna.fornecedor_id, list(getattr(coluna, "contatos_ids", None) or []))
         if not destinos:
             sem_endereco.append(nome)
             continue

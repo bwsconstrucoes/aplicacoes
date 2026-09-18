@@ -492,25 +492,60 @@ async function abrirDisparo(){
       <button class="btn secundario" onclick="els('dlg').close()">Cancelar</button>
     </div>`;
 
+  {# PARA QUEM, DENTRO DO FORNECEDOR. Dono, 18/09/2026: *"quando o fornecedor
+     tiver mais de um contato, vai ser necessário fazer essa seleção, para quem
+     vamos enviar"*. Mandar para os três não é neutro: o vendedor que não
+     atende aquela região responde "não é comigo" — e na terceira vez para de
+     ler. Só aparece quando há mais de um; com um só, nada muda na tela. #}
+  const porColuna = {};
+  p.destinatarios.forEach(d => {
+    const jaEscolhidos = (d.contatos_escolhidos || []);
+    porColuna[d.coluna_id] = new Set(
+      jaEscolhidos.length ? jaEscolhidos
+        : (d.contatos || []).filter(c => c.padrao && c.email).map(c => c.id));
+  });
+
   const pintar = () => {
     els("disp-destinos").innerHTML = p.destinatarios.map(d => `
+      <div style="padding:2px 0 8px">
       <label class="opcao">
         <input type="checkbox" data-dest="${d.coluna_id}"
           ${marcados.has(d.coluna_id) ? "checked" : ""} ${d.pode ? "" : "disabled"}>
-        <span class="rotulo">${d.fornecedor}
+        <span class="rotulo">${escapar(d.fornecedor)}
           <small style="display:block; color:var(--tinta-suave)">${
-            d.pode ? d.para.join(", ") : d.motivo}</small>
+            d.pode ? escapar(d.para.join(", ")) : escapar(d.motivo)}</small>
           ${d.ultimo_envio ? `<small style="display:block; color:${
             d.ultimo_envio.situacao === "ENVIADO" ? "var(--verde)" : "var(--vermelho)"}">
             último envio: ${d.ultimo_envio.situacao === "ENVIADO"
               ? `saiu em ${dataBR((d.ultimo_envio.quando||"").slice(0,10))}`
-              : d.ultimo_envio.erro}</small>` : ""}
-        </span></label>`).join("")
+              : escapar(d.ultimo_envio.erro)}</small>` : ""}
+        </span></label>
+      ${(d.contatos || []).length > 1 ? `
+        <div style="margin:2px 0 0 26px; padding-left:10px;
+             border-left:2px solid var(--borda)">
+          <small style="color:var(--tinta-suave)">para quem, neste fornecedor:</small>
+          ${d.contatos.map(c => `<label class="opcao" style="padding:2px 0">
+            <input type="checkbox" data-contato="${d.coluna_id}:${c.id}"
+              ${porColuna[d.coluna_id].has(c.id) ? "checked" : ""}
+              ${c.email ? "" : "disabled"}>
+            <span class="rotulo"><b>${escapar(c.nome)}</b>
+              ${c.email ? `<small> · ${escapar(c.email)}</small>`
+                        : `<small> · sem e-mail</small>`}
+              ${c.observacao ? `<small style="display:block; color:var(--tinta-suave)"
+                >${escapar(c.observacao)}</small>` : ""}</span></label>`).join("")}
+        </div>` : ""}
+      </div>`).join("")
       || `<div class="cartao-dica">nenhum fornecedor no mapa</div>`;
     document.querySelectorAll("[data-dest]").forEach(c =>
       c.addEventListener("change", ev => {
         const id = +ev.target.dataset.dest;
         ev.target.checked ? marcados.add(id) : marcados.delete(id);
+      }));
+    document.querySelectorAll("[data-contato]").forEach(c =>
+      c.addEventListener("change", ev => {
+        const [coluna, contato] = ev.target.dataset.contato.split(":").map(Number);
+        ev.target.checked ? porColuna[coluna].add(contato)
+                          : porColuna[coluna].delete(contato);
       }));
   };
   pintar();
@@ -525,6 +560,8 @@ async function abrirDisparo(){
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify({empresa_id: +els("disp-empresa").value,
                               colunas: [...marcados],
+                              contatos_por_coluna: Object.fromEntries(
+                                Object.entries(porColuna).map(([k, v]) => [k, [...v]])),
                               prazo: els("disp-prazo").value,
                               observacao: els("disp-obs").value})});
       els("dlg").close();
