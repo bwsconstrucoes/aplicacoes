@@ -141,6 +141,7 @@ MODULOS = [
         "abas": [
             ("obras", "Painel de obras", "erp.pagina_obras"),
             ("contratos", "Contratos e medições", "erp.pagina_contratos"),
+            ("acompanhamento", "Acompanhamento", "erp.pagina_acompanhamento"),
             ("agenda", "Agenda", "erp.pagina_agenda"),
         ],
     },
@@ -207,7 +208,13 @@ ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "ver_suprimentos", "ver_pedidos_compra",
                  # Decide se a tela de Trabalho no sistema mostra a equipe ou
                  # só a própria semana de quem abriu.
-                 "ver_uso_da_equipe")
+                 "ver_uso_da_equipe",
+                 # Acompanhamento (18/09/2026): decide se a tela mostra o botão
+                 # de abrir processo, a caixa de lançar andamento e o "assumir".
+                 # Sem esta linha `pode.tocar_processo` chega indefinido ao
+                 # template — e indefinido é falso, então a tela abriria só de
+                 # leitura para todo mundo, sem erro nenhum para denunciar.
+                 "tocar_processo")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -774,6 +781,14 @@ def pagina_notas():
 def pagina_contratos():
     """O quadro financeiro do contrato — medido, faturado, recebido."""
     return render_template("erp_contratos.html", **_contexto("contratos"))
+
+
+@bp.route("/erp/acompanhamento")
+@login_obrigatorio
+@permissao("ver_acompanhamento")
+def pagina_acompanhamento():
+    """Os processos que correm fora da BWS: aditivo, licença, protocolo."""
+    return render_template("erp_acompanhamento.html", **_contexto("acompanhamento"))
 
 
 @bp.route("/erp/agenda")
@@ -6764,6 +6779,158 @@ def api_indices_lancar():
                 usuario=_usuario_logado(s))
             s.commit()
         return jsonify({"ok": True})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# ACOMPANHAMENTO — os processos que correm fora da BWS (migração 072)
+#
+# O escopo é o da OBRA, pelo mesmo `obras_do_usuario` da listagem de obras.
+# Processo fora do escopo responde 404 "não encontrado", nunca 403: dizer "sem
+# permissão" para um número que existe confirma que ele existe.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/acompanhamento")
+@login_obrigatorio
+@permissao("ver_acompanhamento")
+def api_acompanhamento():
+    """A fila: o que está pendente, de quem está mais perto de virar problema."""
+    from app.apps.erp.core.acompanhamento import processos as svc
+    # `obras_de_registro_sem_autor` e NÃO `obras_do_usuario`: processo não é
+    # recortável por autoria (quem abriu não é quem toca), e para quem enxerga
+    # "só o que eu lancei" a segunda devolveria None — "sem filtro de obra".
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    with get_session() as s:
+        u = _usuario_logado(s)
+        r = svc.listar(
+            s, obras_permitidas=obras_de_registro_sem_autor(s, u),
+            obra_id=request.args.get("obra_id", type=int),
+            responsavel_id=request.args.get("responsavel_id", type=int),
+            tipo=request.args.get("tipo"),
+            incluir_encerrados=request.args.get("encerrados") == "1")
+        return jsonify({"ok": True, "tipos": svc.TIPOS, "situacoes": svc.SITUACOES,
+                        **r})
+
+
+@bp.route("/erp/api/acompanhamento", methods=["POST"])
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_criar():
+    """Abre o processo. Obrigatórios: assunto, tipo e UM dono (obra ou empresa)."""
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo_sem_autoria
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            if d.get("obra_id"):
+                # O MESMO recorte da listagem: abrir processo numa obra que a
+                # pessoa depois não consegue listar seria criar o invisível.
+                exigir_obra_no_escopo_sem_autoria(s, u, int(d["obra_id"]))
+            p = svc.criar(s, d, u)
+            numero, pid = p.numero, p.id
+            s.commit()
+        return jsonify({"ok": True, "id": pid, "numero": numero})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/acompanhamento/<int:processo_id>")
+@login_obrigatorio
+@permissao("ver_acompanhamento")
+def api_acompanhamento_detalhe(processo_id: int):
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    with get_session() as s:
+        exigir_processo_no_escopo(s, _usuario_logado(s), processo_id)
+        return jsonify({"ok": True, "processo": svc.detalhe(s, processo_id),
+                        "tipos": svc.TIPOS, "situacoes": svc.SITUACOES})
+
+
+@bp.route("/erp/api/acompanhamento/<int:processo_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_atualizar(processo_id: int):
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            exigir_processo_no_escopo(s, u, processo_id)
+            svc.atualizar(s, processo_id, d, u)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/acompanhamento/<int:processo_id>/andamento", methods=["POST"])
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_andamento(processo_id: int):
+    """Uma frase, e pronto — data e autor entram sozinhos."""
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            exigir_processo_no_escopo(s, u, processo_id)
+            svc.lancar_andamento(s, processo_id, d, u)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/acompanhamento/assumir", methods=["POST"])
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_assumir():
+    """O botão do caso das férias: vários processos para uma pessoa de uma vez."""
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    d = request.get_json(silent=True) or {}
+    ids = [int(i) for i in (d.get("ids") or [])]
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            for pid in ids:
+                exigir_processo_no_escopo(s, u, pid)
+            quantos = svc.assumir(s, ids, int(d.get("responsavel_id") or u.id), u)
+            s.commit()
+        return jsonify({"ok": True, "trocados": quantos})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/indices/boletim", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_indices_boletim():
+    """A tabela do boletim, colada de uma vez — variações E número-índice.
+
+    Antes disto, alimentar a tabela com o boletim do dono exigia duas telas
+    desconexas: digitar a variação mês a mês e depois informar o número de um
+    mês para a régua bater. Ele já tem a tabela inteira copiada da fonte
+    (18/09/2026: *"os índices vêm nesse formato"*) — colar resolve os dois.
+    """
+    from app.apps.erp.core.indices import bcb
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = bcb.importar_boletim(
+                s, codigo=(d.get("codigo") or bcb.PADRAO),
+                texto=d.get("texto") or "",
+                ancorar=d.get("ancorar") is not False,
+                usuario=_usuario_logado(s),
+                simular=bool(d.get("simular")))
+            if d.get("simular"):
+                s.rollback()
+            else:
+                s.commit()
+        return jsonify({"ok": True, "relatorio": r})
     except (ErroValidacao, ValueError) as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
 

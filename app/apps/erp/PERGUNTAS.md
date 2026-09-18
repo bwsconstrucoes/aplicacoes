@@ -854,6 +854,48 @@ O que ainda **não** responde:
   registrada como evento no histórico da obra, mas não existe consulta que leia
   o histórico; hoje só dá para abrir obra por obra.
 
+## 3p. O ACOMPANHAMENTO: processos que correm fora da BWS
+
+Construído em 18/09/2026 (migração 072, pedaço 1). Guarda assunto burocrático
+que depende de terceiro — aditivo de prazo, apostilamento, licença, protocolo —
+com andamento em uma frase, situação e responsável.
+
+Perguntas que passam a funcionar:
+
+- OK **O que está parado?** 🔒 (escopo por obra) — e o "parado" é do SISTEMA, não
+  de alguém marcar: sai dos dias sem andamento, com teto por tipo.
+- OK **O que passou da previsão?** 🔒 — prometeram uma data e ela venceu.
+- OK **O que está com exigência a responder?** 🔒 — é o único estado em que o
+  órgão está esperando a BWS, e não o contrário.
+- OK **Quais processos estão com fulano?** 🔒 — e é a pergunta que alguém faz na
+  véspera das férias dele.
+- OK **Esta obra tem processo aberto?** 🔒
+- OK **Onde está o aditivo de prazo da obra X?** 🔒 — o "está com" é atualizado
+  pelo próprio andamento.
+- OK **Há quantos dias este processo não anda?** 🔒
+
+⚠️ **Palavra ambígua: "processo".** No ERP ela já significava outras duas coisas
+— o **processo administrativo do ÓRGÃO** (o número que vem no contrato) e o
+processo judicial. O módulo chama-se **Acompanhamento** na tela por causa disso,
+e pergunta com "processo" solto tem de dizer qual das três usou.
+
+⚠️ **Palavra ambígua: "parado".** Aqui é *sem andamento lançado*, e não *sem
+andamento real*: o órgão pode ter mexido sem ninguém da BWS ter ligado para
+saber. A resposta mede o que o sistema sabe, que é o registro — e é justamente
+por isso que ela serve de cutucão.
+
+⚠️ **Palavra ambígua: "em dia".** Significa apenas "não está vencido, parado nem
+com exigência". Não significa que vai sair no prazo.
+
+O que ainda **não** responde:
+
+- FALTA **"Quanto tempo a prefeitura X demora para publicar um aditivo?"** — o
+  dado já entra (protocolo, deferimento e datas), mas o indicador por órgão é do
+  pedaço 3.
+- FALTA **"O que costuma travar mais?"** — exige histórico de vários processos
+  encerrados, e o módulo nasceu vazio por decisão do dono (nada de importar do
+  Pipefy). A resposta melhora sozinha com o uso.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

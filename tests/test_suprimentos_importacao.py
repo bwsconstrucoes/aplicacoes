@@ -157,6 +157,81 @@ def test_linha_em_branco_no_fim_da_planilha_e_ignorada(sessao, admin):
 
 
 # ---------------------------------------------------------------------------
+# A BARRA DENTRO DO NOME DA CATEGORIA, e o CNPJ repetido no próprio arquivo
+#
+# Os dois saíram da planilha de verdade (1.867 fornecedores, 18/09/2026), e
+# nenhum dos dois aparecia como erro: o primeiro tirava a categoria do
+# fornecedor calado, o segundo sobrescrevia um cadastro com o outro.
+# ---------------------------------------------------------------------------
+def test_categoria_com_barra_no_nome_nao_e_partida_em_duas(admin):
+    """"Metais e Acessórios p/ WC" é UMA categoria, não duas.
+
+    Partir na barra virava "Metais e Acessórios p" + "WC", nenhuma das duas
+    existente — e o fornecedor entrava sem o que ele vende, que é justamente
+    o que faz a cotação chegar nele.
+    """
+    s = SessaoFalsa(InsumoCategoria(id=7, codigo="MET", nome="Metais e Acessórios p/ WC"),
+                    InsumoCategoria(id=1, codigo="AGR", nome="Agregados"))
+    conteudo = _csv_fornecedores(
+        f"1,LOUCAS LTDA,Loucas,{CNPJ_A},JOAO,j@x.com.br,85977777,"
+        f"\"Metais e Acessórios p/ WC, Agregados\",FORTALEZA,RMF,Email,Distribuidor")
+
+    rel = importar_fornecedores_csv(s, conteudo, admin)
+
+    ligacoes = {o.categoria_insumo_id for o in s.adicionados
+                if isinstance(o, FornecedorCategoria)}
+    assert ligacoes == {7, 1}
+    assert rel["categorias_nao_encontradas"] == []
+
+
+def test_cnpj_repetido_no_arquivo_e_relatado_com_as_linhas(sessao, admin):
+    """O banco tem CNPJ único, então a segunda linha SOBRESCREVE a primeira.
+
+    Isso não é recusa nem erro do arquivo — é perda de dado silenciosa, e a
+    única defesa é dizer quais linhas colidiram para o conserto ser feito na
+    planilha.
+    """
+    conteudo = _csv_fornecedores(
+        f"1,PRIMEIRA LTDA,Primeira,{CNPJ_A},JOAO,j@x.com.br,85977777,Agregados,F,RMF,Email,Fábrica",
+        f"2,OUTRA EMPRESA LTDA,Outra,{CNPJ_A},MARIA,m@x.com.br,85966666,Pintura,F,RMF,Email,Fábrica")
+
+    rel = importar_fornecedores_csv(sessao, conteudo, admin)
+
+    assert len(rel["documentos_repetidos"]) == 1
+    repetido = rel["documentos_repetidos"][0]
+    assert repetido["documento"] == CNPJ_A
+    assert repetido["linhas"] == [2, 3]
+    assert repetido["nomes"] == ["PRIMEIRA LTDA", "OUTRA EMPRESA LTDA"]
+
+
+def test_documento_sem_repeticao_nao_entra_no_relatorio(sessao, admin):
+    conteudo = _csv_fornecedores(
+        f"1,UMA LTDA,Uma,{CNPJ_A},JOAO,j@x.com.br,85977777,Agregados,F,RMF,Email,Fábrica",
+        f"2,OUTRA LTDA,Outra,{CNPJ_B},MARIA,m@x.com.br,85966666,Pintura,F,RMF,Email,Fábrica")
+
+    rel = importar_fornecedores_csv(sessao, conteudo, admin)
+
+    assert rel["documentos_repetidos"] == []
+
+
+def test_a_previa_nao_conta_o_cnpj_repetido_como_dois_fornecedores(sessao, admin):
+    """A prévia dizia 2 onde a carga faria 1 — número que parece certo e não é.
+
+    Na prévia nada é gravado, então a segunda linha do mesmo CNPJ continuaria
+    "não encontrada" e seria contada como mais um novo.
+    """
+    conteudo = _csv_fornecedores(
+        f"1,PRIMEIRA LTDA,Primeira,{CNPJ_A},JOAO,j@x.com.br,85977777,Agregados,F,RMF,Email,Fábrica",
+        f"2,OUTRA LTDA,Outra,{CNPJ_A},MARIA,m@x.com.br,85966666,Pintura,F,RMF,Email,Fábrica")
+
+    rel = importar_fornecedores_csv(sessao, conteudo, admin, simular=True)
+
+    assert rel["criados"] == 1, "o CNPJ é único: só um cadastro sobra"
+    assert rel["atualizados"] == 1
+    assert sessao.adicionados == []
+
+
+# ---------------------------------------------------------------------------
 # Insumos
 # ---------------------------------------------------------------------------
 def _csv_insumos(*linhas: str) -> bytes:

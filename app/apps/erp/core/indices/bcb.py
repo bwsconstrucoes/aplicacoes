@@ -428,3 +428,270 @@ def _mes_anterior(d: date) -> date:
     primeiro = d.replace(day=1)
     return (primeiro.replace(year=primeiro.year - 1, month=12) if primeiro.month == 1
             else primeiro.replace(month=primeiro.month - 1))
+
+
+# ---------------------------------------------------------------------------
+# COLAR O BOLETIM INTEIRO
+#
+# O dono mandou, em 18/09/2026, o formato em que os índices chegam para ele:
+#
+#     Mês/Ano      Índice     Variação No mês  Variação No ano  Variação 12 meses
+#     julho/2025   1210,471   0,91             4,39             7,41
+#     agosto/2025  1216,706   0,52             4,93             7,22
+#
+# Antes disso, alimentar a tabela com o boletim dele exigia DOIS trabalhos
+# separados e desconexos: digitar a variação mês a mês (lancar_manual) e depois
+# informar o número oficial de um mês para a régua bater (definir_ancora). Duas
+# telas para uma coisa só que ele já tem inteira na mão, copiada da fonte.
+#
+# Colar resolve os dois de uma vez: cada linha traz a VARIAÇÃO (que é o que o
+# cálculo usa) e o NÚMERO-ÍNDICE (que é o que ele confere com o papel). O mês
+# mais recente da colagem vira a âncora.
+#
+# A TRAVA QUE IMPORTA: o boletim tem de ser consistente consigo mesmo. Se
+# número[n] ÷ número[n-1] não bate com a variação declarada daquele mês, ou a
+# colagem misturou duas séries (INCC-DI com INCC-M, por exemplo), ou veio
+# coluna trocada. Nos dois casos o número entra com cara de certo e contamina
+# todo reajuste dali para a frente — então é aviso na cara, não silêncio.
+# ---------------------------------------------------------------------------
+MESES_POR_EXTENSO = {
+    "janeiro": 1, "jan": 1, "fevereiro": 2, "fev": 2, "marco": 3, "mar": 3,
+    "abril": 4, "abr": 4, "maio": 5, "mai": 5, "junho": 6, "jun": 6,
+    "julho": 7, "jul": 7, "agosto": 8, "ago": 8, "setembro": 9, "set": 9,
+    "outubro": 10, "out": 10, "novembro": 11, "nov": 11,
+    "dezembro": 12, "dez": 12,
+}
+
+# Quanto os dois números podem discordar antes de virar aviso. O boletim publica
+# a variação com 2 casas, então a conta feita a partir dos números-índice sempre
+# difere um pouco por arredondamento — 0,05 ponto percentual é folga para o
+# arredondamento e aperto para série trocada.
+FOLGA_DE_ARREDONDAMENTO = Decimal("0.05")
+
+
+def _competencia_do_boletim(texto: str) -> Optional[date]:
+    """"julho/2025", "07/2025", "jul/25", "2025-07" — todos viram 01/07/2025."""
+    import re
+    import unicodedata
+    bruto = unicodedata.normalize("NFKD", (texto or "").strip().lower())
+    limpo = "".join(c for c in bruto if not unicodedata.combining(c))
+    limpo = limpo.replace(" de ", "/").strip()
+    partes = [p for p in re.split(r"[/\-\s]+", limpo) if p]
+    if len(partes) != 2:
+        return None
+    a, b = partes
+    if a.isdigit() and len(a) == 4:          # 2025-07
+        a, b = b, a
+    mes = MESES_POR_EXTENSO.get(a) or (int(a) if a.isdigit() else None)
+    if not mes or not 1 <= mes <= 12 or not b.isdigit():
+        return None
+    ano = int(b)
+    if ano < 100:
+        ano += 2000
+    return date(ano, mes, 1)
+
+
+def _numero_br(texto: str) -> Optional[Decimal]:
+    """1.210,471 e 0,91 viram Decimal. Vazio e traço viram None."""
+    t = (texto or "").strip().replace("%", "")
+    if not t or t in {"-", "—", "–"}:
+        return None
+    t = t.replace(".", "").replace(",", ".") if "," in t else t
+    try:
+        return Decimal(t)
+    except InvalidOperation:
+        return None
+
+
+def ler_boletim(texto: str) -> dict[str, Any]:
+    """Transforma o texto colado em linhas (competência, número, variação).
+
+    Não toca no banco: existe separada para a prévia poder mostrar o que
+    entendeu ANTES de gravar, e para ser testável sem sessão.
+    """
+    linhas: list[dict[str, Any]] = []
+    ignoradas: list[str] = []
+    for bruta in (texto or "").splitlines():
+        if not bruta.strip():
+            continue
+        # A colagem vem do navegador ou do Excel: separador é TAB, mas ponto e
+        # vírgula e duas casas de espaço também aparecem. A vírgula NÃO separa
+        # colunas aqui — ela é a vírgula decimal.
+        import re
+        campos = [c.strip() for c in re.split(r"\t|;|\s{2,}", bruta.strip()) if c.strip()]
+        if len(campos) < 2:
+            ignoradas.append(bruta.strip())
+            continue
+        quando = _competencia_do_boletim(campos[0])
+        if quando is None:
+            ignoradas.append(bruta.strip())       # o cabeçalho cai aqui
+            continue
+        numero = _numero_br(campos[1])
+        variacao = _numero_br(campos[2]) if len(campos) > 2 else None
+        if numero is None and variacao is None:
+            ignoradas.append(bruta.strip())
+            continue
+        linhas.append({"competencia": quando, "numero_indice": numero,
+                       "variacao_pct": variacao})
+    linhas.sort(key=lambda x: x["competencia"])
+    return {"linhas": linhas, "ignoradas": ignoradas}
+
+
+def _curto(v: Any, casas: int = 2) -> str:
+    """Número com as casas que a pessoa lê, não as seis do banco.
+
+    "0,270000%" num aviso obriga quem lê a contar zeros para ver se é 0,27.
+    """
+    q = Decimal(str(v)).quantize(Decimal("1." + "0" * casas))
+    return f"{q:,.{casas}f}".replace(",", "@").replace(".", ",").replace("@", ".")
+
+
+def _conferir_consistencia(linhas: list[dict[str, Any]]) -> list[str]:
+    """O boletim bate consigo mesmo? Número ÷ número anterior = variação?"""
+    avisos: list[str] = []
+    for anterior, atual in zip(linhas, linhas[1:]):
+        na, nb = anterior["numero_indice"], atual["numero_indice"]
+        v = atual["variacao_pct"]
+        if na is None or nb is None or v is None or na == 0:
+            continue
+        # meses precisam ser consecutivos para a conta fazer sentido
+        if _mes_anterior(atual["competencia"]) != anterior["competencia"]:
+            continue
+        calculada = (nb / na - 1) * 100
+        if abs(calculada - v) > FOLGA_DE_ARREDONDAMENTO:
+            avisos.append(
+                f"{atual['competencia'].strftime('%m/%Y')}: o boletim diz "
+                f"{_curto(v)}%, mas de {_curto(na, 3)} para {_curto(nb, 3)} a "
+                f"variação é {_curto(calculada)}%. "
+                f"Confira se a colagem não misturou duas versões do índice "
+                f"(DI, M e 10 são diferentes) ou trocou de coluna.")
+    return avisos
+
+
+def importar_boletim(s: Session, *, codigo: str = PADRAO, texto: str,
+                     ancorar: bool = True, usuario=None,
+                     simular: bool = False) -> dict[str, Any]:
+    """A tabela do boletim, colada de uma vez: variações E número-índice.
+
+    A variação é o que o cálculo do reajuste usa; o número-índice é o que o
+    dono confere com o papel. O mês mais recente com número vira a âncora, e é
+    isso que faz a coluna da tela bater com o boletim dele.
+    """
+    codigo = (codigo or PADRAO).strip().upper()
+    if codigo not in CATALOGO:
+        raise ErroValidacao(f"Índice desconhecido: {codigo}.")
+
+    lido = ler_boletim(texto)
+    linhas = lido["linhas"]
+    if not linhas:
+        raise ErroValidacao(
+            "Não reconheci nenhuma linha. Cole a tabela do boletim com o mês na "
+            "primeira coluna (por exemplo: julho/2025), o número-índice na "
+            "segunda e a variação do mês na terceira.")
+
+    hoje = _mes(date.today())
+    avisos = _conferir_consistencia(linhas)
+    resultado: list[dict[str, Any]] = []
+    gravados = 0
+    for ln in linhas:
+        quando, variacao = ln["competencia"], ln["variacao_pct"]
+        if quando > hoje:
+            avisos.append(f"{quando.strftime('%m/%Y')} ainda não terminou — "
+                          f"essa linha foi deixada de fora.")
+            continue
+        atual = s.get(IndiceEconomico, (codigo, quando))
+        antes = atual.variacao_pct if atual is not None else None
+        if variacao is None:
+            situacao = "sem variação na colagem"
+        elif atual is None:
+            situacao = "novo"
+        elif _dec(antes) == variacao:
+            situacao = "igual ao que já havia"
+        else:
+            situacao = "mudou"
+        resultado.append({
+            "competencia": quando.strftime("%m/%Y"),
+            "numero_indice": _curto(ln["numero_indice"], 3) if ln["numero_indice"] else "",
+            "variacao_pct": _curto(variacao) if variacao is not None else "",
+            "antes": _curto(antes) if antes is not None else "",
+            "situacao": situacao})
+        if variacao is None or simular or situacao == "igual ao que já havia":
+            continue
+        if abs(variacao) > 50:
+            raise ErroValidacao(
+                f"{quando.strftime('%m/%Y')} veio com {_curto(variacao)}% num "
+                f"mês só — isso não existe em índice de construção. Confira a "
+                f"coluna que você colou.")
+        if atual is None:
+            s.add(IndiceEconomico(codigo=codigo, competencia=quando,
+                                  variacao_pct=variacao, fonte="BOLETIM"))
+        else:
+            atual.variacao_pct = variacao
+            atual.fonte = "BOLETIM"
+        gravados += 1
+
+    com_numero = [l for l in linhas
+                  if l["numero_indice"] is not None and l["competencia"] <= hoje]
+    ancora = None
+    if com_numero:
+        referencia = com_numero[-1]           # o mês mais recente do boletim
+        ancora = {"competencia": referencia["competencia"].strftime("%m/%Y"),
+                  "numero_indice": _curto(referencia["numero_indice"], 3)}
+    if not simular:
+        s.flush()
+        recalcular_numeros(s, codigo)
+        if ancorar and com_numero:
+            referencia = com_numero[-1]
+            definir_ancora(s, codigo=codigo,
+                           competencia=referencia["competencia"],
+                           numero_indice=referencia["numero_indice"],
+                           observacao="do boletim colado", usuario=usuario)
+        registrar_evento(s, "indice", 0, "INDICE_BOLETIM_COLADO", {
+            "codigo": codigo, "meses": len(resultado), "gravados": gravados,
+            "ancorado": bool(ancorar and com_numero)},
+            usuario.id if usuario else None)
+        avisos += _conferir_contra_o_papel(s, codigo, com_numero)
+
+    return {"codigo": codigo, "meses": resultado, "gravados": gravados,
+            "ancora": ancora, "avisos": avisos,
+            "ignoradas": lido["ignoradas"], "simulacao": simular}
+
+
+# Diferença entre o número do papel e o que o sistema recompõe, acima da qual
+# vale avisar. 0,02% sobre um contrato de R$ 1,5 milhão dá cerca de R$ 300 —
+# abaixo disso é ruído de arredondamento e avisar só assusta à toa.
+FOLGA_CONTRA_O_PAPEL = Decimal("0.02")
+
+
+def _conferir_contra_o_papel(s: Session, codigo: str,
+                             com_numero: list[dict[str, Any]]) -> list[str]:
+    """Depois de gravar: o que está na tela bate com o que está no papel?
+
+    Bate no mês ancorado por construção, e se afasta um pouco nos outros — o
+    boletim publica a VARIAÇÃO arredondada em duas casas, e o sistema recompõe
+    os demais meses multiplicando e dividindo por elas. O erro é de centésimos,
+    mas é melhor ele estar escrito na tela do que ser descoberto pelo dono
+    comparando com o papel e concluindo que o sistema errou de novo.
+    """
+    pior = None
+    for ln in com_numero:
+        linha = s.get(IndiceEconomico, (codigo, ln["competencia"]))
+        if linha is None or linha.numero_indice is None or not ln["numero_indice"]:
+            continue
+        do_papel = Decimal(str(ln["numero_indice"]))
+        if do_papel == 0:
+            continue
+        diferenca = abs(Decimal(str(linha.numero_indice)) - do_papel) / do_papel * 100
+        if pior is None or diferenca > pior[1]:
+            pior = (ln["competencia"], diferenca, do_papel,
+                    Decimal(str(linha.numero_indice)))
+    if pior is None or pior[1] <= FOLGA_CONTRA_O_PAPEL:
+        return []
+    quando, dif, papel, sistema = pior
+    return [f"A régua foi alinhada pelo mês mais recente, então os meses "
+            f"anteriores podem sair uns centésimos do papel — a maior diferença "
+            f"é em {quando.strftime('%m/%Y')}: o boletim diz {_curto(papel, 3)} "
+            f"e o sistema mostra {_curto(sistema, 3)} ({_curto(dif, 3)}%). "
+            f"Isso vem de o boletim publicar a variação com duas casas; o "
+            f"reajuste usa a razão entre dois meses, e nessa razão a diferença "
+            f"é menor ainda."]

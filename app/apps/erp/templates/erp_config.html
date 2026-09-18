@@ -279,6 +279,27 @@
   <div class="dica" style="margin-top:6px">Use o número do boletim da FGV quando o
     mês ainda não estiver no Banco Central. A linha fica marcada como manual.</div>
 
+  {# COLAR O BOLETIM INTEIRO (18/09/2026). O dono mandou o formato em que os
+     índices chegam para ele — mês, índice e três variações, separados por TAB.
+     Ele já tem a tabela copiada da fonte; pedir que digite mês a mês e depois
+     alinhe a régua noutro campo é fazer duas vezes um trabalho que ele já fez.
+     Colar traz a variação (que o cálculo usa) E o número (que ele confere). #}
+  <div style="margin-top:18px; border-top:1px solid var(--borda); padding-top:14px">
+    <b>Colar a tabela do boletim</b>
+    <div class="dica" style="margin:4px 0 8px">Copie do boletim e cole aqui —
+      mês, índice e variação do mês, uma linha por mês. O cabeçalho pode vir
+      junto. Traz a <b>variação</b> e o <b>número-índice</b> de uma vez, e
+      alinha a régua pelo mês mais recente.</div>
+    <textarea id="ind-boletim" rows="6" placeholder="Mês/Ano&#9;Índice&#9;Variação No mês&#10;julho/2025&#9;1210,471&#9;0,91&#10;agosto/2025&#9;1216,706&#9;0,52"
+      style="width:100%; font-family:var(--mono,monospace); font-size:12.5px;
+             padding:8px; border:1px solid var(--borda-forte); border-radius:8px"></textarea>
+    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+      <button class="btn secundario" id="btn-bol-previa" type="button">Conferir antes</button>
+      <button class="btn" id="btn-bol-gravar" type="button">Gravar o boletim</button>
+    </div>
+    <div id="bol-resultado"></div>
+  </div>
+
   {# A RÉGUA DO NÚMERO-ÍNDICE (migração 069). O dono, vendo a coluna nova:
      *"apareceram os índices, mas os números estão diferentes do que eu costumo
      ver — veja o de 08/2026, 305,943822"*. O Banco Central publica só a
@@ -2018,6 +2039,47 @@ async function desancorarIndice(ev){
 
 els("btn-ind-atualizar").addEventListener("click", atualizarIndices);
 els("btn-ind-lancar").addEventListener("click", lancarIndice);
+// ------------------------------------------------- o boletim colado de uma vez
+async function enviarBoletim(simular){
+  const texto = (els("ind-boletim").value || "").trim();
+  if (!texto) { aviso("mensagem", "Cole a tabela do boletim primeiro.", "erro"); return; }
+  try {
+    const r = await api("/erp/api/indices/boletim", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({codigo: els("ind-codigo").value, texto, simular})});
+    const b = r.relatorio;
+    els("bol-resultado").innerHTML = `
+      <div class="aviso ${simular ? "info" : "ok"}" style="margin-top:10px">
+        ${simular ? "Conferência — nada foi gravado." : "Boletim gravado."}
+        <b>${b.meses.length}</b> mês(es) lido(s)${simular ? "" :
+          ` · <b>${b.gravados}</b> gravado(s)`}
+        ${b.ancora ? ` · régua alinhada por <b>${b.ancora.competencia}</b>
+          (${b.ancora.numero_indice})` : ""}
+      </div>
+      ${(b.avisos || []).map(a => `<div class="critica ALERTA">${escapar(a)}</div>`).join("")}
+      <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table><thead><tr><th>Mês</th><th class="direita">Índice</th>
+          <th class="direita">Variação</th><th>O que muda</th></tr></thead>
+          <tbody>${b.meses.map(m => `<tr>
+            <td class="dados">${escapar(m.competencia)}</td>
+            <td class="direita dados">${escapar(m.numero_indice) || "—"}</td>
+            <td class="direita dados">${escapar(m.variacao_pct) || "—"}</td>
+            <td><small>${m.situacao === "mudou"
+              ? `<b>muda</b>: era ${escapar(m.antes)}` : escapar(m.situacao)}</small></td>
+          </tr>`).join("")}</tbody></table>
+      </div>
+      ${(b.ignoradas || []).length ? `<div class="cartao-dica">
+        ${b.ignoradas.length} linha(s) não reconhecida(s) e deixada(s) de fora —
+        normalmente é o cabeçalho.</div>` : ""}`;
+    if (!simular) { els("ind-boletim").value = ""; carregarIndices(); }
+  } catch(e){
+    els("bol-resultado").innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  }
+}
+els("btn-bol-previa").addEventListener("click", () => enviarBoletim(true));
+els("btn-bol-gravar").addEventListener("click", () => enviarBoletim(false));
+
 els("btn-ind-ancorar").addEventListener("click", ancorarIndice);
 els("btn-ind-desancorar").addEventListener("click", desancorarIndice);
 els("ind-codigo").addEventListener("change", carregarIndices);

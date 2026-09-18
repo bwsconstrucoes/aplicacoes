@@ -1,9 +1,14 @@
 # ACOMPANHAMENTO — a gestão burocrática da obra (desenho, ainda não construído)
 
-> **Estado: DESENHO.** Nada disto existe no sistema ainda. Este arquivo é a
-> proposta apresentada ao dono em 17/09/2026, para ele decidir o formato antes
-> de qualquer linha de código. Quando for construído, o que valer vira
-> `HISTORICO.md` e as perguntas vão para `PERGUNTAS.md`.
+> **Estado: PEDAÇO 1 CONSTRUÍDO em 18/09/2026** (migração 072) — processo,
+> andamento, situação com "parado" calculado, a tela "o que está pendente" e o
+> botão Assumir. Pedaços 2 e 3 continuam na fila (§11).
+>
+> **Estado anterior: APROVADO, em construção (pedaço 1).** O desenho abaixo foi
+> apresentado ao dono em 17/09/2026 e aprovado por ele em 18/09/2026, com duas
+> decisões que mudaram a §12: **nada de Pipefy, e nada de dado antigo de lá**.
+> Conforme for construído, o que valer vira `HISTORICO.md` e as perguntas vão
+> para `PERGUNTAS.md`.
 
 ---
 
@@ -215,19 +220,37 @@ propõe atualizar a vigência da obra; indicadores por órgão (quanto tempo cad
 
 ---
 
-## 12. Riscos e decisões que são do dono
+## 12. As duas decisões do dono, 18/09/2026
 
-- **O pior cenário é ficar com os dois.** Se a equipe continuar alimentando o
-  Pipefy em paralelo, o ERP fica desatualizado, e informação pela metade é pior
-  que informação nenhuma. Quando o pedaço 1 entrar, o quadro "protocolo e
-  medições" do Pipefy precisa de **data marcada para desligar**.
-- **Trazer o que está aberto hoje no Pipefy**: dá, mas o histórico de comentários
-  vem bagunçado. Proposta: importar só os cartões ABERTOS, cada um com um
-  andamento único resumindo o que havia, e deixar o histórico velho no Pipefy
-  como consulta. Importar tudo custa caro e entrega ruído.
-- **Quem alimenta.** O módulo só funciona se as pessoas que ligam para o órgão
-  lançarem a frase. Isso é decisão de rotina, não de software — e nenhum desenho
-  resolve sozinho.
+Eu havia listado o Pipefy como risco em aberto. Ele fechou os dois pontos:
+
+> *"Não vamos usar nenhum outro recurso. A ideia é a gente fechar **100% toda a
+> movimentação da empresa no ERP**. E o que ele não estiver atendendo, a gente
+> vai ajustar para poder atender. Não vamos utilizar Pipe, **nem trazer dados
+> antigos de lá** — só as coisas novas mesmo."*
+
+**Decisão 1 — nada de sistema paralelo.** Não existe convivência com o Pipefy,
+nem período de transição com os dois alimentados. O que falta no ERP vira
+ajuste no ERP, não motivo para voltar ao Pipefy. Isto derruba o "pior cenário"
+que eu tinha apontado: ele não vai acontecer porque não vai haver dois.
+
+**Decisão 2 — nada de importar o passado.** Processo antigo fica onde está, de
+consulta. O acompanhamento começa vazio e só recebe coisa nova. Isso poupa a
+importação suja que eu tinha proposto (cartões abertos com histórico resumido)
+e, principalmente, evita que o módulo nasça cheio de assunto que ninguém vai
+tocar — que é o jeito mais rápido de a tela "o que está pendente" perder
+credibilidade.
+
+**Exigência de forma, dita junto:** *"é interessante também que tenha um visual
+agradável das informações"*. Não é enfeite: a tela do acompanhamento é feita
+para ser olhada de relance por quem assumiu o assunto de outro. Se ela for uma
+tabela crua, ninguém bate o olho — vai abrir um por um, e aí o módulo não fez o
+trabalho dele.
+
+O que continua valendo como risco, e não é software:
+
+- **Quem alimenta.** O módulo só funciona se quem liga para o órgão lançar a
+  frase. Nenhum desenho resolve isso sozinho.
 - **Fica de fora**: execução física (cronograma, diário, efetivo) e tarefas
   internas da equipe.
 

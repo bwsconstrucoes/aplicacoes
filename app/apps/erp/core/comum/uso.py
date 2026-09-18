@@ -53,6 +53,7 @@ CATEGORIAS: list[tuple[str, str]] = [
     ("cadastro",     "Cadastrou"),
     ("documento",    "Arquivou documento"),
     ("agenda",       "Agenda"),
+    ("acompanhamento", "Acompanhou processo"),
     ("pergunta",     "Perguntou ao sistema"),
     ("configuracao", "Configurou o sistema"),
     ("outro",        "Outros"),
@@ -90,6 +91,10 @@ POR_ENTIDADE: dict[str, str] = {
     "unidade_compra": "cadastro",
     "condicao_pagamento": "cadastro",
     "agenda": "agenda",
+    # ACOMPANHAMENTO em categoria própria, e não em "cadastro": lançar o
+    # andamento de um aditivo é o trabalho de quem persegue órgão público, e
+    # misturá-lo com cadastro esconderia justamente a pessoa que mais faz isso.
+    "processo": "acompanhamento",
     # Perguntar não é entrega — é consulta. Fica em categoria própria para
     # não inflar a produção de ninguém, e porque saber QUEM pergunta muito é
     # informação útil por si só.
@@ -157,6 +162,7 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "empresa": "empresa", "conta_bancaria": "conta bancária",
     "unidade_compra": "unidade de compra", "condicao_pagamento": "condição de pagamento",
     "agenda": "agenda", "pergunta": "pergunta escrita", "categoria": "conta do plano",
+    "processo": "processo de acompanhamento",
     "pergunta_agendada": "relatório automático",
     "categoria_depara": "tradução do plano antigo", "parametro": "parâmetro",
     "usuario": "operador", "perfil": "perfil de acesso", "projeto": "projeto",

@@ -54,22 +54,131 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
-### AGUARDANDO DECISÃO: o módulo de ACOMPANHAMENTO (desenho pronto, nada construído)
+### ⚠️ MIGRAÇÕES 071 e 072 PENDENTES — apertar "Aplicar atualizações do banco"
+
+Duas, e as duas precisam ser aplicadas **no mesmo momento da publicação**:
+
+- **071** acrescenta `BOLETIM` às origens aceitas na tabela de índices. Sem ela,
+  colar o boletim falha (o banco recusa a origem nova); o resto do ERP segue.
+- **072** cria as tabelas do **Acompanhamento** e — a parte que se esquece —
+  **libera a seção nova nos perfis que já tratam agenda**. Sem ela, a aba
+  Acompanhamento não abre para ninguém, nem para o administrador.
+
+
+### COLAR O BOLETIM DO ÍNDICE, em vez de digitar mês a mês (migração 071)
+
+18/09/2026, o dono mandou o formato em que os índices chegam para ele:
+
+```
+Mês/Ano         Índice     Variação No mês  Variação No ano  Variação 12 meses
+julho/2025      1210,471   0,91             4,39             7,41
+agosto/2025     1216,706   0,52             4,93             7,22
+```
+
+Até então alimentar a tabela com esse papel eram **dois trabalhos separados**:
+digitar a variação mês a mês, e depois informar o número de UM mês noutro campo
+para a régua bater. Ele já tem a tabela inteira copiada da fonte.
+
+Agora, em Configurações › Índices, há uma caixa **"Colar a tabela do boletim"**:
+cola, aperta "Conferir antes" (mostra o que entendeu, o que muda e o valor
+antigo de cada mês), e grava. A variação entra, o número-índice alinha a régua
+pelo **mês mais recente** da colagem, e a origem fica registrada como `BOLETIM`
+— distinta de `BCB-SGS` e de `MANUAL`, porque quando um número for contestado a
+primeira pergunta é de onde ele veio.
+
+**Duas travas, e as duas já pegaram coisa de verdade:**
+
+1. **O boletim tem de bater consigo mesmo.** Se número ÷ número anterior
+   discorda da variação declarada, é aviso na cara. Pegou no primeiro texto que
+   o dono mandou: dezembro/2025 dizia 0,27%, mas de 1.225,633 para 1.228,161 a
+   variação é 0,21% — a linha de dezembro estava com as três variações iguais
+   às de novembro, sinal de cópia errada.
+2. **A diferença contra o papel é dita na tela.** Ancorando pelo mês mais
+   recente, os meses anteriores saem uns centésimos do impresso, porque o
+   boletim publica a variação com duas casas e a volta acumula arredondamento.
+   No boletim dele isso dá 0,013% em julho — abaixo da folga, então nem aparece.
+   Acima de 0,02% aparece, com os dois números lado a lado.
+
+**Decisão minha, que ele pode querer diferente:** a régua é alinhada pelo mês
+MAIS RECENTE da colagem, porque é o que ele acabou de conferir e o que entra
+nos reajustes de agora. O custo é a diferença de centésimos nos meses antigos.
+A alternativa seria o reajuste passar a usar os números publicados em vez de
+acumular as variações — é mais fiel ao papel, mexe no cálculo de dinheiro, e
+por isso não fiz por conta própria.
+
+
+### ACOMPANHAMENTO — PEDAÇO 1 CONSTRUÍDO (migração 072)
+
+18/09/2026. O dono aprovou o desenho e mandou seguir: *"publique o que já pode
+ser publicado e siga com o pedaço 1"*. O desenho inteiro continua em
+`ACOMPANHAMENTO.md`; aqui fica o que existe agora e o que morde.
+
+**Onde está:** Obras › **Acompanhamento**.
+
+**O que já funciona:**
+
+- **Abrir processo** com assunto, tipo e uma obra (ou a empresa). Nada mais é
+  obrigatório — exigir órgão e prazo na abertura faria a pessoa deixar para
+  depois, e depois é nunca. Numeração `AC-000001`.
+- **Lançar andamento numa frase**, com enter. Data e autor entram sozinhos. A
+  mesma frase pode mudar, de uma vez, onde o papel está, para quando prometeram
+  e a situação — porque quem ligou para o órgão descobre as três coisas juntas.
+- **A situação "parado" é CALCULADA**, e o teto é por tipo: aditivo de prazo
+  vira parado em 10 dias, licença ambiental em 30. Um teto único acenderia a luz
+  nos dois lugares errados.
+- **A tela ordena por quem está mais perto de virar problema** — exigência,
+  depois o que passou da previsão, depois o parado — e escreve o MOTIVO na
+  própria linha. Os cinco quadrinhos do topo são filtro, não enfeite.
+- **Botão "Assumir os marcados"**: o caso das férias, resolvido em um clique em
+  vez de abrir um por um. A troca fica registrada em cada processo.
+
+**Decisões que valem conhecer antes de mexer:**
+
+- **Nada trava nada.** Não existe transição proibida entre situações (há teste
+  percorrendo os casos absurdos: deferido que volta, arquivado que reabre).
+  O órgão não segue ordem, e obrigar ordem faria a pessoa mentir para o sistema.
+- **O escopo usa `obras_de_registro_sem_autor`, e NÃO `obras_do_usuario`.** A
+  segunda devolve None (= "sem filtro de obra") para quem enxerga por autoria, e
+  aí o administrativo de obra veria os processos da empresa inteira. É a mesma
+  armadilha achada nas Locações em 11/09/2026.
+- **Abrir tem o mesmo recorte de listar** (`exigir_obra_no_escopo_sem_autoria`),
+  senão a pessoa criaria processo numa obra que depois não consegue abrir.
+- **Processo da EMPRESA não aparece para quem é preso a obra.** Certidão da sede
+  não é de obra nenhuma — padrão NEGAR, não esquecimento.
+- **`tocar_processo` entrou em `ACOES_NA_TELA`.** Sem isso o template recebe a
+  permissão indefinida, que é falso, e a tela abriria só de leitura para todo
+  mundo — sem erro nenhum para denunciar.
+
+**O que ficou de fora (pedaços 2 e 3):** modelos por tipo com passos sugeridos,
+aviso automático por WhatsApp de parado e previsão estourada, ofício gerado e
+numerado, deferimento que propõe atualizar a vigência da obra, e indicadores de
+demora por órgão.
+
+**Verificado:** suíte completa verde, 26 testes de regra no dublê, 17 de escopo
+com banco de verdade (incluindo os 404 pelas rotas), homologação por perfil
+verde, e a tela exercitada no navegador de ponta a ponta — abrir, lançar
+andamento, histórico, lista e celular.
+
+
+### O PEDIDO E AS DECISÕES do módulo de ACOMPANHAMENTO
 
 17/09/2026, o dono pediu a gestão burocrática da obra — aditivo de prazo,
 apostilamento, licença vencendo, protocolo —, que hoje ele faz no Pipefy
 ("protocolo e medições"). **O desenho inteiro está em `ACOMPANHAMENTO.md`** e
-está registrado na fila do `ROTEIRO.md`. Nada foi construído: ele precisa
-decidir o formato primeiro.
+está registrado na fila do `ROTEIRO.md`. **Ele aprovou em 18/09/2026** e o
+pedaço 1 está construído (seção acima).
 
 As três exigências dele mandam no desenho, e quem pegar isto não pode perder de
 vista: **rápido de alimentar** (andamento é uma frase e enter, ou ninguém
 lança), **não travado** (ele citou o SEI como contraexemplo) e **responder "o
 que está pendente"** para quem assume o assunto de alguém de férias.
 
-A decisão que mais pesa, e é dele: **data para desligar o quadro do Pipefy**.
-Manter os dois em paralelo é o pior resultado possível — informação pela metade
-é pior que informação nenhuma, porque quem bate o olho acredita nela.
+**A decisão que mais pesava, ele tomou**, e ela vale para o repositório inteiro
+(registrada também em `CONTEXTO.md` › Histórico de decisões): *"não vamos usar
+nenhum outro recurso (…) 100% toda a movimentação da empresa no ERP (…) não
+vamos utilizar Pipe, nem trazer dados antigos de lá — só as coisas novas
+mesmo"*. Ou seja: nada de convivência com ferramenta de fora, e o módulo nasce
+vazio. **Falta só a data de desligar o quadro do Pipefy.**
 
 **Por que havia obra sem empresa** — ele explicou, e não era defeito de dado:
 *"isso é porque foi criado primeiro a obra e depois a empresa"*. O conserto já
