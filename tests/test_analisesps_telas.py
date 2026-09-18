@@ -2037,6 +2037,19 @@ def app_relatorio(app, monkeypatch):
     monkeypatch.setattr(consultas, "aging_vencidos", lambda f, p="tudo": [
         {"faixa": "1 a 7 dias", "quantidade": 4, "total": Decimal("20000.00")},
         {"faixa": "mais de 90 dias", "quantidade": 1, "total": Decimal("41200.00")}])
+    # O analítico do PDF, acrescentado em 18/09/2026. Sem esta dublagem os
+    # testes do PDF batem no banco de verdade e devolvem 500 — foi assim que
+    # três testes quebraram no dia em que a seção nasceu.
+    import datetime as _dt
+    monkeypatch.setattr(consultas, "analitico_do_relatorio",
+                        lambda f, t="geral", p="tudo", limite=0: [
+                            {"id": "1409289353", "data": _dt.date(2026, 9, 10),
+                             "credor": "SERTAO CASA E CONSTRUCAO",
+                             "documento": "29.066.773/0001-52",
+                             "centro_custo": "OBRA-12",
+                             "tipo_despesa": "Material",
+                             "descricao": "Cimento CP-II 50kg para a laje",
+                             "valor": Decimal("3250.00")}])
     return app
 
 
@@ -4143,3 +4156,28 @@ def test_relatorio_SEM_lancamento_nenhum_nao_ganha_secao_vazia(app_relatorio,
     assert "lan" in texto.lower(), "o relatório saiu vazio — teste sem valor"
     assert "Anal" not in texto, (
         "desenhou a seção do analítico sem nenhum lançamento embaixo")
+
+
+def test_falha_no_ANALITICO_nao_derruba_o_relatorio_inteiro(app_relatorio,
+                                                            monkeypatch):
+    """⚠️ A regra da casa: o acessório não pode derrubar o principal.
+
+    O analítico é apêndice; o resumo É o relatório. Descoberto em 18/09/2026,
+    no dia em que a seção nasceu: uma falha na consulta do detalhe devolvia 500
+    e a pessoa ficava SEM RELATÓRIO NENHUM — perdendo os totais, as quebras e
+    os credores, que estavam prontos.
+
+    Mesma decisão do quadro por categoria, em 13/09."""
+    from app.apps.analisesps import consultas, pdf
+    monkeypatch.setattr(consultas, "analitico_do_relatorio",
+                        lambda *a, **k: 1 / 0)
+
+    texto = _texto_do_pdf(pdf.relatorio({}, "geral", "tudo"))
+
+    # O relatório saiu, e saiu inteiro na parte que importa.
+    assert "Ticket" in texto, "perdeu os totais por causa do analítico"
+    assert "845.300,55" in texto or "Valor total" in texto
+    # E diz que faltou, para ninguém concluir que não havia lançamento nenhum.
+    assert "Não consegui montar o anal" in texto.replace("\n", " "), (
+        "o analítico sumiu em silêncio")
+    assert "acima está completo e correto" in texto.replace("\n", " ")

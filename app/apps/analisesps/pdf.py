@@ -283,7 +283,23 @@ def relatorio(filtros: dict, tipo: str, periodo: str) -> bytes:
     #
     # FONTE 6,5 e quebra em até três linhas, como ele autorizou. É o mesmo
     # caminho do PDF do lote, que já reduz a fonte para caber a descrição.
-    analitico = consultas.analitico_do_relatorio(filtros, tipo, periodo)
+    # ⚠️ O ANALÍTICO É EXTRA; O RESUMO É O RELATÓRIO. Se a consulta do detalhe
+    # falhar, o PDF sai SEM ele em vez de não sair — é a mesma regra que o
+    # quadro por categoria ganhou em 13/09, e pelo mesmo motivo: perder o
+    # relatório inteiro por causa do apêndice é trocar um problema pequeno por
+    # um grande. A folha diz que faltou, para ninguém achar que não havia
+    # lançamento nenhum.
+    try:
+        analitico = consultas.analitico_do_relatorio(filtros, tipo, periodo)
+    except Exception:  # noqa: BLE001 — o resumo vale mais que o detalhe
+        logger.exception("Análise de SPs: falhou o analítico do relatório")
+        folha.titulo_secao("Analítico - lançamento a lançamento")
+        folha.observacao(
+            "Não consegui montar o analítico desta vez, e o resto do relatório "
+            "acima está completo e correto. Tente gerar de novo; se repetir, "
+            "use um filtro mais estreito ou exporte em CSV.")
+        analitico = []
+
     if analitico:
         folha.titulo_secao("Analítico - lançamento a lançamento")
         folha.tabela(

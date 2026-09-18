@@ -5553,6 +5553,27 @@ fora é o miúdo, não a despesa que interessa.
   recorta — mostrar vencimento num relatório de pagas faria a coluna não
   explicar por que aquela linha entrou.
 
+#### ⚠️ A suíte pegou o que a seção nova trouxe de risco
+
+Três testes do PDF quebraram no mesmo instante, e os dois motivos valem
+registro.
+
+**O primeiro era só de teste:** a dublagem da tela do relatório não conhecia a
+consulta nova, então os testes do PDF batiam no banco de verdade e voltavam
+500. Corrigido acrescentando o analítico à dublagem.
+
+**O segundo era de verdade, e é mais sério:** uma falha na consulta do detalhe
+**derrubava o PDF inteiro**. A pessoa ficaria sem relatório nenhum — perdendo
+os totais, as quebras e os credores, que já estavam prontos — por causa do
+apêndice.
+
+É a mesma regra que o quadro por categoria ganhou em 13/09, e que está escrita
+neste histórico desde então: **o acessório não pode derrubar o principal.**
+Agora o PDF sai **sem** o analítico em vez de não sair, e a folha diz que
+faltou — *"não consegui montar o analítico desta vez, e o resto do relatório
+acima está completo e correto"* — para ninguém concluir que não havia
+lançamento nenhum. Há teste cravando.
+
 #### Conferido gerando o PDF de verdade
 
 Três páginas, 45 lançamentos com descrição longa e credor comprido: a tabela
