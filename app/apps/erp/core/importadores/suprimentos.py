@@ -78,6 +78,20 @@ def _lista(texto: str) -> list[str]:
     return [p.strip() for p in re.split(r"[;,/]", texto or "") if p.strip()]
 
 
+def _categorias(texto: str) -> list[str]:
+    """As categorias do fornecedor, separadas SÓ por vírgula e ponto e vírgula.
+
+    A barra NÃO separa aqui, e isso não é detalhe: a planilha da BWS tem
+    categorias com barra no próprio nome — "Metais e Acessórios p/ WC",
+    "Material p/ Gás", "Material p/ Fôrro". Partir na barra transformava 31
+    fornecedores numa categoria inexistente ("Metais e Acessórios p") mais
+    outra ("WC"), e as duas caíam em "categoria não encontrada" sem ninguém
+    entender por quê — o fornecedor entrava, mas entrava SEM o que ele vende,
+    que é justamente o que faz a cotação chegar a ele.
+    """
+    return [p.strip() for p in re.split(r"[;,]", texto or "") if p.strip()]
+
+
 # ---------------------------------------------------------------------------
 # Fornecedores
 # ---------------------------------------------------------------------------
@@ -92,6 +106,13 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
     categorias = {_chave(c.nome): c for c in s.scalars(select(InsumoCategoria)).all()}
 
     criados, atualizados, rejeitados, sem_categoria = 0, 0, [], set()
+    # DOCUMENTO REPETIDO DENTRO DO PRÓPRIO ARQUIVO. O CNPJ é único no banco,
+    # então a segunda linha não cria fornecedor nenhum: ela SOBRESCREVE a
+    # primeira, calada. Na planilha da BWS isso vale por 126 documentos — há
+    # até uma linha "TESTE" carregando o CNPJ da própria BWS. Sobrescrever sem
+    # avisar é o pior desfecho: o cadastro fica com o nome de um e o e-mail de
+    # outro, e ninguém descobre até a cotação ir para o lugar errado.
+    vistos: dict[str, list[dict[str, Any]]] = {}
     for i, ln in enumerate(linhas, start=2):
         razao = _campo(ln, "razão social", "razao social", "fornecedor")
         doc = somente_digitos(_campo(ln, "cnpj/cpf", "cnpj", "cpf", "documento"))
@@ -100,6 +121,7 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
         try:
             if not doc:
                 raise ErroValidacao("CNPJ/CPF em branco.")
+            vistos.setdefault(doc, []).append({"linha": i, "nome": razao})
             tipo = "PJ" if len(doc) == 14 else "PF"
             dados = {
                 "tipo_pessoa": tipo, "cnpj_cpf": doc, "razao_social": razao,
@@ -111,7 +133,14 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
             forn = svc_forn.obter_por_documento(s, doc)
             if forn is None:
                 if simular:
-                    criados += 1
+                    # Na prévia nada é gravado, então a segunda linha do mesmo
+                    # CNPJ continuaria "não encontrada" e seria contada como
+                    # mais um fornecedor novo. A prévia diria 1.867 onde a
+                    # carga faria 1.733 — número que parece certo e não é.
+                    if len(vistos[doc]) > 1:
+                        atualizados += 1
+                    else:
+                        criados += 1
                     continue
                 forn = svc_forn.criar(s, dados, usuario)
                 criados += 1
@@ -138,8 +167,8 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
                 forn.canais_cotacao = sorted(set(canais))
             s.flush()
 
-            _ligar_categorias(s, forn, _lista(_campo(ln, "categoria de insumo",
-                                                     "categoria")), categorias,
+            _ligar_categorias(s, forn, _categorias(_campo(ln, "categoria de insumo",
+                                                         "categoria")), categorias,
                               sem_categoria)
             _garantir_contato(s, forn,
                               nome=_campo(ln, "contato", "nome do contato"),
@@ -147,9 +176,13 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
         except ErroValidacao as e:
             rejeitados.append({"linha": i, "fornecedor": razao or doc, "motivo": str(e)})
 
+    repetidos = [{"documento": d, "linhas": [o["linha"] for o in ocorrencias],
+                  "nomes": [o["nome"] for o in ocorrencias]}
+                 for d, ocorrencias in vistos.items() if len(ocorrencias) > 1]
     return {"no_arquivo": len(linhas), "criados": criados, "atualizados": atualizados,
             "rejeitados": rejeitados,
             "categorias_nao_encontradas": sorted(sem_categoria),
+            "documentos_repetidos": sorted(repetidos, key=lambda r: r["linhas"][0]),
             "simulacao": simular}
 
 
