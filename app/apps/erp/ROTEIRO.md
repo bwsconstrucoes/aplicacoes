@@ -109,6 +109,23 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+### DISPARO AUTOMÁTICO DE COTAÇÃO — o que falta depois do pedaço de 18/09/2026
+
+A tela **Planejar cotações** já monta o plano e vira cotação. O que o dono
+descreveu e ainda NÃO existe:
+
+- **Disparar os e-mails a partir do plano**, sem passar pela tela de Cotações.
+  Foi decisão minha manter o pedágio de um clique por cotação — vale rever
+  depois de ele usar, e a conversa é sobre confiança na sugestão, não sobre
+  dificuldade técnica.
+- **Aprender com o histórico:** quem respondeu rápido, quem deu o melhor preço
+  naquela categoria, quem ignorou as últimas três. Hoje a ordem é por regra
+  fixa (mesma cidade, porte); com histórico ela passaria a ser por resultado.
+  Precisa de meses de cotação no sistema para significar alguma coisa.
+- **Periodicidade:** rodar sozinho toda segunda e deixar o plano pronto.
+
+
+
 ### ACOMPANHAMENTO — a gestão burocrática da obra — pedido de 17/09/2026
 
 O dono pediu o que hoje ele faz no Pipefy ("protocolo e medições"), com um
@@ -117,18 +134,20 @@ apostilamento, renovação de licença, protocolo — com andamento de uma linha
 ("liguei, está com fulano no setor tal") e uma tela que responde "o que está
 pendente" para quem assume o assunto de alguém que saiu de férias.
 
-**O desenho completo está em `ACOMPANHAMENTO.md`**, apresentado a ele em
-17/09/2026 e aguardando a decisão sobre o formato. Resumo da proposta de
-entrega, em três pedaços:
+**O desenho completo está em `ACOMPANHAMENTO.md`**, aprovado por ele em
+18/09/2026. Entrega em três pedaços:
 
-1. Processo + andamento + situação (com "parado" calculado) + a tela "o que está
-   pendente" + botão Assumir. Duas tabelas de migração. Já substitui o Pipefy.
-2. Modelos por tipo, previsão de publicação e aviso automático por WhatsApp.
-3. Ofício gerado e numerado, deferimento que propõe atualizar a vigência da
-   obra, e indicadores de demora por órgão.
+1. ✔ **PRONTO (18/09/2026, migração 072)** — processo + andamento + situação
+   (com "parado" calculado) + a tela "o que está pendente" + botão Assumir.
+2. ✔ **PRONTO (18/09/2026, migração 073)** — lista de passos sugeridos por
+   tipo (lembrete, nunca trava) e o processo travado entrando na Agenda.
+3. ✔ **PRONTO (18/09/2026, migração 074)** — ofício gerado e numerado por
+   empresa/ano, deferimento que registra o aditivo na obra (propõe, a pessoa
+   confirma) e o quadro de demora por órgão.
 
-Decisão pendente do dono, e é a que mais importa: **data para desligar o quadro
-do Pipefy**. Manter os dois em paralelo é o pior resultado possível.
+Decisões tomadas por ele em 18/09: **nada de Pipefy** e **nada de importar dado
+antigo de lá** — o módulo nasce vazio e só recebe coisa nova. Falta só a **data
+de desligar** o quadro do Pipefy.
 
 ### O ASSISTENTE DE IA E O RELATÓRIO DE TRABALHO — pedidos de 10/09/2026
 

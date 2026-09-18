@@ -126,6 +126,25 @@ async function enviar(simular){
           cadastradas no ERP: <b>${escapar(rel.categorias_nao_encontradas.join(", "))}</b>.
           Marque <b>"criar as categorias"</b> acima e rode de novo, ou cadastre-as
           à mão — sem elas o insumo entra sem categoria.</div>` : ""}
+      {# DOCUMENTO REPETIDO NO PRÓPRIO ARQUIVO. Não é recusa: a linha entra. O
+         problema é que ela SOBRESCREVE a anterior de mesmo CNPJ, calada, e o
+         cadastro acaba com o nome de um e o e-mail de outro. Aparece em
+         destaque justamente porque o conserto é na planilha, não aqui. #}
+      ${rel.documentos_repetidos && rel.documentos_repetidos.length ? `
+        <div class="aviso alerta"><b>${rel.documentos_repetidos.length}</b>
+          CNPJ/CPF aparece(m) mais de uma vez no arquivo. Só um cadastro sobra
+          por documento — <b>a última linha sobrescreve as anteriores</b>.
+          Conserte na planilha e rode de novo.
+          <table style="margin-top:8px"><thead><tr><th>Documento</th>
+            <th>Linhas</th><th>Nomes na planilha</th></tr></thead>
+            <tbody>${rel.documentos_repetidos.slice(0,40).map(x => `<tr>
+              <td class="dados">${escapar(x.documento)}</td>
+              <td class="dados">${x.linhas.join(", ")}</td>
+              <td>${escapar(x.nomes.join(" · "))}</td></tr>`).join("")}
+            </tbody></table>
+          ${rel.documentos_repetidos.length > 40
+            ? `<div class="cartao-dica">…e mais ${rel.documentos_repetidos.length - 40}.</div>` : ""}
+        </div>` : ""}
       ${rel.rejeitados.length ? `
         <table style="margin-top:10px"><thead><tr>
           <th>Linha</th><th>Registro</th><th>Por que não entrou</th></tr></thead>

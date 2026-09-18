@@ -1,200 +1,159 @@
 # ============================================================================
-# BWS ERP — core/cadastros/receita.py
-# Consulta pública de CNPJ para cadastro limpo de fornecedores.
+# ERP — core/cadastros/receita.py
+# O cadastro de CNPJ como a Receita Federal o publica.
 #
-# Fontes (sem chave, gratuitas):
-#   1ª BrasilAPI  — https://brasilapi.com.br/api/cnpj/v1/{cnpj}
-#   2ª ReceitaWS  — https://receitaws.com.br/v1/cnpj/{cnpj}  (fallback; ~3/min)
+# PEDIDO DO DONO, 18/09/2026, olhando a planilha de fornecedores: *"eu queria
+# que você fizesse uma equalização dessa razão social através de pesquisa via
+# API (…) você faz a pesquisa desses CNPJs todos e já readequa com a
+# nomenclatura certa"*.
 #
-# Robustez: valida DV antes de gastar rede, timeout, retry, verificação de
-# HTTP 200, normalização (maiúsculas, espaços) e situação cadastral para as
-# travas do cadastro (C4 da especificação: fornecedor BAIXADO/INAPTO não
-# entra sem tratamento).
+# O PROBLEMA QUE ISSO RESOLVE é real e aparece na própria planilha: o mesmo
+# CNPJ aparece como "STOCK COMERCIO EP LTDA" e "STOCK EPI E EQUIPAMENTOS
+# INDUSTRIAIS"; outro como "GERDAU AÇO LONGOS SA" e "GERDAU AÇO LONGOS SA PE".
+# Cada comprador digitou o nome como lembrava. Nota fiscal, contrato e certidão
+# saem com a razão social OFICIAL — e é ela que tem de estar no cadastro.
+#
+# DE ONDE VEM O DADO: BrasilAPI (`brasilapi.com.br`), que republica a base
+# pública da Receita. Sem chave, sem cadastro, sem conta a pagar — o mesmo
+# critério que levou o ERP a usar o Banco Central para o INCC em vez da FGV.
+# Se um dia ela sair do ar, o cadastro continua como está: a consulta é pelo
+# BOTÃO, nunca no caminho de quem está usando a tela.
+#
+# O QUE ELA NUNCA FAZ: apagar o que a pessoa escreveu à mão sem dizer. A
+# consulta preenche o que está VAZIO e, quando discorda do que existe, RELATA
+# a divergência em vez de sobrescrever — quem decide trocar o nome de um
+# fornecedor é gente, olhando os dois lados.
 # ============================================================================
 from __future__ import annotations
 
-import json
+import logging
 import re
 import time
-import urllib.error
-import urllib.request
-from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from app.apps.erp.core.cadastros.validadores import cnpj_valido, somente_digitos
+logger = logging.getLogger(__name__)
 
-_TIMEOUT = 20
-_TENTATIVAS = 2
+URL = "https://brasilapi.com.br/api/cnpj/v1/{cnpj}"
+TEMPO_LIMITE = 20
 
-SITUACOES_BLOQUEANTES = {"BAIXADA", "INAPTA", "NULA"}
-SITUACOES_ALERTA = {"SUSPENSA"}
-
-
-class ErroConsultaCNPJ(Exception):
-    """Falha de rede/serviço na consulta (não confundir com CNPJ inválido)."""
-
-
-@dataclass
-class DadosCNPJ:
-    cnpj: str
-    razao_social: str
-    nome_fantasia: Optional[str]
-    situacao: str                      # ATIVA / BAIXADA / SUSPENSA / INAPTA / NULA
-    cnae_principal: Optional[str]
-    cnae_descricao: Optional[str]
-    data_abertura: Optional[str]       # AAAA-MM-DD
-    municipio: Optional[str]
-    uf: Optional[str]
-    email: Optional[str]
-    telefone: Optional[str]
-    # O ENDEREÇO (migração 056). A declaração que vai para a prefeitura exige o
-    # endereço de quem recebe o serviço; sem isto alguém teria de digitar à mão
-    # o que a Receita já entrega de graça na mesma consulta.
-    cep: Optional[str] = None
-    logradouro: Optional[str] = None
-    numero: Optional[str] = None
-    complemento: Optional[str] = None
-    bairro: Optional[str] = None
-    codigo_ibge: Optional[str] = None
-    fonte: str = "BRASILAPI"
-    bruto: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def bloqueante(self) -> bool:
-        return self.situacao.upper() in SITUACOES_BLOQUEANTES
-
-    @property
-    def alerta(self) -> bool:
-        return self.situacao.upper() in SITUACOES_ALERTA
+# A BrasilAPI limita a 3 consultas por minuto por IP no plano aberto. 21
+# segundos entre uma e outra é o que cabe sem levar 429 — e é por isso que a
+# equalização de 1.700 fornecedores é TAREFA DE FUNDO, em lotes, e não um
+# botão que trava a tela por dez horas.
+ESPERA_ENTRE_CONSULTAS = 21
 
 
-def _normalizar_texto(v: Optional[str]) -> Optional[str]:
-    if not v:
-        return None
-    v = re.sub(r"\s{2,}", " ", str(v)).strip().upper()
-    return v or None
+class ReceitaIndisponivel(Exception):
+    """A consulta não respondeu. Não é erro de dado — é falta de resposta."""
 
 
-def _http_json(url: str) -> dict[str, Any]:
-    ultimo: Optional[Exception] = None
-    for tentativa in range(1, _TENTATIVAS + 1):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "ERP-BWS/1.0"})
-            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-                if resp.status != 200:
-                    raise ErroConsultaCNPJ(f"HTTP {resp.status} em {url}")
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                raise ErroConsultaCNPJ("CNPJ não encontrado na base da Receita.")
-            if e.code == 429:
-                raise ErroConsultaCNPJ("Limite de consultas atingido — aguarde 1 minuto e tente de novo.")
-            ultimo = e
-        except Exception as e:
-            ultimo = e
-        if tentativa < _TENTATIVAS:
-            time.sleep(1.5 * tentativa)
-    raise ErroConsultaCNPJ(f"Serviço de consulta indisponível: {ultimo}")
+def _digitos(valor: Any) -> str:
+    return re.sub(r"\D", "", str(valor or ""))
 
 
-def _ibge_de(municipio: Optional[str], uf: Optional[str]) -> Optional[str]:
-    """O código IBGE do município, pela tabela offline que já existe no repo.
+def consultar(cnpj: str) -> Optional[dict[str, Any]]:
+    """O que a Receita publica sobre este CNPJ, ou None se ele não existe lá.
 
-    Só é usado quando a fonte não devolve o código — a ReceitaWS não devolve.
-    A tabela é a do `emissaonf`, baixada uma vez do IBGE: reusar é melhor do
-    que ter duas listas de 5.570 municípios que podem divergir.
+    Levanta `ReceitaIndisponivel` quando o problema é de rede — a diferença
+    importa: CNPJ inexistente é achado sobre o dado, rede fora é "tente
+    depois", e tratar os dois igual marcaria fornecedor bom como inválido.
     """
-    if not municipio or not uf:
-        return None
+    import requests
+
+    limpo = _digitos(cnpj)
+    if len(limpo) != 14:
+        return None            # CPF ou documento torto: não há o que consultar
     try:
-        import os
-
-        from app.apps.emissaonf import municipios_ibge as mapa
-        # Só a tabela que já está no repositório: `carregar_cache` sabe baixar
-        # do IBGE se o arquivo faltar, e uma ida à rede no meio de um cadastro
-        # é justamente o que não se quer aqui.
-        if not os.path.exists(mapa.CACHE_PADRAO):
-            return None
-        return str(mapa.resolver(municipio, mapa.carregar_cache(), uf)) or None
-    except Exception:
-        # Município ambíguo, nome fora do padrão, tabela indisponível: fica sem
-        # o código e a pessoa preenche. Chutar aqui poria a nota no município
-        # errado, que é problema de fisco, não de cadastro.
+        r = requests.get(URL.format(cnpj=limpo), timeout=TEMPO_LIMITE)
+    except Exception as erro:
+        raise ReceitaIndisponivel(str(erro)) from erro
+    if r.status_code == 404:
         return None
-
-
-def _da_brasilapi(d: dict[str, Any], cnpj: str) -> DadosCNPJ:
-    tel = somente_digitos(str(d.get("ddd_telefone_1") or ""))
-    municipio = _normalizar_texto(d.get("municipio"))
-    uf = _normalizar_texto(d.get("uf"))
-    return DadosCNPJ(
-        cnpj=cnpj,
-        razao_social=_normalizar_texto(d.get("razao_social")) or "",
-        nome_fantasia=_normalizar_texto(d.get("nome_fantasia")),
-        situacao=(_normalizar_texto(d.get("descricao_situacao_cadastral")) or "DESCONHECIDA"),
-        cnae_principal=str(d.get("cnae_fiscal") or "") or None,
-        cnae_descricao=_normalizar_texto(d.get("cnae_fiscal_descricao")),
-        data_abertura=(d.get("data_inicio_atividade") or None),
-        municipio=municipio,
-        uf=uf,
-        email=(str(d.get("email") or "").strip().lower() or None),
-        telefone=tel or None,
-        cep=somente_digitos(str(d.get("cep") or "")) or None,
-        logradouro=_normalizar_texto(
-            " ".join(x for x in (d.get("descricao_tipo_de_logradouro"),
-                                 d.get("logradouro")) if x)),
-        numero=(str(d.get("numero") or "").strip() or None),
-        complemento=_normalizar_texto(d.get("complemento")),
-        bairro=_normalizar_texto(d.get("bairro")),
-        codigo_ibge=(str(d.get("codigo_municipio_ibge") or "").strip()
-                     or _ibge_de(municipio, uf)),
-        fonte="BRASILAPI", bruto=d,
-    )
-
-
-def _da_receitaws(d: dict[str, Any], cnpj: str) -> DadosCNPJ:
-    if str(d.get("status", "")).upper() == "ERROR":
-        raise ErroConsultaCNPJ(d.get("message") or "CNPJ rejeitado pela ReceitaWS.")
-    atv = (d.get("atividade_principal") or [{}])[0]
-    abertura = None
-    if d.get("abertura"):                                   # vem DD/MM/AAAA
-        p = str(d["abertura"]).split("/")
-        if len(p) == 3:
-            abertura = f"{p[2]}-{p[1]}-{p[0]}"
-    return DadosCNPJ(
-        cnpj=cnpj,
-        razao_social=_normalizar_texto(d.get("nome")) or "",
-        nome_fantasia=_normalizar_texto(d.get("fantasia")),
-        situacao=(_normalizar_texto(d.get("situacao")) or "DESCONHECIDA"),
-        cnae_principal=somente_digitos(str(atv.get("code") or "")) or None,
-        cnae_descricao=_normalizar_texto(atv.get("text")),
-        data_abertura=abertura,
-        municipio=_normalizar_texto(d.get("municipio")),
-        uf=_normalizar_texto(d.get("uf")),
-        email=(str(d.get("email") or "").strip().lower() or None),
-        telefone=somente_digitos(str(d.get("telefone") or "").split("/")[0]) or None,
-        cep=somente_digitos(str(d.get("cep") or "")) or None,
-        logradouro=_normalizar_texto(d.get("logradouro")),
-        numero=(str(d.get("numero") or "").strip() or None),
-        complemento=_normalizar_texto(d.get("complemento")),
-        bairro=_normalizar_texto(d.get("bairro")),
-        # A ReceitaWS não devolve o código do município: sai da tabela offline.
-        codigo_ibge=_ibge_de(_normalizar_texto(d.get("municipio")),
-                             _normalizar_texto(d.get("uf"))),
-        fonte="RECEITAWS", bruto=d,
-    )
-
-
-def consultar_cnpj(cnpj: str) -> DadosCNPJ:
-    """Consulta o CNPJ nas fontes públicas. Levanta ValueError para CNPJ
-    estruturalmente inválido e ErroConsultaCNPJ para falhas de serviço."""
-    dig = somente_digitos(cnpj)
-    if not cnpj_valido(dig):
-        raise ValueError(f"CNPJ inválido (dígito verificador não confere): {cnpj!r}")
+    if r.status_code == 429:
+        raise ReceitaIndisponivel("limite de consultas por minuto atingido")
+    if r.status_code >= 400:
+        raise ReceitaIndisponivel(f"a consulta respondeu {r.status_code}")
     try:
-        return _da_brasilapi(_http_json(f"https://brasilapi.com.br/api/cnpj/v1/{dig}"), dig)
-    except ErroConsultaCNPJ as e_primaria:
-        try:
-            return _da_receitaws(_http_json(f"https://receitaws.com.br/v1/cnpj/{dig}"), dig)
-        except ErroConsultaCNPJ:
-            raise e_primaria
+        d = r.json()
+    except ValueError as erro:
+        raise ReceitaIndisponivel("resposta ilegível") from erro
+    return _traduzir(d)
+
+
+def _traduzir(d: dict[str, Any]) -> dict[str, Any]:
+    """Os nomes da BrasilAPI viram os nomes do ERP, e só o que interessa."""
+    def t(chave: str) -> str:
+        return str(d.get(chave) or "").strip()
+
+    return {
+        "cnpj": _digitos(d.get("cnpj")),
+        "razao_social": t("razao_social"),
+        # `nome_fantasia` vem vazio para a maioria das empresas — é campo
+        # opcional na Receita. Vazio NÃO apaga o que a BWS já tem.
+        "nome_fantasia": t("nome_fantasia"),
+        "situacao": t("descricao_situacao_cadastral").upper(),
+        "data_abertura": t("data_inicio_atividade"),
+        "cnae_principal": t("cnae_fiscal") or str(d.get("cnae_fiscal") or ""),
+        "cnae_descricao": t("cnae_fiscal_descricao"),
+        "logradouro": " ".join(x for x in (t("descricao_tipo_de_logradouro"),
+                                           t("logradouro")) if x).strip(),
+        "numero": t("numero"),
+        "complemento": t("complemento"),
+        "bairro": t("bairro"),
+        "cep": _digitos(d.get("cep")),
+        "municipio": t("municipio"),
+        "uf": t("uf"),
+        "telefone": _digitos(d.get("ddd_telefone_1")),
+        "email": t("email").lower(),
+        "porte": t("porte"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Equalizar o cadastro
+# ---------------------------------------------------------------------------
+# Os campos que a consulta pode PREENCHER quando estão vazios no cadastro.
+# Razão social NÃO está aqui de propósito: ela quase nunca está vazia, e
+# trocá-la é justamente a decisão que precisa de gente.
+PREENCHIVEIS = ("cnae_principal", "logradouro", "numero", "complemento",
+                "bairro", "cep", "municipio", "uf")
+
+
+def comparar(forn, dados: dict[str, Any]) -> dict[str, Any]:
+    """O que mudaria neste fornecedor, separado em PREENCHER e DIVERGE.
+
+    Não toca no objeto: existe assim para a prévia mostrar antes de gravar, e
+    para ser testável sem banco.
+    """
+    preencher: dict[str, Any] = {}
+    diverge: dict[str, Any] = {}
+
+    for campo in PREENCHIVEIS:
+        novo = (dados.get(campo) or "").strip()
+        if not novo:
+            continue
+        atual = (getattr(forn, campo, None) or "").strip()
+        if not atual:
+            preencher[campo] = novo
+        elif _chave(atual) != _chave(novo):
+            diverge[campo] = {"no_erp": atual, "na_receita": novo}
+
+    oficial = (dados.get("razao_social") or "").strip()
+    atual = (getattr(forn, "razao_social", None) or "").strip()
+    if oficial and _chave(atual) != _chave(oficial):
+        diverge["razao_social"] = {"no_erp": atual, "na_receita": oficial}
+
+    fantasia = (dados.get("nome_fantasia") or "").strip()
+    if fantasia and not (getattr(forn, "nome_fantasia", None) or "").strip():
+        preencher["nome_fantasia"] = fantasia
+
+    return {"preencher": preencher, "diverge": diverge,
+            "situacao": dados.get("situacao", ""),
+            "baixada": dados.get("situacao", "") not in ("ATIVA", "")}
+
+
+def _chave(texto: str) -> str:
+    import unicodedata
+    bruto = unicodedata.normalize("NFKD", (texto or "").strip().lower())
+    sem_acento = "".join(c for c in bruto if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", " ", sem_acento).strip()

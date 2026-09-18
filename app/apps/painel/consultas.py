@@ -1194,9 +1194,27 @@ NO_SALDO = _sql_tipos_no_saldo()
 _SOCIO = "COALESCE(NULLIF(TRIM(razao_social),''), '(sem contraparte)')"
 _OBRA = OBRA_OU_SEM
 
-# Entrada é o que o sócio colocou; saída, o que voltou para ele.
-_APORTADO = "SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END)"
-_DEVOLVIDO = "SUM(CASE WHEN pago_recebido < 0 THEN -pago_recebido ELSE 0 END)"
+# APORTE só conta quando ENTRA na obra; DEVOLUÇÃO só quando SAI.
+#
+# Não basta olhar o sinal, e não basta olhar o nome — precisa dos dois juntos.
+# O motivo está na nota de `TIPOS_NO_SALDO` (`sync/fato.py`): quando a BWS põe
+# dinheiro numa obra, o MESMO nome ("Aportes BWS") aparece dos dois lados — saída
+# da conta da matriz e entrada na conta da obra. O aporte de verdade é o que
+# entra; o outro é o registro de onde o dinheiro saiu.
+#
+# Com esta regra o lado da matriz cai fora sozinho, porque tem sempre o sinal
+# contrário ao que o nome dele diz. Vale também para a volta: "Devolução de
+# Aportes BWS" entrando na matriz é positivo, e devolução só conta quando sai.
+#
+# Antes disto o bloco decidia só pelo sinal. Na tela do dono, em 17/09/2026, a
+# BWS aparecia com aportado R$ 1.677.455,70 e devolvido O MESMO VALOR, ao
+# centavo: saldo zero. O painel dizia que ela não tinha nada aplicado na obra,
+# quando tinha 1,67 milhão.
+_E_DEVOLUCAO = f"({TIPO_APORTE}) = 'Devolução de Aporte'"
+_APORTADO = ("SUM(CASE WHEN pago_recebido > 0 AND NOT " + _E_DEVOLUCAO +
+             " THEN pago_recebido ELSE 0 END)")
+_DEVOLVIDO = ("SUM(CASE WHEN pago_recebido < 0 AND " + _E_DEVOLUCAO +
+              " THEN -pago_recebido ELSE 0 END)")
 
 
 def _agregado_de_aporte(f: Filtros, chaves: list[str]) -> list[dict]:

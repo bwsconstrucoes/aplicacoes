@@ -29,12 +29,21 @@ from app.apps.erp.db.models.cadastros import (
 )
 
 
-class ErroValidacao(Exception):
-    """Erro de regra de negócio — mensagem segura para exibir ao usuário."""
-
-
-class ErroPermissao(Exception):
-    """Usuário sem perfil para a operação."""
+# AS EXCEÇÕES SÃO AS DO `core/comum/auditoria`, e não cópias locais.
+#
+# Elas eram definidas aqui, com o mesmo nome — e isso foi um defeito de
+# verdade, achado em 18/09/2026 carregando a planilha de 1.773 fornecedores:
+# UMA linha com o CNPJ e o CPF digitados na mesma célula derrubou a carga
+# INTEIRA. O importador tem `except ErroValidacao` para recusar a linha e
+# seguir, mas a classe que ele importa é a do `auditoria`, e a que este módulo
+# levantava era outra classe com o mesmo nome. O `except` não pegava.
+#
+# Duas classes homônimas é o tipo de coisa que passa por toda revisão: o código
+# lê exatamente igual nos dois lados. Só aparece no dia em que uma linha ruim
+# derruba mil e setecentas boas.
+from app.apps.erp.core.comum.auditoria import (  # noqa: E402  (fica aqui, junto do porquê)
+    ErroPermissao, ErroValidacao,
+)
 
 
 # ---------------------------------------------------------------------------

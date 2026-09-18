@@ -1,9 +1,21 @@
 # ACOMPANHAMENTO — a gestão burocrática da obra (desenho, ainda não construído)
 
-> **Estado: DESENHO.** Nada disto existe no sistema ainda. Este arquivo é a
-> proposta apresentada ao dono em 17/09/2026, para ele decidir o formato antes
-> de qualquer linha de código. Quando for construído, o que valer vira
-> `HISTORICO.md` e as perguntas vão para `PERGUNTAS.md`.
+> **Estado: OS TRÊS PEDAÇOS CONSTRUÍDOS em 18/09/2026** (migrações 072 a 074).
+> O 3 trouxe o **ofício gerado e numerado**, o **deferimento que registra o
+> aditivo na obra** e o quadro de **quanto cada órgão demora**.
+>
+> Estado anterior: **pedaços 1 e 2** (migrações 072 e 073).
+> O 1 trouxe processo, andamento, situação com "parado" calculado, a tela "o
+> que está pendente" e o botão Assumir. O 2 trouxe a **lista de passos
+> sugeridos por tipo** e o **aviso que chega sozinho**: processo com exigência,
+> com previsão estourada ou parado entra na **Agenda**, que é a tela que se
+> abre de manhã. O pedaço 3 continua na fila (§11).
+>
+> **Estado anterior: APROVADO, em construção (pedaço 1).** O desenho abaixo foi
+> apresentado ao dono em 17/09/2026 e aprovado por ele em 18/09/2026, com duas
+> decisões que mudaram a §12: **nada de Pipefy, e nada de dado antigo de lá**.
+> Conforme for construído, o que valer vira `HISTORICO.md` e as perguntas vão
+> para `PERGUNTAS.md`.
 
 ---
 
@@ -204,30 +216,83 @@ linha, situação (com o "parado" calculado), documentos, e a tela "o que está
 pendente" com o botão Assumir. Ligado à obra e ao Arquivo. Migração de banco:
 duas tabelas.
 
-**Pedaço 2 — o que faz lembrar sozinho.** Modelos por tipo, com passos e prazos
-típicos; previsão de publicação; aviso por WhatsApp ao responsável quando algo
-fica parado ou passa da previsão (a infraestrutura de agenda e WhatsApp já
-existe no ERP).
+**Pedaço 2 — o que faz lembrar sozinho.** ✔ **PRONTO (18/09/2026, migração
+073).** Cada tipo traz a lista do que costuma ter que ser feito, e o processo
+travado entra na **Agenda**.
 
-**Pedaço 3 — o que fecha o ciclo.** Ofício gerado e numerado; deferimento que
-propõe atualizar a vigência da obra; indicadores por órgão (quanto tempo cada
-órgão demora, por tipo de processo).
+Duas decisões que valem registro:
+
+- **A lista de passos é SUGESTÃO, e a prova disso é uma ausência.** A tabela
+  `processo_passos` não tem `obrigatorio`, nem `depende_de`, nem `bloqueia` —
+  há um teste estrutural cobrando que essas colunas nunca apareçam. Marcar fora
+  de ordem é permitido, e o processo fecha com passo em branco sem reclamar.
+  Os passos são LINHAS e não um JSON fechado justamente para caber o passo que
+  só aquela prefeitura pede.
+- **O aviso entrou na AGENDA, e não numa notificação própria.** A tela do
+  Acompanhamento é a de quem já lembrou do assunto; a agenda é a que se abre de
+  manhã, já tem escopo por obra, já tem "resolver" e "dispensar", e já é para
+  onde o dono olha. Fazer um segundo canal de avisos seria construir de novo o
+  que existe — e dividir a atenção dele em dois lugares.
+
+**Pedaço 3 — o que fecha o ciclo.** ✔ **PRONTO (18/09/2026, migração 074).**
+
+- **O ofício.** Modelo por tipo, com a epígrafe montada do que o ERP já sabe
+  (contrato, obra, objeto, local, processo). Três decisões: o texto é **sempre
+  editável antes de gerar** (modelo que não se ajusta faz a pessoa voltar para
+  o Word); o **corpo fica guardado como foi enviado** (regerar do modelo meses
+  depois daria outro texto, e o papel do órgão e o sistema divergiriam em
+  silêncio); e a **numeração é por empresa e por ano, com restrição única no
+  banco** — sem ela, duas pessoas gerando ao mesmo tempo produzem dois
+  "OF 012/2026". O rascunho **não numera**: numerar o que vai ser descartado
+  deixaria buraco na sequência.
+  O que o ERP não sabe fica como `____________`, de propósito: espaço em branco
+  é pedido de atenção, valor inventado passa despercebido.
+- **O deferimento.** O sistema **propõe**, a pessoa **confirma** — nunca
+  automático e calado, porque mexer sozinho no prazo de um contrato é mexer em
+  dinheiro e o erro só apareceria numa medição recusada meses depois. O número
+  do termo é digitado, não adivinhado: número inventado vira divergência com o
+  contrato do órgão. Reusa `criar_aditivo`, que já sabe somar valor vigente e
+  mexer na vigência — escrever de novo faria duas verdades sobre o mesmo
+  contrato.
+- **A demora por órgão.** Só entra processo **encerrado com data de protocolo**:
+  o que está aberto não demorou, está demorando, e misturar puxaria a média
+  para baixo por causa dos que travaram. A contagem viaja junto e a coluna
+  "confiança" diz em português quando é **um caso só** — ler "média 4" de um
+  caso como se fosse regra é o erro que isso evita.
 
 ---
 
-## 12. Riscos e decisões que são do dono
+## 12. As duas decisões do dono, 18/09/2026
 
-- **O pior cenário é ficar com os dois.** Se a equipe continuar alimentando o
-  Pipefy em paralelo, o ERP fica desatualizado, e informação pela metade é pior
-  que informação nenhuma. Quando o pedaço 1 entrar, o quadro "protocolo e
-  medições" do Pipefy precisa de **data marcada para desligar**.
-- **Trazer o que está aberto hoje no Pipefy**: dá, mas o histórico de comentários
-  vem bagunçado. Proposta: importar só os cartões ABERTOS, cada um com um
-  andamento único resumindo o que havia, e deixar o histórico velho no Pipefy
-  como consulta. Importar tudo custa caro e entrega ruído.
-- **Quem alimenta.** O módulo só funciona se as pessoas que ligam para o órgão
-  lançarem a frase. Isso é decisão de rotina, não de software — e nenhum desenho
-  resolve sozinho.
+Eu havia listado o Pipefy como risco em aberto. Ele fechou os dois pontos:
+
+> *"Não vamos usar nenhum outro recurso. A ideia é a gente fechar **100% toda a
+> movimentação da empresa no ERP**. E o que ele não estiver atendendo, a gente
+> vai ajustar para poder atender. Não vamos utilizar Pipe, **nem trazer dados
+> antigos de lá** — só as coisas novas mesmo."*
+
+**Decisão 1 — nada de sistema paralelo.** Não existe convivência com o Pipefy,
+nem período de transição com os dois alimentados. O que falta no ERP vira
+ajuste no ERP, não motivo para voltar ao Pipefy. Isto derruba o "pior cenário"
+que eu tinha apontado: ele não vai acontecer porque não vai haver dois.
+
+**Decisão 2 — nada de importar o passado.** Processo antigo fica onde está, de
+consulta. O acompanhamento começa vazio e só recebe coisa nova. Isso poupa a
+importação suja que eu tinha proposto (cartões abertos com histórico resumido)
+e, principalmente, evita que o módulo nasça cheio de assunto que ninguém vai
+tocar — que é o jeito mais rápido de a tela "o que está pendente" perder
+credibilidade.
+
+**Exigência de forma, dita junto:** *"é interessante também que tenha um visual
+agradável das informações"*. Não é enfeite: a tela do acompanhamento é feita
+para ser olhada de relance por quem assumiu o assunto de outro. Se ela for uma
+tabela crua, ninguém bate o olho — vai abrir um por um, e aí o módulo não fez o
+trabalho dele.
+
+O que continua valendo como risco, e não é software:
+
+- **Quem alimenta.** O módulo só funciona se quem liga para o órgão lançar a
+  frase. Nenhum desenho resolve isso sozinho.
 - **Fica de fora**: execução física (cronograma, diário, efetivo) e tarefas
   internas da equipe.
 

@@ -78,6 +78,20 @@ def _lista(texto: str) -> list[str]:
     return [p.strip() for p in re.split(r"[;,/]", texto or "") if p.strip()]
 
 
+def _categorias(texto: str) -> list[str]:
+    """As categorias do fornecedor, separadas SÓ por vírgula e ponto e vírgula.
+
+    A barra NÃO separa aqui, e isso não é detalhe: a planilha da BWS tem
+    categorias com barra no próprio nome — "Metais e Acessórios p/ WC",
+    "Material p/ Gás", "Material p/ Fôrro". Partir na barra transformava 31
+    fornecedores numa categoria inexistente ("Metais e Acessórios p") mais
+    outra ("WC"), e as duas caíam em "categoria não encontrada" sem ninguém
+    entender por quê — o fornecedor entrava, mas entrava SEM o que ele vende,
+    que é justamente o que faz a cotação chegar a ele.
+    """
+    return [p.strip() for p in re.split(r"[;,]", texto or "") if p.strip()]
+
+
 # ---------------------------------------------------------------------------
 # Fornecedores
 # ---------------------------------------------------------------------------
@@ -92,6 +106,13 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
     categorias = {_chave(c.nome): c for c in s.scalars(select(InsumoCategoria)).all()}
 
     criados, atualizados, rejeitados, sem_categoria = 0, 0, [], set()
+    # DOCUMENTO REPETIDO DENTRO DO PRÓPRIO ARQUIVO. O CNPJ é único no banco,
+    # então a segunda linha não cria fornecedor nenhum: ela SOBRESCREVE a
+    # primeira, calada. Na planilha da BWS isso vale por 126 documentos — há
+    # até uma linha "TESTE" carregando o CNPJ da própria BWS. Sobrescrever sem
+    # avisar é o pior desfecho: o cadastro fica com o nome de um e o e-mail de
+    # outro, e ninguém descobre até a cotação ir para o lugar errado.
+    vistos: dict[str, list[dict[str, Any]]] = {}
     for i, ln in enumerate(linhas, start=2):
         razao = _campo(ln, "razão social", "razao social", "fornecedor")
         doc = somente_digitos(_campo(ln, "cnpj/cpf", "cnpj", "cpf", "documento"))
@@ -100,6 +121,7 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
         try:
             if not doc:
                 raise ErroValidacao("CNPJ/CPF em branco.")
+            vistos.setdefault(doc, []).append({"linha": i, "nome": razao})
             tipo = "PJ" if len(doc) == 14 else "PF"
             dados = {
                 "tipo_pessoa": tipo, "cnpj_cpf": doc, "razao_social": razao,
@@ -111,15 +133,32 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
             forn = svc_forn.obter_por_documento(s, doc)
             if forn is None:
                 if simular:
-                    criados += 1
+                    # Na prévia nada é gravado, então a segunda linha do mesmo
+                    # CNPJ continuaria "não encontrada" e seria contada como
+                    # mais um fornecedor novo. A prévia diria 1.867 onde a
+                    # carga faria 1.733 — número que parece certo e não é.
+                    if len(vistos[doc]) > 1:
+                        atualizados += 1
+                    else:
+                        criados += 1
                     continue
                 forn = svc_forn.criar(s, dados, usuario)
                 criados += 1
             else:
                 if not simular:
+                    # SÓ PREENCHE O QUE ESTÁ VAZIO quando o CNPJ já apareceu
+                    # antes NO MESMO ARQUIVO: são duas linhas do mesmo
+                    # fornecedor, e a segunda não é "mais nova" que a primeira —
+                    # é outra pessoa que cadastrou. Deixar a última vencer fazia
+                    # o e-mail do fornecedor ser o do segundo vendedor, ao acaso
+                    # da ordem das linhas.
+                    repetido_no_arquivo = len(vistos[doc]) > 1
                     for campo in ("nome_fantasia", "email", "telefone", "municipio"):
-                        if dados[campo]:
-                            setattr(forn, campo, dados[campo])
+                        if not dados[campo]:
+                            continue
+                        if repetido_no_arquivo and getattr(forn, campo, None):
+                            continue
+                        setattr(forn, campo, dados[campo])
                 atualizados += 1
             if simular:
                 continue
@@ -127,29 +166,57 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
             porte = PORTES.get(_chave(_campo(ln, "porte do fornecedor", "porte")))
             if porte:
                 forn.porte = porte
+            # REGIÃO, CANAL e CATEGORIA SOMAM, não substituem — mudança de
+            # 18/09/2026, quando o dono explicou de onde vinham os CNPJs
+            # repetidos: *"um comprador cadastrou, aí depois um segundo
+            # comprador cadastrou de novo"*. As duas linhas são o mesmo
+            # fornecedor visto por duas pessoas, e cada uma sabia de um pedaço.
+            #
+            # A união é a direção SEGURA para um filtro: categoria a menos
+            # significa fornecedor que nunca é cotado naquilo — some do radar
+            # sem ninguém perceber. Categoria a mais custa um e-mail que a
+            # pessoa vê e descarta.
             regioes = [r.upper() for r in _lista(_campo(ln, "região de atuação",
                                                         "regiao de atuacao", "região"))]
             if regioes:
-                forn.regioes_atuacao = regioes
+                forn.regioes_atuacao = sorted(set(forn.regioes_atuacao or []) | set(regioes))
             canais = [CANAIS[_chave(c)] for c in _lista(_campo(ln, "envio de cotações",
                                                                "envio de cotacoes", "canal"))
                       if _chave(c) in CANAIS]
             if canais:
-                forn.canais_cotacao = sorted(set(canais))
+                forn.canais_cotacao = sorted(set(forn.canais_cotacao or []) | set(canais))
             s.flush()
 
-            _ligar_categorias(s, forn, _lista(_campo(ln, "categoria de insumo",
-                                                     "categoria")), categorias,
+            _ligar_categorias(s, forn, _categorias(_campo(ln, "categoria de insumo",
+                                                         "categoria")), categorias,
                               sem_categoria)
+            # QUEM CADASTROU vira a observação do contato, quando a planilha
+            # não trouxer outra. Pedido do dono: *"bota como observação a
+            # pessoa que cadastrou ele, porque aí já dá uma diferenciação"* —
+            # com dois vendedores do mesmo fornecedor, saber quem trouxe cada
+            # um é o começo de descobrir do que cada um trata.
+            quem = _campo(ln, "responsável pelo registro", "responsavel pelo registro",
+                          "quem cadastrou")
+            quando = _campo(ln, "data de registro")
+            observacao = _campo(ln, "observação do contato", "observacao do contato",
+                                "observação", "observacao")
+            if not observacao and quem:
+                observacao = (f"Cadastrado por {quem.split(' - ')[0].strip()}"
+                              + (f" em {quando}" if quando else "") + ".")
             _garantir_contato(s, forn,
                               nome=_campo(ln, "contato", "nome do contato"),
-                              email=dados["email"], telefone=dados["telefone"])
+                              email=dados["email"], telefone=dados["telefone"],
+                              observacao=observacao)
         except ErroValidacao as e:
             rejeitados.append({"linha": i, "fornecedor": razao or doc, "motivo": str(e)})
 
+    repetidos = [{"documento": d, "linhas": [o["linha"] for o in ocorrencias],
+                  "nomes": [o["nome"] for o in ocorrencias]}
+                 for d, ocorrencias in vistos.items() if len(ocorrencias) > 1]
     return {"no_arquivo": len(linhas), "criados": criados, "atualizados": atualizados,
             "rejeitados": rejeitados,
             "categorias_nao_encontradas": sorted(sem_categoria),
+            "documentos_repetidos": sorted(repetidos, key=lambda r: r["linhas"][0]),
             "simulacao": simular}
 
 
@@ -171,10 +238,24 @@ def _ligar_categorias(s: Session, forn: Fornecedor, nomes: list[str],
             atuais.add(cat.id)
 
 
+# Como começa a observação que o SISTEMA inventou, quando a planilha não
+# trouxe nenhuma. Serve para saber, depois, que ela pode ser substituída por
+# uma escrita por gente — "atende o interior" vale mais que "cadastrado por".
+PREFIXO_AUTOMATICO = "Cadastrado por "
+
+
 def _garantir_contato(s: Session, forn: Fornecedor, nome: str,
-                      email: str, telefone: str) -> None:
-    """O cotador da planilha. Sem e-mail e sem telefone não entra: contato que
-    não recebe cotação não serve para nada, e o banco recusa."""
+                      email: str, telefone: str, observacao: str = "") -> None:
+    """O cotador da planilha — e são VÁRIOS por fornecedor, de propósito.
+
+    Duas linhas com o mesmo CNPJ e contatos diferentes viram um fornecedor com
+    DOIS contatos, e não um sobrescrevendo o outro. Era isso que o cadastro não
+    sabia fazer, e por isso o comprador criava a empresa de novo — foi a origem
+    de boa parte dos 126 CNPJs repetidos da planilha da BWS.
+
+    Sem e-mail e sem telefone não entra: contato que não recebe cotação não
+    serve para nada, e o banco recusa (`ck_contato_tem_canal`).
+    """
     nome = (nome or "").strip()
     if not nome or not (email or telefone):
         return
@@ -182,9 +263,28 @@ def _garantir_contato(s: Session, forn: Fornecedor, nome: str,
         FornecedorContato.fornecedor_id == forn.id)).all()
         if c.fornecedor_id == forn.id and _chave(c.nome) == _chave(nome)]
     if ja_tem:
+        # Mesmo nome, dado novo: COMPLETA em vez de ignorar. Rodar a carga de
+        # novo depois de corrigir a planilha tem de melhorar o cadastro, não
+        # ficar parado nele.
+        atual = ja_tem[0]
+        if email and not atual.email:
+            atual.email = email
+        if telefone and not atual.telefone:
+            atual.telefone = telefone
+        # A observação ESCRITA POR GENTE vence a que o sistema inventou:
+        # "atende o interior" diz do que o vendedor trata, "cadastrado por
+        # fulano" só diz quem o trouxe. O contrário nunca acontece — uma
+        # automática jamais apaga uma escrita.
+        atual_obs = getattr(atual, "observacao", None) or ""
+        escrita_por_gente = bool(observacao) and not observacao.startswith(
+            PREFIXO_AUTOMATICO)
+        if observacao and (not atual_obs or
+                           (escrita_por_gente and atual_obs.startswith(PREFIXO_AUTOMATICO))):
+            atual.observacao = observacao
         return
     s.add(FornecedorContato(fornecedor_id=forn.id, nome=nome,
-                            email=email or None, telefone=telefone or None))
+                            email=email or None, telefone=telefone or None,
+                            observacao=(observacao or "").strip() or None))
 
 
 # ---------------------------------------------------------------------------

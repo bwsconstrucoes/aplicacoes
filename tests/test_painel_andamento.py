@@ -447,3 +447,86 @@ def test_migracao_sem_a_marca_nao_dispara_recalculo(sem_execucoes):
     inteira a cada uma seria caro e desnecessário."""
     from app.apps.painel import migracoes_runner
     assert migracoes_runner._reconstruir_se_preciso(False) is None
+
+
+# ===========================================================================
+# O disparo da madrugada: aceitar o segredo de mais de um jeito
+# ===========================================================================
+# 18/09/2026, o dono pedindo ajuda para ligar o agendador. Até então o segredo
+# só era lido do corpo JSON: se o agendador mandasse como formulário — que é o
+# padrão de vários deles — o segredo chegava vazio e a resposta era só "não
+# autorizado", sem como descobrir que o problema era o FORMATO e não o valor.
+
+@pytest.fixture()
+def cliente_do_agendador(monkeypatch):
+    monkeypatch.setenv("PAINEL_SECRET", "segredo-da-madrugada")
+    monkeypatch.setenv("PAINEL_SENHA", "outra-coisa")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    return app.test_client()
+
+
+def _nao_dispara(monkeypatch):
+    """Troca o disparo por um dublê: aqui se testa a PORTA, não a carga."""
+    from app.apps.painel import tarefas
+    chamou = []
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual": chamou.append((modo, disparo))
+                        or {"ok": True, "modo": modo})
+    return chamou
+
+
+def test_o_segredo_no_corpo_json_funciona(cliente_do_agendador, monkeypatch):
+    chamou = _nao_dispara(monkeypatch)
+    r = cliente_do_agendador.post("/painel/api/sincronizar",
+                                  json={"secret": "segredo-da-madrugada",
+                                        "modo": "rapida"})
+    assert r.status_code == 200 and chamou == [("rapida", "agendado")]
+
+
+def test_o_segredo_como_formulario_tambem_funciona(cliente_do_agendador, monkeypatch):
+    """É o jeito que vários agendadores mandam por padrão."""
+    chamou = _nao_dispara(monkeypatch)
+    r = cliente_do_agendador.post("/painel/api/sincronizar",
+                                  data={"secret": "segredo-da-madrugada",
+                                        "modo": "completa"})
+    assert r.status_code == 200 and chamou == [("completa", "agendado")]
+
+
+def test_o_segredo_no_cabecalho_tambem_funciona(cliente_do_agendador, monkeypatch):
+    chamou = _nao_dispara(monkeypatch)
+    r = cliente_do_agendador.post(
+        "/painel/api/sincronizar",
+        headers={"X-Painel-Secret": "segredo-da-madrugada"})
+    assert r.status_code == 200 and chamou == [("rapida", "agendado")]
+
+
+def test_sem_segredo_a_mensagem_diz_o_que_fazer(cliente_do_agendador):
+    r = cliente_do_agendador.post("/painel/api/sincronizar", json={})
+    assert r.status_code == 401
+    erro = r.get_json()["erro"]
+    assert "nenhum segredo foi enviado" in erro
+    assert "X-Painel-Secret" in erro, "tem de dizer COMO mandar"
+
+
+def test_segredo_errado_diz_que_e_o_valor(cliente_do_agendador):
+    """Diferente de 'não mandou': aqui a configuração está certa e o valor não.
+    Sem essa distinção, quem configura fica adivinhando."""
+    r = cliente_do_agendador.post("/painel/api/sincronizar",
+                                  json={"secret": "chute"})
+    assert r.status_code == 401
+    assert "não confere" in r.get_json()["erro"]
+
+
+def test_servico_sem_a_variavel_avisa_disso(monkeypatch):
+    """O caso que deixa qualquer um maluco: o segredo está certo no agendador e
+    a variável nem existe no serviço."""
+    monkeypatch.delenv("PAINEL_SECRET", raising=False)
+    monkeypatch.setenv("PAINEL_SENHA", "x")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    r = app.test_client().post("/painel/api/sincronizar", json={"secret": "qualquer"})
+    assert r.status_code == 401
+    assert "PAINEL_SECRET" in r.get_json()["erro"]

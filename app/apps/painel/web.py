@@ -12,6 +12,7 @@ PAINEL_SHEET_PROJETOS.
 """
 from __future__ import annotations
 
+import os
 import re
 import time
 import logging
@@ -1195,6 +1196,7 @@ def configuracoes():
         base_vazia=vazia,
         primeira=request.args.get("primeira") == "1",
         etapas=etapas,
+        tem_secret=bool(os.getenv("PAINEL_SECRET", "").strip()),
         sem_obra=consultas.SEM_OBRA if not estado_migracoes["pendentes"] else "",
         sem_categoria=consultas.SEM_CATEGORIA if not estado_migracoes["pendentes"] else "",
         conferir=conferir,
@@ -1238,16 +1240,45 @@ def sincronizar():
     Aceita duas identidades: a sessao (o botao na tela) ou o segredo do modulo
     no corpo do pedido (o agendador da madrugada). Sem uma das duas, recusa.
     """
+    import os
     from . import tarefas
     dados = request.get_json(silent=True) or {}
-    modo = dados.get("modo") or request.form.get("modo") or "rapida"
+
+    # O SEGREDO E ACEITO DE QUATRO JEITOS, e isso nao e desleixo.
+    #
+    # Ate 18/09/2026 ele so era lido do corpo JSON. Se o agendador mandasse como
+    # formulario — que e o padrao de varios deles — o segredo chegava vazio, a
+    # resposta era "nao autorizado", e nao havia como o dono descobrir que o
+    # problema era o formato do envio, e nao o valor do segredo. Meia hora de
+    # tentativa e erro por causa de um cabecalho.
+    segredo = (dados.get("secret")
+               or request.form.get("secret")
+               or request.args.get("secret")
+               or request.headers.get("X-Painel-Secret")
+               or "")
+    modo = (dados.get("modo") or request.form.get("modo")
+            or request.args.get("modo") or "rapida")
 
     if auth.esta_logado():
         disparo = "manual"
-    elif auth.segredo_de_maquina_confere(dados.get("secret", "")):
+    elif auth.segredo_de_maquina_confere(segredo):
         disparo = "agendado"
     else:
-        return jsonify({"ok": False, "erro": "não autorizado"}), 401
+        # A mensagem diz O QUE FAZER, sem entregar o segredo. Dizer so "nao
+        # autorizado" deixa quem esta configurando o agendador no escuro.
+        if not os.getenv("PAINEL_SECRET", "").strip():
+            motivo = ("o serviço não tem PAINEL_SECRET configurada. "
+                      "Cadastre essa variável nas Settings do Render.")
+        elif not segredo:
+            motivo = ("nenhum segredo foi enviado. Mande no corpo do pedido "
+                      '{"secret": "...", "modo": "rapida"} com '
+                      "Content-Type: application/json, ou no cabeçalho "
+                      "X-Painel-Secret.")
+        else:
+            motivo = ("o segredo enviado não confere com a PAINEL_SECRET do "
+                      "serviço.")
+        logger.warning("Painel: disparo recusado — %s", motivo)
+        return jsonify({"ok": False, "erro": f"Não autorizado: {motivo}"}), 401
 
     return jsonify(tarefas.disparar(modo, disparo))
 

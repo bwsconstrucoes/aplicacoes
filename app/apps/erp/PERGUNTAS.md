@@ -854,6 +854,108 @@ O que ainda **não** responde:
   registrada como evento no histórico da obra, mas não existe consulta que leia
   o histórico; hoje só dá para abrir obra por obra.
 
+## 3p. O ACOMPANHAMENTO: processos que correm fora da BWS
+
+Construído em 18/09/2026 (migração 072, pedaço 1). Guarda assunto burocrático
+que depende de terceiro — aditivo de prazo, apostilamento, licença, protocolo —
+com andamento em uma frase, situação e responsável.
+
+Perguntas que passam a funcionar:
+
+- OK **O que está parado?** 🔒 (escopo por obra) — e o "parado" é do SISTEMA, não
+  de alguém marcar: sai dos dias sem andamento, com teto por tipo.
+- OK **O que passou da previsão?** 🔒 — prometeram uma data e ela venceu.
+- OK **O que está com exigência a responder?** 🔒 — é o único estado em que o
+  órgão está esperando a BWS, e não o contrário.
+- OK **Quais processos estão com fulano?** 🔒 — e é a pergunta que alguém faz na
+  véspera das férias dele.
+- OK **Esta obra tem processo aberto?** 🔒
+- OK **Onde está o aditivo de prazo da obra X?** 🔒 — o "está com" é atualizado
+  pelo próprio andamento.
+- OK **Há quantos dias este processo não anda?** 🔒
+
+⚠️ **Palavra ambígua: "processo".** No ERP ela já significava outras duas coisas
+— o **processo administrativo do ÓRGÃO** (o número que vem no contrato) e o
+processo judicial. O módulo chama-se **Acompanhamento** na tela por causa disso,
+e pergunta com "processo" solto tem de dizer qual das três usou.
+
+⚠️ **Palavra ambígua: "parado".** Aqui é *sem andamento lançado*, e não *sem
+andamento real*: o órgão pode ter mexido sem ninguém da BWS ter ligado para
+saber. A resposta mede o que o sistema sabe, que é o registro — e é justamente
+por isso que ela serve de cutucão.
+
+⚠️ **Palavra ambígua: "em dia".** Significa apenas "não está vencido, parado nem
+com exigência". Não significa que vai sair no prazo.
+
+Com os passos (pedaço 2, migração 073), mais estas:
+
+- OK **Quanto já andou este processo?** 🔒 — quantos passos de quantos.
+- OK **O que falta neste aditivo?** 🔒 — os passos ainda não marcados.
+- OK **Quais processos nem começaram?** 🔒 — nenhum passo marcado e nenhum
+  andamento lançado.
+
+⚠️ **Palavra ambígua: "falta".** Um passo não marcado pode significar duas
+coisas bem diferentes: *ainda não foi feito* ou *foi feito e ninguém marcou*. A
+lista é lembrete, não controle — a resposta mede a marcação, não o mundo.
+
+Com o pedaço 3 (migração 074), mais estas:
+
+- OK **Quanto tempo a prefeitura X demora para publicar um aditivo?** 🔒 — média,
+  mais rápido e mais lento, por órgão e por tipo.
+- OK **Quantos ofícios já mandei para este órgão?** 🔒
+- OK **Qual foi o último ofício expedido, e sobre o quê?** 🔒
+- OK **Quais aditivos vieram de um processo de acompanhamento?** 🔒
+
+⚠️ **Palavra ambígua: "demora".** A conta é de **protocolo até encerramento**, e
+não do dia em que a BWS começou a preparar o pedido. O tempo que a própria BWS
+levou para montar a documentação fica de fora — de propósito, porque a pergunta
+é sobre o órgão.
+
+⚠️ **Palavra ambígua: "média".** Só processos ENCERRADOS entram. Um órgão com
+três aditivos travados há meses pode aparecer com média baixa: são os
+concluídos que contam, e a coluna "em andamento" é que mostra o resto.
+
+O que ainda **não** responde:
+- FALTA **"O que costuma travar mais?"** — exige histórico de vários processos
+  encerrados, e o módulo nasceu vazio por decisão do dono (nada de importar do
+  Pipefy). A resposta melhora sozinha com o uso.
+
+## 3q. Fornecedores com vários vendedores, e o disparo automático
+
+Construído em 18/09/2026 (migração 075), depois de o dono explicar de onde
+vinham os 126 CNPJs repetidos: não era só sujeira, era cadastro sem lugar para
+o segundo vendedor.
+
+Perguntas que passam a funcionar:
+
+- OK **Quais fornecedores têm mais de um vendedor?**
+- OK **Quem atende esta região neste fornecedor?** — pela observação do contato.
+- OK **Quais fornecedores estão fora do disparo automático?**
+- OK **Quais fornecedores não estão ATIVOS na Receita?** — depois de rodar o
+  "Acertar o cadastro pela Receita".
+- OK **Quais fornecedores têm nome diferente do da Receita?** — a consulta
+  relata, não troca.
+- OK **O que está esperando cotação, e há quanto tempo?** 🔒 (escopo por obra)
+- OK **Quantos itens estão parados por falta de categoria no insumo?**
+
+⚠️ **Palavra ambígua: "fornecedor duplicado".** Depois desta mudança há duas
+coisas diferentes: o **CNPJ repetido** (que agora vira um cadastro só com vários
+contatos) e o **fornecedor com nome parecido e CNPJ diferente** (que são duas
+empresas de verdade, ou um CNPJ digitado errado — e o sistema não tem como
+saber qual).
+
+⚠️ **Palavra ambígua: "não recebe cotação".** São três coisas: o fornecedor
+INATIVO, o que está FORA do disparo automático (mas entra na cotação montada à
+mão), e o CONTATO com "recebe cotação" desmarcado. A resposta tem de dizer qual.
+
+O que ainda **não** responde:
+
+- FALTA **"Qual fornecedor responde mais rápido?"** e **"quem deu o melhor
+  preço nesta categoria no último ano?"** — o dado existe (envios, propostas,
+  banco de preços), mas o indicador por fornecedor ainda não foi escrito. É o
+  que faria o disparo automático ordenar por RESULTADO em vez de por regra
+  fixa.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

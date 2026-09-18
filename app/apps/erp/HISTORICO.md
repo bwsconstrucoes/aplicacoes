@@ -54,22 +54,331 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
-### AGUARDANDO DECISÃO: o módulo de ACOMPANHAMENTO (desenho pronto, nada construído)
+### ⚠️ MIGRAÇÃO 075 — apertar "Aplicar atualizações do banco"
+
+Acrescenta a **observação do contato**, a marca **cotação automática** no
+fornecedor e os **contatos escolhidos** na coluna da cotação. Sem ela, a tela de
+fornecedores quebra ao salvar e o disparo não guarda para quem foi.
+
+
+### FORNECEDORES: um CNPJ, vários vendedores — e o disparo automático (migração 075)
+
+18/09/2026. O dono olhou os 126 CNPJs repetidos da planilha e explicou a
+origem, que muda tudo:
+
+> *"Um comprador cadastrou, aí depois um segundo comprador cadastrou de novo.
+> Mas veja que tem contatos diferentes — tem fornecedores que têm mais de uma
+> pessoa que atende. Um atende entregas num determinado estado, outro entrega
+> outro."*
+
+**Não era só sujeira: era um cadastro sem lugar para o segundo vendedor.** A
+pessoa resolveu do único jeito que dava — criando a empresa de novo.
+
+**O que mudou:**
+
+1. **O contato ganhou OBSERVAÇÃO** ("do que ele trata"): é o campo que
+   diferencia dois vendedores do mesmo fornecedor, e é por ele que se escolhe
+   para quem mandar. Editável na ficha, com editar/remover por linha.
+2. **O importador SOMA em vez de sobrescrever.** Duas linhas do mesmo CNPJ
+   viram um fornecedor com dois contatos; categoria, região e canal são a
+   UNIÃO das duas. A união é a direção segura para um filtro — categoria a
+   menos significa fornecedor que nunca mais é cotado naquilo, e ninguém
+   percebe.
+3. **Quem cadastrou vira a observação inicial** do contato, pedido dele com
+   todas as letras. Observação escrita por gente vence a automática; a
+   automática nunca apaga a escrita.
+4. **O disparo da cotação deixa escolher PARA QUEM**, dentro do fornecedor,
+   quando há mais de um contato — e grava a escolha na coluna, para o histórico
+   dizer para quem foi mesmo que a marca do cadastro mude depois.
+5. **Marca "entra no disparo automático"** no fornecedor, para o de compra
+   única ficar fora da sugestão sem sair do cadastro.
+6. **Botão "Acertar o cadastro pela Receita"**: consulta o CNPJ na BrasilAPI,
+   preenche o que está vazio e **RELATA o que discorda** — nunca troca razão
+   social por conta própria. Roda na FILA, em lotes de 120, porque a consulta
+   pública aceita 3 por minuto e são 1.700 fornecedores.
+
+**DEFEITO GRAVE ACHADO E CORRIGIDO NO CAMINHO:** `core/cadastros/fornecedores`
+definia uma classe `ErroValidacao` **própria, homônima** da do
+`core/comum/auditoria`. O importador tem `except ErroValidacao` para recusar a
+linha ruim e seguir — mas a classe que ele importa é a do `auditoria`, e a que
+o cadastro levantava era outra. O `except` não pegava. Resultado: **uma célula
+com CNPJ e CPF digitados juntos derrubou a carga inteira de 1.773 linhas**.
+Duas classes homônimas é o tipo de coisa que passa por toda revisão — o código
+lê igual nos dois lados. Há teste cobrando que uma linha ruim não derrube as
+boas.
+
+
+### O DISPARO AUTOMÁTICO DE COTAÇÃO — o sistema monta, a pessoa confere
+
+18/09/2026, pedido do dono:
+
+> *"A gente poderia receber uma demanda de suprimento e já disparar cotações
+> (…) o sistema, através de categoria de fornecedor, já planeja um disparo (…)
+> naquela tela eu estou visualizando o que vai ser disparado e para quem, e a
+> partir dali eu posso editar (…) ele vai apenas validar aquela sugestão do
+> sistema, editar uma ou outra coisa e disparar."*
+
+**Onde está:** Suprimentos › **Planejar cotações**.
+
+O sistema varre tudo que está esperando cotação, agrupa por **categoria de
+insumo** e por **município da obra**, sugere **quem vende aquilo** e ordena por
+urgência — atrasado primeiro, depois prioridade alta. Cada linha traz o
+**porquê**: "a obra pediu para 13/09 e já passou 5 dias", "na mesma cidade da
+obra", "fábrica", "⚠ sem e-mail".
+
+**A LINHA QUE ESTA TELA NÃO CRUZA, e é a decisão central do módulo:** o sistema
+faz o trabalho BRAÇAL e para. Montar as cotações é um clique; **mandar o
+e-mail é outro, na tela de Cotações**. O custo de uma sugestão ruim é
+desmarcar; o de um disparo errado é o fornecedor bom parar de responder.
+
+**Por que agrupa assim:** cimento e luminária no mesmo pedido voltam pela
+metade dos dois lados (o fornecedor responde o que é dele e ignora o resto); e
+preço para duas pontas do estado não é um preço só, porque frete e prazo mudam
+com a distância.
+
+**Achado no primeiro teste da tela, e corrigido:** o plano sugeria itens que já
+estavam numa cotação ABERTA — nove blocos sugeridos, nove recusados na hora de
+montar. O status do item não denuncia isso (um item em SOLICITACAO pode ter
+entrado numa cotação hoje de manhã). Agora eles ficam de fora, e o número deles
+aparece num quadrinho, para a ausência ser explicada em vez de misteriosa.
+
+
+### ⚠️ ~~MIGRAÇÕES 073 e 074~~ — publicadas em 18/09/2026
+
+- **073** cria a tabela dos passos sugeridos. Sem ela, **abrir processo falha**.
+- **074** cria a tabela dos ofícios **e o tipo de documento OFÍCIO**. Sem ela,
+  gerar ofício falha; sem o tipo, o ofício sairia com número e não seria
+  arquivado.
+
+O tipo é criado **pela migração**, e não só pelo catálogo em código, de
+propósito: o catálogo tem botão próprio em Configurações, e depender dele faria
+o primeiro ofício depois da publicação sair sem arquivamento. Hoje o botão que
+o dono já aperta basta.
+
+
+### ~~MIGRAÇÕES 071 e 072~~ — PUBLICADAS em 18/09/2026
+
+Duas, e as duas precisam ser aplicadas **no mesmo momento da publicação**:
+
+- **071** acrescenta `BOLETIM` às origens aceitas na tabela de índices. Sem ela,
+  colar o boletim falha (o banco recusa a origem nova); o resto do ERP segue.
+- **072** cria as tabelas do **Acompanhamento** e — a parte que se esquece —
+  **libera a seção nova nos perfis que já tratam agenda**. Sem ela, a aba
+  Acompanhamento não abre para ninguém, nem para o administrador.
+
+
+### COLAR O BOLETIM DO ÍNDICE, em vez de digitar mês a mês (migração 071)
+
+18/09/2026, o dono mandou o formato em que os índices chegam para ele:
+
+```
+Mês/Ano         Índice     Variação No mês  Variação No ano  Variação 12 meses
+julho/2025      1210,471   0,91             4,39             7,41
+agosto/2025     1216,706   0,52             4,93             7,22
+```
+
+Até então alimentar a tabela com esse papel eram **dois trabalhos separados**:
+digitar a variação mês a mês, e depois informar o número de UM mês noutro campo
+para a régua bater. Ele já tem a tabela inteira copiada da fonte.
+
+Agora, em Configurações › Índices, há uma caixa **"Colar a tabela do boletim"**:
+cola, aperta "Conferir antes" (mostra o que entendeu, o que muda e o valor
+antigo de cada mês), e grava. A variação entra, o número-índice alinha a régua
+pelo **mês mais recente** da colagem, e a origem fica registrada como `BOLETIM`
+— distinta de `BCB-SGS` e de `MANUAL`, porque quando um número for contestado a
+primeira pergunta é de onde ele veio.
+
+**Duas travas, e as duas já pegaram coisa de verdade:**
+
+1. **O boletim tem de bater consigo mesmo.** Se número ÷ número anterior
+   discorda da variação declarada, é aviso na cara. Pegou no primeiro texto que
+   o dono mandou: dezembro/2025 dizia 0,27%, mas de 1.225,633 para 1.228,161 a
+   variação é 0,21% — a linha de dezembro estava com as três variações iguais
+   às de novembro, sinal de cópia errada.
+2. **A diferença contra o papel é dita na tela.** Ancorando pelo mês mais
+   recente, os meses anteriores saem uns centésimos do impresso, porque o
+   boletim publica a variação com duas casas e a volta acumula arredondamento.
+   No boletim dele isso dá 0,013% em julho — abaixo da folga, então nem aparece.
+   Acima de 0,02% aparece, com os dois números lado a lado.
+
+**Decisão minha, que ele pode querer diferente:** a régua é alinhada pelo mês
+MAIS RECENTE da colagem, porque é o que ele acabou de conferir e o que entra
+nos reajustes de agora. O custo é a diferença de centésimos nos meses antigos.
+A alternativa seria o reajuste passar a usar os números publicados em vez de
+acumular as variações — é mais fiel ao papel, mexe no cálculo de dinheiro, e
+por isso não fiz por conta própria.
+
+
+### ACOMPANHAMENTO — PEDAÇO 3: o ofício, o deferimento e a demora (migração 074)
+
+18/09/2026, fechando o módulo. Três entregas.
+
+**1. O OFÍCIO GERADO.** Na ficha do processo, "✉ Gerar ofício": o sistema monta
+a epígrafe com o que já sabe (contrato, obra, objeto, local, número do processo)
+e o miolo pelo tipo — aditivo de prazo, aditivo de valor, apostilamento,
+licença, certidão, protocolo de medição. Sai PDF sóbrio, numerado
+`OF 001/2026`, arquivado no Arquivo da obra e lançado como andamento.
+
+Quatro decisões, todas com o mesmo espírito:
+
+- **O texto é SEMPRE editável antes de gerar.** Órgão tem mania, obra tem
+  particularidade, e modelo que não se ajusta faz a pessoa voltar para o Word —
+  que é pior do que não ter modelo nenhum.
+- **O corpo fica guardado COMO FOI ENVIADO.** Regerar a partir do modelo meses
+  depois daria outro texto, e aí o papel que está no órgão e o que está no
+  sistema divergiriam sem ninguém perceber.
+- **A numeração é por empresa e por ano, com restrição única no banco.** Duas
+  pessoas gerando ao mesmo tempo sem essa trava produzem dois "OF 012/2026" — e
+  número repetido só aparece quando o órgão reclama. O **rascunho não numera**:
+  numerar o que vai ser descartado deixaria buraco na sequência, e buraco em
+  sequência de ofício é pergunta que o órgão faz.
+- **O que o ERP não sabe fica `____________`.** Espaço em branco é pedido de
+  atenção; valor inventado passa despercebido.
+
+Se o arquivamento falhar, **o ofício vale assim mesmo** (perder o número por
+causa do arquivo seria o rabo abanando o cachorro) — mas a falha vai escrita no
+andamento, porque ofício que existe e não está no Arquivo é o que ninguém acha
+no dia em que o órgão pergunta.
+
+**2. O DEFERIMENTO QUE FECHA O CICLO.** Em processo de aditivo aparece
+"✔ Foi deferido — registrar na obra". O sistema **propõe** (diz o que muda e
+qual é a vigência de hoje) e a **pessoa confirma**, digitando o número do termo
+assinado. Aí o aditivo é registrado na obra pela MESMA `criar_aditivo` do
+Arquivo — e a vigência estende, o que faz o alerta "Vigência vencida" sumir
+sozinho do painel de obras.
+
+  **Nunca automático e calado.** Mexer sozinho no prazo ou no valor de um
+  contrato é mexer em dinheiro, e um erro silencioso aqui só apareceria numa
+  medição recusada meses depois. O número não é adivinhado: ele está no papel,
+  e inventar "nº 3" porque existem dois cria divergência com o contrato do
+  órgão.
+
+**3. QUANTO CADA ÓRGÃO DEMORA.** Botão "⏱" na barra da lista: média, mais
+rápido, mais lento e quantos estão em andamento, por órgão e por tipo.
+
+  Só entra processo **encerrado com data de protocolo** — o que está aberto não
+  demorou, está demorando, e misturar os dois puxaria a média para baixo
+  justamente por causa dos que travaram. A coluna **confiança** diz em português
+  quando é "um caso só — não é média": ler "média 4 dias" de um único caso como
+  se fosse regra é o erro que essa coluna existe para evitar.
+
+**Verificado:** suíte completa verde, 24 testes novos com banco de verdade, e a
+tela exercitada no navegador de ponta a ponta — ofício gerado, numerado e
+arquivado (PDF conferido), deferimento estendendo a vigência da obra de
+15/01/2027 para 31/03/2027, e o quadro de demora.
+
+
+### ACOMPANHAMENTO — PEDAÇO 2: os passos e o aviso que chega sozinho (migração 073)
+
+18/09/2026, logo depois do pedaço 1. Duas entregas:
+
+**1. Cada tipo traz a lista do que costuma ter que ser feito.** O aditivo de
+prazo nasce com oito passos (justificativa, cronograma, ofício, protocolo,
+parecer, assinatura, publicação, atualizar a vigência no ERP); a licença com
+sete; e assim por diante. Quem nunca tocou um aditivo não sabe essa lista, e
+quem já tocou esquece um item.
+
+  **É SUGESTÃO, e a prova é uma AUSÊNCIA:** a tabela `processo_passos` não tem
+  `obrigatorio`, nem `depende_de`, nem `bloqueia`. Há um **teste estrutural**
+  cobrando que essas colunas nunca apareçam — porque o dia em que aparecerem, o
+  módulo terá virado o SEI, que foi o contraexemplo que o dono deu. Marcar fora
+  de ordem é permitido, e o processo fecha com passo em branco sem reclamar.
+
+  Os passos são LINHAS, e não um JSON fechado no tipo, de propósito: assim cabe
+  o passo que só aquela prefeitura pede, e ele não some ao trocar o tipo.
+
+**2. O processo travado entra na AGENDA.** Gerador novo (`geradores.processos`),
+com origem `PROCESSO` — "Processo travado" na tela. Gera para três casos, e
+apenas esses: exigência a responder, previsão estourada e parado. Encerrado e
+em dia não geram nada.
+
+  **Por que na agenda e não numa notificação própria:** a tela do Acompanhamento
+  é a de quem JÁ lembrou do assunto; a agenda é a que se abre de manhã. Ela já
+  tem escopo por obra, "resolver", "dispensar" e é para onde o dono olha. Um
+  segundo canal de avisos seria construir de novo o que existe e dividir a
+  atenção dele em dois lugares.
+
+  A chave do evento é `PROCESSO:<id>:<urgência>` — estável, porque a
+  sincronização roda todo dia e chave instável empilharia avisos iguais.
+
+**Verificado:** suíte completa verde, 13 testes novos (5 no dublê, 8 com banco),
+e a tela exercitada no navegador — processo novo nasce com a lista, marcar fora
+de ordem funciona, passo próprio acrescentado, e a barra de progresso aparece na
+lista.
+
+
+### ACOMPANHAMENTO — PEDAÇO 1 CONSTRUÍDO (migração 072)
+
+18/09/2026. O dono aprovou o desenho e mandou seguir: *"publique o que já pode
+ser publicado e siga com o pedaço 1"*. O desenho inteiro continua em
+`ACOMPANHAMENTO.md`; aqui fica o que existe agora e o que morde.
+
+**Onde está:** Obras › **Acompanhamento**.
+
+**O que já funciona:**
+
+- **Abrir processo** com assunto, tipo e uma obra (ou a empresa). Nada mais é
+  obrigatório — exigir órgão e prazo na abertura faria a pessoa deixar para
+  depois, e depois é nunca. Numeração `AC-000001`.
+- **Lançar andamento numa frase**, com enter. Data e autor entram sozinhos. A
+  mesma frase pode mudar, de uma vez, onde o papel está, para quando prometeram
+  e a situação — porque quem ligou para o órgão descobre as três coisas juntas.
+- **A situação "parado" é CALCULADA**, e o teto é por tipo: aditivo de prazo
+  vira parado em 10 dias, licença ambiental em 30. Um teto único acenderia a luz
+  nos dois lugares errados.
+- **A tela ordena por quem está mais perto de virar problema** — exigência,
+  depois o que passou da previsão, depois o parado — e escreve o MOTIVO na
+  própria linha. Os cinco quadrinhos do topo são filtro, não enfeite.
+- **Botão "Assumir os marcados"**: o caso das férias, resolvido em um clique em
+  vez de abrir um por um. A troca fica registrada em cada processo.
+
+**Decisões que valem conhecer antes de mexer:**
+
+- **Nada trava nada.** Não existe transição proibida entre situações (há teste
+  percorrendo os casos absurdos: deferido que volta, arquivado que reabre).
+  O órgão não segue ordem, e obrigar ordem faria a pessoa mentir para o sistema.
+- **O escopo usa `obras_de_registro_sem_autor`, e NÃO `obras_do_usuario`.** A
+  segunda devolve None (= "sem filtro de obra") para quem enxerga por autoria, e
+  aí o administrativo de obra veria os processos da empresa inteira. É a mesma
+  armadilha achada nas Locações em 11/09/2026.
+- **Abrir tem o mesmo recorte de listar** (`exigir_obra_no_escopo_sem_autoria`),
+  senão a pessoa criaria processo numa obra que depois não consegue abrir.
+- **Processo da EMPRESA não aparece para quem é preso a obra.** Certidão da sede
+  não é de obra nenhuma — padrão NEGAR, não esquecimento.
+- **`tocar_processo` entrou em `ACOES_NA_TELA`.** Sem isso o template recebe a
+  permissão indefinida, que é falso, e a tela abriria só de leitura para todo
+  mundo — sem erro nenhum para denunciar.
+
+**O que ficou de fora (pedaços 2 e 3):** modelos por tipo com passos sugeridos,
+aviso automático por WhatsApp de parado e previsão estourada, ofício gerado e
+numerado, deferimento que propõe atualizar a vigência da obra, e indicadores de
+demora por órgão.
+
+**Verificado:** suíte completa verde, 26 testes de regra no dublê, 17 de escopo
+com banco de verdade (incluindo os 404 pelas rotas), homologação por perfil
+verde, e a tela exercitada no navegador de ponta a ponta — abrir, lançar
+andamento, histórico, lista e celular.
+
+
+### O PEDIDO E AS DECISÕES do módulo de ACOMPANHAMENTO
 
 17/09/2026, o dono pediu a gestão burocrática da obra — aditivo de prazo,
 apostilamento, licença vencendo, protocolo —, que hoje ele faz no Pipefy
 ("protocolo e medições"). **O desenho inteiro está em `ACOMPANHAMENTO.md`** e
-está registrado na fila do `ROTEIRO.md`. Nada foi construído: ele precisa
-decidir o formato primeiro.
+está registrado na fila do `ROTEIRO.md`. **Ele aprovou em 18/09/2026** e o
+pedaço 1 está construído (seção acima).
 
 As três exigências dele mandam no desenho, e quem pegar isto não pode perder de
 vista: **rápido de alimentar** (andamento é uma frase e enter, ou ninguém
 lança), **não travado** (ele citou o SEI como contraexemplo) e **responder "o
 que está pendente"** para quem assume o assunto de alguém de férias.
 
-A decisão que mais pesa, e é dele: **data para desligar o quadro do Pipefy**.
-Manter os dois em paralelo é o pior resultado possível — informação pela metade
-é pior que informação nenhuma, porque quem bate o olho acredita nela.
+**A decisão que mais pesava, ele tomou**, e ela vale para o repositório inteiro
+(registrada também em `CONTEXTO.md` › Histórico de decisões): *"não vamos usar
+nenhum outro recurso (…) 100% toda a movimentação da empresa no ERP (…) não
+vamos utilizar Pipe, nem trazer dados antigos de lá — só as coisas novas
+mesmo"*. Ou seja: nada de convivência com ferramenta de fora, e o módulo nasce
+vazio. **Falta só a data de desligar o quadro do Pipefy.**
 
 **Por que havia obra sem empresa** — ele explicou, e não era defeito de dado:
 *"isso é porque foi criado primeiro a obra e depois a empresa"*. O conserto já

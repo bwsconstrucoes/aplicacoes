@@ -190,6 +190,24 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "tratar_agenda":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
                         P.DEPARTAMENTO_PESSOAL},
+    # ACOMPANHAMENTO — aditivo, apostilamento, licença, protocolo (18/09/2026).
+    #
+    # VER é largo pelo mesmo motivo da agenda: o módulo existe para alguém
+    # BATER O OLHO e ver o que está pendente, inclusive quem assumiu o assunto
+    # de quem saiu de férias. Uma tela que só o administrador enxerga não
+    # cumpre essa função. O que cada um vê continua limitado pelo escopo de
+    # obra, não por esta ação.
+    #
+    # TOCAR (abrir processo, lançar andamento, assumir) fica fora de CONSULTA e
+    # de PARCEIRO: andamento é afirmação com nome e data sobre conversa com
+    # órgão público, e o parceiro é de fora da empresa.
+    "ver_acompanhamento": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                           P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                           P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA,
+                           P.PARCEIRO},
+    "tocar_processo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                           P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                           P.DEPARTAMENTO_PESSOAL},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -213,6 +231,9 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # emissor e ele não conseguir abrir a lista seria uma armadilha.
     "ver_notas_emitidas": ("emitir_nota", "ver_contratos"),
     "ver_agenda": ("tratar_agenda",),
+    # Quem toca processo abre a tela dele — marcar alguém como responsável pelo
+    # acompanhamento e ele não conseguir entrar seria uma armadilha.
+    "ver_acompanhamento": ("tocar_processo",),
     # Quem lança cancela — o PRÓPRIO lançamento, e só enquanto ninguém baixou
     # nem conciliou. Sem esta linha, corrigir o próprio engano dependeria de
     # interromper o financeiro, e o erro ficaria no ar até alguém ter tempo.
@@ -263,6 +284,8 @@ ACAO_ROTULOS = {
     "emitir_nota":          "Registrar e cancelar nota emitida",
     "ver_agenda":           "Ver a agenda de obrigações",
     "tratar_agenda":        "Resolver, dispensar e anotar na agenda",
+    "ver_acompanhamento":   "Ver o acompanhamento de processos da obra",
+    "tocar_processo":       "Abrir processo, lançar andamento e assumir",
 }
 
 ROTULOS = {
@@ -734,6 +757,55 @@ def pode_ver_obra(s: Session, usuario: Usuario, obra_id: int) -> bool:
 def exigir_obra_no_escopo(s: Session, usuario: Usuario, obra_id: int) -> None:
     if not pode_ver_obra(s, usuario, obra_id):
         raise ErroNaoEncontrado("Obra não encontrada.")
+
+
+def exigir_obra_no_escopo_sem_autoria(s: Session, usuario: Usuario,
+                                      obra_id: int) -> None:
+    """Como `exigir_obra_no_escopo`, mas para registro SEM autoria útil.
+
+    A diferença não é acadêmica. `pode_ver_obra` usa `obras_do_usuario`, que
+    devolve None (= "sem filtro de obra") para quem enxerga por autoria — e aí
+    essa pessoa poderia ABRIR um processo numa obra que ela depois não
+    consegue LISTAR nem abrir. Criar o que não se pode ver é o tipo de brecha
+    que vira suporte, e é a mesma armadilha achada nas Locações em 11/09/2026.
+    """
+    obras = obras_de_registro_sem_autor(s, usuario)
+    if obras is not None and int(obra_id) not in set(obras):
+        raise ErroNaoEncontrado("Obra não encontrada.")
+
+
+def pode_ver_processo(s: Session, usuario: Usuario, processo_id: int) -> bool:
+    """O processo existe E está dentro do escopo desta pessoa?
+
+    A regra é a da OBRA, e passa pela mesma `obras_de_registro_sem_autor` que a
+    listagem usa — é isso que garante que detalhe e lista não divirjam.
+
+    **`obras_de_registro_sem_autor` e não `obras_do_usuario`**, e a diferença
+    morde: para quem enxerga "só o que eu lancei", a segunda devolve None, que
+    significa "sem filtro de obra" — e aí o administrativo de obra passaria a
+    ver TODOS os processos da empresa. A mesma armadilha já tinha aparecido nas
+    Locações em 11/09/2026, e pelo mesmo motivo: processo não é recortável por
+    autoria (quem abriu não é quem toca), então o único recorte possível é a
+    obra.
+
+    Processo da EMPRESA (certidão, alvará da sede) não é de obra nenhuma: só
+    quem enxerga a base inteira o alcança — padrão NEGAR, não esquecimento.
+    """
+    from app.apps.erp.db.models.cadastros import Processo
+
+    p = s.get(Processo, processo_id)
+    if p is None:
+        return False
+    obras = obras_de_registro_sem_autor(s, usuario)
+    if obras is None:
+        return True
+    return p.obra_id is not None and int(p.obra_id) in set(obras)
+
+
+def exigir_processo_no_escopo(s: Session, usuario: Usuario,
+                              processo_id: int) -> None:
+    if not pode_ver_processo(s, usuario, processo_id):
+        raise ErroNaoEncontrado("Processo não encontrado.")
 
 
 def exigir_agendada_no_escopo(s: Session, usuario: Usuario,

@@ -339,6 +339,11 @@ class Fornecedor(Base):
         ARRAY(Text), nullable=False, default=list, server_default="{}")
     canais_cotacao: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, default=lambda: ["EMAIL"], server_default="{EMAIL}")
+    # Entra na sugestão do disparo automático (migração 075). Nasce LIGADO:
+    # desligar é decisão de quem conhece o fornecedor, e nascer desligado faria
+    # o disparo começar vazio sem ninguém entender por quê.
+    cotacao_automatica: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true")
 
     contas: Mapped[list["FornecedorConta"]] = relationship(
         back_populates="fornecedor", order_by="FornecedorConta.id")
@@ -754,6 +759,12 @@ class FornecedorContato(Base):
     funcao: Mapped[Optional[str]] = mapped_column(Text)
     email: Mapped[Optional[str]] = mapped_column(Text)
     telefone: Mapped[Optional[str]] = mapped_column(Text)
+    # DO QUE ELE TRATA (migração 075). É o campo que diferencia dois vendedores
+    # do mesmo fornecedor — "atende o interior", "só linha elétrica" — e sem
+    # ele o cadastro empurrava a pessoa a criar a empresa de novo só para
+    # guardar o segundo contato. Foi essa a origem de boa parte dos 126 CNPJs
+    # repetidos da planilha da BWS.
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
     recebe_cotacao: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -950,6 +961,10 @@ class CotacaoFornecedor(Base):
         BigInteger, ForeignKey("fornecedores.id"), nullable=False)
     contato_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("fornecedor_contatos.id"))
+    # Quem recebe ESTA cotação neste fornecedor (migração 075). Vazio = todos
+    # os contatos marcados para receber, que é o comportamento de antes.
+    contatos_ids: Mapped[list[int]] = mapped_column(
+        ARRAY(BigInteger), nullable=False, default=list, server_default="{}")
     condicao_pagamento_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("condicoes_pagamento.id"))
     entrega: Mapped[Optional[ModoEntrega]] = mapped_column(
@@ -1416,5 +1431,127 @@ class EmpresaCertificado(Base):
     observacao: Mapped[Optional[str]] = mapped_column(Text)
     enviado_por: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# ACOMPANHAMENTO — a gestão burocrática da obra (migração 072)
+#
+# Pedido do dono em 17/09/2026, aprovado em 18/09. O desenho está em
+# `app/apps/erp/ACOMPANHAMENTO.md`, e a razão de cada campo (e de cada campo
+# que NÃO existe) está na própria migração.
+# ---------------------------------------------------------------------------
+class SituacaoProcesso(str, enum.Enum):
+    """Onde o assunto está, do ponto de vista de quem espera resposta.
+
+    Sete estados e nenhum deles trava o outro: pular, voltar e fechar fora de
+    ordem é permitido, porque o órgão não segue ordem nenhuma. Falta um que
+    NÃO está aqui de propósito — "parado" —, porque parado é conclusão do
+    sistema (dias sem andamento), não campo que alguém marca.
+    """
+    RASCUNHO = "RASCUNHO"
+    PROTOCOLADO = "PROTOCOLADO"
+    EM_ANALISE = "EM_ANALISE"
+    EXIGENCIA = "EXIGENCIA"
+    DEFERIDO = "DEFERIDO"
+    INDEFERIDO = "INDEFERIDO"
+    ARQUIVADO = "ARQUIVADO"
+
+
+class Processo(Base):
+    """Um assunto com começo, meio e fim, que corre fora da BWS."""
+    __tablename__ = "processos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    assunto: Mapped[str] = mapped_column(Text, nullable=False)
+    tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    empresa_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
+    orgao: Mapped[Optional[str]] = mapped_column(Text)
+    responsavel_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="RASCUNHO")
+    onde_esta: Mapped[Optional[str]] = mapped_column(Text)
+    protocolo: Mapped[Optional[str]] = mapped_column(Text)
+    protocolado_em: Mapped[Optional[date]] = mapped_column(Date)
+    previsao: Mapped[Optional[date]] = mapped_column(Date)
+    documento_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    encerrado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Processo {self.numero} {self.assunto!r} {self.situacao}>"
+
+
+class ProcessoAndamento(Base):
+    """A frase que alguém escreveu ao ligar para o órgão.
+
+    Data e autor entram sozinhos. Os três opcionais (onde está, previsão,
+    situação) existem para a MESMA frase mudar o estado do processo sem abrir
+    outro formulário — foi a exigência mais forte do dono sobre este módulo.
+    """
+    __tablename__ = "processo_andamentos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    processo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("processos.id", ondelete="CASCADE"), nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    onde_esta: Mapped[Optional[str]] = mapped_column(Text)
+    previsao: Mapped[Optional[date]] = mapped_column(Date)
+    situacao: Mapped[Optional[str]] = mapped_column(Text)
+    anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    por_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class ProcessoPasso(Base):
+    """Um item da lista de sugestões do processo (migração 073).
+
+    Repare no que NÃO existe aqui: `obrigatorio`, `depende_de`, `quem_marca`.
+    A ausência é a regra — a lista lembra, não barra.
+    """
+    __tablename__ = "processo_passos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    processo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("processos.id", ondelete="CASCADE"), nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    feito_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    feito_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class ProcessoOficio(Base):
+    """O ofício gerado pelo sistema (migração 074).
+
+    Guarda o CORPO como foi enviado, e não só o modelo: regerar a partir do
+    modelo meses depois daria outro texto, e aí o papel que está no órgão e o
+    que está no sistema divergiriam sem ninguém perceber.
+    """
+    __tablename__ = "processo_oficios"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    processo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("processos.id", ondelete="CASCADE"), nullable=False)
+    empresa_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
+    ano: Mapped[int] = mapped_column(Integer, nullable=False)
+    sequencia: Mapped[int] = mapped_column(Integer, nullable=False)
+    numero: Mapped[str] = mapped_column(Text, nullable=False)
+    destinatario: Mapped[Optional[str]] = mapped_column(Text)
+    assunto: Mapped[Optional[str]] = mapped_column(Text)
+    corpo: Mapped[str] = mapped_column(Text, nullable=False)
+    documento_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
