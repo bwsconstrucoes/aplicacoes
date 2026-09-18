@@ -975,6 +975,22 @@ class CotacaoFornecedor(Base):
         Numeric(6, 3), nullable=False, default=0)
     respondido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     respondido_por: Mapped[Optional[str]] = mapped_column(Text)
+    # Por onde a resposta chegou (migração 076). É a nuance do WhatsApp: o
+    # fornecedor respondeu, o comprador ainda não digitou os preços, e cobrar
+    # de novo seria cobrar quem já respondeu.
+    respondido_canal: Mapped[Optional[str]] = mapped_column(Text)
+    cobrado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    cobrancas: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
+                                           server_default="0")
+    # Respondeu que NÃO vai cotar. Não é falta de resposta, e medir as duas
+    # juntas diria que um fornecedor atencioso é relapso.
+    sem_interesse: Mapped[bool] = mapped_column(Boolean, nullable=False,
+                                                default=False, server_default="false")
+    motivo_sem_interesse: Mapped[Optional[str]] = mapped_column(Text)
+    # Lidos da proposta junto com os preços (migração 076): mudam a decisão
+    # tanto quanto o preço e antes se perdiam no corpo do e-mail.
+    prazo_entrega_dias: Mapped[Optional[int]] = mapped_column(Integer)
+    validade_proposta: Mapped[Optional[date]] = mapped_column(Date)
     anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
     ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -1022,6 +1038,12 @@ class PrecoHistorico(Base):
     tipo: Mapped[TipoPreco] = mapped_column(pg_enum(TipoPreco, "tipo_preco"), nullable=False)
     cotacao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("cotacoes.id"))
     data: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    # O HISTÓRICO ANTIGO, vindo da planilha (migração 077). `chave_externa` é
+    # única: reimportar o mesmo arquivo não dobra o banco de preços.
+    chave_externa: Mapped[Optional[str]] = mapped_column(Text)
+    origem: Mapped[str] = mapped_column(Text, nullable=False, default="SISTEMA",
+                                        server_default="SISTEMA")
+    comprador_nome: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

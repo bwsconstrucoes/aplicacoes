@@ -61,7 +61,12 @@
   <div class="tabela-rolagem">
     <table><thead><tr>
       <th class="sem-ordem" style="width:34px"><input type="checkbox" id="marca-todos"></th>
-      <th>Pedido</th><th>Material</th><th class="direita">Qtd</th><th>Obra</th>
+      <th>Pedido</th><th>Material</th>
+      {# O PREÇO EM COLUNA PRÓPRIA, e não embaixo do material: embaixo, a linha
+         ficava com quatro alturas e a lista deixava de ser lida de relance —
+         que é justamente para o que esta tela serve. #}
+      <th class="sem-ordem" style="width:200px">Preço de referência</th>
+      <th class="direita">Qtd</th><th>Obra</th>
       <th>Prioridade</th><th>Precisa até</th><th>Situação</th><th></th>
     </tr></thead><tbody id="tb-itens"></tbody></table>
   </div>
@@ -180,6 +185,35 @@ function visiveis(){
   });
 }
 
+// O QUE ISSO COSTUMA CUSTAR, embaixo do nome do material.
+//
+// Pedido do dono, 18/09/2026: *"na tela das solicitações já poder estar
+// visualizando: ó, o insumo, onde está o último menor preço, qual o
+// fornecedor, qual o valor"*.
+//
+// O ÚLTIMO vem primeiro porque é o que serve para orçar; o MENOR do ano vem
+// depois, porque é a régua da negociação ("da última vez fulano fez por
+// 11,03"). Preço de mais de um ano aparece com o aviso colado — um número
+// velho mostrado sem data é pior do que número nenhum.
+function precoDeReferencia(p){
+  if (!p || !p.resumo) return `<small class="preco-vazio">sem histórico</small>`;
+  const linhas = [];
+  if (p.ultimo) linhas.push(`
+    <div class="preco-linha ${p.ultimo_fora_da_janela ? "preco-velho" : ""}">
+      <b>${moeda(p.ultimo)}</b>
+      <small>último${p.ultimo_em ? " · " + dataBR(p.ultimo_em) : ""}${
+        p.ultimo_de ? " · " + escapar(p.ultimo_de) : ""}${
+        p.ultimo_fora_da_janela ? " · mais de um ano" : ""}</small></div>`);
+  if (p.menor && p.menor !== p.ultimo) linhas.push(`
+    <div class="preco-linha preco-menor"><b>${moeda(p.menor)}</b>
+      <small>menor no ano${p.menor_de ? " · " + escapar(p.menor_de) : ""}</small></div>`);
+  if (p.ocorrencias) linhas.push(
+    `<small class="preco-conta">${p.ocorrencias} cotação(ões) no último ano</small>`);
+  return `<div class="preco-ref"
+    title="Do banco de preços: cotações e compras deste mesmo insumo"
+    >${linhas.join("")}</div>`;
+}
+
 function desenhar(){
   const l = visiveis();
   const hoje = new Date().toISOString().slice(0, 10);
@@ -223,6 +257,7 @@ function desenhar(){
       <td class="desc">${i.insumo}${i.especificacao ? `<small>${i.especificacao}</small>` : ""}
         ${i.correcoes ? `<small class="corrigido" data-hist="${i.id}"
           title="Clique para ver o que mudou, por quem e por quê">corrigido ${i.correcoes}×</small>` : ""}</td>
+      <td class="preco-ref-cel">${precoDeReferencia(i.preco_referencia)}</td>
       <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}
         ${Number(i.quantidade_recebida) > 0
           ? `<br><small>recebido ${quantidadeBR(i.quantidade_recebida)}</small>` : ""}</td>

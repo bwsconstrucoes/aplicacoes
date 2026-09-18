@@ -747,6 +747,54 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 18/09/2026 — O SISTEMA SUGERE; QUEM MANDA É GENTE (atravessa áreas)
+
+Ao ver o disparo automático de cotação funcionando, e depois de eu propor que o
+passo seguinte fosse mandar e cobrar sozinho, o dono fechou a questão:
+
+> *"Disparar sozinho eu acho que nem é o ideal. O sistema pode ter até a
+> inteligência de fazer isso, mas se a gente fizer isso corre o risco de, enfim,
+> tem algumas nuances que só o humano sabe o que deve ser feito. Então eu acho
+> que realmente não deve ser disparado nada sozinho. A cobrança também não deve
+> ser feita sozinha, mas eu quero que o sistema SUGIRA o que deve ser cobrado."*
+
+**A regra, para qualquer área:** automação do ERP vai até **montar e apontar**.
+O ato que sai da empresa — e-mail ao fornecedor, cobrança, protocolo, envio de
+documento a terceiro — **espera um clique de gente**. Não é limitação técnica:
+é que o custo de uma sugestão ruim é desmarcar, e o de um envio errado é a
+relação com quem recebeu.
+
+**O corolário que decide o desenho das telas:** quando o sistema aponta algo,
+ele diz **o que sabe**, não o que deduz. Na cobrança de cotação, ele sabe que o
+e-mail saiu e que nenhum preço foi lançado; **não sabe** se o fornecedor
+respondeu — pode ter respondido por WhatsApp, e o comprador ainda não digitou.
+Por isso toda lista de "pendências" ganha uma saída de "isso já foi resolvido
+por fora", com o mesmo peso do botão de agir.
+
+### 18/09/2026 — INTELIGENTE DEPOIS, MAS GUARDANDO DESDE JÁ (atravessa áreas)
+
+> *"A gente não já pode deixar ele pronto para isso? Enquanto não tem
+> inteligência, ele trabalha de forma automática (…) os dados que a gente vai
+> trabalhar já estarem sendo guardados, para que os compradores vão aos poucos
+> alimentando."*
+
+**A decisão, e por que ela vale para toda área:** um sistema que decide por
+regra fixa está chutando com educação; um que decide por resultado medido está
+medindo. A diferença não é o algoritmo — é o histórico, e histórico não se
+compra, só se acumula. Então funcionalidade nova **guarda desde o primeiro dia
+os carimbos que um dia permitirão medir**, mesmo sem nenhuma inteligência
+ligada: quando aconteceu, quem respondeu, por qual canal, quanto demorou,
+cumpriu o prazo.
+
+Duas travas, também gerais:
+
+1. **Derivar, não guardar nota.** Indicador se calcula na hora a partir dos
+   fatos (`core/suprimentos/desempenho.py`). Nota gravada envelhece e mente.
+2. **Amostra mínima antes de mandar em qualquer coisa.** Abaixo dela o
+   indicador existe, é mostrado, e **não pesa** — vale a regra fixa. Sem isso,
+   quem foi chamado uma vez e respondeu aparece com "100%" e passa na frente de
+   quem atende a empresa há dois anos.
+
 ### 18/09/2026 — TUDO no ERP: nada de sistema paralelo, nada de dado antigo
 
 Ao aprovar o módulo de Acompanhamento (`app/apps/erp/ACOMPANHAMENTO.md`), o dono

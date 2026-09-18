@@ -183,10 +183,15 @@ def planejar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
         if URGENCIAS.get(urgencia, 9) < URGENCIAS.get(bloco["urgencia"], 9):
             bloco["urgencia"], bloco["motivo"] = urgencia, motivo
 
+    # A memória, uma vez só para toda a tela: cada bloco perguntando de novo
+    # varreria as mesmas tabelas dez vezes.
+    from app.apps.erp.core.suprimentos import desempenho
+    memoria = desempenho.por_fornecedor(s)
+
     saida = []
     for (categoria_id, municipio), bloco in blocos.items():
         bloco["fornecedores"] = _fornecedores_do_bloco(
-            catalogo_forn, categoria_id, municipio)
+            catalogo_forn, categoria_id, municipio, memoria)
         bloco["quantos_itens"] = len(bloco["itens"])
         bloco["obras"] = sorted({i["obra"] for i in bloco["itens"] if i["obra"]})
         saida.append(bloco)
@@ -208,14 +213,25 @@ def planejar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
 
 
 def _fornecedores_do_bloco(catalogo: list[dict[str, Any]], categoria_id: int,
-                           municipio: str) -> list[dict[str, Any]]:
+                           municipio: str,
+                           memoria: Optional[dict[int, dict[str, Any]]] = None
+                           ) -> list[dict[str, Any]]:
     """Quem vende esta categoria, do mais provável para o menos.
 
     A ordem é uma OPINIÃO do sistema, e por isso cada linha carrega o porquê:
     quem é da mesma cidade entrega mais rápido, quem é fábrica costuma ter
     preço melhor em quantidade. Sem o porquê, a lista viraria um oráculo — e o
     comprador não teria como discordar com fundamento.
+
+    A REGRA FIXA É O ANDAIME, NÃO O PRÉDIO (18/09/2026). Cadastro — cidade,
+    porte, ter e-mail — é o que dá para saber sobre um fornecedor antes de
+    trabalhar com ele. O que de fato importa (respondeu? entregou no dia?)
+    só o HISTÓRICO diz, e o histórico começa vazio. Então: enquanto não houver
+    amostra, manda o cadastro; a partir de três cotações, `desempenho.py`
+    entra na conta e o cadastro vai perdendo peso relativo sozinho, sem
+    ninguém trocar chave nenhuma.
     """
+    memoria = memoria or {}
     candidatos = []
     for f in catalogo:
         if not f["ativo"] or not f.get("cotacao_automatica", True):
@@ -244,6 +260,10 @@ def _fornecedores_do_bloco(catalogo: list[dict[str, Any]], categoria_id: int,
                 c.get("email") for c in f["contatos"]):
             motivos.append("⚠ sem e-mail")
             pontos -= 3
+        historico = memoria.get(f["id"]) or {}
+        if historico.get("confiavel"):
+            pontos += int(historico.get("pontos") or 0)
+            motivos.append(historico.get("resumo") or "")
         candidatos.append({
             "id": f["id"], "razao_social": f["razao_social"],
             "nome_fantasia": f["nome_fantasia"],
@@ -251,7 +271,8 @@ def _fornecedores_do_bloco(catalogo: list[dict[str, Any]], categoria_id: int,
             "porte": porte, "porte_rotulo": f["porte_rotulo"],
             "contatos": f["contatos"],
             "pontos": pontos,
-            "por_que": ", ".join(motivos) or "vende esta categoria",
+            "historico": historico or None,
+            "por_que": ", ".join(m for m in motivos if m) or "vende esta categoria",
             # O sistema MARCA os melhores; os outros ficam na lista para o
             # comprador acrescentar com um clique, sem procurar.
             "sugerido": False,

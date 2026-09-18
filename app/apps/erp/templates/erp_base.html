@@ -762,6 +762,8 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
                 : c.tipo === "select"
                 ? `<select id="pg-${i}">${(c.opcoes || []).map(o =>
                     `<option value="${o.valor}" ${o.valor === c.valor ? "selected" : ""}>${o.rotulo}</option>`).join("")}</select>`
+                : c.tipo === "arquivo"
+                ? `<input id="pg-${i}" type="file" ${c.aceita ? `accept="${c.aceita}"` : ""}>`
                 : `<input id="pg-${i}" type="${c.tipo || "text"}"
                      value="${c.valor || ""}" placeholder="${c.exemplo || ""}">`}
               ${c.dica ? `<div class="dica">${c.dica}</div>` : ""}
@@ -779,6 +781,20 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
     dlg.querySelector("[data-ok]").addEventListener("click", () => {
       const saida = {};
       for (let i = 0; i < campos.length; i++) {
+        // CAMPO DE ARQUIVO devolve o arquivo, não o texto: `.value` num input
+        // de arquivo é um caminho falso ("C:\\fakepath\\nota.pdf") que não
+        // serve para nada, e mandá-lo como se fosse o arquivo é o tipo de
+        // engano que só aparece na hora do envio.
+        if (campos[i].tipo === "arquivo") {
+          const campo = els(`pg-${i}`);
+          const arquivo = campo && campo.files && campo.files[0] ? campo.files[0] : null;
+          if (campos[i].obrigatorio && !arquivo) {
+            aviso("pg-erro", `Escolha ${campos[i].rotulo.toLowerCase()}.`, "erro");
+            return;
+          }
+          saida[campos[i].nome] = arquivo;
+          continue;
+        }
         const valor = (els(`pg-${i}`).value || "").trim();
         if (campos[i].obrigatorio && !valor) {
           aviso("pg-erro", `Preencha ${campos[i].rotulo.toLowerCase()}.`, "erro");

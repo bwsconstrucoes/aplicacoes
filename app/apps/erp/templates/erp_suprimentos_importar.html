@@ -23,6 +23,7 @@
       <select id="tipo-carga">
         <option value="fornecedores">Fornecedores (aba Registro)</option>
         <option value="insumos">Insumos (aba Cadastrar)</option>
+        <option value="banco_precos">Histórico de preços (aba Banco de Preços BD)</option>
       </select></div>
     <div class="campo" style="grid-column:span 2"><label for="arq-carga">Arquivo (Excel ou CSV)</label>
       <input type="file" id="arq-carga" accept=".csv,.xlsx"></div>
@@ -32,7 +33,11 @@
     <b>fornecedores</b>: Razão Social, Nome do Fornecedor, CNPJ/CPF, Contato, Email,
     Telefone, Categoria de Insumo, Cidade, Região de Atuação, Envio de Cotações,
     Porte do Fornecedor ·
-    <b>insumos</b>: Insumos, Categoria do Insumo, Subcategoria, Plano Financeiro, UND.
+    <b>insumos</b>: Insumos, Categoria do Insumo, Subcategoria, Plano Financeiro, UND ·
+    <b>histórico de preços</b>: Nº Mapa, Dt Atualiz. Mapa, Insumo, Especificação,
+    UND, QTD Cotada, Valor, CNPJ, Fornecedor, Responsável.
+    <br>No histórico de preços <b>não precisa separar a aba</b>: mande a
+    planilha inteira em Excel que o sistema acha a aba certa pelas colunas.
     <br>A coluna <b>Subcategoria</b> com o valor <b>Locação</b> marca o insumo como
     locável — é o que faz ele aparecer na tela de Locações. Sem isso, cimento
     apareceria lá junto com o andaime.</div>
@@ -100,6 +105,8 @@ async function enviar(simular){
                         + `?simular=${simular ? 1 : 0}&criar_categorias=${criarCats}`,
                         {method: "POST", body: fd});
     const rel = r.relatorio;
+    if (tipo === "banco_precos")
+      return desenharBancoDePrecos(rel, simular);
     els("resultado-carga").innerHTML = `
       <div class="aviso ${simular ? "info" : "ok"}">
         ${simular ? "Prévia — nada foi gravado." : "Carga concluída."}
@@ -155,6 +162,62 @@ async function enviar(simular){
     els("resultado-carga").innerHTML = "";
     aviso("mensagem", e.message, "erro");
   }
+}
+
+// O RELATÓRIO DO HISTÓRICO DE PREÇOS tem uma pergunta central, e é diferente
+// das outras cargas: "quantos nomes de insumo você NÃO reconheceu?". Aquelas
+// linhas ficam de fora — e ficar de fora é o certo, porque preço no insumo
+// errado mente sobre quanto o material custa. A lista sai na tela para o dono
+// decidir: ou corrige o nome na planilha, ou cadastra o insumo que falta.
+function desenharBancoDePrecos(rel, simular){
+  els("resultado-carga").innerHTML = `
+    <div class="aviso ${simular ? "info" : "ok"}">
+      ${simular ? "Prévia — nada foi gravado." : "Histórico importado."}
+      <b>${rel.no_arquivo}</b> linha(s) no arquivo ·
+      <b>${rel.gravados}</b> preço(s) ${simular ? "entrariam" : "gravados"} ·
+      <b>${rel.mapas}</b> mapa(s) de cotação ·
+      <b>${rel.insumos_alcancados}</b> insumo(s) com histórico
+      ${rel.repetidos ? ` · <b>${rel.repetidos}</b> já estavam no sistema` : ""}
+    </div>
+    ${rel.quantos_nao_reconhecidos ? `
+      <div class="aviso alerta"><b>${rel.quantos_nao_reconhecidos}</b> nome(s) de
+        insumo não bateram com o cadastro, deixando
+        <b>${rel.linhas_perdidas}</b> linha(s) de fora. Não invento o casamento:
+        preço lançado no insumo errado vira uma referência falsa que ninguém
+        percebe. Corrija o nome na planilha ou cadastre o insumo, e rode de novo
+        — o que já entrou não duplica.
+        <table style="margin-top:8px"><thead><tr><th>Nome na planilha</th>
+          <th>Linhas</th><th>Mais parecido no cadastro</th></tr></thead>
+          <tbody>${rel.nao_reconhecidos.slice(0, 60).map(x => `<tr>
+            <td>${escapar(x.insumo)}</td><td class="dados">${x.linhas}</td>
+            <td class="dados">${x.mais_parecido}</td></tr>`).join("")}
+          </tbody></table>
+        ${rel.quantos_nao_reconhecidos > 60
+          ? `<div class="cartao-dica">…e mais ${rel.quantos_nao_reconhecidos - 60}.</div>` : ""}
+      </div>` : ""}
+    ${rel.casados_por_semelhanca.length ? `
+      <div class="aviso info"><b>${rel.casados_por_semelhanca.length}</b> nome(s)
+        casaram por <b>semelhança</b>, não por igualdade. Estes entraram — mas
+        confira, porque é aqui que um "CA50" vira "CA60".
+        <table style="margin-top:8px"><thead><tr><th>Na planilha</th>
+          <th>No cadastro</th><th>Semelhança</th></tr></thead>
+          <tbody>${rel.casados_por_semelhanca.slice(0, 60).map(x => `<tr>
+            <td>${escapar(x.planilha)}</td><td>${escapar(x.cadastro)}</td>
+            <td class="dados">${x.semelhanca}</td></tr>`).join("")}
+          </tbody></table></div>` : ""}
+    ${rel.sem_fornecedor ? `
+      <div class="aviso info"><b>${rel.sem_fornecedor}</b> linha(s) entraram
+        <b>sem fornecedor</b> — o CNPJ e o nome não bateram com nenhum cadastro.
+        O preço vale (responde "quanto custou"), mas não responde "de quem".
+        Importe os fornecedores primeiro e o casamento melhora.</div>` : ""}
+    ${(rel.sem_valor || rel.sem_data) ? `
+      <div class="aviso info">Ficaram de fora por falta de dado:
+        <b>${rel.sem_valor}</b> sem valor legível ·
+        <b>${rel.sem_data}</b> sem data.</div>` : ""}
+    ${rel.unidades_desconhecidas.length ? `
+      <div class="aviso info">Unidades citadas e não cadastradas:
+        <b>${escapar(rel.unidades_desconhecidas.join(", "))}</b>. O preço entra
+        sem unidade — cadastre em Configurações se quiser a unidade junto.</div>` : ""}`;
 }
 
 els("btn-previa").addEventListener("click", () => enviar(true));

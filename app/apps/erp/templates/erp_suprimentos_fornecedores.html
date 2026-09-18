@@ -344,6 +344,21 @@ function abrir(id){
         para quem mandar a cotação quando há mais de um.</div>` : ""}
     </div>
 
+    {# COMO ELE SE COMPORTA — o que nenhum cadastro sabe dizer.
+
+       Sai do trabalho normal do comprador (cotação disparada, preço lançado,
+       material recebido): ninguém digita nada aqui. Enquanto não há amostra, a
+       frase diz isso com todas as letras em vez de mostrar um "100%" que veio
+       de uma cotação só. #}
+    ${f.historico ? `<div class="cartao-dica" style="margin-top:12px">
+      <b>Como ele se comporta:</b> ${escapar(f.historico.resumo || "")}
+      ${f.historico.confiavel ? `<small style="display:block; margin-top:4px">
+        Isto ${f.historico.pontos > 0 ? "sobe" : f.historico.pontos < 0 ? "desce" : "não muda"}
+        a posição dele na sugestão do disparo automático.</small>` : `
+        <small style="display:block; margin-top:4px">Enquanto não houver
+        histórico, a sugestão vai pelo cadastro — cidade, porte, ter e-mail.</small>`}
+    </div>` : ""}
+
     <label class="opcao"><input type="checkbox" id="fx-ativo" ${f.ativo ? "checked" : ""} ${editavel}>
       <span class="rotulo">Ativo — aparece nas listas de cotação</span></label>
     {# ENTRA NA SUGESTÃO AUTOMÁTICA? Dono: *"de repente eu tenho um fornecedor
