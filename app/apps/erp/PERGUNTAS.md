@@ -887,11 +887,35 @@ por isso que ela serve de cutucão.
 ⚠️ **Palavra ambígua: "em dia".** Significa apenas "não está vencido, parado nem
 com exigência". Não significa que vai sair no prazo.
 
-O que ainda **não** responde:
+Com os passos (pedaço 2, migração 073), mais estas:
 
-- FALTA **"Quanto tempo a prefeitura X demora para publicar um aditivo?"** — o
-  dado já entra (protocolo, deferimento e datas), mas o indicador por órgão é do
-  pedaço 3.
+- OK **Quanto já andou este processo?** 🔒 — quantos passos de quantos.
+- OK **O que falta neste aditivo?** 🔒 — os passos ainda não marcados.
+- OK **Quais processos nem começaram?** 🔒 — nenhum passo marcado e nenhum
+  andamento lançado.
+
+⚠️ **Palavra ambígua: "falta".** Um passo não marcado pode significar duas
+coisas bem diferentes: *ainda não foi feito* ou *foi feito e ninguém marcou*. A
+lista é lembrete, não controle — a resposta mede a marcação, não o mundo.
+
+Com o pedaço 3 (migração 074), mais estas:
+
+- OK **Quanto tempo a prefeitura X demora para publicar um aditivo?** 🔒 — média,
+  mais rápido e mais lento, por órgão e por tipo.
+- OK **Quantos ofícios já mandei para este órgão?** 🔒
+- OK **Qual foi o último ofício expedido, e sobre o quê?** 🔒
+- OK **Quais aditivos vieram de um processo de acompanhamento?** 🔒
+
+⚠️ **Palavra ambígua: "demora".** A conta é de **protocolo até encerramento**, e
+não do dia em que a BWS começou a preparar o pedido. O tempo que a própria BWS
+levou para montar a documentação fica de fora — de propósito, porque a pergunta
+é sobre o órgão.
+
+⚠️ **Palavra ambígua: "média".** Só processos ENCERRADOS entram. Um órgão com
+três aditivos travados há meses pode aparecer com média baixa: são os
+concluídos que contam, e a coluna "em andamento" é que mostra o resto.
+
+O que ainda **não** responde:
 - FALTA **"O que costuma travar mais?"** — exige histórico de vários processos
   encerrados, e o módulo nasceu vazio por decisão do dono (nada de importar do
   Pipefy). A resposta melhora sozinha com o uso.

@@ -98,6 +98,18 @@
 .proc.u-EXIGENCIA .proc-motivo, .proc.u-ATRASADO .proc-motivo { color: var(--vermelho); }
 .proc.u-PARADO .proc-motivo { color: var(--ambar); }
 .proc-num { font-family: var(--fonte-dados); font-size: 11px; color: var(--tinta-suave); }
+/* QUANTO JÁ ANDOU, em um fio. Um número solto ("3/8") obriga a pessoa a fazer
+   a conta; a barra é lida sem pensar, que é o ponto de uma tela de relance. */
+.proc-passos { display: flex; align-items: center; gap: 6px; margin-top: 6px;
+  height: 4px; background: var(--borda); border-radius: 3px; max-width: 260px; }
+.proc-passos span { display: block; height: 4px; border-radius: 3px;
+  background: var(--verde); }
+.proc-passos small { font-size: 10.5px; color: var(--tinta-suave);
+  margin-left: auto; transform: translateY(-4px); }
+.passos { border: 1px solid var(--borda); border-radius: 8px; padding: 4px 6px; }
+.passo { display: flex; align-items: center; gap: 6px; }
+.passo.feito .rotulo { color: var(--tinta-suave); text-decoration: line-through; }
+.passo [data-apagar] { margin-left: auto; color: var(--tinta-suave); }
 .proc-dir { text-align: right; font-size: 12px; color: var(--tinta-suave); white-space: nowrap; }
 .proc-marca { align-self: center; }
 /* O histórico do processo: uma linha por frase, com um fio ligando as datas. */
@@ -230,6 +242,9 @@ function desenhar(){
         </div>
         ${p.motivo ? `<div class="proc-motivo">${escapar(p.motivo)}</div>` : ""}
         ${p.onde_esta ? `<div class="proc-linha">está com: <b>${escapar(p.onde_esta)}</b></div>` : ""}
+        ${p.passos_total ? `<div class="proc-passos" title="${p.passos_feitos} de ${p.passos_total} passos">
+          <span style="width:${Math.round(100 * p.passos_feitos / p.passos_total)}%"></span>
+          <small>${p.passos_feitos}/${p.passos_total}</small></div>` : ""}
       </div>
       <div class="proc-dir">
         <span class="selo ${p.urgencia==="EM_DIA"?"aprovado":p.urgencia==="PARADO"?"aguardando":"bloqueado"}"
@@ -246,8 +261,10 @@ function desenhar(){
 
   els("resumo").innerHTML = `<b>${l.length}</b> processo(s) · `
     + `<b>${PROCESSOS.filter(p => p.urgencia !== "EM_DIA").length}</b> pedindo atenção`;
-  els("acoes-lote").innerHTML = PODE_TOCAR
-    ? `<button class="btn secundario" id="btn-assumir">Assumir os marcados</button>` : "";
+  els("acoes-lote").innerHTML =
+    `<button class="btn secundario" id="btn-demora">⏱ Quanto cada órgão demora</button>`
+    + (PODE_TOCAR ? ` <button class="btn secundario" id="btn-assumir">Assumir os marcados</button>` : "");
+  els("btn-demora").addEventListener("click", verDemora);
   if (els("btn-assumir")) els("btn-assumir").addEventListener("click", assumirMarcados);
 }
 
@@ -302,6 +319,38 @@ async function abrir(id){
           obrigatória — o resto é para quando você souber.</div>
       </div>` : ""}
 
+      {# OS PASSOS SUGERIDOS. Lembram o que costuma faltar, e não barram nada:
+         marcar fora de ordem é permitido, e o processo fecha com passo em
+         branco sem reclamar. #}
+      ${PODE_TOCAR ? `<div style="display:flex; gap:8px; flex-wrap:wrap; margin:12px 0">
+        <button class="btn secundario" id="btn-oficio">✉ Gerar ofício</button>
+        ${["ADITIVO_PRAZO","ADITIVO_VALOR"].includes(p.tipo)
+          ? `<button class="btn amarelo" id="btn-deferir">✔ Foi deferido — registrar na obra</button>` : ""}
+      </div>` : ""}
+      ${p.oficios && p.oficios.length ? `<div class="cartao-dica">
+        Ofícios já expedidos: ${p.oficios.map(o =>
+          o.anexo_id ? `<a href="/erp/anexo/${o.anexo_id}" target="_blank"
+            >${escapar(o.numero)}</a>` : escapar(o.numero)).join(" · ")}</div>` : ""}
+
+      <h4>O que costuma ter que ser feito</h4>
+      ${p.passos.length ? `<div class="passos">${p.passos.map(x => `
+        <label class="opcao passo ${x.feito ? "feito" : ""}">
+          <input type="checkbox" class="pp" data-passo="${x.id}" ${x.feito ? "checked" : ""}
+            ${PODE_TOCAR ? "" : "disabled"}>
+          <span class="rotulo">${escapar(x.texto)}
+            ${x.feito ? `<small> · ${escapar(x.feito_em)}</small>` : ""}</span>
+          ${PODE_TOCAR ? `<button class="link-btn" data-apagar="${x.id}"
+            title="tirar este passo da lista">×</button>` : ""}
+        </label>`).join("")}</div>`
+        : `<div class="cartao-dica">Este tipo não tem lista sugerida.</div>`}
+      ${PODE_TOCAR ? `<div style="display:flex; gap:6px; margin-top:8px">
+        <input id="passo-novo" placeholder="acrescentar um passo que só este órgão pede"
+          style="flex:1; padding:7px 10px; border:1px solid var(--borda-forte);
+                 border-radius:8px; font-size:13px">
+        <button class="btn secundario" id="btn-passo">Acrescentar</button></div>
+        <div class="cartao-dica">A lista é lembrete, não trava: dá para marcar
+          fora de ordem, deixar em branco e fechar o processo assim mesmo.</div>` : ""}
+
       <h4>O que já aconteceu</h4>
       ${p.andamentos.length ? `<ul class="tempo">${p.andamentos.map(a => `
         <li><div class="quando">${escapar(a.em)} · ${escapar(nomeDoOperador(a.por_id))}</div>
@@ -315,7 +364,20 @@ async function abrir(id){
         : `<div class="cartao-dica">Nada lançado ainda. A primeira frase pode ser
            o que você combinou ao abrir o processo.</div>`}`;
     els("dlg").showModal();
+    document.querySelectorAll(".pp").forEach(c => c.addEventListener("change", () =>
+      mexerNoPasso(id, {passo_id: +c.dataset.passo, feito: c.checked})));
+    document.querySelectorAll("[data-apagar]").forEach(b => b.addEventListener("click", ev => {
+      ev.preventDefault();
+      mexerNoPasso(id, {passo_id: +b.dataset.apagar, acao: "apagar"});
+    }));
     if (PODE_TOCAR) {
+      els("btn-oficio").addEventListener("click", () => gerarOficio(id));
+      if (els("btn-deferir")) els("btn-deferir").addEventListener("click", () => deferir(id));
+      els("btn-passo").addEventListener("click", () => {
+        const texto = (els("passo-novo").value || "").trim();
+        if (!texto) { aviso("dlg-msg", "Escreva o passo.", "erro"); return; }
+        mexerNoPasso(id, {acao: "acrescentar", texto});
+      });
       els("btn-and").addEventListener("click", () => lancarAndamento(id));
       els("and-texto").addEventListener("keydown", ev => {
         if (ev.key === "Enter") lancarAndamento(id);
@@ -323,6 +385,115 @@ async function abrir(id){
       els("and-texto").focus();
     }
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------- o ofício
+// O texto vem pronto do servidor e é SEMPRE editável antes de gerar: órgão tem
+// mania, obra tem particularidade, e modelo que não se ajusta faz a pessoa
+// voltar para o Word — que é pior do que não ter modelo nenhum.
+async function gerarOficio(id){
+  let r;
+  try { r = await api(`/erp/api/acompanhamento/${id}/oficio`); }
+  catch(e){ aviso("dlg-msg", e.message, "erro"); return; }
+  const g = r.rascunho;
+  const escolha = await perguntar({
+    titulo: `Ofício ${g.numero_previsto}`,
+    textoOk: "Gerar o PDF",
+    aviso: "Confira e ajuste o texto antes de gerar. Os ____________ são o que "
+         + "o sistema não tem como saber — preencha à mão. O número só é "
+         + "reservado quando você gerar.",
+    campos: [
+      {nome: "destinatario", rotulo: "Para quem", valor: g.destinatario,
+       largura: 3, exemplo: "ex.: Secretaria de Infraestrutura"},
+      {nome: "assunto", rotulo: "Assunto", valor: g.assunto, largura: 3},
+      {nome: "corpo", rotulo: "Texto do ofício", tipo: "textarea", linhas: 12,
+       valor: g.corpo, largura: 6, obrigatorio: true},
+      {nome: "local_e_data", rotulo: "Local e data", valor: g.local_e_data, largura: 3},
+      {nome: "assinatura", rotulo: "Quem assina", largura: 3,
+       exemplo: "nome e cargo de quem assina"},
+    ]});
+  if (!escolha) return;
+  try {
+    const d = await api(`/erp/api/acompanhamento/${id}/oficio`, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({...escolha, empresa_id: g.empresa_id})});
+    aviso("mensagem", `Ofício ${d.numero} gerado e arquivado.`, "ok");
+    if (d.anexo_id) window.open(`/erp/anexo/${d.anexo_id}`, "_blank");
+    await abrir(id); carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+// ------------------------------------------------- o deferimento que fecha
+// O sistema PROPÕE, a pessoa confirma. Nunca automático e calado: mexer
+// sozinho no prazo de um contrato é mexer em dinheiro, e o erro silencioso só
+// apareceria numa medição recusada meses depois.
+async function deferir(id){
+  let r;
+  try { r = await api(`/erp/api/acompanhamento/${id}/deferir`); }
+  catch(e){ aviso("dlg-msg", e.message, "erro"); return; }
+  const pr = r.proposta;
+  if (!pr.propoe) { aviso("dlg-msg", "Este processo não vira aditivo de contrato.", "erro"); return; }
+  const prazo = pr.tipo === "ADITIVO_PRAZO";
+  const escolha = await perguntar({
+    titulo: "O aditivo foi deferido",
+    textoOk: "Registrar na obra",
+    aviso: `Isto muda ${pr.o_que_muda} em ${escapar(pr.obra)}`
+         + (pr.vigencia_atual ? ` (hoje até ${dataBR(pr.vigencia_atual)})` : "")
+         + ". O número é o do termo assinado — o sistema não adivinha, porque "
+         + "número inventado é divergência com o contrato do órgão.",
+    campos: [
+      {nome: "numero", rotulo: "Número do termo aditivo", obrigatorio: true,
+       largura: 3, exemplo: "ex.: 2º TA"},
+      {nome: "data_assinatura", rotulo: "Assinado em", tipo: "date", largura: 3},
+      ...(prazo
+        ? [{nome: "dias", rotulo: "Dias acrescidos", largura: 3},
+           {nome: "nova_vigencia_fim", rotulo: "Nova vigência até", tipo: "date",
+            largura: 3, obrigatorio: true}]
+        : [{nome: "valor", rotulo: "Valor acrescido (R$)", largura: 3, obrigatorio: true}]),
+    ]});
+  if (!escolha) return;
+  try {
+    const d = await api(`/erp/api/acompanhamento/${id}/deferir`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(escolha)});
+    aviso("mensagem", `Aditivo ${d.numero} registrado na obra`
+      + (d.nova_vigencia_fim ? `, vigência até ${dataBR(d.nova_vigencia_fim)}.` : "."), "ok");
+    await abrir(id); carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+// ------------------------------------------- quanto cada órgão demora
+async function verDemora(){
+  try {
+    const d = await api("/erp/api/acompanhamento/demora");
+    els("dlg-titulo").textContent = "Quanto cada órgão demora";
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      <div class="aviso info">${escapar(d.observacao)}</div>
+      ${d.linhas.length ? `<table><thead><tr><th>Órgão</th><th>Assunto</th>
+        <th class="direita">Média</th><th class="direita">Mais rápido</th>
+        <th class="direita">Mais lento</th><th class="direita">Em andamento</th>
+        <th>Confiança</th></tr></thead><tbody>
+        ${d.linhas.map(l => `<tr>
+          <td><b>${escapar(l.orgao)}</b></td><td>${escapar(l.tipo_rotulo)}</td>
+          <td class="direita dados">${l.media_dias === null ? "—" : l.media_dias + " d"}</td>
+          <td class="direita dados">${l.menor === null ? "—" : l.menor + " d"}</td>
+          <td class="direita dados">${l.maior === null ? "—" : l.maior + " d"}</td>
+          <td class="direita dados">${l.abertos || "—"}</td>
+          <td><small>${escapar(l.confianca)}</small></td></tr>`).join("")}
+      </tbody></table>`
+      : `<div class="cartao-dica">Ainda não há processo encerrado com data de
+         protocolo. O número aparece sozinho conforme os processos forem
+         fechando.</div>`}`;
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function mexerNoPasso(id, corpo){
+  try {
+    await api(`/erp/api/acompanhamento/${id}/passo`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+    await abrir(id);
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
 async function lancarAndamento(id){

@@ -233,3 +233,159 @@ def test_abrir_lancar_e_assumir_deixam_rastro_na_trilha(cenario):
         "SELECT acao FROM eventos WHERE entidade_tipo = 'processo' "
         "AND entidade_id = :i"), {"i": pid}).all()}
     assert {"PROCESSO_ABERTO", "PROCESSO_ANDAMENTO", "PROCESSO_ASSUMIDO"} <= acoes
+
+
+# ---------------------------------------------------------------------------
+# OS PASSOS e O AVISO QUE CHEGA SOZINHO (pedaço 2, migração 073)
+# ---------------------------------------------------------------------------
+def test_marcar_e_desmarcar_passo_guarda_quem_e_quando(cenario):
+    s, chefe = cenario["s"], cenario["chefe"]
+    passos = svc.passos_do_processo(s, cenario["da_minha"].id)
+    assert len(passos) == 8, "o aditivo de prazo nasce com a lista do tipo"
+
+    svc.marcar_passo(s, passos[0].id, True, chefe)
+    assert passos[0].feito_em is not None and passos[0].feito_por == chefe.id
+
+    svc.marcar_passo(s, passos[0].id, False, chefe)
+    assert passos[0].feito_em is None and passos[0].feito_por is None
+
+
+def test_marcar_fora_de_ordem_e_permitido(cenario):
+    """O órgão não segue ordem, e obrigar ordem faria a pessoa mentir ao sistema."""
+    s, chefe = cenario["s"], cenario["chefe"]
+    passos = svc.passos_do_processo(s, cenario["da_minha"].id)
+
+    svc.marcar_passo(s, passos[6].id, True, chefe)
+    svc.marcar_passo(s, passos[2].id, True, chefe)
+
+    feitos = [p.ordem for p in svc.passos_do_processo(s, cenario["da_minha"].id)
+              if p.feito_em is not None]
+    assert feitos == [2, 6]
+
+
+def test_encerrar_com_passo_em_branco_nao_reclama(cenario):
+    """A lista lembra, não barra. Se um dia isto falhar, o módulo virou o SEI."""
+    s, chefe = cenario["s"], cenario["chefe"]
+
+    svc.atualizar(s, cenario["da_minha"].id, {"situacao": "DEFERIDO"}, chefe)
+    s.flush()
+
+    assert cenario["da_minha"].situacao == "DEFERIDO"
+    assert any(p.feito_em is None
+               for p in svc.passos_do_processo(s, cenario["da_minha"].id))
+
+
+def test_da_para_acrescentar_e_apagar_passo(cenario):
+    """O passo que só aquela prefeitura pede — sem isso a lista do modelo
+    viraria camisa de força com cara de ajuda."""
+    s, chefe = cenario["s"], cenario["chefe"]
+    pid = cenario["da_minha"].id
+
+    novo = svc.acrescentar_passo(s, pid, "Levar a via impressa no balcão", chefe)
+    assert novo.texto in [p.texto for p in svc.passos_do_processo(s, pid)]
+
+    assert svc.apagar_passo(s, novo.id) is True
+    assert novo.texto not in [p.texto for p in svc.passos_do_processo(s, pid)]
+
+
+def test_a_lista_traz_quantos_passos_ja_foram(cenario):
+    s, chefe = cenario["s"], cenario["chefe"]
+    passos = svc.passos_do_processo(s, cenario["da_minha"].id)
+    svc.marcar_passo(s, passos[0].id, True, chefe)
+    svc.marcar_passo(s, passos[1].id, True, chefe)
+    s.flush()
+
+    linha = [p for p in svc.listar(s, obras_permitidas=None)["processos"]
+             if p["numero"] == cenario["da_minha"].numero][0]
+    assert (linha["passos_feitos"], linha["passos_total"]) == (2, 8)
+
+
+def test_o_passo_de_outro_processo_nao_e_alcancavel_pela_rota(cenario, app_real):
+    """Mandar o id de um passo de fora seria uma porta lateral para o escopo."""
+    s = cenario["s"]
+    de_fora = svc.passos_do_processo(s, cenario["da_outra"].id)
+    if not de_fora:
+        de_fora = [svc.acrescentar_passo(s, cenario["da_outra"].id, "passo",
+                                         cenario["chefe"])]
+    s.flush()
+    c = como(app_real, cenario["chefe"].id)
+
+    r = c.post(f"/erp/api/acompanhamento/{cenario['da_minha'].id}/passo",
+               json={"passo_id": de_fora[0].id, "feito": True})
+
+    assert r.status_code == 404
+    assert de_fora[0].feito_em is None
+
+
+# ---------------------------------------------------------------------------
+# O aviso que chega sozinho: o processo travado entra na AGENDA
+# ---------------------------------------------------------------------------
+def test_processo_com_exigencia_vira_aviso_na_agenda(cenario):
+    from app.apps.erp.core.agenda import geradores
+
+    s, chefe = cenario["s"], cenario["chefe"]
+    svc.atualizar(s, cenario["da_minha"].id, {"situacao": "EXIGENCIA"}, chefe)
+    s.flush()
+
+    eventos = geradores.processos(s, date(2026, 9, 18))
+
+    meu = [e for e in eventos if cenario["da_minha"].numero in e["titulo"]]
+    assert len(meu) == 1
+    assert meu[0]["origem"] == "PROCESSO"
+    assert meu[0]["obra_id"] == cenario["minha"].id
+    assert "pediu alguma coisa" in meu[0]["detalhe"]
+    assert meu[0]["link"] == "/erp/acompanhamento"
+
+
+def test_processo_com_previsao_estourada_vira_aviso(cenario):
+    from app.apps.erp.core.agenda import geradores
+
+    s, chefe = cenario["s"], cenario["chefe"]
+    svc.atualizar(s, cenario["da_minha"].id,
+                  {"previsao": (date(2026, 9, 18) - timedelta(days=4)).isoformat()},
+                  chefe)
+    s.flush()
+
+    eventos = geradores.processos(s, date(2026, 9, 18))
+
+    assert any("4 dia(s)" in e["detalhe"]
+               for e in eventos if cenario["da_minha"].numero in e["titulo"])
+
+
+def test_processo_encerrado_nao_gera_aviso_nenhum(cenario):
+    """O que terminou não é pendência, e uma agenda cheia do que já acabou é
+    uma agenda que ninguém abre."""
+    from app.apps.erp.core.agenda import geradores
+
+    s, chefe = cenario["s"], cenario["chefe"]
+    for chave in ("da_minha", "da_outra", "da_empresa"):
+        svc.atualizar(s, cenario[chave].id, {"situacao": "ARQUIVADO"}, chefe)
+    s.flush()
+
+    assert geradores.processos(s, date(2026, 9, 18)) == []
+
+
+def test_processo_em_dia_nao_enche_a_agenda(cenario):
+    """Aviso que aparece sempre deixa de ser lido quando importa."""
+    from app.apps.erp.core.agenda import geradores
+
+    s, chefe = cenario["s"], cenario["chefe"]
+    for chave in ("da_minha", "da_outra", "da_empresa"):
+        svc.lancar_andamento(s, cenario[chave].id, {"texto": "andou hoje"}, chefe)
+    s.flush()
+
+    assert geradores.processos(s, date.today()) == []
+
+
+def test_a_chave_do_aviso_e_estavel_para_nao_empilhar(cenario):
+    """A sincronização roda todo dia: chave instável empilharia avisos iguais."""
+    from app.apps.erp.core.agenda import geradores
+
+    s, chefe = cenario["s"], cenario["chefe"]
+    svc.atualizar(s, cenario["da_minha"].id, {"situacao": "EXIGENCIA"}, chefe)
+    s.flush()
+
+    um = geradores.processos(s, date(2026, 9, 18))
+    dois = geradores.processos(s, date(2026, 9, 19))
+
+    assert {e["chave"] for e in um} == {e["chave"] for e in dois}

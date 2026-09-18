@@ -1495,3 +1495,48 @@ class ProcessoAndamento(Base):
     por_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+class ProcessoPasso(Base):
+    """Um item da lista de sugestões do processo (migração 073).
+
+    Repare no que NÃO existe aqui: `obrigatorio`, `depende_de`, `quem_marca`.
+    A ausência é a regra — a lista lembra, não barra.
+    """
+    __tablename__ = "processo_passos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    processo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("processos.id", ondelete="CASCADE"), nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    feito_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    feito_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class ProcessoOficio(Base):
+    """O ofício gerado pelo sistema (migração 074).
+
+    Guarda o CORPO como foi enviado, e não só o modelo: regerar a partir do
+    modelo meses depois daria outro texto, e aí o papel que está no órgão e o
+    que está no sistema divergiriam sem ninguém perceber.
+    """
+    __tablename__ = "processo_oficios"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    processo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("processos.id", ondelete="CASCADE"), nullable=False)
+    empresa_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
+    ano: Mapped[int] = mapped_column(Integer, nullable=False)
+    sequencia: Mapped[int] = mapped_column(Integer, nullable=False)
+    numero: Mapped[str] = mapped_column(Text, nullable=False)
+    destinatario: Mapped[Optional[str]] = mapped_column(Text)
+    assunto: Mapped[Optional[str]] = mapped_column(Text)
+    corpo: Mapped[str] = mapped_column(Text, nullable=False)
+    documento_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

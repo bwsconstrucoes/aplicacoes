@@ -54,7 +54,20 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
-### ⚠️ MIGRAÇÕES 071 e 072 PENDENTES — apertar "Aplicar atualizações do banco"
+### ⚠️ MIGRAÇÕES 073 e 074 — apertar "Aplicar atualizações do banco"
+
+- **073** cria a tabela dos passos sugeridos. Sem ela, **abrir processo falha**.
+- **074** cria a tabela dos ofícios **e o tipo de documento OFÍCIO**. Sem ela,
+  gerar ofício falha; sem o tipo, o ofício sairia com número e não seria
+  arquivado.
+
+O tipo é criado **pela migração**, e não só pelo catálogo em código, de
+propósito: o catálogo tem botão próprio em Configurações, e depender dele faria
+o primeiro ofício depois da publicação sair sem arquivamento. Hoje o botão que
+o dono já aperta basta.
+
+
+### ~~MIGRAÇÕES 071 e 072~~ — PUBLICADAS em 18/09/2026
 
 Duas, e as duas precisam ser aplicadas **no mesmo momento da publicação**:
 
@@ -105,6 +118,104 @@ nos reajustes de agora. O custo é a diferença de centésimos nos meses antigos
 A alternativa seria o reajuste passar a usar os números publicados em vez de
 acumular as variações — é mais fiel ao papel, mexe no cálculo de dinheiro, e
 por isso não fiz por conta própria.
+
+
+### ACOMPANHAMENTO — PEDAÇO 3: o ofício, o deferimento e a demora (migração 074)
+
+18/09/2026, fechando o módulo. Três entregas.
+
+**1. O OFÍCIO GERADO.** Na ficha do processo, "✉ Gerar ofício": o sistema monta
+a epígrafe com o que já sabe (contrato, obra, objeto, local, número do processo)
+e o miolo pelo tipo — aditivo de prazo, aditivo de valor, apostilamento,
+licença, certidão, protocolo de medição. Sai PDF sóbrio, numerado
+`OF 001/2026`, arquivado no Arquivo da obra e lançado como andamento.
+
+Quatro decisões, todas com o mesmo espírito:
+
+- **O texto é SEMPRE editável antes de gerar.** Órgão tem mania, obra tem
+  particularidade, e modelo que não se ajusta faz a pessoa voltar para o Word —
+  que é pior do que não ter modelo nenhum.
+- **O corpo fica guardado COMO FOI ENVIADO.** Regerar a partir do modelo meses
+  depois daria outro texto, e aí o papel que está no órgão e o que está no
+  sistema divergiriam sem ninguém perceber.
+- **A numeração é por empresa e por ano, com restrição única no banco.** Duas
+  pessoas gerando ao mesmo tempo sem essa trava produzem dois "OF 012/2026" — e
+  número repetido só aparece quando o órgão reclama. O **rascunho não numera**:
+  numerar o que vai ser descartado deixaria buraco na sequência, e buraco em
+  sequência de ofício é pergunta que o órgão faz.
+- **O que o ERP não sabe fica `____________`.** Espaço em branco é pedido de
+  atenção; valor inventado passa despercebido.
+
+Se o arquivamento falhar, **o ofício vale assim mesmo** (perder o número por
+causa do arquivo seria o rabo abanando o cachorro) — mas a falha vai escrita no
+andamento, porque ofício que existe e não está no Arquivo é o que ninguém acha
+no dia em que o órgão pergunta.
+
+**2. O DEFERIMENTO QUE FECHA O CICLO.** Em processo de aditivo aparece
+"✔ Foi deferido — registrar na obra". O sistema **propõe** (diz o que muda e
+qual é a vigência de hoje) e a **pessoa confirma**, digitando o número do termo
+assinado. Aí o aditivo é registrado na obra pela MESMA `criar_aditivo` do
+Arquivo — e a vigência estende, o que faz o alerta "Vigência vencida" sumir
+sozinho do painel de obras.
+
+  **Nunca automático e calado.** Mexer sozinho no prazo ou no valor de um
+  contrato é mexer em dinheiro, e um erro silencioso aqui só apareceria numa
+  medição recusada meses depois. O número não é adivinhado: ele está no papel,
+  e inventar "nº 3" porque existem dois cria divergência com o contrato do
+  órgão.
+
+**3. QUANTO CADA ÓRGÃO DEMORA.** Botão "⏱" na barra da lista: média, mais
+rápido, mais lento e quantos estão em andamento, por órgão e por tipo.
+
+  Só entra processo **encerrado com data de protocolo** — o que está aberto não
+  demorou, está demorando, e misturar os dois puxaria a média para baixo
+  justamente por causa dos que travaram. A coluna **confiança** diz em português
+  quando é "um caso só — não é média": ler "média 4 dias" de um único caso como
+  se fosse regra é o erro que essa coluna existe para evitar.
+
+**Verificado:** suíte completa verde, 24 testes novos com banco de verdade, e a
+tela exercitada no navegador de ponta a ponta — ofício gerado, numerado e
+arquivado (PDF conferido), deferimento estendendo a vigência da obra de
+15/01/2027 para 31/03/2027, e o quadro de demora.
+
+
+### ACOMPANHAMENTO — PEDAÇO 2: os passos e o aviso que chega sozinho (migração 073)
+
+18/09/2026, logo depois do pedaço 1. Duas entregas:
+
+**1. Cada tipo traz a lista do que costuma ter que ser feito.** O aditivo de
+prazo nasce com oito passos (justificativa, cronograma, ofício, protocolo,
+parecer, assinatura, publicação, atualizar a vigência no ERP); a licença com
+sete; e assim por diante. Quem nunca tocou um aditivo não sabe essa lista, e
+quem já tocou esquece um item.
+
+  **É SUGESTÃO, e a prova é uma AUSÊNCIA:** a tabela `processo_passos` não tem
+  `obrigatorio`, nem `depende_de`, nem `bloqueia`. Há um **teste estrutural**
+  cobrando que essas colunas nunca apareçam — porque o dia em que aparecerem, o
+  módulo terá virado o SEI, que foi o contraexemplo que o dono deu. Marcar fora
+  de ordem é permitido, e o processo fecha com passo em branco sem reclamar.
+
+  Os passos são LINHAS, e não um JSON fechado no tipo, de propósito: assim cabe
+  o passo que só aquela prefeitura pede, e ele não some ao trocar o tipo.
+
+**2. O processo travado entra na AGENDA.** Gerador novo (`geradores.processos`),
+com origem `PROCESSO` — "Processo travado" na tela. Gera para três casos, e
+apenas esses: exigência a responder, previsão estourada e parado. Encerrado e
+em dia não geram nada.
+
+  **Por que na agenda e não numa notificação própria:** a tela do Acompanhamento
+  é a de quem JÁ lembrou do assunto; a agenda é a que se abre de manhã. Ela já
+  tem escopo por obra, "resolver", "dispensar" e é para onde o dono olha. Um
+  segundo canal de avisos seria construir de novo o que existe e dividir a
+  atenção dele em dois lugares.
+
+  A chave do evento é `PROCESSO:<id>:<urgência>` — estável, porque a
+  sincronização roda todo dia e chave instável empilharia avisos iguais.
+
+**Verificado:** suíte completa verde, 13 testes novos (5 no dublê, 8 com banco),
+e a tela exercitada no navegador — processo novo nasce com a lista, marcar fora
+de ordem funciona, passo próprio acrescentado, e a barra de progresso aparece na
+lista.
 
 
 ### ACOMPANHAMENTO — PEDAÇO 1 CONSTRUÍDO (migração 072)
