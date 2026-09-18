@@ -160,6 +160,7 @@ MODULOS = [
         "cor": "var(--ambar)",
         "abas": [
             ("sup_solicitacoes", "Solicitações", "erp.pagina_suprimentos"),
+            ("sup_planejar", "Planejar cotações", "erp.pagina_suprimentos_planejar"),
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
             ("sup_pedidos", "Pedidos", "erp.pagina_suprimentos_pedidos"),
             ("locacoes", "Locações", "erp.pagina_locacoes"),
@@ -949,6 +950,15 @@ def _contexto_cadastros(sub: str) -> dict:
     return ctx
 
 
+@bp.route("/erp/suprimentos/planejar")
+@login_obrigatorio
+@permissao("comprar")
+def pagina_suprimentos_planejar():
+    """O disparo automático: o sistema monta, o comprador confere e dispara."""
+    return render_template("erp_suprimentos_planejar.html",
+                           **_contexto("sup_planejar"))
+
+
 @bp.route("/erp/suprimentos/insumos")
 @login_obrigatorio
 @permissao("ver_suprimentos")
@@ -1211,6 +1221,100 @@ def api_suprimentos_fornecedor_contato(fornecedor_id: int):
     except Exception as e:
         logger.exception("ERP/suprimentos: falha ao acrescentar contato")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/contatos/<int:contato_id>",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_fornecedor_contato_editar(contato_id: int):
+    """Corrigir o vendedor — em especial a OBSERVAÇÃO, que é descoberta com o
+    tempo e não no cadastro ("atende o interior", "só linha elétrica")."""
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            svc.editar_contato(s, contato_id,
+                               request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao editar contato")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/planejamento")
+@login_obrigatorio
+@permissao("comprar")
+def api_suprimentos_planejamento():
+    """O que o sistema PROPÕE cotar hoje — agrupado, priorizado e com quem vende.
+
+    Não dispara nada, e é exatamente essa a linha: o sistema faz o trabalho
+    braçal (varrer o pendente, agrupar, achar quem vende) e a decisão continua
+    com gente, na tela, antes de qualquer e-mail sair.
+    """
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    from app.apps.erp.core.suprimentos import planejamento
+    with get_session() as s:
+        u = _usuario_logado(s)
+        return jsonify({"ok": True, **planejamento.planejar(
+            s, obras_permitidas=obras_de_registro_sem_autor(s, u))})
+
+
+@bp.route("/erp/api/suprimentos/planejamento", methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_suprimentos_planejamento_criar():
+    """Transforma o plano CONFERIDO em cotações abertas.
+
+    Cria as cotações e põe os fornecedores no mapa — e para por aí. O e-mail
+    continua saindo por um clique na tela de Cotações: entre "montei para você"
+    e "mandei sozinho" existe uma diferença que o dono há de querer manter.
+    """
+    from app.apps.erp.core.suprimentos import planejamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            r = planejamento.criar_cotacoes(s, d.get("blocos") or [], u)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/equalizar", methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_equalizar():
+    """Põe na fila a consulta à Receita para acertar o cadastro.
+
+    Vai para a FILA por aritmética: a consulta pública aceita 3 CNPJs por
+    minuto e são ~1.700 fornecedores. Um botão que trava a tela por dez horas
+    não é um botão.
+    """
+    from app.apps.erp.core.comum import tarefas
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            t = tarefas.enfileirar_unico(
+                s, "equalizar_fornecedores",
+                {"limite": int(d.get("limite") or 120),
+                 "todos": bool(d.get("todos"))},
+                usuario=u, rotulo="Acertar o cadastro pela Receita")
+            s.commit()
+            # `enfileirar_unico` devolve None quando já havia um igual na fila:
+            # a tela precisa saber a diferença entre "pus na fila" e "já
+            # estava rodando", senão a pessoa aperta cinco vezes.
+            return jsonify({"ok": True, "tarefa_id": t.id if t else None,
+                            "ja_estava": t is None})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/suprimentos/fornecedores/contatos/<int:contato_id>",

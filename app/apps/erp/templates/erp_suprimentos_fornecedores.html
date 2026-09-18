@@ -47,8 +47,24 @@
         <span class="rotulo">Sem pessoa de contato</span></label>
       <label class="opcao"><input type="checkbox" id="f-sem-email">
         <span class="rotulo">Recebe por e-mail e não tem e-mail</span></label>
+      <label class="opcao"><input type="checkbox" id="f-fora-auto">
+        <span class="rotulo">Fora do disparo automático</span></label>
+      <label class="opcao"><input type="checkbox" id="f-varios-contatos">
+        <span class="rotulo">Com mais de um contato</span></label>
     </div>
   </div>
+
+  {# ACERTAR O CADASTRO PELA RECEITA. Dono, 18/09/2026: *"eu queria que você
+     fizesse uma equalização dessa razão social através de pesquisa via API"*.
+     Vai para a FILA porque a consulta pública aceita 3 CNPJs por minuto: com
+     1.700 fornecedores, um botão que trava a tela levaria dez horas. #}
+  <button class="btn secundario" id="btn-receita" style="width:100%; margin-top:14px">
+    ⟳ Acertar o cadastro pela Receita</button>
+  <div class="dica" style="margin-top:6px">Busca a razão social oficial, o
+    endereço e a situação de cada CNPJ. <b>Preenche o que está vazio e RELATA o
+    que discorda</b> — não troca nome por conta própria. Roda em segundo plano,
+    em lotes, e pode ser rodada de novo de onde parou.</div>
+  <div id="receita-estado"></div>
 {% endblock %}
 
 {% block conteudo %}
@@ -167,6 +183,8 @@ function visiveis(){
     if (!f.ativo && !els("f-inativos").checked) return false;
     if (els("f-sem-categoria").checked && f.categorias_ids.length) return false;
     if (els("f-sem-contato").checked && f.contatos.length) return false;
+    if (els("f-fora-auto").checked && f.cotacao_automatica !== false) return false;
+    if (els("f-varios-contatos").checked && f.contatos.length < 2) return false;
     if (els("f-sem-email").checked && !(f.canais.includes("EMAIL") && !f.email)) return false;
     if (F.categoria.size && !f.categorias_ids.some(i => F.categoria.has(String(i)))) return false;
     if (F.porte.size && !F.porte.has(f.porte)) return false;
@@ -308,17 +326,32 @@ function abrir(id){
       </div>
     </div>
 
+    {# QUEM RESPONDE — e são VÁRIOS, de propósito. Dono, 18/09/2026: *"tem
+       fornecedores que têm mais de uma pessoa que atende; um atende entregas
+       num determinado estado, outro entrega outro"*. Sem lugar para o segundo
+       vendedor, o comprador cadastrava a empresa de novo — foi assim que
+       nasceram boa parte dos 126 CNPJs repetidos da planilha. #}
     <div class="cartao">
       <div class="cartao-cab"><h3>Quem responde</h3>
-        <small>o cotador — sem nome de gente, a cotação vai para caixa geral</small></div>
-      <table><thead><tr><th>Nome</th><th>Função</th><th>E-mail</th><th>Telefone</th><th></th></tr></thead>
+        <small>vários por fornecedor — a observação é o que diferencia um do outro</small></div>
+      <table><thead><tr><th>Nome</th><th>Função</th><th>E-mail</th><th>Telefone</th>
+        <th>Do que trata</th><th class="direita">Cota</th><th></th></tr></thead>
         <tbody id="fx-contatos"></tbody></table>
       ${PODE_EDITAR ? `<div style="margin-top:10px">
-        <button class="btn secundario" id="fx-novo-contato">+ Acrescentar contato</button></div>` : ""}
+        <button class="btn secundario" id="fx-novo-contato">+ Acrescentar contato</button></div>
+        <div class="cartao-dica">Na <b>observação</b> escreva do que aquele vendedor
+        trata — "atende o interior", "só linha elétrica". É por ela que se escolhe
+        para quem mandar a cotação quando há mais de um.</div>` : ""}
     </div>
 
     <label class="opcao"><input type="checkbox" id="fx-ativo" ${f.ativo ? "checked" : ""} ${editavel}>
       <span class="rotulo">Ativo — aparece nas listas de cotação</span></label>
+    {# ENTRA NA SUGESTÃO AUTOMÁTICA? Dono: *"de repente eu tenho um fornecedor
+       pequeno que eu não costumo mandar para cotar, ou foi uma compra única"*. #}
+    <label class="opcao"><input type="checkbox" id="fx-automatico"
+      ${f.cotacao_automatica !== false ? "checked" : ""} ${editavel}>
+      <span class="rotulo">Entra no <b>disparo automático</b> de cotação
+        <small> — desligue para o fornecedor de compra única</small></span></label>
 
     ${PODE_EDITAR ? `<div style="margin-top:14px">
       <button class="btn" id="fx-salvar">Salvar</button></div>` : ""}`;
@@ -345,11 +378,17 @@ function abrir(id){
 
   const pintarContatos = () => {
     els("fx-contatos").innerHTML = f.contatos.map(c => `
-      <tr><td>${c.nome}</td><td>${c.funcao || "—"}</td><td>${c.email || "—"}</td>
-        <td class="dados">${c.telefone || "—"}</td>
+      <tr><td><b>${escapar(c.nome)}</b></td><td>${escapar(c.funcao) || "—"}</td>
+        <td class="desc">${escapar(c.email) || "—"}</td>
+        <td class="dados">${escapar(c.telefone) || "—"}</td>
+        <td class="desc"><small>${escapar(c.observacao) || "—"}</small></td>
+        <td class="direita">${c.recebe_cotacao !== false
+          ? `<span class="selo aprovado">sim</span>`
+          : `<span class="selo outro">não</span>`}</td>
         <td class="direita">${PODE_EDITAR
-          ? `<button class="link-btn" data-remover="${c.id}">remover</button>` : ""}</td></tr>`).join("")
-      || `<tr><td colspan="5">ninguém cadastrado</td></tr>`;
+          ? `<button class="link-btn" data-editar="${c.id}">editar</button>
+             <button class="link-btn" data-remover="${c.id}">remover</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="7">ninguém cadastrado</td></tr>`;
     document.querySelectorAll("[data-remover]").forEach(b =>
       b.addEventListener("click", async () => {
         try {
@@ -359,21 +398,58 @@ function abrir(id){
           pintarContatos();
         } catch(e){ aviso("ficha-msg", e.message, "erro"); }
       }));
+    document.querySelectorAll("[data-editar]").forEach(b =>
+      b.addEventListener("click", () => editarContato(+b.dataset.editar, pintarContatos)));
   };
   pintarContatos();
 
+  async function editarContato(contatoId, redesenhar){
+    const c = f.contatos.find(x => x.id === contatoId);
+    if (!c) return;
+    const d = await perguntar({
+      titulo: `Contato: ${c.nome}`, textoOk: "Salvar",
+      aviso: "A observação é o que diferencia dois vendedores do mesmo "
+           + "fornecedor — e é por ela que se escolhe para quem mandar.",
+      campos: [
+        {nome: "nome", rotulo: "Nome", valor: c.nome, obrigatorio: true, largura: 2},
+        {nome: "funcao", rotulo: "Função", valor: c.funcao, exemplo: "vendedor, gerente…"},
+        {nome: "email", rotulo: "E-mail", valor: c.email, largura: 2},
+        {nome: "telefone", rotulo: "Telefone", valor: c.telefone},
+        {nome: "observacao", rotulo: "Do que ele trata", valor: c.observacao,
+         tipo: "textarea", linhas: 3, largura: 6,
+         exemplo: "ex.: atende o interior do Ceará; só linha elétrica"},
+        {nome: "recebe", rotulo: "Recebe cotação", tipo: "select", largura: 3,
+         valor: c.recebe_cotacao === false ? "0" : "1",
+         opcoes: [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não"}]},
+      ]});
+    if (!d) return;
+    try {
+      await api(`/erp/api/suprimentos/fornecedores/contatos/${contatoId}`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({...d, recebe_cotacao: d.recebe === "1"})});
+      Object.assign(c, d, {recebe_cotacao: d.recebe === "1"});
+      redesenhar();
+    } catch(e){ aviso("ficha-msg", e.message, "erro"); }
+  }
+
   if (els("fx-novo-contato")) els("fx-novo-contato").addEventListener("click", async () => {
-    const d = await perguntar({titulo: "Contato do fornecedor", textoOk: "Acrescentar", campos: [
-      {nome: "nome", rotulo: "Nome", obrigatorio: true, largura: 2},
-      {nome: "funcao", rotulo: "Função", exemplo: "vendedor, gerente…"},
-      {nome: "email", rotulo: "E-mail", largura: 2},
-      {nome: "telefone", rotulo: "Telefone"}]});
+    const d = await perguntar({titulo: "Contato do fornecedor", textoOk: "Acrescentar",
+      aviso: "Escreva na observação do que este vendedor trata — é o que "
+           + "diferencia um do outro quando o fornecedor tem vários.",
+      campos: [
+        {nome: "nome", rotulo: "Nome", obrigatorio: true, largura: 2},
+        {nome: "funcao", rotulo: "Função", exemplo: "vendedor, gerente…"},
+        {nome: "email", rotulo: "E-mail", largura: 2},
+        {nome: "telefone", rotulo: "Telefone"},
+        {nome: "observacao", rotulo: "Do que ele trata", tipo: "textarea",
+         linhas: 3, largura: 6,
+         exemplo: "ex.: atende o interior do Ceará; só linha elétrica"}]});
     if (!d) return;
     try {
       const r = await api(`/erp/api/suprimentos/fornecedores/${id}/contatos`, {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify(d)});
-      f.contatos.push({id: r.id, ...d});
+      f.contatos.push({id: r.id, recebe_cotacao: true, ...d});
       pintarContatos();
     } catch(e){ aviso("ficha-msg", e.message, "erro"); }
   });
@@ -392,6 +468,7 @@ function abrir(id){
           municipio: els("fx-municipio").value.trim(),
           uf: els("fx-uf").value.trim().toUpperCase(),
           porte: els("fx-porte").value,
+          cotacao_automatica: els("fx-automatico").checked,
           regioes_atuacao: els("fx-regioes").value.split(",").map(x => x.trim()).filter(Boolean),
           canais_cotacao: canais,
           categorias: f.categorias_ids,
@@ -445,6 +522,25 @@ els("btn-limpar").addEventListener("click", () => {
     .forEach(id => els(id).checked = false);
   LIMITE = 200; montarFiltros(); desenhar();
 });
+// ------------------------------------------------ acertar pela Receita
+async function acertarPelaReceita(){
+  try {
+    const r = await api("/erp/api/suprimentos/fornecedores/equalizar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({limite: 120})});
+    if (r.ja_estava) {
+      aviso("mensagem", "Já tem uma consulta rodando — espere ela terminar.", "alerta");
+      return;
+    }
+    aviso("mensagem", "Consulta na fila. Ela roda em segundo plano, em lote de "
+        + "120 CNPJs; pode fechar a tela.", "ok");
+    acompanharTarefa(r.tarefa_id, {alvo: "receita-estado", aoTerminar: carregar});
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+els("btn-receita").addEventListener("click", acertarPelaReceita);
+["f-fora-auto", "f-varios-contatos"].forEach(x =>
+  els(x).addEventListener("change", desenhar));
+
 els("btn-novo").addEventListener("click", novoFornecedor);
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");

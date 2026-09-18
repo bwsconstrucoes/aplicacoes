@@ -54,7 +54,96 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
-### ⚠️ MIGRAÇÕES 073 e 074 — apertar "Aplicar atualizações do banco"
+### ⚠️ MIGRAÇÃO 075 — apertar "Aplicar atualizações do banco"
+
+Acrescenta a **observação do contato**, a marca **cotação automática** no
+fornecedor e os **contatos escolhidos** na coluna da cotação. Sem ela, a tela de
+fornecedores quebra ao salvar e o disparo não guarda para quem foi.
+
+
+### FORNECEDORES: um CNPJ, vários vendedores — e o disparo automático (migração 075)
+
+18/09/2026. O dono olhou os 126 CNPJs repetidos da planilha e explicou a
+origem, que muda tudo:
+
+> *"Um comprador cadastrou, aí depois um segundo comprador cadastrou de novo.
+> Mas veja que tem contatos diferentes — tem fornecedores que têm mais de uma
+> pessoa que atende. Um atende entregas num determinado estado, outro entrega
+> outro."*
+
+**Não era só sujeira: era um cadastro sem lugar para o segundo vendedor.** A
+pessoa resolveu do único jeito que dava — criando a empresa de novo.
+
+**O que mudou:**
+
+1. **O contato ganhou OBSERVAÇÃO** ("do que ele trata"): é o campo que
+   diferencia dois vendedores do mesmo fornecedor, e é por ele que se escolhe
+   para quem mandar. Editável na ficha, com editar/remover por linha.
+2. **O importador SOMA em vez de sobrescrever.** Duas linhas do mesmo CNPJ
+   viram um fornecedor com dois contatos; categoria, região e canal são a
+   UNIÃO das duas. A união é a direção segura para um filtro — categoria a
+   menos significa fornecedor que nunca mais é cotado naquilo, e ninguém
+   percebe.
+3. **Quem cadastrou vira a observação inicial** do contato, pedido dele com
+   todas as letras. Observação escrita por gente vence a automática; a
+   automática nunca apaga a escrita.
+4. **O disparo da cotação deixa escolher PARA QUEM**, dentro do fornecedor,
+   quando há mais de um contato — e grava a escolha na coluna, para o histórico
+   dizer para quem foi mesmo que a marca do cadastro mude depois.
+5. **Marca "entra no disparo automático"** no fornecedor, para o de compra
+   única ficar fora da sugestão sem sair do cadastro.
+6. **Botão "Acertar o cadastro pela Receita"**: consulta o CNPJ na BrasilAPI,
+   preenche o que está vazio e **RELATA o que discorda** — nunca troca razão
+   social por conta própria. Roda na FILA, em lotes de 120, porque a consulta
+   pública aceita 3 por minuto e são 1.700 fornecedores.
+
+**DEFEITO GRAVE ACHADO E CORRIGIDO NO CAMINHO:** `core/cadastros/fornecedores`
+definia uma classe `ErroValidacao` **própria, homônima** da do
+`core/comum/auditoria`. O importador tem `except ErroValidacao` para recusar a
+linha ruim e seguir — mas a classe que ele importa é a do `auditoria`, e a que
+o cadastro levantava era outra. O `except` não pegava. Resultado: **uma célula
+com CNPJ e CPF digitados juntos derrubou a carga inteira de 1.773 linhas**.
+Duas classes homônimas é o tipo de coisa que passa por toda revisão — o código
+lê igual nos dois lados. Há teste cobrando que uma linha ruim não derrube as
+boas.
+
+
+### O DISPARO AUTOMÁTICO DE COTAÇÃO — o sistema monta, a pessoa confere
+
+18/09/2026, pedido do dono:
+
+> *"A gente poderia receber uma demanda de suprimento e já disparar cotações
+> (…) o sistema, através de categoria de fornecedor, já planeja um disparo (…)
+> naquela tela eu estou visualizando o que vai ser disparado e para quem, e a
+> partir dali eu posso editar (…) ele vai apenas validar aquela sugestão do
+> sistema, editar uma ou outra coisa e disparar."*
+
+**Onde está:** Suprimentos › **Planejar cotações**.
+
+O sistema varre tudo que está esperando cotação, agrupa por **categoria de
+insumo** e por **município da obra**, sugere **quem vende aquilo** e ordena por
+urgência — atrasado primeiro, depois prioridade alta. Cada linha traz o
+**porquê**: "a obra pediu para 13/09 e já passou 5 dias", "na mesma cidade da
+obra", "fábrica", "⚠ sem e-mail".
+
+**A LINHA QUE ESTA TELA NÃO CRUZA, e é a decisão central do módulo:** o sistema
+faz o trabalho BRAÇAL e para. Montar as cotações é um clique; **mandar o
+e-mail é outro, na tela de Cotações**. O custo de uma sugestão ruim é
+desmarcar; o de um disparo errado é o fornecedor bom parar de responder.
+
+**Por que agrupa assim:** cimento e luminária no mesmo pedido voltam pela
+metade dos dois lados (o fornecedor responde o que é dele e ignora o resto); e
+preço para duas pontas do estado não é um preço só, porque frete e prazo mudam
+com a distância.
+
+**Achado no primeiro teste da tela, e corrigido:** o plano sugeria itens que já
+estavam numa cotação ABERTA — nove blocos sugeridos, nove recusados na hora de
+montar. O status do item não denuncia isso (um item em SOLICITACAO pode ter
+entrado numa cotação hoje de manhã). Agora eles ficam de fora, e o número deles
+aparece num quadrinho, para a ausência ser explicada em vez de misteriosa.
+
+
+### ⚠️ ~~MIGRAÇÕES 073 e 074~~ — publicadas em 18/09/2026
 
 - **073** cria a tabela dos passos sugeridos. Sem ela, **abrir processo falha**.
 - **074** cria a tabela dos ofícios **e o tipo de documento OFÍCIO**. Sem ela,

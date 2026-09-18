@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -183,11 +184,117 @@ def texto_dos_documentos(s: Session, parametros: dict[str, Any], andamento) -> d
     }
 
 
+# ---------------------------------------------------------------------------
+# Equalizar o cadastro de fornecedores pela Receita
+# ---------------------------------------------------------------------------
+# Pedido do dono em 18/09/2026: *"faz a pesquisa desses CNPJs todos e já
+# readequa com a nomenclatura certa"*.
+#
+# É TAREFA DE FUNDO por aritmética, não por preferência: a consulta pública
+# aceita 3 CNPJs por minuto, e são ~1.700 fornecedores. Um botão que trava a
+# tela por dez horas não é um botão. Aqui ela roda em lote, guarda onde parou e
+# pode ser rodada de novo amanhã de onde ficou.
+#
+# E ela NUNCA sobrescreve calada: preenche o que está vazio e RELATA o que
+# discorda. Trocar a razão social de um fornecedor é decisão de gente olhando
+# os dois nomes lado a lado.
+LOTE_DA_RECEITA = 120
+
+
+def equalizar_fornecedores(s: Session, parametros: dict[str, Any],
+                           andamento) -> dict[str, Any]:
+    """Consulta a Receita para cada fornecedor e ajeita o que dá."""
+    import re
+    import time
+
+    from sqlalchemy import select
+
+    from app.apps.erp.core.cadastros import receita
+    from app.apps.erp.db.models.cadastros import Fornecedor
+
+    limite = int(parametros.get("limite") or LOTE_DA_RECEITA)
+    so_pendentes = parametros.get("todos") is not True
+
+    alvos = []
+    for f in s.scalars(select(Fornecedor).order_by(Fornecedor.id)).all():
+        if not f.ativo:
+            continue
+        # CPF não tem cadastro de CNPJ para consultar. Pular aqui é o que
+        # impede o lote de gastar as 3 consultas por minuto com quem não tem
+        # resposta possível.
+        if len(re.sub(r"\D", "", f.cnpj_cpf or "")) != 14:
+            continue
+        if so_pendentes and (f.situacao_rfb or "").strip():
+            continue                 # já consultado antes
+        alvos.append(f)
+        if len(alvos) >= limite:
+            break
+
+    preenchidos = divergentes = baixadas = nao_achados = 0
+    fora_do_ar = ""
+    divergencias: list[dict[str, Any]] = []
+    for i, f in enumerate(alvos, start=1):
+        andamento(i, len(alvos), f"Consultando {f.razao_social[:40]}")
+        try:
+            dados = receita.consultar(f.cnpj_cpf)
+        except receita.ReceitaIndisponivel as erro:
+            # Rede fora não é erro de dado: para o lote e diz onde parou, para
+            # a próxima rodada continuar daqui.
+            fora_do_ar = str(erro)
+            logger.warning("ERP/trabalhos: Receita indisponível (%s)", erro)
+            break
+        if dados is None:
+            nao_achados += 1
+            f.situacao_rfb = "NAO ENCONTRADO"
+            f.situacao_rfb_em = datetime.now(timezone.utc)
+            continue
+
+        r = receita.comparar(f, dados)
+        for campo, valor in r["preencher"].items():
+            setattr(f, campo, valor)
+        if r["preencher"]:
+            preenchidos += 1
+        if r["diverge"]:
+            divergentes += 1
+            divergencias.append({"fornecedor_id": f.id, "cnpj": f.cnpj_cpf,
+                                 "no_erp": f.razao_social, **r["diverge"]})
+        f.situacao_rfb = r["situacao"] or "ATIVA"
+        f.situacao_rfb_em = datetime.now(timezone.utc)
+        if r["baixada"]:
+            baixadas += 1
+        if i % 10 == 0:
+            s.commit()
+        if i < len(alvos):
+            time.sleep(receita.ESPERA_ENTRE_CONSULTAS)
+    s.commit()
+
+    faltam = sum(1 for f in s.scalars(select(Fornecedor)).all()
+                 if f.ativo and not (f.situacao_rfb or "").strip())
+    return {
+        "consultados": len(alvos), "preenchidos": preenchidos,
+        "divergentes": divergentes, "baixadas": baixadas,
+        "nao_encontrados": nao_achados, "faltam": faltam,
+        # Só as 50 primeiras: a lista serve para a pessoa começar a conferir,
+        # não para virar um relatório que ninguém lê até o fim.
+        "divergencias": divergencias[:50],
+        "recado": (
+            (f"A consulta parou: {fora_do_ar}. " if fora_do_ar else "")
+            + f"{len(alvos)} fornecedor(es) consultados. "
+            + f"{preenchidos} tiveram endereço ou CNAE preenchidos. "
+            + (f"{divergentes} têm o nome DIFERENTE do da Receita — confira e "
+               f"decida, o sistema não troca sozinho. " if divergentes else "")
+            + (f"{baixadas} não estão ATIVAS na Receita. " if baixadas else "")
+            + (f"Ainda faltam {faltam} — rode de novo." if faltam
+               else "Não falta nenhum.")),
+    }
+
+
 def registrar_todos() -> None:
     """Liga os executores à fila. Chamado uma vez, no import das rotas."""
     tarefas.registrar("importar_pipefy", importar_pipefy)
     tarefas.registrar("sincronizar_agenda", sincronizar_agenda)
     tarefas.registrar("emitir_nota", emitir_nota)
     tarefas.registrar("texto_dos_documentos", texto_dos_documentos)
+    tarefas.registrar("equalizar_fornecedores", equalizar_fornecedores)
     # Emitir duas vezes cria duas notas de verdade na prefeitura.
     tarefas.registrar_sem_repeticao("emitir_nota")

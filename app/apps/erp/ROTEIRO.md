@@ -109,6 +109,23 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+### DISPARO AUTOMÁTICO DE COTAÇÃO — o que falta depois do pedaço de 18/09/2026
+
+A tela **Planejar cotações** já monta o plano e vira cotação. O que o dono
+descreveu e ainda NÃO existe:
+
+- **Disparar os e-mails a partir do plano**, sem passar pela tela de Cotações.
+  Foi decisão minha manter o pedágio de um clique por cotação — vale rever
+  depois de ele usar, e a conversa é sobre confiança na sugestão, não sobre
+  dificuldade técnica.
+- **Aprender com o histórico:** quem respondeu rápido, quem deu o melhor preço
+  naquela categoria, quem ignorou as últimas três. Hoje a ordem é por regra
+  fixa (mesma cidade, porte); com histórico ela passaria a ser por resultado.
+  Precisa de meses de cotação no sistema para significar alguma coisa.
+- **Periodicidade:** rodar sozinho toda segunda e deixar o plano pronto.
+
+
+
 ### ACOMPANHAMENTO — a gestão burocrática da obra — pedido de 17/09/2026
 
 O dono pediu o que hoje ele faz no Pipefy ("protocolo e medições"), com um
