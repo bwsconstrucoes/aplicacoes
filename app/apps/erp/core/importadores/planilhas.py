@@ -24,7 +24,8 @@ from app.apps.erp.core.comum.auditoria import ErroValidacao
 from app.apps.erp.db.models.cadastros import Usuario
 
 
-def ler_tabela(conteudo: bytes) -> list[dict[str, str]]:
+def ler_tabela(conteudo: bytes, *,
+               colunas_esperadas: tuple[str, ...] = ()) -> list[dict[str, str]]:
     """Lê a planilha venha ela em CSV ou em Excel (.xlsx).
 
     Existe porque exportar para CSV é um passo a mais que ninguém lembra de
@@ -39,30 +40,46 @@ def ler_tabela(conteudo: bytes) -> list[dict[str, str]]:
     nenhuma biblioteca nova entra por causa disto.
     """
     if conteudo[:2] == b"PK":
-        return _ler_xlsx(conteudo)
+        return _ler_xlsx(conteudo, colunas_esperadas)
     return _ler_csv(conteudo)
 
 
-def _ler_xlsx(conteudo: bytes) -> list[dict[str, str]]:
+def _ler_xlsx(conteudo: bytes,
+              colunas_esperadas: tuple[str, ...] = ()) -> list[dict[str, str]]:
     """Primeira aba da pasta, em modo de leitura (não carrega tudo em memória
     de uma vez — a planilha de insumos da BWS tem mais de 3 mil linhas e a
-    instância divide 2 GB com os outros módulos)."""
+    instância divide 2 GB com os outros módulos).
+
+    QUANDO A ABA CERTA NÃO É A PRIMEIRA (18/09/2026): a planilha do banco de
+    preços tem várias abas, e a que interessa não abre primeiro. Quem chama diz
+    quais colunas espera, e a aba é escolhida por elas — não pela posição.
+    Pedir para o dono reordenar as abas da planilha dele seria transformar um
+    detalhe nosso em trabalho dele.
+    """
     from openpyxl import load_workbook
 
     try:
         pasta = load_workbook(io.BytesIO(conteudo), data_only=True, read_only=True)
     except Exception as e:
         raise ErroValidacao(f"Não consegui abrir a planilha Excel: {e}") from e
-    aba = pasta.worksheets[0] if pasta.worksheets else None
-    if aba is None:
+    if not pasta.worksheets:
         raise ErroValidacao("A planilha Excel não tem nenhuma aba.")
+    aba = _aba_certa(pasta, colunas_esperadas)
     linhas: list[dict[str, str]] = []
     cabecalho: list[str] = []
+    alvo = {_simples(c) for c in colunas_esperadas}
     for bruta in aba.iter_rows(values_only=True):
         valores = ["" if v is None else str(v).strip() for v in bruta]
         if not cabecalho:
             if not any(valores):
                 continue                 # linha em branco antes do cabeçalho
+            # COM COLUNAS ESPERADAS, o cabeçalho é a linha que as traz — não a
+            # primeira linha escrita. Planilha de gente tem título, logotipo e
+            # painel de filtro em cima da tabela, e tomar a primeira linha como
+            # cabeçalho faria a importação inteira ler colunas chamadas
+            # "Preços de Insumos Cotados" e "".
+            if alvo and not alvo.issubset({_simples(v) for v in valores if v}):
+                continue
             cabecalho = [v.strip().lower() for v in valores]
             continue
         if not any(valores):
@@ -71,6 +88,33 @@ def _ler_xlsx(conteudo: bytes) -> list[dict[str, str]]:
                        for i, c in enumerate(cabecalho) if c})
     pasta.close()
     return linhas
+
+
+def _aba_certa(pasta, colunas_esperadas: tuple[str, ...]):
+    """A primeira aba cujo cabeçalho traz as colunas pedidas; se nenhuma
+    trouxer, a primeira da pasta — que é o comportamento de sempre."""
+    if not colunas_esperadas:
+        return pasta.worksheets[0]
+    alvo = {_simples(c) for c in colunas_esperadas}
+    for aba in pasta.worksheets:
+        # O cabeçalho às vezes não é a primeira linha (título, logo, filtro em
+        # cima). Vinte linhas é folga suficiente e não custa leitura.
+        for i, bruta in enumerate(aba.iter_rows(values_only=True)):
+            if i >= 20:
+                break
+            achadas = {_simples(str(v)) for v in bruta if v is not None}
+            if alvo.issubset(achadas):
+                return aba
+    return pasta.worksheets[0]
+
+
+def _simples(texto: str) -> str:
+    """Comparável: sem acento, sem caixa, sem espaço sobrando. "Nº Mapa" e
+    "nº mapa" têm de cair no mesmo lugar."""
+    import unicodedata
+    bruto = unicodedata.normalize("NFKD", (texto or "").strip().lower())
+    sem_acento = "".join(c for c in bruto if not unicodedata.combining(c))
+    return " ".join(sem_acento.split())
 
 
 def _ler_csv(conteudo: bytes) -> list[dict[str, str]]:
