@@ -3955,3 +3955,75 @@ def test_a_tela_de_QR_nao_apaga_a_memoria_da_selecao():
     js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
     trecho = js.split('getElementById("ba-codigos")')[1].split("});")[0]
     assert "selecaoConsumida" not in trecho
+
+
+# ---------------------------------------------------------------------------
+# O PDF E O CSV LEVAM O FILTRO INTEIRO — 18/09/2026
+#
+# > *"Eu coloco aplicar para poder baixar o PDF, mas não baixa com as
+# > informações que estão aparecendo na tela. Está aparecendo outras
+# > informações."*
+#
+# ⚠️ A CAUSA, e ela é traiçoeira: os links eram montados com `**args`, e `args`
+# é um MultiDict. Desempacotar com `**` pega **só o primeiro valor de cada
+# chave**. Marcando três obras, a tela filtrava pelas três e o link levava UMA.
+#
+# O pior não é o erro: é o silêncio. O arquivo baixa normalmente, com cara de
+# certo, e ninguém tem como desconfiar — a não ser somando na mão.
+#
+# `to_dict(flat=false)` devolve listas, e aí os três valores viajam.
+# ---------------------------------------------------------------------------
+def _href_de(html, rota):
+    """O endereço do link daquela rota, como ele sai no HTML."""
+    import re
+    achados = re.findall(r'href="([^"]*' + rota + r'[^"]*)"', html)
+    assert achados, f"não achei link para {rota} na tela"
+    return achados[0]
+
+
+def test_o_PDF_do_relatorio_leva_TODOS_os_valores_do_filtro(app_relatorio):
+    """Três obras marcadas na tela têm de ser três obras no PDF."""
+    from urllib.parse import unquote
+
+    html = como(app_relatorio, SENHA_CONSULTA).get(
+        "/analisesps/relatorio?centro_custo=OBRA-1&centro_custo=OBRA-2"
+        "&centro_custo=OBRA-3&tipo=pagas").get_data(as_text=True)
+
+    endereco = unquote(_href_de(html, "/relatorio/pdf"))
+    for obra in ("OBRA-1", "OBRA-2", "OBRA-3"):
+        assert f"centro_custo={obra}" in endereco, (
+            f"o PDF sairia sem {obra} — o filtro da tela não chegou inteiro. "
+            f"Endereço: {endereco}")
+    assert "tipo=pagas" in endereco, "perdeu o tipo do relatório"
+
+
+def test_o_CSV_do_relatorio_leva_TODOS_os_valores_do_filtro(app_relatorio):
+    """Mesmo link, mesmo defeito — e o CSV é o que vira planilha."""
+    from urllib.parse import unquote
+
+    html = como(app_relatorio, SENHA_CONSULTA).get(
+        "/analisesps/relatorio?tipo_despesa=Material&tipo_despesa=Ferramentas"
+        ).get_data(as_text=True)
+
+    endereco = unquote(_href_de(html, "/relatorio/exportar"))
+    assert "tipo_despesa=Material" in endereco
+    assert "tipo_despesa=Ferramentas" in endereco, (
+        f"o CSV sairia só com o primeiro tipo. Endereço: {endereco}")
+
+
+def test_UM_valor_so_continua_funcionando(app_relatorio):
+    """A trava do outro lado: o caso simples não pode ter quebrado."""
+    from urllib.parse import unquote
+
+    html = como(app_relatorio, SENHA_CONSULTA).get(
+        "/analisesps/relatorio?centro_custo=OBRA-12").get_data(as_text=True)
+
+    endereco = unquote(_href_de(html, "/relatorio/pdf"))
+    assert "centro_custo=OBRA-12" in endereco
+
+
+def test_SEM_filtro_nenhum_o_link_continua_valido(app_relatorio):
+    """Sem filtro, o link é o endereço limpo — não pode virar lixo."""
+    html = como(app_relatorio, SENHA_CONSULTA).get(
+        "/analisesps/relatorio").get_data(as_text=True)
+    assert "/analisesps/relatorio/pdf" in _href_de(html, "/relatorio/pdf")

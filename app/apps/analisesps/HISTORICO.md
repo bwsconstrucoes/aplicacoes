@@ -5424,6 +5424,68 @@ aparecer `017_nota_ciencia_e_arquivo.sql`. Estar ausente da lista de
 *pendentes* não basta — pode ser a versão velha ainda no ar.
 
 ---
+
+### Septuagésima segunda leva (18/09) — o PDF saía com outro filtro, e ninguém tinha como desconfiar
+
+> *"Eu coloco aplicar para poder baixar o PDF, mas não baixa com as informações
+> que estão aparecendo na tela. Está aparecendo outras informações."*
+
+#### A causa, e ela é de uma linha
+
+Os links de exportar eram montados assim: `url_for(rota, **args)`.
+
+`args` é o `request.args` do Flask — um **MultiDict**, que guarda vários
+valores por chave. **Desempacotar com `**` pega só o PRIMEIRO valor de cada
+uma.**
+
+Medido:
+
+    marcado na tela  →  ['OBRA-1', 'OBRA-2', 'OBRA-3']
+    no link do PDF   →  {'centro_custo': 'OBRA-1'}
+
+A tela filtrava por três obras; o arquivo saía com **uma**. Com um valor só por
+filtro — o caso mais comum — funcionava perfeitamente, e foi por isso que
+passou tanto tempo sem aparecer.
+
+#### ⚠️ O que torna este defeito pior do que parece: o silêncio
+
+O arquivo **baixa normalmente**. Sem erro, sem aviso, com cara de relatório
+certo. Quem recebe um PDF de prestação de contas não tem como desconfiar que
+faltam duas obras — a não ser somando na mão contra a tela, que é justamente o
+trabalho que o relatório existe para evitar.
+
+É a mesma família do que o `CLAUDE.md` nomeia: **número errado com cara de
+certo é pior que resposta nenhuma**.
+
+#### Eram QUATRO lugares, não um
+
+O mesmo `**args` estava em quatro links, e todos saíam errados do mesmo jeito:
+
+| Onde | O que saía capado |
+|---|---|
+| Relatório | **Baixar PDF** |
+| Relatório | **Exportar CSV** |
+| Solicitações / Lote / Doc. Fiscal | **Exportar CSV** (a barra de ações) |
+| Auditoria | **Exportar esta checagem** |
+
+Só a tela de Documentação Fiscal escapava, porque ela já usava
+`args.to_dict(flat=false)` — escrito quando o "28 vira 2" foi corrigido, em
+13/09. A forma certa existia no repositório e não tinha sido levada aos outros.
+
+#### O que NÃO estava errado
+
+O **"Quebrar por"** da tela não chega ao PDF, e isso é de propósito: o PDF traz
+**todas** as quebras (obra, projeto, tipo de despesa, conta). Ele é mais
+completo que a tela, não diferente.
+
+#### Os testes
+
+Quatro casos, e eles foram conferidos **desfazendo o conserto**: com `**args` de
+volta, dois falham com a mensagem exata do problema (*"o PDF sairia sem
+OBRA-2"*). Os outros dois travam o caso simples (um valor só) e o caso sem
+filtro nenhum, para o conserto não quebrar o que funcionava.
+
+---
 ---
 
 ## Regras que não se discutem
