@@ -31,7 +31,8 @@ from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import (
-    Empresa, Obra, Processo, ProcessoAndamento, SituacaoProcesso, Usuario,
+    Empresa, Obra, Processo, ProcessoAndamento, ProcessoPasso, SituacaoProcesso,
+    Usuario,
 )
 
 # Os tipos de assunto, com o nome que a BWS usa e quantos dias sem andamento
@@ -40,18 +41,65 @@ from app.apps.erp.db.models.cadastros import (
 # O prazo é POR TIPO porque a realidade é por tipo: licença ambiental dorme
 # semanas sem que isso signifique nada, e aditivo de prazo parado dez dias já
 # é problema. Um prazo único acenderia a luz nos dois lugares errados.
+# Junto vai a LISTA DE PASSOS que costuma ter aquele tipo. Ela é SUGESTÃO, e
+# não fluxo: cada passo é uma caixinha que a pessoa marca se quiser, em
+# qualquer ordem, e o processo fecha com passo em branco sem reclamar. Foi a
+# exigência mais forte do dono — *"não quero uma coisa travada"* —, e a
+# diferença entre sugerir e obrigar é justamente esta: a lista lembra o que
+# costuma faltar, sem impedir o caminho que o órgão inventou desta vez.
 TIPOS: dict[str, dict[str, Any]] = {
-    "ADITIVO_PRAZO":   {"rotulo": "Aditivo de prazo", "parado_em": 10},
-    "ADITIVO_VALOR":   {"rotulo": "Aditivo de valor", "parado_em": 10},
-    "APOSTILAMENTO":   {"rotulo": "Apostilamento (reajuste)", "parado_em": 15},
-    "LICENCA":         {"rotulo": "Licença ou autorização", "parado_em": 30},
-    "CERTIDAO":        {"rotulo": "Certidão", "parado_em": 15},
-    "CNO":             {"rotulo": "Matrícula CNO", "parado_em": 20},
-    "ART":             {"rotulo": "ART / RRT", "parado_em": 15},
-    "SEGURO":          {"rotulo": "Seguro-garantia", "parado_em": 15},
-    "PROTOCOLO":       {"rotulo": "Protocolo de medição", "parado_em": 15},
-    "OUTRO":           {"rotulo": "Outro assunto", "parado_em": 20},
+    "ADITIVO_PRAZO": {
+        "rotulo": "Aditivo de prazo", "parado_em": 10,
+        "passos": ["Justificativa técnica do atraso", "Cronograma novo",
+                   "Ofício de solicitação", "Protocolo no órgão",
+                   "Parecer jurídico do órgão", "Assinatura do termo",
+                   "Publicação no diário oficial",
+                   "Atualizar a vigência da obra no ERP"]},
+    "ADITIVO_VALOR": {
+        "rotulo": "Aditivo de valor", "parado_em": 10,
+        "passos": ["Planilha do acréscimo", "Justificativa técnica",
+                   "Ofício de solicitação", "Protocolo no órgão",
+                   "Parecer jurídico do órgão", "Assinatura do termo",
+                   "Publicação no diário oficial",
+                   "Atualizar o valor do contrato no ERP"]},
+    "APOSTILAMENTO": {
+        "rotulo": "Apostilamento (reajuste)", "parado_em": 15,
+        "passos": ["Índice do período conferido", "Memória de cálculo",
+                   "Ofício de solicitação", "Protocolo no órgão",
+                   "Apostilamento publicado",
+                   "Lançar a medição de reajuste no ERP"]},
+    "LICENCA": {
+        "rotulo": "Licença ou autorização", "parado_em": 30,
+        "passos": ["Documentação da empresa", "Taxa paga",
+                   "Protocolo no órgão", "Vistoria", "Exigências respondidas",
+                   "Licença emitida", "Arquivar a licença no ERP"]},
+    "CERTIDAO": {
+        "rotulo": "Certidão", "parado_em": 15,
+        "passos": ["Pendência conferida", "Solicitação feita",
+                   "Certidão emitida", "Arquivar no ERP"]},
+    "CNO": {
+        "rotulo": "Matrícula CNO", "parado_em": 20,
+        "passos": ["Dados da obra conferidos", "Matrícula solicitada",
+                   "Matrícula emitida", "Arquivar e preencher o CNO da obra"]},
+    "ART": {
+        "rotulo": "ART / RRT", "parado_em": 15,
+        "passos": ["Responsável técnico definido", "ART preenchida",
+                   "Taxa paga", "ART registrada", "Arquivar no ERP"]},
+    "SEGURO": {
+        "rotulo": "Seguro-garantia", "parado_em": 15,
+        "passos": ["Cotação com a seguradora", "Apólice emitida",
+                   "Entrega ao contratante", "Arquivar no ERP"]},
+    "PROTOCOLO": {
+        "rotulo": "Protocolo de medição", "parado_em": 15,
+        "passos": ["Medição montada", "Documentação fiscal completa",
+                   "Protocolo no órgão", "Medição atestada",
+                   "Nota emitida", "Pagamento recebido"]},
+    "OUTRO": {"rotulo": "Outro assunto", "parado_em": 20, "passos": []},
 }
+
+
+def passos_do_tipo(tipo: str) -> list[str]:
+    return list(TIPOS.get((tipo or "").upper(), TIPOS["OUTRO"]).get("passos", []))
 
 SITUACOES: dict[str, str] = {
     "RASCUNHO":    "Em preparo",
@@ -146,6 +194,13 @@ def criar(s: Session, dados: dict[str, Any], usuario: Optional[Usuario]) -> Proc
         documento_id=dados.get("documento_id") or None,
         criado_por=usuario.id if usuario else None)
     s.add(processo)
+    s.flush()
+    # A lista de sugestões nasce junto, do modelo do tipo. Nasce aqui e não na
+    # tela porque quem abre pelo celular, com pressa, é justamente quem mais
+    # precisa dela — e porque um passo acrescentado depois não some ao trocar
+    # de tipo: as linhas são do PROCESSO, não do modelo.
+    for ordem, texto in enumerate(passos_do_tipo(tipo)):
+        s.add(ProcessoPasso(processo_id=processo.id, texto=texto, ordem=ordem))
     s.flush()
     registrar_evento(s, "processo", processo.id, "PROCESSO_ABERTO", {
         "numero": processo.numero, "assunto": assunto, "tipo": tipo,
@@ -384,6 +439,25 @@ def _ultimo_andamento_por_processo(s: Session, ids: list[int]) -> dict[int, date
     return ultimos
 
 
+def _passos_por_processo(s: Session, ids: list[int]) -> dict[int, tuple[int, int]]:
+    """Quantos passos já foram marcados, e quantos são — para todos de uma vez.
+
+    Uma consulta para a lista inteira, e não uma por linha: é a diferença entre
+    a tela abrir e a tela demorar.
+    """
+    if not ids:
+        return {}
+    conta: dict[int, list[int]] = {}
+    for x in s.scalars(select(ProcessoPasso)).all():
+        if x.processo_id not in ids:
+            continue
+        par = conta.setdefault(x.processo_id, [0, 0])
+        par[1] += 1
+        if x.feito_em is not None:
+            par[0] += 1
+    return {k: (v[0], v[1]) for k, v in conta.items()}
+
+
 def listar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
            obra_id: Optional[int] = None, responsavel_id: Optional[int] = None,
            tipo: Optional[str] = None, incluir_encerrados: bool = False,
@@ -413,6 +487,7 @@ def listar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
         todos = [p for p in todos if p.situacao not in ENCERRADAS]
 
     ultimos = _ultimo_andamento_por_processo(s, [p.id for p in todos])
+    feitos = _passos_por_processo(s, [p.id for p in todos])
     linhas = []
     for p in todos:
         u = urgencia(p, ultimos.get(p.id), hoje)
@@ -428,7 +503,9 @@ def listar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
             "situacao_rotulo": SITUACOES.get(p.situacao, p.situacao),
             "previsao": p.previsao.isoformat() if p.previsao else None,
             "urgencia": u["chave"], "urgencia_rotulo": u["rotulo"],
-            "motivo": u["motivo"], "dias_parado": u["dias_parado"]})
+            "motivo": u["motivo"], "dias_parado": u["dias_parado"],
+            "passos_feitos": feitos.get(p.id, (0, 0))[0],
+            "passos_total": feitos.get(p.id, (0, 0))[1]})
 
     linhas.sort(key=lambda l: (URGENCIA_ORDEM.get(l["urgencia"], 9),
                                -l["dias_parado"], l["numero"]))
@@ -465,6 +542,11 @@ def detalhe(s: Session, processo_id: int) -> dict[str, Any]:
         "documento_id": p.documento_id,
         "urgencia": u["chave"], "urgencia_rotulo": u["rotulo"],
         "motivo": u["motivo"], "dias_parado": u["dias_parado"],
+        "passos": [{"id": x.id, "texto": x.texto, "ordem": x.ordem,
+                    "feito": x.feito_em is not None,
+                    "feito_em": x.feito_em.strftime("%d/%m/%Y") if x.feito_em else "",
+                    "feito_por": x.feito_por}
+                   for x in passos_do_processo(s, p.id)],
         "andamentos": [{
             "id": a.id, "texto": a.texto, "onde_esta": a.onde_esta,
             "previsao": a.previsao.isoformat() if a.previsao else None,
@@ -473,3 +555,52 @@ def detalhe(s: Session, processo_id: int) -> dict[str, Any]:
             "anexo_id": a.anexo_id, "por_id": a.por_id,
             "em": a.em.strftime("%d/%m/%Y %H:%M") if a.em else ""}
             for a in andamentos]}
+
+
+# ---------------------------------------------------------------------------
+# OS PASSOS — lembrete, nunca trava
+#
+# Nenhuma função aqui impede coisa alguma. Marcar, desmarcar, acrescentar e
+# apagar são livres, em qualquer ordem, e o processo fecha com passo em branco
+# sem reclamar. Se um dia alguém acrescentar uma validação aqui, o módulo terá
+# virado o SEI — que foi o contraexemplo que o dono deu.
+# ---------------------------------------------------------------------------
+def passos_do_processo(s: Session, processo_id: int) -> list[ProcessoPasso]:
+    return sorted([p for p in s.scalars(select(ProcessoPasso)).all()
+                   if p.processo_id == processo_id],
+                  key=lambda p: (p.ordem, p.id or 0))
+
+
+def marcar_passo(s: Session, passo_id: int, feito: bool,
+                 usuario: Optional[Usuario]) -> ProcessoPasso:
+    passo = s.get(ProcessoPasso, passo_id)
+    if passo is None:
+        raise ErroValidacao("Passo não encontrado.")
+    passo.feito_em = datetime.now(timezone.utc) if feito else None
+    passo.feito_por = (usuario.id if usuario else None) if feito else None
+    s.flush()
+    return passo
+
+
+def acrescentar_passo(s: Session, processo_id: int, texto: str,
+                      usuario: Optional[Usuario]) -> ProcessoPasso:
+    """O passo que só aquele órgão pede. Sem isto, a lista do modelo viraria
+    uma camisa de força com cara de ajuda."""
+    if s.get(Processo, processo_id) is None:
+        raise ErroValidacao("Processo não encontrado.")
+    limpo = _texto(texto, "O passo", obrigatorio=True, maximo=200)
+    ultimos = passos_do_processo(s, processo_id)
+    passo = ProcessoPasso(processo_id=processo_id, texto=limpo,
+                          ordem=(ultimos[-1].ordem + 1) if ultimos else 0)
+    s.add(passo)
+    s.flush()
+    return passo
+
+
+def apagar_passo(s: Session, passo_id: int) -> bool:
+    passo = s.get(ProcessoPasso, passo_id)
+    if passo is None:
+        return False
+    s.delete(passo)
+    s.flush()
+    return True

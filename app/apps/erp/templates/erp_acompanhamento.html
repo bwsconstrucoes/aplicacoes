@@ -98,6 +98,18 @@
 .proc.u-EXIGENCIA .proc-motivo, .proc.u-ATRASADO .proc-motivo { color: var(--vermelho); }
 .proc.u-PARADO .proc-motivo { color: var(--ambar); }
 .proc-num { font-family: var(--fonte-dados); font-size: 11px; color: var(--tinta-suave); }
+/* QUANTO JÁ ANDOU, em um fio. Um número solto ("3/8") obriga a pessoa a fazer
+   a conta; a barra é lida sem pensar, que é o ponto de uma tela de relance. */
+.proc-passos { display: flex; align-items: center; gap: 6px; margin-top: 6px;
+  height: 4px; background: var(--borda); border-radius: 3px; max-width: 260px; }
+.proc-passos span { display: block; height: 4px; border-radius: 3px;
+  background: var(--verde); }
+.proc-passos small { font-size: 10.5px; color: var(--tinta-suave);
+  margin-left: auto; transform: translateY(-4px); }
+.passos { border: 1px solid var(--borda); border-radius: 8px; padding: 4px 6px; }
+.passo { display: flex; align-items: center; gap: 6px; }
+.passo.feito .rotulo { color: var(--tinta-suave); text-decoration: line-through; }
+.passo [data-apagar] { margin-left: auto; color: var(--tinta-suave); }
 .proc-dir { text-align: right; font-size: 12px; color: var(--tinta-suave); white-space: nowrap; }
 .proc-marca { align-self: center; }
 /* O histórico do processo: uma linha por frase, com um fio ligando as datas. */
@@ -230,6 +242,9 @@ function desenhar(){
         </div>
         ${p.motivo ? `<div class="proc-motivo">${escapar(p.motivo)}</div>` : ""}
         ${p.onde_esta ? `<div class="proc-linha">está com: <b>${escapar(p.onde_esta)}</b></div>` : ""}
+        ${p.passos_total ? `<div class="proc-passos" title="${p.passos_feitos} de ${p.passos_total} passos">
+          <span style="width:${Math.round(100 * p.passos_feitos / p.passos_total)}%"></span>
+          <small>${p.passos_feitos}/${p.passos_total}</small></div>` : ""}
       </div>
       <div class="proc-dir">
         <span class="selo ${p.urgencia==="EM_DIA"?"aprovado":p.urgencia==="PARADO"?"aguardando":"bloqueado"}"
@@ -302,6 +317,28 @@ async function abrir(id){
           obrigatória — o resto é para quando você souber.</div>
       </div>` : ""}
 
+      {# OS PASSOS SUGERIDOS. Lembram o que costuma faltar, e não barram nada:
+         marcar fora de ordem é permitido, e o processo fecha com passo em
+         branco sem reclamar. #}
+      <h4>O que costuma ter que ser feito</h4>
+      ${p.passos.length ? `<div class="passos">${p.passos.map(x => `
+        <label class="opcao passo ${x.feito ? "feito" : ""}">
+          <input type="checkbox" class="pp" data-passo="${x.id}" ${x.feito ? "checked" : ""}
+            ${PODE_TOCAR ? "" : "disabled"}>
+          <span class="rotulo">${escapar(x.texto)}
+            ${x.feito ? `<small> · ${escapar(x.feito_em)}</small>` : ""}</span>
+          ${PODE_TOCAR ? `<button class="link-btn" data-apagar="${x.id}"
+            title="tirar este passo da lista">×</button>` : ""}
+        </label>`).join("")}</div>`
+        : `<div class="cartao-dica">Este tipo não tem lista sugerida.</div>`}
+      ${PODE_TOCAR ? `<div style="display:flex; gap:6px; margin-top:8px">
+        <input id="passo-novo" placeholder="acrescentar um passo que só este órgão pede"
+          style="flex:1; padding:7px 10px; border:1px solid var(--borda-forte);
+                 border-radius:8px; font-size:13px">
+        <button class="btn secundario" id="btn-passo">Acrescentar</button></div>
+        <div class="cartao-dica">A lista é lembrete, não trava: dá para marcar
+          fora de ordem, deixar em branco e fechar o processo assim mesmo.</div>` : ""}
+
       <h4>O que já aconteceu</h4>
       ${p.andamentos.length ? `<ul class="tempo">${p.andamentos.map(a => `
         <li><div class="quando">${escapar(a.em)} · ${escapar(nomeDoOperador(a.por_id))}</div>
@@ -315,7 +352,18 @@ async function abrir(id){
         : `<div class="cartao-dica">Nada lançado ainda. A primeira frase pode ser
            o que você combinou ao abrir o processo.</div>`}`;
     els("dlg").showModal();
+    document.querySelectorAll(".pp").forEach(c => c.addEventListener("change", () =>
+      mexerNoPasso(id, {passo_id: +c.dataset.passo, feito: c.checked})));
+    document.querySelectorAll("[data-apagar]").forEach(b => b.addEventListener("click", ev => {
+      ev.preventDefault();
+      mexerNoPasso(id, {passo_id: +b.dataset.apagar, acao: "apagar"});
+    }));
     if (PODE_TOCAR) {
+      els("btn-passo").addEventListener("click", () => {
+        const texto = (els("passo-novo").value || "").trim();
+        if (!texto) { aviso("dlg-msg", "Escreva o passo.", "erro"); return; }
+        mexerNoPasso(id, {acao: "acrescentar", texto});
+      });
       els("btn-and").addEventListener("click", () => lancarAndamento(id));
       els("and-texto").addEventListener("keydown", ev => {
         if (ev.key === "Enter") lancarAndamento(id);
@@ -323,6 +371,15 @@ async function abrir(id){
       els("and-texto").focus();
     }
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function mexerNoPasso(id, corpo){
+  try {
+    await api(`/erp/api/acompanhamento/${id}/passo`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+    await abrir(id);
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
 async function lancarAndamento(id){

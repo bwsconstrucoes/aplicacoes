@@ -122,8 +122,8 @@ pendente" para quem assume o assunto de alguém que saiu de férias.
 
 1. ✔ **PRONTO (18/09/2026, migração 072)** — processo + andamento + situação
    (com "parado" calculado) + a tela "o que está pendente" + botão Assumir.
-2. Modelos por tipo, previsão de publicação e aviso automático por WhatsApp
-   quando algo fica parado ou passa da previsão.
+2. ✔ **PRONTO (18/09/2026, migração 073)** — lista de passos sugeridos por
+   tipo (lembrete, nunca trava) e o processo travado entrando na Agenda.
 3. Ofício gerado e numerado, deferimento que propõe atualizar a vigência da
    obra, e indicadores de demora por órgão.
 

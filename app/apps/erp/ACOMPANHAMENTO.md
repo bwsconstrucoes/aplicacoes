@@ -1,8 +1,11 @@
 # ACOMPANHAMENTO — a gestão burocrática da obra (desenho, ainda não construído)
 
-> **Estado: PEDAÇO 1 CONSTRUÍDO em 18/09/2026** (migração 072) — processo,
-> andamento, situação com "parado" calculado, a tela "o que está pendente" e o
-> botão Assumir. Pedaços 2 e 3 continuam na fila (§11).
+> **Estado: PEDAÇOS 1 e 2 CONSTRUÍDOS em 18/09/2026** (migrações 072 e 073).
+> O 1 trouxe processo, andamento, situação com "parado" calculado, a tela "o
+> que está pendente" e o botão Assumir. O 2 trouxe a **lista de passos
+> sugeridos por tipo** e o **aviso que chega sozinho**: processo com exigência,
+> com previsão estourada ou parado entra na **Agenda**, que é a tela que se
+> abre de manhã. O pedaço 3 continua na fila (§11).
 >
 > **Estado anterior: APROVADO, em construção (pedaço 1).** O desenho abaixo foi
 > apresentado ao dono em 17/09/2026 e aprovado por ele em 18/09/2026, com duas
@@ -209,10 +212,23 @@ linha, situação (com o "parado" calculado), documentos, e a tela "o que está
 pendente" com o botão Assumir. Ligado à obra e ao Arquivo. Migração de banco:
 duas tabelas.
 
-**Pedaço 2 — o que faz lembrar sozinho.** Modelos por tipo, com passos e prazos
-típicos; previsão de publicação; aviso por WhatsApp ao responsável quando algo
-fica parado ou passa da previsão (a infraestrutura de agenda e WhatsApp já
-existe no ERP).
+**Pedaço 2 — o que faz lembrar sozinho.** ✔ **PRONTO (18/09/2026, migração
+073).** Cada tipo traz a lista do que costuma ter que ser feito, e o processo
+travado entra na **Agenda**.
+
+Duas decisões que valem registro:
+
+- **A lista de passos é SUGESTÃO, e a prova disso é uma ausência.** A tabela
+  `processo_passos` não tem `obrigatorio`, nem `depende_de`, nem `bloqueia` —
+  há um teste estrutural cobrando que essas colunas nunca apareçam. Marcar fora
+  de ordem é permitido, e o processo fecha com passo em branco sem reclamar.
+  Os passos são LINHAS e não um JSON fechado justamente para caber o passo que
+  só aquela prefeitura pede.
+- **O aviso entrou na AGENDA, e não numa notificação própria.** A tela do
+  Acompanhamento é a de quem já lembrou do assunto; a agenda é a que se abre de
+  manhã, já tem escopo por obra, já tem "resolver" e "dispensar", e já é para
+  onde o dono olha. Fazer um segundo canal de avisos seria construir de novo o
+  que existe — e dividir a atenção dele em dois lugares.
 
 **Pedaço 3 — o que fecha o ciclo.** Ofício gerado e numerado; deferimento que
 propõe atualizar a vigência da obra; indicadores por órgão (quanto tempo cada

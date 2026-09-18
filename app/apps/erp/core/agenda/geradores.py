@@ -393,4 +393,72 @@ def documentos(s: Session, hoje: Optional[date] = None) -> list[dict[str, Any]]:
     return saida
 
 
-TODOS = (reajustes, certidoes, locacoes, contratos, certificados, documentos)
+# ---------------------------------------------------------------------------
+# 7. O processo do Acompanhamento que parou de andar
+# ---------------------------------------------------------------------------
+def processos(s: Session, hoje: Optional[date] = None) -> list[dict[str, Any]]:
+    """Aditivo, licença e protocolo que travaram — ou que passaram da promessa.
+
+    Por que isto está na AGENDA e não só na tela do Acompanhamento: a tela do
+    Acompanhamento é a tela de quem já lembrou do assunto. A agenda é a que se
+    abre de manhã. Foi exatamente por isso que ela existe (ver o topo deste
+    arquivo), e um processo esquecido tem a mesma natureza de uma certidão
+    vencendo — com o agravante de que ele depende de terceiro, então cutucar
+    tarde custa semanas, não dias.
+
+    São TRÊS avisos com naturezas diferentes, e juntá-los num só esconderia o
+    que cada um pede:
+
+      · EXIGÊNCIA — o órgão está esperando a BWS. É o único em que a bola está
+        do nosso lado, e o mais caro de deixar dormindo;
+      · PREVISÃO ESTOURADA — prometeram uma data e ela passou. Pede telefonema,
+        não trabalho;
+      · PARADO — ninguém lançou andamento há mais dias do que aquele tipo
+        costuma dormir. Pode não ser nada; a única forma de saber é ligar.
+
+    Processo encerrado (deferido, indeferido, arquivado) não gera nada: o que
+    terminou não é pendência.
+    """
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.db.models.cadastros import Processo, ProcessoAndamento
+
+    hoje = hoje or date.today()
+    todos = [p for p in s.scalars(select(Processo)).all()
+             if p.situacao not in svc.ENCERRADAS]
+    if not todos:
+        return []
+
+    ids = {p.id for p in todos}
+    ultimos: dict[int, date] = {}
+    for a in s.scalars(select(ProcessoAndamento)).all():
+        if a.processo_id not in ids or a.em is None:
+            continue
+        quando = a.em.date() if hasattr(a.em, "date") else a.em
+        if a.processo_id not in ultimos or quando > ultimos[a.processo_id]:
+            ultimos[a.processo_id] = quando
+
+    saida: list[dict[str, Any]] = []
+    for p in todos:
+        u = svc.urgencia(p, ultimos.get(p.id), hoje)
+        if u["chave"] in ("EM_DIA", "PROXIMO"):
+            continue
+        onde = f" Está com: {p.onde_esta}." if p.onde_esta else ""
+        saida.append(_evento(
+            chave=f"PROCESSO:{p.id}:{u['chave']}",
+            origem="PROCESSO",
+            titulo=f"{p.numero} — {p.assunto}",
+            detalhe=(f"{svc.TIPOS.get(p.tipo, svc.TIPOS['OUTRO'])['rotulo']}: "
+                     f"{u['motivo']}.{onde} "
+                     f"Abra o Acompanhamento e lance o que aconteceu."),
+            # A data é HOJE: os três casos já são atraso, e pôr data futura
+            # faria o aviso nascer escondido atrás do filtro "o que já chegou
+            # a hora" — que é o padrão da tela.
+            quando=hoje,
+            avisar_dias=0,
+            obra_id=p.obra_id, empresa_id=p.empresa_id,
+            link="/erp/acompanhamento"))
+    return saida
+
+
+TODOS = (reajustes, certidoes, locacoes, contratos, certificados, documentos,
+         processos)

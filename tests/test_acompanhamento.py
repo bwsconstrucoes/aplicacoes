@@ -269,3 +269,54 @@ def test_assumir_para_operador_que_nao_existe_e_recusado(admin):
     s = SessaoFalsa(_processo())
     with pytest.raises(ErroValidacao, match="Operador"):
         svc.assumir(s, [1], 999, admin)
+
+
+# ---------------------------------------------------------------------------
+# OS PASSOS SUGERIDOS (pedaço 2, migração 073)
+#
+# A regra inteira deste bloco é uma ausência: NADA aqui pode impedir coisa
+# alguma. O dono citou o SEI como contraexemplo — *"não quero uma coisa
+# travada"* —, e a lista existe para lembrar o que costuma faltar, nunca para
+# barrar o caminho que o órgão inventou desta vez.
+# ---------------------------------------------------------------------------
+def test_o_processo_nasce_com_a_lista_do_tipo(sessao, admin):
+    from app.apps.erp.db.models.cadastros import ProcessoPasso
+
+    svc.criar(sessao, {"assunto": "Aditivo de prazo nº 2",
+                       "tipo": "ADITIVO_PRAZO", "obra_id": 10}, admin)
+
+    passos = [o for o in sessao.adicionados if isinstance(o, ProcessoPasso)]
+    assert [p.texto for p in passos][:3] == [
+        "Justificativa técnica do atraso", "Cronograma novo",
+        "Ofício de solicitação"]
+    assert [p.ordem for p in passos] == list(range(len(passos)))
+
+
+def test_tipo_sem_lista_nao_cria_passo_nenhum(sessao, admin):
+    from app.apps.erp.db.models.cadastros import ProcessoPasso
+
+    svc.criar(sessao, {"assunto": "Coisa solta", "tipo": "OUTRO",
+                       "obra_id": 10}, admin)
+
+    assert not [o for o in sessao.adicionados if isinstance(o, ProcessoPasso)]
+
+
+@pytest.mark.parametrize("tipo", sorted(svc.TIPOS))
+def test_todo_tipo_tem_rotulo_prazo_e_lista_declarados(tipo):
+    """Tipo novo entrando sem prazo herdaria um teto errado em silêncio."""
+    t = svc.TIPOS[tipo]
+    assert t["rotulo"].strip()
+    assert isinstance(t["parado_em"], int) and t["parado_em"] > 0
+    assert isinstance(t.get("passos", []), list)
+
+
+def test_os_passos_nao_tem_como_travar_o_processo():
+    """Varredura estrutural: se um dia aparecer 'obrigatorio' ou 'depende' num
+    passo, alguém transformou o lembrete em fluxo — e o módulo virou o SEI."""
+    from app.apps.erp.db.models.cadastros import ProcessoPasso
+
+    colunas = set(ProcessoPasso.__table__.columns.keys())
+    proibidas = {"obrigatorio", "depende_de", "anterior_id", "bloqueia",
+                 "quem_pode_marcar"}
+    assert not (colunas & proibidas), (
+        "passo é lembrete, não fluxo: nenhuma coluna pode impedir nada")

@@ -54,7 +54,13 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
-### ⚠️ MIGRAÇÕES 071 e 072 PENDENTES — apertar "Aplicar atualizações do banco"
+### ⚠️ MIGRAÇÃO 073 PENDENTE (as 071 e 072 já foram publicadas)
+
+A **073** cria a tabela dos passos sugeridos do Acompanhamento. Sem ela, abrir
+processo falha. Vai junto com a próxima publicação.
+
+
+### ~~MIGRAÇÕES 071 e 072~~ — PUBLICADAS em 18/09/2026
 
 Duas, e as duas precisam ser aplicadas **no mesmo momento da publicação**:
 
@@ -105,6 +111,45 @@ nos reajustes de agora. O custo é a diferença de centésimos nos meses antigos
 A alternativa seria o reajuste passar a usar os números publicados em vez de
 acumular as variações — é mais fiel ao papel, mexe no cálculo de dinheiro, e
 por isso não fiz por conta própria.
+
+
+### ACOMPANHAMENTO — PEDAÇO 2: os passos e o aviso que chega sozinho (migração 073)
+
+18/09/2026, logo depois do pedaço 1. Duas entregas:
+
+**1. Cada tipo traz a lista do que costuma ter que ser feito.** O aditivo de
+prazo nasce com oito passos (justificativa, cronograma, ofício, protocolo,
+parecer, assinatura, publicação, atualizar a vigência no ERP); a licença com
+sete; e assim por diante. Quem nunca tocou um aditivo não sabe essa lista, e
+quem já tocou esquece um item.
+
+  **É SUGESTÃO, e a prova é uma AUSÊNCIA:** a tabela `processo_passos` não tem
+  `obrigatorio`, nem `depende_de`, nem `bloqueia`. Há um **teste estrutural**
+  cobrando que essas colunas nunca apareçam — porque o dia em que aparecerem, o
+  módulo terá virado o SEI, que foi o contraexemplo que o dono deu. Marcar fora
+  de ordem é permitido, e o processo fecha com passo em branco sem reclamar.
+
+  Os passos são LINHAS, e não um JSON fechado no tipo, de propósito: assim cabe
+  o passo que só aquela prefeitura pede, e ele não some ao trocar o tipo.
+
+**2. O processo travado entra na AGENDA.** Gerador novo (`geradores.processos`),
+com origem `PROCESSO` — "Processo travado" na tela. Gera para três casos, e
+apenas esses: exigência a responder, previsão estourada e parado. Encerrado e
+em dia não geram nada.
+
+  **Por que na agenda e não numa notificação própria:** a tela do Acompanhamento
+  é a de quem JÁ lembrou do assunto; a agenda é a que se abre de manhã. Ela já
+  tem escopo por obra, "resolver", "dispensar" e é para onde o dono olha. Um
+  segundo canal de avisos seria construir de novo o que existe e dividir a
+  atenção dele em dois lugares.
+
+  A chave do evento é `PROCESSO:<id>:<urgência>` — estável, porque a
+  sincronização roda todo dia e chave instável empilharia avisos iguais.
+
+**Verificado:** suíte completa verde, 13 testes novos (5 no dublê, 8 com banco),
+e a tela exercitada no navegador — processo novo nasce com a lista, marcar fora
+de ordem funciona, passo próprio acrescentado, e a barra de progresso aparece na
+lista.
 
 
 ### ACOMPANHAMENTO — PEDAÇO 1 CONSTRUÍDO (migração 072)

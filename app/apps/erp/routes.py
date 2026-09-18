@@ -6884,6 +6884,43 @@ def api_acompanhamento_andamento(processo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/acompanhamento/<int:processo_id>/passo", methods=["POST"])
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_passo(processo_id: int):
+    """Marca, desmarca, acrescenta ou apaga um passo sugerido.
+
+    Nenhuma destas ações trava coisa alguma — a lista lembra, não barra. Se um
+    dia aparecer validação aqui, o módulo virou o SEI, que foi o contraexemplo
+    que o dono deu.
+    """
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            exigir_processo_no_escopo(s, u, processo_id)
+            # O passo pertence ao processo, e é por isso que ele é conferido
+            # aqui: mandar o id de um passo de OUTRO processo não pode virar
+            # uma porta lateral para fora do escopo.
+            passo_id = d.get("passo_id")
+            if passo_id is not None:
+                meus = {x.id for x in svc.passos_do_processo(s, processo_id)}
+                if int(passo_id) not in meus:
+                    raise ErroNaoEncontrado("Passo não encontrado.")
+            if d.get("acao") == "acrescentar":
+                svc.acrescentar_passo(s, processo_id, d.get("texto") or "", u)
+            elif d.get("acao") == "apagar":
+                svc.apagar_passo(s, int(passo_id))
+            else:
+                svc.marcar_passo(s, int(passo_id), bool(d.get("feito")), u)
+            s.commit()
+        return jsonify({"ok": True})
+    except (ErroValidacao, ValueError, TypeError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/acompanhamento/assumir", methods=["POST"])
 @login_obrigatorio
 @permissao("tocar_processo")

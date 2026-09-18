@@ -887,6 +887,17 @@ por isso que ela serve de cutucão.
 ⚠️ **Palavra ambígua: "em dia".** Significa apenas "não está vencido, parado nem
 com exigência". Não significa que vai sair no prazo.
 
+Com os passos (pedaço 2, migração 073), mais estas:
+
+- OK **Quanto já andou este processo?** 🔒 — quantos passos de quantos.
+- OK **O que falta neste aditivo?** 🔒 — os passos ainda não marcados.
+- OK **Quais processos nem começaram?** 🔒 — nenhum passo marcado e nenhum
+  andamento lançado.
+
+⚠️ **Palavra ambígua: "falta".** Um passo não marcado pode significar duas
+coisas bem diferentes: *ainda não foi feito* ou *foi feito e ninguém marcou*. A
+lista é lembrete, não controle — a resposta mede a marcação, não o mundo.
+
 O que ainda **não** responde:
 
 - FALTA **"Quanto tempo a prefeitura X demora para publicar um aditivo?"** — o
