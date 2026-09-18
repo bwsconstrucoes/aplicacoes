@@ -54,6 +54,55 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### ⚠️ MIGRAÇÃO 071 PENDENTE — apertar "Aplicar atualizações do banco"
+
+A 071 só acrescenta `BOLETIM` às origens aceitas na tabela de índices. Sem ela
+aplicada, **colar o boletim falha** (o banco recusa a origem nova); o resto do
+ERP continua normal. É a única migração desta leva.
+
+
+### COLAR O BOLETIM DO ÍNDICE, em vez de digitar mês a mês (migração 071)
+
+18/09/2026, o dono mandou o formato em que os índices chegam para ele:
+
+```
+Mês/Ano         Índice     Variação No mês  Variação No ano  Variação 12 meses
+julho/2025      1210,471   0,91             4,39             7,41
+agosto/2025     1216,706   0,52             4,93             7,22
+```
+
+Até então alimentar a tabela com esse papel eram **dois trabalhos separados**:
+digitar a variação mês a mês, e depois informar o número de UM mês noutro campo
+para a régua bater. Ele já tem a tabela inteira copiada da fonte.
+
+Agora, em Configurações › Índices, há uma caixa **"Colar a tabela do boletim"**:
+cola, aperta "Conferir antes" (mostra o que entendeu, o que muda e o valor
+antigo de cada mês), e grava. A variação entra, o número-índice alinha a régua
+pelo **mês mais recente** da colagem, e a origem fica registrada como `BOLETIM`
+— distinta de `BCB-SGS` e de `MANUAL`, porque quando um número for contestado a
+primeira pergunta é de onde ele veio.
+
+**Duas travas, e as duas já pegaram coisa de verdade:**
+
+1. **O boletim tem de bater consigo mesmo.** Se número ÷ número anterior
+   discorda da variação declarada, é aviso na cara. Pegou no primeiro texto que
+   o dono mandou: dezembro/2025 dizia 0,27%, mas de 1.225,633 para 1.228,161 a
+   variação é 0,21% — a linha de dezembro estava com as três variações iguais
+   às de novembro, sinal de cópia errada.
+2. **A diferença contra o papel é dita na tela.** Ancorando pelo mês mais
+   recente, os meses anteriores saem uns centésimos do impresso, porque o
+   boletim publica a variação com duas casas e a volta acumula arredondamento.
+   No boletim dele isso dá 0,013% em julho — abaixo da folga, então nem aparece.
+   Acima de 0,02% aparece, com os dois números lado a lado.
+
+**Decisão minha, que ele pode querer diferente:** a régua é alinhada pelo mês
+MAIS RECENTE da colagem, porque é o que ele acabou de conferir e o que entra
+nos reajustes de agora. O custo é a diferença de centésimos nos meses antigos.
+A alternativa seria o reajuste passar a usar os números publicados em vez de
+acumular as variações — é mais fiel ao papel, mexe no cálculo de dinheiro, e
+por isso não fiz por conta própria.
+
+
 ### AGUARDANDO DECISÃO: o módulo de ACOMPANHAMENTO (desenho pronto, nada construído)
 
 17/09/2026, o dono pediu a gestão burocrática da obra — aditivo de prazo,

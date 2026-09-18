@@ -6768,6 +6768,36 @@ def api_indices_lancar():
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/indices/boletim", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_indices_boletim():
+    """A tabela do boletim, colada de uma vez — variações E número-índice.
+
+    Antes disto, alimentar a tabela com o boletim do dono exigia duas telas
+    desconexas: digitar a variação mês a mês e depois informar o número de um
+    mês para a régua bater. Ele já tem a tabela inteira copiada da fonte
+    (18/09/2026: *"os índices vêm nesse formato"*) — colar resolve os dois.
+    """
+    from app.apps.erp.core.indices import bcb
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = bcb.importar_boletim(
+                s, codigo=(d.get("codigo") or bcb.PADRAO),
+                texto=d.get("texto") or "",
+                ancorar=d.get("ancorar") is not False,
+                usuario=_usuario_logado(s),
+                simular=bool(d.get("simular")))
+            if d.get("simular"):
+                s.rollback()
+            else:
+                s.commit()
+        return jsonify({"ok": True, "relatorio": r})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/indices/ancora", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")
