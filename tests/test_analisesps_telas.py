@@ -4027,3 +4027,119 @@ def test_SEM_filtro_nenhum_o_link_continua_valido(app_relatorio):
     html = como(app_relatorio, SENHA_CONSULTA).get(
         "/analisesps/relatorio").get_data(as_text=True)
     assert "/analisesps/relatorio/pdf" in _href_de(html, "/relatorio/pdf")
+
+
+# ---------------------------------------------------------------------------
+# O ANALÍTICO NO PDF DO RELATÓRIO — 18/09/2026
+#
+# > *"Queria que no relatório em PDF saísse mais abaixo o analítico. Está bom
+# > do jeito que você está colocando, mas está faltando a parte analítica: o
+# > lançamento, credor e a descrição com detalhe do que é. Pode reduzir a fonte
+# > para poder caber as coisas."*
+#
+# ⚠️ O QUE MAIS IMPORTA AQUI não é o analítico aparecer: é ele **fechar com o
+# total do topo**. Detalhe que soma diferente do resumo, na mesma folha, tira a
+# credibilidade do relatório inteiro — e quem confere não tem como saber qual
+# dos dois está certo.
+# ---------------------------------------------------------------------------
+def _analitico_falso(quantos, descricao="Cimento CP-II 50kg para a laje"):
+    import datetime as dt
+    from decimal import Decimal
+    return [{"id": f"140928{n:04d}", "data": dt.date(2026, 9, 10),
+             "credor": "SERTAO CASA E CONSTRUCAO LTDA",
+             "documento": "29.066.773/0001-52",
+             "centro_custo": "OBRA-12", "tipo_despesa": "Material",
+             "descricao": descricao, "valor": Decimal("1000.00")}
+            for n in range(1, quantos + 1)]
+
+
+def test_o_PDF_traz_o_analitico_com_SP_credor_e_descricao(app_relatorio,
+                                                          monkeypatch):
+    """Os três campos que ele pediu, com todas as letras."""
+    from app.apps.analisesps import consultas, pdf
+    monkeypatch.setattr(consultas, "analitico_do_relatorio",
+                        lambda f, t="geral", p="tudo", limite=0:
+                        _analitico_falso(3))
+
+    texto = _texto_do_pdf(pdf.relatorio({}, "geral", "tudo"))
+
+    assert "Anal" in texto, "não saiu a seção do analítico"
+    assert "1409280001" in texto, "faltou o número do lançamento"
+    assert "SERTAO CASA E CONSTRUCAO" in texto, "faltou o credor"
+    assert "Cimento CP-II 50kg para a laje" in texto, "faltou a descrição"
+
+
+def test_a_descricao_LONGA_nao_e_cortada_e_quebra_em_linhas(app_relatorio,
+                                                            monkeypatch):
+    """A descrição é o campo que explica o que é a despesa. Cortada na
+    metade, ela vira enfeite — quem lê fica sem a informação que foi buscar."""
+    from app.apps.analisesps import consultas, pdf
+    longa = ("Aquisicao de cimento CP-II 50kg para a concretagem da laje do "
+             "terceiro pavimento conforme pedido 8842 da obra residencial")
+    monkeypatch.setattr(consultas, "analitico_do_relatorio",
+                        lambda f, t="geral", p="tudo", limite=0:
+                        _analitico_falso(2, descricao=longa))
+
+    texto = _texto_do_pdf(pdf.relatorio({}, "geral", "tudo")).replace("\n", " ")
+
+    # O começo E o fim têm de estar na folha: só o começo significaria corte.
+    assert "Aquisicao de cimento" in texto
+    assert "obra residencial" in texto, "a descrição foi cortada no meio"
+
+
+def test_o_analitico_AVISA_quando_o_teto_cortou(app_relatorio, monkeypatch):
+    """⚠️ Analítico truncado EM SILÊNCIO é pior do que analítico nenhum: quem
+    soma as linhas não encontra o total do topo e conclui que a conta está
+    errada — quando o certo é o total."""
+    from app.apps.analisesps import consultas, pdf
+    monkeypatch.setattr(consultas, "ANALITICO_MAXIMO", 5)
+    monkeypatch.setattr(consultas, "analitico_do_relatorio",
+                        lambda f, t="geral", p="tudo", limite=0:
+                        _analitico_falso(5))
+
+    texto = _texto_do_pdf(pdf.relatorio({}, "geral", "tudo")).replace("\n", " ")
+
+    assert "maiores" in texto, "não avisou que a lista está cortada"
+    assert "abaixo do total do topo" in texto, (
+        "não explicou por que a soma das linhas não fecha")
+
+
+def test_sem_corte_o_PDF_afirma_que_a_soma_FECHA(app_relatorio, monkeypatch):
+    """A contrapartida: quando está tudo ali, dizer isso poupa a conferência."""
+    from app.apps.analisesps import consultas, pdf
+    monkeypatch.setattr(consultas, "analitico_do_relatorio",
+                        lambda f, t="geral", p="tudo", limite=0:
+                        _analitico_falso(3))
+
+    texto = _texto_do_pdf(pdf.relatorio({}, "geral", "tudo")).replace("\n", " ")
+
+    assert "fecha com o total do topo" in texto
+    assert "maiores" not in texto, "avisou de corte sem haver corte"
+
+
+def test_o_analitico_vem_DEPOIS_do_resumo(app_relatorio, monkeypatch):
+    """Quem abre o relatório quer primeiro o resumo. Pondo o analítico antes,
+    seriam dezenas de páginas de linhas antes do primeiro total."""
+    from app.apps.analisesps import consultas, pdf
+    monkeypatch.setattr(consultas, "analitico_do_relatorio",
+                        lambda f, t="geral", p="tudo", limite=0:
+                        _analitico_falso(3))
+
+    texto = _texto_do_pdf(pdf.relatorio({}, "geral", "tudo"))
+
+    assert texto.index("Ticket") < texto.index("Anal"), (
+        "o analítico apareceu antes dos totais do topo")
+
+
+def test_relatorio_SEM_lancamento_nenhum_nao_ganha_secao_vazia(app_relatorio,
+                                                               monkeypatch):
+    """Um título "Analítico" com nada embaixo faz parecer que algo falhou."""
+    from app.apps.analisesps import consultas, pdf
+    monkeypatch.setattr(consultas, "analitico_do_relatorio",
+                        lambda f, t="geral", p="tudo", limite=0: [])
+
+    texto = _texto_do_pdf(pdf.relatorio({}, "geral", "tudo"))
+
+    assert "lan" in texto.lower(), "o relatório saiu vazio — teste sem valor"
+    assert "Anal" not in texto, (
+        "desenhou a seção do analítico sem nenhum lançamento embaixo")

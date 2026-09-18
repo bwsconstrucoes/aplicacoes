@@ -42,6 +42,16 @@ TROCAS = {
 LARGURA_UTIL = 190      # A4 retrato, com as margens padrão de 10 mm
 
 
+def _data_br(valor) -> str:
+    """A data como a pessoa lê. Vazio quando não há — nunca "None" na folha."""
+    if not valor:
+        return "-"
+    try:
+        return valor.strftime("%d/%m/%y")
+    except AttributeError:
+        return _texto(valor)[:10]
+
+
 def _texto(valor) -> str:
     """Deixa o texto no que a fonte embutida sabe escrever."""
     s = "" if valor is None else str(valor)
@@ -260,6 +270,45 @@ def relatorio(filtros: dict, tipo: str, periodo: str) -> bytes:
              for f in aging],
             larguras=[110, 25, 55], direita={1, 2})
         folha.observacao("Uma SP que vence hoje não está atrasada.")
+
+    # ⚠️ O ANALÍTICO VEM POR ÚLTIMO, e é o pedido do dono em 18/09/2026:
+    # *"queria que no relatório em PDF saísse mais abaixo o analítico. Está bom
+    # do jeito que está, mas falta a parte analítica: o lançamento, credor e a
+    # descrição com detalhe do que é. Pode reduzir a fonte para caber."*
+    #
+    # POR ÚLTIMO de propósito: quem abre o relatório quer primeiro o resumo —
+    # os totais e as quebras respondem "quanto" e "onde". O analítico responde
+    # "quais", e é para onde se vai quando o número do topo surpreende. Pondo-o
+    # antes, seriam dezenas de páginas de linhas antes do primeiro total.
+    #
+    # FONTE 6,5 e quebra em até três linhas, como ele autorizou. É o mesmo
+    # caminho do PDF do lote, que já reduz a fonte para caber a descrição.
+    analitico = consultas.analitico_do_relatorio(filtros, tipo, periodo)
+    if analitico:
+        folha.titulo_secao("Analítico - lançamento a lançamento")
+        folha.tabela(
+            ["SP", "Data", "Credor", "Obra", "Tipo", "Descrição", "Valor"],
+            [[str(l["id"]), _data_br(l["data"]), l["credor"] or "-",
+              l["centro_custo"] or "-", l["tipo_despesa"] or "-",
+              l["descricao"] or "", "R$ " + moeda(l["valor"])]
+             for l in analitico],
+            larguras=[17, 15, 40, 26, 24, 45, 23], direita={6},
+            fonte=6.5, linhas_max=3)
+
+        # ⚠️ O AVISO DO TETO. Analítico cortado em silêncio é pior do que
+        # analítico nenhum: quem soma as linhas não encontra o total do topo e
+        # conclui que a conta está errada — quando o certo é o total.
+        if len(analitico) >= consultas.ANALITICO_MAXIMO:
+            folha.observacao(
+                f"ATENÇÃO: este analítico mostra as {len(analitico):,} maiores "
+                "despesas do filtro, e NÃO o filtro inteiro - por isso a soma "
+                "destas linhas fica abaixo do total do topo, que continua "
+                "certo. Para ver tudo, use um filtro mais estreito ou exporte "
+                "em CSV.".replace(",", "."))
+        else:
+            folha.observacao(
+                "São todos os lançamentos do filtro, do maior valor para o "
+                "menor. A soma desta lista fecha com o total do topo.")
 
     return folha.bytes()
 

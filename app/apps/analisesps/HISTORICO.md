@@ -5486,6 +5486,81 @@ OBRA-2"*). Os outros dois travam o caso simples (um valor só) e o caso sem
 filtro nenhum, para o conserto não quebrar o que funcionava.
 
 ---
+
+### Septuagésima terceira leva (18/09) — o analítico no PDF do relatório
+
+> *"Queria que no relatório em PDF saísse mais abaixo o analítico. Está bom do
+> jeito que você está colocando, mas está faltando a parte analítica: o
+> lançamento, credor e a descrição com detalhe do que é. Pode reduzir a fonte
+> para poder caber as coisas."*
+
+O PDF tinha os totais, as quebras por obra/projeto/tipo/conta, os maiores
+credores e o atraso — tudo **resumo**. Faltava o que está por trás: cada
+lançamento, um por linha.
+
+Agora, **ao final do relatório**, uma tabela com **SP · Data · Credor · Obra ·
+Tipo · Descrição · Valor**, em fonte 6,5 e com a descrição quebrando em até
+três linhas — foi ele quem autorizou reduzir a fonte. É o mesmo caminho do PDF
+do lote, que já fazia isso desde 11/09.
+
+#### Por último, e não no começo
+
+Quem abre o relatório quer primeiro o resumo: os totais e as quebras respondem
+*"quanto"* e *"onde"*. O analítico responde *"quais"*, e é para onde se vai
+quando um número do topo surpreende. Pondo-o antes, seriam dezenas de páginas
+de linhas antes do primeiro total. Há teste exigindo essa ordem.
+
+#### ⚠️ A parte que mais importa: o detalhe FECHA com o total
+
+O analítico usa **exatamente** o mesmo recorte dos totais — as mesmas funções
+de filtro e de período que a contagem e as quebras usam.
+
+Isto não é zelo. Detalhe e resumo saem **na mesma folha**: se filtrassem por
+critérios diferentes, a soma das linhas não bateria com o número do topo, e
+quem conferisse não teria como saber qual dos dois está certo. O relatório
+inteiro perderia a credibilidade por causa justamente da parte que deveria
+prová-lo.
+
+Dois testes com banco de verdade cravam isso: a soma do analítico bate com o
+total **no centavo**, e filtrando por obra o detalhe encolhe junto.
+
+#### ⚠️ O teto, e por que ele AVISA
+
+São **2.000 linhas**, da maior despesa para a menor. A base tem 59 mil SPs; um
+relatório sem filtro viraria um PDF de centenas de páginas que ninguém abre e
+que come a memória do serviço ao ser montado.
+
+**Quando o teto corta, a folha diz isso com todas as letras** — e explica a
+consequência: *"a soma destas linhas fica abaixo do total do topo, que continua
+certo"*. Analítico truncado em silêncio seria pior do que analítico nenhum:
+quem somasse as linhas não encontraria o total e concluiria que **a conta está
+errada**, quando o certo é o total.
+
+Quando não corta, a folha afirma o contrário — *"a soma desta lista fecha com o
+total do topo"* — o que poupa a conferência de quem recebe.
+
+A ordem por valor existe por causa do teto: cortando em 2.000, o que fica de
+fora é o miúdo, não a despesa que interessa.
+
+#### O que ficou de fora
+
+- **O CSV do relatório não ganhou o analítico.** Ele já exporta os blocos de
+  resumo, e quem quer lançamento a lançamento em planilha tem o "Exportar CSV"
+  das Solicitações, que sai com o filtro inteiro (corrigido nesta mesma data).
+  Acrescentar um sexto bloco lá tornaria o arquivo difícil de abrir no Excel.
+- **A coluna "Data" muda de significado conforme o relatório**: em "pagas" é a
+  data do pagamento; nos outros, o vencimento. É a mesma data que o período
+  recorta — mostrar vencimento num relatório de pagas faria a coluna não
+  explicar por que aquela linha entrou.
+
+#### Conferido gerando o PDF de verdade
+
+Três páginas, 45 lançamentos com descrição longa e credor comprido: a tabela
+cabe na largura da folha (as sete colunas somam os 190 mm exatos), o cabeçalho
+se repete na virada de página, a descrição quebra em vez de ser cortada, e o
+aviso do rodapé aparece.
+
+---
 ---
 
 ## Regras que não se discutem
