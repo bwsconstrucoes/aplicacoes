@@ -40,7 +40,7 @@
         <span class="rotulo">Atrasado e prioridade alta</span></label>
     </div>
   </div>
-  <div class="dica" style="margin-top:12px">O sistema agrupou por
+  <div class="dica" id="dica-do-disparo" style="margin-top:12px">O sistema agrupou por
     <b>categoria</b> e por <b>município da obra</b>: cimento e luminária no
     mesmo pedido voltam pela metade dos dois lados, e preço de duas pontas do
     estado não é um preço só.</div>
@@ -327,7 +327,7 @@ function trocarPainel(qual){
   // controle que não controla nada — e quem mexe e não vê efeito conclui que
   // a tela está quebrada.
   const cobrando = qual === "cobrar";
-  document.querySelectorAll(".filtro, .busca, #btn-limpar")
+  document.querySelectorAll(".filtro, .busca, #btn-limpar, #dica-do-disparo")
     .forEach(e => e.classList.toggle("oculto", cobrando));
   const nota = els("filtros-da-cobranca");
   if (nota) nota.classList.toggle("oculto", !cobrando);
