@@ -222,6 +222,44 @@ def registrar_evento(chave: str, resultado: dict, quem: str = "") -> None:
                          chave)
 
 
+def falta_a_atualizacao_do_banco() -> bool:
+    """As tabelas da ciência existem? Responde True quando FALTA aplicar.
+
+    ⚠️ ISTO EXISTE POR CAUSA DE UM ERRO EM SILÊNCIO — 18/09/2026.
+
+    Sem a migração 017 a seleção de notas falhava, era engolida, e a tarefa
+    respondia *"0 nota(s) com ciência dada (de 0 olhadas)"*. Essa frase se lê
+    como **"não havia nada a fazer"**, e é outra coisa: "não consegui nem
+    perguntar". O dono apertaria o botão, veria zero, e concluiria que não
+    havia nota nenhuma esperando — sem nunca descobrir que faltava um passo.
+
+    É o defeito que o `CLAUDE.md` chama pelo nome: número errado com cara de
+    certo é pior do que resposta nenhuma.
+
+    Na dúvida responde False (não falta nada): assim o caminho normal segue e
+    quem decide é a Receita, não um palpite nosso sobre o estado do banco."""
+    from .db import consultar_um
+
+    try:
+        linha = consultar_um(
+            "SELECT count(*) FROM information_schema.tables "
+            " WHERE table_schema = 'analisesps' "
+            "   AND table_name IN ('nota_evento', 'nota_arquivo')")
+    except Exception:  # noqa: BLE001 — banco fora do ar: não é este o problema
+        logger.exception("Análise de SPs: não consegui conferir as tabelas da "
+                         "ciência")
+        return False
+    return int((linha or [0])[0] or 0) < 2
+
+
+RECADO_SEM_MIGRACAO = (
+    "A atualização do banco ainda não foi aplicada, e sem ela a ciência não "
+    "pode ser registrada — então nada foi enviado à Receita. Vá em "
+    "Configurações e aperte \"Aplicar atualizações do banco\". "
+    "⚠️ Se a tela disser que está tudo em dia, a publicação ainda não "
+    "terminou: espere o serviço subir e abra Configurações de novo.")
+
+
 def notas_para_manifestar(limite: int = 0) -> list:
     """As notas que ainda esperam ciência, das mais novas para as mais velhas.
 
@@ -275,6 +313,13 @@ def manifestar_pendentes(anotar=None, quem: str = "rotina",
     anotar = anotar or (lambda *a, **k: None)
     if not sefaz.configurado():
         return {"manifestadas": 0, "falhas": 0, "erro": "sem certificado"}
+    # ⚠️ ANTES DE QUALQUER COISA: sem as tabelas da ciência não há onde
+    # registrar, e a rotina devolveria "0 notas" — que se lê como "não havia
+    # nada a fazer". Dizer o que falta é a diferença entre apertar o botão que
+    # resolve e procurar defeito onde não há.
+    if falta_a_atualizacao_do_banco():
+        return {"manifestadas": 0, "falhas": 0, "olhadas": 0,
+                "erro": RECADO_SEM_MIGRACAO}
 
     pendentes = notas_para_manifestar(limite)
     feitas, falhas, ja_existiam = 0, 0, 0

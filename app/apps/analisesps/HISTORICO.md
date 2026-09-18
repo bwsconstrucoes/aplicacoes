@@ -5307,6 +5307,123 @@ precisa semear ao menos uma SP, senão falha por motivo errado — e faz perder
 tempo procurando no lugar errado.
 
 ---
+
+### Septuagésima leva (18/09) — o cabeçalho órfão: a regra existia, mas só num caminho
+
+> *"Em algum momento eu pedi que, quando eu removesse cancelados ou pagos de um
+> lote e ele ficasse vazio, o cabeçalho limpasse. Mas até agora não funcionou."*
+
+**Ele tem razão, e o pedido dele é de 11/09.** O que foi feito naquele dia
+funcionava — só que **por um caminho só**.
+
+#### Há TRÊS jeitos de tirar SP do lote, e um deles ficou de fora
+
+| Caminho | Limpava o cabeçalho órfão? |
+|---|---|
+| "Remover pagos" / "Remover cancelados" | ✔ desde 11/09 |
+| "Remover duplicados" | ✔ desde 11/09 |
+| **"Remover" da barra do alto** (marcar as linhas) | ✘ **nunca** |
+
+Os dois primeiros passavam por uma função comum (`_limpar`), escrita justamente
+para que as limpezas tratassem o título órfão do mesmo jeito. O terceiro
+montava o texto à mão, linha por linha, e guardava **todo** título — esvaziado
+ou não.
+
+Como o dono trabalha marcando as linhas, era sempre esse o caminho que ele
+usava. Do lado dele, o pedido simplesmente nunca funcionou.
+
+#### ⚠️ O que fez o defeito durar quase uma semana: um comentário errado
+
+Dentro do `remover_ids` estava escrito:
+
+> *"Os títulos dos grupos ficam, mesmo que o grupo esvazie — apagar o título
+> junto faria a remessa perder a divisão que alguém montou. **Mesma decisão do
+> `remover_por_status` ao lado**."*
+
+**A decisão do `remover_por_status` é a oposta**: ele tira o título junto. A
+frase estava errada, e errada de um jeito específico — ela oferecia uma
+justificativa coerente e uma referência cruzada falsa. Quem abrisse o arquivo
+para investigar encontrava uma explicação pronta e parava ali.
+
+**A lição, e ela é geral:** comentário errado é pior do que comentário nenhum.
+Sem comentário, quem investiga vai ler o código do lado e descobre em um
+minuto. Com um comentário errado, a investigação termina no lugar errado com a
+sensação de ter sido concluída. Ao escrever "mesma decisão de X", conferir X.
+
+#### E havia um TESTE cravando o comportamento errado
+
+`test_remover_do_lote_tira_de_grupos_diferentes` afirmava, com comentário
+explicando: *"os títulos ficam mesmo quando o grupo esvazia"*. Ou seja: a suíte
+protegia o defeito. Corrigido junto, e o teste agora exige as duas metades — o
+grupo que ainda tem SP mantém o título, o que esvaziou perde.
+
+#### A regra, agora num lugar só e conferida nos três caminhos
+
+`remover_ids` passou a usar o mesmo `_limpar` dos outros dois. Três testes
+novos percorrem **os três caminhos de uma vez**: se um divergir de novo, é ali
+que aparece. E a trava do outro lado continua valendo, nos três: **grupo que já
+estava vazio antes continua** — alguém escreveu aquele título de propósito,
+para encher depois.
+
+#### Conferido na tela
+
+Pelo caminho que ele usa (marcar as linhas e remover): o grupo que esvaziou
+some com o título, o que ainda tem SP fica, e tirando a última SP o lote fica
+realmente vazio — a tela diz "o lote está vazio" em vez de mostrar um título
+sem nada embaixo.
+
+---
+
+### Septuagésima primeira leva (18/09) — "não pediu para atualizar o banco"
+
+> *"Não foi preciso atualizar o banco, não pediu."*
+
+Ele abriu Configurações depois da publicação e a tela não ofereceu nada para
+aplicar. Duas explicações possíveis, e as duas merecem registro.
+
+#### A explicação provável: a tela só conhece o código JÁ PUBLICADO
+
+A lista de atualizações pendentes é a comparação entre **os arquivos `.sql` que
+existem no código rodando** e a tabela de controle no banco. Se a tela é aberta
+**antes de o Render terminar de publicar**, o código antigo está no ar — e ele
+**nem sabe que as migrações 013 a 017 existem**. A tela então diz, com toda a
+sinceridade, que não há nada pendente.
+
+É uma armadilha de tempo, não um defeito: "tudo em dia" pode significar "tudo
+em dia" ou "ainda não sei o que existe", e as duas frases são idênticas na tela.
+
+#### ⚠️ O defeito de verdade que isso revelou: a ciência errava em SILÊNCIO
+
+Se ele tivesse apertado "Dar ciência e baixar as notas" sem a migração 017
+aplicada, a resposta seria:
+
+> *"0 nota(s) com ciência dada (de 0 olhadas)."*
+
+**Essa frase se lê como "não havia nada a fazer"** — e o que aconteceu foi
+outra coisa: a consulta falhou porque as tabelas não existem, a falha foi
+engolida, e a lista voltou vazia. Ele veria zero, concluiria que não há nota
+esperando ciência, e **nunca descobriria que faltava um passo**.
+
+É exatamente o defeito que o `CLAUDE.md` nomeia: *número errado com cara de
+certo é pior que resposta nenhuma*. A diferença entre apertar o botão que
+resolve e passar uma semana procurando defeito onde não há.
+
+Agora a rotina **confere as tabelas antes de tudo** e, faltando, responde o que
+falta, onde resolver — e avisa da armadilha de tempo acima, com todas as
+letras: *"se a tela disser que está tudo em dia, a publicação ainda não
+terminou"*.
+
+Na dúvida (banco fora do ar, pergunta não respondida) ela assume que **não**
+falta nada: assim o caminho normal segue e quem decide é a Receita, não um
+palpite nosso sobre o estado do banco.
+
+#### Como conferir que a 017 está mesmo aplicada
+
+Na tela de Configurações, na lista de atualizações **aplicadas**, tem de
+aparecer `017_nota_ciencia_e_arquivo.sql`. Estar ausente da lista de
+*pendentes* não basta — pode ser a versão velha ainda no ar.
+
+---
 ---
 
 ## Regras que não se discutem

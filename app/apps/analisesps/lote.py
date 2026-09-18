@@ -208,31 +208,31 @@ def remover_ids(texto: str, ids) -> tuple[str, int]:
     todas de uma vez. Sem ele, tirar uma SP do lote era editar o texto na mão
     e achar o número no meio dos outros.
 
-    Os TÍTULOS DOS GRUPOS FICAM, mesmo que o grupo esvazie — apagar o título
-    junto faria a remessa perder a divisão que alguém montou, e reconstruir
-    isso custa mais do que uma linha vazia incomoda. Mesma decisão do
-    `remover_por_status` ao lado."""
+    ⚠️ O TÍTULO DO GRUPO QUE ESVAZIA SAI JUNTO, como em todas as outras
+    remoções — corrigido em 18/09/2026, por relato do dono: *"eu pedi que
+    quando eu removesse cancelados ou pagos de um lote e ele ficasse vazio, o
+    cabeçalho limpasse. Mas até agora não funcionou."*
+
+    E não funcionava mesmo, POR AQUI. "Remover pagos" e "Remover cancelados"
+    limpavam o cabeçalho desde 11/09; este caminho — o "Remover" da barra do
+    alto, marcando as linhas — montava o texto à mão e guardava todo título,
+    esvaziado ou não.
+
+    O QUE FEZ O DEFEITO DURAR: o comentário que estava aqui dizia *"os títulos
+    ficam (…) mesma decisão do `remover_por_status` ao lado"* — e a decisão do
+    `remover_por_status` é a OPOSTA: ele tira o título junto. Quem lesse este
+    arquivo para conferir encontrava uma justificativa coerente para um
+    comportamento que ninguém tinha decidido. Comentário errado é pior do que
+    comentário nenhum: ele encerra a investigação no lugar errado.
+
+    Agora usa o mesmo `_limpar` das outras três, e a regra é uma só —
+    inclusive a parte que importa: grupo que JÁ ESTAVA vazio antes continua,
+    porque alguém escreveu aquele título de propósito para encher depois."""
     alvos = {str(i).strip() for i in (ids or []) if str(i).strip()}
     if not alvos:
         return str(texto or ""), 0
 
-    linhas_novas: list[str] = []
-    removidos = 0
-
-    for bruta in str(texto or "").split("\n"):
-        linha = bruta.strip()
-        if not linha:
-            continue
-        pedacos = [p for p in SEPARADORES.split(linha) if p]
-        if pedacos and all(SO_DIGITOS.fullmatch(p) for p in pedacos):
-            mantidos = [p for p in pedacos if p not in alvos]
-            removidos += len(pedacos) - len(mantidos)
-            if mantidos:
-                linhas_novas.append(" ".join(mantidos))
-        else:
-            linhas_novas.append(linha)      # título de grupo: sempre fica
-
-    return "\n".join(linhas_novas).strip("\n"), removidos
+    return _limpar(texto, lambda sp: sp in alvos)
 
 
 # ---------------------------------------------------------------------------

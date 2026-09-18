@@ -1435,10 +1435,20 @@ def test_remover_do_lote_tira_de_grupos_diferentes_de_uma_vez(app_lote,
     assert "1" not in guardado["conteudo"].split()
     assert "3" not in guardado["conteudo"].split()
     assert "2" in guardado["conteudo"], "tirou o que não foi marcado"
-    # Os títulos ficam mesmo quando o grupo esvazia: apagá-los faria a remessa
-    # perder a divisão que alguém montou.
-    assert "Pagar amanhã" in guardado["conteudo"]
-    assert "Semana que vem" in guardado["conteudo"]
+
+    # ⚠️ MUDOU EM 18/09/2026, e a versão anterior deste teste cravava o
+    # comportamento ERRADO — foi ela que fez o defeito sobreviver.
+    #
+    # Relato do dono: *"eu pedi que quando eu removesse cancelados ou pagos de
+    # um lote e ele ficasse vazio, o cabeçalho limpasse. Mas até agora não
+    # funcionou."* Não funcionava POR AQUI: "Remover pagos" limpava desde
+    # 11/09; o "Remover" da barra, não.
+    #
+    # O grupo que ainda tem SP mantém o título; o que esvaziou AGORA perde.
+    assert "Pagar amanhã" in guardado["conteudo"], (
+        "sumiu o título de um grupo que ainda tem SP")
+    assert "Semana que vem" not in guardado["conteudo"], (
+        "o título ficou órfão: o grupo esvaziou e o cabeçalho continuou")
 
 
 def test_remover_do_lote_nao_mexe_na_sp(app_lote, monkeypatch):
