@@ -124,8 +124,9 @@ pendente" para quem assume o assunto de alguém que saiu de férias.
    (com "parado" calculado) + a tela "o que está pendente" + botão Assumir.
 2. ✔ **PRONTO (18/09/2026, migração 073)** — lista de passos sugeridos por
    tipo (lembrete, nunca trava) e o processo travado entrando na Agenda.
-3. Ofício gerado e numerado, deferimento que propõe atualizar a vigência da
-   obra, e indicadores de demora por órgão.
+3. ✔ **PRONTO (18/09/2026, migração 074)** — ofício gerado e numerado por
+   empresa/ano, deferimento que registra o aditivo na obra (propõe, a pessoa
+   confirma) e o quadro de demora por órgão.
 
 Decisões tomadas por ele em 18/09: **nada de Pipefy** e **nada de importar dado
 antigo de lá** — o módulo nasce vazio e só recebe coisa nova. Falta só a **data

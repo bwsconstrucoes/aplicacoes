@@ -1,6 +1,10 @@
 # ACOMPANHAMENTO — a gestão burocrática da obra (desenho, ainda não construído)
 
-> **Estado: PEDAÇOS 1 e 2 CONSTRUÍDOS em 18/09/2026** (migrações 072 e 073).
+> **Estado: OS TRÊS PEDAÇOS CONSTRUÍDOS em 18/09/2026** (migrações 072 a 074).
+> O 3 trouxe o **ofício gerado e numerado**, o **deferimento que registra o
+> aditivo na obra** e o quadro de **quanto cada órgão demora**.
+>
+> Estado anterior: **pedaços 1 e 2** (migrações 072 e 073).
 > O 1 trouxe processo, andamento, situação com "parado" calculado, a tela "o
 > que está pendente" e o botão Assumir. O 2 trouxe a **lista de passos
 > sugeridos por tipo** e o **aviso que chega sozinho**: processo com exigência,
@@ -230,9 +234,31 @@ Duas decisões que valem registro:
   onde o dono olha. Fazer um segundo canal de avisos seria construir de novo o
   que existe — e dividir a atenção dele em dois lugares.
 
-**Pedaço 3 — o que fecha o ciclo.** Ofício gerado e numerado; deferimento que
-propõe atualizar a vigência da obra; indicadores por órgão (quanto tempo cada
-órgão demora, por tipo de processo).
+**Pedaço 3 — o que fecha o ciclo.** ✔ **PRONTO (18/09/2026, migração 074).**
+
+- **O ofício.** Modelo por tipo, com a epígrafe montada do que o ERP já sabe
+  (contrato, obra, objeto, local, processo). Três decisões: o texto é **sempre
+  editável antes de gerar** (modelo que não se ajusta faz a pessoa voltar para
+  o Word); o **corpo fica guardado como foi enviado** (regerar do modelo meses
+  depois daria outro texto, e o papel do órgão e o sistema divergiriam em
+  silêncio); e a **numeração é por empresa e por ano, com restrição única no
+  banco** — sem ela, duas pessoas gerando ao mesmo tempo produzem dois
+  "OF 012/2026". O rascunho **não numera**: numerar o que vai ser descartado
+  deixaria buraco na sequência.
+  O que o ERP não sabe fica como `____________`, de propósito: espaço em branco
+  é pedido de atenção, valor inventado passa despercebido.
+- **O deferimento.** O sistema **propõe**, a pessoa **confirma** — nunca
+  automático e calado, porque mexer sozinho no prazo de um contrato é mexer em
+  dinheiro e o erro só apareceria numa medição recusada meses depois. O número
+  do termo é digitado, não adivinhado: número inventado vira divergência com o
+  contrato do órgão. Reusa `criar_aditivo`, que já sabe somar valor vigente e
+  mexer na vigência — escrever de novo faria duas verdades sobre o mesmo
+  contrato.
+- **A demora por órgão.** Só entra processo **encerrado com data de protocolo**:
+  o que está aberto não demorou, está demorando, e misturar puxaria a média
+  para baixo por causa dos que travaram. A contagem viaja junto e a coluna
+  "confiança" diz em português quando é **um caso só** — ler "média 4" de um
+  caso como se fosse regra é o erro que isso evita.
 
 ---
 

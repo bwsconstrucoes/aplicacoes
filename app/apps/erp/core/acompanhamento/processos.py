@@ -515,6 +515,13 @@ def listar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
             "pendentes": sum(v for k, v in resumo.items() if k != "EM_DIA")}
 
 
+def _oficios_do_processo(s: Session, processo_id: int) -> list[dict[str, Any]]:
+    """Import tardio de propósito: `oficios` importa este módulo de volta (ele
+    lança o andamento do ofício gerado), e no topo isso seria ciclo."""
+    from app.apps.erp.core.acompanhamento import oficios
+    return oficios.listar_do_processo(s, processo_id)
+
+
 def detalhe(s: Session, processo_id: int) -> dict[str, Any]:
     """O processo e o histórico dele, do mais novo para o mais antigo."""
     p = s.get(Processo, processo_id)
@@ -542,6 +549,7 @@ def detalhe(s: Session, processo_id: int) -> dict[str, Any]:
         "documento_id": p.documento_id,
         "urgencia": u["chave"], "urgencia_rotulo": u["rotulo"],
         "motivo": u["motivo"], "dias_parado": u["dias_parado"],
+        "oficios": _oficios_do_processo(s, p.id),
         "passos": [{"id": x.id, "texto": x.texto, "ordem": x.ordem,
                     "feito": x.feito_em is not None,
                     "feito_em": x.feito_em.strftime("%d/%m/%Y") if x.feito_em else "",
@@ -604,3 +612,156 @@ def apagar_passo(s: Session, passo_id: int) -> bool:
     s.delete(passo)
     s.flush()
     return True
+
+
+# ---------------------------------------------------------------------------
+# O DEFERIMENTO QUE FECHA O CICLO (pedaço 3)
+#
+# Um aditivo de prazo deferido muda a vigência da obra. Hoje isso depende de
+# alguém lembrar de ir ao cadastro e editar o campo — e é exatamente o alerta
+# "Vigência vencida" que aparece no painel de obras quando ninguém lembra.
+#
+# A REGRA QUE NÃO PODE SER QUEBRADA: o sistema PROPÕE, a pessoa confirma. Nunca
+# automático e calado. Mexer sozinho no prazo ou no valor de um contrato é
+# mexer em dinheiro, e um erro silencioso aqui só apareceria numa medição
+# recusada meses depois.
+# ---------------------------------------------------------------------------
+PROPOE_ADITIVO = {"ADITIVO_PRAZO", "ADITIVO_VALOR"}
+
+
+def proposta_de_deferimento(s: Session, processo_id: int) -> dict[str, Any]:
+    """O que o ERP sugere atualizar na obra, quando este processo é deferido.
+
+    Devolve `{"propoe": False}` quando não há o que propor — processo que não é
+    aditivo, processo sem obra, ou obra que já tem aditivo com esse número.
+    """
+    p = s.get(Processo, processo_id)
+    if p is None:
+        raise ErroValidacao("Processo não encontrado.")
+    if p.tipo not in PROPOE_ADITIVO or not p.obra_id:
+        return {"propoe": False}
+    obra = s.get(Obra, p.obra_id)
+    if obra is None:
+        return {"propoe": False}
+    return {
+        "propoe": True,
+        "processo_id": p.id,
+        "tipo": p.tipo,
+        "obra_id": obra.id,
+        "obra": f"{obra.codigo} — {obra.nome}",
+        "vigencia_atual": obra.vigencia_fim.isoformat() if obra.vigencia_fim else None,
+        "assunto": p.assunto,
+        # O NÚMERO do aditivo não é adivinhado: o termo assinado tem um número
+        # que só está no papel, e inventar "nº 3" porque existem dois é como se
+        # cria divergência com o contrato do órgão.
+        "numero_sugerido": "",
+        "o_que_muda": ("o fim da vigência da obra"
+                       if p.tipo == "ADITIVO_PRAZO" else "o valor do contrato"),
+    }
+
+
+def aplicar_deferimento(s: Session, processo_id: int, dados: dict[str, Any],
+                        usuario: Optional[Usuario]) -> dict[str, Any]:
+    """Registra o aditivo na obra a partir do processo deferido.
+
+    Reusa `criar_aditivo`, que é quem já sabe somar valor vigente e mexer na
+    vigência — escrever isso de novo aqui faria duas verdades sobre o mesmo
+    contrato, e um dia elas discordariam.
+    """
+    from app.apps.erp.core.arquivo.preenchimento import criar_aditivo
+
+    p = s.get(Processo, processo_id)
+    if p is None:
+        raise ErroValidacao("Processo não encontrado.")
+    if p.tipo not in PROPOE_ADITIVO or not p.obra_id:
+        raise ErroValidacao("Este processo não vira aditivo de contrato.")
+
+    aditivo = criar_aditivo(s, p.obra_id, {
+        "numero": dados.get("numero"),
+        "tipo": "PRAZO" if p.tipo == "ADITIVO_PRAZO" else "VALOR",
+        "valor": dados.get("valor") or 0,
+        "dias": dados.get("dias") or 0,
+        "nova_vigencia_fim": dados.get("nova_vigencia_fim"),
+        "data_assinatura": dados.get("data_assinatura"),
+        "objeto": p.assunto,
+    }, usuario=usuario)
+
+    _mudar_situacao(p, "DEFERIDO")
+    p.atualizado_em = datetime.now(timezone.utc)
+    s.flush()
+    lancar_andamento(s, p.id, {
+        "texto": f"Deferido. Aditivo {aditivo.numero} registrado na obra"
+                 + (f", nova vigência até "
+                    f"{aditivo.nova_vigencia_fim.strftime('%d/%m/%Y')}."
+                    if aditivo.nova_vigencia_fim else ".")}, usuario)
+    registrar_evento(s, "processo", p.id, "PROCESSO_VIROU_ADITIVO", {
+        "numero": p.numero, "aditivo": aditivo.numero, "obra_id": p.obra_id},
+        usuario.id if usuario else None)
+    return {"aditivo_id": aditivo.id, "numero": aditivo.numero,
+            "nova_vigencia_fim": (aditivo.nova_vigencia_fim.isoformat()
+                                  if aditivo.nova_vigencia_fim else None)}
+
+
+# ---------------------------------------------------------------------------
+# QUANTO CADA ÓRGÃO DEMORA (pedaço 3)
+#
+# A pergunta que o dono sempre teve e nunca teve como responder: "esse cliente
+# demora quanto?". Com ela dá para prometer prazo com base em histórico em vez
+# de esperança, e para saber quando cutucar.
+#
+# DOIS CUIDADOS, e os dois são sobre não mentir:
+#
+#   · só entra processo ENCERRADO com protocolo e data de encerramento. O que
+#     está aberto ainda não demorou — ele está demorando, e misturar os dois
+#     puxaria a média para baixo justamente por causa dos que travaram;
+#   · a contagem de quantos processos entraram na média viaja junto. Média de
+#     um caso não é média, e sem o "de quantos" ninguém tem como saber disso.
+# ---------------------------------------------------------------------------
+def demora_por_orgao(s: Session, *, obras_permitidas: Optional[list[int]] = None,
+                     hoje: Optional[date] = None) -> dict[str, Any]:
+    hoje = hoje or _hoje()
+    todos = list(s.scalars(select(Processo)).all())
+    if obras_permitidas is not None:
+        alcance = set(obras_permitidas)
+        todos = [p for p in todos if p.obra_id is not None and p.obra_id in alcance]
+
+    grupos: dict[tuple[str, str], dict[str, Any]] = {}
+    for p in todos:
+        orgao = (p.orgao or "").strip() or "(sem órgão informado)"
+        chave = (orgao, p.tipo)
+        g = grupos.setdefault(chave, {
+            "orgao": orgao, "tipo": p.tipo,
+            "tipo_rotulo": TIPOS.get(p.tipo, TIPOS["OUTRO"])["rotulo"],
+            "encerrados": 0, "abertos": 0, "dias": []})
+        if p.situacao in ENCERRADAS and p.encerrado_em and p.protocolado_em:
+            fim = (p.encerrado_em.date() if hasattr(p.encerrado_em, "date")
+                   else p.encerrado_em)
+            dias = (fim - p.protocolado_em).days
+            if dias >= 0:
+                g["encerrados"] += 1
+                g["dias"].append(dias)
+        elif p.situacao not in ENCERRADAS:
+            g["abertos"] += 1
+
+    linhas = []
+    for g in grupos.values():
+        dias = sorted(g["dias"])
+        linhas.append({
+            "orgao": g["orgao"], "tipo": g["tipo"],
+            "tipo_rotulo": g["tipo_rotulo"],
+            "concluidos": len(dias),
+            "abertos": g["abertos"],
+            "media_dias": round(sum(dias) / len(dias)) if dias else None,
+            "menor": dias[0] if dias else None,
+            "maior": dias[-1] if dias else None,
+            # A frase existe para ninguém ler "média 4" de UM caso como se
+            # fosse regra. É o mesmo cuidado das respostas do assistente.
+            "confianca": ("sem processo concluído ainda" if not dias
+                          else "um caso só — não é média" if len(dias) == 1
+                          else f"{len(dias)} processos concluídos")})
+    linhas.sort(key=lambda l: (l["orgao"], l["tipo_rotulo"]))
+    return {"linhas": linhas,
+            "observacao": ("A conta usa só processos ENCERRADOS que têm data de "
+                           "protocolo. O que ainda está aberto aparece na coluna "
+                           "'em andamento' e fica de fora da média — senão os "
+                           "que travaram puxariam o número para baixo.")}

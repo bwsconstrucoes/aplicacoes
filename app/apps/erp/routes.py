@@ -6921,6 +6921,98 @@ def api_acompanhamento_passo(processo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/acompanhamento/<int:processo_id>/oficio")
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_oficio_rascunho(processo_id: int):
+    """O rascunho do ofício, com o que o ERP já sabe preenchido.
+
+    Não numera nada: numerar um rascunho que a pessoa vai descartar deixaria
+    buraco na sequência, e buraco em sequência de ofício é pergunta que o órgão
+    faz.
+    """
+    from app.apps.erp.core.acompanhamento import oficios
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    with get_session() as s:
+        exigir_processo_no_escopo(s, _usuario_logado(s), processo_id)
+        return jsonify({"ok": True, "rascunho": oficios.montar(s, processo_id),
+                        "gerados": oficios.listar_do_processo(s, processo_id)})
+
+
+@bp.route("/erp/api/acompanhamento/<int:processo_id>/oficio", methods=["POST"])
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_oficio_gerar(processo_id: int):
+    """Numera, monta o PDF, arquiva e lança o andamento — numa transação só."""
+    from app.apps.erp.core.acompanhamento import oficios
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            exigir_processo_no_escopo(s, u, processo_id)
+            o = oficios.gerar(s, processo_id, d, u)
+            saida = {"numero": o.numero, "documento_id": o.documento_id,
+                     "anexo_id": (oficios.listar_do_processo(s, processo_id) or
+                                  [{}])[0].get("anexo_id")}
+            s.commit()
+        return jsonify({"ok": True, **saida})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/acompanhamento/<int:processo_id>/deferir")
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_deferir_proposta(processo_id: int):
+    """O que o ERP PROPÕE atualizar na obra. Propõe — não aplica."""
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    with get_session() as s:
+        exigir_processo_no_escopo(s, _usuario_logado(s), processo_id)
+        return jsonify({"ok": True,
+                        "proposta": svc.proposta_de_deferimento(s, processo_id)})
+
+
+@bp.route("/erp/api/acompanhamento/<int:processo_id>/deferir", methods=["POST"])
+@login_obrigatorio
+@permissao("tocar_processo")
+def api_acompanhamento_deferir(processo_id: int):
+    """Registra o aditivo na obra a partir do processo deferido.
+
+    Exige `configurar`? NÃO — e é decisão: quem toca o processo é quem sabe que
+    o termo saiu. O que protege o contrato é a CONFIRMAÇÃO na tela (o sistema
+    propõe, a pessoa confirma) e a trilha, não uma segunda permissão que faria
+    a pessoa certa depender da agenda de outra.
+    """
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import exigir_processo_no_escopo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            exigir_processo_no_escopo(s, u, processo_id)
+            r = svc.aplicar_deferimento(s, processo_id, d, u)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/acompanhamento/demora")
+@login_obrigatorio
+@permissao("ver_acompanhamento")
+def api_acompanhamento_demora():
+    """Quanto cada órgão demora, por tipo de processo."""
+    from app.apps.erp.core.acompanhamento import processos as svc
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    with get_session() as s:
+        u = _usuario_logado(s)
+        return jsonify({"ok": True,
+                        **svc.demora_por_orgao(
+                            s, obras_permitidas=obras_de_registro_sem_autor(s, u))})
+
+
 @bp.route("/erp/api/acompanhamento/assumir", methods=["POST"])
 @login_obrigatorio
 @permissao("tocar_processo")

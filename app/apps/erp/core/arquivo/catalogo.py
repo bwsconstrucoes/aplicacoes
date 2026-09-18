@@ -76,6 +76,9 @@ CATALOGO: tuple[tuple[Any, ...], ...] = (
     ("MEDICAO", "Medição", "OBRA", "OBRA", False, None, True, "RESTRITO"),
     ("DIARIO-OBRA", "Diário de obra", "OBRA", "OBRA", False, None, True, "ABERTO"),
     ("PROJETO", "Projeto e memorial", "OBRA", "OBRA", False, None, False, "ABERTO"),
+    # OFÍCIO gerado pelo ERP (migração 074). Não vence: é correspondência, e o
+    # que importa dele é a data de saída, não uma validade.
+    ("OFICIO", "Ofício expedido", "OBRA", "OBRA", False, None, False, "ABERTO"),
     # ---- fiscal e trabalhista, por competência
     ("FOLHA", "Folha de pagamento", "FISCAL", "OBRA", False, None, True, "RESTRITO"),
     ("RELATORIO-FGTS", "Relatório de FGTS", "FISCAL", "OBRA", False, None, True, "RESTRITO"),
