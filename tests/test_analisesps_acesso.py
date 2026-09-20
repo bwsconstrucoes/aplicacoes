@@ -153,6 +153,14 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/pessoas"),
     # Reenviar um comprovante dispara baixa no Omie de verdade — 17/09/2026.
     ("POST", "/analisesps/comprovantes/reprocessar"),
+    # Aportes no OMIE — 20/09/2026. Mesmo o ENSAIO monta o pacote com conta,
+    # categoria e valor; e a gravação cria título no cadastro da empresa.
+    # Nenhuma destas pode ficar aberta por esquecimento.
+    ("GET", "/analisesps/aportes"),
+    ("POST", "/analisesps/aportes/de-para"),
+    ("POST", "/analisesps/api/aportes/ensaiar"),
+    ("POST", "/analisesps/api/aportes/gravar"),
+    ("GET", "/analisesps/api/aportes/fornecedores"),
     ("GET", "/analisesps/sair"),
 ]
 

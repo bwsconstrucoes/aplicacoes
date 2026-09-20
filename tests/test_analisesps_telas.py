@@ -4181,3 +4181,155 @@ def test_falha_no_ANALITICO_nao_derruba_o_relatorio_inteiro(app_relatorio,
     assert "Não consegui montar o anal" in texto.replace("\n", " "), (
         "o analítico sumiu em silêncio")
     assert "acima está completo e correto" in texto.replace("\n", " ")
+
+
+# ---------------------------------------------------------------------------
+# A TELA DE APORTES — 20/09/2026
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def app_aportes(app, monkeypatch):
+    """A tela com o espelho do OMIE dublado. O SQL tem teste próprio, com banco
+    de verdade (`test_analisesps_aportes_banco.py`); aqui o que está sob teste
+    é a tela montar inteira."""
+    from app.apps.analisesps import aportes_de_para, aportes_omie
+
+    monkeypatch.setattr(aportes_de_para, "contas_do_omie", lambda: [
+        {"codigo": 7011, "descricao": "BWS MATRIZ", "numero_conta": "12345-6",
+         "inativa": False},
+        {"codigo": 22069, "descricao": "PARCERIA OBRA X",
+         "numero_conta": "99999-9", "inativa": False}])
+    monkeypatch.setattr(aportes_de_para, "obras",
+                        lambda: [{"codigo": "OBRA-1", "nome": "Obra Um"}])
+    monkeypatch.setattr(aportes_de_para, "fornecedores", lambda q="": [
+        {"codigo": 99, "nome": "PARCEIRO LTDA", "documento": "00.000.000/0001-00"}])
+    monkeypatch.setattr(aportes_de_para, "contas_configuradas", lambda: {
+        "matriz": {"codigo": 7011, "descricao": "BWS MATRIZ"},
+        "parceria": {"codigo": 22069, "descricao": "PARCERIA OBRA X"}})
+    monkeypatch.setattr(aportes_de_para, "descobrir_categorias", lambda: {
+        chave: {"chave": chave, "procurada": nome, "situacao": "escolhida",
+                "erro": "", "candidatos": [{"codigo": "9.01.01",
+                                            "descricao": nome,
+                                            "transferencia": "N"}],
+                "codigo": "9.01.01", "descricao": nome, "transferencia": "N",
+                "confirmada": True}
+        for chave, nome in
+        __import__("app.apps.analisesps.aportes", fromlist=["x"]).CATEGORIAS.items()})
+    monkeypatch.setattr(aportes_de_para, "falta_configurar", lambda: [])
+    monkeypatch.setattr(aportes_omie, "historico", lambda n=30: [])
+    monkeypatch.setattr(aportes_omie, "orfaos", lambda: [])
+    monkeypatch.setattr(aportes_omie, "senha_configurada", lambda: True)
+    return app
+
+
+def test_a_tela_de_aportes_monta(app_aportes):
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "Aportes e devoluções no OMIE" in html
+    # As quatro operações da tabela do dono, com o nome dele, não com o meu.
+    assert "BWS aporta na parceria" in html
+    assert "A parceria devolve o aporte à BWS" in html
+    assert "O parceiro aporta na parceria" in html
+    assert "A parceria devolve o aporte ao parceiro" in html
+    # As duas contas aparecem com código E número de conta — é olhando os dois
+    # juntos que ele reconhece qual é qual.
+    assert "BWS MATRIZ" in html and "12345-6" in html
+
+
+def test_a_tela_de_aportes_nao_deixa_escolher_categoria(app_aportes):
+    """*"Eu não devo ter que escolher categoria nenhuma: quem escolhe é a
+    regra. Se eu pudesse escolher, eu erraria."* O de-para lá em cima é outra
+    coisa: é dizer QUAL código é cada nome, uma vez só."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    lancar = html[html.index("<h3>Lançar</h3>"):]
+    assert 'id="categoria' not in lancar
+    assert 'name="categoria' not in lancar
+
+
+def test_o_perfil_consulta_nao_alcanca_os_aportes(app_aportes):
+    """Mesmo o ensaio monta o pacote com conta, categoria e valor. Ler não
+    basta aqui."""
+    resposta = como(app_aportes, SENHA_CONSULTA).get("/analisesps/aportes")
+    assert resposta.status_code in (302, 403)
+
+
+def test_a_tela_avisa_quando_falta_o_de_para(app_aportes, monkeypatch):
+    from app.apps.analisesps import aportes_de_para
+    monkeypatch.setattr(aportes_de_para, "falta_configurar",
+                        lambda: ["Falta apontar qual conta é a Matriz."])
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "Falta acertar isto antes de lançar" in html
+    assert "Falta apontar qual conta é a Matriz." in html
+
+
+def test_a_tela_grita_o_titulo_orfao(app_aportes, monkeypatch):
+    """Órfão esquecido é meio aporte que nenhum relatório fecha. Ele fica
+    visível no topo da tela até alguém resolver."""
+    from app.apps.analisesps import aportes_omie
+    monkeypatch.setattr(aportes_omie, "orfaos", lambda: [
+        {"codigo_lancamento_omie": 4242, "papel": "conta Matriz da BWS",
+         "sentido": "saida", "erro": "não foi possível excluir"}])
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "título órfão no OMIE" in html
+    assert "4242" in html
+
+
+def test_a_tela_avisa_se_a_senha_de_escrita_nao_existe(app_aportes, monkeypatch):
+    from app.apps.analisesps import aportes_omie
+    monkeypatch.setattr(aportes_omie, "senha_configurada", lambda: False)
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "PAINEL_SENHA_ESCRITA" in html
+
+
+def test_o_espelho_vazio_nao_derruba_a_tela(app, monkeypatch):
+    """A tela de aportes é TAMBÉM a que conserta o de-para. Se ela cair porque
+    a carga do painel nunca rodou, não há por onde arrumar — foi assim que o
+    módulo inteiro travou na estreia, em 03/09."""
+    from app.apps.analisesps import aportes_de_para, aportes_omie
+
+    def sem_espelho(*a, **k):
+        raise aportes_de_para.SemEspelho("A carga do painel nunca rodou.")
+
+    monkeypatch.setattr(aportes_de_para, "contas_do_omie", sem_espelho)
+    monkeypatch.setattr(aportes_de_para, "obras", sem_espelho)
+    monkeypatch.setattr(aportes_de_para, "fornecedores", sem_espelho)
+    monkeypatch.setattr(aportes_de_para, "contas_configuradas", lambda: {})
+    monkeypatch.setattr(aportes_de_para, "descobrir_categorias", lambda: {})
+    monkeypatch.setattr(aportes_de_para, "falta_configurar", lambda: [])
+    monkeypatch.setattr(aportes_omie, "historico", lambda n=30: [])
+    monkeypatch.setattr(aportes_omie, "orfaos", lambda: [])
+
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/aportes")
+    assert resposta.status_code == 200
+    assert "A carga do painel nunca rodou." in resposta.get_data(as_text=True)
+
+
+def test_o_ensaio_nao_pede_senha_e_a_gravacao_pede(app_aportes, monkeypatch):
+    """Conferir tem de ser barato, ou ninguém confere. A senha vale para o que
+    escreve no OMIE."""
+    from app.apps.analisesps import aportes_omie
+    monkeypatch.delenv(aportes_omie.VARIAVEL_SENHA, raising=False)
+    cliente = como(app_aportes, SENHA_OPERADOR)
+
+    pedido = {"operacao": "aporte_bws", "conta_origem": 7011,
+              "conta_destino": 22069, "valor": "12.500,00",
+              "data": "2026-09-20", "fornecedor": 99, "obra": "OBRA-1"}
+    monkeypatch.setattr(
+        "app.apps.analisesps.aportes_de_para.categorias_configuradas",
+        lambda: {c: {"codigo": "9.01.01", "descricao": n, "transferencia": "N"}
+                 for c, n in __import__(
+                     "app.apps.analisesps.aportes",
+                     fromlist=["x"]).CATEGORIAS.items()})
+    monkeypatch.setattr(
+        "app.apps.analisesps.aportes_de_para.consultar_semelhantes",
+        lambda *a, **k: [])
+
+    ensaio = cliente.post("/analisesps/api/aportes/ensaiar", json=pedido)
+    assert ensaio.status_code == 200 and ensaio.get_json()["ok"] is True
+
+    gravacao = cliente.post("/analisesps/api/aportes/gravar", json=pedido)
+    assert gravacao.status_code == 403
+    assert "senha" in gravacao.get_json()["erro"].lower()

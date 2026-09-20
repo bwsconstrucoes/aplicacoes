@@ -191,6 +191,8 @@ seria ou perdido, ou versionado por engano.
 | `ANALISESPS_CHAVE_COFRE` | frase secreta que cifra os certificados digitais no banco. **Sem ela, o sistema recusa guardar certificado** — e sem certificado a busca de notas na Receita não roda. ⚠️ **Trocar a frase torna ilegível o que já foi guardado**: os certificados teriam de ser subidos de novo |
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |
 | `GOOGLE_CREDENTIALS_BASE64` | leitura da planilha — já existe |
+| `OMIE_KEY` / `OMIE_SECRET` | credencial do OMIE — já existem, são as do painel |
+| `PAINEL_SENHA_ESCRITA` | senha pedida na hora de GRAVAR um aporte no OMIE, por cima do login. **Sem ela, dá para conferir mas não para gravar** |
 
 Opcionais, com valor embutido: `ANALISESPS_SHEET_SPS`,
 `ANALISESPS_SHEET_FISCAL`, `ANALISESPS_SHEET_CREDENCIAIS`.
@@ -264,6 +266,7 @@ cobrável de quem preencheu.
 | Agenda | calendário do mês e os lembretes que se repetem, já ajustados a dia útil — e é aqui que se cadastram |
 | Log | toda alteração feita por aqui, e se já subiu |
 | Configurações | migrações do banco e a sincronização |
+| Aportes | lançar aporte e devolução de aporte no OMIE (dentro de Configurações) |
 
 Mais a **ficha de cada SP** e a tela de **códigos de pagamento**, que monta o
 QR Pix ou o código de barras das SPs marcadas — substitui abrir card por card
@@ -324,11 +327,17 @@ Quem for simplificar isto um dia: os dois caminhos têm teste, inclusive o da
 passagem. A lição que ficou escrita no histórico é que **depender de um botão
 para algo que a pessoa espera que "só funcione" é um jeito de nunca funcionar**.
 
-## BeeVale — o único caminho que escreve fora daqui
+## Os dois caminhos que escrevem fora daqui
 
-Tudo o mais neste módulo grava na planilha SPsBD e no banco. O BeeVale sobe
-arquivo no Google Drive e **reescreve o card no Pipefy**, e isso não tem
-desfazer. São três arquivos: `beevale.py` (as regras e os dois `.xlsx`),
+Tudo o mais neste módulo grava na planilha SPsBD e no banco. **Dois caminhos
+saem disso**, e os dois mexem em sistema de terceiro sem desfazer automático:
+o **BeeVale** (Drive + Pipefy) e os **Aportes** (OMIE). Ver a seção dos
+aportes mais abaixo.
+
+### BeeVale
+
+O BeeVale sobe arquivo no Google Drive e **reescreve o card no Pipefy**, e
+isso não tem desfazer. São três arquivos: `beevale.py` (as regras e os dois `.xlsx`),
 `pipefy.py` (o pouco que se lê e escreve lá) e `drive.py` (a subida).
 
 São **duas telas com riscos muito diferentes**, e vale não confundi-las:
@@ -343,6 +352,34 @@ impedido e por quê, com o valor do card ao lado do valor da base — duas
 origens diferentes, e é ali que uma divergência aparece antes de virar recarga
 errada. E a ordem das operações é fixa, com teste: **Drive primeiro, Pipefy
 por último.** Se o arquivo não sobe, nenhum card é tocado.
+
+### Aportes no OMIE — o caminho que CRIA coisa lá fora
+
+`aportes.py` (a regra), `aportes_de_para.py` (do nome para o código) e
+`aportes_omie.py` (a escrita). A tela mora dentro de Configurações.
+
+É o **primeiro lugar do repositório que cria registro** num sistema de
+terceiro — o outro caminho de escrita no OMIE (`painel/sync/omie_escrita.py`)
+só altera categoria e departamento de título que já existe. Quatro cuidados,
+e cada um responde a um jeito conhecido de dar errado:
+
+| Cuidado | O que ele evita |
+|---|---|
+| **Nenhum código de categoria ou de conta escrito no programa** — todos saem de um de-para conferível, descoberto pela descrição em `painel.cat` | o dono mexe no plano financeiro e o sistema passa a lançar na categoria errada **sem nada denunciar** |
+| **Descrição ambígua ou ausente PARA a tela** em vez de escolher uma | o mesmo, pela porta do palpite |
+| **Ensaio obrigatório antes de gravar**, mostrando o pacote exato | escrever no OMIE algo que ninguém leu |
+| **Os dois títulos nascem amarrados**: falhando o segundo, o primeiro é desfeito; não dando para desfazer, o número do órfão vai para a tela | meio aporte no OMIE — nenhum relatório fecha e ninguém percebe |
+
+A ordem das operações é fixa, com teste: **os dois títulos primeiro, as baixas
+por último**. Baixa que falha deixa título correto em aberto, que é chato e
+visível; título que falha deixaria meia operação, que é o que não pode existir.
+
+⚠️ **O que não foi conferido contra a API de verdade:** os campos da baixa e
+da exclusão. A documentação do OMIE não é alcançável do ambiente onde isto foi
+escrito; os campos da INCLUSÃO vieram de `app/apps/atualizaspbotao/omie.py`,
+que inclui conta a pagar em produção há meses, e esses são firmes. Por isso a
+sequência combinada com o dono é ensaio → **UM** lançamento conferido por ele
+dentro do OMIE → uso normal.
 
 ### A armadilha da pasta do Drive
 

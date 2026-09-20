@@ -231,6 +231,23 @@
   {% endif %}
 </div>
 
+{# APORTES — 20/09/2026. Mora em Configurações por pedido do dono, e o lugar
+   também se explica sozinho: a tela tem um de-para que se ajusta uma vez e um
+   lançamento que se usa de vez em quando. Nenhum dos dois é trabalho de todo
+   dia, que é o que a barra de abas lá em cima carrega. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Aportes e devoluções no OMIE</h3></div>
+  <p class="cartao-dica">
+    Lançar aporte e devolução de aporte direto no OMIE, sem montar dois
+    lançamentos à mão — um em cada conta, lembrando qual nome usar de cada
+    lado. Você informa fornecedor, contas, valor, data e obra; a categoria de
+    cada lado sai da regra, não da sua memória. Nada vai para o OMIE sem você
+    conferir antes.
+  </p>
+  <a class="btn secundario" href="{{ url_for('analisesps.tela_aportes') }}">
+    Abrir aportes</a>
+</div>
+
 {# ARRUMAÇÃO DO CADASTRO — fica aqui, e não nas abas de cima, porque é trabalho
    ocasional. A barra de abas é para o que se abre todo dia. #}
 <div class="cartao">

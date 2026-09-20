@@ -5685,6 +5685,159 @@ campo certo, o CRC fecha, e a imagem sai. A leitura de fato só o dono pode
 confirmar, e vale conferir na primeira SP com chave de e-mail.
 
 ---
+
+### Septuagésima quinta leva (20/09) — aportes e devoluções no OMIE
+
+O dono trouxe um briefing escrito, autossuficiente, e ele está preservado na
+conversa: lançar **título a pagar e a receber de Aporte e de Devolução de
+Aporte dentro do OMIE**, sem entrar lá e montar dois lançamentos à mão, um em
+cada conta, lembrando qual nome usar de cada lado.
+
+#### A regra, que é dele e não minha
+
+| Conta | Entra/Sai | Categoria no OMIE |
+|---|---|---|
+| Matriz | Saída | Aportes BWS |
+| Parceria | Entrada | Aportes BWS |
+| Parceria | Entrada | Aportes Parceiros |
+| Parceria | Saída | Devolução de Aportes |
+| Matriz | Entrada | Devolução de Aportes BWS |
+
+Quatro operações saem daí: **BWS aporta** e **devolução à BWS** criam DOIS
+títulos (o dinheiro anda entre duas contas da empresa); **parceiro aporta** e
+**devolução ao parceiro** criam UM (o dinheiro vem de fora ou vai para fora).
+
+⚠️ **O aporte da BWS usa o MESMO nome dos dois lados**, e isso parece erro
+para quem chega depois. Não é: o que distingue os lados é a conta e o sentido.
+Há teste cravando, justamente porque é o tipo de coisa que alguém "conserta"
+por engano.
+
+**O dono não escolhe categoria**, e foi decisão dele: *"se eu pudesse
+escolher, eu erraria."*
+
+#### As quatro perguntas que ele mandou fazer antes, e o que ele decidiu
+
+O briefing trazia uma seção de perguntas obrigatórias. As respostas, de
+20/09/2026:
+
+1. **Baixa:** o título nasce **já baixado**, com a marcação desmarcável na
+   tela. Motivo dele: aporte quase sempre é registro do que já aconteceu, e
+   título em aberto esquecido vira saldo falso.
+2. **Obra:** **sempre obrigatória**. Sem departamento o aporte existe no OMIE
+   mas some de qualquer visão por obra.
+3. **Número e observação:** **automáticos e editáveis**. O mesmo número nos
+   dois títulos é o que permite achar o par depois.
+4. **Como escolher:** ele escolhe **operação + conta de origem + conta de
+   destino**, e aceitou o preço: dá para montar combinação que a regra não
+   cobre, e aí a tela **recusa e explica** em vez de adivinhar.
+
+#### ⚠️ Nenhum código de categoria está escrito no programa
+
+Esta é a parte que mais evita defeito, e a razão é dele: *"eu mexo no plano
+financeiro; código chumbado vira lançamento errado silencioso no dia em que eu
+mexer."*
+
+Lançamento errado silencioso é o pior defeito possível aqui: o título entra, a
+tela diz "gravado", e o número aparece no lugar errado de um relatório que
+ninguém confere linha a linha. Não há alerta, não há erro, não há tela que
+denuncie.
+
+Então os códigos são **descobertos pela descrição** em `painel.cat` (o espelho
+do OMIE que o painel já mantém) e **gravados para conferência**. Descrição que
+não aparece, ou que aparece duas vezes, **para e pergunta**. Um cuidado que
+custou teste próprio: *"Aportes BWS"* é pedaço de *"Devolução de Aportes
+BWS"* — casando por pedaço, as duas viriam como candidatas uma da outra.
+
+O mesmo vale para as contas: qual conta do OMIE é a matriz e qual é a
+parceria é ele quem aponta, numa lista que mostra o código do OMIE **e** o
+número da conta bancária, porque é olhando os dois juntos que ele reconhece.
+
+#### ⚠️ Os dois títulos nascem amarrados
+
+*"Se o segundo título falhar depois do primeiro ter sido criado, eu fico com
+meio aporte no OMIE — pior do que não ter lançado nada."*
+
+A ordem é fixa e tem teste: **todos os títulos primeiro, as baixas por
+último**. Falhando um título, os que já entraram são desfeitos; não dando para
+desfazer, **o número do órfão vai para a tela** e fica lá, no topo, até alguém
+resolver à mão.
+
+Baixa que falha **não** desfaz nada: deixa título correto e em aberto, que é
+chato, visível e fácil de resolver. Apagar título que talvez já tenha baixa
+seria trocar um problema pequeno por um grande.
+
+E um caso que quase passou: título que o OMIE aceita **sem devolver o
+número**. Sem ele não dá para desfazer nem para conferir — dizer "gravado" ali
+seria mentir com cara de sucesso. Agora é tratado como falha.
+
+#### A crítica de transferência
+
+Aviso, nunca bloqueio, como ele pediu. Antes de gravar, procura em
+`painel.movimentos` uma movimentação do **mesmo dia e mesmo valor em duas
+contas da BWS** — e só avisa quando são duas, porque uma perna só é pagamento
+comum, e avisar aí ensinaria a ignorar o aviso. Tolerância de um centavo, para
+a crítica não calar justamente quando importa.
+
+Há uma segunda crítica que o briefing não pediu e que vale o texto: se a
+categoria escolhida pela regra estiver marcada como transferência no plano
+financeiro, o lançamento nasce **fora do DRE** — e some dos relatórios de
+aporte sem dizer nada. A tela avisa.
+
+#### O que fica registrado
+
+Cada título gravado vira uma linha em `analisesps.aporte_lancamento`: o que,
+quando, por quem, e o número que o OMIE devolveu. O `grupo` amarra os dois
+lados. O código de integração é único, então clique duplo ou navegador que
+repete o envio não viram aporte em dobro — e há teste com banco de verdade
+cravando isso.
+
+#### Os testes
+
+**Sem banco (38):** a tabela do briefing percorrida inteira, operação por
+operação e lado por lado; as recusas (conta trocada, sem obra, sem
+fornecedor, categoria sem código, valor impossível); a amarração, com um OMIE
+de mentira que falha onde o teste mandar — inclusive o caso do órfão e o da
+baixa que falha.
+
+**Com banco de verdade (18):** a descoberta do código pela descrição (achou /
+ambígua / não achou / acento e maiúscula), o de-para gravado e relido, a
+tabela inteira **com os códigos vindos do plano financeiro real**, a crítica
+de transferência com JOIN e filtro de data, e o registro com o órfão
+aparecendo na lista.
+
+O briefing pedia os dois últimos por escrito, e o motivo está na frase dele:
+*"se ela errar, meus relatórios de aporte mentem e eu não tenho como
+perceber."*
+
+#### ⚠️ O que NÃO foi conferido, e muda o que esperar da primeira tentativa
+
+**A documentação do OMIE não é alcançável do ambiente onde isto foi escrito**
+— a rede bloqueia o domínio. Consequência, dita sem rodeio:
+
+- os campos da **inclusão** vieram de `app/apps/atualizaspbotao/omie.py`, que
+  inclui conta a pagar em produção há meses: esses são firmes;
+- os campos da **baixa** e da **exclusão** vieram de documentação citada de
+  segunda mão e **não foram exercitados contra a API**.
+
+É exatamente para isso que serve o protocolo combinado, que o dono já exigia
+por outro motivo: ensaio → **UM** lançamento conferido por ele dentro do OMIE,
+com os olhos → uso normal. Se o OMIE recusar, a mensagem dele aparece inteira
+na tela, sem tradução minha.
+
+#### O que ficou de fora
+
+- **Rateio de aporte entre obras.** O lançamento vai 100% para uma obra. Duas
+  obras dividindo um aporte seria outra tela, com outra conferência.
+- **Desfazer um aporte já gravado.** O registro guarda o que é preciso para
+  isso, mas o botão não existe: apagar título que pode já ter baixa e
+  conciliação é coisa para se fazer olhando, dentro do OMIE.
+- **As perguntas em `PERGUNTAS.md`.** Aquele arquivo é do assistente do ERP, e
+  o dado dos aportes vive no OMIE, fora do alcance dele. As perguntas que esta
+  tela torna possíveis ("quanto a BWS já aportou nesta obra?", "quanto o
+  parceiro devolveu este ano?") só fazem sentido depois que alguém decidir se
+  o assistente vai ler o espelho do painel — decisão que é do ERP, não daqui.
+
+---
 ---
 
 ## Regras que não se discutem
