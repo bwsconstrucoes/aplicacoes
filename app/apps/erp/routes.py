@@ -1024,6 +1024,21 @@ def api_suprimentos_insumos():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/suprimentos/insumos/alteracoes")
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_insumos_alteracoes():
+    """As últimas correções feitas em insumos, com o que era antes.
+
+    Existe porque a trilha sempre guardou isso e nenhuma tela mostrava — e foi
+    exatamente disso que o dono precisou quando trocou a conta do plano de um
+    insumo sem querer e não sabia qual tinha sido.
+    """
+    from app.apps.erp.core.suprimentos import cadastro as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "alteracoes": svc.alteracoes_de_insumo(s)})
+
+
 @bp.route("/erp/api/suprimentos/insumos/<int:insumo_id>", methods=["PATCH"])
 @login_obrigatorio
 @permissao("administrar_insumos")
@@ -1348,6 +1363,40 @@ def api_cotacao_marcar_resposta(coluna_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>",
+          methods=["DELETE"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_fornecedor_apagar(fornecedor_id: int):
+    """Apaga o fornecedor — só quando ele nunca foi usado para nada.
+
+    A recusa não é um "não pode" seco: diz ONDE ele aparece, para a pessoa
+    entender por que o botão não serve e o que fazer em vez disso.
+    """
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            r = svc.apagar(s, fornecedor_id, atual)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>/uso")
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_fornecedor_uso(fornecedor_id: int):
+    """Onde este fornecedor aparece. A tela pergunta ANTES de oferecer o
+    apagamento, para não mostrar um botão que vai recusar."""
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "usos": svc.uso_do_fornecedor(s, fornecedor_id)})
 
 
 @bp.route("/erp/api/suprimentos/fornecedores/equalizar", methods=["POST"])

@@ -250,6 +250,92 @@ def remover_contato(s: Session, contato_id: int, usuario: Usuario) -> None:
 # ---------------------------------------------------------------------------
 # A tela de gestão
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Apagar — o que dá e o que não dá
+# ---------------------------------------------------------------------------
+# PEDIDO DO DONO, 20/09/2026: *"olhei aqui na tela de fornecedores: como é que
+# eu excluo? Eu não estou vendo o botão para excluir."*
+#
+# A regra geral deste sistema é NADA SE APAGA, DESATIVA-SE — e ela continua
+# valendo, porque fornecedor apagado levaria junto o título pago, a cotação que
+# ele respondeu e o preço dele no histórico. Mas ela estava valendo DEMAIS: o
+# cadastro criado por engano, que nunca foi usado para nada, não tem passado
+# nenhum para preservar, e mantê-lo para sempre só suja a lista de cotação.
+#
+# Então: apaga quando NÃO HÁ NADA PENDURADO; desativa quando há. A tela mostra
+# os dois caminhos e diz qual vale para aquele fornecedor, em vez de esconder o
+# botão e deixar a pessoa procurando.
+ONDE_APARECE = (
+    ("titulos", "título"),
+    ("pedidos", "pedido de pagamento"),
+    ("pedidos_compra", "pedido de compra"),
+    ("cotacao_fornecedores", "cotação"),
+    ("precos_historico", "preço no histórico"),
+    ("contratos_servico", "contrato de obra"),
+    ("contratos_locacao", "contrato de locação"),
+    ("contratos", "contrato"),
+    ("documentos", "documento arquivado"),
+    ("fornecedor_contas", "conta bancária"),
+)
+
+
+def uso_do_fornecedor(s: Session, fornecedor_id: int) -> list[dict[str, Any]]:
+    """Onde este fornecedor aparece — em português, com a contagem.
+
+    Uma consulta por tabela, feita com SQL cru de propósito: são dez tabelas de
+    módulos diferentes, e importar dez modelos aqui amarraria Suprimentos ao
+    financeiro inteiro só para contar linhas.
+    """
+    from sqlalchemy import text
+
+    saida = []
+    for tabela, rotulo in ONDE_APARECE:
+        try:
+            quantos = s.execute(
+                text(f"SELECT count(*) FROM {tabela} WHERE fornecedor_id = :i"),
+                {"i": int(fornecedor_id)}).scalar() or 0
+        except Exception:       # pragma: no cover - tabela de outra migração
+            continue
+        if quantos:
+            saida.append({"onde": rotulo, "quantos": int(quantos)})
+    return saida
+
+
+def apagar(s: Session, fornecedor_id: int, usuario: Usuario) -> dict[str, Any]:
+    """Apaga o fornecedor — só quando ele nunca foi usado para nada.
+
+    Contato e categoria vão junto: são do próprio cadastro, não são histórico.
+    Qualquer outra coisa pendurada recusa o apagamento e a mensagem DIZ ONDE
+    ele aparece, para a pessoa entender por que o botão não serve — em vez de
+    receber "não é possível excluir" e ficar sem saída.
+    """
+    forn = s.get(Fornecedor, fornecedor_id)
+    if forn is None:
+        raise ErroNaoEncontrado("Fornecedor não encontrado.")
+
+    usos = uso_do_fornecedor(s, fornecedor_id)
+    if usos:
+        onde = ", ".join(f"{u['quantos']} {u['onde']}" for u in usos)
+        raise ErroValidacao(
+            f"{forn.razao_social} não pode ser apagado: já aparece em {onde}. "
+            f"Apagar levaria esse histórico junto. Desative-o — ele sai das "
+            f"listas de cotação e o passado fica.")
+
+    nome = forn.razao_social
+    for contato in s.scalars(select(FornecedorContato)).all():
+        if contato.fornecedor_id == fornecedor_id:
+            s.delete(contato)
+    for vinculo in s.scalars(select(FornecedorCategoria)).all():
+        if vinculo.fornecedor_id == fornecedor_id:
+            s.delete(vinculo)
+    s.delete(forn)
+    registrar_evento(s, "fornecedor", fornecedor_id, "APAGADO",
+                     {"razao_social": nome, "cnpj_cpf": forn.cnpj_cpf},
+                     usuario.id if usuario else None)
+    logger.info("ERP/suprimentos: fornecedor %s apagado (nunca usado)", nome)
+    return {"recado": f"{nome} foi apagado — ele nunca tinha sido usado."}
+
+
 def gerenciar(s: Session) -> dict[str, Any]:
     """Todos os fornecedores com o que Suprimentos precisa ver, mais os
     números do topo e as listas para os filtros."""

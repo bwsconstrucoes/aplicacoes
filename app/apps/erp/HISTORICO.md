@@ -54,6 +54,83 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### 🔧 SEIS COISAS NA TELA DE INSUMOS E FORNECEDORES (20/09/2026)
+
+O dono passou meia hora usando as telas e trouxe uma lista. Vale guardar o
+diagnóstico de cada uma, porque quase todas eram a mesma doença: **a tela
+fazia a coisa certa e contava errado**.
+
+**1. O cadastro de insumo eram quatro diálogos em fila.**
+> *"Não era melhor uma tela só que a gente já pudesse escrever o nome, colocar
+> a categoria, unidades, tudo?"*
+
+Era — e o desenho antigo tinha um efeito pior que a chateação, que é o item 2.
+Agora é uma tela: nome, categoria, conta do plano, unidade e "locável", com o
+que falta escrito ao lado do botão e o botão travado até estar completo.
+
+**2. "Cadastrei e o insumo não aparece, e o contador não mudou."**
+O cadastro estava sendo **RECUSADO** por falta da conta do plano — corretamente
+—, mas o recado aparecia atrás do último diálogo e ninguém via. A leitura de
+quem estava na frente da tela era "o sistema perdeu o cadastro". Resolvido pelo
+item 1: nada vai ao servidor antes de estar completo.
+
+Junto vieram duas coisas que faltavam: ao cadastrar, os **filtros são limpos**
+(com "sem conta do plano" ligado, o insumo novo nasceria invisível) e a linha
+nova **vai para o topo, destacada**.
+
+**3. "Não pede o plano financeiro. Isso está vinculando automático?"**
+Não vincula nada automático — pedia sim, no quarto diálogo. Hoje está à vista,
+marcado como obrigatório e com o motivo escrito ("sem ela o pedido de compra
+não vira previsão de pagamento apropriada").
+
+**4. ⚠️ O CLIQUE ÚNICO NA CÉLULA TROCAVA A CONTA DO PLANO SEM NINGUÉM VER.**
+Este é o grave, e aconteceu com ele enquanto falava:
+
+> *"Alguém pode se enganar e dar dois cliques em cima da categoria, e quando
+> você clica já abre a tela e você já consegue selecionar e sem querer pode
+> alterar sem nem perceber. (…) Eu cliquei duas vezes na conta do plano,
+> selecionei, não lembro qual é o insumo, e alterei a conta. A tela deu um
+> refresh e ele sumiu daqui, porque ele não é mais 'sem conta'. **E eu não sei
+> qual foi.**"*
+
+Três consertos, porque o estrago tinha três partes:
+
+- **editar agora pede o lápis** (✎ ao lado da célula) — um clique a mais por
+  correção, e é o preço de não trocar a conta de um insumo por acidente;
+- **toda correção diz o que mudou e oferece Desfazer** — antes o aviso era
+  "Corrigido.", que não diz qual insumo, nem o que era antes, nem dá volta;
+- **botão "O que mudou"** na barra: as últimas correções de insumo, com quem,
+  quando, de → para, e desfazer em cada uma.
+
+O terceiro item merece nota: **a trilha sempre guardou o antes e o depois** de
+toda edição de insumo. Existia até uma API de auditoria — e **nenhuma tela a
+usava**. O dado estava lá o tempo todo e era inalcançável para quem precisava
+dele. Auditoria que só o banco enxerga não serve a quem está na tela.
+
+**5. O KPI "Locáveis" não filtrava.** Os outros quatro eram botões ligados ao
+filtro; esse tinha nascido `<div>`. Virou botão.
+
+**6. "Como é que eu excluo? Não estou vendo o botão."**
+A regra do sistema é *nada se apaga, desativa-se* — e ela continua valendo para
+quem tem passado. Mas estava valendo demais: o cadastro criado por engano, que
+nunca foi usado, não tem passado nenhum para preservar. Agora a ficha do
+fornecedor **pergunta ao servidor** e mostra um dos dois: o botão **Apagar**
+(com confirmação escrita), ou a frase dizendo **onde ele aparece** — *"já
+aparece em 1 título, 4 pedidos de compra, 1 cotação, 11 preços no histórico"* —
+e mandando desativar. Nunca um botão que recusa depois de clicado.
+
+**Pergunta dele que vale a resposta escrita:** *"'preço conhecido' vai cruzar
+com o banco de preços, não é?"* — sim. A coluna "Último preço" e o KPI "com
+preço conhecido" saem de `precos_historico`, a mesma tabela que a importação da
+planilha antiga alimenta e que a tela de Solicitações lê. Quando o histórico
+antigo entrar, esse número sobe sozinho.
+
+**Um defeito meu, achado no teste:** a lista "O que mudou" lia `evento.dados`, e
+a coluna se chama `detalhe`. A tela mostrava erro em vez de lista, e eu só vi
+porque exercitei no navegador — nenhum teste pegaria, porque o erro estava no
+nome do campo que só o Postgres conhece.
+
+
 ### ⚠️ O AVISO DO CNPJ REPETIDO ESTAVA MANDANDO CONSERTAR O QUE ESTÁ CERTO
 
 20/09/2026. O dono importou a planilha nova de fornecedores e recebeu:
