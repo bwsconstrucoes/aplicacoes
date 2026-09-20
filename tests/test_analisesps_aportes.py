@@ -23,13 +23,11 @@ import pytest
 from app.apps.analisesps import aportes, aportes_omie
 
 
-# Um de-para completo e de mentira. Os códigos são inventados de propósito:
-# se algum deles aparecesse chumbado no código de produção, estes testes
-# passariam e a produção estaria errada.
-CONTAS = {
-    aportes.MATRIZ: {"codigo": 7011, "descricao": "BWS MATRIZ"},
-    aportes.PARCERIA: {"codigo": 22069, "descricao": "PARCERIA OBRA X"},
-}
+# Nomes de conta só para a tela mostrar nome em vez de número. NÃO é cadastro:
+# a conta de cada lado é escolhida em cada lançamento — *"não quero travar a
+# conta Matriz e a da Parceria, tem mais de uma situação."*
+DESCRICOES = {7011: "BWS MATRIZ", 22069: "PARCERIA OBRA X",
+              33333: "PARCERIA OBRA Y"}
 CATEGORIAS = {
     "aportes_bws": {"codigo": "9.01.01", "descricao": "Aportes BWS"},
     "aportes_parceiros": {"codigo": "9.01.02", "descricao": "Aportes Parceiros"},
@@ -44,7 +42,7 @@ def planejar(**mudancas):
         operacao="aporte_bws", conta_origem=7011, conta_destino=22069,
         valor="12.500,00", data="2026-09-20", fornecedor=99,
         fornecedor_nome="PARCEIRO LTDA", obra="OBRA-1", obra_nome="Obra Um",
-        quem="Marcelo", contas=CONTAS, categorias=CATEGORIAS)
+        quem="Marcelo", descricoes=DESCRICOES, categorias=CATEGORIAS)
     base.update(mudancas)
     return aportes.planejar(**base)
 
@@ -123,37 +121,47 @@ def test_sai_dinheiro_vira_conta_a_pagar_e_entra_vira_conta_a_receber():
 # ---------------------------------------------------------------------------
 # O QUE A REGRA RECUSA — e por que recusar é o certo
 # ---------------------------------------------------------------------------
-def test_conta_trocada_e_recusada_com_explicacao():
-    """O dono escolheu poder apontar as contas à mão sabendo deste preço: dá
-    para montar combinação que a regra não prevê. Aí o certo é parar — nunca
-    adivinhar qual categoria ele quis dizer."""
-    with pytest.raises(aportes.ErroDeRegra) as erro:
-        planejar(operacao="aporte_bws", conta_origem=22069, conta_destino=7011)
-    frase = str(erro.value)
-    assert "Matriz" in frase, "não disse qual conta deveria ser"
-    assert "de origem" in frase
+def test_qualquer_conta_serve_em_qualquer_papel():
+    """⚠️ A CORREÇÃO DE 20/09: *"não quero travar a conta Matriz e a da
+    Parceria, tem mais de uma situação."*
 
-
-def test_sem_mandar_conta_nenhuma_a_regra_usa_a_da_operacao():
-    """⚠️ MUDANÇA DE 20/09/2026, depois de ele ver a tela: *"na hora que eu
-    fosse mais embaixo definir o que está acontecendo, você pergunta o que eu
-    estou lançando; então ele já define quais contas seriam utilizadas."*
-
-    Perguntar a conta era oferecer a chance de montar uma combinação que a
-    regra não prevê. Quem não manda conta recebe a da regra — e o confronto
-    do teste acima continua valendo para quem MANDA uma errada."""
-    plano = planejar(conta_origem=None, conta_destino=None)
-    assert [t["id_conta_corrente"] for t in plano["titulos"]] == [7011, 22069]
+    Há mais de uma parceria, e a mesma conta pode fazer papéis diferentes. O
+    que a OPERAÇÃO decide é o papel, o sentido e a categoria de cada lado; ele
+    diz só qual conta faz aquele papel desta vez. Então uma segunda parceria
+    entra sem cadastro nenhum, e a categoria continua saindo da regra."""
+    plano = planejar(operacao="aporte_bws", conta_origem=7011,
+                     conta_destino=33333)
+    assert [t["id_conta_corrente"] for t in plano["titulos"]] == [7011, 33333]
     assert [t["categoria_nome"] for t in plano["titulos"]] == \
         ["Aportes BWS", "Aportes BWS"]
+    assert plano["titulos"][1]["conta_descricao"] == "PARCERIA OBRA Y"
 
 
-def test_o_aporte_do_parceiro_nao_precisa_de_conta_de_origem():
+def test_a_mesma_conta_dos_dois_lados_e_recusada():
+    """Sem cadastro fixo, esta é a única incoerência que o sistema consegue
+    enxergar sozinho — e ela é sempre engano: o dinheiro sairia e entraria no
+    mesmo lugar."""
+    with pytest.raises(aportes.ErroDeRegra) as erro:
+        planejar(operacao="aporte_bws", conta_origem=7011, conta_destino=7011)
+    assert "mesma" in str(erro.value)
+
+
+def test_a_conta_que_falta_e_pedida_pelo_sentido_do_dinheiro():
+    """O rótulo é a pergunta inteira, não "origem": é o sentido do dinheiro
+    que a pessoa tem na cabeça."""
+    with pytest.raises(aportes.ErroDeRegra) as erro:
+        planejar(conta_origem=None)
+    frase = str(erro.value)
+    assert "SAI" in frase
+    assert "Matriz" in frase
+
+
+def test_o_aporte_do_parceiro_nao_pede_conta_de_origem():
     """*"Nem sempre a conta de origem vai ser necessária. Se eu estiver
     lançando um dinheiro do parceiro, ele não vem de conta nenhuma — vem de
     outra empresa, que não nos interessa."*"""
     plano = planejar(operacao="aporte_parceiro", conta_origem=None,
-                     conta_destino=None)
+                     conta_destino=22069)
     assert len(plano["titulos"]) == 1
     assert plano["titulos"][0]["sentido"] == "entrada"
     assert plano["titulos"][0]["id_conta_corrente"] == 22069
@@ -180,12 +188,6 @@ def test_categoria_sem_codigo_para_a_tela_em_vez_de_chutar():
     with pytest.raises(aportes.ErroDeRegra) as erro:
         planejar(categorias=sem)
     assert "Aportes BWS" in str(erro.value)
-
-
-def test_conta_nao_apontada_para_a_tela():
-    with pytest.raises(aportes.ErroDeRegra) as erro:
-        planejar(contas={aportes.PARCERIA: CONTAS[aportes.PARCERIA]})
-    assert "Matriz" in str(erro.value)
 
 
 @pytest.mark.parametrize("ruim", ["", "0", "-5", "abc", "R$ 0,00"])

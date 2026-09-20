@@ -5905,23 +5905,48 @@ um "detalhes" fechado, que ninguém precisa abrir.
 O que ele confirmar à mão continua valendo **por cima** do descoberto: é assim
 que se conserta um caso que o sistema leria errado.
 
-#### 3. A conta não devia ser perguntada
+#### 3. A conta: duas correções no mesmo dia, e a segunda é a boa
+
+Primeiro ele disse:
 
 > *"Na hora que eu fosse mais embaixo definir o que está acontecendo, você
 > pergunta o que eu estou lançando. Então ele já define quais contas seriam
 > utilizadas."*
 
-Isto contraria a escolha que ele mesmo fez de manhã (*"escolho operação, conta
-de origem e conta de destino"*), e a mudança de ideia é correta: vendo a tela
-pronta ficou claro que perguntar a conta era **oferecer a chance de montar uma
-combinação que a regra não prevê**, para depois a tela recusar e explicar. Sem
-a pergunta, o erro não existe.
+A leitura imediata foi: cadastrar uma conta como "a matriz" e outra como "a
+parceria", e a operação escolher entre elas. Feito isso, ele derrubou na
+mesma conversa:
 
-Agora a operação determina as contas, e a tela **mostra** quais são, sem deixar
-trocar. `planejar` passa a usar a conta da regra quando não recebe nenhuma — e
-o confronto continua de pé para quem **manda** uma conta: é ele que impede uma
-tela antiga, ou uma chamada direta, de gravar com a conta trocada e a
-categoria do outro lado.
+> *"Não quero travar a conta Matriz e a da Parceria, tem mais de uma
+> situação."*
+
+**Há mais de uma parceria, e a mesma conta pode fazer papéis diferentes
+conforme o que se lança.** Cadastro fixo significaria, no dia da segunda
+parceria, ou lançar na conta errada ou refazer o cadastro a cada lançamento —
+que é o pior dos dois mundos.
+
+⚠️ **A forma certa é a do meio, e vale guardar porque é o desenho que resolve
+os dois pedidos ao mesmo tempo:**
+
+- **a OPERAÇÃO decide** o papel de cada lado, o sentido do dinheiro e — por
+  consequência — a categoria. Isso ele nunca escolhe;
+- **ele diz apenas QUAL conta faz aquele papel desta vez.**
+
+Com isso deixa de existir "combinação que a regra não prevê": não há nada com
+que confrontar a escolha dele, porque não há mais cadastro. E o campo deixou
+de se chamar "origem": chama-se **"De qual conta o dinheiro sai?"**, com o
+papel ao lado. É a pergunta de verdade — ninguém pensa "origem", pensa "de
+onde saiu".
+
+O que sobrou do cadastro é **memória**: a última conta usada em cada
+(operação, papel) vem pré-escolhida da próxima vez. Ela não decide nada; se
+estiver errada, é trocar no campo e seguir. A tabela `aporte_conta` da
+migração 018 continua servindo para isso, com a chave passando a ser
+`operacao:papel`.
+
+A única incoerência que o sistema ainda consegue enxergar sozinho é **a mesma
+conta dos dois lados** — o dinheiro sairia e entraria no mesmo lugar. Essa é
+sempre engano, e é recusada.
 
 #### 4. Conta de origem nem sempre existe
 
@@ -5940,19 +5965,23 @@ Uma pergunta só para começar — **o que você está lançando** — e a respo
 desenha o resto: as contas, o sentido de cada lado, a categoria de cada lado e
 o tipo de título. Só então aparecem valor, data, fornecedor, obra e baixa.
 
-Sobrou **uma única coisa** que o dono precisa dizer, e uma vez só: qual conta
-do OMIE é a matriz e qual é a parceria. Isso não tem como ser adivinhado — e
-adivinhar aqui seria lançar dinheiro na conta errada.
+E **não sobrou nada para configurar**: as categorias se resolvem sozinhas
+quando o plano financeiro não deixa dúvida, e a conta é escolhida no próprio
+lançamento. O bloco de ajuste só aparece quando há de fato uma decisão de
+categoria a tomar.
 
 #### Os testes que travam a nova forma
 
-Quatro novos na tela (não pede conta nem categoria no bloco de lançar; mostra
-as cinco situações com SAI/ENTRA; o de-para fica guardado quando não falta
-nada; a operação sozinha diz o que vai acontecer) e sete na regra e no banco
-(a conta vem da regra quando não é mandada; o aporte do parceiro não precisa
-de origem; as cinco situações batem com as pernas das operações; a categoria
-sem dúvida se resolve sozinha; a com dúvida continua parando; o confirmado à
-mão vale por cima; e só as contas sobram para ele apontar).
+Cinco novos na tela (não pede categoria no bloco de lançar; mostra as cinco
+situações com SAI/ENTRA; o de-para fica guardado quando não falta nada; a
+operação sozinha diz o que vai acontecer, com a pergunta inteira no rótulo da
+conta; e a conta não é travada em cadastro nenhum) e nove na regra e no banco
+(qualquer conta serve em qualquer papel — inclusive uma segunda parceria, sem
+cadastro; a mesma conta dos dois lados é recusada; a conta que falta é pedida
+pelo sentido do dinheiro; o aporte do parceiro não pede origem; as cinco
+situações batem com as pernas das operações; a categoria sem dúvida se
+resolve sozinha; a com dúvida continua parando; o confirmado à mão vale por
+cima; e a conta é lembrada por operação e papel, sem nunca derrubar nada).
 
 ---
 ---

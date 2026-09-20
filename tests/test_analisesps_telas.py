@@ -4202,9 +4202,10 @@ def app_aportes(app, monkeypatch):
                         lambda: [{"codigo": "OBRA-1", "nome": "Obra Um"}])
     monkeypatch.setattr(aportes_de_para, "fornecedores", lambda q="": [
         {"codigo": 99, "nome": "PARCEIRO LTDA", "documento": "00.000.000/0001-00"}])
-    monkeypatch.setattr(aportes_de_para, "contas_configuradas", lambda: {
-        "matriz": {"codigo": 7011, "descricao": "BWS MATRIZ"},
-        "parceria": {"codigo": 22069, "descricao": "PARCERIA OBRA X"}})
+    monkeypatch.setattr(aportes_de_para, "contas_lembradas",
+                        lambda: {"aporte_bws:matriz": 7011})
+    monkeypatch.setattr(aportes_de_para, "descricoes_das_contas",
+                        lambda: {7011: "BWS MATRIZ", 22069: "PARCERIA OBRA X"})
     monkeypatch.setattr(aportes_de_para, "descobrir_categorias", lambda: {
         chave: {"chave": chave, "procurada": nome, "situacao": "escolhida",
                 "erro": "", "candidatos": [{"codigo": "9.01.01",
@@ -4243,21 +4244,17 @@ def bloco_de_lancar(html):
     return html[inicio:fim]
 
 
-def test_a_tela_de_lancar_nao_pede_categoria_nem_conta(app_aportes):
-    """Duas coisas de uma vez, e as duas são pedido dele.
+def test_a_tela_de_lancar_nao_pede_categoria(app_aportes):
+    """*"Eu não devo ter que escolher categoria nenhuma: quem escolhe é a
+    regra. Se eu pudesse escolher, eu erraria."*
 
-    A categoria nunca foi escolhida por ele — *"se eu pudesse escolher, eu
-    erraria"*. A CONTA deixou de ser perguntada em 20/09, depois de ele ver a
-    tela: *"na hora que eu fosse definir o que está acontecendo, você pergunta
-    o que eu estou lançando; então ele já define quais contas seriam
-    utilizadas."* Perguntar era oferecer a chance de montar uma combinação que
-    a regra não prevê."""
+    A CONTA, essa sim, é perguntada — mas pelo papel e pelo sentido, não como
+    "origem" e "destino" soltos: *"não quero travar a conta Matriz e a da
+    Parceria, tem mais de uma situação."*"""
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)
     lancar = bloco_de_lancar(html)
     assert 'name="categoria' not in lancar
-    assert 'id="conta_origem"' not in lancar, "voltou a perguntar a conta"
-    assert 'id="conta_destino"' not in lancar, "voltou a perguntar a conta"
 
 
 def test_a_tela_mostra_as_cinco_situacoes_e_nao_quatro_categorias(app_aportes):
@@ -4295,6 +4292,24 @@ def test_a_operacao_sozinha_diz_o_que_vai_acontecer(app_aportes):
         "não explica o caso do dinheiro que vem de fora"
     # O aporte do parceiro tem UMA perna só, e a tela tem de saber disso.
     assert '"aporte_parceiro"' in html
+    # A pergunta da conta é a pergunta inteira, não um rótulo que obriga a
+    # traduzir "origem" para "de onde sai".
+    assert "De qual conta o dinheiro sai?" in html
+    assert "Em qual conta o dinheiro entra?" in html
+
+
+def test_a_conta_nao_e_travada_num_cadastro(app_aportes):
+    """*"Não quero travar a conta Matriz e a da Parceria, tem mais de uma
+    situação."* Há mais de uma parceria, e a mesma conta pode fazer papéis
+    diferentes. O que fica guardado é só a última usada, para vir
+    pré-escolhida — e isso não decide nada."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    # O bloco de ajuste não pede mais conta nenhuma.
+    assert 'name="conta_matriz"' not in html
+    assert 'name="conta_parceria"' not in html
+    # E a lista de contas do OMIE vai inteira para a tela, para ele escolher.
+    assert "PARCERIA OBRA X" in html
 
 
 def test_o_perfil_consulta_nao_alcanca_os_aportes(app_aportes):
@@ -4349,7 +4364,8 @@ def test_o_espelho_vazio_nao_derruba_a_tela(app, monkeypatch):
     monkeypatch.setattr(aportes_de_para, "contas_do_omie", sem_espelho)
     monkeypatch.setattr(aportes_de_para, "obras", sem_espelho)
     monkeypatch.setattr(aportes_de_para, "fornecedores", sem_espelho)
-    monkeypatch.setattr(aportes_de_para, "contas_configuradas", lambda: {})
+    monkeypatch.setattr(aportes_de_para, "contas_lembradas", lambda: {})
+    monkeypatch.setattr(aportes_de_para, "descricoes_das_contas", lambda: {})
     monkeypatch.setattr(aportes_de_para, "descobrir_categorias", lambda: {})
     monkeypatch.setattr(aportes_de_para, "falta_configurar", lambda: [])
     monkeypatch.setattr(aportes_omie, "historico", lambda n=30: [])

@@ -367,17 +367,18 @@ e cada um responde a um jeito conhecido de dar errado:
 |---|---|
 | **Nenhum código de categoria ou de conta escrito no programa** — todos saem de um de-para conferível, descoberto pela descrição em `painel.cat` | o dono mexe no plano financeiro e o sistema passa a lançar na categoria errada **sem nada denunciar** |
 | **O de-para não é um passo**: o que é inequívoco se resolve sozinho, e o bloco de ajuste só aparece quando há decisão a tomar | clique de confirmação que se repete vira clique automático — pior do que não ter conferência, porque parece que alguém olhou |
-| **A conta não é perguntada**: a operação determina as duas, e a tela só mostra | oferecer a chance de montar uma combinação que a regra não prevê, para depois recusá-la |
+| **A conta é de cada lançamento, não de um cadastro** — a operação decide o papel, o sentido e a categoria; o dono diz só qual conta faz aquele papel desta vez | travar uma conta como "a parceria" quando há mais de uma parceria, e a mesma conta faz papéis diferentes |
 | **Descrição ambígua ou ausente PARA a tela** em vez de escolher uma | o mesmo, pela porta do palpite |
 | **Ensaio obrigatório antes de gravar**, mostrando o pacote exato | escrever no OMIE algo que ninguém leu |
 | **Os dois títulos nascem amarrados**: falhando o segundo, o primeiro é desfeito; não dando para desfazer, o número do órfão vai para a tela | meio aporte no OMIE — nenhum relatório fecha e ninguém percebe |
 
 ⚠️ **A tela pergunta UMA coisa para começar** — o que está sendo lançado — e a
 resposta desenha o resto: contas, sentido de cada lado, categoria e tipo de
-título, tudo só para conferência. Conta de origem só existe quando existe: no
-aporte do parceiro o dinheiro vem de fora, e a tela escreve isso. A única coisa
-que o dono precisa apontar, uma vez só, é qual conta do OMIE é a matriz e qual
-é a parceria — o resto o sistema descobre.
+título. Um campo de conta por lado, com a pergunta inteira no rótulo ("De qual
+conta o dinheiro sai?") e o papel ao lado — nunca "origem"/"destino" soltos.
+Conta de origem só existe quando existe: no aporte do parceiro o dinheiro vem
+de fora, e a tela escreve isso. **Não há nada a configurar**: as categorias se
+resolvem pela descrição e a conta é escolhida na hora.
 
 ⚠️ **As CINCO situações, não as quatro categorias.** "Aportes BWS" é usada
 saindo da matriz *e* entrando na parceria; listada uma vez, esconde metade do

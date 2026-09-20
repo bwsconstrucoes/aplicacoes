@@ -12,33 +12,16 @@
    categorias escondia metade do que cada uma faz. Aqui cada linha é uma
    situação — conta, sentido e categoria juntos, na ordem da tabela dele.
 
+   ⚠️ AS CONTAS NÃO ESTÃO AQUI, e a ausência é a correção de 20/09: *"não
+   quero travar a conta Matriz e a da Parceria, tem mais de uma situação."*
+   A conta é escolhida em cada lançamento, lá em cima; o que este bloco
+   guarda é só o código da categoria, quando o plano financeiro não o deixa
+   claro sozinho.
+
    É incluído de dois lugares e nunca dos dois ao mesmo tempo, então os `id`
    não se repetem na página.
 --------------------------------------------------------------------------- #}
 <form method="post" action="{{ url_for('analisesps.aportes_de_para_gravar') }}">
-
-  <h4>As duas contas</h4>
-  <p class="cartao-dica">
-    Isto é a única coisa que preciso que você me diga, e é uma vez só. Daqui
-    para a frente a operação escolhida já sabe qual conta usar de cada lado.
-  </p>
-  {% for papel in papeis %}
-    <p>
-      <label class="rotulo-campo" for="conta_{{ papel }}">
-        Qual conta do OMIE é a {{ papel_rotulo[papel] }}?</label>
-      <select class="campo-largo" id="conta_{{ papel }}" name="conta_{{ papel }}">
-        <option value="">— escolha —</option>
-        {% for c in contas_omie %}
-          <option value="{{ c.codigo }}"
-            {% if contas.get(papel) and contas[papel].codigo|string == c.codigo|string %}selected{% endif %}>
-            {{ c.descricao }} — código {{ c.codigo }}
-            {%- if c.numero_conta %} · conta {{ c.numero_conta }}{% endif %}
-            {%- if c.inativa %} (inativa){% endif %}
-          </option>
-        {% endfor %}
-      </select>
-    </p>
-  {% endfor %}
 
   <h4>As cinco situações</h4>
   <p class="cartao-dica">
@@ -47,7 +30,7 @@
   </p>
   <table class="sps">
     <thead>
-      <tr><th>Movimento</th><th>Conta</th><th>Categoria</th>
+      <tr><th>Movimento</th><th>Qual conta</th><th>Categoria</th>
           <th>Código no seu plano financeiro</th></tr>
     </thead>
     <tbody>
@@ -61,8 +44,7 @@
             {% endif %}
             <br><small>{{ s.natureza_rotulo }}</small>
           </td>
-          <td>{{ s.conta_descricao or '—' }}
-              <br><small>{{ s.papel_rotulo }}</small></td>
+          <td>{{ s.papel_rotulo }}</td>
           <td><b>{{ s.categoria_nome }}</b>
             {% if s.transferencia and s.transferencia|upper == 'S' %}
               <br><small>⚠️ marcada como transferência — fica fora do DRE</small>

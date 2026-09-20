@@ -187,40 +187,43 @@ def test_a_marca_de_transferencia_vem_junto(banco_aportes):
 # ---------------------------------------------------------------------------
 # O DE-PARA GRAVADO — e o SQL de gravação
 # ---------------------------------------------------------------------------
-def test_guardar_e_reler_o_de_para(banco_aportes):
-    from app.apps.analisesps import aportes, aportes_de_para
+def test_guardar_e_reler_a_categoria(banco_aportes):
+    from app.apps.analisesps import aportes_de_para
 
     semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
     aportes_de_para.guardar_categoria("aportes_bws", "9.01.01", "Marcelo")
-
-    contas = aportes_de_para.contas_configuradas()
-    assert contas[aportes.MATRIZ]["codigo"] == 7011
-    assert contas[aportes.MATRIZ]["descricao"] == "BWS MATRIZ"
     assert aportes_de_para.categorias_configuradas()["aportes_bws"]["codigo"] \
         == "9.01.01"
 
 
-def test_apontar_de_novo_troca_em_vez_de_duplicar(banco_aportes):
-    """Exercita o ON CONFLICT: o dono troca a conta da parceria quando a obra
-    muda, e isso não pode virar duas linhas brigando."""
+def test_a_conta_e_lembrada_por_operacao_e_papel_nao_cadastrada(banco_aportes):
+    """⚠️ *"Não quero travar a conta Matriz e a da Parceria, tem mais de uma
+    situação."*
+
+    O que ficou não é cadastro: é memória, por (operação, papel), só para vir
+    pré-escolhida. Duas parcerias diferentes em duas operações diferentes
+    convivem — e nenhuma delas decide categoria nenhuma."""
     from app.apps.analisesps import aportes, aportes_de_para
 
     semear_espelho(banco_aportes, contas=AS_CONTAS)
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 7011, "Marcelo")
-    contas = aportes_de_para.contas_configuradas()
-    assert contas[aportes.PARCERIA]["codigo"] == 7011
-    assert contas[aportes.PARCERIA]["descricao"] == "BWS MATRIZ"
+    aportes_de_para.lembrar_conta("aporte_bws", aportes.PARCERIA, 22069, "M")
+    aportes_de_para.lembrar_conta("aporte_parceiro", aportes.PARCERIA, 7011, "M")
+    lembradas = aportes_de_para.contas_lembradas()
+    assert lembradas["aporte_bws:parceria"] == 22069
+    assert lembradas["aporte_parceiro:parceria"] == 7011
+
+    # Lembrar de novo troca, não duplica (exercita o ON CONFLICT).
+    aportes_de_para.lembrar_conta("aporte_bws", aportes.PARCERIA, 7011, "M")
+    assert aportes_de_para.contas_lembradas()["aporte_bws:parceria"] == 7011
 
 
-def test_conta_fora_do_espelho_e_recusada(banco_aportes):
-    from app.apps.analisesps import aportes, aportes_de_para
+def test_lembrar_a_conta_nunca_derruba_nada(banco_aportes):
+    """Um aporte que já entrou no OMIE não pode falhar porque a memória de
+    conforto não gravou."""
+    from app.apps.analisesps import aportes_de_para
 
-    semear_espelho(banco_aportes, contas=AS_CONTAS)
-    with pytest.raises(aportes_de_para.SemEspelho):
-        aportes_de_para.guardar_conta(aportes.MATRIZ, 123456, "Marcelo")
+    aportes_de_para.lembrar_conta("aporte_bws", "papel_que_nao_existe", 1, "M")
+    aportes_de_para.lembrar_conta("aporte_bws", "matriz", None, "M")
 
 
 def test_a_categoria_sem_duvida_se_resolve_sozinha(banco_aportes):
@@ -276,31 +279,27 @@ def test_o_que_ele_confirmou_a_mao_vale_por_cima_do_descoberto(banco_aportes):
     assert resolvidas["aportes_bws"]["codigo"] == "9.99.99"
 
 
-def test_so_as_contas_sobram_para_ele_apontar(banco_aportes):
-    """Com o plano financeiro limpo, a ÚNICA coisa que ele precisa dizer são
-    as duas contas — e uma vez só."""
-    from app.apps.analisesps import aportes, aportes_de_para
+def test_com_o_plano_financeiro_em_ordem_nao_falta_nada(banco_aportes):
+    """Nada a configurar: as categorias se resolvem sozinhas e a conta é
+    escolhida na hora do lançamento."""
+    from app.apps.analisesps import aportes_de_para
 
     semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
-    faltas = aportes_de_para.falta_configurar()
-    assert len(faltas) == 2, faltas
-    assert all("conta" in f for f in faltas)
-
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
     assert aportes_de_para.falta_configurar() == []
 
 
 def test_o_que_falta_e_dito_em_portugues(banco_aportes):
     from app.apps.analisesps import aportes_de_para
 
-    # Plano financeiro VAZIO: aí as quatro categorias também faltam, porque
-    # não há o que descobrir.
+    # Plano financeiro VAZIO: as quatro categorias faltam, porque não há o que
+    # descobrir. Conta NÃO entra nesta conta — ela é escolhida a cada
+    # lançamento, não cadastrada.
     semear_espelho(banco_aportes, contas=AS_CONTAS)
     faltas = aportes_de_para.falta_configurar()
-    assert len(faltas) == 6, "duas contas e quatro categorias"
-    aportes_de_para.guardar_conta("matriz", 7011, "Marcelo")
-    assert len(aportes_de_para.falta_configurar()) == 5
+    assert len(faltas) == 4, faltas
+    assert not any("conta" in f.lower() for f in faltas)
+    aportes_de_para.guardar_categoria("aportes_bws", "", "Marcelo")
+    assert len(aportes_de_para.falta_configurar()) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -315,11 +314,9 @@ def test_a_tabela_inteira_com_os_codigos_vindos_do_plano_financeiro(banco_aporte
 
     semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS,
                    rateios=[("OBRA-1", "Obra Um")])
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
     # Nenhuma categoria confirmada à mão: elas se resolvem sozinhas, que é o
     # caminho que o dono vai usar de verdade.
-    contas = aportes_de_para.contas_configuradas()
+    descricoes = aportes_de_para.descricoes_das_contas()
     categorias = aportes_de_para.categorias_resolvidas()
 
     esperado = {
@@ -337,7 +334,8 @@ def test_a_tabela_inteira_com_os_codigos_vindos_do_plano_financeiro(banco_aporte
         plano = aportes.planejar(
             operacao=operacao, conta_origem=origem, conta_destino=destino,
             valor="12.500,00", data="2026-09-20", fornecedor=99,
-            obra="OBRA-1", quem="Marcelo", contas=contas, categorias=categorias)
+            obra="OBRA-1", quem="Marcelo", descricoes=descricoes,
+            categorias=categorias)
         saiu = [(t["id_conta_corrente"], t["codigo_categoria"], t["natureza"])
                 for t in plano["titulos"]]
         assert saiu == linhas, operacao
@@ -419,13 +417,10 @@ def test_o_que_foi_gravado_fica_registrado_e_o_orfao_aparece(banco_aportes):
     from app.apps.analisesps import aportes, aportes_de_para, aportes_omie
 
     semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-
     plano = aportes.planejar(
-        operacao="aporte_bws",
+        operacao="aporte_bws", conta_origem=7011, conta_destino=22069,
         valor="12.500,00", data="2026-09-20", fornecedor=99, obra="OBRA-1",
-        quem="Marcelo", contas=aportes_de_para.contas_configuradas(),
+        quem="Marcelo", descricoes=aportes_de_para.descricoes_das_contas(),
         categorias=aportes_de_para.categorias_resolvidas())
 
     class OmieQueFalhaNoSegundo:
@@ -464,13 +459,10 @@ def test_gravar_duas_vezes_o_mesmo_lancamento_nao_duplica_o_registro(banco_aport
     from app.apps.analisesps import aportes, aportes_de_para, aportes_omie
 
     semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-
     plano = aportes.planejar(
-        operacao="aporte_parceiro", valor="100,00",
+        operacao="aporte_parceiro", conta_destino=22069, valor="100,00",
         data="2026-09-20", fornecedor=99, obra="OBRA-1", quem="Marcelo",
-        contas=aportes_de_para.contas_configuradas(),
+        descricoes=aportes_de_para.descricoes_das_contas(),
         categorias=aportes_de_para.categorias_resolvidas())
 
     class OmieOk:

@@ -3834,7 +3834,8 @@ def _contexto_dos_aportes() -> dict:
         "papeis": aportes_de_para.PAPEIS,
         "papel_rotulo": aportes.PAPEL_ROTULO,
         "categorias_nomes": aportes.CATEGORIAS,
-        "contas_omie": [], "contas": {}, "categorias": {}, "obras": [],
+        "contas_omie": [], "contas_lembradas": {}, "categorias": {},
+        "obras": [],
         "fornecedores": [], "faltas": [], "erro_espelho": "",
         "historico": [], "orfaos": [], "situacoes": [],
         "senha_configurada": aportes_omie.senha_configurada(),
@@ -3852,7 +3853,10 @@ def _contexto_dos_aportes() -> dict:
     except aportes_de_para.SemEspelho as e:
         ctx["erro_espelho"] = ctx["erro_espelho"] or str(e)
 
-    ctx["contas"] = aportes_de_para.contas_configuradas()
+    # As contas são escolhidas em CADA lançamento (20/09/2026: *"não quero
+    # travar a conta Matriz e a da Parceria, tem mais de uma situação"*). O
+    # que fica guardado é só a última usada, para vir pré-escolhida.
+    ctx["contas_lembradas"] = aportes_de_para.contas_lembradas()
     ctx["categorias"] = aportes_de_para.descobrir_categorias()
     ctx["faltas"] = aportes_de_para.falta_configurar()
 
@@ -3866,12 +3870,10 @@ def _contexto_dos_aportes() -> dict:
     ja_vistas = set()
     for papel, sentido, chave in aportes.SITUACOES:
         achado = ctx["categorias"].get(chave) or {}
-        conta = ctx["contas"].get(papel) or {}
         ctx["situacoes"].append({
             "primeira": chave not in ja_vistas,
             "papel": papel,
             "papel_rotulo": aportes.PAPEL_ROTULO[papel],
-            "conta_descricao": conta.get("descricao") or "",
             "sentido": sentido,
             "sentido_rotulo": aportes.SENTIDO_ROTULO[sentido],
             "natureza_rotulo": aportes.NATUREZA_ROTULO[aportes.NATUREZA[sentido]],
@@ -3905,17 +3907,7 @@ def aportes_de_para_gravar():
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     recados, problemas = [], []
 
-    for papel in aportes_de_para.PAPEIS:
-        campo = request.form.get(f"conta_{papel}")
-        if campo is None:
-            continue
-        try:
-            aportes_de_para.guardar_conta(papel, campo.strip() or None, quem)
-            recados.append(f"Conta da {papel} anotada.")
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Aportes: falhou guardar a conta %s", papel)
-            problemas.append(str(e))
-
+    # ⚠️ SÓ CATEGORIA. A conta não se cadastra: é escolhida em cada lançamento.
     from .aportes import CATEGORIAS
     for chave in CATEGORIAS:
         campo = request.form.get(f"categoria_{chave}")
@@ -3953,7 +3945,7 @@ def _plano_do_pedido(dados: dict):
         baixar=bool(dados.get("baixar", True)),
         grupo=str(dados.get("grupo") or ""),
         numero=str(dados.get("numero") or ""),
-        contas=aportes_de_para.contas_configuradas(),
+        descricoes=aportes_de_para.descricoes_das_contas(),
         categorias=aportes_de_para.categorias_resolvidas(),
         observacoes=dados.get("observacoes") or {},
     )
@@ -4008,6 +4000,14 @@ def aportes_gravar():
     except Exception as e:  # noqa: BLE001 — a mensagem do OMIE vai inteira
         logger.exception("Aportes: falhou gravar no OMIE")
         return {"ok": False, "erro": f"Não consegui falar com o OMIE: {e}"}, 502
+
+    # Lembrar as contas usadas, para virem pré-escolhidas na próxima vez.
+    # Só depois de gravar: conta de um lançamento que falhou não é exemplo.
+    if resultado.get("ok"):
+        from . import aportes_de_para
+        for t in plano["titulos"]:
+            aportes_de_para.lembrar_conta(plano["operacao"], t["papel"],
+                                          t["id_conta_corrente"], quem)
 
     logger.info("Análise de SPs: %s lançou aporte %s (%s) — ok=%s.",
                 quem or "sem nome", plano["grupo"], plano["operacao"],

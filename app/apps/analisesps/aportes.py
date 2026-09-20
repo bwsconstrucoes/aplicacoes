@@ -297,13 +297,14 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
              valor=None, data=None, fornecedor=None, fornecedor_nome: str = "",
              obra: str = "", obra_nome: str = "", quem: str = "",
              baixar: bool = True, grupo: str = "",
-             contas: dict | None = None, categorias: dict | None = None,
+             descricoes: dict | None = None, categorias: dict | None = None,
              numero: str = "", observacoes: dict | None = None) -> dict:
     """Monta os títulos que vão nascer. NÃO fala com o OMIE nem com o banco.
 
-    `contas` é o de-para papel → {codigo, descricao}; `categorias` é o de-para
-    chave → {codigo, descricao}. Os dois entram por parâmetro justamente para
-    esta função continuar sendo pura — quem lê o banco é quem chama.
+    `descricoes` é {código da conta → nome}, só para a tela mostrar o nome em
+    vez do número; `categorias` é o de-para chave → {codigo, descricao}. Os
+    dois entram por parâmetro justamente para esta função continuar sendo
+    pura — quem lê o banco é quem chama.
 
     Levanta `ErroDeRegra` com a frase pronta sempre que o que foi escolhido
     não fecha. Nunca "conserta" a escolha por conta própria: o dono pediu que
@@ -313,7 +314,6 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
     if operacao not in OPERACOES:
         raise ErroDeRegra("Escolha o que você está lançando.")
     op = OPERACOES[operacao]
-    contas = contas or {}
     categorias = categorias or {}
     observacoes = observacoes or {}
 
@@ -335,45 +335,31 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
 
     escolhidas = {"origem": conta_origem, "destino": conta_destino}
     titulos = []
+    usadas = []
     for perna in op["pernas"]:
-        conta_papel = contas.get(perna.papel) or {}
-        codigo_papel = conta_papel.get("codigo")
-        if not codigo_papel:
-            raise ErroDeRegra(
-                f"Falta apontar qual conta do OMIE é a "
-                f"{PAPEL_ROTULO[perna.papel]}. Isso se faz uma vez só, na "
-                f"própria tela de Aportes, em Configurações.")
-
-        # ⚠️ A CONTA NÃO É MAIS PERGUNTADA — 20/09/2026, pedido dele depois de
-        # ver a tela: *"na hora que eu fosse mais embaixo definir o que está
-        # acontecendo, você pergunta o que você está lançando; então ele já
-        # define quais contas seriam utilizadas."*
+        # ⚠️ A CONTA É DESTE LANÇAMENTO, NÃO DE UM CADASTRO — 20/09/2026.
         #
-        # Faz sentido e é mais seguro: a operação determina as contas pela
-        # regra que ele desenhou, então perguntá-las era oferecer a chance de
-        # montar uma combinação que não existe. Quem não manda conta nenhuma
-        # recebe a da regra.
+        # A versão anterior travava uma conta para "matriz" e outra para
+        # "parceria", apontadas uma vez só. O dono derrubou isso com uma frase:
+        # *"não quero travar a conta Matriz e a da Parceria, tem mais de uma
+        # situação."* Há mais de uma parceria, e a mesma conta pode fazer
+        # papéis diferentes conforme o que se está lançando.
         #
-        # O confronto abaixo continua, para quem MANDA uma conta: é ele que
-        # impede uma tela antiga, ou uma chamada direta, de gravar um
-        # lançamento com a conta trocada e a categoria do outro lado.
+        # O que a OPERAÇÃO decide continua sendo o que importa: o papel de
+        # cada lado, o sentido do dinheiro e — por consequência — a categoria.
+        # O que ele diz é apenas QUAL conta faz aquele papel desta vez. Assim
+        # não existe "combinação que a regra não prevê": não há nada com que
+        # confrontar a escolha dele, porque não há mais cadastro fixo.
         escolhida = escolhidas.get(perna.campo_conta)
         if escolhida in (None, "", 0):
-            escolhida = codigo_papel
-        if int(escolhida) != int(codigo_papel):
-            # ⚠️ AQUI É ONDE A TELA RECUSA E EXPLICA. O dono escolheu poder
-            # apontar as contas à mão (20/09/2026) sabendo deste preço: dá
-            # para montar uma combinação que a regra não prevê, e aí o certo
-            # é parar — não adivinhar qual categoria ele quis dizer.
-            onde = ("de origem" if perna.campo_conta == "origem"
-                    else "de destino")
             raise ErroDeRegra(
-                f"Nesta operação, a conta {onde} tem de ser a "
-                f"{PAPEL_ROTULO[perna.papel]} "
-                f"({conta_papel.get('descricao') or codigo_papel}). "
-                f"A regra de aporte que você desenhou não cobre a combinação "
-                f"escolhida — se ela mudou, atualize o de-para em "
-                f"Configurações.")
+                f"Escolha a conta de onde o dinheiro "
+                f"{'SAI' if perna.sentido == SAIDA else 'ENTRA'} "
+                f"({PAPEL_ROTULO[perna.papel]}).")
+        codigo_papel = int(escolhida)
+        usadas.append(codigo_papel)
+        conta_papel = {"codigo": codigo_papel,
+                       "descricao": (descricoes or {}).get(codigo_papel, "")}
 
         cat = categorias.get(perna.categoria) or {}
         codigo_categoria = str(cat.get("codigo") or "").strip()
@@ -414,6 +400,16 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
             "codigo_integracao": f"{grupo}-{perna.papel[:3]}-{perna.sentido[:3]}",
             "baixar": bool(baixar),
         })
+
+    # A MESMA CONTA DOS DOIS LADOS não é aporte: é dinheiro saindo e entrando
+    # no mesmo lugar. Como não há mais cadastro fixo para conferir a escolha,
+    # esta é a única incoerência que o sistema CONSEGUE enxergar sozinho — e
+    # ela é sempre engano.
+    if len(usadas) > 1 and len(set(usadas)) == 1:
+        raise ErroDeRegra(
+            "As duas contas são a mesma. Nesta operação o dinheiro sai de uma "
+            "conta e entra em outra — do jeito que está, ele sairia e entraria "
+            "no mesmo lugar.")
 
     return {
         "operacao": operacao,

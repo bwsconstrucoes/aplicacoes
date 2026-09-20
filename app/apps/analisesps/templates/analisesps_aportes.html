@@ -17,11 +17,16 @@
       Agora o de-para só aparece quando há DE FATO uma decisão: descrição
       repetida, ou descrição que não existe.
 
-   2. **Perguntava as contas.** *"Na hora que eu fosse mais embaixo definir o
-      que está acontecendo, você pergunta o que eu estou lançando; então ele
-      já define quais contas seriam utilizadas."* Perguntar era oferecer a
-      chance de montar uma combinação que a regra não prevê. A operação
-      determina as contas — e a tela MOSTRA quais são, sem deixar trocar.
+   2. **Perguntava "conta de origem" e "conta de destino", soltas.** Primeiro
+      a correção foi tirar a pergunta e usar contas cadastradas; ele derrubou
+      isso no mesmo dia: *"não quero travar a conta Matriz e a da Parceria,
+      tem mais de uma situação."* Há mais de uma parceria, e a mesma conta
+      pode fazer papéis diferentes.
+
+      A forma certa é a do meio: a OPERAÇÃO decide o papel, o sentido e a
+      categoria de cada lado; ele diz só QUAL conta faz aquele papel desta
+      vez. O campo não se chama mais "origem" — chama-se "de onde o dinheiro
+      SAI (conta Matriz)", que é a pergunta de verdade.
 
    3. **Listava as quatro categorias como se cada uma fosse uma coisa só.**
       *"Aportes BWS tanto está na conta de entrada quanto de saída."* O que
@@ -109,9 +114,9 @@
     </select>
   </p>
 
-  {# O que a operação escolhida faz: contas, sentido e categoria, sem deixar
-     trocar nada. É a resposta ao "identifique melhor o que é entrada e o que
-     é saída" — aqui cada linha diz de um jeito só. #}
+  {# O que a operação faz, e um campo de conta por lado. O rótulo do campo é
+     a pergunta inteira — "de onde o dinheiro SAI (conta Matriz)" —, não um
+     "origem" que obriga a pessoa a traduzir. #}
   <div id="o-que-vai-acontecer"></div>
 
   <div id="resto-do-formulario" style="display:none">
@@ -231,7 +236,9 @@
 <script>
 (function () {
   const PERNAS = {{ pernas_por_operacao|tojson }};
-  const CONTAS = {{ contas|tojson }};
+  const CONTAS_OMIE = {{ contas_omie|tojson }};
+  // Só para PRÉ-ESCOLHER a última conta usada. Não decide nada.
+  const LEMBRADAS = {{ contas_lembradas|tojson }};
   const $ = id => document.getElementById(id);
   const conferencia = $("conferencia");
   const oQueVai = $("o-que-vai-acontecer");
@@ -249,35 +256,49 @@
     const pernas = PERNAS[chave];
     if (!pernas) { oQueVai.innerHTML = ""; resto.style.display = "none"; return; }
 
-    let html = '<div class="aviso"><b>O que vai acontecer:</b><table class="sps"' +
-               ' style="margin-top:8px"><thead><tr>' +
-               "<th>Movimento</th><th>Conta</th><th>Categoria no OMIE</th>" +
-               "<th>Tipo de título</th></tr></thead><tbody>";
+    let html = '<div class="aviso"><b>O que vai acontecer:</b>';
     pernas.forEach(p => {
-      const conta = (CONTAS[p.papel] || {}).descricao || "(conta ainda não apontada)";
       const seta = p.sentido === "saida" ? "↑ SAI" : "↓ ENTRA";
       const cor = p.sentido === "saida" ? "ruim" : "boa";
-      html += "<tr><td><span class='etiqueta " + cor + "'>" + seta + "</span></td>" +
-              "<td>" + conta + "<br><small>" + p.papel_rotulo + "</small></td>" +
-              "<td>" + p.categoria_nome + "</td>" +
-              "<td>" + p.natureza_rotulo + "</td></tr>";
+      const campo = p.sentido === "saida" ? "conta_origem" : "conta_destino";
+      const lembrada = LEMBRADAS[chave + ":" + p.papel] || "";
+      html += "<p style='margin:12px 0 0'>" +
+              "<span class='etiqueta " + cor + "'>" + seta + "</span> " +
+              "<b>" + (p.sentido === "saida" ? "De qual conta o dinheiro sai?"
+                                             : "Em qual conta o dinheiro entra?") +
+              "</b> <small>(" + p.papel_rotulo + ")</small><br>" +
+              "<select class='campo-largo' id='" + campo + "'>" +
+              "<option value=''>— escolha a conta —</option>" +
+              CONTAS_OMIE.map(c =>
+                "<option value='" + c.codigo + "'" +
+                (String(c.codigo) === String(lembrada) ? " selected" : "") +
+                ">" + c.descricao + " — " + c.codigo +
+                (c.numero_conta ? " · conta " + c.numero_conta : "") +
+                "</option>").join("") +
+              "</select>" +
+              "<small class='cartao-dica'>Vai nascer um <b>" +
+              p.natureza_rotulo.toLowerCase() + "</b> na categoria <b>" +
+              p.categoria_nome + "</b> — quem decide isso é a operação, não a " +
+              "conta.</small></p>";
     });
-    html += "</tbody></table>";
 
     // A conta de origem nem sempre existe, e dizer por quê evita a pergunta.
     const temSaida = pernas.some(p => p.sentido === "saida");
     const temEntrada = pernas.some(p => p.sentido === "entrada");
     if (!temSaida) {
-      html += "<p style='margin:8px 0 0'><b>Não há conta de origem:</b> o " +
+      html += "<p style='margin:12px 0 0'><b>Não há conta de origem:</b> o " +
               "dinheiro vem de fora da empresa.</p>";
     } else if (!temEntrada) {
-      html += "<p style='margin:8px 0 0'><b>Não há conta de destino:</b> o " +
+      html += "<p style='margin:12px 0 0'><b>Não há conta de destino:</b> o " +
               "dinheiro sai da empresa.</p>";
     }
-    html += "<p style='margin:8px 0 0'><small>As contas saem da regra que " +
-            "você desenhou — por isso não há o que escolher aqui.</small></p>";
     html += "</div>";
     oQueVai.innerHTML = html;
+    // Trocar a conta invalida a conferência, como qualquer outro campo.
+    ["conta_origem", "conta_destino"].forEach(id => {
+      const campo = $(id);
+      if (campo) campo.addEventListener("change", limparConferencia);
+    });
     resto.style.display = "";
   }
 
@@ -317,7 +338,10 @@
     const obra = $("obra");
     return {
       operacao: $("operacao").value,
-      // ⚠️ SEM conta_origem e SEM conta_destino: quem decide é a regra.
+      // A conta é DESTE lançamento. O papel e a categoria de cada lado é que
+      // vêm da operação.
+      conta_origem: ($("conta_origem") || {}).value || null,
+      conta_destino: ($("conta_destino") || {}).value || null,
       valor: $("valor").value,
       data: $("data").value,
       fornecedor: sel.value || null,
