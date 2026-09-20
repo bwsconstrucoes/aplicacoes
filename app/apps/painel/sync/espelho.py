@@ -1319,10 +1319,26 @@ def _ckpt_salvar(caminho, ids, done, atual, pagina):
 
 
 def _ckpt_remover(*caminhos):
+    """Apaga os checkpoints. BEST EFFORT, e o "best effort" e para valer.
+
+    Em 20/09/2026 a carga completa da madrugada terminou com este erro:
+
+        remove: path should be string, bytes or os.PathLike, not NoneType
+
+    Um dos caminhos vem `None` (o legado, que so existia no Windows), e
+    `os.remove(None)` levanta TypeError — que NAO e OSError, entao passava
+    direto pelo `except` daqui e derrubava o reconcile inteiro. O pior: isso
+    acontece DEPOIS de todo o trabalho feito, e a explosao impedia a etapa
+    seguinte, que e a que refaz os numeros das telas. A base atualizava e as
+    telas continuavam mostrando o numero velho.
+
+    O `_ckpt_carregar` logo acima ja pulava caminho vazio. Aqui faltava."""
     for c in caminhos:
+        if not c:
+            continue
         try:
             os.remove(c)
-        except (FileNotFoundError, OSError):
+        except Exception:  # noqa: BLE001 — limpeza nunca derruba a carga
             pass
 
 

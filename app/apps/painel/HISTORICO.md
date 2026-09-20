@@ -530,19 +530,23 @@ Duas consequências práticas, que valem para qualquer mudança aqui:
 
 Cada uma custou horas. Não são preferências.
 
-### 0. O dono deu autorização permanente para publicar — com duas exceções
+### 0. A autorização permanente para publicar FOI REVOGADA — 13/09/2026
 
-Em 04/09/2026, cansado de ser perguntado seis vezes no mesmo dia, o dono
-autorizou: **publicar sozinho sempre que a suíte estiver verde e não houver
-migração de banco.** Continuam exigindo a pergunta:
+Em 04/09/2026 o dono havia autorizado publicar sozinho com a suíte verde. **Em
+13/09/2026 ele cancelou essa autorização, com todas as letras:**
 
-- **mudança com migração**, porque ela precisa do clique dele no mesmo momento;
-- **qualquer suspeita de carga rodando**, pelo motivo da regra 1 abaixo.
+> *"só publique algo se eu autorizar."*
 
-**Isto vale só para a área do painel.** Não foi escrito no `CLAUDE.md`, que as
-três áreas leem: o ERP e o Análise de SPs são outros chats, e o dono não
-autorizou nada para eles. Foi um deles que matou uma carga juntando na main sem
-saber — a regra 1 nasceu disso.
+Cancelou porque eu publiquei antes de ler o resultado da suíte — que já estava
+vermelha — e o Explorador ficou fora do ar em produção. A regra hoje é simples e
+não tem exceção: **nada vai para a `main` sem ele dizer "pode".**
+
+Junto com isso ele pediu duas coisas:
+
+- *"nao publique nada pq analisesps tá publicando"* — confirmar que não há outra
+  área publicando nem carga rodando (regra 1 abaixo);
+- *"me avise quando tiver aguardando minha autorizacao"* — terminar o trabalho no
+  ramo e **avisar** que está pronto, em vez de ficar calado esperando.
 
 ### 1. Não publique na `main` enquanto uma carga estiver rodando
 
@@ -824,6 +828,41 @@ campo "procurar na base crua", em Configurações — levou vinte minutos para s
 feita e respondeu na primeira tentativa.** Devia ter sido a primeira coisa, não
 a sexta. Quando o dado está do outro lado, construir o instrumento é mais barato
 que adivinhar.
+
+## A madrugada de 20/09/2026 — o extra derrubou o essencial
+
+A atualização automática das 03:45 terminou assim:
+
+    remove: path should be string, bytes or os.PathLike, not NoneType
+
+**O erro em si é bobo.** No fim da varredura de títulos excluídos, os arquivos
+de checkpoint são apagados; um dos caminhos vinha vazio, e `os.remove(None)`
+levanta `TypeError` — que **não é `OSError`**, então passava direto pelo
+`except (FileNotFoundError, OSError)` que existia ali para tolerar exatamente
+esse tipo de coisa.
+
+**O estrago não foi o erro, foi onde ele caiu.** A varredura de excluídos roda
+ANTES da etapa que refaz os números das telas. Estourando ali, a carga inteira
+foi para o `except` de cima e o recálculo **não rodou**. Resultado: a base do
+OMIE atualizou e as telas continuaram mostrando número velho — sem ninguém
+perceber, porque a tela dizia "falhou" num erro que parecia de arquivo temporário.
+
+Dois consertos, e o segundo é o que importa:
+
+1. `_ckpt_remover` ignora caminho vazio e engole qualquer exceção. Limpeza de
+   arquivo temporário nunca derruba carga.
+2. **A varredura de excluídos virou etapa não essencial.** Se ela falhar, a
+   falha é registrada e a carga **segue** para o recálculo. A mensagem final
+   ganha um `ATENÇÃO: ...` dizendo o que não foi feito — "concluída" não pode
+   virar meia-verdade.
+
+A regra que fica: **achar título apagado no OMIE é um extra semanal; refazer os
+números é o que faz a tela valer. O extra nunca mais custa o essencial.**
+
+Três testes em `tests/test_painel_carga.py` seguram isso: o caminho vazio, o
+arquivo que existe continuando a ser apagado (tolerar vazio não pode virar
+tolerar tudo) e a varredura falhando sem impedir o recálculo. Os três foram
+conferidos ao contrário — com o conserto desfeito, os três quebram.
 
 ## O que falta
 

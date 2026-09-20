@@ -435,3 +435,71 @@ def test_titulo_de_fornecedor_sem_cadastro_nao_fica_sem_nome(espelho_limpo):
         "nenhuma linha pode ficar sem nome: sem nome ela some de qualquer busca"
     assert "4242" in nomes[0], \
         "e o nome tem de carregar o código, senão não dá para saber de quem é"
+
+
+# ===========================================================================
+# A limpeza do checkpoint nunca mais derruba a carga
+# ===========================================================================
+# 20/09/2026. A carga completa da madrugada terminou com:
+#
+#     remove: path should be string, bytes or os.PathLike, not NoneType
+#
+# Um dos caminhos de checkpoint vem None, e os.remove(None) levanta TypeError —
+# que NÃO é OSError, então passava direto pelo `except` e derrubava a varredura
+# inteira. E o pior nem foi isso: a explosão impedia a ETAPA SEGUINTE, que é a
+# que refaz os números das telas. A base atualizava e as telas continuavam
+# mostrando número velho, sem ninguém perceber.
+
+def test_apagar_checkpoint_com_caminho_vazio_nao_estoura():
+    """O erro exato da madrugada de 20/09."""
+    from app.apps.painel.sync.espelho import _ckpt_remover
+    _ckpt_remover(None)                      # era aqui que estourava
+    _ckpt_remover(None, "", "/nao/existe/arquivo.json")
+
+
+def test_apagar_checkpoint_apaga_de_verdade_o_que_existe(tmp_path):
+    """Tolerar caminho vazio não pode virar tolerar tudo: o arquivo que existe
+    continua sendo apagado."""
+    from app.apps.painel.sync.espelho import _ckpt_remover
+    arquivo = tmp_path / "ckpt.json"
+    arquivo.write_text("{}", encoding="utf-8")
+    _ckpt_remover(str(arquivo), None)
+    assert not arquivo.exists()
+
+
+def test_varredura_de_excluidos_que_falha_nao_impede_o_recalculo(monkeypatch):
+    """A lição que custou uma madrugada: achar título apagado é um extra
+    semanal; refazer os números é o que faz a tela valer. O extra não pode
+    custar o essencial."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.sync import espelho, fato
+
+    monkeypatch.setattr(espelho, "definir_progresso", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "sync_incremental", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "reconcile",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            TypeError("remove: path should be string, "
+                                      "bytes or os.PathLike, not NoneType")))
+    refez = []
+    monkeypatch.setattr(fato, "reconstruir",
+                        lambda conn: refez.append(1) or (100, 20))
+    monkeypatch.setattr(tarefas, "_carimbar", lambda *a, **k: None)
+
+    fechou = {}
+    monkeypatch.setattr(tarefas, "_fechar_execucao",
+                        lambda conn, eid, ok, msg, dur=None: fechou.update(
+                            ok=ok, mensagem=msg))
+    # `tarefas` importa a conexão DENTRO da função (`from .db import conexao`),
+    # então quem tem de ser trocado é o módulo de origem, não o de destino.
+    import contextlib
+
+    from app.apps.painel import db as painel_db
+    monkeypatch.setattr(painel_db, "conexao",
+                        lambda: contextlib.nullcontext(object()))
+
+    assert tarefas.executar_trabalho("completa", 1) is True
+    assert refez, "os números TÊM de ser refeitos mesmo com a varredura falhando"
+    assert fechou["ok"] is True
+    assert "ATENÇÃO" in fechou["mensagem"], \
+        "e a tela tem de dizer o que não foi feito — senão 'concluída' mente"
+    assert "títulos excluídos" in fechou["mensagem"]
