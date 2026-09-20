@@ -1213,6 +1213,41 @@ def test_quem_pede_a_conferencia_recebe(cliente_config, monkeypatch):
                              "titulos_que_sumiram"]
 
 
+def test_as_conferencias_de_verdade_aparecem_na_tela(cliente_config):
+    """SEM dublê: aperta o botão e os quadros têm de vir.
+
+    20/09/2026, o dono: "EU JÁ havia tentado rodar mas não tava apresentando
+    resultado." Os testes acima trocavam as quatro conferências por dublê, então
+    provavam que o botão CHAMA — nunca que o resultado CHEGA. Um erro de SQL em
+    qualquer uma delas passava batido aqui e só aparecia na tela dele."""
+    html = cliente_config.get(
+        "/painel/configuracoes?conferir=1").get_data(as_text=True)
+    assert "Aportes do DRE — onde os valores se perdem" in html
+    assert "dinheiro que as telas não contam" in html
+    assert "falhou" not in html, "alguma conferência quebrou — o quadro diz qual"
+    assert "Rodar de novo" in html, \
+        "depois de rodar, o botão tem de continuar lá para repetir"
+
+
+def test_uma_conferencia_que_quebra_nao_leva_a_tela_junto(cliente_config,
+                                                          monkeypatch):
+    """A falha de uma tem de aparecer NOMEADA, e as outras têm de seguir.
+
+    Antes, qualquer erro numa delas jogava a tela inteira na página de erro do
+    painel — e não dava para saber qual das quatro tinha sido."""
+    from app.apps.painel import consultas
+    monkeypatch.setattr(consultas, "conferencia_dos_aportes",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            RuntimeError("coluna pago não existe")))
+    r = cliente_config.get("/painel/configuracoes?conferir=1")
+    assert r.status_code == 200, "a tela não pode cair por causa de uma conferência"
+    html = r.get_data(as_text=True)
+    assert "Aportes do DRE — falhou" in html
+    assert "coluna pago não existe" in html, "o erro tem de aparecer, não só o log"
+    assert "dinheiro que as telas não contam" in html, \
+        "as outras conferências seguem — a falha é de uma só"
+
+
 def test_procurar_um_valor_tambem_roda(cliente_config, monkeypatch):
     """Quem cola um valor no campo está pedindo a conferência, sem clicar no
     botão. Exigir os dois seria pegadinha."""

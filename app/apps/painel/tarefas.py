@@ -159,6 +159,9 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
         ultimo[0] = time.time()
         _carimbar(execucao_id, etapa, detalhe)
 
+    # Falha de uma etapa NÃO essencial fica registrada aqui e é contada no fim.
+    falha_parcial = ""
+
     try:
         espelho.definir_progresso(_anotar)
         try:
@@ -173,8 +176,25 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     # A varredura de exclusões lê TODOS os ids do OMIE para
                     # descobrir o que foi apagado lá e continua aqui. É a parte
                     # lenta; por isso não entra na atualização do dia.
+                    #
+                    # SE ELA FALHAR, A ATUALIZAÇÃO SEGUE. Em 20/09/2026 um erro
+                    # bobo no fim dela (apagar um arquivo temporário cujo
+                    # caminho vinha vazio) derrubou a carga inteira — e, pior,
+                    # impediu a etapa seguinte, que é a que refaz os números das
+                    # telas. A base atualizou e as telas continuaram mostrando
+                    # número velho, sem ninguém perceber.
+                    #
+                    # Achar título apagado é um extra semanal; refazer os
+                    # números é o que faz a tela valer. O extra nunca mais
+                    # custa o essencial.
                     _etapa("procurando títulos excluídos no OMIE")
-                    espelho.reconcile()
+                    try:
+                        espelho.reconcile()
+                    except Exception as e:  # noqa: BLE001
+                        falha_parcial = ("a varredura de títulos excluídos "
+                                         f"falhou ({e})")
+                        logger.exception("Painel: %s — sigo para o recálculo",
+                                         falha_parcial)
         finally:
             espelho.definir_progresso(None)
 
@@ -186,6 +206,10 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
         duracao = (agora() - inicio).total_seconds()
         mensagem = (f"{n_fato:,} linhas de lançamento e {n_receb:,} recebimentos "
                     f"em {duracao/60:.1f} min.").replace(",", ".")
+        # Falha parcial não pode sumir: a tela tem de dizer o que NÃO foi feito,
+        # senão "concluída" vira meia-verdade.
+        if falha_parcial:
+            mensagem += f" ATENÇÃO: {falha_parcial}."
         logger.info("Painel: atualização %s concluída — %s", modo, mensagem)
         with conexao() as conn:
             _fechar_execucao(conn, execucao_id, True, mensagem, n_fato)

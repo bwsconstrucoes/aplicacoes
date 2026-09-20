@@ -322,20 +322,46 @@
 {% endif %}
 
 {# ============ AS CONFERÊNCIAS, SÓ QUANDO ALGUÉM PEDE ============ #}
-{% if not base_vazia and not conferir and not conferencia %}
-<div class="cartao" style="margin-top:14px">
+{% if not base_vazia %}
+<div class="cartao" id="conferencias" style="margin-top:14px">
   <div class="cartao-cab"><h3>Conferências da base</h3></div>
+  {% if conferir or conferencia %}
   <p class="cartao-dica">
-    Três conferências que <b>só medem, não alteram nada</b>: dinheiro que as
-    telas não contam, de onde vem a diferença do bloco de Aportes do DRE, e
-    procurar um lançamento pelo valor na base crua.<br>
+    <b>Rodaram agora.</b> Os quadros aparecem logo abaixo desta caixa.
+    {% if not conferencia and not aportes_conf and not observacoes
+          and not conferencias_com_erro %}
+      <br><b style="color:var(--vermelho)">Nenhum quadro veio.</b>
+      A base respondeu sem erro e sem dado — se isso continuar, a carga
+      provavelmente não terminou.
+    {% endif %}
+  </p>
+  {% else %}
+  <p class="cartao-dica">
+    Conferências que <b>só medem, não alteram nada</b>: dinheiro que as telas
+    não contam, de onde vem a diferença do bloco de Aportes do DRE, procurar um
+    lançamento pelo valor na base crua e quantos títulos já trouxeram a
+    observação do OMIE.<br>
     Elas varrem as 186 mil linhas e levam alguns segundos — por isso não rodam
     sozinhas ao abrir esta tela.
   </p>
+  {% endif %}
   <a class="btn" style="text-decoration:none"
-     href="{{ url_for('painel.configuracoes', conferir='1') }}">Rodar as conferências</a>
+     href="{{ url_for('painel.configuracoes', conferir='1', _anchor='conferencias') }}">
+    {{ 'Rodar de novo' if (conferir or conferencia) else 'Rodar as conferências' }}</a>
 </div>
 {% endif %}
+
+{# ---- uma conferência que quebrou não pode sumir em silêncio ---- #}
+{% for e in conferencias_com_erro %}
+<div class="cartao" style="margin-top:14px; border-left:4px solid var(--vermelho)">
+  <div class="cartao-cab"><h3>{{ e.nome }} — falhou</h3></div>
+  <p class="cartao-dica">
+    Esta conferência não conseguiu rodar. As outras seguiram normalmente, e
+    <b>nada na base foi alterado</b> — elas só leem.
+  </p>
+  <pre style="white-space:pre-wrap; margin:0"><small>{{ e.erro }}</small></pre>
+</div>
+{% endfor %}
 
 {# ============ CONFERÊNCIA: as duas regras de "foi pago" batem? ============ #}
 {% if conferencia %}
