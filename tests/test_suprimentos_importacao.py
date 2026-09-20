@@ -185,11 +185,12 @@ def test_categoria_com_barra_no_nome_nao_e_partida_em_duas(admin):
 
 
 def test_cnpj_repetido_no_arquivo_e_relatado_com_as_linhas(sessao, admin):
-    """O banco tem CNPJ único, então a segunda linha SOBRESCREVE a primeira.
+    """O CNPJ repetido continua sendo RELATADO — mas não é mais problema.
 
-    Isso não é recusa nem erro do arquivo — é perda de dado silenciosa, e a
-    única defesa é dizer quais linhas colidiram para o conserto ser feito na
-    planilha.
+    Desde 18/09/2026 a segunda linha do mesmo CNPJ acrescenta um VENDEDOR, e é
+    esse o formato da planilha da BWS. A lista continua saindo para uma
+    conferência diferente: o mesmo CNPJ com nomes de empresa muito diferentes
+    pode ser digitação errada, e aí são duas empresas virando uma.
     """
     conteudo = _csv_fornecedores(
         f"1,PRIMEIRA LTDA,Primeira,{CNPJ_A},JOAO,j@x.com.br,85977777,Agregados,F,RMF,Email,Fábrica",
@@ -229,6 +230,27 @@ def test_a_previa_nao_conta_o_cnpj_repetido_como_dois_fornecedores(sessao, admin
     assert rel["criados"] == 1, "o CNPJ é único: só um cadastro sobra"
     assert rel["atualizados"] == 1
     assert sessao.adicionados == []
+
+
+# A SEGUNDA LINHA DO MESMO CNPJ — o caso que o dono levou para a tela em
+# 20/09/2026 — NÃO tem teste aqui, de propósito: ele depende de o importador
+# ACHAR o fornecedor criado pela linha anterior, o que é um `WHERE cnpj_cpf =`.
+# O dublê desta suíte ignora WHERE e devolveria "não achei", criando dois
+# fornecedores e fazendo o teste passar por motivo errado — foi o que aconteceu
+# na primeira tentativa. O teste de verdade vive em
+# `tests/test_fornecedor_contatos_banco.py`, com Postgres.
+
+
+def test_vendedor_sem_email_e_sem_telefone_e_contado_de_fora(sessao, admin):
+    """Contato que não recebe cotação não serve — e o banco recusa. Ficar de
+    fora calado faria o dono procurar um vendedor que nunca entrou."""
+    conteudo = _csv_fornecedores(
+        f"1,UMA LTDA,Uma,{CNPJ_A},SEM CANAL,,,Agregados,F,RMF,Email,Fábrica")
+
+    rel = importar_fornecedores_csv(sessao, conteudo, admin)
+
+    assert rel["contatos_criados"] == 0
+    assert rel["contatos_sem_canal"] == 1
 
 
 # ---------------------------------------------------------------------------

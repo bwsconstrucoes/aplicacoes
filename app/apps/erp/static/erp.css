@@ -328,6 +328,16 @@ a { color: var(--azul-claro); }
 /* O PREÇO DE REFERÊNCIA embaixo do nome do material, na tela de Solicitações.
    Cinza e pequeno de propósito: é apoio à decisão, não o dado da linha — se
    competir com o nome do insumo, a lista deixa de ser legível de relance. */
+/* O LÁPIS DA CORREÇÃO EM LINHA (20/09/2026).
+
+   Antes, a célula inteira era clicável — e dois cliques sem querer trocavam a
+   conta do plano de um insumo, que então saía do filtro e sumia da tela. Agora
+   a edição pede este botão. Ele fica discreto até o mouse passar pela linha:
+   visível o bastante para quem procura, apagado o bastante para não convidar. */
+.lapis { opacity: 0; margin-left: 6px; font-size: 12px; transition: opacity .12s; }
+tr:hover .lapis, .lapis:focus { opacity: .65; }
+.lapis:hover { opacity: 1; }
+
 .preco-ref { display: flex; flex-direction: column; gap: 1px; line-height: 1.3; }
 .preco-linha b { font-size: 13px; font-variant-numeric: tabular-nums; }
 .preco-linha small, .preco-conta, .preco-vazio {
