@@ -409,8 +409,12 @@ def movimentos_por_titulo(conn):
     """
     res = {}
     cur = conn.execute(
-        "SELECT ncodtitulo, ddtpagamento, cliquidado, nvalpago, nvalaberto, ndesconto, "
-        "njuros, nmulta FROM movimentos")
+        # ::float8 desde a migracao 010: as colunas viraram NUMERIC (dinheiro
+        # exato) e o banco devolveria Decimal, que nao soma com float logo
+        # abaixo. Guardar exato, transportar em float de 8 bytes.
+        "SELECT ncodtitulo, ddtpagamento, cliquidado, nvalpago::float8, "
+        "nvalaberto::float8, ndesconto::float8, "
+        "njuros::float8, nmulta::float8 FROM movimentos")
     agg = {}
     for cod, dpg, liq, vpg, vab, vdesc, vjur, vmul in cur:
         a = agg.setdefault(cod, {"dpg": None, "pago": 0.0, "aberto": 0.0, "desc": 0.0,
@@ -452,8 +456,9 @@ def movimentos_detalhe(conn, apenas_liquidados=False):
                                    conta, status, grupo, liquidado}, ... ]
     """
     res = {}
-    sql = ("SELECT ncodtitulo, ddtpagamento, nvalpago, nvalliquido, njuros, nmulta, "
-           "ndesconto, ncodcc, cstatus, cliquidado, cgrupo, nvalaberto FROM movimentos")
+    sql = ("SELECT ncodtitulo, ddtpagamento, nvalpago::float8, nvalliquido::float8, "
+           "njuros::float8, nmulta::float8, ndesconto::float8, ncodcc, cstatus, "
+           "cliquidado, cgrupo, nvalaberto::float8 FROM movimentos")
     for (cod, dpg, vpg, vliq, vjur, vmul, vdesc, ncc, cst, liq, grp, vab) in conn.execute(sql):
         if apenas_liquidados and liq != "S":
             continue
@@ -935,7 +940,7 @@ def _extrair_observacao(payload):
 
 def backfill_observacoes(env=".env", natureza="R",
                          desde=None, limite=None, sonda=5, reconsultar=False,
-                         pausa=None, forcar=False):
+                         pausa=None, forcar=False, progresso=None):
     """
     Preenche titulos.observacao consultando UM titulo por vez (ConsultarContaPagar/
     Receber), porque a listagem nao devolve esse campo.
@@ -946,6 +951,10 @@ def backfill_observacoes(env=".env", natureza="R",
     Retomavel de verdade: cada titulo consultado marca observacao_sync, entao uma
     nova execucao pula tudo que ja foi tentado, inclusive quem voltou sem observacao
     (o que no contas a pagar costuma ser a maioria). Use --reconsultar para forcar.
+
+    `progresso(feitos, total, com_observacao)` e chamado a cada 100 titulos. Sem
+    ele isto e uma caixa preta de horas: quem esta olhando a tela nao tem como
+    saber se anda ou se travou.
     """
     cli = OmieClient.de_ambiente(env)
     espera = cli.pausa if pausa is None else float(pausa)
@@ -1070,6 +1079,11 @@ def backfill_observacoes(env=".env", natureza="R",
                 vazios += 1
             if i % 100 == 0:
                 conn.commit()
+                if progresso:
+                    try:
+                        progresso(i, len(pendentes), gravados)
+                    except Exception:  # noqa: BLE001 — avisar nunca derruba o trabalho
+                        pass
                 falta = (time.time() - t0) / i * (len(pendentes) - i)
                 log.info("  %s/%s — com obs: %s | sem: %s | inexistentes: %s | erros: %d "
                          "| restam ~%s",

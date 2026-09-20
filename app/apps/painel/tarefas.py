@@ -47,8 +47,22 @@ MODOS = {
     "rapida": "Atualização do dia — baixa o que mudou e refaz os números",
     "completa": "Atualização completa — inclui a varredura de títulos excluídos no OMIE",
     "so_numeros": "Só refazer os números, sem baixar nada do OMIE",
+    "observacoes": "Buscar as observações dos títulos no OMIE (bloco a bloco, pode parar e continuar)",
     "carga_inicial": "Primeira carga — baixa toda a base do OMIE (demorado)",
 }
+
+# Quantos títulos a pagar cada rodada de observações consulta.
+#
+# A observação NÃO vem na listagem do OMIE: só consultando um título por vez.
+# São ~0,5 s por título, então 120 mil títulos são mais de 15 horas — não cabe
+# numa rodada, e nem deve: a cada publicação de código o contêiner reinicia e
+# levaria o trabalho junto. Por isso vai por blocos, e o trabalho é retomável
+# (cada título consultado fica marcado e não volta na rodada seguinte).
+#
+# 8 mil dá cerca de uma hora — cabe numa madrugada junto com o resto, e em vinte
+# e poucas rodadas cobre a base inteira. Os títulos A RECEBER (uns 2 mil) vão
+# todos de uma vez na primeira rodada: são as medições, que é o que o dono lê.
+TETO_DE_OBSERVACOES_POR_RODADA = 8000
 
 
 def estado() -> dict:
@@ -161,6 +175,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
 
     # Falha de uma etapa NÃO essencial fica registrada aqui e é contada no fim.
     falha_parcial = ""
+    observacoes_achadas = None
 
     try:
         espelho.definir_progresso(_anotar)
@@ -169,6 +184,23 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             if modo == "carga_inicial":
                 _etapa("baixando a base inteira do OMIE", "começando")
                 espelho.carga_inicial()
+            elif modo == "observacoes":
+                # Só LÊ do OMIE: consulta título por título para trazer a
+                # observação, que a listagem não devolve. Nada é escrito lá.
+                _etapa("buscando as observações dos títulos a receber")
+                n_r = espelho.backfill_observacoes(
+                    natureza="R", forcar=True,
+                    progresso=lambda f, t, g: _anotar(
+                        "observações dos títulos a receber",
+                        f"{f} de {t} — {g} com observação"))
+                _etapa("buscando as observações dos títulos a pagar")
+                n_p = espelho.backfill_observacoes(
+                    natureza="P", forcar=True,
+                    limite=TETO_DE_OBSERVACOES_POR_RODADA,
+                    progresso=lambda f, t, g: _anotar(
+                        "observações dos títulos a pagar",
+                        f"{f} de {t} — {g} com observação"))
+                observacoes_achadas = (n_r or 0) + (n_p or 0)
             elif modo in ("rapida", "completa"):
                 _etapa("baixando o que mudou no OMIE")
                 espelho.sync_incremental()
@@ -208,6 +240,9 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     f"em {duracao/60:.1f} min.").replace(",", ".")
         # Falha parcial não pode sumir: a tela tem de dizer o que NÃO foi feito,
         # senão "concluída" vira meia-verdade.
+        if observacoes_achadas is not None:
+            mensagem = (f"{observacoes_achadas:,} observações trazidas do OMIE. "
+                        .replace(",", ".") + mensagem)
         if falha_parcial:
             mensagem += f" ATENÇÃO: {falha_parcial}."
         logger.info("Painel: atualização %s concluída — %s", modo, mensagem)

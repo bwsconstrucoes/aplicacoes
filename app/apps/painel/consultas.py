@@ -1721,6 +1721,36 @@ INVISIVEL_PARA_AS_TELAS = (
     f"situacao_vencimento = 'Quitado' AND NOT ({PAGO}) AND pago_recebido <> 0")
 
 
+# A migracao 010 trocou o tipo das colunas de dinheiro para NUMERIC, mas isso
+# NAO devolve o centavo que ja se perdeu: o 784.647,06 gravado continua
+# 784.647,06. Os valores so voltam a ficar certos depois de uma rebaixa completa
+# do OMIE — e essa e a parte que um humano tem de mandar rodar.
+#
+# Sem este aviso na tela, a migracao daria a impressao de ter resolvido, e os
+# numeros continuariam errados em silencio. Isto e pior que nao ter consertado.
+MIGRACAO_DO_DINHEIRO = "010_dinheiro_exato.sql"
+
+
+def recarga_total_pendente() -> dict:
+    """A base ainda tem valores com centavo errado, esperando carga inicial?
+
+    Responde comparando duas datas que o proprio sistema ja guarda: quando a
+    migracao 010 foi aplicada e quando a ultima carga inicial terminou bem. Se a
+    carga veio depois, nao ha nada a fazer e o aviso some sozinho."""
+    aplicada = consultar(
+        "SELECT aplicada_em FROM painel._migracoes WHERE nome = ?",
+        [MIGRACAO_DO_DINHEIRO])
+    if not aplicada:
+        return {"pendente": False}
+    quando = aplicada[0][0]
+    depois = consultar(
+        "SELECT fim FROM execucoes"
+        " WHERE tipo = 'carga_inicial' AND ok AND fim IS NOT NULL AND fim >= ?"
+        " ORDER BY fim DESC LIMIT 1", [quando])
+    return {"pendente": not depois, "migracao_em": quando,
+            "carga_em": depois[0][0] if depois else None}
+
+
 def conferencia_do_pago() -> dict:
     """Quanto dinheiro a carga deu por realizado e as telas não enxergam.
 
@@ -1938,11 +1968,16 @@ def titulos_que_sumiram(valor_procurado=None) -> dict:
                       (SELECT COUNT(*) FROM fato f
                         WHERE f.codigo_lancamento = t.codigo_lancamento_omie)
                  FROM titulos t
-                -- POR TOLERANCIA, nao por igualdade. `valor_documento` e REAL
-                -- (ponto flutuante de 4 bytes), que so guarda ~7 digitos
-                -- significativos: 784.647,07 vira 784.647,06 ao ser gravado.
-                -- Comparar exato nunca acharia lancamento grande nenhum. Meio
-                -- real de folga acha o que se procura sem confundir titulos.
+                -- POR TOLERANCIA, nao por igualdade. Ate a migracao 010,
+                -- `valor_documento` era REAL (ponto flutuante de 4 bytes), que
+                -- so guarda ~7 digitos significativos: 784.647,07 virava
+                -- 784.647,06 ao ser gravado, e comparar exato nunca achava
+                -- lancamento grande nenhum. Hoje a coluna e NUMERIC e guarda o
+                -- centavo — mas os valores ANTIGOS so voltam a ficar certos
+                -- depois de uma carga inicial, e quem procura aqui esta
+                -- justamente atras de um numero que nao esta batendo. A folga
+                -- de meio real fica: ela acha o que se procura sem confundir
+                -- titulos, e nao custa nada.
                 WHERE ABS(ABS(COALESCE(t.valor_documento, 0)) - ?) < 0.5
                 ORDER BY 1 LIMIT 50""", [valor_procurado])]
 

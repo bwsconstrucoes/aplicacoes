@@ -876,13 +876,24 @@ def base_com_pago_invisivel(base_para_explorar):
     yield
 
 
-def test_a_conferencia_acha_o_dinheiro_que_as_telas_nao_contam(base_com_pago_invisivel):
+def test_o_titulo_baixado_com_outra_palavra_agora_e_contado(base_com_pago_invisivel):
+    """O caso que escondia R$ 96.750,00 na base do dono.
+
+    Este título foi baixado no OMIE — a carga o deu por quitado —, mas o texto
+    do status é "Baixado", que não é nenhuma das palavras que as telas olhavam.
+    Até a migração 011 ele existia na base e não aparecia em tela nenhuma.
+
+    Agora "foi pago?" tem UMA resposta só: a que a carga gravou. Então este
+    título conta, e a conferência das duas regras não acha mais nada — ela
+    continua existindo como guarda: se um dia voltar a acusar alguma coisa, é
+    porque alguém criou uma segunda regra de novo."""
     from app.apps.painel import consultas
     r = consultas.conferencia_do_pago()
-    assert r["titulos"] >= 1
-    assert r["valor"] >= 320000
-    assert any(s["situacao"] == "Baixado" for s in r["situacoes"]), \
-        "tem de dizer QUAL palavra está escapando — é isso que orienta a correção"
+    assert r["titulos"] == 0 and r["valor"] == 0, \
+        f"as duas regras divergiram de novo: {r['situacoes']}"
+    devolvido = consultas.aportes(consultas.Filtros())["devolvido"]
+    assert devolvido == pytest.approx(320000), \
+        "e o dinheiro dele tem de aparecer no bloco, que é onde sumia"
 
 
 def test_a_conferencia_nao_altera_nada(base_com_pago_invisivel):
@@ -1036,6 +1047,82 @@ def test_diz_quando_o_titulo_foi_baixado_e_descartado(base_para_explorar):
     assert achado["codigo"] == 9001
     assert achado["nas_telas"] is False, "e dizer que ele NÃO virou linha"
     assert achado["situacao"] == "CANCELADO", "e por quê"
+
+
+def test_o_centavo_nao_se_perde_mais_ao_gravar(base_para_explorar):
+    """O erro que custou uma semana: R$ 784.647,07 virava R$ 784.647,06.
+
+    As colunas de dinheiro do espelho nasceram REAL (float de 4 bytes), que
+    guarda ~7 algarismos significativos. Acima de R$ 131.072,00 o centavo NÃO
+    CABE. A migração 010 passou tudo para NUMERIC, que guarda o decimal como
+    ele é escrito. Sem este teste, trocar o tipo de volta passaria despercebido
+    — e a busca por valor exato voltaria a não achar nada grande."""
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 9002")
+        conn.execute(
+            "INSERT INTO titulos (codigo_lancamento_omie, natureza,"
+            " valor_documento, status_titulo) VALUES (9002,'P',784647.07,'PAGO')")
+        conn.commit()
+        (gravado,) = conn.execute(
+            "SELECT valor_documento FROM titulos"
+            " WHERE codigo_lancamento_omie = 9002").fetchone()
+    assert float(gravado) == 784647.07, \
+        f"o banco devolveu {gravado} — o centavo se perdeu ao gravar"
+
+
+def test_dinheiro_e_guardado_em_numeric_nao_em_float(base_para_explorar):
+    """A regra por trás do teste acima, dita direto ao banco.
+
+    Vale para toda coluna de dinheiro do espelho, não só a que o dono procurou:
+    se uma voltar a ser `real`, é centavo perdido esperando para acontecer."""
+    from app.apps.painel.db import conexao
+    esperado = {
+        "titulos": ["valor_documento", "valor_ir", "valor_iss", "valor_inss",
+                    "valor_pis", "valor_cofins", "valor_csll"],
+        "movimentos": ["nvalortitulo", "nvalpago", "nvalliquido", "nvalaberto",
+                       "njuros", "nmulta", "ndesconto"],
+        "rateio": ["nvaldep"],
+        "ajustes": ["valor"],
+    }
+    with conexao() as conn:
+        for tabela, colunas in esperado.items():
+            tipos = dict(conn.execute(
+                "SELECT column_name, data_type FROM information_schema.columns"
+                " WHERE table_schema = 'painel' AND table_name = ?",
+                (tabela,)).fetchall())
+            for coluna in colunas:
+                assert tipos.get(coluna) == "numeric", \
+                    f"painel.{tabela}.{coluna} está como {tipos.get(coluna)}"
+
+
+def test_a_tela_avisa_que_falta_rebaixar_para_os_centavos_voltarem(cliente_config):
+    """A migração 010 arruma o TIPO da coluna, não o valor já gravado.
+
+    Sem este aviso, ela pareceria ter resolvido e os números continuariam
+    errados em silêncio — que é pior do que não ter consertado. O aviso some
+    sozinho quando uma carga inicial terminar bem depois da migração."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM execucoes WHERE tipo = 'carga_inicial'")
+        conn.commit()
+    assert consultas.recarga_total_pendente()["pendente"] is True
+    html = cliente_config.get("/painel/configuracoes").get_data(as_text=True)
+    assert "centavo errado" in html
+    assert "Primeira carga" in html, \
+        "e o botão que resolve tem de estar na mesma tela, senão o aviso é inútil"
+
+    # e some sozinho quando a carga inicial acontecer
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO execucoes (tipo, disparo, inicio, fim, ok)"
+            " VALUES ('carga_inicial','manual', now(), now(), true)")
+        conn.commit()
+    assert consultas.recarga_total_pendente()["pendente"] is False
+    with conexao() as conn:
+        conn.execute("DELETE FROM execucoes WHERE tipo = 'carga_inicial'")
+        conn.commit()
 
 
 def test_diz_quando_a_carga_nunca_trouxe(base_para_explorar):
@@ -1195,10 +1282,15 @@ def test_a_cascata_mostra_quanto_cada_corte_leva(base_de_aportes):
     trf = passos["Tirando transferências entre contas"]
     assert trf["devolvido"] == pytest.approx(500000)
     assert trf["comeu_devolvido"] == pytest.approx(200000)
-    # tirando o que nao e reconhecido como pago: 100 mil, o degrau levou 400
+    # O DEGRAU DO "PAGO" NAO LEVA MAIS NADA, e isso é o conserto da migração
+    # 011. O lançamento 603 foi baixado no OMIE com o status escrito "Baixado":
+    # até 20/09/2026 ele era cortado aqui e sumia do bloco. Hoje "foi pago?"
+    # tem uma resposta só — a que a carga gravou —, então ele chega ao fim.
+    # O degrau continua na tela como guarda: se um dia voltar a comer alguma
+    # coisa, é porque as duas regras divergiram de novo.
     pago = passos["Tirando o que o painel não reconhece como pago"]
-    assert pago["devolvido"] == pytest.approx(100000)
-    assert pago["comeu_devolvido"] == pytest.approx(400000)
+    assert pago["devolvido"] == pytest.approx(500000)
+    assert pago["comeu_devolvido"] == pytest.approx(0)
 
 
 def test_a_cascata_bate_com_o_que_o_bloco_do_dre_mostra(base_de_aportes):
@@ -1216,7 +1308,8 @@ def test_a_cascata_nomeia_os_lancamentos_cortados(base_de_aportes):
     from app.apps.painel import consultas
     r = consultas.conferencia_dos_aportes()
     assert [l["codigo"] for l in r["comidos_trf"]] == [602]
-    assert [l["codigo"] for l in r["comidos_pago"]] == [603]
+    assert [l["codigo"] for l in r["comidos_pago"]] == [], \
+        "desde a migração 011 nada é cortado por 'não reconhecido como pago'"
 
 
 # ===========================================================================

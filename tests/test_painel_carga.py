@@ -503,3 +503,60 @@ def test_varredura_de_excluidos_que_falha_nao_impede_o_recalculo(monkeypatch):
     assert "ATENÇÃO" in fechou["mensagem"], \
         "e a tela tem de dizer o que não foi feito — senão 'concluída' mente"
     assert "títulos excluídos" in fechou["mensagem"]
+
+
+# ===========================================================================
+# As observações dos títulos — 20/09/2026
+# ===========================================================================
+# A conferência mostrou: 0 de 120.772 títulos tinham a observação do OMIE. O
+# dono desconfiou disso em 17/09 e estava certo. O trabalho que busca a
+# observação existia, mas só dava para rodar pela linha de comando — ou seja,
+# na prática nunca rodava. Virou modo de atualização, com botão.
+
+def test_o_modo_de_observacoes_busca_as_duas_naturezas(monkeypatch):
+    """A receber vai inteiro (são as medições, poucos); a pagar vai por bloco."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.sync import espelho, fato
+
+    chamadas = []
+
+    def _falso(natureza=None, limite=None, **k):
+        chamadas.append((natureza, limite))
+        return 7
+
+    monkeypatch.setattr(espelho, "definir_progresso", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "backfill_observacoes", _falso)
+    refez = []
+    monkeypatch.setattr(fato, "reconstruir",
+                        lambda conn: refez.append(1) or (100, 20))
+    monkeypatch.setattr(tarefas, "_carimbar", lambda *a, **k: None)
+    fechou = {}
+    monkeypatch.setattr(tarefas, "_fechar_execucao",
+                        lambda conn, eid, ok, msg, dur=None: fechou.update(
+                            ok=ok, mensagem=msg))
+    import contextlib
+
+    from app.apps.painel import db as painel_db
+    monkeypatch.setattr(painel_db, "conexao",
+                        lambda: contextlib.nullcontext(object()))
+
+    assert tarefas.executar_trabalho("observacoes", 1) is True
+    assert chamadas == [("R", None),
+                        ("P", tarefas.TETO_DE_OBSERVACOES_POR_RODADA)], \
+        "a receber vai inteiro; a pagar vai limitado, senão a rodada não termina"
+    assert refez, "e os números TÊM de ser refeitos — a observação vai para a linha"
+    assert fechou["ok"] is True
+    assert "14 observações" in fechou["mensagem"], \
+        "a tela tem de dizer quantas vieram, senão não dá para saber se anda"
+
+
+def test_a_busca_de_observacoes_nao_escreve_no_omie(monkeypatch):
+    """Ela só CONSULTA. Se um dia alguém puser escrita aqui, este teste cai —
+    e é para cair: escrever no OMIE exige a senha de execução e conferência."""
+    import inspect
+
+    from app.apps.painel.sync import espelho
+    fonte = inspect.getsource(espelho.backfill_observacoes)
+    for proibido in ("Alterar", "Incluir", "Excluir"):
+        assert proibido not in fonte, \
+            f"a busca de observações passou a chamar {proibido} no OMIE"

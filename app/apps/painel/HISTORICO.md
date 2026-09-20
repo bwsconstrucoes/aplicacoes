@@ -938,6 +938,73 @@ nunca é arrumado no OMIE.
   e estava certo: o `backfill_observacoes` nunca rodou. São ~120 mil consultas,
   uma por título. Os 2.137 a receber sairiam em minutos.
 
+## A varredura dos dados errados — 20/09/2026
+
+O dono, depois de ver as conferências: *"faça tudo que for necessário pros dados
+ficarem o mais correto possível. nao posso trabalhar com dados errados."* Quatro
+frentes, todas fechadas nesta leva.
+
+### 1. O centavo (migração 010) — a causa raiz de sete dias de caçada
+
+As colunas de dinheiro do espelho nasceram **REAL**, float de 4 bytes, que
+guarda ~7 algarismos significativos. **Acima de R$ 131.072,00 o centavo não
+cabe.** Foi assim que R$ 784.647,07 virou R$ 784.647,06 — e por isso a busca por
+valor exato nunca o achava. A `fato` já era NUMERIC, mas é CALCULADA a partir
+dessas colunas: guardava com precisão o número errado.
+
+Agora são NUMERIC(16,2) em `titulos`, `movimentos`, `rateio.nvaldep` e
+`ajustes.valor`. Percentuais ficaram REAL de propósito: valem no máximo 100 e
+nunca chegam perto do limite.
+
+**Trocar o tipo NÃO devolve o centavo perdido** — ele só existe no OMIE. Por
+isso a tela ganhou um aviso vermelho que só some quando uma **carga inicial**
+terminar bem depois da migração, e o botão "Primeira carga", que ficava
+escondido enquanto houvesse base, passou a aparecer sempre.
+
+Detalhe de implementação que vai morder quem mexer: NUMERIC volta como `Decimal`
+no Python, e Decimal não soma com float. As leituras passaram a pedir
+`::float8` — o banco guarda exato, o transporte usa float de 8 bytes, que tem
+dígitos de sobra para centavo.
+
+### 2. "Foi pago?" passou a ter uma resposta só (migração 011)
+
+A carga considerava quitado quem tivesse status pago/recebido/conciliado **ou**
+baixa liquidada no OMIE. As telas olhavam só a primeira metade. Título baixado
+cujo status ficou "ATRASADO" era dado por pago pela carga e **não era contado
+por tela nenhuma** — R$ 96.750,00 em 2 títulos na base do dono.
+
+O conserto não foi repetir a regra da carga nas telas: regra repetida diverge de
+novo. A carga já grava a decisão em `situacao_vencimento`; a coluna `pago` passou
+a ser essa decisão, e nada mais. A conferência das duas regras continua na tela
+como guarda — se um dia voltar a acusar algo, é porque alguém criou uma segunda
+regra outra vez.
+
+### 3. O agrupamento por documento
+
+Ver a seção própria acima. Resumo: o bloco somava por nome; agora soma por
+CNPJ/CPF.
+
+### 4. As observações viraram um modo da atualização
+
+0 de 120.772 títulos tinham a observação do OMIE. O trabalho que as busca
+existia desde sempre, mas só pela linha de comando — ou seja, nunca rodava.
+Virou o modo **"Buscar as observações"**, com botão e barra de andamento.
+
+Ele só LÊ do OMIE (há teste que falha se alguém puser Alterar/Incluir ali). Os
+títulos a receber (~2 mil, as medições) vão inteiros na primeira rodada; os a
+pagar vão em blocos de 8 mil, cerca de uma hora cada, porque 120 mil consultas
+são mais de 15 horas e nenhuma publicação de código sobreviveria a isso. É
+retomável de verdade: cada título consultado fica marcado e não volta.
+
+### O que continua fora, e é decisão dele
+
+**Movimento de conta corrente sem título nunca entra no painel.** O painel é
+montado a partir dos títulos; movimento lançado direto na conta, sem título, não
+tem de onde vir. O dono já notou isso ("era pra aparecer todos os lançamentos
+igual o relatório de conta corrente do OMIE"). Trazer esses movimentos é fonte
+de linha nova, com risco real de contar dinheiro duas vezes — precisa de desenho
+e de decisão, não de um remendo.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
