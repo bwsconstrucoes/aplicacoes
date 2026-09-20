@@ -368,8 +368,15 @@ function abrir(id){
       <span class="rotulo">Entra no <b>disparo automático</b> de cotação
         <small> — desligue para o fornecedor de compra única</small></span></label>
 
-    ${PODE_EDITAR ? `<div style="margin-top:14px">
-      <button class="btn" id="fx-salvar">Salvar</button></div>` : ""}`;
+    ${PODE_EDITAR ? `<div style="margin-top:14px; display:flex; gap:8px; align-items:center">
+      <button class="btn" id="fx-salvar">Salvar</button>
+      {# APAGAR — pedido do dono em 20/09/2026: *"como é que eu excluo? Eu não
+         estou vendo o botão para excluir."* Ele só aparece quando o
+         fornecedor NUNCA foi usado; para os outros, no lugar dele fica a
+         frase que explica por quê e manda desativar. Esconder o botão sem
+         dizer nada era o que fazia a pessoa procurar. #}
+      <span id="fx-apagar-area" class="dica">conferindo se dá para apagar…</span>
+      </div>` : ""}`;
 
   const pintarCategorias = () => {
     const q = (els("fx-busca-cat").value || "").toLowerCase().trim();
@@ -469,6 +476,7 @@ function abrir(id){
     } catch(e){ aviso("ficha-msg", e.message, "erro"); }
   });
 
+  if (PODE_EDITAR) conferirSeDaParaApagar(f);
   if (els("fx-salvar")) els("fx-salvar").addEventListener("click", async () => {
     const canais = [...document.querySelectorAll("[data-canal-marca]")]
       .filter(i => i.checked).map(i => i.dataset.canalMarca);
@@ -495,6 +503,54 @@ function abrir(id){
   });
 
   els("dlg").showModal();
+}
+
+// APAGAR OU DESATIVAR — a tela pergunta ao servidor ANTES de mostrar o botão.
+//
+// Fornecedor que já tem título, cotação ou preço no histórico NÃO se apaga:
+// apagar levaria esse passado junto. O que se faz com ele é desativar. Mas o
+// cadastro criado por engano, que nunca foi usado, não tem passado nenhum — e
+// obrigar a conviver com ele para sempre só suja a lista de cotação.
+//
+// Por isso aqui aparecem dois textos diferentes, nunca um botão que recusa.
+async function conferirSeDaParaApagar(f){
+  const area = els("fx-apagar-area");
+  if (!area) return;
+  try {
+    const d = await api(`/erp/api/suprimentos/fornecedores/${f.id}/uso`);
+    if (d.usos.length) {
+      const onde = d.usos.map(u => `${u.quantos} ${u.onde}`).join(", ");
+      area.innerHTML = `Não dá para apagar: já aparece em <b>${escapar(onde)}</b>.
+        Para tirar das listas, desmarque <b>Ativo</b> acima e salve — o
+        histórico fica.`;
+      return;
+    }
+    area.innerHTML = `<button class="link-btn" id="fx-apagar"
+      style="color:var(--vermelho)">Apagar este fornecedor</button>
+      <small style="display:block">nunca foi usado em nada</small>`;
+    els("fx-apagar").addEventListener("click", () => apagarFornecedor(f));
+  } catch(e){ area.textContent = ""; }
+}
+
+async function apagarFornecedor(f){
+  const r = await perguntar({
+    titulo: "Apagar fornecedor",
+    aviso: `<b>${escapar(f.razao_social)}</b> nunca foi usado em cotação, `
+         + `pedido, título ou preço. Apagar tira o cadastro e os contatos dele `
+         + `de vez — isto <b>não tem desfazer</b>.`,
+    campos: [{nome: "confirma", rotulo: "Escreva APAGAR para confirmar",
+              exemplo: "APAGAR"}],
+    textoOk: "Apagar"});
+  if (!r) return;
+  if ((r.confirma || "").trim().toUpperCase() !== "APAGAR")
+    return aviso("mensagem", "Não apaguei: a confirmação não conferiu.", "erro");
+  try {
+    const d = await api(`/erp/api/suprimentos/fornecedores/${f.id}`,
+                        {method: "DELETE"});
+    els("dlg").close();
+    aviso("mensagem", d.recado, "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 async function novoFornecedor(){

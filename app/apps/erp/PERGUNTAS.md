@@ -1015,6 +1015,36 @@ O que ainda **não** responde:
 - FALTA **"Quem deu o melhor preço nesta CATEGORIA no último ano?"** — o dado
   existe, mas a soma por categoria (e não por insumo) ainda não foi escrita.
 
+## 3s. O que mudou no cadastro, e quem mudou
+
+Construído em 20/09/2026, depois de o dono trocar a conta do plano de um insumo
+sem querer e não saber qual tinha sido.
+
+Perguntas que passam a funcionar:
+
+- OK **O que mudou nos insumos hoje?** — e nos últimos dias.
+- OK **Quem alterou este insumo, e o que ele era antes?**
+- OK **Alguém trocou a conta do plano de algum insumo?**
+- OK **Este fornecedor pode ser apagado?** — e, se não, **onde ele aparece**.
+
+⚠️ **Palavra ambígua: "excluir".** São duas coisas: **apagar** (só para quem
+nunca foi usado — some do banco) e **desativar** (sai das listas de escolha e o
+histórico fica). A resposta tem de dizer qual das duas é possível para aquele
+cadastro.
+
+⚠️ **Palavra ambígua: "preço conhecido".** É o último preço do `precos_historico`
+— que junta o cotado nas cotações daqui, o comprado nos pedidos, e o histórico
+antigo importado da planilha. Não é "preço de tabela do fornecedor", que o
+sistema não tem.
+
+O que ainda **não** responde:
+
+- FALTA **"o que mudou nos OUTROS cadastros"** (fornecedor, obra, colaborador)
+  — a trilha guarda, mas só a tela de insumos lista. Vale repetir nas outras
+  onde houver correção em linha.
+- FALTA **"desfazer" para mais de uma alteração de uma vez** — hoje é uma por
+  vez, e para o uso normal basta.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

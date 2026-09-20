@@ -114,6 +114,17 @@ async function enviar(simular){
         <b>${rel.criados}</b> novo(s) · <b>${rel.atualizados}</b> atualizado(s)
         ${rel.rejeitados.length ? ` · <b>${rel.rejeitados.length}</b> recusada(s)` : ""}
       </div>
+      ${rel.contatos_criados ? `
+        <div class="aviso ${simular ? "info" : "ok"}">
+          <b>${rel.contatos_criados}</b> vendedor(es)
+          ${simular ? "entrariam" : "entraram"} no cadastro
+          ${rel.fornecedores_com_varios_contatos
+            ? ` · <b>${rel.fornecedores_com_varios_contatos}</b> fornecedor(es)
+                ficam com <b>mais de um vendedor</b>` : ""}
+          ${rel.contatos_sem_canal
+            ? ` · <b>${rel.contatos_sem_canal}</b> ficaram de fora por não terem
+                e-mail nem telefone — vendedor que não recebe cotação não serve` : ""}
+        </div>` : ""}
       ${rel.categorias_criadas && rel.categorias_criadas.length ? `
         <div class="aviso ${simular ? "info" : "ok"}">
           ${rel.categorias_criadas.length} categoria(s) de insumo
@@ -133,15 +144,23 @@ async function enviar(simular){
           cadastradas no ERP: <b>${escapar(rel.categorias_nao_encontradas.join(", "))}</b>.
           Marque <b>"criar as categorias"</b> acima e rode de novo, ou cadastre-as
           à mão — sem elas o insumo entra sem categoria.</div>` : ""}
-      {# DOCUMENTO REPETIDO NO PRÓPRIO ARQUIVO. Não é recusa: a linha entra. O
-         problema é que ela SOBRESCREVE a anterior de mesmo CNPJ, calada, e o
-         cadastro acaba com o nome de um e o e-mail de outro. Aparece em
-         destaque justamente porque o conserto é na planilha, não aqui. #}
+      {# CNPJ REPETIDO DEIXOU DE SER PROBLEMA em 18/09/2026, e o aviso tinha
+         ficado para trás dizendo o contrário — mandando consertar na planilha
+         o que passou a ser o formato certo. Hoje a segunda linha do mesmo CNPJ
+         acrescenta um VENDEDOR e soma região, canal e categoria; os campos da
+         empresa só preenchem o que está vazio. A lista continua aparecendo,
+         mas como conferência: CNPJ repetido com nomes de empresa MUITO
+         diferentes pode ser digitação errada, e aí são duas empresas virando
+         uma. #}
       ${rel.documentos_repetidos && rel.documentos_repetidos.length ? `
-        <div class="aviso alerta"><b>${rel.documentos_repetidos.length}</b>
-          CNPJ/CPF aparece(m) mais de uma vez no arquivo. Só um cadastro sobra
-          por documento — <b>a última linha sobrescreve as anteriores</b>.
-          Conserte na planilha e rode de novo.
+        <div class="aviso info"><b>${rel.documentos_repetidos.length}</b>
+          CNPJ/CPF aparece(m) mais de uma vez no arquivo — <b>isso é o
+          esperado</b>. Cada linha extra vira um <b>vendedor</b> do mesmo
+          fornecedor; nada é sobrescrito, e região, canal e categoria são
+          somados. <b>Não precisa consertar a planilha.</b>
+          <br>Confira só uma coisa na lista abaixo: se o mesmo CNPJ aparecer
+          com nomes de empresa <b>muito diferentes</b>, aí é digitação errada —
+          duas empresas virando uma.
           <table style="margin-top:8px"><thead><tr><th>Documento</th>
             <th>Linhas</th><th>Nomes na planilha</th></tr></thead>
             <tbody>${rel.documentos_repetidos.slice(0,40).map(x => `<tr>

@@ -57,6 +57,11 @@
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
     <span id="exportar" style="display:flex; gap:6px"></span>
+    {# "O QUE MUDOU AQUI" — pedido do dono em 20/09/2026, depois de trocar a
+       conta do plano de um insumo sem querer e não saber qual tinha sido. A
+       trilha sempre guardou; faltava mostrar na tela onde o erro acontece. #}
+    <button class="btn secundario" id="btn-mudancas"
+      title="As últimas correções feitas em insumos, com o que era antes">O que mudou</button>
     <button class="btn" id="btn-novo">+ Novo insumo</button>
   </div>
   <div class="tabela-rolagem">
@@ -88,6 +93,9 @@ let D = {insumos: [], categorias: [], unidades: [], contas: [], indicadores: {}}
 let F = {categoria: new Set(), unidade: new Set(), grupo: new Set()};
 let ORDEM = {campo: "descricao", asc: true};
 let LIMITE = 200;                   // desenha por partes: mil linhas de uma vez trava
+// O insumo recém-cadastrado, para a lista levar até ele em vez de deixá-lo
+// perdido entre mil linhas ordenadas por código.
+let DESTAQUE = null;
 const PODE_EDITAR = {{ 'true' if pode.administrar_insumos else 'false' }};
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
@@ -210,9 +218,10 @@ function desenhar(){
       <div class="kpi-rotulo">Com preço conhecido</div>
       <div class="kpi-valor">${k.com_preco || 0}</div>
       <div class="kpi-sub">de ${k.ativos || 0} ativos</div></button>
-    <div class="kpi estatico roxo"><div class="kpi-rotulo">Locáveis</div>
+    <button class="kpi ${els("f-locavel").checked ? "ativo" : ""} roxo" data-pendencia="f-locavel">
+      <div class="kpi-rotulo">Locáveis</div>
       <div class="kpi-valor">${k.locaveis || 0}</div>
-      <div class="kpi-sub">aparecem também em Locações</div></div>`;
+      <div class="kpi-sub">aparecem também em Locações</div></button>`;
   document.querySelectorAll("[data-pendencia]").forEach(b =>
     b.addEventListener("click", () => {
       const alvo = els(b.dataset.pendencia);
@@ -227,9 +236,18 @@ function desenhar(){
       : "<b>Nenhum insumo cadastrado</b>Use “+ Novo insumo”, ou traga a planilha em Importações.";
   }
 
+  // O RECÉM-CADASTRADO VAI PARA CIMA. Sem isto, um insumo novo nasce na
+  // posição do código dele, depois de mil linhas — e a leitura de quem
+  // cadastrou é "o sistema não gravou".
+  if (DESTAQUE) {
+    const i = l.findIndex(x => x.id === DESTAQUE);
+    if (i > 0) l.unshift(l.splice(i, 1)[0]);
+  }
+
   const pagina = l.slice(0, LIMITE);
   els("corpo").innerHTML = pagina.map(i => `
-    <tr data-id="${i.id}" ${i.ativo ? "" : 'style="opacity:.55"'}>
+    <tr data-id="${i.id}" class="${i.id === DESTAQUE ? "marcada" : ""}"
+        ${i.ativo ? "" : 'style="opacity:.55"'}>
       <td class="dados"><b>${i.codigo}</b></td>
       <td class="desc"><span class="celula" data-campo="descricao">${i.descricao}</span></td>
       <td class="dados"><span class="celula" data-campo="unidade">${i.unidade || "—"}</span></td>
@@ -252,10 +270,23 @@ function desenhar(){
   if (els("btn-mais")) els("btn-mais").addEventListener("click", () => { LIMITE += 200; desenhar(); });
 
   if (PODE_EDITAR) {
+    // O CLIQUE NA CÉLULA NÃO EDITA MAIS NADA — 20/09/2026.
+    //
+    // Antes, um clique em cima da categoria já abria o seletor, e o clique
+    // seguinte escolhia. Dois cliques sem querer trocavam a conta do plano de
+    // um insumo, a lista se redesenhava, a linha saía do filtro e ninguém
+    // sabia qual tinha sido. O dono relatou isso tendo acabado de acontecer
+    // com ele.
+    //
+    // Agora a edição pede o LÁPIS. É um clique a mais por correção, e é o
+    // preço de não trocar a conta de um insumo por acidente.
     document.querySelectorAll(".celula").forEach(c => {
-      c.style.cursor = "text";
-      c.title = "clique para corrigir";
-      c.addEventListener("click", () => editarCelula(c));
+      const lapis = document.createElement("button");
+      lapis.className = "link-btn lapis";
+      lapis.textContent = "✎";
+      lapis.title = "corrigir " + (ROTULO_DO_CAMPO[c.dataset.campo] || "");
+      lapis.addEventListener("click", ev => { ev.stopPropagation(); editarCelula(c); });
+      c.after(lapis);
     });
     document.querySelectorAll('[data-acao="mais"]').forEach(b =>
       b.addEventListener("click", () => abrirFicha(+b.closest("tr").dataset.id)));
@@ -325,17 +356,65 @@ async function editarCelula(span){
   });
 }
 
+const ROTULO_DO_CAMPO = {
+  descricao: "nome", unidade: "unidade usual",
+  categoria_insumo_id: "categoria de insumo",
+  categoria_id: "conta do plano financeiro",
+};
+
+// TODA CORREÇÃO DIZ O QUE MUDOU E OFERECE DESFAZER.
+//
+// "Corrigido." não servia: some com a linha do filtro, não diz qual insumo
+// foi, não diz o que era antes, e não dá como voltar. Agora o aviso nomeia o
+// insumo, mostra de → para, e o Desfazer manda o valor anterior de volta.
 async function salvar(id, mudanca){
+  const insumo = D.insumos.find(x => x.id === id);
+  const antes = {};
+  Object.keys(mudanca).forEach(k => { antes[k] = insumo ? insumo[k] : null; });
   try {
     await api(`/erp/api/suprimentos/insumos/${id}`, {
       method: "PATCH", headers: {"Content-Type": "application/json"},
       body: JSON.stringify(mudanca)});
-    aviso("mensagem", "Corrigido.", "ok");
     await carregar();
+    avisarComDesfazer(id, antes, mudanca);
   } catch(e){
     aviso("mensagem", e.message, "erro");
     desenhar();
   }
+}
+
+function comoTexto(campo, valor){
+  if (valor === null || valor === undefined || valor === "") return "em branco";
+  if (campo === "categoria_insumo_id") {
+    const c = D.categorias.find(x => x.id === +valor);
+    return c ? c.nome : `categoria ${valor}`;
+  }
+  if (campo === "categoria_id") {
+    const c = D.contas.find(x => x.id === +valor);
+    return c ? `${c.codigo} · ${c.descricao}` : `conta ${valor}`;
+  }
+  return String(valor);
+}
+
+function avisarComDesfazer(id, antes, mudanca){
+  const insumo = D.insumos.find(x => x.id === id);
+  const nome = insumo ? `${insumo.codigo} ${insumo.descricao}` : `insumo ${id}`;
+  const partes = Object.keys(mudanca).map(k =>
+    `<b>${ROTULO_DO_CAMPO[k] || k}</b>: ${escapar(comoTexto(k, antes[k]))} → `
+    + `${escapar(comoTexto(k, mudanca[k]))}`);
+  els("mensagem").innerHTML = `<div class="aviso ok">
+    <b>${escapar(nome)}</b> — ${partes.join(" · ")}
+    <button class="link-btn" id="btn-desfazer" style="margin-left:8px">Desfazer</button>
+  </div>`;
+  els("btn-desfazer").addEventListener("click", async () => {
+    try {
+      await api(`/erp/api/suprimentos/insumos/${id}`, {
+        method: "PATCH", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(antes)});
+      await carregar();
+      aviso("mensagem", "Desfeito — voltou como estava.", "ok");
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  });
 }
 
 // -------------------------------------------------------------- escolhas
@@ -398,40 +477,159 @@ async function novoInsumo(){
       "Cadastre pelo menos uma categoria de insumo antes — é ela que decide " +
       "quem recebe a cotação. Aba “Categorias, unidades e pagamento”.", "erro");
   }
-  const dados = await perguntar({
-    titulo: "Novo insumo",
-    textoOk: "Cadastrar",
-    aviso: "Nome sempre igual: “Cimento CP-II 50kg”, não “cimento cp2”. " +
-           "Duas grafias do mesmo material fazem o relatório de compras parar de fechar.",
-    campos: [{nome: "descricao", rotulo: "Nome do insumo", obrigatorio: true, largura: 3}],
-  });
-  if (!dados) return;
+  abrirCadastroDeInsumo();
+}
 
-  const categoria = await escolherDaLista({
-    titulo: "Categoria de insumo",
-    itens: D.categorias.filter(c => c.ativo).map(c => ({id: c.id, rotulo: c.nome}))});
-  if (!categoria) return;
+// UMA TELA SÓ — pedido do dono, 20/09/2026:
+//
+//   "A tela de cadastro, acho que ela já deveria trazer 'adiciona um novo
+//   insumo': a gente coloca o nome, categoria… depois, noutra tela, né? Não
+//   era melhor uma tela só que a gente já pudesse escrever o nome, colocar a
+//   categoria, as duas categorias, unidades, tudo?"
+//
+// Antes eram QUATRO diálogos em fila (nome → categoria → unidade → conta), e
+// isso tinha um efeito pior que a chateação: quem fechava o último não via que
+// o cadastro havia sido RECUSADO por falta da conta do plano. O insumo não
+// entrava, o contador não mudava, e a impressão era de que o sistema tinha
+// perdido o cadastro. Foi exatamente o que aconteceu com ele.
+//
+// Agora tudo está numa tela: o que falta aparece no botão, e nada é mandado ao
+// servidor antes de estar completo.
+function abrirCadastroDeInsumo(){
+  const escolha = {categoria_insumo_id: null, unidade: "", categoria_id: null};
 
-  const unidade = await escolherDaLista({
-    // Unidade USUAL, não obrigatória: cimento costuma vir em saco, mas um dia
-    // vem em bag. Quem pede escolhe a unidade daquele pedido.
-    titulo: "Unidade usual (só a sugestão — pode pular)",
-    itens: D.unidades.filter(u => u.ativo)
-                     .map(u => ({id: u.codigo, rotulo: `${u.codigo} · ${u.descricao}`}))});
-  if (unidade === null) return;
+  els("dlg-titulo").textContent = "Novo insumo";
+  els("dlg-corpo").innerHTML = `
+    <div id="ni-msg"></div>
+    <div class="cartao-dica">Nome sempre igual: <b>“Cimento CP-II 50kg”</b>, não
+      “cimento cp2”. Duas grafias do mesmo material fazem o relatório de compras
+      parar de fechar.</div>
 
-  const conta = await escolherConta(null);
-  if (!conta) return aviso("mensagem",
-    "Sem conta do plano o insumo não vira previsão de pagamento. Cadastro não feito.", "erro");
+    <div class="campo" style="margin-top:12px">
+      <label for="ni-nome">Nome do insumo *</label>
+      <input id="ni-nome" placeholder="ex.: Cimento CP-II 50kg"></div>
 
-  try {
-    const r = await api("/erp/api/suprimentos/insumos", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({descricao: dados.descricao, categoria_insumo_id: +categoria,
-                            unidade, categoria_id: conta})});
-    aviso("mensagem", `Insumo ${r.codigo} cadastrado.`, "ok");
-    carregar();
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
+    <div class="campo" style="margin-top:10px">
+      <label>Categoria de insumo *</label>
+      <button class="btn secundario" id="ni-categoria"
+        style="width:100%; text-align:left">escolher…</button>
+      <div class="dica">É ela que decide quem recebe a cotação deste material.</div></div>
+
+    <div class="campo" style="margin-top:10px">
+      <label>Conta do plano financeiro *</label>
+      <button class="btn secundario" id="ni-conta"
+        style="width:100%; text-align:left">escolher…</button>
+      <div class="dica">Sem ela o pedido de compra não vira previsão de
+        pagamento apropriada — por isso é obrigatória.</div></div>
+
+    <div class="campo" style="margin-top:10px">
+      <label>Unidade usual (opcional)</label>
+      <button class="btn secundario" id="ni-unidade"
+        style="width:100%; text-align:left">escolher…</button>
+      <div class="dica">Só a sugestão: cimento costuma vir em saco, mas um dia
+        vem em bag. Quem pede escolhe a unidade daquele pedido.</div></div>
+
+    <label class="opcao" style="margin-top:10px"><input type="checkbox" id="ni-locavel">
+      <span class="rotulo">Locável — aparece também em Locações</span></label>
+
+    <div style="margin-top:16px; display:flex; gap:8px; align-items:center">
+      <button class="btn" id="ni-salvar">Cadastrar</button>
+      <button class="btn secundario" id="ni-cancelar">Cancelar</button>
+      <span id="ni-falta" class="dica"></span>
+    </div>`;
+
+  const rotular = () => {
+    const cat = D.categorias.find(c => c.id === escolha.categoria_insumo_id);
+    els("ni-categoria").textContent = cat ? cat.nome : "escolher…";
+    const conta = D.contas.find(c => c.id === escolha.categoria_id);
+    els("ni-conta").textContent = conta
+      ? `${conta.codigo} · ${conta.descricao}` : "escolher…";
+    const un = D.unidades.find(u => u.codigo === escolha.unidade);
+    els("ni-unidade").textContent = un
+      ? `${un.codigo} · ${un.descricao}` : "escolher…";
+
+    const falta = [];
+    if (!els("ni-nome").value.trim()) falta.push("o nome");
+    if (!escolha.categoria_insumo_id) falta.push("a categoria");
+    if (!escolha.categoria_id) falta.push("a conta do plano");
+    els("ni-falta").textContent = falta.length ? "falta " + falta.join(", ") : "";
+    els("ni-salvar").disabled = falta.length > 0;
+  };
+
+  // O seletor com busca abre SOBRE este diálogo e devolve para cá: é o mesmo
+  // usado na correção em linha, e ter dois jeitos de escolher uma conta seria
+  // ter duas listas para manter.
+  const escolherSobre = async (qual) => {
+    const dlg = els("dlg");
+    const corpo = els("dlg-corpo").innerHTML;
+    const titulo = els("dlg-titulo").textContent;
+    const nome = els("ni-nome").value;
+    const locavel = els("ni-locavel").checked;
+    let valor;
+    if (qual === "categoria") {
+      valor = await escolherDaLista({titulo: "Categoria de insumo",
+        itens: D.categorias.filter(c => c.ativo).map(c => ({id: c.id, rotulo: c.nome})),
+        valor: escolha.categoria_insumo_id});
+      if (valor !== null) escolha.categoria_insumo_id = valor ? +valor : null;
+    } else if (qual === "conta") {
+      valor = await escolherConta(escolha.categoria_id);
+      if (valor !== null) escolha.categoria_id = valor;
+    } else {
+      valor = await escolherDaLista({titulo: "Unidade usual",
+        itens: D.unidades.filter(u => u.ativo)
+                         .map(u => ({id: u.codigo, rotulo: `${u.codigo} · ${u.descricao}`})),
+        valor: escolha.unidade});
+      if (valor !== null) escolha.unidade = valor || "";
+    }
+    // Remonta o formulário com o que já estava preenchido — o seletor usa o
+    // mesmo diálogo, e sem isto o que a pessoa digitou se perderia.
+    els("dlg-titulo").textContent = titulo;
+    els("dlg-corpo").innerHTML = corpo;
+    els("ni-nome").value = nome;
+    els("ni-locavel").checked = locavel;
+    ligar();
+    rotular();
+    if (!dlg.open) dlg.showModal();
+  };
+
+  const ligar = () => {
+    els("ni-nome").addEventListener("input", rotular);
+    els("ni-categoria").addEventListener("click", () => escolherSobre("categoria"));
+    els("ni-conta").addEventListener("click", () => escolherSobre("conta"));
+    els("ni-unidade").addEventListener("click", () => escolherSobre("unidade"));
+    els("ni-cancelar").addEventListener("click", () => els("dlg").close());
+    els("ni-salvar").addEventListener("click", gravar);
+  };
+
+  const gravar = async () => {
+    els("ni-salvar").disabled = true;
+    try {
+      const r = await api("/erp/api/suprimentos/insumos", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({descricao: els("ni-nome").value.trim(),
+                              categoria_insumo_id: escolha.categoria_insumo_id,
+                              unidade: escolha.unidade,
+                              categoria_id: escolha.categoria_id,
+                              locavel: els("ni-locavel").checked})});
+      els("dlg").close();
+      // LIMPAR OS FILTROS ao cadastrar: com "sem conta do plano" ligado, o
+      // insumo novo (que tem conta) nasceria invisível — e a leitura seria "o
+      // sistema não cadastrou".
+      limparFiltros();
+      DESTAQUE = r.id;
+      await carregar();
+      aviso("mensagem", `Insumo <b>${escapar(r.codigo)}</b> cadastrado — `
+                      + `está destacado na lista.`, "ok");
+    } catch(e){
+      aviso("ni-msg", e.message, "erro");
+      els("ni-salvar").disabled = false;
+    }
+  };
+
+  ligar();
+  rotular();
+  els("dlg").showModal();
+  setTimeout(() => els("ni-nome").focus(), 50);
 }
 
 function abrirFicha(id){
@@ -468,17 +666,70 @@ function abrirFicha(id){
 ["f-busca", "f-inativos", "f-locavel", "f-sem-conta", "f-sem-unidade", "f-sem-preco"]
   .forEach(id => els(id).addEventListener("input", () => { LIMITE = 200; desenhar(); }));
 els("f-busca-categoria").addEventListener("input", montarFiltros);
-els("btn-limpar").addEventListener("click", () => {
+function limparFiltros(){
   F = {categoria: new Set(), unidade: new Set(), grupo: new Set()};
   ["f-busca", "f-busca-categoria"].forEach(id => els(id).value = "");
   ["f-inativos", "f-locavel", "f-sem-conta", "f-sem-unidade", "f-sem-preco"]
     .forEach(id => els(id).checked = false);
-  LIMITE = 200; montarFiltros(); desenhar();
-});
+  LIMITE = 200; montarFiltros();
+}
+els("btn-limpar").addEventListener("click", () => { limparFiltros(); desenhar(); });
+// AS ÚLTIMAS CORREÇÕES, com quem fez, quando, de → para, e o desfazer.
+//
+// O dono, 20/09/2026: *"eu cliquei duas vezes na conta do plano financeiro,
+// selecionei, não lembro qual é o insumo, e alterei a conta. A tela deu um
+// refresh e ele sumiu daqui (…) E eu não sei qual foi."* Esta tela responde
+// exatamente essa pergunta.
+async function verMudancas(){
+  els("dlg-titulo").textContent = "O que mudou nos insumos";
+  els("dlg-corpo").innerHTML = `<div class="cartao-dica">carregando…</div>`;
+  els("dlg").showModal();
+  try {
+    const d = await api("/erp/api/suprimentos/insumos/alteracoes");
+    els("dlg-corpo").innerHTML = `
+      <div id="mu-msg"></div>
+      <div class="cartao-dica">As últimas correções feitas em insumos — inclusive
+        as feitas sem querer. <b>Desfazer</b> devolve o valor que estava lá antes.</div>
+      ${d.alteracoes.length ? `
+        <table style="margin-top:10px"><thead><tr>
+          <th>Quando</th><th>Insumo</th><th>O que mudou</th><th>Quem</th><th></th>
+        </tr></thead><tbody>${d.alteracoes.map((a, n) => `
+          <tr><td class="dados">${escapar(a.quando)}</td>
+            <td><b>${escapar(a.codigo)}</b><br><small>${escapar(a.insumo)}</small></td>
+            <td class="desc">${a.mudancas.map(m =>
+              `<b>${escapar(m.rotulo)}</b>: ${escapar(m.de)} → ${escapar(m.para)}`).join("<br>")}</td>
+            <td class="dados">${escapar(a.quem)}</td>
+            <td><button class="link-btn" data-desfazer="${n}">desfazer</button></td></tr>`
+          ).join("")}</tbody></table>`
+        : `<div class="vazio" style="margin-top:10px"><b>Nenhuma correção ainda</b>
+             Quando alguém corrigir um insumo, aparece aqui.</div>`}`;
+    document.querySelectorAll("[data-desfazer]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const a = d.alteracoes[+b.dataset.desfazer];
+        b.disabled = true;
+        try {
+          await api(`/erp/api/suprimentos/insumos/${a.insumo_id}`, {
+            method: "PATCH", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(a.desfazer)});
+          els("dlg").close();
+          await carregar();
+          aviso("mensagem", `<b>${escapar(a.codigo)} ${escapar(a.insumo)}</b> `
+                          + `voltou como estava.`, "ok");
+        } catch(e){ aviso("mu-msg", e.message, "erro"); b.disabled = false; }
+      }));
+  } catch(e){
+    els("dlg-corpo").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+els("btn-mudancas").addEventListener("click", verMudancas);
 els("btn-novo").addEventListener("click", novoInsumo);
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");
-if (!PODE_EDITAR) els("btn-novo").style.display = "none";
+if (!PODE_EDITAR) {
+  els("btn-novo").style.display = "none";
+  els("btn-mudancas").style.display = "none";
+}
 
 carregar();
 </script>

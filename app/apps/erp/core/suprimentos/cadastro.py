@@ -334,6 +334,87 @@ def editar_insumo(s: Session, insumo_id: int, dados: dict[str, Any],
     return insumo
 
 
+ROTULO_DO_CAMPO = {
+    "descricao": "nome", "unidade": "unidade usual",
+    "categoria_insumo_id": "categoria de insumo",
+    "categoria_id": "conta do plano financeiro",
+    "ativo": "ativo", "locavel": "locável",
+}
+
+
+def alteracoes_de_insumo(s: Session, *, limite: int = 40) -> list[dict[str, Any]]:
+    """As últimas correções feitas em insumos, em português, com o DESFAZER.
+
+    PEDIDO DO DONO, 20/09/2026, e ele descreve o estrago melhor do que eu:
+
+        "Alguém pode se enganar e dar dois cliques em cima da categoria, e
+        quando você clica já abre a tela e você já consegue selecionar e sem
+        querer pode alterar a categoria sem nem perceber. (…) eu cliquei duas
+        vezes na conta do plano financeiro, selecionei, não lembro qual é o
+        insumo, e alterei a conta. Consequentemente a tela deu um refresh e ele
+        sumiu daqui, porque ele não é mais sem conta. E eu não sei qual foi."
+
+    O estrago tem duas partes, e esta função resolve a segunda: a primeira é
+    ter alterado sem querer (resolvida obrigando o clique no lápis), a segunda
+    é NÃO SABER O QUE FOI ALTERADO. A trilha sempre guardou o antes e o depois;
+    o que faltava era alguém mostrar isso na tela onde o erro acontece, em vez
+    de numa consulta de auditoria que nenhuma tela usa.
+
+    Só lista o que REALMENTE mudou: um PATCH que reenvia o mesmo valor grava
+    evento, e listar isso encheria a tela de linhas que não dizem nada.
+    """
+    from app.apps.erp.db.models.financeiro import Evento
+
+    categorias = {c.id: c.nome for c in s.scalars(select(InsumoCategoria)).all()}
+    contas = {c.id: f"{c.codigo} · {c.descricao}"
+              for c in s.scalars(select(Categoria)).all()}
+    usuarios = {u.id: u.nome for u in s.scalars(select(Usuario)).all()}
+    insumos = {i.id: i for i in s.scalars(select(Insumo)).all()}
+
+    def humano(campo: str, valor: Any) -> str:
+        if valor in (None, ""):
+            return "— em branco —"
+        if campo == "categoria_insumo_id":
+            return categorias.get(valor, f"categoria {valor}")
+        if campo == "categoria_id":
+            return contas.get(valor, f"conta {valor}")
+        if campo in ("ativo", "locavel"):
+            return "sim" if valor else "não"
+        return str(valor)
+
+    saida: list[dict[str, Any]] = []
+    eventos = s.scalars(
+        select(Evento)
+        .where(Evento.entidade_tipo == "insumo")
+        .where(Evento.acao == "EDITADO")
+        .order_by(Evento.criado_em.desc())
+        .limit(limite * 4)).all()
+    for ev in eventos:
+        dados = ev.detalhe or {}
+        antes, depois = dados.get("antes") or {}, dados.get("depois") or {}
+        mudou = {k: (antes.get(k), depois.get(k)) for k in ROTULO_DO_CAMPO
+                 if k in antes and antes.get(k) != depois.get(k)}
+        if not mudou:
+            continue
+        insumo = insumos.get(ev.entidade_id)
+        saida.append({
+            "evento_id": ev.id,
+            "insumo_id": ev.entidade_id,
+            "codigo": getattr(insumo, "codigo", ""),
+            "insumo": getattr(insumo, "descricao", f"insumo {ev.entidade_id}"),
+            "quem": usuarios.get(ev.usuario_id) or "—",
+            "quando": ev.criado_em.strftime("%d/%m/%Y %H:%M") if ev.criado_em else "",
+            "mudancas": [{"campo": k, "rotulo": ROTULO_DO_CAMPO[k],
+                          "de": humano(k, de), "para": humano(k, para)}
+                         for k, (de, para) in mudou.items()],
+            # O que o DESFAZER manda de volta — os valores de antes, crus.
+            "desfazer": {k: de for k, (de, _) in mudou.items()},
+        })
+        if len(saida) >= limite:
+            break
+    return saida
+
+
 def gerenciar_insumos(s: Session) -> dict[str, Any]:
     """A tela de gestão: a lista completa mais o que ela precisa para filtrar,
     e os números do topo.
