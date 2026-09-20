@@ -530,19 +530,23 @@ Duas consequências práticas, que valem para qualquer mudança aqui:
 
 Cada uma custou horas. Não são preferências.
 
-### 0. O dono deu autorização permanente para publicar — com duas exceções
+### 0. A autorização permanente para publicar FOI REVOGADA — 13/09/2026
 
-Em 04/09/2026, cansado de ser perguntado seis vezes no mesmo dia, o dono
-autorizou: **publicar sozinho sempre que a suíte estiver verde e não houver
-migração de banco.** Continuam exigindo a pergunta:
+Em 04/09/2026 o dono havia autorizado publicar sozinho com a suíte verde. **Em
+13/09/2026 ele cancelou essa autorização, com todas as letras:**
 
-- **mudança com migração**, porque ela precisa do clique dele no mesmo momento;
-- **qualquer suspeita de carga rodando**, pelo motivo da regra 1 abaixo.
+> *"só publique algo se eu autorizar."*
 
-**Isto vale só para a área do painel.** Não foi escrito no `CLAUDE.md`, que as
-três áreas leem: o ERP e o Análise de SPs são outros chats, e o dono não
-autorizou nada para eles. Foi um deles que matou uma carga juntando na main sem
-saber — a regra 1 nasceu disso.
+Cancelou porque eu publiquei antes de ler o resultado da suíte — que já estava
+vermelha — e o Explorador ficou fora do ar em produção. A regra hoje é simples e
+não tem exceção: **nada vai para a `main` sem ele dizer "pode".**
+
+Junto com isso ele pediu duas coisas:
+
+- *"nao publique nada pq analisesps tá publicando"* — confirmar que não há outra
+  área publicando nem carga rodando (regra 1 abaixo);
+- *"me avise quando tiver aguardando minha autorizacao"* — terminar o trabalho no
+  ramo e **avisar** que está pronto, em vez de ficar calado esperando.
 
 ### 1. Não publique na `main` enquanto uma carga estiver rodando
 
@@ -824,6 +828,217 @@ campo "procurar na base crua", em Configurações — levou vinte minutos para s
 feita e respondeu na primeira tentativa.** Devia ter sido a primeira coisa, não
 a sexta. Quando o dado está do outro lado, construir o instrumento é mais barato
 que adivinhar.
+
+## A madrugada de 20/09/2026 — o extra derrubou o essencial
+
+A atualização automática das 03:45 terminou assim:
+
+    remove: path should be string, bytes or os.PathLike, not NoneType
+
+**O erro em si é bobo.** No fim da varredura de títulos excluídos, os arquivos
+de checkpoint são apagados; um dos caminhos vinha vazio, e `os.remove(None)`
+levanta `TypeError` — que **não é `OSError`**, então passava direto pelo
+`except (FileNotFoundError, OSError)` que existia ali para tolerar exatamente
+esse tipo de coisa.
+
+**O estrago não foi o erro, foi onde ele caiu.** A varredura de excluídos roda
+ANTES da etapa que refaz os números das telas. Estourando ali, a carga inteira
+foi para o `except` de cima e o recálculo **não rodou**. Resultado: a base do
+OMIE atualizou e as telas continuaram mostrando número velho — sem ninguém
+perceber, porque a tela dizia "falhou" num erro que parecia de arquivo temporário.
+
+Dois consertos, e o segundo é o que importa:
+
+1. `_ckpt_remover` ignora caminho vazio e engole qualquer exceção. Limpeza de
+   arquivo temporário nunca derruba carga.
+2. **A varredura de excluídos virou etapa não essencial.** Se ela falhar, a
+   falha é registrada e a carga **segue** para o recálculo. A mensagem final
+   ganha um `ATENÇÃO: ...` dizendo o que não foi feito — "concluída" não pode
+   virar meia-verdade.
+
+A regra que fica: **achar título apagado no OMIE é um extra semanal; refazer os
+números é o que faz a tela valer. O extra nunca mais custa o essencial.**
+
+Três testes em `tests/test_painel_carga.py` seguram isso: o caminho vazio, o
+arquivo que existe continuando a ser apagado (tolerar vazio não pode virar
+tolerar tudo) e a varredura falhando sem impedir o recálculo. Os três foram
+conferidos ao contrário — com o conserto desfeito, os três quebram.
+
+## O botão das conferências em silêncio — 20/09/2026
+
+O dono: *"EU JÁ havia tentado rodar mas não tava apresentando resultado."*
+
+A tela não tinha como contar o que houve. As quatro conferências rodavam em
+sequência dentro da mesma requisição; qualquer erro numa delas levava a página
+inteira para a tela de erro do painel — e sem dizer qual das quatro foi. Pior:
+o teste que existia trocava as quatro por dublê, então provava que **o botão
+chama**, nunca que **o resultado chega**. Um erro de SQL em qualquer uma passava
+verde aqui e só aparecia na tela dele.
+
+O que mudou:
+
+- cada conferência roda por si. A que falhar aparece **nomeada**, em vermelho,
+  com o erro escrito na tela; as outras três seguem. Elas só leem — falha de
+  uma é informação, não motivo para esconder as outras;
+- a caixa "Conferências da base" fica sempre visível, diz quando elas acabaram
+  de rodar e traz **"Rodar de novo"**;
+- o botão leva âncora: a página volta já no lugar dos quadros;
+- se as quatro voltarem vazias **sem erro**, a tela diz isso — antes, vazio e
+  quebrado eram indistinguíveis.
+
+Um teste novo aperta o botão **com banco de verdade e sem dublê** e exige que os
+quadros cheguem; outro quebra uma de propósito e exige a tela de pé com o nome
+da que falhou.
+
+A lição, que é a mesma do centavo de 13/09: **dublê prova que o caminho existe,
+não que ele entrega.** Onde o dono aperta um botão, o teste tem de apertar o
+mesmo botão.
+
+## A devolução de R$ 784.647,07 — era o AGRUPAMENTO, 20/09/2026
+
+Fim da caçada que durou de 13 a 20/09. A cascata de conferência, rodada com a
+base real, deu o veredito:
+
+| Corte | Devolvido | Quanto levou |
+|---|---|---|
+| Tudo com categoria de aporte | R$ 2.745.993,08 | — |
+| Só o que entra no saldo | R$ 2.745.993,08 | — |
+| Tirando transferências | R$ 2.745.993,08 | — |
+| Tirando o que não é pago | R$ 2.745.993,08 | — |
+
+**Corte nenhum come nada.** O dinheiro está na base e entra na soma geral — o
+que o escondia era o **agrupamento**. O bloco somava por razão social, e a mesma
+empresa com dois cadastros no OMIE (ou com o nome escrito de dois jeitos) virava
+duas linhas, cada uma menor do que a empresa é. Os R$ 567 mil que ele via eram
+uma das linhas; a de R$ 784.647,07 estava logo ali, com outra grafia do mesmo
+nome.
+
+O conserto: **a identidade passou a ser o CNPJ/CPF, só os dígitos** — assim
+"12.345.678/0001-90" e "12345678000190" são a mesma empresa. O nome virou só
+rótulo. Sem documento, cai no nome em maiúsculas, que é o que dava antes —
+nunca pior. Vale para o recorte por sócio, por obra e para o quadro de
+dividendos.
+
+E, para o dono poder **corrigir no OMIE** em vez de só conviver, a conferência
+ganhou a tabela "Devoluções por contraparte", que mostra quantas grafias
+diferentes cada documento tem e marca em vermelho as repetidas.
+
+Dois testes com banco de verdade: um cria a mesma empresa com duas grafias e o
+mesmo CNPJ e exige uma linha só, com a soma certa; o outro exige que a tela
+DENUNCIE a repetição — juntar em silêncio não basta, senão o cadastro errado
+nunca é arrumado no OMIE.
+
+### O que a mesma rodada de conferência revelou, e ainda espera decisão
+
+- **R$ 96.750,00 em 2 títulos com status ATRASADO** que a carga deu por pagos e
+  nenhuma tela conta. A carga aceita "liquidado" na baixa; as telas leem só o
+  texto do status. Corrigir faz o DRE e a Visão Geral subirem — é migração e
+  decisão do dono.
+- **0 de 120.772 títulos têm a observação do OMIE.** O dono desconfiou em 17/09
+  e estava certo: o `backfill_observacoes` nunca rodou. São ~120 mil consultas,
+  uma por título. Os 2.137 a receber sairiam em minutos.
+
+## A varredura dos dados errados — 20/09/2026
+
+O dono, depois de ver as conferências: *"faça tudo que for necessário pros dados
+ficarem o mais correto possível. nao posso trabalhar com dados errados."* Quatro
+frentes, todas fechadas nesta leva.
+
+### 1. O centavo (migração 010) — a causa raiz de sete dias de caçada
+
+As colunas de dinheiro do espelho nasceram **REAL**, float de 4 bytes, que
+guarda ~7 algarismos significativos. **Acima de R$ 131.072,00 o centavo não
+cabe.** Foi assim que R$ 784.647,07 virou R$ 784.647,06 — e por isso a busca por
+valor exato nunca o achava. A `fato` já era NUMERIC, mas é CALCULADA a partir
+dessas colunas: guardava com precisão o número errado.
+
+Agora são NUMERIC(16,2) em `titulos`, `movimentos`, `rateio.nvaldep` e
+`ajustes.valor`. Percentuais ficaram REAL de propósito: valem no máximo 100 e
+nunca chegam perto do limite.
+
+**Trocar o tipo NÃO devolve o centavo perdido** — ele só existe no OMIE. Por
+isso a tela ganhou um aviso vermelho que só some quando uma **carga inicial**
+terminar bem depois da migração, e o botão "Primeira carga", que ficava
+escondido enquanto houvesse base, passou a aparecer sempre.
+
+Detalhe de implementação que vai morder quem mexer: NUMERIC volta como `Decimal`
+no Python, e Decimal não soma com float. As leituras passaram a pedir
+`::float8` — o banco guarda exato, o transporte usa float de 8 bytes, que tem
+dígitos de sobra para centavo.
+
+### 2. "Foi pago?" passou a ter uma resposta só (migração 011)
+
+A carga considerava quitado quem tivesse status pago/recebido/conciliado **ou**
+baixa liquidada no OMIE. As telas olhavam só a primeira metade. Título baixado
+cujo status ficou "ATRASADO" era dado por pago pela carga e **não era contado
+por tela nenhuma** — R$ 96.750,00 em 2 títulos na base do dono.
+
+O conserto não foi repetir a regra da carga nas telas: regra repetida diverge de
+novo. A carga já grava a decisão em `situacao_vencimento`; a coluna `pago` passou
+a ser essa decisão, e nada mais. A conferência das duas regras continua na tela
+como guarda — se um dia voltar a acusar algo, é porque alguém criou uma segunda
+regra outra vez.
+
+### 3. O agrupamento por documento
+
+Ver a seção própria acima. Resumo: o bloco somava por nome; agora soma por
+CNPJ/CPF.
+
+### 4. As observações viraram um modo da atualização
+
+0 de 120.772 títulos tinham a observação do OMIE. O trabalho que as busca
+existia desde sempre, mas só pela linha de comando — ou seja, nunca rodava.
+Virou o modo **"Buscar as observações"**, com botão e barra de andamento.
+
+Ele só LÊ do OMIE (há teste que falha se alguém puser Alterar/Incluir ali). Os
+títulos a receber (~2 mil, as medições) vão inteiros na primeira rodada; os a
+pagar vão em blocos de 8 mil, cerca de uma hora cada, porque 120 mil consultas
+são mais de 15 horas e nenhuma publicação de código sobreviveria a isso. É
+retomável de verdade: cada título consultado fica marcado e não volta.
+
+### O que continua fora, e é decisão dele
+
+**Movimento de conta corrente sem título nunca entra no painel.** O painel é
+montado a partir dos títulos; movimento lançado direto na conta, sem título, não
+tem de onde vir. O dono já notou isso ("era pra aparecer todos os lançamentos
+igual o relatório de conta corrente do OMIE"). Trazer esses movimentos é fonte
+de linha nova, com risco real de contar dinheiro duas vezes — precisa de desenho
+e de decisão, não de um remendo.
+
+## O movimento sem título saiu do escuro — 20/09/2026
+
+O dono, depois de eu dizer que isso ficava de fora: *"esse movimento sem titulo,
+eu não sei exatamente quem sao e de qual forma afeta. como saber?"*
+
+**Não dava para saber, e a culpa era do código:** a carga descartava esses
+movimentos ANTES de gravar (`gravar_movimentos` contava e seguia), então o
+número só existia numa linha de log que ninguém lê. Pergunta legítima sem
+resposta possível.
+
+Agora eles são guardados em `painel.movimentos_sem_titulo` (migração 012) e há
+um quadro na conferência: total, entrou × saiu, por conta, por categoria, por
+ano, e os 50 maiores um a um, com data, conta, categoria e contraparte.
+
+**Essa tabela não entra em número de tela nenhum**, e há teste que falha se
+entrar. Ela existe para ser olhada. O caminho normal de correção é criar o
+título no OMIE — aí o lançamento entra sozinho na atualização seguinte.
+
+Dois casos diferentes, separados na tela porque têm causas diferentes:
+
+1. **movimento sem título nenhum** — lançado direto na conta corrente. É
+   dinheiro que o painel não conhece;
+2. **movimento que aponta para um título que o painel não tem** — título
+   excluído no OMIE depois, ou que a carga não trouxe. Some com uma atualização
+   completa.
+
+Cuidado que já está coberto por teste: a atualização do dia apaga a janela de
+datas nas DUAS tabelas antes de rebaixar. Sem isso, os sem título seriam
+reinseridos toda madrugada e o número cresceria sozinho — erro que só apareceria
+semanas depois.
+
+**A tabela só tem conteúdo depois da próxima rebaixa de movimentos.** Enquanto
+isso, zero ali quer dizer "ainda não olhei", e a tela diz isso com todas as
+letras em vez de mostrar um zero tranquilizador.
 
 ## O que falta
 

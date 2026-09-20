@@ -5486,6 +5486,384 @@ OBRA-2"*). Os outros dois travam o caso simples (um valor só) e o caso sem
 filtro nenhum, para o conserto não quebrar o que funcionava.
 
 ---
+
+### Septuagésima terceira leva (18/09) — o analítico no PDF do relatório
+
+> *"Queria que no relatório em PDF saísse mais abaixo o analítico. Está bom do
+> jeito que você está colocando, mas está faltando a parte analítica: o
+> lançamento, credor e a descrição com detalhe do que é. Pode reduzir a fonte
+> para poder caber as coisas."*
+
+O PDF tinha os totais, as quebras por obra/projeto/tipo/conta, os maiores
+credores e o atraso — tudo **resumo**. Faltava o que está por trás: cada
+lançamento, um por linha.
+
+Agora, **ao final do relatório**, uma tabela com **SP · Data · Credor · Obra ·
+Tipo · Descrição · Valor**, em fonte 6,5 e com a descrição quebrando em até
+três linhas — foi ele quem autorizou reduzir a fonte. É o mesmo caminho do PDF
+do lote, que já fazia isso desde 11/09.
+
+#### Por último, e não no começo
+
+Quem abre o relatório quer primeiro o resumo: os totais e as quebras respondem
+*"quanto"* e *"onde"*. O analítico responde *"quais"*, e é para onde se vai
+quando um número do topo surpreende. Pondo-o antes, seriam dezenas de páginas
+de linhas antes do primeiro total. Há teste exigindo essa ordem.
+
+#### ⚠️ A parte que mais importa: o detalhe FECHA com o total
+
+O analítico usa **exatamente** o mesmo recorte dos totais — as mesmas funções
+de filtro e de período que a contagem e as quebras usam.
+
+Isto não é zelo. Detalhe e resumo saem **na mesma folha**: se filtrassem por
+critérios diferentes, a soma das linhas não bateria com o número do topo, e
+quem conferisse não teria como saber qual dos dois está certo. O relatório
+inteiro perderia a credibilidade por causa justamente da parte que deveria
+prová-lo.
+
+Dois testes com banco de verdade cravam isso: a soma do analítico bate com o
+total **no centavo**, e filtrando por obra o detalhe encolhe junto.
+
+#### ⚠️ O teto, e por que ele AVISA
+
+São **2.000 linhas**, da maior despesa para a menor. A base tem 59 mil SPs; um
+relatório sem filtro viraria um PDF de centenas de páginas que ninguém abre e
+que come a memória do serviço ao ser montado.
+
+**Quando o teto corta, a folha diz isso com todas as letras** — e explica a
+consequência: *"a soma destas linhas fica abaixo do total do topo, que continua
+certo"*. Analítico truncado em silêncio seria pior do que analítico nenhum:
+quem somasse as linhas não encontraria o total e concluiria que **a conta está
+errada**, quando o certo é o total.
+
+Quando não corta, a folha afirma o contrário — *"a soma desta lista fecha com o
+total do topo"* — o que poupa a conferência de quem recebe.
+
+A ordem por valor existe por causa do teto: cortando em 2.000, o que fica de
+fora é o miúdo, não a despesa que interessa.
+
+#### O que ficou de fora
+
+- **O CSV do relatório não ganhou o analítico.** Ele já exporta os blocos de
+  resumo, e quem quer lançamento a lançamento em planilha tem o "Exportar CSV"
+  das Solicitações, que sai com o filtro inteiro (corrigido nesta mesma data).
+  Acrescentar um sexto bloco lá tornaria o arquivo difícil de abrir no Excel.
+- **A coluna "Data" muda de significado conforme o relatório**: em "pagas" é a
+  data do pagamento; nos outros, o vencimento. É a mesma data que o período
+  recorta — mostrar vencimento num relatório de pagas faria a coluna não
+  explicar por que aquela linha entrou.
+
+#### ⚠️ A suíte pegou o que a seção nova trouxe de risco
+
+Três testes do PDF quebraram no mesmo instante, e os dois motivos valem
+registro.
+
+**O primeiro era só de teste:** a dublagem da tela do relatório não conhecia a
+consulta nova, então os testes do PDF batiam no banco de verdade e voltavam
+500. Corrigido acrescentando o analítico à dublagem.
+
+**O segundo era de verdade, e é mais sério:** uma falha na consulta do detalhe
+**derrubava o PDF inteiro**. A pessoa ficaria sem relatório nenhum — perdendo
+os totais, as quebras e os credores, que já estavam prontos — por causa do
+apêndice.
+
+É a mesma regra que o quadro por categoria ganhou em 13/09, e que está escrita
+neste histórico desde então: **o acessório não pode derrubar o principal.**
+Agora o PDF sai **sem** o analítico em vez de não sair, e a folha diz que
+faltou — *"não consegui montar o analítico desta vez, e o resto do relatório
+acima está completo e correto"* — para ninguém concluir que não havia
+lançamento nenhum. Há teste cravando.
+
+#### Conferido gerando o PDF de verdade
+
+Três páginas, 45 lançamentos com descrição longa e credor comprido: a tabela
+cabe na largura da folha (as sete colunas somam os 190 mm exatos), o cabeçalho
+se repete na virada de página, a descrição quebra em vez de ser cortada, e o
+aviso do rodapé aparece.
+
+---
+
+### Septuagésima quarta leva (20/09) — o QR Pix saía com o rótulo dentro
+
+> *"Veja o que está acontecendo com o código QR quando temos e-mail, veja como
+> ele sai: `00020126590014br.gov.bcb.pix0137Chave Pix: carlosgaldino884@gmail.com…`
+> O que está acontecendo, eu acho, é que não está sendo eliminada a expressão
+> 'Chave Pix: ' que fica junto ao e-mail."*
+
+Ele acertou a causa olhando o payload. E o defeito é pior do que parece na
+descrição: **não era um QR feio, era um código de pagamento inútil.** O campo
+01 do bloco 26 é a chave que o banco vai resolver; com `Chave Pix: ` grudado
+nela, nenhum banco resolve. A imagem aparecia, o aplicativo lia, e recusava
+**na hora de pagar** — quem gerou não descobria; quem ia pagar descobria.
+
+#### ⚠️ A limpeza existia, funcionava, e o QR não passava por ela
+
+Esta é a parte que vale guardar. `extrair_chave()` tira o rótulo desde sempre,
+e foi conferida: entrega `carlosgaldino884@gmail.com` corretamente. Só que ela
+era chamada por `classificar()`, que alimenta **o alerta laranja** ("falta a
+chave Pix no cadastro"). O caminho do QR, em `_codigo_de_pagamento`, lia
+`info_pgt` **cru** da planilha e entregava direto ao gerador.
+
+Duas leituras do mesmo dado, uma limpa e outra não. A tela dizia "tem chave" —
+e tinha — e o QR era montado com o texto inteiro.
+
+`normalizar_chave()` deixava passar porque, vendo um `@`, devolvia o texto sem
+tocar: e-mail não tem formato a normalizar. O texto que ela recebeu já vinha
+sujo.
+
+#### O conserto: a limpeza mora no funil, não em quem chama
+
+A remoção do rótulo foi para dentro de `pix_brcode.limpar_rotulo`, chamada por
+`normalizar_chave` — o funil por onde **todo** payload passa. `extrair_chave`
+passou a usar a mesma função, e o caminho da tela passou a usar
+`classificar()` como todo o resto.
+
+Posta no chamador, a correção valeria só para a tela de hoje: a próxima tela
+que montasse um Pix nasceria com o mesmo defeito, e ninguém veria até alguém
+tentar pagar.
+
+Aproveitando, a limpeza ficou mais tolerante ao que a planilha realmente traz:
+`Chave Pix -`, `Chave Pix –`, `Chave:`, `PIX:`, e o endereço com texto em volta
+(`carlos@x.com (Nubank)`) — e-mail não tem espaço, então sobra só o endereço.
+Duas armadilhas foram travadas com teste: `pixelado@x.com` **não** é mutilada
+(só o rótulo *com separador* é rótulo), e o "copia e cola" pronto não é tocado
+— ele tem espaços legítimos no nome e na cidade do recebedor, e mexer neles
+quebraria o CRC.
+
+#### Sem chave, agora o QR não é gerado
+
+Antes, uma SP sem chave gerava um payload com o campo vazio: de novo um QR que
+abre, é lido e só é recusado no fim. Agora a tela escreve o motivo no lugar do
+código.
+
+#### Os testes vigiam o CAMINHO, não só o resultado
+
+O defeito não estava na função de limpeza — estava em ela não ser chamada.
+Então, além dos casos de limpeza, há um teste que **abre o payload gerado** e
+confere que o campo 01 tem só a chave e que o CRC fecha, e outro que lê o
+código de `_codigo_de_pagamento` e falha se alguém voltar a ler `info_pgt`
+direto. Um teste só do resultado da limpeza passaria verde com o defeito no ar
+— foi exatamente o que aconteceu por meses.
+
+#### ⚠️ O que isso significa para trás, e é o que ele precisa saber
+
+**Todo QR gerado para chave escrita com o rótulo saiu quebrado.** Se algum foi
+enviado a alguém para pagar, precisa ser gerado de novo. Não dá para saber
+daqui quantos foram — não há registro de quais QRs foram exibidos.
+
+#### ⚠️ O conserto não bastou: o payload PRONTO também estava podre
+
+Publicado o conserto acima, o dono voltou dizendo que o código continuava
+**exatamente igual** — CRC incluído. Estava certo, e faltava uma peça.
+
+A coluna de informação de pagamento nem sempre traz uma chave: às vezes traz
+um **"copia e cola" pronto**. Esse caso passa direto, por desenho — payload
+pronto é para ser reproduzido como veio, porque ele carrega nome, cidade e
+txid que não temos como remontar.
+
+Só que esse payload pronto pode ter sido gerado **pelo próprio sistema antes
+do conserto** e devolvido à planilha. Aí ele já nasce com o rótulo dentro, e
+**nada o denuncia**: o CRC fecha, porque foi calculado sobre o texto errado.
+A única conferência que existia diz que está tudo certo.
+
+Agora, antes de reproduzir um payload pronto, o sistema **lê a chave de dentro
+dele** (`chave_de_dentro`, campo 01 do bloco 26). Se ela trouxer rótulo, o
+payload é **remontado limpo**, com o valor e o credor da própria SP. Fora esse
+caso, não se encosta nele — há teste cravando que um payload saudável sai
+byte a byte igual, com o txid e a cidade dele.
+
+Efeito colateral aceito e registrado: no caso remontado, valor e nome passam a
+vir da SP, não do payload antigo. É o certo — o payload antigo não servia para
+pagar de nenhum jeito —, mas se o valor da planilha divergir do que estava no
+código velho, é o da planilha que prevalece.
+
+#### Não verificado
+
+O QR corrigido **não foi lido por um aplicativo de banco de verdade** — não há
+como fazer isso daqui. O que foi conferido: o payload tem a chave limpa no
+campo certo, o CRC fecha, e a imagem sai. A leitura de fato só o dono pode
+confirmar, e vale conferir na primeira SP com chave de e-mail.
+
+---
+
+### Septuagésima quinta leva (20/09) — aportes e devoluções no OMIE
+
+O dono trouxe um briefing escrito, autossuficiente, e ele está preservado na
+conversa: lançar **título a pagar e a receber de Aporte e de Devolução de
+Aporte dentro do OMIE**, sem entrar lá e montar dois lançamentos à mão, um em
+cada conta, lembrando qual nome usar de cada lado.
+
+#### A regra, que é dele e não minha
+
+| Conta | Entra/Sai | Categoria no OMIE |
+|---|---|---|
+| Matriz | Saída | Aportes BWS |
+| Parceria | Entrada | Aportes BWS |
+| Parceria | Entrada | Aportes Parceiros |
+| Parceria | Saída | Devolução de Aportes |
+| Matriz | Entrada | Devolução de Aportes BWS |
+
+Quatro operações saem daí: **BWS aporta** e **devolução à BWS** criam DOIS
+títulos (o dinheiro anda entre duas contas da empresa); **parceiro aporta** e
+**devolução ao parceiro** criam UM (o dinheiro vem de fora ou vai para fora).
+
+⚠️ **O aporte da BWS usa o MESMO nome dos dois lados**, e isso parece erro
+para quem chega depois. Não é: o que distingue os lados é a conta e o sentido.
+Há teste cravando, justamente porque é o tipo de coisa que alguém "conserta"
+por engano.
+
+**O dono não escolhe categoria**, e foi decisão dele: *"se eu pudesse
+escolher, eu erraria."*
+
+#### As quatro perguntas que ele mandou fazer antes, e o que ele decidiu
+
+O briefing trazia uma seção de perguntas obrigatórias. As respostas, de
+20/09/2026:
+
+1. **Baixa:** o título nasce **já baixado**, com a marcação desmarcável na
+   tela. Motivo dele: aporte quase sempre é registro do que já aconteceu, e
+   título em aberto esquecido vira saldo falso.
+2. **Obra:** **sempre obrigatória**. Sem departamento o aporte existe no OMIE
+   mas some de qualquer visão por obra.
+3. **Número e observação:** **automáticos e editáveis**. O mesmo número nos
+   dois títulos é o que permite achar o par depois.
+4. **Como escolher:** ele escolhe **operação + conta de origem + conta de
+   destino**, e aceitou o preço: dá para montar combinação que a regra não
+   cobre, e aí a tela **recusa e explica** em vez de adivinhar.
+
+#### ⚠️ Nenhum código de categoria está escrito no programa
+
+Esta é a parte que mais evita defeito, e a razão é dele: *"eu mexo no plano
+financeiro; código chumbado vira lançamento errado silencioso no dia em que eu
+mexer."*
+
+Lançamento errado silencioso é o pior defeito possível aqui: o título entra, a
+tela diz "gravado", e o número aparece no lugar errado de um relatório que
+ninguém confere linha a linha. Não há alerta, não há erro, não há tela que
+denuncie.
+
+Então os códigos são **descobertos pela descrição** em `painel.cat` (o espelho
+do OMIE que o painel já mantém) e **gravados para conferência**. Descrição que
+não aparece, ou que aparece duas vezes, **para e pergunta**. Um cuidado que
+custou teste próprio: *"Aportes BWS"* é pedaço de *"Devolução de Aportes
+BWS"* — casando por pedaço, as duas viriam como candidatas uma da outra.
+
+O mesmo vale para as contas: qual conta do OMIE é a matriz e qual é a
+parceria é ele quem aponta, numa lista que mostra o código do OMIE **e** o
+número da conta bancária, porque é olhando os dois juntos que ele reconhece.
+
+#### ⚠️ Os dois títulos nascem amarrados
+
+*"Se o segundo título falhar depois do primeiro ter sido criado, eu fico com
+meio aporte no OMIE — pior do que não ter lançado nada."*
+
+A ordem é fixa e tem teste: **todos os títulos primeiro, as baixas por
+último**. Falhando um título, os que já entraram são desfeitos; não dando para
+desfazer, **o número do órfão vai para a tela** e fica lá, no topo, até alguém
+resolver à mão.
+
+Baixa que falha **não** desfaz nada: deixa título correto e em aberto, que é
+chato, visível e fácil de resolver. Apagar título que talvez já tenha baixa
+seria trocar um problema pequeno por um grande.
+
+E um caso que quase passou: título que o OMIE aceita **sem devolver o
+número**. Sem ele não dá para desfazer nem para conferir — dizer "gravado" ali
+seria mentir com cara de sucesso. Agora é tratado como falha.
+
+#### A crítica de transferência
+
+Aviso, nunca bloqueio, como ele pediu. Antes de gravar, procura em
+`painel.movimentos` uma movimentação do **mesmo dia e mesmo valor em duas
+contas da BWS** — e só avisa quando são duas, porque uma perna só é pagamento
+comum, e avisar aí ensinaria a ignorar o aviso. Tolerância de um centavo, para
+a crítica não calar justamente quando importa.
+
+Há uma segunda crítica que o briefing não pediu e que vale o texto: se a
+categoria escolhida pela regra estiver marcada como transferência no plano
+financeiro, o lançamento nasce **fora do DRE** — e some dos relatórios de
+aporte sem dizer nada. A tela avisa.
+
+#### O que fica registrado
+
+Cada título gravado vira uma linha em `analisesps.aporte_lancamento`: o que,
+quando, por quem, e o número que o OMIE devolveu. O `grupo` amarra os dois
+lados. O código de integração é único, então clique duplo ou navegador que
+repete o envio não viram aporte em dobro — e há teste com banco de verdade
+cravando isso.
+
+#### Os testes
+
+**Sem banco (38):** a tabela do briefing percorrida inteira, operação por
+operação e lado por lado; as recusas (conta trocada, sem obra, sem
+fornecedor, categoria sem código, valor impossível); a amarração, com um OMIE
+de mentira que falha onde o teste mandar — inclusive o caso do órfão e o da
+baixa que falha.
+
+**Com banco de verdade (18):** a descoberta do código pela descrição (achou /
+ambígua / não achou / acento e maiúscula), o de-para gravado e relido, a
+tabela inteira **com os códigos vindos do plano financeiro real**, a crítica
+de transferência com JOIN e filtro de data, e o registro com o órfão
+aparecendo na lista.
+
+O briefing pedia os dois últimos por escrito, e o motivo está na frase dele:
+*"se ela errar, meus relatórios de aporte mentem e eu não tenho como
+perceber."*
+
+#### ⚠️ O que NÃO foi conferido, e muda o que esperar da primeira tentativa
+
+**A documentação do OMIE não é alcançável do ambiente onde isto foi escrito**
+— a rede bloqueia o domínio. Consequência, dita sem rodeio:
+
+- os campos da **inclusão** vieram de `app/apps/atualizaspbotao/omie.py`, que
+  inclui conta a pagar em produção há meses: esses são firmes;
+- os campos da **baixa** e da **exclusão** vieram de documentação citada de
+  segunda mão e **não foram exercitados contra a API**.
+
+É exatamente para isso que serve o protocolo combinado, que o dono já exigia
+por outro motivo: ensaio → **UM** lançamento conferido por ele dentro do OMIE,
+com os olhos → uso normal. Se o OMIE recusar, a mensagem dele aparece inteira
+na tela, sem tradução minha.
+
+#### ⚠️ O painel JÁ conhecia esta regra — e isso confirma que ela está certa
+
+Descoberto ao trazer a `main` para o ramo, na hora de publicar: o painel tem,
+desde 17/09/2026, a classificação dos aportes no DRE — `TIPOS_APORTE`, em
+`painel/sync/fato.py` — e ela reconhece **exatamente os mesmos quatro nomes**,
+com o mesmo desenho anotado lá (*"BWS manda para a obra: saída da MATRIZ
+Aportes BWS; entrada na OBRA Aportes BWS…"*).
+
+Isso vale registro por dois motivos. O primeiro é a confirmação: dois chats
+diferentes, sem se falarem, chegaram à mesma tabela a partir do que o dono
+lançou à mão no OMIE — é a regra dele, não invenção de nenhum dos dois. O
+segundo é o encaixe: **o título que esta tela cria já nasce sendo lido pelo
+painel**, porque a classificação é por nome de categoria. Mudar o nome de uma
+das quatro categorias no OMIE quebraria os dois lados ao mesmo tempo, e essa é
+mais uma razão para o de-para conferível existir.
+
+#### ⚠️ A migração 010 do painel mudou o tipo do dinheiro — e o teste foi atrás
+
+A mesma leva da `main` trocou as colunas de dinheiro do espelho de `REAL` para
+`NUMERIC`, inclusive `movimentos.nvalpago`, que é justamente a coluna que a
+crítica de transferência compara com tolerância de centavo.
+
+O teste com banco montava só a migração 001 do painel, ou seja, exercitava um
+tipo que a produção não tem mais. Passou a montar **todas** as migrações do
+painel. Conferido: os 18 testes seguem verdes contra a estrutura nova.
+
+#### O que ficou de fora
+
+- **Rateio de aporte entre obras.** O lançamento vai 100% para uma obra. Duas
+  obras dividindo um aporte seria outra tela, com outra conferência.
+- **Desfazer um aporte já gravado.** O registro guarda o que é preciso para
+  isso, mas o botão não existe: apagar título que pode já ter baixa e
+  conciliação é coisa para se fazer olhando, dentro do OMIE.
+- **As perguntas em `PERGUNTAS.md`.** Aquele arquivo é do assistente do ERP, e
+  o dado dos aportes vive no OMIE, fora do alcance dele. As perguntas que esta
+  tela torna possíveis ("quanto a BWS já aportou nesta obra?", "quanto o
+  parceiro devolveu este ano?") só fazem sentido depois que alguém decidir se
+  o assistente vai ler o espelho do painel — decisão que é do ERP, não daqui.
+
+---
 ---
 
 ## Regras que não se discutem

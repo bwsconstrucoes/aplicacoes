@@ -170,8 +170,12 @@ def _movimentos_do_bloco(conn, codigos):
         return {}
     marcas = ",".join(["?"] * len(codigos))
     cur = conn.execute(
-        "SELECT ncodtitulo, ddtpagamento, cliquidado, nvalpago, nvalaberto, "
-        "       ndesconto, njuros, nmulta "
+        # ::float8 nao e enfeite: desde a migracao 010 estas colunas sao
+        # NUMERIC — o banco devolveria Decimal, que nao soma com float e
+        # quebraria a conta aqui. O banco guarda exato; o transporte usa
+        # float de 8 bytes, que tem digitos de sobra para centavo.
+        "SELECT ncodtitulo, ddtpagamento, cliquidado, nvalpago::float8, "
+        "       nvalaberto::float8, ndesconto::float8, njuros::float8, nmulta::float8 "
         "  FROM movimentos WHERE ncodtitulo IN (" + marcas + ")", codigos)
     agg = {}
     for cod, dpg, liq, vpg, vab, vdesc, vjur, vmul in cur.fetchall():
@@ -200,7 +204,7 @@ def _rateio_do_bloco(conn, codigos):
         return {}
     marcas = ",".join(["?"] * len(codigos))
     cur = conn.execute(
-        "SELECT codigo_lancamento_omie, ccoddep, cdesdep, nperdep, nvaldep "
+        "SELECT codigo_lancamento_omie, ccoddep, cdesdep, nperdep, nvaldep::float8 "
         "  FROM rateio WHERE codigo_lancamento_omie IN (" + marcas + ") ORDER BY seq",
         codigos)
     rateio = {}
@@ -218,8 +222,9 @@ def _movimentos_detalhe_do_bloco(conn, codigos):
         return {}
     marcas = ",".join(["?"] * len(codigos))
     cur = conn.execute(
-        "SELECT ncodtitulo, ddtpagamento, nvalpago, nvalliquido, njuros, nmulta, "
-        "       ndesconto, ncodcc, cstatus, cliquidado, cgrupo, nvalaberto "
+        "SELECT ncodtitulo, ddtpagamento, nvalpago::float8, nvalliquido::float8, "
+        "       njuros::float8, nmulta::float8, ndesconto::float8, ncodcc, cstatus, "
+        "       cliquidado, cgrupo, nvalaberto::float8 "
         "  FROM movimentos WHERE ncodtitulo IN (" + marcas + ")", codigos)
     res = {}
     for (cod, dpg, vpg, vliq, vjur, vmul, vdesc, ncc, cst, liq, grp, vab) in cur.fetchall():
@@ -243,10 +248,12 @@ def _blocos_de_titulos(conn, sql_extra="", params=()):
     blocos. Por isso esta conexao NAO pode receber commit durante a varredura —
     quem grava usa outra conexao."""
     cur = conn.executar_em_stream(
-        "SELECT codigo_lancamento_omie, natureza, valor_documento, codigo_categoria, "
+        "SELECT codigo_lancamento_omie, natureza, valor_documento::float8, "
+        "codigo_categoria, "
         "codigo_cliente_fornecedor, id_conta_corrente, numero_documento, numero_pedido, "
-        "status_titulo, data_vencimento, valor_ir, valor_iss, valor_inss, valor_pis, "
-        "valor_cofins, valor_csll, observacao FROM titulos " + sql_extra +
+        "status_titulo, data_vencimento, valor_ir::float8, valor_iss::float8, "
+        "valor_inss::float8, valor_pis::float8, "
+        "valor_cofins::float8, valor_csll::float8, observacao FROM titulos " + sql_extra +
         " ORDER BY codigo_lancamento_omie", params, por_vez=TAMANHO_BLOCO)
     try:
         while True:

@@ -118,20 +118,35 @@
   </div>
   {% endif %}
 
+  {% if recarga and recarga.pendente %}
+  <div style="border-left:4px solid var(--vermelho); background:rgba(220,53,69,.07);
+              padding:10px 12px; border-radius:6px; margin-top:12px">
+    <b>Os valores antigos ainda estão com centavo errado.</b><br>
+    A atualização do banco arrumou o <i>tipo</i> da coluna, e daqui para a frente
+    todo valor novo entra exato. Mas o centavo que já se perdeu não volta sozinho:
+    ele só existe no OMIE. Rode <b>"Primeira carga"</b> (o botão amarelo abaixo)
+    uma vez — ela rebaixa tudo e os valores voltam a bater com o OMIE.
+    Leva horas; o melhor momento é a noite.
+  </div>
+  {% endif %}
+
   <div class="form-grade" style="margin-top:12px">
+    {# A "Primeira carga" ficava escondida enquanto houvesse base. Deixou de
+       ficar em 20/09/2026: a migração 010 (dinheiro exato) só devolve os
+       centavos depois de uma rebaixa completa do OMIE, e não havia botão para
+       isso. Ela continua amarela e continua avisando o que faz. #}
     {% for chave, descricao in modos.items() %}
-      {% if chave != 'carga_inicial' or base_vazia %}
       <div>
         <button class="btn {% if chave == 'carga_inicial' %}amarelo{% elif chave != 'rapida' %}secundario{% endif %}"
                 data-modo="{{ chave }}" style="width:100%">
           {% if chave == 'rapida' %}Atualizar agora
           {% elif chave == 'completa' %}Atualização completa
           {% elif chave == 'so_numeros' %}Só refazer os números
+          {% elif chave == 'observacoes' %}Buscar as observações
           {% else %}Primeira carga{% endif %}
         </button>
         <p class="cartao-dica">{{ descricao }}</p>
       </div>
-      {% endif %}
     {% endfor %}
   </div>
   <div id="saida-sync"></div>
@@ -322,20 +337,46 @@
 {% endif %}
 
 {# ============ AS CONFERÊNCIAS, SÓ QUANDO ALGUÉM PEDE ============ #}
-{% if not base_vazia and not conferir and not conferencia %}
-<div class="cartao" style="margin-top:14px">
+{% if not base_vazia %}
+<div class="cartao" id="conferencias" style="margin-top:14px">
   <div class="cartao-cab"><h3>Conferências da base</h3></div>
+  {% if conferir or conferencia %}
   <p class="cartao-dica">
-    Três conferências que <b>só medem, não alteram nada</b>: dinheiro que as
-    telas não contam, de onde vem a diferença do bloco de Aportes do DRE, e
-    procurar um lançamento pelo valor na base crua.<br>
+    <b>Rodaram agora.</b> Os quadros aparecem logo abaixo desta caixa.
+    {% if not conferencia and not aportes_conf and not observacoes
+          and not conferencias_com_erro %}
+      <br><b style="color:var(--vermelho)">Nenhum quadro veio.</b>
+      A base respondeu sem erro e sem dado — se isso continuar, a carga
+      provavelmente não terminou.
+    {% endif %}
+  </p>
+  {% else %}
+  <p class="cartao-dica">
+    Conferências que <b>só medem, não alteram nada</b>: dinheiro que as telas
+    não contam, de onde vem a diferença do bloco de Aportes do DRE, procurar um
+    lançamento pelo valor na base crua e quantos títulos já trouxeram a
+    observação do OMIE.<br>
     Elas varrem as 186 mil linhas e levam alguns segundos — por isso não rodam
     sozinhas ao abrir esta tela.
   </p>
+  {% endif %}
   <a class="btn" style="text-decoration:none"
-     href="{{ url_for('painel.configuracoes', conferir='1') }}">Rodar as conferências</a>
+     href="{{ url_for('painel.configuracoes', conferir='1', _anchor='conferencias') }}">
+    {{ 'Rodar de novo' if (conferir or conferencia) else 'Rodar as conferências' }}</a>
 </div>
 {% endif %}
+
+{# ---- uma conferência que quebrou não pode sumir em silêncio ---- #}
+{% for e in conferencias_com_erro %}
+<div class="cartao" style="margin-top:14px; border-left:4px solid var(--vermelho)">
+  <div class="cartao-cab"><h3>{{ e.nome }} — falhou</h3></div>
+  <p class="cartao-dica">
+    Esta conferência não conseguiu rodar. As outras seguiram normalmente, e
+    <b>nada na base foi alterado</b> — elas só leem.
+  </p>
+  <pre style="white-space:pre-wrap; margin:0"><small>{{ e.erro }}</small></pre>
+</div>
+{% endfor %}
 
 {# ============ CONFERÊNCIA: as duas regras de "foi pago" batem? ============ #}
 {% if conferencia %}
@@ -571,6 +612,109 @@
 </div>
 {% endif %}
 
+{# ===== O DINHEIRO QUE ANDOU NA CONTA E NAO ESTA EM TELA NENHUMA ===== #}
+{% if fora %}
+<div class="cartao" style="margin-top:14px;
+     border-left:4px solid {{ 'var(--vermelho)' if fora.linhas else 'var(--verde)' }}">
+  <div class="cartao-cab"><h3>Movimentos que não estão no painel</h3></div>
+  {% if fora.linhas %}
+  <div class="aviso info">
+    <b>{{ '{:,}'.format(fora.linhas).replace(',', '.') }}</b> movimentos somando
+    <b>{{ brl(fora.valor) }}</b> andaram na conta corrente <b>sem título por
+    trás</b> — entraram {{ brl(fora.entrou) }} e saíram {{ brl(fora.saiu) }}.
+    Esse dinheiro <b>não está em nenhuma tela</b>: nem no DRE, nem na Visão
+    Geral, nem no fluxo de caixa.
+  </div>
+  {% else %}
+  <div class="aviso ok">
+    Nenhum movimento sem título. Tudo que andou na conta tem um título por trás.
+  </div>
+  {% endif %}
+  <p class="cartao-dica">
+    O painel é montado a partir dos <b>títulos</b> (contas a pagar e a receber).
+    Movimento lançado direto na conta corrente, sem título, não tem de onde
+    virar linha. Esta lista <b>não altera número nenhum</b> — ela existe para
+    você ver o que está de fora e decidir o que fazer: normalmente o caminho é
+    criar o título no OMIE, e aí ele entra sozinho na próxima atualização.
+    {% if fora.orfaos %}
+    <br><br><b>Além desses</b>, há
+    {{ '{:,}'.format(fora.orfaos).replace(',', '.') }} movimentos
+    ({{ brl(fora.valor_orfaos) }}) que apontam para um título que o painel não
+    tem — título excluído no OMIE depois, ou que a carga não trouxe. Isso
+    costuma desaparecer com uma <b>Atualização completa</b>.
+    {% endif %}
+    {% if not fora.linhas %}
+    <br><b>Atenção:</b> esta conta só passa a valer depois da próxima rebaixa de
+    movimentos (Primeira carga ou atualização do dia). Antes disso, zero aqui
+    quer dizer "ainda não olhei", não "não existe".
+    {% endif %}
+  </p>
+
+  {% if fora.linhas %}
+  {% for titulo, cabecalho, linhas, coluna in
+        [('Por conta', 'Conta', fora.por_conta, 'conta'),
+         ('Por categoria', 'Categoria', fora.por_categoria, 'categoria'),
+         ('Por ano', 'Ano', fora.por_ano, 'ano')] %}
+    {% if linhas %}
+    <details style="margin-top:10px" {% if loop.first %}open{% endif %}>
+      <summary style="cursor:pointer; font-weight:600">{{ titulo }}</summary>
+      <div class="tabela-rolagem" style="max-height:240px; margin-top:8px">
+        <table>
+          <thead><tr>
+            <th class="sem-ordem">{{ cabecalho }}</th>
+            <th class="sem-ordem direita">Movimentos</th>
+            <th class="sem-ordem direita">Valor</th>
+          </tr></thead>
+          <tbody>
+          {% for l in linhas %}
+            <tr>
+              <td class="desc">{{ l[coluna] }}</td>
+              <td class="dados direita">{{ l.linhas }}</td>
+              <td class="dados direita">{{ brl(l.valor) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+  {% endfor %}
+
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; font-weight:600">
+      Os 50 maiores, um a um
+    </summary>
+    <div class="tabela-rolagem" style="max-height:320px; margin-top:8px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Data</th>
+          <th class="sem-ordem">Entrada/Saída</th>
+          <th class="sem-ordem">Conta</th>
+          <th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem">Contraparte</th>
+          <th class="sem-ordem">Situação</th>
+          <th class="sem-ordem direita">Valor</th>
+        </tr></thead>
+        <tbody>
+        {% for l in fora.maiores %}
+          <tr>
+            <td class="dados">{{ l.data }}</td>
+            <td>{{ l.natureza }}</td>
+            <td class="desc">{{ l.conta }}</td>
+            <td class="desc">{{ l.categoria }}</td>
+            <td class="desc">{{ l.contraparte }}</td>
+            <td><small>{{ l.status or '—' }}</small></td>
+            <td class="dados direita">{{ brl(l.valor) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
 {# ========== DE ONDE VEM A DIFERENÇA DO BLOCO DE APORTES ========== #}
 {% if aportes_conf %}
 <div class="cartao" style="margin-top:14px">
@@ -605,6 +749,44 @@
       </tbody>
     </table>
   </div>
+
+  {% if aportes_conf.por_contraparte %}
+  <h4 style="margin:16px 0 4px">Devoluções por contraparte — como o bloco do DRE soma</h4>
+  <p class="cartao-dica" style="margin-top:0">
+    Se a cascata acima não mostra corte nenhum e ainda assim falta valor no bloco
+    do DRE, a causa é esta tabela: <b>o bloco soma por empresa</b>. A coluna
+    "nomes" diz quantas grafias diferentes o mesmo documento tem — mais de uma
+    quer dizer cadastro repetido no OMIE. Linha sem documento não junta com
+    ninguém.
+  </p>
+  <div class="tabela-rolagem" style="max-height:320px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Contraparte</th>
+          <th class="sem-ordem">CNPJ/CPF (só dígitos)</th>
+          <th class="sem-ordem direita">Nomes</th>
+          <th class="sem-ordem direita">Devolvido</th>
+          <th class="sem-ordem direita">Lançamentos</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for l in aportes_conf.por_contraparte %}
+        <tr>
+          <td class="desc">{{ l.nome }}
+            {% if l.nomes > 1 %}
+            <br><small style="color:var(--vermelho)">{{ l.todos_os_nomes }}</small>
+            {% endif %}</td>
+          <td class="dados">{{ l.documento }}</td>
+          <td class="dados direita {{ 'v-neg' if l.nomes > 1 else '' }}">{{ l.nomes }}</td>
+          <td class="dados direita">{{ brl(l.devolvido) }}</td>
+          <td class="dados direita">{{ l.lancamentos }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   {% for titulo, linhas in [('Cortados por serem transferência entre contas',
                              aportes_conf.comidos_trf),

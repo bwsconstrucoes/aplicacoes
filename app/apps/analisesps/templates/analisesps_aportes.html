@@ -1,0 +1,513 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Aportes no OMIE — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   APORTES E DEVOLUÇÕES NO OMIE — 20/09/2026
+
+   *"Uma tela por onde eu lance, de forma simples, título a pagar e a receber
+   de Aporte e de Devolução de Aporte dentro do OMIE — sem eu ter que entrar
+   no OMIE e montar dois lançamentos à mão, um em cada conta, lembrando qual
+   nome usar de cada lado."*
+
+   ⚠️ A TELA TEM DUAS METADES, E A ORDEM É DE PROPÓSITO.
+
+   Em cima o DE-PARA: qual conta do OMIE é a matriz, qual é a parceria, e qual
+   código do plano financeiro é cada uma das quatro categorias. É coisa que se
+   ajusta uma vez e se confere de vez em quando — mas sem ela nada pode ser
+   lançado, e por isso ela vem ANTES, não escondida no fim.
+
+   Embaixo o LANÇAMENTO, que é o uso do dia.
+
+   ⚠️ NADA VAI PARA O OMIE SEM PASSAR PELA CONFERÊNCIA. O botão de gravar só
+   aparece depois do ensaio, e o ensaio mostra o pacote exato que seria
+   enviado. Foi pedido com todas as letras, e já deu errado antes em outro
+   caminho de escrita.
+--------------------------------------------------------------------------- #}
+{% block conteudo %}
+<h2>Aportes e devoluções no OMIE</h2>
+
+{% if request.args.get('aviso') %}
+  <div class="aviso">{{ request.args.get('aviso') }}</div>
+{% endif %}
+
+{% if erro_espelho %}
+  <div class="aviso erro">
+    <b>Não consegui ler o espelho do OMIE.</b> {{ erro_espelho }}
+    <p class="cartao-dica">As contas, as categorias, os fornecedores e as obras
+      saem da carga do painel. Enquanto ela não rodar, esta tela não tem o que
+      oferecer nas listas abaixo.</p>
+  </div>
+{% endif %}
+
+{% if orfaos %}
+  <div class="aviso erro">
+    <b>Há título órfão no OMIE.</b> Um lançamento entrou lá e não pôde ser
+    desfeito quando o par dele falhou. Isso é <u>meio aporte</u>: nenhum
+    relatório fecha enquanto estiver assim.
+    <ul style="margin:8px 0 0 18px">
+      {% for o in orfaos %}
+        <li>Título <b>{{ o.codigo_lancamento_omie }}</b>
+            ({{ o.papel }}, {{ o.sentido }}) — resolva à mão no OMIE.
+            {% if o.erro %}<br><small>{{ o.erro }}</small>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+{# ===========================================================================
+   METADE 1 — O DE-PARA
+   =========================================================================== #}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>De-para: do seu nome para o código que o OMIE exige</h3>
+    <small>{% if faltas %}{{ faltas|length }} pendência(s){% else %}em dia{% endif %}</small>
+  </div>
+
+  <p class="cartao-dica">
+    O OMIE não aceita o nome da categoria — ele exige o código dela (tipo
+    <code>2.01.05</code>). Como você mexe no plano financeiro, nenhum código
+    fica escrito dentro do programa: eles são procurados aqui, pela descrição,
+    e ficam gravados para você conferir. Se uma descrição não aparecer, ou
+    aparecer mais de uma vez, esta tela para e pergunta — nunca escolhe
+    sozinha.
+  </p>
+
+  {% if faltas %}
+    <div class="aviso atencao">
+      <b>Falta acertar isto antes de lançar qualquer coisa:</b>
+      <ul style="margin:8px 0 0 18px">
+        {% for f in faltas %}<li>{{ f }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% else %}
+    <div class="aviso bom">O de-para está completo.</div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('analisesps.aportes_de_para_gravar') }}">
+    <h4>As duas contas</h4>
+    {% for papel in papeis %}
+      <p>
+        <label class="rotulo-campo" for="conta_{{ papel }}">
+          Qual conta do OMIE é a {{ papel_rotulo[papel] }}?</label>
+        <select class="campo-largo" id="conta_{{ papel }}" name="conta_{{ papel }}">
+          <option value="">— escolha —</option>
+          {% for c in contas_omie %}
+            <option value="{{ c.codigo }}"
+              {% if contas.get(papel) and contas[papel].codigo|string == c.codigo|string %}selected{% endif %}>
+              {{ c.descricao }} — código {{ c.codigo }}
+              {%- if c.numero_conta %} · conta {{ c.numero_conta }}{% endif %}
+              {%- if c.inativa %} (inativa){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </p>
+    {% endfor %}
+    <p class="cartao-dica">
+      A lista mostra o código que o OMIE usa <i>e</i> o número da conta
+      bancária, porque é olhando os dois juntos que você reconhece qual é
+      qual.
+    </p>
+
+    <h4>As quatro categorias</h4>
+    <table class="sps">
+      <thead>
+        <tr><th>No seu plano financeiro</th><th>Situação</th><th>Código</th></tr>
+      </thead>
+      <tbody>
+        {% for chave, nome in categorias_nomes.items() %}
+          {% set achado = categorias.get(chave) or {} %}
+          <tr>
+            <td><b>{{ nome }}</b></td>
+            <td>
+              {% if achado.situacao == 'escolhida' %}
+                <span class="etiqueta boa">confirmada</span>
+              {% elif achado.situacao == 'achou' %}
+                <span class="etiqueta">achei uma só</span>
+              {% elif achado.situacao == 'ambigua' %}
+                <span class="etiqueta ruim">achei {{ achado.candidatos|length }}</span>
+              {% elif achado.situacao == 'nao_achou' %}
+                <span class="etiqueta ruim">não achei</span>
+              {% else %}
+                <span class="etiqueta ruim">sem espelho</span>
+              {% endif %}
+              {% if achado.transferencia and achado.transferencia|upper == 'S' %}
+                <br><small>⚠️ marcada como transferência — fica fora do DRE</small>
+              {% endif %}
+            </td>
+            <td>
+              {% if achado.candidatos %}
+                <select class="campo-largo" name="categoria_{{ chave }}">
+                  <option value="">— não usar —</option>
+                  {% for c in achado.candidatos %}
+                    <option value="{{ c.codigo }}"
+                      {% if achado.codigo == c.codigo %}selected{% endif %}>
+                      {{ c.codigo }} — {{ c.descricao }}
+                      {%- if c.transferencia|upper == 'S' %} (transferência){% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <input class="campo-largo" name="categoria_{{ chave }}"
+                       value="{{ achado.codigo }}"
+                       placeholder="digite o código, ex.: 2.01.05">
+                <small>Não achei essa descrição no plano financeiro. Confira o
+                  nome dela no OMIE, ou digite o código aqui.</small>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p><button class="btn" type="submit">Gravar o de-para</button></p>
+  </form>
+</div>
+
+{# ===========================================================================
+   METADE 2 — O LANÇAMENTO
+   =========================================================================== #}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Lançar</h3>
+    <small>nada vai para o OMIE sem você conferir antes</small>
+  </div>
+
+  {% if not senha_configurada %}
+    <div class="aviso atencao">
+      <b>A senha de escrita no OMIE não está configurada</b> (variável
+      <code>PAINEL_SENHA_ESCRITA</code>, no Render). Dá para conferir o
+      lançamento aqui, mas gravar não vai funcionar enquanto ela não existir.
+    </div>
+  {% endif %}
+
+  <p>
+    <label class="rotulo-campo" for="operacao">O que você está lançando?</label>
+    <select class="campo-largo" id="operacao">
+      <option value="">— escolha —</option>
+      {% for chave, op in operacoes %}
+        <option value="{{ chave }}">{{ op.rotulo }}</option>
+      {% endfor %}
+    </select>
+    <small id="explicacao-operacao" class="cartao-dica"></small>
+  </p>
+
+  <div style="display:flex; gap:12px; flex-wrap:wrap">
+    <p style="flex:1 1 240px">
+      <label class="rotulo-campo" for="conta_origem">Conta de origem
+        <small>(de onde o dinheiro sai)</small></label>
+      <select class="campo-largo" id="conta_origem">
+        <option value="">— nenhuma —</option>
+        {% for c in contas_omie %}
+          <option value="{{ c.codigo }}">{{ c.descricao }} — {{ c.codigo }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <p style="flex:1 1 240px">
+      <label class="rotulo-campo" for="conta_destino">Conta de destino
+        <small>(para onde o dinheiro vai)</small></label>
+      <select class="campo-largo" id="conta_destino">
+        <option value="">— nenhuma —</option>
+        {% for c in contas_omie %}
+          <option value="{{ c.codigo }}">{{ c.descricao }} — {{ c.codigo }}</option>
+        {% endfor %}
+      </select>
+    </p>
+  </div>
+
+  <div style="display:flex; gap:12px; flex-wrap:wrap">
+    <p style="flex:1 1 160px">
+      <label class="rotulo-campo" for="valor">Valor</label>
+      <input class="campo-largo" id="valor" inputmode="decimal"
+             placeholder="12.500,00">
+    </p>
+    <p style="flex:1 1 160px">
+      <label class="rotulo-campo" for="data">Data</label>
+      <input class="campo-largo" id="data" type="date">
+    </p>
+  </div>
+
+  <p>
+    <label class="rotulo-campo" for="fornecedor">Fornecedor
+      <small>(o cadastro do OMIE que aparece no título)</small></label>
+    <input class="campo-largo" id="busca-fornecedor"
+           placeholder="digite parte do nome ou o CNPJ e espere um instante">
+    <select class="campo-largo" id="fornecedor">
+      {% for f in fornecedores %}
+        <option value="{{ f.codigo }}">{{ f.nome }}{% if f.documento %} — {{ f.documento }}{% endif %}</option>
+      {% endfor %}
+    </select>
+  </p>
+
+  <p>
+    <label class="rotulo-campo" for="obra">Obra</label>
+    <select class="campo-largo" id="obra">
+      <option value="">— escolha —</option>
+      {% for o in obras %}
+        <option value="{{ o.codigo }}">{{ o.nome }}</option>
+      {% endfor %}
+    </select>
+    <small class="cartao-dica">Obrigatória: sem ela o aporte entra no OMIE mas
+      não aparece em nenhuma visão por obra.</small>
+  </p>
+
+  <p>
+    <label><input type="checkbox" id="baixar" checked>
+      Já dar a baixa (o dinheiro consta como movimentado nesta data)</label>
+    <small class="cartao-dica">Desmarque se o dinheiro ainda não andou — aí o
+      título nasce em aberto e alguém dá a baixa depois, no OMIE.</small>
+  </p>
+
+  <p>
+    <label class="rotulo-campo" for="numero">Número do documento
+      <small>(deixe em branco para o sistema montar)</small></label>
+    <input class="campo-largo" id="numero" placeholder="APORTE-20260920-A1B2C3">
+    <small class="cartao-dica">O mesmo número vai nos dois títulos — é ele que
+      permite achar o par depois.</small>
+  </p>
+
+  <p>
+    <button class="btn" id="btn-ensaiar">Conferir antes de gravar</button>
+  </p>
+
+  <div id="conferencia"></div>
+</div>
+
+{# ===========================================================================
+   O QUE JÁ FOI LANÇADO
+   =========================================================================== #}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>O que já foi lançado por aqui</h3>
+    <small>{{ historico|length }} título(s)</small>
+  </div>
+  {% if historico %}
+    <table class="sps">
+      <thead>
+        <tr><th>Quando</th><th>Operação</th><th>Lado</th><th>Valor</th>
+            <th>Título no OMIE</th><th>Baixado</th><th>Situação</th><th>Quem</th></tr>
+      </thead>
+      <tbody>
+        {% for h in historico %}
+          <tr class="{{ 'com-risco' if h.situacao in ('falhou', 'orfao') }}">
+            <td>{{ h.criado_em }}</td>
+            <td>{{ h.operacao }}<br><small>{{ h.numero_documento }}</small></td>
+            <td>{{ h.papel }} · {{ h.sentido }}</td>
+            <td>{{ h.valor }}</td>
+            <td class="id">{{ h.codigo_lancamento_omie or '—' }}</td>
+            <td>{{ 'sim' if h.baixado else 'não' }}</td>
+            <td>{{ h.situacao }}{% if h.erro %}<br><small>{{ h.erro }}</small>{% endif %}</td>
+            <td>{{ h.criado_por }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="cartao-dica">Nada ainda. O primeiro lançamento deve ser UM só,
+      conferido dentro do OMIE com os olhos antes de virar rotina.</p>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  const EXPLICACOES = {
+    {% for chave, op in operacoes %}
+      {{ chave|tojson }}: {{ op.explicacao|tojson }}{% if not loop.last %},{% endif %}
+    {% endfor %}
+  };
+  const $ = id => document.getElementById(id);
+  const conferencia = $("conferencia");
+  let planoConferido = null;
+
+  $("operacao").addEventListener("change", e => {
+    $("explicacao-operacao").textContent = EXPLICACOES[e.target.value] || "";
+    // Conferência feita para outra operação não vale mais: o botão de gravar
+    // some junto, senão daria para conferir uma coisa e gravar outra.
+    planoConferido = null;
+    conferencia.innerHTML = "";
+  });
+
+  // Mudar QUALQUER campo invalida a conferência, pelo mesmo motivo.
+  ["conta_origem", "conta_destino", "valor", "data", "fornecedor", "obra",
+   "baixar", "numero"].forEach(id => {
+    const campo = $(id);
+    if (campo) campo.addEventListener("change", () => {
+      planoConferido = null;
+      conferencia.innerHTML = "";
+    });
+  });
+
+  // A procura de fornecedor vai ao servidor, mas só depois de a pessoa parar
+  // de digitar: uma ida por letra encheria o banco de consultas à toa.
+  let relogio = null;
+  $("busca-fornecedor").addEventListener("input", e => {
+    clearTimeout(relogio);
+    const termo = e.target.value;
+    relogio = setTimeout(async () => {
+      try {
+        const r = await fetch("{{ url_for('analisesps.aportes_fornecedores') }}?q="
+                              + encodeURIComponent(termo));
+        const d = await r.json();
+        if (!d.ok) return;
+        $("fornecedor").innerHTML = d.fornecedores.map(f =>
+          `<option value="${f.codigo}">${f.nome}` +
+          (f.documento ? ` — ${f.documento}` : "") + `</option>`).join("");
+      } catch (e) { /* procura é conforto; a lista atual continua servindo */ }
+    }, 350);
+  });
+
+  function dadosDaTela() {
+    const sel = $("fornecedor");
+    const obra = $("obra");
+    return {
+      operacao: $("operacao").value,
+      conta_origem: $("conta_origem").value || null,
+      conta_destino: $("conta_destino").value || null,
+      valor: $("valor").value,
+      data: $("data").value,
+      fornecedor: sel.value || null,
+      fornecedor_nome: sel.selectedOptions[0] ? sel.selectedOptions[0].text : "",
+      obra: obra.value,
+      obra_nome: obra.selectedOptions[0] ? obra.selectedOptions[0].text : "",
+      baixar: $("baixar").checked,
+      numero: $("numero").value,
+    };
+  }
+
+  function reais(v) {
+    return "R$ " + Number(v).toLocaleString("pt-BR",
+      {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
+  $("btn-ensaiar").addEventListener("click", async () => {
+    conferencia.innerHTML = '<p class="cartao-dica">Conferindo…</p>';
+    let d;
+    try {
+      const r = await fetch("{{ url_for('analisesps.aportes_ensaiar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(dadosDaTela())});
+      d = await r.json();
+    } catch (e) {
+      conferencia.innerHTML = '<div class="aviso erro">Não consegui conferir: '
+                              + e + "</div>";
+      return;
+    }
+    if (!d.ok) {
+      conferencia.innerHTML = '<div class="aviso erro">' + d.erro + "</div>";
+      return;
+    }
+    planoConferido = dadosDaTela();
+    planoConferido.grupo = d.plano.grupo;
+    planoConferido.numero = d.plano.numero_documento;
+    desenharConferencia(d);
+  });
+
+  function desenharConferencia(d) {
+    const p = d.plano;
+    let html = "";
+
+    // ⚠️ A CRÍTICA VEM PRIMEIRO, ANTES DO RESUMO. Aviso depois do resumo é
+    // aviso que se lê depois de já ter decidido.
+    (d.avisos || []).forEach(a => {
+      html += '<div class="aviso atencao">' + a +
+              " <b>Confirma que é aporte mesmo?</b></div>";
+    });
+
+    html += '<div class="aviso">' +
+            "<b>" + p.operacao_rotulo + "</b> — " + p.explicacao +
+            "<br>Número do documento: <code>" + p.numero_documento + "</code>" +
+            "</div>";
+
+    html += '<table class="sps"><thead><tr>' +
+            "<th>Conta</th><th>Tipo de título</th><th>Categoria</th>" +
+            "<th>Sentido</th><th>Valor</th><th>Data</th><th>Obra</th>" +
+            "</tr></thead><tbody>";
+    p.titulos.forEach(t => {
+      html += "<tr><td>" + t.conta_descricao + "</td>" +
+              "<td>" + t.natureza_rotulo + "</td>" +
+              "<td>" + t.categoria_nome + " <small>(" + t.codigo_categoria + ")</small></td>" +
+              "<td>" + t.sentido_rotulo + "</td>" +
+              "<td>" + reais(t.valor) + "</td>" +
+              "<td>" + t.data + "</td>" +
+              "<td>" + (t.departamento_nome || t.cod_departamento) + "</td></tr>";
+    });
+    html += "</tbody></table>";
+
+    html += '<p class="cartao-dica">' +
+            (p.baixar ? "Os títulos nascem já baixados nesta data."
+                      : "Os títulos nascem EM ABERTO — a baixa fica para depois.") +
+            "</p>";
+
+    html += '<details><summary>Ver o pacote exato que vai para o OMIE</summary>' +
+            "<pre style='white-space:pre-wrap; font-size:12px'>" +
+            JSON.stringify(d.ensaio, null, 2).replace(/</g, "&lt;") +
+            "</pre></details>";
+
+    html += '<div class="aviso atencao"><b>Daqui para baixo escreve no OMIE.</b>' +
+            " Desfazer é trabalho manual, título a título." +
+            '<p><label class="rotulo-campo" for="senha">Senha de escrita</label>' +
+            '<input class="campo-largo" id="senha" type="password" ' +
+            'autocomplete="off"></p>' +
+            '<button class="btn" id="btn-gravar">Gravar no OMIE</button></div>';
+
+    html += '<div id="resultado"></div>';
+    conferencia.innerHTML = html;
+    document.getElementById("btn-gravar").addEventListener("click", gravar);
+  }
+
+  async function gravar() {
+    if (!planoConferido) return;
+    const botao = document.getElementById("btn-gravar");
+    const saida = document.getElementById("resultado");
+    botao.disabled = true;                      // clique duplo = aporte duplo
+    botao.textContent = "Gravando…";
+    const corpo = Object.assign({}, planoConferido,
+                                {senha: document.getElementById("senha").value});
+    let d;
+    try {
+      const r = await fetch("{{ url_for('analisesps.aportes_gravar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(corpo)});
+      d = await r.json();
+    } catch (e) {
+      saida.innerHTML = '<div class="aviso erro">Não consegui falar com o ' +
+                        "servidor: " + e + ". <b>Confira no OMIE antes de " +
+                        "tentar de novo</b> — o lançamento pode ter entrado." +
+                        "</div>";
+      botao.disabled = false;
+      botao.textContent = "Gravar no OMIE";
+      return;
+    }
+
+    let html = "";
+    if (d.ok) {
+      html += '<div class="aviso bom"><b>Gravado no OMIE.</b> ' +
+              "Número do documento: <code>" + d.numero + "</code></div>";
+    } else {
+      html += '<div class="aviso erro"><b>Não gravou.</b> ' + (d.erro || "") +
+              "</div>";
+    }
+    (d.titulos || []).forEach(t => {
+      if (!t.codigo) return;
+      html += '<div class="aviso">Título <b>' + t.codigo + "</b> — " +
+              t.papel + ", " + t.sentido + ", " + t.categoria +
+              (t.baixado ? " — baixado." : " — <b>em aberto</b>.") + "</div>";
+    });
+    (d.avisos || []).forEach(a => {
+      html += '<div class="aviso atencao">' + a + "</div>";
+    });
+    (d.orfaos || []).forEach(o => {
+      html += '<div class="aviso erro"><b>Título órfão no OMIE: ' + o.codigo +
+              "</b> (" + o.papel + "). Ele entrou e não deu para desfazer — " +
+              "resolva à mão no OMIE. " + (o.erro || "") + "</div>";
+    });
+    html += '<p><a class="btn secundario" href="">Recarregar a tela</a></p>';
+    saida.innerHTML = html;
+    // Gravou: a conferência morre. Gravar duas vezes o mesmo plano seria
+    // lançar o aporte duas vezes.
+    planoConferido = null;
+    botao.textContent = "Gravado";
+  }
+})();
+</script>
+{% endblock %}

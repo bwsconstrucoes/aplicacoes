@@ -7035,3 +7035,113 @@ def test_SEM_a_migracao_a_ciencia_DIZ_o_que_falta_em_vez_de_zero(
     # ela diz "tudo em dia" porque o código velho nem sabe que elas existem.
     assert "ainda não terminou" in erro, (
         "não avisou que 'tudo em dia' pode ser publicação inacabada")
+
+
+# ---------------------------------------------------------------------------
+# O ANALÍTICO FECHA COM O TOTAL — 18/09/2026
+#
+# ⚠️ O risco que este teste existe para impedir: o detalhe e o resumo saem na
+# MESMA FOLHA. Se filtrassem por critérios diferentes, a soma das linhas não
+# bateria com o número do topo — e quem conferisse não teria como saber qual
+# dos dois está certo. O relatório inteiro perderia a credibilidade justamente
+# por causa da parte que deveria prová-lo.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_o_analitico_soma_EXATAMENTE_o_total_do_relatorio(banco_analisesps):
+    """A soma das linhas do analítico tem de dar o total do topo, no centavo."""
+    from app.apps.analisesps import colunas, consultas, sincronizacao
+    from app.apps.analisesps.db import conexao
+
+    registros = []
+    for n, (valor, cc) in enumerate([("1.000,00", "OBRA-12"),
+                                     ("2.500,50", "OBRA-12"),
+                                     ("300,25", "OBRA-07"),
+                                     ("999,99", "")], start=1):
+        r = {c: "" for c in colunas.CHAVES}
+        r.update({"id": f"150000000{n}", "credor": f"FORNECEDOR {n}",
+                  "valor": valor, "centro_custo": cc,
+                  "descricao": f"Compra numero {n}",
+                  "tipo_despesa": "Material", "status_pgt": "Pagar"})
+        registros.append(r)
+    with conexao() as conn:
+        sincronizacao.gravar_registros(conn, registros)
+        sincronizacao._anotar_a_base_em_dia(conn)
+
+    numeros = consultas.numeros_do_relatorio({}, "geral", "tudo")
+    linhas = consultas.analitico_do_relatorio({}, "geral", "tudo")
+
+    assert len(linhas) == numeros["quantidade"], (
+        f"o analítico traz {len(linhas)} linhas e o topo conta "
+        f"{numeros['quantidade']} — filtram coisas diferentes")
+    assert sum(l["valor"] for l in linhas) == numeros["total"], (
+        "a soma do analítico não fecha com o total do relatório")
+
+
+@pytest.mark.banco
+def test_o_analitico_respeita_o_MESMO_filtro_do_resumo(banco_analisesps):
+    """Filtrando por obra, o detalhe tem de encolher junto com o total."""
+    from app.apps.analisesps import colunas, consultas, sincronizacao
+    from app.apps.analisesps.db import conexao
+
+    registros = []
+    for n, cc in enumerate(["OBRA-12", "OBRA-12", "OBRA-07"], start=1):
+        r = {c: "" for c in colunas.CHAVES}
+        r.update({"id": f"160000000{n}", "credor": f"FORNECEDOR {n}",
+                  "valor": "100,00", "centro_custo": cc,
+                  "descricao": "Compra", "status_pgt": "Pagar"})
+        registros.append(r)
+    with conexao() as conn:
+        sincronizacao.gravar_registros(conn, registros)
+        sincronizacao._anotar_a_base_em_dia(conn)
+
+    filtro = {"centro_custo": ["OBRA-12"]}
+    numeros = consultas.numeros_do_relatorio(filtro, "geral", "tudo")
+    linhas = consultas.analitico_do_relatorio(filtro, "geral", "tudo")
+
+    assert numeros["quantidade"] == 2
+    assert len(linhas) == 2, "o analítico ignorou o filtro do relatório"
+    assert all(l["centro_custo"] == "OBRA-12" for l in linhas)
+
+
+@pytest.mark.banco
+def test_o_analitico_vem_do_MAIOR_para_o_menor(banco_analisesps):
+    """A ordem importa por causa do teto: cortando em 2.000, o que fica de
+    fora tem de ser o miúdo, não a despesa que interessa."""
+    from app.apps.analisesps import colunas, consultas, sincronizacao
+    from app.apps.analisesps.db import conexao
+
+    registros = []
+    for n, valor in enumerate(["50,00", "5.000,00", "500,00"], start=1):
+        r = {c: "" for c in colunas.CHAVES}
+        r.update({"id": f"170000000{n}", "credor": "FORNECEDOR",
+                  "valor": valor, "descricao": "Compra",
+                  "status_pgt": "Pagar"})
+        registros.append(r)
+    with conexao() as conn:
+        sincronizacao.gravar_registros(conn, registros)
+        sincronizacao._anotar_a_base_em_dia(conn)
+
+    valores = [l["valor"] for l in consultas.analitico_do_relatorio({})]
+    assert valores == sorted(valores, reverse=True), (
+        f"saiu fora de ordem: {valores}")
+
+
+@pytest.mark.banco
+def test_o_TETO_do_analitico_e_respeitado(banco_analisesps):
+    """Sem teto, um relatório sem filtro viraria centenas de páginas — e
+    comeria a memória do serviço ao ser montado."""
+    from app.apps.analisesps import colunas, consultas, sincronizacao
+    from app.apps.analisesps.db import conexao
+
+    registros = []
+    for n in range(1, 13):
+        r = {c: "" for c in colunas.CHAVES}
+        r.update({"id": f"18000000{n:02d}", "credor": "FORNECEDOR",
+                  "valor": f"{n}00,00", "descricao": "Compra",
+                  "status_pgt": "Pagar"})
+        registros.append(r)
+    with conexao() as conn:
+        sincronizacao.gravar_registros(conn, registros)
+        sincronizacao._anotar_a_base_em_dia(conn)
+
+    assert len(consultas.analitico_do_relatorio({}, limite=5)) == 5

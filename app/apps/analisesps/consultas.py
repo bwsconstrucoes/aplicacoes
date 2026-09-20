@@ -1319,6 +1319,58 @@ def top_credores(f: dict, tipo: str = "geral", periodo: str = "tudo",
             for r in linhas]
 
 
+# Quantas linhas do analítico cabem num relatório. Ver `analitico_do_relatorio`.
+ANALITICO_MAXIMO = 2000
+
+
+def analitico_do_relatorio(f: dict, tipo: str = "geral", periodo: str = "tudo",
+                           limite: int = 0) -> list[dict]:
+    """Lançamento a lançamento: o que está POR TRÁS dos totais do relatório.
+
+    Pedido do dono em 18/09/2026: *"queria que no relatório em PDF saísse mais
+    abaixo o analítico. Está bom do jeito que está, mas falta a parte
+    analítica: o lançamento, credor e a descrição com detalhe do que é."*
+
+    ⚠️ O RECORTE É O MESMO DOS TOTAIS — `_where_relatorio` e `_periodo`, as
+    mesmas funções que a contagem e as quebras usam. Isto não é zelo: se o
+    detalhe filtrasse por um critério e o total por outro, a soma das linhas
+    não fecharia com o número do topo, **na mesma folha**. Quem conferisse não
+    teria como saber qual dos dois está certo, e o relatório inteiro perderia a
+    credibilidade por causa da parte que deveria prová-lo.
+
+    ⚠️ TEM TETO, e ele é honesto. A base tem 59 mil SPs; um relatório sem
+    filtro viraria um PDF de centenas de páginas que ninguém abre e que come a
+    memória do serviço ao ser montado. São 2.000 linhas, das maiores para as
+    menores — e quem chama AVISA na folha quando o teto cortou, porque um
+    analítico truncado em silêncio é pior do que analítico nenhum: quem soma as
+    linhas não encontra o total e conclui que a conta está errada.
+
+    A ordem é por valor, da maior para a menor: cortando em 2.000, o que fica
+    de fora é o miúdo, não a despesa que interessa."""
+    from .db import consultar
+
+    where, params = _where_relatorio(f, tipo)
+    recorte = _periodo(tipo, periodo)
+    limite = int(limite or ANALITICO_MAXIMO)
+    linhas = consultar(
+        "SELECT id, "
+        # A data que importa muda com o tipo de relatório, e é a MESMA que o
+        # período recorta: no relatório de pagas conta o pagamento; nos outros,
+        # o vencimento. Mostrar vencimento num relatório de pagas faria a
+        # coluna não explicar por que aquela linha entrou.
+        + ("data_pagamento_d" if tipo == "pagas" else "vencimento_d") + ", "
+        "       trim(coalesce(credor,'')), trim(coalesce(documento,'')), "
+        "       trim(coalesce(centro_custo,'')), "
+        "       trim(coalesce(tipo_despesa,'')), "
+        "       trim(coalesce(descricao,'')), coalesce(valor_num, 0) "
+        f"  FROM analisesps.sps{where}{recorte} "
+        "  ORDER BY coalesce(valor_num,0) DESC, id LIMIT ?",
+        tuple(params) + (limite,))
+    return [{"id": r[0], "data": r[1], "credor": r[2], "documento": r[3],
+             "centro_custo": r[4], "tipo_despesa": r[5], "descricao": r[6],
+             "valor": r[7]} for r in linhas]
+
+
 # As faixas de atraso do original, na mesma ordem e com os mesmos limites.
 FAIXAS_ATRASO = [(1, 7, "1 a 7 dias"), (8, 15, "8 a 15 dias"),
                  (16, 30, "16 a 30 dias"), (31, 60, "31 a 60 dias"),

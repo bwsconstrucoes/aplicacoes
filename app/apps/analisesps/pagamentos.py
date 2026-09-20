@@ -25,21 +25,21 @@ import io
 import re
 from . import pix_brcode
 
-_CHAVE_RE = re.compile(r"chave\s*pix\s*:?\s*", re.IGNORECASE)
-
-
 def extrair_chave(y: str):
-    """Texto após 'Chave Pix:'. Retorna None se não houver chave de fato."""
+    """Texto após 'Chave Pix:'. Retorna None se não houver chave de fato.
+
+    ⚠️ A limpeza mora em `pix_brcode.limpar_rotulo`, e é de propósito: esta
+    função dizia quem "tem chave" para o alerta laranja, enquanto o QR era
+    montado por outro caminho, com o texto cru. As duas leituras divergiram
+    e o rótulo foi parar DENTRO do payload. Uma regra, um lugar.
+    """
     if not y:
         return None
-    s = str(y).strip()
-    s = _CHAVE_RE.sub("", s, count=1).strip()
-    return s or None
+    return pix_brcode.limpar_rotulo(str(y)) or None
 
 
 def eh_copia_cola(chave: str) -> bool:
-    c = re.sub(r"\s", "", chave or "")
-    return c.startswith("000201") or "br.gov.bcb.pix" in c.lower()
+    return pix_brcode.eh_copia_cola(chave)
 
 
 def classificar(forma: str, y: str) -> dict:
@@ -90,9 +90,34 @@ def gerar_pix(chave: str, valor, nome: str, copia_cola: bool = False):
     """Retorna (png_bytes, payload). Levanta exceção se não der pra montar."""
     if copia_cola:
         payload = _limpar_copia_cola(chave)
+        # ⚠️ O PAYLOAD PRONTO TAMBÉM PODE ESTAR PODRE POR DENTRO — 20/09/2026.
+        #
+        # Um "copia e cola" que já vem na planilha pode ter sido gerado pelo
+        # próprio sistema ANTES do conserto do rótulo, e devolvido para a
+        # coluna depois. Aí ele passa por aqui intacto: o CRC dele fecha
+        # (foi calculado sobre o texto errado), então nada denuncia o
+        # defeito — e o QR continua saindo quebrado para sempre.
+        #
+        # Quando a chave de dentro traz rótulo, o payload é remontado limpo,
+        # com o valor e o credor da própria SP. Fora esse caso, não se
+        # encosta nele: payload pronto é para ser reproduzido como veio.
+        dentro = pix_brcode.chave_de_dentro(payload)
+        if dentro:
+            limpa = pix_brcode.limpar_rotulo(dentro)
+            if limpa and limpa != dentro:
+                payload = pix_brcode.montar_payload(
+                    pix_brcode.normalizar_chave(limpa),
+                    pix_brcode.formatar_valor(valor),
+                    nome=nome or "RECEBEDOR")
     else:
+        limpa = pix_brcode.normalizar_chave(chave)
+        # Sem chave, o payload sairia com o campo vazio — um QR que abre,
+        # é lido e recusado na hora de pagar. Melhor recusar aqui, onde dá
+        # para escrever o motivo na tela.
+        if not limpa:
+            raise ValueError("Sem chave Pix no cadastro desta SP.")
         payload = pix_brcode.montar_payload(
-            pix_brcode.normalizar_chave(chave),
+            limpa,
             pix_brcode.formatar_valor(valor),
             nome=nome or "RECEBEDOR")
     return pix_brcode.qr_png_bytes(payload), payload

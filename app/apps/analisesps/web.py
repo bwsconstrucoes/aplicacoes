@@ -1687,11 +1687,15 @@ def _codigo_de_pagamento(sp_id: str, registro) -> dict:
                     registro.get("codigo_barras") or "").strip()
         elif "pix" in forma or "beevale" in forma:
             bloco["tipo"] = "pix"
-            chave = str(registro.get("info_pgt") or "")
+            # Passa pela MESMA classificação do alerta laranja: é ela que tira
+            # o rótulo ("Chave Pix: ...") e diz se o que veio é uma chave ou um
+            # "copia e cola" pronto. Ler o texto cru aqui foi o que pôs o
+            # rótulo dentro do QR.
+            info = pagamentos.classificar(forma, registro.get("info_pgt"))
             png, carga = pagamentos.gerar_pix(
-                chave, float(registro.get("valor_num") or 0),
+                info["chave"], float(registro.get("valor_num") or 0),
                 str(registro.get("credor") or ""),
-                copia_cola=("00020" in chave))
+                copia_cola=(info["subtipo"] == "copia_cola"))
             import base64
             bloco["imagem"] = base64.b64encode(png).decode("ascii")
             bloco["copia_cola"] = carga
@@ -3796,6 +3800,230 @@ def lote_excel_todos():
     logger.info("Análise de SPs: Excel de %d lote(s) gerado.", len(lotes))
     return _responder_xlsx(
         conteudo, f"lotes_todos_{agora().strftime('%Y-%m-%d_%H%M')}.xlsx")
+
+
+# ---------------------------------------------------------------------------
+# APORTES E DEVOLUÇÕES NO OMIE — 20/09/2026
+#
+# Mora dentro de Configurações por pedido do dono ("ela pode ficar dentro de
+# configurações"), e o lugar faz sentido por outro motivo também: a tela tem
+# duas metades de naturezas diferentes. Em cima, o DE-PARA — coisa que se
+# ajusta uma vez e se confere de vez em quando. Embaixo, o LANÇAMENTO, que é
+# uso do dia. Configurações é onde a primeira metade pertence, e a segunda
+# fica ao lado dela porque uma não funciona sem a outra estar em dia.
+#
+# ⚠️ TODAS AS ROTAS DAQUI SÃO `@exige_operador`. Ler não basta: mesmo o ensaio
+# monta o pacote que iria para o OMIE, com conta, categoria e valor. E a
+# gravação pede AINDA a senha de escrita, por cima do login.
+# ---------------------------------------------------------------------------
+def _contexto_dos_aportes() -> dict:
+    """Tudo que a tela precisa, sem deixar nenhuma falha derrubá-la.
+
+    A tela de aportes é também a que CONSERTA o de-para. Se ela cair porque o
+    espelho do painel está vazio, não há por onde arrumar — foi assim que o
+    módulo inteiro travou na estreia (03/09), e a lição está no histórico."""
+    from . import aportes, aportes_de_para, aportes_omie
+
+    ctx = {
+        "operacoes": [(c, aportes.OPERACOES[c])
+                      for c in aportes.ORDEM_DAS_OPERACOES],
+        "papeis": aportes_de_para.PAPEIS,
+        "papel_rotulo": aportes.PAPEL_ROTULO,
+        "categorias_nomes": aportes.CATEGORIAS,
+        "contas_omie": [], "contas": {}, "categorias": {}, "obras": [],
+        "fornecedores": [], "faltas": [], "erro_espelho": "",
+        "historico": [], "orfaos": [],
+        "senha_configurada": aportes_omie.senha_configurada(),
+    }
+    try:
+        ctx["contas_omie"] = aportes_de_para.contas_do_omie()
+    except aportes_de_para.SemEspelho as e:
+        ctx["erro_espelho"] = str(e)
+    try:
+        ctx["obras"] = aportes_de_para.obras()
+    except aportes_de_para.SemEspelho as e:
+        ctx["erro_espelho"] = ctx["erro_espelho"] or str(e)
+    try:
+        ctx["fornecedores"] = aportes_de_para.fornecedores("")
+    except aportes_de_para.SemEspelho as e:
+        ctx["erro_espelho"] = ctx["erro_espelho"] or str(e)
+
+    ctx["contas"] = aportes_de_para.contas_configuradas()
+    ctx["categorias"] = aportes_de_para.descobrir_categorias()
+    ctx["faltas"] = aportes_de_para.falta_configurar()
+    ctx["historico"] = aportes_omie.historico(30)
+    ctx["orfaos"] = aportes_omie.orfaos()
+    return ctx
+
+
+@bp.route("/aportes")
+@exige_operador
+def tela_aportes():
+    """Lançar aporte e devolução de aporte no OMIE."""
+    return render_template("analisesps_aportes.html", **_contexto_dos_aportes())
+
+
+@bp.route("/aportes/de-para", methods=["POST"])
+@exige_operador
+def aportes_de_para_gravar():
+    """Aponta qual conta do OMIE é cada papel e confirma o código de cada
+    categoria. É a tela em que o dono conserta o de-para, e por isso ela grava
+    o que dá e DIZ o que não deu, em vez de recusar o lote inteiro."""
+    from . import aportes_de_para
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    recados, problemas = [], []
+
+    for papel in aportes_de_para.PAPEIS:
+        campo = request.form.get(f"conta_{papel}")
+        if campo is None:
+            continue
+        try:
+            aportes_de_para.guardar_conta(papel, campo.strip() or None, quem)
+            recados.append(f"Conta da {papel} anotada.")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Aportes: falhou guardar a conta %s", papel)
+            problemas.append(str(e))
+
+    from .aportes import CATEGORIAS
+    for chave in CATEGORIAS:
+        campo = request.form.get(f"categoria_{chave}")
+        if campo is None:
+            continue
+        try:
+            aportes_de_para.guardar_categoria(chave, campo.strip(), quem)
+            recados.append(f"Categoria \"{CATEGORIAS[chave]}\" anotada.")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Aportes: falhou guardar a categoria %s", chave)
+            problemas.append(str(e))
+
+    aviso = "; ".join(problemas) if problemas else (
+        f"{len(recados)} ajuste(s) gravado(s)." if recados else "Nada mudou.")
+    return redirect(url_for("analisesps.tela_aportes", aviso=aviso))
+
+
+def _plano_do_pedido(dados: dict):
+    """Monta o plano a partir do que a tela mandou. Usado pelo ensaio e pela
+    gravação — as duas TÊM de enxergar o mesmo plano, senão o dono confere uma
+    coisa e o OMIE recebe outra."""
+    from . import aportes, aportes_de_para
+
+    return aportes.planejar(
+        operacao=str(dados.get("operacao") or "").strip(),
+        conta_origem=dados.get("conta_origem") or None,
+        conta_destino=dados.get("conta_destino") or None,
+        valor=dados.get("valor"),
+        data=dados.get("data"),
+        fornecedor=dados.get("fornecedor") or None,
+        fornecedor_nome=str(dados.get("fornecedor_nome") or ""),
+        obra=str(dados.get("obra") or ""),
+        obra_nome=str(dados.get("obra_nome") or ""),
+        quem=auth.nome_atual() or "",
+        baixar=bool(dados.get("baixar", True)),
+        grupo=str(dados.get("grupo") or ""),
+        numero=str(dados.get("numero") or ""),
+        contas=aportes_de_para.contas_configuradas(),
+        categorias=aportes_de_para.categorias_configuradas(),
+        observacoes=dados.get("observacoes") or {},
+    )
+
+
+@bp.route("/api/aportes/ensaiar", methods=["POST"])
+@exige_operador
+def aportes_ensaiar():
+    """O ensaio: mostra o que SERIA gravado, e não grava nada.
+
+    Não pede a senha de escrita de propósito — conferir tem de ser barato, ou
+    ninguém confere. A senha vale para o que escreve."""
+    from . import aportes, aportes_de_para, aportes_omie
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        plano = _plano_do_pedido(dados)
+    except aportes.ErroDeRegra as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Aportes: falhou montar o plano")
+        return {"ok": False, "erro": f"Não consegui montar o lançamento: {e}"}, 500
+
+    contas = [t["id_conta_corrente"] for t in plano["titulos"]]
+    semelhantes = aportes_de_para.consultar_semelhantes(
+        plano["valor"], plano["data"], contas)
+    return {"ok": True, "plano": _plano_para_tela(plano),
+            "ensaio": _ensaio_para_tela(aportes_omie.ensaiar(plano)),
+            "avisos": aportes.criticar(plano, semelhantes)}
+
+
+@bp.route("/api/aportes/gravar", methods=["POST"])
+@exige_operador
+def aportes_gravar():
+    """Grava no OMIE. Pede a senha de escrita POR CIMA do login."""
+    from . import aportes, aportes_omie
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        aportes_omie.conferir_senha(dados.get("senha"))
+    except aportes_omie.SemAutorizacao as e:
+        return {"ok": False, "erro": str(e)}, 403
+
+    try:
+        plano = _plano_do_pedido(dados)
+    except aportes.ErroDeRegra as e:
+        return {"ok": False, "erro": str(e)}, 400
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        resultado = aportes_omie.gravar(plano, quem)
+    except Exception as e:  # noqa: BLE001 — a mensagem do OMIE vai inteira
+        logger.exception("Aportes: falhou gravar no OMIE")
+        return {"ok": False, "erro": f"Não consegui falar com o OMIE: {e}"}, 502
+
+    logger.info("Análise de SPs: %s lançou aporte %s (%s) — ok=%s.",
+                quem or "sem nome", plano["grupo"], plano["operacao"],
+                resultado.get("ok"))
+    return {
+        "ok": bool(resultado.get("ok")),
+        "erro": resultado.get("erro", ""),
+        "grupo": plano["grupo"],
+        "numero": plano["numero_documento"],
+        "avisos": resultado.get("avisos", []),
+        "orfaos": resultado.get("orfaos", []),
+        "titulos": [{"papel": l["titulo"]["papel_rotulo"],
+                     "sentido": l["titulo"]["sentido_rotulo"],
+                     "conta": l["titulo"]["conta_descricao"],
+                     "categoria": l["titulo"]["categoria_nome"],
+                     "codigo": l["codigo"], "baixado": l["baixado"],
+                     "erro": l["erro"]}
+                    for l in resultado.get("titulos", [])],
+    }
+
+
+@bp.route("/api/aportes/fornecedores")
+@exige_operador
+def aportes_fornecedores():
+    """Procura fornecedor pelo nome ou pelo documento."""
+    from . import aportes_de_para
+
+    try:
+        achados = aportes_de_para.fornecedores(request.args.get("q", ""))
+    except aportes_de_para.SemEspelho as e:
+        return {"ok": False, "erro": str(e)}, 503
+    return {"ok": True, "fornecedores": achados}
+
+
+def _plano_para_tela(plano: dict) -> dict:
+    """O plano sem a data como objeto — JSON não sabe o que fazer com ela."""
+    limpo = dict(plano)
+    limpo["data"] = plano["data_br"]
+    limpo["titulos"] = [dict(t, data=t["data_br"]) for t in plano["titulos"]]
+    return limpo
+
+
+def _ensaio_para_tela(ensaio: list) -> list:
+    return [{"url": i["url"], "chamada": i["chamada"], "param": i["param"],
+             "baixa": i["baixa"],
+             "papel": i["titulo"]["papel_rotulo"],
+             "sentido": i["titulo"]["sentido_rotulo"]} for i in ensaio]
 
 
 # ---------------------------------------------------------------------------
