@@ -1194,6 +1194,25 @@ NO_SALDO = _sql_tipos_no_saldo()
 _SOCIO = "COALESCE(NULLIF(TRIM(razao_social),''), '(sem contraparte)')"
 _OBRA = OBRA_OU_SEM
 
+# AGRUPAR PELO DOCUMENTO, NAO PELO NOME.
+#
+# 20/09/2026. O dono procurava uma devolucao de R$ 784.647,07 que o bloco de
+# aportes nao mostrava. A cascata de conferencia provou que corte nenhum a
+# estava comendo: o valor esta na base e entra na soma geral. O que o escondia
+# era o AGRUPAMENTO — o bloco somava por razao social, e a mesma empresa com
+# dois cadastros no OMIE (ou com o nome escrito de dois jeitos) virava duas
+# linhas, cada uma parecendo menor do que a empresa e.
+#
+# Agora a identidade e o CNPJ/CPF, so com os digitos, e o nome vira so rotulo.
+# Sem documento, cai no nome em maiusculas — que e o que dava antes, nunca pior.
+_SOCIO_ID = ("COALESCE("
+             "NULLIF(regexp_replace(COALESCE(cnpj_cpf, ''), '[^0-9]', '', 'g'), ''),"
+             "NULLIF(UPPER(TRIM(COALESCE(razao_social, ''))), ''),"
+             "'(sem contraparte)')")
+# Dentro do grupo os nomes podem divergir; mostra-se um deles, sempre o mesmo.
+_SOCIO_ROTULO = "COALESCE(MIN(NULLIF(TRIM(razao_social), '')), '(sem contraparte)')"
+_SOCIO_AGRUPADO = (_SOCIO_ID, _SOCIO_ROTULO)
+
 # APORTE só conta quando ENTRA na obra; DEVOLUÇÃO só quando SAI.
 #
 # Não basta olhar o sinal, e não basta olhar o nome — precisa dos dois juntos.
@@ -1217,13 +1236,19 @@ _DEVOLVIDO = ("SUM(CASE WHEN pago_recebido < 0 AND " + _E_DEVOLUCAO +
               " THEN -pago_recebido ELSE 0 END)")
 
 
-def _agregado_de_aporte(f: Filtros, chaves: list[str]) -> list[dict]:
-    """Aportado / devolvido / saldo agrupado pelas colunas pedidas."""
+def _agregado_de_aporte(f: Filtros, chaves: list) -> list[dict]:
+    """Aportado / devolvido / saldo agrupado pelas colunas pedidas.
+
+    Uma chave e o proprio texto SQL, quando agrupar e mostrar sao a mesma coisa,
+    ou um par (agrupar_por, mostrar) — como no socio, que agrupa pelo documento
+    e mostra o nome."""
     where, params = f.where(
         f"{PAGO} AND ({TIPO_APORTE}) IN ({NO_SALDO})")
-    grupos = ", ".join(str(i + 1) for i in range(len(chaves)))
+    agrupar = [c[0] if isinstance(c, tuple) else c for c in chaves]
+    mostrar = [c[1] if isinstance(c, tuple) else c for c in chaves]
+    grupos = ", ".join(agrupar)
     sql = f"""
-        SELECT {', '.join(chaves)}, {_APORTADO}, {_DEVOLVIDO}, COUNT(*)
+        SELECT {', '.join(mostrar)}, {_APORTADO}, {_DEVOLVIDO}, COUNT(*)
           FROM fato{where}
          GROUP BY {grupos}"""
     n = len(chaves)
@@ -1243,9 +1268,9 @@ def aportes(f: Filtros) -> dict:
     Devolve os quatro recortes (sócio, obra, tipo, lançamentos), o quadro de
     dividendos — que fica FORA do saldo — e os três totais do topo."""
     por_socio = [dict(l, socio=l["chaves"][0])
-                 for l in _agregado_de_aporte(f, [_SOCIO])]
+                 for l in _agregado_de_aporte(f, [_SOCIO_AGRUPADO])]
     por_obra = [dict(l, obra=l["chaves"][0], socio=l["chaves"][1])
-                for l in _agregado_de_aporte(f, [_OBRA, _SOCIO])]
+                for l in _agregado_de_aporte(f, [_OBRA, _SOCIO_AGRUPADO])]
     por_tipo = [dict(l, obra=l["chaves"][0], tipo=l["chaves"][1])
                 for l in _agregado_de_aporte(f, [_OBRA, TIPO_APORTE])]
 
@@ -1280,12 +1305,12 @@ def dividendos_por_socio(f: Filtros) -> list[dict]:
     retirou o que colocou, o que não aconteceu. Fica em quadro próprio."""
     where, params = f.where(f"{PAGO} AND ({TIPO_APORTE}) = 'Dividendos'")
     sql = f"""
-        SELECT {_SOCIO},
+        SELECT {_SOCIO_ROTULO},
                SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
                SUM(CASE WHEN pago_recebido < 0 THEN -pago_recebido ELSE 0 END),
                COUNT(*)
           FROM fato{where}
-         GROUP BY 1"""
+         GROUP BY {_SOCIO_ID}"""
     saida = [{"socio": socio, "recebido": float(receb or 0), "pago": float(pago or 0),
               "liquido": float(pago or 0) - float(receb or 0), "lancamentos": quantos}
              for socio, receb, pago, quantos in consultar(sql, params)]
@@ -1696,6 +1721,36 @@ INVISIVEL_PARA_AS_TELAS = (
     f"situacao_vencimento = 'Quitado' AND NOT ({PAGO}) AND pago_recebido <> 0")
 
 
+# A migracao 010 trocou o tipo das colunas de dinheiro para NUMERIC, mas isso
+# NAO devolve o centavo que ja se perdeu: o 784.647,06 gravado continua
+# 784.647,06. Os valores so voltam a ficar certos depois de uma rebaixa completa
+# do OMIE — e essa e a parte que um humano tem de mandar rodar.
+#
+# Sem este aviso na tela, a migracao daria a impressao de ter resolvido, e os
+# numeros continuariam errados em silencio. Isto e pior que nao ter consertado.
+MIGRACAO_DO_DINHEIRO = "010_dinheiro_exato.sql"
+
+
+def recarga_total_pendente() -> dict:
+    """A base ainda tem valores com centavo errado, esperando carga inicial?
+
+    Responde comparando duas datas que o proprio sistema ja guarda: quando a
+    migracao 010 foi aplicada e quando a ultima carga inicial terminou bem. Se a
+    carga veio depois, nao ha nada a fazer e o aviso some sozinho."""
+    aplicada = consultar(
+        "SELECT aplicada_em FROM painel._migracoes WHERE nome = ?",
+        [MIGRACAO_DO_DINHEIRO])
+    if not aplicada:
+        return {"pendente": False}
+    quando = aplicada[0][0]
+    depois = consultar(
+        "SELECT fim FROM execucoes"
+        " WHERE tipo = 'carga_inicial' AND ok AND fim IS NOT NULL AND fim >= ?"
+        " ORDER BY fim DESC LIMIT 1", [quando])
+    return {"pendente": not depois, "migracao_em": quando,
+            "carga_em": depois[0][0] if depois else None}
+
+
 def conferencia_do_pago() -> dict:
     """Quanto dinheiro a carga deu por realizado e as telas não enxergam.
 
@@ -1825,7 +1880,36 @@ def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
     comidos_pago = _linhas_de_aporte_comidas(where_pago, params_pago)
 
     return {"passos": passos, "comidos_trf": comidos_trf,
-            "comidos_pago": comidos_pago}
+            "comidos_pago": comidos_pago,
+            "por_contraparte": _devolucoes_por_contraparte(f)}
+
+
+def _devolucoes_por_contraparte(f: Filtros) -> list[dict]:
+    """Toda devolucao que entra no bloco, somada por documento E por nome.
+
+    Existe para responder "cade meu valor?" sem ninguem ter de acreditar em
+    mim. Quando a cascata mostra que corte nenhum comeu o dinheiro — foi o caso
+    em 20/09/2026 —, o que sobra e o agrupamento: a empresa aparece dividida em
+    duas linhas porque tem dois cadastros no OMIE, ou porque o nome esta escrito
+    de dois jeitos. Aqui os dois aparecem lado a lado: quantos NOMES diferentes
+    o mesmo documento tem, e quanto cada um leva."""
+    where, params = f.where(
+        f"{PAGO} AND ({TIPO_APORTE}) IN ({NO_SALDO}) AND pago_recebido < 0 "
+        f"AND ({TIPO_APORTE}) = 'Devolução de Aporte'")
+    sql = f"""
+        SELECT {_SOCIO_ID}, {_SOCIO_ROTULO},
+               COUNT(DISTINCT NULLIF(TRIM(COALESCE(razao_social, '')), '')),
+               STRING_AGG(DISTINCT NULLIF(TRIM(COALESCE(razao_social, '')), ''),
+                          ' | '),
+               SUM(-pago_recebido), COUNT(*)
+          FROM fato{where}
+         GROUP BY {_SOCIO_ID}
+         ORDER BY 5 DESC
+         LIMIT 60"""
+    return [{"documento": doc, "nome": nome, "nomes": quantos_nomes or 0,
+             "todos_os_nomes": todos or "", "devolvido": float(v or 0),
+             "lancamentos": n}
+            for doc, nome, quantos_nomes, todos, v, n in consultar(sql, params)]
 
 
 def _linhas_de_aporte_comidas(where, params) -> list[dict]:
@@ -1884,11 +1968,16 @@ def titulos_que_sumiram(valor_procurado=None) -> dict:
                       (SELECT COUNT(*) FROM fato f
                         WHERE f.codigo_lancamento = t.codigo_lancamento_omie)
                  FROM titulos t
-                -- POR TOLERANCIA, nao por igualdade. `valor_documento` e REAL
-                -- (ponto flutuante de 4 bytes), que so guarda ~7 digitos
-                -- significativos: 784.647,07 vira 784.647,06 ao ser gravado.
-                -- Comparar exato nunca acharia lancamento grande nenhum. Meio
-                -- real de folga acha o que se procura sem confundir titulos.
+                -- POR TOLERANCIA, nao por igualdade. Ate a migracao 010,
+                -- `valor_documento` era REAL (ponto flutuante de 4 bytes), que
+                -- so guarda ~7 digitos significativos: 784.647,07 virava
+                -- 784.647,06 ao ser gravado, e comparar exato nunca achava
+                -- lancamento grande nenhum. Hoje a coluna e NUMERIC e guarda o
+                -- centavo — mas os valores ANTIGOS so voltam a ficar certos
+                -- depois de uma carga inicial, e quem procura aqui esta
+                -- justamente atras de um numero que nao esta batendo. A folga
+                -- de meio real fica: ela acha o que se procura sem confundir
+                -- titulos, e nao custa nada.
                 WHERE ABS(ABS(COALESCE(t.valor_documento, 0)) - ?) < 0.5
                 ORDER BY 1 LIMIT 50""", [valor_procurado])]
 

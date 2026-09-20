@@ -894,6 +894,117 @@ A lição, que é a mesma do centavo de 13/09: **dublê prova que o caminho exis
 não que ele entrega.** Onde o dono aperta um botão, o teste tem de apertar o
 mesmo botão.
 
+## A devolução de R$ 784.647,07 — era o AGRUPAMENTO, 20/09/2026
+
+Fim da caçada que durou de 13 a 20/09. A cascata de conferência, rodada com a
+base real, deu o veredito:
+
+| Corte | Devolvido | Quanto levou |
+|---|---|---|
+| Tudo com categoria de aporte | R$ 2.745.993,08 | — |
+| Só o que entra no saldo | R$ 2.745.993,08 | — |
+| Tirando transferências | R$ 2.745.993,08 | — |
+| Tirando o que não é pago | R$ 2.745.993,08 | — |
+
+**Corte nenhum come nada.** O dinheiro está na base e entra na soma geral — o
+que o escondia era o **agrupamento**. O bloco somava por razão social, e a mesma
+empresa com dois cadastros no OMIE (ou com o nome escrito de dois jeitos) virava
+duas linhas, cada uma menor do que a empresa é. Os R$ 567 mil que ele via eram
+uma das linhas; a de R$ 784.647,07 estava logo ali, com outra grafia do mesmo
+nome.
+
+O conserto: **a identidade passou a ser o CNPJ/CPF, só os dígitos** — assim
+"12.345.678/0001-90" e "12345678000190" são a mesma empresa. O nome virou só
+rótulo. Sem documento, cai no nome em maiúsculas, que é o que dava antes —
+nunca pior. Vale para o recorte por sócio, por obra e para o quadro de
+dividendos.
+
+E, para o dono poder **corrigir no OMIE** em vez de só conviver, a conferência
+ganhou a tabela "Devoluções por contraparte", que mostra quantas grafias
+diferentes cada documento tem e marca em vermelho as repetidas.
+
+Dois testes com banco de verdade: um cria a mesma empresa com duas grafias e o
+mesmo CNPJ e exige uma linha só, com a soma certa; o outro exige que a tela
+DENUNCIE a repetição — juntar em silêncio não basta, senão o cadastro errado
+nunca é arrumado no OMIE.
+
+### O que a mesma rodada de conferência revelou, e ainda espera decisão
+
+- **R$ 96.750,00 em 2 títulos com status ATRASADO** que a carga deu por pagos e
+  nenhuma tela conta. A carga aceita "liquidado" na baixa; as telas leem só o
+  texto do status. Corrigir faz o DRE e a Visão Geral subirem — é migração e
+  decisão do dono.
+- **0 de 120.772 títulos têm a observação do OMIE.** O dono desconfiou em 17/09
+  e estava certo: o `backfill_observacoes` nunca rodou. São ~120 mil consultas,
+  uma por título. Os 2.137 a receber sairiam em minutos.
+
+## A varredura dos dados errados — 20/09/2026
+
+O dono, depois de ver as conferências: *"faça tudo que for necessário pros dados
+ficarem o mais correto possível. nao posso trabalhar com dados errados."* Quatro
+frentes, todas fechadas nesta leva.
+
+### 1. O centavo (migração 010) — a causa raiz de sete dias de caçada
+
+As colunas de dinheiro do espelho nasceram **REAL**, float de 4 bytes, que
+guarda ~7 algarismos significativos. **Acima de R$ 131.072,00 o centavo não
+cabe.** Foi assim que R$ 784.647,07 virou R$ 784.647,06 — e por isso a busca por
+valor exato nunca o achava. A `fato` já era NUMERIC, mas é CALCULADA a partir
+dessas colunas: guardava com precisão o número errado.
+
+Agora são NUMERIC(16,2) em `titulos`, `movimentos`, `rateio.nvaldep` e
+`ajustes.valor`. Percentuais ficaram REAL de propósito: valem no máximo 100 e
+nunca chegam perto do limite.
+
+**Trocar o tipo NÃO devolve o centavo perdido** — ele só existe no OMIE. Por
+isso a tela ganhou um aviso vermelho que só some quando uma **carga inicial**
+terminar bem depois da migração, e o botão "Primeira carga", que ficava
+escondido enquanto houvesse base, passou a aparecer sempre.
+
+Detalhe de implementação que vai morder quem mexer: NUMERIC volta como `Decimal`
+no Python, e Decimal não soma com float. As leituras passaram a pedir
+`::float8` — o banco guarda exato, o transporte usa float de 8 bytes, que tem
+dígitos de sobra para centavo.
+
+### 2. "Foi pago?" passou a ter uma resposta só (migração 011)
+
+A carga considerava quitado quem tivesse status pago/recebido/conciliado **ou**
+baixa liquidada no OMIE. As telas olhavam só a primeira metade. Título baixado
+cujo status ficou "ATRASADO" era dado por pago pela carga e **não era contado
+por tela nenhuma** — R$ 96.750,00 em 2 títulos na base do dono.
+
+O conserto não foi repetir a regra da carga nas telas: regra repetida diverge de
+novo. A carga já grava a decisão em `situacao_vencimento`; a coluna `pago` passou
+a ser essa decisão, e nada mais. A conferência das duas regras continua na tela
+como guarda — se um dia voltar a acusar algo, é porque alguém criou uma segunda
+regra outra vez.
+
+### 3. O agrupamento por documento
+
+Ver a seção própria acima. Resumo: o bloco somava por nome; agora soma por
+CNPJ/CPF.
+
+### 4. As observações viraram um modo da atualização
+
+0 de 120.772 títulos tinham a observação do OMIE. O trabalho que as busca
+existia desde sempre, mas só pela linha de comando — ou seja, nunca rodava.
+Virou o modo **"Buscar as observações"**, com botão e barra de andamento.
+
+Ele só LÊ do OMIE (há teste que falha se alguém puser Alterar/Incluir ali). Os
+títulos a receber (~2 mil, as medições) vão inteiros na primeira rodada; os a
+pagar vão em blocos de 8 mil, cerca de uma hora cada, porque 120 mil consultas
+são mais de 15 horas e nenhuma publicação de código sobreviveria a isso. É
+retomável de verdade: cada título consultado fica marcado e não volta.
+
+### O que continua fora, e é decisão dele
+
+**Movimento de conta corrente sem título nunca entra no painel.** O painel é
+montado a partir dos títulos; movimento lançado direto na conta, sem título, não
+tem de onde vir. O dono já notou isso ("era pra aparecer todos os lançamentos
+igual o relatório de conta corrente do OMIE"). Trazer esses movimentos é fonte
+de linha nova, com risco real de contar dinheiro duas vezes — precisa de desenho
+e de decisão, não de um remendo.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

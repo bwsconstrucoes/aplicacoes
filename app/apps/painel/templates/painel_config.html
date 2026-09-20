@@ -118,20 +118,35 @@
   </div>
   {% endif %}
 
+  {% if recarga and recarga.pendente %}
+  <div style="border-left:4px solid var(--vermelho); background:rgba(220,53,69,.07);
+              padding:10px 12px; border-radius:6px; margin-top:12px">
+    <b>Os valores antigos ainda estão com centavo errado.</b><br>
+    A atualização do banco arrumou o <i>tipo</i> da coluna, e daqui para a frente
+    todo valor novo entra exato. Mas o centavo que já se perdeu não volta sozinho:
+    ele só existe no OMIE. Rode <b>"Primeira carga"</b> (o botão amarelo abaixo)
+    uma vez — ela rebaixa tudo e os valores voltam a bater com o OMIE.
+    Leva horas; o melhor momento é a noite.
+  </div>
+  {% endif %}
+
   <div class="form-grade" style="margin-top:12px">
+    {# A "Primeira carga" ficava escondida enquanto houvesse base. Deixou de
+       ficar em 20/09/2026: a migração 010 (dinheiro exato) só devolve os
+       centavos depois de uma rebaixa completa do OMIE, e não havia botão para
+       isso. Ela continua amarela e continua avisando o que faz. #}
     {% for chave, descricao in modos.items() %}
-      {% if chave != 'carga_inicial' or base_vazia %}
       <div>
         <button class="btn {% if chave == 'carga_inicial' %}amarelo{% elif chave != 'rapida' %}secundario{% endif %}"
                 data-modo="{{ chave }}" style="width:100%">
           {% if chave == 'rapida' %}Atualizar agora
           {% elif chave == 'completa' %}Atualização completa
           {% elif chave == 'so_numeros' %}Só refazer os números
+          {% elif chave == 'observacoes' %}Buscar as observações
           {% else %}Primeira carga{% endif %}
         </button>
         <p class="cartao-dica">{{ descricao }}</p>
       </div>
-      {% endif %}
     {% endfor %}
   </div>
   <div id="saida-sync"></div>
@@ -631,6 +646,44 @@
       </tbody>
     </table>
   </div>
+
+  {% if aportes_conf.por_contraparte %}
+  <h4 style="margin:16px 0 4px">Devoluções por contraparte — como o bloco do DRE soma</h4>
+  <p class="cartao-dica" style="margin-top:0">
+    Se a cascata acima não mostra corte nenhum e ainda assim falta valor no bloco
+    do DRE, a causa é esta tabela: <b>o bloco soma por empresa</b>. A coluna
+    "nomes" diz quantas grafias diferentes o mesmo documento tem — mais de uma
+    quer dizer cadastro repetido no OMIE. Linha sem documento não junta com
+    ninguém.
+  </p>
+  <div class="tabela-rolagem" style="max-height:320px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Contraparte</th>
+          <th class="sem-ordem">CNPJ/CPF (só dígitos)</th>
+          <th class="sem-ordem direita">Nomes</th>
+          <th class="sem-ordem direita">Devolvido</th>
+          <th class="sem-ordem direita">Lançamentos</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for l in aportes_conf.por_contraparte %}
+        <tr>
+          <td class="desc">{{ l.nome }}
+            {% if l.nomes > 1 %}
+            <br><small style="color:var(--vermelho)">{{ l.todos_os_nomes }}</small>
+            {% endif %}</td>
+          <td class="dados">{{ l.documento }}</td>
+          <td class="dados direita {{ 'v-neg' if l.nomes > 1 else '' }}">{{ l.nomes }}</td>
+          <td class="dados direita">{{ brl(l.devolvido) }}</td>
+          <td class="dados direita">{{ l.lancamentos }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   {% for titulo, linhas in [('Cortados por serem transferência entre contas',
                              aportes_conf.comidos_trf),

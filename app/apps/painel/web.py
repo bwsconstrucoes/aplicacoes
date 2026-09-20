@@ -1178,6 +1178,7 @@ def configuracoes():
         atualizacao, vazia, etapas = None, True, []
         conferencia = sumidos = aportes_conf = observacoes = None
         conferir = False
+        recarga = None
     else:
         from . import consultas
         # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
@@ -1189,6 +1190,11 @@ def configuracoes():
             so_concluidas=bool(sincronizacao["interrompida"]))
         vazia = consultas.base_vazia()
         etapas = consultas.etapas_da_carga()
+        # Aviso que NAO pode faltar: a migracao 010 arruma o tipo da coluna, mas
+        # o centavo que ja se perdeu so volta com uma carga inicial. Sem dizer
+        # isso na tela, a migracao daria a impressao de ter resolvido.
+        recarga = _conferir(consultas.recarga_total_pendente,
+                            conferencias_com_erro, "Aviso de recarga")
         # So mede, nao corrige: quanto dinheiro a carga deu por realizado e as
         # telas nao enxergam. Ver o comentario em `conferencia_do_pago`.
         # AS CONFERENCIAS SO RODAM QUANDO ALGUEM PEDE. Sao ~12 varreduras na
@@ -1225,6 +1231,7 @@ def configuracoes():
         sem_obra=consultas.SEM_OBRA if not estado_migracoes["pendentes"] else "",
         sem_categoria=consultas.SEM_CATEGORIA if not estado_migracoes["pendentes"] else "",
         conferir=conferir,
+        recarga=recarga,
         conferencias_com_erro=conferencias_com_erro,
         conferencia=conferencia,
         sumidos=sumidos,
