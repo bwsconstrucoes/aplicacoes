@@ -1125,6 +1125,70 @@ def test_a_tela_avisa_que_falta_rebaixar_para_os_centavos_voltarem(cliente_confi
         conn.commit()
 
 
+# ===========================================================================
+# O dinheiro que andou na conta e não está em tela nenhuma — 20/09/2026
+# ===========================================================================
+# O dono: "esse movimento sem titulo, eu não sei exatamente quem sao e de qual
+# forma afeta. como saber?" — e não dava para saber, porque a carga descartava
+# esses movimentos antes de gravar, contando quantos foram só no log.
+
+@pytest.fixture()
+def base_com_movimento_sem_titulo(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM movimentos_sem_titulo")
+        conn.execute(
+            "INSERT INTO movimentos_sem_titulo (cnatureza, ccodcateg, ncodcc,"
+            " ddtpagamento, cstatus, nvalpago)"
+            " VALUES ('P','1.01.02', 7011, '24/12/2025','LIQUIDADO', 50000),"
+            "        ('R','1.01.02', 7011, '10/01/2026','LIQUIDADO', 12000)")
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+    with conexao() as conn:
+        conn.execute("DELETE FROM movimentos_sem_titulo")
+        conn.commit()
+
+
+def test_a_tela_diz_quanto_dinheiro_andou_fora_do_painel(base_com_movimento_sem_titulo):
+    from app.apps.painel import consultas
+    r = consultas.movimentos_fora_do_painel()
+    assert r["linhas"] == 2
+    assert reais(r["valor"]) == 62000.00
+    assert reais(r["entrou"]) == 12000.00, "entrada e saída separadas"
+    assert reais(r["saiu"]) == 50000.00
+    assert [l["ano"] for l in r["por_ano"]] == ["2026", "2025"]
+    assert r["maiores"][0]["valor"] == 50000.00, "do maior para o menor"
+    assert r["maiores"][0]["natureza"] == "Saída"
+
+
+def test_esse_dinheiro_nao_entra_em_numero_de_tela_nenhum(base_com_movimento_sem_titulo):
+    """A tabela existe para ser OLHADA, não para somar. Se um dia ela começar a
+    entrar no DRE sem ninguém decidir, os números mudam sozinhos — que é
+    exatamente o que o dono não pode ter."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import consultar
+    (linhas_fato,) = consultar("SELECT COUNT(*) FROM fato")[0]
+    consultas.movimentos_fora_do_painel()
+    assert consultar("SELECT COUNT(*) FROM fato")[0][0] == linhas_fato
+    dre = consultas.aportes(consultas.Filtros())
+    assert dre["aportado"] >= 0  # só para exercitar; o que importa é o de baixo
+    (no_fato,) = consultar(
+        "SELECT COUNT(*) FROM fato WHERE ABS(pago_recebido) = 50000")[0]
+    assert no_fato == 0, "o movimento sem título não pode ter virado linha"
+
+
+def test_a_carga_guarda_o_movimento_sem_titulo_em_vez_de_jogar_fora():
+    """Antes ele era contado e descartado na mesma linha de código."""
+    import inspect
+
+    from app.apps.painel.sync import espelho
+    fonte = inspect.getsource(espelho.gravar_movimentos)
+    assert "movimentos_sem_titulo" in fonte, \
+        "voltou a descartar o movimento sem título — e aí não dá nem para contar"
+
+
 def test_diz_quando_a_carga_nunca_trouxe(base_para_explorar):
     """A outra metade da resposta, e a mais importante: se nem na base crua
     está, o problema é a carga, não a montagem das linhas."""
@@ -1370,6 +1434,7 @@ def test_as_conferencias_de_verdade_aparecem_na_tela(cliente_config):
         "/painel/configuracoes?conferir=1").get_data(as_text=True)
     assert "Aportes do DRE — onde os valores se perdem" in html
     assert "dinheiro que as telas não contam" in html
+    assert "Movimentos que não estão no painel" in html
     assert "falhou" not in html, "alguma conferência quebrou — o quadro diz qual"
     assert "Rodar de novo" in html, \
         "depois de rodar, o botão tem de continuar lá para repetir"
@@ -1642,3 +1707,14 @@ def test_dividendo_nao_vira_devolucao_de_aporte(base_com_aporte_bws):
     # e continua visível no quadro próprio
     divs = {l["socio"]: l for l in consultas.dividendos_por_socio(consultas.Filtros())}
     assert divs["MORAIS"]["pago"] == pytest.approx(70000)
+
+
+def test_a_janela_do_incremental_apaga_nas_duas_tabelas():
+    """Senão a atualização do dia reinsere os sem título e o número cresce
+    sozinho a cada madrugada — um erro que só apareceria semanas depois."""
+    import inspect
+
+    from app.apps.painel.sync import espelho
+    fonte = inspect.getsource(espelho._apagar_movimentos_janela)
+    assert fonte.count("DELETE FROM") == 2
+    assert "movimentos_sem_titulo" in fonte

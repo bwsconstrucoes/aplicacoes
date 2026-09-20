@@ -1176,7 +1176,7 @@ def configuracoes():
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
-        conferencia = sumidos = aportes_conf = observacoes = None
+        conferencia = sumidos = aportes_conf = observacoes = fora = None
         conferir = False
         recarga = None
     else:
@@ -1203,7 +1203,7 @@ def configuracoes():
         # em 14/09/2026 e a tela parou de abrir para o dono no mesmo dia.
         conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
-        conferencia = sumidos = aportes_conf = observacoes = None
+        conferencia = sumidos = aportes_conf = observacoes = fora = None
         if not vazia and (conferir or procurado is not None):
             # CADA UMA POR SI. Em 20/09/2026 o dono apertou o botão e "não
             # apresentou resultado" — e não havia como saber se tinha dado erro,
@@ -1220,6 +1220,9 @@ def configuracoes():
             observacoes = _conferir(consultas.cobertura_das_observacoes,
                                     conferencias_com_erro,
                                     "Observações dos títulos")
+            fora = _conferir(consultas.movimentos_fora_do_painel,
+                             conferencias_com_erro,
+                             "Movimentos fora do painel")
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1237,6 +1240,7 @@ def configuracoes():
         sumidos=sumidos,
         aportes_conf=aportes_conf,
         observacoes=observacoes,
+        fora=fora,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
     )

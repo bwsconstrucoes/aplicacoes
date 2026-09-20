@@ -1005,6 +1005,41 @@ igual o relatório de conta corrente do OMIE"). Trazer esses movimentos é fonte
 de linha nova, com risco real de contar dinheiro duas vezes — precisa de desenho
 e de decisão, não de um remendo.
 
+## O movimento sem título saiu do escuro — 20/09/2026
+
+O dono, depois de eu dizer que isso ficava de fora: *"esse movimento sem titulo,
+eu não sei exatamente quem sao e de qual forma afeta. como saber?"*
+
+**Não dava para saber, e a culpa era do código:** a carga descartava esses
+movimentos ANTES de gravar (`gravar_movimentos` contava e seguia), então o
+número só existia numa linha de log que ninguém lê. Pergunta legítima sem
+resposta possível.
+
+Agora eles são guardados em `painel.movimentos_sem_titulo` (migração 012) e há
+um quadro na conferência: total, entrou × saiu, por conta, por categoria, por
+ano, e os 50 maiores um a um, com data, conta, categoria e contraparte.
+
+**Essa tabela não entra em número de tela nenhum**, e há teste que falha se
+entrar. Ela existe para ser olhada. O caminho normal de correção é criar o
+título no OMIE — aí o lançamento entra sozinho na atualização seguinte.
+
+Dois casos diferentes, separados na tela porque têm causas diferentes:
+
+1. **movimento sem título nenhum** — lançado direto na conta corrente. É
+   dinheiro que o painel não conhece;
+2. **movimento que aponta para um título que o painel não tem** — título
+   excluído no OMIE depois, ou que a carga não trouxe. Some com uma atualização
+   completa.
+
+Cuidado que já está coberto por teste: a atualização do dia apaga a janela de
+datas nas DUAS tabelas antes de rebaixar. Sem isso, os sem título seriam
+reinseridos toda madrugada e o número cresceria sozinho — erro que só apareceria
+semanas depois.
+
+**A tabela só tem conteúdo depois da próxima rebaixa de movimentos.** Enquanto
+isso, zero ali quer dizer "ainda não olhei", e a tela diz isso com todas as
+letras em vez de mostrar um zero tranquilizador.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

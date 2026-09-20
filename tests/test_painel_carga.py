@@ -45,7 +45,8 @@ def espelho_limpo():
     resultado = migracoes_runner.aplicar_pendentes()
     assert not resultado.get("erro"), f"migração falhou: {resultado}"
 
-    tabelas = ("fato", "titulos", "rateio", "movimentos", "cat", "clientes",
+    tabelas = ("fato", "titulos", "rateio", "movimentos",
+               "movimentos_sem_titulo", "cat", "clientes",
                "contas_correntes", "depto_projeto", "sync_state")
 
     def _limpar():
@@ -214,8 +215,10 @@ def test_gravar_movimentos(espelho_limpo):
 
 
 def test_movimento_sem_titulo_e_ignorado_e_contado(espelho_limpo):
-    """Movimento que não aponta para título nenhum não tem onde entrar. É
-    descartado — mas a contagem volta, para o número não sumir calado."""
+    """Movimento que não aponta para título nenhum não vira linha do painel —
+    não tem onde entrar. Mas desde a migração 012 ele também não é jogado fora:
+    fica numa tabela própria, fora de todo número de tela, porque o dono
+    perguntou quanto era e não havia como responder."""
     from app.apps.painel.db import conexao, consultar
     from app.apps.painel.sync import espelho
 
@@ -224,6 +227,7 @@ def test_movimento_sem_titulo_e_ignorado_e_contado(espelho_limpo):
     with conexao() as conn:
         gravados, ignorados = espelho.gravar_movimentos(conn, [orfao])
     assert (gravados, ignorados) == (0, 1)
+    assert consultar("SELECT COUNT(*) FROM movimentos_sem_titulo")[0][0] == 1
     assert consultar("SELECT COUNT(*) FROM movimentos")[0][0] == 0
 
 
