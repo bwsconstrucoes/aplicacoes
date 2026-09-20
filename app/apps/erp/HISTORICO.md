@@ -54,6 +54,39 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### ⚠️ O AVISO DO CNPJ REPETIDO ESTAVA MANDANDO CONSERTAR O QUE ESTÁ CERTO
+
+20/09/2026. O dono importou a planilha nova de fornecedores e recebeu:
+
+> *"69 CNPJ/CPF aparece(m) mais de uma vez no arquivo. Só um cadastro sobra por
+> documento — a última linha sobrescreve as anteriores. Conserte na planilha e
+> rode de novo."*
+
+**O comportamento estava certo; o aviso é que tinha ficado para trás.** Desde a
+migração 075, a segunda linha do mesmo CNPJ **acrescenta um vendedor** e soma
+região, canal e categoria; os campos da empresa só preenchem o que está vazio.
+Ou seja: o texto mandava consertar exatamente o formato que passou a ser o
+esperado — e, pior, num arquivo que eu mesmo gerei naquele formato.
+
+**Lição para não repetir:** ao mudar o COMPORTAMENTO de um importador, procurar
+o texto que a tela mostra sobre ele. Aviso velho não quebra teste nenhum e
+sobrevive à mudança calado, dando instrução errada com a autoridade de quem
+sabe. Foi só o dono usando a tela que pegou.
+
+O que mudou junto: o relatório passou a dizer **quantos vendedores entraram** e
+**quantos fornecedores ficaram com mais de um** — o número que a mudança de 075
+trouxe e que a tela não mostrava. A lista de CNPJ repetido continua aparecendo,
+mas como conferência de outra coisa: o mesmo número com nomes de empresa muito
+diferentes é digitação errada, e aí são duas empresas virando uma.
+
+**Segunda lição, esta sobre teste:** a primeira versão do teste desse
+comportamento foi escrita no dublê e **passou por motivo errado**. O importador
+acha o fornecedor da linha anterior com `WHERE cnpj_cpf = …`, e o dublê ignora
+WHERE: ele criava dois fornecedores e o teste, que só contava contatos, dizia
+que estava tudo certo. O teste de verdade vive em
+`tests/test_fornecedor_contatos_banco.py`, com Postgres.
+
+
 ### 📄 A PLANILHA DO BANCO DE PREÇOS — falta o arquivo
 
 O importador está pronto e testado, mas **o histórico antigo ainda não entrou**:

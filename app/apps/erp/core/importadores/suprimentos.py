@@ -106,12 +106,26 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
     categorias = {_chave(c.nome): c for c in s.scalars(select(InsumoCategoria)).all()}
 
     criados, atualizados, rejeitados, sem_categoria = 0, 0, [], set()
-    # DOCUMENTO REPETIDO DENTRO DO PRÓPRIO ARQUIVO. O CNPJ é único no banco,
-    # então a segunda linha não cria fornecedor nenhum: ela SOBRESCREVE a
-    # primeira, calada. Na planilha da BWS isso vale por 126 documentos — há
-    # até uma linha "TESTE" carregando o CNPJ da própria BWS. Sobrescrever sem
-    # avisar é o pior desfecho: o cadastro fica com o nome de um e o e-mail de
-    # outro, e ninguém descobre até a cotação ir para o lugar errado.
+    contatos_criados, contatos_sem_canal = 0, 0
+    contatos_por_fornecedor: dict[int, int] = {}
+    # DOCUMENTO REPETIDO DENTRO DO PRÓPRIO ARQUIVO — e, desde 18/09/2026, isso
+    # DEIXOU DE SER PROBLEMA: é o formato esperado.
+    #
+    # O dono explicou de onde vinham os 126 CNPJs repetidos da planilha da BWS:
+    # *"um comprador cadastrou, aí depois um segundo comprador cadastrou de
+    # novo. Mas veja que tem contatos diferentes — tem fornecedores que têm
+    # mais de uma pessoa que atende."* Ou seja: a linha repetida é o SEGUNDO
+    # VENDEDOR, não sujeira.
+    #
+    # Por isso a segunda linha do mesmo CNPJ hoje acrescenta um CONTATO e
+    # SOMA região, canal e categoria, em vez de sobrescrever o cadastro. Os
+    # campos da empresa (nome fantasia, e-mail, telefone, município) só
+    # preenchem o que está vazio — a segunda linha não é "mais nova" que a
+    # primeira, é outra pessoa que cadastrou.
+    #
+    # A lista continua saindo no relatório, mas como INFORMAÇÃO, não como
+    # alerta: serve para conferir se algum CNPJ repetido é erro de digitação
+    # (duas empresas diferentes com o mesmo número) em vez de dois vendedores.
     vistos: dict[str, list[dict[str, Any]]] = {}
     for i, ln in enumerate(linhas, start=2):
         razao = _campo(ln, "razão social", "razao social", "fornecedor")
@@ -203,10 +217,15 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
             if not observacao and quem:
                 observacao = (f"Cadastrado por {quem.split(' - ')[0].strip()}"
                               + (f" em {quando}" if quando else "") + ".")
-            _garantir_contato(s, forn,
-                              nome=_campo(ln, "contato", "nome do contato"),
-                              email=dados["email"], telefone=dados["telefone"],
-                              observacao=observacao)
+            feito = _garantir_contato(s, forn,
+                                      nome=_campo(ln, "contato", "nome do contato"),
+                                      email=dados["email"], telefone=dados["telefone"],
+                                      observacao=observacao)
+            if feito == "novo":
+                contatos_criados += 1
+                contatos_por_fornecedor[forn.id] = contatos_por_fornecedor.get(forn.id, 0) + 1
+            elif feito == "sem_canal":
+                contatos_sem_canal += 1
         except ErroValidacao as e:
             rejeitados.append({"linha": i, "fornecedor": razao or doc, "motivo": str(e)})
 
@@ -217,6 +236,14 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
             "rejeitados": rejeitados,
             "categorias_nao_encontradas": sorted(sem_categoria),
             "documentos_repetidos": sorted(repetidos, key=lambda r: r["linhas"][0]),
+            # O NÚMERO QUE O DONO QUER VER depois desta carga: quantos
+            # vendedores entraram, e quantos fornecedores ficaram com mais de
+            # um. Sem isso a tela só diz "1.772 linhas" e some com o que a
+            # mudança de 075 trouxe de novo.
+            "contatos_criados": contatos_criados,
+            "contatos_sem_canal": contatos_sem_canal,
+            "fornecedores_com_varios_contatos": sum(
+                1 for n in contatos_por_fornecedor.values() if n > 1),
             "simulacao": simular}
 
 
@@ -245,7 +272,7 @@ PREFIXO_AUTOMATICO = "Cadastrado por "
 
 
 def _garantir_contato(s: Session, forn: Fornecedor, nome: str,
-                      email: str, telefone: str, observacao: str = "") -> None:
+                      email: str, telefone: str, observacao: str = "") -> str:
     """O cotador da planilha — e são VÁRIOS por fornecedor, de propósito.
 
     Duas linhas com o mesmo CNPJ e contatos diferentes viram um fornecedor com
@@ -258,7 +285,7 @@ def _garantir_contato(s: Session, forn: Fornecedor, nome: str,
     """
     nome = (nome or "").strip()
     if not nome or not (email or telefone):
-        return
+        return "sem_canal"
     ja_tem = [c for c in s.scalars(select(FornecedorContato).where(
         FornecedorContato.fornecedor_id == forn.id)).all()
         if c.fornecedor_id == forn.id and _chave(c.nome) == _chave(nome)]
@@ -281,10 +308,11 @@ def _garantir_contato(s: Session, forn: Fornecedor, nome: str,
         if observacao and (not atual_obs or
                            (escrita_por_gente and atual_obs.startswith(PREFIXO_AUTOMATICO))):
             atual.observacao = observacao
-        return
+        return "completado"
     s.add(FornecedorContato(fornecedor_id=forn.id, nome=nome,
                             email=email or None, telefone=telefone or None,
                             observacao=(observacao or "").strip() or None))
+    return "novo"
 
 
 # ---------------------------------------------------------------------------

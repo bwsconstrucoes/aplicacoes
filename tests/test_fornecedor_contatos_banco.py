@@ -252,3 +252,64 @@ def test_a_observacao_escrita_por_gente_nunca_e_apagada_pela_automatica(cenario)
     s.flush()
 
     assert _contatos(s, _fornecedor(s).id)[0].observacao == "atende o interior"
+
+
+# ---------------------------------------------------------------------------
+# OS NÚMEROS DO RELATÓRIO — 20/09/2026
+#
+# O dono importou a planilha nova e o sistema respondeu: *"69 CNPJ/CPF
+# aparece(m) mais de uma vez no arquivo. Só um cadastro sobra por documento — a
+# última linha sobrescreve as anteriores. Conserte na planilha e rode de novo."*
+#
+# O comportamento já estava certo (os testes acima seguram isso). O que estava
+# errado era o AVISO, que tinha ficado da versão anterior e mandava consertar
+# justamente o que passou a ser o formato esperado. Junto com o texto novo
+# entraram os números que faltavam: quantos vendedores entraram e quantos
+# fornecedores ficaram com mais de um.
+# ---------------------------------------------------------------------------
+def test_o_relatorio_diz_quantos_vendedores_entraram(cenario):
+    s, chefe = cenario["s"], cenario["chefe"]
+
+    rel = importar_fornecedores_csv(s, _csv(
+        f"STOCK LTDA,Stock,{CNPJ},ELIAS,elias@x.com.br,8590001111,,Cimento,"
+        f"FORTALEZA,RMF,Email,Distribuidor,GERLANIO,01/09/2022",
+        f"STOCK LTDA,Stock,{CNPJ},MARIO,mario@x.com.br,8590002222,,EPI,"
+        f"FORTALEZA,CE,Whatsapp,Distribuidor,JAQUELINE,05/09/2022"), chefe)
+    s.flush()
+
+    assert rel["contatos_criados"] == 2
+    assert rel["fornecedores_com_varios_contatos"] == 1
+    # O CNPJ repetido continua sendo relatado — mas agora para uma conferência
+    # diferente: nomes de empresa muito diferentes no mesmo número é digitação.
+    assert len(rel["documentos_repetidos"]) == 1
+
+
+def test_o_email_da_empresa_nao_e_sorteado_pela_ordem_das_linhas(cenario):
+    """A segunda linha não é "mais nova" que a primeira: é outra pessoa que
+    cadastrou. Deixar a última vencer fazia o e-mail do fornecedor ser o do
+    segundo vendedor, ao acaso da ordem em que a planilha foi exportada."""
+    s, chefe = cenario["s"], cenario["chefe"]
+
+    importar_fornecedores_csv(s, _csv(
+        f"STOCK LTDA,Stock,{CNPJ},ELIAS,elias@x.com.br,8590001111,,Cimento,"
+        f"FORTALEZA,RMF,Email,Distribuidor,GERLANIO,01/09/2022",
+        f"STOCK LTDA,Stock,{CNPJ},MARIO,mario@x.com.br,8590002222,,EPI,"
+        f"FORTALEZA,CE,Whatsapp,Distribuidor,JAQUELINE,05/09/2022"), chefe)
+    s.flush()
+
+    assert _fornecedor(s).email == "elias@x.com.br"
+
+
+def test_vendedor_repetido_na_planilha_nao_vira_contato_duplicado(cenario):
+    """A mesma pessoa em duas linhas (porque o comprador colou de novo) é UM
+    contato. Sem isso, rodar a carga duas vezes encheria o cadastro."""
+    s, chefe = cenario["s"], cenario["chefe"]
+    linha = (f"STOCK LTDA,Stock,{CNPJ},ELIAS,elias@x.com.br,8590001111,,Cimento,"
+             f"FORTALEZA,RMF,Email,Distribuidor,GERLANIO,01/09/2022")
+
+    rel = importar_fornecedores_csv(s, _csv(linha, linha), chefe)
+    s.flush()
+
+    assert rel["contatos_criados"] == 1
+    assert rel["fornecedores_com_varios_contatos"] == 0
+    assert len(_contatos(s, _fornecedor(s).id)) == 1
