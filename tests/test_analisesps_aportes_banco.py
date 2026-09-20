@@ -48,10 +48,16 @@ def banco_aportes(banco, monkeypatch):
         conn.execute(text("DROP SCHEMA IF EXISTS painel CASCADE"))
         for caminho in sorted((raiz / "analisesps" / "migracoes").glob("*.sql")):
             conn.execute(text(caminho.read_text(encoding="utf-8")))
-        # Do painel basta o espelho (001): é dele que saem cat, contas,
-        # clientes, rateio e movimentos.
-        conn.execute(text((raiz / "painel" / "migracoes" /
-                           "001_espelho_omie.sql").read_text(encoding="utf-8")))
+        # ⚠️ AS MIGRAÇÕES DO PAINEL VÃO TODAS, e isso não é excesso de zelo.
+        #
+        # A 010 (20/09/2026) troca as colunas de dinheiro de REAL para
+        # NUMERIC — inclusive `movimentos.nvalpago`, que é justamente a coluna
+        # que a crítica de transferência compara com tolerância de centavo.
+        # Testando só contra a 001, a crítica seria exercitada sobre um tipo
+        # que a produção não tem mais, e uma incompatibilidade de tipo
+        # apareceria na tela do dono em vez de aqui.
+        for caminho in sorted((raiz / "painel" / "migracoes").glob("*.sql")):
+            conn.execute(text(caminho.read_text(encoding="utf-8")))
         conn.commit()
     yield banco
     with banco.connect() as conn:

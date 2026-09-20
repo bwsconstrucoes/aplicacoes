@@ -5824,6 +5824,32 @@ por outro motivo: ensaio → **UM** lançamento conferido por ele dentro do OMIE
 com os olhos → uso normal. Se o OMIE recusar, a mensagem dele aparece inteira
 na tela, sem tradução minha.
 
+#### ⚠️ O painel JÁ conhecia esta regra — e isso confirma que ela está certa
+
+Descoberto ao trazer a `main` para o ramo, na hora de publicar: o painel tem,
+desde 17/09/2026, a classificação dos aportes no DRE — `TIPOS_APORTE`, em
+`painel/sync/fato.py` — e ela reconhece **exatamente os mesmos quatro nomes**,
+com o mesmo desenho anotado lá (*"BWS manda para a obra: saída da MATRIZ
+Aportes BWS; entrada na OBRA Aportes BWS…"*).
+
+Isso vale registro por dois motivos. O primeiro é a confirmação: dois chats
+diferentes, sem se falarem, chegaram à mesma tabela a partir do que o dono
+lançou à mão no OMIE — é a regra dele, não invenção de nenhum dos dois. O
+segundo é o encaixe: **o título que esta tela cria já nasce sendo lido pelo
+painel**, porque a classificação é por nome de categoria. Mudar o nome de uma
+das quatro categorias no OMIE quebraria os dois lados ao mesmo tempo, e essa é
+mais uma razão para o de-para conferível existir.
+
+#### ⚠️ A migração 010 do painel mudou o tipo do dinheiro — e o teste foi atrás
+
+A mesma leva da `main` trocou as colunas de dinheiro do espelho de `REAL` para
+`NUMERIC`, inclusive `movimentos.nvalpago`, que é justamente a coluna que a
+crítica de transferência compara com tolerância de centavo.
+
+O teste com banco montava só a migração 001 do painel, ou seja, exercitava um
+tipo que a produção não tem mais. Passou a montar **todas** as migrações do
+painel. Conferido: os 18 testes seguem verdes contra a estrutura nova.
+
 #### O que ficou de fora
 
 - **Rateio de aporte entre obras.** O lançamento vai 100% para uma obra. Duas
