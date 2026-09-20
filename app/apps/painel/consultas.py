@@ -1751,6 +1751,86 @@ def recarga_total_pendente() -> dict:
             "carga_em": depois[0][0] if depois else None}
 
 
+def movimentos_fora_do_painel() -> dict:
+    """O dinheiro que andou na conta e NUNCA apareceu em tela nenhuma.
+
+    20/09/2026, o dono: *"esse movimento sem titulo, eu nao sei exatamente quem
+    sao e de qual forma afeta. como saber?"* — e nao dava para saber, porque a
+    carga descartava esses movimentos antes de gravar. Desde a migracao 012 eles
+    ficam guardados (fora de todo numero de tela) e esta funcao os mostra.
+
+    Sao DUAS coisas diferentes, e a tela separa:
+
+      1. movimento sem titulo nenhum — lancado direto na conta corrente;
+      2. movimento que aponta para um titulo que o painel nao tem — titulo
+         excluido no OMIE depois, ou que a carga nao trouxe.
+
+    A primeira e dinheiro que o painel nao conhece. A segunda e sintoma de base
+    desatualizada, e costuma sumir com uma carga completa."""
+    (quantos, valor, entrou, saiu) = consultar(
+        """SELECT COUNT(*),
+                  COALESCE(SUM(ABS(COALESCE(nvalpago, 0))), 0),
+                  COALESCE(SUM(CASE WHEN cnatureza = 'R'
+                                    THEN ABS(COALESCE(nvalpago, 0)) ELSE 0 END), 0),
+                  COALESCE(SUM(CASE WHEN cnatureza <> 'R'
+                                    THEN ABS(COALESCE(nvalpago, 0)) ELSE 0 END), 0)
+             FROM movimentos_sem_titulo""")[0]
+
+    por_ano = [{"ano": ano or "(sem data)", "linhas": n, "valor": float(v or 0)}
+               for ano, n, v in consultar(
+        """SELECT CASE WHEN ddtpagamento ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+                       THEN substr(ddtpagamento, 7, 4) END,
+                  COUNT(*), COALESCE(SUM(ABS(COALESCE(nvalpago, 0))), 0)
+             FROM movimentos_sem_titulo
+            GROUP BY 1 ORDER BY 1 DESC NULLS LAST LIMIT 20""")]
+
+    por_categoria = [{"categoria": (desc or cod or "(sem categoria)"),
+                      "codigo": cod or "", "linhas": n, "valor": float(v or 0)}
+                     for cod, desc, n, v in consultar(
+        """SELECT m.ccodcateg, c.descricao, COUNT(*),
+                  COALESCE(SUM(ABS(COALESCE(m.nvalpago, 0))), 0)
+             FROM movimentos_sem_titulo m
+             LEFT JOIN cat c ON c.codigo = m.ccodcateg
+            GROUP BY 1, 2 ORDER BY 4 DESC LIMIT 30""")]
+
+    por_conta = [{"conta": desc or (str(cod) if cod else "(sem conta)"),
+                  "linhas": n, "valor": float(v or 0)}
+                 for cod, desc, n, v in consultar(
+        """SELECT m.ncodcc, cc.descricao, COUNT(*),
+                  COALESCE(SUM(ABS(COALESCE(m.nvalpago, 0))), 0)
+             FROM movimentos_sem_titulo m
+             LEFT JOIN contas_correntes cc ON cc.codigo = m.ncodcc
+            GROUP BY 1, 2 ORDER BY 4 DESC LIMIT 30""")]
+
+    maiores = [{"data": dtp or "—", "natureza": "Entrada" if nat == "R" else "Saída",
+                "conta": conta or "(sem conta)",
+                "categoria": categ or "(sem categoria)",
+                "contraparte": (cli or "").strip() or "(sem contraparte)",
+                "valor": float(v or 0), "status": (st or "").strip()}
+               for dtp, nat, conta, categ, cli, v, st in consultar(
+        """SELECT m.ddtpagamento, m.cnatureza, cc.descricao,
+                  COALESCE(c.descricao, m.ccodcateg), cl.razao_social,
+                  ABS(COALESCE(m.nvalpago, 0)), m.cstatus
+             FROM movimentos_sem_titulo m
+             LEFT JOIN contas_correntes cc ON cc.codigo = m.ncodcc
+             LEFT JOIN cat c  ON c.codigo = m.ccodcateg
+             LEFT JOIN clientes cl ON cl.codigo = m.ncodcliente
+            ORDER BY ABS(COALESCE(m.nvalpago, 0)) DESC LIMIT 50""")]
+
+    # o segundo caso: o movimento tem titulo, mas o titulo nao esta na base
+    (orfaos, valor_orfaos) = consultar(
+        """SELECT COUNT(*), COALESCE(SUM(ABS(COALESCE(m.nvalpago, 0))), 0)
+             FROM movimentos m
+            WHERE NOT EXISTS (SELECT 1 FROM titulos t
+                               WHERE t.codigo_lancamento_omie = m.ncodtitulo)""")[0]
+
+    return {"linhas": quantos or 0, "valor": float(valor or 0),
+            "entrou": float(entrou or 0), "saiu": float(saiu or 0),
+            "por_ano": por_ano, "por_categoria": por_categoria,
+            "por_conta": por_conta, "maiores": maiores,
+            "orfaos": orfaos or 0, "valor_orfaos": float(valor_orfaos or 0)}
+
+
 def conferencia_do_pago() -> dict:
     """Quanto dinheiro a carga deu por realizado e as telas não enxergam.
 

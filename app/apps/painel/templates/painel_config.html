@@ -612,6 +612,109 @@
 </div>
 {% endif %}
 
+{# ===== O DINHEIRO QUE ANDOU NA CONTA E NAO ESTA EM TELA NENHUMA ===== #}
+{% if fora %}
+<div class="cartao" style="margin-top:14px;
+     border-left:4px solid {{ 'var(--vermelho)' if fora.linhas else 'var(--verde)' }}">
+  <div class="cartao-cab"><h3>Movimentos que não estão no painel</h3></div>
+  {% if fora.linhas %}
+  <div class="aviso info">
+    <b>{{ '{:,}'.format(fora.linhas).replace(',', '.') }}</b> movimentos somando
+    <b>{{ brl(fora.valor) }}</b> andaram na conta corrente <b>sem título por
+    trás</b> — entraram {{ brl(fora.entrou) }} e saíram {{ brl(fora.saiu) }}.
+    Esse dinheiro <b>não está em nenhuma tela</b>: nem no DRE, nem na Visão
+    Geral, nem no fluxo de caixa.
+  </div>
+  {% else %}
+  <div class="aviso ok">
+    Nenhum movimento sem título. Tudo que andou na conta tem um título por trás.
+  </div>
+  {% endif %}
+  <p class="cartao-dica">
+    O painel é montado a partir dos <b>títulos</b> (contas a pagar e a receber).
+    Movimento lançado direto na conta corrente, sem título, não tem de onde
+    virar linha. Esta lista <b>não altera número nenhum</b> — ela existe para
+    você ver o que está de fora e decidir o que fazer: normalmente o caminho é
+    criar o título no OMIE, e aí ele entra sozinho na próxima atualização.
+    {% if fora.orfaos %}
+    <br><br><b>Além desses</b>, há
+    {{ '{:,}'.format(fora.orfaos).replace(',', '.') }} movimentos
+    ({{ brl(fora.valor_orfaos) }}) que apontam para um título que o painel não
+    tem — título excluído no OMIE depois, ou que a carga não trouxe. Isso
+    costuma desaparecer com uma <b>Atualização completa</b>.
+    {% endif %}
+    {% if not fora.linhas %}
+    <br><b>Atenção:</b> esta conta só passa a valer depois da próxima rebaixa de
+    movimentos (Primeira carga ou atualização do dia). Antes disso, zero aqui
+    quer dizer "ainda não olhei", não "não existe".
+    {% endif %}
+  </p>
+
+  {% if fora.linhas %}
+  {% for titulo, cabecalho, linhas, coluna in
+        [('Por conta', 'Conta', fora.por_conta, 'conta'),
+         ('Por categoria', 'Categoria', fora.por_categoria, 'categoria'),
+         ('Por ano', 'Ano', fora.por_ano, 'ano')] %}
+    {% if linhas %}
+    <details style="margin-top:10px" {% if loop.first %}open{% endif %}>
+      <summary style="cursor:pointer; font-weight:600">{{ titulo }}</summary>
+      <div class="tabela-rolagem" style="max-height:240px; margin-top:8px">
+        <table>
+          <thead><tr>
+            <th class="sem-ordem">{{ cabecalho }}</th>
+            <th class="sem-ordem direita">Movimentos</th>
+            <th class="sem-ordem direita">Valor</th>
+          </tr></thead>
+          <tbody>
+          {% for l in linhas %}
+            <tr>
+              <td class="desc">{{ l[coluna] }}</td>
+              <td class="dados direita">{{ l.linhas }}</td>
+              <td class="dados direita">{{ brl(l.valor) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+  {% endfor %}
+
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; font-weight:600">
+      Os 50 maiores, um a um
+    </summary>
+    <div class="tabela-rolagem" style="max-height:320px; margin-top:8px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Data</th>
+          <th class="sem-ordem">Entrada/Saída</th>
+          <th class="sem-ordem">Conta</th>
+          <th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem">Contraparte</th>
+          <th class="sem-ordem">Situação</th>
+          <th class="sem-ordem direita">Valor</th>
+        </tr></thead>
+        <tbody>
+        {% for l in fora.maiores %}
+          <tr>
+            <td class="dados">{{ l.data }}</td>
+            <td>{{ l.natureza }}</td>
+            <td class="desc">{{ l.conta }}</td>
+            <td class="desc">{{ l.categoria }}</td>
+            <td class="desc">{{ l.contraparte }}</td>
+            <td><small>{{ l.status or '—' }}</small></td>
+            <td class="dados direita">{{ brl(l.valor) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
 {# ========== DE ONDE VEM A DIFERENÇA DO BLOCO DE APORTES ========== #}
 {% if aportes_conf %}
 <div class="cartao" style="margin-top:14px">

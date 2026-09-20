@@ -382,19 +382,35 @@ def _linha_movimento(mv):
     )
 
 
+# As mesmas colunas, menos o ncodtitulo — que e justamente o que falta nelas.
+_COLS_MST = _COLS_MOV.replace("ncodtitulo, ", "")
+_PH_MST = ",".join(["?"] * 19)
+
+
 def gravar_movimentos(conn, registros):
-    """Insere um lote de movimentos. Retorna (qtd, ignorados_sem_titulo)."""
-    linhas, ignorados = [], 0
+    """Insere um lote de movimentos. Retorna (qtd, quantos_sem_titulo).
+
+    O MOVIMENTO SEM TITULO NAO E MAIS JOGADO FORA. Ele nao serve para o painel
+    — que e montado a partir dos titulos —, mas e dinheiro que entrou ou saiu da
+    conta de verdade. Descartar na hora significava nao poder nem responder
+    quanto era. Agora vai para `movimentos_sem_titulo`, que nao entra em numero
+    de tela nenhum e existe para poder ser olhada (migracao 012)."""
+    linhas, sem_titulo = [], []
     for mv in registros:
         linha = _linha_movimento(mv)
         if linha[0] is None:
-            ignorados += 1
+            sem_titulo.append(linha[1:])   # tudo menos o ncodtitulo, que e None
             continue
         linhas.append(linha)
-    conn.executemany(
-        f"INSERT INTO movimentos ({_COLS_MOV}) VALUES ({_PH_MOV})", linhas)
+    if linhas:
+        conn.executemany(
+            f"INSERT INTO movimentos ({_COLS_MOV}) VALUES ({_PH_MOV})", linhas)
+    if sem_titulo:
+        conn.executemany(
+            f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}) VALUES ({_PH_MST})",
+            sem_titulo)
     conn.commit()
-    return len(linhas), ignorados
+    return len(linhas), len(sem_titulo)
 
 
 def movimentos_por_titulo(conn):
@@ -839,6 +855,7 @@ def carregar_movimentos_full(conn, cli):
     """Carga COMPLETA de movimentos (zera a tabela e baixa tudo). Sem filtro de data."""
     log.info("=== Movimentos (carga completa) ===")
     conn.execute("DELETE FROM movimentos")
+    conn.execute("DELETE FROM movimentos_sem_titulo")
     conn.commit()
     tot_mov = ign = 0
     t0 = time.time()
@@ -1181,6 +1198,15 @@ def _apagar_movimentos_janela(conn, ini, fim):
         "   AND to_date(ddtpagamento, 'DD/MM/YYYY') BETWEEN ? AND ?",
         (ini, fim))
     apagados = cur.rowcount or 0
+    cur.close()
+    # A janela apaga nas DUAS tabelas, senao a reinsercao duplicaria os sem
+    # titulo a cada atualizacao do dia — e o numero da tela cresceria sozinho.
+    cur = conn.execute(
+        "DELETE FROM movimentos_sem_titulo "
+        " WHERE ddtpagamento ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' "
+        "   AND to_date(ddtpagamento, 'DD/MM/YYYY') BETWEEN ? AND ?",
+        (ini, fim))
+    apagados += cur.rowcount or 0
     cur.close()
     conn.commit()
     return apagados
