@@ -143,6 +143,51 @@ ORDEM_DAS_OPERACOES = ["aporte_bws", "devolucao_bws",
                        "aporte_parceiro", "devolucao_parceiro"]
 
 
+# ---------------------------------------------------------------------------
+# AS CINCO SITUAÇÕES — 20/09/2026, depois de ele ver a tela
+#
+# ⚠️ O QUE ELE APONTOU: *"você tem que identificar melhor o que é entrada
+# financeira e o que é saída. Porque, por exemplo, Aportes BWS, ele tanto está
+# na conta de entrada quanto de saída. Na verdade, todas as categorias poderão
+# ser utilizadas."*
+#
+# A tela mostrava as QUATRO categorias numa lista, como se cada uma fosse uma
+# coisa só. Não são: "Aportes BWS" é usada DUAS vezes — saindo da matriz e
+# entrando na parceria. Listada uma vez, ela esconde metade do que faz.
+#
+# O que existe de verdade são CINCO SITUAÇÕES (conta + sentido + categoria),
+# que é exatamente como ele desenhou a tabela no briefing. É assim que a tela
+# mostra agora, e a ordem é a dele.
+# ---------------------------------------------------------------------------
+SITUACOES = [
+    (MATRIZ, SAIDA, "aportes_bws"),
+    (PARCERIA, ENTRADA, "aportes_bws"),
+    (PARCERIA, ENTRADA, "aportes_parceiros"),
+    (PARCERIA, SAIDA, "devolucao_aportes"),
+    (MATRIZ, ENTRADA, "devolucao_aportes_bws"),
+]
+
+
+def situacoes_da_categoria(chave: str) -> list:
+    """Em que situações esta categoria é usada. Mais de uma, quase sempre."""
+    return [(p, sd) for p, sd, c in SITUACOES if c == chave]
+
+
+def resumo_das_pernas(operacao: str) -> list:
+    """O que a operação faz, em português, para a tela mostrar ANTES de pedir
+    qualquer outra coisa. Sem contas e sem códigos — só o movimento."""
+    op = OPERACOES.get(operacao) or {}
+    return [{
+        "papel": perna.papel,
+        "papel_rotulo": PAPEL_ROTULO[perna.papel],
+        "sentido": perna.sentido,
+        "sentido_rotulo": SENTIDO_ROTULO[perna.sentido],
+        "natureza_rotulo": NATUREZA_ROTULO[NATUREZA[perna.sentido]],
+        "categoria_nome": CATEGORIAS[perna.categoria],
+        "categoria_chave": perna.categoria,
+    } for perna in op.get("pernas", [])]
+
+
 class ErroDeRegra(Exception):
     """O que o dono escolheu não fecha com a regra — e a tela explica por quê.
 
@@ -299,14 +344,22 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
                 f"{PAPEL_ROTULO[perna.papel]}. Isso se faz uma vez só, na "
                 f"própria tela de Aportes, em Configurações.")
 
+        # ⚠️ A CONTA NÃO É MAIS PERGUNTADA — 20/09/2026, pedido dele depois de
+        # ver a tela: *"na hora que eu fosse mais embaixo definir o que está
+        # acontecendo, você pergunta o que você está lançando; então ele já
+        # define quais contas seriam utilizadas."*
+        #
+        # Faz sentido e é mais seguro: a operação determina as contas pela
+        # regra que ele desenhou, então perguntá-las era oferecer a chance de
+        # montar uma combinação que não existe. Quem não manda conta nenhuma
+        # recebe a da regra.
+        #
+        # O confronto abaixo continua, para quem MANDA uma conta: é ele que
+        # impede uma tela antiga, ou uma chamada direta, de gravar um
+        # lançamento com a conta trocada e a categoria do outro lado.
         escolhida = escolhidas.get(perna.campo_conta)
         if escolhida in (None, "", 0):
-            onde = ("de origem" if perna.campo_conta == "origem"
-                    else "de destino")
-            raise ErroDeRegra(
-                f"Escolha a conta {onde}. Nesta operação o dinheiro "
-                f"{'sai da' if perna.sentido == SAIDA else 'entra na'} "
-                f"{PAPEL_ROTULO[perna.papel]}.")
+            escolhida = codigo_papel
         if int(escolhida) != int(codigo_papel):
             # ⚠️ AQUI É ONDE A TELA RECUSA E EXPLICA. O dono escolheu poder
             # apontar as contas à mão (20/09/2026) sabendo deste preço: dá

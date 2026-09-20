@@ -259,6 +259,44 @@ def guardar_categoria(chave: str, codigo: str, quem: str = "") -> None:
         con.commit()
 
 
+def categorias_resolvidas() -> dict:
+    """O código de cada categoria, SEM exigir que o dono confirme nada.
+
+    ⚠️ MUDANÇA DE 20/09/2026, e ela veio dele olhando a tela: *"eu não entendi
+    esse gravar o de-para. Eu acho que não precisaria."*
+
+    Ele tem razão. Quando a descrição aparece UMA vez só no plano financeiro,
+    não há decisão a tomar — pedir um clique de confirmação é cerimônia, e
+    cerimônia que se repete vira clique automático, que é pior do que não ter
+    conferência nenhuma.
+
+    O de-para continua existindo e continua sendo o que impede código chumbado.
+    Só deixou de ser um PASSO: agora ele só aparece quando há de fato uma
+    decisão — descrição repetida, ou descrição que não existe. Nesses dois
+    casos a tela para e pergunta, exatamente como antes.
+
+    O que ele confirmou à mão continua valendo por cima do que foi descoberto:
+    é assim que ele conserta um caso que o sistema leria errado.
+    """
+    confirmadas = categorias_configuradas()
+    resolvidas = dict(confirmadas)
+    for chave, descricao in CATEGORIAS.items():
+        if resolvidas.get(chave, {}).get("codigo"):
+            continue
+        try:
+            candidatos = procurar_categoria(descricao)
+        except SemEspelho:
+            continue
+        if len(candidatos) == 1:
+            resolvidas[chave] = {
+                "codigo": candidatos[0]["codigo"],
+                "descricao": candidatos[0]["descricao"],
+                "transferencia": candidatos[0]["transferencia"],
+                "descoberta": True,
+            }
+    return resolvidas
+
+
 def falta_configurar() -> list:
     """Frases em português sobre o que ainda impede um lançamento."""
     faltas = []
@@ -268,11 +306,11 @@ def falta_configurar() -> list:
             from .aportes import PAPEL_ROTULO
             faltas.append(f"Falta apontar qual conta do OMIE é a "
                           f"{PAPEL_ROTULO[papel]}.")
-    categorias = categorias_configuradas()
+    categorias = categorias_resolvidas()
     for chave, descricao in CATEGORIAS.items():
         if not (categorias.get(chave) or {}).get("codigo"):
-            faltas.append(f"Falta confirmar o código da categoria "
-                          f"\"{descricao}\".")
+            faltas.append(f"Não sei qual é o código da categoria "
+                          f"\"{descricao}\" no seu plano financeiro.")
     return faltas
 
 

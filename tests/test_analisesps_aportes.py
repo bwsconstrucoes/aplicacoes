@@ -134,6 +134,31 @@ def test_conta_trocada_e_recusada_com_explicacao():
     assert "de origem" in frase
 
 
+def test_sem_mandar_conta_nenhuma_a_regra_usa_a_da_operacao():
+    """⚠️ MUDANÇA DE 20/09/2026, depois de ele ver a tela: *"na hora que eu
+    fosse mais embaixo definir o que está acontecendo, você pergunta o que eu
+    estou lançando; então ele já define quais contas seriam utilizadas."*
+
+    Perguntar a conta era oferecer a chance de montar uma combinação que a
+    regra não prevê. Quem não manda conta recebe a da regra — e o confronto
+    do teste acima continua valendo para quem MANDA uma errada."""
+    plano = planejar(conta_origem=None, conta_destino=None)
+    assert [t["id_conta_corrente"] for t in plano["titulos"]] == [7011, 22069]
+    assert [t["categoria_nome"] for t in plano["titulos"]] == \
+        ["Aportes BWS", "Aportes BWS"]
+
+
+def test_o_aporte_do_parceiro_nao_precisa_de_conta_de_origem():
+    """*"Nem sempre a conta de origem vai ser necessária. Se eu estiver
+    lançando um dinheiro do parceiro, ele não vem de conta nenhuma — vem de
+    outra empresa, que não nos interessa."*"""
+    plano = planejar(operacao="aporte_parceiro", conta_origem=None,
+                     conta_destino=None)
+    assert len(plano["titulos"]) == 1
+    assert plano["titulos"][0]["sentido"] == "entrada"
+    assert plano["titulos"][0]["id_conta_corrente"] == 22069
+
+
 def test_sem_obra_nao_planeja():
     """Decisão do dono (20/09): obra sempre. Sem departamento o aporte existe
     no OMIE mas some de qualquer visão por obra — e some calado."""
@@ -180,6 +205,46 @@ def test_data_dos_dois_jeitos():
     assert planejar(data="20/09/2026")["data"] == date(2026, 9, 20)
     with pytest.raises(aportes.ErroDeRegra):
         planejar(data="não é data")
+
+
+# ---------------------------------------------------------------------------
+# AS CINCO SITUAÇÕES — o que a tela mostra
+# ---------------------------------------------------------------------------
+def test_sao_cinco_situacoes_e_nao_quatro_categorias():
+    """*"Aportes BWS tanto está na conta de entrada quanto de saída. Na
+    verdade, todas as categorias poderão ser utilizadas."*
+
+    A tela listava as QUATRO categorias como se cada uma fosse uma coisa só.
+    O que existe são CINCO situações: conta + sentido + categoria."""
+    assert len(aportes.SITUACOES) == 5
+    assert len({c for _, _, c in aportes.SITUACOES}) == 4, "quatro categorias"
+    # A que ele citou: usada dos dois lados, saindo e entrando.
+    assert aportes.situacoes_da_categoria("aportes_bws") == [
+        (aportes.MATRIZ, "saida"), (aportes.PARCERIA, "entrada")]
+    # E a devolução da parceria também serve a duas operações.
+    assert aportes.situacoes_da_categoria("devolucao_aportes") == [
+        (aportes.PARCERIA, "saida")]
+
+
+def test_as_situacoes_batem_com_as_pernas_das_operacoes():
+    """A tabela que a tela mostra e a regra que grava não podem divergir: se
+    divergirem, ele confere uma coisa e o OMIE recebe outra."""
+    das_operacoes = set()
+    for op in aportes.OPERACOES.values():
+        for perna in op["pernas"]:
+            das_operacoes.add((perna.papel, perna.sentido, perna.categoria))
+    assert das_operacoes == set(aportes.SITUACOES)
+
+
+def test_o_resumo_da_operacao_diz_o_movimento_sem_pedir_conta():
+    """É o que a tela mostra assim que ele escolhe a operação, antes de pedir
+    valor ou data."""
+    resumo = aportes.resumo_das_pernas("aporte_bws")
+    assert [r["sentido_rotulo"] for r in resumo] == ["Saída", "Entrada"]
+    assert [r["natureza_rotulo"] for r in resumo] == \
+        ["Conta a pagar", "Conta a receber"]
+    assert all(r["categoria_nome"] == "Aportes BWS" for r in resumo)
+    assert len(aportes.resumo_das_pernas("aporte_parceiro")) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -5864,6 +5864,97 @@ painel. Conferido: os 18 testes seguem verdes contra a estrutura nova.
   o assistente vai ler o espelho do painel — decisão que é do ERP, não daqui.
 
 ---
+
+### Septuagésima sexta leva (20/09) — a tela dos aportes, redesenhada no mesmo dia
+
+Publicada a leva anterior, o dono abriu a tela e apontou quatro coisas. As
+quatro estavam certas, e cada uma é um jeito de errar que volta sozinho na
+próxima tela parecida — por isso ficam escritas.
+
+#### 1. Entrada e saída não davam para distinguir
+
+> *"Você tem que identificar melhor o que é entrada financeira e o que é
+> saída. Porque, por exemplo, Aportes BWS, ele tanto está na conta de entrada
+> quanto de saída. Na verdade, todas as categorias poderão ser utilizadas."*
+
+A tela listava as **quatro categorias** numa tabela, como se cada uma fosse
+uma coisa só. Não são: "Aportes BWS" é usada **duas vezes** — saindo da matriz
+e entrando na parceria. Listada uma vez, ela esconde metade do que faz.
+
+O que existe de verdade são **cinco situações** (conta + sentido + categoria),
+que é exatamente como ele desenhou a tabela no briefing. A tela passa a
+mostrar as cinco, na ordem dele, com `↑ SAI` e `↓ ENTRA` em etiqueta colorida
+— o sentido dito sem depender de ler a frase inteira.
+
+#### 2. O "gravar o de-para" não devia existir
+
+> *"Eu não entendi esse gravar o de-para. Eu acho que não precisaria."*
+
+Ele tem razão, e o raciocínio vale para além desta tela: **quando a descrição
+aparece uma vez só no plano financeiro, não há decisão a tomar.** Pedir um
+clique de confirmação ali é cerimônia — e cerimônia que se repete vira clique
+automático, que é pior do que não ter conferência nenhuma, porque dá a
+sensação de que alguém olhou.
+
+O de-para **continua existindo** e continua sendo o que impede código chumbado.
+Só deixou de ser um **passo**: `categorias_resolvidas()` descobre sozinha o que
+é inequívoco, e o bloco de ajuste só aparece quando há de fato uma decisão —
+descrição repetida, ou descrição que não existe. Fora isso ele mora dentro de
+um "detalhes" fechado, que ninguém precisa abrir.
+
+O que ele confirmar à mão continua valendo **por cima** do descoberto: é assim
+que se conserta um caso que o sistema leria errado.
+
+#### 3. A conta não devia ser perguntada
+
+> *"Na hora que eu fosse mais embaixo definir o que está acontecendo, você
+> pergunta o que eu estou lançando. Então ele já define quais contas seriam
+> utilizadas."*
+
+Isto contraria a escolha que ele mesmo fez de manhã (*"escolho operação, conta
+de origem e conta de destino"*), e a mudança de ideia é correta: vendo a tela
+pronta ficou claro que perguntar a conta era **oferecer a chance de montar uma
+combinação que a regra não prevê**, para depois a tela recusar e explicar. Sem
+a pergunta, o erro não existe.
+
+Agora a operação determina as contas, e a tela **mostra** quais são, sem deixar
+trocar. `planejar` passa a usar a conta da regra quando não recebe nenhuma — e
+o confronto continua de pé para quem **manda** uma conta: é ele que impede uma
+tela antiga, ou uma chamada direta, de gravar com a conta trocada e a
+categoria do outro lado.
+
+#### 4. Conta de origem nem sempre existe
+
+> *"Nem sempre a conta de origem vai ser necessária. Se eu estiver lançando um
+> dinheiro do parceiro, ele não vem de conta nenhuma — vem de outra conta, de
+> outra empresa, que não nos interessa."*
+
+A regra já sabia disso (o aporte do parceiro sempre teve uma perna só), mas a
+**tela** mostrava os dois campos de conta sempre. Agora, escolhida a operação,
+ela diz o que vai acontecer e, quando é o caso, escreve o motivo: *"Não há
+conta de origem: o dinheiro vem de fora da empresa."*
+
+#### A forma da tela agora
+
+Uma pergunta só para começar — **o que você está lançando** — e a resposta
+desenha o resto: as contas, o sentido de cada lado, a categoria de cada lado e
+o tipo de título. Só então aparecem valor, data, fornecedor, obra e baixa.
+
+Sobrou **uma única coisa** que o dono precisa dizer, e uma vez só: qual conta
+do OMIE é a matriz e qual é a parceria. Isso não tem como ser adivinhado — e
+adivinhar aqui seria lançar dinheiro na conta errada.
+
+#### Os testes que travam a nova forma
+
+Quatro novos na tela (não pede conta nem categoria no bloco de lançar; mostra
+as cinco situações com SAI/ENTRA; o de-para fica guardado quando não falta
+nada; a operação sozinha diz o que vai acontecer) e sete na regra e no banco
+(a conta vem da regra quando não é mandada; o aporte do parceiro não precisa
+de origem; as cinco situações batem com as pernas das operações; a categoria
+sem dúvida se resolve sozinha; a com dúvida continua parando; o confirmado à
+mão vale por cima; e só as contas sobram para ele apontar).
+
+---
 ---
 
 ## Regras que não se discutem

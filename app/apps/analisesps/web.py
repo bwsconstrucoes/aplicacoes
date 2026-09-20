@@ -3827,12 +3827,16 @@ def _contexto_dos_aportes() -> dict:
     ctx = {
         "operacoes": [(c, aportes.OPERACOES[c])
                       for c in aportes.ORDEM_DAS_OPERACOES],
+        # O que cada operação FAZ, para a tela dizer isso assim que ele
+        # escolher — antes de pedir valor, data ou qualquer outra coisa.
+        "pernas_por_operacao": {c: aportes.resumo_das_pernas(c)
+                                for c in aportes.ORDEM_DAS_OPERACOES},
         "papeis": aportes_de_para.PAPEIS,
         "papel_rotulo": aportes.PAPEL_ROTULO,
         "categorias_nomes": aportes.CATEGORIAS,
         "contas_omie": [], "contas": {}, "categorias": {}, "obras": [],
         "fornecedores": [], "faltas": [], "erro_espelho": "",
-        "historico": [], "orfaos": [],
+        "historico": [], "orfaos": [], "situacoes": [],
         "senha_configurada": aportes_omie.senha_configurada(),
     }
     try:
@@ -3851,6 +3855,33 @@ def _contexto_dos_aportes() -> dict:
     ctx["contas"] = aportes_de_para.contas_configuradas()
     ctx["categorias"] = aportes_de_para.descobrir_categorias()
     ctx["faltas"] = aportes_de_para.falta_configurar()
+
+    # AS CINCO SITUAÇÕES, do jeito que ele desenhou a tabela: conta + sentido
+    # + categoria. Uma categoria aparece em mais de uma linha, e é isso que a
+    # lista de quatro categorias escondia.
+    # A MESMA CATEGORIA APARECE EM DUAS LINHAS ("Aportes BWS" sai da matriz e
+    # entra na parceria). O campo de ajuste fica só na PRIMEIRA aparição — dois
+    # campos com o mesmo nome fariam o segundo sobrescrever o primeiro com um
+    # valor que o dono não olhou.
+    ja_vistas = set()
+    for papel, sentido, chave in aportes.SITUACOES:
+        achado = ctx["categorias"].get(chave) or {}
+        conta = ctx["contas"].get(papel) or {}
+        ctx["situacoes"].append({
+            "primeira": chave not in ja_vistas,
+            "papel": papel,
+            "papel_rotulo": aportes.PAPEL_ROTULO[papel],
+            "conta_descricao": conta.get("descricao") or "",
+            "sentido": sentido,
+            "sentido_rotulo": aportes.SENTIDO_ROTULO[sentido],
+            "natureza_rotulo": aportes.NATUREZA_ROTULO[aportes.NATUREZA[sentido]],
+            "categoria_chave": chave,
+            "categoria_nome": aportes.CATEGORIAS[chave],
+            "codigo": achado.get("codigo") or "",
+            "situacao": achado.get("situacao") or "",
+            "transferencia": achado.get("transferencia") or "",
+        })
+        ja_vistas.add(chave)
     ctx["historico"] = aportes_omie.historico(30)
     ctx["orfaos"] = aportes_omie.orfaos()
     return ctx
@@ -3923,7 +3954,7 @@ def _plano_do_pedido(dados: dict):
         grupo=str(dados.get("grupo") or ""),
         numero=str(dados.get("numero") or ""),
         contas=aportes_de_para.contas_configuradas(),
-        categorias=aportes_de_para.categorias_configuradas(),
+        categorias=aportes_de_para.categorias_resolvidas(),
         observacoes=dados.get("observacoes") or {},
     )
 

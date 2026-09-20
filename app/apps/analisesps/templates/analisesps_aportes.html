@@ -3,26 +3,35 @@
 {% block classe_corpo %}sem-filtros{% endblock %}
 
 {# ---------------------------------------------------------------------------
-   APORTES E DEVOLUÇÕES NO OMIE — 20/09/2026
+   APORTES E DEVOLUÇÕES NO OMIE — 20/09/2026, REDESENHADA no mesmo dia.
 
-   *"Uma tela por onde eu lance, de forma simples, título a pagar e a receber
-   de Aporte e de Devolução de Aporte dentro do OMIE — sem eu ter que entrar
-   no OMIE e montar dois lançamentos à mão, um em cada conta, lembrando qual
-   nome usar de cada lado."*
+   ⚠️ A PRIMEIRA VERSÃO ERRAVA TRÊS COISAS, e o dono apontou as três olhando a
+   tela. Ficam escritas aqui porque cada uma é um jeito de errar que volta
+   sozinho na próxima tela parecida:
 
-   ⚠️ A TELA TEM DUAS METADES, E A ORDEM É DE PROPÓSITO.
+   1. **Pedia um "gravar o de-para" antes de deixar lançar.** *"Eu não entendi
+      esse gravar o de-para. Eu acho que não precisaria."* Ele tem razão:
+      quando a descrição aparece uma vez só no plano financeiro, não há
+      decisão a tomar, e pedir um clique de confirmação é cerimônia. Cerimônia
+      que se repete vira clique automático — pior do que não ter conferência.
+      Agora o de-para só aparece quando há DE FATO uma decisão: descrição
+      repetida, ou descrição que não existe.
 
-   Em cima o DE-PARA: qual conta do OMIE é a matriz, qual é a parceria, e qual
-   código do plano financeiro é cada uma das quatro categorias. É coisa que se
-   ajusta uma vez e se confere de vez em quando — mas sem ela nada pode ser
-   lançado, e por isso ela vem ANTES, não escondida no fim.
+   2. **Perguntava as contas.** *"Na hora que eu fosse mais embaixo definir o
+      que está acontecendo, você pergunta o que eu estou lançando; então ele
+      já define quais contas seriam utilizadas."* Perguntar era oferecer a
+      chance de montar uma combinação que a regra não prevê. A operação
+      determina as contas — e a tela MOSTRA quais são, sem deixar trocar.
 
-   Embaixo o LANÇAMENTO, que é o uso do dia.
+   3. **Listava as quatro categorias como se cada uma fosse uma coisa só.**
+      *"Aportes BWS tanto está na conta de entrada quanto de saída."* O que
+      existe são CINCO SITUAÇÕES (conta + sentido + categoria). Listar quatro
+      escondia metade do que cada uma faz.
 
-   ⚠️ NADA VAI PARA O OMIE SEM PASSAR PELA CONFERÊNCIA. O botão de gravar só
-   aparece depois do ensaio, e o ensaio mostra o pacote exato que seria
-   enviado. Foi pedido com todas as letras, e já deu errado antes em outro
-   caminho de escrita.
+   ⚠️ E CONTA DE ORIGEM NÃO EXISTE SEMPRE: *"se eu estiver lançando um dinheiro
+   do parceiro, ele não vem de conta nenhuma — vem de outra empresa, que não
+   nos interessa."* Nessas operações a tela não mostra origem nenhuma, e diz
+   por quê.
 --------------------------------------------------------------------------- #}
 {% block conteudo %}
 <h2>Aportes e devoluções no OMIE</h2>
@@ -56,116 +65,25 @@
 {% endif %}
 
 {# ===========================================================================
-   METADE 1 — O DE-PARA
+   SÓ APARECE QUANDO FALTA ALGUMA DECISÃO. No dia a dia, esta caixa não existe.
    =========================================================================== #}
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3>De-para: do seu nome para o código que o OMIE exige</h3>
-    <small>{% if faltas %}{{ faltas|length }} pendência(s){% else %}em dia{% endif %}</small>
-  </div>
-
-  <p class="cartao-dica">
-    O OMIE não aceita o nome da categoria — ele exige o código dela (tipo
-    <code>2.01.05</code>). Como você mexe no plano financeiro, nenhum código
-    fica escrito dentro do programa: eles são procurados aqui, pela descrição,
-    e ficam gravados para você conferir. Se uma descrição não aparecer, ou
-    aparecer mais de uma vez, esta tela para e pergunta — nunca escolhe
-    sozinha.
-  </p>
-
-  {% if faltas %}
+{% if faltas %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Preciso que você me diga isto uma vez só</h3>
+      <small>{{ faltas|length }} pendência(s)</small>
+    </div>
     <div class="aviso atencao">
-      <b>Falta acertar isto antes de lançar qualquer coisa:</b>
-      <ul style="margin:8px 0 0 18px">
+      <ul style="margin:0 0 0 18px">
         {% for f in faltas %}<li>{{ f }}</li>{% endfor %}
       </ul>
     </div>
-  {% else %}
-    <div class="aviso bom">O de-para está completo.</div>
-  {% endif %}
-
-  <form method="post" action="{{ url_for('analisesps.aportes_de_para_gravar') }}">
-    <h4>As duas contas</h4>
-    {% for papel in papeis %}
-      <p>
-        <label class="rotulo-campo" for="conta_{{ papel }}">
-          Qual conta do OMIE é a {{ papel_rotulo[papel] }}?</label>
-        <select class="campo-largo" id="conta_{{ papel }}" name="conta_{{ papel }}">
-          <option value="">— escolha —</option>
-          {% for c in contas_omie %}
-            <option value="{{ c.codigo }}"
-              {% if contas.get(papel) and contas[papel].codigo|string == c.codigo|string %}selected{% endif %}>
-              {{ c.descricao }} — código {{ c.codigo }}
-              {%- if c.numero_conta %} · conta {{ c.numero_conta }}{% endif %}
-              {%- if c.inativa %} (inativa){% endif %}
-            </option>
-          {% endfor %}
-        </select>
-      </p>
-    {% endfor %}
-    <p class="cartao-dica">
-      A lista mostra o código que o OMIE usa <i>e</i> o número da conta
-      bancária, porque é olhando os dois juntos que você reconhece qual é
-      qual.
-    </p>
-
-    <h4>As quatro categorias</h4>
-    <table class="sps">
-      <thead>
-        <tr><th>No seu plano financeiro</th><th>Situação</th><th>Código</th></tr>
-      </thead>
-      <tbody>
-        {% for chave, nome in categorias_nomes.items() %}
-          {% set achado = categorias.get(chave) or {} %}
-          <tr>
-            <td><b>{{ nome }}</b></td>
-            <td>
-              {% if achado.situacao == 'escolhida' %}
-                <span class="etiqueta boa">confirmada</span>
-              {% elif achado.situacao == 'achou' %}
-                <span class="etiqueta">achei uma só</span>
-              {% elif achado.situacao == 'ambigua' %}
-                <span class="etiqueta ruim">achei {{ achado.candidatos|length }}</span>
-              {% elif achado.situacao == 'nao_achou' %}
-                <span class="etiqueta ruim">não achei</span>
-              {% else %}
-                <span class="etiqueta ruim">sem espelho</span>
-              {% endif %}
-              {% if achado.transferencia and achado.transferencia|upper == 'S' %}
-                <br><small>⚠️ marcada como transferência — fica fora do DRE</small>
-              {% endif %}
-            </td>
-            <td>
-              {% if achado.candidatos %}
-                <select class="campo-largo" name="categoria_{{ chave }}">
-                  <option value="">— não usar —</option>
-                  {% for c in achado.candidatos %}
-                    <option value="{{ c.codigo }}"
-                      {% if achado.codigo == c.codigo %}selected{% endif %}>
-                      {{ c.codigo }} — {{ c.descricao }}
-                      {%- if c.transferencia|upper == 'S' %} (transferência){% endif %}
-                    </option>
-                  {% endfor %}
-                </select>
-              {% else %}
-                <input class="campo-largo" name="categoria_{{ chave }}"
-                       value="{{ achado.codigo }}"
-                       placeholder="digite o código, ex.: 2.01.05">
-                <small>Não achei essa descrição no plano financeiro. Confira o
-                  nome dela no OMIE, ou digite o código aqui.</small>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    <p><button class="btn" type="submit">Gravar o de-para</button></p>
-  </form>
-</div>
+    {% include "analisesps_aportes_ajuste.html" %}
+  </div>
+{% endif %}
 
 {# ===========================================================================
-   METADE 2 — O LANÇAMENTO
+   O LANÇAMENTO — a tela, de verdade
    =========================================================================== #}
 <div class="cartao">
   <div class="cartao-cab">
@@ -189,89 +107,91 @@
         <option value="{{ chave }}">{{ op.rotulo }}</option>
       {% endfor %}
     </select>
-    <small id="explicacao-operacao" class="cartao-dica"></small>
   </p>
 
-  <div style="display:flex; gap:12px; flex-wrap:wrap">
-    <p style="flex:1 1 240px">
-      <label class="rotulo-campo" for="conta_origem">Conta de origem
-        <small>(de onde o dinheiro sai)</small></label>
-      <select class="campo-largo" id="conta_origem">
-        <option value="">— nenhuma —</option>
-        {% for c in contas_omie %}
-          <option value="{{ c.codigo }}">{{ c.descricao }} — {{ c.codigo }}</option>
+  {# O que a operação escolhida faz: contas, sentido e categoria, sem deixar
+     trocar nada. É a resposta ao "identifique melhor o que é entrada e o que
+     é saída" — aqui cada linha diz de um jeito só. #}
+  <div id="o-que-vai-acontecer"></div>
+
+  <div id="resto-do-formulario" style="display:none">
+    <div style="display:flex; gap:12px; flex-wrap:wrap">
+      <p style="flex:1 1 160px">
+        <label class="rotulo-campo" for="valor">Valor</label>
+        <input class="campo-largo" id="valor" inputmode="decimal"
+               placeholder="12.500,00">
+      </p>
+      <p style="flex:1 1 160px">
+        <label class="rotulo-campo" for="data">Data</label>
+        <input class="campo-largo" id="data" type="date">
+      </p>
+    </div>
+
+    <p>
+      <label class="rotulo-campo" for="fornecedor">Fornecedor
+        <small>(o cadastro do OMIE que aparece no título)</small></label>
+      <input class="campo-largo" id="busca-fornecedor"
+             placeholder="digite parte do nome ou o CNPJ e espere um instante">
+      <select class="campo-largo" id="fornecedor">
+        {% for f in fornecedores %}
+          <option value="{{ f.codigo }}">{{ f.nome }}{% if f.documento %} — {{ f.documento }}{% endif %}</option>
         {% endfor %}
       </select>
     </p>
-    <p style="flex:1 1 240px">
-      <label class="rotulo-campo" for="conta_destino">Conta de destino
-        <small>(para onde o dinheiro vai)</small></label>
-      <select class="campo-largo" id="conta_destino">
-        <option value="">— nenhuma —</option>
-        {% for c in contas_omie %}
-          <option value="{{ c.codigo }}">{{ c.descricao }} — {{ c.codigo }}</option>
+
+    <p>
+      <label class="rotulo-campo" for="obra">Obra</label>
+      <select class="campo-largo" id="obra">
+        <option value="">— escolha —</option>
+        {% for o in obras %}
+          <option value="{{ o.codigo }}">{{ o.nome }}</option>
         {% endfor %}
       </select>
+      <small class="cartao-dica">Obrigatória: sem ela o aporte entra no OMIE mas
+        não aparece em nenhuma visão por obra.</small>
+    </p>
+
+    <p>
+      <label><input type="checkbox" id="baixar" checked>
+        Já dar a baixa (o dinheiro consta como movimentado nesta data)</label>
+      <small class="cartao-dica">Desmarque se o dinheiro ainda não andou — aí o
+        título nasce em aberto e alguém dá a baixa depois, no OMIE.</small>
+    </p>
+
+    <p>
+      <label class="rotulo-campo" for="numero">Número do documento
+        <small>(deixe em branco para o sistema montar)</small></label>
+      <input class="campo-largo" id="numero" placeholder="APORTE-20260920-A1B2C3">
+      <small class="cartao-dica">O mesmo número vai nos dois títulos — é ele que
+        permite achar o par depois.</small>
+    </p>
+
+    <p>
+      <button class="btn" id="btn-ensaiar">Conferir antes de gravar</button>
     </p>
   </div>
-
-  <div style="display:flex; gap:12px; flex-wrap:wrap">
-    <p style="flex:1 1 160px">
-      <label class="rotulo-campo" for="valor">Valor</label>
-      <input class="campo-largo" id="valor" inputmode="decimal"
-             placeholder="12.500,00">
-    </p>
-    <p style="flex:1 1 160px">
-      <label class="rotulo-campo" for="data">Data</label>
-      <input class="campo-largo" id="data" type="date">
-    </p>
-  </div>
-
-  <p>
-    <label class="rotulo-campo" for="fornecedor">Fornecedor
-      <small>(o cadastro do OMIE que aparece no título)</small></label>
-    <input class="campo-largo" id="busca-fornecedor"
-           placeholder="digite parte do nome ou o CNPJ e espere um instante">
-    <select class="campo-largo" id="fornecedor">
-      {% for f in fornecedores %}
-        <option value="{{ f.codigo }}">{{ f.nome }}{% if f.documento %} — {{ f.documento }}{% endif %}</option>
-      {% endfor %}
-    </select>
-  </p>
-
-  <p>
-    <label class="rotulo-campo" for="obra">Obra</label>
-    <select class="campo-largo" id="obra">
-      <option value="">— escolha —</option>
-      {% for o in obras %}
-        <option value="{{ o.codigo }}">{{ o.nome }}</option>
-      {% endfor %}
-    </select>
-    <small class="cartao-dica">Obrigatória: sem ela o aporte entra no OMIE mas
-      não aparece em nenhuma visão por obra.</small>
-  </p>
-
-  <p>
-    <label><input type="checkbox" id="baixar" checked>
-      Já dar a baixa (o dinheiro consta como movimentado nesta data)</label>
-    <small class="cartao-dica">Desmarque se o dinheiro ainda não andou — aí o
-      título nasce em aberto e alguém dá a baixa depois, no OMIE.</small>
-  </p>
-
-  <p>
-    <label class="rotulo-campo" for="numero">Número do documento
-      <small>(deixe em branco para o sistema montar)</small></label>
-    <input class="campo-largo" id="numero" placeholder="APORTE-20260920-A1B2C3">
-    <small class="cartao-dica">O mesmo número vai nos dois títulos — é ele que
-      permite achar o par depois.</small>
-  </p>
-
-  <p>
-    <button class="btn" id="btn-ensaiar">Conferir antes de gravar</button>
-  </p>
 
   <div id="conferencia"></div>
 </div>
+
+{# ===========================================================================
+   O DE-PARA, GUARDADO. Só se abre quem quiser trocar alguma coisa.
+   =========================================================================== #}
+{% if not faltas %}
+<div class="cartao">
+  <details>
+    <summary><b>As contas e as categorias que estou usando</b></summary>
+    <p class="cartao-dica">
+      Você não precisa mexer aqui. Os códigos das categorias são descobertos
+      sozinhos, pela descrição, no seu plano financeiro — nenhum deles está
+      escrito dentro do programa, porque no dia em que você renomeasse uma
+      categoria o sistema passaria a lançar errado sem avisar. Abra só se
+      alguma linha abaixo estiver apontando para o lugar errado.
+    </p>
+    {% include "analisesps_aportes_ajuste.html" %}
+  </details>
+</div>
+{% endif %}
 
 {# ===========================================================================
    O QUE JÁ FOI LANÇADO
@@ -310,31 +230,67 @@
 
 <script>
 (function () {
-  const EXPLICACOES = {
-    {% for chave, op in operacoes %}
-      {{ chave|tojson }}: {{ op.explicacao|tojson }}{% if not loop.last %},{% endif %}
-    {% endfor %}
-  };
+  const PERNAS = {{ pernas_por_operacao|tojson }};
+  const CONTAS = {{ contas|tojson }};
   const $ = id => document.getElementById(id);
   const conferencia = $("conferencia");
+  const oQueVai = $("o-que-vai-acontecer");
+  const resto = $("resto-do-formulario");
   let planoConferido = null;
 
-  $("operacao").addEventListener("change", e => {
-    $("explicacao-operacao").textContent = EXPLICACOES[e.target.value] || "";
-    // Conferência feita para outra operação não vale mais: o botão de gravar
-    // some junto, senão daria para conferir uma coisa e gravar outra.
+  function limparConferencia() {
     planoConferido = null;
     conferencia.innerHTML = "";
+  }
+
+  // ⚠️ AS SETAS DIZEM O SENTIDO SEM DEPENDER DE LEITURA. Foi o primeiro
+  // apontamento dele: "identifique melhor o que é entrada e o que é saída".
+  function desenharOperacao(chave) {
+    const pernas = PERNAS[chave];
+    if (!pernas) { oQueVai.innerHTML = ""; resto.style.display = "none"; return; }
+
+    let html = '<div class="aviso"><b>O que vai acontecer:</b><table class="sps"' +
+               ' style="margin-top:8px"><thead><tr>' +
+               "<th>Movimento</th><th>Conta</th><th>Categoria no OMIE</th>" +
+               "<th>Tipo de título</th></tr></thead><tbody>";
+    pernas.forEach(p => {
+      const conta = (CONTAS[p.papel] || {}).descricao || "(conta ainda não apontada)";
+      const seta = p.sentido === "saida" ? "↑ SAI" : "↓ ENTRA";
+      const cor = p.sentido === "saida" ? "ruim" : "boa";
+      html += "<tr><td><span class='etiqueta " + cor + "'>" + seta + "</span></td>" +
+              "<td>" + conta + "<br><small>" + p.papel_rotulo + "</small></td>" +
+              "<td>" + p.categoria_nome + "</td>" +
+              "<td>" + p.natureza_rotulo + "</td></tr>";
+    });
+    html += "</tbody></table>";
+
+    // A conta de origem nem sempre existe, e dizer por quê evita a pergunta.
+    const temSaida = pernas.some(p => p.sentido === "saida");
+    const temEntrada = pernas.some(p => p.sentido === "entrada");
+    if (!temSaida) {
+      html += "<p style='margin:8px 0 0'><b>Não há conta de origem:</b> o " +
+              "dinheiro vem de fora da empresa.</p>";
+    } else if (!temEntrada) {
+      html += "<p style='margin:8px 0 0'><b>Não há conta de destino:</b> o " +
+              "dinheiro sai da empresa.</p>";
+    }
+    html += "<p style='margin:8px 0 0'><small>As contas saem da regra que " +
+            "você desenhou — por isso não há o que escolher aqui.</small></p>";
+    html += "</div>";
+    oQueVai.innerHTML = html;
+    resto.style.display = "";
+  }
+
+  $("operacao").addEventListener("change", e => {
+    desenharOperacao(e.target.value);
+    limparConferencia();
   });
 
-  // Mudar QUALQUER campo invalida a conferência, pelo mesmo motivo.
-  ["conta_origem", "conta_destino", "valor", "data", "fornecedor", "obra",
-   "baixar", "numero"].forEach(id => {
+  // Mudar qualquer campo invalida a conferência: senão daria para conferir
+  // uma coisa e gravar outra.
+  ["valor", "data", "fornecedor", "obra", "baixar", "numero"].forEach(id => {
     const campo = $(id);
-    if (campo) campo.addEventListener("change", () => {
-      planoConferido = null;
-      conferencia.innerHTML = "";
-    });
+    if (campo) campo.addEventListener("change", limparConferencia);
   });
 
   // A procura de fornecedor vai ao servidor, mas só depois de a pessoa parar
@@ -361,8 +317,7 @@
     const obra = $("obra");
     return {
       operacao: $("operacao").value,
-      conta_origem: $("conta_origem").value || null,
-      conta_destino: $("conta_destino").value || null,
+      // ⚠️ SEM conta_origem e SEM conta_destino: quem decide é a regra.
       valor: $("valor").value,
       data: $("data").value,
       fornecedor: sel.value || null,
@@ -419,14 +374,16 @@
             "</div>";
 
     html += '<table class="sps"><thead><tr>' +
-            "<th>Conta</th><th>Tipo de título</th><th>Categoria</th>" +
-            "<th>Sentido</th><th>Valor</th><th>Data</th><th>Obra</th>" +
+            "<th>Movimento</th><th>Conta</th><th>Categoria</th>" +
+            "<th>Tipo de título</th><th>Valor</th><th>Data</th><th>Obra</th>" +
             "</tr></thead><tbody>";
     p.titulos.forEach(t => {
-      html += "<tr><td>" + t.conta_descricao + "</td>" +
-              "<td>" + t.natureza_rotulo + "</td>" +
+      const seta = t.sentido === "saida" ? "↑ SAI" : "↓ ENTRA";
+      const cor = t.sentido === "saida" ? "ruim" : "boa";
+      html += "<tr><td><span class='etiqueta " + cor + "'>" + seta + "</span></td>" +
+              "<td>" + t.conta_descricao + "</td>" +
               "<td>" + t.categoria_nome + " <small>(" + t.codigo_categoria + ")</small></td>" +
-              "<td>" + t.sentido_rotulo + "</td>" +
+              "<td>" + t.natureza_rotulo + "</td>" +
               "<td>" + reais(t.valor) + "</td>" +
               "<td>" + t.data + "</td>" +
               "<td>" + (t.departamento_nome || t.cod_departamento) + "</td></tr>";

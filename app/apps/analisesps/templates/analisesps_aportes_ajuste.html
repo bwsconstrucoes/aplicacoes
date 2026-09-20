@@ -1,0 +1,113 @@
+{# ---------------------------------------------------------------------------
+   O AJUSTE — as contas e as cinco situações.
+
+   ⚠️ ESTE PEDAÇO FICA GUARDADO NO DIA A DIA. Ele aparece sozinho só quando
+   falta alguma decisão de verdade (categoria repetida, categoria que não
+   existe, conta ainda não apontada). Fora isso, mora dentro de um "detalhes"
+   fechado, e ninguém precisa abrir.
+
+   ⚠️ E AS CINCO SITUAÇÕES, NÃO AS QUATRO CATEGORIAS. O dono apontou em
+   20/09/2026: *"Aportes BWS tanto está na conta de entrada quanto de saída;
+   na verdade, todas as categorias poderão ser utilizadas."* Listar quatro
+   categorias escondia metade do que cada uma faz. Aqui cada linha é uma
+   situação — conta, sentido e categoria juntos, na ordem da tabela dele.
+
+   É incluído de dois lugares e nunca dos dois ao mesmo tempo, então os `id`
+   não se repetem na página.
+--------------------------------------------------------------------------- #}
+<form method="post" action="{{ url_for('analisesps.aportes_de_para_gravar') }}">
+
+  <h4>As duas contas</h4>
+  <p class="cartao-dica">
+    Isto é a única coisa que preciso que você me diga, e é uma vez só. Daqui
+    para a frente a operação escolhida já sabe qual conta usar de cada lado.
+  </p>
+  {% for papel in papeis %}
+    <p>
+      <label class="rotulo-campo" for="conta_{{ papel }}">
+        Qual conta do OMIE é a {{ papel_rotulo[papel] }}?</label>
+      <select class="campo-largo" id="conta_{{ papel }}" name="conta_{{ papel }}">
+        <option value="">— escolha —</option>
+        {% for c in contas_omie %}
+          <option value="{{ c.codigo }}"
+            {% if contas.get(papel) and contas[papel].codigo|string == c.codigo|string %}selected{% endif %}>
+            {{ c.descricao }} — código {{ c.codigo }}
+            {%- if c.numero_conta %} · conta {{ c.numero_conta }}{% endif %}
+            {%- if c.inativa %} (inativa){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </p>
+  {% endfor %}
+
+  <h4>As cinco situações</h4>
+  <p class="cartao-dica">
+    É a sua tabela. A mesma categoria aparece em mais de uma linha — o que
+    distingue os lados é a conta e o sentido do dinheiro.
+  </p>
+  <table class="sps">
+    <thead>
+      <tr><th>Movimento</th><th>Conta</th><th>Categoria</th>
+          <th>Código no seu plano financeiro</th></tr>
+    </thead>
+    <tbody>
+      {% for s in situacoes %}
+        <tr>
+          <td>
+            {% if s.sentido == 'saida' %}
+              <span class="etiqueta ruim">↑ SAI</span>
+            {% else %}
+              <span class="etiqueta boa">↓ ENTRA</span>
+            {% endif %}
+            <br><small>{{ s.natureza_rotulo }}</small>
+          </td>
+          <td>{{ s.conta_descricao or '—' }}
+              <br><small>{{ s.papel_rotulo }}</small></td>
+          <td><b>{{ s.categoria_nome }}</b>
+            {% if s.transferencia and s.transferencia|upper == 'S' %}
+              <br><small>⚠️ marcada como transferência — fica fora do DRE</small>
+            {% endif %}
+          </td>
+          <td>
+            {# A MESMA CATEGORIA APARECE EM DUAS LINHAS ("Aportes BWS"), e um
+               campo por linha faria a segunda sobrescrever a primeira com um
+               valor que o dono não olhou. O campo fica só na PRIMEIRA vez que
+               a categoria aparece; nas outras, o código é mostrado. #}
+            {% set achado = categorias.get(s.categoria_chave) or {} %}
+            {% if not s.primeira %}
+              <code>{{ s.codigo or '—' }}</code>
+              <br><small>mesmo código da linha acima</small>
+            {% else %}
+              {% if achado.candidatos %}
+                <select class="campo-largo" name="categoria_{{ s.categoria_chave }}">
+                  {% if achado.situacao == 'ambigua' %}
+                    <option value="">— escolha qual é —</option>
+                  {% endif %}
+                  {% for c in achado.candidatos %}
+                    <option value="{{ c.codigo }}"
+                      {% if s.codigo == c.codigo %}selected{% endif %}>
+                      {{ c.codigo }} — {{ c.descricao }}
+                      {%- if c.transferencia|upper == 'S' %} (transferência){% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
+                {% if achado.situacao == 'ambigua' %}
+                  <small>Achei {{ achado.candidatos|length }} com esse nome.
+                    Só você sabe qual é.</small>
+                {% endif %}
+              {% else %}
+                <input class="campo-largo" name="categoria_{{ s.categoria_chave }}"
+                       value="{{ s.codigo }}"
+                       placeholder="digite o código, ex.: 2.01.05">
+                <small>Não achei essa descrição no seu plano financeiro.
+                  Confira o nome dela no OMIE, ou digite o código aqui.</small>
+              {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p><button class="btn" type="submit">Gravar</button></p>
+</form>

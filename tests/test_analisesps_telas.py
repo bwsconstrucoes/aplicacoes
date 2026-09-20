@@ -4235,15 +4235,66 @@ def test_a_tela_de_aportes_monta(app_aportes):
     assert "BWS MATRIZ" in html and "12345-6" in html
 
 
-def test_a_tela_de_aportes_nao_deixa_escolher_categoria(app_aportes):
-    """*"Eu não devo ter que escolher categoria nenhuma: quem escolhe é a
-    regra. Se eu pudesse escolher, eu erraria."* O de-para lá em cima é outra
-    coisa: é dizer QUAL código é cada nome, uma vez só."""
+def bloco_de_lancar(html):
+    """Só o cartão "Lançar" — o ajuste do de-para fica num cartão depois dele,
+    guardado, e não deve ser confundido com a tela de uso."""
+    inicio = html.index("<h3>Lançar</h3>")
+    fim = html.index('id="conferencia"', inicio)
+    return html[inicio:fim]
+
+
+def test_a_tela_de_lancar_nao_pede_categoria_nem_conta(app_aportes):
+    """Duas coisas de uma vez, e as duas são pedido dele.
+
+    A categoria nunca foi escolhida por ele — *"se eu pudesse escolher, eu
+    erraria"*. A CONTA deixou de ser perguntada em 20/09, depois de ele ver a
+    tela: *"na hora que eu fosse definir o que está acontecendo, você pergunta
+    o que eu estou lançando; então ele já define quais contas seriam
+    utilizadas."* Perguntar era oferecer a chance de montar uma combinação que
+    a regra não prevê."""
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)
-    lancar = html[html.index("<h3>Lançar</h3>"):]
-    assert 'id="categoria' not in lancar
+    lancar = bloco_de_lancar(html)
     assert 'name="categoria' not in lancar
+    assert 'id="conta_origem"' not in lancar, "voltou a perguntar a conta"
+    assert 'id="conta_destino"' not in lancar, "voltou a perguntar a conta"
+
+
+def test_a_tela_mostra_as_cinco_situacoes_e_nao_quatro_categorias(app_aportes):
+    """*"Aportes BWS tanto está na conta de entrada quanto de saída. Na
+    verdade, todas as categorias poderão ser utilizadas."* Listar as quatro
+    categorias escondia metade do que cada uma faz."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "As cinco situações" in html
+    # Entrada e saída ditas sem depender de leitura — o primeiro apontamento
+    # dele foi justamente que não dava para distinguir.
+    assert html.count("↑ SAI") >= 2
+    assert html.count("↓ ENTRA") >= 3
+
+
+def test_o_de_para_fica_guardado_quando_nao_falta_nada(app_aportes):
+    """*"Eu não entendi esse gravar o de-para. Eu acho que não precisaria."*
+    Ele continua existindo — é o que impede código chumbado — mas deixou de
+    ser um passo."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "Preciso que você me diga isto uma vez só" not in html
+    assert "<details>" in html
+    assert "As contas e as categorias que estou usando" in html
+
+
+def test_a_operacao_sozinha_diz_o_que_vai_acontecer(app_aportes):
+    """A tela precisa saber, no navegador, o que cada operação faz — para
+    mostrar contas, sentido e categoria assim que ele escolher, antes de pedir
+    valor ou data."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert 'id="o-que-vai-acontecer"' in html
+    assert "Não há conta de origem" in html, \
+        "não explica o caso do dinheiro que vem de fora"
+    # O aporte do parceiro tem UMA perna só, e a tela tem de saber disso.
+    assert '"aporte_parceiro"' in html
 
 
 def test_o_perfil_consulta_nao_alcanca_os_aportes(app_aportes):
@@ -4259,8 +4310,10 @@ def test_a_tela_avisa_quando_falta_o_de_para(app_aportes, monkeypatch):
                         lambda: ["Falta apontar qual conta é a Matriz."])
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)
-    assert "Falta acertar isto antes de lançar" in html
+    assert "Preciso que você me diga isto uma vez só" in html
     assert "Falta apontar qual conta é a Matriz." in html
+    # E aí o ajuste aparece ABERTO, não guardado atrás de um "detalhes".
+    assert "As contas e as categorias que estou usando" not in html
 
 
 def test_a_tela_grita_o_titulo_orfao(app_aportes, monkeypatch):

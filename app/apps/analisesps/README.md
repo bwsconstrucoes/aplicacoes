@@ -366,9 +366,23 @@ e cada um responde a um jeito conhecido de dar errado:
 | Cuidado | O que ele evita |
 |---|---|
 | **Nenhum código de categoria ou de conta escrito no programa** — todos saem de um de-para conferível, descoberto pela descrição em `painel.cat` | o dono mexe no plano financeiro e o sistema passa a lançar na categoria errada **sem nada denunciar** |
+| **O de-para não é um passo**: o que é inequívoco se resolve sozinho, e o bloco de ajuste só aparece quando há decisão a tomar | clique de confirmação que se repete vira clique automático — pior do que não ter conferência, porque parece que alguém olhou |
+| **A conta não é perguntada**: a operação determina as duas, e a tela só mostra | oferecer a chance de montar uma combinação que a regra não prevê, para depois recusá-la |
 | **Descrição ambígua ou ausente PARA a tela** em vez de escolher uma | o mesmo, pela porta do palpite |
 | **Ensaio obrigatório antes de gravar**, mostrando o pacote exato | escrever no OMIE algo que ninguém leu |
 | **Os dois títulos nascem amarrados**: falhando o segundo, o primeiro é desfeito; não dando para desfazer, o número do órfão vai para a tela | meio aporte no OMIE — nenhum relatório fecha e ninguém percebe |
+
+⚠️ **A tela pergunta UMA coisa para começar** — o que está sendo lançado — e a
+resposta desenha o resto: contas, sentido de cada lado, categoria e tipo de
+título, tudo só para conferência. Conta de origem só existe quando existe: no
+aporte do parceiro o dinheiro vem de fora, e a tela escreve isso. A única coisa
+que o dono precisa apontar, uma vez só, é qual conta do OMIE é a matriz e qual
+é a parceria — o resto o sistema descobre.
+
+⚠️ **As CINCO situações, não as quatro categorias.** "Aportes BWS" é usada
+saindo da matriz *e* entrando na parceria; listada uma vez, esconde metade do
+que faz. A tela mostra `conta + sentido + categoria`, na ordem da tabela do
+dono.
 
 A ordem das operações é fixa, com teste: **os dois títulos primeiro, as baixas
 por último**. Baixa que falha deixa título correto em aberto, que é chato e

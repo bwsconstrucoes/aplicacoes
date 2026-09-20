@@ -223,10 +223,80 @@ def test_conta_fora_do_espelho_e_recusada(banco_aportes):
         aportes_de_para.guardar_conta(aportes.MATRIZ, 123456, "Marcelo")
 
 
-def test_o_que_falta_e_dito_em_portugues(banco_aportes):
+def test_a_categoria_sem_duvida_se_resolve_sozinha(banco_aportes):
+    """⚠️ MUDANÇA DE 20/09/2026: *"eu não entendi esse gravar o de-para. Eu
+    acho que não precisaria."*
+
+    Ele tem razão. Descrição que aparece UMA vez só no plano financeiro não
+    tem decisão a tomar — pedir um clique de confirmação é cerimônia, e
+    cerimônia que se repete vira clique automático, que é pior do que não ter
+    conferência nenhuma. O de-para continua impedindo código chumbado; só
+    deixou de ser um passo."""
     from app.apps.analisesps import aportes_de_para
 
     semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
+    # NADA foi confirmado à mão, de propósito.
+    assert aportes_de_para.categorias_configuradas() == {}
+
+    resolvidas = aportes_de_para.categorias_resolvidas()
+    assert resolvidas["aportes_bws"]["codigo"] == "9.01.01"
+    assert resolvidas["devolucao_aportes_bws"]["codigo"] == "9.02.02"
+    assert all(v.get("descoberta") for v in resolvidas.values())
+
+
+def test_a_categoria_com_duvida_continua_parando_a_tela(banco_aportes):
+    """O que se resolve sozinho é o caso SEM dúvida. Descrição repetida
+    continua sendo decisão dele — escolher a primeira seria o lançamento
+    errado silencioso que o de-para existe para evitar."""
+    from app.apps.analisesps import aportes_de_para
+
+    semear_espelho(banco_aportes, contas=AS_CONTAS, categorias=[
+        ("9.01.01", "Aportes BWS", "N"),
+        ("9.09.09", "Aportes BWS", "N"),
+        ("9.01.02", "Aportes Parceiros", "N"),
+        ("9.02.01", "Devolução de Aportes", "N"),
+        ("9.02.02", "Devolução de Aportes BWS", "N"),
+    ])
+    resolvidas = aportes_de_para.categorias_resolvidas()
+    assert "aportes_bws" not in resolvidas, "escolheu uma sozinha"
+    assert resolvidas["aportes_parceiros"]["codigo"] == "9.01.02"
+    faltas = aportes_de_para.falta_configurar()
+    assert any("Aportes BWS" in f for f in faltas)
+    assert not any("Aportes Parceiros" in f for f in faltas)
+
+
+def test_o_que_ele_confirmou_a_mao_vale_por_cima_do_descoberto(banco_aportes):
+    """É assim que ele conserta um caso que o sistema leria errado."""
+    from app.apps.analisesps import aportes_de_para
+
+    semear_espelho(banco_aportes, contas=AS_CONTAS, categorias=AS_QUATRO + [
+        ("9.99.99", "Aportes BWS (antiga)", "N")])
+    aportes_de_para.guardar_categoria("aportes_bws", "9.99.99", "Marcelo")
+    resolvidas = aportes_de_para.categorias_resolvidas()
+    assert resolvidas["aportes_bws"]["codigo"] == "9.99.99"
+
+
+def test_so_as_contas_sobram_para_ele_apontar(banco_aportes):
+    """Com o plano financeiro limpo, a ÚNICA coisa que ele precisa dizer são
+    as duas contas — e uma vez só."""
+    from app.apps.analisesps import aportes, aportes_de_para
+
+    semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
+    faltas = aportes_de_para.falta_configurar()
+    assert len(faltas) == 2, faltas
+    assert all("conta" in f for f in faltas)
+
+    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
+    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
+    assert aportes_de_para.falta_configurar() == []
+
+
+def test_o_que_falta_e_dito_em_portugues(banco_aportes):
+    from app.apps.analisesps import aportes_de_para
+
+    # Plano financeiro VAZIO: aí as quatro categorias também faltam, porque
+    # não há o que descobrir.
+    semear_espelho(banco_aportes, contas=AS_CONTAS)
     faltas = aportes_de_para.falta_configurar()
     assert len(faltas) == 6, "duas contas e quatro categorias"
     aportes_de_para.guardar_conta("matriz", 7011, "Marcelo")
@@ -247,11 +317,10 @@ def test_a_tabela_inteira_com_os_codigos_vindos_do_plano_financeiro(banco_aporte
                    rateios=[("OBRA-1", "Obra Um")])
     aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
     aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    for chave, achado in aportes_de_para.descobrir_categorias().items():
-        aportes_de_para.guardar_categoria(chave, achado["codigo"], "Marcelo")
-
+    # Nenhuma categoria confirmada à mão: elas se resolvem sozinhas, que é o
+    # caminho que o dono vai usar de verdade.
     contas = aportes_de_para.contas_configuradas()
-    categorias = aportes_de_para.categorias_configuradas()
+    categorias = aportes_de_para.categorias_resolvidas()
 
     esperado = {
         "aporte_bws": [(7011, "9.01.01", "P"), (22069, "9.01.01", "R")],
@@ -352,14 +421,12 @@ def test_o_que_foi_gravado_fica_registrado_e_o_orfao_aparece(banco_aportes):
     semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
     aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
     aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    for chave, achado in aportes_de_para.descobrir_categorias().items():
-        aportes_de_para.guardar_categoria(chave, achado["codigo"], "Marcelo")
 
     plano = aportes.planejar(
-        operacao="aporte_bws", conta_origem=7011, conta_destino=22069,
+        operacao="aporte_bws",
         valor="12.500,00", data="2026-09-20", fornecedor=99, obra="OBRA-1",
         quem="Marcelo", contas=aportes_de_para.contas_configuradas(),
-        categorias=aportes_de_para.categorias_configuradas())
+        categorias=aportes_de_para.categorias_resolvidas())
 
     class OmieQueFalhaNoSegundo:
         def __init__(self):
@@ -399,14 +466,12 @@ def test_gravar_duas_vezes_o_mesmo_lancamento_nao_duplica_o_registro(banco_aport
     semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
     aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
     aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    for chave, achado in aportes_de_para.descobrir_categorias().items():
-        aportes_de_para.guardar_categoria(chave, achado["codigo"], "Marcelo")
 
     plano = aportes.planejar(
-        operacao="aporte_parceiro", conta_destino=22069, valor="100,00",
+        operacao="aporte_parceiro", valor="100,00",
         data="2026-09-20", fornecedor=99, obra="OBRA-1", quem="Marcelo",
         contas=aportes_de_para.contas_configuradas(),
-        categorias=aportes_de_para.categorias_configuradas())
+        categorias=aportes_de_para.categorias_resolvidas())
 
     class OmieOk:
         def _call(self, url, call, param):
