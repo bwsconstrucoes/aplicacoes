@@ -1194,6 +1194,25 @@ NO_SALDO = _sql_tipos_no_saldo()
 _SOCIO = "COALESCE(NULLIF(TRIM(razao_social),''), '(sem contraparte)')"
 _OBRA = OBRA_OU_SEM
 
+# AGRUPAR PELO DOCUMENTO, NAO PELO NOME.
+#
+# 20/09/2026. O dono procurava uma devolucao de R$ 784.647,07 que o bloco de
+# aportes nao mostrava. A cascata de conferencia provou que corte nenhum a
+# estava comendo: o valor esta na base e entra na soma geral. O que o escondia
+# era o AGRUPAMENTO — o bloco somava por razao social, e a mesma empresa com
+# dois cadastros no OMIE (ou com o nome escrito de dois jeitos) virava duas
+# linhas, cada uma parecendo menor do que a empresa e.
+#
+# Agora a identidade e o CNPJ/CPF, so com os digitos, e o nome vira so rotulo.
+# Sem documento, cai no nome em maiusculas — que e o que dava antes, nunca pior.
+_SOCIO_ID = ("COALESCE("
+             "NULLIF(regexp_replace(COALESCE(cnpj_cpf, ''), '[^0-9]', '', 'g'), ''),"
+             "NULLIF(UPPER(TRIM(COALESCE(razao_social, ''))), ''),"
+             "'(sem contraparte)')")
+# Dentro do grupo os nomes podem divergir; mostra-se um deles, sempre o mesmo.
+_SOCIO_ROTULO = "COALESCE(MIN(NULLIF(TRIM(razao_social), '')), '(sem contraparte)')"
+_SOCIO_AGRUPADO = (_SOCIO_ID, _SOCIO_ROTULO)
+
 # APORTE só conta quando ENTRA na obra; DEVOLUÇÃO só quando SAI.
 #
 # Não basta olhar o sinal, e não basta olhar o nome — precisa dos dois juntos.
@@ -1217,13 +1236,19 @@ _DEVOLVIDO = ("SUM(CASE WHEN pago_recebido < 0 AND " + _E_DEVOLUCAO +
               " THEN -pago_recebido ELSE 0 END)")
 
 
-def _agregado_de_aporte(f: Filtros, chaves: list[str]) -> list[dict]:
-    """Aportado / devolvido / saldo agrupado pelas colunas pedidas."""
+def _agregado_de_aporte(f: Filtros, chaves: list) -> list[dict]:
+    """Aportado / devolvido / saldo agrupado pelas colunas pedidas.
+
+    Uma chave e o proprio texto SQL, quando agrupar e mostrar sao a mesma coisa,
+    ou um par (agrupar_por, mostrar) — como no socio, que agrupa pelo documento
+    e mostra o nome."""
     where, params = f.where(
         f"{PAGO} AND ({TIPO_APORTE}) IN ({NO_SALDO})")
-    grupos = ", ".join(str(i + 1) for i in range(len(chaves)))
+    agrupar = [c[0] if isinstance(c, tuple) else c for c in chaves]
+    mostrar = [c[1] if isinstance(c, tuple) else c for c in chaves]
+    grupos = ", ".join(agrupar)
     sql = f"""
-        SELECT {', '.join(chaves)}, {_APORTADO}, {_DEVOLVIDO}, COUNT(*)
+        SELECT {', '.join(mostrar)}, {_APORTADO}, {_DEVOLVIDO}, COUNT(*)
           FROM fato{where}
          GROUP BY {grupos}"""
     n = len(chaves)
@@ -1243,9 +1268,9 @@ def aportes(f: Filtros) -> dict:
     Devolve os quatro recortes (sócio, obra, tipo, lançamentos), o quadro de
     dividendos — que fica FORA do saldo — e os três totais do topo."""
     por_socio = [dict(l, socio=l["chaves"][0])
-                 for l in _agregado_de_aporte(f, [_SOCIO])]
+                 for l in _agregado_de_aporte(f, [_SOCIO_AGRUPADO])]
     por_obra = [dict(l, obra=l["chaves"][0], socio=l["chaves"][1])
-                for l in _agregado_de_aporte(f, [_OBRA, _SOCIO])]
+                for l in _agregado_de_aporte(f, [_OBRA, _SOCIO_AGRUPADO])]
     por_tipo = [dict(l, obra=l["chaves"][0], tipo=l["chaves"][1])
                 for l in _agregado_de_aporte(f, [_OBRA, TIPO_APORTE])]
 
@@ -1280,12 +1305,12 @@ def dividendos_por_socio(f: Filtros) -> list[dict]:
     retirou o que colocou, o que não aconteceu. Fica em quadro próprio."""
     where, params = f.where(f"{PAGO} AND ({TIPO_APORTE}) = 'Dividendos'")
     sql = f"""
-        SELECT {_SOCIO},
+        SELECT {_SOCIO_ROTULO},
                SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
                SUM(CASE WHEN pago_recebido < 0 THEN -pago_recebido ELSE 0 END),
                COUNT(*)
           FROM fato{where}
-         GROUP BY 1"""
+         GROUP BY {_SOCIO_ID}"""
     saida = [{"socio": socio, "recebido": float(receb or 0), "pago": float(pago or 0),
               "liquido": float(pago or 0) - float(receb or 0), "lancamentos": quantos}
              for socio, receb, pago, quantos in consultar(sql, params)]
@@ -1825,7 +1850,36 @@ def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
     comidos_pago = _linhas_de_aporte_comidas(where_pago, params_pago)
 
     return {"passos": passos, "comidos_trf": comidos_trf,
-            "comidos_pago": comidos_pago}
+            "comidos_pago": comidos_pago,
+            "por_contraparte": _devolucoes_por_contraparte(f)}
+
+
+def _devolucoes_por_contraparte(f: Filtros) -> list[dict]:
+    """Toda devolucao que entra no bloco, somada por documento E por nome.
+
+    Existe para responder "cade meu valor?" sem ninguem ter de acreditar em
+    mim. Quando a cascata mostra que corte nenhum comeu o dinheiro — foi o caso
+    em 20/09/2026 —, o que sobra e o agrupamento: a empresa aparece dividida em
+    duas linhas porque tem dois cadastros no OMIE, ou porque o nome esta escrito
+    de dois jeitos. Aqui os dois aparecem lado a lado: quantos NOMES diferentes
+    o mesmo documento tem, e quanto cada um leva."""
+    where, params = f.where(
+        f"{PAGO} AND ({TIPO_APORTE}) IN ({NO_SALDO}) AND pago_recebido < 0 "
+        f"AND ({TIPO_APORTE}) = 'Devolução de Aporte'")
+    sql = f"""
+        SELECT {_SOCIO_ID}, {_SOCIO_ROTULO},
+               COUNT(DISTINCT NULLIF(TRIM(COALESCE(razao_social, '')), '')),
+               STRING_AGG(DISTINCT NULLIF(TRIM(COALESCE(razao_social, '')), ''),
+                          ' | '),
+               SUM(-pago_recebido), COUNT(*)
+          FROM fato{where}
+         GROUP BY {_SOCIO_ID}
+         ORDER BY 5 DESC
+         LIMIT 60"""
+    return [{"documento": doc, "nome": nome, "nomes": quantos_nomes or 0,
+             "todos_os_nomes": todos or "", "devolvido": float(v or 0),
+             "lancamentos": n}
+            for doc, nome, quantos_nomes, todos, v, n in consultar(sql, params)]
 
 
 def _linhas_de_aporte_comidas(where, params) -> list[dict]:

@@ -1124,6 +1124,59 @@ def base_de_aportes(base_para_explorar):
     yield
 
 
+@pytest.fixture()
+def base_de_dois_cadastros(base_para_explorar):
+    """A MESMA empresa com dois cadastros no OMIE — mesmo CNPJ, nome diferente.
+
+    20/09/2026. A cascata provou que corte nenhum estava comendo a devolução de
+    R$ 784.647,07 do dono: ela está na soma geral. O que a escondia era o
+    agrupamento — o bloco somava por NOME, então a empresa virava duas linhas,
+    cada uma parecendo menor do que a empresa é."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        for cod, razao, cnpj, valor in (
+                (701, "MORAIS VASCONCELOS LTDA", "12.345.678/0001-90", -784647.07),
+                (702, "MORAIS VASCONCELOS", "12345678000190", -320000),
+                (703, "OUTRA EMPRESA", "99.999.999/0001-99", -100000)):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " situacao_vencimento, categoria, departamento, razao_social,"
+                " cnpj_cpf, data, pago_recebido, a_pagar_receber, juros, multa)"
+                " VALUES (?,'2. Contas a Pagar','Fluxo de Caixa','PAGO','Quitado',"
+                "         'Devolução de Aportes','CASA',?,?,'2025-12-24',?,0,0,0)",
+                (cod, razao, cnpj, valor))
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def test_a_mesma_empresa_com_dois_cadastros_vira_uma_linha_so(base_de_dois_cadastros):
+    """O documento manda, o nome é só rótulo."""
+    from app.apps.painel import consultas
+    por_socio = consultas.aportes(consultas.Filtros())["por_socio"]
+    linhas = {l["socio"]: l["devolvido"] for l in por_socio}
+    assert len(por_socio) == 2, f"deviam sobrar duas empresas, vieram {linhas}"
+    morais = [v for nome, v in linhas.items() if "MORAIS" in nome]
+    assert len(morais) == 1, "as duas grafias da MORAIS têm de virar uma linha só"
+    assert reais(morais[0]) == reais(784647.07 + 320000), \
+        "e a linha tem de somar os dois cadastros"
+
+
+def test_a_conferencia_denuncia_o_cadastro_repetido(base_de_dois_cadastros):
+    """Juntar sozinho não basta: o dono tem de conseguir VER que havia duas
+    grafias, senão a correção no OMIE nunca acontece."""
+    from app.apps.painel import consultas
+    linhas = consultas.conferencia_dos_aportes()["por_contraparte"]
+    repetidas = [l for l in linhas if l["nomes"] > 1]
+    assert len(repetidas) == 1, "a tela tem de apontar o cadastro repetido"
+    assert "MORAIS VASCONCELOS LTDA" in repetidas[0]["todos_os_nomes"]
+    assert "12345678000190" == repetidas[0]["documento"], \
+        "o documento entra só com os dígitos, senão as duas grafias não juntam"
+    assert reais(repetidas[0]["devolvido"]) == reais(784647.07 + 320000)
+
+
 def test_a_cascata_mostra_quanto_cada_corte_leva(base_de_aportes):
     from app.apps.painel import consultas
     passos = dict(consultas.conferencia_dos_aportes()["passos"])

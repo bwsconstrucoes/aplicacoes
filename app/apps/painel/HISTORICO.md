@@ -894,6 +894,50 @@ A lição, que é a mesma do centavo de 13/09: **dublê prova que o caminho exis
 não que ele entrega.** Onde o dono aperta um botão, o teste tem de apertar o
 mesmo botão.
 
+## A devolução de R$ 784.647,07 — era o AGRUPAMENTO, 20/09/2026
+
+Fim da caçada que durou de 13 a 20/09. A cascata de conferência, rodada com a
+base real, deu o veredito:
+
+| Corte | Devolvido | Quanto levou |
+|---|---|---|
+| Tudo com categoria de aporte | R$ 2.745.993,08 | — |
+| Só o que entra no saldo | R$ 2.745.993,08 | — |
+| Tirando transferências | R$ 2.745.993,08 | — |
+| Tirando o que não é pago | R$ 2.745.993,08 | — |
+
+**Corte nenhum come nada.** O dinheiro está na base e entra na soma geral — o
+que o escondia era o **agrupamento**. O bloco somava por razão social, e a mesma
+empresa com dois cadastros no OMIE (ou com o nome escrito de dois jeitos) virava
+duas linhas, cada uma menor do que a empresa é. Os R$ 567 mil que ele via eram
+uma das linhas; a de R$ 784.647,07 estava logo ali, com outra grafia do mesmo
+nome.
+
+O conserto: **a identidade passou a ser o CNPJ/CPF, só os dígitos** — assim
+"12.345.678/0001-90" e "12345678000190" são a mesma empresa. O nome virou só
+rótulo. Sem documento, cai no nome em maiúsculas, que é o que dava antes —
+nunca pior. Vale para o recorte por sócio, por obra e para o quadro de
+dividendos.
+
+E, para o dono poder **corrigir no OMIE** em vez de só conviver, a conferência
+ganhou a tabela "Devoluções por contraparte", que mostra quantas grafias
+diferentes cada documento tem e marca em vermelho as repetidas.
+
+Dois testes com banco de verdade: um cria a mesma empresa com duas grafias e o
+mesmo CNPJ e exige uma linha só, com a soma certa; o outro exige que a tela
+DENUNCIE a repetição — juntar em silêncio não basta, senão o cadastro errado
+nunca é arrumado no OMIE.
+
+### O que a mesma rodada de conferência revelou, e ainda espera decisão
+
+- **R$ 96.750,00 em 2 títulos com status ATRASADO** que a carga deu por pagos e
+  nenhuma tela conta. A carga aceita "liquidado" na baixa; as telas leem só o
+  texto do status. Corrigir faz o DRE e a Visão Geral subirem — é migração e
+  decisão do dono.
+- **0 de 120.772 títulos têm a observação do OMIE.** O dono desconfiou em 17/09
+  e estava certo: o `backfill_observacoes` nunca rodou. São ~120 mil consultas,
+  uma por título. Os 2.137 a receber sairiam em minutos.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

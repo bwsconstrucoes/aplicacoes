@@ -632,6 +632,44 @@
     </table>
   </div>
 
+  {% if aportes_conf.por_contraparte %}
+  <h4 style="margin:16px 0 4px">Devoluções por contraparte — como o bloco do DRE soma</h4>
+  <p class="cartao-dica" style="margin-top:0">
+    Se a cascata acima não mostra corte nenhum e ainda assim falta valor no bloco
+    do DRE, a causa é esta tabela: <b>o bloco soma por empresa</b>. A coluna
+    "nomes" diz quantas grafias diferentes o mesmo documento tem — mais de uma
+    quer dizer cadastro repetido no OMIE. Linha sem documento não junta com
+    ninguém.
+  </p>
+  <div class="tabela-rolagem" style="max-height:320px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Contraparte</th>
+          <th class="sem-ordem">CNPJ/CPF (só dígitos)</th>
+          <th class="sem-ordem direita">Nomes</th>
+          <th class="sem-ordem direita">Devolvido</th>
+          <th class="sem-ordem direita">Lançamentos</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for l in aportes_conf.por_contraparte %}
+        <tr>
+          <td class="desc">{{ l.nome }}
+            {% if l.nomes > 1 %}
+            <br><small style="color:var(--vermelho)">{{ l.todos_os_nomes }}</small>
+            {% endif %}</td>
+          <td class="dados">{{ l.documento }}</td>
+          <td class="dados direita {{ 'v-neg' if l.nomes > 1 else '' }}">{{ l.nomes }}</td>
+          <td class="dados direita">{{ brl(l.devolvido) }}</td>
+          <td class="dados direita">{{ l.lancamentos }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   {% for titulo, linhas in [('Cortados por serem transferência entre contas',
                              aportes_conf.comidos_trf),
                             ('Cortados por o painel não reconhecer como pagos',
