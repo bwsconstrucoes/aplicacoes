@@ -5582,6 +5582,83 @@ se repete na virada de página, a descrição quebra em vez de ser cortada, e o
 aviso do rodapé aparece.
 
 ---
+
+### Septuagésima quarta leva (20/09) — o QR Pix saía com o rótulo dentro
+
+> *"Veja o que está acontecendo com o código QR quando temos e-mail, veja como
+> ele sai: `00020126590014br.gov.bcb.pix0137Chave Pix: carlosgaldino884@gmail.com…`
+> O que está acontecendo, eu acho, é que não está sendo eliminada a expressão
+> 'Chave Pix: ' que fica junto ao e-mail."*
+
+Ele acertou a causa olhando o payload. E o defeito é pior do que parece na
+descrição: **não era um QR feio, era um código de pagamento inútil.** O campo
+01 do bloco 26 é a chave que o banco vai resolver; com `Chave Pix: ` grudado
+nela, nenhum banco resolve. A imagem aparecia, o aplicativo lia, e recusava
+**na hora de pagar** — quem gerou não descobria; quem ia pagar descobria.
+
+#### ⚠️ A limpeza existia, funcionava, e o QR não passava por ela
+
+Esta é a parte que vale guardar. `extrair_chave()` tira o rótulo desde sempre,
+e foi conferida: entrega `carlosgaldino884@gmail.com` corretamente. Só que ela
+era chamada por `classificar()`, que alimenta **o alerta laranja** ("falta a
+chave Pix no cadastro"). O caminho do QR, em `_codigo_de_pagamento`, lia
+`info_pgt` **cru** da planilha e entregava direto ao gerador.
+
+Duas leituras do mesmo dado, uma limpa e outra não. A tela dizia "tem chave" —
+e tinha — e o QR era montado com o texto inteiro.
+
+`normalizar_chave()` deixava passar porque, vendo um `@`, devolvia o texto sem
+tocar: e-mail não tem formato a normalizar. O texto que ela recebeu já vinha
+sujo.
+
+#### O conserto: a limpeza mora no funil, não em quem chama
+
+A remoção do rótulo foi para dentro de `pix_brcode.limpar_rotulo`, chamada por
+`normalizar_chave` — o funil por onde **todo** payload passa. `extrair_chave`
+passou a usar a mesma função, e o caminho da tela passou a usar
+`classificar()` como todo o resto.
+
+Posta no chamador, a correção valeria só para a tela de hoje: a próxima tela
+que montasse um Pix nasceria com o mesmo defeito, e ninguém veria até alguém
+tentar pagar.
+
+Aproveitando, a limpeza ficou mais tolerante ao que a planilha realmente traz:
+`Chave Pix -`, `Chave Pix –`, `Chave:`, `PIX:`, e o endereço com texto em volta
+(`carlos@x.com (Nubank)`) — e-mail não tem espaço, então sobra só o endereço.
+Duas armadilhas foram travadas com teste: `pixelado@x.com` **não** é mutilada
+(só o rótulo *com separador* é rótulo), e o "copia e cola" pronto não é tocado
+— ele tem espaços legítimos no nome e na cidade do recebedor, e mexer neles
+quebraria o CRC.
+
+#### Sem chave, agora o QR não é gerado
+
+Antes, uma SP sem chave gerava um payload com o campo vazio: de novo um QR que
+abre, é lido e só é recusado no fim. Agora a tela escreve o motivo no lugar do
+código.
+
+#### Os testes vigiam o CAMINHO, não só o resultado
+
+O defeito não estava na função de limpeza — estava em ela não ser chamada.
+Então, além dos casos de limpeza, há um teste que **abre o payload gerado** e
+confere que o campo 01 tem só a chave e que o CRC fecha, e outro que lê o
+código de `_codigo_de_pagamento` e falha se alguém voltar a ler `info_pgt`
+direto. Um teste só do resultado da limpeza passaria verde com o defeito no ar
+— foi exatamente o que aconteceu por meses.
+
+#### ⚠️ O que isso significa para trás, e é o que ele precisa saber
+
+**Todo QR gerado para chave escrita com o rótulo saiu quebrado.** Se algum foi
+enviado a alguém para pagar, precisa ser gerado de novo. Não dá para saber
+daqui quantos foram — não há registro de quais QRs foram exibidos.
+
+#### Não verificado
+
+O QR corrigido **não foi lido por um aplicativo de banco de verdade** — não há
+como fazer isso daqui. O que foi conferido: o payload tem a chave limpa no
+campo certo, o CRC fecha, e a imagem sai. A leitura de fato só o dono pode
+confirmar, e vale conferir na primeira SP com chave de e-mail.
+
+---
 ---
 
 ## Regras que não se discutem

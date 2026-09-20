@@ -25,21 +25,21 @@ import io
 import re
 from . import pix_brcode
 
-_CHAVE_RE = re.compile(r"chave\s*pix\s*:?\s*", re.IGNORECASE)
-
-
 def extrair_chave(y: str):
-    """Texto após 'Chave Pix:'. Retorna None se não houver chave de fato."""
+    """Texto após 'Chave Pix:'. Retorna None se não houver chave de fato.
+
+    ⚠️ A limpeza mora em `pix_brcode.limpar_rotulo`, e é de propósito: esta
+    função dizia quem "tem chave" para o alerta laranja, enquanto o QR era
+    montado por outro caminho, com o texto cru. As duas leituras divergiram
+    e o rótulo foi parar DENTRO do payload. Uma regra, um lugar.
+    """
     if not y:
         return None
-    s = str(y).strip()
-    s = _CHAVE_RE.sub("", s, count=1).strip()
-    return s or None
+    return pix_brcode.limpar_rotulo(str(y)) or None
 
 
 def eh_copia_cola(chave: str) -> bool:
-    c = re.sub(r"\s", "", chave or "")
-    return c.startswith("000201") or "br.gov.bcb.pix" in c.lower()
+    return pix_brcode.eh_copia_cola(chave)
 
 
 def classificar(forma: str, y: str) -> dict:
@@ -91,8 +91,14 @@ def gerar_pix(chave: str, valor, nome: str, copia_cola: bool = False):
     if copia_cola:
         payload = _limpar_copia_cola(chave)
     else:
+        limpa = pix_brcode.normalizar_chave(chave)
+        # Sem chave, o payload sairia com o campo vazio — um QR que abre,
+        # é lido e recusado na hora de pagar. Melhor recusar aqui, onde dá
+        # para escrever o motivo na tela.
+        if not limpa:
+            raise ValueError("Sem chave Pix no cadastro desta SP.")
         payload = pix_brcode.montar_payload(
-            pix_brcode.normalizar_chave(chave),
+            limpa,
             pix_brcode.formatar_valor(valor),
             nome=nome or "RECEBEDOR")
     return pix_brcode.qr_png_bytes(payload), payload

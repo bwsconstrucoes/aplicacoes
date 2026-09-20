@@ -34,8 +34,59 @@ def _cpf_valido(dig: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# O RÓTULO COLADO NA CHAVE — 20/09/2026
+#
+# ⚠️ ESTE É O DEFEITO QUE GEROU QR QUEBRADO, e a nota fica para ninguém
+# reintroduzir o caminho curto. A coluna de informação de pagamento vem
+# digitada por gente, e quase sempre vem assim:
+#
+#     "Chave Pix: carlosgaldino884@gmail.com"
+#
+# O rótulo ENTRAVA no payload ("0137Chave Pix: carlos...@gmail.com"), e o
+# banco não resolve uma chave dessas: o QR abria, o aplicativo lia, e
+# recusava. Não era feio — era código de pagamento inútil.
+#
+# A limpeza mora AQUI, e não em quem chama, porque `normalizar_chave` é o
+# funil por onde todo payload passa. Ficando no chamador, a próxima tela que
+# montar um Pix nasceria com o mesmo defeito, e ninguém veria até alguém
+# tentar pagar.
+# ---------------------------------------------------------------------------
+
+# "Chave Pix:", "chave pix -", "CHAVE PIX", "Chave:", "Pix:" ... Só o "pix"
+# sozinho exige o separador: sem ele, uma chave que por acaso comece com
+# essas três letras seria mutilada.
+_ROTULO_RE = re.compile(
+    r"^\s*(?:chave\s*(?:de\s*)?(?:pix)?\s*[:\-\u2013\u2014=]*"
+    r"|pix\s*[:\-\u2013\u2014=]+)\s*",
+    re.IGNORECASE)
+
+
+def eh_copia_cola(chave: str) -> bool:
+    """O texto já É um payload pronto (o "copia e cola"), não uma chave."""
+    c = re.sub(r"\s", "", chave or "")
+    return c.startswith("000201") or "br.gov.bcb.pix" in c.lower()
+
+
+def limpar_rotulo(chave: str) -> str:
+    """Tira o rótulo que veio grudado na chave. Devolve "" se não sobrar nada."""
+    s = (chave or "").strip()
+    s = _ROTULO_RE.sub("", s, count=1).strip()
+    # Payload pronto para aqui: ele tem espaços legítimos (nome e cidade do
+    # recebedor) e um deles pode conter "@". Mexer abaixo o destruiria.
+    if eh_copia_cola(s):
+        return s
+    # E-mail NUNCA tem espaço. Se sobrou texto em volta ("carlos@x.com
+    # (Nubank)", "Favor pagar carlos@x.com"), fica só o endereço.
+    if "@" in s and re.search(r"\s", s):
+        for pedaco in s.split():
+            if "@" in pedaco:
+                return pedaco.strip(" ,;.")
+    return s
+
+
 def normalizar_chave(chave: str, tipo: str | None = None) -> str:
-    bruta = (chave or "").strip()
+    bruta = limpar_rotulo(chave)
     t = (tipo or "").lower()
     if t == "telefone":
         dig = re.sub(r"\D", "", bruta)
