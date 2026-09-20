@@ -90,6 +90,25 @@ def gerar_pix(chave: str, valor, nome: str, copia_cola: bool = False):
     """Retorna (png_bytes, payload). Levanta exceção se não der pra montar."""
     if copia_cola:
         payload = _limpar_copia_cola(chave)
+        # ⚠️ O PAYLOAD PRONTO TAMBÉM PODE ESTAR PODRE POR DENTRO — 20/09/2026.
+        #
+        # Um "copia e cola" que já vem na planilha pode ter sido gerado pelo
+        # próprio sistema ANTES do conserto do rótulo, e devolvido para a
+        # coluna depois. Aí ele passa por aqui intacto: o CRC dele fecha
+        # (foi calculado sobre o texto errado), então nada denuncia o
+        # defeito — e o QR continua saindo quebrado para sempre.
+        #
+        # Quando a chave de dentro traz rótulo, o payload é remontado limpo,
+        # com o valor e o credor da própria SP. Fora esse caso, não se
+        # encosta nele: payload pronto é para ser reproduzido como veio.
+        dentro = pix_brcode.chave_de_dentro(payload)
+        if dentro:
+            limpa = pix_brcode.limpar_rotulo(dentro)
+            if limpa and limpa != dentro:
+                payload = pix_brcode.montar_payload(
+                    pix_brcode.normalizar_chave(limpa),
+                    pix_brcode.formatar_valor(valor),
+                    nome=nome or "RECEBEDOR")
     else:
         limpa = pix_brcode.normalizar_chave(chave)
         # Sem chave, o payload sairia com o campo vazio — um QR que abre,

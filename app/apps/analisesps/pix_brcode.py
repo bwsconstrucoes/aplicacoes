@@ -85,6 +85,27 @@ def limpar_rotulo(chave: str) -> str:
     return s
 
 
+def chave_de_dentro(payload: str) -> str | None:
+    """A chave que está DENTRO de um "copia e cola" pronto (campo 01 do 26).
+
+    Serve para uma coisa só: descobrir se um payload que chegou pronto nasceu
+    com o rótulo grudado na chave — o que o torna um código de pagamento
+    inútil, por mais que o CRC dele feche. Não entendendo o payload, devolve
+    None, e quem chamou deixa o texto como está.
+    """
+    s = payload or ""
+    m = re.search(r"26(\d{2})", s)
+    if not m:
+        return None
+    conta = s[m.end():m.end() + int(m.group(1))]
+    if "br.gov.bcb.pix" not in conta.lower():
+        return None
+    m2 = re.search(r"01(\d{2})", conta)
+    if not m2:
+        return None
+    return conta[m2.end():m2.end() + int(m2.group(1))] or None
+
+
 def normalizar_chave(chave: str, tipo: str | None = None) -> str:
     bruta = limpar_rotulo(chave)
     t = (tipo or "").lower()

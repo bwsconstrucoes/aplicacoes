@@ -131,3 +131,51 @@ def test_a_tela_nao_monta_o_qr_com_o_texto_cru_da_planilha():
         "o QR voltou a ser montado sem passar pela classificação"
     assert 'registro.get("info_pgt") or ""' not in trecho, \
         "o texto cru da planilha voltou a ir direto para o gerador"
+
+
+# ---------------------------------------------------------------------------
+# O PAYLOAD QUE JÁ CHEGA PRONTO — E PODRE POR DENTRO
+# ---------------------------------------------------------------------------
+# Depois do conserto acima, o dono voltou dizendo que o código continuava
+# EXATAMENTE igual, CRC incluído. A explicação que faltava: um "copia e cola"
+# pronto na coluna de informação de pagamento passa direto, por desenho — e se
+# ELE nasceu com o rótulo dentro (gerado pelo próprio sistema antes do
+# conserto e devolvido à planilha), nada o denuncia: o CRC fecha, porque foi
+# calculado sobre o texto errado.
+PAYLOAD_DO_RELATO = (
+    "00020126590014br.gov.bcb.pix0137Chave Pix: carlosgaldino884@gmail.com"
+    "5204000053039865406724.245802BR5925CARLOS GALDINO DOS SANTOS"
+    "6009FORTALEZA62070503***63041104")
+
+
+def test_o_payload_do_relato_tem_crc_valido_e_mesmo_assim_e_inutil():
+    """Por que ele passou despercebido: a única conferência que existia — o
+    CRC — diz que está tudo certo."""
+    assert pix_brcode.validar_payload(PAYLOAD_DO_RELATO)["crc_ok"]
+    assert pix_brcode.chave_de_dentro(PAYLOAD_DO_RELATO) == \
+        "Chave Pix: carlosgaldino884@gmail.com"
+
+
+def test_payload_pronto_com_rotulo_dentro_e_remontado_limpo():
+    _, carga = pagamentos.gerar_pix(
+        PAYLOAD_DO_RELATO, 724.24, "CARLOS GALDINO DOS SANTOS",
+        copia_cola=True)
+    assert campo_da_chave(carga) == "carlosgaldino884@gmail.com"
+    assert "Chave" not in carga
+    assert pix_brcode.validar_payload(carga)["crc_ok"]
+
+
+def test_payload_pronto_e_saudavel_nao_e_tocado():
+    """Payload pronto é para ser reproduzido como veio: ele pode trazer txid,
+    cidade e nome que não temos como remontar. Só o caso podre é refeito."""
+    bom = pix_brcode.montar_payload("carlos@x.com", "10.00", nome="FULANO",
+                                    cidade="RECIFE", txid="ABC123")
+    _, carga = pagamentos.gerar_pix(bom, 10, "OUTRO NOME", copia_cola=True)
+    assert carga == bom
+
+
+def test_texto_que_nao_e_payload_nao_confunde_a_leitura_da_chave():
+    """Não entendendo o que recebeu, devolve None — e o texto fica como está."""
+    assert pix_brcode.chave_de_dentro("") is None
+    assert pix_brcode.chave_de_dentro("carlos@x.com") is None
+    assert pix_brcode.chave_de_dentro("26260026 alguma coisa") is None

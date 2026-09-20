@@ -5651,6 +5651,32 @@ direto. Um teste só do resultado da limpeza passaria verde com o defeito no ar
 enviado a alguém para pagar, precisa ser gerado de novo. Não dá para saber
 daqui quantos foram — não há registro de quais QRs foram exibidos.
 
+#### ⚠️ O conserto não bastou: o payload PRONTO também estava podre
+
+Publicado o conserto acima, o dono voltou dizendo que o código continuava
+**exatamente igual** — CRC incluído. Estava certo, e faltava uma peça.
+
+A coluna de informação de pagamento nem sempre traz uma chave: às vezes traz
+um **"copia e cola" pronto**. Esse caso passa direto, por desenho — payload
+pronto é para ser reproduzido como veio, porque ele carrega nome, cidade e
+txid que não temos como remontar.
+
+Só que esse payload pronto pode ter sido gerado **pelo próprio sistema antes
+do conserto** e devolvido à planilha. Aí ele já nasce com o rótulo dentro, e
+**nada o denuncia**: o CRC fecha, porque foi calculado sobre o texto errado.
+A única conferência que existia diz que está tudo certo.
+
+Agora, antes de reproduzir um payload pronto, o sistema **lê a chave de dentro
+dele** (`chave_de_dentro`, campo 01 do bloco 26). Se ela trouxer rótulo, o
+payload é **remontado limpo**, com o valor e o credor da própria SP. Fora esse
+caso, não se encosta nele — há teste cravando que um payload saudável sai
+byte a byte igual, com o txid e a cidade dele.
+
+Efeito colateral aceito e registrado: no caso remontado, valor e nome passam a
+vir da SP, não do payload antigo. É o certo — o payload antigo não servia para
+pagar de nenhum jeito —, mas se o valor da planilha divergir do que estava no
+código velho, é o da planilha que prevalece.
+
 #### Não verificado
 
 O QR corrigido **não foi lido por um aplicativo de banco de verdade** — não há
