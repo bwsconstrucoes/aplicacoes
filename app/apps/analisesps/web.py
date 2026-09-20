@@ -3925,30 +3925,43 @@ def aportes_de_para_gravar():
     return redirect(url_for("analisesps.tela_aportes", aviso=aviso))
 
 
-def _plano_do_pedido(dados: dict):
-    """Monta o plano a partir do que a tela mandou. Usado pelo ensaio e pela
-    gravação — as duas TÊM de enxergar o mesmo plano, senão o dono confere uma
-    coisa e o OMIE recebe outra."""
+def _planos_do_pedido(dados: dict) -> list:
+    """Um plano por linha de data e valor. Usado pelo ensaio e pela gravação —
+    as duas TÊM de enxergar os mesmos planos, senão o dono confere uma coisa e
+    o OMIE recebe outra.
+
+    ⚠️ Os grupos vêm da TELA quando ela os manda de volta. É isso que faz o
+    que foi conferido ser exatamente o que é gravado: sem passar os grupos, a
+    gravação sortearia números novos e o pacote conferido seria outro."""
     from . import aportes, aportes_de_para
 
-    return aportes.planejar(
+    comuns = dict(
         operacao=str(dados.get("operacao") or "").strip(),
         conta_origem=dados.get("conta_origem") or None,
         conta_destino=dados.get("conta_destino") or None,
-        valor=dados.get("valor"),
-        data=dados.get("data"),
         fornecedor=dados.get("fornecedor") or None,
         fornecedor_nome=str(dados.get("fornecedor_nome") or ""),
         obra=str(dados.get("obra") or ""),
         obra_nome=str(dados.get("obra_nome") or ""),
         quem=auth.nome_atual() or "",
         baixar=bool(dados.get("baixar", True)),
-        grupo=str(dados.get("grupo") or ""),
-        numero=str(dados.get("numero") or ""),
         descricoes=aportes_de_para.descricoes_das_contas(),
         categorias=aportes_de_para.categorias_resolvidas(),
         observacoes=dados.get("observacoes") or {},
     )
+
+    parcelas = dados.get("parcelas")
+    if not parcelas:
+        # Uma linha só: o caminho de sempre, escrito do mesmo jeito.
+        parcelas = [{"data": dados.get("data"), "valor": dados.get("valor")}]
+
+    grupos = dados.get("grupos") or []
+    planos = []
+    for i, (data, valor) in enumerate(aportes.ler_parcelas(parcelas)):
+        planos.append(aportes.planejar(
+            valor=valor, data=data,
+            grupo=str(grupos[i]) if i < len(grupos) else "", **comuns))
+    return planos
 
 
 @bp.route("/api/aportes/ensaiar", methods=["POST"])
@@ -3962,19 +3975,31 @@ def aportes_ensaiar():
 
     dados = request.get_json(silent=True) or {}
     try:
-        plano = _plano_do_pedido(dados)
+        planos = _planos_do_pedido(dados)
     except aportes.ErroDeRegra as e:
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Aportes: falhou montar o plano")
         return {"ok": False, "erro": f"Não consegui montar o lançamento: {e}"}, 500
 
-    contas = [t["id_conta_corrente"] for t in plano["titulos"]]
-    semelhantes = aportes_de_para.consultar_semelhantes(
-        plano["valor"], plano["data"], contas)
-    return {"ok": True, "plano": _plano_para_tela(plano),
+    lancamentos = []
+    for plano in planos:
+        contas = [t["id_conta_corrente"] for t in plano["titulos"]]
+        semelhantes = aportes_de_para.consultar_semelhantes(
+            plano["valor"], plano["data"], contas)
+        lancamentos.append({
+            "plano": _plano_para_tela(plano),
             "ensaio": _ensaio_para_tela(aportes_omie.ensaiar(plano)),
-            "avisos": aportes.criticar(plano, semelhantes)}
+            "avisos": aportes.criticar(plano, semelhantes),
+        })
+    return {
+        "ok": True,
+        "lancamentos": lancamentos,
+        "grupos": [p["grupo"] for p in planos],
+        "quantos": len(planos),
+        "total": round(sum(p["valor"] for p in planos), 2),
+        "quantos_titulos": sum(len(p["titulos"]) for p in planos),
+    }
 
 
 @bp.route("/api/aportes/gravar", methods=["POST"])
@@ -3990,42 +4015,56 @@ def aportes_gravar():
         return {"ok": False, "erro": str(e)}, 403
 
     try:
-        plano = _plano_do_pedido(dados)
+        planos = _planos_do_pedido(dados)
     except aportes.ErroDeRegra as e:
         return {"ok": False, "erro": str(e)}, 400
 
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
-        resultado = aportes_omie.gravar(plano, quem)
+        resultados = aportes_omie.gravar_varios(planos, quem)
     except Exception as e:  # noqa: BLE001 — a mensagem do OMIE vai inteira
         logger.exception("Aportes: falhou gravar no OMIE")
         return {"ok": False, "erro": f"Não consegui falar com o OMIE: {e}"}, 502
 
     # Lembrar as contas usadas, para virem pré-escolhidas na próxima vez.
-    # Só depois de gravar: conta de um lançamento que falhou não é exemplo.
-    if resultado.get("ok"):
-        from . import aportes_de_para
+    # Só das que deram certo: conta de lançamento que falhou não é exemplo.
+    from . import aportes_de_para
+    for plano, resultado in zip(planos, resultados):
+        if not resultado.get("ok"):
+            continue
         for t in plano["titulos"]:
             aportes_de_para.lembrar_conta(plano["operacao"], t["papel"],
                                           t["id_conta_corrente"], quem)
 
-    logger.info("Análise de SPs: %s lançou aporte %s (%s) — ok=%s.",
-                quem or "sem nome", plano["grupo"], plano["operacao"],
-                resultado.get("ok"))
+    deram_certo = sum(1 for r in resultados if r.get("ok"))
+    logger.info("Análise de SPs: %s lançou %d aporte(s) (%s) — %d ok.",
+                quem or "sem nome", len(planos),
+                planos[0]["operacao"] if planos else "?", deram_certo)
+
     return {
-        "ok": bool(resultado.get("ok")),
-        "erro": resultado.get("erro", ""),
-        "grupo": plano["grupo"],
-        "numero": plano["numero_documento"],
-        "avisos": resultado.get("avisos", []),
-        "orfaos": resultado.get("orfaos", []),
-        "titulos": [{"papel": l["titulo"]["papel_rotulo"],
-                     "sentido": l["titulo"]["sentido_rotulo"],
-                     "conta": l["titulo"]["conta_descricao"],
-                     "categoria": l["titulo"]["categoria_nome"],
-                     "codigo": l["codigo"], "baixado": l["baixado"],
-                     "erro": l["erro"]}
-                    for l in resultado.get("titulos", [])],
+        # ⚠️ `ok` só é verdadeiro quando TODAS entraram. Um lote meio gravado
+        # com cara de sucesso é o jeito mais rápido de alguém lançar de novo
+        # as que já entraram.
+        "ok": deram_certo == len(resultados) and bool(resultados),
+        "quantos": len(resultados),
+        "deram_certo": deram_certo,
+        "lancamentos": [{
+            "grupo": plano["grupo"],
+            "numero": plano["numero_documento"],
+            "data": plano["data_br"],
+            "valor": plano["valor"],
+            "ok": bool(resultado.get("ok")),
+            "erro": resultado.get("erro", ""),
+            "avisos": resultado.get("avisos", []),
+            "orfaos": resultado.get("orfaos", []),
+            "titulos": [{"papel": l["titulo"]["papel_rotulo"],
+                         "sentido": l["titulo"]["sentido_rotulo"],
+                         "conta": l["titulo"]["conta_descricao"],
+                         "categoria": l["titulo"]["categoria_nome"],
+                         "codigo": l["codigo"], "baixado": l["baixado"],
+                         "erro": l["erro"]}
+                        for l in resultado.get("titulos", [])],
+        } for plano, resultado in zip(planos, resultados)],
     }
 
 

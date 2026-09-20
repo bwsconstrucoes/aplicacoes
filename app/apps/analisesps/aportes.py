@@ -427,6 +427,72 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
     }
 
 
+# ---------------------------------------------------------------------------
+# LANÇAMENTO EM LOTE — 20/09/2026
+#
+# Pedido dele, com as palavras dele: *"quero poder fazer vários lançamentos do
+# mesmo tipo. Apenas incluir mais datas e valores. Lançamento em lote."*
+#
+# ⚠️ O QUE VARIA É SÓ DATA E VALOR, e isso não é limitação — é o desenho. A
+# operação, as contas, o fornecedor e a obra são os MESMOS para todas as
+# linhas, então há uma decisão só a conferir. Deixar cada linha ter a sua
+# operação transformaria a conferência numa planilha, e é exatamente na
+# conferência que este recurso não pode ser barato.
+#
+# ⚠️ CADA LINHA É UM LANÇAMENTO INDEPENDENTE, com o seu próprio grupo e o seu
+# próprio número de documento. Isso importa na hora em que algo dá errado: uma
+# linha que falha não leva as outras junto, e cada uma tem o seu par amarrado
+# por dentro.
+# ---------------------------------------------------------------------------
+MAX_PARCELAS = 50
+
+
+def ler_parcelas(linhas) -> list:
+    """[{data, valor}] -> [(date, float)], validado e sem repetição boba.
+
+    Levanta `ErroDeRegra` com a frase pronta: quem lê é ele.
+    """
+    if not linhas:
+        raise ErroDeRegra("Informe pelo menos uma data e um valor.")
+    if len(linhas) > MAX_PARCELAS:
+        raise ErroDeRegra(
+            f"São no máximo {MAX_PARCELAS} lançamentos por vez. Cada um vira "
+            f"título no OMIE, e um lote grande demais leva ao bloqueio por "
+            f"excesso de chamadas.")
+
+    saida, vistas = [], set()
+    for i, linha in enumerate(linhas, start=1):
+        try:
+            d = ler_data((linha or {}).get("data"))
+            v = ler_valor((linha or {}).get("valor"))
+        except ErroDeRegra as e:
+            raise ErroDeRegra(f"Linha {i}: {e}") from None
+        # DATA E VALOR IGUAIS DUAS VEZES quase sempre é linha duplicada sem
+        # querer — e duas vezes o mesmo aporte no mesmo dia é o erro caro
+        # deste recurso. Recusar é melhor do que avisar: aqui o certo é ele
+        # apagar a linha, não confirmar.
+        if (d, v) in vistas:
+            raise ErroDeRegra(
+                f"Linha {i}: já existe outra linha com {data_br(d)} e o mesmo "
+                f"valor. Se são dois aportes mesmo, lance um de cada vez — "
+                f"assim ninguém confunde com linha repetida.")
+        vistas.add((d, v))
+        saida.append((d, v))
+    return saida
+
+
+def planejar_lote(*, parcelas, **comuns) -> list:
+    """Um plano por linha de data e valor, com o resto igual em todas."""
+    comuns.pop("valor", None)
+    comuns.pop("data", None)
+    comuns.pop("grupo", None)
+    # O número vem de cada grupo; um número comum a todas faria os pares de
+    # lançamentos diferentes parecerem o mesmo par.
+    comuns.pop("numero", None)
+    return [planejar(valor=valor, data=data, **comuns)
+            for data, valor in ler_parcelas(parcelas)]
+
+
 def _novo_grupo(d: date) -> str:
     """Identificador curto e legível, que vai para o número do documento.
 

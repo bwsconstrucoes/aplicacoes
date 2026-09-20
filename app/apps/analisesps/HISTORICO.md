@@ -5984,6 +5984,74 @@ resolve sozinha; a com dúvida continua parando; o confirmado à mão vale por
 cima; e a conta é lembrada por operação e papel, sem nunca derrubar nada).
 
 ---
+
+### Septuagésima sétima leva (20/09) — lançamento em lote
+
+> *"Quero poder fazer vários lançamentos do mesmo tipo. Apenas incluir mais
+> datas e valores. Lançamento em lote."*
+
+A tela ganhou uma tabelinha de **datas e valores**, com um botão para
+acrescentar linha. Tudo o mais — operação, contas, fornecedor, obra, baixa —
+é preenchido **uma vez** e vale para todas.
+
+#### ⚠️ Só data e valor variam, e isso é desenho, não limitação
+
+Deixar cada linha ter a sua operação e as suas contas transformaria a
+conferência numa planilha — e é justamente a conferência que **não pode ficar
+barata** neste recurso. Um lote de vinte linhas que se confere com um olhar
+distraído escreve vinte lançamentos errados no OMIE de uma vez.
+
+Do jeito que ficou há **uma decisão só** a conferir (o que é, de onde sai,
+para onde entra, qual obra) e uma lista de quanto e quando.
+
+#### ⚠️ Dentro do lançamento, amarrado; entre lançamentos, independente
+
+A distinção é o coração deste recurso:
+
+- **DENTRO de um lançamento** os dois títulos continuam amarrados: ou os dois
+  entram, ou o que entrou é desfeito. Meia operação não pode existir.
+- **ENTRE lançamentos** é o contrário: cada linha tem o seu próprio grupo e o
+  seu próprio número, e uma que falha **não para as outras**. Parar na terceira
+  linha deixaria as outras quarenta e sete por fazer sem motivo nenhum.
+
+Cada linha ganha número próprio de propósito: um número comum a todas faria os
+pares de lançamentos **diferentes** parecerem o mesmo par — e o número é
+justamente o que serve para achar a contrapartida de um título.
+
+#### ⚠️ O caso perigoso é o meio-termo, e a tela o trata com todas as letras
+
+Lote que entra pela metade e diz só "deu erro" é o jeito mais rápido de alguém
+lançar tudo de novo e **duplicar o que já entrou**. Quando parte entra, a tela
+escreve: *"Entraram 3 de 5. As que deram certo já estão no OMIE — não lance
+tudo de novo, refaça só as que falharam."* E lista, linha a linha, o que
+entrou e o que não.
+
+#### Linha repetida é recusada, não avisada
+
+Duas linhas com a **mesma data e o mesmo valor** quase sempre é duplicata sem
+querer — e dois aportes iguais no mesmo dia é o erro caro deste recurso. Aqui
+o certo é ele apagar a linha, não confirmar um aviso. Data igual com valores
+diferentes passa normalmente.
+
+#### O teto: 50 por vez
+
+Cada linha vira até quatro chamadas ao OMIE (dois títulos e duas baixas).
+Cinquenta linhas são duzentas chamadas, e acima disso o risco é o bloqueio por
+consumo indevido — o mesmo que já mordeu a busca de notas na Receita. O
+cliente do OMIE é **um só para o lote inteiro**, porque é ele que carrega a
+sessão e o controle de excesso de chamadas; criar um por linha jogaria isso
+fora justamente quando mais importa.
+
+#### Os testes
+
+Onze novos: cada linha vira um lançamento com o resto igual; número e grupo
+próprios por linha (e o mesmo número dentro do par); uma linha só continua
+sendo o caminho de sempre; linha repetida recusada; mesma data com valores
+diferentes passa; a linha ruim apontada pelo número; lote vazio e lote grande
+demais recusados; uma linha que falha não para as outras; e o ensaio da tela
+devolvendo um lançamento por linha, com o total e os grupos.
+
+---
 ---
 
 ## Regras que não se discutem

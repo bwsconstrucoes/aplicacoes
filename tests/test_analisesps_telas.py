@@ -4402,3 +4402,60 @@ def test_o_ensaio_nao_pede_senha_e_a_gravacao_pede(app_aportes, monkeypatch):
     gravacao = cliente.post("/analisesps/api/aportes/gravar", json=pedido)
     assert gravacao.status_code == 403
     assert "senha" in gravacao.get_json()["erro"].lower()
+
+
+def test_a_tela_deixa_acrescentar_datas_e_valores(app_aportes):
+    """*"Quero poder fazer vários lançamentos do mesmo tipo. Apenas incluir
+    mais datas e valores. Lançamento em lote."*"""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert 'id="parcelas-corpo"' in html
+    assert "Acrescentar data e valor" in html
+    # O que NÃO se repete por linha: operação, conta, fornecedor e obra. Se
+    # repetisse, a conferência viraria uma planilha.
+    lancar = bloco_de_lancar(html)
+    assert lancar.count('id="operacao"') == 1
+    assert lancar.count('id="obra"') == 1
+    assert lancar.count('id="fornecedor"') == 1
+
+
+def test_o_ensaio_de_um_lote_devolve_um_lancamento_por_linha(app_aportes,
+                                                             monkeypatch):
+    from app.apps.analisesps import aportes
+    monkeypatch.setattr(
+        "app.apps.analisesps.aportes_de_para.categorias_resolvidas",
+        lambda: {c: {"codigo": "9.01.01", "descricao": n, "transferencia": "N"}
+                 for c, n in aportes.CATEGORIAS.items()})
+    monkeypatch.setattr(
+        "app.apps.analisesps.aportes_de_para.consultar_semelhantes",
+        lambda *a, **k: [])
+
+    resposta = como(app_aportes, SENHA_OPERADOR).post(
+        "/analisesps/api/aportes/ensaiar",
+        json={"operacao": "aporte_bws", "conta_origem": 7011,
+              "conta_destino": 22069, "fornecedor": 99, "obra": "OBRA-1",
+              "parcelas": [{"data": "2026-09-20", "valor": "100,00"},
+                           {"data": "2026-10-20", "valor": "200,00"}]})
+    dados = resposta.get_json()
+    assert dados["ok"] is True
+    assert dados["quantos"] == 2
+    assert dados["total"] == 300.0
+    assert dados["quantos_titulos"] == 4
+    assert len(set(dados["grupos"])) == 2, "as linhas têm de ter grupos próprios"
+
+
+def test_a_linha_ruim_do_lote_e_apontada_pelo_numero(app_aportes, monkeypatch):
+    from app.apps.analisesps import aportes
+    monkeypatch.setattr(
+        "app.apps.analisesps.aportes_de_para.categorias_resolvidas",
+        lambda: {c: {"codigo": "9.01.01", "descricao": n, "transferencia": "N"}
+                 for c, n in aportes.CATEGORIAS.items()})
+
+    resposta = como(app_aportes, SENHA_OPERADOR).post(
+        "/analisesps/api/aportes/ensaiar",
+        json={"operacao": "aporte_bws", "conta_origem": 7011,
+              "conta_destino": 22069, "fornecedor": 99, "obra": "OBRA-1",
+              "parcelas": [{"data": "2026-09-20", "valor": "100,00"},
+                           {"data": "2026-10-20", "valor": "abacaxi"}]})
+    assert resposta.status_code == 400
+    assert "Linha 2" in resposta.get_json()["erro"]

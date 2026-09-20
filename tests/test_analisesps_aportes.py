@@ -494,3 +494,129 @@ def test_senha_errada_e_recusada(monkeypatch):
     with pytest.raises(aportes_omie.SemAutorizacao):
         aportes_omie.conferir_senha("a-senha-errada")
     aportes_omie.conferir_senha("a-senha-certa")      # não levanta
+
+
+# ---------------------------------------------------------------------------
+# LANÇAMENTO EM LOTE — 20/09/2026
+# ---------------------------------------------------------------------------
+# *"Quero poder fazer vários lançamentos do mesmo tipo. Apenas incluir mais
+# datas e valores. Lançamento em lote."*
+# ---------------------------------------------------------------------------
+def lote(parcelas, **mudancas):
+    base = dict(
+        operacao="aporte_bws", conta_origem=7011, conta_destino=22069,
+        fornecedor=99, fornecedor_nome="PARCEIRO LTDA", obra="OBRA-1",
+        obra_nome="Obra Um", quem="Marcelo", descricoes=DESCRICOES,
+        categorias=CATEGORIAS)
+    base.update(mudancas)
+    return aportes.planejar_lote(parcelas=parcelas, **base)
+
+
+def test_cada_linha_vira_um_lancamento_com_o_resto_igual():
+    planos = lote([{"data": "2026-09-20", "valor": "100,00"},
+                   {"data": "2026-10-20", "valor": "200,00"},
+                   {"data": "2026-11-20", "valor": "300,00"}])
+    assert [p["valor"] for p in planos] == [100.0, 200.0, 300.0]
+    assert [p["data_br"] for p in planos] == \
+        ["20/09/2026", "20/10/2026", "20/11/2026"]
+    # O que NÃO varia: operação, contas, categorias, fornecedor e obra.
+    for p in planos:
+        assert p["operacao"] == "aporte_bws"
+        assert [t["id_conta_corrente"] for t in p["titulos"]] == [7011, 22069]
+        assert [t["categoria_nome"] for t in p["titulos"]] == \
+            ["Aportes BWS", "Aportes BWS"]
+        assert all(t["cod_departamento"] == "OBRA-1" for t in p["titulos"])
+
+
+def test_cada_linha_tem_numero_e_grupo_proprios():
+    """⚠️ Um número comum a todas faria os pares de lançamentos DIFERENTES
+    parecerem o mesmo par — e o número é justamente o que serve para achar a
+    contrapartida de um título."""
+    planos = lote([{"data": "2026-09-20", "valor": "100,00"},
+                   {"data": "2026-10-20", "valor": "200,00"}])
+    assert len({p["grupo"] for p in planos}) == 2
+    assert len({p["numero_documento"] for p in planos}) == 2
+    # E DENTRO de cada lançamento o número continua sendo o mesmo dos dois
+    # lados: é isso que amarra o par.
+    for p in planos:
+        assert len({t["numero_documento"] for t in p["titulos"]}) == 1
+
+
+def test_uma_linha_so_e_o_caminho_de_sempre():
+    planos = lote([{"data": "2026-09-20", "valor": "12.500,00"}])
+    assert len(planos) == 1
+    assert planos[0]["valor"] == 12500.0
+
+
+def test_linha_repetida_e_recusada_em_vez_de_avisada():
+    """Duas vezes a mesma data e o mesmo valor quase sempre é linha duplicada
+    sem querer — e dois aportes iguais no mesmo dia é o erro caro deste
+    recurso. Aqui o certo é ele apagar a linha, não confirmar."""
+    with pytest.raises(aportes.ErroDeRegra) as erro:
+        lote([{"data": "2026-09-20", "valor": "100,00"},
+              {"data": "2026-09-20", "valor": "100,00"}])
+    assert "repetida" in str(erro.value)
+
+
+def test_mesma_data_com_valores_diferentes_passa():
+    planos = lote([{"data": "2026-09-20", "valor": "100,00"},
+                   {"data": "2026-09-20", "valor": "250,00"}])
+    assert len(planos) == 2
+
+
+def test_a_linha_ruim_e_apontada_pelo_numero():
+    """Numa lista de vinte linhas, "não entendi o valor" sem dizer onde é uma
+    caça ao tesouro."""
+    with pytest.raises(aportes.ErroDeRegra) as erro:
+        lote([{"data": "2026-09-20", "valor": "100,00"},
+              {"data": "2026-10-20", "valor": "abacaxi"}])
+    assert "Linha 2" in str(erro.value)
+
+
+def test_lote_vazio_e_lote_grande_demais_sao_recusados():
+    with pytest.raises(aportes.ErroDeRegra):
+        aportes.ler_parcelas([])
+    demais = [{"data": "2026-09-20", "valor": str(i + 1)}
+              for i in range(aportes.MAX_PARCELAS + 1)]
+    with pytest.raises(aportes.ErroDeRegra) as erro:
+        aportes.ler_parcelas(demais)
+    assert str(aportes.MAX_PARCELAS) in str(erro.value)
+
+
+def test_no_lote_uma_linha_que_falha_nao_para_as_outras():
+    """⚠️ A DIFERENÇA ENTRE O LOTE E O LANÇAMENTO ÚNICO, e ela é deliberada.
+
+    DENTRO de um lançamento os dois títulos são amarrados: ou os dois entram,
+    ou o que entrou é desfeito. ENTRE lançamentos é o contrário — parar na
+    terceira linha deixaria as outras por fazer sem motivo nenhum."""
+    planos = lote([{"data": "2026-09-20", "valor": "100,00"},
+                   {"data": "2026-10-20", "valor": "200,00"},
+                   {"data": "2026-11-20", "valor": "300,00"}])
+
+    cli = OmieFalso()
+    resultados = aportes_omie.gravar_varios(planos, "Marcelo", cliente=cli)
+    assert len(resultados) == 3
+    assert all(r["ok"] for r in resultados)
+    # Um cliente só para o lote inteiro: é ele que carrega o controle de
+    # excesso de chamadas do OMIE.
+    assert len([c for c, _ in cli.chamadas if c.startswith("Incluir")]) == 6
+
+
+def test_o_lote_continua_depois_de_uma_linha_que_estoura():
+    planos = lote([{"data": "2026-09-20", "valor": "100,00"},
+                   {"data": "2026-10-20", "valor": "200,00"}])
+
+    class MorreNoPrimeiro:
+        def __init__(self):
+            self.chamadas = 0
+
+        def _call(self, url, call, param):
+            self.chamadas += 1
+            if self.chamadas == 1:
+                raise RuntimeError("a rede caiu")
+            return {"codigo_lancamento_omie": 900 + self.chamadas}
+
+    resultados = aportes_omie.gravar_varios(planos, "Marcelo",
+                                            cliente=MorreNoPrimeiro())
+    assert resultados[0]["ok"] is False
+    assert resultados[1]["ok"] is True, "a segunda linha não chegou a ser feita"

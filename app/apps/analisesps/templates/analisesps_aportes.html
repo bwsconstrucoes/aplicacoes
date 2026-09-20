@@ -120,17 +120,29 @@
   <div id="o-que-vai-acontecer"></div>
 
   <div id="resto-do-formulario" style="display:none">
-    <div style="display:flex; gap:12px; flex-wrap:wrap">
-      <p style="flex:1 1 160px">
-        <label class="rotulo-campo" for="valor">Valor</label>
-        <input class="campo-largo" id="valor" inputmode="decimal"
-               placeholder="12.500,00">
-      </p>
-      <p style="flex:1 1 160px">
-        <label class="rotulo-campo" for="data">Data</label>
-        <input class="campo-largo" id="data" type="date">
-      </p>
-    </div>
+    {# ---------------------------------------------------------------------
+       LANÇAMENTO EM LOTE — *"quero poder fazer vários lançamentos do mesmo
+       tipo. Apenas incluir mais datas e valores."*
+
+       ⚠️ SÓ DATA E VALOR VARIAM, e é desenho, não limitação: a operação, as
+       contas, o fornecedor e a obra são os mesmos para todas as linhas, então
+       há UMA decisão a conferir. Deixar cada linha ter a sua operação
+       transformaria a conferência numa planilha — e é justamente a
+       conferência que não pode ficar barata aqui.
+    --------------------------------------------------------------------- #}
+    <p class="rotulo-campo">Datas e valores</p>
+    <table class="sps" id="parcelas">
+      <thead>
+        <tr><th style="width:1%">#</th><th>Data</th><th>Valor</th>
+            <th style="width:1%"></th></tr>
+      </thead>
+      <tbody id="parcelas-corpo"></tbody>
+    </table>
+    <p>
+      <button class="btn secundario" id="btn-mais-linha" type="button">
+        + Acrescentar data e valor</button>
+      <small class="cartao-dica" id="resumo-parcelas"></small>
+    </p>
 
     <p>
       <label class="rotulo-campo" for="fornecedor">Fornecedor
@@ -163,12 +175,11 @@
         título nasce em aberto e alguém dá a baixa depois, no OMIE.</small>
     </p>
 
-    <p>
-      <label class="rotulo-campo" for="numero">Número do documento
-        <small>(deixe em branco para o sistema montar)</small></label>
-      <input class="campo-largo" id="numero" placeholder="APORTE-20260920-A1B2C3">
-      <small class="cartao-dica">O mesmo número vai nos dois títulos — é ele que
-        permite achar o par depois.</small>
+    <p class="cartao-dica">
+      O número do documento é montado pelo sistema, um por lançamento, e vai
+      igual nos dois títulos do par — é ele que permite achar a contrapartida
+      depois. Num lote, cada linha ganha o seu, senão os pares de lançamentos
+      diferentes pareceriam o mesmo par.
     </p>
 
     <p>
@@ -309,7 +320,7 @@
 
   // Mudar qualquer campo invalida a conferência: senão daria para conferir
   // uma coisa e gravar outra.
-  ["valor", "data", "fornecedor", "obra", "baixar", "numero"].forEach(id => {
+  ["fornecedor", "obra", "baixar", "numero"].forEach(id => {
     const campo = $(id);
     if (campo) campo.addEventListener("change", limparConferencia);
   });
@@ -333,6 +344,69 @@
     }, 350);
   });
 
+  // -------------------------------------------------------------------------
+  // AS LINHAS DE DATA E VALOR
+  // -------------------------------------------------------------------------
+  const corpo = $("parcelas-corpo");
+
+  function linhas() {
+    return Array.from(corpo.querySelectorAll("tr"));
+  }
+
+  function renumerar() {
+    linhas().forEach((tr, i) => {
+      tr.querySelector(".num").textContent = i + 1;
+      // Com uma linha só, tirar não faz sentido — e some, em vez de ficar
+      // desabilitado pedindo para ser clicado.
+      tr.querySelector(".tirar").style.visibility =
+        linhas().length > 1 ? "" : "hidden";
+    });
+    const n = linhas().length;
+    $("resumo-parcelas").textContent = n > 1
+      ? n + " lançamentos serão criados — cada um com o seu próprio número."
+      : "";
+  }
+
+  function novaLinha(data, valor) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td class="num"></td>' +
+      '<td><input class="campo-largo data" type="date" value="' +
+        (data || "") + '"></td>' +
+      '<td><input class="campo-largo valor" inputmode="decimal" ' +
+        'placeholder="12.500,00" value="' + (valor || "") + '"></td>' +
+      '<td><button type="button" class="btn secundario tirar" ' +
+        'title="Tirar esta linha">×</button></td>';
+    tr.querySelector(".tirar").addEventListener("click", () => {
+      if (linhas().length <= 1) return;
+      tr.remove();
+      renumerar();
+      limparConferencia();
+    });
+    tr.querySelectorAll("input").forEach(
+      i => i.addEventListener("change", limparConferencia));
+    corpo.appendChild(tr);
+    renumerar();
+    return tr;
+  }
+
+  $("btn-mais-linha").addEventListener("click", () => {
+    // A linha nova herda a data da anterior: quem lança seis meses seguidos
+    // troca só o mês, e quem lança tudo no mesmo dia não troca nada.
+    const ultima = linhas()[linhas().length - 1];
+    const tr = novaLinha(ultima ? ultima.querySelector(".data").value : "", "");
+    tr.querySelector(".valor").focus();
+    limparConferencia();
+  });
+
+  novaLinha("", "");
+
+  function parcelasDaTela() {
+    return linhas().map(tr => ({
+      data: tr.querySelector(".data").value,
+      valor: tr.querySelector(".valor").value,
+    }));
+  }
+
   function dadosDaTela() {
     const sel = $("fornecedor");
     const obra = $("obra");
@@ -342,14 +416,12 @@
       // vêm da operação.
       conta_origem: ($("conta_origem") || {}).value || null,
       conta_destino: ($("conta_destino") || {}).value || null,
-      valor: $("valor").value,
-      data: $("data").value,
+      parcelas: parcelasDaTela(),
       fornecedor: sel.value || null,
       fornecedor_nome: sel.selectedOptions[0] ? sel.selectedOptions[0].text : "",
       obra: obra.value,
       obra_nome: obra.selectedOptions[0] ? obra.selectedOptions[0].text : "",
       baixar: $("baixar").checked,
-      numero: $("numero").value,
     };
   }
 
@@ -376,52 +448,76 @@
       return;
     }
     planoConferido = dadosDaTela();
-    planoConferido.grupo = d.plano.grupo;
-    planoConferido.numero = d.plano.numero_documento;
+    planoConferido.grupos = d.grupos;          // o que foi conferido é o que grava
     desenharConferencia(d);
   });
 
   function desenharConferencia(d) {
-    const p = d.plano;
     let html = "";
+    const varios = d.quantos > 1;
 
-    // ⚠️ A CRÍTICA VEM PRIMEIRO, ANTES DO RESUMO. Aviso depois do resumo é
+    // ⚠️ AS CRÍTICAS VÊM PRIMEIRO, ANTES DO RESUMO. Aviso depois do resumo é
     // aviso que se lê depois de já ter decidido.
-    (d.avisos || []).forEach(a => {
-      html += '<div class="aviso atencao">' + a +
-              " <b>Confirma que é aporte mesmo?</b></div>";
+    d.lancamentos.forEach((l, i) => {
+      (l.avisos || []).forEach(a => {
+        html += '<div class="aviso atencao">' +
+                (varios ? "<b>Linha " + (i + 1) + ":</b> " : "") + a +
+                " <b>Confirma que é aporte mesmo?</b></div>";
+      });
     });
 
-    html += '<div class="aviso">' +
-            "<b>" + p.operacao_rotulo + "</b> — " + p.explicacao +
-            "<br>Número do documento: <code>" + p.numero_documento + "</code>" +
-            "</div>";
+    const p0 = d.lancamentos[0].plano;
+    html += '<div class="aviso"><b>' + p0.operacao_rotulo + "</b> — " +
+            p0.explicacao;
+    if (varios) {
+      html += "<br><b>" + d.quantos + " lançamentos</b>, " +
+              d.quantos_titulos + " títulos no total, somando " +
+              reais(d.total) + ".";
+    }
+    html += "</div>";
 
+    // Uma tabela por lançamento quando é um só; uma linha por título, com a
+    // data na frente, quando são vários — senão vira uma parede de tabelas.
     html += '<table class="sps"><thead><tr>' +
+            (varios ? "<th>#</th><th>Data</th>" : "") +
             "<th>Movimento</th><th>Conta</th><th>Categoria</th>" +
-            "<th>Tipo de título</th><th>Valor</th><th>Data</th><th>Obra</th>" +
+            "<th>Tipo de título</th><th>Valor</th>" +
+            (varios ? "" : "<th>Data</th>") + "<th>Obra</th>" +
             "</tr></thead><tbody>";
-    p.titulos.forEach(t => {
-      const seta = t.sentido === "saida" ? "↑ SAI" : "↓ ENTRA";
-      const cor = t.sentido === "saida" ? "ruim" : "boa";
-      html += "<tr><td><span class='etiqueta " + cor + "'>" + seta + "</span></td>" +
-              "<td>" + t.conta_descricao + "</td>" +
-              "<td>" + t.categoria_nome + " <small>(" + t.codigo_categoria + ")</small></td>" +
-              "<td>" + t.natureza_rotulo + "</td>" +
-              "<td>" + reais(t.valor) + "</td>" +
-              "<td>" + t.data + "</td>" +
-              "<td>" + (t.departamento_nome || t.cod_departamento) + "</td></tr>";
+    d.lancamentos.forEach((l, i) => {
+      l.plano.titulos.forEach((t, j) => {
+        const seta = t.sentido === "saida" ? "↑ SAI" : "↓ ENTRA";
+        const cor = t.sentido === "saida" ? "ruim" : "boa";
+        html += "<tr>";
+        if (varios) {
+          // O número e a data só na primeira linha do par: repetidos, dariam
+          // a impressão de quatro lançamentos onde há dois.
+          html += "<td>" + (j === 0 ? (i + 1) : "") + "</td>" +
+                  "<td>" + (j === 0 ? t.data : "") + "</td>";
+        }
+        html += "<td><span class='etiqueta " + cor + "'>" + seta + "</span></td>" +
+                "<td>" + t.conta_descricao + "</td>" +
+                "<td>" + t.categoria_nome + " <small>(" + t.codigo_categoria +
+                ")</small></td>" +
+                "<td>" + t.natureza_rotulo + "</td>" +
+                "<td>" + reais(t.valor) + "</td>" +
+                (varios ? "" : "<td>" + t.data + "</td>") +
+                "<td>" + (t.departamento_nome || t.cod_departamento) + "</td></tr>";
+      });
     });
     html += "</tbody></table>";
 
     html += '<p class="cartao-dica">' +
-            (p.baixar ? "Os títulos nascem já baixados nesta data."
-                      : "Os títulos nascem EM ABERTO — a baixa fica para depois.") +
+            (p0.baixar ? "Os títulos nascem já baixados na data de cada linha."
+                       : "Os títulos nascem EM ABERTO — a baixa fica para depois.") +
+            (varios ? " Cada linha é um lançamento independente: se uma falhar, "
+                    + "as outras seguem." : "") +
             "</p>";
 
     html += '<details><summary>Ver o pacote exato que vai para o OMIE</summary>' +
             "<pre style='white-space:pre-wrap; font-size:12px'>" +
-            JSON.stringify(d.ensaio, null, 2).replace(/</g, "&lt;") +
+            JSON.stringify(d.lancamentos.map(l => l.ensaio), null, 2)
+              .replace(/</g, "&lt;") +
             "</pre></details>";
 
     html += '<div class="aviso atencao"><b>Daqui para baixo escreve no OMIE.</b>' +
@@ -429,7 +525,9 @@
             '<p><label class="rotulo-campo" for="senha">Senha de escrita</label>' +
             '<input class="campo-largo" id="senha" type="password" ' +
             'autocomplete="off"></p>' +
-            '<button class="btn" id="btn-gravar">Gravar no OMIE</button></div>';
+            '<button class="btn" id="btn-gravar">Gravar no OMIE' +
+            (varios ? " (" + d.quantos + " lançamentos)" : "") +
+            "</button></div>";
 
     html += '<div id="resultado"></div>';
     conferencia.innerHTML = html;
@@ -461,27 +559,46 @@
     }
 
     let html = "";
+    const quantos = d.quantos || 0;
+    const certos = d.deram_certo || 0;
+
     if (d.ok) {
       html += '<div class="aviso bom"><b>Gravado no OMIE.</b> ' +
-              "Número do documento: <code>" + d.numero + "</code></div>";
+              (quantos > 1 ? quantos + " lançamentos entraram." : "") + "</div>";
+    } else if (certos > 0) {
+      // ⚠️ O MEIO-TERMO É O CASO PERIGOSO: dizer só "deu erro" faria ele
+      // lançar tudo de novo, duplicando o que já entrou.
+      html += '<div class="aviso erro"><b>Entraram ' + certos + " de " +
+              quantos + ".</b> As que deram certo <u>já estão no OMIE</u> — " +
+              "não lance tudo de novo, refaça só as que falharam.</div>";
     } else {
       html += '<div class="aviso erro"><b>Não gravou.</b> ' + (d.erro || "") +
               "</div>";
     }
-    (d.titulos || []).forEach(t => {
-      if (!t.codigo) return;
-      html += '<div class="aviso">Título <b>' + t.codigo + "</b> — " +
-              t.papel + ", " + t.sentido + ", " + t.categoria +
-              (t.baixado ? " — baixado." : " — <b>em aberto</b>.") + "</div>";
+
+    (d.lancamentos || []).forEach((l, i) => {
+      const cab = (quantos > 1 ? "Linha " + (i + 1) + " (" + l.data + ", " +
+                   reais(l.valor) + "): " : "");
+      if (!l.ok) {
+        html += '<div class="aviso erro">' + cab + "<b>não entrou.</b> " +
+                (l.erro || "") + "</div>";
+      }
+      (l.titulos || []).forEach(t => {
+        if (!t.codigo) return;
+        html += '<div class="aviso">' + cab + "Título <b>" + t.codigo +
+                "</b> — " + t.papel + ", " + t.sentido + ", " + t.categoria +
+                (t.baixado ? " — baixado." : " — <b>em aberto</b>.") + "</div>";
+      });
+      (l.avisos || []).forEach(a => {
+        html += '<div class="aviso atencao">' + cab + a + "</div>";
+      });
+      (l.orfaos || []).forEach(o => {
+        html += '<div class="aviso erro">' + cab + "<b>Título órfão no OMIE: " +
+                o.codigo + "</b> (" + o.papel + "). Ele entrou e não deu para " +
+                "desfazer — resolva à mão no OMIE. " + (o.erro || "") + "</div>";
+      });
     });
-    (d.avisos || []).forEach(a => {
-      html += '<div class="aviso atencao">' + a + "</div>";
-    });
-    (d.orfaos || []).forEach(o => {
-      html += '<div class="aviso erro"><b>Título órfão no OMIE: ' + o.codigo +
-              "</b> (" + o.papel + "). Ele entrou e não deu para desfazer — " +
-              "resolva à mão no OMIE. " + (o.erro || "") + "</div>";
-    });
+
     html += '<p><a class="btn secundario" href="">Recarregar a tela</a></p>';
     saida.innerHTML = html;
     // Gravou: a conferência morre. Gravar duas vezes o mesmo plano seria

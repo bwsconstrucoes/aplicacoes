@@ -385,6 +385,15 @@ saindo da matriz *e* entrando na parceria; listada uma vez, esconde metade do
 que faz. A tela mostra `conta + sentido + categoria`, na ordem da tabela do
 dono.
 
+⚠️ **Lançamento em lote:** a tela aceita várias linhas de data e valor, com o
+resto igual para todas. **Dentro** de um lançamento os dois títulos seguem
+amarrados; **entre** lançamentos eles são independentes — um que falha não
+para os outros, e cada um tem grupo e número próprios. Teto de 50 por vez
+(cada linha são até quatro chamadas ao OMIE), e um cliente só para o lote,
+porque é ele que carrega o controle de excesso de chamadas. Lote que entra
+pela metade **diz isso**, em vez de um "deu erro" que levaria a relançar o que
+já entrou.
+
 A ordem das operações é fixa, com teste: **os dois títulos primeiro, as baixas
 por último**. Baixa que falha deixa título correto em aberto, que é chato e
 visível; título que falha deixaria meia operação, que é o que não pode existir.
