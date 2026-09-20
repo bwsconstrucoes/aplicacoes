@@ -40,14 +40,30 @@
         <span class="rotulo">Atrasado e prioridade alta</span></label>
     </div>
   </div>
-  <div class="dica" style="margin-top:12px">O sistema agrupou por
+  <div class="dica" id="dica-do-disparo" style="margin-top:12px">O sistema agrupou por
     <b>categoria</b> e por <b>município da obra</b>: cimento e luminária no
     mesmo pedido voltam pela metade dos dois lados, e preço de duas pontas do
     estado não é um preço só.</div>
+  <div class="dica oculto" id="filtros-da-cobranca" style="margin-top:12px">
+    Os filtros acima valem para <b>“O que disparar”</b>. A cobrança mostra
+    <b>tudo</b> que está sem resposta, em ordem de quem espera há mais tempo —
+    filtrar uma lista de cobrança é o jeito de esquecer alguém.</div>
 {% endblock %}
 
 {% block conteudo %}
 <div id="mensagem"></div>
+
+{# DUAS PERGUNTAS, UMA TELA. "O que disparar" olha para a frente (o que ainda
+   não foi pedido); "O que cobrar" olha para trás (o que foi pedido e não
+   voltou). São o mesmo trabalho do comprador em dois momentos, e separá-las em
+   duas telas faria alguém esquecer a segunda. #}
+<div class="sub-abas" id="sub-abas">
+  <button class="sub-aba ativa" data-painel="disparar">O que disparar</button>
+  <button class="sub-aba" data-painel="cobrar">O que cobrar
+    <span class="sub-aba-conta oculto" id="conta-cobrar"></span></button>
+</div>
+
+<div id="painel-disparar">
 <div class="kpis kpis-largos" id="kpis"></div>
 
 <div class="tabela-wrap">
@@ -58,6 +74,23 @@
   </div>
   <div id="blocos" class="lista-blocos"></div>
   <div class="vazio oculto" id="vazio"></div>
+</div>
+</div>
+
+<div id="painel-cobrar" class="oculto">
+<div class="kpis kpis-largos" id="kpis-cob"></div>
+
+<div class="cartao-dica" id="dica-cobrar"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo-cob"></span>
+    <span class="espaco"></span>
+    <button class="btn" id="btn-cobrar">Cobrar os marcados</button>
+  </div>
+  <div id="blocos-cob" class="lista-blocos"></div>
+  <div class="vazio oculto" id="vazio-cob"></div>
+</div>
 </div>
 
 <style>
@@ -80,6 +113,23 @@
 .mini .opcao { padding:2px 0; }
 .porque { color:var(--tinta-suave); font-size:11.5px; }
 @media (max-width: 900px) { .bloco-colunas { grid-template-columns:1fr; } }
+
+.sub-abas { display:flex; gap:4px; padding:10px 10px 0; }
+.sub-aba { background:none; border:none; border-bottom:2px solid transparent;
+  padding:8px 14px; font-size:13.5px; font-weight:600; cursor:pointer;
+  color:var(--tinta-suave); display:flex; align-items:center; gap:6px; }
+.sub-aba.ativa { color:var(--tinta); border-bottom-color:var(--ambar); }
+.sub-aba-conta { background:var(--vermelho); color:#fff; border-radius:9px;
+  font-size:11px; padding:1px 7px; font-weight:700; }
+.forn-linha { display:flex; align-items:center; gap:8px; padding:5px 0;
+  border-top:1px solid var(--borda); flex-wrap:wrap; }
+.forn-linha:first-of-type { border-top:none; }
+.forn-linha .porque { flex:1; }
+.dias-selo { font-size:11.5px; font-weight:700; border-radius:8px; padding:1px 7px; }
+.dias-ATRASADO { background:var(--vermelho); color:#fff; }
+.dias-ALTA { background:var(--ambar); color:#fff; }
+.dias-MEDIA { background:var(--amarelo); color:var(--tinta); }
+.dias-NORMAL { background:var(--cinza-claro); color:var(--tinta-suave); }
 </style>
 {% endblock %}
 
@@ -253,6 +303,186 @@ els("btn-limpar").addEventListener("click", () => {
 });
 els("btn-montar").addEventListener("click", montar);
 
+// =========================================================================
+// O QUE COBRAR
+//
+// A tela não afirma que o fornecedor não respondeu — ela afirma o que o
+// sistema sabe: o e-mail saiu, tantos dias atrás, e nenhum preço foi lançado.
+// A diferença entre as duas frases é o WhatsApp do comprador, e é por isso que
+// "já respondeu" fica do lado de "cobrar", com o mesmo peso.
+// =========================================================================
+let COB = {blocos: [], a_cobrar: 0};
+let MARCADOS = new Set();
+
+document.querySelectorAll(".sub-aba").forEach(b =>
+  b.addEventListener("click", () => trocarPainel(b.dataset.painel)));
+
+function trocarPainel(qual){
+  document.querySelectorAll(".sub-aba").forEach(b =>
+    b.classList.toggle("ativa", b.dataset.painel === qual));
+  els("painel-disparar").classList.toggle("oculto", qual !== "disparar");
+  els("painel-cobrar").classList.toggle("oculto", qual !== "cobrar");
+  // OS FILTROS DA ESQUERDA são da aba "O que disparar" (urgência do item,
+  // busca por insumo). Deixá-los à vista na cobrança seria oferecer um
+  // controle que não controla nada — e quem mexe e não vê efeito conclui que
+  // a tela está quebrada.
+  const cobrando = qual === "cobrar";
+  document.querySelectorAll(".filtro, .busca, #btn-limpar, #dica-do-disparo")
+    .forEach(e => e.classList.toggle("oculto", cobrando));
+  const nota = els("filtros-da-cobranca");
+  if (nota) nota.classList.toggle("oculto", !cobrando);
+}
+
+async function carregarCobranca(){
+  try {
+    COB = await api("/erp/api/suprimentos/cobranca");
+    // Começa tudo MARCADO: quem abre a tela quer cobrar, e desmarcar um é mais
+    // rápido do que marcar dezoito.
+    MARCADOS = new Set();
+    COB.blocos.forEach(b => b.fornecedores.forEach(f => MARCADOS.add(f.coluna_id)));
+    desenharCobranca();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenharCobranca(){
+  const conta = els("conta-cobrar");
+  conta.textContent = COB.a_cobrar || "";
+  conta.classList.toggle("oculto", !COB.a_cobrar);
+
+  els("kpis-cob").innerHTML = `
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Sem resposta, passou do prazo</div>
+      <div class="kpi-valor">${COB.a_cobrar || 0}</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Ainda dentro do prazo</div>
+      <div class="kpi-valor">${COB.esperando || 0}</div>
+      <div class="kpi-sub">cobrar cedo demais ensina a ignorar</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Já responderam</div>
+      <div class="kpi-valor">${COB.ja_responderam || 0}</div></div>
+    ${COB.nao_disparadas ? `
+      <div class="kpi estatico ambar"><div class="kpi-rotulo">Montadas e não disparadas</div>
+        <div class="kpi-valor">${COB.nao_disparadas}</div>
+        <div class="kpi-sub">isso é disparo, não cobrança</div></div>` : ""}`;
+
+  els("dica-cobrar").innerHTML = escapar(COB.observacao || "");
+  els("vazio-cob").classList.toggle("oculto", COB.blocos.length > 0);
+  if (!COB.blocos.length)
+    els("vazio-cob").innerHTML = "<b>Nada para cobrar</b>"
+      + "Toda cotação disparada teve resposta, ou ainda está dentro do prazo.";
+
+  els("blocos-cob").innerHTML = COB.blocos.map(b => `
+    <div class="bloco u-${b.urgencia}">
+      <div class="bloco-cab">
+        <b>${escapar(b.numero)}</b>
+        <span>${escapar(b.titulo)}</span>
+        <span class="proc-num">${b.fornecedores.length} sem resposta</span>
+      </div>
+      <div style="margin-top:8px">${b.fornecedores.map(f => `
+        <div class="forn-linha">
+          <label class="opcao" style="margin:0">
+            <input type="checkbox" data-cob="${f.coluna_id}"
+              ${MARCADOS.has(f.coluna_id) ? "checked" : ""}>
+            <span class="rotulo"><b>${escapar(f.nome)}</b></span></label>
+          <span class="dias-selo dias-${f.urgencia}">${f.dias} dia(s)</span>
+          <span class="porque">${escapar(f.porque)}</span>
+          <button class="link-btn" data-respondeu="${f.coluna_id}">já respondeu</button>
+          <button class="link-btn" data-recusou="${f.coluna_id}">não vai cotar</button>
+        </div>`).join("")}</div>
+    </div>`).join("");
+
+  document.querySelectorAll("[data-cob]").forEach(c => c.addEventListener("change", ev => {
+    const id = +ev.target.dataset.cob;
+    ev.target.checked ? MARCADOS.add(id) : MARCADOS.delete(id);
+    atualizarResumoCobranca();
+  }));
+  document.querySelectorAll("[data-respondeu]").forEach(b =>
+    b.addEventListener("click", () => marcarQueRespondeu(+b.dataset.respondeu)));
+  document.querySelectorAll("[data-recusou]").forEach(b =>
+    b.addEventListener("click", () => marcarQueRecusou(+b.dataset.recusou)));
+  atualizarResumoCobranca();
+}
+
+function atualizarResumoCobranca(){
+  els("resumo-cob").innerHTML = `<b>${MARCADOS.size}</b> fornecedor(es) marcados `
+    + `para receber lembrete`;
+}
+
+async function marcarQueRespondeu(colunaId){
+  const r = await perguntar({
+    titulo: "Já respondeu",
+    aviso: "Isto tira o fornecedor da cobrança agora. Os preços você lança "
+         + "quando puder, na tela de Cotações — e o tempo de resposta dele "
+         + "fica guardado.",
+    campos: [
+      {nome: "canal", rotulo: "Por onde chegou a resposta", tipo: "select",
+       obrigatorio: true, opcoes: [
+         {valor: "WHATSAPP", rotulo: "WhatsApp"},
+         {valor: "EMAIL", rotulo: "E-mail"},
+         {valor: "TELEFONE", rotulo: "Telefone"},
+         {valor: "PRESENCIAL", rotulo: "Pessoalmente"}]},
+      {nome: "quem", rotulo: "Quem respondeu (opcional)",
+       exemplo: "nome do vendedor"},
+    ], textoOk: "Marcar"});
+  if (!r) return;
+  await enviarResposta(colunaId, {canal: r.canal, quem: r.quem});
+}
+
+async function marcarQueRecusou(colunaId){
+  const r = await perguntar({
+    titulo: "Não vai cotar",
+    aviso: "Ele avisou que não vai participar. Isso NÃO conta contra ele no "
+         + "histórico — quem avisa respondeu; quem some é que não respondeu.",
+    campos: [{nome: "motivo", rotulo: "Motivo (opcional)", tipo: "textarea",
+              linhas: 2, exemplo: "sem estoque; não atende esta região"}],
+    textoOk: "Anotar"});
+  if (!r) return;
+  await enviarResposta(colunaId, {sem_interesse: true, motivo: r.motivo});
+}
+
+async function enviarResposta(colunaId, corpo){
+  try {
+    const d = await api(
+      `/erp/api/suprimentos/cotacoes/fornecedores/${colunaId}/resposta`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify(corpo)});
+    aviso("mensagem", d.recado, "ok");
+    await carregarCobranca();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function cobrar(){
+  if (!MARCADOS.size)
+    return aviso("mensagem", "Marque ao menos um fornecedor.", "erro");
+  const r = await perguntar({
+    titulo: `Cobrar ${MARCADOS.size} fornecedor(es)`,
+    aviso: "Sai um lembrete curto por fornecedor, do e-mail da empresa da "
+         + "cotação. Se algum já respondeu por fora, desmarque antes: cobrar "
+         + "quem respondeu é o jeito mais rápido de perder um fornecedor bom.",
+    campos: [{nome: "observacao", rotulo: "Acrescentar ao lembrete (opcional)",
+              tipo: "textarea", linhas: 2,
+              exemplo: "Precisamos fechar até sexta."}],
+    textoOk: "Mandar os lembretes"});
+  if (!r) return;
+  els("btn-cobrar").disabled = true;
+  try {
+    const d = await api("/erp/api/suprimentos/cobranca", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({colunas: [...MARCADOS], observacao: r.observacao})});
+    let recado = d.recado;
+    if (d.sem_endereco.length)
+      recado += "<br><b>Sem e-mail cadastrado:</b> " +
+                d.sem_endereco.map(escapar).join(", ");
+    if (d.falhas.length)
+      recado += "<br><b>Falharam:</b> " + d.falhas.map(f =>
+        `${escapar(f.fornecedor || "")} — ${escapar(f.motivo || "")}`).join("; ");
+    aviso("mensagem", recado,
+          (d.falhas.length || d.sem_endereco.length) ? "alerta" : "ok");
+    await carregarCobranca();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  els("btn-cobrar").disabled = false;
+}
+
+els("btn-cobrar").addEventListener("click", cobrar);
+
 carregar();
+carregarCobranca();
 </script>
 {% endblock %}

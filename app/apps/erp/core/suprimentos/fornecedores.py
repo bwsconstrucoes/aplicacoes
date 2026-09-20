@@ -254,6 +254,12 @@ def gerenciar(s: Session) -> dict[str, Any]:
     """Todos os fornecedores com o que Suprimentos precisa ver, mais os
     números do topo e as listas para os filtros."""
     categorias = {c.id: c.nome for c in s.scalars(select(InsumoCategoria)).all()}
+    # A MEMÓRIA (18/09/2026): respondeu quantas vezes, em quantos dias, entregou
+    # no prazo. Vem calculada na hora, nunca guardada — nota gravada envelhece
+    # e mente; nota calculada acompanha a realidade. Uma passada só para a tela
+    # inteira: por fornecedor varreria as mesmas tabelas mil vezes.
+    from app.apps.erp.core.suprimentos import desempenho as svc_desempenho
+    memoria = svc_desempenho.por_fornecedor(s)
     por_fornecedor: dict[int, list[int]] = {}
     for v in s.scalars(select(FornecedorCategoria)).all():
         por_fornecedor.setdefault(v.fornecedor_id, []).append(v.categoria_insumo_id)
@@ -290,6 +296,7 @@ def gerenciar(s: Session) -> dict[str, Any]:
             "cotacao_automatica": getattr(f, "cotacao_automatica", True) is not False,
             "situacao_rfb": getattr(f, "situacao_rfb", None) or "",
             "ativo": getattr(f, "ativo", True) is not False,
+            "historico": memoria.get(f.id),
         })
     linhas.sort(key=lambda x: _chave(x["razao_social"]))
 

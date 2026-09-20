@@ -587,20 +587,42 @@ async function abrirDisparo(){
 // veio com os itens QUE JÁ ESTÃO NO MAPA — problema bem mais fácil do que
 // adivinhar material do zero. O que ela não casar volta escrito na tela.
 async function lerProposta(colunaId){
+  // O ARQUIVO vem junto do texto colado, e não em outro botão: a resposta do
+  // fornecedor chega em PDF, em foto do WhatsApp e em e-mail colado, e obrigar
+  // a pessoa a escolher o caminho antes de saber qual tem em mãos é o que o
+  // dono já mandou não fazer nos cadastros ("uma porta só").
   const r = await perguntar({
     titulo: "Ler proposta do fornecedor",
-    aviso: "Anexe o PDF/foto ou cole o texto. A IA preenche a coluna para você " +
-           "conferir — nada é gravado sem você mandar salvar. O arquivo fica " +
-           "guardado no mapa como prova.",
-    campos: [{nome: "texto", rotulo: "Cole o texto da proposta", tipo: "textarea",
-              linhas: 8, exemplo: "Vergalhão CA50 12.5mm — 100 M — R$ 38,50/un"}],
+    aviso: "Jogue aqui o PDF ou a foto da proposta — ou cole o texto do e-mail. " +
+           "A IA preenche os preços E as condições (pagamento, frete, CIF/FOB, " +
+           "prazo) para você conferir. Nada é gravado sem você mandar salvar; " +
+           "o arquivo fica guardado no mapa como prova.",
+    campos: [
+      {nome: "arquivo", rotulo: "Proposta (PDF, foto ou XML)", tipo: "arquivo"},
+      {nome: "texto", rotulo: "…ou cole o texto da proposta", tipo: "textarea",
+       linhas: 6, exemplo: "Vergalhão CA50 12.5mm — 100 M — R$ 38,50/un\n" +
+                           "Pagamento 28 dias · frete incluso · validade 30/09"},
+    ],
     textoOk: "Ler"});
-  if (!r || !r.texto.trim()) return;
+  if (!r) return;
+  const arquivo = (r.arquivo instanceof File) ? r.arquivo
+                : (r.arquivo && r.arquivo[0]) || null;
+  if (!arquivo && !(r.texto || "").trim())
+    return aviso("mensagem", "Anexe a proposta ou cole o texto dela.", "erro");
   aviso("mensagem", "Lendo a proposta…", "info");
   try {
-    const d = await api(`/erp/api/suprimentos/cotacoes/fornecedores/${colunaId}/proposta`,
-      {method: "POST", headers: {"Content-Type": "application/json"},
-       body: JSON.stringify({texto: r.texto})});
+    let d;
+    const url = `/erp/api/suprimentos/cotacoes/fornecedores/${colunaId}/proposta`;
+    if (arquivo) {
+      const forma = new FormData();
+      forma.append("arquivo", arquivo);
+      forma.append("texto", r.texto || "");
+      d = await api(url, {method: "POST", body: forma});
+    } else {
+      d = await api(url, {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({texto: r.texto})});
+    }
     aplicarProposta(colunaId, d.leitura);
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
@@ -621,11 +643,57 @@ function aplicarProposta(colunaId, leitura){
   if (leitura.nao_casados.length)
     partes.push("Não casou com o mapa: " +
       leitura.nao_casados.map(x => x.descricao).join(" · "));
+  if (leitura.condicoes && leitura.condicoes.resumo)
+    partes.push("Condições: " + leitura.condicoes.resumo);
   if (leitura.condicoes_lidas)
-    partes.push("Condições lidas: " + leitura.condicoes_lidas);
+    partes.push("Observações: " + leitura.condicoes_lidas);
   partes.push("Confira e clique em Salvar preços.");
   aviso("mensagem", partes.join(" "),
         leitura.nao_casados.length ? "alerta" : "ok");
+  if (leitura.condicoes) confirmarCondicoes(colunaId, leitura.condicoes);
+}
+
+// AS CONDIÇÕES NÃO SE GRAVAM SOZINHAS, e o motivo é aritmético: frete e forma
+// de pagamento entram no total do mapa. Uma leitura errada aqui não deixa um
+// campo feio — troca o vencedor da cotação. Por isso vêm num formulário, já
+// preenchidas, para a pessoa olhar e confirmar.
+async function confirmarCondicoes(colunaId, c){
+  if (!c.forma_pagamento_lida && c.frete === null && c.entrega === null
+      && c.prazo_entrega_dias === null && !c.validade) return;
+  const r = await perguntar({
+    titulo: "Condições lidas na proposta",
+    aviso: "Frete e forma de pagamento entram no total e podem trocar o "
+         + "vencedor da cotação — por isso não gravo sozinho. Confira e "
+         + "confirme, ou feche e lance à mão.",
+    campos: [
+      {nome: "condicao_pagamento_id", rotulo: "Condição de pagamento", tipo: "select",
+       valor: c.condicao_pagamento_id ? String(c.condicao_pagamento_id) : "",
+       opcoes: [{valor: "", rotulo: c.forma_pagamento_lida
+                   ? `— (a proposta diz "${c.forma_pagamento_lida}")` : "—"}]
+                .concat(BASE.condicoes.map(x => ({valor: String(x.id), rotulo: x.nome})))},
+      {nome: "entrega", rotulo: "Frete por conta de quem", tipo: "select",
+       valor: c.entrega || "",
+       opcoes: [{valor: "", rotulo: "— não diz"},
+                {valor: "ENTREGA", rotulo: "Fornecedor entrega (CIF)"},
+                {valor: "COLETA", rotulo: "Nós retiramos (FOB)"}]},
+      {nome: "frete", rotulo: "Valor do frete (R$)", largura: 1,
+       valor: c.frete === null ? "" : c.frete},
+      {nome: "desconto", rotulo: "Desconto (R$)", largura: 1,
+       valor: c.desconto === null ? "" : c.desconto},
+      {nome: "prazo_entrega_dias", rotulo: "Prazo de entrega (dias)", largura: 1,
+       valor: c.prazo_entrega_dias === null ? "" : String(c.prazo_entrega_dias)},
+      {nome: "validade_proposta", rotulo: "Preço vale até", tipo: "date",
+       largura: 1, valor: c.validade || ""},
+    ], textoOk: "Gravar as condições"});
+  if (!r) return;
+  try {
+    const d = await api(
+      `/erp/api/suprimentos/cotacoes/fornecedores/${colunaId}/condicoes`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify(r)});
+    aviso("mensagem", d.recado, "ok");
+    abrirMapa(MAPA.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 async function abrirMapa(id){

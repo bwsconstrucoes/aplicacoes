@@ -5424,6 +5424,267 @@ aparecer `017_nota_ciencia_e_arquivo.sql`. Estar ausente da lista de
 *pendentes* não basta — pode ser a versão velha ainda no ar.
 
 ---
+
+### Septuagésima segunda leva (18/09) — o PDF saía com outro filtro, e ninguém tinha como desconfiar
+
+> *"Eu coloco aplicar para poder baixar o PDF, mas não baixa com as informações
+> que estão aparecendo na tela. Está aparecendo outras informações."*
+
+#### A causa, e ela é de uma linha
+
+Os links de exportar eram montados assim: `url_for(rota, **args)`.
+
+`args` é o `request.args` do Flask — um **MultiDict**, que guarda vários
+valores por chave. **Desempacotar com `**` pega só o PRIMEIRO valor de cada
+uma.**
+
+Medido:
+
+    marcado na tela  →  ['OBRA-1', 'OBRA-2', 'OBRA-3']
+    no link do PDF   →  {'centro_custo': 'OBRA-1'}
+
+A tela filtrava por três obras; o arquivo saía com **uma**. Com um valor só por
+filtro — o caso mais comum — funcionava perfeitamente, e foi por isso que
+passou tanto tempo sem aparecer.
+
+#### ⚠️ O que torna este defeito pior do que parece: o silêncio
+
+O arquivo **baixa normalmente**. Sem erro, sem aviso, com cara de relatório
+certo. Quem recebe um PDF de prestação de contas não tem como desconfiar que
+faltam duas obras — a não ser somando na mão contra a tela, que é justamente o
+trabalho que o relatório existe para evitar.
+
+É a mesma família do que o `CLAUDE.md` nomeia: **número errado com cara de
+certo é pior que resposta nenhuma**.
+
+#### Eram QUATRO lugares, não um
+
+O mesmo `**args` estava em quatro links, e todos saíam errados do mesmo jeito:
+
+| Onde | O que saía capado |
+|---|---|
+| Relatório | **Baixar PDF** |
+| Relatório | **Exportar CSV** |
+| Solicitações / Lote / Doc. Fiscal | **Exportar CSV** (a barra de ações) |
+| Auditoria | **Exportar esta checagem** |
+
+Só a tela de Documentação Fiscal escapava, porque ela já usava
+`args.to_dict(flat=false)` — escrito quando o "28 vira 2" foi corrigido, em
+13/09. A forma certa existia no repositório e não tinha sido levada aos outros.
+
+#### O que NÃO estava errado
+
+O **"Quebrar por"** da tela não chega ao PDF, e isso é de propósito: o PDF traz
+**todas** as quebras (obra, projeto, tipo de despesa, conta). Ele é mais
+completo que a tela, não diferente.
+
+#### Os testes
+
+Quatro casos, e eles foram conferidos **desfazendo o conserto**: com `**args` de
+volta, dois falham com a mensagem exata do problema (*"o PDF sairia sem
+OBRA-2"*). Os outros dois travam o caso simples (um valor só) e o caso sem
+filtro nenhum, para o conserto não quebrar o que funcionava.
+
+---
+
+### Septuagésima terceira leva (18/09) — o analítico no PDF do relatório
+
+> *"Queria que no relatório em PDF saísse mais abaixo o analítico. Está bom do
+> jeito que você está colocando, mas está faltando a parte analítica: o
+> lançamento, credor e a descrição com detalhe do que é. Pode reduzir a fonte
+> para poder caber as coisas."*
+
+O PDF tinha os totais, as quebras por obra/projeto/tipo/conta, os maiores
+credores e o atraso — tudo **resumo**. Faltava o que está por trás: cada
+lançamento, um por linha.
+
+Agora, **ao final do relatório**, uma tabela com **SP · Data · Credor · Obra ·
+Tipo · Descrição · Valor**, em fonte 6,5 e com a descrição quebrando em até
+três linhas — foi ele quem autorizou reduzir a fonte. É o mesmo caminho do PDF
+do lote, que já fazia isso desde 11/09.
+
+#### Por último, e não no começo
+
+Quem abre o relatório quer primeiro o resumo: os totais e as quebras respondem
+*"quanto"* e *"onde"*. O analítico responde *"quais"*, e é para onde se vai
+quando um número do topo surpreende. Pondo-o antes, seriam dezenas de páginas
+de linhas antes do primeiro total. Há teste exigindo essa ordem.
+
+#### ⚠️ A parte que mais importa: o detalhe FECHA com o total
+
+O analítico usa **exatamente** o mesmo recorte dos totais — as mesmas funções
+de filtro e de período que a contagem e as quebras usam.
+
+Isto não é zelo. Detalhe e resumo saem **na mesma folha**: se filtrassem por
+critérios diferentes, a soma das linhas não bateria com o número do topo, e
+quem conferisse não teria como saber qual dos dois está certo. O relatório
+inteiro perderia a credibilidade por causa justamente da parte que deveria
+prová-lo.
+
+Dois testes com banco de verdade cravam isso: a soma do analítico bate com o
+total **no centavo**, e filtrando por obra o detalhe encolhe junto.
+
+#### ⚠️ O teto, e por que ele AVISA
+
+São **2.000 linhas**, da maior despesa para a menor. A base tem 59 mil SPs; um
+relatório sem filtro viraria um PDF de centenas de páginas que ninguém abre e
+que come a memória do serviço ao ser montado.
+
+**Quando o teto corta, a folha diz isso com todas as letras** — e explica a
+consequência: *"a soma destas linhas fica abaixo do total do topo, que continua
+certo"*. Analítico truncado em silêncio seria pior do que analítico nenhum:
+quem somasse as linhas não encontraria o total e concluiria que **a conta está
+errada**, quando o certo é o total.
+
+Quando não corta, a folha afirma o contrário — *"a soma desta lista fecha com o
+total do topo"* — o que poupa a conferência de quem recebe.
+
+A ordem por valor existe por causa do teto: cortando em 2.000, o que fica de
+fora é o miúdo, não a despesa que interessa.
+
+#### O que ficou de fora
+
+- **O CSV do relatório não ganhou o analítico.** Ele já exporta os blocos de
+  resumo, e quem quer lançamento a lançamento em planilha tem o "Exportar CSV"
+  das Solicitações, que sai com o filtro inteiro (corrigido nesta mesma data).
+  Acrescentar um sexto bloco lá tornaria o arquivo difícil de abrir no Excel.
+- **A coluna "Data" muda de significado conforme o relatório**: em "pagas" é a
+  data do pagamento; nos outros, o vencimento. É a mesma data que o período
+  recorta — mostrar vencimento num relatório de pagas faria a coluna não
+  explicar por que aquela linha entrou.
+
+#### ⚠️ A suíte pegou o que a seção nova trouxe de risco
+
+Três testes do PDF quebraram no mesmo instante, e os dois motivos valem
+registro.
+
+**O primeiro era só de teste:** a dublagem da tela do relatório não conhecia a
+consulta nova, então os testes do PDF batiam no banco de verdade e voltavam
+500. Corrigido acrescentando o analítico à dublagem.
+
+**O segundo era de verdade, e é mais sério:** uma falha na consulta do detalhe
+**derrubava o PDF inteiro**. A pessoa ficaria sem relatório nenhum — perdendo
+os totais, as quebras e os credores, que já estavam prontos — por causa do
+apêndice.
+
+É a mesma regra que o quadro por categoria ganhou em 13/09, e que está escrita
+neste histórico desde então: **o acessório não pode derrubar o principal.**
+Agora o PDF sai **sem** o analítico em vez de não sair, e a folha diz que
+faltou — *"não consegui montar o analítico desta vez, e o resto do relatório
+acima está completo e correto"* — para ninguém concluir que não havia
+lançamento nenhum. Há teste cravando.
+
+#### Conferido gerando o PDF de verdade
+
+Três páginas, 45 lançamentos com descrição longa e credor comprido: a tabela
+cabe na largura da folha (as sete colunas somam os 190 mm exatos), o cabeçalho
+se repete na virada de página, a descrição quebra em vez de ser cortada, e o
+aviso do rodapé aparece.
+
+---
+
+### Septuagésima quarta leva (20/09) — o QR Pix saía com o rótulo dentro
+
+> *"Veja o que está acontecendo com o código QR quando temos e-mail, veja como
+> ele sai: `00020126590014br.gov.bcb.pix0137Chave Pix: carlosgaldino884@gmail.com…`
+> O que está acontecendo, eu acho, é que não está sendo eliminada a expressão
+> 'Chave Pix: ' que fica junto ao e-mail."*
+
+Ele acertou a causa olhando o payload. E o defeito é pior do que parece na
+descrição: **não era um QR feio, era um código de pagamento inútil.** O campo
+01 do bloco 26 é a chave que o banco vai resolver; com `Chave Pix: ` grudado
+nela, nenhum banco resolve. A imagem aparecia, o aplicativo lia, e recusava
+**na hora de pagar** — quem gerou não descobria; quem ia pagar descobria.
+
+#### ⚠️ A limpeza existia, funcionava, e o QR não passava por ela
+
+Esta é a parte que vale guardar. `extrair_chave()` tira o rótulo desde sempre,
+e foi conferida: entrega `carlosgaldino884@gmail.com` corretamente. Só que ela
+era chamada por `classificar()`, que alimenta **o alerta laranja** ("falta a
+chave Pix no cadastro"). O caminho do QR, em `_codigo_de_pagamento`, lia
+`info_pgt` **cru** da planilha e entregava direto ao gerador.
+
+Duas leituras do mesmo dado, uma limpa e outra não. A tela dizia "tem chave" —
+e tinha — e o QR era montado com o texto inteiro.
+
+`normalizar_chave()` deixava passar porque, vendo um `@`, devolvia o texto sem
+tocar: e-mail não tem formato a normalizar. O texto que ela recebeu já vinha
+sujo.
+
+#### O conserto: a limpeza mora no funil, não em quem chama
+
+A remoção do rótulo foi para dentro de `pix_brcode.limpar_rotulo`, chamada por
+`normalizar_chave` — o funil por onde **todo** payload passa. `extrair_chave`
+passou a usar a mesma função, e o caminho da tela passou a usar
+`classificar()` como todo o resto.
+
+Posta no chamador, a correção valeria só para a tela de hoje: a próxima tela
+que montasse um Pix nasceria com o mesmo defeito, e ninguém veria até alguém
+tentar pagar.
+
+Aproveitando, a limpeza ficou mais tolerante ao que a planilha realmente traz:
+`Chave Pix -`, `Chave Pix –`, `Chave:`, `PIX:`, e o endereço com texto em volta
+(`carlos@x.com (Nubank)`) — e-mail não tem espaço, então sobra só o endereço.
+Duas armadilhas foram travadas com teste: `pixelado@x.com` **não** é mutilada
+(só o rótulo *com separador* é rótulo), e o "copia e cola" pronto não é tocado
+— ele tem espaços legítimos no nome e na cidade do recebedor, e mexer neles
+quebraria o CRC.
+
+#### Sem chave, agora o QR não é gerado
+
+Antes, uma SP sem chave gerava um payload com o campo vazio: de novo um QR que
+abre, é lido e só é recusado no fim. Agora a tela escreve o motivo no lugar do
+código.
+
+#### Os testes vigiam o CAMINHO, não só o resultado
+
+O defeito não estava na função de limpeza — estava em ela não ser chamada.
+Então, além dos casos de limpeza, há um teste que **abre o payload gerado** e
+confere que o campo 01 tem só a chave e que o CRC fecha, e outro que lê o
+código de `_codigo_de_pagamento` e falha se alguém voltar a ler `info_pgt`
+direto. Um teste só do resultado da limpeza passaria verde com o defeito no ar
+— foi exatamente o que aconteceu por meses.
+
+#### ⚠️ O que isso significa para trás, e é o que ele precisa saber
+
+**Todo QR gerado para chave escrita com o rótulo saiu quebrado.** Se algum foi
+enviado a alguém para pagar, precisa ser gerado de novo. Não dá para saber
+daqui quantos foram — não há registro de quais QRs foram exibidos.
+
+#### ⚠️ O conserto não bastou: o payload PRONTO também estava podre
+
+Publicado o conserto acima, o dono voltou dizendo que o código continuava
+**exatamente igual** — CRC incluído. Estava certo, e faltava uma peça.
+
+A coluna de informação de pagamento nem sempre traz uma chave: às vezes traz
+um **"copia e cola" pronto**. Esse caso passa direto, por desenho — payload
+pronto é para ser reproduzido como veio, porque ele carrega nome, cidade e
+txid que não temos como remontar.
+
+Só que esse payload pronto pode ter sido gerado **pelo próprio sistema antes
+do conserto** e devolvido à planilha. Aí ele já nasce com o rótulo dentro, e
+**nada o denuncia**: o CRC fecha, porque foi calculado sobre o texto errado.
+A única conferência que existia diz que está tudo certo.
+
+Agora, antes de reproduzir um payload pronto, o sistema **lê a chave de dentro
+dele** (`chave_de_dentro`, campo 01 do bloco 26). Se ela trouxer rótulo, o
+payload é **remontado limpo**, com o valor e o credor da própria SP. Fora esse
+caso, não se encosta nele — há teste cravando que um payload saudável sai
+byte a byte igual, com o txid e a cidade dele.
+
+Efeito colateral aceito e registrado: no caso remontado, valor e nome passam a
+vir da SP, não do payload antigo. É o certo — o payload antigo não servia para
+pagar de nenhum jeito —, mas se o valor da planilha divergir do que estava no
+código velho, é o da planilha que prevalece.
+
+#### Não verificado
+
+O QR corrigido **não foi lido por um aplicativo de banco de verdade** — não há
+como fazer isso daqui. O que foi conferido: o payload tem a chave limpa no
+campo certo, o CRC fecha, e a imagem sai. A leitura de fato só o dono pode
+confirmar, e vale conferir na primeira SP com chave de e-mail.
+
+---
 ---
 
 ## Regras que não se discutem

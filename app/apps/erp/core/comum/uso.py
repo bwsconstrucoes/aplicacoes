@@ -73,6 +73,10 @@ POR_ENTIDADE: dict[str, str] = {
     "documento": "documento",
     "documento_fiscal": "documento",
     "cotacao": "compras",
+    # A COLUNA do mapa é entidade própria desde 18/09/2026: marcar "respondeu
+    # por WhatsApp" é trabalho de comprador perseguindo proposta, e some se for
+    # contado junto da cotação inteira.
+    "cotacao_fornecedor": "compras",
     "pedido_compra": "compras",
     "suprimento_solicitacao": "compras",
     "suprimento_item": "compras",
@@ -90,6 +94,9 @@ POR_ENTIDADE: dict[str, str] = {
     "conta_bancaria": "cadastro",
     "unidade_compra": "cadastro",
     "condicao_pagamento": "cadastro",
+    # Carga de planilha é trabalho de cadastro: quem importa o histórico de
+    # preços está povoando a base, não comprando.
+    "banco_precos": "cadastro",
     "agenda": "agenda",
     # ACOMPANHAMENTO em categoria própria, e não em "cadastro": lançar o
     # andamento de um aditivo é o trabalho de quem persegue órgão público, e
@@ -150,7 +157,8 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "conciliacao": "conciliação", "extrato": "extrato", "movimentacao": "movimentação",
     "contrato_servico": "contrato de obra", "nota_emitida": "nota emitida",
     "documento": "documento", "documento_fiscal": "nota fiscal recebida",
-    "cotacao": "cotação", "pedido_compra": "pedido de compra",
+    "cotacao": "cotação", "cotacao_fornecedor": "fornecedor no mapa de cotação",
+    "pedido_compra": "pedido de compra",
     "suprimento_solicitacao": "pedido de material",
     "suprimento_item": "item do pedido de material",
     "insumo_solicitacao": "pedido de cadastro de insumo",
@@ -161,6 +169,7 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "obra": "obra", "insumo": "insumo", "insumo_categoria": "categoria de insumo",
     "empresa": "empresa", "conta_bancaria": "conta bancária",
     "unidade_compra": "unidade de compra", "condicao_pagamento": "condição de pagamento",
+    "banco_precos": "banco de preços",
     "agenda": "agenda", "pergunta": "pergunta escrita", "categoria": "conta do plano",
     "processo": "processo de acompanhamento",
     "pergunta_agendada": "relatório automático",

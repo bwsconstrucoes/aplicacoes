@@ -66,10 +66,21 @@
     </select>
   </div>
   <button class="btn" type="submit">Aplicar</button>
+{# ⚠️ `args.to_dict(flat=false)` E NÃO `args` — 18/09/2026.
+
+   Relato do dono: *"eu coloco aplicar para baixar o PDF, mas não baixa com as
+   informações que estão na tela. Está aparecendo outras informações."*
+
+   A causa: `args` é um MultiDict, e desempacotar com `**` pega **só o primeiro
+   valor de cada filtro**. Marcando três obras, a tela filtra pelas três e o
+   link levava uma. O arquivo saía com outro conteúdo, sem nada avisando.
+
+   `to_dict(flat=false)` devolve listas, e aí os três valores viajam. #}
+  {% set args_inteiros = args.to_dict(flat=false) %}
   <a class="btn secundario"
-     href="{{ url_for('analisesps.exportar_relatorio', **args) }}">Exportar CSV</a>
+     href="{{ url_for('analisesps.exportar_relatorio', **args_inteiros) }}">Exportar CSV</a>
   <a class="btn secundario"
-     href="{{ url_for('analisesps.relatorio_pdf', **args) }}">Baixar PDF</a>
+     href="{{ url_for('analisesps.relatorio_pdf', **args_inteiros) }}">Baixar PDF</a>
   <span class="cartao-dica" style="margin:0">
     SPs canceladas ficam de fora de todo o relatório.
     {% if tipo == 'pagas' %}O período conta pela data do pagamento.

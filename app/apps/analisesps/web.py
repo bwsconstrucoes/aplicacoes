@@ -1687,11 +1687,15 @@ def _codigo_de_pagamento(sp_id: str, registro) -> dict:
                     registro.get("codigo_barras") or "").strip()
         elif "pix" in forma or "beevale" in forma:
             bloco["tipo"] = "pix"
-            chave = str(registro.get("info_pgt") or "")
+            # Passa pela MESMA classificação do alerta laranja: é ela que tira
+            # o rótulo ("Chave Pix: ...") e diz se o que veio é uma chave ou um
+            # "copia e cola" pronto. Ler o texto cru aqui foi o que pôs o
+            # rótulo dentro do QR.
+            info = pagamentos.classificar(forma, registro.get("info_pgt"))
             png, carga = pagamentos.gerar_pix(
-                chave, float(registro.get("valor_num") or 0),
+                info["chave"], float(registro.get("valor_num") or 0),
                 str(registro.get("credor") or ""),
-                copia_cola=("00020" in chave))
+                copia_cola=(info["subtipo"] == "copia_cola"))
             import base64
             bloco["imagem"] = base64.b64encode(png).decode("ascii")
             bloco["copia_cola"] = carga

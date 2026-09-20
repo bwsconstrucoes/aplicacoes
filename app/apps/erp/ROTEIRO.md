@@ -1261,6 +1261,41 @@ O dono lançou um título de verdade pela primeira vez e mandou uma lista.
 - [x] **Importar as categorias de insumo** junto com os insumos, por uma
       marcação na tela — a carga continua sem inventar categoria por padrão.
 
+## Suprimentos inteligente — o que foi feito e o que falta (18/09/2026)
+
+Feito nesta leva:
+
+- [x] **A cobrança sugerida.** O sistema aponta a cotação disparada sem preço
+      lançado; quem cobra é gente. Com as duas saídas que a nuance exige: "já
+      respondeu (por onde?)" e "não vai cotar".
+- [x] **A proposta lida por inteiro.** Arquivo (PDF/foto) além do texto colado,
+      e as condições — pagamento, frete, CIF/FOB, prazo, validade — voltando
+      separadas e preenchidas para conferência, não numa frase solta.
+- [x] **A memória do fornecedor.** Tempo de resposta, taxa de resposta, recusa
+      declarada, pedidos ganhos e entrega no prazo, tudo derivado do trabalho
+      normal do comprador. Entra na ordenação do planejamento só a partir de
+      três cotações.
+- [x] **O banco de preços antigo.** Importador com a trava dos números
+      (CA50 ≠ CA60), sem criar insumo e sem duplicar na reimportação; e o
+      último/menor preço ao lado do item na tela de Solicitações.
+
+O que falta, em ordem de retorno por hora de trabalho:
+
+- [ ] **Ler a resposta do fornecedor e preencher o mapa continua sendo um
+      clique por proposta.** O caminho está pronto; o que falta é a pessoa não
+      precisar abrir o mapa para cada fornecedor — uma fila de "propostas para
+      ler" resolveria.
+- [ ] **Ordenar por categoria, não só por insumo**: "quem deu o melhor preço em
+      ARMADURA no último ano" ainda não tem soma escrita.
+- [ ] **Alerta de preço fora da curva** no lançamento do mapa: "este preço está
+      40% acima do último cotado". O dado existe; falta a comparação na hora de
+      salvar.
+- [ ] **Correção pela inflação** ao comparar preço antigo com preço novo — o
+      INCC já está no sistema desde a migração 050.
+- [ ] **A cobrança por WhatsApp**, e não só por e-mail. Hoje o lembrete sai
+      pelo correio da empresa; o canal preferido de metade dos vendedores é
+      outro.
+
 ## Decisões registradas
 
 | Assunto | Decisão |

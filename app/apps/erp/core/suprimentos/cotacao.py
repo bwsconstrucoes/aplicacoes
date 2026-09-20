@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Optional
 
@@ -149,6 +149,51 @@ def adicionar_fornecedor(s: Session, cotacao_id: int, dados: dict[str, Any],
     return coluna
 
 
+def atualizar_condicoes(s: Session, coluna_id: int, dados: dict[str, Any],
+                        usuario: Usuario) -> CotacaoFornecedor:
+    """Grava as condições da coluna: pagamento, frete, desconto, entrega, prazo.
+
+    É aqui que desemboca o que a leitura da proposta sugeriu — depois de a
+    pessoa conferir na tela. Só mexe no que vier: um campo ausente fica como
+    estava, porque a tela manda o que mudou e não a coluna inteira.
+    """
+    coluna = s.get(CotacaoFornecedor, coluna_id)
+    if coluna is None:
+        raise ErroNaoEncontrado("Fornecedor não está neste mapa.")
+    _cotacao_aberta(s, coluna.cotacao_id)
+
+    if "condicao_pagamento_id" in dados:
+        valor = dados.get("condicao_pagamento_id")
+        coluna.condicao_pagamento_id = int(valor) if valor else None
+    if "entrega" in dados:
+        entrega = (dados.get("entrega") or "").strip().upper()
+        if entrega and entrega not in {m.value for m in ModoEntrega}:
+            raise ErroValidacao("Modo de entrega inválido.")
+        coluna.entrega = ModoEntrega(entrega) if entrega else None
+    if "frete" in dados:
+        coluna.frete = _dinheiro(dados.get("frete"), "Frete", obrigatorio=False)
+    if "desconto" in dados:
+        coluna.desconto = _dinheiro(dados.get("desconto"), "Desconto",
+                                    obrigatorio=False)
+    if "prazo_entrega_dias" in dados:
+        valor = dados.get("prazo_entrega_dias")
+        prazo = int(valor) if str(valor or "").strip() else None
+        if prazo is not None and not 0 <= prazo <= 365:
+            raise ErroValidacao("Prazo de entrega fora do razoável (0 a 365 dias).")
+        coluna.prazo_entrega_dias = prazo
+    if "validade_proposta" in dados:
+        texto = (dados.get("validade_proposta") or "").strip()
+        coluna.validade_proposta = date.fromisoformat(texto) if texto else None
+    if "respondido_por" in dados:
+        coluna.respondido_por = (dados.get("respondido_por") or "").strip() or None
+
+    registrar_evento(s, "cotacao", coluna.cotacao_id, "CONDICOES_ALTERADAS",
+                     {"coluna_id": coluna.id,
+                      "campos": sorted(k for k in dados if k != "coluna_id")},
+                     usuario.id if usuario else None)
+    return coluna
+
+
 def _cotacao_aberta(s: Session, cotacao_id: int) -> Cotacao:
     cot = s.get(Cotacao, cotacao_id)
     if cot is None:
@@ -199,6 +244,16 @@ def lancar_preco(s: Session, cotacao_fornecedor_id: int, cotacao_item_id: int,
         atual.observacao = observacao or atual.observacao
         atual.herdado_de_cotacao_id = herdado_de
     s.flush()
+
+    # O CARIMBO QUE TORNA O SISTEMA INTELIGENTE (migração 076). O primeiro
+    # preço lançado nesta coluna é a prova de que o fornecedor respondeu — e a
+    # distância até o envio é o tempo de resposta dele. Ninguém digita isso: sai
+    # do trabalho normal do comprador, que é a única forma de um histórico
+    # destes existir daqui a um ano.
+    if coluna.respondido_em is None:
+        coluna.respondido_em = datetime.now(timezone.utc)
+        if not getattr(coluna, "respondido_canal", None):
+            coluna.respondido_canal = "EMAIL"
 
     item = s.get(SuprimentoItem, linha.suprimento_item_id)
     if item is not None:

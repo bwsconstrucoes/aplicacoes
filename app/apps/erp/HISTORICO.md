@@ -54,6 +54,34 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### 📄 A PLANILHA DO BANCO DE PREÇOS — falta o arquivo
+
+O importador está pronto e testado, mas **o histórico antigo ainda não entrou**:
+eu não consegui baixar a aba *Banco de Preços BD* daqui (a exportação desta
+sessão traz só a primeira aba da pasta, que é a de pesquisa — veio filtrada por
+"arame", 250 linhas).
+
+**O que o dono faz:** Suprimentos › Cadastros › **Importar** › *Histórico de
+preços*, e manda **a planilha inteira em Excel** — não precisa separar a aba, o
+sistema acha a aba certa pelas colunas. Aperte **"Ver prévia"** primeiro: ela
+diz quantos nomes de insumo não bateram com o cadastro, sem gravar nada.
+Rodar duas vezes não duplica.
+
+
+### ⚠️ MIGRAÇÕES 076 e 077 — apertar "Aplicar atualizações do banco"
+
+**076** acrescenta, na coluna do fornecedor no mapa: quando foi **cobrado** e
+quantas vezes, **por onde a resposta chegou** (a nuance do WhatsApp), a marca
+de **"não vai cotar"**, e o **prazo de entrega** e a **validade** lidos da
+proposta. Sem ela, a aba "O que cobrar" abre com erro.
+
+**077** acrescenta ao banco de preços a **chave da linha da planilha** (é o que
+impede que importar o mesmo arquivo duas vezes dobre o histórico), a **origem**
+(nasceu aqui ou veio da planilha antiga) e **quem cotou**. Traz também dois
+índices — sem eles, a tela de Solicitações fica lenta depois que o histórico
+antigo entrar.
+
+
 ### ⚠️ MIGRAÇÃO 075 — apertar "Aplicar atualizações do banco"
 
 Acrescenta a **observação do contato**, a marca **cotação automática** no
@@ -5661,6 +5689,199 @@ cadastrada em seguida já nasceu no grupo certo, na ordem certa.
    senha (`ERP_COMPROVANTE_SECRET`) já está no Render; falta o Make usá-la.
 
 ---
+
+## O SISTEMA PARA ANTES DE MANDAR — e quem mandou isso foi o dono
+
+18/09/2026. Eu havia escrito que o passo seguinte do "sistema inteligente" era
+disparar e cobrar sozinho. Ele discordou, e a razão dele vale mais que a minha
+proposta:
+
+> *"Disparar sozinho eu acho que nem é o ideal. O sistema pode ter até a
+> inteligência de fazer isso, mas se a gente fizer isso corre o risco de, enfim,
+> tem algumas nuances que só o humano sabe o que deve ser feito. Então eu acho
+> que realmente não deve ser disparado nada sozinho. A cobrança também não deve
+> ser feita sozinha, mas eu quero que o sistema SUGIRA o que deve ser cobrado."*
+
+**A linha, escrita para quem nunca viu esta conversa:** o sistema faz o trabalho
+braçal — varrer o que está pendente, agrupar, achar quem vende, perceber quem
+não respondeu — e **para no clique**. Montar a cotação é um clique; mandar o
+e-mail é outro; cobrar é outro. Nenhum deles acontece sozinho, hoje nem depois.
+
+### A NUANCE DO WHATSAPP, que decide o desenho da cobrança
+
+> *"De repente o fornecedor não respondeu pelo e-mail, respondeu pelo WhatsApp.
+> Aí o comprador ainda não alimentou o sistema, e na verdade o fornecedor já
+> respondeu."*
+
+O sistema **não sabe** se o fornecedor respondeu. Ele sabe uma coisa bem menor:
+que nenhum preço foi lançado naquela coluna. A distância entre as duas é o
+WhatsApp do comprador, a ligação, o vendedor que passou na obra.
+
+Por isso a aba **"O que cobrar"** (dentro de *Planejar cotações*) não afirma
+"não respondeu": cada linha diz o que o sistema sabe — *"disparada há 6 dias,
+nenhum preço lançado"* — e traz **dois botões de saída** ao lado do "cobrar":
+
+- **"já respondeu"** → pergunta por onde chegou (WhatsApp, e-mail, telefone,
+  pessoalmente). Tira da cobrança na hora, mesmo antes de os preços serem
+  digitados;
+- **"não vai cotar"** → o fornecedor avisou que não participa. **Não conta
+  contra ele** no histórico: quem avisa respondeu; quem some é que não
+  respondeu. Contar as duas juntas diria, daqui a um ano, que o fornecedor
+  atencioso é relapso.
+
+Quem entra na lista: cotação **aberta**, e-mail **efetivamente enviado**, mais
+de **2 dias** sem preço e sem marca de resposta, e **não cobrado nas últimas
+24 h**. Envio que FALHOU não gera cobrança — silêncio depois de um e-mail que
+nunca saiu é problema nosso.
+
+Onde está: `core/suprimentos/cobranca.py`, aba nova em
+`templates/erp_suprimentos_planejar.html`, testes em
+`tests/test_cobranca_cotacao.py` (17 casos — metade deles prova que a lista
+sabe ficar calada).
+
+
+## A PROPOSTA LIDA POR INTEIRO — preços E condições
+
+18/09/2026. Ele corrigiu uma afirmação minha, e estava certo:
+
+> *"Em relação a ler a resposta do fornecedor e preencher o mapa sozinho, nós já
+> tínhamos discutido sobre isso (…) A resposta que a gente recebesse por e-mail,
+> um anexo, ou um texto com informação, eu poder colar no sistema e o sistema
+> fazer a leitura. Isso aí não está assim, não? Porque você colocou já um X aí
+> grande e, na verdade, isso já deveria estar parcialmente."*
+
+**Estava mesmo — e eu errei ao dizer que não.** `core/suprimentos/proposta.py`
+já lia o texto colado e casava os itens com o mapa desde a fase 3 de
+Suprimentos. O que faltava eram duas coisas, e as duas foram feitas agora:
+
+1. **O ARQUIVO.** A rota já aceitava anexo; a tela só oferecia colar texto. O
+   diálogo agora tem o campo de arquivo junto do de texto — uma porta só, como
+   manda a regra dos cadastros. O PDF/foto fica arquivado no mapa como prova.
+2. **AS CONDIÇÕES ESTRUTURADAS.** Antes voltavam como uma frase solta que
+   ninguém transportava para os campos. Agora a leitura devolve, separados:
+   forma de pagamento (já casada com a condição CADASTRADA), valor do frete,
+   **CIF ou FOB**, prazo de entrega em dias e validade da proposta. A tela abre
+   um formulário com tudo preenchido, para a pessoa **conferir e confirmar**.
+
+**Por que não grava sozinho:** frete e forma de pagamento entram no TOTAL do
+mapa. Uma leitura errada aqui não deixa um campo feio — **troca o vencedor da
+cotação**, e o comprador fecha com quem não era o mais barato acreditando que
+era.
+
+O que a leitura entende de CIF/FOB sem que ninguém escreva CIF nem FOB: "posto
+obra", "frete incluso", "frete grátis", "entrega" → o fornecedor entrega; "a
+retirar", "retirada na loja", "coleta", "balcão" → nós retiramos. Proposta com
+**as duas opções** volta em branco de propósito — escolher uma seria inventar a
+decisão do comprador. Testes em `tests/test_proposta_condicoes.py` (21 casos).
+
+**O que ele mesmo previu e continua verdade:** *"para funcionar, eu acho que não
+é tão simples, porque não existe padrão, cada fornecedor responde de uma forma.
+E ainda tem aquele detalhe: a gente cota o insumo, a nomenclatura do fornecedor
+é diferente."* É por isso que tudo volta como sugestão, com o que não casou
+escrito na tela.
+
+
+## A MEMÓRIA QUE TORNA O SISTEMA INTELIGENTE
+
+18/09/2026, e esta é a decisão mais importante desta leva:
+
+> *"A gente não já pode deixar ele pronto para isso? Enquanto não tem
+> inteligência, ele trabalha de forma automática (…) aí você já tem que deixar
+> ele pronto para se tornar inteligente: os dados que a gente vai trabalhar já
+> estarem sendo guardados, para que os compradores vão aos poucos
+> alimentando."*
+
+**Ele está certo sobre a ordem, e vale entender por quê:** um sistema que ordena
+fornecedor por regra fixa ("mesma cidade vale 3 pontos") está chutando com
+educação. Um que ordena por resultado ("respondeu 9 das últimas 10, entregou no
+prazo em 8") está medindo. A diferença NÃO é o algoritmo — é o histórico. E
+histórico não se compra: só se acumula, a partir do dia em que alguém começa a
+guardar. Esse dia é hoje.
+
+**O que passou a ser guardado, sem ninguém digitar nada:**
+
+| O quê | De onde sai |
+|---|---|
+| convites | a cotação foi disparada para ele (`envios_email`) |
+| respostas | preço lançado, ou a marca "respondeu por WhatsApp" |
+| dias para responder | envio → resposta |
+| recusas | "não vai cotar" |
+| pedidos ganhos | `pedidos_compra` |
+| entregou no prazo | previsão do pedido × data do recebimento |
+
+O carimbo novo que fechou o circuito: **lançar o primeiro preço numa coluna
+marca `respondido_em`** (`core/suprimentos/cotacao.py`). Sem ele, o tempo de
+resposta não existiria.
+
+**A TRAVA, que é a parte que impede o número bonito e mentiroso:** abaixo de
+**3 cotações** o histórico devolve `confiavel=False` e **não mexe em nada** — a
+sugestão segue pela regra fixa do cadastro. Um fornecedor chamado uma vez que
+respondeu tem 100% de resposta, e ordenar por isso poria o desconhecido na
+frente de quem atende a empresa há dois anos. A partir de três, o histórico
+entra na pontuação sozinho, **sem ninguém trocar chave nenhuma**.
+
+Quem nunca responde **cai** na lista (pontos negativos), não apenas deixa de
+subir: já teve três chances, é pior que o desconhecido.
+
+Onde está: `core/suprimentos/desempenho.py` (nada é guardado — tudo é calculado
+na hora; nota gravada envelhece e mente), a frase "Como ele se comporta" na
+ficha do fornecedor, e a pontuação em `planejamento.py`. Testes em
+`tests/test_desempenho_fornecedor.py` (10 casos).
+
+
+## O BANCO DE PREÇOS ANTIGO — importador e o preço ao lado do item
+
+18/09/2026:
+
+> *"Como a gente já tem um histórico de banco de preços (…) vai tentar já criar
+> o nosso banco de informações de preços (…) Eu quero ter o histórico de tudo
+> que eu comprei (…) isso é interessante inclusive para quando a gente está na
+> tela das solicitações já poder estar visualizando: ó, o insumo, onde está o
+> último menor preço, qual o fornecedor, qual o valor."*
+
+**Feito, com uma pendência de arquivo — ver "Pendente AGORA".** A planilha é a
+*Banco de Preços (Principal)*, aba **Banco de Preços BD**. Eu **não consegui
+baixar essa aba daqui**: a exportação disponível nesta sessão traz só a primeira
+aba da pasta, que é a de pesquisa (veio filtrada por "arame", 250 linhas). O
+caminho certo, e que é o definitivo, é **ele importar pela tela**: Suprimentos ›
+Cadastros › Importar › *Histórico de preços*. Não precisa separar a aba — o
+sistema acha a aba certa pelas colunas.
+
+**A regra dura deste importador, e o porquê:** ele grava dezenas de milhares de
+linhas que depois viram a frase "o menor preço deste insumo foi R$ 12,90". Se
+casar o insumo errado, ninguém percebe, e o comprador passa a negociar contra um
+preço que nunca existiu para aquele material. Então:
+
+- casa por descrição **exata** (ignorando acento, caixa e o espaço rígido que
+  vem colado do Google Sheets);
+- casa por **semelhança** só a partir de 0,90 **e com os números iguais** —
+  "Vergalhão CA50" e "Vergalhão CA60" são 95% iguais como texto e são materiais
+  diferentes; o que os separa é sempre o número (CA50/CA60, BWG 18/BWG 14,
+  CPII/CPIV, 6mm/8mm). **Este caso foi pego por teste, não por revisão.**
+- abaixo disso **não importa e não cria insumo**: a linha vai para uma lista na
+  tela, para o dono corrigir o nome ou cadastrar o insumo.
+
+O **fornecedor** é mais tolerante de propósito (CNPJ, depois nome, depois
+semelhança; não achou, o preço entra sem fornecedor): preço sem fornecedor ainda
+responde "quanto custou"; preço no insumo errado não responde nada.
+
+**Reimportar não duplica** — cada linha tem chave única (mapa + insumo +
+fornecedor + valor + data + quantidade) com índice único no banco. Alguém VAI
+importar duas vezes: na primeira ninguém confia.
+
+**Na tela de Solicitações**, embaixo do nome do material, agora aparece: *"último
+R$ 11,03 (Almeida) em 12/12/2025 · menor no ano R$ 9,09 (Gerdau) · 14 cotação(ões)
+no último ano"*. Janela de **12 meses** — preço de dois anos atrás não é
+referência, é curiosidade; preço mais velho que isso aparece com o aviso colado.
+
+Isso NÃO reusa `cotacao.historico_de_precos`, e por um motivo que importa: aquela
+função carrega a tabela inteira na memória e filtra em Python. Com o histórico
+antigo dentro são dezenas de milhares de linhas, e a tela precisa do resumo de
+vários insumos de uma vez. O novo (`core/suprimentos/precos.py`) faz a conta no
+BANCO, e por isso tem teste com Postgres de verdade
+(`tests/test_precos_referencia_banco.py`) — o dublê ignora WHERE e devolveria o
+preço de outro material com cara de certo.
+
 
 ## Regras que não se discutem
 
