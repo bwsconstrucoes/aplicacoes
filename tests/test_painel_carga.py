@@ -45,7 +45,8 @@ def espelho_limpo():
     resultado = migracoes_runner.aplicar_pendentes()
     assert not resultado.get("erro"), f"migração falhou: {resultado}"
 
-    tabelas = ("fato", "titulos", "rateio", "movimentos", "cat", "clientes",
+    tabelas = ("fato", "titulos", "rateio", "movimentos",
+               "movimentos_sem_titulo", "cat", "clientes",
                "contas_correntes", "depto_projeto", "sync_state")
 
     def _limpar():
@@ -214,8 +215,10 @@ def test_gravar_movimentos(espelho_limpo):
 
 
 def test_movimento_sem_titulo_e_ignorado_e_contado(espelho_limpo):
-    """Movimento que não aponta para título nenhum não tem onde entrar. É
-    descartado — mas a contagem volta, para o número não sumir calado."""
+    """Movimento que não aponta para título nenhum não vira linha do painel —
+    não tem onde entrar. Mas desde a migração 012 ele também não é jogado fora:
+    fica numa tabela própria, fora de todo número de tela, porque o dono
+    perguntou quanto era e não havia como responder."""
     from app.apps.painel.db import conexao, consultar
     from app.apps.painel.sync import espelho
 
@@ -224,6 +227,7 @@ def test_movimento_sem_titulo_e_ignorado_e_contado(espelho_limpo):
     with conexao() as conn:
         gravados, ignorados = espelho.gravar_movimentos(conn, [orfao])
     assert (gravados, ignorados) == (0, 1)
+    assert consultar("SELECT COUNT(*) FROM movimentos_sem_titulo")[0][0] == 1
     assert consultar("SELECT COUNT(*) FROM movimentos")[0][0] == 0
 
 
@@ -435,3 +439,128 @@ def test_titulo_de_fornecedor_sem_cadastro_nao_fica_sem_nome(espelho_limpo):
         "nenhuma linha pode ficar sem nome: sem nome ela some de qualquer busca"
     assert "4242" in nomes[0], \
         "e o nome tem de carregar o código, senão não dá para saber de quem é"
+
+
+# ===========================================================================
+# A limpeza do checkpoint nunca mais derruba a carga
+# ===========================================================================
+# 20/09/2026. A carga completa da madrugada terminou com:
+#
+#     remove: path should be string, bytes or os.PathLike, not NoneType
+#
+# Um dos caminhos de checkpoint vem None, e os.remove(None) levanta TypeError —
+# que NÃO é OSError, então passava direto pelo `except` e derrubava a varredura
+# inteira. E o pior nem foi isso: a explosão impedia a ETAPA SEGUINTE, que é a
+# que refaz os números das telas. A base atualizava e as telas continuavam
+# mostrando número velho, sem ninguém perceber.
+
+def test_apagar_checkpoint_com_caminho_vazio_nao_estoura():
+    """O erro exato da madrugada de 20/09."""
+    from app.apps.painel.sync.espelho import _ckpt_remover
+    _ckpt_remover(None)                      # era aqui que estourava
+    _ckpt_remover(None, "", "/nao/existe/arquivo.json")
+
+
+def test_apagar_checkpoint_apaga_de_verdade_o_que_existe(tmp_path):
+    """Tolerar caminho vazio não pode virar tolerar tudo: o arquivo que existe
+    continua sendo apagado."""
+    from app.apps.painel.sync.espelho import _ckpt_remover
+    arquivo = tmp_path / "ckpt.json"
+    arquivo.write_text("{}", encoding="utf-8")
+    _ckpt_remover(str(arquivo), None)
+    assert not arquivo.exists()
+
+
+def test_varredura_de_excluidos_que_falha_nao_impede_o_recalculo(monkeypatch):
+    """A lição que custou uma madrugada: achar título apagado é um extra
+    semanal; refazer os números é o que faz a tela valer. O extra não pode
+    custar o essencial."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.sync import espelho, fato
+
+    monkeypatch.setattr(espelho, "definir_progresso", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "sync_incremental", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "reconcile",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            TypeError("remove: path should be string, "
+                                      "bytes or os.PathLike, not NoneType")))
+    refez = []
+    monkeypatch.setattr(fato, "reconstruir",
+                        lambda conn: refez.append(1) or (100, 20))
+    monkeypatch.setattr(tarefas, "_carimbar", lambda *a, **k: None)
+
+    fechou = {}
+    monkeypatch.setattr(tarefas, "_fechar_execucao",
+                        lambda conn, eid, ok, msg, dur=None: fechou.update(
+                            ok=ok, mensagem=msg))
+    # `tarefas` importa a conexão DENTRO da função (`from .db import conexao`),
+    # então quem tem de ser trocado é o módulo de origem, não o de destino.
+    import contextlib
+
+    from app.apps.painel import db as painel_db
+    monkeypatch.setattr(painel_db, "conexao",
+                        lambda: contextlib.nullcontext(object()))
+
+    assert tarefas.executar_trabalho("completa", 1) is True
+    assert refez, "os números TÊM de ser refeitos mesmo com a varredura falhando"
+    assert fechou["ok"] is True
+    assert "ATENÇÃO" in fechou["mensagem"], \
+        "e a tela tem de dizer o que não foi feito — senão 'concluída' mente"
+    assert "títulos excluídos" in fechou["mensagem"]
+
+
+# ===========================================================================
+# As observações dos títulos — 20/09/2026
+# ===========================================================================
+# A conferência mostrou: 0 de 120.772 títulos tinham a observação do OMIE. O
+# dono desconfiou disso em 17/09 e estava certo. O trabalho que busca a
+# observação existia, mas só dava para rodar pela linha de comando — ou seja,
+# na prática nunca rodava. Virou modo de atualização, com botão.
+
+def test_o_modo_de_observacoes_busca_as_duas_naturezas(monkeypatch):
+    """A receber vai inteiro (são as medições, poucos); a pagar vai por bloco."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.sync import espelho, fato
+
+    chamadas = []
+
+    def _falso(natureza=None, limite=None, **k):
+        chamadas.append((natureza, limite))
+        return 7
+
+    monkeypatch.setattr(espelho, "definir_progresso", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "backfill_observacoes", _falso)
+    refez = []
+    monkeypatch.setattr(fato, "reconstruir",
+                        lambda conn: refez.append(1) or (100, 20))
+    monkeypatch.setattr(tarefas, "_carimbar", lambda *a, **k: None)
+    fechou = {}
+    monkeypatch.setattr(tarefas, "_fechar_execucao",
+                        lambda conn, eid, ok, msg, dur=None: fechou.update(
+                            ok=ok, mensagem=msg))
+    import contextlib
+
+    from app.apps.painel import db as painel_db
+    monkeypatch.setattr(painel_db, "conexao",
+                        lambda: contextlib.nullcontext(object()))
+
+    assert tarefas.executar_trabalho("observacoes", 1) is True
+    assert chamadas == [("R", None),
+                        ("P", tarefas.TETO_DE_OBSERVACOES_POR_RODADA)], \
+        "a receber vai inteiro; a pagar vai limitado, senão a rodada não termina"
+    assert refez, "e os números TÊM de ser refeitos — a observação vai para a linha"
+    assert fechou["ok"] is True
+    assert "14 observações" in fechou["mensagem"], \
+        "a tela tem de dizer quantas vieram, senão não dá para saber se anda"
+
+
+def test_a_busca_de_observacoes_nao_escreve_no_omie(monkeypatch):
+    """Ela só CONSULTA. Se um dia alguém puser escrita aqui, este teste cai —
+    e é para cair: escrever no OMIE exige a senha de execução e conferência."""
+    import inspect
+
+    from app.apps.painel.sync import espelho
+    fonte = inspect.getsource(espelho.backfill_observacoes)
+    for proibido in ("Alterar", "Incluir", "Excluir"):
+        assert proibido not in fonte, \
+            f"a busca de observações passou a chamar {proibido} no OMIE"

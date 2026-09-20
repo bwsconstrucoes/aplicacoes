@@ -432,7 +432,13 @@ def _consultar_falso(sql, params=()):
             return [(9,)]
         if "= 'Dividendos'" in sql:                             # o quadro à parte
             return [("SÓCIO A", 0.0, 1200.0, 2)]
-        if "GROUP BY 1, 2" in sql:                              # por obra / por tipo
+        # Por obra / por tipo: o que distingue e a obra estar no recorte.
+        # Antes isto olhava "GROUP BY 1, 2", e quebrou em 20/09/2026,
+        # quando o recorte por socio passou a AGRUPAR pelo documento e
+        # MOSTRAR o nome — duas expressoes diferentes, entao o GROUP BY
+        # deixou de ser posicional. Olhar o que a consulta PEDE, e nao
+        # como ela escreve, nao quebra de novo.
+        if "NULLIF(TRIM(departamento" in sql:                              # por obra / por tipo
             return [("Obra Um", "SÓCIO A", 5000.0, 1000.0, 3),
                     ("Obra Um", "SÓCIO B", 2000.0, 0.0, 1)]
         return [("SÓCIO A", 5000.0, 1000.0, 3),                 # por sócio

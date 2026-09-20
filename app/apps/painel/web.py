@@ -1153,17 +1153,32 @@ def rateio_administracao():
     )
 
 
+def _conferir(funcao, erros: list, nome: str = "Conferência"):
+    """Roda uma conferência sem deixar a falha dela derrubar a tela.
+
+    As conferências SÓ MEDEM — nenhuma altera nada. Então a falha de uma é
+    informação, não motivo para esconder as outras três."""
+    try:
+        return funcao()
+    except Exception as e:  # noqa: BLE001 — o erro vai para a tela, não para o log só
+        logger.exception("Painel: a conferência %s falhou", nome)
+        erros.append({"nome": nome, "erro": str(e)})
+        return None
+
+
 @bp.route("/configuracoes")
 def configuracoes():
     from . import migracoes_runner, tarefas
     estado_migracoes = migracoes_runner.listar_estado()
+    conferencias_com_erro: list[dict] = []
     contexto = {"aba_ativa": "config", "abas": ABAS}
     sincronizacao = tarefas.estado()
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
-        conferencia = sumidos = aportes_conf = observacoes = None
+        conferencia = sumidos = aportes_conf = observacoes = fora = None
         conferir = False
+        recarga = None
     else:
         from . import consultas
         # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
@@ -1175,6 +1190,11 @@ def configuracoes():
             so_concluidas=bool(sincronizacao["interrompida"]))
         vazia = consultas.base_vazia()
         etapas = consultas.etapas_da_carga()
+        # Aviso que NAO pode faltar: a migracao 010 arruma o tipo da coluna, mas
+        # o centavo que ja se perdeu so volta com uma carga inicial. Sem dizer
+        # isso na tela, a migracao daria a impressao de ter resolvido.
+        recarga = _conferir(consultas.recarga_total_pendente,
+                            conferencias_com_erro, "Aviso de recarga")
         # So mede, nao corrige: quanto dinheiro a carga deu por realizado e as
         # telas nao enxergam. Ver o comentario em `conferencia_do_pago`.
         # AS CONFERENCIAS SO RODAM QUANDO ALGUEM PEDE. Sao ~12 varreduras na
@@ -1183,12 +1203,26 @@ def configuracoes():
         # em 14/09/2026 e a tela parou de abrir para o dono no mesmo dia.
         conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
-        conferencia = sumidos = aportes_conf = observacoes = None
+        conferencia = sumidos = aportes_conf = observacoes = fora = None
         if not vazia and (conferir or procurado is not None):
-            conferencia = consultas.conferencia_do_pago()
-            sumidos = consultas.titulos_que_sumiram(procurado)
-            aportes_conf = consultas.conferencia_dos_aportes()
-            observacoes = consultas.cobertura_das_observacoes()
+            # CADA UMA POR SI. Em 20/09/2026 o dono apertou o botão e "não
+            # apresentou resultado" — e não havia como saber se tinha dado erro,
+            # porque uma consulta quebrada levava a tela inteira para a página
+            # de erro, sem dizer qual das quatro foi. Agora cada conferência cai
+            # sozinha e a falha dela aparece em vermelho no lugar do quadro.
+            conferencia = _conferir(consultas.conferencia_do_pago,
+                                    conferencias_com_erro,
+                                    "Dinheiro que as telas não contam")
+            sumidos = _conferir(lambda: consultas.titulos_que_sumiram(procurado),
+                                conferencias_com_erro, "Busca pelo valor")
+            aportes_conf = _conferir(consultas.conferencia_dos_aportes,
+                                     conferencias_com_erro, "Aportes do DRE")
+            observacoes = _conferir(consultas.cobertura_das_observacoes,
+                                    conferencias_com_erro,
+                                    "Observações dos títulos")
+            fora = _conferir(consultas.movimentos_fora_do_painel,
+                             conferencias_com_erro,
+                             "Movimentos fora do painel")
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1200,10 +1234,13 @@ def configuracoes():
         sem_obra=consultas.SEM_OBRA if not estado_migracoes["pendentes"] else "",
         sem_categoria=consultas.SEM_CATEGORIA if not estado_migracoes["pendentes"] else "",
         conferir=conferir,
+        recarga=recarga,
+        conferencias_com_erro=conferencias_com_erro,
         conferencia=conferencia,
         sumidos=sumidos,
         aportes_conf=aportes_conf,
         observacoes=observacoes,
+        fora=fora,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
     )

@@ -876,13 +876,24 @@ def base_com_pago_invisivel(base_para_explorar):
     yield
 
 
-def test_a_conferencia_acha_o_dinheiro_que_as_telas_nao_contam(base_com_pago_invisivel):
+def test_o_titulo_baixado_com_outra_palavra_agora_e_contado(base_com_pago_invisivel):
+    """O caso que escondia R$ 96.750,00 na base do dono.
+
+    Este título foi baixado no OMIE — a carga o deu por quitado —, mas o texto
+    do status é "Baixado", que não é nenhuma das palavras que as telas olhavam.
+    Até a migração 011 ele existia na base e não aparecia em tela nenhuma.
+
+    Agora "foi pago?" tem UMA resposta só: a que a carga gravou. Então este
+    título conta, e a conferência das duas regras não acha mais nada — ela
+    continua existindo como guarda: se um dia voltar a acusar alguma coisa, é
+    porque alguém criou uma segunda regra de novo."""
     from app.apps.painel import consultas
     r = consultas.conferencia_do_pago()
-    assert r["titulos"] >= 1
-    assert r["valor"] >= 320000
-    assert any(s["situacao"] == "Baixado" for s in r["situacoes"]), \
-        "tem de dizer QUAL palavra está escapando — é isso que orienta a correção"
+    assert r["titulos"] == 0 and r["valor"] == 0, \
+        f"as duas regras divergiram de novo: {r['situacoes']}"
+    devolvido = consultas.aportes(consultas.Filtros())["devolvido"]
+    assert devolvido == pytest.approx(320000), \
+        "e o dinheiro dele tem de aparecer no bloco, que é onde sumia"
 
 
 def test_a_conferencia_nao_altera_nada(base_com_pago_invisivel):
@@ -1038,6 +1049,146 @@ def test_diz_quando_o_titulo_foi_baixado_e_descartado(base_para_explorar):
     assert achado["situacao"] == "CANCELADO", "e por quê"
 
 
+def test_o_centavo_nao_se_perde_mais_ao_gravar(base_para_explorar):
+    """O erro que custou uma semana: R$ 784.647,07 virava R$ 784.647,06.
+
+    As colunas de dinheiro do espelho nasceram REAL (float de 4 bytes), que
+    guarda ~7 algarismos significativos. Acima de R$ 131.072,00 o centavo NÃO
+    CABE. A migração 010 passou tudo para NUMERIC, que guarda o decimal como
+    ele é escrito. Sem este teste, trocar o tipo de volta passaria despercebido
+    — e a busca por valor exato voltaria a não achar nada grande."""
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 9002")
+        conn.execute(
+            "INSERT INTO titulos (codigo_lancamento_omie, natureza,"
+            " valor_documento, status_titulo) VALUES (9002,'P',784647.07,'PAGO')")
+        conn.commit()
+        (gravado,) = conn.execute(
+            "SELECT valor_documento FROM titulos"
+            " WHERE codigo_lancamento_omie = 9002").fetchone()
+    assert float(gravado) == 784647.07, \
+        f"o banco devolveu {gravado} — o centavo se perdeu ao gravar"
+
+
+def test_dinheiro_e_guardado_em_numeric_nao_em_float(base_para_explorar):
+    """A regra por trás do teste acima, dita direto ao banco.
+
+    Vale para toda coluna de dinheiro do espelho, não só a que o dono procurou:
+    se uma voltar a ser `real`, é centavo perdido esperando para acontecer."""
+    from app.apps.painel.db import conexao
+    esperado = {
+        "titulos": ["valor_documento", "valor_ir", "valor_iss", "valor_inss",
+                    "valor_pis", "valor_cofins", "valor_csll"],
+        "movimentos": ["nvalortitulo", "nvalpago", "nvalliquido", "nvalaberto",
+                       "njuros", "nmulta", "ndesconto"],
+        "rateio": ["nvaldep"],
+        "ajustes": ["valor"],
+    }
+    with conexao() as conn:
+        for tabela, colunas in esperado.items():
+            tipos = dict(conn.execute(
+                "SELECT column_name, data_type FROM information_schema.columns"
+                " WHERE table_schema = 'painel' AND table_name = ?",
+                (tabela,)).fetchall())
+            for coluna in colunas:
+                assert tipos.get(coluna) == "numeric", \
+                    f"painel.{tabela}.{coluna} está como {tipos.get(coluna)}"
+
+
+def test_a_tela_avisa_que_falta_rebaixar_para_os_centavos_voltarem(cliente_config):
+    """A migração 010 arruma o TIPO da coluna, não o valor já gravado.
+
+    Sem este aviso, ela pareceria ter resolvido e os números continuariam
+    errados em silêncio — que é pior do que não ter consertado. O aviso some
+    sozinho quando uma carga inicial terminar bem depois da migração."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM execucoes WHERE tipo = 'carga_inicial'")
+        conn.commit()
+    assert consultas.recarga_total_pendente()["pendente"] is True
+    html = cliente_config.get("/painel/configuracoes").get_data(as_text=True)
+    assert "centavo errado" in html
+    assert "Primeira carga" in html, \
+        "e o botão que resolve tem de estar na mesma tela, senão o aviso é inútil"
+
+    # e some sozinho quando a carga inicial acontecer
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO execucoes (tipo, disparo, inicio, fim, ok)"
+            " VALUES ('carga_inicial','manual', now(), now(), true)")
+        conn.commit()
+    assert consultas.recarga_total_pendente()["pendente"] is False
+    with conexao() as conn:
+        conn.execute("DELETE FROM execucoes WHERE tipo = 'carga_inicial'")
+        conn.commit()
+
+
+# ===========================================================================
+# O dinheiro que andou na conta e não está em tela nenhuma — 20/09/2026
+# ===========================================================================
+# O dono: "esse movimento sem titulo, eu não sei exatamente quem sao e de qual
+# forma afeta. como saber?" — e não dava para saber, porque a carga descartava
+# esses movimentos antes de gravar, contando quantos foram só no log.
+
+@pytest.fixture()
+def base_com_movimento_sem_titulo(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM movimentos_sem_titulo")
+        conn.execute(
+            "INSERT INTO movimentos_sem_titulo (cnatureza, ccodcateg, ncodcc,"
+            " ddtpagamento, cstatus, nvalpago)"
+            " VALUES ('P','1.01.02', 7011, '24/12/2025','LIQUIDADO', 50000),"
+            "        ('R','1.01.02', 7011, '10/01/2026','LIQUIDADO', 12000)")
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+    with conexao() as conn:
+        conn.execute("DELETE FROM movimentos_sem_titulo")
+        conn.commit()
+
+
+def test_a_tela_diz_quanto_dinheiro_andou_fora_do_painel(base_com_movimento_sem_titulo):
+    from app.apps.painel import consultas
+    r = consultas.movimentos_fora_do_painel()
+    assert r["linhas"] == 2
+    assert reais(r["valor"]) == 62000.00
+    assert reais(r["entrou"]) == 12000.00, "entrada e saída separadas"
+    assert reais(r["saiu"]) == 50000.00
+    assert [l["ano"] for l in r["por_ano"]] == ["2026", "2025"]
+    assert r["maiores"][0]["valor"] == 50000.00, "do maior para o menor"
+    assert r["maiores"][0]["natureza"] == "Saída"
+
+
+def test_esse_dinheiro_nao_entra_em_numero_de_tela_nenhum(base_com_movimento_sem_titulo):
+    """A tabela existe para ser OLHADA, não para somar. Se um dia ela começar a
+    entrar no DRE sem ninguém decidir, os números mudam sozinhos — que é
+    exatamente o que o dono não pode ter."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import consultar
+    (linhas_fato,) = consultar("SELECT COUNT(*) FROM fato")[0]
+    consultas.movimentos_fora_do_painel()
+    assert consultar("SELECT COUNT(*) FROM fato")[0][0] == linhas_fato
+    dre = consultas.aportes(consultas.Filtros())
+    assert dre["aportado"] >= 0  # só para exercitar; o que importa é o de baixo
+    (no_fato,) = consultar(
+        "SELECT COUNT(*) FROM fato WHERE ABS(pago_recebido) = 50000")[0]
+    assert no_fato == 0, "o movimento sem título não pode ter virado linha"
+
+
+def test_a_carga_guarda_o_movimento_sem_titulo_em_vez_de_jogar_fora():
+    """Antes ele era contado e descartado na mesma linha de código."""
+    import inspect
+
+    from app.apps.painel.sync import espelho
+    fonte = inspect.getsource(espelho.gravar_movimentos)
+    assert "movimentos_sem_titulo" in fonte, \
+        "voltou a descartar o movimento sem título — e aí não dá nem para contar"
+
+
 def test_diz_quando_a_carga_nunca_trouxe(base_para_explorar):
     """A outra metade da resposta, e a mais importante: se nem na base crua
     está, o problema é a carga, não a montagem das linhas."""
@@ -1124,6 +1275,59 @@ def base_de_aportes(base_para_explorar):
     yield
 
 
+@pytest.fixture()
+def base_de_dois_cadastros(base_para_explorar):
+    """A MESMA empresa com dois cadastros no OMIE — mesmo CNPJ, nome diferente.
+
+    20/09/2026. A cascata provou que corte nenhum estava comendo a devolução de
+    R$ 784.647,07 do dono: ela está na soma geral. O que a escondia era o
+    agrupamento — o bloco somava por NOME, então a empresa virava duas linhas,
+    cada uma parecendo menor do que a empresa é."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        for cod, razao, cnpj, valor in (
+                (701, "MORAIS VASCONCELOS LTDA", "12.345.678/0001-90", -784647.07),
+                (702, "MORAIS VASCONCELOS", "12345678000190", -320000),
+                (703, "OUTRA EMPRESA", "99.999.999/0001-99", -100000)):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " situacao_vencimento, categoria, departamento, razao_social,"
+                " cnpj_cpf, data, pago_recebido, a_pagar_receber, juros, multa)"
+                " VALUES (?,'2. Contas a Pagar','Fluxo de Caixa','PAGO','Quitado',"
+                "         'Devolução de Aportes','CASA',?,?,'2025-12-24',?,0,0,0)",
+                (cod, razao, cnpj, valor))
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def test_a_mesma_empresa_com_dois_cadastros_vira_uma_linha_so(base_de_dois_cadastros):
+    """O documento manda, o nome é só rótulo."""
+    from app.apps.painel import consultas
+    por_socio = consultas.aportes(consultas.Filtros())["por_socio"]
+    linhas = {l["socio"]: l["devolvido"] for l in por_socio}
+    assert len(por_socio) == 2, f"deviam sobrar duas empresas, vieram {linhas}"
+    morais = [v for nome, v in linhas.items() if "MORAIS" in nome]
+    assert len(morais) == 1, "as duas grafias da MORAIS têm de virar uma linha só"
+    assert reais(morais[0]) == reais(784647.07 + 320000), \
+        "e a linha tem de somar os dois cadastros"
+
+
+def test_a_conferencia_denuncia_o_cadastro_repetido(base_de_dois_cadastros):
+    """Juntar sozinho não basta: o dono tem de conseguir VER que havia duas
+    grafias, senão a correção no OMIE nunca acontece."""
+    from app.apps.painel import consultas
+    linhas = consultas.conferencia_dos_aportes()["por_contraparte"]
+    repetidas = [l for l in linhas if l["nomes"] > 1]
+    assert len(repetidas) == 1, "a tela tem de apontar o cadastro repetido"
+    assert "MORAIS VASCONCELOS LTDA" in repetidas[0]["todos_os_nomes"]
+    assert "12345678000190" == repetidas[0]["documento"], \
+        "o documento entra só com os dígitos, senão as duas grafias não juntam"
+    assert reais(repetidas[0]["devolvido"]) == reais(784647.07 + 320000)
+
+
 def test_a_cascata_mostra_quanto_cada_corte_leva(base_de_aportes):
     from app.apps.painel import consultas
     passos = dict(consultas.conferencia_dos_aportes()["passos"])
@@ -1142,10 +1346,15 @@ def test_a_cascata_mostra_quanto_cada_corte_leva(base_de_aportes):
     trf = passos["Tirando transferências entre contas"]
     assert trf["devolvido"] == pytest.approx(500000)
     assert trf["comeu_devolvido"] == pytest.approx(200000)
-    # tirando o que nao e reconhecido como pago: 100 mil, o degrau levou 400
+    # O DEGRAU DO "PAGO" NAO LEVA MAIS NADA, e isso é o conserto da migração
+    # 011. O lançamento 603 foi baixado no OMIE com o status escrito "Baixado":
+    # até 20/09/2026 ele era cortado aqui e sumia do bloco. Hoje "foi pago?"
+    # tem uma resposta só — a que a carga gravou —, então ele chega ao fim.
+    # O degrau continua na tela como guarda: se um dia voltar a comer alguma
+    # coisa, é porque as duas regras divergiram de novo.
     pago = passos["Tirando o que o painel não reconhece como pago"]
-    assert pago["devolvido"] == pytest.approx(100000)
-    assert pago["comeu_devolvido"] == pytest.approx(400000)
+    assert pago["devolvido"] == pytest.approx(500000)
+    assert pago["comeu_devolvido"] == pytest.approx(0)
 
 
 def test_a_cascata_bate_com_o_que_o_bloco_do_dre_mostra(base_de_aportes):
@@ -1163,7 +1372,8 @@ def test_a_cascata_nomeia_os_lancamentos_cortados(base_de_aportes):
     from app.apps.painel import consultas
     r = consultas.conferencia_dos_aportes()
     assert [l["codigo"] for l in r["comidos_trf"]] == [602]
-    assert [l["codigo"] for l in r["comidos_pago"]] == [603]
+    assert [l["codigo"] for l in r["comidos_pago"]] == [], \
+        "desde a migração 011 nada é cortado por 'não reconhecido como pago'"
 
 
 # ===========================================================================
@@ -1211,6 +1421,42 @@ def test_quem_pede_a_conferencia_recebe(cliente_config, monkeypatch):
     assert r.status_code == 200
     assert sorted(rodou) == ["conferencia_do_pago", "conferencia_dos_aportes",
                              "titulos_que_sumiram"]
+
+
+def test_as_conferencias_de_verdade_aparecem_na_tela(cliente_config):
+    """SEM dublê: aperta o botão e os quadros têm de vir.
+
+    20/09/2026, o dono: "EU JÁ havia tentado rodar mas não tava apresentando
+    resultado." Os testes acima trocavam as quatro conferências por dublê, então
+    provavam que o botão CHAMA — nunca que o resultado CHEGA. Um erro de SQL em
+    qualquer uma delas passava batido aqui e só aparecia na tela dele."""
+    html = cliente_config.get(
+        "/painel/configuracoes?conferir=1").get_data(as_text=True)
+    assert "Aportes do DRE — onde os valores se perdem" in html
+    assert "dinheiro que as telas não contam" in html
+    assert "Movimentos que não estão no painel" in html
+    assert "falhou" not in html, "alguma conferência quebrou — o quadro diz qual"
+    assert "Rodar de novo" in html, \
+        "depois de rodar, o botão tem de continuar lá para repetir"
+
+
+def test_uma_conferencia_que_quebra_nao_leva_a_tela_junto(cliente_config,
+                                                          monkeypatch):
+    """A falha de uma tem de aparecer NOMEADA, e as outras têm de seguir.
+
+    Antes, qualquer erro numa delas jogava a tela inteira na página de erro do
+    painel — e não dava para saber qual das quatro tinha sido."""
+    from app.apps.painel import consultas
+    monkeypatch.setattr(consultas, "conferencia_dos_aportes",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            RuntimeError("coluna pago não existe")))
+    r = cliente_config.get("/painel/configuracoes?conferir=1")
+    assert r.status_code == 200, "a tela não pode cair por causa de uma conferência"
+    html = r.get_data(as_text=True)
+    assert "Aportes do DRE — falhou" in html
+    assert "coluna pago não existe" in html, "o erro tem de aparecer, não só o log"
+    assert "dinheiro que as telas não contam" in html, \
+        "as outras conferências seguem — a falha é de uma só"
 
 
 def test_procurar_um_valor_tambem_roda(cliente_config, monkeypatch):
@@ -1461,3 +1707,14 @@ def test_dividendo_nao_vira_devolucao_de_aporte(base_com_aporte_bws):
     # e continua visível no quadro próprio
     divs = {l["socio"]: l for l in consultas.dividendos_por_socio(consultas.Filtros())}
     assert divs["MORAIS"]["pago"] == pytest.approx(70000)
+
+
+def test_a_janela_do_incremental_apaga_nas_duas_tabelas():
+    """Senão a atualização do dia reinsere os sem título e o número cresce
+    sozinho a cada madrugada — um erro que só apareceria semanas depois."""
+    import inspect
+
+    from app.apps.painel.sync import espelho
+    fonte = inspect.getsource(espelho._apagar_movimentos_janela)
+    assert fonte.count("DELETE FROM") == 2
+    assert "movimentos_sem_titulo" in fonte

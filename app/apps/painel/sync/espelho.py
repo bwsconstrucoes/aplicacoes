@@ -382,19 +382,35 @@ def _linha_movimento(mv):
     )
 
 
+# As mesmas colunas, menos o ncodtitulo — que e justamente o que falta nelas.
+_COLS_MST = _COLS_MOV.replace("ncodtitulo, ", "")
+_PH_MST = ",".join(["?"] * 19)
+
+
 def gravar_movimentos(conn, registros):
-    """Insere um lote de movimentos. Retorna (qtd, ignorados_sem_titulo)."""
-    linhas, ignorados = [], 0
+    """Insere um lote de movimentos. Retorna (qtd, quantos_sem_titulo).
+
+    O MOVIMENTO SEM TITULO NAO E MAIS JOGADO FORA. Ele nao serve para o painel
+    — que e montado a partir dos titulos —, mas e dinheiro que entrou ou saiu da
+    conta de verdade. Descartar na hora significava nao poder nem responder
+    quanto era. Agora vai para `movimentos_sem_titulo`, que nao entra em numero
+    de tela nenhum e existe para poder ser olhada (migracao 012)."""
+    linhas, sem_titulo = [], []
     for mv in registros:
         linha = _linha_movimento(mv)
         if linha[0] is None:
-            ignorados += 1
+            sem_titulo.append(linha[1:])   # tudo menos o ncodtitulo, que e None
             continue
         linhas.append(linha)
-    conn.executemany(
-        f"INSERT INTO movimentos ({_COLS_MOV}) VALUES ({_PH_MOV})", linhas)
+    if linhas:
+        conn.executemany(
+            f"INSERT INTO movimentos ({_COLS_MOV}) VALUES ({_PH_MOV})", linhas)
+    if sem_titulo:
+        conn.executemany(
+            f"INSERT INTO movimentos_sem_titulo ({_COLS_MST}) VALUES ({_PH_MST})",
+            sem_titulo)
     conn.commit()
-    return len(linhas), ignorados
+    return len(linhas), len(sem_titulo)
 
 
 def movimentos_por_titulo(conn):
@@ -409,8 +425,12 @@ def movimentos_por_titulo(conn):
     """
     res = {}
     cur = conn.execute(
-        "SELECT ncodtitulo, ddtpagamento, cliquidado, nvalpago, nvalaberto, ndesconto, "
-        "njuros, nmulta FROM movimentos")
+        # ::float8 desde a migracao 010: as colunas viraram NUMERIC (dinheiro
+        # exato) e o banco devolveria Decimal, que nao soma com float logo
+        # abaixo. Guardar exato, transportar em float de 8 bytes.
+        "SELECT ncodtitulo, ddtpagamento, cliquidado, nvalpago::float8, "
+        "nvalaberto::float8, ndesconto::float8, "
+        "njuros::float8, nmulta::float8 FROM movimentos")
     agg = {}
     for cod, dpg, liq, vpg, vab, vdesc, vjur, vmul in cur:
         a = agg.setdefault(cod, {"dpg": None, "pago": 0.0, "aberto": 0.0, "desc": 0.0,
@@ -452,8 +472,9 @@ def movimentos_detalhe(conn, apenas_liquidados=False):
                                    conta, status, grupo, liquidado}, ... ]
     """
     res = {}
-    sql = ("SELECT ncodtitulo, ddtpagamento, nvalpago, nvalliquido, njuros, nmulta, "
-           "ndesconto, ncodcc, cstatus, cliquidado, cgrupo, nvalaberto FROM movimentos")
+    sql = ("SELECT ncodtitulo, ddtpagamento, nvalpago::float8, nvalliquido::float8, "
+           "njuros::float8, nmulta::float8, ndesconto::float8, ncodcc, cstatus, "
+           "cliquidado, cgrupo, nvalaberto::float8 FROM movimentos")
     for (cod, dpg, vpg, vliq, vjur, vmul, vdesc, ncc, cst, liq, grp, vab) in conn.execute(sql):
         if apenas_liquidados and liq != "S":
             continue
@@ -834,6 +855,7 @@ def carregar_movimentos_full(conn, cli):
     """Carga COMPLETA de movimentos (zera a tabela e baixa tudo). Sem filtro de data."""
     log.info("=== Movimentos (carga completa) ===")
     conn.execute("DELETE FROM movimentos")
+    conn.execute("DELETE FROM movimentos_sem_titulo")
     conn.commit()
     tot_mov = ign = 0
     t0 = time.time()
@@ -935,7 +957,7 @@ def _extrair_observacao(payload):
 
 def backfill_observacoes(env=".env", natureza="R",
                          desde=None, limite=None, sonda=5, reconsultar=False,
-                         pausa=None, forcar=False):
+                         pausa=None, forcar=False, progresso=None):
     """
     Preenche titulos.observacao consultando UM titulo por vez (ConsultarContaPagar/
     Receber), porque a listagem nao devolve esse campo.
@@ -946,6 +968,10 @@ def backfill_observacoes(env=".env", natureza="R",
     Retomavel de verdade: cada titulo consultado marca observacao_sync, entao uma
     nova execucao pula tudo que ja foi tentado, inclusive quem voltou sem observacao
     (o que no contas a pagar costuma ser a maioria). Use --reconsultar para forcar.
+
+    `progresso(feitos, total, com_observacao)` e chamado a cada 100 titulos. Sem
+    ele isto e uma caixa preta de horas: quem esta olhando a tela nao tem como
+    saber se anda ou se travou.
     """
     cli = OmieClient.de_ambiente(env)
     espera = cli.pausa if pausa is None else float(pausa)
@@ -1070,6 +1096,11 @@ def backfill_observacoes(env=".env", natureza="R",
                 vazios += 1
             if i % 100 == 0:
                 conn.commit()
+                if progresso:
+                    try:
+                        progresso(i, len(pendentes), gravados)
+                    except Exception:  # noqa: BLE001 — avisar nunca derruba o trabalho
+                        pass
                 falta = (time.time() - t0) / i * (len(pendentes) - i)
                 log.info("  %s/%s — com obs: %s | sem: %s | inexistentes: %s | erros: %d "
                          "| restam ~%s",
@@ -1167,6 +1198,15 @@ def _apagar_movimentos_janela(conn, ini, fim):
         "   AND to_date(ddtpagamento, 'DD/MM/YYYY') BETWEEN ? AND ?",
         (ini, fim))
     apagados = cur.rowcount or 0
+    cur.close()
+    # A janela apaga nas DUAS tabelas, senao a reinsercao duplicaria os sem
+    # titulo a cada atualizacao do dia — e o numero da tela cresceria sozinho.
+    cur = conn.execute(
+        "DELETE FROM movimentos_sem_titulo "
+        " WHERE ddtpagamento ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$' "
+        "   AND to_date(ddtpagamento, 'DD/MM/YYYY') BETWEEN ? AND ?",
+        (ini, fim))
+    apagados += cur.rowcount or 0
     cur.close()
     conn.commit()
     return apagados
@@ -1319,10 +1359,26 @@ def _ckpt_salvar(caminho, ids, done, atual, pagina):
 
 
 def _ckpt_remover(*caminhos):
+    """Apaga os checkpoints. BEST EFFORT, e o "best effort" e para valer.
+
+    Em 20/09/2026 a carga completa da madrugada terminou com este erro:
+
+        remove: path should be string, bytes or os.PathLike, not NoneType
+
+    Um dos caminhos vem `None` (o legado, que so existia no Windows), e
+    `os.remove(None)` levanta TypeError — que NAO e OSError, entao passava
+    direto pelo `except` daqui e derrubava o reconcile inteiro. O pior: isso
+    acontece DEPOIS de todo o trabalho feito, e a explosao impedia a etapa
+    seguinte, que e a que refaz os numeros das telas. A base atualizava e as
+    telas continuavam mostrando o numero velho.
+
+    O `_ckpt_carregar` logo acima ja pulava caminho vazio. Aqui faltava."""
     for c in caminhos:
+        if not c:
+            continue
         try:
             os.remove(c)
-        except (FileNotFoundError, OSError):
+        except Exception:  # noqa: BLE001 — limpeza nunca derruba a carga
             pass
 
 
