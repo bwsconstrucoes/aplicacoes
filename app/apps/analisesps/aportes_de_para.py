@@ -38,11 +38,11 @@ from __future__ import annotations
 
 import logging
 
-from .aportes import CATEGORIAS, MATRIZ, PARCERIA, achatar
+from .aportes import CATEGORIAS, PARCERIA, PROVEDORA, achatar
 
 logger = logging.getLogger("analisesps.aportes_de_para")
 
-PAPEIS = (MATRIZ, PARCERIA)
+PAPEIS = (PROVEDORA, PARCERIA)
 
 # Teto das listas que vão para a tela. A base tem milhares de fornecedores;
 # mandar todos para um <select> trava o navegador e não ajuda ninguém.
@@ -169,21 +169,39 @@ def procurar_categoria(descricao: str) -> list:
             "Não consegui ler o plano financeiro do OMIE. Ele vem da carga do "
             "painel; se ela nunca rodou, rode-a primeiro.") from e
 
+    alvo_sing = _sem_plural(alvo)
     exatas, parecidas = [], []
     for l in linhas:
         nome = achatar(l[1])
         if not nome:
             continue
         item = {"codigo": l[0], "descricao": l[1], "transferencia": l[2],
-                "codigo_dre": l[3], "inativa": str(l[4]).upper().startswith("S")}
+                "codigo_dre": l[3], "inativa": str(l[4]).upper().startswith("S"),
+                "exata": nome == alvo}
         if nome == alvo:
             exatas.append(item)
-        elif alvo in nome or nome in alvo:
+        elif _sem_plural(nome) == alvo_sing or alvo in nome or nome in alvo:
+            # ⚠️ O SINGULAR/PLURAL ENTRA COMO CANDIDATO, NUNCA COMO CERTEZA.
+            #
+            # O plano financeiro tem "Aportes BWS" (saída da provedora) e
+            # "Aporte BWS" (entrada na parceria): nomes quase iguais, códigos
+            # diferentes, e são lados opostos do mesmo dinheiro. Dobrar o
+            # plural aqui faria as duas casarem uma com a outra, e o sistema
+            # escolheria a errada metade das vezes, em silêncio.
+            #
+            # Como candidato ele ajuda (o dono vê as duas e aponta); como
+            # casamento exato, ele seria o defeito mais caro desta tela.
             parecidas.append(item)
     # Havendo casamento exato, as "parecidas" só atrapalham: "Aportes BWS" é
     # pedaço de "Devolução de Aportes BWS", e mostrar as duas como igualmente
     # prováveis empurraria o dono para o erro.
     return exatas or parecidas
+
+
+def _sem_plural(texto: str) -> str:
+    """"aportes bws" -> "aporte bws". Só para APROXIMAR, nunca para decidir."""
+    return " ".join(p[:-1] if len(p) > 3 and p.endswith("s") else p
+                    for p in (texto or "").split())
 
 
 def descobrir_categorias() -> dict:
@@ -213,10 +231,14 @@ def descobrir_categorias() -> dict:
             situacao = "nao_achou"
         elif len(candidatos) > 1:
             situacao = "ambigua"
-        else:
+        elif candidatos[0].get("exata"):
             situacao = "achou"
+        else:
+            # Um só, mas PARECIDO — não igual. A tela mostra e ele decide.
+            situacao = "parecida"
 
-        unica = candidatos[0] if len(candidatos) == 1 else {}
+        unica = (candidatos[0]
+                 if len(candidatos) == 1 and candidatos[0].get("exata") else {})
         saida[chave] = {
             "chave": chave,
             "procurada": descricao,
@@ -308,7 +330,13 @@ def categorias_resolvidas() -> dict:
             candidatos = procurar_categoria(descricao)
         except SemEspelho:
             continue
-        if len(candidatos) == 1:
+        # ⚠️ SÓ CASAMENTO EXATO SE RESOLVE SOZINHO. Um candidato PARECIDO,
+        # mesmo sendo o único, nunca vira certeza — e este é o caso que um
+        # teste com banco pegou em 21/09/2026: faltando "Aporte BWS" no plano
+        # financeiro, o único parecido é "Aportes BWS", que é a categoria do
+        # LADO OPOSTO do mesmo dinheiro. Resolver sozinho ali seria lançar a
+        # entrada com a categoria da saída, em silêncio, para sempre.
+        if len(candidatos) == 1 and candidatos[0].get("exata"):
             resolvidas[chave] = {
                 "codigo": candidatos[0]["codigo"],
                 "descricao": candidatos[0]["descricao"],

@@ -6052,6 +6052,74 @@ demais recusados; uma linha que falha não para as outras; e o ensaio da tela
 devolvendo um lançamento por linha, com o total e os grupos.
 
 ---
+
+### Septuagésima oitava leva (21/09) — são CINCO categorias, não quatro
+
+Publicada a leva anterior, o dono abriu o plano financeiro e desmentiu o
+briefing dele mesmo:
+
+> *"Você colocou Aportes BWS que ENTRA, conta Parceria, o mesmo código do que
+> SAI. Não são. Precisa permitir colocar."*
+
+E mandou a lista de verdade:
+
+| Conta | Movimento | Categoria | Código |
+|---|---|---|---|
+| **Provedora** | Entrada | Devolução de Aportes BWS | 1.02.95 |
+| **Provedora** | Saída | Aportes BWS | 2.08.97 |
+| **Parceria** | Entrada | Aporte Parceiros | 1.02.02 |
+| **Parceria** | Entrada | Aporte BWS | 1.02.94 |
+| **Parceria** | Saída | Devolução de Aportes | 2.08.02 |
+
+#### ⚠️ O erro era plausível, e é por isso que fica registrado
+
+O briefing de setembro dizia, com todas as letras: *"O mesmo nome dos dois
+lados — o que distingue é a conta e o sentido."* A primeira versão foi
+construída exatamente assim, e os testes cravavam esse comportamento — ou
+seja, **a suíte inteira estava verde defendendo a regra errada**. Nenhuma
+verificação técnica pegaria isto; só o dono, olhando o plano financeiro dele.
+
+A lição para a próxima tela: **regra de negócio contada de memória é hipótese,
+não dado.** O jeito de confirmar era pedir o plano financeiro — a lista, com
+os códigos — antes de escrever a primeira linha, e não depois de publicar.
+
+#### ⚠️ "Aportes BWS" e "Aporte BWS" são lados opostos do mesmo dinheiro
+
+Esta é a armadilha que o plano financeiro traz de fábrica: dois nomes que
+diferem por **uma letra**, com códigos que não têm nada a ver um com o outro,
+e que são justamente a saída e a entrada do mesmo aporte. Trocar um pelo outro
+é o erro mais fácil de cometer aqui e o mais difícil de notar depois.
+
+Três defesas, e todas com teste:
+
+1. **Cada situação tem a sua própria chave.** Não existe mais categoria
+   compartilhada entre dois lados — a única que serve a duas operações é
+   "Devolução de Aportes", e ela é a mesma situação (saída da parceria).
+2. **Só casamento EXATO se resolve sozinho.** Um candidato de nome *parecido*,
+   mesmo sendo o único, nunca vira certeza. Isto foi pego por um teste com
+   banco de verdade, escrito nesta mesma leva: faltando "Aporte BWS" no plano,
+   a versão inicial do conserto pegava "Aportes BWS" — **a categoria do lado
+   oposto** — e resolvia sozinha, em silêncio. Agora ela oferece como
+   candidato, avisa que o nome é parecido e não igual, e **para**.
+3. **A tela mostra a explicação de cada uma, com as palavras dele** (*"dinheiro
+   que sai de uma conta provedora para conta parceria"*), para dar para
+   distinguir as duas sem decorar código.
+
+#### "Provedora", não "Matriz"
+
+Nome dele, e o nome certo: o que define aquele lado não é ser a matriz da
+empresa, é ser **a conta de onde o dinheiro vem** para a parceria. Pode ser
+outra conta qualquer — o que, aliás, é coerente com o *"não quero travar a
+conta"* do dia anterior.
+
+#### E ele pode colocar o código à mão
+
+*"Precisa permitir colocar."* O bloco de ajuste já existia; agora ele tem uma
+linha por situação (cinco, não quatro), com campo para escolher entre os
+candidatos ou digitar o código direto. Continua guardado num "detalhes" quando
+não falta nada, e continua abrindo sozinho quando falta.
+
+---
 ---
 
 ## Regras que não se discutem

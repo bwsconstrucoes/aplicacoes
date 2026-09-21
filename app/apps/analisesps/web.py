@@ -3834,6 +3834,7 @@ def _contexto_dos_aportes() -> dict:
         "papeis": aportes_de_para.PAPEIS,
         "papel_rotulo": aportes.PAPEL_ROTULO,
         "categorias_nomes": aportes.CATEGORIAS,
+        "categoria_explicacao": aportes.CATEGORIA_EXPLICACAO,
         "contas_omie": [], "contas_lembradas": {}, "categorias": {},
         "obras": [],
         "fornecedores": [], "faltas": [], "erro_espelho": "",
@@ -3854,7 +3855,7 @@ def _contexto_dos_aportes() -> dict:
         ctx["erro_espelho"] = ctx["erro_espelho"] or str(e)
 
     # As contas são escolhidas em CADA lançamento (20/09/2026: *"não quero
-    # travar a conta Matriz e a da Parceria, tem mais de uma situação"*). O
+    # travar a conta Provedora e a da Parceria, tem mais de uma situação"*). O
     # que fica guardado é só a última usada, para vir pré-escolhida.
     ctx["contas_lembradas"] = aportes_de_para.contas_lembradas()
     ctx["categorias"] = aportes_de_para.descobrir_categorias()
@@ -3863,10 +3864,10 @@ def _contexto_dos_aportes() -> dict:
     # AS CINCO SITUAÇÕES, do jeito que ele desenhou a tabela: conta + sentido
     # + categoria. Uma categoria aparece em mais de uma linha, e é isso que a
     # lista de quatro categorias escondia.
-    # A MESMA CATEGORIA APARECE EM DUAS LINHAS ("Aportes BWS" sai da matriz e
-    # entra na parceria). O campo de ajuste fica só na PRIMEIRA aparição — dois
-    # campos com o mesmo nome fariam o segundo sobrescrever o primeiro com um
-    # valor que o dono não olhou.
+    # Hoje cada situação tem a SUA categoria, então nenhuma chave se repete.
+    # A guarda fica de pé assim mesmo: se um dia duas situações voltarem a
+    # dividir uma categoria, dois campos com o mesmo nome fariam o segundo
+    # sobrescrever o primeiro com um valor que o dono não olhou.
     ja_vistas = set()
     for papel, sentido, chave in aportes.SITUACOES:
         achado = ctx["categorias"].get(chave) or {}
@@ -3879,6 +3880,7 @@ def _contexto_dos_aportes() -> dict:
             "natureza_rotulo": aportes.NATUREZA_ROTULO[aportes.NATUREZA[sentido]],
             "categoria_chave": chave,
             "categoria_nome": aportes.CATEGORIAS[chave],
+            "categoria_explicacao": aportes.CATEGORIA_EXPLICACAO.get(chave, ""),
             "codigo": achado.get("codigo") or "",
             "situacao": achado.get("situacao") or "",
             "transferencia": achado.get("transferencia") or "",

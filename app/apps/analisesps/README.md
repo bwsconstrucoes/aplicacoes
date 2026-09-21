@@ -380,10 +380,14 @@ Conta de origem só existe quando existe: no aporte do parceiro o dinheiro vem
 de fora, e a tela escreve isso. **Não há nada a configurar**: as categorias se
 resolvem pela descrição e a conta é escolhida na hora.
 
-⚠️ **As CINCO situações, não as quatro categorias.** "Aportes BWS" é usada
-saindo da matriz *e* entrando na parceria; listada uma vez, esconde metade do
-que faz. A tela mostra `conta + sentido + categoria`, na ordem da tabela do
-dono.
+⚠️ **CINCO situações, CINCO categorias diferentes** (21/09/2026). O plano
+financeiro tem `Aportes BWS` (2.08.97, sai da provedora) e `Aporte BWS`
+(1.02.94, entra na parceria): **uma letra de diferença, códigos que não têm
+nada a ver, e são os dois lados do mesmo aporte**. Por isso cada situação tem
+chave própria, só casamento EXATO de descrição se resolve sozinho (um nome
+*parecido* nunca vira certeza — seria pegar a categoria do lado oposto), e a
+tela mostra a explicação de cada uma. O lado de fora chama-se **Provedora**,
+não matriz: o que o define é ser a conta de onde o dinheiro vem.
 
 ⚠️ **Lançamento em lote:** a tela aceita várias linhas de data e valor, com o
 resto igual para todas. **Dentro** de um lançamento os dois títulos seguem

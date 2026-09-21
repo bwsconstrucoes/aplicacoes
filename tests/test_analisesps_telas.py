@@ -4194,8 +4194,8 @@ def app_aportes(app, monkeypatch):
     from app.apps.analisesps import aportes_de_para, aportes_omie
 
     monkeypatch.setattr(aportes_de_para, "contas_do_omie", lambda: [
-        {"codigo": 7011, "descricao": "BWS MATRIZ", "numero_conta": "12345-6",
-         "inativa": False},
+        {"codigo": 7011, "descricao": "BWS PROVEDORA",
+         "numero_conta": "12345-6", "inativa": False},
         {"codigo": 22069, "descricao": "PARCERIA OBRA X",
          "numero_conta": "99999-9", "inativa": False}])
     monkeypatch.setattr(aportes_de_para, "obras",
@@ -4203,9 +4203,10 @@ def app_aportes(app, monkeypatch):
     monkeypatch.setattr(aportes_de_para, "fornecedores", lambda q="": [
         {"codigo": 99, "nome": "PARCEIRO LTDA", "documento": "00.000.000/0001-00"}])
     monkeypatch.setattr(aportes_de_para, "contas_lembradas",
-                        lambda: {"aporte_bws:matriz": 7011})
+                        lambda: {"aporte_bws:provedora": 7011})
     monkeypatch.setattr(aportes_de_para, "descricoes_das_contas",
-                        lambda: {7011: "BWS MATRIZ", 22069: "PARCERIA OBRA X"})
+                        lambda: {7011: "BWS PROVEDORA",
+                                 22069: "PARCERIA OBRA X"})
     monkeypatch.setattr(aportes_de_para, "descobrir_categorias", lambda: {
         chave: {"chave": chave, "procurada": nome, "situacao": "escolhida",
                 "erro": "", "candidatos": [{"codigo": "9.01.01",
@@ -4233,7 +4234,7 @@ def test_a_tela_de_aportes_monta(app_aportes):
     assert "A parceria devolve o aporte ao parceiro" in html
     # As duas contas aparecem com código E número de conta — é olhando os dois
     # juntos que ele reconhece qual é qual.
-    assert "BWS MATRIZ" in html and "12345-6" in html
+    assert "BWS PROVEDORA" in html and "12345-6" in html
 
 
 def bloco_de_lancar(html):
@@ -4306,7 +4307,7 @@ def test_a_conta_nao_e_travada_num_cadastro(app_aportes):
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)
     # O bloco de ajuste não pede mais conta nenhuma.
-    assert 'name="conta_matriz"' not in html
+    assert 'name="conta_provedora"' not in html
     assert 'name="conta_parceria"' not in html
     # E a lista de contas do OMIE vai inteira para a tela, para ele escolher.
     assert "PARCERIA OBRA X" in html
@@ -4322,11 +4323,11 @@ def test_o_perfil_consulta_nao_alcanca_os_aportes(app_aportes):
 def test_a_tela_avisa_quando_falta_o_de_para(app_aportes, monkeypatch):
     from app.apps.analisesps import aportes_de_para
     monkeypatch.setattr(aportes_de_para, "falta_configurar",
-                        lambda: ["Falta apontar qual conta é a Matriz."])
+                        lambda: ["Não sei o código da categoria Aporte BWS."])
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)
     assert "Preciso que você me diga isto uma vez só" in html
-    assert "Falta apontar qual conta é a Matriz." in html
+    assert "Não sei o código da categoria Aporte BWS." in html
     # E aí o ajuste aparece ABERTO, não guardado atrás de um "detalhes".
     assert "As contas e as categorias que estou usando" not in html
 
@@ -4336,7 +4337,7 @@ def test_a_tela_grita_o_titulo_orfao(app_aportes, monkeypatch):
     visível no topo da tela até alguém resolver."""
     from app.apps.analisesps import aportes_omie
     monkeypatch.setattr(aportes_omie, "orfaos", lambda: [
-        {"codigo_lancamento_omie": 4242, "papel": "conta Matriz da BWS",
+        {"codigo_lancamento_omie": 4242, "papel": "conta Provedora",
          "sentido": "saida", "erro": "não foi possível excluir"}])
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)

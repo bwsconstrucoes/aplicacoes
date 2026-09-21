@@ -11,26 +11,35 @@ tabela é o coração disto: se ela errar, meus relatórios de aporte mentem e e
 não tenho como perceber."* Regra que não faz chamada de rede é regra que dá
 para testar exaustivamente — e é o que os testes fazem.
 
-⚠️ A TABELA, DO JEITO QUE ELE DESENHOU E JÁ LANÇOU NO OMIE À MÃO:
+⚠️ A TABELA, DO PLANO FINANCEIRO DE VERDADE (21/09/2026):
 
-    Conta          Entra/Sai   Nome (categoria) no OMIE
-    ------------   ---------   -------------------------
-    Matriz         Saída       Aportes BWS
-    Parceria       Entrada     Aportes BWS
-    Parceria       Entrada     Aportes Parceiros
-    Parceria       Saída       Devolução de Aportes
-    Matriz         Entrada     Devolução de Aportes BWS
+    Conta Provedora
+      Entrada:  Devolução de Aportes BWS .... dinheiro que voltou da parceria
+      Saída:    Aportes BWS ................. dinheiro que vai para a parceria
+
+    Conta Parceria
+      Entrada:  Aporte Parceiros ............ dinheiro que entra do parceiro
+      Entrada:  Aporte BWS .................. dinheiro que entra da BWS
+      Saída:    Devolução de Aportes ........ devolução à BWS ou ao parceiro
 
 Lendo em português:
 
-  · **BWS aporta:** sai da matriz e entra na parceria, com o MESMO nome dos
-    dois lados ("Aportes BWS"). O que distingue é a conta e o sentido.
+  · **BWS aporta:** sai da provedora ("Aportes BWS") e entra na parceria
+    ("Aporte BWS"). **São duas categorias diferentes**, com códigos
+    diferentes, para o mesmo dinheiro visto dos dois lados.
   · **O dinheiro da BWS volta:** sai da parceria ("Devolução de Aportes") e
-    entra na matriz ("Devolução de Aportes BWS").
-  · **O parceiro aporta:** entra só na parceria ("Aportes Parceiros"). Um
+    entra na provedora ("Devolução de Aportes BWS").
+  · **O parceiro aporta:** entra só na parceria ("Aporte Parceiros"). Um
     lançamento só — o dinheiro vem de fora da empresa.
   · **O parceiro recebe de volta:** sai só da parceria ("Devolução de
-    Aportes").
+    Aportes"), a mesma categoria da devolução à BWS.
+
+⚠️ O BRIEFING DE SETEMBRO DIZIA O CONTRÁRIO — *"o mesmo nome dos dois lados"* —
+e a primeira versão foi construída assim. Ele corrigiu olhando a tela pronta:
+*"você colocou Aportes BWS que ENTRA, conta Parceria, o mesmo código do que
+SAI. Não são."* Fica registrado porque o erro era plausível e passaria de
+novo: os nomes são quase iguais, e um lançamento com a categoria do lado
+errado não acusa nada em tela nenhuma.
 
 ⚠️ O DONO NÃO ESCOLHE CATEGORIA, E ISSO É DECISÃO DELE, não economia minha:
 *"eu não devo ter que escolher categoria nenhuma: quem escolhe é a regra, a
@@ -53,22 +62,69 @@ from datetime import date, datetime
 logger = logging.getLogger("analisesps.aportes")
 
 # Os papéis que a regra conhece. O papel é o que a REGRA entende; qual conta
-# do OMIE faz esse papel é o dono quem aponta, na tela de configuração.
-MATRIZ = "matriz"
+# do OMIE faz esse papel é o dono quem escolhe, em cada lançamento.
+#
+# ⚠️ "PROVEDORA", NÃO "MATRIZ" — é o nome que ele usa (21/09/2026), e o nome
+# certo: o que define aquele lado não é ser a matriz da empresa, é ser a conta
+# DE ONDE O DINHEIRO VEM para a parceria. Pode ser outra conta qualquer.
+PROVEDORA = "provedora"
 PARCERIA = "parceria"
 
 PAPEL_ROTULO = {
-    MATRIZ: "conta Matriz da BWS",
+    PROVEDORA: "conta Provedora",
     PARCERIA: "conta da Parceria",
 }
 
-# As quatro categorias, com o nome EXATO do plano financeiro do dono. A chave
-# é o nome interno (o que o código usa); o valor é o que se procura no plano.
+# ---------------------------------------------------------------------------
+# AS CINCO CATEGORIAS
+#
+# ⚠️ ELAS SÃO CINCO, NÃO QUATRO, E NENHUMA SE REPETE DOS DOIS LADOS. Esta é a
+# correção de 21/09/2026, e ela desmente o que o próprio briefing dizia em
+# setembro (*"o mesmo nome dos dois lados — o que distingue é a conta e o
+# sentido"*). O dono mandou o plano financeiro de verdade:
+#
+#   Conta Provedora
+#     Entrada: Devolução de Aportes BWS ......... 1.02.95
+#     Saída:   Aportes BWS ...................... 2.08.97
+#
+#   Conta Parceria
+#     Entrada: Aporte Parceiros ................. 1.02.02
+#     Entrada: Aporte BWS ....................... 1.02.94
+#     Saída:   Devolução de Aportes ............. 2.08.02
+#
+# ⚠️ REPARE EM "Aportes BWS" (saída da provedora) E "Aporte BWS" (entrada na
+# parceria): nomes quase iguais, CÓDIGOS DIFERENTES, e são o mesmo dinheiro
+# visto dos dois lados. Trocar um pelo outro é o erro mais fácil de cometer
+# aqui e o mais difícil de perceber depois — por isso cada lado tem a sua
+# própria chave, e a tela mostra os dois códigos lado a lado.
+#
+# Os códigos acima estão NESTE COMENTÁRIO e em lugar nenhum do programa: eles
+# saem do plano financeiro, pela descrição, e o dono pode corrigir cada um na
+# tela. Ele mexe no plano; código chumbado viraria lançamento errado calado.
+# ---------------------------------------------------------------------------
 CATEGORIAS = {
-    "aportes_bws": "Aportes BWS",
-    "aportes_parceiros": "Aportes Parceiros",
+    "aportes_bws_saida": "Aportes BWS",
+    "aporte_bws_entrada": "Aporte BWS",
+    "aporte_parceiros": "Aporte Parceiros",
     "devolucao_aportes": "Devolução de Aportes",
     "devolucao_aportes_bws": "Devolução de Aportes BWS",
+}
+
+# O que cada uma significa, com as palavras dele. Vai para a tela: é o que
+# permite distinguir "Aportes BWS" de "Aporte BWS" sem decorar código.
+CATEGORIA_EXPLICACAO = {
+    "aportes_bws_saida":
+        "Dinheiro que sai de uma conta provedora para conta parceria.",
+    "aporte_bws_entrada":
+        "Dinheiro que entra da BWS na conta Parceria, proveniente da conta "
+        "provedora.",
+    "aporte_parceiros":
+        "Dinheiro que entra do Parceiro.",
+    "devolucao_aportes":
+        "Devolução dos aportes à BWS ou ao Parceiro.",
+    "devolucao_aportes_bws":
+        "Dinheiro que entrou na conta provedora, proveniente da conta "
+        "parceria.",
 }
 
 SAIDA = "saida"
@@ -105,20 +161,21 @@ class Perna:
 OPERACOES = {
     "aporte_bws": {
         "rotulo": "BWS aporta na parceria",
-        "explicacao": "O dinheiro sai da conta Matriz e entra na conta da "
-                      "Parceria. Nasce um título de cada lado.",
+        "explicacao": "O dinheiro sai da conta Provedora e entra na conta da "
+                      "Parceria. Nasce um título de cada lado, e cada um com "
+                      "a SUA categoria — não são a mesma.",
         "pernas": [
-            Perna(MATRIZ, SAIDA, "aportes_bws"),
-            Perna(PARCERIA, ENTRADA, "aportes_bws"),
+            Perna(PROVEDORA, SAIDA, "aportes_bws_saida"),
+            Perna(PARCERIA, ENTRADA, "aporte_bws_entrada"),
         ],
     },
     "devolucao_bws": {
         "rotulo": "A parceria devolve o aporte à BWS",
         "explicacao": "O dinheiro sai da conta da Parceria e volta para a "
-                      "conta Matriz. Nasce um título de cada lado.",
+                      "conta Provedora. Nasce um título de cada lado.",
         "pernas": [
             Perna(PARCERIA, SAIDA, "devolucao_aportes"),
-            Perna(MATRIZ, ENTRADA, "devolucao_aportes_bws"),
+            Perna(PROVEDORA, ENTRADA, "devolucao_aportes_bws"),
         ],
     },
     "aporte_parceiro": {
@@ -126,7 +183,7 @@ OPERACOES = {
         "explicacao": "O dinheiro vem de fora da empresa e entra na conta da "
                       "Parceria. Nasce um título só.",
         "pernas": [
-            Perna(PARCERIA, ENTRADA, "aportes_parceiros"),
+            Perna(PARCERIA, ENTRADA, "aporte_parceiros"),
         ],
     },
     "devolucao_parceiro": {
@@ -146,25 +203,25 @@ ORDEM_DAS_OPERACOES = ["aporte_bws", "devolucao_bws",
 # ---------------------------------------------------------------------------
 # AS CINCO SITUAÇÕES — 20/09/2026, depois de ele ver a tela
 #
-# ⚠️ O QUE ELE APONTOU: *"você tem que identificar melhor o que é entrada
-# financeira e o que é saída. Porque, por exemplo, Aportes BWS, ele tanto está
-# na conta de entrada quanto de saída. Na verdade, todas as categorias poderão
-# ser utilizadas."*
+# ⚠️ O QUE ELE APONTOU EM 20/09: *"você tem que identificar melhor o que é
+# entrada financeira e o que é saída."* A tela listava as categorias sem dizer
+# em que conta e em que sentido cada uma vive.
 #
-# A tela mostrava as QUATRO categorias numa lista, como se cada uma fosse uma
-# coisa só. Não são: "Aportes BWS" é usada DUAS vezes — saindo da matriz e
-# entrando na parceria. Listada uma vez, ela esconde metade do que faz.
+# ⚠️ E EM 21/09 VEIO A CORREÇÃO MAIOR: *"você colocou Aportes BWS que ENTRA,
+# conta Parceria, o mesmo código do que SAI. Não são."* Cada situação tem a
+# SUA categoria, com o seu próprio código — inclusive as duas de nome quase
+# igual ("Aportes BWS" que sai da provedora e "Aporte BWS" que entra na
+# parceria).
 #
-# O que existe de verdade são CINCO SITUAÇÕES (conta + sentido + categoria),
-# que é exatamente como ele desenhou a tabela no briefing. É assim que a tela
-# mostra agora, e a ordem é a dele.
+# A ordem abaixo é a da lista que ele mandou: primeiro a conta provedora,
+# depois a parceria.
 # ---------------------------------------------------------------------------
 SITUACOES = [
-    (MATRIZ, SAIDA, "aportes_bws"),
-    (PARCERIA, ENTRADA, "aportes_bws"),
-    (PARCERIA, ENTRADA, "aportes_parceiros"),
+    (PROVEDORA, ENTRADA, "devolucao_aportes_bws"),
+    (PROVEDORA, SAIDA, "aportes_bws_saida"),
+    (PARCERIA, ENTRADA, "aporte_parceiros"),
+    (PARCERIA, ENTRADA, "aporte_bws_entrada"),
     (PARCERIA, SAIDA, "devolucao_aportes"),
-    (MATRIZ, ENTRADA, "devolucao_aportes_bws"),
 ]
 
 

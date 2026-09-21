@@ -28,11 +28,16 @@ from app.apps.analisesps import aportes, aportes_omie
 # conta Matriz e a da Parceria, tem mais de uma situação."*
 DESCRICOES = {7011: "BWS MATRIZ", 22069: "PARCERIA OBRA X",
               33333: "PARCERIA OBRA Y"}
+# ⚠️ CINCO CATEGORIAS, e as duas do aporte da BWS têm CÓDIGOS DIFERENTES:
+# "Aportes BWS" sai da provedora, "Aporte BWS" entra na parceria. Foi
+# exatamente isto que o dono corrigiu em 21/09/2026.
 CATEGORIAS = {
-    "aportes_bws": {"codigo": "9.01.01", "descricao": "Aportes BWS"},
-    "aportes_parceiros": {"codigo": "9.01.02", "descricao": "Aportes Parceiros"},
-    "devolucao_aportes": {"codigo": "9.02.01", "descricao": "Devolução de Aportes"},
-    "devolucao_aportes_bws": {"codigo": "9.02.02",
+    "aportes_bws_saida": {"codigo": "2.08.97", "descricao": "Aportes BWS"},
+    "aporte_bws_entrada": {"codigo": "1.02.94", "descricao": "Aporte BWS"},
+    "aporte_parceiros": {"codigo": "1.02.02", "descricao": "Aporte Parceiros"},
+    "devolucao_aportes": {"codigo": "2.08.02",
+                          "descricao": "Devolução de Aportes"},
+    "devolucao_aportes_bws": {"codigo": "1.02.95",
                               "descricao": "Devolução de Aportes BWS"},
 }
 
@@ -50,25 +55,25 @@ def planejar(**mudancas):
 # ---------------------------------------------------------------------------
 # A TABELA DO BRIEFING, INTEIRA
 # ---------------------------------------------------------------------------
-# Conta | Entra/Sai | Nome (categoria) no OMIE
-# ------+-----------+-------------------------
-# 7011  | Saída     | Aportes BWS
-# 22069 | Entrada   | Aportes BWS
-# 22069 | Entrada   | Aportes Parceiros
-# 22069 | Saída     | Devolução de Aportes
-# 7011  | Entrada   | Devolução de Aportes BWS
+# Conta      | Entra/Sai | Categoria no OMIE        | Código
+# -----------+-----------+--------------------------+---------
+# Provedora  | Entrada   | Devolução de Aportes BWS | 1.02.95
+# Provedora  | Saída     | Aportes BWS              | 2.08.97
+# Parceria   | Entrada   | Aporte Parceiros         | 1.02.02
+# Parceria   | Entrada   | Aporte BWS               | 1.02.94
+# Parceria   | Saída     | Devolução de Aportes     | 2.08.02
 # ---------------------------------------------------------------------------
 ESPERADO = {
     "aporte_bws": [
-        (aportes.MATRIZ, "saida", "Aportes BWS", "P"),
-        (aportes.PARCERIA, "entrada", "Aportes BWS", "R"),
+        (aportes.PROVEDORA, "saida", "Aportes BWS", "P"),
+        (aportes.PARCERIA, "entrada", "Aporte BWS", "R"),
     ],
     "devolucao_bws": [
         (aportes.PARCERIA, "saida", "Devolução de Aportes", "P"),
-        (aportes.MATRIZ, "entrada", "Devolução de Aportes BWS", "R"),
+        (aportes.PROVEDORA, "entrada", "Devolução de Aportes BWS", "R"),
     ],
     "aporte_parceiro": [
-        (aportes.PARCERIA, "entrada", "Aportes Parceiros", "R"),
+        (aportes.PARCERIA, "entrada", "Aporte Parceiros", "R"),
     ],
     "devolucao_parceiro": [
         (aportes.PARCERIA, "saida", "Devolução de Aportes", "P"),
@@ -91,14 +96,31 @@ def test_cada_operacao_monta_exatamente_os_lados_da_tabela(operacao):
     assert saiu == ESPERADO[operacao]
 
 
-def test_o_aporte_da_bws_usa_o_mesmo_nome_dos_dois_lados():
-    """A parte da regra mais fácil de "corrigir" por engano: parece erro ter a
-    mesma categoria na saída e na entrada, e não é — é o desenho dele. O que
-    distingue os dois lados é a conta e o sentido."""
+def test_o_aporte_da_bws_usa_CATEGORIAS_DIFERENTES_nos_dois_lados():
+    """⚠️ O DEFEITO QUE ELE PEGOU EM 21/09/2026: *"você colocou Aportes BWS
+    que ENTRA, conta Parceria, o mesmo código do que SAI. Não são."*
+
+    O briefing de setembro dizia o contrário (*"o mesmo nome dos dois
+    lados"*), e a primeira versão foi construída assim. Os nomes são quase
+    iguais — "Aportes BWS" e "Aporte BWS" — e os códigos não têm nada a ver um
+    com o outro. Um lançamento com a categoria do lado errado não acusa nada
+    em tela nenhuma: só este teste."""
     plano = planejar(operacao="aporte_bws")
-    nomes = {t["categoria_nome"] for t in plano["titulos"]}
-    assert nomes == {"Aportes BWS"}
+    saida, entrada = plano["titulos"]
+    assert saida["categoria_nome"] == "Aportes BWS"
+    assert saida["codigo_categoria"] == "2.08.97"
+    assert entrada["categoria_nome"] == "Aporte BWS"
+    assert entrada["codigo_categoria"] == "1.02.94"
+    assert saida["codigo_categoria"] != entrada["codigo_categoria"]
     assert {t["natureza"] for t in plano["titulos"]} == {"P", "R"}
+
+
+def test_as_cinco_categorias_sao_cinco_codigos_distintos():
+    """Nenhuma das cinco divide código com outra. Se duas dividissem, um
+    relatório somaria lados opostos do mesmo dinheiro na mesma linha."""
+    codigos = [c["codigo"] for c in CATEGORIAS.values()]
+    assert len(set(codigos)) == 5
+    assert set(CATEGORIAS) == set(aportes.CATEGORIAS)
 
 
 def test_operacao_com_o_parceiro_gera_um_titulo_so():
@@ -133,7 +155,7 @@ def test_qualquer_conta_serve_em_qualquer_papel():
                      conta_destino=33333)
     assert [t["id_conta_corrente"] for t in plano["titulos"]] == [7011, 33333]
     assert [t["categoria_nome"] for t in plano["titulos"]] == \
-        ["Aportes BWS", "Aportes BWS"]
+        ["Aportes BWS", "Aporte BWS"]
     assert plano["titulos"][1]["conta_descricao"] == "PARCERIA OBRA Y"
 
 
@@ -153,7 +175,7 @@ def test_a_conta_que_falta_e_pedida_pelo_sentido_do_dinheiro():
         planejar(conta_origem=None)
     frase = str(erro.value)
     assert "SAI" in frase
-    assert "Matriz" in frase
+    assert "Provedora" in frase
 
 
 def test_o_aporte_do_parceiro_nao_pede_conta_de_origem():
@@ -184,7 +206,7 @@ def test_categoria_sem_codigo_para_a_tela_em_vez_de_chutar():
     """A frase do briefing: *"se a descrição não for encontrada (…) a tela tem
     de parar e me dizer, em vez de escolher uma."*"""
     sem = dict(CATEGORIAS)
-    sem["aportes_bws"] = {"codigo": "", "descricao": ""}
+    sem["aportes_bws_saida"] = {"codigo": "", "descricao": ""}
     with pytest.raises(aportes.ErroDeRegra) as erro:
         planejar(categorias=sem)
     assert "Aportes BWS" in str(erro.value)
@@ -212,18 +234,19 @@ def test_data_dos_dois_jeitos():
 # ---------------------------------------------------------------------------
 # AS CINCO SITUAÇÕES — o que a tela mostra
 # ---------------------------------------------------------------------------
-def test_sao_cinco_situacoes_e_nao_quatro_categorias():
-    """*"Aportes BWS tanto está na conta de entrada quanto de saída. Na
-    verdade, todas as categorias poderão ser utilizadas."*
-
-    A tela listava as QUATRO categorias como se cada uma fosse uma coisa só.
-    O que existe são CINCO situações: conta + sentido + categoria."""
+def test_sao_cinco_situacoes_com_cinco_categorias_proprias():
+    """Cada situação (conta + sentido) tem a SUA categoria. Foi a correção de
+    21/09: a tela dividia uma categoria entre dois lados que não a dividem."""
     assert len(aportes.SITUACOES) == 5
-    assert len({c for _, _, c in aportes.SITUACOES}) == 4, "quatro categorias"
+    assert len({c for _, _, c in aportes.SITUACOES}) == 5, \
+        "cinco situações, cinco categorias — nenhuma se repete"
     # A que ele citou: usada dos dois lados, saindo e entrando.
-    assert aportes.situacoes_da_categoria("aportes_bws") == [
-        (aportes.MATRIZ, "saida"), (aportes.PARCERIA, "entrada")]
-    # E a devolução da parceria também serve a duas operações.
+    assert aportes.situacoes_da_categoria("aportes_bws_saida") == [
+        (aportes.PROVEDORA, "saida")]
+    assert aportes.situacoes_da_categoria("aporte_bws_entrada") == [
+        (aportes.PARCERIA, "entrada")]
+    # A ÚNICA que serve a duas operações é a devolução da parceria: ela é a
+    # mesma quando o dinheiro volta para a BWS e quando vai para o parceiro.
     assert aportes.situacoes_da_categoria("devolucao_aportes") == [
         (aportes.PARCERIA, "saida")]
 
@@ -245,7 +268,8 @@ def test_o_resumo_da_operacao_diz_o_movimento_sem_pedir_conta():
     assert [r["sentido_rotulo"] for r in resumo] == ["Saída", "Entrada"]
     assert [r["natureza_rotulo"] for r in resumo] == \
         ["Conta a pagar", "Conta a receber"]
-    assert all(r["categoria_nome"] == "Aportes BWS" for r in resumo)
+    assert [r["categoria_nome"] for r in resumo] == \
+        ["Aportes BWS", "Aporte BWS"]
     assert len(aportes.resumo_das_pernas("aporte_parceiro")) == 1
 
 
@@ -282,13 +306,13 @@ def test_a_observacao_automatica_diz_o_que_e_e_aponta_o_par():
     for t in plano["titulos"]:
         assert plano["numero_documento"] in t["observacao"]
         assert "Marcelo" in t["observacao"]
-    assert "Matriz" in plano["titulos"][0]["observacao"]
+    assert "Provedora" in plano["titulos"][0]["observacao"]
 
 
 def test_numero_e_observacao_podem_ser_trocados_pelo_dono():
     """Decisão dele em 20/09: automáticos, e editáveis antes de gravar."""
     plano = planejar(numero="MEU-NUMERO",
-                     observacoes={"matriz_saida": "texto meu"})
+                     observacoes={"provedora_saida": "texto meu"})
     assert plano["numero_documento"] == "MEU-NUMERO"
     assert plano["titulos"][0]["observacao"] == "texto meu"
     # O lado que ele NÃO trocou continua com o texto automático.
@@ -323,7 +347,8 @@ def test_categoria_marcada_como_transferencia_e_denunciada():
     plano financeiro, o lançamento nasce FORA do DRE — e some dos relatórios
     de aporte sem dizer nada."""
     marcadas = dict(CATEGORIAS)
-    marcadas["aportes_bws"] = dict(CATEGORIAS["aportes_bws"], transferencia="S")
+    marcadas["aportes_bws_saida"] = dict(CATEGORIAS["aportes_bws_saida"],
+                                         transferencia="S")
     plano = planejar(categorias=marcadas)
     avisos = aportes.criticar(plano, [])
     assert any("FORA do DRE" in a for a in avisos)
@@ -346,7 +371,7 @@ def test_o_ensaio_nao_fala_com_o_omie():
 def test_o_pacote_leva_a_obra_inteira_num_departamento_so():
     param = aportes_omie.montar_inclusao(planejar()["titulos"][0])
     assert param["distribuicao"] == [{"cCodDep": "OBRA-1", "nPerDep": 100}]
-    assert param["codigo_categoria"] == "9.01.01"
+    assert param["codigo_categoria"] == "2.08.97"
     assert param["id_conta_corrente"] == 7011
     assert param["valor_documento"] == 12500.0
     assert param["data_vencimento"] == "20/09/2026"
@@ -447,7 +472,7 @@ def test_nao_dando_para_desfazer_o_orfao_e_entregue_com_numero():
     assert len(resultado["orfaos"]) == 1
     orfao = resultado["orfaos"][0]
     assert orfao["codigo"] == 1001
-    assert "Matriz" in orfao["papel"]
+    assert "Provedora" in orfao["papel"]
 
 
 def test_baixa_que_falha_nao_apaga_os_titulos():
@@ -524,7 +549,7 @@ def test_cada_linha_vira_um_lancamento_com_o_resto_igual():
         assert p["operacao"] == "aporte_bws"
         assert [t["id_conta_corrente"] for t in p["titulos"]] == [7011, 22069]
         assert [t["categoria_nome"] for t in p["titulos"]] == \
-            ["Aportes BWS", "Aportes BWS"]
+            ["Aportes BWS", "Aporte BWS"]
         assert all(t["cod_departamento"] == "OBRA-1" for t in p["titulos"])
 
 

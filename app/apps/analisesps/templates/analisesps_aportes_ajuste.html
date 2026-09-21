@@ -6,11 +6,11 @@
    existe, conta ainda não apontada). Fora isso, mora dentro de um "detalhes"
    fechado, e ninguém precisa abrir.
 
-   ⚠️ E AS CINCO SITUAÇÕES, NÃO AS QUATRO CATEGORIAS. O dono apontou em
-   20/09/2026: *"Aportes BWS tanto está na conta de entrada quanto de saída;
-   na verdade, todas as categorias poderão ser utilizadas."* Listar quatro
-   categorias escondia metade do que cada uma faz. Aqui cada linha é uma
-   situação — conta, sentido e categoria juntos, na ordem da tabela dele.
+   ⚠️ CINCO SITUAÇÕES, CINCO CATEGORIAS DIFERENTES. Em 20/09 ele apontou que
+   a tela não distinguia entrada de saída; em 21/09 veio a correção maior:
+   *"você colocou Aportes BWS que ENTRA, conta Parceria, o mesmo código do que
+   SAI. Não são."* Cada lado tem a sua categoria e o seu código, inclusive as
+   duas de nome quase igual ("Aportes BWS" e "Aporte BWS").
 
    ⚠️ AS CONTAS NÃO ESTÃO AQUI, e a ausência é a correção de 20/09: *"não
    quero travar a conta Matriz e a da Parceria, tem mais de uma situação."*
@@ -25,8 +25,11 @@
 
   <h4>As cinco situações</h4>
   <p class="cartao-dica">
-    É a sua tabela. A mesma categoria aparece em mais de uma linha — o que
-    distingue os lados é a conta e o sentido do dinheiro.
+    É a sua tabela: cinco situações, <b>cinco categorias diferentes</b>. Repare
+    nas duas de nome quase igual — <b>Aportes BWS</b>, que sai da provedora, e
+    <b>Aporte BWS</b>, que entra na parceria. São o mesmo dinheiro visto dos
+    dois lados, e têm códigos diferentes. Trocar uma pela outra é o erro mais
+    fácil de cometer aqui e o mais difícil de notar depois — confira os dois.
   </p>
   <table class="sps">
     <thead>
@@ -46,6 +49,9 @@
           </td>
           <td>{{ s.papel_rotulo }}</td>
           <td><b>{{ s.categoria_nome }}</b>
+            {% if s.categoria_explicacao %}
+              <br><small>{{ s.categoria_explicacao }}</small>
+            {% endif %}
             {% if s.transferencia and s.transferencia|upper == 'S' %}
               <br><small>⚠️ marcada como transferência — fica fora do DRE</small>
             {% endif %}
@@ -62,13 +68,14 @@
             {% else %}
               {% if achado.candidatos %}
                 <select class="campo-largo" name="categoria_{{ s.categoria_chave }}">
-                  {% if achado.situacao == 'ambigua' %}
+                  {% if achado.situacao in ('ambigua', 'parecida') %}
                     <option value="">— escolha qual é —</option>
                   {% endif %}
                   {% for c in achado.candidatos %}
                     <option value="{{ c.codigo }}"
                       {% if s.codigo == c.codigo %}selected{% endif %}>
                       {{ c.codigo }} — {{ c.descricao }}
+                      {%- if not c.exata %} (nome parecido, não igual){% endif %}
                       {%- if c.transferencia|upper == 'S' %} (transferência){% endif %}
                     </option>
                   {% endfor %}
@@ -76,6 +83,14 @@
                 {% if achado.situacao == 'ambigua' %}
                   <small>Achei {{ achado.candidatos|length }} com esse nome.
                     Só você sabe qual é.</small>
+                {% elif achado.situacao == 'parecida' %}
+                  {# ⚠️ NUNCA ESCOLHIDO SOZINHO. Faltando "Aporte BWS" no
+                     plano, o único parecido é "Aportes BWS" — que é a
+                     categoria do LADO OPOSTO do mesmo dinheiro. #}
+                  <small>Não achei <b>{{ s.categoria_nome }}</b> com esse nome
+                    exato. O que apareceu tem nome <u>parecido</u>, e nome
+                    parecido aqui costuma ser o outro lado do mesmo dinheiro —
+                    confira antes de escolher, ou digite o código certo.</small>
                 {% endif %}
               {% else %}
                 <input class="campo-largo" name="categoria_{{ s.categoria_chave }}"
