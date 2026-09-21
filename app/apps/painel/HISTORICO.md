@@ -1040,6 +1040,132 @@ semanas depois.
 isso, zero ali quer dizer "ainda não olhei", e a tela diz isso com todas as
 letras em vez de mostrar um zero tranquilizador.
 
+## A carga passou a retomar POR PÁGINA — 20/09/2026
+
+**Incidente, e a culpa é minha.** O dono começou a Primeira carga às 18:51 e eu
+publiquei código em cima dela. Publicação reinicia o serviço no Render, e o
+reinício mata a carga — é a regra 1 deste arquivo, escrita justamente por isso,
+e eu passei por cima dela duas vezes no mesmo dia sem perguntar se havia carga
+rodando.
+
+**O estrago foi maior do que precisava ser.** A marca de retomada só existia
+para etapa INTEIRA, e as contas a pagar — 118 mil títulos, a mais longa das sete
+— não tinham terminado. Horas de download jogadas fora. O dono: *"melhor, visto
+que posso iniciar e dar outro problema"* — e preferiu esperar o conserto a
+recomeçar e arriscar de novo. Ele estava certo.
+
+### Como ficou
+
+A página em que cada etapa está também é gravada, na mesma `sync_state` e com o
+mesmo prefixo — então "começar do zero" continua sendo um lugar só.
+
+**As duas etapas longas retomam de jeitos diferentes, e a diferença é o que mais
+importa aqui:**
+
+| | Título | Movimento |
+|---|---|---|
+| Tem chave? | sim, o código do OMIE | **não** |
+| Regravar a mesma página | atualiza | **duplica dinheiro** |
+| Retoma em | uma página ANTES da salva | exatamente na seguinte |
+| Zera a tabela | nunca (é upsert) | só quando começa da página 1 |
+
+O passo atrás do título existe porque o OMIE pode criar títulos entre uma
+tentativa e outra, e aí as páginas se deslocam: retomar exatamente na seguinte
+poderia **pular** alguns. Regravar uma página não custa nada quando há chave.
+
+No movimento esse truque seria o desastre: sem chave, regravar é somar de novo.
+
+### A defesa que não depende de eu ter acertado
+
+No fim de cada etapa a carga **conta**: o OMIE informa o total de registros, e a
+base tem de ter isso. Se faltar (ou, no movimento, se sobrar — sinal de
+duplicata), **a etapa é refeita do zero, uma vez**. Se nem assim fechar, a
+mensagem final da tela ganha um `ATENÇÃO: ...` dizendo quanto a base tem e
+quanto o OMIE diz existir.
+
+Carga que termina com título faltando não pode se anunciar como "concluída" e
+mais nada — ninguém teria como desconfiar.
+
+### Um vazamento de memória que estava ali do lado
+
+A etapa de títulos guardava os 118 mil registros numa lista só para calcular, no
+fim, a marca d'água do incremental. Isso é exatamente o que a regra de memória
+(`CONTEXTO.md` §3.7) proíbe numa instância de 2 GB. A função que grava a marca
+já compara com o valor guardado, então passou a ser chamada por página — mesmo
+resultado, sem a lista.
+
+## Os aportes, refeitos sobre o plano financeiro — 21/09/2026
+
+O dono mandou os números que espera e os que a tela mostra:
+
+| | Esperado | Painel mostrava |
+|---|---|---|
+| Aportado | 4.113.536,46 | 3.786.327,89 |
+| Devolvido | 3.348.891,66 | **887.000,00** |
+| Saldo | 764.644,80 | 2.899.327,89 |
+
+E mandou junto a regra de verdade, que eu não tinha: **o plano financeiro por
+código**, e a instrução que muda tudo.
+
+### 1. O lado provedor não conta — e era isso que duplicava a lista
+
+```
+CONTA PROVEDORA (quem manda)       CONTA DA PARCERIA (a obra)
+  saída   2.08.97 Aportes BWS        entrada 1.02.02 Aportes Parceiros
+  entrada 1.02.95 Devolução BWS      entrada 1.02.94 Aportes BWS
+                                     saída   2.08.02 Devolução de Aportes
+```
+
+> *"Ocorre que para efeitos de aporte, não devemos considerar os lançamentos da
+> conta provedora, senão fica meio duplicado os lançamentos."*
+
+E ele mostrou: R$ 10,00 de 04/09/2025 aparecendo **duas vezes** na lista — +10
+entrando na 22069, −10 saindo da 7011. Somar dava certo (os sinais se anulavam),
+mas **listar mostrava dobrado**, e quem lê a lista conclui que o painel erra.
+
+Agora o lado provedor é excluído **pelo código da categoria**, e some do bloco
+inteiro — inclusive da lista. Quanto ele representa aparece à parte, em vez de
+virar o próximo mistério.
+
+### 2. O corte de transferência estava engolindo o bloco
+
+**É quase certo que era aqui que estavam os R$ 2,4 milhões de devolução.** Todas
+as telas descartam `analise = 'TRF'` por padrão, e com razão. Mas **o bloco de
+aportes é a exceção, e é a exceção porque o assunto dele é exatamente esse
+dinheiro**: aporte da BWS para a obra ANDA entre contas da empresa. Se a
+categoria estiver marcada como transferência no plano financeiro do OMIE — e
+depois da carga inicial as categorias vieram com as marcas novas —, o corte
+levava tudo.
+
+O que impedia a duplicação era esse corte. Hoje quem impede é a exclusão do lado
+provedor, que é o jeito certo: tira o espelho e mantém a operação.
+
+### 3. Quem aportou sai da contraparte, não do rótulo
+
+> *"A diferença de Aportes BWS e Aportes Parceiros é somente a nomenclatura (…)
+> e há várias situações que o pessoal do financeiro fez o lançamento trocado e
+> não colocou Aportes BWS. Veja pra isso não prejudicar a análise."*
+
+No exemplo dele, a entrada estava como "Aportes Parceiros" e a contraparte era
+BWS CONSTRUÇÕES LTDA (MATRIZ) — dinheiro da casa com nome de parceiro. O rótulo
+erra; a contraparte não. Então a categoria decide **se é aporte ou devolução**, e
+a contraparte decide **de quem é o dinheiro**.
+
+A heurística da casa é o nome conter "BWS" (`PADRAO_EMPRESA_DA_CASA`). É um
+palpite razoável e o dono pode corrigir.
+
+### 4. E o aviso que faltava: o filtro da tela
+
+Eu passei dias comparando a conferência das Configurações — que roda **sem
+filtro** — com o bloco do DRE, que roda **com os filtros da barra lateral**, e
+concluindo que faltava dinheiro. Não tinham por que bater. Um ano selecionado na
+lateral já explica uma devolução "sumida".
+
+O bloco agora diz, na cara: quanto está vendo, quanto é na base inteira, quanto
+está fora **por causa do filtro**, e um link para tirar o filtro. E a cascata
+pode ser aberta **dentro do bloco, com os mesmos filtros da tela** — nunca mais
+comparar dois recortes diferentes.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

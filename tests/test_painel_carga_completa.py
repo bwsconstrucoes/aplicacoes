@@ -73,11 +73,14 @@ class OmieDeMentira:
                 })
             yield pagina, self.paginas, total, registros
 
-    def listar_contas_pagar(self):
+    # `pagina_inicial` chega desde 20/09/2026: a carga passou a retomar por
+    # página dentro da etapa, não só por etapa inteira. O dublê aceita e ignora
+    # — ele tem uma página só, então não há de onde retomar.
+    def listar_contas_pagar(self, *, pagina_inicial=1, **k):
         self.pedidos.append("contapagar")
         yield from self._titulos("P", 1000)
 
-    def listar_contas_receber(self):
+    def listar_contas_receber(self, *, pagina_inicial=1, **k):
         self.pedidos.append("contareceber")
         yield from self._titulos("R", 2000)
 
@@ -107,7 +110,7 @@ class OmieDeMentira:
         }]
 
     # -- movimentos ---------------------------------------------------------
-    def listar_movimentos(self):
+    def listar_movimentos(self, *, pagina_inicial=1, **k):
         self.pedidos.append("movimentos")
         # duas páginas: é o que faz a linha de andamento da última página rodar,
         # que é exatamente onde o defeito estava

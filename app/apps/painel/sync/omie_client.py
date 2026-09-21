@@ -334,13 +334,14 @@ class OmieClient:
         return self._listar(URL_CONTARECEBER, "ListarContasReceber", "conta_receber_cadastro",
                             param_extra=param_extra, max_paginas=max_paginas, pagina_inicial=pagina_inicial)
 
-    def listar_movimentos(self, *, param_extra=None, max_paginas=None):
+    def listar_movimentos(self, *, param_extra=None, max_paginas=None,
+                          pagina_inicial=1):
         # Movimentos usa campos com prefixo "n" e registros em "movimentos".
         return self._listar(URL_MOVIMENTOS, "ListarMovimentos", "movimentos",
                             param_extra=param_extra,
                             campo_pagina="nPagina", campo_regpp="nRegPorPagina",
                             campo_totpag="nTotPaginas", campo_totreg="nTotRegistros",
-                            max_paginas=max_paginas)
+                            max_paginas=max_paginas, pagina_inicial=pagina_inicial)
 
     def listar_categorias(self, *, max_paginas=None):
         return self._listar(URL_CATEGORIAS, "ListarCategorias", "categoria_cadastro",

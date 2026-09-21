@@ -167,3 +167,95 @@ def test_carga_concluida_apaga_as_marcas(sem_marcas):
     assert "limpar_etapas(conn)" in codigo
     assert codigo.index('_marcar_etapa(conn, "planilha")') < \
         codigo.rindex("limpar_etapas(conn)")
+
+
+# ===========================================================================
+# A retomada FINA: por página, dentro da etapa — 20/09/2026
+# ===========================================================================
+# O dono começou a carga inicial às 18:51 e uma publicação minha reiniciou o
+# serviço. A marca só existia para etapa INTEIRA, e as contas a pagar — 118 mil
+# títulos, a mais longa das sete — não tinham terminado: horas jogadas fora.
+# Ele: "melhor, visto que posso iniciar e dar outro problema".
+
+def test_a_marca_de_pagina_nao_conta_como_etapa_pronta(sem_marcas):
+    """As duas marcas moram na mesma tabela e no mesmo prefixo. Se a marca de
+    página vazasse para a lista de etapas prontas, a carga pularia uma etapa que
+    não terminou — e o painel mostraria base incompleta como se fosse completa."""
+    from app.apps.painel.db import conexao
+    from app.apps.painel.sync import espelho
+
+    with conexao() as conn:
+        espelho._salvar_pagina(conn, "contapagar", 42)
+        assert espelho.etapas_concluidas(conn) == set(), \
+            "página salva é onde a etapa PAROU — o contrário de ter terminado"
+        assert espelho._pagina_retomada(conn, "contapagar") == 42
+
+
+def test_comecar_do_zero_apaga_tambem_as_marcas_de_pagina(sem_marcas):
+    """Senão "recomeçar do zero" começaria no meio da página 42."""
+    from app.apps.painel.db import conexao
+    from app.apps.painel.sync import espelho
+
+    with conexao() as conn:
+        espelho._marcar_etapa(conn, "contapagar")
+        espelho._salvar_pagina(conn, "contapagar", 42)
+        espelho.limpar_etapas(conn)
+        assert espelho.etapas_concluidas(conn) == set()
+        assert espelho._pagina_retomada(conn, "contapagar") == 0
+
+
+def test_a_marca_de_pagina_some_quando_a_etapa_termina(sem_marcas):
+    """Se sobrasse, a carga seguinte começaria no meio de uma etapa completa."""
+    from app.apps.painel.db import conexao
+    from app.apps.painel.sync import espelho
+
+    with conexao() as conn:
+        espelho._salvar_pagina(conn, "movimentos", 300)
+        espelho._esquecer_pagina(conn, "movimentos")
+        assert espelho._pagina_retomada(conn, "movimentos") == 0
+
+
+def test_titulo_retoma_um_passo_atras_e_movimento_retoma_exato():
+    """A diferença entre as duas etapas, que é a parte fácil de errar.
+
+    TÍTULO tem chave (o código do OMIE): regravar a mesma página atualiza, nunca
+    duplica — então dá para voltar uma página e cobrir o deslocamento de
+    paginação sem custo nenhum.
+
+    MOVIMENTO não tem chave: regravar a mesma página duplicaria dinheiro. Por
+    isso ele retoma exatamente na página seguinte, e a conferência do fim vale
+    nos dois sentidos — faltando ou sobrando."""
+    from app.apps.painel.sync import espelho
+
+    titulos = inspect.getsource(espelho.carga_inicial)
+    assert "max(1, salva - 1)" in titulos, \
+        "o título perdeu o passo atrás: a retomada pode pular títulos"
+
+    movimentos = inspect.getsource(espelho.carregar_movimentos_full)
+    assert "salva + 1" in movimentos, \
+        "o movimento ganhou passo atrás: isso duplica dinheiro, não atualiza"
+    assert "contados > esperado" in movimentos, \
+        "sem conferir a sobra, movimento duplicado passaria despercebido"
+
+
+def test_a_tabela_de_movimentos_so_e_zerada_quando_se_comeca_do_inicio():
+    """Zerar ao retomar apagaria tudo o que a tentativa anterior já baixou —
+    ou seja, a retomada custaria exatamente o que ela existe para evitar."""
+    from app.apps.painel.sync import espelho
+
+    fonte = inspect.getsource(espelho.carregar_movimentos_full)
+    corpo = fonte[fonte.index("def _baixar"):]
+    antes_do_delete = corpo[:corpo.index("DELETE FROM movimentos")]
+    assert "if inicial <= 1:" in antes_do_delete
+
+
+def test_a_carga_confere_com_o_total_que_o_omie_informou():
+    """Retomada que pula título é o risco de todo este mecanismo. A defesa não é
+    confiar: é contar no fim e refazer a etapa se não fechar."""
+    from app.apps.painel.sync import espelho
+
+    fonte = inspect.getsource(espelho.carga_inicial)
+    assert "contados < total_esperado" in fonte
+    assert "Refazendo a etapa do zero" in fonte
+    assert "queixas.append" in fonte, \
+        "e se nem refazendo fechar, a tela tem de dizer — não pode ficar só no log"

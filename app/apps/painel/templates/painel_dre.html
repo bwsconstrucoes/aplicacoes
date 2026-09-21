@@ -407,6 +407,110 @@
     </div>
   </div>
 
+  {# ---- O QUE OS FILTROS ESTAO ESCONDENDO, dito na cara ---- #}
+  {% if aportes_base and (aportes_base.devolvido > aportes.devolvido + 0.01
+                          or aportes_base.aportado > aportes.aportado + 0.01) %}
+  <div style="border-left:4px solid var(--ambar); background:rgba(255,193,7,.09);
+              padding:10px 12px; border-radius:6px; margin-top:12px">
+    <b>Os números acima são do filtro atual{% if chips %}: {{ chips|join(' · ') }}{% endif %}.</b><br>
+    Na base inteira, sem filtro nenhum, são
+    <b>{{ brl(aportes_base.aportado) }}</b> aportados e
+    <b>{{ brl(aportes_base.devolvido) }}</b> devolvidos
+    ({{ aportes_base.lancamentos }} lançamentos).
+    Ou seja, <b>{{ brl(aportes_base.devolvido - aportes.devolvido) }}</b> de
+    devolução e <b>{{ brl(aportes_base.aportado - aportes.aportado) }}</b> de
+    aporte estão fora do que você está vendo — <b>por causa do filtro</b>, não
+    por estarem faltando na base.<br>
+    <a href="{{ com_filtros('painel.dre', bloco='aportes', diagnostico='1') }}">
+      Ver de onde vem a diferença, corte a corte</a> ·
+    <a href="{{ url_for('painel.dre', bloco='aportes') }}">Tirar todos os filtros</a>
+  </div>
+  {% elif aportes_base %}
+  <p class="cartao-dica" style="margin-top:10px">
+    Sem filtro escondendo nada: estes são todos os aportes e devoluções da base
+    ({{ aportes_base.lancamentos }} lançamentos).
+    {% if not aportes_diag %}
+    <a href="{{ com_filtros('painel.dre', bloco='aportes', diagnostico='1') }}">
+      Conferir de onde vem cada número</a>
+    {% endif %}
+  </p>
+  {% endif %}
+
+  {% if aportes_diag %}
+  <div class="cartao" style="margin-top:12px; border-left:4px solid var(--ciano)">
+    <div class="cartao-cab"><h3>De onde vem cada número — com os filtros desta tela</h3></div>
+    <div class="tabela-rolagem">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Corte</th>
+          <th class="sem-ordem direita">Aportado</th>
+          <th class="sem-ordem direita">Devolvido</th>
+          <th class="sem-ordem direita">Quanto levou</th>
+          <th class="sem-ordem direita">Linhas</th>
+        </tr></thead>
+        <tbody>
+        {% for rotulo, v in aportes_diag.passos %}
+          <tr>
+            <td class="desc">{{ rotulo }}</td>
+            <td class="dados direita">{{ brl(v.aportado) }}</td>
+            <td class="dados direita">{{ brl(v.devolvido) }}</td>
+            <td class="dados direita {{ 'v-neg' if v.comeu_devolvido else '' }}">
+              {{ brl(v.comeu_devolvido) if v.comeu_devolvido else '—' }}</td>
+            <td class="dados direita">{{ v.linhas }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if aportes_diag.lado_provedor and aportes_diag.lado_provedor.linhas %}
+    <div style="border-left:4px solid var(--ciano); background:rgba(13,202,240,.07);
+              padding:10px 12px; border-radius:6px; margin-top:12px">
+    <b>Fora do bloco de propósito: o lado da conta provedora.</b><br>
+    {{ aportes_diag.lado_provedor.linhas }} lançamentos somando
+    <b>{{ brl(aportes_diag.lado_provedor.valor) }}</b>, nas categorias
+    {{ aportes_diag.lado_provedor.codigos|join(' e ') }}.
+    Eles são o <b>espelho</b> da mesma operação, na conta que mandou ou recebeu
+    o dinheiro. Contá-los faria cada aporte aparecer duas vezes — entrando numa
+    conta e saindo da outra.
+  </div>
+    {% endif %}
+
+    {% if aportes_diag.por_contraparte %}
+    <h4 style="margin:14px 0 4px">Devoluções por contraparte</h4>
+    <p class="cartao-dica" style="margin-top:0">
+      A coluna "nomes" diz quantas grafias diferentes o mesmo CNPJ tem. Mais de
+      uma quer dizer cadastro repetido no OMIE — o painel já soma junto, mas
+      vale arrumar lá.
+    </p>
+    <div class="tabela-rolagem" style="max-height:300px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Contraparte</th>
+          <th class="sem-ordem">CNPJ/CPF</th>
+          <th class="sem-ordem direita">Nomes</th>
+          <th class="sem-ordem direita">Devolvido</th>
+          <th class="sem-ordem direita">Lançamentos</th>
+        </tr></thead>
+        <tbody>
+        {% for l in aportes_diag.por_contraparte %}
+          <tr>
+            <td class="desc">{{ l.nome }}
+              {% if l.nomes > 1 %}
+              <br><small style="color:var(--vermelho)">{{ l.todos_os_nomes }}</small>
+              {% endif %}</td>
+            <td class="dados">{{ l.documento }}</td>
+            <td class="dados direita {{ 'v-neg' if l.nomes > 1 else '' }}">{{ l.nomes }}</td>
+            <td class="dados direita">{{ brl(l.devolvido) }}</td>
+            <td class="dados direita">{{ l.lancamentos }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <h4 style="margin:16px 0 6px; font-size:13px">Por sócio ou parceiro</h4>
   <div class="tabela-rolagem">
     <table>
