@@ -217,3 +217,133 @@ def test_o_dono_ve_todas_as_contas(base_de_extrato, monkeypatch):
     cliente = _cliente(monkeypatch)
     html = cliente.get("/painel/extrato").get_data(as_text=True)
     assert "Bradesco 22069-8" in html and "Itaú 7011-4" in html
+
+
+# ===========================================================================
+# 3. Transferências entre contas — os DOIS lados juntos
+# ===========================================================================
+# O dono: "se eu quiser filtrar, eu quero ver todas as transferências num
+# determinado período da conta tal para a conta tal. Consigo visualizar isso?"
+#
+# Não conseguia: no OMIE uma transferência são DOIS lançamentos separados, um
+# em cada conta, sem nada ligando um ao outro.
+
+@pytest.fixture()
+def base_com_transferencias(base_de_extrato):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM fato WHERE codigo_lancamento >= 900")
+        # (codigo, conta, valor, data) — os pares têm mesma data e mesmo valor
+        linhas = (
+            (901, "Bradesco 22069-8", -20000, "2025-09-15"),   # saiu daqui
+            (902, "Itaú 7011-4", 20000, "2025-09-15"),         # entrou aqui
+            (903, "Itaú 7011-4", -5000, "2025-09-20"),         # o sentido inverso
+            (904, "Bradesco 22069-8", 5000, "2025-09-20"),
+            (905, "Bradesco 22069-8", -333, "2025-09-25"),     # SEM o outro lado
+        )
+        for cod, conta, valor, data in linhas:
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " situacao_vencimento, categoria, departamento, razao_social,"
+                " conta_corrente, data, ano, pago_recebido, a_pagar_receber,"
+                " juros, multa)"
+                " VALUES (?,'2. Contas a Pagar','TRF','PAGO','Quitado',"
+                "         'Transferência entre contas','MERCADOBARBALHA',"
+                "         'BWS','" + conta + "',?,2025,?,0,0,0)",
+                (cod, data, valor))
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def test_a_transferencia_mostra_de_onde_saiu_e_onde_entrou(base_com_transferencias):
+    """O pedido em uma linha: da conta tal para a conta tal."""
+    from app.apps.painel import consultas
+    r = consultas.transferencias_entre_contas(consultas.Filtros())
+    por_valor = {p["valor"]: p for p in r["pares"]}
+    assert por_valor[20000]["origem"] == "Bradesco 22069-8"
+    assert por_valor[20000]["destino"] == "Itaú 7011-4"
+    # e o sentido inverso também é pareado
+    assert por_valor[5000]["origem"] == "Itaú 7011-4"
+    assert por_valor[5000]["destino"] == "Bradesco 22069-8"
+
+
+def test_da_para_filtrar_para_qual_conta_foi(base_com_transferencias):
+    from app.apps.painel import consultas
+    r = consultas.transferencias_entre_contas(consultas.Filtros(),
+                                              destino="Itaú 7011-4")
+    assert [p["valor"] for p in r["pares"]] == [20000]
+
+
+def test_a_conta_filtrada_aparece_nos_dois_sentidos(base_com_transferencias):
+    """"As transferências desta conta" são as que saem E as que entram."""
+    from app.apps.painel import consultas
+    r = consultas.transferencias_entre_contas(
+        consultas.Filtros(contas=["Bradesco 22069-8"]))
+    assert sorted(p["valor"] for p in r["pares"]) == [5000, 20000]
+
+
+def test_o_que_nao_tem_par_aparece_a_parte(base_com_transferencias):
+    """É a informação mais útil da tela: saída sem entrada do outro lado quase
+    sempre quer dizer que o outro lançamento não está classificado como
+    transferência — e então está entrando no resultado como despesa."""
+    from app.apps.painel import consultas
+    r = consultas.transferencias_entre_contas(consultas.Filtros())
+    por_codigo = {x["codigo"]: x for x in r["sem_par"]}
+    assert 905 in por_codigo
+    assert "sem entrada" in por_codigo[905]["sentido"]
+    # o 804 da base também está aqui, e com razão: é a transferência solta que
+    # a fixture cria de propósito, sem o outro lado
+    assert 804 in por_codigo
+    # e o que TEM par não pode aparecer aqui
+    assert 901 not in por_codigo and 902 not in por_codigo
+
+
+def test_uma_transferencia_nao_pode_aparecer_duas_vezes(base_com_transferencias):
+    """Cada entrada serve a UMA saída. Sem isso, duas saídas do mesmo valor no
+    mesmo dia casariam com a mesma entrada e o total dobraria."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, departamento, razao_social,"
+            " conta_corrente, data, ano, pago_recebido, a_pagar_receber,"
+            " juros, multa)"
+            " VALUES (906,'2. Contas a Pagar','TRF','PAGO','Quitado',"
+            "         'Transferência entre contas','MERCADOBARBALHA','BWS',"
+            "         'Bradesco 22069-8','2025-09-15',2025,-20000,0,0,0)")
+        conn.commit()
+    consultas.esquecer_listas()
+    r = consultas.transferencias_entre_contas(consultas.Filtros())
+    de_20k = [p for p in r["pares"] if p["valor"] == 20000]
+    assert len(de_20k) == 1, "a mesma entrada casou com duas saídas"
+    assert any(x["codigo"] == 906 for x in r["sem_par"]), \
+        "a saída sobrando tem de aparecer como sem par"
+
+
+def test_quem_nao_ve_a_outra_conta_nao_descobre_o_nome_dela(base_com_transferencias,
+                                                            monkeypatch):
+    """Ele vê que o dinheiro foi para algum lugar. Para onde, não."""
+    from app.apps.painel import usuarios
+    usuarios.criar("socio", "senha-dele", obras=["MERCADOBARBALHA"],
+                   telas=["extrato"], contas=["Bradesco 22069-8"])
+    cliente = _cliente(monkeypatch)
+    cliente.get("/painel/sair")
+    cliente.post("/painel/entrar", data={"usuario": "socio", "senha": "senha-dele"})
+    html = cliente.get(
+        "/painel/extrato?visao=transferencias").get_data(as_text=True)
+    assert "(outra conta)" in html
+    assert "Itaú 7011-4" not in html, "o nome da conta do outro VAZOU"
+
+
+def test_a_tela_de_transferencias_abre_e_avisa_o_limite(base_com_transferencias,
+                                                        monkeypatch):
+    """O pareamento é por data e valor. Se a tela não disser isso, alguém vai
+    confiar num destino que pode estar trocado."""
+    cliente = _cliente(monkeypatch)
+    html = cliente.get("/painel/extrato?visao=transferencias").get_data(as_text=True)
+    assert "Transferências entre contas" in html
+    assert "mesma data e mesmo valor" in html
+    assert "pode trocar de destino" in html

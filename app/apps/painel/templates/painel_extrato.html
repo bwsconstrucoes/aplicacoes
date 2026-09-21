@@ -37,6 +37,130 @@
   </div>
 {% endif %}
 
+<div class="tabela-barra" style="margin-bottom:12px">
+  <span>
+    {% for chave, rotulo in [('lancamentos', 'Lançamentos da conta'),
+                             ('transferencias', 'Transferências entre contas')] %}
+      {% if chave == visao %}
+        <b>{{ rotulo }}</b>
+      {% else %}
+        <a href="{{ com_filtros('painel.extrato', visao=chave, de=de, ate=ate) }}">{{ rotulo }}</a>
+      {% endif %}
+      {% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </span>
+</div>
+
+{% if visao == 'transferencias' %}
+<p class="cartao-dica">
+  No OMIE, <b>uma transferência são dois lançamentos separados</b> — um saindo
+  de uma conta, outro entrando na outra, sem nada ligando um ao outro. Aqui eles
+  são juntados por <b>mesma data e mesmo valor</b>.<br>
+  <b>O limite disso, dito na cara:</b> se duas transferências do mesmo valor
+  acontecerem no mesmo dia, o par pode trocar de destino. Não há como fazer
+  melhor sem um vínculo que o OMIE não guarda.<br>
+  A conta filtrada na barra aparece <b>como origem e como destino</b> — são as
+  transferências dela, nos dois sentidos.
+</p>
+
+<form method="get" class="cartao">
+  {{ esconde(['de', 'ate', 'destino', 'visao']) }}
+  <input type="hidden" name="visao" value="transferencias">
+  <div class="form-grade">
+    <div class="campo">
+      <label for="de">De</label>
+      <input id="de" name="de" type="date" value="{{ de }}">
+    </div>
+    <div class="campo">
+      <label for="ate">Até</label>
+      <input id="ate" name="ate" type="date" value="{{ ate }}">
+    </div>
+    <div class="campo">
+      <label for="destino">Para a conta</label>
+      <select id="destino" name="destino">
+        <option value="">Qualquer conta</option>
+        {% for c in opcoes.contas or [] %}
+          <option value="{{ c }}" {% if c == destino %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo" style="align-self:flex-end">
+      <button class="btn" type="submit">Aplicar</button>
+    </div>
+  </div>
+</form>
+
+<div class="tabela-barra" style="margin-top:14px">
+  <span>{{ transferencias.quantos }} transferência(s) — {{ brl(transferencias.total) }}</span>
+</div>
+<div class="tabela-rolagem">
+  <table>
+    <thead><tr>
+      <th class="sem-ordem">Data</th>
+      <th class="sem-ordem">Saiu de</th>
+      <th class="sem-ordem">Entrou em</th>
+      <th class="sem-ordem">Categoria</th>
+      <th class="sem-ordem direita">Valor</th>
+      <th class="sem-ordem">Nº no OMIE</th>
+    </tr></thead>
+    <tbody>
+    {% for t in transferencias.pares %}
+      <tr>
+        <td class="dados">{{ t.data.strftime('%d/%m/%Y') if t.data else '—' }}</td>
+        <td class="desc">{{ t.origem }}</td>
+        <td class="desc">{{ t.destino }}</td>
+        <td class="desc"><small>{{ t.categoria }}</small></td>
+        <td class="dados direita">{{ brl(t.valor) }}</td>
+        <td class="dados"><small>{{ t.codigo_saida }} → {{ t.codigo_entrada }}</small></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="desc">
+        Nenhuma transferência nesse recorte.
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if transferencias.sem_par %}
+<div class="cartao" style="margin-top:14px; border-left:4px solid var(--ambar)">
+  <div class="cartao-cab"><h3>Sem o outro lado ({{ transferencias.quantos_sem_par }})</h3></div>
+  <p class="cartao-dica">
+    Estes lançamentos estão marcados como transferência, mas não têm o par na
+    outra conta — mesma data, mesmo valor. <b>Quase sempre quer dizer que o
+    lançamento do outro lado não está classificado como transferência</b>, e
+    então ele está entrando no resultado como se fosse receita ou despesa.
+    Vale conferir no OMIE.
+  </p>
+  <div class="tabela-rolagem" style="max-height:300px">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Data</th>
+        <th class="sem-ordem">Conta</th>
+        <th class="sem-ordem">O que falta</th>
+        <th class="sem-ordem">Contraparte</th>
+        <th class="sem-ordem direita">Valor</th>
+        <th class="sem-ordem">Nº no OMIE</th>
+      </tr></thead>
+      <tbody>
+      {% for x in transferencias.sem_par %}
+        <tr>
+          <td class="dados">{{ x.data.strftime('%d/%m/%Y') if x.data else '—' }}</td>
+          <td class="desc">{{ x.conta }}</td>
+          <td class="desc"><small>{{ x.sentido }}</small></td>
+          <td class="desc"><small>{{ x.razao_social or '—' }}</small></td>
+          <td class="dados direita">{{ brl(x.valor) }}</td>
+          <td class="dados">{{ x.codigo }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+
 <div class="kpis">
   <div class="kpi estatico verde">
     <div class="kpi-rotulo">Entrou</div>
@@ -150,6 +274,8 @@
     {% endif %}
   </span>
 </div>
+{% endif %}
+
 {% endif %}
 
 <p class="cartao-dica">

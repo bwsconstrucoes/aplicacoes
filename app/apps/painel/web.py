@@ -579,20 +579,37 @@ def extrato():
         pagina = int(request.args.get("pagina") or 1)
     except ValueError:
         pagina = 1
+    # Duas visões da mesma tela: os lançamentos da conta, ou as transferências
+    # entre contas com OS DOIS LADOS juntos. Ficam aqui, e não em outra aba,
+    # porque a pergunta é a mesma — "o que andou nesta conta?" — e os filtros
+    # são os mesmos.
+    visao = request.args.get("visao", "lancamentos")
+    if visao not in ("lancamentos", "transferencias"):
+        visao = "lancamentos"
+
+    pessoa = auth.usuario_da_sessao()
+    transferencias = None
+    if visao == "transferencias":
+        transferencias = consultas.transferencias_entre_contas(
+            f, de=de, ate=ate, destino=request.args.get("destino", ""),
+            contas_visiveis=(pessoa.get("contas") if pessoa else None))
+
     return render_template(
         "painel_extrato.html",
         **_contexto_comum("extrato"),
         chips=f.resumo(),
-        de=de, ate=ate,
+        de=de, ate=ate, visao=visao,
+        destino=request.args.get("destino", ""),
         busca=(request.args.get("busca") or "").strip(),
         categoria=request.args.get("categoria", ""),
         ordem=request.args.get("ordem", "data"),
         categorias=consultas.categorias_do_extrato(f),
+        transferencias=transferencias,
         dados=consultas.extrato_da_conta(
             f, busca=(request.args.get("busca") or "").strip(),
             categoria=request.args.get("categoria", ""),
             de=de, ate=ate, ordem=request.args.get("ordem", "data"),
-            pagina=pagina),
+            pagina=pagina) if visao == "lancamentos" else None,
     )
 
 

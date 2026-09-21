@@ -14,6 +14,8 @@ Receita entra positiva, despesa negativa: somar a coluna ja da o resultado.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 from .db import consultar
 
 REC = "1. Contas a Receber"
@@ -1100,6 +1102,104 @@ def extrato_da_conta(f: Filtros, busca="", categoria="", de="", ate="",
             "liquido": float(entradas or 0) - float(saidas or 0),
             "pagina": pagina, "por_pagina": por_pagina,
             "paginas": max(1, -(-(linhas_total or 0) // por_pagina))}
+
+
+def transferencias_entre_contas(f: Filtros, de="", ate="", destino="",
+                                limite=500, contas_visiveis=None) -> dict:
+    """De qual conta para qual conta o dinheiro foi — os DOIS lados juntos.
+
+    21/09/2026, o dono: *"se eu quiser filtrar, eu quero ver todas as
+    transferências num determinado período da conta tal para a conta tal.
+    Consigo visualizar isso aí?"*
+
+    Hoje, não: **no OMIE uma transferência são DOIS lançamentos separados**, um
+    saindo de uma conta e outro entrando na outra, sem nada que ligue um ao
+    outro. Filtrando a conta de origem, ele via a saída e nao via o destino.
+
+    O PAREAMENTO E POR DATA E VALOR, e a limitacao esta dita na tela: se duas
+    transferencias do MESMO valor acontecerem no MESMO dia, o par pode trocar de
+    destino. Nao ha como fazer melhor sem um vinculo que o OMIE nao guarda — e
+    inventar um vinculo que nao existe seria pior que mostrar o que se sabe.
+
+    O QUE NAO PAREOU vem junto, a parte, e e a informacao mais util da tela:
+    saida sem entrada do outro lado quase sempre quer dizer que o outro
+    lancamento nao esta classificado como transferencia."""
+    condicoes = [PAGO, "analise = 'TRF'", "ABS(pago_recebido) > 0.005"]
+    extras = []
+    if de:
+        condicoes.append("data >= CAST(? AS DATE)")
+        extras.append(de)
+    if ate:
+        condicoes.append("data <= CAST(? AS DATE)")
+        extras.append(ate)
+
+    # SEM o filtro de conta: para achar o outro lado e preciso enxergar as duas
+    # pontas. O recorte por conta entra depois, em Python, ja sabendo o par.
+    amplo = Filtros(anos=f.anos, projetos=f.projetos, excluir_trf=False)
+    where, params = amplo.where(" AND ".join(condicoes), extras)
+
+    linhas = consultar(
+        f"""SELECT data, COALESCE(conta_corrente,'(sem conta)'), pago_recebido,
+                   codigo_lancamento, razao_social,
+                   COALESCE(NULLIF(categoria,''), '(sem categoria)')
+              FROM fato{where}
+             ORDER BY data, ABS(pago_recebido) DESC
+             LIMIT 20000""", params)
+
+    saidas, entradas = [], []
+    for data, conta, valor, cod, razao, categoria in linhas:
+        registro = {"data": data, "conta": conta, "valor": abs(float(valor or 0)),
+                    "codigo": cod, "razao_social": razao or "",
+                    "categoria": categoria}
+        (saidas if float(valor or 0) < 0 else entradas).append(registro)
+
+    # Pareia saida com entrada de MESMA data e MESMO valor. Cada entrada so
+    # serve a uma saida — senao uma transferencia apareceria duas vezes.
+    por_chave = {}
+    for e in entradas:
+        por_chave.setdefault((e["data"], round(e["valor"], 2)), []).append(e)
+
+    pares, sem_par = [], []
+    for s_ in saidas:
+        disponiveis = por_chave.get((s_["data"], round(s_["valor"], 2)), [])
+        par = next((e for e in disponiveis if e["conta"] != s_["conta"]), None)
+        if par is None:
+            sem_par.append(dict(s_, sentido="saída sem entrada do outro lado"))
+            continue
+        disponiveis.remove(par)
+        pares.append({"data": s_["data"], "valor": s_["valor"],
+                      "origem": s_["conta"], "destino": par["conta"],
+                      "codigo_saida": s_["codigo"], "codigo_entrada": par["codigo"],
+                      "categoria": s_["categoria"]})
+    for restantes in por_chave.values():
+        for e in restantes:
+            sem_par.append(dict(e, sentido="entrada sem saída do outro lado"))
+
+    # O recorte da tela: a conta filtrada aparece como origem OU como destino —
+    # "as transferencias DESTA conta" sao as duas coisas.
+    if f.contas:
+        alvo = set(f.contas)
+        pares = [p for p in pares
+                 if p["origem"] in alvo or p["destino"] in alvo]
+        sem_par = [x for x in sem_par if x["conta"] in alvo]
+    if destino:
+        pares = [p for p in pares if p["destino"] == destino]
+        sem_par = []
+
+    # Quem so pode ver certas contas nao pode descobrir o NOME das outras por
+    # aqui. O dinheiro foi para algum lugar, e isso ele ve; para onde, nao.
+    if contas_visiveis is not None:
+        podem = set(contas_visiveis)
+        for par in pares:
+            for ponta in ("origem", "destino"):
+                if par[ponta] not in podem:
+                    par[ponta] = "(outra conta)"
+
+    pares.sort(key=lambda p: (p["data"] or dt.date(1900, 1, 1), -p["valor"]))
+    total = sum(p["valor"] for p in pares)
+    return {"pares": pares[:limite], "sem_par": sem_par[:limite],
+            "quantos": len(pares), "total": total,
+            "quantos_sem_par": len(sem_par)}
 
 
 def categorias_do_extrato(f: Filtros) -> list[str]:

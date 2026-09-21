@@ -1495,6 +1495,39 @@ não usa o Extrato, e as outras telas seguem normais.
 O escopo é aplicado no mesmo `_filtros_do_pedido` — o único lugar por onde toda
 tela passa. Pedir a conta de outro na barra de endereço não funciona, e há teste.
 
+### As transferências, com os dois lados juntos
+
+Logo depois de ver a tela, o dono perguntou: *"se eu quiser filtrar, eu quero
+ver todas as transferências num determinado período da conta tal para a conta
+tal. Consigo visualizar isso aí?"*
+
+Não conseguia, e o motivo é do OMIE: **uma transferência são DOIS lançamentos
+separados**, um saindo de uma conta e outro entrando na outra, **sem nada que
+ligue um ao outro**. Filtrando a conta de origem via-se a saída, nunca o destino.
+
+O Extrato ganhou uma segunda visão que **pareia os dois lados por mesma data e
+mesmo valor**, e mostra "saiu de X, entrou em Y". Dá para filtrar por período e
+por conta de destino, e a conta filtrada na barra aparece nos **dois sentidos** —
+"as transferências desta conta" são as que saem e as que entram.
+
+**O limite está escrito na tela**, não escondido: se duas transferências do mesmo
+valor acontecerem no mesmo dia, o par pode trocar de destino. Não há como fazer
+melhor sem um vínculo que o OMIE não guarda, e inventar um vínculo que não existe
+seria pior que mostrar o que se sabe.
+
+Cuidado que virou teste: **cada entrada serve a UMA saída**. Sem isso, duas
+saídas do mesmo valor no mesmo dia casariam com a mesma entrada e o total
+dobraria.
+
+**O que NÃO pareia é a parte mais útil da tela.** Saída sem entrada do outro lado
+quase sempre quer dizer que o lançamento do outro lado **não está classificado
+como transferência** — e então ele está entrando no resultado como se fosse
+receita ou despesa. Aparece num quadro à parte, com o número do OMIE.
+
+E quem só pode ver certas contas **não descobre o nome das outras por aqui**: o
+destino que ele não pode ver vira "(outra conta)". Ele vê que o dinheiro foi
+para algum lugar; para onde, não.
+
 ### Detalhes que quase passaram
 
 - **`pagina_link` apontava para o Analítico com o nome escrito.** Virar a página
