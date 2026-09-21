@@ -70,7 +70,7 @@ aplicacoes/
         ├── baixabradesco/    ← /api/baixabradesco/* (routes, core, sheets, parser_*, omie, pipefy, zapi, storage, fila, matcher, models, utils, diagnostico)
         ├── processarnovasp/  ← /api/processarnovasp/executar (⚠️ existe em produção, ainda não documentado aqui)
         ├── sync_logs/        ← /api/sync_logs/* (⚠️ ainda não documentado aqui)
-        ├── emissaonf/        ← /emissao/* (emissão de NFS-e; ⚠️ ainda não documentado aqui)
+        ├── emissaonf/        ← /emissao/* (emissão de NFS-e; ver `emissaonf/README.md` e `HISTORICO.md`)
         ├── telegram/         ← /telegram/* (bot / autocadastro; ⚠️ ainda não documentado aqui)
         ├── notificador.py    ← helper `enviar_telegram`, usado pelo ERP para avisar baixas
         └── erp/              ← /erp/* — ERP (ver §2.1 e §5.12). NÃO é um blueprint
@@ -746,6 +746,41 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 21/09/2026 — A EMISSÃO DE NFS-e GANHOU MEMÓRIA (atravessa áreas)
+
+No mesmo dia em que entrou na tabela sem `README.md` nem `HISTORICO.md` (ver a
+entrada logo abaixo), a área ganhou os dois. Por isso o `CLAUDE.md` mudou: a
+linha da tabela deixou de avisar que os arquivos não existem e passou a apontar
+para eles, e o aviso abaixo da tabela deixou de pedir "a primeira entrega é a
+memória" e passou a apontar a seção de perguntas em aberto.
+
+**Duas coisas do jeito como isso foi feito merecem virar regra para a próxima
+área sem memória:**
+
+1. **O histórico diz de onde cada parte veio.** Metade saiu do código, lido de
+   ponta a ponta; a outra metade saiu do relato do dono sobre o que só ele
+   sabia — incidentes, valores, o que já foi consertado no mundo. São duas
+   fontes com confiabilidade diferente, e misturá-las sem dizer qual é qual
+   faria a próxima sessão confiar demais no que é lembrança.
+2. **O histórico tem uma seção de perguntas em aberto**, separada das
+   pendências. Pendência é trabalho que se sabe fazer; pergunta em aberto é
+   trabalho que **não se pode** fazer sem uma resposta do dono, porque o estado
+   do mundo mudou desde o último chat.
+
+**Uma correção que esse levantamento produziu, e que vale registrar porque era
+uma decisão de negócio errada:** o relato do dono dizia que o conserto do
+`ValorDeducoes` (o ISS que a prefeitura calculava sobre o valor cheio) estava
+esperando para subir, e que nenhuma nota nova deveria ser emitida antes disso.
+Conferido no código da `main`: ele subiu em 11/09/2026, no commit `f2d93c8`. O
+que continua pendente é o **passivo** — as notas emitidas com dedução de ISS
+antes daquela data estão com ISS a maior na prefeitura e precisam ser
+substituídas.
+
+Também mudou uma linha de código da área, por causa de um card que não abria: a
+C. Diários identifica a obra por **dois** códigos (primário e secundário), e a
+emissão só procurava pelo primário. Detalhe no `HISTORICO.md` da área.
+
 
 ### 21/09/2026 — A EMISSÃO DE NFS-e VIROU A QUINTA ÁREA (atravessa áreas)
 
@@ -1745,9 +1780,12 @@ verdade ninguém acredita nele.
   A árvore do §2 foi conferida contra o `app/main.py` real em 2026-09-01 e hoje
   são **14 blueprints** registrados; `sync_logs`, `emissaonf`, `telegram` e
   `erp` faltavam aqui.
-- **`sync_logs`, `emissaonf` e `telegram`:** registrados em produção, mas sem
-  seção própria no §5. Documentar na próxima vez que mexer (o `emissaonf` tem
-  ligação prevista com o ERP — ver abaixo).
+- **`sync_logs` e `telegram`:** registrados em produção, mas sem seção própria
+  no §5. Documentar na próxima vez que mexer.
+- **`emissaonf`:** continua sem seção própria no §5, mas a dívida maior está
+  paga — ele ganhou `README.md` e `HISTORICO.md` em 21/09/2026, e a lista de
+  rotas está no README da área. A ligação com o ERP já existe desde 10/09/2026
+  (ver §9).
 
 ### 10.1 ERP
 
