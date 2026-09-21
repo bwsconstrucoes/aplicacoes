@@ -1,0 +1,286 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Extrato de Conta — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{% macro esconde(proprios=[]) %}
+  {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
+  {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
+  {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+  {% for c in selecao.contas %}<input type="hidden" name="conta" value="{{ c }}">{% endfor %}
+  {% for campo, valor in [('categoria', categoria), ('busca', busca),
+                          ('ordem', ordem), ('de', de), ('ate', ate)] %}
+    {% if valor and campo not in proprios %}
+      <input type="hidden" name="{{ campo }}" value="{{ valor }}">
+    {% endif %}
+  {% endfor %}
+{% endmacro %}
+
+{% block conteudo %}
+<h2>Extrato de Conta Corrente
+  <small>o que entrou e o que saiu, por data</small>
+</h2>
+<p class="cartao-dica" style="margin:-8px 0 14px">
+  É o extrato do banco, do jeito que o OMIE mostra — para dar para conferir
+  lado a lado. <b>Só o que virou dinheiro</b>: título em aberto não entra, e por
+  isso não há coluna de vencimento.<br>
+  <b>Tarifa e rendimento aparecem aqui</b>, mesmo ficando de fora do DRE: eles
+  aconteceram na conta. Transferência entre contas também — ela sai do
+  resultado, mas não sai do extrato.<br>
+  <b>Escolha a conta na barra da esquerda.</b> Sem escolher, você vê todas as
+  contas juntas.
+</p>
+
+{% if chips %}
+  <div class="chips">
+    {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+  </div>
+{% endif %}
+
+<div class="tabela-barra" style="margin-bottom:12px">
+  <span>
+    {% for chave, rotulo in [('lancamentos', 'Lançamentos da conta'),
+                             ('transferencias', 'Transferências entre contas')] %}
+      {% if chave == visao %}
+        <b>{{ rotulo }}</b>
+      {% else %}
+        <a href="{{ com_filtros('painel.extrato', visao=chave, de=de, ate=ate) }}">{{ rotulo }}</a>
+      {% endif %}
+      {% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </span>
+</div>
+
+{% if visao == 'transferencias' %}
+<p class="cartao-dica">
+  No OMIE, <b>uma transferência são dois lançamentos separados</b> — um saindo
+  de uma conta, outro entrando na outra, sem nada ligando um ao outro. Aqui eles
+  são juntados por <b>mesma data e mesmo valor</b>.<br>
+  <b>O limite disso, dito na cara:</b> se duas transferências do mesmo valor
+  acontecerem no mesmo dia, o par pode trocar de destino. Não há como fazer
+  melhor sem um vínculo que o OMIE não guarda.<br>
+  A conta filtrada na barra aparece <b>como origem e como destino</b> — são as
+  transferências dela, nos dois sentidos.
+</p>
+
+<form method="get" class="cartao">
+  {{ esconde(['de', 'ate', 'destino', 'visao']) }}
+  <input type="hidden" name="visao" value="transferencias">
+  <div class="form-grade">
+    <div class="campo">
+      <label for="de">De</label>
+      <input id="de" name="de" type="date" value="{{ de }}">
+    </div>
+    <div class="campo">
+      <label for="ate">Até</label>
+      <input id="ate" name="ate" type="date" value="{{ ate }}">
+    </div>
+    <div class="campo">
+      <label for="destino">Para a conta</label>
+      <select id="destino" name="destino">
+        <option value="">Qualquer conta</option>
+        {% for c in opcoes.contas or [] %}
+          <option value="{{ c }}" {% if c == destino %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo" style="align-self:flex-end">
+      <button class="btn" type="submit">Aplicar</button>
+    </div>
+  </div>
+</form>
+
+<div class="tabela-barra" style="margin-top:14px">
+  <span>{{ transferencias.quantos }} transferência(s) — {{ brl(transferencias.total) }}</span>
+</div>
+<div class="tabela-rolagem">
+  <table>
+    <thead><tr>
+      <th class="sem-ordem">Data</th>
+      <th class="sem-ordem">Saiu de</th>
+      <th class="sem-ordem">Entrou em</th>
+      <th class="sem-ordem">Categoria</th>
+      <th class="sem-ordem direita">Valor</th>
+      <th class="sem-ordem">Nº no OMIE</th>
+    </tr></thead>
+    <tbody>
+    {% for t in transferencias.pares %}
+      <tr>
+        <td class="dados">{{ t.data.strftime('%d/%m/%Y') if t.data else '—' }}</td>
+        <td class="desc">{{ t.origem }}</td>
+        <td class="desc">{{ t.destino }}</td>
+        <td class="desc"><small>{{ t.categoria }}</small></td>
+        <td class="dados direita">{{ brl(t.valor) }}</td>
+        <td class="dados"><small>{{ t.codigo_saida }} → {{ t.codigo_entrada }}</small></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="desc">
+        Nenhuma transferência nesse recorte.
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if transferencias.sem_par %}
+<div class="cartao" style="margin-top:14px; border-left:4px solid var(--ambar)">
+  <div class="cartao-cab"><h3>Sem o outro lado ({{ transferencias.quantos_sem_par }})</h3></div>
+  <p class="cartao-dica">
+    Estes lançamentos estão marcados como transferência, mas não têm o par na
+    outra conta — mesma data, mesmo valor. <b>Quase sempre quer dizer que o
+    lançamento do outro lado não está classificado como transferência</b>, e
+    então ele está entrando no resultado como se fosse receita ou despesa.
+    Vale conferir no OMIE.
+  </p>
+  <div class="tabela-rolagem" style="max-height:300px">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Data</th>
+        <th class="sem-ordem">Conta</th>
+        <th class="sem-ordem">O que falta</th>
+        <th class="sem-ordem">Contraparte</th>
+        <th class="sem-ordem direita">Valor</th>
+        <th class="sem-ordem">Nº no OMIE</th>
+      </tr></thead>
+      <tbody>
+      {% for x in transferencias.sem_par %}
+        <tr>
+          <td class="dados">{{ x.data.strftime('%d/%m/%Y') if x.data else '—' }}</td>
+          <td class="desc">{{ x.conta }}</td>
+          <td class="desc"><small>{{ x.sentido }}</small></td>
+          <td class="desc"><small>{{ x.razao_social or '—' }}</small></td>
+          <td class="dados direita">{{ brl(x.valor) }}</td>
+          <td class="dados">{{ x.codigo }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+
+<div class="kpis">
+  <div class="kpi estatico verde">
+    <div class="kpi-rotulo">Entrou</div>
+    <div class="kpi-valor">{{ brl(dados.entradas) }}</div>
+  </div>
+  <div class="kpi estatico vermelho">
+    <div class="kpi-rotulo">Saiu</div>
+    <div class="kpi-valor">{{ brl(dados.saidas) }}</div>
+  </div>
+  <div class="kpi estatico ciano">
+    <div class="kpi-rotulo">Diferença no período</div>
+    <div class="kpi-valor">{{ brl(dados.liquido) }}</div>
+    <div class="kpi-sub">não é o saldo da conta: é entrou menos saiu</div>
+  </div>
+</div>
+
+<form method="get" class="cartao" style="margin-top:14px">
+  {{ esconde(['categoria', 'busca', 'ordem', 'de', 'ate']) }}
+  <div class="form-grade">
+    <div class="campo">
+      <label for="de">De</label>
+      <input id="de" name="de" type="date" value="{{ de }}">
+    </div>
+    <div class="campo">
+      <label for="ate">Até</label>
+      <input id="ate" name="ate" type="date" value="{{ ate }}">
+    </div>
+    <div class="campo">
+      <label for="categoria">Categoria</label>
+      <select id="categoria" name="categoria">
+        <option value="">Todas</option>
+        {% for c in categorias %}
+          <option value="{{ c }}" {% if c == categoria %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="busca">Procurar</label>
+      <input id="busca" name="busca" value="{{ busca }}"
+             placeholder="nome, CNPJ, documento ou observação">
+    </div>
+    <div class="campo">
+      <label for="ordem">Ordem</label>
+      <select id="ordem" name="ordem">
+        <option value="data" {% if ordem == 'data' %}selected{% endif %}>Data, mais antigo primeiro</option>
+        <option value="data_desc" {% if ordem == 'data_desc' %}selected{% endif %}>Data, mais recente primeiro</option>
+        <option value="valor" {% if ordem == 'valor' %}selected{% endif %}>Maior valor</option>
+      </select>
+    </div>
+    <div class="campo" style="align-self:flex-end">
+      <button class="btn" type="submit">Aplicar</button>
+    </div>
+  </div>
+</form>
+
+<div class="tabela-barra" style="margin-top:14px">
+  <span>{{ '{:,}'.format(dados.quantos).replace(',', '.') }} lançamento(s)</span>
+  <a class="btn secundario" style="text-decoration:none"
+     href="{{ link_baixar('extrato') }}">Baixar o extrato</a>
+</div>
+
+<div class="tabela-rolagem">
+  <table id="lista-extrato">
+    <thead>
+      <tr>
+        <th class="sem-ordem">Data</th>
+        <th class="sem-ordem">Cliente ou Fornecedor</th>
+        <th class="sem-ordem">CNPJ/CPF</th>
+        <th class="sem-ordem">Conta</th>
+        <th class="sem-ordem">Categoria</th>
+        <th class="sem-ordem">Obra</th>
+        <th class="sem-ordem">Documento</th>
+        <th class="sem-ordem">Observação</th>
+        <th class="sem-ordem direita">Valor</th>
+        <th class="sem-ordem"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for l in dados.linhas %}
+      <tr>
+        <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+        <td class="desc">{{ l.razao_social or '—' }}</td>
+        <td class="dados"><small>{{ l.cnpj or '—' }}</small></td>
+        <td class="desc"><small>{{ l.conta }}</small></td>
+        <td class="desc"><small>{{ l.categoria }}</small></td>
+        <td class="desc"><small>{{ l.obra }}</small></td>
+        <td class="dados"><small>{{ l.documento or '—' }}</small></td>
+        <td class="desc"><small>{{ l.observacao or '—' }}</small></td>
+        <td class="dados direita {{ classe_valor(l.valor) }}">{{ brl(l.valor) }}</td>
+        <td>{% if l.link %}<a href="{{ l.link }}" target="_blank"
+               rel="noopener" title="Abrir no Pipefy">↗</a>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="10" class="desc">
+        Nenhum lançamento nesse recorte.
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if dados.paginas > 1 %}
+<div class="tabela-barra">
+  <span>Página {{ dados.pagina }} de {{ dados.paginas }}</span>
+  <span>
+    {% if dados.pagina > 1 %}
+      <a href="{{ pagina_link(dados.pagina - 1) }}">← anterior</a>
+    {% endif %}
+    {% if dados.pagina < dados.paginas %}
+      <a href="{{ pagina_link(dados.pagina + 1) }}">próxima →</a>
+    {% endif %}
+  </span>
+</div>
+{% endif %}
+
+{% endif %}
+
+<p class="cartao-dica">
+  A <b>observação</b> só aparece depois de rodar “Buscar as observações”, em
+  Configurações — o OMIE não a entrega na listagem, só consultando título a
+  título.
+</p>
+{% endblock %}

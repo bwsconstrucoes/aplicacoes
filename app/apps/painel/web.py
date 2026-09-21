@@ -82,17 +82,22 @@ def _ajudantes_de_template():
         grupo, dentro do mesmo recorte de ano, projeto e obra — e nao para a
         base inteira."""
         args = {c: request.args.getlist(c) for c in
-                ("ano", "projeto", "obra") if request.args.getlist(c)}
+                ("ano", "projeto", "obra", "conta") if request.args.getlist(c)}
         if request.args.get("trf"):
             args["trf"] = "1"
         args.update({k: v for k, v in extras.items() if v})
         return url_for("painel.analitico", **args)
 
     def pagina_link(numero):
-        """Link para outra pagina do Analitico, guardando todos os filtros."""
+        """Link para outra pagina da tela ATUAL, guardando todos os filtros.
+
+        Antes apontava para o Analitico com o nome escrito. Com o Extrato, em
+        21/09/2026, isso jogaria quem virasse a pagina do extrato para dentro do
+        analitico — e o filtro de conta iria junto, mostrando uma tela que nao e
+        a que a pessoa estava lendo."""
         args = request.args.to_dict(flat=False)
         args["pagina"] = [str(numero)]
-        return url_for("painel.analitico", **args)
+        return url_for(request.endpoint or "painel.analitico", **args)
 
     def link_baixar(assunto, **extras):
         """Link de download levando os filtros da tela — TODOS eles.
@@ -306,6 +311,8 @@ def _filtros_do_pedido():
     anos = [int(a) for a in request.args.getlist("ano") if str(a).strip().isdigit()]
     obras = [o for o in request.args.getlist("obra") if o]
 
+    contas = [c for c in request.args.getlist("conta") if c]
+
     pessoa = auth.usuario_da_sessao()
     if pessoa is not None:
         permitidas = set(pessoa.get("obras") or [])
@@ -314,10 +321,16 @@ def _filtros_do_pedido():
         # virar acesso total. O guard ja barra antes, e isto e a segunda tranca.
         if not obras:
             obras = ["\u0000nenhuma obra liberada"]
+        # A CONTA segue a mesma regra, e pelo mesmo motivo. So que aqui ha uma
+        # diferenca: conta liberada e opcional — quem nao tem nenhuma marcada
+        # simplesmente nao usa o Extrato, e as outras telas seguem normais.
+        contas_ok = set(pessoa.get("contas") or [])
+        if contas_ok:
+            contas = [c for c in contas if c in contas_ok] or sorted(contas_ok)
 
     return Filtros(anos=anos,
                    projetos=[p for p in request.args.getlist("projeto") if p],
-                   departamentos=obras,
+                   departamentos=obras, contas=contas,
                    excluir_trf=request.args.get("trf") != "1")
 
 
@@ -330,6 +343,7 @@ ABAS = [
     ("obras", "Resultado por Obra", "painel.obras"),
     ("execucao", "Comprometido × Executado", "painel.execucao"),
     ("caixa", "Necessidade de Caixa", "painel.necessidade_caixa"),
+    ("extrato", "Extrato de Conta", "painel.extrato"),
     ("prestacao", "Prestação de Contas", "painel.prestacao_contas"),
     ("config", "Configurações", "painel.configuracoes"),
 ]
@@ -384,7 +398,10 @@ def _opcoes_no_escopo():
     if pessoa is None:
         return opcoes
     permitidas = set(pessoa.get("obras") or [])
-    return dict(opcoes, obras=[o for o in opcoes["obras"] if o in permitidas])
+    contas_ok = set(pessoa.get("contas") or [])
+    return dict(opcoes,
+                obras=[o for o in opcoes["obras"] if o in permitidas],
+                contas=[c for c in opcoes.get("contas", []) if c in contas_ok])
 
 
 def _contexto_comum(aba: str):
@@ -399,6 +416,7 @@ def _contexto_comum(aba: str):
             "anos": request.args.getlist("ano"),
             "projetos": request.args.getlist("projeto"),
             "obras": request.args.getlist("obra"),
+            "contas": request.args.getlist("conta"),
             "trf": request.args.get("trf") == "1",
         },
     }
@@ -541,6 +559,57 @@ def analitico():
         dados=consultas.analitico_despesas(
             f, grupo=grupo, categoria=categoria, credor=credor, busca=busca,
             visao=visao, ordem=ordem, de=de, ate=ate, base=base, pagina=pagina),
+    )
+
+
+@bp.route("/extrato")
+def extrato():
+    """O que entrou e o que saiu de uma conta corrente, por data.
+
+    E o Analitico da CONTA, no lugar do da obra — para dar para conferir lado a
+    lado com o extrato do proprio OMIE. So o que virou dinheiro, sem coluna de
+    vencimento, e SEM o corte do DRE: tarifa e rendimento aparecem aqui, porque
+    aconteceram na conta."""
+    from . import consultas
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    f = _filtros_do_pedido()
+    de, ate = _faixa_de_data()
+    try:
+        pagina = int(request.args.get("pagina") or 1)
+    except ValueError:
+        pagina = 1
+    # Duas visões da mesma tela: os lançamentos da conta, ou as transferências
+    # entre contas com OS DOIS LADOS juntos. Ficam aqui, e não em outra aba,
+    # porque a pergunta é a mesma — "o que andou nesta conta?" — e os filtros
+    # são os mesmos.
+    visao = request.args.get("visao", "lancamentos")
+    if visao not in ("lancamentos", "transferencias"):
+        visao = "lancamentos"
+
+    pessoa = auth.usuario_da_sessao()
+    transferencias = None
+    if visao == "transferencias":
+        transferencias = consultas.transferencias_entre_contas(
+            f, de=de, ate=ate, destino=request.args.get("destino", ""),
+            contas_visiveis=(pessoa.get("contas") if pessoa else None))
+
+    return render_template(
+        "painel_extrato.html",
+        **_contexto_comum("extrato"),
+        chips=f.resumo(),
+        de=de, ate=ate, visao=visao,
+        destino=request.args.get("destino", ""),
+        busca=(request.args.get("busca") or "").strip(),
+        categoria=request.args.get("categoria", ""),
+        ordem=request.args.get("ordem", "data"),
+        categorias=consultas.categorias_do_extrato(f),
+        transferencias=transferencias,
+        dados=consultas.extrato_da_conta(
+            f, busca=(request.args.get("busca") or "").strip(),
+            categoria=request.args.get("categoria", ""),
+            de=de, ate=ate, ordem=request.args.get("ordem", "data"),
+            pagina=pagina) if visao == "lancamentos" else None,
     )
 
 
@@ -1133,13 +1202,14 @@ def usuarios_salvar():
     acao = (request.form.get("acao") or "").strip()
     obras = [o for o in request.form.getlist("obra_do_usuario") if o.strip()]
     telas = [t for t in request.form.getlist("tela_do_usuario") if t.strip()]
+    contas = [c for c in request.form.getlist("conta_do_usuario") if c.strip()]
     uid = (request.form.get("usuario_id") or "").strip()
 
     if acao == "criar":
         r = usuarios.criar(request.form.get("novo_usuario", ""),
                            request.form.get("nova_senha", ""),
                            nome=request.form.get("nome", ""),
-                           obras=obras, telas=telas)
+                           obras=obras, telas=telas, contas=contas)
     elif acao == "apagar" and uid.isdigit():
         r = usuarios.apagar(int(uid))
     elif acao == "salvar" and uid.isdigit():
@@ -1147,7 +1217,7 @@ def usuarios_salvar():
             int(uid), nome=request.form.get("nome"),
             senha=request.form.get("nova_senha"),
             ativo=request.form.get("ativo") == "1",
-            obras=obras, telas=telas)
+            obras=obras, telas=telas, contas=contas)
     else:
         r = {"ok": False, "erro": "Pedido não reconhecido."}
 
@@ -1354,6 +1424,14 @@ def _obras_para_liberar(estado_migracoes):
     return consultas.opcoes_de_filtro()["obras"]
 
 
+def _contas_para_liberar(estado_migracoes):
+    """As contas correntes que dá para marcar no cadastro de acesso."""
+    if estado_migracoes["pendentes"]:
+        return []
+    from . import consultas
+    return consultas.opcoes_de_filtro().get("contas", [])
+
+
 def _pessoas_do_painel(estado_migracoes):
     """A lista de quem tem acesso. Vazia enquanto a migração 013 não rodar —
     sem isso a tela de Configurações quebraria justamente para quem vai apertar
@@ -1450,6 +1528,7 @@ def configuracoes():
         telas_liberaveis=usuarios_mod.TELAS,
         telas_sugeridas=usuarios_mod.TELAS_SUGERIDAS,
         obras_para_liberar=_obras_para_liberar(estado_migracoes),
+        contas_para_liberar=_contas_para_liberar(estado_migracoes),
         erro_usuario=request.args.get("erro_usuario", ""),
         usuario_ok=request.args.get("usuario_ok") == "1",
     )
@@ -1681,6 +1760,14 @@ def baixar(assunto):
     montadores = {
         "dre": lambda: [("DRE", C["dre"], _dre())],
         "analitico": lambda: [("Despesas Analitico", C["analitico"], _analitico())],
+        "extrato": lambda: [("Extrato de Conta", C["extrato"],
+                             consultas.extrato_da_conta(
+                                 f, busca=(request.args.get("busca") or "").strip(),
+                                 categoria=request.args.get("categoria", ""),
+                                 de=request.args.get("de", ""),
+                                 ate=request.args.get("ate", ""),
+                                 ordem=request.args.get("ordem", "data"),
+                                 por_pagina=20000)["linhas"])],
         "despesas": lambda: [("Despesas", C["despesas"], consultas.despesas_por(
             f, quebra=request.args.get("quebra", "grupo"),
             visao=request.args.get("visao", "comprometido"), limite=1000))],

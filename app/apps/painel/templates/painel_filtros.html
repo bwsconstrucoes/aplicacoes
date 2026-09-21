@@ -27,6 +27,11 @@
   {{ lista('ano', 'Ano', opcoes.anos, selecao.anos) }}
   {{ lista('projeto', 'Projeto', opcoes.projetos, selecao.projetos, com_busca=True) }}
   {{ lista('obra', 'Obra', opcoes.obras, selecao.obras, com_busca=True) }}
+  {# A conta corrente entrou com o Extrato, em 21/09/2026. Fica na barra como
+     os outros: quem filtra uma conta no Extrato e troca de tela leva o filtro
+     junto, que e o que o dono pediu quando perdeu a obra do Mercado Barbalha. #}
+  {{ lista('conta', 'Conta corrente', opcoes.contas or [], selecao.contas or [],
+           com_busca=True) }}
 
   <div class="filtro aberto">
     <div class="filtro-cont" style="padding-top:10px">
