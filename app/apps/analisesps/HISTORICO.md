@@ -6266,6 +6266,51 @@ deste ambiente bloqueia o domínio). A conferência mostra `baixa_realizada`
 direto do OMIE: é ali que isso se fecha.
 
 ---
+
+### Octogésima primeira leva (21/09) — o bloqueio do OMIE para o lote
+
+Trazendo a `main` para publicar a conferência, veio um conserto do chat do
+Painel que fala direto com este código. Vale registrar porque é o **segundo**
+caso no mesmo dia de dois chats chegarem ao mesmo lugar sem se falarem.
+
+Ele levou um bloqueio de verdade tentando apropriar um título:
+
+> `[425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.`
+> `ERRO: [MAX_TENTATIVAS] Falha apos 8 tentativas em AlterarContaReceber`
+
+E achou duas coisas que o cliente compartilhado não sabia: que o OMIE diz
+*"tente novamente em N segundos"* além de *"aguarde N segundos"*, e que título
+de período contábil fechado **nunca** vai passar — as oito tentativas só
+aprofundavam o bloqueio, porque é exatamente a repetição que ele pune.
+
+#### O que veio de lá e este módulo passou a usar
+
+O cliente ganhou `teto_de_espera` e a exceção `OmieBloqueada`. Acima do teto
+ele **para e diz quanto falta**, em vez de esperar.
+
+⚠️ **E o motivo do teto é o mesmo que escrevemos aqui de manhã**, com as
+palavras dele: *"a tela roda dentro do serviço web, que tem UM worker e 4 vias
+de atendimento; uma espera de um minuto ali prende uma das quatro e trava o
+sistema para todo mundo — inclusive para o ERP, que divide o processo."*
+
+Dois chats, no mesmo dia, pelo mesmo raciocínio. A gravação dos aportes passou
+a **reusar o teto dele** (`TETO_DE_ESPERA_NA_TELA`) em vez de inventar um: teto
+próprio divergiria do dele na primeira mudança, e aí o mesmo sistema teria dois
+limites diferentes para o mesmo problema.
+
+#### ⚠️ Bloqueio PARA o lote — e é o contrário de todo o resto daqui
+
+Uma linha que falha por motivo próprio **não leva as outras**: foi assim que o
+lote foi desenhado, e continua.
+
+**Bloqueio não é falha da linha.** É o OMIE dizendo "pare". Tentar a próxima
+cai no mesmo bloqueio e o **prolonga**. Então, bloqueou, o lote para — e as
+linhas que sobraram aparecem como *"nem cheguei a tentar"*, com o tempo que
+ele pediu, para o dono saber quando voltar.
+
+Há teste para os dois lados: bloqueio interrompe, falha comum não.
+
+---
 ---
 
 ## Regras que não se discutem

@@ -200,16 +200,39 @@ def ensaiar(plano: dict) -> list:
 # vai em toda inclusão, e o OMIE recusa a segunda com "código de integração já
 # cadastrado". É o que torna a retentativa segura mesmo escrevendo.
 # ---------------------------------------------------------------------------
+# ⚠️ E EM 21/09, NO MESMO DIA, O CHAT DO PAINEL CHEGOU AQUI POR OUTRO CAMINHO.
+#
+# Ele levou um bloqueio de verdade do OMIE tentando apropriar um título:
+#
+#   [425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.
+#
+# E descobriu duas coisas que o cliente compartilhado não sabia: que o OMIE
+# diz "tente novamente em N segundos" (e não só "aguarde N segundos"), e que
+# título de período contábil fechado NUNCA vai passar — repetir oito vezes só
+# aprofundava o bloqueio.
+#
+# O conserto dele ficou no cliente compartilhado, e traz o que falta aqui:
+# `teto_de_espera`. Acima dele o cliente levanta `OmieBloqueada` em vez de
+# ficar esperando — e o motivo é exatamente o que escrevemos acima, com as
+# palavras dele: *"a tela roda dentro do serviço web, que tem UM worker e 4
+# vias de atendimento; uma espera de um minuto ali prende uma das quatro e
+# trava o sistema para todo mundo — inclusive para o ERP, que divide o
+# processo."*
+#
+# Dois chats, sem se falarem, no mesmo dia, pelo mesmo motivo. Reusar o teto
+# dele é o certo: teto inventado aqui divergiria do dele na primeira mudança.
 SEGUNDOS_POR_TENTATIVA = 30
 TENTATIVAS = 3
 
 
 def _cliente():
-    from app.apps.painel.sync.omie_client import OmieClient
+    from app.apps.painel.sync.omie_client import (TETO_DE_ESPERA_NA_TELA,
+                                                  OmieClient)
     return OmieClient.de_ambiente(
         timeout=SEGUNDOS_POR_TENTATIVA,
         max_tentativas=TENTATIVAS,
         backoff_base=1.4,
+        teto_de_espera=TETO_DE_ESPERA_NA_TELA,
     )
 
 
@@ -321,11 +344,32 @@ def gravar_varios(planos: list, quem: str = "", cliente=None) -> list:
     controle de excesso de chamadas do OMIE, e criar um por linha jogaria isso
     fora justamente quando mais importa.
     """
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+
     cli = cliente or _cliente()
-    resultados = []
+    resultados, bloqueio = [], None
     for plano in planos:
+        # ⚠️ BLOQUEIO DO OMIE PARA O LOTE INTEIRO, e é o contrário do resto.
+        #
+        # Linha que falha por motivo próprio não leva as outras. Mas bloqueio
+        # não é falha da linha: é o OMIE dizendo "pare". Tentar a próxima cai
+        # no mesmo bloqueio e o PROLONGA — é exatamente a repetição que ele
+        # está punindo. As que sobraram viram "nem tentei", com o tempo que
+        # ele pediu, para o dono saber quando voltar.
+        if bloqueio is not None:
+            resultados.append({
+                "ok": False, "grupo": plano.get("grupo", ""),
+                "erro": f"Nem cheguei a tentar: {bloqueio}",
+                "titulos": [], "avisos": [], "orfaos": []})
+            continue
         try:
             resultados.append(gravar(plano, quem, cliente=cli))
+        except OmieBloqueada as e:
+            logger.warning("Aportes: o OMIE bloqueou o lote — %s", e)
+            bloqueio = e
+            resultados.append({
+                "ok": False, "grupo": plano.get("grupo", ""), "erro": str(e),
+                "titulos": [], "avisos": [], "orfaos": []})
         except Exception as e:  # noqa: BLE001 — a linha ruim não leva o lote
             logger.exception("Aportes: falhou gravar o lançamento %s do lote",
                              plano.get("grupo"))

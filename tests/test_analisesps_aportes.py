@@ -828,3 +828,86 @@ def test_conferir_traz_conta_categoria_e_baixa():
     assert linha["codigo_categoria"] == "1.02.95"
     assert linha["baixa_realizada"] == "N"
     assert linha["valor_aberto"] == 550000.0
+
+
+# ---------------------------------------------------------------------------
+# O BLOQUEIO DO OMIE PARA O LOTE — 21/09/2026
+# ---------------------------------------------------------------------------
+# No mesmo dia, o chat do Painel levou um bloqueio de verdade tentando
+# apropriar um título:
+#
+#   [425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.
+#
+# O conserto dele ficou no cliente compartilhado, e traz `OmieBloqueada` e um
+# teto de espera próprio para quem escreve pela TELA — porque o serviço tem um
+# worker e quatro vias de atendimento, divididas com o ERP.
+# ---------------------------------------------------------------------------
+def test_a_gravacao_usa_o_teto_de_espera_da_tela(monkeypatch):
+    """Teto inventado aqui divergiria do do painel na primeira mudança. O
+    certo é reusar o dele."""
+    from app.apps.painel.sync import omie_client as mod
+    capturado = {}
+
+    class ClienteFalso:
+        @classmethod
+        def de_ambiente(cls, **kwargs):
+            capturado.update(kwargs)
+            return cls()
+
+    monkeypatch.setattr(mod, "OmieClient", ClienteFalso)
+    aportes_omie._cliente()
+    assert capturado["teto_de_espera"] == mod.TETO_DE_ESPERA_NA_TELA
+    assert capturado["teto_de_espera"] < mod.TETO_DE_ESPERA, \
+        "usou o teto da carga noturna numa tela com gente esperando"
+
+
+def test_bloqueio_do_omie_para_o_lote_inteiro(monkeypatch):
+    """⚠️ É O CONTRÁRIO DO RESTO, e de propósito.
+
+    Linha que falha por motivo próprio não leva as outras. Mas bloqueio não é
+    falha da linha: é o OMIE dizendo "pare". Tentar a próxima cai no mesmo
+    bloqueio e o PROLONGA — é exatamente a repetição que ele está punindo."""
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+
+    planos = lote([{"data": "2026-09-21", "valor": "100,00"},
+                   {"data": "2026-10-21", "valor": "200,00"},
+                   {"data": "2026-11-21", "valor": "300,00"}])
+
+    tentativas = []
+
+    def gravar_falso(plano, quem, cliente=None):
+        tentativas.append(plano["grupo"])
+        if len(tentativas) == 2:
+            raise OmieBloqueada(664, "API bloqueada por consumo indevido")
+        return {"ok": True, "grupo": plano["grupo"], "titulos": [],
+                "avisos": [], "orfaos": []}
+
+    monkeypatch.setattr(aportes_omie, "gravar", gravar_falso)
+    resultados = aportes_omie.gravar_varios(planos, "Marcelo", cliente=object())
+
+    assert len(tentativas) == 2, "insistiu depois do bloqueio"
+    assert resultados[0]["ok"] is True
+    assert resultados[1]["ok"] is False
+    assert "664" in resultados[1]["erro"], "não disse quanto esperar"
+    # A terceira nem foi tentada, e a tela precisa saber disso.
+    assert resultados[2]["ok"] is False
+    assert "Nem cheguei a tentar" in resultados[2]["erro"]
+
+
+def test_falha_comum_continua_nao_parando_o_lote(monkeypatch):
+    """A distinção só vale se o outro caso continuar valendo."""
+    planos = lote([{"data": "2026-09-21", "valor": "100,00"},
+                   {"data": "2026-10-21", "valor": "200,00"}])
+    tentativas = []
+
+    def gravar_falso(plano, quem, cliente=None):
+        tentativas.append(plano["grupo"])
+        if len(tentativas) == 1:
+            raise RuntimeError("categoria inválida")
+        return {"ok": True, "grupo": plano["grupo"], "titulos": [],
+                "avisos": [], "orfaos": []}
+
+    monkeypatch.setattr(aportes_omie, "gravar", gravar_falso)
+    resultados = aportes_omie.gravar_varios(planos, "Marcelo", cliente=object())
+    assert len(tentativas) == 2, "uma linha ruim parou o lote"
+    assert resultados[1]["ok"] is True
