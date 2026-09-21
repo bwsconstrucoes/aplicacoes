@@ -3838,7 +3838,7 @@ def _contexto_dos_aportes() -> dict:
         "contas_omie": [], "contas_lembradas": {}, "categorias": {},
         "obras": [],
         "fornecedores": [], "faltas": [], "erro_espelho": "",
-        "historico": [], "orfaos": [], "situacoes": [],
+        "historico": [], "orfaos": [], "em_duvida": [], "situacoes": [],
         "senha_configurada": aportes_omie.senha_configurada(),
     }
     try:
@@ -3888,6 +3888,7 @@ def _contexto_dos_aportes() -> dict:
         ja_vistas.add(chave)
     ctx["historico"] = aportes_omie.historico(30)
     ctx["orfaos"] = aportes_omie.orfaos()
+    ctx["em_duvida"] = aportes_omie.em_duvida()
     return ctx
 
 

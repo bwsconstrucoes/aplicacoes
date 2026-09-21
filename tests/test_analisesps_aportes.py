@@ -645,3 +645,108 @@ def test_o_lote_continua_depois_de_uma_linha_que_estoura():
                                             cliente=MorreNoPrimeiro())
     assert resultados[0]["ok"] is False
     assert resultados[1]["ok"] is True, "a segunda linha não chegou a ser feita"
+
+
+# ---------------------------------------------------------------------------
+# A ESPERA TEM FIM — 21/09/2026
+# ---------------------------------------------------------------------------
+# *"Tentando gravar, mas tá demorando muito. Com certeza o OMIE já terá
+# respondido."* Ele estava certo, e a causa não era o OMIE.
+# ---------------------------------------------------------------------------
+def test_o_cliente_da_gravacao_nao_e_o_da_carga_noturna(monkeypatch):
+    """⚠️ O `OmieClient` nasceu para a carga do painel, que roda sozinha e pode
+    esperar: 120 s por tentativa, OITO tentativas. Pior caso de uma chamada:
+    17 minutos — e um lançamento são quatro chamadas.
+
+    Pior: o serviço tem 4 linhas de atendimento para os 18 blueprints. Quatro
+    gravações penduradas e o monorepo inteiro para de responder."""
+    capturado = {}
+
+    class ClienteFalso:
+        @classmethod
+        def de_ambiente(cls, **kwargs):
+            capturado.update(kwargs)
+            return cls()
+
+    import app.apps.painel.sync.omie_client as mod
+    monkeypatch.setattr(mod, "OmieClient", ClienteFalso)
+    aportes_omie._cliente()
+
+    assert capturado["timeout"] <= 60, "espera de carga noturna numa tela"
+    assert capturado["max_tentativas"] <= 4
+    pior = (capturado["timeout"] * capturado["max_tentativas"]
+            + sum(capturado["backoff_base"] ** t
+                  for t in range(1, capturado["max_tentativas"])))
+    assert pior < 180, f"pior caso de {pior:.0f}s por chamada"
+
+
+def test_a_tentativa_e_registrada_antes_de_chamar_o_omie(monkeypatch):
+    """Se o processo morrer no meio da chamada, sem este registro não sobra
+    nada dizendo que uma inclusão chegou a ser tentada — e ninguém saberia se
+    há título solto no OMIE."""
+    registros = []
+    monkeypatch.setattr(aportes_omie, "_registrar",
+                        lambda plano, t, cod, baixado, situacao, erro, quem:
+                        registros.append((situacao, cod)))
+
+    class MorreNaPrimeira:
+        def _call(self, url, call, param):
+            raise RuntimeError("o processo caiu")
+
+    aportes_omie.gravar(planejar(), "Marcelo", cliente=MorreNaPrimeira())
+    assert registros[0] == ("enviando", None), \
+        "chamou o OMIE sem deixar registro de que ia chamar"
+
+
+def test_o_lancamento_sem_resposta_aparece_na_lista_de_duvida(monkeypatch):
+    """É a lista que responde "mandei de novo ou não?"."""
+    monkeypatch.setattr(aportes_omie, "historico", lambda n=200: [
+        {"situacao": "enviando", "numero_documento": "APORTE-1"},
+        {"situacao": "gravado", "numero_documento": "APORTE-2"},
+        {"situacao": "orfao", "numero_documento": "APORTE-3"},
+    ])
+    assert [h["numero_documento"] for h in aportes_omie.em_duvida()] == \
+        ["APORTE-1"]
+
+
+# ---------------------------------------------------------------------------
+# O LIMITE DE 20 CARACTERES DO NÚMERO DO DOCUMENTO — 21/09/2026
+# ---------------------------------------------------------------------------
+# Descoberto do jeito mais caro: o dono tentou lançar e o OMIE recusou.
+#   "O número máximo de caracteres permitido para o elemento [NUMERO_DOCUMENTO]
+#    é de 20. O número de caracteres informado foi de 22!"
+# ---------------------------------------------------------------------------
+def test_o_numero_automatico_cabe_no_limite_do_omie():
+    for dia in ("2026-01-01", "2026-09-21", "2026-12-31"):
+        for _ in range(40):          # o sorteio muda a cada montagem
+            plano = planejar(data=dia)
+            numero = plano["numero_documento"]
+            assert len(numero) <= aportes.MAX_NUMERO_DOCUMENTO, \
+                f"{numero!r} tem {len(numero)}"
+            # E vai igual nos dois títulos: é o que amarra o par.
+            assert {t["numero_documento"] for t in plano["titulos"]} == {numero}
+
+
+def test_o_numero_digitado_grande_demais_e_recusado_na_tela():
+    """Melhor recusar aqui, na hora, do que gastar oito tentativas contra o
+    OMIE para ele receber a mesma notícia dois minutos depois."""
+    with pytest.raises(aportes.ErroDeRegra) as erro:
+        planejar(numero="APORTE-DA-OBRA-RESIDENCIAL-AURORA-2026")
+    frase = str(erro.value)
+    assert "20" in frase
+    assert "caracteres" in frase
+
+
+def test_o_numero_no_limite_exato_passa():
+    plano = planejar(numero="A" * aportes.MAX_NUMERO_DOCUMENTO)
+    assert plano["numero_documento"] == "A" * 20
+
+
+def test_o_numero_continua_dizendo_a_data_e_sendo_unico():
+    """Encurtar não podia custar as duas coisas que o número faz: dar para
+    reconhecer o lançamento na lista e não colidir com o do vizinho."""
+    plano = planejar(data="2026-09-21")
+    assert "260921" in plano["numero_documento"]
+    numeros = {planejar(data="2026-09-21")["numero_documento"]
+               for _ in range(50)}
+    assert len(numeros) == 50, "dois lançamentos do mesmo dia colidiram"

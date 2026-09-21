@@ -6120,6 +6120,74 @@ candidatos ou digitar o código direto. Continua guardado num "detalhes" quando
 não falta nada, e continua abrindo sozinho quando falta.
 
 ---
+
+### Septuagésima nona leva (21/09) — a primeira tentativa de gravar, e o que ela ensinou
+
+O dono tentou lançar de verdade. Duas coisas apareceram, e as duas valem
+registro porque nenhuma delas seria pega por teste nenhum sem a tentativa.
+
+#### 1. *"Tá demorando muito. Com certeza o OMIE já terá respondido."*
+
+Ele estava certo, e a causa não era o OMIE.
+
+⚠️ **O `OmieClient` nasceu para a carga noturna do painel**, que roda sozinha e
+pode esperar o quanto for: **120 segundos por tentativa, oito tentativas**,
+com pausa crescente entre elas. Pior caso de UMA chamada: **17 minutos**. Um
+lançamento são quatro chamadas — dois títulos e duas baixas. Quase 70 minutos.
+
+⚠️ **E o estrago não parava na tela dele.** O serviço roda com um processo e
+quatro linhas de atendimento (`--workers 1 --threads 4`) para os 18
+blueprints. Cada gravação pendurada ocupa uma delas por todo esse tempo:
+quatro e o monorepo inteiro para de responder. O `--timeout 3600` do gunicorn
+não socorre — ele deixa passar.
+
+A gravação passou a usar um cliente próprio: **30 segundos por tentativa,
+três tentativas**. Pior caso, um minuto e meio por chamada. Retentar continua
+seguro porque toda inclusão leva o `codigo_lancamento_integracao`, e o OMIE
+recusa a segunda com "código de integração já cadastrado".
+
+Três coisas a mais, do mesmo problema:
+
+- **a espera do navegador ganhou fim**, e o recado diz a única coisa que
+  importa: *"não mande de novo; recarregue e olhe o que já foi lançado"*;
+- **a tentativa passou a ser registrada ANTES da chamada** (`situacao =
+  'enviando'`). Se o processo morrer no meio, sem isso não sobraria nada
+  dizendo que uma inclusão chegou a ser tentada, e ninguém saberia se há
+  título solto no OMIE;
+- **a tela mostra o que ficou "enviando"**, com o número do documento, para
+  conferir no OMIE antes de relançar.
+
+#### 2. ⚠️ O número do documento tem limite de 20 caracteres
+
+A resposta do OMIE, palavra por palavra: *"O número máximo de caracteres
+permitido para o elemento [NUMERO_DOCUMENTO] é de 20. O número de caracteres
+informado foi de 22!"*
+
+O número que eu montava — `APORTE-20260921-A1B2C3` — tinha 22. Dois a mais.
+
+Agora o ano vai com dois dígitos e o sorteio com cinco: `APORTE-260921-A1B2C`,
+19 caracteres, um de folga. Continua dizendo a data (para reconhecer o
+lançamento na lista) e continua sem colidir — há teste montando cinquenta do
+mesmo dia e exigindo cinquenta números distintos.
+
+**E o limite é conferido ANTES de qualquer chamada**, inclusive para o número
+que o dono digita: recusar na tela, na hora, é melhor do que gastar oito
+tentativas contra o OMIE para ele receber a mesma notícia dois minutos depois,
+em linguagem de sistema.
+
+#### O que isso mostra sobre os limites que ainda não conhecemos
+
+Este repositório não alcança a documentação do OMIE (a rede bloqueia o
+domínio), e foi dito desde o começo que os campos vinham de código que já roda
+em produção. O `numero_documento` **vinha de lá** — e mesmo assim quebrou,
+porque lá ele é `"SP" + id`, sempre curto.
+
+A lição, e ela vale para o próximo campo: **campo copiado de outro lugar traz
+o formato, não o limite.** Onde o limite é conhecido, ele vira constante com
+nome e conferência antes da chamada. Onde não é, a mensagem do OMIE continua
+aparecendo inteira na tela — e é assim que se descobre o próximo.
+
+---
 ---
 
 ## Regras que não se discutem

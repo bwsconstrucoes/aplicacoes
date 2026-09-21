@@ -169,9 +169,48 @@ def ensaiar(plano: dict) -> list:
 # ---------------------------------------------------------------------------
 # A GRAVAÇÃO
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ⚠️ O CLIENTE DAQUI É OUTRO — 21/09/2026
+#
+# O dono tentou gravar e a tela ficou pendurada: *"tá demorando muito. Com
+# certeza o OMIE já terá respondido."*
+#
+# Ele estava certo, e a causa não era o OMIE. O `OmieClient` nasceu para a
+# CARGA NOTURNA DO PAINEL, que roda sozinha e pode esperar o quanto for: 120
+# segundos de espera por tentativa, OITO tentativas, com pausa crescente entre
+# elas. Pior caso de UMA chamada: 17 minutos. Um lançamento são quatro
+# chamadas (dois títulos e duas baixas): quase 70 minutos.
+#
+# ⚠️ E O ESTRAGO NÃO PARA NA TELA DELE. O serviço roda com 1 processo e 4
+# linhas de atendimento (`--workers 1 --threads 4`). Cada gravação pendurada
+# ocupa uma delas por todo esse tempo — quatro e o monorepo inteiro, os 18
+# blueprints, para de responder. O `--timeout 3600` do gunicorn não socorre:
+# ele deixa passar.
+#
+# Aqui tem gente esperando, então os números são outros:
+#
+#   · 30 s de espera por tentativa — o OMIE responde em segundos; passou
+#     disso, não é lentidão, é alguma coisa errada;
+#   · 3 tentativas, não 8;
+#   · pausa menor entre elas.
+#
+# Pior caso: pouco mais de um minuto e meio por chamada, contra dezessete.
+#
+# ⚠️ REPETIR UMA INCLUSÃO NÃO DUPLICA TÍTULO: o `codigo_lancamento_integracao`
+# vai em toda inclusão, e o OMIE recusa a segunda com "código de integração já
+# cadastrado". É o que torna a retentativa segura mesmo escrevendo.
+# ---------------------------------------------------------------------------
+SEGUNDOS_POR_TENTATIVA = 30
+TENTATIVAS = 3
+
+
 def _cliente():
     from app.apps.painel.sync.omie_client import OmieClient
-    return OmieClient.de_ambiente()
+    return OmieClient.de_ambiente(
+        timeout=SEGUNDOS_POR_TENTATIVA,
+        max_tentativas=TENTATIVAS,
+        backoff_base=1.4,
+    )
 
 
 def _numero_do_titulo(resposta: dict) -> int | None:
@@ -208,6 +247,13 @@ def gravar(plano: dict, quem: str = "", cliente=None) -> dict:
     for t in plano.get("titulos", []):
         url, incluir = PORTAS[t["natureza"]][:2]
         linha = {"titulo": t, "codigo": None, "erro": "", "baixado": False}
+        # ⚠️ REGISTRA ANTES DE CHAMAR, e isto é o que salva quando tudo dá
+        # errado ao mesmo tempo. Se o processo morrer no meio da chamada — o
+        # Render reiniciando, a rede caindo —, sem esta linha não sobraria
+        # nada dizendo que uma inclusão chegou a ser tentada, e ninguém
+        # saberia se há título solto no OMIE. Com ela, a tela mostra
+        # "enviando" e quem for conferir sabe onde procurar.
+        _registrar(plano, t, None, False, "enviando", "", quem)
         try:
             resposta = cli._call(url, incluir, montar_inclusao(t))
             codigo = _numero_do_titulo(resposta)
@@ -373,6 +419,17 @@ def historico(limite: int = 50) -> list:
               "data", "numero_documento", "codigo_lancamento_omie", "baixado",
               "situacao", "erro", "criado_em", "criado_por")
     return [dict(zip(campos, l)) for l in linhas]
+
+
+def em_duvida() -> list:
+    """Lançamentos que ficaram em "enviando" — nem confirmados, nem falhados.
+
+    Uma linha só fica assim se o processo morreu no meio da chamada ao OMIE:
+    o Render reiniciando, a rede caindo, a publicação de uma versão nova. O
+    título PODE existir lá dentro. É a lista que responde "mandei de novo ou
+    não?", e por isso ela aparece na tela em vez de dormir no banco.
+    """
+    return [h for h in historico(200) if h.get("situacao") == "enviando"]
 
 
 def orfaos() -> list:

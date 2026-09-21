@@ -319,12 +319,29 @@ def data_br(d: date) -> str:
 # ---------------------------------------------------------------------------
 # O NÚMERO E A OBSERVAÇÃO — automáticos, e o dono pode editar
 # ---------------------------------------------------------------------------
+# ⚠️ O OMIE ACEITA NO MÁXIMO 20 CARACTERES NO NÚMERO DO DOCUMENTO.
+#
+# Descoberto do jeito mais caro em 21/09/2026: o dono tentou lançar e o OMIE
+# recusou — *"o número máximo de caracteres permitido para o elemento
+# [NUMERO_DOCUMENTO] é de 20. O número de caracteres informado foi de 22!"*.
+# O número que este arquivo montava tinha 22.
+#
+# O limite fica aqui, com nome, porque ele não é palpite: veio da boca do
+# OMIE. E é conferido ANTES de qualquer chamada — mandar algo que vai ser
+# recusado custa oito tentativas com espera entre elas, e o dono olhando uma
+# tela parada.
+MAX_NUMERO_DOCUMENTO = 20
+
+
 def numero_automatico(grupo: str) -> str:
     """O MESMO número nos dois títulos de uma operação interna.
 
     É isto que permite achar o par depois: sem um número comum, dois títulos
     em contas diferentes são dois lançamentos soltos, e descobrir que um é a
     contrapartida do outro vira arqueologia.
+
+    O formato cabe nos 20 caracteres do OMIE com folga de um: "APORTE-" mais
+    a data em seis dígitos e cinco sorteados, 19 ao todo.
     """
     return f"APORTE-{grupo}"
 
@@ -389,6 +406,14 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
 
     grupo = str(grupo or "").strip() or _novo_grupo(data_d)
     numero = str(numero or "").strip() or numero_automatico(grupo)
+    # ⚠️ CONFERIDO AQUI, ANTES DE QUALQUER CHAMADA. Vale também para o número
+    # que o dono digita: melhor recusar na tela, na hora, do que gastar oito
+    # tentativas contra o OMIE para ele receber a mesma notícia em inglês de
+    # sistema, dois minutos depois.
+    if len(numero) > MAX_NUMERO_DOCUMENTO:
+        raise ErroDeRegra(
+            f"O número do documento tem {len(numero)} caracteres e o OMIE "
+            f"aceita no máximo {MAX_NUMERO_DOCUMENTO}: \"{numero}\".")
 
     escolhidas = {"origem": conta_origem, "destino": conta_destino}
     titulos = []
@@ -553,13 +578,17 @@ def planejar_lote(*, parcelas, **comuns) -> list:
 def _novo_grupo(d: date) -> str:
     """Identificador curto e legível, que vai para o número do documento.
 
-    Data + seis caracteres aleatórios. A data na frente serve para o dono
-    reconhecer o lançamento na lista sem abrir; o sorteio evita que dois
-    aportes do mesmo dia colidam no código de integração — e é justamente
-    essa colisão que o OMIE usa para recusar a gravação repetida.
+    Data em SEIS dígitos (aammdd) e cinco sorteados. A data na frente serve
+    para o dono reconhecer o lançamento na lista sem abrir; o sorteio evita
+    que dois aportes do mesmo dia colidam no código de integração — e é
+    justamente essa colisão que o OMIE usa para recusar a gravação repetida.
+
+    ⚠️ O ano vai com dois dígitos e o sorteio tem cinco caracteres por uma
+    razão só: caber nos 20 do OMIE. Com quatro dígitos de ano e seis
+    sorteados, o número saía com 22 e a gravação era recusada.
     """
     import secrets
-    return f"{d.strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}"
+    return f"{d.strftime('%y%m%d')}-{secrets.token_hex(3).upper()[:5]}"
 
 
 # ---------------------------------------------------------------------------

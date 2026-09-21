@@ -74,6 +74,23 @@
   </div>
 {% endif %}
 
+{% if em_duvida %}
+  <div class="aviso atencao">
+    <b>Há lançamento que ficou sem resposta.</b> O envio ao OMIE começou e o
+    sistema nunca soube como terminou — o processo pode ter sido reiniciado no
+    meio. <u>O título pode existir lá dentro.</u>
+    <p><b>Confira no OMIE antes de lançar de novo</b>, procurando pelo número
+      do documento abaixo:</p>
+    <ul style="margin:8px 0 0 18px">
+      {% for d in em_duvida %}
+        <li><code>{{ d.numero_documento }}</code> — {{ d.papel }},
+            {{ d.sentido }}, {{ d.valor }} em {{ d.data }}
+            <small>(enviado por {{ d.criado_por }} em {{ d.criado_em }})</small></li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
 {# ===========================================================================
    SÓ APARECE QUANDO FALTA ALGUMA DECISÃO. No dia a dia, esta caixa não existe.
    =========================================================================== #}
@@ -544,23 +561,48 @@
     const botao = document.getElementById("btn-gravar");
     const saida = document.getElementById("resultado");
     botao.disabled = true;                      // clique duplo = aporte duplo
+    const quantasLinhas = (planoConferido.parcelas || [{}]).length;
     botao.textContent = "Gravando…";
+    saida.innerHTML = '<div class="aviso"><b>Falando com o OMIE…</b> ' +
+      (quantasLinhas > 1 ? quantasLinhas + " lançamentos, um de cada vez. " : "") +
+      "Não feche nem recarregue a tela — ela avisa quando terminar.</div>";
+
+    // ⚠️ A ESPERA TEM FIM, E O FIM AVISA O QUE FAZER — 21/09/2026.
+    //
+    // Antes o navegador esperava para sempre, e o dono ficou olhando uma tela
+    // parada sem saber se tinha entrado ou não. Agora há um teto; passando
+    // dele, o recado diz a única coisa que importa: o servidor PODE ter
+    // gravado, então o certo é recarregar e olhar a lista, nunca mandar de
+    // novo às cegas.
+    const TETO = 120000 + 90000 * quantasLinhas;
+    const corte = new AbortController();
+    const relogioCorte = setTimeout(() => corte.abort(), TETO);
+
     const corpo = Object.assign({}, planoConferido,
                                 {senha: document.getElementById("senha").value});
     let d;
     try {
       const r = await fetch("{{ url_for('analisesps.aportes_gravar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(corpo)});
+        body: JSON.stringify(corpo), signal: corte.signal});
       d = await r.json();
     } catch (e) {
-      saida.innerHTML = '<div class="aviso erro">Não consegui falar com o ' +
-                        "servidor: " + e + ". <b>Confira no OMIE antes de " +
-                        "tentar de novo</b> — o lançamento pode ter entrado." +
-                        "</div>";
-      botao.disabled = false;
-      botao.textContent = "Gravar no OMIE";
+      const desistiu = (e && e.name === "AbortError");
+      saida.innerHTML = '<div class="aviso erro">' +
+        (desistiu
+          ? "<b>Passou do tempo que eu espero por uma resposta.</b> " +
+            "O servidor pode ter gravado assim mesmo."
+          : "<b>Não consegui falar com o servidor:</b> " + e + ".") +
+        "<br><br><b>Não mande de novo.</b> Recarregue esta tela e olhe " +
+        "<i>“O que já foi lançado por aqui”</i>, no fim da página: o que " +
+        "chegou ao OMIE está lá, com o número do título. Só refaça o que " +
+        "não aparecer." +
+        '<p><a class="btn" href="">Recarregar a tela</a></p></div>';
+      botao.disabled = true;      // de propósito: mandar de novo é o erro
+      botao.textContent = "Não sei se entrou";
       return;
+    } finally {
+      clearTimeout(relogioCorte);
     }
 
     let html = "";
