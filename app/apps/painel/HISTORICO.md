@@ -1254,6 +1254,54 @@ metade: cada um ou foi gravado ou nem começou.
 serviço no Render. O trabalho roda dentro da requisição; fechar a aba não para
 nada. Publicar também reinicia, então publicar um conserto já dá o stop.
 
+## Excluir título no OMIE, pelo Explorador — 21/09/2026
+
+O dono pediu um botão para excluir os títulos marcados. Perguntei antes de
+fazer, porque "excluir" tinha dois sentidos muito diferentes com o mesmo nome, e
+um deles não tem volta. As escolhas dele, registradas:
+
+- **apagar no OMIE mesmo** (não só esconder do painel);
+- **título com baixa vai do mesmo jeito** — quem decide é o OMIE, não o painel.
+
+### As travas
+
+| | Alterar | Excluir |
+|---|---|---|
+| Teto por lote | 200 | **50** |
+| Senha de execução | sim | sim |
+| Ensaio por padrão | sim | sim |
+| Palavra digitada à mão | — | **EXCLUIR** |
+| Registro no banco | sim | sim |
+
+O teto menor não é capricho: alterar 200 errado custa alterar 200 de volta;
+excluir 200 errado custa **redigitar 200** — quando se sabe o que havia.
+
+A palavra digitada existe porque **marcar uma caixinha por engano acontece;
+digitar EXCLUIR por engano, não**.
+
+Título com baixa não é recusado, mas **aparece marcado em vermelho no ensaio**,
+antes de confirmar. Recusar é uma coisa; esconder é outra.
+
+### O título sai do painel na hora, e só depois do OMIE confirmar
+
+Excluir no OMIE **não** chega pela atualização do dia: ela pergunta "o que
+mudou?", e um título apagado não aparece numa lista de mudanças. Quem nota é a
+varredura de excluídos, que só roda na **Atualização completa** — no caso do
+dono, toda madrugada.
+
+Então quem exclui pelo botão tira o título da base local no mesmo movimento.
+Sem isso ele apagaria, olharia a tela, veria o título lá e concluiria que não
+funcionou. **Mas só depois de o OMIE confirmar**: apagar aqui antes seria perder
+de vista um título que continua existindo lá.
+
+### Um detalhe de tela que estava faltando desde sempre
+
+A caixa de marcar das linhas não tinha `name`: a marcação só existia na memória
+do navegador, e o servidor nunca ficava sabendo. Funcionava para a alteração
+porque o JavaScript monta campos escondidos com o que foi editado — mas marcar
+sem editar não chegava a lugar nenhum. Agora chega, que é o que a exclusão
+precisa.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

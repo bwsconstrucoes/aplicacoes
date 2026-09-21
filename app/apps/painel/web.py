@@ -974,6 +974,8 @@ def explorador():
         categorias_omie=consultas.categorias_para_alterar(),
         obras_omie=consultas.departamentos_para_alterar(),
         alteracao=None, erro_alteracao=None,
+        exclusao=None, erro_exclusao=None,
+        teto_de_exclusao=saneamento.TETO_DE_EXCLUSAO,
     )
 
 
@@ -1038,6 +1040,65 @@ def explorador_alterar():
         categorias_omie=consultas.categorias_para_alterar(),
         obras_omie=consultas.departamentos_para_alterar(),
         alteracao=resultado, erro_alteracao=erro,
+        exclusao=None, erro_exclusao=None,
+        teto_de_exclusao=saneamento.TETO_DE_EXCLUSAO,
+    )
+
+
+@bp.route("/explorador/excluir", methods=["POST"])
+def explorador_excluir():
+    """APAGA titulos no OMIE. Nao ha desfazer.
+
+    Rota separada da alteracao de proposito: mesmo formulario, mesmo botao, e
+    um dia alguem clica no lugar errado. Aqui vale tudo o que vale na
+    alteracao — senha propria, ensaio por padrao, registro no banco — mais um
+    teto menor, porque o erro aqui nao se conserta alterando de novo."""
+    from . import saneamento
+
+    codigos = request.form.getlist("codigo")
+    executar = request.form.get("executar") == "1"
+
+    erro = None
+    if executar:
+        if not saneamento.escrita_configurada():
+            erro = ("A exclusão no OMIE está desligada neste serviço: falta a "
+                    "senha de execução (PAINEL_SENHA_ESCRITA).")
+        elif not saneamento.senha_de_escrita_confere(request.form.get("senha", "")):
+            logger.warning("Painel: senha de execucao incorreta na exclusao do OMIE.")
+            erro = "Senha de execução incorreta. Nada foi excluído."
+        # Exigir a palavra escrita a mao: marcar uma caixinha por engano
+        # acontece; digitar EXCLUIR por engano, nao.
+        elif (request.form.get("confirmacao") or "").strip().upper() != "EXCLUIR":
+            erro = ("Para excluir de verdade, digite EXCLUIR no campo de "
+                    "confirmação. Nada foi excluído.")
+
+    resultado = None
+    if not erro:
+        resultado = saneamento.excluir(codigos, simulacao=not executar)
+        if not resultado.get("ok"):
+            erro, resultado = resultado.get("erro"), None
+
+    from . import consultas
+    pedido = _pedido_do_explorador()
+    dados = consultas.explorar(pedido)
+    return render_template(
+        "painel_explorador.html",
+        aba_ativa="config", abas=ABAS,
+        pedido=pedido, escolheu=True,
+        dados=dados,
+        resumo=consultas.resumo_do_explorador(pedido),
+        opcoes=consultas.opcoes_do_explorador(),
+        fornecedores=consultas.fornecedores_do_recorte(dados),
+        sem_obra=consultas.SEM_OBRA,
+        sem_fornecedor=consultas.SEM_FORNECEDOR,
+        teto=consultas.TETO_DO_EXPLORADOR,
+        teto_do_lote=saneamento.TETO_POR_LOTE,
+        teto_de_exclusao=saneamento.TETO_DE_EXCLUSAO,
+        escrita_ligada=saneamento.escrita_configurada(),
+        categorias_omie=consultas.categorias_para_alterar(),
+        obras_omie=consultas.departamentos_para_alterar(),
+        exclusao=resultado, erro_exclusao=erro,
+        alteracao=None, erro_alteracao=None,
     )
 
 

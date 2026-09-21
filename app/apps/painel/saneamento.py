@@ -88,6 +88,147 @@ def titulos_para_alterar(codigos) -> list[dict]:
     return saida
 
 
+# EXCLUIR TEM TETO PROPRIO, e menor.
+#
+# Alterar 200 titulos de uma vez, errando, custa alterar 200 de volta. Excluir
+# 200 errado custa redigitar 200 — quando se sabe o que havia. Um lote pequeno e
+# a diferenca entre um erro chato e um irreparavel.
+TETO_DE_EXCLUSAO = 50
+
+
+def titulos_para_excluir(codigos) -> list[dict]:
+    """O que a tela mostra ANTES de apagar: valor, data, quem, e se tem baixa.
+
+    A baixa aparece porque apagar titulo conciliado desmonta o extrato. O dono
+    escolheu, em 21/09/2026, que o painel NAO recusa por conta propria — quem
+    decide e o OMIE. Mas ele tem de ver, antes de confirmar, no que esta
+    mexendo: recusar e uma coisa, esconder e outra."""
+    codigos = [int(c) for c in codigos if str(c).strip().isdigit()]
+    if not codigos:
+        return []
+    marcas = ",".join(["?"] * len(codigos))
+    linhas = consultar(
+        "SELECT DISTINCT ON (f.codigo_lancamento) f.codigo_lancamento, f.tipo,"
+        "       f.numero_documento, f.categoria, f.departamento, f.razao_social,"
+        "       f.data, f.situacao, f.pago_recebido, f.a_pagar_receber,"
+        "       EXISTS (SELECT 1 FROM movimentos m"
+        "                WHERE m.ncodtitulo = f.codigo_lancamento"
+        "                  AND UPPER(COALESCE(m.cliquidado,'')) = 'S')"
+        f"  FROM fato f WHERE f.codigo_lancamento IN ({marcas})"
+        " ORDER BY f.codigo_lancamento", codigos)
+    campos = ("codigo", "tipo", "documento", "categoria", "departamento",
+              "razao_social", "data", "situacao", "pago_recebido",
+              "a_pagar_receber", "tem_baixa")
+    saida = []
+    for bruta in linhas:
+        titulo = dict(zip(campos, bruta))
+        titulo["pago_recebido"] = float(titulo["pago_recebido"] or 0)
+        titulo["a_pagar_receber"] = float(titulo["a_pagar_receber"] or 0)
+        titulo["tem_baixa"] = bool(titulo["tem_baixa"])
+        titulo["rateado_em"] = rateio_do_titulo(titulo["codigo"])
+        saida.append(titulo)
+    return saida
+
+
+def _apagar_do_painel(conn, codigo: int) -> None:
+    """Tira o titulo da base local, depois de o OMIE ter confirmado.
+
+    Sem isto, o titulo apagado no OMIE continuaria no painel ate a proxima
+    ATUALIZACAO COMPLETA — a varredura de excluidos roda uma vez por semana, nao
+    todo dia. O dono apagaria, olharia a tela, veria o titulo la, e concluiria
+    que nao funcionou."""
+    conn.execute("DELETE FROM fato WHERE codigo_lancamento = ?", (codigo,))
+    conn.execute("DELETE FROM fato_recebimentos WHERE codigo_lancamento = ?", (codigo,))
+    conn.execute("DELETE FROM movimentos WHERE ncodtitulo = ?", (codigo,))
+    conn.execute("DELETE FROM rateio WHERE codigo_lancamento_omie = ?", (codigo,))
+    conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = ?", (codigo,))
+
+
+def excluir(codigos, *, simulacao: bool = True, cliente=None) -> dict:
+    """Apaga os titulos escolhidos NO OMIE. Nao ha desfazer.
+
+    Mesma forma da `aplicar`: uma linha por titulo, igual no ensaio e no envio
+    de verdade, para o ensaio mostrar exatamente o que a execucao vai fazer."""
+    from .sync import omie_client, omie_escrita
+
+    codigos = sorted({int(c) for c in (codigos or [])
+                      if str(c).strip().isdigit()})
+    if not codigos:
+        return {"ok": False, "erro": "Nenhum título foi escolhido."}
+
+    titulos = titulos_para_excluir(codigos)
+    if not titulos:
+        return {"ok": False, "erro": "Nenhum título válido foi escolhido."}
+    if len(titulos) > TETO_DE_EXCLUSAO:
+        return {"ok": False,
+                "erro": f"São {len(titulos)} títulos e o máximo por vez é "
+                        f"{TETO_DE_EXCLUSAO}. Exclusão não tem desfazer — vá "
+                        "em lotes menores."}
+    if not simulacao and not escrita_configurada():
+        return {"ok": False,
+                "erro": "A exclusão no OMIE está desligada: falta configurar a "
+                        "senha de execução (PAINEL_SENHA_ESCRITA) no serviço."}
+
+    if cliente is None:
+        try:
+            cliente = omie_escrita.OmieEscrita.de_ambiente()
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erro": f"Sem acesso ao OMIE: {e}"}
+
+    resultados = []
+    bloqueio = None
+    apagados = []
+    for titulo in titulos:
+        tipo = omie_escrita.tipo_do_titulo(titulo["tipo"])
+        titulo["tipo_omie"] = tipo
+        linha = {**titulo, "ok": False, "resultado": ""}
+
+        if bloqueio is not None:
+            linha["resultado"] = "NÃO TENTADO: o OMIE bloqueou as chamadas."
+            resultados.append(linha)
+            continue
+
+        if simulacao:
+            linha["resultado"] = "Ensaio: nada foi excluído."
+            linha["ok"] = True
+            resultados.append(linha)
+            continue
+
+        try:
+            retorno = cliente.excluir_titulo(titulo["codigo"], tipo)
+            linha["resultado"] = "Excluído no OMIE."
+            linha["ok"] = True
+            apagados.append(titulo["codigo"])
+            registrar(titulo, False, "", "", ["EXCLUÍDO no OMIE"], True,
+                      str(retorno)[:500])
+        except omie_client.OmieBloqueada as e:
+            bloqueio = e
+            linha["resultado"] = f"NÃO EXCLUÍDO: {e}"
+            logger.warning("Painel: OMIE bloqueou o lote de exclusão — %s", e)
+        except Exception as e:  # noqa: BLE001 — um título com erro não para o lote
+            linha["resultado"] = f"ERRO: {e}"
+            logger.exception("Painel: falha ao excluir o titulo %s", titulo["codigo"])
+            registrar(titulo, False, "", "", ["EXCLUSÃO recusada"], False, str(e))
+        resultados.append(linha)
+
+    # So depois de o OMIE confirmar. Apagar aqui antes seria perder o registro
+    # de um titulo que continua existindo la.
+    if apagados:
+        try:
+            with conexao() as conn:
+                for codigo in apagados:
+                    _apagar_do_painel(conn, codigo)
+                conn.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception("Painel: excluí no OMIE mas não consegui limpar a "
+                             "base local dos títulos %s", apagados)
+
+    return {"ok": True, "simulacao": simulacao, "linhas": resultados,
+            "quantos": len(resultados), "excluidos": len(apagados),
+            "bloqueio": str(bloqueio) if bloqueio else "",
+            "bloqueio_segundos": bloqueio.segundos if bloqueio else 0}
+
+
 def registrar(titulo: dict, simulacao: bool, categoria_nova, departamento_novo,
               mudancas, ok: bool, retorno: str) -> None:
     """Grava o que foi feito. Falhar aqui não pode derrubar a alteração — mas
