@@ -257,6 +257,35 @@ def gravar(plano: dict, quem: str = "", cliente=None) -> dict:
     return resultado
 
 
+def gravar_varios(planos: list, quem: str = "", cliente=None) -> list:
+    """Grava um lote. Um lançamento que falha NÃO para os outros.
+
+    ⚠️ ESTA É A DIFERENÇA ENTRE O LOTE E O LANÇAMENTO ÚNICO, e ela é
+    deliberada. Dentro de UM lançamento os dois títulos são amarrados: ou os
+    dois entram, ou o que entrou é desfeito — meia operação não pode existir.
+    ENTRE lançamentos é o contrário: eles são independentes, e parar na
+    terceira linha deixaria as outras quarenta e sete por fazer sem motivo
+    nenhum. Cada linha tem o seu próprio grupo e o seu próprio número.
+
+    O cliente é UM só para o lote inteiro: ele carrega a sessão HTTP e o
+    controle de excesso de chamadas do OMIE, e criar um por linha jogaria isso
+    fora justamente quando mais importa.
+    """
+    cli = cliente or _cliente()
+    resultados = []
+    for plano in planos:
+        try:
+            resultados.append(gravar(plano, quem, cliente=cli))
+        except Exception as e:  # noqa: BLE001 — a linha ruim não leva o lote
+            logger.exception("Aportes: falhou gravar o lançamento %s do lote",
+                             plano.get("grupo"))
+            resultados.append({
+                "ok": False, "grupo": plano.get("grupo", ""),
+                "erro": f"Não consegui falar com o OMIE: {e}",
+                "titulos": [], "avisos": [], "orfaos": []})
+    return resultados
+
+
 def _desfazer(cli, plano: dict, criados: list, quem: str) -> dict:
     """Apaga no OMIE os títulos que já tinham entrado. Órfão nunca fica calado."""
     avisos, orfaos = [], []

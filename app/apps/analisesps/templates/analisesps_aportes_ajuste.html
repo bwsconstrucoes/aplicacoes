@@ -1,0 +1,110 @@
+{# ---------------------------------------------------------------------------
+   O AJUSTE — as contas e as cinco situações.
+
+   ⚠️ ESTE PEDAÇO FICA GUARDADO NO DIA A DIA. Ele aparece sozinho só quando
+   falta alguma decisão de verdade (categoria repetida, categoria que não
+   existe, conta ainda não apontada). Fora isso, mora dentro de um "detalhes"
+   fechado, e ninguém precisa abrir.
+
+   ⚠️ CINCO SITUAÇÕES, CINCO CATEGORIAS DIFERENTES. Em 20/09 ele apontou que
+   a tela não distinguia entrada de saída; em 21/09 veio a correção maior:
+   *"você colocou Aportes BWS que ENTRA, conta Parceria, o mesmo código do que
+   SAI. Não são."* Cada lado tem a sua categoria e o seu código, inclusive as
+   duas de nome quase igual ("Aportes BWS" e "Aporte BWS").
+
+   ⚠️ AS CONTAS NÃO ESTÃO AQUI, e a ausência é a correção de 20/09: *"não
+   quero travar a conta Matriz e a da Parceria, tem mais de uma situação."*
+   A conta é escolhida em cada lançamento, lá em cima; o que este bloco
+   guarda é só o código da categoria, quando o plano financeiro não o deixa
+   claro sozinho.
+
+   É incluído de dois lugares e nunca dos dois ao mesmo tempo, então os `id`
+   não se repetem na página.
+--------------------------------------------------------------------------- #}
+<form method="post" action="{{ url_for('analisesps.aportes_de_para_gravar') }}">
+
+  <h4>As cinco situações</h4>
+  <p class="cartao-dica">
+    É a sua tabela: cinco situações, <b>cinco categorias diferentes</b>. Repare
+    nas duas de nome quase igual — <b>Aportes BWS</b>, que sai da provedora, e
+    <b>Aporte BWS</b>, que entra na parceria. São o mesmo dinheiro visto dos
+    dois lados, e têm códigos diferentes. Trocar uma pela outra é o erro mais
+    fácil de cometer aqui e o mais difícil de notar depois — confira os dois.
+  </p>
+  <table class="sps">
+    <thead>
+      <tr><th>Movimento</th><th>Qual conta</th><th>Categoria</th>
+          <th>Código no seu plano financeiro</th></tr>
+    </thead>
+    <tbody>
+      {% for s in situacoes %}
+        <tr>
+          <td>
+            {% if s.sentido == 'saida' %}
+              <span class="etiqueta ruim">↑ SAI</span>
+            {% else %}
+              <span class="etiqueta boa">↓ ENTRA</span>
+            {% endif %}
+            <br><small>{{ s.natureza_rotulo }}</small>
+          </td>
+          <td>{{ s.papel_rotulo }}</td>
+          <td><b>{{ s.categoria_nome }}</b>
+            {% if s.categoria_explicacao %}
+              <br><small>{{ s.categoria_explicacao }}</small>
+            {% endif %}
+            {% if s.transferencia and s.transferencia|upper == 'S' %}
+              <br><small>⚠️ marcada como transferência — fica fora do DRE</small>
+            {% endif %}
+          </td>
+          <td>
+            {# A MESMA CATEGORIA APARECE EM DUAS LINHAS ("Aportes BWS"), e um
+               campo por linha faria a segunda sobrescrever a primeira com um
+               valor que o dono não olhou. O campo fica só na PRIMEIRA vez que
+               a categoria aparece; nas outras, o código é mostrado. #}
+            {% set achado = categorias.get(s.categoria_chave) or {} %}
+            {% if not s.primeira %}
+              <code>{{ s.codigo or '—' }}</code>
+              <br><small>mesmo código da linha acima</small>
+            {% else %}
+              {% if achado.candidatos %}
+                <select class="campo-largo" name="categoria_{{ s.categoria_chave }}">
+                  {% if achado.situacao in ('ambigua', 'parecida') %}
+                    <option value="">— escolha qual é —</option>
+                  {% endif %}
+                  {% for c in achado.candidatos %}
+                    <option value="{{ c.codigo }}"
+                      {% if s.codigo == c.codigo %}selected{% endif %}>
+                      {{ c.codigo }} — {{ c.descricao }}
+                      {%- if not c.exata %} (nome parecido, não igual){% endif %}
+                      {%- if c.transferencia|upper == 'S' %} (transferência){% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
+                {% if achado.situacao == 'ambigua' %}
+                  <small>Achei {{ achado.candidatos|length }} com esse nome.
+                    Só você sabe qual é.</small>
+                {% elif achado.situacao == 'parecida' %}
+                  {# ⚠️ NUNCA ESCOLHIDO SOZINHO. Faltando "Aporte BWS" no
+                     plano, o único parecido é "Aportes BWS" — que é a
+                     categoria do LADO OPOSTO do mesmo dinheiro. #}
+                  <small>Não achei <b>{{ s.categoria_nome }}</b> com esse nome
+                    exato. O que apareceu tem nome <u>parecido</u>, e nome
+                    parecido aqui costuma ser o outro lado do mesmo dinheiro —
+                    confira antes de escolher, ou digite o código certo.</small>
+                {% endif %}
+              {% else %}
+                <input class="campo-largo" name="categoria_{{ s.categoria_chave }}"
+                       value="{{ s.codigo }}"
+                       placeholder="digite o código, ex.: 2.01.05">
+                <small>Não achei essa descrição no seu plano financeiro.
+                  Confira o nome dela no OMIE, ou digite o código aqui.</small>
+              {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p><button class="btn" type="submit">Gravar</button></p>
+</form>

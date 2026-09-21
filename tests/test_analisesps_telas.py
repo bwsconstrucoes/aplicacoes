@@ -4194,17 +4194,19 @@ def app_aportes(app, monkeypatch):
     from app.apps.analisesps import aportes_de_para, aportes_omie
 
     monkeypatch.setattr(aportes_de_para, "contas_do_omie", lambda: [
-        {"codigo": 7011, "descricao": "BWS MATRIZ", "numero_conta": "12345-6",
-         "inativa": False},
+        {"codigo": 7011, "descricao": "BWS PROVEDORA",
+         "numero_conta": "12345-6", "inativa": False},
         {"codigo": 22069, "descricao": "PARCERIA OBRA X",
          "numero_conta": "99999-9", "inativa": False}])
     monkeypatch.setattr(aportes_de_para, "obras",
                         lambda: [{"codigo": "OBRA-1", "nome": "Obra Um"}])
     monkeypatch.setattr(aportes_de_para, "fornecedores", lambda q="": [
         {"codigo": 99, "nome": "PARCEIRO LTDA", "documento": "00.000.000/0001-00"}])
-    monkeypatch.setattr(aportes_de_para, "contas_configuradas", lambda: {
-        "matriz": {"codigo": 7011, "descricao": "BWS MATRIZ"},
-        "parceria": {"codigo": 22069, "descricao": "PARCERIA OBRA X"}})
+    monkeypatch.setattr(aportes_de_para, "contas_lembradas",
+                        lambda: {"aporte_bws:provedora": 7011})
+    monkeypatch.setattr(aportes_de_para, "descricoes_das_contas",
+                        lambda: {7011: "BWS PROVEDORA",
+                                 22069: "PARCERIA OBRA X"})
     monkeypatch.setattr(aportes_de_para, "descobrir_categorias", lambda: {
         chave: {"chave": chave, "procurada": nome, "situacao": "escolhida",
                 "erro": "", "candidatos": [{"codigo": "9.01.01",
@@ -4232,18 +4234,83 @@ def test_a_tela_de_aportes_monta(app_aportes):
     assert "A parceria devolve o aporte ao parceiro" in html
     # As duas contas aparecem com código E número de conta — é olhando os dois
     # juntos que ele reconhece qual é qual.
-    assert "BWS MATRIZ" in html and "12345-6" in html
+    assert "BWS PROVEDORA" in html and "12345-6" in html
 
 
-def test_a_tela_de_aportes_nao_deixa_escolher_categoria(app_aportes):
+def bloco_de_lancar(html):
+    """Só o cartão "Lançar" — o ajuste do de-para fica num cartão depois dele,
+    guardado, e não deve ser confundido com a tela de uso."""
+    inicio = html.index("<h3>Lançar</h3>")
+    fim = html.index('id="conferencia"', inicio)
+    return html[inicio:fim]
+
+
+def test_a_tela_de_lancar_nao_pede_categoria(app_aportes):
     """*"Eu não devo ter que escolher categoria nenhuma: quem escolhe é a
-    regra. Se eu pudesse escolher, eu erraria."* O de-para lá em cima é outra
-    coisa: é dizer QUAL código é cada nome, uma vez só."""
+    regra. Se eu pudesse escolher, eu erraria."*
+
+    A CONTA, essa sim, é perguntada — mas pelo papel e pelo sentido, não como
+    "origem" e "destino" soltos: *"não quero travar a conta Matriz e a da
+    Parceria, tem mais de uma situação."*"""
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)
-    lancar = html[html.index("<h3>Lançar</h3>"):]
-    assert 'id="categoria' not in lancar
+    lancar = bloco_de_lancar(html)
     assert 'name="categoria' not in lancar
+
+
+def test_a_tela_mostra_as_cinco_situacoes_e_nao_quatro_categorias(app_aportes):
+    """*"Aportes BWS tanto está na conta de entrada quanto de saída. Na
+    verdade, todas as categorias poderão ser utilizadas."* Listar as quatro
+    categorias escondia metade do que cada uma faz."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "As cinco situações" in html
+    # Entrada e saída ditas sem depender de leitura — o primeiro apontamento
+    # dele foi justamente que não dava para distinguir.
+    assert html.count("↑ SAI") >= 2
+    assert html.count("↓ ENTRA") >= 3
+
+
+def test_o_de_para_fica_guardado_quando_nao_falta_nada(app_aportes):
+    """*"Eu não entendi esse gravar o de-para. Eu acho que não precisaria."*
+    Ele continua existindo — é o que impede código chumbado — mas deixou de
+    ser um passo."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "Preciso que você me diga isto uma vez só" not in html
+    assert "<details>" in html
+    assert "As contas e as categorias que estou usando" in html
+
+
+def test_a_operacao_sozinha_diz_o_que_vai_acontecer(app_aportes):
+    """A tela precisa saber, no navegador, o que cada operação faz — para
+    mostrar contas, sentido e categoria assim que ele escolher, antes de pedir
+    valor ou data."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert 'id="o-que-vai-acontecer"' in html
+    assert "Não há conta de origem" in html, \
+        "não explica o caso do dinheiro que vem de fora"
+    # O aporte do parceiro tem UMA perna só, e a tela tem de saber disso.
+    assert '"aporte_parceiro"' in html
+    # A pergunta da conta é a pergunta inteira, não um rótulo que obriga a
+    # traduzir "origem" para "de onde sai".
+    assert "De qual conta o dinheiro sai?" in html
+    assert "Em qual conta o dinheiro entra?" in html
+
+
+def test_a_conta_nao_e_travada_num_cadastro(app_aportes):
+    """*"Não quero travar a conta Matriz e a da Parceria, tem mais de uma
+    situação."* Há mais de uma parceria, e a mesma conta pode fazer papéis
+    diferentes. O que fica guardado é só a última usada, para vir
+    pré-escolhida — e isso não decide nada."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    # O bloco de ajuste não pede mais conta nenhuma.
+    assert 'name="conta_provedora"' not in html
+    assert 'name="conta_parceria"' not in html
+    # E a lista de contas do OMIE vai inteira para a tela, para ele escolher.
+    assert "PARCERIA OBRA X" in html
 
 
 def test_o_perfil_consulta_nao_alcanca_os_aportes(app_aportes):
@@ -4256,11 +4323,13 @@ def test_o_perfil_consulta_nao_alcanca_os_aportes(app_aportes):
 def test_a_tela_avisa_quando_falta_o_de_para(app_aportes, monkeypatch):
     from app.apps.analisesps import aportes_de_para
     monkeypatch.setattr(aportes_de_para, "falta_configurar",
-                        lambda: ["Falta apontar qual conta é a Matriz."])
+                        lambda: ["Não sei o código da categoria Aporte BWS."])
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)
-    assert "Falta acertar isto antes de lançar" in html
-    assert "Falta apontar qual conta é a Matriz." in html
+    assert "Preciso que você me diga isto uma vez só" in html
+    assert "Não sei o código da categoria Aporte BWS." in html
+    # E aí o ajuste aparece ABERTO, não guardado atrás de um "detalhes".
+    assert "As contas e as categorias que estou usando" not in html
 
 
 def test_a_tela_grita_o_titulo_orfao(app_aportes, monkeypatch):
@@ -4268,7 +4337,7 @@ def test_a_tela_grita_o_titulo_orfao(app_aportes, monkeypatch):
     visível no topo da tela até alguém resolver."""
     from app.apps.analisesps import aportes_omie
     monkeypatch.setattr(aportes_omie, "orfaos", lambda: [
-        {"codigo_lancamento_omie": 4242, "papel": "conta Matriz da BWS",
+        {"codigo_lancamento_omie": 4242, "papel": "conta Provedora",
          "sentido": "saida", "erro": "não foi possível excluir"}])
     html = como(app_aportes, SENHA_OPERADOR).get(
         "/analisesps/aportes").get_data(as_text=True)
@@ -4296,7 +4365,8 @@ def test_o_espelho_vazio_nao_derruba_a_tela(app, monkeypatch):
     monkeypatch.setattr(aportes_de_para, "contas_do_omie", sem_espelho)
     monkeypatch.setattr(aportes_de_para, "obras", sem_espelho)
     monkeypatch.setattr(aportes_de_para, "fornecedores", sem_espelho)
-    monkeypatch.setattr(aportes_de_para, "contas_configuradas", lambda: {})
+    monkeypatch.setattr(aportes_de_para, "contas_lembradas", lambda: {})
+    monkeypatch.setattr(aportes_de_para, "descricoes_das_contas", lambda: {})
     monkeypatch.setattr(aportes_de_para, "descobrir_categorias", lambda: {})
     monkeypatch.setattr(aportes_de_para, "falta_configurar", lambda: [])
     monkeypatch.setattr(aportes_omie, "historico", lambda n=30: [])
@@ -4333,3 +4403,60 @@ def test_o_ensaio_nao_pede_senha_e_a_gravacao_pede(app_aportes, monkeypatch):
     gravacao = cliente.post("/analisesps/api/aportes/gravar", json=pedido)
     assert gravacao.status_code == 403
     assert "senha" in gravacao.get_json()["erro"].lower()
+
+
+def test_a_tela_deixa_acrescentar_datas_e_valores(app_aportes):
+    """*"Quero poder fazer vários lançamentos do mesmo tipo. Apenas incluir
+    mais datas e valores. Lançamento em lote."*"""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert 'id="parcelas-corpo"' in html
+    assert "Acrescentar data e valor" in html
+    # O que NÃO se repete por linha: operação, conta, fornecedor e obra. Se
+    # repetisse, a conferência viraria uma planilha.
+    lancar = bloco_de_lancar(html)
+    assert lancar.count('id="operacao"') == 1
+    assert lancar.count('id="obra"') == 1
+    assert lancar.count('id="fornecedor"') == 1
+
+
+def test_o_ensaio_de_um_lote_devolve_um_lancamento_por_linha(app_aportes,
+                                                             monkeypatch):
+    from app.apps.analisesps import aportes
+    monkeypatch.setattr(
+        "app.apps.analisesps.aportes_de_para.categorias_resolvidas",
+        lambda: {c: {"codigo": "9.01.01", "descricao": n, "transferencia": "N"}
+                 for c, n in aportes.CATEGORIAS.items()})
+    monkeypatch.setattr(
+        "app.apps.analisesps.aportes_de_para.consultar_semelhantes",
+        lambda *a, **k: [])
+
+    resposta = como(app_aportes, SENHA_OPERADOR).post(
+        "/analisesps/api/aportes/ensaiar",
+        json={"operacao": "aporte_bws", "conta_origem": 7011,
+              "conta_destino": 22069, "fornecedor": 99, "obra": "OBRA-1",
+              "parcelas": [{"data": "2026-09-20", "valor": "100,00"},
+                           {"data": "2026-10-20", "valor": "200,00"}]})
+    dados = resposta.get_json()
+    assert dados["ok"] is True
+    assert dados["quantos"] == 2
+    assert dados["total"] == 300.0
+    assert dados["quantos_titulos"] == 4
+    assert len(set(dados["grupos"])) == 2, "as linhas têm de ter grupos próprios"
+
+
+def test_a_linha_ruim_do_lote_e_apontada_pelo_numero(app_aportes, monkeypatch):
+    from app.apps.analisesps import aportes
+    monkeypatch.setattr(
+        "app.apps.analisesps.aportes_de_para.categorias_resolvidas",
+        lambda: {c: {"codigo": "9.01.01", "descricao": n, "transferencia": "N"}
+                 for c, n in aportes.CATEGORIAS.items()})
+
+    resposta = como(app_aportes, SENHA_OPERADOR).post(
+        "/analisesps/api/aportes/ensaiar",
+        json={"operacao": "aporte_bws", "conta_origem": 7011,
+              "conta_destino": 22069, "fornecedor": 99, "obra": "OBRA-1",
+              "parcelas": [{"data": "2026-09-20", "valor": "100,00"},
+                           {"data": "2026-10-20", "valor": "abacaxi"}]})
+    assert resposta.status_code == 400
+    assert "Linha 2" in resposta.get_json()["erro"]

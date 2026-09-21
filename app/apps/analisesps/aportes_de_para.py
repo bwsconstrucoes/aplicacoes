@@ -38,11 +38,11 @@ from __future__ import annotations
 
 import logging
 
-from .aportes import CATEGORIAS, MATRIZ, PARCERIA, achatar
+from .aportes import CATEGORIAS, PARCERIA, PROVEDORA, achatar
 
 logger = logging.getLogger("analisesps.aportes_de_para")
 
-PAPEIS = (MATRIZ, PARCERIA)
+PAPEIS = (PROVEDORA, PARCERIA)
 
 # Teto das listas que vão para a tela. A base tem milhares de fornecedores;
 # mandar todos para um <select> trava o navegador e não ajuda ninguém.
@@ -84,45 +84,66 @@ def contas_do_omie() -> list:
              "inativa": str(l[3]).upper().startswith("S")} for l in linhas]
 
 
-def contas_configuradas() -> dict:
-    """{papel: {codigo, descricao}} — vazio quando ainda não foi apontado."""
+# ---------------------------------------------------------------------------
+# A CONTA É DE CADA LANÇAMENTO — 20/09/2026
+#
+# ⚠️ AQUI HAVIA UM CADASTRO FIXO: uma conta apontada como "a matriz" e outra
+# como "a parceria", escolhidas uma vez só. O dono derrubou isso com uma
+# frase: *"não quero travar a conta Matriz e a da Parceria, tem mais de uma
+# situação."*
+#
+# Há mais de uma parceria, e a mesma conta pode fazer papéis diferentes
+# conforme o que se lança. Cadastro fixo ali significaria, no dia da segunda
+# parceria, ou lançar na conta errada ou refazer o cadastro a cada lançamento.
+#
+# O que sobrou é MEMÓRIA, não cadastro: guarda-se a última conta usada em cada
+# (operação, papel) só para vir pré-escolhida na próxima vez. Ela não decide
+# nada — se estiver errada, é trocar no `select` e seguir.
+#
+# A tabela `aporte_conta` (migração 018) continua servindo para isso: a chave
+# passou a ser "operacao:papel" em vez de só o papel.
+# ---------------------------------------------------------------------------
+def contas_lembradas() -> dict:
+    """{"operacao:papel": codigo} — só para pré-escolher, nunca para decidir."""
     try:
         linhas = _consultar(
-            "SELECT papel, codigo_conta, COALESCE(descricao, '') "
-            "  FROM analisesps.aporte_conta")
+            "SELECT papel, codigo_conta FROM analisesps.aporte_conta")
     except Exception:  # noqa: BLE001 — migração 018 ainda não aplicada
-        logger.exception("Aportes: não consegui ler o de-para das contas")
+        logger.exception("Aportes: não consegui ler as contas lembradas")
         return {}
-    return {l[0]: {"codigo": l[1], "descricao": l[2]} for l in linhas if l[1]}
+    return {l[0]: l[1] for l in linhas if l[1]}
 
 
-def guardar_conta(papel: str, codigo, quem: str = "") -> None:
-    """Aponta qual conta do OMIE faz este papel. Código vazio desfaz."""
-    if papel not in PAPEIS:
-        raise ValueError(f"Papel desconhecido: {papel}")
-    from .db import conexao
+def lembrar_conta(operacao: str, papel: str, codigo, quem: str = "") -> None:
+    """Guarda a conta usada agora, para vir pré-escolhida na próxima vez.
 
-    descricao = ""
-    if codigo:
-        for c in contas_do_omie():
-            if int(c["codigo"]) == int(codigo):
-                descricao = c["descricao"]
-                break
-        else:
-            raise SemEspelho(
-                f"A conta {codigo} não está no espelho do OMIE. Se ela é nova, "
-                f"rode a carga do painel antes de apontá-la aqui.")
+    Nunca derruba o que quer que esteja chamando: lembrar é conforto, e um
+    aporte que já entrou no OMIE não pode falhar por causa disso."""
+    if not codigo or papel not in PAPEIS:
+        return
+    try:
+        from .db import conexao
+        with conexao() as con:
+            con.execute(
+                "INSERT INTO analisesps.aporte_conta "
+                "       (papel, codigo_conta, descricao, definido_por) "
+                "VALUES (?, ?, '', ?) "
+                "ON CONFLICT (papel) DO UPDATE SET "
+                "    codigo_conta = EXCLUDED.codigo_conta, definido_em = now(),"
+                "    definido_por = EXCLUDED.definido_por",
+                (f"{operacao}:{papel}", int(codigo), quem or ""))
+            con.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("Aportes: falhou lembrar a conta %s de %s",
+                         papel, operacao)
 
-    with conexao() as con:
-        con.execute(
-            "INSERT INTO analisesps.aporte_conta "
-            "       (papel, codigo_conta, descricao, definido_por) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT (papel) DO UPDATE SET codigo_conta = EXCLUDED.codigo_conta,"
-            "    descricao = EXCLUDED.descricao, definido_em = now(),"
-            "    definido_por = EXCLUDED.definido_por",
-            (papel, int(codigo) if codigo else None, descricao, quem or ""))
-        con.commit()
+
+def descricoes_das_contas() -> dict:
+    """{código → nome}, para a tela e o resumo mostrarem nome em vez de número."""
+    try:
+        return {c["codigo"]: c["descricao"] for c in contas_do_omie()}
+    except SemEspelho:
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -148,21 +169,39 @@ def procurar_categoria(descricao: str) -> list:
             "Não consegui ler o plano financeiro do OMIE. Ele vem da carga do "
             "painel; se ela nunca rodou, rode-a primeiro.") from e
 
+    alvo_sing = _sem_plural(alvo)
     exatas, parecidas = [], []
     for l in linhas:
         nome = achatar(l[1])
         if not nome:
             continue
         item = {"codigo": l[0], "descricao": l[1], "transferencia": l[2],
-                "codigo_dre": l[3], "inativa": str(l[4]).upper().startswith("S")}
+                "codigo_dre": l[3], "inativa": str(l[4]).upper().startswith("S"),
+                "exata": nome == alvo}
         if nome == alvo:
             exatas.append(item)
-        elif alvo in nome or nome in alvo:
+        elif _sem_plural(nome) == alvo_sing or alvo in nome or nome in alvo:
+            # ⚠️ O SINGULAR/PLURAL ENTRA COMO CANDIDATO, NUNCA COMO CERTEZA.
+            #
+            # O plano financeiro tem "Aportes BWS" (saída da provedora) e
+            # "Aporte BWS" (entrada na parceria): nomes quase iguais, códigos
+            # diferentes, e são lados opostos do mesmo dinheiro. Dobrar o
+            # plural aqui faria as duas casarem uma com a outra, e o sistema
+            # escolheria a errada metade das vezes, em silêncio.
+            #
+            # Como candidato ele ajuda (o dono vê as duas e aponta); como
+            # casamento exato, ele seria o defeito mais caro desta tela.
             parecidas.append(item)
     # Havendo casamento exato, as "parecidas" só atrapalham: "Aportes BWS" é
     # pedaço de "Devolução de Aportes BWS", e mostrar as duas como igualmente
     # prováveis empurraria o dono para o erro.
     return exatas or parecidas
+
+
+def _sem_plural(texto: str) -> str:
+    """"aportes bws" -> "aporte bws". Só para APROXIMAR, nunca para decidir."""
+    return " ".join(p[:-1] if len(p) > 3 and p.endswith("s") else p
+                    for p in (texto or "").split())
 
 
 def descobrir_categorias() -> dict:
@@ -192,10 +231,14 @@ def descobrir_categorias() -> dict:
             situacao = "nao_achou"
         elif len(candidatos) > 1:
             situacao = "ambigua"
-        else:
+        elif candidatos[0].get("exata"):
             situacao = "achou"
+        else:
+            # Um só, mas PARECIDO — não igual. A tela mostra e ele decide.
+            situacao = "parecida"
 
-        unica = candidatos[0] if len(candidatos) == 1 else {}
+        unica = (candidatos[0]
+                 if len(candidatos) == 1 and candidatos[0].get("exata") else {})
         saida[chave] = {
             "chave": chave,
             "procurada": descricao,
@@ -259,20 +302,61 @@ def guardar_categoria(chave: str, codigo: str, quem: str = "") -> None:
         con.commit()
 
 
+def categorias_resolvidas() -> dict:
+    """O código de cada categoria, SEM exigir que o dono confirme nada.
+
+    ⚠️ MUDANÇA DE 20/09/2026, e ela veio dele olhando a tela: *"eu não entendi
+    esse gravar o de-para. Eu acho que não precisaria."*
+
+    Ele tem razão. Quando a descrição aparece UMA vez só no plano financeiro,
+    não há decisão a tomar — pedir um clique de confirmação é cerimônia, e
+    cerimônia que se repete vira clique automático, que é pior do que não ter
+    conferência nenhuma.
+
+    O de-para continua existindo e continua sendo o que impede código chumbado.
+    Só deixou de ser um PASSO: agora ele só aparece quando há de fato uma
+    decisão — descrição repetida, ou descrição que não existe. Nesses dois
+    casos a tela para e pergunta, exatamente como antes.
+
+    O que ele confirmou à mão continua valendo por cima do que foi descoberto:
+    é assim que ele conserta um caso que o sistema leria errado.
+    """
+    confirmadas = categorias_configuradas()
+    resolvidas = dict(confirmadas)
+    for chave, descricao in CATEGORIAS.items():
+        if resolvidas.get(chave, {}).get("codigo"):
+            continue
+        try:
+            candidatos = procurar_categoria(descricao)
+        except SemEspelho:
+            continue
+        # ⚠️ SÓ CASAMENTO EXATO SE RESOLVE SOZINHO. Um candidato PARECIDO,
+        # mesmo sendo o único, nunca vira certeza — e este é o caso que um
+        # teste com banco pegou em 21/09/2026: faltando "Aporte BWS" no plano
+        # financeiro, o único parecido é "Aportes BWS", que é a categoria do
+        # LADO OPOSTO do mesmo dinheiro. Resolver sozinho ali seria lançar a
+        # entrada com a categoria da saída, em silêncio, para sempre.
+        if len(candidatos) == 1 and candidatos[0].get("exata"):
+            resolvidas[chave] = {
+                "codigo": candidatos[0]["codigo"],
+                "descricao": candidatos[0]["descricao"],
+                "transferencia": candidatos[0]["transferencia"],
+                "descoberta": True,
+            }
+    return resolvidas
+
+
 def falta_configurar() -> list:
     """Frases em português sobre o que ainda impede um lançamento."""
+    # ⚠️ AS CONTAS NÃO ENTRAM AQUI, e é de propósito: elas são escolhidas em
+    # cada lançamento, não cadastradas. O que ainda pode faltar é só o código
+    # de uma categoria que o plano financeiro não deixa claro.
     faltas = []
-    contas = contas_configuradas()
-    for papel in PAPEIS:
-        if not (contas.get(papel) or {}).get("codigo"):
-            from .aportes import PAPEL_ROTULO
-            faltas.append(f"Falta apontar qual conta do OMIE é a "
-                          f"{PAPEL_ROTULO[papel]}.")
-    categorias = categorias_configuradas()
+    categorias = categorias_resolvidas()
     for chave, descricao in CATEGORIAS.items():
         if not (categorias.get(chave) or {}).get("codigo"):
-            faltas.append(f"Falta confirmar o código da categoria "
-                          f"\"{descricao}\".")
+            faltas.append(f"Não sei qual é o código da categoria "
+                          f"\"{descricao}\" no seu plano financeiro.")
     return faltas
 
 

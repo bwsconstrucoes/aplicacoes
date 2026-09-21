@@ -5864,6 +5864,262 @@ painel. Conferido: os 18 testes seguem verdes contra a estrutura nova.
   o assistente vai ler o espelho do painel — decisão que é do ERP, não daqui.
 
 ---
+
+### Septuagésima sexta leva (20/09) — a tela dos aportes, redesenhada no mesmo dia
+
+Publicada a leva anterior, o dono abriu a tela e apontou quatro coisas. As
+quatro estavam certas, e cada uma é um jeito de errar que volta sozinho na
+próxima tela parecida — por isso ficam escritas.
+
+#### 1. Entrada e saída não davam para distinguir
+
+> *"Você tem que identificar melhor o que é entrada financeira e o que é
+> saída. Porque, por exemplo, Aportes BWS, ele tanto está na conta de entrada
+> quanto de saída. Na verdade, todas as categorias poderão ser utilizadas."*
+
+A tela listava as **quatro categorias** numa tabela, como se cada uma fosse
+uma coisa só. Não são: "Aportes BWS" é usada **duas vezes** — saindo da matriz
+e entrando na parceria. Listada uma vez, ela esconde metade do que faz.
+
+O que existe de verdade são **cinco situações** (conta + sentido + categoria),
+que é exatamente como ele desenhou a tabela no briefing. A tela passa a
+mostrar as cinco, na ordem dele, com `↑ SAI` e `↓ ENTRA` em etiqueta colorida
+— o sentido dito sem depender de ler a frase inteira.
+
+#### 2. O "gravar o de-para" não devia existir
+
+> *"Eu não entendi esse gravar o de-para. Eu acho que não precisaria."*
+
+Ele tem razão, e o raciocínio vale para além desta tela: **quando a descrição
+aparece uma vez só no plano financeiro, não há decisão a tomar.** Pedir um
+clique de confirmação ali é cerimônia — e cerimônia que se repete vira clique
+automático, que é pior do que não ter conferência nenhuma, porque dá a
+sensação de que alguém olhou.
+
+O de-para **continua existindo** e continua sendo o que impede código chumbado.
+Só deixou de ser um **passo**: `categorias_resolvidas()` descobre sozinha o que
+é inequívoco, e o bloco de ajuste só aparece quando há de fato uma decisão —
+descrição repetida, ou descrição que não existe. Fora isso ele mora dentro de
+um "detalhes" fechado, que ninguém precisa abrir.
+
+O que ele confirmar à mão continua valendo **por cima** do descoberto: é assim
+que se conserta um caso que o sistema leria errado.
+
+#### 3. A conta: duas correções no mesmo dia, e a segunda é a boa
+
+Primeiro ele disse:
+
+> *"Na hora que eu fosse mais embaixo definir o que está acontecendo, você
+> pergunta o que eu estou lançando. Então ele já define quais contas seriam
+> utilizadas."*
+
+A leitura imediata foi: cadastrar uma conta como "a matriz" e outra como "a
+parceria", e a operação escolher entre elas. Feito isso, ele derrubou na
+mesma conversa:
+
+> *"Não quero travar a conta Matriz e a da Parceria, tem mais de uma
+> situação."*
+
+**Há mais de uma parceria, e a mesma conta pode fazer papéis diferentes
+conforme o que se lança.** Cadastro fixo significaria, no dia da segunda
+parceria, ou lançar na conta errada ou refazer o cadastro a cada lançamento —
+que é o pior dos dois mundos.
+
+⚠️ **A forma certa é a do meio, e vale guardar porque é o desenho que resolve
+os dois pedidos ao mesmo tempo:**
+
+- **a OPERAÇÃO decide** o papel de cada lado, o sentido do dinheiro e — por
+  consequência — a categoria. Isso ele nunca escolhe;
+- **ele diz apenas QUAL conta faz aquele papel desta vez.**
+
+Com isso deixa de existir "combinação que a regra não prevê": não há nada com
+que confrontar a escolha dele, porque não há mais cadastro. E o campo deixou
+de se chamar "origem": chama-se **"De qual conta o dinheiro sai?"**, com o
+papel ao lado. É a pergunta de verdade — ninguém pensa "origem", pensa "de
+onde saiu".
+
+O que sobrou do cadastro é **memória**: a última conta usada em cada
+(operação, papel) vem pré-escolhida da próxima vez. Ela não decide nada; se
+estiver errada, é trocar no campo e seguir. A tabela `aporte_conta` da
+migração 018 continua servindo para isso, com a chave passando a ser
+`operacao:papel`.
+
+A única incoerência que o sistema ainda consegue enxergar sozinho é **a mesma
+conta dos dois lados** — o dinheiro sairia e entraria no mesmo lugar. Essa é
+sempre engano, e é recusada.
+
+#### 4. Conta de origem nem sempre existe
+
+> *"Nem sempre a conta de origem vai ser necessária. Se eu estiver lançando um
+> dinheiro do parceiro, ele não vem de conta nenhuma — vem de outra conta, de
+> outra empresa, que não nos interessa."*
+
+A regra já sabia disso (o aporte do parceiro sempre teve uma perna só), mas a
+**tela** mostrava os dois campos de conta sempre. Agora, escolhida a operação,
+ela diz o que vai acontecer e, quando é o caso, escreve o motivo: *"Não há
+conta de origem: o dinheiro vem de fora da empresa."*
+
+#### A forma da tela agora
+
+Uma pergunta só para começar — **o que você está lançando** — e a resposta
+desenha o resto: as contas, o sentido de cada lado, a categoria de cada lado e
+o tipo de título. Só então aparecem valor, data, fornecedor, obra e baixa.
+
+E **não sobrou nada para configurar**: as categorias se resolvem sozinhas
+quando o plano financeiro não deixa dúvida, e a conta é escolhida no próprio
+lançamento. O bloco de ajuste só aparece quando há de fato uma decisão de
+categoria a tomar.
+
+#### Os testes que travam a nova forma
+
+Cinco novos na tela (não pede categoria no bloco de lançar; mostra as cinco
+situações com SAI/ENTRA; o de-para fica guardado quando não falta nada; a
+operação sozinha diz o que vai acontecer, com a pergunta inteira no rótulo da
+conta; e a conta não é travada em cadastro nenhum) e nove na regra e no banco
+(qualquer conta serve em qualquer papel — inclusive uma segunda parceria, sem
+cadastro; a mesma conta dos dois lados é recusada; a conta que falta é pedida
+pelo sentido do dinheiro; o aporte do parceiro não pede origem; as cinco
+situações batem com as pernas das operações; a categoria sem dúvida se
+resolve sozinha; a com dúvida continua parando; o confirmado à mão vale por
+cima; e a conta é lembrada por operação e papel, sem nunca derrubar nada).
+
+---
+
+### Septuagésima sétima leva (20/09) — lançamento em lote
+
+> *"Quero poder fazer vários lançamentos do mesmo tipo. Apenas incluir mais
+> datas e valores. Lançamento em lote."*
+
+A tela ganhou uma tabelinha de **datas e valores**, com um botão para
+acrescentar linha. Tudo o mais — operação, contas, fornecedor, obra, baixa —
+é preenchido **uma vez** e vale para todas.
+
+#### ⚠️ Só data e valor variam, e isso é desenho, não limitação
+
+Deixar cada linha ter a sua operação e as suas contas transformaria a
+conferência numa planilha — e é justamente a conferência que **não pode ficar
+barata** neste recurso. Um lote de vinte linhas que se confere com um olhar
+distraído escreve vinte lançamentos errados no OMIE de uma vez.
+
+Do jeito que ficou há **uma decisão só** a conferir (o que é, de onde sai,
+para onde entra, qual obra) e uma lista de quanto e quando.
+
+#### ⚠️ Dentro do lançamento, amarrado; entre lançamentos, independente
+
+A distinção é o coração deste recurso:
+
+- **DENTRO de um lançamento** os dois títulos continuam amarrados: ou os dois
+  entram, ou o que entrou é desfeito. Meia operação não pode existir.
+- **ENTRE lançamentos** é o contrário: cada linha tem o seu próprio grupo e o
+  seu próprio número, e uma que falha **não para as outras**. Parar na terceira
+  linha deixaria as outras quarenta e sete por fazer sem motivo nenhum.
+
+Cada linha ganha número próprio de propósito: um número comum a todas faria os
+pares de lançamentos **diferentes** parecerem o mesmo par — e o número é
+justamente o que serve para achar a contrapartida de um título.
+
+#### ⚠️ O caso perigoso é o meio-termo, e a tela o trata com todas as letras
+
+Lote que entra pela metade e diz só "deu erro" é o jeito mais rápido de alguém
+lançar tudo de novo e **duplicar o que já entrou**. Quando parte entra, a tela
+escreve: *"Entraram 3 de 5. As que deram certo já estão no OMIE — não lance
+tudo de novo, refaça só as que falharam."* E lista, linha a linha, o que
+entrou e o que não.
+
+#### Linha repetida é recusada, não avisada
+
+Duas linhas com a **mesma data e o mesmo valor** quase sempre é duplicata sem
+querer — e dois aportes iguais no mesmo dia é o erro caro deste recurso. Aqui
+o certo é ele apagar a linha, não confirmar um aviso. Data igual com valores
+diferentes passa normalmente.
+
+#### O teto: 50 por vez
+
+Cada linha vira até quatro chamadas ao OMIE (dois títulos e duas baixas).
+Cinquenta linhas são duzentas chamadas, e acima disso o risco é o bloqueio por
+consumo indevido — o mesmo que já mordeu a busca de notas na Receita. O
+cliente do OMIE é **um só para o lote inteiro**, porque é ele que carrega a
+sessão e o controle de excesso de chamadas; criar um por linha jogaria isso
+fora justamente quando mais importa.
+
+#### Os testes
+
+Onze novos: cada linha vira um lançamento com o resto igual; número e grupo
+próprios por linha (e o mesmo número dentro do par); uma linha só continua
+sendo o caminho de sempre; linha repetida recusada; mesma data com valores
+diferentes passa; a linha ruim apontada pelo número; lote vazio e lote grande
+demais recusados; uma linha que falha não para as outras; e o ensaio da tela
+devolvendo um lançamento por linha, com o total e os grupos.
+
+---
+
+### Septuagésima oitava leva (21/09) — são CINCO categorias, não quatro
+
+Publicada a leva anterior, o dono abriu o plano financeiro e desmentiu o
+briefing dele mesmo:
+
+> *"Você colocou Aportes BWS que ENTRA, conta Parceria, o mesmo código do que
+> SAI. Não são. Precisa permitir colocar."*
+
+E mandou a lista de verdade:
+
+| Conta | Movimento | Categoria | Código |
+|---|---|---|---|
+| **Provedora** | Entrada | Devolução de Aportes BWS | 1.02.95 |
+| **Provedora** | Saída | Aportes BWS | 2.08.97 |
+| **Parceria** | Entrada | Aporte Parceiros | 1.02.02 |
+| **Parceria** | Entrada | Aporte BWS | 1.02.94 |
+| **Parceria** | Saída | Devolução de Aportes | 2.08.02 |
+
+#### ⚠️ O erro era plausível, e é por isso que fica registrado
+
+O briefing de setembro dizia, com todas as letras: *"O mesmo nome dos dois
+lados — o que distingue é a conta e o sentido."* A primeira versão foi
+construída exatamente assim, e os testes cravavam esse comportamento — ou
+seja, **a suíte inteira estava verde defendendo a regra errada**. Nenhuma
+verificação técnica pegaria isto; só o dono, olhando o plano financeiro dele.
+
+A lição para a próxima tela: **regra de negócio contada de memória é hipótese,
+não dado.** O jeito de confirmar era pedir o plano financeiro — a lista, com
+os códigos — antes de escrever a primeira linha, e não depois de publicar.
+
+#### ⚠️ "Aportes BWS" e "Aporte BWS" são lados opostos do mesmo dinheiro
+
+Esta é a armadilha que o plano financeiro traz de fábrica: dois nomes que
+diferem por **uma letra**, com códigos que não têm nada a ver um com o outro,
+e que são justamente a saída e a entrada do mesmo aporte. Trocar um pelo outro
+é o erro mais fácil de cometer aqui e o mais difícil de notar depois.
+
+Três defesas, e todas com teste:
+
+1. **Cada situação tem a sua própria chave.** Não existe mais categoria
+   compartilhada entre dois lados — a única que serve a duas operações é
+   "Devolução de Aportes", e ela é a mesma situação (saída da parceria).
+2. **Só casamento EXATO se resolve sozinho.** Um candidato de nome *parecido*,
+   mesmo sendo o único, nunca vira certeza. Isto foi pego por um teste com
+   banco de verdade, escrito nesta mesma leva: faltando "Aporte BWS" no plano,
+   a versão inicial do conserto pegava "Aportes BWS" — **a categoria do lado
+   oposto** — e resolvia sozinha, em silêncio. Agora ela oferece como
+   candidato, avisa que o nome é parecido e não igual, e **para**.
+3. **A tela mostra a explicação de cada uma, com as palavras dele** (*"dinheiro
+   que sai de uma conta provedora para conta parceria"*), para dar para
+   distinguir as duas sem decorar código.
+
+#### "Provedora", não "Matriz"
+
+Nome dele, e o nome certo: o que define aquele lado não é ser a matriz da
+empresa, é ser **a conta de onde o dinheiro vem** para a parceria. Pode ser
+outra conta qualquer — o que, aliás, é coerente com o *"não quero travar a
+conta"* do dia anterior.
+
+#### E ele pode colocar o código à mão
+
+*"Precisa permitir colocar."* O bloco de ajuste já existia; agora ele tem uma
+linha por situação (cinco, não quatro), com campo para escolher entre os
+candidatos ou digitar o código direto. Continua guardado num "detalhes" quando
+não falta nada, e continua abrindo sozinho quando falta.
+
+---
 ---
 
 ## Regras que não se discutem

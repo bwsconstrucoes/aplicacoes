@@ -11,26 +11,35 @@ tabela é o coração disto: se ela errar, meus relatórios de aporte mentem e e
 não tenho como perceber."* Regra que não faz chamada de rede é regra que dá
 para testar exaustivamente — e é o que os testes fazem.
 
-⚠️ A TABELA, DO JEITO QUE ELE DESENHOU E JÁ LANÇOU NO OMIE À MÃO:
+⚠️ A TABELA, DO PLANO FINANCEIRO DE VERDADE (21/09/2026):
 
-    Conta          Entra/Sai   Nome (categoria) no OMIE
-    ------------   ---------   -------------------------
-    Matriz         Saída       Aportes BWS
-    Parceria       Entrada     Aportes BWS
-    Parceria       Entrada     Aportes Parceiros
-    Parceria       Saída       Devolução de Aportes
-    Matriz         Entrada     Devolução de Aportes BWS
+    Conta Provedora
+      Entrada:  Devolução de Aportes BWS .... dinheiro que voltou da parceria
+      Saída:    Aportes BWS ................. dinheiro que vai para a parceria
+
+    Conta Parceria
+      Entrada:  Aporte Parceiros ............ dinheiro que entra do parceiro
+      Entrada:  Aporte BWS .................. dinheiro que entra da BWS
+      Saída:    Devolução de Aportes ........ devolução à BWS ou ao parceiro
 
 Lendo em português:
 
-  · **BWS aporta:** sai da matriz e entra na parceria, com o MESMO nome dos
-    dois lados ("Aportes BWS"). O que distingue é a conta e o sentido.
+  · **BWS aporta:** sai da provedora ("Aportes BWS") e entra na parceria
+    ("Aporte BWS"). **São duas categorias diferentes**, com códigos
+    diferentes, para o mesmo dinheiro visto dos dois lados.
   · **O dinheiro da BWS volta:** sai da parceria ("Devolução de Aportes") e
-    entra na matriz ("Devolução de Aportes BWS").
-  · **O parceiro aporta:** entra só na parceria ("Aportes Parceiros"). Um
+    entra na provedora ("Devolução de Aportes BWS").
+  · **O parceiro aporta:** entra só na parceria ("Aporte Parceiros"). Um
     lançamento só — o dinheiro vem de fora da empresa.
   · **O parceiro recebe de volta:** sai só da parceria ("Devolução de
-    Aportes").
+    Aportes"), a mesma categoria da devolução à BWS.
+
+⚠️ O BRIEFING DE SETEMBRO DIZIA O CONTRÁRIO — *"o mesmo nome dos dois lados"* —
+e a primeira versão foi construída assim. Ele corrigiu olhando a tela pronta:
+*"você colocou Aportes BWS que ENTRA, conta Parceria, o mesmo código do que
+SAI. Não são."* Fica registrado porque o erro era plausível e passaria de
+novo: os nomes são quase iguais, e um lançamento com a categoria do lado
+errado não acusa nada em tela nenhuma.
 
 ⚠️ O DONO NÃO ESCOLHE CATEGORIA, E ISSO É DECISÃO DELE, não economia minha:
 *"eu não devo ter que escolher categoria nenhuma: quem escolhe é a regra, a
@@ -53,22 +62,69 @@ from datetime import date, datetime
 logger = logging.getLogger("analisesps.aportes")
 
 # Os papéis que a regra conhece. O papel é o que a REGRA entende; qual conta
-# do OMIE faz esse papel é o dono quem aponta, na tela de configuração.
-MATRIZ = "matriz"
+# do OMIE faz esse papel é o dono quem escolhe, em cada lançamento.
+#
+# ⚠️ "PROVEDORA", NÃO "MATRIZ" — é o nome que ele usa (21/09/2026), e o nome
+# certo: o que define aquele lado não é ser a matriz da empresa, é ser a conta
+# DE ONDE O DINHEIRO VEM para a parceria. Pode ser outra conta qualquer.
+PROVEDORA = "provedora"
 PARCERIA = "parceria"
 
 PAPEL_ROTULO = {
-    MATRIZ: "conta Matriz da BWS",
+    PROVEDORA: "conta Provedora",
     PARCERIA: "conta da Parceria",
 }
 
-# As quatro categorias, com o nome EXATO do plano financeiro do dono. A chave
-# é o nome interno (o que o código usa); o valor é o que se procura no plano.
+# ---------------------------------------------------------------------------
+# AS CINCO CATEGORIAS
+#
+# ⚠️ ELAS SÃO CINCO, NÃO QUATRO, E NENHUMA SE REPETE DOS DOIS LADOS. Esta é a
+# correção de 21/09/2026, e ela desmente o que o próprio briefing dizia em
+# setembro (*"o mesmo nome dos dois lados — o que distingue é a conta e o
+# sentido"*). O dono mandou o plano financeiro de verdade:
+#
+#   Conta Provedora
+#     Entrada: Devolução de Aportes BWS ......... 1.02.95
+#     Saída:   Aportes BWS ...................... 2.08.97
+#
+#   Conta Parceria
+#     Entrada: Aporte Parceiros ................. 1.02.02
+#     Entrada: Aporte BWS ....................... 1.02.94
+#     Saída:   Devolução de Aportes ............. 2.08.02
+#
+# ⚠️ REPARE EM "Aportes BWS" (saída da provedora) E "Aporte BWS" (entrada na
+# parceria): nomes quase iguais, CÓDIGOS DIFERENTES, e são o mesmo dinheiro
+# visto dos dois lados. Trocar um pelo outro é o erro mais fácil de cometer
+# aqui e o mais difícil de perceber depois — por isso cada lado tem a sua
+# própria chave, e a tela mostra os dois códigos lado a lado.
+#
+# Os códigos acima estão NESTE COMENTÁRIO e em lugar nenhum do programa: eles
+# saem do plano financeiro, pela descrição, e o dono pode corrigir cada um na
+# tela. Ele mexe no plano; código chumbado viraria lançamento errado calado.
+# ---------------------------------------------------------------------------
 CATEGORIAS = {
-    "aportes_bws": "Aportes BWS",
-    "aportes_parceiros": "Aportes Parceiros",
+    "aportes_bws_saida": "Aportes BWS",
+    "aporte_bws_entrada": "Aporte BWS",
+    "aporte_parceiros": "Aporte Parceiros",
     "devolucao_aportes": "Devolução de Aportes",
     "devolucao_aportes_bws": "Devolução de Aportes BWS",
+}
+
+# O que cada uma significa, com as palavras dele. Vai para a tela: é o que
+# permite distinguir "Aportes BWS" de "Aporte BWS" sem decorar código.
+CATEGORIA_EXPLICACAO = {
+    "aportes_bws_saida":
+        "Dinheiro que sai de uma conta provedora para conta parceria.",
+    "aporte_bws_entrada":
+        "Dinheiro que entra da BWS na conta Parceria, proveniente da conta "
+        "provedora.",
+    "aporte_parceiros":
+        "Dinheiro que entra do Parceiro.",
+    "devolucao_aportes":
+        "Devolução dos aportes à BWS ou ao Parceiro.",
+    "devolucao_aportes_bws":
+        "Dinheiro que entrou na conta provedora, proveniente da conta "
+        "parceria.",
 }
 
 SAIDA = "saida"
@@ -105,20 +161,21 @@ class Perna:
 OPERACOES = {
     "aporte_bws": {
         "rotulo": "BWS aporta na parceria",
-        "explicacao": "O dinheiro sai da conta Matriz e entra na conta da "
-                      "Parceria. Nasce um título de cada lado.",
+        "explicacao": "O dinheiro sai da conta Provedora e entra na conta da "
+                      "Parceria. Nasce um título de cada lado, e cada um com "
+                      "a SUA categoria — não são a mesma.",
         "pernas": [
-            Perna(MATRIZ, SAIDA, "aportes_bws"),
-            Perna(PARCERIA, ENTRADA, "aportes_bws"),
+            Perna(PROVEDORA, SAIDA, "aportes_bws_saida"),
+            Perna(PARCERIA, ENTRADA, "aporte_bws_entrada"),
         ],
     },
     "devolucao_bws": {
         "rotulo": "A parceria devolve o aporte à BWS",
         "explicacao": "O dinheiro sai da conta da Parceria e volta para a "
-                      "conta Matriz. Nasce um título de cada lado.",
+                      "conta Provedora. Nasce um título de cada lado.",
         "pernas": [
             Perna(PARCERIA, SAIDA, "devolucao_aportes"),
-            Perna(MATRIZ, ENTRADA, "devolucao_aportes_bws"),
+            Perna(PROVEDORA, ENTRADA, "devolucao_aportes_bws"),
         ],
     },
     "aporte_parceiro": {
@@ -126,7 +183,7 @@ OPERACOES = {
         "explicacao": "O dinheiro vem de fora da empresa e entra na conta da "
                       "Parceria. Nasce um título só.",
         "pernas": [
-            Perna(PARCERIA, ENTRADA, "aportes_parceiros"),
+            Perna(PARCERIA, ENTRADA, "aporte_parceiros"),
         ],
     },
     "devolucao_parceiro": {
@@ -141,6 +198,51 @@ OPERACOES = {
 
 ORDEM_DAS_OPERACOES = ["aporte_bws", "devolucao_bws",
                        "aporte_parceiro", "devolucao_parceiro"]
+
+
+# ---------------------------------------------------------------------------
+# AS CINCO SITUAÇÕES — 20/09/2026, depois de ele ver a tela
+#
+# ⚠️ O QUE ELE APONTOU EM 20/09: *"você tem que identificar melhor o que é
+# entrada financeira e o que é saída."* A tela listava as categorias sem dizer
+# em que conta e em que sentido cada uma vive.
+#
+# ⚠️ E EM 21/09 VEIO A CORREÇÃO MAIOR: *"você colocou Aportes BWS que ENTRA,
+# conta Parceria, o mesmo código do que SAI. Não são."* Cada situação tem a
+# SUA categoria, com o seu próprio código — inclusive as duas de nome quase
+# igual ("Aportes BWS" que sai da provedora e "Aporte BWS" que entra na
+# parceria).
+#
+# A ordem abaixo é a da lista que ele mandou: primeiro a conta provedora,
+# depois a parceria.
+# ---------------------------------------------------------------------------
+SITUACOES = [
+    (PROVEDORA, ENTRADA, "devolucao_aportes_bws"),
+    (PROVEDORA, SAIDA, "aportes_bws_saida"),
+    (PARCERIA, ENTRADA, "aporte_parceiros"),
+    (PARCERIA, ENTRADA, "aporte_bws_entrada"),
+    (PARCERIA, SAIDA, "devolucao_aportes"),
+]
+
+
+def situacoes_da_categoria(chave: str) -> list:
+    """Em que situações esta categoria é usada. Mais de uma, quase sempre."""
+    return [(p, sd) for p, sd, c in SITUACOES if c == chave]
+
+
+def resumo_das_pernas(operacao: str) -> list:
+    """O que a operação faz, em português, para a tela mostrar ANTES de pedir
+    qualquer outra coisa. Sem contas e sem códigos — só o movimento."""
+    op = OPERACOES.get(operacao) or {}
+    return [{
+        "papel": perna.papel,
+        "papel_rotulo": PAPEL_ROTULO[perna.papel],
+        "sentido": perna.sentido,
+        "sentido_rotulo": SENTIDO_ROTULO[perna.sentido],
+        "natureza_rotulo": NATUREZA_ROTULO[NATUREZA[perna.sentido]],
+        "categoria_nome": CATEGORIAS[perna.categoria],
+        "categoria_chave": perna.categoria,
+    } for perna in op.get("pernas", [])]
 
 
 class ErroDeRegra(Exception):
@@ -252,13 +354,14 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
              valor=None, data=None, fornecedor=None, fornecedor_nome: str = "",
              obra: str = "", obra_nome: str = "", quem: str = "",
              baixar: bool = True, grupo: str = "",
-             contas: dict | None = None, categorias: dict | None = None,
+             descricoes: dict | None = None, categorias: dict | None = None,
              numero: str = "", observacoes: dict | None = None) -> dict:
     """Monta os títulos que vão nascer. NÃO fala com o OMIE nem com o banco.
 
-    `contas` é o de-para papel → {codigo, descricao}; `categorias` é o de-para
-    chave → {codigo, descricao}. Os dois entram por parâmetro justamente para
-    esta função continuar sendo pura — quem lê o banco é quem chama.
+    `descricoes` é {código da conta → nome}, só para a tela mostrar o nome em
+    vez do número; `categorias` é o de-para chave → {codigo, descricao}. Os
+    dois entram por parâmetro justamente para esta função continuar sendo
+    pura — quem lê o banco é quem chama.
 
     Levanta `ErroDeRegra` com a frase pronta sempre que o que foi escolhido
     não fecha. Nunca "conserta" a escolha por conta própria: o dono pediu que
@@ -268,7 +371,6 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
     if operacao not in OPERACOES:
         raise ErroDeRegra("Escolha o que você está lançando.")
     op = OPERACOES[operacao]
-    contas = contas or {}
     categorias = categorias or {}
     observacoes = observacoes or {}
 
@@ -290,37 +392,31 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
 
     escolhidas = {"origem": conta_origem, "destino": conta_destino}
     titulos = []
+    usadas = []
     for perna in op["pernas"]:
-        conta_papel = contas.get(perna.papel) or {}
-        codigo_papel = conta_papel.get("codigo")
-        if not codigo_papel:
-            raise ErroDeRegra(
-                f"Falta apontar qual conta do OMIE é a "
-                f"{PAPEL_ROTULO[perna.papel]}. Isso se faz uma vez só, na "
-                f"própria tela de Aportes, em Configurações.")
-
+        # ⚠️ A CONTA É DESTE LANÇAMENTO, NÃO DE UM CADASTRO — 20/09/2026.
+        #
+        # A versão anterior travava uma conta para "matriz" e outra para
+        # "parceria", apontadas uma vez só. O dono derrubou isso com uma frase:
+        # *"não quero travar a conta Matriz e a da Parceria, tem mais de uma
+        # situação."* Há mais de uma parceria, e a mesma conta pode fazer
+        # papéis diferentes conforme o que se está lançando.
+        #
+        # O que a OPERAÇÃO decide continua sendo o que importa: o papel de
+        # cada lado, o sentido do dinheiro e — por consequência — a categoria.
+        # O que ele diz é apenas QUAL conta faz aquele papel desta vez. Assim
+        # não existe "combinação que a regra não prevê": não há nada com que
+        # confrontar a escolha dele, porque não há mais cadastro fixo.
         escolhida = escolhidas.get(perna.campo_conta)
         if escolhida in (None, "", 0):
-            onde = ("de origem" if perna.campo_conta == "origem"
-                    else "de destino")
             raise ErroDeRegra(
-                f"Escolha a conta {onde}. Nesta operação o dinheiro "
-                f"{'sai da' if perna.sentido == SAIDA else 'entra na'} "
-                f"{PAPEL_ROTULO[perna.papel]}.")
-        if int(escolhida) != int(codigo_papel):
-            # ⚠️ AQUI É ONDE A TELA RECUSA E EXPLICA. O dono escolheu poder
-            # apontar as contas à mão (20/09/2026) sabendo deste preço: dá
-            # para montar uma combinação que a regra não prevê, e aí o certo
-            # é parar — não adivinhar qual categoria ele quis dizer.
-            onde = ("de origem" if perna.campo_conta == "origem"
-                    else "de destino")
-            raise ErroDeRegra(
-                f"Nesta operação, a conta {onde} tem de ser a "
-                f"{PAPEL_ROTULO[perna.papel]} "
-                f"({conta_papel.get('descricao') or codigo_papel}). "
-                f"A regra de aporte que você desenhou não cobre a combinação "
-                f"escolhida — se ela mudou, atualize o de-para em "
-                f"Configurações.")
+                f"Escolha a conta de onde o dinheiro "
+                f"{'SAI' if perna.sentido == SAIDA else 'ENTRA'} "
+                f"({PAPEL_ROTULO[perna.papel]}).")
+        codigo_papel = int(escolhida)
+        usadas.append(codigo_papel)
+        conta_papel = {"codigo": codigo_papel,
+                       "descricao": (descricoes or {}).get(codigo_papel, "")}
 
         cat = categorias.get(perna.categoria) or {}
         codigo_categoria = str(cat.get("codigo") or "").strip()
@@ -362,6 +458,16 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
             "baixar": bool(baixar),
         })
 
+    # A MESMA CONTA DOS DOIS LADOS não é aporte: é dinheiro saindo e entrando
+    # no mesmo lugar. Como não há mais cadastro fixo para conferir a escolha,
+    # esta é a única incoerência que o sistema CONSEGUE enxergar sozinho — e
+    # ela é sempre engano.
+    if len(usadas) > 1 and len(set(usadas)) == 1:
+        raise ErroDeRegra(
+            "As duas contas são a mesma. Nesta operação o dinheiro sai de uma "
+            "conta e entra em outra — do jeito que está, ele sairia e entraria "
+            "no mesmo lugar.")
+
     return {
         "operacao": operacao,
         "operacao_rotulo": op["rotulo"],
@@ -376,6 +482,72 @@ def planejar(*, operacao: str, conta_origem=None, conta_destino=None,
         "titulos": titulos,
         "interna": len(titulos) > 1,
     }
+
+
+# ---------------------------------------------------------------------------
+# LANÇAMENTO EM LOTE — 20/09/2026
+#
+# Pedido dele, com as palavras dele: *"quero poder fazer vários lançamentos do
+# mesmo tipo. Apenas incluir mais datas e valores. Lançamento em lote."*
+#
+# ⚠️ O QUE VARIA É SÓ DATA E VALOR, e isso não é limitação — é o desenho. A
+# operação, as contas, o fornecedor e a obra são os MESMOS para todas as
+# linhas, então há uma decisão só a conferir. Deixar cada linha ter a sua
+# operação transformaria a conferência numa planilha, e é exatamente na
+# conferência que este recurso não pode ser barato.
+#
+# ⚠️ CADA LINHA É UM LANÇAMENTO INDEPENDENTE, com o seu próprio grupo e o seu
+# próprio número de documento. Isso importa na hora em que algo dá errado: uma
+# linha que falha não leva as outras junto, e cada uma tem o seu par amarrado
+# por dentro.
+# ---------------------------------------------------------------------------
+MAX_PARCELAS = 50
+
+
+def ler_parcelas(linhas) -> list:
+    """[{data, valor}] -> [(date, float)], validado e sem repetição boba.
+
+    Levanta `ErroDeRegra` com a frase pronta: quem lê é ele.
+    """
+    if not linhas:
+        raise ErroDeRegra("Informe pelo menos uma data e um valor.")
+    if len(linhas) > MAX_PARCELAS:
+        raise ErroDeRegra(
+            f"São no máximo {MAX_PARCELAS} lançamentos por vez. Cada um vira "
+            f"título no OMIE, e um lote grande demais leva ao bloqueio por "
+            f"excesso de chamadas.")
+
+    saida, vistas = [], set()
+    for i, linha in enumerate(linhas, start=1):
+        try:
+            d = ler_data((linha or {}).get("data"))
+            v = ler_valor((linha or {}).get("valor"))
+        except ErroDeRegra as e:
+            raise ErroDeRegra(f"Linha {i}: {e}") from None
+        # DATA E VALOR IGUAIS DUAS VEZES quase sempre é linha duplicada sem
+        # querer — e duas vezes o mesmo aporte no mesmo dia é o erro caro
+        # deste recurso. Recusar é melhor do que avisar: aqui o certo é ele
+        # apagar a linha, não confirmar.
+        if (d, v) in vistas:
+            raise ErroDeRegra(
+                f"Linha {i}: já existe outra linha com {data_br(d)} e o mesmo "
+                f"valor. Se são dois aportes mesmo, lance um de cada vez — "
+                f"assim ninguém confunde com linha repetida.")
+        vistas.add((d, v))
+        saida.append((d, v))
+    return saida
+
+
+def planejar_lote(*, parcelas, **comuns) -> list:
+    """Um plano por linha de data e valor, com o resto igual em todas."""
+    comuns.pop("valor", None)
+    comuns.pop("data", None)
+    comuns.pop("grupo", None)
+    # O número vem de cada grupo; um número comum a todas faria os pares de
+    # lançamentos diferentes parecerem o mesmo par.
+    comuns.pop("numero", None)
+    return [planejar(valor=valor, data=data, **comuns)
+            for data, valor in ler_parcelas(parcelas)]
 
 
 def _novo_grupo(d: date) -> str:

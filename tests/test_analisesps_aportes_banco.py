@@ -96,13 +96,17 @@ def semear_espelho(banco, categorias=(), contas=(), movimentos=(), rateios=()):
         conn.commit()
 
 
-AS_QUATRO = [
-    ("9.01.01", "Aportes BWS", "N"),
-    ("9.01.02", "Aportes Parceiros", "N"),
-    ("9.02.01", "Devolução de Aportes", "N"),
-    ("9.02.02", "Devolução de Aportes BWS", "N"),
+# ⚠️ O PLANO FINANCEIRO DE VERDADE, como ele mandou em 21/09/2026. Repare nas
+# duas primeiras: nomes quase iguais, códigos que não têm nada a ver.
+AS_CINCO = [
+    ("2.08.97", "Aportes BWS", "N"),               # sai da provedora
+    ("1.02.94", "Aporte BWS", "N"),                # entra na parceria
+    ("1.02.02", "Aporte Parceiros", "N"),
+    ("2.08.02", "Devolução de Aportes", "N"),
+    ("1.02.95", "Devolução de Aportes BWS", "N"),
 ]
-AS_CONTAS = [(7011, "BWS MATRIZ", "12345-6"), (22069, "PARCERIA OBRA X", "99999-9")]
+AS_CONTAS = [(7011, "BWS PROVEDORA", "12345-6"),
+             (22069, "PARCERIA OBRA X", "99999-9")]
 
 
 # ---------------------------------------------------------------------------
@@ -111,16 +115,17 @@ AS_CONTAS = [(7011, "BWS MATRIZ", "12345-6"), (22069, "PARCERIA OBRA X", "99999-
 def test_acha_as_quatro_categorias_pela_descricao(banco_aportes):
     from app.apps.analisesps import aportes_de_para
 
-    semear_espelho(banco_aportes, categorias=AS_QUATRO + [
+    semear_espelho(banco_aportes, categorias=AS_CINCO + [
         ("1.01.01", "Receita de Obra", "N"),
         ("4.05.00", "Transferência entre Contas", "S"),
     ])
     achados = aportes_de_para.descobrir_categorias()
-    assert achados["aportes_bws"]["situacao"] == "achou"
-    assert achados["aportes_bws"]["codigo"] == "9.01.01"
-    assert achados["devolucao_aportes_bws"]["codigo"] == "9.02.02"
-    assert achados["devolucao_aportes"]["codigo"] == "9.02.01"
-    assert achados["aportes_parceiros"]["codigo"] == "9.01.02"
+    assert achados["aportes_bws_saida"]["situacao"] == "achou"
+    assert achados["aportes_bws_saida"]["codigo"] == "2.08.97"
+    assert achados["aporte_bws_entrada"]["codigo"] == "1.02.94"
+    assert achados["devolucao_aportes_bws"]["codigo"] == "1.02.95"
+    assert achados["devolucao_aportes"]["codigo"] == "2.08.02"
+    assert achados["aporte_parceiros"]["codigo"] == "1.02.02"
 
 
 def test_acento_e_maiuscula_nao_atrapalham(banco_aportes):
@@ -129,12 +134,12 @@ def test_acento_e_maiuscula_nao_atrapalham(banco_aportes):
     from app.apps.analisesps import aportes_de_para
 
     semear_espelho(banco_aportes, categorias=[
-        ("9.01.01", "APORTES BWS", "N"),
-        ("9.02.01", "DEVOLUCAO DE APORTES", "N"),
+        ("2.08.97", "APORTES BWS", "N"),
+        ("2.08.02", "DEVOLUCAO DE APORTES", "N"),
     ])
     achados = aportes_de_para.descobrir_categorias()
-    assert achados["aportes_bws"]["codigo"] == "9.01.01"
-    assert achados["devolucao_aportes"]["codigo"] == "9.02.01"
+    assert achados["aportes_bws_saida"]["codigo"] == "2.08.97"
+    assert achados["devolucao_aportes"]["codigo"] == "2.08.02"
 
 
 def test_descricao_repetida_para_e_pede_a_decisao(banco_aportes):
@@ -145,13 +150,13 @@ def test_descricao_repetida_para_e_pede_a_decisao(banco_aportes):
     from app.apps.analisesps import aportes_de_para
 
     semear_espelho(banco_aportes, categorias=[
-        ("9.01.01", "Aportes BWS", "N"),
+        ("2.08.97", "Aportes BWS", "N"),
         ("9.09.09", "Aportes BWS", "N"),      # a mesma descrição, outro código
     ])
     achados = aportes_de_para.descobrir_categorias()
-    assert achados["aportes_bws"]["situacao"] == "ambigua"
-    assert achados["aportes_bws"]["codigo"] == "", "escolheu uma sozinha"
-    assert len(achados["aportes_bws"]["candidatos"]) == 2
+    assert achados["aportes_bws_saida"]["situacao"] == "ambigua"
+    assert achados["aportes_bws_saida"]["codigo"] == "", "escolheu uma sozinha"
+    assert len(achados["aportes_bws_saida"]["candidatos"]) == 2
 
 
 def test_descricao_que_nao_existe_e_dita_em_vez_de_inventada(banco_aportes):
@@ -159,77 +164,172 @@ def test_descricao_que_nao_existe_e_dita_em_vez_de_inventada(banco_aportes):
 
     semear_espelho(banco_aportes, categorias=[("1.01.01", "Receita", "N")])
     achados = aportes_de_para.descobrir_categorias()
-    assert achados["aportes_bws"]["situacao"] == "nao_achou"
-    assert achados["aportes_bws"]["codigo"] == ""
+    assert achados["aportes_bws_saida"]["situacao"] == "nao_achou"
+    assert achados["aportes_bws_saida"]["codigo"] == ""
 
 
-def test_aportes_bws_nao_e_confundida_com_devolucao_de_aportes_bws(banco_aportes):
-    """"Aportes BWS" é pedaço de "Devolução de Aportes BWS". Casando por
-    pedaço, as duas viriam como candidatas uma da outra — e o dono escolheria
-    a errada metade das vezes."""
+def test_as_quatro_de_nome_parecido_nao_se_confundem(banco_aportes):
+    """⚠️ O CAMPO MINADO DESTE PLANO FINANCEIRO, e o motivo de este teste
+    existir:
+
+      · "Aportes BWS" é pedaço de "Devolução de Aportes BWS";
+      · "Aporte BWS" é o singular de "Aportes BWS" — e são LADOS OPOSTOS do
+        mesmo dinheiro, com códigos diferentes;
+      · "Devolução de Aportes" é pedaço de "Devolução de Aportes BWS".
+
+    Casar por pedaço ou dobrar o plural faria o sistema escolher a errada em
+    silêncio. Casamento EXATO resolve as quatro."""
     from app.apps.analisesps import aportes_de_para
 
-    semear_espelho(banco_aportes, categorias=AS_QUATRO)
+    semear_espelho(banco_aportes, categorias=AS_CINCO)
     achados = aportes_de_para.descobrir_categorias()
-    assert achados["aportes_bws"]["codigo"] == "9.01.01"
-    assert achados["devolucao_aportes_bws"]["codigo"] == "9.02.02"
-    assert achados["devolucao_aportes"]["codigo"] == "9.02.01"
+    assert achados["aportes_bws_saida"]["codigo"] == "2.08.97"
+    assert achados["aporte_bws_entrada"]["codigo"] == "1.02.94"
+    assert achados["devolucao_aportes_bws"]["codigo"] == "1.02.95"
+    assert achados["devolucao_aportes"]["codigo"] == "2.08.02"
+    # E todas resolvidas sozinhas: nenhuma ficou ambígua por causa do nome.
+    assert aportes_de_para.falta_configurar() == []
+
+
+def test_o_singular_so_vira_candidato_nunca_certeza(banco_aportes):
+    """Faltando "Aporte BWS" no plano, o sistema NÃO pode usar "Aportes BWS"
+    no lugar: são lados opostos. Ele oferece como candidato e para."""
+    from app.apps.analisesps import aportes_de_para
+
+    semear_espelho(banco_aportes, categorias=[
+        ("2.08.97", "Aportes BWS", "N"),
+        ("1.02.02", "Aporte Parceiros", "N"),
+        ("2.08.02", "Devolução de Aportes", "N"),
+        ("1.02.95", "Devolução de Aportes BWS", "N"),
+    ])
+    achados = aportes_de_para.descobrir_categorias()
+    assert achados["aportes_bws_saida"]["codigo"] == "2.08.97"
+    entrada = achados["aporte_bws_entrada"]
+    assert entrada["codigo"] == "", "usou a categoria do outro lado"
+    assert any(c["codigo"] == "2.08.97" for c in entrada["candidatos"]), \
+        "nem sequer ofereceu a parecida para ele olhar"
+    assert any("Aporte BWS" in f for f in aportes_de_para.falta_configurar())
 
 
 def test_a_marca_de_transferencia_vem_junto(banco_aportes):
     from app.apps.analisesps import aportes_de_para
 
-    semear_espelho(banco_aportes, categorias=[("9.01.01", "Aportes BWS", "S")])
+    semear_espelho(banco_aportes, categorias=[("2.08.97", "Aportes BWS", "S")])
     achados = aportes_de_para.descobrir_categorias()
-    assert achados["aportes_bws"]["transferencia"] == "S"
+    assert achados["aportes_bws_saida"]["transferencia"] == "S"
 
 
 # ---------------------------------------------------------------------------
 # O DE-PARA GRAVADO — e o SQL de gravação
 # ---------------------------------------------------------------------------
-def test_guardar_e_reler_o_de_para(banco_aportes):
-    from app.apps.analisesps import aportes, aportes_de_para
+def test_guardar_e_reler_a_categoria(banco_aportes):
+    from app.apps.analisesps import aportes_de_para
 
-    semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    aportes_de_para.guardar_categoria("aportes_bws", "9.01.01", "Marcelo")
-
-    contas = aportes_de_para.contas_configuradas()
-    assert contas[aportes.MATRIZ]["codigo"] == 7011
-    assert contas[aportes.MATRIZ]["descricao"] == "BWS MATRIZ"
-    assert aportes_de_para.categorias_configuradas()["aportes_bws"]["codigo"] \
-        == "9.01.01"
+    semear_espelho(banco_aportes, categorias=AS_CINCO, contas=AS_CONTAS)
+    aportes_de_para.guardar_categoria("aportes_bws_saida", "2.08.97", "Marcelo")
+    assert aportes_de_para.categorias_configuradas()[
+        "aportes_bws_saida"]["codigo"] == "2.08.97"
 
 
-def test_apontar_de_novo_troca_em_vez_de_duplicar(banco_aportes):
-    """Exercita o ON CONFLICT: o dono troca a conta da parceria quando a obra
-    muda, e isso não pode virar duas linhas brigando."""
-    from app.apps.analisesps import aportes, aportes_de_para
+def test_a_conta_e_lembrada_por_operacao_e_papel_nao_cadastrada(banco_aportes):
+    """⚠️ *"Não quero travar a conta Matriz e a da Parceria, tem mais de uma
+    situação."*
 
-    semear_espelho(banco_aportes, contas=AS_CONTAS)
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 7011, "Marcelo")
-    contas = aportes_de_para.contas_configuradas()
-    assert contas[aportes.PARCERIA]["codigo"] == 7011
-    assert contas[aportes.PARCERIA]["descricao"] == "BWS MATRIZ"
-
-
-def test_conta_fora_do_espelho_e_recusada(banco_aportes):
+    O que ficou não é cadastro: é memória, por (operação, papel), só para vir
+    pré-escolhida. Duas parcerias diferentes em duas operações diferentes
+    convivem — e nenhuma delas decide categoria nenhuma."""
     from app.apps.analisesps import aportes, aportes_de_para
 
     semear_espelho(banco_aportes, contas=AS_CONTAS)
-    with pytest.raises(aportes_de_para.SemEspelho):
-        aportes_de_para.guardar_conta(aportes.MATRIZ, 123456, "Marcelo")
+    aportes_de_para.lembrar_conta("aporte_bws", aportes.PARCERIA, 22069, "M")
+    aportes_de_para.lembrar_conta("aporte_parceiro", aportes.PARCERIA, 7011, "M")
+    lembradas = aportes_de_para.contas_lembradas()
+    assert lembradas["aporte_bws:parceria"] == 22069
+    assert lembradas["aporte_parceiro:parceria"] == 7011
+
+    # Lembrar de novo troca, não duplica (exercita o ON CONFLICT).
+    aportes_de_para.lembrar_conta("aporte_bws", aportes.PARCERIA, 7011, "M")
+    assert aportes_de_para.contas_lembradas()["aporte_bws:parceria"] == 7011
+
+
+def test_lembrar_a_conta_nunca_derruba_nada(banco_aportes):
+    """Um aporte que já entrou no OMIE não pode falhar porque a memória de
+    conforto não gravou."""
+    from app.apps.analisesps import aportes_de_para
+
+    aportes_de_para.lembrar_conta("aporte_bws", "papel_que_nao_existe", 1, "M")
+    aportes_de_para.lembrar_conta("aporte_bws", "provedora", None, "M")
+
+
+def test_a_categoria_sem_duvida_se_resolve_sozinha(banco_aportes):
+    """⚠️ MUDANÇA DE 20/09/2026: *"eu não entendi esse gravar o de-para. Eu
+    acho que não precisaria."*
+
+    Ele tem razão. Descrição que aparece UMA vez só no plano financeiro não
+    tem decisão a tomar — pedir um clique de confirmação é cerimônia, e
+    cerimônia que se repete vira clique automático, que é pior do que não ter
+    conferência nenhuma. O de-para continua impedindo código chumbado; só
+    deixou de ser um passo."""
+    from app.apps.analisesps import aportes_de_para
+
+    semear_espelho(banco_aportes, categorias=AS_CINCO, contas=AS_CONTAS)
+    # NADA foi confirmado à mão, de propósito.
+    assert aportes_de_para.categorias_configuradas() == {}
+
+    resolvidas = aportes_de_para.categorias_resolvidas()
+    assert resolvidas["aportes_bws_saida"]["codigo"] == "2.08.97"
+    assert resolvidas["aporte_bws_entrada"]["codigo"] == "1.02.94"
+    assert resolvidas["devolucao_aportes_bws"]["codigo"] == "1.02.95"
+    assert all(v.get("descoberta") for v in resolvidas.values())
+
+
+def test_a_categoria_com_duvida_continua_parando_a_tela(banco_aportes):
+    """O que se resolve sozinho é o caso SEM dúvida. Descrição repetida
+    continua sendo decisão dele — escolher a primeira seria o lançamento
+    errado silencioso que o de-para existe para evitar."""
+    from app.apps.analisesps import aportes_de_para
+
+    semear_espelho(banco_aportes, contas=AS_CONTAS,
+                   categorias=AS_CINCO + [("9.09.09", "Aportes BWS", "N")])
+    resolvidas = aportes_de_para.categorias_resolvidas()
+    assert "aportes_bws_saida" not in resolvidas, "escolheu uma sozinha"
+    assert resolvidas["aporte_parceiros"]["codigo"] == "1.02.02"
+    faltas = aportes_de_para.falta_configurar()
+    assert any("Aportes BWS" in f for f in faltas)
+    assert not any("Aporte Parceiros" in f for f in faltas)
+
+
+def test_o_que_ele_confirmou_a_mao_vale_por_cima_do_descoberto(banco_aportes):
+    """É assim que ele conserta um caso que o sistema leria errado."""
+    from app.apps.analisesps import aportes_de_para
+
+    semear_espelho(banco_aportes, contas=AS_CONTAS, categorias=AS_CINCO + [
+        ("9.99.99", "Aportes BWS (antiga)", "N")])
+    aportes_de_para.guardar_categoria("aportes_bws_saida", "9.99.99", "Marcelo")
+    resolvidas = aportes_de_para.categorias_resolvidas()
+    assert resolvidas["aportes_bws_saida"]["codigo"] == "9.99.99"
+
+
+def test_com_o_plano_financeiro_em_ordem_nao_falta_nada(banco_aportes):
+    """Nada a configurar: as categorias se resolvem sozinhas e a conta é
+    escolhida na hora do lançamento."""
+    from app.apps.analisesps import aportes_de_para
+
+    semear_espelho(banco_aportes, categorias=AS_CINCO, contas=AS_CONTAS)
+    assert aportes_de_para.falta_configurar() == []
 
 
 def test_o_que_falta_e_dito_em_portugues(banco_aportes):
     from app.apps.analisesps import aportes_de_para
 
-    semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
+    # Plano financeiro VAZIO: as quatro categorias faltam, porque não há o que
+    # descobrir. Conta NÃO entra nesta conta — ela é escolhida a cada
+    # lançamento, não cadastrada.
+    semear_espelho(banco_aportes, contas=AS_CONTAS)
     faltas = aportes_de_para.falta_configurar()
-    assert len(faltas) == 6, "duas contas e quatro categorias"
-    aportes_de_para.guardar_conta("matriz", 7011, "Marcelo")
+    assert len(faltas) == 5, faltas
+    assert not any("conta" in f.lower() for f in faltas)
+    aportes_de_para.guardar_categoria("aportes_bws_saida", "", "Marcelo")
     assert len(aportes_de_para.falta_configurar()) == 5
 
 
@@ -243,21 +343,19 @@ def test_o_que_falta_e_dito_em_portugues(banco_aportes):
 def test_a_tabela_inteira_com_os_codigos_vindos_do_plano_financeiro(banco_aportes):
     from app.apps.analisesps import aportes, aportes_de_para
 
-    semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS,
+    semear_espelho(banco_aportes, categorias=AS_CINCO, contas=AS_CONTAS,
                    rateios=[("OBRA-1", "Obra Um")])
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    for chave, achado in aportes_de_para.descobrir_categorias().items():
-        aportes_de_para.guardar_categoria(chave, achado["codigo"], "Marcelo")
+    # Nenhuma categoria confirmada à mão: elas se resolvem sozinhas, que é o
+    # caminho que o dono vai usar de verdade.
+    descricoes = aportes_de_para.descricoes_das_contas()
+    categorias = aportes_de_para.categorias_resolvidas()
 
-    contas = aportes_de_para.contas_configuradas()
-    categorias = aportes_de_para.categorias_configuradas()
-
+    # ⚠️ REPARE NO aporte_bws: dois códigos DIFERENTES, um de cada lado.
     esperado = {
-        "aporte_bws": [(7011, "9.01.01", "P"), (22069, "9.01.01", "R")],
-        "devolucao_bws": [(22069, "9.02.01", "P"), (7011, "9.02.02", "R")],
-        "aporte_parceiro": [(22069, "9.01.02", "R")],
-        "devolucao_parceiro": [(22069, "9.02.01", "P")],
+        "aporte_bws": [(7011, "2.08.97", "P"), (22069, "1.02.94", "R")],
+        "devolucao_bws": [(22069, "2.08.02", "P"), (7011, "1.02.95", "R")],
+        "aporte_parceiro": [(22069, "1.02.02", "R")],
+        "devolucao_parceiro": [(22069, "2.08.02", "P")],
     }
     contas_da_operacao = {
         "aporte_bws": (7011, 22069), "devolucao_bws": (22069, 7011),
@@ -268,7 +366,8 @@ def test_a_tabela_inteira_com_os_codigos_vindos_do_plano_financeiro(banco_aporte
         plano = aportes.planejar(
             operacao=operacao, conta_origem=origem, conta_destino=destino,
             valor="12.500,00", data="2026-09-20", fornecedor=99,
-            obra="OBRA-1", quem="Marcelo", contas=contas, categorias=categorias)
+            obra="OBRA-1", quem="Marcelo", descricoes=descricoes,
+            categorias=categorias)
         saiu = [(t["id_conta_corrente"], t["codigo_categoria"], t["natureza"])
                 for t in plano["titulos"]]
         assert saiu == linhas, operacao
@@ -289,7 +388,7 @@ def test_acha_a_movimentacao_do_mesmo_dia_e_do_mesmo_valor(banco_aportes):
     assert len(achados) == 1
     assert achados[0]["e_transferencia"] is True
     assert {achados[0]["conta_a"], achados[0]["conta_b"]} == \
-        {"BWS MATRIZ", "PARCERIA OBRA X"}
+        {"BWS PROVEDORA", "PARCERIA OBRA X"}
 
 
 def test_uma_perna_so_nao_e_transferencia(banco_aportes):
@@ -349,17 +448,12 @@ def test_o_que_foi_gravado_fica_registrado_e_o_orfao_aparece(banco_aportes):
     auditar."*"""
     from app.apps.analisesps import aportes, aportes_de_para, aportes_omie
 
-    semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    for chave, achado in aportes_de_para.descobrir_categorias().items():
-        aportes_de_para.guardar_categoria(chave, achado["codigo"], "Marcelo")
-
+    semear_espelho(banco_aportes, categorias=AS_CINCO, contas=AS_CONTAS)
     plano = aportes.planejar(
         operacao="aporte_bws", conta_origem=7011, conta_destino=22069,
         valor="12.500,00", data="2026-09-20", fornecedor=99, obra="OBRA-1",
-        quem="Marcelo", contas=aportes_de_para.contas_configuradas(),
-        categorias=aportes_de_para.categorias_configuradas())
+        quem="Marcelo", descricoes=aportes_de_para.descricoes_das_contas(),
+        categorias=aportes_de_para.categorias_resolvidas())
 
     class OmieQueFalhaNoSegundo:
         def __init__(self):
@@ -396,17 +490,12 @@ def test_gravar_duas_vezes_o_mesmo_lancamento_nao_duplica_o_registro(banco_aport
     repete o envio, nada disso pode virar dois registros do mesmo aporte."""
     from app.apps.analisesps import aportes, aportes_de_para, aportes_omie
 
-    semear_espelho(banco_aportes, categorias=AS_QUATRO, contas=AS_CONTAS)
-    aportes_de_para.guardar_conta(aportes.MATRIZ, 7011, "Marcelo")
-    aportes_de_para.guardar_conta(aportes.PARCERIA, 22069, "Marcelo")
-    for chave, achado in aportes_de_para.descobrir_categorias().items():
-        aportes_de_para.guardar_categoria(chave, achado["codigo"], "Marcelo")
-
+    semear_espelho(banco_aportes, categorias=AS_CINCO, contas=AS_CONTAS)
     plano = aportes.planejar(
         operacao="aporte_parceiro", conta_destino=22069, valor="100,00",
         data="2026-09-20", fornecedor=99, obra="OBRA-1", quem="Marcelo",
-        contas=aportes_de_para.contas_configuradas(),
-        categorias=aportes_de_para.categorias_configuradas())
+        descricoes=aportes_de_para.descricoes_das_contas(),
+        categorias=aportes_de_para.categorias_resolvidas())
 
     class OmieOk:
         def _call(self, url, call, param):

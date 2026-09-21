@@ -366,9 +366,37 @@ e cada um responde a um jeito conhecido de dar errado:
 | Cuidado | O que ele evita |
 |---|---|
 | **Nenhum código de categoria ou de conta escrito no programa** — todos saem de um de-para conferível, descoberto pela descrição em `painel.cat` | o dono mexe no plano financeiro e o sistema passa a lançar na categoria errada **sem nada denunciar** |
+| **O de-para não é um passo**: o que é inequívoco se resolve sozinho, e o bloco de ajuste só aparece quando há decisão a tomar | clique de confirmação que se repete vira clique automático — pior do que não ter conferência, porque parece que alguém olhou |
+| **A conta é de cada lançamento, não de um cadastro** — a operação decide o papel, o sentido e a categoria; o dono diz só qual conta faz aquele papel desta vez | travar uma conta como "a parceria" quando há mais de uma parceria, e a mesma conta faz papéis diferentes |
 | **Descrição ambígua ou ausente PARA a tela** em vez de escolher uma | o mesmo, pela porta do palpite |
 | **Ensaio obrigatório antes de gravar**, mostrando o pacote exato | escrever no OMIE algo que ninguém leu |
 | **Os dois títulos nascem amarrados**: falhando o segundo, o primeiro é desfeito; não dando para desfazer, o número do órfão vai para a tela | meio aporte no OMIE — nenhum relatório fecha e ninguém percebe |
+
+⚠️ **A tela pergunta UMA coisa para começar** — o que está sendo lançado — e a
+resposta desenha o resto: contas, sentido de cada lado, categoria e tipo de
+título. Um campo de conta por lado, com a pergunta inteira no rótulo ("De qual
+conta o dinheiro sai?") e o papel ao lado — nunca "origem"/"destino" soltos.
+Conta de origem só existe quando existe: no aporte do parceiro o dinheiro vem
+de fora, e a tela escreve isso. **Não há nada a configurar**: as categorias se
+resolvem pela descrição e a conta é escolhida na hora.
+
+⚠️ **CINCO situações, CINCO categorias diferentes** (21/09/2026). O plano
+financeiro tem `Aportes BWS` (2.08.97, sai da provedora) e `Aporte BWS`
+(1.02.94, entra na parceria): **uma letra de diferença, códigos que não têm
+nada a ver, e são os dois lados do mesmo aporte**. Por isso cada situação tem
+chave própria, só casamento EXATO de descrição se resolve sozinho (um nome
+*parecido* nunca vira certeza — seria pegar a categoria do lado oposto), e a
+tela mostra a explicação de cada uma. O lado de fora chama-se **Provedora**,
+não matriz: o que o define é ser a conta de onde o dinheiro vem.
+
+⚠️ **Lançamento em lote:** a tela aceita várias linhas de data e valor, com o
+resto igual para todas. **Dentro** de um lançamento os dois títulos seguem
+amarrados; **entre** lançamentos eles são independentes — um que falha não
+para os outros, e cada um tem grupo e número próprios. Teto de 50 por vez
+(cada linha são até quatro chamadas ao OMIE), e um cliente só para o lote,
+porque é ele que carrega o controle de excesso de chamadas. Lote que entra
+pela metade **diz isso**, em vez de um "deu erro" que levaria a relançar o que
+já entrou.
 
 A ordem das operações é fixa, com teste: **os dois títulos primeiro, as baixas
 por último**. Baixa que falha deixa título correto em aberto, que é chato e
