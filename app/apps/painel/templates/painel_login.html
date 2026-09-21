@@ -26,9 +26,14 @@
       </div>
     {% else %}
       {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+      {# Usuario em branco = senha do dono, que ve tudo. Preenchido = acesso
+         proprio, preso a certas obras e telas. Os dois caminhos sao separados
+         no servidor: senha mestre digitada aqui nao vira administrador. #}
+      <label for="usuario">Usuário <small>(deixe em branco se você é o dono)</small></label>
+      <input id="usuario" name="usuario" autocomplete="username" autofocus>
       <label for="senha">Senha</label>
       <input id="senha" name="senha" type="password" autocomplete="current-password"
-             autofocus required>
+             required>
       <button class="btn" type="submit">Entrar</button>
     {% endif %}
   </form>

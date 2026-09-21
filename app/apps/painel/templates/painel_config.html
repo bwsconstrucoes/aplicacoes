@@ -336,6 +336,115 @@
 </div>
 {% endif %}
 
+{# ===================== QUEM TEM ACESSO AO PAINEL ===================== #}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Quem tem acesso ao painel</h3></div>
+  {% if erro_usuario %}<div class="aviso erro">{{ erro_usuario }}</div>{% endif %}
+  {% if usuario_ok %}<div class="aviso ok">Acesso atualizado.</div>{% endif %}
+  <p class="cartao-dica">
+    Você entra com a <b>senha do dono</b> e vê tudo. Quem for cadastrado aqui
+    entra com <b>usuário e senha próprios</b> e vê <b>só as obras e só as telas
+    que você marcar</b> — inclusive nos downloads.<br>
+    Quem é cadastrado aqui <b>nunca escreve no OMIE</b> e não abre esta tela de
+    Configurações nem o Explorador.<br>
+    <b>Sem obra marcada ou sem tela marcada, a pessoa não entra.</b> Lista vazia
+    quer dizer nenhuma, nunca todas.
+  </p>
+
+  {% if pessoas %}
+  <div class="tabela-rolagem" style="margin-bottom:12px">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Usuário</th>
+        <th class="sem-ordem">Nome</th>
+        <th class="sem-ordem">Obras</th>
+        <th class="sem-ordem">Telas</th>
+        <th class="sem-ordem">Último acesso</th>
+        <th class="sem-ordem"></th>
+      </tr></thead>
+      <tbody>
+      {% for p in pessoas %}
+        <tr>
+          <td class="dados">{{ p.usuario }}{% if not p.ativo %}
+            <br><small style="color:var(--vermelho)">desativado</small>{% endif %}</td>
+          <td class="desc">{{ p.nome or '—' }}</td>
+          <td class="desc"><small>{{ p.obras|join(', ') if p.obras
+              else 'nenhuma — não entra' }}</small></td>
+          <td class="desc"><small>{{ p.telas|map('replace', '_', ' ')|join(', ')
+              if p.telas else 'nenhuma — não entra' }}</small></td>
+          <td class="dados"><small>{{ p.ultimo_acesso.strftime('%d/%m/%Y %H:%M')
+              if p.ultimo_acesso else 'nunca entrou' }}</small></td>
+          <td>
+            <form method="post" action="{{ url_for('painel.usuarios_salvar') }}"
+                  onsubmit="return confirm('Tirar o acesso de {{ p.usuario }}?')">
+              <input type="hidden" name="acao" value="apagar">
+              <input type="hidden" name="usuario_id" value="{{ p.id }}">
+              <button class="link-btn" type="submit"
+                      title="Tirar o acesso">✕</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <details>
+    <summary style="cursor:pointer; font-weight:600">
+      {{ 'Dar acesso a mais alguém' if pessoas else 'Dar acesso a alguém' }}
+    </summary>
+    <form method="post" action="{{ url_for('painel.usuarios_salvar') }}"
+          style="margin-top:10px">
+      <input type="hidden" name="acao" value="criar">
+      <div class="form-grade">
+        <div class="campo">
+          <label for="novo_usuario">Usuário (o que a pessoa digita)</label>
+          <input id="novo_usuario" name="novo_usuario" autocomplete="off" required>
+        </div>
+        <div class="campo">
+          <label for="nome">Nome</label>
+          <input id="nome" name="nome" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="nova_senha">Senha (mínimo 6 letras)</label>
+          <input id="nova_senha" name="nova_senha" autocomplete="new-password" required>
+        </div>
+      </div>
+
+      <h4 style="margin:14px 0 4px">Obras que ela pode ver</h4>
+      {% if obras_para_liberar %}
+      <div class="tabela-rolagem" style="max-height:200px">
+        {% for obra in obras_para_liberar %}
+          <label style="display:block; padding:2px 0">
+            <input type="checkbox" name="obra_do_usuario" value="{{ obra }}">
+            {{ obra }}
+          </label>
+        {% endfor %}
+      </div>
+      {% else %}
+        <p class="cartao-dica">A base ainda não tem obras para liberar.</p>
+      {% endif %}
+
+      <h4 style="margin:14px 0 4px">Telas que ela pode abrir</h4>
+      <div>
+        {% for chave, rotulo in telas_liberaveis.items() %}
+          <label style="display:inline-block; margin:0 14px 6px 0">
+            <input type="checkbox" name="tela_do_usuario" value="{{ chave }}"
+                   {% if chave in telas_sugeridas %}checked{% endif %}>
+            {{ rotulo }}
+          </label>
+        {% endfor %}
+      </div>
+      <p class="cartao-dica">
+        DRE e Despesas Analítico já vêm marcadas. As outras ficam prontas para
+        quando você quiser liberar.
+      </p>
+      <button class="btn" type="submit">Dar acesso</button>
+    </form>
+  </details>
+</div>
+
 {# ============ AS CONFERÊNCIAS, SÓ QUANDO ALGUÉM PEDE ============ #}
 {% if not base_vazia %}
 <div class="cartao" id="conferencias" style="margin-top:14px">

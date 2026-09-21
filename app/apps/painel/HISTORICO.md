@@ -1385,6 +1385,74 @@ separar.
 
 Basta **"Só refazer os números"**.
 
+## Acesso por pessoa, preso a obras e a telas — 21/09/2026
+
+O dono: *"quero poder criar acesso a um usuário para ele entrar e ver somente
+determinada ou determinadas obras no painel."* E, sobre o que liberar:
+*"queria poder selecionar quais telas. Gostaria era de liberar a princípio DRE,
+Despesas Analítico, mas se de repente entender que seja necessário liberar outra
+tela, já estaria configurado."*
+
+Até aqui o painel tinha **uma senha só** e quem entrava via tudo.
+
+### Como ficou
+
+| | Senha do dono (`PAINEL_SENHA`) | Usuário e senha próprios |
+|---|---|---|
+| Vê | tudo | só as obras marcadas |
+| Telas | todas | só as marcadas |
+| Configurações e Explorador | sim | **nunca** |
+| Escreve no OMIE | sim | **nunca** |
+| Baixa Excel/PDF | tudo | só das obras dele |
+
+Cadastro na tela de Configurações: usuário, nome, senha, as obras e as telas.
+DRE e Despesas Analítico já vêm marcadas; as outras ficam prontas.
+
+### O que sustenta isso: UM lugar só
+
+O escopo é aplicado em `_filtros_do_pedido`, por onde **toda tela, todo
+download e todo gráfico passam** para saber o que mostrar. Amarrar ali
+significa que nenhuma tela pode esquecer — que é exatamente como esse tipo de
+coisa vaza quando se protege tela por tela.
+
+A linha que mais importa é um `or`: se a pessoa não escolheu obra (ou escolheu
+uma que não é dela), o filtro vira **a lista dela** — e nunca "sem filtro".
+Sem isso, bastava apagar a obra da barra de endereço para ver a empresa inteira.
+Há teste para os dois ataques óbvios: apagar o filtro e escrever a obra do
+vizinho.
+
+### Falhar FECHADO, em todo lugar
+
+- **sem obra marcada, não entra.** Lista vazia quer dizer nenhuma, nunca todas —
+  um cadastro pela metade não pode virar acesso total;
+- **sem tela marcada, não entra;**
+- **tela não liberada responde 404**, não 403. Dizer "sem permissão" confirmaria
+  que a tela existe, e varrer os endereços mapearia o sistema sem abrir nada
+  (mesma regra do ERP);
+- **tirar a obra de alguém vale na hora**, não quando ele fechar o navegador: a
+  sessão só guarda o número da pessoa, e o escopo é relido a cada pedido;
+- a barra lateral **não lista as obras dos outros** — o nome delas é informação
+  que ele não teria de outro jeito;
+- as abas do topo mostram **só o que abre**: aba que responde "não encontrado"
+  ao ser clicada é pior que aba nenhuma.
+
+### Um vazamento que o teste pegou antes de existir
+
+A lista de áreas proibidas é por prefixo de rota, e `painel.usuarios` tinha
+ficado **de fora**. Resultado: uma pessoa presa a uma obra conseguia **criar
+outro acesso** — inclusive um com todas as obras. O teste que tenta abrir
+Configurações, Explorador e o cadastro pegou na hora.
+
+A lição, que vale para a próxima rota: **a lista por prefixo só protege o que
+está escrito nela.** Rota nova numa área sensível precisa entrar lá, e o jeito
+de não esquecer é ter um teste que tenta abrir.
+
+### A senha
+
+Guardada embaralhada (PBKDF2 com sal, do `werkzeug` que o Flask já traz). Nem o
+dono lê a senha de alguém depois — só troca. Este banco tem o financeiro inteiro
+da empresa.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

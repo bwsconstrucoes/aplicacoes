@@ -194,10 +194,37 @@ def entrar():
         return render_template("painel_login.html", erro=None,
                                sem_senha=not auth.senha_configurada())
 
+    senha = request.form.get("senha", "")
+    login = (request.form.get("usuario") or "").strip()
+
+    # COM USUARIO PREENCHIDO, e a pessoa presa a obras — nunca a senha mestre.
+    # Os dois caminhos ficam separados de proposito: senha mestre digitada no
+    # campo de usuario nao pode virar acesso de administrador por acidente.
+    if login:
+        from . import usuarios
+        pessoa = usuarios.buscar(login)
+        if not pessoa or not usuarios.senha_confere(pessoa, senha):
+            logger.warning("Painel: entrada recusada para o usuário %r.", login)
+            # a mesma resposta para usuário que não existe e senha errada: dizer
+            # qual dos dois falhou entrega metade da resposta a quem tenta
+            return render_template("painel_login.html", sem_senha=False,
+                                   erro="Usuário ou senha incorretos."), 401
+        if not pessoa.get("obras") or not pessoa.get("telas"):
+            logger.warning("Painel: %s entrou sem obra ou sem tela liberada.", login)
+            return render_template(
+                "painel_login.html", sem_senha=False,
+                erro="Seu acesso ainda não tem obra ou tela liberada. "
+                     "Fale com o responsável pelo painel."), 403
+        auth.entrar_na_sessao(usuario_id=pessoa["id"])
+        usuarios.marcar_acesso(pessoa["id"])
+        primeira = next((a for a in ABAS if a[0] in set(pessoa["telas"])), None)
+        return redirect(url_for(primeira[2]) if primeira
+                        else url_for("painel.entrar"))
+
     if not auth.senha_configurada():
         return render_template("painel_login.html", sem_senha=True,
                                erro="O painel ainda não tem senha configurada."), 403
-    if not auth.senha_confere(request.form.get("senha", "")):
+    if not auth.senha_confere(senha):
         logger.warning("Painel: tentativa de entrada com senha errada.")
         return render_template("painel_login.html", sem_senha=False,
                                erro="Senha incorreta."), 401
@@ -263,11 +290,34 @@ def _versao_publicada() -> str:
 
 
 def _filtros_do_pedido():
+    """Os filtros da barra lateral — JA PRESOS ao escopo de quem esta olhando.
+
+    ESTE E O UNICO LUGAR onde se decide o que cada tela enxerga, e e de
+    proposito. Toda tela, todo download e todo grafico passam por aqui. Amarrar
+    o escopo num lugar so significa que NENHUMA TELA PODE ESQUECER — que e
+    exatamente como esse tipo de coisa vaza quando se protege tela por tela.
+
+    A regra que mais importa esta no `or`: se a pessoa nao escolheu obra
+    nenhuma (ou escolheu uma que nao e dela), o filtro vira A LISTA DELA — e
+    nunca "sem filtro". Sem isso, bastaria tirar a obra do endereco para ver a
+    empresa inteira."""
+    from . import auth
     from .consultas import Filtros
     anos = [int(a) for a in request.args.getlist("ano") if str(a).strip().isdigit()]
+    obras = [o for o in request.args.getlist("obra") if o]
+
+    pessoa = auth.usuario_da_sessao()
+    if pessoa is not None:
+        permitidas = set(pessoa.get("obras") or [])
+        obras = [o for o in obras if o in permitidas] or sorted(permitidas)
+        # lista vazia aqui seria "todas": um cadastro pela metade nao pode
+        # virar acesso total. O guard ja barra antes, e isto e a segunda tranca.
+        if not obras:
+            obras = ["\u0000nenhuma obra liberada"]
+
     return Filtros(anos=anos,
                    projetos=[p for p in request.args.getlist("projeto") if p],
-                   departamentos=[o for o in request.args.getlist("obra") if o],
+                   departamentos=obras,
                    excluir_trf=request.args.get("trf") != "1")
 
 
@@ -310,13 +360,40 @@ def _nivel_do_pedido() -> str:
     return "obra" if request.args.get("nivel") == "obra" else "projeto"
 
 
+def _abas_visiveis():
+    """As abas do topo que a pessoa pode abrir.
+
+    Mostrar uma aba que responde "nao encontrado" ao ser clicada seria pior que
+    nao mostrar: a pessoa acha que o sistema esta com defeito."""
+    from . import auth
+    pessoa = auth.usuario_da_sessao()
+    if pessoa is None:
+        return ABAS
+    liberadas = set(pessoa.get("telas") or [])
+    return [aba for aba in ABAS if aba[0] in liberadas]
+
+
+def _opcoes_no_escopo():
+    """As listas da barra lateral, sem os nomes das obras que nao sao dela.
+
+    Mostrar a lista inteira entregaria o nome de todas as obras da empresa a
+    quem so pode ver uma — informacao que ele nao teria de outro jeito."""
+    from . import auth, consultas
+    opcoes = consultas.opcoes_de_filtro()
+    pessoa = auth.usuario_da_sessao()
+    if pessoa is None:
+        return opcoes
+    permitidas = set(pessoa.get("obras") or [])
+    return dict(opcoes, obras=[o for o in opcoes["obras"] if o in permitidas])
+
+
 def _contexto_comum(aba: str):
     """O que toda tela precisa: abas, filtros disponiveis e a data da base."""
     from . import consultas
     return {
         "aba_ativa": aba,
-        "abas": ABAS,
-        "opcoes": consultas.opcoes_de_filtro(),
+        "abas": _abas_visiveis(),
+        "opcoes": _opcoes_no_escopo(),
         "atualizacao": consultas.atualizado_em(),
         "selecao": {
             "anos": request.args.getlist("ano"),
@@ -1045,6 +1122,40 @@ def explorador_alterar():
     )
 
 
+@bp.route("/usuarios", methods=["POST"])
+def usuarios_salvar():
+    """Cadastra, altera ou apaga quem tem acesso proprio ao painel.
+
+    So o administrador chega aqui — o guard ja barra quem entrou por usuario
+    proprio, porque `painel.usuarios` nao esta na lista de telas liberaveis."""
+    from . import usuarios
+
+    acao = (request.form.get("acao") or "").strip()
+    obras = [o for o in request.form.getlist("obra_do_usuario") if o.strip()]
+    telas = [t for t in request.form.getlist("tela_do_usuario") if t.strip()]
+    uid = (request.form.get("usuario_id") or "").strip()
+
+    if acao == "criar":
+        r = usuarios.criar(request.form.get("novo_usuario", ""),
+                           request.form.get("nova_senha", ""),
+                           nome=request.form.get("nome", ""),
+                           obras=obras, telas=telas)
+    elif acao == "apagar" and uid.isdigit():
+        r = usuarios.apagar(int(uid))
+    elif acao == "salvar" and uid.isdigit():
+        r = usuarios.atualizar(
+            int(uid), nome=request.form.get("nome"),
+            senha=request.form.get("nova_senha"),
+            ativo=request.form.get("ativo") == "1",
+            obras=obras, telas=telas)
+    else:
+        r = {"ok": False, "erro": "Pedido não reconhecido."}
+
+    return redirect(url_for("painel.configuracoes",
+                            **({"erro_usuario": r["erro"]} if not r.get("ok")
+                               else {"usuario_ok": "1"})))
+
+
 @bp.route("/explorador/excluir", methods=["POST"])
 def explorador_excluir():
     """APAGA titulos no OMIE. Nao ha desfazer.
@@ -1235,9 +1346,32 @@ def _conferir(funcao, erros: list, nome: str = "Conferência"):
         return None
 
 
+def _obras_para_liberar(estado_migracoes):
+    """As obras que dá para marcar no cadastro de acesso."""
+    if estado_migracoes["pendentes"]:
+        return []
+    from . import consultas
+    return consultas.opcoes_de_filtro()["obras"]
+
+
+def _pessoas_do_painel(estado_migracoes):
+    """A lista de quem tem acesso. Vazia enquanto a migração 013 não rodar —
+    sem isso a tela de Configurações quebraria justamente para quem vai apertar
+    o botão que cria a tabela."""
+    if estado_migracoes["pendentes"]:
+        return []
+    from . import usuarios
+    try:
+        return usuarios.listar()
+    except Exception:  # noqa: BLE001
+        logger.exception("Painel: não consegui listar os usuários")
+        return []
+
+
 @bp.route("/configuracoes")
 def configuracoes():
     from . import migracoes_runner, tarefas
+    from . import usuarios as usuarios_mod
     estado_migracoes = migracoes_runner.listar_estado()
     conferencias_com_erro: list[dict] = []
     contexto = {"aba_ativa": "config", "abas": ABAS}
@@ -1312,6 +1446,12 @@ def configuracoes():
         fora=fora,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
+        pessoas=_pessoas_do_painel(estado_migracoes),
+        telas_liberaveis=usuarios_mod.TELAS,
+        telas_sugeridas=usuarios_mod.TELAS_SUGERIDAS,
+        obras_para_liberar=_obras_para_liberar(estado_migracoes),
+        erro_usuario=request.args.get("erro_usuario", ""),
+        usuario_ok=request.args.get("usuario_ok") == "1",
     )
 
 
