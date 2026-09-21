@@ -37,6 +37,11 @@ COL_NUMERO = 6   # coluna F = nº da última nota
 CERT_PATH = "certificado.p12"   # certificado A1 na pasta do script
 
 
+def _norm_cod(v) -> str:
+    """Normaliza um código de obra para comparação (sem espaços, maiúsculo)."""
+    return str(v or "").strip().upper()
+
+
 def abrir_aba(planilha, candidatos):
     """Abre a 1ª aba que casar (ignorando espaços/maiúsculas) ou mostra as disponíveis."""
     if isinstance(candidatos, str):
@@ -93,6 +98,11 @@ def preparar(card_id: str, tipo_medicao_override=None, valor_override=None,
 
     obras = carregar_obras(abrir_aba(gc.open_by_key(ID_BASE), ABA_CDIARIOS).get_all_values())
     obra = buscar_obra(card["codigo_obra"], obras)
+    # A obra tem dois códigos na planilha; dizer por qual dos dois ela foi achada
+    # evita caçada quando o card e a C. Diários usam códigos diferentes.
+    if obra.codigo_primario and _norm_cod(card["codigo_obra"]) != _norm_cod(obra.codigo_primario):
+        print(f"  >> obra achada pelo código SECUNDÁRIO '{card['codigo_obra']}' "
+              f"(o primário dela é '{obra.codigo_primario}')")
     print(f"Tributação: {obra.tributacao} | Alíq. ISS: {obra.aliquota_iss} | Município: {obra.municipio}")
 
     cat = parse_categoria(obra.tributacao)
