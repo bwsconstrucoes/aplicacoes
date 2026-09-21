@@ -77,18 +77,73 @@ ETAPAS_DA_CARGA = [
 ]
 
 
+# MARCA FINA, DENTRO DA ETAPA.
+#
+# 20/09/2026: o dono comecou a carga inicial as 18:51 e uma publicacao de codigo
+# reiniciou o servico. A marca de etapa so existia para etapa INTEIRA, e as
+# contas a pagar — 118 mil titulos, a etapa mais longa das sete — nao tinham
+# terminado. Resultado: horas jogadas fora e tudo do zero. Ele: *"melhor, visto
+# que posso iniciar e dar outro problema"*.
+#
+# Agora a pagina em que cada etapa estava tambem fica gravada. Usa a mesma
+# `sync_state` e o mesmo prefixo das etapas, entao "comecar do zero" continua
+# sendo um lugar so (`limpar_etapas`) e nao ha tabela nova para isso.
+PREFIXO_PAGINA = PREFIXO_ETAPA + "pagina:"
+
+
 def etapas_concluidas(conn) -> set:
-    """Quais etapas da carga inicial ja terminaram."""
+    """Quais etapas da carga inicial ja terminaram INTEIRAS.
+
+    As marcas de pagina moram no mesmo prefixo e ficam de fora daqui: elas dizem
+    onde uma etapa PAROU, que e o contrario de ter terminado."""
     try:
         cur = conn.execute(
             "SELECT entidade FROM sync_state WHERE entidade LIKE ?",
             (PREFIXO_ETAPA + "%",))
         nomes = {linha[0][len(PREFIXO_ETAPA):] for linha in cur.fetchall()}
         cur.close()
-        return nomes
+        return {n for n in nomes if ":" not in n}
     except Exception:
         conn.rollback()
         return set()
+
+
+def _pagina_retomada(conn, entidade) -> int:
+    """Ultima pagina CONCLUIDA daquela etapa. 0 = nunca comecou."""
+    try:
+        cur = conn.execute("SELECT total_registros FROM sync_state WHERE entidade=?",
+                           (PREFIXO_PAGINA + entidade,))
+        linha = cur.fetchone()
+        cur.close()
+        return int(linha[0] or 0) if linha else 0
+    except Exception:
+        conn.rollback()
+        return 0
+
+
+def _salvar_pagina(conn, entidade, pagina) -> None:
+    conn.execute(
+        "INSERT INTO sync_state (entidade, ultima_sync, total_registros) "
+        "VALUES (?,?,?) ON CONFLICT(entidade) DO UPDATE SET "
+        "ultima_sync=excluded.ultima_sync, total_registros=excluded.total_registros",
+        (PREFIXO_PAGINA + entidade,
+         dt.datetime.now().isoformat(timespec="seconds"), int(pagina)))
+    conn.commit()
+
+
+def _esquecer_pagina(conn, entidade) -> None:
+    """A etapa terminou: a marca fina nao serve mais e nao pode sobrar. Se
+    sobrasse, uma proxima carga comecaria no meio de uma etapa ja completa."""
+    conn.execute("DELETE FROM sync_state WHERE entidade=?",
+                 (PREFIXO_PAGINA + entidade,))
+    conn.commit()
+
+
+def _contar(conn, sql, params=()) -> int:
+    cur = conn.execute(sql, params)
+    linha = cur.fetchone()
+    cur.close()
+    return int(linha[0] or 0) if linha else 0
 
 
 def _marcar_etapa(conn, nome: str) -> None:
@@ -663,6 +718,9 @@ def carga_inicial(env=".env", retomar=True):
     isso como um botao separado, para ser uma decisao e nao um acidente."""
     cli = OmieClient.de_ambiente(env)
     conn = conectar()
+    # O que a carga terminou SEM conseguir garantir. Vai para a mensagem final
+    # da tela: "concluida" com titulo faltando seria meia-verdade.
+    queixas: list[str] = []
     try:
         feitas = etapas_concluidas(conn) if retomar else set()
         if feitas:
@@ -692,36 +750,82 @@ def carga_inicial(env=".env", retomar=True):
                 continue
             log.info("=== Carga inicial: %s ===", entidade)
             rotulo = "contas a pagar" if natureza == "P" else "contas a receber"
-            _progresso(f"baixando {rotulo} do OMIE",
-                       f"{_posicao(entidade)} — começando")
-            tot_tit = tot_rat = 0
-            total_esperado = None
-            t0 = time.time()
-            todos_para_state = []
-            for pagina, total_paginas, total_registros, registros in metodo():
-                if total_esperado is None:
-                    total_esperado = total_registros
-                    log.info("%s: %s titulos em %s paginas.", entidade,
-                             f"{total_registros:,}".replace(",", "."), total_paginas)
-                qt, qr, problemas = gravar_titulos(conn, registros, natureza)
-                tot_tit += qt
-                tot_rat += qr
-                todos_para_state.extend(registros)
-                for cod, motivo in problemas:
-                    log.warning("  [%s] rateio: %s", cod, motivo)
-                if pagina % 5 == 0 or pagina == total_paginas:
-                    _progresso(f"baixando {rotulo} do OMIE",
-                               f"{_posicao(entidade)} — página {pagina} de "
-                               f"{total_paginas}, {tot_tit:,} títulos".replace(",", "."))
-                if pagina % 20 == 0 or pagina == total_paginas:
-                    log.info("  pag %d/%d  | titulos=%s  rateio=%s  (%.0fs)",
-                             pagina, total_paginas,
-                             f"{tot_tit:,}".replace(",", "."),
-                             f"{tot_rat:,}".replace(",", "."), time.time() - t0)
-            _atualizar_sync_state(conn, entidade, todos_para_state, total_esperado or tot_tit)
-            log.info("OK %s -> %s titulos, %s linhas de rateio.",
-                     entidade, f"{tot_tit:,}".replace(",", "."),
-                     f"{tot_rat:,}".replace(",", "."))
+
+            def _baixar(inicial, _ent=entidade, _nat=natureza, _met=metodo,
+                        _rot=rotulo):
+                """Baixa a etapa a partir de uma pagina. Devolve (titulos, esperado)."""
+                tot_tit = tot_rat = 0
+                esperado = None
+                t0 = time.time()
+                _progresso(f"baixando {_rot} do OMIE",
+                           f"{_posicao(_ent)} — " +
+                           (f"retomando na página {inicial}" if inicial > 1
+                            else "começando"))
+                for pagina, total_paginas, total_registros, registros in _met(
+                        pagina_inicial=inicial):
+                    if esperado is None:
+                        esperado = total_registros
+                        log.info("%s: %s titulos em %s paginas (a partir da %d).",
+                                 _ent, f"{total_registros:,}".replace(",", "."),
+                                 total_paginas, inicial)
+                    qt, qr, problemas = gravar_titulos(conn, registros, _nat)
+                    tot_tit += qt
+                    tot_rat += qr
+                    # A marca d'agua do incremental vai por PAGINA. Antes, os
+                    # 118 mil registros eram guardados numa lista so para isto
+                    # no fim — memoria que a instancia de 2 GB nao tem de sobra
+                    # (CONTEXTO 3.7). A funcao ja compara com o que esta gravado,
+                    # entao chamar por pagina da o mesmo resultado.
+                    _atualizar_sync_state(conn, _ent, registros,
+                                          total_registros or tot_tit)
+                    for cod, motivo in problemas:
+                        log.warning("  [%s] rateio: %s", cod, motivo)
+                    if pagina % 5 == 0 or pagina == total_paginas:
+                        _salvar_pagina(conn, _ent, pagina)
+                        _progresso(f"baixando {_rot} do OMIE",
+                                   f"{_posicao(_ent)} — página {pagina} de "
+                                   f"{total_paginas}, {tot_tit:,} títulos".replace(",", "."))
+                    if pagina % 20 == 0 or pagina == total_paginas:
+                        log.info("  pag %d/%d  | titulos=%s  rateio=%s  (%.0fs)",
+                                 pagina, total_paginas,
+                                 f"{tot_tit:,}".replace(",", "."),
+                                 f"{tot_rat:,}".replace(",", "."), time.time() - t0)
+                log.info("OK %s -> %s titulos, %s linhas de rateio.",
+                         _ent, f"{tot_tit:,}".replace(",", "."),
+                         f"{tot_rat:,}".replace(",", "."))
+                return tot_tit, esperado
+
+            # UM PASSO ATRAS de proposito. A pagina salva foi concluida, mas se o
+            # OMIE tiver criado titulo entre uma tentativa e outra as paginas se
+            # deslocam, e retomar exatamente na seguinte poderia PULAR alguns.
+            # Regravar uma pagina nao custa nada: a gravacao de titulo e por
+            # codigo (insere ou atualiza), nunca duplica.
+            salva = _pagina_retomada(conn, entidade) if retomar else 0
+            inicial = max(1, salva - 1) if salva else 1
+            tot_tit, total_esperado = _baixar(inicial)
+
+            # CONFERENCIA: o OMIE disse quantos sao; a base tem de ter isso.
+            # Titulo novo criado durante as horas de carga faz sobrar, nunca
+            # faltar — entao faltar quer dizer que a retomada pulou alguma coisa,
+            # e ai a etapa e refeita do zero UMA vez.
+            contados = _contar(conn,
+                               "SELECT COUNT(*) FROM titulos WHERE natureza=?",
+                               (natureza,))
+            if total_esperado and contados < total_esperado and inicial > 1:
+                log.warning("%s: a base tem %d e o OMIE diz %d — a retomada pulou "
+                            "titulo. Refazendo a etapa do zero.",
+                            entidade, contados, total_esperado)
+                _progresso(f"refazendo {rotulo} do começo",
+                           "a retomada deixou títulos para trás")
+                tot_tit, total_esperado = _baixar(1)
+                contados = _contar(conn,
+                                   "SELECT COUNT(*) FROM titulos WHERE natureza=?",
+                                   (natureza,))
+            if total_esperado and contados < total_esperado:
+                queixas.append(
+                    f"{rotulo}: a base ficou com {contados:,} títulos e o OMIE "
+                    f"diz que são {total_esperado:,}".replace(",", "."))
+            _esquecer_pagina(conn, entidade)
             _marcar_etapa(conn, entidade)
 
         # ---- Catalogos ----
@@ -775,7 +879,9 @@ def carga_inicial(env=".env", retomar=True):
         if "movimentos" in feitas:
             _pular("movimentos", "pagamentos e recebimentos")
         else:
-            carregar_movimentos_full(conn, cli)
+            queixa = carregar_movimentos_full(conn, cli, retomar=retomar)
+            if queixa:
+                queixas.append(queixa)
             _marcar_etapa(conn, "movimentos")
 
         if "planilha" in feitas:
@@ -790,6 +896,7 @@ def carga_inicial(env=".env", retomar=True):
         # as sete etapas e nao faria nada, sem dizer por que.
         limpar_etapas(conn)
         _resumo(conn)
+        return queixas
     finally:
         conn.close()
 
@@ -851,37 +958,87 @@ def recarregar_titulos(env=".env"):
         conn.close()
 
 
-def carregar_movimentos_full(conn, cli):
-    """Carga COMPLETA de movimentos (zera a tabela e baixa tudo). Sem filtro de data."""
+def _total_de_movimentos(conn) -> int:
+    """Quantos movimentos a base tem, contando os que nao tem titulo."""
+    return (_contar(conn, "SELECT COUNT(*) FROM movimentos")
+            + _contar(conn, "SELECT COUNT(*) FROM movimentos_sem_titulo"))
+
+
+def carregar_movimentos_full(conn, cli, retomar=True):
+    """Carga COMPLETA de movimentos. Devolve queixa (texto) ou None.
+
+    RETOMAVEL POR PAGINA, com um cuidado que os titulos nao precisam: movimento
+    NAO TEM CHAVE. Gravar duas vezes o mesmo movimento duplicaria dinheiro, em
+    vez de atualizar. Por isso aqui a retomada e exata — a pagina seguinte a
+    ultima concluida, sem o passo atras que os titulos usam — e a tabela so e
+    zerada quando se comeca do inicio.
+
+    Como retomada exata nao protege contra as paginas do OMIE se deslocarem, a
+    conferencia no fim vale nos dois sentidos: faltando OU sobrando, a etapa e
+    refeita do zero uma vez."""
+
+    def _baixar(inicial):
+        if inicial <= 1:
+            conn.execute("DELETE FROM movimentos")
+            conn.execute("DELETE FROM movimentos_sem_titulo")
+            conn.commit()
+            _esquecer_pagina(conn, "movimentos")
+        tot_mov = sem_titulo = 0
+        esperado = None
+        t0 = time.time()
+        # ListarMovimentos NAO aceita cTipoData; para baixar tudo basta paginar sem filtro.
+        for pagina, total_paginas, total_registros, registros in cli.listar_movimentos(
+                pagina_inicial=inicial):
+            if esperado is None:
+                esperado = total_registros
+                log.info("movimentos: %s registros em %s paginas (a partir da %d).",
+                         f"{total_registros:,}".replace(",", "."), total_paginas,
+                         inicial)
+            qm, qi = gravar_movimentos(conn, registros)
+            tot_mov += qm
+            sem_titulo += qi
+            if pagina % 20 == 0 or pagina == total_paginas:
+                _salvar_pagina(conn, "movimentos", pagina)
+                _progresso("baixando os pagamentos e recebimentos",
+                           f"página {pagina} de {total_paginas} — "
+                           f"{tot_mov:,} movimentos".replace(",", "."))
+                log.info("  mov pag %d/%d -> %s (%.0fs)", pagina, total_paginas,
+                         f"{tot_mov:,}".replace(",", "."), time.time() - t0)
+        log.info("OK movimentos -> %s gravados (%s sem titulo, guardados a parte).",
+                 f"{tot_mov:,}".replace(",", "."),
+                 f"{sem_titulo:,}".replace(",", "."))
+        return tot_mov, esperado
+
     log.info("=== Movimentos (carga completa) ===")
-    conn.execute("DELETE FROM movimentos")
-    conn.execute("DELETE FROM movimentos_sem_titulo")
-    conn.commit()
-    tot_mov = ign = 0
-    t0 = time.time()
-    # ListarMovimentos NAO aceita cTipoData; para baixar tudo basta paginar sem filtro.
-    for pagina, total_paginas, total_registros, registros in cli.listar_movimentos():
-        if pagina == 1:
-            log.info("movimentos: %s registros em %s paginas.",
-                     f"{total_registros:,}".replace(",", "."), total_paginas)
-        qm, qi = gravar_movimentos(conn, registros)
-        tot_mov += qm
-        ign += qi
-        if pagina % 20 == 0 or pagina == total_paginas:
-            _progresso("baixando os pagamentos e recebimentos",
-                       f"página {pagina} de {total_paginas} — "
-                       f"{tot_mov:,} movimentos".replace(",", "."))
-            log.info("  mov pag %d/%d -> %s (%.0fs)", pagina, total_paginas,
-                     f"{tot_mov:,}".replace(",", "."), time.time() - t0)
+    salva = _pagina_retomada(conn, "movimentos") if retomar else 0
+    inicial = salva + 1 if salva else 1
+    tot_mov, esperado = _baixar(inicial)
+
+    queixa = None
+    contados = _total_de_movimentos(conn)
+    # Sobra tambem e alarme aqui, ao contrario dos titulos: sem chave, sobrar
+    # quer dizer movimento contado duas vezes — dinheiro dobrado.
+    fora = esperado and (contados < esperado or contados > esperado + 50)
+    if fora and inicial > 1:
+        log.warning("movimentos: a base tem %d e o OMIE diz %d. Refazendo do zero.",
+                    contados, esperado)
+        _progresso("refazendo os pagamentos e recebimentos do começo",
+                   "a retomada não fechou a conta")
+        tot_mov, esperado = _baixar(1)
+        contados = _total_de_movimentos(conn)
+        fora = esperado and (contados < esperado or contados > esperado + 50)
+    if fora:
+        queixa = (f"pagamentos e recebimentos: a base ficou com {contados:,} e o "
+                  f"OMIE diz que são {esperado:,}".replace(",", "."))
+
     conn.execute(
         "INSERT INTO sync_state (entidade, ultima_sync, total_registros) VALUES ('movimentos',?,?) "
         "ON CONFLICT(entidade) DO UPDATE SET ultima_sync=excluded.ultima_sync, "
         "total_registros=excluded.total_registros",
         (dt.datetime.now().isoformat(timespec="seconds"), tot_mov))
     conn.commit()
-    log.info("OK movimentos -> %s gravados (%d ignorados sem titulo).",
-             f"{tot_mov:,}".replace(",", "."), ign)
-    return tot_mov
+    _esquecer_pagina(conn, "movimentos")
+    return queixa
 
 
 def sincronizar_planilha(conn):
