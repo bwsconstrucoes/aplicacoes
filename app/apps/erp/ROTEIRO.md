@@ -1291,6 +1291,11 @@ Feito nesta leva:
       (migração 079).
 - [x] **Desativar e reativar fornecedor pela ficha**, com apagar só para quem
       nunca foi usado (o sistema confere 10 tabelas antes de oferecer).
+- [x] **O modal do novo pedido cabe.** Cada item virou bloco: o nome do insumo
+      aparece inteiro quebrando linha, a especificação é campo de várias linhas
+      que cresce, e em tela estreita os campos empilham. A causa era um
+      `<select>` sem teto de largura esticado pelo insumo de nome mais
+      comprido — armadilha que vale para toda tela com lista dentro de tabela.
 
 O que falta, em ordem de retorno por hora de trabalho:
 

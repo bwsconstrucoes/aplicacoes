@@ -54,6 +54,54 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### 📐 O MODAL DO NOVO PEDIDO NÃO CABIA — e a causa vale para toda tela
+
+21/09/2026, o dono lançando um pedido por lista colada:
+
+> *"Mesmo na tela grande, o modal que abre não cabe as informações do insumo,
+> especificação, quantidade, unidade e obra. Visualmente fica ruim. Teria que
+> dar uma apertada mais, principalmente no insumo, quebrar linha. Na parte da
+> especificação também poder quebrar linha, que a especificação normalmente é
+> o que demanda mais texto."*
+
+**A CAUSA, e ela não era a largura do diálogo.** Os itens eram linhas de uma
+tabela de sete colunas, e a coluna do insumo era um `<select>` com
+`min-width:200px` e nenhum teto. Um `<select>` sem `max-width` cresce até caber
+a MAIOR opção da lista inteira — com 3.279 insumos cadastrados, basta um
+"VERGALHÃO CA-50 12,5MM X 12M NERVURADO ARCELORMITTAL" para a coluna passar de
+600px e empurrar quantidade, unidade e obra para fora do diálogo.
+
+**Isso vale em qualquer tela do ERP**, porque quem manda no tamanho não é o
+espaço disponível: é o texto mais longo do cadastro. Tela com `select` dentro de
+tabela precisa de `min-width:0` + `max-width:100%`, sempre.
+
+**O que mudou:** cada item deixou de ser linha de tabela e virou um **bloco**.
+O nome do insumo escolhido aparece **em texto no alto do bloco, quebrando
+linha** — porque `<select>` nunca quebra, ele corta, e nome de insumo é
+justamente onde a diferença está no fim ("… 12,5MM" contra "… 10MM"). A
+especificação virou campo de **várias linhas que cresce** com o que se escreve.
+Em tela estreita os campos empilham em vez de rolar para o lado — rolagem
+horizontal dentro de diálogo é onde some o botão de salvar.
+
+Três coisas que vieram de brinde e valem estar escritas:
+
+- **A linha que a IA não reconheceu ficava invisível.** O texto original era
+  posto na *dica* do campo de especificação — que some assim que a própria IA
+  preenche a especificação. Agora é linha própria, em destaque: *"não reconheci:
+  «…» — escolha o insumo"*.
+- **As opções passaram a ser montadas UMA vez** por abertura do diálogo. Eram
+  3.279 `<option>` por item: uma lista colada com 40 linhas gerava 130 mil
+  elementos e a tela travava alguns segundos, justo quando a pessoa espera o
+  resultado da leitura.
+- **A unidade ganhou `data-sem-busca`.** O ERP põe sozinho uma caixa de filtro
+  em lista com mais de 12 opções; são 16 unidades de uma a três letras (UN, M2,
+  SC…), e a caixa não cabia numa coluna de 92px — aparecia cortada e custava uma
+  linha de altura em cada item.
+
+**Verificado no navegador**, a 1440px e a 760px: nada vaza, o nome comprido
+aparece inteiro, o pedido grava com a especificação longa e a renumeração dos
+itens continua certa ao tirar um do meio.
+
 ### ⚠️ MIGRAÇÃO 079 — apertar "Aplicar atualizações do banco"
 
 Guarda **até onde cada fornecedor vende** (abrangência, UFs e municípios). Sem
