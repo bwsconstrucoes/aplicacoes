@@ -328,6 +328,78 @@ def _buckets_rateio(linhas, bruto, proj_map):
     return buckets
 
 
+def _nome_da_conta(ccorr, codigo, reserva=None):
+    """Nome da conta corrente a partir do codigo. Sem catalogo, o codigo cru —
+    a linha nunca perde a informacao."""
+    escolhido = codigo if codigo not in (None, "") else reserva
+    if escolhido in (None, ""):
+        return ""
+    try:
+        return ccorr.get(int(escolhido)) or str(escolhido)
+    except (TypeError, ValueError):
+        return str(escolhido)
+
+
+def _parcelas_da_baixa(movs_todos, realizado, juros_total, multa_total,
+                       ccorr, icc, conta_unica, ddt, ano, mes, dpago_dt):
+    """UMA LINHA POR BAIXA, quando o titulo foi pago em mais de uma.
+
+    21/09/2026, o dono: um titulo pago em dois dias e valores diferentes
+    aparecia no relatorio analitico como UM lancamento, com o valor TOTAL e a
+    data da ULTIMA parcela.
+
+        "Se voce for olhar no extrato, da uma coisa. Ai voce olha no relatorio
+        analitico, da outro valor. Isso confunde."
+
+    O painel ja fazia certo do lado das RECEITAS (`montar_recebimentos`): uma
+    medicao recebida em tres parcelas vira tres linhas. Nas despesas esse
+    caminho nunca tinha sido ligado. Aqui ele passa a valer para as duas — e
+    reusa o mesmo `_escolher_recebimentos`, que e quem sabe desmontar a
+    armadilha do OMIE de guardar a mesma baixa em duas pernas. Regra repetida
+    divergiria; reusada, nao.
+
+    A SOMA NAO MUDA: cada parcela e escalada por realizado/soma_das_baixas,
+    entao o total do titulo continua o mesmo. O que muda e a DATA de cada
+    pedaco — e e por isso que um titulo pago metade em marco e metade em abril
+    deixa de contar inteiro em abril. Isso e o conserto, nao um efeito colateral.
+
+    Devolve [(valor, juros, multa, ddt, ano, mes, dpago_dt, conta)], sempre com
+    pelo menos um item. Baixa unica (a esmagadora maioria) devolve exatamente a
+    linha de antes — nao ha razao para mexer no que ja estava certo."""
+    uma_so = [(realizado, juros_total, multa_total, ddt, ano, mes, dpago_dt,
+               conta_unica)]
+    if realizado <= TOL or not movs_todos:
+        return uma_so
+
+    movs, _origem = _escolher_recebimentos(movs_todos, realizado)
+    if len(movs) < 2:
+        return uma_so
+    soma = sum(m["valor"] for m in movs)
+    if soma <= TOL:
+        return uma_so
+
+    fator = realizado / soma
+    parcelas = []
+    for m in movs:
+        d = _data_para_dt(m.get("data"))
+        # Juros e multa vao pela MESMA proporcao do principal, e nao pelo que
+        # cada movimento carrega: as pernas que o OMIE usa para os creditos
+        # bancarios vem com encargo zerado, e usar o proprio faria o total do
+        # titulo encolher sem ninguem notar. A soma tem de continuar a mesma.
+        peso = m["valor"] / soma
+        parcelas.append((
+            m["valor"] * fator,
+            juros_total * peso,
+            multa_total * peso,
+            d or ddt,
+            d.year if d else ano,
+            d.month if d else mes,
+            d or dpago_dt,
+            _nome_da_conta(ccorr, m.get("conta"), icc),
+        ))
+    return parcelas
+
+
 # ----------------------------------------------------------------------------- 
 # Monta o DataFrame final
 # ----------------------------------------------------------------------------- 
@@ -361,6 +433,9 @@ def gerar_linhas_fato(conn):
         codigos = [linha[0] for linha in bloco]
         mov = _movimentos_do_bloco(conn, codigos)
         rateio = _rateio_do_bloco(conn, codigos)
+        # O detalhe de cada baixa — e o que permite abrir o titulo pago em
+        # parcelas numa linha por parcela. Ver `_parcelas_da_baixa`.
+        detalhe = _movimentos_detalhe_do_bloco(conn, codigos)
 
         for row in bloco:
             (cod, nat, vdoc, ccat, ccli, icc, ndoc, nped, status, dvenc,
@@ -465,23 +540,41 @@ def gerar_linhas_fato(conn):
             # na linha para a tela poder agrupar no banco.
             chave = chave_medicao(ndoc or "", observacao) or f"COD:{cod}"
 
+            # UMA LINHA POR BAIXA. Pago de uma vez (a esmagadora maioria)
+            # devolve exatamente a linha de antes.
+            parcelas = _parcelas_da_baixa(
+                detalhe.get(cod, []), realizado, juros_mov, multa_mov,
+                ccorr, icc, conta, ddt, ano, mes, dpago_dt)
+            rotulo = rotulo_medicao(chave)
+
             for dep, projeto, frac in buckets:
                 comum = (cod, tipo, analise, status, sit_venc)
-                identificacao = (projeto, dep, razao, cnpj, ndoc or "", nped or "",
-                                 conta, observacao, link,
-                                 chave, rotulo_medicao(chave),
-                                 ddt, ano, mes, dvenc_dt, dpago_dt)
-                # linha LIQUIDA (categoria real). Juros e multa sao os encargos
-                # efetivamente pagos e ficam SEPARADOS do principal, para virarem
-                # linha financeira no DRE.
-                yield comum + (desc_cat, ccat, grupo) + identificacao + (
-                    round(sinal * realizado * frac, 2),
-                    round(sinal * aberto * frac, 2),
-                    round(sinal * juros_mov * frac, 2),
-                    round(sinal * multa_mov * frac, 2))
-                # linha RETIDO (so a receber; valor sempre como realizado)
-                if is_rec and ret_total > TOL:
-                    yield comum + (CATEGORIA_RETIDO, None, GRUPO_RETIDO) + identificacao + (
+                primeira = None
+                for i, parcela in enumerate(parcelas):
+                    (p_valor, p_juros, p_multa, p_ddt, p_ano, p_mes,
+                     p_dpago, p_conta) = parcela
+                    identificacao = (projeto, dep, razao, cnpj, ndoc or "",
+                                     nped or "", p_conta, observacao, link,
+                                     chave, rotulo,
+                                     p_ddt, p_ano, p_mes, dvenc_dt, p_dpago)
+                    if primeira is None:
+                        primeira = identificacao
+                    # O SALDO EM ABERTO E DO TITULO, nao de cada parcela.
+                    # Repeti-lo multiplicaria o "a pagar" pelo numero de baixas
+                    # — um erro que cresceria com o uso, silencioso.
+                    em_aberto = aberto if i == 0 else 0.0
+                    # linha LIQUIDA (categoria real). Juros e multa sao os
+                    # encargos efetivamente pagos e ficam SEPARADOS do
+                    # principal, para virarem linha financeira no DRE.
+                    yield comum + (desc_cat, ccat, grupo) + identificacao + (
+                        round(sinal * p_valor * frac, 2),
+                        round(sinal * em_aberto * frac, 2),
+                        round(sinal * p_juros * frac, 2),
+                        round(sinal * p_multa * frac, 2))
+                # linha RETIDO (so a receber; valor sempre como realizado).
+                # UMA so, mesmo com varias baixas: a retencao e do titulo.
+                if is_rec and ret_total > TOL and primeira is not None:
+                    yield comum + (CATEGORIA_RETIDO, None, GRUPO_RETIDO) + primeira + (
                         round(ret_total * frac, 2), 0.0, 0.0, 0.0)
 
 

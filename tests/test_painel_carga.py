@@ -742,18 +742,20 @@ def test_titulo_em_aberto_continua_mostrando_a_conta_prevista(espelho_limpo):
     assert conta == "Bradesco (previsão)"
 
 
-def test_pago_em_duas_contas_vale_a_do_maior_valor(espelho_limpo):
-    """Não existe resposta certa para um título pago metade em cada conta — a
-    linha do relatório é uma só. A do maior valor é a que erra menos, e a
-    escolha está escrita no código para ninguém ter de adivinhar."""
+def test_pago_em_duas_contas_da_uma_linha_para_cada_conta(espelho_limpo):
+    """Melhor ainda que escolher uma: desde que o título pago em parcelas vira
+    uma linha por baixa, cada parcela mostra a conta DELA. A escolha "a do maior
+    valor" ficou só para quando as baixas não dão para separar."""
     from app.apps.painel.db import conexao, consultar
     from app.apps.painel.sync import espelho, fato
 
     titulo = _titulo_do_omie(3, valor=1000.0, natureza="R")
     pequeno = _movimento_do_omie(3, pago=300.0)
     pequeno["detalhes"]["nCodCC"] = 7
+    pequeno["detalhes"]["dDtPagamento"] = "10/03/2025"
     grande = _movimento_do_omie(3, pago=700.0)
     grande["detalhes"]["nCodCC"] = 9
+    grande["detalhes"]["dDtPagamento"] = "20/03/2025"
 
     with conexao() as conn:
         espelho.gravar_titulos(conn, [titulo], "R")
@@ -762,6 +764,100 @@ def test_pago_em_duas_contas_vale_a_do_maior_valor(espelho_limpo):
             _conta_do_omie(7, "Bradesco"), _conta_do_omie(9, "Itaú")])
         fato.reconstruir_fato(conn)
 
-    (conta,) = consultar(
-        "SELECT conta_corrente FROM fato WHERE codigo_lancamento = 3")[0]
-    assert conta == "Itaú", "a conta do maior valor liquidado é a que vale"
+    linhas = consultar("SELECT conta_corrente, pago_recebido FROM fato"
+                       " WHERE codigo_lancamento = 3 ORDER BY data")
+    assert [c for c, _v in linhas] == ["Bradesco", "Itaú"]
+    assert [round(float(v), 2) for _c, v in linhas] == [300.0, 700.0]
+
+
+# ===========================================================================
+# Título pago em parcelas vira UMA LINHA POR BAIXA — 21/09/2026
+# ===========================================================================
+# O dono: "ele foi pago em duas parcelas, em 2 dias diferentes e valores
+# diferentes. Só que no relatório de despesa analítica aparece um único
+# lançamento (…) do total do título. Se você for olhar no extrato, dá uma coisa.
+# Aí você olha no relatório analítico, dá outro valor. Isso confunde."
+
+def test_titulo_pago_em_duas_parcelas_vira_duas_linhas(espelho_limpo):
+    """Cada linha com a SUA data e o SEU valor — é o que bate com o extrato."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(1, valor=1000.0, natureza="P", status_titulo="PAGO")
+    primeira = _movimento_do_omie(1, pago=300.0)
+    primeira["detalhes"]["dDtPagamento"] = "10/03/2025"
+    segunda = _movimento_do_omie(1, pago=700.0)
+    segunda["detalhes"]["dDtPagamento"] = "05/04/2025"
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_movimentos(conn, [primeira, segunda])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT data, pago_recebido FROM fato"
+                       " WHERE codigo_lancamento = 1 ORDER BY data")
+    assert len(linhas) == 2, f"deviam ser duas linhas, vieram {len(linhas)}"
+    assert [d.strftime("%d/%m/%Y") for d, _v in linhas] == \
+        ["10/03/2025", "05/04/2025"], "cada parcela na SUA data"
+    assert [round(float(v), 2) for _d, v in linhas] == [-300.0, -700.0]
+
+
+def test_a_soma_do_titulo_nao_muda_ao_abrir_em_parcelas(espelho_limpo):
+    """A divisão não pode criar nem sumir com dinheiro — só reparti-lo pelas
+    datas certas. Se o total mudasse, o DRE mudaria de valor, e isso seria um
+    defeito novo em vez de um conserto."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(2, valor=1000.0, natureza="P", status_titulo="PAGO")
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_movimentos(conn, [
+            _movimento_do_omie(2, pago=250.0), _movimento_do_omie(2, pago=750.0)])
+        fato.reconstruir_fato(conn)
+
+    (total,) = consultar("SELECT SUM(pago_recebido) FROM fato"
+                         " WHERE codigo_lancamento = 2")[0]
+    assert round(float(total), 2) == -1000.00
+
+
+def test_o_saldo_em_aberto_nao_se_multiplica_pelas_parcelas(espelho_limpo):
+    """O saldo é do TÍTULO, não de cada baixa. Repeti-lo multiplicaria o
+    "a pagar" pelo número de parcelas — um erro que cresceria com o uso."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(3, valor=1000.0, natureza="P",
+                             status_titulo="A PAGAR")
+    parcial_1 = _movimento_do_omie(3, pago=200.0)
+    parcial_1["resumo"]["nValAberto"] = 400.0
+    parcial_2 = _movimento_do_omie(3, pago=400.0)
+    parcial_2["detalhes"]["dDtPagamento"] = "20/03/2025"
+    parcial_2["resumo"]["nValAberto"] = 400.0
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_movimentos(conn, [parcial_1, parcial_2])
+        fato.reconstruir_fato(conn)
+
+    abertos = [round(float(v), 2) for (v,) in consultar(
+        "SELECT a_pagar_receber FROM fato WHERE codigo_lancamento = 3")]
+    assert sum(abertos) == round(sum(abertos), 2)
+    assert len([v for v in abertos if v != 0]) <= 1, \
+        f"o saldo apareceu em mais de uma linha: {abertos}"
+
+
+def test_pago_de_uma_vez_continua_sendo_uma_linha_so(espelho_limpo):
+    """O conserto não pode mexer no que já estava certo — e é a esmagadora
+    maioria dos títulos."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(4, valor=800.0, natureza="P", status_titulo="PAGO")
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_movimentos(conn, [_movimento_do_omie(4, pago=800.0)])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT pago_recebido FROM fato WHERE codigo_lancamento = 4")
+    assert len(linhas) == 1 and round(float(linhas[0][0]), 2) == -800.00

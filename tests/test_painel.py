@@ -138,7 +138,16 @@ class ConexaoFalsa:
         if "FROM contas_correntes" in sql:
             return self.contas
         if "FROM movimentos" in sql:
-            return self.movimentos
+            # Duas consultas leem a mesma tabela: a AGREGADA (uma linha por
+            # título) e a DETALHADA (uma por baixa), que desde 21/09/2026
+            # alimenta a divisão do título pago em parcelas. O dublê guarda só
+            # a forma agregada e monta a outra a partir dela.
+            if "nvalliquido" not in sql:
+                return self.movimentos
+            return [(cod, data, pago, pago, juros, multa, desc, ncc, "", liq,
+                     "", aberto)
+                    for (cod, data, liq, pago, aberto, desc, juros, multa,
+                         ncc) in self.movimentos]
         if "FROM rateio" in sql:
             return self.rateios
         if "FROM titulos" in sql:
