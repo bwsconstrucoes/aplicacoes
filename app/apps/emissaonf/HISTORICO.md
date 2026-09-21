@@ -43,8 +43,15 @@ trabalho pendente é **conserto e faxina**, não funcionalidade nova.
 
 ### O que está pendente AGORA
 
-Tudo aqui vem do relato do dono, e **nada disso foi conferido contra o mundo
-real nesta sessão** — nenhuma planilha foi aberta, nenhuma nota foi consultada.
+**O único item confirmado nesta sessão:** conferir na tela que o card
+1447316614 (obra AREFORTAL09) carrega, agora que a busca olha os dois códigos
+da obra. É o defeito que o dono trouxe, e o conserto está feito e testado —
+falta o olho dele na tela, com o card de verdade.
+
+**Todo o resto abaixo é pista, não tarefa.** Veio de um relato que o dono colou
+de um chat antigo, e **nada disso foi conferido contra o mundo real** — nenhuma
+planilha foi aberta, nenhuma nota foi consultada. Mais do que isso: perguntado
+em 21/09/2026, **ele não recorda os itens 1 e 2** (ver a seção logo abaixo).
 
 1. **O passivo de notas com ISS a maior na prefeitura.** É o item mais caro, e
    está explicado no incidente do `ValorDeducoes`, mais abaixo. Falta
@@ -65,28 +72,52 @@ real nesta sessão** — nenhuma planilha foi aberta, nenhuma nota foi consultad
    **por nota**.
 6. **Uma das buscas de PDF deve varrer subpastas do Drive** — o dono pediu, mas
    ficou sem dizer qual das três. Pergunta em aberto.
-7. **Conferir na tela que o card 1447316614 (obra AREFORTAL09) carrega**, agora
-   que a busca olha os dois códigos da obra — ver o incidente de 21/09/2026.
-8. **Vigiar o embaralhamento da "Notas BWS".** Se voltar mesmo com o
+7. **Vigiar o embaralhamento da "Notas BWS".** Se voltar mesmo com o
    `LockService`, o caminho é tirar a ordenação de cima do `onChange` e pôr num
    gatilho por tempo.
 
-### O que precisa ser confirmado com o dono antes de qualquer coisa
+### O que o dono respondeu — 21/09/2026
 
-O estado do mundo pode ter mudado desde o relato. Estas são as perguntas que
-travam trabalho de verdade:
+Esta lista foi levada a ele no mesmo dia em que foi escrita. A resposta, na
+íntegra:
 
-- **O passivo do `ValorDeducoes` já foi levantado?** Quantas notas, e alguma já
-  foi substituída?
-- **A 3083 já foi substituída?**
-- **O `LockService` da planilha já está no ar**, e o embaralhamento parou?
-- **Qual das três buscas de PDF** deve varrer subpastas?
+> *"no mais tudo funciona normal. nao recordo de problema de iss, nem de
+> substituicao."*
+
+**Como ler isso, sem esticar nem encolher:**
+
+- **O defeito do `ValorDeducoes` existiu** — não é lembrança, está provado no
+  código, no comentário que explica por que o campo passou a ser enviado. E
+  está corrigido desde 11/09/2026.
+- **O passivo de notas afetadas NÃO está confirmado.** Ele não recorda o
+  problema, e ninguém levantou a lista. Pode ser que o número de notas com
+  dedução de ISS emitidas antes de 11/09 seja pequeno, ou zero; pode ser que
+  não seja. **Ninguém olhou a planilha ainda.**
+- **As substituições (3069→3081, 3070→3082, 3083) também não estão
+  confirmadas.** Vieram do relato colado de um chat antigo, e ele não recorda.
+
+**O que isso quer dizer na prática:** o que está na lista de pendências abaixo
+veio do relato antigo, não de uma conferência. Antes de gastar tempo com
+qualquer um daqueles itens, **abrir a planilha e ver se o problema existe** —
+e não presumir que existe porque está escrito aqui. Um levantamento de meia
+hora na "Notas BWS" decide se o item 1 é trabalho de dias ou não é trabalho
+nenhum.
+
+**E a notícia boa, que também é informação:** o sistema está rodando normal. O
+único defeito que ele trouxe nesta sessão foi o card que não abria, e esse foi
+corrigido.
+
+### As perguntas que continuam em aberto
+
+Estas ele não respondeu, e continuam valendo:
+
+- **Qual das três buscas de PDF** deve varrer subpastas do Drive?
 - **Existe um agendamento externo** chamando `/emissao/nacional` de tempos em
   tempos? O código fala num Cron "de 10 em 10 minutos" como rede de segurança,
   mas **não há nada no repositório que o configure** — se existe, é no
-  cron-job.org, fora daqui. Se não existe, a rede de segurança não está armada.
-
----
+  cron-job.org, fora daqui. Se não existe, a rede de segurança não está armada,
+  e uma nota que a busca automática não pegar nos primeiros cinco minutos fica
+  esperando alguém clicar.
 
 ## Decisões tomadas, e por quê
 
