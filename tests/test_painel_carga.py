@@ -861,3 +861,15 @@ def test_pago_de_uma_vez_continua_sendo_uma_linha_so(espelho_limpo):
 
     linhas = consultar("SELECT pago_recebido FROM fato WHERE codigo_lancamento = 4")
     assert len(linhas) == 1 and round(float(linhas[0][0]), 2) == -800.00
+
+
+def test_titulo_sem_medicao_diz_isso_em_portugues():
+    """21/09/2026: o dono viu "COD:11255312361" na Receita de Obra e perguntou o
+    que significava. Não significava nada para quem lê — e o número ali é
+    justamente o que serve para achar o lançamento no OMIE."""
+    from app.apps.painel.sync.fato import rotulo_medicao
+    assert rotulo_medicao("COD:11255312361") == \
+        "Sem número de medição (título 11255312361)"
+    # e o que JÁ era legível continua igual
+    assert rotulo_medicao("MED:CEIFOR5|3") == "CEIFOR5 | Medição 3"
+    assert rotulo_medicao("DOC:NF 900") == "NF 900"
