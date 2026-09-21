@@ -41,6 +41,12 @@ UN, M, VR (vara), KG, L, LT (lata), BD (balde), SC (saco), GL (galão), PCT, CAR
   opções ainda Fornecedor Local e Homecenter.
 - **Região de atuação:** RMF (59), BR (23), CE (9), NE (5) — e **combinações**
   ("CE, RMF", "NE, CE, RMF"). É campo de vários valores, não um só.
+  **Desde 21/09/2026 esse texto deixou de ser o que decide.** Ele continua
+  guardado, mas o disparo usa a **abrangência** padronizada da migração 079 —
+  NACIONAL, ESTADUAL (com UFs), REGIONAL ou LOCAL (com municípios). O botão
+  "Padronizar as regiões" traduz o texto antigo: "NE" vira as 9 UFs, "RMF" vira
+  os 19 municípios da Grande Fortaleza, e em combinação vence o maior alcance.
+  Rodado sobre os 1.702 fornecedores da planilha completa: 100% traduzidos.
 - **Canal de cotação:** e-mail em 109 dos 111. WhatsApp é exceção, não regra.
 
 ---

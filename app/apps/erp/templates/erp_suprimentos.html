@@ -73,6 +73,66 @@
   <div class="vazio oculto" id="vazio"></div>
 </div>
 
+<style>
+/* ---------------------------------------------------------------------------
+   OS ITENS DO NOVO PEDIDO — 21/09/2026
+
+   Eram linhas de uma tabela de sete colunas. O dono achou o defeito usando:
+   *"mesmo na tela grande, o modal que abre não cabe as informações do insumo,
+   especificação, quantidade, unidade e obra (…) talvez uma apertada mais,
+   principalmente no insumo, quebrar linha. Na especificação também, que é o
+   que demanda mais texto."*
+
+   A CAUSA, e vale estar escrita porque ela volta em toda tela com `select`
+   dentro de tabela: um `<select>` sem teto de largura cresce até caber a
+   MAIOR opção da lista inteira. Com 3.279 insumos cadastrados, basta um
+   "VERGALHÃO CA-50 12,5MM X 12M NERVURADO" para a coluna passar de 600px e
+   empurrar quantidade, unidade e obra para fora do diálogo — em QUALQUER
+   tela, porque o que manda não é o espaço disponível, é o texto do cadastro.
+
+   Por isso duas coisas juntas, e nenhuma delas sozinha resolve:
+   `min-width:0` + `max-width:100%` tiram do select o poder de esticar a
+   grade; e o nome do insumo escolhido é repetido EM TEXTO no alto do bloco,
+   onde pode quebrar linha — porque um `<select>` nunca quebra, corta.
+   --------------------------------------------------------------------------- */
+.itens-pedido { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+.item-pedido { border:1px solid var(--borda); border-radius:var(--raio-p);
+  background:var(--branco); padding:9px 11px; }
+.item-pedido.ip-duvida { border-color:var(--amarelo); background:#FFF8E5; }
+
+.ip-topo { display:flex; align-items:flex-start; gap:8px; }
+.ip-n { flex:0 0 auto; min-width:22px; height:20px; padding:0 6px; border-radius:10px;
+  background:var(--papel); color:var(--tinta-suave); font-size:11.5px;
+  font-weight:700; display:flex; align-items:center; justify-content:center; }
+/* É AQUI que o nome do insumo quebra linha, em vez de ser cortado pelo select. */
+.ip-nome { flex:1 1 auto; min-width:0; font-size:13.5px; font-weight:600;
+  line-height:1.35; overflow-wrap:anywhere; }
+.ip-nome.vazio-ainda { font-weight:500; color:var(--tinta-suave); }
+.ip-tirar { flex:0 0 auto; padding:3px 9px; font-size:12px; }
+.ip-lido { font-size:11.5px; color:var(--ambar); margin:3px 0 0 30px;
+  overflow-wrap:anywhere; }
+
+/* Alinhado pelo ALTO, não pela base: o campo de insumo ganha sozinho uma
+   caixa de filtro (são 3.279 opções), e alinhar pela base jogava o rótulo
+   "Qtd" para uma altura diferente do rótulo "Un." ao lado. */
+.ip-grade { display:grid; gap:8px 10px; margin-top:8px; align-items:start;
+  grid-template-columns: minmax(0,1.5fr) minmax(0,1.7fr) 80px 92px minmax(0,150px); }
+.ip-campo { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.ip-campo > span { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+  color:var(--tinta-suave); font-weight:700; }
+/* O teto que impede o select de esticar a grade inteira. */
+.ip-campo select, .ip-campo input, .ip-campo textarea {
+  width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
+.ip-campo textarea { resize:vertical; line-height:1.35; min-height:34px; }
+
+/* Na tela estreita as colunas empilham em vez de rolar para o lado — rolagem
+   horizontal dentro de diálogo é onde some o botão de salvar. */
+@media (max-width: 880px) {
+  .ip-grade { grid-template-columns: 1fr 1fr; }
+  .ip-insumo, .ip-espec, .ip-obra { grid-column: 1 / -1; }
+}
+</style>
+
 <dialog id="dlg">
   <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
     <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
@@ -104,6 +164,7 @@ async function carregarBase(){
   BASE.unidades = sup.unidades;
   BASE.insumos = sup.insumos;
   BASE.categorias = sup.categorias_insumo;
+  montarOpcoes();
 }
 
 async function carregar(){
@@ -500,24 +561,52 @@ async function gerarCotacao(){
 // ---------------------------------------------------------------------------
 // Novo pedido
 // ---------------------------------------------------------------------------
+// As opções são as mesmas em toda linha e não mudam enquanto o diálogo está
+// aberto. Montá-las UMA vez importa: são 3.279 insumos, e uma lista colada com
+// 40 itens repetia 130 mil <option> — a tela travava alguns segundos ao ler a
+// lista, justamente quando a pessoa está esperando o resultado.
+let OPCOES = {insumo: "", unidade: "", obra: ""};
+
+function montarOpcoes(){
+  OPCOES.insumo = BASE.insumos.map(i =>
+    `<option value="${i.id}" data-unidade="${i.unidade || ""}">${escapar(i.descricao)}</option>`).join("");
+  OPCOES.unidade = BASE.unidades.map(u =>
+    `<option value="${u.codigo}">${escapar(u.codigo)}</option>`).join("");
+  OPCOES.obra = BASE.obras.map(o =>
+    `<option value="${o.id}">${escapar(o.codigo)}</option>`).join("");
+}
+
 function linhaDeItem(n){
-  return `<tr data-item>
-    <td class="dados">${n}</td>
-    <td><select class="it-insumo" style="min-width:200px">
-      <option value="">— escolha —</option>
-      ${BASE.insumos.map(i => `<option value="${i.id}" data-unidade="${i.unidade || ""}">${i.descricao}</option>`).join("")}
-    </select></td>
-    <td><input class="it-espec" placeholder="ex.: 6mm, cinza" style="min-width:130px"></td>
-    <td><input class="it-qtd" inputmode="decimal" style="width:80px"></td>
-    <td><select class="it-un" style="width:90px">
-      <option value="">— un. —</option>
-      ${BASE.unidades.map(u => `<option value="${u.codigo}">${u.codigo}</option>`).join("")}
-    </select></td>
-    <td><select class="it-obra" style="min-width:170px">
-      ${BASE.obras.map(o => `<option value="${o.id}">${o.codigo}</option>`).join("")}
-    </select></td>
-    <td><button type="button" class="btn secundario" data-tirar
-        style="padding:4px 9px; font-size:12px">tirar</button></td></tr>`;
+  return `<div class="item-pedido" data-item>
+    <div class="ip-topo">
+      <span class="ip-n">${n}</span>
+      <span class="ip-nome vazio-ainda">— escolha o insumo abaixo —</span>
+      <button type="button" class="btn secundario ip-tirar" data-tirar>tirar</button>
+    </div>
+    <div class="ip-lido oculto"></div>
+    <div class="ip-grade">
+      <label class="ip-campo ip-insumo"><span>Insumo</span>
+        <select class="it-insumo">
+          <option value="">— escolha —</option>${OPCOES.insumo}
+        </select></label>
+      <label class="ip-campo ip-espec"><span>Especificação</span>
+        <textarea class="it-espec" rows="2"
+                  placeholder="ex.: 6mm, cinza, marca X"></textarea></label>
+      <label class="ip-campo ip-qtd"><span>Qtd</span>
+        <input class="it-qtd" inputmode="decimal"></label>
+      {# `data-sem-busca`: são 16 unidades de uma a três letras (UN, M2, SC…).
+         A caixa de filtro que o sistema põe sozinha em lista longa não cabe
+         numa coluna de 92px — aparecia como "digite para" cortado, e custava
+         uma linha de altura em cada item do pedido. #}
+      <label class="ip-campo ip-un"
+             title="A unidade é deste pedido. O cadastro só sugere."><span>Un.</span>
+        <select class="it-un" data-sem-busca>
+          <option value="">— un. —</option>${OPCOES.unidade}
+        </select></label>
+      <label class="ip-campo ip-obra"><span>Obra</span>
+        <select class="it-obra">${OPCOES.obra}</select></label>
+    </div>
+  </div>`;
 }
 
 function abrirNovo(){
@@ -543,11 +632,7 @@ function abrirNovo(){
     </div>
     <div class="cartao-dica" style="margin-top:10px">Uma mesma solicitação pode
       pedir material para <b>obras diferentes</b> — a obra é de cada item.</div>
-    <table style="margin-top:10px"><thead><tr>
-      <th>#</th><th>Insumo</th><th>Especificação</th><th>Qtd</th>
-      <th title="A unidade é deste pedido. O cadastro só sugere.">Un.</th>
-      <th>Obra</th><th></th></tr></thead>
-      <tbody id="ns-itens">${linhaDeItem(1)}</tbody></table>
+    <div class="itens-pedido" id="ns-itens">${linhaDeItem(1)}</div>
     <div style="margin-top:10px; display:flex; gap:8px">
       <button class="btn secundario" id="ns-mais">Mais um item</button>
       <button class="btn secundario" id="ns-colar">Colar lista da planilha</button>
@@ -564,22 +649,55 @@ function abrirNovo(){
   els("dlg").showModal();
 }
 
+function renumerar(){
+  [...els("ns-itens").children].forEach((bloco, i) =>
+    bloco.querySelector(".ip-n").textContent = i + 1);
+}
+
+// O nome escolhido é repetido em texto no alto do bloco porque é ali que ele
+// CABE: o <select> corta o que não couber na largura, e nome de insumo é
+// justamente onde a diferença está no fim ("… 12,5MM" contra "… 10MM").
+function mostrarNome(bloco){
+  const sel = bloco.querySelector(".it-insumo");
+  const alvo = bloco.querySelector(".ip-nome");
+  const texto = sel.value ? sel.selectedOptions[0].textContent.trim() : "";
+  // Sem insumo escolhido, o título do bloco é o que a IA LEU — assim a pessoa
+  // sabe de qual linha da lista colada este bloco veio.
+  alvo.textContent = texto || bloco.dataset.lido || "— escolha o insumo abaixo —";
+  alvo.classList.toggle("vazio-ainda", !texto);
+}
+
 function ligarLinhas(){
   document.querySelectorAll("[data-tirar]").forEach(b => b.onclick = () => {
     const corpo = els("ns-itens");
     if (corpo.children.length === 1) return;   // pedido sem item não existe
-    b.closest("tr").remove();
-    [...corpo.children].forEach((tr, i) => tr.firstElementChild.textContent = i + 1);
+    b.closest("[data-item]").remove();
+    renumerar();
   });
   // Escolher o insumo SUGERE a unidade usual do cadastro — mas não trava:
   // cimento costuma vir em saco e um dia vem em bag, cerâmica costuma ir por
   // metro quadrado e um dia vai por caixa. Quem pede troca na hora.
   document.querySelectorAll(".it-insumo").forEach(sel => {
+    const bloco = sel.closest("[data-item]");
+    mostrarNome(bloco);
     sel.onchange = () => {
       const un = sel.selectedOptions[0]?.dataset.unidade;
-      const alvo = sel.closest("tr").querySelector(".it-un");
+      const alvo = bloco.querySelector(".it-un");
       if (un && [...alvo.options].some(o => o.value === un)) alvo.value = un;
+      mostrarNome(bloco);
+      // Escolhido o insumo, a dúvida da leitura deixou de existir.
+      if (sel.value) bloco.classList.remove("ip-duvida");
     };
+  });
+  // A especificação é o campo de texto mais longo do pedido — ela cresce com
+  // o que for escrito, em vez de esconder o resto atrás de uma barra.
+  document.querySelectorAll(".it-espec").forEach(ta => {
+    const crescer = () => {
+      ta.style.height = "auto";
+      ta.style.height = Math.min(ta.scrollHeight + 2, 160) + "px";
+    };
+    ta.oninput = crescer;
+    crescer();
   });
 }
 
@@ -607,22 +725,27 @@ async function colarLista(){
 
 function aplicarLeitura(leitura){
   const corpo = els("ns-itens");
-  const vazias = [...corpo.children].filter(tr => !tr.querySelector(".it-insumo").value);
-  vazias.forEach(tr => tr.remove());
-  leitura.itens.forEach((linha, i) => {
+  const vazias = [...corpo.children].filter(b => !b.querySelector(".it-insumo").value);
+  vazias.forEach(b => b.remove());
+  leitura.itens.forEach(linha => {
     corpo.insertAdjacentHTML("beforeend", linhaDeItem(corpo.children.length + 1));
-    const tr = corpo.lastElementChild;
-    if (linha.insumo_id) tr.querySelector(".it-insumo").value = linha.insumo_id;
-    if (linha.quantidade) tr.querySelector(".it-qtd").value = linha.quantidade;
-    if (linha.unidade) tr.querySelector(".it-un").value = linha.unidade;
-    if (linha.obra_id) tr.querySelector(".it-obra").value = linha.obra_id;
-    if (linha.especificacao) tr.querySelector(".it-espec").value = linha.especificacao;
-    // O que a IA não reconheceu fica marcado na tela, com o texto original ao
-    // lado — quem pediu escolhe o insumo certo em vez de a máquina chutar.
+    const bloco = corpo.lastElementChild;
+    if (linha.insumo_id) bloco.querySelector(".it-insumo").value = linha.insumo_id;
+    if (linha.quantidade) bloco.querySelector(".it-qtd").value = linha.quantidade;
+    if (linha.unidade) bloco.querySelector(".it-un").value = linha.unidade;
+    if (linha.obra_id) bloco.querySelector(".it-obra").value = linha.obra_id;
+    if (linha.especificacao) bloco.querySelector(".it-espec").value = linha.especificacao;
+    // O que a IA não reconheceu fica marcado na tela, com o texto original em
+    // LINHA PRÓPRIA — quem pediu escolhe o insumo certo em vez de a máquina
+    // chutar. Antes esse texto ocupava o lugar da dica da especificação, que
+    // some assim que a própria IA preenche a especificação: o original ficava
+    // invisível justamente na linha em que ele era necessário.
     if (!linha.insumo_id) {
-      tr.style.background = "var(--fundo-aviso, #fff8e1)";
-      tr.querySelector(".it-espec").placeholder = `lido: ${linha.descricao_lida}`;
-      tr.querySelector(".it-insumo").title = `não reconhecido: ${linha.descricao_lida}`;
+      bloco.classList.add("ip-duvida");
+      const lido = bloco.querySelector(".ip-lido");
+      lido.textContent = `não reconheci: “${linha.descricao_lida}” — escolha o insumo`;
+      lido.classList.remove("oculto");
+      bloco.dataset.lido = linha.descricao_lida;
     }
   });
   if (!corpo.children.length) corpo.insertAdjacentHTML("beforeend", linhaDeItem(1));

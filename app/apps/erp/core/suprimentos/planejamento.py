@@ -49,6 +49,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.suprimentos import fornecedores as svc_forn
+from app.apps.erp.core.suprimentos import regioes as svc_regioes
 from app.apps.erp.db.models.cadastros import (
     Fornecedor, FornecedorCategoria, Insumo, InsumoCategoria, Obra,
     StatusItemSuprimento, SuprimentoItem, SuprimentoSolicitacao,
@@ -149,6 +150,10 @@ def planejar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
         categoria_id = getattr(insumo, "categoria_insumo_id", None) if insumo else None
         obra = obras.get(item.obra_id)
         municipio = (getattr(obra, "municipio", "") or "").strip().upper()
+        # A UF da obra entra no agrupamento junto do município: é ela que o
+        # fornecedor ESTADUAL atende, e sem ela "SÃO PAULO" a obra e
+        # "SÃO PAULO" o fornecedor do Ceará não se distinguiriam.
+        uf_da_obra = (getattr(obra, "uf", "") or "").strip().upper()
         sol = solicitacoes.get(item.solicitacao_id)
         urgencia, motivo = _urgencia(sol, hoje) if sol else ("NORMAL", "")
 
@@ -178,6 +183,7 @@ def planejar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
             "categoria_id": categoria_id,
             "categoria": getattr(categorias.get(categoria_id), "nome", ""),
             "municipio": municipio or "(sem município na obra)",
+            "uf": uf_da_obra,
             "itens": [], "urgencia": "NORMAL", "motivo": ""})
         bloco["itens"].append(linha)
         if URGENCIAS.get(urgencia, 9) < URGENCIAS.get(bloco["urgencia"], 9):
@@ -189,9 +195,15 @@ def planejar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
     memoria = desempenho.por_fornecedor(s)
 
     saida = []
+    fora_da_regiao = sem_regiao = 0
     for (categoria_id, municipio), bloco in blocos.items():
-        bloco["fornecedores"] = _fornecedores_do_bloco(
-            catalogo_forn, categoria_id, municipio, memoria)
+        r = _fornecedores_do_bloco(catalogo_forn, categoria_id, municipio,
+                                   bloco.get("uf", ""), memoria)
+        bloco["fornecedores"] = r["fornecedores"]
+        bloco["fora_da_regiao"] = r["fora_da_regiao"]
+        bloco["sem_regiao"] = r["sem_regiao"]
+        fora_da_regiao += r["fora_da_regiao"]
+        sem_regiao = max(sem_regiao, r["sem_regiao"])
         bloco["quantos_itens"] = len(bloco["itens"])
         bloco["obras"] = sorted({i["obra"] for i in bloco["itens"] if i["obra"]})
         saida.append(bloco)
@@ -203,6 +215,11 @@ def planejar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
         "itens_pendentes": len(itens),
         "em_cotacao_aberta": em_cotacao_aberta,
         "sem_categoria": sem_categoria,
+        # QUEM NÃO ENTROU, e por quê. Lista que encolhe em silêncio é pior que
+        # lista errada: o comprador não tem como desconfiar de um fornecedor
+        # que ele sabe que atende e não viu na tela.
+        "fora_da_regiao": fora_da_regiao,
+        "sem_regiao": sem_regiao,
         "observacao": (
             "O sistema agrupou por CATEGORIA e por município da obra, e "
             "sugeriu quem vende cada coisa. Nada foi disparado: tire, "
@@ -213,7 +230,7 @@ def planejar(s: Session, *, obras_permitidas: Optional[list[int]] = None,
 
 
 def _fornecedores_do_bloco(catalogo: list[dict[str, Any]], categoria_id: int,
-                           municipio: str,
+                           municipio: str, uf: str = "",
                            memoria: Optional[dict[int, dict[str, Any]]] = None
                            ) -> list[dict[str, Any]]:
     """Quem vende esta categoria, do mais provável para o menos.
@@ -233,10 +250,29 @@ def _fornecedores_do_bloco(catalogo: list[dict[str, Any]], categoria_id: int,
     """
     memoria = memoria or {}
     candidatos = []
+    fora_da_regiao = 0
+    sem_regiao = 0
     for f in catalogo:
         if not f["ativo"] or not f.get("cotacao_automatica", True):
             continue
         if categoria_id not in (f["categorias_ids"] or []):
+            continue
+        # A REGIÃO É FILTRO, NÃO PONTUAÇÃO (21/09/2026). Pedido do dono:
+        # *"a gente não pode colocar para disparar uma cotação com qualquer
+        # fornecedor (…) se não é um fornecedor que atenda a nível nacional, eu
+        # tenho que buscar na região da obra"*.
+        #
+        # Antes daqui, "mesma cidade" só somava 3 pontos — e um fornecedor de
+        # São Paulo entrava numa cotação de obra no Cariri, atrás dos locais
+        # mas dentro dela. Pedir preço a quem não entrega naquele lugar não é
+        # só um e-mail perdido: é uma coluna vazia no mapa, que faz a cotação
+        # parecer que teve menos concorrência do que teve.
+        pode, porque_regiao = svc_regioes.atende(_ComoObjeto(f), municipio, uf)
+        if not pode:
+            if (f.get("abrangencia") or "NAO_INFORMADA") == "NAO_INFORMADA":
+                sem_regiao += 1
+            else:
+                fora_da_regiao += 1
             continue
         mesma_cidade = bool(municipio) and (f["municipio"] or "").upper() == municipio
         porte = f["porte"] or ""
@@ -272,7 +308,7 @@ def _fornecedores_do_bloco(catalogo: list[dict[str, Any]], categoria_id: int,
             "contatos": f["contatos"],
             "pontos": pontos,
             "historico": historico or None,
-            "por_que": ", ".join(m for m in motivos if m) or "vende esta categoria",
+            "por_que": ", ".join([porque_regiao] + [m for m in motivos if m]),
             # O sistema MARCA os melhores; os outros ficam na lista para o
             # comprador acrescentar com um clique, sem procurar.
             "sugerido": False,
@@ -280,7 +316,19 @@ def _fornecedores_do_bloco(catalogo: list[dict[str, Any]], categoria_id: int,
     candidatos.sort(key=lambda c: (-c["pontos"], c["razao_social"]))
     for c in candidatos[:FORNECEDORES_POR_BLOCO]:
         c["sugerido"] = True
-    return candidatos
+    # Quem ficou de fora é contado e DITO na tela. Lista que encolhe em
+    # silêncio é pior que lista errada: o comprador não tem como desconfiar.
+    return {"fornecedores": candidatos, "fora_da_regiao": fora_da_regiao,
+            "sem_regiao": sem_regiao}
+
+
+class _ComoObjeto:
+    """O catálogo vem como dicionário e `regioes.atende` espera um objeto com
+    atributos. Em vez de duplicar a regra para dicionário — e arriscar as duas
+    divergirem —, o dicionário veste um objeto por um instante."""
+
+    def __init__(self, dados: dict[str, Any]):
+        self.__dict__.update(dados)
 
 
 # ---------------------------------------------------------------------------

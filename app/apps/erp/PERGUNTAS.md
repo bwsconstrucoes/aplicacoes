@@ -1037,8 +1037,47 @@ cadastro.
 antigo importado da planilha. Não é "preço de tabela do fornecedor", que o
 sistema não tem.
 
+- OK **Quais fornecedores têm nome diferente do da Receita?** — e quais são os
+  dois nomes.
+- OK **Este CNPJ já está cadastrado?** — respondida no meio do cadastro, antes
+  de a pessoa digitar o resto.
+
+⚠️ **Palavra ambígua: "nome do fornecedor".** São três: a **razão social**
+cadastrada (a que o comprador digitou), a **razão social na Receita** (a
+oficial) e o **nome fantasia** (por onde a obra o conhece). A resposta tem de
+dizer qual está usando — e, depois de alguém adotar o oficial, o nome antigo
+passa a ser o fantasia.
+
+- OK **Quais fornecedores atendem a obra X?** — cruzando o município e a UF da
+  obra com a abrangência do fornecedor.
+- OK **Quantos fornecedores estão sem região cadastrada?** — e quais.
+- OK **Por que este fornecedor não foi sugerido na cotação?** — a tela do
+  disparo separa "não atende a região" de "sem região cadastrada".
+- OK **Quais fornecedores atendem todo o Brasil?** / **só o Ceará?** / **só a
+  Grande Fortaleza?**
+
+⚠️ **Palavra ambígua: "região do fornecedor".** São duas coisas diferentes: a
+**cidade onde ele fica** (o endereço dele) e **até onde ele vende** (a
+abrangência). Um fornecedor de São Paulo pode atender o Brasil inteiro, e um de
+Fortaleza pode só entregar na Grande Fortaleza. Quem decide a cotação é a
+segunda, nunca a primeira.
+
+⚠️ **Palavra ambígua: "atende a região".** NACIONAL atende qualquer obra;
+ESTADUAL, as obras nas UFs listadas; REGIONAL e LOCAL, só os municípios
+listados. Quem está como NÃO INFORMADA **não atende ninguém** para efeito de
+disparo — é falta de cadastro, não abrangência zero, e a resposta tem de dizer
+isso com essas palavras.
+
+⚠️ **Resposta muda conforme quem pergunta:** a lista de fornecedores por obra
+respeita o escopo por obra — quem não alcança a obra não vê o cruzamento dela.
+
 O que ainda **não** responde:
 
+- FALTA **"qual fornecedor entrega em tal bairro / com tal prazo"** — o sistema
+  guarda município, não bairro, e o prazo só existe depois de uma proposta.
+- FALTA **"adotar o nome oficial de todos de uma vez"** — hoje é um a um, de
+  propósito: cada troca é uma decisão sobre um fornecedor que alguém reconhece
+  pelo nome antigo.
 - FALTA **"o que mudou nos OUTROS cadastros"** (fornecedor, obra, colaborador)
   — a trilha guarda, mas só a tela de insumos lista. Vale repetir nas outras
   onde houver correção em linha.

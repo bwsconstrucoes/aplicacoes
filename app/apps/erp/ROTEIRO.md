@@ -1278,6 +1278,24 @@ Feito nesta leva:
 - [x] **O banco de preços antigo.** Importador com a trava dos números
       (CA50 ≠ CA60), sem criar insumo e sem duplicar na reimportação; e o
       último/menor preço ao lado do item na tela de Solicitações.
+- [x] **O cadastro do fornecedor pela Receita.** CNPJ no topo do formulário
+      preenche razão social, fantasia, cidade e UF ao sair do campo, e avisa se
+      o documento já está cadastrado; o nome oficial fica guardado, com filtro
+      "nome diferente da Receita" e o botão de adotar um a um (migração 078).
+- [x] **A região virou filtro do disparo.** Abrangência padronizada
+      (NACIONAL / ESTADUAL / REGIONAL / LOCAL) com UFs e municípios, botão
+      "Padronizar as regiões" traduzindo o texto livre antigo (1.702
+      fornecedores, 100% traduzidos), e quem não atende o lugar da obra deixa de
+      ser sugerido — com contagem do que ficou de fora e do que está sem
+      cadastro. Região, porte, contato, nome e CNPJ passaram a ser obrigatórios
+      (migração 079).
+- [x] **Desativar e reativar fornecedor pela ficha**, com apagar só para quem
+      nunca foi usado (o sistema confere 10 tabelas antes de oferecer).
+- [x] **O modal do novo pedido cabe.** Cada item virou bloco: o nome do insumo
+      aparece inteiro quebrando linha, a especificação é campo de várias linhas
+      que cresce, e em tela estreita os campos empilham. A causa era um
+      `<select>` sem teto de largura esticado pelo insumo de nome mais
+      comprido — armadilha que vale para toda tela com lista dentro de tabela.
 
 O que falta, em ordem de retorno por hora de trabalho:
 

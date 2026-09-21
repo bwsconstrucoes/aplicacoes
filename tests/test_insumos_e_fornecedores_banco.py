@@ -213,3 +213,161 @@ def test_apagar_leva_junto_os_contatos_do_proprio_cadastro(cenario):
     s.flush()
     assert not [c for c in s.scalars(select(FornecedorContato)).all()
                 if c.fornecedor_id == f.id]
+
+
+# ---------------------------------------------------------------------------
+# O CNPJ PREENCHE O CADASTRO, e o nome oficial normaliza o que já está aqui
+#
+# Pedido do dono, 21/09/2026: *"preciso normalizar o nome do fornecedor através
+# de consulta CNPJ, e ainda que após digitação do CNPJ sejam pesquisados os
+# dados para serem pré-preenchidos (…) quando sigo após a digitação, falo no
+# cadastro."*
+#
+# A consulta de verdade não roda nesta sessão (o serviço externo está fora do
+# alcance daqui), então ela é dublada. O que estes testes seguram é o que está
+# em volta dela — e é lá que mora o estrago possível: cadastrar o mesmo CNPJ
+# duas vezes, sobrescrever o que a pessoa digitou, ou trocar a razão social
+# sem deixar rastro de qual era.
+# ---------------------------------------------------------------------------
+RESPOSTA_DA_RECEITA = {
+    "cnpj": "34028316000103",
+    "razao_social": "EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS",
+    "nome_fantasia": "CORREIOS",
+    "situacao": "ATIVA",
+    "municipio": "BRASILIA", "uf": "DF", "cep": "70002900",
+    "logradouro": "SBN QUADRA 1", "numero": "S/N", "bairro": "ASA NORTE",
+    "cnae_principal": "5310501",
+    "email": "contador@escritorio.com.br", "telefone": "6134268000",
+}
+
+
+@pytest.fixture
+def receita_dublada(monkeypatch):
+    from app.apps.erp.core.cadastros import receita
+
+    def falsa(cnpj):
+        return dict(RESPOSTA_DA_RECEITA)
+    monkeypatch.setattr(receita, "consultar", falsa)
+    return receita
+
+
+def test_a_consulta_preenche_o_formulario_com_o_que_a_receita_tem(
+        cenario, receita_dublada):
+    s = cenario["s"]
+    r = svc_forn.consultar_para_cadastro(s, "34.028.316/0001-03")
+
+    assert r["ja_cadastrado"] is None
+    assert r["tipo_pessoa"] == "PJ"
+    assert r["campos"]["razao_social"] == "EMPRESA BRASILEIRA DE CORREIOS E TELEGRAFOS"
+    assert r["campos"]["municipio"] == "BRASILIA"
+    assert r["campos"]["uf"] == "DF"
+
+
+def test_a_consulta_NAO_traz_email_nem_telefone(cenario, receita_dublada):
+    """O que está na Receita é o do contador, quase nunca o do vendedor. Um
+    e-mail errado no cadastro faz a cotação sair para o lugar errado."""
+    s = cenario["s"]
+    campos = svc_forn.consultar_para_cadastro(s, "34028316000103")["campos"]
+    assert "email" not in campos
+    assert "telefone" not in campos
+
+
+def test_cnpj_ja_cadastrado_avisa_em_vez_de_deixar_digitar_tudo(
+        cenario, receita_dublada):
+    """Sem isto, a pessoa preenche o formulário inteiro para o banco recusar
+    no fim — e foi assim que nasceu boa parte dos documentos repetidos."""
+    s, chefe = cenario["s"], cenario["chefe"]
+    f = _fornecedor(s, doc="34028316000103", nome="CORREIOS JA CADASTRADO")
+
+    r = svc_forn.consultar_para_cadastro(s, "34028316000103")
+    assert r["ja_cadastrado"]["id"] == f.id
+    assert "já está cadastrado" in r["aviso"]
+    assert r["campos"] == {}, "nem consulta a Receita: já sabe que não serve"
+
+
+def test_documento_com_tamanho_errado_e_recusado(cenario, receita_dublada):
+    with pytest.raises(ErroValidacao):
+        svc_forn.consultar_para_cadastro(cenario["s"], "123")
+
+
+def test_cpf_diz_que_nao_tem_consulta_em_vez_de_ficar_girando(
+        cenario, receita_dublada):
+    r = svc_forn.consultar_para_cadastro(cenario["s"], "11144477735")
+    assert r["tipo_pessoa"] == "PF"
+    assert r["campos"] == {}
+    assert "CPF" in r["aviso"]
+
+
+def test_receita_fora_do_ar_nao_quebra_o_cadastro(cenario, monkeypatch):
+    """Serviço externo cai. O cadastro não pode cair junto: a pessoa preenche
+    à mão e acerta depois."""
+    from app.apps.erp.core.cadastros import receita
+
+    def caiu(cnpj):
+        raise receita.ReceitaIndisponivel("tempo esgotado")
+    monkeypatch.setattr(receita, "consultar", caiu)
+
+    r = svc_forn.consultar_para_cadastro(cenario["s"], "34028316000103")
+    assert r["campos"] == {}
+    assert "à mão" in r["aviso"]
+
+
+def test_cnpj_baixado_na_receita_vem_com_aviso(cenario, monkeypatch):
+    from app.apps.erp.core.cadastros import receita
+    monkeypatch.setattr(receita, "consultar",
+                        lambda c: {**RESPOSTA_DA_RECEITA, "situacao": "BAIXADA"})
+
+    r = svc_forn.consultar_para_cadastro(cenario["s"], "34028316000103")
+    assert "BAIXADA" in r["aviso"]
+    assert r["campos"], "mesmo baixada, os campos vêm — quem decide é quem lê"
+
+
+# --- normalizar o nome de quem já está cadastrado --------------------------
+def test_adotar_o_nome_oficial_guarda_o_antigo_como_fantasia(cenario):
+    """"MADEIREIRA SÃO JOSÉ" é como o comprador reconhece a empresa. Perder
+    isso encheria a lista de cotação de razões sociais que ninguém liga a
+    ninguém."""
+    s, chefe = cenario["s"], cenario["chefe"]
+    f = _fornecedor(s, doc="34028316000103", nome="MADEIREIRA SAO JOSE")
+    f.razao_social_rfb = "J G DA SILVA COMERCIO DE MADEIRAS EIRELI"
+    s.flush()
+
+    r = svc_forn.adotar_nome_oficial(s, f.id, chefe)
+    s.flush()
+
+    assert f.razao_social == "J G DA SILVA COMERCIO DE MADEIRAS EIRELI"
+    assert f.nome_fantasia == "MADEIREIRA SAO JOSE"
+    assert f.razao_social_rfb is None, "some do filtro depois de resolvido"
+    assert "MADEIREIRA SAO JOSE" in r["recado"]
+
+
+def test_adotar_o_nome_oficial_nao_apaga_um_fantasia_que_ja_existe(cenario):
+    s, chefe = cenario["s"], cenario["chefe"]
+    f = _fornecedor(s, doc="34028316000103", nome="MADEIREIRA SAO JOSE")
+    f.nome_fantasia = "MADEMAX"
+    f.razao_social_rfb = "J G DA SILVA COMERCIO DE MADEIRAS EIRELI"
+    s.flush()
+
+    svc_forn.adotar_nome_oficial(s, f.id, chefe)
+    s.flush()
+    assert f.nome_fantasia == "MADEMAX"
+
+
+def test_sem_divergencia_guardada_nao_da_para_adotar(cenario):
+    s, chefe = cenario["s"], cenario["chefe"]
+    f = _fornecedor(s, doc="34028316000103")
+    with pytest.raises(ErroValidacao) as e:
+        svc_forn.adotar_nome_oficial(s, f.id, chefe)
+    assert "Acertar o cadastro pela Receita" in str(e.value)
+
+
+def test_o_fornecedor_com_nome_divergente_aparece_no_indicador(cenario):
+    s = cenario["s"]
+    f = _fornecedor(s, doc="34028316000103", nome="NOME ANTIGO LTDA")
+    f.razao_social_rfb = "NOME OFICIAL LTDA"
+    s.flush()
+
+    d = svc_forn.gerenciar(s)
+    linha = [x for x in d["fornecedores"] if x["id"] == f.id][0]
+    assert linha["razao_social_rfb"] == "NOME OFICIAL LTDA"
+    assert d["indicadores"]["nome_diferente"] >= 1
