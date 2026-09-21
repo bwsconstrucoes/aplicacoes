@@ -165,7 +165,26 @@ def _movimentos_do_bloco(conn, codigos):
       - so movimentos com cLiquidado='S' contam pago/desconto/juros/multa
         (os nao liquidados sao perna de conta corrente e dobrariam o caixa)
       - o saldo aberto soma todos.
-    Devolve {codigo: (data, pago, aberto, desconto, liquidado, juros, multa)}."""
+      - conta = a conta da BAIXA, nao a da previsao (ver abaixo).
+
+    A CONTA DA BAIXA, e por que ela importa. 21/09/2026, o dono:
+
+        "No OMIE existe a conta de previsao de pagamento e existe a conta onde
+        efetivamente foi realizado o pagamento. A informacao que esta sendo
+        colocada nesse relatorio analitico e exatamente a primeira. E a primeira
+        e errada."
+
+    Ele esta certo, e o erro era silencioso: a coluna saia do titulo
+    (`id_conta_corrente`), que e onde se PREVIU pagar. Quem paga por outra conta
+    — o que acontece o tempo todo — aparecia no relatorio na conta errada, e
+    qualquer analise por conta mentia sem dar sinal alguma.
+
+    Quando ha mais de uma baixa, vale a do MAIOR valor liquidado; empate, a mais
+    recente. Nao existe resposta certa para um titulo pago metade em cada conta;
+    esta e a que erra menos, e a linha do relatorio e uma so.
+
+    Devolve {codigo: (data, pago, aberto, desconto, liquidado, juros, multa,
+                      conta_da_baixa)}."""
     if not codigos:
         return {}
     marcas = ",".join(["?"] * len(codigos))
@@ -175,12 +194,14 @@ def _movimentos_do_bloco(conn, codigos):
         # quebraria a conta aqui. O banco guarda exato; o transporte usa
         # float de 8 bytes, que tem digitos de sobra para centavo.
         "SELECT ncodtitulo, ddtpagamento, cliquidado, nvalpago::float8, "
-        "       nvalaberto::float8, ndesconto::float8, njuros::float8, nmulta::float8 "
+        "       nvalaberto::float8, ndesconto::float8, njuros::float8, "
+        "       nmulta::float8, ncodcc "
         "  FROM movimentos WHERE ncodtitulo IN (" + marcas + ")", codigos)
     agg = {}
-    for cod, dpg, liq, vpg, vab, vdesc, vjur, vmul in cur.fetchall():
+    for cod, dpg, liq, vpg, vab, vdesc, vjur, vmul, ncc in cur.fetchall():
         a = agg.setdefault(cod, {"dpg": None, "pago": 0.0, "aberto": 0.0, "desc": 0.0,
-                                 "juros": 0.0, "multa": 0.0, "liq": "N"})
+                                 "juros": 0.0, "multa": 0.0, "liq": "N",
+                                 "conta": None, "peso": -1.0, "quando": None})
         a["aberto"] += (vab or 0.0)
         if liq == "S":
             a["liq"] = "S"
@@ -191,10 +212,20 @@ def _movimentos_do_bloco(conn, codigos):
             d = _data_para_dt(dpg)
             if d and (a["dpg"] is None or d > a["dpg"]):
                 a["dpg"] = d
+            # a conta da baixa: maior valor liquidado; empate, a mais recente
+            if ncc not in (None, ""):
+                peso = abs(vpg or 0.0)
+                melhor = (peso > a["peso"]
+                          or (peso == a["peso"] and d and a["quando"]
+                              and d > a["quando"])
+                          or (peso == a["peso"] and a["conta"] is None))
+                if melhor:
+                    a["conta"], a["peso"], a["quando"] = ncc, peso, d
     cur.close()
     return {cod: (a["dpg"].strftime("%d/%m/%Y") if a["dpg"] else None,
                   round(a["pago"], 2), round(a["aberto"], 2), round(a["desc"], 2),
-                  a["liq"], round(a["juros"], 2), round(a["multa"], 2))
+                  a["liq"], round(a["juros"], 2), round(a["multa"], 2),
+                  a["conta"])
             for cod, a in agg.items()}
 
 
@@ -345,7 +376,9 @@ def gerar_linhas_fato(conn):
             sinal = 1.0 if is_rec else -1.0
             tipo = REC if is_rec else PAG
 
-            dpg, pago_mov, aberto_mov, desc_mov, liq_mov, juros_mov, multa_mov =                 mov.get(cod, (None, 0.0, 0.0, 0.0, "N", 0.0, 0.0))
+            (dpg, pago_mov, aberto_mov, desc_mov, liq_mov, juros_mov,
+             multa_mov, conta_da_baixa) = mov.get(
+                cod, (None, 0.0, 0.0, 0.0, "N", 0.0, 0.0, None))
             quitado = bool(re.search(r"pago|recebido|conciliado", status, re.I)) or liq_mov == "S"
 
             # realizado x aberto (parte LIQUIDA).
@@ -400,16 +433,29 @@ def gerar_linhas_fato(conn):
             if not (razao or "").strip() and ccli not in (None, ""):
                 razao = f"(fornecedor {ccli})"
             link = pipefy_link(ndoc)
-            # Conta corrente: NOME da conta. Se o catalogo ainda nao tem esse codigo
-            # (conta criada depois do ultimo sync), cai para o codigo cru — assim a
-            # linha nunca perde a informacao.
-            if icc in (None, ""):
+            # Conta corrente: A CONTA DA BAIXA, nao a da previsao.
+            #
+            # 21/09/2026, o dono: "existe a conta de previsao de pagamento e
+            # existe a conta onde efetivamente foi realizado o pagamento. A
+            # informacao que esta sendo colocada nesse relatorio analitico e
+            # exatamente a primeira. E a primeira e errada."
+            #
+            # O titulo carrega a conta onde se PREVIU pagar
+            # (`id_conta_corrente`); quem paga por outra conta aparecia no
+            # relatorio na conta errada, calado. Titulo ainda EM ABERTO nao tem
+            # baixa — ai a previsao e a unica informacao que existe, e continua
+            # valendo.
+            codigo_conta = conta_da_baixa if conta_da_baixa not in (None, "") else icc
+            if codigo_conta in (None, ""):
                 conta = ""
             else:
+                # Se o catalogo ainda nao tem esse codigo (conta criada depois
+                # do ultimo sync), cai para o codigo cru — a linha nunca perde a
+                # informacao.
                 try:
-                    conta = ccorr.get(int(icc)) or str(icc)
+                    conta = ccorr.get(int(codigo_conta)) or str(codigo_conta)
                 except (TypeError, ValueError):
-                    conta = str(icc)
+                    conta = str(codigo_conta)
             observacao = (obs or "").strip()
 
             buckets = _buckets_rateio(rateio.get(cod, []), bruto, proj_map)
@@ -777,8 +823,8 @@ def montar_recebimentos(conn, natureza="R"):
             is_rec = (nat == "R")
             sinal = 1.0 if is_rec else -1.0
 
-            _dpg, pago_mov, _ab, desc_mov, liq_mov, _ju, _mu = \
-                mov.get(cod, (None, 0.0, 0.0, 0.0, "N", 0.0, 0.0))
+            _dpg, pago_mov, _ab, desc_mov, liq_mov, _ju, _mu, _conta = \
+                mov.get(cod, (None, 0.0, 0.0, 0.0, "N", 0.0, 0.0, None))
             quitado = bool(re.search(r"pago|recebido|conciliado", status, re.I)) or liq_mov == "S"
             if not quitado:
                 continue  # nada entrou/saiu: fica so na tabela `fato`, como "em aberto"

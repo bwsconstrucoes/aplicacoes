@@ -682,3 +682,86 @@ def test_a_queixa_da_carga_inicial_chega_na_mensagem_da_tela(monkeypatch):
     assert tarefas.executar_trabalho("carga_inicial", 1) is True
     assert "ATENÇÃO" in fechou["mensagem"]
     assert "118.635" in fechou["mensagem"]
+
+
+# ===========================================================================
+# A conta do relatório é a da BAIXA, não a da previsão — 21/09/2026
+# ===========================================================================
+# O dono: "No OMIE existe a conta de previsão de pagamento e existe a conta onde
+# efetivamente foi realizado o pagamento. A informação que está sendo colocada
+# nesse relatório analítico é exatamente a primeira. E a primeira é errada."
+#
+# Ele está certo, e o erro era silencioso: quem previu pagar pelo Bradesco e
+# pagou pelo Itaú aparecia no Bradesco, e nenhuma análise por conta avisava.
+
+def _conta_do_omie(codigo, descricao):
+    return {"nCodCC": codigo, "descricao": descricao, "tipo_conta": "CORRENTE",
+            "codigo_banco": "000", "agencia": "1", "conta_corrente": "1",
+            "inativo": "N"}
+
+
+def test_a_conta_do_fato_e_a_da_baixa_e_nao_a_da_previsao(espelho_limpo):
+    """Título previsto na conta 7 e pago na conta 9: o relatório tem de dizer 9."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(1, valor=1000.0, natureza="R")  # id_conta_corrente = 7
+    movimento = _movimento_do_omie(1, pago=1000.0)
+    movimento["detalhes"]["nCodCC"] = 9                      # pago por OUTRA conta
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_movimentos(conn, [movimento])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco (previsão)"),
+            _conta_do_omie(9, "Itaú (onde pagou)")])
+        fato.reconstruir_fato(conn)
+
+    (conta,) = consultar(
+        "SELECT conta_corrente FROM fato WHERE codigo_lancamento = 1")[0]
+    assert conta == "Itaú (onde pagou)", \
+        f"o relatório mostrou '{conta}' — voltou a usar a conta da previsão"
+
+
+def test_titulo_em_aberto_continua_mostrando_a_conta_prevista(espelho_limpo):
+    """Sem baixa não há conta de baixa. A previsão é a única informação que
+    existe, e esconder isso seria pior que mostrá-la."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(2, valor=500.0, natureza="R",
+                             status_titulo="A RECEBER")
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco (previsão)")])
+        fato.reconstruir_fato(conn)
+
+    (conta,) = consultar(
+        "SELECT conta_corrente FROM fato WHERE codigo_lancamento = 2")[0]
+    assert conta == "Bradesco (previsão)"
+
+
+def test_pago_em_duas_contas_vale_a_do_maior_valor(espelho_limpo):
+    """Não existe resposta certa para um título pago metade em cada conta — a
+    linha do relatório é uma só. A do maior valor é a que erra menos, e a
+    escolha está escrita no código para ninguém ter de adivinhar."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(3, valor=1000.0, natureza="R")
+    pequeno = _movimento_do_omie(3, pago=300.0)
+    pequeno["detalhes"]["nCodCC"] = 7
+    grande = _movimento_do_omie(3, pago=700.0)
+    grande["detalhes"]["nCodCC"] = 9
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_movimentos(conn, [pequeno, grande])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco"), _conta_do_omie(9, "Itaú")])
+        fato.reconstruir_fato(conn)
+
+    (conta,) = consultar(
+        "SELECT conta_corrente FROM fato WHERE codigo_lancamento = 3")[0]
+    assert conta == "Itaú", "a conta do maior valor liquidado é a que vale"

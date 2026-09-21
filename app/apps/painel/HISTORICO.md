@@ -1302,6 +1302,39 @@ porque o JavaScript monta campos escondidos com o que foi editado — mas marcar
 sem editar não chegava a lugar nenhum. Agora chega, que é o que a exclusão
 precisa.
 
+## A conta do relatório era a da PREVISÃO, não a da baixa — 21/09/2026
+
+O dono:
+
+> *"No OMIE existe a conta de previsão de pagamento e existe a conta onde
+> efetivamente foi realizado o pagamento. A informação que está sendo colocada
+> nesse relatório analítico é exatamente a primeira. E a primeira é errada."*
+
+Ele está certo, e o erro era **silencioso**. A coluna saía do título
+(`id_conta_corrente`), que é onde se **previu** pagar. Quem previu pagar pelo
+Bradesco e pagou pelo Itaú aparecia no Bradesco, e nenhuma análise por conta
+dava sinal.
+
+Agora sai do **movimento de baixa** (`ncodcc`). Título ainda em aberto não tem
+baixa — aí a previsão é a única informação que existe e continua valendo, o que
+é diferente de estar errada.
+
+Quando há mais de uma baixa, vale a do **maior valor liquidado**; empate, a mais
+recente. Não existe resposta certa para um título pago metade em cada conta — a
+linha do relatório é uma só —, e a escolha está escrita no código para ninguém
+ter de adivinhar.
+
+**Efeito colateral bom:** a lista de aportes mostrava as devoluções na conta
+7011-4. Parte disso pode ter sido a previsão; depois de refazer os números, a
+conta exibida passa a ser a de onde o dinheiro saiu de verdade.
+
+**Pega por três testes**, um deles reproduzindo a frase dele: previsto na conta
+7, pago na conta 9, o relatório tem de dizer 9. Sem o conserto, a mensagem de
+falha é literalmente *"o relatório mostrou 'Bradesco (previsão)'"*.
+
+Basta **"Só refazer os números"** — os movimentos já estão na base, não precisa
+baixar nada do OMIE.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
