@@ -183,7 +183,13 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             # ---- etapa 1: trazer do OMIE o que mudou ---------------------
             if modo == "carga_inicial":
                 _etapa("baixando a base inteira do OMIE", "começando")
-                espelho.carga_inicial()
+                # A carga devolve o que NAO conseguiu garantir (etapa que
+                # terminou com menos titulos do que o OMIE diz existir). Isso
+                # tem de chegar a tela: "concluida" com dado faltando e
+                # meia-verdade, e ninguem teria como desconfiar.
+                queixas = espelho.carga_inicial() or []
+                if queixas:
+                    falha_parcial = "; ".join(queixas)
             elif modo == "observacoes":
                 # Só LÊ do OMIE: consulta título por título para trazer a
                 # observação, que a listagem não devolve. Nada é escrito lá.

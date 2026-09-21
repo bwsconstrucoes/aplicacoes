@@ -1040,6 +1040,60 @@ semanas depois.
 isso, zero ali quer dizer "ainda não olhei", e a tela diz isso com todas as
 letras em vez de mostrar um zero tranquilizador.
 
+## A carga passou a retomar POR PÁGINA — 20/09/2026
+
+**Incidente, e a culpa é minha.** O dono começou a Primeira carga às 18:51 e eu
+publiquei código em cima dela. Publicação reinicia o serviço no Render, e o
+reinício mata a carga — é a regra 1 deste arquivo, escrita justamente por isso,
+e eu passei por cima dela duas vezes no mesmo dia sem perguntar se havia carga
+rodando.
+
+**O estrago foi maior do que precisava ser.** A marca de retomada só existia
+para etapa INTEIRA, e as contas a pagar — 118 mil títulos, a mais longa das sete
+— não tinham terminado. Horas de download jogadas fora. O dono: *"melhor, visto
+que posso iniciar e dar outro problema"* — e preferiu esperar o conserto a
+recomeçar e arriscar de novo. Ele estava certo.
+
+### Como ficou
+
+A página em que cada etapa está também é gravada, na mesma `sync_state` e com o
+mesmo prefixo — então "começar do zero" continua sendo um lugar só.
+
+**As duas etapas longas retomam de jeitos diferentes, e a diferença é o que mais
+importa aqui:**
+
+| | Título | Movimento |
+|---|---|---|
+| Tem chave? | sim, o código do OMIE | **não** |
+| Regravar a mesma página | atualiza | **duplica dinheiro** |
+| Retoma em | uma página ANTES da salva | exatamente na seguinte |
+| Zera a tabela | nunca (é upsert) | só quando começa da página 1 |
+
+O passo atrás do título existe porque o OMIE pode criar títulos entre uma
+tentativa e outra, e aí as páginas se deslocam: retomar exatamente na seguinte
+poderia **pular** alguns. Regravar uma página não custa nada quando há chave.
+
+No movimento esse truque seria o desastre: sem chave, regravar é somar de novo.
+
+### A defesa que não depende de eu ter acertado
+
+No fim de cada etapa a carga **conta**: o OMIE informa o total de registros, e a
+base tem de ter isso. Se faltar (ou, no movimento, se sobrar — sinal de
+duplicata), **a etapa é refeita do zero, uma vez**. Se nem assim fechar, a
+mensagem final da tela ganha um `ATENÇÃO: ...` dizendo quanto a base tem e
+quanto o OMIE diz existir.
+
+Carga que termina com título faltando não pode se anunciar como "concluída" e
+mais nada — ninguém teria como desconfiar.
+
+### Um vazamento de memória que estava ali do lado
+
+A etapa de títulos guardava os 118 mil registros numa lista só para calcular, no
+fim, a marca d'água do incremental. Isso é exatamente o que a regra de memória
+(`CONTEXTO.md` §3.7) proíbe numa instância de 2 GB. A função que grava a marca
+já compara com o valor guardado, então passou a ser chamada por página — mesmo
+resultado, sem a lista.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
