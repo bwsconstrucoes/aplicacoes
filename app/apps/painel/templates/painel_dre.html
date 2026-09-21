@@ -424,6 +424,40 @@
     <a href="{{ com_filtros('painel.dre', bloco='aportes', diagnostico='1') }}">
       Ver de onde vem a diferença, corte a corte</a> ·
     <a href="{{ url_for('painel.dre', bloco='aportes') }}">Tirar todos os filtros</a>
+
+    {% if aportes_base.por_obra and aportes_base.por_obra|length > 1 %}
+    <details style="margin-top:10px" open>
+      <summary style="cursor:pointer; font-weight:600">
+        E onde está o resto — obra por obra, na base inteira
+      </summary>
+      <p class="cartao-dica" style="margin:6px 0 0">
+        A linha <b>(não apropriado)</b> é a que costuma explicar a diferença:
+        são aportes e devoluções que existem na base mas <b>não estão ligados a
+        obra nenhuma</b> — então somem quando você filtra por obra. O conserto é
+        apropriar o lançamento (no OMIE, ou aqui pelo Explorador).
+      </p>
+      <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table>
+          <thead><tr>
+            <th class="sem-ordem">Obra</th>
+            <th class="sem-ordem direita">Aportado</th>
+            <th class="sem-ordem direita">Devolvido</th>
+            <th class="sem-ordem direita">Lançamentos</th>
+          </tr></thead>
+          <tbody>
+          {% for l in aportes_base.por_obra %}
+            <tr>
+              <td class="desc">{{ l.obra }}</td>
+              <td class="dados direita">{{ brl(l.aportado) }}</td>
+              <td class="dados direita">{{ brl(l.devolvido) }}</td>
+              <td class="dados direita">{{ l.lancamentos }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
   </div>
   {% elif aportes_base %}
   <p class="cartao-dica" style="margin-top:10px">

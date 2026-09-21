@@ -1835,3 +1835,42 @@ def test_o_diagnostico_so_roda_quando_alguem_pede(cliente_config,
     assert rodou == []
     cliente_config.get("/painel/dre?bloco=aportes&diagnostico=1")
     assert rodou, "e com o pedido, tem de rodar"
+
+
+def test_o_bloco_diz_ONDE_esta_o_resto_obra_por_obra(cliente_config):
+    """21/09/2026. Filtrado na obra, o dono via R$ 887 mil de devolução e
+    esperava R$ 3,3 milhões. Na base inteira havia R$ 5,4 milhões — ou seja, o
+    dinheiro estava lá, em lançamentos NÃO APROPRIADOS àquela obra.
+
+    Dizer "o filtro esconde X" não resolve: ele precisa saber ONDE está o resto
+    para poder apropriar. A linha "(não apropriado)" é a que ele conserta."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        for cod, obra, valor in ((901, "MERCADOBARBALHA", -320000),
+                                 (902, "", -784647.07)):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " situacao_vencimento, categoria, codigo_categoria, departamento,"
+                " razao_social, cnpj_cpf, data, ano, pago_recebido,"
+                " a_pagar_receber, juros, multa)"
+                " VALUES (?,'2. Contas a Pagar','Fluxo de Caixa','PAGO','Quitado',"
+                "         'Devolução de Aportes','2.08.02',?,'MORAIS',"
+                "         '09426420000109','2025-12-24',2025,?,0,0,0)",
+                (cod, obra, valor))
+        conn.commit()
+    consultas.esquecer_listas()
+
+    base = consultas.aportes_na_base_inteira()
+    por_obra = {l["obra"]: l["devolvido"] for l in base["por_obra"]}
+    assert reais(por_obra[consultas.SEM_OBRA]) == reais(784647.07), \
+        "o lançamento sem obra tem de aparecer com nome próprio"
+    assert reais(por_obra["MERCADOBARBALHA"]) == reais(320000)
+
+    html = cliente_config.get(
+        "/painel/dre?bloco=aportes&obra=MERCADOBARBALHA").get_data(as_text=True)
+    assert "E onde está o resto" in html
+    assert consultas.SEM_OBRA in html, \
+        "a linha que ele conserta tem de estar na tela, não no meu raciocínio"
+    assert "784.647,07" in html

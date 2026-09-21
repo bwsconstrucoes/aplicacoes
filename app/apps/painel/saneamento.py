@@ -161,7 +161,7 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
     Devolve uma linha por título, com o "de → para" e o resultado — a mesma
     forma na simulação e no envio de verdade, para que o ensaio mostre
     exatamente o que a execução vai fazer."""
-    from .sync import omie_escrita
+    from .sync import omie_client, omie_escrita
 
     pedido = normalizar_alvos(alvos, categoria_nova, departamento_novo)
     if not pedido:
@@ -190,6 +190,15 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
             return {"ok": False, "erro": f"Sem acesso ao OMIE para consultar: {e}"}
 
     resultados = []
+    # A Omie bloqueando o acesso PARA o lote, e isso nao e desistencia.
+    #
+    # 21/09/2026: ela devolveu "API bloqueada por consumo indevido. Tente
+    # novamente em 664 segundos". Tentar o proximo titulo cairia no mesmo
+    # bloqueio e o PROLONGARIA — e é exatamente esse tipo de insistência que ela
+    # esta punindo. Melhor parar, dizer quanto falta esperar, e listar o que
+    # nao chegou a ser tentado.
+    bloqueio = None
+
     for titulo in titulos:
         # cada título carrega o SEU destino: na edição linha a linha, um vai
         # para uma categoria e o outro para outra, no mesmo envio
@@ -200,6 +209,11 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
                  "resultado": "",
                  "categoria_pedida": categoria_do_titulo,
                  "departamento_pedido": departamento_do_titulo}
+
+        if bloqueio is not None:
+            linha["resultado"] = "NÃO TENTADO: o OMIE bloqueou as chamadas."
+            resultados.append(linha)
+            continue
 
         # a trava do rateio: recusar ANTES de consultar o OMIE
         if departamento_do_titulo and titulo["tem_rateio_multiplo"] and not aceita_desfazer_rateio:
@@ -229,6 +243,10 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
                 registrar(titulo, False, categoria_do_titulo,
                           departamento_do_titulo, mudancas, True,
                           str(retorno)[:500])
+        except omie_client.OmieBloqueada as e:
+            bloqueio = e
+            linha["resultado"] = f"NÃO ALTERADO: {e}"
+            logger.warning("Painel: OMIE bloqueou o lote — %s", e)
         except Exception as e:  # noqa: BLE001 — um título com erro não para o lote
             linha["resultado"] = f"ERRO: {e}"
             logger.exception("Painel: falha ao alterar o titulo %s", titulo["codigo"])
@@ -240,5 +258,7 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
     enviados = sum(1 for r in resultados if r["ok"] and r["mudancas"])
     return {"ok": True, "simulacao": simulacao, "linhas": resultados,
             "quantos": len(resultados), "alterados": enviados,
+            "bloqueio": str(bloqueio) if bloqueio else "",
+            "bloqueio_segundos": bloqueio.segundos if bloqueio else 0,
             "recusados": sum(1 for r in resultados
                              if r["resultado"].startswith("RECUSADO"))}
