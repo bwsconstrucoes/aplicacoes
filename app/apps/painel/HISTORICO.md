@@ -1194,6 +1194,66 @@ entra sozinho na obra certa.
 tela tem de mostrar ONDE ele está, não só quanto falta. "O filtro esconde X" não
 resolve nada se a pessoa não souber para onde olhar.
 
+## O lote que travou o sistema — 21/09/2026
+
+O dono mandou um lote grande de apropriações pela tela de saneamento e o painel
+inteiro ficou lento por horas. O log do Render contou a história:
+
+```
+HTTP 500 (tent. 1/8): O período contábil de Dezembro de 2023 foi bloqueado
+                      por Integração em 01/07 Qua às 06:00.
+HTTP 500 (tent. 2/8): (a mesma coisa)
+HTTP 500 (tent. 3/8): Consumo redundante detectado. Aguarde 57 segundos.
+...
+[425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.
+```
+
+**Quatro defeitos empilhados, e o primeiro causou todos os outros.**
+
+### 1. Período contábil fechado era tratado como erro passageiro
+
+A Omie devolve isso como HTTP 500, e HTTP 500 dela costuma ser transitório —
+por isso o código retentava. Só que **título de período fechado nunca vai ser
+alterado**: repetir é impossível de dar certo. Foram 8 tentativas por título, e
+na terceira a própria Omie já acusava *"Consumo redundante detectado"* — ou
+seja, a repetição da MESMA requisição. Daí veio o bloqueio geral.
+
+Agora entra na lista de erros definitivos: aborta na primeira.
+
+### 2. O tempo que a Omie pede não era entendido
+
+O código conhecia só `"Aguarde N segundos"`. A mensagem do bloqueio usa outra
+redação: `"Tente novamente em N segundos"`. Sem reconhecer, caía no backoff
+normal — 8 tentativas somando 112 s, todas DENTRO de um bloqueio de 664 s, cada
+uma prolongando-o.
+
+### 3. Esperar dentro da tela trava o sistema inteiro
+
+Dois tetos agora, porque são dois mundos. A **carga** roda num processo
+separado, sozinha, e esperar 10 minutos ali é melhor que abortar 120 mil
+títulos. A **tela** roda no processo que atende todo mundo, com 4 vias de
+atendimento: uma espera de um minuto prende uma das quatro e trava o painel — e
+o ERP junto, que divide o mesmo processo. Na tela o teto é 30 s: acima disso,
+para e diz quanto falta esperar.
+
+**É quase certo que era isto por trás da lentidão que ele relatou como "clico e
+demora minutos".**
+
+### 4. Alteração que não alterava nada
+
+`Departamento: 1651586723 → 1651586723 (100%)`. Gastava uma chamada e, ao
+falhar, mais oito. Agora responde "já está assim" sem tocar na Omie.
+
+### E o lote para no primeiro bloqueio
+
+Insistir no próximo título cai no mesmo bloqueio e o prolonga. A tela passa a
+dizer quanto esperar e quais títulos **não foram tentados** — nada fica pela
+metade: cada um ou foi gravado ou nem começou.
+
+**Como parar um lote em andamento, se acontecer de novo:** só reiniciando o
+serviço no Render. O trabalho roda dentro da requisição; fechar a aba não para
+nada. Publicar também reinicia, então publicar um conserto já dá o stop.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

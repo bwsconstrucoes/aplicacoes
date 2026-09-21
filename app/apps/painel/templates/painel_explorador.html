@@ -107,6 +107,17 @@
         obras — trocar a obra apagaria esse rateio.
       {% endif %}
     </div>
+    {% if alteracao.bloqueio %}
+    <div class="aviso erro">
+      <b>O OMIE bloqueou as chamadas e o lote parou aqui.</b><br>
+      {{ alteracao.bloqueio }}<br>
+      Isso acontece quando muitas chamadas saem em pouco tempo — por exemplo,
+      alterar em lote <b>enquanto uma atualização da base está rodando</b>, já
+      que ela também consome o OMIE. <b>Nada foi alterado pela metade:</b> cada
+      título ou foi gravado ou nem chegou a ser tentado, e a coluna Resultado
+      diz qual é qual. Espere o tempo pedido e mande os que ficaram de fora.
+    </div>
+    {% endif %}
     <div class="tabela-rolagem">
       <table>
         <thead>
