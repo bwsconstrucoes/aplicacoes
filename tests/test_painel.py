@@ -436,6 +436,10 @@ def _consultar_falso(sql, params=()):
         if (sql.strip().startswith("SELECT COALESCE(")
                 and "GROUP BY" not in sql):
             return [(7000.0, 1000.0, 4)]
+        # "onde está o resto": aportado/devolvido por obra, na base inteira
+        if "ORDER BY 3 DESC, 2 DESC" in sql:
+            return [("Obra Um", 7000.0, 1000.0, 4),
+                    ("(não apropriado)", 0.0, 2000.0, 1)]
         if "= 'Dividendos'" in sql:                             # o quadro à parte
             return [("SÓCIO A", 0.0, 1200.0, 2)]
         # Por obra / por tipo: o que distingue e a obra estar no recorte.

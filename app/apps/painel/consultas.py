@@ -1363,8 +1363,27 @@ def aportes_na_base_inteira() -> dict:
     (ap, dev, n) = consultar(
         f"""SELECT COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0), COUNT(*)
               FROM fato{where}""", params)[0]
+
+    # E ONDE ESTA O RESTO — obra por obra.
+    #
+    # 21/09/2026: filtrado na obra Mercado Barbalha, o dono via R$ 887 mil de
+    # devolucao e esperava R$ 3,3 milhoes. Na base inteira havia R$ 5,4 milhoes.
+    # Ou seja, o dinheiro estava la — em lancamentos que NAO estao apropriados
+    # aquela obra. Dizer so "o filtro esconde X" nao resolve: ele precisa saber
+    # ONDE o resto esta para poder apropriar no OMIE.
+    #
+    # "(nao apropriado)" e a linha que mais importa: e a que ele conserta.
+    por_obra = [{"obra": obra, "aportado": float(a or 0),
+                 "devolvido": float(d or 0), "lancamentos": q}
+                for obra, a, d, q in consultar(
+        f"""SELECT {_OBRA}, COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0),
+                   COUNT(*)
+              FROM fato{where}
+             GROUP BY 1
+             ORDER BY 3 DESC, 2 DESC
+             LIMIT 30""", params)]
     return {"aportado": float(ap or 0), "devolvido": float(dev or 0),
-            "lancamentos": n or 0}
+            "lancamentos": n or 0, "por_obra": por_obra}
 
 
 def dividendos_por_socio(f: Filtros) -> list[dict]:

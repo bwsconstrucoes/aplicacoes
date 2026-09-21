@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import logging
 
-from .omie_client import OmieClient, URL_CONTAPAGAR, URL_CONTARECEBER
+from .omie_client import (TETO_DE_ESPERA_NA_TELA, OmieClient,
+                          URL_CONTAPAGAR, URL_CONTARECEBER)
 
 logger = logging.getLogger("painel.omie_escrita")
 
@@ -52,7 +53,17 @@ def tipo_do_titulo(tipo_do_fato: str) -> str:
 
 
 class OmieEscrita(OmieClient):
-    """O mesmo cliente do sync, com as duas chamadas que alteram."""
+    """O mesmo cliente do sync, com as duas chamadas que alteram.
+
+    Com uma diferenca que importa: ele roda DENTRO da tela, no processo que
+    atende todo mundo. Por isso o teto de espera e curto — segurar uma das 4
+    vias de atendimento por um minuto trava o sistema inteiro, inclusive o ERP,
+    que divide o mesmo processo. Melhor parar e dizer quanto falta esperar."""
+
+    @classmethod
+    def de_ambiente(cls, caminho_env=".env", **kwargs):
+        kwargs.setdefault("teto_de_espera", TETO_DE_ESPERA_NA_TELA)
+        return super().de_ambiente(caminho_env, **kwargs)
 
     def consultar_titulo(self, codigo: int, tipo: str) -> dict:
         url, consultar, _alterar = OPERACOES[tipo]
@@ -82,7 +93,7 @@ def preparar_alteracao(cadastro: dict, codigo_categoria=None,
     novo = {c: v for c, v in (cadastro or {}).items() if c not in SO_LEITURA}
     mudancas = []
 
-    if codigo_categoria:
+    if codigo_categoria and str(cadastro.get("codigo_categoria") or "") != str(codigo_categoria):
         antes = str(cadastro.get("codigo_categoria") or "—")
         novo["codigo_categoria"] = str(codigo_categoria)
         # o array `categorias` é a categoria MÚLTIPLA; deixá-lo junto faz o
@@ -93,7 +104,17 @@ def preparar_alteracao(cadastro: dict, codigo_categoria=None,
     if cod_departamento:
         distribuicao = cadastro.get("distribuicao") or []
         antes = ", ".join(str(d.get("cCodDep") or "?") for d in distribuicao) or "—"
-        novo["distribuicao"] = [{"cCodDep": str(cod_departamento), "nPerDep": 100}]
-        mudancas.append(f"Departamento: {antes} → {cod_departamento} (100%)")
+        # JA ESTA ASSIM? Entao nao se manda nada.
+        #
+        # 21/09/2026: o dono viu "Departamento: 1651586723 → 1651586723 (100%)"
+        # — uma alteracao que nao altera. Ela nao era inofensiva: gastava uma
+        # chamada na API da Omie e, ao errar, mais 8 tentativas. Foi assim que
+        # ele levou um bloqueio de 11 minutos por "consumo indevido".
+        ja_esta = (len(distribuicao) == 1
+                   and str(distribuicao[0].get("cCodDep") or "") == str(cod_departamento)
+                   and float(distribuicao[0].get("nPerDep") or 0) == 100.0)
+        if not ja_esta:
+            novo["distribuicao"] = [{"cCodDep": str(cod_departamento), "nPerDep": 100}]
+            mudancas.append(f"Departamento: {antes} → {cod_departamento} (100%)")
 
     return novo, mudancas

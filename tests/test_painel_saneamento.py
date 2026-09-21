@@ -631,3 +631,115 @@ def test_a_tela_abre_com_cada_filtro_sozinho(cliente_web):
         r = cliente_web.get(f"/painel/explorador?{campo}={valor}")
         assert r.status_code == 200, f"a tela quebrou com o filtro {campo}"
         assert "Alguma coisa deu errado" not in r.get_data(as_text=True), campo
+
+
+# ===========================================================================
+# O bloqueio da Omie, e a chamada gasta à toa — 21/09/2026
+# ===========================================================================
+# O dono tentou apropriar um título e levou:
+#
+#   Departamento: 1651586723 → 1651586723 (100%)
+#   ERRO: [MAX_TENTATIVAS] Falha apos 8 tentativas em AlterarContaReceber:
+#         [425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.
+#
+# Duas falhas na mesma linha: uma alteração que NÃO ALTERA nada (e mesmo assim
+# gasta chamada), e oito tentativas dentro de um bloqueio de 11 minutos — que
+# cada tentativa prolongava.
+
+def test_mandar_o_mesmo_departamento_nao_gera_alteracao():
+    """A alteração que não altera. Ela não era inofensiva: gastava uma chamada
+    na Omie e, ao falhar, mais oito tentativas."""
+    from app.apps.painel.sync import omie_escrita
+    cadastro = dict(CADASTRO_DO_OMIE,
+                    distribuicao=[{"cCodDep": "1651586723", "nPerDep": 100}])
+    novo, mudancas = omie_escrita.preparar_alteracao(
+        cadastro, cod_departamento="1651586723")
+    assert mudancas == [], f"nada mudou, não podia haver o que enviar: {mudancas}"
+    assert "distribuicao" not in novo or novo["distribuicao"] == cadastro["distribuicao"]
+
+    # e continua alterando quando é DIFERENTE de verdade
+    _novo2, mudancas2 = omie_escrita.preparar_alteracao(
+        cadastro, cod_departamento="OUTRO")
+    assert mudancas2 and "OUTRO" in mudancas2[0]
+
+
+def test_mandar_a_mesma_categoria_tambem_nao_gera_alteracao():
+    from app.apps.painel.sync import omie_escrita
+    _novo, mudancas = omie_escrita.preparar_alteracao(
+        CADASTRO_DO_OMIE, codigo_categoria="1.01.01")
+    assert mudancas == []
+
+
+def test_o_tempo_que_a_omie_pede_e_entendido_nas_duas_redacoes():
+    """O código só conhecia "Aguarde N segundos". A mensagem que pegou o dono
+    usa outra redação — e por isso caiu no backoff normal, de 112 segundos,
+    dentro de um bloqueio de 664."""
+    from app.apps.painel.sync.omie_client import _SEGUNDOS_PEDIDOS
+    achados = [_SEGUNDOS_PEDIDOS.search(t) for t in (
+        "API bloqueada por consumo indevido. Tente novamente em 664 segundos.",
+        "Consumo redundante. Aguarde 30 segundos.")]
+    assert [int(m.group(1)) for m in achados] == [664, 30]
+
+
+def test_bloqueio_longo_para_o_lote_e_diz_o_que_nao_foi_tentado(base_de_saneamento,
+                                                                monkeypatch):
+    """Insistir no próximo título cai no MESMO bloqueio e o prolonga — é esse
+    tipo de insistência que a Omie está punindo. E esperar 11 minutos dentro da
+    requisição prenderia uma das 4 threads do serviço, travando o sistema para
+    quem mais estiver usando."""
+    from app.apps.painel import saneamento
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "x")
+
+    class ClienteBloqueado(ClienteFalso):
+        def alterar_titulo(self, cadastro, tipo):
+            raise OmieBloqueada(664, "API bloqueada por consumo indevido.")
+
+    cliente = ClienteBloqueado()
+    r = saneamento.aplicar([501, 502], categoria_nova="2.02", simulacao=False,
+                           cliente=cliente)
+    assert r["ok"] is True
+    assert r["alterados"] == 0
+    assert r["bloqueio_segundos"] == 664
+    assert "11 min" in r["bloqueio"], "tem de dizer em minutos, não em segundos crus"
+    assert "NÃO ALTERADO" in r["linhas"][0]["resultado"]
+    assert "NÃO TENTADO" in r["linhas"][1]["resultado"], \
+        "o segundo não pode nem ter sido tentado"
+    assert len(cliente.consultados) == 1, \
+        "e nem consultado: cada chamada a mais prolonga o bloqueio"
+
+
+def test_periodo_contabil_fechado_nao_e_retentado():
+    """A ORIGEM do estrago de 21/09/2026.
+
+    "O período contábil de Dezembro de 2023 foi bloqueado por Integração" vem
+    como HTTP 500, que o código tratava como transitório. Só que título de
+    período fechado NUNCA vai ser alterado: repetir é impossível de dar certo.
+    Foram 8 tentativas por título, e na terceira a Omie já acusava "Consumo
+    redundante detectado" — a repetição da MESMA requisição. Daí veio o
+    bloqueio geral que travou o sistema por horas."""
+    from app.apps.painel.sync.omie_client import _texto_e_definitivo
+    assert _texto_e_definitivo(
+        "ERROR: O período contábil de Dezembro de 2023 (01/12/23 ~ 31/12/23) "
+        "foi bloqueado por Integração em 01/07 Qua às 06:00.")
+    # e o que É transitório continua sendo retentado
+    assert not _texto_e_definitivo(
+        "ERROR: API bloqueada por consumo indevido. Tente novamente em 14 segundos.")
+    assert not _texto_e_definitivo(
+        "Consumo redundante detectado. Aguarde 57 segundos para tentar novamente.")
+
+
+def test_a_tela_espera_menos_que_a_carga():
+    """Dois mundos, dois tetos. A carga roda sozinha num processo separado e
+    tem horas pela frente. A tela roda no processo que atende todo mundo: uma
+    espera de um minuto ali prende uma das 4 vias e trava o sistema inteiro —
+    inclusive o ERP, que divide o mesmo processo."""
+    from app.apps.painel.sync.omie_client import (TETO_DE_ESPERA,
+                                                  TETO_DE_ESPERA_NA_TELA,
+                                                  OmieClient)
+    from app.apps.painel.sync.omie_escrita import OmieEscrita
+    assert TETO_DE_ESPERA_NA_TELA < TETO_DE_ESPERA
+    assert OmieClient("k", "s").teto_de_espera == TETO_DE_ESPERA
+    assert OmieEscrita("k", "s",
+                       teto_de_espera=TETO_DE_ESPERA_NA_TELA).teto_de_espera == \
+        TETO_DE_ESPERA_NA_TELA
