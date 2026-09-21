@@ -384,6 +384,75 @@
             </form>
           </td>
         </tr>
+        {# A LINHA DE ALTERAR, logo abaixo da pessoa. Trocar a senha de quem
+           esqueceu e mudar as obras de quem passou a tocar outra coisa são as
+           duas coisas que mais vão acontecer — deixá-las a um clique. #}
+        <tr>
+          <td colspan="6" style="padding:0 0 10px">
+            <details>
+              <summary style="cursor:pointer; font-size:12px">
+                Alterar {{ p.usuario }} — senha, obras ou telas
+              </summary>
+              <form method="post"
+                    action="{{ url_for('painel.usuarios_salvar') }}"
+                    style="margin-top:8px; padding-left:10px">
+                <input type="hidden" name="acao" value="salvar">
+                <input type="hidden" name="usuario_id" value="{{ p.id }}">
+                <div class="form-grade">
+                  <div class="campo">
+                    <label for="nome{{ p.id }}">Nome</label>
+                    <input id="nome{{ p.id }}" name="nome" value="{{ p.nome }}">
+                  </div>
+                  <div class="campo">
+                    <label for="senha{{ p.id }}">Nova senha
+                      <small>(em branco mantém a atual)</small></label>
+                    <input id="senha{{ p.id }}" name="nova_senha"
+                           autocomplete="new-password"
+                           placeholder="só preencha para trocar">
+                  </div>
+                  <div class="campo" style="align-self:flex-end">
+                    <label style="display:flex; align-items:center; gap:6px">
+                      <input type="checkbox" name="ativo" value="1"
+                             {% if p.ativo %}checked{% endif %}>
+                      Pode entrar
+                    </label>
+                  </div>
+                </div>
+
+                <h4 style="margin:12px 0 4px; font-size:12px">Obras</h4>
+                <div class="tabela-rolagem" style="max-height:160px">
+                  {% for obra in obras_para_liberar %}
+                    <label style="display:block; padding:2px 0">
+                      <input type="checkbox" name="obra_do_usuario"
+                             value="{{ obra }}"
+                             {% if obra in p.obras %}checked{% endif %}>
+                      {{ obra }}
+                    </label>
+                  {% endfor %}
+                </div>
+
+                <h4 style="margin:12px 0 4px; font-size:12px">Telas</h4>
+                <div>
+                  {% for chave, rotulo in telas_liberaveis.items() %}
+                    <label style="display:inline-block; margin:0 14px 6px 0">
+                      <input type="checkbox" name="tela_do_usuario"
+                             value="{{ chave }}"
+                             {% if chave in p.telas %}checked{% endif %}>
+                      {{ rotulo }}
+                    </label>
+                  {% endfor %}
+                </div>
+                <button class="btn" type="submit"
+                        style="margin-top:8px">Salvar</button>
+                <p class="cartao-dica">
+                  Desmarcar todas as obras (ou todas as telas) <b>tira o acesso
+                  dela na hora</b> — ela para de entrar sem você precisar apagar
+                  o cadastro.
+                </p>
+              </form>
+            </details>
+          </td>
+        </tr>
       {% endfor %}
       </tbody>
     </table>

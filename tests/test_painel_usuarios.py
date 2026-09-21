@@ -273,3 +273,77 @@ def test_o_dono_continua_vendo_tudo(base_com_duas_obras, monkeypatch):
     assert "10.000,00" in html, "o dono deixou de ver a empresa inteira"
     assert cliente.get("/painel/configuracoes").status_code == 200
     assert cliente.get("/painel/fluxo").status_code == 200
+
+
+# ===========================================================================
+# 6. Trocar a senha e mudar as obras, pela tela
+# ===========================================================================
+# O dono, sobre o fluxo: "eu cadastro o usuário e a senha e dou para ela, e
+# ponto final". É isso mesmo — e a consequência de guardar a senha embaralhada
+# é que quem esquece não tem a senha consultada: ganha uma nova. Dois cliques.
+
+@pytest.fixture()
+def cliente_dono(parceiro, monkeypatch):
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente)
+    return cliente
+
+
+def test_o_dono_troca_a_senha_de_quem_esqueceu(parceiro, cliente_dono, monkeypatch):
+    from app.apps.painel import usuarios
+    cliente_dono.post("/painel/usuarios", data={
+        "acao": "salvar", "usuario_id": str(parceiro), "nome": "Parceiro",
+        "nova_senha": "senha-nova-dele", "ativo": "1",
+        "obra_do_usuario": "OBRA DELE", "tela_do_usuario": "dre"})
+
+    pessoa = usuarios.buscar("parceiro")
+    assert usuarios.senha_confere(pessoa, "senha-nova-dele") is True
+    assert usuarios.senha_confere(pessoa, "senha-dele") is False, \
+        "a senha antiga não pode continuar valendo"
+
+    # e a pessoa entra com a nova
+    outro = _cliente(monkeypatch)
+    assert _entrar(outro, usuario="parceiro",
+                   senha="senha-nova-dele").status_code == 302
+
+
+def test_senha_em_branco_mantem_a_que_existe(parceiro, cliente_dono):
+    """Salvar as obras sem querer trocar a senha é o caso comum. Se o campo
+    vazio apagasse a senha, o dono trancaria a pessoa do lado de fora sem saber."""
+    from app.apps.painel import usuarios
+    cliente_dono.post("/painel/usuarios", data={
+        "acao": "salvar", "usuario_id": str(parceiro), "nome": "Outro Nome",
+        "nova_senha": "", "ativo": "1",
+        "obra_do_usuario": "OBRA DELE", "tela_do_usuario": "dre"})
+    assert usuarios.senha_confere(usuarios.buscar("parceiro"), "senha-dele")
+
+
+def test_o_dono_muda_as_obras_pela_tela(parceiro, cliente_dono, monkeypatch):
+    cliente_dono.post("/painel/usuarios", data={
+        "acao": "salvar", "usuario_id": str(parceiro), "nome": "Parceiro",
+        "nova_senha": "", "ativo": "1",
+        "obra_do_usuario": "OBRA DE OUTRO", "tela_do_usuario": "dre"})
+
+    dele = _cliente(monkeypatch)
+    _entrar(dele, usuario="parceiro", senha="senha-dele")
+    html = dele.get("/painel/dre").get_data(as_text=True)
+    assert "9.000,00" in html, "passou a ver a obra nova"
+    assert "1.000,00" not in html, "e deixou de ver a antiga"
+
+
+def test_desmarcar_todas_as_obras_tira_o_acesso_sem_apagar(parceiro, cliente_dono,
+                                                           monkeypatch):
+    """Tirar o acesso sem perder o cadastro — útil quando a parceria pausa."""
+    cliente_dono.post("/painel/usuarios", data={
+        "acao": "salvar", "usuario_id": str(parceiro), "nome": "Parceiro",
+        "nova_senha": "", "ativo": "1", "tela_do_usuario": "dre"})
+    dele = _cliente(monkeypatch)
+    assert _entrar(dele, usuario="parceiro",
+                   senha="senha-dele").status_code == 403
+
+
+def test_a_tela_oferece_alterar_cada_pessoa(parceiro, cliente_dono):
+    """Sem isso, trocar a senha de quem esqueceu exigiria apagar e recadastrar."""
+    html = cliente_dono.get("/painel/configuracoes").get_data(as_text=True)
+    assert "Alterar parceiro" in html
+    assert "em branco mantém a atual" in html

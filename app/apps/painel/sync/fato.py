@@ -806,6 +806,17 @@ def rotulo_medicao(chave):
     for p in ("DOC:", "OBS:", "ROW:"):
         if c.startswith(p):
             return c[len(p):]
+    # COD: e a saida quando NAO DA para saber a medicao — o titulo nao tem
+    # numero de documento nem observacao no padrao "OBRA|Medicao No: N". Ai a
+    # chave vira o codigo do proprio titulo no OMIE, para ele pelo menos nao se
+    # misturar com outro.
+    #
+    # 21/09/2026 o dono topou com "COD:11255312361" na tela e perguntou o que
+    # era. "COD:" nao quer dizer nada para quem le: o rotulo passa a dizer o que
+    # e, e a deixar o numero a vista — e por ele que se acha o lancamento no
+    # OMIE.
+    if c.startswith("COD:"):
+        return f"Sem número de medição (título {c[4:]})"
     return c
 
 
