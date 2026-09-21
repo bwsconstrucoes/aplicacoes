@@ -6234,21 +6234,36 @@ Três coisas a mais:
   lista: "não consegui ler" é resposta tão importante quanto as outras, porque
   pode querer dizer que ele não existe.
 
-#### O que continua sem resposta, e é o que a conferência vai dizer
+#### ⚠️ RESPONDIDO NO MESMO DIA: era a TELA DO OMIE, não o lançamento
 
-O dono descreveu mais coisas na mesma sessão — um lançamento de R$ 550 mil que
-aparecia só na conta da parceria, outro com um real a mais que substituiu o
-anterior na tela do OMIE, valores sumindo depois de conciliar e atualizar.
+O dono voltou horas depois:
 
-**Nada disso foi diagnosticado, e é honesto dizer.** Pode ser o campo da conta
-não estar sendo respeitado no título a receber, pode ser a baixa não ter
-pegado (e título sem baixa não aparece no extrato da conta), pode ser
-comportamento da tela de conciliação do próprio OMIE. As três hipóteses levam
-a consertos diferentes, e chutar entre elas seria escrever no sistema da
-empresa por palpite.
+> *"Os lançamentos entraram. Problema é no OMIE mesmo, ele não estava exibindo
+> corretamente as informações. Só apareceu depois que afinei a filtragem."*
 
-A conferência responde às duas primeiras em um clique. A terceira só se separa
-das outras depois.
+Ou seja: a terceira hipótese. Os títulos estavam lá o tempo todo — na conta
+certa, com a categoria certa. **A tela do OMIE é que não os mostrava com o
+filtro que ele estava usando.**
+
+⚠️ **E A LIÇÃO NÃO É "ERA ALARME FALSO".** É o contrário, e vale guardar:
+
+**"Não estou vendo no OMIE" e "não está no OMIE" são coisas diferentes**, e do
+lado de cá não há como distinguir uma da outra olhando a nossa tela. Só
+perguntando ao próprio OMIE o que ele guardou. Foi por isso que a conferência
+foi construída antes de saber a resposta — e ela continua valendo: o que
+custou um dia de investigação agora custa um clique.
+
+O que estava certo desde o começo, e vale anotar porque foi testado na prática:
+a decisão de **não chutar** entre as três hipóteses. As três levavam a
+consertos diferentes, e duas delas mexeriam em código que já estava correto.
+
+#### O que ficou aberto depois disso
+
+**A BAIXA continua sem confirmação.** Saber que os títulos entraram não é a
+mesma coisa que saber que eles nasceram baixados — e os campos da baixa são
+justamente os que nunca foram conferidos contra a documentação do OMIE (a rede
+deste ambiente bloqueia o domínio). A conferência mostra `baixa_realizada`
+direto do OMIE: é ali que isso se fecha.
 
 ---
 ---
