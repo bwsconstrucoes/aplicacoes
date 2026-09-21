@@ -190,6 +190,7 @@ _ABAS_POR_ENDPOINT = {
     "painel.execucao": "execucao",
     "painel.necessidade_caixa": "caixa",
     "painel.prestacao_contas": "prestacao",
+    "painel.extrato": "extrato",
 }
 
 

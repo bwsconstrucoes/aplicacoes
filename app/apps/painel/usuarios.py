@@ -47,6 +47,7 @@ TELAS = {
     "execucao": "Comprometido × Executado",
     "caixa": "Necessidade de Caixa",
     "prestacao": "Prestação de Contas",
+    "extrato": "Extrato de Conta Corrente",
 }
 
 # O que o dono pediu para liberar de saida. O resto fica pronto para quando ele
@@ -61,9 +62,9 @@ def _normalizar(texto) -> str:
 
 
 def listar() -> list[dict]:
-    """Todas as pessoas cadastradas, com as obras e as telas de cada uma."""
+    """Todas as pessoas cadastradas, com as obras, contas e telas de cada uma."""
     pessoas = [{"id": i, "usuario": u, "nome": n, "ativo": bool(a),
-                "ultimo_acesso": ult, "obras": [], "telas": []}
+                "ultimo_acesso": ult, "obras": [], "telas": [], "contas": []}
                for i, u, n, a, ult in consultar(
         "SELECT id, usuario, nome, ativo, ultimo_acesso FROM usuarios"
         " ORDER BY lower(usuario)")]
@@ -75,6 +76,10 @@ def listar() -> list[dict]:
     for uid, tela in consultar("SELECT usuario_id, tela FROM usuario_telas"):
         if uid in por_id:
             por_id[uid]["telas"].append(tela)
+    for uid, conta in consultar("SELECT usuario_id, conta FROM usuario_contas"
+                                " ORDER BY conta"):
+        if uid in por_id:
+            por_id[uid]["contas"].append(conta)
     return pessoas
 
 
@@ -95,7 +100,10 @@ def buscar(usuario: str) -> dict | None:
                 "SELECT departamento FROM usuario_obras WHERE usuario_id = ?"
                 " ORDER BY departamento", (uid,))],
             "telas": [t for (t,) in consultar(
-                "SELECT tela FROM usuario_telas WHERE usuario_id = ?", (uid,))]}
+                "SELECT tela FROM usuario_telas WHERE usuario_id = ?", (uid,))],
+            "contas": [c for (c,) in consultar(
+                "SELECT conta FROM usuario_contas WHERE usuario_id = ?"
+                " ORDER BY conta", (uid,))]}
 
 
 def senha_confere(pessoa: dict, digitada: str) -> bool:
@@ -110,7 +118,8 @@ def senha_confere(pessoa: dict, digitada: str) -> bool:
         return False
 
 
-def criar(usuario: str, senha: str, nome: str = "", obras=(), telas=()) -> dict:
+def criar(usuario: str, senha: str, nome: str = "", obras=(), telas=(),
+          contas=()) -> dict:
     """Cadastra a pessoa. Devolve {'ok': True, 'id': n} ou o erro em português."""
     login = _normalizar(usuario)
     if not login:
@@ -126,16 +135,20 @@ def criar(usuario: str, senha: str, nome: str = "", obras=(), telas=()) -> dict:
             (login, str(nome or "").strip(), generate_password_hash(senha)))
         uid = cur.fetchone()[0]
         cur.close()
-        _gravar_escopo(conn, uid, obras, telas)
+        _gravar_escopo(conn, uid, obras, telas, contas)
         conn.commit()
     logger.info("Painel: usuário %s criado com %d obra(s) e %d tela(s).",
                 login, len(set(obras)), len(set(telas)))
     return {"ok": True, "id": uid}
 
 
-def _gravar_escopo(conn, uid: int, obras, telas) -> None:
+def _gravar_escopo(conn, uid: int, obras, telas, contas=()) -> None:
     conn.execute("DELETE FROM usuario_obras WHERE usuario_id = ?", (uid,))
     conn.execute("DELETE FROM usuario_telas WHERE usuario_id = ?", (uid,))
+    conn.execute("DELETE FROM usuario_contas WHERE usuario_id = ?", (uid,))
+    for conta in sorted({str(c).strip() for c in (contas or []) if str(c).strip()}):
+        conn.execute("INSERT INTO usuario_contas (usuario_id, conta)"
+                     " VALUES (?,?)", (uid, conta))
     for dep in sorted({str(o).strip() for o in (obras or []) if str(o).strip()}):
         conn.execute("INSERT INTO usuario_obras (usuario_id, departamento)"
                      " VALUES (?,?)", (uid, dep))
@@ -146,7 +159,7 @@ def _gravar_escopo(conn, uid: int, obras, telas) -> None:
 
 
 def atualizar(uid: int, *, nome=None, senha=None, ativo=None,
-              obras=None, telas=None) -> dict:
+              obras=None, telas=None, contas=None) -> dict:
     """Muda o que foi pedido e só isso. Senha vazia não apaga a que existe."""
     if not consultar("SELECT 1 FROM usuarios WHERE id = ?", (int(uid),)):
         return {"ok": False, "erro": "Usuário não encontrado."}
@@ -163,11 +176,12 @@ def atualizar(uid: int, *, nome=None, senha=None, ativo=None,
             conn.execute("UPDATE usuarios SET senha_hash = ? WHERE id = ?",
                          (generate_password_hash(senha), int(uid)))
             logger.info("Painel: senha do usuário %s trocada.", uid)
-        if obras is not None or telas is not None:
+        if obras is not None or telas is not None or contas is not None:
             atual = buscar_por_id(int(uid)) or {}
             _gravar_escopo(conn, int(uid),
                            atual["obras"] if obras is None else obras,
-                           atual["telas"] if telas is None else telas)
+                           atual["telas"] if telas is None else telas,
+                           atual.get("contas", []) if contas is None else contas)
         conn.commit()
     return {"ok": True}
 

@@ -41,11 +41,16 @@ COMPROMETIDO = f"({EXECUTADO} + {EM_ABERTO})"
 class Filtros:
     """Os filtros da barra lateral, traduzidos para um WHERE."""
 
-    def __init__(self, anos=None, projetos=None, departamentos=None, excluir_trf=True):
+    def __init__(self, anos=None, projetos=None, departamentos=None,
+                 excluir_trf=True, contas=None):
         self.anos = [int(a) for a in (anos or [])]
         self.projetos = list(projetos or [])
         self.departamentos = list(departamentos or [])
         self.excluir_trf = bool(excluir_trf)
+        # A conta corrente entrou em 21/09/2026, com o Extrato. Ela e tambem o
+        # escopo de quem so pode ver certas contas — e por isso mora aqui, no
+        # mesmo lugar que a obra: e o unico ponto por onde toda tela passa.
+        self.contas = list(contas or [])
 
     def where(self, extra: str = "", params_extra=None) -> tuple[str, list]:
         """Devolve (trecho SQL, parametros). Filtro vazio = tudo.
@@ -66,6 +71,9 @@ class Filtros:
         if self.departamentos:
             partes.append("departamento = ANY(?)")
             params.append(self.departamentos)
+        if self.contas:
+            partes.append("COALESCE(conta_corrente,'') = ANY(?)")
+            params.append(self.contas)
         if self.excluir_trf:
             partes.append("analise <> 'TRF'")
         if extra:
@@ -76,6 +84,8 @@ class Filtros:
     def resumo(self) -> list[str]:
         """Descricao curta dos filtros ativos, para os chips no topo da tela."""
         chips = []
+        if self.contas:
+            chips.append("Conta: " + ", ".join(sorted(self.contas)))
         if self.anos:
             chips.append("Ano: " + ", ".join(str(a) for a in sorted(self.anos)))
         if self.projetos:
@@ -166,7 +176,11 @@ def opcoes_de_filtro() -> dict:
         obras = [d for (d,) in consultar(
             "SELECT DISTINCT departamento FROM fato "
             " WHERE COALESCE(departamento,'') <> '' ORDER BY departamento")]
-        return {"anos": anos, "projetos": projetos, "obras": obras}
+        contas = [c for (c,) in consultar(
+            "SELECT DISTINCT conta_corrente FROM fato "
+            " WHERE COALESCE(conta_corrente,'') <> '' ORDER BY conta_corrente")]
+        return {"anos": anos, "projetos": projetos, "obras": obras,
+                "contas": contas}
 
     return _lembrando(("opcoes_de_filtro",), calcular)
 
@@ -1003,6 +1017,100 @@ def duas_datas_prontas() -> bool:
 
     # so muda quando o fato e refeito, e ai o carimbo muda junto
     return _lembrando(("duas_datas_prontas",), calcular)
+
+
+def extrato_da_conta(f: Filtros, busca="", categoria="", de="", ate="",
+                     ordem="data", pagina=1, por_pagina=200) -> dict:
+    """O EXTRATO: o que entrou e o que saiu de uma conta corrente, por data.
+
+    Pedido do dono em 21/09/2026, para poder conferir lado a lado com o OMIE:
+    *"seria até similar com o relatório analítico. Só que ao invés de ser o da
+    obra, seria o da conta corrente (…) e ali só iriam poder ser vistos os
+    lançamentos que aconteceram na conta corrente."*
+
+    TRES DIFERENCAS que separam isto do Analitico, e cada uma e o ponto:
+
+    1. **so o que virou dinheiro.** Titulo em aberto nao entra — extrato e
+       caixa, nao compromisso. Por isso nao ha coluna de vencimento: ela nao
+       significa nada aqui, e o dono disse isso com todas as letras;
+    2. **as duas pontas juntas**, entrada e saida, na ordem da data — que e
+       como o extrato do banco mostra e como da para comparar;
+    3. **NAO filtra por DRE.** Tarifa bancaria e rendimento ficam de fora do
+       resultado porque o plano financeiro do OMIE nao lhes da conta de DRE
+       (ver a conversa de 21/09). No extrato eles APARECEM, porque saiu e
+       entrou dinheiro de verdade — que e justamente o que o dono nao estava
+       conseguindo achar.
+    """
+    condicoes, extras = [PAGO, "ABS(pago_recebido) > 0.005"], []
+
+    if de:
+        condicoes.append("data >= CAST(? AS DATE)")
+        extras.append(de)
+    if ate:
+        condicoes.append("data <= CAST(? AS DATE)")
+        extras.append(ate)
+    if categoria:
+        condicoes.append("COALESCE(NULLIF(categoria,''), '(sem categoria)') = ?")
+        extras.append(categoria)
+    if busca:
+        # o mesmo campo unico do Analitico: nome, documento ou observacao
+        condicoes.append("(razao_social ILIKE ? OR numero_documento ILIKE ?"
+                         " OR observacao ILIKE ? OR cnpj_cpf ILIKE ?)")
+        alvo = f"%{busca}%"
+        extras.extend([alvo, alvo, alvo, alvo])
+
+    # O extrato mostra o dinheiro andando entre contas tambem: transferencia
+    # SAI do resultado, mas nao sai do extrato — ela aconteceu na conta.
+    sem_corte = Filtros(anos=f.anos, projetos=f.projetos,
+                        departamentos=f.departamentos, contas=f.contas,
+                        excluir_trf=False)
+    where, params = sem_corte.where(" AND ".join(condicoes), extras)
+
+    (linhas_total, entradas, saidas) = consultar(
+        f"""SELECT COUNT(*),
+                   COALESCE(SUM(CASE WHEN pago_recebido > 0
+                                     THEN pago_recebido ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN pago_recebido < 0
+                                     THEN -pago_recebido ELSE 0 END), 0)
+              FROM fato{where}""", params)[0]
+
+    ordens = {"data": "data, codigo_lancamento",
+              "data_desc": "data DESC, codigo_lancamento",
+              "valor": "ABS(pago_recebido) DESC"}
+    ordenacao = ordens.get(ordem, ordens["data"])
+    pagina = max(1, int(pagina or 1))
+    salto = (pagina - 1) * por_pagina
+
+    campos = ("data", "codigo", "razao_social", "cnpj", "conta", "categoria",
+              "obra", "documento", "observacao", "valor", "link")
+    linhas = [dict(zip(campos, linha)) for linha in consultar(
+        f"""SELECT data, codigo_lancamento, razao_social, cnpj_cpf,
+                   COALESCE(conta_corrente,'(sem conta)'),
+                   COALESCE(NULLIF(categoria,''), '(sem categoria)'),
+                   {OBRA_OU_SEM}, numero_documento, observacao,
+                   pago_recebido, link
+              FROM fato{where}
+             ORDER BY {ordenacao}
+             LIMIT {int(por_pagina)} OFFSET {int(salto)}""", params)]
+    for l in linhas:
+        l["valor"] = float(l["valor"] or 0)
+
+    return {"linhas": linhas, "quantos": linhas_total or 0,
+            "entradas": float(entradas or 0), "saidas": float(saidas or 0),
+            "liquido": float(entradas or 0) - float(saidas or 0),
+            "pagina": pagina, "por_pagina": por_pagina,
+            "paginas": max(1, -(-(linhas_total or 0) // por_pagina))}
+
+
+def categorias_do_extrato(f: Filtros) -> list[str]:
+    """As categorias que aparecem no recorte — para o filtro da tela."""
+    sem_corte = Filtros(anos=f.anos, projetos=f.projetos,
+                        departamentos=f.departamentos, contas=f.contas,
+                        excluir_trf=False)
+    where, params = sem_corte.where(f"{PAGO} AND ABS(pago_recebido) > 0.005")
+    return [c for (c,) in consultar(
+        f"""SELECT DISTINCT COALESCE(NULLIF(categoria,''), '(sem categoria)')
+              FROM fato{where} ORDER BY 1 LIMIT 300""", params)]
 
 
 def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",

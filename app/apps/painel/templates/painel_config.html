@@ -358,6 +358,7 @@
         <th class="sem-ordem">Usuário</th>
         <th class="sem-ordem">Nome</th>
         <th class="sem-ordem">Obras</th>
+        <th class="sem-ordem">Contas</th>
         <th class="sem-ordem">Telas</th>
         <th class="sem-ordem">Último acesso</th>
         <th class="sem-ordem"></th>
@@ -370,6 +371,8 @@
           <td class="desc">{{ p.nome or '—' }}</td>
           <td class="desc"><small>{{ p.obras|join(', ') if p.obras
               else 'nenhuma — não entra' }}</small></td>
+          <td class="desc"><small>{{ p.contas|join(', ') if p.contas
+              else '—' }}</small></td>
           <td class="desc"><small>{{ p.telas|map('replace', '_', ' ')|join(', ')
               if p.telas else 'nenhuma — não entra' }}</small></td>
           <td class="dados"><small>{{ p.ultimo_acesso.strftime('%d/%m/%Y %H:%M')
@@ -388,7 +391,7 @@
            esqueceu e mudar as obras de quem passou a tocar outra coisa são as
            duas coisas que mais vão acontecer — deixá-las a um clique. #}
         <tr>
-          <td colspan="6" style="padding:0 0 10px">
+          <td colspan="7" style="padding:0 0 10px">
             <details>
               <summary style="cursor:pointer; font-size:12px">
                 Alterar {{ p.usuario }} — senha, obras ou telas
@@ -427,6 +430,18 @@
                              value="{{ obra }}"
                              {% if obra in p.obras %}checked{% endif %}>
                       {{ obra }}
+                    </label>
+                  {% endfor %}
+                </div>
+
+                <h4 style="margin:12px 0 4px; font-size:12px">Contas do Extrato</h4>
+                <div class="tabela-rolagem" style="max-height:140px">
+                  {% for conta in contas_para_liberar %}
+                    <label style="display:block; padding:2px 0">
+                      <input type="checkbox" name="conta_do_usuario"
+                             value="{{ conta }}"
+                             {% if conta in p.contas %}checked{% endif %}>
+                      {{ conta }}
                     </label>
                   {% endfor %}
                 </div>
@@ -493,6 +508,24 @@
       </div>
       {% else %}
         <p class="cartao-dica">A base ainda não tem obras para liberar.</p>
+      {% endif %}
+
+      <h4 style="margin:14px 0 4px">Contas correntes que ela pode ver no Extrato</h4>
+      <p class="cartao-dica" style="margin-top:0">
+        Só vale para a tela <b>Extrato de Conta Corrente</b>. Sem nenhuma
+        marcada, ela não vê conta nenhuma lá — as outras telas seguem normais.
+      </p>
+      {% if contas_para_liberar %}
+      <div class="tabela-rolagem" style="max-height:160px">
+        {% for conta in contas_para_liberar %}
+          <label style="display:block; padding:2px 0">
+            <input type="checkbox" name="conta_do_usuario" value="{{ conta }}">
+            {{ conta }}
+          </label>
+        {% endfor %}
+      </div>
+      {% else %}
+        <p class="cartao-dica">A base ainda não tem contas para liberar.</p>
       {% endif %}
 
       <h4 style="margin:14px 0 4px">Telas que ela pode abrir</h4>

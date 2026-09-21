@@ -1453,6 +1453,57 @@ Guardada embaralhada (PBKDF2 com sal, do `werkzeug` que o Flask já traz). Nem o
 dono lê a senha de alguém depois — só troca. Este banco tem o financeiro inteiro
 da empresa.
 
+## Extrato de Conta Corrente — 21/09/2026
+
+O dono: *"seria até similar com o relatório analítico, só que ao invés de ser o
+da obra, seria o da conta corrente (…) e ali só iriam poder ser vistos os
+lançamentos que aconteceram na conta corrente."* Para poder conferir lado a lado
+com o extrato do próprio OMIE.
+
+### O que separa esta tela do Analítico
+
+1. **Só o que virou dinheiro.** Título em aberto não entra — extrato é caixa,
+   não compromisso. Por isso **não há coluna de vencimento**: ele disse com
+   todas as letras que ali ela não interessa.
+2. **As duas pontas juntas**, entrada e saída, na ordem da data — como o banco
+   mostra e como dá para comparar.
+3. **NÃO filtra por DRE**, e este é o ponto. Tarifa bancária e rendimento ficam
+   de fora do resultado porque o plano financeiro do OMIE não lhes dá conta de
+   DRE (ver a seção sobre isso). No extrato eles **aparecem**, porque saiu e
+   entrou dinheiro de verdade — era exatamente o que ele não estava conseguindo
+   achar quando foi olhar as tarifas do Mercado Barbalha.
+4. Transferência entre contas também aparece: sai do resultado, não sai do
+   extrato.
+
+Colunas, como ele ditou: data, cliente/fornecedor, CNPJ, conta, categoria, obra,
+documento, observação, valor e o link do Pipefy. Filtros de período, categoria e
+busca (nome, CNPJ, documento ou observação), com download.
+
+### O acesso por conta (migração 014)
+
+*"eu queria poder disponibilizar essa tela para um determinado usuário, mas
+definir qual conta e quais contas ele poderia visualizar."*
+
+`usuario_contas`, tabela separada de `usuario_obras` de propósito: são recortes
+independentes. Alguém pode ver a obra inteira e só uma das contas por onde ela
+passa — e o contrário também.
+
+Mesma regra das obras: **sem conta marcada, não vê conta nenhuma no Extrato.**
+Com uma diferença: conta liberada é opcional. Quem não tem nenhuma simplesmente
+não usa o Extrato, e as outras telas seguem normais.
+
+O escopo é aplicado no mesmo `_filtros_do_pedido` — o único lugar por onde toda
+tela passa. Pedir a conta de outro na barra de endereço não funciona, e há teste.
+
+### Detalhes que quase passaram
+
+- **`pagina_link` apontava para o Analítico com o nome escrito.** Virar a página
+  do extrato jogaria a pessoa para dentro do analítico, com o filtro de conta
+  junto — mostrando uma tela que não é a que ela está lendo. Passou a usar a
+  tela atual.
+- **A observação só aparece depois do "Buscar as observações"**, e a tela diz
+  isso em vez de mostrar travessão e deixar parecer que o dado não existe.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

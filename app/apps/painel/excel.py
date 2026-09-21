@@ -162,6 +162,20 @@ COLUNAS = {
                      ("final_b", "Posição final B")],
     "credores": [("nome", "Credor"), ("pago", "Já pago"),
                  ("aberto", "A pagar"), ("titulos", "Títulos")],
+    # O EXTRATO: so o que aconteceu na conta, na ordem da data. Sem vencimento
+    # nem previsao — no extrato elas nao significam nada, e o dono disse isso
+    # com todas as letras ao pedir a tela.
+    "extrato": [("data", "Data"),
+                ("razao_social", "Cliente ou Fornecedor"),
+                ("cnpj", "CNPJ/CPF"),
+                ("conta", "Conta corrente"),
+                ("categoria", "Categoria"),
+                ("obra", "Obra"),
+                ("documento", "Documento"),
+                ("observacao", "Observação"),
+                ("valor", "Valor"),
+                ("codigo", "Nº no OMIE"),
+                ("link", "Link")],
     "analitico": [("data", "Data (pagto ou vencto)"),
                   ("data_vencimento", "Vencimento"),
                   ("data_pagamento", "Pagamento"),

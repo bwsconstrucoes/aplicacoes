@@ -402,6 +402,8 @@ RESPOSTAS_FALSAS = {
     "DISTINCT ano": [(2025,), (2024,)],
     "DISTINCT projeto": [("PROJ-A",), ("PROJ-B",)],
     "DISTINCT departamento": [("Obra Um",), ("Obra Dois",)],
+    # a conta corrente entrou na barra lateral com o Extrato, em 21/09/2026
+    "DISTINCT conta_corrente": [("Bradesco 22069-8",), ("Itaú 7011-4",)],
     # o carimbo da base: e ele que diz se as listas guardadas ainda valem
     "MAX(fim) FROM execucoes": [(dt.datetime(2026, 9, 2, 3, 12),)],
     # as colunas de vencimento/pagamento já preenchidas — a tela sem o aviso.
@@ -1156,8 +1158,13 @@ def test_saber_se_a_base_esta_vazia_nao_conta_a_base_inteira(painel, monkeypatch
 
 
 def test_as_listas_de_opcoes_nao_sao_refeitas_a_cada_tela(painel, monkeypatch):
-    """Anos, projetos e obras só mudam quando entra carga nova. Refazer as três
-    varreduras a cada clique era o grosso do tempo de abertura."""
+    """Anos, projetos, obras e contas só mudam quando entra carga nova. Refazer
+    as varreduras a cada clique era o grosso do tempo de abertura.
+
+    São QUATRO desde 21/09/2026, quando a conta corrente entrou na barra
+    lateral com o Extrato — e é justamente por isso que este teste existe: cada
+    lista nova é mais uma varredura, e guardá-las é o que impede a tela de ficar
+    lenta de novo."""
     from app.apps.painel import consultas
     consultas.esquecer_listas()
     contadas = []
@@ -1166,10 +1173,10 @@ def test_as_listas_de_opcoes_nao_sao_refeitas_a_cada_tela(painel, monkeypatch):
 
     consultas.opcoes_de_filtro()
     distintos = lambda: sum(1 for s in contadas if "SELECT DISTINCT" in s)
-    assert distintos() == 3                      # a primeira vez paga
+    assert distintos() == 4                      # a primeira vez paga
     consultas.opcoes_de_filtro()
     consultas.opcoes_de_filtro()
-    assert distintos() == 3                      # as seguintes, não
+    assert distintos() == 4                      # as seguintes, não
 
 
 def test_carga_nova_joga_fora_a_lista_guardada(painel, monkeypatch):
