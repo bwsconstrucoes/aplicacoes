@@ -1337,15 +1337,15 @@ def test_a_cascata_mostra_quanto_cada_corte_leva(base_de_aportes):
     # junto com o TIPO, "devolvido" só soma o que é devolução de aporte de
     # verdade. Dividendo é distribuição de lucro — tem quadro próprio, e não
     # aparece nem como aporte nem como devolução.
-    assert passos["Tudo com categoria de aporte"]["devolvido"] == pytest.approx(700000)
+    assert passos["Tudo o que é aporte (sem o lado provedor)"]["devolvido"] == \
+        pytest.approx(700000)
     # por isso este degrau não tem mais o que levar do devolvido
     saldo = passos["Só o que entra no saldo (tira Dividendos)"]
     assert saldo["devolvido"] == pytest.approx(700000)
     assert saldo["comeu_devolvido"] == pytest.approx(0)
-    # tirando transferencia: 500 mil, o degrau levou 200
-    trf = passos["Tirando transferências entre contas"]
-    assert trf["devolvido"] == pytest.approx(500000)
-    assert trf["comeu_devolvido"] == pytest.approx(200000)
+    # O DEGRAU DA TRANSFERÊNCIA SAIU em 21/09/2026: aporte entre contas da
+    # própria empresa É transferência, e o corte engolia o bloco inteiro. Por
+    # isso o lançamento 602, marcado TRF, chega ao fim agora.
     # O DEGRAU DO "PAGO" NAO LEVA MAIS NADA, e isso é o conserto da migração
     # 011. O lançamento 603 foi baixado no OMIE com o status escrito "Baixado":
     # até 20/09/2026 ele era cortado aqui e sumia do bloco. Hoje "foi pago?"
@@ -1353,7 +1353,7 @@ def test_a_cascata_mostra_quanto_cada_corte_leva(base_de_aportes):
     # O degrau continua na tela como guarda: se um dia voltar a comer alguma
     # coisa, é porque as duas regras divergiram de novo.
     pago = passos["Tirando o que o painel não reconhece como pago"]
-    assert pago["devolvido"] == pytest.approx(500000)
+    assert pago["devolvido"] == pytest.approx(700000)
     assert pago["comeu_devolvido"] == pytest.approx(0)
 
 
@@ -1371,7 +1371,8 @@ def test_a_cascata_nomeia_os_lancamentos_cortados(base_de_aportes):
     """Número sem nome não ajuda ninguém a corrigir: tem de dizer QUAIS."""
     from app.apps.painel import consultas
     r = consultas.conferencia_dos_aportes()
-    assert [l["codigo"] for l in r["comidos_trf"]] == [602]
+    assert r["comidos_trf"] == [], \
+        "o corte por transferência não existe mais — ver a nota da cascata"
     assert [l["codigo"] for l in r["comidos_pago"]] == [], \
         "desde a migração 011 nada é cortado por 'não reconhecido como pago'"
 
@@ -1626,9 +1627,41 @@ def test_devolucao_de_aportes_bws_nao_e_aporte(base_com_aporte_bws):
     entrava no bloco com o sinal trocado, sem ninguém perceber."""
     from app.apps.painel.sync.fato import classificar_aporte
     assert classificar_aporte("Devolução de Aportes BWS") == "Devolução de Aporte"
-    assert classificar_aporte("Aportes BWS") == "Aporte BWS"
-    assert classificar_aporte("Aportes Parceiros") == "Aporte de Parceiro"
     assert classificar_aporte("Devolução de Aportes") == "Devolução de Aporte"
+
+
+def test_quem_aportou_sai_da_contraparte_e_nao_do_rotulo(base_com_aporte_bws):
+    """21/09/2026, o dono: "A diferença de Aportes BWS e Aportes Parceiros é
+    somente a nomenclatura (…) e há várias situações que o pessoal do financeiro
+    fez o lançamento trocado e não colocou Aportes BWS. Veja pra isso não
+    prejudicar a análise."
+
+    O rótulo erra; a contraparte não."""
+    from app.apps.painel.sync.fato import classificar_aporte
+    assert classificar_aporte("Aportes BWS",
+                              razao_social="BWS CONSTRUCOES LTDA") == "Aporte BWS"
+    assert classificar_aporte("Aportes Parceiros",
+                              razao_social="BWS CONSTRUCOES LTDA") == "Aporte BWS", \
+        "rótulo trocado pelo financeiro não pode virar aporte de parceiro"
+    assert classificar_aporte("Aportes BWS",
+                              razao_social="MORAIS VASCONCELOS") == "Aporte de Parceiro"
+    assert classificar_aporte("Aportes Parceiros",
+                              razao_social="MORAIS VASCONCELOS") == "Aporte de Parceiro"
+
+
+def test_o_lado_provedor_nao_e_aporte(base_com_aporte_bws):
+    """Ele é o ESPELHO da operação, na conta que mandou o dinheiro. Contá-lo faz
+    o mesmo R$ 10,00 aparecer duas vezes na lista — foi o caso que o dono mandou
+    em 21/09/2026, entrando na 22069 e saindo da 7011 no mesmo dia."""
+    from app.apps.painel.sync.fato import classificar_aporte
+    assert classificar_aporte("Aportes BWS", codigo="2.08.97") is None
+    assert classificar_aporte("Devolução de Aportes BWS", codigo="1.02.95") is None
+    # e o lado da parceria continua contando, pelos códigos dele
+    assert classificar_aporte("qualquer coisa", codigo="2.08.02") == "Devolução de Aporte"
+    assert classificar_aporte("nome errado", codigo="1.02.94",
+                              razao_social="BWS CONSTRUCOES") == "Aporte BWS"
+    assert classificar_aporte("nome errado", codigo="1.02.02",
+                              razao_social="MORAIS") == "Aporte de Parceiro"
 
 
 def test_o_aporte_so_conta_quando_entra_na_obra(base_com_aporte_bws):
@@ -1718,3 +1751,87 @@ def test_a_janela_do_incremental_apaga_nas_duas_tabelas():
     fonte = inspect.getsource(espelho._apagar_movimentos_janela)
     assert fonte.count("DELETE FROM") == 2
     assert "movimentos_sem_titulo" in fonte
+
+
+# ===========================================================================
+# O bloco de aportes tem de dizer o que o FILTRO está escondendo — 21/09/2026
+# ===========================================================================
+# O dono: "a parte dos aportes continua sem apresentar todos os números."
+#
+# Eu vinha comparando a conferência das Configurações — que roda SEM filtro —
+# com o bloco do DRE, que roda COM os filtros da barra lateral, e dizendo que
+# tinham de bater. Não tinham por que bater: um ano selecionado na lateral já
+# explica uma devolução "sumida". A tela nunca dizia isso; agora diz.
+
+@pytest.fixture()
+def base_de_dois_anos(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        for cod, data, ano, valor in ((801, "2025-12-24", 2025, -784647.07),
+                                      (802, "2026-03-10", 2026, -100000)):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " situacao_vencimento, categoria, departamento, razao_social,"
+                " cnpj_cpf, data, ano, pago_recebido, a_pagar_receber, juros, multa)"
+                " VALUES (?,'2. Contas a Pagar','Fluxo de Caixa','PAGO','Quitado',"
+                "         'Devolução de Aportes','CASA','MORAIS','12345678000190',"
+                "         ?,?,?,0,0,0)", (cod, data, ano, valor))
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def test_o_bloco_avisa_quanto_o_filtro_esta_escondendo(cliente_config,
+                                                       base_de_dois_anos):
+    """Filtrado em 2026, o bloco mostra R$ 100 mil — e tem de dizer que na base
+    inteira são R$ 884 mil, senão o dono procura um dinheiro que está lá."""
+    from app.apps.painel import consultas
+    base = consultas.aportes_na_base_inteira()
+    assert reais(base["devolvido"]) == reais(884647.07)
+
+    html = cliente_config.get(
+        "/painel/dre?bloco=aportes&ano=2026").get_data(as_text=True)
+    assert "estão fora do que você está vendo" in html
+    assert "por causa do filtro" in html
+    assert "Tirar todos os filtros" in html, \
+        "e tem de dar o caminho de ver tudo, não só avisar"
+
+
+def test_sem_filtro_o_bloco_diz_que_nao_esconde_nada(cliente_config,
+                                                     base_de_dois_anos):
+    """O outro lado, que é o que mata a dúvida: quando não há filtro, a tela
+    afirma isso. Silêncio aqui deixaria a suspeita de pé para sempre."""
+    html = cliente_config.get("/painel/dre?bloco=aportes").get_data(as_text=True)
+    assert "Sem filtro escondendo nada" in html
+    assert "estão fora do que você está vendo" not in html
+
+
+def test_o_diagnostico_do_bloco_usa_os_filtros_da_propria_tela(cliente_config,
+                                                               base_de_dois_anos):
+    """A cascata das Configurações roda sem filtro. Esta, dentro do bloco, tem
+    de rodar com os MESMOS filtros da tela — senão repete o erro que me custou
+    uma semana: comparar dois recortes diferentes e concluir que falta dinheiro."""
+    html = cliente_config.get(
+        "/painel/dre?bloco=aportes&ano=2026&diagnostico=1").get_data(as_text=True)
+    assert "De onde vem cada número" in html
+    # só o quadro do diagnóstico; o aviso lá em cima fala da base inteira de
+    # propósito, e é ele que cita os 784 mil
+    quadro = html[html.index("De onde vem cada número"):]
+    assert "100.000" in quadro
+    assert "784.647" not in quadro, \
+        "o diagnóstico trouxe lançamento de fora do filtro da tela"
+
+
+def test_o_diagnostico_so_roda_quando_alguem_pede(cliente_config,
+                                                  base_de_dois_anos, monkeypatch):
+    """São várias varreduras na base inteira. Abrir o DRE não pode disparar."""
+    from app.apps.painel import consultas
+    rodou = []
+    monkeypatch.setattr(consultas, "conferencia_dos_aportes",
+                        lambda *a, **k: rodou.append(1) or {})
+    cliente_config.get("/painel/dre?bloco=aportes")
+    assert rodou == []
+    cliente_config.get("/painel/dre?bloco=aportes&diagnostico=1")
+    assert rodou, "e com o pedido, tem de rodar"

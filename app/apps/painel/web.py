@@ -401,6 +401,14 @@ def dre():
         aportes = consultas.aportes(f)
         divisao = consultas.resultado_dividendos(f)
         extra["aportes"] = aportes
+        # O bloco usa os filtros da barra lateral. Quem olha a tela nao tem como
+        # saber quanto ficou DE FORA por causa deles — e foi exatamente isso que
+        # fez o dono caçar um valor "sumido" por dias. Agora o bloco diz.
+        extra["aportes_base"] = consultas.aportes_na_base_inteira()
+        # A cascata e a lista por contraparte, com OS MESMOS filtros da tela,
+        # so quando alguem pede: sao varias varreduras na base inteira.
+        if request.args.get("diagnostico") == "1":
+            extra["aportes_diag"] = consultas.conferencia_dos_aportes(f)
         extra["divisao"] = divisao
         extra["hipotese"] = consultas.hipotese_de_distribuicao(
             aportes["por_socio"], divisao["disponivel"])
