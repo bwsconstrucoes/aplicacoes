@@ -1166,6 +1166,34 @@ está fora **por causa do filtro**, e um link para tirar o filtro. E a cascata
 pode ser aberta **dentro do bloco, com os mesmos filtros da tela** — nunca mais
 comparar dois recortes diferentes.
 
+## O resto estava sem obra — 21/09/2026
+
+Com a tela na mão (ele mandou o bloco inteiro colado), a conta fechou o
+diagnóstico:
+
+```
+devolvido, filtrado em MERCADOBARBALHA ....  R$   887.000,00
+devolvido, base inteira ..................  R$ 5.491.600,35
+fora do filtro de obra ...................  R$ 4.604.600,35
+o que ele esperava a mais ................  R$ 2.461.891,66
+```
+
+**O dinheiro está na base.** Ele cabe folgado nos R$ 4,6 milhões que o filtro de
+obra deixa de fora. Ou seja: são aportes e devoluções que existem, estão
+classificados certo, foram reconhecidos como pagos — e **não estão apropriados a
+obra nenhuma**. O filtro por obra os descarta, e a tela não dizia por quê.
+
+A devolução de R$ 784.647,07 que ele caçou por uma semana é um desses.
+
+Por isso o bloco ganhou, dentro do próprio aviso de filtro, a quebra
+**obra por obra na base inteira**, com a linha `(não apropriado)` à vista. É a
+linha que ele conserta — no OMIE ou pelo Explorador —, e depois dela o número
+entra sozinho na obra certa.
+
+**A lição, que vale para o resto do painel:** quando um número parece faltar, a
+tela tem de mostrar ONDE ele está, não só quanto falta. "O filtro esconde X" não
+resolve nada se a pessoa não souber para onde olhar.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
