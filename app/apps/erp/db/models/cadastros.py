@@ -320,6 +320,20 @@ class Fornecedor(Base):
     bairro: Mapped[Optional[str]] = mapped_column(Text)
     codigo_ibge: Mapped[Optional[str]] = mapped_column(Text)
     situacao_rfb: Mapped[Optional[str]] = mapped_column(Text)
+    # O nome OFICIAL, quando diferente do cadastrado (migração 078). É o que
+    # permite filtrar "nome diferente da Receita" e adotar o oficial com um
+    # clique — antes isso morria no relatório do trabalho em lote.
+    razao_social_rfb: Mapped[Optional[str]] = mapped_column(Text)
+    # ATÉ ONDE ELE VENDE (migração 079). `regioes_atuacao` continua guardando o
+    # que a pessoa escreveu; estes três é que o disparo automático cruza com o
+    # município da obra.
+    abrangencia: Mapped[str] = mapped_column(Text, nullable=False,
+                                             default="NAO_INFORMADA",
+                                             server_default="NAO_INFORMADA")
+    ufs_atendidas: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, default=list, server_default="{}")
+    municipios_atendidos: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, default=list, server_default="{}")
     situacao_rfb_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     data_abertura: Mapped[Optional[date]] = mapped_column(Date)
     codigo_omie: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True)

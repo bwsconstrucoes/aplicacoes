@@ -190,6 +190,14 @@ function desenhar(){
       <div class="kpi estatico ambar"><div class="kpi-rotulo">Já numa cotação aberta</div>
         <div class="kpi-valor">${PLANO.em_cotacao_aberta}</div>
         <div class="kpi-sub">ficam de fora — cotar duas vezes dá dois preços</div></div>` : ""}
+    ${PLANO.sem_regiao ? `
+      <div class="kpi estatico vermelho"><div class="kpi-rotulo">Sem região definida</div>
+        <div class="kpi-valor">${PLANO.sem_regiao}</div>
+        <div class="kpi-sub">fornecedores que não entram — arrume em Cadastros</div></div>` : ""}
+    ${PLANO.fora_da_regiao ? `
+      <div class="kpi estatico"><div class="kpi-rotulo">Fora da região da obra</div>
+        <div class="kpi-valor">${PLANO.fora_da_regiao}</div>
+        <div class="kpi-sub">não atendem o município — ficaram de fora</div></div>` : ""}
     ${(PLANO.sem_categoria || []).length ? `
       <div class="kpi estatico vermelho"><div class="kpi-rotulo">Sem categoria — ficam de fora</div>
         <div class="kpi-valor">${PLANO.sem_categoria.length}</div>

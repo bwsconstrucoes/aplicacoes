@@ -54,6 +54,162 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### ⚠️ MIGRAÇÃO 079 — apertar "Aplicar atualizações do banco"
+
+Guarda **até onde cada fornecedor vende** (abrangência, UFs e municípios). Sem
+ela, a tela de Fornecedores e o disparo automático abrem com erro.
+
+
+### 🗺️ A REGIÃO VIROU FILTRO DO DISPARO — e passou a ser obrigatória no cadastro
+
+21/09/2026, o dono olhando a tela de fornecedores:
+
+> *"Na cotação automática, eu acho que você não se atentou a isso, da
+> importância. Os fornecedores, a gente não pode colocar para disparar uma
+> cotação com qualquer fornecedor, tem que ter uma lógica. O fornecedor ele tem
+> a região que atende, e existe o local da obra. Porque se não é um fornecedor
+> que atenda a nível nacional, eu tenho que buscar na região da obra. Então, da
+> forma que está a gente simplesmente escreve de qualquer jeito, sem
+> padronização. Como vamos cruzar obra × fornecedor? Então é um item obrigatório
+> no cadastro, além do porte e dados para contato. E claro nome, CNPJ."*
+
+**Ele achou um buraco de verdade, e ele estava no lugar mais caro.** Até aqui, a
+região de atuação era texto livre — na planilha antiga havia *"CE"*, *"Ceará"*,
+*"Nordeste"*, *"NE"*, *"Fortaleza e região metropolitana"*, *"todo o Brasil"*,
+*"nacional"*, *"RMF"*, *"Tauá CE"*. Três pessoas escreveram a mesma coisa de
+sete jeitos, e nenhum deles dava para comparar com o município da obra.
+
+Pior: no planejamento do disparo, estar na mesma cidade da obra só **somava
+pontos**. Um fornecedor de São Paulo entrava numa cotação de obra no Cariri —
+atrás dos locais na lista, mas **dentro dela**. Pedir preço a quem não entrega
+naquele lugar deixa uma coluna vazia no mapa, e o mapa passa a parecer que teve
+menos concorrência do que teve.
+
+**O que mudou, em três partes:**
+
+**1. A região virou campo com forma.** Cada fornecedor passa a ter uma
+**abrangência** — NACIONAL, ESTADUAL, REGIONAL ou LOCAL —, mais a lista de UFs
+(para o estadual) ou de municípios (para o regional e o local). Não é mais
+texto: é dado que o sistema consegue cruzar com o município e a UF da obra.
+
+**2. O que já estava escrito foi traduzido, não jogado fora.** O botão
+**"Padronizar as regiões"** lê o texto antigo de cada fornecedor e converte:
+*"NE"*, *"Nordeste"* → as 9 UFs; *"RMF"*, *"Grande Fortaleza"* → os 19
+municípios da região metropolitana; *"Cariri"* → os 9 do Cariri; *"Tauá CE"* →
+município TAUÁ na UF CE; *"nacional"*, *"Brasil"*, *"todo o país"* → NACIONAL.
+Quando o texto traz mais de uma coisa, **vence o maior alcance** — quem escreveu
+"CE e Nordeste" atende o Nordeste.
+
+Rodado contra a planilha real de 1.702 fornecedores: **100% traduzidos, nenhum
+termo desconhecido**. Deu 40% ESTADUAL, 25% LOCAL, 22% NACIONAL, 11% REGIONAL.
+O que não der para traduzir fica marcado **"sem região"** e aparece num
+quadrinho clicável na tela — não some.
+
+**3. Quem não atende o lugar da obra não é mais sugerido.** No disparo
+automático, a região deixou de ser ponto e virou **porta**. E a tela diz o que
+ficou de fora e por quê: *"N fornecedor(es) não atendem a região da obra"* e
+*"N sem região cadastrada"*. Essa segunda linha é de propósito — enquanto o
+fornecedor sem cadastro entrava "porque sim", ninguém tinha motivo para arrumar
+o cadastro dele.
+
+**A decisão que eu tomei sozinho e vale conferir:** fornecedor **sem região
+cadastrada fica de fora** do disparo, não dentro. O contrário seria mais
+confortável (ninguém deixa de ser cotado), mas manteria exatamente o problema
+que ele apontou — o sistema continuaria disparando para qualquer um, só que
+calado. Se preferir que o sem-região entre no fim da lista com aviso, eu troco.
+
+**No cadastro, agora são obrigatórios:** nome, CNPJ/CPF, porte, até onde ele
+vende, quem responde e pelo menos um e-mail ou telefone. Faltando qualquer um,
+o cadastro não fecha e diz o que falta, numa frase só — *"falta o CNPJ, a razão
+social, o porte, até onde ele vende, quem responde, e-mail ou telefone"* — em
+vez de reclamar de um campo por vez.
+
+**Na tela:** o quadrinho "Perto da fábrica" passou a se chamar **"Fábrica"** e a
+coluna "Atende" virou **"Região"**, como ele pediu.
+
+
+### 🚫 DESATIVAR FORNECEDOR — a pergunta dele, e por que não é "apagar"
+
+> *"Outra coisa, como desativo/cancelo um fornecedor?"*
+
+Dava para fazer, mas não dava para **achar**: a situação do fornecedor só mudava
+editando o cadastro inteiro. Agora a ficha tem o botão direto — **Desativar** ou
+**Reativar**, ao lado do apagar.
+
+**A diferença entre os dois importa, e a tela explica:** *desativar* tira o
+fornecedor das listas e do disparo automático e **mantém o histórico** — as
+compras, as cotações e os preços que ele já fez continuam lá, e o preço de
+referência continua contando com eles. *Apagar* só é oferecido quando o
+fornecedor **nunca foi usado em lugar nenhum** (o sistema confere 10 tabelas
+antes); se ele já foi usado, o botão explica onde e oferece desativar no lugar.
+
+Cadastro errado recém-criado se apaga. Fornecedor com quem a BWS já comprou se
+desativa — apagar levaria junto a memória de preço que é justamente o que o
+sistema está começando a construir.
+
+### ⚠️ MIGRAÇÃO 078 — apertar "Aplicar atualizações do banco"
+
+Guarda o **nome oficial do fornecedor na Receita**, quando diferente do
+cadastrado. Sem ela, a tela de Fornecedores abre com erro.
+
+
+### 🔎 O CNPJ PREENCHE O CADASTRO, E O NOME OFICIAL NORMALIZA O QUE JÁ ESTÁ AQUI
+
+21/09/2026:
+
+> *"Preciso normalizar o nome do fornecedor através de consulta CNPJ, e ainda
+> que após digitação do CNPJ sejam pesquisados os dados para serem
+> pré-preenchidos."* E, esclarecendo: *"quando sigo após a digitação, falo no
+> cadastro."*
+
+São duas coisas, e as duas estavam pela metade.
+
+**1. A CONSULTA DENTRO DO FORMULÁRIO.** O cadastro de fornecedor era um
+formulário seco: digitava-se tudo à mão. Agora o CNPJ fica em cima e, **ao sair
+do campo**, o sistema consulta e preenche razão social, nome fantasia, cidade e
+UF. É a mesma regra do Cartão CNPJ da empresa e do contrato da obra — *uma porta
+só, e o documento é atalho DENTRO dela*. Não existe "cadastrar pelo CNPJ" ao
+lado de "cadastrar digitando".
+
+Três decisões que valem estar escritas:
+
+- **Só preenche o que está VAZIO.** Se a pessoa já digitou, o que ela escreveu
+  vale mais que a consulta — ela pode estar corrigindo de propósito.
+- **Não traz e-mail nem telefone.** O que está na Receita é o do contador, quase
+  nunca o do vendedor, e um e-mail errado faz a cotação sair para o lugar errado.
+- **Diz se o CNPJ JÁ está cadastrado**, antes de a pessoa digitar o resto — com
+  um botão para abrir o cadastro existente. Sem isso, preenchia-se o formulário
+  inteiro para o banco recusar no fim, que foi como nasceu boa parte dos 126
+  documentos repetidos da planilha antiga.
+
+E o que a Receita responde nunca trava o cadastro: serviço fora do ar, CNPJ não
+encontrado, CPF (que não tem consulta pública) e CNPJ baixado, cada um vira uma
+frase e a pessoa segue digitando.
+
+**2. NORMALIZAR OS NOMES QUE JÁ ESTÃO NO SISTEMA.** A consulta em lote
+("Acertar o cadastro pela Receita") já comparava o nome — mas o que ela
+descobria **morria no relatório**: *"47 têm o nome diferente do da Receita"*, e
+quando o aviso saía da tela ninguém sabia mais quais. Não havia onde clicar.
+
+Agora o nome oficial **fica guardado no fornecedor** (migração 078). Isso muda a
+divergência de "número num relatório que passou" para **estado do cadastro**:
+
+- filtro e quadrinho **"Nome diferente da Receita"** na tela;
+- na ficha, **os dois nomes lado a lado** e o botão *"Usar o nome da Receita"*.
+
+**Por que não troco sozinho, sendo o da Receita o oficial:** "MADEIREIRA SÃO
+JOSÉ" no ERP e "J. G. DA SILVA COMÉRCIO DE MADEIRAS EIRELI" na Receita são a
+mesma empresa, e o comprador reconhece a primeira. Trocar calado encheria a
+lista de cotação de nomes que ninguém liga a ninguém. Ao adotar o oficial, **o
+nome antigo vira o nome fantasia** (se este estiver vazio) — ninguém perde a
+referência.
+
+**O que NÃO foi verificado:** a consulta de verdade não roda nesta sessão — a
+saída para o serviço externo é recusada pelo proxy daqui. A tela foi exercitada
+com a consulta dublada, com o formato exato da resposta real. O caminho de rede
+é o mesmo que o "Acertar pela Receita" já usa em produção.
+
+
 ### 🔧 SEIS COISAS NA TELA DE INSUMOS E FORNECEDORES (20/09/2026)
 
 O dono passou meia hora usando as telas e trouxe uma lista. Vale guardar o

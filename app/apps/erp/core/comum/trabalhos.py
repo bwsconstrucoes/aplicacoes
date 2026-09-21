@@ -258,6 +258,12 @@ def equalizar_fornecedores(s: Session, parametros: dict[str, Any],
             divergentes += 1
             divergencias.append({"fornecedor_id": f.id, "cnpj": f.cnpj_cpf,
                                  "no_erp": f.razao_social, **r["diverge"]})
+        # O NOME OFICIAL FICA GUARDADO (migração 078). Antes a divergência
+        # morria neste relatório: quando o aviso saía da tela, ninguém sabia
+        # mais quais eram. Agora vira estado do cadastro — dá para filtrar e
+        # adotar depois, sem rodar a consulta de novo.
+        oficial = (r["diverge"].get("razao_social") or {}).get("na_receita")
+        f.razao_social_rfb = oficial or None
         f.situacao_rfb = r["situacao"] or "ATIVA"
         f.situacao_rfb_em = datetime.now(timezone.utc)
         if r["baixada"]:

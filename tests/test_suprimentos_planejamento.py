@@ -42,16 +42,20 @@ HOJE = date(2026, 9, 18)
 def _cenario(*, porte=FornecedorPorte.FABRICA, municipio_forn="FORTALEZA",
              automatico=True, status=StatusItemSuprimento.SOLICITACAO,
              prioridade=PrioridadeSolicitacao.NORMAL, previsao=None,
-             categoria_do_insumo=1):
+             categoria_do_insumo=1, abrangencia="ESTADUAL", ufs=("CE",),
+             municipios=(), uf_obra="CE"):
     categoria = InsumoCategoria(id=1, codigo="CIM", nome="Cimento")
-    obra = Obra(id=10, codigo="OB-01", nome="Creche", municipio="FORTALEZA")
+    obra = Obra(id=10, codigo="OB-01", nome="Creche", municipio="FORTALEZA",
+                uf=uf_obra)
     insumo = Insumo(id=100, codigo="1", descricao="Cimento CP-II 50kg",
                     categoria_insumo_id=categoria_do_insumo, unidade="SC")
     forn = Fornecedor(id=5, tipo_pessoa=TipoPessoa.PJ, cnpj_cpf="11444777000161",
                       razao_social="CIMENTOS DO CEARA LTDA", email="v@x.com.br",
                       municipio=municipio_forn, porte=porte,
                       regioes_atuacao=["CE"], canais_cotacao=["EMAIL"],
-                      cotacao_automatica=automatico, ativo=True)
+                      cotacao_automatica=automatico, ativo=True,
+                      abrangencia=abrangencia, ufs_atendidas=list(ufs),
+                      municipios_atendidos=list(municipios))
     ligacao = FornecedorCategoria(fornecedor_id=5, categoria_insumo_id=1)
     sol = SuprimentoSolicitacao(id=7, numero="SP-0007", titulo="Fundação",
                                 solicitante_id=1, prioridade=prioridade,
@@ -90,11 +94,68 @@ def test_sugere_quem_vende_a_categoria_e_diz_por_que():
     assert "fábrica" in forns[0]["por_que"]
 
 
-def test_fornecedor_de_outra_cidade_entra_mas_pontua_menos():
-    r = svc.planejar(_cenario(municipio_forn="RECIFE"), hoje=HOJE)
+def test_fornecedor_de_outra_cidade_mas_que_atende_o_estado_entra():
+    """Estar noutra cidade não tira ninguém: o que decide é se ele ATENDE o
+    lugar da obra. Ele só deixa de ganhar os pontos de proximidade."""
+    r = svc.planejar(_cenario(municipio_forn="SOBRAL"), hoje=HOJE)
     forns = r["blocos"][0]["fornecedores"]
     assert len(forns) == 1
     assert "mesma cidade" not in forns[0]["por_que"]
+    assert "atende o estado" in forns[0]["por_que"]
+
+
+# ---------------------------------------------------------------------------
+# A REGIÃO É FILTRO — 21/09/2026
+#
+# O dono achou o buraco: *"a gente não pode colocar para disparar uma cotação
+# com qualquer fornecedor, tem que ter uma lógica. O fornecedor tem a região
+# que atende, e existe o local da obra."*
+#
+# Antes daqui, "mesma cidade" só somava 3 pontos, e um fornecedor de São Paulo
+# entrava numa cotação de obra no Cariri — atrás dos locais, mas dentro dela.
+# Pedir preço a quem não entrega naquele lugar deixa uma coluna vazia no mapa,
+# e o mapa passa a parecer que teve menos concorrência do que teve.
+# ---------------------------------------------------------------------------
+def test_fornecedor_de_outro_estado_NAO_entra():
+    r = svc.planejar(_cenario(municipio_forn="SAO PAULO", ufs=("SP",)), hoje=HOJE)
+    assert r["blocos"][0]["fornecedores"] == []
+    assert r["blocos"][0]["fora_da_regiao"] == 1
+    assert r["fora_da_regiao"] == 1
+
+
+def test_fornecedor_nacional_entra_em_qualquer_obra():
+    r = svc.planejar(_cenario(municipio_forn="SAO PAULO", abrangencia="NACIONAL",
+                              ufs=()), hoje=HOJE)
+    forns = r["blocos"][0]["fornecedores"]
+    assert len(forns) == 1
+    assert "todo o Brasil" in forns[0]["por_que"]
+
+
+def test_fornecedor_regional_entra_se_a_cidade_da_obra_esta_na_lista():
+    r = svc.planejar(_cenario(abrangencia="REGIONAL", ufs=(),
+                              municipios=("FORTALEZA", "CAUCAIA", "EUSEBIO")),
+                     hoje=HOJE)
+    forns = r["blocos"][0]["fornecedores"]
+    assert len(forns) == 1
+    assert "região que ele atende" in forns[0]["por_que"]
+
+
+def test_fornecedor_regional_de_outra_regiao_fica_de_fora():
+    r = svc.planejar(_cenario(abrangencia="REGIONAL", ufs=(),
+                              municipios=("JUAZEIRO DO NORTE", "CRATO")),
+                     hoje=HOJE)
+    assert r["blocos"][0]["fornecedores"] == []
+    assert r["blocos"][0]["fora_da_regiao"] == 1
+
+
+def test_fornecedor_SEM_REGIAO_fica_de_fora_e_e_contado():
+    """Enquanto ele entrava "porque sim", ninguém arrumava o cadastro. Agora
+    fica de fora e a tela diz quantos são."""
+    r = svc.planejar(_cenario(abrangencia="NAO_INFORMADA", ufs=()), hoje=HOJE)
+    assert r["blocos"][0]["fornecedores"] == []
+    assert r["blocos"][0]["sem_regiao"] == 1
+    assert r["blocos"][0]["fora_da_regiao"] == 0, "falta de cadastro não é o mesmo que estar fora"
+    assert r["sem_regiao"] == 1
 
 
 def test_fornecedor_fora_do_automatico_nao_e_sugerido():

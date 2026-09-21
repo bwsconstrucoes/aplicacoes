@@ -1365,6 +1365,85 @@ def api_cotacao_marcar_resposta(coluna_id: int):
         raise
 
 
+@bp.route("/erp/api/suprimentos/fornecedores/padronizar-regioes",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_padronizar_regioes():
+    """Traduz o texto livre de "Região de Atuação" para algo que cruza com a
+    obra. Com `?simular=1`, só relata.
+
+    Roda na hora (não é fila): são 1.700 cadastros e nenhuma ida à rede.
+    """
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    simular = str(request.args.get("simular") or "").strip() in ("1", "true", "sim")
+    with get_session() as s:
+        atual = _usuario_logado(s)
+        r = svc.padronizar_regioes(s, atual, simular=simular)
+        if simular:
+            s.rollback()
+        else:
+            s.commit()
+    return jsonify({"ok": True, **r})
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>/regiao",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_definir_regiao(fornecedor_id: int):
+    """Grava à mão até onde este fornecedor vende."""
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            r = svc.definir_regiao(s, fornecedor_id,
+                                   request.get_json(silent=True) or {}, atual)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/consulta-cnpj")
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_consulta_cnpj():
+    """O que a Receita sabe sobre este CNPJ — para o formulário preencher.
+
+    Não grava nada, e também responde se o documento JÁ está cadastrado: é o
+    que evita a pessoa digitar tudo para o banco recusar no fim.
+    """
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, **svc.consultar_para_cadastro(
+                s, request.args.get("cnpj", ""))})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>/nome-oficial",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_adotar_nome_oficial(fornecedor_id: int):
+    """Troca a razão social pela da Receita, guardando a antiga como fantasia."""
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            r = svc.adotar_nome_oficial(s, fornecedor_id, atual)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
 @bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>",
           methods=["DELETE"])
 @login_obrigatorio
