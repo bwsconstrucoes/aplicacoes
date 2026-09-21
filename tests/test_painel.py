@@ -138,7 +138,16 @@ class ConexaoFalsa:
         if "FROM contas_correntes" in sql:
             return self.contas
         if "FROM movimentos" in sql:
-            return self.movimentos
+            # Duas consultas leem a mesma tabela: a AGREGADA (uma linha por
+            # título) e a DETALHADA (uma por baixa), que desde 21/09/2026
+            # alimenta a divisão do título pago em parcelas. O dublê guarda só
+            # a forma agregada e monta a outra a partir dela.
+            if "nvalliquido" not in sql:
+                return self.movimentos
+            return [(cod, data, pago, pago, juros, multa, desc, ncc, "", liq,
+                     "", aberto)
+                    for (cod, data, liq, pago, aberto, desc, juros, multa,
+                         ncc) in self.movimentos]
         if "FROM rateio" in sql:
             return self.rateios
         if "FROM titulos" in sql:
@@ -198,7 +207,7 @@ def test_rateio_divide_o_titulo_entre_as_obras():
         [_titulo(1, "R", 1000.0)],
         rateios=[(1, "D1", "Obra Um", 70.0, 700.0),
                  (1, "D2", "Obra Dois", 30.0, 300.0)],
-        movimentos=[(1, "15/03/2025", "S", 1000.0, 0.0, 0.0, 0.0, 0.0)],
+        movimentos=[(1, "15/03/2025", "S", 1000.0, 0.0, 0.0, 0.0, 0.0, 7)],
         categorias=CATALOGO, clientes=CLIENTES, obras=OBRAS, contas=CONTAS)
     linhas = [dict(zip(fato.COLUNAS_FATO, l)) for l in fato.gerar_linhas_fato(conn)]
 
@@ -214,7 +223,7 @@ def test_receita_com_imposto_retido_gera_linha_separada():
     conn = ConexaoFalsa(
         [_titulo(1, "R", 1000.0, retencoes=(50.0, 30.0, 0, 0, 0, 0))],
         rateios=[(1, "D1", "Obra Um", 100.0, 1000.0)],
-        movimentos=[(1, "15/03/2025", "S", 920.0, 0.0, 0.0, 0.0, 0.0)],
+        movimentos=[(1, "15/03/2025", "S", 920.0, 0.0, 0.0, 0.0, 0.0, 7)],
         categorias=CATALOGO, clientes=CLIENTES, obras=OBRAS, contas=CONTAS)
     linhas = [dict(zip(fato.COLUNAS_FATO, l)) for l in fato.gerar_linhas_fato(conn)]
 
@@ -234,7 +243,7 @@ def test_despesa_entra_negativa():
     conn = ConexaoFalsa(
         [_titulo(1, "P", 500.0, status="Pago")],
         rateios=[(1, "D1", "Obra Um", 100.0, 500.0)],
-        movimentos=[(1, "15/03/2025", "S", 500.0, 0.0, 0.0, 0.0, 0.0)],
+        movimentos=[(1, "15/03/2025", "S", 500.0, 0.0, 0.0, 0.0, 0.0, 7)],
         categorias=CATALOGO, clientes=CLIENTES, obras=OBRAS, contas=CONTAS)
     linha = dict(zip(fato.COLUNAS_FATO, next(iter(fato.gerar_linhas_fato(conn)))))
     assert linha["pago_recebido"] == pytest.approx(-500.0)

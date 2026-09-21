@@ -1302,6 +1302,89 @@ porque o JavaScript monta campos escondidos com o que foi editado — mas marcar
 sem editar não chegava a lugar nenhum. Agora chega, que é o que a exclusão
 precisa.
 
+## A conta do relatório era a da PREVISÃO, não a da baixa — 21/09/2026
+
+O dono:
+
+> *"No OMIE existe a conta de previsão de pagamento e existe a conta onde
+> efetivamente foi realizado o pagamento. A informação que está sendo colocada
+> nesse relatório analítico é exatamente a primeira. E a primeira é errada."*
+
+Ele está certo, e o erro era **silencioso**. A coluna saía do título
+(`id_conta_corrente`), que é onde se **previu** pagar. Quem previu pagar pelo
+Bradesco e pagou pelo Itaú aparecia no Bradesco, e nenhuma análise por conta
+dava sinal.
+
+Agora sai do **movimento de baixa** (`ncodcc`). Título ainda em aberto não tem
+baixa — aí a previsão é a única informação que existe e continua valendo, o que
+é diferente de estar errada.
+
+Quando há mais de uma baixa, vale a do **maior valor liquidado**; empate, a mais
+recente. Não existe resposta certa para um título pago metade em cada conta — a
+linha do relatório é uma só —, e a escolha está escrita no código para ninguém
+ter de adivinhar.
+
+**Efeito colateral bom:** a lista de aportes mostrava as devoluções na conta
+7011-4. Parte disso pode ter sido a previsão; depois de refazer os números, a
+conta exibida passa a ser a de onde o dinheiro saiu de verdade.
+
+**Pega por três testes**, um deles reproduzindo a frase dele: previsto na conta
+7, pago na conta 9, o relatório tem de dizer 9. Sem o conserto, a mensagem de
+falha é literalmente *"o relatório mostrou 'Bradesco (previsão)'"*.
+
+Basta **"Só refazer os números"** — os movimentos já estão na base, não precisa
+baixar nada do OMIE.
+
+## Título pago em parcelas: UMA LINHA POR BAIXA — 21/09/2026
+
+O dono, no mesmo dia e sobre o mesmo relatório:
+
+> *"Ele foi pago em duas parcelas, em 2 dias diferentes e valores diferentes. Só
+> que no relatório de despesa analítica aparece um único lançamento (…) do total
+> do título. Se você for olhar no extrato, dá uma coisa. Aí você olha no
+> relatório analítico, dá outro valor. Isso confunde."*
+
+Os dois erros que ele achou hoje são **o mesmo defeito**: a `fato` montava
+**uma linha por título**, quando o certo é **uma linha por baixa**.
+
+**O painel já fazia certo do lado das receitas.** `montar_recebimentos` abre uma
+medição recebida em três parcelas em três linhas, cada uma com sua data e seu
+valor. Nas despesas esse caminho nunca tinha sido ligado. Agora vale para as
+duas, e reusa o mesmo `_escolher_recebimentos` — que é quem sabe desmontar a
+armadilha do OMIE de guardar a mesma baixa em duas pernas (a consolidada e os
+créditos bancários). Regra repetida divergiria; reusada, não.
+
+### O que muda, e o que não muda
+
+**Não muda:** o total do título. Cada parcela é escalada por
+`realizado / soma_das_baixas`, e juros e multa vão pela mesma proporção — as
+pernas de crédito bancário vêm com encargo zerado, e usar o de cada uma faria o
+total encolher sem ninguém notar.
+
+**Não muda:** título pago de uma vez, que é a esmagadora maioria. Continua uma
+linha só, idêntica à de antes.
+
+**MUDA, e o dono foi avisado antes:** um título pago metade em março e metade em
+abril contava **inteiro em abril**; agora conta **metade em cada mês**. Meses já
+olhados podem mudar de valor. Não é o painel ficando errado — é ele parando de
+estar.
+
+**Cuidado que estava fácil de errar:** o saldo em aberto é do TÍTULO, não de
+cada baixa. Repeti-lo em cada linha multiplicaria o "a pagar" pelo número de
+parcelas — um erro que cresceria com o uso, silencioso. Ele vai numa linha só, e
+há teste para isso.
+
+E a retenção de imposto também: uma linha por título, mesmo com várias baixas.
+
+### De quebra
+
+O teste "pago em duas contas" mudou de resposta para melhor. Antes valia a conta
+do maior valor, porque a linha era uma só; agora **cada parcela mostra a conta
+dela**. A regra do maior valor ficou só para quando as baixas não dão para
+separar.
+
+Basta **"Só refazer os números"**.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
