@@ -263,6 +263,10 @@ def gravar(plano: dict, quem: str = "", cliente=None) -> dict:
                     "ele não dá para desfazer nem para conferir — confira no "
                     "OMIE antes de lançar de novo.")
             linha["codigo"] = codigo
+            # ⚠️ A RESPOSTA INTEIRA VAI PARA O LOG. Quando o dono disser "o
+            # OMIE não mostra o que a tela disse que gravou", é isto que
+            # permite responder com evidência em vez de com hipótese.
+            logger.info("Aportes: %s devolveu %s", incluir, resposta)
             criados.append((t, codigo))
         except Exception as e:  # noqa: BLE001 — a mensagem do OMIE vai inteira
             logger.exception("Aportes: falhou incluir título no OMIE")
@@ -418,6 +422,98 @@ def historico(limite: int = 50) -> list:
     campos = ("grupo", "operacao", "papel", "sentido", "natureza", "valor",
               "data", "numero_documento", "codigo_lancamento_omie", "baixado",
               "situacao", "erro", "criado_em", "criado_por")
+    return [dict(zip(campos, l)) for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# CONFERIR NO OMIE — 21/09/2026
+#
+# ⚠️ NASCEU DE UMA FRASE QUE VALE GUARDAR: *"ele dá as informações tudo como
+# se tivesse acontecido tudo certo, o número do título, tudo verdinho. Aí
+# quando eu vou no OMIE, na conta provedora, não tá aparecendo."*
+#
+# A tela estava dizendo mais do que sabia. "Gravado" significava, na verdade,
+# **o OMIE aceitou a chamada e devolveu um número** — nada além disso. Não
+# significa que o título ficou na conta que mandamos, nem com a categoria que
+# mandamos, nem que a baixa pegou.
+#
+# A diferença entre as duas coisas é justamente onde mora o defeito que
+# ninguém percebe. Então em vez de adivinhar, o sistema PERGUNTA: lê de volta
+# cada título criado e mostra o que o OMIE responde, campo por campo.
+#
+# É LEITURA. Não altera, não exclui, não baixa. Pode ser usado à vontade.
+# ---------------------------------------------------------------------------
+def conferir_no_omie(codigos: list, cliente=None) -> list:
+    """Lê de volta cada título e devolve o que o OMIE diz que guardou.
+
+    Um título que não puder ser lido vira uma linha com o erro — nunca some
+    da lista, porque "não consegui ler" é resposta tão importante quanto as
+    outras: pode ser que ele não exista.
+    """
+    cli = cliente or _cliente()
+    saida = []
+    for item in codigos or []:
+        codigo = item.get("codigo")
+        natureza = item.get("natureza") or "P"
+        linha = {"codigo": codigo, "natureza": natureza, "erro": "",
+                 "achou": False}
+        if not codigo:
+            linha["erro"] = "Sem número de título — nada a consultar."
+            saida.append(linha)
+            continue
+        url, _inc, _exc = PORTAS.get(natureza, PORTAS["P"])[:3]
+        consultar = ("ConsultarContaPagar" if natureza == "P"
+                     else "ConsultarContaReceber")
+        try:
+            cadastro = cli._call(url, consultar,
+                                 {"codigo_lancamento_omie": int(codigo)}) or {}
+        except Exception as e:  # noqa: BLE001 — a mensagem do OMIE vai inteira
+            logger.exception("Aportes: falhou consultar o título %s", codigo)
+            linha["erro"] = str(e)
+            saida.append(linha)
+            continue
+
+        linha.update({
+            "achou": True,
+            # Os nomes vêm do OMIE como ele os devolve; a tela mostra em
+            # português ao lado do que MANDAMOS, para a diferença saltar.
+            "id_conta_corrente": cadastro.get("id_conta_corrente"),
+            "codigo_categoria": cadastro.get("codigo_categoria"),
+            "valor_documento": cadastro.get("valor_documento"),
+            "numero_documento": cadastro.get("numero_documento"),
+            "data_vencimento": cadastro.get("data_vencimento"),
+            "status_titulo": cadastro.get("status_titulo"),
+            "valor_pago": cadastro.get("valor_pago"),
+            "valor_aberto": cadastro.get("valor_aberto"),
+            "baixa_realizada": cadastro.get("baixa_realizada"),
+            "distribuicao": cadastro.get("distribuicao"),
+            "codigo_integracao": cadastro.get("codigo_lancamento_integracao"),
+        })
+        saida.append(linha)
+    return saida
+
+
+def titulos_do_grupo(grupo: str) -> list:
+    """O que ESTE sistema registrou de um lançamento: número e natureza.
+
+    É por aqui que a conferência sabe o que perguntar ao OMIE — e o confronto
+    entre o que registramos e o que ele responde é a resposta.
+    """
+    try:
+        from .db import consultar
+        linhas = consultar(
+            "SELECT codigo_lancamento_omie, natureza, papel, sentido, "
+            "       id_conta_corrente, codigo_categoria, valor, "
+            "       numero_documento, baixado, situacao "
+            "  FROM analisesps.aporte_lancamento "
+            " WHERE grupo = ? ORDER BY id", (str(grupo),))
+    except Exception:  # noqa: BLE001
+        logger.exception("Aportes: não consegui ler os títulos do grupo %s",
+                         grupo)
+        return []
+    campos = ("codigo", "natureza", "papel", "sentido", "id_conta_corrente",
+              "codigo_categoria", "valor", "numero_documento", "baixado",
+              "situacao")
     return [dict(zip(campos, l)) for l in linhas]
 
 

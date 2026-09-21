@@ -750,3 +750,81 @@ def test_o_numero_continua_dizendo_a_data_e_sendo_unico():
     numeros = {planejar(data="2026-09-21")["numero_documento"]
                for _ in range(50)}
     assert len(numeros) == 50, "dois lançamentos do mesmo dia colidiram"
+
+
+# ---------------------------------------------------------------------------
+# CONFERIR NO OMIE — 21/09/2026
+# ---------------------------------------------------------------------------
+# *"Ele dá as informações tudo como se tivesse acontecido tudo certo, o número
+# do título, tudo verdinho. Aí quando eu vou no OMIE, na conta provedora, não
+# tá aparecendo."*
+#
+# A tela dizia mais do que sabia: "gravado" significava apenas que o OMIE
+# aceitou e devolveu um número.
+# ---------------------------------------------------------------------------
+class OmieQueResponde:
+    def __init__(self, cadastros):
+        self.cadastros = cadastros
+        self.chamadas = []
+
+    def _call(self, url, call, param):
+        self.chamadas.append((call, param))
+        codigo = param.get("codigo_lancamento_omie")
+        if codigo not in self.cadastros:
+            raise RuntimeError("ERROR: lancamento nao cadastrado")
+        return self.cadastros[codigo]
+
+
+def test_conferir_le_de_volta_e_nao_escreve_nada():
+    """É leitura. Se um dia isto alterar alguma coisa, deixa de ser seguro
+    usar à vontade — e o valor dele é justamente poder ser usado à vontade."""
+    cli = OmieQueResponde({1001: {"id_conta_corrente": 7011,
+                                  "codigo_categoria": "2.08.02",
+                                  "baixa_realizada": "S"}})
+    aportes_omie.conferir_no_omie([{"codigo": 1001, "natureza": "P"}],
+                                  cliente=cli)
+    chamadas = [c for c, _ in cli.chamadas]
+    assert chamadas == ["ConsultarContaPagar"]
+    assert not any(c.startswith(("Incluir", "Alterar", "Excluir", "Lancar"))
+                   for c in chamadas)
+
+
+def test_conferir_usa_a_consulta_certa_para_cada_natureza():
+    cli = OmieQueResponde({1: {}, 2: {}})
+    aportes_omie.conferir_no_omie(
+        [{"codigo": 1, "natureza": "P"}, {"codigo": 2, "natureza": "R"}],
+        cliente=cli)
+    assert [c for c, _ in cli.chamadas] == \
+        ["ConsultarContaPagar", "ConsultarContaReceber"]
+
+
+def test_o_titulo_que_o_omie_nao_devolve_vira_linha_com_o_erro():
+    """"Não consegui ler" é resposta tão importante quanto as outras: pode
+    ser que o título não exista. Sumir da lista seria o pior."""
+    cli = OmieQueResponde({})
+    linhas = aportes_omie.conferir_no_omie(
+        [{"codigo": 4242, "natureza": "P"}], cliente=cli)
+    assert len(linhas) == 1
+    assert linhas[0]["achou"] is False
+    assert "nao cadastrado" in linhas[0]["erro"]
+
+
+def test_conferir_sem_numero_de_titulo_nao_chama_o_omie():
+    cli = OmieQueResponde({})
+    linhas = aportes_omie.conferir_no_omie([{"codigo": None, "natureza": "P"}],
+                                           cliente=cli)
+    assert linhas[0]["erro"] and not cli.chamadas
+
+
+def test_conferir_traz_conta_categoria_e_baixa():
+    """Os três campos que respondem "por que não aparece na conta?"."""
+    cli = OmieQueResponde({1001: {
+        "id_conta_corrente": 22069, "codigo_categoria": "1.02.95",
+        "valor_documento": 550000.0, "baixa_realizada": "N",
+        "valor_pago": 0, "valor_aberto": 550000.0}})
+    linha = aportes_omie.conferir_no_omie(
+        [{"codigo": 1001, "natureza": "R"}], cliente=cli)[0]
+    assert linha["id_conta_corrente"] == 22069
+    assert linha["codigo_categoria"] == "1.02.95"
+    assert linha["baixa_realizada"] == "N"
+    assert linha["valor_aberto"] == 550000.0

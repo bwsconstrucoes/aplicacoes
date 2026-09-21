@@ -6188,6 +6188,69 @@ nome e conferência antes da chamada. Onde não é, a mensagem do OMIE continua
 aparecendo inteira na tela — e é assim que se descobre o próximo.
 
 ---
+
+### Octogésima leva (21/09) — "tudo verdinho, e no OMIE não aparece"
+
+> *"Ele dá as informações tudo como se tivesse acontecido tudo certo, o número
+> do título, tudo verdinho. Aí quando eu vou no OMIE, na conta provedora, não
+> tá aparecendo o retorno desse recurso."*
+
+#### ⚠️ A tela estava dizendo MAIS DO QUE SABIA
+
+Este é o achado que interessa, e ele vale para qualquer integração futura:
+
+**"Gravado" significava, na verdade, "o OMIE aceitou a chamada e devolveu um
+número".** Nada além disso. Não significa que o título ficou na conta que
+mandamos, nem com a categoria que mandamos, nem que a baixa pegou — e a
+diferença entre essas duas coisas é exatamente onde mora o defeito que ninguém
+percebe.
+
+Escrever num sistema de terceiro e considerar "sucesso" a ausência de erro é
+confiar num silêncio. O OMIE pode aceitar, responder 200, devolver número — e
+guardar outra coisa.
+
+#### O que foi feito: perguntar em vez de adivinhar
+
+Cada linha da lista "O que já foi lançado por aqui" ganhou **"Conferir no
+OMIE"**. Ele lê de volta os títulos daquele lançamento e mostra, lado a lado,
+**o que mandamos e o que o OMIE diz que guardou**: conta, categoria, valor e
+se está baixado. Divergência aparece em vermelho, com a frase pronta —
+*"a conta é outra: mandei 7011, o OMIE guardou 99999"*.
+
+É **leitura**: não altera, não exclui, não baixa. Por isso não pede senha de
+escrita — conferir tem de ser barato, ou ninguém confere. Há teste exigindo
+que só chame `Consultar*` e nunca `Incluir`, `Alterar`, `Excluir` ou `Lancar`.
+
+Três coisas a mais:
+
+- **a resposta do OMIE vai inteira para o log** em cada inclusão. Da próxima
+  vez que a tela disser uma coisa e o OMIE mostrar outra, há evidência em vez
+  de hipótese;
+- **a tela deixou de afirmar o que não sabe.** Depois de gravar, ela escreve:
+  *"'Gravado' quer dizer que o OMIE aceitou e devolveu um número — não que o
+  título ficou na conta certa nem que a baixa pegou"*, e aponta para a
+  conferência;
+- **título que o OMIE não devolve vira linha com o erro**, nunca some da
+  lista: "não consegui ler" é resposta tão importante quanto as outras, porque
+  pode querer dizer que ele não existe.
+
+#### O que continua sem resposta, e é o que a conferência vai dizer
+
+O dono descreveu mais coisas na mesma sessão — um lançamento de R$ 550 mil que
+aparecia só na conta da parceria, outro com um real a mais que substituiu o
+anterior na tela do OMIE, valores sumindo depois de conciliar e atualizar.
+
+**Nada disso foi diagnosticado, e é honesto dizer.** Pode ser o campo da conta
+não estar sendo respeitado no título a receber, pode ser a baixa não ter
+pegado (e título sem baixa não aparece no extrato da conta), pode ser
+comportamento da tela de conciliação do próprio OMIE. As três hipóteses levam
+a consertos diferentes, e chutar entre elas seria escrever no sistema da
+empresa por palpite.
+
+A conferência responde às duas primeiras em um clique. A terceira só se separa
+das outras depois.
+
+---
 ---
 
 ## Regras que não se discutem

@@ -4071,6 +4071,67 @@ def aportes_gravar():
     }
 
 
+@bp.route("/api/aportes/conferir", methods=["POST"])
+@exige_operador
+def aportes_conferir():
+    """Lê de volta no OMIE o que foi gravado, e mostra lado a lado.
+
+    ⚠️ NASCEU DE *"tudo verdinho, e no OMIE não tá aparecendo na conta
+    provedora"*. A tela dizia mais do que sabia: "gravado" significava apenas
+    que o OMIE aceitou e devolveu um número — não que o título ficou na conta
+    que mandamos, com a categoria que mandamos, nem que a baixa pegou.
+
+    É LEITURA. Não altera, não exclui, não baixa. Por isso não pede a senha de
+    escrita: conferir tem de ser barato, ou ninguém confere."""
+    from . import aportes_omie
+
+    grupo = str((request.get_json(silent=True) or {}).get("grupo") or "").strip()
+    if not grupo:
+        return {"ok": False, "erro": "Diga qual lançamento conferir."}, 400
+
+    registrados = aportes_omie.titulos_do_grupo(grupo)
+    if not registrados:
+        return {"ok": False,
+                "erro": f"Não tenho registro nenhum do lançamento {grupo}."}, 404
+
+    try:
+        no_omie = aportes_omie.conferir_no_omie(
+            [{"codigo": r["codigo"], "natureza": r["natureza"]}
+             for r in registrados])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Aportes: falhou conferir no OMIE")
+        return {"ok": False, "erro": f"Não consegui falar com o OMIE: {e}"}, 502
+
+    # O CONFRONTO é a resposta: o que mandamos ao lado do que ele guardou.
+    # Divergência aqui é o defeito que nenhuma tela mostraria sozinha.
+    linhas = []
+    for reg, omie in zip(registrados, no_omie):
+        divergencias = []
+        if omie.get("achou"):
+            if (str(omie.get("id_conta_corrente") or "")
+                    != str(reg.get("id_conta_corrente") or "")):
+                divergencias.append(
+                    f"A conta é outra: mandei {reg.get('id_conta_corrente')}, "
+                    f"o OMIE guardou {omie.get('id_conta_corrente')}.")
+            if (str(omie.get("codigo_categoria") or "").strip()
+                    != str(reg.get("codigo_categoria") or "").strip()):
+                divergencias.append(
+                    f"A categoria é outra: mandei {reg.get('codigo_categoria')}, "
+                    f"o OMIE guardou {omie.get('codigo_categoria')}.")
+            baixado_la = str(omie.get("baixa_realizada") or "").upper()
+            if reg.get("baixado") and not baixado_la.startswith("S"):
+                divergencias.append(
+                    "Eu dei a baixa por feita, mas o OMIE diz que o título "
+                    "NÃO está baixado — por isso ele não aparece no extrato "
+                    "da conta.")
+        linhas.append({"registrado": reg, "omie": omie,
+                       "divergencias": divergencias})
+
+    return {"ok": True, "grupo": grupo, "linhas": linhas,
+            "tudo_certo": all(not l["divergencias"] and l["omie"].get("achou")
+                              for l in linhas)}
+
+
 @bp.route("/api/aportes/fornecedores")
 @exige_operador
 def aportes_fornecedores():

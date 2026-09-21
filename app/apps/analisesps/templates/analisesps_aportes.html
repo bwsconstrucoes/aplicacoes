@@ -243,7 +243,8 @@
     <table class="sps">
       <thead>
         <tr><th>Quando</th><th>Operação</th><th>Lado</th><th>Valor</th>
-            <th>Título no OMIE</th><th>Baixado</th><th>Situação</th><th>Quem</th></tr>
+            <th>Título no OMIE</th><th>Baixado</th><th>Situação</th><th>Quem</th>
+            <th>Confere?</th></tr>
       </thead>
       <tbody>
         {% for h in historico %}
@@ -256,10 +257,19 @@
             <td>{{ 'sim' if h.baixado else 'não' }}</td>
             <td>{{ h.situacao }}{% if h.erro %}<br><small>{{ h.erro }}</small>{% endif %}</td>
             <td>{{ h.criado_por }}</td>
+            {# ⚠️ "Gravado" só quer dizer que o OMIE aceitou e devolveu um
+               número. Este botão pergunta a ELE o que ficou guardado — conta,
+               categoria e baixa — e mostra a diferença, se houver. É leitura:
+               não altera nada. #}
+            <td>{% if h.codigo_lancamento_omie %}
+              <button type="button" class="btn secundario conferir-omie"
+                      data-grupo="{{ h.grupo }}">Conferir no OMIE</button>
+            {% endif %}</td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+    <div id="conferencia-omie"></div>
   {% else %}
     <p class="cartao-dica">Nada ainda. O primeiro lançamento deve ser UM só,
       conferido dentro do OMIE com os olhos antes de virar rotina.</p>
@@ -364,6 +374,79 @@
           (f.documento ? ` — ${f.documento}` : "") + `</option>`).join("");
       } catch (e) { /* procura é conforto; a lista atual continua servindo */ }
     }, 350);
+  });
+
+  // -------------------------------------------------------------------------
+  // CONFERIR NO OMIE — pergunta a ELE o que ficou guardado
+  //
+  // ⚠️ "Gravado" só dizia que o OMIE aceitou e devolveu um número. Isso não é
+  // a mesma coisa que o título ter ficado na conta certa, com a categoria
+  // certa e baixado — e a diferença entre as duas coisas é onde mora o
+  // defeito que ninguém percebe. Aqui a tela pergunta e mostra o confronto.
+  // -------------------------------------------------------------------------
+  const saidaConferencia = $("conferencia-omie");
+  document.querySelectorAll(".conferir-omie").forEach(botao => {
+    botao.addEventListener("click", async () => {
+      const grupo = botao.dataset.grupo;
+      saidaConferencia.innerHTML =
+        '<p class="cartao-dica">Perguntando ao OMIE…</p>';
+      botao.disabled = true;
+      let d;
+      try {
+        const r = await fetch("{{ url_for('analisesps.aportes_conferir') }}", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({grupo: grupo})});
+        d = await r.json();
+      } catch (e) {
+        saidaConferencia.innerHTML =
+          '<div class="aviso erro">Não consegui perguntar: ' + e + "</div>";
+        botao.disabled = false;
+        return;
+      }
+      botao.disabled = false;
+      if (!d.ok) {
+        saidaConferencia.innerHTML =
+          '<div class="aviso erro">' + d.erro + "</div>";
+        return;
+      }
+
+      let html = d.tudo_certo
+        ? '<div class="aviso bom"><b>O OMIE confirma tudo.</b> Conta, ' +
+          "categoria e baixa batem com o que foi mandado.</div>"
+        : '<div class="aviso erro"><b>O OMIE guardou algo diferente do que ' +
+          "foi mandado.</b> Veja abaixo.</div>";
+
+      html += '<table class="sps"><thead><tr>' +
+              "<th>Título</th><th>Lado</th><th>Conta</th><th>Categoria</th>" +
+              "<th>Valor</th><th>Baixado no OMIE</th><th>O que diverge</th>" +
+              "</tr></thead><tbody>";
+      d.linhas.forEach(l => {
+        const r = l.registrado, o = l.omie;
+        if (!o.achou) {
+          html += "<tr class='com-risco'><td class='id'>" + (r.codigo || "—") +
+                  "</td><td>" + r.papel + " · " + r.sentido +
+                  "</td><td colspan='4'><b>O OMIE não me devolveu este " +
+                  "título.</b> " + (o.erro || "") + "</td><td>—</td></tr>";
+          return;
+        }
+        const baixa = String(o.baixa_realizada || "").toUpperCase()
+                        .startsWith("S") ? "sim" : "NÃO";
+        html += "<tr" + (l.divergencias.length ? " class='com-risco'" : "") +
+                "><td class='id'>" + r.codigo + "</td>" +
+                "<td>" + r.papel + " · " + r.sentido + "</td>" +
+                "<td>" + (o.id_conta_corrente || "—") +
+                  "<br><small>mandei " + (r.id_conta_corrente || "—") + "</small></td>" +
+                "<td>" + (o.codigo_categoria || "—") +
+                  "<br><small>mandei " + (r.codigo_categoria || "—") + "</small></td>" +
+                "<td>" + (o.valor_documento != null ? reais(o.valor_documento) : "—") + "</td>" +
+                "<td>" + baixa +
+                  (o.valor_pago != null ? "<br><small>pago " + reais(o.valor_pago) + "</small>" : "") +
+                "</td>" +
+                "<td>" + (l.divergencias.join("<br>") || "—") + "</td></tr>";
+      });
+      html += "</tbody></table>";
+      saidaConferencia.innerHTML = html;
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -647,6 +730,11 @@
     });
 
     html += '<p><a class="btn secundario" href="">Recarregar a tela</a></p>';
+    html += '<p class="cartao-dica">⚠️ <b>“Gravado” quer dizer que o OMIE ' +
+            "aceitou e devolveu um número</b> — não que o título ficou na " +
+            "conta certa nem que a baixa pegou. Recarregue a tela e use " +
+            "<i>“Conferir no OMIE”</i> na lista abaixo para ver o que ele " +
+            "realmente guardou.</p>";
     saida.innerHTML = html;
     // Gravou: a conferência morre. Gravar duas vezes o mesmo plano seria
     // lançar o aporte duas vezes.
