@@ -504,3 +504,96 @@ def test_gravar_duas_vezes_o_mesmo_lancamento_nao_duplica_o_registro(banco_aport
     aportes_omie.gravar(plano, "Marcelo", cliente=OmieOk())
     aportes_omie.gravar(plano, "Marcelo", cliente=OmieOk())
     assert len(aportes_omie.historico(10)) == 1
+
+
+# ---------------------------------------------------------------------------
+# O CONFRONTO: o que mandamos × o que o OMIE guardou — 21/09/2026
+# ---------------------------------------------------------------------------
+def _de_para_pronto(banco):
+    from app.apps.analisesps import aportes_de_para
+    semear_espelho(banco, categorias=AS_CINCO, contas=AS_CONTAS)
+    return (aportes_de_para.descricoes_das_contas(),
+            aportes_de_para.categorias_resolvidas())
+
+
+def test_a_conferencia_acusa_conta_e_categoria_trocadas(banco_aportes):
+    """⚠️ É o defeito que nenhuma tela mostraria sozinha: o OMIE aceita, devolve
+    número, e guarda numa conta que não é a que mandamos."""
+    from app.apps.analisesps import aportes, aportes_omie
+    from app.apps.analisesps.web import _contexto_dos_aportes  # noqa: F401
+
+    descricoes, categorias = _de_para_pronto(banco_aportes)
+    plano = aportes.planejar(
+        operacao="devolucao_bws", conta_origem=22069, conta_destino=7011,
+        valor="550.000,00", data="2026-09-21", fornecedor=99, obra="OBRA-1",
+        quem="Marcelo", descricoes=descricoes, categorias=categorias)
+
+    class OmieOk:
+        def __init__(self):
+            self.n = 0
+
+        def _call(self, url, call, param):
+            if call.startswith("Incluir"):
+                self.n += 1
+                return {"codigo_lancamento_omie": 1000 + self.n}
+            return {}
+
+    aportes_omie.gravar(plano, "Marcelo", cliente=OmieOk())
+    registrados = aportes_omie.titulos_do_grupo(plano["grupo"])
+    assert len(registrados) == 2
+    assert [r["codigo"] for r in registrados] == [1001, 1002]
+
+    # O OMIE responde com a conta ERRADA no título a receber e diz que ele
+    # não foi baixado — exatamente o que o dono descreveu.
+    class OmieQueDiverge:
+        def _call(self, url, call, param):
+            codigo = param["codigo_lancamento_omie"]
+            if codigo == 1001:
+                return {"id_conta_corrente": 22069,
+                        "codigo_categoria": "2.08.02",
+                        "baixa_realizada": "S"}
+            return {"id_conta_corrente": 99999,        # não é a provedora
+                    "codigo_categoria": "1.02.95",
+                    "baixa_realizada": "N"}            # e não baixou
+
+    lidos = aportes_omie.conferir_no_omie(
+        [{"codigo": r["codigo"], "natureza": r["natureza"]}
+         for r in registrados], cliente=OmieQueDiverge())
+    assert lidos[0]["id_conta_corrente"] == 22069
+    assert lidos[1]["id_conta_corrente"] == 99999
+    assert lidos[1]["baixa_realizada"] == "N"
+
+
+def test_os_titulos_do_grupo_saem_na_ordem_com_conta_e_categoria(banco_aportes):
+    """A conferência precisa saber O QUE foi mandado para poder confrontar."""
+    from app.apps.analisesps import aportes, aportes_omie
+
+    descricoes, categorias = _de_para_pronto(banco_aportes)
+    plano = aportes.planejar(
+        operacao="aporte_bws", conta_origem=7011, conta_destino=22069,
+        valor="100,00", data="2026-09-21", fornecedor=99, obra="OBRA-1",
+        quem="Marcelo", descricoes=descricoes, categorias=categorias)
+
+    class OmieOk:
+        def __init__(self):
+            self.n = 0
+
+        def _call(self, url, call, param):
+            if call.startswith("Incluir"):
+                self.n += 1
+                return {"codigo_lancamento_omie": 7770 + self.n}
+            return {}
+
+    aportes_omie.gravar(plano, "Marcelo", cliente=OmieOk())
+    registrados = aportes_omie.titulos_do_grupo(plano["grupo"])
+    assert [(r["papel"], r["sentido"], r["natureza"], r["id_conta_corrente"],
+             r["codigo_categoria"]) for r in registrados] == [
+        ("provedora", "saida", "P", 7011, "2.08.97"),
+        ("parceria", "entrada", "R", 22069, "1.02.94"),
+    ]
+
+
+def test_grupo_que_nao_existe_nao_inventa_titulo(banco_aportes):
+    from app.apps.analisesps import aportes_omie
+    _de_para_pronto(banco_aportes)
+    assert aportes_omie.titulos_do_grupo("260921-ZZZZZ") == []

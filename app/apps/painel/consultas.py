@@ -1168,15 +1168,45 @@ _CAT_SIMPLES = ("translate(lower(COALESCE(categoria,'')), "
 
 
 def _sql_tipo_aporte() -> str:
-    from .sync.fato import TIPOS_APORTE, _APORTE_GENERICO, _sem_acento
+    """A mesma decisão do `classificar_aporte`, escrita em SQL.
+
+    A ordem dos ramos é a regra, e cada um está aqui por um motivo:
+
+    1. o LADO PROVEDOR vira NULL — não é aporte, é o espelho de um. Contá-lo
+       faz o mesmo dinheiro aparecer duas vezes na lista;
+    2. o CÓDIGO do plano financeiro decide, quando existe: ele não depende de
+       alguém ter digitado o nome certo;
+    3. o NOME fica como rede, para os lançamentos anteriores ao plano de
+       17/09/2026;
+    4. em qualquer aporte, QUEM aportou sai da CONTRAPARTE, não do rótulo — o
+       financeiro troca "Aportes BWS" por "Aportes Parceiros" sem querer, e o
+       dono pediu que isso não prejudicasse a análise."""
+    from .sync.fato import (CODIGOS_APORTE, CODIGOS_LADO_PROVEDOR,
+                            PADRAO_EMPRESA_DA_CASA, TIPOS_APORTE,
+                            _APORTE_GENERICO, _sem_acento)
+
+    # `strpos` e nao `LIKE '%...%'` de proposito: este SQL as vezes roda sem
+    # parametro nenhum, e ai o driver nao faz substituicao — um `%%` ficaria
+    # literal e o LIKE nao casaria com nada, calado.
+    origem = ("CASE WHEN strpos(lower(COALESCE(razao_social,'')), "
+              f"'{PADRAO_EMPRESA_DA_CASA}') > 0 THEN 'Aporte BWS' "
+              "ELSE 'Aporte de Parceiro' END")
 
     def ramo(padroes, tipo):
         # Os padrões são só letras e espaços, então a alternância do regex é
         # segura — e cabe numa linha, ao contrário de um OR por padrão.
         alternativas = "|".join(_sem_acento(p) for p in padroes)
-        return f"WHEN {_CAT_SIMPLES} ~ '{alternativas}' THEN '{tipo}'"
+        destino = origem if tipo in ("Aporte de Parceiro", "Aporte BWS") \
+            else f"'{tipo}'"
+        return f"WHEN {_CAT_SIMPLES} ~ '{alternativas}' THEN {destino}"
 
-    ramos = [ramo(padroes, tipo) for tipo, padroes in TIPOS_APORTE.items()]
+    provedor = ", ".join(f"'{c}'" for c in sorted(CODIGOS_LADO_PROVEDOR))
+    ramos = [f"WHEN COALESCE(codigo_categoria,'') IN ({provedor}) THEN NULL"]
+    for cod, tipo in sorted(CODIGOS_APORTE.items()):
+        destino = origem if tipo in ("Aporte de Parceiro", "Aporte BWS") \
+            else f"'{tipo}'"
+        ramos.append(f"WHEN COALESCE(codigo_categoria,'') = '{cod}' THEN {destino}")
+    ramos += [ramo(padroes, tipo) for tipo, padroes in TIPOS_APORTE.items()]
     ramos.append(ramo(_APORTE_GENERICO, "Outros aportes"))
     return "CASE " + " ".join(ramos) + " END"
 
@@ -1236,13 +1266,32 @@ _DEVOLVIDO = ("SUM(CASE WHEN pago_recebido < 0 AND " + _E_DEVOLUCAO +
               " THEN -pago_recebido ELSE 0 END)")
 
 
+def _sem_cortar_transferencia(f: Filtros) -> Filtros:
+    """Os mesmos filtros da tela, MENOS o corte de transferência entre contas.
+
+    21/09/2026. Todas as telas descartam `analise = 'TRF'` por padrão, e com
+    razão: dinheiro andando entre contas da própria empresa não é receita nem
+    despesa, e contá-lo infla tudo.
+
+    **O bloco de aportes é a exceção, e é a exceção porque o assunto dele é
+    exatamente esse dinheiro.** Aporte da BWS para a obra ANDA entre contas da
+    empresa — se a categoria estiver marcada como transferência no plano
+    financeiro do OMIE, o corte engole o bloco inteiro e ninguém vê por quê.
+
+    O que impedia a duplicação era esse corte; hoje quem impede é a exclusão do
+    LADO PROVEDOR pelo código da categoria, que é o jeito certo de fazer: tira
+    o espelho da operação e mantém a operação."""
+    return Filtros(anos=f.anos, projetos=f.projetos,
+                   departamentos=f.departamentos, excluir_trf=False)
+
+
 def _agregado_de_aporte(f: Filtros, chaves: list) -> list[dict]:
     """Aportado / devolvido / saldo agrupado pelas colunas pedidas.
 
     Uma chave e o proprio texto SQL, quando agrupar e mostrar sao a mesma coisa,
     ou um par (agrupar_por, mostrar) — como no socio, que agrupa pelo documento
     e mostra o nome."""
-    where, params = f.where(
+    where, params = _sem_cortar_transferencia(f).where(
         f"{PAGO} AND ({TIPO_APORTE}) IN ({NO_SALDO})")
     agrupar = [c[0] if isinstance(c, tuple) else c for c in chaves]
     mostrar = [c[1] if isinstance(c, tuple) else c for c in chaves]
@@ -1298,12 +1347,52 @@ def aportes(f: Filtros) -> dict:
     }
 
 
+def aportes_na_base_inteira() -> dict:
+    """Aportado e devolvido SEM filtro nenhum — o bloco do DRE usa os filtros da
+    barra lateral, e essa diferenca e invisivel para quem olha a tela.
+
+    21/09/2026, o dono: *"a parte dos aportes continua sem apresentar todos os
+    numeros"*. Eu vinha comparando a conferencia (que roda sem filtro) com o
+    bloco do DRE (que roda COM os filtros da tela) e dizendo que tinham de bater
+    — nao tinham por que bater. Um ano selecionado na barra lateral ja explica
+    uma devolucao "sumida".
+
+    Duas somas indexadas; o bloco pode mostrar sempre, sem pesar."""
+    f = Filtros(excluir_trf=False)
+    where, params = f.where(f"{PAGO} AND ({TIPO_APORTE}) IN ({NO_SALDO})")
+    (ap, dev, n) = consultar(
+        f"""SELECT COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0), COUNT(*)
+              FROM fato{where}""", params)[0]
+
+    # E ONDE ESTA O RESTO — obra por obra.
+    #
+    # 21/09/2026: filtrado na obra Mercado Barbalha, o dono via R$ 887 mil de
+    # devolucao e esperava R$ 3,3 milhoes. Na base inteira havia R$ 5,4 milhoes.
+    # Ou seja, o dinheiro estava la — em lancamentos que NAO estao apropriados
+    # aquela obra. Dizer so "o filtro esconde X" nao resolve: ele precisa saber
+    # ONDE o resto esta para poder apropriar no OMIE.
+    #
+    # "(nao apropriado)" e a linha que mais importa: e a que ele conserta.
+    por_obra = [{"obra": obra, "aportado": float(a or 0),
+                 "devolvido": float(d or 0), "lancamentos": q}
+                for obra, a, d, q in consultar(
+        f"""SELECT {_OBRA}, COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0),
+                   COUNT(*)
+              FROM fato{where}
+             GROUP BY 1
+             ORDER BY 3 DESC, 2 DESC
+             LIMIT 30""", params)]
+    return {"aportado": float(ap or 0), "devolvido": float(dev or 0),
+            "lancamentos": n or 0, "por_obra": por_obra}
+
+
 def dividendos_por_socio(f: Filtros) -> list[dict]:
     """Dividendo é distribuição de LUCRO, não devolução de capital.
 
     Por isso ele não abate o saldo de aporte — abater faria parecer que o sócio
     retirou o que colocou, o que não aconteceu. Fica em quadro próprio."""
-    where, params = f.where(f"{PAGO} AND ({TIPO_APORTE}) = 'Dividendos'")
+    where, params = _sem_cortar_transferencia(f).where(
+        f"{PAGO} AND ({TIPO_APORTE}) = 'Dividendos'")
     sql = f"""
         SELECT {_SOCIO_ROTULO},
                SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
@@ -1325,7 +1414,8 @@ LIMITE_LANCAMENTOS = 400
 
 
 def lancamentos_de_aporte(f: Filtros, limite: int | None = LIMITE_LANCAMENTOS) -> dict:
-    where, params = f.where(f"{PAGO} AND ({TIPO_APORTE}) IS NOT NULL")
+    where, params = _sem_cortar_transferencia(f).where(
+        f"{PAGO} AND ({TIPO_APORTE}) IS NOT NULL")
     (quantos,) = consultar(f"SELECT COUNT(*) FROM fato{where}", params)[0]
     teto = f" LIMIT {int(limite)}" if limite else ""
     sql = f"""
@@ -1909,27 +1999,22 @@ def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
     valor que falta é o culpado, e aparece na tela em vez de na minha cabeça.
 
     Os degraus, na ordem em que o código os aplica:
-      1. tudo o que a categoria diz ser aporte (inclusive Dividendos);
+      1. tudo o que é aporte — já SEM o lado provedor, que é o espelho da
+         operação e apareceria em dobro;
       2. menos o que NÃO entra no saldo — hoje, só Dividendos;
-      3. menos o que é transferência entre contas (`analise = 'TRF'`);
-      4. menos o que o `PAGO` não reconhece como pago;
-      5. o que sobra é o que o bloco mostra."""
-    f = f or Filtros()
+      3. menos o que o `PAGO` não reconhece como pago;
+      4. o que sobra é o que o bloco mostra.
+
+    O corte de transferência entre contas SAIU desta lista em 21/09/2026, junto
+    com a mudança no bloco: aporte entre contas da própria empresa é exatamente
+    o assunto aqui, e o corte engolia tudo. Quem impede a duplicação agora é a
+    exclusão do lado provedor, pelo código da categoria — ver
+    `_sem_cortar_transferencia`. Quanto o lado provedor representa vem à parte,
+    em `lado_provedor`, para não virar mistério."""
+    f = _sem_cortar_transferencia(f or Filtros())
 
     def _soma(extra):
         where, params = f.where(extra)
-        (ap, dev, n) = consultar(
-            f"""SELECT COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0), COUNT(*)
-                  FROM fato{where}""", params)[0]
-        return {"aportado": float(ap or 0), "devolvido": float(dev or 0),
-                "linhas": n or 0}
-
-    # o passo 1 ignora ate a exclusao de TRF que o Filtros aplica sozinho
-    sem_trf = Filtros(anos=f.anos, projetos=f.projetos,
-                      departamentos=f.departamentos, excluir_trf=False)
-
-    def _soma_larga(extra):
-        where, params = sem_trf.where(extra)
         (ap, dev, n) = consultar(
             f"""SELECT COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0), COUNT(*)
                   FROM fato{where}""", params)[0]
@@ -1940,9 +2025,8 @@ def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
     no_saldo = f"({TIPO_APORTE}) IN ({NO_SALDO})"
 
     passos = [
-        ("Tudo com categoria de aporte", _soma_larga(e_aporte)),
-        ("Só o que entra no saldo (tira Dividendos)", _soma_larga(no_saldo)),
-        ("Tirando transferências entre contas", _soma(no_saldo)),
+        ("Tudo o que é aporte (sem o lado provedor)", _soma(e_aporte)),
+        ("Só o que entra no saldo (tira Dividendos)", _soma(no_saldo)),
         ("Tirando o que o painel não reconhece como pago",
          _soma(f"{no_saldo} AND {PAGO}")),
     ]
@@ -1954,13 +2038,26 @@ def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
             round(anterior["aportado"] - valores["aportado"], 2) if anterior else 0.0)
 
     # e QUEM foi comido, para nao virar outro numero sem nome
-    where_trf, params_trf = sem_trf.where(f"{no_saldo} AND analise = 'TRF'")
-    comidos_trf = _linhas_de_aporte_comidas(where_trf, params_trf)
     where_pago, params_pago = f.where(f"{no_saldo} AND NOT ({PAGO}) AND pago_recebido <> 0")
     comidos_pago = _linhas_de_aporte_comidas(where_pago, params_pago)
 
-    return {"passos": passos, "comidos_trf": comidos_trf,
+    # O lado provedor nao entra em numero nenhum do bloco — de proposito. Mas
+    # ele tem de aparecer em ALGUM lugar, senao vira o proximo misterio: o dono
+    # ve os lancamentos no OMIE e nao os acha no painel.
+    from .sync.fato import CODIGOS_LADO_PROVEDOR
+    lista = ", ".join(f"'{c}'" for c in sorted(CODIGOS_LADO_PROVEDOR))
+    where_prov, params_prov = f.where(
+        f"COALESCE(codigo_categoria,'') IN ({lista}) AND {PAGO}")
+    (n_prov, v_prov) = consultar(
+        f"""SELECT COUNT(*), COALESCE(SUM(ABS(pago_recebido)), 0)
+              FROM fato{where_prov}""", params_prov)[0]
+    lado_provedor = {"linhas": n_prov or 0, "valor": float(v_prov or 0),
+                     "codigos": sorted(CODIGOS_LADO_PROVEDOR),
+                     "maiores": _linhas_de_aporte_comidas(where_prov, params_prov)}
+
+    return {"passos": passos, "comidos_trf": [],
             "comidos_pago": comidos_pago,
+            "lado_provedor": lado_provedor,
             "por_contraparte": _devolucoes_por_contraparte(f)}
 
 

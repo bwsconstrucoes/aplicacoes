@@ -750,6 +750,19 @@
     </table>
   </div>
 
+  {% if aportes_conf.lado_provedor and aportes_conf.lado_provedor.linhas %}
+  <div style="border-left:4px solid var(--ciano); background:rgba(13,202,240,.07);
+              padding:10px 12px; border-radius:6px; margin-top:12px">
+    <b>Fora do bloco de propósito: o lado da conta provedora.</b><br>
+    {{ aportes_conf.lado_provedor.linhas }} lançamentos somando
+    <b>{{ brl(aportes_conf.lado_provedor.valor) }}</b>, nas categorias
+    {{ aportes_conf.lado_provedor.codigos|join(' e ') }}.
+    Eles são o <b>espelho</b> da mesma operação, na conta que mandou ou recebeu
+    o dinheiro. Contá-los faria cada aporte aparecer duas vezes — entrando numa
+    conta e saindo da outra.
+  </div>
+  {% endif %}
+
   {% if aportes_conf.por_contraparte %}
   <h4 style="margin:16px 0 4px">Devoluções por contraparte — como o bloco do DRE soma</h4>
   <p class="cartao-dica" style="margin-top:0">

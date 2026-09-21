@@ -398,9 +398,22 @@ porque é ele que carrega o controle de excesso de chamadas. Lote que entra
 pela metade **diz isso**, em vez de um "deu erro" que levaria a relançar o que
 já entrou.
 
+⚠️ **Bloqueio do OMIE para o lote inteiro** (21/09/2026). Linha que falha por
+motivo próprio não leva as outras; bloqueio, sim — é o OMIE dizendo "pare", e
+tentar a próxima o prolonga. A gravação reusa o `TETO_DE_ESPERA_NA_TELA` do
+cliente compartilhado (30 s), não um teto próprio: o serviço tem um worker e
+quatro vias de atendimento, divididas com o ERP.
+
 A ordem das operações é fixa, com teste: **os dois títulos primeiro, as baixas
 por último**. Baixa que falha deixa título correto em aberto, que é chato e
 visível; título que falha deixaria meia operação, que é o que não pode existir.
+
+⚠️ **"Não estou vendo no OMIE" ≠ "não está no OMIE"** (21/09/2026). Um
+lançamento que a tela do OMIE não mostrava por causa do filtro dela custou uma
+tarde de investigação. Do lado de cá não há como distinguir as duas coisas — só
+perguntando a ele. É para isso que serve o botão **"Conferir no OMIE"** na
+lista de lançamentos: lê os títulos de volta e mostra conta, categoria, valor e
+baixa, ao lado do que foi mandado. É leitura pura; pode ser usado à vontade.
 
 ⚠️ **O que não foi conferido contra a API de verdade:** os campos da baixa e
 da exclusão. A documentação do OMIE não é alcançável do ambiente onde isto foi

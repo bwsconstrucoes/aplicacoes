@@ -645,3 +645,269 @@ def test_o_lote_continua_depois_de_uma_linha_que_estoura():
                                             cliente=MorreNoPrimeiro())
     assert resultados[0]["ok"] is False
     assert resultados[1]["ok"] is True, "a segunda linha não chegou a ser feita"
+
+
+# ---------------------------------------------------------------------------
+# A ESPERA TEM FIM — 21/09/2026
+# ---------------------------------------------------------------------------
+# *"Tentando gravar, mas tá demorando muito. Com certeza o OMIE já terá
+# respondido."* Ele estava certo, e a causa não era o OMIE.
+# ---------------------------------------------------------------------------
+def test_o_cliente_da_gravacao_nao_e_o_da_carga_noturna(monkeypatch):
+    """⚠️ O `OmieClient` nasceu para a carga do painel, que roda sozinha e pode
+    esperar: 120 s por tentativa, OITO tentativas. Pior caso de uma chamada:
+    17 minutos — e um lançamento são quatro chamadas.
+
+    Pior: o serviço tem 4 linhas de atendimento para os 18 blueprints. Quatro
+    gravações penduradas e o monorepo inteiro para de responder."""
+    capturado = {}
+
+    class ClienteFalso:
+        @classmethod
+        def de_ambiente(cls, **kwargs):
+            capturado.update(kwargs)
+            return cls()
+
+    import app.apps.painel.sync.omie_client as mod
+    monkeypatch.setattr(mod, "OmieClient", ClienteFalso)
+    aportes_omie._cliente()
+
+    assert capturado["timeout"] <= 60, "espera de carga noturna numa tela"
+    assert capturado["max_tentativas"] <= 4
+    pior = (capturado["timeout"] * capturado["max_tentativas"]
+            + sum(capturado["backoff_base"] ** t
+                  for t in range(1, capturado["max_tentativas"])))
+    assert pior < 180, f"pior caso de {pior:.0f}s por chamada"
+
+
+def test_a_tentativa_e_registrada_antes_de_chamar_o_omie(monkeypatch):
+    """Se o processo morrer no meio da chamada, sem este registro não sobra
+    nada dizendo que uma inclusão chegou a ser tentada — e ninguém saberia se
+    há título solto no OMIE."""
+    registros = []
+    monkeypatch.setattr(aportes_omie, "_registrar",
+                        lambda plano, t, cod, baixado, situacao, erro, quem:
+                        registros.append((situacao, cod)))
+
+    class MorreNaPrimeira:
+        def _call(self, url, call, param):
+            raise RuntimeError("o processo caiu")
+
+    aportes_omie.gravar(planejar(), "Marcelo", cliente=MorreNaPrimeira())
+    assert registros[0] == ("enviando", None), \
+        "chamou o OMIE sem deixar registro de que ia chamar"
+
+
+def test_o_lancamento_sem_resposta_aparece_na_lista_de_duvida(monkeypatch):
+    """É a lista que responde "mandei de novo ou não?"."""
+    monkeypatch.setattr(aportes_omie, "historico", lambda n=200: [
+        {"situacao": "enviando", "numero_documento": "APORTE-1"},
+        {"situacao": "gravado", "numero_documento": "APORTE-2"},
+        {"situacao": "orfao", "numero_documento": "APORTE-3"},
+    ])
+    assert [h["numero_documento"] for h in aportes_omie.em_duvida()] == \
+        ["APORTE-1"]
+
+
+# ---------------------------------------------------------------------------
+# O LIMITE DE 20 CARACTERES DO NÚMERO DO DOCUMENTO — 21/09/2026
+# ---------------------------------------------------------------------------
+# Descoberto do jeito mais caro: o dono tentou lançar e o OMIE recusou.
+#   "O número máximo de caracteres permitido para o elemento [NUMERO_DOCUMENTO]
+#    é de 20. O número de caracteres informado foi de 22!"
+# ---------------------------------------------------------------------------
+def test_o_numero_automatico_cabe_no_limite_do_omie():
+    for dia in ("2026-01-01", "2026-09-21", "2026-12-31"):
+        for _ in range(40):          # o sorteio muda a cada montagem
+            plano = planejar(data=dia)
+            numero = plano["numero_documento"]
+            assert len(numero) <= aportes.MAX_NUMERO_DOCUMENTO, \
+                f"{numero!r} tem {len(numero)}"
+            # E vai igual nos dois títulos: é o que amarra o par.
+            assert {t["numero_documento"] for t in plano["titulos"]} == {numero}
+
+
+def test_o_numero_digitado_grande_demais_e_recusado_na_tela():
+    """Melhor recusar aqui, na hora, do que gastar oito tentativas contra o
+    OMIE para ele receber a mesma notícia dois minutos depois."""
+    with pytest.raises(aportes.ErroDeRegra) as erro:
+        planejar(numero="APORTE-DA-OBRA-RESIDENCIAL-AURORA-2026")
+    frase = str(erro.value)
+    assert "20" in frase
+    assert "caracteres" in frase
+
+
+def test_o_numero_no_limite_exato_passa():
+    plano = planejar(numero="A" * aportes.MAX_NUMERO_DOCUMENTO)
+    assert plano["numero_documento"] == "A" * 20
+
+
+def test_o_numero_continua_dizendo_a_data_e_sendo_unico():
+    """Encurtar não podia custar as duas coisas que o número faz: dar para
+    reconhecer o lançamento na lista e não colidir com o do vizinho."""
+    plano = planejar(data="2026-09-21")
+    assert "260921" in plano["numero_documento"]
+    numeros = {planejar(data="2026-09-21")["numero_documento"]
+               for _ in range(50)}
+    assert len(numeros) == 50, "dois lançamentos do mesmo dia colidiram"
+
+
+# ---------------------------------------------------------------------------
+# CONFERIR NO OMIE — 21/09/2026
+# ---------------------------------------------------------------------------
+# *"Ele dá as informações tudo como se tivesse acontecido tudo certo, o número
+# do título, tudo verdinho. Aí quando eu vou no OMIE, na conta provedora, não
+# tá aparecendo."*
+#
+# A tela dizia mais do que sabia: "gravado" significava apenas que o OMIE
+# aceitou e devolveu um número.
+# ---------------------------------------------------------------------------
+class OmieQueResponde:
+    def __init__(self, cadastros):
+        self.cadastros = cadastros
+        self.chamadas = []
+
+    def _call(self, url, call, param):
+        self.chamadas.append((call, param))
+        codigo = param.get("codigo_lancamento_omie")
+        if codigo not in self.cadastros:
+            raise RuntimeError("ERROR: lancamento nao cadastrado")
+        return self.cadastros[codigo]
+
+
+def test_conferir_le_de_volta_e_nao_escreve_nada():
+    """É leitura. Se um dia isto alterar alguma coisa, deixa de ser seguro
+    usar à vontade — e o valor dele é justamente poder ser usado à vontade."""
+    cli = OmieQueResponde({1001: {"id_conta_corrente": 7011,
+                                  "codigo_categoria": "2.08.02",
+                                  "baixa_realizada": "S"}})
+    aportes_omie.conferir_no_omie([{"codigo": 1001, "natureza": "P"}],
+                                  cliente=cli)
+    chamadas = [c for c, _ in cli.chamadas]
+    assert chamadas == ["ConsultarContaPagar"]
+    assert not any(c.startswith(("Incluir", "Alterar", "Excluir", "Lancar"))
+                   for c in chamadas)
+
+
+def test_conferir_usa_a_consulta_certa_para_cada_natureza():
+    cli = OmieQueResponde({1: {}, 2: {}})
+    aportes_omie.conferir_no_omie(
+        [{"codigo": 1, "natureza": "P"}, {"codigo": 2, "natureza": "R"}],
+        cliente=cli)
+    assert [c for c, _ in cli.chamadas] == \
+        ["ConsultarContaPagar", "ConsultarContaReceber"]
+
+
+def test_o_titulo_que_o_omie_nao_devolve_vira_linha_com_o_erro():
+    """"Não consegui ler" é resposta tão importante quanto as outras: pode
+    ser que o título não exista. Sumir da lista seria o pior."""
+    cli = OmieQueResponde({})
+    linhas = aportes_omie.conferir_no_omie(
+        [{"codigo": 4242, "natureza": "P"}], cliente=cli)
+    assert len(linhas) == 1
+    assert linhas[0]["achou"] is False
+    assert "nao cadastrado" in linhas[0]["erro"]
+
+
+def test_conferir_sem_numero_de_titulo_nao_chama_o_omie():
+    cli = OmieQueResponde({})
+    linhas = aportes_omie.conferir_no_omie([{"codigo": None, "natureza": "P"}],
+                                           cliente=cli)
+    assert linhas[0]["erro"] and not cli.chamadas
+
+
+def test_conferir_traz_conta_categoria_e_baixa():
+    """Os três campos que respondem "por que não aparece na conta?"."""
+    cli = OmieQueResponde({1001: {
+        "id_conta_corrente": 22069, "codigo_categoria": "1.02.95",
+        "valor_documento": 550000.0, "baixa_realizada": "N",
+        "valor_pago": 0, "valor_aberto": 550000.0}})
+    linha = aportes_omie.conferir_no_omie(
+        [{"codigo": 1001, "natureza": "R"}], cliente=cli)[0]
+    assert linha["id_conta_corrente"] == 22069
+    assert linha["codigo_categoria"] == "1.02.95"
+    assert linha["baixa_realizada"] == "N"
+    assert linha["valor_aberto"] == 550000.0
+
+
+# ---------------------------------------------------------------------------
+# O BLOQUEIO DO OMIE PARA O LOTE — 21/09/2026
+# ---------------------------------------------------------------------------
+# No mesmo dia, o chat do Painel levou um bloqueio de verdade tentando
+# apropriar um título:
+#
+#   [425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.
+#
+# O conserto dele ficou no cliente compartilhado, e traz `OmieBloqueada` e um
+# teto de espera próprio para quem escreve pela TELA — porque o serviço tem um
+# worker e quatro vias de atendimento, divididas com o ERP.
+# ---------------------------------------------------------------------------
+def test_a_gravacao_usa_o_teto_de_espera_da_tela(monkeypatch):
+    """Teto inventado aqui divergiria do do painel na primeira mudança. O
+    certo é reusar o dele."""
+    from app.apps.painel.sync import omie_client as mod
+    capturado = {}
+
+    class ClienteFalso:
+        @classmethod
+        def de_ambiente(cls, **kwargs):
+            capturado.update(kwargs)
+            return cls()
+
+    monkeypatch.setattr(mod, "OmieClient", ClienteFalso)
+    aportes_omie._cliente()
+    assert capturado["teto_de_espera"] == mod.TETO_DE_ESPERA_NA_TELA
+    assert capturado["teto_de_espera"] < mod.TETO_DE_ESPERA, \
+        "usou o teto da carga noturna numa tela com gente esperando"
+
+
+def test_bloqueio_do_omie_para_o_lote_inteiro(monkeypatch):
+    """⚠️ É O CONTRÁRIO DO RESTO, e de propósito.
+
+    Linha que falha por motivo próprio não leva as outras. Mas bloqueio não é
+    falha da linha: é o OMIE dizendo "pare". Tentar a próxima cai no mesmo
+    bloqueio e o PROLONGA — é exatamente a repetição que ele está punindo."""
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+
+    planos = lote([{"data": "2026-09-21", "valor": "100,00"},
+                   {"data": "2026-10-21", "valor": "200,00"},
+                   {"data": "2026-11-21", "valor": "300,00"}])
+
+    tentativas = []
+
+    def gravar_falso(plano, quem, cliente=None):
+        tentativas.append(plano["grupo"])
+        if len(tentativas) == 2:
+            raise OmieBloqueada(664, "API bloqueada por consumo indevido")
+        return {"ok": True, "grupo": plano["grupo"], "titulos": [],
+                "avisos": [], "orfaos": []}
+
+    monkeypatch.setattr(aportes_omie, "gravar", gravar_falso)
+    resultados = aportes_omie.gravar_varios(planos, "Marcelo", cliente=object())
+
+    assert len(tentativas) == 2, "insistiu depois do bloqueio"
+    assert resultados[0]["ok"] is True
+    assert resultados[1]["ok"] is False
+    assert "664" in resultados[1]["erro"], "não disse quanto esperar"
+    # A terceira nem foi tentada, e a tela precisa saber disso.
+    assert resultados[2]["ok"] is False
+    assert "Nem cheguei a tentar" in resultados[2]["erro"]
+
+
+def test_falha_comum_continua_nao_parando_o_lote(monkeypatch):
+    """A distinção só vale se o outro caso continuar valendo."""
+    planos = lote([{"data": "2026-09-21", "valor": "100,00"},
+                   {"data": "2026-10-21", "valor": "200,00"}])
+    tentativas = []
+
+    def gravar_falso(plano, quem, cliente=None):
+        tentativas.append(plano["grupo"])
+        if len(tentativas) == 1:
+            raise RuntimeError("categoria inválida")
+        return {"ok": True, "grupo": plano["grupo"], "titulos": [],
+                "avisos": [], "orfaos": []}
+
+    monkeypatch.setattr(aportes_omie, "gravar", gravar_falso)
+    resultados = aportes_omie.gravar_varios(planos, "Marcelo", cliente=object())
+    assert len(tentativas) == 2, "uma linha ruim parou o lote"
+    assert resultados[1]["ok"] is True

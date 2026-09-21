@@ -747,6 +747,39 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 21/09/2026 — A EMISSÃO DE NFS-e VIROU A QUINTA ÁREA (atravessa áreas)
+
+O dono decidiu abrir um chat próprio para o `emissaonf` e pediu que ele
+entrasse na tabela de áreas do `CLAUDE.md`, para todo chat novo já nascer
+sabendo que ele existe.
+
+**Por que isto merece registro, e não é só uma linha numa tabela:** a área
+entrou **sem memória**. É a única das cinco sem `README.md` e sem
+`HISTORICO.md` — ~7.000 linhas em 48 arquivos, e a dívida está anotada neste
+mesmo arquivo há meses (*"ainda não documentado aqui"*, *"documentar na
+próxima vez que mexer"*).
+
+Botá-la na tabela apontando para arquivos que não existem seria pior do que
+deixá-la de fora: o chat novo leria a linha, não acharia nada e começaria a
+programar às cegas. Então a linha **diz que eles não existem** e o `CLAUDE.md`
+ganhou um aviso logo abaixo da tabela: **a primeira entrega de quem abrir um
+chat nessa área é a memória, não código.**
+
+**Dois riscos próprios dela ficaram escritos junto, porque não existem nas
+outras quatro:**
+
+1. **Nota fiscal emitida não se apaga.** Cancelar ou substituir tem prazo e
+   regra da prefeitura, e nem todo município aceita. É o risco mais alto do
+   repositório — maior que escrever no OMIE, onde no pior caso se apaga um
+   título.
+2. **Ela usa o certificado digital A1 da empresa.** Vale a mesma regra do
+   Análise de SPs: o arquivo e a senha nunca entram no chat. E há precedente
+   de credencial vazada justamente aqui — o `EL_NFSE_TOKEN` ficou no histórico
+   do repositório até ser trocado na origem (ver neste mesmo §9).
+
+Nada de código mudou. Só o `CLAUDE.md` e este arquivo.
+
+
 ### 18/09/2026 — O SISTEMA SUGERE; QUEM MANDA É GENTE (atravessa áreas)
 
 Ao ver o disparo automático de cotação funcionando, e depois de eu propor que o

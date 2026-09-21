@@ -477,6 +477,53 @@ TIPOS_APORTE = {
 
 _APORTE_GENERICO = ["aporte", "aportes"]
 
+# -----------------------------------------------------------------------------
+# O PLANO FINANCEIRO DO DONO, POR CODIGO — 21/09/2026
+# -----------------------------------------------------------------------------
+# O nome da categoria e frouxo: o pessoal do financeiro troca "Aportes BWS" por
+# "Aportes Parceiros" sem querer, e os dois lados da mesma operacao usam nomes
+# parecidos. O CODIGO nao tem esse problema. Foi o dono quem passou a tabela:
+#
+#   CONTA PROVEDORA (a que manda o dinheiro)
+#     saida   2.08.97  Aportes BWS
+#     entrada 1.02.95  Devolucao de Aportes BWS
+#
+#   CONTA DA PARCERIA (a obra)
+#     entrada 1.02.02  Aportes Parceiros
+#     entrada 1.02.94  Aportes BWS
+#     saida   2.08.02  Devolucao de Aportes
+#
+# "Ocorre que para efeitos de aporte, nao devemos considerar os lancamentos da
+# conta provedora, senao fica meio duplicado os lancamentos."
+#
+# E verdade, e ele mostrou o caso: R$ 10,00 de 04/09/2025 aparecia DUAS vezes na
+# lista — +10 entrando na 22069 e -10 saindo da 7011. Mesma operacao, dois
+# lancamentos. Somar da certo (os sinais se anulam), mas LISTAR mostra dobrado,
+# e quem le a lista conclui que o painel esta errado.
+#
+# Entao o lado provedor sai do bloco inteiro: nao e aporte, e o espelho de um.
+CODIGOS_LADO_PROVEDOR = {"2.08.97", "1.02.95"}
+
+# E o lado da parceria, que e o que conta.
+CODIGOS_APORTE = {
+    "2.08.02": "Devolução de Aporte",
+    "1.02.02": "Aporte de Parceiro",
+    "1.02.94": "Aporte BWS",
+}
+
+# QUEM APORTOU SAI DA CONTRAPARTE, NAO DO ROTULO.
+#
+# O dono, no mesmo dia: "A diferenca de Aportes BWS e Aportes Parceiros e
+# somente a nomenclatura para identificar melhor. E ha varias situacoes que o
+# pessoal do financeiro fez o lancamento trocado e nao colocou Aportes BWS."
+#
+# Ou seja: o rotulo erra, a contraparte nao. No exemplo que ele mandou, a
+# entrada estava como "Aportes Parceiros" e a contraparte era BWS CONSTRUCOES
+# LTDA (MATRIZ) — dinheiro da BWS com nome de parceiro.
+#
+# HEURISTICA, e o dono pode corrigir: empresa cujo nome tem "BWS" e a casa.
+PADRAO_EMPRESA_DA_CASA = "bws"
+
 # Tipos que compoem o SALDO de aporte do socio/parceiro.
 #
 # DIVIDENDO fica de fora de proposito: e distribuicao de LUCRO, nao devolucao de
@@ -507,19 +554,40 @@ def _sem_acento(texto):
     return str(texto or "").translate(tab).lower().strip()
 
 
-def classificar_aporte(categoria):
-    """Devolve o tipo de aporte da categoria, ou None se nao for aporte."""
-    c = _sem_acento(categoria)
-    if not c:
+def classificar_aporte(categoria, codigo=None, razao_social=None):
+    """Que tipo de aporte e esta linha — ou None, se nao for aporte.
+
+    O CODIGO manda quando existe: ele e o unico que nao depende de alguem ter
+    digitado o nome certo. O nome fica como rede, para os lancamentos antigos,
+    anteriores ao plano financeiro de 17/09/2026.
+
+    Devolve None tambem para o LADO PROVEDOR — ele e o espelho da operacao, e
+    conta-lo duplicaria a lista."""
+    cod = (codigo or "").strip()
+    if cod and cod in CODIGOS_LADO_PROVEDOR:
         return None
+    if cod and cod in CODIGOS_APORTE:
+        tipo = CODIGOS_APORTE[cod]
+        return tipo if tipo == "Devolução de Aporte" else _origem(razao_social)
+
+    c = _sem_acento((categoria or "").lower())
     for tipo, padroes in TIPOS_APORTE.items():
         for p in padroes:
             if _sem_acento(p) in c:
+                # Aporte: quem aportou sai da contraparte, nao do rotulo.
+                if tipo in ("Aporte de Parceiro", "Aporte BWS"):
+                    return _origem(razao_social)
                 return tipo
     for p in _APORTE_GENERICO:
         if p in c:
             return "Outros aportes"
     return None
+
+
+def _origem(razao_social):
+    """Dinheiro da casa ou do parceiro, pela contraparte."""
+    nome = _sem_acento((razao_social or "").lower())
+    return "Aporte BWS" if PADRAO_EMPRESA_DA_CASA in nome else "Aporte de Parceiro"
 
 
 def e_aporte(categoria):

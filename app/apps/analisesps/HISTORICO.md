@@ -6120,6 +6120,197 @@ candidatos ou digitar o código direto. Continua guardado num "detalhes" quando
 não falta nada, e continua abrindo sozinho quando falta.
 
 ---
+
+### Septuagésima nona leva (21/09) — a primeira tentativa de gravar, e o que ela ensinou
+
+O dono tentou lançar de verdade. Duas coisas apareceram, e as duas valem
+registro porque nenhuma delas seria pega por teste nenhum sem a tentativa.
+
+#### 1. *"Tá demorando muito. Com certeza o OMIE já terá respondido."*
+
+Ele estava certo, e a causa não era o OMIE.
+
+⚠️ **O `OmieClient` nasceu para a carga noturna do painel**, que roda sozinha e
+pode esperar o quanto for: **120 segundos por tentativa, oito tentativas**,
+com pausa crescente entre elas. Pior caso de UMA chamada: **17 minutos**. Um
+lançamento são quatro chamadas — dois títulos e duas baixas. Quase 70 minutos.
+
+⚠️ **E o estrago não parava na tela dele.** O serviço roda com um processo e
+quatro linhas de atendimento (`--workers 1 --threads 4`) para os 18
+blueprints. Cada gravação pendurada ocupa uma delas por todo esse tempo:
+quatro e o monorepo inteiro para de responder. O `--timeout 3600` do gunicorn
+não socorre — ele deixa passar.
+
+A gravação passou a usar um cliente próprio: **30 segundos por tentativa,
+três tentativas**. Pior caso, um minuto e meio por chamada. Retentar continua
+seguro porque toda inclusão leva o `codigo_lancamento_integracao`, e o OMIE
+recusa a segunda com "código de integração já cadastrado".
+
+Três coisas a mais, do mesmo problema:
+
+- **a espera do navegador ganhou fim**, e o recado diz a única coisa que
+  importa: *"não mande de novo; recarregue e olhe o que já foi lançado"*;
+- **a tentativa passou a ser registrada ANTES da chamada** (`situacao =
+  'enviando'`). Se o processo morrer no meio, sem isso não sobraria nada
+  dizendo que uma inclusão chegou a ser tentada, e ninguém saberia se há
+  título solto no OMIE;
+- **a tela mostra o que ficou "enviando"**, com o número do documento, para
+  conferir no OMIE antes de relançar.
+
+#### 2. ⚠️ O número do documento tem limite de 20 caracteres
+
+A resposta do OMIE, palavra por palavra: *"O número máximo de caracteres
+permitido para o elemento [NUMERO_DOCUMENTO] é de 20. O número de caracteres
+informado foi de 22!"*
+
+O número que eu montava — `APORTE-20260921-A1B2C3` — tinha 22. Dois a mais.
+
+Agora o ano vai com dois dígitos e o sorteio com cinco: `APORTE-260921-A1B2C`,
+19 caracteres, um de folga. Continua dizendo a data (para reconhecer o
+lançamento na lista) e continua sem colidir — há teste montando cinquenta do
+mesmo dia e exigindo cinquenta números distintos.
+
+**E o limite é conferido ANTES de qualquer chamada**, inclusive para o número
+que o dono digita: recusar na tela, na hora, é melhor do que gastar oito
+tentativas contra o OMIE para ele receber a mesma notícia dois minutos depois,
+em linguagem de sistema.
+
+#### O que isso mostra sobre os limites que ainda não conhecemos
+
+Este repositório não alcança a documentação do OMIE (a rede bloqueia o
+domínio), e foi dito desde o começo que os campos vinham de código que já roda
+em produção. O `numero_documento` **vinha de lá** — e mesmo assim quebrou,
+porque lá ele é `"SP" + id`, sempre curto.
+
+A lição, e ela vale para o próximo campo: **campo copiado de outro lugar traz
+o formato, não o limite.** Onde o limite é conhecido, ele vira constante com
+nome e conferência antes da chamada. Onde não é, a mensagem do OMIE continua
+aparecendo inteira na tela — e é assim que se descobre o próximo.
+
+---
+
+### Octogésima leva (21/09) — "tudo verdinho, e no OMIE não aparece"
+
+> *"Ele dá as informações tudo como se tivesse acontecido tudo certo, o número
+> do título, tudo verdinho. Aí quando eu vou no OMIE, na conta provedora, não
+> tá aparecendo o retorno desse recurso."*
+
+#### ⚠️ A tela estava dizendo MAIS DO QUE SABIA
+
+Este é o achado que interessa, e ele vale para qualquer integração futura:
+
+**"Gravado" significava, na verdade, "o OMIE aceitou a chamada e devolveu um
+número".** Nada além disso. Não significa que o título ficou na conta que
+mandamos, nem com a categoria que mandamos, nem que a baixa pegou — e a
+diferença entre essas duas coisas é exatamente onde mora o defeito que ninguém
+percebe.
+
+Escrever num sistema de terceiro e considerar "sucesso" a ausência de erro é
+confiar num silêncio. O OMIE pode aceitar, responder 200, devolver número — e
+guardar outra coisa.
+
+#### O que foi feito: perguntar em vez de adivinhar
+
+Cada linha da lista "O que já foi lançado por aqui" ganhou **"Conferir no
+OMIE"**. Ele lê de volta os títulos daquele lançamento e mostra, lado a lado,
+**o que mandamos e o que o OMIE diz que guardou**: conta, categoria, valor e
+se está baixado. Divergência aparece em vermelho, com a frase pronta —
+*"a conta é outra: mandei 7011, o OMIE guardou 99999"*.
+
+É **leitura**: não altera, não exclui, não baixa. Por isso não pede senha de
+escrita — conferir tem de ser barato, ou ninguém confere. Há teste exigindo
+que só chame `Consultar*` e nunca `Incluir`, `Alterar`, `Excluir` ou `Lancar`.
+
+Três coisas a mais:
+
+- **a resposta do OMIE vai inteira para o log** em cada inclusão. Da próxima
+  vez que a tela disser uma coisa e o OMIE mostrar outra, há evidência em vez
+  de hipótese;
+- **a tela deixou de afirmar o que não sabe.** Depois de gravar, ela escreve:
+  *"'Gravado' quer dizer que o OMIE aceitou e devolveu um número — não que o
+  título ficou na conta certa nem que a baixa pegou"*, e aponta para a
+  conferência;
+- **título que o OMIE não devolve vira linha com o erro**, nunca some da
+  lista: "não consegui ler" é resposta tão importante quanto as outras, porque
+  pode querer dizer que ele não existe.
+
+#### ⚠️ RESPONDIDO NO MESMO DIA: era a TELA DO OMIE, não o lançamento
+
+O dono voltou horas depois:
+
+> *"Os lançamentos entraram. Problema é no OMIE mesmo, ele não estava exibindo
+> corretamente as informações. Só apareceu depois que afinei a filtragem."*
+
+Ou seja: a terceira hipótese. Os títulos estavam lá o tempo todo — na conta
+certa, com a categoria certa. **A tela do OMIE é que não os mostrava com o
+filtro que ele estava usando.**
+
+⚠️ **E A LIÇÃO NÃO É "ERA ALARME FALSO".** É o contrário, e vale guardar:
+
+**"Não estou vendo no OMIE" e "não está no OMIE" são coisas diferentes**, e do
+lado de cá não há como distinguir uma da outra olhando a nossa tela. Só
+perguntando ao próprio OMIE o que ele guardou. Foi por isso que a conferência
+foi construída antes de saber a resposta — e ela continua valendo: o que
+custou um dia de investigação agora custa um clique.
+
+O que estava certo desde o começo, e vale anotar porque foi testado na prática:
+a decisão de **não chutar** entre as três hipóteses. As três levavam a
+consertos diferentes, e duas delas mexeriam em código que já estava correto.
+
+#### O que ficou aberto depois disso
+
+**A BAIXA continua sem confirmação.** Saber que os títulos entraram não é a
+mesma coisa que saber que eles nasceram baixados — e os campos da baixa são
+justamente os que nunca foram conferidos contra a documentação do OMIE (a rede
+deste ambiente bloqueia o domínio). A conferência mostra `baixa_realizada`
+direto do OMIE: é ali que isso se fecha.
+
+---
+
+### Octogésima primeira leva (21/09) — o bloqueio do OMIE para o lote
+
+Trazendo a `main` para publicar a conferência, veio um conserto do chat do
+Painel que fala direto com este código. Vale registrar porque é o **segundo**
+caso no mesmo dia de dois chats chegarem ao mesmo lugar sem se falarem.
+
+Ele levou um bloqueio de verdade tentando apropriar um título:
+
+> `[425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.`
+> `ERRO: [MAX_TENTATIVAS] Falha apos 8 tentativas em AlterarContaReceber`
+
+E achou duas coisas que o cliente compartilhado não sabia: que o OMIE diz
+*"tente novamente em N segundos"* além de *"aguarde N segundos"*, e que título
+de período contábil fechado **nunca** vai passar — as oito tentativas só
+aprofundavam o bloqueio, porque é exatamente a repetição que ele pune.
+
+#### O que veio de lá e este módulo passou a usar
+
+O cliente ganhou `teto_de_espera` e a exceção `OmieBloqueada`. Acima do teto
+ele **para e diz quanto falta**, em vez de esperar.
+
+⚠️ **E o motivo do teto é o mesmo que escrevemos aqui de manhã**, com as
+palavras dele: *"a tela roda dentro do serviço web, que tem UM worker e 4 vias
+de atendimento; uma espera de um minuto ali prende uma das quatro e trava o
+sistema para todo mundo — inclusive para o ERP, que divide o processo."*
+
+Dois chats, no mesmo dia, pelo mesmo raciocínio. A gravação dos aportes passou
+a **reusar o teto dele** (`TETO_DE_ESPERA_NA_TELA`) em vez de inventar um: teto
+próprio divergiria do dele na primeira mudança, e aí o mesmo sistema teria dois
+limites diferentes para o mesmo problema.
+
+#### ⚠️ Bloqueio PARA o lote — e é o contrário de todo o resto daqui
+
+Uma linha que falha por motivo próprio **não leva as outras**: foi assim que o
+lote foi desenhado, e continua.
+
+**Bloqueio não é falha da linha.** É o OMIE dizendo "pare". Tentar a próxima
+cai no mesmo bloqueio e o **prolonga**. Então, bloqueou, o lote para — e as
+linhas que sobraram aparecem como *"nem cheguei a tentar"*, com o tempo que
+ele pediu, para o dono saber quando voltar.
+
+Há teste para os dois lados: bloqueio interrompe, falha comum não.
+
+---
 ---
 
 ## Regras que não se discutem

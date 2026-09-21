@@ -564,3 +564,121 @@ def test_a_busca_de_observacoes_nao_escreve_no_omie(monkeypatch):
     for proibido in ("Alterar", "Incluir", "Excluir"):
         assert proibido not in fonte, \
             f"a busca de observações passou a chamar {proibido} no OMIE"
+
+
+# ===========================================================================
+# A retomada por página, exercitada de verdade — 20/09/2026
+# ===========================================================================
+
+class _OmieFalsoDeMovimentos:
+    """Um OMIE de mentira com N páginas de movimentos, que anota o que pediram."""
+
+    def __init__(self, paginas, por_pagina=2, primeiro_codigo=1):
+        self.paginas = paginas
+        self.por_pagina = por_pagina
+        self.primeiro = primeiro_codigo
+        self.pedidas = []
+
+    def listar_movimentos(self, *, param_extra=None, max_paginas=None,
+                          pagina_inicial=1):
+        total = self.paginas * self.por_pagina
+        for pagina in range(int(pagina_inicial), self.paginas + 1):
+            self.pedidas.append(pagina)
+            base = self.primeiro + (pagina - 1) * self.por_pagina
+            registros = [_movimento_do_omie(base + i)
+                         for i in range(self.por_pagina)]
+            yield pagina, self.paginas, total, registros
+
+
+def test_movimentos_retomam_na_pagina_seguinte_sem_apagar_o_que_ja_veio(espelho_limpo):
+    """O ponto da retomada: o que já desceu não é baixado outra vez."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho
+
+    cli = _OmieFalsoDeMovimentos(paginas=5)
+    with conexao() as conn:
+        # simula a carga tendo morrido depois da página 3
+        espelho.gravar_movimentos(conn, [_movimento_do_omie(c) for c in range(1, 7)])
+        espelho._salvar_pagina(conn, "movimentos", 3)
+        espelho.carregar_movimentos_full(conn, cli)
+
+    assert cli.pedidas == [4, 5], f"baixou páginas demais: {cli.pedidas}"
+    assert consultar("SELECT COUNT(*) FROM movimentos")[0][0] == 10, \
+        "as 6 linhas que já estavam mais as 4 que faltavam"
+
+
+def test_comecando_do_zero_os_movimentos_sao_zerados_antes(espelho_limpo):
+    """Sem isso, uma carga inteira somaria em cima da anterior — dinheiro
+    dobrado, que é justamente o que não pode acontecer com movimento."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho
+
+    with conexao() as conn:
+        espelho.gravar_movimentos(conn, [_movimento_do_omie(c) for c in range(1, 7)])
+        espelho.carregar_movimentos_full(conn, _OmieFalsoDeMovimentos(paginas=5))
+
+    assert consultar("SELECT COUNT(*) FROM movimentos")[0][0] == 10, \
+        "as 6 antigas tinham de ser apagadas antes das 10 novas"
+
+
+def test_se_a_retomada_nao_fechar_a_conta_a_etapa_e_refeita_do_zero(espelho_limpo):
+    """A defesa contra a retomada ter pulado alguma coisa não é confiar: é
+    contar no fim contra o total que o próprio OMIE informou."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho
+
+    cli = _OmieFalsoDeMovimentos(paginas=5)
+    with conexao() as conn:
+        # a marca diz página 3, mas a base está vazia: a conta não vai fechar
+        espelho._salvar_pagina(conn, "movimentos", 3)
+        queixa = espelho.carregar_movimentos_full(conn, cli)
+
+    assert 1 in cli.pedidas, "tinha de refazer do zero ao ver que faltava"
+    assert consultar("SELECT COUNT(*) FROM movimentos")[0][0] == 10
+    assert queixa is None, "refez e fechou: não há do que reclamar"
+
+
+def test_quando_nem_refazendo_fecha_a_tela_fica_sabendo(espelho_limpo):
+    """Carga que termina com menos do que o OMIE diz existir não pode se
+    anunciar como concluída e pronto."""
+    from app.apps.painel.db import conexao
+    from app.apps.painel.sync import espelho
+
+    class _Mentiroso(_OmieFalsoDeMovimentos):
+        def listar_movimentos(self, **k):
+            # diz que são 999 e entrega 10
+            for pagina, _tp, _tr, registros in super().listar_movimentos(**k):
+                yield pagina, self.paginas, 999, registros
+
+    with conexao() as conn:
+        queixa = espelho.carregar_movimentos_full(conn, _Mentiroso(paginas=5))
+
+    assert queixa and "999" in queixa and "OMIE" in queixa
+
+
+def test_a_queixa_da_carga_inicial_chega_na_mensagem_da_tela(monkeypatch):
+    """Carga que terminou com título faltando não pode se anunciar como
+    "concluída" e mais nada — ninguém teria como desconfiar."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.sync import espelho, fato
+
+    monkeypatch.setattr(espelho, "definir_progresso", lambda *a, **k: None)
+    monkeypatch.setattr(
+        espelho, "carga_inicial",
+        lambda *a, **k: ["contas a pagar: a base ficou com 118.000 títulos e o "
+                         "OMIE diz que são 118.635"])
+    monkeypatch.setattr(fato, "reconstruir", lambda conn: (100, 20))
+    monkeypatch.setattr(tarefas, "_carimbar", lambda *a, **k: None)
+    fechou = {}
+    monkeypatch.setattr(tarefas, "_fechar_execucao",
+                        lambda conn, eid, ok, msg, dur=None: fechou.update(
+                            ok=ok, mensagem=msg))
+    import contextlib
+
+    from app.apps.painel import db as painel_db
+    monkeypatch.setattr(painel_db, "conexao",
+                        lambda: contextlib.nullcontext(object()))
+
+    assert tarefas.executar_trabalho("carga_inicial", 1) is True
+    assert "ATENÇÃO" in fechou["mensagem"]
+    assert "118.635" in fechou["mensagem"]

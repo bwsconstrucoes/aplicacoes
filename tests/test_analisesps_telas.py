@@ -4460,3 +4460,30 @@ def test_a_linha_ruim_do_lote_e_apontada_pelo_numero(app_aportes, monkeypatch):
                            {"data": "2026-10-20", "valor": "abacaxi"}]})
     assert resposta.status_code == 400
     assert "Linha 2" in resposta.get_json()["erro"]
+
+
+def test_a_tela_grita_o_lancamento_sem_resposta(app_aportes, monkeypatch):
+    """*"Tá demorando muito."* Quando o envio começa e ninguém sabe como
+    terminou, o pior recado possível é nenhum: a pessoa manda de novo e
+    duplica o que já entrou."""
+    from app.apps.analisesps import aportes_omie
+    monkeypatch.setattr(aportes_omie, "em_duvida", lambda: [
+        {"numero_documento": "APORTE-20260921-AB12", "papel": "conta Provedora",
+         "sentido": "saida", "valor": 1000, "data": "21/09/2026",
+         "criado_por": "Marcelo", "criado_em": "2026-09-21 10:00"}])
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "ficou sem resposta" in html
+    assert "APORTE-20260921-AB12" in html
+    assert "antes de lançar de novo" in html
+
+
+def test_a_tela_desiste_de_esperar_e_diz_o_que_fazer(app_aportes):
+    """O navegador esperava para sempre, e o dono ficou olhando uma tela
+    parada sem saber se tinha entrado. Agora a espera tem teto, e o recado diz
+    a única coisa que importa: não mandar de novo às cegas."""
+    html = como(app_aportes, SENHA_OPERADOR).get(
+        "/analisesps/aportes").get_data(as_text=True)
+    assert "AbortController" in html, "a espera continua sem fim"
+    assert "Não mande de novo" in html
+    assert "O que já foi lançado por aqui" in html

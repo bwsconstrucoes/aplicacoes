@@ -100,10 +100,38 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 | Painel OMIE | `app/apps/painel/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | Análise de SPs | `app/apps/analisesps/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | BaixaBradesco (baixa de comprovantes) | `app/apps/baixabradesco/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.9 e §9 | `HISTORICO.md` |
+| Emissão de NFS-e | `app/apps/emissaonf/` | ⚠️ **ainda não tem README nem HISTORICO** — ver abaixo; por ora, `CONTEXTO.md` §5 e §9 | `HISTORICO.md` (a criar) |
 
 **Ao começar** uma sessão numa área: ler os arquivos da linha, conferir a
 seção "Pendente AGORA" e **perguntar ao dono** se aquilo já aconteceu — o
 estado do mundo pode ter mudado desde que o arquivo foi escrito.
+
+### ⚠️ A emissão de NFS-e entrou na tabela SEM memória (21/09/2026)
+
+Ela é a quinta área, e a única que **não tem `README.md` nem `HISTORICO.md`**.
+São ~7.000 linhas em 48 arquivos, e o `CONTEXTO.md` registra a dívida desde
+sempre: *"⚠️ ainda não documentado aqui"*, *"documentar na próxima vez que
+mexer"*.
+
+**Então a primeira entrega de quem abrir um chat nessa área é a memória, não
+código.** Criar os dois arquivos, no padrão do `analisesps/` e do `painel/`,
+levantando o que der do código e **perguntando ao dono o que só ele sabe** —
+o estado do mundo, as decisões e os motivos, os incidentes. Sem isso, a
+segunda sessão recomeça do zero, e é exatamente o que este arquivo existe
+para impedir.
+
+**Dois riscos próprios dela, que não existem nas outras quatro:**
+
+1. **Nota fiscal emitida não se apaga.** Cancelar ou substituir tem prazo e
+   regra da prefeitura, e nem todo município aceita. É o risco mais alto do
+   repositório — maior que escrever no OMIE, onde no pior caso se apaga um
+   título.
+2. **Ela usa o certificado digital A1 da empresa**
+   (`EMISSAO_NF_CERTIFICADO_P12_BASE64` e a senha). Vale a mesma regra do
+   Análise de SPs: **o arquivo do certificado e a senha nunca entram no
+   chat.** Diagnóstico se faz pelo sistema. E há precedente de credencial
+   vazada nessa área — o `EL_NFSE_TOKEN` ficou no histórico do repositório
+   até ser trocado na origem (`CONTEXTO.md` §9).
 
 **Antes de encerrar, ou sempre que uma entrega ficar pronta**, atualizar o
 `HISTORICO.md` da área: onde o trabalho está, o que está pendente agora, as
@@ -129,8 +157,8 @@ histórico **perdeu** o que aprendeu — o chat não é memória, o repositório
 
 **Mensagem de abertura** que o dono usa num chat novo (basta trocar a área):
 
-> Trabalhe na área **[ERP / Painel OMIE / Análise de SPs / BaixaBradesco]** deste
-> repositório.
+> Trabalhe na área **[ERP / Painel OMIE / Análise de SPs / BaixaBradesco /
+> Emissão de NFS-e]** deste repositório.
 > Leia o `CLAUDE.md` e os arquivos da área indicados nele, me diga em que pé o
 > trabalho está e o que consta como pendente, e confirme comigo antes de
 > começar. Não mexa nas outras áreas. Trabalhe no seu ramo e me pergunte antes

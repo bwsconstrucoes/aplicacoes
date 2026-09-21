@@ -117,7 +117,71 @@ _ERROS_DEFINITIVOS = (
     "não existe",
     "not found",
     "inexistente",
+    # PERIODO CONTABIL FECHADO — 21/09/2026, e foi a origem do estrago.
+    #
+    # "O periodo contabil de Dezembro de 2023 (01/12/23 ~ 31/12/23) foi
+    # bloqueado por Integracao em 01/07 Qua as 06:00."
+    #
+    # A Omie devolve isso como HTTP 500, que o codigo tratava como transitorio.
+    # So que titulo de periodo fechado NUNCA vai ser alterado: repetir e
+    # impossivel de dar certo. Foram 8 tentativas por titulo, e a terceira ja
+    # virou "Consumo redundante detectado" — a Omie acusando a repeticao da
+    # MESMA requisicao. Dai veio o bloqueio geral que travou o sistema inteiro
+    # por horas.
+    "periodo contabil",
+    "período contábil",
+    "bloqueado por integra",       # "bloqueado por Integracao/Integração"
+    # Outras recusas de regra de negocio, que tambem nao melhoram repetindo.
+    "nao e permitido",
+    "não é permitido",
+    "nao pode ser alterado",
+    "não pode ser alterado",
 )
+
+
+# QUANTO TEMPO A OMIE MANDA ESPERAR, dito de duas formas diferentes.
+#
+# 21/09/2026. O dono tentou apropriar um titulo e levou:
+#
+#   [425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.
+#   ERRO: [MAX_TENTATIVAS] Falha apos 8 tentativas em AlterarContaReceber
+#
+# O codigo so reconhecia "Aguarde N segundos". Com a outra redacao, caiu no
+# backoff normal: 8 tentativas somando 112 segundos, todas DENTRO de um bloqueio
+# de 664 — e cada uma piorando o bloqueio, porque é exatamente isso que a Omie
+# esta punindo.
+_SEGUNDOS_PEDIDOS = re.compile(
+    r"(?:aguarde|tente\s+novamente\s+em)\s+(\d+)\s+segundos", re.I)
+
+# Acima disto nao se espera: avisa e para.
+#
+# DOIS TETOS, porque sao dois mundos:
+#
+#   A CARGA roda num processo separado, sozinha, e tem horas pela frente.
+#   Esperar 10 minutos ali e melhor que abortar uma carga de 120 mil titulos.
+#
+#   A TELA roda dentro do servico web, que tem UM worker e 4 vias de
+#   atendimento. Uma espera de um minuto ali prende uma das quatro e trava o
+#   sistema para todo mundo — inclusive para o ERP, que divide o processo.
+#   Melhor parar e dizer quanto falta esperar.
+TETO_DE_ESPERA = 600.0          # padrao: a carga
+TETO_DE_ESPERA_NA_TELA = 30.0   # quem escreve pela tela
+
+
+class OmieBloqueada(Exception):
+    """A Omie bloqueou as chamadas e disse por quanto tempo.
+
+    E diferente de erro: nao ha o que consertar, so esperar. Quem chamou deve
+    PARAR o lote — insistir em outro titulo cai no mesmo bloqueio e o prolonga."""
+
+    def __init__(self, segundos, faultstring=""):
+        self.segundos = int(segundos)
+        self.faultstring = faultstring
+        minutos = max(1, round(self.segundos / 60))
+        super().__init__(
+            f"A Omie bloqueou as chamadas por consumo excessivo e pediu "
+            f"{self.segundos} segundos (~{minutos} min). Nada foi alterado. "
+            f"Tente de novo depois desse tempo.")
 
 
 class OmieAPIError(Exception):
@@ -146,7 +210,8 @@ def erro_definitivo(exc):
 class OmieClient:
     def __init__(self, app_key, app_secret, *,
                  pausa_entre_chamadas=0.3, max_tentativas=8,
-                 backoff_base=1.6, timeout=120, registros_por_pagina=500):
+                 backoff_base=1.6, timeout=120, registros_por_pagina=500,
+                 teto_de_espera=TETO_DE_ESPERA):
         if not app_key or not app_secret:
             raise ValueError("app_key/app_secret ausentes. Configure OMIE_KEY e OMIE_SECRET.")
         self.app_key = app_key
@@ -156,6 +221,7 @@ class OmieClient:
         self.backoff_base = float(backoff_base)
         self.timeout = int(timeout)
         self.registros_por_pagina = int(registros_por_pagina)
+        self.teto_de_espera = float(teto_de_espera)
         self.sessao = requests.Session()
         self.sessao.headers.update({"Content-Type": "application/json"})
 
@@ -217,10 +283,14 @@ class OmieClient:
                 if _texto_e_definitivo(fs):
                     raise OmieAPIError(resp.status_code, fs)
                 espera = self._espera(tentativa, resp.headers.get("Retry-After"))
-                # Omie "Consumo redundante" pede um tempo explicito: "Aguarde N segundos".
-                m = re.search(r"[Aa]guarde\s+(\d+)\s+segundos", fs)
+                # A Omie pede um tempo explicito, em duas redacoes diferentes.
+                m = _SEGUNDOS_PEDIDOS.search(fs)
                 if m:
                     espera = max(espera, float(m.group(1)) + 2.0)
+                # Pedido longo demais: nao adianta insistir, e esperar aqui
+                # prenderia uma das 4 threads do servico. Para e diz por quanto.
+                if espera > self.teto_de_espera:
+                    raise OmieBloqueada(int(espera), fs)
                 log.warning("HTTP %s em %s (tent. %d/%d): %s. Aguardando %.1fs.",
                             resp.status_code, call, tentativa, self.max_tentativas,
                             fs[:120], espera)
@@ -246,6 +316,11 @@ class OmieClient:
                 fs = dados.get("faultstring", "")
                 if not _texto_e_definitivo(fs) and self._texto_e_rate_limit(fs):
                     espera = self._espera(tentativa, None)
+                    m = _SEGUNDOS_PEDIDOS.search(fs)
+                    if m:
+                        espera = max(espera, float(m.group(1)) + 2.0)
+                    if espera > self.teto_de_espera:
+                        raise OmieBloqueada(int(espera), fs)
                     log.warning("Rate limit (faultstring) em %s. Aguardando %.1fs.", call, espera)
                     time.sleep(espera)
                     continue
@@ -334,13 +409,14 @@ class OmieClient:
         return self._listar(URL_CONTARECEBER, "ListarContasReceber", "conta_receber_cadastro",
                             param_extra=param_extra, max_paginas=max_paginas, pagina_inicial=pagina_inicial)
 
-    def listar_movimentos(self, *, param_extra=None, max_paginas=None):
+    def listar_movimentos(self, *, param_extra=None, max_paginas=None,
+                          pagina_inicial=1):
         # Movimentos usa campos com prefixo "n" e registros em "movimentos".
         return self._listar(URL_MOVIMENTOS, "ListarMovimentos", "movimentos",
                             param_extra=param_extra,
                             campo_pagina="nPagina", campo_regpp="nRegPorPagina",
                             campo_totpag="nTotPaginas", campo_totreg="nTotRegistros",
-                            max_paginas=max_paginas)
+                            max_paginas=max_paginas, pagina_inicial=pagina_inicial)
 
     def listar_categorias(self, *, max_paginas=None):
         return self._listar(URL_CATEGORIAS, "ListarCategorias", "categoria_cadastro",

@@ -169,9 +169,71 @@ def ensaiar(plano: dict) -> list:
 # ---------------------------------------------------------------------------
 # A GRAVAÇÃO
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# ⚠️ O CLIENTE DAQUI É OUTRO — 21/09/2026
+#
+# O dono tentou gravar e a tela ficou pendurada: *"tá demorando muito. Com
+# certeza o OMIE já terá respondido."*
+#
+# Ele estava certo, e a causa não era o OMIE. O `OmieClient` nasceu para a
+# CARGA NOTURNA DO PAINEL, que roda sozinha e pode esperar o quanto for: 120
+# segundos de espera por tentativa, OITO tentativas, com pausa crescente entre
+# elas. Pior caso de UMA chamada: 17 minutos. Um lançamento são quatro
+# chamadas (dois títulos e duas baixas): quase 70 minutos.
+#
+# ⚠️ E O ESTRAGO NÃO PARA NA TELA DELE. O serviço roda com 1 processo e 4
+# linhas de atendimento (`--workers 1 --threads 4`). Cada gravação pendurada
+# ocupa uma delas por todo esse tempo — quatro e o monorepo inteiro, os 18
+# blueprints, para de responder. O `--timeout 3600` do gunicorn não socorre:
+# ele deixa passar.
+#
+# Aqui tem gente esperando, então os números são outros:
+#
+#   · 30 s de espera por tentativa — o OMIE responde em segundos; passou
+#     disso, não é lentidão, é alguma coisa errada;
+#   · 3 tentativas, não 8;
+#   · pausa menor entre elas.
+#
+# Pior caso: pouco mais de um minuto e meio por chamada, contra dezessete.
+#
+# ⚠️ REPETIR UMA INCLUSÃO NÃO DUPLICA TÍTULO: o `codigo_lancamento_integracao`
+# vai em toda inclusão, e o OMIE recusa a segunda com "código de integração já
+# cadastrado". É o que torna a retentativa segura mesmo escrevendo.
+# ---------------------------------------------------------------------------
+# ⚠️ E EM 21/09, NO MESMO DIA, O CHAT DO PAINEL CHEGOU AQUI POR OUTRO CAMINHO.
+#
+# Ele levou um bloqueio de verdade do OMIE tentando apropriar um título:
+#
+#   [425] API bloqueada por consumo indevido. Tente novamente em 664 segundos.
+#
+# E descobriu duas coisas que o cliente compartilhado não sabia: que o OMIE
+# diz "tente novamente em N segundos" (e não só "aguarde N segundos"), e que
+# título de período contábil fechado NUNCA vai passar — repetir oito vezes só
+# aprofundava o bloqueio.
+#
+# O conserto dele ficou no cliente compartilhado, e traz o que falta aqui:
+# `teto_de_espera`. Acima dele o cliente levanta `OmieBloqueada` em vez de
+# ficar esperando — e o motivo é exatamente o que escrevemos acima, com as
+# palavras dele: *"a tela roda dentro do serviço web, que tem UM worker e 4
+# vias de atendimento; uma espera de um minuto ali prende uma das quatro e
+# trava o sistema para todo mundo — inclusive para o ERP, que divide o
+# processo."*
+#
+# Dois chats, sem se falarem, no mesmo dia, pelo mesmo motivo. Reusar o teto
+# dele é o certo: teto inventado aqui divergiria do dele na primeira mudança.
+SEGUNDOS_POR_TENTATIVA = 30
+TENTATIVAS = 3
+
+
 def _cliente():
-    from app.apps.painel.sync.omie_client import OmieClient
-    return OmieClient.de_ambiente()
+    from app.apps.painel.sync.omie_client import (TETO_DE_ESPERA_NA_TELA,
+                                                  OmieClient)
+    return OmieClient.de_ambiente(
+        timeout=SEGUNDOS_POR_TENTATIVA,
+        max_tentativas=TENTATIVAS,
+        backoff_base=1.4,
+        teto_de_espera=TETO_DE_ESPERA_NA_TELA,
+    )
 
 
 def _numero_do_titulo(resposta: dict) -> int | None:
@@ -208,6 +270,13 @@ def gravar(plano: dict, quem: str = "", cliente=None) -> dict:
     for t in plano.get("titulos", []):
         url, incluir = PORTAS[t["natureza"]][:2]
         linha = {"titulo": t, "codigo": None, "erro": "", "baixado": False}
+        # ⚠️ REGISTRA ANTES DE CHAMAR, e isto é o que salva quando tudo dá
+        # errado ao mesmo tempo. Se o processo morrer no meio da chamada — o
+        # Render reiniciando, a rede caindo —, sem esta linha não sobraria
+        # nada dizendo que uma inclusão chegou a ser tentada, e ninguém
+        # saberia se há título solto no OMIE. Com ela, a tela mostra
+        # "enviando" e quem for conferir sabe onde procurar.
+        _registrar(plano, t, None, False, "enviando", "", quem)
         try:
             resposta = cli._call(url, incluir, montar_inclusao(t))
             codigo = _numero_do_titulo(resposta)
@@ -217,6 +286,10 @@ def gravar(plano: dict, quem: str = "", cliente=None) -> dict:
                     "ele não dá para desfazer nem para conferir — confira no "
                     "OMIE antes de lançar de novo.")
             linha["codigo"] = codigo
+            # ⚠️ A RESPOSTA INTEIRA VAI PARA O LOG. Quando o dono disser "o
+            # OMIE não mostra o que a tela disse que gravou", é isto que
+            # permite responder com evidência em vez de com hipótese.
+            logger.info("Aportes: %s devolveu %s", incluir, resposta)
             criados.append((t, codigo))
         except Exception as e:  # noqa: BLE001 — a mensagem do OMIE vai inteira
             logger.exception("Aportes: falhou incluir título no OMIE")
@@ -271,11 +344,32 @@ def gravar_varios(planos: list, quem: str = "", cliente=None) -> list:
     controle de excesso de chamadas do OMIE, e criar um por linha jogaria isso
     fora justamente quando mais importa.
     """
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+
     cli = cliente or _cliente()
-    resultados = []
+    resultados, bloqueio = [], None
     for plano in planos:
+        # ⚠️ BLOQUEIO DO OMIE PARA O LOTE INTEIRO, e é o contrário do resto.
+        #
+        # Linha que falha por motivo próprio não leva as outras. Mas bloqueio
+        # não é falha da linha: é o OMIE dizendo "pare". Tentar a próxima cai
+        # no mesmo bloqueio e o PROLONGA — é exatamente a repetição que ele
+        # está punindo. As que sobraram viram "nem tentei", com o tempo que
+        # ele pediu, para o dono saber quando voltar.
+        if bloqueio is not None:
+            resultados.append({
+                "ok": False, "grupo": plano.get("grupo", ""),
+                "erro": f"Nem cheguei a tentar: {bloqueio}",
+                "titulos": [], "avisos": [], "orfaos": []})
+            continue
         try:
             resultados.append(gravar(plano, quem, cliente=cli))
+        except OmieBloqueada as e:
+            logger.warning("Aportes: o OMIE bloqueou o lote — %s", e)
+            bloqueio = e
+            resultados.append({
+                "ok": False, "grupo": plano.get("grupo", ""), "erro": str(e),
+                "titulos": [], "avisos": [], "orfaos": []})
         except Exception as e:  # noqa: BLE001 — a linha ruim não leva o lote
             logger.exception("Aportes: falhou gravar o lançamento %s do lote",
                              plano.get("grupo"))
@@ -373,6 +467,109 @@ def historico(limite: int = 50) -> list:
               "data", "numero_documento", "codigo_lancamento_omie", "baixado",
               "situacao", "erro", "criado_em", "criado_por")
     return [dict(zip(campos, l)) for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# CONFERIR NO OMIE — 21/09/2026
+#
+# ⚠️ NASCEU DE UMA FRASE QUE VALE GUARDAR: *"ele dá as informações tudo como
+# se tivesse acontecido tudo certo, o número do título, tudo verdinho. Aí
+# quando eu vou no OMIE, na conta provedora, não tá aparecendo."*
+#
+# A tela estava dizendo mais do que sabia. "Gravado" significava, na verdade,
+# **o OMIE aceitou a chamada e devolveu um número** — nada além disso. Não
+# significa que o título ficou na conta que mandamos, nem com a categoria que
+# mandamos, nem que a baixa pegou.
+#
+# A diferença entre as duas coisas é justamente onde mora o defeito que
+# ninguém percebe. Então em vez de adivinhar, o sistema PERGUNTA: lê de volta
+# cada título criado e mostra o que o OMIE responde, campo por campo.
+#
+# É LEITURA. Não altera, não exclui, não baixa. Pode ser usado à vontade.
+# ---------------------------------------------------------------------------
+def conferir_no_omie(codigos: list, cliente=None) -> list:
+    """Lê de volta cada título e devolve o que o OMIE diz que guardou.
+
+    Um título que não puder ser lido vira uma linha com o erro — nunca some
+    da lista, porque "não consegui ler" é resposta tão importante quanto as
+    outras: pode ser que ele não exista.
+    """
+    cli = cliente or _cliente()
+    saida = []
+    for item in codigos or []:
+        codigo = item.get("codigo")
+        natureza = item.get("natureza") or "P"
+        linha = {"codigo": codigo, "natureza": natureza, "erro": "",
+                 "achou": False}
+        if not codigo:
+            linha["erro"] = "Sem número de título — nada a consultar."
+            saida.append(linha)
+            continue
+        url, _inc, _exc = PORTAS.get(natureza, PORTAS["P"])[:3]
+        consultar = ("ConsultarContaPagar" if natureza == "P"
+                     else "ConsultarContaReceber")
+        try:
+            cadastro = cli._call(url, consultar,
+                                 {"codigo_lancamento_omie": int(codigo)}) or {}
+        except Exception as e:  # noqa: BLE001 — a mensagem do OMIE vai inteira
+            logger.exception("Aportes: falhou consultar o título %s", codigo)
+            linha["erro"] = str(e)
+            saida.append(linha)
+            continue
+
+        linha.update({
+            "achou": True,
+            # Os nomes vêm do OMIE como ele os devolve; a tela mostra em
+            # português ao lado do que MANDAMOS, para a diferença saltar.
+            "id_conta_corrente": cadastro.get("id_conta_corrente"),
+            "codigo_categoria": cadastro.get("codigo_categoria"),
+            "valor_documento": cadastro.get("valor_documento"),
+            "numero_documento": cadastro.get("numero_documento"),
+            "data_vencimento": cadastro.get("data_vencimento"),
+            "status_titulo": cadastro.get("status_titulo"),
+            "valor_pago": cadastro.get("valor_pago"),
+            "valor_aberto": cadastro.get("valor_aberto"),
+            "baixa_realizada": cadastro.get("baixa_realizada"),
+            "distribuicao": cadastro.get("distribuicao"),
+            "codigo_integracao": cadastro.get("codigo_lancamento_integracao"),
+        })
+        saida.append(linha)
+    return saida
+
+
+def titulos_do_grupo(grupo: str) -> list:
+    """O que ESTE sistema registrou de um lançamento: número e natureza.
+
+    É por aqui que a conferência sabe o que perguntar ao OMIE — e o confronto
+    entre o que registramos e o que ele responde é a resposta.
+    """
+    try:
+        from .db import consultar
+        linhas = consultar(
+            "SELECT codigo_lancamento_omie, natureza, papel, sentido, "
+            "       id_conta_corrente, codigo_categoria, valor, "
+            "       numero_documento, baixado, situacao "
+            "  FROM analisesps.aporte_lancamento "
+            " WHERE grupo = ? ORDER BY id", (str(grupo),))
+    except Exception:  # noqa: BLE001
+        logger.exception("Aportes: não consegui ler os títulos do grupo %s",
+                         grupo)
+        return []
+    campos = ("codigo", "natureza", "papel", "sentido", "id_conta_corrente",
+              "codigo_categoria", "valor", "numero_documento", "baixado",
+              "situacao")
+    return [dict(zip(campos, l)) for l in linhas]
+
+
+def em_duvida() -> list:
+    """Lançamentos que ficaram em "enviando" — nem confirmados, nem falhados.
+
+    Uma linha só fica assim se o processo morreu no meio da chamada ao OMIE:
+    o Render reiniciando, a rede caindo, a publicação de uma versão nova. O
+    título PODE existir lá dentro. É a lista que responde "mandei de novo ou
+    não?", e por isso ela aparece na tela em vez de dormir no banco.
+    """
+    return [h for h in historico(200) if h.get("situacao") == "enviando"]
 
 
 def orfaos() -> list:
