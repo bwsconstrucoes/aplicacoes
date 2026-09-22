@@ -962,6 +962,9 @@ def prestacao_contas():
 
     projetos = sorted(calculo["por_projeto"].items(),
                       key=lambda kv: -kv[1]["resultado"])
+    sem_projeto = sorted(o for o, info in calculo["obras"].items()
+                         if not (info.get("projeto") or "").strip()
+                         and o != consultas.SEM_OBRA)
     # As duas sobras aparecem juntas: para quem le, "custo que nao coube em
     # obra nenhuma" e uma coisa so, venha ela da estrutura ou do juro.
     sobras = calculo["rateio"]["sobras"] + calculo["juros"]["sobras"]
@@ -983,6 +986,7 @@ def prestacao_contas():
         juros_memoria=memoria[-36:],
         juros_por_deficit=str(calculo["config"].get("juros_por_deficit", "1")) == "1",
         tem_participacoes=bool(prestacao_dados.participacoes()),
+        sem_projeto=sem_projeto, nao_apropriado=consultas.SEM_OBRA,
     )
 
 
@@ -1016,8 +1020,27 @@ def _calcular_cenario(cenario: dict) -> dict:
     deptos = _deptos_administrativos(config)
 
     apuracao = consultas.apuracao_por_obra_mes(medida)
+    # O que o cenario deixa FORA da analise sai aqui, antes de qualquer conta:
+    # nao vira obra, nao recebe estrutura nem juros, nao pesa na regua.
+    itens_fora = cenario.get("excluidas")
+    if itens_fora is None:
+        itens_fora = cenarios.excluidas(cenario["id"])
+    # A estrutura (matriz e filial) nunca e obra: nao entra na lista do que
+    # se pode tirar, mesmo que esteja no projeto tirado.
+    fora = prestacao.obras_fora_da_analise(
+        itens_fora, consultas.obra_para_projeto(),
+        {(l.get("obra") or "").strip() for l in apuracao} - set(deptos))
+    if fora:
+        apuracao = [l for l in apuracao if (l.get("obra") or "").strip() not in fora]
     obras = prestacao.classificar_obras(apuracao, config)
     admin = consultas.despesa_administrativa(deptos, medida)
+    # Duas coisas que o dono viu misturadas em 22/09/2026 e que sao diferentes:
+    # "(nao apropriado)" e lancamento SEM OBRA; "(sem projeto)" e obra que
+    # existe mas nao esta ligada a projeto nenhum no OMIE — dado a corrigir la.
+    # A tela lista as obras sem projeto pelo nome, para dar para corrigir.
+    sem_projeto = sorted(o for o, info in obras.items()
+                         if not (info.get("projeto") or "").strip()
+                         and o != consultas.SEM_OBRA)
 
     pesos = cenario.get("pesos") or cenarios.pesos(cenario["id"])
     excecoes = consultas.lancamentos_administrativos_por_codigo(
@@ -1036,6 +1059,8 @@ def _calcular_cenario(cenario: dict) -> dict:
               if cenario.get("criterio") == "faturamento"
               else consultas.custo_de_pessoal_por_obra_mes(
                   config["grupo_pessoal"], medida))
+    if fora:
+        driver = [d for d in driver if d[1] not in fora]
 
     rateio = prestacao.calcular_rateio_do_cenario(
         admin_sem_juros, excecoes, driver, obras, pesos,
@@ -1045,7 +1070,8 @@ def _calcular_cenario(cenario: dict) -> dict:
     # O caixa e lido UMA vez e devolvido: a tela de resultado desenha a vida de
     # uma obra com ele, e reler significaria varrer o fato inteiro de novo.
     caixa = [(mes.strftime("%Y-%m"), obra, valor)
-             for mes, obra, valor in consultas.caixa_mensal_por_obra()]
+             for mes, obra, valor in consultas.caixa_mensal_por_obra()
+             if obra not in fora]
     if por_deficit:
         juros = prestacao.alocar_juros_por_deficit(
             caixa, juros_por_mes, obras,
@@ -1064,7 +1090,9 @@ def _calcular_cenario(cenario: dict) -> dict:
     return {
         "cenario": cenario, "obras": obras, "rateio": rateio, "juros": juros,
         "apurado": apurado, "por_obra": por_obra, "quotas": quotas,
-        "driver": driver, "caixa": caixa,
+        "driver": driver, "caixa": caixa, "excluidas": sorted(fora),
+        "sem_projeto": sem_projeto,
+        "tem_nao_apropriado": consultas.SEM_OBRA in obras,
         "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
         "sobras": rateio["sobras"] + juros["sobras"],
     }
@@ -1109,7 +1137,7 @@ def _contas_da_matriz(config, cenario, medida: str) -> list[dict]:
 @bp.route("/prestacao/montagem")
 def cenario_montagem():
     """A tela unica: a regua, o que se divide, os juros e quem divide."""
-    from . import cenarios, consultas, prestacao_dados
+    from . import cenarios, consultas, prestacao, prestacao_dados
     if consultas.base_vazia():
         return redirect(url_for("painel.configuracoes", primeira="1"))
 
@@ -1131,6 +1159,13 @@ def cenario_montagem():
                 if atual else []),
         socios=prestacao_dados.socios(apenas_ativos=True),
         obras_do_painel=_opcoes_no_escopo().get("obras", []),
+        projetos_do_painel=_opcoes_no_escopo().get("projetos", []),
+        # onde estao os juros na base, categoria por categoria — e quais a
+        # prestacao esta contando. E a resposta para "na controladoria tem
+        # 1,6 milhao e aqui 191 mil".
+        juros_conf=consultas.conferencia_dos_juros(
+            prestacao.categorias_de_juros(config.get("categoria_juros")
+                                          or prestacao.CATEGORIA_JUROS_PADRAO)),
         aberto_grupo=request.args.get("grupo", ""),
         aberto_categoria=request.args.get("categoria", ""),
         lancamentos=(consultas.lancamentos_administrativos(
@@ -1182,6 +1217,11 @@ def cenario_gravar():
                                      request.form.get("obra", ""))
     elif acao == "apagar_participacao" and cenario_id:
         cenarios.apagar_participacao(request.form["participacao_id"])
+    elif acao == "excluir" and cenario_id:
+        for item in request.form.getlist("item"):
+            cenarios.excluir(cenario_id, item)
+    elif acao == "reincluir" and cenario_id:
+        cenarios.reincluir(cenario_id, request.form.get("item", ""))
 
     return redirect(url_for("painel.cenario_montagem",
                             cenario=cenario_id or None,
@@ -1252,6 +1292,10 @@ def cenario_resultado():
         obra_grafico=obra, trilha=trilha, grafico=grafico,
         obras_para_grafico=[nome for nome, _n in por_obra],
         criterios=cenarios.CRITERIOS,
+        excluidas=calculo["excluidas"],
+        sem_projeto=calculo["sem_projeto"],
+        tem_nao_apropriado=calculo["tem_nao_apropriado"],
+        nao_apropriado=consultas.SEM_OBRA,
     )
 
 
@@ -1814,7 +1858,7 @@ def configuracoes():
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
         conferencia = sumidos = aportes_conf = observacoes = fora = None
-        contas_conf = aportes_base = None
+        contas_conf = aportes_base = juros_conf = None
         conferir = False
         recarga = None
     else:
@@ -1842,7 +1886,7 @@ def configuracoes():
         conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
         conferencia = sumidos = aportes_conf = observacoes = fora = None
-        contas_conf = aportes_base = None
+        contas_conf = aportes_base = juros_conf = None
         if not vazia and (conferir or procurado is not None):
             # CADA UMA POR SI. Em 20/09/2026 o dono apertou o botão e "não
             # apresentou resultado" — e não havia como saber se tinha dado erro,
@@ -1870,6 +1914,12 @@ def configuracoes():
             contas_conf = _conferir(consultas.conferencia_das_contas,
                                     conferencias_com_erro,
                                     "Conta de onde o dinheiro saiu")
+            from . import prestacao, prestacao_dados
+            juros_conf = _conferir(
+                lambda: consultas.conferencia_dos_juros(prestacao.categorias_de_juros(
+                    prestacao_dados.config().get("categoria_juros")
+                    or prestacao.CATEGORIA_JUROS_PADRAO)),
+                conferencias_com_erro, "Onde estão os juros de empréstimo")
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1890,6 +1940,7 @@ def configuracoes():
         observacoes=observacoes,
         fora=fora,
         contas_conf=contas_conf,
+        juros_conf=juros_conf,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
         pessoas=_pessoas_do_painel(estado_migracoes),

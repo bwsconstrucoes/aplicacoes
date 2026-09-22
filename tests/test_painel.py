@@ -567,6 +567,10 @@ def _consultar_falso(sql, params=()):
         return [(18500.0, -12300.0)]
     if sql.count("SUM(CASE WHEN tipo") == 4:                    # resumo do resultado
         return [(9500.0, -6150.0, 9000.0, -6000.0)]
+    if "(jur|emprest" in sql:                                   # onde estão os juros
+        return []
+    if "AS encargos_de_atraso" in sql:
+        return [(0.0,)]
     raise AssertionError(f"consulta sem resposta no dublê: {sql.strip()[:120]}")
 
 

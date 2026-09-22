@@ -166,3 +166,23 @@ def test_na_parceria_o_juro_entra_na_base_de_todos():
     externo = next(q for q in quotas if q["tipo"] == "Externo")
     assert externo["base"] == pytest.approx(940.0)     # 1000 direto − 60 de juro
     assert sum(q["quota"] for q in quotas) == pytest.approx(840.0)
+
+
+def test_varias_categorias_de_juros_separadas_por_ponto_e_virgula():
+    """22/09/2026: 1,6 milhão na controladoria, 191 mil aqui. Parte da
+    diferença é nome que a configuração de UMA categoria não alcançava."""
+    resto, juros = prestacao.separar_juros(
+        [_admin(JAN, "Juros sobre Empréstimos", -900.0),
+         _admin(JAN, "IOF", -100.0),
+         _admin(JAN, "Aluguel", -2000.0)],
+        "Juros sobre Empréstimos; iof")
+    assert juros == {JAN: -1000.0}
+    assert [l["categoria"] for l in resto] == ["Aluguel"]
+
+
+def test_obras_fora_da_analise_abrem_o_projeto():
+    fora = prestacao.obras_fora_da_analise(
+        ["projeto:CEARA", "obra:PONTE"],
+        {"CASA": "CEARA", "PONTE": "SUL", "MURO": "SUL"},
+        ["CASA", "PONTE", "MURO"])
+    assert fora == {"CASA", "PONTE"}

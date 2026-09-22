@@ -408,3 +408,80 @@ def test_o_dono_baixa_o_cenario_inteiro(cenario, monkeypatch):
     r = cliente.get(f"/painel/baixar/cenario?cenario={cenario}")
     assert r.status_code == 200
     assert len(r.data) > 2000, "planilha vazia"
+
+
+# ===========================================================================
+# 7. Fora da análise — 22/09/2026
+# ===========================================================================
+# O dono: "preciso poder remover projetos ou obras da análise".
+
+def test_obra_fora_da_analise_nao_recebe_estrutura_nem_juros(cenario):
+    from app.apps.painel import cenarios
+    cenarios.excluir(cenario, "obra:MUITA GENTE")
+    conta = _calcular(cenario)
+    assert "MUITA GENTE" not in conta["por_obra"]
+    assert conta["excluidas"] == ["MUITA GENTE"]
+    # toda a estrutura (1.200) vai para quem ficou
+    assert conta["por_obra"]["POUCA GENTE"]["rateio"] == pytest.approx(-1200, abs=0.02)
+    assert all(obra != "MUITA GENTE" for obra, _m in conta["juros"]["alocacoes"])
+
+
+def test_projeto_fora_da_analise_tira_todas_as_obras_dele(cenario):
+    """As duas obras do teste estão no projeto ALFA: tirar o projeto esvazia
+    a análise — e a tela avisa em vez de quebrar."""
+    from app.apps.painel import cenarios
+    cenarios.excluir(cenario, "projeto:ALFA")
+    conta = _calcular(cenario)
+    assert conta["por_obra"] == {}
+    assert sorted(conta["excluidas"]) == ["MUITA GENTE", "POUCA GENTE"]
+
+
+def test_tirar_e_voltar_pela_tela(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cliente = _cliente(monkeypatch)
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "excluir", "cenario_id": str(cenario), "item": ["obra:MUITA GENTE"]})
+    assert cenarios.excluidas(cenario) == ["obra:MUITA GENTE"]
+    html = cliente.get(f"/painel/prestacao/resultado?cenario={cenario}").get_data(as_text=True)
+    assert "Fora da análise neste cenário" in html and "MUITA GENTE" in html
+    cliente.post("/painel/prestacao/montagem", data={
+        "acao": "reincluir", "cenario_id": str(cenario), "item": "obra:MUITA GENTE"})
+    assert cenarios.excluidas(cenario) == []
+
+
+def test_duplicar_leva_as_excluidas(cenario):
+    from app.apps.painel import cenarios
+    cenarios.excluir(cenario, "obra:MUITA GENTE")
+    copia = cenarios.duplicar(cenario, "Cópia")
+    assert cenarios.excluidas(copia) == ["obra:MUITA GENTE"]
+
+
+# ===========================================================================
+# 8. Onde estão os juros — 22/09/2026
+# ===========================================================================
+def test_a_conferencia_lista_toda_categoria_que_fala_em_juro(base, monkeypatch):
+    """"Na controladoria tem 1,6 milhão, no painel só vejo 191 mil." A
+    conferência mostra CADA categoria com cara de juro, em que análise está e
+    quanto foi pago — e marca a que a prestação conta."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        # uma parcela de empréstimo no Fluxo de Caixa: o painel não a vê como despesa
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (901,'2. Contas a Pagar','Fluxo de Caixa','PAGO','Quitado',"
+            "         'Empréstimos - Amortização','Financeiras',?,'ALFA','BANCO',"
+            "         '2025-03-10',2025,-50000,0,0,0)", (MATRIZ,))
+        conn.commit()
+    conf = consultas.conferencia_dos_juros({"juros sobre empréstimos"})
+    por_nome = {l["categoria"]: l for l in conf["linhas"]}
+    assert por_nome["Juros sobre Empréstimos"]["configurada"] is True
+    assert por_nome["Juros sobre Empréstimos"]["analise"] == "DRE"
+    assert por_nome["Empréstimos - Amortização"]["configurada"] is False
+    assert por_nome["Empréstimos - Amortização"]["analise"] == "Fluxo de Caixa"
+    assert conf["total_configurado_dre"] == pytest.approx(600.0)
+
+    html = _cliente(monkeypatch).get("/painel/configuracoes?conferir=1").get_data(as_text=True)
+    assert "Onde estão os juros de empréstimo" in html

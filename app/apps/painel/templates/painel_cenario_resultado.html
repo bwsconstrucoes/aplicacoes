@@ -43,6 +43,28 @@
   meses depois.
 </p>
 
+{% if excluidas %}
+<div class="aviso info">
+  <b>Fora da análise neste cenário:</b> {{ excluidas|join(' · ') }}.
+  Não recebem estrutura nem juros e não entram na quota de ninguém.
+</div>
+{% endif %}
+
+{% if sem_projeto or tem_nao_apropriado %}
+<div class="aviso info">
+  {% if sem_projeto %}
+  <b>Obras sem projeto no OMIE:</b> {{ sem_projeto|join(' · ') }}.
+  Aparecem como "(sem projeto)". Toda obra pertence a um projeto — isto é dado
+  para corrigir no cadastro da obra no OMIE; na próxima atualização ela entra
+  no projeto certo sozinha.<br>
+  {% endif %}
+  {% if tem_nao_apropriado %}
+  <b>"{{ nao_apropriado }}"</b> é outra coisa: lançamento <b>sem obra
+  nenhuma</b>. O conserto é apropriar o lançamento (no OMIE, ou pelo Explorador).
+  {% endif %}
+</div>
+{% endif %}
+
 {% if not quotas %}
 <div class="aviso erro">
   <b>Ninguém foi nomeado neste cenário.</b> O resultado por obra aparece abaixo,

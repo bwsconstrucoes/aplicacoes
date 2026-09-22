@@ -2048,6 +2048,41 @@ rápido e outras nem vai."* Três causas, todas conhecidas, nenhuma aleatória:
 3. **Uma carga ou atualização rodando ao mesmo tempo.** O serviço tem 4
    threads; uma carga toma uma delas por horas e disputa o banco com as telas.
 
+## Cenário: obras fora da análise, e onde estão os juros — 22/09/2026
+
+Três pedidos do dono, juntos, com a frase que dói: *"tá muito foda isso. Não
+consigo ter confiança no painel. Pra todo lado que olho tem erro."*
+
+1. **Tirar obras ou projetos da análise.** Cada cenário tem a sua lista
+   ("obra:NOME" / "projeto:NOME", migração 018). O que sai não recebe
+   estrutura nem juros, não entra na quota de ninguém e não pesa na régua. A
+   estrutura (matriz e filial) nunca entra nessa lista, mesmo que esteja no
+   projeto tirado — o teste pegou isso. Duplicar leva a lista junto.
+
+2. **"Na controladoria tem 1,6 milhão de juros de empréstimo, no painel só
+   vejo 191 mil."** Não chutei: uma conferência nova, "Onde estão os juros de
+   empréstimo na base" (na montagem do cenário e em Configurações), lista
+   toda categoria cujo nome fala em juro, empréstimo, financiamento, IOF,
+   encargo ou amortização, com a análise em que o OMIE a põe (DRE ou Fluxo de
+   Caixa), quanto foi pago, e marca a que a prestação conta. As hipóteses,
+   nesta ordem:
+   - a configuração alcançava **um nome só** ("Juros sobre Empréstimos");
+     agora aceita vários, separados por ponto-e-vírgula;
+   - **parcela de empréstimo lançada inteira** (principal e juro juntos)
+     fica no Fluxo de Caixa — não é despesa para o painel, e o juro que
+     está dentro dela **não aparece em lugar nenhum**. Se for isso, o
+     conserto é no OMIE (separar o juro) ou é uma tabela de amortização —
+     decisão do dono;
+   - filtro de ano na tela.
+   A conferência diz qual das três é.
+
+3. **"(sem projeto)" com 90 mil ao lado de "(não apropriado)" com 7 mil —
+   "sem projeto só pode ser coisa não apropriada."** São duas coisas, e a
+   tela agora explica e nomeia: **(não apropriado)** é lançamento sem obra
+   nenhuma; **(sem projeto)** é obra que existe mas não está ligada a projeto
+   no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
+   nome. Na prestação antiga e no cenário.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

@@ -397,6 +397,68 @@
   {% endif %}
 </div>
 
+<!-- ===================== FORA DA ANÁLISE ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Fora da análise</h3>
+    <small>obras e projetos que este cenário não considera</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    O que sair daqui <b>não recebe estrutura, não recebe juros, não entra na
+    quota de ninguém e não pesa na régua</b>. Cada cenário tem a sua lista:
+    comparar "com o Ceará" e "sem o Ceará" é duplicar o cenário e tirar num só.
+  </p>
+  <form method="post" class="form-grade">
+    <input type="hidden" name="acao" value="excluir">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+    <div class="campo" style="grid-column: 1 / span 2">
+      <label for="item">Tirar da análise</label>
+      <select id="item" name="item" multiple size="8">
+        {% if projetos_do_painel %}
+        <optgroup label="Projetos inteiros">
+          {% for p in projetos_do_painel %}
+          <option value="projeto:{{ p }}">Projeto — {{ p }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
+        <optgroup label="Obras">
+          {% for o in obras_do_painel %}
+          <option value="obra:{{ o }}">{{ o }}</option>
+          {% endfor %}
+        </optgroup>
+      </select>
+      <p class="dica">Segure Ctrl (ou ⌘) para marcar vários.</p>
+    </div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" type="submit">Tirar</button>
+    </div>
+  </form>
+  {% if cenario.excluidas %}
+  <div class="tabela-rolagem" style="max-height:260px; margin-top:10px">
+    <table>
+      <thead><tr><th class="sem-ordem">Fora</th><th class="sem-ordem"></th></tr></thead>
+      <tbody>
+        {% for item in cenario.excluidas %}
+        <tr>
+          <td class="desc">{% if item.startswith('projeto:') %}Projeto — {{ item[8:] }}{% else %}{{ item[5:] }}{% endif %}</td>
+          <td>
+            <form method="post">
+              <input type="hidden" name="acao" value="reincluir">
+              <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+              <input type="hidden" name="item" value="{{ item }}">
+              <button class="btn secundario" type="submit">Voltar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+{% if juros_conf %}{% include "painel_juros_conferencia.html" %}{% endif %}
+
 <!-- ===================== APAGAR ===================== -->
 <div class="cartao">
   <div class="cartao-cab"><h3>Apagar este cenário</h3></div>

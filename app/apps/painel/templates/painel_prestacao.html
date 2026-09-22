@@ -94,6 +94,19 @@
   </div>
 </div>
 
+{% if sem_projeto %}
+<div class="aviso info">
+  {% if sem_projeto %}
+  <b>Obras sem projeto no OMIE:</b> {{ sem_projeto|join(' · ') }}.
+  Aparecem como "(sem projeto)". Toda obra pertence a um projeto — isto é dado
+  para corrigir no cadastro da obra no OMIE; na próxima atualização ela entra
+  no projeto certo sozinha.<br>
+  {% endif %}
+  <b>"{{ nao_apropriado }}"</b> é outra coisa: lançamento <b>sem obra
+  nenhuma</b>. O conserto é apropriar o lançamento (no OMIE, ou pelo Explorador).
+</div>
+{% endif %}
+
 <!-- ===================== POR PROJETO ===================== -->
 <div class="cartao">
   <div class="cartao-cab">

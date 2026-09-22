@@ -185,7 +185,21 @@ SEM_DEFICIT = {
 }
 
 
-def separar_juros(despesa_admin, categoria_juros: str):
+def categorias_de_juros(configurado) -> set:
+    """As categorias que contam como juro de empréstimo, em minúsculas.
+
+    Aceita VÁRIAS, separadas por ponto-e-vírgula: no OMIE o juro pode estar em
+    mais de um nome ("Juros sobre Empréstimos", "Juros Bancários", "IOF"…), e
+    o dono viu 1,6 milhão na controladoria contra 191 mil aqui (22/09/2026)
+    — parte da diferença é nome que a configuração não alcançava."""
+    if isinstance(configurado, (list, tuple, set)):
+        partes = configurado
+    else:
+        partes = str(configurado or "").split(";")
+    return {p.strip().lower() for p in partes if p and p.strip()}
+
+
+def separar_juros(despesa_admin, categoria_juros):
     """Tira do bolo da estrutura o que for juro de empréstimo.
 
     Sem isto o juro seria rateado DUAS vezes — uma pelo pessoal, junto com o
@@ -194,12 +208,12 @@ def separar_juros(despesa_admin, categoria_juros: str):
 
     Juro lançado direto numa obra não passa por aqui: ele já é despesa daquela
     obra, e mexer nisso seria tirar de quem o assumiu."""
-    alvo = (categoria_juros or "").strip().lower()
-    if not alvo:
+    alvos = categorias_de_juros(categoria_juros)
+    if not alvos:
         return list(despesa_admin), {}
     resto, juros = [], {}
     for linha in despesa_admin:
-        if (linha.get("categoria") or "").strip().lower() == alvo:
+        if (linha.get("categoria") or "").strip().lower() in alvos:
             juros[linha["mes"]] = juros.get(linha["mes"], 0.0) + linha["valor"]
         else:
             resto.append(linha)
@@ -308,6 +322,21 @@ def total_por_obra(alocacoes) -> list[dict]:
         total[obra] = total.get(obra, 0.0) + valor
     return sorted(({"obra": o, "valor": round(v, 2)} for o, v in total.items()),
                   key=lambda l: l["valor"])
+
+
+def obras_fora_da_analise(itens, mapa_projeto: dict, obras) -> set:
+    """As obras que o cenário deixa de fora: as nomeadas uma a uma, e todas as
+    obras dos projetos nomeados. O que sai daqui não recebe estrutura, não
+    recebe juros e não entra na quota de ninguém."""
+    fora = set()
+    for item in itens or ():
+        item = (item or "").strip()
+        if item.startswith("obra:"):
+            fora.add(item[len("obra:"):])
+        elif item.startswith("projeto:"):
+            alvo = item[len("projeto:"):]
+            fora |= {o for o in obras if (mapa_projeto.get(o) or "") == alvo}
+    return fora
 
 
 # ---------------------------------------------------------------------------

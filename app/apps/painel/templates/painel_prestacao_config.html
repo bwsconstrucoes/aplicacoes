@@ -388,8 +388,10 @@
       <label for="categoria_juros">Categoria dos juros de empréstimo</label>
       <input id="categoria_juros" name="categoria_juros"
              value="{{ config.categoria_juros or 'Juros sobre Empréstimos' }}">
-      <p class="dica">O nome exato como está no OMIE. É por ele que o juro é
-        separado do resto do custo da matriz.</p>
+      <p class="dica">O nome exato como está no OMIE — <b>várias, separadas por
+        ponto-e-vírgula</b> (ex.: Juros sobre Empréstimos; IOF; Juros Bancários).
+        É por ele que o juro é separado do resto do custo da matriz. A
+        conferência "Onde estão os juros" mostra os nomes que existem na base.</p>
     </div>
     <div class="campo">
       <label for="juros_por_deficit">Quem paga os juros de empréstimo</label>

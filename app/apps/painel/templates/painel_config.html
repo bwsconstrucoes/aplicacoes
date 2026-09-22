@@ -824,6 +824,10 @@
 {% endif %}
 
 {# ===== O DINHEIRO QUE ANDOU NA CONTA E NAO ESTA EM TELA NENHUMA ===== #}
+{% if juros_conf %}
+<div style="margin-top:14px">{% include "painel_juros_conferencia.html" %}</div>
+{% endif %}
+
 {% if contas_conf %}
 <div class="cartao" style="margin-top:14px;
      border-left:4px solid {{ 'var(--verde)' if contas_conf.tem_perna_bancaria else 'var(--vermelho)' }}">
