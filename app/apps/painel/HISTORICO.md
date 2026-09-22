@@ -1885,14 +1885,17 @@ esse documento, conferiu no OMIE, achou R$ 86 mil, e concluiu, com razão, que
 o número não tinha pé nem cabeça. **Um número que não dá para conferir é um
 número errado**, mesmo quando a soma está certa.
 
-**O que mudou:**
+**A decisão do dono, ao ver a composição:** *"não fica legal agrupado,
+confunde, tem que separar mesmo os títulos."* Então a linha da Receita de Obra
+passou a ser **o título**, não a medição:
 
-- a lista diz **quantos títulos** cada medição junta (`· 3 títulos`, em
-  âmbar), e a planilha ganhou a coluna;
-- o detalhe da medição abre com **os títulos um a um** — nº no OMIE,
-  documento, data, cliente, bruto, recebido, retido, a receber, observação —
-  e, quando são vários, explica de onde vem o agrupamento e **onde se corrige**
-  (na observação do título, no OMIE; na próxima atualização ele sai sozinho);
+- **um título por linha**, com o documento dele, o valor dele e o nº no OMIE.
+  A medição continua escrita ao lado, como rótulo — mas o número é o do
+  título, que é o que se confere no OMIE;
+- o detalhe (`/receita/titulo/<nº>`) mostra o título e os recebimentos dele,
+  e recusa com "não encontrado" quem está preso a outra obra;
+- o rodapé conta títulos. O agrupamento por medição sobrevive só no rótulo e
+  na Receita Analítico (que já abria por recebimento);
 - a lista passou a sair **por data**, mais recente primeiro. Era por valor, e o
   dono viu "aleatório";
 - **as outras receitas saíram da lista de medições.** Rendimento, estorno e

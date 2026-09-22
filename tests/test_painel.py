@@ -508,12 +508,12 @@ def _consultar_falso(sql, params=()):
                  dt.date(2025, 4, 1), dt.date(2025, 4, 8), 7)]
     if "medicao_rotulo" in sql and "COUNT(*)" in sql:           # os totais
         return [(3, 7000.0, 300.0, 500.0)]
-    if "GROUP BY codigo_lancamento" in sql:                     # os títulos de UMA medição
+    if "GROUP BY codigo_lancamento" in sql and "MAX(observacao)" in sql:  # um título
         return [(998877, "NF123", "CLIENTE A", "Obra Um", dt.date(2025, 5, 2),
-                 "OBRA1|Medição No: 3", "", 7000.0, 300.0, 500.0)]
-    if "medicao_rotulo" in sql:                                 # as medições
+                 "OBRA1|Medição No: 3", "", 7000.0, 300.0, 500.0, "OBRA1 | Medição 3")]
+    if "medicao_rotulo" in sql:                                 # a receita, um título por linha
         return [("OBRA1 | Medição 3", "CLIENTE A", "Obra Um", "PROJ-A",
-                 "NF123", "", dt.date(2025, 5, 2), 7000.0, 300.0, 500.0, 1)]
+                 "NF123", "", dt.date(2025, 5, 2), 7000.0, 300.0, 500.0, 998877)]
     if "categoria <> 'Receita de Obras'" in sql:
         return [("Estorno de Despesas", 900.0, 0.0, 4)]
     if "FROM fato_recebimentos" in sql:

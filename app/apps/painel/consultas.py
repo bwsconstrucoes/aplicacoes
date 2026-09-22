@@ -692,12 +692,13 @@ def obra_para_projeto() -> dict:
 # (migração 004), então quem agrupa é o banco.
 
 def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
-    """As medições de obra, da mais recente para a mais antiga.
+    """A receita de obra, UM TÍTULO POR LINHA, da mais recente para a mais antiga.
 
-    Era da maior para a menor, e o dono achou que "apareciam de forma
-    aleatória" (22/09/2026): quem confere receita contra o OMIE lê por data. A
-    mais recente vem primeiro porque a lista tem teto — cortar as antigas dói
-    menos que cortar as do mês.
+    Até 22/09/2026 a linha era a MEDIÇÃO — todos os títulos cuja observação diz
+    a mesma medição da mesma obra, somados. O dono conferiu uma linha contra o
+    OMIE, achou um título oito vezes menor, e decidiu: *"não fica legal
+    agrupado, confunde, tem que separar mesmo os títulos"*. A medição continua
+    escrita ao lado, como rótulo; o número é o do título.
 
     Bruto = o que já entrou + o que o cliente reteve + o que falta receber.
     `visao`: 'todas', 'a_receber' (só com saldo) ou 'quitadas'."""
@@ -707,25 +708,19 @@ def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
         "quitadas": "HAVING ABS(SUM(a_pagar_receber)) <= 0.005",
     }.get(visao, "")
     sql = f"""
-        SELECT COALESCE(NULLIF(medicao_rotulo,''), '(sem medição)'),
+        SELECT COALESCE(NULLIF(MAX(medicao_rotulo),''), '(sem medição)'),
                MAX(razao_social), MAX(departamento), MAX(projeto),
                MAX(numero_documento), MAX(link), MAX(data),
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
                SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
                SUM(a_pagar_receber),
-               -- quantos TITULOS do OMIE esta linha junta. Uma medicao e
-               -- faturada em varias notas, e isso e de proposito; mas a tela
-               -- mostrava UM documento para o grupo inteiro, e o dono foi
-               -- conferir esse documento no OMIE: achou R$ 86 mil onde a
-               -- linha dizia R$ 664 mil. 22/09/2026. Sem este numero a linha
-               -- nao tem como ser conferida.
-               COUNT(DISTINCT codigo_lancamento)
+               codigo_lancamento
           FROM fato{where}
-         GROUP BY 1 {tendo}
-         ORDER BY MAX(data) DESC NULLS LAST, 1 LIMIT {int(limite)}"""
+         GROUP BY codigo_lancamento {tendo}
+         ORDER BY MAX(data) DESC NULLS LAST, codigo_lancamento LIMIT {int(limite)}"""
     saida = []
     for (rotulo, cliente, obra, projeto, documento, link, data,
-         recebido, retido, a_receber, titulos) in consultar(sql, params):
+         recebido, retido, a_receber, codigo) in consultar(sql, params):
         recebido, retido = float(recebido or 0), float(retido or 0)
         a_receber = float(a_receber or 0)
         bruto = recebido + retido + a_receber
@@ -738,52 +733,20 @@ def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
         else:
             situacao = "A receber"
         saida.append({
-            "medicao": rotulo, "cliente": cliente or "", "obra": obra or "",
-            "projeto": projeto or "", "documento": documento or "",
-            "link": link or "", "data": data,
+            "codigo": codigo, "medicao": rotulo, "cliente": cliente or "",
+            "obra": obra or "", "projeto": projeto or "",
+            "documento": documento or "", "link": link or "", "data": data,
             "recebido": recebido, "retido": retido, "a_receber": a_receber,
-            "bruto": bruto, "situacao": situacao, "titulos": int(titulos or 0),
+            "bruto": bruto, "situacao": situacao,
         })
     return saida
 
 
-def titulos_da_medicao(medicao: str, limite: int = 200) -> list[dict]:
-    """Os títulos do OMIE que compõem UMA medição, um por linha.
-
-    É o que permite conferir a linha da Receita de Obra contra o OMIE: a
-    medição junta os títulos cuja observação diz a mesma medição da mesma obra
-    (várias notas, principal e reajuste, fontes de recurso diferentes). Quando
-    a observação está errada num título, ele cai na medição errada — e é aqui
-    que isso aparece, com o número para achar o título lá."""
-    sql = f"""
-        SELECT codigo_lancamento, MAX(numero_documento), MAX(razao_social),
-               MAX(departamento), MAX(data), MAX(observacao), MAX(link),
-               SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(a_pagar_receber)
-          FROM fato
-         WHERE analise = 'DRE' AND tipo = ? AND medicao_rotulo = ?
-         GROUP BY codigo_lancamento
-         ORDER BY MAX(data) NULLS LAST, codigo_lancamento
-         LIMIT {int(limite)}"""
-    campos = ("codigo", "documento", "cliente", "obra", "data", "observacao",
-              "link", "recebido", "retido", "a_receber")
-    saida = []
-    for linha in consultar(sql, [REC, medicao]):
-        d = dict(zip(campos, linha))
-        for campo in ("recebido", "retido", "a_receber"):
-            d[campo] = float(d[campo] or 0)
-        d["bruto"] = d["recebido"] + d["retido"] + d["a_receber"]
-        d["documento"] = d["documento"] or ""
-        saida.append(d)
-    return saida
-
-
 def total_das_medicoes(f: Filtros, visao: str = "todas") -> dict:
-    """Os totais das medições — somados pelo banco, não pela lista da tela.
+    """Os totais da receita de obra — somados pelo banco, não pela lista.
 
-    A tela mostra as 300 maiores; o total tem de ser de TODAS, senão o rodapé
-    não bate com o DRE."""
+    A tela mostra os 300 títulos mais recentes; o total tem de ser de TODOS,
+    senão o rodapé não bate com o DRE. `quantas` conta títulos."""
     where, params = f.where(f"analise = 'DRE' AND tipo = ? AND {RECEITA_DE_OBRA}", [REC])
     tendo = {
         "a_receber": "HAVING ABS(SUM(a_pagar_receber)) > 0.005",
@@ -796,8 +759,8 @@ def total_das_medicoes(f: Filtros, visao: str = "todas") -> dict:
                    SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END) AS retido,
                    SUM(a_pagar_receber) AS aberto
               FROM fato{where}
-             GROUP BY COALESCE(NULLIF(medicao_rotulo,''), '(sem medição)') {tendo}
-          ) AS por_medicao"""
+             GROUP BY codigo_lancamento {tendo}
+          ) AS por_titulo"""
     quantas, recebido, retido, aberto = consultar(sql, params)[0]
     recebido, retido = float(recebido or 0), float(retido or 0)
     aberto = float(aberto or 0)
@@ -810,16 +773,71 @@ def recebimentos_da_medicao(medicao: str, limite: int = 200) -> list[dict]:
 
     Vem da outra tabela (`fato_recebimentos`), que abre por movimento: um título
     recebido em três parcelas aparece aqui como três linhas."""
-    sql = """
+    return _recebimentos("medicao = ?", [medicao], limite)
+
+
+def recebimentos_do_titulo(codigo, limite: int = 200) -> list[dict]:
+    """O mesmo, para UM título — a linha da Receita de Obra é o título."""
+    return _recebimentos("codigo_lancamento = ?", [int(codigo)], limite)
+
+
+def _recebimentos(condicao: str, params, limite: int) -> list[dict]:
+    sql = f"""
         SELECT data, valor, juros, multa, desconto, conta_corrente, parcela,
                origem, numero_documento
           FROM fato_recebimentos
-         WHERE medicao = ?
+         WHERE {condicao}
          ORDER BY data NULLS LAST, id
-         LIMIT %d""" % int(limite)
+         LIMIT {int(limite)}"""
     campos = ("data", "valor", "juros", "multa", "desconto", "conta_corrente",
               "parcela", "origem", "numero_documento")
-    return [dict(zip(campos, linha)) for linha in consultar(sql, (medicao,))]
+    return [dict(zip(campos, linha)) for linha in consultar(sql, params)]
+
+
+def titulos_da_medicao(medicao: str, limite: int = 200) -> list[dict]:
+    """Os títulos do OMIE que compõem UMA medição, um por linha.
+
+    É o que permite conferir a linha da Receita de Obra contra o OMIE: a
+    medição junta os títulos cuja observação diz a mesma medição da mesma obra
+    (várias notas, principal e reajuste, fontes de recurso diferentes). Quando
+    a observação está errada num título, ele cai na medição errada — e é aqui
+    que isso aparece, com o número para achar o título lá."""
+    return _titulos_de_receita("medicao_rotulo = ?", [medicao], limite)
+
+
+def titulo_da_receita(codigo, f: "Filtros | None" = None) -> dict | None:
+    """UM título de receita, ou None quando ele não existe — ou não está no
+    recorte de quem pergunta. O recorte entra aqui de propósito: é o que impede
+    alguém preso a uma obra de abrir o título de outra pelo número."""
+    where, params = (f or Filtros()).where("codigo_lancamento = ?", [int(codigo)])
+    linhas = _titulos_de_receita(where[len(" WHERE "):], params, 1)
+    return linhas[0] if linhas else None
+
+
+def _titulos_de_receita(condicao: str, params, limite: int) -> list[dict]:
+    sql = f"""
+        SELECT codigo_lancamento, MAX(numero_documento), MAX(razao_social),
+               MAX(departamento), MAX(data), MAX(observacao), MAX(link),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+               SUM(a_pagar_receber),
+               MAX(medicao_rotulo)
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ? AND {condicao}
+         GROUP BY codigo_lancamento
+         ORDER BY MAX(data) NULLS LAST, codigo_lancamento
+         LIMIT {int(limite)}"""
+    campos = ("codigo", "documento", "cliente", "obra", "data", "observacao",
+              "link", "recebido", "retido", "a_receber", "medicao")
+    saida = []
+    for linha in consultar(sql, [REC] + list(params)):
+        d = dict(zip(campos, linha))
+        for campo in ("recebido", "retido", "a_receber"):
+            d[campo] = float(d[campo] or 0)
+        d["bruto"] = d["recebido"] + d["retido"] + d["a_receber"]
+        d["documento"] = d["documento"] or ""
+        saida.append(d)
+    return saida
 
 
 def outras_receitas(f: Filtros, limite: int = 60) -> list[dict]:

@@ -672,6 +672,32 @@ def receita_detalhe(medicao):
     )
 
 
+@bp.route("/receita/titulo/<int:codigo>")
+def receita_titulo(codigo):
+    """UM titulo de receita: os dados dele e os recebimentos que o quitaram.
+
+    Desde 22/09/2026 a linha da Receita de Obra e o titulo, nao a medicao —
+    o dono: "nao fica legal agrupado, confunde, tem que separar mesmo os
+    titulos". O detalhe acompanha."""
+    from . import auth, consultas
+    titulo = consultas.titulo_da_receita(codigo, _filtros_do_pedido())
+    if titulo is None:
+        # fora do recorte ou inexistente: "nao encontrado", nunca "nao pode"
+        return auth.nao_encontrado()
+    recebimentos = consultas.recebimentos_do_titulo(codigo)
+    total = {campo: sum(float(r[campo] or 0) for r in recebimentos)
+             for campo in ("valor", "juros", "multa", "desconto")}
+    cabecalho = (f"Título {codigo}"
+                 + (f" · doc. {titulo['documento']}" if titulo.get("documento") else ""))
+    return render_template(
+        "painel_medicao.html",
+        **_contexto_comum("receita"),
+        medicao=cabecalho, recebimentos=recebimentos, total=total,
+        titulos=[titulo], bruto_dos_titulos=titulo["bruto"],
+        rotulo_da_medicao=titulo.get("medicao") or "",
+    )
+
+
 @bp.route("/fluxo")
 def fluxo():
     """Entradas e saidas mes a mes, e o caixa acumulado."""

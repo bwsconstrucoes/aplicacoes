@@ -4,7 +4,7 @@
 
 {% block conteudo %}
 <h2>{{ medicao }}
-  <small>os recebimentos que quitaram esta medição</small>
+  <small>{% if rotulo_da_medicao %}{{ rotulo_da_medicao }} · {% endif %}os recebimentos que quitaram este título</small>
 </h2>
 
 <p style="margin:-6px 0 14px">
@@ -30,7 +30,7 @@
 <div class="cartao" style="margin-bottom:14px;
      border-left:4px solid {{ 'var(--ambar)' if titulos|length > 1 else 'var(--verde)' }}">
   <div class="cartao-cab">
-    <h3>Títulos do OMIE nesta medição</h3>
+    <h3>O título no OMIE</h3>
     <small>{{ titulos|length }} título(s) · bruto {{ brl(bruto_dos_titulos) }}</small>
   </div>
   {% if titulos|length > 1 %}

@@ -71,21 +71,30 @@ def _cliente(monkeypatch):
     return cliente
 
 
-def test_a_lista_diz_quantos_titulos_a_medicao_junta(base, monkeypatch):
+def test_a_lista_tem_um_titulo_por_linha(base, monkeypatch):
+    """"Não fica legal agrupado, confunde, tem que separar mesmo os títulos."
+    Cada título com o documento dele e o valor dele — o que o dono confere no
+    OMIE é exatamente o que está na linha."""
     html = _cliente(monkeypatch).get("/painel/receita").get_data(as_text=True)
-    assert "3 títulos" in html
-    assert "664.875,43" in html          # a soma dos três — o número que ele viu
-
-
-def test_o_detalhe_lista_os_titulos_um_a_um(base, monkeypatch):
-    from urllib.parse import quote
-    html = _cliente(monkeypatch).get(
-        "/painel/receita/" + quote(ROTULO)).get_data(as_text=True)
-    assert "Esta linha junta 3 títulos" in html
     for doc in ("PM1339984827", "PM1339984900", "PM1339985001"):
         assert doc in html
     assert "86.828,71" in html           # o título que ele conferiu, no valor dele
-    assert "1001" in html                # e o número para achá-lo no OMIE
+    assert "<b>R$ 664.875,43</b>" not in html   # nenhuma LINHA com a soma que confundiu
+    assert "3 títulos" in html           # o rodapé conta títulos
+
+
+def test_o_detalhe_e_de_um_titulo_so(base, monkeypatch):
+    html = _cliente(monkeypatch).get("/painel/receita/titulo/1001").get_data(as_text=True)
+    assert "Título 1001" in html and "PM1339984827" in html
+    assert "86.828,71" in html
+    assert "PM1339984900" not in html    # o vizinho de medição não entra
+    assert ROTULO in html                # mas a medição continua escrita
+
+
+def test_titulo_fora_do_recorte_nao_existe(base, monkeypatch):
+    """Quem só vê uma obra não abre o título de outra pelo número."""
+    r = _cliente(monkeypatch).get("/painel/receita/titulo/1001?obra=OUTRA")
+    assert r.status_code == 404
 
 
 def test_a_funcao_devolve_um_titulo_por_linha(base):
@@ -107,7 +116,7 @@ def test_a_receita_de_obra_sai_por_data_e_nao_por_valor(base, monkeypatch):
                      " WHERE codigo_lancamento = 1001")
         conn.commit()
     itens = consultas.medicoes(consultas.Filtros())
-    assert [m["medicao"] for m in itens] == ["CREPEBELEM | Medição 2", ROTULO]
+    assert [m["codigo"] for m in itens] == [1001, 1003, 1002]
 
 
 def test_outras_receitas_nao_entram_na_lista_de_medicoes(base, monkeypatch):
@@ -140,10 +149,10 @@ def test_outras_receitas_nao_entram_na_lista_de_medicoes(base, monkeypatch):
     consultas.esquecer_listas()
 
     itens = consultas.medicoes(consultas.Filtros())
-    assert [m["medicao"] for m in itens] == [ROTULO]
-    assert itens[0]["retido"] == pytest.approx(1000.0)
+    assert {m["medicao"] for m in itens} == {ROTULO}
+    assert next(m for m in itens if m["codigo"] == 1001)["retido"] == pytest.approx(1000.0)
     total = consultas.total_das_medicoes(consultas.Filtros())
-    assert total["quantas"] == 1 if "quantas" in total else True
+    assert total["quantas"] == 3            # três títulos; o rendimento não conta
 
     html = _cliente(monkeypatch).get("/painel/receita").get_data(as_text=True)
     assert "Medição 9" not in html
