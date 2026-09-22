@@ -1335,6 +1335,10 @@ falha é literalmente *"o relatório mostrou 'Bradesco (previsão)'"*.
 Basta **"Só refazer os números"** — os movimentos já estão na base, não precisa
 baixar nada do OMIE.
 
+**Correção em 22/09/2026:** o conserto acima trocou a fonte mas lia a perna
+errada do movimento, e a tela não mudou. Ver *"A conta da baixa continuava
+errada"*, mais abaixo.
+
 ## Título pago em parcelas: UMA LINHA POR BAIXA — 21/09/2026
 
 O dono, no mesmo dia e sobre o mesmo relatório:
@@ -1780,6 +1784,48 @@ conferir que a nova bate.
   régua dos juros já resolve sozinha);
 - **Os percentuais de cada sócio e parceiro.** O cadastro existe e a conta
   existe; falta o dado, que só ele tem.
+
+## A conta da baixa continuava errada — 22/09/2026
+
+O dono: *"refiz os números do painel, mas o problema das contas permaneceu"*.
+
+**O que tinha acontecido.** O conserto de 21/09 trocou a **fonte** da conta —
+do título (`id_conta_corrente`) para o movimento de baixa (`ncodcc`). Só que o
+OMIE guarda cada baixa em **duas pernas**, e o código estava lendo a errada:
+
+- a **consolidada** (`cLiquidado = 'S'`) é o *resumo do título* — e carrega a
+  conta **do título**, a da previsão. Era dela que a conta saía. Trocar de
+  tabela e continuar lendo essa perna deu exatamente o mesmo número de antes;
+- a **bancária** (`cLiquidado` vazio, `nValLiquido = 0`, uma por conta que o
+  dinheiro tocou) é a única que sabe **por onde o dinheiro saiu**.
+
+O `_escolher_recebimentos` já sabia dessa armadilha — é ele quem desmonta as
+duas pernas para não dobrar o caixa — e o título pago em parcelas já usava a
+conta de cada perna bancária. Só o título pago **de uma vez** (a esmagadora
+maioria) caía no atalho da consolidada.
+
+**O conserto:** `_conta_de_onde_saiu`, no `fato.py`. Entre as pernas que o
+`_escolher_recebimentos` escolhe, vale a de maior valor; empate, a mais
+recente. Sem perna com conta, fica a consolidada, e depois a previsão — a
+linha nunca perde a informação. Um teste reproduz a cena: previsto na 7,
+resumo na 7, dinheiro saiu da 9, o relatório tem de dizer 9.
+
+**E uma conferência nova, "Conta de onde o dinheiro saiu"**, em Configurações,
+porque desta vez eu não tenho como olhar a base real: ela conta, no espelho,
+quantas pernas bancárias existem e em quantas a conta é diferente da do
+título — e quantas consolidadas diferem (a aposta é: quase nenhuma). Se a
+base **não tiver** perna bancária nenhuma, a caixa fica vermelha e diz o que
+isso significa: a conta real não está no espelho, refazer os números não muda
+nada, e ela teria de vir de outra listagem do OMIE com uma carga nova.
+
+**O que o dono precisa fazer:** depois de publicado, **"Só refazer os
+números"** de novo — o espelho já tem as duas pernas, nada precisa ser baixado
+do OMIE. E rodar as conferências para ler a caixa nova.
+
+**Lição:** um conserto "confirmado por teste" pode confirmar só a leitura do
+código, não a do mundo. O teste de 21/09 modelava a conta na perna consolidada
+porque eu assumi que era lá que ela estava. Quando o dono diz que não mudou,
+a primeira pergunta é *de qual pedaço do dado* o número está vindo.
 
 ## O que falta
 

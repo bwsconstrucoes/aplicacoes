@@ -824,6 +824,72 @@
 {% endif %}
 
 {# ===== O DINHEIRO QUE ANDOU NA CONTA E NAO ESTA EM TELA NENHUMA ===== #}
+{% if contas_conf %}
+<div class="cartao" style="margin-top:14px;
+     border-left:4px solid {{ 'var(--verde)' if contas_conf.tem_perna_bancaria else 'var(--vermelho)' }}">
+  <div class="cartao-cab"><h3>Conta de onde o dinheiro saiu</h3></div>
+  {% if contas_conf.tem_perna_bancaria %}
+  <div class="aviso ok">
+    A base tem <b>{{ '{:,}'.format(contas_conf.bancaria.pernas).replace(',', '.') }}</b>
+    movimentos bancários de baixa, e em
+    <b>{{ '{:,}'.format(contas_conf.bancaria.diferentes).replace(',', '.') }}</b> deles
+    a conta é <b>diferente</b> da conta prevista no título. É essa conta que o
+    relatório passa a mostrar. Nos
+    {{ '{:,}'.format(contas_conf.consolidada.pernas).replace(',', '.') }} resumos
+    consolidados, só {{ '{:,}'.format(contas_conf.consolidada.diferentes).replace(',', '.') }}
+    diferem — o resumo repete a conta do título, por isso ler dele não mudava nada.
+  </div>
+  {% else %}
+  <div class="aviso erro">
+    <b>A base não tem o movimento bancário das baixas</b> — só o resumo
+    consolidado, que repete a conta prevista no título. Assim não há de onde
+    tirar a conta real: refazer os números não muda nada, e a conta teria de vir
+    de outra listagem do OMIE, com uma carga nova.
+  </div>
+  {% endif %}
+  <p class="cartao-dica">
+    O OMIE guarda cada baixa em duas pernas: o <b>resumo do título</b>, que
+    carrega a conta onde se previu pagar, e o <b>movimento bancário</b>, um por
+    conta que o dinheiro tocou. Até 22/09/2026 o relatório lia o resumo. Esta
+    conferência <b>não altera número nenhum</b>: ela diz se a base tem a
+    informação certa e quanto dela o relatório antigo mostrava errado.
+    {% if contas_conf.bancaria.sem_conta %}
+    <br><br>{{ '{:,}'.format(contas_conf.bancaria.sem_conta).replace(',', '.') }}
+    movimentos bancários vieram <b>sem conta</b>: nesses, vale a conta do título.
+    {% endif %}
+  </p>
+  {% if contas_conf.exemplos %}
+  <details style="margin-top:10px" open>
+    <summary style="cursor:pointer; font-weight:600">Os maiores em que a conta muda</summary>
+    <div class="tabela-rolagem" style="max-height:300px; margin-top:8px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Título OMIE</th>
+          <th class="sem-ordem">Natureza</th>
+          <th class="sem-ordem">Prevista no título</th>
+          <th class="sem-ordem">De onde saiu</th>
+          <th class="sem-ordem direita">Valor</th>
+          <th class="sem-ordem">Data</th>
+        </tr></thead>
+        <tbody>
+        {% for e in contas_conf.exemplos %}
+          <tr>
+            <td class="dados">{{ e.titulo }}</td>
+            <td class="desc">{{ e.natureza }}</td>
+            <td class="desc">{{ e.prevista }}</td>
+            <td class="desc"><b>{{ e.bancaria }}</b></td>
+            <td class="dados direita">{{ brl(e.valor) }}</td>
+            <td class="desc">{{ e.data }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if fora %}
 <div class="cartao" style="margin-top:14px;
      border-left:4px solid {{ 'var(--vermelho)' if fora.linhas else 'var(--verde)' }}">

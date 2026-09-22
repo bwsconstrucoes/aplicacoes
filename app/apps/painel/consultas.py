@@ -2194,6 +2194,58 @@ def cobertura_das_observacoes() -> dict:
             "pct": round((com_obs or 0) * 100 / (total or 1), 1)}
 
 
+def conferencia_das_contas() -> dict:
+    """A conta que o relatorio mostra e a de onde o dinheiro saiu?
+
+    22/09/2026, o dono: *"refiz os numeros do painel, mas o problema das contas
+    permaneceu"*. O OMIE guarda cada baixa em duas pernas: a CONSOLIDADA (o
+    resumo do titulo, que repete a conta do titulo — a da previsao) e a
+    BANCARIA (uma por conta que o dinheiro tocou). Esta conferencia mede, na
+    base de verdade, quantas pernas de cada tipo existem e em quantas a conta
+    e DIFERENTE da do titulo. Se a consolidada quase nunca difere e a bancaria
+    difere, o relatorio tem de ler a bancaria — e e isso que o `fato` faz
+    desde hoje.
+
+    So mede. Nao altera nada."""
+    por_perna = {}
+    for perna, pernas, diferentes, sem_conta in consultar(
+        """SELECT CASE WHEN m.cliquidado = 'S' OR COALESCE(m.nvalliquido, 0) > 0
+                       THEN 'consolidada' ELSE 'bancaria' END,
+                  COUNT(*),
+                  COUNT(*) FILTER (WHERE m.ncodcc IS NOT NULL
+                                     AND m.ncodcc::text <> COALESCE(t.id_conta_corrente::text, '')),
+                  COUNT(*) FILTER (WHERE m.ncodcc IS NULL)
+             FROM movimentos m
+             JOIN titulos t ON t.codigo_lancamento_omie = m.ncodtitulo
+            WHERE COALESCE(m.nvalpago, 0) > 0 AND COALESCE(m.cliquidado, '') <> 'N'
+            GROUP BY 1"""):
+        por_perna[perna] = {"pernas": pernas or 0, "diferentes": diferentes or 0,
+                            "sem_conta": sem_conta or 0}
+
+    exemplos = [{"titulo": cod, "natureza": "Receber" if nat == "R" else "Pagar",
+                 "prevista": prev or "(sem conta)", "bancaria": banc or "(sem conta)",
+                 "valor": float(v or 0), "data": dtp or "—"}
+                for cod, nat, prev, banc, v, dtp in consultar(
+        """SELECT t.codigo_lancamento_omie, t.natureza, cp.descricao, cb.descricao,
+                  m.nvalpago::float8, m.ddtpagamento
+             FROM movimentos m
+             JOIN titulos t ON t.codigo_lancamento_omie = m.ncodtitulo
+             LEFT JOIN contas_correntes cp ON cp.codigo = t.id_conta_corrente
+             LEFT JOIN contas_correntes cb ON cb.codigo = m.ncodcc
+            WHERE NOT (m.cliquidado = 'S' OR COALESCE(m.nvalliquido, 0) > 0)
+              AND COALESCE(m.nvalpago, 0) > 0 AND COALESCE(m.cliquidado, '') <> 'N'
+              AND m.ncodcc IS NOT NULL
+              AND m.ncodcc::text <> COALESCE(t.id_conta_corrente::text, '')
+            ORDER BY m.nvalpago DESC LIMIT 30""")]
+
+    bancaria = por_perna.get("bancaria", {"pernas": 0, "diferentes": 0, "sem_conta": 0})
+    consolidada = por_perna.get("consolidada", {"pernas": 0, "diferentes": 0, "sem_conta": 0})
+    return {"bancaria": bancaria, "consolidada": consolidada, "exemplos": exemplos,
+            # sem perna bancaria a base NAO TEM a conta real: ai o conserto no
+            # fato nao muda nada e a conta tem de vir de outra listagem do OMIE
+            "tem_perna_bancaria": bancaria["pernas"] > 0}
+
+
 def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
     """De onde a diferença do bloco de Aportes vem — corte a corte.
 

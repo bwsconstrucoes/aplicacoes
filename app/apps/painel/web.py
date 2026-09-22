@@ -1784,6 +1784,7 @@ def configuracoes():
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
         conferencia = sumidos = aportes_conf = observacoes = fora = None
+        contas_conf = None
         conferir = False
         recarga = None
     else:
@@ -1811,6 +1812,7 @@ def configuracoes():
         conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
         conferencia = sumidos = aportes_conf = observacoes = fora = None
+        contas_conf = None
         if not vazia and (conferir or procurado is not None):
             # CADA UMA POR SI. Em 20/09/2026 o dono apertou o botão e "não
             # apresentou resultado" — e não havia como saber se tinha dado erro,
@@ -1830,6 +1832,9 @@ def configuracoes():
             fora = _conferir(consultas.movimentos_fora_do_painel,
                              conferencias_com_erro,
                              "Movimentos fora do painel")
+            contas_conf = _conferir(consultas.conferencia_das_contas,
+                                    conferencias_com_erro,
+                                    "Conta de onde o dinheiro saiu")
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1848,6 +1853,7 @@ def configuracoes():
         aportes_conf=aportes_conf,
         observacoes=observacoes,
         fora=fora,
+        contas_conf=contas_conf,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
         pessoas=_pessoas_do_painel(estado_migracoes),

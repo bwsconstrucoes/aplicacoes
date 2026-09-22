@@ -770,6 +770,70 @@ def test_pago_em_duas_contas_da_uma_linha_para_cada_conta(espelho_limpo):
     assert [round(float(v), 2) for _c, v in linhas] == [300.0, 700.0]
 
 
+def _perna_bancaria(codigo_titulo, pago, conta, data="15/03/2025"):
+    """A OUTRA perna da mesma baixa, como o OMIE devolve: cLiquidado vazio,
+    nValLiquido zero, e a conta por onde o dinheiro de fato passou."""
+    m = _movimento_do_omie(codigo_titulo, pago=pago)
+    m["detalhes"]["nCodCC"] = conta
+    m["detalhes"]["dDtPagamento"] = data
+    m["resumo"]["cLiquidado"] = ""
+    m["resumo"]["nValLiquido"] = 0.0
+    return m
+
+
+def test_a_conta_vem_da_perna_bancaria_e_nao_do_resumo_do_titulo(espelho_limpo):
+    """22/09/2026, o dono: "refiz os números do painel, mas o problema das
+    contas permaneceu".
+
+    O conserto do dia anterior trocou a FONTE (do título para o movimento) mas
+    lia a perna CONSOLIDADA — que é o resumo do título e repete a conta dele.
+    A conta real está na perna bancária. Previsto na 7, resumo na 7, dinheiro
+    saiu da 9: o relatório tem de dizer 9."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(4, valor=1000.0, natureza="R")   # prevista: 7
+    consolidada = _movimento_do_omie(4, pago=1000.0)          # resumo: 7
+    bancaria = _perna_bancaria(4, 1000.0, conta=9)            # saiu da 9
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_movimentos(conn, [consolidada, bancaria])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco (previsão)"),
+            _conta_do_omie(9, "Itaú (onde pagou)")])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT conta_corrente, pago_recebido FROM fato"
+                       " WHERE codigo_lancamento = 4")
+    assert [c for c, _v in linhas] == ["Itaú (onde pagou)"], \
+        f"o relatório mostrou {[c for c, _v in linhas]} — leu o resumo do título"
+    # e a perna bancária NÃO dobrou o valor
+    assert [round(float(v), 2) for _c, v in linhas] == [1000.0]
+
+
+def test_a_conferencia_mede_quantas_contas_o_relatorio_antigo_errava(espelho_limpo):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    from app.apps.painel.sync import espelho
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [_titulo_do_omie(5, valor=1000.0, natureza="R"),
+                                      _titulo_do_omie(6, valor=200.0, natureza="R")], "R")
+        espelho.gravar_movimentos(conn, [
+            _movimento_do_omie(5, pago=1000.0), _perna_bancaria(5, 1000.0, conta=9),
+            _movimento_do_omie(6, pago=200.0), _perna_bancaria(6, 200.0, conta=7)])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco"), _conta_do_omie(9, "Itaú")])
+
+    conf = consultas.conferencia_das_contas()
+    assert conf["tem_perna_bancaria"] is True
+    assert conf["bancaria"] == {"pernas": 2, "diferentes": 1, "sem_conta": 0}
+    assert conf["consolidada"]["diferentes"] == 0
+    assert [e["titulo"] for e in conf["exemplos"]] == [5]
+    assert conf["exemplos"][0]["bancaria"] == "Itaú"
+
+
 # ===========================================================================
 # Título pago em parcelas vira UMA LINHA POR BAIXA — 21/09/2026
 # ===========================================================================
