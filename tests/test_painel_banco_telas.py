@@ -1489,7 +1489,10 @@ def test_o_link_da_medicao_leva_o_filtro_junto(cliente_config):
     from app.apps.painel import consultas
     from app.apps.painel.db import conexao
     with conexao() as conn:
+        # categoria de OBRA: desde 22/09/2026 a lista de medições é só receita
+        # de obra — rendimento, estorno e devolução ficam no bloco de baixo
         conn.execute("UPDATE fato SET tipo = ?, medicao_rotulo = 'MEDICAO 1',"
+                     " categoria = 'Receita de Obras',"
                      " pago_recebido = 5000 WHERE codigo_lancamento = 701", (REC,))
         conn.commit()
     consultas.esquecer_listas()
