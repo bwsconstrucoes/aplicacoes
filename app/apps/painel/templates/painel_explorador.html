@@ -302,7 +302,12 @@
               {# A observacao INTEIRA. Cortar em 60 letras escondia justamente o
                  que identifica o lancamento na hora de achar ele no OMIE. #}
               {% if l.observacao %}<small>{{ l.observacao }}</small>{% endif %}</td>
-            <td class="dados">{{ l.numero_documento or '—' }}</td>
+            <td class="dados">
+              {% if l.link %}
+                <a href="{{ l.link }}" target="_blank" rel="noopener"
+                   title="Abrir no Pipefy">{{ l.numero_documento or 'Pipefy' }} ↗</a>
+              {% else %}{{ l.numero_documento or '—' }}{% endif %}
+            </td>
             <td class="desc">{{ l.conta_corrente or '—' }}</td>
             <td class="dados">{{ l.data_vencimento.strftime('%d/%m/%Y') if l.data_vencimento else '—' }}</td>
             <td class="dados">{{ l.data_pagamento.strftime('%d/%m/%Y') if l.data_pagamento else '—' }}</td>

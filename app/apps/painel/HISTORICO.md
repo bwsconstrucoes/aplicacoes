@@ -2083,6 +2083,14 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## O Explorador ganhou o link do Pipefy — 22/09/2026
+
+Pedido do dono: *"quero que seja adicionado o link pra acessar o Pipefy quando
+pertinente"*. O link já existia na base (é o mesmo do Analítico e do Extrato,
+montado a partir do número do documento); o Explorador não o mostrava. Agora o
+documento vira link quando há cartão no Pipefy, com "↗", e a planilha do
+Explorador ganhou a coluna.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

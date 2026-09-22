@@ -1858,6 +1858,9 @@ COLUNAS_DO_EXPLORADOR = (
     # conferindo o painel contra o OMIE lado a lado.
     "data_vencimento", "data_pagamento",
     "pago_recebido", "a_pagar_receber", "observacao",
+    # O link do Pipefy, quando o documento tem cartao la. 22/09/2026, o dono:
+    # "quero o link pra acessar o pipefy quando pertinente".
+    "link",
 )
 
 

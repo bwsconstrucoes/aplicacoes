@@ -143,6 +143,7 @@ COLUNAS = {
                    ("situacao", "Situação"),
                    ("pago_recebido", "Pago/Recebido"),
                    ("a_pagar_receber", "A pagar/receber"),
+                   ("link", "Pipefy"),
                    ("observacao", "Observação")],
     # a memoria de calculo do rateio da administracao, mes a mes
     "rateio_admin": [("rotulo", "Mês"),
