@@ -25,11 +25,52 @@ from __future__ import annotations
 import hmac
 import logging
 import os
+import time
 import unicodedata
 
 from .db import conexao, consultar
 
 logger = logging.getLogger("painel.saneamento")
+
+# O CADASTRO LIDO NO ENSAIO SERVE PARA O ENVIO.
+#
+# 22/09/2026, o dono, ao alterar UM título: "A Omie bloqueou as chamadas por
+# consumo excessivo e pediu 59 segundos. 0 título(s) alterado(s)." O fluxo da
+# tela é ensaio → executar, e cada um consultava o título no OMIE. Duas
+# consultas iguais em menos de um minuto é o que a Omie chama de "consumo
+# redundante" — e bloqueia. Ou seja: alterar um título logo depois de ensaiá-lo
+# NUNCA funcionava. Foi por isso que "a primeira escrita no OMIE nunca
+# aconteceu".
+#
+# Agora o cadastro lido fica guardado por alguns minutos, e o envio usa o que
+# o ensaio leu: a única chamada nova é a alteração, que é outra chamada. O
+# preço: se alguém mexer no título no OMIE nesses minutos, o envio parte do
+# cadastro de antes. Cinco minutos é curto o bastante para isso ser raro e
+# longo o bastante para ler o ensaio e clicar. Depois de alterado, o cadastro
+# guardado é esquecido — ele já não descreve o título.
+VALIDADE_DO_CADASTRO = 300.0
+_CADASTROS_RECENTES: dict[tuple, tuple[float, dict]] = {}
+
+
+def esquecer_cadastros() -> None:
+    """Zera o que o ensaio guardou. Os testes usam; a tela não precisa."""
+    _CADASTROS_RECENTES.clear()
+
+
+def _consultar_lembrando(cliente, codigo, tipo) -> dict:
+    """O cadastro do título — do ensaio de há pouco, ou do OMIE."""
+    chave = (int(codigo), tipo)
+    agora = time.monotonic()
+    guardado = _CADASTROS_RECENTES.get(chave)
+    if guardado and agora - guardado[0] < VALIDADE_DO_CADASTRO:
+        return guardado[1]
+    cadastro = cliente.consultar_titulo(codigo, tipo)
+    # limpa o que venceu, para o dicionário não crescer para sempre
+    for k, (quando, _c) in list(_CADASTROS_RECENTES.items()):
+        if agora - quando >= VALIDADE_DO_CADASTRO:
+            _CADASTROS_RECENTES.pop(k, None)
+    _CADASTROS_RECENTES[chave] = (agora, cadastro)
+    return cadastro
 
 # Quantos títulos por vez. O limite não é técnico: é para um engano de seleção
 # não virar um estrago de mil títulos antes de alguém perceber.
@@ -366,7 +407,7 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
             continue
 
         try:
-            cadastro = cliente.consultar_titulo(titulo["codigo"], tipo)
+            cadastro = _consultar_lembrando(cliente, titulo["codigo"], tipo)
             novo, mudancas = omie_escrita.preparar_alteracao(
                 cadastro, categoria_do_titulo or None,
                 departamento_do_titulo or None)
@@ -379,6 +420,8 @@ def aplicar(alvos, categoria_nova="", departamento_novo="", *,
                 linha["ok"] = True
             else:
                 retorno = cliente.alterar_titulo(novo, tipo)
+                # o cadastro guardado já não descreve o título: fora com ele
+                _CADASTROS_RECENTES.pop((int(titulo["codigo"]), tipo), None)
                 linha["resultado"] = "Alterado no OMIE."
                 linha["ok"] = True
                 registrar(titulo, False, categoria_do_titulo,

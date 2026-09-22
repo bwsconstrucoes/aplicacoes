@@ -1957,6 +1957,34 @@ decidir coisa cara linha a linha dentro de uma consulta.
 **De passagem, um erro meu:** ao remover o bloco do DRE cortei junto a tabela
 "Por sócio ou parceiro" — um teste do dublê pegou antes de sair daqui.
 
+## Alterar um título logo depois de ensaiá-lo NUNCA funcionava — 22/09/2026
+
+O dono, ao alterar **um** título pelo Explorador:
+
+> *"0 título(s) alterado(s). A Omie bloqueou as chamadas por consumo excessivo
+> e pediu 59 segundos."*
+
+**A causa.** O fluxo da tela é ensaio → executar. Cada um **consultava o
+título no OMIE** — a mesma chamada, com os mesmos parâmetros, com segundos de
+diferença. É exatamente o que a Omie chama de *consumo redundante*, e ela
+bloqueia por um minuto. Como o teto de espera na tela é 30 s, o lote parava
+antes de enviar. Um título só, e nunca dava certo. **É provavelmente por isso
+que "a primeira escrita no OMIE nunca aconteceu"** — estava anotado como
+pendência desde 13/09.
+
+**O conserto.** O cadastro lido no ensaio fica guardado por cinco minutos e o
+envio usa o que o ensaio leu: a única chamada nova é a alteração, que é
+outra chamada. Depois de alterado, o cadastro guardado é esquecido.
+
+**O preço, dito:** se alguém mexer no título no OMIE nesses cinco minutos, o
+envio parte do cadastro de antes. Curto o bastante para ser raro; longo o
+bastante para ler o ensaio e clicar.
+
+**O que o dono precisa fazer agora:** esperar o minuto que a Omie pediu, e
+mandar de novo — ensaio e executar. Se ainda bloquear, é outra coisa
+consumindo o OMIE ao mesmo tempo (uma atualização da base, ou o Análise de
+SPs), e aí é esperar ela acabar.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
