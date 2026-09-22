@@ -1291,6 +1291,13 @@ Feito nesta leva:
       (migração 079).
 - [x] **Desativar e reativar fornecedor pela ficha**, com apagar só para quem
       nunca foi usado (o sistema confere 10 tabelas antes de oferecer).
+- [x] **Varredura do formato dos campos, em todas as telas (22/09/2026).**
+      Máscara automática de CNPJ/CPF, telefone e CEP (o campo é reconhecido
+      pelo nome, inclusive dentro dos diálogos montados na hora); célula de
+      tabela mostrando duas linhas em vez de cortar numa, com o texto inteiro
+      no balãozinho; busca ignorando acento, pontuação de documento e ordem das
+      palavras. Tudo em `erp_base.html`, para tela nova nascer certa sem
+      ninguém lembrar. 32 telas varridas no navegador, zero pendências.
 - [x] **A tela de lançamento, por dentro (22/09/2026).** Busca que travava ao
       digitar (conserto vale para toda lista longa do ERP: espera de 140ms e
       teto de 60 achados, com o corte dito); linha digitável só em boleto e

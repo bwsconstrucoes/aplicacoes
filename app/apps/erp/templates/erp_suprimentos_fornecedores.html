@@ -212,7 +212,7 @@ function visiveis(){
     if (F.regiao.size && !f.regioes.some(r => F.regiao.has(r))) return false;
     if (F.canal.size && !f.canais.some(c => F.canal.has(c))) return false;
     if (b) {
-      const alvo = `${f.razao_social} ${f.nome_fantasia} ${f.cnpj_cpf} ${f.municipio} ` +
+      const alvo = `${f.razao_social} ${f.nome_fantasia} ${f.cnpj_cpf} ${documento(f.cnpj_cpf)} ${f.municipio} ` +
                    `${f.categorias.join(" ")} ${f.contatos.map(c => c.nome).join(" ")}`;
       if (!alvo.toLowerCase().includes(b)) return false;
     }
@@ -276,7 +276,7 @@ function desenhar(){
     <tr data-id="${f.id}" style="cursor:pointer" ${f.ativo ? "" : 'style="opacity:.55"'}>
       <td class="desc"><b>${f.razao_social}</b>
         ${f.nome_fantasia ? `<small>${f.nome_fantasia}</small>` : ""}</td>
-      <td class="dados">${f.cnpj_cpf}</td>
+      <td class="dados">${documento(f.cnpj_cpf)}</td>
       <td>${f.municipio || "—"}${f.uf ? ` / ${f.uf}` : ""}</td>
       <td>${f.porte_rotulo || "—"}</td>
       <td class="dados">${f.regioes.join(", ") || "—"}</td>
@@ -321,7 +321,7 @@ function abrir(id){
       <div class="campo"><label>Nome fantasia</label>
         <input id="fx-fantasia" value="${f.nome_fantasia}" ${editavel}></div>
       <div class="campo"><label>CNPJ/CPF</label>
-        <input value="${f.cnpj_cpf}" disabled></div>
+        <input value="${documento(f.cnpj_cpf)}" disabled></div>
       <div class="campo"><label>E-mail</label>
         <input id="fx-email" value="${f.email}" ${editavel}></div>
       <div class="campo"><label>Telefone</label>

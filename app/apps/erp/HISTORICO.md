@@ -54,6 +54,76 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### 🔍 A VARREDURA DOS CAMPOS — e por que ela foi feita num lugar só
+
+22/09/2026, depois de algumas horas usando o sistema:
+
+> *"Acho que precisa dar uma reanalisada nos campos. Às vezes tem campo assim
+> que fica comendo as informações, deveria ter uma quebra de linha, não tem (…)
+> campo de CPF, CNPJ, como não aparecer a formatação, já deveria aparecer. Os
+> campos que têm busca, dá uma melhorada nessa engrenagem das buscas (…) mas
+> não só para o que eu citei, de uma maneira geral também. Acho que tem que
+> fazer uma varredura mais profunda aí."*
+
+**A decisão que vale registrar não é o que foi consertado, é ONDE.** A queixa
+dele foi *"todas as telas têm algum detalhe assim"* — e é verdade. Consertar
+tela por tela custaria dias e deixaria de fora a próxima que alguém escrever,
+que é exatamente como o problema nasceu. Então **tudo foi para
+`erp_base.html`**, e o observador que já existia (o que põe caixa de busca em
+lista longa) passou a aplicar também as máscaras.
+
+Resultado: uma tela nova nasce com CNPJ formatado, busca decente e célula que
+não come texto, **sem ninguém lembrar de nada**.
+
+**1 · DOCUMENTO, TELEFONE E CEP GANHAM MÁSCARA SOZINHOS.** O campo é
+reconhecido pelo NOME (`cnpj`, `cpf`, `documento`, `telefone`, `celular`,
+`cep`…), inclusive dentro dos diálogos montados na hora. O banco continua
+guardando **só dígitos** — máscara é de leitura e digitação; guardar formatado
+faria "11.222.333/0001-81" e "11222333000181" virarem dois cadastros do mesmo
+CNPJ.
+
+Duas coisas que o cuidado exigiu:
+
+- **O cursor não pula para o fim** ao corrigir no meio do texto. Sem isso a
+  máscara é pior do que não ter.
+- **`perguntar()` passou a dar `name` aos campos.** Sem isso, as dezenas de
+  diálogos do ERP ficavam de fora — e foi essa a diferença entre consertar uma
+  tela e consertar o sistema.
+
+**O defeito que quase passou, e vale mais que o conserto:** a primeira versão do
+reconhecedor aceitava só hífen e sublinhado como fronteira do nome. Como o texto
+examinado é `"id nome"`, o CNPJ pegava — por causa do `_` em `cnpj_cpf` — e o
+**telefone não**. Funcionava o bastante para parecer certo. Só apareceu porque
+exercitei a máscara digitando um telefone de verdade no navegador, não por
+leitura de código.
+
+**2 · A CÉLULA MOSTRA DUAS LINHAS EM VEZ DE CORTAR NUMA.** A regra antiga estava
+certa no problema e apertada demais na solução: nome longo virava uma torre de
+quatro linhas, então cortou-se tudo em uma linha com reticências. Só que aí
+*"MATERIAL PARA A FUNDAÇÃO DO BLOCO B"* vira *"MATERIAL PARA A FUND…"*, e **o que
+distingue um lançamento do outro está no fim da frase**. Duas linhas é o acordo,
+e o texto inteiro fica no balãozinho — mas **só quando sobrou**, porque
+balãozinho repetindo o que já está escrito faz ninguém ler nenhum.
+
+**3 · A ENGRENAGEM DA BUSCA.** Além da espera e do teto (ver a seção da tela de
+lançamento), a comparação passou a ignorar três coisas que ela errava:
+
+- **acento** — "jose" não achava "JOSÉ", e ninguém digita acento com pressa;
+- **pontuação de documento** — colar "11.444.777/0001-61" da nota não achava
+  nada, porque o cadastro guarda só dígitos;
+- **ordem das palavras** — "silva joao" não achava "JOÃO DA SILVA".
+
+E as buscas das próprias telas (Empresas, Colaboradores, Fornecedores) passaram
+a achar o documento nas **duas formas** — agora que a tela mostra formatado,
+procurar pelo que está escrito na tela tem de funcionar.
+
+**A VARREDURA, medida:** 32 telas abertas no navegador e examinadas campo a
+campo — célula cortada sem balãozinho, documento sem formatação, campo sem
+máscara, lista longa sem busca, erro de JavaScript. **Zero pendências.** O
+teste `tests/test_formato_dos_campos.py` guarda as regras e varre os templates
+atrás de documento cru — ele achou três casos que a varredura no navegador não
+alcançou, porque estavam em trecho que só aparece depois de um clique.
+
 ### 🧰 A TELA DE LANÇAMENTO, POR DENTRO (22/09/2026)
 
 Cinco coisas, todas achadas pelo dono usando o sistema, e a mais importante

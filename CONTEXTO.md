@@ -747,6 +747,30 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 22/09/2026 — FORMATO DE CAMPO É DO `erp_base.html` (mexe no `CLAUDE.md`)
+
+O dono, depois de horas usando o ERP: *"todas as telas têm algum detalhe assim
+(…) acho que tem que fazer uma varredura mais profunda."* Máscara de CNPJ
+faltando, célula comendo o fim da descrição, busca travando ao digitar.
+
+**A decisão não foi O QUE consertar, foi ONDE.** Tela por tela custaria dias e
+deixaria de fora a próxima que alguém escrever — que é como o problema nasceu.
+Então máscara, formatação e busca passaram a viver no `erp_base.html`, e o
+observador que já punha caixa de busca em lista longa passou a aplicar também
+as máscaras, reconhecendo o campo pelo NOME.
+
+**Vale para quem for escrever tela nova, em qualquer área que use o
+`erp_base.html`:** não recriar máscara dentro da tela. Dê ao campo um nome que
+diga o que ele é (`cnpj`, `cpf`, `documento`, `telefone`, `cep`) e a formatação
+vem sozinha; a exceção se marca no campo (`data-sem-mascara`).
+
+**O defeito que quase passou merece ficar escrito**, porque é o tipo que
+sobrevive a revisão de código: o reconhecedor aceitava só hífen e sublinhado
+como fronteira do nome, e como o texto examinado é `"id nome"`, o CNPJ pegava
+(pelo `_` de `cnpj_cpf`) e o telefone não. **Funcionava o bastante para parecer
+certo.** Só apareceu ao digitar um telefone de verdade no navegador.
+
+
 ### 21/09/2026 — A EMISSÃO DE NFS-e GANHOU MEMÓRIA (atravessa áreas)
 
 No mesmo dia em que entrou na tabela sem `README.md` nem `HISTORICO.md` (ver a

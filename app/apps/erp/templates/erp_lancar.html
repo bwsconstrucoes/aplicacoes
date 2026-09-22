@@ -200,7 +200,7 @@ async function carregarColaboradores(){
     const d = await api("/erp/api/colaboradores");
     if (!d.colaboradores.length) return;
     els("f-colaborador").innerHTML = `<option value="">— nenhum —</option>` +
-      d.colaboradores.map(c=>`<option value="${c.id}">${c.nome} · ${c.cpf}</option>`).join("");
+      d.colaboradores.map(c=>`<option value="${c.id}">${c.nome} · ${documento(c.cpf)}</option>`).join("");
     comBusca("f-colaborador", "buscar por nome ou CPF…");
   } catch(e) { /* módulo Pessoal pode não estar em uso */ }
 }
@@ -226,7 +226,7 @@ async function carregar(){
         "<b>plano financeiro</b> cadastrados — veja a aba Configurações.", "info");
     }
     els("f-credor").innerHTML = `<option value="">— escolher —</option>` +
-      D.fornecedores.map(f=>`<option value="${f.id}">${f.nome} · ${f.documento}</option>`).join("");
+      D.fornecedores.map(f=>`<option value="${f.id}">${f.nome} · ${documento(f.documento)}</option>`).join("");
     const porGrupo = {};
     D.categorias.forEach(c => (porGrupo[c.grupo] = porGrupo[c.grupo]||[]).push(c));
     els("f-categoria").innerHTML = `<option value="">— escolher —</option>` +
@@ -627,7 +627,7 @@ async function cadastrarCredor(sugestao){
     D.fornecedores = D.fornecedores.filter(x => x.id !== r.credor.id).concat([r.credor]);
     D.fornecedores.sort((a,b) => a.nome.localeCompare(b.nome));
     els("f-credor").innerHTML = `<option value="">— escolher —</option>` +
-      D.fornecedores.map(f=>`<option value="${f.id}">${escapar(f.nome)} · ${escapar(f.documento)}</option>`).join("");
+      D.fornecedores.map(f=>`<option value="${f.id}">${escapar(f.nome)} · ${escapar(documento(f.documento))}</option>`).join("");
     comBusca("f-credor", "buscar credor por nome ou CNPJ…");
     els("f-credor").value = r.credor.id;
     atualizarCredor();

@@ -462,7 +462,7 @@ async function abrirDisparo(){
           ${(p.empresas_possiveis.length ? p.empresas_possiveis
              : (p.empresa ? [p.empresa] : [])).map(e =>
             `<option value="${e.id}" ${p.empresa && e.id === p.empresa.id ? "selected" : ""}
-              >${e.razao_social} · ${e.cnpj}</option>`).join("")}
+              >${e.razao_social} · ${documento(e.cnpj)}</option>`).join("")}
         </select>
         ${p.empresa ? `<div class="dica">Quem recebe vê: ${escapar(p.empresa.remetente)}</div>` : ""}</div>
       <div class="campo"><label>Pedir retorno até</label>

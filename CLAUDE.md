@@ -400,5 +400,12 @@ Empresas e pela criação de obra).
   `app/main.py`. Mas **área nova do ERP** (Suprimentos, Agenda, Contratos) entra
   dentro do `erp`, não como blueprint paralelo: lá já existem navegação, login,
   permissão e auditoria.
+- **Formato de campo é do `erp_base.html`, não da tela.** Máscara de CNPJ/CPF,
+  telefone e CEP, caixa de busca em lista longa e célula que não corta texto já
+  valem sozinhas: o campo é reconhecido pelo NOME (`cnpj`, `cpf`, `documento`,
+  `telefone`, `cep`), inclusive nos diálogos montados na hora — por isso todo
+  campo de `perguntar()` leva `nome`. Tela nova nasce certa sem lembrar de
+  nada; a exceção se marca no campo (`data-sem-mascara`, `data-sem-busca`).
+  Não recriar máscara dentro de tela.
 - Regra de negócio do ERP mora em `core/<dominio>/`, nunca no `routes.py`.
 - Não introduzir dependência nova sem avisar.

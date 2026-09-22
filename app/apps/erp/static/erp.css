@@ -732,13 +732,27 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   .dlg-topo { flex: 0 0 auto; }
   .dlg-corpo { flex: 1 1 auto; max-height: none; padding: 14px 14px 40px; }
 
-  /* 9. Célula não vira torre. Um nome de fornecedor longo quebrava em quatro
-     linhas e a linha da tabela ficava com a altura de um parágrafo — com três
-     títulos a tela acabava. Como a tabela já rola de lado, o certo é manter
-     cada linha em UMA linha e cortar com reticências o que não couber. */
+  /* 9. Célula não vira torre — MAS TAMBÉM NÃO COME A INFORMAÇÃO.
+
+     A regra nasceu certa e ficou apertada demais. O problema original era real:
+     um nome de fornecedor longo quebrava em quatro linhas e a linha da tabela
+     ficava com a altura de um parágrafo — com três títulos a tela acabava.
+     A solução foi cortar tudo em UMA linha com reticências.
+
+     Em 22/09/2026 o dono apontou o outro lado: *"às vezes tem campo assim que
+     fica comendo as informações. Deveria ter uma quebra de linha, não tem."*
+     Com uma linha só, "MATERIAL DE CONSTRUÇÃO PARA A FUNDAÇÃO DO BLOCO B"
+     aparece como "MATERIAL DE CONSTRUÇÃO PARA A FUND…", e o que distingue um
+     lançamento do outro é justamente o FIM da frase.
+
+     DUAS LINHAS é o acordo: cabe a informação que distingue, e a linha da
+     tabela ainda é lida de relance. O texto inteiro continua no `title` (o
+     balãozinho ao parar o mouse) e na ficha, que abre com um clique. */
   .tabela-rolagem td, .tabela-rolagem th { white-space: nowrap; }
   .tabela-rolagem td.desc, .tabela-rolagem td.credor, .tabela-rolagem td.nome {
-    max-width: 230px; overflow: hidden; text-overflow: ellipsis;
+    max-width: 280px; white-space: normal; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    line-height: 1.3; overflow-wrap: anywhere;
   }
   .tabela-rolagem td small, .tabela-rolagem td div { display: inline; }
 }

@@ -351,7 +351,7 @@ async function comoPagar(parcelaId){
       ${d.transferencia ? `<h4>Transferência</h4><div class="cartao">
         <div class="dados">Banco ${d.transferencia.banco} · Ag ${d.transferencia.agencia} ·
           Conta ${d.transferencia.conta}</div>
-        <div class="cartao-dica">${d.transferencia.titular} · ${d.transferencia.documento}</div></div>` : ""}`;
+        <div class="cartao-dica">${d.transferencia.titular} · ${documento(d.transferencia.documento)}</div></div>` : ""}`;
     els("dlg").showModal();
     if (d.pix && window.QRCode) new QRCode(els("qr"), {text: d.pix.copia_e_cola, width: 150, height: 150});
   } catch(e){ aviso("mensagem", e.message, "erro"); }
