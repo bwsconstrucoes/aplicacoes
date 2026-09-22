@@ -94,6 +94,13 @@ def montar(abas, titulo_arquivo: str = "Relatório") -> bytes:
                 # tipo texto resolve sem mexer no rotulo que o dono conhece.
                 if isinstance(valor, str) and valor.lstrip().startswith(("=", "+", "-", "@")):
                     celula.data_type = "s"
+                # Endereço vira LINK de verdade, clicável — 22/09/2026, o dono:
+                # "coloca nos relatórios os links para acessar o Pipefy quando
+                # houver". O texto mostrado é curto; o endereço fica no link.
+                if isinstance(valor, str) and valor.startswith(("http://", "https://")):
+                    celula.hyperlink = valor
+                    celula.value = "Abrir no Pipefy" if "pipefy" in valor.lower() else "Abrir"
+                    celula.style = "Hyperlink"
                 if isinstance(valor, dt.date):
                     celula.number_format = FORMATO_DATA
                 elif isinstance(valor, (int, float)) and not isinstance(valor, bool):
@@ -178,7 +185,7 @@ COLUNAS = {
                 ("observacao", "Observação"),
                 ("valor", "Valor"),
                 ("codigo", "Nº no OMIE"),
-                ("link", "Link")],
+                ("link", "Pipefy")],
     "analitico": [("data", "Data (pagto ou vencto)"),
                   ("data_vencimento", "Vencimento"),
                   ("data_pagamento", "Pagamento"),
@@ -188,6 +195,7 @@ COLUNAS = {
                   ("obra", "Obra"), ("projeto", "Projeto"),
                   ("documento", "Documento"), ("observacao", "Observação"),
                   ("conta", "Conta corrente"), ("situacao", "Situação"),
+                  ("link", "Pipefy"),
                   ("vencimento", "Situação do vencimento"),
                   ("pedido", "Pedido de compra"), ("medicao", "Medição"),
                   ("lancamento", "Nº no OMIE"),
@@ -198,7 +206,8 @@ COLUNAS = {
                  ("documento", "Documento"), ("data", "Data"),
                  ("bruto", "Bruto"), ("recebido", "Recebido"),
                  ("retido", "Retido na fonte"), ("a_receber", "A receber"),
-                 ("situacao", "Situação"), ("codigo", "Nº no OMIE")],
+                 ("situacao", "Situação"), ("codigo", "Nº no OMIE"),
+                 ("link", "Pipefy")],
     "outras": [("categoria", "Categoria"), ("recebido", "Recebido"),
                ("a_receber", "A receber"), ("titulos", "Títulos")],
     "fluxo": [("rotulo", "Mês"), ("entradas", "Entradas"), ("saidas", "Saídas"),

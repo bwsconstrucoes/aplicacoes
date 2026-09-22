@@ -2091,6 +2091,11 @@ montado a partir do número do documento); o Explorador não o mostrava. Agora o
 documento vira link quando há cartão no Pipefy, com "↗", e a planilha do
 Explorador ganhou a coluna.
 
+**E os relatórios também** (*"aproveita e coloca nos relatórios os links para
+acessar o Pipefy quando houver"*): na planilha, o endereço vira uma célula
+**clicável** ("Abrir no Pipefy") — Analítico, Extrato, Receita de Obra e
+Explorador; no PDF, a célula diz "Pipefy" em azul e o clique abre o cartão.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

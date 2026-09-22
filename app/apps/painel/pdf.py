@@ -87,6 +87,10 @@ def _celula(valor, chave: str, titulo: str) -> tuple[str, str]:
 
     if valor is None or valor == "":
         return "", "L"
+    # Endereço vira "Pipefy", clicável (quem escreve a linha passa o link).
+    # O endereço inteiro na célula tomaria a largura da página e não diria nada.
+    if isinstance(valor, str) and valor.startswith(("http://", "https://")):
+        return "Pipefy", "L"
     if isinstance(valor, (dt.date, dt.datetime)):
         return valor.strftime("%d/%m/%Y"), "L"
     if excel._e_dinheiro(titulo) and isinstance(valor, (int, float)):
@@ -215,9 +219,17 @@ class Relatorio:
             listrado = i % 2 == 1
             self.pdf.set_fill_color(*(CINZA_CLARO if listrado else (255, 255, 255)))
             for (chave, titulo), largura in zip(colunas, larguras):
-                texto, alinhamento = _celula(linha.get(chave), chave, titulo)
+                valor = linha.get(chave)
+                texto, alinhamento = _celula(valor, chave, titulo)
+                endereco = (valor if isinstance(valor, str)
+                            and valor.startswith(("http://", "https://")) else "")
+                if endereco:
+                    self.pdf.set_text_color(*AZUL)
                 self.pdf.cell(largura, altura, _recorta(texto, largura),
-                              border=1, align=alinhamento, fill=True)
+                              border=1, align=alinhamento, fill=True,
+                              link=endereco or None)
+                if endereco:
+                    self.pdf.set_text_color(0, 0, 0)
             self.pdf.ln()
 
         if cortadas:
