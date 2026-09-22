@@ -90,6 +90,13 @@ def participacoes(cenario_id) -> list[dict]:
                 " ORDER BY p.obra, s.nome", [int(cenario_id)])]
 
 
+def excluidas(cenario_id) -> list[str]:
+    """O que fica FORA da análise: "obra:NOME" ou "projeto:NOME"."""
+    return [i for (i,) in consultar(
+        "SELECT item FROM cenario_excluida WHERE cenario_id = ? ORDER BY item",
+        [int(cenario_id)])]
+
+
 def completo(cenario_id) -> dict | None:
     """O cenário com tudo o que ele guarda — uma leitura só para a tela."""
     cenario = buscar(cenario_id)
@@ -97,6 +104,7 @@ def completo(cenario_id) -> dict | None:
         return None
     cenario["pesos"] = pesos(cenario_id)
     cenario["participacoes"] = participacoes(cenario_id)
+    cenario["excluidas"] = excluidas(cenario_id)
     return cenario
 
 
@@ -211,6 +219,25 @@ def apagar_participacao(participacao_id) -> None:
         conn.commit()
 
 
+def excluir(cenario_id, item: str) -> None:
+    """Tira uma obra ("obra:NOME") ou um projeto inteiro ("projeto:NOME") da
+    análise deste cenário. Repetir não dá erro."""
+    item = (item or "").strip()
+    if not (item.startswith("obra:") or item.startswith("projeto:")) or len(item) < 6:
+        return
+    with conexao() as conn:
+        conn.execute("INSERT INTO cenario_excluida (cenario_id, item) VALUES (?,?) "
+                     "ON CONFLICT DO NOTHING", (int(cenario_id), item))
+        conn.commit()
+
+
+def reincluir(cenario_id, item: str) -> None:
+    with conexao() as conn:
+        conn.execute("DELETE FROM cenario_excluida WHERE cenario_id = ? AND item = ?",
+                     (int(cenario_id), (item or "").strip()))
+        conn.commit()
+
+
 def duplicar(cenario_id, nome: str) -> int:
     """Copia um cenário inteiro com outro nome.
 
@@ -230,6 +257,10 @@ def duplicar(cenario_id, nome: str) -> int:
             "INSERT INTO cenario_participacao (cenario_id, obra, socio_id, pct) "
             "SELECT ?, obra, socio_id, pct FROM cenario_participacao "
             " WHERE cenario_id = ?",
+            (novo, int(cenario_id)))
+        conn.execute(
+            "INSERT INTO cenario_excluida (cenario_id, item) "
+            "SELECT ?, item FROM cenario_excluida WHERE cenario_id = ?",
             (novo, int(cenario_id)))
         conn.commit()
     return novo

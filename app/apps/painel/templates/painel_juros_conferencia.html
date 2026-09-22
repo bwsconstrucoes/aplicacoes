@@ -1,0 +1,57 @@
+{# Onde estão os juros de empréstimo na base, categoria por categoria.
+   Usado na montagem do cenário e em Configurações › Conferências. #}
+<div class="cartao" style="border-left:4px solid var(--ambar)">
+  <div class="cartao-cab">
+    <h3>Onde estão os juros de empréstimo na base</h3>
+    <small>o que a prestação conta hoje: {{ brl(juros_conf.total_configurado_dre) }}</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    Toda categoria cujo nome fala em <b>juro, empréstimo, financiamento, IOF,
+    encargo ou amortização</b>, com a análise em que o OMIE a põe. A prestação
+    de contas só conta o que está marcado como <b>contada</b> — e só o que está
+    no <b>DRE</b>. O que está no <b>Fluxo de Caixa</b> não é despesa para o
+    painel: uma parcela de empréstimo lançada inteira (principal e juro juntos)
+    fica lá, e o juro que está dentro dela <b>não aparece em lugar nenhum</b>.
+    Para contar uma categoria, escreva o nome dela em Parâmetros › Geral ›
+    "Categoria dos juros de empréstimo" — várias, separadas por ponto-e-vírgula.
+    {% if juros_conf.encargos_de_atraso %}
+    <br><br>Fora desta lista: <b>{{ brl(juros_conf.encargos_de_atraso) }}</b> de
+    juros e multa <b>por atraso</b> em títulos comuns — é a linha "Juros e Multas
+    Pagos" do DRE, e não é juro de empréstimo.
+    {% endif %}
+  </p>
+  {% if juros_conf.linhas %}
+  <div class="tabela-rolagem" style="max-height:360px">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Categoria</th>
+        <th class="sem-ordem">Código</th>
+        <th class="sem-ordem">Análise</th>
+        <th class="sem-ordem">Lado</th>
+        <th class="sem-ordem direita">Títulos</th>
+        <th class="sem-ordem direita">Pago</th>
+        <th class="sem-ordem direita">Em aberto</th>
+        <th class="sem-ordem">Contada?</th>
+      </tr></thead>
+      <tbody>
+      {% for l in juros_conf.linhas %}
+        <tr>
+          <td class="desc"><b>{{ l.categoria or '(sem categoria)' }}</b></td>
+          <td class="dados">{{ l.codigo }}</td>
+          <td class="desc">{{ l.analise }}</td>
+          <td class="desc">{{ l.tipo }}</td>
+          <td class="dados direita">{{ l.titulos }}</td>
+          <td class="dados direita">{{ brl(l.pago) }}</td>
+          <td class="dados direita">{{ brl(l.aberto) }}</td>
+          <td class="desc">{% if l.configurada and l.analise == 'DRE' %}<b>sim</b>
+            {% elif l.configurada %}<span style="color:var(--ambar-escuro, #8a5a00)">configurada, mas fora do DRE</span>
+            {% else %}não{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="aviso info">Nenhuma categoria da base fala em juro ou empréstimo.</div>
+  {% endif %}
+</div>

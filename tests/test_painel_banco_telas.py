@@ -1489,7 +1489,10 @@ def test_o_link_da_medicao_leva_o_filtro_junto(cliente_config):
     from app.apps.painel import consultas
     from app.apps.painel.db import conexao
     with conexao() as conn:
+        # categoria de OBRA: desde 22/09/2026 a lista de medições é só receita
+        # de obra — rendimento, estorno e devolução ficam no bloco de baixo
         conn.execute("UPDATE fato SET tipo = ?, medicao_rotulo = 'MEDICAO 1',"
+                     " categoria = 'Receita de Obras',"
                      " pago_recebido = 5000 WHERE codigo_lancamento = 701", (REC,))
         conn.commit()
     consultas.esquecer_listas()
@@ -1783,58 +1786,54 @@ def base_de_dois_anos(base_para_explorar):
     yield
 
 
-def test_o_bloco_avisa_quanto_o_filtro_esta_escondendo(cliente_config,
-                                                       base_de_dois_anos):
-    """Filtrado em 2026, o bloco mostra R$ 100 mil — e tem de dizer que na base
-    inteira são R$ 884 mil, senão o dono procura um dinheiro que está lá."""
+def test_a_base_inteira_dos_aportes_esta_em_configuracoes(cliente_config,
+                                                        base_de_dois_anos):
+    """Ate 22/09/2026 o bloco do DRE dizia quanto o filtro escondia. O dono:
+    "essa informacao nao deveria aparecer aqui, tem que colocar em
+    Configuracoes". O numero continua existindo — la. E o DRE nao fala mais
+    disso, nem com filtro nem sem."""
     from app.apps.painel import consultas
     base = consultas.aportes_na_base_inteira()
     assert reais(base["devolvido"]) == reais(884647.07)
 
     html = cliente_config.get(
         "/painel/dre?bloco=aportes&ano=2026").get_data(as_text=True)
-    assert "estão fora do que você está vendo" in html
-    assert "por causa do filtro" in html
-    assert "Tirar todos os filtros" in html, \
-        "e tem de dar o caminho de ver tudo, não só avisar"
-
-
-def test_sem_filtro_o_bloco_diz_que_nao_esconde_nada(cliente_config,
-                                                     base_de_dois_anos):
-    """O outro lado, que é o que mata a dúvida: quando não há filtro, a tela
-    afirma isso. Silêncio aqui deixaria a suspeita de pé para sempre."""
-    html = cliente_config.get("/painel/dre?bloco=aportes").get_data(as_text=True)
-    assert "Sem filtro escondendo nada" in html
     assert "estão fora do que você está vendo" not in html
+    html = cliente_config.get("/painel/dre?bloco=aportes").get_data(as_text=True)
+    assert "Sem filtro escondendo nada" not in html
+
+    html = cliente_config.get("/painel/configuracoes?conferir=1").get_data(as_text=True)
+    assert "Aportes na base inteira" in html
+    assert "884.647,07" in html
 
 
-def test_o_diagnostico_do_bloco_usa_os_filtros_da_propria_tela(cliente_config,
-                                                               base_de_dois_anos):
-    """A cascata das Configurações roda sem filtro. Esta, dentro do bloco, tem
-    de rodar com os MESMOS filtros da tela — senão repete o erro que me custou
-    uma semana: comparar dois recortes diferentes e concluir que falta dinheiro."""
+def test_o_diagnostico_nao_mora_mais_no_dre(cliente_config, base_de_dois_anos):
+    """A cascata "de onde vem cada numero" saiu do DRE junto com o aviso.
+    Pedir `diagnostico=1` la nao faz mais nada; em Configuracoes ela roda."""
     html = cliente_config.get(
         "/painel/dre?bloco=aportes&ano=2026&diagnostico=1").get_data(as_text=True)
-    assert "De onde vem cada número" in html
-    # só o quadro do diagnóstico; o aviso lá em cima fala da base inteira de
-    # propósito, e é ele que cita os 784 mil
-    quadro = html[html.index("De onde vem cada número"):]
-    assert "100.000" in quadro
-    assert "784.647" not in quadro, \
-        "o diagnóstico trouxe lançamento de fora do filtro da tela"
+    assert "De onde vem cada número" not in html
+    html = cliente_config.get("/painel/configuracoes?conferir=1").get_data(as_text=True)
+    assert "onde os valores se perdem" in html
 
 
 def test_o_diagnostico_so_roda_quando_alguem_pede(cliente_config,
                                                   base_de_dois_anos, monkeypatch):
-    """São várias varreduras na base inteira. Abrir o DRE não pode disparar."""
+    """Sao varias varreduras na base inteira. Abrir o DRE nao pode disparar —
+    nem com `diagnostico=1`, que deixou de existir la. Em Configuracoes, so
+    com o botao."""
     from app.apps.painel import consultas
     rodou = []
     monkeypatch.setattr(consultas, "conferencia_dos_aportes",
                         lambda *a, **k: rodou.append(1) or {})
+    monkeypatch.setattr(consultas, "aportes_na_base_inteira",
+                        lambda *a, **k: rodou.append(1) or {})
     cliente_config.get("/painel/dre?bloco=aportes")
-    assert rodou == []
     cliente_config.get("/painel/dre?bloco=aportes&diagnostico=1")
-    assert rodou, "e com o pedido, tem de rodar"
+    cliente_config.get("/painel/configuracoes")
+    assert rodou == []
+    cliente_config.get("/painel/configuracoes?conferir=1")
+    assert rodou, "e com o botao, tem de rodar"
 
 
 def test_o_bloco_diz_ONDE_esta_o_resto_obra_por_obra(cliente_config):
@@ -1868,9 +1867,50 @@ def test_o_bloco_diz_ONDE_esta_o_resto_obra_por_obra(cliente_config):
         "o lançamento sem obra tem de aparecer com nome próprio"
     assert reais(por_obra["MERCADOBARBALHA"]) == reais(320000)
 
-    html = cliente_config.get(
-        "/painel/dre?bloco=aportes&obra=MERCADOBARBALHA").get_data(as_text=True)
-    assert "E onde está o resto" in html
-    assert consultas.SEM_OBRA in html, \
-        "a linha que ele conserta tem de estar na tela, não no meu raciocínio"
+    html = cliente_config.get("/painel/configuracoes?conferir=1").get_data(as_text=True)
+    assert "onde está o resto" in html
+    assert "(não apropriado)" in html
     assert "784.647,07" in html
+
+
+
+
+def test_a_busca_por_valor_nao_soma_a_base_dentro_do_where(base_para_explorar):
+    """22/09/2026: "Tela montada em 373542 ms". A soma por título ficava como
+    subconsulta dentro do OR, e o banco a refazia para cada linha. Agora é uma
+    consulta antes, e a lista de títulos entra pronta — uma vez por pedido."""
+    from app.apps.painel import consultas
+    pedido = _pedido_padrao(busca="784.647,07")
+    where, params = consultas._onde_do_explorador(pedido)
+    assert "SELECT codigo_lancamento FROM fato" not in where
+    assert "_titulos_com_o_valor" in pedido, "a lista tem de ficar guardada no pedido"
+    # e a segunda montagem do WHERE (os totais, o resumo) nao consulta de novo
+    vistos = []
+    original = consultas.consultar
+    consultas.consultar = lambda s, p=(): (vistos.append(s), original(s, p))[1]
+    try:
+        consultas._onde_do_explorador(pedido)
+    finally:
+        consultas.consultar = original
+    assert not any("GROUP BY codigo_lancamento" in s for s in vistos)
+
+
+def test_o_explorador_mostra_o_link_do_pipefy_quando_ha(base_para_explorar, monkeypatch):
+    """22/09/2026, o dono: "quero o link pra acessar o pipefy quando pertinente"."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET link = 'https://app.pipefy.com/open-cards/123',"
+                     " razao_social = 'FORNECEDOR COM PIPEFY', numero_documento = 'NF 777'"
+                     " WHERE codigo_lancamento = (SELECT MIN(codigo_lancamento) FROM fato)")
+        conn.commit()
+    consultas.esquecer_listas()
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = cliente.get("/painel/explorador?busca=COM+PIPEFY").get_data(as_text=True)
+    assert 'href="https://app.pipefy.com/open-cards/123"' in html
+    assert "NF 777 ↗" in html

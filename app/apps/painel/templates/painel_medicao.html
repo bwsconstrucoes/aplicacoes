@@ -4,7 +4,7 @@
 
 {% block conteudo %}
 <h2>{{ medicao }}
-  <small>os recebimentos que quitaram esta medição</small>
+  <small>{% if rotulo_da_medicao %}{{ rotulo_da_medicao }} · {% endif %}os recebimentos que quitaram este título</small>
 </h2>
 
 <p style="margin:-6px 0 14px">
@@ -22,6 +22,59 @@
   {% for a in selecao.anos %}<span class="chip">Ano: {{ a }}</span>{% endfor %}
   {% for pr in selecao.projetos %}<span class="chip">Projeto: {{ pr }}</span>{% endfor %}
   {% for o in selecao.obras %}<span class="chip">Obra: {{ o }}</span>{% endfor %}
+</div>
+{% endif %}
+
+<!-- ===================== OS TÍTULOS QUE COMPÕEM ===================== -->
+{% if titulos %}
+<div class="cartao" style="margin-bottom:14px;
+     border-left:4px solid {{ 'var(--ambar)' if titulos|length > 1 else 'var(--verde)' }}">
+  <div class="cartao-cab">
+    <h3>O título no OMIE</h3>
+    <small>{{ titulos|length }} título(s) · bruto {{ brl(bruto_dos_titulos) }}</small>
+  </div>
+  {% if titulos|length > 1 %}
+  <div class="aviso info">
+    <b>Esta linha junta {{ titulos|length }} títulos.</b> A medição é montada
+    pela <b>observação</b> de cada título ("OBRA|Medição No: N"): todos os que
+    dizem a mesma medição da mesma obra viram uma linha só — é assim que uma
+    medição faturada em várias notas aparece inteira. Se algum destes títulos
+    <b>não</b> é desta medição, o erro está na observação dele no OMIE, e é lá
+    que se corrige; na próxima atualização ele sai daqui sozinho.
+  </div>
+  {% endif %}
+  <div class="tabela-rolagem" style="max-height:360px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Nº no OMIE</th>
+          <th class="sem-ordem">Documento</th>
+          <th class="sem-ordem">Data</th>
+          <th class="sem-ordem">Cliente</th>
+          <th class="sem-ordem direita">Bruto</th>
+          <th class="sem-ordem direita">Recebido</th>
+          <th class="sem-ordem direita">Retido</th>
+          <th class="sem-ordem direita">A receber</th>
+          <th class="sem-ordem">Observação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in titulos %}
+        <tr>
+          <td class="dados">{{ t.codigo }}</td>
+          <td class="desc">{% if t.link %}<a href="{{ t.link }}" target="_blank" rel="noopener">{{ t.documento or '—' }}</a>{% else %}{{ t.documento or '—' }}{% endif %}</td>
+          <td class="desc">{{ t.data.strftime('%d/%m/%Y') if t.data else '—' }}</td>
+          <td class="desc">{{ t.cliente or '—' }}</td>
+          <td class="dados direita"><b>{{ brl(t.bruto) }}</b></td>
+          <td class="dados direita">{{ brl(t.recebido) }}</td>
+          <td class="dados direita">{{ brl(t.retido) }}</td>
+          <td class="dados direita {{ classe_valor(t.a_receber) }}">{{ brl(t.a_receber) }}</td>
+          <td class="desc"><small>{{ t.observacao or '' }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
 

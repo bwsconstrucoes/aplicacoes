@@ -195,6 +195,8 @@ _ABAS_POR_ENDPOINT = {
     "painel.analitico": "analitico",
     "painel.receita": "receita",
     "painel.medicao": "receita",
+    "painel.receita_detalhe": "receita",
+    "painel.receita_titulo": "receita",
     "painel.fluxo": "fluxo",
     "painel.obras": "obras",
     "painel.execucao": "execucao",

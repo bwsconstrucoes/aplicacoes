@@ -208,12 +208,21 @@ Command* das Settings do Render, e ele é **idêntico**, palavra por palavra, ao
 ```
 web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 \
      --workers 1 --threads 4 --worker-class gthread \
-     --max-requests 150 --max-requests-jitter 40 --log-level info
+     --max-requests 1000 --max-requests-jitter 100 --log-level info
 ```
 
 Ou seja: a produção roda com **1 worker e 4 threads**, e não com 8 — a suspeita
 anotada aqui desde julho era infundada. As `4` threads vieram do commit
 `352782d`, que conteve o OOM de julho de 2026 (`CONTEXTO.md` §9).
+
+**22/09/2026 — `--max-requests` subiu de 150 para 1000 (jitter de 40 para
+100).** Decisão do dono, depois de sentir a inconstância ("uma hora é rápido e
+outras nem vai"): com 1 worker, a cada ~150 acessos TODA requisição esperava a
+partida do monorepo, e as listas guardadas em memória morriam junto. As
+métricas de setembro mostraram folga (15–45% dos 2 GB). O `Procfile` e o Start
+Command do Render estão **os dois com 1000** desde 22/09/2026 (o dono colou
+o texto no mesmo dia). Se a memória voltar a subir, o caminho de volta é o mesmo
+texto com 150.
 
 **A armadilha continua de pé, e é por isso que a nota fica:** o Start Command
 **sobrescreve o Procfile**. Como hoje os dois são iguais, mexer só no Procfile

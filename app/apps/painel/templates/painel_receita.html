@@ -5,7 +5,7 @@
 
 {% block conteudo %}
 <h2>Receita de Obra
-  <small>por medição — o que foi faturado, o que entrou e o que falta</small>
+  <small>título a título — o que foi faturado, o que entrou e o que falta</small>
 </h2>
 
 {% if chips %}
@@ -27,7 +27,7 @@
   <div class="kpi estatico">
     <div class="kpi-rotulo">Bruto faturado</div>
     <div class="kpi-valor">{{ brl(total.bruto) }}</div>
-    <div class="kpi-sub">{{ total.quantas }} medições</div>
+    <div class="kpi-sub">{{ total.quantas }} títulos</div>
   </div>
   <div class="kpi estatico verde">
     <div class="kpi-rotulo">Já recebido</div>
@@ -52,7 +52,7 @@
   <div class="campo" style="max-width:230px">
     <label for="visao">Mostrar</label>
     <select id="visao" name="visao" onchange="this.form.submit()">
-      <option value="todas" {% if visao == 'todas' %}selected{% endif %}>Todas as medições</option>
+      <option value="todas" {% if visao == 'todas' %}selected{% endif %}>Todos os títulos</option>
       <option value="a_receber" {% if visao == 'a_receber' %}selected{% endif %}>Só com saldo a receber</option>
       <option value="quitadas" {% if visao == 'quitadas' %}selected{% endif %}>Só as quitadas</option>
     </select>
@@ -60,13 +60,13 @@
 </form>
 
 {% if not itens %}
-  <div class="vazio"><b>Sem medições</b>Nenhuma receita de obra nos filtros escolhidos.</div>
+  <div class="vazio"><b>Sem títulos</b>Nenhuma receita de obra nos filtros escolhidos.</div>
 {% else %}
 <div class="tabela-wrap" style="margin-bottom:14px">
   <div class="tabela-barra">
     <span class="resumo">
       Mostrando as <b>{{ itens|length }}</b> maiores de <b>{{ total.quantas }}</b>.
-      Clique numa medição para ver os recebimentos.
+      Clique num título para ver os recebimentos.
     </span>
     <span class="espaco"></span>
     <a class="btn secundario" style="text-decoration:none" href="{{ link_baixar('medicoes') }}">⬇ Baixar planilha</a>
@@ -75,7 +75,7 @@
     <table>
       <thead>
         <tr>
-          <th class="sem-ordem">Medição</th>
+          <th class="sem-ordem">Título · medição</th>
           <th class="sem-ordem">Cliente</th>
           <th class="sem-ordem">Obra</th>
           <th class="sem-ordem direita">Bruto</th>
@@ -89,9 +89,13 @@
         {% for m in itens %}
         <tr>
           <td class="desc">
-            <a href="{{ com_filtros('painel.receita_detalhe', medicao=m.medicao) }}"
-               style="font-weight:600">{{ m.medicao }}</a>
-            {% if m.documento %}<small>doc. {{ m.documento }}</small>{% endif %}
+            {# UM TÍTULO POR LINHA. Era a medição inteira, e o dono conferiu
+               uma linha contra o OMIE e achou um título oito vezes menor:
+               "não fica legal agrupado, confunde". A medição fica ao lado,
+               como rótulo — o número é o do título. #}
+            <a href="{{ com_filtros('painel.receita_titulo', codigo=m.codigo) }}"
+               style="font-weight:600">{{ m.documento or ('Título ' ~ m.codigo) }}</a>
+            <small>{{ m.medicao }}{% if m.documento %} · nº {{ m.codigo }}{% endif %}</small>
           </td>
           <td class="desc">{{ m.cliente }}</td>
           <td>{{ m.obra }}</td>

@@ -508,9 +508,12 @@ def _consultar_falso(sql, params=()):
                  dt.date(2025, 4, 1), dt.date(2025, 4, 8), 7)]
     if "medicao_rotulo" in sql and "COUNT(*)" in sql:           # os totais
         return [(3, 7000.0, 300.0, 500.0)]
-    if "medicao_rotulo" in sql:                                 # as medições
+    if "GROUP BY codigo_lancamento" in sql and "MAX(observacao)" in sql:  # um título
+        return [(998877, "NF123", "CLIENTE A", "Obra Um", dt.date(2025, 5, 2),
+                 "OBRA1|Medição No: 3", "", 7000.0, 300.0, 500.0, "OBRA1 | Medição 3")]
+    if "medicao_rotulo" in sql:                                 # a receita, um título por linha
         return [("OBRA1 | Medição 3", "CLIENTE A", "Obra Um", "PROJ-A",
-                 "NF123", "", dt.date(2025, 5, 2), 7000.0, 300.0, 500.0)]
+                 "NF123", "", dt.date(2025, 5, 2), 7000.0, 300.0, 500.0, 998877)]
     if "categoria <> 'Receita de Obras'" in sql:
         return [("Estorno de Despesas", 900.0, 0.0, 4)]
     if "FROM fato_recebimentos" in sql:
@@ -564,6 +567,10 @@ def _consultar_falso(sql, params=()):
         return [(18500.0, -12300.0)]
     if sql.count("SUM(CASE WHEN tipo") == 4:                    # resumo do resultado
         return [(9500.0, -6150.0, 9000.0, -6000.0)]
+    if "(jur|emprest" in sql:                                   # onde estão os juros
+        return []
+    if "AS encargos_de_atraso" in sql:
+        return [(0.0,)]
     raise AssertionError(f"consulta sem resposta no dublê: {sql.strip()[:120]}")
 
 
@@ -926,7 +933,7 @@ def test_aba_de_aportes_mostra_os_quatro_recortes(painel):
     assert "Aportes e devoluções" in html
     assert "Por sócio ou parceiro" in html
     assert "Por obra" in html
-    assert "Por tipo" in html
+    assert "Por tipo" not in html      # saiu em 22/09/2026: "dados em duplicidade"
     assert "Lançamentos" in html
     assert "Falta p/ igualar" in html
     assert "SÓCIO A" in html
@@ -984,7 +991,7 @@ def test_o_excel_de_aportes_tem_uma_aba_por_recorte(painel):
     assert r.status_code == 200
     livro = load_workbook(io.BytesIO(r.get_data()))
     assert livro.sheetnames == [
-        "Aportes por Socio", "Aportes por Obra", "Aportes por Tipo",
+        "Aportes por Socio", "Aportes por Obra",
         "Dividendos", "Lancamentos de Aporte", "Resultado x Dividendos"]
 
 
@@ -1608,3 +1615,37 @@ def test_carga_nova_ainda_joga_fora_a_lista_velha(painel, monkeypatch):
 
     carimbo[0] = "depois da carga"
     assert consultas._lembrando(("x",), _calcular) == 2, "carga nova: recalcula"
+
+
+# ===========================================================================
+# Os relatórios levam o link do Pipefy — 22/09/2026
+# ===========================================================================
+def test_a_planilha_faz_do_endereco_um_link_clicavel():
+    from openpyxl import load_workbook
+    from app.apps.painel import excel
+    colunas = [("documento", "Documento"), ("link", "Pipefy")]
+    conteudo = excel.montar([("Teste", colunas, [
+        {"documento": "NF 1", "link": "https://app.pipefy.com/open-cards/1"},
+        {"documento": "NF 2", "link": ""}])])
+    folha = load_workbook(io.BytesIO(conteudo))["Teste"]
+    com = folha.cell(row=2, column=2)
+    assert com.hyperlink is not None
+    assert com.hyperlink.target == "https://app.pipefy.com/open-cards/1"
+    assert com.value == "Abrir no Pipefy"
+    assert folha.cell(row=3, column=2).hyperlink is None
+
+
+def test_o_pdf_escreve_pipefy_no_lugar_do_endereco():
+    from app.apps.painel import pdf
+    colunas = [("documento", "Documento"), ("link", "Pipefy")]
+    conteudo = pdf.montar([("Teste", colunas, [
+        {"documento": "NF 1", "link": "https://app.pipefy.com/open-cards/1"}])],
+        titulo="Teste")
+    assert conteudo[:4] == b"%PDF"
+    assert pdf._celula("https://app.pipefy.com/x", "link", "Pipefy") == ("Pipefy", "L")
+
+
+def test_o_analitico_e_as_medicoes_exportam_a_coluna_do_pipefy():
+    from app.apps.painel import excel
+    for chave in ("analitico", "medicoes", "extrato", "explorador"):
+        assert ("link", "Pipefy") in excel.COLUNAS[chave], chave

@@ -134,7 +134,12 @@ def base_de_saneamento():
                      " cdesdep, nperdep, nvaldep) VALUES (502,2,'D2','PREDIO',40,40)")
         conn.commit()
     consultas.esquecer_listas()
+    # o cadastro lido no ensaio fica guardado entre chamadas — e entre testes,
+    # se ninguém limpar
+    from app.apps.painel import saneamento
+    saneamento.esquecer_cadastros()
     yield
+    saneamento.esquecer_cadastros()
     with painel_db.conexao() as conn:
         conn.execute("TRUNCATE TABLE fato")
         conn.execute("DELETE FROM rateio")
@@ -886,3 +891,45 @@ def test_a_tela_exige_a_palavra_escrita_para_excluir(cliente_web, monkeypatch):
                      data={"codigo": "501", "executar": "1", "senha": "x",
                            "confirmacao": "excluir"})
     assert chamou == [1], "com a palavra certa (sem ligar para maiúscula), vai"
+
+
+# ===========================================================================
+# O envio usa o cadastro que o ensaio leu — 22/09/2026
+# ===========================================================================
+# O dono, ao alterar UM título: "A Omie bloqueou as chamadas por consumo
+# excessivo e pediu 59 segundos. 0 título(s) alterado(s)." Ensaio e envio
+# consultavam o mesmo título no OMIE com segundos de diferença — a Omie chama
+# isso de "consumo redundante" e bloqueia. Alterar um título logo depois de
+# ensaiá-lo nunca funcionava.
+
+def test_o_envio_nao_consulta_de_novo_o_que_o_ensaio_ja_leu(base_de_saneamento,
+                                                            monkeypatch):
+    from app.apps.painel import saneamento
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "segredo-de-execucao")
+    cliente = ClienteFalso()
+    saneamento.aplicar([501], categoria_nova="2.02", simulacao=True, cliente=cliente)
+    r = saneamento.aplicar([501], categoria_nova="2.02", simulacao=False, cliente=cliente)
+    assert r["alterados"] == 1
+    assert cliente.consultados == [(501, "pagar")], \
+        "o envio consultou de novo — é isso que a Omie bloqueia"
+    assert len(cliente.enviados) == 1
+
+
+def test_depois_de_alterado_o_cadastro_guardado_e_esquecido(base_de_saneamento,
+                                                            monkeypatch):
+    """O título mudou; o que o ensaio leu já não o descreve."""
+    from app.apps.painel import saneamento
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "segredo-de-execucao")
+    cliente = ClienteFalso()
+    saneamento.aplicar([501], categoria_nova="2.02", simulacao=False, cliente=cliente)
+    saneamento.aplicar([501], categoria_nova="2.03", simulacao=True, cliente=cliente)
+    assert len(cliente.consultados) == 2
+
+
+def test_o_cadastro_guardado_vence(base_de_saneamento, monkeypatch):
+    from app.apps.painel import saneamento
+    monkeypatch.setattr(saneamento, "VALIDADE_DO_CADASTRO", 0.0)
+    cliente = ClienteFalso()
+    saneamento.aplicar([501], categoria_nova="2.02", simulacao=True, cliente=cliente)
+    saneamento.aplicar([501], categoria_nova="2.02", simulacao=True, cliente=cliente)
+    assert len(cliente.consultados) == 2, "vencido, tem de ler de novo"

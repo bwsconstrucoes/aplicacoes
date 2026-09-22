@@ -870,6 +870,21 @@ C. Diários identifica a obra por **dois** códigos (primário e secundário), e
 emissão só procurava pelo primário. Detalhe no `HISTORICO.md` da área.
 
 
+### 22/09/2026 — O serviço reinicia a cada 1000 acessos, não 150 (atravessa áreas)
+
+`--max-requests 150 --max-requests-jitter 40` virou `1000` e `100`, no
+`Procfile`. Com `--workers 1`, o reinício a cada ~150 acessos fazia TODA
+requisição esperar a partida do monorepo inteiro e apagava as listas guardadas
+em memória do painel — o dono sentiu como "uma hora é rápido e outras nem
+vai". As métricas de 08–10/09 mostraram memória entre 15% e 45% dos 2 GB, com
+folga para afrouxar. Decisão do dono, em 22/09.
+
+**O Start Command do Render sobrescreve o Procfile**: o dono colou o mesmo texto lá
+no próprio dia 22/09 — os dois estão iguais (`CLAUDE.md` › Gunicorn tem o
+comando inteiro).
+Se a memória voltar a subir, o caminho de volta é o mesmo texto com 150.
+`--workers 1` continua obrigatório: há estado em memória por processo.
+
 ### 21/09/2026 — A EMISSÃO DE NFS-e VIROU A QUINTA ÁREA (atravessa áreas)
 
 O dono decidiu abrir um chat próprio para o `emissaonf` e pediu que ele

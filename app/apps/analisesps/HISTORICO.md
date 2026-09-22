@@ -611,6 +611,12 @@ responde**: diz se `DRIVE_FOLDER_ID` e `PIPEFY_TOKEN` estão configurados
 suficiente para reconhecer qual é), e um botão **"Conferir a pasta do Drive"**
 que olha a pasta **sem escrever nada** e diz o nome dela.
 
+> ⚠️ **ESTE BLOCO ESTÁ SUPERADO desde 22/09/2026** — ver "Octogésima segunda
+> leva" mais abaixo. O que ele diz sobre a cota continua certo; o que ele
+> manda fazer (mover a pasta) deixou de ser o conserto. Fica aqui porque foi
+> o que se pensou na época, e porque entender o engano é o que impede a
+> repetição.
+>
 > **A ARMADILHA DA COTA, escrita uma vez para não se perder de novo.** A conta
 > de serviço do Google **não tem espaço de armazenamento próprio**. Ela grava
 > numa pasta de **Drive Compartilhado** (Shared Drive) onde seja membro com
@@ -6309,6 +6315,90 @@ linhas que sobraram aparecem como *"nem cheguei a tentar"*, com o tempo que
 ele pediu, para o dono saber quando voltar.
 
 Há teste para os dois lados: bloqueio interrompe, falha comum não.
+
+---
+
+### Octogésima segunda leva (22/09) — ⚠️ o conselho errado estava em pé há vinte dias
+
+O dono tentou apontar a pasta do Drive do BeeVale e a tela respondeu:
+*"Achei a pasta BEEVALE, mas ela NÃO é de um Drive Compartilhado"*, mandando
+mover a pasta. Ele respondeu com a pergunta que derrubou tudo:
+
+> *"mas me explica uma coisa, eu tenho várias automações que gravam em pastas
+> compartilhadas, por que essa não pode?"*
+
+**Ele estava certo e o sistema estava errado.** A resposta estava a duas
+pastas de distância, no `app/apps/emissaonf/drive_upload.py`:
+
+```
+EMAIL_IMPERSONAR = "contato@bwsconstrucoes.com.br"
+imp = os.getenv("EMISSAO_NF_DRIVE_IMPERSONAR", EMAIL_IMPERSONAR)
+if imp:
+    cred = cred.with_subject(imp)
+```
+
+A emissão de NFS-e **personifica uma pessoa**: com delegação em todo o domínio
+(Admin do Google › Segurança › Controles de API › Delegação), a conta de
+serviço age **como** `contato@bwsconstrucoes.com.br`. Quem tem a cota é ele,
+não ela — então o arquivo nasce numa pasta comum sem problema nenhum, e
+aparece como criado por ele. O BeeVale entrava como a conta de serviço pelada,
+que não tem espaço, e por isso só funcionava em Drive Compartilhado.
+
+**Duas partes do mesmo sistema autenticavam no mesmo Drive de jeitos
+diferentes, e ninguém tinha reparado.** O `analisesps/drive.py` até cita o
+`emissaonf` no cabeçalho — para explicar por que um usa a biblioteca do Google
+e o outro fala REST direto. Olhou o arquivo, viu a diferença que interessava
+naquele momento, e não viu a linha do `with_subject` três linhas adiante.
+
+**O que mudou.** O `drive.py` passa a personificar, por
+`ANALISESPS_DRIVE_IMPERSONAR`, com o mesmo padrão do `emissaonf`
+(`contato@bwsconstrucoes.com.br`). Variável **própria**, não compartilhada com
+a emissão de NFS-e: são áreas diferentes, e desligar a personificação de uma
+não pode desligar a da outra pelas costas. Vazio volta ao comportamento
+antigo, que é o certo quando a pasta for mesmo de Drive Compartilhado.
+
+**Três coisas que o conserto arrastou, e nenhuma é detalhe:**
+
+1. **A recusa da delegação não chega como resposta HTTP.** Ela estoura no
+   pedido do *token*, antes da chamada que a gente fez — chegaria crua na
+   tela, como traço de pilha. Por isso o token é pedido dentro de `_sessao()`,
+   de propósito, e a recusa vira uma frase que diz o lugar exato do Admin do
+   Google onde se libera. Custo zero: a sessão pediria o token na primeira
+   chamada de qualquer jeito.
+2. **O erro 404 mandava compartilhar a pasta com a conta de serviço** — e
+   agora quem precisa enxergar a pasta é **a pessoa personificada**. Mantido
+   como estava, o recado faria o dono liberar a pasta para quem não está
+   pedindo e continuar sem funcionar. A mensagem agora nomeia quem é.
+3. **O botão "Conferir a pasta do Drive" acusava pasta comum como problema.**
+   Com personificação, pasta comum é o lugar certo. O aviso agora só sai
+   quando não há personificação **e** a pasta não é de Drive Compartilhado —
+   o único caso em que a gravação vai falhar de verdade.
+
+**O teste que defendia o conselho errado foi trocado.** Havia um exigindo que
+a mensagem de cota mandasse mover a pasta; ele passava, verde, guardando o
+engano. Agora a mensagem conta as duas saídas e o teste cobra as duas. Mais
+quatro casos novos: pasta comum sem aviso com personificação, pasta comum com
+aviso sem ela, o 404 nomeando quem tem de enxergar a pasta, e a delegação
+recusada virando frase.
+
+**A lição, que não é sobre Drive.** Cinco áreas, cinco chats, e cada um
+resolve o mesmo problema do seu jeito sem saber do outro. Aqui deu conselho
+errado por vinte dias e fez o dono mexer no Drive à toa. **Quando uma
+integração externa emperrar, o primeiro lugar a procurar é outra área deste
+mesmo repositório que já fale com ela** — e a resposta pode estar no arquivo
+que a gente acha que já leu.
+
+**NÃO verificado:** nenhum teste encosta no Drive de verdade, e a delegação em
+todo o domínio não dá para conferir daqui. A prova é gerar **um** BeeVale e
+ver o arquivo aparecer na pasta, com `contato@bwsconstrucoes.com.br` como
+criador. Se a delegação não cobrir a conta de serviço para o escopo do Drive,
+a tela vai dizer isso com o caminho do conserto — mas quem confirma é ele.
+
+**Também não verificado:** arquivos que este módulo tenha subido **antes**
+desta mudança pertencem à conta de serviço. Lidos agora em nome do
+`contato@`, só abrem se ele enxergar a pasta. Na prática não deve haver
+nenhum — a gravação estava falhando, que é a origem de tudo isto —, mas se
+algum XML de nota sumir da tela, é aqui que se olha.
 
 ---
 ---

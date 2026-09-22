@@ -94,6 +94,13 @@ def montar(abas, titulo_arquivo: str = "Relatório") -> bytes:
                 # tipo texto resolve sem mexer no rotulo que o dono conhece.
                 if isinstance(valor, str) and valor.lstrip().startswith(("=", "+", "-", "@")):
                     celula.data_type = "s"
+                # Endereço vira LINK de verdade, clicável — 22/09/2026, o dono:
+                # "coloca nos relatórios os links para acessar o Pipefy quando
+                # houver". O texto mostrado é curto; o endereço fica no link.
+                if isinstance(valor, str) and valor.startswith(("http://", "https://")):
+                    celula.hyperlink = valor
+                    celula.value = "Abrir no Pipefy" if "pipefy" in valor.lower() else "Abrir"
+                    celula.style = "Hyperlink"
                 if isinstance(valor, dt.date):
                     celula.number_format = FORMATO_DATA
                 elif isinstance(valor, (int, float)) and not isinstance(valor, bool):
@@ -143,6 +150,7 @@ COLUNAS = {
                    ("situacao", "Situação"),
                    ("pago_recebido", "Pago/Recebido"),
                    ("a_pagar_receber", "A pagar/receber"),
+                   ("link", "Pipefy"),
                    ("observacao", "Observação")],
     # a memoria de calculo do rateio da administracao, mes a mes
     "rateio_admin": [("rotulo", "Mês"),
@@ -177,7 +185,7 @@ COLUNAS = {
                 ("observacao", "Observação"),
                 ("valor", "Valor"),
                 ("codigo", "Nº no OMIE"),
-                ("link", "Link")],
+                ("link", "Pipefy")],
     "analitico": [("data", "Data (pagto ou vencto)"),
                   ("data_vencimento", "Vencimento"),
                   ("data_pagamento", "Pagamento"),
@@ -187,6 +195,7 @@ COLUNAS = {
                   ("obra", "Obra"), ("projeto", "Projeto"),
                   ("documento", "Documento"), ("observacao", "Observação"),
                   ("conta", "Conta corrente"), ("situacao", "Situação"),
+                  ("link", "Pipefy"),
                   ("vencimento", "Situação do vencimento"),
                   ("pedido", "Pedido de compra"), ("medicao", "Medição"),
                   ("lancamento", "Nº no OMIE"),
@@ -197,7 +206,8 @@ COLUNAS = {
                  ("documento", "Documento"), ("data", "Data"),
                  ("bruto", "Bruto"), ("recebido", "Recebido"),
                  ("retido", "Retido na fonte"), ("a_receber", "A receber"),
-                 ("situacao", "Situação")],
+                 ("situacao", "Situação"), ("codigo", "Nº no OMIE"),
+                 ("link", "Pipefy")],
     "outras": [("categoria", "Categoria"), ("recebido", "Recebido"),
                ("a_receber", "A receber"), ("titulos", "Títulos")],
     "fluxo": [("rotulo", "Mês"), ("entradas", "Entradas"), ("saidas", "Saídas"),
@@ -221,9 +231,6 @@ COLUNAS = {
                     ("aportado", "Aportado"), ("devolvido", "Devolvido"),
                     ("saldo", "Saldo"), ("falta", "Falta p/ igualar"),
                     ("lancamentos", "Lançamentos")],
-    "aporte_tipo": [("obra", "Obra"), ("tipo", "Tipo"), ("aportado", "Aportado"),
-                    ("devolvido", "Devolvido"), ("saldo", "Saldo"),
-                    ("lancamentos", "Lançamentos")],
     "aporte_lancamentos": [("data", "Data"), ("obra", "Obra"),
                            ("socio", "Sócio ou parceiro"), ("tipo", "Tipo"),
                            ("categoria", "Categoria"), ("valor", "Valor"),
@@ -238,6 +245,21 @@ COLUNAS = {
     # O cenário da prestação de contas. Cada recorte vira uma aba, e os
     # parâmetros vão junto: memória de cálculo sem as escolhas que a geraram
     # não dá para conferir seis meses depois.
+    "prestacao_projeto": [("projeto", "Projeto"), ("receita_bruta", "Receita bruta"),
+                          ("receita_liquida", "Receita líquida"),
+                          ("despesas", "Despesas"),
+                          ("resultado_direto", "Resultado direto"),
+                          ("rateio", "Rateio recebido"),
+                          ("juros", "Juros de empréstimo"),
+                          ("resultado", "Resultado")],
+    "prestacao_obra": [("projeto", "Projeto"), ("obra", "Obra"),
+                       ("receita_bruta", "Receita bruta"),
+                       ("receita_liquida", "Receita líquida"),
+                       ("despesas", "Despesas"),
+                       ("resultado_direto", "Resultado direto"),
+                       ("rateio", "Rateio recebido"),
+                       ("juros", "Juros de empréstimo"),
+                       ("resultado", "Resultado")],
     "cenario_obra": [("obra", "Obra"), ("receita_liquida", "Receita líquida"),
                      ("despesas", "Despesas"),
                      ("resultado_direto", "Resultado direto"),
