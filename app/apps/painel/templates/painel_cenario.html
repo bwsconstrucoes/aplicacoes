@@ -407,7 +407,16 @@
     O que sair daqui <b>não recebe estrutura, não recebe juros, não entra na
     quota de ninguém e não pesa na régua</b>. Cada cenário tem a sua lista:
     comparar "com o Ceará" e "sem o Ceará" é duplicar o cenário e tirar num só.
+    O que foi tirado em
+    <a href="{{ url_for('painel.prestacao_parametros', aba='fora') }}">Parâmetros › Fora da análise</a>
+    já está fora de <b>todos</b> os cenários e só volta por lá.
   </p>
+  {% if excluidas_gerais %}
+  <p class="cartao-dica" style="margin-top:0">
+    <b>Fora por Parâmetros:</b>
+    {% for item in excluidas_gerais %}{% if not loop.first %} · {% endif %}{% if item.startswith('projeto:') %}Projeto — {{ item[8:] }}{% else %}{{ item[5:] }}{% endif %}{% endfor %}.
+  </p>
+  {% endif %}
   <form method="post" class="form-grade">
     <input type="hidden" name="acao" value="excluir">
     <input type="hidden" name="cenario_id" value="{{ cenario.id }}">

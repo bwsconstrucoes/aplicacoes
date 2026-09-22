@@ -245,6 +245,21 @@ COLUNAS = {
     # O cenário da prestação de contas. Cada recorte vira uma aba, e os
     # parâmetros vão junto: memória de cálculo sem as escolhas que a geraram
     # não dá para conferir seis meses depois.
+    "prestacao_projeto": [("projeto", "Projeto"), ("receita_bruta", "Receita bruta"),
+                          ("receita_liquida", "Receita líquida"),
+                          ("despesas", "Despesas"),
+                          ("resultado_direto", "Resultado direto"),
+                          ("rateio", "Rateio recebido"),
+                          ("juros", "Juros de empréstimo"),
+                          ("resultado", "Resultado")],
+    "prestacao_obra": [("projeto", "Projeto"), ("obra", "Obra"),
+                       ("receita_bruta", "Receita bruta"),
+                       ("receita_liquida", "Receita líquida"),
+                       ("despesas", "Despesas"),
+                       ("resultado_direto", "Resultado direto"),
+                       ("rateio", "Rateio recebido"),
+                       ("juros", "Juros de empréstimo"),
+                       ("resultado", "Resultado")],
     "cenario_obra": [("obra", "Obra"), ("receita_liquida", "Receita líquida"),
                      ("despesas", "Despesas"),
                      ("resultado_direto", "Resultado direto"),

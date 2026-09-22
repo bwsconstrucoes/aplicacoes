@@ -26,6 +26,7 @@ dicionários. É a mesma regra que rodava no computador, sem pandas.
 from __future__ import annotations
 
 import json
+import re
 
 MATRIZ, FILIAL = "MATRIZ", "FILIAL"
 SEM_DATA = "(sem data)"
@@ -355,6 +356,39 @@ def obras_fora_da_analise(itens, mapa_projeto: dict, obras) -> set:
 # dono: "o custo de despesas com o pessoal é um indicador da quantidade de
 # energia que aquela obra requer (…) o DP vai ter mais trabalho, a engenharia
 # vai ter mais trabalho".
+
+
+def itens_fora_da_analise(texto) -> list[str]:
+    """A lista gravada em Parâmetros ("obra:NOME;projeto:NOME"), como itens.
+
+    Vive na configuração da prestação porque é o que vale para TUDO: a
+    prestação antiga, os cenários de rateio e todo cenário novo. A lista de
+    cada cenário soma-se a esta — nunca a substitui."""
+    partes = re.split(r"[;\n]", texto or "")
+    saida: list[str] = []
+    for parte in partes:
+        parte = parte.strip()
+        if parte and parte not in saida:
+            saida.append(parte)
+    return saida
+
+
+def sem_as_obras(base: dict, fora) -> dict:
+    """A base da prestação sem as obras que ficaram fora da análise.
+
+    Tira das três leituras que dependem de obra — a apuração, o pessoal (a
+    régua) e o caixa (a régua dos juros). O que sai daqui não é obra para
+    o cálculo: não recebe estrutura nem juros, não entra na quota de ninguém
+    e não pesa na régua. As demais chaves passam intactas."""
+    fora = set(fora or ())
+    if not fora:
+        return base
+    saida = dict(base)
+    saida["apuracao"] = [l for l in base.get("apuracao", [])
+                         if (l.get("obra") or "").strip() not in fora]
+    saida["pessoal"] = [t for t in base.get("pessoal", []) if t[1] not in fora]
+    saida["caixa"] = [t for t in base.get("caixa", []) if t[1] not in fora]
+    return saida
 
 
 def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,

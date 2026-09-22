@@ -2083,6 +2083,32 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## Fora da análise em Parâmetros, e a prestação por obra — 22/09/2026
+
+Duas perguntas do dono, no mesmo dia, depois de ver o cenário: *"tem a visão
+de projetos, mas dá para ver por obra também?"* e *"na parte de configurações
+da prestação de conta, pra eu poder eliminar projetos e/ou obras dessa
+análise"*. Ele esperava a exclusão nos Parâmetros — e ela estava só dentro
+de cada cenário.
+
+1. **A lista "Fora da análise" agora vive em Parâmetros** (aba própria), na
+   configuração da prestação (`fora_da_analise`, itens "obra:NOME" e
+   "projeto:NOME" separados por ponto-e-vírgula — **sem migração**: é uma
+   chave a mais na tabela `config`). É aplicada na base, antes de qualquer
+   conta, e por isso vale para **tudo**: a Prestação de Contas, os cenários
+   de rateio e todo cenário. A lista de cada cenário **soma-se** a ela — nunca
+   a substitui. "Tirar o Ceará de tudo" se faz uma vez; "e se sem a obra X?"
+   continua sendo coisa de um cenário só. A montagem do cenário mostra o que
+   já está fora por Parâmetros, e avisa que só volta por lá.
+
+2. **A Prestação de Contas ganhou "Resultado por obra"**, logo abaixo do
+   resultado por projeto: a mesma conta obra a obra, com o projeto ao lado,
+   pior primeiro, com linha de total. A planilha da prestação (botão "Baixar
+   planilha") leva as duas abas — por projeto e por obra.
+
+O que ficou de fora, de propósito: a lista geral não entra no Rateio
+administrativo (a simulação antiga, tela própria) — ele tem os filtros dele.
+
 ## O Explorador ganhou o link do Pipefy — 22/09/2026
 
 Pedido do dono: *"quero que seja adicionado o link pra acessar o Pipefy quando

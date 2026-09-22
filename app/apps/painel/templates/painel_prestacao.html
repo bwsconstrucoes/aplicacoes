@@ -94,6 +94,15 @@
   </div>
 </div>
 
+{% if excluidas %}
+<div class="aviso">
+  <b>Fora da análise:</b> {{ excluidas|join(' · ') }}.
+  {{ excluidas|length }} obra(s) não entram em nenhuma conta desta tela — nem
+  recebem estrutura ou juros, nem pesam na régua, nem entram na quota de
+  ninguém. Definido em
+  <a href="{{ url_for('painel.prestacao_parametros', aba='fora') }}">Parâmetros › Fora da análise</a>.
+</div>
+{% endif %}
 {% if sem_projeto %}
 <div class="aviso info">
   {% if sem_projeto %}
@@ -150,6 +159,69 @@
     {% if juros_por_deficit %}Os <b>juros de empréstimo</b> seguem outra régua:
     caem mês a mês em quem estava com o caixa negativo, na proporção do buraco.
     Obra que se paga sozinha não carrega juro.{% endif %}
+  </p>
+</div>
+
+<!-- ===================== POR OBRA ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Resultado por obra</h3>
+    <small>a mesma conta, obra a obra &nbsp;·&nbsp; pior primeiro</small>
+  </div>
+  <div class="tabela-rolagem" style="max-height:520px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem">Projeto</th>
+          <th class="sem-ordem direita">Receita líquida</th>
+          <th class="sem-ordem direita">Despesas</th>
+          <th class="sem-ordem direita">Resultado direto</th>
+          <th class="sem-ordem direita">Rateio recebido</th>
+          <th class="sem-ordem direita">Juros de empréstimo</th>
+          <th class="sem-ordem direita">Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for nome, n in por_obra %}
+        <tr>
+          <td class="desc"><b>{{ nome }}</b></td>
+          <td class="desc">{{ (obras.get(nome) or {}).get('projeto') or '(sem projeto)' }}</td>
+          <td class="dados direita">{{ brl(n.receita_liquida) }}</td>
+          <td class="dados direita">{{ brl(n.despesas) }}</td>
+          <td class="dados direita {{ classe_valor(n.resultado_direto) }}">{{ brl(n.resultado_direto) }}</td>
+          <td class="dados direita">{{ brl(n.rateio) }}</td>
+          <td class="dados direita">{{ brl(n.juros) }}</td>
+          <td class="dados direita {{ classe_valor(n.resultado) }}"><b>{{ brl(n.resultado) }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if por_obra %}
+      {% set ns = namespace(rl=0, d=0, rd=0, ra=0, j=0, r=0) %}
+      {% for nome, n in por_obra %}
+        {% set ns.rl = ns.rl + n.receita_liquida %}{% set ns.d = ns.d + n.despesas %}
+        {% set ns.rd = ns.rd + n.resultado_direto %}{% set ns.ra = ns.ra + n.rateio %}
+        {% set ns.j = ns.j + n.juros %}{% set ns.r = ns.r + n.resultado %}
+      {% endfor %}
+      <tfoot>
+        <tr>
+          <td class="desc"><b>Total</b></td>
+          <td class="desc">{{ por_obra|length }} obra(s)</td>
+          <td class="dados direita"><b>{{ brl(ns.rl) }}</b></td>
+          <td class="dados direita"><b>{{ brl(ns.d) }}</b></td>
+          <td class="dados direita {{ classe_valor(ns.rd) }}"><b>{{ brl(ns.rd) }}</b></td>
+          <td class="dados direita"><b>{{ brl(ns.ra) }}</b></td>
+          <td class="dados direita"><b>{{ brl(ns.j) }}</b></td>
+          <td class="dados direita {{ classe_valor(ns.r) }}"><b>{{ brl(ns.r) }}</b></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+  <p class="cartao-dica">
+    Somando as obras de um projeto dá a linha dele na tabela de cima. Para
+    <b>tirar uma obra ou um projeto inteiro</b> desta conta, use
+    <a href="{{ url_for('painel.prestacao_parametros', aba='fora') }}">Parâmetros › Fora da análise</a>.
   </p>
 </div>
 

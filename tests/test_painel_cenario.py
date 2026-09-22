@@ -69,6 +69,7 @@ def base():
         conn.execute("DELETE FROM cenario")
         conn.execute("DELETE FROM socios")
         conn.execute("DELETE FROM usuarios")
+        conn.execute("DELETE FROM config WHERE chave = 'fora_da_analise'")
         # pessoal: 2.000 numa, 1.000 na outra
         _por_pagar(conn, 801, "MUITA GENTE", -2000, grupo="Despesas com Pessoal",
                    categoria="Salários")
@@ -93,6 +94,7 @@ def base():
         conn.execute("DELETE FROM cenario")
         conn.execute("DELETE FROM socios")
         conn.execute("DELETE FROM usuarios")
+        conn.execute("DELETE FROM config WHERE chave = 'fora_da_analise'")
         conn.commit()
 
 
@@ -454,6 +456,78 @@ def test_duplicar_leva_as_excluidas(cenario):
     cenarios.excluir(cenario, "obra:MUITA GENTE")
     copia = cenarios.duplicar(cenario, "Cópia")
     assert cenarios.excluidas(copia) == ["obra:MUITA GENTE"]
+
+
+# ---- a lista de Parâmetros, que vale para tudo — 22/09/2026 ----
+# O dono: "na parte de configurações da prestação de conta, pra eu poder
+# eliminar projetos e/ou obras dessa análise".
+
+def test_o_que_sai_em_parametros_sai_de_todo_cenario(cenario):
+    from app.apps.painel import cenarios, prestacao_dados
+    prestacao_dados.tirar_da_analise(["obra:MUITA GENTE"])
+    assert cenarios.excluidas(cenario) == []          # o cenário não tem lista própria
+    conta = _calcular(cenario)
+    assert conta["excluidas"] == ["MUITA GENTE"]
+    assert conta["excluidas_gerais"] == ["obra:MUITA GENTE"]
+    assert "MUITA GENTE" not in conta["por_obra"]
+    assert conta["por_obra"]["POUCA GENTE"]["rateio"] == pytest.approx(-1200, abs=0.02)
+    # a lista do cenário SOMA-SE à geral
+    cenarios.excluir(cenario, "obra:POUCA GENTE")
+    assert _calcular(cenario)["por_obra"] == {}
+    # e voltar em Parâmetros devolve a obra
+    prestacao_dados.voltar_para_analise("obra:MUITA GENTE")
+    assert prestacao_dados.fora_da_analise() == []
+    assert "MUITA GENTE" in _calcular(cenario)["por_obra"]
+
+
+def test_a_prestacao_antiga_tambem_respeita_a_lista_e_mostra_por_obra(base, monkeypatch):
+    """A Prestação de Contas ganhou a visão por obra ("dá para ver por obra
+    também?") — e a obra tirada em Parâmetros some dela."""
+    from app.apps.painel import prestacao_dados
+    from app.apps.painel.web import _calcular_prestacao
+    from app.main import create_app
+    app = create_app()
+    with app.test_request_context("/painel/prestacao"):
+        conta = _calcular_prestacao("comprometido")
+    assert set(conta["por_obra"]) == {"MUITA GENTE", "POUCA GENTE"}
+    assert conta["excluidas"] == []
+
+    prestacao_dados.tirar_da_analise(["projeto:ALFA"])
+    with app.test_request_context("/painel/prestacao"):
+        conta = _calcular_prestacao("comprometido")
+    assert conta["por_obra"] == {}
+    assert conta["excluidas"] == ["MUITA GENTE", "POUCA GENTE"]
+
+    prestacao_dados.voltar_para_analise("projeto:ALFA")
+    prestacao_dados.tirar_da_analise(["obra:POUCA GENTE"])
+    cliente = _cliente(monkeypatch)
+    html = cliente.get("/painel/prestacao").get_data(as_text=True)
+    assert "Resultado por obra" in html
+    assert "MUITA GENTE" in html
+    assert "Fora da análise:" in html and "POUCA GENTE" in html
+    # a planilha da prestação leva a conta por obra
+    resposta = cliente.get("/painel/baixar/posicao")
+    assert resposta.status_code == 200
+
+
+def test_tirar_e_voltar_pela_aba_de_parametros(cenario, monkeypatch):
+    from app.apps.painel import prestacao_dados
+    cliente = _cliente(monkeypatch)
+    html = cliente.get("/painel/prestacao/parametros?aba=fora").get_data(as_text=True)
+    assert "Fora da análise" in html and "Nada fora" in html
+    resposta = cliente.post("/painel/prestacao/parametros", data={
+        "acao": "tirar_da_analise", "aba": "fora",
+        "item": ["obra:MUITA GENTE", "projeto:ALFA"]})
+    assert resposta.status_code == 302
+    assert prestacao_dados.fora_da_analise() == ["obra:MUITA GENTE", "projeto:ALFA"]
+    html = cliente.get("/painel/prestacao/parametros?aba=fora").get_data(as_text=True)
+    assert "Projeto — ALFA" in html
+    cliente.post("/painel/prestacao/parametros", data={
+        "acao": "voltar_para_analise", "aba": "fora", "item": "projeto:ALFA"})
+    assert prestacao_dados.fora_da_analise() == ["obra:MUITA GENTE"]
+    # a montagem do cenário avisa o que já está fora por Parâmetros
+    html = cliente.get("/painel/prestacao/montagem").get_data(as_text=True)
+    assert "Fora por Parâmetros" in html and "MUITA GENTE" in html
 
 
 # ===========================================================================

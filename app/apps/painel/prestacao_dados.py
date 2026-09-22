@@ -71,6 +71,17 @@ def ajustes() -> list[dict]:
                 " ORDER BY a.data DESC, a.id DESC")]
 
 
+CHAVE_FORA_DA_ANALISE = "fora_da_analise"
+
+
+def fora_da_analise(config_lida: dict | None = None) -> list[str]:
+    """O que o dono tirou da análise em Parâmetros: "obra:NOME" e
+    "projeto:NOME". Vale para a prestação e para todo cenário."""
+    from . import prestacao
+    dados = config_lida if config_lida is not None else config()
+    return prestacao.itens_fora_da_analise(dados.get(CHAVE_FORA_DA_ANALISE, ""))
+
+
 # --------------------------------------------------------------------- escrita
 def salvar_config(chave: str, valor: str) -> None:
     with conexao() as conn:
@@ -78,6 +89,24 @@ def salvar_config(chave: str, valor: str) -> None:
                      "ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
                      (chave, str(valor)))
         conn.commit()
+
+
+def tirar_da_analise(itens) -> list[str]:
+    """Acrescenta obras ou projetos à lista de fora — sem repetir."""
+    atual = fora_da_analise()
+    for item in itens or ():
+        item = (item or "").strip()
+        if item and item not in atual:
+            atual.append(item)
+    salvar_config(CHAVE_FORA_DA_ANALISE, ";".join(atual))
+    return atual
+
+
+def voltar_para_analise(item: str) -> list[str]:
+    """Traz de volta o que tinha sido tirado."""
+    atual = [i for i in fora_da_analise() if i != (item or "").strip()]
+    salvar_config(CHAVE_FORA_DA_ANALISE, ";".join(atual))
+    return atual
 
 
 def salvar_socio(nome: str, tipo: str = "Interno", socio_id=None) -> None:
