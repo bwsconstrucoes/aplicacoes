@@ -6804,6 +6804,31 @@ passou a levar o link no fim. Antes ela contava o que era e parava aí.
 O lançamento já tinha a saída certa (abre em janela quando não está na lista) —
 foi o que serviu de modelo.
 
+### A BRECHA QUE A GUARDA DO REPOSITÓRIO PEGOU
+
+A primeira versão do atalho conferia só a AÇÃO — e passou verde em tudo que eu
+tinha escrito. Quem pegou foi `tests/test_permissoes_rotas.py`, a guarda que
+exige escopo de objeto em rota que recebe o número de um registro:
+
+> *"Rota recebe o número de um registro e é aberta a perfil restrito, mas não
+> confere se o registro é dele."*
+
+**Ela estava certa, e o furo era real.** `ver_titulos` é de TODO MUNDO — o que
+limita cada um é a obra. Sem conferir o escopo, um supervisor preso a uma obra
+mandava números em sequência e descobria QUAIS existem e o número interno de
+cada um, sem abrir registro nenhum. É exatamente o que "fora do escopo responde
+404, nunca 403" existe para impedir.
+
+A trava virou `exigir_registro_no_escopo`, em `core/auth/permissoes.py` — junto
+das irmãs, e não dentro do atalho: escopo é uma regra só, e espalhar a decisão é
+o jeito garantido de um dia as duas divergirem. Ela leva cada tipo à trava que o
+resto do ERP já usa; insumo, cotação e pedido de compra são cadastro central, e
+quem enxerga por obra não alcança nenhum deles.
+
+**Vale como lição de desenho:** o teste que pegou não é de negócio, é
+ESTRUTURAL — lê o código das rotas e cobra a regra. Foi a segunda vez nesta
+sessão que uma guarda dessas achou o que a leitura não achou.
+
 ### Número que não existe e número que não se pode ver respondem IGUAL
 
 De propósito, e é a mesma regra do escopo: dizer *"existe, mas você não pode"*

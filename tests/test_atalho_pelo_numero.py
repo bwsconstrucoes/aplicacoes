@@ -229,6 +229,56 @@ def test_numero_sem_formato_de_numero_nao_vai_ao_banco(cenario):
         assert atalho.achar(c["s"], bruto) == [], bruto
 
 
+def test_quem_e_preso_a_obra_nao_descobre_registro_de_OUTRA(cenario, app_real):
+    """A brecha que a guarda do repositório pegou (22/09/2026).
+
+    Ter a AÇÃO não basta: `ver_titulos` é de todo mundo, e o que limita cada
+    um é a obra. Sem conferir o escopo do registro, o atalho respondia com um
+    redirecionamento — e quem mandasse números em sequência descobriria QUAIS
+    existem e o número interno de cada um, sem abrir registro nenhum.
+    """
+    from app.apps.erp.db.models.cadastros import EscopoVisao, UsuarioObra
+
+    c = cenario
+    outra = Obra(codigo="ATALHO99", nome="Obra de outra frente", status="ATIVA")
+    c["s"].add(outra)
+    c["s"].flush()
+    supervisor = _pessoa(c["s"], "supervisor-atalho", P.SUPERVISOR_OBRA)
+    c["s"].add(UsuarioObra(usuario_id=supervisor.id, obra_id=outra.id))
+    supervisor.escopo_visao = EscopoVisao.OBRAS_DESIGNADAS
+    c["s"].flush()
+
+    # o lançamento do cenário é da obra ATALHO01, que não é a dele
+    r = como(app_real, supervisor.id).get(f"/erp/ir/{c['titulo'].numero_sp}")
+    assert r.status_code == 404, "não pode nem confirmar que o número existe"
+
+    # e a obra dele continua abrindo normalmente
+    r = como(app_real, supervisor.id).get("/erp/ir/ATALHO99")
+    assert r.status_code == 302
+    assert f"obra={outra.id}" in r.headers["Location"]
+
+
+def test_perfil_preso_a_obra_nao_alcanca_o_cadastro_central(cenario, app_real):
+    """Insumo, cotação e pedido de compra não pertencem a obra nenhuma. Quem
+    enxerga por obra não alcança nenhum deles — na dúvida, fecha."""
+    from app.apps.erp.db.models.cadastros import (
+        Cotacao, EscopoVisao, UsuarioObra,
+    )
+
+    c = cenario
+    cot = Cotacao(numero="COT-9100", titulo="Cotação do cadastro central",
+                  criado_por=c["dono"].id)
+    c["s"].add(cot)
+    c["s"].flush()
+    supervisor = _pessoa(c["s"], "supervisor-central", P.SUPERVISOR_OBRA)
+    c["s"].add(UsuarioObra(usuario_id=supervisor.id, obra_id=c["obra"].id))
+    supervisor.escopo_visao = EscopoVisao.OBRAS_DESIGNADAS
+    c["s"].flush()
+
+    r = como(app_real, supervisor.id).get("/erp/ir/COT-9100")
+    assert r.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # 4. O link que a tela copia é o mesmo que a rota entende
 # ---------------------------------------------------------------------------

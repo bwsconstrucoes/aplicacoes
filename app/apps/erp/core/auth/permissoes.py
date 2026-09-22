@@ -881,6 +881,39 @@ def exigir_entidade_no_escopo(s: Session, usuario: Usuario,
         raise ErroNaoEncontrado("Registro não encontrado.")
 
 
+def exigir_registro_no_escopo(s: Session, usuario: Usuario, tipo: str,
+                              registro_id: int) -> None:
+    """Escopo de QUALQUER registro que tenha número próprio (22/09/2026).
+
+    Nasceu para o atalho `/erp/ir/<numero>`, que traduz o número que a pessoa
+    tem na mão para a tela do registro. Ter a AÇÃO não basta ali: `ver_titulos`
+    é de todo mundo, e o que limita cada um é a obra. Sem esta conferência,
+    quem mandasse números em sequência descobriria QUAIS existem — e o número
+    interno de cada um — sem abrir registro nenhum. É a mesma razão de "fora do
+    escopo responde 404, nunca 403".
+
+    Mora aqui, com as irmãs, e não no atalho: escopo é uma regra só, e espalhar
+    a decisão é o jeito garantido de um dia as duas divergirem.
+    """
+    travas = {
+        "titulo": exigir_titulo_no_escopo,
+        "obra": exigir_obra_no_escopo,
+        "empreita": exigir_empreita_no_escopo,
+        "locacao": exigir_locacao_no_escopo,
+        "despesa_colaborador": exigir_despesa_no_escopo,
+        "processo": exigir_processo_no_escopo,
+    }
+    trava = travas.get((tipo or "").strip())
+    if trava is not None:
+        trava(s, usuario, registro_id)
+        return
+    # CADASTRO CENTRAL — insumo, cotação, pedido de compra, pedido de material.
+    # Não pertencem a uma obra: quem enxerga por obra não alcança nenhum deles.
+    # Mesma leitura do `exigir_entidade_no_escopo`: na dúvida, fecha.
+    if obras_do_usuario(s, usuario) is not None:
+        raise ErroNaoEncontrado("Registro não encontrado.")
+
+
 def exigir_despesa_no_escopo(s: Session, usuario: Usuario, despesa_id: int) -> None:
     """Despesa com colaborador pertence a uma obra e segue o escopo dela."""
     from app.apps.erp.db.models.financeiro import DespesaColaborador

@@ -600,14 +600,29 @@ def _destino_seguro(bruto: str | None) -> str | None:
 @login_obrigatorio
 @permissao("ver_erp")
 def ir_para_o_numero(numero: str):
-    from app.apps.erp.core.auth.permissoes import pode
+    from app.apps.erp.core.auth.permissoes import exigir_registro_no_escopo, pode
     from app.apps.erp.core.comum import atalho
+
+    def alcanca(s, usuario, achado) -> bool:
+        """DUAS PENEIRAS, e as duas são necessárias. A ação responde "este
+        perfil pode este tipo de registro?"; o escopo responde "pode ESTE
+        registro?". Sem a segunda, quem mandasse números em sequência
+        descobriria quais existem — e o número interno de cada um — sem abrir
+        registro nenhum, que é o que "fora do escopo responde 404" impede."""
+        if not pode(usuario, achado["destino"].acao):
+            return False
+        try:
+            exigir_registro_no_escopo(s, usuario, achado["destino"].chave,
+                                      achado["id"])
+            return True
+        except (ErroNaoEncontrado, ErroPermissao):
+            return False
 
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
             achados = [a for a in atalho.achar(s, numero)
-                       if pode(usuario, a["destino"].acao)]
+                       if alcanca(s, usuario, a)]
     except Exception as e:
         logger.exception("ERP: falha ao procurar o número %r", numero)
         return render_template("erp_numero.html", numero=atalho.limpar(numero),

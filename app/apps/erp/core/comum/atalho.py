@@ -71,6 +71,7 @@ DESTINOS: tuple[Destino, ...] = (
 
 POR_CHAVE = {d.chave: d for d in DESTINOS}
 
+
 # O que as pessoas digitam junto do número e não faz parte dele: "SP 000123",
 # "#000123", "sp-000123". Tudo isso é o mesmo lançamento.
 _ENFEITE = re.compile(r"^(?:sp|n[ºo°]?|num(?:ero)?|#)[\s.:\-]*", re.IGNORECASE)
