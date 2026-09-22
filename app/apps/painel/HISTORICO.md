@@ -2076,6 +2076,16 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    - filtro de ano na tela.
    A conferência diz qual das três é.
 
+   **Confirmado pelo dono em 22/09/2026:** "Juros sobre Empréstimos" **é** a
+   categoria certa — a de resultado (DRE). A outra, de amortização, é o
+   pagamento do **principal** e fica no Fluxo de Caixa, fora do resultado.
+   Ou seja: a configuração está certa, e o que falta entender é por que a
+   controladoria enxerga 1,6 milhão. A conferência publicada mostra quanto a
+   base inteira tem nessa categoria; se for 191 mil, a diferença está fora
+   do painel (outro período, principal somado ao juro, ou lançamento que a
+   carga não traz) — o próximo passo é o dono comparar os dois números na
+   conferência, não mudar a categoria.
+
 3. **"(sem projeto)" com 90 mil ao lado de "(não apropriado)" com 7 mil —
    "sem projeto só pode ser coisa não apropriada."** São duas coisas, e a
    tela agora explica e nomeia: **(não apropriado)** é lançamento sem obra
