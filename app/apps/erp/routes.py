@@ -3780,7 +3780,11 @@ def api_acao_lote():
     acao = (payload.get("acao") or "").strip()
     ids = payload.get("ids") or []
     motivo = (payload.get("motivo") or "").strip()
-    if acao not in ("aprovar", "devolver", "cancelar"):
+    # "reanalisar" (22/09/2026) é a saída do beco do título BLOQUEADO por conta
+    # do credor ainda não homologada: homologa-se a conta e manda reanalisar,
+    # em vez de refazer o lançamento inteiro. Ele NÃO aprova — devolve o título
+    # para a fila de aprovação, que continua sendo de outra pessoa.
+    if acao not in ("aprovar", "devolver", "cancelar", "reanalisar"):
         return jsonify({"ok": False, "erro": f"Ação inválida: {acao!r}"}), 400
     if not ids:
         return jsonify({"ok": False, "erro": "Nenhum título selecionado."}), 400
@@ -3797,6 +3801,8 @@ def api_acao_lote():
                         t = svc_titulos.aprovar(s, int(tid), usuario)
                     elif acao == "devolver":
                         t = svc_titulos.devolver(s, int(tid), motivo, usuario)
+                    elif acao == "reanalisar":
+                        t = svc_titulos.reanalisar(s, int(tid), usuario)
                     else:
                         t = svc_titulos.cancelar(s, int(tid), motivo, usuario)
                     oks.append(t.numero_sp)
@@ -4449,6 +4455,112 @@ def api_definir_depara():
 # ---------------------------------------------------------------------------
 # Lançamento
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# CADASTRAR O CREDOR SEM SAIR DO LANÇAMENTO — 22/09/2026
+#
+# Pedido do dono: *"se o credor não tem cadastro, o ERP deve avisar e tem que
+# ser permitido o cadastro já a partir da tela."*
+#
+# É a mesma regra de desenho que ele já tinha dado para empresa e obra: UMA
+# PORTA, e o atalho DENTRO do formulário. Mandar a pessoa sair do lançamento,
+# ir a Cadastros, voltar e recomeçar é onde o lançamento é abandonado no meio.
+#
+# A CONTA BANCÁRIA VEM JUNTO, E NASCE PENDENTE — e é aqui que mora a decisão
+# que importa. A homologação em duas pessoas existe contra o golpe da troca de
+# conta: quem lança não pode ser quem aprova o destino do dinheiro. Deixar o
+# lançador criar conta JÁ HOMOLOGADA destruiria esse controle.
+#
+# Então a conta entra PENDENTE: o lançamento é concluído, o título nasce
+# BLOQUEADO pela crítica C2 (que já existia), e alguém com alçada homologa e
+# reanalisa. O trabalho não se perde e o controle não cai.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/credores", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_credor_no_lancamento():
+    """Cadastra o credor a partir da tela de lançamento, com conta pendente."""
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.db.models.cadastros import (
+        FormaPagamento, FornecedorConta, StatusConta,
+    )
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            doc = somente_digitos(d.get("cnpj_cpf") or "")
+            # Documento já cadastrado não é erro para quem está lançando: é a
+            # resposta que ele procurava. Devolve o que existe em vez de mandar
+            # procurar.
+            ja = svc_forn.obter_por_documento(s, doc) if doc else None
+            if ja is not None:
+                return jsonify({"ok": True, "ja_existia": True,
+                                "credor": _credor_para_lancamento(s, ja)})
+            forn = svc_forn.criar(s, {
+                "tipo_pessoa": "PF" if len(doc) == 11 else "PJ",
+                "cnpj_cpf": doc,
+                "razao_social": (d.get("razao_social") or "").strip(),
+                "nome_fantasia": (d.get("nome_fantasia") or "").strip() or None,
+                "email": (d.get("email") or "").strip() or None,
+                "telefone": (d.get("telefone") or "").strip() or None,
+                "origem": "LANCAMENTO"}, usuario)
+
+            forma = (d.get("conta_forma") or "").strip().upper()
+            conta_criada = None
+            if forma in ("PIX", "TED"):
+                conta = FornecedorConta(
+                    fornecedor_id=forn.id, forma=FormaPagamento(forma),
+                    titular_nome=forn.razao_social, titular_doc=forn.cnpj_cpf,
+                    status=StatusConta.PENDENTE)
+                if forma == "PIX":
+                    chave = (d.get("pix_chave") or "").strip()
+                    if not chave:
+                        raise ErroValidacao("Informe a chave Pix do credor.")
+                    conta.pix_tipo = (d.get("pix_tipo") or "ALEATORIA").strip().upper()
+                    conta.pix_chave = chave
+                else:
+                    banco = somente_digitos(d.get("banco_codigo") or "")
+                    agencia = (d.get("agencia") or "").strip()
+                    numero = (d.get("conta") or "").strip()
+                    if not (banco and agencia and numero):
+                        raise ErroValidacao("Para TED informe banco, agência e conta.")
+                    conta.banco_codigo, conta.agencia, conta.conta = banco, agencia, numero
+                s.add(conta)
+                s.flush()
+                conta_criada = conta.id
+            s.commit()
+            return jsonify({"ok": True, "ja_existia": False,
+                            "conta_pendente_id": conta_criada,
+                            "credor": _credor_para_lancamento(s, forn)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao cadastrar credor no lançamento")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+def _credor_para_lancamento(s, forn) -> dict:
+    """O credor no MESMO formato que /erp/api/lancamento/dados devolve.
+
+    Uma função só, para a tela poder encaixar o recém-criado na lista sem
+    recarregar tudo — e para os dois formatos não divergirem com o tempo.
+    """
+    from app.apps.erp.db.models.cadastros import StatusConta
+    return {
+        "id": forn.id, "nome": forn.razao_social, "documento": forn.cnpj_cpf,
+        "situacao_rfb": forn.situacao_rfb,
+        "contas": [{"id": ct.id, "forma": ct.forma.value,
+                    "identificacao": ct.pix_chave or
+                    f"{ct.banco_codigo}/{ct.agencia}/{ct.conta}"}
+                   for ct in forn.contas if ct.status == StatusConta.HOMOLOGADA],
+        "contas_pendentes": [{"id": ct.id, "forma": ct.forma.value}
+                             for ct in forn.contas
+                             if ct.status == StatusConta.PENDENTE],
+    }
+
+
 @bp.route("/erp/api/lancamento/dados")
 @login_obrigatorio
 @permissao("lancar")

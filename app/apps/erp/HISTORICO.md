@@ -54,6 +54,94 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### 🧰 A TELA DE LANÇAMENTO, POR DENTRO (22/09/2026)
+
+Cinco coisas, todas achadas pelo dono usando o sistema, e a mais importante
+delas não era nenhuma das cinco — foi a frase dele no meio: *"putz, mas tô
+vendo que tem muitas falhas operacionais pequenas, isso vai dar muito trabalho
+pra corrigir. Toda tela existe várias."*
+
+**Vale registrar a resposta, porque ela muda como priorizar:** falha pequena
+achada USANDO é barata de consertar e cara de deixar. Cada uma dessas cinco
+levou de dez minutos a uma hora. O que custa caro é o que passa despercebido —
+como a competência indo para o mês errado, ou a crítica de duplicidade parando
+calada. Achar essas coisas com o sistema na mão é o método funcionando, não
+falhando.
+
+**1 · A BUSCA TRAVAVA — e o conserto vale para o ERP inteiro.**
+
+> *"Tem algo esquisito na busca pelo nome do credor, ele fica uns segundos meio
+> travado quando tentamos digitar, sem aparecer nada. Pensamos que não tá
+> funcionando."*
+
+A caixa de filtro que o ERP põe sozinha em lista longa refazia a lista inteira
+**a cada tecla**, clonando uma a uma todas as opções que casassem. Com 1.702
+credores (e 3.279 insumos na outra tela), digitar "jo" mandava o navegador criar
+milhares de elementos, e ele para de responder enquanto faz isso. Quem digita
+rápido enfileira uma refação por letra, e o travamento soma.
+
+Duas correções, e nenhuma resolve sozinha: **espera** de 140ms depois da última
+tecla (digitar uma palavra refaz uma vez, não cinco) e **teto** de 60 achados,
+com uma linha dizendo quantos ficaram de fora. O corte é DITO, nunca silencioso
+— lista cortada calada faz a pessoa jurar que o cadastro não existe.
+
+Isso conserta a busca de credor, de insumo, de categoria, de obra e de
+colaborador de uma vez só.
+
+**2 · LINHA DIGITÁVEL SÓ QUANDO A FORMA PEDE.** O campo ficava lá em Pix, em TED
+e em débito automático, com a dica "somente para boleto ou guia" dentro dele.
+Campo que não serve ao caminho escolhido não é neutro: faz parar para decidir se
+aquilo é com você, em toda parcela. Agora só aparece em BOLETO (obrigatório) e
+GUIA (opcional, porque DARF e GPS nem sempre trazem uma).
+
+**3 · CADASTRAR O CREDOR SEM SAIR DO LANÇAMENTO.**
+
+> *"Se o credor não tem cadastro, o ERP deve avisar e tem que ser permitido o
+> cadastro já a partir da tela."*
+
+Mesma regra de "uma porta" que já valia para empresa e obra. Tem botão
+**+ Cadastrar credor**, e quando o documento lido traz um emitente que não está
+cadastrado, um aviso o nomeia e oferece cadastrar com os dados já preenchidos —
+antes a pessoa procurava na lista um nome que não existia.
+
+**4 · A CONTA PENDENTE, E A SAÍDA DO BECO.** Este é o ponto que mais exigiu
+decisão.
+
+> *"'Dados bancários vivem no cadastro do credor, nunca no lançamento.' Isso
+> não tem sentido se tivermos cadastrando na hora. E ainda tem que prever como
+> sairemos da situação que cadastro o credor enquanto lanço e preciso voltar pra
+> cadastrar a forma de pgt."*
+
+A homologação em duas pessoas existe contra o golpe da troca de conta: quem
+lança não pode ser quem libera o destino do dinheiro. **Deixar o lançador criar
+conta já homologada destruiria o controle. Não deixar cadastrar nada obriga a
+jogar fora o lançamento e recomeçar.**
+
+A saída é PENDENTE: a conta nasce pendente, o lançamento é **gravado**, o título
+nasce **bloqueado** pela crítica C2 — que já existia —, e quem tem alçada
+homologa e manda **Reanalisar**. O trabalho não se perde e o controle não cai.
+
+Duas coisas tiveram de mudar para isso funcionar:
+
+- **A recusa no lançamento saiu.** Ela era REDUNDANTE: o motor de análise já
+  bloqueava o mesmo caso, e título bloqueado não pode ser aprovado nem pago. O
+  que continua recusado é o que é erro de verdade — conta de outro credor, ou
+  conta de forma diferente da escolhida.
+- **Nasceu o botão Reanalisar**, em Títulos. Sem ele o beco continuava: a
+  análise só rodava na criação, então homologar a conta não adiantava nada e o
+  título ficava preso para sempre. Reanalisar **não aprova** — devolve o título
+  para a fila, e a aprovação continua sendo de outra pessoa.
+
+E a dica que o dono apontou foi reescrita. A regra continua de pé, mas o que ela
+quer dizer é outra coisa: o dado bancário fica no CADASTRO do credor — é de lá
+que o pagamento sai, homologado por outra pessoa —, não solto dentro do título.
+Cadastrar na hora não fere isso.
+
+**5 · VARREDURA DOS CAMPOS**, como ele pediu. Duas incoerências a mais saíram:
+a dica da conta dizia *"este credor não tem conta BOLETO cadastrada"* em formas
+que não usam conta de credor nenhuma; e o rótulo **"Conta homologada"** passou a
+mentir quando a conta está pendente — virou **"Conta do credor"**.
+
 ### 🐞 O CÓDIGO DA OBRA NÃO MUDAVA — e o formato do defeito vale mais que ele
 
 22/09/2026:

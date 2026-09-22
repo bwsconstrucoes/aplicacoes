@@ -1291,6 +1291,13 @@ Feito nesta leva:
       (migração 079).
 - [x] **Desativar e reativar fornecedor pela ficha**, com apagar só para quem
       nunca foi usado (o sistema confere 10 tabelas antes de oferecer).
+- [x] **A tela de lançamento, por dentro (22/09/2026).** Busca que travava ao
+      digitar (conserto vale para toda lista longa do ERP: espera de 140ms e
+      teto de 60 achados, com o corte dito); linha digitável só em boleto e
+      guia; **+ Cadastrar credor** sem sair do lançamento, com aviso quando o
+      emitente do documento lido não está cadastrado; conta bancária criada ali
+      nasce **pendente** — o lançamento é gravado, o título nasce bloqueado e o
+      botão **Reanalisar** destrava depois da homologação, sem refazer nada.
 - [x] **Dois consertos achados usando o sistema (22/09/2026):** o código da
       obra não mudava ao salvar (a rota descartava o campo calada; agora troca,
       com trava de duplicidade e registro do de→para), e a competência saiu do

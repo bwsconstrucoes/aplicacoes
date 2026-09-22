@@ -1062,6 +1062,16 @@ passa a ser o fantasia.
 - OK **Que pagamentos saíram pela conta de outra empresa?** — a trilha guarda o
   recado com os dois nomes, em `detalhe.outra_empresa`.
 
+- OK **Quais títulos estão bloqueados, e por quê?** — a crítica que bloqueou
+  fica gravada na análise, com o código e o recado.
+- OK **Quais credores têm conta bancária esperando homologação?**
+- OK **Quem cadastrou este credor, e quando?** — a trilha guarda, inclusive
+  quando o cadastro nasceu de dentro do lançamento.
+
+⚠️ **Palavra ambígua: "conta do credor".** Uma conta PENDENTE existe no
+cadastro mas não paga nada. Responder "o credor tem conta" sem dizer o status
+faria alguém contar com um pagamento que o sistema vai bloquear.
+
 ⚠️ **Palavra ambígua: "conta".** São três coisas diferentes no ERP: a **conta
 bancária** (de onde o dinheiro sai), a **conta do plano financeiro** (a
 classificação do gasto) e a **conta do fornecedor** (onde ele recebe). A

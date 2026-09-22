@@ -457,23 +457,73 @@ function comBusca(alvo, textoVazio) {
   const original = document.createDocumentFragment();
   [...sel.children].forEach(el => original.appendChild(el.cloneNode(true)));
 
-  campo.addEventListener("input", () => {
+  // ---------------------------------------------------------------------
+  // POR QUE ISTO TEM ESPERA E TETO — 22/09/2026
+  //
+  // O dono, digitando o nome de um credor: *"tem algo esquisito na busca pelo
+  // nome do credor, ele fica uns segundos meio travado quando tentamos
+  // digitar, sem aparecer nada. Pensamos que não tá funcionando."*
+  //
+  // A CAUSA eram duas, e as duas somavam: a cada TECLA a lista inteira era
+  // refeita, clonando uma a uma TODAS as opções que casassem. Com 1.700
+  // credores (e 3.279 insumos na outra tela), digitar "jo" mandava o navegador
+  // criar milhares de elementos — e ele para de responder enquanto faz isso.
+  // Quem digita rápido enfileira uma refação por letra, e o travamento soma.
+  //
+  // Duas correções, e nenhuma resolve sozinha:
+  //   ESPERA — só refaz a lista 140ms depois da última tecla. Digitando uma
+  //            palavra inteira, refaz UMA vez em vez de cinco.
+  //   TETO   — mostra no máximo 60 achados e diz quantos ficaram de fora.
+  //            Ninguém escolhe olhando 800 linhas; quem tem 800 achados
+  //            precisa é digitar mais uma letra, e a linha de aviso diz isso.
+  // ---------------------------------------------------------------------
+  const TETO = 60;
+  const ESPERA = 140;
+  let relogio = null;
+
+  function filtrar() {
     const q = campo.value.toLowerCase().trim();
     const selecionado = sel.value;
-    sel.innerHTML = "";
-    [...original.children].forEach(el => {
+    let mostrados = 0, achados = 0;
+    const pedacos = document.createDocumentFragment();
+    for (const el of original.children) {
       if (el.tagName === "OPTGROUP") {
         const grupo = el.cloneNode(false);
-        [...el.children].forEach(o => {
-          if (!q || o.textContent.toLowerCase().includes(q)) grupo.appendChild(o.cloneNode(true));
-        });
-        if (grupo.children.length) sel.appendChild(grupo);
-      } else if (!q || el.textContent.toLowerCase().includes(q)) {
-        sel.appendChild(el.cloneNode(true));
+        for (const o of el.children) {
+          if (q && !o.textContent.toLowerCase().includes(q)) continue;
+          achados++;
+          if (mostrados < TETO) { grupo.appendChild(o.cloneNode(true)); mostrados++; }
+        }
+        if (grupo.children.length) pedacos.appendChild(grupo);
+      } else {
+        if (q && !el.textContent.toLowerCase().includes(q)) continue;
+        achados++;
+        if (mostrados < TETO) { pedacos.appendChild(el.cloneNode(true)); mostrados++; }
       }
-    });
+    }
+    sel.innerHTML = "";
+    sel.appendChild(pedacos);
+    // O que ficou de fora é DITO, não escondido: lista cortada em silêncio faz
+    // a pessoa jurar que o cadastro não existe.
+    if (achados > mostrados) {
+      const aviso = document.createElement("option");
+      aviso.disabled = true;
+      aviso.textContent = `… e mais ${achados - mostrados}. Digite mais para achar.`;
+      sel.appendChild(aviso);
+    }
+    if (q && !achados) {
+      const vazio = document.createElement("option");
+      vazio.disabled = true;
+      vazio.textContent = "nada encontrado com este texto";
+      sel.appendChild(vazio);
+    }
     if ([...sel.options].some(o => o.value === selecionado)) sel.value = selecionado;
     sel.size = q ? Math.min(8, Math.max(2, sel.options.length)) : 0;
+  }
+
+  campo.addEventListener("input", () => {
+    clearTimeout(relogio);
+    relogio = setTimeout(filtrar, ESPERA);
   });
   sel.addEventListener("change", () => { sel.size = 0; });
 }

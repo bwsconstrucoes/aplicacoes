@@ -65,6 +65,13 @@
       {% if pode.aprovar %}
       <button class="btn" data-acao="aprovar">✔ Liberar p/ pagamento</button>
       <button class="btn secundario" data-acao="devolver">↩ Devolver ao solicitante</button>
+      {# REANALISAR (22/09/2026) é a saída do título que ficou BLOQUEADO porque
+         a conta do credor foi cadastrada durante o lançamento e ainda não foi
+         homologada. Homologa-se a conta no cadastro do credor e manda
+         reanalisar — o lançamento não é refeito. Reanalisar NÃO aprova: o
+         título volta para a fila de aprovação. #}
+      <button class="btn secundario" data-acao="reanalisar"
+        title="Para título BLOQUEADO: roda a análise de novo depois de resolver o que bloqueou (conta homologada, por exemplo)">⟳ Reanalisar</button>
       {% endif %}
       {# CANCELAR tem condição PRÓPRIA desde 12/09/2026: quem lança cancela o
          próprio lançamento sem depender do financeiro. O botão aparece para

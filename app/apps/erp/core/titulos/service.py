@@ -291,20 +291,32 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     except ValueError:
         raise ErroValidacao(f"Forma de pagamento inválida: {dados.get('forma_pagamento')!r}")
 
+    # ---- conta do credor
+    #
+    # ATÉ 22/09/2026 ISTO RECUSAVA O LANÇAMENTO quando não havia conta
+    # HOMOLOGADA. O dono esbarrou no beco: *"tem que prever como sairemos da
+    # situação que cadastro o credor enquanto lanço e preciso voltar pra
+    # cadastrar a forma de pgt."* Sem conta homologada, o trabalho inteiro se
+    # perdia na hora de salvar.
+    #
+    # A recusa era REDUNDANTE, e é isso que permite afrouxá-la sem perder
+    # controle: o motor de análise já tem a crítica C2, que BLOQUEIA o título
+    # quando o PIX/TED não tem conta homologada. Título BLOQUEADO não pode ser
+    # aprovado, e sem aprovação não existe pagamento. A diferença é que agora o
+    # lançamento é GRAVADO e fica esperando a homologação, em vez de sumir.
+    #
+    # O que continua recusado é o que é erro de verdade, não de fluxo: conta de
+    # OUTRO credor, ou conta de forma diferente da escolhida.
     conta_id = dados.get("fornecedor_conta_id") or None
-    if forma in (FormaPagamento.PIX, FormaPagamento.TED):
-        if regras.exige_conta_fornecedor:
-            if not conta_id:
-                raise ErroValidacao(
-                    "Pagamento por PIX/TED exige seleção de conta HOMOLOGADA do fornecedor "
-                    "(dados bancários vivem no cadastro, nunca no lançamento).")
-            conta = s.get(FornecedorConta, int(conta_id))
-            if conta is None or conta.fornecedor_id != forn.id:
-                raise ErroValidacao("Conta selecionada não pertence ao fornecedor do título.")
-            if conta.status != StatusConta.HOMOLOGADA:
-                raise ErroValidacao(f"Conta selecionada não está HOMOLOGADA (status: {conta.status.value}).")
-            if conta.forma != forma:
-                raise ErroValidacao(f"Conta selecionada é {conta.forma.value}, não {forma.value}.")
+    if forma in (FormaPagamento.PIX, FormaPagamento.TED) and conta_id:
+        conta = s.get(FornecedorConta, int(conta_id))
+        if conta is None or conta.fornecedor_id != forn.id:
+            raise ErroValidacao("Conta selecionada não pertence ao fornecedor do título.")
+        if conta.forma != forma:
+            raise ErroValidacao(f"Conta selecionada é {conta.forma.value}, não {forma.value}.")
+        # Conta não homologada NÃO é recusada aqui: quem bloqueia é a crítica
+        # C2 do motor de análise, com o recado para quem vai destravar. Repetir
+        # a mensagem nos dois lugares faria as duas divergirem com o tempo.
 
     # ---- parcelas
     parcelas_in = dados.get("parcelas") or []
@@ -689,6 +701,38 @@ def aprovar(s: Session, titulo_id: int, usuario: Usuario) -> Titulo:
     t.aprovado_em = datetime.now(timezone.utc)
     registrar_evento(s, "titulo", t.id, "APROVADO",
                      {"numero_sp": t.numero_sp, "por": usuario.email}, usuario.id)
+    return t
+
+
+def reanalisar(s: Session, titulo_id: int, usuario: Usuario) -> Titulo:
+    """Roda o motor de análise de novo num título BLOQUEADO.
+
+    É A SAÍDA DO BECO que o dono apontou em 22/09/2026: *"tem que prever como
+    sairemos da situação que cadastro o credor enquanto lanço e preciso voltar
+    pra cadastrar a forma de pgt."*
+
+    Desde a mesma data, o lançamento com conta pendente é GRAVADO e nasce
+    BLOQUEADO pela crítica C2 — o trabalho não se perde. Mas até aqui não havia
+    volta: a análise só rodava na criação, e título bloqueado não pode ser
+    aprovado. Homologar a conta não adiantava nada.
+
+    Agora, homologada a conta, alguém manda reanalisar e o título segue. Note
+    que reanalisar NÃO aprova nada: ele volta para AGUARDANDO_APROVAÇÃO, e a
+    aprovação continua sendo de outra pessoa, com alçada.
+
+    Só vale para BLOQUEADO de propósito: reanalisar um título já aprovado
+    poderia rebaixá-lo sem ninguém pedir.
+    """
+    from app.apps.erp.core.titulos.analise import analisar_titulo
+
+    t = obter(s, titulo_id)
+    _exigir_status(t, StatusTitulo.BLOQUEADO)
+    antes = t.score_risco
+    analisar_titulo(s, t)
+    s.flush()
+    registrar_evento(s, "titulo", t.id, "REANALISADO",
+                     {"status": t.status.value, "score_antes": antes,
+                      "score_depois": t.score_risco}, usuario.id)
     return t
 
 
