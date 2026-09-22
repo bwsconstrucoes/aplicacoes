@@ -11,6 +11,7 @@
   {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
   {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
   {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+  {% for c in selecao.contas %}<input type="hidden" name="conta" value="{{ c }}">{% endfor %}
   {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
   {% for campo, valor in [('bloco', bloco), ('quebra', quebra),
                           ('visao', visao), ('medida', medida)] %}

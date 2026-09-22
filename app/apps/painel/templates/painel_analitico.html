@@ -11,6 +11,11 @@
   {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
   {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
   {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+  {# A conta ficava de fora daqui — e quem escolhia uma conta na barra lateral
+     e clicava em Aplicar via o filtro sumir sem aviso. 22/09/2026. #}
+  {% if 'conta' not in proprios %}
+    {% for c in selecao.contas %}<input type="hidden" name="conta" value="{{ c }}">{% endfor %}
+  {% endif %}
   {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
   {% for campo, valor in [('grupo', grupo), ('categoria', categoria),
                           ('credor', credor), ('busca', busca),
@@ -61,8 +66,12 @@
 <!-- ===================== FILTROS DESTA TELA ===================== -->
 <div class="cartao">
   <form method="get">
+    {# Uma conta só cabe na caixa desta tela; várias (marcadas na barra lateral)
+       viajam escondidas e a caixa avisa, em vez de mostrar só a primeira. #}
+    {% set conta_propria = (selecao.contas|length) <= 1 %}
     {{ esconde(['grupo', 'categoria', 'credor', 'busca',
-                'visao', 'ordem', 'de', 'ate', 'base']) }}
+                'visao', 'ordem', 'de', 'ate', 'base']
+               + (['conta'] if conta_propria else [])) }}
     <div class="form-grade">
       <div class="campo">
         <label for="busca">Buscar</label>
@@ -86,6 +95,20 @@
             <option value="{{ c }}" {% if c == categoria %}selected{% endif %}>{{ c }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div class="campo">
+        <label for="conta">Conta de pagamento</label>
+        <select id="conta" name="conta" {% if not conta_propria %}disabled{% endif %}>
+          {% if conta_propria %}
+            <option value="">(todas)</option>
+            {% for c in opcoes.contas or [] %}
+              <option value="{{ c }}" {% if selecao.contas and c == selecao.contas[0] %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          {% else %}
+            <option selected>({{ selecao.contas|length }} contas, pela barra lateral)</option>
+          {% endif %}
+        </select>
+        <p class="dica">A conta por onde o pagamento <b>saiu</b> — não a prevista no título.</p>
       </div>
       <div class="campo">
         <label for="de">Data — de</label>
@@ -124,7 +147,7 @@
       </div>
       <div class="campo" style="align-self:end; display:flex; gap:8px">
         <button class="btn" type="submit">Aplicar</button>
-        {% if grupo or categoria or credor or busca or de or ate %}
+        {% if grupo or categoria or credor or busca or de or ate or selecao.contas %}
           <a class="btn secundario" style="text-decoration:none"
              href="{{ url_for('painel.analitico') }}">Limpar</a>
         {% endif %}
@@ -177,6 +200,9 @@
     <a class="btn secundario" style="text-decoration:none"
        href="{{ link_baixar('analitico') }}">
       ⬇ Baixar Excel</a>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ link_baixar('analitico', formato='pdf') }}">
+      ⬇ PDF</a>
   </div>
   <div class="tabela-rolagem">
     <table>

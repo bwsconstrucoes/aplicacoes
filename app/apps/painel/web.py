@@ -2017,6 +2017,95 @@ def baixar(assunto):
             de=de, ate=ate, base=request.args.get("base", "movimento"),
             pagina=1, por_pagina=limite)["linhas"]
 
+    def _abas_do_analitico():
+        """O relatorio do Analitico com as somas por cima dos lancamentos.
+
+        22/09/2026, o dono: "melhore o relatorio, ta muito pobre. Acho que pode
+        ter outras abas." Saia uma aba so, a lista crua.
+
+        As somas sao feitas AQUI, a partir das mesmas linhas da aba de
+        lancamentos — e nao por consultas proprias — por um motivo: assim cada
+        aba de resumo FECHA com a lista, com os mesmos filtros (inclusive os
+        desta tela: grupo, credor, busca, faixa de data), e ninguem precisa
+        explicar por que a soma por conta deu diferente da lista."""
+        linhas = _analitico()
+        de, ate = _faixa_de_data()
+        visao = request.args.get("visao", "comprometido")
+
+        resumo = [{"o_que": "Filtro", "valor": chip} for chip in f.resumo()]
+        for rotulo, valor in (("Grupo", request.args.get("grupo", "")),
+                              ("Categoria", request.args.get("categoria", "")),
+                              ("Credor", request.args.get("credor", "")),
+                              ("Busca", (request.args.get("busca") or "").strip()),
+                              ("De", de), ("Ate", ate)):
+            if valor:
+                resumo.append({"o_que": rotulo, "valor": valor})
+        resumo.append({"o_que": "Visao", "valor": {"executado": "so pagas",
+                                                   "aberto": "so a pagar"}.get(visao, "comprometido")})
+        pago = sum(l["pago"] for l in linhas)
+        aberto = sum(l["a_pagar"] for l in linhas)
+        encargos = sum(l["juros"] + l["multa"] for l in linhas)
+        resumo += [
+            {"o_que": "Lancamentos", "valor": f"{len(linhas):,}".replace(",", ".")},
+            {"o_que": "Pago", "valor": round(pago, 2)},
+            {"o_que": "A pagar", "valor": round(aberto, 2)},
+            {"o_que": "Juros e multa", "valor": round(encargos, 2)},
+            {"o_que": "Total", "valor": round(pago + aberto + encargos, 2)},
+        ]
+
+        def _quebra(rotulo, chave_de):
+            """Uma aba de resumo: soma por uma chave, com o peso de cada linha."""
+            agg: dict = {}
+            for l in linhas:
+                nome, ordem = chave_de(l)
+                a = agg.setdefault(nome, {"nome": nome, "lancamentos": 0, "pago": 0.0,
+                                          "a_pagar": 0.0, "encargos": 0.0,
+                                          "total": 0.0, "_ordem": ordem})
+                a["lancamentos"] += 1
+                a["pago"] += l["pago"]
+                a["a_pagar"] += l["a_pagar"]
+                a["encargos"] += l["juros"] + l["multa"]
+                a["total"] += l["pago"] + l["a_pagar"] + l["juros"] + l["multa"]
+            base = sum(abs(a["total"]) for a in agg.values()) or 1.0
+            saida = []
+            for a in sorted(agg.values(), key=lambda a: a["_ordem"]):
+                a["pct"] = round(abs(a["total"]) / base * 100, 1)
+                for campo in ("pago", "a_pagar", "encargos", "total"):
+                    a[campo] = round(a[campo], 2)
+                a.pop("_ordem")
+                saida.append(a)
+            colunas = [("nome", rotulo), ("lancamentos", "Lancamentos"),
+                       ("pago", "Pago"), ("a_pagar", "A pagar"),
+                       ("encargos", "Juros e multa"), ("total", "Total"),
+                       ("pct", "% do total")]
+            return colunas, saida
+
+        def _por_texto(campo, vazio):
+            # maior valor primeiro: o total e negativo, entao o menor vem antes
+            return lambda l: ((l.get(campo) or "").strip() or vazio,
+                              (l["pago"] + l["a_pagar"] + l["juros"] + l["multa"]))
+
+        def _por_mes(l):
+            d = l.get("data")
+            if not d:
+                return "(sem data)", (9999, 12)
+            return f"{d.month:02d}/{d.year}", (d.year, d.month)
+
+        abas = [("Resumo", [("o_que", "O que"), ("valor", "Valor")], resumo)]
+        for titulo, rotulo, chave in (
+                ("Por grupo", "Grupo", _por_texto("grupo", "(sem grupo)")),
+                ("Por categoria", "Categoria", _por_texto("categoria", "(sem categoria)")),
+                ("Por credor", "Credor", _por_texto("credor", "(sem fornecedor)")),
+                ("Por conta de pagamento", "Conta de pagamento",
+                 _por_texto("conta", "(sem conta)")),
+                ("Por obra", "Obra", _por_texto("obra", "(sem obra)")),
+                ("Por mes", "Mes", _por_mes)):
+            colunas, dados = _quebra(rotulo, chave)
+            abas.append((titulo, colunas, dados))
+        abas.append(("Despesas Analitico", C["analitico"], linhas))
+        return abas
+
+
     def _abas_do_rateio_admin():
         """A memoria de calculo mes a mes, com os parametros ao lado.
 
@@ -2170,7 +2259,7 @@ def baixar(assunto):
 
     montadores = {
         "dre": lambda: [("DRE", C["dre"], _dre())],
-        "analitico": lambda: [("Despesas Analitico", C["analitico"], _analitico())],
+        "analitico": _abas_do_analitico,
         "extrato": lambda: [("Extrato de Conta", C["extrato"],
                              consultas.extrato_da_conta(
                                  f, busca=(request.args.get("busca") or "").strip(),

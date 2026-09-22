@@ -1827,6 +1827,44 @@ código, não a do mundo. O teste de 21/09 modelava a conta na perna consolidada
 porque eu assumi que era lá que ela estava. Quando o dono diz que não mudou,
 a primeira pergunta é *de qual pedaço do dado* o número está vindo.
 
+## Analítico: filtro pela conta de pagamento e o relatório com abas — 22/09/2026
+
+O dono: *"coloque no despesas analítico filtro pra conta de pagamento. Gostaria
+ainda que você melhorasse o relatório, tá muito pobre. Acho que pode ter outras
+abas."*
+
+**O filtro já existia — e sumia.** A barra lateral tem a lista de contas desde
+o Extrato (21/09), e o Analítico já a respeitava. Mas o formulário da própria
+tela não levava a conta adiante: quem escolhia uma conta na barra lateral e
+clicava em **Aplicar** via o filtro desaparecer, sem aviso. O DRE tinha o mesmo
+defeito. Os dois foram consertados, e o Analítico ganhou uma caixa própria,
+**"Conta de pagamento"** — uma conta só; várias marcadas na barra lateral
+viajam escondidas e a caixa avisa quantas são, em vez de mostrar só a primeira.
+
+A conta é **a de onde o pagamento saiu**, não a prevista no título — vale a
+correção da perna bancária, mais acima.
+
+**O relatório passou a ter oito abas**, todas somadas **a partir das mesmas
+linhas da aba de lançamentos** — e não por consultas próprias. É de propósito:
+assim cada resumo fecha com a lista, com os mesmos filtros (inclusive os desta
+tela: grupo, credor, busca, faixa de data), e ninguém precisa explicar por que
+a soma por conta deu diferente da lista.
+
+1. **Resumo** — os filtros aplicados (para o arquivo dizer o que ele é) e os
+   totais;
+2. **Por grupo**, 3. **Por categoria**, 4. **Por credor**,
+5. **Por conta de pagamento**, 6. **Por obra** — cada um com lançamentos,
+   pago, a pagar, juros e multa, total e % do total, do maior para o menor;
+7. **Por mês** — em ordem cronológica, o sem-data por último;
+8. **Lançamentos** — a lista de sempre.
+
+E o botão de **PDF** ao lado do Excel, que já existia para o resto e não para
+esta tela.
+
+Sete testes com banco de verdade: o recorte, a caixa, as duas contas que não
+se perdem, o DRE, as abas fechando com a lista, o filtro escrito no arquivo e
+o PDF.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
