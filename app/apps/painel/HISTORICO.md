@@ -1537,6 +1537,109 @@ para algum lugar; para onde, não.
 - **A observação só aparece depois do "Buscar as observações"**, e a tela diz
   isso em vez de mostrar travessão e deixar parecer que o dado não existe.
 
+## Os juros de empréstimo passam a ser pagos por quem demandou o caixa — 21/09/2026
+
+O dono parou e disse, em bom português, o que o painel ainda não faz — e que é
+o motivo de existir:
+
+> *"As telas que eu estou basicamente usando: DRE, analítica e o extrato. Todas
+> as outras telas juntas, elas têm sido uma tentativa ainda frustrada de
+> realizar a prestação de contas da empresa (…) a gente precisa entender o
+> resultado final e quanto é de direito para cada envolvido."*
+
+E apontou o que trava, na ordem em que ele mesmo colocou: (1) os aportes — já
+quase resolvidos; (2) os **percentuais de cada sócio e parceiro**, que só ele
+tem; (3) **o ponto mais crítico: pulverizar o custo da matriz nas obras**, com
+dois detalhes:
+
+> *"Quando a gente fala em custo de juros de empréstimo (…) a gente tem que
+> utilizar a necessidade de caixa da obra. Quem é que paga aquele juro de
+> empréstimo mês a mês? É a obra que está demandando caixa. Essa é a forma
+> justa. Se a obra não demanda caixa, não tem por que estar pagando um juro de
+> empréstimo. Esse juro de empréstimo, eles estão consolidados dentro do custo
+> da matriz."*
+
+> *"Segundo, dividir o custo das obras do Ceará com as demais obras. Por quê?
+> As obras do Ceará demandaram mais do que as outras obras."*
+
+### O que já existia, e por que não resolvia
+
+As duas metades do que ele pede já moravam no repositório — em telas
+**diferentes, que não se falavam**:
+
+- o **Rateio da Administração** já alocava os juros pelo déficit de caixa, que
+  é exatamente a régua dele. Mas só divide em **dois lados** (A e B): não fala
+  de obra individual nem de sócio, e o resultado não entra na prestação;
+- a **Prestação de Contas** já pulverizava o custo da matriz **obra a obra** e
+  já dividia entre sócios, com o caso do sócio externo. Mas jogava o juro
+  dentro do bolo da estrutura, repartido pelo **custo de pessoal**.
+
+Ou seja: quem sabia alocar juro direito não sabia falar de obra; quem falava de
+obra alocava juro errado. Obra que se paga sozinha pagava juro só por ter
+gente; obra que viveu de dinheiro emprestado pagava de menos.
+
+### O que mudou
+
+Na Prestação de Contas, o juro de empréstimo **sai do bolo da estrutura antes
+do rateio** e ganha régua própria:
+
+1. reconstrói-se o caixa acumulado de cada obra, mês a mês, **incluindo o
+   rateio da estrutura que coube a ela** — a administração que a obra consumiu
+   é dinheiro que ela fez a empresa gastar;
+2. o juro de cada mês é dividido entre as obras que estavam **com o acumulado
+   negativo naquele mês**, na proporção do tamanho do buraco;
+3. não há circularidade: o déficit que serve de régua é o de **antes** do juro.
+
+O buraco **não se apaga num mês sem movimento** — só quando a obra recupera o
+dinheiro. Sem isso, bastaria a obra ficar parada um mês para deixar de pagar o
+juro que ela mesma provocou.
+
+**Juro lançado direto numa obra não passa por aqui**: já é despesa dela, e
+mexer nisso seria tirar de quem o assumiu. O que se realoca é só o que está
+consolidado nos departamentos administrativos — que é onde ele está, como o
+dono disse.
+
+**Na divisão entre sócios o juro entra na base de TODOS**, inclusive do sócio
+externo — diferente do rateio da estrutura, que volta só para os internos. A
+razão: estrutura é overhead da construtora, e por ela se cobra a taxa de
+administração; juro é o preço do dinheiro que financiou **aquela obra**, e quem
+participa do resultado dela participa do custo de bancá-la. A soma das quotas
+continua fechando com o resultado do projeto — há teste para isso.
+
+### Três chaves novas (migração 015)
+
+- `categoria_juros` — o nome exato da categoria no OMIE (padrão *Juros sobre
+  Empréstimos*). É por ele que o juro é separado do resto do custo da matriz;
+- `juros_por_deficit` — `1` liga a régua nova, `0` volta ao comportamento
+  antigo. Sai ligada;
+- `juros_sem_deficit` — o que fazer com o juro de um mês em que **ninguém**
+  estava no vermelho: `sobra` (fica visível como custo sem dono, o padrão) ou
+  `estrutura` (segue a régua da estrutura).
+
+Todas editáveis em Prestação de Contas › Parâmetros › Geral.
+
+### O que a tela mostra agora
+
+Uma coluna **Juros de empréstimo** separada do **Rateio recebido** no resultado
+por projeto — juntá-las esconderia justamente a diferença que interessa. Abaixo,
+um bloco com o juro que coube a cada obra e uma **memória mês a mês** (juro
+pago, quantas obras no vermelho, o buraco somado, a maior devedora e qual régua
+valeu) para a conta poder ser conferida em vez de acreditada.
+
+### O que ficou de fora, e por quê
+
+- **Os percentuais de cada sócio e parceiro** continuam vazios. O cadastro
+  existe e a conta existe; falta o dado, que só o dono tem. Sem ele não há
+  visão global.
+- **A divisão do custo das obras do Ceará com as demais** não foi feita: a
+  frase dele admite duas leituras muito diferentes — o **prejuízo** do Ceará
+  espalhado nas outras obras, ou apenas o **custo do caixa** que elas
+  demandaram, que a régua nova já resolve sozinha. Perguntado, não chutado.
+- **Aporte recebido pela obra não abate a necessidade de caixa dela.** Hoje o
+  déficit é o da operação, tenha ele sido tapado pelo banco ou pelo sócio. Se o
+  dono quiser que aporte abata, é uma linha de configuração a mais — está na
+  pergunta que foi devolvida a ele.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

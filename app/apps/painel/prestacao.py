@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 
 MATRIZ, FILIAL = "MATRIZ", "FILIAL"
+SEM_DATA = "(sem data)"
 
 
 # ---------------------------------------------------------------------------
@@ -88,8 +89,6 @@ def calcular_rateio(despesa_admin, pessoal, obras, regras, config) -> dict:
     alocacoes: dict[tuple, float] = {}
     sobras: list[dict] = []
     capturado: dict[tuple, float] = {}     # (depto admin, mês) -> já pego por regra
-
-    SEM_DATA = "(sem data)"
 
     def _distribuir(mes: str, valor: float, escopo: str, origem: str):
         """Divide um valor entre as obras do escopo, na proporção do pessoal."""
@@ -164,10 +163,164 @@ def calcular_rateio(despesa_admin, pessoal, obras, regras, config) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 2b. Os juros de empréstimo: quem demandou o caixa é quem paga
+# ---------------------------------------------------------------------------
+# A régua aqui é OUTRA, e a diferença é o ponto:
+#
+# - o custo da estrutura se reparte pelo PESSOAL — obra com mais gente consome
+#   mais administração, gaste ela caixa ou não;
+# - o juro de empréstimo se reparte pelo DÉFICIT — ele não é estrutura, é o
+#   preço de faltar dinheiro. Obra que se paga sozinha não deveria pagar juro
+#   nenhum; obra que só anda com dinheiro emprestado paga o do mês em que
+#   estava no vermelho.
+#
+# E não há circularidade: o juro é alocado pelo déficit de ANTES do juro.
+
+CATEGORIA_JUROS_PADRAO = "Juros sobre Empréstimos"
+
+# O que fazer com o juro de um mês em que NINGUÉM estava negativo.
+SEM_DEFICIT = {
+    "sobra": "ninguém paga — fica visível como custo sem dono",
+    "estrutura": "segue a mesma régua da estrutura naquele mês",
+}
+
+
+def separar_juros(despesa_admin, categoria_juros: str):
+    """Tira do bolo da estrutura o que for juro de empréstimo.
+
+    Sem isto o juro seria rateado DUAS vezes — uma pelo pessoal, junto com o
+    resto da administração, e outra pelo déficit. Devolve (resto, juros por
+    mês), e o resto é o que as regras de rateio vão continuar dividindo.
+
+    Juro lançado direto numa obra não passa por aqui: ele já é despesa daquela
+    obra, e mexer nisso seria tirar de quem o assumiu."""
+    alvo = (categoria_juros or "").strip().lower()
+    if not alvo:
+        return list(despesa_admin), {}
+    resto, juros = [], {}
+    for linha in despesa_admin:
+        if (linha.get("categoria") or "").strip().lower() == alvo:
+            juros[linha["mes"]] = juros.get(linha["mes"], 0.0) + linha["valor"]
+        else:
+            resto.append(linha)
+    return resto, juros
+
+
+def _meses_ordenados(*conjuntos) -> list[str]:
+    """Todos os meses envolvidos, do mais antigo ao mais novo, sem o sem-data.
+
+    O formato é 'AAAA-MM', então a ordem alfabética JÁ é a cronológica."""
+    meses = set()
+    for conjunto in conjuntos:
+        meses |= {m for m in conjunto if m and m != SEM_DATA}
+    return sorted(meses)
+
+
+def alocar_juros_por_deficit(caixa_por_obra_mes, juros_por_mes, obras, *,
+                             rateio_recebido=None,
+                             sem_deficit: str = "sobra") -> dict:
+    """Divide o juro de cada mês entre as obras que estavam no vermelho nele.
+
+    Proporcional ao tamanho do buraco: quem devia o dobro paga o dobro.
+
+    Devolve as alocações — (obra, mês) -> valor, negativo como toda despesa —,
+    as **sobras** (juro que não coube em obra nenhuma, com o motivo) e a
+    **memória** mês a mês, para a conta poder ser conferida linha por linha em
+    vez de acreditada."""
+    if sem_deficit not in SEM_DEFICIT:
+        sem_deficit = "sobra"
+
+    # O acumulado de cada obra, mês a mês, agora sem buracos: o déficit de um
+    # mês sem movimento é o mesmo do mês anterior.
+    saldo: dict[str, dict[str, float]] = {}
+    for mes, obra, valor in caixa_por_obra_mes:
+        if obra in obras and mes != SEM_DATA:
+            saldo.setdefault(obra, {})
+            saldo[obra][mes] = saldo[obra].get(mes, 0.0) + float(valor or 0)
+    for (obra, mes), valor in (rateio_recebido or {}).items():
+        if obra in obras and mes != SEM_DATA:
+            saldo.setdefault(obra, {})
+            saldo[obra][mes] = saldo[obra].get(mes, 0.0) + float(valor or 0)
+
+    meses = _meses_ordenados({m for serie in saldo.values() for m in serie},
+                             set(juros_por_mes))
+    acumulado = {obra: 0.0 for obra in saldo}
+    alocacoes: dict[tuple, float] = {}
+    sobras: list[dict] = []
+    memoria: list[dict] = []
+
+    rateio_do_mes: dict[str, dict[str, float]] = {}
+    for (obra, mes), valor in (rateio_recebido or {}).items():
+        if obra in obras:
+            rateio_do_mes.setdefault(mes, {})[obra] = (
+                rateio_do_mes.get(mes, {}).get(obra, 0.0) + abs(float(valor or 0)))
+
+    for mes in meses:
+        for obra, serie in saldo.items():
+            acumulado[obra] += serie.get(mes, 0.0)
+        deficits = {o: -v for o, v in acumulado.items() if v < -0.005}
+        total = sum(deficits.values())
+        juro = juros_por_mes.get(mes, 0.0)
+
+        pesos, criterio = deficits, "déficit de caixa"
+        if total <= 0.005:
+            pesos, criterio = {}, "ninguém no vermelho"
+            if sem_deficit == "estrutura" and rateio_do_mes.get(mes):
+                pesos, criterio = rateio_do_mes[mes], "régua da estrutura"
+                total = sum(pesos.values())
+
+        if abs(juro) > 0.005:
+            if pesos and total > 0.005:
+                for obra, peso in pesos.items():
+                    chave = (obra, mes)
+                    alocacoes[chave] = alocacoes.get(chave, 0.0) + juro * peso / total
+            else:
+                sobras.append({
+                    "origem": "Juros de empréstimo", "mes": mes, "valor": juro,
+                    "motivo": "nenhuma obra estava com o caixa negativo neste mês",
+                })
+
+        memoria.append({
+            "mes": mes,
+            "juros": round(juro, 2),
+            "criterio": criterio,
+            "deficit_total": round(sum(deficits.values()), 2),
+            "obras_no_vermelho": len(deficits),
+            "maior": (max(deficits.items(), key=lambda kv: kv[1])[0]
+                      if deficits else ""),
+        })
+
+    juros_sem_data = juros_por_mes.get(SEM_DATA, 0.0)
+    if abs(juros_sem_data) > 0.005:
+        sobras.append({
+            "origem": "Juros de empréstimo", "mes": SEM_DATA,
+            "valor": juros_sem_data,
+            "motivo": "lançamento sem data: não dá para saber de que mês é o buraco",
+        })
+
+    return {"alocacoes": alocacoes, "sobras": sobras, "memoria": memoria}
+
+
+def total_por_obra(alocacoes) -> list[dict]:
+    """Soma uma alocação por obra, da maior para a menor — o formato da tela."""
+    total: dict[str, float] = {}
+    for (obra, _mes), valor in alocacoes.items():
+        total[obra] = total.get(obra, 0.0) + valor
+    return sorted(({"obra": o, "valor": round(v, 2)} for o, v in total.items()),
+                  key=lambda l: l["valor"])
+
+
+# ---------------------------------------------------------------------------
 # 3. A apuração por obra
 # ---------------------------------------------------------------------------
-def apurar(apuracao, obras, alocacoes) -> list[dict]:
-    """Junta a receita e a despesa de cada obra com o rateio que ela recebeu."""
+def apurar(apuracao, obras, alocacoes, juros=None) -> list[dict]:
+    """Junta a receita e a despesa de cada obra com o que ela recebeu de fora.
+
+    Duas coisas vêm de fora, e ficam separadas de propósito: o **rateio** da
+    estrutura, repartido pelo pessoal, e os **juros** de empréstimo, repartidos
+    pelo déficit de caixa. Juntá-las numa coluna só esconderia a diferença que
+    é justamente o ponto — obra que se paga sozinha carrega estrutura, mas não
+    carrega juro."""
     por_chave: dict[tuple, dict] = {}
     for linha in apuracao:
         obra = (linha["obra"] or "").strip()
@@ -176,28 +329,33 @@ def apurar(apuracao, obras, alocacoes) -> list[dict]:
         chave = (obras[obra]["projeto"], obra, linha["mes"])
         registro = por_chave.setdefault(chave, {
             "projeto": chave[0], "obra": obra, "mes": linha["mes"],
-            "receita_liquida": 0.0, "retencoes": 0.0, "despesas": 0.0, "rateio": 0.0,
+            "receita_liquida": 0.0, "retencoes": 0.0, "despesas": 0.0,
+            "rateio": 0.0, "juros": 0.0,
         })
         registro["receita_liquida"] += linha["receita_liquida"]
         registro["retencoes"] += linha["retencoes"]
         registro["despesas"] += linha["despesas"]
 
-    # rateio pode cair em obra/mês sem movimento próprio: a chave é criada aqui
-    for (obra, mes), valor in alocacoes.items():
-        if obra not in obras:
-            continue
-        chave = (obras[obra]["projeto"], obra, mes)
-        registro = por_chave.setdefault(chave, {
-            "projeto": chave[0], "obra": obra, "mes": mes,
-            "receita_liquida": 0.0, "retencoes": 0.0, "despesas": 0.0, "rateio": 0.0,
-        })
-        registro["rateio"] += valor
+    # rateio e juros podem cair em obra/mês sem movimento próprio: a chave é
+    # criada aqui
+    for campo, vindos in (("rateio", alocacoes), ("juros", juros or {})):
+        for (obra, mes), valor in vindos.items():
+            if obra not in obras:
+                continue
+            chave = (obras[obra]["projeto"], obra, mes)
+            registro = por_chave.setdefault(chave, {
+                "projeto": chave[0], "obra": obra, "mes": mes,
+                "receita_liquida": 0.0, "retencoes": 0.0, "despesas": 0.0,
+                "rateio": 0.0, "juros": 0.0,
+            })
+            registro[campo] += valor
 
     saida = []
     for registro in por_chave.values():
         registro["receita_bruta"] = registro["receita_liquida"] + registro["retencoes"]
         registro["resultado_direto"] = registro["receita_liquida"] + registro["despesas"]
-        registro["resultado"] = registro["resultado_direto"] + registro["rateio"]
+        registro["resultado"] = (registro["resultado_direto"] + registro["rateio"]
+                                 + registro["juros"])
         saida.append(registro)
     saida.sort(key=lambda r: (r["projeto"], r["obra"], r["mes"]))
     return saida
@@ -206,7 +364,7 @@ def apurar(apuracao, obras, alocacoes) -> list[dict]:
 def totalizar_por_projeto(apurado) -> dict:
     """Soma a apuração por projeto — é o nível em que os sócios participam."""
     campos = ("receita_bruta", "receita_liquida", "retencoes", "despesas",
-              "rateio", "resultado_direto", "resultado")
+              "rateio", "juros", "resultado_direto", "resultado")
     total: dict[str, dict] = {}
     for linha in apurado:
         alvo = total.setdefault(linha["projeto"], {c: 0.0 for c in campos})
@@ -230,7 +388,11 @@ def quotas_por_socio(por_projeto, participacoes, config) -> list[dict]:
 
       - cobra-se da parceria uma **taxa de administração** (um percentual da
         receita bruta). Para a parceria é custo; para os sócios da BWS é receita;
-      - a base que todos dividem é o resultado **direto** menos essa taxa;
+      - a base que todos dividem é o resultado **direto**, mais os **juros** que
+        a obra fez a empresa pagar, menos essa taxa. O juro entra na base de
+        todos porque não é estrutura da construtora: é o preço do dinheiro que
+        financiou AQUELA obra, e quem participa do resultado dela participa
+        também do custo de bancá-la;
       - o rateio administrativo da obra e a taxa cobrada voltam **só para os
         sócios internos**, na proporção entre eles.
 
@@ -260,7 +422,7 @@ def quotas_por_socio(por_projeto, participacoes, config) -> list[dict]:
         taxa_adm = taxa * numeros["receita_bruta"]
 
         if projeto in tem_externo:
-            base = numeros["resultado_direto"] - taxa_adm
+            base = numeros["resultado_direto"] + numeros.get("juros", 0.0) - taxa_adm
             quota = base * fracao
             credito = 0.0
             if not externo:
@@ -268,7 +430,7 @@ def quotas_por_socio(por_projeto, participacoes, config) -> list[dict]:
                 proporcao = (float(p["pct"]) / interna) if interna > 0 else 0.0
                 credito = (taxa_adm + numeros["rateio"]) * proporcao
                 quota += credito
-            visao = ("Parceria — resultado direto menos taxa de administração"
+            visao = ("Parceria — resultado direto, mais os juros, menos a taxa"
                      if externo else
                      "Parceria, lado BWS — mais a taxa e o rateio")
         else:
@@ -286,6 +448,7 @@ def quotas_por_socio(por_projeto, participacoes, config) -> list[dict]:
             "resultado": numeros["resultado"],
             "resultado_direto": numeros["resultado_direto"],
             "rateio": numeros["rateio"],
+            "juros": numeros.get("juros", 0.0),
         })
     saida.sort(key=lambda q: (q["socio"], q["projeto"]))
     return saida

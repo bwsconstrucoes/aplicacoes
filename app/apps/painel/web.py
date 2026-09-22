@@ -823,6 +823,12 @@ def _base_da_prestacao(config, medida: str) -> dict:
             config["grupo_pessoal"], medida),
         "admin": consultas.despesa_administrativa(
             [config["depto_admin_matriz"], config["depto_admin_filial"]], medida),
+        # O caixa e sempre CAIXA, mesmo quando a apuracao esta em comprometido:
+        # a regua dos juros e "quem estava sem dinheiro no mes", e conta a
+        # pagar nao tira dinheiro de ninguem. Vem com o mes em texto para
+        # casar com o resto da prestacao, que usa 'AAAA-MM'.
+        "caixa": [(mes.strftime("%Y-%m"), obra, valor)
+                  for mes, obra, valor in consultas.caixa_mensal_por_obra()],
     }
 
 
@@ -836,11 +842,31 @@ def _apurar_com(regras, config, base) -> dict:
     from . import prestacao
 
     obras = prestacao.classificar_obras(base["apuracao"], config)
-    rateio = prestacao.calcular_rateio(base["admin"], base["pessoal"], obras,
+
+    # Os juros de emprestimo saem do bolo da estrutura ANTES do rateio: eles
+    # tem regua propria — quem demandou caixa. Deixa-los no bolo faria a obra
+    # que se paga sozinha pagar juro so por ter gente, e faria o juro ser
+    # contado duas vezes.
+    por_deficit = str(config.get("juros_por_deficit", "1")) == "1"
+    categoria_juros = (config.get("categoria_juros")
+                       or prestacao.CATEGORIA_JUROS_PADRAO)
+    admin, juros_por_mes = ((prestacao.separar_juros(base["admin"], categoria_juros))
+                            if por_deficit else (base["admin"], {}))
+
+    rateio = prestacao.calcular_rateio(admin, base["pessoal"], obras,
                                        regras, config)
-    return {"obras": obras, "rateio": rateio,
+    if por_deficit:
+        juros = prestacao.alocar_juros_por_deficit(
+            base.get("caixa", []), juros_por_mes, obras,
+            rateio_recebido=rateio["alocacoes"],
+            sem_deficit=str(config.get("juros_sem_deficit", "sobra")))
+    else:
+        juros = {"alocacoes": {}, "sobras": [], "memoria": []}
+
+    return {"obras": obras, "rateio": rateio, "juros": juros,
             "apurado": prestacao.apurar(base["apuracao"], obras,
-                                        rateio["alocacoes"])}
+                                        rateio["alocacoes"],
+                                        juros["alocacoes"])}
 
 
 def _calcular_prestacao(medida: str, regras=None, config=None, base=None):
@@ -861,12 +887,13 @@ def _calcular_prestacao(medida: str, regras=None, config=None, base=None):
 
     conta = _apurar_com(regras, config, base)
     obras, rateio, apurado = conta["obras"], conta["rateio"], conta["apurado"]
+    juros = conta["juros"]
     por_projeto = prestacao.totalizar_por_projeto(apurado)
     quotas = prestacao.quotas_por_socio(por_projeto,
                                         prestacao_dados.participacoes(), config)
     ajustes = prestacao_dados.ajustes()
     return {
-        "config": config, "obras": obras, "rateio": rateio,
+        "config": config, "obras": obras, "rateio": rateio, "juros": juros,
         "apurado": apurado, "por_projeto": por_projeto,
         "quotas": quotas, "ajustes": ajustes,
         "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
@@ -882,9 +909,15 @@ def prestacao_contas():
     medida = "executado" if request.args.get("medida") == "executado" else "comprometido"
     calculo = _calcular_prestacao(medida)
 
+    from . import prestacao
+
     projetos = sorted(calculo["por_projeto"].items(),
                       key=lambda kv: -kv[1]["resultado"])
-    sobras = calculo["rateio"]["sobras"]
+    # As duas sobras aparecem juntas: para quem le, "custo que nao coube em
+    # obra nenhuma" e uma coisa so, venha ela da estrutura ou do juro.
+    sobras = calculo["rateio"]["sobras"] + calculo["juros"]["sobras"]
+    juros_por_obra = prestacao.total_por_obra(calculo["juros"]["alocacoes"])
+    memoria = [l for l in calculo["juros"]["memoria"] if abs(l["juros"]) > 0.005]
     return render_template(
         "painel_prestacao.html",
         **_contexto_comum("prestacao"),
@@ -896,6 +929,10 @@ def prestacao_contas():
         sobras=sorted(sobras, key=lambda s: abs(s["valor"]), reverse=True)[:40],
         total_sobras=sum(s["valor"] for s in sobras),
         rateio_total=sum(calculo["rateio"]["alocacoes"].values()),
+        juros_por_obra=juros_por_obra,
+        juros_total=sum(calculo["juros"]["alocacoes"].values()),
+        juros_memoria=memoria[-36:],
+        juros_por_deficit=str(calculo["config"].get("juros_por_deficit", "1")) == "1",
         tem_participacoes=bool(prestacao_dados.participacoes()),
     )
 
@@ -1057,7 +1094,8 @@ def _aplicar_mudanca_da_prestacao(dados, form):
         dados.apagar_ajuste(form["ajuste_id"])
     elif acao == "config":
         for chave in ("projeto_matriz", "depto_admin_matriz", "depto_admin_filial",
-                      "grupo_pessoal", "taxa_adm_pct", "residual"):
+                      "grupo_pessoal", "taxa_adm_pct", "residual",
+                      "categoria_juros", "juros_por_deficit", "juros_sem_deficit"):
             if chave in form:
                 dados.salvar_config(chave, form[chave])
 
