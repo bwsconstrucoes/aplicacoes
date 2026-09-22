@@ -1878,6 +1878,31 @@ def _valor_procurado(texto: str):
         return None
 
 
+# Quantos títulos a busca por valor devolve, no máximo. Um valor redondo
+# ("1000") bate com muitos títulos; a lista entra na consulta como parâmetro e
+# não pode crescer sem teto.
+TETO_DE_TITULOS_POR_VALOR = 5000
+
+
+def _titulos_com_o_valor(pedido: dict, valor: float) -> list:
+    """Os títulos cuja SOMA (todas as obras juntas) bate com o valor.
+
+    Uma consulta só, com o resultado guardado no próprio pedido: a lista, os
+    totais e o resumo montam o mesmo WHERE, e refazer a soma três vezes seria
+    pagar três vezes pela mesma resposta."""
+    guardado = pedido.get("_titulos_com_o_valor")
+    if guardado and guardado[0] == valor:
+        return guardado[1]
+    codigos = [c for (c,) in consultar(
+        f"""SELECT codigo_lancamento FROM fato
+             GROUP BY codigo_lancamento
+            HAVING ABS(ABS(SUM(pago_recebido)) - ?) < {TOLERANCIA_DE_VALOR}
+                OR ABS(ABS(SUM(a_pagar_receber)) - ?) < {TOLERANCIA_DE_VALOR}
+             LIMIT {TETO_DE_TITULOS_POR_VALOR}""", [valor, valor])]
+    pedido["_titulos_com_o_valor"] = (valor, codigos)
+    return codigos
+
+
 def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
     """Monta o WHERE do explorador a partir do que a pessoa escolheu."""
     condicoes, params = [], []
@@ -1973,14 +1998,26 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
             #
             # Foi assim que uma devolucao de aporte de 24/12/2025 pareceu sumida
             # a tarde inteira de 13/09/2026. Ela estava na base o tempo todo.
+            #
+            # E A SOMA POR TÍTULO É FEITA UMA VEZ, ANTES — não dentro do WHERE.
+            #
+            # 22/09/2026, o dono: "Tela montada em 373542 ms — 5 consultas ao
+            # banco". A versão anterior punha a soma como subconsulta dentro do
+            # OR ("codigo_lancamento IN (SELECT ... GROUP BY ...)"). Com 120
+            # mil títulos, o resultado não cabe na memória de trabalho do
+            # banco, e o Postgres deixa de guardá-lo numa tabela de hash: passa
+            # a REFAZER a soma da base inteira para cada uma das 185 mil linhas.
+            # Três consultas assim são seis minutos. Agora os títulos que batem
+            # com o valor são achados numa consulta só, e entram na condição
+            # como lista pronta.
             alternativas.append(
                 f"(ABS(ABS(pago_recebido) - ?) < {TOLERANCIA_DE_VALOR}"
-                f" OR ABS(ABS(a_pagar_receber) - ?) < {TOLERANCIA_DE_VALOR}"
-                " OR codigo_lancamento IN ("
-                "     SELECT codigo_lancamento FROM fato GROUP BY codigo_lancamento"
-                f"      HAVING ABS(ABS(SUM(pago_recebido)) - ?) < {TOLERANCIA_DE_VALOR}"
-                f"          OR ABS(ABS(SUM(a_pagar_receber)) - ?) < {TOLERANCIA_DE_VALOR}))")
-            valores.extend([valor, valor, valor, valor])
+                f" OR ABS(ABS(a_pagar_receber) - ?) < {TOLERANCIA_DE_VALOR})")
+            valores.extend([valor, valor])
+            codigos = _titulos_com_o_valor(pedido, valor)
+            if codigos:
+                alternativas.append("codigo_lancamento = ANY(?)")
+                valores.append(codigos)
         condicoes.append("(" + " OR ".join(alternativas) + ")")
         params.extend(valores)
 

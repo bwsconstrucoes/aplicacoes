@@ -1873,3 +1873,23 @@ def test_o_bloco_diz_ONDE_esta_o_resto_obra_por_obra(cliente_config):
     assert "784.647,07" in html
 
 
+
+
+def test_a_busca_por_valor_nao_soma_a_base_dentro_do_where(base_para_explorar):
+    """22/09/2026: "Tela montada em 373542 ms". A soma por título ficava como
+    subconsulta dentro do OR, e o banco a refazia para cada linha. Agora é uma
+    consulta antes, e a lista de títulos entra pronta — uma vez por pedido."""
+    from app.apps.painel import consultas
+    pedido = _pedido_padrao(busca="784.647,07")
+    where, params = consultas._onde_do_explorador(pedido)
+    assert "SELECT codigo_lancamento FROM fato" not in where
+    assert "_titulos_com_o_valor" in pedido, "a lista tem de ficar guardada no pedido"
+    # e a segunda montagem do WHERE (os totais, o resumo) nao consulta de novo
+    vistos = []
+    original = consultas.consultar
+    consultas.consultar = lambda s, p=(): (vistos.append(s), original(s, p))[1]
+    try:
+        consultas._onde_do_explorador(pedido)
+    finally:
+        consultas.consultar = original
+    assert not any("GROUP BY codigo_lancamento" in s for s in vistos)

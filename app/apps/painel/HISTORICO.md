@@ -1985,6 +1985,32 @@ mandar de novo — ensaio e executar. Se ainda bloquear, é outra coisa
 consumindo o OMIE ao mesmo tempo (uma atualização da base, ou o Análise de
 SPs), e aí é esperar ela acabar.
 
+## O Explorador levava seis minutos quando se procurava por valor — 22/09/2026
+
+O dono: *"Tela montada em 373542 ms — 5 consultas ao banco, 373530 ms delas."*
+
+**A causa** é da mesma família do bloco de Aportes: uma decisão cara refeita
+linha a linha. A busca por valor precisa achar o título cuja **soma** (todas
+as obras juntas) bate com o número digitado — e fazia isso com uma subconsulta
+dentro do `OR` do WHERE (`codigo_lancamento IN (SELECT … GROUP BY … HAVING …)`).
+Com 120 mil títulos o resultado não cabe na memória de trabalho do banco, e o
+Postgres deixa de guardá-lo numa tabela de hash: passa a **refazer a soma da
+base inteira para cada uma das 185 mil linhas**. Três consultas montam o mesmo
+WHERE (a lista, os totais e o resumo) — seis minutos.
+
+**O conserto:** a soma por título vira **uma consulta só, antes**
+(`_titulos_com_o_valor`), com o resultado guardado no próprio pedido, e os
+títulos entram na condição como lista pronta. A busca por texto e por número
+do título continuam iguais.
+
+**Não medido em produção ainda** — o dono vai mandar o "Tela montada em" da
+mesma busca.
+
+**Ainda pesa, e fica anotado:** a busca por texto varre a base inteira com
+`ILIKE` em três colunas, sem índice. Numa base de 185 mil linhas são alguns
+segundos, não minutos; se incomodar, o caminho é um índice de trigramas
+(`pg_trgm`), que depende de a extensão existir no Postgres do Render.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
