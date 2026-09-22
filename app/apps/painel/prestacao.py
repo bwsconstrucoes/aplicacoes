@@ -311,6 +311,149 @@ def total_por_obra(alocacoes) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# 2c. O rateio do CENÁRIO: uma régua escolhida, percentuais em hierarquia
+# ---------------------------------------------------------------------------
+# A diferença para o `calcular_rateio` acima não é de conta, é de operação. Lá,
+# cada pedaço do custo da matriz exigia cadastrar uma regra com nome, escopo e
+# vigência. O dono disse que ficou complicado, e tinha razão.
+#
+# Aqui a conta da matriz herda o percentual padrão do cenário; marcar o GRUPO
+# sobrepõe; marcar a CATEGORIA sobrepõe o grupo; marcar um LANÇAMENTO sobrepõe
+# a categoria. Configurar é tocar em poucas linhas, não em todas.
+#
+# E a régua de quem recebe é escolhida: MÃO DE OBRA (o custo de pessoal de cada
+# obra) ou FATURAMENTO. A razão de a mão de obra ser o padrão está na frase do
+# dono: "o custo de despesas com o pessoal é um indicador da quantidade de
+# energia que aquela obra requer (…) o DP vai ter mais trabalho, a engenharia
+# vai ter mais trabalho".
+
+
+def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,
+                  pct_padrao: float) -> float:
+    """Quanto desta conta entra no bolo, do mais específico ao mais amplo.
+
+    Zero e "não marcado" são coisas DIFERENTES: zero quer dizer "esta conta não
+    se divide"; não marcado quer dizer "segue o nível de cima"."""
+    for nivel, chave in (("lancamento", codigo), ("categoria", categoria),
+                         ("grupo", grupo)):
+        if chave and chave in (pesos.get(nivel) or {}):
+            return float(pesos[nivel][chave])
+    return float(pct_padrao)
+
+
+def pesos_por_mes(driver, meses, janela: str = "1") -> dict:
+    """Quanto de cada obra em cada mês, de 0 a 1, pela régua escolhida.
+
+    `driver` é (mês, obra, valor) — o custo de pessoal ou o faturamento. A
+    janela soma os meses anteriores antes de comparar: janela curta reage
+    rápido e balança, janela longa é estável e demora a reagir.
+
+    Mês em que a régua inteira deu zero não inventa divisão: devolve vazio, e
+    quem chama transforma isso numa sobra visível."""
+    por_obra: dict[str, dict[str, float]] = {}
+    for mes, obra, valor in driver:
+        if mes == SEM_DATA:
+            continue
+        por_obra.setdefault(obra, {})
+        por_obra[obra][mes] = por_obra[obra].get(mes, 0.0) + abs(float(valor or 0))
+
+    ordem = list(meses)
+    try:
+        n = max(int(janela), 1)
+    except (TypeError, ValueError):
+        n = None                                   # 'acumulado'
+
+    saida: dict[str, dict[str, float]] = {}
+    for i, mes in enumerate(ordem):
+        recorte = ordem[:i + 1] if n is None else ordem[max(0, i - n + 1):i + 1]
+        bruto = {obra: sum(serie.get(m, 0.0) for m in recorte)
+                 for obra, serie in por_obra.items()}
+        total = sum(bruto.values())
+        saida[mes] = ({obra: v / total for obra, v in bruto.items() if v > 0}
+                      if total > 0.005 else {})
+    return saida
+
+
+def calcular_rateio_do_cenario(despesa_admin, excecoes, driver, obras, pesos,
+                               *, pct_padrao: float = 100.0,
+                               janela: str = "1") -> dict:
+    """Divide o custo da matriz entre as obras, pelo cenário.
+
+    `despesa_admin` é o agregado por (mês, grupo, categoria); `excecoes` são os
+    lançamentos marcados um a um — eles saem do agregado e entram com o
+    percentual próprio, senão o mesmo dinheiro contaria duas vezes.
+
+    Devolve as alocações — (obra, mês) -> valor —, as **sobras** (custo que não
+    coube em obra nenhuma, com o motivo) e a **memória** mês a mês. A sobra não
+    é detalhe: é custo real da empresa que ficou sem dono, e a tela mostra isso
+    em vez de esconder."""
+    pesos = pesos or {}
+
+    # 1. As exceções saem do balde a que pertencem.
+    fora: dict[tuple, float] = {}
+    pool: dict[str, float] = {}
+    sobras: list[dict] = []
+    for e in excecoes or []:
+        chave = (e["mes"], e.get("grupo") or "", e.get("categoria") or "")
+        fora[chave] = fora.get(chave, 0.0) + float(e["valor"] or 0)
+        pct = peso_da_conta(pesos, e.get("grupo"), e.get("categoria"),
+                            str(e.get("codigo") or ""), pct_padrao)
+        if e["mes"] == SEM_DATA:
+            if abs(float(e["valor"] or 0) * pct / 100.0) > 0.005:
+                sobras.append({"origem": f"Lançamento {e.get('codigo')}",
+                               "mes": SEM_DATA, "valor": float(e["valor"]) * pct / 100.0,
+                               "motivo": "lançamento sem data: não dá para ratear por mês"})
+            continue
+        pool[e["mes"]] = pool.get(e["mes"], 0.0) + float(e["valor"]) * pct / 100.0
+
+    # 2. O que sobrou de cada balde entra pelo percentual do seu nível.
+    for linha in despesa_admin:
+        chave = (linha["mes"], linha.get("grupo") or "", linha.get("categoria") or "")
+        valor = float(linha["valor"] or 0) - fora.get(chave, 0.0)
+        if abs(valor) <= 0.005:
+            continue
+        pct = peso_da_conta(pesos, linha.get("grupo"), linha.get("categoria"),
+                            "", pct_padrao)
+        parte = valor * pct / 100.0
+        if abs(parte) <= 0.005:
+            continue
+        if linha["mes"] == SEM_DATA:
+            sobras.append({"origem": f"{linha.get('grupo') or '(sem grupo)'} › "
+                                     f"{linha.get('categoria') or '(sem categoria)'}",
+                           "mes": SEM_DATA, "valor": parte,
+                           "motivo": "lançamento sem data: não dá para ratear por mês"})
+            continue
+        pool[linha["mes"]] = pool.get(linha["mes"], 0.0) + parte
+
+    # 3. O bolo de cada mês se divide pela régua escolhida.
+    meses = _meses_ordenados(set(pool), {m for m, _o, _v in driver})
+    fracoes = pesos_por_mes([(m, o, v) for m, o, v in driver if o in obras],
+                            meses, janela)
+
+    alocacoes: dict[tuple, float] = {}
+    memoria: list[dict] = []
+    for mes in meses:
+        bolo = pool.get(mes, 0.0)
+        fatias = fracoes.get(mes) or {}
+        if abs(bolo) > 0.005 and not fatias:
+            sobras.append({"origem": "Custo da matriz", "mes": mes, "valor": bolo,
+                           "motivo": "nenhuma obra com movimento na régua escolhida "
+                                     "neste mês"})
+        for obra, fracao in fatias.items():
+            if abs(bolo * fracao) > 0.005:
+                alocacoes[(obra, mes)] = alocacoes.get((obra, mes), 0.0) + bolo * fracao
+        memoria.append({
+            "mes": mes,
+            "pool": round(bolo, 2),
+            "obras": len(fatias),
+            "maior": (max(fatias.items(), key=lambda kv: kv[1])[0] if fatias else ""),
+            "maior_pct": (round(max(fatias.values()) * 100, 1) if fatias else 0.0),
+        })
+
+    return {"alocacoes": alocacoes, "sobras": sobras, "memoria": memoria}
+
+
+# ---------------------------------------------------------------------------
 # 3. A apuração por obra
 # ---------------------------------------------------------------------------
 def apurar(apuracao, obras, alocacoes, juros=None) -> list[dict]:
