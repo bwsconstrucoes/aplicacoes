@@ -1914,6 +1914,44 @@ ver a composição, a suspeita seguinte é duplicação de movimentos na retomad
 por página (`espelho.py`): a página gravada sem a marca salva seria regravada.
 Não foi investigado porque a composição explica o caso relatado; fica anotado.
 
+## O bloco de Aportes levava dois minutos para abrir — 22/09/2026
+
+O dono, com o número na mão: *"Tela montada em 126753 ms — 15 consultas ao
+banco, 126743 ms delas."*
+
+**A causa.** Cada consulta do bloco decidia, **linha a linha**, se o lançamento
+era aporte e de que tipo: tirar acento da categoria, testar dez expressões
+regulares e procurar "bws" na contraparte. Para 185 mil linhas, quinze vezes
+por tela. A decisão não muda entre uma tela e outra — muda quando a base é
+refeita.
+
+**O conserto: decidir uma vez, na montagem do fato** (`tipo_aporte`, migração
+017). `''` quer dizer "não é aporte"; `NULL` quer dizer "linha anterior à
+migração, ainda não recalculada" — e para essas a consulta cai na expressão
+antiga, lenta mas certa. Depois do primeiro **"Só refazer os números"** não
+sobra NULL nenhum e cada consulta lê um texto pronto.
+
+**O que precisa acontecer para valer:** apertar "Aplicar atualizações do
+banco" (017) **e** rodar "Só refazer os números". Só a migração não acelera
+nada.
+
+**E três pedidos do dono na mesma hora, no mesmo bloco:**
+
+- *"Essa informação não deveria aparecer aqui, tem que colocar em
+  Configurações."* A comparação com a base inteira ("na base inteira são X
+  aportados… estão fora do que você está vendo") e a cascata "de onde vem
+  cada número" **saíram do DRE**. Estão em Configurações › Conferências, num
+  bloco próprio ("Aportes na base inteira — e onde está o resto"). O DRE
+  perdeu quatro consultas pesadas com isso;
+- *"Essa tela por tipo tá errada, acho que nem precisa dela — tô achando os
+  dados em duplicidade."* A tabela **Por tipo** saiu do bloco e da planilha.
+  Era a mesma soma do "Por obra" aberta por outro eixo;
+- *"Na por obra poderia ter só o somatório embaixo."* Tem: linha de total com
+  aportado, devolvido e saldo.
+
+**De passagem, um erro meu:** ao remover o bloco do DRE cortei junto a tabela
+"Por sócio ou parceiro" — um teste do dublê pegou antes de sair daqui.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

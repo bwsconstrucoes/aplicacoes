@@ -929,7 +929,7 @@ def test_aba_de_aportes_mostra_os_quatro_recortes(painel):
     assert "Aportes e devoluções" in html
     assert "Por sócio ou parceiro" in html
     assert "Por obra" in html
-    assert "Por tipo" in html
+    assert "Por tipo" not in html      # saiu em 22/09/2026: "dados em duplicidade"
     assert "Lançamentos" in html
     assert "Falta p/ igualar" in html
     assert "SÓCIO A" in html
@@ -987,7 +987,7 @@ def test_o_excel_de_aportes_tem_uma_aba_por_recorte(painel):
     assert r.status_code == 200
     livro = load_workbook(io.BytesIO(r.get_data()))
     assert livro.sheetnames == [
-        "Aportes por Socio", "Aportes por Obra", "Aportes por Tipo",
+        "Aportes por Socio", "Aportes por Obra",
         "Dividendos", "Lancamentos de Aporte", "Resultado x Dividendos"]
 
 

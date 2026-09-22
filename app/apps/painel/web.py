@@ -515,14 +515,9 @@ def dre():
         aportes = consultas.aportes(f)
         divisao = consultas.resultado_dividendos(f)
         extra["aportes"] = aportes
-        # O bloco usa os filtros da barra lateral. Quem olha a tela nao tem como
-        # saber quanto ficou DE FORA por causa deles — e foi exatamente isso que
-        # fez o dono caçar um valor "sumido" por dias. Agora o bloco diz.
-        extra["aportes_base"] = consultas.aportes_na_base_inteira()
-        # A cascata e a lista por contraparte, com OS MESMOS filtros da tela,
-        # so quando alguem pede: sao varias varreduras na base inteira.
-        if request.args.get("diagnostico") == "1":
-            extra["aportes_diag"] = consultas.conferencia_dos_aportes(f)
+        # A comparacao com a base inteira e a cascata de conferencia SAIRAM
+        # daqui em 22/09/2026 — o dono: "essa informacao nao deveria aparecer
+        # aqui, tem que colocar em Configuracoes". Estao la, nas conferencias.
         extra["divisao"] = divisao
         extra["hipotese"] = consultas.hipotese_de_distribuicao(
             aportes["por_socio"], divisao["disponivel"])
@@ -1814,7 +1809,7 @@ def configuracoes():
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
         conferencia = sumidos = aportes_conf = observacoes = fora = None
-        contas_conf = None
+        contas_conf = aportes_base = None
         conferir = False
         recarga = None
     else:
@@ -1842,7 +1837,7 @@ def configuracoes():
         conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
         conferencia = sumidos = aportes_conf = observacoes = fora = None
-        contas_conf = None
+        contas_conf = aportes_base = None
         if not vazia and (conferir or procurado is not None):
             # CADA UMA POR SI. Em 20/09/2026 o dono apertou o botão e "não
             # apresentou resultado" — e não havia como saber se tinha dado erro,
@@ -1856,6 +1851,11 @@ def configuracoes():
                                 conferencias_com_erro, "Busca pelo valor")
             aportes_conf = _conferir(consultas.conferencia_dos_aportes,
                                      conferencias_com_erro, "Aportes do DRE")
+            # Veio do bloco do DRE: aportado e devolvido na base inteira, e
+            # onde esta o resto, obra por obra.
+            aportes_base = _conferir(consultas.aportes_na_base_inteira,
+                                     conferencias_com_erro,
+                                     "Aportes na base inteira")
             observacoes = _conferir(consultas.cobertura_das_observacoes,
                                     conferencias_com_erro,
                                     "Observações dos títulos")
@@ -1881,6 +1881,7 @@ def configuracoes():
         conferencia=conferencia,
         sumidos=sumidos,
         aportes_conf=aportes_conf,
+        aportes_base=aportes_base,
         observacoes=observacoes,
         fora=fora,
         contas_conf=contas_conf,
@@ -2280,7 +2281,6 @@ def baixar(assunto):
         return [
             ("Aportes por Socio", C["aporte_socio"], bloco["por_socio"]),
             ("Aportes por Obra", C["aporte_obra"], bloco["por_obra"]),
-            ("Aportes por Tipo", C["aporte_tipo"], bloco["por_tipo"]),
             ("Dividendos", C["aporte_dividendos"], bloco["dividendos"]),
             ("Lancamentos de Aporte", C["aporte_lancamentos"],
              consultas.lancamentos_de_aporte(f, limite=None)["linhas"]),

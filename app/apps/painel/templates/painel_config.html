@@ -993,6 +993,43 @@
 {% endif %}
 
 {# ========== DE ONDE VEM A DIFERENÇA DO BLOCO DE APORTES ========== #}
+{% if aportes_base %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Aportes na base inteira — e onde está o resto</h3></div>
+  <p class="cartao-dica">
+    Sem filtro nenhum, a base tem <b>{{ brl(aportes_base.aportado) }}</b>
+    aportados e <b>{{ brl(aportes_base.devolvido) }}</b> devolvidos
+    ({{ aportes_base.lancamentos }} lançamentos). O bloco do DRE usa os filtros
+    da barra lateral; o que não aparece lá está aqui, obra por obra. A linha
+    <b>(não apropriado)</b> é a que costuma explicar a diferença: aportes e
+    devoluções sem obra nenhuma somem quando se filtra por obra. O conserto é
+    apropriar o lançamento (no OMIE, ou pelo Explorador).
+  </p>
+  {% if aportes_base.por_obra %}
+  <div class="tabela-rolagem" style="max-height:300px">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Obra</th>
+        <th class="sem-ordem direita">Aportado</th>
+        <th class="sem-ordem direita">Devolvido</th>
+        <th class="sem-ordem direita">Lançamentos</th>
+      </tr></thead>
+      <tbody>
+      {% for l in aportes_base.por_obra %}
+        <tr>
+          <td class="desc">{{ l.obra }}</td>
+          <td class="dados direita">{{ brl(l.aportado) }}</td>
+          <td class="dados direita">{{ brl(l.devolvido) }}</td>
+          <td class="dados direita">{{ l.lancamentos }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if aportes_conf %}
 <div class="cartao" style="margin-top:14px">
   <div class="cartao-cab"><h3>Aportes do DRE — onde os valores se perdem</h3></div>

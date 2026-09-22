@@ -937,3 +937,31 @@ def test_titulo_sem_medicao_diz_isso_em_portugues():
     # e o que JÁ era legível continua igual
     assert rotulo_medicao("MED:CEIFOR5|3") == "CEIFOR5 | Medição 3"
     assert rotulo_medicao("DOC:NF 900") == "NF 900"
+
+
+# ===========================================================================
+# O tipo de aporte é decidido na montagem do fato, não em cada consulta
+# ===========================================================================
+# 22/09/2026, o dono: "Tela montada em 126753 ms — 15 consultas ao banco". Cada
+# consulta refazia a classificação (acento, dez expressões regulares, "bws" na
+# contraparte) em 185 mil linhas. Agora é uma coluna (migração 017).
+
+def test_o_fato_ja_diz_se_a_linha_e_aporte(espelho_limpo):
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    aporte = _titulo_do_omie(11, valor=1000.0, natureza="R")
+    aporte["codigo_categoria"] = "1.02.02"            # Aporte de Parceiro, pelo código
+    comum = _titulo_do_omie(12, valor=500.0, natureza="P")
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [aporte], "R")
+        espelho.gravar_titulos(conn, [comum], "P")
+        espelho.gravar_movimentos(conn, [_movimento_do_omie(11, pago=1000.0),
+                                         _movimento_do_omie(12, pago=500.0)])
+        fato.reconstruir_fato(conn)
+
+    tipos = dict(consultar("SELECT codigo_lancamento, tipo_aporte FROM fato"
+                           " WHERE codigo_lancamento IN (11, 12)"))
+    assert tipos[11] == "Aporte de Parceiro"
+    assert tipos[12] == "", "linha que não é aporte leva '' — nunca NULL"

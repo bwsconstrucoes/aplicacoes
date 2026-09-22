@@ -447,6 +447,11 @@ COLUNAS_FATO = (
     # atraso, que nao existia em lugar nenhum do painel.
     "data", "ano", "mes", "data_vencimento", "data_pagamento",
     "pago_recebido", "a_pagar_receber", "juros", "multa",
+    # Que tipo de aporte e a linha ('' quando nao e). Decidido AQUI, uma vez,
+    # em vez de em cada consulta do bloco de aportes — que levava dois minutos
+    # para abrir por refazer essa decisao 185 mil vezes por consulta (migracao
+    # 017).
+    "tipo_aporte",
 )
 
 
@@ -569,6 +574,9 @@ def gerar_linhas_fato(conn):
 
             buckets = _buckets_rateio(rateio.get(cod, []), bruto, proj_map)
 
+            # O tipo de aporte, decidido uma vez por titulo. '' = nao e aporte.
+            tipo_aporte = classificar_aporte(desc_cat, ccat, razao) or ""
+
             # Chave da medicao: e o que junta as parcelas de uma mesma medicao,
             # que no OMIE sao titulos separados sem numero de documento. Guardada
             # na linha para a tela poder agrupar no banco.
@@ -604,12 +612,13 @@ def gerar_linhas_fato(conn):
                         round(sinal * p_valor * frac, 2),
                         round(sinal * em_aberto * frac, 2),
                         round(sinal * p_juros * frac, 2),
-                        round(sinal * p_multa * frac, 2))
+                        round(sinal * p_multa * frac, 2),
+                        tipo_aporte)
                 # linha RETIDO (so a receber; valor sempre como realizado).
                 # UMA so, mesmo com varias baixas: a retencao e do titulo.
                 if is_rec and ret_total > TOL and primeira is not None:
                     yield comum + (CATEGORIA_RETIDO, None, GRUPO_RETIDO) + primeira + (
-                        round(ret_total * frac, 2), 0.0, 0.0, 0.0)
+                        round(ret_total * frac, 2), 0.0, 0.0, 0.0, "")
 
 
 # -----------------------------------------------------------------------------

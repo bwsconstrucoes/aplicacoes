@@ -1490,7 +1490,17 @@ def _sql_tipos_no_saldo() -> str:
     return ", ".join(f"'{t}'" for t in sorted(TIPOS_NO_SALDO))
 
 
-TIPO_APORTE = _sql_tipo_aporte()
+# A decisão "é aporte, e de que tipo?" mora na coluna `tipo_aporte`, escrita na
+# montagem do fato (migração 017). A expressão em SQL fica como REDE, só para
+# as linhas ainda não recalculadas (NULL): assim a tela continua certa entre a
+# migração e o próximo "Só refazer os números" — lenta nessas linhas, mas
+# certa. Depois disso, cada consulta lê um texto pronto em vez de refazer dez
+# expressões regulares por linha, e o bloco que levava dois minutos abre em
+# menos de um segundo.
+#
+# '' na coluna quer dizer "não é aporte"; o NULLIF devolve isso como NULL, que
+# é o que todas as consultas já esperavam.
+TIPO_APORTE = f"NULLIF(COALESCE(tipo_aporte, {_sql_tipo_aporte()}), '')"
 NO_SALDO = _sql_tipos_no_saldo()
 
 # Nome de quem aportou e obra onde entrou — com o mesmo rótulo de "faltando" que
@@ -1594,8 +1604,9 @@ def aportes(f: Filtros) -> dict:
                  for l in _agregado_de_aporte(f, [_SOCIO_AGRUPADO])]
     por_obra = [dict(l, obra=l["chaves"][0], socio=l["chaves"][1])
                 for l in _agregado_de_aporte(f, [_OBRA, _SOCIO_AGRUPADO])]
-    por_tipo = [dict(l, obra=l["chaves"][0], tipo=l["chaves"][1])
-                for l in _agregado_de_aporte(f, [_OBRA, TIPO_APORTE])]
+    # O recorte "por tipo" saiu em 22/09/2026 — o dono: "tá errado, acho que
+    # nem precisa dela; tô achando os dados em duplicidade". Era a mesma soma
+    # do "por obra" aberta por outro eixo, e confundia mais do que dizia.
 
     # "Falta p/ igualar": a distância até o MAIOR aportador da mesma obra. É uma
     # referência de igualdade, não uma cobrança — o sistema não conhece a quota
@@ -1612,7 +1623,7 @@ def aportes(f: Filtros) -> dict:
         l["pct"] = (l["aportado"] / total_ap * 100) if total_ap else 0.0
 
     return {
-        "por_socio": por_socio, "por_obra": por_obra, "por_tipo": por_tipo,
+        "por_socio": por_socio, "por_obra": por_obra,
         "dividendos": dividendos_por_socio(f),
         "lancamentos": lancamentos_de_aporte(f),
         "aportado": total_ap, "devolvido": total_dev,
