@@ -2037,9 +2037,9 @@ rápido e outras nem vai."* Três causas, todas conhecidas, nenhuma aleatória:
    listas guardadas em memória (`_lembrando`), que morrem com o processo. É a
    causa mais provável do "nem vai". Afrouxar para 1000 é decisão do dono e
    exige mudar **em dois lugares** — o `Procfile` e o *Start Command* do
-   Render, que o sobrescreve (ver `CLAUDE.md` › Gunicorn). **Decidido em
-   22/09: 1000.** O `Procfile` já está assim; o dono cola o mesmo texto no
-   Start Command do Render — até lá, vale o de 150.
+   Render, que o sobrescreve (ver `CLAUDE.md` › Gunicorn). **Decidido e aplicado em
+   22/09: 1000**, no `Procfile` e no Start Command do Render, os dois no mesmo
+   dia. A memória fica em observação nos próximos dias.
 2. **Estatísticas velhas depois de refazer os números.** "Só refazer os
    números" esvazia e regrava o `fato` inteiro; até o autovacuum passar, o
    planejador do Postgres escolhe os caminhos das consultas com os números de
