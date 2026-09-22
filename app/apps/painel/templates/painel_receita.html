@@ -92,6 +92,13 @@
             <a href="{{ com_filtros('painel.receita_detalhe', medicao=m.medicao) }}"
                style="font-weight:600">{{ m.medicao }}</a>
             {% if m.documento %}<small>doc. {{ m.documento }}</small>{% endif %}
+            {# Uma medição em várias notas é normal; mas mostrar UM documento
+               para o grupo inteiro fez o dono conferir esse documento no OMIE
+               e achar um valor oito vezes menor. Agora a linha diz quantos
+               títulos junta — e o detalhe lista um a um. #}
+            {% if m.titulos and m.titulos > 1 %}
+              <small style="color:var(--ambar-escuro, #8a5a00)"> · <b>{{ m.titulos }} títulos</b></small>
+            {% endif %}
           </td>
           <td class="desc">{{ m.cliente }}</td>
           <td>{{ m.obra }}</td>

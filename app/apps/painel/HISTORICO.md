@@ -1865,6 +1865,52 @@ Sete testes com banco de verdade: o recorte, a caixa, as duas contas que não
 se perdem, o DRE, as abas fechando com a lista, o filtro escrito no arquivo e
 o PDF.
 
+## "Falha gravíssima": a medição que valia oito vezes o título — 22/09/2026
+
+O dono:
+
+> *"CREPEBELEM | Medição 1, doc. PM1339984827 — R$ 664.875,43 bruto. No OMIE
+> tenho para o mesmo título o valor bruto de 86.828,71. Vi outra obra
+> (MERCADOBARBALHA) e estava correto. Outra tem valores corretos e errados."*
+
+**O que a linha é.** A Receita de Obra junta numa linha todos os títulos cuja
+**observação** diz a mesma medição da mesma obra (`OBRA|Medição No: N`) — de
+propósito, desde a conversão: uma medição é faturada em várias notas (principal
+e reajuste, fontes de recurso diferentes), e a linha mostra a medição inteira.
+MERCADOBARBALHA bate porque lá cada medição é uma nota só.
+
+**O que estava errado na tela.** Ela mostrava **um** documento para o grupo
+inteiro (`MAX(numero_documento)`) — e não dizia que era um grupo. O dono pegou
+esse documento, conferiu no OMIE, achou R$ 86 mil, e concluiu, com razão, que
+o número não tinha pé nem cabeça. **Um número que não dá para conferir é um
+número errado**, mesmo quando a soma está certa.
+
+**O que mudou:**
+
+- a lista diz **quantos títulos** cada medição junta (`· 3 títulos`, em
+  âmbar), e a planilha ganhou a coluna;
+- o detalhe da medição abre com **os títulos um a um** — nº no OMIE,
+  documento, data, cliente, bruto, recebido, retido, a receber, observação —
+  e, quando são vários, explica de onde vem o agrupamento e **onde se corrige**
+  (na observação do título, no OMIE; na próxima atualização ele sai sozinho);
+- a lista passou a sair **por data**, mais recente primeiro. Era por valor, e o
+  dono viu "aleatório";
+- **as outras receitas saíram da lista de medições.** Rendimento, estorno e
+  devolução apareciam misturados com as medições (a lista era "toda receita do
+  DRE"); agora a lista é só receita de obra e o imposto retido dela
+  (`RECEITA_DE_OBRA`), e o resto fica só no bloco "Outras receitas", embaixo.
+  O total do rodapé segue a mesma régua. *"Não misturar com a receita de
+  obra"* — o dono, três vezes na mesma hora.
+
+**O que NÃO dá para saber daqui:** se os outros títulos de "CREPEBELEM |
+Medição 1" são mesmo dessa medição (notas da mesma medição) ou títulos com a
+observação errada. O detalhe novo é o que responde — e a resposta é dele.
+
+**Se ele confirmar que o OMIE está certo e o painel errado** mesmo depois de
+ver a composição, a suspeita seguinte é duplicação de movimentos na retomada
+por página (`espelho.py`): a página gravada sem a marca salva seria regravada.
+Não foi investigado porque a composição explica o caso relatado; fica anotado.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

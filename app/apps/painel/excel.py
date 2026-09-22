@@ -197,7 +197,7 @@ COLUNAS = {
                  ("documento", "Documento"), ("data", "Data"),
                  ("bruto", "Bruto"), ("recebido", "Recebido"),
                  ("retido", "Retido na fonte"), ("a_receber", "A receber"),
-                 ("situacao", "Situação")],
+                 ("situacao", "Situação"), ("titulos", "Títulos do OMIE")],
     "outras": [("categoria", "Categoria"), ("recebido", "Recebido"),
                ("a_receber", "A receber"), ("titulos", "Títulos")],
     "fluxo": [("rotulo", "Mês"), ("entradas", "Entradas"), ("saidas", "Saídas"),

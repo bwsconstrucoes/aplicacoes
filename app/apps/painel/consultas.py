@@ -34,6 +34,10 @@ PAGO = "pago"
 # Imposto retido na fonte: o cliente reteve, nao virou caixa da BWS. Entra na
 # receita bruta e sai da liquida.
 RETIDO = "categoria ILIKE '%Retido%'"
+# O que e MEDICAO na Receita de Obra: a receita de obras e o imposto retido dela.
+# Rendimento, estorno e devolucao NAO sao medicao — o dono viu os dois juntos na
+# mesma lista em 22/09/2026 e pediu que ficassem so no bloco "Outras receitas".
+RECEITA_DE_OBRA = f"(categoria = 'Receita de Obras' OR {RETIDO})"
 
 EXECUTADO = f"CASE WHEN {PAGO} THEN pago_recebido ELSE 0 END"
 EM_ABERTO = "a_pagar_receber"
@@ -688,11 +692,16 @@ def obra_para_projeto() -> dict:
 # (migração 004), então quem agrupa é o banco.
 
 def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
-    """As medições de obra, da maior para a menor.
+    """As medições de obra, da mais recente para a mais antiga.
+
+    Era da maior para a menor, e o dono achou que "apareciam de forma
+    aleatória" (22/09/2026): quem confere receita contra o OMIE lê por data. A
+    mais recente vem primeiro porque a lista tem teto — cortar as antigas dói
+    menos que cortar as do mês.
 
     Bruto = o que já entrou + o que o cliente reteve + o que falta receber.
     `visao`: 'todas', 'a_receber' (só com saldo) ou 'quitadas'."""
-    where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])
+    where, params = f.where(f"analise = 'DRE' AND tipo = ? AND {RECEITA_DE_OBRA}", [REC])
     tendo = {
         "a_receber": "HAVING ABS(SUM(a_pagar_receber)) > 0.005",
         "quitadas": "HAVING ABS(SUM(a_pagar_receber)) <= 0.005",
@@ -703,13 +712,20 @@ def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
                MAX(numero_documento), MAX(link), MAX(data),
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
                SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(a_pagar_receber)
+               SUM(a_pagar_receber),
+               -- quantos TITULOS do OMIE esta linha junta. Uma medicao e
+               -- faturada em varias notas, e isso e de proposito; mas a tela
+               -- mostrava UM documento para o grupo inteiro, e o dono foi
+               -- conferir esse documento no OMIE: achou R$ 86 mil onde a
+               -- linha dizia R$ 664 mil. 22/09/2026. Sem este numero a linha
+               -- nao tem como ser conferida.
+               COUNT(DISTINCT codigo_lancamento)
           FROM fato{where}
          GROUP BY 1 {tendo}
-         ORDER BY ABS(SUM({COMPROMETIDO})) DESC LIMIT {int(limite)}"""
+         ORDER BY MAX(data) DESC NULLS LAST, 1 LIMIT {int(limite)}"""
     saida = []
     for (rotulo, cliente, obra, projeto, documento, link, data,
-         recebido, retido, a_receber) in consultar(sql, params):
+         recebido, retido, a_receber, titulos) in consultar(sql, params):
         recebido, retido = float(recebido or 0), float(retido or 0)
         a_receber = float(a_receber or 0)
         bruto = recebido + retido + a_receber
@@ -726,8 +742,40 @@ def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
             "projeto": projeto or "", "documento": documento or "",
             "link": link or "", "data": data,
             "recebido": recebido, "retido": retido, "a_receber": a_receber,
-            "bruto": bruto, "situacao": situacao,
+            "bruto": bruto, "situacao": situacao, "titulos": int(titulos or 0),
         })
+    return saida
+
+
+def titulos_da_medicao(medicao: str, limite: int = 200) -> list[dict]:
+    """Os títulos do OMIE que compõem UMA medição, um por linha.
+
+    É o que permite conferir a linha da Receita de Obra contra o OMIE: a
+    medição junta os títulos cuja observação diz a mesma medição da mesma obra
+    (várias notas, principal e reajuste, fontes de recurso diferentes). Quando
+    a observação está errada num título, ele cai na medição errada — e é aqui
+    que isso aparece, com o número para achar o título lá."""
+    sql = f"""
+        SELECT codigo_lancamento, MAX(numero_documento), MAX(razao_social),
+               MAX(departamento), MAX(data), MAX(observacao), MAX(link),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+               SUM(a_pagar_receber)
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ? AND medicao_rotulo = ?
+         GROUP BY codigo_lancamento
+         ORDER BY MAX(data) NULLS LAST, codigo_lancamento
+         LIMIT {int(limite)}"""
+    campos = ("codigo", "documento", "cliente", "obra", "data", "observacao",
+              "link", "recebido", "retido", "a_receber")
+    saida = []
+    for linha in consultar(sql, [REC, medicao]):
+        d = dict(zip(campos, linha))
+        for campo in ("recebido", "retido", "a_receber"):
+            d[campo] = float(d[campo] or 0)
+        d["bruto"] = d["recebido"] + d["retido"] + d["a_receber"]
+        d["documento"] = d["documento"] or ""
+        saida.append(d)
     return saida
 
 
@@ -736,7 +784,7 @@ def total_das_medicoes(f: Filtros, visao: str = "todas") -> dict:
 
     A tela mostra as 300 maiores; o total tem de ser de TODAS, senão o rodapé
     não bate com o DRE."""
-    where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])
+    where, params = f.where(f"analise = 'DRE' AND tipo = ? AND {RECEITA_DE_OBRA}", [REC])
     tendo = {
         "a_receber": "HAVING ABS(SUM(a_pagar_receber)) > 0.005",
         "quitadas": "HAVING ABS(SUM(a_pagar_receber)) <= 0.005",

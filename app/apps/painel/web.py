@@ -661,10 +661,14 @@ def receita_detalhe(medicao):
     recebimentos = consultas.recebimentos_da_medicao(medicao)
     total = {campo: sum(float(r[campo] or 0) for r in recebimentos)
              for campo in ("valor", "juros", "multa", "desconto")}
+    # Os titulos que compoem a medicao — o que da para conferir no OMIE.
+    titulos = consultas.titulos_da_medicao(medicao)
     return render_template(
         "painel_medicao.html",
         **_contexto_comum("receita"),
         medicao=medicao, recebimentos=recebimentos, total=total,
+        titulos=titulos,
+        bruto_dos_titulos=sum(t["bruto"] for t in titulos),
     )
 
 
