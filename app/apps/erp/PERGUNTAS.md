@@ -1194,6 +1194,31 @@ outra inverte quem deve a quem.
 - FALTA **"avisar quando o seguro-garantia estiver perto de vencer"** — a data
   agora existe; o aviso na agenda ainda não.
 
+## 3w. O número que alguém mandou: que registro é esse?
+
+Construído em 22/09/2026, junto com `/erp/ir/<numero>`. São as perguntas que
+aparecem quando chega um número solto por WhatsApp.
+
+- OK **Que registro é o número X?** — o sistema reconhece dez tipos pelo
+  formato e diz qual é.
+- OK **Abrir o registro de número X** — leva direto à tela dele.
+- OK **Qual o link deste lançamento / desta obra / deste pedido?**
+
+⚠️ **Palavra ambígua: "número".** No ERP são vários, e trocá-los dá resposta
+errada com cara de certa: o **número da SP** (000123, o lançamento), o **número
+do documento** (a nota fiscal do fornecedor), o **número do pedido de compra**
+(PC-0001) e o **número interno** (o do banco, que ninguém vê). Quando alguém
+diz só "o número", quase sempre é a SP.
+
+⚠️ **Muda conforme quem pergunta.** O mesmo número pode abrir para uma pessoa e
+não abrir para outra — e a resposta para quem não pode é a MESMA de número que
+não existe, de propósito.
+
+- FALTA **"achar pelo número da nota fiscal do fornecedor"** — hoje o atalho
+  entende os números que o ERP gera, não os que vêm de fora.
+- FALTA **medição** — ela é numerada dentro do contrato, e ainda não tem número
+  único próprio. Para chegar nela, o caminho é o contrato.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

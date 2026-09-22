@@ -368,7 +368,9 @@ def login_obrigatorio(fn):
         if not session.get("erp_usuario_id"):
             if request.path.startswith("/erp/api/"):
                 return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
-            return redirect(url_for("erp.pagina_login"))
+            # leva junto o endereço pedido, para voltar a ele depois de entrar
+            return redirect(url_for("erp.pagina_login",
+                                    proximo=request.full_path.rstrip("?")))
         return fn(*a, **kw)
     return _wrap
 
@@ -562,11 +564,81 @@ def _recusa_de_acesso(perfil_enum):
                            perfil=ROTULOS.get(perfil_enum, perfil_enum.value)), 403
 
 
+def _destino_seguro(bruto: str | None) -> str | None:
+    """O endereço para onde voltar depois de entrar — se for daqui de dentro.
+
+    Aceitar qualquer endereço seria abrir a porta para o golpe clássico: um
+    link que passa pela tela de entrada da BWS e joga a pessoa, já convencida
+    de que está no sistema, num site de fora pedindo a senha. Por isso só
+    passa caminho relativo que começa em /erp/ — sem "//", sem outro domínio.
+    """
+    destino = (bruto or "").strip()
+    if not destino.startswith("/erp/") or destino.startswith("//"):
+        return None
+    if "\n" in destino or "\r" in destino or "\\" in destino:
+        return None
+    return destino
+
+
+# ---------------------------------------------------------------------------
+# O NÚMERO VIRA LINK — /erp/ir/<numero>
+#
+# Pedido do dono em 22/09/2026: *"eu encaminho via celular o número de um
+# registro, e a pessoa só clica e puf, abre o sistema"* — do mesmo jeito que
+# um card do Pipefy.
+#
+# As telas já abriam direto num registro, mas só pelo número INTERNO do banco,
+# que ninguém vê. Aqui entra o número que o sistema imprime — 000123, PC-0001,
+# CRECHE01 — e sai a tela certa, já aberta nele.
+#
+# Quem não está logado é levado ao login e VOLTA para cá depois de entrar.
+# Quem não tem a ação recebe "não encontrado", e não "sem permissão": dizer
+# "existe, mas você não pode" já entrega que o número existe, e varrer números
+# mapearia o sistema sem abrir um registro.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/ir/<path:numero>")
+@login_obrigatorio
+@permissao("ver_erp")
+def ir_para_o_numero(numero: str):
+    from app.apps.erp.core.auth.permissoes import pode
+    from app.apps.erp.core.comum import atalho
+
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            achados = [a for a in atalho.achar(s, numero)
+                       if pode(usuario, a["destino"].acao)]
+    except Exception as e:
+        logger.exception("ERP: falha ao procurar o número %r", numero)
+        return render_template("erp_numero.html", numero=atalho.limpar(numero),
+                               achados=[], erro=recado_de_falha(e)), 500
+
+    limpo = atalho.limpar(numero)
+    if not achados:
+        logger.info("ERP/ir: número %r não levou a nada", limpo)
+        return render_template("erp_numero.html", numero=limpo,
+                               achados=[], erro=None), 404
+    if len(achados) == 1:
+        a = achados[0]
+        return redirect(atalho.endereco(a["destino"], a["id"], a["numero"]))
+    # dois registros com o mesmo número: a pessoa escolhe, em vez de o
+    # sistema adivinhar e abrir o errado calado
+    return render_template("erp_numero.html", numero=limpo, erro=None, achados=[
+        {"rotulo": a["destino"].rotulo, "numero": a["numero"],
+         "endereco": atalho.endereco(a["destino"], a["id"], a["numero"])}
+        for a in achados])
+
+
 @bp.route("/erp/entrar", methods=["GET", "POST"])
 @permissao_publica("tela de login — porta de entrada do ERP")
 def pagina_login():
+    # PARA ONDE A PESSOA IA (22/09/2026). Até aqui o login jogava todo mundo na
+    # tela inicial, esquecendo o endereço pedido — e um link mandado por
+    # WhatsApp morria na porta: quem clicava caía no início e tinha de caçar o
+    # registro na mão. Agora o destino atravessa o login.
+    proximo = _destino_seguro(request.args.get("proximo") or request.form.get("proximo"))
     if request.method == "GET":
-        return render_template("erp_login.html", erro=None)
+        return render_template("erp_login.html", erro=None, proximo=proximo)
     email = (request.form.get("email") or "").strip()
     senha = request.form.get("senha") or ""
     try:
@@ -576,12 +648,12 @@ def pagina_login():
             session["erp_usuario_nome"] = usuario.nome
             session["erp_usuario_perfil"] = usuario.perfil.value
         logger.info("ERP: login de %s", email)
-        return redirect(url_for("erp.pagina_inicio"))
+        return redirect(proximo or url_for("erp.pagina_inicio"))
     except ErroAutenticacao as e:
-        return render_template("erp_login.html", erro=str(e)), 401
+        return render_template("erp_login.html", erro=str(e), proximo=proximo), 401
     except Exception as e:  # falha de banco/config
         logger.exception("ERP: falha no login")
-        return render_template("erp_login.html",
+        return render_template("erp_login.html", proximo=proximo,
                                erro=f"Não foi possível conectar ao banco: {e}"), 500
 
 

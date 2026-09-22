@@ -6741,6 +6741,99 @@ teste automatizado). O que eles acharam virou teste de verdade:
 defeito: desfazendo os consertos, três falham na hora.
 
 
+## O NÚMERO VIRA LINK — /erp/ir/<numero>
+
+22/09/2026, pedido do dono:
+
+> *"Cada lançamento, cadastro, uma obra, um título a pagar, uma medição, um
+> pedido de compra — a gente tem uma numeração, e essa numeração a gente tem um
+> link que a gente possa acessar (…) da mesma forma que eu consigo acessar um
+> card do Pipefy. Porque de repente eu encaminho via celular o número de um
+> registro, e a pessoa só clica e puf, abre o sistema."*
+
+### O que já existia, e por que não bastava
+
+Oito telas já abriam direto num registro — mas só pelo **número interno do
+banco** (`/erp/titulos?titulo=57`), que ninguém vê, ninguém decora e não está
+em papel nenhum. O que a pessoa tem na mão é o número que o sistema imprime:
+**000123**, **PC-0001**, **CRECHE01**.
+
+Agora existe **um endereço só**: `/erp/ir/<numero>`. Ele descobre que registro é
+aquele e leva à tela certa, já aberta nele. Funciona para dez tipos:
+lançamento, pedido de material, cotação, pedido de compra, empreita, locação,
+despesa de colaborador, processo do acompanhamento, insumo e obra.
+
+Aceita o número sujo, do jeito que chega: `SP 000123`, `nº 000123`, `000123`,
+`123` (sem os zeros da frente), maiúscula ou minúscula.
+
+### O que quase matou a ideia: o login jogava todo mundo no início
+
+**Era o defeito que tornava tudo inútil.** Quem clicasse no link sem estar
+logado entrava e caía na tela inicial — tendo de caçar o registro na mão, que é
+exatamente o trabalho que o link deveria poupar.
+
+Agora o destino atravessa o login: a tela de entrada guarda para onde a pessoa
+ia, avisa *"Entre para abrir o registro que te mandaram"*, e depois de entrar
+leva até lá. **Só caminho que começa em `/erp/` passa** — aceitar qualquer
+endereço abriria o golpe clássico de um link que atravessa a tela de entrada da
+BWS e joga a pessoa, já convencida de que está no sistema, num site de fora
+pedindo a senha.
+
+### O botão de copiar, e o link na mensagem de WhatsApp
+
+Na ficha do lançamento, da obra, do pedido de compra e da empreita há um
+**"🔗 Copiar link"**. Ele copia o número, a descrição e o endereço juntos —
+pronto para colar:
+
+    000001 — MADEIREIRA DO CEARA LTDA
+    https://<o endereço do sistema>/erp/ir/000001
+
+E a mensagem que o ERP já mandava por WhatsApp (o "Encaminhar" do título)
+passou a levar o link no fim. Antes ela contava o que era e parava aí.
+
+### Dois defeitos que só apareceram usando
+
+1. **O link de um pedido de compra já recebido dizia "não está na lista de
+   agora"** em vez de abrir. A tela chega filtrada em "aguardando autorização",
+   e pedido que andou sai dela — mas quem clica num link quer ver AQUELE
+   registro, não a lista de hoje. A conferência contra a lista foi removida: a
+   ficha é buscada no servidor, que é quem decide se pode mostrar.
+2. **Fornecedor desativado** dava "não está mais no cadastro". Agora a tela
+   recarrega incluindo os inativos antes de desistir.
+
+O lançamento já tinha a saída certa (abre em janela quando não está na lista) —
+foi o que serviu de modelo.
+
+### Número que não existe e número que não se pode ver respondem IGUAL
+
+De propósito, e é a mesma regra do escopo: dizer *"existe, mas você não pode"*
+já entrega que o número existe, e varrer números mapearia o sistema sem abrir
+um registro. As duas respostas são a mesma tela, byte a byte — tirando o número
+que a própria pessoa digitou. **Há teste comparando as duas.**
+
+### Onde mexer quando aparecer registro novo
+
+Tudo vive em `core/comum/atalho.py`, numa tabela só: o tipo, a tabela, a coluna
+do número, a tela e a ação que o perfil precisa ter. Tipo novo é uma linha ali
+— e dois testes conferem que toda tela apontada existe e que toda ação
+declarada existe de verdade, porque qualquer um dos dois errado fecharia o
+atalho em silêncio.
+
+**O pedido de material é a exceção que vale explicar:** a tela dele lista
+ITENS, não pedidos. Então `/erp/ir/SS-0001` não abre ficha — deixa a lista
+filtrada naquele pedido, que é o que se quer ver: as linhas dele e em que pé
+cada uma está.
+
+### O que ficou de fora
+
+- **Medição** ainda não tem número próprio único (ela é numerada dentro do
+  contrato), então não entrou. Para chegar nela, o caminho é o contrato.
+- **Link para quem não tem conta no sistema** não existe, e foi escolha: hoje
+  todo link exige login. Abrir para fora significaria link com senha embutida —
+  e um título carrega dado bancário de fornecedor. Se o dono quiser isso um
+  dia, é decisão dele, e muda o desenho.
+
+
 ## Regras que não se discutem
 
 ### 1. Nada que rode antes de toda rota depende do ORM

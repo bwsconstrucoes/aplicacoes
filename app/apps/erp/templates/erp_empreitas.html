@@ -91,6 +91,7 @@ async function abrir(id){
     const {contrato: c} = await api(`/erp/api/empreitas/${id}`);
     els("dlg-titulo").textContent = `${c.numero} — ${c.prestador}`;
     els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      <div style="margin-bottom:10px">${botaoDeLink(c.numero, c.prestador)}</div>
       <div class="kpis">
         <div class="kpi estatico"><div class="kpi-rotulo">Contratado</div>
           <div class="kpi-valor" style="font-size:17px">${numero(c.valor_vigente)}</div>
@@ -406,7 +407,15 @@ els("btn-novo").addEventListener("click", () => {
 });
 
 els("busca").addEventListener("input", desenhar);
-carregar();
+// ABRIR DIRETO NUM REGISTRO (22/09/2026). É o que faz /erp/ir/<numero>
+// chegar até aqui: o atalho traduz o número que a pessoa tem na mão para o
+// número interno, e esta tela abre a ficha dele sozinha.
+carregar().then(() => {
+  const pedido = new URLSearchParams(location.search).get("empreita");
+  if (!pedido) return;
+  const id = +pedido;
+  if (Number.isFinite(id) && id > 0) abrir(id);
+});
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");

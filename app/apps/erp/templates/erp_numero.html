@@ -1,0 +1,61 @@
+{# ============================================================================
+   A RESPOSTA DE /erp/ir/<numero> quando ela não é uma tela direta.
+
+   São dois casos, e os dois precisam de gente, não de código na cara:
+   · o número não levou a nada — ou não existe, ou está fora do que este
+     acesso alcança. A resposta é a MESMA nos dois casos, de propósito: dizer
+     "existe, mas você não pode" já entrega que o número existe;
+   · dois registros com o mesmo número — acontece porque o código da obra é
+     texto livre. Aí a pessoa escolhe, em vez de o sistema abrir o errado.
+   ============================================================================ #}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP BWS — {{ numero }}</title>
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+<link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
+</head>
+<body>
+<main class="entrada">
+  <div class="cartao-recado">
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>{{ "Qual destes?" if achados else "Não achei esse número" }}</h1>
+        <p class="sub">Você procurou por <b>{{ numero }}</b>.</p>
+      </div>
+    </div>
+
+    {% if erro %}
+      <div class="aviso erro">{{ erro }}</div>
+    {% elif achados %}
+      <div class="aviso info">Existe mais de um registro com este número.
+        Clique no que você quer abrir.</div>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px">
+        {% for a in achados %}
+          <a class="btn secundario" href="{{ a.endereco }}"
+             style="text-align:left">{{ a.rotulo }} · <b>{{ a.numero }}</b></a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="aviso alerta">Nenhum registro com este número aparece para você.</div>
+      <p>Pode ser uma destas três coisas:</p>
+      <ul style="font-size:13.5px; line-height:1.6">
+        <li>o número foi digitado com alguma diferença — confira letra por letra;</li>
+        <li>o registro é de uma área que o seu acesso não abre;</li>
+        <li>ou ele é de uma obra que você não acompanha.</li>
+      </ul>
+      <p class="sub"><small>Números do sistema são assim: <b>000123</b> (lançamento),
+        <b>SS-0001</b> (pedido de material), <b>COT-0001</b> (cotação),
+        <b>PC-0001</b> (pedido de compra), <b>CRECHE01</b> (obra).</small></p>
+    {% endif %}
+
+    <p style="margin-top:18px">
+      <a class="btn" href="{{ url_for('erp.pagina_inicio') }}">Ir para o início</a>
+    </p>
+  </div>
+</main>
+</body>
+</html>

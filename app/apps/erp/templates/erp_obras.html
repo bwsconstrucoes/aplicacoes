@@ -427,6 +427,7 @@ async function abrir(id, aba=0, foco=null){
   const o = OBRAS.find(x=>x.id===id);
   els("dlg-titulo").textContent = `${o.codigo} — ${o.nome}`;
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div style="margin-bottom:10px">${botaoDeLink(o.codigo, o.nome)}</div>
     <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
       ${["Resumo","Cadastro","Contrato","Tributação","Documentos","Movimento","Histórico"]
         .map((t,i)=>`<button class="topo-aba ${i===aba?"ativa":""}" data-painel="${i}">${t}</button>`).join("")}

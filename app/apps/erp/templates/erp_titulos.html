@@ -463,6 +463,8 @@ function montarFicha(t){
   return `
       <div class="ficha-topo"><h3>${escapar(c.numero_sp)} — ${elo("credor", c.fornecedor_id, c.fornecedor)}</h3>
         ${t.pedido ? `<span class="kpi-rotulo">compra ${elo("pedido", t.pedido.id, t.pedido.numero)}</span>` : ""}
+        <span style="flex:1"></span>
+        ${botaoDeLink(c.numero_sp, c.fornecedor)}
         <button class="link-btn" id="btn-fechar-ficha">Fechar ✕</button></div>
       ${t.porque_status ? `<div class="aviso info"><b>${ROTULOS[c.status]||c.status}.</b>
         ${t.porque_status}</div>` : ""}

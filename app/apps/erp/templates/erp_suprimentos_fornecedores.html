@@ -975,8 +975,20 @@ carregar().then(() => {
   const pedido = new URLSearchParams(location.search).get("fornecedor");
   if (!pedido) return;
   const id = +pedido;
-  if (D.fornecedores.some(f => f.id === id)) abrir(id);
-  else aviso("mensagem", "Este fornecedor não está mais no cadastro.", "erro");
+  if (D.fornecedores.some(f => f.id === id)) { abrir(id); return; }
+  // Não está na lista de agora — quase sempre porque foi desativado. Recarrega
+  // incluindo os inativos antes de dizer que não existe: quem clica num link
+  // quer ver AQUELE cadastro, mesmo aposentado.
+  const inativos = els("f-inativos");
+  if (inativos && !inativos.checked) {
+    inativos.checked = true;
+    carregar().then(() => {
+      if (D.fornecedores.some(f => f.id === id)) abrir(id);
+      else aviso("mensagem", "Este fornecedor não está mais no cadastro.", "erro");
+    });
+    return;
+  }
+  aviso("mensagem", "Este fornecedor não está mais no cadastro.", "erro");
 });
 </script>
 {% endblock %}
