@@ -6617,6 +6617,130 @@ de verdade: `tests/test_homologar_conta_do_credor.py` (15 casos) e três casos
 novos em `tests/test_credor_no_lancamento.py`.
 
 
+## VARREDURA DE USO — alguém usando o sistema, tela por tela
+
+22/09/2026, pedido do dono: *"Faça e busque por erros operacionais. Simule
+alguém utilizando o sistema. Me ajude."*
+
+Foi montado um ERP com dados de empresa em uso — 2 empresas, 5 obras, 5
+credores com conta homologada, 11 títulos em situações diferentes (em
+aprovação, aprovados, pagos), colaboradores, extrato conciliado — e percorrido
+de quatro jeitos:
+
+1. **Todas as 37 telas**, no navegador, escutando erro de JavaScript, chamada
+   que volta com falha e tela presa em "carregando".
+2. **Grava e relê**: escrever em cada cadastro pela mesma rota que a tela usa e
+   reler pela mesma rota que a tela lê — é a peneira do defeito que o dono mais
+   achou.
+3. **Entrada ruim** em 53 tentativas contra 14 rotas que gravam: campo vazio,
+   data que não existe, valor negativo, texto de 5 mil letras, número de
+   registro inventado.
+4. **Sete perfis diferentes** abrindo dezesseis telas cada um.
+
+### O achado mais caro: `/favicon.ico` saía à internet e respondia erro
+
+O encurtador de links tem uma rota curinga `/<codigo>` que pega **qualquer**
+endereço de um pedaço só que nenhum dos 18 módulos reconheceu. Ela consultava
+a planilha do Google **pela internet**, sem cache, e devolvia **erro 500**
+quando a consulta falhava.
+
+Quem caía nela, todo dia: `/favicon.ico` — o ícone que o navegador pede
+sozinho ao abrir a tela de entrada. E também qualquer endereço digitado
+torto, qualquer link velho, qualquer robô de busca.
+
+O custo não aparece em lugar nenhum e é real: a produção roda com **1 processo
+e 4 linhas de atendimento**; cada endereço errado prendia uma delas numa ida à
+internet. Três coisas mudaram:
+
+- **peneira por forma** no curinga: o que tem ponto (arquivo) ou é nome de
+  serviço conhecido nunca chega à planilha — responde 404 em 2 milésimos;
+- **planilha fora do ar vira 404**, não 500: quem clicou pediu um link, e o
+  link não foi achado — não é falha do sistema;
+- **cache de 60 segundos** da planilha, para uma rajada de cliques custar uma
+  leitura só (link recém-criado continua valendo na hora: quem grava limpa o
+  cache);
+- e a **tela de entrada ganhou o `rel="icon"`** que faltava só nela, o que
+  corta a ida na origem.
+
+### Quatro campos da obra que a tela mostrava e o sistema nunca gravou
+
+**Seguro-garantia (apólice)**, **seguro válido até**, **caução (%)** e
+**código do departamento no Omie**. A pessoa preenchia na aba Contrato, o
+sistema respondia "Salvo.", e nada era gravado — os quatro não estavam na
+lista de campos que a rota aceita, e o que não está na lista é descartado sem
+reclamar. É o defeito do código da obra, quatro vezes.
+
+E era pior que "não grava": como também não voltavam na leitura, o formulário
+remontava vazio e **o salvamento seguinte mandava o vazio de volta**. O
+departamento do Omie é único no banco, então ganhou trava de repetido com
+recado ("já está na obra X") em vez de estourar como erro de banco.
+
+### Colaborador: o tipo da chave Pix e a impossibilidade de tirar da obra
+
+- **O tipo da chave Pix não voltava na leitura.** A caixinha remontava sempre
+  em "CPF", o primeiro da lista — então quem tinha chave de telefone ou e-mail
+  via o tipo **trocado para CPF no primeiro salvamento**, sem pedir. Chave com
+  tipo errado é pagamento que não sai.
+- **Escolher "—" em obra ou função não desligava nada.** O código usava
+  `dados.get(campo)`, e valor vazio caía fora do `if`: não havia como tirar um
+  colaborador da obra pela tela.
+- **Data impossível virava vazio em silêncio.** Admissão "2026-13-45" era
+  aceita, guardada como nada, e a pessoa lia "salvo".
+
+### Cinco respostas de "falha do sistema" onde cabia explicar
+
+Erro 500 aparece para quem usa como *"Não consegui concluir. Isso é falha do
+sistema"* — assusta e não ensina. Viraram recado:
+
+- data no formato brasileiro ou dia que não existe no cadastro da obra;
+- prazo de execução negativo (era aceito e virava "-5 dias");
+- seleção estragada na aprovação em lote (tela recarregada no meio);
+- conciliação manual sem os dois lados escolhidos.
+
+### A tela que o perfil não abre mostrava JSON cru
+
+Quem abria uma tela fora do seu acesso via **isto ocupando a janela inteira**:
+
+    {"erro":"Seu perfil não tem permissão para esta operação.","ok":false}
+
+Sem menu, sem caminho de volta, com cara de defeito. Agora é uma página que
+diz qual é o acesso da pessoa, que nada deixou de ser gravado, onde pedir
+liberação, e tem botão de voltar. **Chamada de API continua respondendo
+JSON** — quem fala com o sistema por programa precisa do JSON; quem está na
+frente da tela precisa de gente.
+
+De quebra, o mesmo cartão branco passou a valer para a tela de "banco
+desatualizado", que tinha o mesmo problema de leitura (texto escuro no fundo
+escuro).
+
+### O QR do Pix vem da internet, e agora avisa quando não vem
+
+O desenho do QR é uma biblioteca carregada de fora. Quando não carrega — rede
+da obra, firewall, site fora do ar — o quadrado ficava em branco e a dica ao
+lado continuava mandando "leia o QR": a pessoa esperava uma imagem que não
+vinha. Agora ela é avisada, e o botão de copiar e colar, que não depende de
+nada externo, continua ali.
+
+### O que a varredura NÃO achou — e vale saber
+
+- **Dinheiro está firme.** Pagar valor negativo, zero, valor diferente da
+  parcela, conta que não existe, parcela já paga: tudo recusado com recado
+  claro. Foi o único bloco que passou sem nenhum ajuste.
+- **Formato de tela está limpo.** A varredura procurou data americana,
+  dinheiro sem ponto e nome técnico em caixa alta no texto visível de 28
+  telas: achou uma ocorrência, e legítima (o nome de uma variável de ambiente
+  numa instrução de configuração). O trabalho da leva do dia 22 segurou.
+- **Todas as 37 telas abrem para todos os 7 perfis**, sem erro 500 e sem ficar
+  presas em "carregando".
+
+### Como repetir
+
+Os roteiros ficam em `/tmp` de propósito (falam com um ERP rodando e não são
+teste automatizado). O que eles acharam virou teste de verdade:
+`tests/test_varredura_de_uso.py`, 18 casos. Foi conferido que eles pegam o
+defeito: desfazendo os consertos, três falham na hora.
+
+
 ## Regras que não se discutem
 
 ### 1. Nada que rode antes de toda rota depende do ORM

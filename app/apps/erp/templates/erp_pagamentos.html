@@ -408,7 +408,20 @@ async function comoPagar(parcelaId){
           Conta ${d.transferencia.conta}</div>
         <div class="cartao-dica">${d.transferencia.titular} · ${documento(d.transferencia.documento)}</div></div>` : ""}`;
     els("dlg").showModal();
-    if (d.pix && window.QRCode) new QRCode(els("qr"), {text: d.pix.copia_e_cola, width: 150, height: 150});
+    // O DESENHO DO QR VEM DE FORA (biblioteca na internet). Quando não carrega
+    // — rede da obra, firewall, o site fora do ar — o quadrado ficava em
+    // branco e a dica ao lado continuava mandando "leia o QR": a pessoa ficava
+    // esperando uma imagem que não vinha. Agora ela é avisada, e o código de
+    // copiar e colar (que não depende de nada externo) continua ali.
+    if (d.pix) {
+      if (window.QRCode) {
+        new QRCode(els("qr"), {text: d.pix.copia_e_cola, width: 150, height: 150});
+      } else {
+        els("qr").innerHTML = `<div class="cartao-dica">Não consegui desenhar o QR
+          agora (o desenho vem da internet). Use o botão <b>Copiar código</b> e
+          cole no aplicativo do banco — dá no mesmo.</div>`;
+      }
+    }
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 

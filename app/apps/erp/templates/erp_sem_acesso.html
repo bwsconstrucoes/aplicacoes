@@ -1,0 +1,43 @@
+{# ============================================================================
+   A TELA QUE O PERFIL NÃO ABRE — e o que a pessoa lê no lugar.
+
+   Até 22/09/2026 a recusa vinha como JSON cru na janela do navegador:
+   {"erro":"Seu perfil não tem permissão para esta operação.","ok":false}
+   Era a página inteira. Sem menu, sem caminho de volta, com cara de defeito —
+   e a pessoa ainda ficava achando que tinha quebrado alguma coisa.
+
+   Chamada de API continua recebendo JSON: quem fala com o sistema por
+   programa precisa do JSON, quem está na frente da tela precisa de gente.
+   ============================================================================ #}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP BWS — sem acesso a esta tela</title>
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+<link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
+</head>
+<body>
+<main class="entrada">
+  <div class="cartao-recado">
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>Esta tela não está liberada para você</h1>
+        <p class="sub">Seu acesso é de <b>{{ perfil }}</b>.</p>
+      </div>
+    </div>
+    <div class="aviso alerta">Não foi um erro do sistema, e nada deixou de ser
+      gravado. Esta tela simplesmente não faz parte do que o seu acesso libera.</div>
+    <p>Se você precisa dela para trabalhar, peça a um <b>administrador</b> para
+      liberar em <b>Configurações › Operadores</b>. Ele consegue liberar só esta
+      parte, sem mudar o resto do seu acesso.</p>
+    <p style="margin-top:18px">
+      <a class="btn" href="{{ url_for('erp.pagina_inicio') }}">Voltar ao início</a>
+      <a class="btn secundario" href="{{ url_for('erp.sair') }}" style="margin-left:8px">Sair</a>
+    </p>
+  </div>
+</main>
+</body>
+</html>

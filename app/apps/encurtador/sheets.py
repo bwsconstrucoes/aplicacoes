@@ -110,11 +110,30 @@ def _rows_via_csv():
         })
     return out
 
+# CACHE CURTO DA PLANILHA (22/09/2026). Cada clique num link curto fazia uma
+# leitura inteira da planilha pela internet. Com 1 processo e 4 linhas de
+# atendimento em produção, um punhado de cliques ao mesmo tempo prendia todas.
+# 60 segundos é curto o bastante para um link recém-criado aparecer quase na
+# hora, e longo o bastante para uma rajada custar uma leitura só.
+_CACHE = {"quando": 0.0, "linhas": None}
+_VALIDADE_SEGUNDOS = 60
+
+
 def _carregar_linhas():
+    agora = time.time()
+    if _CACHE["linhas"] is not None and agora - _CACHE["quando"] < _VALIDADE_SEGUNDOS:
+        return _CACHE["linhas"]
     rows = _rows_via_api()
     if rows is None:  # sem credencial, usa CSV
         rows = _rows_via_csv()
-    return [r for r in rows if any(r.values())]
+    linhas = [r for r in rows if any(r.values())]
+    _CACHE["quando"], _CACHE["linhas"] = agora, linhas
+    return linhas
+
+
+def esquecer_cache():
+    """Usada depois de gravar um link novo, para ele valer na hora."""
+    _CACHE["quando"], _CACHE["linhas"] = 0.0, None
 
 # -------- API pública usada pelo encurtador --------
 def buscar_url_por_codigo(codigo: str):
@@ -144,6 +163,9 @@ def adicionar_link(codigo: str, url: str, expira_em: str, conteudo_base64: str =
             insertDataOption="INSERT_ROWS",
             body=body,
         ).execute()
+        # o link novo tem de valer AGORA: sem isto ele demoraria até um minuto
+        # para funcionar, e quem acabou de criar acharia que não gravou.
+        esquecer_cache()
         return True
     except Exception:
         return False

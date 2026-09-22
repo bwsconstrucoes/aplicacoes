@@ -530,9 +530,36 @@ def _guarda_permissao():
     if not decidir(perfil_enum, acao, excecoes, acoes):
         logger.warning("ERP/permissao: %s negado ao usuário %s (%s) em %s",
                        acao, session.get("erp_usuario_id"), perfil, endpoint)
+        return _recusa_de_acesso(perfil_enum)
+    return None
+
+
+def _e_chamada_de_api() -> bool:
+    """Quem está pedindo: um programa ou uma pessoa na frente da tela?
+
+    Endereço de API responde JSON — é o que a tela e as integrações esperam.
+    TELA responde tela: até 22/09/2026 a recusa vinha como JSON cru ocupando a
+    janela inteira, sem menu e sem caminho de volta, com cara de defeito do
+    sistema. Quem esbarrava nisso achava que tinha quebrado alguma coisa.
+    """
+    caminho = request.path or ""
+    if caminho.startswith("/erp/api/"):
+        return True
+    # busca (XHR/fetch) pede JSON explicitamente; navegador pede HTML
+    aceita = (request.headers.get("Accept") or "")
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return True
+    return "application/json" in aceita and "text/html" not in aceita
+
+
+def _recusa_de_acesso(perfil_enum):
+    """A recusa, do jeito de quem perguntou."""
+    if _e_chamada_de_api():
         return jsonify({"ok": False,
                         "erro": "Seu perfil não tem permissão para esta operação."}), 403
-    return None
+    from app.apps.erp.core.auth.permissoes import ROTULOS
+    return render_template("erp_sem_acesso.html",
+                           perfil=ROTULOS.get(perfil_enum, perfil_enum.value)), 403
 
 
 @bp.route("/erp/entrar", methods=["GET", "POST"])
@@ -3830,14 +3857,21 @@ def api_acao_lote():
                 return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
             for tid in ids:
                 try:
+                    # SELEÇÃO ESTRAGADA vira recado, não erro 500 (22/09/2026).
+                    try:
+                        tid = int(tid)
+                    except (TypeError, ValueError):
+                        erros.append({"id": tid, "erro": "Seleção inválida — "
+                                      "recarregue a lista e escolha de novo."})
+                        continue
                     if acao == "aprovar":
-                        t = svc_titulos.aprovar(s, int(tid), usuario)
+                        t = svc_titulos.aprovar(s, tid, usuario)
                     elif acao == "devolver":
-                        t = svc_titulos.devolver(s, int(tid), motivo, usuario)
+                        t = svc_titulos.devolver(s, tid, motivo, usuario)
                     elif acao == "reanalisar":
-                        t = svc_titulos.reanalisar(s, int(tid), usuario)
+                        t = svc_titulos.reanalisar(s, tid, usuario)
                     else:
-                        t = svc_titulos.cancelar(s, int(tid), motivo, usuario)
+                        t = svc_titulos.cancelar(s, tid, motivo, usuario)
                     oks.append(t.numero_sp)
                 except (ErroValidacao, ErroPermissao) as e:
                     erros.append({"id": tid, "erro": str(e)})
@@ -5315,7 +5349,18 @@ def api_conciliar_manual():
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
-            conciliar_manual(s, int(d["pagamento_id"]), int(d["extrato_id"]), usuario,
+            # CASAR EXIGE OS DOIS LADOS (22/09/2026). Sem eles, ou com a
+            # seleção estragada, isto estourava como erro 500 — e quem estava
+            # conciliando lia "falha do sistema" em vez de "escolha o
+            # pagamento e a linha do extrato".
+            try:
+                pagamento_id = int(d["pagamento_id"])
+                extrato_id = int(d["extrato_id"])
+            except (KeyError, TypeError, ValueError):
+                return jsonify({"ok": False, "erro":
+                                "Escolha o pagamento E a linha do extrato para "
+                                "casar os dois."}), 400
+            conciliar_manual(s, pagamento_id, extrato_id, usuario,
                              d.get("observacao", ""))
             s.commit()
         return jsonify({"ok": True})
@@ -5773,18 +5818,25 @@ def api_obra(obra_id: int):
             if request.method == "POST":
                 usuario = _usuario_logado(s)
                 d = request.get_json(silent=True) or {}
+                # SEGURO-GARANTIA entra na lista em 22/09/2026, com a caução,
+                # a validade da apólice e o código do departamento no Omie.
+                # Os quatro campos APARECIAM na tela de cadastro da obra, a
+                # pessoa preenchia, o sistema respondia "Salvo." — e nada era
+                # gravado, porque não estavam nesta lista. Mesmo defeito do
+                # código da obra, que o dono achou usando: o que não está aqui
+                # é descartado em silêncio, e a tela recarrega mostrando vazio.
                 texto = ("nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
                          "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
                          "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
-                         "observacoes_fiscais orgao_resumido status").split()
+                         "observacoes_fiscais orgao_resumido status seguro_garantia").split()
                 if "conta_bancaria_id" in d:
                     obra.conta_bancaria_id = (int(d["conta_bancaria_id"])
                                               if d["conta_bancaria_id"] else None)
                 numeros = ("valor_contrato latitude longitude "
                            "aliquota_iss aliquota_iss_pct pct_servico_iss "
-                           "pct_servico_inss").split()
+                           "pct_servico_inss caucao_pct").split()
                 datas = ("vigencia_inicio vigencia_fim data_base_orcamento data_ordem_servico "
-                         "data_inicio data_termino").split()
+                         "data_inicio data_termino seguro_vigencia_fim").split()
                 booleanos = "iss_retido inss_retido aceita_deducao_material".split()
                 from decimal import Decimal, InvalidOperation
                 from datetime import date as _date
@@ -5811,20 +5863,56 @@ def api_obra(obra_id: int):
                 for campo in datas:
                     if campo in d:
                         v = str(d[campo]).strip()
-                        setattr(obra, campo, _date.fromisoformat(v) if v else None)
+                        try:
+                            setattr(obra, campo, _date.fromisoformat(v) if v else None)
+                        except ValueError:
+                            # DATA QUE NÃO EXISTE não é falha do sistema
+                            # (22/09/2026): "31/02/2026" ou uma data escrita no
+                            # formato brasileiro caía como erro 500, com o
+                            # recado de "falha do sistema" — que não diz à
+                            # pessoa que basta corrigir o dia.
+                            return jsonify({"ok": False, "erro":
+                                            f"Data inválida em {campo}: {v!r}. "
+                                            f"Use dia/mês/ano que existam."}), 400
                 for campo in booleanos:
                     if campo in d:
                         setattr(obra, campo, bool(d[campo]))
                 if "federais_retidos" in d:
                     obra.federais_retidos = [str(x).upper() for x in (d["federais_retidos"] or [])]
                 if "prazo_execucao_dias" in d:
-                    obra.prazo_execucao_dias = int(d["prazo_execucao_dias"] or 0) or None
+                    # prazo negativo passava direto e virava "-5 dias de
+                    # execução" no cadastro (22/09/2026). Não é dado, é engano
+                    # de digitação — e melhor dizer isso na hora.
+                    try:
+                        dias = int(str(d["prazo_execucao_dias"] or 0).strip() or 0)
+                    except ValueError:
+                        return jsonify({"ok": False, "erro":
+                                        "Prazo de execução tem de ser um número de dias."}), 400
+                    if dias < 0:
+                        return jsonify({"ok": False, "erro":
+                                        "Prazo de execução não pode ser negativo."}), 400
+                    obra.prazo_execucao_dias = dias or None
                 if "conta_recebimento_id" in d:
                     obra.conta_recebimento_id = d["conta_recebimento_id"] or None
                 # O projeto que agrupa a obra (migração 066). Vazio = sem
                 # projeto, que é o caso comum.
                 if "projeto_id" in d:
                     obra.projeto_id = int(d["projeto_id"]) if d["projeto_id"] else None
+                # CÓDIGO DO DEPARTAMENTO NO OMIE. Fica de fora da lista de
+                # texto porque é ÚNICO no banco: repetido, o salvamento
+                # estouraria com erro de banco em vez de dizer o que houve.
+                if "codigo_omie_depto" in d:
+                    novo_depto = (str(d["codigo_omie_depto"]) or "").strip() or None
+                    if novo_depto and novo_depto != obra.codigo_omie_depto:
+                        from app.apps.erp.db.models.cadastros import Obra as _ObD
+                        ja = s.scalars(select(_ObD).where(
+                            _ObD.codigo_omie_depto == novo_depto,
+                            _ObD.id != obra.id)).first()
+                        if ja is not None:
+                            return jsonify({"ok": False, "erro":
+                                            f"O departamento {novo_depto} do Omie já está "
+                                            f"na obra {ja.codigo}."}), 400
+                    obra.codigo_omie_depto = novo_depto
                 # A EMPRESA DA OBRA, editável DEPOIS de criada (17/09/2026):
                 # *"depois de criada a obra, tem como selecionar a empresa
                 # fácil?"*. Não tinha — o campo só existia na criação, e as
@@ -5890,6 +5978,10 @@ def api_obra(obra_id: int):
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 "iss_retido inss_retido aceita_deducao_material prazo_execucao_dias "
+                # SEGURO-GARANTIA, VALIDADE E CAUÇÃO voltam junto (22/09/2026),
+                # pelo mesmo motivo da conta: gravados e nunca devolvidos, o
+                # formulário remontava vazio e o salvamento seguinte apagava.
+                "seguro_garantia seguro_vigencia_fim caucao_pct "
                 # A CONTA DE PAGAMENTO DA OBRA volta junto (22/09/2026). Ela era
                 # gravada e nunca devolvida: o formulário remontava a caixinha
                 # vazia, e o salvamento seguinte — que manda o campo em branco —
@@ -5898,11 +5990,12 @@ def api_obra(obra_id: int):
                 "conta_bancaria_id conta_recebimento_id projeto_id empresa_id").split()}
             for campo in ("valor_contrato", "latitude", "longitude",
                           "aliquota_iss", "aliquota_iss_pct",
-                          "pct_servico_iss", "pct_servico_inss"):
+                          "pct_servico_iss", "pct_servico_inss", "caucao_pct"):
                 v = getattr(obra, campo, None)
                 dados[campo] = float(v) if v is not None else None
             for campo in ("vigencia_inicio", "vigencia_fim", "data_base_orcamento",
-                          "data_ordem_servico", "data_inicio", "data_termino"):
+                          "data_ordem_servico", "data_inicio", "data_termino",
+                          "seguro_vigencia_fim"):
                 v = getattr(obra, campo, None)
                 dados[campo] = v.isoformat() if v else None
             dados["federais_retidos"] = list(obra.federais_retidos or [])

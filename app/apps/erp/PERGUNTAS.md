@@ -1175,6 +1175,25 @@ de Suprimentos (`pedidos_compra`, PC-0001) e o **pedido** antigo importado do
 Pipefy/Omie (`pedidos`), que é o que o título guarda hoje. Responder um pelo
 outro dá número errado com cara de certo.
 
+## 3v. O contrato da obra: seguro, caução e prazo
+
+Passaram a ser guardados de verdade em 22/09/2026 — apareciam na tela e nunca
+eram gravados.
+
+- OK **Qual o seguro-garantia desta obra, e até quando vale?**
+- OK **Que obras estão com o seguro-garantia vencendo?**
+- OK **Quanto foi retido de caução nesta obra?** — a porcentagem; o valor
+  retido continua vindo das medições.
+- OK **Qual o departamento desta obra no Omie?**
+
+⚠️ **Palavra ambígua: "caução".** São duas: a **caução do contrato com o
+cliente** (percentual que o órgão retém da BWS, este campo) e a **retenção de
+garantia da empreita** (o que a BWS retém do empreiteiro). Trocar uma pela
+outra inverte quem deve a quem.
+
+- FALTA **"avisar quando o seguro-garantia estiver perto de vencer"** — a data
+  agora existe; o aviso na agenda ainda não.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

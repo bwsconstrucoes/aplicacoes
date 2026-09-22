@@ -747,6 +747,42 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 22/09/2026 — O CURINGA DO ENCURTADOR NÃO PEGA MAIS TUDO (atravessa áreas)
+
+Achado numa varredura de uso do ERP: a rota `/<codigo>` do encurtador é um
+curinga que pega **qualquer** endereço de um pedaço só que nenhum dos 18
+módulos reconheceu — e consultava a planilha do Google **pela internet**, sem
+cache, respondendo **erro 500** quando a consulta falhava.
+
+Quem caía nela todo dia era `/favicon.ico`, que o navegador pede sozinho ao
+abrir a tela de entrada do ERP. Também caía qualquer endereço digitado torto,
+link velho ou robô de busca.
+
+**Por que importa mais do que parece:** a produção roda com `--workers 1
+--threads 4`. Cada endereço errado prendia uma das quatro linhas de
+atendimento numa ida à internet. Não aparecia em lugar nenhum — só no log,
+como um 500 entre outros.
+
+O que mudou, em `app/apps/encurtador/`:
+
+- **peneira por FORMA** no curinga: código curto é uma palavra sem ponto;
+  arquivo tem extensão. O que tem ponto, ou é nome de serviço conhecido
+  (`favicon`, `robots`, `sitemap`, `health`…), responde 404 em 2 milésimos sem
+  sair da máquina;
+- **planilha fora do ar vira 404**, não 500 — quem clicou pediu um link, e o
+  link não foi achado;
+- **cache de 60 segundos** das linhas da planilha, com limpeza ao gravar um
+  link novo (senão ele demoraria até um minuto para funcionar).
+
+**Vale para quem for criar rota curinga em qualquer módulo:** rota que casa
+com tudo tem de peneirar antes de fazer trabalho caro, e falha de serviço de
+fora nunca deve virar erro 500 para quem está na frente da tela.
+
+O restante da varredura — quatro campos da obra que não gravavam, o tipo da
+chave Pix do colaborador, cinco "falha do sistema" que viraram recado, e a
+tela recusada que mostrava JSON cru — está em `app/apps/erp/HISTORICO.md`.
+
+
 ### 22/09/2026 — PERCORRER A CADEIA INTEIRA É UM TIPO DE PROVA QUE A SUÍTE NÃO DÁ
 
 O dono pediu para simular tudo, do cadastro do CNPJ à conciliação. Feito num
