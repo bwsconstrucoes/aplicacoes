@@ -6,7 +6,7 @@
 <div class="chips" style="margin-bottom:16px">
   {% for chave, rotulo in [('socios','Sócios'), ('participacoes','Participações'),
                            ('regras','Regras de rateio'), ('ajustes','Ajustes'),
-                           ('geral','Parâmetros gerais')] %}
+                           ('fora','Fora da análise'), ('geral','Parâmetros gerais')] %}
     <a class="modulo-btn {% if aba == chave %}ativo{% endif %}"
        style="background:{{ 'var(--amarelo)' if aba == chave else 'var(--branco)' }};
               color:{{ 'var(--azul)' if aba == chave else 'var(--tinta-suave)' }};
@@ -341,6 +341,73 @@
 </div>
 {% endif %}
 
+{# ============================ FORA DA ANÁLISE ============================ #}
+{% if aba == 'fora' %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Fora da análise</h3>
+    <small>obras e projetos que a prestação de contas não considera</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    O que sair daqui <b>não recebe estrutura, não recebe juros, não entra na
+    quota de ninguém e não pesa na régua</b> — na Prestação de Contas, nos
+    cenários de rateio e em todo cenário. Tirar um projeto tira todas as obras
+    dele. A matriz e a filial nunca saem: são a estrutura que se divide, não
+    destino dela. Cada cenário pode ainda tirar mais coisa só para ele, na
+    montagem dele.
+  </p>
+  <form method="post" class="form-grade">
+    <input type="hidden" name="acao" value="tirar_da_analise">
+    <input type="hidden" name="aba" value="fora">
+    <div class="campo" style="grid-column: 1 / span 2">
+      <label for="item">Tirar da análise</label>
+      <select id="item" name="item" multiple size="8">
+        {% if projetos_do_painel %}
+        <optgroup label="Projetos inteiros">
+          {% for p in projetos_do_painel %}
+          <option value="projeto:{{ p }}">Projeto — {{ p }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endif %}
+        <optgroup label="Obras">
+          {% for o in obras_do_painel %}
+          <option value="obra:{{ o }}">{{ o }}</option>
+          {% endfor %}
+        </optgroup>
+      </select>
+      <p class="dica">Segure Ctrl (ou ⌘) para marcar vários.</p>
+    </div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" type="submit">Tirar</button>
+    </div>
+  </form>
+  {% if fora %}
+  <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
+    <table>
+      <thead><tr><th class="sem-ordem">Fora</th><th class="sem-ordem"></th></tr></thead>
+      <tbody>
+        {% for item in fora %}
+        <tr>
+          <td class="desc">{% if item.startswith('projeto:') %}Projeto — {{ item[8:] }}{% else %}{{ item[5:] }}{% endif %}</td>
+          <td>
+            <form method="post">
+              <input type="hidden" name="acao" value="voltar_para_analise">
+              <input type="hidden" name="aba" value="fora">
+              <input type="hidden" name="item" value="{{ item }}">
+              <button class="btn secundario" type="submit">Voltar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="cartao-dica">Nada fora: toda obra da base entra na conta.</p>
+  {% endif %}
+</div>
+{% endif %}
+
 {# ============================ GERAL ============================ #}
 {% if aba == 'geral' %}
 <div class="cartao">
@@ -388,8 +455,10 @@
       <label for="categoria_juros">Categoria dos juros de empréstimo</label>
       <input id="categoria_juros" name="categoria_juros"
              value="{{ config.categoria_juros or 'Juros sobre Empréstimos' }}">
-      <p class="dica">O nome exato como está no OMIE. É por ele que o juro é
-        separado do resto do custo da matriz.</p>
+      <p class="dica">O nome exato como está no OMIE — <b>várias, separadas por
+        ponto-e-vírgula</b> (ex.: Juros sobre Empréstimos; IOF; Juros Bancários).
+        É por ele que o juro é separado do resto do custo da matriz. A
+        conferência "Onde estão os juros" mostra os nomes que existem na base.</p>
     </div>
     <div class="campo">
       <label for="juros_por_deficit">Quem paga os juros de empréstimo</label>

@@ -567,6 +567,10 @@ def _consultar_falso(sql, params=()):
         return [(18500.0, -12300.0)]
     if sql.count("SUM(CASE WHEN tipo") == 4:                    # resumo do resultado
         return [(9500.0, -6150.0, 9000.0, -6000.0)]
+    if "(jur|emprest" in sql:                                   # onde estão os juros
+        return []
+    if "AS encargos_de_atraso" in sql:
+        return [(0.0,)]
     raise AssertionError(f"consulta sem resposta no dublê: {sql.strip()[:120]}")
 
 
@@ -1611,3 +1615,37 @@ def test_carga_nova_ainda_joga_fora_a_lista_velha(painel, monkeypatch):
 
     carimbo[0] = "depois da carga"
     assert consultas._lembrando(("x",), _calcular) == 2, "carga nova: recalcula"
+
+
+# ===========================================================================
+# Os relatórios levam o link do Pipefy — 22/09/2026
+# ===========================================================================
+def test_a_planilha_faz_do_endereco_um_link_clicavel():
+    from openpyxl import load_workbook
+    from app.apps.painel import excel
+    colunas = [("documento", "Documento"), ("link", "Pipefy")]
+    conteudo = excel.montar([("Teste", colunas, [
+        {"documento": "NF 1", "link": "https://app.pipefy.com/open-cards/1"},
+        {"documento": "NF 2", "link": ""}])])
+    folha = load_workbook(io.BytesIO(conteudo))["Teste"]
+    com = folha.cell(row=2, column=2)
+    assert com.hyperlink is not None
+    assert com.hyperlink.target == "https://app.pipefy.com/open-cards/1"
+    assert com.value == "Abrir no Pipefy"
+    assert folha.cell(row=3, column=2).hyperlink is None
+
+
+def test_o_pdf_escreve_pipefy_no_lugar_do_endereco():
+    from app.apps.painel import pdf
+    colunas = [("documento", "Documento"), ("link", "Pipefy")]
+    conteudo = pdf.montar([("Teste", colunas, [
+        {"documento": "NF 1", "link": "https://app.pipefy.com/open-cards/1"}])],
+        titulo="Teste")
+    assert conteudo[:4] == b"%PDF"
+    assert pdf._celula("https://app.pipefy.com/x", "link", "Pipefy") == ("Pipefy", "L")
+
+
+def test_o_analitico_e_as_medicoes_exportam_a_coluna_do_pipefy():
+    from app.apps.painel import excel
+    for chave in ("analitico", "medicoes", "extrato", "explorador"):
+        assert ("link", "Pipefy") in excel.COLUNAS[chave], chave

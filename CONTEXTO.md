@@ -879,8 +879,9 @@ em memória do painel — o dono sentiu como "uma hora é rápido e outras nem
 vai". As métricas de 08–10/09 mostraram memória entre 15% e 45% dos 2 GB, com
 folga para afrouxar. Decisão do dono, em 22/09.
 
-**O Start Command do Render sobrescreve o Procfile**: a mudança só vale quando
-o dono colar o mesmo texto lá (`CLAUDE.md` › Gunicorn tem o comando inteiro).
+**O Start Command do Render sobrescreve o Procfile**: o dono colou o mesmo texto lá
+no próprio dia 22/09 — os dois estão iguais (`CLAUDE.md` › Gunicorn tem o
+comando inteiro).
 Se a memória voltar a subir, o caminho de volta é o mesmo texto com 150.
 `--workers 1` continua obrigatório: há estado em memória por processo.
 

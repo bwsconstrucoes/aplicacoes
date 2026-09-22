@@ -26,6 +26,7 @@ dicionários. É a mesma regra que rodava no computador, sem pandas.
 from __future__ import annotations
 
 import json
+import re
 
 MATRIZ, FILIAL = "MATRIZ", "FILIAL"
 SEM_DATA = "(sem data)"
@@ -185,7 +186,21 @@ SEM_DEFICIT = {
 }
 
 
-def separar_juros(despesa_admin, categoria_juros: str):
+def categorias_de_juros(configurado) -> set:
+    """As categorias que contam como juro de empréstimo, em minúsculas.
+
+    Aceita VÁRIAS, separadas por ponto-e-vírgula: no OMIE o juro pode estar em
+    mais de um nome ("Juros sobre Empréstimos", "Juros Bancários", "IOF"…), e
+    o dono viu 1,6 milhão na controladoria contra 191 mil aqui (22/09/2026)
+    — parte da diferença é nome que a configuração não alcançava."""
+    if isinstance(configurado, (list, tuple, set)):
+        partes = configurado
+    else:
+        partes = str(configurado or "").split(";")
+    return {p.strip().lower() for p in partes if p and p.strip()}
+
+
+def separar_juros(despesa_admin, categoria_juros):
     """Tira do bolo da estrutura o que for juro de empréstimo.
 
     Sem isto o juro seria rateado DUAS vezes — uma pelo pessoal, junto com o
@@ -194,12 +209,12 @@ def separar_juros(despesa_admin, categoria_juros: str):
 
     Juro lançado direto numa obra não passa por aqui: ele já é despesa daquela
     obra, e mexer nisso seria tirar de quem o assumiu."""
-    alvo = (categoria_juros or "").strip().lower()
-    if not alvo:
+    alvos = categorias_de_juros(categoria_juros)
+    if not alvos:
         return list(despesa_admin), {}
     resto, juros = [], {}
     for linha in despesa_admin:
-        if (linha.get("categoria") or "").strip().lower() == alvo:
+        if (linha.get("categoria") or "").strip().lower() in alvos:
             juros[linha["mes"]] = juros.get(linha["mes"], 0.0) + linha["valor"]
         else:
             resto.append(linha)
@@ -310,6 +325,21 @@ def total_por_obra(alocacoes) -> list[dict]:
                   key=lambda l: l["valor"])
 
 
+def obras_fora_da_analise(itens, mapa_projeto: dict, obras) -> set:
+    """As obras que o cenário deixa de fora: as nomeadas uma a uma, e todas as
+    obras dos projetos nomeados. O que sai daqui não recebe estrutura, não
+    recebe juros e não entra na quota de ninguém."""
+    fora = set()
+    for item in itens or ():
+        item = (item or "").strip()
+        if item.startswith("obra:"):
+            fora.add(item[len("obra:"):])
+        elif item.startswith("projeto:"):
+            alvo = item[len("projeto:"):]
+            fora |= {o for o in obras if (mapa_projeto.get(o) or "") == alvo}
+    return fora
+
+
 # ---------------------------------------------------------------------------
 # 2c. O rateio do CENÁRIO: uma régua escolhida, percentuais em hierarquia
 # ---------------------------------------------------------------------------
@@ -326,6 +356,39 @@ def total_por_obra(alocacoes) -> list[dict]:
 # dono: "o custo de despesas com o pessoal é um indicador da quantidade de
 # energia que aquela obra requer (…) o DP vai ter mais trabalho, a engenharia
 # vai ter mais trabalho".
+
+
+def itens_fora_da_analise(texto) -> list[str]:
+    """A lista gravada em Parâmetros ("obra:NOME;projeto:NOME"), como itens.
+
+    Vive na configuração da prestação porque é o que vale para TUDO: a
+    prestação antiga, os cenários de rateio e todo cenário novo. A lista de
+    cada cenário soma-se a esta — nunca a substitui."""
+    partes = re.split(r"[;\n]", texto or "")
+    saida: list[str] = []
+    for parte in partes:
+        parte = parte.strip()
+        if parte and parte not in saida:
+            saida.append(parte)
+    return saida
+
+
+def sem_as_obras(base: dict, fora) -> dict:
+    """A base da prestação sem as obras que ficaram fora da análise.
+
+    Tira das três leituras que dependem de obra — a apuração, o pessoal (a
+    régua) e o caixa (a régua dos juros). O que sai daqui não é obra para
+    o cálculo: não recebe estrutura nem juros, não entra na quota de ninguém
+    e não pesa na régua. As demais chaves passam intactas."""
+    fora = set(fora or ())
+    if not fora:
+        return base
+    saida = dict(base)
+    saida["apuracao"] = [l for l in base.get("apuracao", [])
+                         if (l.get("obra") or "").strip() not in fora]
+    saida["pessoal"] = [t for t in base.get("pessoal", []) if t[1] not in fora]
+    saida["caixa"] = [t for t in base.get("caixa", []) if t[1] not in fora]
+    return saida
 
 
 def peso_da_conta(pesos: dict, grupo: str, categoria: str, codigo: str,

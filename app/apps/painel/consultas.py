@@ -1858,6 +1858,9 @@ COLUNAS_DO_EXPLORADOR = (
     # conferindo o painel contra o OMIE lado a lado.
     "data_vencimento", "data_pagamento",
     "pago_recebido", "a_pagar_receber", "observacao",
+    # O link do Pipefy, quando o documento tem cartao la. 22/09/2026, o dono:
+    # "quero o link pra acessar o pipefy quando pertinente".
+    "link",
 )
 
 
@@ -2358,6 +2361,41 @@ def conferencia_das_contas() -> dict:
             # sem perna bancaria a base NAO TEM a conta real: ai o conserto no
             # fato nao muda nada e a conta tem de vir de outra listagem do OMIE
             "tem_perna_bancaria": bancaria["pernas"] > 0}
+
+
+def conferencia_dos_juros(configuradas) -> dict:
+    """Onde estão os juros de empréstimo na base — categoria por categoria.
+
+    22/09/2026, o dono: "na controladoria tem 1,6 milhão, no painel só vejo
+    191 mil". Esta conferência não decide nada: lista toda categoria cujo nome
+    fala em juro, empréstimo, financiamento, IOF, encargo ou amortização, com a
+    análise em que o OMIE a põe (DRE ou Fluxo de Caixa), quanto foi pago e
+    quanto está em aberto — e marca quais delas a prestação de contas está
+    contando. O que estiver no Fluxo de Caixa não é despesa para o painel:
+    parcela de empréstimo com o juro dentro é exatamente isso."""
+    alvos = {a.strip().lower() for a in (configuradas or []) if a and a.strip()}
+    linhas = []
+    for cat, cod, analise, tipo, titulos, pago, aberto in consultar(f"""
+        SELECT TRIM(categoria), MAX(COALESCE(codigo_categoria,'')), analise, tipo,
+               COUNT(DISTINCT codigo_lancamento),
+               COALESCE(SUM({EXECUTADO}), 0), COALESCE(SUM(a_pagar_receber), 0)
+          FROM fato
+         WHERE translate(lower(COALESCE(categoria,'')), 'áàâãéêíóôõúç', 'aaaaeeiooouc')
+               ~ '(jur|emprest|financ|\\miof\\M|encarg|amortiz)'
+         GROUP BY 1, 3, 4
+         ORDER BY 6"""):
+        linhas.append({"categoria": cat, "codigo": cod, "analise": analise or "",
+                       "tipo": "Receber" if tipo == REC else "Pagar",
+                       "titulos": titulos, "pago": float(pago or 0),
+                       "aberto": float(aberto or 0),
+                       "configurada": (cat or "").strip().lower() in alvos})
+    (encargos,) = consultar(f"""
+        SELECT COALESCE(SUM({ENCARGO}), 0) AS encargos_de_atraso FROM fato
+         WHERE tipo = ?""", [PAG])[0]
+    return {"linhas": linhas, "encargos_de_atraso": float(encargos or 0),
+            "configuradas": sorted(alvos),
+            "total_configurado_dre": sum(abs(l["pago"]) for l in linhas
+                                         if l["configurada"] and l["analise"] == "DRE")}
 
 
 def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:

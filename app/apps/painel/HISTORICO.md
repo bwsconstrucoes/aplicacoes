@@ -2037,9 +2037,9 @@ rápido e outras nem vai."* Três causas, todas conhecidas, nenhuma aleatória:
    listas guardadas em memória (`_lembrando`), que morrem com o processo. É a
    causa mais provável do "nem vai". Afrouxar para 1000 é decisão do dono e
    exige mudar **em dois lugares** — o `Procfile` e o *Start Command* do
-   Render, que o sobrescreve (ver `CLAUDE.md` › Gunicorn). **Decidido em
-   22/09: 1000.** O `Procfile` já está assim; o dono cola o mesmo texto no
-   Start Command do Render — até lá, vale o de 150.
+   Render, que o sobrescreve (ver `CLAUDE.md` › Gunicorn). **Decidido e aplicado em
+   22/09: 1000**, no `Procfile` e no Start Command do Render, os dois no mesmo
+   dia. A memória fica em observação nos próximos dias.
 2. **Estatísticas velhas depois de refazer os números.** "Só refazer os
    números" esvazia e regrava o `fato` inteiro; até o autovacuum passar, o
    planejador do Postgres escolhe os caminhos das consultas com os números de
@@ -2047,6 +2047,90 @@ rápido e outras nem vai."* Três causas, todas conhecidas, nenhuma aleatória:
    no `fato` e nos recebimentos.
 3. **Uma carga ou atualização rodando ao mesmo tempo.** O serviço tem 4
    threads; uma carga toma uma delas por horas e disputa o banco com as telas.
+
+## Cenário: obras fora da análise, e onde estão os juros — 22/09/2026
+
+Três pedidos do dono, juntos, com a frase que dói: *"tá muito foda isso. Não
+consigo ter confiança no painel. Pra todo lado que olho tem erro."*
+
+1. **Tirar obras ou projetos da análise.** Cada cenário tem a sua lista
+   ("obra:NOME" / "projeto:NOME", migração 018). O que sai não recebe
+   estrutura nem juros, não entra na quota de ninguém e não pesa na régua. A
+   estrutura (matriz e filial) nunca entra nessa lista, mesmo que esteja no
+   projeto tirado — o teste pegou isso. Duplicar leva a lista junto.
+
+2. **"Na controladoria tem 1,6 milhão de juros de empréstimo, no painel só
+   vejo 191 mil."** Não chutei: uma conferência nova, "Onde estão os juros de
+   empréstimo na base" (na montagem do cenário e em Configurações), lista
+   toda categoria cujo nome fala em juro, empréstimo, financiamento, IOF,
+   encargo ou amortização, com a análise em que o OMIE a põe (DRE ou Fluxo de
+   Caixa), quanto foi pago, e marca a que a prestação conta. As hipóteses,
+   nesta ordem:
+   - a configuração alcançava **um nome só** ("Juros sobre Empréstimos");
+     agora aceita vários, separados por ponto-e-vírgula;
+   - **parcela de empréstimo lançada inteira** (principal e juro juntos)
+     fica no Fluxo de Caixa — não é despesa para o painel, e o juro que
+     está dentro dela **não aparece em lugar nenhum**. Se for isso, o
+     conserto é no OMIE (separar o juro) ou é uma tabela de amortização —
+     decisão do dono;
+   - filtro de ano na tela.
+   A conferência diz qual das três é.
+
+   **Confirmado pelo dono em 22/09/2026:** "Juros sobre Empréstimos" **é** a
+   categoria certa — a de resultado (DRE). A outra, de amortização, é o
+   pagamento do **principal** e fica no Fluxo de Caixa, fora do resultado.
+   Ou seja: a configuração está certa, e o que falta entender é por que a
+   controladoria enxerga 1,6 milhão. A conferência publicada mostra quanto a
+   base inteira tem nessa categoria; se for 191 mil, a diferença está fora
+   do painel (outro período, principal somado ao juro, ou lançamento que a
+   carga não traz) — o próximo passo é o dono comparar os dois números na
+   conferência, não mudar a categoria.
+
+3. **"(sem projeto)" com 90 mil ao lado de "(não apropriado)" com 7 mil —
+   "sem projeto só pode ser coisa não apropriada."** São duas coisas, e a
+   tela agora explica e nomeia: **(não apropriado)** é lançamento sem obra
+   nenhuma; **(sem projeto)** é obra que existe mas não está ligada a projeto
+   no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
+   nome. Na prestação antiga e no cenário.
+
+## Fora da análise em Parâmetros, e a prestação por obra — 22/09/2026
+
+Duas perguntas do dono, no mesmo dia, depois de ver o cenário: *"tem a visão
+de projetos, mas dá para ver por obra também?"* e *"na parte de configurações
+da prestação de conta, pra eu poder eliminar projetos e/ou obras dessa
+análise"*. Ele esperava a exclusão nos Parâmetros — e ela estava só dentro
+de cada cenário.
+
+1. **A lista "Fora da análise" agora vive em Parâmetros** (aba própria), na
+   configuração da prestação (`fora_da_analise`, itens "obra:NOME" e
+   "projeto:NOME" separados por ponto-e-vírgula — **sem migração**: é uma
+   chave a mais na tabela `config`). É aplicada na base, antes de qualquer
+   conta, e por isso vale para **tudo**: a Prestação de Contas, os cenários
+   de rateio e todo cenário. A lista de cada cenário **soma-se** a ela — nunca
+   a substitui. "Tirar o Ceará de tudo" se faz uma vez; "e se sem a obra X?"
+   continua sendo coisa de um cenário só. A montagem do cenário mostra o que
+   já está fora por Parâmetros, e avisa que só volta por lá.
+
+2. **A Prestação de Contas ganhou "Resultado por obra"**, logo abaixo do
+   resultado por projeto: a mesma conta obra a obra, com o projeto ao lado,
+   pior primeiro, com linha de total. A planilha da prestação (botão "Baixar
+   planilha") leva as duas abas — por projeto e por obra.
+
+O que ficou de fora, de propósito: a lista geral não entra no Rateio
+administrativo (a simulação antiga, tela própria) — ele tem os filtros dele.
+
+## O Explorador ganhou o link do Pipefy — 22/09/2026
+
+Pedido do dono: *"quero que seja adicionado o link pra acessar o Pipefy quando
+pertinente"*. O link já existia na base (é o mesmo do Analítico e do Extrato,
+montado a partir do número do documento); o Explorador não o mostrava. Agora o
+documento vira link quando há cartão no Pipefy, com "↗", e a planilha do
+Explorador ganhou a coluna.
+
+**E os relatórios também** (*"aproveita e coloca nos relatórios os links para
+acessar o Pipefy quando houver"*): na planilha, o endereço vira uma célula
+**clicável** ("Abrir no Pipefy") — Analítico, Extrato, Receita de Obra e
+Explorador; no PDF, a célula diz "Pipefy" em azul e o clique abre o cartão.
 
 ## O que falta
 

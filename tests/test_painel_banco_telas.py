@@ -1893,3 +1893,24 @@ def test_a_busca_por_valor_nao_soma_a_base_dentro_do_where(base_para_explorar):
     finally:
         consultas.consultar = original
     assert not any("GROUP BY codigo_lancamento" in s for s in vistos)
+
+
+def test_o_explorador_mostra_o_link_do_pipefy_quando_ha(base_para_explorar, monkeypatch):
+    """22/09/2026, o dono: "quero o link pra acessar o pipefy quando pertinente"."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET link = 'https://app.pipefy.com/open-cards/123',"
+                     " razao_social = 'FORNECEDOR COM PIPEFY', numero_documento = 'NF 777'"
+                     " WHERE codigo_lancamento = (SELECT MIN(codigo_lancamento) FROM fato)")
+        conn.commit()
+    consultas.esquecer_listas()
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = cliente.get("/painel/explorador?busca=COM+PIPEFY").get_data(as_text=True)
+    assert 'href="https://app.pipefy.com/open-cards/123"' in html
+    assert "NF 777 ↗" in html

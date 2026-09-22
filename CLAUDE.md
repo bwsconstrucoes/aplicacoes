@@ -219,9 +219,9 @@ anotada aqui desde julho era infundada. As `4` threads vieram do commit
 100).** Decisão do dono, depois de sentir a inconstância ("uma hora é rápido e
 outras nem vai"): com 1 worker, a cada ~150 acessos TODA requisição esperava a
 partida do monorepo, e as listas guardadas em memória morriam junto. As
-métricas de setembro mostraram folga (15–45% dos 2 GB). O `Procfile` já está
-com 1000; **o dono edita o Start Command no Render com o mesmo texto** — até
-lá, vale o de 150. Se a memória voltar a subir, o caminho de volta é o mesmo
+métricas de setembro mostraram folga (15–45% dos 2 GB). O `Procfile` e o Start
+Command do Render estão **os dois com 1000** desde 22/09/2026 (o dono colou
+o texto no mesmo dia). Se a memória voltar a subir, o caminho de volta é o mesmo
 texto com 150.
 
 **A armadilha continua de pé, e é por isso que a nota fica:** o Start Command
