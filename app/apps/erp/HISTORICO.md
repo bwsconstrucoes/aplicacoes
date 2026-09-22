@@ -54,6 +54,67 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### 🐞 O CÓDIGO DA OBRA NÃO MUDAVA — e o formato do defeito vale mais que ele
+
+22/09/2026:
+
+> *"Tentei alterar o código de uma obra, ele salva, mas quando volta pro
+> cadastro não muda."*
+
+**A tela SEMPRE mandou o `codigo`.** A rota de atualização da obra tem uma lista
+fixa dos campos que aceita, e `codigo` não estava nela. **O que não está na
+lista é descartado sem reclamar** — então o salvamento respondia "ok", a tela
+recarregava do banco, e o código voltava o mesmo.
+
+**Erro que responde sucesso é pior que erro que responde erro:** não há o que
+investigar, e a pessoa fica achando que fez errado. Vale varrer as outras rotas
+com lista fixa de campos procurando o mesmo padrão.
+
+Agora dá para trocar, com três guardas: o código não pode ficar vazio, não pode
+ser o de outra obra (o recado diz **qual** obra já usa), e a troca fica
+registrada na trilha com o **de → para**. Trocar o código é RENOMEAR: os
+lançamentos apontam para o número interno da obra e seguem intactos.
+
+**O que fica de fora, e é decisão sua:** a planilha "C. Diários", que a emissão
+de NFS-e lê, casa a obra pelo código escrito nela. Renomear aqui **não** muda a
+planilha — se o código for usado lá, acerte nos dois lugares.
+
+
+### 📅 COMPETÊNCIA SAIU DO LANÇAMENTO — e continua certa
+
+22/09/2026:
+
+> *"No lançamento do título não queria precisar lançar competência, nem usamos
+> isso."*
+
+Ela saiu do **formulário**, não do sistema, e a distinção é o ponto: três coisas
+dependem da competência e nenhuma aparece naquela tela — o relatório analítico
+filtra e agrupa por ela; as críticas de duplicidade comparam *"mesmo valor no
+mesmo mês"* (D4) e *"aluguel já lançado neste mês"* (D5) por ela; e a NFS-e
+emitida leva a competência dentro do XML.
+
+**A dedução, nesta ordem:**
+
+1. a **emissão do documento**, quando informada — é a resposta contabilmente
+   certa, e é campo que a pessoa já preenche (ou que a leitura da nota preenche
+   sozinha);
+2. o **menor vencimento** entre as parcelas;
+3. hoje, como último recurso.
+
+**"Hoje" em primeiro lugar seria o erro fácil e caro:** uma nota de agosto
+lançada em outubro cairia no custo de outubro, e a obra fecharia o mês com
+despesa que não é dela.
+
+**A armadilha que quase passou:** a crítica de duplicidade é chamada ANTES de
+gravar, com o que está na tela. Sem a mesma dedução lá dentro, ela receberia
+competência vazia e as regras D4 e D5 parariam de rodar **caladas** — a falha
+mais cara que existe, porque ninguém nota que a rede de proteção saiu do ar. A
+dedução foi para os dois lados, e há teste exigindo que concordem.
+
+**Se um dia precisar do campo de volta** (nota de dezembro paga em janeiro, por
+exemplo), é meia hora de trabalho: o sistema continua aceitando a competência de
+quem a mandar — o importador do Pipefy manda.
+
 ### ⚠️ MIGRAÇÃO 080 — apertar "Aplicar atualizações do banco"
 
 Liga a **conta bancária a uma empresa** e o **título à empresa que paga**. Sem

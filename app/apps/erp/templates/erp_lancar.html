@@ -58,10 +58,18 @@
       <div class="campo" style="grid-column:span 2"><label for="f-categoria">Categoria de despesa *</label>
         <select id="f-categoria"></select>
         <div class="dica" id="dica-categoria"></div></div>
-      <div class="campo"><label for="f-competencia">Competência *</label>
-        <input type="month" id="f-competencia"></div>
+      {# COMPETÊNCIA SAIU DA TELA em 22/09/2026, a pedido do dono: *"no
+         lançamento do título não queria precisar lançar competência, nem
+         usamos isso."*
+
+         Ela continua sendo gravada — o relatório analítico filtra por ela, a
+         crítica de duplicidade do fundo fixo compara "mesma conta no mesmo
+         mês" por ela, e a NFS-e leva a competência dentro. O que mudou é que
+         o sistema deduz: emissão do documento, ou o primeiro vencimento. #}
       <div class="campo"><label for="f-emissao">Emissão do documento</label>
-        <input type="date" id="f-emissao"></div>
+        <input type="date" id="f-emissao">
+        <div class="dica">É daqui que sai o mês de competência. Em branco, vale
+          o primeiro vencimento.</div></div>
     </div>
     <div class="form-grade" style="margin-top:12px">
       {# TEXTO DE VÁRIAS LINHAS, e não uma caixinha. O dono pediu isso duas
@@ -211,7 +219,6 @@ async function carregar(){
       Object.keys(porGrupo).map(g => `<optgroup label="${g}">` +
         porGrupo[g].map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("") +
         `</optgroup>`).join("");
-    els("f-competencia").value = new Date().toISOString().slice(0,7);
     desenharLinhas();
     comBusca("f-credor", "buscar credor por nome ou CNPJ…");
     comBusca("f-categoria", "buscar categoria de despesa…");
@@ -445,7 +452,6 @@ function aplicarLeitura(x, primeira = true){
   porFora("f-doc-numero", x.numero_documento);
   if (x.data_emissao && (primeira || !els("f-emissao").value)) {
     els("f-emissao").value = x.data_emissao;
-    els("f-competencia").value = x.data_emissao.slice(0,7);
   }
   // Parcela que veio de DOCUMENTO é fato, não sugestão: entra travada, para o
   // "dividir igualmente" não passar por cima do que o boleto diz.
@@ -476,7 +482,8 @@ async function conferirAutomatico(){
     const r = await api("/erp/api/lancamento/checar", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({fornecedor_id:d.fornecedor_id, valor:d.valor_bruto,
-        parcelas:d.parcelas, competencia:d.competencia, descricao:d.descricao,
+        parcelas:d.parcelas, data_emissao_doc:d.data_emissao_doc,
+        descricao:d.descricao,
         categoria_id:d.categoria_id, documento_numero:d.documento_numero})});
     const c = r.critica;
     if (mostrarCritica(c)) {
@@ -621,7 +628,6 @@ function montar(){
     categoria_id: els("f-categoria").value ? +els("f-categoria").value : null,
     descricao: els("f-descricao").value.trim(),
     valor_bruto: String(dec(els("f-valor").value)),
-    competencia: els("f-competencia").value,
     data_emissao_doc: els("f-emissao").value || null,
     documento_numero: els("f-doc-numero").value.trim(),
     forma_pagamento: els("f-forma").value,
@@ -676,7 +682,8 @@ els("btn-checar").addEventListener("click", async () => {
     const r = await api("/erp/api/lancamento/checar", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({fornecedor_id:d.fornecedor_id, valor:d.valor_bruto,
-        parcelas:d.parcelas, competencia:d.competencia, descricao:d.descricao,
+        parcelas:d.parcelas, data_emissao_doc:d.data_emissao_doc,
+        descricao:d.descricao,
         categoria_id:d.categoria_id, documento_numero:d.documento_numero})});
     mostrarCritica(r.critica);
   } catch(e){ aviso("mensagem", e.message, "erro"); }

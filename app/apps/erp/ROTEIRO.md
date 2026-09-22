@@ -1291,6 +1291,12 @@ Feito nesta leva:
       (migração 079).
 - [x] **Desativar e reativar fornecedor pela ficha**, com apagar só para quem
       nunca foi usado (o sistema confere 10 tabelas antes de oferecer).
+- [x] **Dois consertos achados usando o sistema (22/09/2026):** o código da
+      obra não mudava ao salvar (a rota descartava o campo calada; agora troca,
+      com trava de duplicidade e registro do de→para), e a competência saiu do
+      lançamento de título — o sistema deduz pela emissão do documento ou pelo
+      menor vencimento, e a crítica de duplicidade deduz igual, senão as regras
+      D4 e D5 parariam de rodar caladas.
 - [x] **A conta bancária tem dona, e o título tem empresa.** Migração 080:
       conta nova exige a empresa, as antigas ganham botão *definir empresa* com
       contagem do que falta, o título recebe a empresa da obra do rateio

@@ -79,6 +79,40 @@ def _competencia(valor: Any) -> date:
     return _data(v, "competencia").replace(day=1)
 
 
+def _competencia_deduzida(dados: dict[str, Any], parcelas: list[Parcela]) -> date:
+    """O mês de competência, SEM ninguém precisar digitar.
+
+    Pedido do dono em 22/09/2026: *"no lançamento do título não queria precisar
+    lançar competência, nem usamos isso."*
+
+    A coluna continua existindo, e continua sendo preenchida: o relatório
+    analítico filtra por ela, a crítica de duplicidade do fundo fixo compara
+    "mesma conta no mesmo mês" por ela, e a NFS-e emitida leva a competência
+    dentro. Tirá-la do banco quebraria as três; tirá-la da TELA é o pedido, e é
+    o que foi feito.
+
+    A ORDEM da dedução é o que importa, e ela não é "hoje":
+
+      1. a **emissão do documento**, quando informada — é a resposta
+         contabilmente certa, e é um campo que a pessoa já preenche (ou que a
+         leitura da nota preenche sozinha);
+      2. o **primeiro vencimento**, na falta dela;
+      3. hoje, como último recurso.
+
+    "Hoje" em primeiro lugar seria o erro fácil e caro: uma nota de agosto
+    lançada em outubro cairia no custo de outubro, e a obra fecharia o mês com
+    despesa que não é dela.
+    """
+    if str(dados.get("competencia") or "").strip():
+        return _competencia(dados["competencia"])
+    emissao = dados.get("data_emissao_doc")
+    if str(emissao or "").strip():
+        return _data(emissao, "data_emissao_doc").replace(day=1)
+    if parcelas:
+        return min(p.vencimento for p in parcelas).replace(day=1)
+    return date.today().replace(day=1)
+
+
 def proximo_numero_sp(s: Session) -> str:
     """Número SP sequencial via sequence dedicada (migração 001)."""
     n = s.execute(text("SELECT nextval('seq_numero_sp')")).scalar_one()
@@ -365,7 +399,7 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
         numero_sp=proximo_numero_sp(s),
         tipo=tipo, fornecedor_id=forn.id, descricao=descricao,
         valor_bruto=valor_bruto, valor_retencoes=total_ret, valor_liquido=valor_liquido,
-        competencia=_competencia(dados.get("competencia")),
+        competencia=_competencia_deduzida(dados, parcelas_obj),
         data_emissao_doc=_data(dados["data_emissao_doc"], "data_emissao_doc")
             if dados.get("data_emissao_doc") else None,
         categoria_id=cat.id, empresa_id=empresa_id,

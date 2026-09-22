@@ -5523,6 +5523,39 @@ def api_obra(obra_id: int):
                 # *"depois de criada a obra, tem como selecionar a empresa
                 # fácil?"*. Não tinha — o campo só existia na criação, e as
                 # obras que nasceram soltas não tinham conserto pela tela.
+                # O CÓDIGO DA OBRA, editável (22/09/2026). O dono: *"tentei
+                # alterar o código de uma obra, ele salva, mas quando volta
+                # pro cadastro não muda."*
+                #
+                # O defeito era silencioso e vale entender o formato: a tela
+                # SEMPRE mandou o `codigo`, e a lista de campos que esta rota
+                # aceita simplesmente não o incluía. O que não está na lista é
+                # descartado sem reclamar — então o salvamento respondia "ok",
+                # a tela recarregava do banco, e o código voltava o mesmo. Erro
+                # que responde sucesso é pior que erro que responde erro.
+                #
+                # Trocar o código é RENOMEAR, não criar outra obra: os
+                # lançamentos apontam para o número interno dela e seguem
+                # intactos. Mas o código aparece em relatório, em planilha e
+                # na cabeça das pessoas — por isso a troca fica registrada na
+                # trilha com o de e o para.
+                if "codigo" in d:
+                    novo_codigo = (str(d["codigo"]) or "").strip().upper()
+                    if not novo_codigo:
+                        return jsonify({"ok": False,
+                                        "erro": "O código da obra não pode ficar vazio."}), 400
+                    if novo_codigo != (obra.codigo or "").upper():
+                        from app.apps.erp.db.models.cadastros import Obra as _Ob
+                        ja = s.scalars(select(_Ob).where(
+                            _Ob.codigo == novo_codigo, _Ob.id != obra.id)).first()
+                        if ja is not None:
+                            return jsonify({"ok": False, "erro":
+                                            f"Já existe outra obra com o código "
+                                            f"{novo_codigo} ({ja.nome})."}), 400
+                        registrar_evento(s, "obra", obra.id, "CODIGO_ALTERADO",
+                                         {"de": obra.codigo, "para": novo_codigo},
+                                         usuario.id if usuario else None)
+                        obra.codigo = novo_codigo
                 if "empresa_id" in d:
                     from app.apps.erp.db.models.cadastros import Empresa
                     novo_id = int(d["empresa_id"]) if d["empresa_id"] else None
