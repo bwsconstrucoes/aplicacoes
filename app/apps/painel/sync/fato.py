@@ -1171,6 +1171,14 @@ def reconstruir_fato(conn, tamanho_lote=2000):
             conn.executemany(sql, lote)
             total += len(lote)
         conn.commit()
+    # ESTATISTICAS FRESCAS, na hora. A tabela acabou de ser esvaziada e
+    # regravada inteira; ate o autovacuum passar (minutos, ou horas), o
+    # planejador do Postgres decide os caminhos das consultas com os numeros
+    # de ANTES — e escolhe errado. E uma das razoes de a mesma tela ser rapida
+    # numa hora e lenta na outra (22/09/2026, o dono: "uma hora e rapido e
+    # outras nem vai").
+    conn.execute("ANALYZE fato")
+    conn.commit()
     log.info("Fato reconstruido: %s linhas.", f"{total:,}".replace(",", "."))
     return total
 
@@ -1195,6 +1203,8 @@ def reconstruir_recebimentos(conn, tamanho_lote=2000):
         conn.executemany(sql, lote)
         total += len(lote)
     conn.commit()
+    conn.execute("ANALYZE fato_recebimentos")   # mesma razao do fato
+
     log.info("Recebimentos reconstruidos: %s linhas.", f"{total:,}".replace(",", "."))
     return total
 

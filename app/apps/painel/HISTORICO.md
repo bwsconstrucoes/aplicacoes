@@ -2011,6 +2011,41 @@ mesma busca.
 segundos, não minutos; se incomodar, o caminho é um índice de trigramas
 (`pg_trgm`), que depende de a extensão existir no Postgres do Render.
 
+## O PDF do DRE dava "página não encontrada" para o usuário — 22/09/2026
+
+O dono, no acesso de um usuário preso a obra: clicou em PDF no DRE e caiu em
+"Página não encontrada", com o texto genérico mandando ir a Configurações —
+que ele nem pode abrir.
+
+**A causa:** os dois botões do DRE (Excel e PDF) baixavam o relatório
+**completo** — que cruza todas as telas e, desde a manhã do mesmo dia, é só do
+dono (`SO_DO_DONO_PARA_BAIXAR`). O bloqueio estava certo; o botão, não.
+
+**O conserto:** o contexto das telas passou a dizer quem é o dono
+(`administrador`), e para quem está preso a obra os botões do DRE baixam o
+**DRE** — o mesmo recorte da tela. Dois testes com banco: o parceiro baixa o
+PDF dele, o dono continua com o completo.
+
+## Por que a mesma tela é rápida numa hora e lenta na outra — 22/09/2026
+
+O dono: *"queria entender onde está a inconstância na velocidade. Uma hora é
+rápido e outras nem vai."* Três causas, todas conhecidas, nenhuma aleatória:
+
+1. **O serviço reinicia a cada ~150 acessos** (`--max-requests 150`, com
+   `--workers 1`). Quem cai na reinicialização espera a partida inteira do
+   monorepo (18 módulos), e as primeiras telas depois disso pagam de novo as
+   listas guardadas em memória (`_lembrando`), que morrem com o processo. É a
+   causa mais provável do "nem vai". Afrouxar para 1000 é decisão do dono e
+   exige mudar **em dois lugares** — o `Procfile` e o *Start Command* do
+   Render, que o sobrescreve (ver `CLAUDE.md` › Gunicorn).
+2. **Estatísticas velhas depois de refazer os números.** "Só refazer os
+   números" esvazia e regrava o `fato` inteiro; até o autovacuum passar, o
+   planejador do Postgres escolhe os caminhos das consultas com os números de
+   antes — e escolhe errado. Consertado: `ANALYZE` logo depois de regravar,
+   no `fato` e nos recebimentos.
+3. **Uma carga ou atualização rodando ao mesmo tempo.** O serviço tem 4
+   threads; uma carga toma uma delas por horas e disputa o banco com as telas.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

@@ -370,3 +370,24 @@ def test_a_tela_oferece_alterar_cada_pessoa(parceiro, cliente_dono):
     html = cliente_dono.get("/painel/configuracoes").get_data(as_text=True)
     assert "Alterar parceiro" in html
     assert "em branco mantém a atual" in html
+
+
+def test_o_botao_de_pdf_do_dre_leva_o_parceiro_ao_dre_dele(parceiro, monkeypatch):
+    """22/09/2026: no acesso de um usuário, o PDF do DRE dava "página não
+    encontrada". O botão apontava para o relatório COMPLETO, que é só do dono.
+    Para quem está preso a obra, o botão passa a baixar o DRE — o mesmo recorte
+    da tela."""
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente, usuario="parceiro", senha="senha-dele")
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "/painel/baixar/dre" in html
+    assert "/painel/baixar/completo" not in html
+    r = cliente.get("/painel/baixar/dre?formato=pdf")
+    assert r.status_code == 200 and r.get_data()[:4] == b"%PDF"
+
+
+def test_o_dono_continua_com_o_relatorio_completo(base_com_duas_obras, monkeypatch):
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente)
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "/painel/baixar/completo" in html

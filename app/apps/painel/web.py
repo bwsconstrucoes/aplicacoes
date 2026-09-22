@@ -429,6 +429,11 @@ def _contexto_comum(aba: str):
     return {
         "aba_ativa": aba,
         "abas": _abas_visiveis(),
+        # Quem esta preso a obra nao pode baixar o relatorio COMPLETO (ele
+        # cruza todas as telas): os botoes do DRE precisam saber para oferecer
+        # so o DRE. Sem isto o botao levava a "pagina nao encontrada" —
+        # 22/09/2026, visto pelo dono no acesso de um usuario.
+        "administrador": auth.e_administrador(),
         "opcoes": _opcoes_no_escopo(),
         "atualizacao": consultas.atualizado_em(),
         "selecao": {

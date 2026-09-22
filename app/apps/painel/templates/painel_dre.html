@@ -69,10 +69,10 @@
     </span>
     <span class="espaco"></span>
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ link_baixar('completo') }}">
+       href="{{ link_baixar('completo' if administrador else 'dre') }}">
       ⬇ Baixar Excel (tudo)</a>
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ link_baixar('completo', formato='pdf') }}">
+       href="{{ link_baixar('completo' if administrador else 'dre', formato='pdf') }}">
       ⬇ Baixar PDF (tudo)</a>
   </div>
   <div class="tabela-rolagem" style="max-height:none">
