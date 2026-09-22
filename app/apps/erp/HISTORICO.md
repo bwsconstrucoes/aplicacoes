@@ -6494,6 +6494,129 @@ BANCO, e por isso tem teste com Postgres de verdade
 preço de outro material com cara de certo.
 
 
+## A CADEIA INTEIRA PERCORRIDA DE PONTA A PONTA — e o buraco que ela achou
+
+22/09/2026. Pedido do dono, com todas as letras:
+
+> *"Você já conversou tudo? Já fez várias simulações? Consegue simular desde o
+> cadastro de um cnpj à um cadastro de obra, lançamento de pedido, cotação,
+> pedido, autorização, acompanhamento de suprimento, recebimento, lançamento
+> financeiro e acompanhamento até conciliação, lançamento, autorização, baixa,
+> conciliação?"*
+
+A resposta honesta na hora foi **não**: até ali cada pedaço tinha sido testado
+sozinho, e a cadeia inteira nunca. Foi feita agora, e é por isso que este
+registro existe — **o que a leitura de código não pega, a cadeia pega.**
+
+### Como foi feita, para repetir
+
+Banco `erp_ponta_a_ponta` **criado do zero**: `schema.sql` + as 81 migrações,
+102 tabelas, três usuários. Depois, 37 passos por HTTP, como as telas fazem,
+com três sessões diferentes (dono, comprador, financeiro) — porque parte do que
+se quer provar é justamente que **uma pessoa não consegue fazer os dois lados**.
+
+Os passos: plano financeiro → empresa (CNPJ) → conta bancária da empresa → obra
+ligada à empresa → conta apontada na obra → fornecedor → categoria de insumo →
+insumo → fornecedor ligado à categoria → pedido de material → fila do comprador
+→ disparo automático → cotação → mapa → preço → fechamento do pedido →
+autorização → acompanhamento → recebimento na obra → conta Pix do credor →
+homologação por OUTRA pessoa → lançamento do título → fila de aprovação →
+aprovação → agenda de pagamento → baixa → importação do extrato OFX →
+conciliação automática → título PAGO.
+
+Hoje passa inteiro, 0 falhas. Antes desta leva, **parava no passo 23.**
+
+### O buraco: a homologação da conta do credor não tinha porta
+
+`homologar_conta` existia em `core/cadastros/fornecedores.py` desde sempre e
+**não tinha um único chamador** — nem rota, nem botão, nem teste. Cada peça,
+lida sozinha, estava certa; o vão entre elas é que não existia.
+
+O efeito num banco novo: todo título pago por **Pix ou TED** nasce BLOQUEADO
+pela crítica C2 enquanto a conta do credor não for homologada; nenhuma conta
+podia ser homologada; logo, **nenhum pagamento por Pix ou TED chegava ao fim**.
+E a tela não dizia por quê — dizia "homologue no cadastro do credor", onde não
+havia nada.
+
+O que foi feito:
+
+- **Rota e fila** (`/erp/api/credores/contas/pendentes` e
+  `/erp/api/credores/contas/<id>/homologar`), com ação própria
+  `homologar_conta_credor` e **seção própria** no cadastro de perfis
+  (`fin_homologar_conta`, migração **081**). Ela NÃO vem junto de "pagar" de
+  propósito: conferir para onde o dinheiro vai e soltar o dinheiro são duas
+  decisões, e o dono precisa poder dar uma sem a outra.
+- **O botão fica na própria crítica C2**, dentro da ficha do título, e já manda
+  reanalisar na mesma ida. Mandar a pessoa sair da ficha, achar o credor,
+  homologar e voltar era onde o trabalho era abandonado — o beco continuava
+  beco mesmo depois de existir o "reanalisar".
+- **A fila aparece na tela de Pagamentos**, porque é ali que a pendência custa
+  dinheiro parado. Sem ela a pendência era invisível.
+
+### A trava que estava escrita e não estava no código
+
+A docstring de `homologar_conta` prometia: *"Segregação (F2): quem homologa não
+pode ser quem cadastrou a conta"*. **O código não conferia isso.** A promessa
+existia, a trava não — e é exatamente o controle contra o golpe da troca de
+conta bancária.
+
+Agora confere, lendo **quem criou a conta na trilha de auditoria** (evento
+`CRIADA`) — sem coluna nova, e usando a mesma fonte que a tela mostra: se
+divergissem, a tela contaria uma história e a trava obedeceria a outra. Quem
+cadastrou recebe 403 com recado que diz o que fazer, e a fila já mostra o botão
+apagado para ele, antes do clique.
+
+### Quatro defeitos menores que a cadeia mostrou
+
+1. **A conta bancária da obra era gravada e nunca devolvida.** O formulário
+   remontava a caixinha vazia, e o salvamento seguinte — que manda o campo em
+   branco — **apagava a conta sem ninguém pedir**. Mesmo defeito do código da
+   obra (consertado na leva anterior), só que pior, porque perdia informação em
+   silêncio. Faltava `conta_bancaria_id` na lista de campos que a rota devolve.
+2. **Credor que já existe, mas sem forma de pagamento**, tinha a conta digitada
+   **descartada em silêncio**: a rota devolvia o cadastro existente e ignorava o
+   Pix/TED que a pessoa acabou de digitar. É a situação que o dono descreveu —
+   *"preciso voltar pra cadastrar a forma de pgt"*. Agora a conta é criada
+   (pendente, como sempre), e a mesma conta digitada duas vezes não vira duas
+   pendências.
+3. **Três erros 500 com o recado de "falha do sistema"** onde cabia um recado
+   claro: situação de título que não existe no filtro (um link velho bastava),
+   item nulo na cotação e parcela nula na baixa (tela recarregada no meio, com
+   a seleção perdida).
+4. **A crítica C2 mandava para o lugar errado** — "homologue no cadastro do
+   credor". Agora aponta para o botão que está logo abaixo dela.
+
+### O elo que AINDA FALTA — decisão do dono
+
+**Suprimentos e Financeiro não se encontram.** O pedido de compra gera a
+`previsao_pagamento`, e o sistema chega a avisar: *"Material recebido e a
+parcela ainda não virou título no financeiro. Falta lançar a nota."* Mas não há
+caminho da previsão para o lançamento: nenhuma rota, nenhum botão. Quem lança
+**redigita tudo**, e o título nasce sem ligação com o pedido.
+
+Pior: o campo `titulos.pedido_id` aponta para a tabela **`pedidos`** (a antiga,
+importada do Pipefy/Omie), **não** para `pedidos_compra` (a de Suprimentos). Por
+isso a crítica **B1** — *"título do tipo exige pedido vinculado"* — aparece em
+TODO título de compra, e sempre vai aparecer enquanto o elo não existir.
+
+Isto é funcionalidade nova, não conserto: fica para o dono decidir. As perguntas
+que ela destravaria estão em `PERGUNTAS.md` §3u.
+
+### O que a simulação NÃO cobriu
+
+Empreitas, medições, locações, fundo fixo, notas fiscais emitidas e o
+acompanhamento de processos. A cadeia percorrida é a de **compra de material**,
+que era a que o dono pediu. As outras continuam cobertas só pela suíte.
+
+### O roteiro fica fora do repositório, e por quê
+
+O script (`cadeia.py`) fala com um ERP de verdade rodando, num banco que ele
+mesmo recria — não é teste automatizado, é uma varredura para rodar à mão
+quando se quer conferir a costura entre as áreas. O que ele achou virou teste
+de verdade: `tests/test_homologar_conta_do_credor.py` (15 casos) e três casos
+novos em `tests/test_credor_no_lancamento.py`.
+
+
 ## Regras que não se discutem
 
 ### 1. Nada que rode antes de toda rota depende do ORM

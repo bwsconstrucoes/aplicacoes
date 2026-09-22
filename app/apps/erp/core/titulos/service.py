@@ -15,6 +15,7 @@
 # ============================================================================
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
@@ -33,6 +34,8 @@ from app.apps.erp.db.models.financeiro import (
     Conciliacao, Pagamento, Parcela, Rateio, Retencao, StatusParcela,
     StatusTitulo, TipoRetencao, Titulo,
 )
+
+logger = logging.getLogger(__name__)
 
 _CENT = Decimal("0.01")
 
@@ -525,7 +528,18 @@ def consulta_de_titulos(s: Session, *, status: Any = None,
         for v in valores:
             if not v:
                 continue
-            convertidos.append(v if isinstance(v, StatusTitulo) else StatusTitulo(v))
+            if isinstance(v, StatusTitulo):
+                convertidos.append(v)
+                continue
+            try:
+                convertidos.append(StatusTitulo(v))
+            except ValueError:
+                # SITUAÇÃO QUE NÃO EXISTE não derruba a tela (22/09/2026).
+                # Antes virava erro 500 com o recado de "falha do sistema" —
+                # um link velho ou um favorito com a situação antiga bastava.
+                # Agora a situação desconhecida é ignorada, e o filtro responde
+                # com o que ele entende.
+                logger.warning("ERP: situação de título desconhecida no filtro: %r", v)
         if convertidos:
             stmt = stmt.where(Titulo.status.in_(convertidos))
     if fornecedor_id:

@@ -1118,6 +1118,63 @@ O que ainda **não** responde:
 - FALTA **"desfazer" para mais de uma alteração de uma vez** — hoje é uma por
   vez, e para o uso normal basta.
 
+## 3t. A conta do credor: quem confere, e o que está parado esperando
+
+Construído em 22/09/2026, depois de percorrer a cadeia inteira do ERP num banco
+recém-criado — do cadastro do CNPJ até a conciliação. A homologação da conta do
+credor existia como regra e não tinha porta nenhuma: num banco novo, nenhum
+pagamento por Pix ou TED chegava ao fim, e nada na tela dizia por quê.
+
+Perguntas que passam a funcionar:
+
+- OK **Quais contas de credor estão esperando conferência?** — e há quanto tempo.
+- OK **Quem cadastrou esta conta bancária?** — e quem a homologou depois.
+- OK **Por que este título está bloqueado?** — quando é a conta, a resposta diz
+  o que falta e quem pode liberar.
+- OK **Que títulos estão parados esperando a conta do credor ser conferida?**
+- OK **Este credor tem forma de pagamento cadastrada?**
+
+⚠️ **Palavra ambígua: "conta do credor".** São duas coisas no mesmo nome: a
+**conta bancária para onde o credor recebe** (é esta, que se homologa) e a
+**conta do plano financeiro** em que a despesa dele é classificada. A resposta
+tem de dizer qual das duas está respondendo.
+
+⚠️ **Palavra ambígua: "liberar".** Também são duas: **homologar a conta**
+(conferir o titular, o que destrava o título) e **aprovar o título** (liberar o
+pagamento). Homologar NÃO aprova — são duas pessoas, de propósito.
+
+⚠️ **Muda conforme quem pergunta.** Quem cadastrou a conta não pode homologá-la;
+para essa pessoa a resposta tem de dizer que a conferência é de outra pessoa do
+financeiro, e não só "não pode".
+
+- FALTA **"quanto dinheiro está parado por causa de conta não conferida"** — dá
+  para somar os títulos bloqueados por C2, mas ainda não existe a resposta
+  pronta.
+- FALTA **"avisar sozinho quem confere quando entra conta nova"** — hoje a fila
+  aparece na tela de Pagamentos, e alguém precisa olhar.
+
+## 3u. O elo que ainda falta: do pedido de compra ao título
+
+Achado na mesma simulação de 22/09/2026, e é a maior lacuna que ela mostrou. O
+pedido de compra gera a **previsão de pagamento** e o sistema até avisa —
+*"Material recebido e a parcela ainda não virou título no financeiro"* —, mas
+não existe caminho da previsão para o lançamento. Quem lança redigita tudo, e o
+título nasce sem ligação com o pedido que o originou.
+
+- FALTA **"lançar o título a partir do pedido de compra"** — o que hoje obriga a
+  redigitar credor, valor, vencimento e obra.
+- FALTA **"este pedido já virou título?"** — a previsão sabe, a tela do título
+  não mostra.
+- FALTA **"o que comprei e ainda não foi lançado no financeiro"** — a lista
+  existe por pedido, não no conjunto.
+- FALTA **"o valor pago bate com o pedido autorizado?"** — sem o elo, não há
+  como comparar.
+
+⚠️ **Cuidado com "pedido" na resposta.** O ERP tem DOIS: o **pedido de compra**
+de Suprimentos (`pedidos_compra`, PC-0001) e o **pedido** antigo importado do
+Pipefy/Omie (`pedidos`), que é o que o título guarda hoje. Responder um pelo
+outro dá número errado com cara de certo.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

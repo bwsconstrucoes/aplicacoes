@@ -42,6 +42,19 @@
 <div id="mensagem"></div>
 <div class="kpis" id="kpis"></div>
 
+{# CONTAS DE CREDOR ESPERANDO CONFERÊNCIA (22/09/2026). Fica AQUI porque é
+   aqui que a pendência custa dinheiro parado: enquanto a conta não é
+   conferida, o título dela não chega à agenda de pagamento. Antes desta
+   caixa a pendência era invisível — só aparecia para quem esbarrasse num
+   título travado, e ninguém sabia que havia o que fazer.
+   O cartão some sozinho quando não há nada esperando. #}
+<div class="cartao oculto" id="cartao-contas-pendentes">
+  <div class="cartao-cab"><h3>Contas de credor esperando conferência</h3>
+    <small>confirme o titular por um canal que você mesmo procurou — o telefone
+      do cadastro, nunca o contato que mandou a cobrança</small></div>
+  <div id="contas-pendentes"></div>
+</div>
+
 <div class="cartao">
   <div class="cartao-cab"><h3>Baixa por comprovante</h3>
     <small>mande o PDF ou a foto do comprovante — o sistema acha o título, baixa e guarda o documento</small></div>
@@ -197,6 +210,47 @@ async function abrirLote(id){
 }
 
 
+// A fila de contas de credor a conferir. Quem não tem a ação recebe recusa
+// do servidor — e aí o cartão simplesmente não aparece, sem recado de erro:
+// para quem não homologa, isso não é problema nenhum.
+async function carregarContasPendentes(){
+  let contas = [];
+  try { contas = (await api("/erp/api/credores/contas/pendentes")).contas || []; }
+  catch(e){ return; }
+  const cartao = els("cartao-contas-pendentes");
+  if (!contas.length) { cartao.classList.add("oculto"); return; }
+  cartao.classList.remove("oculto");
+  els("contas-pendentes").innerHTML = `<table><thead><tr><th>Credor</th><th>Forma</th>
+    <th>Conta / chave</th><th>Titular</th><th>Cadastrada por</th><th></th></tr></thead><tbody>` +
+    contas.map(c=>`<tr><td>${escapar(c.credor)}</td><td class="dados">${c.forma||"—"}</td>
+      <td class="dados">${escapar(c.identificacao||"—")}</td>
+      <td>${escapar(c.titular||"—")}</td><td>${escapar(c.cadastrada_por||"—")}</td>
+      <td class="direita">${c.posso_homologar
+        ? `<button class="btn secundario" data-homologar="${c.id}">Conferi — homologar</button>`
+        : `<small>quem cadastrou não homologa</small>`}</td></tr>`).join("") +
+    `</tbody></table>`;
+  els("contas-pendentes").querySelectorAll("[data-homologar]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const id = b.getAttribute("data-homologar");
+      const linha = contas.find(x => String(x.id) === String(id)) || {};
+      const resp = await perguntar({
+        titulo: "Homologar a conta do credor",
+        aviso: "Esta conferência é o que segura a troca de conta bancária. "
+             + "Confirme o titular por um canal que você mesmo procurou.",
+        campos: [{nome:"titular", rotulo:"Titular conferido", valor: linha.titular || linha.credor}],
+        textoOk: "Homologar"});
+      if (!resp) return;
+      b.disabled = true;
+      try {
+        await api(`/erp/api/credores/contas/${id}/homologar`,
+          {method:"POST", headers:{"Content-Type":"application/json"}, body: "{}"});
+        aviso("mensagem", "Conta liberada. Os títulos dela precisam ser reanalisados "
+                        + "na tela de Solicitações.", "ok");
+        carregarContasPendentes();
+      } catch(e){ b.disabled = false; aviso("mensagem", e.message, "erro"); }
+    }));
+}
+
 async function carregar(){
   try {
     const d = await api("/erp/api/pagamentos/agenda");
@@ -209,6 +263,7 @@ async function carregar(){
       LOTES.filter(l=>l.status==="ABERTO").map(l=>`<option value="${l.id}">${l.nome}</option>`).join("");
     els("data-baixa").value = new Date().toISOString().slice(0,10);
     montarFiltros(); desenharLotes(); desenhar();
+    carregarContasPendentes();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 

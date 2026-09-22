@@ -111,6 +111,62 @@ def test_documento_ja_cadastrado_devolve_o_que_existe_em_vez_de_reclamar(cenario
         "devolve o cadastro que existe, sem sobrescrever com o que foi digitado"
 
 
+def test_credor_que_ja_existe_SEM_forma_de_pagamento_ganha_a_conta(cenario, app_real):
+    """Achado em 22/09/2026 ao percorrer a cadeia inteira num banco novo.
+
+    A rota devolvia o cadastro que já existia e DESCARTAVA em silêncio a conta
+    que a pessoa acabou de digitar. Ela via "pronto", salvava o lançamento, e o
+    título travava do mesmo jeito — sem nada na tela explicando por quê. É
+    exatamente a situação que o dono descreveu: *"preciso voltar pra cadastrar
+    a forma de pgt"*.
+    """
+    c = cenario
+    _cadastrar(app_real, c["lancador"].id, cnpj_cpf="11444777000161",
+               razao_social="MADEIREIRA DO TESTE LTDA")
+
+    r = _cadastrar(app_real, c["lancador"].id, cnpj_cpf="11444777000161",
+                   razao_social="MADEIREIRA DO TESTE LTDA", conta_forma="PIX",
+                   pix_tipo="CNPJ", pix_chave="11444777000161")
+
+    corpo = r.get_json()
+    assert corpo["ja_existia"] is True
+    assert corpo["conta_pendente_id"], "a conta digitada agora não pode se perder"
+    assert len(corpo["credor"]["contas_pendentes"]) == 1
+    conta = c["s"].get(FornecedorConta, corpo["conta_pendente_id"])
+    assert conta.status == StatusConta.PENDENTE, "e continua nascendo pendente"
+
+
+def test_a_mesma_conta_digitada_de_novo_nao_vira_segunda_pendencia(cenario, app_real):
+    """Duas filas de conferência para o mesmo dado: quem confere não saberia
+    qual liberar, e liberaria as duas."""
+    c = cenario
+    dados = dict(cnpj_cpf="11444777000161", razao_social="MADEIREIRA DO TESTE LTDA",
+                 conta_forma="PIX", pix_tipo="CNPJ", pix_chave="11444777000161")
+    primeiro = _cadastrar(app_real, c["lancador"].id, **dados).get_json()
+    segundo = _cadastrar(app_real, c["lancador"].id, **dados).get_json()
+
+    assert segundo["conta_pendente_id"] == primeiro["conta_pendente_id"]
+    assert len(segundo["credor"]["contas_pendentes"]) == 1
+
+
+def test_quem_cadastrou_a_conta_pela_tela_fica_na_trilha(cenario, app_real):
+    """Sem este registro a trava da homologação não teria como saber quem
+    cadastrou — e quem lança poderia liberar a própria conta."""
+    from sqlalchemy import select
+    from app.apps.erp.db.models.financeiro import Evento
+
+    c = cenario
+    corpo = _cadastrar(app_real, c["lancador"].id, cnpj_cpf="11444777000161",
+                       razao_social="MADEIREIRA DO TESTE LTDA", conta_forma="PIX",
+                       pix_tipo="CNPJ", pix_chave="11444777000161").get_json()
+
+    ev = c["s"].scalars(select(Evento).where(
+        Evento.entidade_tipo == "fornecedor_conta",
+        Evento.entidade_id == corpo["conta_pendente_id"],
+        Evento.acao == "CRIADA")).first()
+    assert ev is not None and ev.usuario_id == c["lancador"].id
+
+
 def test_pix_sem_chave_e_recusado(cenario, app_real):
     c = cenario
     r = _cadastrar(app_real, c["lancador"].id, cnpj_cpf="11444777000161",

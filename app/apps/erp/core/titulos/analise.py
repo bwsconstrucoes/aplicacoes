@@ -91,9 +91,9 @@ def analisar_titulo(s: Session, t: Titulo, *, criticas_extra: Optional[list[str]
                 _critica(criticas, "C2", "BLOQUEIA",
                          f"A conta {conta.forma.value} deste credor está "
                          f"{conta.status.value}, e pagamento exige conta HOMOLOGADA. "
-                         f"Alguém com alçada homologa a conta no cadastro do credor e "
-                         f"depois manda REANALISAR este título — o lançamento não se "
-                         f"perde.")
+                         f"Alguém do financeiro — que não seja quem cadastrou a conta — "
+                         f"confere o titular e libera pelo botão logo abaixo, que já "
+                         f"manda REANALISAR este título. O lançamento não se perde.")
             if conta.homologada_em and (hoje - conta.homologada_em.date()).days <= 7:
                 _critica(criticas, "C2", "ALERTA",
                          "Conta homologada há menos de 7 dias — janela típica do golpe da "

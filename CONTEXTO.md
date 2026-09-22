@@ -747,6 +747,34 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 22/09/2026 — PERCORRER A CADEIA INTEIRA É UM TIPO DE PROVA QUE A SUÍTE NÃO DÁ
+
+O dono pediu para simular tudo, do cadastro do CNPJ à conciliação. Feito num
+banco criado do zero (`schema.sql` + as 81 migrações), 37 passos por HTTP, com
+três sessões diferentes — parte do que se quer provar é que **uma pessoa
+sozinha não consegue fazer os dois lados de um controle**.
+
+**Achou uma função de regra de negócio sem nenhum chamador**: `homologar_conta`
+existia, e nem rota, nem botão, nem teste a chamavam. Num banco novo isso
+travava o ERP inteiro — nenhum pagamento por Pix ou TED chegava ao fim, e a
+tela não dizia por quê. Cada peça, lida sozinha, estava certa; **o vão entre
+elas é que não existia**, e vão não aparece em revisão de código nem em teste
+de unidade.
+
+**Achou também uma trava que estava na docstring e não no código**: a promessa
+de que quem cadastra a conta bancária não a homologa — o controle contra o
+golpe da troca de conta. Comentário não é trava.
+
+**A decisão que fica:** quando uma área passa a conversar com outra, percorrer a
+cadeia inteira num banco limpo é obrigatório antes de dizer que está pronto. O
+que a varredura achar vira teste de verdade; o roteiro em si não entra no
+repositório, porque ele fala com um ERP rodando e não é teste automatizado.
+
+O detalhe de tudo que foi achado está em `app/apps/erp/HISTORICO.md`, e a maior
+lacuna — Suprimentos e Financeiro ainda não se encontram — em
+`app/apps/erp/PERGUNTAS.md` §3u.
+
+
 ### 22/09/2026 — FORMATO DE CAMPO É DO `erp_base.html` (mexe no `CLAUDE.md`)
 
 O dono, depois de horas usando o ERP: *"todas as telas têm algum detalhe assim

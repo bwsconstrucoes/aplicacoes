@@ -3443,6 +3443,34 @@ def api_titulos():
                                 "tem_mais", "de", "ate", "resumo")}})
 
 
+def _conta_do_credor_do_titulo(s, t) -> dict | None:
+    """A conta bancária que este título vai pagar, com a situação dela.
+
+    Só o necessário para o card decidir se mostra o botão de homologar: id,
+    situação e se QUEM ESTÁ OLHANDO pode homologar. Dado bancário em si não
+    passa por aqui — ele tem tela própria, com permissão própria.
+    """
+    from app.apps.erp.core.auth.permissoes import pode
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    from app.apps.erp.db.models.cadastros import FornecedorConta
+
+    if not getattr(t, "fornecedor_conta_id", None):
+        return None
+    conta = s.get(FornecedorConta, t.fornecedor_conta_id)
+    if conta is None:
+        return None
+    atual = _usuario_logado(s)
+    autor = svc_forn.quem_cadastrou_a_conta(s, conta.id)
+    proprio = autor is not None and atual is not None and autor == atual.id
+    return {
+        "id": conta.id,
+        "status": conta.status.value if conta.status else None,
+        "forma": conta.forma.value if conta.forma else None,
+        "posso_homologar": bool(pode(atual, "homologar_conta_credor")) and not proprio,
+        "eu_que_cadastrei": proprio,
+    }
+
+
 def _pedido_do_titulo(s, t) -> dict | None:
     """O pedido de compra que originou o título, para virar link na ficha.
 
@@ -3626,6 +3654,11 @@ def api_titulo_detalhe(titulo_id: int):
                                "aliquota": float(r.aliquota), "valor": float(r.valor)}
                               for r in t.retencoes],
                 "criticas": (analise.criticas if analise else []) or [],
+                # A CONTA DO CREDOR que este título usa, e se ela ainda espera
+                # conferência (22/09/2026). É o que permite ao card mostrar o
+                # botão de homologar bem onde a pessoa esbarra no bloqueio, em
+                # vez de mandá-la procurar a tela do credor e voltar.
+                "conta_do_credor": _conta_do_credor_do_titulo(s, t),
                 "trilha": [{"quando": e.criado_em.strftime("%d/%m/%Y %H:%M"),
                             "acao": e.acao, "detalhe": e.detalhe} for e in eventos],
             }
@@ -4481,9 +4514,6 @@ def api_credor_no_lancamento():
     """Cadastra o credor a partir da tela de lançamento, com conta pendente."""
     from app.apps.erp.core.cadastros import fornecedores as svc_forn
     from app.apps.erp.core.cadastros.validadores import somente_digitos
-    from app.apps.erp.db.models.cadastros import (
-        FormaPagamento, FornecedorConta, StatusConta,
-    )
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
@@ -4494,7 +4524,18 @@ def api_credor_no_lancamento():
             # procurar.
             ja = svc_forn.obter_por_documento(s, doc) if doc else None
             if ja is not None:
+                # CREDOR QUE JÁ EXISTE MAS AINDA NÃO TEM FORMA DE PAGAMENTO
+                # (22/09/2026, achado ao simular a cadeia inteira). Antes a
+                # rota devolvia o cadastro e DESCARTAVA em silêncio a conta
+                # que a pessoa acabou de digitar — ela via "pronto", salvava,
+                # e o título travava do mesmo jeito. É exatamente o caso que
+                # o dono descreveu: *"preciso voltar pra cadastrar a forma de
+                # pgt"*.
+                conta_nova = _conta_pendente_do_credor(s, ja, d)
+                if conta_nova is not None:
+                    s.commit()
                 return jsonify({"ok": True, "ja_existia": True,
+                                "conta_pendente_id": conta_nova,
                                 "credor": _credor_para_lancamento(s, ja)})
             forn = svc_forn.criar(s, {
                 "tipo_pessoa": "PF" if len(doc) == 11 else "PJ",
@@ -4505,29 +4546,7 @@ def api_credor_no_lancamento():
                 "telefone": (d.get("telefone") or "").strip() or None,
                 "origem": "LANCAMENTO"}, usuario)
 
-            forma = (d.get("conta_forma") or "").strip().upper()
-            conta_criada = None
-            if forma in ("PIX", "TED"):
-                conta = FornecedorConta(
-                    fornecedor_id=forn.id, forma=FormaPagamento(forma),
-                    titular_nome=forn.razao_social, titular_doc=forn.cnpj_cpf,
-                    status=StatusConta.PENDENTE)
-                if forma == "PIX":
-                    chave = (d.get("pix_chave") or "").strip()
-                    if not chave:
-                        raise ErroValidacao("Informe a chave Pix do credor.")
-                    conta.pix_tipo = (d.get("pix_tipo") or "ALEATORIA").strip().upper()
-                    conta.pix_chave = chave
-                else:
-                    banco = somente_digitos(d.get("banco_codigo") or "")
-                    agencia = (d.get("agencia") or "").strip()
-                    numero = (d.get("conta") or "").strip()
-                    if not (banco and agencia and numero):
-                        raise ErroValidacao("Para TED informe banco, agência e conta.")
-                    conta.banco_codigo, conta.agencia, conta.conta = banco, agencia, numero
-                s.add(conta)
-                s.flush()
-                conta_criada = conta.id
+            conta_criada = _conta_pendente_do_credor(s, forn, d)
             s.commit()
             return jsonify({"ok": True, "ja_existia": False,
                             "conta_pendente_id": conta_criada,
@@ -4539,6 +4558,173 @@ def api_credor_no_lancamento():
     except Exception as e:
         logger.exception("ERP: falha ao cadastrar credor no lançamento")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# A HOMOLOGAÇÃO DA CONTA DO CREDOR — a porta que faltava (22/09/2026)
+#
+# Achado ao simular a cadeia inteira de ponta a ponta: a regra de negócio
+# `homologar_conta` existia desde sempre e NÃO TINHA QUEM A CHAMASSE — nenhuma
+# rota, nenhum botão, nenhum teste. Na prática isso travava o ERP inteiro num
+# banco novo: todo título pago por Pix ou TED nasce BLOQUEADO pela crítica C2
+# enquanto a conta do credor não estiver homologada, e não havia como
+# homologar. O lançamento chegava ao fim e morria ali.
+#
+# É o segundo lado da porta que o cadastro do credor pela tela de lançamento
+# abriu: lá a conta nasce PENDENTE de propósito, aqui ela é conferida por
+# outra pessoa e liberada. As duas metades juntas é que fazem o controle
+# valer — uma sem a outra é ou um beco, ou um convite ao golpe da troca de
+# conta.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/credores/contas/pendentes")
+@login_obrigatorio
+@permissao("homologar_conta_credor")
+def api_contas_pendentes():
+    """A fila de contas de credor esperando conferência.
+
+    Sem esta lista a pendência ficaria invisível: ela só apareceria para quem
+    esbarrasse num título bloqueado, e o dinheiro pararia sem ninguém saber
+    por quê.
+    """
+    from sqlalchemy import select
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    from app.apps.erp.db.models.cadastros import (
+        Fornecedor, FornecedorConta, StatusConta, Usuario as _U,
+    )
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            contas = s.scalars(select(FornecedorConta).where(
+                FornecedorConta.status == StatusConta.PENDENTE)).all()
+            nomes = {f.id: f.razao_social for f in s.scalars(select(Fornecedor)).all()}
+            pessoas = {u.id: u.nome for u in s.scalars(select(_U)).all()}
+            fila = []
+            for ct in sorted(contas, key=lambda c: c.id or 0, reverse=True):
+                autor = svc_forn.quem_cadastrou_a_conta(s, ct.id)
+                fila.append({
+                    "id": ct.id, "fornecedor_id": ct.fornecedor_id,
+                    "credor": nomes.get(ct.fornecedor_id, ""),
+                    "forma": ct.forma.value if ct.forma else None,
+                    "identificacao": ct.pix_chave or
+                    f"{ct.banco_codigo or ''}/{ct.agencia or ''}/{ct.conta or ''}",
+                    "titular": ct.titular_nome, "titular_doc": ct.titular_doc,
+                    "cadastrada_por": pessoas.get(autor, ""),
+                    # quem cadastrou não homologa: a tela já mostra o botão
+                    # apagado, em vez de deixar a pessoa clicar e tomar recusa.
+                    "posso_homologar": not (autor is not None and atual is not None
+                                            and autor == atual.id),
+                    "criado_em": ct.criado_em.isoformat() if ct.criado_em else None,
+                })
+        return jsonify({"ok": True, "contas": fila})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao listar contas pendentes")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/credores/contas/<int:conta_id>/homologar", methods=["POST"])
+@login_obrigatorio
+@permissao("homologar_conta_credor")
+def api_homologar_conta_credor(conta_id: int):
+    """Libera a conta do credor para pagamento, conferida por outra pessoa.
+
+    Aceita `reanalisar_titulo_id`: o título que estava bloqueado por causa
+    desta conta volta para a fila de aprovação na MESMA ida. Sem isso a
+    pessoa homologa, acha que resolveu, e o título continua parado — o beco
+    que o dono descreveu, só que uma casa adiante.
+    """
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            conta = svc_forn.homologar_conta(s, conta_id, usuario)
+            resposta = {"ok": True, "conta_id": conta.id,
+                        "status": conta.status.value}
+            alvo = d.get("reanalisar_titulo_id")
+            if alvo:
+                try:
+                    titulo = svc_titulos.reanalisar(s, int(alvo), usuario)
+                    resposta["titulo"] = {"id": titulo.id,
+                                          "numero_sp": titulo.numero_sp,
+                                          "status": titulo.status.value}
+                except (ErroValidacao, ErroPermissao) as e:
+                    # a homologação vale de qualquer jeito: ela é o ato
+                    # principal, e desfazê-la por causa da reanálise seria
+                    # perder o trabalho conferido.
+                    resposta["aviso_reanalise"] = str(e)
+            s.commit()
+        return jsonify(resposta)
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao homologar conta do credor")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+def _conta_pendente_do_credor(s, forn, d: dict):
+    """A conta bancária que veio junto do cadastro pela tela de lançamento.
+
+    Nasce PENDENTE sempre — é o controle inteiro: quem lança pode DIZER para
+    onde o credor recebe, mas não pode LIBERAR esse destino. Devolve o id da
+    conta criada, ou None quando não veio forma de pagamento nenhuma.
+    """
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import (
+        FormaPagamento, FornecedorConta, StatusConta,
+    )
+
+    forma = (d.get("conta_forma") or "").strip().upper()
+    if forma not in ("PIX", "TED"):
+        return None
+    conta = FornecedorConta(
+        fornecedor_id=forn.id, forma=FormaPagamento(forma),
+        titular_nome=forn.razao_social, titular_doc=forn.cnpj_cpf,
+        status=StatusConta.PENDENTE)
+    if forma == "PIX":
+        chave = (d.get("pix_chave") or "").strip()
+        if not chave:
+            raise ErroValidacao("Informe a chave Pix do credor.")
+        conta.pix_tipo = (d.get("pix_tipo") or "ALEATORIA").strip().upper()
+        conta.pix_chave = chave
+    else:
+        banco = somente_digitos(d.get("banco_codigo") or "")
+        agencia = (d.get("agencia") or "").strip()
+        numero = (d.get("conta") or "").strip()
+        if not (banco and agencia and numero):
+            raise ErroValidacao("Para TED informe banco, agência e conta.")
+        conta.banco_codigo, conta.agencia, conta.conta = banco, agencia, numero
+    # a conta repetida não vira segunda conta pendente: seriam duas filas de
+    # conferência para o mesmo dado, e quem confere não saberia qual liberar.
+    igual = next((c for c in forn.contas
+                  if c.forma == conta.forma and c.status == StatusConta.PENDENTE
+                  and (c.pix_chave or "") == (conta.pix_chave or "")
+                  and (c.banco_codigo or "") == (conta.banco_codigo or "")
+                  and (c.agencia or "") == (conta.agencia or "")
+                  and (c.conta or "") == (conta.conta or "")), None)
+    if igual is not None:
+        return igual.id
+    s.add(conta)
+    s.flush()
+    # QUEM CADASTROU fica na trilha — é o que a homologação lê depois para
+    # recusar que a mesma pessoa libere a própria conta.
+    usuario = _usuario_logado(s)
+    registrar_evento(s, "fornecedor_conta", conta.id, "CRIADA",
+                     {"fornecedor_id": forn.id, "forma": forma,
+                      "origem": "LANCAMENTO"},
+                     usuario.id if usuario else None)
+    s.flush()
+    # a lista de contas do credor foi lida acima (a busca por repetida), então
+    # ela ficou velha: sem esta linha o cadastro acabado de gravar não apareceria
+    # na resposta, e a tela diria que nada foi criado.
+    s.expire(forn, ["contas"])
+    return conta.id
 
 
 def _credor_para_lancamento(s, forn) -> dict:
@@ -4888,12 +5074,20 @@ def api_baixar():
             usuario = _usuario_logado(s)
             for it in itens:
                 try:
+                    # Parcela sem número não é falha do sistema (22/09/2026):
+                    # era um erro 500 com o recado de "falha do sistema", que
+                    # assusta e não diz o que fazer.
+                    try:
+                        parcela_id = int(it.get("parcela_id"))
+                    except (TypeError, ValueError):
+                        raise ErroValidacao(
+                            "Escolha de novo as parcelas a pagar — a seleção se perdeu.")
                     # escopo do OBJETO: ter alçada para pagar não autoriza a
                     # pagar a parcela da obra de outro. Fora do escopo responde
                     # "não encontrado", nunca "sem permissão".
-                    exigir_parcela_no_escopo(s, usuario, int(it["parcela_id"]))
+                    exigir_parcela_no_escopo(s, usuario, parcela_id)
                     pg = svc_pag.registrar_pagamento(
-                        s, parcela_id=int(it["parcela_id"]),
+                        s, parcela_id=parcela_id,
                         conta_bancaria_id=int(conta_id),
                         data_pagamento=date.fromisoformat(data_pg),
                         valor_pago=it.get("valor_pago") or it.get("valor"),
@@ -5696,7 +5890,12 @@ def api_obra(obra_id: int):
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 "iss_retido inss_retido aceita_deducao_material prazo_execucao_dias "
-                "conta_recebimento_id projeto_id empresa_id").split()}
+                # A CONTA DE PAGAMENTO DA OBRA volta junto (22/09/2026). Ela era
+                # gravada e nunca devolvida: o formulário remontava a caixinha
+                # vazia, e o salvamento seguinte — que manda o campo em branco —
+                # APAGAVA a conta sem ninguém pedir. Mesmo defeito do código da
+                # obra, só que pior, porque perdia informação em silêncio.
+                "conta_bancaria_id conta_recebimento_id projeto_id empresa_id").split()}
             for campo in ("valor_contrato", "latitude", "longitude",
                           "aliquota_iss", "aliquota_iss_pct",
                           "pct_servico_iss", "pct_servico_inss"):
