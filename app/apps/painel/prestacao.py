@@ -597,6 +597,131 @@ def quotas_por_socio(por_projeto, participacoes, config) -> list[dict]:
     return saida
 
 
+# ---------------------------------------------------------------------------
+# 4b. A divisão entre sócios, OBRA a obra
+# ---------------------------------------------------------------------------
+# A `quotas_por_socio` acima divide por PROJETO. O cenário divide por OBRA, e a
+# razão é do dono: ele fala de "as obras do Ceará", e parceiro entra em obra,
+# não na construtora. Quem participa de tudo entra uma vez só, com a obra em
+# branco — senão seriam 174 linhas iguais.
+
+
+def participantes_da_obra(participacoes, obra: str) -> list[dict]:
+    """Quem divide ESTA obra: quem foi nomeado nela; se ninguém foi, quem
+    participa de todas. O específico ganha do geral — é o que permite dizer
+    "nesta obra entrou um parceiro" sem refazer o resto."""
+    nomeados = [p for p in participacoes if (p.get("obra") or "") == obra]
+    return nomeados or [p for p in participacoes if not (p.get("obra") or "")]
+
+
+def quotas_por_obra(por_obra: dict, participacoes, taxa_adm_pct: float = 0.0) -> list[dict]:
+    """Quanto cabe a cada um, obra a obra. Mesma conta da divisão por projeto.
+
+    **Obra só da BWS:** cada um leva seu percentual do resultado com rateio.
+
+    **Obra com parceiro:** o parceiro entrou na obra, não na BWS — não é ele
+    quem paga a estrutura da construtora. Então cobra-se da obra uma taxa de
+    administração sobre a receita bruta; a base que todos dividem é o resultado
+    direto MAIS os juros MENOS essa taxa; e a taxa somada ao rateio da estrutura
+    volta só para os sócios internos, na proporção entre eles.
+
+    O juro entra na base de todos porque não é estrutura: é o preço do dinheiro
+    que financiou aquela obra.
+
+    A soma de todas as quotas de uma obra fecha com o resultado dela."""
+    taxa = float(taxa_adm_pct or 0) / 100.0
+    saida = []
+    for obra, n in por_obra.items():
+        gente = participantes_da_obra(participacoes, obra)
+        if not gente:
+            continue
+        tem_externo = any((p.get("tipo") or "").lower() == "externo" for p in gente)
+        soma_interna = sum(float(p["pct"]) for p in gente
+                           if (p.get("tipo") or "").lower() != "externo")
+        taxa_adm = taxa * n.get("receita_bruta", 0.0)
+
+        for p in gente:
+            externo = (p.get("tipo") or "").lower() == "externo"
+            fracao = float(p["pct"]) / 100.0
+            if tem_externo:
+                base = (n.get("resultado_direto", 0.0) + n.get("juros", 0.0)
+                        - taxa_adm)
+                quota = base * fracao
+                credito = 0.0
+                if not externo and soma_interna > 0:
+                    credito = ((taxa_adm + n.get("rateio", 0.0))
+                               * float(p["pct"]) / soma_interna)
+                    quota += credito
+                visao = ("Parceria — resultado direto, mais os juros, menos a taxa"
+                         if externo else "Parceria, lado BWS — mais a taxa e o rateio")
+            else:
+                base = n.get("resultado", 0.0)
+                quota = base * fracao
+                credito = 0.0
+                visao = "Obra só da BWS — resultado com rateio e juros"
+
+            saida.append({
+                "socio": p["socio"], "tipo": p.get("tipo") or "Interno",
+                "obra": obra, "pct": float(p["pct"]),
+                "base": round(base, 2), "quota": round(quota, 2),
+                "credito_bws": round(credito, 2), "taxa_adm": round(taxa_adm, 2),
+                "visao": visao,
+                "resultado": n.get("resultado", 0.0),
+                "resultado_direto": n.get("resultado_direto", 0.0),
+                "rateio": n.get("rateio", 0.0), "juros": n.get("juros", 0.0),
+            })
+    saida.sort(key=lambda q: (q["socio"], q["obra"]))
+    return saida
+
+
+def totalizar_por_obra(apurado) -> dict:
+    """Soma a apuração por obra — é o nível em que o cenário divide."""
+    campos = ("receita_bruta", "receita_liquida", "retencoes", "despesas",
+              "rateio", "juros", "resultado_direto", "resultado")
+    total: dict[str, dict] = {}
+    for linha in apurado:
+        alvo = total.setdefault(linha["obra"], {c: 0.0 for c in campos})
+        for campo in campos:
+            alvo[campo] += linha[campo]
+    return total
+
+
+def trilha_da_obra(caixa_por_obra_mes, obra: str, *, rateio=None, juros=None) -> list[dict]:
+    """A vida de UMA obra, mês a mês — para o gráfico e para a conferência.
+
+    O dono: "a parte gráfica é muito interessante para você entender o que
+    aconteceu, como aconteceu (…) mostrando a evolução da obra, do consumo de
+    caixa, como é que ela se comportou, por que que ela precisou puxar juros".
+
+    É isso que esta lista responde, uma linha por mês: o que a obra gerou ou
+    consumiu, o acumulado (onde ela ficou no vermelho), a estrutura que recebeu
+    e o juro que absorveu por causa do buraco."""
+    proprio: dict[str, float] = {}
+    for mes, nome, valor in caixa_por_obra_mes:
+        if nome == obra and mes != SEM_DATA:
+            proprio[mes] = proprio.get(mes, 0.0) + float(valor or 0)
+
+    do_rateio = {m: v for (o, m), v in (rateio or {}).items() if o == obra}
+    do_juros = {m: v for (o, m), v in (juros or {}).items() if o == obra}
+
+    linhas, acumulado, juros_ac = [], 0.0, 0.0
+    for mes in _meses_ordenados(set(proprio), set(do_rateio), set(do_juros)):
+        no_mes = proprio.get(mes, 0.0) + do_rateio.get(mes, 0.0)
+        acumulado += no_mes
+        juros_ac += do_juros.get(mes, 0.0)
+        ano, _, m = mes.partition("-")
+        linhas.append({
+            "mes": mes, "rotulo": f"{m}/{ano}",
+            "caixa_do_mes": round(no_mes, 2),
+            "acumulado": round(acumulado, 2),
+            "rateio": round(do_rateio.get(mes, 0.0), 2),
+            "juros": round(do_juros.get(mes, 0.0), 2),
+            "juros_acumulado": round(juros_ac, 2),
+            "com_juros": round(acumulado + juros_ac, 2),
+        })
+    return linhas
+
+
 def efeito_do_ajuste(tipo: str, valor: float) -> float:
     """Como cada tipo de ajuste manual mexe na posição do sócio.
 

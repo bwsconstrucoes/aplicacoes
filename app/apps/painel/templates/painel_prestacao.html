@@ -40,7 +40,18 @@
      style="text-decoration:none; align-self:flex-end">Cenários de rateio</a>
   <a class="btn secundario" href="{{ url_for('painel.prestacao_parametros') }}"
      style="text-decoration:none; align-self:flex-end">Parâmetros e regras</a>
+  <a class="btn" href="{{ url_for('painel.cenario_montagem') }}"
+     style="text-decoration:none; align-self:flex-end">Cenário — tudo num lugar só</a>
 </form>
+
+<div class="aviso">
+  <b>Existe agora um ambiente único para a prestação de contas.</b> Nele você
+  nomeia sócios e parceiros, escolhe a régua (mão de obra ou faturamento), diz
+  quais contas da matriz se dividem e em quanto, e guarda isso com nome para
+  comparar com outro jeito de dividir. Esta tela aqui continua funcionando
+  exatamente como antes, com as regras antigas — nada foi trocado sem você ver.
+  <a href="{{ url_for('painel.cenario_montagem') }}">Abrir o cenário</a>.
+</div>
 
 <!-- ===================== POSIÇÃO DOS SÓCIOS ===================== -->
 <div class="tabela-wrap" style="margin-bottom:14px">

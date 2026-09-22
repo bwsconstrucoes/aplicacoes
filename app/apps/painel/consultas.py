@@ -2464,3 +2464,103 @@ def departamentos_administrativos() -> list[str]:
         f"SELECT DISTINCT {OBRA_OU_SEM} FROM fato "
         " WHERE departamento ILIKE '%BWS%' OR departamento ILIKE '%CONS%' "
         "    OR departamento ILIKE '%ADM%' ORDER BY 1")]
+
+
+# ---------------------------------------------------------------------------
+# A montagem do cenário: as contas da matriz, abertas para escolher
+# ---------------------------------------------------------------------------
+# O dono, sobre a tela antiga de regras: "não adianta uma coisa que eu tenho que
+# digitar coisa por coisa para sair colocando. Tem que ser um negócio realmente
+# fácil de fazer."
+#
+# Por isso a tela não pede cadastro: mostra o que a matriz gastou, do maior para
+# o menor, com um campo de percentual ao lado. Estas consultas alimentam essa
+# lista em três níveis — grupo, categoria e o lançamento individual.
+
+def lancamentos_administrativos(deptos_admin, medida: str = "comprometido", *,
+                                grupo: str = "", categoria: str = "",
+                                limite: int = 400) -> list[dict]:
+    """Os lançamentos da matriz, um a um, para marcar exceções.
+
+    O teto existe porque esta lista é para ESCOLHER, não para somar: quem quer o
+    total tem o nível de cima, que sai agregado do banco. Sem teto, abrir um
+    grupo grande traria milhares de linhas para dentro de um `select` da tela."""
+    if not deptos_admin:
+        return []
+    valor = _medida_de_despesa(medida)
+    onde = ["analise = 'DRE'", "tipo = ?", "departamento = ANY(?)"]
+    params = [PAG, list(deptos_admin)]
+    if grupo:
+        onde.append("TRIM(COALESCE(grupo,'')) = ?")
+        params.append(grupo)
+    if categoria:
+        onde.append("TRIM(COALESCE(categoria,'')) = ?")
+        params.append(categoria)
+    sql = f"""
+        SELECT codigo_lancamento,
+               COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
+               data,
+               TRIM(COALESCE(grupo,'')), TRIM(COALESCE(categoria,'')),
+               COALESCE(razao_social,''), COALESCE(numero_documento,''),
+               COALESCE(observacao,''), COALESCE(link,''),
+               SUM({valor})
+          FROM fato
+         WHERE {' AND '.join(onde)}
+         GROUP BY 1,2,3,4,5,6,7,8,9
+        HAVING ABS(SUM({valor})) > 0.005
+         ORDER BY ABS(SUM({valor})) DESC
+         LIMIT {int(limite)}"""
+    campos = ("codigo", "mes", "data", "grupo", "categoria", "credor",
+              "documento", "observacao", "link", "valor")
+    return [dict(zip(campos, (str(l[0] or ""), l[1], l[2], l[3], l[4], l[5],
+                              l[6], l[7], l[8], float(l[9] or 0))))
+            for l in consultar(sql, params)]
+
+
+def lancamentos_administrativos_por_codigo(deptos_admin, codigos,
+                                           medida: str = "comprometido") -> list[dict]:
+    """Só os lançamentos marcados um a um — para a conta tirá-los do agregado.
+
+    Sem isto o mesmo dinheiro contaria duas vezes: uma dentro do balde da
+    categoria e outra com o percentual próprio."""
+    if not deptos_admin or not codigos:
+        return []
+    valor = _medida_de_despesa(medida)
+    sql = f"""
+        SELECT codigo_lancamento,
+               COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
+               TRIM(COALESCE(grupo,'')), TRIM(COALESCE(categoria,'')),
+               SUM({valor})
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ? AND departamento = ANY(?)
+           AND codigo_lancamento = ANY(?)
+         GROUP BY 1, 2, 3, 4"""
+    numeros = []
+    for c in codigos:
+        try:
+            numeros.append(int(str(c).strip()))
+        except (TypeError, ValueError):
+            continue
+    if not numeros:
+        return []
+    campos = ("codigo", "mes", "grupo", "categoria", "valor")
+    return [dict(zip(campos, (str(l[0] or ""), l[1], l[2], l[3], float(l[4] or 0))))
+            for l in consultar(sql, [PAG, list(deptos_admin), numeros])]
+
+
+def receita_por_obra_mes(medida: str = "comprometido") -> list[tuple]:
+    """O faturamento de cada obra, mês a mês — a outra régua do rateio.
+
+    Mesmo formato do `custo_de_pessoal_por_obra_mes` (mês em texto 'AAAA-MM'),
+    para as duas réguas serem intercambiáveis sem a conta saber qual é qual.
+    As retenções ficam de fora: imposto retido não é dinheiro da obra."""
+    valor = _medida(medida)
+    sql = f"""
+        SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
+               {OBRA_OU_SEM},
+               ABS(SUM({valor}))
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ? AND NOT ({RETIDO})
+         GROUP BY 1, 2 HAVING ABS(SUM({valor})) > 0.005"""
+    return [(mes, obra, float(v or 0))
+            for mes, obra, v in consultar(sql, [REC])]

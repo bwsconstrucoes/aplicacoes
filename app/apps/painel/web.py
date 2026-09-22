@@ -956,6 +956,275 @@ def prestacao_contas():
     )
 
 
+# ---------------------------------------------------------------------------
+# O CENARIO da prestacao de contas — tudo num ambiente so
+# ---------------------------------------------------------------------------
+# Pedido do dono em 22/09/2026, depois de olhar o que existia espalhado em
+# quatro telas: "eu queria trazer para uma tela de prestacao de conta, onde
+# dentro dela eu vou nomear os parceiros, os socios, os percentuais, vou definir
+# se vai ser baseado na mao de obra ou no faturamento, quais contas da matriz eu
+# vou dividir, em quais percentuais (...) e importantissimo, auditavel".
+#
+# O cenario e o objeto: trocar de cenario troca o resultado inteiro, e o
+# anterior continua intacto para comparar.
+def _deptos_administrativos(config) -> list[str]:
+    """Os departamentos que sao a ESTRUTURA — o bolo a repartir, nao destino."""
+    return [d for d in (config.get("depto_admin_matriz"),
+                        config.get("depto_admin_filial")) if d]
+
+
+def _calcular_cenario(cenario: dict) -> dict:
+    """A conta inteira de um cenario, do banco ate a quota de cada pessoa.
+
+    Fica aqui, e nao na rota, porque a tela de montagem e a de resultado
+    precisam do mesmo calculo — e porque assim da para chamar de um teste sem
+    passar por HTTP."""
+    from . import cenarios, consultas, prestacao, prestacao_dados
+
+    config = prestacao_dados.config()
+    medida = cenario.get("medida") or "comprometido"
+    deptos = _deptos_administrativos(config)
+
+    apuracao = consultas.apuracao_por_obra_mes(medida)
+    obras = prestacao.classificar_obras(apuracao, config)
+    admin = consultas.despesa_administrativa(deptos, medida)
+
+    pesos = cenario.get("pesos") or cenarios.pesos(cenario["id"])
+    excecoes = consultas.lancamentos_administrativos_por_codigo(
+        deptos, list((pesos.get("lancamento") or {}).keys()), medida)
+
+    # Os juros saem do bolo ANTES do rateio: regua propria, a do deficit.
+    categoria_juros = (config.get("categoria_juros")
+                       or prestacao.CATEGORIA_JUROS_PADRAO)
+    por_deficit = bool(cenario.get("juros_por_deficit", 1))
+    admin_sem_juros, juros_por_mes = (
+        prestacao.separar_juros(admin, categoria_juros) if por_deficit
+        else (admin, {}))
+
+    # A regua de quem recebe: mao de obra ou faturamento, como o dono escolheu.
+    driver = (consultas.receita_por_obra_mes(medida)
+              if cenario.get("criterio") == "faturamento"
+              else consultas.custo_de_pessoal_por_obra_mes(
+                  config["grupo_pessoal"], medida))
+
+    rateio = prestacao.calcular_rateio_do_cenario(
+        admin_sem_juros, excecoes, driver, obras, pesos,
+        pct_padrao=float(cenario.get("pct_padrao", 100) or 0),
+        janela=str(cenario.get("janela", "1")))
+
+    # O caixa e lido UMA vez e devolvido: a tela de resultado desenha a vida de
+    # uma obra com ele, e reler significaria varrer o fato inteiro de novo.
+    caixa = [(mes.strftime("%Y-%m"), obra, valor)
+             for mes, obra, valor in consultas.caixa_mensal_por_obra()]
+    if por_deficit:
+        juros = prestacao.alocar_juros_por_deficit(
+            caixa, juros_por_mes, obras,
+            rateio_recebido=rateio["alocacoes"],
+            sem_deficit=str(cenario.get("juros_sem_deficit", "sobra")))
+    else:
+        juros = {"alocacoes": {}, "sobras": [], "memoria": []}
+
+    apurado = prestacao.apurar(apuracao, obras, rateio["alocacoes"],
+                               juros["alocacoes"])
+    por_obra = prestacao.totalizar_por_obra(apurado)
+    participacoes = cenario.get("participacoes") or cenarios.participacoes(cenario["id"])
+    quotas = prestacao.quotas_por_obra(por_obra, participacoes,
+                                       float(cenario.get("taxa_adm_pct", 0) or 0))
+    ajustes = prestacao_dados.ajustes()
+    return {
+        "cenario": cenario, "obras": obras, "rateio": rateio, "juros": juros,
+        "apurado": apurado, "por_obra": por_obra, "quotas": quotas,
+        "driver": driver, "caixa": caixa,
+        "posicao": prestacao.posicao_dos_socios(quotas, ajustes),
+        "sobras": rateio["sobras"] + juros["sobras"],
+    }
+
+
+def _contas_da_matriz(config, cenario, medida: str) -> list[dict]:
+    """A arvore do que a matriz gastou, com o percentual de cada linha.
+
+    Sai do MESMO agregado que a conta usa — nao ha consulta extra, e o que a
+    tela mostra e por construcao o que entra no calculo. Ordenada do maior para
+    o menor: quem esta configurando quer ver primeiro o que move o resultado."""
+    from . import consultas, prestacao
+    pesos = cenario.get("pesos") or {}
+    padrao = float(cenario.get("pct_padrao", 100) or 0)
+
+    grupos: dict[str, dict] = {}
+    for linha in consultas.despesa_administrativa(
+            _deptos_administrativos(config), medida):
+        nome = linha.get("grupo") or "(sem grupo)"
+        cat = linha.get("categoria") or "(sem categoria)"
+        g = grupos.setdefault(nome, {"grupo": nome, "valor": 0.0, "categorias": {}})
+        g["valor"] += linha["valor"]
+        c = g["categorias"].setdefault(cat, {"categoria": cat, "valor": 0.0})
+        c["valor"] += linha["valor"]
+
+    saida = []
+    for g in grupos.values():
+        g["pct"] = (pesos.get("grupo") or {}).get(g["grupo"])
+        g["pct_efetivo"] = prestacao.peso_da_conta(pesos, g["grupo"], "", "", padrao)
+        cats = []
+        for c in g["categorias"].values():
+            c["pct"] = (pesos.get("categoria") or {}).get(c["categoria"])
+            c["pct_efetivo"] = prestacao.peso_da_conta(
+                pesos, g["grupo"], c["categoria"], "", padrao)
+            c["grupo"] = g["grupo"]
+            cats.append(c)
+        g["categorias"] = sorted(cats, key=lambda c: c["valor"])
+        saida.append(g)
+    return sorted(saida, key=lambda g: g["valor"])
+
+
+@bp.route("/prestacao/montagem")
+def cenario_montagem():
+    """A tela unica: a regua, o que se divide, os juros e quem divide."""
+    from . import cenarios, consultas, prestacao_dados
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+
+    lista = cenarios.listar()
+    escolhido = request.args.get("cenario")
+    atual = None
+    if escolhido:
+        atual = cenarios.completo(escolhido)
+    if atual is None and lista:
+        atual = cenarios.completo(lista[0]["id"])
+
+    config = prestacao_dados.config()
+    contexto = dict(_contexto_comum("prestacao"))
+    return render_template(
+        "painel_cenario.html", **contexto,
+        cenarios=lista, cenario=atual,
+        criterios=cenarios.CRITERIOS, janelas=cenarios.JANELAS,
+        contas=(_contas_da_matriz(config, atual, atual.get("medida", "comprometido"))
+                if atual else []),
+        socios=prestacao_dados.socios(apenas_ativos=True),
+        obras_do_painel=_opcoes_no_escopo().get("obras", []),
+        aberto_grupo=request.args.get("grupo", ""),
+        aberto_categoria=request.args.get("categoria", ""),
+        lancamentos=(consultas.lancamentos_administrativos(
+            _deptos_administrativos(config), atual.get("medida", "comprometido"),
+            grupo=request.args.get("grupo", ""),
+            categoria=request.args.get("categoria", ""))
+            if atual and request.args.get("categoria") else []),
+        config=config,
+    )
+
+
+@bp.route("/prestacao/montagem", methods=["POST"])
+def cenario_gravar():
+    """Uma acao por envio; o formulario diz qual em `acao`.
+
+    Tudo volta para a mesma tela, com o mesmo grupo e a mesma categoria
+    abertos: quem esta configurando trinta linhas nao pode perder o lugar a
+    cada salvada."""
+    from . import cenarios
+    acao = request.form.get("acao", "")
+    cenario_id = request.form.get("cenario_id") or ""
+
+    if acao == "novo":
+        cenario_id = cenarios.criar(request.form.get("nome", ""))
+    elif acao == "duplicar" and cenario_id:
+        cenario_id = cenarios.duplicar(cenario_id, request.form.get("nome", ""))
+    elif acao == "apagar" and cenario_id:
+        cenarios.apagar(cenario_id)
+        cenario_id = ""
+    elif acao == "regua" and cenario_id:
+        cenarios.atualizar(cenario_id, **{
+            c: request.form[c] for c in
+            ("nome", "criterio", "janela", "pct_padrao", "medida",
+             "juros_sem_deficit", "taxa_adm_pct", "observacao")
+            if c in request.form})
+        cenarios.atualizar(cenario_id,
+                           juros_por_deficit=request.form.get("juros_por_deficit", "0"))
+    elif acao == "peso" and cenario_id:
+        cenarios.marcar_peso(cenario_id, request.form.get("nivel", ""),
+                             request.form.get("chave", ""),
+                             request.form.get("pct"))
+    elif acao == "peso_em_lote" and cenario_id:
+        cenarios.marcar_pesos(cenario_id, request.form.get("nivel", "lancamento"),
+                              request.form.getlist("marcado"),
+                              request.form.get("pct"))
+    elif acao == "participacao" and cenario_id:
+        cenarios.salvar_participacao(cenario_id, request.form["socio_id"],
+                                     request.form.get("pct", 0),
+                                     request.form.get("obra", ""))
+    elif acao == "apagar_participacao" and cenario_id:
+        cenarios.apagar_participacao(request.form["participacao_id"])
+
+    return redirect(url_for("painel.cenario_montagem",
+                            cenario=cenario_id or None,
+                            grupo=request.form.get("grupo") or None,
+                            categoria=request.form.get("categoria") or None))
+
+
+@bp.route("/prestacao/resultado")
+def cenario_resultado():
+    """O resultado do cenario: por obra, por pessoa, e a conta aberta.
+
+    A mesma tela responde as tres perguntas do dono — "qual o resultado final",
+    "quanto e de direito para cada envolvido" e "como foi que deu isso" — porque
+    separa-las em telas diferentes foi justamente o que nao funcionou."""
+    from . import cenarios, consultas, graficos, prestacao
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+
+    lista = cenarios.listar()
+    atual = cenarios.completo(request.args.get("cenario") or
+                              (lista[0]["id"] if lista else 0))
+    if atual is None:
+        return redirect(url_for("painel.cenario_montagem"))
+
+    calculo = _calcular_cenario(atual)
+    por_obra = sorted(calculo["por_obra"].items(), key=lambda kv: kv[1]["resultado"])
+
+    # O grafico e de UMA obra por vez: sobrepor 174 linhas nao se le. A escolhida
+    # vem na URL, e sem escolha vale a que mais consumiu caixa — que e a que o
+    # dono vai querer olhar primeiro.
+    obras_com_juros = prestacao.total_por_obra(calculo["juros"]["alocacoes"])
+    obra = request.args.get("obra_grafico") or (
+        obras_com_juros[0]["obra"] if obras_com_juros else
+        (por_obra[0][0] if por_obra else ""))
+    trilha = []
+    if obra:
+        trilha = prestacao.trilha_da_obra(
+            calculo["caixa"], obra, rateio=calculo["rateio"]["alocacoes"],
+            juros=calculo["juros"]["alocacoes"])
+
+    grafico = None
+    if trilha:
+        grafico = graficos.linhas_com_barras(
+            trilha,
+            [("acumulado", "var(--azul-claro)", "Caixa acumulado (antes dos juros)"),
+             ("com_juros", "var(--vermelho)", "Com os juros que absorveu")],
+            barras=("caixa_do_mes", "b-despesa", "Caixa do mes"),
+            campo_rotulo="rotulo")
+
+    sobras = calculo["sobras"]
+    return render_template(
+        "painel_cenario_resultado.html",
+        **_contexto_comum("prestacao"),
+        cenarios=lista, cenario=atual,
+        por_obra=por_obra,
+        quotas=calculo["quotas"],
+        posicao=calculo["posicao"],
+        rateio_memoria=[l for l in calculo["rateio"]["memoria"]
+                        if abs(l["pool"]) > 0.005][-36:],
+        juros_memoria=[l for l in calculo["juros"]["memoria"]
+                       if abs(l["juros"]) > 0.005][-36:],
+        juros_por_obra=obras_com_juros,
+        rateio_por_obra=prestacao.total_por_obra(calculo["rateio"]["alocacoes"]),
+        rateio_total=sum(calculo["rateio"]["alocacoes"].values()),
+        juros_total=sum(calculo["juros"]["alocacoes"].values()),
+        sobras=sorted(sobras, key=lambda s: abs(s["valor"]), reverse=True)[:40],
+        total_sobras=sum(s["valor"] for s in sobras),
+        obra_grafico=obra, trilha=trilha, grafico=grafico,
+        obras_para_grafico=[nome for nome, _n in por_obra],
+        criterios=cenarios.CRITERIOS,
+    )
+
+
 def _cenario_do_pedido(regras_gravadas, args):
     """Le da URL o que a pessoa mexeu: `pct_12=50`, `ativo_12=on`, ...
 
@@ -1717,6 +1986,13 @@ def baixar(assunto):
     from flask import Response
     from . import consultas, excel
 
+    # O download passava por fora da protecao das telas — ver `pode_baixar`.
+    # Responde "nao encontrado", como o resto do painel: dizer "sem permissao"
+    # confirmaria que o arquivo existe.
+    if not auth.pode_baixar(assunto):
+        logger.warning("Painel: download de '%s' recusado.", assunto)
+        return auth.nao_encontrado()
+
     f = _filtros_do_pedido()
     C = excel.COLUNAS
 
@@ -1799,6 +2075,78 @@ def baixar(assunto):
              consultas.custo_da_matriz_por_categoria(matriz) if matriz else []),
         ]
 
+    def _abas_do_cenario():
+        """O cenario inteiro num arquivo so — e auditavel.
+
+        O dono: "importantissimo, auditavel. Porque eu preciso, se eu quiser,
+        gerar um relatorio dos juros, para ver como e que isso ficou
+        distribuido, gerar um relatorio da mao de obra, como e que foi
+        distribuida, quanto cada obra absorveu daquele, daquele por mes."
+
+        Uma aba por recorte, e os PARAMETROS na frente: memoria de calculo sem
+        as escolhas que a geraram nao da para conferir seis meses depois."""
+        from . import cenarios, prestacao
+        atual = cenarios.completo(request.args.get("cenario") or 0)
+        if atual is None:
+            return [("Cenario", [("o_que", "O que"), ("valor", "Valor")],
+                     [{"o_que": "Cenario", "valor": "nenhum escolhido"}])]
+        calculo = _calcular_cenario(atual)
+
+        parametros = [
+            {"o_que": "Cenario", "valor": atual["nome"]},
+            {"o_que": "Para que serve", "valor": atual["observacao"]},
+            {"o_que": "Regua do rateio",
+             "valor": cenarios.CRITERIOS.get(atual["criterio"], atual["criterio"])},
+            {"o_que": "Janela",
+             "valor": cenarios.JANELAS.get(atual["janela"], atual["janela"])},
+            {"o_que": "Conta nao marcada divide",
+             "valor": f"{atual['pct_padrao']:.0f}%"},
+            {"o_que": "Base do calculo", "valor": atual["medida"]},
+            {"o_que": "Juros de emprestimo",
+             "valor": ("por quem demandou caixa" if atual["juros_por_deficit"]
+                       else "junto da estrutura")},
+            {"o_que": "Mes sem ninguem no vermelho",
+             "valor": atual["juros_sem_deficit"]},
+            {"o_que": "Taxa de administracao",
+             "valor": f"{atual['taxa_adm_pct']:.2f}%"},
+        ]
+        for nivel in ("grupo", "categoria", "lancamento"):
+            for chave, pct in sorted((atual["pesos"].get(nivel) or {}).items()):
+                parametros.append({"o_que": f"Marcado ({nivel}) {chave}",
+                                   "valor": f"{pct:.0f}%"})
+        for p in atual["participacoes"]:
+            parametros.append({"o_que": f"{p['socio']} em {p['obra'] or 'todas as obras'}",
+                               "valor": f"{p['pct']:.2f}%"})
+
+        por_obra = [dict(obra=nome, **n) for nome, n in
+                    sorted(calculo["por_obra"].items(),
+                           key=lambda kv: kv[1]["resultado"])]
+        obra = request.args.get("obra_grafico") or ""
+        trilha = []
+        if obra:
+            trilha = prestacao.trilha_da_obra(
+                calculo["caixa"], obra, rateio=calculo["rateio"]["alocacoes"],
+                juros=calculo["juros"]["alocacoes"])
+
+        abas = [
+            ("Parametros", [("o_que", "O que"), ("valor", "Valor")], parametros),
+            ("Resultado por Obra", C["cenario_obra"], por_obra),
+            ("Posicao de cada um", C["posicao"], calculo["posicao"]),
+            ("Quotas", C["cenario_quotas"], calculo["quotas"]),
+            ("Estrutura por Obra", C["cenario_por_obra"],
+             prestacao.total_por_obra(calculo["rateio"]["alocacoes"])),
+            ("Estrutura mes a mes", C["cenario_estrutura_mes"],
+             calculo["rateio"]["memoria"]),
+            ("Juros por Obra", C["cenario_por_obra"],
+             prestacao.total_por_obra(calculo["juros"]["alocacoes"])),
+            ("Juros mes a mes", C["cenario_juros_mes"], calculo["juros"]["memoria"]),
+            ("Sem dono", C["cenario_sobras"], calculo["sobras"]),
+        ]
+        if trilha:
+            abas.append((f"Mes a mes {obra[:18]}", C["cenario_trilha"], trilha))
+        return abas
+
+
     def _abas_de_aporte():
         # Na tela os lançamentos são cortados num teto; no arquivo saem todos —
         # é para isso que se baixa o arquivo.
@@ -1847,6 +2195,7 @@ def baixar(assunto):
                                   f, nivel=_nivel_do_pedido(),
                                   tipo=request.args.get("tipo", "pagar"), limite=1000))],
         "aportes": _abas_de_aporte,
+        "cenario": _abas_do_cenario,
         # o relatorio inteiro, na ordem da tela antiga
         "completo": lambda: [
             ("DRE", C["dre"], _dre()),

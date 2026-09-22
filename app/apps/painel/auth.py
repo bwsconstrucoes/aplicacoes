@@ -49,6 +49,11 @@ SO_DO_ADMINISTRADOR = (
     # todas as obras. A lista por prefixo existe justamente para isso doer
     # menos na proxima vez, mas so protege o que esta escrito nela.
     "painel.usuarios",
+    # O cenario da prestacao de contas: a montagem CONFIGURA a empresa inteira,
+    # e o resultado mostra TODAS as obras, com a quota de cada socio. Nenhuma
+    # das duas passa pelo filtro de escopo — entao nenhuma das duas e de quem
+    # esta preso a uma obra. O prefixo cobre as duas e as proximas.
+    "painel.cenario_",
 )
 
 # Rotas que podem responder sem login. Cada uma com o motivo escrito.
@@ -167,6 +172,11 @@ def exigir_login():
     return None
 
 
+def nao_encontrado():
+    """A mesma recusa, para quem esta fora deste modulo (o download usa)."""
+    return _nao_encontrado()
+
+
 def _nao_encontrado():
     """Responde "nao existe", e nao "voce nao pode".
 
@@ -196,6 +206,52 @@ _ABAS_POR_ENDPOINT = {
 
 def _aba_do_endpoint(endpoint: str):
     return _ABAS_POR_ENDPOINT.get(endpoint)
+
+
+# ---------------------------------------------------------------------------
+# O que cada pessoa pode BAIXAR
+# ---------------------------------------------------------------------------
+# Achado em 22/09/2026, ao acrescentar o download do cenario: a rota
+# `/painel/baixar/<assunto>` nao conferia assunto nenhum. As telas eram
+# protegidas uma a uma e o download passava por fora.
+#
+# A maioria dos assuntos monta o arquivo a partir de `_filtros_do_pedido`, que
+# ja prende a pessoa as obras dela — esses estavam certos por acidente. Mas
+# quotas, posicao, rateio da administracao e o cenario NAO passam por ali: eles
+# leem a empresa inteira, porque a pergunta que respondem e sobre a empresa
+# inteira. Quem tinha acesso a uma obra podia baixar a divisao de lucro entre
+# os socios.
+#
+# A regra passa a ser a mesma das telas, e pelo mesmo motivo: o padrao e NEGAR.
+# Assunto que ninguem mapeou aqui nao e baixado por quem esta preso a uma obra.
+
+# Assunto -> a tela de que ele e o arquivo. Quem nao tem a tela nao tem o
+# arquivo: seria estranho o contrario.
+TELA_DO_DOWNLOAD = {
+    "dre": "dre", "aportes": "dre",
+    "analitico": "analitico", "despesas": "analitico", "credores": "analitico",
+    "medicoes": "receita", "fluxo": "fluxo", "obras": "obras",
+    "execucao": "execucao", "extrato": "extrato",
+}
+
+# Estes leem a empresa INTEIRA, por definicao. Sao do dono.
+SO_DO_DONO_PARA_BAIXAR = frozenset({
+    "quotas", "posicao", "rateio_admin", "cenario", "explorador", "completo",
+})
+
+
+def pode_baixar(assunto: str) -> bool:
+    """O administrador baixa tudo. Quem esta preso a obra, so o arquivo de uma
+    tela que ele tem — e nunca o que abre a empresa inteira."""
+    if e_administrador():
+        return True
+    if assunto in SO_DO_DONO_PARA_BAIXAR:
+        return False
+    tela = TELA_DO_DOWNLOAD.get(assunto)
+    if not tela:
+        return False                      # assunto novo nasce fechado
+    pessoa = usuario_da_sessao()
+    return bool(pessoa) and tela in set(pessoa.get("telas") or [])
 
 
 def segredo_de_maquina_confere(recebido: str) -> bool:
