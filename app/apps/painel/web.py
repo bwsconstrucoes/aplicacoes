@@ -202,18 +202,38 @@ def entrar():
     senha = request.form.get("senha", "")
     login = (request.form.get("usuario") or "").strip()
 
-    # COM USUARIO PREENCHIDO, e a pessoa presa a obras — nunca a senha mestre.
-    # Os dois caminhos ficam separados de proposito: senha mestre digitada no
-    # campo de usuario nao pode virar acesso de administrador por acidente.
+    # A SENHA MESTRE DECIDE PRIMEIRO, esteja o campo de usuario preenchido ou
+    # nao. Isto NAO e conveniencia: e o conserto de um jeito de trancar o dono
+    # para fora do proprio painel.
+    #
+    # Ate 22/09/2026 o caminho era escolhido pelo campo de usuario estar vazio.
+    # So que a tela de login passou a ter DOIS campos, e o navegador do dono
+    # tinha a senha dele guardada de quando havia um so: ao abrir a pagina, o
+    # gerenciador preenchia o campo novo sozinho, sem ele ver. O pedido saia
+    # com usuario preenchido, caia no caminho da pessoa presa a obra, e a
+    # resposta era "usuario ou senha incorretos" — com a senha certa digitada.
+    #
+    # Checar a senha mestre antes nao afrouxa nada: quem a conhece JA e o
+    # administrador. O que se perde e so a chance de o navegador escolher o
+    # caminho por ele.
+    if senha and auth.senha_confere(senha):
+        auth.entrar_na_sessao()
+        return redirect(url_for("painel.visao_geral"))
+
     if login:
         from . import usuarios
         pessoa = usuarios.buscar(login)
         if not pessoa or not usuarios.senha_confere(pessoa, senha):
             logger.warning("Painel: entrada recusada para o usuário %r.", login)
             # a mesma resposta para usuário que não existe e senha errada: dizer
-            # qual dos dois falhou entrega metade da resposta a quem tenta
-            return render_template("painel_login.html", sem_senha=False,
-                                   erro="Usuário ou senha incorretos."), 401
+            # qual dos dois falhou entrega metade da resposta a quem tenta.
+            # O aviso do navegador vem junto porque foi exatamente isso que
+            # trancou o dono para fora — e ele não tinha como adivinhar.
+            return render_template(
+                "painel_login.html", sem_senha=False,
+                erro="Usuário ou senha incorretos. Se você é o dono, apague o "
+                     "que estiver no campo Usuário — o navegador às vezes "
+                     "preenche sozinho — e digite só a senha."), 401
         if not pessoa.get("obras") or not pessoa.get("telas"):
             logger.warning("Painel: %s entrou sem obra ou sem tela liberada.", login)
             return render_template(
@@ -226,15 +246,14 @@ def entrar():
         return redirect(url_for(primeira[2]) if primeira
                         else url_for("painel.entrar"))
 
+    # Chegou aqui: sem usuario, e a senha ja foi comparada com a mestre la em
+    # cima e nao bateu.
     if not auth.senha_configurada():
         return render_template("painel_login.html", sem_senha=True,
                                erro="O painel ainda não tem senha configurada."), 403
-    if not auth.senha_confere(senha):
-        logger.warning("Painel: tentativa de entrada com senha errada.")
-        return render_template("painel_login.html", sem_senha=False,
-                               erro="Senha incorreta."), 401
-    auth.entrar_na_sessao()
-    return redirect(url_for("painel.visao_geral"))
+    logger.warning("Painel: tentativa de entrada com senha errada.")
+    return render_template("painel_login.html", sem_senha=False,
+                           erro="Senha incorreta."), 401
 
 
 @bp.route("/sair")
