@@ -682,3 +682,286 @@ def test_a_queixa_da_carga_inicial_chega_na_mensagem_da_tela(monkeypatch):
     assert tarefas.executar_trabalho("carga_inicial", 1) is True
     assert "ATENÇÃO" in fechou["mensagem"]
     assert "118.635" in fechou["mensagem"]
+
+
+# ===========================================================================
+# A conta do relatório é a da BAIXA, não a da previsão — 21/09/2026
+# ===========================================================================
+# O dono: "No OMIE existe a conta de previsão de pagamento e existe a conta onde
+# efetivamente foi realizado o pagamento. A informação que está sendo colocada
+# nesse relatório analítico é exatamente a primeira. E a primeira é errada."
+#
+# Ele está certo, e o erro era silencioso: quem previu pagar pelo Bradesco e
+# pagou pelo Itaú aparecia no Bradesco, e nenhuma análise por conta avisava.
+
+def _conta_do_omie(codigo, descricao):
+    return {"nCodCC": codigo, "descricao": descricao, "tipo_conta": "CORRENTE",
+            "codigo_banco": "000", "agencia": "1", "conta_corrente": "1",
+            "inativo": "N"}
+
+
+def test_a_conta_do_fato_e_a_da_baixa_e_nao_a_da_previsao(espelho_limpo):
+    """Título previsto na conta 7 e pago na conta 9: o relatório tem de dizer 9."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(1, valor=1000.0, natureza="R")  # id_conta_corrente = 7
+    movimento = _movimento_do_omie(1, pago=1000.0)
+    movimento["detalhes"]["nCodCC"] = 9                      # pago por OUTRA conta
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_movimentos(conn, [movimento])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco (previsão)"),
+            _conta_do_omie(9, "Itaú (onde pagou)")])
+        fato.reconstruir_fato(conn)
+
+    (conta,) = consultar(
+        "SELECT conta_corrente FROM fato WHERE codigo_lancamento = 1")[0]
+    assert conta == "Itaú (onde pagou)", \
+        f"o relatório mostrou '{conta}' — voltou a usar a conta da previsão"
+
+
+def test_titulo_em_aberto_continua_mostrando_a_conta_prevista(espelho_limpo):
+    """Sem baixa não há conta de baixa. A previsão é a única informação que
+    existe, e esconder isso seria pior que mostrá-la."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(2, valor=500.0, natureza="R",
+                             status_titulo="A RECEBER")
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco (previsão)")])
+        fato.reconstruir_fato(conn)
+
+    (conta,) = consultar(
+        "SELECT conta_corrente FROM fato WHERE codigo_lancamento = 2")[0]
+    assert conta == "Bradesco (previsão)"
+
+
+def test_pago_em_duas_contas_da_uma_linha_para_cada_conta(espelho_limpo):
+    """Melhor ainda que escolher uma: desde que o título pago em parcelas vira
+    uma linha por baixa, cada parcela mostra a conta DELA. A escolha "a do maior
+    valor" ficou só para quando as baixas não dão para separar."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(3, valor=1000.0, natureza="R")
+    pequeno = _movimento_do_omie(3, pago=300.0)
+    pequeno["detalhes"]["nCodCC"] = 7
+    pequeno["detalhes"]["dDtPagamento"] = "10/03/2025"
+    grande = _movimento_do_omie(3, pago=700.0)
+    grande["detalhes"]["nCodCC"] = 9
+    grande["detalhes"]["dDtPagamento"] = "20/03/2025"
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_movimentos(conn, [pequeno, grande])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco"), _conta_do_omie(9, "Itaú")])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT conta_corrente, pago_recebido FROM fato"
+                       " WHERE codigo_lancamento = 3 ORDER BY data")
+    assert [c for c, _v in linhas] == ["Bradesco", "Itaú"]
+    assert [round(float(v), 2) for _c, v in linhas] == [300.0, 700.0]
+
+
+def _perna_bancaria(codigo_titulo, pago, conta, data="15/03/2025"):
+    """A OUTRA perna da mesma baixa, como o OMIE devolve: cLiquidado vazio,
+    nValLiquido zero, e a conta por onde o dinheiro de fato passou."""
+    m = _movimento_do_omie(codigo_titulo, pago=pago)
+    m["detalhes"]["nCodCC"] = conta
+    m["detalhes"]["dDtPagamento"] = data
+    m["resumo"]["cLiquidado"] = ""
+    m["resumo"]["nValLiquido"] = 0.0
+    return m
+
+
+def test_a_conta_vem_da_perna_bancaria_e_nao_do_resumo_do_titulo(espelho_limpo):
+    """22/09/2026, o dono: "refiz os números do painel, mas o problema das
+    contas permaneceu".
+
+    O conserto do dia anterior trocou a FONTE (do título para o movimento) mas
+    lia a perna CONSOLIDADA — que é o resumo do título e repete a conta dele.
+    A conta real está na perna bancária. Previsto na 7, resumo na 7, dinheiro
+    saiu da 9: o relatório tem de dizer 9."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(4, valor=1000.0, natureza="R")   # prevista: 7
+    consolidada = _movimento_do_omie(4, pago=1000.0)          # resumo: 7
+    bancaria = _perna_bancaria(4, 1000.0, conta=9)            # saiu da 9
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_movimentos(conn, [consolidada, bancaria])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco (previsão)"),
+            _conta_do_omie(9, "Itaú (onde pagou)")])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT conta_corrente, pago_recebido FROM fato"
+                       " WHERE codigo_lancamento = 4")
+    assert [c for c, _v in linhas] == ["Itaú (onde pagou)"], \
+        f"o relatório mostrou {[c for c, _v in linhas]} — leu o resumo do título"
+    # e a perna bancária NÃO dobrou o valor
+    assert [round(float(v), 2) for _c, v in linhas] == [1000.0]
+
+
+def test_a_conferencia_mede_quantas_contas_o_relatorio_antigo_errava(espelho_limpo):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    from app.apps.painel.sync import espelho
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [_titulo_do_omie(5, valor=1000.0, natureza="R"),
+                                      _titulo_do_omie(6, valor=200.0, natureza="R")], "R")
+        espelho.gravar_movimentos(conn, [
+            _movimento_do_omie(5, pago=1000.0), _perna_bancaria(5, 1000.0, conta=9),
+            _movimento_do_omie(6, pago=200.0), _perna_bancaria(6, 200.0, conta=7)])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco"), _conta_do_omie(9, "Itaú")])
+
+    conf = consultas.conferencia_das_contas()
+    assert conf["tem_perna_bancaria"] is True
+    assert conf["bancaria"] == {"pernas": 2, "diferentes": 1, "sem_conta": 0}
+    assert conf["consolidada"]["diferentes"] == 0
+    assert [e["titulo"] for e in conf["exemplos"]] == [5]
+    assert conf["exemplos"][0]["bancaria"] == "Itaú"
+
+
+# ===========================================================================
+# Título pago em parcelas vira UMA LINHA POR BAIXA — 21/09/2026
+# ===========================================================================
+# O dono: "ele foi pago em duas parcelas, em 2 dias diferentes e valores
+# diferentes. Só que no relatório de despesa analítica aparece um único
+# lançamento (…) do total do título. Se você for olhar no extrato, dá uma coisa.
+# Aí você olha no relatório analítico, dá outro valor. Isso confunde."
+
+def test_titulo_pago_em_duas_parcelas_vira_duas_linhas(espelho_limpo):
+    """Cada linha com a SUA data e o SEU valor — é o que bate com o extrato."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(1, valor=1000.0, natureza="P", status_titulo="PAGO")
+    primeira = _movimento_do_omie(1, pago=300.0)
+    primeira["detalhes"]["dDtPagamento"] = "10/03/2025"
+    segunda = _movimento_do_omie(1, pago=700.0)
+    segunda["detalhes"]["dDtPagamento"] = "05/04/2025"
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_movimentos(conn, [primeira, segunda])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT data, pago_recebido FROM fato"
+                       " WHERE codigo_lancamento = 1 ORDER BY data")
+    assert len(linhas) == 2, f"deviam ser duas linhas, vieram {len(linhas)}"
+    assert [d.strftime("%d/%m/%Y") for d, _v in linhas] == \
+        ["10/03/2025", "05/04/2025"], "cada parcela na SUA data"
+    assert [round(float(v), 2) for _d, v in linhas] == [-300.0, -700.0]
+
+
+def test_a_soma_do_titulo_nao_muda_ao_abrir_em_parcelas(espelho_limpo):
+    """A divisão não pode criar nem sumir com dinheiro — só reparti-lo pelas
+    datas certas. Se o total mudasse, o DRE mudaria de valor, e isso seria um
+    defeito novo em vez de um conserto."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(2, valor=1000.0, natureza="P", status_titulo="PAGO")
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_movimentos(conn, [
+            _movimento_do_omie(2, pago=250.0), _movimento_do_omie(2, pago=750.0)])
+        fato.reconstruir_fato(conn)
+
+    (total,) = consultar("SELECT SUM(pago_recebido) FROM fato"
+                         " WHERE codigo_lancamento = 2")[0]
+    assert round(float(total), 2) == -1000.00
+
+
+def test_o_saldo_em_aberto_nao_se_multiplica_pelas_parcelas(espelho_limpo):
+    """O saldo é do TÍTULO, não de cada baixa. Repeti-lo multiplicaria o
+    "a pagar" pelo número de parcelas — um erro que cresceria com o uso."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(3, valor=1000.0, natureza="P",
+                             status_titulo="A PAGAR")
+    parcial_1 = _movimento_do_omie(3, pago=200.0)
+    parcial_1["resumo"]["nValAberto"] = 400.0
+    parcial_2 = _movimento_do_omie(3, pago=400.0)
+    parcial_2["detalhes"]["dDtPagamento"] = "20/03/2025"
+    parcial_2["resumo"]["nValAberto"] = 400.0
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_movimentos(conn, [parcial_1, parcial_2])
+        fato.reconstruir_fato(conn)
+
+    abertos = [round(float(v), 2) for (v,) in consultar(
+        "SELECT a_pagar_receber FROM fato WHERE codigo_lancamento = 3")]
+    assert sum(abertos) == round(sum(abertos), 2)
+    assert len([v for v in abertos if v != 0]) <= 1, \
+        f"o saldo apareceu em mais de uma linha: {abertos}"
+
+
+def test_pago_de_uma_vez_continua_sendo_uma_linha_so(espelho_limpo):
+    """O conserto não pode mexer no que já estava certo — e é a esmagadora
+    maioria dos títulos."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(4, valor=800.0, natureza="P", status_titulo="PAGO")
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_movimentos(conn, [_movimento_do_omie(4, pago=800.0)])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT pago_recebido FROM fato WHERE codigo_lancamento = 4")
+    assert len(linhas) == 1 and round(float(linhas[0][0]), 2) == -800.00
+
+
+def test_titulo_sem_medicao_diz_isso_em_portugues():
+    """21/09/2026: o dono viu "COD:11255312361" na Receita de Obra e perguntou o
+    que significava. Não significava nada para quem lê — e o número ali é
+    justamente o que serve para achar o lançamento no OMIE."""
+    from app.apps.painel.sync.fato import rotulo_medicao
+    assert rotulo_medicao("COD:11255312361") == \
+        "Sem número de medição (título 11255312361)"
+    # e o que JÁ era legível continua igual
+    assert rotulo_medicao("MED:CEIFOR5|3") == "CEIFOR5 | Medição 3"
+    assert rotulo_medicao("DOC:NF 900") == "NF 900"
+
+
+# ===========================================================================
+# O tipo de aporte é decidido na montagem do fato, não em cada consulta
+# ===========================================================================
+# 22/09/2026, o dono: "Tela montada em 126753 ms — 15 consultas ao banco". Cada
+# consulta refazia a classificação (acento, dez expressões regulares, "bws" na
+# contraparte) em 185 mil linhas. Agora é uma coluna (migração 017).
+
+def test_o_fato_ja_diz_se_a_linha_e_aporte(espelho_limpo):
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    aporte = _titulo_do_omie(11, valor=1000.0, natureza="R")
+    aporte["codigo_categoria"] = "1.02.02"            # Aporte de Parceiro, pelo código
+    comum = _titulo_do_omie(12, valor=500.0, natureza="P")
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [aporte], "R")
+        espelho.gravar_titulos(conn, [comum], "P")
+        espelho.gravar_movimentos(conn, [_movimento_do_omie(11, pago=1000.0),
+                                         _movimento_do_omie(12, pago=500.0)])
+        fato.reconstruir_fato(conn)
+
+    tipos = dict(consultar("SELECT codigo_lancamento, tipo_aporte FROM fato"
+                           " WHERE codigo_lancamento IN (11, 12)"))
+    assert tipos[11] == "Aporte de Parceiro"
+    assert tipos[12] == "", "linha que não é aporte leva '' — nunca NULL"

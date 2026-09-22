@@ -71,7 +71,15 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Cotacao:
     if len(titulo) < 3:
         raise ErroValidacao("Dê um título à cotação — é por ele que se procura depois.")
 
-    ids = [int(x) for x in (dados.get("itens") or [])]
+    # Item vazio na lista não derruba a chamada (22/09/2026): antes um item
+    # nulo — tela recarregada no meio, seleção perdida — virava erro 500 com o
+    # recado de "falha do sistema", quando o certo é pedir a escolha de novo.
+    ids = []
+    for x in (dados.get("itens") or []):
+        try:
+            ids.append(int(x))
+        except (TypeError, ValueError):
+            raise ErroValidacao("Escolha os itens de novo — a seleção se perdeu.")
     if not ids:
         raise ErroValidacao("Escolha pelo menos um item para cotar.")
 

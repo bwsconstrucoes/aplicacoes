@@ -336,6 +336,217 @@
 </div>
 {% endif %}
 
+{# ===================== QUEM TEM ACESSO AO PAINEL ===================== #}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Quem tem acesso ao painel</h3></div>
+  {% if erro_usuario %}<div class="aviso erro">{{ erro_usuario }}</div>{% endif %}
+  {% if usuario_ok %}<div class="aviso ok">Acesso atualizado.</div>{% endif %}
+  <p class="cartao-dica">
+    Você entra com a <b>senha do dono</b> e vê tudo. Quem for cadastrado aqui
+    entra com <b>usuário e senha próprios</b> e vê <b>só as obras e só as telas
+    que você marcar</b> — inclusive nos downloads.<br>
+    Quem é cadastrado aqui <b>nunca escreve no OMIE</b> e não abre esta tela de
+    Configurações nem o Explorador.<br>
+    <b>Sem obra marcada ou sem tela marcada, a pessoa não entra.</b> Lista vazia
+    quer dizer nenhuma, nunca todas.
+  </p>
+
+  {% if pessoas %}
+  <div class="tabela-rolagem" style="margin-bottom:12px">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Usuário</th>
+        <th class="sem-ordem">Nome</th>
+        <th class="sem-ordem">Obras</th>
+        <th class="sem-ordem">Contas</th>
+        <th class="sem-ordem">Telas</th>
+        <th class="sem-ordem">Último acesso</th>
+        <th class="sem-ordem"></th>
+      </tr></thead>
+      <tbody>
+      {% for p in pessoas %}
+        <tr>
+          <td class="dados">{{ p.usuario }}{% if not p.ativo %}
+            <br><small style="color:var(--vermelho)">desativado</small>{% endif %}</td>
+          <td class="desc">{{ p.nome or '—' }}</td>
+          <td class="desc"><small>{{ p.obras|join(', ') if p.obras
+              else 'nenhuma — não entra' }}</small></td>
+          <td class="desc"><small>{{ p.contas|join(', ') if p.contas
+              else '—' }}</small></td>
+          <td class="desc"><small>{{ p.telas|map('replace', '_', ' ')|join(', ')
+              if p.telas else 'nenhuma — não entra' }}</small></td>
+          <td class="dados"><small>{{ p.ultimo_acesso.strftime('%d/%m/%Y %H:%M')
+              if p.ultimo_acesso else 'nunca entrou' }}</small></td>
+          <td>
+            <form method="post" action="{{ url_for('painel.usuarios_salvar') }}"
+                  onsubmit="return confirm('Tirar o acesso de {{ p.usuario }}?')">
+              <input type="hidden" name="acao" value="apagar">
+              <input type="hidden" name="usuario_id" value="{{ p.id }}">
+              <button class="link-btn" type="submit"
+                      title="Tirar o acesso">✕</button>
+            </form>
+          </td>
+        </tr>
+        {# A LINHA DE ALTERAR, logo abaixo da pessoa. Trocar a senha de quem
+           esqueceu e mudar as obras de quem passou a tocar outra coisa são as
+           duas coisas que mais vão acontecer — deixá-las a um clique. #}
+        <tr>
+          <td colspan="7" style="padding:0 0 10px">
+            <details>
+              <summary style="cursor:pointer; font-size:12px">
+                Alterar {{ p.usuario }} — senha, obras ou telas
+              </summary>
+              <form method="post"
+                    action="{{ url_for('painel.usuarios_salvar') }}"
+                    style="margin-top:8px; padding-left:10px">
+                <input type="hidden" name="acao" value="salvar">
+                <input type="hidden" name="usuario_id" value="{{ p.id }}">
+                <div class="form-grade">
+                  <div class="campo">
+                    <label for="nome{{ p.id }}">Nome</label>
+                    <input id="nome{{ p.id }}" name="nome" value="{{ p.nome }}">
+                  </div>
+                  <div class="campo">
+                    <label for="senha{{ p.id }}">Nova senha
+                      <small>(em branco mantém a atual)</small></label>
+                    <input id="senha{{ p.id }}" name="nova_senha"
+                           autocomplete="new-password"
+                           placeholder="só preencha para trocar">
+                  </div>
+                  <div class="campo" style="align-self:flex-end">
+                    <label style="display:flex; align-items:center; gap:6px">
+                      <input type="checkbox" name="ativo" value="1"
+                             {% if p.ativo %}checked{% endif %}>
+                      Pode entrar
+                    </label>
+                  </div>
+                </div>
+
+                <h4 style="margin:12px 0 4px; font-size:12px">Obras</h4>
+                <div class="tabela-rolagem" style="max-height:160px">
+                  {% for obra in obras_para_liberar %}
+                    <label style="display:block; padding:2px 0">
+                      <input type="checkbox" name="obra_do_usuario"
+                             value="{{ obra }}"
+                             {% if obra in p.obras %}checked{% endif %}>
+                      {{ obra }}
+                    </label>
+                  {% endfor %}
+                </div>
+
+                <h4 style="margin:12px 0 4px; font-size:12px">Contas do Extrato</h4>
+                <div class="tabela-rolagem" style="max-height:140px">
+                  {% for conta in contas_para_liberar %}
+                    <label style="display:block; padding:2px 0">
+                      <input type="checkbox" name="conta_do_usuario"
+                             value="{{ conta }}"
+                             {% if conta in p.contas %}checked{% endif %}>
+                      {{ conta }}
+                    </label>
+                  {% endfor %}
+                </div>
+
+                <h4 style="margin:12px 0 4px; font-size:12px">Telas</h4>
+                <div>
+                  {% for chave, rotulo in telas_liberaveis.items() %}
+                    <label style="display:inline-block; margin:0 14px 6px 0">
+                      <input type="checkbox" name="tela_do_usuario"
+                             value="{{ chave }}"
+                             {% if chave in p.telas %}checked{% endif %}>
+                      {{ rotulo }}
+                    </label>
+                  {% endfor %}
+                </div>
+                <button class="btn" type="submit"
+                        style="margin-top:8px">Salvar</button>
+                <p class="cartao-dica">
+                  Desmarcar todas as obras (ou todas as telas) <b>tira o acesso
+                  dela na hora</b> — ela para de entrar sem você precisar apagar
+                  o cadastro.
+                </p>
+              </form>
+            </details>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <details>
+    <summary style="cursor:pointer; font-weight:600">
+      {{ 'Dar acesso a mais alguém' if pessoas else 'Dar acesso a alguém' }}
+    </summary>
+    <form method="post" action="{{ url_for('painel.usuarios_salvar') }}"
+          style="margin-top:10px">
+      <input type="hidden" name="acao" value="criar">
+      <div class="form-grade">
+        <div class="campo">
+          <label for="novo_usuario">Usuário (o que a pessoa digita)</label>
+          <input id="novo_usuario" name="novo_usuario" autocomplete="off" required>
+        </div>
+        <div class="campo">
+          <label for="nome">Nome</label>
+          <input id="nome" name="nome" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="nova_senha">Senha (mínimo 6 letras)</label>
+          <input id="nova_senha" name="nova_senha" autocomplete="new-password" required>
+        </div>
+      </div>
+
+      <h4 style="margin:14px 0 4px">Obras que ela pode ver</h4>
+      {% if obras_para_liberar %}
+      <div class="tabela-rolagem" style="max-height:200px">
+        {% for obra in obras_para_liberar %}
+          <label style="display:block; padding:2px 0">
+            <input type="checkbox" name="obra_do_usuario" value="{{ obra }}">
+            {{ obra }}
+          </label>
+        {% endfor %}
+      </div>
+      {% else %}
+        <p class="cartao-dica">A base ainda não tem obras para liberar.</p>
+      {% endif %}
+
+      <h4 style="margin:14px 0 4px">Contas correntes que ela pode ver no Extrato</h4>
+      <p class="cartao-dica" style="margin-top:0">
+        Só vale para a tela <b>Extrato de Conta Corrente</b>. Sem nenhuma
+        marcada, ela não vê conta nenhuma lá — as outras telas seguem normais.
+      </p>
+      {% if contas_para_liberar %}
+      <div class="tabela-rolagem" style="max-height:160px">
+        {% for conta in contas_para_liberar %}
+          <label style="display:block; padding:2px 0">
+            <input type="checkbox" name="conta_do_usuario" value="{{ conta }}">
+            {{ conta }}
+          </label>
+        {% endfor %}
+      </div>
+      {% else %}
+        <p class="cartao-dica">A base ainda não tem contas para liberar.</p>
+      {% endif %}
+
+      <h4 style="margin:14px 0 4px">Telas que ela pode abrir</h4>
+      <div>
+        {% for chave, rotulo in telas_liberaveis.items() %}
+          <label style="display:inline-block; margin:0 14px 6px 0">
+            <input type="checkbox" name="tela_do_usuario" value="{{ chave }}"
+                   {% if chave in telas_sugeridas %}checked{% endif %}>
+            {{ rotulo }}
+          </label>
+        {% endfor %}
+      </div>
+      <p class="cartao-dica">
+        DRE e Despesas Analítico já vêm marcadas. As outras ficam prontas para
+        quando você quiser liberar.
+      </p>
+      <button class="btn" type="submit">Dar acesso</button>
+    </form>
+  </details>
+</div>
+
 {# ============ AS CONFERÊNCIAS, SÓ QUANDO ALGUÉM PEDE ============ #}
 {% if not base_vazia %}
 <div class="cartao" id="conferencias" style="margin-top:14px">
@@ -613,6 +824,72 @@
 {% endif %}
 
 {# ===== O DINHEIRO QUE ANDOU NA CONTA E NAO ESTA EM TELA NENHUMA ===== #}
+{% if contas_conf %}
+<div class="cartao" style="margin-top:14px;
+     border-left:4px solid {{ 'var(--verde)' if contas_conf.tem_perna_bancaria else 'var(--vermelho)' }}">
+  <div class="cartao-cab"><h3>Conta de onde o dinheiro saiu</h3></div>
+  {% if contas_conf.tem_perna_bancaria %}
+  <div class="aviso ok">
+    A base tem <b>{{ '{:,}'.format(contas_conf.bancaria.pernas).replace(',', '.') }}</b>
+    movimentos bancários de baixa, e em
+    <b>{{ '{:,}'.format(contas_conf.bancaria.diferentes).replace(',', '.') }}</b> deles
+    a conta é <b>diferente</b> da conta prevista no título. É essa conta que o
+    relatório passa a mostrar. Nos
+    {{ '{:,}'.format(contas_conf.consolidada.pernas).replace(',', '.') }} resumos
+    consolidados, só {{ '{:,}'.format(contas_conf.consolidada.diferentes).replace(',', '.') }}
+    diferem — o resumo repete a conta do título, por isso ler dele não mudava nada.
+  </div>
+  {% else %}
+  <div class="aviso erro">
+    <b>A base não tem o movimento bancário das baixas</b> — só o resumo
+    consolidado, que repete a conta prevista no título. Assim não há de onde
+    tirar a conta real: refazer os números não muda nada, e a conta teria de vir
+    de outra listagem do OMIE, com uma carga nova.
+  </div>
+  {% endif %}
+  <p class="cartao-dica">
+    O OMIE guarda cada baixa em duas pernas: o <b>resumo do título</b>, que
+    carrega a conta onde se previu pagar, e o <b>movimento bancário</b>, um por
+    conta que o dinheiro tocou. Até 22/09/2026 o relatório lia o resumo. Esta
+    conferência <b>não altera número nenhum</b>: ela diz se a base tem a
+    informação certa e quanto dela o relatório antigo mostrava errado.
+    {% if contas_conf.bancaria.sem_conta %}
+    <br><br>{{ '{:,}'.format(contas_conf.bancaria.sem_conta).replace(',', '.') }}
+    movimentos bancários vieram <b>sem conta</b>: nesses, vale a conta do título.
+    {% endif %}
+  </p>
+  {% if contas_conf.exemplos %}
+  <details style="margin-top:10px" open>
+    <summary style="cursor:pointer; font-weight:600">Os maiores em que a conta muda</summary>
+    <div class="tabela-rolagem" style="max-height:300px; margin-top:8px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Título OMIE</th>
+          <th class="sem-ordem">Natureza</th>
+          <th class="sem-ordem">Prevista no título</th>
+          <th class="sem-ordem">De onde saiu</th>
+          <th class="sem-ordem direita">Valor</th>
+          <th class="sem-ordem">Data</th>
+        </tr></thead>
+        <tbody>
+        {% for e in contas_conf.exemplos %}
+          <tr>
+            <td class="dados">{{ e.titulo }}</td>
+            <td class="desc">{{ e.natureza }}</td>
+            <td class="desc">{{ e.prevista }}</td>
+            <td class="desc"><b>{{ e.bancaria }}</b></td>
+            <td class="dados direita">{{ brl(e.valor) }}</td>
+            <td class="desc">{{ e.data }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if fora %}
 <div class="cartao" style="margin-top:14px;
      border-left:4px solid {{ 'var(--vermelho)' if fora.linhas else 'var(--verde)' }}">
@@ -716,6 +993,43 @@
 {% endif %}
 
 {# ========== DE ONDE VEM A DIFERENÇA DO BLOCO DE APORTES ========== #}
+{% if aportes_base %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Aportes na base inteira — e onde está o resto</h3></div>
+  <p class="cartao-dica">
+    Sem filtro nenhum, a base tem <b>{{ brl(aportes_base.aportado) }}</b>
+    aportados e <b>{{ brl(aportes_base.devolvido) }}</b> devolvidos
+    ({{ aportes_base.lancamentos }} lançamentos). O bloco do DRE usa os filtros
+    da barra lateral; o que não aparece lá está aqui, obra por obra. A linha
+    <b>(não apropriado)</b> é a que costuma explicar a diferença: aportes e
+    devoluções sem obra nenhuma somem quando se filtra por obra. O conserto é
+    apropriar o lançamento (no OMIE, ou pelo Explorador).
+  </p>
+  {% if aportes_base.por_obra %}
+  <div class="tabela-rolagem" style="max-height:300px">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">Obra</th>
+        <th class="sem-ordem direita">Aportado</th>
+        <th class="sem-ordem direita">Devolvido</th>
+        <th class="sem-ordem direita">Lançamentos</th>
+      </tr></thead>
+      <tbody>
+      {% for l in aportes_base.por_obra %}
+        <tr>
+          <td class="desc">{{ l.obra }}</td>
+          <td class="dados direita">{{ brl(l.aportado) }}</td>
+          <td class="dados direita">{{ brl(l.devolvido) }}</td>
+          <td class="dados direita">{{ l.lancamentos }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if aportes_conf %}
 <div class="cartao" style="margin-top:14px">
   <div class="cartao-cab"><h3>Aportes do DRE — onde os valores se perdem</h3></div>

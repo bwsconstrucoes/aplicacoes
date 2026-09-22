@@ -136,6 +136,44 @@ def texto_para_copiar(conta: ContaBancaria, empresa: Optional[Empresa] = None) -
     return "\n".join(linhas)
 
 
+def _empresa_exigida(s: Session, empresa_id: Any) -> Optional[Empresa]:
+    """A empresa dona da conta, conferida de verdade.
+
+    Obrigatória desde 22/09/2026 (migração 080), a pedido do dono: *"associar
+    banco a uma empresa"*. Sem ela, as contas de todos os CNPJs apareciam
+    misturadas em toda tela que escolhe conta, e nada impedia pagar a despesa
+    de um pelo caixa do outro.
+    """
+    try:
+        eid = int(empresa_id or 0)
+    except (TypeError, ValueError):
+        return None
+    return s.get(Empresa, eid) if eid else None
+
+
+def definir_empresa(s: Session, conta_id: int, empresa_id: Any,
+                    usuario: Optional[Usuario] = None) -> ContaBancaria:
+    """Marca de quem é uma conta que já existia antes da migração 080.
+
+    As contas antigas nasceram sem empresa e continuam assim de propósito:
+    atribuir sozinho a empresa padrão seria adivinhar em cima de dado
+    bancário. Quem sabe de quem é cada uma é o dono, e são poucas.
+    """
+    conta = s.get(ContaBancaria, conta_id)
+    if conta is None:
+        raise ErroValidacao("Conta bancária não encontrada.")
+    empresa = _empresa_exigida(s, empresa_id)
+    if empresa is None:
+        raise ErroValidacao("Escolha a empresa dona desta conta.")
+    antes = conta.empresa_id
+    conta.empresa_id = empresa.id
+    s.flush()
+    registrar_evento(s, "conta_bancaria", conta.id, "EMPRESA_DEFINIDA",
+                     {"empresa": empresa.razao_social, "empresa_anterior": antes},
+                     usuario.id if usuario else None)
+    return conta
+
+
 def criar(s: Session, dados: dict[str, Any],
           usuario: Optional[Usuario] = None) -> ContaBancaria:
     """Cadastra a conta da empresa. Uma chave Pix pode vir junto.
@@ -151,19 +189,22 @@ def criar(s: Session, dados: dict[str, Any],
     banco = bancos.normalizar_codigo(dados.get("banco_codigo"))
     agencia = _texto(dados.get("agencia"))
     conta = _texto(dados.get("conta"))
+    empresa = _empresa_exigida(s, dados.get("empresa_id"))
     faltando = [rot for valor, rot in (
         (descricao, "a descrição"), (banco, "o banco"),
-        (agencia, "a agência"), (conta, "a conta")) if not valor]
+        (agencia, "a agência"), (conta, "a conta"),
+        (empresa, "a empresa dona da conta")) if not valor]
     if faltando:
         raise ErroValidacao(f"Preencha {', '.join(faltando)}.")
 
     linha = ContaBancaria(descricao=descricao, banco_codigo=banco,
-                          agencia=agencia, conta=conta)
+                          agencia=agencia, conta=conta, empresa_id=empresa.id)
     s.add(linha)
     s.flush()
     registrar_evento(s, "conta_bancaria", linha.id, "CRIADA",
                      {"descricao": descricao, "banco": bancos.rotulo(banco, s),
-                      "agencia": agencia, "conta": conta},
+                      "agencia": agencia, "conta": conta,
+                      "empresa": empresa.razao_social},
                      usuario.id if usuario else None)
 
     if _texto(dados.get("pix_chave")):
@@ -176,24 +217,42 @@ def criar(s: Session, dados: dict[str, Any],
 
 def listar(s: Session, *, empresa_id: Optional[int] = None,
            incluir_inativas: bool = False) -> list[dict[str, Any]]:
+    """As contas, opcionalmente só as de uma empresa.
+
+    `empresa_id` FILTRA desde 22/09/2026. Antes ele servia apenas para escolher
+    de quem era o cabeçalho do texto para copiar — e a lista vinha inteira, com
+    as contas de todos os CNPJs misturadas.
+    """
     from app.apps.erp.core.cadastros import bancos
 
     stmt = (select(ContaBancaria).options(selectinload(ContaBancaria.chaves_pix))
             .order_by(ContaBancaria.descricao))
     if not incluir_inativas:
         stmt = stmt.where(ContaBancaria.ativo.is_(True))
-    empresa = s.get(Empresa, empresa_id) if empresa_id else None
-    if empresa is None:
-        empresa = s.scalars(select(Empresa).where(Empresa.padrao.is_(True))).first()
+    if empresa_id:
+        stmt = stmt.where(ContaBancaria.empresa_id == int(empresa_id))
 
     saida = []
     for c in s.scalars(stmt).all():
+        # O CABEÇALHO SAI DA EMPRESA DA CONTA, não da empresa padrão.
+        #
+        # Este era um defeito de verdade, achado em 22/09/2026 ao ligar a conta
+        # à empresa: o bloco "para copiar" trazia SEMPRE a razão social e o
+        # CNPJ da empresa padrão, em cima da agência e conta de qualquer uma
+        # das contas. Mandar para um cliente o CNPJ de uma empresa com a conta
+        # de outra é justamente o erro que este bloco existe para evitar — e
+        # ele não aparece na conferência, porque os dois lados estão certos
+        # sozinhos.
+        empresa = s.get(Empresa, c.empresa_id) if c.empresa_id else None
         saida.append({
             "id": c.id, "descricao": c.descricao,
             "banco_codigo": c.banco_codigo,
             "banco_nome": bancos.nome(c.banco_codigo, s),
             "agencia": c.agencia, "conta": c.conta,
             "ativo": c.ativo is not False,
+            "empresa_id": c.empresa_id,
+            "empresa_nome": (empresa.nome_fantasia or empresa.razao_social)
+                            if empresa else "",
             "chaves_pix": [{"id": k.id, "tipo": k.tipo,
                             "tipo_nome": ROTULO_PIX.get(k.tipo, k.tipo),
                             "chave": (_formatar_cnpj(k.chave) if k.tipo == "CNPJ"

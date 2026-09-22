@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.cadastros import fornecedores as base
+from app.apps.erp.core.suprimentos import regioes as svc_regioes
 from app.apps.erp.core.comum.auditoria import (
     ErroNaoEncontrado, ErroValidacao, registrar_evento,
 )
@@ -85,6 +86,35 @@ def _aplicar_campos_de_suprimentos(s: Session, forn: Fornecedor,
                           if _texto(r)})
         forn.regioes_atuacao = regioes
         mudou["regioes_atuacao"] = regioes
+        # SE AINDA NÃO TEM ALCANCE DEFINIDO, tenta traduzir o texto agora. É o
+        # que faz o cadastro novo já nascer cruzável com a obra em vez de
+        # esperar alguém rodar o "Padronizar as regiões".
+        if (getattr(forn, "abrangencia", None) or "NAO_INFORMADA") == "NAO_INFORMADA":
+            r = svc_regioes.traduzir(regioes)
+            if r["abrangencia"] != svc_regioes.NAO_INFORMADA:
+                forn.abrangencia = r["abrangencia"]
+                forn.ufs_atendidas = r["ufs"]
+                forn.municipios_atendidos = r["municipios"]
+
+    # ALCANCE DITO DIRETAMENTE (tela de cadastro novo) vence a tradução: é
+    # alguém escolhendo numa lista, não um de-para adivinhando texto livre.
+    if dados.get("abrangencia"):
+        alcance = _texto(dados.get("abrangencia")).upper()
+        if alcance not in svc_regioes.ROTULOS:
+            raise ErroValidacao(f"Alcance desconhecido: {alcance!r}.")
+        ufs = [svc_regioes.normalizar(x) for x in (dados.get("ufs_atendidas") or [])]
+        ufs = [u for u in ufs if u in svc_regioes.UFS]
+        municipios = sorted({svc_regioes.normalizar(x)
+                             for x in (dados.get("municipios_atendidos") or []) if x})
+        if alcance == svc_regioes.ESTADUAL and not ufs:
+            raise ErroValidacao("Diga quais estados este fornecedor atende.")
+        if alcance in (svc_regioes.REGIONAL, svc_regioes.LOCAL) and not municipios:
+            raise ErroValidacao("Diga quais municípios este fornecedor atende.")
+        forn.abrangencia = alcance
+        forn.ufs_atendidas = [] if alcance == svc_regioes.NACIONAL else ufs
+        forn.municipios_atendidos = ([] if alcance == svc_regioes.NACIONAL
+                                     else municipios)
+        mudou["abrangencia"] = alcance
 
     if "canais_cotacao" in dados:
         canais = sorted({_texto(c).upper() for c in (dados.get("canais_cotacao") or [])
@@ -251,6 +281,225 @@ def remover_contato(s: Session, contato_id: int, usuario: Usuario) -> None:
 # A tela de gestão
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
+# Padronizar a região que o fornecedor atende
+# ---------------------------------------------------------------------------
+def padronizar_regioes(s: Session, usuario: Usuario, *,
+                       simular: bool = False) -> dict[str, Any]:
+    """Traduz o texto livre de "Região de Atuação" para algo que cruza com a
+    obra. Roda em cima de todo o cadastro, e pode rodar quantas vezes precisar.
+
+    NÃO APAGA o texto original: `regioes_atuacao` continua com o que a pessoa
+    escreveu. É o que permite conferir uma conversão suspeita e refazer o
+    de-para depois de acrescentar um apelido novo em `regioes.py`.
+
+    O QUE ELA NÃO FAZ: inventar. Termo que não é UF, nem macrorregião, nem
+    região conhecida, nem nome de lugar volta na lista de `nao_reconhecidos` —
+    e o fornecedor fica NAO_INFORMADA, aparecendo no contador da tela até
+    alguém resolver. Um cadastro que diz atender o lugar errado é pior que um
+    que admite não saber: o primeiro manda cotação de Fortaleza para uma obra
+    em São Paulo e ninguém desconfia.
+    """
+    convertidos = 0
+    ja_estavam = 0
+    sem_traducao: list[dict[str, Any]] = []
+    termos_nao_reconhecidos: dict[str, int] = {}
+
+    for f in s.scalars(select(Fornecedor)).all():
+        if getattr(f, "ativo", True) is False:
+            continue
+        texto = list(getattr(f, "regioes_atuacao", None) or [])
+        r = svc_regioes.traduzir(texto)
+        for termo in r["desconhecidos"]:
+            termos_nao_reconhecidos[termo] = termos_nao_reconhecidos.get(termo, 0) + 1
+
+        if r["abrangencia"] == svc_regioes.NAO_INFORMADA:
+            if (getattr(f, "abrangencia", None) or "NAO_INFORMADA") == "NAO_INFORMADA":
+                sem_traducao.append({
+                    "id": f.id, "fornecedor": f.razao_social,
+                    "escrito": ", ".join(texto) or "— em branco —"})
+            continue
+        if (getattr(f, "abrangencia", None) or "NAO_INFORMADA") != "NAO_INFORMADA":
+            # Já padronizado antes (ou preenchido à mão na tela): não se mexe.
+            # Refazer por cima apagaria a correção de quem sabe mais que o
+            # de-para.
+            ja_estavam += 1
+            continue
+        if not simular:
+            f.abrangencia = r["abrangencia"]
+            f.ufs_atendidas = r["ufs"]
+            f.municipios_atendidos = r["municipios"]
+        convertidos += 1
+
+    if not simular:
+        registrar_evento(s, "fornecedor", 0, "REGIOES_PADRONIZADAS",
+                         {"convertidos": convertidos,
+                          "sem_traducao": len(sem_traducao)},
+                         usuario.id if usuario else None)
+        logger.info("ERP/suprimentos: regiões padronizadas — %d convertidos, "
+                    "%d sem tradução", convertidos, len(sem_traducao))
+
+    return {
+        "convertidos": convertidos,
+        "ja_estavam": ja_estavam,
+        "sem_traducao": sorted(sem_traducao, key=lambda x: x["fornecedor"])[:200],
+        "quantos_sem_traducao": len(sem_traducao),
+        "termos_nao_reconhecidos": sorted(
+            ({"termo": t, "vezes": n} for t, n in termos_nao_reconhecidos.items()),
+            key=lambda x: -x["vezes"])[:50],
+        "simulacao": simular,
+        "recado": (
+            f"{convertidos} fornecedor(es) "
+            + ("teriam a região padronizada" if simular else "tiveram a região padronizada")
+            + (f", {ja_estavam} já estavam" if ja_estavam else "")
+            + (f". {len(sem_traducao)} ficaram SEM região — eles não entram no "
+               f"disparo automático até alguém preencher" if sem_traducao else ".")),
+    }
+
+
+def definir_regiao(s: Session, fornecedor_id: int, dados: dict[str, Any],
+                   usuario: Usuario) -> dict[str, Any]:
+    """Grava a região à mão, pela ficha do fornecedor."""
+    forn = s.get(Fornecedor, fornecedor_id)
+    if forn is None:
+        raise ErroNaoEncontrado("Fornecedor não encontrado.")
+
+    abrangencia = (dados.get("abrangencia") or "").strip().upper()
+    if abrangencia not in svc_regioes.ROTULOS:
+        raise ErroValidacao("Escolha até onde este fornecedor vende.")
+
+    ufs = [svc_regioes.normalizar(x) for x in (dados.get("ufs") or []) if x]
+    ufs = [u for u in ufs if u in svc_regioes.UFS]
+    municipios = sorted({svc_regioes.normalizar(x)
+                         for x in (dados.get("municipios") or []) if x})
+
+    if abrangencia == svc_regioes.ESTADUAL and not ufs:
+        raise ErroValidacao(
+            "Diga QUAIS estados. Um fornecedor estadual sem estado nenhum "
+            "nunca seria escolhido para cotação, e ninguém perceberia.")
+    if abrangencia in (svc_regioes.REGIONAL, svc_regioes.LOCAL) and not municipios:
+        raise ErroValidacao("Diga QUAIS municípios ele atende.")
+    if abrangencia == svc_regioes.NACIONAL:
+        ufs, municipios = [], []
+
+    antes = getattr(forn, "abrangencia", None)
+    forn.abrangencia = abrangencia
+    forn.ufs_atendidas = ufs
+    forn.municipios_atendidos = municipios
+    registrar_evento(s, "fornecedor", forn.id, "REGIAO_DEFINIDA",
+                     {"antes": antes, "depois": abrangencia,
+                      "ufs": ufs, "municipios": municipios},
+                     usuario.id if usuario else None)
+    return {"recado": f"Região de {forn.razao_social} definida: "
+                      f"{svc_regioes.ROTULOS[abrangencia]}."}
+
+
+# ---------------------------------------------------------------------------
+# Consulta de CNPJ no meio do cadastro
+# ---------------------------------------------------------------------------
+def consultar_para_cadastro(s: Session, cnpj: str) -> dict[str, Any]:
+    """O que a Receita sabe sobre este CNPJ — para preencher o formulário.
+
+    PEDIDO DO DONO, 21/09/2026: *"que após digitação do CNPJ sejam pesquisados
+    os dados para serem pré-preenchidos"*, e ele completou: *"quando sigo após
+    a digitação, falo no cadastro"* — é dentro do formulário, não num botão ao
+    lado. É a mesma regra do Cartão CNPJ da empresa e do contrato da obra:
+    **uma porta só, e o documento é atalho DENTRO dela**.
+
+    NÃO GRAVA NADA. Devolve os campos para a tela preencher, e a pessoa
+    confere e corrige antes de mandar. Cadastro escrito por robô sem ninguém
+    olhar é como entra endereço de filial no lugar da matriz.
+
+    Também responde a pergunta que evita o estrago mais comum deste cadastro:
+    **este CNPJ já está aqui?**. Cadastrar o mesmo fornecedor duas vezes é o
+    que gerou boa parte dos 126 documentos repetidos da planilha antiga — e o
+    banco recusaria no fim, depois de a pessoa ter digitado tudo.
+    """
+    from app.apps.erp.core.cadastros import receita
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+
+    digitos = somente_digitos(cnpj or "")
+    if len(digitos) not in (11, 14):
+        raise ErroValidacao("Digite o CNPJ com 14 dígitos (ou o CPF com 11).")
+
+    ja = base.obter_por_documento(s, digitos)
+    saida: dict[str, Any] = {
+        "documento": digitos,
+        "tipo_pessoa": "PJ" if len(digitos) == 14 else "PF",
+        "ja_cadastrado": None if ja is None else {
+            "id": ja.id, "razao_social": ja.razao_social,
+            "ativo": getattr(ja, "ativo", True) is not False},
+        "campos": {}, "situacao": "", "aviso": "",
+    }
+    if ja is not None:
+        saida["aviso"] = (f"Este documento já está cadastrado como "
+                          f"{ja.razao_social}. Abra o cadastro existente em vez "
+                          f"de criar outro.")
+        return saida
+    if len(digitos) == 11:
+        # CPF não tem cadastro público para consultar. Dizer isso é melhor do
+        # que deixar a tela girando e não preencher nada.
+        saida["aviso"] = "CPF não tem consulta pública — preencha à mão."
+        return saida
+
+    try:
+        dados = receita.consultar(digitos)
+    except receita.ReceitaIndisponivel as erro:
+        saida["aviso"] = (f"Não consegui consultar agora ({erro}). "
+                          f"Preencha à mão — dá para acertar depois pelo botão "
+                          f"“Acertar o cadastro pela Receita”.")
+        return saida
+    if dados is None:
+        saida["aviso"] = "A Receita não achou este CNPJ. Confira o número."
+        return saida
+
+    saida["campos"] = {c: v for c, v in dados.items()
+                       if c in CAMPOS_DO_FORMULARIO and (v or "").strip()}
+    saida["situacao"] = dados.get("situacao", "")
+    if saida["situacao"] and saida["situacao"] != "ATIVA":
+        saida["aviso"] = (f"Atenção: na Receita este CNPJ está "
+                          f"{saida['situacao']}, não ATIVA.")
+    return saida
+
+
+# O que a consulta preenche no formulário. Deliberadamente sem e-mail e sem
+# telefone da Receita: o que está lá é o do contador, quase nunca o do vendedor
+# — e um e-mail errado no cadastro faz a cotação sair para o lugar errado.
+CAMPOS_DO_FORMULARIO = (
+    "razao_social", "nome_fantasia", "municipio", "uf", "cep",
+    "logradouro", "numero", "complemento", "bairro", "cnae_principal",
+)
+
+
+def adotar_nome_oficial(s: Session, fornecedor_id: int,
+                        usuario: Usuario) -> dict[str, Any]:
+    """Troca a razão social cadastrada pela que a Receita tem.
+
+    O nome antigo vai para `nome_fantasia` quando este estiver vazio: é por ele
+    que o comprador reconhece o fornecedor, e perdê-lo faria a lista de cotação
+    ficar cheia de razões sociais que ninguém liga a ninguém.
+    """
+    forn = s.get(Fornecedor, fornecedor_id)
+    if forn is None:
+        raise ErroNaoEncontrado("Fornecedor não encontrado.")
+    oficial = (getattr(forn, "razao_social_rfb", None) or "").strip()
+    if not oficial:
+        raise ErroValidacao(
+            "Este fornecedor não tem nome divergente guardado. Rode antes o "
+            "“Acertar o cadastro pela Receita”.")
+
+    antigo = forn.razao_social
+    forn.razao_social = oficial
+    if not (forn.nome_fantasia or "").strip():
+        forn.nome_fantasia = antigo
+    forn.razao_social_rfb = None
+    registrar_evento(s, "fornecedor", forn.id, "NOME_OFICIAL_ADOTADO",
+                     {"antes": antigo, "depois": oficial},
+                     usuario.id if usuario else None)
+    return {"recado": f"{antigo} passou a se chamar {oficial}.",
+            "antes": antigo, "depois": oficial}
+
+
+# ---------------------------------------------------------------------------
 # Apagar — o que dá e o que não dá
 # ---------------------------------------------------------------------------
 # PEDIDO DO DONO, 20/09/2026: *"olhei aqui na tela de fornecedores: como é que
@@ -381,6 +630,17 @@ def gerenciar(s: Session) -> dict[str, Any]:
             "contatos": contatos.get(f.id, []),
             "cotacao_automatica": getattr(f, "cotacao_automatica", True) is not False,
             "situacao_rfb": getattr(f, "situacao_rfb", None) or "",
+            # O nome OFICIAL, quando diferente do cadastrado (migração 078).
+            # Vazio quando bate, quando nunca foi consultado, ou depois de
+            # alguém adotar o oficial.
+            "razao_social_rfb": getattr(f, "razao_social_rfb", None) or "",
+            # ATÉ ONDE ELE VENDE (migração 079)
+            "abrangencia": getattr(f, "abrangencia", None) or "NAO_INFORMADA",
+            "abrangencia_rotulo": svc_regioes.ROTULOS.get(
+                getattr(f, "abrangencia", None) or "NAO_INFORMADA", ""),
+            "ufs_atendidas": list(getattr(f, "ufs_atendidas", None) or []),
+            "municipios_atendidos": list(
+                getattr(f, "municipios_atendidos", None) or []),
             "ativo": getattr(f, "ativo", True) is not False,
             "historico": memoria.get(f.id),
         })
@@ -418,6 +678,16 @@ def gerenciar(s: Session) -> dict[str, Any]:
             "fora_do_automatico": sum(1 for l in ativos
                                       if not l["cotacao_automatica"]),
             "mais_de_um_contato": sum(1 for l in ativos if len(l["contatos"]) > 1),
+            # NOME DIFERENTE DA RECEITA (migração 078). Antes esse número só
+            # existia no relatório do trabalho em lote e sumia com ele; agora é
+            # um estado do cadastro, que dá para filtrar e resolver.
+            "nome_diferente": sum(1 for l in ativos if l["razao_social_rfb"]),
+            # SEM REGIÃO DEFINIDA (migração 079). Este é o número que decide se
+            # o disparo automático funciona: quem está aqui não é escolhido
+            # para cotação nenhuma, porque não dá para saber se ele atende a
+            # obra. Antes disso existir, ele entrava "porque sim".
+            "sem_regiao": sum(1 for l in ativos
+                              if l["abrangencia"] == "NAO_INFORMADA"),
             "por_porte": contagem_porte,
         },
     }

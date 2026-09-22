@@ -14,6 +14,8 @@ Receita entra positiva, despesa negativa: somar a coluna ja da o resultado.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 from .db import consultar
 
 REC = "1. Contas a Receber"
@@ -32,6 +34,10 @@ PAGO = "pago"
 # Imposto retido na fonte: o cliente reteve, nao virou caixa da BWS. Entra na
 # receita bruta e sai da liquida.
 RETIDO = "categoria ILIKE '%Retido%'"
+# O que e MEDICAO na Receita de Obra: a receita de obras e o imposto retido dela.
+# Rendimento, estorno e devolucao NAO sao medicao — o dono viu os dois juntos na
+# mesma lista em 22/09/2026 e pediu que ficassem so no bloco "Outras receitas".
+RECEITA_DE_OBRA = f"(categoria = 'Receita de Obras' OR {RETIDO})"
 
 EXECUTADO = f"CASE WHEN {PAGO} THEN pago_recebido ELSE 0 END"
 EM_ABERTO = "a_pagar_receber"
@@ -41,11 +47,16 @@ COMPROMETIDO = f"({EXECUTADO} + {EM_ABERTO})"
 class Filtros:
     """Os filtros da barra lateral, traduzidos para um WHERE."""
 
-    def __init__(self, anos=None, projetos=None, departamentos=None, excluir_trf=True):
+    def __init__(self, anos=None, projetos=None, departamentos=None,
+                 excluir_trf=True, contas=None):
         self.anos = [int(a) for a in (anos or [])]
         self.projetos = list(projetos or [])
         self.departamentos = list(departamentos or [])
         self.excluir_trf = bool(excluir_trf)
+        # A conta corrente entrou em 21/09/2026, com o Extrato. Ela e tambem o
+        # escopo de quem so pode ver certas contas — e por isso mora aqui, no
+        # mesmo lugar que a obra: e o unico ponto por onde toda tela passa.
+        self.contas = list(contas or [])
 
     def where(self, extra: str = "", params_extra=None) -> tuple[str, list]:
         """Devolve (trecho SQL, parametros). Filtro vazio = tudo.
@@ -66,6 +77,9 @@ class Filtros:
         if self.departamentos:
             partes.append("departamento = ANY(?)")
             params.append(self.departamentos)
+        if self.contas:
+            partes.append("COALESCE(conta_corrente,'') = ANY(?)")
+            params.append(self.contas)
         if self.excluir_trf:
             partes.append("analise <> 'TRF'")
         if extra:
@@ -76,6 +90,8 @@ class Filtros:
     def resumo(self) -> list[str]:
         """Descricao curta dos filtros ativos, para os chips no topo da tela."""
         chips = []
+        if self.contas:
+            chips.append("Conta: " + ", ".join(sorted(self.contas)))
         if self.anos:
             chips.append("Ano: " + ", ".join(str(a) for a in sorted(self.anos)))
         if self.projetos:
@@ -166,7 +182,11 @@ def opcoes_de_filtro() -> dict:
         obras = [d for (d,) in consultar(
             "SELECT DISTINCT departamento FROM fato "
             " WHERE COALESCE(departamento,'') <> '' ORDER BY departamento")]
-        return {"anos": anos, "projetos": projetos, "obras": obras}
+        contas = [c for (c,) in consultar(
+            "SELECT DISTINCT conta_corrente FROM fato "
+            " WHERE COALESCE(conta_corrente,'') <> '' ORDER BY conta_corrente")]
+        return {"anos": anos, "projetos": projetos, "obras": obras,
+                "contas": contas}
 
     return _lembrando(("opcoes_de_filtro",), calcular)
 
@@ -672,28 +692,35 @@ def obra_para_projeto() -> dict:
 # (migração 004), então quem agrupa é o banco.
 
 def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
-    """As medições de obra, da maior para a menor.
+    """A receita de obra, UM TÍTULO POR LINHA, da mais recente para a mais antiga.
+
+    Até 22/09/2026 a linha era a MEDIÇÃO — todos os títulos cuja observação diz
+    a mesma medição da mesma obra, somados. O dono conferiu uma linha contra o
+    OMIE, achou um título oito vezes menor, e decidiu: *"não fica legal
+    agrupado, confunde, tem que separar mesmo os títulos"*. A medição continua
+    escrita ao lado, como rótulo; o número é o do título.
 
     Bruto = o que já entrou + o que o cliente reteve + o que falta receber.
     `visao`: 'todas', 'a_receber' (só com saldo) ou 'quitadas'."""
-    where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])
+    where, params = f.where(f"analise = 'DRE' AND tipo = ? AND {RECEITA_DE_OBRA}", [REC])
     tendo = {
         "a_receber": "HAVING ABS(SUM(a_pagar_receber)) > 0.005",
         "quitadas": "HAVING ABS(SUM(a_pagar_receber)) <= 0.005",
     }.get(visao, "")
     sql = f"""
-        SELECT COALESCE(NULLIF(medicao_rotulo,''), '(sem medição)'),
+        SELECT COALESCE(NULLIF(MAX(medicao_rotulo),''), '(sem medição)'),
                MAX(razao_social), MAX(departamento), MAX(projeto),
                MAX(numero_documento), MAX(link), MAX(data),
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
                SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(a_pagar_receber)
+               SUM(a_pagar_receber),
+               codigo_lancamento
           FROM fato{where}
-         GROUP BY 1 {tendo}
-         ORDER BY ABS(SUM({COMPROMETIDO})) DESC LIMIT {int(limite)}"""
+         GROUP BY codigo_lancamento {tendo}
+         ORDER BY MAX(data) DESC NULLS LAST, codigo_lancamento LIMIT {int(limite)}"""
     saida = []
     for (rotulo, cliente, obra, projeto, documento, link, data,
-         recebido, retido, a_receber) in consultar(sql, params):
+         recebido, retido, a_receber, codigo) in consultar(sql, params):
         recebido, retido = float(recebido or 0), float(retido or 0)
         a_receber = float(a_receber or 0)
         bruto = recebido + retido + a_receber
@@ -706,9 +733,9 @@ def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
         else:
             situacao = "A receber"
         saida.append({
-            "medicao": rotulo, "cliente": cliente or "", "obra": obra or "",
-            "projeto": projeto or "", "documento": documento or "",
-            "link": link or "", "data": data,
+            "codigo": codigo, "medicao": rotulo, "cliente": cliente or "",
+            "obra": obra or "", "projeto": projeto or "",
+            "documento": documento or "", "link": link or "", "data": data,
             "recebido": recebido, "retido": retido, "a_receber": a_receber,
             "bruto": bruto, "situacao": situacao,
         })
@@ -716,11 +743,11 @@ def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
 
 
 def total_das_medicoes(f: Filtros, visao: str = "todas") -> dict:
-    """Os totais das medições — somados pelo banco, não pela lista da tela.
+    """Os totais da receita de obra — somados pelo banco, não pela lista.
 
-    A tela mostra as 300 maiores; o total tem de ser de TODAS, senão o rodapé
-    não bate com o DRE."""
-    where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])
+    A tela mostra os 300 títulos mais recentes; o total tem de ser de TODOS,
+    senão o rodapé não bate com o DRE. `quantas` conta títulos."""
+    where, params = f.where(f"analise = 'DRE' AND tipo = ? AND {RECEITA_DE_OBRA}", [REC])
     tendo = {
         "a_receber": "HAVING ABS(SUM(a_pagar_receber)) > 0.005",
         "quitadas": "HAVING ABS(SUM(a_pagar_receber)) <= 0.005",
@@ -732,8 +759,8 @@ def total_das_medicoes(f: Filtros, visao: str = "todas") -> dict:
                    SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END) AS retido,
                    SUM(a_pagar_receber) AS aberto
               FROM fato{where}
-             GROUP BY COALESCE(NULLIF(medicao_rotulo,''), '(sem medição)') {tendo}
-          ) AS por_medicao"""
+             GROUP BY codigo_lancamento {tendo}
+          ) AS por_titulo"""
     quantas, recebido, retido, aberto = consultar(sql, params)[0]
     recebido, retido = float(recebido or 0), float(retido or 0)
     aberto = float(aberto or 0)
@@ -746,16 +773,71 @@ def recebimentos_da_medicao(medicao: str, limite: int = 200) -> list[dict]:
 
     Vem da outra tabela (`fato_recebimentos`), que abre por movimento: um título
     recebido em três parcelas aparece aqui como três linhas."""
-    sql = """
+    return _recebimentos("medicao = ?", [medicao], limite)
+
+
+def recebimentos_do_titulo(codigo, limite: int = 200) -> list[dict]:
+    """O mesmo, para UM título — a linha da Receita de Obra é o título."""
+    return _recebimentos("codigo_lancamento = ?", [int(codigo)], limite)
+
+
+def _recebimentos(condicao: str, params, limite: int) -> list[dict]:
+    sql = f"""
         SELECT data, valor, juros, multa, desconto, conta_corrente, parcela,
                origem, numero_documento
           FROM fato_recebimentos
-         WHERE medicao = ?
+         WHERE {condicao}
          ORDER BY data NULLS LAST, id
-         LIMIT %d""" % int(limite)
+         LIMIT {int(limite)}"""
     campos = ("data", "valor", "juros", "multa", "desconto", "conta_corrente",
               "parcela", "origem", "numero_documento")
-    return [dict(zip(campos, linha)) for linha in consultar(sql, (medicao,))]
+    return [dict(zip(campos, linha)) for linha in consultar(sql, params)]
+
+
+def titulos_da_medicao(medicao: str, limite: int = 200) -> list[dict]:
+    """Os títulos do OMIE que compõem UMA medição, um por linha.
+
+    É o que permite conferir a linha da Receita de Obra contra o OMIE: a
+    medição junta os títulos cuja observação diz a mesma medição da mesma obra
+    (várias notas, principal e reajuste, fontes de recurso diferentes). Quando
+    a observação está errada num título, ele cai na medição errada — e é aqui
+    que isso aparece, com o número para achar o título lá."""
+    return _titulos_de_receita("medicao_rotulo = ?", [medicao], limite)
+
+
+def titulo_da_receita(codigo, f: "Filtros | None" = None) -> dict | None:
+    """UM título de receita, ou None quando ele não existe — ou não está no
+    recorte de quem pergunta. O recorte entra aqui de propósito: é o que impede
+    alguém preso a uma obra de abrir o título de outra pelo número."""
+    where, params = (f or Filtros()).where("codigo_lancamento = ?", [int(codigo)])
+    linhas = _titulos_de_receita(where[len(" WHERE "):], params, 1)
+    return linhas[0] if linhas else None
+
+
+def _titulos_de_receita(condicao: str, params, limite: int) -> list[dict]:
+    sql = f"""
+        SELECT codigo_lancamento, MAX(numero_documento), MAX(razao_social),
+               MAX(departamento), MAX(data), MAX(observacao), MAX(link),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+               SUM(a_pagar_receber),
+               MAX(medicao_rotulo)
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ? AND {condicao}
+         GROUP BY codigo_lancamento
+         ORDER BY MAX(data) NULLS LAST, codigo_lancamento
+         LIMIT {int(limite)}"""
+    campos = ("codigo", "documento", "cliente", "obra", "data", "observacao",
+              "link", "recebido", "retido", "a_receber", "medicao")
+    saida = []
+    for linha in consultar(sql, [REC] + list(params)):
+        d = dict(zip(campos, linha))
+        for campo in ("recebido", "retido", "a_receber"):
+            d[campo] = float(d[campo] or 0)
+        d["bruto"] = d["recebido"] + d["retido"] + d["a_receber"]
+        d["documento"] = d["documento"] or ""
+        saida.append(d)
+    return saida
 
 
 def outras_receitas(f: Filtros, limite: int = 60) -> list[dict]:
@@ -1005,6 +1087,198 @@ def duas_datas_prontas() -> bool:
     return _lembrando(("duas_datas_prontas",), calcular)
 
 
+def extrato_da_conta(f: Filtros, busca="", categoria="", de="", ate="",
+                     ordem="data", pagina=1, por_pagina=200) -> dict:
+    """O EXTRATO: o que entrou e o que saiu de uma conta corrente, por data.
+
+    Pedido do dono em 21/09/2026, para poder conferir lado a lado com o OMIE:
+    *"seria até similar com o relatório analítico. Só que ao invés de ser o da
+    obra, seria o da conta corrente (…) e ali só iriam poder ser vistos os
+    lançamentos que aconteceram na conta corrente."*
+
+    TRES DIFERENCAS que separam isto do Analitico, e cada uma e o ponto:
+
+    1. **so o que virou dinheiro.** Titulo em aberto nao entra — extrato e
+       caixa, nao compromisso. Por isso nao ha coluna de vencimento: ela nao
+       significa nada aqui, e o dono disse isso com todas as letras;
+    2. **as duas pontas juntas**, entrada e saida, na ordem da data — que e
+       como o extrato do banco mostra e como da para comparar;
+    3. **NAO filtra por DRE.** Tarifa bancaria e rendimento ficam de fora do
+       resultado porque o plano financeiro do OMIE nao lhes da conta de DRE
+       (ver a conversa de 21/09). No extrato eles APARECEM, porque saiu e
+       entrou dinheiro de verdade — que e justamente o que o dono nao estava
+       conseguindo achar.
+    """
+    condicoes, extras = [PAGO, "ABS(pago_recebido) > 0.005"], []
+
+    if de:
+        condicoes.append("data >= CAST(? AS DATE)")
+        extras.append(de)
+    if ate:
+        condicoes.append("data <= CAST(? AS DATE)")
+        extras.append(ate)
+    if categoria:
+        condicoes.append("COALESCE(NULLIF(categoria,''), '(sem categoria)') = ?")
+        extras.append(categoria)
+    if busca:
+        # o mesmo campo unico do Analitico: nome, documento ou observacao
+        condicoes.append("(razao_social ILIKE ? OR numero_documento ILIKE ?"
+                         " OR observacao ILIKE ? OR cnpj_cpf ILIKE ?)")
+        alvo = f"%{busca}%"
+        extras.extend([alvo, alvo, alvo, alvo])
+
+    # O extrato mostra o dinheiro andando entre contas tambem: transferencia
+    # SAI do resultado, mas nao sai do extrato — ela aconteceu na conta.
+    sem_corte = Filtros(anos=f.anos, projetos=f.projetos,
+                        departamentos=f.departamentos, contas=f.contas,
+                        excluir_trf=False)
+    where, params = sem_corte.where(" AND ".join(condicoes), extras)
+
+    (linhas_total, entradas, saidas) = consultar(
+        f"""SELECT COUNT(*),
+                   COALESCE(SUM(CASE WHEN pago_recebido > 0
+                                     THEN pago_recebido ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN pago_recebido < 0
+                                     THEN -pago_recebido ELSE 0 END), 0)
+              FROM fato{where}""", params)[0]
+
+    ordens = {"data": "data, codigo_lancamento",
+              "data_desc": "data DESC, codigo_lancamento",
+              "valor": "ABS(pago_recebido) DESC"}
+    ordenacao = ordens.get(ordem, ordens["data"])
+    pagina = max(1, int(pagina or 1))
+    salto = (pagina - 1) * por_pagina
+
+    campos = ("data", "codigo", "razao_social", "cnpj", "conta", "categoria",
+              "obra", "documento", "observacao", "valor", "link")
+    linhas = [dict(zip(campos, linha)) for linha in consultar(
+        f"""SELECT data, codigo_lancamento, razao_social, cnpj_cpf,
+                   COALESCE(conta_corrente,'(sem conta)'),
+                   COALESCE(NULLIF(categoria,''), '(sem categoria)'),
+                   {OBRA_OU_SEM}, numero_documento, observacao,
+                   pago_recebido, link
+              FROM fato{where}
+             ORDER BY {ordenacao}
+             LIMIT {int(por_pagina)} OFFSET {int(salto)}""", params)]
+    for l in linhas:
+        l["valor"] = float(l["valor"] or 0)
+
+    return {"linhas": linhas, "quantos": linhas_total or 0,
+            "entradas": float(entradas or 0), "saidas": float(saidas or 0),
+            "liquido": float(entradas or 0) - float(saidas or 0),
+            "pagina": pagina, "por_pagina": por_pagina,
+            "paginas": max(1, -(-(linhas_total or 0) // por_pagina))}
+
+
+def transferencias_entre_contas(f: Filtros, de="", ate="", destino="",
+                                limite=500, contas_visiveis=None) -> dict:
+    """De qual conta para qual conta o dinheiro foi — os DOIS lados juntos.
+
+    21/09/2026, o dono: *"se eu quiser filtrar, eu quero ver todas as
+    transferências num determinado período da conta tal para a conta tal.
+    Consigo visualizar isso aí?"*
+
+    Hoje, não: **no OMIE uma transferência são DOIS lançamentos separados**, um
+    saindo de uma conta e outro entrando na outra, sem nada que ligue um ao
+    outro. Filtrando a conta de origem, ele via a saída e nao via o destino.
+
+    O PAREAMENTO E POR DATA E VALOR, e a limitacao esta dita na tela: se duas
+    transferencias do MESMO valor acontecerem no MESMO dia, o par pode trocar de
+    destino. Nao ha como fazer melhor sem um vinculo que o OMIE nao guarda — e
+    inventar um vinculo que nao existe seria pior que mostrar o que se sabe.
+
+    O QUE NAO PAREOU vem junto, a parte, e e a informacao mais util da tela:
+    saida sem entrada do outro lado quase sempre quer dizer que o outro
+    lancamento nao esta classificado como transferencia."""
+    condicoes = [PAGO, "analise = 'TRF'", "ABS(pago_recebido) > 0.005"]
+    extras = []
+    if de:
+        condicoes.append("data >= CAST(? AS DATE)")
+        extras.append(de)
+    if ate:
+        condicoes.append("data <= CAST(? AS DATE)")
+        extras.append(ate)
+
+    # SEM o filtro de conta: para achar o outro lado e preciso enxergar as duas
+    # pontas. O recorte por conta entra depois, em Python, ja sabendo o par.
+    amplo = Filtros(anos=f.anos, projetos=f.projetos, excluir_trf=False)
+    where, params = amplo.where(" AND ".join(condicoes), extras)
+
+    linhas = consultar(
+        f"""SELECT data, COALESCE(conta_corrente,'(sem conta)'), pago_recebido,
+                   codigo_lancamento, razao_social,
+                   COALESCE(NULLIF(categoria,''), '(sem categoria)')
+              FROM fato{where}
+             ORDER BY data, ABS(pago_recebido) DESC
+             LIMIT 20000""", params)
+
+    saidas, entradas = [], []
+    for data, conta, valor, cod, razao, categoria in linhas:
+        registro = {"data": data, "conta": conta, "valor": abs(float(valor or 0)),
+                    "codigo": cod, "razao_social": razao or "",
+                    "categoria": categoria}
+        (saidas if float(valor or 0) < 0 else entradas).append(registro)
+
+    # Pareia saida com entrada de MESMA data e MESMO valor. Cada entrada so
+    # serve a uma saida — senao uma transferencia apareceria duas vezes.
+    por_chave = {}
+    for e in entradas:
+        por_chave.setdefault((e["data"], round(e["valor"], 2)), []).append(e)
+
+    pares, sem_par = [], []
+    for s_ in saidas:
+        disponiveis = por_chave.get((s_["data"], round(s_["valor"], 2)), [])
+        par = next((e for e in disponiveis if e["conta"] != s_["conta"]), None)
+        if par is None:
+            sem_par.append(dict(s_, sentido="saída sem entrada do outro lado"))
+            continue
+        disponiveis.remove(par)
+        pares.append({"data": s_["data"], "valor": s_["valor"],
+                      "origem": s_["conta"], "destino": par["conta"],
+                      "codigo_saida": s_["codigo"], "codigo_entrada": par["codigo"],
+                      "categoria": s_["categoria"]})
+    for restantes in por_chave.values():
+        for e in restantes:
+            sem_par.append(dict(e, sentido="entrada sem saída do outro lado"))
+
+    # O recorte da tela: a conta filtrada aparece como origem OU como destino —
+    # "as transferencias DESTA conta" sao as duas coisas.
+    if f.contas:
+        alvo = set(f.contas)
+        pares = [p for p in pares
+                 if p["origem"] in alvo or p["destino"] in alvo]
+        sem_par = [x for x in sem_par if x["conta"] in alvo]
+    if destino:
+        pares = [p for p in pares if p["destino"] == destino]
+        sem_par = []
+
+    # Quem so pode ver certas contas nao pode descobrir o NOME das outras por
+    # aqui. O dinheiro foi para algum lugar, e isso ele ve; para onde, nao.
+    if contas_visiveis is not None:
+        podem = set(contas_visiveis)
+        for par in pares:
+            for ponta in ("origem", "destino"):
+                if par[ponta] not in podem:
+                    par[ponta] = "(outra conta)"
+
+    pares.sort(key=lambda p: (p["data"] or dt.date(1900, 1, 1), -p["valor"]))
+    total = sum(p["valor"] for p in pares)
+    return {"pares": pares[:limite], "sem_par": sem_par[:limite],
+            "quantos": len(pares), "total": total,
+            "quantos_sem_par": len(sem_par)}
+
+
+def categorias_do_extrato(f: Filtros) -> list[str]:
+    """As categorias que aparecem no recorte — para o filtro da tela."""
+    sem_corte = Filtros(anos=f.anos, projetos=f.projetos,
+                        departamentos=f.departamentos, contas=f.contas,
+                        excluir_trf=False)
+    where, params = sem_corte.where(f"{PAGO} AND ABS(pago_recebido) > 0.005")
+    return [c for (c,) in consultar(
+        f"""SELECT DISTINCT COALESCE(NULLIF(categoria,''), '(sem categoria)')
+              FROM fato{where} ORDER BY 1 LIMIT 300""", params)]
+
+
 def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
                        busca="", visao="comprometido", ordem="valor",
                        de="", ate="", base="movimento",
@@ -1216,7 +1490,17 @@ def _sql_tipos_no_saldo() -> str:
     return ", ".join(f"'{t}'" for t in sorted(TIPOS_NO_SALDO))
 
 
-TIPO_APORTE = _sql_tipo_aporte()
+# A decisão "é aporte, e de que tipo?" mora na coluna `tipo_aporte`, escrita na
+# montagem do fato (migração 017). A expressão em SQL fica como REDE, só para
+# as linhas ainda não recalculadas (NULL): assim a tela continua certa entre a
+# migração e o próximo "Só refazer os números" — lenta nessas linhas, mas
+# certa. Depois disso, cada consulta lê um texto pronto em vez de refazer dez
+# expressões regulares por linha, e o bloco que levava dois minutos abre em
+# menos de um segundo.
+#
+# '' na coluna quer dizer "não é aporte"; o NULLIF devolve isso como NULL, que
+# é o que todas as consultas já esperavam.
+TIPO_APORTE = f"NULLIF(COALESCE(tipo_aporte, {_sql_tipo_aporte()}), '')"
 NO_SALDO = _sql_tipos_no_saldo()
 
 # Nome de quem aportou e obra onde entrou — com o mesmo rótulo de "faltando" que
@@ -1320,8 +1604,9 @@ def aportes(f: Filtros) -> dict:
                  for l in _agregado_de_aporte(f, [_SOCIO_AGRUPADO])]
     por_obra = [dict(l, obra=l["chaves"][0], socio=l["chaves"][1])
                 for l in _agregado_de_aporte(f, [_OBRA, _SOCIO_AGRUPADO])]
-    por_tipo = [dict(l, obra=l["chaves"][0], tipo=l["chaves"][1])
-                for l in _agregado_de_aporte(f, [_OBRA, TIPO_APORTE])]
+    # O recorte "por tipo" saiu em 22/09/2026 — o dono: "tá errado, acho que
+    # nem precisa dela; tô achando os dados em duplicidade". Era a mesma soma
+    # do "por obra" aberta por outro eixo, e confundia mais do que dizia.
 
     # "Falta p/ igualar": a distância até o MAIOR aportador da mesma obra. É uma
     # referência de igualdade, não uma cobrança — o sistema não conhece a quota
@@ -1338,7 +1623,7 @@ def aportes(f: Filtros) -> dict:
         l["pct"] = (l["aportado"] / total_ap * 100) if total_ap else 0.0
 
     return {
-        "por_socio": por_socio, "por_obra": por_obra, "por_tipo": por_tipo,
+        "por_socio": por_socio, "por_obra": por_obra,
         "dividendos": dividendos_por_socio(f),
         "lancamentos": lancamentos_de_aporte(f),
         "aportado": total_ap, "devolvido": total_dev,
@@ -1986,6 +2271,58 @@ def cobertura_das_observacoes() -> dict:
             "pct": round((com_obs or 0) * 100 / (total or 1), 1)}
 
 
+def conferencia_das_contas() -> dict:
+    """A conta que o relatorio mostra e a de onde o dinheiro saiu?
+
+    22/09/2026, o dono: *"refiz os numeros do painel, mas o problema das contas
+    permaneceu"*. O OMIE guarda cada baixa em duas pernas: a CONSOLIDADA (o
+    resumo do titulo, que repete a conta do titulo — a da previsao) e a
+    BANCARIA (uma por conta que o dinheiro tocou). Esta conferencia mede, na
+    base de verdade, quantas pernas de cada tipo existem e em quantas a conta
+    e DIFERENTE da do titulo. Se a consolidada quase nunca difere e a bancaria
+    difere, o relatorio tem de ler a bancaria — e e isso que o `fato` faz
+    desde hoje.
+
+    So mede. Nao altera nada."""
+    por_perna = {}
+    for perna, pernas, diferentes, sem_conta in consultar(
+        """SELECT CASE WHEN m.cliquidado = 'S' OR COALESCE(m.nvalliquido, 0) > 0
+                       THEN 'consolidada' ELSE 'bancaria' END,
+                  COUNT(*),
+                  COUNT(*) FILTER (WHERE m.ncodcc IS NOT NULL
+                                     AND m.ncodcc::text <> COALESCE(t.id_conta_corrente::text, '')),
+                  COUNT(*) FILTER (WHERE m.ncodcc IS NULL)
+             FROM movimentos m
+             JOIN titulos t ON t.codigo_lancamento_omie = m.ncodtitulo
+            WHERE COALESCE(m.nvalpago, 0) > 0 AND COALESCE(m.cliquidado, '') <> 'N'
+            GROUP BY 1"""):
+        por_perna[perna] = {"pernas": pernas or 0, "diferentes": diferentes or 0,
+                            "sem_conta": sem_conta or 0}
+
+    exemplos = [{"titulo": cod, "natureza": "Receber" if nat == "R" else "Pagar",
+                 "prevista": prev or "(sem conta)", "bancaria": banc or "(sem conta)",
+                 "valor": float(v or 0), "data": dtp or "—"}
+                for cod, nat, prev, banc, v, dtp in consultar(
+        """SELECT t.codigo_lancamento_omie, t.natureza, cp.descricao, cb.descricao,
+                  m.nvalpago::float8, m.ddtpagamento
+             FROM movimentos m
+             JOIN titulos t ON t.codigo_lancamento_omie = m.ncodtitulo
+             LEFT JOIN contas_correntes cp ON cp.codigo = t.id_conta_corrente
+             LEFT JOIN contas_correntes cb ON cb.codigo = m.ncodcc
+            WHERE NOT (m.cliquidado = 'S' OR COALESCE(m.nvalliquido, 0) > 0)
+              AND COALESCE(m.nvalpago, 0) > 0 AND COALESCE(m.cliquidado, '') <> 'N'
+              AND m.ncodcc IS NOT NULL
+              AND m.ncodcc::text <> COALESCE(t.id_conta_corrente::text, '')
+            ORDER BY m.nvalpago DESC LIMIT 30""")]
+
+    bancaria = por_perna.get("bancaria", {"pernas": 0, "diferentes": 0, "sem_conta": 0})
+    consolidada = por_perna.get("consolidada", {"pernas": 0, "diferentes": 0, "sem_conta": 0})
+    return {"bancaria": bancaria, "consolidada": consolidada, "exemplos": exemplos,
+            # sem perna bancaria a base NAO TEM a conta real: ai o conserto no
+            # fato nao muda nada e a conta tem de vir de outra listagem do OMIE
+            "tem_perna_bancaria": bancaria["pernas"] > 0}
+
+
 def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
     """De onde a diferença do bloco de Aportes vem — corte a corte.
 
@@ -2256,3 +2593,103 @@ def departamentos_administrativos() -> list[str]:
         f"SELECT DISTINCT {OBRA_OU_SEM} FROM fato "
         " WHERE departamento ILIKE '%BWS%' OR departamento ILIKE '%CONS%' "
         "    OR departamento ILIKE '%ADM%' ORDER BY 1")]
+
+
+# ---------------------------------------------------------------------------
+# A montagem do cenário: as contas da matriz, abertas para escolher
+# ---------------------------------------------------------------------------
+# O dono, sobre a tela antiga de regras: "não adianta uma coisa que eu tenho que
+# digitar coisa por coisa para sair colocando. Tem que ser um negócio realmente
+# fácil de fazer."
+#
+# Por isso a tela não pede cadastro: mostra o que a matriz gastou, do maior para
+# o menor, com um campo de percentual ao lado. Estas consultas alimentam essa
+# lista em três níveis — grupo, categoria e o lançamento individual.
+
+def lancamentos_administrativos(deptos_admin, medida: str = "comprometido", *,
+                                grupo: str = "", categoria: str = "",
+                                limite: int = 400) -> list[dict]:
+    """Os lançamentos da matriz, um a um, para marcar exceções.
+
+    O teto existe porque esta lista é para ESCOLHER, não para somar: quem quer o
+    total tem o nível de cima, que sai agregado do banco. Sem teto, abrir um
+    grupo grande traria milhares de linhas para dentro de um `select` da tela."""
+    if not deptos_admin:
+        return []
+    valor = _medida_de_despesa(medida)
+    onde = ["analise = 'DRE'", "tipo = ?", "departamento = ANY(?)"]
+    params = [PAG, list(deptos_admin)]
+    if grupo:
+        onde.append("TRIM(COALESCE(grupo,'')) = ?")
+        params.append(grupo)
+    if categoria:
+        onde.append("TRIM(COALESCE(categoria,'')) = ?")
+        params.append(categoria)
+    sql = f"""
+        SELECT codigo_lancamento,
+               COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
+               data,
+               TRIM(COALESCE(grupo,'')), TRIM(COALESCE(categoria,'')),
+               COALESCE(razao_social,''), COALESCE(numero_documento,''),
+               COALESCE(observacao,''), COALESCE(link,''),
+               SUM({valor})
+          FROM fato
+         WHERE {' AND '.join(onde)}
+         GROUP BY 1,2,3,4,5,6,7,8,9
+        HAVING ABS(SUM({valor})) > 0.005
+         ORDER BY ABS(SUM({valor})) DESC
+         LIMIT {int(limite)}"""
+    campos = ("codigo", "mes", "data", "grupo", "categoria", "credor",
+              "documento", "observacao", "link", "valor")
+    return [dict(zip(campos, (str(l[0] or ""), l[1], l[2], l[3], l[4], l[5],
+                              l[6], l[7], l[8], float(l[9] or 0))))
+            for l in consultar(sql, params)]
+
+
+def lancamentos_administrativos_por_codigo(deptos_admin, codigos,
+                                           medida: str = "comprometido") -> list[dict]:
+    """Só os lançamentos marcados um a um — para a conta tirá-los do agregado.
+
+    Sem isto o mesmo dinheiro contaria duas vezes: uma dentro do balde da
+    categoria e outra com o percentual próprio."""
+    if not deptos_admin or not codigos:
+        return []
+    valor = _medida_de_despesa(medida)
+    sql = f"""
+        SELECT codigo_lancamento,
+               COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
+               TRIM(COALESCE(grupo,'')), TRIM(COALESCE(categoria,'')),
+               SUM({valor})
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ? AND departamento = ANY(?)
+           AND codigo_lancamento = ANY(?)
+         GROUP BY 1, 2, 3, 4"""
+    numeros = []
+    for c in codigos:
+        try:
+            numeros.append(int(str(c).strip()))
+        except (TypeError, ValueError):
+            continue
+    if not numeros:
+        return []
+    campos = ("codigo", "mes", "grupo", "categoria", "valor")
+    return [dict(zip(campos, (str(l[0] or ""), l[1], l[2], l[3], float(l[4] or 0))))
+            for l in consultar(sql, [PAG, list(deptos_admin), numeros])]
+
+
+def receita_por_obra_mes(medida: str = "comprometido") -> list[tuple]:
+    """O faturamento de cada obra, mês a mês — a outra régua do rateio.
+
+    Mesmo formato do `custo_de_pessoal_por_obra_mes` (mês em texto 'AAAA-MM'),
+    para as duas réguas serem intercambiáveis sem a conta saber qual é qual.
+    As retenções ficam de fora: imposto retido não é dinheiro da obra."""
+    valor = _medida(medida)
+    sql = f"""
+        SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
+               {OBRA_OU_SEM},
+               ABS(SUM({valor}))
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ? AND NOT ({RETIDO})
+         GROUP BY 1, 2 HAVING ABS(SUM({valor})) > 0.005"""
+    return [(mes, obra, float(v or 0))
+            for mes, obra, v in consultar(sql, [REC])]

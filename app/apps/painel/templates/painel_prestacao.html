@@ -40,7 +40,18 @@
      style="text-decoration:none; align-self:flex-end">Cenários de rateio</a>
   <a class="btn secundario" href="{{ url_for('painel.prestacao_parametros') }}"
      style="text-decoration:none; align-self:flex-end">Parâmetros e regras</a>
+  <a class="btn" href="{{ url_for('painel.cenario_montagem') }}"
+     style="text-decoration:none; align-self:flex-end">Cenário — tudo num lugar só</a>
 </form>
+
+<div class="aviso">
+  <b>Existe agora um ambiente único para a prestação de contas.</b> Nele você
+  nomeia sócios e parceiros, escolhe a régua (mão de obra ou faturamento), diz
+  quais contas da matriz se dividem e em quanto, e guarda isso com nome para
+  comparar com outro jeito de dividir. Esta tela aqui continua funcionando
+  exatamente como antes, com as regras antigas — nada foi trocado sem você ver.
+  <a href="{{ url_for('painel.cenario_montagem') }}">Abrir o cenário</a>.
+</div>
 
 <!-- ===================== POSIÇÃO DOS SÓCIOS ===================== -->
 <div class="tabela-wrap" style="margin-bottom:14px">
@@ -87,7 +98,7 @@
 <div class="cartao">
   <div class="cartao-cab">
     <h3>Resultado por projeto</h3>
-    <small>antes e depois do rateio da estrutura</small>
+    <small>antes e depois da estrutura e dos juros</small>
   </div>
   <div class="tabela-rolagem" style="max-height:400px">
     <table>
@@ -99,6 +110,7 @@
           <th class="sem-ordem direita">Despesas</th>
           <th class="sem-ordem direita">Resultado direto</th>
           <th class="sem-ordem direita">Rateio recebido</th>
+          <th class="sem-ordem direita">Juros de empréstimo</th>
           <th class="sem-ordem direita">Resultado</th>
         </tr>
       </thead>
@@ -111,6 +123,7 @@
           <td class="dados direita">{{ brl(n.despesas) }}</td>
           <td class="dados direita {{ classe_valor(n.resultado_direto) }}">{{ brl(n.resultado_direto) }}</td>
           <td class="dados direita">{{ brl(n.rateio) }}</td>
+          <td class="dados direita">{{ brl(n.juros) }}</td>
           <td class="dados direita {{ classe_valor(n.resultado) }}"><b>{{ brl(n.resultado) }}</b></td>
         </tr>
         {% endfor %}
@@ -121,8 +134,79 @@
     <b>Resultado direto</b> é só o que aconteceu na obra. O <b>rateio</b> é o
     pedaço do custo da matriz e da filial que coube a ela, dividido na proporção
     do custo de pessoal — obra com mais gente consome mais estrutura.
+    {% if juros_por_deficit %}Os <b>juros de empréstimo</b> seguem outra régua:
+    caem mês a mês em quem estava com o caixa negativo, na proporção do buraco.
+    Obra que se paga sozinha não carrega juro.{% endif %}
   </p>
 </div>
+
+<!-- ===================== JUROS PELO DÉFICIT ===================== -->
+{% if juros_por_deficit and juros_por_obra %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Juros de empréstimo — quem demandou o caixa</h3>
+    <small>{{ brl(juros_total) }} no total</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    O juro não é custo de estrutura: é o preço de ter faltado dinheiro. Por isso
+    ele não se divide por quem tem mais gente, e sim por quem estava no vermelho
+    no mês em que o juro foi pago — na proporção do tamanho do buraco de cada um.
+    O caixa de cada obra é acumulado desde o começo, e já inclui o rateio da
+    estrutura que coube a ela.
+  </p>
+  <div class="tabela-rolagem" style="max-height:340px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Juros que coube</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in juros_por_obra %}
+        <tr>
+          <td class="desc">{{ l.obra }}</td>
+          <td class="dados direita">{{ brl(l.valor) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if juros_memoria %}
+<details class="cartao">
+  <summary style="cursor:pointer; padding:6px 0"><b>Memória mês a mês</b>
+    — conferir a conta em vez de acreditar nela</summary>
+  <div class="tabela-rolagem" style="max-height:340px; margin-top:10px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Juros pagos</th>
+          <th class="sem-ordem direita">Obras no vermelho</th>
+          <th class="sem-ordem direita">Buraco somado</th>
+          <th class="sem-ordem">Maior devedora</th>
+          <th class="sem-ordem">Régua</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in juros_memoria %}
+        <tr>
+          <td class="desc">{{ l.mes }}</td>
+          <td class="dados direita">{{ brl(l.juros) }}</td>
+          <td class="dados direita">{{ l.obras_no_vermelho }}</td>
+          <td class="dados direita">{{ brl(l.deficit_total) }}</td>
+          <td class="desc">{{ l.maior }}</td>
+          <td class="desc">{{ l.criterio }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+{% endif %}
 
 <!-- ===================== QUOTAS ===================== -->
 {% if quotas %}

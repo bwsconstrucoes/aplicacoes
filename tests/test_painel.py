@@ -138,7 +138,16 @@ class ConexaoFalsa:
         if "FROM contas_correntes" in sql:
             return self.contas
         if "FROM movimentos" in sql:
-            return self.movimentos
+            # Duas consultas leem a mesma tabela: a AGREGADA (uma linha por
+            # título) e a DETALHADA (uma por baixa), que desde 21/09/2026
+            # alimenta a divisão do título pago em parcelas. O dublê guarda só
+            # a forma agregada e monta a outra a partir dela.
+            if "nvalliquido" not in sql:
+                return self.movimentos
+            return [(cod, data, pago, pago, juros, multa, desc, ncc, "", liq,
+                     "", aberto)
+                    for (cod, data, liq, pago, aberto, desc, juros, multa,
+                         ncc) in self.movimentos]
         if "FROM rateio" in sql:
             return self.rateios
         if "FROM titulos" in sql:
@@ -198,7 +207,7 @@ def test_rateio_divide_o_titulo_entre_as_obras():
         [_titulo(1, "R", 1000.0)],
         rateios=[(1, "D1", "Obra Um", 70.0, 700.0),
                  (1, "D2", "Obra Dois", 30.0, 300.0)],
-        movimentos=[(1, "15/03/2025", "S", 1000.0, 0.0, 0.0, 0.0, 0.0)],
+        movimentos=[(1, "15/03/2025", "S", 1000.0, 0.0, 0.0, 0.0, 0.0, 7)],
         categorias=CATALOGO, clientes=CLIENTES, obras=OBRAS, contas=CONTAS)
     linhas = [dict(zip(fato.COLUNAS_FATO, l)) for l in fato.gerar_linhas_fato(conn)]
 
@@ -214,7 +223,7 @@ def test_receita_com_imposto_retido_gera_linha_separada():
     conn = ConexaoFalsa(
         [_titulo(1, "R", 1000.0, retencoes=(50.0, 30.0, 0, 0, 0, 0))],
         rateios=[(1, "D1", "Obra Um", 100.0, 1000.0)],
-        movimentos=[(1, "15/03/2025", "S", 920.0, 0.0, 0.0, 0.0, 0.0)],
+        movimentos=[(1, "15/03/2025", "S", 920.0, 0.0, 0.0, 0.0, 0.0, 7)],
         categorias=CATALOGO, clientes=CLIENTES, obras=OBRAS, contas=CONTAS)
     linhas = [dict(zip(fato.COLUNAS_FATO, l)) for l in fato.gerar_linhas_fato(conn)]
 
@@ -234,7 +243,7 @@ def test_despesa_entra_negativa():
     conn = ConexaoFalsa(
         [_titulo(1, "P", 500.0, status="Pago")],
         rateios=[(1, "D1", "Obra Um", 100.0, 500.0)],
-        movimentos=[(1, "15/03/2025", "S", 500.0, 0.0, 0.0, 0.0, 0.0)],
+        movimentos=[(1, "15/03/2025", "S", 500.0, 0.0, 0.0, 0.0, 0.0, 7)],
         categorias=CATALOGO, clientes=CLIENTES, obras=OBRAS, contas=CONTAS)
     linha = dict(zip(fato.COLUNAS_FATO, next(iter(fato.gerar_linhas_fato(conn)))))
     assert linha["pago_recebido"] == pytest.approx(-500.0)
@@ -393,6 +402,8 @@ RESPOSTAS_FALSAS = {
     "DISTINCT ano": [(2025,), (2024,)],
     "DISTINCT projeto": [("PROJ-A",), ("PROJ-B",)],
     "DISTINCT departamento": [("Obra Um",), ("Obra Dois",)],
+    # a conta corrente entrou na barra lateral com o Extrato, em 21/09/2026
+    "DISTINCT conta_corrente": [("Bradesco 22069-8",), ("Itaú 7011-4",)],
     # o carimbo da base: e ele que diz se as listas guardadas ainda valem
     "MAX(fim) FROM execucoes": [(dt.datetime(2026, 9, 2, 3, 12),)],
     # as colunas de vencimento/pagamento já preenchidas — a tela sem o aviso.
@@ -497,9 +508,12 @@ def _consultar_falso(sql, params=()):
                  dt.date(2025, 4, 1), dt.date(2025, 4, 8), 7)]
     if "medicao_rotulo" in sql and "COUNT(*)" in sql:           # os totais
         return [(3, 7000.0, 300.0, 500.0)]
-    if "medicao_rotulo" in sql:                                 # as medições
+    if "GROUP BY codigo_lancamento" in sql and "MAX(observacao)" in sql:  # um título
+        return [(998877, "NF123", "CLIENTE A", "Obra Um", dt.date(2025, 5, 2),
+                 "OBRA1|Medição No: 3", "", 7000.0, 300.0, 500.0, "OBRA1 | Medição 3")]
+    if "medicao_rotulo" in sql:                                 # a receita, um título por linha
         return [("OBRA1 | Medição 3", "CLIENTE A", "Obra Um", "PROJ-A",
-                 "NF123", "", dt.date(2025, 5, 2), 7000.0, 300.0, 500.0)]
+                 "NF123", "", dt.date(2025, 5, 2), 7000.0, 300.0, 500.0, 998877)]
     if "categoria <> 'Receita de Obras'" in sql:
         return [("Estorno de Despesas", 900.0, 0.0, 4)]
     if "FROM fato_recebimentos" in sql:
@@ -915,7 +929,7 @@ def test_aba_de_aportes_mostra_os_quatro_recortes(painel):
     assert "Aportes e devoluções" in html
     assert "Por sócio ou parceiro" in html
     assert "Por obra" in html
-    assert "Por tipo" in html
+    assert "Por tipo" not in html      # saiu em 22/09/2026: "dados em duplicidade"
     assert "Lançamentos" in html
     assert "Falta p/ igualar" in html
     assert "SÓCIO A" in html
@@ -973,7 +987,7 @@ def test_o_excel_de_aportes_tem_uma_aba_por_recorte(painel):
     assert r.status_code == 200
     livro = load_workbook(io.BytesIO(r.get_data()))
     assert livro.sheetnames == [
-        "Aportes por Socio", "Aportes por Obra", "Aportes por Tipo",
+        "Aportes por Socio", "Aportes por Obra",
         "Dividendos", "Lancamentos de Aporte", "Resultado x Dividendos"]
 
 
@@ -1147,8 +1161,13 @@ def test_saber_se_a_base_esta_vazia_nao_conta_a_base_inteira(painel, monkeypatch
 
 
 def test_as_listas_de_opcoes_nao_sao_refeitas_a_cada_tela(painel, monkeypatch):
-    """Anos, projetos e obras só mudam quando entra carga nova. Refazer as três
-    varreduras a cada clique era o grosso do tempo de abertura."""
+    """Anos, projetos, obras e contas só mudam quando entra carga nova. Refazer
+    as varreduras a cada clique era o grosso do tempo de abertura.
+
+    São QUATRO desde 21/09/2026, quando a conta corrente entrou na barra
+    lateral com o Extrato — e é justamente por isso que este teste existe: cada
+    lista nova é mais uma varredura, e guardá-las é o que impede a tela de ficar
+    lenta de novo."""
     from app.apps.painel import consultas
     consultas.esquecer_listas()
     contadas = []
@@ -1157,10 +1176,10 @@ def test_as_listas_de_opcoes_nao_sao_refeitas_a_cada_tela(painel, monkeypatch):
 
     consultas.opcoes_de_filtro()
     distintos = lambda: sum(1 for s in contadas if "SELECT DISTINCT" in s)
-    assert distintos() == 3                      # a primeira vez paga
+    assert distintos() == 4                      # a primeira vez paga
     consultas.opcoes_de_filtro()
     consultas.opcoes_de_filtro()
-    assert distintos() == 3                      # as seguintes, não
+    assert distintos() == 4                      # as seguintes, não
 
 
 def test_carga_nova_joga_fora_a_lista_guardada(painel, monkeypatch):

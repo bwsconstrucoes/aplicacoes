@@ -1,0 +1,352 @@
+{% extends "painel_base.html" %}
+{% import "painel_grafico_linhas.html" as grl %}
+{% block titulo %}Resultado do cenário — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Resultado do cenário
+  <small>o resultado final por obra, e quanto é de direito de cada um</small>
+</h2>
+
+<form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
+  <div class="campo" style="max-width:360px">
+    <label for="cenario">Cenário</label>
+    <select id="cenario" name="cenario" onchange="this.form.submit()">
+      {% for c in cenarios %}
+      <option value="{{ c.id }}" {% if c.id == cenario.id %}selected{% endif %}>
+        {{ c.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <span class="resumo">
+    Dividindo por <b>{{ criterios.get(cenario.criterio, cenario.criterio) }}</b>
+    &nbsp;·&nbsp; base <b>{{ cenario.medida }}</b>
+    &nbsp;·&nbsp; juros
+    <b>{{ 'por quem demandou caixa' if cenario.juros_por_deficit else 'junto da estrutura' }}</b>
+  </span>
+  <span class="espaco"></span>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.baixar', assunto='cenario', cenario=cenario.id,
+                      obra_grafico=obra_grafico) }}">⬇ Baixar tudo</a>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.baixar', assunto='cenario', formato='pdf',
+                      cenario=cenario.id, obra_grafico=obra_grafico) }}">⬇ PDF</a>
+  <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+     href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">← Montar</a>
+</form>
+
+<p class="cartao-dica" style="margin:-4px 0 14px">
+  O arquivo sai com <b>uma aba por recorte</b> — resultado por obra, quota de
+  cada um, estrutura por obra e mês a mês, juros por obra e mês a mês, o que
+  ficou sem dono — e com os <b>parâmetros deste cenário na primeira aba</b>.
+  Memória de cálculo sem as escolhas que a geraram não dá para conferir seis
+  meses depois.
+</p>
+
+{% if not quotas %}
+<div class="aviso erro">
+  <b>Ninguém foi nomeado neste cenário.</b> O resultado por obra aparece abaixo,
+  mas não há como dizer quanto é de direito de cada um sem os percentuais.
+  <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id) }}">Nomeie em Montar</a>.
+</div>
+{% endif %}
+
+<!-- ===================== POSIÇÃO DE CADA UM ===================== -->
+{% if posicao %}
+<div class="tabela-wrap" style="margin-bottom:14px">
+  <div class="tabela-barra">
+    <span class="resumo">
+      <b>Quota</b> = o que coube do resultado &nbsp;·&nbsp;
+      <b>Ajustes</b> = o que já foi retirado ou assumido &nbsp;·&nbsp;
+      <b>Saldo</b> = a diferença
+    </span>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Quem</th>
+          <th class="sem-ordem">Tipo</th>
+          <th class="sem-ordem direita">Obras</th>
+          <th class="sem-ordem direita">Quota</th>
+          <th class="sem-ordem direita">Ajustes</th>
+          <th class="sem-ordem direita">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in posicao %}
+        <tr>
+          <td class="desc"><b>{{ p.socio }}</b></td>
+          <td class="desc">{{ p.tipo }}</td>
+          <td class="dados direita">{{ p.projetos }}</td>
+          <td class="dados direita {{ classe_valor(p.quota) }}">{{ brl(p.quota) }}</td>
+          <td class="dados direita">{{ brl(p.ajustes) }}</td>
+          <td class="dados direita {{ classe_valor(p.saldo) }}"><b>{{ brl(p.saldo) }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- ===================== RESULTADO POR OBRA ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Resultado por obra</h3>
+    <small>pior primeiro &nbsp;·&nbsp; estrutura {{ brl(rateio_total) }}
+      &nbsp;·&nbsp; juros {{ brl(juros_total) }}</small>
+  </div>
+  <div class="tabela-rolagem" style="max-height:520px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Receita líquida</th>
+          <th class="sem-ordem direita">Despesas</th>
+          <th class="sem-ordem direita">Resultado direto</th>
+          <th class="sem-ordem direita">Estrutura</th>
+          <th class="sem-ordem direita">Juros</th>
+          <th class="sem-ordem direita">Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for nome, n in por_obra %}
+        <tr>
+          <td class="desc"><b>{{ nome }}</b></td>
+          <td class="dados direita">{{ brl(n.receita_liquida) }}</td>
+          <td class="dados direita">{{ brl(n.despesas) }}</td>
+          <td class="dados direita {{ classe_valor(n.resultado_direto) }}">{{ brl(n.resultado_direto) }}</td>
+          <td class="dados direita">{{ brl(n.rateio) }}</td>
+          <td class="dados direita">{{ brl(n.juros) }}</td>
+          <td class="dados direita {{ classe_valor(n.resultado) }}"><b>{{ brl(n.resultado) }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    <b>Resultado direto</b> é só o que aconteceu na obra. <b>Estrutura</b> é o
+    pedaço do custo da matriz que coube a ela, pela régua do cenário.
+    <b>Juros</b> é o preço do dinheiro que ela fez faltar — obra que se paga
+    sozinha não carrega nenhum.
+  </p>
+</div>
+
+<!-- ===================== A VIDA DA OBRA ===================== -->
+{% if trilha %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Como a obra se comportou</h3>
+    <small>o caixa acumulado, e por que ela precisou puxar juros</small>
+  </div>
+  <form method="get" class="tabela-barra" style="border:0; padding:0 0 10px">
+    <input type="hidden" name="cenario" value="{{ cenario.id }}">
+    <div class="campo" style="max-width:360px">
+      <label for="obra_grafico">Obra</label>
+      <select id="obra_grafico" name="obra_grafico" onchange="this.form.submit()">
+        {% for o in obras_para_grafico %}
+        <option value="{{ o }}" {% if o == obra_grafico %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+  {% if grafico %}{{ grl.grafico(grafico) }}{% endif %}
+  <p class="cartao-dica">
+    A linha azul é o caixa acumulado da obra, já com a estrutura que ela
+    recebeu. Onde ela fica abaixo de zero é onde a obra estava sendo bancada por
+    dinheiro de fora — e é exatamente nesses meses que o juro cai nela. A linha
+    vermelha é a mesma conta depois do juro absorvido.
+  </p>
+
+  <details>
+    <summary style="cursor:pointer; padding:6px 0"><b>Mês a mês de {{ obra_grafico }}</b></summary>
+    <div class="tabela-rolagem" style="max-height:360px; margin-top:10px">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Mês</th>
+            <th class="sem-ordem direita">Caixa do mês</th>
+            <th class="sem-ordem direita">Estrutura recebida</th>
+            <th class="sem-ordem direita">Acumulado</th>
+            <th class="sem-ordem direita">Juros do mês</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in trilha %}
+          <tr>
+            <td class="desc">{{ l.rotulo }}</td>
+            <td class="dados direita">{{ brl(l.caixa_do_mes) }}</td>
+            <td class="dados direita">{{ brl(l.rateio) }}</td>
+            <td class="dados direita {{ classe_valor(l.acumulado) }}">{{ brl(l.acumulado) }}</td>
+            <td class="dados direita">{{ brl(l.juros) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+{% endif %}
+
+<!-- ===================== AUDITORIA ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>A conta aberta</h3>
+    <small>para conferir, e não para acreditar</small>
+  </div>
+
+  <details open>
+    <summary style="cursor:pointer; padding:6px 0"><b>Estrutura — quanto cada obra absorveu</b></summary>
+    <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
+      <table>
+        <thead><tr><th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Estrutura</th></tr></thead>
+        <tbody>
+          {% for l in rateio_por_obra %}
+          <tr><td class="desc">{{ l.obra }}</td>
+            <td class="dados direita">{{ brl(l.valor) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <details>
+    <summary style="cursor:pointer; padding:6px 0"><b>Estrutura — mês a mês</b></summary>
+    <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Bolo a repartir</th>
+          <th class="sem-ordem direita">Obras</th>
+          <th class="sem-ordem">Quem levou mais</th>
+          <th class="sem-ordem direita">Fatia dela</th>
+        </tr></thead>
+        <tbody>
+          {% for l in rateio_memoria %}
+          <tr>
+            <td class="desc">{{ l.mes }}</td>
+            <td class="dados direita">{{ brl(l.pool) }}</td>
+            <td class="dados direita">{{ l.obras }}</td>
+            <td class="desc">{{ l.maior }}</td>
+            <td class="dados direita">{{ '%.1f'|format(l.maior_pct) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  {% if juros_por_obra %}
+  <details>
+    <summary style="cursor:pointer; padding:6px 0"><b>Juros — quanto cada obra absorveu</b></summary>
+    <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
+      <table>
+        <thead><tr><th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Juros</th></tr></thead>
+        <tbody>
+          {% for l in juros_por_obra %}
+          <tr><td class="desc">{{ l.obra }}</td>
+            <td class="dados direita">{{ brl(l.valor) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <details>
+    <summary style="cursor:pointer; padding:6px 0"><b>Juros — mês a mês</b></summary>
+    <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Juros pagos</th>
+          <th class="sem-ordem direita">Obras no vermelho</th>
+          <th class="sem-ordem direita">Buraco somado</th>
+          <th class="sem-ordem">Maior devedora</th>
+          <th class="sem-ordem">Régua</th>
+        </tr></thead>
+        <tbody>
+          {% for l in juros_memoria %}
+          <tr>
+            <td class="desc">{{ l.mes }}</td>
+            <td class="dados direita">{{ brl(l.juros) }}</td>
+            <td class="dados direita">{{ l.obras_no_vermelho }}</td>
+            <td class="dados direita">{{ brl(l.deficit_total) }}</td>
+            <td class="desc">{{ l.maior }}</td>
+            <td class="desc">{{ l.criterio }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+
+  {% if quotas %}
+  <details>
+    <summary style="cursor:pointer; padding:6px 0"><b>Quota de cada um, obra a obra</b></summary>
+    <div class="tabela-rolagem" style="max-height:380px; margin-top:10px">
+      <table>
+        <thead><tr>
+          <th class="sem-ordem">Quem</th>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">%</th>
+          <th class="sem-ordem direita">Base</th>
+          <th class="sem-ordem direita">Quota</th>
+          <th class="sem-ordem">Como foi contado</th>
+        </tr></thead>
+        <tbody>
+          {% for q in quotas %}
+          <tr>
+            <td class="desc">{{ q.socio }}</td>
+            <td class="desc">{{ q.obra }}</td>
+            <td class="dados direita">{{ '%.2f'|format(q.pct) }}%</td>
+            <td class="dados direita">{{ brl(q.base) }}</td>
+            <td class="dados direita {{ classe_valor(q.quota) }}">{{ brl(q.quota) }}</td>
+            <td class="desc">{{ q.visao }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</div>
+
+<!-- ===================== SOBRAS ===================== -->
+{% if sobras %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Custo que não coube em obra nenhuma</h3>
+    <small>{{ brl(total_sobras) }} no total</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    Aparece aqui em vez de sumir: é custo real da empresa que a régua não
+    conseguiu atribuir. Um cenário que "melhora" empurrando valor para cá não
+    melhorou nada.
+  </p>
+  <div class="tabela-rolagem" style="max-height:300px">
+    <table>
+      <thead><tr>
+        <th class="sem-ordem">De onde veio</th>
+        <th class="sem-ordem">Mês</th>
+        <th class="sem-ordem direita">Valor</th>
+        <th class="sem-ordem">Por quê</th>
+      </tr></thead>
+      <tbody>
+        {% for s in sobras %}
+        <tr>
+          <td class="desc">{{ s.origem }}</td>
+          <td class="desc">{{ s.mes }}</td>
+          <td class="dados direita">{{ brl(s.valor) }}</td>
+          <td class="desc">{{ s.motivo }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

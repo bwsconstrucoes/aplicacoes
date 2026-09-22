@@ -46,6 +46,20 @@ OPERACOES = {
     "receber": (URL_CONTARECEBER, "ConsultarContaReceber", "AlterarContaReceber"),
 }
 
+# EXCLUIR é a única coisa aqui que NÃO TEM VOLTA.
+#
+# Alterar categoria ou departamento erra para o lado do reparável: basta alterar
+# de novo. Excluir apaga o registro financeiro no OMIE, e recuperar é digitar
+# tudo outra vez, à mão, título por título — quando se sabe o que havia.
+#
+# Pedido do dono em 21/09/2026, com a escolha dele registrada: apagar no OMIE
+# mesmo (não só esconder do painel), e deixar o OMIE decidir sobre título com
+# baixa, em vez de o painel recusar por conta própria.
+EXCLUSOES = {
+    "pagar": (URL_CONTAPAGAR, "ExcluirContaPagar"),
+    "receber": (URL_CONTARECEBER, "ExcluirContaReceber"),
+}
+
 
 def tipo_do_titulo(tipo_do_fato: str) -> str:
     """"2. Contas a Pagar" -> "pagar". O fato guarda o rótulo por extenso."""
@@ -73,6 +87,15 @@ class OmieEscrita(OmieClient):
     def alterar_titulo(self, cadastro: dict, tipo: str) -> dict:
         url, _consultar, alterar = OPERACOES[tipo]
         return self._call(url, alterar, cadastro)
+
+    def excluir_titulo(self, codigo: int, tipo: str) -> dict:
+        """Apaga o título NO OMIE. Não há desfazer.
+
+        Manda só o código — é o que o OMIE pede, e é o que a consulta já usa.
+        Mandar o cadastro inteiro aqui seria convidar a recusa por campo
+        sobrando, e a mensagem dele não diz qual foi o culpado."""
+        url, excluir = EXCLUSOES[tipo]
+        return self._call(url, excluir, {"codigo_lancamento_omie": int(codigo)})
 
     def listar_departamentos(self, **kwargs):
         return self._listar(URL_DEPARTAMENTOS, "ListarDepartamentos",

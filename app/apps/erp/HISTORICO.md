@@ -54,6 +54,507 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### 🔍 A VARREDURA DOS CAMPOS — e por que ela foi feita num lugar só
+
+22/09/2026, depois de algumas horas usando o sistema:
+
+> *"Acho que precisa dar uma reanalisada nos campos. Às vezes tem campo assim
+> que fica comendo as informações, deveria ter uma quebra de linha, não tem (…)
+> campo de CPF, CNPJ, como não aparecer a formatação, já deveria aparecer. Os
+> campos que têm busca, dá uma melhorada nessa engrenagem das buscas (…) mas
+> não só para o que eu citei, de uma maneira geral também. Acho que tem que
+> fazer uma varredura mais profunda aí."*
+
+**A decisão que vale registrar não é o que foi consertado, é ONDE.** A queixa
+dele foi *"todas as telas têm algum detalhe assim"* — e é verdade. Consertar
+tela por tela custaria dias e deixaria de fora a próxima que alguém escrever,
+que é exatamente como o problema nasceu. Então **tudo foi para
+`erp_base.html`**, e o observador que já existia (o que põe caixa de busca em
+lista longa) passou a aplicar também as máscaras.
+
+Resultado: uma tela nova nasce com CNPJ formatado, busca decente e célula que
+não come texto, **sem ninguém lembrar de nada**.
+
+**1 · DOCUMENTO, TELEFONE E CEP GANHAM MÁSCARA SOZINHOS.** O campo é
+reconhecido pelo NOME (`cnpj`, `cpf`, `documento`, `telefone`, `celular`,
+`cep`…), inclusive dentro dos diálogos montados na hora. O banco continua
+guardando **só dígitos** — máscara é de leitura e digitação; guardar formatado
+faria "11.222.333/0001-81" e "11222333000181" virarem dois cadastros do mesmo
+CNPJ.
+
+Duas coisas que o cuidado exigiu:
+
+- **O cursor não pula para o fim** ao corrigir no meio do texto. Sem isso a
+  máscara é pior do que não ter.
+- **`perguntar()` passou a dar `name` aos campos.** Sem isso, as dezenas de
+  diálogos do ERP ficavam de fora — e foi essa a diferença entre consertar uma
+  tela e consertar o sistema.
+
+**O defeito que quase passou, e vale mais que o conserto:** a primeira versão do
+reconhecedor aceitava só hífen e sublinhado como fronteira do nome. Como o texto
+examinado é `"id nome"`, o CNPJ pegava — por causa do `_` em `cnpj_cpf` — e o
+**telefone não**. Funcionava o bastante para parecer certo. Só apareceu porque
+exercitei a máscara digitando um telefone de verdade no navegador, não por
+leitura de código.
+
+**2 · A CÉLULA MOSTRA DUAS LINHAS EM VEZ DE CORTAR NUMA.** A regra antiga estava
+certa no problema e apertada demais na solução: nome longo virava uma torre de
+quatro linhas, então cortou-se tudo em uma linha com reticências. Só que aí
+*"MATERIAL PARA A FUNDAÇÃO DO BLOCO B"* vira *"MATERIAL PARA A FUND…"*, e **o que
+distingue um lançamento do outro está no fim da frase**. Duas linhas é o acordo,
+e o texto inteiro fica no balãozinho — mas **só quando sobrou**, porque
+balãozinho repetindo o que já está escrito faz ninguém ler nenhum.
+
+**3 · A ENGRENAGEM DA BUSCA.** Além da espera e do teto (ver a seção da tela de
+lançamento), a comparação passou a ignorar três coisas que ela errava:
+
+- **acento** — "jose" não achava "JOSÉ", e ninguém digita acento com pressa;
+- **pontuação de documento** — colar "11.444.777/0001-61" da nota não achava
+  nada, porque o cadastro guarda só dígitos;
+- **ordem das palavras** — "silva joao" não achava "JOÃO DA SILVA".
+
+E as buscas das próprias telas (Empresas, Colaboradores, Fornecedores) passaram
+a achar o documento nas **duas formas** — agora que a tela mostra formatado,
+procurar pelo que está escrito na tela tem de funcionar.
+
+**A VARREDURA, medida:** 32 telas abertas no navegador e examinadas campo a
+campo — célula cortada sem balãozinho, documento sem formatação, campo sem
+máscara, lista longa sem busca, erro de JavaScript. **Zero pendências.** O
+teste `tests/test_formato_dos_campos.py` guarda as regras e varre os templates
+atrás de documento cru — ele achou três casos que a varredura no navegador não
+alcançou, porque estavam em trecho que só aparece depois de um clique.
+
+### 🧰 A TELA DE LANÇAMENTO, POR DENTRO (22/09/2026)
+
+Cinco coisas, todas achadas pelo dono usando o sistema, e a mais importante
+delas não era nenhuma das cinco — foi a frase dele no meio: *"putz, mas tô
+vendo que tem muitas falhas operacionais pequenas, isso vai dar muito trabalho
+pra corrigir. Toda tela existe várias."*
+
+**Vale registrar a resposta, porque ela muda como priorizar:** falha pequena
+achada USANDO é barata de consertar e cara de deixar. Cada uma dessas cinco
+levou de dez minutos a uma hora. O que custa caro é o que passa despercebido —
+como a competência indo para o mês errado, ou a crítica de duplicidade parando
+calada. Achar essas coisas com o sistema na mão é o método funcionando, não
+falhando.
+
+**1 · A BUSCA TRAVAVA — e o conserto vale para o ERP inteiro.**
+
+> *"Tem algo esquisito na busca pelo nome do credor, ele fica uns segundos meio
+> travado quando tentamos digitar, sem aparecer nada. Pensamos que não tá
+> funcionando."*
+
+A caixa de filtro que o ERP põe sozinha em lista longa refazia a lista inteira
+**a cada tecla**, clonando uma a uma todas as opções que casassem. Com 1.702
+credores (e 3.279 insumos na outra tela), digitar "jo" mandava o navegador criar
+milhares de elementos, e ele para de responder enquanto faz isso. Quem digita
+rápido enfileira uma refação por letra, e o travamento soma.
+
+Duas correções, e nenhuma resolve sozinha: **espera** de 140ms depois da última
+tecla (digitar uma palavra refaz uma vez, não cinco) e **teto** de 60 achados,
+com uma linha dizendo quantos ficaram de fora. O corte é DITO, nunca silencioso
+— lista cortada calada faz a pessoa jurar que o cadastro não existe.
+
+Isso conserta a busca de credor, de insumo, de categoria, de obra e de
+colaborador de uma vez só.
+
+**2 · LINHA DIGITÁVEL SÓ QUANDO A FORMA PEDE.** O campo ficava lá em Pix, em TED
+e em débito automático, com a dica "somente para boleto ou guia" dentro dele.
+Campo que não serve ao caminho escolhido não é neutro: faz parar para decidir se
+aquilo é com você, em toda parcela. Agora só aparece em BOLETO (obrigatório) e
+GUIA (opcional, porque DARF e GPS nem sempre trazem uma).
+
+**3 · CADASTRAR O CREDOR SEM SAIR DO LANÇAMENTO.**
+
+> *"Se o credor não tem cadastro, o ERP deve avisar e tem que ser permitido o
+> cadastro já a partir da tela."*
+
+Mesma regra de "uma porta" que já valia para empresa e obra. Tem botão
+**+ Cadastrar credor**, e quando o documento lido traz um emitente que não está
+cadastrado, um aviso o nomeia e oferece cadastrar com os dados já preenchidos —
+antes a pessoa procurava na lista um nome que não existia.
+
+**4 · A CONTA PENDENTE, E A SAÍDA DO BECO.** Este é o ponto que mais exigiu
+decisão.
+
+> *"'Dados bancários vivem no cadastro do credor, nunca no lançamento.' Isso
+> não tem sentido se tivermos cadastrando na hora. E ainda tem que prever como
+> sairemos da situação que cadastro o credor enquanto lanço e preciso voltar pra
+> cadastrar a forma de pgt."*
+
+A homologação em duas pessoas existe contra o golpe da troca de conta: quem
+lança não pode ser quem libera o destino do dinheiro. **Deixar o lançador criar
+conta já homologada destruiria o controle. Não deixar cadastrar nada obriga a
+jogar fora o lançamento e recomeçar.**
+
+A saída é PENDENTE: a conta nasce pendente, o lançamento é **gravado**, o título
+nasce **bloqueado** pela crítica C2 — que já existia —, e quem tem alçada
+homologa e manda **Reanalisar**. O trabalho não se perde e o controle não cai.
+
+Duas coisas tiveram de mudar para isso funcionar:
+
+- **A recusa no lançamento saiu.** Ela era REDUNDANTE: o motor de análise já
+  bloqueava o mesmo caso, e título bloqueado não pode ser aprovado nem pago. O
+  que continua recusado é o que é erro de verdade — conta de outro credor, ou
+  conta de forma diferente da escolhida.
+- **Nasceu o botão Reanalisar**, em Títulos. Sem ele o beco continuava: a
+  análise só rodava na criação, então homologar a conta não adiantava nada e o
+  título ficava preso para sempre. Reanalisar **não aprova** — devolve o título
+  para a fila, e a aprovação continua sendo de outra pessoa.
+
+E a dica que o dono apontou foi reescrita. A regra continua de pé, mas o que ela
+quer dizer é outra coisa: o dado bancário fica no CADASTRO do credor — é de lá
+que o pagamento sai, homologado por outra pessoa —, não solto dentro do título.
+Cadastrar na hora não fere isso.
+
+**5 · VARREDURA DOS CAMPOS**, como ele pediu. Duas incoerências a mais saíram:
+a dica da conta dizia *"este credor não tem conta BOLETO cadastrada"* em formas
+que não usam conta de credor nenhuma; e o rótulo **"Conta homologada"** passou a
+mentir quando a conta está pendente — virou **"Conta do credor"**.
+
+### 🐞 O CÓDIGO DA OBRA NÃO MUDAVA — e o formato do defeito vale mais que ele
+
+22/09/2026:
+
+> *"Tentei alterar o código de uma obra, ele salva, mas quando volta pro
+> cadastro não muda."*
+
+**A tela SEMPRE mandou o `codigo`.** A rota de atualização da obra tem uma lista
+fixa dos campos que aceita, e `codigo` não estava nela. **O que não está na
+lista é descartado sem reclamar** — então o salvamento respondia "ok", a tela
+recarregava do banco, e o código voltava o mesmo.
+
+**Erro que responde sucesso é pior que erro que responde erro:** não há o que
+investigar, e a pessoa fica achando que fez errado. Vale varrer as outras rotas
+com lista fixa de campos procurando o mesmo padrão.
+
+Agora dá para trocar, com três guardas: o código não pode ficar vazio, não pode
+ser o de outra obra (o recado diz **qual** obra já usa), e a troca fica
+registrada na trilha com o **de → para**. Trocar o código é RENOMEAR: os
+lançamentos apontam para o número interno da obra e seguem intactos.
+
+**O que fica de fora, e é decisão sua:** a planilha "C. Diários", que a emissão
+de NFS-e lê, casa a obra pelo código escrito nela. Renomear aqui **não** muda a
+planilha — se o código for usado lá, acerte nos dois lugares.
+
+
+### 📅 COMPETÊNCIA SAIU DO LANÇAMENTO — e continua certa
+
+22/09/2026:
+
+> *"No lançamento do título não queria precisar lançar competência, nem usamos
+> isso."*
+
+Ela saiu do **formulário**, não do sistema, e a distinção é o ponto: três coisas
+dependem da competência e nenhuma aparece naquela tela — o relatório analítico
+filtra e agrupa por ela; as críticas de duplicidade comparam *"mesmo valor no
+mesmo mês"* (D4) e *"aluguel já lançado neste mês"* (D5) por ela; e a NFS-e
+emitida leva a competência dentro do XML.
+
+**A dedução, nesta ordem:**
+
+1. a **emissão do documento**, quando informada — é a resposta contabilmente
+   certa, e é campo que a pessoa já preenche (ou que a leitura da nota preenche
+   sozinha);
+2. o **menor vencimento** entre as parcelas;
+3. hoje, como último recurso.
+
+**"Hoje" em primeiro lugar seria o erro fácil e caro:** uma nota de agosto
+lançada em outubro cairia no custo de outubro, e a obra fecharia o mês com
+despesa que não é dela.
+
+**A armadilha que quase passou:** a crítica de duplicidade é chamada ANTES de
+gravar, com o que está na tela. Sem a mesma dedução lá dentro, ela receberia
+competência vazia e as regras D4 e D5 parariam de rodar **caladas** — a falha
+mais cara que existe, porque ninguém nota que a rede de proteção saiu do ar. A
+dedução foi para os dois lados, e há teste exigindo que concordem.
+
+**Se um dia precisar do campo de volta** (nota de dezembro paga em janeiro, por
+exemplo), é meia hora de trabalho: o sistema continua aceitando a competência de
+quem a mandar — o importador do Pipefy manda.
+
+### ⚠️ MIGRAÇÃO 080 — apertar "Aplicar atualizações do banco"
+
+Liga a **conta bancária a uma empresa** e o **título à empresa que paga**. Sem
+ela, a tela de Configurações e a de Pagamentos abrem com erro.
+
+
+### 🏦 A CONTA BANCÁRIA PASSOU A TER DONA — e o título, a empresa que paga
+
+22/09/2026, o dono olhando a tela de contas:
+
+> *"Uma coisa que acho que precisa fazer, ou não? Associar banco a uma
+> empresa."*
+
+**Ele achou um buraco de verdade, e maior do que a pergunta sugeria.** A conta
+bancária era uma lista solta — descrição, banco, agência, conta — e não
+pertencia a empresa nenhuma. Quem tinha empresa era a OBRA; a conta, não. Três
+consequências, todas reais:
+
+1. Em toda tela que escolhe conta — pagar, importar extrato, apontar a conta da
+   obra — apareciam as contas de **todos os CNPJs misturadas**, sem nada dizendo
+   de quem era cada uma. A única defesa era a pessoa reconhecer pela descrição.
+2. Nada impedia **pagar a despesa de uma empresa pelo caixa de outra**. Esse
+   erro não se conserta no sistema: o dinheiro saiu do CNPJ errado, vira acerto
+   entre empresas e passa por movimentação bancária de verdade.
+3. *"Quanto tem em caixa nesta empresa"* não tinha resposta.
+
+**E TEM O OUTRO LADO, que é o que torna a conta-com-empresa útil:** o TÍTULO
+também não sabia de que empresa era — ela só existia indiretamente, pela obra
+do rateio. Sem os dois lados não há o que comparar na hora de pagar. Por isso a
+migração 080 cria as **duas** colunas.
+
+**A premissa que tornou a dedução possível**, e o dono confirmou com todas as
+letras ao ser perguntado se existia obra tocada por duas empresas: *"sempre uma
+empresa só"*. Com isso, a empresa do título é **dedução, não chute** — e o
+histórico foi preenchido na própria migração, pela mesma regra que o código usa
+daqui para a frente. Só recebeu empresa o título cujas obras de rateio apontam
+todas para a mesma, e nenhuma sem empresa; os demais ficaram em branco de
+propósito, porque "a primeira que apareceu" seria um número errado com cara de
+certo.
+
+**AVISA, NÃO BLOQUEIA — e a diferença é o coração do desenho.** Pagar por outra
+empresa ACONTECE de propósito: é empréstimo entre elas, e precisa ficar
+registrado como tal. Então, ao escolher a conta de outro CNPJ, a tela pergunta
+uma vez, com os dois nomes na frente, e o pagamento entra **com a observação
+escrita na trilha**. Travar de saída faria a pessoa pagar por fora do sistema, e
+aí o ERP não saberia de nada.
+
+**O que mais mudou:**
+
+- **Conta nova exige a empresa.** As contas que já existiam ficaram sem dona de
+  propósito — atribuir sozinho a empresa padrão seria adivinhar em cima de dado
+  bancário. A tela diz quantas faltam e tem o botão *definir empresa* na linha.
+- **Título rateado entre obras de EMPRESAS diferentes é recusado no
+  lançamento**, com os dois nomes no recado. É o mesmo raciocínio da regra de
+  09/09/2026 sobre contas diferentes: um título vira um pagamento só.
+- **Na tela de pagar**, as contas ficam em três grupos: as da empresa do título,
+  as de outra empresa ("vira acerto entre elas") e as sem empresa definida. Os
+  dois últimos são coisas diferentes — uma é decisão, a outra é cadastro pela
+  metade — e o texto diz isso.
+- **Conciliação e importação de extrato** mostram a empresa junto do nome da
+  conta. Importar o extrato na conta de outra empresa suja a conciliação
+  inteira, e o erro só aparece depois, quando nada casa.
+
+### 🐛 UM DEFEITO ACHADO NO CAMINHO — o bloco "copiar dados" da conta
+
+Ao ligar a conta à empresa, apareceu um defeito que estava lá desde sempre: o
+bloco pronto para colar (razão social, CNPJ, banco, agência, conta) trazia
+**sempre a razão social e o CNPJ da empresa PADRÃO**, em cima da agência e conta
+de qualquer uma das contas.
+
+Mandar para um cliente o **CNPJ de uma empresa com a conta de outra** é
+exatamente o erro que esse bloco existe para evitar — e ele não aparece na
+conferência, porque os dois lados estão certos sozinhos. Agora o cabeçalho sai
+da empresa DA CONTA, e conta sem dona não empresta o CNPJ de ninguém.
+
+**Obrigado a este defeito por uma lição:** funcionalidade que junta dois
+cadastros costuma revelar que um deles vinha do lugar errado.
+
+### 📐 O MODAL DO NOVO PEDIDO NÃO CABIA — e a causa vale para toda tela
+
+21/09/2026, o dono lançando um pedido por lista colada:
+
+> *"Mesmo na tela grande, o modal que abre não cabe as informações do insumo,
+> especificação, quantidade, unidade e obra. Visualmente fica ruim. Teria que
+> dar uma apertada mais, principalmente no insumo, quebrar linha. Na parte da
+> especificação também poder quebrar linha, que a especificação normalmente é
+> o que demanda mais texto."*
+
+**A CAUSA, e ela não era a largura do diálogo.** Os itens eram linhas de uma
+tabela de sete colunas, e a coluna do insumo era um `<select>` com
+`min-width:200px` e nenhum teto. Um `<select>` sem `max-width` cresce até caber
+a MAIOR opção da lista inteira — com 3.279 insumos cadastrados, basta um
+"VERGALHÃO CA-50 12,5MM X 12M NERVURADO ARCELORMITTAL" para a coluna passar de
+600px e empurrar quantidade, unidade e obra para fora do diálogo.
+
+**Isso vale em qualquer tela do ERP**, porque quem manda no tamanho não é o
+espaço disponível: é o texto mais longo do cadastro. Tela com `select` dentro de
+tabela precisa de `min-width:0` + `max-width:100%`, sempre.
+
+**O que mudou:** cada item deixou de ser linha de tabela e virou um **bloco**.
+O nome do insumo escolhido aparece **em texto no alto do bloco, quebrando
+linha** — porque `<select>` nunca quebra, ele corta, e nome de insumo é
+justamente onde a diferença está no fim ("… 12,5MM" contra "… 10MM"). A
+especificação virou campo de **várias linhas que cresce** com o que se escreve.
+Em tela estreita os campos empilham em vez de rolar para o lado — rolagem
+horizontal dentro de diálogo é onde some o botão de salvar.
+
+Três coisas que vieram de brinde e valem estar escritas:
+
+- **A linha que a IA não reconheceu ficava invisível.** O texto original era
+  posto na *dica* do campo de especificação — que some assim que a própria IA
+  preenche a especificação. Agora é linha própria, em destaque: *"não reconheci:
+  «…» — escolha o insumo"*.
+- **As opções passaram a ser montadas UMA vez** por abertura do diálogo. Eram
+  3.279 `<option>` por item: uma lista colada com 40 linhas gerava 130 mil
+  elementos e a tela travava alguns segundos, justo quando a pessoa espera o
+  resultado da leitura.
+- **A unidade ganhou `data-sem-busca`.** O ERP põe sozinho uma caixa de filtro
+  em lista com mais de 12 opções; são 16 unidades de uma a três letras (UN, M2,
+  SC…), e a caixa não cabia numa coluna de 92px — aparecia cortada e custava uma
+  linha de altura em cada item.
+
+**Verificado no navegador**, a 1440px e a 760px: nada vaza, o nome comprido
+aparece inteiro, o pedido grava com a especificação longa e a renumeração dos
+itens continua certa ao tirar um do meio.
+
+### ⚠️ MIGRAÇÃO 079 — apertar "Aplicar atualizações do banco"
+
+Guarda **até onde cada fornecedor vende** (abrangência, UFs e municípios). Sem
+ela, a tela de Fornecedores e o disparo automático abrem com erro.
+
+
+### 🗺️ A REGIÃO VIROU FILTRO DO DISPARO — e passou a ser obrigatória no cadastro
+
+21/09/2026, o dono olhando a tela de fornecedores:
+
+> *"Na cotação automática, eu acho que você não se atentou a isso, da
+> importância. Os fornecedores, a gente não pode colocar para disparar uma
+> cotação com qualquer fornecedor, tem que ter uma lógica. O fornecedor ele tem
+> a região que atende, e existe o local da obra. Porque se não é um fornecedor
+> que atenda a nível nacional, eu tenho que buscar na região da obra. Então, da
+> forma que está a gente simplesmente escreve de qualquer jeito, sem
+> padronização. Como vamos cruzar obra × fornecedor? Então é um item obrigatório
+> no cadastro, além do porte e dados para contato. E claro nome, CNPJ."*
+
+**Ele achou um buraco de verdade, e ele estava no lugar mais caro.** Até aqui, a
+região de atuação era texto livre — na planilha antiga havia *"CE"*, *"Ceará"*,
+*"Nordeste"*, *"NE"*, *"Fortaleza e região metropolitana"*, *"todo o Brasil"*,
+*"nacional"*, *"RMF"*, *"Tauá CE"*. Três pessoas escreveram a mesma coisa de
+sete jeitos, e nenhum deles dava para comparar com o município da obra.
+
+Pior: no planejamento do disparo, estar na mesma cidade da obra só **somava
+pontos**. Um fornecedor de São Paulo entrava numa cotação de obra no Cariri —
+atrás dos locais na lista, mas **dentro dela**. Pedir preço a quem não entrega
+naquele lugar deixa uma coluna vazia no mapa, e o mapa passa a parecer que teve
+menos concorrência do que teve.
+
+**O que mudou, em três partes:**
+
+**1. A região virou campo com forma.** Cada fornecedor passa a ter uma
+**abrangência** — NACIONAL, ESTADUAL, REGIONAL ou LOCAL —, mais a lista de UFs
+(para o estadual) ou de municípios (para o regional e o local). Não é mais
+texto: é dado que o sistema consegue cruzar com o município e a UF da obra.
+
+**2. O que já estava escrito foi traduzido, não jogado fora.** O botão
+**"Padronizar as regiões"** lê o texto antigo de cada fornecedor e converte:
+*"NE"*, *"Nordeste"* → as 9 UFs; *"RMF"*, *"Grande Fortaleza"* → os 19
+municípios da região metropolitana; *"Cariri"* → os 9 do Cariri; *"Tauá CE"* →
+município TAUÁ na UF CE; *"nacional"*, *"Brasil"*, *"todo o país"* → NACIONAL.
+Quando o texto traz mais de uma coisa, **vence o maior alcance** — quem escreveu
+"CE e Nordeste" atende o Nordeste.
+
+Rodado contra a planilha real de 1.702 fornecedores: **100% traduzidos, nenhum
+termo desconhecido**. Deu 40% ESTADUAL, 25% LOCAL, 22% NACIONAL, 11% REGIONAL.
+O que não der para traduzir fica marcado **"sem região"** e aparece num
+quadrinho clicável na tela — não some.
+
+**3. Quem não atende o lugar da obra não é mais sugerido.** No disparo
+automático, a região deixou de ser ponto e virou **porta**. E a tela diz o que
+ficou de fora e por quê: *"N fornecedor(es) não atendem a região da obra"* e
+*"N sem região cadastrada"*. Essa segunda linha é de propósito — enquanto o
+fornecedor sem cadastro entrava "porque sim", ninguém tinha motivo para arrumar
+o cadastro dele.
+
+**A decisão que eu tomei sozinho e vale conferir:** fornecedor **sem região
+cadastrada fica de fora** do disparo, não dentro. O contrário seria mais
+confortável (ninguém deixa de ser cotado), mas manteria exatamente o problema
+que ele apontou — o sistema continuaria disparando para qualquer um, só que
+calado. Se preferir que o sem-região entre no fim da lista com aviso, eu troco.
+
+**No cadastro, agora são obrigatórios:** nome, CNPJ/CPF, porte, até onde ele
+vende, quem responde e pelo menos um e-mail ou telefone. Faltando qualquer um,
+o cadastro não fecha e diz o que falta, numa frase só — *"falta o CNPJ, a razão
+social, o porte, até onde ele vende, quem responde, e-mail ou telefone"* — em
+vez de reclamar de um campo por vez.
+
+**Na tela:** o quadrinho "Perto da fábrica" passou a se chamar **"Fábrica"** e a
+coluna "Atende" virou **"Região"**, como ele pediu.
+
+
+### 🚫 DESATIVAR FORNECEDOR — a pergunta dele, e por que não é "apagar"
+
+> *"Outra coisa, como desativo/cancelo um fornecedor?"*
+
+Dava para fazer, mas não dava para **achar**: a situação do fornecedor só mudava
+editando o cadastro inteiro. Agora a ficha tem o botão direto — **Desativar** ou
+**Reativar**, ao lado do apagar.
+
+**A diferença entre os dois importa, e a tela explica:** *desativar* tira o
+fornecedor das listas e do disparo automático e **mantém o histórico** — as
+compras, as cotações e os preços que ele já fez continuam lá, e o preço de
+referência continua contando com eles. *Apagar* só é oferecido quando o
+fornecedor **nunca foi usado em lugar nenhum** (o sistema confere 10 tabelas
+antes); se ele já foi usado, o botão explica onde e oferece desativar no lugar.
+
+Cadastro errado recém-criado se apaga. Fornecedor com quem a BWS já comprou se
+desativa — apagar levaria junto a memória de preço que é justamente o que o
+sistema está começando a construir.
+
+### ⚠️ MIGRAÇÃO 078 — apertar "Aplicar atualizações do banco"
+
+Guarda o **nome oficial do fornecedor na Receita**, quando diferente do
+cadastrado. Sem ela, a tela de Fornecedores abre com erro.
+
+
+### 🔎 O CNPJ PREENCHE O CADASTRO, E O NOME OFICIAL NORMALIZA O QUE JÁ ESTÁ AQUI
+
+21/09/2026:
+
+> *"Preciso normalizar o nome do fornecedor através de consulta CNPJ, e ainda
+> que após digitação do CNPJ sejam pesquisados os dados para serem
+> pré-preenchidos."* E, esclarecendo: *"quando sigo após a digitação, falo no
+> cadastro."*
+
+São duas coisas, e as duas estavam pela metade.
+
+**1. A CONSULTA DENTRO DO FORMULÁRIO.** O cadastro de fornecedor era um
+formulário seco: digitava-se tudo à mão. Agora o CNPJ fica em cima e, **ao sair
+do campo**, o sistema consulta e preenche razão social, nome fantasia, cidade e
+UF. É a mesma regra do Cartão CNPJ da empresa e do contrato da obra — *uma porta
+só, e o documento é atalho DENTRO dela*. Não existe "cadastrar pelo CNPJ" ao
+lado de "cadastrar digitando".
+
+Três decisões que valem estar escritas:
+
+- **Só preenche o que está VAZIO.** Se a pessoa já digitou, o que ela escreveu
+  vale mais que a consulta — ela pode estar corrigindo de propósito.
+- **Não traz e-mail nem telefone.** O que está na Receita é o do contador, quase
+  nunca o do vendedor, e um e-mail errado faz a cotação sair para o lugar errado.
+- **Diz se o CNPJ JÁ está cadastrado**, antes de a pessoa digitar o resto — com
+  um botão para abrir o cadastro existente. Sem isso, preenchia-se o formulário
+  inteiro para o banco recusar no fim, que foi como nasceu boa parte dos 126
+  documentos repetidos da planilha antiga.
+
+E o que a Receita responde nunca trava o cadastro: serviço fora do ar, CNPJ não
+encontrado, CPF (que não tem consulta pública) e CNPJ baixado, cada um vira uma
+frase e a pessoa segue digitando.
+
+**2. NORMALIZAR OS NOMES QUE JÁ ESTÃO NO SISTEMA.** A consulta em lote
+("Acertar o cadastro pela Receita") já comparava o nome — mas o que ela
+descobria **morria no relatório**: *"47 têm o nome diferente do da Receita"*, e
+quando o aviso saía da tela ninguém sabia mais quais. Não havia onde clicar.
+
+Agora o nome oficial **fica guardado no fornecedor** (migração 078). Isso muda a
+divergência de "número num relatório que passou" para **estado do cadastro**:
+
+- filtro e quadrinho **"Nome diferente da Receita"** na tela;
+- na ficha, **os dois nomes lado a lado** e o botão *"Usar o nome da Receita"*.
+
+**Por que não troco sozinho, sendo o da Receita o oficial:** "MADEIREIRA SÃO
+JOSÉ" no ERP e "J. G. DA SILVA COMÉRCIO DE MADEIRAS EIRELI" na Receita são a
+mesma empresa, e o comprador reconhece a primeira. Trocar calado encheria a
+lista de cotação de nomes que ninguém liga a ninguém. Ao adotar o oficial, **o
+nome antigo vira o nome fantasia** (se este estiver vazio) — ninguém perde a
+referência.
+
+**O que NÃO foi verificado:** a consulta de verdade não roda nesta sessão — a
+saída para o serviço externo é recusada pelo proxy daqui. A tela foi exercitada
+com a consulta dublada, com o formato exato da resposta real. O caminho de rede
+é o mesmo que o "Acertar pela Receita" já usa em produção.
+
+
 ### 🔧 SEIS COISAS NA TELA DE INSUMOS E FORNECEDORES (20/09/2026)
 
 O dono passou meia hora usando as telas e trouxe uma lista. Vale guardar o
@@ -5991,6 +6492,253 @@ vários insumos de uma vez. O novo (`core/suprimentos/precos.py`) faz a conta no
 BANCO, e por isso tem teste com Postgres de verdade
 (`tests/test_precos_referencia_banco.py`) — o dublê ignora WHERE e devolveria o
 preço de outro material com cara de certo.
+
+
+## A CADEIA INTEIRA PERCORRIDA DE PONTA A PONTA — e o buraco que ela achou
+
+22/09/2026. Pedido do dono, com todas as letras:
+
+> *"Você já conversou tudo? Já fez várias simulações? Consegue simular desde o
+> cadastro de um cnpj à um cadastro de obra, lançamento de pedido, cotação,
+> pedido, autorização, acompanhamento de suprimento, recebimento, lançamento
+> financeiro e acompanhamento até conciliação, lançamento, autorização, baixa,
+> conciliação?"*
+
+A resposta honesta na hora foi **não**: até ali cada pedaço tinha sido testado
+sozinho, e a cadeia inteira nunca. Foi feita agora, e é por isso que este
+registro existe — **o que a leitura de código não pega, a cadeia pega.**
+
+### Como foi feita, para repetir
+
+Banco `erp_ponta_a_ponta` **criado do zero**: `schema.sql` + as 81 migrações,
+102 tabelas, três usuários. Depois, 37 passos por HTTP, como as telas fazem,
+com três sessões diferentes (dono, comprador, financeiro) — porque parte do que
+se quer provar é justamente que **uma pessoa não consegue fazer os dois lados**.
+
+Os passos: plano financeiro → empresa (CNPJ) → conta bancária da empresa → obra
+ligada à empresa → conta apontada na obra → fornecedor → categoria de insumo →
+insumo → fornecedor ligado à categoria → pedido de material → fila do comprador
+→ disparo automático → cotação → mapa → preço → fechamento do pedido →
+autorização → acompanhamento → recebimento na obra → conta Pix do credor →
+homologação por OUTRA pessoa → lançamento do título → fila de aprovação →
+aprovação → agenda de pagamento → baixa → importação do extrato OFX →
+conciliação automática → título PAGO.
+
+Hoje passa inteiro, 0 falhas. Antes desta leva, **parava no passo 23.**
+
+### O buraco: a homologação da conta do credor não tinha porta
+
+`homologar_conta` existia em `core/cadastros/fornecedores.py` desde sempre e
+**não tinha um único chamador** — nem rota, nem botão, nem teste. Cada peça,
+lida sozinha, estava certa; o vão entre elas é que não existia.
+
+O efeito num banco novo: todo título pago por **Pix ou TED** nasce BLOQUEADO
+pela crítica C2 enquanto a conta do credor não for homologada; nenhuma conta
+podia ser homologada; logo, **nenhum pagamento por Pix ou TED chegava ao fim**.
+E a tela não dizia por quê — dizia "homologue no cadastro do credor", onde não
+havia nada.
+
+O que foi feito:
+
+- **Rota e fila** (`/erp/api/credores/contas/pendentes` e
+  `/erp/api/credores/contas/<id>/homologar`), com ação própria
+  `homologar_conta_credor` e **seção própria** no cadastro de perfis
+  (`fin_homologar_conta`, migração **081**). Ela NÃO vem junto de "pagar" de
+  propósito: conferir para onde o dinheiro vai e soltar o dinheiro são duas
+  decisões, e o dono precisa poder dar uma sem a outra.
+- **O botão fica na própria crítica C2**, dentro da ficha do título, e já manda
+  reanalisar na mesma ida. Mandar a pessoa sair da ficha, achar o credor,
+  homologar e voltar era onde o trabalho era abandonado — o beco continuava
+  beco mesmo depois de existir o "reanalisar".
+- **A fila aparece na tela de Pagamentos**, porque é ali que a pendência custa
+  dinheiro parado. Sem ela a pendência era invisível.
+
+### A trava que estava escrita e não estava no código
+
+A docstring de `homologar_conta` prometia: *"Segregação (F2): quem homologa não
+pode ser quem cadastrou a conta"*. **O código não conferia isso.** A promessa
+existia, a trava não — e é exatamente o controle contra o golpe da troca de
+conta bancária.
+
+Agora confere, lendo **quem criou a conta na trilha de auditoria** (evento
+`CRIADA`) — sem coluna nova, e usando a mesma fonte que a tela mostra: se
+divergissem, a tela contaria uma história e a trava obedeceria a outra. Quem
+cadastrou recebe 403 com recado que diz o que fazer, e a fila já mostra o botão
+apagado para ele, antes do clique.
+
+### Quatro defeitos menores que a cadeia mostrou
+
+1. **A conta bancária da obra era gravada e nunca devolvida.** O formulário
+   remontava a caixinha vazia, e o salvamento seguinte — que manda o campo em
+   branco — **apagava a conta sem ninguém pedir**. Mesmo defeito do código da
+   obra (consertado na leva anterior), só que pior, porque perdia informação em
+   silêncio. Faltava `conta_bancaria_id` na lista de campos que a rota devolve.
+2. **Credor que já existe, mas sem forma de pagamento**, tinha a conta digitada
+   **descartada em silêncio**: a rota devolvia o cadastro existente e ignorava o
+   Pix/TED que a pessoa acabou de digitar. É a situação que o dono descreveu —
+   *"preciso voltar pra cadastrar a forma de pgt"*. Agora a conta é criada
+   (pendente, como sempre), e a mesma conta digitada duas vezes não vira duas
+   pendências.
+3. **Três erros 500 com o recado de "falha do sistema"** onde cabia um recado
+   claro: situação de título que não existe no filtro (um link velho bastava),
+   item nulo na cotação e parcela nula na baixa (tela recarregada no meio, com
+   a seleção perdida).
+4. **A crítica C2 mandava para o lugar errado** — "homologue no cadastro do
+   credor". Agora aponta para o botão que está logo abaixo dela.
+
+### O elo que AINDA FALTA — decisão do dono
+
+**Suprimentos e Financeiro não se encontram.** O pedido de compra gera a
+`previsao_pagamento`, e o sistema chega a avisar: *"Material recebido e a
+parcela ainda não virou título no financeiro. Falta lançar a nota."* Mas não há
+caminho da previsão para o lançamento: nenhuma rota, nenhum botão. Quem lança
+**redigita tudo**, e o título nasce sem ligação com o pedido.
+
+Pior: o campo `titulos.pedido_id` aponta para a tabela **`pedidos`** (a antiga,
+importada do Pipefy/Omie), **não** para `pedidos_compra` (a de Suprimentos). Por
+isso a crítica **B1** — *"título do tipo exige pedido vinculado"* — aparece em
+TODO título de compra, e sempre vai aparecer enquanto o elo não existir.
+
+Isto é funcionalidade nova, não conserto: fica para o dono decidir. As perguntas
+que ela destravaria estão em `PERGUNTAS.md` §3u.
+
+### O que a simulação NÃO cobriu
+
+Empreitas, medições, locações, fundo fixo, notas fiscais emitidas e o
+acompanhamento de processos. A cadeia percorrida é a de **compra de material**,
+que era a que o dono pediu. As outras continuam cobertas só pela suíte.
+
+### O roteiro fica fora do repositório, e por quê
+
+O script (`cadeia.py`) fala com um ERP de verdade rodando, num banco que ele
+mesmo recria — não é teste automatizado, é uma varredura para rodar à mão
+quando se quer conferir a costura entre as áreas. O que ele achou virou teste
+de verdade: `tests/test_homologar_conta_do_credor.py` (15 casos) e três casos
+novos em `tests/test_credor_no_lancamento.py`.
+
+
+## VARREDURA DE USO — alguém usando o sistema, tela por tela
+
+22/09/2026, pedido do dono: *"Faça e busque por erros operacionais. Simule
+alguém utilizando o sistema. Me ajude."*
+
+Foi montado um ERP com dados de empresa em uso — 2 empresas, 5 obras, 5
+credores com conta homologada, 11 títulos em situações diferentes (em
+aprovação, aprovados, pagos), colaboradores, extrato conciliado — e percorrido
+de quatro jeitos:
+
+1. **Todas as 37 telas**, no navegador, escutando erro de JavaScript, chamada
+   que volta com falha e tela presa em "carregando".
+2. **Grava e relê**: escrever em cada cadastro pela mesma rota que a tela usa e
+   reler pela mesma rota que a tela lê — é a peneira do defeito que o dono mais
+   achou.
+3. **Entrada ruim** em 53 tentativas contra 14 rotas que gravam: campo vazio,
+   data que não existe, valor negativo, texto de 5 mil letras, número de
+   registro inventado.
+4. **Sete perfis diferentes** abrindo dezesseis telas cada um.
+
+### O achado mais caro: `/favicon.ico` saía à internet e respondia erro
+
+O encurtador de links tem uma rota curinga `/<codigo>` que pega **qualquer**
+endereço de um pedaço só que nenhum dos 18 módulos reconheceu. Ela consultava
+a planilha do Google **pela internet**, sem cache, e devolvia **erro 500**
+quando a consulta falhava.
+
+Quem caía nela, todo dia: `/favicon.ico` — o ícone que o navegador pede
+sozinho ao abrir a tela de entrada. E também qualquer endereço digitado
+torto, qualquer link velho, qualquer robô de busca.
+
+O custo não aparece em lugar nenhum e é real: a produção roda com **1 processo
+e 4 linhas de atendimento**; cada endereço errado prendia uma delas numa ida à
+internet. Três coisas mudaram:
+
+- **peneira por forma** no curinga: o que tem ponto (arquivo) ou é nome de
+  serviço conhecido nunca chega à planilha — responde 404 em 2 milésimos;
+- **planilha fora do ar vira 404**, não 500: quem clicou pediu um link, e o
+  link não foi achado — não é falha do sistema;
+- **cache de 60 segundos** da planilha, para uma rajada de cliques custar uma
+  leitura só (link recém-criado continua valendo na hora: quem grava limpa o
+  cache);
+- e a **tela de entrada ganhou o `rel="icon"`** que faltava só nela, o que
+  corta a ida na origem.
+
+### Quatro campos da obra que a tela mostrava e o sistema nunca gravou
+
+**Seguro-garantia (apólice)**, **seguro válido até**, **caução (%)** e
+**código do departamento no Omie**. A pessoa preenchia na aba Contrato, o
+sistema respondia "Salvo.", e nada era gravado — os quatro não estavam na
+lista de campos que a rota aceita, e o que não está na lista é descartado sem
+reclamar. É o defeito do código da obra, quatro vezes.
+
+E era pior que "não grava": como também não voltavam na leitura, o formulário
+remontava vazio e **o salvamento seguinte mandava o vazio de volta**. O
+departamento do Omie é único no banco, então ganhou trava de repetido com
+recado ("já está na obra X") em vez de estourar como erro de banco.
+
+### Colaborador: o tipo da chave Pix e a impossibilidade de tirar da obra
+
+- **O tipo da chave Pix não voltava na leitura.** A caixinha remontava sempre
+  em "CPF", o primeiro da lista — então quem tinha chave de telefone ou e-mail
+  via o tipo **trocado para CPF no primeiro salvamento**, sem pedir. Chave com
+  tipo errado é pagamento que não sai.
+- **Escolher "—" em obra ou função não desligava nada.** O código usava
+  `dados.get(campo)`, e valor vazio caía fora do `if`: não havia como tirar um
+  colaborador da obra pela tela.
+- **Data impossível virava vazio em silêncio.** Admissão "2026-13-45" era
+  aceita, guardada como nada, e a pessoa lia "salvo".
+
+### Cinco respostas de "falha do sistema" onde cabia explicar
+
+Erro 500 aparece para quem usa como *"Não consegui concluir. Isso é falha do
+sistema"* — assusta e não ensina. Viraram recado:
+
+- data no formato brasileiro ou dia que não existe no cadastro da obra;
+- prazo de execução negativo (era aceito e virava "-5 dias");
+- seleção estragada na aprovação em lote (tela recarregada no meio);
+- conciliação manual sem os dois lados escolhidos.
+
+### A tela que o perfil não abre mostrava JSON cru
+
+Quem abria uma tela fora do seu acesso via **isto ocupando a janela inteira**:
+
+    {"erro":"Seu perfil não tem permissão para esta operação.","ok":false}
+
+Sem menu, sem caminho de volta, com cara de defeito. Agora é uma página que
+diz qual é o acesso da pessoa, que nada deixou de ser gravado, onde pedir
+liberação, e tem botão de voltar. **Chamada de API continua respondendo
+JSON** — quem fala com o sistema por programa precisa do JSON; quem está na
+frente da tela precisa de gente.
+
+De quebra, o mesmo cartão branco passou a valer para a tela de "banco
+desatualizado", que tinha o mesmo problema de leitura (texto escuro no fundo
+escuro).
+
+### O QR do Pix vem da internet, e agora avisa quando não vem
+
+O desenho do QR é uma biblioteca carregada de fora. Quando não carrega — rede
+da obra, firewall, site fora do ar — o quadrado ficava em branco e a dica ao
+lado continuava mandando "leia o QR": a pessoa esperava uma imagem que não
+vinha. Agora ela é avisada, e o botão de copiar e colar, que não depende de
+nada externo, continua ali.
+
+### O que a varredura NÃO achou — e vale saber
+
+- **Dinheiro está firme.** Pagar valor negativo, zero, valor diferente da
+  parcela, conta que não existe, parcela já paga: tudo recusado com recado
+  claro. Foi o único bloco que passou sem nenhum ajuste.
+- **Formato de tela está limpo.** A varredura procurou data americana,
+  dinheiro sem ponto e nome técnico em caixa alta no texto visível de 28
+  telas: achou uma ocorrência, e legítima (o nome de uma variável de ambiente
+  numa instrução de configuração). O trabalho da leva do dia 22 segurou.
+- **Todas as 37 telas abrem para todos os 7 perfis**, sem erro 500 e sem ficar
+  presas em "carregando".
+
+### Como repetir
+
+Os roteiros ficam em `/tmp` de propósito (falam com um ERP rodando e não são
+teste automatizado). O que eles acharam virou teste de verdade:
+`tests/test_varredura_de_uso.py`, 18 casos. Foi conferido que eles pegam o
+defeito: desfazendo os consertos, três falham na hora.
 
 
 ## Regras que não se discutem

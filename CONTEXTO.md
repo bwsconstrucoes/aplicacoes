@@ -70,7 +70,7 @@ aplicacoes/
         ├── baixabradesco/    ← /api/baixabradesco/* (routes, core, sheets, parser_*, omie, pipefy, zapi, storage, fila, matcher, models, utils, diagnostico)
         ├── processarnovasp/  ← /api/processarnovasp/executar (⚠️ existe em produção, ainda não documentado aqui)
         ├── sync_logs/        ← /api/sync_logs/* (⚠️ ainda não documentado aqui)
-        ├── emissaonf/        ← /emissao/* (emissão de NFS-e; ⚠️ ainda não documentado aqui)
+        ├── emissaonf/        ← /emissao/* (emissão de NFS-e; ver `emissaonf/README.md` e `HISTORICO.md`)
         ├── telegram/         ← /telegram/* (bot / autocadastro; ⚠️ ainda não documentado aqui)
         ├── notificador.py    ← helper `enviar_telegram`, usado pelo ERP para avisar baixas
         └── erp/              ← /erp/* — ERP (ver §2.1 e §5.12). NÃO é um blueprint
@@ -746,6 +746,129 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 22/09/2026 — O CURINGA DO ENCURTADOR NÃO PEGA MAIS TUDO (atravessa áreas)
+
+Achado numa varredura de uso do ERP: a rota `/<codigo>` do encurtador é um
+curinga que pega **qualquer** endereço de um pedaço só que nenhum dos 18
+módulos reconheceu — e consultava a planilha do Google **pela internet**, sem
+cache, respondendo **erro 500** quando a consulta falhava.
+
+Quem caía nela todo dia era `/favicon.ico`, que o navegador pede sozinho ao
+abrir a tela de entrada do ERP. Também caía qualquer endereço digitado torto,
+link velho ou robô de busca.
+
+**Por que importa mais do que parece:** a produção roda com `--workers 1
+--threads 4`. Cada endereço errado prendia uma das quatro linhas de
+atendimento numa ida à internet. Não aparecia em lugar nenhum — só no log,
+como um 500 entre outros.
+
+O que mudou, em `app/apps/encurtador/`:
+
+- **peneira por FORMA** no curinga: código curto é uma palavra sem ponto;
+  arquivo tem extensão. O que tem ponto, ou é nome de serviço conhecido
+  (`favicon`, `robots`, `sitemap`, `health`…), responde 404 em 2 milésimos sem
+  sair da máquina;
+- **planilha fora do ar vira 404**, não 500 — quem clicou pediu um link, e o
+  link não foi achado;
+- **cache de 60 segundos** das linhas da planilha, com limpeza ao gravar um
+  link novo (senão ele demoraria até um minuto para funcionar).
+
+**Vale para quem for criar rota curinga em qualquer módulo:** rota que casa
+com tudo tem de peneirar antes de fazer trabalho caro, e falha de serviço de
+fora nunca deve virar erro 500 para quem está na frente da tela.
+
+O restante da varredura — quatro campos da obra que não gravavam, o tipo da
+chave Pix do colaborador, cinco "falha do sistema" que viraram recado, e a
+tela recusada que mostrava JSON cru — está em `app/apps/erp/HISTORICO.md`.
+
+
+### 22/09/2026 — PERCORRER A CADEIA INTEIRA É UM TIPO DE PROVA QUE A SUÍTE NÃO DÁ
+
+O dono pediu para simular tudo, do cadastro do CNPJ à conciliação. Feito num
+banco criado do zero (`schema.sql` + as 81 migrações), 37 passos por HTTP, com
+três sessões diferentes — parte do que se quer provar é que **uma pessoa
+sozinha não consegue fazer os dois lados de um controle**.
+
+**Achou uma função de regra de negócio sem nenhum chamador**: `homologar_conta`
+existia, e nem rota, nem botão, nem teste a chamavam. Num banco novo isso
+travava o ERP inteiro — nenhum pagamento por Pix ou TED chegava ao fim, e a
+tela não dizia por quê. Cada peça, lida sozinha, estava certa; **o vão entre
+elas é que não existia**, e vão não aparece em revisão de código nem em teste
+de unidade.
+
+**Achou também uma trava que estava na docstring e não no código**: a promessa
+de que quem cadastra a conta bancária não a homologa — o controle contra o
+golpe da troca de conta. Comentário não é trava.
+
+**A decisão que fica:** quando uma área passa a conversar com outra, percorrer a
+cadeia inteira num banco limpo é obrigatório antes de dizer que está pronto. O
+que a varredura achar vira teste de verdade; o roteiro em si não entra no
+repositório, porque ele fala com um ERP rodando e não é teste automatizado.
+
+O detalhe de tudo que foi achado está em `app/apps/erp/HISTORICO.md`, e a maior
+lacuna — Suprimentos e Financeiro ainda não se encontram — em
+`app/apps/erp/PERGUNTAS.md` §3u.
+
+
+### 22/09/2026 — FORMATO DE CAMPO É DO `erp_base.html` (mexe no `CLAUDE.md`)
+
+O dono, depois de horas usando o ERP: *"todas as telas têm algum detalhe assim
+(…) acho que tem que fazer uma varredura mais profunda."* Máscara de CNPJ
+faltando, célula comendo o fim da descrição, busca travando ao digitar.
+
+**A decisão não foi O QUE consertar, foi ONDE.** Tela por tela custaria dias e
+deixaria de fora a próxima que alguém escrever — que é como o problema nasceu.
+Então máscara, formatação e busca passaram a viver no `erp_base.html`, e o
+observador que já punha caixa de busca em lista longa passou a aplicar também
+as máscaras, reconhecendo o campo pelo NOME.
+
+**Vale para quem for escrever tela nova, em qualquer área que use o
+`erp_base.html`:** não recriar máscara dentro da tela. Dê ao campo um nome que
+diga o que ele é (`cnpj`, `cpf`, `documento`, `telefone`, `cep`) e a formatação
+vem sozinha; a exceção se marca no campo (`data-sem-mascara`).
+
+**O defeito que quase passou merece ficar escrito**, porque é o tipo que
+sobrevive a revisão de código: o reconhecedor aceitava só hífen e sublinhado
+como fronteira do nome, e como o texto examinado é `"id nome"`, o CNPJ pegava
+(pelo `_` de `cnpj_cpf`) e o telefone não. **Funcionava o bastante para parecer
+certo.** Só apareceu ao digitar um telefone de verdade no navegador.
+
+
+### 21/09/2026 — A EMISSÃO DE NFS-e GANHOU MEMÓRIA (atravessa áreas)
+
+No mesmo dia em que entrou na tabela sem `README.md` nem `HISTORICO.md` (ver a
+entrada logo abaixo), a área ganhou os dois. Por isso o `CLAUDE.md` mudou: a
+linha da tabela deixou de avisar que os arquivos não existem e passou a apontar
+para eles, e o aviso abaixo da tabela deixou de pedir "a primeira entrega é a
+memória" e passou a apontar a seção de perguntas em aberto.
+
+**Duas coisas do jeito como isso foi feito merecem virar regra para a próxima
+área sem memória:**
+
+1. **O histórico diz de onde cada parte veio.** Metade saiu do código, lido de
+   ponta a ponta; a outra metade saiu do relato do dono sobre o que só ele
+   sabia — incidentes, valores, o que já foi consertado no mundo. São duas
+   fontes com confiabilidade diferente, e misturá-las sem dizer qual é qual
+   faria a próxima sessão confiar demais no que é lembrança.
+2. **O histórico tem uma seção de perguntas em aberto**, separada das
+   pendências. Pendência é trabalho que se sabe fazer; pergunta em aberto é
+   trabalho que **não se pode** fazer sem uma resposta do dono, porque o estado
+   do mundo mudou desde o último chat.
+
+**Uma correção que esse levantamento produziu, e que vale registrar porque era
+uma decisão de negócio errada:** o relato do dono dizia que o conserto do
+`ValorDeducoes` (o ISS que a prefeitura calculava sobre o valor cheio) estava
+esperando para subir, e que nenhuma nota nova deveria ser emitida antes disso.
+Conferido no código da `main`: ele subiu em 11/09/2026, no commit `f2d93c8`. O
+que continua pendente é o **passivo** — as notas emitidas com dedução de ISS
+antes daquela data estão com ISS a maior na prefeitura e precisam ser
+substituídas.
+
+Também mudou uma linha de código da área, por causa de um card que não abria: a
+C. Diários identifica a obra por **dois** códigos (primário e secundário), e a
+emissão só procurava pelo primário. Detalhe no `HISTORICO.md` da área.
+
 
 ### 21/09/2026 — A EMISSÃO DE NFS-e VIROU A QUINTA ÁREA (atravessa áreas)
 
@@ -1745,9 +1868,12 @@ verdade ninguém acredita nele.
   A árvore do §2 foi conferida contra o `app/main.py` real em 2026-09-01 e hoje
   são **14 blueprints** registrados; `sync_logs`, `emissaonf`, `telegram` e
   `erp` faltavam aqui.
-- **`sync_logs`, `emissaonf` e `telegram`:** registrados em produção, mas sem
-  seção própria no §5. Documentar na próxima vez que mexer (o `emissaonf` tem
-  ligação prevista com o ERP — ver abaixo).
+- **`sync_logs` e `telegram`:** registrados em produção, mas sem seção própria
+  no §5. Documentar na próxima vez que mexer.
+- **`emissaonf`:** continua sem seção própria no §5, mas a dívida maior está
+  paga — ele ganhou `README.md` e `HISTORICO.md` em 21/09/2026, e a lista de
+  rotas está no README da área. A ligação com o ERP já existe desde 10/09/2026
+  (ver §9).
 
 ### 10.1 ERP
 

@@ -51,6 +51,15 @@
         <span class="rotulo">Fora do disparo automático</span></label>
       <label class="opcao"><input type="checkbox" id="f-varios-contatos">
         <span class="rotulo">Com mais de um contato</span></label>
+      {# NOME DIFERENTE DA RECEITA — 21/09/2026. Antes esse número só existia
+         no relatório do trabalho em lote e sumia junto com o aviso; ninguém
+         sabia mais QUAIS eram, nem tinha onde clicar para resolver. #}
+      <label class="opcao"><input type="checkbox" id="f-nome-diferente">
+        <span class="rotulo">Nome diferente da Receita</span></label>
+      {# SEM REGIÃO DEFINIDA — 21/09/2026. Quem está aqui NÃO é escolhido para
+         cotação nenhuma, porque não dá para saber se atende a obra. #}
+      <label class="opcao"><input type="checkbox" id="f-sem-regiao">
+        <span class="rotulo">Sem região definida</span></label>
     </div>
   </div>
 
@@ -65,6 +74,16 @@
     que discorda</b> — não troca nome por conta própria. Roda em segundo plano,
     em lotes, e pode ser rodada de novo de onde parou.</div>
   <div id="receita-estado"></div>
+
+  {# PADRONIZAR A REGIÃO — 21/09/2026. Traduz o texto livre ("BR", "NE", "RMF",
+     "BARBALHA - CE") para algo que cruza com o município da obra. #}
+  <button class="btn secundario" id="btn-regioes" style="width:100%; margin-top:14px">
+    ⤫ Padronizar as regiões</button>
+  <div class="dica" style="margin-top:6px">A coluna “Região de Atuação” da
+    planilha mistura país, estado, região e cidade — e assim <b>não dá para
+    cruzar com a obra</b>. Isto traduz o que dá e <b>relata o que não
+    reconheceu</b>, sem inventar. O texto original não se perde.</div>
+  <div id="regioes-estado"></div>
 {% endblock %}
 
 {% block conteudo %}
@@ -85,7 +104,7 @@
       <th data-ordem="cnpj_cpf">CNPJ/CPF</th>
       <th data-ordem="municipio">Cidade</th>
       <th data-ordem="porte_rotulo">Porte</th>
-      <th class="sem-ordem">Atende</th>
+      <th class="sem-ordem">Região</th>
       <th class="sem-ordem">O que fornece</th>
       <th class="sem-ordem">Fala-se com</th>
       <th class="sem-ordem">Situação</th>
@@ -185,13 +204,15 @@ function visiveis(){
     if (els("f-sem-contato").checked && f.contatos.length) return false;
     if (els("f-fora-auto").checked && f.cotacao_automatica !== false) return false;
     if (els("f-varios-contatos").checked && f.contatos.length < 2) return false;
+    if (els("f-nome-diferente").checked && !f.razao_social_rfb) return false;
+    if (els("f-sem-regiao").checked && f.abrangencia !== "NAO_INFORMADA") return false;
     if (els("f-sem-email").checked && !(f.canais.includes("EMAIL") && !f.email)) return false;
     if (F.categoria.size && !f.categorias_ids.some(i => F.categoria.has(String(i)))) return false;
     if (F.porte.size && !F.porte.has(f.porte)) return false;
     if (F.regiao.size && !f.regioes.some(r => F.regiao.has(r))) return false;
     if (F.canal.size && !f.canais.some(c => F.canal.has(c))) return false;
     if (b) {
-      const alvo = `${f.razao_social} ${f.nome_fantasia} ${f.cnpj_cpf} ${f.municipio} ` +
+      const alvo = `${f.razao_social} ${f.nome_fantasia} ${f.cnpj_cpf} ${documento(f.cnpj_cpf)} ${f.municipio} ` +
                    `${f.categorias.join(" ")} ${f.contatos.map(c => c.nome).join(" ")}`;
       if (!alvo.toLowerCase().includes(b)) return false;
     }
@@ -224,9 +245,21 @@ function desenhar(){
       <div class="kpi-rotulo">E-mail faltando</div>
       <div class="kpi-valor">${k.sem_email || 0}</div>
       <div class="kpi-sub">recebem por e-mail e não têm</div></button>
-    <div class="kpi estatico ciano"><div class="kpi-rotulo">Perto da fábrica</div>
+    ${k.sem_regiao ? `
+      <button class="kpi vermelho ${els("f-sem-regiao").checked ? "ativo" : ""}"
+        data-pendencia="f-sem-regiao">
+        <div class="kpi-rotulo">Sem região definida</div>
+        <div class="kpi-valor">${k.sem_regiao}</div>
+        <div class="kpi-sub">não entram no disparo automático</div></button>` : ""}
+    ${k.nome_diferente ? `
+      <button class="kpi ciano ${els("f-nome-diferente").checked ? "ativo" : ""}"
+        data-pendencia="f-nome-diferente">
+        <div class="kpi-rotulo">Nome diferente da Receita</div>
+        <div class="kpi-valor">${k.nome_diferente}</div>
+        <div class="kpi-sub">confira e adote o oficial, um a um</div></button>`
+    : `<div class="kpi estatico ciano"><div class="kpi-rotulo">Fábrica</div>
       <div class="kpi-valor">${(k.por_porte || {}).FABRICA || 0} + ${(k.por_porte || {}).REP_FABRICA || 0}</div>
-      <div class="kpi-sub">fábrica + representante</div></div>`;
+      <div class="kpi-sub">fábrica + representante</div></div>`}`;
   document.querySelectorAll("[data-pendencia]").forEach(b =>
     b.addEventListener("click", () => {
       const alvo = els(b.dataset.pendencia);
@@ -243,7 +276,7 @@ function desenhar(){
     <tr data-id="${f.id}" style="cursor:pointer" ${f.ativo ? "" : 'style="opacity:.55"'}>
       <td class="desc"><b>${f.razao_social}</b>
         ${f.nome_fantasia ? `<small>${f.nome_fantasia}</small>` : ""}</td>
-      <td class="dados">${f.cnpj_cpf}</td>
+      <td class="dados">${documento(f.cnpj_cpf)}</td>
       <td>${f.municipio || "—"}${f.uf ? ` / ${f.uf}` : ""}</td>
       <td>${f.porte_rotulo || "—"}</td>
       <td class="dados">${f.regioes.join(", ") || "—"}</td>
@@ -288,7 +321,7 @@ function abrir(id){
       <div class="campo"><label>Nome fantasia</label>
         <input id="fx-fantasia" value="${f.nome_fantasia}" ${editavel}></div>
       <div class="campo"><label>CNPJ/CPF</label>
-        <input value="${f.cnpj_cpf}" disabled></div>
+        <input value="${documento(f.cnpj_cpf)}" disabled></div>
       <div class="campo"><label>E-mail</label>
         <input id="fx-email" value="${f.email}" ${editavel}></div>
       <div class="campo"><label>Telefone</label>
@@ -302,9 +335,44 @@ function abrir(id){
           <option value="">—</option>
           ${D.portes.map(p => `<option value="${p.chave}" ${p.chave === f.porte ? "selected" : ""}>${p.rotulo}</option>`).join("")}
         </select></div>
-      <div class="campo" style="grid-column:span 2"><label>Regiões de atuação</label>
+      <div class="campo" style="grid-column:span 2"><label>Regiões de atuação (como veio da planilha)</label>
         <input id="fx-regioes" value="${f.regioes.join(", ")}" placeholder="ex.: FORTALEZA, RMF, CE" ${editavel}>
-        <div class="dica">Separe por vírgula. Em branco = atende qualquer região.</div></div>
+        <div class="dica">Texto livre, guardado como veio. O que o disparo
+          automático usa é o bloco abaixo.</div></div>
+    </div>
+
+    {# ATÉ ONDE ELE VENDE — 21/09/2026, e é o que cruza com o município da obra.
+       Dono: *"se não é um fornecedor que atenda a nível nacional, eu tenho que
+       buscar na região da obra. Da forma que está, a gente simplesmente escreve
+       de qualquer jeito, sem padronização."* #}
+    <div class="cartao" style="margin-top:14px">
+      <div class="cartao-cab"><h3>Até onde ele vende</h3></div>
+      ${f.abrangencia === "NAO_INFORMADA" ? `
+        <div class="aviso alerta">Sem isto preenchido, <b>ele não entra no
+          disparo automático</b>: o sistema não tem como saber se ele atende o
+          município da obra.</div>` : ""}
+      <div class="form-grade" style="margin-top:10px">
+        <div class="campo" style="grid-column:span 2">
+          <label for="fx-abrangencia">Alcance *</label>
+          <select id="fx-abrangencia" ${editavel}>
+            <option value="NAO_INFORMADA" ${f.abrangencia === "NAO_INFORMADA" ? "selected" : ""}>— escolha —</option>
+            <option value="NACIONAL" ${f.abrangencia === "NACIONAL" ? "selected" : ""}>Todo o Brasil</option>
+            <option value="ESTADUAL" ${f.abrangencia === "ESTADUAL" ? "selected" : ""}>Estado(s) inteiro(s)</option>
+            <option value="REGIONAL" ${f.abrangencia === "REGIONAL" ? "selected" : ""}>Uma região (vários municípios)</option>
+            <option value="LOCAL" ${f.abrangencia === "LOCAL" ? "selected" : ""}>Só a cidade dele</option>
+          </select></div>
+        <div class="campo" style="grid-column:span 1" id="fx-caixa-ufs">
+          <label for="fx-ufs">Estados (siglas)</label>
+          <input id="fx-ufs" value="${f.ufs_atendidas.join(", ")}" placeholder="CE, PE" ${editavel}></div>
+        <div class="campo" style="grid-column:span 3" id="fx-caixa-municipios">
+          <label for="fx-municipios">Municípios</label>
+          <input id="fx-municipios" value="${f.municipios_atendidos.join(", ")}"
+            placeholder="FORTALEZA, CAUCAIA, EUSEBIO" ${editavel}>
+          <div class="dica">Separe por vírgula. É por aqui que o disparo
+            automático cruza com a cidade da obra.</div></div>
+      </div>
+      ${PODE_EDITAR ? `<div style="margin-top:10px">
+        <button class="btn secundario" id="fx-salvar-regiao">Salvar o alcance</button></div>` : ""}
     </div>
 
     <div class="cartao" style="margin-top:14px">
@@ -350,6 +418,22 @@ function abrir(id){
        material recebido): ninguém digita nada aqui. Enquanto não há amostra, a
        frase diz isso com todas as letras em vez de mostrar um "100%" que veio
        de uma cotação só. #}
+    {# O NOME OFICIAL, quando diferente do cadastrado. Os dois lado a lado, e a
+       troca num clique. Não troco sozinho porque "MADEIREIRA SÃO JOSÉ" e
+       "J. G. DA SILVA COM. DE MADEIRAS EIRELI" são a mesma empresa, e o
+       comprador reconhece a primeira — trocar calado encheria a lista de
+       cotação de nomes que ninguém liga a ninguém. #}
+    ${f.razao_social_rfb ? `<div class="aviso alerta" style="margin-top:12px">
+      <b>Na Receita este CNPJ se chama:</b><br>
+      ${escapar(f.razao_social_rfb)}
+      <br><small>aqui está cadastrado como <b>${escapar(f.razao_social)}</b></small>
+      ${PODE_EDITAR ? `<div style="margin-top:8px">
+        <button class="btn secundario" id="fx-nome-oficial">Usar o nome da Receita</button>
+        <small style="display:block; margin-top:4px">o nome atual passa a ser o
+          nome fantasia, se ele estiver vazio — é por ele que o comprador
+          reconhece o fornecedor</small></div>` : ""}
+    </div>` : ""}
+
     ${f.historico ? `<div class="cartao-dica" style="margin-top:12px">
       <b>Como ele se comporta:</b> ${escapar(f.historico.resumo || "")}
       ${f.historico.confiavel ? `<small style="display:block; margin-top:4px">
@@ -476,6 +560,41 @@ function abrir(id){
     } catch(e){ aviso("ficha-msg", e.message, "erro"); }
   });
 
+  // Mostra só a caixa que o alcance escolhido usa: pedir municípios a um
+  // fornecedor nacional é pedir um dado que não muda nada.
+  const ajustarCaixas = () => {
+    const v = els("fx-abrangencia") ? els("fx-abrangencia").value : "NAO_INFORMADA";
+    const caixaU = els("fx-caixa-ufs"), caixaM = els("fx-caixa-municipios");
+    if (caixaU) caixaU.style.display = v === "ESTADUAL" ? "" : "none";
+    if (caixaM) caixaM.style.display = (v === "REGIONAL" || v === "LOCAL") ? "" : "none";
+  };
+  if (els("fx-abrangencia")) {
+    els("fx-abrangencia").addEventListener("change", ajustarCaixas);
+    ajustarCaixas();
+  }
+  if (els("fx-salvar-regiao")) els("fx-salvar-regiao").addEventListener("click", async () => {
+    const lista = id => (els(id).value || "").split(",").map(x => x.trim()).filter(Boolean);
+    try {
+      const d = await api(`/erp/api/suprimentos/fornecedores/${f.id}/regiao`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({abrangencia: els("fx-abrangencia").value,
+                              ufs: lista("fx-ufs"),
+                              municipios: lista("fx-municipios")})});
+      els("dlg").close();
+      aviso("mensagem", escapar(d.recado), "ok");
+      await carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  });
+
+  if (els("fx-nome-oficial")) els("fx-nome-oficial").addEventListener("click", async () => {
+    try {
+      const d = await api(
+        `/erp/api/suprimentos/fornecedores/${f.id}/nome-oficial`, {method: "POST"});
+      els("dlg").close();
+      aviso("mensagem", escapar(d.recado), "ok");
+      await carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  });
   if (PODE_EDITAR) conferirSeDaParaApagar(f);
   if (els("fx-salvar")) els("fx-salvar").addEventListener("click", async () => {
     const canais = [...document.querySelectorAll("[data-canal-marca]")]
@@ -518,18 +637,51 @@ async function conferirSeDaParaApagar(f){
   if (!area) return;
   try {
     const d = await api(`/erp/api/suprimentos/fornecedores/${f.id}/uso`);
+    // DESATIVAR É O CAMINHO NORMAL, e por isso vem primeiro e como BOTÃO.
+    //
+    // O dono, 21/09/2026: *"como desativo/cancelo um fornecedor?"* — existia,
+    // era a caixinha "Ativo" lá em cima, que ninguém associa a "cancelar".
+    // Agora o botão está ao lado do de apagar, com o efeito escrito.
+    const desativar = f.ativo
+      ? `<button class="link-btn" id="fx-desativar">Desativar este fornecedor</button>
+         <small style="display:block">some das listas de cotação; o histórico
+           fica, e dá para reativar depois</small>`
+      : `<button class="link-btn" id="fx-reativar">Reativar este fornecedor</button>
+         <small style="display:block">volta a aparecer nas listas de cotação</small>`;
+
     if (d.usos.length) {
       const onde = d.usos.map(u => `${u.quantos} ${u.onde}`).join(", ");
-      area.innerHTML = `Não dá para apagar: já aparece em <b>${escapar(onde)}</b>.
-        Para tirar das listas, desmarque <b>Ativo</b> acima e salve — o
-        histórico fica.`;
+      area.innerHTML = `${desativar}
+        <small style="display:block; margin-top:6px">Apagar não dá:
+          já aparece em <b>${escapar(onde)}</b>, e apagar levaria isso junto.</small>`;
+      ligarAtivar(f);
       return;
     }
-    area.innerHTML = `<button class="link-btn" id="fx-apagar"
-      style="color:var(--vermelho)">Apagar este fornecedor</button>
-      <small style="display:block">nunca foi usado em nada</small>`;
+    area.innerHTML = `${desativar}
+      <div style="margin-top:6px"><button class="link-btn" id="fx-apagar"
+        style="color:var(--vermelho)">Apagar de vez</button>
+        <small style="display:block">dá porque ele nunca foi usado em nada</small></div>`;
+    ligarAtivar(f);
     els("fx-apagar").addEventListener("click", () => apagarFornecedor(f));
   } catch(e){ area.textContent = ""; }
+}
+
+function ligarAtivar(f){
+  const trocar = async (ativo) => {
+    try {
+      await api(`/erp/api/suprimentos/fornecedores/${f.id}`, {
+        method: "PATCH", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ativo})});
+      els("dlg").close();
+      aviso("mensagem", ativo
+        ? `${escapar(f.razao_social)} voltou para as listas de cotação.`
+        : `${escapar(f.razao_social)} saiu das listas de cotação. O histórico `
+          + `dele continua onde está.`, "ok");
+      await carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  };
+  if (els("fx-desativar")) els("fx-desativar").addEventListener("click", () => trocar(false));
+  if (els("fx-reativar")) els("fx-reativar").addEventListener("click", () => trocar(true));
 }
 
 async function apagarFornecedor(f){
@@ -553,47 +705,219 @@ async function apagarFornecedor(f){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+// O CNPJ PREENCHE O CADASTRO — pedido do dono, 21/09/2026:
+//
+//   "Preciso normalizar o nome do fornecedor através de consulta CNPJ, e ainda
+//   que após digitação do CNPJ sejam pesquisados os dados para serem
+//   pré-preenchidos (…) quando sigo após a digitação, falo no cadastro."
+//
+// É a mesma regra do Cartão CNPJ da empresa e do contrato da obra: UMA PORTA
+// SÓ, e a consulta é atalho DENTRO dela. Não existe botão "cadastrar pelo
+// CNPJ" ao lado de "cadastrar digitando" — existe o formulário, e o CNPJ em
+// cima dele.
+//
+// O que a consulta NÃO traz, de propósito: e-mail e telefone. O que está na
+// Receita é o do contador, quase nunca o do vendedor — e um e-mail errado no
+// cadastro faz a cotação sair para o lugar errado, que é o pior desfecho
+// possível aqui.
 async function novoFornecedor(){
-  const d = await perguntar({
-    titulo: "Novo fornecedor",
-    textoOk: "Cadastrar",
-    aviso: "O documento não muda depois. Se estiver errado, o jeito é inativar " +
-           "e cadastrar de novo — é o que preserva o histórico de títulos.",
-    campos: [
-      {nome: "cnpj_cpf", rotulo: "CNPJ ou CPF", obrigatorio: true, largura: 2},
-      {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3},
-      {nome: "nome_fantasia", rotulo: "Nome fantasia", largura: 2},
-      {nome: "email", rotulo: "E-mail", largura: 2},
-      {nome: "telefone", rotulo: "Telefone"},
-      {nome: "municipio", rotulo: "Cidade", largura: 2},
-      {nome: "uf", rotulo: "UF"},
-      {nome: "contato_nome", rotulo: "Quem responde", largura: 2,
-       dica: "a pessoa que recebe a cotação"}]});
-  if (!d) return;
-  const digitos = (d.cnpj_cpf || "").replace(/\D/g, "");
-  try {
-    const r = await api("/erp/api/suprimentos/fornecedores", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({...d, tipo_pessoa: digitos.length === 14 ? "PJ" : "PF"})});
-    aviso("mensagem", "Fornecedor cadastrado. Marque agora o que ele vende — " +
-                      "sem categoria ele não entra em cotação nenhuma.", "ok");
-    await carregar();
-    abrir(r.id);
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  els("dlg-titulo").textContent = "Novo fornecedor";
+  els("dlg-corpo").innerHTML = `
+    <div id="nf-msg"></div>
+    <div class="cartao-dica">Digite o <b>CNPJ</b> e saia do campo: o sistema
+      consulta a Receita e preenche o resto para você conferir. Nada é gravado
+      até você mandar. <b>O documento não muda depois</b> — se estiver errado, o
+      jeito é inativar e cadastrar de novo, que é o que preserva o histórico.</div>
+
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 2">
+        <label for="nf-cnpj">CNPJ ou CPF *</label>
+        <input id="nf-cnpj" inputmode="numeric" placeholder="só os números">
+        <div class="dica" id="nf-estado">a consulta acontece ao sair do campo</div></div>
+      <div class="campo" style="grid-column:span 3">
+        <label for="nf-razao">Razão social *</label>
+        <input id="nf-razao"></div>
+      <div class="campo" style="grid-column:span 2">
+        <label for="nf-fantasia">Nome fantasia</label>
+        <input id="nf-fantasia">
+        <div class="dica">é por ele que o comprador reconhece o fornecedor</div></div>
+      <div class="campo" style="grid-column:span 2">
+        <label for="nf-email">E-mail</label>
+        <input id="nf-email" type="email">
+        <div class="dica">não vem da Receita: lá é o do contador</div></div>
+      <div class="campo"><label for="nf-telefone">Telefone</label>
+        <input id="nf-telefone"></div>
+      <div class="campo" style="grid-column:span 2">
+        <label for="nf-municipio">Cidade</label><input id="nf-municipio"></div>
+      <div class="campo"><label for="nf-uf">UF</label><input id="nf-uf" maxlength="2"></div>
+      <div class="campo" style="grid-column:span 3">
+        <label for="nf-contato">Quem responde *</label>
+        <input id="nf-contato" placeholder="a pessoa que recebe a cotação"></div>
+      <div class="campo" style="grid-column:span 2">
+        <label for="nf-porte">Porte *</label>
+        <select id="nf-porte">
+          <option value="">— escolha —</option>
+          ${D.portes.map(p => `<option value="${p.chave}">${p.rotulo}</option>`).join("")}
+        </select></div>
+      <div class="campo" style="grid-column:span 2">
+        <label for="nf-abrangencia">Até onde ele vende *</label>
+        <select id="nf-abrangencia">
+          <option value="">— escolha —</option>
+          <option value="NACIONAL">Todo o Brasil</option>
+          <option value="ESTADUAL">Estado(s) inteiro(s)</option>
+          <option value="REGIONAL">Uma região (vários municípios)</option>
+          <option value="LOCAL">Só a cidade dele</option>
+        </select>
+        <div class="dica">é o que decide se ele entra na cotação de cada obra</div></div>
+      <div class="campo" id="nf-caixa-ufs" style="grid-column:span 1; display:none">
+        <label for="nf-ufs">Estados</label>
+        <input id="nf-ufs" placeholder="CE, PE"></div>
+      <div class="campo" id="nf-caixa-municipios" style="grid-column:span 3; display:none">
+        <label for="nf-municipios">Municípios</label>
+        <input id="nf-municipios" placeholder="FORTALEZA, CAUCAIA"></div>
+    </div>
+
+    <div style="margin-top:16px; display:flex; gap:8px; align-items:center">
+      <button class="btn" id="nf-salvar">Cadastrar</button>
+      <button class="btn secundario" id="nf-cancelar">Cancelar</button>
+      <span id="nf-falta" class="dica"></span>
+    </div>`;
+
+  // Guarda o que veio da Receita e não cabe no formulário (endereço, CNAE):
+  // vai junto no cadastro, sem poluir a tela com oito campos que ninguém lê.
+  let daReceita = {};
+  let jaCadastrado = null;
+
+  // O QUE É OBRIGATÓRIO, e por quê — pedido do dono em 21/09/2026: *"então é
+  // um item obrigatório no cadastro, além do porte e dados para contato. E
+  // claro, nome, CNPJ."* Cada um destes, faltando, tira o fornecedor de toda
+  // cotação futura — e ninguém percebe, porque a tela não mostra quem não foi
+  // chamado.
+  const rotular = () => {
+    const falta = [];
+    if (!els("nf-cnpj").value.replace(/\D/g, "")) falta.push("o CNPJ");
+    if (!els("nf-razao").value.trim()) falta.push("a razão social");
+    if (!els("nf-porte").value) falta.push("o porte");
+    const alcance = els("nf-abrangencia").value;
+    if (!alcance) falta.push("até onde ele vende");
+    if (alcance === "ESTADUAL" && !els("nf-ufs").value.trim())
+      falta.push("quais estados");
+    if ((alcance === "REGIONAL" || alcance === "LOCAL")
+        && !els("nf-municipios").value.trim())
+      falta.push("quais municípios");
+    if (!els("nf-contato").value.trim()) falta.push("quem responde");
+    if (!els("nf-email").value.trim() && !els("nf-telefone").value.trim())
+      falta.push("e-mail ou telefone");
+    els("nf-falta").textContent = jaCadastrado
+      ? "este documento já está cadastrado"
+      : (falta.length ? "falta " + falta.join(", ") : "");
+    els("nf-salvar").disabled = falta.length > 0 || !!jaCadastrado;
+  };
+
+  const ajustarAlcance = () => {
+    const v = els("nf-abrangencia").value;
+    els("nf-caixa-ufs").style.display = v === "ESTADUAL" ? "" : "none";
+    els("nf-caixa-municipios").style.display =
+      (v === "REGIONAL" || v === "LOCAL") ? "" : "none";
+    rotular();
+  };
+
+  const consultar = async () => {
+    const digitos = els("nf-cnpj").value.replace(/\D/g, "");
+    jaCadastrado = null;
+    if (digitos.length !== 11 && digitos.length !== 14) {
+      els("nf-estado").textContent = digitos
+        ? "CNPJ tem 14 dígitos; CPF, 11." : "a consulta acontece ao sair do campo";
+      return rotular();
+    }
+    els("nf-estado").textContent = "consultando a Receita…";
+    try {
+      const d = await api(`/erp/api/suprimentos/fornecedores/consulta-cnpj?cnpj=${digitos}`);
+      if (d.ja_cadastrado) {
+        jaCadastrado = d.ja_cadastrado;
+        els("nf-estado").innerHTML = "";
+        aviso("nf-msg", escapar(d.aviso) +
+          ` <button class="link-btn" id="nf-abrir-existente">Abrir o cadastro</button>`,
+          "alerta");
+        els("nf-abrir-existente").addEventListener("click", () => {
+          els("dlg").close();
+          abrir(jaCadastrado.id);
+        });
+        return rotular();
+      }
+      daReceita = d.campos || {};
+      // SÓ PREENCHE O QUE ESTÁ VAZIO: se a pessoa já digitou algo, o que ela
+      // escreveu vale mais que a consulta — ela pode estar corrigindo de
+      // propósito um nome que a Receita tem errado.
+      const por = {razao_social: "nf-razao", nome_fantasia: "nf-fantasia",
+                   municipio: "nf-municipio", uf: "nf-uf"};
+      let quantos = 0;
+      Object.keys(por).forEach(campo => {
+        const alvo = els(por[campo]);
+        if (daReceita[campo] && alvo && !alvo.value.trim()) {
+          alvo.value = daReceita[campo];
+          quantos++;
+        }
+      });
+      els("nf-estado").textContent = quantos
+        ? `preenchi ${quantos} campo(s) pela Receita — confira`
+        : "a Receita achou o CNPJ, mas os campos já estavam preenchidos";
+      if (d.aviso) aviso("nf-msg", escapar(d.aviso), "alerta");
+      else els("nf-msg").innerHTML = "";
+    } catch(e){
+      els("nf-estado").textContent = "não consegui consultar — preencha à mão";
+    }
+    rotular();
+  };
+
+  els("nf-cnpj").addEventListener("blur", consultar);
+  els("nf-cnpj").addEventListener("keydown", ev => {
+    if (ev.key === "Enter") { ev.preventDefault(); els("nf-cnpj").blur(); }
+  });
+  ["nf-cnpj", "nf-razao", "nf-email", "nf-telefone", "nf-contato",
+   "nf-ufs", "nf-municipios"].forEach(id => els(id).addEventListener("input", rotular));
+  els("nf-porte").addEventListener("change", rotular);
+  els("nf-abrangencia").addEventListener("change", ajustarAlcance);
+  els("nf-cancelar").addEventListener("click", () => els("dlg").close());
+  els("nf-salvar").addEventListener("click", async () => {
+    const digitos = els("nf-cnpj").value.replace(/\D/g, "");
+    els("nf-salvar").disabled = true;
+    try {
+      const r = await api("/erp/api/suprimentos/fornecedores", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          ...daReceita,
+          cnpj_cpf: digitos,
+          tipo_pessoa: digitos.length === 14 ? "PJ" : "PF",
+          razao_social: els("nf-razao").value.trim(),
+          nome_fantasia: els("nf-fantasia").value.trim(),
+          email: els("nf-email").value.trim(),
+          telefone: els("nf-telefone").value.trim(),
+          municipio: els("nf-municipio").value.trim(),
+          uf: els("nf-uf").value.trim().toUpperCase(),
+          porte: els("nf-porte").value,
+          abrangencia: els("nf-abrangencia").value,
+          ufs_atendidas: (els("nf-ufs").value || "").split(",")
+            .map(x => x.trim().toUpperCase()).filter(Boolean),
+          municipios_atendidos: (els("nf-municipios").value || "").split(",")
+            .map(x => x.trim()).filter(Boolean),
+          contato_nome: els("nf-contato").value.trim()})});
+      els("dlg").close();
+      aviso("mensagem", "Fornecedor cadastrado. Marque agora o que ele vende — "
+                      + "sem categoria ele não entra em cotação nenhuma.", "ok");
+      await carregar();
+      abrir(r.id);
+    } catch(e){
+      aviso("nf-msg", e.message, "erro");
+      els("nf-salvar").disabled = false;
+    }
+  });
+
+  rotular();
+  els("dlg").showModal();
+  setTimeout(() => els("nf-cnpj").focus(), 50);
 }
 
-
-["f-busca", "f-inativos", "f-sem-categoria", "f-sem-contato", "f-sem-email"]
-  .forEach(id => els(id).addEventListener("input", () => { LIMITE = 200; desenhar(); }));
-els("f-busca-categoria").addEventListener("input", montarFiltros);
-els("btn-limpar").addEventListener("click", () => {
-  F = {categoria: new Set(), porte: new Set(), regiao: new Set(), canal: new Set()};
-  ["f-busca", "f-busca-categoria"].forEach(id => els(id).value = "");
-  ["f-inativos", "f-sem-categoria", "f-sem-contato", "f-sem-email"]
-    .forEach(id => els(id).checked = false);
-  LIMITE = 200; montarFiltros(); desenhar();
-});
-// ------------------------------------------------ acertar pela Receita
 async function acertarPelaReceita(){
   try {
     const r = await api("/erp/api/suprimentos/fornecedores/equalizar", {
@@ -608,6 +932,35 @@ async function acertarPelaReceita(){
     acompanharTarefa(r.tarefa_id, {alvo: "receita-estado", aoTerminar: carregar});
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
+// PADRONIZAR AS REGIÕES. Roda na hora: são 1.700 cadastros e nenhuma ida à
+// rede — diferente do "Acertar pela Receita", que espera 21 segundos por CNPJ.
+async function padronizarRegioes(){
+  const previa = await api(
+    "/erp/api/suprimentos/fornecedores/padronizar-regioes?simular=1",
+    {method: "POST"});
+  const r = await perguntar({
+    titulo: "Padronizar as regiões",
+    aviso: escapar(previa.recado)
+         + (previa.termos_nao_reconhecidos.length
+            ? "<br><br><b>Não reconheci:</b> "
+              + previa.termos_nao_reconhecidos.slice(0, 12)
+                  .map(t => `${escapar(t.termo)} (${t.vezes}×)`).join(", ")
+              + ". Esses ficam sem região e você preenche na ficha."
+            : ""),
+    campos: [], textoOk: "Padronizar agora"});
+  if (!r) return;
+  els("regioes-estado").innerHTML = `<div class="cartao-dica">trabalhando…</div>`;
+  try {
+    const d = await api("/erp/api/suprimentos/fornecedores/padronizar-regioes",
+                        {method: "POST"});
+    els("regioes-estado").innerHTML = `<div class="aviso ok">${escapar(d.recado)}</div>`;
+    await carregar();
+  } catch(e){
+    els("regioes-estado").innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  }
+}
+els("btn-regioes").addEventListener("click", padronizarRegioes);
 els("btn-receita").addEventListener("click", acertarPelaReceita);
 ["f-fora-auto", "f-varios-contatos"].forEach(x =>
   els(x).addEventListener("change", desenhar));

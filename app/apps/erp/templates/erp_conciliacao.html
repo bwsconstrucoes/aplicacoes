@@ -71,8 +71,12 @@ async function carregar(){
     if (!CONTAS.length) {
       const p = await api("/erp/api/conciliacao/painel");
       CONTAS = p.contas;
+      // A EMPRESA no nome da conta (22/09/2026): escolher a conta errada aqui
+      // joga o extrato de uma empresa dentro de outra, e aí a conciliação
+      // tenta casar lançamentos que nunca vão casar.
       els("conta").innerHTML = `<option value="">Todas as contas</option>` +
-        CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("");
+        CONTAS.map(c=>`<option value="${c.id}">${escapar(c.descricao)}${
+          c.empresa_nome ? " · " + escapar(c.empresa_nome) : " · sem empresa"}</option>`).join("");
       const m = await api("/erp/api/movimentacoes");
       TIPOS_MOV = m.tipos;
     }

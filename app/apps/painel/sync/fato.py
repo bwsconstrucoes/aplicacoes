@@ -165,7 +165,26 @@ def _movimentos_do_bloco(conn, codigos):
       - so movimentos com cLiquidado='S' contam pago/desconto/juros/multa
         (os nao liquidados sao perna de conta corrente e dobrariam o caixa)
       - o saldo aberto soma todos.
-    Devolve {codigo: (data, pago, aberto, desconto, liquidado, juros, multa)}."""
+      - conta = a conta da BAIXA, nao a da previsao (ver abaixo).
+
+    A CONTA DA BAIXA, e por que ela importa. 21/09/2026, o dono:
+
+        "No OMIE existe a conta de previsao de pagamento e existe a conta onde
+        efetivamente foi realizado o pagamento. A informacao que esta sendo
+        colocada nesse relatorio analitico e exatamente a primeira. E a primeira
+        e errada."
+
+    Ele esta certo, e o erro era silencioso: a coluna saia do titulo
+    (`id_conta_corrente`), que e onde se PREVIU pagar. Quem paga por outra conta
+    — o que acontece o tempo todo — aparecia no relatorio na conta errada, e
+    qualquer analise por conta mentia sem dar sinal alguma.
+
+    Quando ha mais de uma baixa, vale a do MAIOR valor liquidado; empate, a mais
+    recente. Nao existe resposta certa para um titulo pago metade em cada conta;
+    esta e a que erra menos, e a linha do relatorio e uma so.
+
+    Devolve {codigo: (data, pago, aberto, desconto, liquidado, juros, multa,
+                      conta_da_baixa)}."""
     if not codigos:
         return {}
     marcas = ",".join(["?"] * len(codigos))
@@ -175,12 +194,14 @@ def _movimentos_do_bloco(conn, codigos):
         # quebraria a conta aqui. O banco guarda exato; o transporte usa
         # float de 8 bytes, que tem digitos de sobra para centavo.
         "SELECT ncodtitulo, ddtpagamento, cliquidado, nvalpago::float8, "
-        "       nvalaberto::float8, ndesconto::float8, njuros::float8, nmulta::float8 "
+        "       nvalaberto::float8, ndesconto::float8, njuros::float8, "
+        "       nmulta::float8, ncodcc "
         "  FROM movimentos WHERE ncodtitulo IN (" + marcas + ")", codigos)
     agg = {}
-    for cod, dpg, liq, vpg, vab, vdesc, vjur, vmul in cur.fetchall():
+    for cod, dpg, liq, vpg, vab, vdesc, vjur, vmul, ncc in cur.fetchall():
         a = agg.setdefault(cod, {"dpg": None, "pago": 0.0, "aberto": 0.0, "desc": 0.0,
-                                 "juros": 0.0, "multa": 0.0, "liq": "N"})
+                                 "juros": 0.0, "multa": 0.0, "liq": "N",
+                                 "conta": None, "peso": -1.0, "quando": None})
         a["aberto"] += (vab or 0.0)
         if liq == "S":
             a["liq"] = "S"
@@ -191,10 +212,20 @@ def _movimentos_do_bloco(conn, codigos):
             d = _data_para_dt(dpg)
             if d and (a["dpg"] is None or d > a["dpg"]):
                 a["dpg"] = d
+            # a conta da baixa: maior valor liquidado; empate, a mais recente
+            if ncc not in (None, ""):
+                peso = abs(vpg or 0.0)
+                melhor = (peso > a["peso"]
+                          or (peso == a["peso"] and d and a["quando"]
+                              and d > a["quando"])
+                          or (peso == a["peso"] and a["conta"] is None))
+                if melhor:
+                    a["conta"], a["peso"], a["quando"] = ncc, peso, d
     cur.close()
     return {cod: (a["dpg"].strftime("%d/%m/%Y") if a["dpg"] else None,
                   round(a["pago"], 2), round(a["aberto"], 2), round(a["desc"], 2),
-                  a["liq"], round(a["juros"], 2), round(a["multa"], 2))
+                  a["liq"], round(a["juros"], 2), round(a["multa"], 2),
+                  a["conta"])
             for cod, a in agg.items()}
 
 
@@ -297,6 +328,109 @@ def _buckets_rateio(linhas, bruto, proj_map):
     return buckets
 
 
+def _nome_da_conta(ccorr, codigo, reserva=None):
+    """Nome da conta corrente a partir do codigo. Sem catalogo, o codigo cru —
+    a linha nunca perde a informacao."""
+    escolhido = codigo if codigo not in (None, "") else reserva
+    if escolhido in (None, ""):
+        return ""
+    try:
+        return ccorr.get(int(escolhido)) or str(escolhido)
+    except (TypeError, ValueError):
+        return str(escolhido)
+
+
+def _conta_de_onde_saiu(movs_todos, realizado, reserva):
+    """A conta por onde o dinheiro DE FATO andou — e nao a que o titulo diz.
+
+    O OMIE guarda a mesma baixa em duas pernas (ver `_escolher_recebimentos`):
+    a CONSOLIDADA, que e o resumo do titulo e carrega a conta DO TITULO — a da
+    previsao —, e os creditos/debitos BANCARIOS, um por conta que o dinheiro
+    tocou. So a segunda sabe por onde o dinheiro saiu.
+
+    22/09/2026: o conserto do dia anterior trocou a FONTE (do titulo para o
+    movimento) mas continuou lendo a perna consolidada — e a tela nao mudou. O
+    dono refez os numeros e "o problema das contas permaneceu". O erro era
+    escolher a perna, nao a tabela.
+
+    Entre as pernas escolhidas, vale a de maior valor; empate, a mais recente.
+    Sem perna com conta, fica a reserva (a consolidada, e depois a previsao):
+    a linha nunca perde a informacao."""
+    if not movs_todos:
+        return reserva
+    escolhidos, _origem = _escolher_recebimentos(movs_todos, realizado)
+    melhor, peso, quando = None, -1.0, None
+    for m in escolhidos:
+        conta = m.get("conta")
+        if conta in (None, ""):
+            continue
+        valor = abs(m.get("valor") or 0.0)
+        d = _data_para_dt(m.get("data"))
+        if valor > peso or (valor == peso and d and quando and d > quando):
+            melhor, peso, quando = conta, valor, d
+    return melhor if melhor not in (None, "") else reserva
+
+
+def _parcelas_da_baixa(movs_todos, realizado, juros_total, multa_total,
+                       ccorr, icc, conta_unica, ddt, ano, mes, dpago_dt):
+    """UMA LINHA POR BAIXA, quando o titulo foi pago em mais de uma.
+
+    21/09/2026, o dono: um titulo pago em dois dias e valores diferentes
+    aparecia no relatorio analitico como UM lancamento, com o valor TOTAL e a
+    data da ULTIMA parcela.
+
+        "Se voce for olhar no extrato, da uma coisa. Ai voce olha no relatorio
+        analitico, da outro valor. Isso confunde."
+
+    O painel ja fazia certo do lado das RECEITAS (`montar_recebimentos`): uma
+    medicao recebida em tres parcelas vira tres linhas. Nas despesas esse
+    caminho nunca tinha sido ligado. Aqui ele passa a valer para as duas — e
+    reusa o mesmo `_escolher_recebimentos`, que e quem sabe desmontar a
+    armadilha do OMIE de guardar a mesma baixa em duas pernas. Regra repetida
+    divergiria; reusada, nao.
+
+    A SOMA NAO MUDA: cada parcela e escalada por realizado/soma_das_baixas,
+    entao o total do titulo continua o mesmo. O que muda e a DATA de cada
+    pedaco — e e por isso que um titulo pago metade em marco e metade em abril
+    deixa de contar inteiro em abril. Isso e o conserto, nao um efeito colateral.
+
+    Devolve [(valor, juros, multa, ddt, ano, mes, dpago_dt, conta)], sempre com
+    pelo menos um item. Baixa unica (a esmagadora maioria) devolve exatamente a
+    linha de antes — nao ha razao para mexer no que ja estava certo."""
+    uma_so = [(realizado, juros_total, multa_total, ddt, ano, mes, dpago_dt,
+               conta_unica)]
+    if realizado <= TOL or not movs_todos:
+        return uma_so
+
+    movs, _origem = _escolher_recebimentos(movs_todos, realizado)
+    if len(movs) < 2:
+        return uma_so
+    soma = sum(m["valor"] for m in movs)
+    if soma <= TOL:
+        return uma_so
+
+    fator = realizado / soma
+    parcelas = []
+    for m in movs:
+        d = _data_para_dt(m.get("data"))
+        # Juros e multa vao pela MESMA proporcao do principal, e nao pelo que
+        # cada movimento carrega: as pernas que o OMIE usa para os creditos
+        # bancarios vem com encargo zerado, e usar o proprio faria o total do
+        # titulo encolher sem ninguem notar. A soma tem de continuar a mesma.
+        peso = m["valor"] / soma
+        parcelas.append((
+            m["valor"] * fator,
+            juros_total * peso,
+            multa_total * peso,
+            d or ddt,
+            d.year if d else ano,
+            d.month if d else mes,
+            d or dpago_dt,
+            _nome_da_conta(ccorr, m.get("conta"), icc),
+        ))
+    return parcelas
+
+
 # ----------------------------------------------------------------------------- 
 # Monta o DataFrame final
 # ----------------------------------------------------------------------------- 
@@ -313,6 +447,11 @@ COLUNAS_FATO = (
     # atraso, que nao existia em lugar nenhum do painel.
     "data", "ano", "mes", "data_vencimento", "data_pagamento",
     "pago_recebido", "a_pagar_receber", "juros", "multa",
+    # Que tipo de aporte e a linha ('' quando nao e). Decidido AQUI, uma vez,
+    # em vez de em cada consulta do bloco de aportes — que levava dois minutos
+    # para abrir por refazer essa decisao 185 mil vezes por consulta (migracao
+    # 017).
+    "tipo_aporte",
 )
 
 
@@ -330,6 +469,9 @@ def gerar_linhas_fato(conn):
         codigos = [linha[0] for linha in bloco]
         mov = _movimentos_do_bloco(conn, codigos)
         rateio = _rateio_do_bloco(conn, codigos)
+        # O detalhe de cada baixa — e o que permite abrir o titulo pago em
+        # parcelas numa linha por parcela. Ver `_parcelas_da_baixa`.
+        detalhe = _movimentos_detalhe_do_bloco(conn, codigos)
 
         for row in bloco:
             (cod, nat, vdoc, ccat, ccli, icc, ndoc, nped, status, dvenc,
@@ -345,7 +487,9 @@ def gerar_linhas_fato(conn):
             sinal = 1.0 if is_rec else -1.0
             tipo = REC if is_rec else PAG
 
-            dpg, pago_mov, aberto_mov, desc_mov, liq_mov, juros_mov, multa_mov =                 mov.get(cod, (None, 0.0, 0.0, 0.0, "N", 0.0, 0.0))
+            (dpg, pago_mov, aberto_mov, desc_mov, liq_mov, juros_mov,
+             multa_mov, conta_da_baixa) = mov.get(
+                cod, (None, 0.0, 0.0, 0.0, "N", 0.0, 0.0, None))
             quitado = bool(re.search(r"pago|recebido|conciliado", status, re.I)) or liq_mov == "S"
 
             # realizado x aberto (parte LIQUIDA).
@@ -400,43 +544,81 @@ def gerar_linhas_fato(conn):
             if not (razao or "").strip() and ccli not in (None, ""):
                 razao = f"(fornecedor {ccli})"
             link = pipefy_link(ndoc)
-            # Conta corrente: NOME da conta. Se o catalogo ainda nao tem esse codigo
-            # (conta criada depois do ultimo sync), cai para o codigo cru — assim a
-            # linha nunca perde a informacao.
-            if icc in (None, ""):
+            # Conta corrente: A CONTA DA BAIXA, nao a da previsao.
+            #
+            # 21/09/2026, o dono: "existe a conta de previsao de pagamento e
+            # existe a conta onde efetivamente foi realizado o pagamento. A
+            # informacao que esta sendo colocada nesse relatorio analitico e
+            # exatamente a primeira. E a primeira e errada."
+            #
+            # O titulo carrega a conta onde se PREVIU pagar
+            # (`id_conta_corrente`); quem paga por outra conta aparecia no
+            # relatorio na conta errada, calado. Titulo ainda EM ABERTO nao tem
+            # baixa — ai a previsao e a unica informacao que existe, e continua
+            # valendo.
+            # E a conta vem da perna BANCARIA da baixa, nao da consolidada: a
+            # consolidada repete a conta do titulo. Ver `_conta_de_onde_saiu`.
+            reserva = conta_da_baixa if conta_da_baixa not in (None, "") else icc
+            codigo_conta = _conta_de_onde_saiu(detalhe.get(cod, []), realizado, reserva)
+            if codigo_conta in (None, ""):
                 conta = ""
             else:
+                # Se o catalogo ainda nao tem esse codigo (conta criada depois
+                # do ultimo sync), cai para o codigo cru — a linha nunca perde a
+                # informacao.
                 try:
-                    conta = ccorr.get(int(icc)) or str(icc)
+                    conta = ccorr.get(int(codigo_conta)) or str(codigo_conta)
                 except (TypeError, ValueError):
-                    conta = str(icc)
+                    conta = str(codigo_conta)
             observacao = (obs or "").strip()
 
             buckets = _buckets_rateio(rateio.get(cod, []), bruto, proj_map)
+
+            # O tipo de aporte, decidido uma vez por titulo. '' = nao e aporte.
+            tipo_aporte = classificar_aporte(desc_cat, ccat, razao) or ""
 
             # Chave da medicao: e o que junta as parcelas de uma mesma medicao,
             # que no OMIE sao titulos separados sem numero de documento. Guardada
             # na linha para a tela poder agrupar no banco.
             chave = chave_medicao(ndoc or "", observacao) or f"COD:{cod}"
 
+            # UMA LINHA POR BAIXA. Pago de uma vez (a esmagadora maioria)
+            # devolve exatamente a linha de antes.
+            parcelas = _parcelas_da_baixa(
+                detalhe.get(cod, []), realizado, juros_mov, multa_mov,
+                ccorr, icc, conta, ddt, ano, mes, dpago_dt)
+            rotulo = rotulo_medicao(chave)
+
             for dep, projeto, frac in buckets:
                 comum = (cod, tipo, analise, status, sit_venc)
-                identificacao = (projeto, dep, razao, cnpj, ndoc or "", nped or "",
-                                 conta, observacao, link,
-                                 chave, rotulo_medicao(chave),
-                                 ddt, ano, mes, dvenc_dt, dpago_dt)
-                # linha LIQUIDA (categoria real). Juros e multa sao os encargos
-                # efetivamente pagos e ficam SEPARADOS do principal, para virarem
-                # linha financeira no DRE.
-                yield comum + (desc_cat, ccat, grupo) + identificacao + (
-                    round(sinal * realizado * frac, 2),
-                    round(sinal * aberto * frac, 2),
-                    round(sinal * juros_mov * frac, 2),
-                    round(sinal * multa_mov * frac, 2))
-                # linha RETIDO (so a receber; valor sempre como realizado)
-                if is_rec and ret_total > TOL:
-                    yield comum + (CATEGORIA_RETIDO, None, GRUPO_RETIDO) + identificacao + (
-                        round(ret_total * frac, 2), 0.0, 0.0, 0.0)
+                primeira = None
+                for i, parcela in enumerate(parcelas):
+                    (p_valor, p_juros, p_multa, p_ddt, p_ano, p_mes,
+                     p_dpago, p_conta) = parcela
+                    identificacao = (projeto, dep, razao, cnpj, ndoc or "",
+                                     nped or "", p_conta, observacao, link,
+                                     chave, rotulo,
+                                     p_ddt, p_ano, p_mes, dvenc_dt, p_dpago)
+                    if primeira is None:
+                        primeira = identificacao
+                    # O SALDO EM ABERTO E DO TITULO, nao de cada parcela.
+                    # Repeti-lo multiplicaria o "a pagar" pelo numero de baixas
+                    # — um erro que cresceria com o uso, silencioso.
+                    em_aberto = aberto if i == 0 else 0.0
+                    # linha LIQUIDA (categoria real). Juros e multa sao os
+                    # encargos efetivamente pagos e ficam SEPARADOS do
+                    # principal, para virarem linha financeira no DRE.
+                    yield comum + (desc_cat, ccat, grupo) + identificacao + (
+                        round(sinal * p_valor * frac, 2),
+                        round(sinal * em_aberto * frac, 2),
+                        round(sinal * p_juros * frac, 2),
+                        round(sinal * p_multa * frac, 2),
+                        tipo_aporte)
+                # linha RETIDO (so a receber; valor sempre como realizado).
+                # UMA so, mesmo com varias baixas: a retencao e do titulo.
+                if is_rec and ret_total > TOL and primeira is not None:
+                    yield comum + (CATEGORIA_RETIDO, None, GRUPO_RETIDO) + primeira + (
+                        round(ret_total * frac, 2), 0.0, 0.0, 0.0, "")
 
 
 # -----------------------------------------------------------------------------
@@ -667,6 +849,17 @@ def rotulo_medicao(chave):
     for p in ("DOC:", "OBS:", "ROW:"):
         if c.startswith(p):
             return c[len(p):]
+    # COD: e a saida quando NAO DA para saber a medicao — o titulo nao tem
+    # numero de documento nem observacao no padrao "OBRA|Medicao No: N". Ai a
+    # chave vira o codigo do proprio titulo no OMIE, para ele pelo menos nao se
+    # misturar com outro.
+    #
+    # 21/09/2026 o dono topou com "COD:11255312361" na tela e perguntou o que
+    # era. "COD:" nao quer dizer nada para quem le: o rotulo passa a dizer o que
+    # e, e a deixar o numero a vista — e por ele que se acha o lancamento no
+    # OMIE.
+    if c.startswith("COD:"):
+        return f"Sem número de medição (título {c[4:]})"
     return c
 
 
@@ -777,8 +970,8 @@ def montar_recebimentos(conn, natureza="R"):
             is_rec = (nat == "R")
             sinal = 1.0 if is_rec else -1.0
 
-            _dpg, pago_mov, _ab, desc_mov, liq_mov, _ju, _mu = \
-                mov.get(cod, (None, 0.0, 0.0, 0.0, "N", 0.0, 0.0))
+            _dpg, pago_mov, _ab, desc_mov, liq_mov, _ju, _mu, _conta = \
+                mov.get(cod, (None, 0.0, 0.0, 0.0, "N", 0.0, 0.0, None))
             quitado = bool(re.search(r"pago|recebido|conciliado", status, re.I)) or liq_mov == "S"
             if not quitado:
                 continue  # nada entrou/saiu: fica so na tabela `fato`, como "em aberto"

@@ -50,12 +50,12 @@ async function carregar(){
 }
 function desenhar(){
   const b = (els("busca").value||"").toLowerCase();
-  const l = COL.filter(c => `${c.nome} ${c.cpf}`.toLowerCase().includes(b));
+  const l = COL.filter(c => `${c.nome} ${c.cpf} ${documento(c.cpf)}`.toLowerCase().includes(b));
   els("vazio").classList.toggle("oculto", l.length>0);
   if (!l.length) els("vazio").innerHTML = "<b>Nenhum colaborador</b>Cadastre para lançar despesas.";
   els("corpo").innerHTML = l.map(c=>`<tr style="cursor:pointer" data-c="${c.id}">
     <td><b>${c.nome}</b>${c.matricula?`<small>mat. ${c.matricula}</small>`:""}</td>
-    <td class="dados">${c.cpf}</td><td>${c.funcao||"—"}</td><td class="dados">${c.obra||"—"}</td>
+    <td class="dados">${documento(c.cpf)}</td><td>${c.funcao||"—"}</td><td class="dados">${c.obra||"—"}</td>
     <td>${rotulo(c.regime)}</td>
     <td class="direita dados">${c.valor_diaria?numero(c.valor_diaria):"—"}</td>
     <td class="direita dados">${c.aux_alimentacao?numero(c.aux_alimentacao):"—"}</td>
@@ -70,7 +70,7 @@ async function ficha(id){
   try {
     const {historico: h} = await api(`/erp/api/colaboradores/${id}/historico`);
     const c = h.colaborador;
-    els("dlg-titulo").textContent = `${c.nome} — ${c.cpf}`;
+    els("dlg-titulo").textContent = `${c.nome} — ${documento(c.cpf)}`;
     els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
       <div class="kpis">
         <div class="kpi estatico"><div class="kpi-rotulo">Pago no total</div>

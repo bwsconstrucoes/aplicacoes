@@ -530,9 +530,36 @@ def _guarda_permissao():
     if not decidir(perfil_enum, acao, excecoes, acoes):
         logger.warning("ERP/permissao: %s negado ao usuário %s (%s) em %s",
                        acao, session.get("erp_usuario_id"), perfil, endpoint)
+        return _recusa_de_acesso(perfil_enum)
+    return None
+
+
+def _e_chamada_de_api() -> bool:
+    """Quem está pedindo: um programa ou uma pessoa na frente da tela?
+
+    Endereço de API responde JSON — é o que a tela e as integrações esperam.
+    TELA responde tela: até 22/09/2026 a recusa vinha como JSON cru ocupando a
+    janela inteira, sem menu e sem caminho de volta, com cara de defeito do
+    sistema. Quem esbarrava nisso achava que tinha quebrado alguma coisa.
+    """
+    caminho = request.path or ""
+    if caminho.startswith("/erp/api/"):
+        return True
+    # busca (XHR/fetch) pede JSON explicitamente; navegador pede HTML
+    aceita = (request.headers.get("Accept") or "")
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return True
+    return "application/json" in aceita and "text/html" not in aceita
+
+
+def _recusa_de_acesso(perfil_enum):
+    """A recusa, do jeito de quem perguntou."""
+    if _e_chamada_de_api():
         return jsonify({"ok": False,
                         "erro": "Seu perfil não tem permissão para esta operação."}), 403
-    return None
+    from app.apps.erp.core.auth.permissoes import ROTULOS
+    return render_template("erp_sem_acesso.html",
+                           perfil=ROTULOS.get(perfil_enum, perfil_enum.value)), 403
 
 
 @bp.route("/erp/entrar", methods=["GET", "POST"])
@@ -1357,6 +1384,85 @@ def api_cotacao_marcar_resposta(coluna_id: int):
                 r = cobranca.marcar_resposta(
                     s, coluna_id, canal=d.get("canal") or "",
                     quem=d.get("quem") or "", usuario=u)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/padronizar-regioes",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_padronizar_regioes():
+    """Traduz o texto livre de "Região de Atuação" para algo que cruza com a
+    obra. Com `?simular=1`, só relata.
+
+    Roda na hora (não é fila): são 1.700 cadastros e nenhuma ida à rede.
+    """
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    simular = str(request.args.get("simular") or "").strip() in ("1", "true", "sim")
+    with get_session() as s:
+        atual = _usuario_logado(s)
+        r = svc.padronizar_regioes(s, atual, simular=simular)
+        if simular:
+            s.rollback()
+        else:
+            s.commit()
+    return jsonify({"ok": True, **r})
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>/regiao",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_definir_regiao(fornecedor_id: int):
+    """Grava à mão até onde este fornecedor vende."""
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            r = svc.definir_regiao(s, fornecedor_id,
+                                   request.get_json(silent=True) or {}, atual)
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/consulta-cnpj")
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_consulta_cnpj():
+    """O que a Receita sabe sobre este CNPJ — para o formulário preencher.
+
+    Não grava nada, e também responde se o documento JÁ está cadastrado: é o
+    que evita a pessoa digitar tudo para o banco recusar no fim.
+    """
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, **svc.consultar_para_cadastro(
+                s, request.args.get("cnpj", ""))})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>/nome-oficial",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_adotar_nome_oficial(fornecedor_id: int):
+    """Troca a razão social pela da Receita, guardando a antiga como fantasia."""
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            r = svc.adotar_nome_oficial(s, fornecedor_id, atual)
             s.commit()
         return jsonify({"ok": True, **r})
     except ErroValidacao as e:
@@ -3364,6 +3470,34 @@ def api_titulos():
                                 "tem_mais", "de", "ate", "resumo")}})
 
 
+def _conta_do_credor_do_titulo(s, t) -> dict | None:
+    """A conta bancária que este título vai pagar, com a situação dela.
+
+    Só o necessário para o card decidir se mostra o botão de homologar: id,
+    situação e se QUEM ESTÁ OLHANDO pode homologar. Dado bancário em si não
+    passa por aqui — ele tem tela própria, com permissão própria.
+    """
+    from app.apps.erp.core.auth.permissoes import pode
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    from app.apps.erp.db.models.cadastros import FornecedorConta
+
+    if not getattr(t, "fornecedor_conta_id", None):
+        return None
+    conta = s.get(FornecedorConta, t.fornecedor_conta_id)
+    if conta is None:
+        return None
+    atual = _usuario_logado(s)
+    autor = svc_forn.quem_cadastrou_a_conta(s, conta.id)
+    proprio = autor is not None and atual is not None and autor == atual.id
+    return {
+        "id": conta.id,
+        "status": conta.status.value if conta.status else None,
+        "forma": conta.forma.value if conta.forma else None,
+        "posso_homologar": bool(pode(atual, "homologar_conta_credor")) and not proprio,
+        "eu_que_cadastrei": proprio,
+    }
+
+
 def _pedido_do_titulo(s, t) -> dict | None:
     """O pedido de compra que originou o título, para virar link na ficha.
 
@@ -3547,6 +3681,11 @@ def api_titulo_detalhe(titulo_id: int):
                                "aliquota": float(r.aliquota), "valor": float(r.valor)}
                               for r in t.retencoes],
                 "criticas": (analise.criticas if analise else []) or [],
+                # A CONTA DO CREDOR que este título usa, e se ela ainda espera
+                # conferência (22/09/2026). É o que permite ao card mostrar o
+                # botão de homologar bem onde a pessoa esbarra no bloqueio, em
+                # vez de mandá-la procurar a tela do credor e voltar.
+                "conta_do_credor": _conta_do_credor_do_titulo(s, t),
                 "trilha": [{"quando": e.criado_em.strftime("%d/%m/%Y %H:%M"),
                             "acao": e.acao, "detalhe": e.detalhe} for e in eventos],
             }
@@ -3701,7 +3840,11 @@ def api_acao_lote():
     acao = (payload.get("acao") or "").strip()
     ids = payload.get("ids") or []
     motivo = (payload.get("motivo") or "").strip()
-    if acao not in ("aprovar", "devolver", "cancelar"):
+    # "reanalisar" (22/09/2026) é a saída do beco do título BLOQUEADO por conta
+    # do credor ainda não homologada: homologa-se a conta e manda reanalisar,
+    # em vez de refazer o lançamento inteiro. Ele NÃO aprova — devolve o título
+    # para a fila de aprovação, que continua sendo de outra pessoa.
+    if acao not in ("aprovar", "devolver", "cancelar", "reanalisar"):
         return jsonify({"ok": False, "erro": f"Ação inválida: {acao!r}"}), 400
     if not ids:
         return jsonify({"ok": False, "erro": "Nenhum título selecionado."}), 400
@@ -3714,12 +3857,21 @@ def api_acao_lote():
                 return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
             for tid in ids:
                 try:
+                    # SELEÇÃO ESTRAGADA vira recado, não erro 500 (22/09/2026).
+                    try:
+                        tid = int(tid)
+                    except (TypeError, ValueError):
+                        erros.append({"id": tid, "erro": "Seleção inválida — "
+                                      "recarregue a lista e escolha de novo."})
+                        continue
                     if acao == "aprovar":
-                        t = svc_titulos.aprovar(s, int(tid), usuario)
+                        t = svc_titulos.aprovar(s, tid, usuario)
                     elif acao == "devolver":
-                        t = svc_titulos.devolver(s, int(tid), motivo, usuario)
+                        t = svc_titulos.devolver(s, tid, motivo, usuario)
+                    elif acao == "reanalisar":
+                        t = svc_titulos.reanalisar(s, tid, usuario)
                     else:
-                        t = svc_titulos.cancelar(s, int(tid), motivo, usuario)
+                        t = svc_titulos.cancelar(s, tid, motivo, usuario)
                     oks.append(t.numero_sp)
                 except (ErroValidacao, ErroPermissao) as e:
                     erros.append({"id": tid, "erro": str(e)})
@@ -3779,8 +3931,12 @@ def api_config():
                     "municipio": o.municipio, "uf": o.uf, "contrato": o.contrato,
                     "status": o.status,
                 } for o in obras],
+                # A EMPRESA DONA vai junto (migração 080): é o que permite a
+                # tela oferecer só as contas do CNPJ certo na hora de pagar, em
+                # vez de misturar as de todas as empresas numa lista só.
                 "contas": [{"id": b.id, "descricao": b.descricao, "banco": b.banco_codigo,
-                            "agencia": b.agencia, "conta": b.conta, "ativo": b.ativo}
+                            "agencia": b.agencia, "conta": b.conta, "ativo": b.ativo,
+                            "empresa_id": b.empresa_id}
                            for b in contas],
                 "usuarios": [{"nome": u.nome, "email": u.email,
                               "perfil": u.perfil.value, "ativo": u.ativo} for u in usuarios],
@@ -4366,6 +4522,265 @@ def api_definir_depara():
 # ---------------------------------------------------------------------------
 # Lançamento
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# CADASTRAR O CREDOR SEM SAIR DO LANÇAMENTO — 22/09/2026
+#
+# Pedido do dono: *"se o credor não tem cadastro, o ERP deve avisar e tem que
+# ser permitido o cadastro já a partir da tela."*
+#
+# É a mesma regra de desenho que ele já tinha dado para empresa e obra: UMA
+# PORTA, e o atalho DENTRO do formulário. Mandar a pessoa sair do lançamento,
+# ir a Cadastros, voltar e recomeçar é onde o lançamento é abandonado no meio.
+#
+# A CONTA BANCÁRIA VEM JUNTO, E NASCE PENDENTE — e é aqui que mora a decisão
+# que importa. A homologação em duas pessoas existe contra o golpe da troca de
+# conta: quem lança não pode ser quem aprova o destino do dinheiro. Deixar o
+# lançador criar conta JÁ HOMOLOGADA destruiria esse controle.
+#
+# Então a conta entra PENDENTE: o lançamento é concluído, o título nasce
+# BLOQUEADO pela crítica C2 (que já existia), e alguém com alçada homologa e
+# reanalisa. O trabalho não se perde e o controle não cai.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/credores", methods=["POST"])
+@login_obrigatorio
+@permissao("lancar")
+def api_credor_no_lancamento():
+    """Cadastra o credor a partir da tela de lançamento, com conta pendente."""
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            doc = somente_digitos(d.get("cnpj_cpf") or "")
+            # Documento já cadastrado não é erro para quem está lançando: é a
+            # resposta que ele procurava. Devolve o que existe em vez de mandar
+            # procurar.
+            ja = svc_forn.obter_por_documento(s, doc) if doc else None
+            if ja is not None:
+                # CREDOR QUE JÁ EXISTE MAS AINDA NÃO TEM FORMA DE PAGAMENTO
+                # (22/09/2026, achado ao simular a cadeia inteira). Antes a
+                # rota devolvia o cadastro e DESCARTAVA em silêncio a conta
+                # que a pessoa acabou de digitar — ela via "pronto", salvava,
+                # e o título travava do mesmo jeito. É exatamente o caso que
+                # o dono descreveu: *"preciso voltar pra cadastrar a forma de
+                # pgt"*.
+                conta_nova = _conta_pendente_do_credor(s, ja, d)
+                if conta_nova is not None:
+                    s.commit()
+                return jsonify({"ok": True, "ja_existia": True,
+                                "conta_pendente_id": conta_nova,
+                                "credor": _credor_para_lancamento(s, ja)})
+            forn = svc_forn.criar(s, {
+                "tipo_pessoa": "PF" if len(doc) == 11 else "PJ",
+                "cnpj_cpf": doc,
+                "razao_social": (d.get("razao_social") or "").strip(),
+                "nome_fantasia": (d.get("nome_fantasia") or "").strip() or None,
+                "email": (d.get("email") or "").strip() or None,
+                "telefone": (d.get("telefone") or "").strip() or None,
+                "origem": "LANCAMENTO"}, usuario)
+
+            conta_criada = _conta_pendente_do_credor(s, forn, d)
+            s.commit()
+            return jsonify({"ok": True, "ja_existia": False,
+                            "conta_pendente_id": conta_criada,
+                            "credor": _credor_para_lancamento(s, forn)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao cadastrar credor no lançamento")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# A HOMOLOGAÇÃO DA CONTA DO CREDOR — a porta que faltava (22/09/2026)
+#
+# Achado ao simular a cadeia inteira de ponta a ponta: a regra de negócio
+# `homologar_conta` existia desde sempre e NÃO TINHA QUEM A CHAMASSE — nenhuma
+# rota, nenhum botão, nenhum teste. Na prática isso travava o ERP inteiro num
+# banco novo: todo título pago por Pix ou TED nasce BLOQUEADO pela crítica C2
+# enquanto a conta do credor não estiver homologada, e não havia como
+# homologar. O lançamento chegava ao fim e morria ali.
+#
+# É o segundo lado da porta que o cadastro do credor pela tela de lançamento
+# abriu: lá a conta nasce PENDENTE de propósito, aqui ela é conferida por
+# outra pessoa e liberada. As duas metades juntas é que fazem o controle
+# valer — uma sem a outra é ou um beco, ou um convite ao golpe da troca de
+# conta.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/credores/contas/pendentes")
+@login_obrigatorio
+@permissao("homologar_conta_credor")
+def api_contas_pendentes():
+    """A fila de contas de credor esperando conferência.
+
+    Sem esta lista a pendência ficaria invisível: ela só apareceria para quem
+    esbarrasse num título bloqueado, e o dinheiro pararia sem ninguém saber
+    por quê.
+    """
+    from sqlalchemy import select
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    from app.apps.erp.db.models.cadastros import (
+        Fornecedor, FornecedorConta, StatusConta, Usuario as _U,
+    )
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            contas = s.scalars(select(FornecedorConta).where(
+                FornecedorConta.status == StatusConta.PENDENTE)).all()
+            nomes = {f.id: f.razao_social for f in s.scalars(select(Fornecedor)).all()}
+            pessoas = {u.id: u.nome for u in s.scalars(select(_U)).all()}
+            fila = []
+            for ct in sorted(contas, key=lambda c: c.id or 0, reverse=True):
+                autor = svc_forn.quem_cadastrou_a_conta(s, ct.id)
+                fila.append({
+                    "id": ct.id, "fornecedor_id": ct.fornecedor_id,
+                    "credor": nomes.get(ct.fornecedor_id, ""),
+                    "forma": ct.forma.value if ct.forma else None,
+                    "identificacao": ct.pix_chave or
+                    f"{ct.banco_codigo or ''}/{ct.agencia or ''}/{ct.conta or ''}",
+                    "titular": ct.titular_nome, "titular_doc": ct.titular_doc,
+                    "cadastrada_por": pessoas.get(autor, ""),
+                    # quem cadastrou não homologa: a tela já mostra o botão
+                    # apagado, em vez de deixar a pessoa clicar e tomar recusa.
+                    "posso_homologar": not (autor is not None and atual is not None
+                                            and autor == atual.id),
+                    "criado_em": ct.criado_em.isoformat() if ct.criado_em else None,
+                })
+        return jsonify({"ok": True, "contas": fila})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao listar contas pendentes")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/credores/contas/<int:conta_id>/homologar", methods=["POST"])
+@login_obrigatorio
+@permissao("homologar_conta_credor")
+def api_homologar_conta_credor(conta_id: int):
+    """Libera a conta do credor para pagamento, conferida por outra pessoa.
+
+    Aceita `reanalisar_titulo_id`: o título que estava bloqueado por causa
+    desta conta volta para a fila de aprovação na MESMA ida. Sem isso a
+    pessoa homologa, acha que resolveu, e o título continua parado — o beco
+    que o dono descreveu, só que uma casa adiante.
+    """
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            conta = svc_forn.homologar_conta(s, conta_id, usuario)
+            resposta = {"ok": True, "conta_id": conta.id,
+                        "status": conta.status.value}
+            alvo = d.get("reanalisar_titulo_id")
+            if alvo:
+                try:
+                    titulo = svc_titulos.reanalisar(s, int(alvo), usuario)
+                    resposta["titulo"] = {"id": titulo.id,
+                                          "numero_sp": titulo.numero_sp,
+                                          "status": titulo.status.value}
+                except (ErroValidacao, ErroPermissao) as e:
+                    # a homologação vale de qualquer jeito: ela é o ato
+                    # principal, e desfazê-la por causa da reanálise seria
+                    # perder o trabalho conferido.
+                    resposta["aviso_reanalise"] = str(e)
+            s.commit()
+        return jsonify(resposta)
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao homologar conta do credor")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+def _conta_pendente_do_credor(s, forn, d: dict):
+    """A conta bancária que veio junto do cadastro pela tela de lançamento.
+
+    Nasce PENDENTE sempre — é o controle inteiro: quem lança pode DIZER para
+    onde o credor recebe, mas não pode LIBERAR esse destino. Devolve o id da
+    conta criada, ou None quando não veio forma de pagamento nenhuma.
+    """
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import (
+        FormaPagamento, FornecedorConta, StatusConta,
+    )
+
+    forma = (d.get("conta_forma") or "").strip().upper()
+    if forma not in ("PIX", "TED"):
+        return None
+    conta = FornecedorConta(
+        fornecedor_id=forn.id, forma=FormaPagamento(forma),
+        titular_nome=forn.razao_social, titular_doc=forn.cnpj_cpf,
+        status=StatusConta.PENDENTE)
+    if forma == "PIX":
+        chave = (d.get("pix_chave") or "").strip()
+        if not chave:
+            raise ErroValidacao("Informe a chave Pix do credor.")
+        conta.pix_tipo = (d.get("pix_tipo") or "ALEATORIA").strip().upper()
+        conta.pix_chave = chave
+    else:
+        banco = somente_digitos(d.get("banco_codigo") or "")
+        agencia = (d.get("agencia") or "").strip()
+        numero = (d.get("conta") or "").strip()
+        if not (banco and agencia and numero):
+            raise ErroValidacao("Para TED informe banco, agência e conta.")
+        conta.banco_codigo, conta.agencia, conta.conta = banco, agencia, numero
+    # a conta repetida não vira segunda conta pendente: seriam duas filas de
+    # conferência para o mesmo dado, e quem confere não saberia qual liberar.
+    igual = next((c for c in forn.contas
+                  if c.forma == conta.forma and c.status == StatusConta.PENDENTE
+                  and (c.pix_chave or "") == (conta.pix_chave or "")
+                  and (c.banco_codigo or "") == (conta.banco_codigo or "")
+                  and (c.agencia or "") == (conta.agencia or "")
+                  and (c.conta or "") == (conta.conta or "")), None)
+    if igual is not None:
+        return igual.id
+    s.add(conta)
+    s.flush()
+    # QUEM CADASTROU fica na trilha — é o que a homologação lê depois para
+    # recusar que a mesma pessoa libere a própria conta.
+    usuario = _usuario_logado(s)
+    registrar_evento(s, "fornecedor_conta", conta.id, "CRIADA",
+                     {"fornecedor_id": forn.id, "forma": forma,
+                      "origem": "LANCAMENTO"},
+                     usuario.id if usuario else None)
+    s.flush()
+    # a lista de contas do credor foi lida acima (a busca por repetida), então
+    # ela ficou velha: sem esta linha o cadastro acabado de gravar não apareceria
+    # na resposta, e a tela diria que nada foi criado.
+    s.expire(forn, ["contas"])
+    return conta.id
+
+
+def _credor_para_lancamento(s, forn) -> dict:
+    """O credor no MESMO formato que /erp/api/lancamento/dados devolve.
+
+    Uma função só, para a tela poder encaixar o recém-criado na lista sem
+    recarregar tudo — e para os dois formatos não divergirem com o tempo.
+    """
+    from app.apps.erp.db.models.cadastros import StatusConta
+    return {
+        "id": forn.id, "nome": forn.razao_social, "documento": forn.cnpj_cpf,
+        "situacao_rfb": forn.situacao_rfb,
+        "contas": [{"id": ct.id, "forma": ct.forma.value,
+                    "identificacao": ct.pix_chave or
+                    f"{ct.banco_codigo}/{ct.agencia}/{ct.conta}"}
+                   for ct in forn.contas if ct.status == StatusConta.HOMOLOGADA],
+        "contas_pendentes": [{"id": ct.id, "forma": ct.forma.value}
+                             for ct in forn.contas
+                             if ct.status == StatusConta.PENDENTE],
+    }
+
+
 @bp.route("/erp/api/lancamento/dados")
 @login_obrigatorio
 @permissao("lancar")
@@ -4632,8 +5047,19 @@ def api_agenda():
                 "em_lote": p.id in em_lote,
                 "contas_da_obra": _contas_da_parcela(p),
                 "contas_nomes": [nome_da_conta.get(i, "") for i in _contas_da_parcela(p)],
+                # A EMPRESA QUE PAGA (migração 080): é com ela que a tela
+                # decide quais contas oferecer, em vez de listar as de todos
+                # os CNPJs juntas.
+                "empresa_id": p.titulo.empresa_id,
             } for p in parcelas]
-            contas = [{"id": c.id, "descricao": c.descricao}
+            from app.apps.erp.db.models.cadastros import Empresa as _Emp
+            nome_empresa = {e.id: (e.nome_fantasia or e.razao_social)
+                            for e in s.scalars(select(_Emp)).all()}
+            for item in itens:
+                item["empresa_nome"] = nome_empresa.get(item["empresa_id"], "")
+            contas = [{"id": c.id, "descricao": c.descricao,
+                       "empresa_id": c.empresa_id,
+                       "empresa_nome": nome_empresa.get(c.empresa_id, "")}
                       for c in s.scalars(select(ContaBancaria)
                                          .where(ContaBancaria.ativo.is_(True))).all()]
         return jsonify({"ok": True, "parcelas": itens, "contas": contas})
@@ -4676,24 +5102,40 @@ def api_baixar():
     data_pg = d.get("data_pagamento") or date.today().isoformat()
     if not itens or not conta_id:
         return jsonify({"ok": False, "erro": "Informe as parcelas e a conta de saída."}), 400
-    ok, erros = [], []
+    ok, erros, confirmar = [], [], []
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
             for it in itens:
                 try:
+                    # Parcela sem número não é falha do sistema (22/09/2026):
+                    # era um erro 500 com o recado de "falha do sistema", que
+                    # assusta e não diz o que fazer.
+                    try:
+                        parcela_id = int(it.get("parcela_id"))
+                    except (TypeError, ValueError):
+                        raise ErroValidacao(
+                            "Escolha de novo as parcelas a pagar — a seleção se perdeu.")
                     # escopo do OBJETO: ter alçada para pagar não autoriza a
                     # pagar a parcela da obra de outro. Fora do escopo responde
                     # "não encontrado", nunca "sem permissão".
-                    exigir_parcela_no_escopo(s, usuario, int(it["parcela_id"]))
+                    exigir_parcela_no_escopo(s, usuario, parcela_id)
                     pg = svc_pag.registrar_pagamento(
-                        s, parcela_id=int(it["parcela_id"]),
+                        s, parcela_id=parcela_id,
                         conta_bancaria_id=int(conta_id),
                         data_pagamento=date.fromisoformat(data_pg),
                         valor_pago=it.get("valor_pago") or it.get("valor"),
-                        usuario=usuario)
+                        usuario=usuario,
+                        confirmar_outra_empresa=bool(d.get("confirmar_outra_empresa")))
                     ok.append({"parcela_id": pg.parcela_id, "valor": float(pg.valor_pago),
                                "pagamento_id": pg.id})
+                # PAGAR POR OUTRA EMPRESA não é erro: é uma decisão, e ela
+                # volta em campo PRÓPRIO para a tela perguntar uma vez e
+                # reenviar confirmado. Misturado com os erros, viraria uma
+                # linha vermelha que a pessoa lê como "deu problema".
+                except svc_pag.ErroEmpresaDiferente as e:
+                    confirmar.append({"parcela_id": it.get("parcela_id"),
+                                      "pergunta": str(e)})
                 except (ErroValidacao, ErroPermissao) as e:
                     erros.append({"parcela_id": it.get("parcela_id"), "erro": str(e)})
             s.commit()
@@ -4706,7 +5148,8 @@ def api_baixar():
                     except Exception as e:      # aviso não derruba a baixa
                         logger.warning("ERP: aviso falhou (%s)", e)
                 s.commit()
-        return jsonify({"ok": True, "pagas": ok, "erros": erros, "avisos": avisos})
+        return jsonify({"ok": True, "pagas": ok, "erros": erros,
+                        "confirmar": confirmar, "avisos": avisos})
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
@@ -4852,7 +5295,16 @@ def api_conciliacao_painel():
     conta = request.args.get("conta_id", type=int)
     try:
         with get_session() as s:
-            contas = [{"id": c.id, "descricao": c.descricao}
+            # A EMPRESA vai junto na conciliação também (migração 080):
+            # escolher a conta errada aqui joga o extrato de uma empresa dentro
+            # de outra, e a conciliação passa a tentar casar lançamentos que
+            # nunca vão casar.
+            from app.apps.erp.db.models.cadastros import Empresa as _EmpC
+            _nome_emp = {e.id: (e.nome_fantasia or e.razao_social)
+                         for e in s.scalars(select(_EmpC)).all()}
+            contas = [{"id": c.id, "descricao": c.descricao,
+                       "empresa_id": c.empresa_id,
+                       "empresa_nome": _nome_emp.get(c.empresa_id, "")}
                       for c in s.scalars(select(ContaBancaria)
                                          .where(ContaBancaria.ativo.is_(True))).all()]
             return jsonify({"ok": True, "painel": painel(s, conta), "contas": contas})
@@ -4897,7 +5349,18 @@ def api_conciliar_manual():
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
-            conciliar_manual(s, int(d["pagamento_id"]), int(d["extrato_id"]), usuario,
+            # CASAR EXIGE OS DOIS LADOS (22/09/2026). Sem eles, ou com a
+            # seleção estragada, isto estourava como erro 500 — e quem estava
+            # conciliando lia "falha do sistema" em vez de "escolha o
+            # pagamento e a linha do extrato".
+            try:
+                pagamento_id = int(d["pagamento_id"])
+                extrato_id = int(d["extrato_id"])
+            except (KeyError, TypeError, ValueError):
+                return jsonify({"ok": False, "erro":
+                                "Escolha o pagamento E a linha do extrato para "
+                                "casar os dois."}), 400
+            conciliar_manual(s, pagamento_id, extrato_id, usuario,
                              d.get("observacao", ""))
             s.commit()
         return jsonify({"ok": True})
@@ -5198,6 +5661,28 @@ def api_contas_detalhe():
                         "tipos_pix": svc_contas.TIPOS_PIX})
 
 
+@bp.route("/erp/api/contas/<int:conta_id>/empresa", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_conta_empresa(conta_id: int):
+    """Marca de quem é uma conta que nasceu antes da migração 080.
+
+    Existe porque as contas antigas ficaram SEM empresa de propósito: atribuir
+    sozinho a empresa padrão seria adivinhar em cima de dado bancário. São
+    poucas, e quem sabe de quem é cada uma é o dono.
+    """
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            svc_contas.definir_empresa(s, conta_id, d.get("empresa_id"),
+                                       usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "contas": svc_contas.listar(s)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/contas/<int:conta_id>/pix", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")
@@ -5278,7 +5763,8 @@ def api_contas_bancarias():
                            .order_by(ContaBancaria.descricao)).all()
         return jsonify({"ok": True, "contas": [
             {"id": c.id, "descricao": c.descricao, "banco": c.banco_codigo,
-             "agencia": c.agencia, "conta": c.conta, "ativo": c.ativo}
+             "agencia": c.agencia, "conta": c.conta, "ativo": c.ativo,
+             "empresa_id": c.empresa_id}
             for c in contas if c.ativo]})
 
 
@@ -5332,18 +5818,25 @@ def api_obra(obra_id: int):
             if request.method == "POST":
                 usuario = _usuario_logado(s)
                 d = request.get_json(silent=True) or {}
+                # SEGURO-GARANTIA entra na lista em 22/09/2026, com a caução,
+                # a validade da apólice e o código do departamento no Omie.
+                # Os quatro campos APARECIAM na tela de cadastro da obra, a
+                # pessoa preenchia, o sistema respondia "Salvo." — e nada era
+                # gravado, porque não estavam nesta lista. Mesmo defeito do
+                # código da obra, que o dono achou usando: o que não está aqui
+                # é descartado em silêncio, e a tela recarrega mostrando vazio.
                 texto = ("nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
                          "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
                          "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
-                         "observacoes_fiscais orgao_resumido status").split()
+                         "observacoes_fiscais orgao_resumido status seguro_garantia").split()
                 if "conta_bancaria_id" in d:
                     obra.conta_bancaria_id = (int(d["conta_bancaria_id"])
                                               if d["conta_bancaria_id"] else None)
                 numeros = ("valor_contrato latitude longitude "
                            "aliquota_iss aliquota_iss_pct pct_servico_iss "
-                           "pct_servico_inss").split()
+                           "pct_servico_inss caucao_pct").split()
                 datas = ("vigencia_inicio vigencia_fim data_base_orcamento data_ordem_servico "
-                         "data_inicio data_termino").split()
+                         "data_inicio data_termino seguro_vigencia_fim").split()
                 booleanos = "iss_retido inss_retido aceita_deducao_material".split()
                 from decimal import Decimal, InvalidOperation
                 from datetime import date as _date
@@ -5370,24 +5863,93 @@ def api_obra(obra_id: int):
                 for campo in datas:
                     if campo in d:
                         v = str(d[campo]).strip()
-                        setattr(obra, campo, _date.fromisoformat(v) if v else None)
+                        try:
+                            setattr(obra, campo, _date.fromisoformat(v) if v else None)
+                        except ValueError:
+                            # DATA QUE NÃO EXISTE não é falha do sistema
+                            # (22/09/2026): "31/02/2026" ou uma data escrita no
+                            # formato brasileiro caía como erro 500, com o
+                            # recado de "falha do sistema" — que não diz à
+                            # pessoa que basta corrigir o dia.
+                            return jsonify({"ok": False, "erro":
+                                            f"Data inválida em {campo}: {v!r}. "
+                                            f"Use dia/mês/ano que existam."}), 400
                 for campo in booleanos:
                     if campo in d:
                         setattr(obra, campo, bool(d[campo]))
                 if "federais_retidos" in d:
                     obra.federais_retidos = [str(x).upper() for x in (d["federais_retidos"] or [])]
                 if "prazo_execucao_dias" in d:
-                    obra.prazo_execucao_dias = int(d["prazo_execucao_dias"] or 0) or None
+                    # prazo negativo passava direto e virava "-5 dias de
+                    # execução" no cadastro (22/09/2026). Não é dado, é engano
+                    # de digitação — e melhor dizer isso na hora.
+                    try:
+                        dias = int(str(d["prazo_execucao_dias"] or 0).strip() or 0)
+                    except ValueError:
+                        return jsonify({"ok": False, "erro":
+                                        "Prazo de execução tem de ser um número de dias."}), 400
+                    if dias < 0:
+                        return jsonify({"ok": False, "erro":
+                                        "Prazo de execução não pode ser negativo."}), 400
+                    obra.prazo_execucao_dias = dias or None
                 if "conta_recebimento_id" in d:
                     obra.conta_recebimento_id = d["conta_recebimento_id"] or None
                 # O projeto que agrupa a obra (migração 066). Vazio = sem
                 # projeto, que é o caso comum.
                 if "projeto_id" in d:
                     obra.projeto_id = int(d["projeto_id"]) if d["projeto_id"] else None
+                # CÓDIGO DO DEPARTAMENTO NO OMIE. Fica de fora da lista de
+                # texto porque é ÚNICO no banco: repetido, o salvamento
+                # estouraria com erro de banco em vez de dizer o que houve.
+                if "codigo_omie_depto" in d:
+                    novo_depto = (str(d["codigo_omie_depto"]) or "").strip() or None
+                    if novo_depto and novo_depto != obra.codigo_omie_depto:
+                        from app.apps.erp.db.models.cadastros import Obra as _ObD
+                        ja = s.scalars(select(_ObD).where(
+                            _ObD.codigo_omie_depto == novo_depto,
+                            _ObD.id != obra.id)).first()
+                        if ja is not None:
+                            return jsonify({"ok": False, "erro":
+                                            f"O departamento {novo_depto} do Omie já está "
+                                            f"na obra {ja.codigo}."}), 400
+                    obra.codigo_omie_depto = novo_depto
                 # A EMPRESA DA OBRA, editável DEPOIS de criada (17/09/2026):
                 # *"depois de criada a obra, tem como selecionar a empresa
                 # fácil?"*. Não tinha — o campo só existia na criação, e as
                 # obras que nasceram soltas não tinham conserto pela tela.
+                # O CÓDIGO DA OBRA, editável (22/09/2026). O dono: *"tentei
+                # alterar o código de uma obra, ele salva, mas quando volta
+                # pro cadastro não muda."*
+                #
+                # O defeito era silencioso e vale entender o formato: a tela
+                # SEMPRE mandou o `codigo`, e a lista de campos que esta rota
+                # aceita simplesmente não o incluía. O que não está na lista é
+                # descartado sem reclamar — então o salvamento respondia "ok",
+                # a tela recarregava do banco, e o código voltava o mesmo. Erro
+                # que responde sucesso é pior que erro que responde erro.
+                #
+                # Trocar o código é RENOMEAR, não criar outra obra: os
+                # lançamentos apontam para o número interno dela e seguem
+                # intactos. Mas o código aparece em relatório, em planilha e
+                # na cabeça das pessoas — por isso a troca fica registrada na
+                # trilha com o de e o para.
+                if "codigo" in d:
+                    novo_codigo = (str(d["codigo"]) or "").strip().upper()
+                    if not novo_codigo:
+                        return jsonify({"ok": False,
+                                        "erro": "O código da obra não pode ficar vazio."}), 400
+                    if novo_codigo != (obra.codigo or "").upper():
+                        from app.apps.erp.db.models.cadastros import Obra as _Ob
+                        ja = s.scalars(select(_Ob).where(
+                            _Ob.codigo == novo_codigo, _Ob.id != obra.id)).first()
+                        if ja is not None:
+                            return jsonify({"ok": False, "erro":
+                                            f"Já existe outra obra com o código "
+                                            f"{novo_codigo} ({ja.nome})."}), 400
+                        registrar_evento(s, "obra", obra.id, "CODIGO_ALTERADO",
+                                         {"de": obra.codigo, "para": novo_codigo},
+                                         usuario.id if usuario else None)
+                        obra.codigo = novo_codigo
                 if "empresa_id" in d:
                     from app.apps.erp.db.models.cadastros import Empresa
                     novo_id = int(d["empresa_id"]) if d["empresa_id"] else None
@@ -5416,14 +5978,24 @@ def api_obra(obra_id: int):
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 "iss_retido inss_retido aceita_deducao_material prazo_execucao_dias "
-                "conta_recebimento_id projeto_id empresa_id").split()}
+                # SEGURO-GARANTIA, VALIDADE E CAUÇÃO voltam junto (22/09/2026),
+                # pelo mesmo motivo da conta: gravados e nunca devolvidos, o
+                # formulário remontava vazio e o salvamento seguinte apagava.
+                "seguro_garantia seguro_vigencia_fim caucao_pct "
+                # A CONTA DE PAGAMENTO DA OBRA volta junto (22/09/2026). Ela era
+                # gravada e nunca devolvida: o formulário remontava a caixinha
+                # vazia, e o salvamento seguinte — que manda o campo em branco —
+                # APAGAVA a conta sem ninguém pedir. Mesmo defeito do código da
+                # obra, só que pior, porque perdia informação em silêncio.
+                "conta_bancaria_id conta_recebimento_id projeto_id empresa_id").split()}
             for campo in ("valor_contrato", "latitude", "longitude",
                           "aliquota_iss", "aliquota_iss_pct",
-                          "pct_servico_iss", "pct_servico_inss"):
+                          "pct_servico_iss", "pct_servico_inss", "caucao_pct"):
                 v = getattr(obra, campo, None)
                 dados[campo] = float(v) if v is not None else None
             for campo in ("vigencia_inicio", "vigencia_fim", "data_base_orcamento",
-                          "data_ordem_servico", "data_inicio", "data_termino"):
+                          "data_ordem_servico", "data_inicio", "data_termino",
+                          "seguro_vigencia_fim"):
                 v = getattr(obra, campo, None)
                 dados[campo] = v.isoformat() if v else None
             dados["federais_retidos"] = list(obra.federais_retidos or [])

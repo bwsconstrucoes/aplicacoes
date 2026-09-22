@@ -134,7 +134,12 @@ def base_de_saneamento():
                      " cdesdep, nperdep, nvaldep) VALUES (502,2,'D2','PREDIO',40,40)")
         conn.commit()
     consultas.esquecer_listas()
+    # o cadastro lido no ensaio fica guardado entre chamadas — e entre testes,
+    # se ninguém limpar
+    from app.apps.painel import saneamento
+    saneamento.esquecer_cadastros()
     yield
+    saneamento.esquecer_cadastros()
     with painel_db.conexao() as conn:
         conn.execute("TRUNCATE TABLE fato")
         conn.execute("DELETE FROM rateio")
@@ -460,8 +465,15 @@ def test_a_tela_tem_uma_lista_so(cliente_web):
     conta: ela agrupa, não lista lançamento."""
     html = cliente_web.get("/painel/explorador?busca=FORNECEDOR").get_data(as_text=True)
     assert html.count('id="lista-explorador"') == 1
-    # a marca da segunda lista de antes: caixas `name="codigo"` numa tabela
-    assert 'name="codigo"' not in html
+    # `name="codigo"` era a marca da segunda lista, e por isso este teste exigia
+    # que ela não existisse. Em 21/09/2026 ela voltou — mas na lista ÚNICA: é o
+    # que faz a marcação viajar até o servidor, que é o que a exclusão precisa.
+    # O que o teste guarda continua sendo o mesmo: UMA tabela de lançamentos.
+    assert 'name="codigo"' in html, "sem isso o servidor não sabe o que foi marcado"
+    # e as caixas de marcar só existem DENTRO da lista única — se aparecessem
+    # antes dela, seria a segunda tabela de volta
+    antes_da_lista = html[:html.index('id="lista-explorador"')]
+    assert 'name="codigo"' not in antes_da_lista
 
 
 def test_os_filtros_ficam_na_barra_da_esquerda(cliente_web):
@@ -743,3 +755,181 @@ def test_a_tela_espera_menos_que_a_carga():
     assert OmieEscrita("k", "s",
                        teto_de_espera=TETO_DE_ESPERA_NA_TELA).teto_de_espera == \
         TETO_DE_ESPERA_NA_TELA
+
+
+# ===========================================================================
+# EXCLUIR — a única coisa aqui que não tem volta (21/09/2026)
+# ===========================================================================
+# Pedido do dono, com a escolha dele registrada: apagar no OMIE mesmo (não só
+# esconder do painel), e deixar o OMIE decidir sobre título com baixa.
+#
+# Alterar erra para o lado do reparável: basta alterar de novo. Excluir apaga o
+# registro financeiro, e recuperar é digitar tudo outra vez, à mão.
+
+class ClienteQueExclui(ClienteFalso):
+    def __init__(self, explode=False):
+        super().__init__(explode=explode)
+        self.excluidos = []
+
+    def excluir_titulo(self, codigo, tipo):
+        if self.explode:
+            raise RuntimeError("o OMIE recusou")
+        self.excluidos.append((codigo, tipo))
+        return {"codigo_status": "0", "descricao_status": "excluído"}
+
+
+def test_o_ensaio_da_exclusao_nao_apaga_nada(base_de_saneamento):
+    """Padrão é ensaiar. Aqui isso vale o dobro."""
+    from app.apps.painel import saneamento
+    from app.apps.painel.db import consultar
+    cliente = ClienteQueExclui()
+    r = saneamento.excluir([501], simulacao=True, cliente=cliente)
+    assert r["simulacao"] is True and r["excluidos"] == 0
+    assert cliente.excluidos == []
+    assert "Ensaio" in r["linhas"][0]["resultado"]
+    assert consultar("SELECT COUNT(*) FROM fato WHERE codigo_lancamento=501")[0][0] > 0
+
+
+def test_excluir_de_verdade_apaga_no_omie_e_some_do_painel(base_de_saneamento,
+                                                           monkeypatch):
+    """Sem tirar da base local, o título apagado no OMIE continuaria na tela até
+    a próxima ATUALIZAÇÃO COMPLETA — que roda uma vez por semana. O dono
+    apagaria, olharia, veria o título lá, e concluiria que não funcionou."""
+    from app.apps.painel import saneamento
+    from app.apps.painel.db import consultar
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "x")
+    cliente = ClienteQueExclui()
+    r = saneamento.excluir([501], simulacao=False, cliente=cliente)
+    assert r["excluidos"] == 1
+    assert cliente.excluidos == [(501, "pagar")]
+    assert consultar("SELECT COUNT(*) FROM fato WHERE codigo_lancamento=501")[0][0] == 0
+    assert consultar("SELECT COUNT(*) FROM rateio"
+                     " WHERE codigo_lancamento_omie=501")[0][0] == 0
+    # e fica registrado, que é quando o registro mais importa
+    registros = saneamento.historico()
+    assert registros[0]["codigo"] == 501 and registros[0]["ok"] is True
+    assert "EXCLUÍDO" in registros[0]["mudancas"]
+
+
+def test_o_omie_recusando_nao_apaga_do_painel(base_de_saneamento, monkeypatch):
+    """Apagar aqui antes de o OMIE confirmar seria perder de vista um título
+    que continua existindo lá."""
+    from app.apps.painel import saneamento
+    from app.apps.painel.db import consultar
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "x")
+    r = saneamento.excluir([501], simulacao=False,
+                           cliente=ClienteQueExclui(explode=True))
+    assert r["excluidos"] == 0
+    assert "ERRO" in r["linhas"][0]["resultado"]
+    assert consultar("SELECT COUNT(*) FROM fato WHERE codigo_lancamento=501")[0][0] > 0
+
+
+def test_sem_a_senha_configurada_excluir_e_recusado(base_de_saneamento, monkeypatch):
+    from app.apps.painel import saneamento
+    monkeypatch.delenv("PAINEL_SENHA_ESCRITA", raising=False)
+    cliente = ClienteQueExclui()
+    r = saneamento.excluir([501], simulacao=False, cliente=cliente)
+    assert r["ok"] is False and "desligada" in r["erro"]
+    assert cliente.excluidos == []
+
+
+def test_a_exclusao_tem_teto_menor_que_a_alteracao(base_de_saneamento):
+    """Alterar 200 errado custa alterar 200 de volta. Excluir 200 errado custa
+    redigitar 200 — quando se sabe o que havia."""
+    from app.apps.painel import saneamento
+    assert saneamento.TETO_DE_EXCLUSAO < saneamento.TETO_POR_LOTE
+
+
+def test_o_ensaio_mostra_quem_tem_baixa(base_de_saneamento):
+    """O dono escolheu que o painel NÃO recusa título com baixa — quem decide é
+    o OMIE. Mas ele tem de VER, antes de confirmar: recusar é uma coisa,
+    esconder é outra."""
+    from app.apps.painel import saneamento
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM movimentos WHERE ncodtitulo = 501")
+        conn.execute("INSERT INTO movimentos (ncodtitulo, cliquidado, nvalpago)"
+                     " VALUES (501,'S',100)")
+        conn.commit()
+    linhas = saneamento.titulos_para_excluir([501, 502])
+    por_codigo = {l["codigo"]: l for l in linhas}
+    assert por_codigo[501]["tem_baixa"] is True
+    assert por_codigo[502]["tem_baixa"] is False
+
+
+def test_bloqueio_do_omie_para_o_lote_de_exclusao(base_de_saneamento, monkeypatch):
+    from app.apps.painel import saneamento
+    from app.apps.painel.sync.omie_client import OmieBloqueada
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "x")
+
+    class Bloqueado(ClienteQueExclui):
+        def excluir_titulo(self, codigo, tipo):
+            raise OmieBloqueada(664, "API bloqueada por consumo indevido.")
+
+    r = saneamento.excluir([501, 502], simulacao=False, cliente=Bloqueado())
+    assert r["excluidos"] == 0 and r["bloqueio_segundos"] == 664
+    assert "NÃO EXCLUÍDO" in r["linhas"][0]["resultado"]
+    assert "NÃO TENTADO" in r["linhas"][1]["resultado"]
+
+
+def test_a_tela_exige_a_palavra_escrita_para_excluir(cliente_web, monkeypatch):
+    """Marcar uma caixinha por engano acontece; digitar EXCLUIR por engano,
+    não."""
+    from app.apps.painel import saneamento
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "x")
+    chamou = []
+    monkeypatch.setattr(saneamento, "excluir",
+                        lambda *a, **k: chamou.append(1) or {"ok": True})
+    r = cliente_web.post("/painel/explorador/excluir",
+                         data={"codigo": "501", "executar": "1", "senha": "x",
+                               "confirmacao": "sim"})
+    assert r.status_code == 200
+    assert chamou == [], "sem a palavra EXCLUIR, nada pode ser enviado"
+    assert "digite EXCLUIR" in r.get_data(as_text=True)
+
+    cliente_web.post("/painel/explorador/excluir",
+                     data={"codigo": "501", "executar": "1", "senha": "x",
+                           "confirmacao": "excluir"})
+    assert chamou == [1], "com a palavra certa (sem ligar para maiúscula), vai"
+
+
+# ===========================================================================
+# O envio usa o cadastro que o ensaio leu — 22/09/2026
+# ===========================================================================
+# O dono, ao alterar UM título: "A Omie bloqueou as chamadas por consumo
+# excessivo e pediu 59 segundos. 0 título(s) alterado(s)." Ensaio e envio
+# consultavam o mesmo título no OMIE com segundos de diferença — a Omie chama
+# isso de "consumo redundante" e bloqueia. Alterar um título logo depois de
+# ensaiá-lo nunca funcionava.
+
+def test_o_envio_nao_consulta_de_novo_o_que_o_ensaio_ja_leu(base_de_saneamento,
+                                                            monkeypatch):
+    from app.apps.painel import saneamento
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "segredo-de-execucao")
+    cliente = ClienteFalso()
+    saneamento.aplicar([501], categoria_nova="2.02", simulacao=True, cliente=cliente)
+    r = saneamento.aplicar([501], categoria_nova="2.02", simulacao=False, cliente=cliente)
+    assert r["alterados"] == 1
+    assert cliente.consultados == [(501, "pagar")], \
+        "o envio consultou de novo — é isso que a Omie bloqueia"
+    assert len(cliente.enviados) == 1
+
+
+def test_depois_de_alterado_o_cadastro_guardado_e_esquecido(base_de_saneamento,
+                                                            monkeypatch):
+    """O título mudou; o que o ensaio leu já não o descreve."""
+    from app.apps.painel import saneamento
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "segredo-de-execucao")
+    cliente = ClienteFalso()
+    saneamento.aplicar([501], categoria_nova="2.02", simulacao=False, cliente=cliente)
+    saneamento.aplicar([501], categoria_nova="2.03", simulacao=True, cliente=cliente)
+    assert len(cliente.consultados) == 2
+
+
+def test_o_cadastro_guardado_vence(base_de_saneamento, monkeypatch):
+    from app.apps.painel import saneamento
+    monkeypatch.setattr(saneamento, "VALIDADE_DO_CADASTRO", 0.0)
+    cliente = ClienteFalso()
+    saneamento.aplicar([501], categoria_nova="2.02", simulacao=True, cliente=cliente)
+    saneamento.aplicar([501], categoria_nova="2.02", simulacao=True, cliente=cliente)
+    assert len(cliente.consultados) == 2, "vencido, tem de ler de novo"

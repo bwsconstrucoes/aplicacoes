@@ -94,7 +94,7 @@ function visiveis(){
     if (!e.ativo && !els("f-inativas").checked) return false;
     if (els("f-sem-conta").checked && e.pode_enviar) return false;
     if (els("f-sem-logo").checked && e.tem_logo) return false;
-    if (b && !`${e.razao_social} ${e.nome_fantasia} ${e.cnpj} ${e.municipio}`
+    if (b && !`${e.razao_social} ${e.nome_fantasia} ${e.cnpj} ${documento(e.cnpj)} ${e.municipio}`
               .toLowerCase().includes(b)) return false;
     return true;
   });
@@ -153,7 +153,7 @@ function desenhar(){
       <td class="desc"><b>${e.razao_social}</b>
         ${e.nome_fantasia ? `<small>${e.nome_fantasia}</small>` : ""}
         ${e.padrao ? `<span class="selo pago">padrão</span>` : ""}</td>
-      <td class="dados">${e.cnpj}</td>
+      <td class="dados">${documento(e.cnpj)}</td>
       <td>${e.municipio || "—"}${e.uf ? ` / ${e.uf}` : ""}</td>
       <td class="direita dados">${e.obras}</td>
       <td class="desc">${e.pode_enviar
@@ -429,7 +429,7 @@ function painel(i, id){
           <input id="e-razao" value="${e.razao_social}"></div>
         <div class="campo"><label>Nome fantasia</label>
           <input id="e-fantasia" value="${e.nome_fantasia}"></div>
-        <div class="campo"><label>CNPJ</label><input value="${e.cnpj}" disabled>
+        <div class="campo"><label>CNPJ</label><input value="${documento(e.cnpj)}" disabled>
           <div class="dica">Não muda. CNPJ errado se inativa e se cadastra outro
             — é o que preserva as obras e os envios já ligados.</div></div>
         <div class="campo"><label>Inscrição estadual</label>
@@ -663,7 +663,7 @@ async function ligarObra(obraId){
            "que aparece para o fornecedor.",
     campos: [{nome: "empresa_id", rotulo: "Empresa", tipo: "select", largura: 3,
               opcoes: ativas.map(e => ({valor: String(e.id),
-                                        rotulo: `${e.razao_social} · ${e.cnpj}`}))}]});
+                                        rotulo: `${e.razao_social} · ${documento(e.cnpj)}`}))}]});
   if (!d) return;
   try {
     await api(`/erp/api/obras/${obraId}/empresa`, {method: "POST",

@@ -26,9 +26,21 @@
       </div>
     {% else %}
       {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+      {# Senha do dono = ve tudo. Usuario e senha proprios = acesso preso a
+         certas obras e telas. Quem decide e a SENHA, nao o campo de usuario
+         estar vazio: o navegador preenche esse campo sozinho e chegou a
+         trancar o dono para fora. #}
+      {# `autocomplete="off"` e o campo fora da ordem natural do gerenciador:
+         quando esta tela tinha um campo só, o navegador guardou a senha do
+         dono; ao ganhar o segundo campo, passou a preenchê-lo sozinho e o
+         pedido saía pelo caminho errado. O servidor já não se importa com
+         isso — checa a senha mestre primeiro —, mas o campo não precisa
+         continuar sendo preenchido sem ninguém pedir. #}
+      <label for="usuario">Usuário <small>(deixe em branco se você é o dono)</small></label>
+      <input id="usuario" name="usuario" autocomplete="off">
       <label for="senha">Senha</label>
       <input id="senha" name="senha" type="password" autocomplete="current-password"
-             autofocus required>
+             required autofocus>
       <button class="btn" type="submit">Entrar</button>
     {% endif %}
   </form>

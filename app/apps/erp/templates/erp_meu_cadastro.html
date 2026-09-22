@@ -48,7 +48,7 @@ async function carregar(){
   try {
     const d = await api("/erp/api/meu-cadastro");
     const c = d.cadastro;
-    els("atual").innerHTML = `<b>${c.nome}</b>${c.cpf?` · CPF ${c.cpf}`:""}<br>` +
+    els("atual").innerHTML = `<b>${c.nome}</b>${c.cpf?` · CPF ${documento(c.cpf)}`:""}<br>` +
       (c.pix_chave
         ? `Chave atual: <b>${c.pix_tipo}: ${c.pix_chave}</b>`
         : `<span style="color:var(--vermelho)">Sem chave cadastrada — reembolsos ficam parados.</span>`);

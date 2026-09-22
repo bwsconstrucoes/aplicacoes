@@ -1254,6 +1254,737 @@ metade: cada um ou foi gravado ou nem começou.
 serviço no Render. O trabalho roda dentro da requisição; fechar a aba não para
 nada. Publicar também reinicia, então publicar um conserto já dá o stop.
 
+## Excluir título no OMIE, pelo Explorador — 21/09/2026
+
+O dono pediu um botão para excluir os títulos marcados. Perguntei antes de
+fazer, porque "excluir" tinha dois sentidos muito diferentes com o mesmo nome, e
+um deles não tem volta. As escolhas dele, registradas:
+
+- **apagar no OMIE mesmo** (não só esconder do painel);
+- **título com baixa vai do mesmo jeito** — quem decide é o OMIE, não o painel.
+
+### As travas
+
+| | Alterar | Excluir |
+|---|---|---|
+| Teto por lote | 200 | **50** |
+| Senha de execução | sim | sim |
+| Ensaio por padrão | sim | sim |
+| Palavra digitada à mão | — | **EXCLUIR** |
+| Registro no banco | sim | sim |
+
+O teto menor não é capricho: alterar 200 errado custa alterar 200 de volta;
+excluir 200 errado custa **redigitar 200** — quando se sabe o que havia.
+
+A palavra digitada existe porque **marcar uma caixinha por engano acontece;
+digitar EXCLUIR por engano, não**.
+
+Título com baixa não é recusado, mas **aparece marcado em vermelho no ensaio**,
+antes de confirmar. Recusar é uma coisa; esconder é outra.
+
+### O título sai do painel na hora, e só depois do OMIE confirmar
+
+Excluir no OMIE **não** chega pela atualização do dia: ela pergunta "o que
+mudou?", e um título apagado não aparece numa lista de mudanças. Quem nota é a
+varredura de excluídos, que só roda na **Atualização completa** — no caso do
+dono, toda madrugada.
+
+Então quem exclui pelo botão tira o título da base local no mesmo movimento.
+Sem isso ele apagaria, olharia a tela, veria o título lá e concluiria que não
+funcionou. **Mas só depois de o OMIE confirmar**: apagar aqui antes seria perder
+de vista um título que continua existindo lá.
+
+### Um detalhe de tela que estava faltando desde sempre
+
+A caixa de marcar das linhas não tinha `name`: a marcação só existia na memória
+do navegador, e o servidor nunca ficava sabendo. Funcionava para a alteração
+porque o JavaScript monta campos escondidos com o que foi editado — mas marcar
+sem editar não chegava a lugar nenhum. Agora chega, que é o que a exclusão
+precisa.
+
+## A conta do relatório era a da PREVISÃO, não a da baixa — 21/09/2026
+
+O dono:
+
+> *"No OMIE existe a conta de previsão de pagamento e existe a conta onde
+> efetivamente foi realizado o pagamento. A informação que está sendo colocada
+> nesse relatório analítico é exatamente a primeira. E a primeira é errada."*
+
+Ele está certo, e o erro era **silencioso**. A coluna saía do título
+(`id_conta_corrente`), que é onde se **previu** pagar. Quem previu pagar pelo
+Bradesco e pagou pelo Itaú aparecia no Bradesco, e nenhuma análise por conta
+dava sinal.
+
+Agora sai do **movimento de baixa** (`ncodcc`). Título ainda em aberto não tem
+baixa — aí a previsão é a única informação que existe e continua valendo, o que
+é diferente de estar errada.
+
+Quando há mais de uma baixa, vale a do **maior valor liquidado**; empate, a mais
+recente. Não existe resposta certa para um título pago metade em cada conta — a
+linha do relatório é uma só —, e a escolha está escrita no código para ninguém
+ter de adivinhar.
+
+**Efeito colateral bom:** a lista de aportes mostrava as devoluções na conta
+7011-4. Parte disso pode ter sido a previsão; depois de refazer os números, a
+conta exibida passa a ser a de onde o dinheiro saiu de verdade.
+
+**Pega por três testes**, um deles reproduzindo a frase dele: previsto na conta
+7, pago na conta 9, o relatório tem de dizer 9. Sem o conserto, a mensagem de
+falha é literalmente *"o relatório mostrou 'Bradesco (previsão)'"*.
+
+Basta **"Só refazer os números"** — os movimentos já estão na base, não precisa
+baixar nada do OMIE.
+
+**Correção em 22/09/2026:** o conserto acima trocou a fonte mas lia a perna
+errada do movimento, e a tela não mudou. Ver *"A conta da baixa continuava
+errada"*, mais abaixo.
+
+## Título pago em parcelas: UMA LINHA POR BAIXA — 21/09/2026
+
+O dono, no mesmo dia e sobre o mesmo relatório:
+
+> *"Ele foi pago em duas parcelas, em 2 dias diferentes e valores diferentes. Só
+> que no relatório de despesa analítica aparece um único lançamento (…) do total
+> do título. Se você for olhar no extrato, dá uma coisa. Aí você olha no
+> relatório analítico, dá outro valor. Isso confunde."*
+
+Os dois erros que ele achou hoje são **o mesmo defeito**: a `fato` montava
+**uma linha por título**, quando o certo é **uma linha por baixa**.
+
+**O painel já fazia certo do lado das receitas.** `montar_recebimentos` abre uma
+medição recebida em três parcelas em três linhas, cada uma com sua data e seu
+valor. Nas despesas esse caminho nunca tinha sido ligado. Agora vale para as
+duas, e reusa o mesmo `_escolher_recebimentos` — que é quem sabe desmontar a
+armadilha do OMIE de guardar a mesma baixa em duas pernas (a consolidada e os
+créditos bancários). Regra repetida divergiria; reusada, não.
+
+### O que muda, e o que não muda
+
+**Não muda:** o total do título. Cada parcela é escalada por
+`realizado / soma_das_baixas`, e juros e multa vão pela mesma proporção — as
+pernas de crédito bancário vêm com encargo zerado, e usar o de cada uma faria o
+total encolher sem ninguém notar.
+
+**Não muda:** título pago de uma vez, que é a esmagadora maioria. Continua uma
+linha só, idêntica à de antes.
+
+**MUDA, e o dono foi avisado antes:** um título pago metade em março e metade em
+abril contava **inteiro em abril**; agora conta **metade em cada mês**. Meses já
+olhados podem mudar de valor. Não é o painel ficando errado — é ele parando de
+estar.
+
+**Cuidado que estava fácil de errar:** o saldo em aberto é do TÍTULO, não de
+cada baixa. Repeti-lo em cada linha multiplicaria o "a pagar" pelo número de
+parcelas — um erro que cresceria com o uso, silencioso. Ele vai numa linha só, e
+há teste para isso.
+
+E a retenção de imposto também: uma linha por título, mesmo com várias baixas.
+
+### De quebra
+
+O teste "pago em duas contas" mudou de resposta para melhor. Antes valia a conta
+do maior valor, porque a linha era uma só; agora **cada parcela mostra a conta
+dela**. A regra do maior valor ficou só para quando as baixas não dão para
+separar.
+
+Basta **"Só refazer os números"**.
+
+## Acesso por pessoa, preso a obras e a telas — 21/09/2026
+
+O dono: *"quero poder criar acesso a um usuário para ele entrar e ver somente
+determinada ou determinadas obras no painel."* E, sobre o que liberar:
+*"queria poder selecionar quais telas. Gostaria era de liberar a princípio DRE,
+Despesas Analítico, mas se de repente entender que seja necessário liberar outra
+tela, já estaria configurado."*
+
+Até aqui o painel tinha **uma senha só** e quem entrava via tudo.
+
+### Como ficou
+
+| | Senha do dono (`PAINEL_SENHA`) | Usuário e senha próprios |
+|---|---|---|
+| Vê | tudo | só as obras marcadas |
+| Telas | todas | só as marcadas |
+| Configurações e Explorador | sim | **nunca** |
+| Escreve no OMIE | sim | **nunca** |
+| Baixa Excel/PDF | tudo | só das obras dele |
+
+Cadastro na tela de Configurações: usuário, nome, senha, as obras e as telas.
+DRE e Despesas Analítico já vêm marcadas; as outras ficam prontas.
+
+### O que sustenta isso: UM lugar só
+
+O escopo é aplicado em `_filtros_do_pedido`, por onde **toda tela, todo
+download e todo gráfico passam** para saber o que mostrar. Amarrar ali
+significa que nenhuma tela pode esquecer — que é exatamente como esse tipo de
+coisa vaza quando se protege tela por tela.
+
+A linha que mais importa é um `or`: se a pessoa não escolheu obra (ou escolheu
+uma que não é dela), o filtro vira **a lista dela** — e nunca "sem filtro".
+Sem isso, bastava apagar a obra da barra de endereço para ver a empresa inteira.
+Há teste para os dois ataques óbvios: apagar o filtro e escrever a obra do
+vizinho.
+
+### Falhar FECHADO, em todo lugar
+
+- **sem obra marcada, não entra.** Lista vazia quer dizer nenhuma, nunca todas —
+  um cadastro pela metade não pode virar acesso total;
+- **sem tela marcada, não entra;**
+- **tela não liberada responde 404**, não 403. Dizer "sem permissão" confirmaria
+  que a tela existe, e varrer os endereços mapearia o sistema sem abrir nada
+  (mesma regra do ERP);
+- **tirar a obra de alguém vale na hora**, não quando ele fechar o navegador: a
+  sessão só guarda o número da pessoa, e o escopo é relido a cada pedido;
+- a barra lateral **não lista as obras dos outros** — o nome delas é informação
+  que ele não teria de outro jeito;
+- as abas do topo mostram **só o que abre**: aba que responde "não encontrado"
+  ao ser clicada é pior que aba nenhuma.
+
+### Um vazamento que o teste pegou antes de existir
+
+A lista de áreas proibidas é por prefixo de rota, e `painel.usuarios` tinha
+ficado **de fora**. Resultado: uma pessoa presa a uma obra conseguia **criar
+outro acesso** — inclusive um com todas as obras. O teste que tenta abrir
+Configurações, Explorador e o cadastro pegou na hora.
+
+A lição, que vale para a próxima rota: **a lista por prefixo só protege o que
+está escrito nela.** Rota nova numa área sensível precisa entrar lá, e o jeito
+de não esquecer é ter um teste que tenta abrir.
+
+### A senha
+
+Guardada embaralhada (PBKDF2 com sal, do `werkzeug` que o Flask já traz). Nem o
+dono lê a senha de alguém depois — só troca. Este banco tem o financeiro inteiro
+da empresa.
+
+## Extrato de Conta Corrente — 21/09/2026
+
+O dono: *"seria até similar com o relatório analítico, só que ao invés de ser o
+da obra, seria o da conta corrente (…) e ali só iriam poder ser vistos os
+lançamentos que aconteceram na conta corrente."* Para poder conferir lado a lado
+com o extrato do próprio OMIE.
+
+### O que separa esta tela do Analítico
+
+1. **Só o que virou dinheiro.** Título em aberto não entra — extrato é caixa,
+   não compromisso. Por isso **não há coluna de vencimento**: ele disse com
+   todas as letras que ali ela não interessa.
+2. **As duas pontas juntas**, entrada e saída, na ordem da data — como o banco
+   mostra e como dá para comparar.
+3. **NÃO filtra por DRE**, e este é o ponto. Tarifa bancária e rendimento ficam
+   de fora do resultado porque o plano financeiro do OMIE não lhes dá conta de
+   DRE (ver a seção sobre isso). No extrato eles **aparecem**, porque saiu e
+   entrou dinheiro de verdade — era exatamente o que ele não estava conseguindo
+   achar quando foi olhar as tarifas do Mercado Barbalha.
+4. Transferência entre contas também aparece: sai do resultado, não sai do
+   extrato.
+
+Colunas, como ele ditou: data, cliente/fornecedor, CNPJ, conta, categoria, obra,
+documento, observação, valor e o link do Pipefy. Filtros de período, categoria e
+busca (nome, CNPJ, documento ou observação), com download.
+
+### O acesso por conta (migração 014)
+
+*"eu queria poder disponibilizar essa tela para um determinado usuário, mas
+definir qual conta e quais contas ele poderia visualizar."*
+
+`usuario_contas`, tabela separada de `usuario_obras` de propósito: são recortes
+independentes. Alguém pode ver a obra inteira e só uma das contas por onde ela
+passa — e o contrário também.
+
+Mesma regra das obras: **sem conta marcada, não vê conta nenhuma no Extrato.**
+Com uma diferença: conta liberada é opcional. Quem não tem nenhuma simplesmente
+não usa o Extrato, e as outras telas seguem normais.
+
+O escopo é aplicado no mesmo `_filtros_do_pedido` — o único lugar por onde toda
+tela passa. Pedir a conta de outro na barra de endereço não funciona, e há teste.
+
+### As transferências, com os dois lados juntos
+
+Logo depois de ver a tela, o dono perguntou: *"se eu quiser filtrar, eu quero
+ver todas as transferências num determinado período da conta tal para a conta
+tal. Consigo visualizar isso aí?"*
+
+Não conseguia, e o motivo é do OMIE: **uma transferência são DOIS lançamentos
+separados**, um saindo de uma conta e outro entrando na outra, **sem nada que
+ligue um ao outro**. Filtrando a conta de origem via-se a saída, nunca o destino.
+
+O Extrato ganhou uma segunda visão que **pareia os dois lados por mesma data e
+mesmo valor**, e mostra "saiu de X, entrou em Y". Dá para filtrar por período e
+por conta de destino, e a conta filtrada na barra aparece nos **dois sentidos** —
+"as transferências desta conta" são as que saem e as que entram.
+
+**O limite está escrito na tela**, não escondido: se duas transferências do mesmo
+valor acontecerem no mesmo dia, o par pode trocar de destino. Não há como fazer
+melhor sem um vínculo que o OMIE não guarda, e inventar um vínculo que não existe
+seria pior que mostrar o que se sabe.
+
+Cuidado que virou teste: **cada entrada serve a UMA saída**. Sem isso, duas
+saídas do mesmo valor no mesmo dia casariam com a mesma entrada e o total
+dobraria.
+
+**O que NÃO pareia é a parte mais útil da tela.** Saída sem entrada do outro lado
+quase sempre quer dizer que o lançamento do outro lado **não está classificado
+como transferência** — e então ele está entrando no resultado como se fosse
+receita ou despesa. Aparece num quadro à parte, com o número do OMIE.
+
+E quem só pode ver certas contas **não descobre o nome das outras por aqui**: o
+destino que ele não pode ver vira "(outra conta)". Ele vê que o dinheiro foi
+para algum lugar; para onde, não.
+
+### Detalhes que quase passaram
+
+- **`pagina_link` apontava para o Analítico com o nome escrito.** Virar a página
+  do extrato jogaria a pessoa para dentro do analítico, com o filtro de conta
+  junto — mostrando uma tela que não é a que ela está lendo. Passou a usar a
+  tela atual.
+- **A observação só aparece depois do "Buscar as observações"**, e a tela diz
+  isso em vez de mostrar travessão e deixar parecer que o dado não existe.
+
+## Os juros de empréstimo passam a ser pagos por quem demandou o caixa — 21/09/2026
+
+O dono parou e disse, em bom português, o que o painel ainda não faz — e que é
+o motivo de existir:
+
+> *"As telas que eu estou basicamente usando: DRE, analítica e o extrato. Todas
+> as outras telas juntas, elas têm sido uma tentativa ainda frustrada de
+> realizar a prestação de contas da empresa (…) a gente precisa entender o
+> resultado final e quanto é de direito para cada envolvido."*
+
+E apontou o que trava, na ordem em que ele mesmo colocou: (1) os aportes — já
+quase resolvidos; (2) os **percentuais de cada sócio e parceiro**, que só ele
+tem; (3) **o ponto mais crítico: pulverizar o custo da matriz nas obras**, com
+dois detalhes:
+
+> *"Quando a gente fala em custo de juros de empréstimo (…) a gente tem que
+> utilizar a necessidade de caixa da obra. Quem é que paga aquele juro de
+> empréstimo mês a mês? É a obra que está demandando caixa. Essa é a forma
+> justa. Se a obra não demanda caixa, não tem por que estar pagando um juro de
+> empréstimo. Esse juro de empréstimo, eles estão consolidados dentro do custo
+> da matriz."*
+
+> *"Segundo, dividir o custo das obras do Ceará com as demais obras. Por quê?
+> As obras do Ceará demandaram mais do que as outras obras."*
+
+### O que já existia, e por que não resolvia
+
+As duas metades do que ele pede já moravam no repositório — em telas
+**diferentes, que não se falavam**:
+
+- o **Rateio da Administração** já alocava os juros pelo déficit de caixa, que
+  é exatamente a régua dele. Mas só divide em **dois lados** (A e B): não fala
+  de obra individual nem de sócio, e o resultado não entra na prestação;
+- a **Prestação de Contas** já pulverizava o custo da matriz **obra a obra** e
+  já dividia entre sócios, com o caso do sócio externo. Mas jogava o juro
+  dentro do bolo da estrutura, repartido pelo **custo de pessoal**.
+
+Ou seja: quem sabia alocar juro direito não sabia falar de obra; quem falava de
+obra alocava juro errado. Obra que se paga sozinha pagava juro só por ter
+gente; obra que viveu de dinheiro emprestado pagava de menos.
+
+### O que mudou
+
+Na Prestação de Contas, o juro de empréstimo **sai do bolo da estrutura antes
+do rateio** e ganha régua própria:
+
+1. reconstrói-se o caixa acumulado de cada obra, mês a mês, **incluindo o
+   rateio da estrutura que coube a ela** — a administração que a obra consumiu
+   é dinheiro que ela fez a empresa gastar;
+2. o juro de cada mês é dividido entre as obras que estavam **com o acumulado
+   negativo naquele mês**, na proporção do tamanho do buraco;
+3. não há circularidade: o déficit que serve de régua é o de **antes** do juro.
+
+O buraco **não se apaga num mês sem movimento** — só quando a obra recupera o
+dinheiro. Sem isso, bastaria a obra ficar parada um mês para deixar de pagar o
+juro que ela mesma provocou.
+
+**Juro lançado direto numa obra não passa por aqui**: já é despesa dela, e
+mexer nisso seria tirar de quem o assumiu. O que se realoca é só o que está
+consolidado nos departamentos administrativos — que é onde ele está, como o
+dono disse.
+
+**Na divisão entre sócios o juro entra na base de TODOS**, inclusive do sócio
+externo — diferente do rateio da estrutura, que volta só para os internos. A
+razão: estrutura é overhead da construtora, e por ela se cobra a taxa de
+administração; juro é o preço do dinheiro que financiou **aquela obra**, e quem
+participa do resultado dela participa do custo de bancá-la. A soma das quotas
+continua fechando com o resultado do projeto — há teste para isso.
+
+### Três chaves novas (migração 015)
+
+- `categoria_juros` — o nome exato da categoria no OMIE (padrão *Juros sobre
+  Empréstimos*). É por ele que o juro é separado do resto do custo da matriz;
+- `juros_por_deficit` — `1` liga a régua nova, `0` volta ao comportamento
+  antigo. Sai ligada;
+- `juros_sem_deficit` — o que fazer com o juro de um mês em que **ninguém**
+  estava no vermelho: `sobra` (fica visível como custo sem dono, o padrão) ou
+  `estrutura` (segue a régua da estrutura).
+
+Todas editáveis em Prestação de Contas › Parâmetros › Geral.
+
+### O que a tela mostra agora
+
+Uma coluna **Juros de empréstimo** separada do **Rateio recebido** no resultado
+por projeto — juntá-las esconderia justamente a diferença que interessa. Abaixo,
+um bloco com o juro que coube a cada obra e uma **memória mês a mês** (juro
+pago, quantas obras no vermelho, o buraco somado, a maior devedora e qual régua
+valeu) para a conta poder ser conferida em vez de acreditada.
+
+### O que ficou de fora, e por quê
+
+- **Os percentuais de cada sócio e parceiro** continuam vazios. O cadastro
+  existe e a conta existe; falta o dado, que só o dono tem. Sem ele não há
+  visão global.
+- **A divisão do custo das obras do Ceará com as demais** não foi feita: a
+  frase dele admite duas leituras muito diferentes — o **prejuízo** do Ceará
+  espalhado nas outras obras, ou apenas o **custo do caixa** que elas
+  demandaram, que a régua nova já resolve sozinha. Perguntado, não chutado.
+- **Aporte recebido pela obra não abate a necessidade de caixa dela.** Hoje o
+  déficit é o da operação, tenha ele sido tapado pelo banco ou pelo sócio. Se o
+  dono quiser que aporte abata, é uma linha de configuração a mais — está na
+  pergunta que foi devolvida a ele.
+
+## O login trancou o dono para fora — 22/09/2026
+
+**O relato:** *"Com a criação de usuários não tô mais conseguindo acessar o
+painel."*
+
+**A causa, e ela é traiçoeira o bastante para ficar escrita:** quando a tela de
+login ganhou o campo *Usuário*, o caminho da entrada passou a ser escolhido por
+esse campo estar **vazio**. Só que o gerenciador de senhas do navegador tinha a
+senha do dono guardada de quando a tela tinha **um campo só** — e, ao ganhar o
+segundo, passou a preenchê-lo sozinho. O pedido saía com usuário preenchido,
+caía no caminho da pessoa presa a obra, e a resposta era "usuário ou senha
+incorretos" **com a senha certa digitada**. Do lado de fora não havia como
+adivinhar.
+
+**O conserto:** quem decide é a **senha**. Se ela for a senha mestre, entra como
+administrador, tenha o campo de usuário o que tiver. Isso não afrouxa nada —
+quem conhece a senha mestre já é o administrador.
+
+A única brecha que isso abriria: uma pessoa presa a obra com a **mesma senha do
+dono** passaria a entrar como administrador. Fechada onde custa nada — o
+cadastro recusa a senha mestre como senha de alguém.
+
+**A lição geral:** *decidir um caminho de autenticação por um campo estar vazio
+é frágil*, porque quem preenche o campo nem sempre é a pessoa. Decida pelo que
+confere, não pelo que falta.
+
+## O download passava por fora da proteção das telas — 22/09/2026
+
+Achado ao acrescentar o arquivo do cenário: a rota `/painel/baixar/<assunto>`
+**não conferia assunto nenhum**. Cada tela era protegida uma a uma e o download
+passava por fora.
+
+A maioria dos arquivos se monta a partir de `_filtros_do_pedido`, que já prende
+a pessoa às obras dela — esses estavam certos **por acidente**. Mas `quotas`,
+`posicao`, `rateio_admin` e o `cenario` não passam por ali: leem a empresa
+inteira, porque a pergunta que respondem é sobre a empresa inteira. **Quem
+tinha acesso a uma obra podia baixar a divisão de lucro entre os sócios.**
+
+Agora o arquivo segue a tela (`TELA_DO_DOWNLOAD`, em `auth.py`), e os quatro
+que abrem a empresa inteira são só do dono. Assunto novo que ninguém mapear
+nasce **fechado**. Há teste para cada um dos seis.
+
+## O cenário da prestação de contas — 22/09/2026
+
+O dono, depois de olhar o que existia espalhado em quatro telas:
+
+> *"Todas as outras telas juntas, elas têm sido uma tentativa ainda frustrada de
+> realizar a prestação de contas da empresa (…) eu queria trazer para uma tela
+> de prestação de conta, onde dentro dela eu vou nomear os parceiros, os sócios,
+> os percentuais, vou definir se vai ser baseado na mão de obra ou no
+> faturamento, quais contas da matriz eu vou dividir, em quais percentuais (…)
+> e importantíssimo, auditável."*
+
+E, sobre a operação — a parte em que a tela antiga falhou:
+
+> *"Não adianta uma coisa que eu tenho que digitar coisa por coisa para sair
+> colocando. Tem que ser um negócio realmente fácil de fazer."*
+
+### O CENÁRIO é o objeto
+
+Tudo o que muda o resultado vive dentro dele: a régua do rateio, os percentuais
+de cada conta da matriz, a régua dos juros, a taxa de administração e quem
+divide. Trocar de cenário troca o resultado inteiro — e o anterior fica
+intacto. **Duplicar** um cenário é o que torna barato perguntar "e se fosse
+faturamento?": parte-se do pronto e troca-se uma coisa só.
+
+### Por que os percentuais são uma HIERARQUIA, e não uma lista de regras
+
+A tela antiga pedia um cadastro por regra, com nome, escopo e vigência. Aqui a
+conta da matriz herda o percentual padrão do cenário; marcar o **grupo**
+sobrepõe; marcar a **categoria** sobrepõe o grupo; marcar um **lançamento**
+sobrepõe a categoria. Configurar é tocar em poucas linhas, não em todas.
+
+Duas sutilezas que têm teste porque custariam caro:
+
+- **vazio e zero são coisas diferentes.** Zero é "esta conta não se divide";
+  vazio é "segue o nível de cima". Por isso apagar o campo APAGA a marcação em
+  vez de gravar zero;
+- **lançamento marcado sai do balde da categoria.** Se entrasse com percentual
+  próprio sem sair do agregado, o mesmo dinheiro contaria duas vezes.
+
+### A régua: mão de obra ou faturamento
+
+O padrão é mão de obra, e o motivo é do dono:
+
+> *"O custo de despesas com o pessoal é um indicador da quantidade de energia
+> que aquela obra requer (…) o DP vai ter mais trabalho, a engenharia vai ter
+> mais trabalho. É uma obra normalmente mais complexa do que uma que usa pouca
+> mão de obra e muito maquinário."*
+
+Trocar para faturamento vira a conta, e é justamente a comparação que ele quer
+poder fazer. Há uma **janela** (1, 3, 12 meses ou acumulado) para escolher entre
+reagir rápido e ser estável.
+
+### Quem divide: por OBRA, não por projeto
+
+Diferente da prestação antiga. A razão: ele fala de "as obras do Ceará", e
+parceiro entra em **obra**, não na construtora. Quem participa de tudo entra uma
+vez só, com a obra em branco; quem for nomeado numa obra específica
+**substitui** a lista geral naquela obra. É assim que entra o parceiro de uma
+obra só sem refazer o resto.
+
+Na obra com parceiro, a conta é a mesma de antes — taxa de administração sobre
+a receita bruta, crédito da taxa e da estrutura só para os internos — com uma
+diferença: **o juro entra na base de todos**, inclusive do parceiro, porque não
+é estrutura da construtora, é o preço do dinheiro que financiou aquela obra. A
+soma das quotas continua fechando com o resultado da obra, e há teste.
+
+### Auditável, que era a outra palavra sublinhada
+
+A tela de resultado abre a conta: estrutura por obra e mês a mês (com o bolo do
+mês, quantas obras entraram e quem levou mais), juros por obra e mês a mês (com
+quantas estavam no vermelho e o buraco somado), a quota de cada um obra a obra,
+e o que ficou **sem dono**. O mesmo sai em planilha e em PDF, com os
+**parâmetros do cenário na primeira aba** — memória de cálculo sem as escolhas
+que a geraram não se confere seis meses depois.
+
+E o gráfico que ele pediu: **a vida de uma obra**, mês a mês — o caixa
+acumulado (já com a estrutura que ela recebeu), onde ele fica abaixo de zero, e
+a mesma linha depois do juro absorvido. Uma obra por vez, porque 174 linhas
+sobrepostas não se leem.
+
+### O que NÃO mudou
+
+A Prestação de Contas antiga continua funcionando, com as regras antigas, e é
+ela que roda hoje. O cenário é uma porta nova, com um aviso na tela velha. Nada
+foi trocado sem o dono ver — e aposentar a tela antiga é decisão dele, depois de
+conferir que a nova bate.
+
+### O que ainda falta
+
+- **Comparar dois cenários lado a lado** numa tela só. Hoje compara-se trocando
+  o cenário no seletor. A tela antiga de cenários faz isso para as regras
+  antigas e serve de modelo;
+- **A divisão do custo das obras do Ceará com as demais.** Continua
+  perguntada, não chutada — a frase dele admite duas leituras (o prejuízo
+  espalhado nas outras obras, ou só o custo do caixa que elas demandaram, que a
+  régua dos juros já resolve sozinha);
+- **Os percentuais de cada sócio e parceiro.** O cadastro existe e a conta
+  existe; falta o dado, que só ele tem.
+
+## A conta da baixa continuava errada — 22/09/2026
+
+O dono: *"refiz os números do painel, mas o problema das contas permaneceu"*.
+
+**O que tinha acontecido.** O conserto de 21/09 trocou a **fonte** da conta —
+do título (`id_conta_corrente`) para o movimento de baixa (`ncodcc`). Só que o
+OMIE guarda cada baixa em **duas pernas**, e o código estava lendo a errada:
+
+- a **consolidada** (`cLiquidado = 'S'`) é o *resumo do título* — e carrega a
+  conta **do título**, a da previsão. Era dela que a conta saía. Trocar de
+  tabela e continuar lendo essa perna deu exatamente o mesmo número de antes;
+- a **bancária** (`cLiquidado` vazio, `nValLiquido = 0`, uma por conta que o
+  dinheiro tocou) é a única que sabe **por onde o dinheiro saiu**.
+
+O `_escolher_recebimentos` já sabia dessa armadilha — é ele quem desmonta as
+duas pernas para não dobrar o caixa — e o título pago em parcelas já usava a
+conta de cada perna bancária. Só o título pago **de uma vez** (a esmagadora
+maioria) caía no atalho da consolidada.
+
+**O conserto:** `_conta_de_onde_saiu`, no `fato.py`. Entre as pernas que o
+`_escolher_recebimentos` escolhe, vale a de maior valor; empate, a mais
+recente. Sem perna com conta, fica a consolidada, e depois a previsão — a
+linha nunca perde a informação. Um teste reproduz a cena: previsto na 7,
+resumo na 7, dinheiro saiu da 9, o relatório tem de dizer 9.
+
+**E uma conferência nova, "Conta de onde o dinheiro saiu"**, em Configurações,
+porque desta vez eu não tenho como olhar a base real: ela conta, no espelho,
+quantas pernas bancárias existem e em quantas a conta é diferente da do
+título — e quantas consolidadas diferem (a aposta é: quase nenhuma). Se a
+base **não tiver** perna bancária nenhuma, a caixa fica vermelha e diz o que
+isso significa: a conta real não está no espelho, refazer os números não muda
+nada, e ela teria de vir de outra listagem do OMIE com uma carga nova.
+
+**O que o dono precisa fazer:** depois de publicado, **"Só refazer os
+números"** de novo — o espelho já tem as duas pernas, nada precisa ser baixado
+do OMIE. E rodar as conferências para ler a caixa nova.
+
+**Lição:** um conserto "confirmado por teste" pode confirmar só a leitura do
+código, não a do mundo. O teste de 21/09 modelava a conta na perna consolidada
+porque eu assumi que era lá que ela estava. Quando o dono diz que não mudou,
+a primeira pergunta é *de qual pedaço do dado* o número está vindo.
+
+## Analítico: filtro pela conta de pagamento e o relatório com abas — 22/09/2026
+
+O dono: *"coloque no despesas analítico filtro pra conta de pagamento. Gostaria
+ainda que você melhorasse o relatório, tá muito pobre. Acho que pode ter outras
+abas."*
+
+**O filtro já existia — e sumia.** A barra lateral tem a lista de contas desde
+o Extrato (21/09), e o Analítico já a respeitava. Mas o formulário da própria
+tela não levava a conta adiante: quem escolhia uma conta na barra lateral e
+clicava em **Aplicar** via o filtro desaparecer, sem aviso. O DRE tinha o mesmo
+defeito. Os dois foram consertados, e o Analítico ganhou uma caixa própria,
+**"Conta de pagamento"** — uma conta só; várias marcadas na barra lateral
+viajam escondidas e a caixa avisa quantas são, em vez de mostrar só a primeira.
+
+A conta é **a de onde o pagamento saiu**, não a prevista no título — vale a
+correção da perna bancária, mais acima.
+
+**O relatório passou a ter oito abas**, todas somadas **a partir das mesmas
+linhas da aba de lançamentos** — e não por consultas próprias. É de propósito:
+assim cada resumo fecha com a lista, com os mesmos filtros (inclusive os desta
+tela: grupo, credor, busca, faixa de data), e ninguém precisa explicar por que
+a soma por conta deu diferente da lista.
+
+1. **Resumo** — os filtros aplicados (para o arquivo dizer o que ele é) e os
+   totais;
+2. **Por grupo**, 3. **Por categoria**, 4. **Por credor**,
+5. **Por conta de pagamento**, 6. **Por obra** — cada um com lançamentos,
+   pago, a pagar, juros e multa, total e % do total, do maior para o menor;
+7. **Por mês** — em ordem cronológica, o sem-data por último;
+8. **Lançamentos** — a lista de sempre.
+
+E o botão de **PDF** ao lado do Excel, que já existia para o resto e não para
+esta tela.
+
+Sete testes com banco de verdade: o recorte, a caixa, as duas contas que não
+se perdem, o DRE, as abas fechando com a lista, o filtro escrito no arquivo e
+o PDF.
+
+## "Falha gravíssima": a medição que valia oito vezes o título — 22/09/2026
+
+O dono:
+
+> *"CREPEBELEM | Medição 1, doc. PM1339984827 — R$ 664.875,43 bruto. No OMIE
+> tenho para o mesmo título o valor bruto de 86.828,71. Vi outra obra
+> (MERCADOBARBALHA) e estava correto. Outra tem valores corretos e errados."*
+
+**O que a linha é.** A Receita de Obra junta numa linha todos os títulos cuja
+**observação** diz a mesma medição da mesma obra (`OBRA|Medição No: N`) — de
+propósito, desde a conversão: uma medição é faturada em várias notas (principal
+e reajuste, fontes de recurso diferentes), e a linha mostra a medição inteira.
+MERCADOBARBALHA bate porque lá cada medição é uma nota só.
+
+**O que estava errado na tela.** Ela mostrava **um** documento para o grupo
+inteiro (`MAX(numero_documento)`) — e não dizia que era um grupo. O dono pegou
+esse documento, conferiu no OMIE, achou R$ 86 mil, e concluiu, com razão, que
+o número não tinha pé nem cabeça. **Um número que não dá para conferir é um
+número errado**, mesmo quando a soma está certa.
+
+**A decisão do dono, ao ver a composição:** *"não fica legal agrupado,
+confunde, tem que separar mesmo os títulos."* Então a linha da Receita de Obra
+passou a ser **o título**, não a medição:
+
+- **um título por linha**, com o documento dele, o valor dele e o nº no OMIE.
+  A medição continua escrita ao lado, como rótulo — mas o número é o do
+  título, que é o que se confere no OMIE;
+- o detalhe (`/receita/titulo/<nº>`) mostra o título e os recebimentos dele,
+  e recusa com "não encontrado" quem está preso a outra obra;
+- o rodapé conta títulos. O agrupamento por medição sobrevive só no rótulo e
+  na Receita Analítico (que já abria por recebimento);
+- a lista passou a sair **por data**, mais recente primeiro. Era por valor, e o
+  dono viu "aleatório";
+- **as outras receitas saíram da lista de medições.** Rendimento, estorno e
+  devolução apareciam misturados com as medições (a lista era "toda receita do
+  DRE"); agora a lista é só receita de obra e o imposto retido dela
+  (`RECEITA_DE_OBRA`), e o resto fica só no bloco "Outras receitas", embaixo.
+  O total do rodapé segue a mesma régua. *"Não misturar com a receita de
+  obra"* — o dono, três vezes na mesma hora.
+
+**O que NÃO dá para saber daqui:** se os outros títulos de "CREPEBELEM |
+Medição 1" são mesmo dessa medição (notas da mesma medição) ou títulos com a
+observação errada. O detalhe novo é o que responde — e a resposta é dele.
+
+**Se ele confirmar que o OMIE está certo e o painel errado** mesmo depois de
+ver a composição, a suspeita seguinte é duplicação de movimentos na retomada
+por página (`espelho.py`): a página gravada sem a marca salva seria regravada.
+Não foi investigado porque a composição explica o caso relatado; fica anotado.
+
+## O bloco de Aportes levava dois minutos para abrir — 22/09/2026
+
+O dono, com o número na mão: *"Tela montada em 126753 ms — 15 consultas ao
+banco, 126743 ms delas."*
+
+**A causa.** Cada consulta do bloco decidia, **linha a linha**, se o lançamento
+era aporte e de que tipo: tirar acento da categoria, testar dez expressões
+regulares e procurar "bws" na contraparte. Para 185 mil linhas, quinze vezes
+por tela. A decisão não muda entre uma tela e outra — muda quando a base é
+refeita.
+
+**O conserto: decidir uma vez, na montagem do fato** (`tipo_aporte`, migração
+017). `''` quer dizer "não é aporte"; `NULL` quer dizer "linha anterior à
+migração, ainda não recalculada" — e para essas a consulta cai na expressão
+antiga, lenta mas certa. Depois do primeiro **"Só refazer os números"** não
+sobra NULL nenhum e cada consulta lê um texto pronto.
+
+**O que precisa acontecer para valer:** apertar "Aplicar atualizações do
+banco" (017) **e** rodar "Só refazer os números". Só a migração não acelera
+nada.
+
+**Medido pelo dono, em produção, no mesmo dia:** *"Tela montada em 252 ms —
+12 consultas ao banco, 241 ms delas."* De 126.753 ms para 252 ms: **500 vezes
+mais rápido**. Fica o número aqui para a próxima vez que alguém pensar em
+decidir coisa cara linha a linha dentro de uma consulta.
+
+**E três pedidos do dono na mesma hora, no mesmo bloco:**
+
+- *"Essa informação não deveria aparecer aqui, tem que colocar em
+  Configurações."* A comparação com a base inteira ("na base inteira são X
+  aportados… estão fora do que você está vendo") e a cascata "de onde vem
+  cada número" **saíram do DRE**. Estão em Configurações › Conferências, num
+  bloco próprio ("Aportes na base inteira — e onde está o resto"). O DRE
+  perdeu quatro consultas pesadas com isso;
+- *"Essa tela por tipo tá errada, acho que nem precisa dela — tô achando os
+  dados em duplicidade."* A tabela **Por tipo** saiu do bloco e da planilha.
+  Era a mesma soma do "Por obra" aberta por outro eixo;
+- *"Na por obra poderia ter só o somatório embaixo."* Tem: linha de total com
+  aportado, devolvido e saldo.
+
+**De passagem, um erro meu:** ao remover o bloco do DRE cortei junto a tabela
+"Por sócio ou parceiro" — um teste do dublê pegou antes de sair daqui.
+
+## Alterar um título logo depois de ensaiá-lo NUNCA funcionava — 22/09/2026
+
+O dono, ao alterar **um** título pelo Explorador:
+
+> *"0 título(s) alterado(s). A Omie bloqueou as chamadas por consumo excessivo
+> e pediu 59 segundos."*
+
+**A causa.** O fluxo da tela é ensaio → executar. Cada um **consultava o
+título no OMIE** — a mesma chamada, com os mesmos parâmetros, com segundos de
+diferença. É exatamente o que a Omie chama de *consumo redundante*, e ela
+bloqueia por um minuto. Como o teto de espera na tela é 30 s, o lote parava
+antes de enviar. Um título só, e nunca dava certo. **É provavelmente por isso
+que "a primeira escrita no OMIE nunca aconteceu"** — estava anotado como
+pendência desde 13/09.
+
+**O conserto.** O cadastro lido no ensaio fica guardado por cinco minutos e o
+envio usa o que o ensaio leu: a única chamada nova é a alteração, que é
+outra chamada. Depois de alterado, o cadastro guardado é esquecido.
+
+**O preço, dito:** se alguém mexer no título no OMIE nesses cinco minutos, o
+envio parte do cadastro de antes. Curto o bastante para ser raro; longo o
+bastante para ler o ensaio e clicar.
+
+**O que o dono precisa fazer agora:** esperar o minuto que a Omie pediu, e
+mandar de novo — ensaio e executar. Se ainda bloquear, é outra coisa
+consumindo o OMIE ao mesmo tempo (uma atualização da base, ou o Análise de
+SPs), e aí é esperar ela acabar.
+
 ## O que falta
 
 Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte

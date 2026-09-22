@@ -1278,6 +1278,52 @@ Feito nesta leva:
 - [x] **O banco de preços antigo.** Importador com a trava dos números
       (CA50 ≠ CA60), sem criar insumo e sem duplicar na reimportação; e o
       último/menor preço ao lado do item na tela de Solicitações.
+- [x] **O cadastro do fornecedor pela Receita.** CNPJ no topo do formulário
+      preenche razão social, fantasia, cidade e UF ao sair do campo, e avisa se
+      o documento já está cadastrado; o nome oficial fica guardado, com filtro
+      "nome diferente da Receita" e o botão de adotar um a um (migração 078).
+- [x] **A região virou filtro do disparo.** Abrangência padronizada
+      (NACIONAL / ESTADUAL / REGIONAL / LOCAL) com UFs e municípios, botão
+      "Padronizar as regiões" traduzindo o texto livre antigo (1.702
+      fornecedores, 100% traduzidos), e quem não atende o lugar da obra deixa de
+      ser sugerido — com contagem do que ficou de fora e do que está sem
+      cadastro. Região, porte, contato, nome e CNPJ passaram a ser obrigatórios
+      (migração 079).
+- [x] **Desativar e reativar fornecedor pela ficha**, com apagar só para quem
+      nunca foi usado (o sistema confere 10 tabelas antes de oferecer).
+- [x] **Varredura do formato dos campos, em todas as telas (22/09/2026).**
+      Máscara automática de CNPJ/CPF, telefone e CEP (o campo é reconhecido
+      pelo nome, inclusive dentro dos diálogos montados na hora); célula de
+      tabela mostrando duas linhas em vez de cortar numa, com o texto inteiro
+      no balãozinho; busca ignorando acento, pontuação de documento e ordem das
+      palavras. Tudo em `erp_base.html`, para tela nova nascer certa sem
+      ninguém lembrar. 32 telas varridas no navegador, zero pendências.
+- [x] **A tela de lançamento, por dentro (22/09/2026).** Busca que travava ao
+      digitar (conserto vale para toda lista longa do ERP: espera de 140ms e
+      teto de 60 achados, com o corte dito); linha digitável só em boleto e
+      guia; **+ Cadastrar credor** sem sair do lançamento, com aviso quando o
+      emitente do documento lido não está cadastrado; conta bancária criada ali
+      nasce **pendente** — o lançamento é gravado, o título nasce bloqueado e o
+      botão **Reanalisar** destrava depois da homologação, sem refazer nada.
+- [x] **Dois consertos achados usando o sistema (22/09/2026):** o código da
+      obra não mudava ao salvar (a rota descartava o campo calada; agora troca,
+      com trava de duplicidade e registro do de→para), e a competência saiu do
+      lançamento de título — o sistema deduz pela emissão do documento ou pelo
+      menor vencimento, e a crítica de duplicidade deduz igual, senão as regras
+      D4 e D5 parariam de rodar caladas.
+- [x] **A conta bancária tem dona, e o título tem empresa.** Migração 080:
+      conta nova exige a empresa, as antigas ganham botão *definir empresa* com
+      contagem do que falta, o título recebe a empresa da obra do rateio
+      (histórico preenchido na própria migração) e pagar por outra empresa
+      pergunta uma vez e fica escrito na trilha. Rateio entre obras de empresas
+      diferentes é recusado no lançamento. De brinde, um defeito antigo: o bloco
+      "copiar dados" trazia o CNPJ da empresa padrão em cima da conta de
+      qualquer uma.
+- [x] **O modal do novo pedido cabe.** Cada item virou bloco: o nome do insumo
+      aparece inteiro quebrando linha, a especificação é campo de várias linhas
+      que cresce, e em tela estreita os campos empilham. A causa era um
+      `<select>` sem teto de largura esticado pelo insumo de nome mais
+      comprido — armadilha que vale para toda tela com lista dentro de tabela.
 
 O que falta, em ordem de retorno por hora de trabalho:
 

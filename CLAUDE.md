@@ -100,25 +100,24 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 | Painel OMIE | `app/apps/painel/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | Análise de SPs | `app/apps/analisesps/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | BaixaBradesco (baixa de comprovantes) | `app/apps/baixabradesco/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.9 e §9 | `HISTORICO.md` |
-| Emissão de NFS-e | `app/apps/emissaonf/` | ⚠️ **ainda não tem README nem HISTORICO** — ver abaixo; por ora, `CONTEXTO.md` §5 e §9 | `HISTORICO.md` (a criar) |
+| Emissão de NFS-e | `app/apps/emissaonf/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §9 — e o aviso de risco logo abaixo desta tabela | `HISTORICO.md` |
 
 **Ao começar** uma sessão numa área: ler os arquivos da linha, conferir a
 seção "Pendente AGORA" e **perguntar ao dono** se aquilo já aconteceu — o
 estado do mundo pode ter mudado desde que o arquivo foi escrito.
 
-### ⚠️ A emissão de NFS-e entrou na tabela SEM memória (21/09/2026)
+### ⚠️ A emissão de NFS-e: a memória existe desde 21/09/2026 — e o risco continua
 
-Ela é a quinta área, e a única que **não tem `README.md` nem `HISTORICO.md`**.
-São ~7.000 linhas em 48 arquivos, e o `CONTEXTO.md` registra a dívida desde
-sempre: *"⚠️ ainda não documentado aqui"*, *"documentar na próxima vez que
-mexer"*.
+Ela entrou na tabela **sem memória nenhuma**, e a primeira entrega do primeiro
+chat dela foi justamente essa: o `README.md` e o `HISTORICO.md` foram escritos
+em 21/09/2026, a partir do código lido de ponta a ponta e do relato do dono
+sobre o que só ele sabia. O `HISTORICO.md` diz, em cada parte, qual das duas
+fontes a sustenta — e o que ficou sem confirmação.
 
-**Então a primeira entrega de quem abrir um chat nessa área é a memória, não
-código.** Criar os dois arquivos, no padrão do `analisesps/` e do `painel/`,
-levantando o que der do código e **perguntando ao dono o que só ele sabe** —
-o estado do mundo, as decisões e os motivos, os incidentes. Sem isso, a
-segunda sessão recomeça do zero, e é exatamente o que este arquivo existe
-para impedir.
+**O que continua valendo:** o `HISTORICO.md` tem uma seção "O que precisa ser
+confirmado com o dono", com perguntas que travam trabalho de verdade (o passivo
+de notas com ISS a maior, entre elas). Começar um chat nessa área é ler as duas
+e perguntar antes de mexer.
 
 **Dois riscos próprios dela, que não existem nas outras quatro:**
 
@@ -401,5 +400,12 @@ Empresas e pela criação de obra).
   `app/main.py`. Mas **área nova do ERP** (Suprimentos, Agenda, Contratos) entra
   dentro do `erp`, não como blueprint paralelo: lá já existem navegação, login,
   permissão e auditoria.
+- **Formato de campo é do `erp_base.html`, não da tela.** Máscara de CNPJ/CPF,
+  telefone e CEP, caixa de busca em lista longa e célula que não corta texto já
+  valem sozinhas: o campo é reconhecido pelo NOME (`cnpj`, `cpf`, `documento`,
+  `telefone`, `cep`), inclusive nos diálogos montados na hora — por isso todo
+  campo de `perguntar()` leva `nome`. Tela nova nasce certa sem lembrar de
+  nada; a exceção se marca no campo (`data-sem-mascara`, `data-sem-busca`).
+  Não recriar máscara dentro de tela.
 - Regra de negócio do ERP mora em `core/<dominio>/`, nunca no `routes.py`.
 - Não introduzir dependência nova sem avisar.

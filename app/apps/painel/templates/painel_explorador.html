@@ -149,6 +149,71 @@
 </div>
 {% endif %}
 
+{# ============== O QUE A EXCLUSÃO DEVOLVEU ============== #}
+{% if exclusao or erro_exclusao %}
+<div class="cartao" style="margin-bottom:14px; border-left:4px solid var(--vermelho)">
+  <div class="cartao-cab">
+    <h3>{{ 'Ensaio da exclusão' if exclusao and exclusao.simulacao
+           else 'Resultado da exclusão no OMIE' }}</h3>
+  </div>
+  {% if erro_exclusao %}
+    <div class="aviso erro">{{ erro_exclusao }}</div>
+  {% else %}
+    <div class="aviso {{ 'info' if exclusao.simulacao else 'erro' }}">
+      {% if exclusao.simulacao %}
+        <b>Ensaio: nada foi excluído.</b>
+        {{ exclusao.quantos }} título(s) seriam apagados no OMIE.
+        Confira a coluna <b>Baixa</b> antes de confirmar.
+      {% else %}
+        <b>{{ exclusao.excluidos }} título(s) excluído(s) no OMIE.</b>
+        Eles já saíram do painel também — não precisa atualizar a base.
+      {% endif %}
+    </div>
+    {% if exclusao.bloqueio %}
+    <div class="aviso erro">
+      <b>O OMIE bloqueou as chamadas e o lote parou aqui.</b><br>
+      {{ exclusao.bloqueio }}<br>
+      Cada título ou foi excluído ou nem chegou a ser tentado — a coluna
+      Resultado diz qual é qual.
+    </div>
+    {% endif %}
+    <div class="tabela-rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Cód. OMIE</th>
+            <th class="sem-ordem">Data</th>
+            <th class="sem-ordem">Cliente ou Fornecedor</th>
+            <th class="sem-ordem">Categoria / obra</th>
+            <th class="sem-ordem direita">Valor</th>
+            <th class="sem-ordem">Baixa</th>
+            <th class="sem-ordem">Resultado</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for l in exclusao.linhas %}
+          <tr>
+            <td class="dados">{{ l.codigo }}</td>
+            <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+            <td class="desc">{{ l.razao_social or '—' }}</td>
+            <td class="desc"><small>{{ l.categoria or '—' }}
+              {% if l.departamento %}· {{ l.departamento }}{% endif %}</small></td>
+            <td class="dados direita">{{ brl(l.pago_recebido or l.a_pagar_receber) }}</td>
+            <td class="desc">
+              {% if l.tem_baixa %}
+                <b style="color:var(--vermelho)">tem baixa</b>
+              {% else %}—{% endif %}
+            </td>
+            <td class="desc {{ 'v-neg' if not l.ok else '' }}">{{ l.resultado }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {# ================= A LISTA — UMA SÓ, E É NELA QUE SE EDITA ================= #}
 <form method="post" id="form-alterar"
       action="{{ url_for('painel.explorador_alterar', **request.args) }}">
@@ -208,7 +273,11 @@
         {% for l in dados.linhas %}
           <tr data-codigo="{{ l.codigo_lancamento }}">
             <td class="cel-marca">
+              {# O `name` faz a marcação VIAJAR no formulário. Sem ele, marcar
+                 linha só existia na memória do navegador, e o servidor nunca
+                 ficava sabendo — que é o que a exclusão precisa saber. #}
               <input type="checkbox" data-marca
+                     name="codigo" value="{{ l.codigo_lancamento }}"
                      aria-label="Marcar o título {{ l.codigo_lancamento }}">
               <button type="button" class="link-btn oculto" data-desfazer
                       title="Descartar a alteração deste título">↺</button>
@@ -298,6 +367,53 @@
     <p class="cartao-dica">
       Ensaie primeiro. Depois altere <b>um</b> título, confira no OMIE, e só então
       faça o lote — esta escrita nunca foi testada contra a API de verdade.
+    </p>
+  </div>
+
+  {# ============ EXCLUIR — a única coisa aqui que não tem volta ============ #}
+  <div class="cartao" style="margin-top:14px; border-left:4px solid var(--vermelho)">
+    <div class="cartao-cab"><h3>Excluir os títulos marcados</h3></div>
+    <div class="aviso erro">
+      <b>Isto apaga o título dentro do OMIE, e não existe desfazer.</b>
+      Não é lixeira: o registro some de lá, e recuperar é digitar tudo de novo,
+      à mão. Use para lançamento <b>duplicado ou que nunca deveria ter
+      existido</b> — não para lançamento que só está atrapalhando a análise
+      (esse é caso de corrigir a categoria ou a obra, aí em cima).<br>
+      Título <b>com baixa</b> (pagamento conciliado) é enviado do mesmo jeito e
+      quem decide é o OMIE — mas o ensaio mostra quais são, <b>antes</b>.
+      No máximo <b>{{ teto_de_exclusao }}</b> por vez.
+    </div>
+
+    <div class="tabela-barra" style="border:0; padding-left:0">
+      <button class="btn secundario" name="executar" value="0"
+              formaction="{{ url_for('painel.explorador_excluir', **request.args) }}"
+              data-precisa-marcado disabled>
+        Ensaiar exclusão (não apaga nada)
+      </button>
+    </div>
+
+    <div class="form-grade" style="margin-top:8px">
+      <div class="campo">
+        <label for="confirmacao">Digite <b>EXCLUIR</b> para confirmar</label>
+        <input id="confirmacao" name="confirmacao" autocomplete="off"
+               placeholder="EXCLUIR"
+               {% if not escrita_ligada %}disabled{% endif %}>
+      </div>
+      <div class="campo" style="align-self:flex-end">
+        <button class="btn" name="executar" value="1"
+                style="background:var(--vermelho); border-color:var(--vermelho); color:#fff"
+                formaction="{{ url_for('painel.explorador_excluir', **request.args) }}"
+                onclick="return confirm('Isto apaga os títulos marcados DENTRO DO OMIE. Não há desfazer. Confirma?')"
+                data-precisa-marcado
+                {% if not escrita_ligada %}disabled{% endif %}>
+          EXCLUIR no OMIE (sem desfazer)
+        </button>
+      </div>
+    </div>
+    <p class="cartao-dica">
+      Usa a mesma <b>senha de execução</b> preenchida acima. Digitar a palavra
+      EXCLUIR é de propósito: marcar uma caixinha por engano acontece; digitar
+      EXCLUIR por engano, não.
     </p>
   </div>
 </form>

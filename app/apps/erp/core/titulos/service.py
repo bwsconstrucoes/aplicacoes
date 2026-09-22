@@ -15,6 +15,7 @@
 # ============================================================================
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
@@ -26,13 +27,15 @@ from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao, regi
 from app.apps.erp.core.pagamentos.boleto import validar_linha_digitavel
 from app.apps.erp.core.titulos.regras import modo_transicao, regras_de
 from app.apps.erp.db.models.cadastros import (
-    Alcada, Categoria, FormaPagamento, Fornecedor, FornecedorConta, Obra,
-    PerfilUsuario, StatusConta, TipoTitulo, Usuario,
+    Alcada, Categoria, Empresa, FormaPagamento, Fornecedor, FornecedorConta,
+    Obra, PerfilUsuario, StatusConta, TipoTitulo, Usuario,
 )
 from app.apps.erp.db.models.financeiro import (
     Conciliacao, Pagamento, Parcela, Rateio, Retencao, StatusParcela,
     StatusTitulo, TipoRetencao, Titulo,
 )
+
+logger = logging.getLogger(__name__)
 
 _CENT = Decimal("0.01")
 
@@ -77,6 +80,40 @@ def _competencia(valor: Any) -> date:
         except ValueError:
             continue
     return _data(v, "competencia").replace(day=1)
+
+
+def _competencia_deduzida(dados: dict[str, Any], parcelas: list[Parcela]) -> date:
+    """O mês de competência, SEM ninguém precisar digitar.
+
+    Pedido do dono em 22/09/2026: *"no lançamento do título não queria precisar
+    lançar competência, nem usamos isso."*
+
+    A coluna continua existindo, e continua sendo preenchida: o relatório
+    analítico filtra por ela, a crítica de duplicidade do fundo fixo compara
+    "mesma conta no mesmo mês" por ela, e a NFS-e emitida leva a competência
+    dentro. Tirá-la do banco quebraria as três; tirá-la da TELA é o pedido, e é
+    o que foi feito.
+
+    A ORDEM da dedução é o que importa, e ela não é "hoje":
+
+      1. a **emissão do documento**, quando informada — é a resposta
+         contabilmente certa, e é um campo que a pessoa já preenche (ou que a
+         leitura da nota preenche sozinha);
+      2. o **primeiro vencimento**, na falta dela;
+      3. hoje, como último recurso.
+
+    "Hoje" em primeiro lugar seria o erro fácil e caro: uma nota de agosto
+    lançada em outubro cairia no custo de outubro, e a obra fecharia o mês com
+    despesa que não é dela.
+    """
+    if str(dados.get("competencia") or "").strip():
+        return _competencia(dados["competencia"])
+    emissao = dados.get("data_emissao_doc")
+    if str(emissao or "").strip():
+        return _data(emissao, "data_emissao_doc").replace(day=1)
+    if parcelas:
+        return min(p.vencimento for p in parcelas).replace(day=1)
+    return date.today().replace(day=1)
 
 
 def proximo_numero_sp(s: Session) -> str:
@@ -126,6 +163,43 @@ def _exigir_uma_conta_so(s: Session, rateios: list[Rateio]) -> None:
         "— não dá para pagar o mesmo boleto de duas contas. Separe em dois "
         "títulos (peça ao fornecedor dois boletos), ou acerte a conta das obras "
         "no cadastro.")
+
+
+def _empresa_do_rateio(s: Session, rateios: list[Rateio]) -> Optional[int]:
+    """De que EMPRESA é este título — deduzido pelas obras do rateio.
+
+    Pedido do dono em 22/09/2026, junto com a empresa na conta bancária, e a
+    dedução só é honesta porque ele confirmou a premissa com todas as letras:
+    *"sempre uma empresa só"* — obra não é tocada por duas.
+
+    Sem isto, a empresa do título só existia INDIRETAMENTE, pela obra do
+    rateio, e não havia com o que comparar a conta escolhida na hora de pagar.
+
+    Obra sem empresa no cadastro NÃO trava o lançamento: o título fica sem
+    empresa e aparece na tela para alguém acertar. Travar o financeiro por um
+    campo em branco de outro cadastro é o tipo de rigor que faz a pessoa voltar
+    para a planilha.
+    """
+    empresas = {getattr(s.get(Obra, r.obra_id), "empresa_id", None)
+                for r in rateios}
+    empresas.discard(None)
+    if len(empresas) == 1:
+        return empresas.pop()
+    if len(empresas) > 1:
+        # Rateio cruzando empresas é coisa diferente de rateio cruzando obras:
+        # são dois CNPJs, e um título vira um pagamento só. Recusar aqui é o
+        # mesmo raciocínio de `_exigir_uma_conta_so` — depois de lançado,
+        # separar dá trabalho e envolve o fornecedor.
+        nomes = []
+        for eid in sorted(empresas):
+            emp = s.get(Empresa, eid)
+            nomes.append(getattr(emp, "razao_social", None) or f"empresa {eid}")
+        raise ErroValidacao(
+            "Este título está rateado entre obras de EMPRESAS diferentes ("
+            + " · ".join(nomes) + "). Um título vira um pagamento só, e ele sai "
+            "do caixa de um CNPJ — não dá para uma despesa ser paga por dois. "
+            "Separe em dois títulos, um por empresa.")
+    return None
 
 
 def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
@@ -220,20 +294,32 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     except ValueError:
         raise ErroValidacao(f"Forma de pagamento inválida: {dados.get('forma_pagamento')!r}")
 
+    # ---- conta do credor
+    #
+    # ATÉ 22/09/2026 ISTO RECUSAVA O LANÇAMENTO quando não havia conta
+    # HOMOLOGADA. O dono esbarrou no beco: *"tem que prever como sairemos da
+    # situação que cadastro o credor enquanto lanço e preciso voltar pra
+    # cadastrar a forma de pgt."* Sem conta homologada, o trabalho inteiro se
+    # perdia na hora de salvar.
+    #
+    # A recusa era REDUNDANTE, e é isso que permite afrouxá-la sem perder
+    # controle: o motor de análise já tem a crítica C2, que BLOQUEIA o título
+    # quando o PIX/TED não tem conta homologada. Título BLOQUEADO não pode ser
+    # aprovado, e sem aprovação não existe pagamento. A diferença é que agora o
+    # lançamento é GRAVADO e fica esperando a homologação, em vez de sumir.
+    #
+    # O que continua recusado é o que é erro de verdade, não de fluxo: conta de
+    # OUTRO credor, ou conta de forma diferente da escolhida.
     conta_id = dados.get("fornecedor_conta_id") or None
-    if forma in (FormaPagamento.PIX, FormaPagamento.TED):
-        if regras.exige_conta_fornecedor:
-            if not conta_id:
-                raise ErroValidacao(
-                    "Pagamento por PIX/TED exige seleção de conta HOMOLOGADA do fornecedor "
-                    "(dados bancários vivem no cadastro, nunca no lançamento).")
-            conta = s.get(FornecedorConta, int(conta_id))
-            if conta is None or conta.fornecedor_id != forn.id:
-                raise ErroValidacao("Conta selecionada não pertence ao fornecedor do título.")
-            if conta.status != StatusConta.HOMOLOGADA:
-                raise ErroValidacao(f"Conta selecionada não está HOMOLOGADA (status: {conta.status.value}).")
-            if conta.forma != forma:
-                raise ErroValidacao(f"Conta selecionada é {conta.forma.value}, não {forma.value}.")
+    if forma in (FormaPagamento.PIX, FormaPagamento.TED) and conta_id:
+        conta = s.get(FornecedorConta, int(conta_id))
+        if conta is None or conta.fornecedor_id != forn.id:
+            raise ErroValidacao("Conta selecionada não pertence ao fornecedor do título.")
+        if conta.forma != forma:
+            raise ErroValidacao(f"Conta selecionada é {conta.forma.value}, não {forma.value}.")
+        # Conta não homologada NÃO é recusada aqui: quem bloqueia é a crítica
+        # C2 do motor de análise, com o recado para quem vai destravar. Repetir
+        # a mensagem nos dois lugares faria as duas divergirem com o tempo.
 
     # ---- parcelas
     parcelas_in = dados.get("parcelas") or []
@@ -311,6 +397,7 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
             f"Soma dos rateios (R$ {soma_rat}) ≠ valor líquido (R$ {valor_liquido}).")
 
     _exigir_uma_conta_so(s, rateios_obj)
+    empresa_id = _empresa_do_rateio(s, rateios_obj)
 
     # ---- C7(d): duplicidade credor + valor + 1º vencimento em janela de 30 dias
     venc1 = parcelas_obj[0].vencimento
@@ -327,10 +414,11 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
         numero_sp=proximo_numero_sp(s),
         tipo=tipo, fornecedor_id=forn.id, descricao=descricao,
         valor_bruto=valor_bruto, valor_retencoes=total_ret, valor_liquido=valor_liquido,
-        competencia=_competencia(dados.get("competencia")),
+        competencia=_competencia_deduzida(dados, parcelas_obj),
         data_emissao_doc=_data(dados["data_emissao_doc"], "data_emissao_doc")
             if dados.get("data_emissao_doc") else None,
-        categoria_id=cat.id, pedido_id=pedido_id, contrato_id=contrato_id,
+        categoria_id=cat.id, empresa_id=empresa_id,
+        pedido_id=pedido_id, contrato_id=contrato_id,
         documento_fiscal_id=doc_fiscal_id, forma_pagamento=forma,
         fornecedor_conta_id=conta_id,
         dedutivel=bool(dados.get("dedutivel", regras.dedutivel_padrao and cat.dedutivel_padrao)),
@@ -440,7 +528,18 @@ def consulta_de_titulos(s: Session, *, status: Any = None,
         for v in valores:
             if not v:
                 continue
-            convertidos.append(v if isinstance(v, StatusTitulo) else StatusTitulo(v))
+            if isinstance(v, StatusTitulo):
+                convertidos.append(v)
+                continue
+            try:
+                convertidos.append(StatusTitulo(v))
+            except ValueError:
+                # SITUAÇÃO QUE NÃO EXISTE não derruba a tela (22/09/2026).
+                # Antes virava erro 500 com o recado de "falha do sistema" —
+                # um link velho ou um favorito com a situação antiga bastava.
+                # Agora a situação desconhecida é ignorada, e o filtro responde
+                # com o que ele entende.
+                logger.warning("ERP: situação de título desconhecida no filtro: %r", v)
         if convertidos:
             stmt = stmt.where(Titulo.status.in_(convertidos))
     if fornecedor_id:
@@ -616,6 +715,38 @@ def aprovar(s: Session, titulo_id: int, usuario: Usuario) -> Titulo:
     t.aprovado_em = datetime.now(timezone.utc)
     registrar_evento(s, "titulo", t.id, "APROVADO",
                      {"numero_sp": t.numero_sp, "por": usuario.email}, usuario.id)
+    return t
+
+
+def reanalisar(s: Session, titulo_id: int, usuario: Usuario) -> Titulo:
+    """Roda o motor de análise de novo num título BLOQUEADO.
+
+    É A SAÍDA DO BECO que o dono apontou em 22/09/2026: *"tem que prever como
+    sairemos da situação que cadastro o credor enquanto lanço e preciso voltar
+    pra cadastrar a forma de pgt."*
+
+    Desde a mesma data, o lançamento com conta pendente é GRAVADO e nasce
+    BLOQUEADO pela crítica C2 — o trabalho não se perde. Mas até aqui não havia
+    volta: a análise só rodava na criação, e título bloqueado não pode ser
+    aprovado. Homologar a conta não adiantava nada.
+
+    Agora, homologada a conta, alguém manda reanalisar e o título segue. Note
+    que reanalisar NÃO aprova nada: ele volta para AGUARDANDO_APROVAÇÃO, e a
+    aprovação continua sendo de outra pessoa, com alçada.
+
+    Só vale para BLOQUEADO de propósito: reanalisar um título já aprovado
+    poderia rebaixá-lo sem ninguém pedir.
+    """
+    from app.apps.erp.core.titulos.analise import analisar_titulo
+
+    t = obter(s, titulo_id)
+    _exigir_status(t, StatusTitulo.BLOQUEADO)
+    antes = t.score_risco
+    analisar_titulo(s, t)
+    s.flush()
+    registrar_evento(s, "titulo", t.id, "REANALISADO",
+                     {"status": t.status.value, "score_antes": antes,
+                      "score_depois": t.score_risco}, usuario.id)
     return t
 
 
