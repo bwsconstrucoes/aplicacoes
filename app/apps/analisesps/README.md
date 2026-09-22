@@ -201,7 +201,8 @@ Opcionais da ciência da operação (17/09/2026), as duas com padrão sensato:
 
 | Variável | Para quê |
 |---|---|
-| `DRIVE_FOLDER_NOTAS` | pasta do Drive só para os XMLs das notas. Sem ela, valem a pasta geral (`DRIVE_FOLDER_ID`) e a que estiver colada na tela de credenciais. ⚠️ Tem de ser **Drive Compartilhado** — ver `drive.py` |
+| `DRIVE_FOLDER_NOTAS` | pasta do Drive só para os XMLs das notas. Sem ela, valem a pasta geral (`DRIVE_FOLDER_ID`) e a que estiver colada na tela de credenciais. Pode ser pasta comum, desde que compartilhada com o e-mail personificado — ver `drive.py` |
+| `ANALISESPS_DRIVE_IMPERSONAR` | em nome de quem a conta de serviço grava no Drive (padrão `contato@bwsconstrucoes.com.br`). Vazio = entra como a própria conta de serviço, o que só funciona em Drive Compartilhado |
 | `ANALISESPS_CIENCIAS_POR_RODADA` | quantas notas recebem ciência por vez (padrão **40**). Subir esse número aproxima do bloqueio por consumo indevido da Receita |
 
 ## Qual versão está no ar
@@ -424,12 +425,24 @@ dentro do OMIE → uso normal.
 
 ### A armadilha da pasta do Drive
 
-A conta de serviço do Google **não tem espaço de armazenamento próprio**. Ela
-grava numa pasta de **Drive Compartilhado** (Shared Drive) onde seja membro
-com permissão de gravar. Numa pasta comum do "Meu Drive" — mesmo compartilhada
-com ela como Editor — o Google recusa com `storageQuotaExceeded`, que parece
-falta de espaço e não é: o conserto é **mover a pasta para um Drive
-Compartilhado**.
+A conta de serviço do Google **não tem espaço de armazenamento próprio**.
+Entrando como ela mesma, o Google recusa a gravação em pasta comum do "Meu
+Drive" — mesmo compartilhada com ela como Editor — com `storageQuotaExceeded`,
+que parece falta de espaço e não é.
+
+**Há duas saídas, e até 22/09/2026 este módulo conhecia só uma.** A que ele
+mandava na tela era mover a pasta para um Drive Compartilhado. A outra é
+**personificar uma pessoa de verdade** (delegação em todo o domínio, no Admin
+do Google): a conta de serviço age como `contato@bwsconstrucoes.com.br`, que
+tem cota, e o arquivo nasce dono dele numa pasta comum. É o que o `emissaonf`
+faz desde sempre — e é o que explica a pergunta do dono, *"eu tenho várias
+automações que gravam em pastas compartilhadas, por que essa não pode?"*.
+
+Hoje este módulo personifica, como as outras automações. A pasta pode ser
+comum; o que ela precisa é estar compartilhada com **o e-mail personificado**,
+não com o endereço da conta de serviço. `ANALISESPS_DRIVE_IMPERSONAR=""`
+desliga a personificação, e aí volta a valer a exigência do Drive
+Compartilhado.
 
 **A pasta é colada em Configurações**, num campo próprio — aceita o endereço
 inteiro copiado da barra do navegador e guarda só o identificador, na tabela

@@ -316,23 +316,31 @@ def test_sem_pasta_o_drive_diz_o_nome_da_variavel():
     assert "DRIVE_FOLDER_ID" in str(erro.value)
 
 
-def test_erro_de_cota_vira_a_instrucao_de_mover_a_pasta():
+def test_erro_de_cota_conta_as_duas_saidas():
     """O Google diz "storageQuotaExceeded", que faz pensar em falta de espaço.
-    O conserto de verdade é mover a pasta para um Drive Compartilhado, e é
-    isso que a tela precisa dizer."""
+
+    ⚠️ ESTE TESTE DEFENDIA O CONSELHO ERRADO até 22/09/2026: exigia que a
+    mensagem mandasse mover a pasta para um Drive Compartilhado, que era a
+    única saída que este módulo conhecia. A outra — personificar uma pessoa —
+    já estava no `emissaonf` e é a que o dono usa nas outras automações. As
+    duas valem, e a mensagem tem de contar as duas.
+    """
     from app.apps.analisesps import drive
 
     class RespostaFalsa:
         status_code = 403
         text = '{"error":{"errors":[{"reason":"storageQuotaExceeded"}]}}'
 
-    mensagem = drive._explicar(RespostaFalsa())
-    assert "DRIVE COMPARTILHADO" in mensagem.upper()
+    mensagem = drive._explicar(RespostaFalsa()).lower()
+    assert "personifica" in mensagem
+    assert "drive compartilhado" in mensagem
 
 
-def test_pasta_fora_de_drive_compartilhado_e_avisada(monkeypatch):
-    """Enxergar a pasta e poder gravar nela são coisas diferentes — e é na
-    gravação que a cota morde. O aviso tem de vir antes, não no meio."""
+def test_pasta_comum_nao_e_mais_acusada_quando_ha_personificacao(monkeypatch):
+    """Com personificação, pasta comum é o lugar CERTO — não é aviso nenhum.
+
+    Era o que fazia a tela mandar o dono mexer no Drive à toa.
+    """
     from app.apps.analisesps import drive
 
     class RespostaFalsa:
@@ -348,8 +356,81 @@ def test_pasta_fora_de_drive_compartilhado_e_avisada(monkeypatch):
             return RespostaFalsa()
 
     monkeypatch.setattr(drive, "_sessao", lambda: SessaoFalsa())
+    monkeypatch.delenv("ANALISESPS_DRIVE_IMPERSONAR", raising=False)
     resultado = drive.conferir_pasta("abc")
 
     assert resultado["ok"] is True
     assert resultado["compartilhado"] is False
+    assert resultado["aviso"] is None
+    assert resultado["personificando"] == drive.EMAIL_IMPERSONAR
+
+
+def test_sem_personificacao_a_pasta_comum_volta_a_ser_avisada(monkeypatch):
+    """Desligar a personificação é decisão legítima (pasta em Drive
+    Compartilhado dispensa). Mas aí a pasta comum volta a ser problema, e o
+    aviso tem de voltar junto — enxergar a pasta e poder gravar nela são
+    coisas diferentes, e é na gravação que a cota morde."""
+    from app.apps.analisesps import drive
+
+    class RespostaFalsa:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"id": "abc", "name": "BeeVale", "mimeType": "folder"}
+
+    class SessaoFalsa:
+        @staticmethod
+        def get(*a, **k):
+            return RespostaFalsa()
+
+    monkeypatch.setattr(drive, "_sessao", lambda: SessaoFalsa())
+    monkeypatch.setenv("ANALISESPS_DRIVE_IMPERSONAR", "")
+    resultado = drive.conferir_pasta("abc")
+
+    assert resultado["personificando"] == ""
     assert resultado["aviso"]
+
+
+def test_pasta_nao_achada_manda_compartilhar_com_quem_realmente_grava(monkeypatch):
+    """⚠️ Quem precisa enxergar a pasta é a PESSOA personificada, não a conta
+    de serviço. Mandar compartilhar com a conta de serviço faria o dono
+    liberar a pasta para quem não está pedindo — e continuar sem funcionar."""
+    from app.apps.analisesps import drive
+
+    class RespostaFalsa:
+        status_code = 404
+        text = '{"error":{"code":404}}'
+
+    monkeypatch.setenv("ANALISESPS_DRIVE_IMPERSONAR", "fulano@bws.com.br")
+    assert "fulano@bws.com.br" in drive._explicar(RespostaFalsa())
+
+    monkeypatch.setenv("ANALISESPS_DRIVE_IMPERSONAR", "")
+    assert "conta de serviço" in drive._explicar(RespostaFalsa())
+
+
+def test_delegacao_recusada_vira_frase_que_diz_onde_consertar(monkeypatch):
+    """A recusa da delegação estoura no pedido do TOKEN, não na chamada que a
+    gente fez — chegaria crua na tela como um traço de pilha. Vira frase, e a
+    frase diz o lugar exato do Admin do Google."""
+    from app.apps.analisesps import credenciais, drive
+
+    class CredencialFalsa:
+        def with_subject(self, quem):
+            return self
+
+        def refresh(self, _pedido):
+            raise RuntimeError("unauthorized_client")
+
+    monkeypatch.setattr(credenciais, "credencial_bruta",
+                        lambda: {"client_email": "x@y.iam"})
+    monkeypatch.setattr(
+        "google.oauth2.service_account.Credentials.from_service_account_info",
+        staticmethod(lambda *a, **k: CredencialFalsa()))
+    monkeypatch.setenv("ANALISESPS_DRIVE_IMPERSONAR", "fulano@bws.com.br")
+
+    with pytest.raises(drive.ErroDoDrive) as erro:
+        drive._sessao()
+    mensagem = str(erro.value)
+    assert "Delegação em todo o domínio" in mensagem
+    assert "fulano@bws.com.br" in mensagem
