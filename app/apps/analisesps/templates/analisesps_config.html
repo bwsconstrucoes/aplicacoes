@@ -431,12 +431,17 @@
       <div id="saida-drive"></div>
     {% endif %}
 
+    {# ⚠️ ESTE TEXTO MANDAVA MOVER A PASTA, e era conselho errado — corrigido
+       em 22/09/2026. Ver o cabeçalho do `drive.py`. #}
     <p class="cartao-dica" style="margin-top:10px">
-      <b>A pegadinha da pasta, dita uma vez:</b> ela precisa ser de um
-      <b>Drive Compartilhado</b>, não uma pasta do "Meu Drive". A conta de
-      serviço não tem espaço próprio no Google — numa pasta comum o envio é
-      recusado por falta de cota, mesmo que a pasta esteja compartilhada com
-      ela. O botão acima diz qual das duas é a sua.
+      <b>A pegadinha da pasta, dita uma vez:</b> quem grava aí não é uma
+      pessoa, é o programa. E o Google não dá espaço de armazenamento para
+      programa — por isso ele grava <b>em nome de
+      contato@bwsconstrucoes.com.br</b>, exatamente como a emissão de NFS-e
+      faz. Então a pasta pode ser comum, do "Meu Drive"; o que ela precisa é
+      estar compartilhada com <b>esse</b> e-mail, e não com o endereço
+      esquisito da conta de serviço. Os arquivos vão aparecer como criados por
+      ele. O botão acima confere isso sem gravar nada.
     </p>
   {% endif %}
 </div>
@@ -544,7 +549,12 @@ if (btnDrive) btnDrive.addEventListener("click", async () => {
       alvo.innerHTML = '<div class="aviso erro">' + (d.erro || "não deu certo") + '</div>';
     } else if (d.aviso) {
       alvo.innerHTML = '<div class="aviso atencao"><b>Achei a pasta "' + d.nome +
-        '", mas ela NÃO é de um Drive Compartilhado.</b><br>' + d.aviso + '</div>';
+        '", mas nada garante que dá para gravar nela.</b><br>' + d.aviso + '</div>';
+    } else if (d.personificando) {
+      alvo.innerHTML = '<div class="aviso bom"><b>Pasta "' + d.nome +
+        '" encontrada.</b> O BeeVale vai gravar nela em nome de ' +
+        d.personificando + '. Se ela estiver compartilhada com esse e-mail, é ' +
+        'o que ele precisa.</div>';
     } else {
       alvo.innerHTML = '<div class="aviso bom"><b>Pasta "' + d.nome +
         '", em Drive Compartilhado.</b> É o que o BeeVale precisa.</div>';
