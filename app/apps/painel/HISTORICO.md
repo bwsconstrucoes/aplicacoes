@@ -1935,6 +1935,11 @@ sobra NULL nenhum e cada consulta lê um texto pronto.
 banco" (017) **e** rodar "Só refazer os números". Só a migração não acelera
 nada.
 
+**Medido pelo dono, em produção, no mesmo dia:** *"Tela montada em 252 ms —
+12 consultas ao banco, 241 ms delas."* De 126.753 ms para 252 ms: **500 vezes
+mais rápido**. Fica o número aqui para a próxima vez que alguém pensar em
+decidir coisa cara linha a linha dentro de uma consulta.
+
 **E três pedidos do dono na mesma hora, no mesmo bloco:**
 
 - *"Essa informação não deveria aparecer aqui, tem que colocar em
