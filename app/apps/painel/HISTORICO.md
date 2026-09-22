@@ -1335,6 +1335,10 @@ falha é literalmente *"o relatório mostrou 'Bradesco (previsão)'"*.
 Basta **"Só refazer os números"** — os movimentos já estão na base, não precisa
 baixar nada do OMIE.
 
+**Correção em 22/09/2026:** o conserto acima trocou a fonte mas lia a perna
+errada do movimento, e a tela não mudou. Ver *"A conta da baixa continuava
+errada"*, mais abaixo.
+
 ## Título pago em parcelas: UMA LINHA POR BAIXA — 21/09/2026
 
 O dono, no mesmo dia e sobre o mesmo relatório:
@@ -1536,6 +1540,292 @@ para algum lugar; para onde, não.
   tela atual.
 - **A observação só aparece depois do "Buscar as observações"**, e a tela diz
   isso em vez de mostrar travessão e deixar parecer que o dado não existe.
+
+## Os juros de empréstimo passam a ser pagos por quem demandou o caixa — 21/09/2026
+
+O dono parou e disse, em bom português, o que o painel ainda não faz — e que é
+o motivo de existir:
+
+> *"As telas que eu estou basicamente usando: DRE, analítica e o extrato. Todas
+> as outras telas juntas, elas têm sido uma tentativa ainda frustrada de
+> realizar a prestação de contas da empresa (…) a gente precisa entender o
+> resultado final e quanto é de direito para cada envolvido."*
+
+E apontou o que trava, na ordem em que ele mesmo colocou: (1) os aportes — já
+quase resolvidos; (2) os **percentuais de cada sócio e parceiro**, que só ele
+tem; (3) **o ponto mais crítico: pulverizar o custo da matriz nas obras**, com
+dois detalhes:
+
+> *"Quando a gente fala em custo de juros de empréstimo (…) a gente tem que
+> utilizar a necessidade de caixa da obra. Quem é que paga aquele juro de
+> empréstimo mês a mês? É a obra que está demandando caixa. Essa é a forma
+> justa. Se a obra não demanda caixa, não tem por que estar pagando um juro de
+> empréstimo. Esse juro de empréstimo, eles estão consolidados dentro do custo
+> da matriz."*
+
+> *"Segundo, dividir o custo das obras do Ceará com as demais obras. Por quê?
+> As obras do Ceará demandaram mais do que as outras obras."*
+
+### O que já existia, e por que não resolvia
+
+As duas metades do que ele pede já moravam no repositório — em telas
+**diferentes, que não se falavam**:
+
+- o **Rateio da Administração** já alocava os juros pelo déficit de caixa, que
+  é exatamente a régua dele. Mas só divide em **dois lados** (A e B): não fala
+  de obra individual nem de sócio, e o resultado não entra na prestação;
+- a **Prestação de Contas** já pulverizava o custo da matriz **obra a obra** e
+  já dividia entre sócios, com o caso do sócio externo. Mas jogava o juro
+  dentro do bolo da estrutura, repartido pelo **custo de pessoal**.
+
+Ou seja: quem sabia alocar juro direito não sabia falar de obra; quem falava de
+obra alocava juro errado. Obra que se paga sozinha pagava juro só por ter
+gente; obra que viveu de dinheiro emprestado pagava de menos.
+
+### O que mudou
+
+Na Prestação de Contas, o juro de empréstimo **sai do bolo da estrutura antes
+do rateio** e ganha régua própria:
+
+1. reconstrói-se o caixa acumulado de cada obra, mês a mês, **incluindo o
+   rateio da estrutura que coube a ela** — a administração que a obra consumiu
+   é dinheiro que ela fez a empresa gastar;
+2. o juro de cada mês é dividido entre as obras que estavam **com o acumulado
+   negativo naquele mês**, na proporção do tamanho do buraco;
+3. não há circularidade: o déficit que serve de régua é o de **antes** do juro.
+
+O buraco **não se apaga num mês sem movimento** — só quando a obra recupera o
+dinheiro. Sem isso, bastaria a obra ficar parada um mês para deixar de pagar o
+juro que ela mesma provocou.
+
+**Juro lançado direto numa obra não passa por aqui**: já é despesa dela, e
+mexer nisso seria tirar de quem o assumiu. O que se realoca é só o que está
+consolidado nos departamentos administrativos — que é onde ele está, como o
+dono disse.
+
+**Na divisão entre sócios o juro entra na base de TODOS**, inclusive do sócio
+externo — diferente do rateio da estrutura, que volta só para os internos. A
+razão: estrutura é overhead da construtora, e por ela se cobra a taxa de
+administração; juro é o preço do dinheiro que financiou **aquela obra**, e quem
+participa do resultado dela participa do custo de bancá-la. A soma das quotas
+continua fechando com o resultado do projeto — há teste para isso.
+
+### Três chaves novas (migração 015)
+
+- `categoria_juros` — o nome exato da categoria no OMIE (padrão *Juros sobre
+  Empréstimos*). É por ele que o juro é separado do resto do custo da matriz;
+- `juros_por_deficit` — `1` liga a régua nova, `0` volta ao comportamento
+  antigo. Sai ligada;
+- `juros_sem_deficit` — o que fazer com o juro de um mês em que **ninguém**
+  estava no vermelho: `sobra` (fica visível como custo sem dono, o padrão) ou
+  `estrutura` (segue a régua da estrutura).
+
+Todas editáveis em Prestação de Contas › Parâmetros › Geral.
+
+### O que a tela mostra agora
+
+Uma coluna **Juros de empréstimo** separada do **Rateio recebido** no resultado
+por projeto — juntá-las esconderia justamente a diferença que interessa. Abaixo,
+um bloco com o juro que coube a cada obra e uma **memória mês a mês** (juro
+pago, quantas obras no vermelho, o buraco somado, a maior devedora e qual régua
+valeu) para a conta poder ser conferida em vez de acreditada.
+
+### O que ficou de fora, e por quê
+
+- **Os percentuais de cada sócio e parceiro** continuam vazios. O cadastro
+  existe e a conta existe; falta o dado, que só o dono tem. Sem ele não há
+  visão global.
+- **A divisão do custo das obras do Ceará com as demais** não foi feita: a
+  frase dele admite duas leituras muito diferentes — o **prejuízo** do Ceará
+  espalhado nas outras obras, ou apenas o **custo do caixa** que elas
+  demandaram, que a régua nova já resolve sozinha. Perguntado, não chutado.
+- **Aporte recebido pela obra não abate a necessidade de caixa dela.** Hoje o
+  déficit é o da operação, tenha ele sido tapado pelo banco ou pelo sócio. Se o
+  dono quiser que aporte abata, é uma linha de configuração a mais — está na
+  pergunta que foi devolvida a ele.
+
+## O login trancou o dono para fora — 22/09/2026
+
+**O relato:** *"Com a criação de usuários não tô mais conseguindo acessar o
+painel."*
+
+**A causa, e ela é traiçoeira o bastante para ficar escrita:** quando a tela de
+login ganhou o campo *Usuário*, o caminho da entrada passou a ser escolhido por
+esse campo estar **vazio**. Só que o gerenciador de senhas do navegador tinha a
+senha do dono guardada de quando a tela tinha **um campo só** — e, ao ganhar o
+segundo, passou a preenchê-lo sozinho. O pedido saía com usuário preenchido,
+caía no caminho da pessoa presa a obra, e a resposta era "usuário ou senha
+incorretos" **com a senha certa digitada**. Do lado de fora não havia como
+adivinhar.
+
+**O conserto:** quem decide é a **senha**. Se ela for a senha mestre, entra como
+administrador, tenha o campo de usuário o que tiver. Isso não afrouxa nada —
+quem conhece a senha mestre já é o administrador.
+
+A única brecha que isso abriria: uma pessoa presa a obra com a **mesma senha do
+dono** passaria a entrar como administrador. Fechada onde custa nada — o
+cadastro recusa a senha mestre como senha de alguém.
+
+**A lição geral:** *decidir um caminho de autenticação por um campo estar vazio
+é frágil*, porque quem preenche o campo nem sempre é a pessoa. Decida pelo que
+confere, não pelo que falta.
+
+## O download passava por fora da proteção das telas — 22/09/2026
+
+Achado ao acrescentar o arquivo do cenário: a rota `/painel/baixar/<assunto>`
+**não conferia assunto nenhum**. Cada tela era protegida uma a uma e o download
+passava por fora.
+
+A maioria dos arquivos se monta a partir de `_filtros_do_pedido`, que já prende
+a pessoa às obras dela — esses estavam certos **por acidente**. Mas `quotas`,
+`posicao`, `rateio_admin` e o `cenario` não passam por ali: leem a empresa
+inteira, porque a pergunta que respondem é sobre a empresa inteira. **Quem
+tinha acesso a uma obra podia baixar a divisão de lucro entre os sócios.**
+
+Agora o arquivo segue a tela (`TELA_DO_DOWNLOAD`, em `auth.py`), e os quatro
+que abrem a empresa inteira são só do dono. Assunto novo que ninguém mapear
+nasce **fechado**. Há teste para cada um dos seis.
+
+## O cenário da prestação de contas — 22/09/2026
+
+O dono, depois de olhar o que existia espalhado em quatro telas:
+
+> *"Todas as outras telas juntas, elas têm sido uma tentativa ainda frustrada de
+> realizar a prestação de contas da empresa (…) eu queria trazer para uma tela
+> de prestação de conta, onde dentro dela eu vou nomear os parceiros, os sócios,
+> os percentuais, vou definir se vai ser baseado na mão de obra ou no
+> faturamento, quais contas da matriz eu vou dividir, em quais percentuais (…)
+> e importantíssimo, auditável."*
+
+E, sobre a operação — a parte em que a tela antiga falhou:
+
+> *"Não adianta uma coisa que eu tenho que digitar coisa por coisa para sair
+> colocando. Tem que ser um negócio realmente fácil de fazer."*
+
+### O CENÁRIO é o objeto
+
+Tudo o que muda o resultado vive dentro dele: a régua do rateio, os percentuais
+de cada conta da matriz, a régua dos juros, a taxa de administração e quem
+divide. Trocar de cenário troca o resultado inteiro — e o anterior fica
+intacto. **Duplicar** um cenário é o que torna barato perguntar "e se fosse
+faturamento?": parte-se do pronto e troca-se uma coisa só.
+
+### Por que os percentuais são uma HIERARQUIA, e não uma lista de regras
+
+A tela antiga pedia um cadastro por regra, com nome, escopo e vigência. Aqui a
+conta da matriz herda o percentual padrão do cenário; marcar o **grupo**
+sobrepõe; marcar a **categoria** sobrepõe o grupo; marcar um **lançamento**
+sobrepõe a categoria. Configurar é tocar em poucas linhas, não em todas.
+
+Duas sutilezas que têm teste porque custariam caro:
+
+- **vazio e zero são coisas diferentes.** Zero é "esta conta não se divide";
+  vazio é "segue o nível de cima". Por isso apagar o campo APAGA a marcação em
+  vez de gravar zero;
+- **lançamento marcado sai do balde da categoria.** Se entrasse com percentual
+  próprio sem sair do agregado, o mesmo dinheiro contaria duas vezes.
+
+### A régua: mão de obra ou faturamento
+
+O padrão é mão de obra, e o motivo é do dono:
+
+> *"O custo de despesas com o pessoal é um indicador da quantidade de energia
+> que aquela obra requer (…) o DP vai ter mais trabalho, a engenharia vai ter
+> mais trabalho. É uma obra normalmente mais complexa do que uma que usa pouca
+> mão de obra e muito maquinário."*
+
+Trocar para faturamento vira a conta, e é justamente a comparação que ele quer
+poder fazer. Há uma **janela** (1, 3, 12 meses ou acumulado) para escolher entre
+reagir rápido e ser estável.
+
+### Quem divide: por OBRA, não por projeto
+
+Diferente da prestação antiga. A razão: ele fala de "as obras do Ceará", e
+parceiro entra em **obra**, não na construtora. Quem participa de tudo entra uma
+vez só, com a obra em branco; quem for nomeado numa obra específica
+**substitui** a lista geral naquela obra. É assim que entra o parceiro de uma
+obra só sem refazer o resto.
+
+Na obra com parceiro, a conta é a mesma de antes — taxa de administração sobre
+a receita bruta, crédito da taxa e da estrutura só para os internos — com uma
+diferença: **o juro entra na base de todos**, inclusive do parceiro, porque não
+é estrutura da construtora, é o preço do dinheiro que financiou aquela obra. A
+soma das quotas continua fechando com o resultado da obra, e há teste.
+
+### Auditável, que era a outra palavra sublinhada
+
+A tela de resultado abre a conta: estrutura por obra e mês a mês (com o bolo do
+mês, quantas obras entraram e quem levou mais), juros por obra e mês a mês (com
+quantas estavam no vermelho e o buraco somado), a quota de cada um obra a obra,
+e o que ficou **sem dono**. O mesmo sai em planilha e em PDF, com os
+**parâmetros do cenário na primeira aba** — memória de cálculo sem as escolhas
+que a geraram não se confere seis meses depois.
+
+E o gráfico que ele pediu: **a vida de uma obra**, mês a mês — o caixa
+acumulado (já com a estrutura que ela recebeu), onde ele fica abaixo de zero, e
+a mesma linha depois do juro absorvido. Uma obra por vez, porque 174 linhas
+sobrepostas não se leem.
+
+### O que NÃO mudou
+
+A Prestação de Contas antiga continua funcionando, com as regras antigas, e é
+ela que roda hoje. O cenário é uma porta nova, com um aviso na tela velha. Nada
+foi trocado sem o dono ver — e aposentar a tela antiga é decisão dele, depois de
+conferir que a nova bate.
+
+### O que ainda falta
+
+- **Comparar dois cenários lado a lado** numa tela só. Hoje compara-se trocando
+  o cenário no seletor. A tela antiga de cenários faz isso para as regras
+  antigas e serve de modelo;
+- **A divisão do custo das obras do Ceará com as demais.** Continua
+  perguntada, não chutada — a frase dele admite duas leituras (o prejuízo
+  espalhado nas outras obras, ou só o custo do caixa que elas demandaram, que a
+  régua dos juros já resolve sozinha);
+- **Os percentuais de cada sócio e parceiro.** O cadastro existe e a conta
+  existe; falta o dado, que só ele tem.
+
+## A conta da baixa continuava errada — 22/09/2026
+
+O dono: *"refiz os números do painel, mas o problema das contas permaneceu"*.
+
+**O que tinha acontecido.** O conserto de 21/09 trocou a **fonte** da conta —
+do título (`id_conta_corrente`) para o movimento de baixa (`ncodcc`). Só que o
+OMIE guarda cada baixa em **duas pernas**, e o código estava lendo a errada:
+
+- a **consolidada** (`cLiquidado = 'S'`) é o *resumo do título* — e carrega a
+  conta **do título**, a da previsão. Era dela que a conta saía. Trocar de
+  tabela e continuar lendo essa perna deu exatamente o mesmo número de antes;
+- a **bancária** (`cLiquidado` vazio, `nValLiquido = 0`, uma por conta que o
+  dinheiro tocou) é a única que sabe **por onde o dinheiro saiu**.
+
+O `_escolher_recebimentos` já sabia dessa armadilha — é ele quem desmonta as
+duas pernas para não dobrar o caixa — e o título pago em parcelas já usava a
+conta de cada perna bancária. Só o título pago **de uma vez** (a esmagadora
+maioria) caía no atalho da consolidada.
+
+**O conserto:** `_conta_de_onde_saiu`, no `fato.py`. Entre as pernas que o
+`_escolher_recebimentos` escolhe, vale a de maior valor; empate, a mais
+recente. Sem perna com conta, fica a consolidada, e depois a previsão — a
+linha nunca perde a informação. Um teste reproduz a cena: previsto na 7,
+resumo na 7, dinheiro saiu da 9, o relatório tem de dizer 9.
+
+**E uma conferência nova, "Conta de onde o dinheiro saiu"**, em Configurações,
+porque desta vez eu não tenho como olhar a base real: ela conta, no espelho,
+quantas pernas bancárias existem e em quantas a conta é diferente da do
+título — e quantas consolidadas diferem (a aposta é: quase nenhuma). Se a
+base **não tiver** perna bancária nenhuma, a caixa fica vermelha e diz o que
+isso significa: a conta real não está no espelho, refazer os números não muda
+nada, e ela teria de vir de outra listagem do OMIE com uma carga nova.
+
+**O que o dono precisa fazer:** depois de publicado, **"Só refazer os
+números"** de novo — o espelho já tem as duas pernas, nada precisa ser baixado
+do OMIE. E rodar as conferências para ler a caixa nova.
+
+**Lição:** um conserto "confirmado por teste" pode confirmar só a leitura do
+código, não a do mundo. O teste de 21/09 modelava a conta na perna consolidada
+porque eu assumi que era lá que ela estava. Quando o dono diz que não mudou,
+a primeira pergunta é *de qual pedaço do dado* o número está vindo.
 
 ## O que falta
 

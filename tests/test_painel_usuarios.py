@@ -252,12 +252,35 @@ def test_desativar_derruba_a_sessao(parceiro, monkeypatch):
     assert cliente.get("/painel/dre").status_code in (302, 404)
 
 
-def test_a_senha_do_dono_digitada_no_campo_de_usuario_nao_vira_administrador(
-        parceiro, monkeypatch):
-    """Os dois caminhos são separados no servidor de propósito."""
+def test_o_dono_entra_mesmo_com_o_campo_de_usuario_preenchido(parceiro, monkeypatch):
+    """O conserto de 22/09/2026, e o motivo dele.
+
+    Enquanto o caminho era escolhido pelo campo de usuário estar VAZIO, o
+    gerenciador de senhas do navegador — que guardara a senha do dono de quando
+    esta tela tinha um campo só — passou a preencher o campo novo sozinho. O
+    dono digitava a senha certa e ouvia "usuário ou senha incorretos", sem ter
+    como adivinhar o que estava acontecendo. Ficou trancado para fora do
+    próprio painel.
+
+    Agora quem decide é a SENHA. Isso não afrouxa nada: quem conhece a senha
+    mestre já é o administrador, e a única brecha que isso abriria — uma pessoa
+    presa a obra com a mesma senha do dono — está fechada no cadastro, no teste
+    seguinte."""
     cliente = _cliente(monkeypatch)
     r = _entrar(cliente, usuario="parceiro", senha=SENHA_MESTRE)
-    assert r.status_code == 401
+    assert r.status_code in (200, 302), "o dono ficou trancado para fora"
+    assert cliente.get("/painel/configuracoes").status_code == 200, \
+        "entrou, mas não como administrador"
+
+
+def test_ninguem_pode_ter_a_senha_do_dono(base_com_duas_obras, monkeypatch):
+    """Se pudesse, essa pessoa entraria como administrador — porque é a senha
+    que decide. Fecha-se onde custa nada: no cadastro."""
+    monkeypatch.setenv("PAINEL_SENHA", SENHA_MESTRE)
+    from app.apps.painel import usuarios
+    r = usuarios.criar("outro", SENHA_MESTRE, obras=["OBRA DELE"], telas=["dre"])
+    assert r["ok"] is False
+    assert "senha do dono" in r["erro"]
 
 
 # ===========================================================================

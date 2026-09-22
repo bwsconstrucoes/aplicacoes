@@ -1,0 +1,414 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Montar o cenário — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% macro pct(valor) %}{% if valor is none %}—{% else %}{{ '%.0f'|format(valor) }}%{% endif %}{% endmacro %}
+
+{% block conteudo %}
+<h2>Montar o cenário
+  <small>a régua, o que se divide e quem divide — num lugar só</small>
+</h2>
+
+<!-- ===================== QUAL CENÁRIO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Cenário</h3>
+    <small>trocar de cenário troca o resultado inteiro; o anterior continua intacto</small>
+  </div>
+
+  {% if cenarios %}
+  <form method="get" class="tabela-barra" style="border:0; padding:0 0 10px">
+    <div class="campo" style="max-width:360px">
+      <label for="cenario">Em qual você está trabalhando</label>
+      <select id="cenario" name="cenario" onchange="this.form.submit()">
+        {% for c in cenarios %}
+        <option value="{{ c.id }}" {% if cenario and c.id == cenario.id %}selected{% endif %}>
+          {{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if cenario %}
+    <div class="espaco"></div>
+    <a class="btn secundario" style="text-decoration:none; align-self:flex-end"
+       href="{{ url_for('painel.cenario_resultado', cenario=cenario.id) }}">Ver o resultado →</a>
+    {% endif %}
+  </form>
+  {% else %}
+  <p class="cartao-dica" style="margin-top:0">
+    Nenhum cenário ainda. Crie o primeiro abaixo — depois dá para duplicá-lo e
+    trocar uma coisa só, que é o jeito barato de perguntar "e se fosse
+    faturamento?".
+  </p>
+  {% endif %}
+
+  <div class="form-grade">
+    <form method="post" style="display:contents">
+      <input type="hidden" name="acao" value="novo">
+      <div class="campo">
+        <label for="nome_novo">Criar um cenário</label>
+        <input id="nome_novo" name="nome" placeholder="Ex.: Mão de obra, 100%" required>
+      </div>
+      <div class="campo" style="align-self:end">
+        <button class="btn" type="submit">Criar</button>
+      </div>
+    </form>
+
+    {% if cenario %}
+    <form method="post" style="display:contents">
+      <input type="hidden" name="acao" value="duplicar">
+      <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+      <div class="campo">
+        <label for="nome_copia">Duplicar “{{ cenario.nome }}” como</label>
+        <input id="nome_copia" name="nome" placeholder="Ex.: Igual, mas por faturamento" required>
+      </div>
+      <div class="campo" style="align-self:end">
+        <button class="btn secundario" type="submit">Duplicar</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if cenario %}
+<!-- ===================== A RÉGUA ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>A régua</h3>
+    <small>por qual medida o custo da estrutura se divide entre as obras</small>
+  </div>
+  <form method="post" class="form-grade">
+    <input type="hidden" name="acao" value="regua">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+
+    <div class="campo">
+      <label for="nome">Nome do cenário</label>
+      <input id="nome" name="nome" value="{{ cenario.nome }}" required>
+    </div>
+
+    <div class="campo">
+      <label for="criterio">Dividir na proporção de</label>
+      <select id="criterio" name="criterio">
+        {% for chave, rotulo in criterios.items() %}
+        <option value="{{ chave }}" {% if cenario.criterio == chave %}selected{% endif %}>
+          {{ rotulo }}</option>
+        {% endfor %}
+      </select>
+      <p class="dica">Mão de obra é o padrão: o custo de pessoal mede a energia
+        que a obra exige — mais gente, mais DP, mais engenharia, obra mais
+        complexa.</p>
+    </div>
+
+    <div class="campo">
+      <label for="janela">Somar quantos meses antes de comparar</label>
+      <select id="janela" name="janela">
+        {% for chave, rotulo in janelas.items() %}
+        <option value="{{ chave }}" {% if cenario.janela == chave %}selected{% endif %}>
+          {{ rotulo }}</option>
+        {% endfor %}
+      </select>
+      <p class="dica">Janela curta reage rápido e balança; janela longa é
+        estável e demora a reagir.</p>
+    </div>
+
+    <div class="campo">
+      <label for="pct_padrao">Conta que você não marcar divide</label>
+      <input id="pct_padrao" name="pct_padrao" value="{{ '%.0f'|format(cenario.pct_padrao) }}">
+      <p class="dica">Em por cento. Com 100, tudo da matriz se divide, menos o
+        que você abaixar. Com 0, só divide o que você marcar.</p>
+    </div>
+
+    <div class="campo">
+      <label for="medida">Base do cálculo</label>
+      <select id="medida" name="medida">
+        <option value="comprometido" {% if cenario.medida == 'comprometido' %}selected{% endif %}>
+          Comprometido — tudo que foi ganho e gasto</option>
+        <option value="executado" {% if cenario.medida == 'executado' %}selected{% endif %}>
+          Executado — só o que já foi pago e recebido</option>
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="juros_por_deficit">Quem paga os juros de empréstimo</label>
+      <select id="juros_por_deficit" name="juros_por_deficit">
+        <option value="1" {% if cenario.juros_por_deficit %}selected{% endif %}>
+          Quem demandou caixa (recomendado)</option>
+        <option value="0" {% if not cenario.juros_por_deficit %}selected{% endif %}>
+          Junto com o resto da estrutura</option>
+      </select>
+      <p class="dica">Juro não é estrutura: é o preço de faltar dinheiro. Pela
+        primeira opção ele cai mês a mês nas obras que estavam com o caixa
+        negativo, na proporção do buraco.</p>
+    </div>
+
+    <div class="campo">
+      <label for="juros_sem_deficit">Mês em que ninguém estava no vermelho</label>
+      <select id="juros_sem_deficit" name="juros_sem_deficit">
+        <option value="sobra" {% if cenario.juros_sem_deficit == 'sobra' %}selected{% endif %}>
+          Ninguém paga — aparece como custo sem dono</option>
+        <option value="estrutura" {% if cenario.juros_sem_deficit == 'estrutura' %}selected{% endif %}>
+          Segue a régua da estrutura</option>
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="taxa_adm_pct">Taxa de administração (%)</label>
+      <input id="taxa_adm_pct" name="taxa_adm_pct" value="{{ '%.2f'|format(cenario.taxa_adm_pct) }}">
+      <p class="dica">Cobrada da obra com parceiro, sobre a receita bruta. Ela é
+        o que faz o parceiro não pagar a estrutura da construtora.</p>
+    </div>
+
+    <div class="campo">
+      <label for="observacao">Para que serve este cenário</label>
+      <input id="observacao" name="observacao" value="{{ cenario.observacao }}"
+             placeholder="Ex.: o que vou apresentar na reunião de outubro">
+    </div>
+
+    <div class="campo" style="align-self:end">
+      <button class="btn" type="submit">Salvar a régua</button>
+    </div>
+  </form>
+</div>
+
+<!-- ===================== O QUE SE DIVIDE ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>O que se divide</h3>
+    <small>o que a matriz gastou, do maior para o menor</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    Escreva o percentual só onde quiser mudar. O que ficar em branco herda o
+    nível de cima — e o que ninguém tocar divide
+    <b>{{ '%.0f'|format(cenario.pct_padrao) }}%</b>. Clique no grupo para abrir
+    as categorias, e na categoria para abrir os lançamentos.
+  </p>
+
+  <div class="tabela-rolagem" style="max-height:520px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Conta da matriz</th>
+          <th class="sem-ordem direita">Total</th>
+          <th class="sem-ordem direita">Marcado</th>
+          <th class="sem-ordem direita">Divide</th>
+          <th class="sem-ordem"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in contas %}
+        <tr>
+          <td class="desc">
+            <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id,
+                                grupo=('' if aberto_grupo == g.grupo else g.grupo)) }}">
+              {{ '▾' if aberto_grupo == g.grupo else '▸' }} <b>{{ g.grupo }}</b></a>
+          </td>
+          <td class="dados direita">{{ brl(g.valor) }}</td>
+          <td class="dados direita">{{ pct(g.pct) }}</td>
+          <td class="dados direita"><b>{{ '%.0f'|format(g.pct_efetivo) }}%</b></td>
+          <td>
+            <form method="post" style="display:flex; gap:6px">
+              <input type="hidden" name="acao" value="peso">
+              <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+              <input type="hidden" name="nivel" value="grupo">
+              <input type="hidden" name="chave" value="{{ g.grupo }}">
+              <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
+              <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
+              <input name="pct" value="{{ '' if g.pct is none else '%.0f'|format(g.pct) }}"
+                     style="width:70px" placeholder="herda" aria-label="Percentual do grupo {{ g.grupo }}">
+              <button class="btn secundario" type="submit">ok</button>
+            </form>
+          </td>
+        </tr>
+
+        {% if aberto_grupo == g.grupo %}
+          {% for c in g.categorias %}
+          <tr>
+            <td class="desc" style="padding-left:28px">
+              <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id,
+                                  grupo=g.grupo,
+                                  categoria=('' if aberto_categoria == c.categoria else c.categoria)) }}">
+                {{ '▾' if aberto_categoria == c.categoria else '▸' }} {{ c.categoria }}</a>
+            </td>
+            <td class="dados direita">{{ brl(c.valor) }}</td>
+            <td class="dados direita">{{ pct(c.pct) }}</td>
+            <td class="dados direita">{{ '%.0f'|format(c.pct_efetivo) }}%</td>
+            <td>
+              <form method="post" style="display:flex; gap:6px">
+                <input type="hidden" name="acao" value="peso">
+                <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+                <input type="hidden" name="nivel" value="categoria">
+                <input type="hidden" name="chave" value="{{ c.categoria }}">
+                <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
+                <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
+                <input name="pct" value="{{ '' if c.pct is none else '%.0f'|format(c.pct) }}"
+                       style="width:70px" placeholder="herda"
+                       aria-label="Percentual da categoria {{ c.categoria }}">
+                <button class="btn secundario" type="submit">ok</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if lancamentos %}
+<!-- ===================== LANÇAMENTO A LANÇAMENTO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>{{ aberto_categoria }}</h3>
+    <small>{{ lancamentos|length }} lançamento(s), do maior para o menor</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    Marque os que quiser tratar diferente do resto da categoria e aplique o
+    percentual de uma vez. Marcação de lançamento ganha da categoria e do grupo.
+  </p>
+  <form method="post">
+    <input type="hidden" name="acao" value="peso_em_lote">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+    <input type="hidden" name="nivel" value="lancamento">
+    <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
+    <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
+
+    <div class="tabela-barra">
+      <label for="pct_lote" style="margin:0">Aplicar aos marcados:</label>
+      <input id="pct_lote" name="pct" style="width:90px" placeholder="0 a 100">
+      <button class="btn" type="submit">Aplicar</button>
+      <span class="resumo">Deixe em branco para desmarcar e voltar a herdar a categoria.</span>
+    </div>
+
+    <div class="tabela-rolagem" style="max-height:460px">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem"></th>
+            <th class="sem-ordem">Data</th>
+            <th class="sem-ordem">Fornecedor</th>
+            <th class="sem-ordem">Documento</th>
+            <th class="sem-ordem direita">Valor</th>
+            <th class="sem-ordem direita">Divide</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in lancamentos %}
+          <tr>
+            <td><input type="checkbox" name="marcado" value="{{ l.codigo }}"
+                       aria-label="Marcar o lançamento {{ l.codigo }}"></td>
+            <td class="desc">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+            <td class="desc">{{ l.credor or '—' }}</td>
+            <td class="desc">{{ l.documento or '—' }}</td>
+            <td class="dados direita">{{ brl(l.valor) }}</td>
+            <td class="dados direita">
+              {% set marcado = (cenario.pesos.lancamento or {}).get(l.codigo) %}
+              {% if marcado is not none %}<b>{{ '%.0f'|format(marcado) }}%</b>{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<!-- ===================== QUEM DIVIDE ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Quem divide</h3>
+    <small>sócios da BWS e parceiros de obra</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    Deixe a obra em branco para quem participa de <b>todas</b>. Quem for nomeado
+    numa obra específica <b>substitui</b> a lista geral naquela obra — é assim
+    que entra o parceiro de uma obra só, sem refazer o resto.
+  </p>
+
+  {% if socios %}
+  <form method="post" class="form-grade">
+    <input type="hidden" name="acao" value="participacao">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+    <div class="campo">
+      <label for="socio_id">Quem</label>
+      <select id="socio_id" name="socio_id" required>
+        {% for s in socios %}
+        <option value="{{ s.id }}">{{ s.nome }} — {{ s.tipo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="obra">Em qual obra</label>
+      <select id="obra" name="obra">
+        <option value="">Todas as obras</option>
+        {% for o in obras_do_painel %}
+        <option value="{{ o }}">{{ o }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="pct_socio">Percentual</label>
+      <input id="pct_socio" name="pct" required placeholder="Ex.: 50">
+    </div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" type="submit">Salvar</button>
+    </div>
+  </form>
+  {% else %}
+  <div class="aviso erro">
+    Nenhum sócio cadastrado ainda.
+    <a href="{{ url_for('painel.prestacao_parametros', aba='socios') }}">Cadastre em Sócios</a>
+    — é lá que se diz quem é sócio da BWS e quem é parceiro de obra.
+  </div>
+  {% endif %}
+
+  {% if cenario.participacoes %}
+  <div class="tabela-rolagem" style="max-height:320px; margin-top:10px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Quem</th>
+          <th class="sem-ordem">Tipo</th>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Percentual</th>
+          <th class="sem-ordem"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in cenario.participacoes %}
+        <tr>
+          <td class="desc">{{ p.socio }}</td>
+          <td class="desc">{{ p.tipo }}</td>
+          <td class="desc">{{ p.obra or 'Todas as obras' }}</td>
+          <td class="dados direita">{{ '%.2f'|format(p.pct) }}%</td>
+          <td>
+            <form method="post">
+              <input type="hidden" name="acao" value="apagar_participacao">
+              <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+              <input type="hidden" name="participacao_id" value="{{ p.id }}">
+              <button class="btn secundario" type="submit">Tirar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ===================== APAGAR ===================== -->
+<div class="cartao">
+  <div class="cartao-cab"><h3>Apagar este cenário</h3></div>
+  <form method="post" onsubmit="return confirm('Apagar o cenário “{{ cenario.nome }}”? Não dá para desfazer.')">
+    <input type="hidden" name="acao" value="apagar">
+    <input type="hidden" name="cenario_id" value="{{ cenario.id }}">
+    <p class="cartao-dica" style="margin-top:0">
+      Some com a régua, os percentuais e as participações deste cenário. Os
+      lançamentos do OMIE não são tocados.
+    </p>
+    <button class="btn secundario" type="submit">Apagar “{{ cenario.nome }}”</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

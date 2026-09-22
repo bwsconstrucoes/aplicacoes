@@ -384,6 +384,37 @@
       </select>
       <p class="dica">"Não é rateado" faz o custo sumir da conta das obras — só use sabendo disso.</p>
     </div>
+    <div class="campo">
+      <label for="categoria_juros">Categoria dos juros de empréstimo</label>
+      <input id="categoria_juros" name="categoria_juros"
+             value="{{ config.categoria_juros or 'Juros sobre Empréstimos' }}">
+      <p class="dica">O nome exato como está no OMIE. É por ele que o juro é
+        separado do resto do custo da matriz.</p>
+    </div>
+    <div class="campo">
+      <label for="juros_por_deficit">Quem paga os juros de empréstimo</label>
+      <select id="juros_por_deficit" name="juros_por_deficit">
+        <option value="1" {% if (config.juros_por_deficit or '1') == '1' %}selected{% endif %}>
+          Quem demandou caixa (recomendado)</option>
+        <option value="0" {% if config.juros_por_deficit == '0' %}selected{% endif %}>
+          Junto com o resto da estrutura</option>
+      </select>
+      <p class="dica">Juro não é estrutura: é o preço de faltar dinheiro. Pela
+        primeira opção ele cai mês a mês nas obras que estavam com o caixa
+        negativo, na proporção do buraco de cada uma. Obra que se paga sozinha
+        não paga juro nenhum.</p>
+    </div>
+    <div class="campo">
+      <label for="juros_sem_deficit">Mês em que ninguém estava no vermelho</label>
+      <select id="juros_sem_deficit" name="juros_sem_deficit">
+        <option value="sobra" {% if (config.juros_sem_deficit or 'sobra') == 'sobra' %}selected{% endif %}>
+          Ninguém paga — aparece como custo sem dono</option>
+        <option value="estrutura" {% if config.juros_sem_deficit == 'estrutura' %}selected{% endif %}>
+          Segue a régua da estrutura</option>
+      </select>
+      <p class="dica">Acontece quando a empresa toda estava com caixa positivo
+        e mesmo assim pagou juro de um empréstimo antigo.</p>
+    </div>
     <div class="campo" style="align-self:end">
       <button class="btn" type="submit">Salvar</button>
     </div>

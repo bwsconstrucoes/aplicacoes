@@ -28,7 +28,9 @@ FORMATO_PCT = '0.0"%"'
 DINHEIRO = ("valor", "pago", "receb", "aberto", "pagar", "bruto", "líquid",
             "liquid", "retid", "total", "executado", "comprometido", "juros",
             "multa", "desconto", "saldo", "quota", "base", "rateio",
-            "resultado", "despesa", "receita", "crédito", "credito", "encargo")
+            "resultado", "despesa", "receita", "crédito", "credito", "encargo",
+            # o cenário da prestação de contas fala nestes nomes
+            "estrutura", "bolo", "caixa", "acumulado", "buraco")
 
 
 def _e_dinheiro(titulo: str) -> bool:
@@ -233,4 +235,30 @@ COLUNAS = {
                           ("lancamentos", "Lançamentos")],
     "divisao": [("obra", "Obra"), ("resultado", "Resultado realizado"),
                 ("dividendos", "Dividendos pagos"), ("disponivel", "Disponível")],
+    # O cenário da prestação de contas. Cada recorte vira uma aba, e os
+    # parâmetros vão junto: memória de cálculo sem as escolhas que a geraram
+    # não dá para conferir seis meses depois.
+    "cenario_obra": [("obra", "Obra"), ("receita_liquida", "Receita líquida"),
+                     ("despesas", "Despesas"),
+                     ("resultado_direto", "Resultado direto"),
+                     ("rateio", "Estrutura"), ("juros", "Juros"),
+                     ("resultado", "Resultado")],
+    "cenario_quotas": [("socio", "Quem"), ("tipo", "Tipo"), ("obra", "Obra"),
+                       ("pct", "%"), ("base", "Base de cálculo"),
+                       ("credito_bws", "Crédito BWS"), ("quota", "Quota"),
+                       ("visao", "Como foi calculado")],
+    "cenario_por_obra": [("obra", "Obra"), ("valor", "Valor")],
+    "cenario_estrutura_mes": [("mes", "Mês"), ("pool", "Bolo a repartir"),
+                              ("obras", "Obras"), ("maior", "Quem levou mais"),
+                              ("maior_pct", "% dela")],
+    "cenario_juros_mes": [("mes", "Mês"), ("juros", "Juros pagos"),
+                          ("obras_no_vermelho", "Obras no vermelho"),
+                          ("deficit_total", "Buraco somado"),
+                          ("maior", "Maior devedora"), ("criterio", "Régua")],
+    "cenario_trilha": [("rotulo", "Mês"), ("caixa_do_mes", "Caixa do mês"),
+                       ("rateio", "Estrutura recebida"),
+                       ("acumulado", "Acumulado"), ("juros", "Juros do mês"),
+                       ("juros_acumulado", "Juros acumulados")],
+    "cenario_sobras": [("origem", "De onde veio"), ("mes", "Mês"),
+                       ("valor", "Valor"), ("motivo", "Por quê")],
 }

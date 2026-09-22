@@ -340,6 +340,37 @@ def _nome_da_conta(ccorr, codigo, reserva=None):
         return str(escolhido)
 
 
+def _conta_de_onde_saiu(movs_todos, realizado, reserva):
+    """A conta por onde o dinheiro DE FATO andou — e nao a que o titulo diz.
+
+    O OMIE guarda a mesma baixa em duas pernas (ver `_escolher_recebimentos`):
+    a CONSOLIDADA, que e o resumo do titulo e carrega a conta DO TITULO — a da
+    previsao —, e os creditos/debitos BANCARIOS, um por conta que o dinheiro
+    tocou. So a segunda sabe por onde o dinheiro saiu.
+
+    22/09/2026: o conserto do dia anterior trocou a FONTE (do titulo para o
+    movimento) mas continuou lendo a perna consolidada — e a tela nao mudou. O
+    dono refez os numeros e "o problema das contas permaneceu". O erro era
+    escolher a perna, nao a tabela.
+
+    Entre as pernas escolhidas, vale a de maior valor; empate, a mais recente.
+    Sem perna com conta, fica a reserva (a consolidada, e depois a previsao):
+    a linha nunca perde a informacao."""
+    if not movs_todos:
+        return reserva
+    escolhidos, _origem = _escolher_recebimentos(movs_todos, realizado)
+    melhor, peso, quando = None, -1.0, None
+    for m in escolhidos:
+        conta = m.get("conta")
+        if conta in (None, ""):
+            continue
+        valor = abs(m.get("valor") or 0.0)
+        d = _data_para_dt(m.get("data"))
+        if valor > peso or (valor == peso and d and quando and d > quando):
+            melhor, peso, quando = conta, valor, d
+    return melhor if melhor not in (None, "") else reserva
+
+
 def _parcelas_da_baixa(movs_todos, realizado, juros_total, multa_total,
                        ccorr, icc, conta_unica, ddt, ano, mes, dpago_dt):
     """UMA LINHA POR BAIXA, quando o titulo foi pago em mais de uma.
@@ -520,7 +551,10 @@ def gerar_linhas_fato(conn):
             # relatorio na conta errada, calado. Titulo ainda EM ABERTO nao tem
             # baixa — ai a previsao e a unica informacao que existe, e continua
             # valendo.
-            codigo_conta = conta_da_baixa if conta_da_baixa not in (None, "") else icc
+            # E a conta vem da perna BANCARIA da baixa, nao da consolidada: a
+            # consolidada repete a conta do titulo. Ver `_conta_de_onde_saiu`.
+            reserva = conta_da_baixa if conta_da_baixa not in (None, "") else icc
+            codigo_conta = _conta_de_onde_saiu(detalhe.get(cod, []), realizado, reserva)
             if codigo_conta in (None, ""):
                 conta = ""
             else:

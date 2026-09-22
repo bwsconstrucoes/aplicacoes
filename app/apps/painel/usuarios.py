@@ -118,6 +118,18 @@ def senha_confere(pessoa: dict, digitada: str) -> bool:
         return False
 
 
+def _e_a_senha_do_dono(senha) -> bool:
+    """A senha mestre não pode virar senha de ninguém.
+
+    Desde 22/09/2026 quem decide o caminho da entrada é a SENHA, e não o campo
+    de usuário estar vazio — foi o conserto de um jeito de trancar o dono para
+    fora do painel. A consequência é esta: se a senha de uma pessoa presa a uma
+    obra fosse igual à do dono, ela entraria como administrador. Fecha-se aqui,
+    no cadastro, que é onde custa nada."""
+    from .auth import senha_confere as mestre_confere
+    return bool(str(senha or "")) and mestre_confere(senha)
+
+
 def criar(usuario: str, senha: str, nome: str = "", obras=(), telas=(),
           contas=()) -> dict:
     """Cadastra a pessoa. Devolve {'ok': True, 'id': n} ou o erro em português."""
@@ -126,6 +138,9 @@ def criar(usuario: str, senha: str, nome: str = "", obras=(), telas=(),
         return {"ok": False, "erro": "Escolha um nome de usuário."}
     if len(str(senha or "")) < 6:
         return {"ok": False, "erro": "A senha precisa de pelo menos 6 letras."}
+    if _e_a_senha_do_dono(senha):
+        return {"ok": False, "erro": "Essa é a senha do dono do painel. "
+                                     "Escolha outra para esta pessoa."}
     if consultar("SELECT 1 FROM usuarios WHERE lower(usuario) = ?", (login,)):
         return {"ok": False, "erro": f"Já existe um usuário “{login}”."}
     with conexao() as conn:
@@ -165,6 +180,9 @@ def atualizar(uid: int, *, nome=None, senha=None, ativo=None,
         return {"ok": False, "erro": "Usuário não encontrado."}
     if senha is not None and str(senha).strip() and len(str(senha)) < 6:
         return {"ok": False, "erro": "A senha precisa de pelo menos 6 letras."}
+    if senha is not None and _e_a_senha_do_dono(senha):
+        return {"ok": False, "erro": "Essa é a senha do dono do painel. "
+                                     "Escolha outra para esta pessoa."}
     with conexao() as conn:
         if nome is not None:
             conn.execute("UPDATE usuarios SET nome = ? WHERE id = ?",
