@@ -54,6 +54,84 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### ⚠️ MIGRAÇÃO 080 — apertar "Aplicar atualizações do banco"
+
+Liga a **conta bancária a uma empresa** e o **título à empresa que paga**. Sem
+ela, a tela de Configurações e a de Pagamentos abrem com erro.
+
+
+### 🏦 A CONTA BANCÁRIA PASSOU A TER DONA — e o título, a empresa que paga
+
+22/09/2026, o dono olhando a tela de contas:
+
+> *"Uma coisa que acho que precisa fazer, ou não? Associar banco a uma
+> empresa."*
+
+**Ele achou um buraco de verdade, e maior do que a pergunta sugeria.** A conta
+bancária era uma lista solta — descrição, banco, agência, conta — e não
+pertencia a empresa nenhuma. Quem tinha empresa era a OBRA; a conta, não. Três
+consequências, todas reais:
+
+1. Em toda tela que escolhe conta — pagar, importar extrato, apontar a conta da
+   obra — apareciam as contas de **todos os CNPJs misturadas**, sem nada dizendo
+   de quem era cada uma. A única defesa era a pessoa reconhecer pela descrição.
+2. Nada impedia **pagar a despesa de uma empresa pelo caixa de outra**. Esse
+   erro não se conserta no sistema: o dinheiro saiu do CNPJ errado, vira acerto
+   entre empresas e passa por movimentação bancária de verdade.
+3. *"Quanto tem em caixa nesta empresa"* não tinha resposta.
+
+**E TEM O OUTRO LADO, que é o que torna a conta-com-empresa útil:** o TÍTULO
+também não sabia de que empresa era — ela só existia indiretamente, pela obra
+do rateio. Sem os dois lados não há o que comparar na hora de pagar. Por isso a
+migração 080 cria as **duas** colunas.
+
+**A premissa que tornou a dedução possível**, e o dono confirmou com todas as
+letras ao ser perguntado se existia obra tocada por duas empresas: *"sempre uma
+empresa só"*. Com isso, a empresa do título é **dedução, não chute** — e o
+histórico foi preenchido na própria migração, pela mesma regra que o código usa
+daqui para a frente. Só recebeu empresa o título cujas obras de rateio apontam
+todas para a mesma, e nenhuma sem empresa; os demais ficaram em branco de
+propósito, porque "a primeira que apareceu" seria um número errado com cara de
+certo.
+
+**AVISA, NÃO BLOQUEIA — e a diferença é o coração do desenho.** Pagar por outra
+empresa ACONTECE de propósito: é empréstimo entre elas, e precisa ficar
+registrado como tal. Então, ao escolher a conta de outro CNPJ, a tela pergunta
+uma vez, com os dois nomes na frente, e o pagamento entra **com a observação
+escrita na trilha**. Travar de saída faria a pessoa pagar por fora do sistema, e
+aí o ERP não saberia de nada.
+
+**O que mais mudou:**
+
+- **Conta nova exige a empresa.** As contas que já existiam ficaram sem dona de
+  propósito — atribuir sozinho a empresa padrão seria adivinhar em cima de dado
+  bancário. A tela diz quantas faltam e tem o botão *definir empresa* na linha.
+- **Título rateado entre obras de EMPRESAS diferentes é recusado no
+  lançamento**, com os dois nomes no recado. É o mesmo raciocínio da regra de
+  09/09/2026 sobre contas diferentes: um título vira um pagamento só.
+- **Na tela de pagar**, as contas ficam em três grupos: as da empresa do título,
+  as de outra empresa ("vira acerto entre elas") e as sem empresa definida. Os
+  dois últimos são coisas diferentes — uma é decisão, a outra é cadastro pela
+  metade — e o texto diz isso.
+- **Conciliação e importação de extrato** mostram a empresa junto do nome da
+  conta. Importar o extrato na conta de outra empresa suja a conciliação
+  inteira, e o erro só aparece depois, quando nada casa.
+
+### 🐛 UM DEFEITO ACHADO NO CAMINHO — o bloco "copiar dados" da conta
+
+Ao ligar a conta à empresa, apareceu um defeito que estava lá desde sempre: o
+bloco pronto para colar (razão social, CNPJ, banco, agência, conta) trazia
+**sempre a razão social e o CNPJ da empresa PADRÃO**, em cima da agência e conta
+de qualquer uma das contas.
+
+Mandar para um cliente o **CNPJ de uma empresa com a conta de outra** é
+exatamente o erro que esse bloco existe para evitar — e ele não aparece na
+conferência, porque os dois lados estão certos sozinhos. Agora o cabeçalho sai
+da empresa DA CONTA, e conta sem dona não empresta o CNPJ de ninguém.
+
+**Obrigado a este defeito por uma lição:** funcionalidade que junta dois
+cadastros costuma revelar que um deles vinha do lugar errado.
+
 ### 📐 O MODAL DO NOVO PEDIDO NÃO CABIA — e a causa vale para toda tela
 
 21/09/2026, o dono lançando um pedido por lista colada:

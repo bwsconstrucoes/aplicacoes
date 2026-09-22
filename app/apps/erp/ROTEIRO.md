@@ -1291,6 +1291,14 @@ Feito nesta leva:
       (migração 079).
 - [x] **Desativar e reativar fornecedor pela ficha**, com apagar só para quem
       nunca foi usado (o sistema confere 10 tabelas antes de oferecer).
+- [x] **A conta bancária tem dona, e o título tem empresa.** Migração 080:
+      conta nova exige a empresa, as antigas ganham botão *definir empresa* com
+      contagem do que falta, o título recebe a empresa da obra do rateio
+      (histórico preenchido na própria migração) e pagar por outra empresa
+      pergunta uma vez e fica escrito na trilha. Rateio entre obras de empresas
+      diferentes é recusado no lançamento. De brinde, um defeito antigo: o bloco
+      "copiar dados" trazia o CNPJ da empresa padrão em cima da conta de
+      qualquer uma.
 - [x] **O modal do novo pedido cabe.** Cada item virou bloco: o nome do insumo
       aparece inteiro quebrando linha, a especificação é campo de várias linhas
       que cresce, e em tela estreita os campos empilham. A causa era um

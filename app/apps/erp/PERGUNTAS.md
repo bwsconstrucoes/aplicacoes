@@ -1056,6 +1056,30 @@ passa a ser o fantasia.
 - OK **Quais fornecedores atendem todo o Brasil?** / **só o Ceará?** / **só a
   Grande Fortaleza?**
 
+- OK **De qual empresa é esta conta bancária?** — e quais contas ainda estão
+  sem dona.
+- OK **De qual empresa é este título?** — vem da obra do rateio.
+- OK **Que pagamentos saíram pela conta de outra empresa?** — a trilha guarda o
+  recado com os dois nomes, em `detalhe.outra_empresa`.
+
+⚠️ **Palavra ambígua: "conta".** São três coisas diferentes no ERP: a **conta
+bancária** (de onde o dinheiro sai), a **conta do plano financeiro** (a
+classificação do gasto) e a **conta do fornecedor** (onde ele recebe). A
+resposta tem de dizer qual das três está usando.
+
+⚠️ **Palavra ambígua: "quanto tem em caixa".** Por empresa ou somando todas? A
+pergunta só passou a ter resposta por empresa depois da migração 080 — e o que
+estiver em conta sem dona não entra em nenhuma das duas.
+
+O que ainda **não** responde:
+
+- FALTA **"qual o saldo da conta"** — o ERP guarda o extrato importado, não o
+  saldo do banco. Somar os lançamentos daria um número parecido e errado nos
+  dias em que faltar extrato.
+- FALTA **"quanto a empresa A deve para a B"** por causa dos pagamentos
+  cruzados. Cada um fica registrado, mas ninguém soma — e somar sem combinar o
+  que conta como acerto daria um número que não bate com o do contador.
+
 ⚠️ **Palavra ambígua: "região do fornecedor".** São duas coisas diferentes: a
 **cidade onde ele fica** (o endereço dele) e **até onde ele vende** (a
 abrangência). Um fornecedor de São Paulo pode atender o Brasil inteiro, e um de

@@ -3858,8 +3858,12 @@ def api_config():
                     "municipio": o.municipio, "uf": o.uf, "contrato": o.contrato,
                     "status": o.status,
                 } for o in obras],
+                # A EMPRESA DONA vai junto (migração 080): é o que permite a
+                # tela oferecer só as contas do CNPJ certo na hora de pagar, em
+                # vez de misturar as de todas as empresas numa lista só.
                 "contas": [{"id": b.id, "descricao": b.descricao, "banco": b.banco_codigo,
-                            "agencia": b.agencia, "conta": b.conta, "ativo": b.ativo}
+                            "agencia": b.agencia, "conta": b.conta, "ativo": b.ativo,
+                            "empresa_id": b.empresa_id}
                            for b in contas],
                 "usuarios": [{"nome": u.nome, "email": u.email,
                               "perfil": u.perfil.value, "ativo": u.ativo} for u in usuarios],
@@ -4711,8 +4715,19 @@ def api_agenda():
                 "em_lote": p.id in em_lote,
                 "contas_da_obra": _contas_da_parcela(p),
                 "contas_nomes": [nome_da_conta.get(i, "") for i in _contas_da_parcela(p)],
+                # A EMPRESA QUE PAGA (migração 080): é com ela que a tela
+                # decide quais contas oferecer, em vez de listar as de todos
+                # os CNPJs juntas.
+                "empresa_id": p.titulo.empresa_id,
             } for p in parcelas]
-            contas = [{"id": c.id, "descricao": c.descricao}
+            from app.apps.erp.db.models.cadastros import Empresa as _Emp
+            nome_empresa = {e.id: (e.nome_fantasia or e.razao_social)
+                            for e in s.scalars(select(_Emp)).all()}
+            for item in itens:
+                item["empresa_nome"] = nome_empresa.get(item["empresa_id"], "")
+            contas = [{"id": c.id, "descricao": c.descricao,
+                       "empresa_id": c.empresa_id,
+                       "empresa_nome": nome_empresa.get(c.empresa_id, "")}
                       for c in s.scalars(select(ContaBancaria)
                                          .where(ContaBancaria.ativo.is_(True))).all()]
         return jsonify({"ok": True, "parcelas": itens, "contas": contas})
@@ -4755,7 +4770,7 @@ def api_baixar():
     data_pg = d.get("data_pagamento") or date.today().isoformat()
     if not itens or not conta_id:
         return jsonify({"ok": False, "erro": "Informe as parcelas e a conta de saída."}), 400
-    ok, erros = [], []
+    ok, erros, confirmar = [], [], []
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
@@ -4770,9 +4785,17 @@ def api_baixar():
                         conta_bancaria_id=int(conta_id),
                         data_pagamento=date.fromisoformat(data_pg),
                         valor_pago=it.get("valor_pago") or it.get("valor"),
-                        usuario=usuario)
+                        usuario=usuario,
+                        confirmar_outra_empresa=bool(d.get("confirmar_outra_empresa")))
                     ok.append({"parcela_id": pg.parcela_id, "valor": float(pg.valor_pago),
                                "pagamento_id": pg.id})
+                # PAGAR POR OUTRA EMPRESA não é erro: é uma decisão, e ela
+                # volta em campo PRÓPRIO para a tela perguntar uma vez e
+                # reenviar confirmado. Misturado com os erros, viraria uma
+                # linha vermelha que a pessoa lê como "deu problema".
+                except svc_pag.ErroEmpresaDiferente as e:
+                    confirmar.append({"parcela_id": it.get("parcela_id"),
+                                      "pergunta": str(e)})
                 except (ErroValidacao, ErroPermissao) as e:
                     erros.append({"parcela_id": it.get("parcela_id"), "erro": str(e)})
             s.commit()
@@ -4785,7 +4808,8 @@ def api_baixar():
                     except Exception as e:      # aviso não derruba a baixa
                         logger.warning("ERP: aviso falhou (%s)", e)
                 s.commit()
-        return jsonify({"ok": True, "pagas": ok, "erros": erros, "avisos": avisos})
+        return jsonify({"ok": True, "pagas": ok, "erros": erros,
+                        "confirmar": confirmar, "avisos": avisos})
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
@@ -4931,7 +4955,16 @@ def api_conciliacao_painel():
     conta = request.args.get("conta_id", type=int)
     try:
         with get_session() as s:
-            contas = [{"id": c.id, "descricao": c.descricao}
+            # A EMPRESA vai junto na conciliação também (migração 080):
+            # escolher a conta errada aqui joga o extrato de uma empresa dentro
+            # de outra, e a conciliação passa a tentar casar lançamentos que
+            # nunca vão casar.
+            from app.apps.erp.db.models.cadastros import Empresa as _EmpC
+            _nome_emp = {e.id: (e.nome_fantasia or e.razao_social)
+                         for e in s.scalars(select(_EmpC)).all()}
+            contas = [{"id": c.id, "descricao": c.descricao,
+                       "empresa_id": c.empresa_id,
+                       "empresa_nome": _nome_emp.get(c.empresa_id, "")}
                       for c in s.scalars(select(ContaBancaria)
                                          .where(ContaBancaria.ativo.is_(True))).all()]
             return jsonify({"ok": True, "painel": painel(s, conta), "contas": contas})
@@ -5277,6 +5310,28 @@ def api_contas_detalhe():
                         "tipos_pix": svc_contas.TIPOS_PIX})
 
 
+@bp.route("/erp/api/contas/<int:conta_id>/empresa", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_conta_empresa(conta_id: int):
+    """Marca de quem é uma conta que nasceu antes da migração 080.
+
+    Existe porque as contas antigas ficaram SEM empresa de propósito: atribuir
+    sozinho a empresa padrão seria adivinhar em cima de dado bancário. São
+    poucas, e quem sabe de quem é cada uma é o dono.
+    """
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            svc_contas.definir_empresa(s, conta_id, d.get("empresa_id"),
+                                       usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "contas": svc_contas.listar(s)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/contas/<int:conta_id>/pix", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")
@@ -5357,7 +5412,8 @@ def api_contas_bancarias():
                            .order_by(ContaBancaria.descricao)).all()
         return jsonify({"ok": True, "contas": [
             {"id": c.id, "descricao": c.descricao, "banco": c.banco_codigo,
-             "agencia": c.agencia, "conta": c.conta, "ativo": c.ativo}
+             "agencia": c.agencia, "conta": c.conta, "ativo": c.ativo,
+             "empresa_id": c.empresa_id}
             for c in contas if c.ativo]})
 
 

@@ -202,8 +202,7 @@ async function carregar(){
     const d = await api("/erp/api/pagamentos/agenda");
     P = d.parcelas; CONTAS = d.contas;
     const l = await api("/erp/api/lotes"); LOTES = l.lotes;
-    els("conta-baixa").innerHTML = CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")
-      || `<option value="">— cadastre uma conta —</option>`;
+    montarContasDeSaida();
     els("comp-conta").innerHTML = CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")
       || `<option value="">— cadastre uma conta —</option>`;
     els("lote-destino").innerHTML = `<option value="">— escolher lote —</option>` +
@@ -277,6 +276,9 @@ function visiveis(){
 
 function desenhar(){
   const l = visiveis();
+  // A caixa "de que conta sai" acompanha o que está marcado: marcar parcelas
+  // de outra empresa muda quais contas sobem para o topo.
+  montarContasDeSaida();
   const soma = f => l.filter(f).reduce((a,p)=>a+p.valor,0);
   const hoje = new Date().toISOString().slice(0,10);
   els("kpis").innerHTML = `
@@ -553,6 +555,56 @@ async function adicionarSPsAoLote(loteId){
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
+// ---------------------------------------------------------------------------
+// DE QUE CONTA SAI O PAGAMENTO — e de qual EMPRESA ela é (22/09/2026)
+//
+// Pedido do dono: *"associar banco a uma empresa"*. Antes, a caixa listava as
+// contas de TODOS os CNPJs juntas, sem nada dizendo de quem era cada uma — e
+// pagar a despesa de uma empresa pelo caixa de outra não se conserta na tela:
+// o dinheiro saiu do lugar errado, vira acerto entre empresas e passa por
+// movimentação bancária de verdade.
+//
+// A lista se ajusta ao que está MARCADO: selecionadas parcelas de uma empresa
+// só, as contas dela sobem para o topo e as demais ficam num grupo à parte,
+// marcadas — visíveis, porque pagar por outra empresa acontece de propósito
+// (é empréstimo entre elas), e esconder faria a pessoa pagar por fora do
+// sistema.
+// ---------------------------------------------------------------------------
+function empresasSelecionadas(){
+  return new Set(P.filter(p => SEL.has(p.parcela_id))
+                  .map(p => p.empresa_id).filter(Boolean));
+}
+
+function montarContasDeSaida(){
+  const alvo = els("conta-baixa");
+  if (!alvo) return;
+  const marcadas = empresasSelecionadas();
+  const uma = marcadas.size === 1 ? [...marcadas][0] : null;
+  const rotulo = c => c.empresa_nome ? `${c.descricao} · ${c.empresa_nome}`
+                                     : `${c.descricao} · sem empresa`;
+  const opcao = c => `<option value="${c.id}">${escapar(rotulo(c))}</option>`;
+  if (!CONTAS.length) {
+    alvo.innerHTML = `<option value="">— cadastre uma conta —</option>`;
+    return;
+  }
+  if (uma === null) {
+    alvo.innerHTML = CONTAS.map(opcao).join("");
+    return;
+  }
+  const dela = CONTAS.filter(c => c.empresa_id === uma);
+  // "Sem empresa" fica em grupo PRÓPRIO, separado de "outra empresa": são
+  // coisas diferentes. Uma é uma decisão (empréstimo entre empresas); a outra
+  // é cadastro pela metade, e o texto tem de dizer isso com estas palavras.
+  const outras = CONTAS.filter(c => c.empresa_id && c.empresa_id !== uma);
+  const orfas = CONTAS.filter(c => !c.empresa_id);
+  alvo.innerHTML =
+    (dela.length ? `<optgroup label="Contas desta empresa">${dela.map(opcao).join("")}</optgroup>` : "") +
+    (outras.length ? `<optgroup label="Outra empresa — vira acerto entre elas">${
+      outras.map(opcao).join("")}</optgroup>` : "") +
+    (orfas.length ? `<optgroup label="Sem empresa definida — acerte em Configurações">${
+      orfas.map(opcao).join("")}</optgroup>` : "");
+}
+
 document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", async () => {
   const acao = b.dataset.acao;
   try {
@@ -567,10 +619,23 @@ document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click"
       aviso("mensagem", m, d.relatorio.recusadas.length?"info":"ok");
     } else {
       const itens = P.filter(p=>SEL.has(p.parcela_id)).map(p=>({parcela_id:p.parcela_id, valor:p.valor}));
-      const d = await api("/erp/api/pagamentos/baixar", {method:"POST",
+      const enviar = (confirmado) => api("/erp/api/pagamentos/baixar", {method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({itens, conta_bancaria_id: els("conta-baixa").value,
-          data_pagamento: els("data-baixa").value})});
+          data_pagamento: els("data-baixa").value,
+          confirmar_outra_empresa: !!confirmado})});
+      let d = await enviar(false);
+      // A conta é de outra empresa: pergunta UMA vez, com os dois nomes na
+      // frente, e só então registra. Não é erro — é decisão, e ela fica
+      // escrita na trilha do pagamento.
+      if ((d.confirmar||[]).length) {
+        const perguntas = [...new Set(d.confirmar.map(c=>c.pergunta))].join(" ");
+        if (!confirm(perguntas + "\n\nRegistrar assim mesmo?")) {
+          aviso("mensagem", "Nada foi registrado. Troque a conta e tente de novo.", "info");
+          return;
+        }
+        d = await enviar(true);
+      }
       let m = `${d.pagas.length} pagamento(s) registrado(s).`;
       if (d.erros.length) m += `<br><b>${d.erros.length} com erro:</b><br>` +
         d.erros.map(e=>e.erro).join("<br>");

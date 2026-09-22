@@ -156,7 +156,8 @@
       title="Troca a lista de bancos pela oficial do Banco Central">Atualizar lista de bancos</button>
     <button class="btn secundario" id="btn-nova-conta">+ Nova conta</button>
   </div>
-  <table><thead><tr><th>Descrição</th><th>Banco</th><th>Agência</th><th>Conta</th>
+  <div class="aviso alerta oculto" id="contas-sem-empresa" style="margin-bottom:10px"></div>
+  <table><thead><tr><th>Descrição</th><th>Empresa</th><th>Banco</th><th>Agência</th><th>Conta</th>
     <th>Chaves Pix</th><th>Situação</th><th></th></tr></thead>
     <tbody id="tb-contas"></tbody></table>
   <div class="dica" style="margin-top:8px">O botão <b>Copiar dados</b> monta o bloco
@@ -1315,6 +1316,17 @@ els("btn-nova-conta").addEventListener("click", () => {
     <div class="form-grade">
       <div class="campo" style="grid-column:span 2"><label>Descrição *</label>
         <input id="cb-descricao" placeholder="Bradesco BWS principal"></div>
+      {# A EMPRESA DONA é obrigatória desde 22/09/2026 (migração 080). Sem ela
+         as contas dos vários CNPJs apareciam misturadas em toda tela que
+         escolhe conta, e nada impedia pagar a despesa de uma pelo caixa da
+         outra — erro que não se conserta no sistema, porque o dinheiro saiu. #}
+      <div class="campo" style="grid-column:span 2"><label>Empresa dona da conta *</label>
+        <select id="cb-empresa">
+          <option value="">escolha a empresa…</option>
+          ${(DADOS.empresas||[]).map(e=>`<option value="${e.id}">${escapar(e.nome)}</option>`).join("")}
+        </select>
+        <div class="dica">É o CNPJ de onde o dinheiro sai. O sistema usa isso para
+          oferecer só as contas certas na hora de pagar.</div></div>
       <div class="campo" style="grid-column:span 2"><label>Banco *</label>
         <select id="cb-banco">
           <option value="">escolha o banco…</option>
@@ -1351,6 +1363,7 @@ els("btn-nova-conta").addEventListener("click", () => {
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           descricao: els("cb-descricao").value,
+          empresa_id: els("cb-empresa").value,
           banco_codigo: els("cb-banco-livre").value.trim() || els("cb-banco").value,
           agencia: els("cb-agencia").value, conta: els("cb-conta").value,
           pix_tipo: els("cb-pix-tipo").value, pix_chave: els("cb-pix-chave").value,
@@ -1769,6 +1782,9 @@ function desenharContas(){
   alvo.innerHTML = lista.map(c => `
     <tr data-conta="${c.id}">
       <td>${c.descricao}</td>
+      <td>${c.empresa_nome ? escapar(c.empresa_nome)
+            : `<button class="link-btn" data-empresa="${c.id}"
+                 style="color:var(--ambar); font-weight:600">definir empresa</button>`}</td>
       <td class="desc"><span class="dados">${escapar(c.banco_codigo || c.banco || "")}</span>${
         c.banco_nome ? `<small>${escapar(c.banco_nome)}</small>` : ""}</td>
       <td class="dados">${c.agencia}</td>
@@ -1782,7 +1798,42 @@ function desenharContas(){
         <button class="btn secundario" data-pix-novo="${c.id}">+ Pix</button>
         <button class="btn secundario" data-copiar="${c.id}">Copiar dados</button></td>
     </tr>`).join("")
-    || `<tr><td colspan="7" class="cartao-dica">Nenhuma conta cadastrada — necessária para registrar pagamentos.</td></tr>`;
+    || `<tr><td colspan="8" class="cartao-dica">Nenhuma conta cadastrada — necessária para registrar pagamentos.</td></tr>`;
+
+  // AS CONTAS ANTERIORES À MIGRAÇÃO 080 ficaram sem empresa de propósito:
+  // atribuir sozinho a empresa padrão seria adivinhar em cima de dado
+  // bancário. A tela DIZ quantas faltam em vez de deixar a coluna vazia
+  // passar despercebida — é o mesmo desenho das contas do plano sem grupo.
+  const semEmpresa = lista.filter(c => !c.empresa_id);
+  const cartaz = els("contas-sem-empresa");
+  if (cartaz) {
+    cartaz.classList.toggle("oculto", !semEmpresa.length);
+    cartaz.innerHTML = semEmpresa.length
+      ? `<b>${semEmpresa.length} conta(s) ainda sem empresa.</b> Enquanto faltar, o
+         sistema não tem como conferir se o pagamento está saindo do CNPJ certo.
+         Clique em <b>definir empresa</b> na linha para acertar.` : "";
+  }
+
+  document.querySelectorAll("[data-empresa]").forEach(b => b.addEventListener("click", async () => {
+    const r = await perguntar({
+      titulo: "De qual empresa é esta conta?",
+      aviso: "É o CNPJ de onde o dinheiro sai. O sistema usa isso para avisar se " +
+             "um pagamento estiver saindo pela empresa errada.",
+      campos: [{nome: "empresa_id", rotulo: "Empresa", tipo: "select", obrigatorio: true,
+                largura: 4,
+                opcoes: [{valor: "", rotulo: "— escolha —"}].concat(
+                  (DADOS.empresas||[]).map(e => ({valor: String(e.id), rotulo: e.nome})))}],
+      textoOk: "Guardar"});
+    if (!r || !r.empresa_id) return;
+    try {
+      const d = await api(`/erp/api/contas/${b.dataset.empresa}/empresa`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({empresa_id: r.empresa_id})});
+      CONTAS_PIX = d.contas || CONTAS_PIX;
+      desenharContas();
+      aviso("pix-msg", "Pronto — a conta agora tem dona.", "ok");
+    } catch(e){ aviso("pix-msg", e.message, "erro"); }
+  }));
 
   document.querySelectorAll("[data-copiar]").forEach(b => b.addEventListener("click", async () => {
     const c = CONTAS_PIX.find(x => String(x.id) === b.dataset.copiar);

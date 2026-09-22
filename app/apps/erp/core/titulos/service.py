@@ -26,8 +26,8 @@ from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao, regi
 from app.apps.erp.core.pagamentos.boleto import validar_linha_digitavel
 from app.apps.erp.core.titulos.regras import modo_transicao, regras_de
 from app.apps.erp.db.models.cadastros import (
-    Alcada, Categoria, FormaPagamento, Fornecedor, FornecedorConta, Obra,
-    PerfilUsuario, StatusConta, TipoTitulo, Usuario,
+    Alcada, Categoria, Empresa, FormaPagamento, Fornecedor, FornecedorConta,
+    Obra, PerfilUsuario, StatusConta, TipoTitulo, Usuario,
 )
 from app.apps.erp.db.models.financeiro import (
     Conciliacao, Pagamento, Parcela, Rateio, Retencao, StatusParcela,
@@ -126,6 +126,43 @@ def _exigir_uma_conta_so(s: Session, rateios: list[Rateio]) -> None:
         "— não dá para pagar o mesmo boleto de duas contas. Separe em dois "
         "títulos (peça ao fornecedor dois boletos), ou acerte a conta das obras "
         "no cadastro.")
+
+
+def _empresa_do_rateio(s: Session, rateios: list[Rateio]) -> Optional[int]:
+    """De que EMPRESA é este título — deduzido pelas obras do rateio.
+
+    Pedido do dono em 22/09/2026, junto com a empresa na conta bancária, e a
+    dedução só é honesta porque ele confirmou a premissa com todas as letras:
+    *"sempre uma empresa só"* — obra não é tocada por duas.
+
+    Sem isto, a empresa do título só existia INDIRETAMENTE, pela obra do
+    rateio, e não havia com o que comparar a conta escolhida na hora de pagar.
+
+    Obra sem empresa no cadastro NÃO trava o lançamento: o título fica sem
+    empresa e aparece na tela para alguém acertar. Travar o financeiro por um
+    campo em branco de outro cadastro é o tipo de rigor que faz a pessoa voltar
+    para a planilha.
+    """
+    empresas = {getattr(s.get(Obra, r.obra_id), "empresa_id", None)
+                for r in rateios}
+    empresas.discard(None)
+    if len(empresas) == 1:
+        return empresas.pop()
+    if len(empresas) > 1:
+        # Rateio cruzando empresas é coisa diferente de rateio cruzando obras:
+        # são dois CNPJs, e um título vira um pagamento só. Recusar aqui é o
+        # mesmo raciocínio de `_exigir_uma_conta_so` — depois de lançado,
+        # separar dá trabalho e envolve o fornecedor.
+        nomes = []
+        for eid in sorted(empresas):
+            emp = s.get(Empresa, eid)
+            nomes.append(getattr(emp, "razao_social", None) or f"empresa {eid}")
+        raise ErroValidacao(
+            "Este título está rateado entre obras de EMPRESAS diferentes ("
+            + " · ".join(nomes) + "). Um título vira um pagamento só, e ele sai "
+            "do caixa de um CNPJ — não dá para uma despesa ser paga por dois. "
+            "Separe em dois títulos, um por empresa.")
+    return None
 
 
 def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
@@ -311,6 +348,7 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
             f"Soma dos rateios (R$ {soma_rat}) ≠ valor líquido (R$ {valor_liquido}).")
 
     _exigir_uma_conta_so(s, rateios_obj)
+    empresa_id = _empresa_do_rateio(s, rateios_obj)
 
     # ---- C7(d): duplicidade credor + valor + 1º vencimento em janela de 30 dias
     venc1 = parcelas_obj[0].vencimento
@@ -330,7 +368,8 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
         competencia=_competencia(dados.get("competencia")),
         data_emissao_doc=_data(dados["data_emissao_doc"], "data_emissao_doc")
             if dados.get("data_emissao_doc") else None,
-        categoria_id=cat.id, pedido_id=pedido_id, contrato_id=contrato_id,
+        categoria_id=cat.id, empresa_id=empresa_id,
+        pedido_id=pedido_id, contrato_id=contrato_id,
         documento_fiscal_id=doc_fiscal_id, forma_pagamento=forma,
         fornecedor_conta_id=conta_id,
         dedutivel=bool(dados.get("dedutivel", regras.dedutivel_padrao and cat.dedutivel_padrao)),
