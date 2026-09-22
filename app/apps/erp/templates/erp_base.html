@@ -259,6 +259,149 @@ const els = id => document.getElementById(id);
 // Texto que veio do banco e vai para dentro de innerHTML.
 // "Alfa <compras@alfa.exemplo>" sem isto some da tela: o navegador lê o
 // <compras@...> como uma marcação e engole o pedaço.
+// ---------------------------------------------------------------------------
+// DOCUMENTO, TELEFONE E CEP COM A CARA QUE A PESSOA CONHECE — 22/09/2026
+//
+// Pedido do dono, depois de uma varredura pelas telas: *"campo de CPF, CNPJ,
+// como não aparecer a formatação, já deveria aparecer (…) mas não só para o
+// que eu citei, de uma maneira geral também."*
+//
+// POR QUE ISTO MORA AQUI, e não em cada tela: documento aparece em dezenas de
+// lugares (credor, colaborador, empresa, fornecedor, cliente da obra, chave
+// Pix, operador). Corrigir tela por tela deixaria de fora a próxima que
+// alguém escrever — foi exatamente essa a queixa dele, *"todas as telas têm
+// algum detalhe assim"*. Uma função só, e a máscara nos campos é aplicada
+// SOZINHA pelo observador lá embaixo.
+//
+// O BANCO CONTINUA GUARDANDO SÓ DÍGITOS. A máscara é de leitura e de
+// digitação; na hora de enviar, o servidor limpa (`somente_digitos`). Guardar
+// formatado faria "11.222.333/0001-81" e "11222333000181" virarem dois
+// cadastros diferentes do mesmo CNPJ.
+// ---------------------------------------------------------------------------
+const soDigitos = v => String(v ?? "").replace(/\D/g, "");
+
+const documento = v => {
+  const d = soDigitos(v);
+  if (d.length === 11) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+  if (d.length === 14) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+  return String(v ?? "");            // documento torto aparece como está, sem inventar
+};
+
+const telefoneBR = v => {
+  let d = soDigitos(v);
+  if (d.length > 11 && d.startsWith("55")) d = d.slice(2);   // veio com o país
+  if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return String(v ?? "");
+};
+
+const cepBR = v => {
+  const d = soDigitos(v);
+  return d.length === 8 ? `${d.slice(0,5)}-${d.slice(5)}` : String(v ?? "");
+};
+
+// A máscara enquanto se digita. Preserva a posição do cursor quando a pessoa
+// está corrigindo no meio do texto — sem isso o cursor pula para o fim a cada
+// tecla, que é pior do que não ter máscara nenhuma.
+function mascarar(entrada, formatar) {
+  if (!entrada || entrada.dataset.temMascara) return;
+  entrada.dataset.temMascara = "1";
+  const aplicar = () => {
+    const antes = entrada.value;
+    const cursor = entrada.selectionStart;
+    const digitosAteCursor = soDigitos(antes.slice(0, cursor)).length;
+    const depois = formatar(antes);
+    if (depois === antes) return;
+    entrada.value = depois;
+    // recoloca o cursor DEPOIS do mesmo dígito em que ele estava
+    let vistos = 0, pos = depois.length;
+    for (let i = 0; i < depois.length; i++) {
+      if (/\d/.test(depois[i])) vistos++;
+      if (vistos === digitosAteCursor) { pos = i + 1; break; }
+    }
+    if (document.activeElement === entrada) entrada.setSelectionRange(pos, pos);
+  };
+  entrada.addEventListener("input", aplicar);
+  entrada.addEventListener("blur", aplicar);
+  if (entrada.value) aplicar();
+}
+
+// CPF e CNPJ no mesmo campo: o ERP aceita os dois no lugar do credor, e qual
+// deles é só se sabe pela quantidade de dígitos. Abaixo de 12, formata como
+// CPF; daí para cima, como CNPJ.
+function mascaraDocumento(bruto) {
+  const d = soDigitos(bruto).slice(0, 14);
+  if (!d) return "";
+  if (d.length <= 11) {
+    return d.replace(/^(\d{1,3})(\d{0,3})(\d{0,3})(\d{0,2}).*/,
+      (_, a, b, c, e) => a + (b ? "." + b : "") + (c ? "." + c : "") + (e ? "-" + e : ""));
+  }
+  return d.replace(/^(\d{2})(\d{0,3})(\d{0,3})(\d{0,4})(\d{0,2}).*/,
+    (_, a, b, c, e, f) => a + (b ? "." + b : "") + (c ? "." + c : "") +
+                          (e ? "/" + e : "") + (f ? "-" + f : ""));
+}
+
+function mascaraTelefone(bruto) {
+  let d = soDigitos(bruto);
+  if (d.length > 11 && d.startsWith("55")) d = d.slice(2);
+  d = d.slice(0, 11);
+  if (!d) return "";
+  if (d.length <= 2) return `(${d}`;
+  const corte = d.length > 10 ? 7 : 6;
+  return `(${d.slice(0,2)}) ${d.slice(2, corte)}` + (d.length > corte ? `-${d.slice(corte)}` : "");
+}
+
+function mascaraCEP(bruto) {
+  const d = soDigitos(bruto).slice(0, 8);
+  return d.length > 5 ? `${d.slice(0,5)}-${d.slice(5)}` : d;
+}
+
+// QUAL CAMPO GANHA QUAL MÁSCARA, decidido pelo NOME do campo — é o que faz
+// isto valer para as telas que ainda nem existem. Quem não quiser marca o
+// campo com `data-sem-mascara`, e a exceção fica escrita onde ela vale.
+// A fronteira aceita espaço, hífen e sublinhado — o texto examinado é
+// "id nome" junto, e sem o espaço na lista um campo chamado só "telefone"
+// ficava de fora, porque o que vinha antes dele era o espaço. Foi assim que
+// este defeito apareceu: o CNPJ pegava (por causa do "_" de "cnpj_cpf") e o
+// telefone não, o que fazia parecer que a máscara funcionava.
+const SEPARADOR = String.raw`[\s\-_.]`;
+const alvoDeMascara = palavras =>
+  new RegExp(`(^|${SEPARADOR})(${palavras})(${SEPARADOR}|$)`, "i");
+
+const MASCARAS = [
+  [alvoDeMascara("cnpj|cpf|documento|doc"), mascaraDocumento],
+  [alvoDeMascara("telefone|celular|fone|whatsapp"), mascaraTelefone],
+  [alvoDeMascara("cep"), mascaraCEP],
+];
+
+// O TEXTO INTEIRO NO BALÃOZINHO. A célula mostra duas linhas; o resto fica no
+// `title`, que aparece ao parar o mouse. Sem isto, o que a célula corta some —
+// e foi essa a queixa: *"tem campo que fica comendo as informações."*
+function explicarCelulasCortadas(raiz) {
+  (raiz || document).querySelectorAll(
+    ".tabela-rolagem td.desc, .tabela-rolagem td.credor, .tabela-rolagem td.nome"
+  ).forEach(td => {
+    if (td.title) return;
+    const texto = (td.textContent || "").trim();
+    // Só quando realmente sobrou texto de fora: title em célula inteira vira
+    // balãozinho repetindo o que já está escrito, e aí ninguém lê nenhum.
+    if (texto && td.scrollHeight > td.clientHeight + 2) td.title = texto;
+  });
+}
+
+function aplicarMascaras(raiz) {
+  (raiz || document).querySelectorAll(
+    "input:not([data-sem-mascara]):not([type=date]):not([type=file]):not([type=checkbox])"
+  ).forEach(campo => {
+    if (campo.dataset.temMascara) return;
+    const nome = `${campo.id || ""} ${campo.name || ""}`;
+    // "cnpj_cliente" e "doc-titular" entram; "documentos" (o campo de ANEXO da
+    // tela de lançamento) fica de fora — é arquivo, não número.
+    const achou = MASCARAS.find(([padrao]) => padrao.test(nome));
+    if (achou) mascarar(campo, achou[1]);
+  });
+}
+
 const escapar = t => String(t ?? "").replace(/[&<>"']/g,
   c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 
@@ -457,23 +600,98 @@ function comBusca(alvo, textoVazio) {
   const original = document.createDocumentFragment();
   [...sel.children].forEach(el => original.appendChild(el.cloneNode(true)));
 
-  campo.addEventListener("input", () => {
-    const q = campo.value.toLowerCase().trim();
+  // ---------------------------------------------------------------------
+  // POR QUE ISTO TEM ESPERA E TETO — 22/09/2026
+  //
+  // O dono, digitando o nome de um credor: *"tem algo esquisito na busca pelo
+  // nome do credor, ele fica uns segundos meio travado quando tentamos
+  // digitar, sem aparecer nada. Pensamos que não tá funcionando."*
+  //
+  // A CAUSA eram duas, e as duas somavam: a cada TECLA a lista inteira era
+  // refeita, clonando uma a uma TODAS as opções que casassem. Com 1.700
+  // credores (e 3.279 insumos na outra tela), digitar "jo" mandava o navegador
+  // criar milhares de elementos — e ele para de responder enquanto faz isso.
+  // Quem digita rápido enfileira uma refação por letra, e o travamento soma.
+  //
+  // Duas correções, e nenhuma resolve sozinha:
+  //   ESPERA — só refaz a lista 140ms depois da última tecla. Digitando uma
+  //            palavra inteira, refaz UMA vez em vez de cinco.
+  //   TETO   — mostra no máximo 60 achados e diz quantos ficaram de fora.
+  //            Ninguém escolhe olhando 800 linhas; quem tem 800 achados
+  //            precisa é digitar mais uma letra, e a linha de aviso diz isso.
+  // ---------------------------------------------------------------------
+  const TETO = 60;
+  const ESPERA = 140;
+  let relogio = null;
+
+  // COMO O TEXTO DIGITADO É COMPARADO — 22/09/2026, com o dono pedindo para
+  // *"dar uma melhorada nessa engrenagem das buscas"*. Três coisas que a
+  // comparação literal errava, e todas doem no uso diário:
+  //
+  //   ACENTO   — "jose" não achava "JOSÉ", e ninguém digita acento com pressa.
+  //   PONTUAÇÃO— colar "11.222.333/0001-81" da nota não achava nada, porque o
+  //              cadastro guarda só dígitos. Agora, quando o que se digita é
+  //              só número e pontuação, a comparação também vira só dígitos.
+  //   ORDEM    — "silva joao" não achava "JOÃO DA SILVA". Cada palavra é
+  //              procurada por conta própria, em qualquer ordem.
+  const semAcento = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const simplificar = s => semAcento(String(s || "").toLowerCase()).replace(/\s+/g, " ").trim();
+
+  function casa(texto, termos, digitos) {
+    const alvo = simplificar(texto);
+    if (digitos) return alvo.replace(/\D/g, "").includes(digitos);
+    return termos.every(p => alvo.includes(p));
+  }
+
+  function filtrar() {
+    const bruto = campo.value.trim();
+    const q = simplificar(bruto);
+    const termos = q ? q.split(" ").filter(Boolean) : [];
+    // Só dígitos e pontuação de documento? Então é documento, e a comparação
+    // ignora ponto, barra e hífen dos dois lados.
+    const digitos = /^[\d.\-/\s]+$/.test(bruto) && /\d/.test(bruto)
+                    ? bruto.replace(/\D/g, "") : "";
     const selecionado = sel.value;
-    sel.innerHTML = "";
-    [...original.children].forEach(el => {
+    let mostrados = 0, achados = 0;
+    const pedacos = document.createDocumentFragment();
+    for (const el of original.children) {
       if (el.tagName === "OPTGROUP") {
         const grupo = el.cloneNode(false);
-        [...el.children].forEach(o => {
-          if (!q || o.textContent.toLowerCase().includes(q)) grupo.appendChild(o.cloneNode(true));
-        });
-        if (grupo.children.length) sel.appendChild(grupo);
-      } else if (!q || el.textContent.toLowerCase().includes(q)) {
-        sel.appendChild(el.cloneNode(true));
+        for (const o of el.children) {
+          if (q && !casa(o.textContent, termos, digitos)) continue;
+          achados++;
+          if (mostrados < TETO) { grupo.appendChild(o.cloneNode(true)); mostrados++; }
+        }
+        if (grupo.children.length) pedacos.appendChild(grupo);
+      } else {
+        if (q && !casa(el.textContent, termos, digitos)) continue;
+        achados++;
+        if (mostrados < TETO) { pedacos.appendChild(el.cloneNode(true)); mostrados++; }
       }
-    });
+    }
+    sel.innerHTML = "";
+    sel.appendChild(pedacos);
+    // O que ficou de fora é DITO, não escondido: lista cortada em silêncio faz
+    // a pessoa jurar que o cadastro não existe.
+    if (achados > mostrados) {
+      const aviso = document.createElement("option");
+      aviso.disabled = true;
+      aviso.textContent = `… e mais ${achados - mostrados}. Digite mais para achar.`;
+      sel.appendChild(aviso);
+    }
+    if (q && !achados) {
+      const vazio = document.createElement("option");
+      vazio.disabled = true;
+      vazio.textContent = "nada encontrado com este texto";
+      sel.appendChild(vazio);
+    }
     if ([...sel.options].some(o => o.value === selecionado)) sel.value = selecionado;
     sel.size = q ? Math.min(8, Math.max(2, sel.options.length)) : 0;
+  }
+
+  campo.addEventListener("input", () => {
+    clearTimeout(relogio);
+    relogio = setTimeout(filtrar, ESPERA);
   });
   sel.addEventListener("change", () => { sel.size = 0; });
 }
@@ -731,14 +949,32 @@ new MutationObserver(registros => {
       else if (no.querySelector && no.querySelector("select")) {
         aplicarBuscaEmListasLongas(no);
       }
+      // A MÁSCARA PEGA CARONA no mesmo observador (22/09/2026): quase todo
+      // campo de CNPJ do ERP nasce dentro de um diálogo montado na hora, e um
+      // segundo observador seria o mesmo trabalho em dobro.
+      if (no.tagName === "INPUT") aplicarMascaras(no.parentNode || document);
+      else if (no.querySelector && no.querySelector("input")) aplicarMascaras(no);
+      if (no.tagName === "TR" || (no.querySelector && no.querySelector("td"))) {
+        explicarCelulasCortadas(no.closest ? (no.closest(".tabela-rolagem") || no) : no);
+      }
     }
   }
 }).observe(document.documentElement, {childList: true, subtree: true});
 
-document.addEventListener("DOMContentLoaded", () => aplicarBuscaEmListasLongas());
+document.addEventListener("DOMContentLoaded", () => {
+  aplicarBuscaEmListasLongas();
+  aplicarMascaras();
+  explicarCelulasCortadas();
+});
 
 // Substitui o prompt() do navegador, que tem a cara do sistema operacional e
 // destoa do resto. Devolve os valores preenchidos ou null se cancelar.
+//
+// O CAMPO LEVA `name` (22/09/2026) além do id `pg-N`. Não é enfeite: é por ele
+// que a máscara automática de CNPJ, CPF, telefone e CEP reconhece o campo. Sem
+// isso, todo diálogo montado por aqui — e são dezenas no ERP — ficava de fora
+// da formatação, que foi justamente a queixa do dono de que "todas as telas
+// têm algum detalhe assim".
 function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
   return new Promise(resolve => {
     let dlg = els("dlg-pergunta");
@@ -764,7 +1000,7 @@ function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
                     `<option value="${o.valor}" ${o.valor === c.valor ? "selected" : ""}>${o.rotulo}</option>`).join("")}</select>`
                 : c.tipo === "arquivo"
                 ? `<input id="pg-${i}" type="file" ${c.aceita ? `accept="${c.aceita}"` : ""}>`
-                : `<input id="pg-${i}" type="${c.tipo || "text"}"
+                : `<input id="pg-${i}" name="${c.nome || ""}" type="${c.tipo || "text"}"
                      value="${c.valor || ""}" placeholder="${c.exemplo || ""}">`}
               ${c.dica ? `<div class="dica">${c.dica}</div>` : ""}
             </div>`).join("")}

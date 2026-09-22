@@ -73,9 +73,17 @@ def checar(s: Session, dados: dict[str, Any]) -> dict[str, Any]:
     forn_id = dados.get("fornecedor_id")
     valor = _dec(dados.get("valor"))
     descricao = (dados.get("descricao") or "").strip()
-    competencia = _data(dados.get("competencia"))
     parcelas = dados.get("parcelas") or []
     vencimentos = [v for v in (_data(p.get("vencimento")) for p in parcelas) if v]
+    # A COMPETÊNCIA SAIU DA TELA em 22/09/2026 — *"nem usamos isso"* — e passou
+    # a ser deduzida na gravação. A dedução tem de ser a MESMA aqui: as
+    # críticas D4 ("mesmo valor na mesma competência") e D5 ("aluguel já
+    # lançado neste mês") dependem dela, e com o campo vazio as duas parariam
+    # de rodar CALADAS — que é justamente a falha mais cara, porque ninguém
+    # nota que a rede de proteção saiu do ar.
+    competencia = (_data(dados.get("competencia"))
+                   or _data(dados.get("data_emissao_doc"))
+                   or (min(vencimentos) if vencimentos else None))
     linhas = [somente_digitos(p.get("linha_digitavel") or "") for p in parcelas]
     linhas = [l for l in linhas if l]
     numero_doc = (dados.get("documento_numero") or "").strip()

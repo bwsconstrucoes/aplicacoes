@@ -164,7 +164,7 @@ async function enviar(simular){
           <table style="margin-top:8px"><thead><tr><th>Documento</th>
             <th>Linhas</th><th>Nomes na planilha</th></tr></thead>
             <tbody>${rel.documentos_repetidos.slice(0,40).map(x => `<tr>
-              <td class="dados">${escapar(x.documento)}</td>
+              <td class="dados">${escapar(documento(x.documento))}</td>
               <td class="dados">${x.linhas.join(", ")}</td>
               <td>${escapar(x.nomes.join(" · "))}</td></tr>`).join("")}
             </tbody></table>

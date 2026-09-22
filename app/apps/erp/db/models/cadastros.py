@@ -608,6 +608,11 @@ class ContaBancaria(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     descricao: Mapped[str] = mapped_column(Text, nullable=False)
+    # A EMPRESA DONA DA CONTA (migração 080). Nulo só nas contas anteriores a
+    # ela — a tela cobra e lista o que falta. É o que permite conferir, na
+    # hora de pagar, se a conta escolhida é da mesma empresa do título.
+    empresa_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
     banco_codigo: Mapped[str] = mapped_column(Text, nullable=False)
     agencia: Mapped[str] = mapped_column(Text, nullable=False)
     conta: Mapped[str] = mapped_column(Text, nullable=False)

@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao, registrar_evento
 from app.apps.erp.core.pagamentos.ofx import extrair_nome_contraparte, parsear_ofx
-from app.apps.erp.db.models.cadastros import ContaBancaria, FormaPagamento, PerfilUsuario, Usuario
+from app.apps.erp.db.models.cadastros import (
+    ContaBancaria, Empresa, FormaPagamento, PerfilUsuario, Usuario,
+)
 from app.apps.erp.db.models.financeiro import (
     Conciliacao, Extrato, Pagamento, Parcela, StatusParcela, StatusTitulo, Titulo,
 )
@@ -24,14 +26,56 @@ from app.apps.erp.db.models.financeiro import (
 _CENT = Decimal("0.01")
 
 
+class ErroEmpresaDiferente(ErroValidacao):
+    """A conta escolhida é de outra empresa — falta a pessoa confirmar.
+
+    É filha de `ErroValidacao` de propósito: quem não conhece este caso
+    continua recusando a baixa, que é o lado seguro. Quem conhece pergunta
+    antes e reenvia com a confirmação.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Baixa de pagamento
 # ---------------------------------------------------------------------------
+def _conferir_empresa(s: Session, titulo: Titulo, conta: ContaBancaria,
+                      confirmado: bool) -> Optional[str]:
+    """A conta que vai pagar é da MESMA empresa do título?
+
+    Pedido do dono em 22/09/2026. Pagar a despesa de um CNPJ pelo caixa de
+    outro não é erro de digitação que se conserta na tela: o dinheiro saiu do
+    lugar errado, vira acerto entre empresas e passa por movimentação bancária
+    de verdade.
+
+    AVISA, NÃO BLOQUEIA — e a diferença é deliberada. Pagar por outra empresa
+    ACONTECE de propósito: é um empréstimo entre elas, e precisa ficar
+    registrado como tal, não escondido nem impedido. Travar de saída faria a
+    pessoa pagar por fora do sistema, e aí o ERP não saberia de nada.
+
+    Devolve o aviso a registrar quando a pessoa confirmou; levanta quando ela
+    ainda não foi perguntada. Falta de cadastro dos dois lados não inventa
+    conferência: sem empresa não há o que comparar.
+    """
+    da_conta = getattr(conta, "empresa_id", None)
+    do_titulo = getattr(titulo, "empresa_id", None)
+    if not da_conta or not do_titulo or da_conta == do_titulo:
+        return None
+    nome = lambda eid: getattr(s.get(Empresa, eid), "razao_social", None) or f"empresa {eid}"
+    recado = (f"O título {titulo.numero_sp} é da {nome(do_titulo)}, e a conta "
+              f"{conta.descricao} é da {nome(da_conta)}.")
+    if not confirmado:
+        raise ErroEmpresaDiferente(
+            recado + " Pagar por outra empresa vira acerto entre elas — "
+            "confirme se é isso mesmo.")
+    return recado
+
+
 def registrar_pagamento(s: Session, *, parcela_id: int, conta_bancaria_id: int,
                         data_pagamento: date, valor_pago: Any = None,
                         meio: Optional[str] = None, usuario: Optional[Usuario] = None,
                         robo: bool = False,
-                        comprovante_anexo_id: Optional[int] = None) -> Pagamento:
+                        comprovante_anexo_id: Optional[int] = None,
+                        confirmar_outra_empresa: bool = False) -> Pagamento:
     # TRAVA DE LINHA: duas pessoas clicando "baixar" na mesma parcela no mesmo
     # instante liam as duas o status ABERTA e gravavam DOIS pagamentos — o
     # dinheiro sairia uma vez e o ERP registraria duas. Com FOR UPDATE a
@@ -55,6 +99,8 @@ def registrar_pagamento(s: Session, *, parcela_id: int, conta_bancaria_id: int,
     conta = s.get(ContaBancaria, conta_bancaria_id)
     if conta is None or not conta.ativo:
         raise ErroValidacao("Conta bancária da empresa inexistente ou inativa.")
+
+    aviso_empresa = _conferir_empresa(s, titulo, conta, confirmar_outra_empresa)
 
     if valor_pago in (None, "", "None"):
         valor = Decimal(parcela.valor).quantize(_CENT)   # baixa pelo valor da parcela
@@ -86,6 +132,9 @@ def registrar_pagamento(s: Session, *, parcela_id: int, conta_bancaria_id: int,
         "titulo": titulo.numero_sp, "parcela": parcela.numero,
         "valor": str(valor), "data": data_pagamento.isoformat(),
         "meio": meio_pg.value, "robo": robo,
+        # Pagamento entre empresas fica ESCRITO na trilha. É o que transforma
+        # "saiu da conta errada" em "a empresa A pagou por B, e está aqui".
+        **({"outra_empresa": aviso_empresa} if aviso_empresa else {}),
     }, usuario.id if usuario else None)
     return pg
 

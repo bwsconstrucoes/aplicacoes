@@ -65,6 +65,13 @@
       {% if pode.aprovar %}
       <button class="btn" data-acao="aprovar">✔ Liberar p/ pagamento</button>
       <button class="btn secundario" data-acao="devolver">↩ Devolver ao solicitante</button>
+      {# REANALISAR (22/09/2026) é a saída do título que ficou BLOQUEADO porque
+         a conta do credor foi cadastrada durante o lançamento e ainda não foi
+         homologada. Homologa-se a conta no cadastro do credor e manda
+         reanalisar — o lançamento não é refeito. Reanalisar NÃO aprova: o
+         título volta para a fila de aprovação. #}
+      <button class="btn secundario" data-acao="reanalisar"
+        title="Para título BLOQUEADO: roda a análise de novo depois de resolver o que bloqueou (conta homologada, por exemplo)">⟳ Reanalisar</button>
       {% endif %}
       {# CANCELAR tem condição PRÓPRIA desde 12/09/2026: quem lança cancela o
          próprio lançamento sem depender do financeiro. O botão aparece para
@@ -503,7 +510,23 @@ function montarFicha(t){
           escapar(c.descricao)}</div></div>` : ""}
 
       ${t.criticas.length ? `<h4>Análise automática</h4>` + t.criticas.map(k =>
-        `<div class="critica ${k.severidade}"><code>${k.codigo}</code>${k.msg}</div>`).join("") : ""}
+        `<div class="critica ${k.severidade}"><code>${k.codigo}</code>${k.msg}` +
+        // A SAÍDA FICA NA PRÓPRIA CRÍTICA (22/09/2026). O C2 trava o título
+        // porque a conta do credor ainda não foi conferida. Mandar a pessoa
+        // sair da ficha, achar o credor, homologar e voltar para reanalisar
+        // é onde o trabalho era abandonado — e era por isso que o beco
+        // continuava beco mesmo depois de existir o "reanalisar".
+        (k.codigo === "C2" && t.conta_do_credor
+          && t.conta_do_credor.status === "PENDENTE" ? (
+            t.conta_do_credor.posso_homologar
+              ? `<div style="margin-top:8px"><button class="btn secundario"
+                   id="btn-homologar-conta">✔ Conferi o titular — homologar e reanalisar</button></div>`
+              : `<div class="cartao-dica" style="margin-top:8px">${
+                  t.conta_do_credor.eu_que_cadastrei
+                    ? "Você cadastrou esta conta, então quem libera tem de ser outra pessoa do financeiro — é a trava contra a troca de conta bancária."
+                    : "Quem libera a conta do credor é o financeiro. Peça a conferência do titular."}</div>`
+          ) : "") +
+        `</div>`).join("") : ""}
 
       <h4>Parcelas ${t.pode_editar ? `<button class="link-btn" id="btn-editar-parc">alterar vencimento/boleto</button>` : ""}</h4>
       <div class="cartao" style="padding:0"><table><thead><tr><th>Nº</th><th>Vencimento</th>
@@ -537,7 +560,7 @@ function montarFicha(t){
       ${(t.colaboradores||[]).length?`<h4>Colaborador(es)</h4>
         <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
         <table><tbody>${t.colaboradores.map(c=>`<tr>
-          <td><b>${c.nome}</b><small>${c.cpf}</small></td>
+          <td><b>${c.nome}</b><small>${documento(c.cpf)}</small></td>
           <td class="direita dados">${c.valor!==null&&c.valor!==undefined?numero(c.valor):"—"}</td>
           <td><small>${c.observacao||""}</small></td>
           <td><a class="btn secundario" href="/erp/colaboradores">Ver ficha</a></td>
@@ -605,6 +628,34 @@ function ligarFicha(id, t, raiz){
 
     const bParc = raiz.querySelector("#btn-editar-parc");
     if (bParc) bParc.addEventListener("click", () => editarParcelas(id, t.parcelas));
+
+    // Homologar a conta do credor SEM SAIR DA FICHA, e já reanalisar o título
+    // na mesma ida — senão a conta fica liberada e o título continua parado,
+    // que é o beco uma casa adiante.
+    const bHom = raiz.querySelector("#btn-homologar-conta");
+    if (bHom) bHom.addEventListener("click", async () => {
+      const conta = t.conta_do_credor;
+      if (!conta) return;
+      const resp = await perguntar({
+        titulo: "Homologar a conta do credor",
+        aviso: "Confirme o titular por um canal que você mesmo procurou — o "
+             + "telefone do cadastro, nunca o contato que mandou a cobrança. "
+             + "É esta conferência que segura a troca de conta bancária.",
+        campos: [{nome:"titular", rotulo:"Nome do titular que você conferiu",
+                  valor: t.cabecalho.fornecedor}],
+        textoOk: "Homologar e reanalisar"});
+      if (!resp) return;
+      bHom.disabled = true;
+      try {
+        const d = await api(`/erp/api/credores/contas/${conta.id}/homologar`,
+          {method:"POST", headers:{"Content-Type":"application/json"},
+           body: JSON.stringify({reanalisar_titulo_id: id})});
+        aviso("mensagem", d.titulo
+          ? `Conta liberada. ${d.titulo.numero_sp} voltou para a fila de aprovação.`
+          : (d.aviso_reanalise || "Conta liberada."), "ok");
+        recarregarFicha(id); carregar();
+      } catch(e){ bHom.disabled = false; aviso("mensagem", e.message, "erro"); }
+    });
 }
 
 function linhaDaFicha(){

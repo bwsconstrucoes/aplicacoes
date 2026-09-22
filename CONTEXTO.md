@@ -747,6 +747,94 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 22/09/2026 — O CURINGA DO ENCURTADOR NÃO PEGA MAIS TUDO (atravessa áreas)
+
+Achado numa varredura de uso do ERP: a rota `/<codigo>` do encurtador é um
+curinga que pega **qualquer** endereço de um pedaço só que nenhum dos 18
+módulos reconheceu — e consultava a planilha do Google **pela internet**, sem
+cache, respondendo **erro 500** quando a consulta falhava.
+
+Quem caía nela todo dia era `/favicon.ico`, que o navegador pede sozinho ao
+abrir a tela de entrada do ERP. Também caía qualquer endereço digitado torto,
+link velho ou robô de busca.
+
+**Por que importa mais do que parece:** a produção roda com `--workers 1
+--threads 4`. Cada endereço errado prendia uma das quatro linhas de
+atendimento numa ida à internet. Não aparecia em lugar nenhum — só no log,
+como um 500 entre outros.
+
+O que mudou, em `app/apps/encurtador/`:
+
+- **peneira por FORMA** no curinga: código curto é uma palavra sem ponto;
+  arquivo tem extensão. O que tem ponto, ou é nome de serviço conhecido
+  (`favicon`, `robots`, `sitemap`, `health`…), responde 404 em 2 milésimos sem
+  sair da máquina;
+- **planilha fora do ar vira 404**, não 500 — quem clicou pediu um link, e o
+  link não foi achado;
+- **cache de 60 segundos** das linhas da planilha, com limpeza ao gravar um
+  link novo (senão ele demoraria até um minuto para funcionar).
+
+**Vale para quem for criar rota curinga em qualquer módulo:** rota que casa
+com tudo tem de peneirar antes de fazer trabalho caro, e falha de serviço de
+fora nunca deve virar erro 500 para quem está na frente da tela.
+
+O restante da varredura — quatro campos da obra que não gravavam, o tipo da
+chave Pix do colaborador, cinco "falha do sistema" que viraram recado, e a
+tela recusada que mostrava JSON cru — está em `app/apps/erp/HISTORICO.md`.
+
+
+### 22/09/2026 — PERCORRER A CADEIA INTEIRA É UM TIPO DE PROVA QUE A SUÍTE NÃO DÁ
+
+O dono pediu para simular tudo, do cadastro do CNPJ à conciliação. Feito num
+banco criado do zero (`schema.sql` + as 81 migrações), 37 passos por HTTP, com
+três sessões diferentes — parte do que se quer provar é que **uma pessoa
+sozinha não consegue fazer os dois lados de um controle**.
+
+**Achou uma função de regra de negócio sem nenhum chamador**: `homologar_conta`
+existia, e nem rota, nem botão, nem teste a chamavam. Num banco novo isso
+travava o ERP inteiro — nenhum pagamento por Pix ou TED chegava ao fim, e a
+tela não dizia por quê. Cada peça, lida sozinha, estava certa; **o vão entre
+elas é que não existia**, e vão não aparece em revisão de código nem em teste
+de unidade.
+
+**Achou também uma trava que estava na docstring e não no código**: a promessa
+de que quem cadastra a conta bancária não a homologa — o controle contra o
+golpe da troca de conta. Comentário não é trava.
+
+**A decisão que fica:** quando uma área passa a conversar com outra, percorrer a
+cadeia inteira num banco limpo é obrigatório antes de dizer que está pronto. O
+que a varredura achar vira teste de verdade; o roteiro em si não entra no
+repositório, porque ele fala com um ERP rodando e não é teste automatizado.
+
+O detalhe de tudo que foi achado está em `app/apps/erp/HISTORICO.md`, e a maior
+lacuna — Suprimentos e Financeiro ainda não se encontram — em
+`app/apps/erp/PERGUNTAS.md` §3u.
+
+
+### 22/09/2026 — FORMATO DE CAMPO É DO `erp_base.html` (mexe no `CLAUDE.md`)
+
+O dono, depois de horas usando o ERP: *"todas as telas têm algum detalhe assim
+(…) acho que tem que fazer uma varredura mais profunda."* Máscara de CNPJ
+faltando, célula comendo o fim da descrição, busca travando ao digitar.
+
+**A decisão não foi O QUE consertar, foi ONDE.** Tela por tela custaria dias e
+deixaria de fora a próxima que alguém escrever — que é como o problema nasceu.
+Então máscara, formatação e busca passaram a viver no `erp_base.html`, e o
+observador que já punha caixa de busca em lista longa passou a aplicar também
+as máscaras, reconhecendo o campo pelo NOME.
+
+**Vale para quem for escrever tela nova, em qualquer área que use o
+`erp_base.html`:** não recriar máscara dentro da tela. Dê ao campo um nome que
+diga o que ele é (`cnpj`, `cpf`, `documento`, `telefone`, `cep`) e a formatação
+vem sozinha; a exceção se marca no campo (`data-sem-mascara`).
+
+**O defeito que quase passou merece ficar escrito**, porque é o tipo que
+sobrevive a revisão de código: o reconhecedor aceitava só hífen e sublinhado
+como fronteira do nome, e como o texto examinado é `"id nome"`, o CNPJ pegava
+(pelo `_` de `cnpj_cpf`) e o telefone não. **Funcionava o bastante para parecer
+certo.** Só apareceu ao digitar um telefone de verdade no navegador.
+
+
 ### 21/09/2026 — A EMISSÃO DE NFS-e GANHOU MEMÓRIA (atravessa áreas)
 
 No mesmo dia em que entrou na tabela sem `README.md` nem `HISTORICO.md` (ver a

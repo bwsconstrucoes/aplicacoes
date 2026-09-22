@@ -80,11 +80,20 @@ def analisar_titulo(s: Session, t: Titulo, *, criticas_extra: Optional[list[str]
             conta = s.get(FornecedorConta, t.fornecedor_conta_id)
         if conta is None:
             _critica(criticas, "C2", "BLOQUEIA",
-                     "PIX/TED sem conta homologada selecionada.")
+                     "PIX/TED sem conta homologada selecionada. Cadastre a conta do "
+                     "credor e homologue antes de aprovar.")
         else:
             if conta.status != StatusConta.HOMOLOGADA:
+                # O RECADO DIZ O QUE FAZER (22/09/2026). Desde que o lançamento
+                # passou a ser GRAVADO com conta pendente — em vez de recusado,
+                # perdendo o trabalho —, este é o texto que a pessoa lê para
+                # saber por que o título não anda e quem destrava.
                 _critica(criticas, "C2", "BLOQUEIA",
-                         f"Conta do fornecedor com status {conta.status.value} (exigido HOMOLOGADA).")
+                         f"A conta {conta.forma.value} deste credor está "
+                         f"{conta.status.value}, e pagamento exige conta HOMOLOGADA. "
+                         f"Alguém do financeiro — que não seja quem cadastrou a conta — "
+                         f"confere o titular e libera pelo botão logo abaixo, que já "
+                         f"manda REANALISAR este título. O lançamento não se perde.")
             if conta.homologada_em and (hoje - conta.homologada_em.date()).days <= 7:
                 _critica(criticas, "C2", "ALERTA",
                          "Conta homologada há menos de 7 dias — janela típica do golpe da "

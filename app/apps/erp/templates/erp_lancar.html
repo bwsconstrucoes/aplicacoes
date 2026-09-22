@@ -38,30 +38,52 @@
 
 <!-- 2. FORMULÁRIO -->
 <div id="form-bloco" class="oculto">
+  <div class="aviso alerta oculto" id="aviso-credor" style="margin-bottom:12px"></div>
   <div class="cartao">
     <div class="cartao-cab"><h3>2 · Credor e classificação</h3></div>
     <div class="form-grade">
+      {# CADASTRAR O CREDOR SEM SAIR DAQUI (22/09/2026): *"se o credor não tem
+         cadastro, o ERP deve avisar e tem que ser permitido o cadastro já a
+         partir da tela."* Mesma regra de "uma porta" já valendo em empresa e
+         obra — mandar a pessoa sair, cadastrar e voltar é onde o lançamento é
+         abandonado no meio. #}
       <div class="campo" style="grid-column:span 2"><label for="f-credor">Credor *</label>
         <select id="f-credor"></select>
-        <div class="dica" id="dica-credor"></div></div>
+        <div class="dica" id="dica-credor"></div>
+        <button class="btn secundario" id="btn-novo-credor" type="button"
+                style="margin-top:6px; padding:5px 10px; font-size:12.5px">+ Cadastrar credor</button></div>
       <div class="campo"><label for="f-forma">Forma de pagamento *</label>
         <select id="f-forma">
           <option value="BOLETO">Boleto</option><option value="PIX">Pix</option>
           <option value="TED">Transferência (TED)</option>
           <option value="GUIA">Guia</option><option value="DEBITO_AUTOMATICO">Débito automático</option>
         </select></div>
-      <div class="campo" id="campo-conta" style="display:none"><label for="f-conta">Conta homologada *</label>
+      {# A DICA ANTIGA dizia "dados bancários vivem no cadastro do credor, nunca
+         no lançamento" — e o dono apontou, com razão: *"isso não tem sentido se
+         tivermos cadastrando na hora."* A regra continua de pé, mas o que ela
+         quer dizer é outra coisa: o dado bancário fica no CADASTRO do credor
+         (é de lá que o pagamento sai, e ele é homologado por outra pessoa), não
+         solto dentro deste título. Cadastrar na hora não fere isso. #}
+      <div class="campo" id="campo-conta" style="display:none"><label for="f-conta">Conta do credor *</label>
         <select id="f-conta"></select>
-        <div class="dica">Dados bancários vivem no cadastro do credor, nunca no lançamento.</div></div>
+        <div class="dica" id="dica-conta"></div></div>
     </div>
     <div class="form-grade" style="margin-top:12px">
       <div class="campo" style="grid-column:span 2"><label for="f-categoria">Categoria de despesa *</label>
         <select id="f-categoria"></select>
         <div class="dica" id="dica-categoria"></div></div>
-      <div class="campo"><label for="f-competencia">Competência *</label>
-        <input type="month" id="f-competencia"></div>
+      {# COMPETÊNCIA SAIU DA TELA em 22/09/2026, a pedido do dono: *"no
+         lançamento do título não queria precisar lançar competência, nem
+         usamos isso."*
+
+         Ela continua sendo gravada — o relatório analítico filtra por ela, a
+         crítica de duplicidade do fundo fixo compara "mesma conta no mesmo
+         mês" por ela, e a NFS-e leva a competência dentro. O que mudou é que
+         o sistema deduz: emissão do documento, ou o primeiro vencimento. #}
       <div class="campo"><label for="f-emissao">Emissão do documento</label>
-        <input type="date" id="f-emissao"></div>
+        <input type="date" id="f-emissao">
+        <div class="dica">É daqui que sai o mês de competência. Em branco, vale
+          o primeiro vencimento.</div></div>
     </div>
     <div class="form-grade" style="margin-top:12px">
       {# TEXTO DE VÁRIAS LINHAS, e não uma caixinha. O dono pediu isso duas
@@ -178,7 +200,7 @@ async function carregarColaboradores(){
     const d = await api("/erp/api/colaboradores");
     if (!d.colaboradores.length) return;
     els("f-colaborador").innerHTML = `<option value="">— nenhum —</option>` +
-      d.colaboradores.map(c=>`<option value="${c.id}">${c.nome} · ${c.cpf}</option>`).join("");
+      d.colaboradores.map(c=>`<option value="${c.id}">${c.nome} · ${documento(c.cpf)}</option>`).join("");
     comBusca("f-colaborador", "buscar por nome ou CPF…");
   } catch(e) { /* módulo Pessoal pode não estar em uso */ }
 }
@@ -204,18 +226,31 @@ async function carregar(){
         "<b>plano financeiro</b> cadastrados — veja a aba Configurações.", "info");
     }
     els("f-credor").innerHTML = `<option value="">— escolher —</option>` +
-      D.fornecedores.map(f=>`<option value="${f.id}">${f.nome} · ${f.documento}</option>`).join("");
+      D.fornecedores.map(f=>`<option value="${f.id}">${f.nome} · ${documento(f.documento)}</option>`).join("");
     const porGrupo = {};
     D.categorias.forEach(c => (porGrupo[c.grupo] = porGrupo[c.grupo]||[]).push(c));
     els("f-categoria").innerHTML = `<option value="">— escolher —</option>` +
       Object.keys(porGrupo).map(g => `<optgroup label="${g}">` +
         porGrupo[g].map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("") +
         `</optgroup>`).join("");
-    els("f-competencia").value = new Date().toISOString().slice(0,7);
     desenharLinhas();
     comBusca("f-credor", "buscar credor por nome ou CNPJ…");
     comBusca("f-categoria", "buscar categoria de despesa…");
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// A LINHA DIGITÁVEL SÓ APARECE QUANDO A FORMA PEDE — 22/09/2026.
+//
+// O dono: *"linha digitável (boleto/guia) acho que só deve ser exibido se a
+// forma de pgt for a adequada."* Estava certo: o campo ficava lá em Pix, em
+// TED e em débito automático, com a dica "somente para boleto ou guia" dentro
+// dele. Campo que não serve para o caminho escolhido não é neutro — ele faz a
+// pessoa parar para decidir se aquilo é com ela, em toda parcela.
+//
+// Em BOLETO a linha é OBRIGATÓRIA (o sistema confere os dígitos e compara o
+// valor); em GUIA ela é opcional, porque DARF e GPS nem sempre trazem uma.
+function comBoleto(){
+  return ["BOLETO", "GUIA"].includes(els("f-forma").value);
 }
 
 function desenharLinhas(){
@@ -234,8 +269,10 @@ function desenharLinhas(){
       <div class="campo"><label>Vencimento ${i+1}</label>
         <input type="date" data-p="vencimento" data-i="${i}" value="${p.vencimento||""}"></div>
       <div class="campo"><label>Valor</label><input data-p="valor" data-i="${i}" value="${p.valor||""}"></div>
-      <div class="campo" style="grid-column:span 2"><label>Linha digitável (boleto/guia)</label>
-        <input data-p="linha_digitavel" data-i="${i}" value="${p.linha_digitavel||""}" placeholder="somente para boleto ou guia"></div>
+      ${comBoleto() ? `<div class="campo" style="grid-column:span 2">
+        <label>Linha digitável${els("f-forma").value === "BOLETO" ? " *" : ""}</label>
+        <input data-p="linha_digitavel" data-i="${i}" value="${p.linha_digitavel||""}"
+               placeholder="os 47 dígitos do código de barras"></div>` : ""}
       <div class="campo" style="align-self:end">${PARC.length>1?`<button class="btn secundario" data-del-p="${i}">Remover</button>`:""}</div>
     </div>`).join("");
   els("lista-rateios").innerHTML = RAT.map((r,i) => `
@@ -440,12 +477,12 @@ function aplicarLeitura(x, primeira = true){
   if (x.obra_sugerida) RAT = [{obra_id: x.obra_sugerida.obra_id,
                               valor: String(x.valor_total||"").replace(".",",")}];
   if (x.fornecedor_id && (primeira || !els("f-credor").value)) els("f-credor").value = x.fornecedor_id;
+  avisarCredorNaoCadastrado(x);
   porFora("f-descricao", x.descricao);
   porFora("f-valor", x.valor_total ? String(x.valor_total).replace(".",",") : "");
   porFora("f-doc-numero", x.numero_documento);
   if (x.data_emissao && (primeira || !els("f-emissao").value)) {
     els("f-emissao").value = x.data_emissao;
-    els("f-competencia").value = x.data_emissao.slice(0,7);
   }
   // Parcela que veio de DOCUMENTO é fato, não sugestão: entra travada, para o
   // "dividir igualmente" não passar por cima do que o boleto diz.
@@ -476,7 +513,8 @@ async function conferirAutomatico(){
     const r = await api("/erp/api/lancamento/checar", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({fornecedor_id:d.fornecedor_id, valor:d.valor_bruto,
-        parcelas:d.parcelas, competencia:d.competencia, descricao:d.descricao,
+        parcelas:d.parcelas, data_emissao_doc:d.data_emissao_doc,
+        descricao:d.descricao,
         categoria_id:d.categoria_id, documento_numero:d.documento_numero})});
     const c = r.critica;
     if (mostrarCritica(c)) {
@@ -504,12 +542,130 @@ function atualizarCredor(){
   els("dica-credor").innerHTML = (f.situacao_rfb ? `Situação na Receita: <b>${f.situacao_rfb}</b>. ` : "") +
     `${f.contas.length} conta(s) homologada(s).`;
   const contas = f.contas.filter(c => c.forma === forma);
+  const pendentes = (f.contas_pendentes||[]).filter(c => c.forma === forma);
   els("f-conta").innerHTML = contas.length
     ? contas.map(c=>`<option value="${c.id}">${c.forma} · ${c.identificacao}</option>`).join("")
-    : `<option value="">— sem conta ${forma} homologada —</option>`;
+    : (pendentes.length
+        ? pendentes.map(c=>`<option value="${c.id}">${c.forma} · aguardando homologação</option>`).join("")
+        : `<option value="">— sem conta ${forma} cadastrada —</option>`);
+  // O QUE ACONTECE A SEGUIR, dito ANTES de salvar. O dono pediu a saída do
+  // beco: *"tem que prever como sairemos da situação que cadastro o credor
+  // enquanto lanço e preciso voltar pra cadastrar a forma de pgt."* Agora o
+  // lançamento é GRAVADO com a conta pendente e fica bloqueado esperando a
+  // homologação — e a tela avisa disso aqui, não na hora do erro.
+  // A dica só existe para as formas que USAM conta do credor. Sem esta guarda
+  // ela dizia "este credor não tem conta BOLETO cadastrada" — frase sem
+  // sentido, porque boleto não sai de conta de credor nenhuma.
+  const dica = els("dica-conta");
+  if (!dica) return;
+  if (!precisa) { dica.textContent = ""; return; }
+  if (contas.length) {
+    dica.innerHTML = "O pagamento sai desta conta, que já foi <b>homologada</b> " +
+      "por outra pessoa. É por isso que o dado bancário vive no cadastro do " +
+      "credor, e não solto dentro do título.";
+  } else if (pendentes.length) {
+    dica.innerHTML = "<b>Esta conta ainda não foi homologada.</b> Pode salvar: o " +
+      "lançamento fica guardado e o título nasce <b>bloqueado</b>. Quem tem alçada " +
+      "homologa a conta no cadastro do credor e manda <b>Reanalisar</b> na tela de " +
+      "Títulos — você não precisa lançar de novo.";
+  } else {
+    dica.innerHTML = "Este credor não tem conta " + forma + " cadastrada. Use " +
+      "<b>+ Cadastrar credor</b> para acrescentar, ou escolha outra forma de pagamento.";
+  }
 }
+// ---------------------------------------------------------------------------
+// CADASTRAR O CREDOR AQUI DENTRO — 22/09/2026
+//
+// *"Se o credor não tem cadastro, o ERP deve avisar e tem que ser permitido o
+// cadastro já a partir da tela."*
+//
+// A CONTA BANCÁRIA VEM JUNTO E NASCE PENDENTE. A homologação em duas pessoas
+// existe contra o golpe da troca de conta — quem lança não pode ser quem
+// libera o destino do dinheiro. Deixar o lançador criar conta já homologada
+// destruiria o controle; não deixar cadastrar nada obriga a refazer tudo
+// depois. Pendente resolve os dois: o lançamento anda, o título nasce
+// bloqueado, e alguém com alçada homologa.
+// ---------------------------------------------------------------------------
+async function cadastrarCredor(sugestao){
+  sugestao = sugestao || {};
+  const forma = els("f-forma").value;
+  const pedeConta = ["PIX","TED"].includes(forma);
+  const campos = [
+    {nome:"cnpj_cpf", rotulo:"CNPJ ou CPF", obrigatorio:true, largura:2,
+     valor: sugestao.documento || "", exemplo:"só os números"},
+    {nome:"razao_social", rotulo:"Nome / razão social", obrigatorio:true, largura:2,
+     valor: sugestao.nome || ""},
+    {nome:"email", rotulo:"E-mail", largura:2},
+    {nome:"telefone", rotulo:"Telefone", largura:2},
+  ];
+  if (forma === "PIX") campos.push(
+    {nome:"pix_tipo", rotulo:"Tipo da chave Pix", tipo:"select", largura:2,
+     opcoes:[{valor:"CNPJ",rotulo:"CNPJ"},{valor:"CPF",rotulo:"CPF"},
+             {valor:"EMAIL",rotulo:"E-mail"},{valor:"TELEFONE",rotulo:"Telefone"},
+             {valor:"ALEATORIA",rotulo:"Chave aleatória"}]},
+    {nome:"pix_chave", rotulo:"Chave Pix", largura:2});
+  if (forma === "TED") campos.push(
+    {nome:"banco_codigo", rotulo:"Banco (código)", largura:1, exemplo:"237"},
+    {nome:"agencia", rotulo:"Agência", largura:1},
+    {nome:"conta", rotulo:"Conta", largura:2});
+
+  const d = await perguntar({
+    titulo: "Cadastrar credor",
+    aviso: pedeConta
+      ? "Os dados bancários entram como <b>pendentes de homologação</b>: é outra " +
+        "pessoa que confere o destino do dinheiro. O lançamento segue normalmente — " +
+        "o título só fica bloqueado até a homologação."
+      : "Dá para completar o cadastro depois, em Cadastros › Fornecedores.",
+    campos, textoOk: "Cadastrar"});
+  if (!d) return;
+  try {
+    const r = await api("/erp/api/credores", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({...d, conta_forma: pedeConta ? forma : ""})});
+    // Encaixa na lista sem recarregar a tela: recarregar limparia o que a
+    // pessoa já preencheu no lançamento.
+    D.fornecedores = D.fornecedores.filter(x => x.id !== r.credor.id).concat([r.credor]);
+    D.fornecedores.sort((a,b) => a.nome.localeCompare(b.nome));
+    els("f-credor").innerHTML = `<option value="">— escolher —</option>` +
+      D.fornecedores.map(f=>`<option value="${f.id}">${escapar(f.nome)} · ${escapar(documento(f.documento))}</option>`).join("");
+    comBusca("f-credor", "buscar credor por nome ou CNPJ…");
+    els("f-credor").value = r.credor.id;
+    atualizarCredor();
+    esconderAvisoDeCredor();
+    aviso("mensagem", r.ja_existia
+      ? `Este documento já estava cadastrado como <b>${escapar(r.credor.nome)}</b> — escolhi ele para você.`
+      : `Credor <b>${escapar(r.credor.nome)}</b> cadastrado e selecionado.`, "ok");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-novo-credor").addEventListener("click", () => cadastrarCredor());
+
+// O EMITENTE DO DOCUMENTO LIDO QUE NÃO ESTÁ CADASTRADO. Antes ele só não era
+// escolhido, e a pessoa ficava procurando na lista um nome que não existe.
+function avisarCredorNaoCadastrado(x){
+  const alvo = els("aviso-credor");
+  if (!alvo) return;
+  const doc = (x && x.emitente_documento || "").replace(/\D/g, "");
+  if (!doc || els("f-credor").value) return esconderAvisoDeCredor();
+  alvo.classList.remove("oculto");
+  alvo.innerHTML = `<b>O emitente do documento não está cadastrado:</b>
+    ${escapar(x.emitente_nome || "(sem nome no documento)")} · ${escapar(doc)}.
+    <button class="btn secundario" id="btn-credor-do-doc"
+      style="margin-left:8px; padding:4px 10px; font-size:12.5px">Cadastrar este credor</button>`;
+  els("btn-credor-do-doc").addEventListener("click",
+    () => cadastrarCredor({documento: doc, nome: x.emitente_nome || ""}));
+}
+
+function esconderAvisoDeCredor(){
+  const alvo = els("aviso-credor");
+  if (alvo) { alvo.classList.add("oculto"); alvo.innerHTML = ""; }
+}
+
 els("f-credor").addEventListener("change", atualizarCredor);
-els("f-forma").addEventListener("change", atualizarCredor);
+els("f-forma").addEventListener("change", () => {
+  atualizarCredor();
+  desenharLinhas();       // o campo da linha digitável entra ou sai com a forma
+});
 els("f-categoria").addEventListener("change", () => {
   const c = D.categorias.find(x => String(x.id) === els("f-categoria").value);
   els("dica-categoria").innerHTML = c ? (c.uso || `${c.grupo} › ${c.subgrupo}`) +
@@ -621,7 +777,6 @@ function montar(){
     categoria_id: els("f-categoria").value ? +els("f-categoria").value : null,
     descricao: els("f-descricao").value.trim(),
     valor_bruto: String(dec(els("f-valor").value)),
-    competencia: els("f-competencia").value,
     data_emissao_doc: els("f-emissao").value || null,
     documento_numero: els("f-doc-numero").value.trim(),
     forma_pagamento: els("f-forma").value,
@@ -676,7 +831,8 @@ els("btn-checar").addEventListener("click", async () => {
     const r = await api("/erp/api/lancamento/checar", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({fornecedor_id:d.fornecedor_id, valor:d.valor_bruto,
-        parcelas:d.parcelas, competencia:d.competencia, descricao:d.descricao,
+        parcelas:d.parcelas, data_emissao_doc:d.data_emissao_doc,
+        descricao:d.descricao,
         categoria_id:d.categoria_id, documento_numero:d.documento_numero})});
     mostrarCritica(r.critica);
   } catch(e){ aviso("mensagem", e.message, "erro"); }

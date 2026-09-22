@@ -68,7 +68,11 @@ async function preencher(){
       d.dados.categorias.map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("");
     els("obra-padrao").innerHTML = `<option value="">— deixar pendente —</option>` +
       d.dados.obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
-    els("conta-ofx").innerHTML = d.dados.contas.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")
+    // O nome da EMPRESA junto: importar o extrato na conta de outra empresa
+    // suja a conciliação inteira, e o erro só aparece depois, quando nada casa.
+    const nomeEmp = Object.fromEntries((d.dados.empresas||[]).map(e=>[e.id, e.nome]));
+    els("conta-ofx").innerHTML = d.dados.contas.map(c=>`<option value="${c.id}">${
+      escapar(c.descricao)} · ${escapar(nomeEmp[c.empresa_id] || "sem empresa")}</option>`).join("")
       || `<option value="">— cadastre uma conta em Configurações —</option>`;
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }

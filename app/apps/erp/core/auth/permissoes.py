@@ -103,6 +103,13 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                         P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
                         P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.LANCADOR},
     "pagar":           {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    # HOMOLOGAR A CONTA DO CREDOR (22/09/2026). É a trava contra o golpe da
+    # troca de conta: quem lança pode CADASTRAR a conta do credor, mas ela
+    # nasce pendente e não paga nada até alguém do financeiro conferir o
+    # titular por canal independente. Por isso a ação é própria, e não vem
+    # junto de "lancar" — se viesse, quem lança liberaria o destino do
+    # próprio dinheiro.
+    "homologar_conta_credor": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "conciliar":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "receber":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "reclassificar":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
@@ -250,6 +257,7 @@ ACAO_ROTULOS = {
     "cancelar_titulo":      "Cancelar título (o próprio, se ninguém baixou)",
     "encaminhar":           "Encaminhar informação por WhatsApp",
     "pagar":                "Dar baixa em pagamento",
+    "homologar_conta_credor": "Homologar a conta bancária do credor",
     "conciliar":            "Conciliar extrato",
     "receber":              "Lançar recebimento",
     "reclassificar":        "Reclassificar lançamento",

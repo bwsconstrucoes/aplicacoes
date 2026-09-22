@@ -188,7 +188,7 @@ function desenhar(){
   els("corpo").innerHTML = NOTAS.map(n => `
     <tr data-id="${n.id}" class="${n.alerta_duplo ? 'linha-alerta' : ''}">
       <td>${dataBR(n.emissao)}</td>
-      <td>${n.emitente || "—"}<br><small>${n.emitente_doc || ""}</small></td>
+      <td>${n.emitente || "—"}<br><small>${n.emitente_doc ? documento(n.emitente_doc) : ""}</small></td>
       <td>${n.numero || "—"}${n.serie ? "/" + n.serie : ""}</td>
       <td class="direita mono">${moeda(n.valor)}</td>
       <td>${n.empresa || `<span class="selo bloqueado">não é nosso</span>`}</td>

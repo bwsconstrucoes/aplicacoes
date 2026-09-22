@@ -1056,6 +1056,40 @@ passa a ser o fantasia.
 - OK **Quais fornecedores atendem todo o Brasil?** / **só o Ceará?** / **só a
   Grande Fortaleza?**
 
+- OK **De qual empresa é esta conta bancária?** — e quais contas ainda estão
+  sem dona.
+- OK **De qual empresa é este título?** — vem da obra do rateio.
+- OK **Que pagamentos saíram pela conta de outra empresa?** — a trilha guarda o
+  recado com os dois nomes, em `detalhe.outra_empresa`.
+
+- OK **Quais títulos estão bloqueados, e por quê?** — a crítica que bloqueou
+  fica gravada na análise, com o código e o recado.
+- OK **Quais credores têm conta bancária esperando homologação?**
+- OK **Quem cadastrou este credor, e quando?** — a trilha guarda, inclusive
+  quando o cadastro nasceu de dentro do lançamento.
+
+⚠️ **Palavra ambígua: "conta do credor".** Uma conta PENDENTE existe no
+cadastro mas não paga nada. Responder "o credor tem conta" sem dizer o status
+faria alguém contar com um pagamento que o sistema vai bloquear.
+
+⚠️ **Palavra ambígua: "conta".** São três coisas diferentes no ERP: a **conta
+bancária** (de onde o dinheiro sai), a **conta do plano financeiro** (a
+classificação do gasto) e a **conta do fornecedor** (onde ele recebe). A
+resposta tem de dizer qual das três está usando.
+
+⚠️ **Palavra ambígua: "quanto tem em caixa".** Por empresa ou somando todas? A
+pergunta só passou a ter resposta por empresa depois da migração 080 — e o que
+estiver em conta sem dona não entra em nenhuma das duas.
+
+O que ainda **não** responde:
+
+- FALTA **"qual o saldo da conta"** — o ERP guarda o extrato importado, não o
+  saldo do banco. Somar os lançamentos daria um número parecido e errado nos
+  dias em que faltar extrato.
+- FALTA **"quanto a empresa A deve para a B"** por causa dos pagamentos
+  cruzados. Cada um fica registrado, mas ninguém soma — e somar sem combinar o
+  que conta como acerto daria um número que não bate com o do contador.
+
 ⚠️ **Palavra ambígua: "região do fornecedor".** São duas coisas diferentes: a
 **cidade onde ele fica** (o endereço dele) e **até onde ele vende** (a
 abrangência). Um fornecedor de São Paulo pode atender o Brasil inteiro, e um de
@@ -1083,6 +1117,82 @@ O que ainda **não** responde:
   onde houver correção em linha.
 - FALTA **"desfazer" para mais de uma alteração de uma vez** — hoje é uma por
   vez, e para o uso normal basta.
+
+## 3t. A conta do credor: quem confere, e o que está parado esperando
+
+Construído em 22/09/2026, depois de percorrer a cadeia inteira do ERP num banco
+recém-criado — do cadastro do CNPJ até a conciliação. A homologação da conta do
+credor existia como regra e não tinha porta nenhuma: num banco novo, nenhum
+pagamento por Pix ou TED chegava ao fim, e nada na tela dizia por quê.
+
+Perguntas que passam a funcionar:
+
+- OK **Quais contas de credor estão esperando conferência?** — e há quanto tempo.
+- OK **Quem cadastrou esta conta bancária?** — e quem a homologou depois.
+- OK **Por que este título está bloqueado?** — quando é a conta, a resposta diz
+  o que falta e quem pode liberar.
+- OK **Que títulos estão parados esperando a conta do credor ser conferida?**
+- OK **Este credor tem forma de pagamento cadastrada?**
+
+⚠️ **Palavra ambígua: "conta do credor".** São duas coisas no mesmo nome: a
+**conta bancária para onde o credor recebe** (é esta, que se homologa) e a
+**conta do plano financeiro** em que a despesa dele é classificada. A resposta
+tem de dizer qual das duas está respondendo.
+
+⚠️ **Palavra ambígua: "liberar".** Também são duas: **homologar a conta**
+(conferir o titular, o que destrava o título) e **aprovar o título** (liberar o
+pagamento). Homologar NÃO aprova — são duas pessoas, de propósito.
+
+⚠️ **Muda conforme quem pergunta.** Quem cadastrou a conta não pode homologá-la;
+para essa pessoa a resposta tem de dizer que a conferência é de outra pessoa do
+financeiro, e não só "não pode".
+
+- FALTA **"quanto dinheiro está parado por causa de conta não conferida"** — dá
+  para somar os títulos bloqueados por C2, mas ainda não existe a resposta
+  pronta.
+- FALTA **"avisar sozinho quem confere quando entra conta nova"** — hoje a fila
+  aparece na tela de Pagamentos, e alguém precisa olhar.
+
+## 3u. O elo que ainda falta: do pedido de compra ao título
+
+Achado na mesma simulação de 22/09/2026, e é a maior lacuna que ela mostrou. O
+pedido de compra gera a **previsão de pagamento** e o sistema até avisa —
+*"Material recebido e a parcela ainda não virou título no financeiro"* —, mas
+não existe caminho da previsão para o lançamento. Quem lança redigita tudo, e o
+título nasce sem ligação com o pedido que o originou.
+
+- FALTA **"lançar o título a partir do pedido de compra"** — o que hoje obriga a
+  redigitar credor, valor, vencimento e obra.
+- FALTA **"este pedido já virou título?"** — a previsão sabe, a tela do título
+  não mostra.
+- FALTA **"o que comprei e ainda não foi lançado no financeiro"** — a lista
+  existe por pedido, não no conjunto.
+- FALTA **"o valor pago bate com o pedido autorizado?"** — sem o elo, não há
+  como comparar.
+
+⚠️ **Cuidado com "pedido" na resposta.** O ERP tem DOIS: o **pedido de compra**
+de Suprimentos (`pedidos_compra`, PC-0001) e o **pedido** antigo importado do
+Pipefy/Omie (`pedidos`), que é o que o título guarda hoje. Responder um pelo
+outro dá número errado com cara de certo.
+
+## 3v. O contrato da obra: seguro, caução e prazo
+
+Passaram a ser guardados de verdade em 22/09/2026 — apareciam na tela e nunca
+eram gravados.
+
+- OK **Qual o seguro-garantia desta obra, e até quando vale?**
+- OK **Que obras estão com o seguro-garantia vencendo?**
+- OK **Quanto foi retido de caução nesta obra?** — a porcentagem; o valor
+  retido continua vindo das medições.
+- OK **Qual o departamento desta obra no Omie?**
+
+⚠️ **Palavra ambígua: "caução".** São duas: a **caução do contrato com o
+cliente** (percentual que o órgão retém da BWS, este campo) e a **retenção de
+garantia da empreita** (o que a BWS retém do empreiteiro). Trocar uma pela
+outra inverte quem deve a quem.
+
+- FALTA **"avisar quando o seguro-garantia estiver perto de vencer"** — a data
+  agora existe; o aviso na agenda ainda não.
 
 ## 4. Como esta lista vira código
 

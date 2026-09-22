@@ -172,15 +172,29 @@ def test_lista_guardada_ilegivel_cai_para_a_embutida(sessao_real):
 
 # ---------------------------------------------------------------------------
 # O cadastro da conta em si
+#
+# A EMPRESA DONA passou a ser obrigatória em 22/09/2026 (migração 080), a
+# pedido do dono: *"associar banco a uma empresa"*. Sem ela, as contas de todos
+# os CNPJs apareciam misturadas em toda tela que escolhe conta, e nada impedia
+# pagar a despesa de um pelo caixa do outro.
 # ---------------------------------------------------------------------------
+@pytest.fixture
+def empresa(sessao_real):
+    from app.apps.erp.db.models.cadastros import Empresa
+    e = Empresa(razao_social="BWS Construções LTDA", nome_fantasia="BWS",
+                cnpj="11222333000181")
+    sessao_real.add(e)
+    sessao_real.flush()
+    return e
+
 @pytest.mark.banco
-def test_a_conta_nasce_com_a_chave_pix_junto(sessao_real):
+def test_a_conta_nasce_com_a_chave_pix_junto(sessao_real, empresa):
     from app.apps.erp.core.cadastros import contas as svc
     from app.apps.erp.db.models.cadastros import ContaBancaria
 
     conta = svc.criar(sessao_real, {
         "descricao": "Bradesco BWS principal", "banco_codigo": "237",
-        "agencia": "1234", "conta": "56789-0",
+        "agencia": "1234", "conta": "56789-0", "empresa_id": empresa.id,
         "pix_tipo": "CNPJ", "pix_chave": "11222333000181",
         "pix_descricao": "recebimento de medição"})
     sessao_real.flush()
@@ -191,27 +205,29 @@ def test_a_conta_nasce_com_a_chave_pix_junto(sessao_real):
 
 
 @pytest.mark.banco
-def test_o_codigo_do_banco_e_normalizado_ao_cadastrar(sessao_real):
+def test_o_codigo_do_banco_e_normalizado_ao_cadastrar(sessao_real, empresa):
     from app.apps.erp.core.cadastros import contas as svc
     conta = svc.criar(sessao_real, {"descricao": "BB", "banco_codigo": "1",
-                                    "agencia": "1", "conta": "2"})
+                                    "agencia": "1", "conta": "2",
+                                    "empresa_id": empresa.id})
     assert conta.banco_codigo == "001"
 
 
 @pytest.mark.banco
-def test_conta_sem_banco_e_recusada_dizendo_o_que_falta(sessao_real):
+def test_conta_sem_banco_e_recusada_dizendo_o_que_falta(sessao_real, empresa):
     from app.apps.erp.core.cadastros import contas as svc
     with pytest.raises(ErroValidacao) as e:
-        svc.criar(sessao_real, {"descricao": "X", "agencia": "1", "conta": "2"})
+        svc.criar(sessao_real, {"descricao": "X", "agencia": "1", "conta": "2",
+                                "empresa_id": empresa.id})
 
     assert "o banco" in str(e.value)
 
 
 @pytest.mark.banco
-def test_a_listagem_de_contas_diz_o_nome_do_banco(sessao_real):
+def test_a_listagem_de_contas_diz_o_nome_do_banco(sessao_real, empresa):
     from app.apps.erp.core.cadastros import contas as svc
     svc.criar(sessao_real, {"descricao": "Bradesco", "banco_codigo": "237",
-                            "agencia": "1", "conta": "2"})
+                            "agencia": "1", "conta": "2", "empresa_id": empresa.id})
     sessao_real.flush()
 
     linha = svc.listar(sessao_real)[0]

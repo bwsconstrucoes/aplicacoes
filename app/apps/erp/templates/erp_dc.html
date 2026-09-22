@@ -99,7 +99,7 @@ async function abrir(id){
           : (i.criticas||[]).length ? "ALERTA" : "";
         const cor = {BLOQUEIA:"var(--vermelho)",CRITICA:"var(--ambar)",ALERTA:"var(--amarelo)"}[g];
         return `<tr style="${cor?`border-left:4px solid ${cor}`:""}">
-          <td>${i.nome}<small>${i.cpf}</small></td><td>${i.verba_rotulo}</td>
+          <td>${i.nome}<small>${documento(i.cpf)}</small></td><td>${i.verba_rotulo}</td>
           <td class="direita dados">${i.quantidade??"—"}</td>
           <td class="direita dados"><b>${numero(i.valor)}</b></td>
           <td class="dados">${i.obra}</td>
@@ -186,7 +186,7 @@ async function abrir(id){
           ${p.sem_dados.join(", ")}. Complete o cadastro antes de gerar o arquivo.</div>`:""}
         <table><thead><tr><th>Nome</th><th>CPF</th><th>Verba</th>
           <th class="direita">Valor</th><th>Chave/Conta</th></tr></thead>
-        <tbody>${p.linhas.map(l=>`<tr><td>${l.nome}</td><td class="dados">${l.cpf}</td>
+        <tbody>${p.linhas.map(l=>`<tr><td>${l.nome}</td><td class="dados">${documento(l.cpf)}</td>
           <td>${l.verba}</td><td class="direita dados">${numero(l.valor)}</td>
           <td class="dados">${l.pix_chave||`${l.banco||""} ${l.agencia||""} ${l.conta||""}`||"—"}</td>
         </tr>`).join("")}</tbody>
@@ -245,7 +245,7 @@ els("btn-nova").addEventListener("click", async () => {
         <div class="campo" style="grid-column:span 2"><select data-i="${i}" data-c="colaborador_id">
           <option value="">— colaborador —</option>
           ${COLABS.map(c=>`<option value="${c.id}" ${String(it.colaborador_id)===String(c.id)?"selected":""}
-            data-diaria="${c.valor_diaria||""}">${c.nome} · ${c.cpf}</option>`).join("")}
+            data-diaria="${c.valor_diaria||""}">${c.nome} · ${documento(c.cpf)}</option>`).join("")}
         </select></div>
         <div class="campo"><select data-i="${i}" data-c="verba">
           ${VERBAS.map(v=>`<option value="${v.chave}" ${it.verba===v.chave?"selected":""}>${v.rotulo}</option>`).join("")}

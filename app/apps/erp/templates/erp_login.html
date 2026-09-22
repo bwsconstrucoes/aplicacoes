@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ERP BWS — entrar</title>
 <link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+{# O ÍCONE FALTAVA SÓ AQUI (22/09/2026). Sem ele o navegador pede /favicon.ico
+   por conta própria ao abrir a tela de entrada — e esse endereço caía no
+   encurtador, que respondia erro 500 depois de consultar a planilha do
+   Google. Uma linha aqui corta a ida desnecessária. #}
+<link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
 </head>
 <body>
 <main class="entrada">

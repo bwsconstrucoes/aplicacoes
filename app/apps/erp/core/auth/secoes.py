@@ -112,6 +112,16 @@ SECOES: list[dict[str, Any]] = [
     {"chave": "fin_pagar", "area": "Financeiro", "nome": "Pagamentos",
      "explicacao": "dar baixa, desfazer baixa e ver dados bancários do credor",
      "ler": ["ver_dados_pagamento"], "editar": ["pagar", "desfazer"]},
+    # SEÇÃO PRÓPRIA, e não um item de "Pagamentos" (22/09/2026): homologar a
+    # conta do credor é conferir PARA ONDE o dinheiro vai, e quem lança pode
+    # cadastrar essa conta. Se viesse junto de pagar, o dono não teria como
+    # dar uma coisa sem a outra — e é exatamente essa separação que segura o
+    # golpe da troca de conta.
+    {"chave": "fin_homologar_conta", "area": "Financeiro",
+     "nome": "Homologar conta do credor",
+     "explicacao": "conferir o titular e liberar a conta bancária do credor "
+                   "para receber pagamento",
+     "ler": [], "editar": ["homologar_conta_credor"]},
     {"chave": "fin_conciliar", "area": "Financeiro", "nome": "Conciliação e importação",
      "explicacao": "extrato do banco, conciliação e importação de planilha",
      "ler": [], "editar": ["conciliar", "importar"]},

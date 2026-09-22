@@ -202,6 +202,10 @@ class Titulo(Base):
     competencia: Mapped[date] = mapped_column(Date, nullable=False)
     data_emissao_doc: Mapped[Optional[date]] = mapped_column(Date)
     categoria_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("categorias.id"), nullable=False)
+    # A EMPRESA QUE PAGA (migração 080). Vem da obra do rateio — obra é sempre
+    # de uma empresa só — e é o outro lado da conferência na hora de pagar:
+    # sem ela, "esta conta é da empresa certa?" não tem com o que comparar.
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
     pedido_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("pedidos.id"))
     contrato_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("contratos.id"))
     documento_fiscal_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("documentos_fiscais.id"))

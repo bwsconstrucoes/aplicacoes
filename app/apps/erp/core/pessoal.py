@@ -85,13 +85,23 @@ def _dec(v: Any, campo: str = "valor") -> Decimal:
         raise ErroValidacao(f"Valor inválido em {campo}: {v!r}")
 
 
-def _data(v: Any) -> Optional[date]:
+def _data(v: Any, campo: str = "data") -> Optional[date]:
+    """Data do cadastro. Vazio é vazio; ERRADO é erro, e não vazio.
+
+    Até 22/09/2026 a data impossível virava None em silêncio: quem digitava a
+    admissão errada recebia "salvo", e o campo simplesmente ficava vazio — sem
+    nada na tela dizendo que aquilo não foi guardado.
+    """
     if isinstance(v, date):
         return v
-    try:
-        return date.fromisoformat(str(v)[:10]) if v else None
-    except ValueError:
+    texto = str(v or "").strip()
+    if not texto:
         return None
+    try:
+        return date.fromisoformat(texto[:10])
+    except ValueError:
+        raise ErroValidacao(
+            f"Data inválida em {campo}: {texto!r}. Confira o dia e o mês.")
 
 
 # ---------------------------------------------------------------------------
@@ -117,16 +127,22 @@ def salvar_colaborador(s: Session, dados: dict[str, Any], usuario: Usuario) -> C
                   "banco", "agencia", "conta", "telefone", "observacoes"):
         if campo in dados:
             setattr(c, campo, (str(dados[campo]).strip() or None))
+    # ESCOLHER "—" TEM DE DESLIGAR (22/09/2026). Antes era `dados.get(campo)`:
+    # valor vazio caía fora do `if` e o vínculo antigo ficava. Na prática não
+    # havia como tirar o colaborador da obra nem apagar a função pela tela — a
+    # pessoa escolhia o traço, salvava, e o cadastro voltava com a obra de
+    # antes, sem nenhum recado.
     for campo in ("funcao_id", "obra_id"):
-        if dados.get(campo):
-            setattr(c, campo, int(dados[campo]))
+        if campo in dados:
+            bruto = dados[campo]
+            setattr(c, campo, int(bruto) if bruto not in (None, "", 0, "0") else None)
     for campo in ("valor_diaria", "aux_alimentacao", "aux_transporte"):
         if campo in dados:
             valor = str(dados[campo] or "").strip()
             setattr(c, campo, _dec(valor, campo) if valor else None)
     for campo in ("admissao", "demissao"):
         if campo in dados:
-            setattr(c, campo, _data(dados[campo]))
+            setattr(c, campo, _data(dados[campo], campo))
     if c.demissao and c.situacao == "ATIVO":
         c.situacao = "DESLIGADO"
     s.flush()
@@ -177,7 +193,13 @@ def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
             float(c.funcao.valor_diaria) if c.funcao and c.funcao.valor_diaria else None),
         "aux_alimentacao": float(c.aux_alimentacao) if c.aux_alimentacao else None,
         "aux_transporte": float(c.aux_transporte) if c.aux_transporte else None,
-        "pix_chave": c.pix_chave, "tem_pagamento": bool(c.pix_chave or c.conta),
+        # O TIPO DA CHAVE PIX volta junto (22/09/2026). Ele não voltava, e a
+        # caixinha do formulário remontava sempre em "CPF" — o primeiro item
+        # da lista. Quem tinha chave de telefone ou e-mail via o tipo trocado
+        # para CPF no primeiro salvamento, sem pedir. Chave com tipo errado é
+        # pagamento que não sai.
+        "pix_chave": c.pix_chave, "pix_tipo": c.pix_tipo,
+        "tem_pagamento": bool(c.pix_chave or c.conta),
         "admissao": c.admissao.isoformat() if c.admissao else None,
     } for c in s.scalars(stmt.order_by(Colaborador.nome)).all()]
 
@@ -329,11 +351,11 @@ def criar_despesa(s: Session, dados: dict[str, Any], usuario: Usuario) -> Despes
         raise ErroValidacao(
             f"{critica['bloqueios']} bloqueio(s) na conferência — corrija antes de enviar.")
 
-    competencia = _data(dados.get("competencia")) or date.today()
+    competencia = _data(dados.get("competencia"), "competência") or date.today()
     n = s.scalar(select(func.count()).select_from(DespesaColaborador)) or 0
     d = DespesaColaborador(
         numero=f"DC{n + 1:05d}", obra_id=obra.id, competencia=competencia,
-        data_prevista=_data(dados.get("data_prevista")),
+        data_prevista=_data(dados.get("data_prevista"), "data prevista"),
         descricao=(dados.get("descricao") or "").strip() or None,
         # o meio de pagamento NÃO é escolhido por quem lança: é o financeiro
         # que decide, na hora de gerar o arquivo

@@ -24,7 +24,7 @@ from app.apps.erp.core.cadastros.validadores import (
     documento_valido, pix_chave_valida, somente_digitos,
 )
 from app.apps.erp.db.models.cadastros import (
-    FormaPagamento, Fornecedor, FornecedorConta, PerfilUsuario,
+    FormaPagamento, Fornecedor, FornecedorConta,
     RegimeTributario, StatusConta, TipoPessoa, Usuario,
 )
 
@@ -307,14 +307,38 @@ def adicionar_conta(s: Session, fornecedor_id: int, dados: dict[str, Any], usuar
     return conta
 
 
-_PERFIS_HOMOLOGACAO = (PerfilUsuario.ADMIN, PerfilUsuario.FINANCEIRO)
+def quem_cadastrou_a_conta(s: Session, conta_id: int) -> Optional[int]:
+    """Quem criou esta conta bancária, lido da trilha de auditoria.
+
+    A conta não guarda o autor numa coluna própria — ele está no evento
+    "CRIADA". Ler da trilha evita uma migração e, principalmente, usa a
+    MESMA fonte que a auditoria mostra na tela: se divergissem, a tela
+    contaria uma história e a trava obedeceria a outra.
+    """
+    from app.apps.erp.db.models.financeiro import Evento
+
+    ev = s.scalars(
+        select(Evento)
+        .where(Evento.entidade_tipo == "fornecedor_conta",
+               Evento.entidade_id == conta_id,
+               Evento.acao == "CRIADA")
+        .order_by(Evento.id)).first()
+    return getattr(ev, "usuario_id", None) if ev is not None else None
 
 
 def homologar_conta(s: Session, conta_id: int, usuario: Usuario) -> FornecedorConta:
-    """Homologa conta para uso em pagamentos. Exige perfil FINANCEIRO/ADMIN.
-    Segregação (F2): quem homologa não pode ser quem cadastrou a conta."""
-    if usuario is None or usuario.perfil not in _PERFIS_HOMOLOGACAO:
-        raise ErroPermissao("Apenas perfis FINANCEIRO ou ADMIN homologam contas.")
+    """Homologa a conta do credor para uso em pagamentos.
+
+    Quem entra é decidido pela ação `homologar_conta_credor`, declarada na
+    rota — aqui não se confere perfil de novo, senão a declaração da rota
+    mentiria (duas regras para a mesma porta acabam divergindo).
+
+    SEGREGAÇÃO (F2): quem homologa não pode ser quem cadastrou a conta. É a
+    trava contra o golpe da troca de conta — um só par de olhos decidindo
+    para onde o dinheiro vai é exatamente o que o golpe precisa. Até
+    22/09/2026 a regra estava escrita na docstring e NÃO no código; agora
+    está nos dois.
+    """
     conta = s.get(FornecedorConta, conta_id)
     if conta is None:
         raise ErroValidacao(f"Conta {conta_id} não encontrada.")
@@ -327,6 +351,11 @@ def homologar_conta(s: Session, conta_id: int, usuario: Usuario) -> FornecedorCo
             "Homologação exige o nome do titular verificado por canal independente "
             "(telefone do cadastro, nunca o contato que enviou a cobrança)."
         )
+    autor = quem_cadastrou_a_conta(s, conta_id)
+    if autor is not None and usuario is not None and autor == usuario.id:
+        raise ErroPermissao(
+            "Quem cadastrou esta conta não pode homologá-la. Peça a outra "
+            "pessoa do financeiro para conferir o titular e liberar.")
     conta.status = StatusConta.HOMOLOGADA
     conta.homologada_por = usuario.id
     conta.homologada_em = datetime.now(timezone.utc)
