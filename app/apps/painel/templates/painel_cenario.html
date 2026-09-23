@@ -179,8 +179,27 @@
     Escreva o percentual só onde quiser mudar. O que ficar em branco herda o
     nível de cima — e o que ninguém tocar divide
     <b>{{ '%.0f'|format(cenario.pct_padrao) }}%</b>. Clique no grupo para abrir
-    as categorias, e na categoria para abrir os lançamentos.
+    as categorias, e na categoria para abrir os lançamentos — lá dá para
+    marcar um a um. <b>Entra</b> é o dinheiro que vai para o bolo com o que
+    está marcado hoje, já descontando as exceções lá de dentro; <b>fica de
+    fora</b> é o resto.
   </p>
+  {% if resumo_matriz %}
+  <div class="kpis" style="margin-bottom:10px">
+    <div class="kpi estatico"><div class="kpi-rotulo">A matriz gastou</div>
+      <div class="kpi-valor">{{ brl(resumo_matriz.total) }}</div></div>
+    <div class="kpi verde estatico"><div class="kpi-rotulo">Entra no rateio</div>
+      <div class="kpi-valor">{{ brl(resumo_matriz.entra) }}</div>
+      <div class="kpi-sub">{{ '%.0f'|format(100 * resumo_matriz.entra / resumo_matriz.total if resumo_matriz.total else 0) }}% do gasto</div></div>
+    <div class="kpi vermelho estatico"><div class="kpi-rotulo">Fica de fora</div>
+      <div class="kpi-valor">{{ brl(resumo_matriz.fora) }}</div></div>
+    {% if resumo_matriz.juros %}
+    <div class="kpi ambar estatico"><div class="kpi-rotulo">Juros — régua própria</div>
+      <div class="kpi-valor">{{ brl(resumo_matriz.juros) }}</div>
+      <div class="kpi-sub">caem em quem demandou caixa</div></div>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <div class="tabela-rolagem" style="max-height:520px">
     <table>
@@ -188,6 +207,8 @@
         <tr>
           <th class="sem-ordem">Conta da matriz</th>
           <th class="sem-ordem direita">Total</th>
+          <th class="sem-ordem direita">Entra</th>
+          <th class="sem-ordem direita">Fica de fora</th>
           <th class="sem-ordem direita">Marcado</th>
           <th class="sem-ordem direita">Divide</th>
           <th class="sem-ordem"></th>
@@ -200,8 +221,11 @@
             <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id,
                                 grupo=('' if aberto_grupo == g.grupo else g.grupo)) }}">
               {{ '▾' if aberto_grupo == g.grupo else '▸' }} <b>{{ g.grupo }}</b></a>
+            {% if g.excecoes %}<span class="selo neutro" title="lançamentos marcados um a um dentro deste grupo">{{ g.excecoes }} exceção(ões)</span>{% endif %}
           </td>
           <td class="dados direita">{{ brl(g.valor) }}</td>
+          <td class="dados direita v-pos">{{ brl(g.entra) }}</td>
+          <td class="dados direita">{{ brl(g.fora) }}{% if g.juros %}<br><small>+ {{ brl(g.juros) }} de juros</small>{% endif %}</td>
           <td class="dados direita">{{ pct(g.pct) }}</td>
           <td class="dados direita"><b>{{ '%.0f'|format(g.pct_efetivo) }}%</b></td>
           <td>
@@ -227,10 +251,17 @@
                                   grupo=g.grupo,
                                   categoria=('' if aberto_categoria == c.categoria else c.categoria)) }}">
                 {{ '▾' if aberto_categoria == c.categoria else '▸' }} {{ c.categoria }}</a>
+              {% if c.excecoes %}<span class="selo neutro" title="lançamentos marcados um a um">{{ c.excecoes }} exceção(ões)</span>{% endif %}
             </td>
             <td class="dados direita">{{ brl(c.valor) }}</td>
+            {% if c.e_juros %}
+            <td class="dados direita" colspan="4"><small>juros de empréstimo — não entram aqui: seguem a régua do déficit</small></td>
+            {% else %}
+            <td class="dados direita v-pos">{{ brl(c.entra) }}</td>
+            <td class="dados direita">{{ brl(c.fora) }}</td>
             <td class="dados direita">{{ pct(c.pct) }}</td>
             <td class="dados direita">{{ '%.0f'|format(c.pct_efetivo) }}%</td>
+            {% endif %}
             <td>
               <form method="post" style="display:flex; gap:6px">
                 <input type="hidden" name="acao" value="peso">
@@ -250,6 +281,17 @@
         {% endif %}
         {% endfor %}
       </tbody>
+      {% if resumo_matriz %}
+      <tfoot>
+        <tr class="linha-total">
+          <td class="desc">Total da matriz</td>
+          <td class="dados direita">{{ brl(resumo_matriz.total) }}</td>
+          <td class="dados direita v-pos">{{ brl(resumo_matriz.entra) }}</td>
+          <td class="dados direita">{{ brl(resumo_matriz.fora) }}{% if resumo_matriz.juros %}<br><small>+ {{ brl(resumo_matriz.juros) }} de juros</small>{% endif %}</td>
+          <td colspan="3"></td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 </div>
@@ -272,44 +314,122 @@
     <input type="hidden" name="grupo" value="{{ aberto_grupo }}">
     <input type="hidden" name="categoria" value="{{ aberto_categoria }}">
 
-    <div class="tabela-barra">
-      <label for="pct_lote" style="margin:0">Aplicar aos marcados:</label>
-      <input id="pct_lote" name="pct" style="width:90px" placeholder="0 a 100">
+    <div class="tabela-barra" style="flex-wrap:wrap; gap:8px">
+      <input id="busca_lancamentos" type="search" style="width:260px"
+             placeholder="procurar fornecedor, documento ou observação" aria-label="Procurar nos lançamentos">
+      <span class="espaco"></span>
+      <label for="pct_lote" style="margin:0">Aos marcados:</label>
+      <button class="btn secundario" type="button"
+              onclick="els('pct_lote').value='0'; this.form.submit()">Não entra (0%)</button>
+      <button class="btn secundario" type="button"
+              onclick="els('pct_lote').value='100'; this.form.submit()">Entra inteiro (100%)</button>
+      <input id="pct_lote" name="pct" style="width:80px" placeholder="outro %">
       <button class="btn" type="submit">Aplicar</button>
-      <span class="resumo">Deixe em branco para desmarcar e voltar a herdar a categoria.</span>
+      <button class="btn secundario" type="button"
+              onclick="els('pct_lote').value=''; this.form.submit()"
+              title="tira a marcação: voltam a herdar a categoria">Voltar a herdar</button>
     </div>
+    <p class="cartao-dica" style="margin:4px 0 8px">
+      {% set pct_herdado = categoria_aberta.pct_efetivo if categoria_aberta else cenario.pct_padrao %}
+      Quem não tem marcação própria herda a categoria: <b>{{ '%.0f'|format(pct_herdado) }}%</b>.
+      <span id="contagem_marcados"></span>
+    </p>
 
     <div class="tabela-rolagem" style="max-height:460px">
-      <table>
+      <table id="tabela_lancamentos">
         <thead>
           <tr>
-            <th class="sem-ordem"></th>
+            <th class="sem-ordem"><input type="checkbox" id="marcar_todos" aria-label="Marcar todos os visíveis" title="marcar todos os visíveis"></th>
             <th class="sem-ordem">Data</th>
             <th class="sem-ordem">Fornecedor</th>
             <th class="sem-ordem">Documento</th>
             <th class="sem-ordem direita">Valor</th>
             <th class="sem-ordem direita">Divide</th>
+            <th class="sem-ordem direita">Entra</th>
           </tr>
         </thead>
         <tbody>
           {% for l in lancamentos %}
-          <tr>
+          {% set marcado = (cenario.pesos.lancamento or {}).get(l.codigo) %}
+          {% set pct_linha = marcado if marcado is not none else pct_herdado %}
+          <tr data-busca="{{ (l.credor ~ ' ' ~ l.documento ~ ' ' ~ l.observacao)|lower }}">
             <td><input type="checkbox" name="marcado" value="{{ l.codigo }}"
                        aria-label="Marcar o lançamento {{ l.codigo }}"></td>
             <td class="desc">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
-            <td class="desc">{{ l.credor or '—' }}</td>
-            <td class="desc">{{ l.documento or '—' }}</td>
+            <td class="desc" title="{{ l.observacao }}">{{ l.credor or '—' }}</td>
+            <td class="desc">{% if l.link %}<a href="{{ l.link }}" target="_blank" rel="noopener" title="Abrir no Pipefy">{{ l.documento or 'Pipefy' }} ↗</a>{% else %}{{ l.documento or '—' }}{% endif %}</td>
             <td class="dados direita">{{ brl(l.valor) }}</td>
             <td class="dados direita">
-              {% set marcado = (cenario.pesos.lancamento or {}).get(l.codigo) %}
-              {% if marcado is not none %}<b>{{ '%.0f'|format(marcado) }}%</b>{% else %}—{% endif %}
+              {% if marcado is not none %}<b>{{ '%.0f'|format(marcado) }}%</b> <small>próprio</small>{% else %}{{ '%.0f'|format(pct_linha) }}% <small>herdado</small>{% endif %}
             </td>
+            <td class="dados direita v-pos">{{ brl(l.valor * pct_linha / 100) }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </form>
+  <script>
+  (function () {
+    const busca = els("busca_lancamentos");
+    const linhas = Array.from(document.querySelectorAll("#tabela_lancamentos tbody tr"));
+    const todos = els("marcar_todos");
+    const contagem = els("contagem_marcados");
+    const simples = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    function contar() {
+      const n = linhas.filter(l => l.querySelector("input").checked).length;
+      contagem.textContent = n ? `${n} marcado(s) para receber o percentual.` : "";
+    }
+    busca.addEventListener("input", () => {
+      const alvo = simples(busca.value.trim());
+      linhas.forEach(l => { l.style.display = (!alvo || simples(l.dataset.busca).includes(alvo)) ? "" : "none"; });
+    });
+    todos.addEventListener("change", () => {
+      linhas.forEach(l => { if (l.style.display !== "none") l.querySelector("input").checked = todos.checked; });
+      contar();
+    });
+    linhas.forEach(l => l.querySelector("input").addEventListener("change", contar));
+  })();
+  </script>
+</div>
+{% endif %}
+
+{% if marcacoes %}
+<!-- ===================== O QUE VOCÊ MARCOU ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>O que você marcou</h3>
+    <small>{{ marcacoes|length }} marcação(ões) neste cenário — tudo que foge do padrão de {{ '%.0f'|format(cenario.pct_padrao) }}%</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    É a lista para quem for conferir depois: cada exceção, onde ela está e o
+    que faz. Clique para abrir o lugar e mudar.
+  </p>
+  <div class="tabela-rolagem" style="max-height:320px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Nível</th>
+          <th class="sem-ordem">O que</th>
+          <th class="sem-ordem direita">Valor</th>
+          <th class="sem-ordem direita">Divide</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in marcacoes %}
+        <tr>
+          <td class="desc">{{ {'grupo': 'Grupo', 'categoria': 'Categoria', 'lancamento': 'Lançamento'}[m.nivel] }}</td>
+          <td class="desc">
+            <a href="{{ url_for('painel.cenario_montagem', cenario=cenario.id, grupo=m.grupo, categoria=m.categoria) }}">{{ m.rotulo }}</a>
+            {% if m.nivel == 'lancamento' %}<small>· {{ m.grupo }} › {{ m.categoria }}</small>{% endif %}
+          </td>
+          <td class="dados direita">{{ brl(m.valor) }}</td>
+          <td class="dados direita"><b>{{ '%.0f'|format(m.pct) }}%</b>{% if m.pct == 0 %} <small>não entra</small>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
 

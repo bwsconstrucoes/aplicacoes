@@ -531,6 +531,65 @@ def test_tirar_e_voltar_pela_aba_de_parametros(cenario, monkeypatch):
 
 
 # ===========================================================================
+# 7b. A árvore diz quanto ENTRA e quanto FICA DE FORA — 23/09/2026
+# ===========================================================================
+# O dono: "só informar um grupo fica complicado para quem quiser analisar
+# depois (...) preciso ir adentrando até o lançamento e estipular o que entra
+# e o que não entra".
+
+def test_a_arvore_da_matriz_mostra_o_que_entra_com_as_excecoes(cenario):
+    """Aluguel 900 e Patrimônio 300 se dividem; os juros (600) seguem a régua
+    própria. Grupo Patrimônio marcado com 0% e o aluguel (805) com 50%:
+    entra 450, fica de fora 750, e a lista de marcações tem as duas."""
+    from app.apps.painel import cenarios, prestacao_dados
+    from app.apps.painel.web import _contas_da_matriz
+    cenarios.marcar_peso(cenario, "grupo", "Patrimônio", 0)
+    cenarios.marcar_peso(cenario, "lancamento", "805", 50)
+    arvore = _contas_da_matriz(prestacao_dados.config(), cenarios.completo(cenario),
+                               "comprometido")
+    por_grupo = {g["grupo"]: g for g in arvore["contas"]}
+    assert por_grupo["Administrativas"]["entra"] == pytest.approx(-450.0)
+    assert por_grupo["Administrativas"]["fora"] == pytest.approx(-450.0)
+    assert por_grupo["Administrativas"]["excecoes"] == 1
+    assert por_grupo["Patrimônio"]["entra"] == pytest.approx(0.0)
+    assert por_grupo["Patrimônio"]["fora"] == pytest.approx(-300.0)
+    assert por_grupo["Financeiras"]["juros"] == pytest.approx(-600.0)
+    assert por_grupo["Financeiras"]["entra"] == 0.0
+    resumo = arvore["resumo"]
+    assert resumo["total"] == pytest.approx(-1800.0)
+    assert resumo["entra"] == pytest.approx(-450.0)
+    assert resumo["fora"] == pytest.approx(-750.0)
+    assert resumo["juros"] == pytest.approx(-600.0)
+    # e o que entra na árvore é o que a conta divide de fato
+    conta = _calcular(cenario)
+    assert sum(conta["rateio"]["alocacoes"].values()) == pytest.approx(-450.0)
+    niveis = [(m["nivel"], m["chave"], m["pct"]) for m in arvore["marcacoes"]]
+    assert ("grupo", "Patrimônio", 0.0) in niveis
+    assert ("lancamento", "805", 50.0) in niveis
+    lanc = next(m for m in arvore["marcacoes"] if m["nivel"] == "lancamento")
+    assert "FORNECEDOR X" in lanc["rotulo"]
+
+
+def test_a_montagem_mostra_entra_fora_e_o_que_foi_marcado(cenario, monkeypatch):
+    from app.apps.painel import cenarios
+    cenarios.marcar_peso(cenario, "grupo", "Patrimônio", 0)
+    cenarios.marcar_peso(cenario, "lancamento", "805", 50)
+    cliente = _cliente(monkeypatch)
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}"
+                       "&grupo=Administrativas&categoria=Aluguel").get_data(as_text=True)
+    assert "Entra no rateio" in html and "−R$ 450,00" in html
+    assert "Fica de fora" in html and "−R$ 750,00" in html
+    assert "O que você marcou" in html and "2 marcação(ões)" in html
+    assert "1 exceção(ões)" in html
+    assert "Não entra (0%)" in html and "Entra inteiro (100%)" in html
+    assert "próprio" in html                       # o 805 tem marcação própria
+    # numa categoria sem marcação, cada linha diz o que herda da categoria
+    html = cliente.get(f"/painel/prestacao/montagem?cenario={cenario}"
+                       "&grupo=Patrimônio&categoria=Equipamento").get_data(as_text=True)
+    assert "herdado" in html and "herda a categoria: <b>0%</b>" in html
+
+
+# ===========================================================================
 # 8. Onde estão os juros — 22/09/2026
 # ===========================================================================
 def test_a_conferencia_lista_toda_categoria_que_fala_em_juro(base, monkeypatch):

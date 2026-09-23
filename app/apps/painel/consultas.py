@@ -2849,7 +2849,8 @@ def lancamentos_administrativos_por_codigo(deptos_admin, codigos,
         SELECT codigo_lancamento,
                COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
                TRIM(COALESCE(grupo,'')), TRIM(COALESCE(categoria,'')),
-               SUM({valor})
+               SUM({valor}),
+               MIN(COALESCE(razao_social,'')), MIN(COALESCE(numero_documento,''))
           FROM fato
          WHERE analise = 'DRE' AND tipo = ? AND departamento = ANY(?)
            AND codigo_lancamento = ANY(?)
@@ -2862,8 +2863,11 @@ def lancamentos_administrativos_por_codigo(deptos_admin, codigos,
             continue
     if not numeros:
         return []
-    campos = ("codigo", "mes", "grupo", "categoria", "valor")
-    return [dict(zip(campos, (str(l[0] or ""), l[1], l[2], l[3], float(l[4] or 0))))
+    # credor e documento vao junto para a tela dizer O QUE foi marcado — um
+    # numero de lancamento sozinho nao diz nada a quem for auditar
+    campos = ("codigo", "mes", "grupo", "categoria", "valor", "credor", "documento")
+    return [dict(zip(campos, (str(l[0] or ""), l[1], l[2], l[3], float(l[4] or 0),
+                              l[5], l[6])))
             for l in consultar(sql, [PAG, list(deptos_admin), numeros])]
 
 

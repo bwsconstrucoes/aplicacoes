@@ -2093,6 +2093,41 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## O rateio da matriz: afunilar até o lançamento, e ver o que entra — 23/09/2026
+
+O dono, explicando a dificuldade que sobrou na prestação de contas: *"dentro
+dos custos da matriz não é tudo que entra (...) só informar um grupo fica
+muito complicado para quem quiser analisar depois — o que é que está dentro
+daquele grupo? De repente eu quero eliminar parcial, olhar de forma analítica,
+um lançamento específico com 0% (...) preciso poder afunilar isso em tela e
+não pode ser difícil."*
+
+**O afunilar já existia** desde 22/09 (grupo › categoria › lançamento, com
+percentual em cada nível e marcação em lote), mas a tela não dizia **quanto
+dinheiro** cada escolha punha ou tirava do bolo, e não havia um lugar que
+listasse tudo que foi marcado. Agora:
+
+- **"Entra" e "Fica de fora" em dinheiro**, em cada grupo e categoria, já
+  descontando as exceções marcadas lá embaixo — o mesmo cálculo da conta
+  (`_contas_da_matriz` e `calcular_rateio_do_cenario` têm de concordar, e há
+  teste provando). Rodapé com o total da matriz, e quatro números no alto:
+  gastou, entra, fica de fora, juros (régua própria).
+- **As categorias de juros aparecem marcadas** como "não entram aqui: seguem
+  a régua do déficit", em vez de parecerem coisa que se divide por aqui.
+- **Na lista de lançamentos**: busca (fornecedor, documento, observação),
+  marcar todos os visíveis, botões **"Não entra (0%)"** e **"Entra inteiro
+  (100%)"** para os marcados, "Voltar a herdar", e cada linha diz o que
+  divide de fato — **próprio** ou **herdado** da categoria — e quanto entra.
+  O documento abre no Pipefy quando há cartão.
+- **"O que você marcou"**: a lista de toda exceção do cenário (grupo,
+  categoria, lançamento com fornecedor e documento), com valor e percentual,
+  cada uma com link para o lugar onde se muda. É a trilha para quem for
+  auditar.
+- Selo "N exceção(ões)" no grupo e na categoria que têm lançamento marcado
+  por dentro, para não passar despercebido.
+
+Sem migração: é a mesma gravação de antes, só a leitura ficou mais rica.
+
 ## O Calendário, e o menu que quebrava na tela pequena — 23/09/2026
 
 Ideia do dono em 22/09/2026, à noite: *"um calendário grande na tela (...)
