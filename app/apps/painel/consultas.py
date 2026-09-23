@@ -1170,6 +1170,121 @@ def extrato_da_conta(f: Filtros, busca="", categoria="", de="", ate="",
             "paginas": max(1, -(-(linhas_total or 0) // por_pagina))}
 
 
+# ---------------------------------------------------------------------------
+# O Calendário — o caixa dia a dia, num mês
+# ---------------------------------------------------------------------------
+# Pedido do dono em 22/09/2026: "um calendário grande na tela (...) cada dia
+# tem um resuminho de valores pagos ou recebidos (...) você bate o olho e já vê
+# toda a evolução dia após dia. E quando clicar no dia, ele expande com o
+# detalhamento: fornecedor, categoria, valor — e dali abrir o Pipefy."
+#
+# É CAIXA, e a mesma régua do Fluxo de Caixa: só o que foi pago ou recebido de
+# fato, pela data em que aconteceu, com os encargos pagos, sem as retenções de
+# receita (o cliente as reteve, nunca passaram pela conta). O mês do calendário
+# fecha com a linha do mesmo mês no Fluxo de Caixa — é o que permite conferir.
+TIPOS_DO_CALENDARIO = {
+    "": "Pagamentos e recebimentos",
+    "recebido": "Só recebimentos",
+    "pago": "Só pagamentos",
+}
+
+
+def _condicoes_do_calendario(tipo="", grupo="", categoria="", busca=""):
+    condicoes = [PAGO, "data IS NOT NULL", f"ABS({MOVIMENTO_DE_CAIXA}) > 0.005",
+                 f"NOT (tipo = ? AND {RETIDO})"]
+    extras: list = [REC]
+    if tipo == "recebido":
+        condicoes.append(f"{MOVIMENTO_DE_CAIXA} > 0")
+    elif tipo == "pago":
+        condicoes.append(f"{MOVIMENTO_DE_CAIXA} < 0")
+    if grupo:
+        condicoes.append("COALESCE(NULLIF(grupo,''), '(sem grupo)') = ?")
+        extras.append(grupo)
+    if categoria:
+        condicoes.append("COALESCE(NULLIF(categoria,''), '(sem categoria)') = ?")
+        extras.append(categoria)
+    if busca:
+        condicoes.append("(razao_social ILIKE ? OR categoria ILIKE ?"
+                         " OR numero_documento ILIKE ? OR observacao ILIKE ?)")
+        extras.extend([f"%{busca}%"] * 4)
+    return condicoes, extras
+
+
+def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
+                      categoria="", busca="") -> dict:
+    """Entradas, saídas e quantos lançamentos em cada dia do mês — e os totais.
+
+    Uma consulta só, agrupada pelo dia: o banco devolve no máximo 31 linhas."""
+    import datetime as _dt
+    inicio = _dt.date(int(ano), int(mes), 1)
+    fim = (_dt.date(inicio.year + (inicio.month == 12),
+                    1 if inicio.month == 12 else inicio.month + 1, 1))
+    condicoes, extras = _condicoes_do_calendario(tipo, grupo, categoria, busca)
+    condicoes += ["data >= CAST(? AS DATE)", "data < CAST(? AS DATE)"]
+    extras += [inicio.isoformat(), fim.isoformat()]
+    where, params = f.where(" AND ".join(condicoes), extras)
+    sql = f"""
+        SELECT data AS dia_do_calendario,
+               SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} > 0
+                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
+               SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} < 0
+                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
+               COUNT(*)
+          FROM fato{where}
+         GROUP BY 1 ORDER BY 1"""
+    dias = {}
+    entradas = saidas = 0.0
+    quantos = 0
+    maior_entrada = maior_saida = None
+    for dia, entrou, saiu, n in consultar(sql, params):
+        entrou, saiu = float(entrou or 0), float(saiu or 0)
+        dias[dia] = {"entradas": entrou, "saidas": saiu,
+                     "liquido": entrou + saiu, "quantos": int(n or 0)}
+        entradas += entrou
+        saidas += saiu
+        quantos += int(n or 0)
+        if entrou > 0 and (maior_entrada is None or entrou > maior_entrada[1]):
+            maior_entrada = (dia, entrou)
+        if saiu < 0 and (maior_saida is None or saiu < maior_saida[1]):
+            maior_saida = (dia, saiu)
+    return {
+        "inicio": inicio, "dias": dias,
+        "entradas": entradas, "saidas": saidas, "liquido": entradas + saidas,
+        "quantos": quantos, "dias_com_movimento": len(dias),
+        "maior_entrada": maior_entrada, "maior_saida": maior_saida,
+    }
+
+
+def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
+                       busca="", limite: int = 500) -> list[dict]:
+    """O que entrou e o que saiu num dia, um lançamento por linha — o detalhe
+    que abre ao clicar no dia. Com os mesmos filtros do calendário, para o
+    total do detalhe fechar com o número do quadradinho."""
+    condicoes, extras = _condicoes_do_calendario(tipo, grupo, categoria, busca)
+    condicoes.append("data = CAST(? AS DATE)")
+    extras.append(dia)
+    where, params = f.where(" AND ".join(condicoes), extras)
+    campos = ("data", "codigo", "tipo", "razao_social", "cnpj", "grupo",
+              "categoria", "obra", "projeto", "documento", "observacao",
+              "conta", "valor", "encargo", "link")
+    linhas = [dict(zip(campos, linha)) for linha in consultar(
+        f"""SELECT data, codigo_lancamento, tipo AS lancamento_do_dia,
+                   razao_social, cnpj_cpf,
+                   COALESCE(NULLIF(grupo,''), '(sem grupo)'),
+                   COALESCE(NULLIF(categoria,''), '(sem categoria)'),
+                   {OBRA_OU_SEM}, projeto, numero_documento, observacao,
+                   COALESCE(conta_corrente,'(sem conta)'),
+                   {MOVIMENTO_DE_CAIXA}, {ENCARGO}, link
+              FROM fato{where}
+             ORDER BY ABS({MOVIMENTO_DE_CAIXA}) DESC, codigo_lancamento
+             LIMIT {int(limite)}""", params)]
+    for l in linhas:
+        l["valor"] = float(l["valor"] or 0)
+        l["encargo"] = float(l["encargo"] or 0)
+        l["natureza"] = "Recebimento" if l["valor"] > 0 else "Pagamento"
+    return linhas
+
+
 def transferencias_entre_contas(f: Filtros, de="", ate="", destino="",
                                 limite=500, contas_visiveis=None) -> dict:
     """De qual conta para qual conta o dinheiro foi — os DOIS lados juntos.

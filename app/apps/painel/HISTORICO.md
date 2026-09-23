@@ -2093,6 +2093,56 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## O Calendário, e o menu que quebrava na tela pequena — 23/09/2026
+
+Ideia do dono em 22/09/2026, à noite: *"um calendário grande na tela (...)
+cada dia tem um resuminho dentro do dia de valores pagos ou recebidos (...)
+você bate o olho e já vê toda a evolução dia após dia. Quando clicar no dia,
+ele expande com o detalhamento: fornecedor, categoria, valor — e dali abrir
+o Pipefy. Dois botões para o mês anterior e o seguinte, e KPIs."*
+
+**Como ficou** — a tela "Calendário", no menu, depois do Fluxo de Caixa:
+
+- **A régua é a do Fluxo de Caixa**, de propósito: só o que foi pago ou
+  recebido de fato, pela data em que aconteceu, com juros e multa pagos e
+  sem as retenções de receita. O total do mês do calendário **fecha com a
+  linha do mesmo mês no Fluxo de Caixa** — há teste com banco de verdade
+  provando isso. Título em aberto não aparece: calendário é caixa, não
+  compromisso. Se um dia ele quiser "o que vence", é outra visão, não esta.
+- **Filtros**: os da barra lateral (projeto, obra, conta, transferências) e
+  os próprios da tela, como no Analítico: busca, grupo, categoria e "mostrar"
+  (tudo, só recebimentos, só pagamentos). **O ano da barra lateral não vale
+  aqui** — o mês manda; senão "mês seguinte" atravessaria a virada do ano e
+  acharia um calendário vazio sem explicação.
+- **Cada dia é um botão** com o que entrou (verde), o que saiu (vermelho) e
+  quantos lançamentos. Dia sem nada fica apagado. Ao clicar, abre uma janela
+  com a lista (tipo, quem, categoria, obra, documento, conta, valor) e o
+  documento vira link para o Pipefy quando há cartão. A janela pede o dia ao
+  servidor **com os mesmos filtros da tela** — a soma dela fecha com o
+  número do quadradinho.
+- **KPIs**: recebido no mês (e o maior dia), pago no mês (e o maior dia),
+  líquido, dias com movimento e quantidade de lançamentos.
+- **Planilha do mês**: duas abas, o dia a dia e os lançamentos do mês.
+- **Escopo**: é tela de dado como as outras — só abre para quem tem
+  "Calendário" marcado no cadastro, e o detalhe do dia (outro endereço) passa
+  pelo mesmo filtro de obra. Testado com usuário preso a uma obra.
+- **Na tela do celular** os valores viram "7 mil" / "−1,2 mil": o valor
+  inteiro não cabe no quadradinho.
+
+**Custo**: uma consulta agrupada por dia (no máximo 31 linhas) para montar o
+mês; o detalhe só é lido quando alguém clica.
+
+**O menu de cima na tela pequena.** O dono: *"quando a tela encolhe fica
+uma barra de rolagem, fica ruim de encontrar as telas"*. Agora as abas
+**quebram linha** em vez de rolar, e o topo deixa de ser fixo abaixo de 900
+px de largura — fixo, com três linhas de abas, comeria a tela do celular.
+A data da base some do topo nessa largura (continua no rodapé das telas).
+
+**Uma armadilha que custou uma hora**: a classe `entrada` já existia no
+CSS, para a **tela de login** (ocupa a tela inteira, fundo azul-escuro).
+Usada num valor do calendário, o quadradinho virou um bloco de 900 px de
+altura. As classes do calendário levam o prefixo `cal-` por isso.
+
 ## Fora da análise em Parâmetros, e a prestação por obra — 22/09/2026
 
 Duas perguntas do dono, no mesmo dia, depois de ver o cenário: *"tem a visão
