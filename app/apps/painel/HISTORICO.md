@@ -2093,6 +2093,122 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## A planilha de projetos passa a ser lida todo dia — 23/09/2026
+
+O dono: *"os projetos são puxados da planilha C. Diários? Em qual momento?
+Toda vez que o painel abre?"*
+
+Não é ao abrir: o painel lê só o banco. O de-para obra → projeto vem da
+aba "C. Diários" da planilha "Bases de Dados Pipefy" (colunas AJ e AK: o
+código do departamento no OMIE e o projeto), gravado na tabela
+`depto_projeto` — e **só era lido na primeira carga**. Obra nova no OMIE
+chegava "(sem projeto)" até alguém rodar a carga inicial de novo. Com o
+acesso por projeto isso ficaria pior: a obra nova ficaria fora do acesso de
+quem tem o projeto.
+
+Agora **toda atualização (a do dia e a completa) lê a planilha** antes de
+refazer os números. É uma faixa de duas colunas, custa segundos. Se a
+planilha falhar (credencial, planilha fora do ar), a atualização segue e a
+tela de Configurações diz "ATENÇÃO: a planilha de projetos não foi lida".
+"Só refazer os números" continua sem ler nada de fora.
+
+## As medições por trás do número do DRE, num clique — 23/09/2026
+
+O dono: *"num clique, visualizar a receita executada; num clique, a receita
+em aberto — no modal, as medições. Não vai sobrecarregar?"*
+
+Não: nada é lido ao abrir o DRE. Nas linhas **Receita Bruta** e **Receita
+Líquida**, os três números (executado, em aberto, comprometido) viraram
+botões; clicar busca, na hora, a mesma lista da Receita de Obra (um título
+por linha, os 300 mais recentes, com os filtros da barra lateral) e abre a
+janela: medição, cliente, obra, documento (link do Pipefy), data, recebido,
+retido, a receber, bruto e situação, com os totais no alto e o botão "Ver
+na Receita de Obra" com os mesmos filtros. Quem não tem a tela Receita de
+Obra abre a janela (é parte do DRE), mas sem os links para lá. O endereço
+novo é da tela DRE para a autorização, e passa pelo mesmo filtro de obra.
+
+## A retenção do título em aberto aparecia como executada — 23/09/2026
+
+O dono, nos KPIs do DRE: *"tem o executado e tem as retenções; no que está
+em aberto não aparecem as retenções. No comprometido aparece só o que já
+foi executado. Esses tributos estão lançados — você tem essa informação."*
+
+Tinha. **A carga gravava a linha de retenção sempre como realizado**, mesmo
+com o título ainda a receber. Efeito: retenção de medição não recebida
+entrava em "Executado", "Em aberto" ficava sem retenção nenhuma, e
+"Comprometido" parecia mostrar só as executadas.
+
+**Agora a linha de retenção segue o estado do título**: quitado, realizado;
+em aberto, em aberto — junto com o líquido do mesmo título. O bruto continua
+líquido + retido, nas três leituras. Nas telas de receita (Receita de Obra,
+medição, título, receita por obra), **"Retido"** passou a ser o
+comprometido da linha (o já retido e o que ainda vai ser retido) e **"A
+receber"** é só o líquido — o retido nunca vai entrar na conta.
+
+**Para valer na base é preciso refazer os números**: a mudança está na
+montagem do fato. Depois de publicar, Configurações › **"Só refazer os
+números"** (não baixa nada do OMIE). Até lá as retenções continuam como
+antes. O que muda nos números: parte do "Executado" da receita bruta
+migra para "Em aberto"; o comprometido não muda; o resultado não muda.
+
+## O filtro de conta sumia ao mudar de mês no Calendário — 23/09/2026
+
+O dono: *"aplico um filtro de conta corrente, mudo o mês, ele perde o
+filtro"*. Os botões de mês passam pelo mesmo `com_filtros` que as abas do
+topo usam — e ele levava ano, projeto, obra e transferências, **mas não a
+conta**, que entrou na barra lateral depois dele (21/09). Agora leva. Vale
+para toda troca de tela: quem está numa conta no Extrato e vai ao Calendário
+chega na mesma conta. Teste cobre o botão de mês e a aba do topo.
+
+## Acesso por projeto, além de por obra — 23/09/2026 (migração 019)
+
+O dono: *"tanto define por obra como por projeto, porque pode ser que eu
+queira dar acesso ao projeto como um todo"*.
+
+- **No cadastro de acesso** (Configurações › Acesso por pessoa) há agora
+  "Projetos inteiros" ao lado de "Obras, uma a uma". Marcar um projeto libera
+  **todas as obras dele, inclusive as que ainda vão entrar na base** — o
+  projeto se abre em obras na hora de entrar, não na hora de marcar. Dá para
+  combinar: o projeto BETA mais a obra avulsa X.
+- **A tranca é a mesma**: toda tela continua lendo a lista de obras da pessoa
+  (`_filtros_do_pedido`); o que mudou é que essa lista passou a ser as obras
+  marcadas **mais** as obras dos projetos liberados, calculada a cada
+  pedido. Sem obra nenhuma (marcada ou vinda de projeto), não entra — um
+  projeto ainda sem obra na base não abre nada.
+- **A barra lateral** de quem está preso passou a mostrar só os projetos
+  dele (os liberados, ou os das obras dele). Antes listava todos os projetos
+  da empresa para qualquer pessoa — o nome vazava.
+- **Editar a pessoa não congela o projeto**: regravar o cadastro guarda as
+  obras marcadas uma a uma, nunca as efetivas — senão a obra futura do
+  projeto deixaria de entrar.
+- **Custo**: a lista obra → projeto (uma varredura do fato) passou a ser
+  lembrada até a próxima carga; sem isso, quem tem projeto pagaria essa
+  varredura a cada clique.
+- **Migração 019** cria `usuario_projetos`. Ao publicar, apertar "Aplicar
+  atualizações do banco" no mesmo momento: o cadastro de acesso lê a tabela.
+
+## O Calendário ganhou o terceiro número: a pagar, em laranja — 23/09/2026
+
+O dono: *"gostaria de visualizar o que está a pagar de cada dia também, um
+terceiro número, em outra cor — laranja. Se eu vejo laranja numa data que já
+passou, venceu; num dia que não aconteceu ainda, é a vencer. E entra no
+KPI."*
+
+- **O número**: o título **a pagar em aberto**, no dia do **vencimento**
+  (a coluna de vencimento; quando o OMIE não a trouxe, a data de sempre, que
+  no título em aberto já é o vencimento). Só contas a pagar — o a receber em
+  aberto não entra, e o caixa (verde e vermelho) não muda.
+- **Dia passado com laranja = vencido**: o quadradinho ganha borda laranja e
+  o texto diz "venc."; dia futuro diz "a pagar". O KPI "A pagar no mês" abre
+  em vencido e a vencer, com a contagem de títulos.
+- **Na janela do dia** os títulos em aberto aparecem em laranja, como
+  "Vencido" ou "A pagar", e ficam **fora do líquido** — líquido é caixa.
+- **"Mostrar"** ganhou "Só a pagar"; "Só pagamentos" e "Só recebimentos"
+  escondem o laranja. A planilha do mês leva as duas colunas.
+- Teste com banco: o título 3 do cenário (250, vence 30/06) aparece no dia
+  30, vencido visto de julho, a vencer visto de junho; o a receber de
+  setembro não entra.
+
 ## Dividendos: o critério, o negativo de Barbalha, e o dinheiro da obra com os sócios — 23/09/2026
 
 O dono: *"como é que você está fazendo aquela distribuição de dividendos,

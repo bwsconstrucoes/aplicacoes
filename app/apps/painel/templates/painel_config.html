@@ -357,7 +357,7 @@
       <thead><tr>
         <th class="sem-ordem">Usuário</th>
         <th class="sem-ordem">Nome</th>
-        <th class="sem-ordem">Obras</th>
+        <th class="sem-ordem">Projetos e obras</th>
         <th class="sem-ordem">Contas</th>
         <th class="sem-ordem">Telas</th>
         <th class="sem-ordem">Último acesso</th>
@@ -369,8 +369,7 @@
           <td class="dados">{{ p.usuario }}{% if not p.ativo %}
             <br><small style="color:var(--vermelho)">desativado</small>{% endif %}</td>
           <td class="desc">{{ p.nome or '—' }}</td>
-          <td class="desc"><small>{{ p.obras|join(', ') if p.obras
-              else 'nenhuma — não entra' }}</small></td>
+          <td class="desc"><small>{% if p.projetos %}<b>Projeto{{ 's' if p.projetos|length > 1 }}:</b> {{ p.projetos|join(', ') }}{% if p.obras %}<br>{% endif %}{% endif %}{% if p.obras %}<b>Obra{{ 's' if p.obras|length > 1 }}:</b> {{ p.obras|join(', ') }}{% endif %}{% if not p.projetos and not p.obras %}nenhuma — não entra{% endif %}</small></td>
           <td class="desc"><small>{{ p.contas|join(', ') if p.contas
               else '—' }}</small></td>
           <td class="desc"><small>{{ p.telas|map('replace', '_', ' ')|join(', ')
@@ -422,7 +421,20 @@
                   </div>
                 </div>
 
-                <h4 style="margin:12px 0 4px; font-size:12px">Obras</h4>
+                <h4 style="margin:12px 0 4px; font-size:12px">Projetos inteiros</h4>
+                <p class="cartao-dica" style="margin:0 0 4px">Todas as obras do projeto, inclusive as que ainda vão entrar.</p>
+                <div class="tabela-rolagem" style="max-height:120px">
+                  {% for projeto in projetos_para_liberar %}
+                    <label style="display:block; padding:2px 0">
+                      <input type="checkbox" name="projeto_do_usuario"
+                             value="{{ projeto }}"
+                             {% if projeto in p.projetos %}checked{% endif %}>
+                      {{ projeto }}
+                    </label>
+                  {% endfor %}
+                </div>
+
+                <h4 style="margin:12px 0 4px; font-size:12px">Obras, uma a uma</h4>
                 <div class="tabela-rolagem" style="max-height:160px">
                   {% for obra in obras_para_liberar %}
                     <label style="display:block; padding:2px 0">
@@ -460,9 +472,9 @@
                 <button class="btn" type="submit"
                         style="margin-top:8px">Salvar</button>
                 <p class="cartao-dica">
-                  Desmarcar todas as obras (ou todas as telas) <b>tira o acesso
-                  dela na hora</b> — ela para de entrar sem você precisar apagar
-                  o cadastro.
+                  Desmarcar todos os projetos e todas as obras (ou todas as
+                  telas) <b>tira o acesso dela na hora</b> — ela para de entrar
+                  sem você precisar apagar o cadastro.
                 </p>
               </form>
             </details>
@@ -496,7 +508,25 @@
         </div>
       </div>
 
-      <h4 style="margin:14px 0 4px">Obras que ela pode ver</h4>
+      <h4 style="margin:14px 0 4px">Projetos inteiros que ela pode ver</h4>
+      <p class="cartao-dica" style="margin-top:0">
+        Marcar um projeto libera <b>todas as obras dele</b>, inclusive as que
+        ainda vão entrar na base. Dá para combinar com obras avulsas abaixo.
+      </p>
+      {% if projetos_para_liberar %}
+      <div class="tabela-rolagem" style="max-height:140px">
+        {% for projeto in projetos_para_liberar %}
+          <label style="display:block; padding:2px 0">
+            <input type="checkbox" name="projeto_do_usuario" value="{{ projeto }}">
+            {{ projeto }}
+          </label>
+        {% endfor %}
+      </div>
+      {% else %}
+        <p class="cartao-dica">A base ainda não tem projetos para liberar.</p>
+      {% endif %}
+
+      <h4 style="margin:14px 0 4px">Obras que ela pode ver, uma a uma</h4>
       {% if obras_para_liberar %}
       <div class="tabela-rolagem" style="max-height:200px">
         {% for obra in obras_para_liberar %}

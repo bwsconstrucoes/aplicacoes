@@ -237,6 +237,27 @@ def test_receita_com_imposto_retido_gera_linha_separada():
             + retida["pago_recebido"]) == pytest.approx(1000.0)
 
 
+def test_a_retencao_de_titulo_em_aberto_fica_em_aberto():
+    """23/09/2026, o dono no DRE: "no que está em aberto não aparecem as
+    retenções; no comprometido só as já executadas". A retenção era gravada
+    sempre como realizado. Agora segue o título: em aberto, fica em aberto."""
+    conn = ConexaoFalsa(
+        [_titulo(1, "R", 1000.0, retencoes=(50.0, 30.0, 0, 0, 0, 0),
+                 status="A RECEBER")],
+        rateios=[(1, "D1", "Obra Um", 100.0, 1000.0)],
+        movimentos=[],
+        categorias=CATALOGO, clientes=CLIENTES, obras=OBRAS, contas=CONTAS)
+    linhas = [dict(zip(fato.COLUNAS_FATO, l)) for l in fato.gerar_linhas_fato(conn)]
+    retida = next(l for l in linhas if "Retido" in l["categoria"])
+    liquida = next(l for l in linhas if "Retido" not in l["categoria"])
+    assert retida["pago_recebido"] == 0.0
+    assert retida["a_pagar_receber"] == pytest.approx(80.0)
+    assert liquida["pago_recebido"] == 0.0
+    assert liquida["a_pagar_receber"] == pytest.approx(920.0)
+    # bruto = líquido + retido, na leitura em aberto
+    assert liquida["a_pagar_receber"] + retida["a_pagar_receber"] == pytest.approx(1000.0)
+
+
 def test_despesa_entra_negativa():
     """O sinal é o que permite somar receita e despesa na mesma coluna e ler o
     resultado direto. Trocar o sinal dobraria o lucro em vez de zerá-lo."""
@@ -441,6 +462,12 @@ def _consultar_falso(sql, params=()):
     if "AS dia_do_calendario" in sql:
         return [(dt.date(2025, 4, 8), 7000.0, -3000.0, 5),
                 (dt.date(2025, 4, 15), 0.0, -1200.0, 2)]
+    if "AS dia_a_pagar" in sql:                                 # a pagar, pelo vencimento
+        return [(dt.date(2025, 4, 20), -900.0, 3)]
+    if "AS lancamento_a_pagar" in sql:
+        return [(dt.date(2025, 4, 20), 998879, "2. Contas a Pagar", "FORNECEDOR B",
+                 "", "Materiais", "Cimento", "Obra Um", "PROJ-A", "NF80", "",
+                 "(sem conta)", -900.0, 0, "")]
     if "AS lancamento_do_dia" in sql:
         return [(dt.date(2025, 4, 8), 998877, "1. Contas a Receber", "CLIENTE A",
                  "11.111.111/0001-11", "Receita Bruta", "Receita de Obras",
@@ -1689,12 +1716,25 @@ def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
     assert 'data-dia="2025-04-08"' in html
     assert "mes=2025-03" in html and "mes=2025-05" in html   # os dois botões
     assert "2 lanç." in html
+    # o terceiro número: a pagar pelo vencimento, em laranja, e no KPI
+    assert "A pagar no mês" in html and "−R$ 900,00" in html
+    assert 'class="cal-valor cal-aberto"' in html
+    assert "vencido −R$ 900,00" in html                      # abril de 2025 já passou
     # os filtros de cima seguem o padrão do Analítico — a conta inclusive
     assert 'name="conta"' in html and "Conta de pagamento" in html
     r = painel.get("/painel/calendario?mes=2025-04&conta=Bradesco+22069-8")
     html = r.get_data(as_text=True)
     assert "Conta: Bradesco 22069-8" in html          # o chip
     assert 'value="Bradesco 22069-8" selected' in html  # a caixa mostra a escolha
+    # mudar de mês NÃO perde a conta (dono, 23/09/2026) — nem o resto
+    r = painel.get("/painel/calendario?mes=2025-04&conta=Bradesco+22069-8"
+                   "&obra=Obra+Um&categoria=Cimento&tipo=pago")
+    html = r.get_data(as_text=True)
+    anterior = [l for l in html.split('href="') if l.startswith("/painel/calendario?") and "mes=2025-03" in l][0]
+    assert "conta=Bradesco" in anterior and "obra=Obra" in anterior
+    assert "categoria=Cimento" in anterior and "tipo=pago" in anterior
+    # e a conta viaja também nas abas do topo
+    assert "/painel/analitico?" in html and "conta=Bradesco" in html.split("</nav>")[0]
 
 
 def test_o_calendario_com_mes_torto_cai_no_mes_de_hoje(painel):
@@ -1711,14 +1751,20 @@ def test_o_detalhe_do_dia_vem_em_json_com_o_link_do_pipefy(painel):
     r = painel.get("/painel/calendario/dia?dia=2025-04-08")
     assert r.status_code == 200
     dados = r.get_json()
-    assert dados["ok"] and dados["quantos"] == 2
+    # o dublê responde o a pagar para qualquer dia: 2 do caixa + 1 em aberto
+    assert dados["ok"] and dados["quantos"] == 3
     assert dados["entradas"] == 7000.0 and dados["saidas"] == -3000.0
-    assert dados["liquido"] == 4000.0
+    assert dados["liquido"] == 4000.0                # o em aberto fica fora do líquido
+    assert dados["a_pagar"] == -900.0
     assert dados["linhas"][0]["natureza"] == "Recebimento"
     assert dados["linhas"][0]["link"].startswith("https://app.pipefy.com/")
     assert dados["linhas"][1]["natureza"] == "Pagamento"
-    assert r.status_code == 200
     assert painel.get("/painel/calendario/dia?dia=ontem").status_code == 400
+    # num dia com título em aberto, ele vem junto, marcado, e fora do líquido
+    dados = painel.get("/painel/calendario/dia?dia=2025-04-20").get_json()
+    aberto = [l for l in dados["linhas"] if l["em_aberto"]]
+    assert aberto and aberto[0]["natureza"] == "Vencido"
+    assert dados["a_pagar"] == -900.0 and dados["liquido"] == 4000.0
 
 
 def test_a_planilha_do_calendario_leva_o_mes_e_os_lancamentos(painel):
@@ -1754,3 +1800,24 @@ def test_o_bloco_de_aportes_mostra_o_dinheiro_da_obra_com_os_socios(painel):
     assert "com nome de dividendo" in html and "R$ 300,00" in html
     # o quadro de dividendos não mostra mais um "líquido" negativo
     assert "Distribuído a ele" in html and "Líquido" not in html.split("Dividendos distribuídos")[1].split("Lançamentos</h4>")[0]
+
+
+# ===========================================================================
+# As medições por trás do número do DRE — 23/09/2026
+# ===========================================================================
+def test_os_numeros_de_receita_do_dre_abrem_as_medicoes(painel):
+    """O dono: "num clique, visualizar a receita executada; num clique, a
+    em aberto — no modal, as medições". A lista só é lida ao clicar."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre").get_data(as_text=True)
+    assert 'data-visao="quitadas"' in html and 'data-visao="a_receber"' in html
+    assert 'id="medicoes-do-dre"' in html
+    dados = painel.get("/painel/dre/medicoes?visao=a_receber&obra=Obra+Um").get_json()
+    assert dados["ok"] and dados["visao"] == "a_receber"
+    assert dados["linhas"][0]["medicao"] == "OBRA1 | Medição 3"
+    assert dados["linhas"][0]["abrir"].endswith("/painel/receita/titulo/998877")
+    assert set(dados["total"]) >= {"quantas", "recebido", "retido", "a_receber", "bruto"}
+    assert "obra=Obra+Um" in dados["ver_tudo"] and "visao=a_receber" in dados["ver_tudo"]
+    assert dados["pode_abrir"] is True
+    # visão inventada cai em "todas" em vez de quebrar
+    assert painel.get("/painel/dre/medicoes?visao=x").get_json()["visao"] == "todas"
