@@ -100,6 +100,17 @@
               <td class="dados direita {{ classe_valor(l.executado) }}"><button type="button" class="link-btn dados abre-medicoes" data-visao="quitadas" title="ver as medições recebidas">{{ brl(l.executado) }}</button></td>
               <td class="dados direita {{ classe_valor(l.aberto) }}"><button type="button" class="link-btn dados abre-medicoes" data-visao="a_receber" title="ver as medições a receber">{{ brl(l.aberto) }}</button></td>
               <td class="dados direita {{ classe_valor(l.comprometido) }}"><button type="button" class="link-btn dados abre-medicoes" data-visao="todas" title="ver todas as medições">{{ brl(l.comprometido) }}</button></td>
+              {% elif l.linha == '(−) Retenções na fonte' %}
+              {# as retencoes, abertas por tributo — dono, 23/09/2026 #}
+              <td class="dados direita {{ classe_valor(l.executado) }}"><button type="button" class="link-btn dados abre-retencoes" data-visao="quitadas" title="ver as retenções por tributo">{{ brl(l.executado) }}</button></td>
+              <td class="dados direita {{ classe_valor(l.aberto) }}"><button type="button" class="link-btn dados abre-retencoes" data-visao="a_receber" title="ver as retenções por tributo">{{ brl(l.aberto) }}</button></td>
+              <td class="dados direita {{ classe_valor(l.comprometido) }}"><button type="button" class="link-btn dados abre-retencoes" data-visao="todas" title="ver as retenções por tributo">{{ brl(l.comprometido) }}</button></td>
+              {% elif (l.linha.startswith('  ') and l.linha.strip() != 'Juros e Multas Pagos') or l.linha == '= Total Custos/Despesas' %}
+              {# as despesas do grupo (ou todas, no total) — dono, 23/09/2026 #}
+              {% set grupo_da_linha = '' if l.linha.startswith('=') else l.linha.strip() %}
+              <td class="dados direita {{ classe_valor(l.executado) }}"><button type="button" class="link-btn dados abre-despesas" data-grupo="{{ grupo_da_linha }}" data-visao="executado" title="ver as despesas pagas">{{ brl(l.executado) }}</button></td>
+              <td class="dados direita {{ classe_valor(l.aberto) }}"><button type="button" class="link-btn dados abre-despesas" data-grupo="{{ grupo_da_linha }}" data-visao="aberto" title="ver as despesas a pagar">{{ brl(l.aberto) }}</button></td>
+              <td class="dados direita {{ classe_valor(l.comprometido) }}"><button type="button" class="link-btn dados abre-despesas" data-grupo="{{ grupo_da_linha }}" data-visao="comprometido" title="ver todas as despesas">{{ brl(l.comprometido) }}</button></td>
               {% else %}
               <td class="dados direita {{ classe_valor(l.executado) }}">{{ brl(l.executado) }}</td>
               <td class="dados direita {{ classe_valor(l.aberto) }}">{{ brl(l.aberto) }}</td>
@@ -112,8 +123,9 @@
     </table>
   </div>
   <p class="cartao-dica">
-    Nas linhas de receita, <b>clique no número</b> para ver as medições por
-    trás dele — as recebidas, as a receber ou todas — sem sair daqui.
+    <b>Clique no número</b> para ver o que está por trás dele, sem sair
+    daqui: nas linhas de receita, as medições; nas retenções, cada tributo;
+    em cada grupo de despesa (e no total), os lançamentos.
   </p>
 </div>
 
@@ -813,7 +825,7 @@
     titulo.textContent = rotulos[visao] || "Medições";
     resumo.textContent = "";
     corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
-    dialogo.showModal();
+    if (!dialogo.open) dialogo.showModal();
     const consulta = new URLSearchParams(filtros);
     consulta.set("visao", visao);
     try {
@@ -826,6 +838,7 @@
                        + ` &nbsp;·&nbsp; retido <b>${moeda(t.retido)}</b> &nbsp;·&nbsp; a receber <b class="v-aberto">${moeda(t.a_receber)}</b>`
                        + ` &nbsp;·&nbsp; bruto <b>${moeda(t.bruto)}</b>`;
       verTudo.href = dados.ver_tudo;
+      verTudo.textContent = "Ver na Receita de Obra";
       verTudo.style.display = dados.pode_abrir ? "" : "none";
       if (!dados.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nenhuma medição nos filtros atuais.</p>'; return; }
       corpo.innerHTML = `<table class="sem-quebra">
@@ -846,6 +859,95 @@
 
   document.querySelectorAll(".abre-medicoes").forEach(b => {
     b.addEventListener("click", () => abrir(b.dataset.visao));
+  });
+
+  // ---- despesas de um grupo (ou todas) — dono, 23/09/2026 ----
+  const visoesDespesa = {executado: "pagas (executado)", aberto: "a pagar (em aberto)",
+                         comprometido: "todas (comprometido)"};
+  async function abrirDespesas(grupo, visao) {
+    titulo.textContent = `${grupo || "Todas as despesas"} — ${visoesDespesa[visao] || ""}`;
+    resumo.textContent = "";
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    if (!dialogo.open) dialogo.showModal();
+    const consulta = new URLSearchParams(filtros);
+    consulta.set("visao", visao);
+    consulta.set("grupo", grupo);
+    try {
+      const r = await fetch("{{ url_for('painel.dre_despesas') }}?" + consulta.toString());
+      const d = await r.json();
+      if (!d.ok) { corpo.innerHTML = '<p class="aviso erro">Não deu para carregar.</p>'; return; }
+      resumo.innerHTML = `${d.quantos} lançamento(s) &nbsp;·&nbsp; pago <b>${moeda(d.total_pago)}</b>`
+                       + ` &nbsp;·&nbsp; a pagar <b class="v-aberto">${moeda(d.total_a_pagar)}</b>`
+                       + ` &nbsp;·&nbsp; juros/multa <b>${moeda(d.total_encargo)}</b> &nbsp;·&nbsp; total <b>${moeda(d.total)}</b>`;
+      verTudo.href = d.ver_tudo;
+      verTudo.textContent = "Ver no Despesas Analítico";
+      verTudo.style.display = d.pode_abrir ? "" : "none";
+      if (!d.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nada nos filtros atuais.</p>'; return; }
+      corpo.innerHTML = `<table class="sem-quebra"><thead><tr>
+          <th class="sem-ordem">Data</th><th class="sem-ordem">Credor</th><th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem">Obra</th><th class="sem-ordem">Documento</th><th class="sem-ordem">Conta</th>
+          <th class="sem-ordem direita">Pago</th><th class="sem-ordem direita">A pagar</th>
+          <th class="sem-ordem direita">Juros/Multa</th><th class="sem-ordem direita">Total</th></tr></thead><tbody>`
+        + d.linhas.map(l => `<tr>
+          <td class="dados">${data(l.data)}</td>
+          <td class="desc">${escapar(l.credor)}</td>
+          <td class="desc">${escapar(l.categoria)}${grupo ? "" : `<br><small>${escapar(l.grupo)}</small>`}</td>
+          <td class="desc">${escapar(l.obra)}</td>
+          <td class="desc">${l.link ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener">${escapar(l.documento || "Pipefy")} ↗</a>` : escapar(l.documento || "—")}</td>
+          <td class="desc">${escapar(l.conta || "—")}</td>
+          <td class="dados direita">${l.pago ? moeda(l.pago) : "—"}</td>
+          <td class="dados direita v-aberto">${l.a_pagar ? moeda(l.a_pagar) : "—"}</td>
+          <td class="dados direita">${(l.juros || l.multa) ? moeda(l.juros + l.multa) : "—"}</td>
+          <td class="dados direita"><b>${moeda(l.total)}</b></td></tr>`).join("")
+        + "</tbody></table>"
+        + (d.quantos > d.linhas.length ? `<p class="cartao-dica">Mostrando os ${d.linhas.length} maiores de ${d.quantos}. A lista inteira está no Despesas Analítico.</p>` : "");
+    } catch (e) {
+      corpo.innerHTML = '<p class="aviso erro">Não deu para carregar as despesas. Tente de novo.</p>';
+    }
+  }
+  document.querySelectorAll(".abre-despesas").forEach(b => {
+    b.addEventListener("click", () => abrirDespesas(b.dataset.grupo, b.dataset.visao));
+  });
+
+  // ---- retenções por tributo — dono, 23/09/2026 ----
+  async function abrirRetencoes(visao) {
+    titulo.textContent = "Retenções na fonte — " + ({quitadas: "já retidas (executado)", a_receber: "a reter (em aberto)", todas: "todas (comprometido)"}[visao] || "");
+    resumo.textContent = "";
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    if (!dialogo.open) dialogo.showModal();
+    const consulta = new URLSearchParams(filtros);
+    consulta.set("visao", visao);
+    try {
+      const r = await fetch("{{ url_for('painel.dre_retencoes') }}?" + consulta.toString());
+      const d = await r.json();
+      if (!d.ok) { corpo.innerHTML = '<p class="aviso erro">Não deu para carregar.</p>'; return; }
+      const t = d.totais;
+      resumo.innerHTML = `${d.quantos} título(s) &nbsp;·&nbsp; total retido <b>${moeda(d.total)}</b> &nbsp;·&nbsp; `
+        + d.tributos.map(x => `${x.rotulo} <b>${moeda(t[x.chave])}</b>`).join(" &nbsp;·&nbsp; ")
+        + (t.sem_detalhe > 0.005 ? ` &nbsp;·&nbsp; sem detalhe no OMIE <b>${moeda(t.sem_detalhe)}</b>` : "");
+      verTudo.style.display = "none";
+      if (!d.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nenhuma retenção nos filtros atuais.</p>'; return; }
+      corpo.innerHTML = `<table class="sem-quebra"><thead><tr>
+          <th class="sem-ordem">Data</th><th class="sem-ordem">Cliente</th><th class="sem-ordem">Obra</th>
+          <th class="sem-ordem">Documento</th>`
+        + d.tributos.map(x => `<th class="sem-ordem direita">${x.rotulo}</th>`).join("")
+        + `<th class="sem-ordem direita">Total retido</th></tr></thead><tbody>`
+        + d.linhas.map(l => `<tr>
+          <td class="dados">${data(l.data)}</td>
+          <td class="desc">${escapar(l.cliente)}</td>
+          <td class="desc">${escapar(l.obra)}</td>
+          <td class="desc">${l.link ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener">${escapar(l.documento || "Pipefy")} ↗</a>` : escapar(l.documento || "—")}</td>`
+          + d.tributos.map(x => `<td class="dados direita">${l[x.chave] > 0.005 ? moeda(l[x.chave]) : "—"}</td>`).join("")
+          + `<td class="dados direita"><b>${moeda(l.retido)}</b>${l.sem_detalhe > 0.005 ? "<br><small>sem detalhe</small>" : ""}</td></tr>`).join("")
+        + "</tbody></table>"
+        + (d.quantos > d.linhas.length ? `<p class="cartao-dica">Mostrando os ${d.linhas.length} mais recentes de ${d.quantos}. Os totais do alto somam todos.</p>` : "")
+        + '<p class="cartao-dica">Valores retidos pelo cliente, que nunca entraram na conta. A abertura por tributo vem do cadastro do título no OMIE; quando o título foi dividido entre obras, cada tributo segue a mesma proporção.</p>';
+    } catch (e) {
+      corpo.innerHTML = '<p class="aviso erro">Não deu para carregar as retenções. Tente de novo.</p>';
+    }
+  }
+  document.querySelectorAll(".abre-retencoes").forEach(b => {
+    b.addEventListener("click", () => abrirRetencoes(b.dataset.visao));
   });
   els("medicoes-fechar").addEventListener("click", () => dialogo.close());
   dialogo.addEventListener("click", e => { if (e.target === dialogo) dialogo.close(); });

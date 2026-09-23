@@ -2182,6 +2182,30 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## DRE: despesas e retenções num clique; Calendário: setas de dia — 23/09/2026
+
+O dono: *"fazer isso [a janela das medições] para as despesas também, clicar
+e abrir uma janelinha com as despesas; no resultado não tem o que pôr link;
+e nas retenções, o detalhamento de cada tributo"*. E no Calendário: *"quando
+abrir um dia, um botão para ir ao próximo dia, ou ao anterior"*.
+
+- **DRE, despesas**: os três números de cada grupo de despesa, e do "= Total
+  Custos/Despesas", abrem a janela com os lançamentos (a mesma consulta do
+  Despesas Analítico, com os filtros da tela, os 300 maiores), totais de
+  pago, a pagar, juros/multa, e o botão para o Analítico já filtrado no
+  grupo. "Juros e Multas Pagos" e "= RESULTADO" não abrem: não têm lista
+  própria. Teste com banco: o principal da janela fecha com a linha do grupo.
+- **DRE, retenções**: os números de "(−) Retenções na fonte" abrem a janela
+  título a título, aberta em **IR, ISS, INSS, PIS, COFINS e CSLL**, com o
+  total de cada tributo no alto. O retido vem do fato (filtros, rateio); a
+  abertura por tributo vem do cadastro do título no espelho do OMIE, e em
+  título rateado cada tributo segue a proporção do que coube ao recorte.
+  Título sem cadastro no espelho aparece como "sem detalhe".
+  (`retencoes_por_tributo`, rota `painel.dre_retencoes`, tela DRE.)
+- **Calendário**: setas ‹ › ao lado do dia na janela, e as setas do teclado,
+  vão ao dia anterior/seguinte — um dia de calendário por vez, atravessando
+  o mês se for o caso.
+
 ## Conferir um dia com o OMIE, na hora — 23/09/2026
 
 O dono: *"era interessante uma forma de extrair a informação completa da base

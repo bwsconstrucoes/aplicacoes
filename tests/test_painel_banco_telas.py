@@ -1989,3 +1989,62 @@ def test_a_entrada_com_nome_de_dividendo_nao_vira_liquido_negativo(base_com_soci
     assert "−R$ 744.400,00" in html             # o saldo com os sócios
     r = cliente.get("/painel/baixar/aportes")
     assert r.status_code == 200
+
+
+
+# ===========================================================================
+# As retenções por tributo e as despesas do DRE num clique — 23/09/2026
+# ===========================================================================
+def test_as_retencoes_se_abrem_por_tributo_na_proporcao_do_titulo(painel_no_banco):
+    """O título 1 do cenário retém 100 (linha de retenção do fato). No
+    cadastro do título, o OMIE diz IR 60 e ISS 40 — é assim que se abre."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 1")
+        conn.execute("INSERT INTO titulos (codigo_lancamento_omie, natureza,"
+                     " valor_documento, valor_ir, valor_iss) VALUES (1, 'R', 1100, 60, 40)")
+        conn.commit()
+    try:
+        r = consultas.retencoes_por_tributo(consultas.Filtros(), visao="todas")
+        assert r["quantos"] == 1 and r["total"] == pytest.approx(100.0)
+        l = r["linhas"][0]
+        assert l["ir"] == pytest.approx(60.0) and l["iss"] == pytest.approx(40.0)
+        assert l["sem_detalhe"] == 0.0
+        assert r["totais"]["ir"] == pytest.approx(60.0)
+        # o título 1 está quitado: a retenção é executada, nada em aberto
+        assert consultas.retencoes_por_tributo(consultas.Filtros(), visao="a_receber")["quantos"] == 0
+        # a obra da barra lateral vale aqui também
+        assert consultas.retencoes_por_tributo(
+            consultas.Filtros(departamentos=["PONTE"]))["quantos"] == 0
+    finally:
+        with conexao() as conn:
+            conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 1")
+            conn.commit()
+
+
+def test_sem_cadastro_no_espelho_a_retencao_fica_sem_detalhe(painel_no_banco):
+    from app.apps.painel import consultas
+    r = consultas.retencoes_por_tributo(consultas.Filtros(), visao="todas")
+    assert r["linhas"][0]["sem_detalhe"] == pytest.approx(100.0)
+    assert r["totais"]["sem_detalhe"] == pytest.approx(100.0)
+
+
+def test_a_janela_de_despesas_do_dre_fecha_com_a_linha(painel_no_banco, monkeypatch):
+    """O total da janela é o número da linha que foi clicada."""
+    from app.apps.painel import consultas
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    dre = {l["linha"].strip(): l for l in consultas.dre_linhas(consultas.Filtros())["linhas"]
+           if l.get("linha")}
+    d = cliente.get("/painel/dre/despesas?grupo=Materiais+Aplicados&visao=comprometido").get_json()
+    linha = dre["Materiais Aplicados"]
+    # a linha do grupo não leva os encargos (eles têm linha própria); a janela
+    # mostra principal e encargo separados — o principal fecha com a linha
+    assert d["total_pago"] + d["total_a_pagar"] == pytest.approx(linha["comprometido"])
+    tudo = cliente.get("/painel/dre/despesas?grupo=&visao=comprometido").get_json()
+    assert tudo["total"] == pytest.approx(dre["= Total Custos/Despesas"]["comprometido"])
