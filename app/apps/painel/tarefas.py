@@ -209,7 +209,13 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 observacoes_achadas = (n_r or 0) + (n_p or 0)
             elif modo in ("rapida", "completa"):
                 _etapa("baixando o que mudou no OMIE")
-                espelho.sync_incremental()
+                # A completa rele seis meses de pagamentos; a do dia, um mes.
+                # E o que pega baixa lancada com data antiga e estorno refeito
+                # em outra conta (ver DIAS_REVISADOS_NA_ATUALIZACAO).
+                espelho.sync_incremental(
+                    revisar_dias=(espelho.DIAS_REVISADOS_NA_COMPLETA
+                                  if modo == "completa"
+                                  else espelho.DIAS_REVISADOS_NA_ATUALIZACAO))
                 # O de-para obra -> projeto vem da planilha "C. Diários" e
                 # até 23/09/2026 só era lido na primeira carga. Obra nova
                 # ficava "(sem projeto)" — e, com o acesso por projeto, fora

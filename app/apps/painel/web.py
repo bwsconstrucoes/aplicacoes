@@ -743,7 +743,14 @@ def _filtros_do_calendario():
         "grupo": request.args.get("grupo", ""),
         "categoria": request.args.get("categoria", ""),
         "busca": (request.args.get("busca") or "").strip(),
+        "analise": request.args.get("analise", "") if request.args.get("analise", "")
+        in consultas_analises_do_calendario() else "",
     }
+
+
+def consultas_analises_do_calendario():
+    from . import consultas
+    return consultas.ANALISES_DO_CALENDARIO
 
 
 def consultas_tipos_do_calendario():
@@ -781,6 +788,7 @@ def calendario():
         hoje=_dt.date.today(),
         dados=dados,
         tipos=consultas.TIPOS_DO_CALENDARIO,
+        analises=consultas.ANALISES_DO_CALENDARIO,
         opcoes_analitico=consultas.opcoes_do_analitico(f),
         **proprios,
     )
@@ -804,6 +812,20 @@ def calendario_dia():
                     "quantos": len(linhas), "entradas": entradas,
                     "saidas": saidas, "liquido": entradas + saidas,
                     "a_pagar": a_pagar})
+
+
+@bp.route("/titulo/<int:codigo>/conta")
+def conta_do_titulo(codigo):
+    """De onde o painel tirou a conta de um titulo — as pernas da baixa no
+    espelho do OMIE. So do administrador (a lista SO_DO_ADMINISTRADOR cobre o
+    prefixo): mostra contas e movimentos crus, e e ferramenta de conferencia."""
+    from . import consultas
+    dados = consultas.origem_da_conta(codigo)
+    if dados is None:
+        return jsonify({"ok": False, "erro": "Título não encontrado."}), 404
+    for p in dados["pernas"]:
+        p["data"] = str(p["data"] or "")
+    return jsonify({"ok": True, **dados})
 
 
 @bp.route("/receita")

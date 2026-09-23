@@ -2093,6 +2093,58 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## "Pago numa conta, mas o comprovante diz outra" — de onde veio a conta — 23/09/2026
+
+O dono, no Calendário, filtrando a Bradesco 7011-4: *"está dizendo que esse
+pagamento foi pago numa conta quando, no comprovante, foi pago noutra"* —
+SH FORMAS ANDAIMES E ESCORAMENTOS, Locação de Equipamentos, MERCADOBARBALHA,
+SP1343985444, −R$ 13.291,28.
+
+**O painel não inventa a conta**: lê o espelho do OMIE, nesta ordem — a
+**baixa bancária** (o débito que o OMIE lança na conta por onde o dinheiro
+saiu), senão a **baixa consolidada** (o resumo do título, que repete a conta
+do título), senão a conta **prevista** no título. Não dá para ver a base
+daqui, então em vez de chutar a causa entrou a ferramenta:
+
+- **No Calendário, na janela do dia, a conta virou link (só para o dono)**:
+  clicar mostra a conta prevista no título, a conta no painel, **todas as
+  pernas da baixa no espelho** com conta, data e valor, qual delas valeu, e
+  a regra usada — com a explicação do que fazer em cada caso:
+  - regra "baixa bancária": o OMIE registrou a baixa naquela conta. Se o
+    comprovante diz outra, a baixa foi lançada errada **no OMIE** — estornar e
+    baixar de novo na conta certa; a próxima atualização acompanha;
+  - regra "baixa consolidada": o OMIE não tem a baixa bancária, só o resumo
+    com a conta do título — falta a baixa na conta certa lá;
+  - regra "conta prevista": não há baixa nenhuma no espelho.
+- Rota `/painel/titulo/<n>/conta`, só do administrador. Mesma regra da carga
+  (`_escolher_recebimentos`), então o que a janela diz é o que a carga fez.
+
+**O dono conferiu no OMIE: o pagamento está na 22069.** Então o painel
+estava errado — e a causa estava na atualização: ela só **relia os
+pagamentos com data de pagamento nos últimos dois dias**. Baixa lançada com
+data antiga, ou estornada e refeita em outra conta mantendo a data original,
+nunca era relida; a baixa velha (7011) ficava no espelho. O título se
+atualizava (o OMIE marca a alteração nele), os pagamentos dele não.
+
+**Conserto**: a atualização do dia passou a reler **30 dias** de pagamentos e
+a completa, **180 dias** (`DIAS_REVISADOS_NA_ATUALIZACAO`,
+`DIAS_REVISADOS_NA_COMPLETA` em `sync/espelho.py`). A janela é apagada e
+relida inteira, então o que mudou dentro dela se corrige sozinho. Custa
+páginas a mais de leitura no OMIE. Baixa refeita há mais de 180 dias
+continua fora — para essa, a conferência com o OMIE (abaixo).
+
+## Calendário: filtro "DRE ou fluxo" — 23/09/2026
+
+O dono: *"é importante poder visualizar os lançamentos de fluxo, e somente
+os pagamentos e recebimentos — as contas de fluxo e de DRE. Tudo junto
+atrapalha."* Filtro novo no alto do Calendário: **DRE e fluxo** (padrão),
+**Só DRE** (entra no resultado) e **Só fluxo** (empréstimo, aporte,
+dividendo, aplicação — e transferência quando a barra lateral a inclui).
+Vale no mês, nos KPIs, no laranja do a pagar, na janela do dia (que marca o
+lançamento de fluxo com um selo) e na planilha (coluna "DRE ou fluxo"), e
+viaja nos botões de mês. Teste com banco: um empréstimo recebido no mesmo dia
+de uma receita — DRE mais fluxo dá o total.
+
 ## A planilha de projetos passa a ser lida todo dia — 23/09/2026
 
 O dono: *"os projetos são puxados da planilha C. Diários? Em qual momento?

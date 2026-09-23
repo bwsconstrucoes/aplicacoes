@@ -1384,7 +1384,44 @@ def _apagar_movimentos_janela(conn, ini, fim):
     return apagados
 
 
-def sync_incremental(env=".env", margem_dias=2, com_catalogos=True):
+# Quantos dias para tras a atualizacao RELE os pagamentos no OMIE.
+#
+# 23/09/2026, o dono: o SP1343985444 aparecia pago na Bradesco 7011-4, e no
+# OMIE o pagamento esta na 22069. A atualizacao do dia so relia os pagamentos
+# com DATA DE PAGAMENTO nos ultimos dois dias — entao uma baixa lancada com
+# data antiga, ou estornada e refeita em outra conta mantendo a data original,
+# nunca era relida: a baixa velha ficava no espelho, e o painel mostrava a
+# conta velha. O titulo se atualizava (o OMIE marca a alteracao nele); os
+# pagamentos dele, nao.
+#
+# A janela e apagada e relida inteira (delete + insert), entao alarga-la so
+# custa paginas a mais na leitura — e corrige sozinha o que mudou la dentro.
+DIAS_REVISADOS_NA_ATUALIZACAO = 30
+DIAS_REVISADOS_NA_COMPLETA = 180
+
+
+def janela_de_movimentos(hoje, ultima_sync, margem_dias=2, revisar_dias=0):
+    """O primeiro dia da janela de pagamentos que a atualizacao rele.
+
+    O mais antigo entre: `margem_dias` antes de hoje, `margem_dias` antes da
+    ultima leitura (para nao deixar buraco se a atualizacao ficou dias sem
+    rodar) e `revisar_dias` antes de hoje (para pegar baixa retroativa e
+    estorno refeito)."""
+    inicio = hoje - dt.timedelta(days=margem_dias)
+    if ultima_sync:
+        try:
+            base = (dt.datetime.fromisoformat(ultima_sync).date()
+                    - dt.timedelta(days=margem_dias))
+            inicio = min(inicio, base)
+        except Exception:
+            pass
+    if revisar_dias:
+        inicio = min(inicio, hoje - dt.timedelta(days=int(revisar_dias)))
+    return inicio
+
+
+def sync_incremental(env=".env", margem_dias=2, com_catalogos=True,
+                     revisar_dias=DIAS_REVISADOS_NA_ATUALIZACAO):
     cli = OmieClient.de_ambiente(env)
     conn = conectar()
     try:
@@ -1432,13 +1469,7 @@ def sync_incremental(env=".env", margem_dias=2, com_catalogos=True):
 
         # ---- Movimentos por janela de data de pagamento (delete+insert idempotente) ----
         _, ult_sync_mov = _ler_sync_state(conn, "movimentos")
-        inicio = hoje - dt.timedelta(days=margem_dias)
-        if ult_sync_mov:
-            try:
-                base = dt.datetime.fromisoformat(ult_sync_mov).date() - dt.timedelta(days=margem_dias)
-                inicio = min(inicio, base)
-            except Exception:
-                pass
+        inicio = janela_de_movimentos(hoje, ult_sync_mov, margem_dias, revisar_dias)
         ini_str = inicio.strftime("%d/%m/%Y")
         log.info("=== Incremental movimentos: janela %s a %s ===", ini_str, hoje_str)
         apagados = _apagar_movimentos_janela(conn, inicio, hoje)

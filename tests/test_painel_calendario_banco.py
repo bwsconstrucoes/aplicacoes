@@ -121,3 +121,116 @@ def test_a_tela_e_o_detalhe_abrem_com_banco_de_verdade(painel_no_banco, monkeypa
 
     r = cliente.get("/painel/baixar/calendario?mes=2025-06")
     assert r.status_code == 200 and "spreadsheet" in r.mimetype
+
+
+
+def test_dre_ou_fluxo_separa_o_que_entra_no_resultado(painel_no_banco):
+    """O dono: "é importante poder ver só os lançamentos de fluxo, ou só os
+    de DRE — tudo junto atrapalha". Um empréstimo recebido (fluxo) entra no
+    dia 10/06 ao lado dos lançamentos de DRE; cada filtro fica só com o seu."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, mes, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (950,'1. Contas a Receber','Fluxo de Caixa','Recebido','Quitado',"
+            "         'Empréstimos','Financeiras','CASA','ALFA','BANCO',"
+            "         '2025-06-10',2025,6,5000,0,0,0)")
+        conn.commit()
+    f = consultas.Filtros()
+    tudo = consultas.calendario_do_mes(f, 2025, 6)
+    so_dre = consultas.calendario_do_mes(f, 2025, 6, analise="dre")
+    so_fluxo = consultas.calendario_do_mes(f, 2025, 6, analise="fluxo")
+    assert tudo["entradas"] == pytest.approx(6000.0)
+    assert so_dre["entradas"] == pytest.approx(1000.0)
+    assert so_fluxo["entradas"] == pytest.approx(5000.0)
+    assert so_fluxo["saidas"] == 0.0 and so_fluxo["a_pagar"] == 0.0
+    assert so_dre["entradas"] + so_fluxo["entradas"] == pytest.approx(tudo["entradas"])
+    linhas = consultas.lancamentos_do_dia(f, "2025-06-10", analise="fluxo")
+    assert [l["analise"] for l in linhas] == ["Fluxo de Caixa"]
+
+
+# ===========================================================================
+# De onde veio a conta — 23/09/2026
+# ===========================================================================
+# O dono: "no Calendário está dizendo que esse pagamento foi pago numa conta,
+# quando no comprovante ele foi pago noutra".
+
+@pytest.fixture()
+def espelho_de_um_titulo(painel_no_banco):
+    """O título 2 do cenário (pago 425 em 10/06/2025, na obra CASA). No
+    espelho: previsto na conta 7011, baixa consolidada repetindo a 7011, e a
+    baixa BANCÁRIA na 22069 — que é por onde o dinheiro saiu de verdade."""
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM movimentos WHERE ncodtitulo = 2")
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 2")
+        conn.execute("DELETE FROM contas_correntes WHERE codigo IN (7011, 22069)")
+        conn.execute("INSERT INTO contas_correntes (codigo, descricao) VALUES"
+                     " (7011, 'Bradesco 7011-4'), (22069, 'Bradesco 22069-8')")
+        conn.execute("INSERT INTO titulos (codigo_lancamento_omie, natureza,"
+                     " valor_documento, id_conta_corrente, numero_documento,"
+                     " status_titulo) VALUES (2, 'P', 400, 7011, 'SP1', 'PAGO')")
+        conn.execute("INSERT INTO movimentos (ncodtitulo, ddtpagamento, nvalpago,"
+                     " nvalliquido, ncodcc, cliquidado) VALUES"
+                     " (2, '10/06/2025', 425, 425, 7011, 'S'),"
+                     " (2, '10/06/2025', 425, 0, 22069, '')")
+        conn.commit()
+    yield
+    with conexao() as conn:
+        conn.execute("DELETE FROM movimentos WHERE ncodtitulo = 2")
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 2")
+        conn.commit()
+
+
+def test_a_origem_da_conta_mostra_as_pernas_e_qual_valeu(espelho_de_um_titulo):
+    from app.apps.painel import consultas
+    d = consultas.origem_da_conta(2)
+    assert d["conta_prevista"] == "Bradesco 7011-4"
+    assert d["regra"] == "baixa bancária" and d["tem_baixa_bancaria"] is True
+    por_tipo = {p["tipo"]: p for p in d["pernas"]}
+    assert por_tipo["baixa bancária"]["conta"] == "Bradesco 22069-8"
+    assert por_tipo["baixa bancária"]["valeu"] is True
+    assert por_tipo["baixa consolidada"]["valeu"] is False
+    assert consultas.origem_da_conta(999999) is None
+    assert consultas.origem_da_conta("abc") is None
+
+
+def test_sem_baixa_bancaria_a_regra_diz_que_falta_no_omie(espelho_de_um_titulo):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM movimentos WHERE ncodtitulo = 2 AND cliquidado = ''")
+        conn.commit()
+    d = consultas.origem_da_conta(2)
+    assert d["regra"] == "baixa consolidada" and d["tem_baixa_bancaria"] is False
+
+
+def test_a_origem_da_conta_e_so_do_dono(espelho_de_um_titulo, monkeypatch):
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.apps.painel import usuarios
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    dono = app.test_client()
+    dono.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = dono.get("/painel/titulo/2/conta")
+    assert r.status_code == 200 and r.get_json()["regra"] == "baixa bancária"
+    assert dono.get("/painel/titulo/999999/conta").status_code == 404
+    html = dono.get("/painel/calendario?mes=2025-06").get_data(as_text=True)
+    assert "const ADMIN = true" in html and "/painel/titulo/0/conta" in html
+
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM usuarios WHERE usuario = 'preso-conta'")
+        conn.commit()
+    usuarios.criar("preso-conta", "senha-dele", obras=["CASA"], telas=["calendario"])
+    preso = app.test_client()
+    preso.post("/painel/entrar", data={"usuario": "preso-conta", "senha": "senha-dele"})
+    assert preso.get("/painel/titulo/2/conta").status_code == 404
+    assert "const ADMIN = false" in preso.get("/painel/calendario?mes=2025-06").get_data(as_text=True)
+    with conexao() as conn:
+        conn.execute("DELETE FROM usuarios WHERE usuario = 'preso-conta'")
+        conn.commit()
