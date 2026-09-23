@@ -114,6 +114,36 @@ def moeda(valor) -> str:
     return ("-" if n < 0 else "") + ".".join(grupos) + "," + centavos
 
 
+def moeda_curta(valor) -> str:
+    """1234.5 -> "1,2 mil"; 2500000 -> "2,5 mi". Para onde não cabe o número.
+
+    ⚠️ É PARA O CELULAR, e só. O quadradinho de um dia do calendário tem menos
+    de 40 px de largura numa tela pequena, e "128.450,00" não cabe: ou some, ou
+    quebra a grade. A lição veio do calendário do PAINEL, feito no mesmo dia —
+    lá o problema já tinha aparecido.
+
+    Nunca substitui o valor exato numa tela onde a pessoa vai conferir conta.
+    Aqui os dois vão para o HTML e quem escolhe é a folha de estilo, pela
+    largura — assim o valor cheio continua existindo em tela grande e na hora
+    de copiar."""
+    if valor is None:
+        return ""
+    try:
+        n = Decimal(str(valor))
+    except (InvalidOperation, ValueError):
+        return ""
+    sinal = "-" if n < 0 else ""
+    n = abs(n)
+    if n >= 1_000_000:
+        return sinal + f"{n / 1_000_000:.1f}".replace(".", ",") + " mi"
+    if n >= 1_000:
+        corpo = f"{n / 1_000:.1f}".replace(".", ",")
+        if corpo.endswith(",0"):
+            corpo = corpo[:-2]
+        return sinal + corpo + " mil"
+    return sinal + f"{n:.0f}"
+
+
 def _como_momento(valor):
     """Aceita data, data-e-hora ou o TEXTO de uma delas. None quando não dá.
 

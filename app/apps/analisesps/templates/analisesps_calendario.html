@@ -1,0 +1,159 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Calendário — Análise de SPs{% endblock %}
+
+{# A MESMA barra de filtros de Solicitações e do Relatório. É o ponto da tela:
+   o recorte que a pessoa montou lá vale aqui, sem remontar nada. #}
+{% block filtros %}{% include "analisesps_filtros.html" %}{% endblock %}
+
+{% block conteudo %}
+{# ---------------------------------------------------------------------------
+   O CALENDÁRIO DAS SPs — pedido do dono em 23/09/2026:
+   *"é bem interessante a gente conseguir visualizar no formato de calendário
+   o que é que tem (…) e a gente pode atrelar esse calendário aos filtros que
+   já estão atrelados ao relatório e à tela de solicitações."*
+
+   ⚠️ CADA DIA É UM LINK PARA AS SOLICITAÇÕES daquele dia, levando o filtro
+   inteiro junto. Um calendário que só mostra número obriga a pessoa a ir na
+   outra tela e remontar o recorte na mão para descobrir QUEM vence naquele
+   dia — que é sempre a pergunta seguinte.
+--------------------------------------------------------------------------- #}
+{% set args_inteiros = args.to_dict(flat=false) %}
+
+{# Os parâmetros que viajam para os links do dia e dos meses vizinhos. `ano` e
+   `mes` saem porque cada link põe os seus; `pagina` sai porque a lista do dia
+   começa na primeira. #}
+{% macro sem(chaves) %}
+  {%- for chave, valores in args.lists() if chave not in chaves -%}
+    {%- for v in valores %}&{{ chave }}={{ v|urlencode }}{% endfor -%}
+  {%- endfor -%}
+{% endmacro %}
+
+<h2>Calendário
+  <small>{{ tipos[tipo] }} · {{ meses[mes - 1] }} de {{ ano }}</small></h2>
+
+<form method="get" class="cartao"
+      style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end">
+  {% for chave, valores in args.lists() %}
+    {% if chave not in ('tipo', 'ano', 'mes') %}
+      {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+    {% endif %}
+  {% endfor %}
+  <input type="hidden" name="ano" value="{{ ano }}">
+  <input type="hidden" name="mes" value="{{ mes }}">
+  <div>
+    <label class="rotulo-campo">Recorte</label>
+    <select name="tipo">
+      {% for chave, rotulo in tipos.items() %}
+        <option value="{{ chave }}" {% if tipo == chave %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn" type="submit">Aplicar</button>
+  <span class="cartao-dica" style="margin:0">
+    {% if tipo == 'pagas' %}
+      Os dias contam pela <b>data do pagamento</b> — é quando o dinheiro saiu.
+    {% else %}
+      Os dias contam pelo <b>vencimento</b> — é quando o dinheiro tem de sair.
+    {% endif %}
+    SPs canceladas ficam de fora, como no Relatório.
+  </span>
+</form>
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">No mês, dentro do filtro</div>
+    <div class="kpi-valor">{{ achado.total|moeda }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Quantas SPs</div>
+    <div class="kpi-valor">{{ '{:,}'.format(achado.quantidade)|replace(',', '.') }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Maior dia do mês</div>
+    <div class="kpi-valor">{{ grade.maior|moeda }}</div>
+  </div>
+</div>
+
+{# ⚠️ O QUE NÃO TEM DATA NÃO SOME EM SILÊNCIO. Uma SP sem vencimento não cai
+   em dia nenhum do calendário; se ela sumisse sem aviso, a soma daqui não
+   bateria com a do Relatório no mesmo filtro — e a conferência é justamente
+   o que o dono faz. #}
+{% if achado.sem_data_qtd %}
+  <div class="aviso atencao">
+    <b>{{ achado.sem_data_qtd }} SP(s) do seu filtro ficam de fora do calendário</b>,
+    somando {{ achado.sem_data_total|moeda }}: elas não têm
+    {% if tipo == 'pagas' %}data de pagamento{% else %}data de vencimento{% endif %}
+    preenchida, então não caem em dia nenhum. Elas continuam no Relatório e nas
+    Solicitações — só não têm onde ser desenhadas aqui.
+  </div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>{{ meses[mes - 1]|capitalize }} de {{ ano }}</h3>
+    <small>clique num dia para ver as SPs dele</small>
+  </div>
+
+  <div class="mes-nav">
+    <a class="btn secundario"
+       href="?ano={{ anterior[0] }}&mes={{ anterior[1] }}{{ sem(['ano', 'mes', 'pagina']) }}">‹
+      {{ meses[anterior[1] - 1] }}</a>
+    <a class="btn secundario"
+       href="?{{ sem(['ano', 'mes', 'pagina'])|trim('&') }}">Hoje</a>
+    <a class="btn secundario"
+       href="?ano={{ seguinte[0] }}&mes={{ seguinte[1] }}{{ sem(['ano', 'mes', 'pagina']) }}">{{ meses[seguinte[1] - 1] }}
+      ›</a>
+  </div>
+
+  <div class="calendario com-semana">
+    {% for dn in dias_da_semana %}
+      <div class="cal-cab">{{ dn }}</div>
+    {% endfor %}
+    <div class="cal-cab">Semana</div>
+
+    {% for semana in grade.semanas %}
+      {% for d in semana.dias %}
+        {# O dia sem nada não é link: clicar para ver uma lista vazia gasta uma
+           ida ao servidor para não responder nada. #}
+        {% if d.quantidade %}
+          <a class="cal-dia tem-valor {{ '' if d.do_mes else 'fora' }}
+                    {{ 'hoje' if d.hoje }} {{ 'nao-util' if d.feriado or d.fim_de_semana }}
+                    {{ 'tem-vencida' if d.vencidas }}"
+             href="{{ url_for('analisesps.solicitacoes') }}?f=1&{{ 'pgt_ini' if tipo == 'pagas' else 'periodo_ini' }}={{ d.data }}&{{ 'pgt_fim' if tipo == 'pagas' else 'periodo_fim' }}={{ d.data }}{{ sem(['ano', 'mes', 'pagina', 'periodo_ini', 'periodo_fim', 'pgt_ini', 'pgt_fim', 'tipo', 'f', 'status_pgt']) }}{% for s in status_do_dia %}&status_pgt={{ s|urlencode }}{% endfor %}"
+             title="{{ d.data|data_br }} — {{ d.quantidade }} SP(s), {{ d.total|moeda }}{% if d.vencidas %} · {{ d.vencidas }} vencida(s) e ainda a pagar{% endif %}">
+            <div class="cal-numero">{{ d.dia }}</div>
+            {# Os DOIS valores vão no HTML e a largura da tela escolhe: o
+               número cheio some abaixo de 760px, onde ele não cabe no
+               quadradinho. A lição é do calendário do painel, do mesmo dia. #}
+            <div class="cal-dinheiro"><span class="so-largo">{{ d.total|moeda }}</span><span
+                 class="so-estreito">{{ d.total|moeda_curta }}</span></div>
+            <div class="cal-quantas">{{ d.quantidade }} SP{{ 's' if d.quantidade > 1 }}
+              {%- if d.vencidas %} <span class="cal-vencida" title="vencidas e ainda a pagar">⚠ {{ d.vencidas }}</span>{% endif %}</div>
+          </a>
+        {% else %}
+          <div class="cal-dia {{ '' if d.do_mes else 'fora' }}
+                      {{ 'hoje' if d.hoje }} {{ 'nao-util' if d.feriado or d.fim_de_semana }}">
+            <div class="cal-numero">{{ d.dia }}</div>
+          </div>
+        {% endif %}
+      {% endfor %}
+      {# O total da semana, na coluna da direita: "quanto sai nesta semana?" é
+         a pergunta que a soma do mês não responde. #}
+      <div class="cal-semana {{ 'vazia' if not semana.quantidade }}">
+        {% if semana.quantidade %}
+          <div class="cal-dinheiro"><span class="so-largo">{{ semana.total|moeda }}</span><span
+               class="so-estreito">{{ semana.total|moeda_curta }}</span></div>
+          <div class="cal-quantas">{{ semana.quantidade }} SP{{ 's' if semana.quantidade > 1 }}</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <p class="cartao-dica">
+    Dias em cinza são fim de semana ou feriado — repare quando um vencimento
+    grande cair num deles. O ⚠ marca o que já <b>venceu e continua a pagar</b>.
+    A coluna da direita é o total de cada semana, contando a semana inteira,
+    inclusive os dias do mês vizinho que aparecem nela.
+  </p>
+</div>
+{% endblock %}

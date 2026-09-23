@@ -92,6 +92,7 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/lote"),
     ("POST", "/analisesps/lote"),
     ("GET", "/analisesps/relatorio"),
+    ("GET", "/analisesps/calendario"),
     ("GET", "/analisesps/auditoria"),
     ("GET", "/analisesps/ratear"),
     ("POST", "/analisesps/ratear"),

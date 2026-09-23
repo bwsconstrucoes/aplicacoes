@@ -29,6 +29,7 @@ consultas.py       as perguntas que as telas fazem ao banco
 auditoria.py       as sete checagens da tela de Auditoria
 lote.py            o lote de trabalho: agrupar, extrair SPs, guardar
 agenda.py          calendário de compromissos que se repetem
+calendario.py      a grade de mês do calendário das SPs (outra coisa da agenda)
 colunas.py         o mapeamento da aba SPsBD (A:AL) — fonte única
 tabela.py          as colunas da lista — espelha o GRID_COLS do Streamlit
 preferencias.py    o que cada pessoa deixou do jeito dela (filtro, colunas)
@@ -261,6 +262,7 @@ cobrável de quem preencheu.
 | Solicitações | a lista, com todos os filtros e as ações em lote |
 | Lote | a remessa que está sendo tratada agora, em grupos |
 | Relatório | quanto, por obra, projeto, tipo, conta e credor |
+| Calendário | o MESMO filtro do Relatório e das Solicitações, espalhado nos dias do mês; o dia clicado abre a lista daquele dia |
 | Auditoria | sete checagens do que está errado na base |
 | Ratear | o JSON que atualiza o título no Omie |
 | Bradesco | o extrato colado, cruzado com as SPs |
@@ -593,7 +595,7 @@ aparecer por até cinco minutos (o relógio no alto e o aviso de 90 s cobrem,
 com atraso).
 
 **A lista de telas guardadas é fechada e tem teste:** Solicitações, Relatório,
-Auditoria, Log **e o Lote**. **Não entram** Agenda, Ratear, Bradesco nem a
+Calendário, Auditoria, Log **e o Lote**. **Não entram** Agenda, Ratear, Bradesco nem a
 ficha da SP — as três primeiras recebem alterações no PRÓPRIO endereço, e
 guardá-las mostraria o estado anterior à mudança que a pessoa acabou de fazer;
 a ficha mostra o status atual e tem botões que agem sobre ele. Antes de pôr

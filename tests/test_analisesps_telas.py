@@ -3333,6 +3333,9 @@ def test_a_lista_de_telas_guardadas_e_fechada():
     from app.apps.analisesps import web
     assert web.TELAS_QUE_FICAM_GUARDADAS == {
         "analisesps.solicitacoes", "analisesps.relatorio",
+        # O Calendário entrou em 23/09/2026: é leitura pura, como o Relatório
+        # — não recebe alteração nenhuma, só desenha o filtro no mês.
+        "analisesps.calendario",
         "analisesps.auditoria", "analisesps.log", "analisesps.tela_lote"}
     # A Agenda e a ficha da SP continuam fora: as duas recebem alteração e
     # NÃO têm a hora de salvamento na tela, que é o que torna o Lote seguro.

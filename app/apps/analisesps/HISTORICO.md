@@ -6401,6 +6401,114 @@ nenhum — a gravação estava falhando, que é a origem de tudo isto —, mas s
 algum XML de nota sumir da tela, é aqui que se olha.
 
 ---
+
+### Octogésima terceira leva (23/09) — o Calendário, com o filtro que já existia
+
+Pedido do dono, na mesma conversa em que perguntou pela tela de calendário do
+painel:
+
+> *"É bem interessante a gente conseguir visualizar no formato de calendário o
+> que é que tem (…) e a gente pode atrelar esse calendário aos filtros que já
+> estão atrelados ao próprio relatório e à tela de solicitações."*
+
+**Um detalhe do caminho que vale registrar.** Ao procurar a tal tela do
+painel, ela **não existia** — o `HISTORICO.md` de lá não a citava e não havia
+`painel_calendario.html`. O trabalho seguiu assim mesmo, pelo que ele
+descreveu. Horas depois, ao trazer a `main` para o ramo, **a tela do painel
+apareceu**: o chat de lá a publicou no mesmo dia, entre uma coisa e outra.
+
+A lição, para a próxima sessão: **num repositório com cinco chats, "não
+existe" quer dizer "não existia quando eu olhei"**. Antes de concluir que algo
+não foi feito em outra área, vale buscar a `main` de novo.
+
+O calendário do painel resolve outra pergunta — ele é de CAIXA (o que entrou e
+saiu de fato, com a régua do Fluxo de Caixa) e o dia abre uma janela com os
+lançamentos. Este é de COMPROMISSO (o que vence, ou o que foi pago), e o dia
+abre a lista de Solicitações, que já é a tela onde se trabalha. **Duas telas
+parecidas respondendo perguntas diferentes** — se um dia elas divergirem no
+desenho, é isto aqui que explica por quê. Do painel veio emprestada uma lição
+já paga: no celular o valor inteiro não cabe no quadradinho, então ele sai
+abreviado ("128,4 mil") abaixo de 760 px.
+
+**O que entrou.** Uma tela nova, `Calendário`, na faixa de abas **depois da
+Agenda** — e a posição foi uma correção no meio do caminho. Ela é irmã do
+Relatório e foi posta ao lado dele primeiro; o teste da ordem das telas
+acusou na hora. **As seis primeiras são o caminho do dia do dono**, dito por
+ele em 13/09/2026, e mexer nelas para acomodar tela nova é desfazer uma
+decisão dele. Tela nova entra entre "os demais" — que é onde ele mesmo
+mandou. Ao lado da Agenda ainda lê melhor: são as duas grades de mês do
+módulo. Ela desenha o mês com o que cai em cada dia: quanto, quantas SPs, e
+quantas já venceram e continuam a pagar. Cada semana traz o próprio total na
+coluna da direita — *"quanto sai nesta semana?"* é a pergunta que a soma do
+mês não responde.
+
+**O que faz a tela valer a pena é ela NÃO ter filtro próprio.** Ela lê o mesmo
+filtro guardado que Solicitações e Relatório, na mesma gaveta, pelo mesmo
+`_lembrar_filtro`. Quem recortou "obra X, a pagar" nas Solicitações e clica em
+Calendário vê aquele recorte no mês, sem remontar nada. Um filtro próprio
+seria a falha mais fácil de cometer e a mais difícil de notar: a tela
+desenharia igual, mostrando outra coisa.
+
+#### Cinco decisões que não são óbvias, e o motivo de cada uma
+
+1. **O padrão é CONTAS A PAGAR, não a visão geral do Relatório.** Calendário se
+   olha para frente. A visão geral continua a um clique, na mesma barra.
+2. **A data que manda depende do recorte** — a mesma regra do Relatório
+   (`coluna_de_data`): a pagar pelo vencimento, pagas pela data do pagamento.
+   Misturar mostraria a mesma SP em dois dias e não fecharia com o Relatório
+   do mesmo filtro, que é a conferência que o dono faz.
+3. **O dia é um link para as Solicitações daquele dia**, levando o filtro
+   inteiro junto. Sem isso, a pergunta seguinte a *"tem 128 mil no dia 10"* —
+   que é sempre *"de quem?"* — obrigaria a ir na outra tela e remontar o
+   recorte na mão.
+4. **⚠️ O link do dia leva o STATUS que a célula contou, e o valor sai da
+   lista de opções, não de um texto chutado.** A célula conta só o recorte; a
+   lista sem status mostraria também o que já foi pago naquele dia — o dia
+   diria 3 e a lista mostraria 5, sem nada avisando. E um filtro exato por
+   `"Pagar"` deixaria de fora uma SP gravada como `"PAGAR"` na planilha, que é
+   o mesmo tipo de armadilha. A opção vem do banco.
+5. **O que não tem data aparece como aviso, não some.** Uma SP sem vencimento
+   não cai em dia nenhum; sumir calada faria a soma do calendário não bater
+   com a do Relatório no mesmo filtro.
+
+#### O que foi feito para não ficar caro
+
+**Uma consulta só, e só o mês pedido**, agrupando no BANCO: volta uma linha
+por dia, no máximo 31. A tentação era trazer as SPs do mês e agrupar em
+Python — com 59 mil linhas na tabela, o dia em que alguém abrisse o calendário
+sem filtro nenhum isso viraria a tela mais cara do módulo. Mais uma contagem
+barata para o que não tem data.
+
+**O intervalo consultado é o da GRADE, não o do mês:** a primeira linha mostra
+o fim do mês anterior, e desenhá-lo vazio seria mentira.
+
+**A tela entra na lista das que ficam guardadas no navegador** — é leitura
+pura, como o Relatório, e não recebe alteração nenhuma.
+
+#### Uma pegadinha que só apareceu montando
+
+`ano` e `mes` tiveram de entrar na lista `nao_filtro` da barra de filtros.
+Sem isso, marcar uma caixa enquanto se olha outubro devolveria a pessoa para o
+mês de hoje — justamente quando ela estava filtrando outubro.
+
+#### Verificado e não verificado
+
+**Verificado:** 22 testes de tela e de grade sem banco (a grade começando no
+domingo, os dias do mês vizinho marcados, o total da semana, a escala da cor
+saindo do maior dia DO MÊS, mês torto na barra de endereço não derrubando a
+tela, o filtro guardado chegando, o link do dia com a data e o status certos), mais dois do valor abreviado
+e **7 com banco de verdade** — que é onde `WHERE`, `GROUP BY` e o recorte de
+datas realmente se provam, porque o dublê ignora os três. Um deles compara o
+total do calendário com o do Relatório no mesmo filtro: se divergirem, um dos
+dois está mentindo.
+
+**NÃO verificado:** a tela não foi aberta num navegador — nem o desenho da
+grade de oito colunas em tela larga, nem o que acontece com ela no celular
+(onde a coluna da semana some de propósito). E o tempo de resposta com a base
+real de 59 mil SPs não foi medido; a consulta é uma só e agrupada no banco,
+mas isso é argumento, não medição.
+
+---
 ---
 
 ## Regras que não se discutem

@@ -7145,3 +7145,131 @@ def test_o_TETO_do_analitico_e_respeitado(banco_analisesps):
         sincronizacao._anotar_a_base_em_dia(conn)
 
     assert len(consultas.analitico_do_relatorio({}, limite=5)) == 5
+
+
+# ---------------------------------------------------------------------------
+# O CALENDÁRIO — 23/09/2026
+#
+# ⚠️ ISTO SÓ SE PROVA COM BANCO DE VERDADE. A sessão dublada ignora `WHERE`,
+# `GROUP BY` e o recorte de datas — exatamente as três coisas que o calendário
+# é. Um erro aqui não estoura: ele mostra um número errado com cara de certo
+# num dia errado, e ninguém tem como desconfiar olhando a tela.
+# ---------------------------------------------------------------------------
+def test_o_calendario_agrupa_por_dia_e_soma(banco_analisesps):
+    from app.apps.analisesps import consultas
+    semear([sp("1", credor="ACME", valor="1.000,00", status_pgt="Pagar",
+               vencimento="10/09/2026"),
+            sp("2", credor="OUTRO", valor="500,00", status_pgt="Pagar",
+               vencimento="10/09/2026"),
+            sp("3", credor="TERCEIRO", valor="300,00", status_pgt="Pagar",
+               vencimento="11/09/2026")])
+
+    achado = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30), "pagar")
+
+    assert achado["dias"][dt.date(2026, 9, 10)]["quantidade"] == 2
+    assert achado["dias"][dt.date(2026, 9, 10)]["total"] == Decimal("1500.00")
+    assert achado["dias"][dt.date(2026, 9, 11)]["quantidade"] == 1
+    assert achado["quantidade"] == 3
+    assert achado["total"] == Decimal("1800.00")
+
+
+def test_o_calendario_respeita_o_intervalo_pedido(banco_analisesps):
+    """O que cai fora da grade não entra na soma do mês — senão o total do
+    cabeçalho não bateria com a soma dos dias desenhados."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pagar",
+               vencimento="10/09/2026"),
+            sp("2", valor="9.000,00", status_pgt="Pagar",
+               vencimento="10/12/2026")])
+
+    achado = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30), "pagar")
+
+    assert achado["quantidade"] == 1
+    assert achado["total"] == Decimal("1000.00")
+
+
+def test_as_pagas_caem_no_dia_do_PAGAMENTO_e_nao_do_vencimento(banco_analisesps):
+    """⚠️ A regra que mais erra em silêncio. Uma conta que venceu dia 5 e foi
+    paga dia 20 tem de aparecer no dia 20 no recorte "pagas" — senão o
+    calendário diz que saiu dinheiro num dia em que não saiu."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pago",
+               vencimento="05/09/2026", data_pagamento="20/09/2026")])
+
+    pagas = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30), "pagas")
+    assert dt.date(2026, 9, 20) in pagas["dias"]
+    assert dt.date(2026, 9, 5) not in pagas["dias"]
+
+    # E no recorte a pagar ela nem aparece: está paga.
+    a_pagar = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30), "pagar")
+    assert a_pagar["quantidade"] == 0
+
+
+def test_o_calendario_obedece_ao_filtro_da_barra(banco_analisesps):
+    """É o pedido inteiro: o recorte das Solicitações vale aqui."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pagar", conta="ITAU",
+               vencimento="10/09/2026"),
+            sp("2", valor="7.000,00", status_pgt="Pagar", conta="BRADESCO",
+               vencimento="10/09/2026")])
+
+    achado = consultas.calendario_do_mes(
+        {"conta": ["ITAU"]}, dt.date(2026, 9, 1), dt.date(2026, 9, 30), "pagar")
+
+    assert achado["total"] == Decimal("1000.00")
+    assert achado["dias"][dt.date(2026, 9, 10)]["quantidade"] == 1
+
+
+def test_a_cancelada_fica_de_fora_como_no_relatorio(banco_analisesps):
+    """Mesma regra do Relatório. Duas telas do mesmo filtro com totais
+    diferentes seria o pior dos mundos."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pagar",
+               vencimento="10/09/2026"),
+            sp("2", valor="5.000,00", status_pgt="Cancelado",
+               vencimento="10/09/2026")])
+
+    achado = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30), "pagar")
+    assert achado["total"] == Decimal("1000.00")
+
+
+def test_a_sp_sem_data_e_contada_a_parte_e_nao_some(banco_analisesps):
+    """Ela não cai em dia nenhum. Sumir calada faria a soma do calendário não
+    bater com a do Relatório no mesmo filtro."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pagar",
+               vencimento="10/09/2026"),
+            sp("2", valor="400,00", status_pgt="Pagar", vencimento="")])
+
+    achado = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30), "pagar")
+
+    assert achado["total"] == Decimal("1000.00")
+    assert achado["sem_data_qtd"] == 1
+    assert achado["sem_data_total"] == Decimal("400.00")
+
+
+def test_o_total_do_calendario_bate_com_o_do_relatorio(banco_analisesps):
+    """⚠️ A CONFERÊNCIA QUE O DONO VAI FAZER. Mesmo filtro, mesmo recorte: o
+    calendário do mês mais o que não tem data tem de dar o total do Relatório
+    no mesmo período. Se divergir, um dos dois está mentindo."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pagar",
+               vencimento="10/09/2026"),
+            sp("2", valor="2.500,00", status_pgt="Pagar",
+               vencimento="25/09/2026"),
+            sp("3", valor="400,00", status_pgt="Pagar", vencimento="")])
+
+    achado = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30), "pagar")
+    numeros = consultas.numeros_do_relatorio(
+        {"periodo_ini": dt.date(2026, 9, 1),
+         "periodo_fim": dt.date(2026, 9, 30)}, "pagar", "tudo")
+
+    assert achado["total"] == numeros["total"]
+    assert achado["quantidade"] == numeros["quantidade"]
