@@ -265,6 +265,7 @@ COLUNAS = {
                                ("documento", "Documento"),
                                ("observacao", "Observação"), ("conta", "Conta"),
                                ("valor", "Valor"), ("encargo", "Juros/Multa"),
+                               ("analise", "DRE ou fluxo"),
                                ("codigo", "Nº no OMIE"), ("link", "Pipefy")],
     "prestacao_projeto": [("projeto", "Projeto"), ("receita_bruta", "Receita bruta"),
                           ("receita_liquida", "Receita líquida"),

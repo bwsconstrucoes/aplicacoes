@@ -54,6 +54,9 @@ SO_DO_ADMINISTRADOR = (
     # das duas passa pelo filtro de escopo — entao nenhuma das duas e de quem
     # esta preso a uma obra. O prefixo cobre as duas e as proximas.
     "painel.cenario_",
+    # De onde veio a conta de um titulo: mostra as pernas cruas da baixa no
+    # espelho do OMIE. Ferramenta de conferencia do dono (23/09/2026).
+    "painel.conta_do_titulo",
 )
 
 # Rotas que podem responder sem login. Cada uma com o motivo escrito.

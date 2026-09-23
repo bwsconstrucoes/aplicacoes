@@ -467,16 +467,16 @@ def _consultar_falso(sql, params=()):
     if "AS lancamento_a_pagar" in sql:
         return [(dt.date(2025, 4, 20), 998879, "2. Contas a Pagar", "FORNECEDOR B",
                  "", "Materiais", "Cimento", "Obra Um", "PROJ-A", "NF80", "",
-                 "(sem conta)", -900.0, 0, "")]
+                 "(sem conta)", -900.0, 0, "", "DRE")]
     if "AS lancamento_do_dia" in sql:
         return [(dt.date(2025, 4, 8), 998877, "1. Contas a Receber", "CLIENTE A",
                  "11.111.111/0001-11", "Receita Bruta", "Receita de Obras",
                  "Obra Um", "PROJ-A", "NF123", "medição 3", "Bradesco C/C",
-                 7000.0, 0.0, "https://app.pipefy.com/open-cards/1"),
+                 7000.0, 0.0, "https://app.pipefy.com/open-cards/1", "DRE"),
                 (dt.date(2025, 4, 8), 998878, "2. Contas a Pagar", "FORNECEDOR A LTDA",
                  "12.345.678/0001-90", "Despesas com Pessoal", "Salários",
                  "Obra Um", "PROJ-A", "NF77", "folha", "Bradesco C/C",
-                 -3000.0, -25.0, "")]
+                 -3000.0, -25.0, "", "Fluxo de Caixa")]
 
     # ---- aportes e dividendos (o bloco do fim do DRE) ----
     # Vem antes de tudo: o SQL de aporte cai em vários dos marcadores genéricos
@@ -1720,6 +1720,13 @@ def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
     assert "A pagar no mês" in html and "−R$ 900,00" in html
     assert 'class="cal-valor cal-aberto"' in html
     assert "vencido −R$ 900,00" in html                      # abril de 2025 já passou
+    # DRE ou fluxo: o filtro existe, vira chip e viaja no botão de mês
+    r = painel.get("/painel/calendario?mes=2025-04&analise=fluxo")
+    html = r.get_data(as_text=True)
+    assert 'name="analise"' in html and "Só fluxo (fora do resultado)" in html
+    assert 'value="fluxo" selected' in html
+    assert "analise=fluxo" in [l for l in html.split('href="') if "mes=2025-05" in l][0]
+    assert painel.get("/painel/calendario?mes=2025-04&analise=xyz").status_code == 200
     # os filtros de cima seguem o padrão do Analítico — a conta inclusive
     assert 'name="conta"' in html and "Conta de pagamento" in html
     r = painel.get("/painel/calendario?mes=2025-04&conta=Bradesco+22069-8")

@@ -14,7 +14,8 @@
   {% endif %}
   {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
   {% for campo, valor in [('mes', mes_iso), ('tipo', tipo), ('grupo', grupo),
-                          ('categoria', categoria), ('busca', busca)] %}
+                          ('categoria', categoria), ('busca', busca),
+                          ('analise', analise)] %}
     {% if valor and campo not in proprios %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
     {% endif %}
@@ -36,10 +37,11 @@
   aqui: o mês manda.
 </p>
 
-{% if chips or tipo or grupo or categoria or busca %}
+{% if chips or tipo or grupo or categoria or busca or analise %}
 <div class="chips">
   {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
   {% if tipo %}<span class="chip">{{ tipos[tipo] }}</span>{% endif %}
+  {% if analise %}<span class="chip">{{ analises[analise] }}</span>{% endif %}
   {% if grupo %}<span class="chip">Grupo: {{ grupo }}</span>{% endif %}
   {% if categoria %}<span class="chip">Categoria: {{ categoria }}</span>{% endif %}
   {% if busca %}<span class="chip">Busca: {{ busca }}</span>{% endif %}
@@ -52,7 +54,7 @@
     {# Uma conta só cabe na caixa desta tela; várias (marcadas na barra lateral)
        viajam escondidas e a caixa avisa — o mesmo do Analítico. #}
     {% set conta_propria = (selecao.contas|length) <= 1 %}
-    {{ esconde(['mes', 'tipo', 'grupo', 'categoria', 'busca']
+    {{ esconde(['mes', 'tipo', 'grupo', 'categoria', 'busca', 'analise']
                + (['conta'] if conta_propria else [])) }}
     <div class="form-grade">
       <div class="campo">
@@ -71,6 +73,15 @@
             <option value="{{ chave }}" {% if tipo == chave %}selected{% endif %}>{{ rotulo }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div class="campo">
+        <label for="analise">DRE ou fluxo</label>
+        <select id="analise" name="analise">
+          {% for chave, rotulo in analises.items() %}
+            <option value="{{ chave }}" {% if analise == chave %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+        <p class="dica">Fluxo é o que mexe no caixa sem entrar no resultado: empréstimo, aporte, dividendo, aplicação.</p>
       </div>
       <div class="campo">
         <label for="grupo">Grupo</label>
@@ -106,7 +117,7 @@
       </div>
       <div class="campo" style="align-self:end; display:flex; gap:8px; flex-wrap:wrap">
         <button class="btn" type="submit">Aplicar</button>
-        {% if tipo or grupo or categoria or busca or selecao.contas %}
+        {% if tipo or grupo or categoria or busca or analise or selecao.contas %}
           <a class="btn secundario" style="text-decoration:none"
              href="{{ url_for('painel.calendario', mes=mes_iso) }}">Limpar</a>
         {% endif %}
@@ -150,10 +161,10 @@
 <div class="cartao cal-cartao">
   <div class="cal-nav">
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ com_filtros('painel.calendario', mes=anterior, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca) }}">‹ Mês anterior</a>
+       href="{{ com_filtros('painel.calendario', mes=anterior, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca, analise=analise) }}">‹ Mês anterior</a>
     <h3 class="cal-titulo">{{ titulo_do_mes|capitalize }}</h3>
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ com_filtros('painel.calendario', mes=seguinte, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca) }}">Mês seguinte ›</a>
+       href="{{ com_filtros('painel.calendario', mes=seguinte, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca, analise=analise) }}">Mês seguinte ›</a>
   </div>
 
   <div class="calendario" role="grid" aria-label="Calendário de {{ titulo_do_mes }}">
@@ -213,6 +224,7 @@
   const titulo = els("detalhe-titulo");
   const resumo = els("detalhe-resumo");
   const filtros = new URLSearchParams(window.location.search);
+  const ADMIN = {{ 'true' if administrador else 'false' }};
   const escapar = t => String(t == null ? "" : t)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -224,10 +236,10 @@
     return `<tr>
       <td class="${l.em_aberto ? "v-aberto" : ""}"><b>${escapar(l.natureza)}</b></td>
       <td class="desc" title="${escapar(l.observacao)}">${escapar(l.razao_social || "(sem nome)")}</td>
-      <td class="desc">${escapar(l.categoria)}</td>
+      <td class="desc">${escapar(l.categoria)}${l.analise && l.analise !== "DRE" ? ` <small class="selo neutro">${escapar(l.analise)}</small>` : ""}</td>
       <td class="desc">${escapar(l.obra)}</td>
       <td class="desc">${doc}</td>
-      <td class="desc">${escapar(l.conta)}</td>
+      <td class="desc">${(ADMIN && l.codigo) ? `<button type="button" class="link-btn" data-conta-de="${escapar(l.codigo)}" title="de onde o painel tirou esta conta">${escapar(l.conta || "(sem conta)")} ⓘ</button>` : escapar(l.conta || "(sem conta)")}</td>
       <td class="dados direita ${classe}">${moeda(l.valor)}</td>
     </tr>`;
   }
@@ -257,9 +269,44 @@
           <th class="sem-ordem">Documento</th><th class="sem-ordem">Conta</th>
           <th class="sem-ordem direita">Valor</th>
         </tr></thead>
-        <tbody>${dados.linhas.map(linha).join("")}</tbody></table>`;
+        <tbody>${dados.linhas.map(linha).join("")}</tbody></table>
+        <div id="origem-da-conta" style="margin-top:12px"></div>`;
+      corpo.querySelectorAll("[data-conta-de]").forEach(b =>
+        b.addEventListener("click", () => origem(b.dataset.contaDe)));
     } catch (e) {
       corpo.innerHTML = '<p class="aviso erro">Não deu para carregar o dia. Tente de novo.</p>';
+    }
+  }
+
+  // De onde veio a conta: as pernas da baixa no espelho do OMIE (dono, 23/09)
+  async function origem(codigo) {
+    const alvo = els("origem-da-conta");
+    alvo.innerHTML = '<p class="cartao-dica">Lendo o espelho do OMIE…</p>';
+    try {
+      const r = await fetch("{{ url_for('painel.conta_do_titulo', codigo=0) }}".replace("/0/conta", `/${encodeURIComponent(codigo)}/conta`));
+      const d = await r.json();
+      if (!d.ok) { alvo.innerHTML = `<p class="aviso erro">${escapar(d.erro || "Não encontrado.")}</p>`; return; }
+      const explica = {
+        "baixa bancária": "A conta vem da <b>baixa bancária</b> que o OMIE registrou — é a conta que o próprio OMIE diz que o dinheiro saiu. Se o comprovante mostra outra, a baixa foi lançada na conta errada <b>no OMIE</b>: o conserto é lá (estornar e baixar de novo na conta certa); na próxima atualização o painel acompanha.",
+        "baixa consolidada": "O OMIE <b>não tem a baixa bancária</b> deste título, só a baixa consolidada, que repete a conta do título. O painel não tem como saber a conta real: falta a baixa na conta certa no OMIE.",
+        "conta prevista no título": "O OMIE não tem <b>baixa nenhuma</b> deste título no espelho — o painel mostra a conta <b>prevista</b>. Confira se a baixa foi feita no OMIE; se foi hoje, ela entra na próxima atualização.",
+      }[d.regra] || "";
+      const pernas = d.pernas.length ? `<table class="sem-quebra"><thead><tr>
+          <th class="sem-ordem">Data</th><th class="sem-ordem">Perna</th><th class="sem-ordem">Conta</th>
+          <th class="sem-ordem direita">Valor</th><th class="sem-ordem">Valeu?</th></tr></thead><tbody>`
+        + d.pernas.map(p => `<tr><td class="dados">${escapar(p.data)}</td><td class="desc">${escapar(p.tipo)}</td>
+             <td class="desc">${escapar(p.conta || "(sem conta)")}</td><td class="dados direita">${moeda(p.valor)}</td>
+             <td class="desc">${p.valeu ? "<b>sim</b>" : "—"}</td></tr>`).join("") + "</tbody></table>"
+        : '<p class="cartao-dica">Nenhum movimento deste título no espelho.</p>';
+      alvo.innerHTML = `<div class="cartao" style="margin:0; border-left:4px solid var(--azul-claro)">
+        <b>De onde veio a conta — título ${escapar(d.codigo)} ${d.documento ? "· " + escapar(d.documento) : ""}</b>
+        <p class="cartao-dica" style="margin:6px 0">Conta prevista no título: <b>${escapar(d.conta_prevista || "—")}</b>
+          · No painel: ${d.no_painel.map(n => `<b>${escapar(n.conta)}</b> (${moeda(n.valor)})`).join(", ")}
+          · Regra usada: <b>${escapar(d.regra)}</b></p>
+        <p class="cartao-dica" style="margin:0 0 8px">${explica}</p>${pernas}</div>`;
+      alvo.scrollIntoView({block: "nearest"});
+    } catch (e) {
+      alvo.innerHTML = '<p class="aviso erro">Não deu para ler. Tente de novo.</p>';
     }
   }
 
