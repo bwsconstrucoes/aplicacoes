@@ -391,3 +391,40 @@ def test_o_dono_continua_com_o_relatorio_completo(base_com_duas_obras, monkeypat
     _entrar(cliente)
     html = cliente.get("/painel/dre").get_data(as_text=True)
     assert "/painel/baixar/completo" in html
+
+
+# ===========================================================================
+# O Calendário respeita o escopo — 22/09/2026
+# ===========================================================================
+def test_o_calendario_do_parceiro_so_tem_o_dia_da_obra_dele(base_com_duas_obras, monkeypatch):
+    """O calendário é tela de dado como as outras: só abre se liberada, e o
+    detalhe do dia — que é outro endereço — nunca mostra a obra do outro."""
+    from app.apps.painel import usuarios
+    r = usuarios.criar("calendarista", "senha-dele", obras=["OBRA DELE"],
+                       telas=["calendario"])
+    assert r["ok"], r
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente, usuario="calendarista", senha="senha-dele")
+
+    html = cliente.get("/painel/calendario?mes=2025-03").get_data(as_text=True)
+    assert 'data-dia="2025-03-10"' in html
+    assert "1.000,00" in html and "9.000,00" not in html
+    assert "10.000,00" not in html, "somou a obra do outro"
+
+    dados = cliente.get("/painel/calendario/dia?dia=2025-03-10").get_json()
+    assert dados["ok"] and dados["quantos"] == 1
+    assert dados["linhas"][0]["obra"] == "OBRA DELE"
+    # pedir a obra do outro no endereço não adianta
+    dados = cliente.get("/painel/calendario/dia?dia=2025-03-10&obra=OBRA+DE+OUTRO").get_json()
+    assert dados["quantos"] == 1 and dados["linhas"][0]["obra"] == "OBRA DELE"
+    # a planilha do mês sai só com a obra dele
+    assert cliente.get("/painel/baixar/calendario?mes=2025-03").status_code == 200
+
+    # quem NÃO tem a tela não a vê nem no topo nem no endereço
+    r = usuarios.criar("semcalendario", "senha-dele", obras=["OBRA DELE"], telas=["dre"])
+    outro = _cliente(monkeypatch)
+    _entrar(outro, usuario="semcalendario", senha="senha-dele")
+    assert outro.get("/painel/calendario?mes=2025-03").status_code == 404
+    assert outro.get("/painel/calendario/dia?dia=2025-03-10").status_code == 404
+    assert outro.get("/painel/baixar/calendario?mes=2025-03").status_code == 404
+    assert "Calendário" not in outro.get("/painel/dre").get_data(as_text=True).split("</nav>")[0]

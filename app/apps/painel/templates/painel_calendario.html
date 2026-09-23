@@ -1,0 +1,261 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Calendário — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{# Leva adiante os filtros da barra lateral e os desta tela — o mesmo cuidado
+   do Analítico: campo que o formulário JÁ TEM não vai repetido. #}
+{% macro esconde(proprios=[]) %}
+  {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
+  {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
+  {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+  {% if 'conta' not in proprios %}
+    {% for c in selecao.contas %}<input type="hidden" name="conta" value="{{ c }}">{% endfor %}
+  {% endif %}
+  {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
+  {% for campo, valor in [('mes', mes_iso), ('tipo', tipo), ('grupo', grupo),
+                          ('categoria', categoria), ('busca', busca)] %}
+    {% if valor and campo not in proprios %}
+      <input type="hidden" name="{{ campo }}" value="{{ valor }}">
+    {% endif %}
+  {% endfor %}
+{% endmacro %}
+
+{% block conteudo %}
+<h2>Calendário
+  <small>o caixa dia a dia — {{ titulo_do_mes }}</small>
+</h2>
+<p class="cartao-dica" style="margin:-8px 0 14px">
+  Cada dia mostra o que <b>entrou</b> e o que <b>saiu</b> de fato — a mesma
+  régua do Fluxo de Caixa, pela data do pagamento ou do recebimento, com juros
+  e multa pagos e sem as retenções de receita. O total do mês fecha com a linha
+  do mesmo mês no Fluxo de Caixa. <b>Clique no dia</b> para ver lançamento a
+  lançamento. O ano marcado na barra lateral não vale aqui: o mês manda.
+</p>
+
+{% if chips or tipo or grupo or categoria or busca %}
+<div class="chips">
+  {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+  {% if tipo %}<span class="chip">{{ tipos[tipo] }}</span>{% endif %}
+  {% if grupo %}<span class="chip">Grupo: {{ grupo }}</span>{% endif %}
+  {% if categoria %}<span class="chip">Categoria: {{ categoria }}</span>{% endif %}
+  {% if busca %}<span class="chip">Busca: {{ busca }}</span>{% endif %}
+</div>
+{% endif %}
+
+<!-- ===================== FILTROS DESTA TELA ===================== -->
+<div class="cartao">
+  <form method="get" id="filtros-do-calendario">
+    {# Uma conta só cabe na caixa desta tela; várias (marcadas na barra lateral)
+       viajam escondidas e a caixa avisa — o mesmo do Analítico. #}
+    {% set conta_propria = (selecao.contas|length) <= 1 %}
+    {{ esconde(['mes', 'tipo', 'grupo', 'categoria', 'busca']
+               + (['conta'] if conta_propria else [])) }}
+    <div class="form-grade">
+      <div class="campo">
+        <label for="mes">Mês</label>
+        <input id="mes" name="mes" type="month" value="{{ mes_iso }}">
+      </div>
+      <div class="campo">
+        <label for="busca">Buscar</label>
+        <input id="busca" name="busca" value="{{ busca }}" type="search"
+               placeholder="fornecedor, cliente, categoria, documento ou observação">
+      </div>
+      <div class="campo">
+        <label for="tipo">Mostrar</label>
+        <select id="tipo" name="tipo">
+          {% for chave, rotulo in tipos.items() %}
+            <option value="{{ chave }}" {% if tipo == chave %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="grupo">Grupo</label>
+        <select id="grupo" name="grupo">
+          <option value="">(todos)</option>
+          {% for g in opcoes_analitico.grupos %}
+            <option value="{{ g }}" {% if g == grupo %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="categoria">Categoria</label>
+        <select id="categoria" name="categoria">
+          <option value="">(todas)</option>
+          {% for c in opcoes_analitico.categorias %}
+            <option value="{{ c }}" {% if c == categoria %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="conta">Conta de pagamento</label>
+        <select id="conta" name="conta" {% if not conta_propria %}disabled{% endif %}>
+          {% if conta_propria %}
+            <option value="">(todas)</option>
+            {% for c in opcoes.contas or [] %}
+              <option value="{{ c }}" {% if selecao.contas and c == selecao.contas[0] %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          {% else %}
+            <option selected>({{ selecao.contas|length }} contas, pela barra lateral)</option>
+          {% endif %}
+        </select>
+        <p class="dica">A conta por onde o dinheiro <b>entrou ou saiu</b>.</p>
+      </div>
+      <div class="campo" style="align-self:end; display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn" type="submit">Aplicar</button>
+        {% if tipo or grupo or categoria or busca or selecao.contas %}
+          <a class="btn secundario" style="text-decoration:none"
+             href="{{ url_for('painel.calendario', mes=mes_iso) }}">Limpar</a>
+        {% endif %}
+        <a class="btn secundario" style="text-decoration:none"
+           href="{{ link_baixar('calendario') }}">⬇ Planilha do mês</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- ===================== KPIs ===================== -->
+<div class="kpis">
+  <div class="kpi verde estatico">
+    <div class="kpi-rotulo">Recebido no mês</div>
+    <div class="kpi-valor">{{ brl(dados.entradas) }}</div>
+    <div class="kpi-sub">{% if dados.maior_entrada %}maior dia: {{ dados.maior_entrada[0].strftime('%d/%m') }} — {{ brl(dados.maior_entrada[1]) }}{% else %}nenhum recebimento{% endif %}</div>
+  </div>
+  <div class="kpi vermelho estatico">
+    <div class="kpi-rotulo">Pago no mês</div>
+    <div class="kpi-valor">{{ brl(dados.saidas) }}</div>
+    <div class="kpi-sub">{% if dados.maior_saida %}maior dia: {{ dados.maior_saida[0].strftime('%d/%m') }} — {{ brl(dados.maior_saida[1]) }}{% else %}nenhum pagamento{% endif %}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Líquido do mês</div>
+    <div class="kpi-valor {{ classe_valor(dados.liquido) }}">{{ brl(dados.liquido) }}</div>
+    <div class="kpi-sub">recebido menos pago</div>
+  </div>
+  <div class="kpi ciano estatico">
+    <div class="kpi-rotulo">Dias com movimento</div>
+    <div class="kpi-valor">{{ dados.dias_com_movimento }}</div>
+    <div class="kpi-sub">{{ dados.quantos }} lançamento(s) no mês</div>
+  </div>
+</div>
+
+<!-- ===================== O CALENDÁRIO ===================== -->
+<div class="cartao cal-cartao">
+  <div class="cal-nav">
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ com_filtros('painel.calendario', mes=anterior, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca) }}">‹ Mês anterior</a>
+    <h3 class="cal-titulo">{{ titulo_do_mes|capitalize }}</h3>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ com_filtros('painel.calendario', mes=seguinte, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca) }}">Mês seguinte ›</a>
+  </div>
+
+  <div class="calendario" role="grid" aria-label="Calendário de {{ titulo_do_mes }}">
+    {% for nome in ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'] %}
+      <div class="cal-semana">{{ nome }}</div>
+    {% endfor %}
+    {% for semana in semanas %}
+      {% for numero in semana %}
+        {% if numero == 0 %}
+          <div class="cal-dia fora"></div>
+        {% else %}
+          {% set data = dados.inicio.replace(day=numero) %}
+          {% set n = dados.dias.get(data) %}
+          <button type="button"
+                  class="cal-dia {% if n %}com-movimento{% else %}vazio{% endif %} {% if data == hoje %}hoje{% endif %}"
+                  data-dia="{{ data.isoformat() }}" data-rotulo="{{ data.strftime('%d/%m/%Y') }}"
+                  {% if not n %}disabled{% endif %}
+                  title="{% if n %}{{ n.quantos }} lançamento(s) — clique para ver{% else %}sem movimento{% endif %}">
+            <span class="cal-numero">{{ numero }}</span>
+            {% if n %}
+              {% if n.entradas > 0 %}<span class="cal-valor cal-entrou"><span class="cal-longo">+{{ brl(n.entradas) }}</span><span class="cal-curto">{{ brl_curto(n.entradas) }}</span></span>{% endif %}
+              {% if n.saidas < 0 %}<span class="cal-valor cal-saiu"><span class="cal-longo">{{ brl(n.saidas) }}</span><span class="cal-curto">{{ brl_curto(n.saidas) }}</span></span>{% endif %}
+              <span class="cal-quantos">{{ n.quantos }} lanç.</span>
+            {% endif %}
+          </button>
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+  </div>
+  <p class="cartao-dica">
+    Verde é o que entrou, vermelho o que saiu. Dia sem nada fica apagado. O
+    detalhe abre com os mesmos filtros desta tela, então a soma dele fecha com
+    o número do dia.
+  </p>
+</div>
+
+<!-- ===================== O DETALHE DO DIA ===================== -->
+<dialog id="detalhe-do-dia" class="cal-dialogo">
+  <div class="cal-dialogo-cab">
+    <h3 id="detalhe-titulo">Dia</h3>
+    <div class="cal-dialogo-resumo" id="detalhe-resumo"></div>
+    <button type="button" class="btn secundario" id="detalhe-fechar">Fechar</button>
+  </div>
+  <div id="detalhe-corpo" class="tabela-rolagem" style="max-height:60vh">
+    <p class="cartao-dica">Carregando…</p>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const dialogo = els("detalhe-do-dia");
+  const corpo = els("detalhe-corpo");
+  const titulo = els("detalhe-titulo");
+  const resumo = els("detalhe-resumo");
+  const filtros = new URLSearchParams(window.location.search);
+  const escapar = t => String(t == null ? "" : t)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  function linha(l) {
+    const doc = l.link
+      ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener" title="Abrir no Pipefy">${escapar(l.documento || "Pipefy")} ↗</a>`
+      : escapar(l.documento || "");
+    const classe = l.valor > 0 ? "v-pos" : "v-neg";
+    return `<tr>
+      <td>${escapar(l.natureza)}</td>
+      <td class="desc" title="${escapar(l.observacao)}">${escapar(l.razao_social || "(sem nome)")}</td>
+      <td class="desc">${escapar(l.categoria)}</td>
+      <td class="desc">${escapar(l.obra)}</td>
+      <td class="desc">${doc}</td>
+      <td class="desc">${escapar(l.conta)}</td>
+      <td class="dados direita ${classe}">${moeda(l.valor)}</td>
+    </tr>`;
+  }
+
+  async function abrir(dia, rotulo) {
+    titulo.textContent = "Dia " + rotulo;
+    resumo.textContent = "";
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    dialogo.showModal();
+    const consulta = new URLSearchParams(filtros);
+    consulta.set("dia", dia);
+    try {
+      const r = await fetch("{{ url_for('painel.calendario_dia') }}?" + consulta.toString(),
+                            {headers: {"Accept": "application/json"}});
+      const dados = await r.json();
+      if (!dados.ok) { corpo.innerHTML = `<p class="aviso erro">${escapar(dados.erro || "Não deu para carregar.")}</p>`; return; }
+      resumo.innerHTML = `<b class="v-pos">+${moeda(dados.entradas)}</b> &nbsp;·&nbsp; `
+                       + `<b class="v-neg">${moeda(dados.saidas)}</b> &nbsp;·&nbsp; `
+                       + `líquido <b>${moeda(dados.liquido)}</b> &nbsp;·&nbsp; ${dados.quantos} lançamento(s)`;
+      if (!dados.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nada neste dia com os filtros atuais.</p>'; return; }
+      corpo.innerHTML = `<table>
+        <thead><tr>
+          <th class="sem-ordem">Tipo</th><th class="sem-ordem">Quem</th>
+          <th class="sem-ordem">Categoria</th><th class="sem-ordem">Obra</th>
+          <th class="sem-ordem">Documento</th><th class="sem-ordem">Conta</th>
+          <th class="sem-ordem direita">Valor</th>
+        </tr></thead>
+        <tbody>${dados.linhas.map(linha).join("")}</tbody></table>`;
+    } catch (e) {
+      corpo.innerHTML = '<p class="aviso erro">Não deu para carregar o dia. Tente de novo.</p>';
+    }
+  }
+
+  document.querySelectorAll(".cal-dia.com-movimento").forEach(b => {
+    b.addEventListener("click", () => abrir(b.dataset.dia, b.dataset.rotulo));
+  });
+  els("detalhe-fechar").addEventListener("click", () => dialogo.close());
+  dialogo.addEventListener("click", e => { if (e.target === dialogo) dialogo.close(); });
+})();
+</script>
+{% endblock %}

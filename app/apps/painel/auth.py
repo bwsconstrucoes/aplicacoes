@@ -203,6 +203,8 @@ _ABAS_POR_ENDPOINT = {
     "painel.necessidade_caixa": "caixa",
     "painel.prestacao_contas": "prestacao",
     "painel.extrato": "extrato",
+    "painel.calendario": "calendario",
+    "painel.calendario_dia": "calendario",
 }
 
 
@@ -234,6 +236,7 @@ TELA_DO_DOWNLOAD = {
     "analitico": "analitico", "despesas": "analitico", "credores": "analitico",
     "medicoes": "receita", "fluxo": "fluxo", "obras": "obras",
     "execucao": "execucao", "extrato": "extrato",
+    "calendario": "calendario",
 }
 
 # Estes leem a empresa INTEIRA, por definicao. Sao do dono.

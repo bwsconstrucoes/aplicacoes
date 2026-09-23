@@ -2093,6 +2093,129 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## Dividendos: o critério, o negativo de Barbalha, e o dinheiro da obra com os sócios — 23/09/2026
+
+O dono: *"como é que você está fazendo aquela distribuição de dividendos,
+qual é o critério? Na obra Mercado Barbalha aparece uma distribuição de
+dividendos NEGATIVA e eu nem compreendi. Só deve ser informado o que
+efetivamente foi distribuído. E seria legal visualizar ali: positivo são
+receitas e aportes; negativo, despesas, devolução de aportes e distribuição
+de lucros."*
+
+**O critério** (inalterado, agora escrito na tela): é dividendo todo
+lançamento **pago ou recebido** cuja categoria tenha "dividendo" ou
+"distribuição de lucro(s)" no nome — qualquer conta com esse nome, inclusive
+as marcadas como transferência. Nada além do nome da categoria.
+
+**O negativo de Barbalha**: o quadro somava "pago − recebido" por sócio. Se
+entra dinheiro com categoria de dividendo (a matriz recebendo da parceria,
+um estorno, ou categoria trocada no OMIE), o "recebido" passa do "pago" e o
+líquido fica negativo — sem a tela explicar. **Agora o quadro mostra só o
+distribuído** (o que saiu), e, quando há entrada com esse nome, uma coluna
+à parte e um aviso: não foi somado nem abatido, confira e corrija no OMIE
+se for o caso. O quadro "Resultado × dividendos" já usava só o que saiu.
+(Eu não vi o lançamento de Barbalha — a base não é alcançável daqui. A
+hipótese acima é a única que produz um negativo; o aviso na tela mostra a
+linha.)
+
+**"O dinheiro da obra, com os sócios"** — quadro novo no bloco de Aportes e
+Dividendos do DRE, obra por obra e no total: receitas recebidas (sem
+retenções) + despesas pagas = resultado; + aportes que entraram − devoluções
+que saíram − dividendos pagos = **saldo com os sócios**. Tudo em caixa. Vai
+na planilha do bloco como aba "Caixa com Socios". Teste com banco cobre a
+soma, o dividendo que entrou (fica fora do saldo) e a igualdade com o
+"Resultado" do quadro ao lado.
+
+**Uma correção de passagem**: o "Resultado realizado" do quadro "Resultado ×
+dividendos" somava as retenções de receita (dinheiro que nunca entrou). Agora
+segue a mesma régua do Fluxo de Caixa. Obra com retenção vai mostrar
+resultado um pouco menor do que antes — é o certo.
+
+## O rateio da matriz: afunilar até o lançamento, e ver o que entra — 23/09/2026
+
+O dono, explicando a dificuldade que sobrou na prestação de contas: *"dentro
+dos custos da matriz não é tudo que entra (...) só informar um grupo fica
+muito complicado para quem quiser analisar depois — o que é que está dentro
+daquele grupo? De repente eu quero eliminar parcial, olhar de forma analítica,
+um lançamento específico com 0% (...) preciso poder afunilar isso em tela e
+não pode ser difícil."*
+
+**O afunilar já existia** desde 22/09 (grupo › categoria › lançamento, com
+percentual em cada nível e marcação em lote), mas a tela não dizia **quanto
+dinheiro** cada escolha punha ou tirava do bolo, e não havia um lugar que
+listasse tudo que foi marcado. Agora:
+
+- **"Entra" e "Fica de fora" em dinheiro**, em cada grupo e categoria, já
+  descontando as exceções marcadas lá embaixo — o mesmo cálculo da conta
+  (`_contas_da_matriz` e `calcular_rateio_do_cenario` têm de concordar, e há
+  teste provando). Rodapé com o total da matriz, e quatro números no alto:
+  gastou, entra, fica de fora, juros (régua própria).
+- **As categorias de juros aparecem marcadas** como "não entram aqui: seguem
+  a régua do déficit", em vez de parecerem coisa que se divide por aqui.
+- **Na lista de lançamentos**: busca (fornecedor, documento, observação),
+  marcar todos os visíveis, botões **"Não entra (0%)"** e **"Entra inteiro
+  (100%)"** para os marcados, "Voltar a herdar", e cada linha diz o que
+  divide de fato — **próprio** ou **herdado** da categoria — e quanto entra.
+  O documento abre no Pipefy quando há cartão.
+- **"O que você marcou"**: a lista de toda exceção do cenário (grupo,
+  categoria, lançamento com fornecedor e documento), com valor e percentual,
+  cada uma com link para o lugar onde se muda. É a trilha para quem for
+  auditar.
+- Selo "N exceção(ões)" no grupo e na categoria que têm lançamento marcado
+  por dentro, para não passar despercebido.
+
+Sem migração: é a mesma gravação de antes, só a leitura ficou mais rica.
+
+## O Calendário, e o menu que quebrava na tela pequena — 23/09/2026
+
+Ideia do dono em 22/09/2026, à noite: *"um calendário grande na tela (...)
+cada dia tem um resuminho dentro do dia de valores pagos ou recebidos (...)
+você bate o olho e já vê toda a evolução dia após dia. Quando clicar no dia,
+ele expande com o detalhamento: fornecedor, categoria, valor — e dali abrir
+o Pipefy. Dois botões para o mês anterior e o seguinte, e KPIs."*
+
+**Como ficou** — a tela "Calendário", no menu, depois do Fluxo de Caixa:
+
+- **A régua é a do Fluxo de Caixa**, de propósito: só o que foi pago ou
+  recebido de fato, pela data em que aconteceu, com juros e multa pagos e
+  sem as retenções de receita. O total do mês do calendário **fecha com a
+  linha do mesmo mês no Fluxo de Caixa** — há teste com banco de verdade
+  provando isso. Título em aberto não aparece: calendário é caixa, não
+  compromisso. Se um dia ele quiser "o que vence", é outra visão, não esta.
+- **Filtros**: os da barra lateral (projeto, obra, conta, transferências) e
+  os próprios da tela, como no Analítico: busca, grupo, categoria e "mostrar"
+  (tudo, só recebimentos, só pagamentos). **O ano da barra lateral não vale
+  aqui** — o mês manda; senão "mês seguinte" atravessaria a virada do ano e
+  acharia um calendário vazio sem explicação.
+- **Cada dia é um botão** com o que entrou (verde), o que saiu (vermelho) e
+  quantos lançamentos. Dia sem nada fica apagado. Ao clicar, abre uma janela
+  com a lista (tipo, quem, categoria, obra, documento, conta, valor) e o
+  documento vira link para o Pipefy quando há cartão. A janela pede o dia ao
+  servidor **com os mesmos filtros da tela** — a soma dela fecha com o
+  número do quadradinho.
+- **KPIs**: recebido no mês (e o maior dia), pago no mês (e o maior dia),
+  líquido, dias com movimento e quantidade de lançamentos.
+- **Planilha do mês**: duas abas, o dia a dia e os lançamentos do mês.
+- **Escopo**: é tela de dado como as outras — só abre para quem tem
+  "Calendário" marcado no cadastro, e o detalhe do dia (outro endereço) passa
+  pelo mesmo filtro de obra. Testado com usuário preso a uma obra.
+- **Na tela do celular** os valores viram "7 mil" / "−1,2 mil": o valor
+  inteiro não cabe no quadradinho.
+
+**Custo**: uma consulta agrupada por dia (no máximo 31 linhas) para montar o
+mês; o detalhe só é lido quando alguém clica.
+
+**O menu de cima na tela pequena.** O dono: *"quando a tela encolhe fica
+uma barra de rolagem, fica ruim de encontrar as telas"*. Agora as abas
+**quebram linha** em vez de rolar, e o topo deixa de ser fixo abaixo de 900
+px de largura — fixo, com três linhas de abas, comeria a tela do celular.
+A data da base some do topo nessa largura (continua no rodapé das telas).
+
+**Uma armadilha que custou uma hora**: a classe `entrada` já existia no
+CSS, para a **tela de login** (ocupa a tela inteira, fundo azul-escuro).
+Usada num valor do calendário, o quadradinho virou um bloco de 900 px de
+altura. As classes do calendário levam o prefixo `cal-` por isso.
+
 ## Fora da análise em Parâmetros, e a prestação por obra — 22/09/2026
 
 Duas perguntas do dono, no mesmo dia, depois de ver o cenário: *"tem a visão

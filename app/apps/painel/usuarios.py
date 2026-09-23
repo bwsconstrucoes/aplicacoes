@@ -48,6 +48,7 @@ TELAS = {
     "caixa": "Necessidade de Caixa",
     "prestacao": "Prestação de Contas",
     "extrato": "Extrato de Conta Corrente",
+    "calendario": "Calendário",
 }
 
 # O que o dono pediu para liberar de saida. O resto fica pronto para quando ele

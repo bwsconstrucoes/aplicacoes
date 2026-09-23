@@ -112,6 +112,7 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | Despesas Analítico | cada lançamento de despesa, com busca por fornecedor, categoria ou documento |
 | Receita de Obra | cada medição: o que foi faturado, o que entrou, o que falta |
 | Fluxo de Caixa | entradas e saídas mês a mês, e o acumulado |
+| Calendário | o caixa **dia a dia** num mês: cada dia com o que entrou e saiu, e o detalhe ao clicar (com o link do Pipefy) |
 | Resultado por Obra | quanto cada obra ou projeto deu |
 | Comprometido × Executado | quanto de cada obra já andou, de cada lado |
 | Necessidade de Caixa | um conjunto de obras se paga sozinho, ou alguém segurou |

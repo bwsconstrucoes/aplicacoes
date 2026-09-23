@@ -62,6 +62,24 @@ def _ajudantes_de_template():
         texto = f"{abs(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return ("−R$ " if v < 0 else "R$ ") + texto
 
+    def brl_curto(v):
+        """O valor em poucas letras — "7 mil", "1,2 mi" — para caber num
+        quadradinho do calendario na tela do celular."""
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return "—"
+        sinal = "−" if v < 0 else "+"
+        v = abs(v)
+        if v >= 1_000_000:
+            texto = f"{v / 1_000_000:.1f}".replace(".", ",") + " mi"
+        elif v >= 1_000:
+            texto = (f"{v / 1_000:.1f}".replace(".", ",").replace(",0", "")
+                     + " mil")
+        else:
+            texto = f"{v:.0f}"
+        return sinal + texto
+
     def classe_valor(v):
         """Vermelho para negativo, verde para positivo — para nao ser preciso
         procurar o sinal no meio do numero."""
@@ -158,7 +176,8 @@ def _ajudantes_de_template():
                 "ms_banco": int(segundos_banco * 1000),
                 "ms_total": int(total * 1000)}
 
-    return {"brl": brl, "classe_valor": classe_valor, "com_filtros": com_filtros,
+    return {"brl": brl, "brl_curto": brl_curto, "classe_valor": classe_valor,
+            "com_filtros": com_filtros,
             "cronometro": cronometro, "link_baixar": link_baixar,
             "link_analitico": link_analitico, "pagina_link": pagina_link,
             "estatico": estatico}
@@ -359,6 +378,7 @@ ABAS = [
     ("analitico", "Despesas Analítico", "painel.analitico"),
     ("receita", "Receita de Obra", "painel.receita"),
     ("fluxo", "Fluxo de Caixa", "painel.fluxo"),
+    ("calendario", "Calendário", "painel.calendario"),
     ("obras", "Resultado por Obra", "painel.obras"),
     ("execucao", "Comprometido × Executado", "painel.execucao"),
     ("caixa", "Necessidade de Caixa", "painel.necessidade_caixa"),
@@ -526,6 +546,9 @@ def dre():
         extra["divisao"] = divisao
         extra["hipotese"] = consultas.hipotese_de_distribuicao(
             aportes["por_socio"], divisao["disponivel"])
+        # o dinheiro da obra com os socios dentro: receitas e aportes de um
+        # lado, despesas, devolucoes e dividendos do outro (dono, 23/09/2026)
+        extra["caixa_socios"] = consultas.caixa_com_socios(f)
 
     return render_template(
         "painel_dre.html",
@@ -630,6 +653,107 @@ def extrato():
             de=de, ate=ate, ordem=request.args.get("ordem", "data"),
             pagina=pagina) if visao == "lancamentos" else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# O Calendario — o caixa dia a dia
+# ---------------------------------------------------------------------------
+# Pedido do dono em 22/09/2026: um calendario grande, do mes, com o resumo de
+# cada dia (pago e recebido), filtros como os do Analitico, botoes para o mes
+# anterior e o seguinte, KPIs no alto, e o detalhe do dia ao clicar — com o
+# link do Pipefy.
+_MES_ISO = re.compile(r"^\d{4}-\d{2}$")
+
+NOMES_DOS_MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+                   "julho", "agosto", "setembro", "outubro", "novembro",
+                   "dezembro"]
+
+
+def _mes_do_calendario() -> tuple[int, int]:
+    """O mes pedido (AAAA-MM) — ou o mes de hoje, quando nao veio ou veio torto."""
+    import datetime as _dt
+    texto = (request.args.get("mes") or "").strip()
+    if _MES_ISO.match(texto):
+        ano, mes = int(texto[:4]), int(texto[5:7])
+        if 1 <= mes <= 12 and 2000 <= ano <= 2100:
+            return ano, mes
+    hoje = _dt.date.today()
+    return hoje.year, hoje.month
+
+
+def _filtros_do_calendario():
+    """Os filtros da tela do calendario: os da barra lateral, SEM o ano.
+
+    O mes do calendario ja diz o ano; deixar o filtro de ano da barra lateral
+    valer aqui faria "ir para o mes seguinte" atravessar a virada do ano e
+    encontrar um calendario vazio, sem explicacao."""
+    f = _filtros_do_pedido()
+    f.anos = []
+    return f, {
+        "tipo": request.args.get("tipo", "") if request.args.get("tipo", "")
+        in consultas_tipos_do_calendario() else "",
+        "grupo": request.args.get("grupo", ""),
+        "categoria": request.args.get("categoria", ""),
+        "busca": (request.args.get("busca") or "").strip(),
+    }
+
+
+def consultas_tipos_do_calendario():
+    from . import consultas
+    return consultas.TIPOS_DO_CALENDARIO
+
+
+def _semanas_do_mes(ano: int, mes: int) -> list[list]:
+    """As semanas do mes, de domingo a sabado, com zero fora do mes."""
+    import calendar as _cal
+    return _cal.Calendar(firstweekday=6).monthdayscalendar(ano, mes)
+
+
+@bp.route("/calendario")
+def calendario():
+    """O caixa dia a dia, num mes — para bater o olho e ver a evolucao."""
+    import datetime as _dt
+    from . import consultas
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    f, proprios = _filtros_do_calendario()
+    ano, mes = _mes_do_calendario()
+    dados = consultas.calendario_do_mes(f, ano, mes, **proprios)
+    inicio = dados["inicio"]
+    anterior = (inicio - _dt.timedelta(days=1)).replace(day=1)
+    seguinte = (inicio + _dt.timedelta(days=32)).replace(day=1)
+    return render_template(
+        "painel_calendario.html",
+        **_contexto_comum("calendario"),
+        chips=[c for c in f.resumo() if not c.startswith("Ano:")],
+        ano=ano, mes=mes, mes_iso=f"{ano:04d}-{mes:02d}",
+        titulo_do_mes=f"{NOMES_DOS_MESES[mes - 1]} de {ano}",
+        anterior=anterior.strftime("%Y-%m"), seguinte=seguinte.strftime("%Y-%m"),
+        semanas=_semanas_do_mes(ano, mes),
+        hoje=_dt.date.today(),
+        dados=dados,
+        tipos=consultas.TIPOS_DO_CALENDARIO,
+        opcoes_analitico=consultas.opcoes_do_analitico(f),
+        **proprios,
+    )
+
+
+@bp.route("/calendario/dia")
+def calendario_dia():
+    """O detalhe de um dia, para a janela que abre ao clicar nele."""
+    from . import consultas
+    dia = (request.args.get("dia") or "").strip()
+    if not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Dia inválido."}), 400
+    f, proprios = _filtros_do_calendario()
+    linhas = consultas.lancamentos_do_dia(f, dia, **proprios)
+    for l in linhas:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+    entradas = sum(l["valor"] for l in linhas if l["valor"] > 0)
+    saidas = sum(l["valor"] for l in linhas if l["valor"] < 0)
+    return jsonify({"ok": True, "dia": dia, "linhas": linhas,
+                    "quantos": len(linhas), "entradas": entradas,
+                    "saidas": saidas, "liquido": entradas + saidas})
 
 
 @bp.route("/receita")
@@ -1133,19 +1257,45 @@ def _calcular_cenario(cenario: dict) -> dict:
     }
 
 
-def _contas_da_matriz(config, cenario, medida: str) -> list[dict]:
-    """A arvore do que a matriz gastou, com o percentual de cada linha.
+def _contas_da_matriz(config, cenario, medida: str) -> dict:
+    """A arvore do que a matriz gastou, com o percentual de cada linha — e
+    quanto ENTRA no bolo e quanto FICA DE FORA, em dinheiro, em cada nivel.
 
-    Sai do MESMO agregado que a conta usa — nao ha consulta extra, e o que a
-    tela mostra e por construcao o que entra no calculo. Ordenada do maior para
-    o menor: quem esta configurando quer ver primeiro o que move o resultado."""
+    Sai do MESMO agregado que a conta usa — nao ha consulta extra para a
+    arvore, e o que a tela mostra e por construcao o que entra no calculo.
+    Ordenada do maior para o menor: quem esta configurando quer ver primeiro
+    o que move o resultado.
+
+    Pedido do dono em 23/09/2026: "so informar um grupo fica complicado para
+    quem quiser analisar depois — o que esta dentro daquele grupo? Eu preciso
+    ir adentrando ate o lancamento e estipular o que entra e o que nao entra".
+    Por isso cada linha diz o valor que entra, considerando as excecoes
+    marcadas la embaixo, e a tela lista tudo que foi marcado num lugar so.
+
+    Devolve {"contas": [...], "resumo": {...}, "marcacoes": [...]}."""
     from . import consultas, prestacao
     pesos = cenario.get("pesos") or {}
     padrao = float(cenario.get("pct_padrao", 100) or 0)
+    deptos = _deptos_administrativos(config)
+    # As categorias de juro seguem a regua do deficit, nao a do rateio: a
+    # arvore as mostra, mas nao como coisa que se divide por aqui.
+    juros = (prestacao.categorias_de_juros(config.get("categoria_juros")
+                                           or prestacao.CATEGORIA_JUROS_PADRAO)
+             if bool(cenario.get("juros_por_deficit", 1)) else set())
+
+    # Os lancamentos marcados um a um saem do balde da categoria e entram com
+    # o percentual proprio — exatamente como na conta (calcular_rateio_do_cenario)
+    marcados = pesos.get("lancamento") or {}
+    excecoes = consultas.lancamentos_administrativos_por_codigo(
+        deptos, list(marcados.keys()), medida) if marcados else []
+    por_categoria: dict[tuple, list] = {}
+    for e in excecoes:
+        chave = ((e.get("grupo") or "").strip() or "(sem grupo)",
+                 (e.get("categoria") or "").strip() or "(sem categoria)")
+        por_categoria.setdefault(chave, []).append(e)
 
     grupos: dict[str, dict] = {}
-    for linha in consultas.despesa_administrativa(
-            _deptos_administrativos(config), medida):
+    for linha in consultas.despesa_administrativa(deptos, medida):
         nome = linha.get("grupo") or "(sem grupo)"
         cat = linha.get("categoria") or "(sem categoria)"
         g = grupos.setdefault(nome, {"grupo": nome, "valor": 0.0, "categorias": {}})
@@ -1153,20 +1303,65 @@ def _contas_da_matriz(config, cenario, medida: str) -> list[dict]:
         c = g["categorias"].setdefault(cat, {"categoria": cat, "valor": 0.0})
         c["valor"] += linha["valor"]
 
+    marcacoes: list[dict] = []
     saida = []
     for g in grupos.values():
         g["pct"] = (pesos.get("grupo") or {}).get(g["grupo"])
         g["pct_efetivo"] = prestacao.peso_da_conta(pesos, g["grupo"], "", "", padrao)
+        g["entra"] = g["fora"] = g["juros"] = 0.0
+        g["excecoes"] = 0
+        if g["pct"] is not None:
+            marcacoes.append({"nivel": "grupo", "grupo": g["grupo"], "categoria": "",
+                              "chave": g["grupo"], "rotulo": g["grupo"],
+                              "valor": g["valor"], "pct": g["pct"]})
         cats = []
         for c in g["categorias"].values():
             c["pct"] = (pesos.get("categoria") or {}).get(c["categoria"])
             c["pct_efetivo"] = prestacao.peso_da_conta(
                 pesos, g["grupo"], c["categoria"], "", padrao)
             c["grupo"] = g["grupo"]
+            c["e_juros"] = c["categoria"].strip().lower() in juros
+            proprias = por_categoria.get((g["grupo"], c["categoria"]), [])
+            c["excecoes"] = len(proprias)
+            if c["e_juros"]:
+                c["entra"], c["fora"], c["juros"] = 0.0, 0.0, c["valor"]
+            else:
+                no_balde = c["valor"] - sum(e["valor"] for e in proprias)
+                entra = no_balde * c["pct_efetivo"] / 100.0
+                for e in proprias:
+                    pct = prestacao.peso_da_conta(
+                        pesos, g["grupo"], c["categoria"], e["codigo"], padrao)
+                    entra += e["valor"] * pct / 100.0
+                    marcacoes.append({
+                        "nivel": "lancamento", "grupo": g["grupo"],
+                        "categoria": c["categoria"], "chave": e["codigo"],
+                        "rotulo": f"{e.get('credor') or '—'} · {e.get('documento') or 'sem documento'} "
+                                  f"({e.get('mes')})",
+                        "valor": e["valor"], "pct": pct})
+                c["entra"], c["fora"], c["juros"] = entra, c["valor"] - entra, 0.0
+            if c["pct"] is not None:
+                marcacoes.append({"nivel": "categoria", "grupo": g["grupo"],
+                                  "categoria": c["categoria"], "chave": c["categoria"],
+                                  "rotulo": f"{g['grupo']} › {c['categoria']}",
+                                  "valor": c["valor"], "pct": c["pct"]})
+            g["entra"] += c["entra"]
+            g["fora"] += c["fora"]
+            g["juros"] += c["juros"]
+            g["excecoes"] += c["excecoes"]
             cats.append(c)
         g["categorias"] = sorted(cats, key=lambda c: c["valor"])
         saida.append(g)
-    return sorted(saida, key=lambda g: g["valor"])
+    contas = sorted(saida, key=lambda g: g["valor"])
+    resumo = {
+        "total": sum(g["valor"] for g in contas),
+        "entra": sum(g["entra"] for g in contas),
+        "fora": sum(g["fora"] for g in contas),
+        "juros": sum(g["juros"] for g in contas),
+        "marcacoes": len(marcacoes),
+    }
+    ordem = {"grupo": 0, "categoria": 1, "lancamento": 2}
+    marcacoes.sort(key=lambda m: (ordem[m["nivel"]], m["grupo"], m["categoria"], m["rotulo"]))
+    return {"contas": contas, "resumo": resumo, "marcacoes": marcacoes}
 
 
 @bp.route("/prestacao/montagem")
@@ -1186,12 +1381,21 @@ def cenario_montagem():
 
     config = prestacao_dados.config()
     contexto = dict(_contexto_comum("prestacao"))
+    arvore = (_contas_da_matriz(config, atual, atual.get("medida", "comprometido"))
+              if atual else {"contas": [], "resumo": None, "marcacoes": []})
+    aberto_grupo = request.args.get("grupo", "")
+    aberto_categoria = request.args.get("categoria", "")
+    # o percentual que a categoria aberta passa aos lancamentos sem marcacao
+    # propria — a lista mostra, linha a linha, o que cada um divide de fato
+    categoria_aberta = next(
+        (c for g in arvore["contas"] if g["grupo"] == aberto_grupo
+         for c in g["categorias"] if c["categoria"] == aberto_categoria), None)
     return render_template(
         "painel_cenario.html", **contexto,
         cenarios=lista, cenario=atual,
         criterios=cenarios.CRITERIOS, janelas=cenarios.JANELAS,
-        contas=(_contas_da_matriz(config, atual, atual.get("medida", "comprometido"))
-                if atual else []),
+        contas=arvore["contas"], resumo_matriz=arvore["resumo"],
+        marcacoes=arvore["marcacoes"], categoria_aberta=categoria_aberta,
         socios=prestacao_dados.socios(apenas_ativos=True),
         obras_do_painel=_opcoes_no_escopo().get("obras", []),
         projetos_do_painel=_opcoes_no_escopo().get("projetos", []),
@@ -1202,13 +1406,12 @@ def cenario_montagem():
         juros_conf=consultas.conferencia_dos_juros(
             prestacao.categorias_de_juros(config.get("categoria_juros")
                                           or prestacao.CATEGORIA_JUROS_PADRAO)),
-        aberto_grupo=request.args.get("grupo", ""),
-        aberto_categoria=request.args.get("categoria", ""),
+        aberto_grupo=aberto_grupo,
+        aberto_categoria=aberto_categoria,
         lancamentos=(consultas.lancamentos_administrativos(
             _deptos_administrativos(config), atual.get("medida", "comprometido"),
-            grupo=request.args.get("grupo", ""),
-            categoria=request.args.get("categoria", ""))
-            if atual and request.args.get("categoria") else []),
+            grupo=aberto_grupo, categoria=aberto_categoria)
+            if atual and aberto_categoria else []),
         config=config,
     )
 
@@ -2384,10 +2587,27 @@ def baixar(assunto):
             ("Lancamentos de Aporte", C["aporte_lancamentos"],
              consultas.lancamentos_de_aporte(f, limite=None)["linhas"]),
             ("Resultado x Dividendos", C["divisao"], divisao["linhas"]),
+            ("Caixa com Socios", C["caixa_socios"],
+             consultas.caixa_com_socios(f)["linhas"]),
         ]
+
+    def _abas_do_calendario():
+        import datetime as _dt
+        fc, proprios = _filtros_do_calendario()
+        ano, mes = _mes_do_calendario()
+        dados = consultas.calendario_do_mes(fc, ano, mes, **proprios)
+        dias = [dict(dia=d, **n) for d, n in sorted(dados["dias"].items())]
+        lancamentos = []
+        for d in sorted(dados["dias"]):
+            lancamentos.extend(consultas.lancamentos_do_dia(
+                fc, d.isoformat(), limite=5000, **proprios))
+        rotulo = f"{NOMES_DOS_MESES[mes - 1]} de {ano}"
+        return [(f"Calendario {rotulo}", C["calendario_dias"], dias),
+                ("Lancamentos do mes", C["calendario_lancamentos"], lancamentos)]
 
     montadores = {
         "dre": lambda: [("DRE", C["dre"], _dre())],
+        "calendario": _abas_do_calendario,
         "analitico": _abas_do_analitico,
         "extrato": lambda: [("Extrato de Conta", C["extrato"],
                              consultas.extrato_da_conta(
