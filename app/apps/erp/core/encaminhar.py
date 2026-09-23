@@ -109,6 +109,20 @@ def normalizar_telefone(bruto: str) -> str:
 # mesmo cuidado do bloco de dados bancários que o ERP já monta para colar num
 # WhatsApp (`core/cadastros/contas.py`).
 # ---------------------------------------------------------------------------
+def _link_do_numero(numero: Any) -> Optional[str]:
+    """O link curto do registro, quando dá para montar.
+
+    Fora de uma requisição web (um robô, um teste) não há endereço do site
+    para montar link nenhum — e aí a mensagem simplesmente sai sem ele, em vez
+    de quebrar o envio inteiro por causa de uma linha a mais.
+    """
+    try:
+        from app.apps.erp.core.comum import atalho
+        return atalho.link_pelo_numero(numero, absoluto=True)
+    except Exception:            # noqa: BLE001 — sem contexto web, sem link
+        return None
+
+
 def texto_do_titulo(s: Session, titulo_id: int) -> tuple[str, str]:
     """(assunto, mensagem) do lançamento — os campos que o pessoal pedia."""
     t = s.get(Titulo, titulo_id, options=[selectinload(Titulo.fornecedor),
@@ -151,9 +165,14 @@ def texto_do_titulo(s: Session, titulo_id: int) -> tuple[str, str]:
     linhas += [
         "",
         f"📌 Situação: {getattr(t.status, 'value', t.status)}",
-        "",
-        "_Enviado pelo ERP da BWS._",
     ]
+    # O LINK QUE ABRE O REGISTRO (22/09/2026). Antes a mensagem contava o que
+    # era e parava aí: para ver o resto — anexos, parcelas, histórico — a
+    # pessoa tinha de entrar no sistema e procurar pelo número na mão.
+    link = _link_do_numero(t.numero_sp)
+    if link:
+        linhas += ["", f"🔗 Abrir no sistema: {link}"]
+    linhas += ["", "_Enviado pelo ERP da BWS._"]
     return f"Lançamento {t.numero_sp}", "\n".join(linhas)
 
 

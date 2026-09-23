@@ -814,6 +814,12 @@ els("btn-limpar").addEventListener("click", () => {
   montarFiltros(); desenhar();
 });
 
+// CHEGAR PELO NÚMERO DA SP (22/09/2026). Aqui a tela lista os ITENS, e o
+// número que a pessoa tem na mão é o do pedido inteiro (SS-0001). Então o
+// atalho não abre uma ficha: ele DEIXA A LISTA FILTRADA naquele pedido, que é
+// o que se quer ver — as linhas dele e em que pé cada uma está.
+const _sp = new URLSearchParams(location.search).get("solicitacao");
+if (_sp && els("f-busca")) els("f-busca").value = _sp;
 carregarBase().then(carregar).catch(e => aviso("mensagem", e.message, "erro"));
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.

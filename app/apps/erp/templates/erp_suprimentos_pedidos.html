@@ -171,6 +171,7 @@ async function abrir(id){
     const p = d.pedido;
     els("dlg-titulo").textContent = `${p.numero} · ${p.fornecedor}`;
     els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      <div style="margin-bottom:10px">${botaoDeLink(p.numero, p.fornecedor)}</div>
       <div class="cartao-dica">
         ${p.condicao ? `Pagamento: <b>${p.condicao}</b> · ` : ""}
         ${p.entrega ? (p.entrega === "COLETA" ? "coleta nossa" : "entrega do fornecedor") : ""}
@@ -407,13 +408,19 @@ els("btn-limpar").addEventListener("click", () => {
   carregar();
 });
 
-// ENCADEAMENTO: ?pedido=N abre a compra que originou o título.
+// ENCADEAMENTO: ?pedido=N abre a compra que originou o título — e é também o
+// que /erp/ir/PC-0001 usa para chegar aqui.
+//
+// NÃO CONFERE SE ESTÁ NA LISTA (22/09/2026). Conferia, e por isso o link de um
+// pedido já recebido respondia "não está na lista de agora" em vez de abrir:
+// a lista chega filtrada em "aguardando autorização", e pedido que andou sai
+// dela. Quem clica num link quer VER AQUELE registro, não a lista de hoje — e
+// `abrir` busca a ficha no servidor, que é quem decide se pode mostrar.
 carregar().then(() => {
   const pedido = new URLSearchParams(location.search).get("pedido");
   if (!pedido) return;
   const id = +pedido;
-  if (PEDIDOS.some(x => x.id === id)) abrir(id);
-  else aviso("mensagem", "Este pedido de compra não está na lista de agora.", "erro");
+  if (Number.isFinite(id) && id > 0) abrir(id);
 });
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.

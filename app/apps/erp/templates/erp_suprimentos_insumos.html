@@ -731,6 +731,12 @@ if (!PODE_EDITAR) {
   els("btn-mudancas").style.display = "none";
 }
 
-carregar();
+// ABRIR DIRETO NUM INSUMO (22/09/2026): /erp/ir/INS-0001 chega aqui.
+carregar().then(() => {
+  const pedido = new URLSearchParams(location.search).get("insumo");
+  if (!pedido) return;
+  const id = +pedido;
+  if (Number.isFinite(id) && id > 0) abrirFicha(id);
+});
 </script>
 {% endblock %}

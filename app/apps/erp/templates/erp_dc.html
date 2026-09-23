@@ -315,7 +315,15 @@ els("btn-nova").addEventListener("click", async () => {
   });
 });
 els("busca").addEventListener("input", desenhar);
-carregar();
+// ABRIR DIRETO NUM REGISTRO (22/09/2026). É o que faz /erp/ir/<numero>
+// chegar até aqui: o atalho traduz o número que a pessoa tem na mão para o
+// número interno, e esta tela abre a ficha dele sozinha.
+carregar().then(() => {
+  const pedido = new URLSearchParams(location.search).get("despesa");
+  if (!pedido) return;
+  const id = +pedido;
+  if (Number.isFinite(id) && id > 0) abrir(id);
+});
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");

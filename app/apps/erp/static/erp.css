@@ -489,7 +489,7 @@ tr.linha-detalhe:hover > td { background: #F4F7FC; }
 /* Cabeçalho sticky faz sentido na tabela de fora; nas tabelinhas de dentro
    da ficha ele flutuaria por cima do conteúdo. */
 .ficha thead th { position: static; }
-.ficha-topo { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.ficha-topo { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .ficha-topo h3 { margin: 0; font-size: 15px; }
 .ficha-topo .link-btn { margin-left: auto; }
 

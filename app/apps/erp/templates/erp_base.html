@@ -1143,6 +1143,55 @@ function valorDeDetalhe(v){
 // Mora aqui, no base, porque duas telas usam (Empresas e a criação de obra) e
 // vai servir às próximas — o padrão é o mesmo em qualquer cadastro.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// O LINK DO REGISTRO — para mandar por WhatsApp (22/09/2026)
+//
+// Pedido do dono: *"eu encaminho via celular o número de um registro, e a
+// pessoa só clica e puf, abre o sistema"* — igual a um card do Pipefy.
+//
+// MORA AQUI, e não em cada tela, pelo mesmo motivo de sempre: o endereço do
+// atalho é um só (/erp/ir/<numero>), e repetir a regra em oito fichas é
+// garantir que um dia elas discordem. Tela nova ganha o botão escrevendo uma
+// linha, e o texto copiado sai igual em todas.
+// ---------------------------------------------------------------------------
+function linkDoNumero(numero){
+  return `${location.origin}/erp/ir/${encodeURIComponent(String(numero||"").trim())}`;
+}
+
+// O botão. `descricao` é o que vai junto do link no texto copiado — o credor,
+// o nome da obra: sem isso a pessoa do outro lado recebe um link pelado e não
+// sabe se vale a pena clicar.
+function botaoDeLink(numero, descricao){
+  if (!numero) return "";
+  return `<button class="btn secundario" data-copiar-link="${escapar(numero)}"
+    data-copiar-descricao="${escapar(descricao||"")}"
+    title="Copia o link deste registro, pronto para mandar">🔗 Copiar link</button>`;
+}
+
+// Um ouvinte só, no documento: pega o clique de qualquer botão desses,
+// inclusive os que nascerem depois — as fichas são desenhadas na hora.
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-copiar-link]");
+  if (!b) return;
+  const numero = b.getAttribute("data-copiar-link");
+  const desc = b.getAttribute("data-copiar-descricao");
+  const texto = `${numero}${desc ? " — " + desc : ""}\n${linkDoNumero(numero)}`;
+  try {
+    await navigator.clipboard.writeText(texto);
+    const antes = b.textContent;
+    b.textContent = "✔ Copiado";
+    setTimeout(() => { b.textContent = antes; }, 2000);
+  } catch (e) {
+    // NAVEGADOR QUE NÃO DEIXA COPIAR (acontece fora de HTTPS, e em alguns
+    // celulares): mostrar o texto é melhor que não fazer nada — a pessoa
+    // seleciona e copia na mão.
+    perguntar({titulo: "Copie o link",
+      aviso: "Seu navegador não deixou copiar sozinho. Selecione o texto abaixo.",
+      textoOk: "Fechar",
+      campos: [{nome: "link", rotulo: "Link deste registro", valor: texto}]});
+  }
+});
+
 const CAMPOS_DA_EMPRESA = [
   ["cnpj", "CNPJ *", 2], ["razao_social", "Razão social *", 4],
   ["nome_fantasia", "Nome fantasia", 3], ["logradouro", "Logradouro", 3],

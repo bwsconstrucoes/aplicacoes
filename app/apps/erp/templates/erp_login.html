@@ -22,6 +22,10 @@
       </div>
     </div>
     {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+    {# PARA ONDE A PESSOA IA. Sem isto, um link mandado por WhatsApp morre
+       aqui: quem clica entra e cai no início, tendo de caçar o registro. #}
+    {% if proximo %}<input type="hidden" name="proximo" value="{{ proximo }}">
+    <div class="aviso info">Entre para abrir o registro que te mandaram.</div>{% endif %}
     <label for="email">E-mail</label>
     <input id="email" name="email" type="email" autocomplete="username" required autofocus>
     <label for="senha">Senha</label>

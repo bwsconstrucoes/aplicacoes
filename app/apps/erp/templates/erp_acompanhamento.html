@@ -577,6 +577,13 @@ els("btn-limpar").addEventListener("click", () => {
 els("dlg-fechar").addEventListener("click", () => els("dlg").close());
 if (els("btn-novo")) els("btn-novo").addEventListener("click", novoProcesso);
 
-carregarApoio().then(carregar);
+// ABRIR DIRETO NUM PROCESSO (22/09/2026): é o que faz /erp/ir/AC-000001
+// chegar até aqui.
+carregarApoio().then(carregar).then(() => {
+  const pedido = new URLSearchParams(location.search).get("processo");
+  if (!pedido) return;
+  const id = +pedido;
+  if (Number.isFinite(id) && id > 0) abrir(id);
+});
 </script>
 {% endblock %}
