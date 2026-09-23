@@ -2119,19 +2119,36 @@ daqui, então em vez de chutar a causa entrou a ferramenta:
 - Rota `/painel/titulo/<n>/conta`, só do administrador. Mesma regra da carga
   (`_escolher_recebimentos`), então o que a janela diz é o que a carga fez.
 
-**O dono conferiu no OMIE: o pagamento está na 22069.** Então o painel
-estava errado — e a causa estava na atualização: ela só **relia os
-pagamentos com data de pagamento nos últimos dois dias**. Baixa lançada com
-data antiga, ou estornada e refeita em outra conta mantendo a data original,
-nunca era relida; a baixa velha (7011) ficava no espelho. O título se
-atualizava (o OMIE marca a alteração nele), os pagamentos dele não.
+**O dono conferiu no OMIE: o pagamento está na 22069.** O painel está
+errado nesse título. **A causa NÃO foi confirmada.** Na primeira resposta eu
+afirmei que a baixa tinha sido estornada e refeita — e o dono corrigiu, com
+razão: *"isso é mera suposição sua. Quem disse que houve alteração nesse
+lançamento? Como é baixa antiga, acredito que não houve."* Não havia dado
+nenhum sustentando a alteração; foi hipótese dita como fato. Lição anotada:
+**causa só se afirma com o dado na mão.**
 
-**Conserto**: a atualização do dia passou a reler **30 dias** de pagamentos e
-a completa, **180 dias** (`DIAS_REVISADOS_NA_ATUALIZACAO`,
-`DIAS_REVISADOS_NA_COMPLETA` em `sync/espelho.py`). A janela é apagada e
-relida inteira, então o que mudou dentro dela se corrige sozinho. Custa
-páginas a mais de leitura no OMIE. Baixa refeita há mais de 180 dias
-continua fora — para essa, a conferência com o OMIE (abaixo).
+As causas possíveis que o código permite, sem saber qual é a deste título:
+
+1. **A baixa foi alterada no OMIE depois de lida** (estorno e nova baixa com
+   a data antiga) — a atualização só relia dois dias. Foi alargada para 30
+   dias (180 na completa); a mudança é boa em si, mas NÃO está provado que
+   seja o caso deste título.
+2. **O painel tem a perna bancária na 22069, mas escolheu a consolidada**: a
+   regra (`_escolher_recebimentos`) só usa as pernas bancárias quando a soma
+   delas FECHA com a consolidada. Se não fecha (juros, multa, desconto,
+   centavos), fica com a consolidada — que repete a conta do título, 7011. A
+   regra foi feita para acertar o VALOR; para a CONTA, qualquer perna
+   bancária seria melhor que a consolidada. Possível defeito do painel,
+   independente de alteração no OMIE.
+3. **A perna bancária chegou sem o número do título** e foi para
+   `movimentos_sem_titulo` — o painel fica só com a consolidada (7011).
+
+**Como decidir, sem suposição**: no Calendário, dia do pagamento, clicar na
+conta do lançamento (mostra as pernas que o painel TEM e qual valeu) e em
+"Conferir este dia com o OMIE" (mostra o que o OMIE tem AGORA). Se o painel
+tem a 22069 e não a usou → causa 2, conserto no código. Se o painel não tem
+a 22069 e o OMIE tem → causa 1 ou 3 (a conferência diz se a perna do OMIE
+tem título). **Pendente: essas duas leituras, feitas pelo dono.**
 
 ## Conferir um dia com o OMIE, na hora — 23/09/2026
 
