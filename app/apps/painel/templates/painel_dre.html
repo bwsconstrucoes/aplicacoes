@@ -483,15 +483,17 @@
   </p>
 
   {% if aportes.dividendos %}
-  <h4 style="margin:20px 0 6px; font-size:13px">Dividendos</h4>
+  {% set entradas_com_nome_de_dividendo = aportes.dividendos|sum(attribute='recebido') %}
+  <h4 style="margin:20px 0 6px; font-size:13px">Dividendos distribuídos</h4>
   <div class="tabela-rolagem">
     <table>
       <thead>
         <tr>
           <th class="sem-ordem">Sócio</th>
-          <th class="sem-ordem direita">Pago a ele</th>
-          <th class="sem-ordem direita">Recebido dele</th>
-          <th class="sem-ordem direita">Líquido</th>
+          <th class="sem-ordem direita">Distribuído a ele</th>
+          {% if entradas_com_nome_de_dividendo > 0.005 %}
+          <th class="sem-ordem direita">Entrou com nome de dividendo</th>
+          {% endif %}
           <th class="sem-ordem direita">Lançamentos</th>
         </tr>
       </thead>
@@ -499,9 +501,10 @@
         {% for d in aportes.dividendos %}
         <tr>
           <td class="desc">{{ d.socio }}</td>
-          <td class="dados direita">{{ brl(d.pago) }}</td>
-          <td class="dados direita">{{ brl(d.recebido) }}</td>
-          <td class="dados direita"><b>{{ brl(d.liquido) }}</b></td>
+          <td class="dados direita"><b>{{ brl(d.pago) if d.pago else '—' }}</b></td>
+          {% if entradas_com_nome_de_dividendo > 0.005 %}
+          <td class="dados direita v-neg">{{ brl(d.recebido) if d.recebido else '—' }}</td>
+          {% endif %}
           <td class="dados direita">{{ d.lancamentos }}</td>
         </tr>
         {% endfor %}
@@ -509,8 +512,19 @@
     </table>
   </div>
   <p class="cartao-dica">
-    Dividendo é distribuição de <b>lucro</b> — não abate o saldo de aporte, que
-    é capital. Por isso ele fica neste quadro à parte.
+    <b>Critério:</b> é dividendo todo lançamento pago ou recebido cuja categoria
+    tenha "dividendo" ou "distribuição de lucro(s)" no nome — inclusive os
+    marcados como transferência. Só o que <b>saiu</b> conta como distribuído.
+    Dividendo é distribuição de <b>lucro</b>, não abate o saldo de aporte, que é
+    capital — por isso fica neste quadro à parte.
+    {% if entradas_com_nome_de_dividendo > 0.005 %}
+    <br><b class="v-neg">Atenção:</b> há <b>{{ brl(entradas_com_nome_de_dividendo) }}</b>
+    que <b>entraram</b> com categoria de dividendo. Entrada não é distribuição:
+    pode ser o outro lado de um pagamento (a matriz recebendo da parceria),
+    um estorno, ou categoria trocada no OMIE. Não foi somado nem abatido de
+    nada — confira os lançamentos abaixo, marcados como "Dividendos" com valor
+    positivo, e corrija no OMIE se for o caso.
+    {% endif %}
   </p>
   {% endif %}
 
@@ -549,6 +563,86 @@
       de aportes</a>.
     </p>
   {% endif %}
+  {% endif %}
+</div>
+
+<!-- ---------------------- O DINHEIRO DA OBRA, COM OS SÓCIOS ---------------------- -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>O dinheiro da obra, com os sócios</h3>
+    <small>o que entrou e o que saiu, em caixa, obra por obra</small>
+  </div>
+  {% if not caixa_socios.tem_dados %}
+    <div class="vazio"><b>Sem dados</b>Nenhum movimento nos filtros escolhidos.</div>
+  {% else %}
+  {% set t = caixa_socios.total %}
+  <div class="kpis">
+    <div class="kpi estatico verde">
+      <div class="kpi-rotulo">Entrou</div>
+      <div class="kpi-valor">{{ brl(t.receitas + t.aportes) }}</div>
+      <div class="kpi-sub">receitas {{ brl(t.receitas) }} · aportes {{ brl(t.aportes) }}</div>
+    </div>
+    <div class="kpi estatico vermelho">
+      <div class="kpi-rotulo">Saiu</div>
+      <div class="kpi-valor">{{ brl(t.despesas + t.devolucoes + t.dividendos) }}</div>
+      <div class="kpi-sub">despesas {{ brl(t.despesas) }} · devoluções {{ brl(t.devolucoes) }} · dividendos {{ brl(t.dividendos) }}</div>
+    </div>
+    <div class="kpi estatico ciano">
+      <div class="kpi-rotulo">Saldo com os sócios</div>
+      <div class="kpi-valor {{ classe_valor(t.saldo) }}">{{ brl(t.saldo) }}</div>
+      <div class="kpi-sub">resultado {{ brl(t.resultado) }} + aportes − devoluções − dividendos</div>
+    </div>
+  </div>
+  <div class="tabela-rolagem" style="margin-top:10px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Receitas</th>
+          <th class="sem-ordem direita">Despesas</th>
+          <th class="sem-ordem direita">Resultado</th>
+          <th class="sem-ordem direita">Aportes</th>
+          <th class="sem-ordem direita">Devoluções</th>
+          <th class="sem-ordem direita">Dividendos</th>
+          <th class="sem-ordem direita">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in caixa_socios.linhas %}
+        <tr>
+          <td class="desc">{{ l.obra }}{% if l.dividendos_recebidos > 0.005 %} <span class="selo neutro" title="entrou dinheiro com categoria de dividendo — não somado">+{{ brl(l.dividendos_recebidos) }} com nome de dividendo</span>{% endif %}</td>
+          <td class="dados direita">{{ brl(l.receitas) if l.receitas else '—' }}</td>
+          <td class="dados direita">{{ brl(l.despesas) if l.despesas else '—' }}</td>
+          <td class="dados direita {{ classe_valor(l.resultado) }}">{{ brl(l.resultado) }}</td>
+          <td class="dados direita">{{ brl(l.aportes) if l.aportes else '—' }}</td>
+          <td class="dados direita">{{ brl(l.devolucoes) if l.devolucoes else '—' }}</td>
+          <td class="dados direita">{{ brl(l.dividendos) if l.dividendos else '—' }}</td>
+          <td class="dados direita {{ classe_valor(l.saldo) }}"><b>{{ brl(l.saldo) }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="linha-total">
+          <td class="desc">Total</td>
+          <td class="dados direita">{{ brl(t.receitas) }}</td>
+          <td class="dados direita">{{ brl(t.despesas) }}</td>
+          <td class="dados direita {{ classe_valor(t.resultado) }}">{{ brl(t.resultado) }}</td>
+          <td class="dados direita">{{ brl(t.aportes) }}</td>
+          <td class="dados direita">{{ brl(t.devolucoes) }}</td>
+          <td class="dados direita">{{ brl(t.dividendos) }}</td>
+          <td class="dados direita {{ classe_valor(t.saldo) }}"><b>{{ brl(t.saldo) }}</b></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    Tudo em caixa: só o que foi pago ou recebido de fato. <b>Receitas</b> sem as
+    retenções (o cliente reteve, nunca entrou); <b>despesas</b> com juros e multa
+    pagos; <b>aportes</b> só quando entram na obra, <b>devoluções</b> só quando
+    saem dela; <b>dividendos</b> só o que foi distribuído. Saldo positivo é
+    dinheiro que a obra gerou além do que os sócios puseram; negativo é quanto
+    os sócios estão sustentando. O "Resultado" é o mesmo do quadro abaixo.
+  </p>
   {% endif %}
 </div>
 

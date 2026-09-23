@@ -2093,6 +2093,44 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## Dividendos: o critério, o negativo de Barbalha, e o dinheiro da obra com os sócios — 23/09/2026
+
+O dono: *"como é que você está fazendo aquela distribuição de dividendos,
+qual é o critério? Na obra Mercado Barbalha aparece uma distribuição de
+dividendos NEGATIVA e eu nem compreendi. Só deve ser informado o que
+efetivamente foi distribuído. E seria legal visualizar ali: positivo são
+receitas e aportes; negativo, despesas, devolução de aportes e distribuição
+de lucros."*
+
+**O critério** (inalterado, agora escrito na tela): é dividendo todo
+lançamento **pago ou recebido** cuja categoria tenha "dividendo" ou
+"distribuição de lucro(s)" no nome — qualquer conta com esse nome, inclusive
+as marcadas como transferência. Nada além do nome da categoria.
+
+**O negativo de Barbalha**: o quadro somava "pago − recebido" por sócio. Se
+entra dinheiro com categoria de dividendo (a matriz recebendo da parceria,
+um estorno, ou categoria trocada no OMIE), o "recebido" passa do "pago" e o
+líquido fica negativo — sem a tela explicar. **Agora o quadro mostra só o
+distribuído** (o que saiu), e, quando há entrada com esse nome, uma coluna
+à parte e um aviso: não foi somado nem abatido, confira e corrija no OMIE
+se for o caso. O quadro "Resultado × dividendos" já usava só o que saiu.
+(Eu não vi o lançamento de Barbalha — a base não é alcançável daqui. A
+hipótese acima é a única que produz um negativo; o aviso na tela mostra a
+linha.)
+
+**"O dinheiro da obra, com os sócios"** — quadro novo no bloco de Aportes e
+Dividendos do DRE, obra por obra e no total: receitas recebidas (sem
+retenções) + despesas pagas = resultado; + aportes que entraram − devoluções
+que saíram − dividendos pagos = **saldo com os sócios**. Tudo em caixa. Vai
+na planilha do bloco como aba "Caixa com Socios". Teste com banco cobre a
+soma, o dividendo que entrou (fica fora do saldo) e a igualdade com o
+"Resultado" do quadro ao lado.
+
+**Uma correção de passagem**: o "Resultado realizado" do quadro "Resultado ×
+dividendos" somava as retenções de receita (dinheiro que nunca entrou). Agora
+segue a mesma régua do Fluxo de Caixa. Obra com retenção vai mostrar
+resultado um pouco menor do que antes — é o certo.
+
 ## O rateio da matriz: afunilar até o lançamento, e ver o que entra — 23/09/2026
 
 O dono, explicando a dificuldade que sobrou na prestação de contas: *"dentro

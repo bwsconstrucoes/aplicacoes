@@ -546,6 +546,9 @@ def dre():
         extra["divisao"] = divisao
         extra["hipotese"] = consultas.hipotese_de_distribuicao(
             aportes["por_socio"], divisao["disponivel"])
+        # o dinheiro da obra com os socios dentro: receitas e aportes de um
+        # lado, despesas, devolucoes e dividendos do outro (dono, 23/09/2026)
+        extra["caixa_socios"] = consultas.caixa_com_socios(f)
 
     return render_template(
         "painel_dre.html",
@@ -2584,6 +2587,8 @@ def baixar(assunto):
             ("Lancamentos de Aporte", C["aporte_lancamentos"],
              consultas.lancamentos_de_aporte(f, limite=None)["linhas"]),
             ("Resultado x Dividendos", C["divisao"], divisao["linhas"]),
+            ("Caixa com Socios", C["caixa_socios"],
+             consultas.caixa_com_socios(f)["linhas"]),
         ]
 
     def _abas_do_calendario():
