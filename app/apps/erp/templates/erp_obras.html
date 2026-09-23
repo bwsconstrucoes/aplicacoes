@@ -462,10 +462,19 @@ function irPara(foco){
   if (typeof c.focus === "function") try { c.focus({preventScroll:true}); } catch(e){}
 }
 
+// Qual aba de qual obra está desenhada agora. Serve para redesenhar sozinho
+// quando um documento é corrigido ou excluído pelos botões do `erp_base.html`.
+let PAINEL_ATUAL = null;
+
 async function painel(i, id, foco=null){
+  PAINEL_ATUAL = {aba: i, obra: id};
   await desenharPainel(i, id);
   irPara(foco);
 }
+
+document.addEventListener("documento-mudou", () => {
+  if (PAINEL_ATUAL) painel(PAINEL_ATUAL.aba, PAINEL_ATUAL.obra);
+});
 
 async function desenharPainel(i, id){
   const o = OBRAS.find(x=>x.id===id);
@@ -792,7 +801,7 @@ async function desenharPainel(i, id){
           <td class="desc"><small class="mono">${a.nome}</small></td>
           <td class="direita dados">${a.tamanho_kb} KB${a.comprimido?`<small>de ${a.original_kb}</small>`:""}</td>
           <td class="dados">${a.em}</td>
-          <td><a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">Abrir</a></td></tr>`).join("")
+          <td>${acoesDoDocumento(a)}</td></tr>`).join("")
           || `<tr><td colspan="5" class="cartao-dica">Nenhum documento anexado.</td></tr>`}
       </tbody></table>`;
     els("btn-doc-ler").addEventListener("click", () => lerDocumentoDaObra(id));

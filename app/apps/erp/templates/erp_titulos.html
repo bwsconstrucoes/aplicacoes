@@ -576,7 +576,7 @@ function montarFicha(t){
           <td>${a.nome}${a.descricao?`<small>${a.descricao}</small>`:""}</td>
           <td>${rotulo(a.categoria)}</td><td class="dados">${a.tamanho_kb} KB</td>
           <td class="dados">${a.em}</td>
-          <td><a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">Abrir</a></td>
+          <td>${acoesDoDocumento(a)}</td>
         </tr>`).join("")}</tbody></table>` : `<div class="cartao-dica">Nenhum anexo.</div>`}
         <div class="form-grade" style="margin-top:10px">
           <div class="campo"><label>Anexar documento</label><input type="file" id="an-arq"></div>
@@ -700,6 +700,12 @@ function recarregarFicha(id){
   if (els("dlg") && els("dlg").open) return fichaNaJanela(id);
   pintarFicha();
 }
+
+// Documento corrigido ou excluído pelos botões do `erp_base.html`: a ficha
+// aberta se redesenha sozinha, senão a lista de anexos fica mentindo.
+document.addEventListener("documento-mudou", () => {
+  if (FICHA && FICHA.id) recarregarFicha(FICHA.id);
+});
 
 // Endereço direto para um título que os filtros de hoje não mostram: não há
 // linha para expandir, então a ficha abre na janela mesmo.

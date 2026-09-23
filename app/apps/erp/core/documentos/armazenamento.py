@@ -270,6 +270,39 @@ def listar(s: Session, entidade_tipo: str, entidade_id: int) -> list[dict[str, A
     } for a in linhas]
 
 
+def corrigir(s: Session, anexo_id: int, usuario: Usuario, *,
+             descricao: Optional[str] = None,
+             categoria: Optional[str] = None) -> Anexo:
+    """Conserta o que foi digitado errado na hora de anexar.
+
+    Pedido do dono em 23/09/2026: *"caso eu adicione um documento de forma
+    equivocada e precise alterar, não tem opção pra isso"*. Ele tinha razão —
+    anexar era via de mão única: errou o tipo ou a descrição, e a única saída
+    era excluir e subir de novo.
+
+    O ARQUIVO EM SI NÃO MUDA, de propósito. Trocar os bytes por baixo do mesmo
+    registro apaga a diferença entre "corrigi o rótulo" e "é outro documento" —
+    e é justamente essa diferença que a trilha precisa guardar. Documento
+    errado se exclui e se anexa o certo; o que se corrige aqui é a etiqueta.
+    """
+    a = obter(s, anexo_id)
+    antes = {"descricao": a.descricao, "categoria": a.categoria_anexo}
+    if categoria is not None:
+        cat = (categoria or "").strip().upper() or "OUTRO"
+        if cat not in CATEGORIAS:
+            raise ErroValidacao(f"Tipo de documento desconhecido: {cat}")
+        a.categoria_anexo = cat
+    if descricao is not None:
+        a.descricao = (descricao or "").strip() or None
+    depois = {"descricao": a.descricao, "categoria": a.categoria_anexo}
+    if antes == depois:
+        return a                      # nada mudou: não suja a trilha
+    registrar_evento(s, a.entidade_tipo, a.entidade_id, "ANEXO_CORRIGIDO",
+                     {"arquivo": a.nome_arquivo, "antes": antes,
+                      "depois": depois}, usuario.id)
+    return a
+
+
 def excluir(s: Session, anexo_id: int, usuario: Usuario) -> None:
     a = obter(s, anexo_id)
     registrar_evento(s, a.entidade_tipo, a.entidade_id, "ANEXO_EXCLUIDO",
