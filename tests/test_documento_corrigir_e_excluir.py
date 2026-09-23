@@ -167,7 +167,7 @@ def test_corrigir_o_arquivo_em_si_nao_e_oferecido(cenario):
 
 
 def test_corrigir_fica_registrado_na_trilha(cenario):
-    from app.apps.erp.db.models.financeiro import EventoAuditoria
+    from app.apps.erp.db.models.financeiro import Evento
     from sqlalchemy import select
     c = cenario
     a = _anexar(c, categoria="OUTRO")
@@ -175,15 +175,15 @@ def test_corrigir_fica_registrado_na_trilha(cenario):
     corrigir(c["s"], a.id, c["dono"], categoria="SEGURO")
     c["s"].flush()
 
-    eventos = c["s"].scalars(select(EventoAuditoria).where(
-        EventoAuditoria.entidade_tipo == "obra",
-        EventoAuditoria.entidade_id == c["obra"].id,
-        EventoAuditoria.acao == "ANEXO_CORRIGIDO")).all()
+    eventos = c["s"].scalars(select(Evento).where(
+        Evento.entidade_tipo == "obra",
+        Evento.entidade_id == c["obra"].id,
+        Evento.acao == "ANEXO_CORRIGIDO")).all()
     assert len(eventos) == 1
 
 
 def test_correcao_que_nao_muda_nada_nao_suja_a_trilha(cenario):
-    from app.apps.erp.db.models.financeiro import EventoAuditoria
+    from app.apps.erp.db.models.financeiro import Evento
     from sqlalchemy import select
     c = cenario
     a = _anexar(c, categoria="NOTA", descricao="a mesma coisa")
@@ -191,8 +191,8 @@ def test_correcao_que_nao_muda_nada_nao_suja_a_trilha(cenario):
     corrigir(c["s"], a.id, c["dono"], categoria="NOTA", descricao="a mesma coisa")
     c["s"].flush()
 
-    assert not c["s"].scalars(select(EventoAuditoria).where(
-        EventoAuditoria.acao == "ANEXO_CORRIGIDO")).all()
+    assert not c["s"].scalars(select(Evento).where(
+        Evento.acao == "ANEXO_CORRIGIDO")).all()
 
 
 def test_corrigir_pela_tela_responde_o_que_ficou_gravado(cenario, app_real):
