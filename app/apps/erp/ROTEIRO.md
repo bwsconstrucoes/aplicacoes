@@ -1324,6 +1324,19 @@ Feito nesta leva:
       que cresce, e em tela estreita os campos empilham. A causa era um
       `<select>` sem teto de largura esticado pelo insumo de nome mais
       comprido — armadilha que vale para toda tela com lista dentro de tabela.
+- [x] **A tag "Sem empresa" não sumia (23/09/2026).** A empresa era gravada e a
+      lista de obras não a devolvia, então o alerta vermelho ficava para sempre
+      — em todas as obras, inclusive nas corretas. Terceira aparição do mesmo
+      formato de defeito (campo gravado e não devolvido), aqui com o agravante
+      de o sistema afirmar em vermelho uma coisa falsa. Quatro testes de banco
+      cobrem os dois caminhos que definem a empresa.
+- [x] **Corrigir e excluir o documento anexado (23/09/2026).** Fora da tela do
+      Arquivo, anexar era via de mão única: a ficha da obra, a do título e as
+      fotos de medição só ofereciam "Abrir". Agora corrigem o tipo e a
+      descrição (com o de→para na trilha) e excluem (apagando o arquivo,
+      inclusive no Drive). Mora no `erp_base.html`, então tela nova nasce com
+      isso. O arquivo em si não se troca por baixo do mesmo registro — essa
+      diferença a trilha precisa guardar.
 
 O que falta, em ordem de retorno por hora de trabalho:
 

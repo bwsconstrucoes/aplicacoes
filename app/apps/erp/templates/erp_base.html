@@ -1192,6 +1192,91 @@ document.addEventListener("click", async (ev) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// DOCUMENTO ANEXADO: CORRIGIR E EXCLUIR (23/09/2026)
+//
+// Dono: *"caso eu adicione um documento de forma equivocada e precise alterar,
+// não tem opção pra isso. Ou até mesmo excluir algo que esteja errado."*
+//
+// Estava certo: anexar era via de mão única fora da tela do Arquivo. Errar o
+// tipo na pressa é o que mais acontece — a caixinha já vem com um valor, e
+// quem está com o papel na mão clica em Anexar sem trocar.
+//
+// MORA AQUI pela regra de sempre (*"o funcionamento do sistema tem que ser
+// similar"*): seis telas listam documento, e seis cópias da mesma regra é
+// garantir que um dia discordem. A tela escreve `acoesDoDocumento(a)` numa
+// célula e recebe os três botões; depois de corrigir ou excluir, o base avisa
+// a tela pelo evento `documento-mudou`, e cada uma recarrega do seu jeito.
+//
+// O ARQUIVO EM SI NÃO SE TROCA, de propósito — só a etiqueta. Documento errado
+// se exclui e se anexa o certo; assim a trilha não confunde "corrigi o rótulo"
+// com "é outro papel".
+// ---------------------------------------------------------------------------
+const TIPOS_DE_DOCUMENTO = [
+  ["CONTRATO","Contrato"], ["ART","ART/RRT"], ["SEGURO","Seguro-garantia"],
+  ["OS","Ordem de serviço"], ["MEDICAO","Medição"], ["NOTA","Nota fiscal"],
+  ["BOLETO","Boleto"], ["GUIA","Guia"], ["COMPROVANTE","Comprovante"],
+  ["PROPOSTA","Proposta"], ["PRESTACAO_CONTAS","Prestação de contas"],
+  ["OUTRO","Outro"],
+];
+
+function acoesDoDocumento(a){
+  if (!a || !a.id) return "";
+  return `<a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">Abrir</a>
+    <button class="link-btn" data-doc-corrigir="${a.id}"
+      data-doc-categoria="${escapar(a.categoria||"OUTRO")}"
+      data-doc-descricao="${escapar(a.descricao||"")}"
+      title="Trocar o tipo ou a descrição deste documento">Corrigir</button>
+    <button class="link-btn" data-doc-excluir="${a.id}"
+      data-doc-nome="${escapar(a.nome||"")}"
+      title="Tirar este documento daqui">Excluir</button>`;
+}
+
+// Um ouvinte só, no documento — vale para os botões que nascerem depois, e as
+// fichas são desenhadas na hora.
+document.addEventListener("click", async (ev) => {
+  const corrigir = ev.target.closest("[data-doc-corrigir]");
+  if (corrigir) {
+    const id = corrigir.getAttribute("data-doc-corrigir");
+    const resposta = await perguntar({
+      titulo: "Corrigir o documento",
+      aviso: "Troca o tipo e a descrição. Para substituir o arquivo em si, "
+           + "exclua este e anexe o certo — assim o histórico não mistura as "
+           + "duas coisas.",
+      textoOk: "Salvar correção",
+      campos: [
+        {nome: "categoria", rotulo: "Tipo do documento", tipo: "select",
+         valor: corrigir.getAttribute("data-doc-categoria") || "OUTRO",
+         opcoes: TIPOS_DE_DOCUMENTO.map(([v, r]) => ({valor: v, rotulo: r}))},
+        {nome: "descricao", rotulo: "Descrição", largura: 6,
+         valor: corrigir.getAttribute("data-doc-descricao") || "",
+         dica: "O que este papel é, na sua língua — é o que aparece na lista."},
+      ]});
+    if (!resposta) return;
+    try {
+      await api(`/erp/api/anexos/${id}`, {method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({categoria: resposta.categoria,
+                              descricao: resposta.descricao})});
+      document.dispatchEvent(new CustomEvent("documento-mudou",
+        {detail: {id: Number(id), acao: "corrigido"}}));
+    } catch (e) { alert(e.message); }
+    return;
+  }
+  const excluir = ev.target.closest("[data-doc-excluir]");
+  if (!excluir) return;
+  const nome = excluir.getAttribute("data-doc-nome") || "este documento";
+  // EXCLUIR APAGA O ARQUIVO, e não tem desfazer — por isso a confirmação diz o
+  // nome do arquivo, e não um "tem certeza?" que ninguém lê.
+  if (!confirm(`Excluir ${nome}? O arquivo é apagado junto e não tem como voltar.`)) return;
+  try {
+    await api(`/erp/api/anexos/${excluir.getAttribute("data-doc-excluir")}`,
+              {method: "DELETE"});
+    document.dispatchEvent(new CustomEvent("documento-mudou",
+      {detail: {id: Number(excluir.getAttribute("data-doc-excluir")), acao: "excluido"}}));
+  } catch (e) { alert(e.message); }
+});
+
 const CAMPOS_DA_EMPRESA = [
   ["cnpj", "CNPJ *", 2], ["razao_social", "Razão social *", 4],
   ["nome_fantasia", "Nome fantasia", 3], ["logradouro", "Logradouro", 3],
