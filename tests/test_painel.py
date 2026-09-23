@@ -429,6 +429,12 @@ def _consultar_falso(sql, params=()):
         if marca in sql:
             return resposta
 
+    # ---- o dinheiro da obra com os socios (bloco de aportes do DRE) ----
+    # Antes do ramo de aportes: a consulta cita 'Aporte de Parceiro' e cairia la.
+    if "AS caixa_com_socios" in sql:
+        return [("Obra Um", 9000.0, -5000.0, 5000.0, -1000.0, -1200.0, 0.0),
+                ("Obra Dois", 0.0, -800.0, 0.0, 0.0, 0.0, 300.0)]
+
     # ---- o calendario: o mes dia a dia, e o detalhe de um dia ----
     # Vem antes de tudo: o detalhe cita a obra (NULLIF(TRIM(departamento)
     # e cairia no ramo do resultado por obra, com duas colunas so.
@@ -1008,7 +1014,8 @@ def test_o_excel_de_aportes_tem_uma_aba_por_recorte(painel):
     livro = load_workbook(io.BytesIO(r.get_data()))
     assert livro.sheetnames == [
         "Aportes por Socio", "Aportes por Obra",
-        "Dividendos", "Lancamentos de Aporte", "Resultado x Dividendos"]
+        "Dividendos", "Lancamentos de Aporte", "Resultado x Dividendos",
+        "Caixa com Socios"]
 
 
 # ===========================================================================
@@ -1730,3 +1737,20 @@ def test_o_menu_de_cima_quebra_linha_na_tela_pequena():
     assert ".topo-abas" in bloco and "flex-wrap: wrap" in bloco
     assert "overflow: visible" in bloco
     assert "position: static" in bloco
+
+
+# ===========================================================================
+# O dinheiro da obra, com os sócios — 23/09/2026
+# ===========================================================================
+def test_o_bloco_de_aportes_mostra_o_dinheiro_da_obra_com_os_socios(painel):
+    """O dono: "positivo: receitas e aportes; negativo: despesas, devolução
+    de aportes e distribuição de lucros. Seria legal visualizar isso ali"."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre?bloco=aportes").get_data(as_text=True)
+    assert "O dinheiro da obra, com os sócios" in html
+    # Obra Um: 9.000 − 5.000 + 5.000 − 1.000 − 1.200 = 6.800
+    assert "R$ 6.800,00" in html
+    # Obra Dois entrou dinheiro com nome de dividendo: marcado, não somado
+    assert "com nome de dividendo" in html and "R$ 300,00" in html
+    # o quadro de dividendos não mostra mais um "líquido" negativo
+    assert "Distribuído a ele" in html and "Líquido" not in html.split("Dividendos distribuídos")[1].split("Lançamentos</h4>")[0]

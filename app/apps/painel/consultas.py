@@ -1840,7 +1840,10 @@ def resultado_dividendos(f: Filtros) -> dict:
 
         Disponível = resultado realizado − dividendos já pagos
     """
-    where_r, params_r = f.where(f"analise = 'DRE' AND {PAGO}")
+    # Sem as retenções de receita: o cliente as reteve, nunca passaram pela
+    # conta — a mesma régua do Fluxo de Caixa e do quadro "o dinheiro da obra"
+    where_r, params_r = f.where(
+        f"analise = 'DRE' AND {PAGO} AND NOT (tipo = ? AND {RETIDO})", [REC])
     resultado = {obra: float(valor or 0) for obra, valor in consultar(
         f"SELECT {_OBRA}, SUM({MOVIMENTO_DE_CAIXA}) FROM fato{where_r} GROUP BY 1",
         params_r)}
@@ -1865,6 +1868,59 @@ def resultado_dividendos(f: Filtros) -> dict:
         "disponivel": sum(l["disponivel"] for l in linhas),
         "tem_dados": bool(linhas),
     }
+
+
+def caixa_com_socios(f: Filtros) -> dict:
+    """O dinheiro da obra, com os sócios dentro — obra por obra.
+
+    Pedido do dono em 23/09/2026: *"o que eu tenho de positivo? Receitas e
+    aportes. De negativo? Despesas, devolução de aportes e distribuição de
+    lucros. Seria legal visualizar isso nesse local."*
+
+    Tudo em CAIXA, só o que foi pago ou recebido de fato:
+
+        receitas recebidas (sem as retenções) + despesas pagas = resultado
+        + aportes que entraram − devoluções que saíram − dividendos pagos
+        = saldo com os sócios
+
+    Uma consulta só, com uma soma condicional por coluna. Dividendo que
+    ENTROU (dinheiro recebido com nome de dividendo) fica numa coluna à parte
+    e NÃO entra no saldo: distribuição é o que saiu — o que entrou com esse
+    nome é coisa para conferir, não para abater."""
+    where, params = _sem_cortar_transferencia(f).where(PAGO)
+    sql = f"""
+        SELECT {_OBRA} AS caixa_com_socios,
+               SUM(CASE WHEN analise = 'DRE' AND tipo = '{REC}' AND NOT ({RETIDO})
+                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
+               SUM(CASE WHEN analise = 'DRE' AND tipo = '{PAG}'
+                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
+               SUM(CASE WHEN ({TIPO_APORTE}) IN ({NO_SALDO})
+                         AND ({TIPO_APORTE}) <> 'Devolução de Aporte'
+                         AND pago_recebido > 0 THEN pago_recebido ELSE 0 END),
+               SUM(CASE WHEN ({TIPO_APORTE}) = 'Devolução de Aporte'
+                         AND pago_recebido < 0 THEN pago_recebido ELSE 0 END),
+               SUM(CASE WHEN ({TIPO_APORTE}) = 'Dividendos'
+                         AND pago_recebido < 0 THEN pago_recebido ELSE 0 END),
+               SUM(CASE WHEN ({TIPO_APORTE}) = 'Dividendos'
+                         AND pago_recebido > 0 THEN pago_recebido ELSE 0 END)
+          FROM fato{where}
+         GROUP BY 1"""
+    campos = ("receitas", "despesas", "aportes", "devolucoes",
+              "dividendos", "dividendos_recebidos")
+    linhas = []
+    for bruta in consultar(sql, params):
+        linha = {"obra": bruta[0]}
+        for campo, valor in zip(campos, bruta[1:]):
+            linha[campo] = float(valor or 0)
+        linha["resultado"] = linha["receitas"] + linha["despesas"]
+        linha["saldo"] = (linha["resultado"] + linha["aportes"]
+                          + linha["devolucoes"] + linha["dividendos"])
+        if any(abs(linha[c]) > 0.005 for c in campos):
+            linhas.append(linha)
+    linhas.sort(key=lambda l: l["saldo"])
+    total = {c: sum(l[c] for l in linhas)
+             for c in campos + ("resultado", "saldo")}
+    return {"linhas": linhas, "total": total, "tem_dados": bool(linhas)}
 
 
 def hipotese_de_distribuicao(por_socio: list[dict], disponivel: float) -> list[dict]:
@@ -2849,7 +2905,8 @@ def lancamentos_administrativos_por_codigo(deptos_admin, codigos,
         SELECT codigo_lancamento,
                COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
                TRIM(COALESCE(grupo,'')), TRIM(COALESCE(categoria,'')),
-               SUM({valor})
+               SUM({valor}),
+               MIN(COALESCE(razao_social,'')), MIN(COALESCE(numero_documento,''))
           FROM fato
          WHERE analise = 'DRE' AND tipo = ? AND departamento = ANY(?)
            AND codigo_lancamento = ANY(?)
@@ -2862,8 +2919,11 @@ def lancamentos_administrativos_por_codigo(deptos_admin, codigos,
             continue
     if not numeros:
         return []
-    campos = ("codigo", "mes", "grupo", "categoria", "valor")
-    return [dict(zip(campos, (str(l[0] or ""), l[1], l[2], l[3], float(l[4] or 0))))
+    # credor e documento vao junto para a tela dizer O QUE foi marcado — um
+    # numero de lancamento sozinho nao diz nada a quem for auditar
+    campos = ("codigo", "mes", "grupo", "categoria", "valor", "credor", "documento")
+    return [dict(zip(campos, (str(l[0] or ""), l[1], l[2], l[3], float(l[4] or 0),
+                              l[5], l[6])))
             for l in consultar(sql, [PAG, list(deptos_admin), numeros])]
 
 

@@ -1914,3 +1914,78 @@ def test_o_explorador_mostra_o_link_do_pipefy_quando_ha(base_para_explorar, monk
     html = cliente.get("/painel/explorador?busca=COM+PIPEFY").get_data(as_text=True)
     assert 'href="https://app.pipefy.com/open-cards/123"' in html
     assert "NF 777 ↗" in html
+
+
+# ===========================================================================
+# O dinheiro da obra, com os sócios — 23/09/2026
+# ===========================================================================
+@pytest.fixture()
+def base_com_socios(base_de_aportes):
+    """Sobre a base de aportes (devolução 100 mil + 200 mil em TRF, dividendo
+    50 mil pago, tudo na CASA), entram: receita de 1.000 com 100 retidos,
+    despesa de 400, aporte de parceiro de 5.000 e 700 que ENTRARAM com nome
+    de dividendo — que é o caso de Barbalha que o dono não entendeu."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        for cod, tipo, analise, cat, grupo, razao, valor in (
+                (701, "1. Contas a Receber", "DRE", "Receita de Obras", "Receita Bruta", "CLIENTE", 1000),
+                (701, "1. Contas a Receber", "DRE", "Impostos Retidos na Fonte", "Retenções", "CLIENTE", 100),
+                (702, "2. Contas a Pagar", "DRE", "Materiais", "Materiais", "FORNECEDOR", -400),
+                (703, "1. Contas a Receber", "Fluxo de Caixa", "Aportes Parceiros", "Aportes", "PARCEIRO LTDA", 5000),
+                (704, "1. Contas a Receber", "Fluxo de Caixa", "Distribuição de Lucros e Dividendos", "Dividendos", "MORAIS", 700)):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " situacao_vencimento, categoria, grupo, departamento, razao_social,"
+                " data, pago_recebido, a_pagar_receber, juros, multa)"
+                " VALUES (?,?,?,'PAGO','Quitado',?,?,'CASA',?,'2025-12-24',?,0,0,0)",
+                (cod, tipo, analise, cat, grupo, razao, valor))
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def test_o_dinheiro_da_obra_com_os_socios_fecha(base_com_socios):
+    from app.apps.painel import consultas
+    quadro = consultas.caixa_com_socios(consultas.Filtros())
+    casa = next(l for l in quadro["linhas"] if l["obra"] == "CASA")
+    assert casa["receitas"] == pytest.approx(1000.0)       # sem os 100 retidos
+    assert casa["despesas"] == pytest.approx(-400.0)
+    assert casa["resultado"] == pytest.approx(600.0)
+    assert casa["aportes"] == pytest.approx(5000.0)
+    # as três devoluções contam: a TRF e a "Baixado" (Quitado no vencimento) também, como no bloco
+    assert casa["devolucoes"] == pytest.approx(-700000.0)
+    assert casa["dividendos"] == pytest.approx(-50000.0)
+    assert casa["dividendos_recebidos"] == pytest.approx(700.0)
+    # o que ENTROU com nome de dividendo não soma nem abate
+    assert casa["saldo"] == pytest.approx(600 + 5000 - 700000 - 50000)
+    # e o "resultado" é o mesmo do quadro Resultado × dividendos
+    divisao = consultas.resultado_dividendos(consultas.Filtros())
+    assert divisao["resultado"] == pytest.approx(600.0)
+    assert divisao["dividendos"] == pytest.approx(50000.0)
+
+
+def test_a_entrada_com_nome_de_dividendo_nao_vira_liquido_negativo(base_com_socios, monkeypatch):
+    """Barbalha: "aparece uma distribuição de dividendos negativa e eu nem
+    compreendi". Era 'pago − recebido' com uma ENTRADA de dividendo. Agora a
+    tela mostra o distribuído e avisa da entrada, separada."""
+    from app.apps.painel import consultas
+    por_socio = {d["socio"]: d for d in consultas.dividendos_por_socio(consultas.Filtros())}
+    assert por_socio["MORAIS"]["pago"] == pytest.approx(50000.0)
+    assert por_socio["MORAIS"]["recebido"] == pytest.approx(700.0)
+
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = cliente.get("/painel/dre?bloco=aportes").get_data(as_text=True)
+    assert "Dividendos distribuídos" in html
+    assert "R$ 50.000,00" in html
+    assert "Entrou com nome de dividendo" in html and "R$ 700,00" in html
+    assert "−R$ 49.300,00" not in html          # o líquido que confundia sumiu
+    assert "O dinheiro da obra, com os sócios" in html
+    assert "−R$ 744.400,00" in html             # o saldo com os sócios
+    r = cliente.get("/painel/baixar/aportes")
+    assert r.status_code == 200
