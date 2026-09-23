@@ -2119,9 +2119,19 @@ daqui, então em vez de chutar a causa entrou a ferramenta:
 - Rota `/painel/titulo/<n>/conta`, só do administrador. Mesma regra da carga
   (`_escolher_recebimentos`), então o que a janela diz é o que a carga fez.
 
-**Pendente com o dono**: abrir o SP1343985444 por esse link e dizer qual regra
-apareceu. Se for "baixa bancária" na 7011, o painel está fiel ao OMIE e o
-conserto é lá; se for outra, é aqui.
+**O dono conferiu no OMIE: o pagamento está na 22069.** Então o painel
+estava errado — e a causa estava na atualização: ela só **relia os
+pagamentos com data de pagamento nos últimos dois dias**. Baixa lançada com
+data antiga, ou estornada e refeita em outra conta mantendo a data original,
+nunca era relida; a baixa velha (7011) ficava no espelho. O título se
+atualizava (o OMIE marca a alteração nele), os pagamentos dele não.
+
+**Conserto**: a atualização do dia passou a reler **30 dias** de pagamentos e
+a completa, **180 dias** (`DIAS_REVISADOS_NA_ATUALIZACAO`,
+`DIAS_REVISADOS_NA_COMPLETA` em `sync/espelho.py`). A janela é apagada e
+relida inteira, então o que mudou dentro dela se corrige sozinho. Custa
+páginas a mais de leitura no OMIE. Baixa refeita há mais de 180 dias
+continua fora — para essa, a conferência com o OMIE (abaixo).
 
 ## Calendário: filtro "DRE ou fluxo" — 23/09/2026
 
