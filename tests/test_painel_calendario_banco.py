@@ -198,6 +198,20 @@ def test_a_origem_da_conta_mostra_as_pernas_e_qual_valeu(espelho_de_um_titulo):
     assert consultas.origem_da_conta("abc") is None
 
 
+def test_bancaria_com_valor_diferente_ainda_da_a_conta(espelho_de_um_titulo):
+    """O caso do SP1343985444: a bancária (com o juro) não fecha com a
+    consolidada — e é ela que dá a conta."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE movimentos SET nvalpago = 497.38"
+                     " WHERE ncodtitulo = 2 AND cliquidado = ''")
+        conn.commit()
+    d = consultas.origem_da_conta(2)
+    assert d["regra"] == "baixa bancária"
+    assert [p["conta"] for p in d["pernas"] if p["valeu"]] == ["Bradesco 22069-8"]
+
+
 def test_sem_baixa_bancaria_a_regra_diz_que_falta_no_omie(espelho_de_um_titulo):
     from app.apps.painel import consultas
     from app.apps.painel.db import conexao

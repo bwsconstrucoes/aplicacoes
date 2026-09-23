@@ -1435,7 +1435,7 @@ def origem_da_conta(codigo) -> dict | None:
     (`_escolher_recebimentos`) marcando qual perna valeu. Se a conta errada
     está na própria baixa, o conserto é no OMIE; se está só na previsão, é a
     baixa bancária que falta lá."""
-    from .sync.fato import _escolher_recebimentos
+    from .sync.fato import escolher_perna_da_conta
     try:
         codigo = int(str(codigo).strip())
     except (TypeError, ValueError):
@@ -1471,8 +1471,8 @@ def origem_da_conta(codigo) -> dict | None:
                      "liquidado": (liq or "").strip(), "status": (cst or "").strip(),
                      "grupo": (grp or "").strip()})
     realizado = abs(sum(float(v or 0) for _c, v in no_painel))
-    escolhidos, origem = _escolher_recebimentos(movs, realizado)
-    ids_escolhidos = {id(m) for m in escolhidos}
+    # a MESMA decisão da carga: qual perna dá a conta, e por qual regra
+    perna_da_conta, regra = escolher_perna_da_conta(movs, realizado)
 
     def _perna(m):
         if m.get("liquidado") == "N":
@@ -1485,14 +1485,7 @@ def origem_da_conta(codigo) -> dict | None:
 
     pernas = [{"data": m["data"], "valor": m["valor"], "conta": _nome(m["conta"]),
                "tipo": _perna(m), "status": m["status"], "grupo": m["grupo"],
-               "valeu": id(m) in ids_escolhidos} for m in movs]
-    tipos_que_valeram = {p["tipo"] for p in pernas if p["valeu"]}
-    if "baixa bancária" in tipos_que_valeram:
-        regra = "baixa bancária"
-    elif "baixa consolidada" in tipos_que_valeram:
-        regra = "baixa consolidada"
-    else:
-        regra = "conta prevista no título"
+               "valeu": m is perna_da_conta} for m in movs]
     prevista = _nome(titulo[0][0]) if titulo else ""
     return {
         "codigo": codigo,

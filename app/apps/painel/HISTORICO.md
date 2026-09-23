@@ -2148,7 +2148,39 @@ conta do lançamento (mostra as pernas que o painel TEM e qual valeu) e em
 "Conferir este dia com o OMIE" (mostra o que o OMIE tem AGORA). Se o painel
 tem a 22069 e não a usou → causa 2, conserto no código. Se o painel não tem
 a 22069 e o OMIE tem → causa 1 ou 3 (a conferência diz se a perna do OMIE
-tem título). **Pendente: essas duas leituras, feitas pelo dono.**
+tem título).
+
+**CONFIRMADO pela leitura do dono (23/09/2026) — causa 2, defeito do painel.**
+A ferramenta mostrou, para o título 11204772585:
+
+| Data | Perna | Conta | Valor |
+|---|---|---|---|
+| 11/05/2026 | baixa consolidada | Bradesco 7011-4 | 13.218,90 |
+| 11/05/2026 | baixa bancária | Bradesco 22069-8 | 13.291,28 |
+
+O painel TINHA a bancária na 22069 e escolheu a consolidada. A diferença de
+R$ 72,38 é o que o painel registra como juro/multa desse título (o Calendário
+mostrava −13.291,28 = 13.218,90 de principal + 72,38 de encargo). A conta era
+escolhida junto com o VALOR, e a regra do valor só aceita as bancárias quando
+a soma fecha com a consolidada — com juro, nunca fecha. **Todo título pago
+com juro ou multa mostrava a conta prevista, não a de onde saiu.** Não
+houve alteração nenhuma no OMIE; o dono estava certo.
+
+**Conserto**: a conta passou a ter decisão própria
+(`escolher_perna_da_conta` em `sync/fato.py`): havendo perna bancária, é
+dela a conta, feche o valor ou não. O valor continua pela regra de antes. A
+mesma decisão vale para a linha única, para as parcelas e para as receitas
+(`montar_recebimentos`), e a ferramenta "de onde veio a conta" usa a mesma
+função. Vale depois de "Só refazer os números".
+
+**A janela de 30/180 dias** (causa 1) ficou provado que não era a causa
+deste título. Foi mantida como margem contra baixa retroativa; custa páginas a
+mais de leitura no OMIE. Voltar aos dois dias é decisão do dono.
+
+A ferramenta também dizia, errado, "o OMIE não tem a baixa bancária" quando
+tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
+mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
+quando de fato não há bancária.
 
 ## Conferir um dia com o OMIE, na hora — 23/09/2026
 

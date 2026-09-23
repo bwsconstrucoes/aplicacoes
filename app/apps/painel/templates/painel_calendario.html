@@ -340,7 +340,7 @@
       }[d.regra] || "";
       const pernas = d.pernas.length ? `<table class="sem-quebra"><thead><tr>
           <th class="sem-ordem">Data</th><th class="sem-ordem">Perna</th><th class="sem-ordem">Conta</th>
-          <th class="sem-ordem direita">Valor</th><th class="sem-ordem">Valeu?</th></tr></thead><tbody>`
+          <th class="sem-ordem direita">Valor</th><th class="sem-ordem">Deu a conta?</th></tr></thead><tbody>`
         + d.pernas.map(p => `<tr><td class="dados">${escapar(p.data)}</td><td class="desc">${escapar(p.tipo)}</td>
              <td class="desc">${escapar(p.conta || "(sem conta)")}</td><td class="dados direita">${moeda(p.valor)}</td>
              <td class="desc">${p.valeu ? "<b>sim</b>" : "—"}</td></tr>`).join("") + "</tbody></table>"
