@@ -237,6 +237,27 @@ def test_receita_com_imposto_retido_gera_linha_separada():
             + retida["pago_recebido"]) == pytest.approx(1000.0)
 
 
+def test_a_retencao_de_titulo_em_aberto_fica_em_aberto():
+    """23/09/2026, o dono no DRE: "no que está em aberto não aparecem as
+    retenções; no comprometido só as já executadas". A retenção era gravada
+    sempre como realizado. Agora segue o título: em aberto, fica em aberto."""
+    conn = ConexaoFalsa(
+        [_titulo(1, "R", 1000.0, retencoes=(50.0, 30.0, 0, 0, 0, 0),
+                 status="A RECEBER")],
+        rateios=[(1, "D1", "Obra Um", 100.0, 1000.0)],
+        movimentos=[],
+        categorias=CATALOGO, clientes=CLIENTES, obras=OBRAS, contas=CONTAS)
+    linhas = [dict(zip(fato.COLUNAS_FATO, l)) for l in fato.gerar_linhas_fato(conn)]
+    retida = next(l for l in linhas if "Retido" in l["categoria"])
+    liquida = next(l for l in linhas if "Retido" not in l["categoria"])
+    assert retida["pago_recebido"] == 0.0
+    assert retida["a_pagar_receber"] == pytest.approx(80.0)
+    assert liquida["pago_recebido"] == 0.0
+    assert liquida["a_pagar_receber"] == pytest.approx(920.0)
+    # bruto = líquido + retido, na leitura em aberto
+    assert liquida["a_pagar_receber"] + retida["a_pagar_receber"] == pytest.approx(1000.0)
+
+
 def test_despesa_entra_negativa():
     """O sinal é o que permite somar receita e despesa na mesma coluna e ler o
     resultado direto. Trocar o sinal dobraria o lucro em vez de zerá-lo."""

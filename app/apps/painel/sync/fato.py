@@ -614,11 +614,22 @@ def gerar_linhas_fato(conn):
                         round(sinal * p_juros * frac, 2),
                         round(sinal * p_multa * frac, 2),
                         tipo_aporte)
-                # linha RETIDO (so a receber; valor sempre como realizado).
-                # UMA so, mesmo com varias baixas: a retencao e do titulo.
+                # linha RETIDO (so a receber). UMA so, mesmo com varias
+                # baixas: a retencao e do titulo.
+                #
+                # Segue o ESTADO do titulo (23/09/2026): quitado, a retencao
+                # ja aconteceu e e realizado; em aberto, ela ainda vai
+                # acontecer e fica em aberto — junto com o liquido do mesmo
+                # titulo. Ate entao ela era gravada sempre como realizado, e
+                # o dono viu o efeito no DRE: "no que esta em aberto nao
+                # aparecem as retencoes; no comprometido aparecem so as ja
+                # executadas". O bruto continua liquido + retido, nas duas
+                # leituras.
                 if is_rec and ret_total > TOL and primeira is not None:
+                    retido = round(ret_total * frac, 2)
                     yield comum + (CATEGORIA_RETIDO, None, GRUPO_RETIDO) + primeira + (
-                        round(ret_total * frac, 2), 0.0, 0.0, 0.0, "")
+                        (retido if quitado else 0.0),
+                        (0.0 if quitado else retido), 0.0, 0.0, "")
 
 
 # -----------------------------------------------------------------------------

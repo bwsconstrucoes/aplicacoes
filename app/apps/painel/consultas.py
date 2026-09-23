@@ -31,7 +31,11 @@ PAG = "2. Contas a Pagar"
 # Medido em 17/09/2026, numa base de 144 mil linhas, na consulta do ano do DRE:
 # 112 ms com a expressão, 29 ms com a coluna. Era 71% do tempo de cada tela.
 PAGO = "pago"
-# Imposto retido na fonte: o cliente reteve, nao virou caixa da BWS. Entra na
+# Imposto retido na fonte: o cliente reteve, nao virou caixa da BWS. Desde
+# 23/09/2026 a linha segue o estado do titulo: realizado quando quitado, em
+# aberto quando o titulo ainda esta em aberto. Nas telas de receita, "retido"
+# e o COMPROMETIDO da linha (o que ja foi e o que ainda vai ser retido), e "a
+# receber" e so o liquido — o retido nunca vai entrar na conta. Entra na
 # receita bruta e sai da liquida.
 RETIDO = "categoria ILIKE '%Retido%'"
 # O que e MEDICAO na Receita de Obra: a receita de obras e o imposto retido dela.
@@ -481,8 +485,8 @@ def receita_por_obra(f: Filtros, limite: int = 25) -> list[dict]:
     sql = f"""
         SELECT {OBRA_OU_SEM},
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM({EM_ABERTO})
+               SUM(CASE WHEN     ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EM_ABERTO} ELSE 0 END)
           FROM fato{where} GROUP BY 1
          ORDER BY 2 DESC LIMIT {int(limite)}"""
     saida = []
@@ -727,8 +731,8 @@ def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
                MAX(razao_social), MAX(departamento), MAX(projeto),
                MAX(numero_documento), MAX(link), MAX(data),
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(a_pagar_receber),
+               SUM(CASE WHEN     ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EM_ABERTO} ELSE 0 END),
                codigo_lancamento
           FROM fato{where}
          GROUP BY codigo_lancamento {tendo}
@@ -771,8 +775,8 @@ def total_das_medicoes(f: Filtros, visao: str = "todas") -> dict:
         SELECT COUNT(*), SUM(recebido), SUM(retido), SUM(aberto)
           FROM (
             SELECT SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END) AS recebido,
-                   SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END) AS retido,
-                   SUM(a_pagar_receber) AS aberto
+                   SUM(CASE WHEN     ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END) AS retido,
+                   SUM(CASE WHEN NOT ({RETIDO}) THEN {EM_ABERTO} ELSE 0 END) AS aberto
               FROM fato{where}
              GROUP BY codigo_lancamento {tendo}
           ) AS por_titulo"""
@@ -834,8 +838,8 @@ def _titulos_de_receita(condicao: str, params, limite: int) -> list[dict]:
         SELECT codigo_lancamento, MAX(numero_documento), MAX(razao_social),
                MAX(departamento), MAX(data), MAX(observacao), MAX(link),
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(a_pagar_receber),
+               SUM(CASE WHEN     ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EM_ABERTO} ELSE 0 END),
                MAX(medicao_rotulo)
           FROM fato
          WHERE analise = 'DRE' AND tipo = ? AND {condicao}

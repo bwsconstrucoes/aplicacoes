@@ -2093,6 +2093,30 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## A retenção do título em aberto aparecia como executada — 23/09/2026
+
+O dono, nos KPIs do DRE: *"tem o executado e tem as retenções; no que está
+em aberto não aparecem as retenções. No comprometido aparece só o que já
+foi executado. Esses tributos estão lançados — você tem essa informação."*
+
+Tinha. **A carga gravava a linha de retenção sempre como realizado**, mesmo
+com o título ainda a receber. Efeito: retenção de medição não recebida
+entrava em "Executado", "Em aberto" ficava sem retenção nenhuma, e
+"Comprometido" parecia mostrar só as executadas.
+
+**Agora a linha de retenção segue o estado do título**: quitado, realizado;
+em aberto, em aberto — junto com o líquido do mesmo título. O bruto continua
+líquido + retido, nas três leituras. Nas telas de receita (Receita de Obra,
+medição, título, receita por obra), **"Retido"** passou a ser o
+comprometido da linha (o já retido e o que ainda vai ser retido) e **"A
+receber"** é só o líquido — o retido nunca vai entrar na conta.
+
+**Para valer na base é preciso refazer os números**: a mudança está na
+montagem do fato. Depois de publicar, Configurações › **"Só refazer os
+números"** (não baixa nada do OMIE). Até lá as retenções continuam como
+antes. O que muda nos números: parte do "Executado" da receita bruta
+migra para "Em aberto"; o comprometido não muda; o resultado não muda.
+
 ## O filtro de conta sumia ao mudar de mês no Calendário — 23/09/2026
 
 O dono: *"aplico um filtro de conta corrente, mudo o mês, ele perde o
