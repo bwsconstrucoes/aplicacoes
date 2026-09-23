@@ -2133,6 +2133,37 @@ relida inteira, então o que mudou dentro dela se corrige sozinho. Custa
 páginas a mais de leitura no OMIE. Baixa refeita há mais de 180 dias
 continua fora — para essa, a conferência com o OMIE (abaixo).
 
+## Conferir um dia com o OMIE, na hora — 23/09/2026
+
+O dono: *"era interessante uma forma de extrair a informação completa da base
+e a do OMIE — consultando o OMIE e podendo confrontar os dados pra entender
+onde há diferença."*
+
+**Por dia, no Calendário** (só o dono): na janela do dia, "Conferir este dia
+com o OMIE" lê no OMIE, naquele momento, todos os pagamentos e recebimentos
+com aquela data (a mesma consulta da carga, `ListarMovimentos` por data de
+pagamento, lida pela mesma função que grava o espelho) e compara perna a
+perna — título, conta, valor, baixa consolidada ou bancária — com o espelho.
+Mostra os títulos diferentes, cada um com o que o painel tem e o que o OMIE
+tem agora; baixa a planilha com três abas (diferenças, o lado do painel
+inteiro, o lado do OMIE inteiro); e oferece **"Trazer este dia do OMIE para o
+painel"**, que apaga e regrava o dia no espelho (nada muda no OMIE) e dispara
+"Só refazer os números".
+
+**Por que por dia, e não a base inteira**: ler tudo do OMIE é a carga
+inicial — horas. Um dia é uma ou duas páginas e cabe numa tela. Para
+corrigir em massa, a atualização relê 30 dias (180 na completa).
+
+A leitura do OMIE fica guardada 150 s: conferir e baixar a planilha seriam
+duas chamadas iguais em segundos, e a OMIE recusa a repetida ("consumo
+redundante"). Módulo `conferencia_omie.py`; rotas `painel.conferir_*` na
+lista do administrador; download "conferencia" só do dono. Testes com banco e
+com um OMIE de mentira.
+
+**Despesas Analítico**: a tabela da tela ganhou as colunas **Conta de
+pagamento** e **Nº no OMIE** (a planilha já as tinha) — pedido do dono para
+"um confronto de informações".
+
 ## Calendário: filtro "DRE ou fluxo" — 23/09/2026
 
 O dono: *"é importante poder visualizar os lançamentos de fluxo, e somente

@@ -270,12 +270,59 @@
           <th class="sem-ordem direita">Valor</th>
         </tr></thead>
         <tbody>${dados.linhas.map(linha).join("")}</tbody></table>
-        <div id="origem-da-conta" style="margin-top:12px"></div>`;
+        <div id="origem-da-conta" style="margin-top:12px"></div>
+        ${ADMIN ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+            <button type="button" class="btn secundario" id="conferir-omie">Conferir este dia com o OMIE</button>
+          </div><div id="conferencia-omie" style="margin-top:10px"></div>` : ""}`;
+      if (ADMIN) els("conferir-omie").addEventListener("click", () => conferir(dia));
       corpo.querySelectorAll("[data-conta-de]").forEach(b =>
         b.addEventListener("click", () => origem(b.dataset.contaDe)));
     } catch (e) {
       corpo.innerHTML = '<p class="aviso erro">Não deu para carregar o dia. Tente de novo.</p>';
     }
+  }
+
+  // Conferir o dia com o OMIE, lendo o OMIE na hora (dono, 23/09/2026)
+  const perna = p => `${escapar(p.conta_nome)} · ${moeda(p.valor)} <small>(${escapar(p.perna)})</small>`;
+  async function conferir(dia) {
+    const alvo = els("conferencia-omie");
+    alvo.innerHTML = '<p class="cartao-dica">Lendo o OMIE… pode levar alguns segundos.</p>';
+    try {
+      const r = await fetch("{{ url_for('painel.conferir_dia') }}?dia=" + encodeURIComponent(dia));
+      const d = await r.json();
+      if (!d.ok) { alvo.innerHTML = `<p class="aviso erro">${escapar(d.erro || "Não deu para conferir.")}</p>`; return; }
+      const planilha = "{{ url_for('painel.baixar', assunto='conferencia') }}?dia=" + encodeURIComponent(dia);
+      const topo = `<p class="cartao-dica" style="margin:0 0 8px">Dia <b>${escapar(d.dia)}</b>: ${d.pernas_no_painel} registro(s) no painel, ${d.pernas_no_omie} no OMIE, ${d.iguais} iguais.
+        <a href="${planilha}">⬇ Planilha com os dois lados</a></p>`;
+      if (d.bate) { alvo.innerHTML = `<div class="aviso ok">O painel bate com o OMIE neste dia.</div>` + topo; return; }
+      const linhas = d.titulos.map(t => `<tr>
+          <td class="desc"><b>${escapar(t.quem || "—")}</b><br><small>${escapar(t.documento || "")} ${t.obra ? "· " + escapar(t.obra) : ""} · nº ${escapar(t.codigo ?? "—")}</small></td>
+          <td class="desc">${t.no_painel.map(perna).join("<br>") || "<i>nada</i>"}</td>
+          <td class="desc">${t.no_omie.map(perna).join("<br>") || "<i>nada</i>"}</td></tr>`).join("");
+      alvo.innerHTML = `<div class="cartao" style="margin:0; border-left:4px solid var(--ambar)">
+          <b>${d.titulos.length} título(s) diferente(s) entre o painel e o OMIE</b>
+          ${topo}
+          <div class="tabela-rolagem" style="max-height:40vh"><table>
+            <thead><tr><th class="sem-ordem">Título</th><th class="sem-ordem">No painel</th><th class="sem-ordem">No OMIE (agora)</th></tr></thead>
+            <tbody>${linhas}</tbody></table></div>
+          <p class="cartao-dica">O OMIE é a fonte. Para o painel ficar igual a ele neste dia, traga o dia de novo — não mexe em nada no OMIE, só na cópia do painel, e refaz os números em seguida.</p>
+          <button type="button" class="btn" id="trazer-dia">Trazer este dia do OMIE para o painel</button>
+          <span id="trazer-resultado" class="cartao-dica"></span></div>`;
+      els("trazer-dia").addEventListener("click", () => trazer(dia));
+    } catch (e) {
+      alvo.innerHTML = '<p class="aviso erro">Não deu para ler o OMIE. Tente de novo em um minuto.</p>';
+    }
+  }
+  async function trazer(dia) {
+    if (!confirm("Substituir os pagamentos deste dia no painel pelo que o OMIE tem agora? Nada muda no OMIE.")) return;
+    const saida = els("trazer-resultado");
+    saida.textContent = " Trazendo…";
+    try {
+      const corpoForm = new URLSearchParams({dia});
+      const r = await fetch("{{ url_for('painel.conferir_dia_trazer') }}", {method: "POST", body: corpoForm});
+      const d = await r.json();
+      saida.textContent = d.ok ? ` Feito: ${d.gravados} registro(s) regravados. ${d.aviso}` : ` ${d.erro}`;
+    } catch (e) { saida.textContent = " Não deu certo. Tente de novo."; }
   }
 
   // De onde veio a conta: as pernas da baixa no espelho do OMIE (dono, 23/09)

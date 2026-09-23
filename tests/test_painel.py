@@ -1828,3 +1828,13 @@ def test_os_numeros_de_receita_do_dre_abrem_as_medicoes(painel):
     assert dados["pode_abrir"] is True
     # visão inventada cai em "todas" em vez de quebrar
     assert painel.get("/painel/dre/medicoes?visao=x").get_json()["visao"] == "todas"
+
+
+def test_o_analitico_mostra_a_conta_de_pagamento_e_o_numero_no_omie(painel):
+    """23/09/2026, o dono: "no Despesas Analítico quero a conta de pagamento,
+    para um confronto de informações"."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/analitico").get_data(as_text=True)
+    assert "<th class=\"sem-ordem\">Conta de pagamento</th>" in html
+    assert "<th class=\"sem-ordem\">Nº no OMIE</th>" in html
+    assert "Bradesco C/C" in html and "998877" in html
