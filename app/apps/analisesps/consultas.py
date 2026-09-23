@@ -1558,3 +1558,72 @@ def quadro_por_categoria(f: dict) -> list[dict]:
             "valor": valor or 0,
         })
     return saida
+
+
+# ===========================================================================
+# O CALENDÁRIO — o mesmo filtro das Solicitações, desenhado dia a dia
+#
+# Pedido do dono em 23/09/2026: *"é bem interessante a gente conseguir
+# visualizar no formato de calendário o que é que tem (…) e a gente pode
+# atrelar esse calendário aos filtros que já estão atrelados ao próprio
+# relatório e à tela de solicitações."*
+#
+# ⚠️ UMA CONSULTA SÓ, E SÓ O MÊS PEDIDO. A tentação aqui é trazer as SPs do
+# mês e agrupar em Python — são 59 mil linhas na tabela, e o dia em que
+# alguém abrir o calendário sem filtro nenhum isso vira a tela mais cara do
+# módulo. Quem agrupa é o banco, e volta uma linha por DIA: no máximo 31.
+#
+# ⚠️ A DATA QUE MANDA DEPENDE DO RECORTE, e é a mesma regra do Relatório
+# (`coluna_de_data`): contas a pagar se olham pelo VENCIMENTO, contas pagas
+# pela DATA DO PAGAMENTO. Um calendário que misturasse as duas mostraria a
+# mesma SP em dois dias e não fecharia com o Relatório do mesmo filtro — que
+# é exatamente a conferência que o dono vai fazer.
+# ===========================================================================
+def calendario_do_mes(f: dict, primeiro, ultimo, tipo: str = "geral") -> dict:
+    """Quantas SPs e quanto em dinheiro caem em cada dia do intervalo.
+
+    Devolve `{"dias": {data: {...}}, "total": ..., "quantidade": ...}`. O
+    intervalo vem pronto de fora porque a grade do mês inclui os dias
+    vizinhos que completam a primeira e a última semana — e o dono espera ver
+    o que cai neles também, senão o fim do mês anterior aparece vazio sem
+    estar.
+
+    `sem_data` conta o que entrou no filtro mas não tem a data que manda: uma
+    SP sem vencimento não cai em dia nenhum, e sumir do calendário sem aviso
+    faria a soma do mês não bater com a do Relatório."""
+    from .db import consultar, consultar_um
+
+    coluna = coluna_de_data(tipo)
+    where, params = _where_relatorio(f, tipo)
+
+    linhas = consultar(
+        f"SELECT {coluna} AS dia, count(*), coalesce(sum(valor_num), 0), "
+        # As vencidas e ainda a pagar, que é o que pinta o dia de vermelho.
+        "        count(*) FILTER (WHERE lower(trim(coalesce(status_pgt,''))) "
+        f"                              = 'pagar' AND vencimento_d < {SQL_HOJE}) "
+        f"  FROM analisesps.sps{where} "
+        f"   AND {coluna} >= ? AND {coluna} <= ? "
+        " GROUP BY 1 ORDER BY 1", tuple(params) + (primeiro, ultimo))
+
+    dias = {}
+    total = quantidade = 0
+    for dia, quantas, valor, vencidas in linhas:
+        dias[dia] = {"quantidade": int(quantas or 0), "total": valor or 0,
+                     "vencidas": int(vencidas or 0)}
+        total += valor or 0
+        quantidade += int(quantas or 0)
+
+    # O que o filtro alcança mas não tem a data que manda. Consulta própria e
+    # barata (uma contagem), e a tela só a mostra quando não é zero.
+    sem_data = consultar_um(
+        f"SELECT count(*), coalesce(sum(valor_num), 0) "
+        f"  FROM analisesps.sps{where} AND {coluna} IS NULL", tuple(params))
+
+    return {
+        "dias": dias,
+        "total": total,
+        "quantidade": quantidade,
+        "sem_data_qtd": int((sem_data or (0, 0))[0] or 0),
+        "sem_data_total": (sem_data or (0, 0))[1] or 0,
+        "coluna": coluna,
+    }

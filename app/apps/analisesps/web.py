@@ -83,6 +83,7 @@ SEGUNDOS_GUARDADA = 300
 TELAS_QUE_FICAM_GUARDADAS = {
     "analisesps.solicitacoes",
     "analisesps.relatorio",
+    "analisesps.calendario",
     "analisesps.auditoria",
     "analisesps.log",
     "analisesps.tela_lote",
@@ -145,6 +146,13 @@ TELAS = [
     ("relatorio",     "Relatório",     "analisesps.relatorio"),
     ("fiscal",        "Doc. Fiscal",   "analisesps.tela_fiscal"),
     ("agenda",        "Agenda",        "analisesps.tela_agenda"),
+    # ⚠️ O CALENDÁRIO ENTRA DEPOIS DA AGENDA, e não entre Relatório e Doc.
+    # Fiscal, embora seja do Relatório que ele seja irmão. As seis primeiras
+    # telas são o caminho do dia do dono, dito por ele em 13/09/2026 e travado
+    # por teste: mexer nelas para acomodar tela nova é desfazer uma decisão
+    # dele. Tela nova entra entre "os demais", que é onde ele mesmo mandou.
+    # Ao lado da Agenda também lê bem: são as duas grades de mês do módulo.
+    ("calendario",    "Calendário",    "analisesps.calendario"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
@@ -231,6 +239,13 @@ def _comprimir(resposta):
 def _filtro_moeda(valor):
     from .formatos import moeda
     return moeda(valor)
+
+
+@bp.app_template_filter("moeda_curta")
+def _filtro_moeda_curta(valor):
+    """O valor em poucas letras, para onde ele não cabe. Ver `formatos`."""
+    from .formatos import moeda_curta
+    return moeda_curta(valor)
 
 
 @bp.app_template_filter("data_br")
@@ -1411,6 +1426,74 @@ def relatorio():
         tipos=consultas.TIPOS, periodos=consultas.PERIODOS,
         dimensoes=consultas.DIMENSOES,
         args=request.args, filtros=filtros, opcoes=_opcoes_dos_filtros(),
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+# ---------------------------------------------------------------------------
+# O CALENDÁRIO — o filtro das Solicitações, espalhado no tempo
+#
+# Pedido do dono em 23/09/2026. O que faz esta tela valer a pena é ela NÃO ter
+# filtro próprio: ela lê o mesmo filtro guardado que Solicitações e Relatório,
+# pela mesma gaveta. Quem recortou "obra X, a pagar" nas Solicitações e vem
+# para cá vê aquele recorte no calendário, sem remontar nada.
+# ---------------------------------------------------------------------------
+@bp.route("/calendario")
+@exige_consulta
+def calendario():
+    from . import calendario as grade_do_mes
+    from . import consultas
+
+    # O FILTRO GUARDADO É CONFERIDO ANTES DE QUALQUER CONSULTA — mesma regra
+    # das outras duas telas, e pelo mesmo motivo: quem chega pelo menu é
+    # redirecionado, e tudo o que for perguntado ao banco antes daqui é
+    # perguntado à toa na primeira passagem.
+    voltar = _lembrar_filtro("analisesps.calendario")
+    if voltar is not None:
+        return voltar
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    filtros = _filtros_do_pedido()
+    tipo = request.args.get("tipo", "pagar")
+    if tipo not in consultas.TIPOS:
+        # O padrão é CONTAS A PAGAR, e não a visão geral do Relatório: um
+        # calendário se olha para frente, para saber o que vem. A visão geral
+        # continua a um clique, na mesma barra.
+        tipo = "pagar"
+
+    ano, mes = grade_do_mes.mes_valido(request.args.get("ano"),
+                                       request.args.get("mes"))
+    opcoes = _opcoes_dos_filtros(base.get("ultima"))
+
+    # ⚠️ O LINK DO DIA TEM DE TRAZER A MESMA COISA QUE A CÉLULA CONTOU.
+    # A célula conta pelo recorte (a pagar / pagas), que compara sem ligar
+    # para maiúscula; a lista de Solicitações filtra pelo valor EXATO que
+    # está na planilha. Mandar o texto "Pagar" chutado deixaria de fora uma
+    # SP gravada como "PAGAR", e aí o dia diria 3 e a lista mostraria 2 —
+    # sem nada avisando. Então o valor sai da própria lista de opções, que é
+    # o que existe no banco de verdade.
+    alvo = {"pagas": "pago", "pagar": "pagar"}.get(tipo)
+    status_do_dia = [v for v in opcoes.get("status_pgt", [])
+                     if str(v).strip().lower() == alvo] if alvo else []
+    primeiro, ultimo = grade_do_mes.limites(ano, mes)
+    achado = consultas.calendario_do_mes(filtros, primeiro, ultimo, tipo)
+    grade = grade_do_mes.grade(ano, mes, achado["dias"])
+    anterior, seguinte = grade_do_mes.vizinhos(ano, mes)
+
+    return render_template(
+        "analisesps_calendario.html",
+        aba="calendario", base=base,
+        grade=grade, achado=achado, ano=ano, mes=mes,
+        anterior=anterior, seguinte=seguinte,
+        meses=grade_do_mes.MESES, dias_da_semana=grade_do_mes.DIAS_DA_SEMANA,
+        tipo=tipo, tipos=consultas.TIPOS,
+        args=request.args, filtros=filtros, opcoes=opcoes,
+        status_do_dia=status_do_dia,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())

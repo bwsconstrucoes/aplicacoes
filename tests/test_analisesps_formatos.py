@@ -215,3 +215,27 @@ def test_data_de_verdade_e_texto_brasileiro_continuam_iguais():
     assert data_br(dt.date(2026, 9, 20)) == "20/09/2026"
     assert data_br("20/09/2026") == "20/09/2026"
     assert data_br("") == "" and data_br(None) == ""
+
+
+# ---------------------------------------------------------------------------
+# O VALOR CURTO — para o quadradinho do calendário no celular (23/09/2026)
+# ---------------------------------------------------------------------------
+def test_o_valor_curto_cabe_onde_o_cheio_nao_cabe():
+    """"128.450,00" não cabe num quadradinho de menos de 40 px. A lição veio
+    do calendário do painel, feito no mesmo dia."""
+    from app.apps.analisesps.formatos import moeda_curta
+
+    assert moeda_curta(128450) == "128,4 mil"
+    assert moeda_curta(2500000) == "2,5 mi"
+    assert moeda_curta(1000) == "1 mil"     # sem o ",0" pendurado
+    assert moeda_curta(999) == "999"
+    assert moeda_curta(-1200) == "-1,2 mil"
+
+
+def test_o_valor_curto_nao_estoura_com_lixo():
+    """Ele desenha tela. Um valor estranho não pode derrubar o calendário
+    inteiro por causa de uma célula."""
+    from app.apps.analisesps.formatos import moeda_curta
+
+    assert moeda_curta(None) == ""
+    assert moeda_curta("nada disso") == ""

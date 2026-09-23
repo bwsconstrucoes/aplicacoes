@@ -15,8 +15,11 @@
    de "limpei de propósito", e o filtro limpo voltaria preenchido sozinho.
 --------------------------------------------------------------------------- #}
 {# Os parâmetros da tela que NÃO são filtro e precisam sobreviver a mexer na
-   barra. Hoje são os três controles do Relatório. #}
-{% set nao_filtro = ['tipo', 'periodo', 'dimensao'] %}
+   barra: os três controles do Relatório e, desde 23/09/2026, o mês que o
+   Calendário está mostrando. Sem `ano` e `mes` aqui, marcar uma caixa no
+   filtro jogaria a pessoa de volta para o mês de hoje — e ela estava olhando
+   outubro justamente para filtrar outubro. #}
+{% set nao_filtro = ['tipo', 'periodo', 'dimensao', 'ano', 'mes'] %}
 
 {# O Relatório não tem ordenação de lista; a barra é a mesma, então o valor
    precisa de um padrão em vez de estourar. #}

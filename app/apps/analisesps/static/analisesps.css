@@ -816,9 +816,57 @@ a.kpi { display: block; }
   background: #E7F3E1; color: #26551A; border-left-color: var(--sl-verde);
 }
 
+/* --------------------------------------------------------------------------
+   O CALENDARIO DAS SPs (23/09/2026) — a MESMA grade, com dinheiro no dia.
+
+   Reusa tudo o que esta acima: `.cal-dia`, `.fora`, `.hoje`, `.nao-util`. O
+   que muda e o conteudo da celula (valor e quantidade, em vez da lista de
+   compromissos) e uma oitava coluna com o total da semana.
+   -------------------------------------------------------------------------- */
+.calendario.com-semana { grid-template-columns: repeat(7, 1fr) 1.15fr; }
+
+/* O dia com SP e um LINK para as Solicitacoes daquele dia. Precisa parecer
+   clicavel sem virar um botao azul no meio do calendario. */
+a.cal-dia { text-decoration: none; color: inherit; cursor: pointer; }
+a.cal-dia:hover { background: #EEF4FF; }
+a.cal-dia.nao-util:hover { background: #E8EEF9; }
+.cal-dia.tem-vencida { box-shadow: inset 3px 0 0 var(--vermelho); }
+
+.cal-dinheiro {
+  font-family: var(--fonte-dados); font-size: 12px; font-weight: 700;
+  color: var(--tinta); line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cal-quantas { font-size: 10.5px; color: var(--tinta-suave); line-height: 1.2; }
+.so-estreito { display: none; }
+.cal-vencida { color: var(--vermelho); font-weight: 700; }
+.cal-dia.fora .cal-dinheiro { color: var(--tinta-suave); font-weight: 600; }
+
+/* A coluna da direita: o total da semana. Fundo proprio para nao ser lida
+   como um oitavo dia. */
+.cal-semana {
+  background: #F7F9FD; padding: 5px 6px; min-height: 84px;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  border-left: 2px solid var(--borda);
+}
+.cal-semana.vazia { background: #FAFBFD; }
+
 @media (max-width: 760px) {
   .cal-dia { min-height: 56px; }
   .cal-item { font-size: 10px; }
+  /* Em tela pequena a coluna da semana sai: oito colunas num celular deixam
+     cada dia com menos de 40px, e ai nem o valor cabe. */
+  .calendario.com-semana { grid-template-columns: repeat(7, 1fr); }
+  .cal-semana { display: none; }
+  .calendario.com-semana .cal-cab:nth-child(8) { display: none; }
+  .cal-dinheiro { font-size: 10.5px; }
+  /* O numero cheio nao cabe num quadradinho de menos de 40px: no celular
+     vale o abreviado ("128,4 mil"). Os dois vem no HTML; quem escolhe e a
+     largura, para o valor exato continuar existindo em tela grande. */
+  .so-largo { display: none; }
+  .so-estreito { display: inline; }
+  .cal-quantas { font-size: 9.5px; }
+  .cal-semana { min-height: 0; }
 }
 
 /* A DESCRICAO. E o texto mais comprido da linha: letra menor e corte na
