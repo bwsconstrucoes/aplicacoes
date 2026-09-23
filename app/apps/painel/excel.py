@@ -255,7 +255,9 @@ COLUNAS = {
     # não dá para conferir seis meses depois.
     "calendario_dias": [("dia", "Dia"), ("entradas", "Recebido"),
                         ("saidas", "Pago"), ("liquido", "Líquido"),
-                        ("quantos", "Lançamentos")],
+                        ("quantos", "Lançamentos"),
+                        ("a_pagar", "A pagar (em aberto, pelo vencimento)"),
+                        ("quantos_a_pagar", "Títulos a pagar")],
     "calendario_lancamentos": [("data", "Dia"), ("natureza", "Tipo"),
                                ("razao_social", "Quem"), ("cnpj", "CNPJ/CPF"),
                                ("grupo", "Grupo"), ("categoria", "Categoria"),

@@ -332,6 +332,12 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .cal-valor { font-size: 11.5px; font-weight: 700; font-family: var(--fonte-dados); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-valor.cal-entrou { color: var(--verde); }
 .cal-valor.cal-saiu { color: var(--vermelho); }
+/* o terceiro numero: a pagar, pelo vencimento — laranja. Dia que ja passou
+   com laranja e conta VENCIDA: a borda avisa tambem. */
+.cal-valor.cal-aberto { color: var(--ambar); }
+.cal-dia.vencido { border-color: var(--ambar); box-shadow: inset 3px 0 0 var(--ambar); }
+.cal-dia.hoje.vencido { box-shadow: inset 0 0 0 2px var(--amarelo), inset 3px 0 0 var(--ambar); }
+.v-aberto { color: var(--ambar); }
 /* na tela grande o valor inteiro; na pequena, "7 mil" — o inteiro nao cabe */
 .cal-curto { display: none; }
 .cal-quantos { font-size: 10.5px; color: var(--tinta-suave); margin-top: auto; }

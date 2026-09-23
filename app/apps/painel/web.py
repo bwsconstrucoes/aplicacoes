@@ -749,11 +749,13 @@ def calendario_dia():
     linhas = consultas.lancamentos_do_dia(f, dia, **proprios)
     for l in linhas:
         l["data"] = l["data"].isoformat() if l.get("data") else ""
-    entradas = sum(l["valor"] for l in linhas if l["valor"] > 0)
-    saidas = sum(l["valor"] for l in linhas if l["valor"] < 0)
+    entradas = sum(l["valor"] for l in linhas if l["valor"] > 0 and not l["em_aberto"])
+    saidas = sum(l["valor"] for l in linhas if l["valor"] < 0 and not l["em_aberto"])
+    a_pagar = sum(l["valor"] for l in linhas if l["em_aberto"])
     return jsonify({"ok": True, "dia": dia, "linhas": linhas,
                     "quantos": len(linhas), "entradas": entradas,
-                    "saidas": saidas, "liquido": entradas + saidas})
+                    "saidas": saidas, "liquido": entradas + saidas,
+                    "a_pagar": a_pagar})
 
 
 @bp.route("/receita")

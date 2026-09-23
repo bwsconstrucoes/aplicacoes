@@ -2093,6 +2093,28 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## O Calendário ganhou o terceiro número: a pagar, em laranja — 23/09/2026
+
+O dono: *"gostaria de visualizar o que está a pagar de cada dia também, um
+terceiro número, em outra cor — laranja. Se eu vejo laranja numa data que já
+passou, venceu; num dia que não aconteceu ainda, é a vencer. E entra no
+KPI."*
+
+- **O número**: o título **a pagar em aberto**, no dia do **vencimento**
+  (a coluna de vencimento; quando o OMIE não a trouxe, a data de sempre, que
+  no título em aberto já é o vencimento). Só contas a pagar — o a receber em
+  aberto não entra, e o caixa (verde e vermelho) não muda.
+- **Dia passado com laranja = vencido**: o quadradinho ganha borda laranja e
+  o texto diz "venc."; dia futuro diz "a pagar". O KPI "A pagar no mês" abre
+  em vencido e a vencer, com a contagem de títulos.
+- **Na janela do dia** os títulos em aberto aparecem em laranja, como
+  "Vencido" ou "A pagar", e ficam **fora do líquido** — líquido é caixa.
+- **"Mostrar"** ganhou "Só a pagar"; "Só pagamentos" e "Só recebimentos"
+  escondem o laranja. A planilha do mês leva as duas colunas.
+- Teste com banco: o título 3 do cenário (250, vence 30/06) aparece no dia
+  30, vencido visto de julho, a vencer visto de junho; o a receber de
+  setembro não entra.
+
 ## Dividendos: o critério, o negativo de Barbalha, e o dinheiro da obra com os sócios — 23/09/2026
 
 O dono: *"como é que você está fazendo aquela distribuição de dividendos,
