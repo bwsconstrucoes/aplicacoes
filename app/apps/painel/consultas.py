@@ -671,16 +671,31 @@ def financeiro_mensal() -> list[dict]:
 def obra_para_projeto() -> dict:
     """A que projeto cada obra pertence. Quando a obra aparece com mais de um
     projeto (dado inconsistente na planilha), vale o mais frequente."""
-    sql = """
-        SELECT departamento, projeto, COUNT(*) AS quantas
-          FROM fato
-         WHERE COALESCE(departamento,'') <> ''
-         GROUP BY 1, 2 ORDER BY 1, 3 DESC"""
-    mapa = {}
-    for obra, projeto, _quantas in consultar(sql):
-        if obra not in mapa:                       # o primeiro é o mais frequente
-            mapa[obra] = (projeto or "").strip()
-    return mapa
+    # Lembrado até a próxima carga: desde 23/09/2026 quem tem acesso por
+    # PROJETO passa por aqui a cada pedido — e varrer o fato a cada clique
+    # seria a tela mais lenta do painel só para saber de quem é a obra.
+    def calcular():
+        sql = """
+            SELECT departamento, projeto, COUNT(*) AS quantas
+              FROM fato
+             WHERE COALESCE(departamento,'') <> ''
+             GROUP BY 1, 2 ORDER BY 1, 3 DESC"""
+        mapa = {}
+        for obra, projeto, _quantas in consultar(sql):
+            if obra not in mapa:                   # o primeiro é o mais frequente
+                mapa[obra] = (projeto or "").strip()
+        return mapa
+
+    return dict(_lembrando(("obra_para_projeto",), calcular))
+
+
+def obras_dos_projetos(projetos) -> list[str]:
+    """Todas as obras que pertencem a estes projetos, hoje — inclusive as que
+    entraram na base depois de o acesso ter sido dado."""
+    alvo = {str(p).strip() for p in (projetos or ()) if str(p).strip()}
+    if not alvo:
+        return []
+    return sorted(o for o, p in obra_para_projeto().items() if p in alvo)
 
 
 # ---------------------------------------------------------------------------

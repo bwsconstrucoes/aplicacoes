@@ -428,3 +428,108 @@ def test_o_calendario_do_parceiro_so_tem_o_dia_da_obra_dele(base_com_duas_obras,
     assert outro.get("/painel/calendario/dia?dia=2025-03-10").status_code == 404
     assert outro.get("/painel/baixar/calendario?mes=2025-03").status_code == 404
     assert "Calendário" not in outro.get("/painel/dre").get_data(as_text=True).split("</nav>")[0]
+
+
+# ===========================================================================
+# Acesso por PROJETO, além de por obra — 23/09/2026
+# ===========================================================================
+# O dono: "tanto define por obra como por projeto, porque pode ser que eu
+# queira dar acesso ao projeto como um todo".
+
+def _mais_uma_obra(cod, obra, projeto, valor):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, grupo, departamento, projeto,"
+            " razao_social, data, ano, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (?,'2. Contas a Pagar','DRE','PAGO','Quitado',"
+            "         'Serviços','Custo',?,?,'FORNECEDOR Y',"
+            "         '2025-03-10',2025,?,0,0,0)", (cod, obra, projeto, valor))
+        conn.commit()
+    consultas.esquecer_listas()
+
+
+def test_o_projeto_abre_em_todas_as_obras_dele_inclusive_as_futuras(base_com_duas_obras, monkeypatch):
+    """As duas obras da base estão no projeto ALFA. Quem tem o projeto vê as
+    duas — e a obra que entrar depois no ALFA aparece sozinha."""
+    from app.apps.painel import usuarios
+    r = usuarios.criar("gerente", "senha-dele", projetos=["ALFA"], telas=["dre"])
+    assert r["ok"], r
+    pessoa = usuarios.buscar("gerente")
+    assert pessoa["projetos"] == ["ALFA"]
+    assert pessoa["obras_marcadas"] == []
+    assert pessoa["obras"] == ["OBRA DE OUTRO", "OBRA DELE"]
+
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente, usuario="gerente", senha="senha-dele")
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "10.000,00" in html                       # as duas obras somadas
+
+    _mais_uma_obra(703, "OBRA NOVA DO ALFA", "ALFA", -500)
+    assert "OBRA NOVA DO ALFA" in usuarios.buscar("gerente")["obras"]
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "10.500,00" in html                       # a obra nova entrou sozinha
+
+
+def test_o_projeto_de_outro_continua_fechado(base_com_duas_obras, monkeypatch):
+    """Um projeto BETA com uma obra. Quem tem só o BETA não vê o ALFA — nem
+    o nome dele na barra lateral."""
+    from app.apps.painel import usuarios
+    _mais_uma_obra(704, "OBRA BETA", "BETA", -700)
+    usuarios.criar("beta", "senha-dele", projetos=["BETA"], telas=["dre"])
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente, usuario="beta", senha="senha-dele")
+    html = cliente.get("/painel/dre").get_data(as_text=True)
+    assert "700,00" in html
+    assert "9.000,00" not in html and "OBRA DELE" not in html
+    barra = html.split("<main", 1)[0]
+    assert "BETA" in barra and "ALFA" not in barra, "o nome do projeto alheio vazou"
+    # pedir o ALFA no endereço não adianta
+    html = cliente.get("/painel/dre?projeto=ALFA").get_data(as_text=True)
+    assert "9.000,00" not in html
+
+
+def test_projeto_sem_obra_nenhuma_nao_entra(base_com_duas_obras, monkeypatch):
+    from app.apps.painel import usuarios
+    usuarios.criar("gama", "senha-dele", projetos=["GAMA"], telas=["dre"])
+    cliente = _cliente(monkeypatch)
+    r = _entrar(cliente, usuario="gama", senha="senha-dele")
+    assert r.status_code == 403
+    assert "não tem obra ou tela liberada" in r.get_data(as_text=True)
+
+
+def test_obra_avulsa_e_projeto_somam_e_a_edicao_nao_congela_o_projeto(base_com_duas_obras):
+    """Quem tem a OBRA DELE marcada mais o projeto BETA vê as duas. E mudar o
+    nome (sem mexer no escopo) NÃO transforma as obras do projeto em obras
+    marcadas uma a uma — senão a obra futura do BETA deixaria de entrar."""
+    from app.apps.painel import usuarios
+    _mais_uma_obra(704, "OBRA BETA", "BETA", -700)
+    r = usuarios.criar("misto", "senha-dele", obras=["OBRA DELE"],
+                       projetos=["BETA"], telas=["dre"])
+    pessoa = usuarios.buscar("misto")
+    assert pessoa["obras"] == ["OBRA BETA", "OBRA DELE"]
+    usuarios.atualizar(r["id"], nome="Fulano")
+    pessoa = usuarios.buscar("misto")
+    assert pessoa["obras_marcadas"] == ["OBRA DELE"]
+    assert pessoa["projetos"] == ["BETA"]
+    # tirar o projeto pela tela de cadastro tira as obras dele na hora
+    usuarios.atualizar(r["id"], projetos=[])
+    assert usuarios.buscar("misto")["obras"] == ["OBRA DELE"]
+    assert {p["usuario"]: p["projetos"] for p in usuarios.listar()}["misto"] == []
+
+
+def test_o_cadastro_pela_tela_grava_o_projeto(base_com_duas_obras, monkeypatch):
+    from app.apps.painel import usuarios
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente)
+    r = cliente.post("/painel/usuarios", data={
+        "acao": "criar", "novo_usuario": "pela-tela", "nova_senha": "senha-dele",
+        "projeto_do_usuario": ["ALFA"], "tela_do_usuario": ["dre"]})
+    assert r.status_code == 302 and "usuario_ok=1" in r.headers["Location"]
+    pessoa = usuarios.buscar("pela-tela")
+    assert pessoa["projetos"] == ["ALFA"] and len(pessoa["obras"]) == 2
+    html = cliente.get("/painel/configuracoes").get_data(as_text=True)
+    assert "Projetos inteiros" in html and 'name="projeto_do_usuario"' in html
+    assert "<b>Projeto:</b> ALFA" in html

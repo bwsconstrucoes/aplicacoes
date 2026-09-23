@@ -438,8 +438,14 @@ def _opcoes_no_escopo():
         return opcoes
     permitidas = set(pessoa.get("obras") or [])
     contas_ok = set(pessoa.get("contas") or [])
+    # os projetos tambem: so os dela (liberados, ou os das obras dela). A
+    # lista inteira entregaria o nome de todo projeto da empresa.
+    mapa = consultas.obra_para_projeto() if permitidas else {}
+    projetos_ok = (set(pessoa.get("projetos") or [])
+                   | {mapa.get(o, "") for o in permitidas}) - {""}
     return dict(opcoes,
                 obras=[o for o in opcoes["obras"] if o in permitidas],
+                projetos=[p for p in opcoes.get("projetos", []) if p in projetos_ok],
                 contas=[c for c in opcoes.get("contas", []) if c in contas_ok])
 
 
@@ -1851,13 +1857,15 @@ def usuarios_salvar():
     obras = [o for o in request.form.getlist("obra_do_usuario") if o.strip()]
     telas = [t for t in request.form.getlist("tela_do_usuario") if t.strip()]
     contas = [c for c in request.form.getlist("conta_do_usuario") if c.strip()]
+    projetos = [p for p in request.form.getlist("projeto_do_usuario") if p.strip()]
     uid = (request.form.get("usuario_id") or "").strip()
 
     if acao == "criar":
         r = usuarios.criar(request.form.get("novo_usuario", ""),
                            request.form.get("nova_senha", ""),
                            nome=request.form.get("nome", ""),
-                           obras=obras, telas=telas, contas=contas)
+                           obras=obras, telas=telas, contas=contas,
+                           projetos=projetos)
     elif acao == "apagar" and uid.isdigit():
         r = usuarios.apagar(int(uid))
     elif acao == "salvar" and uid.isdigit():
@@ -1865,7 +1873,7 @@ def usuarios_salvar():
             int(uid), nome=request.form.get("nome"),
             senha=request.form.get("nova_senha"),
             ativo=request.form.get("ativo") == "1",
-            obras=obras, telas=telas, contas=contas)
+            obras=obras, telas=telas, contas=contas, projetos=projetos)
     else:
         r = {"ok": False, "erro": "Pedido não reconhecido."}
 
@@ -2072,6 +2080,15 @@ def _obras_para_liberar(estado_migracoes):
     return consultas.opcoes_de_filtro()["obras"]
 
 
+def _projetos_para_liberar(estado_migracoes):
+    """Os projetos que dá para marcar no cadastro de acesso — cada um abre em
+    todas as obras dele, inclusive as futuras."""
+    if estado_migracoes["pendentes"]:
+        return []
+    from . import consultas
+    return consultas.opcoes_de_filtro().get("projetos", [])
+
+
 def _contas_para_liberar(estado_migracoes):
     """As contas correntes que dá para marcar no cadastro de acesso."""
     if estado_migracoes["pendentes"]:
@@ -2195,6 +2212,7 @@ def configuracoes():
         telas_liberaveis=usuarios_mod.TELAS,
         telas_sugeridas=usuarios_mod.TELAS_SUGERIDAS,
         obras_para_liberar=_obras_para_liberar(estado_migracoes),
+        projetos_para_liberar=_projetos_para_liberar(estado_migracoes),
         contas_para_liberar=_contas_para_liberar(estado_migracoes),
         erro_usuario=request.args.get("erro_usuario", ""),
         usuario_ok=request.args.get("usuario_ok") == "1",

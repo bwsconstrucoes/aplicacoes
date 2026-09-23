@@ -2093,6 +2093,33 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## Acesso por projeto, além de por obra — 23/09/2026 (migração 019)
+
+O dono: *"tanto define por obra como por projeto, porque pode ser que eu
+queira dar acesso ao projeto como um todo"*.
+
+- **No cadastro de acesso** (Configurações › Acesso por pessoa) há agora
+  "Projetos inteiros" ao lado de "Obras, uma a uma". Marcar um projeto libera
+  **todas as obras dele, inclusive as que ainda vão entrar na base** — o
+  projeto se abre em obras na hora de entrar, não na hora de marcar. Dá para
+  combinar: o projeto BETA mais a obra avulsa X.
+- **A tranca é a mesma**: toda tela continua lendo a lista de obras da pessoa
+  (`_filtros_do_pedido`); o que mudou é que essa lista passou a ser as obras
+  marcadas **mais** as obras dos projetos liberados, calculada a cada
+  pedido. Sem obra nenhuma (marcada ou vinda de projeto), não entra — um
+  projeto ainda sem obra na base não abre nada.
+- **A barra lateral** de quem está preso passou a mostrar só os projetos
+  dele (os liberados, ou os das obras dele). Antes listava todos os projetos
+  da empresa para qualquer pessoa — o nome vazava.
+- **Editar a pessoa não congela o projeto**: regravar o cadastro guarda as
+  obras marcadas uma a uma, nunca as efetivas — senão a obra futura do
+  projeto deixaria de entrar.
+- **Custo**: a lista obra → projeto (uma varredura do fato) passou a ser
+  lembrada até a próxima carga; sem isso, quem tem projeto pagaria essa
+  varredura a cada clique.
+- **Migração 019** cria `usuario_projetos`. Ao publicar, apertar "Aplicar
+  atualizações do banco" no mesmo momento: o cadastro de acesso lê a tabela.
+
 ## O Calendário ganhou o terceiro número: a pagar, em laranja — 23/09/2026
 
 O dono: *"gostaria de visualizar o que está a pagar de cada dia também, um
