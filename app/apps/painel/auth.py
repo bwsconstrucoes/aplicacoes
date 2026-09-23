@@ -192,6 +192,7 @@ def _nao_encontrado():
 _ABAS_POR_ENDPOINT = {
     "painel.visao_geral": "visao",
     "painel.dre": "dre",
+    "painel.dre_medicoes": "dre",
     "painel.analitico": "analitico",
     "painel.receita": "receita",
     "painel.medicao": "receita",

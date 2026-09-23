@@ -54,6 +54,74 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### 🐞 A TAG "SEM EMPRESA" NÃO SUMIA — e o formato do defeito, de novo
+
+23/09/2026, o dono:
+
+> *"atualizei o cadastro da obra com a empresa, mas a crítica de sem empresa
+> não saiu"*
+
+**Ele estava certo, e o defeito era pior que "não grava".** A empresa era
+gravada, a ficha da obra mostrava certo, e a tag vermelha **"Sem empresa"**
+continuava no painel de Obras — para sempre, em TODAS as obras, inclusive nas
+que estavam corretas desde o começo.
+
+A causa: o alerta do painel lê o campo da **LISTA** de obras
+(`/erp/api/obras`), e a lista nunca mandava `empresa_id`. A ficha
+(`/erp/api/obras/<id>`) mandava — por isso o cadastro parecia certo quando se
+abria, e errado quando se fechava.
+
+**É a terceira vez que o MESMO formato de defeito aparece** (o código da obra,
+a conta de pagamento, o seguro-garantia): *campo gravado e não devolvido*. Aqui
+com um agravante — o sistema não ficava calado, ele **afirmava em vermelho uma
+coisa falsa** sobre um cadastro correto. Aviso que mente é pior que aviso que
+falta: ensina a equipe a ignorar os avisos que valem.
+
+**Consertado devolvendo `empresa_id` na listagem**, com quatro testes de banco
+que percorrem o caminho inteiro: obra nasce sem empresa e vem marcada; definir
+pelo cadastro apaga a crítica; definir pelo atalho da tela de Empresas
+**também**; e tirar a empresa traz a crítica de volta.
+
+### 📎 CORRIGIR E EXCLUIR O DOCUMENTO ANEXADO (23/09/2026)
+
+Na mesma conversa:
+
+> *"vendo em documentos de obra, caso eu adicione um documento de forma
+> equivocada e precise alterar, não tem opção pra isso. Ou até mesmo excluir
+> algo que esteja errado."*
+
+Também certo. **Fora da tela do Arquivo, anexar era via de mão única**: a lista
+de documentos da obra (e a do título, e as fotos da medição) só oferecia
+"Abrir". Errar o tipo é o que mais acontece — a caixinha já vem preenchida, e
+quem está com o papel na mão clica em Anexar sem trocar.
+
+Curiosidade que explica o buraco: a rota de **excluir anexo já existia** e era
+usada só pela tela do Arquivo. As fichas nunca ganharam o botão.
+
+**O que passou a existir:**
+
+- **Corrigir** — troca o tipo e a descrição, com a trilha guardando o de/para.
+- **Excluir** — tira o documento e apaga o arquivo (inclusive no Drive), com
+  confirmação que diz o nome do arquivo, não um "tem certeza?" que ninguém lê.
+
+**O ARQUIVO EM SI NÃO SE TROCA por baixo do mesmo registro, de propósito.**
+Trocar os bytes apagaria a diferença entre "corrigi o rótulo" e "é outro
+documento" — e é justamente essa diferença que a trilha precisa guardar.
+Documento errado se exclui e se anexa o certo. (A tela do **Arquivo** é a
+exceção e continua com "Trocar arquivo": lá o registro tem vida própria —
+validade, dono, competência — e perdê-lo custa mais que o arquivo.)
+
+**Mora no `erp_base.html`**, pela regra dele mesmo (*"o funcionamento do sistema
+tem que ser similar"*): a tela escreve uma chamada e recebe os botões prontos;
+quando o documento muda, o base avisa a tela e ela se redesenha. Vale hoje na
+ficha da **obra**, na do **título** e nas **fotos de medição** da empreita.
+
+**O que ficou de fora, e por quê:** trocar o **tipo** de um documento na tela do
+**Arquivo** continua sem existir. Lá o tipo decide o nome do arquivo, quem
+enxerga e a pasta no Drive — não é a mesma correção barata, e foi deixado de
+fora conscientemente desde 17/09/2026. Se incomodar na prática, é trabalho
+próprio.
+
 ### 🔍 A VARREDURA DOS CAMPOS — e por que ela foi feita num lugar só
 
 22/09/2026, depois de algumas horas usando o sistema:

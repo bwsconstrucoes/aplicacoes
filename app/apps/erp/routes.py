@@ -6417,6 +6417,46 @@ def baixar_anexo(anexo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 404
 
 
+# ---------------------------------------------------------------------------
+# CORRIGIR A ETIQUETA DO DOCUMENTO — dono, 23/09/2026:
+# *"caso eu adicione um documento de forma equivocada e precise alterar, não
+# tem opção pra isso. Ou até mesmo excluir algo que esteja errado."*
+#
+# Excluir já existia na API, mas SÓ a tela do Arquivo oferecia o botão — nas
+# fichas (obra, título, medição) o documento entrava e não saía mais. Corrigir
+# não existia em lugar nenhum.
+#
+# É `lancar` e confere escopo do anexo pelo mesmo motivo do DELETE: quem não
+# alcança a obra não alcança o papel dela.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/anexos/<int:anexo_id>", methods=["PATCH"])
+@login_obrigatorio
+@permissao("lancar")
+def api_corrigir_anexo(anexo_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_anexo_no_escopo
+    from app.apps.erp.core.documentos.armazenamento import corrigir
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_anexo_no_escopo(s, usuario, anexo_id)
+            a = corrigir(s, anexo_id, usuario,
+                         descricao=d.get("descricao"),
+                         categoria=d.get("categoria"))
+            resposta = {"id": a.id, "nome": a.nome_arquivo,
+                        "categoria": a.categoria_anexo or "OUTRO",
+                        "descricao": a.descricao or ""}
+            s.commit()
+        return jsonify({"ok": True, "anexo": resposta})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise            # fora do escopo vira 404, nunca 403
+    except Exception as e:
+        logger.exception("ERP: falha ao corrigir o anexo")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/anexos/<int:anexo_id>", methods=["DELETE"])
 @login_obrigatorio
 @permissao("lancar")
@@ -9108,6 +9148,15 @@ def api_listar_obras():
                                             if o.seguro_vigencia_fim else None),
                     "cno": o.cno, "art_rrt": o.art_rrt,
                     "tem_responsavel": o.id in com_responsavel,
+                    # A EMPRESA DA OBRA volta na listagem (23/09/2026). O dono:
+                    # *"atualizei o cadastro da obra com a empresa, mas a
+                    # crítica de sem empresa não saiu"*. E não saía mesmo: o
+                    # alerta "Sem empresa" do painel lê este campo da LISTA, e
+                    # a lista nunca o mandava. Gravava certo, a ficha mostrava
+                    # certo, e a tag vermelha ficava para sempre. Mesmo defeito
+                    # de família do código da obra e da conta de pagamento:
+                    # campo gravado e não devolvido.
+                    "empresa_id": o.empresa_id,
                     "conta_bancaria_id": o.conta_bancaria_id,
                     # O projeto que agrupa a obra (migração 066): vira filtro
                     # na tela e coluna no relatório somado por projeto.

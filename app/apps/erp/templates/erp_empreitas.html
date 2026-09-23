@@ -41,6 +41,9 @@ const dec = paraNumero;   // conversor único: trata "30.00" e "1.234,56" corret
 // Devolver garantia é dinheiro saindo: quem pode aprovar é quem pode devolver.
 const PODE_APROVAR = {{ 'true' if pode.aprovar else 'false' }};
 
+// Foto de medição excluída pelo botão do `erp_base.html`: a tela recarrega.
+document.addEventListener("documento-mudou", () => carregar());
+
 async function carregar(){
   try {
     const d = await api("/erp/api/empreitas"); CT = d.contratos;
@@ -146,7 +149,13 @@ async function abrir(id){
         <td class="direita dados"><b>${numero(m.valor_liquido)}</b></td>
         <td><span class="selo ${m.status==="FATURADA"?"aprovado":"aguardando"}">${rotulo(m.status)}</span>
           <small>${m.medido_por}</small></td>
-        <td>${(m.anexos||[]).map(a=>`<a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">ver</a>`).join(" ")||"—"}</td>
+        {# A foto da medição também se tira daqui quando entra errada
+           (23/09/2026) — a coluna é estreita, então o excluir vira um ✕ ao
+           lado do "ver", e não os três botões da ficha. #}
+        <td>${(m.anexos||[]).map(a=>`<a class="btn secundario" href="/erp/anexo/${a.id}"
+            target="_blank">ver</a><button class="link-btn" data-doc-excluir="${a.id}"
+            data-doc-nome="${escapar(a.nome||"esta foto")}" title="Tirar esta foto">✕</button>`
+          ).join(" ")||"—"}</td>
         <td>${m.status==="MEDIDA"?`<button class="btn secundario" data-foto="${m.id}">+ foto</button>
           <button class="btn" data-aut="${m.id}">Autorizar</button>`:""}</td>
       </tr>`).join("") || `<tr><td colspan="9" class="cartao-dica">Nenhuma medição ainda.</td></tr>`}

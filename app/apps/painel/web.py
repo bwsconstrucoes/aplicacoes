@@ -157,9 +157,14 @@ def _ajudantes_de_template():
         base inteira.
 
         `extras` leva o que for do proprio link (a medicao, a medida), sem
-        atropelar o filtro."""
+        atropelar o filtro.
+
+        A CONTA CORRENTE entrou aqui em 23/09/2026: o dono filtrou o
+        Calendario por conta, mudou de mes, e o filtro sumiu — os botoes de
+        mes passam por esta funcao, e ela nao levava a conta. Vale para toda
+        troca de tela, como os outros tres."""
         args = {c: request.args.getlist(c) for c in
-                ("ano", "projeto", "obra") if request.args.getlist(c)}
+                ("ano", "projeto", "obra", "conta") if request.args.getlist(c)}
         if request.args.get("trf"):
             args["trf"] = "1"
         args.update(extras)
@@ -438,8 +443,14 @@ def _opcoes_no_escopo():
         return opcoes
     permitidas = set(pessoa.get("obras") or [])
     contas_ok = set(pessoa.get("contas") or [])
+    # os projetos tambem: so os dela (liberados, ou os das obras dela). A
+    # lista inteira entregaria o nome de todo projeto da empresa.
+    mapa = consultas.obra_para_projeto() if permitidas else {}
+    projetos_ok = (set(pessoa.get("projetos") or [])
+                   | {mapa.get(o, "") for o in permitidas}) - {""}
     return dict(opcoes,
                 obras=[o for o in opcoes["obras"] if o in permitidas],
+                projetos=[p for p in opcoes.get("projetos", []) if p in projetos_ok],
                 contas=[c for c in opcoes.get("contas", []) if c in contas_ok])
 
 
@@ -564,6 +575,43 @@ def dre():
             campo_rotulo="rotulo", campo_linha="acumulado"),
         **extra,
     )
+
+
+@bp.route("/dre/medicoes")
+def dre_medicoes():
+    """As medicoes por tras de um numero do DRE — para a janela que abre ao
+    clicar em "Executado" ou "Em aberto" na linha de receita.
+
+    Pedido do dono em 23/09/2026: "num clique, visualizar a receita executada;
+    num clique, a receita em aberto — no modal, as medicoes". So e lido quando
+    alguem clica, com os mesmos filtros da tela: a mesma consulta da Receita
+    de Obra, um titulo por linha."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    visao = request.args.get("visao", "todas")
+    if visao not in ("todas", "quitadas", "a_receber"):
+        visao = "todas"
+    linhas = consultas.medicoes(f, visao=visao, limite=300)
+    for l in linhas:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+        l["abrir"] = url_for("painel.receita_titulo", codigo=l["codigo"])
+    # a aba Receita de Obra pode nao estar liberada para quem esta olhando:
+    # o link so aparece quando abre
+    pode_abrir = any(chave == "receita" for chave, _r, _e in _abas_visiveis())
+    return jsonify({"ok": True, "visao": visao, "linhas": linhas,
+                    "pode_abrir": pode_abrir,
+                    "ver_tudo": com_filtros_para_json("painel.receita", visao=visao),
+                    "total": consultas.total_das_medicoes(f, visao=visao)})
+
+
+def com_filtros_para_json(rota, **extras):
+    """O mesmo `com_filtros` das telas, disponivel fora do template."""
+    args = {c: request.args.getlist(c) for c in
+            ("ano", "projeto", "obra", "conta") if request.args.getlist(c)}
+    if request.args.get("trf"):
+        args["trf"] = "1"
+    args.update(extras)
+    return url_for(rota, **args)
 
 
 @bp.route("/analitico")
@@ -749,11 +797,13 @@ def calendario_dia():
     linhas = consultas.lancamentos_do_dia(f, dia, **proprios)
     for l in linhas:
         l["data"] = l["data"].isoformat() if l.get("data") else ""
-    entradas = sum(l["valor"] for l in linhas if l["valor"] > 0)
-    saidas = sum(l["valor"] for l in linhas if l["valor"] < 0)
+    entradas = sum(l["valor"] for l in linhas if l["valor"] > 0 and not l["em_aberto"])
+    saidas = sum(l["valor"] for l in linhas if l["valor"] < 0 and not l["em_aberto"])
+    a_pagar = sum(l["valor"] for l in linhas if l["em_aberto"])
     return jsonify({"ok": True, "dia": dia, "linhas": linhas,
                     "quantos": len(linhas), "entradas": entradas,
-                    "saidas": saidas, "liquido": entradas + saidas})
+                    "saidas": saidas, "liquido": entradas + saidas,
+                    "a_pagar": a_pagar})
 
 
 @bp.route("/receita")
@@ -1849,13 +1899,15 @@ def usuarios_salvar():
     obras = [o for o in request.form.getlist("obra_do_usuario") if o.strip()]
     telas = [t for t in request.form.getlist("tela_do_usuario") if t.strip()]
     contas = [c for c in request.form.getlist("conta_do_usuario") if c.strip()]
+    projetos = [p for p in request.form.getlist("projeto_do_usuario") if p.strip()]
     uid = (request.form.get("usuario_id") or "").strip()
 
     if acao == "criar":
         r = usuarios.criar(request.form.get("novo_usuario", ""),
                            request.form.get("nova_senha", ""),
                            nome=request.form.get("nome", ""),
-                           obras=obras, telas=telas, contas=contas)
+                           obras=obras, telas=telas, contas=contas,
+                           projetos=projetos)
     elif acao == "apagar" and uid.isdigit():
         r = usuarios.apagar(int(uid))
     elif acao == "salvar" and uid.isdigit():
@@ -1863,7 +1915,7 @@ def usuarios_salvar():
             int(uid), nome=request.form.get("nome"),
             senha=request.form.get("nova_senha"),
             ativo=request.form.get("ativo") == "1",
-            obras=obras, telas=telas, contas=contas)
+            obras=obras, telas=telas, contas=contas, projetos=projetos)
     else:
         r = {"ok": False, "erro": "Pedido não reconhecido."}
 
@@ -2070,6 +2122,15 @@ def _obras_para_liberar(estado_migracoes):
     return consultas.opcoes_de_filtro()["obras"]
 
 
+def _projetos_para_liberar(estado_migracoes):
+    """Os projetos que dá para marcar no cadastro de acesso — cada um abre em
+    todas as obras dele, inclusive as futuras."""
+    if estado_migracoes["pendentes"]:
+        return []
+    from . import consultas
+    return consultas.opcoes_de_filtro().get("projetos", [])
+
+
 def _contas_para_liberar(estado_migracoes):
     """As contas correntes que dá para marcar no cadastro de acesso."""
     if estado_migracoes["pendentes"]:
@@ -2193,6 +2254,7 @@ def configuracoes():
         telas_liberaveis=usuarios_mod.TELAS,
         telas_sugeridas=usuarios_mod.TELAS_SUGERIDAS,
         obras_para_liberar=_obras_para_liberar(estado_migracoes),
+        projetos_para_liberar=_projetos_para_liberar(estado_migracoes),
         contas_para_liberar=_contas_para_liberar(estado_migracoes),
         erro_usuario=request.args.get("erro_usuario", ""),
         usuario_ok=request.args.get("usuario_ok") == "1",

@@ -854,6 +854,38 @@ O que ainda **não** responde:
   registrada como evento no histórico da obra, mas não existe consulta que leia
   o histórico; hoje só dá para abrir obra por obra.
 
+## 3o-bis. Documento corrigido e documento excluído (23/09/2026)
+
+Pedido do dono, olhando os documentos de uma obra: *"caso eu adicione um
+documento de forma equivocada e precise alterar, não tem opção pra isso. Ou até
+mesmo excluir algo que esteja errado."* Corrigir a etiqueta (tipo e descrição) e
+excluir passaram a existir nas fichas — e as duas coisas ficam na trilha.
+
+Perguntas que passam a funcionar:
+
+- OK **Quais documentos foram excluídos, de qual obra e por quem?** 🔒 (escopo
+  por obra) — a exclusão registra o arquivo, o tipo e quem apagou.
+- OK **Quem trocou o tipo deste documento, e o que ele era antes?** — a
+  correção guarda o de/para.
+
+⚠️ **Palavra ambígua: "alterar o documento".** De novo as três coisas que já
+brigavam entre si, agora com uma quarta:
+
+- **corrigir a ETIQUETA** — o papel está certo, o rótulo está errado (entrou
+  como "Outro" e é o contrato). É o que passou a existir agora;
+- **trocar o ARQUIVO** — o papel está errado. Só na tela do Arquivo, onde o
+  registro tem vida própria;
+- **ATUALIZAR** — veio uma via nova. São dois documentos, e o velho continua;
+- **EXCLUIR** — não deveria estar ali. Apaga o arquivo junto, sem desfazer.
+
+O que ainda **não** responde:
+
+- FALTA **"Quantos documentos foram excluídos este mês, no sistema todo?"** — os
+  eventos existem por obra e por título, mas não há consulta que os some.
+- FALTA **trocar o TIPO de um documento na tela do Arquivo** — lá o tipo decide
+  o nome do arquivo, quem enxerga e a pasta no Drive; não é a mesma correção
+  barata da ficha, e continua de fora.
+
 ## 3p. O ACOMPANHAMENTO: processos que correm fora da BWS
 
 Construído em 18/09/2026 (migração 072, pedaço 1). Guarda assunto burocrático

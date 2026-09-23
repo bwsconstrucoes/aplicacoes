@@ -65,7 +65,8 @@ def _normalizar(texto) -> str:
 def listar() -> list[dict]:
     """Todas as pessoas cadastradas, com as obras, contas e telas de cada uma."""
     pessoas = [{"id": i, "usuario": u, "nome": n, "ativo": bool(a),
-                "ultimo_acesso": ult, "obras": [], "telas": [], "contas": []}
+                "ultimo_acesso": ult, "obras": [], "telas": [], "contas": [],
+                "projetos": []}
                for i, u, n, a, ult in consultar(
         "SELECT id, usuario, nome, ativo, ultimo_acesso FROM usuarios"
         " ORDER BY lower(usuario)")]
@@ -81,6 +82,10 @@ def listar() -> list[dict]:
                                 " ORDER BY conta"):
         if uid in por_id:
             por_id[uid]["contas"].append(conta)
+    for uid, projeto in consultar("SELECT usuario_id, projeto FROM usuario_projetos"
+                                  " ORDER BY projeto"):
+        if uid in por_id:
+            por_id[uid]["projetos"].append(projeto)
     return pessoas
 
 
@@ -95,11 +100,23 @@ def buscar(usuario: str) -> dict | None:
     if not linhas:
         return None
     uid, login_real, nome, senha_hash = linhas[0]
+    obras_marcadas = [d for (d,) in consultar(
+        "SELECT departamento FROM usuario_obras WHERE usuario_id = ?"
+        " ORDER BY departamento", (uid,))]
+    projetos = [p for (p,) in consultar(
+        "SELECT projeto FROM usuario_projetos WHERE usuario_id = ?"
+        " ORDER BY projeto", (uid,))]
+    # "obras" e o que VALE: as marcadas uma a uma MAIS todas as obras dos
+    # projetos liberados, hoje. E o que o filtro de toda tela le — por isso
+    # a obra nova de um projeto entra sozinha no acesso de quem tem o projeto.
+    obras = obras_marcadas
+    if projetos:
+        from . import consultas
+        obras = sorted(set(obras_marcadas) | set(consultas.obras_dos_projetos(projetos)))
     return {"id": uid, "usuario": login_real, "nome": nome,
             "senha_hash": senha_hash,
-            "obras": [d for (d,) in consultar(
-                "SELECT departamento FROM usuario_obras WHERE usuario_id = ?"
-                " ORDER BY departamento", (uid,))],
+            "obras": obras, "obras_marcadas": obras_marcadas,
+            "projetos": projetos,
             "telas": [t for (t,) in consultar(
                 "SELECT tela FROM usuario_telas WHERE usuario_id = ?", (uid,))],
             "contas": [c for (c,) in consultar(
@@ -132,7 +149,7 @@ def _e_a_senha_do_dono(senha) -> bool:
 
 
 def criar(usuario: str, senha: str, nome: str = "", obras=(), telas=(),
-          contas=()) -> dict:
+          contas=(), projetos=()) -> dict:
     """Cadastra a pessoa. Devolve {'ok': True, 'id': n} ou o erro em português."""
     login = _normalizar(usuario)
     if not login:
@@ -151,17 +168,21 @@ def criar(usuario: str, senha: str, nome: str = "", obras=(), telas=(),
             (login, str(nome or "").strip(), generate_password_hash(senha)))
         uid = cur.fetchone()[0]
         cur.close()
-        _gravar_escopo(conn, uid, obras, telas, contas)
+        _gravar_escopo(conn, uid, obras, telas, contas, projetos)
         conn.commit()
-    logger.info("Painel: usuário %s criado com %d obra(s) e %d tela(s).",
-                login, len(set(obras)), len(set(telas)))
+    logger.info("Painel: usuário %s criado com %d obra(s), %d projeto(s) e %d tela(s).",
+                login, len(set(obras)), len(set(projetos)), len(set(telas)))
     return {"ok": True, "id": uid}
 
 
-def _gravar_escopo(conn, uid: int, obras, telas, contas=()) -> None:
+def _gravar_escopo(conn, uid: int, obras, telas, contas=(), projetos=()) -> None:
     conn.execute("DELETE FROM usuario_obras WHERE usuario_id = ?", (uid,))
     conn.execute("DELETE FROM usuario_telas WHERE usuario_id = ?", (uid,))
     conn.execute("DELETE FROM usuario_contas WHERE usuario_id = ?", (uid,))
+    conn.execute("DELETE FROM usuario_projetos WHERE usuario_id = ?", (uid,))
+    for projeto in sorted({str(p).strip() for p in (projetos or []) if str(p).strip()}):
+        conn.execute("INSERT INTO usuario_projetos (usuario_id, projeto)"
+                     " VALUES (?,?)", (uid, projeto))
     for conta in sorted({str(c).strip() for c in (contas or []) if str(c).strip()}):
         conn.execute("INSERT INTO usuario_contas (usuario_id, conta)"
                      " VALUES (?,?)", (uid, conta))
@@ -175,7 +196,7 @@ def _gravar_escopo(conn, uid: int, obras, telas, contas=()) -> None:
 
 
 def atualizar(uid: int, *, nome=None, senha=None, ativo=None,
-              obras=None, telas=None, contas=None) -> dict:
+              obras=None, telas=None, contas=None, projetos=None) -> dict:
     """Muda o que foi pedido e só isso. Senha vazia não apaga a que existe."""
     if not consultar("SELECT 1 FROM usuarios WHERE id = ?", (int(uid),)):
         return {"ok": False, "erro": "Usuário não encontrado."}
@@ -195,12 +216,16 @@ def atualizar(uid: int, *, nome=None, senha=None, ativo=None,
             conn.execute("UPDATE usuarios SET senha_hash = ? WHERE id = ?",
                          (generate_password_hash(senha), int(uid)))
             logger.info("Painel: senha do usuário %s trocada.", uid)
-        if obras is not None or telas is not None or contas is not None:
+        if (obras is not None or telas is not None or contas is not None
+                or projetos is not None):
             atual = buscar_por_id(int(uid)) or {}
+            # as MARCADAS, nunca as efetivas: regravar as efetivas congelaria
+            # as obras do projeto como se tivessem sido marcadas uma a uma
             _gravar_escopo(conn, int(uid),
-                           atual["obras"] if obras is None else obras,
+                           atual.get("obras_marcadas", []) if obras is None else obras,
                            atual["telas"] if telas is None else telas,
-                           atual.get("contas", []) if contas is None else contas)
+                           atual.get("contas", []) if contas is None else contas,
+                           atual.get("projetos", []) if projetos is None else projetos)
         conn.commit()
     return {"ok": True}
 

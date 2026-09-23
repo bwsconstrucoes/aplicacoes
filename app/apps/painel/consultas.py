@@ -31,7 +31,11 @@ PAG = "2. Contas a Pagar"
 # Medido em 17/09/2026, numa base de 144 mil linhas, na consulta do ano do DRE:
 # 112 ms com a expressão, 29 ms com a coluna. Era 71% do tempo de cada tela.
 PAGO = "pago"
-# Imposto retido na fonte: o cliente reteve, nao virou caixa da BWS. Entra na
+# Imposto retido na fonte: o cliente reteve, nao virou caixa da BWS. Desde
+# 23/09/2026 a linha segue o estado do titulo: realizado quando quitado, em
+# aberto quando o titulo ainda esta em aberto. Nas telas de receita, "retido"
+# e o COMPROMETIDO da linha (o que ja foi e o que ainda vai ser retido), e "a
+# receber" e so o liquido — o retido nunca vai entrar na conta. Entra na
 # receita bruta e sai da liquida.
 RETIDO = "categoria ILIKE '%Retido%'"
 # O que e MEDICAO na Receita de Obra: a receita de obras e o imposto retido dela.
@@ -481,8 +485,8 @@ def receita_por_obra(f: Filtros, limite: int = 25) -> list[dict]:
     sql = f"""
         SELECT {OBRA_OU_SEM},
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM({EM_ABERTO})
+               SUM(CASE WHEN     ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EM_ABERTO} ELSE 0 END)
           FROM fato{where} GROUP BY 1
          ORDER BY 2 DESC LIMIT {int(limite)}"""
     saida = []
@@ -671,16 +675,31 @@ def financeiro_mensal() -> list[dict]:
 def obra_para_projeto() -> dict:
     """A que projeto cada obra pertence. Quando a obra aparece com mais de um
     projeto (dado inconsistente na planilha), vale o mais frequente."""
-    sql = """
-        SELECT departamento, projeto, COUNT(*) AS quantas
-          FROM fato
-         WHERE COALESCE(departamento,'') <> ''
-         GROUP BY 1, 2 ORDER BY 1, 3 DESC"""
-    mapa = {}
-    for obra, projeto, _quantas in consultar(sql):
-        if obra not in mapa:                       # o primeiro é o mais frequente
-            mapa[obra] = (projeto or "").strip()
-    return mapa
+    # Lembrado até a próxima carga: desde 23/09/2026 quem tem acesso por
+    # PROJETO passa por aqui a cada pedido — e varrer o fato a cada clique
+    # seria a tela mais lenta do painel só para saber de quem é a obra.
+    def calcular():
+        sql = """
+            SELECT departamento, projeto, COUNT(*) AS quantas
+              FROM fato
+             WHERE COALESCE(departamento,'') <> ''
+             GROUP BY 1, 2 ORDER BY 1, 3 DESC"""
+        mapa = {}
+        for obra, projeto, _quantas in consultar(sql):
+            if obra not in mapa:                   # o primeiro é o mais frequente
+                mapa[obra] = (projeto or "").strip()
+        return mapa
+
+    return dict(_lembrando(("obra_para_projeto",), calcular))
+
+
+def obras_dos_projetos(projetos) -> list[str]:
+    """Todas as obras que pertencem a estes projetos, hoje — inclusive as que
+    entraram na base depois de o acesso ter sido dado."""
+    alvo = {str(p).strip() for p in (projetos or ()) if str(p).strip()}
+    if not alvo:
+        return []
+    return sorted(o for o, p in obra_para_projeto().items() if p in alvo)
 
 
 # ---------------------------------------------------------------------------
@@ -712,8 +731,8 @@ def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
                MAX(razao_social), MAX(departamento), MAX(projeto),
                MAX(numero_documento), MAX(link), MAX(data),
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(a_pagar_receber),
+               SUM(CASE WHEN     ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EM_ABERTO} ELSE 0 END),
                codigo_lancamento
           FROM fato{where}
          GROUP BY codigo_lancamento {tendo}
@@ -756,8 +775,8 @@ def total_das_medicoes(f: Filtros, visao: str = "todas") -> dict:
         SELECT COUNT(*), SUM(recebido), SUM(retido), SUM(aberto)
           FROM (
             SELECT SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END) AS recebido,
-                   SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END) AS retido,
-                   SUM(a_pagar_receber) AS aberto
+                   SUM(CASE WHEN     ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END) AS retido,
+                   SUM(CASE WHEN NOT ({RETIDO}) THEN {EM_ABERTO} ELSE 0 END) AS aberto
               FROM fato{where}
              GROUP BY codigo_lancamento {tendo}
           ) AS por_titulo"""
@@ -819,8 +838,8 @@ def _titulos_de_receita(condicao: str, params, limite: int) -> list[dict]:
         SELECT codigo_lancamento, MAX(numero_documento), MAX(razao_social),
                MAX(departamento), MAX(data), MAX(observacao), MAX(link),
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
-               SUM(a_pagar_receber),
+               SUM(CASE WHEN     ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EM_ABERTO} ELSE 0 END),
                MAX(medicao_rotulo)
           FROM fato
          WHERE analise = 'DRE' AND tipo = ? AND {condicao}
@@ -1183,20 +1202,39 @@ def extrato_da_conta(f: Filtros, busca="", categoria="", de="", ate="",
 # receita (o cliente as reteve, nunca passaram pela conta). O mês do calendário
 # fecha com a linha do mesmo mês no Fluxo de Caixa — é o que permite conferir.
 TIPOS_DO_CALENDARIO = {
-    "": "Pagamentos e recebimentos",
+    "": "Recebido, pago e a pagar",
     "recebido": "Só recebimentos",
     "pago": "Só pagamentos",
+    "a_pagar": "Só a pagar (em aberto, pelo vencimento)",
 }
 
+# O terceiro numero de cada dia (dono, 23/09/2026): "o que esta a pagar de
+# cada dia, em laranja — num dia que ja passou, venceu; num dia que nao
+# chegou, esta a vencer". E o titulo em aberto, no dia do VENCIMENTO. Quando
+# o OMIE nao trouxe o vencimento em separado, vale a data de sempre — que, no
+# titulo em aberto, ja e o vencimento.
+DIA_DO_VENCIMENTO = "COALESCE(data_vencimento, data)"
+A_PAGAR_EM_ABERTO = f"tipo = '{PAG}' AND ABS({EM_ABERTO}) > 0.005"
 
-def _condicoes_do_calendario(tipo="", grupo="", categoria="", busca=""):
-    condicoes = [PAGO, "data IS NOT NULL", f"ABS({MOVIMENTO_DE_CAIXA}) > 0.005",
-                 f"NOT (tipo = ? AND {RETIDO})"]
-    extras: list = [REC]
-    if tipo == "recebido":
-        condicoes.append(f"{MOVIMENTO_DE_CAIXA} > 0")
-    elif tipo == "pago":
-        condicoes.append(f"{MOVIMENTO_DE_CAIXA} < 0")
+
+def _condicoes_do_calendario(tipo="", grupo="", categoria="", busca="",
+                             em_aberto: bool = False):
+    """O WHERE comum ao mes e ao detalhe do dia.
+
+    `em_aberto=False` e o CAIXA (pago e recebido, pela data em que
+    aconteceu); `em_aberto=True` e o A PAGAR (titulo em aberto, pelo dia do
+    vencimento). Os filtros proprios da tela valem nos dois."""
+    if em_aberto:
+        condicoes = [A_PAGAR_EM_ABERTO, f"{DIA_DO_VENCIMENTO} IS NOT NULL"]
+        extras: list = []
+    else:
+        condicoes = [PAGO, "data IS NOT NULL", f"ABS({MOVIMENTO_DE_CAIXA}) > 0.005",
+                     f"NOT (tipo = ? AND {RETIDO})"]
+        extras = [REC]
+        if tipo == "recebido":
+            condicoes.append(f"{MOVIMENTO_DE_CAIXA} > 0")
+        elif tipo == "pago":
+            condicoes.append(f"{MOVIMENTO_DE_CAIXA} < 0")
     if grupo:
         condicoes.append("COALESCE(NULLIF(grupo,''), '(sem grupo)') = ?")
         extras.append(grupo)
@@ -1210,78 +1248,154 @@ def _condicoes_do_calendario(tipo="", grupo="", categoria="", busca=""):
     return condicoes, extras
 
 
-def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
-                      categoria="", busca="") -> dict:
-    """Entradas, saídas e quantos lançamentos em cada dia do mês — e os totais.
+def _dia_vazio() -> dict:
+    return {"entradas": 0.0, "saidas": 0.0, "liquido": 0.0, "quantos": 0,
+            "a_pagar": 0.0, "quantos_a_pagar": 0, "vencido": False}
 
-    Uma consulta só, agrupada pelo dia: o banco devolve no máximo 31 linhas."""
+
+def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
+                      categoria="", busca="", hoje=None) -> dict:
+    """Entradas, saídas, o que está a pagar e quantos lançamentos em cada dia
+    do mês — e os totais.
+
+    Duas consultas agrupadas pelo dia (no máximo 31 linhas cada): o caixa,
+    pela data em que aconteceu, e o A PAGAR em aberto, pelo vencimento. O que
+    venceu antes de `hoje` é "vencido"; o resto, "a vencer"."""
     import datetime as _dt
+    hoje = hoje or _dt.date.today()
     inicio = _dt.date(int(ano), int(mes), 1)
     fim = (_dt.date(inicio.year + (inicio.month == 12),
                     1 if inicio.month == 12 else inicio.month + 1, 1))
-    condicoes, extras = _condicoes_do_calendario(tipo, grupo, categoria, busca)
-    condicoes += ["data >= CAST(? AS DATE)", "data < CAST(? AS DATE)"]
-    extras += [inicio.isoformat(), fim.isoformat()]
-    where, params = f.where(" AND ".join(condicoes), extras)
-    sql = f"""
-        SELECT data AS dia_do_calendario,
-               SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} > 0
-                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
-               SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} < 0
-                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
-               COUNT(*)
-          FROM fato{where}
-         GROUP BY 1 ORDER BY 1"""
-    dias = {}
+    dias: dict = {}
     entradas = saidas = 0.0
     quantos = 0
     maior_entrada = maior_saida = None
-    for dia, entrou, saiu, n in consultar(sql, params):
-        entrou, saiu = float(entrou or 0), float(saiu or 0)
-        dias[dia] = {"entradas": entrou, "saidas": saiu,
-                     "liquido": entrou + saiu, "quantos": int(n or 0)}
-        entradas += entrou
-        saidas += saiu
-        quantos += int(n or 0)
-        if entrou > 0 and (maior_entrada is None or entrou > maior_entrada[1]):
-            maior_entrada = (dia, entrou)
-        if saiu < 0 and (maior_saida is None or saiu < maior_saida[1]):
-            maior_saida = (dia, saiu)
+
+    if tipo != "a_pagar":
+        condicoes, extras = _condicoes_do_calendario(tipo, grupo, categoria, busca)
+        condicoes += ["data >= CAST(? AS DATE)", "data < CAST(? AS DATE)"]
+        extras += [inicio.isoformat(), fim.isoformat()]
+        where, params = f.where(" AND ".join(condicoes), extras)
+        sql = f"""
+            SELECT data AS dia_do_calendario,
+                   SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} > 0
+                            THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
+                   SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} < 0
+                            THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
+                   COUNT(*)
+              FROM fato{where}
+             GROUP BY 1 ORDER BY 1"""
+        for dia, entrou, saiu, n in consultar(sql, params):
+            entrou, saiu = float(entrou or 0), float(saiu or 0)
+            d = dias.setdefault(dia, _dia_vazio())
+            d.update({"entradas": entrou, "saidas": saiu,
+                      "liquido": entrou + saiu, "quantos": int(n or 0)})
+            entradas += entrou
+            saidas += saiu
+            quantos += int(n or 0)
+            if entrou > 0 and (maior_entrada is None or entrou > maior_entrada[1]):
+                maior_entrada = (dia, entrou)
+            if saiu < 0 and (maior_saida is None or saiu < maior_saida[1]):
+                maior_saida = (dia, saiu)
+
+    a_pagar = vencido = a_vencer = 0.0
+    quantos_a_pagar = 0
+    maior_a_pagar = None
+    if tipo in ("", "a_pagar"):
+        condicoes, extras = _condicoes_do_calendario(
+            tipo, grupo, categoria, busca, em_aberto=True)
+        condicoes += [f"{DIA_DO_VENCIMENTO} >= CAST(? AS DATE)",
+                      f"{DIA_DO_VENCIMENTO} < CAST(? AS DATE)"]
+        extras += [inicio.isoformat(), fim.isoformat()]
+        where, params = f.where(" AND ".join(condicoes), extras)
+        sql = f"""
+            SELECT {DIA_DO_VENCIMENTO} AS dia_a_pagar, SUM({EM_ABERTO}), COUNT(*)
+              FROM fato{where}
+             GROUP BY 1 ORDER BY 1"""
+        for dia, aberto, n in consultar(sql, params):
+            aberto = float(aberto or 0)
+            d = dias.setdefault(dia, _dia_vazio())
+            d["a_pagar"] = aberto
+            d["quantos_a_pagar"] = int(n or 0)
+            d["vencido"] = dia < hoje
+            a_pagar += aberto
+            quantos_a_pagar += int(n or 0)
+            if dia < hoje:
+                vencido += aberto
+            else:
+                a_vencer += aberto
+            if aberto < 0 and (maior_a_pagar is None or aberto < maior_a_pagar[1]):
+                maior_a_pagar = (dia, aberto)
+
     return {
-        "inicio": inicio, "dias": dias,
+        "inicio": inicio, "hoje": hoje, "dias": dict(sorted(dias.items())),
         "entradas": entradas, "saidas": saidas, "liquido": entradas + saidas,
-        "quantos": quantos, "dias_com_movimento": len(dias),
+        "quantos": quantos,
+        "dias_com_movimento": sum(1 for d in dias.values() if d["quantos"]),
         "maior_entrada": maior_entrada, "maior_saida": maior_saida,
+        "a_pagar": a_pagar, "a_pagar_vencido": vencido, "a_pagar_a_vencer": a_vencer,
+        "quantos_a_pagar": quantos_a_pagar, "maior_a_pagar": maior_a_pagar,
     }
 
 
 def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
-                       busca="", limite: int = 500) -> list[dict]:
-    """O que entrou e o que saiu num dia, um lançamento por linha — o detalhe
-    que abre ao clicar no dia. Com os mesmos filtros do calendário, para o
-    total do detalhe fechar com o número do quadradinho."""
-    condicoes, extras = _condicoes_do_calendario(tipo, grupo, categoria, busca)
-    condicoes.append("data = CAST(? AS DATE)")
-    extras.append(dia)
-    where, params = f.where(" AND ".join(condicoes), extras)
+                       busca="", limite: int = 500, hoje=None) -> list[dict]:
+    """O que entrou, o que saiu e o que está a pagar num dia, um lançamento
+    por linha — o detalhe que abre ao clicar no dia. Com os mesmos filtros do
+    calendário, para o total do detalhe fechar com o número do quadradinho."""
+    import datetime as _dt
+    hoje = hoje or _dt.date.today()
     campos = ("data", "codigo", "tipo", "razao_social", "cnpj", "grupo",
               "categoria", "obra", "projeto", "documento", "observacao",
               "conta", "valor", "encargo", "link")
-    linhas = [dict(zip(campos, linha)) for linha in consultar(
-        f"""SELECT data, codigo_lancamento, tipo AS lancamento_do_dia,
-                   razao_social, cnpj_cpf,
-                   COALESCE(NULLIF(grupo,''), '(sem grupo)'),
-                   COALESCE(NULLIF(categoria,''), '(sem categoria)'),
-                   {OBRA_OU_SEM}, projeto, numero_documento, observacao,
-                   COALESCE(conta_corrente,'(sem conta)'),
-                   {MOVIMENTO_DE_CAIXA}, {ENCARGO}, link
-              FROM fato{where}
-             ORDER BY ABS({MOVIMENTO_DE_CAIXA}) DESC, codigo_lancamento
-             LIMIT {int(limite)}""", params)]
-    for l in linhas:
-        l["valor"] = float(l["valor"] or 0)
-        l["encargo"] = float(l["encargo"] or 0)
-        l["natureza"] = "Recebimento" if l["valor"] > 0 else "Pagamento"
+    linhas: list[dict] = []
+    if tipo != "a_pagar":
+        condicoes, extras = _condicoes_do_calendario(tipo, grupo, categoria, busca)
+        condicoes.append("data = CAST(? AS DATE)")
+        extras.append(dia)
+        where, params = f.where(" AND ".join(condicoes), extras)
+        for bruta in consultar(
+                f"""SELECT data, codigo_lancamento, tipo AS lancamento_do_dia,
+                           razao_social, cnpj_cpf,
+                           COALESCE(NULLIF(grupo,''), '(sem grupo)'),
+                           COALESCE(NULLIF(categoria,''), '(sem categoria)'),
+                           {OBRA_OU_SEM}, projeto, numero_documento, observacao,
+                           COALESCE(conta_corrente,'(sem conta)'),
+                           {MOVIMENTO_DE_CAIXA}, {ENCARGO}, link
+                      FROM fato{where}
+                     ORDER BY ABS({MOVIMENTO_DE_CAIXA}) DESC, codigo_lancamento
+                     LIMIT {int(limite)}""", params):
+            l = dict(zip(campos, bruta))
+            l["valor"] = float(l["valor"] or 0)
+            l["encargo"] = float(l["encargo"] or 0)
+            l["natureza"] = "Recebimento" if l["valor"] > 0 else "Pagamento"
+            l["em_aberto"] = False
+            linhas.append(l)
+    if tipo in ("", "a_pagar"):
+        condicoes, extras = _condicoes_do_calendario(
+            tipo, grupo, categoria, busca, em_aberto=True)
+        condicoes.append(f"{DIA_DO_VENCIMENTO} = CAST(? AS DATE)")
+        extras.append(dia)
+        where, params = f.where(" AND ".join(condicoes), extras)
+        vencido = _dt.date.fromisoformat(dia) < hoje
+        for bruta in consultar(
+                f"""SELECT {DIA_DO_VENCIMENTO}, codigo_lancamento,
+                           tipo AS lancamento_a_pagar,
+                           razao_social, cnpj_cpf,
+                           COALESCE(NULLIF(grupo,''), '(sem grupo)'),
+                           COALESCE(NULLIF(categoria,''), '(sem categoria)'),
+                           {OBRA_OU_SEM}, projeto, numero_documento, observacao,
+                           COALESCE(conta_corrente,'(sem conta)'),
+                           {EM_ABERTO}, 0, link
+                      FROM fato{where}
+                     ORDER BY ABS({EM_ABERTO}) DESC, codigo_lancamento
+                     LIMIT {int(limite)}""", params):
+            l = dict(zip(campos, bruta))
+            l["valor"] = float(l["valor"] or 0)
+            l["encargo"] = 0.0
+            l["natureza"] = "Vencido" if vencido else "A pagar"
+            l["em_aberto"] = True
+            linhas.append(l)
     return linhas
 
 

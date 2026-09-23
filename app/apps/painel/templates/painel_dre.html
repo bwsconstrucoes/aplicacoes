@@ -93,17 +93,41 @@
             <tr class="{% if l.estilo == 'total' %}linha-total
                        {% elif l.estilo == 'destaque' %}linha-destaque
                        {% elif l.estilo == 'sub' %}linha-sub{% endif %}">
+              {% set e_receita = l.linha in ('Receita Bruta de Serviços', '= Receita Líquida') %}
               <td class="{% if l.linha.startswith('  ') %}recuada{% endif %}">{{ l.linha }}</td>
+              {% if e_receita %}
+              {# clicar abre as medicoes por tras do numero — dono, 23/09/2026 #}
+              <td class="dados direita {{ classe_valor(l.executado) }}"><button type="button" class="link-btn dados abre-medicoes" data-visao="quitadas" title="ver as medições recebidas">{{ brl(l.executado) }}</button></td>
+              <td class="dados direita {{ classe_valor(l.aberto) }}"><button type="button" class="link-btn dados abre-medicoes" data-visao="a_receber" title="ver as medições a receber">{{ brl(l.aberto) }}</button></td>
+              <td class="dados direita {{ classe_valor(l.comprometido) }}"><button type="button" class="link-btn dados abre-medicoes" data-visao="todas" title="ver todas as medições">{{ brl(l.comprometido) }}</button></td>
+              {% else %}
               <td class="dados direita {{ classe_valor(l.executado) }}">{{ brl(l.executado) }}</td>
               <td class="dados direita {{ classe_valor(l.aberto) }}">{{ brl(l.aberto) }}</td>
               <td class="dados direita {{ classe_valor(l.comprometido) }}">{{ brl(l.comprometido) }}</td>
+              {% endif %}
             </tr>
           {% endif %}
         {% endfor %}
       </tbody>
     </table>
   </div>
+  <p class="cartao-dica">
+    Nas linhas de receita, <b>clique no número</b> para ver as medições por
+    trás dele — as recebidas, as a receber ou todas — sem sair daqui.
+  </p>
 </div>
+
+<dialog id="medicoes-do-dre" class="cal-dialogo">
+  <div class="cal-dialogo-cab">
+    <h3 id="medicoes-titulo">Medições</h3>
+    <div class="cal-dialogo-resumo" id="medicoes-resumo"></div>
+    <a class="btn secundario" id="medicoes-ver-tudo" href="#" style="text-decoration:none">Ver na Receita de Obra</a>
+    <button type="button" class="btn secundario" id="medicoes-fechar">Fechar</button>
+  </div>
+  <div id="medicoes-corpo" class="tabela-rolagem" style="max-height:60vh">
+    <p class="cartao-dica">Carregando…</p>
+  </div>
+</dialog>
 
 <!-- ===================== FLUXO FINANCEIRO ===================== -->
 <div class="cartao">
@@ -747,4 +771,84 @@
   {% endif %}
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const dialogo = els("medicoes-do-dre");
+  if (!dialogo) return;
+  const corpo = els("medicoes-corpo");
+  const titulo = els("medicoes-titulo");
+  const resumo = els("medicoes-resumo");
+  const verTudo = els("medicoes-ver-tudo");
+  const filtros = new URLSearchParams(window.location.search);
+  const rotulos = {quitadas: "Medições recebidas (executado)",
+                   a_receber: "Medições a receber (em aberto)",
+                   todas: "Todas as medições (comprometido)"};
+  const escapar = t => String(t == null ? "" : t)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const data = d => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "—";
+
+  function linha(l, podeAbrir) {
+    const doc = l.link
+      ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener" title="Abrir no Pipefy">${escapar(l.documento || "Pipefy")} ↗</a>`
+      : escapar(l.documento || "—");
+    const nome = podeAbrir ? `<a href="${escapar(l.abrir)}">${escapar(l.medicao)}</a>` : escapar(l.medicao);
+    return `<tr>
+      <td class="desc">${nome}</td>
+      <td class="desc">${escapar(l.cliente)}</td>
+      <td class="desc">${escapar(l.obra)}</td>
+      <td class="desc">${doc}</td>
+      <td class="dados">${data(l.data)}</td>
+      <td class="dados direita v-pos">${moeda(l.recebido)}</td>
+      <td class="dados direita">${moeda(l.retido)}</td>
+      <td class="dados direita v-aberto">${moeda(l.a_receber)}</td>
+      <td class="dados direita"><b>${moeda(l.bruto)}</b></td>
+      <td class="desc"><small>${escapar(l.situacao)}</small></td>
+    </tr>`;
+  }
+
+  async function abrir(visao) {
+    titulo.textContent = rotulos[visao] || "Medições";
+    resumo.textContent = "";
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    dialogo.showModal();
+    const consulta = new URLSearchParams(filtros);
+    consulta.set("visao", visao);
+    try {
+      const r = await fetch("{{ url_for('painel.dre_medicoes') }}?" + consulta.toString(),
+                            {headers: {"Accept": "application/json"}});
+      const dados = await r.json();
+      if (!dados.ok) { corpo.innerHTML = '<p class="aviso erro">Não deu para carregar.</p>'; return; }
+      const t = dados.total;
+      resumo.innerHTML = `${t.quantas} título(s) &nbsp;·&nbsp; recebido <b class="v-pos">${moeda(t.recebido)}</b>`
+                       + ` &nbsp;·&nbsp; retido <b>${moeda(t.retido)}</b> &nbsp;·&nbsp; a receber <b class="v-aberto">${moeda(t.a_receber)}</b>`
+                       + ` &nbsp;·&nbsp; bruto <b>${moeda(t.bruto)}</b>`;
+      verTudo.href = dados.ver_tudo;
+      verTudo.style.display = dados.pode_abrir ? "" : "none";
+      if (!dados.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nenhuma medição nos filtros atuais.</p>'; return; }
+      corpo.innerHTML = `<table class="sem-quebra">
+        <thead><tr>
+          <th class="sem-ordem">Medição</th><th class="sem-ordem">Cliente</th>
+          <th class="sem-ordem">Obra</th><th class="sem-ordem">Documento</th>
+          <th class="sem-ordem">Data</th>
+          <th class="sem-ordem direita">Recebido</th><th class="sem-ordem direita">Retido</th>
+          <th class="sem-ordem direita">A receber</th><th class="sem-ordem direita">Bruto</th>
+          <th class="sem-ordem">Situação</th>
+        </tr></thead>
+        <tbody>${dados.linhas.map(l => linha(l, dados.pode_abrir)).join("")}</tbody></table>`
+        + (dados.linhas.length >= 300 ? '<p class="cartao-dica">Mostrando os 300 títulos mais recentes. A lista inteira está na Receita de Obra.</p>' : "");
+    } catch (e) {
+      corpo.innerHTML = '<p class="aviso erro">Não deu para carregar as medições. Tente de novo.</p>';
+    }
+  }
+
+  document.querySelectorAll(".abre-medicoes").forEach(b => {
+    b.addEventListener("click", () => abrir(b.dataset.visao));
+  });
+  els("medicoes-fechar").addEventListener("click", () => dialogo.close());
+  dialogo.addEventListener("click", e => { if (e.target === dialogo) dialogo.close(); });
+})();
+</script>
 {% endblock %}
