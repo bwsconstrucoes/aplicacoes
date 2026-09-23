@@ -9,7 +9,9 @@
   {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
   {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
   {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
-  {% for c in selecao.contas %}<input type="hidden" name="conta" value="{{ c }}">{% endfor %}
+  {% if 'conta' not in proprios %}
+    {% for c in selecao.contas %}<input type="hidden" name="conta" value="{{ c }}">{% endfor %}
+  {% endif %}
   {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
   {% for campo, valor in [('mes', mes_iso), ('tipo', tipo), ('grupo', grupo),
                           ('categoria', categoria), ('busca', busca)] %}
@@ -44,7 +46,11 @@
 <!-- ===================== FILTROS DESTA TELA ===================== -->
 <div class="cartao">
   <form method="get" id="filtros-do-calendario">
-    {{ esconde(['mes', 'tipo', 'grupo', 'categoria', 'busca']) }}
+    {# Uma conta só cabe na caixa desta tela; várias (marcadas na barra lateral)
+       viajam escondidas e a caixa avisa — o mesmo do Analítico. #}
+    {% set conta_propria = (selecao.contas|length) <= 1 %}
+    {{ esconde(['mes', 'tipo', 'grupo', 'categoria', 'busca']
+               + (['conta'] if conta_propria else [])) }}
     <div class="form-grade">
       <div class="campo">
         <label for="mes">Mês</label>
@@ -81,11 +87,25 @@
           {% endfor %}
         </select>
       </div>
+      <div class="campo">
+        <label for="conta">Conta de pagamento</label>
+        <select id="conta" name="conta" {% if not conta_propria %}disabled{% endif %}>
+          {% if conta_propria %}
+            <option value="">(todas)</option>
+            {% for c in opcoes.contas or [] %}
+              <option value="{{ c }}" {% if selecao.contas and c == selecao.contas[0] %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          {% else %}
+            <option selected>({{ selecao.contas|length }} contas, pela barra lateral)</option>
+          {% endif %}
+        </select>
+        <p class="dica">A conta por onde o dinheiro <b>entrou ou saiu</b>.</p>
+      </div>
       <div class="campo" style="align-self:end; display:flex; gap:8px; flex-wrap:wrap">
         <button class="btn" type="submit">Aplicar</button>
-        {% if tipo or grupo or categoria or busca %}
+        {% if tipo or grupo or categoria or busca or selecao.contas %}
           <a class="btn secundario" style="text-decoration:none"
-             href="{{ com_filtros('painel.calendario', mes=mes_iso) }}">Limpar</a>
+             href="{{ url_for('painel.calendario', mes=mes_iso) }}">Limpar</a>
         {% endif %}
         <a class="btn secundario" style="text-decoration:none"
            href="{{ link_baixar('calendario') }}">⬇ Planilha do mês</a>

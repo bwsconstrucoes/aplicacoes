@@ -1682,6 +1682,12 @@ def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
     assert 'data-dia="2025-04-08"' in html
     assert "mes=2025-03" in html and "mes=2025-05" in html   # os dois botões
     assert "2 lanç." in html
+    # os filtros de cima seguem o padrão do Analítico — a conta inclusive
+    assert 'name="conta"' in html and "Conta de pagamento" in html
+    r = painel.get("/painel/calendario?mes=2025-04&conta=Bradesco+22069-8")
+    html = r.get_data(as_text=True)
+    assert "Conta: Bradesco 22069-8" in html          # o chip
+    assert 'value="Bradesco 22069-8" selected' in html  # a caixa mostra a escolha
 
 
 def test_o_calendario_com_mes_torto_cai_no_mes_de_hoje(painel):
