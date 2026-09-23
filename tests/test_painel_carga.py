@@ -509,6 +509,42 @@ def test_varredura_de_excluidos_que_falha_nao_impede_o_recalculo(monkeypatch):
     assert "títulos excluídos" in fechou["mensagem"]
 
 
+def test_a_atualizacao_do_dia_le_a_planilha_de_projetos(monkeypatch):
+    """23/09/2026, o dono: "os projetos são puxados da planilha C. Diários em
+    qual momento?" Só na primeira carga. Agora em toda atualização — e, se a
+    planilha falhar, o recálculo acontece do mesmo jeito."""
+    import contextlib
+
+    from app.apps.painel import tarefas
+    from app.apps.painel import db as painel_db
+    from app.apps.painel.sync import espelho, fato
+
+    monkeypatch.setattr(espelho, "definir_progresso", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "sync_incremental", lambda *a, **k: None)
+    monkeypatch.setattr(tarefas, "_carimbar", lambda *a, **k: None)
+    monkeypatch.setattr(painel_db, "conexao",
+                        lambda: contextlib.nullcontext(object()))
+    refez = []
+    monkeypatch.setattr(fato, "reconstruir", lambda conn: refez.append(1) or (100, 20))
+    fechou = {}
+    monkeypatch.setattr(tarefas, "_fechar_execucao",
+                        lambda conn, eid, ok, msg, dur=None: fechou.update(ok=ok, mensagem=msg))
+
+    lida = []
+    monkeypatch.setattr(espelho, "atualizar_projetos", lambda *a, **k: lida.append(1) or 12)
+    assert tarefas.executar_trabalho("rapida", 1) is True
+    assert lida, "a atualização do dia tem de ler a planilha de projetos"
+    assert refez and fechou["ok"] is True and "ATENÇÃO" not in fechou["mensagem"]
+
+    # a planilha fora do ar não derruba a atualização
+    refez.clear()
+    monkeypatch.setattr(espelho, "atualizar_projetos",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sem credencial")))
+    assert tarefas.executar_trabalho("rapida", 2) is True
+    assert refez and fechou["ok"] is True
+    assert "ATENÇÃO" in fechou["mensagem"] and "planilha de projetos" in fechou["mensagem"]
+
+
 # ===========================================================================
 # As observações dos títulos — 20/09/2026
 # ===========================================================================

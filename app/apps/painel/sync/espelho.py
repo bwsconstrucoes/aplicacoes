@@ -1057,6 +1057,21 @@ def sincronizar_planilha(conn):
         return 0
 
 
+def atualizar_projetos(env=".env") -> int:
+    """Le a planilha "C. Diarios" de novo e refaz o de-para obra -> projeto.
+
+    Ate 23/09/2026 a planilha so era lida na PRIMEIRA carga: obra nova no
+    OMIE chegava sem projeto ("(sem projeto)") ate alguem rodar a carga
+    inicial de novo. O dono perguntou "em qual momento os projetos sao
+    puxados?" — agora e a cada atualizacao do dia, antes de refazer os
+    numeros. E uma faixa de duas colunas; falhar nao derruba a atualizacao."""
+    conn = conectar()
+    try:
+        return sincronizar_planilha(conn)
+    finally:
+        conn.close()
+
+
 def completar(env=".env"):
     """Baixa SO o que costuma faltar apos a carga (movimentos + planilha), sem refazer
     titulos/catalogos. Use quando a carga inicial morreu no meio dos movimentos."""

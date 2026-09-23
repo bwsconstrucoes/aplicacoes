@@ -210,6 +210,19 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             elif modo in ("rapida", "completa"):
                 _etapa("baixando o que mudou no OMIE")
                 espelho.sync_incremental()
+                # O de-para obra -> projeto vem da planilha "C. Diários" e
+                # até 23/09/2026 só era lido na primeira carga. Obra nova
+                # ficava "(sem projeto)" — e, com o acesso por projeto, fora
+                # do acesso de quem tem o projeto. Agora é lido todo dia.
+                # Se a planilha falhar, a atualização segue: é um de-para,
+                # não a base.
+                _etapa("lendo a planilha de projetos")
+                try:
+                    espelho.atualizar_projetos()
+                except Exception as e:  # noqa: BLE001
+                    falha_parcial = f"a planilha de projetos não foi lida ({e})"
+                    logger.exception("Painel: %s — sigo para o recálculo",
+                                     falha_parcial)
                 if modo == "completa":
                     # A varredura de exclusões lê TODOS os ids do OMIE para
                     # descobrir o que foi apagado lá e continua aqui. É a parte
@@ -229,8 +242,10 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     try:
                         espelho.reconcile()
                     except Exception as e:  # noqa: BLE001
-                        falha_parcial = ("a varredura de títulos excluídos "
-                                         f"falhou ({e})")
+                        # soma-se ao que ja falhou (a planilha, por exemplo):
+                        # uma falha nao pode esconder a outra na mensagem
+                        falha_parcial = ((falha_parcial + "; ") if falha_parcial else "") + (
+                            f"a varredura de títulos excluídos falhou ({e})")
                         logger.exception("Painel: %s — sigo para o recálculo",
                                          falha_parcial)
         finally:

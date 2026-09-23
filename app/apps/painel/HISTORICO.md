@@ -2093,6 +2093,25 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## A planilha de projetos passa a ser lida todo dia — 23/09/2026
+
+O dono: *"os projetos são puxados da planilha C. Diários? Em qual momento?
+Toda vez que o painel abre?"*
+
+Não é ao abrir: o painel lê só o banco. O de-para obra → projeto vem da
+aba "C. Diários" da planilha "Bases de Dados Pipefy" (colunas AJ e AK: o
+código do departamento no OMIE e o projeto), gravado na tabela
+`depto_projeto` — e **só era lido na primeira carga**. Obra nova no OMIE
+chegava "(sem projeto)" até alguém rodar a carga inicial de novo. Com o
+acesso por projeto isso ficaria pior: a obra nova ficaria fora do acesso de
+quem tem o projeto.
+
+Agora **toda atualização (a do dia e a completa) lê a planilha** antes de
+refazer os números. É uma faixa de duas colunas, custa segundos. Se a
+planilha falhar (credencial, planilha fora do ar), a atualização segue e a
+tela de Configurações diz "ATENÇÃO: a planilha de projetos não foi lida".
+"Só refazer os números" continua sem ler nada de fora.
+
 ## As medições por trás do número do DRE, num clique — 23/09/2026
 
 O dono: *"num clique, visualizar a receita executada; num clique, a receita
