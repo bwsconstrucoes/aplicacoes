@@ -216,6 +216,8 @@
           <th class="sem-ordem">Categoria</th>
           <th class="sem-ordem">Obra</th>
           <th class="sem-ordem">Documento</th>
+          <th class="sem-ordem">Conta de pagamento</th>
+          <th class="sem-ordem">Nº no OMIE</th>
           <th class="sem-ordem direita">Pago</th>
           <th class="sem-ordem direita">A pagar</th>
           <th class="sem-ordem direita">Juros/Multa</th>
@@ -247,6 +249,10 @@
             {% if l.pedido %}<small>PC {{ l.pedido }}</small>{% endif %}
             {% if l.medicao %}<small>{{ l.medicao }}</small>{% endif %}
           </td>
+          {# a conta por onde o pagamento SAIU (a baixa), e o numero para achar
+             o titulo no OMIE — o dono pediu os dois para confrontar, 23/09/2026 #}
+          <td class="desc">{{ l.conta or ('—' if not l.pago else '(sem conta)') }}</td>
+          <td class="dados"><small>{{ l.lancamento or '—' }}</small></td>
           <td class="dados direita">{{ brl(l.pago) if l.pago else '—' }}</td>
           <td class="dados direita {{ classe_valor(l.a_pagar) }}">{{ brl(l.a_pagar) if l.a_pagar else '—' }}</td>
           <td class="dados direita">{{ brl(l.juros + l.multa) if (l.juros or l.multa) else '—' }}</td>

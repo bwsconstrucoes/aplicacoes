@@ -234,3 +234,99 @@ def test_a_origem_da_conta_e_so_do_dono(espelho_de_um_titulo, monkeypatch):
     with conexao() as conn:
         conn.execute("DELETE FROM usuarios WHERE usuario = 'preso-conta'")
         conn.commit()
+
+
+# ===========================================================================
+# Conferir o dia com o OMIE — 23/09/2026
+# ===========================================================================
+# O dono: "uma forma de extrair a informação da base e a do OMIE, consultando
+# o OMIE, e poder confrontar os dados pra entender onde há diferença".
+
+def _movimento_omie(titulo, conta, valor, liquidado, data="10/06/2025"):
+    return {"detalhes": {"nCodTitulo": titulo, "cNatureza": "P", "nCodCC": conta,
+                         "dDtPagamento": data, "cGrupo": "CONTA_A_PAGAR"},
+            "resumo": {"nValPago": valor, "nValLiquido": valor if liquidado == "S" else 0,
+                       "cLiquidado": liquidado}}
+
+
+class OmieFalso:
+    """Devolve o que o OMIE teria, e conta as chamadas — a segunda leitura do
+    mesmo dia em seguida não pode ir ao OMIE (consumo redundante)."""
+    def __init__(self, registros):
+        self.registros, self.chamadas = registros, []
+
+    def listar_movimentos(self, param_extra=None, max_paginas=None):
+        self.chamadas.append(param_extra)
+        yield 1, 1, len(self.registros), list(self.registros)
+
+
+def test_conferir_o_dia_acha_a_baixa_que_mudou_de_conta(espelho_de_um_titulo):
+    """No painel, a baixa bancária do título 2 está na 22069 (a fixture); no
+    OMIE, agora, está na 7011. A conferência aponta o título, com os dois
+    lados, e o que bate não aparece."""
+    from app.apps.painel import conferencia_omie
+    conferencia_omie._LIDOS.clear()
+    omie = OmieFalso([_movimento_omie(2, 7011, 425, "S"),
+                      _movimento_omie(2, 7011, 425, "")])
+    d = conferencia_omie.conferir_dia("2025-06-10", omie)
+    assert d["bate"] is False and len(d["titulos"]) == 1
+    t = d["titulos"][0]
+    assert t["codigo"] == 2 and t["quem"] == "FORNECEDOR X"
+    assert [p["conta_nome"] for p in t["no_painel"] if p["perna"] == "baixa bancária"] == ["Bradesco 22069-8"]
+    assert [p["conta_nome"] for p in t["no_omie"] if p["perna"] == "baixa bancária"] == ["Bradesco 7011-4"]
+    assert d["iguais"] == 1                                # a consolidada bate
+    # a segunda leitura do mesmo dia não vai ao OMIE
+    conferencia_omie.conferir_dia("2025-06-10", omie)
+    assert len(omie.chamadas) == 1
+    assert omie.chamadas[0] == {"dDtPagtoDe": "10/06/2025", "dDtPagtoAte": "10/06/2025"}
+
+
+def test_trazer_o_dia_deixa_o_painel_igual_ao_omie(espelho_de_um_titulo):
+    from app.apps.painel import conferencia_omie
+    conferencia_omie._LIDOS.clear()
+    omie = OmieFalso([_movimento_omie(2, 7011, 425, "S"),
+                      _movimento_omie(2, 7011, 425, "")])
+    feito = conferencia_omie.trazer_dia_do_omie("2025-06-10", omie)
+    assert feito["gravados"] == 2
+    assert conferencia_omie.conferir_dia("2025-06-10", omie)["bate"] is True
+    # e a origem da conta passa a dizer 7011, pela baixa bancária
+    from app.apps.painel import consultas
+    origem = consultas.origem_da_conta(2)
+    assert [p["conta"] for p in origem["pernas"] if p["valeu"]] == ["Bradesco 7011-4"]
+
+
+def test_conferir_com_o_omie_e_so_do_dono(espelho_de_um_titulo, monkeypatch):
+    from app.apps.painel import conferencia_omie, tarefas, usuarios
+    from app.apps.painel.db import conexao
+    conferencia_omie._LIDOS.clear()
+    omie = OmieFalso([_movimento_omie(2, 7011, 425, "S")])
+    monkeypatch.setattr(conferencia_omie, "_cliente", lambda: omie)
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="": {"ok": True})
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    dono = app.test_client()
+    dono.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    d = dono.get("/painel/conferir/dia?dia=2025-06-10").get_json()
+    assert d["ok"] and d["bate"] is False
+    assert dono.get("/painel/conferir/dia?dia=ontem").status_code == 400
+    r = dono.get("/painel/baixar/conferencia?dia=2025-06-10")
+    assert r.status_code == 200 and "spreadsheet" in r.mimetype
+    html = dono.get("/painel/calendario?mes=2025-06").get_data(as_text=True)
+    assert "/painel/conferir/dia" in html and "Conferir este dia com o OMIE" in html
+    r = dono.post("/painel/conferir/dia/trazer", data={"dia": "2025-06-10"}).get_json()
+    assert r["ok"] and r["gravados"] == 1 and r["recalculo"] is True
+
+    with conexao() as conn:
+        conn.execute("DELETE FROM usuarios WHERE usuario = 'preso-conf'")
+        conn.commit()
+    usuarios.criar("preso-conf", "senha-dele", obras=["CASA"], telas=["calendario"])
+    preso = app.test_client()
+    preso.post("/painel/entrar", data={"usuario": "preso-conf", "senha": "senha-dele"})
+    assert preso.get("/painel/conferir/dia?dia=2025-06-10").status_code == 404
+    assert preso.post("/painel/conferir/dia/trazer", data={"dia": "2025-06-10"}).status_code == 404
+    assert preso.get("/painel/baixar/conferencia?dia=2025-06-10").status_code == 404
+    with conexao() as conn:
+        conn.execute("DELETE FROM usuarios WHERE usuario = 'preso-conf'")
+        conn.commit()

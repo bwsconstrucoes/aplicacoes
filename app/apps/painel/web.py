@@ -814,6 +814,47 @@ def calendario_dia():
                     "a_pagar": a_pagar})
 
 
+@bp.route("/conferir/dia")
+def conferir_dia():
+    """Confere UM dia do painel com o OMIE, lendo o OMIE na hora.
+
+    So do administrador (prefixo "painel.conferir_" em SO_DO_ADMINISTRADOR):
+    le a empresa inteira do dia e chama a API do OMIE."""
+    from . import conferencia_omie
+    dia = (request.args.get("dia") or "").strip()
+    if not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Dia inválido."}), 400
+    try:
+        resultado = conferencia_omie.conferir_dia(dia)
+    except Exception as e:  # noqa: BLE001 — OMIE fora, credencial, limite
+        logger.exception("Painel: conferencia do dia %s com o OMIE falhou", dia)
+        return jsonify({"ok": False, "erro": f"Não consegui ler o OMIE agora: {e}"}), 502
+    return jsonify({"ok": True, **resultado})
+
+
+@bp.route("/conferir/dia/trazer", methods=["POST"])
+def conferir_dia_trazer():
+    """Substitui o dia no espelho pelo que o OMIE tem, e refaz os numeros.
+
+    Nao escreve no OMIE. E o mesmo que a atualizacao faria se o dia estivesse
+    na janela dela."""
+    from . import conferencia_omie, tarefas
+    dia = (request.form.get("dia") or request.args.get("dia") or "").strip()
+    if not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Dia inválido."}), 400
+    try:
+        feito = conferencia_omie.trazer_dia_do_omie(dia)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Painel: trazer o dia %s do OMIE falhou", dia)
+        return jsonify({"ok": False, "erro": f"Não consegui trazer do OMIE: {e}"}), 502
+    recalculo = tarefas.disparar("so_numeros", "conferência com o OMIE")
+    return jsonify({"ok": True, **feito,
+                    "recalculo": recalculo.get("ok", False),
+                    "aviso": ("Os números estão sendo refeitos — em alguns minutos a "
+                              "tela mostra o dia corrigido." if recalculo.get("ok")
+                              else recalculo.get("erro", ""))})
+
+
 @bp.route("/titulo/<int:codigo>/conta")
 def conta_do_titulo(codigo):
     """De onde o painel tirou a conta de um titulo — as pernas da baixa no
@@ -2689,8 +2730,41 @@ def baixar(assunto):
         return [(f"Calendario {rotulo}", C["calendario_dias"], dias),
                 ("Lancamentos do mes", C["calendario_lancamentos"], lancamentos)]
 
+    def _abas_da_conferencia():
+        from . import conferencia_omie
+        dia = (request.args.get("dia") or "").strip()
+        if not _DATA_ISO.match(dia):
+            return [("Conferencia", [("aviso", "Aviso")], [{"aviso": "Dia inválido."}])]
+        resultado = conferencia_omie.conferir_dia(dia)
+        contas = conferencia_omie._nomes_das_contas()
+        quem = conferencia_omie._quem_e(
+            [p["codigo"] for p in conferencia_omie.pernas_do_espelho(dia)])
+
+        def _lado(pernas):
+            saida = []
+            for p in pernas:
+                q = quem.get(p["codigo"], {})
+                saida.append({"codigo": p["codigo"], "quem": q.get("quem", ""),
+                              "documento": q.get("documento", ""),
+                              "obra": q.get("obra", ""),
+                              "perna": ("baixa consolidada" if p["liquidado"] == "S"
+                                        else "previsão" if p["liquidado"] == "N"
+                                        else "baixa bancária"),
+                              "conta": conferencia_omie._nome(contas, p["conta"]),
+                              "valor": p["valor"]})
+            return saida
+
+        no_omie = conferencia_omie.pernas_do_omie(conferencia_omie.registros_do_omie(dia))
+        return [
+            (f"Diferencas {dia}", C["conferencia_diferencas"],
+             conferencia_omie.linhas_para_planilha(resultado)["diferencas"]),
+            ("No painel", C["conferencia_lado"], _lado(conferencia_omie.pernas_do_espelho(dia))),
+            ("No OMIE", C["conferencia_lado"], _lado(no_omie)),
+        ]
+
     montadores = {
         "dre": lambda: [("DRE", C["dre"], _dre())],
+        "conferencia": _abas_da_conferencia,
         "calendario": _abas_do_calendario,
         "analitico": _abas_do_analitico,
         "extrato": lambda: [("Extrato de Conta", C["extrato"],

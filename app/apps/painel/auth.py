@@ -57,6 +57,9 @@ SO_DO_ADMINISTRADOR = (
     # De onde veio a conta de um titulo: mostra as pernas cruas da baixa no
     # espelho do OMIE. Ferramenta de conferencia do dono (23/09/2026).
     "painel.conta_do_titulo",
+    # Conferir um dia com o OMIE: le a empresa inteira do dia e chama a API do
+    # OMIE; "trazer" regrava o espelho. Do dono (23/09/2026).
+    "painel.conferir_",
 )
 
 # Rotas que podem responder sem login. Cada uma com o motivo escrito.
@@ -246,6 +249,7 @@ TELA_DO_DOWNLOAD = {
 # Estes leem a empresa INTEIRA, por definicao. Sao do dono.
 SO_DO_DONO_PARA_BAIXAR = frozenset({
     "quotas", "posicao", "rateio_admin", "cenario", "explorador", "completo",
+    "conferencia",
 })
 
 
