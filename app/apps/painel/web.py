@@ -62,6 +62,24 @@ def _ajudantes_de_template():
         texto = f"{abs(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return ("−R$ " if v < 0 else "R$ ") + texto
 
+    def brl_curto(v):
+        """O valor em poucas letras — "7 mil", "1,2 mi" — para caber num
+        quadradinho do calendario na tela do celular."""
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return "—"
+        sinal = "−" if v < 0 else "+"
+        v = abs(v)
+        if v >= 1_000_000:
+            texto = f"{v / 1_000_000:.1f}".replace(".", ",") + " mi"
+        elif v >= 1_000:
+            texto = (f"{v / 1_000:.1f}".replace(".", ",").replace(",0", "")
+                     + " mil")
+        else:
+            texto = f"{v:.0f}"
+        return sinal + texto
+
     def classe_valor(v):
         """Vermelho para negativo, verde para positivo — para nao ser preciso
         procurar o sinal no meio do numero."""
@@ -158,7 +176,8 @@ def _ajudantes_de_template():
                 "ms_banco": int(segundos_banco * 1000),
                 "ms_total": int(total * 1000)}
 
-    return {"brl": brl, "classe_valor": classe_valor, "com_filtros": com_filtros,
+    return {"brl": brl, "brl_curto": brl_curto, "classe_valor": classe_valor,
+            "com_filtros": com_filtros,
             "cronometro": cronometro, "link_baixar": link_baixar,
             "link_analitico": link_analitico, "pagina_link": pagina_link,
             "estatico": estatico}
@@ -359,6 +378,7 @@ ABAS = [
     ("analitico", "Despesas Analítico", "painel.analitico"),
     ("receita", "Receita de Obra", "painel.receita"),
     ("fluxo", "Fluxo de Caixa", "painel.fluxo"),
+    ("calendario", "Calendário", "painel.calendario"),
     ("obras", "Resultado por Obra", "painel.obras"),
     ("execucao", "Comprometido × Executado", "painel.execucao"),
     ("caixa", "Necessidade de Caixa", "painel.necessidade_caixa"),
@@ -630,6 +650,107 @@ def extrato():
             de=de, ate=ate, ordem=request.args.get("ordem", "data"),
             pagina=pagina) if visao == "lancamentos" else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# O Calendario — o caixa dia a dia
+# ---------------------------------------------------------------------------
+# Pedido do dono em 22/09/2026: um calendario grande, do mes, com o resumo de
+# cada dia (pago e recebido), filtros como os do Analitico, botoes para o mes
+# anterior e o seguinte, KPIs no alto, e o detalhe do dia ao clicar — com o
+# link do Pipefy.
+_MES_ISO = re.compile(r"^\d{4}-\d{2}$")
+
+NOMES_DOS_MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+                   "julho", "agosto", "setembro", "outubro", "novembro",
+                   "dezembro"]
+
+
+def _mes_do_calendario() -> tuple[int, int]:
+    """O mes pedido (AAAA-MM) — ou o mes de hoje, quando nao veio ou veio torto."""
+    import datetime as _dt
+    texto = (request.args.get("mes") or "").strip()
+    if _MES_ISO.match(texto):
+        ano, mes = int(texto[:4]), int(texto[5:7])
+        if 1 <= mes <= 12 and 2000 <= ano <= 2100:
+            return ano, mes
+    hoje = _dt.date.today()
+    return hoje.year, hoje.month
+
+
+def _filtros_do_calendario():
+    """Os filtros da tela do calendario: os da barra lateral, SEM o ano.
+
+    O mes do calendario ja diz o ano; deixar o filtro de ano da barra lateral
+    valer aqui faria "ir para o mes seguinte" atravessar a virada do ano e
+    encontrar um calendario vazio, sem explicacao."""
+    f = _filtros_do_pedido()
+    f.anos = []
+    return f, {
+        "tipo": request.args.get("tipo", "") if request.args.get("tipo", "")
+        in consultas_tipos_do_calendario() else "",
+        "grupo": request.args.get("grupo", ""),
+        "categoria": request.args.get("categoria", ""),
+        "busca": (request.args.get("busca") or "").strip(),
+    }
+
+
+def consultas_tipos_do_calendario():
+    from . import consultas
+    return consultas.TIPOS_DO_CALENDARIO
+
+
+def _semanas_do_mes(ano: int, mes: int) -> list[list]:
+    """As semanas do mes, de domingo a sabado, com zero fora do mes."""
+    import calendar as _cal
+    return _cal.Calendar(firstweekday=6).monthdayscalendar(ano, mes)
+
+
+@bp.route("/calendario")
+def calendario():
+    """O caixa dia a dia, num mes — para bater o olho e ver a evolucao."""
+    import datetime as _dt
+    from . import consultas
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    f, proprios = _filtros_do_calendario()
+    ano, mes = _mes_do_calendario()
+    dados = consultas.calendario_do_mes(f, ano, mes, **proprios)
+    inicio = dados["inicio"]
+    anterior = (inicio - _dt.timedelta(days=1)).replace(day=1)
+    seguinte = (inicio + _dt.timedelta(days=32)).replace(day=1)
+    return render_template(
+        "painel_calendario.html",
+        **_contexto_comum("calendario"),
+        chips=[c for c in f.resumo() if not c.startswith("Ano:")],
+        ano=ano, mes=mes, mes_iso=f"{ano:04d}-{mes:02d}",
+        titulo_do_mes=f"{NOMES_DOS_MESES[mes - 1]} de {ano}",
+        anterior=anterior.strftime("%Y-%m"), seguinte=seguinte.strftime("%Y-%m"),
+        semanas=_semanas_do_mes(ano, mes),
+        hoje=_dt.date.today(),
+        dados=dados,
+        tipos=consultas.TIPOS_DO_CALENDARIO,
+        opcoes_analitico=consultas.opcoes_do_analitico(f),
+        **proprios,
+    )
+
+
+@bp.route("/calendario/dia")
+def calendario_dia():
+    """O detalhe de um dia, para a janela que abre ao clicar nele."""
+    from . import consultas
+    dia = (request.args.get("dia") or "").strip()
+    if not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Dia inválido."}), 400
+    f, proprios = _filtros_do_calendario()
+    linhas = consultas.lancamentos_do_dia(f, dia, **proprios)
+    for l in linhas:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+    entradas = sum(l["valor"] for l in linhas if l["valor"] > 0)
+    saidas = sum(l["valor"] for l in linhas if l["valor"] < 0)
+    return jsonify({"ok": True, "dia": dia, "linhas": linhas,
+                    "quantos": len(linhas), "entradas": entradas,
+                    "saidas": saidas, "liquido": entradas + saidas})
 
 
 @bp.route("/receita")
@@ -2386,8 +2507,23 @@ def baixar(assunto):
             ("Resultado x Dividendos", C["divisao"], divisao["linhas"]),
         ]
 
+    def _abas_do_calendario():
+        import datetime as _dt
+        fc, proprios = _filtros_do_calendario()
+        ano, mes = _mes_do_calendario()
+        dados = consultas.calendario_do_mes(fc, ano, mes, **proprios)
+        dias = [dict(dia=d, **n) for d, n in sorted(dados["dias"].items())]
+        lancamentos = []
+        for d in sorted(dados["dias"]):
+            lancamentos.extend(consultas.lancamentos_do_dia(
+                fc, d.isoformat(), limite=5000, **proprios))
+        rotulo = f"{NOMES_DOS_MESES[mes - 1]} de {ano}"
+        return [(f"Calendario {rotulo}", C["calendario_dias"], dias),
+                ("Lancamentos do mes", C["calendario_lancamentos"], lancamentos)]
+
     montadores = {
         "dre": lambda: [("DRE", C["dre"], _dre())],
+        "calendario": _abas_do_calendario,
         "analitico": _abas_do_analitico,
         "extrato": lambda: [("Extrato de Conta", C["extrato"],
                              consultas.extrato_da_conta(

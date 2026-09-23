@@ -245,6 +245,17 @@ COLUNAS = {
     # O cenário da prestação de contas. Cada recorte vira uma aba, e os
     # parâmetros vão junto: memória de cálculo sem as escolhas que a geraram
     # não dá para conferir seis meses depois.
+    "calendario_dias": [("dia", "Dia"), ("entradas", "Recebido"),
+                        ("saidas", "Pago"), ("liquido", "Líquido"),
+                        ("quantos", "Lançamentos")],
+    "calendario_lancamentos": [("data", "Dia"), ("natureza", "Tipo"),
+                               ("razao_social", "Quem"), ("cnpj", "CNPJ/CPF"),
+                               ("grupo", "Grupo"), ("categoria", "Categoria"),
+                               ("obra", "Obra"), ("projeto", "Projeto"),
+                               ("documento", "Documento"),
+                               ("observacao", "Observação"), ("conta", "Conta"),
+                               ("valor", "Valor"), ("encargo", "Juros/Multa"),
+                               ("codigo", "Nº no OMIE"), ("link", "Pipefy")],
     "prestacao_projeto": [("projeto", "Projeto"), ("receita_bruta", "Receita bruta"),
                           ("receita_liquida", "Receita líquida"),
                           ("despesas", "Despesas"),

@@ -294,8 +294,61 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   .filtros { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--borda); }
   .topo-titulo, .topo-sub { display: none; }
   td.desc { max-width: 180px; }
+  /* O menu de cima na tela pequena: as abas QUEBRAM LINHA em vez de virar
+     uma barra de rolagem — que escondia metade das telas e obrigava a
+     arrastar para achar cada uma (dono, 22/09/2026). O topo deixa de ser
+     fixo: com as abas em duas ou três linhas ele comeria a tela do celular. */
+  .topo { position: static; height: auto; min-height: var(--altura-topo);
+          flex-wrap: wrap; padding: 8px 12px; row-gap: 6px; }
+  .topo-abas { order: 3; flex-basis: 100%; flex-wrap: wrap; overflow: visible;
+               margin-left: 0; padding-left: 0; border-left: 0; gap: 4px; }
+  .topo-aba { padding: 6px 10px; font-size: 13px; }
+  .topo-meta { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ============================ CALENDARIO ============================ */
+/* Um mes inteiro numa grade de 7 colunas. Cada dia e um BOTAO com o resumo
+   (entrou, saiu, quantos) — comprimido para caber numa tela comum. */
+.cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.cal-titulo { margin: 0; font-size: 16px; font-weight: 800; text-align: center; }
+.calendario { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.cal-semana { font-size: 11px; font-weight: 700; color: var(--tinta-suave); text-transform: uppercase; letter-spacing: .06em; text-align: center; padding: 2px 0; }
+.cal-dia {
+  min-height: 84px; padding: 6px 7px; border-radius: var(--raio-p); text-align: left;
+  border: 1px solid var(--borda); background: var(--branco); color: var(--tinta);
+  display: flex; flex-direction: column; gap: 2px; font: inherit; cursor: pointer; min-width: 0;
+  transition: transform .1s, box-shadow .1s;
+}
+.cal-dia.com-movimento:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(11,44,92,.14); border-color: var(--azul-claro); }
+.cal-dia.vazio { background: #F7F9FC; color: var(--tinta-suave); cursor: default; }
+.cal-dia.fora { background: transparent; border-color: transparent; cursor: default; }
+.cal-dia.hoje { box-shadow: inset 0 0 0 2px var(--amarelo); }
+.cal-numero { font-size: 12px; font-weight: 800; font-family: var(--fonte-dados); }
+.cal-valor { font-size: 11.5px; font-weight: 700; font-family: var(--fonte-dados); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-valor.cal-entrou { color: var(--verde); }
+.cal-valor.cal-saiu { color: var(--vermelho); }
+/* na tela grande o valor inteiro; na pequena, "7 mil" — o inteiro nao cabe */
+.cal-curto { display: none; }
+.cal-quantos { font-size: 10.5px; color: var(--tinta-suave); margin-top: auto; }
+.cal-dialogo { border: 0; border-radius: var(--raio); box-shadow: 0 12px 40px rgba(0,0,0,.28); padding: 14px 16px; width: min(1100px, 96vw); }
+.cal-dialogo::backdrop { background: rgba(10,27,46,.55); }
+.cal-dialogo-cab { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.cal-dialogo-cab h3 { margin: 0; font-size: 15px; }
+.cal-dialogo-resumo { font-size: 13px; color: var(--tinta-suave); flex: 1; }
+.cal-dialogo table { width: 100%; }
+/* Na tela pequena — DEPOIS das regras acima, senao elas ganham por virem
+   depois no arquivo. Fonte normal (a monoespacada e larga demais para 34 px)
+   e pode quebrar: "+7" numa linha, "mil" na outra, em vez de "+7…". */
+@media (max-width: 900px) {
+  .calendario { gap: 3px; }
+  .cal-dia { min-height: 62px; padding: 3px 2px; gap: 1px; }
+  .cal-valor { font-size: 10px; font-family: inherit; white-space: normal;
+               overflow: visible; line-height: 1.15; }
+  .cal-longo { display: none; }
+  .cal-curto { display: inline; }
+  .cal-quantos { display: none; }
+}
 
 
 /* ==========================================================================

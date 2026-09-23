@@ -429,6 +429,22 @@ def _consultar_falso(sql, params=()):
         if marca in sql:
             return resposta
 
+    # ---- o calendario: o mes dia a dia, e o detalhe de um dia ----
+    # Vem antes de tudo: o detalhe cita a obra (NULLIF(TRIM(departamento)
+    # e cairia no ramo do resultado por obra, com duas colunas so.
+    if "AS dia_do_calendario" in sql:
+        return [(dt.date(2025, 4, 8), 7000.0, -3000.0, 5),
+                (dt.date(2025, 4, 15), 0.0, -1200.0, 2)]
+    if "AS lancamento_do_dia" in sql:
+        return [(dt.date(2025, 4, 8), 998877, "1. Contas a Receber", "CLIENTE A",
+                 "11.111.111/0001-11", "Receita Bruta", "Receita de Obras",
+                 "Obra Um", "PROJ-A", "NF123", "medição 3", "Bradesco C/C",
+                 7000.0, 0.0, "https://app.pipefy.com/open-cards/1"),
+                (dt.date(2025, 4, 8), 998878, "2. Contas a Pagar", "FORNECEDOR A LTDA",
+                 "12.345.678/0001-90", "Despesas com Pessoal", "Salários",
+                 "Obra Um", "PROJ-A", "NF77", "folha", "Bradesco C/C",
+                 -3000.0, -25.0, "")]
+
     # ---- aportes e dividendos (o bloco do fim do DRE) ----
     # Vem antes de tudo: o SQL de aporte cai em vários dos marcadores genéricos
     # lá embaixo, e responder por engano com a linha de outra tela daria um erro
@@ -1649,3 +1665,62 @@ def test_o_analitico_e_as_medicoes_exportam_a_coluna_do_pipefy():
     from app.apps.painel import excel
     for chave in ("analitico", "medicoes", "extrato", "explorador"):
         assert ("link", "Pipefy") in excel.COLUNAS[chave], chave
+
+
+# ===========================================================================
+# O Calendario — o caixa dia a dia (22/09/2026)
+# ===========================================================================
+def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/calendario?mes=2025-04")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Abril de 2025" in html
+    assert "Recebido no mês" in html and "Pago no mês" in html
+    assert "R$ 7.000,00" in html                # o dia 8 na grade e no KPI
+    assert "−R$ 4.200,00" in html              # pago no mês: 3.000 + 1.200
+    assert 'data-dia="2025-04-08"' in html
+    assert "mes=2025-03" in html and "mes=2025-05" in html   # os dois botões
+    assert "2 lanç." in html
+
+
+def test_o_calendario_com_mes_torto_cai_no_mes_de_hoje(painel):
+    import datetime as _dt
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/calendario?mes=abc")
+    assert r.status_code == 200
+    hoje = _dt.date.today()
+    assert f'value="{hoje:%Y-%m}"' in r.get_data(as_text=True)
+
+
+def test_o_detalhe_do_dia_vem_em_json_com_o_link_do_pipefy(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/calendario/dia?dia=2025-04-08")
+    assert r.status_code == 200
+    dados = r.get_json()
+    assert dados["ok"] and dados["quantos"] == 2
+    assert dados["entradas"] == 7000.0 and dados["saidas"] == -3000.0
+    assert dados["liquido"] == 4000.0
+    assert dados["linhas"][0]["natureza"] == "Recebimento"
+    assert dados["linhas"][0]["link"].startswith("https://app.pipefy.com/")
+    assert dados["linhas"][1]["natureza"] == "Pagamento"
+    assert r.status_code == 200
+    assert painel.get("/painel/calendario/dia?dia=ontem").status_code == 400
+
+
+def test_a_planilha_do_calendario_leva_o_mes_e_os_lancamentos(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/calendario?mes=2025-04")
+    assert r.status_code == 200
+    assert "spreadsheet" in r.mimetype
+
+
+def test_o_menu_de_cima_quebra_linha_na_tela_pequena():
+    """Na tela pequena as abas viravam uma barra de rolagem que escondia
+    metade das telas. Agora quebram linha, e o topo deixa de ser fixo."""
+    from pathlib import Path
+    css = Path("app/apps/painel/static/painel.css").read_text(encoding="utf-8")
+    bloco = css.split("@media (max-width: 900px)", 1)[1].split("}\n}", 1)[0]
+    assert ".topo-abas" in bloco and "flex-wrap: wrap" in bloco
+    assert "overflow: visible" in bloco
+    assert "position: static" in bloco
