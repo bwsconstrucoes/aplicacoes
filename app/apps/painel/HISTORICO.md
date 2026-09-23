@@ -2093,6 +2093,15 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## O filtro de conta sumia ao mudar de mês no Calendário — 23/09/2026
+
+O dono: *"aplico um filtro de conta corrente, mudo o mês, ele perde o
+filtro"*. Os botões de mês passam pelo mesmo `com_filtros` que as abas do
+topo usam — e ele levava ano, projeto, obra e transferências, **mas não a
+conta**, que entrou na barra lateral depois dele (21/09). Agora leva. Vale
+para toda troca de tela: quem está numa conta no Extrato e vai ao Calendário
+chega na mesma conta. Teste cobre o botão de mês e a aba do topo.
+
 ## Acesso por projeto, além de por obra — 23/09/2026 (migração 019)
 
 O dono: *"tanto define por obra como por projeto, porque pode ser que eu

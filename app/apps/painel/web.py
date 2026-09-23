@@ -157,9 +157,14 @@ def _ajudantes_de_template():
         base inteira.
 
         `extras` leva o que for do proprio link (a medicao, a medida), sem
-        atropelar o filtro."""
+        atropelar o filtro.
+
+        A CONTA CORRENTE entrou aqui em 23/09/2026: o dono filtrou o
+        Calendario por conta, mudou de mes, e o filtro sumiu — os botoes de
+        mes passam por esta funcao, e ela nao levava a conta. Vale para toda
+        troca de tela, como os outros tres."""
         args = {c: request.args.getlist(c) for c in
-                ("ano", "projeto", "obra") if request.args.getlist(c)}
+                ("ano", "projeto", "obra", "conta") if request.args.getlist(c)}
         if request.args.get("trf"):
             args["trf"] = "1"
         args.update(extras)

@@ -1705,6 +1705,15 @@ def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
     html = r.get_data(as_text=True)
     assert "Conta: Bradesco 22069-8" in html          # o chip
     assert 'value="Bradesco 22069-8" selected' in html  # a caixa mostra a escolha
+    # mudar de mês NÃO perde a conta (dono, 23/09/2026) — nem o resto
+    r = painel.get("/painel/calendario?mes=2025-04&conta=Bradesco+22069-8"
+                   "&obra=Obra+Um&categoria=Cimento&tipo=pago")
+    html = r.get_data(as_text=True)
+    anterior = [l for l in html.split('href="') if l.startswith("/painel/calendario?") and "mes=2025-03" in l][0]
+    assert "conta=Bradesco" in anterior and "obra=Obra" in anterior
+    assert "categoria=Cimento" in anterior and "tipo=pago" in anterior
+    # e a conta viaja também nas abas do topo
+    assert "/painel/analitico?" in html and "conta=Bradesco" in html.split("</nav>")[0]
 
 
 def test_o_calendario_com_mes_torto_cai_no_mes_de_hoje(painel):
