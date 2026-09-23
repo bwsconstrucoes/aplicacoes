@@ -577,6 +577,43 @@ def dre():
     )
 
 
+@bp.route("/dre/medicoes")
+def dre_medicoes():
+    """As medicoes por tras de um numero do DRE — para a janela que abre ao
+    clicar em "Executado" ou "Em aberto" na linha de receita.
+
+    Pedido do dono em 23/09/2026: "num clique, visualizar a receita executada;
+    num clique, a receita em aberto — no modal, as medicoes". So e lido quando
+    alguem clica, com os mesmos filtros da tela: a mesma consulta da Receita
+    de Obra, um titulo por linha."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    visao = request.args.get("visao", "todas")
+    if visao not in ("todas", "quitadas", "a_receber"):
+        visao = "todas"
+    linhas = consultas.medicoes(f, visao=visao, limite=300)
+    for l in linhas:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+        l["abrir"] = url_for("painel.receita_titulo", codigo=l["codigo"])
+    # a aba Receita de Obra pode nao estar liberada para quem esta olhando:
+    # o link so aparece quando abre
+    pode_abrir = any(chave == "receita" for chave, _r, _e in _abas_visiveis())
+    return jsonify({"ok": True, "visao": visao, "linhas": linhas,
+                    "pode_abrir": pode_abrir,
+                    "ver_tudo": com_filtros_para_json("painel.receita", visao=visao),
+                    "total": consultas.total_das_medicoes(f, visao=visao)})
+
+
+def com_filtros_para_json(rota, **extras):
+    """O mesmo `com_filtros` das telas, disponivel fora do template."""
+    args = {c: request.args.getlist(c) for c in
+            ("ano", "projeto", "obra", "conta") if request.args.getlist(c)}
+    if request.args.get("trf"):
+        args["trf"] = "1"
+    args.update(extras)
+    return url_for(rota, **args)
+
+
 @bp.route("/analitico")
 def analitico():
     """Despesas lancamento a lancamento — de onde veio cada numero do DRE."""

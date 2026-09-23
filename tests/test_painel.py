@@ -1800,3 +1800,24 @@ def test_o_bloco_de_aportes_mostra_o_dinheiro_da_obra_com_os_socios(painel):
     assert "com nome de dividendo" in html and "R$ 300,00" in html
     # o quadro de dividendos não mostra mais um "líquido" negativo
     assert "Distribuído a ele" in html and "Líquido" not in html.split("Dividendos distribuídos")[1].split("Lançamentos</h4>")[0]
+
+
+# ===========================================================================
+# As medições por trás do número do DRE — 23/09/2026
+# ===========================================================================
+def test_os_numeros_de_receita_do_dre_abrem_as_medicoes(painel):
+    """O dono: "num clique, visualizar a receita executada; num clique, a
+    em aberto — no modal, as medições". A lista só é lida ao clicar."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre").get_data(as_text=True)
+    assert 'data-visao="quitadas"' in html and 'data-visao="a_receber"' in html
+    assert 'id="medicoes-do-dre"' in html
+    dados = painel.get("/painel/dre/medicoes?visao=a_receber&obra=Obra+Um").get_json()
+    assert dados["ok"] and dados["visao"] == "a_receber"
+    assert dados["linhas"][0]["medicao"] == "OBRA1 | Medição 3"
+    assert dados["linhas"][0]["abrir"].endswith("/painel/receita/titulo/998877")
+    assert set(dados["total"]) >= {"quantas", "recebido", "retido", "a_receber", "bruto"}
+    assert "obra=Obra+Um" in dados["ver_tudo"] and "visao=a_receber" in dados["ver_tudo"]
+    assert dados["pode_abrir"] is True
+    # visão inventada cai em "todas" em vez de quebrar
+    assert painel.get("/painel/dre/medicoes?visao=x").get_json()["visao"] == "todas"

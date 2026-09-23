@@ -533,3 +533,16 @@ def test_o_cadastro_pela_tela_grava_o_projeto(base_com_duas_obras, monkeypatch):
     html = cliente.get("/painel/configuracoes").get_data(as_text=True)
     assert "Projetos inteiros" in html and 'name="projeto_do_usuario"' in html
     assert "<b>Projeto:</b> ALFA" in html
+
+
+def test_as_medicoes_do_dre_respeitam_a_tela_e_a_obra(parceiro, monkeypatch):
+    """O parceiro tem DRE e Analítico, não Receita de Obra: o modal abre (é
+    parte do DRE), só com a obra dele, e sem o link para a tela que ele não
+    tem."""
+    cliente = _cliente(monkeypatch)
+    _entrar(cliente, usuario="parceiro", senha="senha-dele")
+    r = cliente.get("/painel/dre/medicoes?visao=todas&obra=OBRA+DE+OUTRO")
+    assert r.status_code == 200
+    dados = r.get_json()
+    assert dados["ok"] and dados["pode_abrir"] is False
+    assert all(l["obra"] == "OBRA DELE" for l in dados["linhas"])

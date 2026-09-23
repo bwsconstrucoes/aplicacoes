@@ -2093,6 +2093,21 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## As medições por trás do número do DRE, num clique — 23/09/2026
+
+O dono: *"num clique, visualizar a receita executada; num clique, a receita
+em aberto — no modal, as medições. Não vai sobrecarregar?"*
+
+Não: nada é lido ao abrir o DRE. Nas linhas **Receita Bruta** e **Receita
+Líquida**, os três números (executado, em aberto, comprometido) viraram
+botões; clicar busca, na hora, a mesma lista da Receita de Obra (um título
+por linha, os 300 mais recentes, com os filtros da barra lateral) e abre a
+janela: medição, cliente, obra, documento (link do Pipefy), data, recebido,
+retido, a receber, bruto e situação, com os totais no alto e o botão "Ver
+na Receita de Obra" com os mesmos filtros. Quem não tem a tela Receita de
+Obra abre a janela (é parte do DRE), mas sem os links para lá. O endereço
+novo é da tela DRE para a autorização, e passa pelo mesmo filtro de obra.
+
 ## A retenção do título em aberto aparecia como executada — 23/09/2026
 
 O dono, nos KPIs do DRE: *"tem o executado e tem as retenções; no que está
