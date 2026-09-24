@@ -1459,12 +1459,20 @@ def calendario():
                                pode_operar=auth.pode_operar())
 
     filtros = _filtros_do_pedido()
-    tipo = request.args.get("tipo", "pagar")
+    # ⚠️ O PADRÃO MUDOU EM 23/09/2026, DE "A PAGAR" PARA A VISÃO GERAL, e a
+    # razão é a cor. O dono pediu *"azul para pago, vermelho para vencido e
+    # laranja a vencer"* — e no recorte "a pagar" o azul NUNCA apareceria,
+    # porque conta paga está fora dele. Abrir numa visão que esconde uma das
+    # três cores que ele acabou de pedir seria entregar metade.
+    #
+    # O preço, dito para não se perder: na visão geral o dia conta pelo
+    # VENCIMENTO, inclusive o que já foi pago. Ou seja, o calendário mostra
+    # "o que vencia neste dia, e o que aconteceu com aquilo". Para ver o dia
+    # em que o dinheiro saiu de fato, o recorte "Contas pagas" continua ali,
+    # e ele conta pela data do pagamento.
+    tipo = request.args.get("tipo", "geral")
     if tipo not in consultas.TIPOS:
-        # O padrão é CONTAS A PAGAR, e não a visão geral do Relatório: um
-        # calendário se olha para frente, para saber o que vem. A visão geral
-        # continua a um clique, na mesma barra.
-        tipo = "pagar"
+        tipo = "geral"
 
     ano, mes = grade_do_mes.mes_valido(request.args.get("ano"),
                                        request.args.get("mes"))
@@ -1491,6 +1499,7 @@ def calendario():
         grade=grade, achado=achado, ano=ano, mes=mes,
         anterior=anterior, seguinte=seguinte,
         meses=grade_do_mes.MESES, dias_da_semana=grade_do_mes.DIAS_DA_SEMANA,
+        situacoes_possiveis=grade_do_mes.SITUACOES,
         tipo=tipo, tipos=consultas.TIPOS,
         args=request.args, filtros=filtros, opcoes=opcoes,
         status_do_dia=status_do_dia,

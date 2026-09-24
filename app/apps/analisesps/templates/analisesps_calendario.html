@@ -74,6 +74,21 @@
   </div>
 </div>
 
+{# Os mesmos três baldes do calendário, somados no mês. É a resposta direta a
+   "quanto tem vencido?" — que olhando dia a dia exigiria somar de cabeça. #}
+<div class="kpis">
+  {% for chave, cor, rotulo in situacoes_possiveis %}
+    {% set s = achado.situacoes.get(chave) or {} %}
+    {% if s.quantidade %}
+      <div class="kpi estatico {{ cor }}">
+        <div class="kpi-rotulo">{{ rotulo|capitalize }} no mês</div>
+        <div class="kpi-valor">{{ s.total|moeda }}</div>
+        <div class="kpi-sub">{{ s.quantidade }} SP{{ 's' if s.quantidade > 1 }}</div>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
+
 {# ⚠️ O QUE NÃO TEM DATA NÃO SOME EM SILÊNCIO. Uma SP sem vencimento não cai
    em dia nenhum do calendário; se ela sumisse sem aviso, a soma daqui não
    bateria com a do Relatório no mesmo filtro — e a conferência é justamente
@@ -116,19 +131,28 @@
         {# O dia sem nada não é link: clicar para ver uma lista vazia gasta uma
            ida ao servidor para não responder nada. #}
         {% if d.quantidade %}
-          <a class="cal-dia tem-valor {{ '' if d.do_mes else 'fora' }}
+          <a class="cal-dia {{ '' if d.do_mes else 'fora' }}
                     {{ 'hoje' if d.hoje }} {{ 'nao-util' if d.feriado or d.fim_de_semana }}
-                    {{ 'tem-vencida' if d.vencidas }}"
+                    {{ 'urgencia-' ~ d.faixas[0].cor if d.faixas }}"
              href="{{ url_for('analisesps.solicitacoes') }}?f=1&{{ 'pgt_ini' if tipo == 'pagas' else 'periodo_ini' }}={{ d.data }}&{{ 'pgt_fim' if tipo == 'pagas' else 'periodo_fim' }}={{ d.data }}{{ sem(['ano', 'mes', 'pagina', 'periodo_ini', 'periodo_fim', 'pgt_ini', 'pgt_fim', 'tipo', 'f', 'status_pgt']) }}{% for s in status_do_dia %}&status_pgt={{ s|urlencode }}{% endfor %}"
-             title="{{ d.data|data_br }} — {{ d.quantidade }} SP(s), {{ d.total|moeda }}{% if d.vencidas %} · {{ d.vencidas }} vencida(s) e ainda a pagar{% endif %}">
+             title="{{ d.data|data_br }} — {{ d.quantidade }} SP(s), {{ d.total|moeda }}{% for fx in d.faixas %} · {{ fx.quantidade }} {{ fx.rotulo }} ({{ fx.total|moeda }}){% endfor %}">
             <div class="cal-numero">{{ d.dia }}</div>
             {# Os DOIS valores vão no HTML e a largura da tela escolhe: o
                número cheio some abaixo de 760px, onde ele não cabe no
                quadradinho. A lição é do calendário do painel, do mesmo dia. #}
             <div class="cal-dinheiro"><span class="so-largo">{{ d.total|moeda }}</span><span
                  class="so-estreito">{{ d.total|moeda_curta }}</span></div>
-            <div class="cal-quantas">{{ d.quantidade }} SP{{ 's' if d.quantidade > 1 }}
-              {%- if d.vencidas %} <span class="cal-vencida" title="vencidas e ainda a pagar">⚠ {{ d.vencidas }}</span>{% endif %}</div>
+            {# ⚠️ UMA LINHA POR SITUAÇÃO, e não um total só pintado de uma cor:
+               o mesmo dia costuma ter conta paga E conta a vencer, e escolher
+               UMA cor para o dia esconderia a outra. A ordem é de urgência —
+               vencido, a vencer, pago —, decidida em `calendario.SITUACOES`. #}
+            {% for fx in d.faixas %}
+              <div class="cal-faixa faixa-{{ fx.cor }}" title="{{ fx.quantidade }} {{ fx.rotulo }} — {{ fx.total|moeda }}">
+                <span class="cal-faixa-qtd">{{ fx.quantidade }}</span>
+                <span class="so-largo">{{ fx.total|moeda }}</span><span
+                      class="so-estreito">{{ fx.total|moeda_curta }}</span>
+              </div>
+            {% endfor %}
           </a>
         {% else %}
           <div class="cal-dia {{ '' if d.do_mes else 'fora' }}
@@ -149,10 +173,17 @@
     {% endfor %}
   </div>
 
+  <p class="cal-legenda">
+    <span class="cal-chip faixa-vermelho"></span> vencido e ainda a pagar
+    <span class="cal-chip faixa-laranja"></span> a vencer
+    <span class="cal-chip faixa-azul"></span> pago
+    <span class="cal-chip faixa-cinza"></span> em outra situação
+  </p>
+
   <p class="cartao-dica">
     Dias em cinza são fim de semana ou feriado — repare quando um vencimento
-    grande cair num deles. O ⚠ marca o que já <b>venceu e continua a pagar</b>.
-    A coluna da direita é o total de cada semana, contando a semana inteira,
+    grande cair num deles. Dentro do dia, cada linha colorida é uma situação —
+    o número à esquerda é quantas SPs, e o outro é quanto. A coluna da direita é o total de cada semana, contando a semana inteira,
     inclusive os dias do mês vizinho que aparecem nela.
   </p>
 </div>

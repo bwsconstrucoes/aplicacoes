@@ -6509,6 +6509,68 @@ real de 59 mil SPs não foi medido; a consulta é uma só e agrupada no banco,
 mas isso é argumento, não medição.
 
 ---
+
+### Octogésima quarta leva (23/09) — as três cores, e o padrão que teve de mudar
+
+Logo depois de ver o Calendário publicado, o dono pediu:
+
+> *"Coloca azul para pago, vermelho para vencido e laranja a vencer."*
+
+**O dia deixou de ter um número só.** Cada dia agora mostra o total em cima e,
+abaixo, **uma linha por situação**, colorida. Pintar o dia inteiro de uma cor
+só era a saída óbvia e está errada: o mesmo dia costuma ter conta paga **e**
+conta a vencer, e escolher uma cor esconderia a outra — sem que quem olha
+tivesse como saber que está vendo metade.
+
+**A ordem das linhas é de URGÊNCIA, não de valor:** vencido, a vencer, pago.
+Por valor, uma conta vencida de R$ 200 sumiria embaixo de vinte pagas. Pelo
+mesmo motivo, a barrinha da esquerda do dia é a situação **mais urgente** que
+ele tem: um dia com uma vencida e vinte pagas continua gritando vermelho.
+
+#### ⚠️ O padrão da tela teve de mudar junto, e isso não era óbvio
+
+A tela abria em **"contas a pagar"** — escolha da leva anterior, com o
+argumento de que calendário se olha para frente. **Com as cores, esse padrão
+passou a esconder uma delas:** conta paga está fora do recorte "a pagar", ou
+seja, **o azul nunca apareceria**. Abrir numa visão que esconde uma das três
+cores que ele acabou de pedir é entregar metade.
+
+Agora abre na **visão geral**. O preço, dito para não se perder: na visão
+geral o dia conta pelo **vencimento**, inclusive o que já foi pago — o
+calendário passa a mostrar *"o que vencia neste dia, e o que aconteceu com
+aquilo"*. Para ver o dia em que o dinheiro **saiu de fato**, o recorte
+"Contas pagas" continua ali, contando pela data do pagamento.
+
+#### Duas coisas que não aparecem na tela e sustentam ela
+
+1. **Os três baldes saem da MESMA varredura**, com `FILTER`. Três consultas
+   seriam três passagens pela mesma tabela filtrada para responder à mesma
+   pergunta — e o custo baixo é o que impede esta tela de ficar cara com 59
+   mil SPs.
+2. **O que sobra vira um balde neutro, calculado.** Um status fora dos três
+   (coluna em branco, ou um valor novo que a planilha ganhe amanhã) entraria
+   no total do dia e não apareceria em cor nenhuma: as partes não fechariam o
+   todo, e ninguém veria isso olhando. Há teste com banco cobrando que a soma
+   das partes seja sempre o total.
+
+**"Vencido" é sempre pelo vencimento**, mesmo no recorte das pagas, onde o
+DIA conta pelo pagamento. São coisas diferentes e fáceis de misturar: o dia
+diz **quando** aquilo aconteceu; a cor diz **o que** aconteceu.
+
+**O quadro de cima ganhou os mesmos três baldes somados no mês** — *"quanto
+tem vencido?"* olhando dia a dia exigiria somar de cabeça. E a tela ganhou
+legenda: três cores sem legenda é adivinhação.
+
+**Verificado:** 26 testes de tela e de grade, mais 3 novos com banco de
+verdade (a separação nos três baldes, as partes somando o total, e a cor
+saindo do status enquanto o dia sai da data do pagamento).
+
+**NÃO verificado, e continua sendo a mesma coisa da leva anterior:** a tela
+não foi aberta num navegador. O dia cresceu para caber até três linhas
+coloridas (108 px, 86 px no celular) — se elas não couberem, é aqui que se
+mexe.
+
+---
 ---
 
 ## Regras que não se discutem
