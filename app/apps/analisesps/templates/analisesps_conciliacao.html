@@ -170,38 +170,6 @@
      href="{{ url_for('analisesps.conciliacao_panorama') }}">Panorama de todas as contas</a>
 </h2>
 
-{# ---------------------------------------------------------------------------
-   A BUSCA RÁPIDA — pedido do dono em 24/09/2026:
-
-   *"Lá no cabeçalho da conciliação — tudo bem que nós temos os filtros, mas se
-   na parte superior eu pudesse já inserir uma data, informação do histórico,
-   um valor, sem precisar ir no filtro, ajudaria demais."*
-
-   ⚠️ ELA NÃO É UM SEGUNDO FILTRO: preenche o mesmo. Duas máquinas de filtrar
-   na mesma tela divergiriam no dia em que alguém mexesse numa só, e a pessoa
-   não teria como saber qual das duas está valendo. Aqui `data` é um DIA e
-   `valor` é o valor EXATO — é assim que se procura numa conciliação ("entrou
-   1.500 no dia 10?"). A faixa de datas e de valores continua na barra
-   lateral, para quem precisa dela.
---------------------------------------------------------------------------- #}
-<form method="get" class="busca-rapida">
-  <input type="hidden" name="conta_id" value="{{ filtros.conta_id }}">
-  {% for chave, valores in args.lists() if chave in ('situacao', 'sentido') %}
-    {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
-  {% endfor %}
-  <input type="date" name="data" title="um dia"
-         value="{{ filtros.dia.isoformat() if filtros.dia else '' }}">
-  <input name="busca" placeholder="histórico, documento ou observação"
-         value="{{ filtros.busca }}" style="flex:1; min-width:180px">
-  <input name="valor" placeholder="valor exato" style="width:130px"
-         value="{{ filtros.valor or '' }}">
-  <button class="btn" type="submit">Procurar</button>
-  {% if filtros.dia or filtros.busca or filtros.valor %}
-    <a class="link-btn" href="{{ url_for('analisesps.tela_conciliacao',
-                                          conta_id=filtros.conta_id) }}">limpar</a>
-  {% endif %}
-</form>
-
 {# O gesto de soltar o arquivo mora na barra lateral; a RESPOSTA aparece aqui,
    onde há largura para a tabela do que vai entrar ser lida. #}
 <div id="saida-extrato"></div>
@@ -287,6 +255,17 @@
     </div>
   {% endif %}
 
+  {# ⚠️ O FORMULÁRIO FICA FORA DA TABELA, e os campos do cabeçalho apontam
+     para ele pelo atributo `form`. Um `<form>` no meio de `<tr>` não é HTML
+     válido: o navegador o expulsa da tabela e as caixinhas param de enviar,
+     sem erro nenhum na tela. #}
+  <form method="get" id="filtro-colunas" style="display:none">
+    <input type="hidden" name="conta_id" value="{{ filtros.conta_id }}">
+    {% for chave, valores in args.lists() if chave in ('sentido', 'busca') %}
+      {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+    {% endfor %}
+  </form>
+
   <div class="rolagem-tabela">
   {# ⚠️ AS LARGURAS SÃO DECLARADAS, TODAS. Antes, só o Histórico ficava sem
      largura — e por isso ele engolia toda a sobra da tabela, empurrando a
@@ -315,6 +294,48 @@
         <th class="direita">Saldo</th>
         <th>Conc.</th>
         <th>Observação</th>
+      </tr>
+      {# ---------------------------------------------------------------------
+         O FILTRO EM CADA COLUNA — pedido do dono em 24/09/2026: *"tem data,
+         tem histórico, tem observação, tem entrada, tem saída. Acho que em
+         cada um desses dá para colocar o filtro de cabeçalho."*
+
+         ⚠️ SUBSTITUIU A BARRA DE TRÊS CAMPOS da leva anterior, e é melhor:
+         ali "valor" não distinguia entrada de saída, e "histórico" procurava
+         nas três colunas de texto ao mesmo tempo. Aqui cada caixinha filtra a
+         SUA coluna — que é o que a pessoa quer dizer quando digita embaixo de
+         um título.
+
+         ⚠️ E ELE ALIMENTA O MESMO FILTRO DA BARRA LATERAL. Duas máquinas de
+         filtrar na mesma tela divergiriam, e ninguém saberia qual está
+         valendo. Enter em qualquer caixinha aplica tudo de uma vez.
+      --------------------------------------------------------------------- #}
+      <tr class="filtros-coluna">
+        {% if pode_operar %}<th></th>{% endif %}
+        <th><input type="date" name="data" form="filtro-colunas"
+                   value="{{ filtros.dia.isoformat() if filtros.dia else '' }}"></th>
+        <th><input name="historico" form="filtro-colunas" placeholder="procurar…"
+                   value="{{ filtros.historico }}"></th>
+        <th><input name="documento" form="filtro-colunas" placeholder="procurar…"
+                   value="{{ filtros.documento }}"></th>
+        <th><input name="entrada" form="filtro-colunas" placeholder="valor"
+                   class="direita" value="{{ filtros.entrada or '' }}"></th>
+        <th><input name="saida" form="filtro-colunas" placeholder="valor"
+                   class="direita" value="{{ filtros.saida or '' }}"></th>
+        <th></th>
+        <th>
+          <select name="situacao" form="filtro-colunas"
+                  onchange="this.form.submit()">
+            {% for chave, rotulo in situacoes.items() %}
+              <option value="{{ chave }}"
+                {% if filtros.situacao == chave %}selected{% endif %}>
+                {{ {'todos': 'todos', 'pendentes': 'falta',
+                    'conciliados': 'sim', 'com_observacao': 'com obs.'}[chave] }}</option>
+            {% endfor %}
+          </select>
+        </th>
+        <th><input name="observacao" form="filtro-colunas" placeholder="procurar…"
+                   value="{{ filtros.observacao }}"></th>
       </tr>
     </thead>
     <tbody>

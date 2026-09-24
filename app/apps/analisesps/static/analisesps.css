@@ -2049,15 +2049,19 @@ table.conciliacao col.c-observacao { width: 26%; }
 table.panorama td { vertical-align: top; }
 table.panorama small.ruim { color: var(--vermelho); }
 
-/* A BUSCA RAPIDA do topo da conciliacao (24/09/2026). Ela preenche o MESMO
-   filtro da barra lateral — ver o comentario no template. Fica compacta de
-   proposito: e um atalho, nao um painel. */
-.busca-rapida {
-  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-  margin-bottom: 14px; padding: 10px 12px; background: var(--branco);
-  border-radius: var(--raio); box-shadow: var(--sombra);
+/* O FILTRO EM CADA COLUNA, na segunda linha do cabecalho (24/09/2026).
+   Substituiu a barra de tres campos: ali "valor" nao distinguia entrada de
+   saida, e "historico" procurava nas tres colunas de texto ao mesmo tempo.
+   Aqui cada caixinha filtra a SUA coluna — que e o que a pessoa quer dizer
+   quando digita embaixo de um titulo. */
+table.conciliacao tr.filtros-coluna th {
+  background: var(--papel); padding: 4px 5px; font-weight: 400;
+  border-top: 1px solid var(--borda);
 }
-.busca-rapida input {
-  padding: 7px 9px; border: 1px solid var(--borda-forte);
-  border-radius: var(--raio-p); font-size: 13px;
+tr.filtros-coluna input, tr.filtros-coluna select {
+  width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 11.5px;
+  border: 1px solid var(--borda-forte); border-radius: 4px;
+  background: var(--branco); font-family: inherit;
 }
+tr.filtros-coluna input.direita { text-align: right; }
+tr.filtros-coluna input::placeholder { color: var(--borda-forte); }

@@ -7223,7 +7223,37 @@ dobro, porque ela mexe em duas contas.
 
 ---
 
-### Nonagésima terceira leva (24/09) — a busca rápida no topo
+### Nonagésima terceira leva (24/09) — o filtro em cada coluna
+
+> *"Tem data, tem histórico, tem observação, tem entrada, tem saída. Acho que
+> em cada um desses dá para colocar o filtro de cabeçalho."*
+
+Uma caixinha embaixo de cada título da tabela, como numa planilha: dia,
+histórico, documento, entrada, saída, conciliado e observação.
+
+**⚠️ ISTO SUBSTITUIU A BARRA DE TRÊS CAMPOS que eu tinha feito minutos antes**
+(descrita abaixo), e a troca é uma melhora de verdade, não gosto: ali "valor"
+não distinguia entrada de saída, e "histórico" procurava nas **três** colunas
+de texto ao mesmo tempo. Procurar "pix" no histórico e procurar "pix" na
+observação são perguntas diferentes — e quem digita embaixo de um título quer
+**aquela** coluna. Duas caixinhas preenchidas se somam, não se substituem.
+
+**Entrada e saída são o mesmo campo do banco, com o sinal decidindo:** quem
+digita 1.500 em "Entrada" quer +1.500; em "Saída", quer −1.500.
+
+**⚠️ O formulário fica FORA da tabela**, e os campos apontam para ele pelo
+atributo `form`. Um `<form>` no meio de `<tr>` não é HTML válido: o navegador
+o expulsa da tabela e as caixinhas param de enviar — **sem erro nenhum na
+tela**.
+
+**Verificado:** 5 testes de tela e 7 com banco de verdade (um por coluna, mais
+o caso das duas caixinhas juntas). *Esse último reprovou na primeira vez
+porque eu havia posto a anotação na linha errada do teste — o código estava
+certo, o dado é que estava trocado.*
+
+---
+
+### A barra de três campos, substituída no mesmo dia
 
 > *"Lá no cabeçalho da conciliação — tudo bem que nós temos os filtros, mas se
 > na parte superior eu pudesse já inserir uma data, informação do histórico,

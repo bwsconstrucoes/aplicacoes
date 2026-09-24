@@ -742,3 +742,41 @@ def test_o_titulo_criado_com_baixa_falhando_VIRA_PENDENCIA(banco_conc):
     assert len(pendentes) == 1
     assert pendentes[0]["omie_situacao"] == "sem_baixa"
     assert pendentes[0]["omie_codigo"] == 777
+
+
+@pytest.mark.parametrize("filtro,esperado,porque", [
+    ({"historico": "pix"}, 1, "só o que tem PIX no histórico"),
+    ({"documento": "41024"}, 1, "só o do documento 41024"),
+    ({"observacao": "nilo"}, 1, "só o que foi anotado"),
+    ({"entrada": "1000"}, 1, "a entrada de 1.000"),
+    ({"saida": "300"}, 1, "a saída de 300"),
+    ({"entrada": "300"}, 0, "300 saiu, não entrou"),
+    ({"historico": "pix", "observacao": "nilo"}, 0,
+     "as duas caixinhas juntas, e nada casa as duas"),
+])
+def test_o_filtro_de_cada_COLUNA_recorta_so_a_dela(banco_conc, filtro,
+                                                   esperado, porque):
+    """⚠️ Procurar "pix" no histórico e procurar "pix" na observação são
+    perguntas diferentes. Quem digita embaixo de um título quer aquela coluna
+    — e duas caixinhas preenchidas se somam, não se substituem."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "1000.00", "A1", "TED RECEBIDA"),
+        ("20260902", "-300.00", "A2", "PAGAMENTO PIX FULANO")])), "x.ofx", "T")
+    # ⚠️ A LISTA VEM DA MAIS NOVA PARA A MAIS VELHA, e a anotação precisa cair
+    # na linha CERTA — na primeira versão deste teste ela caiu na do PIX, e o
+    # caso das "duas caixinhas juntas" passou a casar uma linha. O código
+    # estava certo; o dado do teste é que estava trocado.
+    por_descricao = {l["descricao"]: l
+                     for l in conciliacao.listar({"conta_id": conta_id})}
+    da_ted = por_descricao["TED RECEBIDA"]
+    from app.apps.analisesps.db import conexao
+    with conexao() as con:
+        con.execute("UPDATE analisesps.conciliacao_extrato SET documento='41024'"
+                    " WHERE id = ?", (da_ted["id"],))
+        con.commit()
+    conciliacao.anotar(da_ted["id"], "conferir com o Nilo", "T")
+
+    achadas = conciliacao.listar(dict({"conta_id": conta_id}, **filtro))
+    assert len(achadas) == esperado, porque

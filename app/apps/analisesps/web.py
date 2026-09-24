@@ -1587,13 +1587,23 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
     # 10?". A faixa continua existindo na barra lateral, para quem precisa.
     dia = data("data")
     exato = numero("valor")
+
+    def texto(nome):
+        return (request.args.get(nome) or "").strip()
+
     return {"conta_id": conta_id, "situacao": situacao, "sentido": sentido,
-            "busca": (request.args.get("busca") or "").strip(),
+            "busca": texto("busca"),
             "data_ini": dia or data("data_ini"),
             "data_fim": dia or data("data_fim"),
             "valor_ini": abs(exato) if exato is not None else numero("valor_ini"),
             "valor_fim": abs(exato) if exato is not None else numero("valor_fim"),
-            # Guardados para a tela redesenhar os campos do topo como estavam.
+            # Os filtros de cabeçalho, um por coluna.
+            "historico": texto("historico"),
+            "documento": texto("documento"),
+            "observacao": texto("observacao"),
+            "entrada": numero("entrada"),
+            "saida": numero("saida"),
+            # Guardados para a tela redesenhar os campos como estavam.
             "dia": dia, "valor": exato}
 
 

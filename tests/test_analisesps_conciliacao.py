@@ -786,58 +786,86 @@ def test_a_transferencia_pede_a_conta_de_destino_na_tela(app_com_dados):
 
 
 # ---------------------------------------------------------------------------
-# A BUSCA RÁPIDA DO TOPO — 24/09/2026
+# O FILTRO EM CADA COLUNA — 24/09/2026
+#
+# *"Tem data, tem histórico, tem observação, tem entrada, tem saída. Acho que
+# em cada um desses dá para colocar o filtro de cabeçalho."*
+#
+# ⚠️ SUBSTITUIU a barra de três campos da leva anterior: ali "valor" não
+# distinguia entrada de saída, e "histórico" procurava nas três colunas de
+# texto ao mesmo tempo.
 # ---------------------------------------------------------------------------
-def test_a_busca_rapida_aparece_no_topo(app_com_dados):
-    """*"Se na parte superior eu pudesse já inserir uma data, informação do
-    histórico, um valor, sem precisar ir no filtro, ajudaria demais."*"""
+def test_cada_coluna_tem_a_sua_caixinha_de_filtro(app_com_dados):
     html = como(app_com_dados).get(
         "/analisesps/conciliacao").get_data(as_text=True)
 
-    assert 'class="busca-rapida"' in html
-    assert 'name="data"' in html
-    assert 'name="valor"' in html
-    # Ela vem ANTES da tabela, que é onde ele disse que a queria.
-    assert html.index("busca-rapida") < html.index("<table class=\"sps conciliacao\"")
+    assert 'class="filtros-coluna"' in html
+    for campo in ("data", "historico", "documento", "entrada", "saida",
+                  "observacao"):
+        assert f'name="{campo}" form="filtro-colunas"' in html or \
+               f'type="date" name="{campo}" form="filtro-colunas"' in html, campo
 
 
-def test_a_busca_rapida_PREENCHE_o_mesmo_filtro(app_com_dados, monkeypatch):
-    """⚠️ Ela não é um segundo filtro. Duas máquinas de filtrar na mesma tela
-    divergiriam no dia em que alguém mexesse numa só, e a pessoa não teria como
-    saber qual das duas está valendo."""
+def test_o_formulario_fica_FORA_da_tabela(app_com_dados):
+    """⚠️ Um `<form>` no meio de `<tr>` não é HTML válido: o navegador o
+    expulsa da tabela e as caixinhas param de enviar, sem erro nenhum na tela.
+    Por isso ele fica fora, e os campos apontam para ele pelo atributo `form`.
+    """
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert 'id="filtro-colunas"' in html
+    # O formulário vem ANTES da tabela, e não dentro dela.
+    assert html.index('id="filtro-colunas"') < html.index(
+        '<table class="sps conciliacao">')
+
+
+def test_cada_caixinha_filtra_a_SUA_coluna(app_com_dados, monkeypatch):
+    """⚠️ Procurar "pix" no histórico e procurar "pix" na observação são
+    perguntas diferentes. Quem digita embaixo de um título quer aquela
+    coluna."""
+    vistos = []
+    monkeypatch.setattr(conciliacao, "listar",
+                        lambda f, pagina=1: vistos.append(f) or [])
+    monkeypatch.setattr(conciliacao, "resumo", lambda f: {})
+
+    como(app_com_dados).get("/analisesps/conciliacao?conta_id=1"
+                            "&historico=pix&documento=41024&observacao=nilo")
+
+    usado = vistos[0]
+    assert usado["historico"] == "pix"
+    assert usado["documento"] == "41024"
+    assert usado["observacao"] == "nilo"
+
+
+def test_entrada_e_saida_sao_o_mesmo_campo_com_o_sinal_decidindo():
+    """Quem digita 1.500 em "Entrada" quer +1.500; em "Saída", quer -1.500."""
+    from app.apps.analisesps import conciliacao as conc
+    onde, params = conc._onde({"conta_id": 1, "entrada": "1500"})
+    assert "valor = ?" in onde and Decimal("1500") in params
+
+    onde, params = conc._onde({"conta_id": 1, "saida": "1500"})
+    assert Decimal("-1500") in params
+
+    # E "saída" digitada já negativa continua achando a saída.
+    _onde2, params2 = conc._onde({"conta_id": 1, "saida": "-1500"})
+    assert Decimal("-1500") in params2
+
+
+def test_um_dia_no_cabecalho_vira_o_dia_inteiro(app_com_dados, monkeypatch):
     import datetime as dt
     vistos = []
     monkeypatch.setattr(conciliacao, "listar",
                         lambda f, pagina=1: vistos.append(f) or [])
     monkeypatch.setattr(conciliacao, "resumo", lambda f: {})
 
-    como(app_com_dados).get("/analisesps/conciliacao"
-                            "?conta_id=1&data=2026-09-10&valor=1.500,00"
-                            "&busca=pix")
-
-    usado = vistos[0]
-    # UM DIA, não uma faixa aberta.
-    assert usado["data_ini"] == dt.date(2026, 9, 10)
-    assert usado["data_fim"] == dt.date(2026, 9, 10)
-    # O VALOR EXATO, em módulo — é assim que se procura numa conciliação.
-    assert usado["valor_ini"] == usado["valor_fim"] == Decimal("1500.00")
-    assert usado["busca"] == "pix"
-
-
-def test_o_valor_negativo_digitado_acha_a_saida(app_com_dados, monkeypatch):
-    """Quem procura "-1.500" quer a saída de 1.500. O módulo resolve os dois."""
-    vistos = []
-    monkeypatch.setattr(conciliacao, "listar",
-                        lambda f, pagina=1: vistos.append(f) or [])
-    monkeypatch.setattr(conciliacao, "resumo", lambda f: {})
-
-    como(app_com_dados).get(
-        "/analisesps/conciliacao?conta_id=1&valor=-1.500,00")
-    assert vistos[0]["valor_ini"] == Decimal("1500.00")
+    como(app_com_dados).get("/analisesps/conciliacao?conta_id=1&data=2026-09-10")
+    assert vistos[0]["data_ini"] == vistos[0]["data_fim"] == dt.date(2026, 9, 10)
 
 
 def test_a_faixa_da_barra_lateral_continua_valendo(app_com_dados, monkeypatch):
-    """A busca rápida é um atalho; quem precisa de faixa continua com ela."""
+    """O filtro de coluna é um atalho para UM dia e UM valor; quem precisa de
+    faixa (de 1/9 a 30/9) continua com a barra lateral."""
     import datetime as dt
     vistos = []
     monkeypatch.setattr(conciliacao, "listar",

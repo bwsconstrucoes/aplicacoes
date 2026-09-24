@@ -401,6 +401,33 @@ def _onde(f: dict) -> tuple[str, list]:
                         " || ' ' || lower(coalesce(observacao,''))) LIKE ?")
             params.append(f"%{termo.replace('%', '').replace('_', '')}%")
 
+    # ⚠️ OS FILTROS DE CABEÇALHO, um por coluna — pedido do dono em 24/09/2026:
+    # *"tem data, tem histórico, tem observação, tem entrada, tem saída. Acho
+    # que em cada um desses dá para colocar o filtro de cabeçalho."*
+    #
+    # Eles são SEPARADOS da busca livre acima de propósito: procurar "pix" no
+    # histórico e procurar "pix" na observação são perguntas diferentes, e
+    # quem filtra por coluna quer exatamente aquela coluna. A busca livre
+    # continua existindo para quem não sabe em qual delas está.
+    for campo, coluna in (("historico", "descricao"),
+                          ("documento", "documento"),
+                          ("observacao", "observacao")):
+        termo = str(f.get(campo) or "").strip().lower()
+        if termo:
+            onde.append(f"lower(coalesce({coluna},'')) LIKE ?")
+            params.append(f"%{termo.replace('%', '').replace('_', '')}%")
+
+    # Entrada e saída são o MESMO campo do banco, com o sinal decidindo. Quem
+    # digita 1.500 em "Entrada" quer +1.500; em "Saída", quer -1.500.
+    entrada = f.get("entrada")
+    if entrada is not None:
+        onde.append("valor = ?")
+        params.append(abs(Decimal(str(entrada))))
+    saida = f.get("saida")
+    if saida is not None:
+        onde.append("valor = ?")
+        params.append(-abs(Decimal(str(saida))))
+
     if f.get("valor_ini") is not None:
         onde.append("abs(valor) >= ?")
         params.append(abs(Decimal(str(f["valor_ini"]))))
