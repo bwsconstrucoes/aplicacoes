@@ -1995,7 +1995,24 @@ def test_a_entrada_com_nome_de_dividendo_nao_vira_liquido_negativo(base_com_soci
 # ===========================================================================
 # As retenções por tributo e as despesas do DRE num clique — 23/09/2026
 # ===========================================================================
-def test_as_retencoes_se_abrem_por_tributo_na_proporcao_do_titulo(painel_no_banco):
+@pytest.fixture()
+def cenario_original(painel_no_banco):
+    """O cenário do painel_no_banco, recarregado: testes anteriores deste
+    arquivo trocam o fato e não devolvem."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    from tests.test_painel_banco import CENARIO
+    colunas = list(CENARIO[0].keys())
+    marcas = ",".join(["?"] * len(colunas))
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        conn.executemany(f"INSERT INTO fato ({', '.join(colunas)}) VALUES ({marcas})",
+                         [tuple(l[c] for c in colunas) for l in CENARIO])
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+def test_as_retencoes_se_abrem_por_tributo_na_proporcao_do_titulo(cenario_original):
     """O título 1 do cenário retém 100 (linha de retenção do fato). No
     cadastro do título, o OMIE diz IR 60 e ISS 40 — é assim que se abre."""
     from app.apps.painel import consultas
@@ -2023,14 +2040,14 @@ def test_as_retencoes_se_abrem_por_tributo_na_proporcao_do_titulo(painel_no_banc
             conn.commit()
 
 
-def test_sem_cadastro_no_espelho_a_retencao_fica_sem_detalhe(painel_no_banco):
+def test_sem_cadastro_no_espelho_a_retencao_fica_sem_detalhe(cenario_original):
     from app.apps.painel import consultas
     r = consultas.retencoes_por_tributo(consultas.Filtros(), visao="todas")
     assert r["linhas"][0]["sem_detalhe"] == pytest.approx(100.0)
     assert r["totais"]["sem_detalhe"] == pytest.approx(100.0)
 
 
-def test_a_janela_de_despesas_do_dre_fecha_com_a_linha(painel_no_banco, monkeypatch):
+def test_a_janela_de_despesas_do_dre_fecha_com_a_linha(cenario_original, monkeypatch):
     """O total da janela é o número da linha que foi clicada."""
     from app.apps.painel import consultas
     monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
