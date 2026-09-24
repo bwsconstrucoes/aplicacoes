@@ -327,3 +327,99 @@ def test_uma_conta_nao_ve_o_extrato_da_outra(banco_conc):
     assert conciliacao.saldo_da_conta(uma) == Decimal("1000.00")
     assert conciliacao.saldo_da_conta(outra) == Decimal("50.00")
     assert len(conciliacao.listar({"conta_id": uma})) == 1
+
+
+# ---------------------------------------------------------------------------
+# A PLANILHA ANTIGA, e o encontro dela com o extrato do banco
+# ---------------------------------------------------------------------------
+def aba_falsa(linhas=None, aba="BD 7011"):
+    from decimal import Decimal as D
+    return {"aba": aba, "conciliadas": 0, "descartadas": [],
+            "linhas": linhas or [
+                {"data": dt.date(2026, 9, 10), "descricao": "PIX FULANO",
+                 "documento": "946047", "valor": D("-1500.00"),
+                 "conciliado": True, "observacao": "Obs. 1: conferir"},
+                {"data": dt.date(2026, 9, 11), "descricao": "TED RECEBIDA",
+                 "documento": "", "valor": D("2000.00"),
+                 "conciliado": False, "observacao": ""}]}
+
+
+def test_a_planilha_traz_a_marca_e_a_anotacao_junto(banco_conc):
+    """⚠️ Trazer só os números e deixar o dono remarcar dois anos de
+    conciliação tornaria a importação inútil."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste()
+
+    feito = conciliacao.importar_da_planilha(conta_id, aba_falsa(), "TESTE")
+    assert feito["gravadas"] == 2
+
+    linhas = {l["descricao"]: l for l in conciliacao.listar({"conta_id": conta_id})}
+    assert linhas["PIX FULANO"]["conciliado"] is True
+    assert linhas["PIX FULANO"]["observacao"] == "Obs. 1: conferir"
+    assert linhas["PIX FULANO"]["origem"] == "planilha"
+    assert linhas["TED RECEBIDA"]["conciliado"] is False
+
+
+def test_reimportar_a_mesma_aba_nao_duplica(banco_conc):
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa(), "T")
+    de_novo = conciliacao.importar_da_planilha(conta_id, aba_falsa(), "T")
+
+    assert de_novo["gravadas"] == 0
+    assert de_novo["repetidas"] == 2
+    assert conciliacao.resumo({"conta_id": conta_id})["quantidade"] == 2
+
+
+def test_dois_pagamentos_iguais_no_mesmo_dia_na_PLANILHA_sao_dois(banco_conc):
+    from app.apps.analisesps import conciliacao
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    duas = [{"data": dt.date(2026, 9, 10), "descricao": "PIX FULANO",
+             "documento": "", "valor": D("-1500.00"), "conciliado": False,
+             "observacao": ""}] * 2
+
+    conciliacao.importar_da_planilha(conta_id, aba_falsa(duas), "T")
+    assert conciliacao.resumo({"conta_id": conta_id})["quantidade"] == 2
+
+
+def test_o_OFX_ADOTA_a_linha_da_planilha_em_vez_de_duplicar(banco_conc):
+    """⚠️ O PROBLEMA QUE SÓ APARECE NA SEGUNDA SEMANA. O dono importa a
+    planilha (anos de histórico anotado) e depois solta um OFX do mesmo
+    período. As duas linhas são o MESMO lançamento — a do banco tem FITID, a
+    da planilha não. Sem isto, o extrato duplicaria inteiro, e a cópia nova
+    viria SEM a anotação dele."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa(), "T")
+
+    extrato = ofx([("20260910", "-1500.00", "A1", "PIX DES: FULANO"),
+                   ("20260911", "2000.00", "A2", "TED RECEBIDA")])
+    feito = conciliacao.importar(conta_id, conciliacao_ofx.ler(extrato),
+                                 "set.ofx", "T")
+
+    assert feito["adotadas"] == 2
+    assert feito["gravadas"] == 0
+    # Continuam duas linhas, e a anotação e a marca sobreviveram.
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    assert len(linhas) == 2
+    anotada = [l for l in linhas if l["observacao"]][0]
+    assert anotada["observacao"] == "Obs. 1: conferir"
+    assert anotada["conciliado"] is True
+
+
+def test_depois_de_adotada_a_linha_nao_e_adotada_de_novo(banco_conc):
+    """Um segundo OFX com outro lançamento igual em data e valor não pode
+    roubar a linha que o primeiro já casou."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa(), "T")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260910", "-1500.00", "A1")])), "um.ofx", "T")
+
+    segundo = conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260910", "-1500.00", "B9")])), "dois.ofx", "T")
+
+    assert segundo["adotadas"] == 0
+    assert segundo["gravadas"] == 1
+    assert conciliacao.resumo({"conta_id": conta_id})["quantidade"] == 3

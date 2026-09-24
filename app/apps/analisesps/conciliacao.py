@@ -283,7 +283,14 @@ def importar(conta_id: int, lido, nome_arquivo: str = "",
         arquivo_id = int(cur.fetchone()[0])
 
         gravadas = 0
+        adotadas = 0
         for marca, lanc in novas:
+            # ⚠️ ANTES DE CRIAR, PROCURA a mesma linha vinda da planilha: ela é
+            # o mesmo lançamento, e traz a anotação do dono junto. Ver o bloco
+            # "O ENCONTRO DAS DUAS FONTES", mais abaixo.
+            if _adotar_linha_da_planilha(con, conta_id, lanc, marca):
+                adotadas += 1
+                continue
             descricao = (lanc.memo or "").strip()
             if lanc.nome and lanc.nome not in descricao:
                 descricao = f"{lanc.nome} — {descricao}".strip(" —")
@@ -299,10 +306,12 @@ def importar(conta_id: int, lido, nome_arquivo: str = "",
             gravadas += (cur.rowcount or 0)
         con.commit()
 
-    logger.info("Conciliação: %s importou %s na conta %s — %s nova(s) de %s.",
-                quem or "?", nome_arquivo or "extrato", conta_id, gravadas,
+    logger.info("Conciliação: %s importou %s na conta %s — %s nova(s) e %s "
+                "adotada(s) da planilha, de %s.", quem or "?",
+                nome_arquivo or "extrato", conta_id, gravadas, adotadas,
                 conferido["lidas"])
-    return dict(conferido, gravadas=gravadas, arquivo_id=arquivo_id)
+    return dict(conferido, gravadas=gravadas, adotadas=adotadas,
+                arquivo_id=arquivo_id)
 
 
 # ---------------------------------------------------------------------------
@@ -620,3 +629,104 @@ def lembrar_conta_do_extrato(conta_id: int, bankid: str, acctid: str,
         con.commit()
     logger.info("Conciliação: %s apontou o extrato %s/%s para a conta %s.",
                 quem or "?", bankid, acctid, conta_id)
+
+
+# ---------------------------------------------------------------------------
+# A PLANILHA ANTIGA — trazer o histórico sem perder o que foi anotado nele
+# ---------------------------------------------------------------------------
+def impressao_da_planilha(conta_id: int, linha: dict, ordem: int = 1) -> str:
+    """A identidade de uma linha que veio da planilha.
+
+    Não há FITID: a planilha é uma cópia colada do extrato, sem o
+    identificador do banco. Então a identidade é data + valor + descrição
+    normalizada, mais a ORDEM da repetição — pelo mesmo motivo do OFX: dois
+    pagamentos iguais no mesmo dia são dois, e tratá-los como um faria o
+    histórico importado divergir do que estava na planilha.
+    """
+    import hashlib
+    import re as _re
+    texto = _re.sub(r"\s+", " ", str(linha.get("descricao") or "")).strip().lower()
+    base = (f"planilha|{linha['data'].isoformat()}|{linha['valor']}|{texto}"
+            f"|#{ordem}")
+    return hashlib.sha256(f"conta{conta_id}|{base}".encode("utf-8")).hexdigest()
+
+
+def importar_da_planilha(conta_id: int, lido: dict, quem: str = "") -> dict:
+    """Grava as linhas de uma aba. Reimportar a mesma aba não duplica nada.
+
+    ⚠️ O QUE FOI ANOTADO NA PLANILHA VEM JUNTO — o "Conciliado" e as colunas
+    soltas viram marca e observação. Trazer só os números e deixar o dono
+    remarcar dois anos de conciliação tornaria a importação inútil.
+    """
+    from .db import conexao
+
+    linhas = lido.get("linhas") or []
+    vistas: dict = {}
+    gravadas = repetidas = 0
+
+    with conexao() as con:
+        for linha in linhas:
+            marca_base = (linha["data"], linha["valor"],
+                          (linha.get("descricao") or "").strip().lower())
+            vistas[marca_base] = vistas.get(marca_base, 0) + 1
+            marca = impressao_da_planilha(conta_id, linha, vistas[marca_base])
+            cur = con.execute(
+                "INSERT INTO analisesps.conciliacao_extrato "
+                "  (conta_id, data, descricao, documento, valor, conciliado, "
+                "   conciliado_por, conciliado_em, observacao, origem, "
+                "   impressao) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, "
+                "        CASE WHEN ? THEN now() ELSE NULL END, ?, "
+                "        'planilha', ?) "
+                "ON CONFLICT (conta_id, impressao) DO NOTHING",
+                (conta_id, linha["data"], (linha.get("descricao") or "")[:500],
+                 (linha.get("documento") or "")[:60], linha["valor"],
+                 bool(linha.get("conciliado")),
+                 quem if linha.get("conciliado") else "",
+                 bool(linha.get("conciliado")),
+                 (linha.get("observacao") or "")[:1000], marca))
+            if cur.rowcount:
+                gravadas += 1
+            else:
+                repetidas += 1
+        con.commit()
+
+    logger.info("Conciliação: %s importou a aba %s na conta %s — %s de %s.",
+                quem or "?", lido.get("aba", "?"), conta_id, gravadas,
+                len(linhas))
+    return {"gravadas": gravadas, "repetidas": repetidas,
+            "lidas": len(linhas), "aba": lido.get("aba", ""),
+            "conciliadas": lido.get("conciliadas", 0),
+            "descartadas": len(lido.get("descartadas") or [])}
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O ENCONTRO DAS DUAS FONTES — o problema que só aparece na segunda semana
+#
+# O dono importa a planilha (anos de histórico, com o que ele anotou) e depois
+# solta um OFX do mesmo período. As duas linhas são o MESMO lançamento, mas a
+# do banco tem FITID e a da planilha não — identidades diferentes, e o extrato
+# duplicaria inteiro. Pior: a cópia nova viria sem a anotação dele.
+#
+# Por isso, antes de inserir uma linha do OFX, procura-se uma linha da
+# PLANILHA igual em data e valor que ainda não tenha sido confirmada pelo
+# banco. Achando, ela é ADOTADA: ganha o FITID e a identidade do banco, e
+# mantém a marca de conciliado e a observação que já tinha.
+# ---------------------------------------------------------------------------
+def _adotar_linha_da_planilha(con, conta_id: int, lanc, marca: str) -> bool:
+    """Achou a mesma linha vinda da planilha? Então é ela, e não uma nova."""
+    cur = con.execute(
+        "SELECT id FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND data = ? AND valor = ? "
+        "   AND origem = 'planilha' AND fitid = '' "
+        " ORDER BY id LIMIT 1",
+        (conta_id, lanc.data, lanc.valor))
+    achada = cur.fetchone()
+    if not achada:
+        return False
+    con.execute(
+        "UPDATE analisesps.conciliacao_extrato "
+        "   SET impressao = ?, fitid = ?, alterado_em = now() "
+        " WHERE id = ?",
+        (marca, (lanc.fitid or "")[:120], int(achada[0])))
+    return True

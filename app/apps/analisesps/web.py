@@ -1581,6 +1581,15 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
             "valor_ini": numero("valor_ini"), "valor_fim": numero("valor_fim")}
 
 
+def _planilha_da_conciliacao() -> str:
+    """O identificador da planilha antiga, se já foi colado uma vez."""
+    from . import conciliacao_planilha as cp
+    try:
+        return cp.planilha_guardada()
+    except Exception:  # noqa: BLE001 — é enfeite do campo, não a tela
+        return ""
+
+
 @bp.route("/conciliacao")
 @exige_consulta
 def tela_conciliacao():
@@ -1619,6 +1628,7 @@ def tela_conciliacao():
         if filtros["conta_id"] else 0,
         ultimos_arquivos=conc.ultimos_arquivos(filtros["conta_id"])
         if filtros["conta_id"] else [],
+        planilha_guardada=_planilha_da_conciliacao(),
         args=request.args,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -1756,6 +1766,98 @@ def conciliacao_gravar_conta():
         logger.exception("Conciliação: falhou gravar conta")
         return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
     return {"ok": True, "id": conta_id}
+
+
+# ---------------------------------------------------------------------------
+# TRAZER A PLANILHA ANTIGA — uma aba por vez, com amostra antes de gravar
+#
+# *"Já tem muita informação aqui, eu quero manter."* São ~20 abas, uma por
+# conta, desde 2024. A associação aba → conta é feita por ele, na tela: é o
+# único que sabe que "BD IFPE 2541" e a conta do Bradesco terminada em 2541
+# são a mesma coisa.
+# ---------------------------------------------------------------------------
+@bp.route("/api/conciliacao/planilha/abas", methods=["POST"])
+@exige_operador
+def conciliacao_abas_da_planilha():
+    """As abas da planilha, para ele escolher qual trazer."""
+    from . import conciliacao_planilha as cp
+
+    dados = request.get_json(silent=True) or {}
+    bruto = (dados.get("planilha") or "").strip()
+    try:
+        planilha_id = cp.guardar_planilha(bruto) if bruto else cp.planilha_guardada()
+        if not planilha_id:
+            return {"ok": False, "erro": "Cole o endereço da planilha."}
+        return {"ok": True, "planilha": planilha_id, "abas": cp.abas(planilha_id)}
+    except cp.ErroDaPlanilha as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou listar abas")
+        return {"ok": False, "erro": f"Não consegui: {e}"}, 500
+
+
+@bp.route("/api/conciliacao/planilha/ler", methods=["POST"])
+@exige_operador
+def conciliacao_ler_aba():
+    """Lê UMA aba e devolve a amostra. NÃO grava nada.
+
+    ⚠️ A AMOSTRA É O PONTO DE CONTROLE: é onde ele vê se as colunas foram
+    entendidas antes de dois anos de histórico entrarem no sistema.
+    """
+    from . import conciliacao_planilha as cp
+
+    dados = request.get_json(silent=True) or {}
+    planilha_id = (dados.get("planilha") or "").strip() or cp.planilha_guardada()
+    try:
+        lido = cp.ler_aba(planilha_id, dados.get("aba") or "")
+    except cp.ErroDaPlanilha as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou ler aba")
+        return {"ok": False, "erro": f"Não consegui ler: {e}"}, 500
+    return {"ok": True, **cp.amostra_para_a_tela(lido)}
+
+
+@bp.route("/api/conciliacao/planilha/importar", methods=["POST"])
+@exige_operador
+def conciliacao_importar_aba():
+    """Grava uma aba na conta escolhida. A aba é lida DE NOVO, de propósito.
+
+    ⚠️ RELER EM VEZ DE GUARDAR o que a amostra leu: com 1 worker e 4 threads,
+    um "guardado na memória" entre duas chamadas vira do outro usuário no dia
+    em que duas pessoas importarem ao mesmo tempo. Reler custa uma ida ao
+    Google e não tem esse risco.
+    """
+    from . import conciliacao as conc
+    from . import conciliacao_planilha as cp
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta desta aba."}
+    planilha_id = (dados.get("planilha") or "").strip() or cp.planilha_guardada()
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        lido = cp.ler_aba(planilha_id, dados.get("aba") or "")
+        feito = conc.importar_da_planilha(int(conta_id), lido, quem)
+    except cp.ErroDaPlanilha as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou importar aba")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+
+    # A aba fica anotada na conta: é o que responde "esta conta já veio da
+    # planilha?" quando ninguém lembrar mais.
+    try:
+        conc.gravar_conta({"id": int(conta_id),
+                           **{k: v for k, v in (next(
+                               (c for c in conc.contas(so_ativas=False)
+                                if c["id"] == int(conta_id)), {})).items()
+                              if k != "id"},
+                           "aba_planilha": lido.get("aba", "")}, quem)
+    except Exception:  # noqa: BLE001 — anotar a aba é enfeite, não a entrega
+        logger.exception("Conciliação: não consegui anotar a aba na conta")
+    return {"ok": True, **feito}
 
 
 @bp.route("/api/conciliacao/linha", methods=["POST"])

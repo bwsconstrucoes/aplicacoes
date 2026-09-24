@@ -6689,7 +6689,7 @@ tela** — gravam por trás. A recarga só acontece na marcação em leva, onde 
 saldo e os números de cima mudam junto e mostrá-los velhos seria pior. Uma
 tela mais lenta que a planilha que ela veio substituir não seria usada.
 
-#### ⚠️ O QUE FALTA, e é a metade que o dono mais quer
+#### ⚠️ O QUE FALTAVA — resolvido no mesmo dia, ver a leva seguinte
 
 **A importação da planilha antiga não foi feita nesta leva.** Ele disse, com
 todas as letras: *"já tem muita informação aqui, eu quero manter"*. O que
@@ -6723,6 +6723,105 @@ tela.
 verdade dos bancos dele passou por aqui** — os testes usam arquivos montados
 à mão. Bancos brasileiros escrevem OFX de jeitos diferentes; o primeiro
 arquivo real é o teste que importa.
+
+---
+
+### Octogésima sétima leva (24/09) — a planilha antiga entra, com as anotações
+
+Ele voltou com o que faltava: **trechos reais de cinco abas**, coladas no chat.
+E com duas notícias que mudaram o trabalho:
+
+> *"Eu padronizei e coloquei conciliado em todas as colunas, na coluna L, de
+> forma padrão."*
+
+**Isso apagou a parte mais arriscada da leva anterior.** Antes, "conciliado"
+era uma célula **pintada de amarelo** em metade das abas, e ler cor exige
+outra API do Google — mais cara, mais frágil, e de resultado incerto. Ele
+resolveu na origem, e o leitor agora depende da palavra em texto. De
+propósito.
+
+> *"Eu excluo todas as abas que são desnecessárias. Os bancos são basicamente
+> Bradesco, Banco do Brasil, Santander, Caixa e Sicredi. O Soma, por enquanto,
+> como ele não gera o OFX e é meio diferente, vou deixar para depois."*
+
+BNB e Cora saíram da lista. Soma fica para depois.
+
+#### Três armadilhas que só o dado REAL revelou
+
+Elas estão nos testes com as amostras dele, e nenhuma teria sido descoberta
+inventando exemplo:
+
+1. **"TIPO" QUER DIZER DUAS COISAS.** No Bradesco a coluna Tipo traz o NÚMERO
+   do documento (1798917); no Sicredi traz o TIPO do lançamento (PIX_DEB). A
+   mesma coluna, o mesmo nome, conteúdos incompatíveis. A decisão passou a ser
+   pelo CONTEÚDO: se 80% dos valores forem numéricos, é documento. Decidir
+   pelo nome poria "PIX_DEB" no campo de documento numa aba e jogaria o número
+   fora na outra.
+2. **O SANTANDER REPETE O BLOCO DE COLUNAS INTEIRO** na mesma linha de
+   cabeçalho (Data|Histórico|Documento|Valor|Saldo aparece duas vezes). Ler os
+   dois como um duplicaria o extrato. Vale o PRIMEIRO.
+3. **O BB TEM LINHAS QUE NÃO SÃO LANÇAMENTO** — "Saldo Anterior" e "Saldo do
+   dia", com valor 0,00. Ele avisou: *"isso aí é ignorável, nem para entrar"*.
+   Elas entrariam caladas e somariam zero: ninguém notaria olhando o saldo.
+
+#### A prova de que a leitura entendeu os sinais
+
+A planilha traz o saldo de cada linha. O leitor confere se a **variação do
+saldo** bate com a **soma dos valores** — e é a única prova que existe. Ler o
+débito como positivo deixaria todas as linhas lá, com datas e históricos
+certos; só o saldo denuncia. A tela mostra o resultado dessa conferência antes
+de gravar.
+
+*O primeiro teste com as amostras reprovou* — porque eu havia montado a
+amostra com linhas salteadas, e aí o saldo realmente não fecha. A conferência
+estava certa e o exemplo errado. Ficou registrado no teste.
+
+**A coluna Débito vale com ou sem o sinal de menos.** O Bradesco dele escreve
+-675,87; outro banco pode escrever 675,87 na coluna "Débito". As duas dizem a
+mesma coisa, e o leitor aceita as duas.
+
+#### ⚠️ O ENCONTRO DAS DUAS FONTES — o problema que só apareceria na segunda semana
+
+Ele importa a planilha (anos de histórico, com o que anotou) e depois solta um
+OFX do mesmo período. **As duas linhas são o MESMO lançamento**, mas a do
+banco tem FITID e a da planilha não — identidades diferentes, e o extrato
+duplicaria inteiro. Pior: a cópia nova viria **sem a anotação dele**.
+
+Agora, antes de inserir uma linha do OFX, procura-se uma linha da planilha
+igual em data e valor que ainda não tenha sido confirmada pelo banco. Achando,
+ela é **adotada**: ganha o FITID e a identidade do banco, e mantém a marca de
+conciliado e a observação. Há teste com banco para isso, e outro garantindo
+que um segundo OFX não rouba a linha que o primeiro já casou.
+
+#### As colunas soltas viram observação
+
+Pedido dele: *"algum dado que tenha entre as colunas da parte numérica e a
+coluna L, a gente vai colocar como observação do lançamento"*. Cada pedaço vem
+com o **nome da coluna** junto ("Obs. 1: conferir · Status Tarifa Omie: tarifa
+ok") — sem isso, "conferir" sozinho não diria nada daqui a um ano.
+
+#### Como a associação aba → conta ficou
+
+Ele perguntou: *"eu acho que cada aba dessa a gente vai associar uma conta. Aí
+eu não sei como é que você imagina para a gente fazer?"*
+
+Na tela, no cartão "Trazer a planilha antiga", **fechado**: cola-se o endereço
+da planilha uma vez, ela lista as abas, e para cada aba ele escolhe a conta,
+**vê uma amostra do que o sistema entendeu** e só então grava. Uma aba por
+vez — abrir as vinte de uma vez traria 8 MB para a memória do serviço, que já
+morreu disso uma vez. A aba fica anotada na conta, para responder "esta conta
+já veio da planilha?" quando ninguém lembrar.
+
+**Verificado:** 28 testes sobre as amostras REAIS dele (os cinco formatos, os
+sinais, o "Tipo" ambíguo, o bloco repetido do Santander, as linhas de saldo do
+BB, as colunas soltas virando observação, a conferência do saldo aprovando e
+reprovando) e 25 com banco de verdade, incluindo a adoção das linhas da
+planilha pelo OFX.
+
+**NÃO verificado, e é o mesmo de antes:** a tela não foi aberta num navegador,
+nenhum OFX real passou por ela, e **nenhuma aba de verdade foi lida do Google**
+— daqui não há credencial. A leitura por gspread segue o mesmo caminho que o
+resto do módulo usa todo dia, mas o primeiro uso real é o teste que importa.
 
 ---
 ---

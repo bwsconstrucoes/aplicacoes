@@ -32,6 +32,7 @@ agenda.py          calendário de compromissos que se repetem
 calendario.py      a grade de mês do calendário das SPs (outra coisa da agenda)
 conciliacao.py     a conciliação bancária: contas, extrato, marcar e anotar
 conciliacao_ofx.py a leitura do arquivo OFX (⚠️ usa o parser do ERP — ver dentro)
+conciliacao_planilha.py  a leitura da planilha antiga, aba por aba
 colunas.py         o mapeamento da aba SPsBD (A:AL) — fonte única
 tabela.py          as colunas da lista — espelha o GRID_COLS do Streamlit
 preferencias.py    o que cada pessoa deixou do jeito dela (filtro, colunas)

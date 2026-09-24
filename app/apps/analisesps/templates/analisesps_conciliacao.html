@@ -295,6 +295,32 @@
 
 {% if estado.pronto and pode_operar %}
 {# ---------------------------------------------------------------------------
+   TRAZER A PLANILHA ANTIGA — uma aba por vez, com amostra antes de gravar.
+
+   ⚠️ FICA FECHADO. É um trabalho que se faz UMA vez, na estreia; deixá-lo
+   aberto no dia a dia poria o botão de importar dois anos de histórico ao
+   lado do tique de conciliar uma linha.
+--------------------------------------------------------------------------- #}
+<details class="cartao" id="cartao-planilha">
+  <summary><b>Trazer a planilha antiga</b> — o histórico que já existe</summary>
+
+  <p class="cartao-dica" style="margin:10px 0">
+    Uma aba por vez. O sistema lê, mostra <b>uma amostra do que entendeu</b> e
+    só grava depois que você confere. Trazer a mesma aba duas vezes não
+    duplica nada — e o que estiver marcado como <b>Conciliado</b> na planilha
+    chega marcado aqui, com as anotações junto.
+  </p>
+
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+    <input class="campo-largo" id="planilha-id" style="flex:1; min-width:280px"
+           placeholder="cole o endereço da planilha do Google"
+           value="{{ planilha_guardada or '' }}">
+    <button class="btn secundario" id="btn-listar-abas">Ver as abas</button>
+  </div>
+  <div id="saida-planilha"></div>
+</details>
+
+{# ---------------------------------------------------------------------------
    AS CONTAS — uma porta só, como manda a regra da casa (CLAUDE.md, 17/09).
 
    Não há "cadastrar digitando" de um lado e "cadastrar pelo extrato" do outro.
@@ -632,6 +658,112 @@ if (formConta) {
     const d = await pedir("{{ url_for('analisesps.conciliacao_gravar_conta') }}", corpo);
     if (!d.ok) { alvo.textContent = d.erro || "não gravou"; return; }
     location.reload();
+  });
+}
+
+// --- a planilha antiga ------------------------------------------------------
+const saidaPl = document.getElementById("saida-planilha");
+const btnAbas = document.getElementById("btn-listar-abas");
+
+if (btnAbas) btnAbas.addEventListener("click", async () => {
+  btnAbas.disabled = true;
+  saidaPl.innerHTML = '<div class="aviso">Perguntando ao Google…</div>';
+  const d = await pedir("{{ url_for('analisesps.conciliacao_abas_da_planilha') }}",
+                        {planilha: document.getElementById("planilha-id").value});
+  btnAbas.disabled = false;
+  if (!d.ok) { saidaPl.innerHTML = '<div class="aviso erro">' + d.erro + '</div>'; return; }
+
+  let html = '<div class="aviso"><b>' + d.abas.length + ' aba(s).</b> ' +
+    'Escolha uma e a conta dela:<br><br>' +
+    '<select id="aba-escolhida" class="campo-largo" style="max-width:280px">';
+  d.abas.forEach(a => { html += '<option value="' + a + '">' + a + '</option>'; });
+  html += '</select> ';
+  html += '<select id="conta-da-aba" class="campo-largo" style="max-width:280px">';
+  {% for c in contas %}
+    html += '<option value="{{ c.id }}">{{ c.nome }}</option>';
+  {% endfor %}
+  html += '</select> <button class="btn" id="btn-ler-aba">Ler esta aba</button>';
+  html += '<p class="cartao-dica" style="margin:8px 0 0">Ainda não grava nada.</p></div>';
+  saidaPl.innerHTML = html;
+  document.getElementById("btn-ler-aba").addEventListener("click", lerAba);
+});
+
+async function lerAba() {
+  const aba = document.getElementById("aba-escolhida").value;
+  const conta = document.getElementById("conta-da-aba").value;
+  const planilha = document.getElementById("planilha-id").value;
+  const botao = document.getElementById("btn-ler-aba");
+  botao.disabled = true; botao.textContent = "Lendo…";
+  const d = await pedir("{{ url_for('analisesps.conciliacao_ler_aba') }}",
+                        {planilha: planilha, aba: aba});
+  if (!d.ok) {
+    saidaPl.innerHTML = '<div class="aviso erro">' + d.erro +
+      '</div>' + saidaPl.innerHTML;
+    botao.disabled = false; botao.textContent = "Ler esta aba";
+    return;
+  }
+  desenharAba(d, aba, conta, planilha);
+}
+
+function desenharAba(d, aba, conta, planilha) {
+  const saldo = d.conferencia_do_saldo || {};
+  let html = '<div class="aviso ' + (saldo.deu && !saldo.bate ? 'atencao' : 'bom') + '">';
+  html += '<b>' + d.aba + '</b> — ' + d.total + ' lançamento(s), de ' +
+    d.periodo_ini.split("-").reverse().join("/") + ' a ' +
+    d.periodo_fim.split("-").reverse().join("/") + '. ' +
+    d.conciliadas + ' já conciliado(s).';
+
+  // ⚠️ A CONFERÊNCIA DO SALDO é a única prova de que os sinais foram
+  // entendidos: ler o débito como positivo deixaria todas as linhas lá, com
+  // as datas certas. Só o saldo denuncia.
+  if (saldo.deu) {
+    html += '<br>' + (saldo.bate
+      ? '<b>O saldo da planilha bate com a soma dos valores</b> — os sinais foram entendidos.'
+      : '<b>⚠️ O saldo da planilha NÃO bate com a soma dos valores</b> (variação ' +
+        saldo.variacao + ', soma ' + saldo.soma + '). Pode ser que faltem ' +
+        'linhas no meio, ou que uma coluna tenha sido entendida errada. ' +
+        'Confira a amostra antes de gravar.');
+  }
+
+  if (d.observacao_veio_de.length) {
+    html += '<br>Vira observação: <b>' + d.observacao_veio_de.join(", ") + '</b>.';
+  }
+  if (d.descartadas_total) {
+    html += '<br>' + d.descartadas_total + ' linha(s) de fora: ';
+    html += d.descartadas.map(x => x.porque + ' (' + x.texto + ')').join("; ");
+  }
+
+  html += '<table class="sps" style="margin-top:8px"><thead><tr><th>Data</th>' +
+    '<th>Histórico</th><th>Doc.</th><th class="direita">Valor</th>' +
+    '<th>Conc.</th><th>Observação</th></tr></thead><tbody>';
+  d.amostra.forEach(l => {
+    html += '<tr><td>' + l.data + '</td><td>' + l.descricao + '</td><td>' +
+      l.documento + '</td><td class="direita">' + dinheiro(l.valor) + '</td><td>' +
+      (l.conciliado ? '✓' : '—') + '</td><td>' + l.observacao + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  if (d.total > d.amostra.length) {
+    html += '<p class="cartao-dica">Mostro as ' + d.amostra.length +
+      ' primeiras de ' + d.total + '.</p>';
+  }
+  html += '<button class="btn" id="btn-gravar-aba">Gravar as ' + d.total +
+    ' linhas nesta conta</button> ' +
+    '<button class="btn secundario" id="btn-cancelar-aba">Deixa pra lá</button>';
+  html += '</div>';
+  saidaPl.innerHTML = html;
+
+  document.getElementById("btn-cancelar-aba").addEventListener("click", () => {
+    saidaPl.innerHTML = "";
+  });
+  document.getElementById("btn-gravar-aba").addEventListener("click", async e => {
+    e.target.disabled = true; e.target.textContent = "Gravando…";
+    const f = await pedir("{{ url_for('analisesps.conciliacao_importar_aba') }}",
+                          {planilha: planilha, aba: aba, conta_id: conta});
+    if (!f.ok) {
+      saidaPl.innerHTML = '<div class="aviso erro">' + f.erro + '</div>';
+      return;
+    }
+    location.href = "{{ url_for('analisesps.tela_conciliacao') }}?conta_id=" + conta;
   });
 }
 
