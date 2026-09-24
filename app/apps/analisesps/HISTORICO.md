@@ -7222,6 +7222,30 @@ de ser UM, conferido lá antes do segundo — e numa transferência isso vale em
 dobro, porque ela mexe em duas contas.
 
 ---
+
+### Nonagésima terceira leva (24/09) — a busca rápida no topo
+
+> *"Lá no cabeçalho da conciliação — tudo bem que nós temos os filtros, mas se
+> na parte superior eu pudesse já inserir uma data, informação do histórico,
+> um valor, sem precisar ir no filtro, ajudaria demais."*
+
+Três campos acima da tabela: **um dia, um texto e um valor**.
+
+**⚠️ Ela NÃO é um segundo filtro — preenche o mesmo.** Duas máquinas de
+filtrar na mesma tela divergiriam no dia em que alguém mexesse numa só, e a
+pessoa não teria como saber qual das duas está valendo. Por baixo, `data` vira
+`data_ini = data_fim` e `valor` vira `valor_ini = valor_fim`, em módulo.
+
+**E é assim de propósito:** numa conciliação a pergunta é *"entrou 1.500 no
+dia 10?"*, não *"o que houve entre o dia 1 e o dia 30 com valor entre 1.000 e
+2.000"*. Um dia e um valor exato respondem a primeira em um gesto; a faixa
+continua na barra lateral para quem precisar da segunda. Digitar "-1.500"
+também acha — o módulo resolve os dois lados.
+
+**Verificado:** 4 testes novos, incluindo o que garante que os dois caminhos
+caem no mesmo filtro.
+
+---
 ---
 
 ## Regras que não se discutem

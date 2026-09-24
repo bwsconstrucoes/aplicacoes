@@ -170,6 +170,38 @@
      href="{{ url_for('analisesps.conciliacao_panorama') }}">Panorama de todas as contas</a>
 </h2>
 
+{# ---------------------------------------------------------------------------
+   A BUSCA RÁPIDA — pedido do dono em 24/09/2026:
+
+   *"Lá no cabeçalho da conciliação — tudo bem que nós temos os filtros, mas se
+   na parte superior eu pudesse já inserir uma data, informação do histórico,
+   um valor, sem precisar ir no filtro, ajudaria demais."*
+
+   ⚠️ ELA NÃO É UM SEGUNDO FILTRO: preenche o mesmo. Duas máquinas de filtrar
+   na mesma tela divergiriam no dia em que alguém mexesse numa só, e a pessoa
+   não teria como saber qual das duas está valendo. Aqui `data` é um DIA e
+   `valor` é o valor EXATO — é assim que se procura numa conciliação ("entrou
+   1.500 no dia 10?"). A faixa de datas e de valores continua na barra
+   lateral, para quem precisa dela.
+--------------------------------------------------------------------------- #}
+<form method="get" class="busca-rapida">
+  <input type="hidden" name="conta_id" value="{{ filtros.conta_id }}">
+  {% for chave, valores in args.lists() if chave in ('situacao', 'sentido') %}
+    {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+  {% endfor %}
+  <input type="date" name="data" title="um dia"
+         value="{{ filtros.dia.isoformat() if filtros.dia else '' }}">
+  <input name="busca" placeholder="histórico, documento ou observação"
+         value="{{ filtros.busca }}" style="flex:1; min-width:180px">
+  <input name="valor" placeholder="valor exato" style="width:130px"
+         value="{{ filtros.valor or '' }}">
+  <button class="btn" type="submit">Procurar</button>
+  {% if filtros.dia or filtros.busca or filtros.valor %}
+    <a class="link-btn" href="{{ url_for('analisesps.tela_conciliacao',
+                                          conta_id=filtros.conta_id) }}">limpar</a>
+  {% endif %}
+</form>
+
 {# O gesto de soltar o arquivo mora na barra lateral; a RESPOSTA aparece aqui,
    onde há largura para a tabela do que vai entrar ser lida. #}
 <div id="saida-extrato"></div>

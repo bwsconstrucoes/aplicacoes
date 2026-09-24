@@ -783,3 +783,68 @@ def test_a_transferencia_pede_a_conta_de_destino_na_tela(app_com_dados):
     assert "qual conta o dinheiro foi?" in html
     assert 'name="natureza"' in html
     assert "Transferência entre contas" in html
+
+
+# ---------------------------------------------------------------------------
+# A BUSCA RÁPIDA DO TOPO — 24/09/2026
+# ---------------------------------------------------------------------------
+def test_a_busca_rapida_aparece_no_topo(app_com_dados):
+    """*"Se na parte superior eu pudesse já inserir uma data, informação do
+    histórico, um valor, sem precisar ir no filtro, ajudaria demais."*"""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert 'class="busca-rapida"' in html
+    assert 'name="data"' in html
+    assert 'name="valor"' in html
+    # Ela vem ANTES da tabela, que é onde ele disse que a queria.
+    assert html.index("busca-rapida") < html.index("<table class=\"sps conciliacao\"")
+
+
+def test_a_busca_rapida_PREENCHE_o_mesmo_filtro(app_com_dados, monkeypatch):
+    """⚠️ Ela não é um segundo filtro. Duas máquinas de filtrar na mesma tela
+    divergiriam no dia em que alguém mexesse numa só, e a pessoa não teria como
+    saber qual das duas está valendo."""
+    import datetime as dt
+    vistos = []
+    monkeypatch.setattr(conciliacao, "listar",
+                        lambda f, pagina=1: vistos.append(f) or [])
+    monkeypatch.setattr(conciliacao, "resumo", lambda f: {})
+
+    como(app_com_dados).get("/analisesps/conciliacao"
+                            "?conta_id=1&data=2026-09-10&valor=1.500,00"
+                            "&busca=pix")
+
+    usado = vistos[0]
+    # UM DIA, não uma faixa aberta.
+    assert usado["data_ini"] == dt.date(2026, 9, 10)
+    assert usado["data_fim"] == dt.date(2026, 9, 10)
+    # O VALOR EXATO, em módulo — é assim que se procura numa conciliação.
+    assert usado["valor_ini"] == usado["valor_fim"] == Decimal("1500.00")
+    assert usado["busca"] == "pix"
+
+
+def test_o_valor_negativo_digitado_acha_a_saida(app_com_dados, monkeypatch):
+    """Quem procura "-1.500" quer a saída de 1.500. O módulo resolve os dois."""
+    vistos = []
+    monkeypatch.setattr(conciliacao, "listar",
+                        lambda f, pagina=1: vistos.append(f) or [])
+    monkeypatch.setattr(conciliacao, "resumo", lambda f: {})
+
+    como(app_com_dados).get(
+        "/analisesps/conciliacao?conta_id=1&valor=-1.500,00")
+    assert vistos[0]["valor_ini"] == Decimal("1500.00")
+
+
+def test_a_faixa_da_barra_lateral_continua_valendo(app_com_dados, monkeypatch):
+    """A busca rápida é um atalho; quem precisa de faixa continua com ela."""
+    import datetime as dt
+    vistos = []
+    monkeypatch.setattr(conciliacao, "listar",
+                        lambda f, pagina=1: vistos.append(f) or [])
+    monkeypatch.setattr(conciliacao, "resumo", lambda f: {})
+
+    como(app_com_dados).get("/analisesps/conciliacao"
+                            "?conta_id=1&data_ini=2026-09-01&data_fim=2026-09-30")
+    assert vistos[0]["data_ini"] == dt.date(2026, 9, 1)
+    assert vistos[0]["data_fim"] == dt.date(2026, 9, 30)

@@ -1575,10 +1575,26 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
     if sentido not in ("", "entrada", "saida"):
         sentido = ""
 
+    # ⚠️ A BUSCA RÁPIDA DO TOPO NÃO É UM SEGUNDO FILTRO — ela preenche ESTE.
+    # Pedido do dono em 24/09/2026: *"se na parte superior eu pudesse já
+    # inserir uma data, informação do histórico, um valor, sem precisar ir no
+    # filtro, ajudaria demais."* Duas máquinas de filtrar na mesma tela
+    # divergiriam no dia em que alguém mexesse numa só, e a pessoa não teria
+    # como saber qual das duas está valendo.
+    #
+    # `data` é um DIA (de e até no mesmo), e `valor` é um valor EXATO em
+    # módulo — é assim que se procura numa conciliação: "entrou 1.500 no dia
+    # 10?". A faixa continua existindo na barra lateral, para quem precisa.
+    dia = data("data")
+    exato = numero("valor")
     return {"conta_id": conta_id, "situacao": situacao, "sentido": sentido,
             "busca": (request.args.get("busca") or "").strip(),
-            "data_ini": data("data_ini"), "data_fim": data("data_fim"),
-            "valor_ini": numero("valor_ini"), "valor_fim": numero("valor_fim")}
+            "data_ini": dia or data("data_ini"),
+            "data_fim": dia or data("data_fim"),
+            "valor_ini": abs(exato) if exato is not None else numero("valor_ini"),
+            "valor_fim": abs(exato) if exato is not None else numero("valor_fim"),
+            # Guardados para a tela redesenhar os campos do topo como estavam.
+            "dia": dia, "valor": exato}
 
 
 def _listas_do_omie() -> dict:

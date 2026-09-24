@@ -2048,3 +2048,16 @@ table.conciliacao col.c-observacao { width: 26%; }
 
 table.panorama td { vertical-align: top; }
 table.panorama small.ruim { color: var(--vermelho); }
+
+/* A BUSCA RAPIDA do topo da conciliacao (24/09/2026). Ela preenche o MESMO
+   filtro da barra lateral — ver o comentario no template. Fica compacta de
+   proposito: e um atalho, nao um painel. */
+.busca-rapida {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin-bottom: 14px; padding: 10px 12px; background: var(--branco);
+  border-radius: var(--raio); box-shadow: var(--sombra);
+}
+.busca-rapida input {
+  padding: 7px 9px; border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); font-size: 13px;
+}
