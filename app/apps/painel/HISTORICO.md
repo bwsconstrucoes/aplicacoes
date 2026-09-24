@@ -2182,6 +2182,24 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## Dividendos: clicar no valor e ver os lançamentos — 24/09/2026
+
+O dono: *"não tem nenhum canto que eu clique e me sejam listados os
+dividendos. Não sei qual é o título, a data, nada — só tem um valor."*
+
+Todo valor de dividendo do bloco de Aportes e Dividendos do DRE virou botão:
+o distribuído e o "entrou com nome de dividendo" de cada sócio; a coluna de
+dividendos de cada obra e o total em "O dinheiro da obra, com os sócios"; e o
+número e a coluna por obra do "Resultado × dividendos". A janela lista data,
+sócio (com CNPJ), obra, categoria (e a análise, quando não é DRE), documento
+com link do Pipefy e observação, conta, nº no OMIE e valor.
+
+O sócio é filtrado pelo documento (`_SOCIO_ID`), não pelo nome — o mesmo
+agrupamento do quadro, então a lista fecha com o número. O "Resultado ×
+dividendos" corta transferência e os outros quadros não; o clique leva o corte
+do quadro de onde veio (`com_trf`). Teste com banco: cada janela soma o que o
+quadro mostra. (`lancamentos_de_dividendo`, rota `painel.dre_dividendos`.)
+
 ## Calendário: as cores do dono — 24/09/2026
 
 *"Verde para recebimento, azul para pago, vermelho para vencido e laranja a

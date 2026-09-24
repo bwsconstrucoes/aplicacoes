@@ -488,6 +488,13 @@ def _consultar_falso(sql, params=()):
     # lá embaixo, e responder por engano com a linha de outra tela daria um erro
     # de arity difícil de ler.
     if "'Aporte de Parceiro'" in sql:
+        # os lançamentos de dividendo por trás do número (24/09/2026)
+        if "AS lancamento_de_dividendo" in sql:
+            return [(dt.date(2025, 6, 30), 4455, "SÓCIO A", "11.222.333/0001-44",
+                     "Obra Um", "PROJ-A", "Distribuição de Lucros", "Bradesco C/C",
+                     "DIV-06", "lucro do semestre", "", -1200.0, "Fluxo de Caixa")]
+        if "COALESCE(SUM(pago_recebido), 0)" in sql:
+            return [(1, -1200.0)]
         if "SUM(-pago_recebido)" in sql:                        # dividendo por obra
             return [("Obra Um", 1200.0)]
         if "ORDER BY 2, 3, 1" in sql:                           # os lançamentos
@@ -505,8 +512,8 @@ def _consultar_falso(sql, params=()):
         if "ORDER BY 3 DESC, 2 DESC" in sql:
             return [("Obra Um", 7000.0, 1000.0, 4),
                     ("(não apropriado)", 0.0, 2000.0, 1)]
-        if "= 'Dividendos'" in sql:                             # o quadro à parte
-            return [("SÓCIO A", 0.0, 1200.0, 2)]
+        if "AS socio_do_dividendo" in sql:                      # o quadro à parte
+            return [("11222333000144", "SÓCIO A", 0.0, 1200.0, 2)]
         # Por obra / por tipo: o que distingue e a obra estar no recorte.
         # Antes isto olhava "GROUP BY 1, 2", e quebrou em 20/09/2026,
         # quando o recorte por socio passou a AGRUPAR pelo documento e
@@ -1871,3 +1878,18 @@ def test_os_numeros_de_despesa_e_de_retencao_do_dre_abrem_o_detalhe(painel):
     # 300 retidos no título, o OMIE abre em IR 150, ISS 50, PIS 30, COFINS 70
     assert (l["ir"], l["iss"], l["pis"], l["cofins"]) == (150.0, 50.0, 30.0, 70.0)
     assert r["totais"]["ir"] == 150.0 and r["total"] == 300.0
+
+
+def test_os_dividendos_abrem_os_lancamentos(painel):
+    """24/09/2026, o dono: "não tem nenhum canto que eu clique e me sejam
+    listados os dividendos — não sei o título, a data, nada, só um valor"."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre?bloco=aportes").get_data(as_text=True)
+    assert 'abre-dividendos" data-sentido="pago" data-socio="11222333000144"' in html
+    assert 'data-trf="0"' in html                   # o quadro Resultado × dividendos
+    d = painel.get("/painel/dre/dividendos?sentido=pago&socio=11222333000144").get_json()
+    assert d["ok"] and d["quantos"] == 1 and d["total"] == -1200.0
+    l = d["linhas"][0]
+    assert (l["data"], l["codigo"], l["socio"], l["documento"]) == (
+        "2025-06-30", 4455, "SÓCIO A", "DIV-06")
+    assert painel.get("/painel/dre/dividendos?sentido=x").get_json()["sentido"] == "pago"
