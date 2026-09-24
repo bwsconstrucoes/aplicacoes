@@ -537,9 +537,9 @@
         {% for d in aportes.dividendos %}
         <tr>
           <td class="desc">{{ d.socio }}</td>
-          <td class="dados direita"><b>{{ brl(d.pago) if d.pago else '—' }}</b></td>
+          <td class="dados direita"><b>{% if d.pago %}<button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-socio="{{ d.socio_id }}" data-rotulo="{{ d.socio }}" title="ver os lançamentos">{{ brl(d.pago) }}</button>{% else %}—{% endif %}</b></td>
           {% if entradas_com_nome_de_dividendo > 0.005 %}
-          <td class="dados direita v-neg">{{ brl(d.recebido) if d.recebido else '—' }}</td>
+          <td class="dados direita v-neg">{% if d.recebido %}<button type="button" class="link-btn dados abre-dividendos" data-sentido="recebido" data-socio="{{ d.socio_id }}" data-rotulo="{{ d.socio }}" title="ver os lançamentos">{{ brl(d.recebido) }}</button>{% else %}—{% endif %}</td>
           {% endif %}
           <td class="dados direita">{{ d.lancamentos }}</td>
         </tr>
@@ -646,13 +646,13 @@
       <tbody>
         {% for l in caixa_socios.linhas %}
         <tr>
-          <td class="desc">{{ l.obra }}{% if l.dividendos_recebidos > 0.005 %} <span class="selo neutro" title="entrou dinheiro com categoria de dividendo — não somado">+{{ brl(l.dividendos_recebidos) }} com nome de dividendo</span>{% endif %}</td>
+          <td class="desc">{{ l.obra }}{% if l.dividendos_recebidos > 0.005 %} <span class="selo neutro" title="entrou dinheiro com categoria de dividendo — não somado"><button type="button" class="link-btn dados abre-dividendos" data-sentido="recebido" data-obra="{{ l.obra }}" data-rotulo="{{ l.obra }}" title="ver os lançamentos">+{{ brl(l.dividendos_recebidos) }} com nome de dividendo</button></span>{% endif %}</td>
           <td class="dados direita">{{ brl(l.receitas) if l.receitas else '—' }}</td>
           <td class="dados direita">{{ brl(l.despesas) if l.despesas else '—' }}</td>
           <td class="dados direita {{ classe_valor(l.resultado) }}">{{ brl(l.resultado) }}</td>
           <td class="dados direita">{{ brl(l.aportes) if l.aportes else '—' }}</td>
           <td class="dados direita">{{ brl(l.devolucoes) if l.devolucoes else '—' }}</td>
-          <td class="dados direita">{{ brl(l.dividendos) if l.dividendos else '—' }}</td>
+          <td class="dados direita">{% if l.dividendos %}<button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-obra="{{ l.obra }}" data-rotulo="{{ l.obra }}" title="ver os lançamentos">{{ brl(l.dividendos) }}</button>{% else %}—{% endif %}</td>
           <td class="dados direita {{ classe_valor(l.saldo) }}"><b>{{ brl(l.saldo) }}</b></td>
         </tr>
         {% endfor %}
@@ -665,7 +665,7 @@
           <td class="dados direita {{ classe_valor(t.resultado) }}">{{ brl(t.resultado) }}</td>
           <td class="dados direita">{{ brl(t.aportes) }}</td>
           <td class="dados direita">{{ brl(t.devolucoes) }}</td>
-          <td class="dados direita">{{ brl(t.dividendos) }}</td>
+          <td class="dados direita"><button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-rotulo="todas as obras" title="ver os lançamentos">{{ brl(t.dividendos) }}</button></td>
           <td class="dados direita {{ classe_valor(t.saldo) }}"><b>{{ brl(t.saldo) }}</b></td>
         </tr>
       </tfoot>
@@ -699,7 +699,7 @@
     </div>
     <div class="kpi estatico ambar">
       <div class="kpi-rotulo">Dividendos pagos</div>
-      <div class="kpi-valor">{{ brl(divisao.dividendos) }}</div>
+      <div class="kpi-valor"><button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-trf="0" data-rotulo="todas as obras" title="ver os lançamentos">{{ brl(divisao.dividendos) }}</button></div>
     </div>
     <div class="kpi estatico ciano">
       <div class="kpi-rotulo">Disponível</div>
@@ -741,7 +741,7 @@
         <tr>
           <td class="desc">{{ l.obra }}</td>
           <td class="dados direita {{ classe_valor(l.resultado) }}">{{ brl(l.resultado) }}</td>
-          <td class="dados direita">{{ brl(l.dividendos) if l.dividendos else '—' }}</td>
+          <td class="dados direita">{% if l.dividendos %}<button type="button" class="link-btn dados abre-dividendos" data-sentido="pago" data-trf="0" data-obra="{{ l.obra }}" data-rotulo="{{ l.obra }}" title="ver os lançamentos">{{ brl(l.dividendos) }}</button>{% else %}—{% endif %}</td>
           <td class="dados direita {{ classe_valor(l.disponivel) }}"><b>{{ brl(l.disponivel) }}</b></td>
         </tr>
         {% endfor %}
@@ -946,6 +946,50 @@
       corpo.innerHTML = '<p class="aviso erro">Não deu para carregar as retenções. Tente de novo.</p>';
     }
   }
+  // ---- dividendos: os lançamentos por trás do número — dono, 24/09/2026 ----
+  async function abrirDividendos(b) {
+    const sentido = b.dataset.sentido;
+    titulo.textContent = (sentido === "recebido" ? "Entrou com nome de dividendo" : "Dividendos distribuídos")
+                       + (b.dataset.rotulo ? " — " + b.dataset.rotulo : "");
+    resumo.textContent = "";
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    if (!dialogo.open) dialogo.showModal();
+    const consulta = new URLSearchParams(filtros);
+    consulta.set("sentido", sentido);
+    if (b.dataset.socio) consulta.set("socio", b.dataset.socio);
+    if (b.dataset.obra) consulta.set("obra_do_dividendo", b.dataset.obra);
+    consulta.set("com_trf", b.dataset.trf === "0" ? "0" : "1");
+    try {
+      const r = await fetch("{{ url_for('painel.dre_dividendos') }}?" + consulta.toString());
+      const d = await r.json();
+      if (!d.ok) { corpo.innerHTML = '<p class="aviso erro">Não deu para carregar.</p>'; return; }
+      resumo.innerHTML = `${d.quantos} lançamento(s) &nbsp;·&nbsp; total <b>${moeda(d.total)}</b>`;
+      verTudo.style.display = "none";
+      if (!d.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nenhum lançamento nos filtros atuais.</p>'; return; }
+      corpo.innerHTML = `<table class="sem-quebra"><thead><tr>
+          <th class="sem-ordem">Data</th><th class="sem-ordem">Sócio ou parceiro</th><th class="sem-ordem">Obra</th>
+          <th class="sem-ordem">Categoria</th><th class="sem-ordem">Documento</th><th class="sem-ordem">Conta</th>
+          <th class="sem-ordem">Nº no OMIE</th><th class="sem-ordem direita">Valor</th></tr></thead><tbody>`
+        + d.linhas.map(l => `<tr>
+          <td class="dados">${data(l.data)}</td>
+          <td class="desc">${escapar(l.socio)}${l.cnpj ? `<br><small>${escapar(l.cnpj)}</small>` : ""}</td>
+          <td class="desc">${escapar(l.obra)}</td>
+          <td class="desc">${escapar(l.categoria)}${l.analise && l.analise !== "DRE" ? `<br><small>${escapar(l.analise)}</small>` : ""}</td>
+          <td class="desc">${l.link ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener">${escapar(l.documento || "Pipefy")} ↗</a>` : escapar(l.documento || "—")}${l.observacao ? `<br><small>${escapar(String(l.observacao).slice(0, 80))}</small>` : ""}</td>
+          <td class="desc">${escapar(l.conta || "—")}</td>
+          <td class="dados"><small>${escapar(l.codigo ?? "—")}</small></td>
+          <td class="dados direita ${l.valor < 0 ? "v-neg" : "v-pos"}"><b>${moeda(l.valor)}</b></td></tr>`).join("")
+        + "</tbody></table>"
+        + (d.quantos > d.linhas.length ? `<p class="cartao-dica">Mostrando os ${d.linhas.length} mais recentes de ${d.quantos}. O total do alto soma todos.</p>` : "")
+        + (sentido === "recebido" ? '<p class="cartao-dica">Entrada com categoria de dividendo não é distribuição: pode ser o outro lado de um pagamento, um estorno ou categoria trocada no OMIE. Não foi somada nem abatida de nada.</p>' : "");
+    } catch (e) {
+      corpo.innerHTML = '<p class="aviso erro">Não deu para carregar os dividendos. Tente de novo.</p>';
+    }
+  }
+  document.querySelectorAll(".abre-dividendos").forEach(b => {
+    b.addEventListener("click", () => abrirDividendos(b));
+  });
+
   document.querySelectorAll(".abre-retencoes").forEach(b => {
     b.addEventListener("click", () => abrirRetencoes(b.dataset.visao));
   });

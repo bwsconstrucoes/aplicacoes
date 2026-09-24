@@ -2065,3 +2065,28 @@ def test_a_janela_de_despesas_do_dre_fecha_com_a_linha(cenario_original, monkeyp
     assert d["total_pago"] + d["total_a_pagar"] == pytest.approx(linha["comprometido"])
     tudo = cliente.get("/painel/dre/despesas?grupo=&visao=comprometido").get_json()
     assert tudo["total"] == pytest.approx(dre["= Total Custos/Despesas"]["comprometido"])
+
+
+
+def test_os_lancamentos_de_dividendo_fecham_com_os_quadros(base_com_socios):
+    """A base tem 50.000 distribuídos (título 604) e 700 que ENTRARAM com
+    nome de dividendo (704), tudo na CASA. Cada clique lista o que soma."""
+    from app.apps.painel import consultas
+    f = consultas.Filtros()
+    por_socio = {d["socio"]: d for d in consultas.dividendos_por_socio(f)}
+    sid = por_socio["MORAIS"]["socio_id"]
+    pago = consultas.lancamentos_de_dividendo(f, socio_id=sid, sentido="pago")
+    assert pago["quantos"] == 1 and pago["total"] == pytest.approx(-50000.0)
+    assert pago["linhas"][0]["codigo"] == 604
+    assert -pago["total"] == pytest.approx(por_socio["MORAIS"]["pago"])
+    entrou = consultas.lancamentos_de_dividendo(f, socio_id=sid, sentido="recebido")
+    assert entrou["total"] == pytest.approx(700.0)
+    assert [l["codigo"] for l in entrou["linhas"]] == [704]
+    # por obra, fecha com o quadro "O dinheiro da obra, com os sócios"
+    casa = next(l for l in consultas.caixa_com_socios(f)["linhas"] if l["obra"] == "CASA")
+    da_obra = consultas.lancamentos_de_dividendo(f, obra="CASA", sentido="pago")
+    assert da_obra["total"] == pytest.approx(casa["dividendos"])
+    # e o do "Resultado × dividendos" fecha com ele
+    divisao = consultas.resultado_dividendos(f)
+    sem_trf = consultas.lancamentos_de_dividendo(f, sentido="pago", com_transferencias=False)
+    assert -sem_trf["total"] == pytest.approx(divisao["dividendos"])

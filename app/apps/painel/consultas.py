@@ -2012,17 +2012,70 @@ def dividendos_por_socio(f: Filtros) -> list[dict]:
     where, params = _sem_cortar_transferencia(f).where(
         f"{PAGO} AND ({TIPO_APORTE}) = 'Dividendos'")
     sql = f"""
-        SELECT {_SOCIO_ROTULO},
+        SELECT {_SOCIO_ID} AS socio_do_dividendo, {_SOCIO_ROTULO},
                SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
                SUM(CASE WHEN pago_recebido < 0 THEN -pago_recebido ELSE 0 END),
                COUNT(*)
           FROM fato{where}
          GROUP BY {_SOCIO_ID}"""
-    saida = [{"socio": socio, "recebido": float(receb or 0), "pago": float(pago or 0),
+    # o socio_id vai junto para a tela abrir os lancamentos DAQUELE socio —
+    # o nome nao serve de chave (ver _SOCIO_ID)
+    saida = [{"socio_id": sid, "socio": socio, "recebido": float(receb or 0),
+              "pago": float(pago or 0),
               "liquido": float(pago or 0) - float(receb or 0), "lancamentos": quantos}
-             for socio, receb, pago, quantos in consultar(sql, params)]
+             for sid, socio, receb, pago, quantos in consultar(sql, params)]
     saida.sort(key=lambda x: -x["liquido"])
     return saida
+
+
+def lancamentos_de_dividendo(f: Filtros, *, socio_id: str = "", obra: str = "",
+                             sentido: str = "pago", com_transferencias: bool = True,
+                             limite: int = 500) -> dict:
+    """Os lançamentos por trás de um número de dividendo, um por linha.
+
+    Pedido do dono em 24/09/2026: *"não tem nenhum canto que eu clique e me
+    sejam listados os dividendos — não sei qual é o título, a data, nada, só
+    tem um valor"*.
+
+    Mesmo critério dos quadros: categoria com "dividendo" ou "distribuição de
+    lucro(s)" no nome, pago ou recebido. `sentido`: "pago" (o que saiu, o
+    distribuído), "recebido" (o que entrou com esse nome) ou "todos".
+    `com_transferencias` segue o quadro de onde veio o clique: o bloco de
+    aportes não corta transferência; o "Resultado × dividendos", sim."""
+    base = _sem_cortar_transferencia(f) if com_transferencias else f
+    condicoes = [PAGO, f"({TIPO_APORTE}) = 'Dividendos'"]
+    extras: list = []
+    if sentido == "pago":
+        condicoes.append("pago_recebido < 0")
+    elif sentido == "recebido":
+        condicoes.append("pago_recebido > 0")
+    if socio_id:
+        condicoes.append(f"({_SOCIO_ID}) = ?")
+        extras.append(socio_id)
+    if obra:
+        condicoes.append(f"({_OBRA}) = ?")
+        extras.append(obra)
+    where, params = base.where(" AND ".join(condicoes), extras)
+    campos = ("data", "codigo", "socio", "cnpj", "obra", "projeto", "categoria",
+              "conta", "documento", "observacao", "link", "valor", "analise")
+    linhas = []
+    for bruta in consultar(
+            f"""SELECT data, codigo_lancamento AS lancamento_de_dividendo,
+                       COALESCE(NULLIF(TRIM(razao_social),''), '(sem contraparte)'),
+                       cnpj_cpf, {_OBRA}, projeto,
+                       COALESCE(NULLIF(categoria,''), '(sem categoria)'),
+                       COALESCE(conta_corrente,''), numero_documento, observacao,
+                       link, pago_recebido, COALESCE(analise,'')
+                  FROM fato{where}
+                 ORDER BY data DESC NULLS LAST, codigo_lancamento
+                 LIMIT {int(limite)}""", params):
+        linha = dict(zip(campos, bruta))
+        linha["valor"] = float(linha["valor"] or 0)
+        linhas.append(linha)
+    (quantos, total) = consultar(
+        f"SELECT COUNT(*), COALESCE(SUM(pago_recebido), 0) FROM fato{where}", params)[0]
+    return {"linhas": linhas, "quantos": int(quantos or 0),
+            "total": float(total or 0)}
 
 
 # Teto do detalhamento na tela. A versão antiga mostrava tudo porque já tinha a
