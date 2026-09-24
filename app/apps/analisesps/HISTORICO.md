@@ -7160,6 +7160,68 @@ primeiro lançamento tem de ser UM, conferido no OMIE antes do segundo — é a
 mesma sequência combinada para os aportes, e pelo mesmo motivo.
 
 ---
+
+### Nonagésima segunda leva (24/09) — a transferência entre contas
+
+> *"Transferência no OMIE: você seleciona a conta origem e a conta destino, e
+> já interfere nas duas pontas."*
+
+E ele autorizou testar direto em produção: *"em relação a ser produção, sem
+problema, a gente está sempre acompanhando no sistema."*
+
+#### ⚠️ Foi o espelho do painel que disse COMO o OMIE representa isso
+
+Eu tinha levantado a dúvida na leva anterior — usar uma rota de transferência
+do OMIE que este repositório nunca chamou, ou repetir o desenho do aporte. A
+resposta estava no código do painel: no `sync/fato.py`, **transferência é uma
+CATEGORIA marcada com `transferencia = S`**, e é essa marca que manda o valor
+para o balde TRF em vez do resultado.
+
+Ou seja: **no modelo de dados do OMIE, transferência é um par de títulos com
+categoria de transferência**. Não há rota especial a inventar — é o mesmo
+caminho dos aportes, que roda em produção e que ele já validou.
+
+**O que ele vai ver no OMIE, dito antes para não haver surpresa:** a
+transferência aparece como uma **conta a pagar na origem** e uma **conta a
+receber no destino**, as duas baixadas, as duas com a categoria de
+transferência. O dinheiro fica certo nas duas contas e fora do DRE. Não é a
+tela de "Transferências" do OMIE — se ele quiser exatamente aquela, é outra
+conversa, e eu preciso ver a rota funcionando antes.
+
+#### Três decisões dentro dela
+
+1. **A conta de destino NÃO é chutada.** Linha de transferência sem destino
+   escolhido é recusada, com o motivo, e a tela mostra um seletor para cada
+   uma — depois reensaia. Adivinhar o destino poria o dinheiro numa conta que
+   ninguém pediu.
+2. **A segunda ponta tem código de integração PRÓPRIO** (`CONC42D` contra
+   `CONC42`). Com o mesmo código, o OMIE recusaria a entrada como repetição da
+   saída — e a transferência ficaria pela metade **toda vez**, sem ninguém
+   entender por quê.
+3. **Meia transferência GRITA.** Se a saída entrou e a entrada falhou, o
+   dinheiro saiu de uma conta e não entrou em nenhuma: o saldo das **duas**
+   fica errado. A linha é marcada como `meia_transferencia`, entra na lista de
+   pendências do panorama, e a mensagem diz isso com todas as letras em vez de
+   contar como sucesso parcial.
+
+#### E um teste que faltava, achado escrevendo este
+
+**O JavaScript desta tela nunca era conferido.** Ela tem centenas de linhas
+dele, e um erro de sintaxe **não aparece em teste nenhum**: o HTML monta, a
+tela abre, e simplesmente nada funciona — o tique não marca, o arquivo não
+sobe, e nada avisa. Agora há um teste que extrai o script (tirando o Jinja) e
+passa pelo `node --check`. Se o Node não existir na máquina, ele é pulado: é
+uma rede, não um requisito de ambiente.
+
+**Verificado:** 45 testes de tela (um deles o do JavaScript) e 6 novos do
+lançamento, incluindo as duas pontas, os códigos de integração diferentes e a
+meia transferência gritando.
+
+**NÃO verificado:** nenhum lançamento de verdade foi ao OMIE. O primeiro tem
+de ser UM, conferido lá antes do segundo — e numa transferência isso vale em
+dobro, porque ela mexe em duas contas.
+
+---
 ---
 
 ## Regras que não se discutem

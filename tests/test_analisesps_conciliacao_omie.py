@@ -170,3 +170,125 @@ def test_a_baixa_usa_a_conta_corrente_e_a_data_do_extrato():
     assert baixa["codigo_conta_corrente"] == 9999
     assert baixa["data"] == "10/09/2026"
     assert baixa["valor"] == 9.0
+
+
+# ---------------------------------------------------------------------------
+# TRANSFERÊNCIA ENTRE CONTAS — 24/09/2026
+#
+# *"Transferência no OMIE: você seleciona a conta origem e a conta destino, e
+# já interfere nas duas pontas."*
+#
+# ⚠️ COMO O OMIE REPRESENTA ISSO, e foi o espelho do painel que respondeu: um
+# PAR DE TÍTULOS com a categoria marcada como transferência. É essa marca que
+# a tira do DRE. Não há rota especial a inventar — é o mesmo caminho dos
+# aportes, que roda e que ele já validou.
+# ---------------------------------------------------------------------------
+TIPO_TRANSF = {"id": 9, "nome": "Transferência", "palavras": "TRANSF CC",
+               "codigo_categoria": "9.99.99", "codigo_cliente": 333,
+               "cod_departamento": "", "ativo": True, "ordem": 9,
+               "natureza": "transferencia"}
+
+DESTINO = {"id": 2, "nome": "BB 1234", "omie_conta_corrente": 8888}
+
+
+class ClienteQueAnota:
+    def __init__(self, falhar_em=None):
+        self.chamadas = []
+        self.falhar_em = falhar_em or []
+        self.proximo = 100
+
+    def _call(self, url, acao, param):
+        self.chamadas.append((acao, param))
+        if acao in self.falhar_em:
+            raise RuntimeError("o OMIE recusou")
+        self.proximo += 1
+        return {"codigo_lancamento_omie": self.proximo}
+
+
+def test_transferencia_SEM_destino_escolhido_e_recusada():
+    """⚠️ Adivinhar o destino poria o dinheiro numa conta que ninguém pediu."""
+    plano = co.planejar([linha(descricao="TRANSF CC PARA CC PJ")], CONTA,
+                        [TIPO_TRANSF])
+    assert plano["vai"] == []
+    assert "escolha a conta de destino" in plano["nao_vai"][0]["motivo"]
+    assert plano["nao_vai"][0]["pede_destino"] is True
+
+
+def test_destino_sem_conta_corrente_do_OMIE_e_recusado():
+    plano = co.planejar([linha(descricao="TRANSF CC PARA CC PJ")], CONTA,
+                        [TIPO_TRANSF],
+                        destinos={10: {"id": 2, "nome": "BB 1234",
+                                       "omie_conta_corrente": None}})
+    assert plano["vai"] == []
+    assert "não tem a conta corrente do OMIE" in plano["nao_vai"][0]["motivo"]
+
+
+def test_a_transferencia_cria_AS_DUAS_PONTAS(monkeypatch):
+    """A saída na conta de origem e a entrada na de destino — é o que faz o
+    dinheiro aparecer nas duas, como ele descreveu."""
+    monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    plano = co.planejar([linha(descricao="TRANSF CC PARA CC PJ",
+                               valor="-30000.00")],
+                        CONTA, [TIPO_TRANSF], destinos={10: DESTINO})
+    assert plano["vai"][0]["transferencia"] is True
+
+    cli = ClienteQueAnota()
+    feito = co.lancar(plano["vai"], "MARCELO", cli)
+
+    acoes = [a for a, _ in cli.chamadas]
+    assert acoes == ["IncluirContaPagar", "LancarPagamento",
+                     "IncluirContaReceber", "LancarRecebimento"]
+
+    saida = cli.chamadas[0][1]
+    entrada = cli.chamadas[2][1]
+    assert saida["id_conta_corrente"] == 9999      # origem
+    assert entrada["id_conta_corrente"] == 8888    # destino
+    assert saida["valor_documento"] == entrada["valor_documento"] == 30000.0
+    assert feito["feitos"][0]["codigo_par"]
+
+
+def test_a_segunda_ponta_tem_codigo_de_integracao_PROPRIO(monkeypatch):
+    """⚠️ Com o mesmo código, o OMIE recusaria a segunda ponta como repetição
+    da primeira — e a transferência ficaria pela metade toda vez, sem ninguém
+    entender por quê."""
+    monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    plano = co.planejar([linha(id_=42, descricao="TRANSF CC PARA CC PJ")],
+                        CONTA, [TIPO_TRANSF], destinos={42: DESTINO})
+    cli = ClienteQueAnota()
+    co.lancar(plano["vai"], "T", cli)
+
+    saida = cli.chamadas[0][1]["codigo_lancamento_integracao"]
+    entrada = cli.chamadas[2][1]["codigo_lancamento_integracao"]
+    assert saida == "CONC42"
+    assert entrada == "CONC42D"
+    assert saida != entrada
+
+
+def test_meia_transferencia_GRITA(monkeypatch):
+    """⚠️ Dinheiro que saiu de uma conta e não entrou em nenhuma: o saldo das
+    DUAS fica errado. É o pior estado possível, e a tela tem de dizer isso com
+    todas as letras em vez de contar como sucesso parcial."""
+    monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    plano = co.planejar([linha(descricao="TRANSF CC PARA CC PJ")], CONTA,
+                        [TIPO_TRANSF], destinos={10: DESTINO})
+    cli = ClienteQueAnota(falhar_em=["IncluirContaReceber"])
+
+    feito = co.lancar(plano["vai"], "T", cli)
+
+    assert len(feito["falhas"]) == 1
+    erro = feito["falhas"][0]["erro"]
+    assert "METADE DA TRANSFERÊNCIA" in erro
+    assert "BB 1234" in erro
+    assert "saldo das duas contas está errado" in erro
+
+
+def test_o_tipo_normal_NAO_cria_segunda_ponta(monkeypatch):
+    """Só a transferência tem duas pontas. Uma tarifa com segunda ponta seria
+    dinheiro inventado."""
+    monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    plano = co.planejar([linha()], CONTA, TIPOS)
+    cli = ClienteQueAnota()
+    co.lancar(plano["vai"], "T", cli)
+
+    assert [a for a, _ in cli.chamadas] == ["IncluirContaPagar",
+                                            "LancarPagamento"]

@@ -67,14 +67,17 @@ def _pronto() -> bool:
 def tipos(so_ativos: bool = True) -> list[dict]:
     if not _pronto():
         return []
-    from .db import consultar
+    from .db import consultar, tem_coluna
     onde = " WHERE ativo" if so_ativos else ""
+    # ⚠️ A NATUREZA É DA MIGRAÇÃO 022, e o código sobe antes do botão.
+    natureza = ("natureza" if tem_coluna("conciliacao_tipo", "natureza")
+                else "'normal' AS natureza")
     linhas = consultar(
         "SELECT id, nome, palavras, codigo_categoria, codigo_cliente, "
-        "       cod_departamento, ativo, ordem "
+        f"       cod_departamento, ativo, ordem, {natureza} "
         f"  FROM analisesps.conciliacao_tipo{onde} ORDER BY ordem, lower(nome)")
     nomes = ["id", "nome", "palavras", "codigo_categoria", "codigo_cliente",
-             "cod_departamento", "ativo", "ordem"]
+             "cod_departamento", "ativo", "ordem", "natureza"]
     return [dict(zip(nomes, linha)) for linha in linhas]
 
 
@@ -84,6 +87,9 @@ def gravar_tipo(dados: dict, quem: str = "") -> int:
         raise ErroDoLancamento("O tipo precisa de um nome.")
     from .db import conexao
 
+    natureza = ("transferencia"
+                if str(dados.get("natureza") or "").strip() == "transferencia"
+                else "normal")
     campos = (
         nome,
         str(dados.get("palavras") or "").strip(),
@@ -93,6 +99,7 @@ def gravar_tipo(dados: dict, quem: str = "") -> int:
         str(dados.get("cod_departamento") or "").strip(),
         bool(dados.get("ativo", True)),
         int(dados.get("ordem") or 0),
+        natureza,
     )
     tipo_id = dados.get("id")
     with conexao() as con:
@@ -100,15 +107,16 @@ def gravar_tipo(dados: dict, quem: str = "") -> int:
             con.execute(
                 "UPDATE analisesps.conciliacao_tipo SET nome=?, palavras=?, "
                 "       codigo_categoria=?, codigo_cliente=?, "
-                "       cod_departamento=?, ativo=?, ordem=? WHERE id=?",
+                "       cod_departamento=?, ativo=?, ordem=?, natureza=? "
+                " WHERE id=?",
                 campos + (int(tipo_id),))
             con.commit()
             return int(tipo_id)
         cur = con.execute(
             "INSERT INTO analisesps.conciliacao_tipo "
             "  (nome, palavras, codigo_categoria, codigo_cliente, "
-            "   cod_departamento, ativo, ordem, criado_por) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", campos + (quem,))
+            "   cod_departamento, ativo, ordem, natureza, criado_por) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", campos + (quem,))
         novo = int(cur.fetchone()[0])
         con.commit()
     logger.info("Conciliação: %s criou o tipo %s.", quem or "?", nome)
@@ -157,12 +165,16 @@ def _codigo_de_integracao(linha_id: int) -> str:
     return f"CONC{int(linha_id)}"
 
 
-def planejar(linhas: list, conta: dict, lista_tipos: list = None) -> dict:
+def planejar(linhas: list, conta: dict, lista_tipos: list = None,
+             destinos: dict = None) -> dict:
     """O que aconteceria com cada linha marcada. NÃO fala com o OMIE.
 
     Separa em `vai` (dá para lançar) e `nao_vai` (e o motivo de cada uma). A
     lista dos que não vão é tão importante quanto a outra: é ela que diz ao
     dono o que falta configurar, em vez de o lote inteiro falhar sem explicar.
+
+    `destinos` é `{linha_id: conta}` e só vale para tipo de TRANSFERÊNCIA —
+    é a conta para onde o dinheiro foi.
     """
     lista_tipos = lista_tipos if lista_tipos is not None else tipos()
     vai, nao_vai = [], []
@@ -195,10 +207,38 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None) -> dict:
             continue
 
         valor = Decimal(str(linha["valor"]))
+        # ⚠️ A TRANSFERÊNCIA PRECISA DA CONTA DE DESTINO, e ela não é chutada:
+        # sem destino escolhido, a linha é recusada com o motivo. Adivinhar o
+        # destino poria o dinheiro numa conta que ninguém pediu.
+        e_transferencia = (tipo.get("natureza") == "transferencia")
+        destino = destinos.get(linha["id"]) if destinos else None
+        if e_transferencia and not destino:
+            nao_vai.append({"id": linha.get("id"),
+                            "motivo": "é transferência — escolha a conta de "
+                                      "destino",
+                            "descricao": (linha.get("descricao") or "")[:90],
+                            "data": linha.get("data"),
+                            "valor": linha.get("valor"),
+                            "pede_destino": True})
+            continue
+        if e_transferencia and not (destino or {}).get("omie_conta_corrente"):
+            nao_vai.append({"id": linha.get("id"),
+                            "motivo": f"a conta de destino "
+                                      f"\"{(destino or {}).get('nome', '?')}\" "
+                                      "não tem a conta corrente do OMIE",
+                            "descricao": (linha.get("descricao") or "")[:90],
+                            "data": linha.get("data"),
+                            "valor": linha.get("valor")})
+            continue
+
         vai.append({
             "linha_id": linha["id"],
             "tipo_id": tipo["id"],
             "tipo": tipo["nome"],
+            "transferencia": e_transferencia,
+            "destino_id": (destino or {}).get("id"),
+            "destino_nome": (destino or {}).get("nome", ""),
+            "destino_conta_corrente": (destino or {}).get("omie_conta_corrente"),
             # ⚠️ O SENTIDO VEM DO SINAL, não de configuração: negativo é conta
             # a pagar, positivo é conta a receber. Um estorno de tarifa entra
             # sozinho do lado certo, e não há campo a mais para errar.
@@ -367,12 +407,43 @@ def lancar(itens: list, quem: str = "", cliente=None) -> dict:
             baixa_ok = False
             erro_baixa = str(e)[:400]
 
+        # ⚠️ A TRANSFERÊNCIA TEM DUAS PONTAS, e a segunda é feita AQUI, depois
+        # da primeira ter entrado. No OMIE a transferência é um PAR DE TÍTULOS
+        # com categoria marcada como transferência — foi o espelho do painel
+        # que respondeu isso (`painel/sync/fato.py`: transferencia=S vai para o
+        # balde TRF e não entra no resultado). Não há rota especial a inventar.
+        #
+        # ⚠️ E SE A SEGUNDA PONTA FALHAR, A LINHA DIZ ISSO ALTO. Meia
+        # transferência é dinheiro que saiu de uma conta e não entrou em
+        # nenhuma — o saldo das duas fica errado, e é o pior estado possível.
+        codigo_par = None
+        if item.get("transferencia") and baixa_ok:
+            codigo_par, erro_par = _outra_ponta(cli, item, quem)
+            if erro_par:
+                _registrar(item["linha_id"], item["tipo_id"],
+                           item["codigo_integracao"], "meia_transferencia",
+                           quem, codigo=codigo, erro=erro_par,
+                           conta_par=item.get("destino_id"))
+                falhas.append({
+                    "linha_id": item["linha_id"],
+                    "descricao": item["descricao"][:90],
+                    "erro": (f"⚠️ METADE DA TRANSFERÊNCIA ENTROU: o título "
+                             f"{codigo} saiu da conta de origem, mas a entrada "
+                             f"em \"{item.get('destino_nome')}\" falhou. O "
+                             f"saldo das duas contas está errado no OMIE até "
+                             f"alguém lançar a outra ponta. ({erro_par[:150]})")})
+                feitos.append({"linha_id": item["linha_id"], "codigo": codigo,
+                               "baixado": baixa_ok,
+                               "descricao": item["descricao"][:90]})
+                continue
+
         _registrar(item["linha_id"], item["tipo_id"],
                    item["codigo_integracao"],
                    "gravado" if baixa_ok else "sem_baixa", quem,
-                   codigo=codigo, erro=erro_baixa)
+                   codigo=codigo, erro=erro_baixa, codigo_par=codigo_par,
+                   conta_par=item.get("destino_id"))
         feitos.append({"linha_id": item["linha_id"], "codigo": codigo,
-                       "baixado": baixa_ok,
+                       "codigo_par": codigo_par, "baixado": baixa_ok,
                        "descricao": item["descricao"][:90]})
         if not baixa_ok:
             falhas.append({
@@ -386,19 +457,53 @@ def lancar(itens: list, quem: str = "", cliente=None) -> dict:
     return {"gravados": len(feitos), "feitos": feitos, "falhas": falhas}
 
 
+def _outra_ponta(cli, item: dict, quem: str):
+    """A ENTRADA na conta de destino. Devolve `(codigo, erro)`.
+
+    ⚠️ O CÓDIGO DE INTEGRAÇÃO DELA É OUTRO ("CONC5D"), senão o OMIE recusaria
+    a segunda ponta como repetição da primeira — e a transferência ficaria
+    pela metade toda vez, sem ninguém entender por quê.
+    """
+    from .aportes_omie import PORTAS
+    url, acao, _excluir, url_baixa, acao_baixa = PORTAS["R"]
+    entrada = dict(item,
+                   sentido="receber",
+                   id_conta_corrente=int(item["destino_conta_corrente"]),
+                   codigo_integracao=item["codigo_integracao"] + "D",
+                   descricao=f"{item['descricao']} (entrada da transferência)")
+    try:
+        resposta = cli._call(url, acao, montar_inclusao(entrada))
+        codigo = _numero_do_titulo(resposta)
+        if not codigo:
+            return None, "o OMIE aceitou mas não devolveu o número do título"
+        cli._call(url_baixa, acao_baixa, montar_baixa(entrada, codigo))
+        return codigo, ""
+    except Exception as e:  # noqa: BLE001 — quem lê a frase é o dono
+        logger.exception("Conciliação: falhou a outra ponta da transferência")
+        return None, str(e)[:400]
+
+
 def _registrar(linha_id: int, tipo_id: int, integracao: str, situacao: str,
-               quem: str, codigo=None, erro: str = "") -> None:
+               quem: str, codigo=None, erro: str = "", codigo_par=None,
+               conta_par=None) -> None:
     """Grava na linha do extrato o que aconteceu com ela no OMIE."""
-    from .db import conexao
+    from .db import conexao, tem_coluna
+    # ⚠️ AS COLUNAS DO PAR SÃO DA MIGRAÇÃO 022, e o código sobe antes do botão.
+    com_par = tem_coluna("conciliacao_extrato", "omie_codigo_par")
+    extra = (", omie_codigo_par = coalesce(?, omie_codigo_par), "
+             "conta_par_id = coalesce(?, conta_par_id)") if com_par else ""
+    valores_par = ((int(codigo_par) if codigo_par else None,
+                    int(conta_par) if conta_par else None) if com_par else ())
     with conexao() as con:
         con.execute(
             "UPDATE analisesps.conciliacao_extrato "
             "   SET tipo_id = ?, omie_integracao = ?, omie_situacao = ?, "
             "       omie_codigo = coalesce(?, omie_codigo), omie_erro = ?, "
-            "       omie_em = now(), omie_por = ? "
+            f"       omie_em = now(), omie_por = ?{extra} "
             " WHERE id = ?",
             (int(tipo_id) if tipo_id else None, integracao, situacao,
-             int(codigo) if codigo else None, erro, quem, int(linha_id)))
+             int(codigo) if codigo else None, erro, quem) + valores_par
+            + (int(linha_id),))
         con.commit()
 
 
@@ -417,7 +522,8 @@ def pendencias() -> list[dict]:
         "       e.omie_situacao, e.omie_erro, c.nome "
         "  FROM analisesps.conciliacao_extrato e "
         "  JOIN analisesps.conciliacao_conta c ON c.id = e.conta_id "
-        " WHERE e.omie_situacao IN ('enviando', 'sem_baixa', 'falhou') "
+        " WHERE e.omie_situacao IN ('enviando', 'sem_baixa', 'falhou', "
+        "                          'meia_transferencia') "
         " ORDER BY e.omie_em DESC LIMIT 100")
     nomes = ["id", "data", "descricao", "valor", "omie_codigo",
              "omie_situacao", "omie_erro", "conta"]

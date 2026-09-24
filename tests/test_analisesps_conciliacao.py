@@ -733,3 +733,53 @@ def test_sem_a_lista_do_OMIE_a_tela_ABRE_e_deixa_digitar(app_com_dados,
 
     assert '<input class="campo-largo" name="codigo_categoria"' in html
     assert "a carga do painel nunca rodou" in html
+
+
+def test_o_javascript_da_tela_e_sintaticamente_valido():
+    """⚠️ ESTA TELA TEM MUITO JAVASCRIPT, e um erro de sintaxe nele NÃO aparece
+    em nenhum outro teste: o HTML monta, a tela abre, e simplesmente nada
+    funciona — o tique não marca, o arquivo não sobe, nada avisa. Aqui o
+    script é extraído (sem o Jinja) e passado pelo Node.
+
+    Se o Node não existir na máquina, o teste é pulado em vez de falhar: ele é
+    uma rede, não um requisito de ambiente.
+    """
+    import pathlib
+    import re
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not shutil.which("node"):
+        pytest.skip("node não está nesta máquina")
+
+    caminho = (pathlib.Path(web.__file__).parent / "templates"
+               / "analisesps_conciliacao.html")
+    html = caminho.read_text(encoding="utf-8")
+    ini = html.index("<script>", html.index("{% block scripts %}"))
+    js = html[ini + len("<script>"):html.index("</script>", ini)]
+    # O Jinja sai: `{{ ... }}` vira um literal, `{% ... %}` some.
+    js = re.sub(r"\{\{[^}]*\}\}", "0", js)
+    js = re.sub(r"\{%.*?%\}", "", js, flags=re.S)
+
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as arquivo:
+        arquivo.write(js)
+        nome = arquivo.name
+    saida = subprocess.run(["node", "--check", nome], capture_output=True,
+                           text=True)
+    assert saida.returncode == 0, saida.stderr[:900]
+
+
+def test_a_transferencia_pede_a_conta_de_destino_na_tela(app_com_dados):
+    """⚠️ Adivinhar o destino poria o dinheiro numa conta que ninguém pediu.
+    O dono: *"você seleciona a conta origem e a conta destino, e já interfere
+    nas duas pontas"*."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert "destino-transf" in html
+    assert "transferência — para " in html
+    assert "qual conta o dinheiro foi?" in html
+    assert 'name="natureza"' in html
+    assert "Transferência entre contas" in html

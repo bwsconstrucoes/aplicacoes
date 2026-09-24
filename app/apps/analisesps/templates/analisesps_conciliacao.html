@@ -433,7 +433,7 @@
   <table class="sps" style="margin-top:10px">
     <thead><tr><th>Tipo</th><th>Reconhece pelo histórico</th>
       <th>Categoria no OMIE</th><th>Fornecedor/cliente</th><th>Obra</th>
-      <th></th></tr></thead>
+      <th>O que é</th><th></th></tr></thead>
     <tbody>
       {% for tp in tipos_omie %}
         <tr {% if not tp.ativo %}class="apagada"{% endif %}>
@@ -442,6 +442,9 @@
           <td><code>{{ tp.codigo_categoria or '—' }}</code></td>
           <td>{{ tp.codigo_cliente or '—' }}</td>
           <td>{{ tp.cod_departamento or '—' }}</td>
+          <td>{% if tp.natureza == 'transferencia' %}
+                <span class="etiqueta">transferência</span>
+              {% else %}movimento{% endif %}</td>
           <td><button class="btn secundario editar-tipo"
                       data-tipo="{{ tp|tojson|forceescape }}">Editar</button></td>
         </tr>
@@ -473,6 +476,15 @@
         {% endif %}</div>
       <div><label class="rotulo-campo">Código do fornecedor/cliente</label>
         <input class="campo-largo" name="codigo_cliente" placeholder="1234567"></div>
+      <div><label class="rotulo-campo">O que é</label>
+        {# ⚠️ TRANSFERÊNCIA MEXE NAS DUAS PONTAS: sai de uma conta e entra na
+           outra. Por isso ela pede a conta de destino na hora de lançar, e a
+           categoria dela tem de ser uma marcada como transferência no plano
+           financeiro do OMIE — é essa marca que a tira do DRE. #}
+        <select class="campo-largo" name="natureza">
+          <option value="normal">Movimento normal (tarifa, rentabilidade…)</option>
+          <option value="transferencia">Transferência entre contas</option>
+        </select></div>
       <div><label class="rotulo-campo">Obra (opcional)</label>
         {% if listas_omie.obras %}
           <select class="campo-largo" name="cod_departamento">
@@ -1217,13 +1229,48 @@ if (btnOmie) btnOmie.addEventListener("click", async () => {
   abrir("cartao-omie");
   alvo.innerHTML = '<div class="aviso">Conferindo…</div>';
 
+  await ensaiarOmie(ids, {});
+});
+
+// ⚠️ A TRANSFERÊNCIA PEDE A CONTA DE DESTINO, e ela não é chutada: adivinhar
+// poria o dinheiro numa conta que ninguém pediu. Quando o ensaio devolve
+// linhas pedindo destino, a tela mostra um seletor para cada uma e reensaia
+// com a resposta — só então o botão de lançar aparece.
+let destinosEscolhidos = {};
+
+async function ensaiarOmie(ids, destinos) {
+  const alvo = document.getElementById("saida-omie");
+  alvo.innerHTML = '<div class="aviso">Conferindo…</div>';
   const d = await pedir("{{ url_for('analisesps.conciliacao_omie_ensaiar') }}",
-                        {ids: ids, conta_id: CONTA_ID});
+                        {ids: ids, conta_id: CONTA_ID, destinos: destinos});
   if (!d.ok) { alvo.innerHTML = '<div class="aviso erro">' + d.erro + '</div>'; return; }
+  desenharEnsaio(d, ids);
+}
+
+function desenharEnsaio(d, ids) {
+  const alvo = document.getElementById("saida-omie");
 
   let html = '<div class="aviso ' + (d.vai.length ? 'atencao' : 'erro') + '">';
   html += '<b>' + d.vai.length + ' de ' + (d.vai.length + d.nao_vai.length) +
     ' linha(s) podem ser lançadas</b> na conta ' + d.conta + '.';
+
+  const pedindo = d.nao_vai.filter(l => l.pede_destino);
+  if (pedindo.length) {
+    html += '<br><br><b>' + pedindo.length + ' é/são transferência — para ' +
+      'qual conta o dinheiro foi?</b><table class="sps" style="margin-top:6px">' +
+      '<tbody>';
+    pedindo.forEach(l => {
+      html += '<tr><td>' + l.descricao + '</td><td class="direita">' +
+        dinheiro(l.valor) + '</td><td><select class="destino-transf" ' +
+        'data-linha="' + l.linha_id + '"><option value="">— escolha —</option>';
+      (d.contas || []).forEach(c => {
+        html += '<option value="' + c.id + '">' + c.nome + '</option>';
+      });
+      html += '</select></td></tr>';
+    });
+    html += '</tbody></table>' +
+      '<button class="btn secundario" id="btn-conferir-destinos">Conferir de novo</button>';
+  }
 
   if (d.vai.length) {
     html += '<table class="sps" style="margin-top:8px"><thead><tr><th>Data</th>' +
@@ -1232,7 +1279,9 @@ if (btnOmie) btnOmie.addEventListener("click", async () => {
     d.vai.forEach(l => {
       html += '<tr><td>' + l.data + '</td><td>' + l.descricao + '</td><td>' +
         l.tipo + '</td><td><code>' + l.categoria + '</code></td><td>' +
-        (l.sentido === "pagar" ? "conta a pagar" : "conta a receber") +
+        (l.transferencia
+          ? '<b>transferência</b> para ' + l.destino + ' — sai daqui e entra lá'
+          : (l.sentido === "pagar" ? "conta a pagar" : "conta a receber")) +
         '</td><td class="direita">' + dinheiro(l.valor) + '</td></tr>';
     });
     html += '</tbody></table>';
@@ -1262,12 +1311,21 @@ if (btnOmie) btnOmie.addEventListener("click", async () => {
   if (cancelar) cancelar.addEventListener("click", () => {
     document.getElementById("cartao-omie").close();
   });
+  const conferirDestinos = document.getElementById("btn-conferir-destinos");
+  if (conferirDestinos) conferirDestinos.addEventListener("click", () => {
+    destinosEscolhidos = {};
+    document.querySelectorAll(".destino-transf").forEach(s => {
+      if (s.value) destinosEscolhidos[s.dataset.linha] = s.value;
+    });
+    ensaiarOmie(ids, destinosEscolhidos);
+  });
   const lancar = document.getElementById("btn-lancar-omie");
   if (lancar) lancar.addEventListener("click", async () => {
     lancar.disabled = true;
     lancar.textContent = "Lançando… (pode levar um tempo)";
     const f = await pedir("{{ url_for('analisesps.conciliacao_omie_lancar') }}",
-                          {ids: ids, conta_id: CONTA_ID});
+                          {ids: ids, conta_id: CONTA_ID,
+                           destinos: destinosEscolhidos});
     if (!f.ok) {
       alvo.innerHTML = '<div class="aviso erro">' + (f.erro || "não deu certo") +
         '</div>';
@@ -1284,7 +1342,7 @@ if (btnOmie) btnOmie.addEventListener("click", async () => {
     alvo.innerHTML = fim;
     setTimeout(() => location.reload(), f.falhas.length ? 8000 : 2000);
   });
-});
+}
 
 // --- os tipos de movimento --------------------------------------------------
 const formTipo = document.getElementById("form-tipo");
@@ -1293,7 +1351,7 @@ if (formTipo) {
     b.addEventListener("click", () => {
       const tp = JSON.parse(b.dataset.tipo);
       ["id", "nome", "palavras", "codigo_categoria", "codigo_cliente",
-       "cod_departamento"].forEach(k => {
+       "cod_departamento", "natureza"].forEach(k => {
         const campo = formTipo.querySelector('[name="' + k + '"]');
         if (campo) campo.value = tp[k] === null || tp[k] === undefined ? "" : tp[k];
       });

@@ -1878,10 +1878,31 @@ def _linhas_para_o_omie(ids: list, conta_id: int) -> tuple:
     return [dict(zip(nomes, linha)) for linha in linhas], conta
 
 
+def _destinos_pedidos(dados: dict) -> dict:
+    """`{linha_id: conta}` — as contas de destino escolhidas na tela.
+
+    ⚠️ A CONTA VEM DO BANCO PELO NÚMERO, e nunca do que o navegador mandou:
+    o que sai daqui é lançamento contábil em duas contas.
+    """
+    from . import conciliacao as conc
+    cru = dados.get("destinos") or {}
+    if not isinstance(cru, dict) or not cru:
+        return {}
+    todas = {c["id"]: c for c in conc.contas(so_ativas=False)}
+    saida = {}
+    for linha_id, conta_id in cru.items():
+        if str(linha_id).isdigit() and str(conta_id).isdigit():
+            achada = todas.get(int(conta_id))
+            if achada:
+                saida[int(linha_id)] = achada
+    return saida
+
+
 @bp.route("/api/conciliacao/omie/ensaiar", methods=["POST"])
 @exige_operador
 def conciliacao_omie_ensaiar():
     """O que SERIA lançado. Não fala com o OMIE."""
+    from . import conciliacao as conc
     from . import conciliacao_omie as co
 
     dados = request.get_json(silent=True) or {}
@@ -1894,16 +1915,21 @@ def conciliacao_omie_ensaiar():
     if not conta:
         return {"ok": False, "erro": "Conta não encontrada."}
 
-    plano = co.planejar(linhas, conta)
+    plano = co.planejar(linhas, conta, destinos=_destinos_pedidos(dados))
     return {"ok": True,
             "conta": conta["nome"],
+            "contas": [{"id": c["id"], "nome": c["nome"]}
+                       for c in conc.contas() if c["id"] != conta["id"]],
             "vai": [{"linha_id": x["linha_id"], "tipo": x["tipo"],
                      "sentido": x["sentido"], "valor": str(x["valor"]),
                      "data": x["data"].strftime("%d/%m/%Y"),
                      "categoria": x["codigo_categoria"],
+                     "transferencia": x.get("transferencia", False),
+                     "destino": x.get("destino_nome", ""),
                      "descricao": x["descricao"][:90]} for x in plano["vai"]],
             "nao_vai": [{"linha_id": x["id"], "motivo": x["motivo"],
                          "descricao": x["descricao"],
+                         "pede_destino": x.get("pede_destino", False),
                          "valor": str(x["valor"] or 0)}
                         for x in plano["nao_vai"]],
             "total": str(plano["total"])}
@@ -1924,7 +1950,7 @@ def conciliacao_omie_lancar():
         return {"ok": False, "erro": "Marque as linhas primeiro."}
 
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    plano = co.planejar(linhas, conta)
+    plano = co.planejar(linhas, conta, destinos=_destinos_pedidos(dados))
     if not plano["vai"]:
         return {"ok": False,
                 "erro": "Nenhuma das linhas marcadas pode ser lançada.",
