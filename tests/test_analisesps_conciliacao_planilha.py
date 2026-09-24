@@ -194,8 +194,10 @@ def test_as_colunas_extras_viram_OBSERVACAO_com_o_nome_delas():
     nome da coluna junto, "conferir" sozinho não diria nada daqui a um ano."""
     lido = planilha.interpretar(BRADESCO_IFPE, "BD IFPE 2541")
 
+    # A coluna K não tem cabeçalho e entra assim mesmo, chamada pela letra —
+    # é justamente o caso que a primeira versão deixava de fora.
     assert lido["observacao_veio_de"] == ["Obs. 1", "Obs. 2",
-                                          "Status Tarifa Omie"]
+                                          "Status Tarifa Omie", "coluna K"]
     assert lido["linhas"][0]["observacao"] == ""
     assert lido["linhas"][1]["observacao"] == ("Obs. 1: conferir · "
                                                "Status Tarifa Omie: tarifa ok")
@@ -324,3 +326,60 @@ def test_endereco_que_nao_e_planilha_e_recusado(monkeypatch):
     with pytest.raises(planilha.ErroDaPlanilha) as erro:
         planilha.guardar_planilha("isso aqui não é planilha nenhuma")
     assert "planilha do Google" in str(erro.value)
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O DEFEITO QUE PASSOU EM SILÊNCIO — 24/09/2026
+#
+# Ele importou de verdade e voltou: *"tenho a impressão que não foi importada
+# as observações (…) confirmo, nenhuma observação foi importada."*
+#
+# A regra antiga só olhava colunas com CABEÇALHO preenchido. Nas abas do
+# Bradesco dele, as colunas de anotação NÃO TÊM CABEÇALHO NENHUM. O sistema
+# importou tudo, disse que deu certo, e deixou dois anos de anotação para trás
+# sem avisar — o pior tipo de defeito, o que parece sucesso.
+#
+# A regra dele: *"a coluna subsequente ao último dado (…) porque tem uns que o
+# último dado, o saldo, fica numa coluna e outra coluna. Então seria a
+# informação subsequente."*
+# ---------------------------------------------------------------------------
+BRADESCO_SEM_CABECALHO_NAS_SOBRAS = [
+    # DATA  DESCRIÇÃO  (vazia) TIPO  CRÉDITO DEBITO SALDO  H  I  J  K  Conciliado
+    ["DATA", "DESCRIÇÃO", "", "TIPO", "CRÉDITO", "DEBITO", "SALDO",
+     "", "", "", "", "Conciliado"],
+    ["08/10/2024", "PAGTO ELETRON COBRANCA", "", "938", "", "-675,87",
+     "636.750,03", "falta nota", "", "ver com o Nilo", "urgente", "Conciliado"],
+    ["09/10/2024", "TARIFA BANCARIA", "", "41024", "", "-9,00",
+     "636.741,03", "", "", "", "", "Conciliado"],
+]
+
+
+def test_coluna_SEM_CABECALHO_depois_do_saldo_vira_observacao():
+    """⚠️ O defeito que fez o dono perder dois anos de anotação na primeira
+    importação. Nenhuma dessas colunas tem nome no cabeçalho."""
+    lido = planilha.interpretar(BRADESCO_SEM_CABECALHO_NAS_SOBRAS, "BD 50302")
+
+    primeira = lido["linhas"][0]
+    assert primeira["observacao"] == ("coluna H: falta nota · "
+                                      "coluna J: ver com o Nilo · "
+                                      "coluna K: urgente")
+    # A linha sem nada anotado continua sem observação — e não com os rótulos
+    # das colunas vazias pendurados nela.
+    assert lido["linhas"][1]["observacao"] == ""
+
+
+def test_a_coluna_de_conciliado_NAO_entra_na_observacao():
+    """Ela é a marca, não uma anotação. Entrando, toda linha conciliada teria
+    a palavra "Conciliado" escrita na observação, para sempre."""
+    lido = planilha.interpretar(BRADESCO_SEM_CABECALHO_NAS_SOBRAS, "BD 50302")
+    assert "Conciliado" not in lido["linhas"][0]["observacao"]
+    assert lido["linhas"][0]["conciliado"] is True
+
+
+def test_a_letra_da_coluna_e_a_da_planilha():
+    """"coluna H" tem de ser a coluna H que ele vê no Google, senão o rótulo
+    atrapalha em vez de ajudar."""
+    assert planilha.letra_da_coluna(0) == "A"
+    assert planilha.letra_da_coluna(7) == "H"
+    assert planilha.letra_da_coluna(10) == "K"
+    assert planilha.letra_da_coluna(26) == "AA"

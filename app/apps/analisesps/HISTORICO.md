@@ -6892,6 +6892,86 @@ e é justamente por isso que este defeito chegou até ele. Uma tela nova deste
 módulo precisa ser vista antes de ser publicada, e eu não tenho como.
 
 ---
+
+### Octogésima nona leva (24/09) — o uso de verdade, e o defeito que parecia sucesso
+
+Ele importou a planilha e usou a tela. Voltou com seis coisas, e uma delas era
+grave.
+
+#### ⚠️ NENHUMA OBSERVAÇÃO FOI IMPORTADA — e o sistema disse que deu certo
+
+> *"Tenho a impressão que não foi importada as observações. (…) Confirmo.
+> Nenhuma observação foi importada."*
+
+A regra de quais colunas viram observação só olhava colunas com **cabeçalho
+preenchido**. Nas abas do Bradesco dele, as colunas de anotação (H, J, K)
+**não têm cabeçalho nenhum**. O sistema importou tudo, informou sucesso, e
+deixou dois anos de anotação para trás **em silêncio**.
+
+**É o pior tipo de defeito: o que parece sucesso.** Nada na tela indicava a
+perda — ele só descobriu porque foi procurar uma anotação que sabia existir.
+
+A regra dele, agora implementada: *"a coluna subsequente ao último dado (…)
+porque tem uns que o último dado, o saldo, fica numa coluna e outra coluna.
+Então seria a informação subsequente."* Ou seja: **tudo entre a última coluna
+de dado e a coluna de Conciliado**, com ou sem cabeçalho. Coluna sem nome é
+chamada pela letra dela na planilha ("coluna H"), para a observação dizer de
+onde veio.
+
+**E reimportar agora PREENCHE o que faltou, sem apagar nada.** Sem isso ele
+teria de apagar tudo e recomeçar. A regra: só preenche o que está vazio; a
+observação escrita aqui dentro vale mais que a da planilha, e conciliado só
+sobe de não para sim — desmarcar o que ele conferiu no sistema porque a
+planilha está atrasada seria pior do que não importar.
+
+#### O saldo não batia, e não era defeito
+
+> *"Eu estou vendo o saldo, por exemplo, não está batendo de uma determinada
+> conta. Acho que merece ser colocado o saldo inicial, e uma data."*
+
+**O extrato importado começa no dia em que a planilha dele começou.** Tudo o
+que a conta movimentou antes disso não existe aqui — e a diferença no saldo
+tinha exatamente esse tamanho. A conta ganhou **saldo inicial e data**
+(migração 020), e a soma passa a partir dali.
+
+**⚠️ O que é anterior à data do saldo inicial NÃO é somado de novo:** "no dia
+31/08 a conta tinha 100 mil" quer dizer o saldo no FIM daquele dia. Somar os
+lançamentos daquele dia contaria o mesmo dinheiro duas vezes, e o erro seria
+silencioso. Há teste com banco para os dois lados, e outro garantindo que a
+coluna Saldo da lista concorda com o número do topo — se discordassem, não
+haveria como saber em qual acreditar.
+
+**Enquanto a conta não tiver saldo inicial, o número do topo diz isso**, em
+vez de mostrar um saldo que não bate sem explicação.
+
+#### As quatro de tela
+
+1. **O Histórico esticava a tabela** (*"é o campo que estica a tela (…) o campo
+   de observação está bem diminuto em relação a ele"*). Ele era a única coluna
+   **sem largura declarada**, e por isso engolia toda a sobra. Agora todas as
+   larguras são declaradas, e a sobra vai para a **observação** — que é onde
+   ele escreve, e onde a falta de espaço atrapalha de verdade.
+2. **"Contas" e "Trazer a planilha antiga" saíram do rodapé** (*"você vai
+   manuseando e isso vai estar sempre aparecendo"*). Viraram **dois botões na
+   barra lateral** que abrem uma janela por cima. A regra que fica: **o que se
+   configura uma vez não divide espaço com o que se faz o dia inteiro.**
+3. **Os números do topo viraram filtros** (*"se eu clicar em falta conciliar,
+   eu já sei listado imediatamente as que faltam"*). Clicar troca só a
+   SITUAÇÃO — conta, período e busca ficam. Limpar o resto junto faria o
+   clique parecer um "voltar ao início", e a pessoa perderia o recorte que
+   levou minutos montando. Entrou também um quarto número, "Já conciliado".
+4. O saldo do topo agora explica a própria conta: mostra o saldo inicial e a
+   data quando existem.
+
+**Verificado:** 26 testes de tela e 31 com banco de verdade, incluindo os da
+coluna sem cabeçalho, os do saldo inicial (com e sem data, e a não-dupla
+contagem) e os da reimportação que preenche sem apagar.
+
+**NÃO verificado:** a tela continua sem ser aberta num navegador daqui — e as
+janelas que abrem por cima (`<dialog>`) são a parte nova que mais depende
+disso. E ele ainda não testou o OFX.
+
+---
 ---
 
 ## Regras que não se discutem

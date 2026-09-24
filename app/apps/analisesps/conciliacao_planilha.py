@@ -116,13 +116,61 @@ def achar_cabecalho(valores: list) -> tuple[int, dict, list]:
         tem_valor = ("valor" in papeis or "credito" in papeis
                      or "debito" in papeis)
         if "data" in papeis and tem_valor:
-            usadas = set(papeis.values())
-            sobras = [(col, _limpo(linha[col])) for col in range(len(linha))
-                      if col not in usadas and _limpo(linha[col])]
-            return i, papeis, sobras
+            return i, papeis, _colunas_de_observacao(linha, papeis)
     raise ErroDaPlanilha(
         "Não achei o cabeçalho desta aba. Ele precisa ter uma coluna de "
         "DATA e uma de VALOR (ou CRÉDITO e DÉBITO) nas dez primeiras linhas.")
+
+
+def letra_da_coluna(indice: int) -> str:
+    """0 -> "A", 7 -> "H". Para nomear coluna que não tem cabeçalho."""
+    nome = ""
+    indice += 1
+    while indice:
+        indice, resto = divmod(indice - 1, 26)
+        nome = chr(65 + resto) + nome
+    return nome
+
+
+def _colunas_de_observacao(cabecalho: list, papeis: dict) -> list:
+    """Quais colunas viram OBSERVAÇÃO do lançamento.
+
+    ⚠️ ESTA REGRA FOI CORRIGIDA EM 24/09/2026, e o defeito era grave: nenhuma
+    observação foi importada na primeira vez. A regra antiga só olhava colunas
+    com CABEÇALHO preenchido — e nas abas do Bradesco dele as colunas de
+    anotação (H, J, K) **não têm cabeçalho nenhum**. O sistema importou tudo,
+    disse que deu certo, e deixou dois anos de anotação para trás em silêncio.
+
+    A regra dele, com todas as letras: *"a coluna subsequente ao último dado
+    (...) porque tem uns que o último dado, o saldo, fica numa coluna e outra
+    coluna. Então seria a informação subsequente."*
+
+    Ou seja: **tudo o que vem DEPOIS da última coluna de dado e ANTES da
+    coluna de Conciliado**, com ou sem cabeçalho. Coluna sem nome é chamada
+    pela letra dela na planilha ("H"), para a observação dizer de onde veio.
+    """
+    de_dado = [papeis[p] for p in
+               ("data", "descricao", "detalhe", "documento", "tipo",
+                "credito", "debito", "valor", "saldo") if p in papeis]
+    if not de_dado:
+        return []
+    depois_do_ultimo = max(de_dado)
+    # A coluna de Conciliado fecha o intervalo. Sem ela, vale até o fim.
+    fim = papeis.get("conciliado", len(cabecalho))
+
+    sobras = []
+    for col in range(depois_do_ultimo + 1, max(fim, depois_do_ultimo + 1)):
+        rotulo = _limpo(cabecalho[col]) if col < len(cabecalho) else ""
+        sobras.append((col, rotulo or f"coluna {letra_da_coluna(col)}"))
+
+    # E uma coluna com cabeçalho que tenha sobrado NO MEIO dos dados também
+    # conta: é anotação igual, só está em lugar incomum.
+    usadas = set(papeis.values()) | {c for c, _ in sobras}
+    for col in range(depois_do_ultimo):
+        rotulo = _limpo(cabecalho[col]) if col < len(cabecalho) else ""
+        if col not in usadas and rotulo:
+            sobras.append((col, rotulo))
+    return sorted(sobras)
 
 
 def _data(bruto) -> date | None:

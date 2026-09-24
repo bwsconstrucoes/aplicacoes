@@ -115,6 +115,23 @@
     Mandar o mesmo extrato duas vezes não duplica nada.
   </p>
 </div>
+
+{# ---------------------------------------------------------------------------
+   AJUSTES — o que se faz UMA vez e não se olha mais.
+
+   ⚠️ ELES ESTAVAM NO RODAPÉ DA TELA e o dono pediu para sair: *"o trazer a
+   planilha antiga e contas está no final da tela, então você vai manuseando e
+   isso vai estar sempre aparecendo. Isso é uma coisa que uma vez feita não é
+   uma coisa que você precisa estar olhando a todo instante."*
+
+   Ele tem razão, e a razão vale como regra nesta tela: **o que se configura
+   uma vez não divide espaço com o que se faz o dia inteiro.** Agora são dois
+   botões aqui, e o conteúdo abre por cima, numa janela.
+--------------------------------------------------------------------------- #}
+<div class="lateral-ajustes">
+  <button class="btn secundario" id="btn-abrir-contas">Contas</button>
+  <button class="btn secundario" id="btn-abrir-planilha">Trazer planilha</button>
+</div>
 {% endif %}
 {% endif %}
 {% endblock %}
@@ -151,27 +168,58 @@
    onde há largura para a tabela do que vai entrar ser lida. #}
 <div id="saida-extrato"></div>
 
+{# ---------------------------------------------------------------------------
+   OS NÚMEROS DO TOPO SÃO FILTROS — pedido dele em 24/09/2026: *"se eu clicar
+   em falta conciliar, eu já sei listado imediatamente as que faltam. Isso
+   aqui não está acontecendo."*
+
+   ⚠️ O QUE MUDA E O QUE NÃO MUDA AO CLICAR: o número clicado troca só a
+   SITUAÇÃO; conta, período e busca ficam como estavam. Limpar o resto junto
+   faria o clique parecer um "voltar ao início" — e a pessoa perderia o
+   recorte que levou minutos montando.
+--------------------------------------------------------------------------- #}
+{% macro endereco(situacao) -%}
+  {%- set base = args.to_dict(flat=false) -%}
+  {%- set _ = base.pop('situacao', None) -%}
+  {%- set _ = base.pop('pagina', None) -%}
+  {{ url_for('analisesps.tela_conciliacao', situacao=situacao, **base) }}
+{%- endmacro %}
+
 <div class="kpis">
-  <div class="kpi estatico">
+  <a class="kpi {{ 'ativo' if filtros.situacao == 'todos' }}"
+     href="{{ endereco('todos') }}" title="ver tudo desta conta">
     <div class="kpi-rotulo">Saldo da conta</div>
     <div class="kpi-valor">{{ saldo_total|moeda }}</div>
-    <div class="kpi-sub">tudo o que entrou menos o que saiu</div>
-  </div>
-  <div class="kpi estatico vermelho">
+    <div class="kpi-sub">
+      {% if conta and conta.saldo_inicial_em %}
+        começa em {{ conta.saldo_inicial|moeda }} no {{ conta.saldo_inicial_em|data_br }}
+      {% else %}
+        <b>sem saldo inicial</b> — é por isso que ele pode não bater
+      {% endif %}
+    </div>
+  </a>
+  <a class="kpi vermelho {{ 'ativo' if filtros.situacao == 'pendentes' }}"
+     href="{{ endereco('pendentes') }}" title="listar só o que falta conciliar">
     <div class="kpi-rotulo">Falta conciliar</div>
     <div class="kpi-valor">{{ resumo.pendentes or 0 }}</div>
     <div class="kpi-sub">{{ (resumo.pendentes_valor or 0)|moeda }} no recorte</div>
-  </div>
-  <div class="kpi estatico laranja">
+  </a>
+  <a class="kpi laranja {{ 'ativo' if filtros.situacao == 'com_observacao' }}"
+     href="{{ endereco('com_observacao') }}" title="listar só o que tem anotação">
     <div class="kpi-rotulo">Com observação</div>
     <div class="kpi-valor">{{ resumo.com_observacao or 0 }}</div>
     <div class="kpi-sub">pendências anotadas</div>
-  </div>
+  </a>
+  <a class="kpi verde {{ 'ativo' if filtros.situacao == 'conciliados' }}"
+     href="{{ endereco('conciliados') }}" title="listar só o que já foi conciliado">
+    <div class="kpi-rotulo">Já conciliado</div>
+    <div class="kpi-valor">{{ (resumo.quantidade or 0) - (resumo.pendentes or 0) }}</div>
+    <div class="kpi-sub">de {{ resumo.quantidade or 0 }} no recorte</div>
+  </a>
   <div class="kpi estatico">
     <div class="kpi-rotulo">No recorte</div>
     <div class="kpi-valor">{{ (resumo.saldo or 0)|moeda }}</div>
-    <div class="kpi-sub">{{ resumo.quantidade or 0 }} linha(s) ·
-      {{ (resumo.entradas or 0)|moeda }} entrou ·
+    <div class="kpi-sub">{{ (resumo.entradas or 0)|moeda }} entrou ·
       {{ (resumo.saidas or 0)|moeda }} saiu</div>
   </div>
 </div>
@@ -199,18 +247,33 @@
   {% endif %}
 
   <div class="rolagem-tabela">
+  {# ⚠️ AS LARGURAS SÃO DECLARADAS, TODAS. Antes, só o Histórico ficava sem
+     largura — e por isso ele engolia toda a sobra da tabela, empurrando a
+     observação para um canto. Com `table-layout: fixed` e uma largura por
+     coluna, a sobra vai para onde ele escreve. #}
   <table class="sps conciliacao">
+    <colgroup>
+      {% if pode_operar %}<col style="width:32px">{% endif %}
+      <col style="width:84px">
+      <col class="c-historico">
+      <col style="width:96px">
+      <col style="width:106px">
+      <col style="width:106px">
+      <col style="width:118px">
+      <col style="width:76px">
+      <col class="c-observacao">
+    </colgroup>
     <thead>
       <tr>
-        {% if pode_operar %}<th style="width:28px"></th>{% endif %}
-        <th style="width:92px">Data</th>
+        {% if pode_operar %}<th></th>{% endif %}
+        <th>Data</th>
         <th>Histórico</th>
-        <th style="width:110px">Documento</th>
-        <th style="width:120px" class="direita">Entrada</th>
-        <th style="width:120px" class="direita">Saída</th>
-        <th style="width:130px" class="direita">Saldo</th>
-        <th style="width:92px">Conciliado</th>
-        <th style="width:240px">Observação</th>
+        <th>Documento</th>
+        <th class="direita">Entrada</th>
+        <th class="direita">Saída</th>
+        <th class="direita">Saldo</th>
+        <th>Conc.</th>
+        <th>Observação</th>
       </tr>
     </thead>
     <tbody>
@@ -308,8 +371,9 @@
    aberto no dia a dia poria o botão de importar dois anos de histórico ao
    lado do tique de conciliar uma linha.
 --------------------------------------------------------------------------- #}
-<details class="cartao" id="cartao-planilha">
-  <summary><b>Trazer a planilha antiga</b> — o histórico que já existe</summary>
+<dialog class="dialogo" id="cartao-planilha">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Trazer a planilha antiga</h3>
 
   <p class="cartao-dica" style="margin:10px 0">
     Uma aba por vez. O sistema lê, mostra <b>uma amostra do que entendeu</b> e
@@ -325,7 +389,7 @@
     <button class="btn secundario" id="btn-listar-abas">Ver as abas</button>
   </div>
   <div id="saida-planilha"></div>
-</details>
+</dialog>
 
 {# ---------------------------------------------------------------------------
    AS CONTAS — uma porta só, como manda a regra da casa (CLAUDE.md, 17/09).
@@ -335,18 +399,27 @@
    conta desconhecida, a tela oferece ligá-lo a uma conta, e o banco e o número
    ficam guardados a partir dali. Quem tem o arquivo usa; quem não tem, digita.
 --------------------------------------------------------------------------- #}
-<details class="cartao" id="cartao-contas">
-  <summary><b>Contas</b> — {{ contas|length }} cadastrada(s)</summary>
+<dialog class="dialogo" id="cartao-contas">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Contas <small>{{ contas|length }} cadastrada(s)</small></h3>
 
   <table class="sps" style="margin-top:10px">
     <thead><tr><th>Nome</th><th>Banco</th><th>Agência / conta</th>
-      <th>Reconhece o extrato?</th><th></th></tr></thead>
+      <th>Saldo inicial</th><th>Reconhece o extrato?</th><th></th></tr></thead>
     <tbody>
       {% for c in contas %}
         <tr>
           <td><b>{{ c.nome }}</b></td>
           <td>{{ c.banco }}</td>
           <td>{{ c.agencia }} {{ c.numero }}</td>
+          <td>
+            {% if c.saldo_inicial_em %}
+              {{ c.saldo_inicial|moeda }}<br><small>em {{ c.saldo_inicial_em|data_br }}</small>
+            {% else %}
+              <span class="etiqueta ruim">falta</span>
+              <small>sem ele o saldo não bate</small>
+            {% endif %}
+          </td>
           <td>
             {% if c.ofx_bankid and c.ofx_acctid %}
               <span class="etiqueta boa">sim</span>
@@ -379,7 +452,23 @@
       <div><label class="rotulo-campo">Ordem na lista</label>
         <input class="campo-largo" name="ordem" value="0"></div>
     </div>
+    {# ⚠️ O SALDO INICIAL É O QUE FAZ O SALDO BATER. O extrato importado começa
+       no dia em que a planilha começou; tudo o que a conta movimentou antes
+       disso não existe aqui. Sem este número, o saldo fica errado exatamente
+       do tamanho do que veio antes — foi o que ele viu. #}
+    <div class="faixa" style="margin-top:8px">
+      <div><label class="rotulo-campo">Saldo inicial</label>
+        <input class="campo-largo" name="saldo_inicial" placeholder="0,00"></div>
+      <div><label class="rotulo-campo">nesta data</label>
+        <input class="campo-largo" type="date" name="saldo_inicial_em"></div>
+    </div>
     <p class="cartao-dica" style="margin:8px 0 0">
+      <b>O saldo inicial é o que faz o saldo bater.</b> Ponha quanto a conta
+      tinha no fim do dia anterior ao primeiro lançamento que você trouxe — o
+      que veio antes disso não está aqui, e sem esse número a diferença
+      aparece no saldo sem explicação. O que for daquele dia ou anterior não é
+      somado de novo.
+      <br><br>
       O banco e o número que <b>reconhecem o extrato</b> não precisam ser
       digitados: eles vêm do próprio arquivo na primeira vez que você soltar um
       OFX desta conta.
@@ -390,7 +479,7 @@
       <span id="recado-conta" class="cartao-dica"></span>
     </p>
   </form>
-</details>
+</dialog>
 {% endif %}
 {% endblock %}
 
@@ -653,7 +742,8 @@ if (formConta) {
   document.querySelectorAll(".editar-conta").forEach(b => {
     b.addEventListener("click", () => {
       const c = JSON.parse(b.dataset.conta);
-      ["id", "nome", "banco", "agencia", "numero", "ordem"].forEach(k => {
+      ["id", "nome", "banco", "agencia", "numero", "ordem",
+       "saldo_inicial", "saldo_inicial_em"].forEach(k => {
         const campo = formConta.querySelector('[name="' + k + '"]');
         if (campo) campo.value = c[k] === null || c[k] === undefined ? "" : c[k];
       });
@@ -784,10 +874,17 @@ function desenharAba(d, aba, conta, planilha) {
   });
 }
 
-const btnNovaConta = document.getElementById("btn-nova-conta");
-if (btnNovaConta) btnNovaConta.addEventListener("click", () => {
-  const cartao = document.getElementById("cartao-contas");
-  if (cartao) { cartao.open = true; cartao.scrollIntoView({behavior: "smooth"}); }
+// --- os dois ajustes, que abrem por cima da tela ----------------------------
+function abrir(id) {
+  const dialogo = document.getElementById(id);
+  if (dialogo && dialogo.showModal) dialogo.showModal();
+  else if (dialogo) dialogo.setAttribute("open", "");
+}
+[["btn-abrir-contas", "cartao-contas"],
+ ["btn-nova-conta", "cartao-contas"],
+ ["btn-abrir-planilha", "cartao-planilha"]].forEach(([botao, alvo]) => {
+  const b = document.getElementById(botao);
+  if (b) b.addEventListener("click", () => abrir(alvo));
 });
 </script>
 {% endif %}

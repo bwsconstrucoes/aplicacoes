@@ -415,3 +415,52 @@ def test_o_soltar_o_extrato_fica_na_BARRA_LATERAL(app_com_dados):
     assert lateral < conteudo, "o bloco de soltar o arquivo saiu da barra lateral"
     # E a RESPOSTA da conferência fica no meio da tela, onde há largura.
     assert html.index('id="saida-extrato"') > conteudo
+
+
+def test_os_numeros_do_topo_SAO_FILTROS(app_com_dados):
+    """Pedido dele: *"se eu clicar em falta conciliar, eu já sei listado
+    imediatamente as que faltam. Isso aqui não está acontecendo."*"""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao?conta_id=1&busca=cimento").get_data(as_text=True)
+
+    assert "situacao=pendentes" in html
+    assert "situacao=com_observacao" in html
+    assert "situacao=conciliados" in html
+    # ⚠️ E o clique NÃO joga fora o resto do recorte: conta, período e busca
+    # ficam. Limpá-los faria o clique parecer um "voltar ao início".
+    assert "busca=cimento" in html
+
+
+def test_os_ajustes_saem_do_RODAPE_e_viram_janela(app_com_dados):
+    """⚠️ *"O trazer a planilha antiga e contas está no final da tela, então
+    você vai manuseando e isso vai estar sempre aparecendo."* O que se
+    configura uma vez não divide espaço com o que se faz o dia inteiro."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert '<dialog class="dialogo" id="cartao-contas">' in html
+    assert '<dialog class="dialogo" id="cartao-planilha">' in html
+    assert 'id="btn-abrir-contas"' in html
+    assert 'id="btn-abrir-planilha"' in html
+    # E os botões que as abrem ficam na barra lateral, antes do conteúdo.
+    assert html.index('id="btn-abrir-contas"') < html.index("<h2>Conciliação")
+
+
+def test_a_largura_das_colunas_e_declarada(app_com_dados):
+    """⚠️ Só o Histórico ficava sem largura, e por isso engolia toda a sobra da
+    tabela — empurrando a observação para um canto. O dono: *"o histórico é o
+    campo que estica a tela (...) ficou grande demais"*."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert "<colgroup>" in html
+    assert 'class="c-historico"' in html
+    assert 'class="c-observacao"' in html
+
+
+def test_o_saldo_avisa_quando_a_conta_nao_tem_saldo_inicial(app_com_dados):
+    """⚠️ É a explicação de "o saldo não está batendo": sem saldo inicial, o
+    número soma só o que foi importado, e o que veio antes disso falta."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    assert "sem saldo inicial" in html

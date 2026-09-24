@@ -1851,9 +1851,11 @@ table.conciliacao td {
   max-height: 46px;
 }
 table.conciliacao tr.linha-extrato { height: 38px; }
+/* O histórico do Bradesco vem com quebra de linha dentro dele. Com largura
+   declarada, ele cabe em duas linhas e o resto corta — o texto inteiro fica
+   no `title`, ao passar o mouse. */
 table.conciliacao .historico {
-  max-width: 420px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* ⚠️ `valor-entrada` E `valor-saida`, NAO `entrada` E `saida` — 24/09/2026.
    A classe `.entrada` JA EXISTIA nesta folha, para a TELA DE LOGIN: ela tem
@@ -1936,3 +1938,45 @@ tr.linha-extrato.conciliada .valor-saida { font-weight: 500; }
 .solta-arquivo p { margin: 0; }
 
 .paginacao { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+
+/* --------------------------------------------------------------------------
+   OS AJUSTES DA CONCILIACAO ABREM POR CIMA DA TELA (24/09/2026)
+
+   ⚠️ "Contas" e "Trazer a planilha antiga" ficavam no RODAPE da tela, e o dono
+   pediu para sair: *"voce vai manuseando e isso vai estar sempre aparecendo.
+   Isso e uma coisa que uma vez feita nao e uma coisa que voce precisa estar
+   olhando a todo instante."* O que se configura uma vez nao divide espaco com
+   o que se faz o dia inteiro.
+   -------------------------------------------------------------------------- */
+.lateral-ajustes {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px;
+  padding-top: 12px; border-top: 1px solid var(--borda);
+}
+.lateral-ajustes .btn { flex: 1; min-width: 110px; font-size: 12.5px; }
+
+.dialogo {
+  border: 0; border-radius: var(--raio); box-shadow: var(--sombra-forte);
+  padding: 22px 24px; width: min(920px, 94vw); max-height: 88vh;
+  overflow-y: auto; color: var(--tinta);
+}
+.dialogo::backdrop { background: rgba(10, 27, 46, .45); }
+.dialogo h3 { margin: 0 0 12px; }
+.dialogo h3 small { font-weight: 500; color: var(--tinta-suave); font-size: 13px; }
+.dialogo-fechar { float: right; margin-left: 12px; }
+
+/* --------------------------------------------------------------------------
+   AS LARGURAS DA TABELA — 24/09/2026
+
+   ⚠️ O dono: *"o historico e o campo que estica a tela (...) o campo de
+   observacao esta bem diminuto em relacao a ele. Acho que tem que aumentar um
+   pouco o de observacao e trazer tudo mais para perto do historico. Ele
+   ficou grande demais."*
+
+   O historico ganhava toda a sobra da tabela porque era a unica coluna sem
+   largura declarada. Agora ele tem teto, e a sobra vai para a observacao —
+   que e onde ele escreve, e onde a falta de espaco atrapalha de verdade.
+   -------------------------------------------------------------------------- */
+table.conciliacao { table-layout: fixed; width: 100%; }
+table.conciliacao .historico { max-width: none; width: auto; }
+table.conciliacao col.c-historico { width: 34%; }
+table.conciliacao col.c-observacao { width: 26%; }

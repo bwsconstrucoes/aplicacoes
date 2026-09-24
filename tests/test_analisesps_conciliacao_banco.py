@@ -423,3 +423,110 @@ def test_depois_de_adotada_a_linha_nao_e_adotada_de_novo(banco_conc):
     assert segundo["adotadas"] == 0
     assert segundo["gravadas"] == 1
     assert conciliacao.resumo({"conta_id": conta_id})["quantidade"] == 3
+
+
+def test_reimportar_PREENCHE_a_observacao_que_faltou(banco_conc):
+    """⚠️ A primeira importação de verdade trouxe as linhas SEM observação (um
+    defeito de leitura, corrigido em 24/09/2026). Sem isto, o dono teria de
+    apagar tudo e recomeçar para recuperar dois anos de anotação."""
+    from app.apps.analisesps import conciliacao
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+
+    sem_obs = aba_falsa([{"data": dt.date(2026, 9, 10), "descricao": "PIX",
+                          "documento": "", "valor": D("-100.00"),
+                          "conciliado": False, "observacao": ""}])
+    conciliacao.importar_da_planilha(conta_id, sem_obs, "T")
+
+    com_obs = aba_falsa([{"data": dt.date(2026, 9, 10), "descricao": "PIX",
+                          "documento": "946047", "valor": D("-100.00"),
+                          "conciliado": True,
+                          "observacao": "coluna H: falta nota"}])
+    de_novo = conciliacao.importar_da_planilha(conta_id, com_obs, "T")
+
+    assert de_novo["gravadas"] == 0        # não é linha nova
+    assert de_novo["repetidas"] == 1
+    linha = conciliacao.listar({"conta_id": conta_id})[0]
+    assert linha["observacao"] == "coluna H: falta nota"
+    assert linha["conciliado"] is True
+
+
+def test_reimportar_NAO_APAGA_o_que_foi_escrito_no_sistema(banco_conc):
+    """⚠️ A observação que ele escreveu AQUI vale mais que a da planilha, e
+    desmarcar o que ele conferiu no sistema porque a planilha está atrasada
+    seria pior do que não importar nada."""
+    from app.apps.analisesps import conciliacao
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    aba = aba_falsa([{"data": dt.date(2026, 9, 10), "descricao": "PIX",
+                      "documento": "", "valor": D("-100.00"),
+                      "conciliado": False, "observacao": "da planilha"}])
+    conciliacao.importar_da_planilha(conta_id, aba, "T")
+
+    linha = conciliacao.listar({"conta_id": conta_id})[0]
+    conciliacao.anotar(linha["id"], "o que EU escrevi aqui", "MARCELO")
+    conciliacao.marcar([linha["id"]], True, "MARCELO")
+
+    conciliacao.importar_da_planilha(conta_id, aba, "T")
+
+    depois = conciliacao.listar({"conta_id": conta_id})[0]
+    assert depois["observacao"] == "o que EU escrevi aqui"
+    assert depois["conciliado"] is True          # a planilha não desmarcou
+
+
+# ---------------------------------------------------------------------------
+# O SALDO INICIAL — por que o saldo "não batia"
+# ---------------------------------------------------------------------------
+def test_o_saldo_comeca_no_saldo_inicial_da_conta(banco_conc):
+    """⚠️ O extrato importado começa num dia qualquer — o dia em que a planilha
+    dele começou. Tudo o que a conta movimentou antes disso não existe aqui, e
+    o saldo ficava errado exatamente do tamanho do que veio antes. Foi o que
+    ele viu: *"o saldo não está batendo de uma determinada conta"*."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste(saldo_inicial="100.000,00",
+                              saldo_inicial_em="31/08/2026")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-1000.00", "A1"), ("20260902", "500.00", "A2")])),
+        "x.ofx", "T")
+
+    assert conciliacao.saldo_da_conta(conta_id) == D("99500.00")
+
+
+def test_o_que_e_anterior_a_data_do_saldo_inicial_NAO_conta_duas_vezes(banco_conc):
+    """⚠️ "No dia 31/08 a conta tinha 100 mil" quer dizer o saldo NO FIM
+    daquele dia. Somar de novo os lançamentos daquele dia contaria o mesmo
+    dinheiro duas vezes — e o erro seria silencioso."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste(saldo_inicial="100.000,00",
+                              saldo_inicial_em="31/08/2026")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260830", "-9999.00", "VELHO"),   # antes: já está no saldo inicial
+        ("20260831", "-8888.00", "DIA"),     # no dia: idem
+        ("20260901", "-1000.00", "A1")])), "x.ofx", "T")
+
+    assert conciliacao.saldo_da_conta(conta_id) == D("99000.00")
+
+
+def test_a_coluna_saldo_da_lista_concorda_com_o_numero_do_topo(banco_conc):
+    """Se discordassem, não haveria como saber em qual acreditar."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste(saldo_inicial="100.000,00",
+                              saldo_inicial_em="31/08/2026")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-1000.00", "A1"), ("20260902", "500.00", "A2")])),
+        "x.ofx", "T")
+
+    linhas = conciliacao.listar({"conta_id": conta_id})   # mais nova primeiro
+    assert linhas[0]["saldo"] == conciliacao.saldo_da_conta(conta_id)
+
+
+def test_sem_saldo_inicial_nada_muda(banco_conc):
+    """Quem não usar o campo continua com o comportamento de antes."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260901", "-1000.00", "A1")])), "x.ofx", "T")
+    assert conciliacao.saldo_da_conta(conta_id) == D("-1000.00")

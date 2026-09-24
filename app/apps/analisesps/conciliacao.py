@@ -68,13 +68,21 @@ def contas(so_ativas: bool = True) -> list[dict]:
         return []
     from .db import consultar
     onde = " WHERE ativa" if so_ativas else ""
+    # ⚠️ AS DUAS COLUNAS DO SALDO INICIAL SÃO DA MIGRAÇÃO 020, e o código sobe
+    # antes de o botão ser apertado. Pedi-las direto derrubaria a tela inteira
+    # nesse intervalo — por isso a consulta tem duas formas.
+    from .db import tem_coluna
+    tem_saldo = tem_coluna("conciliacao_conta", "saldo_inicial")
+    extra = (", saldo_inicial, saldo_inicial_em" if tem_saldo
+             else ", 0 AS saldo_inicial, NULL AS saldo_inicial_em")
     linhas = consultar(
         "SELECT id, nome, banco, agencia, numero, ofx_bankid, ofx_acctid, "
-        "       aba_planilha, ativa, ordem, observacao "
+        f"       aba_planilha, ativa, ordem, observacao{extra} "
         f"  FROM analisesps.conciliacao_conta{onde} "
         " ORDER BY ordem, lower(nome)")
     nomes = ["id", "nome", "banco", "agencia", "numero", "ofx_bankid",
-             "ofx_acctid", "aba_planilha", "ativa", "ordem", "observacao"]
+             "ofx_acctid", "aba_planilha", "ativa", "ordem", "observacao",
+             "saldo_inicial", "saldo_inicial_em"]
     return [dict(zip(nomes, linha)) for linha in linhas]
 
 
@@ -97,30 +105,50 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
         "ordem": int(dados.get("ordem") or 0),
         "ativa": bool(dados.get("ativa", True)),
     }
+    from .formatos import para_data, para_numero
+    saldo = para_numero(str(dados.get("saldo_inicial") or "").strip())
+    campos["saldo_inicial"] = saldo if saldo is not None else Decimal("0")
+    campos["saldo_inicial_em"] = para_data(
+        str(dados.get("saldo_inicial_em") or "").strip())
     conta_id = dados.get("id")
+    from .db import tem_coluna
     with conexao() as con:
         if conta_id:
+            saldo_sql = (", saldo_inicial=?, saldo_inicial_em=?"
+                         if tem_coluna("conciliacao_conta", "saldo_inicial")
+                         else "")
+            extras = ((campos["saldo_inicial"], campos["saldo_inicial_em"])
+                      if saldo_sql else ())
             con.execute(
                 "UPDATE analisesps.conciliacao_conta SET nome=?, banco=?, "
                 "       agencia=?, numero=?, ofx_bankid=?, ofx_acctid=?, "
-                "       aba_planilha=?, observacao=?, ordem=?, ativa=? "
+                f"       aba_planilha=?, observacao=?, ordem=?, ativa=?{saldo_sql} "
                 " WHERE id=?",
                 (campos["nome"], campos["banco"], campos["agencia"],
                  campos["numero"], campos["ofx_bankid"], campos["ofx_acctid"],
                  campos["aba_planilha"], campos["observacao"], campos["ordem"],
-                 campos["ativa"], int(conta_id)))
+                 campos["ativa"]) + extras + (int(conta_id),))
             con.commit()
             logger.info("Conciliação: %s alterou a conta %s.", quem or "?", nome)
             return int(conta_id)
+        # ⚠️ O SALDO INICIAL TAMBÉM NA CRIAÇÃO, e não só na alteração. Ele
+        # ficou de fora na primeira versão, e o resultado era pior do que não
+        # existir: o campo aceitava o número, a tela dizia que gravou, e o
+        # saldo continuava sem bater — sem nada apontando onde se perdeu.
+        com_saldo = tem_coluna("conciliacao_conta", "saldo_inicial")
+        colunas_saldo = ", saldo_inicial, saldo_inicial_em" if com_saldo else ""
+        marcas_saldo = ", ?, ?" if com_saldo else ""
+        extras = ((campos["saldo_inicial"], campos["saldo_inicial_em"])
+                  if com_saldo else ())
         cur = con.execute(
             "INSERT INTO analisesps.conciliacao_conta "
             "  (nome, banco, agencia, numero, ofx_bankid, ofx_acctid, "
-            "   aba_planilha, observacao, ordem, ativa) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            f"   aba_planilha, observacao, ordem, ativa{colunas_saldo}) "
+            f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?{marcas_saldo}) RETURNING id",
             (campos["nome"], campos["banco"], campos["agencia"],
              campos["numero"], campos["ofx_bankid"], campos["ofx_acctid"],
              campos["aba_planilha"], campos["observacao"], campos["ordem"],
-             campos["ativa"]))
+             campos["ativa"]) + extras)
         novo = cur.fetchone()[0]
         con.commit()
     logger.info("Conciliação: %s criou a conta %s.", quem or "?", nome)
@@ -391,18 +419,28 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
     onde, params = _onde(f)
     pagina = max(1, int(pagina or 1))
 
+    # ⚠️ O SALDO CORRIDO COMEÇA NO SALDO INICIAL DA CONTA, e o que é anterior
+    # à data dele não entra de novo — senão a coluna Saldo da tela discordaria
+    # do número do topo, e não haveria como saber qual dos dois acreditar.
+    conta = next((c for c in contas(so_ativas=False)
+                  if c["id"] == int(f.get("conta_id") or 0)), None) or {}
+    inicial = Decimal(str(conta.get("saldo_inicial") or 0))
+    desde = conta.get("saldo_inicial_em")
+    corte = " AND data > ? " if desde else " "
+    antes = [desde] if desde else []
+
     linhas = consultar(
         "SELECT id, data, descricao, documento, valor, conciliado, "
         "       observacao, origem, conciliado_por, conciliado_em, saldo "
         "  FROM ( "
-        "    SELECT e.*, sum(valor) OVER (PARTITION BY conta_id "
-        "                                 ORDER BY data, id "
-        "                                 ROWS UNBOUNDED PRECEDING) AS saldo "
+        "    SELECT e.*, ? + sum(valor) OVER (PARTITION BY conta_id "
+        "                                     ORDER BY data, id "
+        "                                     ROWS UNBOUNDED PRECEDING) AS saldo "
         "      FROM analisesps.conciliacao_extrato e "
-        "     WHERE conta_id = ? "
+        f"     WHERE conta_id = ?{corte} "
         "  ) t "
         f"{onde} ORDER BY data DESC, id DESC LIMIT ? OFFSET ?",
-        tuple([int(f.get("conta_id") or 0)] + params
+        tuple([inicial, int(f.get("conta_id") or 0)] + antes + params
               + [POR_PAGINA, (pagina - 1) * POR_PAGINA]))
     nomes = ["id", "data", "descricao", "documento", "valor", "conciliado",
              "observacao", "origem", "conciliado_por", "conciliado_em", "saldo"]
@@ -435,19 +473,39 @@ def saldo_da_conta(conta_id: int, ate=None) -> Decimal:
 
     É o número que se compara com o saldo que o banco declara no OFX. Ele
     IGNORA o filtro da tela de propósito: saldo com filtro não é saldo.
+
+    ⚠️ COMEÇA NO SALDO INICIAL DA CONTA (migração 020). O extrato importado
+    começa num dia qualquer — o dia em que a planilha dele começou —, e tudo
+    o que a conta movimentou antes disso não existe aqui. Sem o saldo
+    inicial, o número fica errado exatamente do tamanho do que veio antes,
+    e foi o que ele viu: *"o saldo não está batendo de uma determinada
+    conta"*.
     """
     if not _pronto():
         return Decimal("0")
     from .db import consultar_um
+    conta = next((c for c in contas(so_ativas=False)
+                  if c["id"] == int(conta_id)), None) or {}
+    inicial = Decimal(str(conta.get("saldo_inicial") or 0))
+    desde = conta.get("saldo_inicial_em")
+
+    # ⚠️ O QUE VEIO ATÉ A DATA DO SALDO INICIAL JÁ ESTÁ DENTRO DELE. "No dia
+    # 30/01 a conta tinha 637.425,90" quer dizer o saldo NO FIM daquele dia —
+    # somar de novo os lançamentos daquele dia e dos anteriores contaria o
+    # mesmo dinheiro duas vezes.
+    onde = ["conta_id = ?"]
+    params: list = [int(conta_id)]
+    if desde:
+        onde.append("data > ?")
+        params.append(desde)
     if ate:
-        linha = consultar_um(
-            "SELECT coalesce(sum(valor), 0) FROM analisesps.conciliacao_extrato "
-            " WHERE conta_id = ? AND data <= ?", (int(conta_id), ate))
-    else:
-        linha = consultar_um(
-            "SELECT coalesce(sum(valor), 0) FROM analisesps.conciliacao_extrato "
-            " WHERE conta_id = ?", (int(conta_id),))
-    return (linha or (Decimal("0"),))[0] or Decimal("0")
+        onde.append("data <= ?")
+        params.append(ate)
+    linha = consultar_um(
+        "SELECT coalesce(sum(valor), 0) FROM analisesps.conciliacao_extrato "
+        " WHERE " + " AND ".join(onde), tuple(params))
+    movimento = (linha or (Decimal("0"),))[0] or Decimal("0")
+    return inicial + movimento
 
 
 def marcar(ids: list, conciliado: bool, quem: str = "") -> int:
@@ -663,6 +721,7 @@ def importar_da_planilha(conta_id: int, lido: dict, quem: str = "") -> dict:
     linhas = lido.get("linhas") or []
     vistas: dict = {}
     gravadas = repetidas = 0
+    ja_existiam = _impressoes_existentes(conta_id, linhas)
 
     with conexao() as con:
         for linha in linhas:
@@ -678,14 +737,43 @@ def importar_da_planilha(conta_id: int, lido: dict, quem: str = "") -> dict:
                 "VALUES (?, ?, ?, ?, ?, ?, ?, "
                 "        CASE WHEN ? THEN now() ELSE NULL END, ?, "
                 "        'planilha', ?) "
-                "ON CONFLICT (conta_id, impressao) DO NOTHING",
+                # ⚠️ REIMPORTAR PREENCHE O QUE FALTA, E NUNCA APAGA O QUE HÁ.
+                # A primeira importação trouxe as linhas SEM observação (um
+                # defeito de leitura, corrigido em 24/09/2026), e sem isto o
+                # dono teria de apagar tudo e recomeçar para recuperá-las.
+                #
+                # Só preenche o que está VAZIO: a observação que ele escreveu
+                # aqui dentro vale mais que a da planilha, e conciliado só
+                # sobe de não para sim — desmarcar o que ele conferiu no
+                # sistema porque a planilha está atrasada seria pior que não
+                # importar nada.
+                "ON CONFLICT (conta_id, impressao) DO UPDATE SET "
+                "    observacao = CASE "
+                "        WHEN btrim(coalesce(conciliacao_extrato.observacao,'')) = '' "
+                "        THEN EXCLUDED.observacao "
+                "        ELSE conciliacao_extrato.observacao END, "
+                "    documento = CASE "
+                "        WHEN btrim(coalesce(conciliacao_extrato.documento,'')) = '' "
+                "        THEN EXCLUDED.documento "
+                "        ELSE conciliacao_extrato.documento END, "
+                "    conciliado = conciliacao_extrato.conciliado OR EXCLUDED.conciliado, "
+                "    conciliado_em = coalesce(conciliacao_extrato.conciliado_em, "
+                "                             EXCLUDED.conciliado_em), "
+                "    conciliado_por = CASE "
+                "        WHEN conciliacao_extrato.conciliado_por = '' "
+                "        THEN EXCLUDED.conciliado_por "
+                "        ELSE conciliacao_extrato.conciliado_por END",
                 (conta_id, linha["data"], (linha.get("descricao") or "")[:500],
                  (linha.get("documento") or "")[:60], linha["valor"],
                  bool(linha.get("conciliado")),
                  quem if linha.get("conciliado") else "",
                  bool(linha.get("conciliado")),
                  (linha.get("observacao") or "")[:1000], marca))
-            if cur.rowcount:
+            # Com `DO UPDATE`, o banco conta a linha atualizada como afetada.
+            # Para a tela dizer a verdade ("quantas entraram" contra "quantas
+            # já estavam"), a diferença é vista antes: a conferência da
+            # impressão é feita na hora, e não depois.
+            if cur.rowcount and marca not in ja_existiam:
                 gravadas += 1
             else:
                 repetidas += 1
@@ -730,3 +818,34 @@ def _adotar_linha_da_planilha(con, conta_id: int, lanc, marca: str) -> bool:
         " WHERE id = ?",
         (marca, (lanc.fitid or "")[:120], int(achada[0])))
     return True
+
+
+def _impressoes_existentes(conta_id: int, linhas: list) -> set:
+    """Quais destas linhas JÁ estão na conta — perguntado ANTES de gravar.
+
+    Existe porque a gravação passou a ATUALIZAR a linha repetida (para
+    preencher observação que faltou), e aí o banco conta as duas coisas como
+    "afetada". Sem esta consulta, a tela diria que importou 800 linhas novas
+    quando na verdade completou 800 antigas.
+    """
+    if not _pronto() or not linhas:
+        return set()
+    from .db import consultar
+    vistas: dict = {}
+    marcas = []
+    for linha in linhas:
+        base = (linha["data"], linha["valor"],
+                (linha.get("descricao") or "").strip().lower())
+        vistas[base] = vistas.get(base, 0) + 1
+        marcas.append(impressao_da_planilha(conta_id, linha, vistas[base]))
+
+    achadas = set()
+    for i in range(0, len(marcas), 500):
+        bloco = marcas[i:i + 500]
+        for linha in consultar(
+                "SELECT impressao FROM analisesps.conciliacao_extrato "
+                f" WHERE conta_id = ? AND impressao IN "
+                f"({','.join(['?'] * len(bloco))})",
+                tuple([conta_id] + bloco)):
+            achadas.add(linha[0])
+    return achadas
