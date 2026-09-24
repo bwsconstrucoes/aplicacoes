@@ -101,6 +101,7 @@ depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
 | Análise de SPs | `app/apps/analisesps/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 | BaixaBradesco (baixa de comprovantes) | `app/apps/baixabradesco/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §5.9 e §9 | `HISTORICO.md` |
 | Emissão de NFS-e | `app/apps/emissaonf/` | `README.md`, `HISTORICO.md`, `CONTEXTO.md` §9 — e o aviso de risco logo abaixo desta tabela | `HISTORICO.md` |
+| AtualizaSPBotão (botão de atualizar SP → planilhas + Omie) | `app/apps/atualizaspbotao/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
 
 **Ao começar** uma sessão numa área: ler os arquivos da linha, conferir a
 seção "Pendente AGORA" e **perguntar ao dono** se aquilo já aconteceu — o
@@ -157,7 +158,7 @@ histórico **perdeu** o que aprendeu — o chat não é memória, o repositório
 **Mensagem de abertura** que o dono usa num chat novo (basta trocar a área):
 
 > Trabalhe na área **[ERP / Painel OMIE / Análise de SPs / BaixaBradesco /
-> Emissão de NFS-e]** deste repositório.
+> Emissão de NFS-e / AtualizaSPBotão]** deste repositório.
 > Leia o `CLAUDE.md` e os arquivos da área indicados nele, me diga em que pé o
 > trabalho está e o que consta como pendente, e confirme comigo antes de
 > começar. Não mexa nas outras áreas. Trabalhe no seu ramo e me pergunte antes

@@ -747,6 +747,17 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 24/09/2026 — AtualizaSPBotão ganhou memória própria (atravessa áreas)
+
+O módulo `app/apps/atualizaspbotao/` entrou na tabela de áreas do `CLAUDE.md`,
+com `README.md` e `HISTORICO.md` escritos a partir do código e do `git log`.
+Motivo: o dono pediu para "trazer o atualizaspbotao do Render" para cá, e o
+módulo não tinha memória nenhuma. Apurado: ele já está neste repositório desde
+25/04/2026 e já responde em `/api/atualizaspbotao/executar`; não há ramo nem
+repositório com esse nome visível à conta do GitHub. O que o dono chama de
+"do Render" ficou como pergunta aberta no `HISTORICO.md` da área. Nenhuma
+linha de código mudou.
+
 ### 22/09/2026 — O CURINGA DO ENCURTADOR NÃO PEGA MAIS TUDO (atravessa áreas)
 
 Achado numa varredura de uso do ERP: a rota `/<codigo>` do encurtador é um
