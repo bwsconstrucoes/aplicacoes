@@ -250,7 +250,10 @@
       <button class="btn secundario" id="btn-desmarcar">Desmarcar selecionados</button>
       {# ⚠️ ESTE BOTÃO ESCREVE NO OMIE. Ele não lança direto: abre o ensaio,
          que mostra linha a linha o que vai acontecer. #}
-      <button class="btn secundario" id="btn-omie">Lançar no OMIE…</button>
+      <button class="btn secundario" id="btn-omie"
+              {% if not omie_pronto %}disabled
+              title="falta aplicar a atualização do banco que liga a parte do OMIE"
+              {% endif %}>Lançar no OMIE…</button>
       <span id="recado-acao" class="cartao-dica" style="margin:0"></span>
     </div>
   {% endif %}
@@ -475,6 +478,20 @@
 <dialog class="dialogo" id="cartao-tipos">
   <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
   <h3>Tipos de movimento <small>o que lançar no OMIE, e como</small></h3>
+
+  {# ⚠️ O AVISO VEM ANTES DO FORMULÁRIO, não depois de ele tentar gravar. Em
+     24/09/2026 o dono preencheu o cadastro inteiro e recebeu no Gravar a
+     frase crua do Postgres ("relation ... does not exist"), porque a parte do
+     OMIE é de outra atualização do banco que ainda não tinha sido aplicada. #}
+  {% if not omie_pronto %}
+    <div class="aviso atencao">
+      <b>A parte do OMIE ainda não foi ligada no banco.</b> Aperte
+      <b>"Aplicar atualizações do banco"</b> em
+      <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a> —
+      é a atualização que cria os tipos de movimento. Enquanto isso, o
+      formulário abaixo não grava.
+    </div>
+  {% endif %}
 
   <p class="cartao-dica">
     Cada tipo é uma coisa que se repete no extrato e <b>não nasce de uma SP</b>:

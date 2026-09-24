@@ -81,7 +81,26 @@ def tipos(so_ativos: bool = True) -> list[dict]:
     return [dict(zip(nomes, linha)) for linha in linhas]
 
 
+FALTA_MIGRAR = (
+    "A parte do OMIE ainda não foi ligada no banco. Aperte "
+    "\"Aplicar atualizações do banco\" em Configurações do Análise de SPs — "
+    "é a atualização que cria os tipos de movimento. Nada do que você digitou "
+    "se perdeu: é só apertar e gravar de novo.")
+
+
 def gravar_tipo(dados: dict, quem: str = "") -> int:
+    # ⚠️ ESTA GUARDA FALTAVA, e o dono pagou por isso em 24/09/2026: ele
+    # recebeu na tela a frase crua do Postgres, *"relation
+    # analisesps.conciliacao_tipo does not exist"*.
+    #
+    # A tela inteira se dava por pronta porque a Conciliação olhava UMA tabela
+    # (a das contas, da migração 019) para decidir isso — e a parte do OMIE
+    # veio depois, na 021. Entre uma e outra, a tela abria, o formulário
+    # aparecia, e só o Gravar quebrava. **Cada pedaço tem de conferir a SUA
+    # tabela**, e dizer em português o que falta.
+    if not _pronto():
+        raise ErroDoLancamento(FALTA_MIGRAR)
+
     nome = str(dados.get("nome") or "").strip()
     if not nome:
         raise ErroDoLancamento("O tipo precisa de um nome.")
@@ -178,6 +197,16 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
     """
     lista_tipos = lista_tipos if lista_tipos is not None else tipos()
     vai, nao_vai = [], []
+
+    # ⚠️ SEM A MIGRAÇÃO, A LISTA DE TIPOS VEM VAZIA — e sem esta frase o
+    # ensaio diria "não reconheci o tipo" para TODAS as linhas, mandando o
+    # dono cadastrar tipos num lugar que não grava.
+    if not lista_tipos and not _pronto():
+        return {"vai": [], "total": 0,
+                "nao_vai": [{"id": l.get("id"), "motivo": FALTA_MIGRAR,
+                             "descricao": (l.get("descricao") or "")[:90],
+                             "data": l.get("data"), "valor": l.get("valor")}
+                            for l in linhas]}
 
     for linha in linhas:
         motivo = None
@@ -354,6 +383,8 @@ def lancar(itens: list, quem: str = "", cliente=None) -> dict:
     tentado de novo. Reenviar é seguro — o OMIE recusa o código de integração
     repetido.
     """
+    if not _pronto():
+        raise ErroDoLancamento(FALTA_MIGRAR)
     if not itens:
         return {"gravados": 0, "falhas": [], "feitos": []}
     if len(itens) > MAX_POR_VEZ:

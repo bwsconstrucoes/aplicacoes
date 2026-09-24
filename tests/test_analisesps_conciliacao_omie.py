@@ -227,6 +227,7 @@ def test_a_transferencia_cria_AS_DUAS_PONTAS(monkeypatch):
     """A saída na conta de origem e a entrada na de destino — é o que faz o
     dinheiro aparecer nas duas, como ele descreveu."""
     monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    monkeypatch.setattr(co, "_pronto", lambda: True)
     plano = co.planejar([linha(descricao="TRANSF CC PARA CC PJ",
                                valor="-30000.00")],
                         CONTA, [TIPO_TRANSF], destinos={10: DESTINO})
@@ -252,6 +253,7 @@ def test_a_segunda_ponta_tem_codigo_de_integracao_PROPRIO(monkeypatch):
     da primeira — e a transferência ficaria pela metade toda vez, sem ninguém
     entender por quê."""
     monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    monkeypatch.setattr(co, "_pronto", lambda: True)
     plano = co.planejar([linha(id_=42, descricao="TRANSF CC PARA CC PJ")],
                         CONTA, [TIPO_TRANSF], destinos={42: DESTINO})
     cli = ClienteQueAnota()
@@ -269,6 +271,7 @@ def test_meia_transferencia_GRITA(monkeypatch):
     DUAS fica errado. É o pior estado possível, e a tela tem de dizer isso com
     todas as letras em vez de contar como sucesso parcial."""
     monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    monkeypatch.setattr(co, "_pronto", lambda: True)
     plano = co.planejar([linha(descricao="TRANSF CC PARA CC PJ")], CONTA,
                         [TIPO_TRANSF], destinos={10: DESTINO})
     cli = ClienteQueAnota(falhar_em=["IncluirContaReceber"])
@@ -286,6 +289,7 @@ def test_o_tipo_normal_NAO_cria_segunda_ponta(monkeypatch):
     """Só a transferência tem duas pontas. Uma tarifa com segunda ponta seria
     dinheiro inventado."""
     monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    monkeypatch.setattr(co, "_pronto", lambda: True)
     plano = co.planejar([linha()], CONTA, TIPOS)
     cli = ClienteQueAnota()
     co.lancar(plano["vai"], "T", cli)

@@ -1607,6 +1607,21 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
             "dia": dia, "valor": exato}
 
 
+def _omie_ligado() -> bool:
+    """A parte do OMIE já existe no banco? (migração 021)
+
+    ⚠️ ELA É SEPARADA DA CONCILIAÇÃO, e o dono pagou por eu não ter separado:
+    a tela se dava por pronta olhando a tabela das CONTAS (migração 019), e o
+    formulário dos tipos aparecia inteiro — só o Gravar quebrava, com a frase
+    crua do Postgres. Cada pedaço confere a SUA tabela.
+    """
+    try:
+        from . import conciliacao_omie as co
+        return co._pronto()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _listas_do_omie() -> dict:
     """As contas correntes, o plano financeiro e as obras — do espelho.
 
@@ -1680,6 +1695,7 @@ def tela_conciliacao():
         if filtros["conta_id"] else [],
         planilha_guardada=_planilha_da_conciliacao(),
         tipos_omie=_tipos_do_omie(),
+        omie_pronto=_omie_ligado(),
         listas_omie=_listas_do_omie(),
         args=request.args,
         pode_operar=auth.pode_operar(),

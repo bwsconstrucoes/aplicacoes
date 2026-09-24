@@ -7276,6 +7276,48 @@ também acha — o módulo resolve os dois lados.
 caem no mesmo filtro.
 
 ---
+
+### Nonagésima quarta leva (24/09) — ⚠️ a frase do Postgres na cara do dono
+
+Ele preencheu o cadastro de tipos inteiro, apertou Gravar, e recebeu:
+
+> *"Não consegui gravar: relation "analisesps.conciliacao_tipo" does not
+> exist LINE 1: INSERT INTO analisesps.conciliacao_tipo (nome, palavras..."*
+
+**A causa imediata é a migração 021 não aplicada. O defeito é meu, e é
+outro:** a tela deixou ele digitar tudo e só quebrou no fim, com uma frase que
+não é para ele ler — ela não diz o que fazer.
+
+#### ⚠️ POR QUE A GUARDA NÃO PEGOU, e é o que importa
+
+A Conciliação tem uma guarda para exatamente isto (`_pronto()`), e ela
+funciona. Só que ela olha **UMA** tabela — a das contas, da migração 019. A
+parte do OMIE veio depois, na **021**. Entre as duas, o mundo fica num estado
+que eu não tinha previsto: **a tela se dá por pronta, o formulário aparece
+inteiro, e só o Gravar quebra**.
+
+**A regra que fica: cada pedaço confere a SUA tabela.** Uma guarda por módulo
+não basta quando o módulo cresce em mais de uma migração — e ele sempre
+cresce.
+
+#### O que mudou
+
+1. **O aviso vem ANTES de digitar**, dentro do próprio cadastro de tipos, com
+   o caminho do botão. E o botão "Lançar no OMIE" fica desligado.
+2. **Gravar e lançar conferem a própria tabela** e devolvem uma frase em
+   português — nunca a do Postgres.
+3. **O ensaio também.** Sem a migração a lista de tipos vem vazia, e sem esta
+   guarda ele diria *"não reconheci o tipo"* para todas as linhas — mandando o
+   dono cadastrar tipos num lugar que não grava.
+
+**Verificado:** 3 testes novos, um deles garantindo que a frase do Postgres
+não chega à tela.
+
+**A lição além desta tela:** funcionalidade que nasce em duas migrações
+precisa de duas guardas. Quando a próxima área do módulo crescer assim, é aqui
+que está o precedente.
+
+---
 ---
 
 ## Regras que não se discutem

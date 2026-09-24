@@ -876,3 +876,63 @@ def test_a_faixa_da_barra_lateral_continua_valendo(app_com_dados, monkeypatch):
                             "?conta_id=1&data_ini=2026-09-01&data_fim=2026-09-30")
     assert vistos[0]["data_ini"] == dt.date(2026, 9, 1)
     assert vistos[0]["data_fim"] == dt.date(2026, 9, 30)
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ A MIGRAÇÃO DO OMIE É SEPARADA DA DA CONCILIAÇÃO — 24/09/2026
+#
+# O dono preencheu o cadastro de tipos inteiro e recebeu no Gravar a frase
+# crua do Postgres: *"relation analisesps.conciliacao_tipo does not exist"*.
+#
+# A causa: a tela se dava por pronta olhando a tabela das CONTAS (migração
+# 019), e a parte do OMIE veio depois, na 021. Entre uma e outra, a tela
+# abria, o formulário aparecia inteiro, e só o Gravar quebrava.
+#
+# **Cada pedaço confere a SUA tabela**, e avisa ANTES de a pessoa digitar.
+# ---------------------------------------------------------------------------
+def test_sem_a_migracao_do_OMIE_a_tela_AVISA_antes_de_digitar(app_com_dados,
+                                                              monkeypatch):
+    from app.apps.analisesps import web as web_
+    monkeypatch.setattr(web_, "_omie_ligado", lambda: False)
+
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert "A parte do OMIE ainda não foi ligada no banco" in html
+    assert "Aplicar atualizações do banco" in html
+    # E o botão de lançar não fica oferecendo o que não funciona.
+    assert "disabled" in html[html.index('id="btn-omie"'):
+                              html.index('id="btn-omie"') + 200]
+
+
+def test_gravar_tipo_sem_a_migracao_devolve_FRASE_e_nao_erro_de_banco(
+        monkeypatch):
+    """⚠️ A frase do Postgres não é para o dono ler. Ela não diz o que fazer."""
+    from app.apps.analisesps import conciliacao_omie as co
+    monkeypatch.setattr(co, "_pronto", lambda: False)
+
+    with pytest.raises(co.ErroDoLancamento) as erro:
+        co.gravar_tipo({"nome": "Tarifa"}, "T")
+
+    assert "Aplicar atualizações do banco" in str(erro.value)
+    assert "does not exist" not in str(erro.value)
+
+
+def test_o_ensaio_sem_a_migracao_nao_manda_cadastrar_onde_nao_grava(
+        monkeypatch):
+    """⚠️ Sem a migração a lista de tipos vem VAZIA — e sem esta guarda o
+    ensaio diria "não reconheci o tipo" para todas as linhas, mandando o dono
+    cadastrar tipos num lugar que não grava."""
+    from app.apps.analisesps import conciliacao_omie as co
+    monkeypatch.setattr(co, "_pronto", lambda: False)
+    monkeypatch.setattr(co, "tipos", lambda so_ativos=True: [])
+
+    import datetime as dt
+    plano = co.planejar(
+        [{"id": 1, "data": dt.date(2026, 9, 10), "descricao": "TARIFA",
+          "documento": "", "valor": Decimal("-9.00"), "omie_codigo": None}],
+        {"id": 1, "nome": "X", "omie_conta_corrente": 1})
+
+    assert plano["vai"] == []
+    assert "Aplicar atualizações do banco" in plano["nao_vai"][0]["motivo"]
+    assert "não reconheci" not in plano["nao_vai"][0]["motivo"]
