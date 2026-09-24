@@ -632,6 +632,25 @@ def dre_despesas():
                         **({"grupo": grupo} if grupo else {}))})
 
 
+@bp.route("/dre/dividendos")
+def dre_dividendos():
+    """Os lancamentos de dividendo por tras de um numero do bloco de aportes
+    (dono, 24/09/2026): titulo, data, socio, obra, conta, documento."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    sentido = request.args.get("sentido", "pago")
+    if sentido not in ("pago", "recebido", "todos"):
+        sentido = "pago"
+    dados = consultas.lancamentos_de_dividendo(
+        f, socio_id=(request.args.get("socio") or "").strip(),
+        obra=(request.args.get("obra_do_dividendo") or "").strip(),
+        sentido=sentido,
+        com_transferencias=request.args.get("com_trf", "1") != "0")
+    for l in dados["linhas"]:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+    return jsonify({"ok": True, "sentido": sentido, **dados})
+
+
 @bp.route("/dre/retencoes")
 def dre_retencoes():
     """As retencoes por tras do numero do DRE, abertas por tributo."""

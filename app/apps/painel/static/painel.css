@@ -349,6 +349,8 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 /* numero clicavel do DRE: parece o numero, sublinha ao passar o mouse */
 .link-btn.abre-medicoes { color: inherit; font-family: var(--fonte-dados); font-size: inherit; font-weight: inherit; padding: 0; text-decoration: underline dotted; text-underline-offset: 3px; }
 .link-btn.abre-medicoes:hover { color: var(--azul-claro); }
+.link-btn.abre-dividendos { color: inherit; font-family: var(--fonte-dados); font-size: inherit; font-weight: inherit; padding: 0; text-decoration: underline dotted; text-underline-offset: 3px; }
+.link-btn.abre-dividendos:hover { color: var(--azul-claro); }
 /* na tela grande o valor inteiro; na pequena, "7 mil" — o inteiro nao cabe */
 .cal-curto { display: none; }
 .cal-quantos { font-size: 10.5px; color: var(--tinta-suave); margin-top: auto; }
