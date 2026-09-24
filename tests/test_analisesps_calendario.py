@@ -443,3 +443,87 @@ def test_o_mes_mostra_o_total_de_cada_situacao(app, monkeypatch):
     assert "Pago no mês" in html
     # A situação sem nada não vira quadro vazio.
     assert "Em outra situação no mês" not in html
+
+
+# ---------------------------------------------------------------------------
+# O FILTRO DE DATA NÃO VALE AQUI — 24/09/2026
+#
+# *"Como é um calendário, eu não queria que o filtro de data interferisse nele;
+# o correto é aparecer tudo. Continua mantendo os outros filtros."*
+#
+# ⚠️ E é o certo: quem escolhe a data nesta tela é o MÊS aberto. Um recorte de
+# vencimento vindo das Solicitações apagaria dias inteiros do calendário sem
+# nada explicando — a pessoa veria um mês pela metade e concluiria que não há
+# nada a pagar naqueles dias.
+# ---------------------------------------------------------------------------
+def test_o_filtro_de_data_nao_chega_na_consulta_do_calendario(app, monkeypatch):
+    vistos = []
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: vistos.append(f)
+                        or achado_falso())
+    como(app).get("/analisesps/calendario?f=1&periodo_ini=2026-09-01"
+                  "&periodo_fim=2026-09-05&pgt_ini=2026-09-02"
+                  "&pgt_fim=2026-09-03")
+
+    usado = vistos[0]
+    assert usado["periodo_ini"] is None and usado["periodo_fim"] is None
+    assert usado["pgt_ini"] is None and usado["pgt_fim"] is None
+
+
+def test_os_OUTROS_filtros_continuam_valendo(app, monkeypatch):
+    """"Continua mantendo os outros filtros, caso a gente queira." Jogar fora
+    o filtro inteiro junto com a data seria perder o que a tela tem de melhor."""
+    vistos = []
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: vistos.append(f)
+                        or achado_falso())
+    como(app).get("/analisesps/calendario?f=1&conta=ITAU&periodo_ini=2026-09-01"
+                  "&centro_custo=OBRA+1&busca=cimento")
+
+    usado = vistos[0]
+    assert usado["conta"] == ["ITAU"]
+    assert usado["centro_custo"] == ["OBRA 1"]
+    assert usado["busca"] == "cimento"
+    assert usado["periodo_ini"] is None
+
+
+def test_a_data_marcada_NAO_E_APAGADA_das_outras_telas(app, monkeypatch):
+    """⚠️ Ignorar aqui e apagar são coisas diferentes. O recorte foi montado
+    nas Solicitações; esta tela não pode mexer nele pelas costas."""
+    gravados = []
+    monkeypatch.setattr(preferencias, "gravar",
+                        lambda pessoa, chave, valor: gravados.append(valor))
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: achado_falso())
+
+    html = como(app).get(
+        "/analisesps/calendario?f=1&periodo_ini=2026-09-01").get_data(as_text=True)
+
+    # O que foi guardado continua com a data.
+    assert gravados and gravados[0].get("periodo_ini") == ["2026-09-01"]
+    # E a tela diz, na própria barra, que ali ela não vale.
+    assert "Não vale no calendário" in html
+
+
+def test_a_barra_avisa_que_a_data_nao_vale_mesmo_sem_data_marcada(app,
+                                                                  monkeypatch):
+    """O recado não depende de haver data marcada: quem vai marcar precisa
+    saber antes que ali não vai adiantar."""
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: achado_falso())
+    html = como(app).get("/analisesps/calendario?f=1").get_data(as_text=True)
+    assert html.count("Não vale no calendário") == 2   # vencimento e pagamento
+
+
+def test_nas_solicitacoes_a_data_continua_valendo(app, monkeypatch):
+    """A barra é a mesma nas três telas. O recado só pode aparecer numa."""
+    monkeypatch.setattr(consultas, "listar", lambda f, **k: [])
+    monkeypatch.setattr(consultas, "resumo_e_agendamento", lambda f: (
+        {"quantidade": 0, "total": 0, "quantidade_pagar": 0, "total_pagar": 0},
+        {}))
+    monkeypatch.setattr(consultas, "soma_por", lambda f, coluna, limite=12: [])
+    monkeypatch.setattr(preferencias, "ler", lambda pessoa, chave: {})
+
+    html = como(app).get(
+        "/analisesps/solicitacoes?f=1&periodo_ini=2026-09-01").get_data(as_text=True)
+    assert "Não vale no calendário" not in html

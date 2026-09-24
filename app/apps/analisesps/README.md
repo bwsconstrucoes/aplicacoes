@@ -262,7 +262,7 @@ cobrável de quem preencheu.
 | Solicitações | a lista, com todos os filtros e as ações em lote |
 | Lote | a remessa que está sendo tratada agora, em grupos |
 | Relatório | quanto, por obra, projeto, tipo, conta e credor |
-| Calendário | o MESMO filtro do Relatório e das Solicitações, espalhado nos dias do mês, com uma linha colorida por situação (vermelho vencido, laranja a vencer, azul pago); o dia clicado abre a lista daquele dia |
+| Calendário | o MESMO filtro do Relatório e das Solicitações (**menos as datas** — quem manda aqui é o mês aberto), espalhado nos dias do mês, com uma linha colorida por situação (vermelho vencido, laranja a vencer, azul pago); o dia clicado abre a lista daquele dia |
 | Auditoria | sete checagens do que está errado na base |
 | Ratear | o JSON que atualiza o título no Omie |
 | Bradesco | o extrato colado, cruzado com as SPs |

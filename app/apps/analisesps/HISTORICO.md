@@ -6571,6 +6571,54 @@ coloridas (108 px, 86 px no celular) — se elas não couberem, é aqui que se
 mexe.
 
 ---
+
+### Octogésima quinta leva (24/09) — o filtro de data não vale no calendário
+
+> *"Como é um calendário, eu não queria que o filtro de data interferisse
+> nele. Porque o correto é aparecer tudo. (…) Continua mantendo os outros
+> filtros, caso a gente queira."*
+
+**Quem escolhe a data nesta tela é o MÊS aberto.** Um recorte de vencimento
+montado nas Solicitações apagaria dias inteiros do calendário — e sem nada na
+tela explicando por quê. A pessoa veria um mês pela metade e concluiria que
+não há nada a pagar naqueles dias, que é o pior tipo de erro: o que parece um
+fato.
+
+Os quatro campos de data (vencimento de/até e pagamento de/até) passam a ser
+**ignorados** na consulta do calendário. Todo o resto do filtro continua
+valendo — obra, conta, projeto, credor, busca, tudo.
+
+#### ⚠️ Ignorar não é apagar, e a diferença importa
+
+O recorte foi montado nas Solicitações, e é lá que ele vale. Se esta tela
+apagasse a data do filtro guardado, ela estaria mexendo no recorte das outras
+telas **pelas costas** — a pessoa voltaria para as Solicitações e encontraria
+o filtro dela desfeito, sem ter pedido nada. Então a data continua guardada,
+continua valendo lá, e só não é usada aqui.
+
+**E a barra de filtros diz isso, nos dois blocos de data**, apagados e com o
+recado *"não vale no calendário — aqui quem manda é o mês aberto; continua
+valendo nas Solicitações e no Relatório"*. Eles **não foram escondidos** de
+propósito: eles guardam o que a pessoa marcou nas outras telas, e sumir com
+eles faria o valor desaparecer da vista enquanto continuava valendo.
+
+O recado aparece **mesmo sem data marcada** — quem está prestes a marcar
+precisa saber antes que ali não vai adiantar.
+
+#### As cores, no mesmo pedido
+
+Ele descreveu de novo as três cores (azul pago, vermelho a pagar vencido,
+laranja a pagar não vencido). **Já estavam prontas na leva anterior, no ramo,
+e ainda não publicadas** — foi o que ele viu descrito, não na tela. Nada a
+fazer além de publicar; a regra bate exatamente com o que ele repetiu.
+
+**Verificado:** 5 testes novos de tela (a data não chega na consulta, os
+outros filtros chegam, a data guardada não é apagada, o recado aparece com e
+sem data marcada, e o recado NÃO aparece nas Solicitações — a barra é a mesma
+nas três telas) e 1 com banco de verdade, porque é no `WHERE` que isto vive e
+o dublê ignora `WHERE` inteiro.
+
+---
 ---
 
 ## Regras que não se discutem

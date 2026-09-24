@@ -128,10 +128,19 @@
   {{ bloco('Projeto', 'projeto', opcoes.projeto, filtros.projeto) }}
   {{ bloco('Responsável', 'responsavel', opcoes.responsavel, filtros.responsavel) }}
 
-  <div class="filtro {% if filtros.periodo_ini or filtros.periodo_fim %}aberto{% endif %}">
+  {# ⚠️ NO CALENDÁRIO A DATA NÃO MANDA — quem escolhe é o mês aberto. Os dois
+     blocos abaixo continuam aparecendo, e de propósito: eles guardam o que a
+     pessoa marcou nas Solicitações, e escondê-los faria o valor sumir da tela
+     enquanto continuava valendo lá. O que muda é o recado. #}
+  <div class="filtro {% if filtros.periodo_ini or filtros.periodo_fim %}aberto{% endif %}
+              {% if datas_nao_valem %}nao-vale{% endif %}">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
       <span>Vencimento</span><span class="seta">▾</span>
     </div>
+    {% if datas_nao_valem %}
+      <p class="filtro-recado">Não vale no calendário — aqui quem manda é o mês
+        aberto. Continua valendo nas Solicitações e no Relatório.</p>
+    {% endif %}
     <div class="filtro-cont">
       <div class="faixa">
         <div><label>De</label>
@@ -144,10 +153,15 @@
     </div>
   </div>
 
-  <div class="filtro {% if filtros.pgt_ini or filtros.pgt_fim %}aberto{% endif %}">
+  <div class="filtro {% if filtros.pgt_ini or filtros.pgt_fim %}aberto{% endif %}
+              {% if datas_nao_valem %}nao-vale{% endif %}">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
       <span>Data do pagamento</span><span class="seta">▾</span>
     </div>
+    {% if datas_nao_valem %}
+      <p class="filtro-recado">Não vale no calendário — aqui quem manda é o mês
+        aberto. Continua valendo nas Solicitações e no Relatório.</p>
+    {% endif %}
     <div class="filtro-cont">
       <div class="faixa">
         <div><label>De</label>

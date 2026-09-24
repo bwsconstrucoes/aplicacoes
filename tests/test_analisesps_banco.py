@@ -7335,3 +7335,30 @@ def test_no_recorte_das_pagas_o_dia_e_do_pagamento_mas_a_cor_e_do_STATUS(
 
     assert dia["situacoes"]["pago"]["total"] == Decimal("1000.00")
     assert dia["situacoes"]["vencido"]["quantidade"] == 0
+
+
+def test_o_calendario_ignora_a_data_e_obedece_ao_resto(banco_analisesps):
+    """24/09/2026: *"como é um calendário, eu não queria que o filtro de data
+    interferisse nele; o correto é aparecer tudo."*
+
+    Com banco de verdade porque é no `WHERE` que isto vive: a rota tira as
+    datas do dicionário, mas se a consulta as lesse de outro lugar, o dublê
+    não acusaria — ele ignora `WHERE` inteiro."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pagar", conta="ITAU",
+               vencimento="03/09/2026"),
+            sp("2", valor="2.000,00", status_pgt="Pagar", conta="ITAU",
+               vencimento="25/09/2026"),
+            sp("3", valor="9.000,00", status_pgt="Pagar", conta="BRADESCO",
+               vencimento="25/09/2026")])
+
+    # O filtro que a rota monta: sem data, com a conta.
+    achado = consultas.calendario_do_mes(
+        {"conta": ["ITAU"], "periodo_ini": None, "periodo_fim": None},
+        dt.date(2026, 9, 1), dt.date(2026, 9, 30), "geral")
+
+    # As duas do ITAÚ aparecem, nos dois dias — a data não recortou nada.
+    assert achado["quantidade"] == 2
+    assert achado["total"] == Decimal("3000.00")
+    assert dt.date(2026, 9, 3) in achado["dias"]
+    assert dt.date(2026, 9, 25) in achado["dias"]

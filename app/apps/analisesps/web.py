@@ -1459,6 +1459,24 @@ def calendario():
                                pode_operar=auth.pode_operar())
 
     filtros = _filtros_do_pedido()
+
+    # ⚠️ O FILTRO DE DATA NÃO VALE AQUI — pedido do dono em 24/09/2026:
+    # *"como é um calendário, eu não queria que o filtro de data interferisse
+    # nele; o correto é aparecer tudo. Continua mantendo os outros filtros."*
+    #
+    # E é o certo: quem escolhe a data nesta tela é o MÊS que está aberto. Um
+    # recorte de vencimento vindo das Solicitações apagaria dias inteiros do
+    # calendário sem nada na tela explicando por quê — a pessoa veria um mês
+    # pela metade e concluiria que não há nada a pagar naqueles dias.
+    #
+    # ⚠️ O FILTRO NÃO É APAGADO, só ignorado AQUI: ele continua guardado e
+    # valendo nas Solicitações e no Relatório, que é onde ele foi montado.
+    # Apagá-lo faria esta tela mexer no recorte das outras pelas costas.
+    DATAS_QUE_NAO_VALEM = ("periodo_ini", "periodo_fim", "pgt_ini", "pgt_fim")
+    datas_ignoradas = {k: filtros[k] for k in DATAS_QUE_NAO_VALEM
+                       if filtros.get(k)}
+    filtros_do_mes = dict(filtros, **{k: None for k in DATAS_QUE_NAO_VALEM})
+
     # ⚠️ O PADRÃO MUDOU EM 23/09/2026, DE "A PAGAR" PARA A VISÃO GERAL, e a
     # razão é a cor. O dono pediu *"azul para pago, vermelho para vencido e
     # laranja a vencer"* — e no recorte "a pagar" o azul NUNCA apareceria,
@@ -1489,7 +1507,7 @@ def calendario():
     status_do_dia = [v for v in opcoes.get("status_pgt", [])
                      if str(v).strip().lower() == alvo] if alvo else []
     primeiro, ultimo = grade_do_mes.limites(ano, mes)
-    achado = consultas.calendario_do_mes(filtros, primeiro, ultimo, tipo)
+    achado = consultas.calendario_do_mes(filtros_do_mes, primeiro, ultimo, tipo)
     grade = grade_do_mes.grade(ano, mes, achado["dias"])
     anterior, seguinte = grade_do_mes.vizinhos(ano, mes)
 
@@ -1503,6 +1521,9 @@ def calendario():
         tipo=tipo, tipos=consultas.TIPOS,
         args=request.args, filtros=filtros, opcoes=opcoes,
         status_do_dia=status_do_dia,
+        # A barra de filtros é a mesma das outras telas; estas duas dizem a
+        # ela que aqui a data não manda, e se havia alguma marcada.
+        datas_nao_valem=True, datas_ignoradas=datas_ignoradas,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
