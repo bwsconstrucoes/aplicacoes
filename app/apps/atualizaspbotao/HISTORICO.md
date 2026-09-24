@@ -5,9 +5,30 @@ encerrar. O que o módulo faz está no `README.md`.
 
 ## Pendente AGORA
 
-1. **Descobrir o que é o "atualizaspbotao do Render" que o dono quer trazer
-   para cá** (pedido de 24/09/2026). Ver "O que precisa ser confirmado com o
-   dono" abaixo — nada foi alterado no código enquanto isso não se resolve.
+1. **Saber o que o dono quer mudar no botão.** Já se sabe que o "do Render" é
+   este mesmo módulo (ver "Como o botão é disparado"); falta o objetivo do
+   trabalho. Nada foi alterado no código.
+
+## Como o botão é disparado (fonte: relato do dono, 24/09/2026)
+
+**Pipefy → Make → Render.** A pessoa aperta o botão no card da SP no Pipefy;
+o Pipefy dispara um webhook (aviso automático) para um cenário do **Make**; o
+Make chama `/api/atualizaspbotao/executar` neste serviço do Render. O objetivo,
+nas palavras do dono: levar as informações do card do Pipefy para o **Omie** e
+para a planilha **Registros de SP** (abas `SPsBD` e `Log`).
+
+Consequências:
+
+- O "atualizaspbotao do Render" que o dono pediu para trazer **é este
+  módulo** — não existe outro serviço.
+- A senha da rota e as chaves do Omie ficam guardadas **no cenário do Make**.
+- As etiquetas do Pipefy que este módulo calcula são, ao que tudo indica,
+  aplicadas no card pelo próprio Make (este código não chama o Pipefy) — **não
+  confirmado**.
+- O dono **não conhece** o Apps Script de que o código foi traduzido. Ele deve
+  ter sido o caminho usado antes de 25/04/2026; se o Make ainda aponta para ele
+  em algum ramo do cenário, existem dois caminhos gravando a mesma SP — **não
+  confirmado**.
 
 ## Linha do tempo (dos commits — fonte: `git log`)
 
@@ -61,11 +82,16 @@ porque não foram pedidos e mexem em produção):
 
 ## O que precisa ser confirmado com o dono
 
-1. **O que exatamente é o "atualizaspbotao do Render"?** Um serviço separado
-   no painel do Render (com nome e endereço próprios)? Se sim: qual o
-   repositório do GitHub dele, e em qual conta — a atual não enxerga nenhum com
-   esse nome. Ou é o Apps Script / o cenário do Make que ainda roda em paralelo?
-2. **O que chama esta rota hoje?** Botão do Pipefy direto, Make, Apps Script?
-   Isso define se desligar o antigo quebra alguma coisa.
-3. **O Apps Script original ainda roda?** Se sim, há dois caminhos gravando a
-   mesma SP — convém saber antes de mexer em qualquer um.
+Respondido em 24/09/2026: quem chama a rota (Pipefy → Make → Render) e que o
+"do Render" é este módulo. O dono não conhece o Apps Script de origem.
+
+Em aberto:
+
+1. **O que se quer mudar no botão?** (o motivo de abrir esta área)
+2. **No cenário do Make, o endereço chamado é só o do Render?** Basta abrir o
+   módulo HTTP do cenário e ver se o endereço tem `onrender.com` (ou o domínio
+   do serviço). Se aparecer `script.google.com`, o Apps Script antigo ainda roda.
+3. **Quem aplica as etiquetas no card do Pipefy** — o Make, com o que este
+   módulo devolve?
+4. **Corrigir os pontos 1 (senha vazia) e 3 (hora da SPsDDA)** da lista de
+   atenção acima?
