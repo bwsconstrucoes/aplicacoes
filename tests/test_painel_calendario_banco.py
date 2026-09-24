@@ -59,11 +59,13 @@ def test_o_terceiro_numero_e_o_a_pagar_pelo_vencimento(painel_no_banco):
     assert mes["a_pagar"] == pytest.approx(-250.0)
     assert mes["a_pagar_vencido"] == pytest.approx(-250.0)
     assert mes["a_pagar_a_vencer"] == 0.0
+    assert mes["quantos_vencidos"] == 1 and mes["quantos_a_vencer"] == 0
     assert mes["maior_a_pagar"] == (dt.date(2025, 6, 30), pytest.approx(-250.0))
     assert mes["dias_com_movimento"] == 1                 # só o dia 10 tem caixa
     antes = consultas.calendario_do_mes(f, 2025, 6, hoje=dt.date(2025, 6, 1))
     assert antes["dias"][dt.date(2025, 6, 30)]["vencido"] is False
     assert antes["a_pagar_a_vencer"] == pytest.approx(-250.0)
+    assert antes["quantos_vencidos"] == 0 and antes["quantos_a_vencer"] == 1
     # setembro tem o a receber de 2.000 em aberto — não é a pagar
     assert consultas.calendario_do_mes(f, 2025, 9)["a_pagar"] == 0.0
     # o detalhe do dia traz o título em aberto, marcado
