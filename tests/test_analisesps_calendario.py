@@ -58,8 +58,26 @@ def como(app, nome="MARCELO"):
     return cliente
 
 
+def situacoes(pago=0, vencido=0, a_vencer=0, outros=0):
+    """As quatro situações de um dia, no formato que a consulta devolve.
+
+    O valor acompanha a quantidade só para os testes terem número: aqui o que
+    importa é qual balde recebeu quanto."""
+    return {nome: {"quantidade": q, "total": Decimal(q * 100)}
+            for nome, q in (("pago", pago), ("vencido", vencido),
+                            ("a_vencer", a_vencer), ("outros", outros))}
+
+
+def dia_falso(quantidade=1, total="100.00", **baldes):
+    achado = situacoes(**baldes) if baldes else situacoes(a_vencer=quantidade)
+    return {"quantidade": quantidade, "total": Decimal(total),
+            "vencidas": achado["vencido"]["quantidade"],
+            "situacoes": achado}
+
+
 def achado_falso(dias=None, **extra):
     base = {"dias": dias or {}, "total": Decimal("0"), "quantidade": 0,
+            "situacoes": situacoes(),
             "sem_data_qtd": 0, "sem_data_total": Decimal("0"),
             "coluna": "vencimento_d"}
     base.update(extra)
@@ -219,14 +237,18 @@ def test_o_que_nao_tem_data_e_avisado_na_tela(app, monkeypatch):
     assert "900,00" in html
 
 
-def test_o_recorte_padrao_e_contas_a_pagar(app, monkeypatch):
-    """Calendário se olha para frente. A visão geral fica a um clique."""
+def test_o_recorte_padrao_e_a_VISAO_GERAL_por_causa_das_CORES(app, monkeypatch):
+    """⚠️ Era "a pagar" até 23/09/2026, e mudou por causa do pedido das cores.
+
+    O dono pediu azul para pago, vermelho para vencido e laranja a vencer. No
+    recorte "a pagar", conta paga está fora — o azul NUNCA apareceria. Abrir
+    numa visão que esconde uma das três cores é entregar metade do pedido."""
     vistos = []
     monkeypatch.setattr(consultas, "calendario_do_mes",
                         lambda f, ini, fim, tipo: vistos.append(tipo)
                         or achado_falso())
     como(app).get("/analisesps/calendario?f=1")
-    assert vistos == ["pagar"]
+    assert vistos == ["geral"]
 
 
 def test_recorte_inventado_na_barra_de_endereco_cai_no_padrao(app, monkeypatch):
@@ -235,7 +257,7 @@ def test_recorte_inventado_na_barra_de_endereco_cai_no_padrao(app, monkeypatch):
                         lambda f, ini, fim, tipo: vistos.append(tipo)
                         or achado_falso())
     como(app).get("/analisesps/calendario?f=1&tipo=qualquer-coisa")
-    assert vistos == ["pagar"]
+    assert vistos == ["geral"]
 
 
 def test_o_calendario_le_o_filtro_guardado_DAS_OUTRAS_TELAS(app, monkeypatch):
@@ -314,7 +336,8 @@ def test_o_link_do_dia_leva_o_status_QUE_A_CELULA_CONTOU(app, monkeypatch):
                                                  "total": Decimal("10"),
                                                  "vencidas": 0}}))
     html = como(app).get(
-        "/analisesps/calendario?f=1&ano=2026&mes=9").get_data(as_text=True)
+        "/analisesps/calendario?f=1&ano=2026&mes=9&tipo=pagar"
+    ).get_data(as_text=True)
 
     assert "status_pgt=PAGAR" in html
     assert "status_pgt=Pago" not in html
@@ -337,3 +360,170 @@ def test_no_recorte_geral_o_dia_nao_filtra_status(app, monkeypatch):
     ).get_data(as_text=True)
 
     assert "status_pgt=" not in html
+
+
+# ---------------------------------------------------------------------------
+# AS CORES — 23/09/2026
+#
+# *"Coloca azul para pago, vermelho para vencido e laranja a vencer."*
+#
+# ⚠️ O QUE ESTES TESTES PROTEGEM: um dia com conta paga E conta a vencer tem
+# de mostrar as DUAS. Pintar o dia de uma cor só esconderia metade do que ele
+# tem, e quem olha não teria como saber que está vendo metade.
+# ---------------------------------------------------------------------------
+def test_o_dia_mostra_UMA_LINHA_POR_SITUACAO():
+    from app.apps.analisesps import calendario
+
+    faixas = calendario._faixas(
+        {"pago": {"quantidade": 2, "total": Decimal("200")},
+         "vencido": {"quantidade": 1, "total": Decimal("900")},
+         "a_vencer": {"quantidade": 3, "total": Decimal("300")},
+         "outros": {"quantidade": 0, "total": Decimal("0")}})
+
+    assert [f["cor"] for f in faixas] == ["vermelho", "laranja", "azul"]
+    assert [f["quantidade"] for f in faixas] == [1, 3, 2]
+
+
+def test_a_situacao_vazia_nao_vira_linha():
+    """Um dia com três faixas zeradas seria ruído dentro de um quadradinho
+    que já é pequeno."""
+    from app.apps.analisesps import calendario
+
+    faixas = calendario._faixas(
+        {"pago": {"quantidade": 0, "total": Decimal("0")},
+         "a_vencer": {"quantidade": 2, "total": Decimal("200")}})
+    assert [f["cor"] for f in faixas] == ["laranja"]
+
+
+def test_a_ordem_das_cores_e_de_URGENCIA_e_nao_de_valor():
+    """⚠️ Vencido primeiro, sempre: é o que cobra ação. Ordenar por valor
+    faria uma conta vencida de R$ 200 sumir embaixo de vinte pagas."""
+    from app.apps.analisesps import calendario
+
+    assert [c for _, c, _ in calendario.SITUACOES][:3] == [
+        "vermelho", "laranja", "azul"]
+
+
+def test_a_barra_do_dia_e_a_situacao_MAIS_URGENTE_e_nao_a_maior(app,
+                                                                monkeypatch):
+    """Um dia com uma conta vencida e vinte pagas continua gritando vermelho."""
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: achado_falso(
+                            {date(2026, 9, 10): dia_falso(
+                                21, "2100.00", pago=20, vencido=1)}))
+    html = como(app).get(
+        "/analisesps/calendario?f=1&ano=2026&mes=9").get_data(as_text=True)
+
+    assert "urgencia-vermelho" in html
+    assert "urgencia-azul" not in html
+    # E as duas situações aparecem, cada uma na sua linha.
+    assert "faixa-vermelho" in html and "faixa-azul" in html
+
+
+def test_a_tela_traz_a_legenda_das_cores(app, monkeypatch):
+    """Cor sem legenda é adivinhação — e são três."""
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: achado_falso())
+    html = como(app).get("/analisesps/calendario?f=1").get_data(as_text=True)
+
+    assert "vencido e ainda a pagar" in html
+    assert "a vencer" in html
+    assert "pago" in html
+
+
+def test_o_mes_mostra_o_total_de_cada_situacao(app, monkeypatch):
+    """"Quanto tem vencido?" olhando dia a dia exigiria somar de cabeça."""
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: achado_falso(
+                            situacoes=situacoes(pago=2, vencido=1, a_vencer=3)))
+    html = como(app).get("/analisesps/calendario?f=1").get_data(as_text=True)
+
+    assert "Vencido e ainda a pagar no mês" in html
+    assert "A vencer no mês" in html
+    assert "Pago no mês" in html
+    # A situação sem nada não vira quadro vazio.
+    assert "Em outra situação no mês" not in html
+
+
+# ---------------------------------------------------------------------------
+# O FILTRO DE DATA NÃO VALE AQUI — 24/09/2026
+#
+# *"Como é um calendário, eu não queria que o filtro de data interferisse nele;
+# o correto é aparecer tudo. Continua mantendo os outros filtros."*
+#
+# ⚠️ E é o certo: quem escolhe a data nesta tela é o MÊS aberto. Um recorte de
+# vencimento vindo das Solicitações apagaria dias inteiros do calendário sem
+# nada explicando — a pessoa veria um mês pela metade e concluiria que não há
+# nada a pagar naqueles dias.
+# ---------------------------------------------------------------------------
+def test_o_filtro_de_data_nao_chega_na_consulta_do_calendario(app, monkeypatch):
+    vistos = []
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: vistos.append(f)
+                        or achado_falso())
+    como(app).get("/analisesps/calendario?f=1&periodo_ini=2026-09-01"
+                  "&periodo_fim=2026-09-05&pgt_ini=2026-09-02"
+                  "&pgt_fim=2026-09-03")
+
+    usado = vistos[0]
+    assert usado["periodo_ini"] is None and usado["periodo_fim"] is None
+    assert usado["pgt_ini"] is None and usado["pgt_fim"] is None
+
+
+def test_os_OUTROS_filtros_continuam_valendo(app, monkeypatch):
+    """"Continua mantendo os outros filtros, caso a gente queira." Jogar fora
+    o filtro inteiro junto com a data seria perder o que a tela tem de melhor."""
+    vistos = []
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: vistos.append(f)
+                        or achado_falso())
+    como(app).get("/analisesps/calendario?f=1&conta=ITAU&periodo_ini=2026-09-01"
+                  "&centro_custo=OBRA+1&busca=cimento")
+
+    usado = vistos[0]
+    assert usado["conta"] == ["ITAU"]
+    assert usado["centro_custo"] == ["OBRA 1"]
+    assert usado["busca"] == "cimento"
+    assert usado["periodo_ini"] is None
+
+
+def test_a_data_marcada_NAO_E_APAGADA_das_outras_telas(app, monkeypatch):
+    """⚠️ Ignorar aqui e apagar são coisas diferentes. O recorte foi montado
+    nas Solicitações; esta tela não pode mexer nele pelas costas."""
+    gravados = []
+    monkeypatch.setattr(preferencias, "gravar",
+                        lambda pessoa, chave, valor: gravados.append(valor))
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: achado_falso())
+
+    html = como(app).get(
+        "/analisesps/calendario?f=1&periodo_ini=2026-09-01").get_data(as_text=True)
+
+    # O que foi guardado continua com a data.
+    assert gravados and gravados[0].get("periodo_ini") == ["2026-09-01"]
+    # E a tela diz, na própria barra, que ali ela não vale.
+    assert "Não vale no calendário" in html
+
+
+def test_a_barra_avisa_que_a_data_nao_vale_mesmo_sem_data_marcada(app,
+                                                                  monkeypatch):
+    """O recado não depende de haver data marcada: quem vai marcar precisa
+    saber antes que ali não vai adiantar."""
+    monkeypatch.setattr(consultas, "calendario_do_mes",
+                        lambda f, ini, fim, tipo: achado_falso())
+    html = como(app).get("/analisesps/calendario?f=1").get_data(as_text=True)
+    assert html.count("Não vale no calendário") == 2   # vencimento e pagamento
+
+
+def test_nas_solicitacoes_a_data_continua_valendo(app, monkeypatch):
+    """A barra é a mesma nas três telas. O recado só pode aparecer numa."""
+    monkeypatch.setattr(consultas, "listar", lambda f, **k: [])
+    monkeypatch.setattr(consultas, "resumo_e_agendamento", lambda f: (
+        {"quantidade": 0, "total": 0, "quantidade_pagar": 0, "total_pagar": 0},
+        {}))
+    monkeypatch.setattr(consultas, "soma_por", lambda f, coluna, limite=12: [])
+    monkeypatch.setattr(preferencias, "ler", lambda pessoa, chave: {})
+
+    html = como(app).get(
+        "/analisesps/solicitacoes?f=1&periodo_ini=2026-09-01").get_data(as_text=True)
+    assert "Não vale no calendário" not in html

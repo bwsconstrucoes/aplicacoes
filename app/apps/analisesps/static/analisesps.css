@@ -170,6 +170,16 @@ a { color: var(--azul-claro); }
 }
 .filtro-cab .seta { margin-left: auto; transition: transform .15s; color: var(--tinta-suave); }
 .filtro.aberto .filtro-cab .seta { transform: rotate(180deg); }
+
+/* O filtro que NAO VALE NA TELA ATUAL (a data, no calendario: quem manda ali e
+   o mes aberto). Ele continua na barra de proposito — guarda o que a pessoa
+   marcou nas outras telas —, so fica apagado e com o recado do porque. */
+.filtro.nao-vale .filtro-cab { color: var(--tinta-suave); }
+.filtro.nao-vale .filtro-cont { opacity: .6; }
+.filtro-recado {
+  margin: 0 2px 8px; font-size: 11.5px; line-height: 1.35;
+  color: var(--ambar); font-weight: 600;
+}
 .filtro-cont { display: none; padding: 0 2px 10px; }
 .filtro.aberto .filtro-cont { display: block; }
 .filtro-badge { background: var(--azul); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 7px; }
@@ -212,6 +222,12 @@ a { color: var(--azul-claro); }
 .kpi.ambar { border-left-color: var(--ambar); }
 .kpi.roxo { border-left-color: var(--roxo); }
 .kpi.ciano { border-left-color: var(--ciano); }
+/* As cores do calendario das SPs (23/09/2026), com os MESMOS nomes que as
+   faixas do dia usam — assim o quadro de cima e o quadradinho do dia nunca
+   discordam sobre o que e "laranja". */
+.kpi.laranja { border-left-color: var(--ambar); }
+.kpi.azul { border-left-color: var(--azul-claro); }
+.kpi.cinza { border-left-color: var(--borda-forte); }
 .kpi.estatico { cursor: default; }
 .kpi.estatico:hover { transform: none; box-shadow: var(--sombra); }
 
@@ -790,6 +806,9 @@ a.kpi { display: block; }
   background: var(--branco); min-height: 84px; padding: 5px 6px;
   display: flex; flex-direction: column; gap: 3px;
 }
+/* O dia do calendario das SPs cresceu: alem do total, ele mostra ate tres
+   linhas coloridas (vencido, a vencer, pago). Com 84px elas eram cortadas. */
+.calendario.com-semana .cal-dia { min-height: 108px; gap: 2px; }
 .cal-dia.fora     { background: #FAFBFD; }
 .cal-dia.fora .cal-numero { color: var(--borda-forte); }
 .cal-dia.nao-util { background: #F4F6FA; }
@@ -830,7 +849,6 @@ a.kpi { display: block; }
 a.cal-dia { text-decoration: none; color: inherit; cursor: pointer; }
 a.cal-dia:hover { background: #EEF4FF; }
 a.cal-dia.nao-util:hover { background: #E8EEF9; }
-.cal-dia.tem-vencida { box-shadow: inset 3px 0 0 var(--vermelho); }
 
 .cal-dinheiro {
   font-family: var(--fonte-dados); font-size: 12px; font-weight: 700;
@@ -839,7 +857,44 @@ a.cal-dia.nao-util:hover { background: #E8EEF9; }
 }
 .cal-quantas { font-size: 10.5px; color: var(--tinta-suave); line-height: 1.2; }
 .so-estreito { display: none; }
-.cal-vencida { color: var(--vermelho); font-weight: 700; }
+
+/* AS TRES CORES, pedido do dono em 23/09/2026: azul pago, vermelho vencido,
+   laranja a vencer. Uma LINHA por situacao dentro do dia, e nao o dia inteiro
+   pintado de uma cor so: o mesmo dia costuma ter conta paga E conta a vencer,
+   e escolher uma cor esconderia a outra.
+
+   As cores saem das variaveis que o modulo ja usa (--vermelho, --ambar,
+   --azul-claro), para a tela continuar sendo a mesma tela. */
+.cal-faixa {
+  display: flex; align-items: baseline; gap: 4px;
+  font-family: var(--fonte-dados); font-size: 10.5px; line-height: 1.25;
+  padding: 1px 4px; border-radius: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cal-faixa-qtd {
+  font-weight: 700; min-width: 13px; text-align: right; opacity: .85;
+}
+.faixa-vermelho { background: #FFEAEA; color: #8C1F19; }
+.faixa-laranja  { background: #FFF1DC; color: #7A4300; }
+.faixa-azul     { background: #E7EDF7; color: var(--azul); }
+.faixa-cinza    { background: #EFF1F6; color: var(--cinza); }
+
+/* A barra da esquerda do dia e a situacao MAIS URGENTE que ele tem — nao a
+   de maior valor. Um dia com uma conta vencida e vinte pagas continua
+   gritando vermelho, que e o certo. */
+.cal-dia.urgencia-vermelho { box-shadow: inset 3px 0 0 var(--vermelho); }
+.cal-dia.urgencia-laranja  { box-shadow: inset 3px 0 0 var(--ambar); }
+.cal-dia.urgencia-azul     { box-shadow: inset 3px 0 0 var(--azul-claro); }
+.cal-dia.urgencia-cinza    { box-shadow: inset 3px 0 0 var(--borda-forte); }
+
+.cal-legenda {
+  display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center;
+  margin: 10px 0 0; font-size: 12px; color: var(--tinta-suave);
+}
+.cal-chip {
+  display: inline-block; width: 12px; height: 12px; border-radius: 3px;
+  margin-right: 2px; vertical-align: -1px;
+}
 .cal-dia.fora .cal-dinheiro { color: var(--tinta-suave); font-weight: 600; }
 
 /* A coluna da direita: o total da semana. Fundo proprio para nao ser lida
@@ -860,6 +915,8 @@ a.cal-dia.nao-util:hover { background: #E8EEF9; }
   .cal-semana { display: none; }
   .calendario.com-semana .cal-cab:nth-child(8) { display: none; }
   .cal-dinheiro { font-size: 10.5px; }
+  .calendario.com-semana .cal-dia { min-height: 86px; }
+  .cal-faixa { font-size: 9.5px; padding: 0 3px; gap: 3px; }
   /* O numero cheio nao cabe num quadradinho de menos de 40px: no celular
      vale o abreviado ("128,4 mil"). Os dois vem no HTML; quem escolhe e a
      largura, para o valor exato continuar existindo em tela grande. */

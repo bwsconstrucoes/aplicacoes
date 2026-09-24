@@ -1596,22 +1596,64 @@ def calendario_do_mes(f: dict, primeiro, ultimo, tipo: str = "geral") -> dict:
     coluna = coluna_de_data(tipo)
     where, params = _where_relatorio(f, tipo)
 
+    # As TRÊS SITUAÇÕES QUE GANHAM COR, pedido do dono em 23/09/2026: *"coloca
+    # azul para pago, vermelho para vencido e laranja a vencer."*
+    #
+    # ⚠️ ELAS SAEM NA MESMA VARREDURA, com `FILTER`. Três consultas seriam três
+    # passagens pela mesma tabela filtrada para responder à mesma pergunta — e
+    # o custo desta tela é justamente o que impede que ela fique cara com 59
+    # mil SPs.
+    #
+    # ⚠️ "VENCIDO" É SEMPRE PELO VENCIMENTO, mesmo no recorte das pagas, onde o
+    # DIA do calendário conta pelo pagamento. São coisas diferentes: o dia diz
+    # QUANDO aquilo aconteceu; a cor diz O QUE aconteceu.
+    pago = "lower(trim(coalesce(status_pgt,''))) = 'pago'"
+    a_pagar = "lower(trim(coalesce(status_pgt,''))) = 'pagar'"
+    vencido = f"{a_pagar} AND vencimento_d < {SQL_HOJE}"
+    a_vencer = f"{a_pagar} AND (vencimento_d >= {SQL_HOJE} OR vencimento_d IS NULL)"
+
+    def soma(condicao):
+        return (f"count(*) FILTER (WHERE {condicao}), "
+                f"coalesce(sum(valor_num) FILTER (WHERE {condicao}), 0)")
+
     linhas = consultar(
         f"SELECT {coluna} AS dia, count(*), coalesce(sum(valor_num), 0), "
-        # As vencidas e ainda a pagar, que é o que pinta o dia de vermelho.
-        "        count(*) FILTER (WHERE lower(trim(coalesce(status_pgt,''))) "
-        f"                              = 'pagar' AND vencimento_d < {SQL_HOJE}) "
+        f"       {soma(pago)}, {soma(vencido)}, {soma(a_vencer)} "
         f"  FROM analisesps.sps{where} "
         f"   AND {coluna} >= ? AND {coluna} <= ? "
         " GROUP BY 1 ORDER BY 1", tuple(params) + (primeiro, ultimo))
 
     dias = {}
     total = quantidade = 0
-    for dia, quantas, valor, vencidas in linhas:
-        dias[dia] = {"quantidade": int(quantas or 0), "total": valor or 0,
-                     "vencidas": int(vencidas or 0)}
-        total += valor or 0
-        quantidade += int(quantas or 0)
+    mes_por_situacao = {s: {"quantidade": 0, "total": 0}
+                        for s in ("pago", "vencido", "a_vencer", "outros")}
+    for linha in linhas:
+        (dia, quantas, valor, pago_q, pago_v, venc_q, venc_v,
+         av_q, av_v) = linha
+        quantas = int(quantas or 0)
+        valor = valor or 0
+        situacoes = {
+            "pago": {"quantidade": int(pago_q or 0), "total": pago_v or 0},
+            "vencido": {"quantidade": int(venc_q or 0), "total": venc_v or 0},
+            "a_vencer": {"quantidade": int(av_q or 0), "total": av_v or 0},
+        }
+        # ⚠️ O RESTO É CALCULADO, NÃO CONSULTADO. Status fora das três (uma SP
+        # com a coluna em branco, um valor novo que a planilha ganhe amanhã)
+        # continuaria no total do dia e não apareceria em cor nenhuma — as
+        # partes não somariam o todo, e ninguém veria isso na tela. Assim o
+        # que sobra ganha um balde neutro e a soma sempre fecha.
+        situacoes["outros"] = {
+            "quantidade": quantas - sum(s["quantidade"] for s in situacoes.values()),
+            "total": valor - sum(s["total"] for s in situacoes.values()),
+        }
+        dias[dia] = {"quantidade": quantas, "total": valor,
+                     "vencidas": situacoes["vencido"]["quantidade"],
+                     "situacoes": situacoes}
+        total += valor
+        quantidade += quantas
+        for nome, s in situacoes.items():
+            mes_por_situacao[nome]["quantidade"] += s["quantidade"]
+            mes_por_situacao[nome]["total"] += s["total"]
 
     # O que o filtro alcança mas não tem a data que manda. Consulta própria e
     # barata (uma contagem), e a tela só a mostra quando não é zero.
@@ -1623,6 +1665,7 @@ def calendario_do_mes(f: dict, primeiro, ultimo, tipo: str = "geral") -> dict:
         "dias": dias,
         "total": total,
         "quantidade": quantidade,
+        "situacoes": mes_por_situacao,
         "sem_data_qtd": int((sem_data or (0, 0))[0] or 0),
         "sem_data_total": (sem_data or (0, 0))[1] or 0,
         "coluna": coluna,

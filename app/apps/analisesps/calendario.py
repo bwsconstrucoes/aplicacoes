@@ -60,6 +60,34 @@ def limites(ano: int, mes: int) -> tuple[date, date]:
     return semanas[0][0], semanas[-1][-1]
 
 
+# As cores, pedidas pelo dono em 23/09/2026: *"coloca azul para pago, vermelho
+# para vencido e laranja a vencer."* A chave vira classe no HTML (`faixa-azul`)
+# e o rótulo é o que aparece ao passar o mouse.
+#
+# ⚠️ A ORDEM DESTA LISTA É A ORDEM NA TELA, e não é alfabética nem à toa: o que
+# venceu vem primeiro porque é o que cobra ação; o pago vem por último porque é
+# o que já está resolvido. "Outros" fecha a conta quando aparece um status que
+# não é nenhum dos três — sem ele, as partes não somariam o total do dia.
+SITUACOES = [
+    ("vencido", "vermelho", "vencido e ainda a pagar"),
+    ("a_vencer", "laranja", "a vencer"),
+    ("pago", "azul", "pago"),
+    ("outros", "cinza", "em outra situação"),
+]
+
+
+def _faixas(situacoes: dict) -> list:
+    """As faixas coloridas de um dia, só as que têm alguma coisa."""
+    saida = []
+    for chave, cor, rotulo in SITUACOES:
+        achado = situacoes.get(chave) or {}
+        if achado.get("quantidade"):
+            saida.append({"chave": chave, "cor": cor, "rotulo": rotulo,
+                          "quantidade": achado["quantidade"],
+                          "total": achado.get("total") or 0})
+    return saida
+
+
 def grade(ano: int, mes: int, por_dia: dict) -> dict:
     """A grade do mês, semana a semana, com o que o banco achou em cada dia.
 
@@ -96,6 +124,11 @@ def grade(ano: int, mes: int, por_dia: dict) -> dict:
                 "quantidade": achado.get("quantidade") or 0,
                 "total": achado.get("total") or 0,
                 "vencidas": achado.get("vencidas") or 0,
+                # As faixas coloridas do dia, na ORDEM EM QUE SE OLHA: o que
+                # já venceu primeiro (é o que cobra ação), depois o que está
+                # por vencer, depois o que já foi pago. Só entram as que têm
+                # alguma coisa — um dia com três faixas vazias seria ruído.
+                "faixas": _faixas(achado.get("situacoes") or {}),
             })
         semanas.append({"dias": dias, "total": soma, "quantidade": quantas})
 

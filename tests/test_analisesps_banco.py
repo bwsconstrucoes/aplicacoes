@@ -7273,3 +7273,92 @@ def test_o_total_do_calendario_bate_com_o_do_relatorio(banco_analisesps):
 
     assert achado["total"] == numeros["total"]
     assert achado["quantidade"] == numeros["quantidade"]
+
+
+def test_o_calendario_separa_pago_vencido_e_a_vencer(banco_analisesps):
+    """As três cores pedidas pelo dono em 23/09/2026. ⚠️ Só com banco de
+    verdade: os três baldes saem de `FILTER` na mesma varredura, e o dublê
+    ignora isso — devolveria tudo em todos, e a tela ficaria colorida do jeito
+    errado sem nada estourar."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pago",
+               vencimento="10/09/2026"),
+            sp("2", valor="2.000,00", status_pgt="Pagar",
+               vencimento="10/09/2026"),          # vencido (data no passado)
+            sp("3", valor="3.000,00", status_pgt="Pagar",
+               vencimento="10/09/2090")])        # a vencer
+
+    achado = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2090, 12, 31), "geral")
+
+    de_setembro = achado["dias"][dt.date(2026, 9, 10)]["situacoes"]
+    assert de_setembro["pago"]["total"] == Decimal("1000.00")
+    assert de_setembro["vencido"]["total"] == Decimal("2000.00")
+    assert de_setembro["a_vencer"]["quantidade"] == 0
+
+    de_2090 = achado["dias"][dt.date(2090, 9, 10)]["situacoes"]
+    assert de_2090["a_vencer"]["total"] == Decimal("3000.00")
+
+
+def test_as_partes_do_dia_sempre_somam_o_TOTAL_do_dia(banco_analisesps):
+    """⚠️ Um status fora dos três (coluna em branco, ou um valor novo que a
+    planilha ganhe amanhã) entraria no total e não apareceria em cor nenhuma.
+    As partes não fechariam o todo, e ninguém veria isso na tela — por isso o
+    que sobra cai num balde neutro."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pago",
+               vencimento="10/09/2026"),
+            sp("2", valor="500,00", status_pgt="Em análise",
+               vencimento="10/09/2026")])
+
+    dia = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30),
+        "geral")["dias"][dt.date(2026, 9, 10)]
+
+    assert sum(s["total"] for s in dia["situacoes"].values()) == dia["total"]
+    assert sum(s["quantidade"] for s in dia["situacoes"].values()) == dia["quantidade"]
+    assert dia["situacoes"]["outros"]["total"] == Decimal("500.00")
+
+
+def test_no_recorte_das_pagas_o_dia_e_do_pagamento_mas_a_cor_e_do_STATUS(
+        banco_analisesps):
+    """São coisas diferentes, e misturá-las seria fácil: o DIA diz quando
+    aquilo aconteceu; a COR diz o que aconteceu. Uma conta paga aparece no dia
+    do pagamento, e é azul mesmo tendo vencido antes."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pago",
+               vencimento="05/09/2026", data_pagamento="20/09/2026")])
+
+    dia = consultas.calendario_do_mes(
+        {}, dt.date(2026, 9, 1), dt.date(2026, 9, 30),
+        "pagas")["dias"][dt.date(2026, 9, 20)]
+
+    assert dia["situacoes"]["pago"]["total"] == Decimal("1000.00")
+    assert dia["situacoes"]["vencido"]["quantidade"] == 0
+
+
+def test_o_calendario_ignora_a_data_e_obedece_ao_resto(banco_analisesps):
+    """24/09/2026: *"como é um calendário, eu não queria que o filtro de data
+    interferisse nele; o correto é aparecer tudo."*
+
+    Com banco de verdade porque é no `WHERE` que isto vive: a rota tira as
+    datas do dicionário, mas se a consulta as lesse de outro lugar, o dublê
+    não acusaria — ele ignora `WHERE` inteiro."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", valor="1.000,00", status_pgt="Pagar", conta="ITAU",
+               vencimento="03/09/2026"),
+            sp("2", valor="2.000,00", status_pgt="Pagar", conta="ITAU",
+               vencimento="25/09/2026"),
+            sp("3", valor="9.000,00", status_pgt="Pagar", conta="BRADESCO",
+               vencimento="25/09/2026")])
+
+    # O filtro que a rota monta: sem data, com a conta.
+    achado = consultas.calendario_do_mes(
+        {"conta": ["ITAU"], "periodo_ini": None, "periodo_fim": None},
+        dt.date(2026, 9, 1), dt.date(2026, 9, 30), "geral")
+
+    # As duas do ITAÚ aparecem, nos dois dias — a data não recortou nada.
+    assert achado["quantidade"] == 2
+    assert achado["total"] == Decimal("3000.00")
+    assert dt.date(2026, 9, 3) in achado["dias"]
+    assert dt.date(2026, 9, 25) in achado["dias"]

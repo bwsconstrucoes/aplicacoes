@@ -1459,12 +1459,38 @@ def calendario():
                                pode_operar=auth.pode_operar())
 
     filtros = _filtros_do_pedido()
-    tipo = request.args.get("tipo", "pagar")
+
+    # ⚠️ O FILTRO DE DATA NÃO VALE AQUI — pedido do dono em 24/09/2026:
+    # *"como é um calendário, eu não queria que o filtro de data interferisse
+    # nele; o correto é aparecer tudo. Continua mantendo os outros filtros."*
+    #
+    # E é o certo: quem escolhe a data nesta tela é o MÊS que está aberto. Um
+    # recorte de vencimento vindo das Solicitações apagaria dias inteiros do
+    # calendário sem nada na tela explicando por quê — a pessoa veria um mês
+    # pela metade e concluiria que não há nada a pagar naqueles dias.
+    #
+    # ⚠️ O FILTRO NÃO É APAGADO, só ignorado AQUI: ele continua guardado e
+    # valendo nas Solicitações e no Relatório, que é onde ele foi montado.
+    # Apagá-lo faria esta tela mexer no recorte das outras pelas costas.
+    DATAS_QUE_NAO_VALEM = ("periodo_ini", "periodo_fim", "pgt_ini", "pgt_fim")
+    datas_ignoradas = {k: filtros[k] for k in DATAS_QUE_NAO_VALEM
+                       if filtros.get(k)}
+    filtros_do_mes = dict(filtros, **{k: None for k in DATAS_QUE_NAO_VALEM})
+
+    # ⚠️ O PADRÃO MUDOU EM 23/09/2026, DE "A PAGAR" PARA A VISÃO GERAL, e a
+    # razão é a cor. O dono pediu *"azul para pago, vermelho para vencido e
+    # laranja a vencer"* — e no recorte "a pagar" o azul NUNCA apareceria,
+    # porque conta paga está fora dele. Abrir numa visão que esconde uma das
+    # três cores que ele acabou de pedir seria entregar metade.
+    #
+    # O preço, dito para não se perder: na visão geral o dia conta pelo
+    # VENCIMENTO, inclusive o que já foi pago. Ou seja, o calendário mostra
+    # "o que vencia neste dia, e o que aconteceu com aquilo". Para ver o dia
+    # em que o dinheiro saiu de fato, o recorte "Contas pagas" continua ali,
+    # e ele conta pela data do pagamento.
+    tipo = request.args.get("tipo", "geral")
     if tipo not in consultas.TIPOS:
-        # O padrão é CONTAS A PAGAR, e não a visão geral do Relatório: um
-        # calendário se olha para frente, para saber o que vem. A visão geral
-        # continua a um clique, na mesma barra.
-        tipo = "pagar"
+        tipo = "geral"
 
     ano, mes = grade_do_mes.mes_valido(request.args.get("ano"),
                                        request.args.get("mes"))
@@ -1481,7 +1507,7 @@ def calendario():
     status_do_dia = [v for v in opcoes.get("status_pgt", [])
                      if str(v).strip().lower() == alvo] if alvo else []
     primeiro, ultimo = grade_do_mes.limites(ano, mes)
-    achado = consultas.calendario_do_mes(filtros, primeiro, ultimo, tipo)
+    achado = consultas.calendario_do_mes(filtros_do_mes, primeiro, ultimo, tipo)
     grade = grade_do_mes.grade(ano, mes, achado["dias"])
     anterior, seguinte = grade_do_mes.vizinhos(ano, mes)
 
@@ -1491,9 +1517,13 @@ def calendario():
         grade=grade, achado=achado, ano=ano, mes=mes,
         anterior=anterior, seguinte=seguinte,
         meses=grade_do_mes.MESES, dias_da_semana=grade_do_mes.DIAS_DA_SEMANA,
+        situacoes_possiveis=grade_do_mes.SITUACOES,
         tipo=tipo, tipos=consultas.TIPOS,
         args=request.args, filtros=filtros, opcoes=opcoes,
         status_do_dia=status_do_dia,
+        # A barra de filtros é a mesma das outras telas; estas duas dizem a
+        # ela que aqui a data não manda, e se havia alguma marcada.
+        datas_nao_valem=True, datas_ignoradas=datas_ignoradas,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())

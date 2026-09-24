@@ -6509,6 +6509,116 @@ real de 59 mil SPs não foi medido; a consulta é uma só e agrupada no banco,
 mas isso é argumento, não medição.
 
 ---
+
+### Octogésima quarta leva (23/09) — as três cores, e o padrão que teve de mudar
+
+Logo depois de ver o Calendário publicado, o dono pediu:
+
+> *"Coloca azul para pago, vermelho para vencido e laranja a vencer."*
+
+**O dia deixou de ter um número só.** Cada dia agora mostra o total em cima e,
+abaixo, **uma linha por situação**, colorida. Pintar o dia inteiro de uma cor
+só era a saída óbvia e está errada: o mesmo dia costuma ter conta paga **e**
+conta a vencer, e escolher uma cor esconderia a outra — sem que quem olha
+tivesse como saber que está vendo metade.
+
+**A ordem das linhas é de URGÊNCIA, não de valor:** vencido, a vencer, pago.
+Por valor, uma conta vencida de R$ 200 sumiria embaixo de vinte pagas. Pelo
+mesmo motivo, a barrinha da esquerda do dia é a situação **mais urgente** que
+ele tem: um dia com uma vencida e vinte pagas continua gritando vermelho.
+
+#### ⚠️ O padrão da tela teve de mudar junto, e isso não era óbvio
+
+A tela abria em **"contas a pagar"** — escolha da leva anterior, com o
+argumento de que calendário se olha para frente. **Com as cores, esse padrão
+passou a esconder uma delas:** conta paga está fora do recorte "a pagar", ou
+seja, **o azul nunca apareceria**. Abrir numa visão que esconde uma das três
+cores que ele acabou de pedir é entregar metade.
+
+Agora abre na **visão geral**. O preço, dito para não se perder: na visão
+geral o dia conta pelo **vencimento**, inclusive o que já foi pago — o
+calendário passa a mostrar *"o que vencia neste dia, e o que aconteceu com
+aquilo"*. Para ver o dia em que o dinheiro **saiu de fato**, o recorte
+"Contas pagas" continua ali, contando pela data do pagamento.
+
+#### Duas coisas que não aparecem na tela e sustentam ela
+
+1. **Os três baldes saem da MESMA varredura**, com `FILTER`. Três consultas
+   seriam três passagens pela mesma tabela filtrada para responder à mesma
+   pergunta — e o custo baixo é o que impede esta tela de ficar cara com 59
+   mil SPs.
+2. **O que sobra vira um balde neutro, calculado.** Um status fora dos três
+   (coluna em branco, ou um valor novo que a planilha ganhe amanhã) entraria
+   no total do dia e não apareceria em cor nenhuma: as partes não fechariam o
+   todo, e ninguém veria isso olhando. Há teste com banco cobrando que a soma
+   das partes seja sempre o total.
+
+**"Vencido" é sempre pelo vencimento**, mesmo no recorte das pagas, onde o
+DIA conta pelo pagamento. São coisas diferentes e fáceis de misturar: o dia
+diz **quando** aquilo aconteceu; a cor diz **o que** aconteceu.
+
+**O quadro de cima ganhou os mesmos três baldes somados no mês** — *"quanto
+tem vencido?"* olhando dia a dia exigiria somar de cabeça. E a tela ganhou
+legenda: três cores sem legenda é adivinhação.
+
+**Verificado:** 26 testes de tela e de grade, mais 3 novos com banco de
+verdade (a separação nos três baldes, as partes somando o total, e a cor
+saindo do status enquanto o dia sai da data do pagamento).
+
+**NÃO verificado, e continua sendo a mesma coisa da leva anterior:** a tela
+não foi aberta num navegador. O dia cresceu para caber até três linhas
+coloridas (108 px, 86 px no celular) — se elas não couberem, é aqui que se
+mexe.
+
+---
+
+### Octogésima quinta leva (24/09) — o filtro de data não vale no calendário
+
+> *"Como é um calendário, eu não queria que o filtro de data interferisse
+> nele. Porque o correto é aparecer tudo. (…) Continua mantendo os outros
+> filtros, caso a gente queira."*
+
+**Quem escolhe a data nesta tela é o MÊS aberto.** Um recorte de vencimento
+montado nas Solicitações apagaria dias inteiros do calendário — e sem nada na
+tela explicando por quê. A pessoa veria um mês pela metade e concluiria que
+não há nada a pagar naqueles dias, que é o pior tipo de erro: o que parece um
+fato.
+
+Os quatro campos de data (vencimento de/até e pagamento de/até) passam a ser
+**ignorados** na consulta do calendário. Todo o resto do filtro continua
+valendo — obra, conta, projeto, credor, busca, tudo.
+
+#### ⚠️ Ignorar não é apagar, e a diferença importa
+
+O recorte foi montado nas Solicitações, e é lá que ele vale. Se esta tela
+apagasse a data do filtro guardado, ela estaria mexendo no recorte das outras
+telas **pelas costas** — a pessoa voltaria para as Solicitações e encontraria
+o filtro dela desfeito, sem ter pedido nada. Então a data continua guardada,
+continua valendo lá, e só não é usada aqui.
+
+**E a barra de filtros diz isso, nos dois blocos de data**, apagados e com o
+recado *"não vale no calendário — aqui quem manda é o mês aberto; continua
+valendo nas Solicitações e no Relatório"*. Eles **não foram escondidos** de
+propósito: eles guardam o que a pessoa marcou nas outras telas, e sumir com
+eles faria o valor desaparecer da vista enquanto continuava valendo.
+
+O recado aparece **mesmo sem data marcada** — quem está prestes a marcar
+precisa saber antes que ali não vai adiantar.
+
+#### As cores, no mesmo pedido
+
+Ele descreveu de novo as três cores (azul pago, vermelho a pagar vencido,
+laranja a pagar não vencido). **Já estavam prontas na leva anterior, no ramo,
+e ainda não publicadas** — foi o que ele viu descrito, não na tela. Nada a
+fazer além de publicar; a regra bate exatamente com o que ele repetiu.
+
+**Verificado:** 5 testes novos de tela (a data não chega na consulta, os
+outros filtros chegam, a data guardada não é apagada, o recado aparece com e
+sem data marcada, e o recado NÃO aparece nas Solicitações — a barra é a mesma
+nas três telas) e 1 com banco de verdade, porque é no `WHERE` que isto vive e
+o dublê ignora `WHERE` inteiro.
+
+---
 ---
 
 ## Regras que não se discutem
