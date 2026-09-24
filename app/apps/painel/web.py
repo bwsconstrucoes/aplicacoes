@@ -604,6 +604,48 @@ def dre_medicoes():
                     "total": consultas.total_das_medicoes(f, visao=visao)})
 
 
+@bp.route("/dre/despesas")
+def dre_despesas():
+    """Os lancamentos por tras de um numero de despesa do DRE (dono,
+    23/09/2026): "clicar e abrir uma janelinha com as despesas". A mesma
+    consulta do Despesas Analitico, com os filtros da tela."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    grupo = request.args.get("grupo", "").strip()
+    visao = request.args.get("visao", "comprometido")
+    if visao not in ("executado", "aberto", "comprometido"):
+        visao = "comprometido"
+    dados = consultas.analitico_despesas(f, grupo=grupo, visao=visao,
+                                         ordem="valor", por_pagina=300)
+    for l in dados["linhas"]:
+        for campo in ("data", "data_vencimento", "data_pagamento"):
+            l[campo] = l[campo].isoformat() if l.get(campo) else ""
+    pode_abrir = any(chave == "analitico" for chave, _r, _e in _abas_visiveis())
+    return jsonify({"ok": True, "grupo": grupo, "visao": visao,
+                    "linhas": dados["linhas"], "quantos": dados["quantos"],
+                    "total_pago": dados["total_pago"],
+                    "total_a_pagar": dados["total_a_pagar"],
+                    "total_encargo": dados["total_encargo"],
+                    "total": dados["total"], "pode_abrir": pode_abrir,
+                    "ver_tudo": com_filtros_para_json(
+                        "painel.analitico", visao=visao,
+                        **({"grupo": grupo} if grupo else {}))})
+
+
+@bp.route("/dre/retencoes")
+def dre_retencoes():
+    """As retencoes por tras do numero do DRE, abertas por tributo."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    visao = request.args.get("visao", "todas")
+    if visao not in ("todas", "quitadas", "a_receber"):
+        visao = "todas"
+    dados = consultas.retencoes_por_tributo(f, visao=visao)
+    for l in dados["linhas"]:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+    return jsonify({"ok": True, "visao": visao, **dados})
+
+
 def com_filtros_para_json(rota, **extras):
     """O mesmo `com_filtros` das telas, disponivel fora do template."""
     args = {c: request.args.getlist(c) for c in
@@ -743,7 +785,14 @@ def _filtros_do_calendario():
         "grupo": request.args.get("grupo", ""),
         "categoria": request.args.get("categoria", ""),
         "busca": (request.args.get("busca") or "").strip(),
+        "analise": request.args.get("analise", "") if request.args.get("analise", "")
+        in consultas_analises_do_calendario() else "",
     }
+
+
+def consultas_analises_do_calendario():
+    from . import consultas
+    return consultas.ANALISES_DO_CALENDARIO
 
 
 def consultas_tipos_do_calendario():
@@ -781,6 +830,7 @@ def calendario():
         hoje=_dt.date.today(),
         dados=dados,
         tipos=consultas.TIPOS_DO_CALENDARIO,
+        analises=consultas.ANALISES_DO_CALENDARIO,
         opcoes_analitico=consultas.opcoes_do_analitico(f),
         **proprios,
     )
@@ -804,6 +854,61 @@ def calendario_dia():
                     "quantos": len(linhas), "entradas": entradas,
                     "saidas": saidas, "liquido": entradas + saidas,
                     "a_pagar": a_pagar})
+
+
+@bp.route("/conferir/dia")
+def conferir_dia():
+    """Confere UM dia do painel com o OMIE, lendo o OMIE na hora.
+
+    So do administrador (prefixo "painel.conferir_" em SO_DO_ADMINISTRADOR):
+    le a empresa inteira do dia e chama a API do OMIE."""
+    from . import conferencia_omie
+    dia = (request.args.get("dia") or "").strip()
+    if not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Dia inválido."}), 400
+    try:
+        resultado = conferencia_omie.conferir_dia(dia)
+    except Exception as e:  # noqa: BLE001 — OMIE fora, credencial, limite
+        logger.exception("Painel: conferencia do dia %s com o OMIE falhou", dia)
+        return jsonify({"ok": False, "erro": f"Não consegui ler o OMIE agora: {e}"}), 502
+    return jsonify({"ok": True, **resultado})
+
+
+@bp.route("/conferir/dia/trazer", methods=["POST"])
+def conferir_dia_trazer():
+    """Substitui o dia no espelho pelo que o OMIE tem, e refaz os numeros.
+
+    Nao escreve no OMIE. E o mesmo que a atualizacao faria se o dia estivesse
+    na janela dela."""
+    from . import conferencia_omie, tarefas
+    dia = (request.form.get("dia") or request.args.get("dia") or "").strip()
+    if not _DATA_ISO.match(dia):
+        return jsonify({"ok": False, "erro": "Dia inválido."}), 400
+    try:
+        feito = conferencia_omie.trazer_dia_do_omie(dia)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Painel: trazer o dia %s do OMIE falhou", dia)
+        return jsonify({"ok": False, "erro": f"Não consegui trazer do OMIE: {e}"}), 502
+    recalculo = tarefas.disparar("so_numeros", "conferência com o OMIE")
+    return jsonify({"ok": True, **feito,
+                    "recalculo": recalculo.get("ok", False),
+                    "aviso": ("Os números estão sendo refeitos — em alguns minutos a "
+                              "tela mostra o dia corrigido." if recalculo.get("ok")
+                              else recalculo.get("erro", ""))})
+
+
+@bp.route("/titulo/<int:codigo>/conta")
+def conta_do_titulo(codigo):
+    """De onde o painel tirou a conta de um titulo — as pernas da baixa no
+    espelho do OMIE. So do administrador (a lista SO_DO_ADMINISTRADOR cobre o
+    prefixo): mostra contas e movimentos crus, e e ferramenta de conferencia."""
+    from . import consultas
+    dados = consultas.origem_da_conta(codigo)
+    if dados is None:
+        return jsonify({"ok": False, "erro": "Título não encontrado."}), 404
+    for p in dados["pernas"]:
+        p["data"] = str(p["data"] or "")
+    return jsonify({"ok": True, **dados})
 
 
 @bp.route("/receita")
@@ -2667,8 +2772,41 @@ def baixar(assunto):
         return [(f"Calendario {rotulo}", C["calendario_dias"], dias),
                 ("Lancamentos do mes", C["calendario_lancamentos"], lancamentos)]
 
+    def _abas_da_conferencia():
+        from . import conferencia_omie
+        dia = (request.args.get("dia") or "").strip()
+        if not _DATA_ISO.match(dia):
+            return [("Conferencia", [("aviso", "Aviso")], [{"aviso": "Dia inválido."}])]
+        resultado = conferencia_omie.conferir_dia(dia)
+        contas = conferencia_omie._nomes_das_contas()
+        quem = conferencia_omie._quem_e(
+            [p["codigo"] for p in conferencia_omie.pernas_do_espelho(dia)])
+
+        def _lado(pernas):
+            saida = []
+            for p in pernas:
+                q = quem.get(p["codigo"], {})
+                saida.append({"codigo": p["codigo"], "quem": q.get("quem", ""),
+                              "documento": q.get("documento", ""),
+                              "obra": q.get("obra", ""),
+                              "perna": ("baixa consolidada" if p["liquidado"] == "S"
+                                        else "previsão" if p["liquidado"] == "N"
+                                        else "baixa bancária"),
+                              "conta": conferencia_omie._nome(contas, p["conta"]),
+                              "valor": p["valor"]})
+            return saida
+
+        no_omie = conferencia_omie.pernas_do_omie(conferencia_omie.registros_do_omie(dia))
+        return [
+            (f"Diferencas {dia}", C["conferencia_diferencas"],
+             conferencia_omie.linhas_para_planilha(resultado)["diferencas"]),
+            ("No painel", C["conferencia_lado"], _lado(conferencia_omie.pernas_do_espelho(dia))),
+            ("No OMIE", C["conferencia_lado"], _lado(no_omie)),
+        ]
+
     montadores = {
         "dre": lambda: [("DRE", C["dre"], _dre())],
+        "conferencia": _abas_da_conferencia,
         "calendario": _abas_do_calendario,
         "analitico": _abas_do_analitico,
         "extrato": lambda: [("Extrato de Conta", C["extrato"],

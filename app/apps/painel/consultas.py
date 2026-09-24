@@ -1208,6 +1208,20 @@ TIPOS_DO_CALENDARIO = {
     "a_pagar": "Só a pagar (em aberto, pelo vencimento)",
 }
 
+# DRE ou fluxo (dono, 23/09/2026): "é importante poder ver só os lançamentos
+# de fluxo, ou só os de DRE — tudo junto atrapalha". DRE é o que entra no
+# resultado; fluxo é o resto que mexe no caixa (empréstimo, aporte, dividendo,
+# aplicação — e transferência, quando a barra lateral a inclui).
+ANALISES_DO_CALENDARIO = {
+    "": "DRE e fluxo",
+    "dre": "Só DRE (entra no resultado)",
+    "fluxo": "Só fluxo (fora do resultado)",
+}
+_CONDICAO_DA_ANALISE = {
+    "dre": "analise = 'DRE'",
+    "fluxo": "COALESCE(analise,'') <> 'DRE'",
+}
+
 # O terceiro numero de cada dia (dono, 23/09/2026): "o que esta a pagar de
 # cada dia, em laranja — num dia que ja passou, venceu; num dia que nao
 # chegou, esta a vencer". E o titulo em aberto, no dia do VENCIMENTO. Quando
@@ -1218,7 +1232,7 @@ A_PAGAR_EM_ABERTO = f"tipo = '{PAG}' AND ABS({EM_ABERTO}) > 0.005"
 
 
 def _condicoes_do_calendario(tipo="", grupo="", categoria="", busca="",
-                             em_aberto: bool = False):
+                             em_aberto: bool = False, analise=""):
     """O WHERE comum ao mes e ao detalhe do dia.
 
     `em_aberto=False` e o CAIXA (pago e recebido, pela data em que
@@ -1235,6 +1249,8 @@ def _condicoes_do_calendario(tipo="", grupo="", categoria="", busca="",
             condicoes.append(f"{MOVIMENTO_DE_CAIXA} > 0")
         elif tipo == "pago":
             condicoes.append(f"{MOVIMENTO_DE_CAIXA} < 0")
+    if analise in _CONDICAO_DA_ANALISE:
+        condicoes.append(_CONDICAO_DA_ANALISE[analise])
     if grupo:
         condicoes.append("COALESCE(NULLIF(grupo,''), '(sem grupo)') = ?")
         extras.append(grupo)
@@ -1254,7 +1270,7 @@ def _dia_vazio() -> dict:
 
 
 def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
-                      categoria="", busca="", hoje=None) -> dict:
+                      categoria="", busca="", analise="", hoje=None) -> dict:
     """Entradas, saídas, o que está a pagar e quantos lançamentos em cada dia
     do mês — e os totais.
 
@@ -1272,7 +1288,8 @@ def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
     maior_entrada = maior_saida = None
 
     if tipo != "a_pagar":
-        condicoes, extras = _condicoes_do_calendario(tipo, grupo, categoria, busca)
+        condicoes, extras = _condicoes_do_calendario(
+            tipo, grupo, categoria, busca, analise=analise)
         condicoes += ["data >= CAST(? AS DATE)", "data < CAST(? AS DATE)"]
         extras += [inicio.isoformat(), fim.isoformat()]
         where, params = f.where(" AND ".join(condicoes), extras)
@@ -1299,11 +1316,11 @@ def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
                 maior_saida = (dia, saiu)
 
     a_pagar = vencido = a_vencer = 0.0
-    quantos_a_pagar = 0
+    quantos_a_pagar = quantos_vencidos = quantos_a_vencer = 0
     maior_a_pagar = None
     if tipo in ("", "a_pagar"):
         condicoes, extras = _condicoes_do_calendario(
-            tipo, grupo, categoria, busca, em_aberto=True)
+            tipo, grupo, categoria, busca, em_aberto=True, analise=analise)
         condicoes += [f"{DIA_DO_VENCIMENTO} >= CAST(? AS DATE)",
                       f"{DIA_DO_VENCIMENTO} < CAST(? AS DATE)"]
         extras += [inicio.isoformat(), fim.isoformat()]
@@ -1322,8 +1339,10 @@ def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
             quantos_a_pagar += int(n or 0)
             if dia < hoje:
                 vencido += aberto
+                quantos_vencidos += int(n or 0)
             else:
                 a_vencer += aberto
+                quantos_a_vencer += int(n or 0)
             if aberto < 0 and (maior_a_pagar is None or aberto < maior_a_pagar[1]):
                 maior_a_pagar = (dia, aberto)
 
@@ -1335,11 +1354,12 @@ def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
         "maior_entrada": maior_entrada, "maior_saida": maior_saida,
         "a_pagar": a_pagar, "a_pagar_vencido": vencido, "a_pagar_a_vencer": a_vencer,
         "quantos_a_pagar": quantos_a_pagar, "maior_a_pagar": maior_a_pagar,
+        "quantos_vencidos": quantos_vencidos, "quantos_a_vencer": quantos_a_vencer,
     }
 
 
 def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
-                       busca="", limite: int = 500, hoje=None) -> list[dict]:
+                       busca="", analise="", limite: int = 500, hoje=None) -> list[dict]:
     """O que entrou, o que saiu e o que está a pagar num dia, um lançamento
     por linha — o detalhe que abre ao clicar no dia. Com os mesmos filtros do
     calendário, para o total do detalhe fechar com o número do quadradinho."""
@@ -1347,10 +1367,11 @@ def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
     hoje = hoje or _dt.date.today()
     campos = ("data", "codigo", "tipo", "razao_social", "cnpj", "grupo",
               "categoria", "obra", "projeto", "documento", "observacao",
-              "conta", "valor", "encargo", "link")
+              "conta", "valor", "encargo", "link", "analise")
     linhas: list[dict] = []
     if tipo != "a_pagar":
-        condicoes, extras = _condicoes_do_calendario(tipo, grupo, categoria, busca)
+        condicoes, extras = _condicoes_do_calendario(
+            tipo, grupo, categoria, busca, analise=analise)
         condicoes.append("data = CAST(? AS DATE)")
         extras.append(dia)
         where, params = f.where(" AND ".join(condicoes), extras)
@@ -1361,7 +1382,8 @@ def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
                            COALESCE(NULLIF(categoria,''), '(sem categoria)'),
                            {OBRA_OU_SEM}, projeto, numero_documento, observacao,
                            COALESCE(conta_corrente,'(sem conta)'),
-                           {MOVIMENTO_DE_CAIXA}, {ENCARGO}, link
+                           {MOVIMENTO_DE_CAIXA}, {ENCARGO}, link,
+                           COALESCE(analise,'')
                       FROM fato{where}
                      ORDER BY ABS({MOVIMENTO_DE_CAIXA}) DESC, codigo_lancamento
                      LIMIT {int(limite)}""", params):
@@ -1373,7 +1395,7 @@ def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
             linhas.append(l)
     if tipo in ("", "a_pagar"):
         condicoes, extras = _condicoes_do_calendario(
-            tipo, grupo, categoria, busca, em_aberto=True)
+            tipo, grupo, categoria, busca, em_aberto=True, analise=analise)
         condicoes.append(f"{DIA_DO_VENCIMENTO} = CAST(? AS DATE)")
         extras.append(dia)
         where, params = f.where(" AND ".join(condicoes), extras)
@@ -1386,7 +1408,7 @@ def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
                            COALESCE(NULLIF(categoria,''), '(sem categoria)'),
                            {OBRA_OU_SEM}, projeto, numero_documento, observacao,
                            COALESCE(conta_corrente,'(sem conta)'),
-                           {EM_ABERTO}, 0, link
+                           {EM_ABERTO}, 0, link, COALESCE(analise,'')
                       FROM fato{where}
                      ORDER BY ABS({EM_ABERTO}) DESC, codigo_lancamento
                      LIMIT {int(limite)}""", params):
@@ -1397,6 +1419,88 @@ def lancamentos_do_dia(f: Filtros, dia: str, *, tipo="", grupo="", categoria="",
             l["em_aberto"] = True
             linhas.append(l)
     return linhas
+
+
+def origem_da_conta(codigo) -> dict | None:
+    """POR QUE o painel diz que este título foi pago nesta conta.
+
+    23/09/2026, o dono no Calendário: "está dizendo que esse pagamento foi
+    pago numa conta, quando no comprovante ele foi pago noutra". O painel não
+    inventa a conta — ele lê o espelho do OMIE, nesta ordem:
+
+      1. a BAIXA BANCÁRIA (o débito/crédito que o OMIE lança na conta por onde
+         o dinheiro andou), quando ela existe e fecha com o valor pago;
+      2. senão, a BAIXA CONSOLIDADA (o resumo do título), que costuma repetir
+         a conta do título;
+      3. sem baixa nenhuma, a conta PREVISTA no título.
+
+    Esta função mostra as três coisas lado a lado, com a MESMA regra da carga
+    (`_escolher_recebimentos`) marcando qual perna valeu. Se a conta errada
+    está na própria baixa, o conserto é no OMIE; se está só na previsão, é a
+    baixa bancária que falta lá."""
+    from .sync.fato import escolher_perna_da_conta
+    try:
+        codigo = int(str(codigo).strip())
+    except (TypeError, ValueError):
+        return None
+    contas = {c: (d or "").strip() for c, d in consultar(
+        "SELECT codigo, descricao FROM contas_correntes")}
+
+    def _nome(c):
+        if c in (None, ""):
+            return ""
+        try:
+            return contas.get(int(c)) or str(c)
+        except (TypeError, ValueError):
+            return str(c)
+
+    titulo = consultar(
+        "SELECT id_conta_corrente, valor_documento::float8, status_titulo,"
+        "       numero_documento, data_vencimento"
+        "  FROM titulos WHERE codigo_lancamento_omie = ?", [codigo])
+    no_painel = consultar(
+        f"SELECT COALESCE(conta_corrente,''), SUM(pago_recebido)"
+        f"  FROM fato WHERE codigo_lancamento = ? AND NOT ({RETIDO})"
+        f" GROUP BY 1 ORDER BY 2", [codigo])
+    if not titulo and not no_painel:
+        return None
+    movs = []
+    for (dpg, vpg, vliq, ncc, liq, cst, grp) in consultar(
+            "SELECT ddtpagamento, nvalpago::float8, nvalliquido::float8, ncodcc,"
+            "       cliquidado, cstatus, cgrupo"
+            "  FROM movimentos WHERE ncodtitulo = ? ORDER BY ddtpagamento", [codigo]):
+        movs.append({"data": dpg or "", "valor": float(vpg or 0.0),
+                     "liquido": float(vliq or 0.0), "conta": ncc,
+                     "liquidado": (liq or "").strip(), "status": (cst or "").strip(),
+                     "grupo": (grp or "").strip()})
+    realizado = abs(sum(float(v or 0) for _c, v in no_painel))
+    # a MESMA decisão da carga: qual perna dá a conta, e por qual regra
+    perna_da_conta, regra = escolher_perna_da_conta(movs, realizado)
+
+    def _perna(m):
+        if m.get("liquidado") == "N":
+            return "previsão (não conta)"
+        if m.get("liquidado") == "S" or m.get("liquido", 0.0) > 0.005:
+            return "baixa consolidada"
+        if m.get("data") and m.get("valor", 0.0) > 0.005:
+            return "baixa bancária"
+        return "previsão (não conta)"
+
+    pernas = [{"data": m["data"], "valor": m["valor"], "conta": _nome(m["conta"]),
+               "tipo": _perna(m), "status": m["status"], "grupo": m["grupo"],
+               "valeu": m is perna_da_conta} for m in movs]
+    prevista = _nome(titulo[0][0]) if titulo else ""
+    return {
+        "codigo": codigo,
+        "documento": (titulo[0][3] if titulo else "") or "",
+        "status": (titulo[0][2] if titulo else "") or "",
+        "conta_prevista": prevista,
+        "no_painel": [{"conta": c or "(sem conta)", "valor": float(v or 0)}
+                      for c, v in no_painel],
+        "pernas": pernas,
+        "regra": regra,
+        "tem_baixa_bancaria": any(p["tipo"] == "baixa bancária" for p in pernas),
+    }
 
 
 def transferencias_entre_contas(f: Filtros, de="", ate="", destino="",
@@ -2035,6 +2139,60 @@ def caixa_com_socios(f: Filtros) -> dict:
     total = {c: sum(l[c] for l in linhas)
              for c in campos + ("resultado", "saldo")}
     return {"linhas": linhas, "total": total, "tem_dados": bool(linhas)}
+
+
+TRIBUTOS_RETIDOS = (("ir", "IR"), ("iss", "ISS"), ("inss", "INSS"),
+                    ("pis", "PIS"), ("cofins", "COFINS"), ("csll", "CSLL"))
+
+
+def retencoes_por_tributo(f: Filtros, visao: str = "todas", limite: int = 300) -> dict:
+    """As retenções da receita, título a título, abertas por tributo.
+
+    Pedido do dono em 23/09/2026, no DRE: *"na parte de retenções, consegue o
+    detalhamento para clicar e ver o que é de cada tributo?"*
+
+    O valor retido vem do fato (com os filtros da tela e o rateio por obra); a
+    abertura por tributo vem do cadastro do título no espelho do OMIE (IR, ISS,
+    INSS, PIS, COFINS, CSLL). Quando o título foi rateado entre obras, cada
+    tributo entra na MESMA proporção do retido que coube ao recorte.
+    `visao`: "quitadas" (executado), "a_receber" (em aberto) ou "todas"."""
+    valor = {"quitadas": EXECUTADO, "a_receber": EM_ABERTO}.get(visao, COMPROMETIDO)
+    where, params = f.where(f"analise = 'DRE' AND tipo = ? AND {RETIDO}", [REC])
+    colunas_t = ", ".join(f"t.valor_{c}::float8" for c, _r in TRIBUTOS_RETIDOS)
+    sql = f"""
+        SELECT r.cod, r.quem, r.doc, r.obra, r.data, r.link, r.retido, {colunas_t}
+          FROM (SELECT codigo_lancamento AS cod, MAX(razao_social) AS quem,
+                       MAX(numero_documento) AS doc, MAX(departamento) AS obra,
+                       MAX(data) AS data, MAX(link) AS link,
+                       SUM({valor}) AS retido
+                  FROM fato{where}
+                 GROUP BY codigo_lancamento) AS r
+          LEFT JOIN titulos t ON t.codigo_lancamento_omie = r.cod
+         WHERE ABS(r.retido) > 0.005
+         ORDER BY r.data DESC NULLS LAST, r.cod
+         LIMIT 5000"""
+    linhas, totais = [], {c: 0.0 for c, _r in TRIBUTOS_RETIDOS}
+    totais["sem_detalhe"] = 0.0
+    for cod, quem, doc, obra, data, link, retido, *tributos in consultar(sql, params):
+        retido = float(retido or 0)
+        do_titulo = [float(v or 0) for v in tributos]
+        soma = sum(do_titulo)
+        linha = {"codigo": cod, "cliente": quem or "", "documento": doc or "",
+                 "obra": obra or "", "data": data, "link": link or "",
+                 "retido": retido, "sem_detalhe": 0.0}
+        if soma > 0.005:
+            for (chave, _r), v in zip(TRIBUTOS_RETIDOS, do_titulo):
+                linha[chave] = retido * v / soma
+        else:
+            for chave, _r in TRIBUTOS_RETIDOS:
+                linha[chave] = 0.0
+            linha["sem_detalhe"] = retido
+        for chave in totais:
+            totais[chave] += linha[chave]
+        linhas.append(linha)
+    return {"linhas": linhas[:int(limite)], "quantos": len(linhas),
+            "total": sum(l["retido"] for l in linhas), "totais": totais,
+            "tributos": [{"chave": c, "rotulo": r} for c, r in TRIBUTOS_RETIDOS]}
 
 
 def hipotese_de_distribuicao(por_socio: list[dict], disponivel: float) -> list[dict]:

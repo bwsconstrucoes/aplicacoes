@@ -2093,6 +2093,172 @@ consigo ter confiança no painel. Pra todo lado que olho tem erro."*
    no cadastro do OMIE — dado para corrigir lá, e a tela lista as obras pelo
    nome. Na prestação antiga e no cenário.
 
+## "Pago numa conta, mas o comprovante diz outra" — de onde veio a conta — 23/09/2026
+
+O dono, no Calendário, filtrando a Bradesco 7011-4: *"está dizendo que esse
+pagamento foi pago numa conta quando, no comprovante, foi pago noutra"* —
+SH FORMAS ANDAIMES E ESCORAMENTOS, Locação de Equipamentos, MERCADOBARBALHA,
+SP1343985444, −R$ 13.291,28.
+
+**O painel não inventa a conta**: lê o espelho do OMIE, nesta ordem — a
+**baixa bancária** (o débito que o OMIE lança na conta por onde o dinheiro
+saiu), senão a **baixa consolidada** (o resumo do título, que repete a conta
+do título), senão a conta **prevista** no título. Não dá para ver a base
+daqui, então em vez de chutar a causa entrou a ferramenta:
+
+- **No Calendário, na janela do dia, a conta virou link (só para o dono)**:
+  clicar mostra a conta prevista no título, a conta no painel, **todas as
+  pernas da baixa no espelho** com conta, data e valor, qual delas valeu, e
+  a regra usada — com a explicação do que fazer em cada caso:
+  - regra "baixa bancária": o OMIE registrou a baixa naquela conta. Se o
+    comprovante diz outra, a baixa foi lançada errada **no OMIE** — estornar e
+    baixar de novo na conta certa; a próxima atualização acompanha;
+  - regra "baixa consolidada": o OMIE não tem a baixa bancária, só o resumo
+    com a conta do título — falta a baixa na conta certa lá;
+  - regra "conta prevista": não há baixa nenhuma no espelho.
+- Rota `/painel/titulo/<n>/conta`, só do administrador. Mesma regra da carga
+  (`_escolher_recebimentos`), então o que a janela diz é o que a carga fez.
+
+**O dono conferiu no OMIE: o pagamento está na 22069.** O painel está
+errado nesse título. **A causa NÃO foi confirmada.** Na primeira resposta eu
+afirmei que a baixa tinha sido estornada e refeita — e o dono corrigiu, com
+razão: *"isso é mera suposição sua. Quem disse que houve alteração nesse
+lançamento? Como é baixa antiga, acredito que não houve."* Não havia dado
+nenhum sustentando a alteração; foi hipótese dita como fato. Lição anotada:
+**causa só se afirma com o dado na mão.**
+
+As causas possíveis que o código permite, sem saber qual é a deste título:
+
+1. **A baixa foi alterada no OMIE depois de lida** (estorno e nova baixa com
+   a data antiga) — a atualização só relia dois dias. Foi alargada para 30
+   dias (180 na completa); a mudança é boa em si, mas NÃO está provado que
+   seja o caso deste título.
+2. **O painel tem a perna bancária na 22069, mas escolheu a consolidada**: a
+   regra (`_escolher_recebimentos`) só usa as pernas bancárias quando a soma
+   delas FECHA com a consolidada. Se não fecha (juros, multa, desconto,
+   centavos), fica com a consolidada — que repete a conta do título, 7011. A
+   regra foi feita para acertar o VALOR; para a CONTA, qualquer perna
+   bancária seria melhor que a consolidada. Possível defeito do painel,
+   independente de alteração no OMIE.
+3. **A perna bancária chegou sem o número do título** e foi para
+   `movimentos_sem_titulo` — o painel fica só com a consolidada (7011).
+
+**Como decidir, sem suposição**: no Calendário, dia do pagamento, clicar na
+conta do lançamento (mostra as pernas que o painel TEM e qual valeu) e em
+"Conferir este dia com o OMIE" (mostra o que o OMIE tem AGORA). Se o painel
+tem a 22069 e não a usou → causa 2, conserto no código. Se o painel não tem
+a 22069 e o OMIE tem → causa 1 ou 3 (a conferência diz se a perna do OMIE
+tem título).
+
+**CONFIRMADO pela leitura do dono (23/09/2026) — causa 2, defeito do painel.**
+A ferramenta mostrou, para o título 11204772585:
+
+| Data | Perna | Conta | Valor |
+|---|---|---|---|
+| 11/05/2026 | baixa consolidada | Bradesco 7011-4 | 13.218,90 |
+| 11/05/2026 | baixa bancária | Bradesco 22069-8 | 13.291,28 |
+
+O painel TINHA a bancária na 22069 e escolheu a consolidada. A diferença de
+R$ 72,38 é o que o painel registra como juro/multa desse título (o Calendário
+mostrava −13.291,28 = 13.218,90 de principal + 72,38 de encargo). A conta era
+escolhida junto com o VALOR, e a regra do valor só aceita as bancárias quando
+a soma fecha com a consolidada — com juro, nunca fecha. **Todo título pago
+com juro ou multa mostrava a conta prevista, não a de onde saiu.** Não
+houve alteração nenhuma no OMIE; o dono estava certo.
+
+**Conserto**: a conta passou a ter decisão própria
+(`escolher_perna_da_conta` em `sync/fato.py`): havendo perna bancária, é
+dela a conta, feche o valor ou não. O valor continua pela regra de antes. A
+mesma decisão vale para a linha única, para as parcelas e para as receitas
+(`montar_recebimentos`), e a ferramenta "de onde veio a conta" usa a mesma
+função. Vale depois de "Só refazer os números".
+
+**A janela de 30/180 dias** (causa 1) ficou provado que não era a causa
+deste título. Foi mantida como margem contra baixa retroativa; custa páginas a
+mais de leitura no OMIE. Voltar aos dois dias é decisão do dono.
+
+A ferramenta também dizia, errado, "o OMIE não tem a baixa bancária" quando
+tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
+mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
+quando de fato não há bancária.
+
+## Calendário: as cores do dono — 24/09/2026
+
+*"Verde para recebimento, azul para pago, vermelho para vencido e laranja a
+vencer."* Vale na grade, nos números do alto, na janela do dia e nas
+legendas. O dia com conta vencida ganha borda vermelha (era laranja). O
+número único "A pagar no mês" virou dois: **Vencido no mês** (vermelho) e **A
+vencer no mês** (laranja, de hoje em diante), cada um com a contagem de
+títulos. As cores são só desta tela: no resto do painel vermelho continua
+sendo "valor negativo" e verde "positivo".
+
+## DRE: despesas e retenções num clique; Calendário: setas de dia — 23/09/2026
+
+O dono: *"fazer isso [a janela das medições] para as despesas também, clicar
+e abrir uma janelinha com as despesas; no resultado não tem o que pôr link;
+e nas retenções, o detalhamento de cada tributo"*. E no Calendário: *"quando
+abrir um dia, um botão para ir ao próximo dia, ou ao anterior"*.
+
+- **DRE, despesas**: os três números de cada grupo de despesa, e do "= Total
+  Custos/Despesas", abrem a janela com os lançamentos (a mesma consulta do
+  Despesas Analítico, com os filtros da tela, os 300 maiores), totais de
+  pago, a pagar, juros/multa, e o botão para o Analítico já filtrado no
+  grupo. "Juros e Multas Pagos" e "= RESULTADO" não abrem: não têm lista
+  própria. Teste com banco: o principal da janela fecha com a linha do grupo.
+- **DRE, retenções**: os números de "(−) Retenções na fonte" abrem a janela
+  título a título, aberta em **IR, ISS, INSS, PIS, COFINS e CSLL**, com o
+  total de cada tributo no alto. O retido vem do fato (filtros, rateio); a
+  abertura por tributo vem do cadastro do título no espelho do OMIE, e em
+  título rateado cada tributo segue a proporção do que coube ao recorte.
+  Título sem cadastro no espelho aparece como "sem detalhe".
+  (`retencoes_por_tributo`, rota `painel.dre_retencoes`, tela DRE.)
+- **Calendário**: setas ‹ › ao lado do dia na janela, e as setas do teclado,
+  vão ao dia anterior/seguinte — um dia de calendário por vez, atravessando
+  o mês se for o caso.
+
+## Conferir um dia com o OMIE, na hora — 23/09/2026
+
+O dono: *"era interessante uma forma de extrair a informação completa da base
+e a do OMIE — consultando o OMIE e podendo confrontar os dados pra entender
+onde há diferença."*
+
+**Por dia, no Calendário** (só o dono): na janela do dia, "Conferir este dia
+com o OMIE" lê no OMIE, naquele momento, todos os pagamentos e recebimentos
+com aquela data (a mesma consulta da carga, `ListarMovimentos` por data de
+pagamento, lida pela mesma função que grava o espelho) e compara perna a
+perna — título, conta, valor, baixa consolidada ou bancária — com o espelho.
+Mostra os títulos diferentes, cada um com o que o painel tem e o que o OMIE
+tem agora; baixa a planilha com três abas (diferenças, o lado do painel
+inteiro, o lado do OMIE inteiro); e oferece **"Trazer este dia do OMIE para o
+painel"**, que apaga e regrava o dia no espelho (nada muda no OMIE) e dispara
+"Só refazer os números".
+
+**Por que por dia, e não a base inteira**: ler tudo do OMIE é a carga
+inicial — horas. Um dia é uma ou duas páginas e cabe numa tela. Para
+corrigir em massa, a atualização relê 30 dias (180 na completa).
+
+A leitura do OMIE fica guardada 150 s: conferir e baixar a planilha seriam
+duas chamadas iguais em segundos, e a OMIE recusa a repetida ("consumo
+redundante"). Módulo `conferencia_omie.py`; rotas `painel.conferir_*` na
+lista do administrador; download "conferencia" só do dono. Testes com banco e
+com um OMIE de mentira.
+
+**Despesas Analítico**: a tabela da tela ganhou as colunas **Conta de
+pagamento** e **Nº no OMIE** (a planilha já as tinha) — pedido do dono para
+"um confronto de informações".
+
+## Calendário: filtro "DRE ou fluxo" — 23/09/2026
+
+O dono: *"é importante poder visualizar os lançamentos de fluxo, e somente
+os pagamentos e recebimentos — as contas de fluxo e de DRE. Tudo junto
+atrapalha."* Filtro novo no alto do Calendário: **DRE e fluxo** (padrão),
+**Só DRE** (entra no resultado) e **Só fluxo** (empréstimo, aporte,
+dividendo, aplicação — e transferência quando a barra lateral a inclui).
+Vale no mês, nos KPIs, no laranja do a pagar, na janela do dia (que marca o
+lançamento de fluxo com um selo) e na planilha (coluna "DRE ou fluxo"), e
+viaja nos botões de mês. Teste com banco: um empréstimo recebido no mesmo dia
+de uma receita — DRE mais fluxo dá o total.
+
 ## A planilha de projetos passa a ser lida todo dia — 23/09/2026
 
 O dono: *"os projetos são puxados da planilha C. Diários? Em qual momento?

@@ -54,6 +54,12 @@ SO_DO_ADMINISTRADOR = (
     # das duas passa pelo filtro de escopo — entao nenhuma das duas e de quem
     # esta preso a uma obra. O prefixo cobre as duas e as proximas.
     "painel.cenario_",
+    # De onde veio a conta de um titulo: mostra as pernas cruas da baixa no
+    # espelho do OMIE. Ferramenta de conferencia do dono (23/09/2026).
+    "painel.conta_do_titulo",
+    # Conferir um dia com o OMIE: le a empresa inteira do dia e chama a API do
+    # OMIE; "trazer" regrava o espelho. Do dono (23/09/2026).
+    "painel.conferir_",
 )
 
 # Rotas que podem responder sem login. Cada uma com o motivo escrito.
@@ -193,6 +199,8 @@ _ABAS_POR_ENDPOINT = {
     "painel.visao_geral": "visao",
     "painel.dre": "dre",
     "painel.dre_medicoes": "dre",
+    "painel.dre_despesas": "dre",
+    "painel.dre_retencoes": "dre",
     "painel.analitico": "analitico",
     "painel.receita": "receita",
     "painel.medicao": "receita",
@@ -243,6 +251,7 @@ TELA_DO_DOWNLOAD = {
 # Estes leem a empresa INTEIRA, por definicao. Sao do dono.
 SO_DO_DONO_PARA_BAIXAR = frozenset({
     "quotas", "posicao", "rateio_admin", "cenario", "explorador", "completo",
+    "conferencia",
 })
 
 

@@ -509,6 +509,52 @@ def test_varredura_de_excluidos_que_falha_nao_impede_o_recalculo(monkeypatch):
     assert "títulos excluídos" in fechou["mensagem"]
 
 
+def test_a_janela_de_pagamentos_pega_baixa_retroativa():
+    """23/09/2026: o SP1343985444 foi pago na 22069 segundo o OMIE, e o painel
+    dizia 7011. A atualização só relia pagamentos com data nos últimos dois
+    dias — baixa refeita com data antiga nunca era relida."""
+    import datetime as _dt
+
+    from app.apps.painel.sync.espelho import (
+        DIAS_REVISADOS_NA_ATUALIZACAO, DIAS_REVISADOS_NA_COMPLETA,
+        janela_de_movimentos)
+    hoje = _dt.date(2026, 9, 23)
+    # o comportamento antigo continua sendo o piso
+    assert janela_de_movimentos(hoje, None, 2, 0) == _dt.date(2026, 9, 21)
+    assert janela_de_movimentos(hoje, "2026-09-10T03:00:00", 2, 0) == _dt.date(2026, 9, 8)
+    # e a revisão alarga
+    assert janela_de_movimentos(hoje, "2026-09-22T03:00:00", 2,
+                                DIAS_REVISADOS_NA_ATUALIZACAO) == _dt.date(2026, 8, 24)
+    assert janela_de_movimentos(hoje, None, 2,
+                                DIAS_REVISADOS_NA_COMPLETA) == _dt.date(2026, 3, 27)
+    # a última leitura mais antiga que a revisão continua mandando
+    assert janela_de_movimentos(hoje, "2026-01-01T03:00:00", 2, 30) == _dt.date(2025, 12, 30)
+    assert janela_de_movimentos(hoje, "lixo", 2, 0) == _dt.date(2026, 9, 21)
+
+
+def test_cada_modo_revisa_a_sua_janela(monkeypatch):
+    import contextlib
+
+    from app.apps.painel import tarefas
+    from app.apps.painel import db as painel_db
+    from app.apps.painel.sync import espelho, fato
+
+    pedidos = []
+    monkeypatch.setattr(espelho, "definir_progresso", lambda *a, **k: None)
+    monkeypatch.setattr(espelho, "sync_incremental",
+                        lambda *a, **k: pedidos.append(k.get("revisar_dias")))
+    monkeypatch.setattr(espelho, "atualizar_projetos", lambda *a, **k: 1)
+    monkeypatch.setattr(espelho, "reconcile", lambda *a, **k: None)
+    monkeypatch.setattr(tarefas, "_carimbar", lambda *a, **k: None)
+    monkeypatch.setattr(painel_db, "conexao", lambda: contextlib.nullcontext(object()))
+    monkeypatch.setattr(fato, "reconstruir", lambda conn: (1, 1))
+    monkeypatch.setattr(tarefas, "_fechar_execucao", lambda *a, **k: None)
+    tarefas.executar_trabalho("rapida", 1)
+    tarefas.executar_trabalho("completa", 2)
+    assert pedidos == [espelho.DIAS_REVISADOS_NA_ATUALIZACAO,
+                       espelho.DIAS_REVISADOS_NA_COMPLETA]
+
+
 def test_a_atualizacao_do_dia_le_a_planilha_de_projetos(monkeypatch):
     """23/09/2026, o dono: "os projetos são puxados da planilha C. Diários em
     qual momento?" Só na primeira carga. Agora em toda atualização — e, se a
@@ -846,6 +892,47 @@ def test_a_conta_vem_da_perna_bancaria_e_nao_do_resumo_do_titulo(espelho_limpo):
         f"o relatório mostrou {[c for c, _v in linhas]} — leu o resumo do título"
     # e a perna bancária NÃO dobrou o valor
     assert [round(float(v), 2) for _c, v in linhas] == [1000.0]
+
+
+def test_a_conta_vem_da_bancaria_mesmo_quando_o_valor_nao_fecha(espelho_limpo):
+    """23/09/2026, SP1343985444: consolidada de 13.218,90 na 7011 (a conta do
+    título) e bancária de 13.291,28 na 22069 — a diferença era o juro. A regra
+    do VALOR recusa a bancária (não fecha) e fica com a consolidada; a CONTA
+    não pode ir junto. O valor continua o de antes."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(5, valor=13218.90, natureza="R")   # prevista: 7
+    consolidada = _movimento_do_omie(5, pago=13218.90)           # resumo: 7
+    bancaria = _perna_bancaria(5, 13291.28, conta=9)             # saiu da 9
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_movimentos(conn, [consolidada, bancaria])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco 7011-4"),
+            _conta_do_omie(9, "Bradesco 22069-8")])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT conta_corrente, pago_recebido FROM fato"
+                       " WHERE codigo_lancamento = 5")
+    assert [c for c, _v in linhas] == ["Bradesco 22069-8"], \
+        f"o relatório mostrou {[c for c, _v in linhas]} — a conta foi junto com o valor"
+    assert [round(float(v), 2) for _c, v in linhas] == [13218.90]
+
+
+def test_escolher_a_perna_da_conta_diz_a_regra():
+    from app.apps.painel.sync.fato import escolher_perna_da_conta
+    cons = {"data": "11/05/2026", "valor": 13218.90, "liquido": 13218.90,
+            "liquidado": "S", "conta": 7011}
+    banc = {"data": "11/05/2026", "valor": 13291.28, "liquido": 0.0,
+            "liquidado": "", "conta": 22069}
+    previsao = {"data": "", "valor": 0.0, "liquido": 0.0, "liquidado": "N", "conta": 7011}
+    perna, regra = escolher_perna_da_conta([cons, banc], 13218.90)
+    assert perna is banc and regra == "baixa bancária"
+    perna, regra = escolher_perna_da_conta([cons, previsao], 13218.90)
+    assert perna is cons and regra == "baixa consolidada"
+    assert escolher_perna_da_conta([], 0) == (None, "conta prevista no título")
 
 
 def test_a_conferencia_mede_quantas_contas_o_relatorio_antigo_errava(espelho_limpo):

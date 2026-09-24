@@ -14,7 +14,8 @@
   {% endif %}
   {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
   {% for campo, valor in [('mes', mes_iso), ('tipo', tipo), ('grupo', grupo),
-                          ('categoria', categoria), ('busca', busca)] %}
+                          ('categoria', categoria), ('busca', busca),
+                          ('analise', analise)] %}
     {% if valor and campo not in proprios %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
     {% endif %}
@@ -26,20 +27,22 @@
   <small>o caixa dia a dia — {{ titulo_do_mes }}</small>
 </h2>
 <p class="cartao-dica" style="margin:-8px 0 14px">
-  Cada dia mostra o que <b>entrou</b> (verde) e o que <b>saiu</b> (vermelho)
+  Cada dia mostra o que <b class="v-pos">entrou</b> (verde) e o que foi <b class="v-pago">pago</b> (azul)
   de fato — a mesma régua do Fluxo de Caixa, pela data do pagamento ou do
   recebimento, com juros e multa pagos e sem as retenções de receita. O total
-  do mês fecha com a linha do mesmo mês no Fluxo de Caixa. Em <b class="v-aberto">laranja</b>,
-  o que está <b>a pagar</b> naquele vencimento: num dia que já passou, é conta
-  <b>vencida</b>; num dia que não chegou, é conta a vencer. <b>Clique no dia</b>
+  do mês fecha com a linha do mesmo mês no Fluxo de Caixa. O que está <b>a
+  pagar</b> aparece no dia do vencimento: em <b class="v-vencido">vermelho</b> se
+  o dia já passou (<b>vencido</b>), em <b class="v-aberto">laranja</b> se ainda
+  vai vencer (inclusive hoje). <b>Clique no dia</b>
   para ver lançamento a lançamento. O ano marcado na barra lateral não vale
   aqui: o mês manda.
 </p>
 
-{% if chips or tipo or grupo or categoria or busca %}
+{% if chips or tipo or grupo or categoria or busca or analise %}
 <div class="chips">
   {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
   {% if tipo %}<span class="chip">{{ tipos[tipo] }}</span>{% endif %}
+  {% if analise %}<span class="chip">{{ analises[analise] }}</span>{% endif %}
   {% if grupo %}<span class="chip">Grupo: {{ grupo }}</span>{% endif %}
   {% if categoria %}<span class="chip">Categoria: {{ categoria }}</span>{% endif %}
   {% if busca %}<span class="chip">Busca: {{ busca }}</span>{% endif %}
@@ -52,7 +55,7 @@
     {# Uma conta só cabe na caixa desta tela; várias (marcadas na barra lateral)
        viajam escondidas e a caixa avisa — o mesmo do Analítico. #}
     {% set conta_propria = (selecao.contas|length) <= 1 %}
-    {{ esconde(['mes', 'tipo', 'grupo', 'categoria', 'busca']
+    {{ esconde(['mes', 'tipo', 'grupo', 'categoria', 'busca', 'analise']
                + (['conta'] if conta_propria else [])) }}
     <div class="form-grade">
       <div class="campo">
@@ -71,6 +74,15 @@
             <option value="{{ chave }}" {% if tipo == chave %}selected{% endif %}>{{ rotulo }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div class="campo">
+        <label for="analise">DRE ou fluxo</label>
+        <select id="analise" name="analise">
+          {% for chave, rotulo in analises.items() %}
+            <option value="{{ chave }}" {% if analise == chave %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+        <p class="dica">Fluxo é o que mexe no caixa sem entrar no resultado: empréstimo, aporte, dividendo, aplicação.</p>
       </div>
       <div class="campo">
         <label for="grupo">Grupo</label>
@@ -106,7 +118,7 @@
       </div>
       <div class="campo" style="align-self:end; display:flex; gap:8px; flex-wrap:wrap">
         <button class="btn" type="submit">Aplicar</button>
-        {% if tipo or grupo or categoria or busca or selecao.contas %}
+        {% if tipo or grupo or categoria or busca or analise or selecao.contas %}
           <a class="btn secundario" style="text-decoration:none"
              href="{{ url_for('painel.calendario', mes=mes_iso) }}">Limpar</a>
         {% endif %}
@@ -121,12 +133,12 @@
 <div class="kpis">
   <div class="kpi verde estatico">
     <div class="kpi-rotulo">Recebido no mês</div>
-    <div class="kpi-valor">{{ brl(dados.entradas) }}</div>
+    <div class="kpi-valor v-pos">{{ brl(dados.entradas) }}</div>
     <div class="kpi-sub">{% if dados.maior_entrada %}maior dia: {{ dados.maior_entrada[0].strftime('%d/%m') }} — {{ brl(dados.maior_entrada[1]) }}{% else %}nenhum recebimento{% endif %}</div>
   </div>
-  <div class="kpi vermelho estatico">
+  <div class="kpi azul estatico">
     <div class="kpi-rotulo">Pago no mês</div>
-    <div class="kpi-valor">{{ brl(dados.saidas) }}</div>
+    <div class="kpi-valor v-pago">{{ brl(dados.saidas) }}</div>
     <div class="kpi-sub">{% if dados.maior_saida %}maior dia: {{ dados.maior_saida[0].strftime('%d/%m') }} — {{ brl(dados.maior_saida[1]) }}{% else %}nenhum pagamento{% endif %}</div>
   </div>
   <div class="kpi estatico">
@@ -134,10 +146,15 @@
     <div class="kpi-valor {{ classe_valor(dados.liquido) }}">{{ brl(dados.liquido) }}</div>
     <div class="kpi-sub">recebido menos pago</div>
   </div>
+  <div class="kpi vermelho estatico">
+    <div class="kpi-rotulo">Vencido no mês</div>
+    <div class="kpi-valor v-vencido">{{ brl(dados.a_pagar_vencido) }}</div>
+    <div class="kpi-sub">{% if dados.quantos_vencidos %}{{ dados.quantos_vencidos }} título(s) em aberto que já venceram{% else %}nada vencido em aberto{% endif %}</div>
+  </div>
   <div class="kpi ambar estatico">
-    <div class="kpi-rotulo">A pagar no mês</div>
-    <div class="kpi-valor v-aberto">{{ brl(dados.a_pagar) }}</div>
-    <div class="kpi-sub">{% if dados.quantos_a_pagar %}vencido {{ brl(dados.a_pagar_vencido) }} · a vencer {{ brl(dados.a_pagar_a_vencer) }} · {{ dados.quantos_a_pagar }} título(s){% else %}nada em aberto vencendo neste mês{% endif %}</div>
+    <div class="kpi-rotulo">A vencer no mês</div>
+    <div class="kpi-valor v-aberto">{{ brl(dados.a_pagar_a_vencer) }}</div>
+    <div class="kpi-sub">{% if dados.quantos_a_vencer %}{{ dados.quantos_a_vencer }} título(s) de hoje em diante{% else %}nada a vencer{% endif %}</div>
   </div>
   <div class="kpi ciano estatico">
     <div class="kpi-rotulo">Dias com movimento</div>
@@ -150,10 +167,10 @@
 <div class="cartao cal-cartao">
   <div class="cal-nav">
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ com_filtros('painel.calendario', mes=anterior, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca) }}">‹ Mês anterior</a>
+       href="{{ com_filtros('painel.calendario', mes=anterior, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca, analise=analise) }}">‹ Mês anterior</a>
     <h3 class="cal-titulo">{{ titulo_do_mes|capitalize }}</h3>
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ com_filtros('painel.calendario', mes=seguinte, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca) }}">Mês seguinte ›</a>
+       href="{{ com_filtros('painel.calendario', mes=seguinte, tipo=tipo, grupo=grupo, categoria=categoria, busca=busca, analise=analise) }}">Mês seguinte ›</a>
   </div>
 
   <div class="calendario" role="grid" aria-label="Calendário de {{ titulo_do_mes }}">
@@ -176,7 +193,7 @@
             {% if n %}
               {% if n.entradas > 0 %}<span class="cal-valor cal-entrou"><span class="cal-longo">+{{ brl(n.entradas) }}</span><span class="cal-curto">{{ brl_curto(n.entradas) }}</span></span>{% endif %}
               {% if n.saidas < 0 %}<span class="cal-valor cal-saiu"><span class="cal-longo">{{ brl(n.saidas) }}</span><span class="cal-curto">{{ brl_curto(n.saidas) }}</span></span>{% endif %}
-              {% if n.a_pagar %}<span class="cal-valor cal-aberto" title="{{ 'vencido' if n.vencido else 'a vencer' }}"><span class="cal-longo">{{ brl(n.a_pagar) }} {{ 'venc.' if n.vencido else 'a pagar' }}</span><span class="cal-curto">{{ brl_curto(n.a_pagar) }}</span></span>{% endif %}
+              {% if n.a_pagar %}<span class="cal-valor {{ 'cal-vencido' if n.vencido else 'cal-aberto' }}" title="{{ 'vencido' if n.vencido else 'a vencer' }}"><span class="cal-longo">{{ brl(n.a_pagar) }} {{ 'venc.' if n.vencido else 'a pagar' }}</span><span class="cal-curto">{{ brl_curto(n.a_pagar) }}</span></span>{% endif %}
               <span class="cal-quantos">{{ n.quantos + n.quantos_a_pagar }} lanç.</span>
             {% endif %}
           </button>
@@ -185,8 +202,9 @@
     {% endfor %}
   </div>
   <p class="cartao-dica">
-    Verde é o que entrou, vermelho o que saiu, <span class="v-aberto"><b>laranja</b></span> o
-    que está a pagar naquele vencimento (dia passado com laranja = venceu). Dia
+    <b class="v-pos">Verde</b> é o que entrou, <b class="v-pago">azul</b> o que foi pago,
+    <b class="v-vencido">vermelho</b> o que venceu e não foi pago (o dia ganha
+    borda vermelha), <b class="v-aberto">laranja</b> o que está a vencer. Dia
     sem nada fica apagado. O detalhe abre com os mesmos filtros desta tela,
     então a soma dele fecha com o número do dia.
   </p>
@@ -195,7 +213,9 @@
 <!-- ===================== O DETALHE DO DIA ===================== -->
 <dialog id="detalhe-do-dia" class="cal-dialogo">
   <div class="cal-dialogo-cab">
+    <button type="button" class="btn secundario" id="detalhe-anterior" title="dia anterior (seta ←)">‹</button>
     <h3 id="detalhe-titulo">Dia</h3>
+    <button type="button" class="btn secundario" id="detalhe-seguinte" title="dia seguinte (seta →)">›</button>
     <div class="cal-dialogo-resumo" id="detalhe-resumo"></div>
     <button type="button" class="btn secundario" id="detalhe-fechar">Fechar</button>
   </div>
@@ -213,6 +233,7 @@
   const titulo = els("detalhe-titulo");
   const resumo = els("detalhe-resumo");
   const filtros = new URLSearchParams(window.location.search);
+  const ADMIN = {{ 'true' if administrador else 'false' }};
   const escapar = t => String(t == null ? "" : t)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -220,23 +241,35 @@
     const doc = l.link
       ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener" title="Abrir no Pipefy">${escapar(l.documento || "Pipefy")} ↗</a>`
       : escapar(l.documento || "");
-    const classe = l.em_aberto ? "v-aberto" : (l.valor > 0 ? "v-pos" : "v-neg");
+    const classe = l.em_aberto ? (l.natureza === "Vencido" ? "v-vencido" : "v-aberto")
+                               : (l.valor > 0 ? "v-pos" : "v-pago");
     return `<tr>
-      <td class="${l.em_aberto ? "v-aberto" : ""}"><b>${escapar(l.natureza)}</b></td>
+      <td class="${classe}"><b>${escapar(l.natureza)}</b></td>
       <td class="desc" title="${escapar(l.observacao)}">${escapar(l.razao_social || "(sem nome)")}</td>
-      <td class="desc">${escapar(l.categoria)}</td>
+      <td class="desc">${escapar(l.categoria)}${l.analise && l.analise !== "DRE" ? ` <small class="selo neutro">${escapar(l.analise)}</small>` : ""}</td>
       <td class="desc">${escapar(l.obra)}</td>
       <td class="desc">${doc}</td>
-      <td class="desc">${escapar(l.conta)}</td>
+      <td class="desc">${(ADMIN && l.codigo) ? `<button type="button" class="link-btn" data-conta-de="${escapar(l.codigo)}" title="de onde o painel tirou esta conta">${escapar(l.conta || "(sem conta)")} ⓘ</button>` : escapar(l.conta || "(sem conta)")}</td>
       <td class="dados direita ${classe}">${moeda(l.valor)}</td>
     </tr>`;
   }
 
+  // o dia aberto agora, para as setas irem ao anterior e ao seguinte
+  let diaAberto = null;
+  const ROTULO = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+  function somarDias(iso, n) {
+    const d = new Date(iso + "T12:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function andar(n) { if (diaAberto) { const d = somarDias(diaAberto, n); abrir(d, ROTULO(d)); } }
+
   async function abrir(dia, rotulo) {
+    diaAberto = dia;
     titulo.textContent = "Dia " + rotulo;
     resumo.textContent = "";
     corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
-    dialogo.showModal();
+    if (!dialogo.open) dialogo.showModal();
     const consulta = new URLSearchParams(filtros);
     consulta.set("dia", dia);
     try {
@@ -245,9 +278,11 @@
       const dados = await r.json();
       if (!dados.ok) { corpo.innerHTML = `<p class="aviso erro">${escapar(dados.erro || "Não deu para carregar.")}</p>`; return; }
       resumo.innerHTML = `<b class="v-pos">+${moeda(dados.entradas)}</b> &nbsp;·&nbsp; `
-                       + `<b class="v-neg">${moeda(dados.saidas)}</b> &nbsp;·&nbsp; `
+                       + `<b class="v-pago">${moeda(dados.saidas)}</b> &nbsp;·&nbsp; `
                        + `líquido <b>${moeda(dados.liquido)}</b>`
-                       + (dados.a_pagar ? ` &nbsp;·&nbsp; <b class="v-aberto">${moeda(dados.a_pagar)} a pagar</b>` : "")
+                       + (dados.a_pagar ? (dados.linhas.some(l => l.natureza === "Vencido")
+                           ? ` &nbsp;·&nbsp; <b class="v-vencido">${moeda(dados.a_pagar)} vencido</b>`
+                           : ` &nbsp;·&nbsp; <b class="v-aberto">${moeda(dados.a_pagar)} a vencer</b>`) : "")
                        + ` &nbsp;·&nbsp; ${dados.quantos} lançamento(s)`;
       if (!dados.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nada neste dia com os filtros atuais.</p>'; return; }
       corpo.innerHTML = `<table>
@@ -257,9 +292,91 @@
           <th class="sem-ordem">Documento</th><th class="sem-ordem">Conta</th>
           <th class="sem-ordem direita">Valor</th>
         </tr></thead>
-        <tbody>${dados.linhas.map(linha).join("")}</tbody></table>`;
+        <tbody>${dados.linhas.map(linha).join("")}</tbody></table>
+        <div id="origem-da-conta" style="margin-top:12px"></div>
+        ${ADMIN ? `<div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+            <button type="button" class="btn secundario" id="conferir-omie">Conferir este dia com o OMIE</button>
+          </div><div id="conferencia-omie" style="margin-top:10px"></div>` : ""}`;
+      if (ADMIN) els("conferir-omie").addEventListener("click", () => conferir(dia));
+      corpo.querySelectorAll("[data-conta-de]").forEach(b =>
+        b.addEventListener("click", () => origem(b.dataset.contaDe)));
     } catch (e) {
       corpo.innerHTML = '<p class="aviso erro">Não deu para carregar o dia. Tente de novo.</p>';
+    }
+  }
+
+  // Conferir o dia com o OMIE, lendo o OMIE na hora (dono, 23/09/2026)
+  const perna = p => `${escapar(p.conta_nome)} · ${moeda(p.valor)} <small>(${escapar(p.perna)})</small>`;
+  async function conferir(dia) {
+    const alvo = els("conferencia-omie");
+    alvo.innerHTML = '<p class="cartao-dica">Lendo o OMIE… pode levar alguns segundos.</p>';
+    try {
+      const r = await fetch("{{ url_for('painel.conferir_dia') }}?dia=" + encodeURIComponent(dia));
+      const d = await r.json();
+      if (!d.ok) { alvo.innerHTML = `<p class="aviso erro">${escapar(d.erro || "Não deu para conferir.")}</p>`; return; }
+      const planilha = "{{ url_for('painel.baixar', assunto='conferencia') }}?dia=" + encodeURIComponent(dia);
+      const topo = `<p class="cartao-dica" style="margin:0 0 8px">Dia <b>${escapar(d.dia)}</b>: ${d.pernas_no_painel} registro(s) no painel, ${d.pernas_no_omie} no OMIE, ${d.iguais} iguais.
+        <a href="${planilha}">⬇ Planilha com os dois lados</a></p>`;
+      if (d.bate) { alvo.innerHTML = `<div class="aviso ok">O painel bate com o OMIE neste dia.</div>` + topo; return; }
+      const linhas = d.titulos.map(t => `<tr>
+          <td class="desc"><b>${escapar(t.quem || "—")}</b><br><small>${escapar(t.documento || "")} ${t.obra ? "· " + escapar(t.obra) : ""} · nº ${escapar(t.codigo ?? "—")}</small></td>
+          <td class="desc">${t.no_painel.map(perna).join("<br>") || "<i>nada</i>"}</td>
+          <td class="desc">${t.no_omie.map(perna).join("<br>") || "<i>nada</i>"}</td></tr>`).join("");
+      alvo.innerHTML = `<div class="cartao" style="margin:0; border-left:4px solid var(--ambar)">
+          <b>${d.titulos.length} título(s) diferente(s) entre o painel e o OMIE</b>
+          ${topo}
+          <div class="tabela-rolagem" style="max-height:40vh"><table>
+            <thead><tr><th class="sem-ordem">Título</th><th class="sem-ordem">No painel</th><th class="sem-ordem">No OMIE (agora)</th></tr></thead>
+            <tbody>${linhas}</tbody></table></div>
+          <p class="cartao-dica">O OMIE é a fonte. Para o painel ficar igual a ele neste dia, traga o dia de novo — não mexe em nada no OMIE, só na cópia do painel, e refaz os números em seguida.</p>
+          <button type="button" class="btn" id="trazer-dia">Trazer este dia do OMIE para o painel</button>
+          <span id="trazer-resultado" class="cartao-dica"></span></div>`;
+      els("trazer-dia").addEventListener("click", () => trazer(dia));
+    } catch (e) {
+      alvo.innerHTML = '<p class="aviso erro">Não deu para ler o OMIE. Tente de novo em um minuto.</p>';
+    }
+  }
+  async function trazer(dia) {
+    if (!confirm("Substituir os pagamentos deste dia no painel pelo que o OMIE tem agora? Nada muda no OMIE.")) return;
+    const saida = els("trazer-resultado");
+    saida.textContent = " Trazendo…";
+    try {
+      const corpoForm = new URLSearchParams({dia});
+      const r = await fetch("{{ url_for('painel.conferir_dia_trazer') }}", {method: "POST", body: corpoForm});
+      const d = await r.json();
+      saida.textContent = d.ok ? ` Feito: ${d.gravados} registro(s) regravados. ${d.aviso}` : ` ${d.erro}`;
+    } catch (e) { saida.textContent = " Não deu certo. Tente de novo."; }
+  }
+
+  // De onde veio a conta: as pernas da baixa no espelho do OMIE (dono, 23/09)
+  async function origem(codigo) {
+    const alvo = els("origem-da-conta");
+    alvo.innerHTML = '<p class="cartao-dica">Lendo o espelho do OMIE…</p>';
+    try {
+      const r = await fetch("{{ url_for('painel.conta_do_titulo', codigo=0) }}".replace("/0/conta", `/${encodeURIComponent(codigo)}/conta`));
+      const d = await r.json();
+      if (!d.ok) { alvo.innerHTML = `<p class="aviso erro">${escapar(d.erro || "Não encontrado.")}</p>`; return; }
+      const explica = {
+        "baixa bancária": "A conta vem da <b>baixa bancária</b> que o OMIE registrou — é a conta que o próprio OMIE diz que o dinheiro saiu. Se o comprovante mostra outra, a baixa foi lançada na conta errada <b>no OMIE</b>: o conserto é lá (estornar e baixar de novo na conta certa); na próxima atualização o painel acompanha.",
+        "baixa consolidada": "O OMIE <b>não tem a baixa bancária</b> deste título, só a baixa consolidada, que repete a conta do título. O painel não tem como saber a conta real: falta a baixa na conta certa no OMIE.",
+        "conta prevista no título": "O OMIE não tem <b>baixa nenhuma</b> deste título no espelho — o painel mostra a conta <b>prevista</b>. Confira se a baixa foi feita no OMIE; se foi hoje, ela entra na próxima atualização.",
+      }[d.regra] || "";
+      const pernas = d.pernas.length ? `<table class="sem-quebra"><thead><tr>
+          <th class="sem-ordem">Data</th><th class="sem-ordem">Perna</th><th class="sem-ordem">Conta</th>
+          <th class="sem-ordem direita">Valor</th><th class="sem-ordem">Deu a conta?</th></tr></thead><tbody>`
+        + d.pernas.map(p => `<tr><td class="dados">${escapar(p.data)}</td><td class="desc">${escapar(p.tipo)}</td>
+             <td class="desc">${escapar(p.conta || "(sem conta)")}</td><td class="dados direita">${moeda(p.valor)}</td>
+             <td class="desc">${p.valeu ? "<b>sim</b>" : "—"}</td></tr>`).join("") + "</tbody></table>"
+        : '<p class="cartao-dica">Nenhum movimento deste título no espelho.</p>';
+      alvo.innerHTML = `<div class="cartao" style="margin:0; border-left:4px solid var(--azul-claro)">
+        <b>De onde veio a conta — título ${escapar(d.codigo)} ${d.documento ? "· " + escapar(d.documento) : ""}</b>
+        <p class="cartao-dica" style="margin:6px 0">Conta prevista no título: <b>${escapar(d.conta_prevista || "—")}</b>
+          · No painel: ${d.no_painel.map(n => `<b>${escapar(n.conta)}</b> (${moeda(n.valor)})`).join(", ")}
+          · Regra usada: <b>${escapar(d.regra)}</b></p>
+        <p class="cartao-dica" style="margin:0 0 8px">${explica}</p>${pernas}</div>`;
+      alvo.scrollIntoView({block: "nearest"});
+    } catch (e) {
+      alvo.innerHTML = '<p class="aviso erro">Não deu para ler. Tente de novo.</p>';
     }
   }
 
@@ -267,6 +384,14 @@
     b.addEventListener("click", () => abrir(b.dataset.dia, b.dataset.rotulo));
   });
   els("detalhe-fechar").addEventListener("click", () => dialogo.close());
+  els("detalhe-anterior").addEventListener("click", () => andar(-1));
+  els("detalhe-seguinte").addEventListener("click", () => andar(1));
+  // setas do teclado, com a janela aberta e fora de campo de texto
+  document.addEventListener("keydown", e => {
+    if (!dialogo.open || /INPUT|TEXTAREA|SELECT/.test((e.target.tagName || ""))) return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); andar(-1); }
+    if (e.key === "ArrowRight") { e.preventDefault(); andar(1); }
+  });
   dialogo.addEventListener("click", e => { if (e.target === dialogo) dialogo.close(); });
 })();
 </script>

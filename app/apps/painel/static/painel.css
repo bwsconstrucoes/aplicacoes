@@ -330,14 +330,22 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .cal-dia.hoje { box-shadow: inset 0 0 0 2px var(--amarelo); }
 .cal-numero { font-size: 12px; font-weight: 800; font-family: var(--fonte-dados); }
 .cal-valor { font-size: 11.5px; font-weight: 700; font-family: var(--fonte-dados); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* As cores do Calendario, escolhidas pelo dono em 24/09/2026: verde o que
+   entrou, AZUL o que foi pago, VERMELHO o que venceu e nao foi pago, LARANJA o
+   que esta a vencer. Ficam restritas a esta tela: no resto do painel vermelho
+   continua sendo "valor negativo". */
 .cal-valor.cal-entrou { color: var(--verde); }
-.cal-valor.cal-saiu { color: var(--vermelho); }
+.cal-valor.cal-saiu { color: var(--azul-claro); }
 /* o terceiro numero: a pagar, pelo vencimento — laranja. Dia que ja passou
    com laranja e conta VENCIDA: a borda avisa tambem. */
 .cal-valor.cal-aberto { color: var(--ambar); }
-.cal-dia.vencido { border-color: var(--ambar); box-shadow: inset 3px 0 0 var(--ambar); }
-.cal-dia.hoje.vencido { box-shadow: inset 0 0 0 2px var(--amarelo), inset 3px 0 0 var(--ambar); }
+.cal-valor.cal-vencido { color: var(--vermelho); }
+.cal-dia.vencido { border-color: var(--vermelho); box-shadow: inset 3px 0 0 var(--vermelho); }
+.cal-dia.hoje.vencido { box-shadow: inset 0 0 0 2px var(--amarelo), inset 3px 0 0 var(--vermelho); }
 .v-aberto { color: var(--ambar); }
+.v-pago { color: var(--azul-claro); }
+.v-vencido { color: var(--vermelho); }
+.kpi.azul { border-left-color: var(--azul-claro); }
 /* numero clicavel do DRE: parece o numero, sublinha ao passar o mouse */
 .link-btn.abre-medicoes { color: inherit; font-family: var(--fonte-dados); font-size: inherit; font-weight: inherit; padding: 0; text-decoration: underline dotted; text-underline-offset: 3px; }
 .link-btn.abre-medicoes:hover { color: var(--azul-claro); }

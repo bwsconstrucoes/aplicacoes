@@ -450,6 +450,11 @@ def _consultar_falso(sql, params=()):
         if marca in sql:
             return resposta
 
+    # ---- as retencoes por tributo (janela do DRE) ----
+    if "FROM (SELECT codigo_lancamento AS cod" in sql:
+        return [(998877, "CLIENTE A", "NF123", "Obra Um", dt.date(2025, 5, 2), "",
+                 300.0, 150.0, 50.0, 0.0, 30.0, 70.0, 0.0)]
+
     # ---- o dinheiro da obra com os socios (bloco de aportes do DRE) ----
     # Antes do ramo de aportes: a consulta cita 'Aporte de Parceiro' e cairia la.
     if "AS caixa_com_socios" in sql:
@@ -467,16 +472,16 @@ def _consultar_falso(sql, params=()):
     if "AS lancamento_a_pagar" in sql:
         return [(dt.date(2025, 4, 20), 998879, "2. Contas a Pagar", "FORNECEDOR B",
                  "", "Materiais", "Cimento", "Obra Um", "PROJ-A", "NF80", "",
-                 "(sem conta)", -900.0, 0, "")]
+                 "(sem conta)", -900.0, 0, "", "DRE")]
     if "AS lancamento_do_dia" in sql:
         return [(dt.date(2025, 4, 8), 998877, "1. Contas a Receber", "CLIENTE A",
                  "11.111.111/0001-11", "Receita Bruta", "Receita de Obras",
                  "Obra Um", "PROJ-A", "NF123", "medição 3", "Bradesco C/C",
-                 7000.0, 0.0, "https://app.pipefy.com/open-cards/1"),
+                 7000.0, 0.0, "https://app.pipefy.com/open-cards/1", "DRE"),
                 (dt.date(2025, 4, 8), 998878, "2. Contas a Pagar", "FORNECEDOR A LTDA",
                  "12.345.678/0001-90", "Despesas com Pessoal", "Salários",
                  "Obra Um", "PROJ-A", "NF77", "folha", "Bradesco C/C",
-                 -3000.0, -25.0, "")]
+                 -3000.0, -25.0, "", "Fluxo de Caixa")]
 
     # ---- aportes e dividendos (o bloco do fim do DRE) ----
     # Vem antes de tudo: o SQL de aporte cai em vários dos marcadores genéricos
@@ -1717,9 +1722,20 @@ def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
     assert "mes=2025-03" in html and "mes=2025-05" in html   # os dois botões
     assert "2 lanç." in html
     # o terceiro número: a pagar pelo vencimento, em laranja, e no KPI
-    assert "A pagar no mês" in html and "−R$ 900,00" in html
-    assert 'class="cal-valor cal-aberto"' in html
-    assert "vencido −R$ 900,00" in html                      # abril de 2025 já passou
+    # as cores do dono (24/09/2026): verde recebido, azul pago, vermelho
+    # vencido, laranja a vencer — abril de 2025 já passou, então é vencido
+    assert "Vencido no mês" in html and "A vencer no mês" in html
+    assert 'class="kpi-valor v-vencido">−R$ 900,00' in html
+    assert 'class="cal-valor cal-vencido"' in html
+    assert 'class="kpi-valor v-pago">−R$ 4.200,00' in html
+    assert "3 título(s) em aberto que já venceram" in html
+    # DRE ou fluxo: o filtro existe, vira chip e viaja no botão de mês
+    r = painel.get("/painel/calendario?mes=2025-04&analise=fluxo")
+    html = r.get_data(as_text=True)
+    assert 'name="analise"' in html and "Só fluxo (fora do resultado)" in html
+    assert 'value="fluxo" selected' in html
+    assert "analise=fluxo" in [l for l in html.split('href="') if "mes=2025-05" in l][0]
+    assert painel.get("/painel/calendario?mes=2025-04&analise=xyz").status_code == 200
     # os filtros de cima seguem o padrão do Analítico — a conta inclusive
     assert 'name="conta"' in html and "Conta de pagamento" in html
     r = painel.get("/painel/calendario?mes=2025-04&conta=Bradesco+22069-8")
@@ -1821,3 +1837,37 @@ def test_os_numeros_de_receita_do_dre_abrem_as_medicoes(painel):
     assert dados["pode_abrir"] is True
     # visão inventada cai em "todas" em vez de quebrar
     assert painel.get("/painel/dre/medicoes?visao=x").get_json()["visao"] == "todas"
+
+
+def test_o_analitico_mostra_a_conta_de_pagamento_e_o_numero_no_omie(painel):
+    """23/09/2026, o dono: "no Despesas Analítico quero a conta de pagamento,
+    para um confronto de informações"."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/analitico").get_data(as_text=True)
+    assert "<th class=\"sem-ordem\">Conta de pagamento</th>" in html
+    assert "<th class=\"sem-ordem\">Nº no OMIE</th>" in html
+    assert "Bradesco C/C" in html and "998877" in html
+
+
+# ===========================================================================
+# Despesas e retenções num clique no DRE — 23/09/2026
+# ===========================================================================
+def test_os_numeros_de_despesa_e_de_retencao_do_dre_abrem_o_detalhe(painel):
+    """O dono: "fazer isso para as despesas também, clicar e abrir uma
+    janelinha; e as retenções, ver o que é de cada tributo"."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre").get_data(as_text=True)
+    assert 'class="link-btn dados abre-despesas" data-grupo="Despesas com Pessoal"' in html
+    assert 'data-grupo="" data-visao="comprometido"' in html      # o total
+    assert "abre-retencoes" in html
+    assert 'data-grupo="Juros e Multas Pagos"' not in html        # não tem lista própria
+    d = painel.get("/painel/dre/despesas?grupo=Despesas+com+Pessoal&visao=executado").get_json()
+    assert d["ok"] and d["visao"] == "executado" and d["linhas"][0]["credor"] == "FORNECEDOR A LTDA"
+    assert "grupo=Despesas" in d["ver_tudo"] and d["pode_abrir"] is True
+    assert painel.get("/painel/dre/despesas?visao=x").get_json()["visao"] == "comprometido"
+    r = painel.get("/painel/dre/retencoes?visao=todas").get_json()
+    assert r["ok"] and r["quantos"] == 1
+    l = r["linhas"][0]
+    # 300 retidos no título, o OMIE abre em IR 150, ISS 50, PIS 30, COFINS 70
+    assert (l["ir"], l["iss"], l["pis"], l["cofins"]) == (150.0, 50.0, 30.0, 70.0)
+    assert r["totais"]["ir"] == 150.0 and r["total"] == 300.0
