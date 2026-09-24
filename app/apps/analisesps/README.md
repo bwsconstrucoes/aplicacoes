@@ -30,6 +30,8 @@ auditoria.py       as sete checagens da tela de Auditoria
 lote.py            o lote de trabalho: agrupar, extrair SPs, guardar
 agenda.py          calendário de compromissos que se repetem
 calendario.py      a grade de mês do calendário das SPs (outra coisa da agenda)
+conciliacao.py     a conciliação bancária: contas, extrato, marcar e anotar
+conciliacao_ofx.py a leitura do arquivo OFX (⚠️ usa o parser do ERP — ver dentro)
 colunas.py         o mapeamento da aba SPsBD (A:AL) — fonte única
 tabela.py          as colunas da lista — espelha o GRID_COLS do Streamlit
 preferencias.py    o que cada pessoa deixou do jeito dela (filtro, colunas)
@@ -262,6 +264,7 @@ cobrável de quem preencheu.
 | Solicitações | a lista, com todos os filtros e as ações em lote |
 | Lote | a remessa que está sendo tratada agora, em grupos |
 | Relatório | quanto, por obra, projeto, tipo, conta e credor |
+| Conciliação | o extrato bancário conta a conta: solta o OFX (ele descobre a conta sozinho), confere ANTES de gravar, marca o conciliado e anota pendência. Controle paralelo ao OMIE, a pedido do dono |
 | Calendário | o MESMO filtro do Relatório e das Solicitações (**menos as datas** — quem manda aqui é o mês aberto), espalhado nos dias do mês, com uma linha colorida por situação (vermelho vencido, laranja a vencer, azul pago); o dia clicado abre a lista daquele dia |
 | Auditoria | sete checagens do que está errado na base |
 | Ratear | o JSON que atualiza o título no Omie |

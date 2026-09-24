@@ -747,6 +747,37 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 24/09/2026 — O Análise de SPs passou a IMPORTAR código do ERP (atravessa áreas)
+
+A Conciliação Bancária nova (`app/apps/analisesps/conciliacao*.py`) lê extrato
+OFX. Um parser de OFX **já existia**, no ERP:
+`app/apps/erp/core/pagamentos/ofx.py` — funções puras, sem banco, sem
+dependência externa, rodando em produção desde julho.
+
+**A decisão foi IMPORTAR, e não copiar.** O motivo não é economia de linhas: é
+que aquele arquivo já pagou o preço de duas armadilhas que ninguém descobre de
+novo sem se machucar — o FITID como identidade da linha, e a ORDEM da
+repetição quando o banco não manda FITID (sem ela, dois PIX iguais de R$ 1.500
+no mesmo dia viravam UM, e o extrato passava a divergir do banco em silêncio;
+achado em 11/09/2026). Uma cópia começaria certa e divergiria calada na
+primeira correção que só um dos lados recebesse.
+
+**O preço, e ele é real: existe agora uma amarra entre duas áreas.** Se o chat
+do ERP mover, renomear ou mudar a forma daquele arquivo, a tela de Conciliação
+para de ler extrato. Duas proteções:
+
+1. **Um teste guarda o contrato** — `tests/test_analisesps_conciliacao.py`
+   importa o parser e confere os campos que a Conciliação lê. A quebra aparece
+   na suíte do GitHub Actions, e não na tela do dono no meio de uma
+   conferência.
+2. **Está escrito no alto dos dois arquivos** que usam a importação, com o
+   porquê.
+
+**Para quem mexer no `erp/core/pagamentos/ofx.py`:** ele tem um segundo
+consumidor fora do ERP. Mudança de assinatura ou de campo do `LancamentoOFX`
+precisa olhar o `analisesps/conciliacao_ofx.py` junto.
+
+
 ### 22/09/2026 — O CURINGA DO ENCURTADOR NÃO PEGA MAIS TUDO (atravessa áreas)
 
 Achado numa varredura de uso do ERP: a rota `/<codigo>` do encurtador é um

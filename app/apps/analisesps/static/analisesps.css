@@ -1831,3 +1831,68 @@ td.credor-grupos { margin: 0; }
   .nota-doc-itens th, .nota-doc-itens td,
   .nota-doc-totais th, .nota-doc-totais td { border-color: #666; }
 }
+
+/* ==========================================================================
+   A CONCILIACAO BANCARIA (24/09/2026)
+
+   ⚠️ O PEDIDO ERA "MANUSEIO FLUIDO, RAPIDO — no Excel a gente vai so alterando
+   a coluna e colocando alguma observacao". Por isso o tique e o campo de
+   observacao vivem DENTRO da linha da tabela, e nao atras de um botao que
+   abre um formulario: cada clique a mais e um motivo para voltar a planilha.
+   ========================================================================== */
+.rolagem-tabela { overflow-x: auto; }
+
+table.conciliacao td { vertical-align: middle; }
+table.conciliacao .historico {
+  max-width: 420px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+table.conciliacao .entrada { color: var(--verde); font-weight: 600; }
+table.conciliacao .saida   { color: var(--vermelho); font-weight: 600; }
+table.conciliacao .saldo   { font-family: var(--fonte-dados); color: var(--tinta-suave); }
+
+/* A linha conciliada fica discreta: o que interessa numa conciliacao e o que
+   AINDA NAO foi conferido. Apagar o que ja esta resolvido e o que faz o
+   pendente saltar aos olhos. */
+tr.linha-extrato.conciliada { background: #F6F9F4; }
+tr.linha-extrato.conciliada td { color: var(--tinta-suave); }
+tr.linha-extrato.conciliada .entrada,
+tr.linha-extrato.conciliada .saida { font-weight: 500; opacity: .75; }
+
+/* O tique: um alvo grande o suficiente para acertar sem mirar, inclusive no
+   celular, porque e o gesto mais repetido da tela. */
+.tique {
+  width: 30px; height: 26px; border-radius: var(--raio-p);
+  border: 1px solid var(--borda-forte); background: var(--branco);
+  cursor: pointer; font-size: 14px; line-height: 1; color: var(--tinta-suave);
+}
+.tique:hover { border-color: var(--azul-claro); }
+.tique.ligado {
+  background: #E7F3E1; border-color: var(--verde); color: var(--verde);
+  font-weight: 700;
+}
+.tique:disabled { opacity: .5; cursor: wait; }
+
+.anotacao {
+  width: 100%; font-size: 12px; padding: 4px 6px;
+  border: 1px solid transparent; border-radius: var(--raio-p);
+  background: transparent; color: var(--tinta);
+}
+.anotacao:hover { border-color: var(--borda); }
+.anotacao:focus { border-color: var(--azul-claro); background: var(--branco); }
+.anotacao.gravando { opacity: .6; }
+/* O "gravou" e um verde que aparece e some sozinho: um aviso permanente para
+   cada anotacao entulharia a tela, e nenhum aviso deixaria a duvida. */
+.anotacao.gravou { background: #E7F3E1; border-color: var(--verde); }
+
+/* A area de soltar o arquivo. */
+.solta-arquivo {
+  border: 2px dashed var(--borda-forte); border-radius: var(--raio);
+  padding: 18px; text-align: center; cursor: pointer;
+  background: var(--papel); transition: background .12s, border-color .12s;
+}
+.solta-arquivo:hover { border-color: var(--azul-claro); }
+.solta-arquivo.por-cima { border-color: var(--azul); background: #EEF4FF; }
+.solta-arquivo p { margin: 0; }
+
+.paginacao { display: flex; gap: 10px; align-items: center; margin-top: 12px; }

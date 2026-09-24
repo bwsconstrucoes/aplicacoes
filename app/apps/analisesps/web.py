@@ -153,6 +153,7 @@ TELAS = [
     # dele. Tela nova entra entre "os demais", que é onde ele mesmo mandou.
     # Ao lado da Agenda também lê bem: são as duas grades de mês do módulo.
     ("calendario",    "Calendário",    "analisesps.calendario"),
+    ("conciliacao",   "Conciliação",   "analisesps.tela_conciliacao"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
@@ -1527,6 +1528,261 @@ def calendario():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+# ---------------------------------------------------------------------------
+# CONCILIAÇÃO BANCÁRIA — 24/09/2026
+#
+# O controle paralelo que vive numa planilha desde sempre, trazido para cá.
+# A conciliação de verdade continua no OMIE; esta é a visão do dono, e o lugar
+# onde cabe a ANOTAÇÃO, que o OMIE não tem.
+#
+# ⚠️ O FILTRO É PRÓPRIO, e NÃO o da barra das Solicitações. São universos
+# diferentes: lá se filtra SP (credor, obra, projeto); aqui se filtra linha de
+# extrato bancário (conta, período, conciliado, observação). Reusar a mesma
+# gaveta faria o recorte de uma tela vazar na outra sem sentido nenhum.
+# ---------------------------------------------------------------------------
+FILTRO_CONCILIACAO = "filtro_conciliacao"
+
+
+def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
+    """O que a barra desta tela manda, com um padrão sensato para cada coisa."""
+    from . import conciliacao as conc
+    from .formatos import para_data, para_numero
+
+    def data(nome):
+        bruto = (request.args.get(nome) or "").strip()
+        return para_data(bruto) if bruto else None
+
+    def numero(nome):
+        bruto = (request.args.get(nome) or "").strip()
+        return para_numero(bruto) if bruto else None
+
+    # A conta é obrigatória: conciliação sem conta não é conciliação, é uma
+    # lista de lançamentos de bancos misturados. Sem escolha, vale a primeira.
+    try:
+        conta_id = int(request.args.get("conta_id") or 0)
+    except ValueError:
+        conta_id = 0
+    ids = [c["id"] for c in contas_cadastradas]
+    if conta_id not in ids:
+        conta_id = ids[0] if ids else 0
+
+    situacao = request.args.get("situacao") or "todos"
+    if situacao not in conc.SITUACOES:
+        situacao = "todos"
+    sentido = request.args.get("sentido") or ""
+    if sentido not in ("", "entrada", "saida"):
+        sentido = ""
+
+    return {"conta_id": conta_id, "situacao": situacao, "sentido": sentido,
+            "busca": (request.args.get("busca") or "").strip(),
+            "data_ini": data("data_ini"), "data_fim": data("data_fim"),
+            "valor_ini": numero("valor_ini"), "valor_fim": numero("valor_fim")}
+
+
+@bp.route("/conciliacao")
+@exige_consulta
+def tela_conciliacao():
+    from . import conciliacao as conc
+
+    estado = conc.estado()
+    if not estado["pronto"]:
+        # ⚠️ A MIGRAÇÃO AINDA NÃO FOI APLICADA. O código sobe antes do botão
+        # ser apertado, e uma tela que estourasse aqui derrubaria a confiança
+        # na publicação inteira. Ela diz o que falta, e como fazer.
+        return render_template("analisesps_conciliacao.html", estado=estado,
+                               contas=[], linhas=[], filtros={}, resumo={},
+                               situacoes=conc.SITUACOES, pagina=1,
+                               pode_operar=auth.pode_operar(),
+                               perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+                               nome=auth.nome_atual())
+
+    contas = conc.contas()
+    filtros = _filtros_da_conciliacao(contas)
+    try:
+        pagina = max(1, int(request.args.get("pagina", 1)))
+    except ValueError:
+        pagina = 1
+
+    linhas = conc.listar(filtros, pagina) if filtros["conta_id"] else []
+    resumo = conc.resumo(filtros) if filtros["conta_id"] else {}
+    conta = next((c for c in contas if c["id"] == filtros["conta_id"]), None)
+
+    return render_template(
+        "analisesps_conciliacao.html", aba="conciliacao", estado=estado,
+        contas=contas, conta=conta, linhas=linhas, filtros=filtros,
+        resumo=resumo, situacoes=conc.SITUACOES, pagina=pagina,
+        por_pagina=conc.POR_PAGINA,
+        tem_proxima=len(linhas) == conc.POR_PAGINA,
+        saldo_total=conc.saldo_da_conta(filtros["conta_id"])
+        if filtros["conta_id"] else 0,
+        ultimos_arquivos=conc.ultimos_arquivos(filtros["conta_id"])
+        if filtros["conta_id"] else [],
+        args=request.args,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/conciliacao/conferir", methods=["POST"])
+@exige_operador
+def conciliacao_conferir():
+    """Lê o OFX e diz o que vai acontecer. NÃO grava nada.
+
+    ⚠️ CONFERIR E GRAVAR SÃO DUAS CHAMADAS, e é o pedido do dono: *"eu quero
+    jogar um OFX e o sistema me dizer: todos os lançamentos já estavam
+    registrados desse período"*. Uma resposta dada DEPOIS de gravar não teria
+    como ser conferida — ela mesma teria mudado o mundo que descreve.
+    """
+    from . import conciliacao as conc
+    from . import conciliacao_ofx
+
+    arquivo = request.files.get("extrato")
+    if not arquivo or not arquivo.filename:
+        return {"ok": False, "erro": "Escolha o arquivo do extrato (.ofx)."}
+    try:
+        lido = conciliacao_ofx.ler(arquivo.read())
+    except conciliacao_ofx.ErroDoExtrato as e:
+        return {"ok": False, "erro": str(e)}
+
+    achada = conc.conta_do_extrato(lido.bankid, lido.acctid)
+    pedida = request.form.get("conta_id")
+    conta_id = int(pedida) if (pedida or "").strip().isdigit() else (
+        achada["id"] if achada else 0)
+    if not conta_id:
+        # ⚠️ NÃO SE CHUTA A CONTA. Jogar o extrato de uma empresa dentro da
+        # conta de outra é um estrago que ninguém percebe olhando a tela.
+        return {"ok": False, "desconhecida": True,
+                "bankid": lido.bankid, "acctid": lido.acctid,
+                "erro": ("Não reconheci de qual conta é este extrato "
+                         f"(banco {lido.bankid or '?'}, conta "
+                         f"{lido.acctid or '?'}). Escolha a conta abaixo — e "
+                         "ela passa a ser reconhecida sozinha da próxima vez.")}
+
+    try:
+        conferido = conc.conferir(conta_id, lido)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+
+    return {"ok": True, **conc.resumo_para_a_tela(conferido, conta_id,
+                                                  arquivo.filename)}
+
+
+@bp.route("/api/conciliacao/importar", methods=["POST"])
+@exige_operador
+def conciliacao_importar():
+    """Grava o que a conferência mostrou. O arquivo vem de novo, de propósito.
+
+    ⚠️ O ARQUIVO É REENVIADO EM VEZ DE FICAR GUARDADO NO SERVIDOR entre as
+    duas chamadas. Guardar exigiria um lugar para ele e uma limpeza depois, e
+    com 1 worker e 4 threads um "guardado na memória" vira do outro usuário no
+    dia em que duas pessoas importarem ao mesmo tempo. Reenviar custa um
+    segundo e não tem esse risco.
+    """
+    from . import conciliacao as conc
+    from . import conciliacao_ofx
+
+    arquivo = request.files.get("extrato")
+    conta_id = (request.form.get("conta_id") or "").strip()
+    if not arquivo or not arquivo.filename:
+        return {"ok": False, "erro": "O arquivo não veio junto."}
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    try:
+        lido = conciliacao_ofx.ler(arquivo.read())
+    except conciliacao_ofx.ErroDoExtrato as e:
+        return {"ok": False, "erro": str(e)}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    # Lembrar a conta do arquivo: da próxima vez ele se reconhece sozinho.
+    if request.form.get("lembrar") == "1":
+        conc.lembrar_conta_do_extrato(int(conta_id), lido.bankid, lido.acctid,
+                                      quem)
+    try:
+        feito = conc.importar(int(conta_id), lido, arquivo.filename, quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    return {"ok": True, **conc.resumo_para_a_tela(feito, int(conta_id),
+                                                  arquivo.filename)}
+
+
+@bp.route("/api/conciliacao/marcar", methods=["POST"])
+@exige_operador
+def conciliacao_marcar():
+    """Marca ou desmarca linhas. É o gesto mais repetido da tela."""
+    from . import conciliacao as conc
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        mudadas = conc.marcar(dados.get("ids") or [],
+                              bool(dados.get("conciliado")), quem)
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou marcar")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "mudadas": mudadas, "quem": quem}
+
+
+@bp.route("/api/conciliacao/anotar", methods=["POST"])
+@exige_operador
+def conciliacao_anotar():
+    """A observação de uma linha — o que a planilha tinha e o OMIE não tem."""
+    from . import conciliacao as conc
+    dados = request.get_json(silent=True) or {}
+    linha_id = dados.get("id")
+    if not str(linha_id or "").isdigit():
+        return {"ok": False, "erro": "Linha não informada."}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        texto = conc.anotar(int(linha_id), dados.get("texto") or "", quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou anotar")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "texto": texto}
+
+
+@bp.route("/api/conciliacao/conta", methods=["POST"])
+@exige_operador
+def conciliacao_gravar_conta():
+    """Cria ou altera uma conta bancária, de dentro da própria tela."""
+    from . import conciliacao as conc
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        conta_id = conc.gravar_conta(dados, quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou gravar conta")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": conta_id}
+
+
+@bp.route("/api/conciliacao/linha", methods=["POST"])
+@exige_operador
+def conciliacao_linha_a_mao():
+    """Uma linha que o banco não trouxe e precisa existir."""
+    from . import conciliacao as conc
+    from .formatos import para_data, para_numero
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    data = para_data((dados.get("data") or "").strip())
+    valor = para_numero(str(dados.get("valor") or "").strip())
+    if not data:
+        return {"ok": False, "erro": "Informe a data."}
+    if valor is None:
+        return {"ok": False, "erro": "Informe o valor (negativo se for saída)."}
+    if not str(dados.get("conta_id") or "").isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    try:
+        novo = conc.acrescentar_a_mao(
+            int(dados["conta_id"]), data, dados.get("descricao") or "", valor,
+            dados.get("documento") or "", dados.get("observacao") or "", quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou acrescentar linha")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": novo}
 
 
 # ---------------------------------------------------------------------------

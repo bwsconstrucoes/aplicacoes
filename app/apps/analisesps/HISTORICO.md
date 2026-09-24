@@ -6619,6 +6619,112 @@ nas três telas) e 1 com banco de verdade, porque é no `WHERE` que isto vive e
 o dublê ignora `WHERE` inteiro.
 
 ---
+
+### Octogésima sexta leva (24/09) — a Conciliação Bancária
+
+> *"Eu tenho uma planilha de controle de conciliação. A gente cola o extrato
+> do banco e vai marcando o que já bateu. A conciliação a gente faz no OMIE,
+> mas aqui fica um controle paralelo também, porque é mais fácil de visualizar
+> — e até para fazer uma anotação quando tem uma pendência. Eu queria trazer
+> esse controle para o Análise de SPs."*
+
+A planilha "Controle de Conciliação" tem ~20 abas, uma por conta (Bradesco
+2541/7011/50024/22069/DND 44217/132275, BB, Santander, Cora, BNB, Caixa,
+Sicredi 3008/83289/92945, Soma DND, Soma IFPE, Soma), 8 MB, viva desde 2024.
+
+#### O que entrou nesta leva
+
+Uma tela nova, **Conciliação**, com: cadastro de contas; **soltar o arquivo
+OFX**, que descobre sozinho de qual conta é; conferência **antes** de gravar;
+lista com filtro próprio; marcar conciliado no tique; observação por linha; e
+saldo corrido.
+
+#### ⚠️ O que NÃO é, e precisa ficar dito
+
+**Não é um segundo razão.** Aqui não se lança nada: entra o que o banco diz
+(o OFX) ou o que já estava na planilha. O que a pessoa faz é MARCAR e ANOTAR.
+Confundir os papéis faria disto uma fonte de verdade paralela ao OMIE — e é
+justamente o que ninguém quer manter.
+
+#### Seis decisões, com o motivo
+
+1. **O parser de OFX foi IMPORTADO do ERP, não reescrito.**
+   `erp/core/pagamentos/ofx.py` já pagou o preço de duas armadilhas: o FITID
+   como identidade da linha e a ORDEM da repetição quando o banco não manda
+   FITID — sem ela, dois PIX iguais de R$ 1.500 no mesmo dia viravam UM.
+   **Isso cria uma amarra entre áreas**, registrada em `CONTEXTO.md` §9, com
+   aviso no alto dos dois arquivos e um teste guardando o contrato. Cópia
+   começaria certa e divergiria calada.
+2. **Conferir e gravar são DUAS chamadas.** Foi o pedido mais específico dele:
+   *"jogar um OFX e o sistema me dizer: todos os lançamentos já estavam
+   registrados desse período"*. Uma resposta dada depois de gravar não teria
+   como ser conferida — ela mesma teria mudado o mundo que descreve.
+3. **A conta desconhecida NÃO é chutada.** Jogar o extrato de uma empresa
+   dentro da conta de outra é um estrago que ninguém percebe olhando a tela.
+   A tela pergunta uma vez, e a partir dali reconhece sozinha.
+4. **Zero à esquerda cai dos dois lados** (banco e conta). O mesmo Bradesco
+   manda "237"/"0237" e "0007011-4"/"70114". Comparar cru faria o sistema
+   perguntar a conta toda vez — que é o que ele pediu para não ter de fazer.
+   *Um teste com banco pegou isso; a primeira versão errava.*
+5. **Um valor só, com sinal, no banco.** A planilha tem crédito e débito em
+   colunas separadas, e isso obriga toda soma a lembrar de somar as duas e
+   subtrair uma — o tipo de conta que sai errada uma vez e ninguém percebe. A
+   tela mostra duas colunas; o banco guarda uma.
+6. **O saldo corrido é da CONTA, não da página.** Somar as 300 linhas da tela
+   daria um saldo que recomeça a cada página: um número com cara de certo e
+   sem sentido nenhum. É uma janela sobre a conta inteira; o filtro recorta o
+   que se vê, não o que se soma.
+
+#### A conferência que vale mais que contar linhas
+
+O OFX traz o **saldo que o banco declara**. A tela compara com o saldo daqui e
+diz se bate. Contagem de linhas não prova que o extrato está completo; isso
+prova.
+
+#### O manuseio, que era metade do pedido
+
+*"No Excel a gente vai só alterando a coluna e colocando alguma observação."*
+Por isso o tique e a observação vivem DENTRO da linha e **não recarregam a
+tela** — gravam por trás. A recarga só acontece na marcação em leva, onde o
+saldo e os números de cima mudam junto e mostrá-los velhos seria pior. Uma
+tela mais lenta que a planilha que ela veio substituir não seria usada.
+
+#### ⚠️ O QUE FALTA, e é a metade que o dono mais quer
+
+**A importação da planilha antiga não foi feita nesta leva.** Ele disse, com
+todas as letras: *"já tem muita informação aqui, eu quero manter"*. O que
+trava:
+
+1. **Daqui não dá para ler as ~20 abas.** A planilha tem 8 MB; a ferramenta
+   desta sessão só mostrou a primeira aba ("Controle Geral"). O layout das
+   abas de conta — quais colunas são data, histórico, crédito, débito, saldo —
+   não foi visto.
+2. **⚠️ EM VÁRIAS ABAS, "CONCILIADO" É UMA COR, NÃO UM DADO.** Ele explicou:
+   no BB é a coluna E pintada de amarelo; no Santander a D; no Cora a E; no
+   BNB e no Sicredi 3008 está tudo pintado; no Sicredi 83289 a D; no Soma DND
+   a E; no Soma IFPE a D. Só Bradesco, Sicredi 92945 (coluna L) e Soma (coluna
+   K) têm a palavra escrita. **Ler cor exige a API de formatação do Google,
+   não a de valores** — é outro caminho de leitura, mais caro, e precisa ser
+   feito por aba e por faixa para não estourar a memória.
+3. **Muita linha está vazia** — *"ninguém nem tratou ainda"*. Vazio não é "não
+   conciliado": é "ninguém olhou". Se a importação transformar os dois na
+   mesma coisa, perde-se a informação de onde o trabalho parou.
+
+**As abas que ele mandou ignorar:** Alelo e as que não citou (anotações).
+
+**Verificado:** 20 testes com banco de verdade (a migração, o OFX achando a
+conta sozinho, reimportar não duplicando, dois PIX iguais sendo dois, o
+arquivo repetido reconhecido, o que está aqui e não vem no extrato, os
+filtros, o saldo corrido, o saldo da conta ignorando o filtro, desmarcar
+apagando quem conciliou, e uma conta não vendo o extrato da outra) e 17 de
+tela.
+
+**NÃO verificado:** a tela não foi aberta num navegador, e **nenhum OFX de
+verdade dos bancos dele passou por aqui** — os testes usam arquivos montados
+à mão. Bancos brasileiros escrevem OFX de jeitos diferentes; o primeiro
+arquivo real é o teste que importa.
+
+---
 ---
 
 ## Regras que não se discutem

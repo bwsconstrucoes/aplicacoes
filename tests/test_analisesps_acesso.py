@@ -93,6 +93,16 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/lote"),
     ("GET", "/analisesps/relatorio"),
     ("GET", "/analisesps/calendario"),
+    # A CONCILIAÇÃO mostra o extrato bancário inteiro da empresa — é das telas
+    # mais sensíveis do módulo, e este inventário é o que garante que ela não
+    # fique aberta sem querer.
+    ("GET", "/analisesps/conciliacao"),
+    ("POST", "/analisesps/api/conciliacao/conferir"),
+    ("POST", "/analisesps/api/conciliacao/importar"),
+    ("POST", "/analisesps/api/conciliacao/marcar"),
+    ("POST", "/analisesps/api/conciliacao/anotar"),
+    ("POST", "/analisesps/api/conciliacao/conta"),
+    ("POST", "/analisesps/api/conciliacao/linha"),
     ("GET", "/analisesps/auditoria"),
     ("GET", "/analisesps/ratear"),
     ("POST", "/analisesps/ratear"),

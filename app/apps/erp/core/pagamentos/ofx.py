@@ -7,6 +7,12 @@
 # Saída: lista de LancamentoOFX com hash determinístico por transação —
 # o hash usa FITID quando presente (identificador único do banco), o que torna
 # a reimportação do mesmo arquivo idempotente (constraint UNIQUE em extratos).
+#
+# ⚠️ ESTE ARQUIVO TEM UM SEGUNDO CONSUMIDOR, FORA DO ERP (24/09/2026).
+# A tela de Conciliação Bancária do Análise de SPs importa `parsear_ofx`,
+# `ErroOFX` e `_decodificar` daqui — ver `app/apps/analisesps/conciliacao_ofx.py`
+# e o registro em `CONTEXTO.md` §9. Mudar a assinatura ou os campos de
+# `LancamentoOFX` quebra aquela tela; há teste na suíte guardando o contrato.
 # ============================================================================
 from __future__ import annotations
 

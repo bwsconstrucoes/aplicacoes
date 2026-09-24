@@ -1,0 +1,646 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Conciliação — Análise de SPs{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   A CONCILIAÇÃO BANCÁRIA — pedido do dono em 24/09/2026.
+
+   ⚠️ A BARRA DE FILTROS É PRÓPRIA, e não a de Solicitações. São universos
+   diferentes: lá se filtra SP (credor, obra, projeto); aqui, linha de extrato
+   (conta, período, conciliado, observação). Reusar a mesma barra faria o
+   recorte de uma tela vazar na outra sem sentido nenhum.
+--------------------------------------------------------------------------- #}
+{% block filtros %}
+{% if estado.pronto and contas %}
+<form method="get" class="filtros-form" id="filtros-conciliacao">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_conciliacao',
+                                          conta_id=filtros.conta_id) }}">Limpar</a>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab"><span>Conta</span></div>
+    <div class="filtro-cont">
+      <select class="campo-largo" name="conta_id" onchange="this.form.submit()">
+        {% for c in contas %}
+          <option value="{{ c.id }}" {% if filtros.conta_id == c.id %}selected{% endif %}>
+            {{ c.nome }}{% if c.banco %} · {{ c.banco }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab"><span>Situação</span></div>
+    <div class="filtro-cont">
+      <select class="campo-largo" name="situacao" onchange="this.form.submit()">
+        {% for chave, rotulo in situacoes.items() %}
+          <option value="{{ chave }}" {% if filtros.situacao == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.data_ini or filtros.data_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Período</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label>
+          <input type="date" name="data_ini"
+                 value="{{ filtros.data_ini.isoformat() if filtros.data_ini else '' }}"></div>
+        <div><label>Até</label>
+          <input type="date" name="data_fim"
+                 value="{{ filtros.data_fim.isoformat() if filtros.data_fim else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.busca %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Procurar</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <input class="campo-largo" name="busca" value="{{ filtros.busca }}"
+             placeholder="histórico, documento ou observação">
+      <p class="cartao-dica" style="margin:6px 2px 0">
+        Separe por vírgula para exigir as duas coisas. A busca alcança a
+        <b>observação</b> — é o que a planilha tinha de melhor.
+      </p>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.sentido or filtros.valor_ini or filtros.valor_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Valor</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select class="campo-largo" name="sentido">
+        <option value="">Entradas e saídas</option>
+        <option value="entrada" {% if filtros.sentido == 'entrada' %}selected{% endif %}>Só entradas</option>
+        <option value="saida" {% if filtros.sentido == 'saida' %}selected{% endif %}>Só saídas</option>
+      </select>
+      <div class="faixa" style="margin-top:6px">
+        <div><label>De</label>
+          <input name="valor_ini" value="{{ filtros.valor_ini or '' }}" placeholder="0,00"></div>
+        <div><label>Até</label>
+          <input name="valor_fim" value="{{ filtros.valor_fim or '' }}" placeholder="0,00"></div>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin:12px 2px"><button class="btn" type="submit">Aplicar</button></p>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+{# ⚠️ A MIGRAÇÃO PODE NÃO TER SIDO APLICADA AINDA. O código sobe para o Render
+   antes de o dono apertar o botão, e uma tela que estourasse aqui derrubaria a
+   confiança na publicação inteira. #}
+{% if not estado.pronto %}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>A Conciliação ainda não foi ligada</h3></div>
+    <p>Falta aplicar a atualização do banco — é o botão
+      <b>"Aplicar atualizações do banco"</b>, aqui mesmo em
+      <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a>.
+      Ele cria as três tabelas que esta tela usa.</p>
+    <p class="cartao-dica">Enquanto isso, nada se perde: a planilha continua
+      sendo a fonte, e nenhum extrato foi importado ainda.</p>
+  </div>
+{% elif not contas %}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Comece cadastrando uma conta</h3></div>
+    <p>A conciliação é por conta bancária. Cadastre a primeira e, na hora de
+      soltar o extrato, o sistema passa a reconhecer sozinho de qual conta ele
+      é — o banco e o número vêm dentro do próprio arquivo.</p>
+    {% if pode_operar %}
+      <p><button class="btn" id="btn-nova-conta">+ Nova conta</button></p>
+    {% endif %}
+  </div>
+{% else %}
+
+<h2>Conciliação <small>{{ conta.nome if conta else '' }}</small></h2>
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Saldo da conta</div>
+    <div class="kpi-valor">{{ saldo_total|moeda }}</div>
+    <div class="kpi-sub">tudo o que entrou menos o que saiu</div>
+  </div>
+  <div class="kpi estatico vermelho">
+    <div class="kpi-rotulo">Falta conciliar</div>
+    <div class="kpi-valor">{{ resumo.pendentes or 0 }}</div>
+    <div class="kpi-sub">{{ (resumo.pendentes_valor or 0)|moeda }} no recorte</div>
+  </div>
+  <div class="kpi estatico laranja">
+    <div class="kpi-rotulo">Com observação</div>
+    <div class="kpi-valor">{{ resumo.com_observacao or 0 }}</div>
+    <div class="kpi-sub">pendências anotadas</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">No recorte</div>
+    <div class="kpi-valor">{{ (resumo.saldo or 0)|moeda }}</div>
+    <div class="kpi-sub">{{ resumo.quantidade or 0 }} linha(s) ·
+      {{ (resumo.entradas or 0)|moeda }} entrou ·
+      {{ (resumo.saidas or 0)|moeda }} saiu</div>
+  </div>
+</div>
+
+{% if pode_operar %}
+{# ---------------------------------------------------------------------------
+   O EXTRATO ENTRA AQUI — e o sistema diz o que vai fazer ANTES de fazer.
+   Pedido do dono: *"eu quero jogar um OFX e o sistema me dizer: ó, esse OFX
+   aqui, todos os lançamentos já estavam registrados desse período."*
+--------------------------------------------------------------------------- #}
+<div class="cartao" id="area-extrato">
+  <div class="cartao-cab">
+    <h3>Trazer extrato</h3>
+    <small>arquivo .OFX do banco</small>
+  </div>
+  <div class="solta-arquivo" id="solta-extrato">
+    <p><b>Solte o arquivo OFX aqui</b>, ou <label class="link-btn"
+        for="arq-extrato">escolha no computador</label>.</p>
+    <input type="file" id="arq-extrato" accept=".ofx,.OFX" hidden>
+    <p class="cartao-dica" style="margin:6px 0 0">
+      O sistema descobre sozinho de qual conta é o arquivo, e <b>diz o que vai
+      acontecer antes de gravar</b>: quantos lançamentos já estavam aqui e
+      quantos são novos. Mandar o mesmo extrato duas vezes não duplica nada.
+    </p>
+  </div>
+  <div id="saida-extrato"></div>
+</div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Extrato</h3>
+    <small>{{ resumo.quantidade or 0 }} linha(s) neste recorte</small>
+  </div>
+
+  {% if not linhas %}
+    <p class="cartao-dica" style="margin:0">Nada neste recorte.
+      {% if resumo.quantidade == 0 and filtros.situacao == 'todos' and not filtros.busca %}
+        Esta conta ainda não tem extrato importado.
+      {% endif %}</p>
+  {% else %}
+  {% if pode_operar %}
+    <div class="barra-acoes">
+      <label class="opcao"><input type="checkbox" id="marcar-todos">
+        <span class="rotulo">marcar todos da página</span></label>
+      <button class="btn secundario" id="btn-conciliar">Conciliar selecionados</button>
+      <button class="btn secundario" id="btn-desmarcar">Desmarcar selecionados</button>
+      <span id="recado-acao" class="cartao-dica" style="margin:0"></span>
+    </div>
+  {% endif %}
+
+  <div class="rolagem-tabela">
+  <table class="sps conciliacao">
+    <thead>
+      <tr>
+        {% if pode_operar %}<th style="width:28px"></th>{% endif %}
+        <th style="width:92px">Data</th>
+        <th>Histórico</th>
+        <th style="width:110px">Documento</th>
+        <th style="width:120px" class="direita">Entrada</th>
+        <th style="width:120px" class="direita">Saída</th>
+        <th style="width:130px" class="direita">Saldo</th>
+        <th style="width:92px">Conciliado</th>
+        <th style="width:240px">Observação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+        <tr class="linha-extrato {{ 'conciliada' if l.conciliado }}"
+            data-id="{{ l.id }}">
+          {% if pode_operar %}
+            <td><input type="checkbox" class="marca-linha" value="{{ l.id }}"></td>
+          {% endif %}
+          <td>{{ l.data|data_br }}</td>
+          <td class="historico" title="{{ l.descricao }}">{{ l.descricao }}
+            {%- if l.origem == 'mao' %}
+              <span class="etiqueta" title="linha digitada, não veio do banco">à mão</span>
+            {%- elif l.origem == 'planilha' %}
+              <span class="etiqueta" title="veio da planilha antiga">planilha</span>
+            {%- endif %}</td>
+          <td>{{ l.documento }}</td>
+          <td class="direita entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
+          <td class="direita saida">{{ (-l.valor)|moeda if l.valor < 0 else '' }}</td>
+          <td class="direita saldo">{{ l.saldo|moeda }}</td>
+          <td>
+            {% if pode_operar %}
+              <button class="tique {{ 'ligado' if l.conciliado }}"
+                      data-id="{{ l.id }}"
+                      title="{% if l.conciliado %}conciliado por {{ l.conciliado_por or '—' }}{% else %}clique para conciliar{% endif %}">
+                {{ '✓' if l.conciliado else '—' }}</button>
+            {% else %}
+              {{ '✓' if l.conciliado else '—' }}
+            {% endif %}
+          </td>
+          <td>
+            {% if pode_operar %}
+              <input class="anotacao" data-id="{{ l.id }}"
+                     value="{{ l.observacao }}" placeholder="anotar…">
+            {% else %}
+              {{ l.observacao }}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if pagina > 1 or tem_proxima %}
+    <div class="paginacao">
+      {% set base = args.to_dict(flat=false) %}
+      {% set _ = base.pop('pagina', None) %}
+      {% if pagina > 1 %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina-1, **base) }}">‹ anterior</a>
+      {% endif %}
+      <span class="cartao-dica">página {{ pagina }}</span>
+      {% if tem_proxima %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina+1, **base) }}">próxima ›</a>
+      {% endif %}
+    </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+{% if ultimos_arquivos %}
+<details class="cartao">
+  <summary><b>Extratos já trazidos nesta conta</b> — responde "já mandei este mês?"</summary>
+  <table class="sps" style="margin-top:10px">
+    <thead><tr><th>Arquivo</th><th>Período</th><th class="direita">Linhas</th>
+      <th class="direita">Novas</th><th>Quando</th><th>Quem</th></tr></thead>
+    <tbody>
+      {% for a in ultimos_arquivos %}
+        <tr>
+          <td>{{ a.nome_arquivo or '—' }}</td>
+          <td>{{ a.periodo_ini|data_br }} a {{ a.periodo_fim|data_br }}</td>
+          <td class="direita">{{ a.linhas_lidas }}</td>
+          <td class="direita">{{ a.linhas_novas }}</td>
+          <td>{{ a.importado_em|momento_br }}</td>
+          <td>{{ a.importado_por }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+{% endif %}
+
+{% if estado.pronto and pode_operar %}
+{# ---------------------------------------------------------------------------
+   AS CONTAS — uma porta só, como manda a regra da casa (CLAUDE.md, 17/09).
+
+   Não há "cadastrar digitando" de um lado e "cadastrar pelo extrato" do outro.
+   É um formulário só; o EXTRATO é o atalho DENTRO dele: soltando um OFX de
+   conta desconhecida, a tela oferece ligá-lo a uma conta, e o banco e o número
+   ficam guardados a partir dali. Quem tem o arquivo usa; quem não tem, digita.
+--------------------------------------------------------------------------- #}
+<details class="cartao" id="cartao-contas">
+  <summary><b>Contas</b> — {{ contas|length }} cadastrada(s)</summary>
+
+  <table class="sps" style="margin-top:10px">
+    <thead><tr><th>Nome</th><th>Banco</th><th>Agência / conta</th>
+      <th>Reconhece o extrato?</th><th></th></tr></thead>
+    <tbody>
+      {% for c in contas %}
+        <tr>
+          <td><b>{{ c.nome }}</b></td>
+          <td>{{ c.banco }}</td>
+          <td>{{ c.agencia }} {{ c.numero }}</td>
+          <td>
+            {% if c.ofx_bankid and c.ofx_acctid %}
+              <span class="etiqueta boa">sim</span>
+              <small>banco {{ c.ofx_bankid }}, conta {{ c.ofx_acctid }}</small>
+            {% else %}
+              <span class="etiqueta">ainda não</span>
+              <small>solte um extrato dela uma vez, e passa a reconhecer</small>
+            {% endif %}
+          </td>
+          <td><button class="btn secundario editar-conta"
+                      data-conta="{{ c|tojson|forceescape }}">Editar</button></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form id="form-conta" style="margin-top:14px">
+    <input type="hidden" name="id" value="">
+    <div class="faixa">
+      <div><label class="rotulo-campo">Nome (como você chama)</label>
+        <input class="campo-largo" name="nome" placeholder="BD 7011" required></div>
+      <div><label class="rotulo-campo">Banco</label>
+        <input class="campo-largo" name="banco" placeholder="Bradesco"></div>
+    </div>
+    <div class="faixa" style="margin-top:8px">
+      <div><label class="rotulo-campo">Agência</label>
+        <input class="campo-largo" name="agencia"></div>
+      <div><label class="rotulo-campo">Conta</label>
+        <input class="campo-largo" name="numero"></div>
+      <div><label class="rotulo-campo">Ordem na lista</label>
+        <input class="campo-largo" name="ordem" value="0"></div>
+    </div>
+    <p class="cartao-dica" style="margin:8px 0 0">
+      O banco e o número que <b>reconhecem o extrato</b> não precisam ser
+      digitados: eles vêm do próprio arquivo na primeira vez que você soltar um
+      OFX desta conta.
+    </p>
+    <p style="margin:10px 0 0">
+      <button class="btn" type="submit">Gravar conta</button>
+      <button class="btn secundario" type="button" id="btn-limpar-conta">Limpar</button>
+      <span id="recado-conta" class="cartao-dica"></span>
+    </p>
+  </form>
+</details>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if estado.pronto and pode_operar %}
+<script>
+// ===========================================================================
+// ⚠️ O MANUSEIO TEM DE SER FLUIDO — foi o que o dono pediu com essas palavras:
+// *"no Excel a gente vai só alterando a coluna e colocando alguma observação"*.
+// Por isso marcar e anotar NÃO recarregam a tela: gravam por trás e devolvem
+// só o recado. Uma recarga a cada tique tornaria a tela mais lenta que a
+// planilha que ela veio substituir — e aí ninguém a usaria.
+// ===========================================================================
+const CONTA_ID = {{ filtros.conta_id or 0 }};
+
+function recado(texto, classe) {
+  const alvo = document.getElementById("recado-acao");
+  if (!alvo) return;
+  alvo.textContent = texto;
+  alvo.className = "cartao-dica " + (classe || "");
+  if (texto) setTimeout(() => { if (alvo.textContent === texto) alvo.textContent = ""; }, 4000);
+}
+
+async function pedir(url, corpo) {
+  const r = await fetch(url, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(corpo)});
+  return await r.json();
+}
+
+// --- marcar/desmarcar uma linha, no tique -----------------------------------
+document.querySelectorAll(".tique").forEach(b => {
+  b.addEventListener("click", async () => {
+    const ligado = b.classList.contains("ligado");
+    b.disabled = true;
+    try {
+      const d = await pedir("{{ url_for('analisesps.conciliacao_marcar') }}",
+                            {ids: [b.dataset.id], conciliado: !ligado});
+      if (!d.ok) { recado(d.erro || "não deu certo", "ruim"); return; }
+      b.classList.toggle("ligado", !ligado);
+      b.textContent = ligado ? "—" : "✓";
+      b.title = ligado ? "clique para conciliar" : ("conciliado por " + (d.quem || ""));
+      b.closest("tr").classList.toggle("conciliada", !ligado);
+    } catch (e) { recado("falhou: " + e, "ruim"); }
+    finally { b.disabled = false; }
+  });
+});
+
+// --- em leva, pelas caixinhas ----------------------------------------------
+function selecionadas() {
+  return [...document.querySelectorAll(".marca-linha:checked")].map(c => c.value);
+}
+const todos = document.getElementById("marcar-todos");
+if (todos) todos.addEventListener("change", () => {
+  document.querySelectorAll(".marca-linha").forEach(c => { c.checked = todos.checked; });
+});
+
+async function emLeva(conciliado) {
+  const ids = selecionadas();
+  if (!ids.length) { recado("Marque as linhas primeiro."); return; }
+  const d = await pedir("{{ url_for('analisesps.conciliacao_marcar') }}",
+                        {ids: ids, conciliado: conciliado});
+  if (!d.ok) { recado(d.erro || "não deu certo", "ruim"); return; }
+  // A tela recarrega aqui, e só aqui: em leva o saldo e os números de cima
+  // mudam junto, e mostrá-los velhos seria pior do que a espera.
+  location.reload();
+}
+const btnC = document.getElementById("btn-conciliar");
+if (btnC) btnC.addEventListener("click", () => emLeva(true));
+const btnD = document.getElementById("btn-desmarcar");
+if (btnD) btnD.addEventListener("click", () => emLeva(false));
+
+// --- a observação, ao sair do campo ----------------------------------------
+document.querySelectorAll(".anotacao").forEach(campo => {
+  let antes = campo.value;
+  campo.addEventListener("blur", async () => {
+    if (campo.value === antes) return;
+    campo.classList.add("gravando");
+    const d = await pedir("{{ url_for('analisesps.conciliacao_anotar') }}",
+                          {id: campo.dataset.id, texto: campo.value});
+    campo.classList.remove("gravando");
+    if (!d.ok) { recado(d.erro || "não gravou", "ruim"); campo.value = antes; return; }
+    antes = campo.value;
+    campo.classList.add("gravou");
+    setTimeout(() => campo.classList.remove("gravou"), 1200);
+  });
+  // Enter grava sem esperar sair do campo.
+  campo.addEventListener("keydown", e => { if (e.key === "Enter") campo.blur(); });
+});
+
+// --- o extrato: soltar, conferir, e só então gravar -------------------------
+const area = document.getElementById("solta-extrato");
+const campoArq = document.getElementById("arq-extrato");
+const saida = document.getElementById("saida-extrato");
+let arquivoNaMao = null;
+
+if (area) {
+  ["dragenter", "dragover"].forEach(ev => area.addEventListener(ev, e => {
+    e.preventDefault(); area.classList.add("por-cima");
+  }));
+  ["dragleave", "drop"].forEach(ev => area.addEventListener(ev, e => {
+    e.preventDefault(); area.classList.remove("por-cima");
+  }));
+  area.addEventListener("drop", e => {
+    if (e.dataTransfer.files.length) conferir(e.dataTransfer.files[0]);
+  });
+  area.addEventListener("click", e => {
+    if (e.target.tagName !== "LABEL") campoArq.click();
+  });
+  campoArq.addEventListener("change", () => {
+    if (campoArq.files.length) conferir(campoArq.files[0]);
+  });
+}
+
+function dinheiro(v) {
+  const n = Number(v);
+  if (isNaN(n)) return v;
+  return n.toLocaleString("pt-BR", {minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2});
+}
+
+async function conferir(arquivo, contaEscolhida) {
+  arquivoNaMao = arquivo;
+  saida.innerHTML = '<div class="aviso">Lendo ' + arquivo.name + '…</div>';
+  const corpo = new FormData();
+  corpo.append("extrato", arquivo);
+  if (contaEscolhida) corpo.append("conta_id", contaEscolhida);
+  let d;
+  try {
+    const r = await fetch("{{ url_for('analisesps.conciliacao_conferir') }}",
+                          {method: "POST", body: corpo});
+    d = await r.json();
+  } catch (e) {
+    saida.innerHTML = '<div class="aviso erro">Falhou ao ler: ' + e + '</div>';
+    return;
+  }
+  if (!d.ok) { desenharErro(d); return; }
+  desenharConferencia(d);
+}
+
+function desenharErro(d) {
+  if (!d.desconhecida) {
+    saida.innerHTML = '<div class="aviso erro">' + (d.erro || "não deu certo") + '</div>';
+    return;
+  }
+  // ⚠️ CONTA DESCONHECIDA NÃO É CHUTADA. Jogar o extrato de uma empresa dentro
+  // da conta de outra é um estrago que ninguém percebe olhando a tela.
+  let html = '<div class="aviso atencao"><b>' + d.erro + '</b><br><br>' +
+    '<select id="escolher-conta" class="campo-largo" style="max-width:320px">';
+  {% for c in contas %}
+    html += '<option value="{{ c.id }}">{{ c.nome }}</option>';
+  {% endfor %}
+  html += '</select> <button class="btn" id="btn-conta-escolhida">É esta conta</button>' +
+    '<p class="cartao-dica" style="margin:8px 0 0">Ela passa a ser reconhecida ' +
+    'sozinha da próxima vez.</p></div>';
+  saida.innerHTML = html;
+  document.getElementById("btn-conta-escolhida").addEventListener("click", () => {
+    conferir(arquivoNaMao, document.getElementById("escolher-conta").value);
+  });
+}
+
+function desenharConferencia(d) {
+  let html = '<div class="aviso ' + (d.novas ? 'atencao' : 'bom') + '">';
+
+  if (d.arquivo_repetido) {
+    html += '<b>Este arquivo já foi trazido</b> em ' +
+      d.arquivo_repetido.importado_em + ' por ' +
+      (d.arquivo_repetido.importado_por || '—') + ', na conta ' +
+      d.arquivo_repetido.conta + '.<br>';
+  }
+
+  html += '<b>' + d.conta + '</b> · ' + d.periodo_ini + ' a ' + d.periodo_fim +
+    '<br>Li <b>' + d.lidas + '</b> lançamento(s): <b>' + d.ja_estavam +
+    '</b> já estavam aqui e <b>' + d.novas + '</b> ' +
+    (d.novas === 1 ? 'é novo' : 'são novos') + '.';
+
+  if (!d.novas) {
+    html += '<br><b>Está tudo registrado.</b> Nada a fazer com este arquivo.';
+  }
+
+  // O saldo do banco contra o daqui: a conferência que vale mais que contar
+  // linhas. Se os dois batem, o extrato está completo.
+  if (d.saldo_banco) {
+    html += '<br><br>Saldo que o banco declara: <b>' + dinheiro(d.saldo_banco) +
+      '</b> · aqui: <b>' + dinheiro(d.saldo_aqui) + '</b> — ' +
+      (d.saldo_bate ? '<b>bate.</b>'
+                    : '<b>não bate</b> (pode ser extrato faltando antes deste período).');
+  }
+
+  if (d.amostra.length) {
+    html += '<br><br><b>O que entraria:</b><table class="sps" style="margin-top:6px">' +
+      '<thead><tr><th>Data</th><th>Histórico</th><th class="direita">Valor</th></tr></thead><tbody>';
+    d.amostra.forEach(l => {
+      html += '<tr><td>' + l.data.split("-").reverse().join("/") + '</td><td>' +
+        l.descricao + '</td><td class="direita">' + dinheiro(l.valor) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (d.amostra_parcial) html += '<p class="cartao-dica">…e outros. Mostro os 15 primeiros.</p>';
+  }
+
+  if (d.so_aqui_total) {
+    html += '<br><b>Atenção: ' + d.so_aqui_total + ' linha(s) que estão aqui e ' +
+      'NÃO vêm neste extrato</b>, dentro do mesmo período. Pode ser linha ' +
+      'digitada errada, ou algo que o banco estornou:<ul>';
+    d.so_aqui.forEach(l => {
+      html += '<li>' + l.data.split("-").reverse().join("/") + ' — ' + l.descricao +
+        ' (' + dinheiro(l.valor) + ')' + (l.origem === 'mao' ? ' <i>digitada à mão</i>' : '') + '</li>';
+    });
+    html += '</ul>';
+  }
+
+  html += '<br><button class="btn" id="btn-gravar-extrato"' +
+    (d.novas ? '' : ' disabled title="não há nada novo para gravar"') + '>' +
+    'Gravar ' + d.novas + ' lançamento(s)</button> ' +
+    '<button class="btn secundario" id="btn-cancelar-extrato">Deixa pra lá</button>';
+  html += '</div>';
+  saida.innerHTML = html;
+
+  document.getElementById("btn-cancelar-extrato").addEventListener("click", () => {
+    saida.innerHTML = ""; arquivoNaMao = null; campoArq.value = "";
+  });
+  const gravar = document.getElementById("btn-gravar-extrato");
+  if (gravar && !gravar.disabled) {
+    gravar.addEventListener("click", async () => {
+      gravar.disabled = true;
+      gravar.textContent = "Gravando…";
+      const corpo = new FormData();
+      corpo.append("extrato", arquivoNaMao);
+      corpo.append("conta_id", d.conta_id);
+      corpo.append("lembrar", "1");
+      try {
+        const r = await fetch("{{ url_for('analisesps.conciliacao_importar') }}",
+                              {method: "POST", body: corpo});
+        const f = await r.json();
+        if (!f.ok) {
+          saida.innerHTML = '<div class="aviso erro">' + (f.erro || "não gravou") + '</div>';
+          return;
+        }
+        location.href = "{{ url_for('analisesps.tela_conciliacao') }}?conta_id=" + d.conta_id;
+      } catch (e) {
+        saida.innerHTML = '<div class="aviso erro">Falhou ao gravar: ' + e + '</div>';
+      }
+    });
+  }
+}
+
+// --- as contas --------------------------------------------------------------
+const formConta = document.getElementById("form-conta");
+if (formConta) {
+  document.querySelectorAll(".editar-conta").forEach(b => {
+    b.addEventListener("click", () => {
+      const c = JSON.parse(b.dataset.conta);
+      ["id", "nome", "banco", "agencia", "numero", "ordem"].forEach(k => {
+        const campo = formConta.querySelector('[name="' + k + '"]');
+        if (campo) campo.value = c[k] === null || c[k] === undefined ? "" : c[k];
+      });
+      formConta.scrollIntoView({behavior: "smooth", block: "center"});
+    });
+  });
+  const limpar = document.getElementById("btn-limpar-conta");
+  if (limpar) limpar.addEventListener("click", () => {
+    formConta.reset();
+    formConta.querySelector('[name="id"]').value = "";
+  });
+  formConta.addEventListener("submit", async e => {
+    e.preventDefault();
+    const corpo = {};
+    new FormData(formConta).forEach((v, k) => { corpo[k] = v; });
+    if (!corpo.id) delete corpo.id;
+    const alvo = document.getElementById("recado-conta");
+    alvo.textContent = "gravando…";
+    const d = await pedir("{{ url_for('analisesps.conciliacao_gravar_conta') }}", corpo);
+    if (!d.ok) { alvo.textContent = d.erro || "não gravou"; return; }
+    location.reload();
+  });
+}
+
+const btnNovaConta = document.getElementById("btn-nova-conta");
+if (btnNovaConta) btnNovaConta.addEventListener("click", () => {
+  const cartao = document.getElementById("cartao-contas");
+  if (cartao) { cartao.open = true; cartao.scrollIntoView({behavior: "smooth"}); }
+});
+</script>
+{% endif %}
+{% endblock %}
+
