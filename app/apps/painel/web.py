@@ -604,6 +604,48 @@ def dre_medicoes():
                     "total": consultas.total_das_medicoes(f, visao=visao)})
 
 
+@bp.route("/dre/despesas")
+def dre_despesas():
+    """Os lancamentos por tras de um numero de despesa do DRE (dono,
+    23/09/2026): "clicar e abrir uma janelinha com as despesas". A mesma
+    consulta do Despesas Analitico, com os filtros da tela."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    grupo = request.args.get("grupo", "").strip()
+    visao = request.args.get("visao", "comprometido")
+    if visao not in ("executado", "aberto", "comprometido"):
+        visao = "comprometido"
+    dados = consultas.analitico_despesas(f, grupo=grupo, visao=visao,
+                                         ordem="valor", por_pagina=300)
+    for l in dados["linhas"]:
+        for campo in ("data", "data_vencimento", "data_pagamento"):
+            l[campo] = l[campo].isoformat() if l.get(campo) else ""
+    pode_abrir = any(chave == "analitico" for chave, _r, _e in _abas_visiveis())
+    return jsonify({"ok": True, "grupo": grupo, "visao": visao,
+                    "linhas": dados["linhas"], "quantos": dados["quantos"],
+                    "total_pago": dados["total_pago"],
+                    "total_a_pagar": dados["total_a_pagar"],
+                    "total_encargo": dados["total_encargo"],
+                    "total": dados["total"], "pode_abrir": pode_abrir,
+                    "ver_tudo": com_filtros_para_json(
+                        "painel.analitico", visao=visao,
+                        **({"grupo": grupo} if grupo else {}))})
+
+
+@bp.route("/dre/retencoes")
+def dre_retencoes():
+    """As retencoes por tras do numero do DRE, abertas por tributo."""
+    from . import consultas
+    f = _filtros_do_pedido()
+    visao = request.args.get("visao", "todas")
+    if visao not in ("todas", "quitadas", "a_receber"):
+        visao = "todas"
+    dados = consultas.retencoes_por_tributo(f, visao=visao)
+    for l in dados["linhas"]:
+        l["data"] = l["data"].isoformat() if l.get("data") else ""
+    return jsonify({"ok": True, "visao": visao, **dados})
+
+
 def com_filtros_para_json(rota, **extras):
     """O mesmo `com_filtros` das telas, disponivel fora do template."""
     args = {c: request.args.getlist(c) for c in

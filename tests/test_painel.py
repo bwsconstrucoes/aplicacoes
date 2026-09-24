@@ -450,6 +450,11 @@ def _consultar_falso(sql, params=()):
         if marca in sql:
             return resposta
 
+    # ---- as retencoes por tributo (janela do DRE) ----
+    if "FROM (SELECT codigo_lancamento AS cod" in sql:
+        return [(998877, "CLIENTE A", "NF123", "Obra Um", dt.date(2025, 5, 2), "",
+                 300.0, 150.0, 50.0, 0.0, 30.0, 70.0, 0.0)]
+
     # ---- o dinheiro da obra com os socios (bloco de aportes do DRE) ----
     # Antes do ramo de aportes: a consulta cita 'Aporte de Parceiro' e cairia la.
     if "AS caixa_com_socios" in sql:
@@ -1838,3 +1843,27 @@ def test_o_analitico_mostra_a_conta_de_pagamento_e_o_numero_no_omie(painel):
     assert "<th class=\"sem-ordem\">Conta de pagamento</th>" in html
     assert "<th class=\"sem-ordem\">Nº no OMIE</th>" in html
     assert "Bradesco C/C" in html and "998877" in html
+
+
+# ===========================================================================
+# Despesas e retenções num clique no DRE — 23/09/2026
+# ===========================================================================
+def test_os_numeros_de_despesa_e_de_retencao_do_dre_abrem_o_detalhe(painel):
+    """O dono: "fazer isso para as despesas também, clicar e abrir uma
+    janelinha; e as retenções, ver o que é de cada tributo"."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre").get_data(as_text=True)
+    assert 'class="link-btn dados abre-despesas" data-grupo="Despesas com Pessoal"' in html
+    assert 'data-grupo="" data-visao="comprometido"' in html      # o total
+    assert "abre-retencoes" in html
+    assert 'data-grupo="Juros e Multas Pagos"' not in html        # não tem lista própria
+    d = painel.get("/painel/dre/despesas?grupo=Despesas+com+Pessoal&visao=executado").get_json()
+    assert d["ok"] and d["visao"] == "executado" and d["linhas"][0]["credor"] == "FORNECEDOR A LTDA"
+    assert "grupo=Despesas" in d["ver_tudo"] and d["pode_abrir"] is True
+    assert painel.get("/painel/dre/despesas?visao=x").get_json()["visao"] == "comprometido"
+    r = painel.get("/painel/dre/retencoes?visao=todas").get_json()
+    assert r["ok"] and r["quantos"] == 1
+    l = r["linhas"][0]
+    # 300 retidos no título, o OMIE abre em IR 150, ISS 50, PIS 30, COFINS 70
+    assert (l["ir"], l["iss"], l["pis"], l["cofins"]) == (150.0, 50.0, 30.0, 70.0)
+    assert r["totais"]["ir"] == 150.0 and r["total"] == 300.0

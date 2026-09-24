@@ -340,6 +340,53 @@ def _nome_da_conta(ccorr, codigo, reserva=None):
         return str(escolhido)
 
 
+def pernas_bancarias(movs):
+    """As pernas BANCARIAS pagas de um titulo: o debito/credito que o OMIE
+    lanca na conta por onde o dinheiro andou. Mesma classificacao de
+    `_escolher_recebimentos` (flag vazio, liquido zero, com data e valor)."""
+    return [m for m in movs
+            if m.get("data") and m.get("valor", 0.0) > TOL
+            and m.get("liquidado") not in ("S", "N")
+            and not m.get("liquido", 0.0) > TOL]
+
+
+def _maior_perna(pernas):
+    """A de maior valor; empate, a mais recente. So pernas com conta."""
+    melhor, peso, quando = None, -1.0, None
+    for m in pernas:
+        if m.get("conta") in (None, ""):
+            continue
+        valor = abs(m.get("valor") or 0.0)
+        d = _data_para_dt(m.get("data"))
+        if valor > peso or (valor == peso and d and quando and d > quando):
+            melhor, peso, quando = m, valor, d
+    return melhor
+
+
+def escolher_perna_da_conta(movs_todos, realizado):
+    """Qual perna decide a CONTA do titulo, e por qual regra.
+
+    Devolve (perna ou None, regra). A regra e "baixa bancaria" sempre que
+    existir uma — mesmo que o VALOR dela nao feche com a baixa consolidada.
+
+    23/09/2026, SP1343985444: consolidada de R$ 13.218,90 na 7011 (a conta do
+    titulo) e bancaria de R$ 13.291,28 na 22069 — a diferenca era o juro pago.
+    A conta era escolhida junto com o VALOR, por `_escolher_recebimentos`, que
+    so aceita as bancarias quando a soma delas fecha com a consolidada; nao
+    fechou, ficou a consolidada, e a tela disse 7011. Para o valor a regra esta
+    certa (a consolidada nao traz o encargo, que o painel soma a parte). Para a
+    conta, nao: a consolidada so repete a conta do titulo, e qualquer perna
+    bancaria sabe mais que ela. As duas decisoes foram separadas."""
+    bancaria = _maior_perna(pernas_bancarias(movs_todos or []))
+    if bancaria is not None:
+        return bancaria, "baixa bancária"
+    escolhidos, _origem = _escolher_recebimentos(movs_todos or [], realizado)
+    consolidada = _maior_perna(escolhidos)
+    if consolidada is not None:
+        return consolidada, "baixa consolidada"
+    return None, "conta prevista no título"
+
+
 def _conta_de_onde_saiu(movs_todos, realizado, reserva):
     """A conta por onde o dinheiro DE FATO andou — e nao a que o titulo diz.
 
@@ -349,26 +396,25 @@ def _conta_de_onde_saiu(movs_todos, realizado, reserva):
     tocou. So a segunda sabe por onde o dinheiro saiu.
 
     22/09/2026: o conserto do dia anterior trocou a FONTE (do titulo para o
-    movimento) mas continuou lendo a perna consolidada — e a tela nao mudou. O
-    dono refez os numeros e "o problema das contas permaneceu". O erro era
-    escolher a perna, nao a tabela.
+    movimento) mas continuou lendo a perna consolidada — e a tela nao mudou.
+    23/09/2026: e continuava lendo a consolidada sempre que o valor da bancaria
+    nao fechava com ela (juro pago) — ver `escolher_perna_da_conta`.
 
-    Entre as pernas escolhidas, vale a de maior valor; empate, a mais recente.
-    Sem perna com conta, fica a reserva (a consolidada, e depois a previsao):
-    a linha nunca perde a informacao."""
+    Sem perna com conta, fica a reserva (a consolidada agregada, e depois a
+    previsao): a linha nunca perde a informacao."""
     if not movs_todos:
         return reserva
-    escolhidos, _origem = _escolher_recebimentos(movs_todos, realizado)
-    melhor, peso, quando = None, -1.0, None
-    for m in escolhidos:
-        conta = m.get("conta")
-        if conta in (None, ""):
-            continue
-        valor = abs(m.get("valor") or 0.0)
-        d = _data_para_dt(m.get("data"))
-        if valor > peso or (valor == peso and d and quando and d > quando):
-            melhor, peso, quando = conta, valor, d
-    return melhor if melhor not in (None, "") else reserva
+    perna, _regra = escolher_perna_da_conta(movs_todos, realizado)
+    conta = perna.get("conta") if perna else None
+    return conta if conta not in (None, "") else reserva
+
+
+def _conta_bancaria_unica(movs_todos):
+    """A conta das pernas bancarias, quando todas sao da MESMA conta. Serve
+    para corrigir a conta de linhas montadas a partir das consolidadas."""
+    contas = {m.get("conta") for m in pernas_bancarias(movs_todos or [])
+              if m.get("conta") not in (None, "")}
+    return contas.pop() if len(contas) == 1 else None
 
 
 def _parcelas_da_baixa(movs_todos, realizado, juros_total, multa_total,
@@ -410,6 +456,11 @@ def _parcelas_da_baixa(movs_todos, realizado, juros_total, multa_total,
         return uma_so
 
     fator = realizado / soma
+    # Se as parcelas sairam das CONSOLIDADAS (as bancarias nao fecharam em
+    # valor), a conta delas e a do titulo. Quando as bancarias sao todas de
+    # uma conta so, e ela que vale — ver `escolher_perna_da_conta`.
+    conta_bancaria = (_conta_bancaria_unica(movs_todos)
+                      if _origem == ORIGEM_MOV else None)
     parcelas = []
     for m in movs:
         d = _data_para_dt(m.get("data"))
@@ -426,7 +477,7 @@ def _parcelas_da_baixa(movs_todos, realizado, juros_total, multa_total,
             d.year if d else ano,
             d.month if d else mes,
             d or dpago_dt,
-            _nome_da_conta(ccorr, m.get("conta"), icc),
+            _nome_da_conta(ccorr, conta_bancaria or m.get("conta"), icc),
         ))
     return parcelas
 
@@ -1017,9 +1068,12 @@ def montar_recebimentos(conn, natureza="R"):
                 origem = ORIGEM_SEM_MOV
 
             n_parc = len(movs)
+            conta_bancaria = (_conta_bancaria_unica(movs_todos)
+                              if origem == ORIGEM_MOV else None)
             for i, m in enumerate(movs, start=1):
                 ddt = _data_para_dt(m["data"])
-                conta_cod = m.get("conta") if m.get("conta") not in (None, "") else icc
+                conta_cod = (conta_bancaria
+                             or (m.get("conta") if m.get("conta") not in (None, "") else icc))
                 if conta_cod in (None, ""):
                     conta = ""
                 else:

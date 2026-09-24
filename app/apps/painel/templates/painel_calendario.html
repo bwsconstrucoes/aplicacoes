@@ -206,7 +206,9 @@
 <!-- ===================== O DETALHE DO DIA ===================== -->
 <dialog id="detalhe-do-dia" class="cal-dialogo">
   <div class="cal-dialogo-cab">
+    <button type="button" class="btn secundario" id="detalhe-anterior" title="dia anterior (seta ←)">‹</button>
     <h3 id="detalhe-titulo">Dia</h3>
+    <button type="button" class="btn secundario" id="detalhe-seguinte" title="dia seguinte (seta →)">›</button>
     <div class="cal-dialogo-resumo" id="detalhe-resumo"></div>
     <button type="button" class="btn secundario" id="detalhe-fechar">Fechar</button>
   </div>
@@ -244,11 +246,22 @@
     </tr>`;
   }
 
+  // o dia aberto agora, para as setas irem ao anterior e ao seguinte
+  let diaAberto = null;
+  const ROTULO = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+  function somarDias(iso, n) {
+    const d = new Date(iso + "T12:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function andar(n) { if (diaAberto) { const d = somarDias(diaAberto, n); abrir(d, ROTULO(d)); } }
+
   async function abrir(dia, rotulo) {
+    diaAberto = dia;
     titulo.textContent = "Dia " + rotulo;
     resumo.textContent = "";
     corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
-    dialogo.showModal();
+    if (!dialogo.open) dialogo.showModal();
     const consulta = new URLSearchParams(filtros);
     consulta.set("dia", dia);
     try {
@@ -340,7 +353,7 @@
       }[d.regra] || "";
       const pernas = d.pernas.length ? `<table class="sem-quebra"><thead><tr>
           <th class="sem-ordem">Data</th><th class="sem-ordem">Perna</th><th class="sem-ordem">Conta</th>
-          <th class="sem-ordem direita">Valor</th><th class="sem-ordem">Valeu?</th></tr></thead><tbody>`
+          <th class="sem-ordem direita">Valor</th><th class="sem-ordem">Deu a conta?</th></tr></thead><tbody>`
         + d.pernas.map(p => `<tr><td class="dados">${escapar(p.data)}</td><td class="desc">${escapar(p.tipo)}</td>
              <td class="desc">${escapar(p.conta || "(sem conta)")}</td><td class="dados direita">${moeda(p.valor)}</td>
              <td class="desc">${p.valeu ? "<b>sim</b>" : "—"}</td></tr>`).join("") + "</tbody></table>"
@@ -361,6 +374,14 @@
     b.addEventListener("click", () => abrir(b.dataset.dia, b.dataset.rotulo));
   });
   els("detalhe-fechar").addEventListener("click", () => dialogo.close());
+  els("detalhe-anterior").addEventListener("click", () => andar(-1));
+  els("detalhe-seguinte").addEventListener("click", () => andar(1));
+  // setas do teclado, com a janela aberta e fora de campo de texto
+  document.addEventListener("keydown", e => {
+    if (!dialogo.open || /INPUT|TEXTAREA|SELECT/.test((e.target.tagName || ""))) return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); andar(-1); }
+    if (e.key === "ArrowRight") { e.preventDefault(); andar(1); }
+  });
   dialogo.addEventListener("click", e => { if (e.target === dialogo) dialogo.close(); });
 })();
 </script>

@@ -894,6 +894,47 @@ def test_a_conta_vem_da_perna_bancaria_e_nao_do_resumo_do_titulo(espelho_limpo):
     assert [round(float(v), 2) for _c, v in linhas] == [1000.0]
 
 
+def test_a_conta_vem_da_bancaria_mesmo_quando_o_valor_nao_fecha(espelho_limpo):
+    """23/09/2026, SP1343985444: consolidada de 13.218,90 na 7011 (a conta do
+    título) e bancária de 13.291,28 na 22069 — a diferença era o juro. A regra
+    do VALOR recusa a bancária (não fecha) e fica com a consolidada; a CONTA
+    não pode ir junto. O valor continua o de antes."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(5, valor=13218.90, natureza="R")   # prevista: 7
+    consolidada = _movimento_do_omie(5, pago=13218.90)           # resumo: 7
+    bancaria = _perna_bancaria(5, 13291.28, conta=9)             # saiu da 9
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "R")
+        espelho.gravar_movimentos(conn, [consolidada, bancaria])
+        espelho.gravar_contas_correntes(conn, [
+            _conta_do_omie(7, "Bradesco 7011-4"),
+            _conta_do_omie(9, "Bradesco 22069-8")])
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT conta_corrente, pago_recebido FROM fato"
+                       " WHERE codigo_lancamento = 5")
+    assert [c for c, _v in linhas] == ["Bradesco 22069-8"], \
+        f"o relatório mostrou {[c for c, _v in linhas]} — a conta foi junto com o valor"
+    assert [round(float(v), 2) for _c, v in linhas] == [13218.90]
+
+
+def test_escolher_a_perna_da_conta_diz_a_regra():
+    from app.apps.painel.sync.fato import escolher_perna_da_conta
+    cons = {"data": "11/05/2026", "valor": 13218.90, "liquido": 13218.90,
+            "liquidado": "S", "conta": 7011}
+    banc = {"data": "11/05/2026", "valor": 13291.28, "liquido": 0.0,
+            "liquidado": "", "conta": 22069}
+    previsao = {"data": "", "valor": 0.0, "liquido": 0.0, "liquidado": "N", "conta": 7011}
+    perna, regra = escolher_perna_da_conta([cons, banc], 13218.90)
+    assert perna is banc and regra == "baixa bancária"
+    perna, regra = escolher_perna_da_conta([cons, previsao], 13218.90)
+    assert perna is cons and regra == "baixa consolidada"
+    assert escolher_perna_da_conta([], 0) == (None, "conta prevista no título")
+
+
 def test_a_conferencia_mede_quantas_contas_o_relatorio_antigo_errava(espelho_limpo):
     from app.apps.painel import consultas
     from app.apps.painel.db import conexao

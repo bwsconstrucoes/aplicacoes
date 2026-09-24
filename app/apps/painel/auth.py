@@ -199,6 +199,8 @@ _ABAS_POR_ENDPOINT = {
     "painel.visao_geral": "visao",
     "painel.dre": "dre",
     "painel.dre_medicoes": "dre",
+    "painel.dre_despesas": "dre",
+    "painel.dre_retencoes": "dre",
     "painel.analitico": "analitico",
     "painel.receita": "receita",
     "painel.medicao": "receita",

@@ -1435,7 +1435,7 @@ def origem_da_conta(codigo) -> dict | None:
     (`_escolher_recebimentos`) marcando qual perna valeu. Se a conta errada
     está na própria baixa, o conserto é no OMIE; se está só na previsão, é a
     baixa bancária que falta lá."""
-    from .sync.fato import _escolher_recebimentos
+    from .sync.fato import escolher_perna_da_conta
     try:
         codigo = int(str(codigo).strip())
     except (TypeError, ValueError):
@@ -1471,8 +1471,8 @@ def origem_da_conta(codigo) -> dict | None:
                      "liquidado": (liq or "").strip(), "status": (cst or "").strip(),
                      "grupo": (grp or "").strip()})
     realizado = abs(sum(float(v or 0) for _c, v in no_painel))
-    escolhidos, origem = _escolher_recebimentos(movs, realizado)
-    ids_escolhidos = {id(m) for m in escolhidos}
+    # a MESMA decisão da carga: qual perna dá a conta, e por qual regra
+    perna_da_conta, regra = escolher_perna_da_conta(movs, realizado)
 
     def _perna(m):
         if m.get("liquidado") == "N":
@@ -1485,14 +1485,7 @@ def origem_da_conta(codigo) -> dict | None:
 
     pernas = [{"data": m["data"], "valor": m["valor"], "conta": _nome(m["conta"]),
                "tipo": _perna(m), "status": m["status"], "grupo": m["grupo"],
-               "valeu": id(m) in ids_escolhidos} for m in movs]
-    tipos_que_valeram = {p["tipo"] for p in pernas if p["valeu"]}
-    if "baixa bancária" in tipos_que_valeram:
-        regra = "baixa bancária"
-    elif "baixa consolidada" in tipos_que_valeram:
-        regra = "baixa consolidada"
-    else:
-        regra = "conta prevista no título"
+               "valeu": m is perna_da_conta} for m in movs]
     prevista = _nome(titulo[0][0]) if titulo else ""
     return {
         "codigo": codigo,
@@ -2143,6 +2136,60 @@ def caixa_com_socios(f: Filtros) -> dict:
     total = {c: sum(l[c] for l in linhas)
              for c in campos + ("resultado", "saldo")}
     return {"linhas": linhas, "total": total, "tem_dados": bool(linhas)}
+
+
+TRIBUTOS_RETIDOS = (("ir", "IR"), ("iss", "ISS"), ("inss", "INSS"),
+                    ("pis", "PIS"), ("cofins", "COFINS"), ("csll", "CSLL"))
+
+
+def retencoes_por_tributo(f: Filtros, visao: str = "todas", limite: int = 300) -> dict:
+    """As retenções da receita, título a título, abertas por tributo.
+
+    Pedido do dono em 23/09/2026, no DRE: *"na parte de retenções, consegue o
+    detalhamento para clicar e ver o que é de cada tributo?"*
+
+    O valor retido vem do fato (com os filtros da tela e o rateio por obra); a
+    abertura por tributo vem do cadastro do título no espelho do OMIE (IR, ISS,
+    INSS, PIS, COFINS, CSLL). Quando o título foi rateado entre obras, cada
+    tributo entra na MESMA proporção do retido que coube ao recorte.
+    `visao`: "quitadas" (executado), "a_receber" (em aberto) ou "todas"."""
+    valor = {"quitadas": EXECUTADO, "a_receber": EM_ABERTO}.get(visao, COMPROMETIDO)
+    where, params = f.where(f"analise = 'DRE' AND tipo = ? AND {RETIDO}", [REC])
+    colunas_t = ", ".join(f"t.valor_{c}::float8" for c, _r in TRIBUTOS_RETIDOS)
+    sql = f"""
+        SELECT r.cod, r.quem, r.doc, r.obra, r.data, r.link, r.retido, {colunas_t}
+          FROM (SELECT codigo_lancamento AS cod, MAX(razao_social) AS quem,
+                       MAX(numero_documento) AS doc, MAX(departamento) AS obra,
+                       MAX(data) AS data, MAX(link) AS link,
+                       SUM({valor}) AS retido
+                  FROM fato{where}
+                 GROUP BY codigo_lancamento) AS r
+          LEFT JOIN titulos t ON t.codigo_lancamento_omie = r.cod
+         WHERE ABS(r.retido) > 0.005
+         ORDER BY r.data DESC NULLS LAST, r.cod
+         LIMIT 5000"""
+    linhas, totais = [], {c: 0.0 for c, _r in TRIBUTOS_RETIDOS}
+    totais["sem_detalhe"] = 0.0
+    for cod, quem, doc, obra, data, link, retido, *tributos in consultar(sql, params):
+        retido = float(retido or 0)
+        do_titulo = [float(v or 0) for v in tributos]
+        soma = sum(do_titulo)
+        linha = {"codigo": cod, "cliente": quem or "", "documento": doc or "",
+                 "obra": obra or "", "data": data, "link": link or "",
+                 "retido": retido, "sem_detalhe": 0.0}
+        if soma > 0.005:
+            for (chave, _r), v in zip(TRIBUTOS_RETIDOS, do_titulo):
+                linha[chave] = retido * v / soma
+        else:
+            for chave, _r in TRIBUTOS_RETIDOS:
+                linha[chave] = 0.0
+            linha["sem_detalhe"] = retido
+        for chave in totais:
+            totais[chave] += linha[chave]
+        linhas.append(linha)
+    return {"linhas": linhas[:int(limite)], "quantos": len(linhas),
+            "total": sum(l["retido"] for l in linhas), "totais": totais,
+            "tributos": [{"chave": c, "rotulo": r} for c, r in TRIBUTOS_RETIDOS]}
 
 
 def hipotese_de_distribuicao(por_socio: list[dict], disponivel: float) -> list[dict]:
