@@ -571,10 +571,17 @@ document.querySelectorAll(".anotacao").forEach(campo => {
   campo.addEventListener("keydown", e => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); campo.blur(); }
   });
-  // O campo cresce com o texto, em vez de esconder o que foi escrito.
+  // ⚠️ O CAMPO CRESCE COM O TEXTO, MAS NEM UM PIXEL A MAIS. A primeira versão
+  // abria como se houvesse duas ou três linhas com uma só escrita: o
+  // `scrollHeight` de um textarea sem `box-sizing: border-box` não conta o
+  // preenchimento interno do mesmo jeito que a altura, e a soma sobrava. Com
+  // o `border-box` no CSS, `scrollHeight` é a altura certa — e o `auto` antes
+  // da medida é o que impede o campo de só crescer e nunca encolher.
   const crescer = () => {
     campo.style.height = "auto";
-    campo.style.height = Math.min(campo.scrollHeight, 120) + "px";
+    const alvo = Math.min(campo.scrollHeight, 120);
+    campo.style.height = alvo + "px";
+    campo.classList.toggle("cheia", campo.scrollHeight > 120);
   };
   campo.addEventListener("input", crescer);
   crescer();
@@ -767,6 +774,14 @@ if (formConta) {
     location.reload();
   });
 }
+
+// --- o histórico comprido abre com um clique --------------------------------
+// ⚠️ Ele quebra em até três linhas; o que passar disso fica escondido, e numa
+// tela estreita não havia como alcançar — o `title` do mouse não existe no
+// celular. Um clique na célula mostra o resto.
+document.querySelectorAll("table.conciliacao .historico").forEach(celula => {
+  celula.addEventListener("click", () => celula.classList.toggle("aberto"));
+});
 
 // --- a planilha antiga ------------------------------------------------------
 const saidaPl = document.getElementById("saida-planilha");

@@ -1846,16 +1846,35 @@ td.credor-grupos { margin: 0; }
    dentro ("PAGTO ELETRON COBRANCA\nALPE FUNDO..."), e a observacao agora e um
    campo de varias linhas: sem teto, uma linha do extrato empurra as outras
    para fora da tela. Com ele, a tabela continua uma tabela. */
+/* ⚠️ SEM ALTURA FIXA NA LINHA (24/09/2026, segunda correção). O teto que eu
+   tinha posto cortava o historico: numa tela estreita o texto sumia e NAO
+   HAVIA COMO VER — nem clicando. O dono: *"quando a gente diminui a tela,
+   deixa de aparecer as informacoes; mesmo clicando voce nao as ve de forma
+   alguma"*.
+
+   Agora a linha tem a altura do que ela precisa. Quem controla o tamanho e o
+   conteudo: o historico quebra em ate tres linhas, e a observacao cresce
+   conforme se escreve. Esconder informacao para a tabela ficar bonita e a
+   troca errada numa tela de conferencia. */
 table.conciliacao td {
-  vertical-align: middle; padding-top: 5px; padding-bottom: 5px;
-  max-height: 46px;
+  vertical-align: top; padding-top: 6px; padding-bottom: 6px;
 }
-table.conciliacao tr.linha-extrato { height: 38px; }
-/* O histórico do Bradesco vem com quebra de linha dentro dele. Com largura
-   declarada, ele cabe em duas linhas e o resto corta — o texto inteiro fica
-   no `title`, ao passar o mouse. */
+/* ⚠️ O HISTORICO QUEBRA A LINHA, como a observacao — pedido do dono. Antes ele
+   era uma linha so com reticencias, e numa tela estreita o texto ficava
+   inalcancavel: o `title` do mouse nao existe no celular, e nao havia clique
+   que o mostrasse.
+
+   Ele quebra em ate TRES linhas; passando disso, um clique na celula abre o
+   resto. Tres linhas cobrem o historico do Bradesco inteiro ("PAGTO ELETRON
+   COBRANCA / ALPE FUNDO DE INVESTIMENTO EM DI"), que e o mais comprido que
+   aparece — o clique e para o caso raro, nao para o dia a dia. */
 table.conciliacao .historico {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; cursor: pointer;
+}
+table.conciliacao .historico.aberto {
+  display: block; -webkit-line-clamp: none; overflow: visible;
 }
 /* ⚠️ `valor-entrada` E `valor-saida`, NAO `entrada` E `saida` — 24/09/2026.
    A classe `.entrada` JA EXISTIA nesta folha, para a TELA DE LOGIN: ela tem
@@ -1908,13 +1927,21 @@ tr.linha-extrato.conciliada .valor-saida { font-weight: 500; }
    isso e um `textarea`. Ele nasce com a altura de UMA linha e cresce conforme
    se escreve, ate 120px — um campo alto e vazio em cada linha do extrato
    inchava a tabela sem motivo. */
+/* ⚠️ `box-sizing: border-box` E A CORRECAO DO CAMPO QUE CRESCIA SOZINHO. Sem
+   ele, o `textarea` mede a altura SEM o preenchimento interno, e o script que
+   ajusta o tamanho somava o preenchimento por cima a cada medida: com UMA
+   linha escrita, o campo abria como se tivesse duas ou tres. O dono viu isso
+   na primeira tela: *"se tiver uma linha so dentro da observacao ele ja
+   expande (...) como se tivesse praticamente mais duas linhas abaixo"*. */
 .anotacao {
-  width: 100%; font-size: 12px; padding: 4px 6px;
+  box-sizing: border-box;
+  width: 100%; font-size: 12px; padding: 3px 6px;
   border: 1px solid transparent; border-radius: var(--raio-p);
   background: transparent; color: var(--tinta);
-  font-family: inherit; line-height: 1.35; resize: vertical;
-  min-height: 24px; max-height: 120px; overflow-y: auto; display: block;
+  font-family: inherit; line-height: 1.35; resize: none;
+  min-height: 23px; max-height: 120px; overflow-y: hidden; display: block;
 }
+.anotacao.cheia { overflow-y: auto; }
 .anotacao-lida { font-size: 12px; white-space: pre-wrap; }
 .anotacao:hover { border-color: var(--borda); }
 .anotacao:focus { border-color: var(--azul-claro); background: var(--branco); }
@@ -1948,6 +1975,16 @@ tr.linha-extrato.conciliada .valor-saida { font-weight: 500; }
    olhando a todo instante."* O que se configura uma vez nao divide espaco com
    o que se faz o dia inteiro.
    -------------------------------------------------------------------------- */
+/* ⚠️ O NUMERO DO TOPO VIROU LINK PARA PODER FILTRAR, e veio com o sublinhado
+   e a cor de link atras. O dono: *"nao precisa ficar com esse tracinho
+   embaixo, fica feio, aquele sublinhado de link"*. Ele continua clicavel — a
+   mao do mouse e o realce ao passar ja dizem isso, sem enfeite. */
+a.kpi, a.kpi:hover, a.kpi:visited { text-decoration: none; color: inherit; }
+a.kpi { cursor: pointer; }
+a.kpi:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(11,44,92,.14); }
+.kpi.ativo { outline: 2px solid var(--azul-claro); outline-offset: -2px; }
+.kpi.verde { border-left-color: var(--verde); }
+
 .lateral-ajustes {
   display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px;
   padding-top: 12px; border-top: 1px solid var(--borda);

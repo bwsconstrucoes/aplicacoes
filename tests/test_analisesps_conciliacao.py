@@ -464,3 +464,60 @@ def test_o_saldo_avisa_quando_a_conta_nao_tem_saldo_inicial(app_com_dados):
     html = como(app_com_dados).get(
         "/analisesps/conciliacao").get_data(as_text=True)
     assert "sem saldo inicial" in html
+
+
+def test_o_historico_quebra_a_linha_em_vez_de_sumir(app_com_dados):
+    """⚠️ Ele era uma linha só com reticências, e numa tela estreita o texto
+    ficava INALCANÇÁVEL: o `title` do mouse não existe no celular, e não havia
+    clique que o mostrasse. O dono: *"quando a gente diminui a tela, deixa de
+    aparecer as informações; mesmo clicando você não as vê de forma alguma"*.
+    """
+    import pathlib
+    css = (pathlib.Path(web.__file__).parent / "static"
+           / "analisesps.css").read_text(encoding="utf-8")
+    bloco = css[css.index("table.conciliacao .historico"):][:400]
+
+    assert "white-space: pre-wrap" in bloco
+    assert "white-space: nowrap" not in bloco
+    # E o que passar de três linhas abre com um clique.
+    assert "table.conciliacao .historico.aberto" in css
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    assert 'classList.toggle("aberto")' in html
+
+
+def test_a_linha_da_tabela_nao_tem_altura_travada(app_com_dados):
+    """O teto que eu tinha posto era o que cortava o histórico. Quem decide o
+    tamanho da linha é o conteúdo dela."""
+    import pathlib
+    css = (pathlib.Path(web.__file__).parent / "static"
+           / "analisesps.css").read_text(encoding="utf-8")
+    assert "table.conciliacao tr.linha-extrato { height:" not in css
+    assert "max-height: 46px" not in css
+
+
+def test_o_campo_de_observacao_nao_cresce_mais_do_que_precisa(app_com_dados):
+    """⚠️ Com UMA linha escrita ele abria como se tivesse duas ou três. A causa
+    era o `textarea` medir a altura sem contar o preenchimento interno do mesmo
+    jeito — sem `box-sizing: border-box`, a soma sobrava."""
+    import pathlib
+    css = (pathlib.Path(web.__file__).parent / "static"
+           / "analisesps.css").read_text(encoding="utf-8")
+    bloco = css[css.index(".anotacao {"):][:400]
+
+    assert "box-sizing: border-box" in bloco
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    # O `auto` antes da medida é o que deixa o campo ENCOLHER também.
+    assert 'campo.style.height = "auto"' in html
+
+
+def test_os_numeros_do_topo_nao_ficam_com_cara_de_link(app_com_dados):
+    """*"Não precisa ficar com esse tracinho embaixo, fica feio, aquele
+    sublinhado de link."* Ele continua clicável — a mão do mouse e o realce ao
+    passar já dizem isso."""
+    import pathlib
+    css = (pathlib.Path(web.__file__).parent / "static"
+           / "analisesps.css").read_text(encoding="utf-8")
+    assert "a.kpi, a.kpi:hover, a.kpi:visited { text-decoration: none;" in css
+    assert "a.kpi { cursor: pointer; }" in css

@@ -6972,6 +6972,55 @@ janelas que abrem por cima (`<dialog>`) são a parte nova que mais depende
 disso. E ele ainda não testou o OFX.
 
 ---
+
+### Nonagésima leva (24/09) — o que eu escondi para a tabela ficar bonita
+
+Três acertos de tela, e os dois primeiros são correções de decisões MINHAS da
+leva anterior — não de coisas que faltavam.
+
+#### ⚠️ Eu cortei o histórico, e não havia como alcançar o que sumiu
+
+> *"O histórico, da mesma forma que a observação, você tem que permitir a
+> quebra de linha. Porque quando a gente diminui a tela, deixa de aparecer as
+> informações. Mesmo clicando, você não as vê de forma alguma."*
+
+Eu havia posto o histórico numa linha só, com reticências e o texto inteiro no
+`title` do mouse. Numa tela estreita isso **esconde informação sem saída**: o
+`title` não existe no celular, e não havia clique que mostrasse o resto.
+
+**A lição, e ela vale para o módulo inteiro: esconder informação para a tabela
+ficar bonita é a troca errada numa tela de conferência.** Agora o histórico
+quebra em até três linhas — o que cobre o histórico do Bradesco inteiro — e o
+que passar disso abre com um clique na célula. E **a linha perdeu a altura
+travada**: quem decide o tamanho é o conteúdo.
+
+#### ⚠️ O campo de observação crescia sozinho
+
+> *"Se tiver uma linha só dentro da observação, ele já expande. Se tiver duas
+> linhas, ele expande como se tivesse praticamente mais duas linhas abaixo."*
+
+Defeito meu, e a causa é específica: sem `box-sizing: border-box`, o
+`textarea` não conta o preenchimento interno do mesmo jeito na altura e na
+medida — e o script que ajusta o tamanho somava esse preenchimento por cima a
+cada medida. Com uma linha escrita, o campo abria com três.
+
+#### O sublinhado de link nos números do topo
+
+> *"Eu falei de KPI clicáveis, mas não precisa ficar com esse tracinho
+> embaixo, fica feio."*
+
+Consequência de eu ter transformado os números em link para eles filtrarem.
+Saiu o sublinhado e a cor de link; ficou a mão do mouse e o realce ao passar,
+que já dizem que dá para clicar.
+
+**Verificado:** 30 testes de tela, quatro deles novos e escritos contra a
+folha de estilo — eles leem o CSS e cobram as regras, porque é lá que estes
+três defeitos moravam.
+
+**NÃO verificado:** de novo, a tela não foi aberta num navegador daqui. Três
+dos últimos quatro defeitos chegaram até o dono por isso.
+
+---
 ---
 
 ## Regras que não se discutem
