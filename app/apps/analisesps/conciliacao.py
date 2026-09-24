@@ -21,6 +21,7 @@ isso toda leitura passa por `_pronto()`.
 from __future__ import annotations
 
 import logging
+import re
 from decimal import Decimal
 
 logger = logging.getLogger("analisesps.conciliacao")
@@ -73,8 +74,11 @@ def contas(so_ativas: bool = True) -> list[dict]:
     # nesse intervalo — por isso a consulta tem duas formas.
     from .db import tem_coluna
     tem_saldo = tem_coluna("conciliacao_conta", "saldo_inicial")
+    tem_omie = tem_coluna("conciliacao_conta", "omie_conta_corrente")
     extra = (", saldo_inicial, saldo_inicial_em" if tem_saldo
              else ", 0 AS saldo_inicial, NULL AS saldo_inicial_em")
+    extra += (", omie_conta_corrente" if tem_omie
+              else ", NULL AS omie_conta_corrente")
     linhas = consultar(
         "SELECT id, nome, banco, agencia, numero, ofx_bankid, ofx_acctid, "
         f"       aba_planilha, ativa, ordem, observacao{extra} "
@@ -82,7 +86,7 @@ def contas(so_ativas: bool = True) -> list[dict]:
         " ORDER BY ordem, lower(nome)")
     nomes = ["id", "nome", "banco", "agencia", "numero", "ofx_bankid",
              "ofx_acctid", "aba_planilha", "ativa", "ordem", "observacao",
-             "saldo_inicial", "saldo_inicial_em"]
+             "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente"]
     return [dict(zip(nomes, linha)) for linha in linhas]
 
 
@@ -110,6 +114,8 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
     campos["saldo_inicial"] = saldo if saldo is not None else Decimal("0")
     campos["saldo_inicial_em"] = para_data(
         str(dados.get("saldo_inicial_em") or "").strip())
+    bruto_omie = re.sub(r"\D", "", str(dados.get("omie_conta_corrente") or ""))
+    campos["omie_conta_corrente"] = int(bruto_omie) if bruto_omie else None
     conta_id = dados.get("id")
     from .db import tem_coluna
     with conexao() as con:
@@ -119,6 +125,9 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
                          else "")
             extras = ((campos["saldo_inicial"], campos["saldo_inicial_em"])
                       if saldo_sql else ())
+            if tem_coluna("conciliacao_conta", "omie_conta_corrente"):
+                saldo_sql += ", omie_conta_corrente=?"
+                extras += (campos["omie_conta_corrente"],)
             con.execute(
                 "UPDATE analisesps.conciliacao_conta SET nome=?, banco=?, "
                 "       agencia=?, numero=?, ofx_bankid=?, ofx_acctid=?, "
@@ -140,6 +149,10 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
         marcas_saldo = ", ?, ?" if com_saldo else ""
         extras = ((campos["saldo_inicial"], campos["saldo_inicial_em"])
                   if com_saldo else ())
+        if tem_coluna("conciliacao_conta", "omie_conta_corrente"):
+            colunas_saldo += ", omie_conta_corrente"
+            marcas_saldo += ", ?"
+            extras += (campos["omie_conta_corrente"],)
         cur = con.execute(
             "INSERT INTO analisesps.conciliacao_conta "
             "  (nome, banco, agencia, numero, ofx_bankid, ofx_acctid, "
@@ -849,3 +862,237 @@ def _impressoes_existentes(conta_id: int, linhas: list) -> set:
                 tuple([conta_id] + bloco)):
             achadas.add(linha[0])
     return achadas
+
+
+# ===========================================================================
+# O PANORAMA — "como está a empresa em termos de conciliação"
+#
+# Pedido do dono em 24/09/2026:
+#
+#   *"Eu queria um dashboard de cada conta (…) a movimentação de cada conta, o
+#   volume. (…) Inclusive indicar se tem extrato que falta importar, a última
+#   importação. De repente a gente vê 'está tudo conciliado', mas opa, tem
+#   muito tempo que não foi importado o extrato. Cadê o extrato dessa conta?
+#   Está faltando os meses tais e tais. Para direcionar o operador do que ele
+#   precisa fazer. O objetivo é esse: direcionar o que está pendente, o que
+#   falta, e ter um panorama geral."*
+#
+# ⚠️ A PERGUNTA QUE ESTA TELA EXISTE PARA RESPONDER NÃO É "QUANTO TEM", É "NO
+# QUE EU NÃO POSSO CONFIAR". Uma conta 100% conciliada cujo último extrato é
+# de três meses atrás está PIOR do que uma com pendências e extrato de ontem —
+# e olhando só o percentual de conciliado ela pareceria a melhor de todas.
+# Por isso o buraco de extrato vem antes do resto, em destaque.
+# ===========================================================================
+MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun",
+                "jul", "ago", "set", "out", "nov", "dez"]
+
+
+def anos_com_movimento() -> list[int]:
+    """Os anos que têm lançamento, do mais novo para o mais velho."""
+    if not _pronto():
+        return []
+    from .db import consultar
+    linhas = consultar(
+        "SELECT DISTINCT extract(year FROM data)::int AS ano "
+        "  FROM analisesps.conciliacao_extrato ORDER BY 1 DESC")
+    return [int(linha[0]) for linha in linhas if linha[0]]
+
+
+def panorama(ano: int) -> dict:
+    """Uma linha por conta, com o que o operador precisa fazer.
+
+    ⚠️ DUAS CONSULTAS, E SÓ DUAS. Uma por conta seria vinte idas ao banco numa
+    tela que se abre o dia inteiro. Aqui o banco agrupa por conta e por mês de
+    uma vez, e o resto é aritmética em Python sobre no máximo 12×N linhas.
+    """
+    if not _pronto():
+        return {"pronto": False, "contas": [], "ano": ano}
+    from .db import consultar
+
+    todas = contas(so_ativas=True)
+    if not todas:
+        return {"pronto": True, "contas": [], "ano": ano, "resumo": {}}
+
+    # 1) O movimento do ano, por conta e por mês.
+    por_conta: dict = {}
+    for linha in consultar(
+            "SELECT conta_id, extract(month FROM data)::int AS mes, "
+            "       count(*), coalesce(sum(valor), 0), "
+            "       count(*) FILTER (WHERE NOT conciliado), "
+            "       coalesce(sum(valor) FILTER (WHERE NOT conciliado), 0), "
+            "       count(*) FILTER (WHERE btrim(coalesce(observacao,'')) <> ''), "
+            "       coalesce(sum(valor) FILTER (WHERE valor > 0), 0), "
+            "       coalesce(sum(valor) FILTER (WHERE valor < 0), 0) "
+            "  FROM analisesps.conciliacao_extrato "
+            " WHERE extract(year FROM data) = ? "
+            " GROUP BY 1, 2", (int(ano),)):
+        (conta_id, mes, quantas, soma, pendentes, pendente_valor,
+         com_obs, entradas, saidas) = linha
+        por_conta.setdefault(int(conta_id), {})[int(mes)] = {
+            "quantidade": int(quantas or 0), "soma": soma or 0,
+            "pendentes": int(pendentes or 0),
+            "pendentes_valor": pendente_valor or 0,
+            "com_observacao": int(com_obs or 0),
+            "entradas": entradas or 0, "saidas": saidas or 0,
+        }
+
+    # 2) A última importação e o último lançamento de cada conta — SEM recorte
+    #    de ano: "o extrato está atrasado" é sobre hoje, não sobre 2025.
+    ultimos: dict = {}
+    for linha in consultar(
+            "SELECT c.id, "
+            "       (SELECT max(a.importado_em) FROM analisesps.conciliacao_arquivo a "
+            "         WHERE a.conta_id = c.id), "
+            "       (SELECT max(e.data) FROM analisesps.conciliacao_extrato e "
+            "         WHERE e.conta_id = c.id), "
+            "       (SELECT count(*) FROM analisesps.conciliacao_extrato e "
+            "         WHERE e.conta_id = c.id AND NOT e.conciliado) "
+            "  FROM analisesps.conciliacao_conta c WHERE c.ativa"):
+        ultimos[int(linha[0])] = {"importado_em": linha[1],
+                                  "ate": linha[2],
+                                  "pendentes_total": int(linha[3] or 0)}
+
+    from .horario import agora
+    hoje = agora().date()
+    saida = []
+    for conta in todas:
+        meses = por_conta.get(conta["id"], {})
+        ultimo = ultimos.get(conta["id"], {})
+        saida.append(_linha_do_panorama(conta, meses, ultimo, ano, hoje))
+
+    return {
+        "pronto": True, "ano": ano, "contas": saida,
+        "resumo": _resumo_do_panorama(saida),
+        "meses": MESES_CURTOS,
+    }
+
+
+def _linha_do_panorama(conta: dict, meses: dict, ultimo: dict, ano: int,
+                       hoje) -> dict:
+    """O que dizer sobre UMA conta — e, principalmente, o que ela precisa.
+
+    ⚠️ A DIFERENÇA ENTRE "BURACO" E "AINDA NÃO VEIO" É O CORAÇÃO DESTA TELA.
+
+    Um mês sem lançamento DEPOIS do último que tem é extrato que ainda não foi
+    trazido — normal no mês corrente, preocupante em março se estamos em
+    setembro. Um mês sem lançamento ENTRE dois que têm é **buraco**: o extrato
+    pulou um pedaço, e o saldo dali para a frente está errado sem ninguém
+    saber. São problemas diferentes e o operador faz coisas diferentes com
+    cada um — misturá-los num "faltam 4 meses" esconderia o que importa.
+    """
+    com_dado = sorted(m for m, v in meses.items() if v["quantidade"])
+    ultimo_mes_do_ano = 12 if ano < hoje.year else hoje.month
+
+    buracos, nao_vieram = [], []
+    if com_dado:
+        for mes in range(com_dado[0], ultimo_mes_do_ano + 1):
+            if mes in com_dado:
+                continue
+            (buracos if mes < com_dado[-1] else nao_vieram).append(mes)
+    elif ano <= hoje.year:
+        # Nenhum lançamento no ano inteiro.
+        nao_vieram = list(range(1, ultimo_mes_do_ano + 1))
+
+    def soma(campo):
+        return sum(v[campo] for v in meses.values())
+
+    importado_em = ultimo.get("importado_em")
+    dias_sem_importar = None
+    if importado_em:
+        try:
+            dias_sem_importar = (hoje - importado_em.date()).days
+        except AttributeError:
+            dias_sem_importar = None
+
+    # ⚠️ O ATRASO É MEDIDO PELO ÚLTIMO LANÇAMENTO, não pela última importação.
+    # Importar um extrato velho hoje deixaria "importado há 0 dias" numa conta
+    # que continua sem o mês passado — e a tela estaria mentindo.
+    ate = ultimo.get("ate")
+    dias_sem_extrato = (hoje - ate).days if ate else None
+
+    quantidade = soma("quantidade")
+    pendentes = soma("pendentes")
+    return {
+        "id": conta["id"],
+        "nome": conta["nome"],
+        "banco": conta["banco"],
+        "tem_saldo_inicial": bool(conta.get("saldo_inicial_em")),
+        "saldo": saldo_da_conta(conta["id"]),
+        "quantidade": quantidade,
+        "pendentes": pendentes,
+        "pendentes_valor": soma("pendentes_valor"),
+        "conciliados": quantidade - pendentes,
+        "por_cento": round(100 * (quantidade - pendentes) / quantidade)
+        if quantidade else None,
+        "com_observacao": soma("com_observacao"),
+        "entradas": soma("entradas"),
+        "saidas": soma("saidas"),
+        "movimento": soma("entradas") + abs(soma("saidas")),
+        "meses": {m: meses.get(m, {}).get("quantidade", 0)
+                  for m in range(1, 13)},
+        "buracos": buracos,
+        "buracos_nome": ", ".join(MESES_CURTOS[m - 1] for m in buracos),
+        "nao_vieram": nao_vieram,
+        "nao_vieram_nome": ", ".join(MESES_CURTOS[m - 1] for m in nao_vieram),
+        "ate": ate,
+        "dias_sem_extrato": dias_sem_extrato,
+        "importado_em": importado_em,
+        "dias_sem_importar": dias_sem_importar,
+        "pendentes_total": ultimo.get("pendentes_total", 0),
+        "recado": _recado_da_conta(conta, buracos, nao_vieram,
+                                   dias_sem_extrato, pendentes),
+    }
+
+
+def _recado_da_conta(conta: dict, buracos: list, nao_vieram: list,
+                     dias_sem_extrato, pendentes: int) -> dict:
+    """A frase que diz ao operador o que fazer com ESTA conta, agora.
+
+    ⚠️ UMA FRASE SÓ, A MAIS URGENTE. Listar tudo o que está imperfeito em cada
+    conta faria a tela virar um mural que ninguém lê. A ordem é a do estrago:
+    buraco no extrato (o saldo está errado e ninguém sabe) vem antes de
+    extrato atrasado, que vem antes de falta conciliar, que vem antes de falta
+    o saldo inicial.
+    """
+    if buracos:
+        nomes = ", ".join(MESES_CURTOS[m - 1] for m in buracos)
+        return {"grau": "ruim",
+                "texto": f"faltam os meses de {nomes} — o extrato pulou um "
+                         "pedaço, e o saldo daí para a frente está errado"}
+    if dias_sem_extrato is not None and dias_sem_extrato > 45:
+        return {"grau": "ruim",
+                "texto": f"sem extrato há {dias_sem_extrato} dias — traga o "
+                         "OFX antes de confiar no saldo"}
+    if nao_vieram:
+        nomes = ", ".join(MESES_CURTOS[m - 1] for m in nao_vieram)
+        return {"grau": "atencao",
+                "texto": f"ainda não veio o extrato de {nomes}"}
+    if dias_sem_extrato is not None and dias_sem_extrato > 15:
+        return {"grau": "atencao",
+                "texto": f"último lançamento há {dias_sem_extrato} dias"}
+    if pendentes:
+        return {"grau": "atencao",
+                "texto": f"{pendentes} lançamento(s) por conciliar"}
+    if not conta.get("saldo_inicial_em"):
+        return {"grau": "atencao",
+                "texto": "sem saldo inicial — o saldo pode não bater"}
+    return {"grau": "bom", "texto": "em dia"}
+
+
+def _resumo_do_panorama(linhas: list) -> dict:
+    """O cabeçalho: quantas contas estão bem e quantas precisam de alguém."""
+    return {
+        "contas": len(linhas),
+        "em_dia": sum(1 for x in linhas if x["recado"]["grau"] == "bom"),
+        "atencao": sum(1 for x in linhas if x["recado"]["grau"] == "atencao"),
+        "ruim": sum(1 for x in linhas if x["recado"]["grau"] == "ruim"),
+        "com_buraco": sum(1 for x in linhas if x["buracos"]),
+        "pendentes": sum(x["pendentes"] for x in linhas),
+        "pendentes_valor": sum(x["pendentes_valor"] for x in linhas),
+        "com_observacao": sum(x["com_observacao"] for x in linhas),
+        "movimento": sum(x["movimento"] for x in linhas),
+        "entradas": sum(x["entradas"] for x in linhas),
+        "saidas": sum(x["saidas"] for x in linhas),
+        "sem_saldo_inicial": sum(1 for x in linhas
+                                 if not x["tem_saldo_inicial"]),
+    }

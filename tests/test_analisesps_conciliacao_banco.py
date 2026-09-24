@@ -530,3 +530,215 @@ def test_sem_saldo_inicial_nada_muda(banco_conc):
     conciliacao.importar(conta_id, conciliacao_ofx.ler(
         ofx([("20260901", "-1000.00", "A1")])), "x.ofx", "T")
     assert conciliacao.saldo_da_conta(conta_id) == D("-1000.00")
+
+
+# ---------------------------------------------------------------------------
+# O PANORAMA — "no que eu não posso confiar"
+# ---------------------------------------------------------------------------
+def test_o_panorama_acha_o_BURACO_no_meio_do_extrato(banco_conc):
+    """⚠️ É o coração da tela. Um mês sem lançamento ENTRE dois que têm quer
+    dizer que o extrato pulou um pedaço — e o saldo dali para a frente está
+    errado **sem ninguém saber**. O dono: *"está faltando os meses tais e
+    tais"*."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20250115", "-100.00", "A1"),
+        ("20250320", "-200.00", "A2")])), "x.ofx", "T")   # fevereiro falta
+
+    linha = conciliacao.panorama(2025)["contas"][0]
+    assert linha["buracos"] == [2]
+    assert linha["buracos_nome"] == "fev"
+    assert linha["recado"]["grau"] == "ruim"
+    assert "fev" in linha["recado"]["texto"]
+
+
+def test_buraco_e_MES_QUE_AINDA_NAO_VEIO_sao_coisas_diferentes(banco_conc):
+    """⚠️ São problemas diferentes e o operador faz coisas diferentes com cada
+    um. Misturá-los num "faltam 4 meses" esconderia o que importa."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20200115", "-100.00", "A1"),
+        ("20200320", "-200.00", "A2")])), "x.ofx", "T")
+
+    linha = conciliacao.panorama(2020)["contas"][0]
+    assert linha["buracos"] == [2]                 # entre janeiro e março
+    assert linha["nao_vieram"] == list(range(4, 13))   # depois de março
+
+
+def test_o_atraso_e_medido_pelo_ULTIMO_LANCAMENTO_e_nao_pela_importacao(
+        banco_conc):
+    """⚠️ Importar hoje um extrato velho deixaria "importado há 0 dias" numa
+    conta que continua sem o mês passado — a tela estaria mentindo."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20200115", "-100.00", "A1")])), "velho.ofx", "T")
+
+    linha = conciliacao.panorama(2020)["contas"][0]
+    assert linha["dias_sem_importar"] == 0          # importado agora
+    assert linha["dias_sem_extrato"] > 1000         # mas o extrato é de 2020
+    assert linha["recado"]["grau"] == "ruim"
+
+
+def test_o_recado_diz_UMA_coisa_so_e_a_mais_urgente(banco_conc):
+    """Listar tudo o que está imperfeito em cada conta faria a tela virar um
+    mural que ninguém lê. A ordem é a do estrago."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    # Tem buraco E tem pendente: o buraco manda.
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20250115", "-100.00", "A1"),
+        ("20250320", "-200.00", "A2")])), "x.ofx", "T")
+
+    recado = conciliacao.panorama(2025)["contas"][0]["recado"]
+    assert "faltam os meses" in recado["texto"]
+    assert "por conciliar" not in recado["texto"]
+
+
+def test_conta_em_dia_diz_que_esta_em_dia(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from app.apps.analisesps.horario import agora
+    hoje = agora().date()
+    conta_id = conta_de_teste(saldo_inicial="1.000,00",
+                              saldo_inicial_em="01/01/2020")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        (hoje.strftime("%Y%m%d"), "-100.00", "A1")])), "hoje.ofx", "T")
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    conciliacao.marcar([l["id"] for l in linhas], True, "T")
+
+    linha = conciliacao.panorama(hoje.year)["contas"][0]
+    assert linha["recado"]["grau"] == "bom"
+    assert linha["recado"]["texto"] == "em dia"
+
+
+def test_o_panorama_separa_entrada_saida_e_o_que_falta_por_conta(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20250115", "1000.00", "A1"), ("20250116", "-300.00", "A2")])),
+        "x.ofx", "T")
+
+    linha = conciliacao.panorama(2025)["contas"][0]
+    assert linha["entradas"] == D("1000.00")
+    assert linha["saidas"] == D("-300.00")
+    assert linha["movimento"] == D("1300.00")
+    assert linha["pendentes"] == 2
+    assert linha["por_cento"] == 0
+
+
+def test_o_resumo_conta_quantas_contas_precisam_de_alguem(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    uma = conta_de_teste()
+    outra = conta_de_teste(nome="BB 1234", ofx_bankid="001", ofx_acctid="1234-5")
+    conciliacao.importar(uma, conciliacao_ofx.ler(ofx([
+        ("20250115", "-100.00", "A1"), ("20250320", "-200.00", "A2")])),
+        "a.ofx", "T")
+    conciliacao.importar(outra, conciliacao_ofx.ler(ofx(
+        [("20250115", "-50.00", "B1")], banco="001", conta="1234-5")),
+        "b.ofx", "T")
+
+    resumo = conciliacao.panorama(2025)["resumo"]
+    assert resumo["contas"] == 2
+    assert resumo["com_buraco"] == 1
+    assert resumo["sem_saldo_inicial"] == 2
+
+
+def test_os_anos_com_movimento_saem_do_banco(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20240115", "-100.00", "A1"), ("20250320", "-200.00", "A2")])),
+        "x.ofx", "T")
+    assert conciliacao.anos_com_movimento() == [2025, 2024]
+
+
+def test_a_conta_corrente_do_OMIE_e_guardada_e_lida(banco_conc):
+    """⚠️ Sem ela nada é lançado — e ela mora na CONTA, nunca no tipo. Lançar
+    uma tarifa do Bradesco dentro da conta do Santander é o erro mais caro
+    possível aqui."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(omie_conta_corrente="  1234567 ")
+
+    conta = [c for c in conciliacao.contas() if c["id"] == conta_id][0]
+    assert conta["omie_conta_corrente"] == 1234567
+
+    conciliacao.gravar_conta({**conta, "omie_conta_corrente": "999"}, "T")
+    de_novo = [c for c in conciliacao.contas() if c["id"] == conta_id][0]
+    assert de_novo["omie_conta_corrente"] == 999
+
+
+def test_lancar_no_OMIE_marca_a_linha_e_nao_deixa_lancar_de_novo(banco_conc):
+    """⚠️ A trava de verdade é o OMIE recusar o código de integração repetido.
+    Esta é a primeira: a linha já lançada nem chega a ser oferecida."""
+    from app.apps.analisesps import (conciliacao, conciliacao_ofx,
+                                     conciliacao_omie)
+    conta_id = conta_de_teste(omie_conta_corrente="1234567")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260910", "-9.00", "A1", "TARIFA BANCARIA")])), "x.ofx", "T")
+    linha = conciliacao.listar({"conta_id": conta_id})[0]
+    conta = [c for c in conciliacao.contas() if c["id"] == conta_id][0]
+
+    tipo_id = conciliacao_omie.gravar_tipo(
+        {"nome": "Tarifa", "palavras": "TARIFA",
+         "codigo_categoria": "2.01.05", "codigo_cliente": 111}, "T")
+
+    class ClienteFalso:
+        def __init__(self):
+            self.chamadas = []
+
+        def _call(self, url, acao, param):
+            self.chamadas.append((acao, param))
+            return {"codigo_lancamento_omie": 555}
+
+    cli = ClienteFalso()
+    plano = conciliacao_omie.planejar([linha], conta)
+    assert len(plano["vai"]) == 1
+    feito = conciliacao_omie.lancar(plano["vai"], "MARCELO", cli)
+
+    assert feito["gravados"] == 1
+    assert [a for a, _ in cli.chamadas] == ["IncluirContaPagar",
+                                            "LancarPagamento"]
+
+    # A linha ficou marcada, e um novo plano não a oferece mais.
+    de_novo = conciliacao.listar({"conta_id": conta_id})[0]
+    campos = conciliacao_omie.planejar([{**de_novo, "omie_codigo": 555}], conta)
+    assert campos["vai"] == []
+    assert "já foi lançada" in campos["nao_vai"][0]["motivo"]
+    assert tipo_id
+
+
+def test_o_titulo_criado_com_baixa_falhando_VIRA_PENDENCIA(banco_conc):
+    """⚠️ Um título criado no OMIE cuja baixa falhou fica lá em aberto,
+    dizendo que há algo a pagar que já foi pago — e ninguém descobre isso
+    olhando o extrato daqui."""
+    from app.apps.analisesps import (conciliacao, conciliacao_ofx,
+                                     conciliacao_omie)
+    conta_id = conta_de_teste(omie_conta_corrente="1234567")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260910", "-9.00", "A1", "TARIFA BANCARIA")])), "x.ofx", "T")
+    linha = conciliacao.listar({"conta_id": conta_id})[0]
+    conta = [c for c in conciliacao.contas() if c["id"] == conta_id][0]
+    conciliacao_omie.gravar_tipo(
+        {"nome": "Tarifa", "palavras": "TARIFA",
+         "codigo_categoria": "2.01.05", "codigo_cliente": 111}, "T")
+
+    class ClienteQueFalhaNaBaixa:
+        def _call(self, url, acao, param):
+            if "Lancar" in acao:
+                raise RuntimeError("conta corrente bloqueada")
+            return {"codigo_lancamento_omie": 777}
+
+    plano = conciliacao_omie.planejar([linha], conta)
+    feito = conciliacao_omie.lancar(plano["vai"], "T", ClienteQueFalhaNaBaixa())
+
+    assert feito["gravados"] == 1          # o título entrou
+    assert len(feito["falhas"]) == 1       # e a baixa não
+    assert "FOI CRIADO" in feito["falhas"][0]["erro"]
+
+    pendentes = conciliacao_omie.pendencias()
+    assert len(pendentes) == 1
+    assert pendentes[0]["omie_situacao"] == "sem_baixa"
+    assert pendentes[0]["omie_codigo"] == 777

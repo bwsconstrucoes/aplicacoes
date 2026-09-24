@@ -521,3 +521,215 @@ def test_os_numeros_do_topo_nao_ficam_com_cara_de_link(app_com_dados):
            / "analisesps.css").read_text(encoding="utf-8")
     assert "a.kpi, a.kpi:hover, a.kpi:visited { text-decoration: none;" in css
     assert "a.kpi { cursor: pointer; }" in css
+
+
+def test_desconciliar_pede_confirmacao_e_conciliar_nao(app_com_dados):
+    """⚠️ O dono perguntou se desconciliar não deveria pedir dois cliques *"para
+    ninguém fazer acidentalmente"*. A ideia está certa; clique duplo não é uma
+    boa trava — não se descobre sozinho, e acontece por acidente justamente
+    com quem está marcando várias linhas seguidas.
+
+    Aqui o botão VIRA UMA PERGUNTA ("↺?") e o segundo clique confirma. Mesma
+    trava, mas ela se explica. Marcar continua sendo um clique só."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert "perguntando" in html
+    assert "clique de novo para desconciliar" in html
+    assert "ESPERA_DA_CONFIRMACAO" in html
+
+
+def test_varios_OFX_de_uma_vez(app_com_dados):
+    """*"Vou jogar vários arquivos OFX de uma determinada conta, aí o sistema
+    importa eles tudinho. Ou tentar importar — ele vai barrar quando detectar
+    que já foi importado."*"""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert 'id="arq-extrato" accept=".ofx,.OFX" multiple' in html
+    assert "conferirVarios" in html
+    # ⚠️ Confere TUDO antes de gravar QUALQUER coisa: gravar cada um assim que
+    # é lido tiraria dele a chance de olhar o conjunto.
+    assert "btn-gravar-leva" in html
+
+
+# ---------------------------------------------------------------------------
+# O PANORAMA
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def app_panorama(app, monkeypatch):
+    import datetime as dt
+    monkeypatch.setattr(conciliacao, "estado",
+                        lambda: {"pronto": True, "contas": 2, "linhas": 10})
+    monkeypatch.setattr(conciliacao, "anos_com_movimento", lambda: [2026, 2025])
+    monkeypatch.setattr(conciliacao, "panorama", lambda ano: {
+        "pronto": True, "ano": ano, "meses": conciliacao.MESES_CURTOS,
+        "contas": [
+            {"id": 1, "nome": "BD 7011", "banco": "Bradesco",
+             "tem_saldo_inicial": False, "saldo": Decimal("1000.00"),
+             "quantidade": 20, "pendentes": 3,
+             "pendentes_valor": Decimal("-500.00"), "conciliados": 17,
+             "por_cento": 85, "com_observacao": 2,
+             "entradas": Decimal("5000.00"), "saidas": Decimal("-4000.00"),
+             "movimento": Decimal("9000.00"),
+             "meses": {m: (5 if m in (1, 3) else 0) for m in range(1, 13)},
+             "buracos": [2], "buracos_nome": "fev",
+             "nao_vieram": [4, 5], "nao_vieram_nome": "abr, mai",
+             "ate": dt.date(2026, 3, 20), "dias_sem_extrato": 90,
+             "importado_em": None, "dias_sem_importar": None,
+             "pendentes_total": 3,
+             "recado": {"grau": "ruim", "texto": "faltam os meses de fev"}},
+        ],
+        "resumo": {"contas": 1, "em_dia": 0, "atencao": 0, "ruim": 1,
+                   "com_buraco": 1, "pendentes": 3,
+                   "pendentes_valor": Decimal("-500.00"), "com_observacao": 2,
+                   "movimento": Decimal("9000.00"),
+                   "entradas": Decimal("5000.00"),
+                   "saidas": Decimal("-4000.00"), "sem_saldo_inicial": 1},
+    })
+    return app
+
+
+def test_o_panorama_mostra_o_buraco_antes_dos_numeros(app_panorama):
+    """⚠️ A pergunta desta tela não é "quanto tem", é "no que eu não posso
+    confiar". Uma conta 100% conciliada com extrato de três meses atrás está
+    pior que uma com pendências e extrato de ontem."""
+    html = como(app_panorama).get(
+        "/analisesps/conciliacao/panorama").get_data(as_text=True)
+
+    assert "faltam os meses de fev" in html
+    assert "Contas com buraco no extrato" in html
+    # O recado vem ANTES das colunas de número, DENTRO da tabela — a coluna
+    # do que fazer é a segunda, logo depois do nome da conta.
+    cabecalho = html[html.index("<table class=\"sps panorama\">"):]
+    cabecalho = cabecalho[:cabecalho.index("</thead>")]
+    assert cabecalho.index("O que ela precisa") < cabecalho.index("Saldo")
+    assert cabecalho.index("O que ela precisa") < cabecalho.index("Movimento")
+
+
+def test_o_panorama_desenha_a_fita_dos_doze_meses(app_panorama):
+    html = como(app_panorama).get(
+        "/analisesps/conciliacao/panorama").get_data(as_text=True)
+    assert 'class="fita-meses"' in html
+    assert "buraco no extrato" in html
+    assert "ainda não veio" in html
+
+
+def test_o_panorama_avisa_das_contas_sem_saldo_inicial(app_panorama):
+    html = como(app_panorama).get(
+        "/analisesps/conciliacao/panorama").get_data(as_text=True)
+    assert "sem saldo inicial" in html
+
+
+def test_do_panorama_da_para_ir_direto_ao_que_falta(app_panorama):
+    """Panorama que só informa é relatório. Ele tem de levar ao trabalho."""
+    html = como(app_panorama).get(
+        "/analisesps/conciliacao/panorama").get_data(as_text=True)
+    assert "situacao=pendentes" in html
+    assert "conta_id=1" in html
+
+
+# ---------------------------------------------------------------------------
+# LANÇAR NO OMIE — a tela
+# ---------------------------------------------------------------------------
+def test_o_botao_do_OMIE_nao_lanca_direto_ele_ENSAIA(app_com_dados):
+    """⚠️ Lançamento no OMIE não se desfaz num clique. São dois passos: o
+    ensaio mostra linha a linha o que vai acontecer, e o segundo botão manda —
+    o mesmo desenho dos aportes."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert 'id="btn-omie"' in html
+    assert "conciliacao_omie_ensaiar" in html or "omie/ensaiar" in html
+    assert "btn-lancar-omie" in html
+
+
+def test_a_tela_tem_onde_configurar_a_categoria_de_cada_tipo(app_com_dados):
+    """Pedido dele: *"eu poder gravar a conta do plano financeiro OMIE que está
+    relacionada a cada ação. Se for tarifa, essa conta."*"""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert 'id="cartao-tipos"' in html
+    assert 'name="codigo_categoria"' in html
+    assert 'name="palavras"' in html
+    assert 'id="btn-abrir-tipos"' in html
+
+
+def test_quem_so_consulta_nao_ve_o_botao_de_lancar_no_OMIE(app_com_dados):
+    html = como(app_com_dados, SENHA_CONSULTA).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    assert 'id="btn-omie"' not in html
+
+
+def test_quem_so_consulta_e_recusado_na_rota_que_lanca(app_com_dados):
+    """⚠️ Esconder o botão não é a segurança. A rota recusa."""
+    resposta = como(app_com_dados, SENHA_CONSULTA).post(
+        "/analisesps/api/conciliacao/omie/lancar",
+        json={"ids": [10], "conta_id": 1})
+    assert resposta.status_code in (302, 401, 403)
+
+
+def test_o_que_vai_para_o_OMIE_e_lido_do_BANCO_e_nao_do_navegador(
+        app_com_dados, monkeypatch):
+    """⚠️ O navegador manda só os NÚMEROS das linhas. Aceitar dele o valor, a
+    data ou a descrição deixaria o que vai para o OMIE nas mãos de quem abrir
+    o console — e o que sai daqui é lançamento contábil."""
+    from app.apps.analisesps import web as web_
+
+    vistos = {}
+    monkeypatch.setattr(web_, "_linhas_para_o_omie",
+                        lambda ids, conta_id: (vistos.setdefault("ids", ids)
+                                               or [], None))
+    resposta = como(app_com_dados).post(
+        "/analisesps/api/conciliacao/omie/ensaiar",
+        json={"ids": [10, 11], "conta_id": 1,
+              "valor": "999999", "descricao": "MENTIRA"})
+
+    assert vistos["ids"] == [10, 11]
+    assert resposta.get_json()["ok"] is False   # sem linhas, recusa
+
+
+def test_os_codigos_do_OMIE_sao_ESCOLHIDOS_e_nao_digitados(app_com_dados,
+                                                           monkeypatch):
+    """⚠️ Pedido dele: *"você pode utilizar a própria API dele para atualizar
+    aqui (…) tem a questão do código dos departamentos também"*.
+
+    E a resposta é que NÃO se chama a API do OMIE aqui: a carga do painel já
+    traz tudo isso toda noite. Chamar de novo seria mais uma credencial para
+    manter e duas cópias dos mesmos dados que um dia divergiriam."""
+    from app.apps.analisesps import web as web_
+    monkeypatch.setattr(web_, "_listas_do_omie", lambda: {
+        "contas": [{"codigo": 777, "descricao": "BRADESCO 7011",
+                    "numero_conta": "7011-4", "inativa": False}],
+        "categorias": [{"codigo": "2.01.05", "descricao": "Tarifas bancárias",
+                        "inativa": False, "transferencia": False}],
+        "obras": [{"codigo": "OBRA1", "nome": "CRECHE SWAP"}],
+        "erro": ""})
+
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert '<select class="campo-largo" name="omie_conta_corrente">' in html
+    assert "BRADESCO 7011" in html
+    assert '<select class="campo-largo" name="codigo_categoria">' in html
+    assert "Tarifas bancárias" in html
+    assert "CRECHE SWAP" in html
+    # E a tela diz de onde vem a lista, e qual é a idade dela.
+    assert "carga do painel" in html
+
+
+def test_sem_a_lista_do_OMIE_a_tela_ABRE_e_deixa_digitar(app_com_dados,
+                                                         monkeypatch):
+    """⚠️ Uma tela de configuração que não abre porque o espelho está vazio é
+    pior do que uma que abre dizendo que a lista está vazia."""
+    from app.apps.analisesps import web as web_
+    monkeypatch.setattr(web_, "_listas_do_omie", lambda: {
+        "contas": [], "categorias": [], "obras": [],
+        "erro": "a carga do painel nunca rodou"})
+
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert '<input class="campo-largo" name="codigo_categoria"' in html
+    assert "a carga do painel nunca rodou" in html

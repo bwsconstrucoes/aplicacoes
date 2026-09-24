@@ -7021,6 +7021,145 @@ três defeitos moravam.
 dos últimos quatro defeitos chegaram até o dono por isso.
 
 ---
+
+### Nonagésima primeira leva (24/09) — lançar no OMIE, o panorama, e mais cinco
+
+Uma tanda grande, pedida em mensagens seguidas enquanto o trabalho corria.
+
+#### 1. Lançar no OMIE a partir do extrato
+
+> *"Tarifas bancárias, rentabilidade de investimento. Tem muita tarifa de PIX.
+> Esse aí a gente poder lançar direto no OMIE: selecionar e gravar essa
+> movimentação financeira."*
+
+São lançamentos que aparecem no extrato e **não nascem de uma SP** — ninguém
+pede autorização para pagar tarifa de PIX. Marca-se as linhas, e o sistema
+cria no OMIE conta a pagar (ou a receber) **já baixada**.
+
+**⚠️ Quatro proteções, todas deliberadas:**
+
+1. **Nada é lançado sem TIPO reconhecido.** Uma linha cujo histórico não casa
+   com nenhum tipo configurado é recusada, não chutada. Chutar a categoria
+   poria tarifa bancária dentro de "material de obra" — e no OMIE isso vira
+   relatório errado que ninguém desconfia.
+2. **Nada é lançado duas vezes.** O código de integração sai do número da
+   linha; reenviar faz o OMIE recusar sozinho. **A recusa dele vale mais que
+   qualquer conferência feita deste lado** — uma conferência local não
+   sobrevive a duas pessoas clicando junto.
+3. **A conta corrente do OMIE vem da CONTA BANCÁRIA, nunca do tipo.** Lançar
+   uma tarifa do Bradesco dentro da conta do Santander é o erro mais caro
+   possível aqui, e o único jeito de não o cometer é não ter onde errar.
+4. **Ensaiar antes.** A tela mostra linha a linha o que vai acontecer — e,
+   igualmente importante, **o que NÃO vai e por quê**. É essa segunda lista
+   que diz o que falta configurar, em vez de o lote inteiro falhar sem
+   explicar.
+
+**O sentido não é configurado, é deduzido do sinal:** negativo vira conta a
+pagar, positivo vira conta a receber. Um estorno de tarifa entra sozinho do
+lado certo, e não há um campo a mais para alguém marcar errado.
+
+**E cada linha é independente** — o contrário do aporte. Lá, um título sem o
+outro é meio aporte, e por isso a falha de um desfaz todos. Aqui cada linha é
+uma tarifa isolada: desfazer as que entraram porque a décima falhou faria o
+dono perder trabalho bom por um problema que não é dele.
+
+**Título criado com a baixa falhando vira PENDÊNCIA**, listada no panorama.
+Ele fica em aberto no OMIE dizendo que há algo a pagar que já foi pago, e
+ninguém descobriria isso olhando o extrato daqui.
+
+#### 2. O panorama — "no que eu não posso confiar"
+
+> *"Um dashboard de cada conta (…) inclusive indicar se tem extrato que falta
+> importar. De repente a gente vê 'está tudo conciliado', mas opa, tem muito
+> tempo que não foi importado o extrato. Cadê o extrato dessa conta? Está
+> faltando os meses tais e tais. Para direcionar o operador."*
+
+**⚠️ A pergunta desta tela não é "quanto tem", é ONDE ESTÁ O BURACO.** Uma
+conta 100% conciliada cujo último extrato é de três meses atrás está PIOR do
+que uma com pendências e extrato de ontem — e olhando só o percentual de
+conciliado ela pareceria a melhor de todas.
+
+**A distinção que é o coração da tela:** um mês sem lançamento **entre** dois
+que têm é **buraco** (o extrato pulou um pedaço, e o saldo dali para a frente
+está errado sem ninguém saber); um mês sem lançamento **depois** do último é
+extrato que ainda não veio. São problemas diferentes, o operador faz coisas
+diferentes com cada um, e juntá-los num "faltam 4 meses" esconderia o que
+importa. Uma **fita de doze quadradinhos** mostra isso sem ler número nenhum.
+
+**O atraso é medido pelo último LANÇAMENTO, não pela última importação** —
+importar hoje um extrato velho deixaria "importado há 0 dias" numa conta que
+continua sem o mês passado, e a tela estaria mentindo.
+
+**Cada conta tem UM recado, o mais urgente.** Listar tudo o que está imperfeito
+faria a tela virar um mural que ninguém lê. A ordem é a do estrago: buraco →
+extrato atrasado → falta conciliar → falta o saldo inicial.
+
+#### 3. Vários OFX de uma vez
+
+> *"Vou jogar vários arquivos OFX de uma determinada conta, aí o sistema
+> importa eles tudinho. Ou tentar importar — ele vai barrar quando detectar
+> que já foi importado."*
+
+Solta-se a pasta inteira. **Um arquivo por vez no servidor**, mesmo com vários
+na tela: cada um tem a sua conta e a sua resposta, e mandar todos numa chamada
+só faria um arquivo torto derrubar a leva. **Confere TUDO, depois grava TUDO**
+— gravar cada um assim que é lido tiraria dele a chance de olhar o conjunto.
+
+#### 4. Desconciliar pede confirmação; conciliar não
+
+Ele perguntou: *"para conciliar é só clicar, né? (…) de repente, para
+desconciliar, precisasse clicar duas vezes, para ninguém fazer
+acidentalmente."*
+
+**A ideia está certa e a implementação ficou diferente, de propósito.** Clique
+duplo não é uma boa trava: não se descobre sozinho, e clique duplo acidental
+acontece justamente com quem está marcando várias linhas em sequência — a
+hora de maior risco. Aqui o botão **vira uma pergunta** ("↺?") por quatro
+segundos. Mesma trava, mas ela se explica.
+
+#### 5. Os códigos do OMIE são ESCOLHIDOS, não digitados
+
+> *"Você pode utilizar a própria API dele para atualizar aqui (…) tem a questão
+> do código dos departamentos também."*
+
+**E a resposta é que isso já existe: não se chama a API do OMIE aqui.** A carga
+do painel traz toda noite as contas correntes, o plano financeiro, os cadastros
+e o rateio, e guarda no espelho. Chamar de novo daqui seria mais uma credencial
+para manter, mais uma chance de bater no limite do OMIE, e duas cópias dos
+mesmos dados que um dia divergiriam.
+
+**O preço, dito na própria tela:** as listas têm a idade da última carga do
+painel. Se um dia incomodar, o conserto é rodar a carga — não duplicar a
+integração. E se o espelho estiver vazio, a tela **abre assim mesmo** e deixa
+digitar o código: tela de configuração que não abre é pior que lista vazia.
+
+#### O que ficou de fora, e é escolha do dono
+
+**A transferência entre contas.** Ele perguntou: *"se existe alguma forma a
+gente poderia facilitar essa movimentação entre conta da empresa, transferência
+de uma conta para outra"*. Não foi feita, e a razão é que ela tem uma escolha
+que é dele:
+
+- **Ou** usa-se o endpoint de transferência do OMIE, que este repositório
+  nunca chamou — e escrever contra uma rota que nunca foi exercitada, em
+  produção, com dinheiro, é o tipo de coisa que se faz com o dono olhando;
+- **ou** repete-se o desenho do APORTE, que ele já validou: dois títulos, um
+  em cada conta, com a categoria de transferência. Roda hoje e está provado.
+
+Há ainda um detalhe que precisa de decisão: a transferência aparece nos DOIS
+extratos, e lançar as duas pontas duplicaria. Ou o sistema casa as duas
+linhas, ou ele só aceita lançar pela ponta da saída.
+
+**Verificado:** 43 testes de tela e 43 com banco de verdade, incluindo o
+lançamento no OMIE com cliente dublado (inclusão + baixa, e a baixa falhando
+virando pendência), o buraco de meses, e o atraso medido pelo lançamento.
+
+**NÃO verificado, e é muito:** nada disto foi aberto num navegador, **nenhum
+lançamento de verdade foi para o OMIE**, e nenhum OFX real passou pela tela. O
+primeiro lançamento tem de ser UM, conferido no OMIE antes do segundo — é a
+mesma sequência combinada para os aportes, e pelo mesmo motivo.
+
+---
 ---
 
 ## Regras que não se discutem

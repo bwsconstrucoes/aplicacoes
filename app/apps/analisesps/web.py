@@ -1581,6 +1581,30 @@ def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
             "valor_ini": numero("valor_ini"), "valor_fim": numero("valor_fim")}
 
 
+def _listas_do_omie() -> dict:
+    """As contas correntes, o plano financeiro e as obras — do espelho.
+
+    ⚠️ NÃO CHAMA A API DO OMIE. A carga do painel já traz tudo isso toda
+    noite; chamar de novo daqui seria mais uma credencial para manter e duas
+    cópias dos mesmos dados. O preço é a idade da última carga, e está dito na
+    tela.
+    """
+    try:
+        from . import conciliacao_omie as co
+        return co.listas_do_omie()
+    except Exception:  # noqa: BLE001 — tela de configuração não pode não abrir
+        return {"contas": [], "categorias": [], "obras": [], "erro": ""}
+
+
+def _tipos_do_omie() -> list:
+    """Os tipos de movimento cadastrados. Nunca derruba a tela."""
+    try:
+        from . import conciliacao_omie as co
+        return co.tipos(so_ativos=False)
+    except Exception:  # noqa: BLE001 — antes da migração é estado normal
+        return []
+
+
 def _planilha_da_conciliacao() -> str:
     """O identificador da planilha antiga, se já foi colado uma vez."""
     from . import conciliacao_planilha as cp
@@ -1629,10 +1653,54 @@ def tela_conciliacao():
         ultimos_arquivos=conc.ultimos_arquivos(filtros["conta_id"])
         if filtros["conta_id"] else [],
         planilha_guardada=_planilha_da_conciliacao(),
+        tipos_omie=_tipos_do_omie(),
+        listas_omie=_listas_do_omie(),
         args=request.args,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/conciliacao/panorama")
+@exige_consulta
+def conciliacao_panorama():
+    """O panorama de todas as contas — "no que eu não posso confiar".
+
+    ⚠️ A PERGUNTA QUE ESTA TELA RESPONDE NÃO É "QUANTO TEM", É ONDE ESTÁ O
+    BURACO. Uma conta 100% conciliada cujo último extrato é de três meses
+    atrás está pior do que uma com pendências e extrato de ontem — e olhando
+    só o percentual ela pareceria a melhor de todas.
+    """
+    from . import conciliacao as conc
+    from .horario import agora
+
+    estado = conc.estado()
+    anos = conc.anos_com_movimento() if estado["pronto"] else []
+    try:
+        ano = int(request.args.get("ano") or 0)
+    except ValueError:
+        ano = 0
+    if ano not in anos:
+        ano = anos[0] if anos else agora().date().year
+
+    dados = conc.panorama(ano) if estado["pronto"] else {"contas": []}
+    return render_template(
+        "analisesps_conciliacao_panorama.html", aba="conciliacao",
+        estado=estado, ano=ano, anos=anos, panorama=dados,
+        meses=conc.MESES_CURTOS,
+        pendencias_omie=_pendencias_do_omie(),
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+def _pendencias_do_omie() -> list:
+    """O que ficou pelo caminho ao lançar no OMIE. Nunca derruba a tela."""
+    try:
+        from . import conciliacao_omie as co
+        return co.pendencias()
+    except Exception:  # noqa: BLE001 — antes da migração é estado normal
+        return []
 
 
 @bp.route("/api/conciliacao/conferir", methods=["POST"])
@@ -1776,6 +1844,122 @@ def conciliacao_gravar_conta():
 # único que sabe que "BD IFPE 2541" e a conta do Bradesco terminada em 2541
 # são a mesma coisa.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# LANÇAR NO OMIE a partir do extrato — 24/09/2026
+#
+# ⚠️ ISTO ESCREVE NO OMIE. Ensaiar e lançar são DUAS rotas, e a tela chama as
+# duas em ordem: ele vê o que vai acontecer, linha a linha, antes de acontecer.
+# É o mesmo desenho dos aportes, e pela mesma razão — lançamento no OMIE não
+# se desfaz com um clique.
+# ---------------------------------------------------------------------------
+def _linhas_para_o_omie(ids: list, conta_id: int) -> tuple:
+    """As linhas marcadas, lidas do banco — e nunca do que o navegador mandou.
+
+    ⚠️ O NAVEGADOR MANDA SÓ OS NÚMEROS. Aceitar dele o valor, a data ou a
+    descrição deixaria o que vai para o OMIE nas mãos de quem abrir o console
+    do navegador — e o que sai daqui é lançamento contábil.
+    """
+    from . import conciliacao as conc
+    from .db import consultar
+
+    numeros = [int(i) for i in (ids or []) if str(i).strip().isdigit()]
+    if not numeros:
+        return [], None
+    marcas = ",".join(["?"] * len(numeros))
+    linhas = consultar(
+        "SELECT id, conta_id, data, descricao, documento, valor, omie_codigo "
+        f"  FROM analisesps.conciliacao_extrato WHERE id IN ({marcas}) "
+        "   AND conta_id = ? ORDER BY data, id",
+        tuple(numeros + [int(conta_id)]))
+    nomes = ["id", "conta_id", "data", "descricao", "documento", "valor",
+             "omie_codigo"]
+    conta = next((c for c in conc.contas(so_ativas=False)
+                  if c["id"] == int(conta_id)), None)
+    return [dict(zip(nomes, linha)) for linha in linhas], conta
+
+
+@bp.route("/api/conciliacao/omie/ensaiar", methods=["POST"])
+@exige_operador
+def conciliacao_omie_ensaiar():
+    """O que SERIA lançado. Não fala com o OMIE."""
+    from . import conciliacao_omie as co
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    linhas, conta = _linhas_para_o_omie(dados.get("ids") or [], int(conta_id))
+    if not linhas:
+        return {"ok": False, "erro": "Marque as linhas primeiro."}
+    if not conta:
+        return {"ok": False, "erro": "Conta não encontrada."}
+
+    plano = co.planejar(linhas, conta)
+    return {"ok": True,
+            "conta": conta["nome"],
+            "vai": [{"linha_id": x["linha_id"], "tipo": x["tipo"],
+                     "sentido": x["sentido"], "valor": str(x["valor"]),
+                     "data": x["data"].strftime("%d/%m/%Y"),
+                     "categoria": x["codigo_categoria"],
+                     "descricao": x["descricao"][:90]} for x in plano["vai"]],
+            "nao_vai": [{"linha_id": x["id"], "motivo": x["motivo"],
+                         "descricao": x["descricao"],
+                         "valor": str(x["valor"] or 0)}
+                        for x in plano["nao_vai"]],
+            "total": str(plano["total"])}
+
+
+@bp.route("/api/conciliacao/omie/lancar", methods=["POST"])
+@exige_operador
+def conciliacao_omie_lancar():
+    """Lança de verdade. ⚠️ Escreve no OMIE."""
+    from . import conciliacao_omie as co
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    linhas, conta = _linhas_para_o_omie(dados.get("ids") or [], int(conta_id))
+    if not linhas or not conta:
+        return {"ok": False, "erro": "Marque as linhas primeiro."}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    plano = co.planejar(linhas, conta)
+    if not plano["vai"]:
+        return {"ok": False,
+                "erro": "Nenhuma das linhas marcadas pode ser lançada.",
+                "nao_vai": [{"motivo": x["motivo"],
+                             "descricao": x["descricao"]}
+                            for x in plano["nao_vai"]]}
+    try:
+        feito = co.lancar(plano["vai"], quem)
+    except co.ErroDoLancamento as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou lançar no OMIE")
+        return {"ok": False, "erro": f"Não consegui: {e}"}, 500
+    return {"ok": True, **feito,
+            "nao_foram": len(plano["nao_vai"])}
+
+
+@bp.route("/api/conciliacao/omie/tipo", methods=["POST"])
+@exige_operador
+def conciliacao_omie_tipo():
+    """Cria ou altera um tipo de movimento (tarifa, rentabilidade, PIX)."""
+    from . import conciliacao_omie as co
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        tipo_id = co.gravar_tipo(dados, quem)
+    except co.ErroDoLancamento as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou gravar tipo")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": tipo_id}
+
+
 @bp.route("/api/conciliacao/planilha/abas", methods=["POST"])
 @exige_operador
 def conciliacao_abas_da_planilha():

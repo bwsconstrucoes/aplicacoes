@@ -1,0 +1,202 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Panorama da conciliação — Análise de SPs{% endblock %}
+
+{% block conteudo %}
+{# ---------------------------------------------------------------------------
+   O PANORAMA — pedido do dono em 24/09/2026:
+
+   *"Um dashboard de cada conta (…) inclusive indicar se tem extrato que falta
+   importar. De repente a gente vê 'está tudo conciliado', mas opa, tem muito
+   tempo que não foi importado o extrato. Cadê o extrato dessa conta? Está
+   faltando os meses tais e tais. Para direcionar o operador do que ele precisa
+   fazer."*
+
+   ⚠️ A PERGUNTA DESTA TELA NÃO É "QUANTO TEM", É "NO QUE EU NÃO POSSO
+   CONFIAR". Uma conta 100% conciliada cujo último extrato é de três meses
+   atrás está PIOR do que uma com pendências e extrato de ontem — e olhando só
+   o percentual de conciliado ela pareceria a melhor de todas. Por isso a
+   coluna do recado vem antes dos números, e o buraco de extrato vem antes de
+   tudo.
+--------------------------------------------------------------------------- #}
+<h2>Panorama da conciliação <small>{{ ano }}</small></h2>
+
+{% if not estado.pronto %}
+  <div class="cartao">
+    <p>A Conciliação ainda não foi ligada — falta aplicar a atualização do
+      banco em <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a>.</p>
+  </div>
+{% elif not panorama.contas %}
+  <div class="cartao">
+    <p>Nenhuma conta com movimento em {{ ano }}.
+      <a href="{{ url_for('analisesps.tela_conciliacao') }}">Ir para a conciliação</a>.</p>
+  </div>
+{% else %}
+
+<form method="get" class="cartao"
+      style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end">
+  <div>
+    <label class="rotulo-campo">Ano</label>
+    <select name="ano" onchange="this.form.submit()">
+      {% for a in anos %}
+        <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.tela_conciliacao') }}">Ir para o extrato</a>
+  <span class="cartao-dica" style="margin:0">
+    O movimento e o que falta conciliar são do ano escolhido. <b>O atraso do
+    extrato é sobre hoje</b> — não adianta olhar 2024 e achar que está em dia.
+  </span>
+</form>
+
+{% set r = panorama.resumo %}
+<div class="kpis">
+  <div class="kpi estatico {{ 'vermelho' if r.ruim else ('laranja' if r.atencao else 'verde') }}">
+    <div class="kpi-rotulo">Contas que precisam de alguém</div>
+    <div class="kpi-valor">{{ r.ruim + r.atencao }}</div>
+    <div class="kpi-sub">de {{ r.contas }} · {{ r.em_dia }} em dia</div>
+  </div>
+  <div class="kpi estatico vermelho">
+    <div class="kpi-rotulo">Contas com buraco no extrato</div>
+    <div class="kpi-valor">{{ r.com_buraco }}</div>
+    <div class="kpi-sub">mês faltando no meio — o saldo está errado</div>
+  </div>
+  <div class="kpi estatico laranja">
+    <div class="kpi-rotulo">Falta conciliar</div>
+    <div class="kpi-valor">{{ r.pendentes }}</div>
+    <div class="kpi-sub">{{ r.pendentes_valor|moeda }} em {{ ano }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Movimento em {{ ano }}</div>
+    <div class="kpi-valor">{{ r.movimento|moeda }}</div>
+    <div class="kpi-sub">{{ r.entradas|moeda }} entrou ·
+      {{ r.saidas|moeda }} saiu</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Com observação</div>
+    <div class="kpi-valor">{{ r.com_observacao }}</div>
+    <div class="kpi-sub">pendências anotadas</div>
+  </div>
+</div>
+
+{% if r.sem_saldo_inicial %}
+  <div class="aviso atencao">
+    <b>{{ r.sem_saldo_inicial }} conta(s) sem saldo inicial.</b> Nelas o saldo
+    mostrado é só a soma do que foi importado — o que a conta tinha antes disso
+    não está aqui, e a diferença aparece sem explicação. O saldo inicial se
+    põe em <b>Contas</b>, na tela da conciliação.
+  </div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Conta a conta</h3>
+    <small>o que cada uma precisa, primeiro o mais urgente</small>
+  </div>
+  <div class="rolagem-tabela">
+  <table class="sps panorama">
+    <thead>
+      <tr>
+        <th style="width:150px">Conta</th>
+        <th style="width:280px">O que ela precisa</th>
+        <th style="width:180px">Meses de {{ ano }}</th>
+        <th class="direita" style="width:120px">Saldo</th>
+        <th class="direita" style="width:110px">Movimento</th>
+        <th class="direita" style="width:110px">Falta conciliar</th>
+        <th style="width:120px">Último lançamento</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in panorama.contas|sort(attribute='recado.grau') %}
+        <tr>
+          <td><b>{{ c.nome }}</b>
+            {% if c.banco %}<br><small>{{ c.banco }}</small>{% endif %}</td>
+          <td>
+            <span class="etiqueta {{ 'ruim' if c.recado.grau == 'ruim'
+                                     else ('boa' if c.recado.grau == 'bom' else '') }}">
+              {{ c.recado.texto }}</span>
+          </td>
+          <td>
+            {# ⚠️ A FITA DOS DOZE MESES. Um quadradinho por mês: cheio quando
+               teve lançamento, vermelho quando é BURACO (mês sem nada entre
+               dois com movimento) e vazio quando ainda não veio. É o jeito
+               mais rápido de ver onde o extrato parou. #}
+            <span class="fita-meses">
+              {% for m in range(1, 13) %}
+                <i class="mes {% if m in c.buracos %}buraco
+                              {% elif c.meses[m] %}cheio
+                              {% elif m in c.nao_vieram %}falta{% endif %}"
+                   title="{{ meses[m-1] }}: {% if m in c.buracos %}buraco no extrato{% elif c.meses[m] %}{{ c.meses[m] }} lançamento(s){% elif m in c.nao_vieram %}ainda não veio{% else %}—{% endif %}"></i>
+              {% endfor %}
+            </span>
+            <br><small>{{ c.quantidade }} lançamento(s)</small>
+          </td>
+          <td class="direita">{{ c.saldo|moeda }}
+            {% if not c.tem_saldo_inicial %}
+              <br><small class="ruim">sem saldo inicial</small>
+            {% endif %}</td>
+          <td class="direita">{{ c.movimento|moeda }}</td>
+          <td class="direita">
+            {% if c.pendentes %}
+              <a href="{{ url_for('analisesps.tela_conciliacao',
+                                  conta_id=c.id, situacao='pendentes') }}">
+                {{ c.pendentes }}</a>
+              <br><small>{{ c.pendentes_valor|moeda }}</small>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if c.ate %}{{ c.ate|data_br }}
+              <br><small>há {{ c.dias_sem_extrato }} dia(s)</small>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="cal-legenda">
+    <span class="cal-chip mes-cheio"></span> teve lançamento
+    <span class="cal-chip mes-buraco"></span> buraco no extrato
+    <span class="cal-chip mes-falta"></span> ainda não veio
+  </p>
+</div>
+
+{% if pendencias_omie %}
+{# ⚠️ ESTA LISTA IMPEDE TRABALHO MANUAL ESQUECIDO. Um título criado no OMIE
+   cuja baixa falhou fica lá, em aberto, dizendo que há algo a pagar que já
+   foi pago — e ninguém descobre isso olhando o extrato daqui. #}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Lançamentos no OMIE que ficaram pelo caminho</h3>
+    <small>precisam de alguém, lá</small>
+  </div>
+  <table class="sps">
+    <thead><tr><th>Conta</th><th>Data</th><th>Histórico</th>
+      <th class="direita">Valor</th><th>O que houve</th></tr></thead>
+    <tbody>
+      {% for p in pendencias_omie %}
+        <tr>
+          <td>{{ p.conta }}</td>
+          <td>{{ p.data|data_br }}</td>
+          <td>{{ p.descricao }}</td>
+          <td class="direita">{{ p.valor|moeda }}</td>
+          <td>
+            {% if p.omie_situacao == 'sem_baixa' %}
+              <b>o título {{ p.omie_codigo }} foi criado, mas a baixa falhou</b>
+              — dê a baixa no OMIE
+            {% elif p.omie_situacao == 'enviando' %}
+              <b>enviado sem resposta</b> — confira no OMIE se entrou antes de
+              mandar de novo
+            {% else %}
+              <b>falhou</b>: {{ p.omie_erro }}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1922,6 +1922,12 @@ tr.linha-extrato.conciliada .valor-saida { font-weight: 500; }
   font-weight: 700;
 }
 .tique:disabled { opacity: .5; cursor: wait; }
+/* O botao virado pergunta: "desconciliar mesmo?". Ele se explica sozinho e
+   some em quatro segundos — ver o porque no script da tela. */
+.tique.perguntando {
+  background: #FFF1DC; border-color: var(--ambar); color: #7A4300;
+  font-weight: 700; font-size: 12px;
+}
 
 /* ⚠️ A OBSERVACAO ACEITA QUEBRA DE LINHA (pedido do dono, 24/09/2026), e por
    isso e um `textarea`. Ele nasce com a altura de UMA linha e cresce conforme
@@ -2017,3 +2023,28 @@ table.conciliacao { table-layout: fixed; width: 100%; }
 table.conciliacao .historico { max-width: none; width: auto; }
 table.conciliacao col.c-historico { width: 34%; }
 table.conciliacao col.c-observacao { width: 26%; }
+
+/* --------------------------------------------------------------------------
+   O PANORAMA DA CONCILIACAO (24/09/2026)
+
+   ⚠️ A FITA DOS DOZE MESES e o que responde "cade o extrato dessa conta?" sem
+   ler numero nenhum: um quadradinho por mes, cheio quando teve lancamento,
+   VERMELHO quando e buraco (mes sem nada entre dois com movimento) e vazio
+   quando ainda nao veio. Buraco e "ainda nao veio" sao problemas diferentes e
+   por isso tem cores diferentes.
+   -------------------------------------------------------------------------- */
+.fita-meses { display: inline-flex; gap: 2px; }
+.fita-meses .mes {
+  width: 12px; height: 16px; border-radius: 2px; display: inline-block;
+  background: #EFF1F6; border: 1px solid var(--borda);
+}
+.fita-meses .mes.cheio  { background: var(--azul-claro); border-color: var(--azul); }
+.fita-meses .mes.buraco { background: var(--vermelho); border-color: #8C1F19; }
+.fita-meses .mes.falta  { background: #FFF1DC; border-color: var(--ambar); }
+
+.cal-chip.mes-cheio  { background: var(--azul-claro); }
+.cal-chip.mes-buraco { background: var(--vermelho); }
+.cal-chip.mes-falta  { background: #FFF1DC; border: 1px solid var(--ambar); }
+
+table.panorama td { vertical-align: top; }
+table.panorama small.ruim { color: var(--vermelho); }

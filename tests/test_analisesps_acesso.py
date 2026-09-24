@@ -97,12 +97,16 @@ TODAS_AS_TELAS = [
     # mais sensíveis do módulo, e este inventário é o que garante que ela não
     # fique aberta sem querer.
     ("GET", "/analisesps/conciliacao"),
+    ("GET", "/analisesps/conciliacao/panorama"),
     ("POST", "/analisesps/api/conciliacao/conferir"),
     ("POST", "/analisesps/api/conciliacao/importar"),
     ("POST", "/analisesps/api/conciliacao/marcar"),
     ("POST", "/analisesps/api/conciliacao/anotar"),
     ("POST", "/analisesps/api/conciliacao/conta"),
     ("POST", "/analisesps/api/conciliacao/linha"),
+    ("POST", "/analisesps/api/conciliacao/omie/ensaiar"),
+    ("POST", "/analisesps/api/conciliacao/omie/lancar"),
+    ("POST", "/analisesps/api/conciliacao/omie/tipo"),
     ("POST", "/analisesps/api/conciliacao/planilha/abas"),
     ("POST", "/analisesps/api/conciliacao/planilha/ler"),
     ("POST", "/analisesps/api/conciliacao/planilha/importar"),

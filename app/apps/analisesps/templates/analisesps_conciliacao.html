@@ -106,13 +106,15 @@
 <div class="lateral-extrato" id="area-extrato">
   <h2 style="font-size:13.5px; margin:0 2px 8px">Trazer extrato</h2>
   <div class="solta-arquivo" id="solta-extrato">
-    <p><b>Solte o OFX aqui</b><br>
-      <label class="link-btn" for="arq-extrato">ou escolha no computador</label></p>
-    <input type="file" id="arq-extrato" accept=".ofx,.OFX" hidden>
+    <p><b>Solte os OFX aqui</b><br>
+      <label class="link-btn" for="arq-extrato">ou escolha no computador</label>
+      <br><small>pode soltar vários de uma vez</small></p>
+    <input type="file" id="arq-extrato" accept=".ofx,.OFX" multiple hidden>
   </div>
   <p class="cartao-dica" style="margin:8px 2px 0">
-    Ele descobre a conta sozinho e <b>diz o que vai fazer antes de gravar</b>.
-    Mandar o mesmo extrato duas vezes não duplica nada.
+    Ele descobre a conta de cada arquivo sozinho e <b>diz o que vai fazer antes
+    de gravar</b>. Mandar o mesmo extrato duas vezes não duplica nada — então
+    dá para jogar a pasta inteira e deixar ele separar o que falta.
   </p>
 </div>
 
@@ -131,6 +133,7 @@
 <div class="lateral-ajustes">
   <button class="btn secundario" id="btn-abrir-contas">Contas</button>
   <button class="btn secundario" id="btn-abrir-planilha">Trazer planilha</button>
+  <button class="btn secundario" id="btn-abrir-tipos">Tipos do OMIE</button>
 </div>
 {% endif %}
 {% endif %}
@@ -162,7 +165,10 @@
   </div>
 {% else %}
 
-<h2>Conciliação <small>{{ conta.nome if conta else '' }}</small></h2>
+<h2>Conciliação <small>{{ conta.nome if conta else '' }}</small>
+  <a class="btn secundario" style="float:right"
+     href="{{ url_for('analisesps.conciliacao_panorama') }}">Panorama de todas as contas</a>
+</h2>
 
 {# O gesto de soltar o arquivo mora na barra lateral; a RESPOSTA aparece aqui,
    onde há largura para a tabela do que vai entrar ser lida. #}
@@ -242,6 +248,9 @@
         <span class="rotulo">marcar todos da página</span></label>
       <button class="btn secundario" id="btn-conciliar">Conciliar selecionados</button>
       <button class="btn secundario" id="btn-desmarcar">Desmarcar selecionados</button>
+      {# ⚠️ ESTE BOTÃO ESCREVE NO OMIE. Ele não lança direto: abre o ensaio,
+         que mostra linha a linha o que vai acontecer. #}
+      <button class="btn secundario" id="btn-omie">Lançar no OMIE…</button>
       <span id="recado-acao" class="cartao-dica" style="margin:0"></span>
     </div>
   {% endif %}
@@ -399,6 +408,111 @@
    conta desconhecida, a tela oferece ligá-lo a uma conta, e o banco e o número
    ficam guardados a partir dali. Quem tem o arquivo usa; quem não tem, digita.
 --------------------------------------------------------------------------- #}
+{# ---------------------------------------------------------------------------
+   OS TIPOS DE MOVIMENTO — o de-para que o dono pediu:
+
+   *"Dentro dessa parte, uma espécie de configurações relacionada ao OMIE, eu
+   poder gravar a conta do plano financeiro OMIE que está relacionada a cada
+   ação. Se for tarifa, essa conta; se for isso, aquela conta."*
+
+   ⚠️ SEM ISTO NADA É LANÇADO, e é de propósito: chutar a categoria poria
+   tarifa bancária dentro de "material de obra", e no OMIE isso vira relatório
+   errado que ninguém desconfia.
+--------------------------------------------------------------------------- #}
+<dialog class="dialogo" id="cartao-tipos">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Tipos de movimento <small>o que lançar no OMIE, e como</small></h3>
+
+  <p class="cartao-dica">
+    Cada tipo é uma coisa que se repete no extrato e <b>não nasce de uma SP</b>:
+    tarifa bancária, tarifa de PIX, rentabilidade. O sistema reconhece pelo
+    histórico do banco e usa a categoria que você apontar aqui.
+    <b>O que ele não reconhecer, ele não lança</b> — e diz qual foi.
+  </p>
+
+  <table class="sps" style="margin-top:10px">
+    <thead><tr><th>Tipo</th><th>Reconhece pelo histórico</th>
+      <th>Categoria no OMIE</th><th>Fornecedor/cliente</th><th>Obra</th>
+      <th></th></tr></thead>
+    <tbody>
+      {% for tp in tipos_omie %}
+        <tr {% if not tp.ativo %}class="apagada"{% endif %}>
+          <td><b>{{ tp.nome }}</b></td>
+          <td><small>{{ tp.palavras }}</small></td>
+          <td><code>{{ tp.codigo_categoria or '—' }}</code></td>
+          <td>{{ tp.codigo_cliente or '—' }}</td>
+          <td>{{ tp.cod_departamento or '—' }}</td>
+          <td><button class="btn secundario editar-tipo"
+                      data-tipo="{{ tp|tojson|forceescape }}">Editar</button></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form id="form-tipo" style="margin-top:14px">
+    <input type="hidden" name="id" value="">
+    <div class="faixa">
+      <div><label class="rotulo-campo">Nome</label>
+        <input class="campo-largo" name="nome" placeholder="Tarifa bancária" required></div>
+      <div style="flex:2"><label class="rotulo-campo">Palavras que aparecem no histórico</label>
+        <input class="campo-largo" name="palavras"
+               placeholder="TARIFA;TAR PIX"></div>
+    </div>
+    <div class="faixa" style="margin-top:8px">
+      <div style="flex:2"><label class="rotulo-campo">Categoria do OMIE</label>
+        {% if listas_omie.categorias %}
+          <select class="campo-largo" name="codigo_categoria">
+            <option value="">— escolha —</option>
+            {% for cat in listas_omie.categorias %}
+              <option value="{{ cat.codigo }}">{{ cat.codigo }} — {{ cat.descricao }}
+                {%- if cat.inativa %} (inativa){% endif %}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input class="campo-largo" name="codigo_categoria" placeholder="2.01.05">
+        {% endif %}</div>
+      <div><label class="rotulo-campo">Código do fornecedor/cliente</label>
+        <input class="campo-largo" name="codigo_cliente" placeholder="1234567"></div>
+      <div><label class="rotulo-campo">Obra (opcional)</label>
+        {% if listas_omie.obras %}
+          <select class="campo-largo" name="cod_departamento">
+            <option value="">— nenhuma —</option>
+            {% for o in listas_omie.obras %}
+              <option value="{{ o.codigo }}">{{ o.nome }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input class="campo-largo" name="cod_departamento">
+        {% endif %}</div>
+    </div>
+    <p class="cartao-dica" style="margin:8px 0 0">
+      {% if listas_omie.erro %}
+        <br><b>⚠️ A lista do OMIE não veio:</b> {{ listas_omie.erro }}
+        Dá para digitar o código na mão enquanto isso.
+      {% else %}
+        As listas de contas, categorias e obras vêm da <b>carga do painel</b>,
+        que traz do OMIE toda noite — uma categoria criada hoje só aparece
+        aqui depois que ela rodar.
+      {% endif %}
+      <br><b>Separe as palavras por ponto-e-vírgula.</b> Acento e maiúscula não
+      contam. Quando duas casarem, vale a mais específica — "TARIFA PIX" ganha
+      de "TARIFA". Para tarifa, o fornecedor é o próprio banco; para
+      rentabilidade, o cliente é o banco também.
+    </p>
+    <p style="margin:10px 0 0">
+      <button class="btn" type="submit">Gravar tipo</button>
+      <button class="btn secundario" type="button" id="btn-limpar-tipo">Limpar</button>
+      <span id="recado-tipo" class="cartao-dica"></span>
+    </p>
+  </form>
+</dialog>
+
+<dialog class="dialogo" id="cartao-omie">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Lançar no OMIE</h3>
+  <div id="saida-omie"></div>
+</dialog>
+
 <dialog class="dialogo" id="cartao-contas">
   <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
   <h3>Contas <small>{{ contas|length }} cadastrada(s)</small></h3>
@@ -456,6 +570,31 @@
        no dia em que a planilha começou; tudo o que a conta movimentou antes
        disso não existe aqui. Sem este número, o saldo fica errado exatamente
        do tamanho do que veio antes — foi o que ele viu. #}
+    {# ⚠️ A CONTA CORRENTE DO OMIE. Sem ela nada é lançado — e é de propósito:
+       lançar uma tarifa do Bradesco dentro da conta do Santander é o erro mais
+       caro possível aqui, e o único jeito de não cometê-lo é não ter onde
+       errar. Ela mora na CONTA, nunca no tipo de movimento. #}
+    <div class="faixa" style="margin-top:8px">
+      <div style="flex:2"><label class="rotulo-campo">Conta corrente no OMIE</label>
+        {# ⚠️ ESCOLHER, E NÃO DIGITAR. O código da conta corrente do OMIE é um
+           número sem significado; digitá-lo errado põe a tarifa do Bradesco
+           dentro da conta do Santander, e nada na tela acusa. A lista vem do
+           espelho do painel, que a carga da noite traz do OMIE. #}
+        {% if listas_omie.contas %}
+          <select class="campo-largo" name="omie_conta_corrente">
+            <option value="">— escolha —</option>
+            {% for cc in listas_omie.contas %}
+              <option value="{{ cc.codigo }}">{{ cc.descricao }}
+                {%- if cc.numero_conta %} · {{ cc.numero_conta }}{% endif %}
+                {%- if cc.inativa %} (inativa){% endif %}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input class="campo-largo" name="omie_conta_corrente"
+                 placeholder="o código dela no OMIE">
+          <small>A lista do OMIE não veio — digite o código.</small>
+        {% endif %}</div>
+    </div>
     <div class="faixa" style="margin-top:8px">
       <div><label class="rotulo-campo">Saldo inicial</label>
         <input class="campo-largo" name="saldo_inicial" placeholder="0,00"></div>
@@ -511,19 +650,58 @@ async function pedir(url, corpo) {
 }
 
 // --- marcar/desmarcar uma linha, no tique -----------------------------------
+// ⚠️ CONCILIAR É UM CLIQUE; DESCONCILIAR PEDE CONFIRMAÇÃO — 24/09/2026.
+//
+// O dono perguntou: *"para conciliar é só clicar, né? É prudente deixar
+// assim? Acho que sim, tem que ser fácil. De repente, para desconciliar,
+// precisasse clicar duas vezes, para ninguém fazer acidentalmente."*
+//
+// A ideia dele está certa e a implementação ficou diferente, de propósito:
+// clique duplo NÃO é uma boa trava. Ele não se descobre sozinho (nada na tela
+// diz que existe), e clique duplo acidental acontece justamente com quem está
+// marcando várias linhas em sequência — que é a hora de maior risco.
+//
+// Aqui o botão VIRA UMA PERGUNTA: o primeiro clique numa linha conciliada
+// troca o ✓ por "↺?", e o segundo confirma. A trava é a mesma (dois cliques),
+// mas ela se explica sozinha e some em quatro segundos se ninguém confirmar.
+// Marcar continua sendo um clique só — é o gesto do dia inteiro.
+const ESPERA_DA_CONFIRMACAO = 4000;
+
 document.querySelectorAll(".tique").forEach(b => {
+  let confirmando = null;
+
+  const soltar = () => {
+    clearTimeout(confirmando);
+    confirmando = null;
+    b.classList.remove("perguntando");
+    b.textContent = "✓";
+    b.title = "clique para desconciliar";
+  };
+
   b.addEventListener("click", async () => {
     const ligado = b.classList.contains("ligado");
+
+    if (ligado && !confirmando) {
+      b.classList.add("perguntando");
+      b.textContent = "↺?";
+      b.title = "clique de novo para desconciliar";
+      confirmando = setTimeout(soltar, ESPERA_DA_CONFIRMACAO);
+      return;
+    }
+    if (confirmando) { clearTimeout(confirmando); confirmando = null; }
+
     b.disabled = true;
+    b.classList.remove("perguntando");
     try {
       const d = await pedir("{{ url_for('analisesps.conciliacao_marcar') }}",
                             {ids: [b.dataset.id], conciliado: !ligado});
-      if (!d.ok) { recado(d.erro || "não deu certo", "ruim"); return; }
+      if (!d.ok) { recado(d.erro || "não deu certo", "ruim"); soltar(); return; }
       b.classList.toggle("ligado", !ligado);
       b.textContent = ligado ? "—" : "✓";
-      b.title = ligado ? "clique para conciliar" : ("conciliado por " + (d.quem || ""));
+      b.title = ligado ? "clique para conciliar"
+                       : "conciliado por " + (d.quem || "");
       b.closest("tr").classList.toggle("conciliada", !ligado);
-    } catch (e) { recado("falhou: " + e, "ruim"); }
+    } catch (e) { recado("falhou: " + e, "ruim"); soltar(); }
     finally { b.disabled = false; }
   });
 });
@@ -601,13 +779,13 @@ if (area) {
     e.preventDefault(); area.classList.remove("por-cima");
   }));
   area.addEventListener("drop", e => {
-    if (e.dataTransfer.files.length) conferir(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files.length) conferirVarios([...e.dataTransfer.files]);
   });
   area.addEventListener("click", e => {
     if (e.target.tagName !== "LABEL") campoArq.click();
   });
   campoArq.addEventListener("change", () => {
-    if (campoArq.files.length) conferir(campoArq.files[0]);
+    if (campoArq.files.length) conferirVarios([...campoArq.files]);
   });
 }
 
@@ -616,6 +794,133 @@ function dinheiro(v) {
   if (isNaN(n)) return v;
   return n.toLocaleString("pt-BR", {minimumFractionDigits: 2,
                                     maximumFractionDigits: 2});
+}
+
+// ===========================================================================
+// VÁRIOS OFX DE UMA VEZ — pedido do dono em 24/09/2026:
+//
+//   *"Consigo importar vários OFX ao mesmo tempo? Vou jogar vários arquivos de
+//   uma determinada conta, aí o sistema importa eles tudinho. Ou tentar
+//   importar — ele vai barrar quando detectar que já foi importado."*
+//
+// ⚠️ UM ARQUIVO POR VEZ NO SERVIDOR, mesmo com vários na tela. Cada arquivo
+// tem a sua conta, o seu período e a sua resposta; mandar todos juntos numa
+// chamada só faria um arquivo torto derrubar a leva inteira, e a resposta
+// viraria um amontoado sem dizer qual arquivo deu no quê.
+//
+// ⚠️ E A ORDEM É CONFERIR TUDO, DEPOIS GRAVAR TUDO. Gravar cada um assim que
+// é lido tiraria dele a chance de olhar o conjunto antes — que é justamente
+// o ponto desta tela.
+// ===========================================================================
+let leva = [];
+
+async function conferirVarios(arquivos) {
+  const ofx = arquivos.filter(a => /\.ofx$/i.test(a.name));
+  const ignorados = arquivos.length - ofx.length;
+  if (!ofx.length) {
+    saida.innerHTML = '<div class="aviso erro">Nenhum arquivo .OFX no que ' +
+      'você soltou.</div>';
+    return;
+  }
+  if (ofx.length === 1) { conferir(ofx[0]); return; }
+
+  leva = [];
+  saida.innerHTML = '<div class="aviso">Lendo ' + ofx.length + ' arquivos…</div>';
+  for (let i = 0; i < ofx.length; i++) {
+    saida.innerHTML = '<div class="aviso">Lendo ' + (i + 1) + ' de ' +
+      ofx.length + ': ' + ofx[i].name + '…</div>';
+    const corpo = new FormData();
+    corpo.append("extrato", ofx[i]);
+    let d;
+    try {
+      const r = await fetch("{{ url_for('analisesps.conciliacao_conferir') }}",
+                            {method: "POST", body: corpo});
+      d = await r.json();
+    } catch (e) {
+      d = {ok: false, erro: "falhou ao ler: " + e};
+    }
+    leva.push({arquivo: ofx[i], nome: ofx[i].name, d: d});
+  }
+  desenharLeva(ignorados);
+}
+
+function desenharLeva(ignorados) {
+  const bons = leva.filter(x => x.d.ok && x.d.novas > 0);
+  const semNovidade = leva.filter(x => x.d.ok && !x.d.novas);
+  const ruins = leva.filter(x => !x.d.ok);
+  const totalNovas = bons.reduce((s, x) => s + x.d.novas, 0);
+
+  let html = '<div class="aviso ' + (ruins.length ? 'atencao' : 'bom') + '">';
+  html += '<b>' + leva.length + ' arquivo(s) lidos.</b> ' + totalNovas +
+    ' lançamento(s) novo(s) ao todo.';
+  if (ignorados) html += ' (' + ignorados + ' que não eram .OFX ficaram de fora.)';
+
+  html += '<table class="sps" style="margin-top:8px"><thead><tr>' +
+    '<th>Arquivo</th><th>Conta</th><th>Período</th>' +
+    '<th class="direita">Já estavam</th><th class="direita">Novos</th>' +
+    '<th>Saldo</th></tr></thead><tbody>';
+  leva.forEach(x => {
+    if (!x.d.ok) {
+      html += '<tr><td>' + x.nome + '</td><td colspan="5" class="ruim">' +
+        (x.d.erro || "não deu certo") + '</td></tr>';
+      return;
+    }
+    html += '<tr><td>' + x.nome + '</td><td>' + x.d.conta + '</td><td>' +
+      x.d.periodo_ini.split("-").reverse().join("/") + ' a ' +
+      x.d.periodo_fim.split("-").reverse().join("/") + '</td>' +
+      '<td class="direita">' + x.d.ja_estavam + '</td>' +
+      '<td class="direita"><b>' + x.d.novas + '</b></td><td>' +
+      (x.d.saldo_banco ? (x.d.saldo_bate ? 'bate' : '⚠️ não bate') : '—') +
+      '</td></tr>';
+  });
+  html += '</tbody></table>';
+
+  if (semNovidade.length) {
+    html += '<p class="cartao-dica">' + semNovidade.length + ' arquivo(s) já ' +
+      'estavam inteiros aqui — nada a fazer com eles.</p>';
+  }
+  html += '<br><button class="btn" id="btn-gravar-leva"' +
+    (totalNovas ? '' : ' disabled title="não há nada novo"') + '>Gravar ' +
+    totalNovas + ' lançamento(s) de ' + bons.length + ' arquivo(s)</button> ' +
+    '<button class="btn secundario" id="btn-cancelar-leva">Deixa pra lá</button>';
+  html += '</div>';
+  saida.innerHTML = html;
+
+  document.getElementById("btn-cancelar-leva").addEventListener("click", () => {
+    saida.innerHTML = ""; leva = []; campoArq.value = "";
+  });
+  const gravar = document.getElementById("btn-gravar-leva");
+  if (gravar && !gravar.disabled) {
+    gravar.addEventListener("click", () => gravarLeva(bons));
+  }
+}
+
+async function gravarLeva(bons) {
+  const gravar = document.getElementById("btn-gravar-leva");
+  gravar.disabled = true;
+  let feitos = 0, erros = [];
+  for (let i = 0; i < bons.length; i++) {
+    gravar.textContent = "Gravando " + (i + 1) + " de " + bons.length + "…";
+    const corpo = new FormData();
+    corpo.append("extrato", bons[i].arquivo);
+    corpo.append("conta_id", bons[i].d.conta_id);
+    corpo.append("lembrar", "1");
+    try {
+      const r = await fetch("{{ url_for('analisesps.conciliacao_importar') }}",
+                            {method: "POST", body: corpo});
+      const f = await r.json();
+      if (f.ok) feitos += (f.gravadas || 0);
+      else erros.push(bons[i].nome + ": " + (f.erro || "não gravou"));
+    } catch (e) { erros.push(bons[i].nome + ": " + e); }
+  }
+  if (erros.length) {
+    saida.innerHTML = '<div class="aviso atencao"><b>Gravei ' + feitos +
+      ' lançamento(s), mas ' + erros.length + ' arquivo(s) falharam:</b><ul><li>' +
+      erros.join("</li><li>") + '</li></ul>A tela vai recarregar.</div>';
+    setTimeout(() => location.reload(), 6000);
+    return;
+  }
+  location.reload();
 }
 
 async function conferir(arquivo, contaEscolhida) {
@@ -750,7 +1055,7 @@ if (formConta) {
     b.addEventListener("click", () => {
       const c = JSON.parse(b.dataset.conta);
       ["id", "nome", "banco", "agencia", "numero", "ordem",
-       "saldo_inicial", "saldo_inicial_em"].forEach(k => {
+       "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente"].forEach(k => {
         const campo = formConta.querySelector('[name="' + k + '"]');
         if (campo) campo.value = c[k] === null || c[k] === undefined ? "" : c[k];
       });
@@ -889,14 +1194,133 @@ function desenharAba(d, aba, conta, planilha) {
   });
 }
 
-// --- os dois ajustes, que abrem por cima da tela ----------------------------
+// A janela que abre por cima. Definida aqui porque o lançamento no OMIE a
+// usa, e ele vem antes no arquivo.
 function abrir(id) {
   const dialogo = document.getElementById(id);
   if (dialogo && dialogo.showModal) dialogo.showModal();
   else if (dialogo) dialogo.setAttribute("open", "");
 }
+
+// ===========================================================================
+// LANÇAR NO OMIE — ⚠️ escreve no OMIE, e lançamento não se desfaz num clique.
+//
+// Por isso são dois passos: ENSAIAR mostra linha a linha o que vai acontecer
+// (e o que NÃO vai, com o motivo), e só o segundo botão manda. É o mesmo
+// desenho dos aportes.
+// ===========================================================================
+const btnOmie = document.getElementById("btn-omie");
+if (btnOmie) btnOmie.addEventListener("click", async () => {
+  const ids = selecionadas();
+  if (!ids.length) { recado("Marque as linhas primeiro."); return; }
+  const alvo = document.getElementById("saida-omie");
+  abrir("cartao-omie");
+  alvo.innerHTML = '<div class="aviso">Conferindo…</div>';
+
+  const d = await pedir("{{ url_for('analisesps.conciliacao_omie_ensaiar') }}",
+                        {ids: ids, conta_id: CONTA_ID});
+  if (!d.ok) { alvo.innerHTML = '<div class="aviso erro">' + d.erro + '</div>'; return; }
+
+  let html = '<div class="aviso ' + (d.vai.length ? 'atencao' : 'erro') + '">';
+  html += '<b>' + d.vai.length + ' de ' + (d.vai.length + d.nao_vai.length) +
+    ' linha(s) podem ser lançadas</b> na conta ' + d.conta + '.';
+
+  if (d.vai.length) {
+    html += '<table class="sps" style="margin-top:8px"><thead><tr><th>Data</th>' +
+      '<th>Histórico</th><th>Tipo</th><th>Categoria</th><th>Vai como</th>' +
+      '<th class="direita">Valor</th></tr></thead><tbody>';
+    d.vai.forEach(l => {
+      html += '<tr><td>' + l.data + '</td><td>' + l.descricao + '</td><td>' +
+        l.tipo + '</td><td><code>' + l.categoria + '</code></td><td>' +
+        (l.sentido === "pagar" ? "conta a pagar" : "conta a receber") +
+        '</td><td class="direita">' + dinheiro(l.valor) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  // ⚠️ A LISTA DO QUE NÃO VAI É TÃO IMPORTANTE QUANTO A OUTRA: é ela que diz
+  // o que falta configurar, em vez de o lote inteiro falhar sem explicar.
+  if (d.nao_vai.length) {
+    html += '<br><b>' + d.nao_vai.length + ' ficam de fora:</b><ul>';
+    d.nao_vai.forEach(l => {
+      html += '<li>' + l.descricao + ' (' + dinheiro(l.valor) + ') — ' +
+        l.motivo + '</li>';
+    });
+    html += '</ul>';
+  }
+
+  html += '<br>';
+  if (d.vai.length) {
+    html += '<button class="btn" id="btn-lancar-omie">Lançar ' + d.vai.length +
+      ' no OMIE</button> ';
+  }
+  html += '<button class="btn secundario" id="btn-cancelar-omie">Deixa pra lá</button>';
+  html += '</div>';
+  alvo.innerHTML = html;
+
+  const cancelar = document.getElementById("btn-cancelar-omie");
+  if (cancelar) cancelar.addEventListener("click", () => {
+    document.getElementById("cartao-omie").close();
+  });
+  const lancar = document.getElementById("btn-lancar-omie");
+  if (lancar) lancar.addEventListener("click", async () => {
+    lancar.disabled = true;
+    lancar.textContent = "Lançando… (pode levar um tempo)";
+    const f = await pedir("{{ url_for('analisesps.conciliacao_omie_lancar') }}",
+                          {ids: ids, conta_id: CONTA_ID});
+    if (!f.ok) {
+      alvo.innerHTML = '<div class="aviso erro">' + (f.erro || "não deu certo") +
+        '</div>';
+      return;
+    }
+    let fim = '<div class="aviso ' + (f.falhas.length ? 'atencao' : 'bom') +
+      '"><b>' + f.gravados + ' lançamento(s) entraram no OMIE.</b>';
+    if (f.falhas.length) {
+      fim += '<br><b>' + f.falhas.length + ' precisam de você:</b><ul><li>' +
+        f.falhas.map(x => x.descricao + " — " + x.erro).join("</li><li>") +
+        '</li></ul>';
+    }
+    fim += '<br>A tela vai recarregar.</div>';
+    alvo.innerHTML = fim;
+    setTimeout(() => location.reload(), f.falhas.length ? 8000 : 2000);
+  });
+});
+
+// --- os tipos de movimento --------------------------------------------------
+const formTipo = document.getElementById("form-tipo");
+if (formTipo) {
+  document.querySelectorAll(".editar-tipo").forEach(b => {
+    b.addEventListener("click", () => {
+      const tp = JSON.parse(b.dataset.tipo);
+      ["id", "nome", "palavras", "codigo_categoria", "codigo_cliente",
+       "cod_departamento"].forEach(k => {
+        const campo = formTipo.querySelector('[name="' + k + '"]');
+        if (campo) campo.value = tp[k] === null || tp[k] === undefined ? "" : tp[k];
+      });
+    });
+  });
+  const limpar = document.getElementById("btn-limpar-tipo");
+  if (limpar) limpar.addEventListener("click", () => {
+    formTipo.reset();
+    formTipo.querySelector('[name="id"]').value = "";
+  });
+  formTipo.addEventListener("submit", async e => {
+    e.preventDefault();
+    const corpo = {};
+    new FormData(formTipo).forEach((v, k) => { corpo[k] = v; });
+    if (!corpo.id) delete corpo.id;
+    const alvo = document.getElementById("recado-tipo");
+    alvo.textContent = "gravando…";
+    const d = await pedir("{{ url_for('analisesps.conciliacao_omie_tipo') }}", corpo);
+    if (!d.ok) { alvo.textContent = d.erro || "não gravou"; return; }
+    location.reload();
+  });
+}
+
+// --- os dois ajustes, que abrem por cima da tela ----------------------------
 [["btn-abrir-contas", "cartao-contas"],
  ["btn-nova-conta", "cartao-contas"],
+ ["btn-abrir-tipos", "cartao-tipos"],
  ["btn-abrir-planilha", "cartao-planilha"]].forEach(([botao, alvo]) => {
   const b = document.getElementById(botao);
   if (b) b.addEventListener("click", () => abrir(alvo));
