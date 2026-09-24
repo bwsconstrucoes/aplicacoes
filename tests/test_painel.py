@@ -1722,9 +1722,13 @@ def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
     assert "mes=2025-03" in html and "mes=2025-05" in html   # os dois botões
     assert "2 lanç." in html
     # o terceiro número: a pagar pelo vencimento, em laranja, e no KPI
-    assert "A pagar no mês" in html and "−R$ 900,00" in html
-    assert 'class="cal-valor cal-aberto"' in html
-    assert "vencido −R$ 900,00" in html                      # abril de 2025 já passou
+    # as cores do dono (24/09/2026): verde recebido, azul pago, vermelho
+    # vencido, laranja a vencer — abril de 2025 já passou, então é vencido
+    assert "Vencido no mês" in html and "A vencer no mês" in html
+    assert 'class="kpi-valor v-vencido">−R$ 900,00' in html
+    assert 'class="cal-valor cal-vencido"' in html
+    assert 'class="kpi-valor v-pago">−R$ 4.200,00' in html
+    assert "3 título(s) em aberto que já venceram" in html
     # DRE ou fluxo: o filtro existe, vira chip e viaja no botão de mês
     r = painel.get("/painel/calendario?mes=2025-04&analise=fluxo")
     html = r.get_data(as_text=True)

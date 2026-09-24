@@ -27,12 +27,13 @@
   <small>o caixa dia a dia — {{ titulo_do_mes }}</small>
 </h2>
 <p class="cartao-dica" style="margin:-8px 0 14px">
-  Cada dia mostra o que <b>entrou</b> (verde) e o que <b>saiu</b> (vermelho)
+  Cada dia mostra o que <b class="v-pos">entrou</b> (verde) e o que foi <b class="v-pago">pago</b> (azul)
   de fato — a mesma régua do Fluxo de Caixa, pela data do pagamento ou do
   recebimento, com juros e multa pagos e sem as retenções de receita. O total
-  do mês fecha com a linha do mesmo mês no Fluxo de Caixa. Em <b class="v-aberto">laranja</b>,
-  o que está <b>a pagar</b> naquele vencimento: num dia que já passou, é conta
-  <b>vencida</b>; num dia que não chegou, é conta a vencer. <b>Clique no dia</b>
+  do mês fecha com a linha do mesmo mês no Fluxo de Caixa. O que está <b>a
+  pagar</b> aparece no dia do vencimento: em <b class="v-vencido">vermelho</b> se
+  o dia já passou (<b>vencido</b>), em <b class="v-aberto">laranja</b> se ainda
+  vai vencer (inclusive hoje). <b>Clique no dia</b>
   para ver lançamento a lançamento. O ano marcado na barra lateral não vale
   aqui: o mês manda.
 </p>
@@ -132,12 +133,12 @@
 <div class="kpis">
   <div class="kpi verde estatico">
     <div class="kpi-rotulo">Recebido no mês</div>
-    <div class="kpi-valor">{{ brl(dados.entradas) }}</div>
+    <div class="kpi-valor v-pos">{{ brl(dados.entradas) }}</div>
     <div class="kpi-sub">{% if dados.maior_entrada %}maior dia: {{ dados.maior_entrada[0].strftime('%d/%m') }} — {{ brl(dados.maior_entrada[1]) }}{% else %}nenhum recebimento{% endif %}</div>
   </div>
-  <div class="kpi vermelho estatico">
+  <div class="kpi azul estatico">
     <div class="kpi-rotulo">Pago no mês</div>
-    <div class="kpi-valor">{{ brl(dados.saidas) }}</div>
+    <div class="kpi-valor v-pago">{{ brl(dados.saidas) }}</div>
     <div class="kpi-sub">{% if dados.maior_saida %}maior dia: {{ dados.maior_saida[0].strftime('%d/%m') }} — {{ brl(dados.maior_saida[1]) }}{% else %}nenhum pagamento{% endif %}</div>
   </div>
   <div class="kpi estatico">
@@ -145,10 +146,15 @@
     <div class="kpi-valor {{ classe_valor(dados.liquido) }}">{{ brl(dados.liquido) }}</div>
     <div class="kpi-sub">recebido menos pago</div>
   </div>
+  <div class="kpi vermelho estatico">
+    <div class="kpi-rotulo">Vencido no mês</div>
+    <div class="kpi-valor v-vencido">{{ brl(dados.a_pagar_vencido) }}</div>
+    <div class="kpi-sub">{% if dados.quantos_vencidos %}{{ dados.quantos_vencidos }} título(s) em aberto que já venceram{% else %}nada vencido em aberto{% endif %}</div>
+  </div>
   <div class="kpi ambar estatico">
-    <div class="kpi-rotulo">A pagar no mês</div>
-    <div class="kpi-valor v-aberto">{{ brl(dados.a_pagar) }}</div>
-    <div class="kpi-sub">{% if dados.quantos_a_pagar %}vencido {{ brl(dados.a_pagar_vencido) }} · a vencer {{ brl(dados.a_pagar_a_vencer) }} · {{ dados.quantos_a_pagar }} título(s){% else %}nada em aberto vencendo neste mês{% endif %}</div>
+    <div class="kpi-rotulo">A vencer no mês</div>
+    <div class="kpi-valor v-aberto">{{ brl(dados.a_pagar_a_vencer) }}</div>
+    <div class="kpi-sub">{% if dados.quantos_a_vencer %}{{ dados.quantos_a_vencer }} título(s) de hoje em diante{% else %}nada a vencer{% endif %}</div>
   </div>
   <div class="kpi ciano estatico">
     <div class="kpi-rotulo">Dias com movimento</div>
@@ -187,7 +193,7 @@
             {% if n %}
               {% if n.entradas > 0 %}<span class="cal-valor cal-entrou"><span class="cal-longo">+{{ brl(n.entradas) }}</span><span class="cal-curto">{{ brl_curto(n.entradas) }}</span></span>{% endif %}
               {% if n.saidas < 0 %}<span class="cal-valor cal-saiu"><span class="cal-longo">{{ brl(n.saidas) }}</span><span class="cal-curto">{{ brl_curto(n.saidas) }}</span></span>{% endif %}
-              {% if n.a_pagar %}<span class="cal-valor cal-aberto" title="{{ 'vencido' if n.vencido else 'a vencer' }}"><span class="cal-longo">{{ brl(n.a_pagar) }} {{ 'venc.' if n.vencido else 'a pagar' }}</span><span class="cal-curto">{{ brl_curto(n.a_pagar) }}</span></span>{% endif %}
+              {% if n.a_pagar %}<span class="cal-valor {{ 'cal-vencido' if n.vencido else 'cal-aberto' }}" title="{{ 'vencido' if n.vencido else 'a vencer' }}"><span class="cal-longo">{{ brl(n.a_pagar) }} {{ 'venc.' if n.vencido else 'a pagar' }}</span><span class="cal-curto">{{ brl_curto(n.a_pagar) }}</span></span>{% endif %}
               <span class="cal-quantos">{{ n.quantos + n.quantos_a_pagar }} lanç.</span>
             {% endif %}
           </button>
@@ -196,8 +202,9 @@
     {% endfor %}
   </div>
   <p class="cartao-dica">
-    Verde é o que entrou, vermelho o que saiu, <span class="v-aberto"><b>laranja</b></span> o
-    que está a pagar naquele vencimento (dia passado com laranja = venceu). Dia
+    <b class="v-pos">Verde</b> é o que entrou, <b class="v-pago">azul</b> o que foi pago,
+    <b class="v-vencido">vermelho</b> o que venceu e não foi pago (o dia ganha
+    borda vermelha), <b class="v-aberto">laranja</b> o que está a vencer. Dia
     sem nada fica apagado. O detalhe abre com os mesmos filtros desta tela,
     então a soma dele fecha com o número do dia.
   </p>
@@ -234,9 +241,10 @@
     const doc = l.link
       ? `<a href="${escapar(l.link)}" target="_blank" rel="noopener" title="Abrir no Pipefy">${escapar(l.documento || "Pipefy")} ↗</a>`
       : escapar(l.documento || "");
-    const classe = l.em_aberto ? "v-aberto" : (l.valor > 0 ? "v-pos" : "v-neg");
+    const classe = l.em_aberto ? (l.natureza === "Vencido" ? "v-vencido" : "v-aberto")
+                               : (l.valor > 0 ? "v-pos" : "v-pago");
     return `<tr>
-      <td class="${l.em_aberto ? "v-aberto" : ""}"><b>${escapar(l.natureza)}</b></td>
+      <td class="${classe}"><b>${escapar(l.natureza)}</b></td>
       <td class="desc" title="${escapar(l.observacao)}">${escapar(l.razao_social || "(sem nome)")}</td>
       <td class="desc">${escapar(l.categoria)}${l.analise && l.analise !== "DRE" ? ` <small class="selo neutro">${escapar(l.analise)}</small>` : ""}</td>
       <td class="desc">${escapar(l.obra)}</td>
@@ -270,9 +278,11 @@
       const dados = await r.json();
       if (!dados.ok) { corpo.innerHTML = `<p class="aviso erro">${escapar(dados.erro || "Não deu para carregar.")}</p>`; return; }
       resumo.innerHTML = `<b class="v-pos">+${moeda(dados.entradas)}</b> &nbsp;·&nbsp; `
-                       + `<b class="v-neg">${moeda(dados.saidas)}</b> &nbsp;·&nbsp; `
+                       + `<b class="v-pago">${moeda(dados.saidas)}</b> &nbsp;·&nbsp; `
                        + `líquido <b>${moeda(dados.liquido)}</b>`
-                       + (dados.a_pagar ? ` &nbsp;·&nbsp; <b class="v-aberto">${moeda(dados.a_pagar)} a pagar</b>` : "")
+                       + (dados.a_pagar ? (dados.linhas.some(l => l.natureza === "Vencido")
+                           ? ` &nbsp;·&nbsp; <b class="v-vencido">${moeda(dados.a_pagar)} vencido</b>`
+                           : ` &nbsp;·&nbsp; <b class="v-aberto">${moeda(dados.a_pagar)} a vencer</b>`) : "")
                        + ` &nbsp;·&nbsp; ${dados.quantos} lançamento(s)`;
       if (!dados.linhas.length) { corpo.innerHTML = '<p class="cartao-dica">Nada neste dia com os filtros atuais.</p>'; return; }
       corpo.innerHTML = `<table>

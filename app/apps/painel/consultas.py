@@ -1316,7 +1316,7 @@ def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
                 maior_saida = (dia, saiu)
 
     a_pagar = vencido = a_vencer = 0.0
-    quantos_a_pagar = 0
+    quantos_a_pagar = quantos_vencidos = quantos_a_vencer = 0
     maior_a_pagar = None
     if tipo in ("", "a_pagar"):
         condicoes, extras = _condicoes_do_calendario(
@@ -1339,8 +1339,10 @@ def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
             quantos_a_pagar += int(n or 0)
             if dia < hoje:
                 vencido += aberto
+                quantos_vencidos += int(n or 0)
             else:
                 a_vencer += aberto
+                quantos_a_vencer += int(n or 0)
             if aberto < 0 and (maior_a_pagar is None or aberto < maior_a_pagar[1]):
                 maior_a_pagar = (dia, aberto)
 
@@ -1352,6 +1354,7 @@ def calendario_do_mes(f: Filtros, ano: int, mes: int, *, tipo="", grupo="",
         "maior_entrada": maior_entrada, "maior_saida": maior_saida,
         "a_pagar": a_pagar, "a_pagar_vencido": vencido, "a_pagar_a_vencer": a_vencer,
         "quantos_a_pagar": quantos_a_pagar, "maior_a_pagar": maior_a_pagar,
+        "quantos_vencidos": quantos_vencidos, "quantos_a_vencer": quantos_a_vencer,
     }
 
 

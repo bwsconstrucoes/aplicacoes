@@ -2182,6 +2182,16 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## Calendário: as cores do dono — 24/09/2026
+
+*"Verde para recebimento, azul para pago, vermelho para vencido e laranja a
+vencer."* Vale na grade, nos números do alto, na janela do dia e nas
+legendas. O dia com conta vencida ganha borda vermelha (era laranja). O
+número único "A pagar no mês" virou dois: **Vencido no mês** (vermelho) e **A
+vencer no mês** (laranja, de hoje em diante), cada um com a contagem de
+títulos. As cores são só desta tela: no resto do painel vermelho continua
+sendo "valor negativo" e verde "positivo".
+
 ## DRE: despesas e retenções num clique; Calendário: setas de dia — 23/09/2026
 
 O dono: *"fazer isso [a janela das medições] para as despesas também, clicar
