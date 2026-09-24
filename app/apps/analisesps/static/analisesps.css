@@ -1842,22 +1842,51 @@ td.credor-grupos { margin: 0; }
    ========================================================================== */
 .rolagem-tabela { overflow-x: auto; }
 
-table.conciliacao td { vertical-align: middle; }
+/* ⚠️ TETO DE ALTURA NA LINHA. O historico do Bradesco vem com quebra de linha
+   dentro ("PAGTO ELETRON COBRANCA\nALPE FUNDO..."), e a observacao agora e um
+   campo de varias linhas: sem teto, uma linha do extrato empurra as outras
+   para fora da tela. Com ele, a tabela continua uma tabela. */
+table.conciliacao td {
+  vertical-align: middle; padding-top: 5px; padding-bottom: 5px;
+  max-height: 46px;
+}
+table.conciliacao tr.linha-extrato { height: 38px; }
 table.conciliacao .historico {
   max-width: 420px; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap;
 }
-table.conciliacao .entrada { color: var(--verde); font-weight: 600; }
-table.conciliacao .saida   { color: var(--vermelho); font-weight: 600; }
+/* ⚠️ `valor-entrada` E `valor-saida`, NAO `entrada` E `saida` — 24/09/2026.
+   A classe `.entrada` JA EXISTIA nesta folha, para a TELA DE LOGIN: ela tem
+   `min-height: 100vh` e fundo azul-escuro. Usada numa celula da tabela, cada
+   linha do extrato virou um bloco mais alto que a tela inteira, escuro.
+
+   O chat do PAINEL caiu nesta mesma armadilha no dia anterior e escreveu no
+   historico dele: *"a classe `entrada` ja existia no CSS, para a tela de
+   login (...) o quadradinho virou um bloco de 900 px de altura. As classes do
+   calendario levam o prefixo `cal-` por isso."* A licao estava paga, no mesmo
+   repositorio, e eu nao a li. Classe nova nesta folha leva prefixo. */
+table.conciliacao .valor-entrada { color: var(--verde); font-weight: 600; }
+table.conciliacao .valor-saida   { color: var(--vermelho); font-weight: 600; }
 table.conciliacao .saldo   { font-family: var(--fonte-dados); color: var(--tinta-suave); }
 
-/* A linha conciliada fica discreta: o que interessa numa conciliacao e o que
-   AINDA NAO foi conferido. Apagar o que ja esta resolvido e o que faz o
-   pendente saltar aos olhos. */
-tr.linha-extrato.conciliada { background: #F6F9F4; }
-tr.linha-extrato.conciliada td { color: var(--tinta-suave); }
-tr.linha-extrato.conciliada .entrada,
-tr.linha-extrato.conciliada .saida { font-weight: 500; opacity: .75; }
+/* ⚠️ AS CORES FORAM REFEITAS EM 24/09/2026. O dono viu a primeira versao e
+   disse: *"nao gostei das cores, ficou um cinza e tem uma parte escura e tem
+   um verdinho de conciliado, esta esquisito"*. A parte escura era o defeito
+   da classe `.entrada` (ver acima); o resto era excesso meu: fundo verde
+   chapado na linha inteira MAIS o texto todo cinza deixava metade da tabela
+   parecendo desligada.
+
+   Agora a linha conciliada tem so um TRACO VERDE na esquerda e o dinheiro um
+   tom mais claro. O fundo continua branco: o que precisa saltar e o que falta
+   conciliar, e isso se consegue deixando o resolvido discreto — nao pintado. */
+tr.linha-extrato.conciliada { background: var(--branco); }
+tr.linha-extrato.conciliada td:first-child {
+  box-shadow: inset 3px 0 0 var(--verde);
+}
+tr.linha-extrato.conciliada .historico,
+tr.linha-extrato.conciliada .saldo { color: var(--tinta-suave); }
+tr.linha-extrato.conciliada .valor-entrada,
+tr.linha-extrato.conciliada .valor-saida { font-weight: 500; }
 
 /* O tique: um alvo grande o suficiente para acertar sem mirar, inclusive no
    celular, porque e o gesto mais repetido da tela. */
@@ -1873,11 +1902,18 @@ tr.linha-extrato.conciliada .saida { font-weight: 500; opacity: .75; }
 }
 .tique:disabled { opacity: .5; cursor: wait; }
 
+/* ⚠️ A OBSERVACAO ACEITA QUEBRA DE LINHA (pedido do dono, 24/09/2026), e por
+   isso e um `textarea`. Ele nasce com a altura de UMA linha e cresce conforme
+   se escreve, ate 120px — um campo alto e vazio em cada linha do extrato
+   inchava a tabela sem motivo. */
 .anotacao {
   width: 100%; font-size: 12px; padding: 4px 6px;
   border: 1px solid transparent; border-radius: var(--raio-p);
   background: transparent; color: var(--tinta);
+  font-family: inherit; line-height: 1.35; resize: vertical;
+  min-height: 24px; max-height: 120px; overflow-y: auto; display: block;
 }
+.anotacao-lida { font-size: 12px; white-space: pre-wrap; }
 .anotacao:hover { border-color: var(--borda); }
 .anotacao:focus { border-color: var(--azul-claro); background: var(--branco); }
 .anotacao.gravando { opacity: .6; }
@@ -1886,10 +1922,14 @@ tr.linha-extrato.conciliada .saida { font-weight: 500; opacity: .75; }
 .anotacao.gravou { background: #E7F3E1; border-color: var(--verde); }
 
 /* A area de soltar o arquivo. */
+/* Na barra lateral, abaixo dos filtros — onde o dono pediu que ficasse. */
+.lateral-extrato { margin-top: 18px; padding-top: 14px;
+                   border-top: 1px solid var(--borda); }
 .solta-arquivo {
   border: 2px dashed var(--borda-forte); border-radius: var(--raio);
-  padding: 18px; text-align: center; cursor: pointer;
-  background: var(--papel); transition: background .12s, border-color .12s;
+  padding: 14px 10px; text-align: center; cursor: pointer;
+  background: var(--branco); font-size: 12.5px; line-height: 1.4;
+  transition: background .12s, border-color .12s;
 }
 .solta-arquivo:hover { border-color: var(--azul-claro); }
 .solta-arquivo.por-cima { border-color: var(--azul); background: #EEF4FF; }

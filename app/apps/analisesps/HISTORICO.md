@@ -6824,6 +6824,74 @@ nenhum OFX real passou por ela, e **nenhuma aba de verdade foi lida do Google**
 resto do módulo usa todo dia, mas o primeiro uso real é o teste que importa.
 
 ---
+
+### Octogésima oitava leva (24/09) — ⚠️ a classe de CSS que já tinha dono
+
+O dono abriu a Conciliação pela primeira vez:
+
+> *"Isso é bem estranho. Cada linha está ocupando um espaço absurdo — uma
+> única linha está dando mais do que toda a tela. (…) Não gostei também das
+> cores. Ficou um cinza e tem uma parte escura e tem um verdinho de
+> conciliado. Está esquisito."*
+
+**A causa foi uma classe de CSS.** As células de valor usavam
+`class="entrada"` e `class="saida"`. E `.entrada` **já existia** na folha de
+estilo do módulo, para a **TELA DE LOGIN**: `min-height: 100vh` e fundo
+azul-escuro. Cada linha do extrato virou um bloco mais alto que a tela, com um
+pedaço escuro dentro. A "parte escura" que ele viu era o fundo da tela de
+entrada, dentro de uma tabela.
+
+#### ⚠️ E A LIÇÃO JÁ ESTAVA PAGA, NO MESMO REPOSITÓRIO, NO DIA ANTERIOR
+
+O chat do **painel** caiu na **mesma classe** fazendo o calendário deles, e
+escreveu no histórico:
+
+> *"Uma armadilha que custou uma hora: a classe `entrada` já existia no CSS,
+> para a tela de login (ocupa a tela inteira, fundo azul-escuro). Usada num
+> valor do calendário, o quadradinho virou um bloco de 900 px de altura. As
+> classes do calendário levam o prefixo `cal-` por isso."*
+
+Eu não li. **Cinco áreas, cinco chats, e o que uma aprende só chega na outra
+se alguém for ler** — e "ler o histórico da área" quer dizer a minha, não a
+dos outros. Aqui custou uma tela entregue quebrada ao dono.
+
+**A regra, agora com teste:** classe nova nesta folha leva prefixo (`cal-`,
+`conciliacao`, `valor-`). Há um teste que lista as classes com dono e recusa
+que a Conciliação use qualquer uma delas fora dos componentes de reuso
+legítimo (`cartao`, `kpis`, `sps`, `filtro`).
+
+#### As outras três, no mesmo pedido
+
+1. **As cores.** Além do defeito acima, era excesso meu: fundo verde chapado
+   na linha inteira MAIS o texto todo cinza deixava metade da tabela parecendo
+   desligada. Agora a linha conciliada tem só um **traço verde na esquerda** e
+   o dinheiro num tom mais claro, com fundo branco. O que precisa saltar é o
+   que **falta** conciliar, e isso se consegue deixando o resolvido discreto —
+   não pintado.
+2. **A observação aceita quebra de linha** (*"permita a quebra de linha"*).
+   Virou um campo de várias linhas que nasce com a altura de uma e cresce
+   conforme se escreve, até um teto. **Enter agora quebra a linha**; quem
+   grava é sair do campo, ou Ctrl+Enter — se Enter gravasse, não haveria como
+   escrever a segunda linha.
+3. **O soltar o OFX foi para a barra lateral**, abaixo dos filtros (*"está a
+   ocupar a parte de cima da tela"*). Ele tem razão, e a razão vale como
+   regra: **trazer extrato é coisa de uma vez por semana; olhar o extrato é o
+   dia inteiro** — o que se faz o dia inteiro é que merece o topo. **A
+   RESPOSTA da conferência continua no meio da tela**: a barra lateral tem
+   menos de 300 px, e a tabela do que vai entrar ficaria ilegível ali.
+
+E a linha da tabela ganhou **teto de altura**: o histórico do Bradesco vem com
+quebra de linha dentro dele, e com a observação de várias linhas por cima,
+sem teto uma linha empurra as outras para fora da tela.
+
+**Verificado:** 22 testes de tela, incluindo o da colisão de classe, o da
+observação de várias linhas e o da posição do bloco de soltar arquivo.
+
+**NÃO verificado:** a tela continua sem ter sido aberta num navegador daqui —
+e é justamente por isso que este defeito chegou até ele. Uma tela nova deste
+módulo precisa ser vista antes de ser publicada, e eu não tenho como.
+
+---
 ---
 
 ## Regras que não se discutem

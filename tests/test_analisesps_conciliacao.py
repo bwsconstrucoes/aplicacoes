@@ -309,3 +309,109 @@ def test_o_cadastro_de_conta_tem_UMA_PORTA_so(app, monkeypatch):
     assert html.count('id="form-conta"') == 1
     assert "Cadastrar pelo extrato" not in html
     assert "não precisam ser" in html   # o recado de que o OFX preenche
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ A COLISÃO DE CLASSE DE CSS — 24/09/2026
+#
+# O dono abriu a tela e disse: *"cada linha está ocupando um espaço absurdo,
+# uma única linha está dando mais do que toda a tela (…) tem uma parte
+# escura"*.
+#
+# A causa: as células de valor usavam `class="entrada"` e `class="saida"`. E
+# `.entrada` JÁ EXISTIA nesta folha de estilo, para a TELA DE LOGIN — com
+# `min-height: 100vh` e fundo azul-escuro. Cada linha do extrato virou um
+# bloco mais alto que a tela.
+#
+# ⚠️ E ESSA LIÇÃO JÁ ESTAVA PAGA NO MESMO REPOSITÓRIO. O chat do painel caiu
+# na MESMA classe no dia anterior e escreveu no histórico dele: *"a classe
+# `entrada` já existia no CSS, para a tela de login (...) o quadradinho virou
+# um bloco de 900 px de altura. As classes do calendário levam o prefixo
+# `cal-` por isso."* Eu não li.
+#
+# Este teste existe para a próxima tela não repetir.
+# ---------------------------------------------------------------------------
+CLASSES_QUE_JA_TEM_DONO = {
+    # classe -> para que ela serve nesta folha, e por que colide
+    "entrada": "a TELA DE LOGIN (min-height: 100vh, fundo escuro)",
+    "recado": "as telas de recado (caixa centralizada de 560px)",
+    "marca": "o brasão da tela de login",
+    "kpis": "a faixa de números do topo",
+    "cartao": "o cartão branco das telas",
+    "filtro": "um bloco da barra de filtros",
+    "sps": "a tabela padrão do módulo",
+}
+
+
+def _classes_do_template(nome: str) -> set:
+    """Todas as classes usadas num template, uma a uma."""
+    import pathlib
+    import re
+    caminho = (pathlib.Path(web.__file__).parent / "templates" / nome)
+    html = caminho.read_text(encoding="utf-8")
+    achadas = set()
+    for bloco in re.findall(r'class="([^"]*)"', html):
+        # O Jinja entra no meio do atributo; o que sobra ainda serve.
+        for pedaco in re.sub(r"\{[{%].*?[%}]\}", " ", bloco).split():
+            achadas.add(pedaco)
+    return achadas
+
+
+def test_a_conciliacao_nao_usa_classe_de_CSS_de_outra_tela():
+    """⚠️ Uma classe com dono não é "estilo parecido": é o estilo DAQUELA
+    tela, inteiro, caindo em cima desta. Foi assim que cada linha do extrato
+    virou um bloco maior que a tela."""
+    usadas = _classes_do_template("analisesps_conciliacao.html")
+    invasoras = usadas & set(CLASSES_QUE_JA_TEM_DONO) - {
+        # Estas são reuso LEGÍTIMO: a tela usa o componente inteiro, como ele
+        # foi feito para ser usado.
+        "kpis", "cartao", "filtro", "sps", "marca", "recado",
+    }
+    assert not invasoras, (
+        "classe com dono usada na Conciliação: "
+        + ", ".join(f"{c} (é {CLASSES_QUE_JA_TEM_DONO[c]})"
+                    for c in sorted(invasoras)))
+
+
+def test_a_folha_de_estilo_nao_tem_regra_solta_para_entrada_e_saida():
+    """A correção foi renomear para `valor-entrada`/`valor-saida`. Se alguém
+    reintroduzir `.entrada` numa tabela, isto acusa."""
+    import pathlib
+    css = (pathlib.Path(web.__file__).parent / "static"
+           / "analisesps.css").read_text(encoding="utf-8")
+
+    assert "table.conciliacao .valor-entrada" in css
+    assert "table.conciliacao .entrada " not in css
+    assert "table.conciliacao .entrada{" not in css
+
+
+def test_a_observacao_aceita_quebra_de_linha(app_com_dados):
+    """Pedido do dono: *"na observação, permita a quebra de linha"*. Campo de
+    uma linha só corta o que ele escreve sem avisar."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert '<textarea class="anotacao"' in html
+    assert '<input class="anotacao"' not in html
+
+
+def test_o_ENTER_quebra_a_linha_em_vez_de_gravar(app_com_dados):
+    """Se Enter gravasse, não haveria como escrever a segunda linha."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    assert "ctrlKey" in html          # Ctrl+Enter é que grava
+    assert 'if (e.key === "Enter") campo.blur()' not in html
+
+
+def test_o_soltar_o_extrato_fica_na_BARRA_LATERAL(app_com_dados):
+    """⚠️ Ele estava no topo do conteúdo e o dono pediu para sair: *"queria que
+    ficasse no sidebar, abaixo dos filtros; está a ocupar a parte de cima da
+    tela"*. Trazer extrato é semanal; olhar o extrato é o dia inteiro."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    lateral = html.index('class="lateral-extrato"')
+    conteudo = html.index("<h2>Conciliação")
+    assert lateral < conteudo, "o bloco de soltar o arquivo saiu da barra lateral"
+    # E a RESPOSTA da conferência fica no meio da tela, onde há largura.
+    assert html.index('id="saida-extrato"') > conteudo

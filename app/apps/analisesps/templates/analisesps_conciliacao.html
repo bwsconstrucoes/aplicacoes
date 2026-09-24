@@ -92,6 +92,30 @@
 
   <p style="margin:12px 2px"><button class="btn" type="submit">Aplicar</button></p>
 </form>
+
+{% if pode_operar %}
+{# ---------------------------------------------------------------------------
+   O EXTRATO ENTRA POR AQUI — na barra lateral, abaixo dos filtros.
+
+   ⚠️ ELE ESTAVA NO TOPO DA TELA, e o dono pediu para sair: *"o soltar o
+   arquivo OFX, eu queria que ele ficasse no sidebar, abaixo dos filtros.
+   Está a ocupar a parte de cima da tela."* Ele tem razão: trazer extrato é
+   coisa de uma vez por semana; olhar o extrato é o dia inteiro. O que se faz
+   o dia inteiro é que merece o topo.
+--------------------------------------------------------------------------- #}
+<div class="lateral-extrato" id="area-extrato">
+  <h2 style="font-size:13.5px; margin:0 2px 8px">Trazer extrato</h2>
+  <div class="solta-arquivo" id="solta-extrato">
+    <p><b>Solte o OFX aqui</b><br>
+      <label class="link-btn" for="arq-extrato">ou escolha no computador</label></p>
+    <input type="file" id="arq-extrato" accept=".ofx,.OFX" hidden>
+  </div>
+  <p class="cartao-dica" style="margin:8px 2px 0">
+    Ele descobre a conta sozinho e <b>diz o que vai fazer antes de gravar</b>.
+    Mandar o mesmo extrato duas vezes não duplica nada.
+  </p>
+</div>
+{% endif %}
 {% endif %}
 {% endblock %}
 
@@ -123,6 +147,10 @@
 
 <h2>Conciliação <small>{{ conta.nome if conta else '' }}</small></h2>
 
+{# O gesto de soltar o arquivo mora na barra lateral; a RESPOSTA aparece aqui,
+   onde há largura para a tabela do que vai entrar ser lida. #}
+<div id="saida-extrato"></div>
+
 <div class="kpis">
   <div class="kpi estatico">
     <div class="kpi-rotulo">Saldo da conta</div>
@@ -147,31 +175,6 @@
       {{ (resumo.saidas or 0)|moeda }} saiu</div>
   </div>
 </div>
-
-{% if pode_operar %}
-{# ---------------------------------------------------------------------------
-   O EXTRATO ENTRA AQUI — e o sistema diz o que vai fazer ANTES de fazer.
-   Pedido do dono: *"eu quero jogar um OFX e o sistema me dizer: ó, esse OFX
-   aqui, todos os lançamentos já estavam registrados desse período."*
---------------------------------------------------------------------------- #}
-<div class="cartao" id="area-extrato">
-  <div class="cartao-cab">
-    <h3>Trazer extrato</h3>
-    <small>arquivo .OFX do banco</small>
-  </div>
-  <div class="solta-arquivo" id="solta-extrato">
-    <p><b>Solte o arquivo OFX aqui</b>, ou <label class="link-btn"
-        for="arq-extrato">escolha no computador</label>.</p>
-    <input type="file" id="arq-extrato" accept=".ofx,.OFX" hidden>
-    <p class="cartao-dica" style="margin:6px 0 0">
-      O sistema descobre sozinho de qual conta é o arquivo, e <b>diz o que vai
-      acontecer antes de gravar</b>: quantos lançamentos já estavam aqui e
-      quantos são novos. Mandar o mesmo extrato duas vezes não duplica nada.
-    </p>
-  </div>
-  <div id="saida-extrato"></div>
-</div>
-{% endif %}
 
 <div class="cartao">
   <div class="cartao-cab">
@@ -225,8 +228,8 @@
               <span class="etiqueta" title="veio da planilha antiga">planilha</span>
             {%- endif %}</td>
           <td>{{ l.documento }}</td>
-          <td class="direita entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
-          <td class="direita saida">{{ (-l.valor)|moeda if l.valor < 0 else '' }}</td>
+          <td class="direita valor-entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
+          <td class="direita valor-saida">{{ (-l.valor)|moeda if l.valor < 0 else '' }}</td>
           <td class="direita saldo">{{ l.saldo|moeda }}</td>
           <td>
             {% if pode_operar %}
@@ -239,11 +242,15 @@
             {% endif %}
           </td>
           <td>
+            {# ⚠️ CAMPO DE VÁRIAS LINHAS, pedido dele em 24/09/2026: *"na
+               observação, permita a quebra de linha"*. Ele cresce sozinho
+               conforme se escreve (está no script), e Enter quebra a linha —
+               quem grava é sair do campo, ou Ctrl+Enter. #}
             {% if pode_operar %}
-              <input class="anotacao" data-id="{{ l.id }}"
-                     value="{{ l.observacao }}" placeholder="anotar…">
+              <textarea class="anotacao" data-id="{{ l.id }}" rows="1"
+                        placeholder="anotar…">{{ l.observacao }}</textarea>
             {% else %}
-              {{ l.observacao }}
+              <span class="anotacao-lida">{{ l.observacao }}</span>
             {% endif %}
           </td>
         </tr>
@@ -470,8 +477,18 @@ document.querySelectorAll(".anotacao").forEach(campo => {
     campo.classList.add("gravou");
     setTimeout(() => campo.classList.remove("gravou"), 1200);
   });
-  // Enter grava sem esperar sair do campo.
-  campo.addEventListener("keydown", e => { if (e.key === "Enter") campo.blur(); });
+  // ⚠️ ENTER QUEBRA A LINHA, e não grava — foi o pedido. Quem grava é sair do
+  // campo (ou Ctrl+Enter, para quem não quer tirar a mão do teclado).
+  campo.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); campo.blur(); }
+  });
+  // O campo cresce com o texto, em vez de esconder o que foi escrito.
+  const crescer = () => {
+    campo.style.height = "auto";
+    campo.style.height = Math.min(campo.scrollHeight, 120) + "px";
+  };
+  campo.addEventListener("input", crescer);
+  crescer();
 });
 
 // --- o extrato: soltar, conferir, e só então gravar -------------------------
