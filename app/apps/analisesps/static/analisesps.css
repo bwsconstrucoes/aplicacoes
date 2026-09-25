@@ -630,14 +630,44 @@ a.kpi { display: block; }
 /* A MARCA DE "JA ESTA NO LOTE" — pequena, colada no numero da SP.
    Azul: e o SEU lote, so lembrete. Ambar: e o lote de OUTRA PESSOA, e ai e
    aviso — separar de novo o que alguem ja separou leva a pagar duas vezes.
-   Letra menor que os outros selos de proposito: ela acompanha o numero, nao
-   compete com ele. */
+
+   ⚠️ ELA NAO PODE ENGORDAR A LINHA DA TABELA. Reclamacao do dono em
+   25/09/2026: "nao gostei da tag lote, ela aumenta a linha da tabela de
+   solicitacoes". E aumentava por DOIS motivos somados, e os dois estao
+   tratados aqui:
+
+   1. A celula do numero era a UNICA da tabela que podia quebrar linha (todas
+      as outras sao `.cortar`, com nowrap). Numa tela cheia de colunas a tag
+      caia embaixo do numero e a linha dobrava de altura. Dai o `nowrap` logo
+      abaixo — numero e tag ficam SEMPRE lado a lado.
+   2. A altura do selo vinha do `line-height: 1.45` herdado do corpo, que
+      sobre 9.5px da quase 14px e mais o espaco de folga. Com a altura
+      TRAVADA em 14px ela cabe na linha de texto de 13px da tabela (que tem
+      caixa de ~18.8px) e nao empurra nada.
+
+   Sem `text-transform` nem `letter-spacing` de proposito: "lote" em minuscula
+   ocupa um terco menos de largura, e largura na celula do numero e
+   exatamente o que fazia a quebra. */
 .selo.no-lote, .selo.no-lote-de-outro {
-  font-size: 9.5px; padding: 0 5px; margin-left: 5px;
-  vertical-align: middle; letter-spacing: .3px; text-transform: uppercase;
+  font-size: 9.5px; line-height: 14px; height: 14px; padding: 0 5px;
+  margin-left: 5px; vertical-align: middle;
 }
 .selo.no-lote          { background: #E7F0FF; color: var(--sl-azul); }
 .selo.no-lote-de-outro { background: #FFF0DB; color: #A35F00; }
+/* Ver o motivo 1 acima: e esta regra que impede a linha de dobrar. */
+.sps td.id { white-space: nowrap; }
+
+/* O PONTO, para quem escondeu a coluna do numero. Na primeira celula cabem
+   34px: a caixa de marcar (15px) mais um ponto de 7px e ainda sobra. A palavra
+   ali quebraria a linha, que e exatamente o que se quer evitar. A informacao
+   nao se perde — ela esta no balaozinho. */
+.ponto-lote {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-left: 4px; vertical-align: middle;
+}
+.ponto-lote.no-lote          { background: var(--sl-azul); }
+.ponto-lote.no-lote-de-outro { background: #C87A00; }
+.sps .sel { white-space: nowrap; }
 
 /* O NUMERO DA SP NAO E PINTADO. O Streamlit tingia o ID de vermelho ou
    laranja conforme o alerta, e na conversao isso somou com o vencimento

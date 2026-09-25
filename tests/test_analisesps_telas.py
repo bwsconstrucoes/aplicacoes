@@ -4556,7 +4556,10 @@ def test_a_marca_do_lote_NAO_aparece_na_tela_do_proprio_lote(app, monkeypatch):
 
 def test_quem_escondeu_a_coluna_ID_continua_vendo_a_marca(app, monkeypatch):
     """A marca mora colada no número da SP. Esconder a coluna ID é uma escolha
-    de tabela — não pode apagar um aviso de pagamento em duplicidade."""
+    de tabela — não pode apagar um aviso de pagamento em duplicidade.
+
+    Ali ela vira um PONTO, não a palavra: a primeira célula tem 34px, e a
+    palavra quebraria a linha embaixo da caixa de marcar."""
     from app.apps.analisesps import lote, tabela
 
     monkeypatch.setattr(lote, "onde_no_lote", lambda ids, pessoa: {
@@ -4566,7 +4569,34 @@ def test_quem_escondeu_a_coluna_ID_continua_vendo_a_marca(app, monkeypatch):
     html = como(app, SENHA_OPERADOR).get(
         "/analisesps/solicitacoes").get_data(as_text=True)
 
-    assert "selo no-lote-de-outro" in html
+    assert "ponto-lote no-lote-de-outro" in html
+    assert "Já está no lote de Ana Paula" in html
+    assert '>lote</span>' not in html, (
+        "a palavra na célula de 34px quebraria a linha da tabela")
+
+
+def test_a_marca_do_lote_NAO_pode_engordar_a_linha_da_tabela():
+    """⚠️ RECLAMAÇÃO DO DONO EM 25/09/2026: *"não gostei da tag lote. Ela
+    aumenta a linha da tabela de solicitações."*
+
+    Aumentava por dois motivos somados:
+
+    1. A célula do número era a ÚNICA da tabela que podia quebrar linha — todas
+       as outras são `.cortar`, com nowrap. Numa tela cheia de colunas a tag
+       caía embaixo do número e a linha dobrava de altura.
+    2. A altura do selo vinha do `line-height: 1.45` herdado do corpo, que
+       sobre 9,5px dá quase 14px MAIS a folga da entrelinha.
+    """
+    css = Path("app/apps/analisesps/static/analisesps.css").read_text(
+        encoding="utf-8")
+    assert ".sps td.id { white-space: nowrap; }" in css, (
+        "a célula do número voltou a poder quebrar linha")
+    marca = css[css.index(".selo.no-lote, .selo.no-lote-de-outro {"):]
+    marca = marca[:marca.index("}")]
+    assert "line-height: 14px" in marca and "height: 14px" in marca, (
+        "a altura do selo voltou a depender da entrelinha herdada")
+    assert "text-transform" not in marca, (
+        "maiúscula alarga a tag, e largura na célula do número é o que quebra")
 
 
 def test_o_codigo_de_barras_do_boleto_tem_teto_de_largura():

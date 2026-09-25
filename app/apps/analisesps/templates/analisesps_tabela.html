@@ -25,12 +25,22 @@
    DUAS CORES, e a diferença é o que importa: azul é o SEU lote — lembrete,
    nada de errado. Âmbar é o lote de OUTRA PESSOA, e aí é aviso: separar de
    novo o que alguém já separou é o caminho para pagar duas vezes. #}
-{% macro marca_lote(no) -%}
+{% macro marca_lote(no, compacto=false) -%}
   {%- if no -%}
-    {%- if no.minha -%}
-      <span class="selo no-lote" title="Já está no seu lote{% if no.grupos %} — {{ no.grupos|join(', ') }}{% endif %}{% if no.outros %}; e também no lote de {{ no.outros|join(', ') }}{% endif %}">lote</span>
+    {%- set classe = 'no-lote' if no.minha else 'no-lote-de-outro' -%}
+    {%- set dica = ('Já está no seu lote'
+                    + (' — ' ~ no.grupos|join(', ') if no.grupos else '')
+                    + ('; e também no lote de ' ~ no.outros|join(', ') if no.outros else ''))
+                   if no.minha
+                   else ('Já está no lote de ' ~ no.outros|join(', ')) -%}
+    {#- COMPACTO É UM PONTO, NÃO A PALAVRA: ele só é usado na primeira célula,
+        que tem 34px de largura. A palavra ali quebraria a linha embaixo da
+        caixa de marcar e a tabela engordaria — que é justamente o que o dono
+        reclamou em 25/09/2026. O balãozinho diz a mesma coisa. -#}
+    {%- if compacto -%}
+      <span class="ponto-lote {{ classe }}" title="{{ dica }}"></span>
     {%- else -%}
-      <span class="selo no-lote-de-outro" title="Já está no lote de {{ no.outros|join(', ') }}">lote</span>
+      <span class="selo {{ classe }}" title="{{ dica }}">lote</span>
     {%- endif -%}
   {%- endif -%}
 {%- endmacro %}
@@ -87,7 +97,7 @@
                       marcado POR CONTA — que é o número que decide se a
                       remessa cabe no banco. Pedido do dono em 11/09/2026. #}
                    data-conta="{{ l.conta or '' }}">
-            {% if not tem_coluna_id %}{{ marca_lote(l.no_lote) }}{% endif %}
+            {% if not tem_coluna_id %}{{ marca_lote(l.no_lote, true) }}{% endif %}
           </td>
 
           {% for c in colunas %}

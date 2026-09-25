@@ -7901,6 +7901,40 @@ dos testes vermelhos.
 **NÃO verificado:** nada num navegador, e o banco de produção.
 
 ---
+
+### Centésima segunda leva (25/09) — a tag de lote engordava a linha
+
+> *"Uma coisa não gostei da tag lote. Ela aumenta a linha da tabela de
+> solicitações."*
+
+Ele está certo, e a causa eram DUAS coisas somadas:
+
+1. **A célula do número era a única da tabela que podia quebrar linha.** Todas
+   as outras são `.cortar`, com `nowrap` e corte com "…". Numa tela cheia de
+   colunas, a tag não caberia ao lado do número e caía embaixo dele — a linha
+   dobrava de altura. Agora a célula do número é `nowrap`: número e tag ficam
+   sempre lado a lado, e quem aperta é a coluna, não a altura.
+2. **A altura do selo vinha da entrelinha herdada** (`line-height: 1.45` do
+   corpo), que sobre 9,5px dá quase 14px mais a folga. Travada em 14px, ela
+   cabe na linha de 13px da tabela (caixa de ~18,8px) e não empurra nada.
+
+Tirei também o MAIÚSCULO e o espaçamento entre letras: "lote" em minúscula
+ocupa um terço menos de largura — e largura na célula do número era exatamente
+o que causava a quebra.
+
+**E o caso que ia repetir o defeito:** quem esconde a coluna do número recebia
+a tag na primeira célula, que tem 34px. A palavra ali quebra embaixo da caixa
+de marcar. Lá ela virou um **ponto colorido** (azul/âmbar, mesma leitura), com
+o mesmo balãozinho — a informação não se perde.
+
+**Verificado:** os testes da tela, com uma guarda nova que falha se a célula
+do número voltar a poder quebrar ou se a altura do selo voltar a depender da
+entrelinha.
+
+**NÃO verificado:** nada num navegador — a altura da linha na tela de 34"
+dele é o único jeito de fechar isso.
+
+---
 ---
 
 ## Regras que não se discutem
