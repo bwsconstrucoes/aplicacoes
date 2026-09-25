@@ -170,6 +170,21 @@ def reconhecer(descricao: str, lista: list = None) -> dict | None:
 # ---------------------------------------------------------------------------
 # O QUE SERIA MANDADO — conferido ANTES de falar com o OMIE
 # ---------------------------------------------------------------------------
+# O teto que o OMIE impôs na prática, em 21/09/2026: oito tentativas repetidas
+# até descobrir que `numero_documento` acima de 20 caracteres é recusado.
+#
+# ⚠️ O QUE EU NÃO SEI, E DIGO EM VEZ DE CHUTAR: qual é o teto documentado do
+# `codigo_lancamento_integracao`. O dono perguntou em 25/09/2026 e a
+# documentação do OMIE não é alcançável do ambiente onde isto foi escrito (a
+# rede bloqueia o domínio). Então este código trata os DOIS campos pelo teto
+# que se conhece — o de 20 —, que é o lado seguro: se o teto de verdade for
+# maior, nada se perde; se for 20, já está respeitado.
+#
+# Na prática sobra muito espaço: "CONC" + o número da linha + "D" dá 12 ou 13
+# caracteres com os números de hoje, e o teste trava isso.
+MAX_CODIGO = 20
+
+
 def _codigo_de_integracao(linha_id: int) -> str:
     """A identidade do lançamento no OMIE, tirada da linha do extrato.
 
@@ -178,10 +193,30 @@ def _codigo_de_integracao(linha_id: int) -> str:
     conferência feita só deste lado não sobrevive a duas pessoas clicando ao
     mesmo tempo; a recusa dele sobrevive.
 
-    ⚠️ MÁXIMO 20 CARACTERES no `numero_documento` — o OMIE recusa acima disso,
-    e essa lição custou oito tentativas repetidas em 21/09/2026.
+    ⚠️ O "D" DA SEGUNDA PONTA CABE DENTRO DO TETO, e é por isso que a conta é
+    feita com um caractere a menos: a transferência manda dois títulos, e o da
+    entrada é este código mais um "D". Se o código estourasse só na segunda
+    ponta, a transferência ficaria pela metade — o pior estado possível aqui.
     """
     return f"CONC{int(linha_id)}"
+
+
+def _fornecedor_de(conta: dict, tipo: dict):
+    """Quem é o fornecedor/cliente deste lançamento no OMIE.
+
+    ⚠️ A CONTA MANDA; o tipo é reserva. Quem cobra a tarifa é o banco da conta
+    — a do BD 50024 é do Bradesco, a da Sicredi é da Sicredi. Guardar isso no
+    tipo obrigaria a um tipo por banco, todos com as mesmas palavras.
+
+    O do tipo continua valendo quando a conta não tem: assim nada do que já
+    estava configurado parou de funcionar quando isto mudou, e um tipo cobrado
+    por um terceiro (não pelo banco) continua tendo onde dizer isso.
+    """
+    da_conta = (conta or {}).get("omie_fornecedor")
+    if da_conta:
+        return int(da_conta)
+    do_tipo = (tipo or {}).get("codigo_cliente")
+    return int(do_tipo) if do_tipo else None
 
 
 def planejar(linhas: list, conta: dict, lista_tipos: list = None,
@@ -222,11 +257,31 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
                       "Cadastre um tipo com uma palavra que apareça nele")
         elif not str(tipo.get("codigo_categoria") or "").strip():
             motivo = f"o tipo \"{tipo['nome']}\" está sem categoria do OMIE"
-        elif not tipo.get("codigo_cliente"):
-            motivo = (f"o tipo \"{tipo['nome']}\" está sem o fornecedor/cliente "
-                      "do OMIE")
+        elif not _fornecedor_de(conta, tipo):
+            # ⚠️ O FORNECEDOR VEM DA CONTA, e o do tipo é só reserva.
+            #
+            # Pedido do dono em 25/09/2026: *"o código fornecedor tem que estar
+            # atrelado à conta bancária"*. E ele tem razão — quem cobra a
+            # tarifa é o banco DESTA conta. No tipo, seria preciso um "Tarifa
+            # Bradesco", um "Tarifa Sicredi" e um "Tarifa BB", todos repetindo
+            # as mesmas palavras do histórico e brigando entre si na hora de
+            # reconhecer o lançamento.
+            #
+            # A frase diz onde resolver, e não só o que falta: quem lê isto
+            # está com a tela aberta e precisa saber para onde ir.
+            motivo = (f"a conta \"{conta.get('nome', '?')}\" está sem o "
+                      "fornecedor do OMIE — é quem cobra a tarifa. Abra "
+                      "\"Contas\", escolha o banco no campo "
+                      "\"Fornecedor no OMIE\" e grave")
         elif not linha.get("valor"):
             motivo = "o valor é zero"
+        elif len(_codigo_de_integracao(linha["id"])) + 1 > MAX_CODIGO:
+            # Guarda que nunca deve disparar: o número da linha teria de passar
+            # de quinze dígitos. Existe para que, se um dia disparar, ela vire
+            # uma linha recusada com motivo em vez de um erro do OMIE no meio
+            # do lote — e, na transferência, em vez de meia transferência.
+            motivo = ("o número interno desta linha ficou grande demais para o "
+                      "código de integração do OMIE. Me avise, é defeito meu")
 
         if motivo:
             nao_vai.append({"id": linha.get("id"), "motivo": motivo,
@@ -268,6 +323,9 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
             "destino_id": (destino or {}).get("id"),
             "destino_nome": (destino or {}).get("nome", ""),
             "destino_conta_corrente": (destino or {}).get("omie_conta_corrente"),
+            # A ponta que RECEBE é do banco de destino — se ele tiver
+            # fornecedor próprio, é o dele que vale naquele título.
+            "destino_fornecedor": (destino or {}).get("omie_fornecedor"),
             # ⚠️ O SENTIDO VEM DO SINAL, não de configuração: negativo é conta
             # a pagar, positivo é conta a receber. Um estorno de tarifa entra
             # sozinho do lado certo, e não há campo a mais para errar.
@@ -277,7 +335,7 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
             "descricao": (linha.get("descricao") or "").strip(),
             "documento": (linha.get("documento") or "").strip(),
             "codigo_categoria": str(tipo["codigo_categoria"]).strip(),
-            "codigo_cliente": int(tipo["codigo_cliente"]),
+            "codigo_cliente": int(_fornecedor_de(conta, tipo)),
             "cod_departamento": str(tipo.get("cod_departamento") or "").strip(),
             "id_conta_corrente": int(conta["omie_conta_corrente"]),
             "codigo_integracao": _codigo_de_integracao(linha["id"]),
@@ -502,6 +560,10 @@ def _outra_ponta(cli, item: dict, quem: str):
                    id_conta_corrente=int(item["destino_conta_corrente"]),
                    codigo_integracao=item["codigo_integracao"] + "D",
                    descricao=f"{item['descricao']} (entrada da transferência)")
+    # O título que ENTRA é do banco de destino. Quando ele tem fornecedor
+    # próprio, é o dele — senão fica o da origem, que é melhor que nenhum.
+    if item.get("destino_fornecedor"):
+        entrada["codigo_cliente"] = int(item["destino_fornecedor"])
     try:
         resposta = cli._call(url, acao, montar_inclusao(entrada))
         codigo = _numero_do_titulo(resposta)
@@ -589,11 +651,20 @@ def listas_do_omie() -> dict:
     """
     from . import aportes_de_para as dp
 
-    saida = {"contas": [], "categorias": [], "obras": [], "erro": ""}
+    saida = {"contas": [], "categorias": [], "obras": [], "fornecedores": [],
+             "erro": ""}
     try:
         saida["contas"] = dp.contas_do_omie()
     except Exception as e:  # noqa: BLE001 — a tela diz, e segue
         saida["erro"] = str(e)
+    try:
+        # Os BANCOS, para o campo de fornecedor da conta. A lista inteira de
+        # fornecedores tem milhares de linhas e não cabe num `select`; quem se
+        # cadastra como cobrador de tarifa é banco, então é por banco que se
+        # procura. Quem não achar digita o código, como antes.
+        saida["fornecedores"] = bancos_do_omie()
+    except Exception:  # noqa: BLE001 — a tela abre sem a lista
+        pass
     try:
         saida["obras"] = dp.obras()
     except Exception:  # noqa: BLE001
@@ -627,3 +698,40 @@ def categorias_do_omie(busca: str = "", limite: int = 400) -> list:
              "inativa": str(l[2]).upper().startswith("S"),
              "transferencia": str(l[3]).upper().startswith("S")}
             for l in linhas]
+
+
+def bancos_do_omie(busca: str = "", limite: int = 300) -> list:
+    """Cadastros do OMIE que parecem ser bancos, para o campo da conta.
+
+    ⚠️ POR QUE FILTRAR, E NÃO TRAZER TODOS. O espelho tem milhares de
+    fornecedores — a lista inteira não cabe num campo de escolha, e rolar
+    milhares de linhas para achar "BRADESCO" é pior do que digitar o código.
+    Quem cobra tarifa bancária é banco, e é por banco que se procura aqui.
+
+    A busca livre continua valendo: digitando qualquer coisa, procura em tudo.
+    Assim um cobrador que não seja banco ainda é alcançável.
+    """
+    from .aportes_de_para import _consultar
+
+    termo = str(busca or "").strip().lower()
+    if termo:
+        linhas = _consultar(
+            "SELECT codigo, COALESCE(razao_social, ''), COALESCE(cnpj_cpf, '') "
+            "  FROM painel.clientes "
+            " WHERE LOWER(COALESCE(razao_social, '')) LIKE ? "
+            "    OR COALESCE(cnpj_cpf, '') LIKE ? "
+            " ORDER BY razao_social LIMIT ?",
+            (f"%{termo}%", f"%{termo}%", int(limite)))
+    else:
+        # As palavras que aparecem na razão social de banco. Não é lista de
+        # bancos — é o que basta para o campo nascer útil.
+        curinga = ("%banco%", "%bradesco%", "%itau%", "%itaú%", "%santander%",
+                   "%sicredi%", "%caixa%", "%brasil%", "%safra%", "%inter%",
+                   "%sicoob%", "%btg%", "%nubank%", "%c6%", "%daycoval%")
+        onde = " OR ".join(["LOWER(COALESCE(razao_social, '')) LIKE ?"] * len(curinga))
+        linhas = _consultar(
+            "SELECT codigo, COALESCE(razao_social, ''), COALESCE(cnpj_cpf, '') "
+            f"  FROM painel.clientes WHERE {onde} "
+            " ORDER BY razao_social LIMIT ?",
+            curinga + (int(limite),))
+    return [{"codigo": l[0], "nome": l[1], "documento": l[2]} for l in linhas]

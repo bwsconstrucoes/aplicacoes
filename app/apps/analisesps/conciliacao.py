@@ -79,6 +79,11 @@ def contas(so_ativas: bool = True) -> list[dict]:
              else ", 0 AS saldo_inicial, NULL AS saldo_inicial_em")
     extra += (", omie_conta_corrente" if tem_omie
               else ", NULL AS omie_conta_corrente")
+    # ⚠️ O FORNECEDOR DO OMIE É DA MIGRAÇÃO 025, e vale a mesma regra: o código
+    # sobe antes de o botão ser apertado, então a coluna pode ainda não existir.
+    tem_fornecedor = tem_coluna("conciliacao_conta", "omie_fornecedor")
+    extra += (", omie_fornecedor" if tem_fornecedor
+              else ", NULL AS omie_fornecedor")
     linhas = consultar(
         "SELECT id, nome, banco, agencia, numero, ofx_bankid, ofx_acctid, "
         f"       aba_planilha, ativa, ordem, observacao{extra} "
@@ -86,7 +91,8 @@ def contas(so_ativas: bool = True) -> list[dict]:
         " ORDER BY ordem, lower(nome)")
     nomes = ["id", "nome", "banco", "agencia", "numero", "ofx_bankid",
              "ofx_acctid", "aba_planilha", "ativa", "ordem", "observacao",
-             "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente"]
+             "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente",
+             "omie_fornecedor"]
     return [dict(zip(nomes, linha)) for linha in linhas]
 
 
@@ -116,6 +122,11 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
         str(dados.get("saldo_inicial_em") or "").strip())
     bruto_omie = re.sub(r"\D", "", str(dados.get("omie_conta_corrente") or ""))
     campos["omie_conta_corrente"] = int(bruto_omie) if bruto_omie else None
+    # ⚠️ QUEM COBRA A TARIFA É O BANCO DESTA CONTA. Por isso o fornecedor do
+    # OMIE mora aqui, e não no tipo de movimento — pedido do dono em
+    # 25/09/2026, depois de ver a tarifa do BD 50024 ser recusada.
+    bruto_forn = re.sub(r"\D", "", str(dados.get("omie_fornecedor") or ""))
+    campos["omie_fornecedor"] = int(bruto_forn) if bruto_forn else None
     conta_id = dados.get("id")
     from .db import tem_coluna
     with conexao() as con:
@@ -128,6 +139,9 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
             if tem_coluna("conciliacao_conta", "omie_conta_corrente"):
                 saldo_sql += ", omie_conta_corrente=?"
                 extras += (campos["omie_conta_corrente"],)
+            if tem_coluna("conciliacao_conta", "omie_fornecedor"):
+                saldo_sql += ", omie_fornecedor=?"
+                extras += (campos["omie_fornecedor"],)
             con.execute(
                 "UPDATE analisesps.conciliacao_conta SET nome=?, banco=?, "
                 "       agencia=?, numero=?, ofx_bankid=?, ofx_acctid=?, "
@@ -153,6 +167,12 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
             colunas_saldo += ", omie_conta_corrente"
             marcas_saldo += ", ?"
             extras += (campos["omie_conta_corrente"],)
+        # ⚠️ TAMBÉM NA CRIAÇÃO, e não só na alteração — foi o defeito do saldo
+        # inicial, que aceitava o número na tela e não gravava. Uma vez basta.
+        if tem_coluna("conciliacao_conta", "omie_fornecedor"):
+            colunas_saldo += ", omie_fornecedor"
+            marcas_saldo += ", ?"
+            extras += (campos["omie_fornecedor"],)
         cur = con.execute(
             "INSERT INTO analisesps.conciliacao_conta "
             "  (nome, banco, agencia, numero, ofx_bankid, ofx_acctid, "

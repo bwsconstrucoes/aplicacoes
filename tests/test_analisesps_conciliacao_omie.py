@@ -120,10 +120,59 @@ def test_tipo_sem_categoria_e_recusado_com_o_nome_do_tipo():
     assert "categoria" in plano["nao_vai"][0]["motivo"]
 
 
-def test_tipo_sem_fornecedor_e_recusado():
-    capengas = [dict(TIPOS[0], codigo_cliente=None)]
-    plano = co.planejar([linha()], CONTA, capengas)
-    assert "fornecedor" in plano["nao_vai"][0]["motivo"]
+# ---------------------------------------------------------------------------
+# O FORNECEDOR DO OMIE MORA NA CONTA — 25/09/2026
+#
+# *"0 de 1 linha(s) podem ser lançadas na conta BD 50024 (…) o tipo 'Tarifa
+# Bancária' está sem o fornecedor/cliente do OMIE. O código fornecedor tem que
+# estar atrelado à conta bancária."*
+#
+# Ele tem razão: quem cobra a tarifa é o banco DAQUELA conta. No tipo, seria
+# preciso um "Tarifa Bradesco", um "Tarifa Sicredi" e um "Tarifa BB", todos
+# repetindo as mesmas palavras do histórico e brigando entre si na hora de
+# reconhecer o lançamento.
+# ---------------------------------------------------------------------------
+def test_o_fornecedor_vem_da_CONTA_e_nao_do_tipo():
+    conta = dict(CONTA, omie_fornecedor=7777)
+    sem_forn = [dict(TIPOS[0], codigo_cliente=None)]
+    plano = co.planejar([linha()], conta, sem_forn)
+    assert plano["nao_vai"] == [], plano["nao_vai"]
+    assert plano["vai"][0]["codigo_cliente"] == 7777
+
+
+def test_o_fornecedor_da_conta_GANHA_do_que_estiver_no_tipo():
+    """Senão o dono configuraria a conta, veria o tipo antigo continuar
+    mandando, e concluiria que o campo novo não faz nada."""
+    conta = dict(CONTA, omie_fornecedor=7777)
+    plano = co.planejar([linha()], conta, TIPOS)     # o tipo tem 111
+    assert plano["vai"][0]["codigo_cliente"] == 7777
+
+
+def test_sem_fornecedor_na_conta_vale_o_do_TIPO():
+    """A reserva existe para nada que já estava configurado parar de funcionar
+    quando isto mudou — e para um cobrador que não seja o banco."""
+    plano = co.planejar([linha()], CONTA, TIPOS)     # a conta não tem
+    assert plano["vai"][0]["codigo_cliente"] == 111
+
+
+def test_sem_fornecedor_em_LUGAR_NENHUM_a_recusa_manda_para_a_conta():
+    """⚠️ ESTA FRASE É O CONSERTO DO QUE ELE VIU. A antiga mandava cadastrar no
+    TIPO, que é o lugar errado — e ele teria de criar um tipo por banco."""
+    sem_forn = [dict(TIPOS[0], codigo_cliente=None)]
+    plano = co.planejar([linha()], CONTA, sem_forn)
+    motivo = plano["nao_vai"][0]["motivo"]
+    assert "conta" in motivo and "BD 7011" in motivo
+    assert "Contas" in motivo, "a frase tem de dizer ONDE resolver"
+    assert "tipo" not in motivo.lower(), (
+        "a recusa não pode mais mandar cadastrar o fornecedor no tipo")
+
+
+def test_zero_nao_conta_como_fornecedor():
+    """Campo vazio no banco vira 0 ou None conforme o caminho; nenhum dos dois
+    é um cadastro do OMIE, e lançar com 0 daria erro lá, não aqui."""
+    conta = dict(CONTA, omie_fornecedor=0)
+    plano = co.planejar([linha()], conta, TIPOS)
+    assert plano["vai"][0]["codigo_cliente"] == 111
 
 
 def test_historico_desconhecido_diz_o_que_fazer():
@@ -296,3 +345,43 @@ def test_o_tipo_normal_NAO_cria_segunda_ponta(monkeypatch):
 
     assert [a for a, _ in cli.chamadas] == ["IncluirContaPagar",
                                             "LancarPagamento"]
+
+
+# ---------------------------------------------------------------------------
+# O TAMANHO DO CÓDIGO DE INTEGRAÇÃO — 25/09/2026
+#
+# *"O código de integração tem limite de caracteres, salvo engano. Cheque."*
+#
+# ⚠️ O QUE EU NÃO SEI: o teto documentado desse campo. A documentação do OMIE
+# não é alcançável do ambiente onde isto foi escrito. O que se SABE, porque
+# custou oito tentativas repetidas em 21/09, é o teto de 20 do
+# `numero_documento` — e é por ele que os dois campos são tratados aqui.
+# ---------------------------------------------------------------------------
+def test_o_codigo_de_integracao_cabe_folgado_no_teto_conhecido():
+    from app.apps.analisesps.conciliacao_omie import MAX_CODIGO
+    # o maior número de linha que este módulo verá em muitos anos
+    assert len(co._codigo_de_integracao(999_999)) <= MAX_CODIGO
+    assert len(co._codigo_de_integracao(999_999)) == 10
+
+
+def test_a_SEGUNDA_PONTA_da_transferencia_tambem_cabe():
+    """Ela é o código mais um "D". Se estourasse só nela, a transferência
+    ficaria pela metade — o pior estado possível aqui."""
+    from app.apps.analisesps.conciliacao_omie import MAX_CODIGO
+    assert len(co._codigo_de_integracao(999_999) + "D") <= MAX_CODIGO
+
+
+def test_linha_com_numero_absurdo_e_recusada_com_motivo_em_vez_de_estourar():
+    """Nunca deve acontecer — o número teria de passar de quinze dígitos. Mas
+    se acontecer, é uma linha recusada com frase, e não um erro do OMIE no meio
+    do lote (nem meia transferência)."""
+    plano = co.planejar([linha(id_=10 ** 18)], CONTA, TIPOS)
+    assert plano["vai"] == []
+    assert "grande demais" in plano["nao_vai"][0]["motivo"]
+
+
+def test_o_numero_do_documento_continua_cortado_em_20():
+    """O teto que se conhece de verdade, e o que custou as oito tentativas."""
+    from app.apps.analisesps.conciliacao_omie import MAX_CODIGO
+    item = co.planejar([linha(documento="1" * 60)], CONTA, TIPOS)["vai"][0]
+    assert len(co.montar_inclusao(item)["numero_documento"]) == MAX_CODIGO

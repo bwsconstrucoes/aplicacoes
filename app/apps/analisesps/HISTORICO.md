@@ -7581,6 +7581,80 @@ marcação de mestre, três testes ficam vermelhos.
 **NÃO verificado:** nada num navegador, e nenhum cadastro real criado.
 
 ---
+
+### Nonagésima oitava leva (25/09) — o fornecedor do OMIE mora na CONTA
+
+Ele tentou lançar uma tarifa e recebeu:
+
+> *"0 de 1 linha(s) podem ser lançadas na conta BD 50024. 1 fica de fora:
+> TARIFA BANCARIA TRANSF PGTO PIX (−0,35) — o tipo 'Tarifa Bancária' está sem
+> o fornecedor/cliente do OMIE."*
+>
+> *"O código fornecedor tem que estar atrelado à conta bancária."*
+
+**E ele está certo.** Quem cobra a tarifa é o **banco daquela conta**: a do
+BD 50024 é do Bradesco, a da Sicredi é da Sicredi. Guardar o fornecedor no
+TIPO obrigaria a criar um "Tarifa Bradesco", um "Tarifa Sicredi" e um "Tarifa
+BB" — cada um repetindo as mesmas palavras do histórico ("TARIFA"), e todos
+brigando entre si no reconhecimento, que escolhe pela palavra mais específica.
+O desenho estava errado, não a configuração dele.
+
+É a mesma razão pela qual a **conta corrente do OMIE** já morava na conta desde
+o começo. O fornecedor ficou para trás por descuido meu.
+
+#### O que mudou (migração 025)
+
+- A conta ganhou **Fornecedor no OMIE**, com lista para escolher — ela traz do
+  espelho do painel os cadastros com cara de banco, porque a lista inteira tem
+  milhares de linhas e não cabe num campo de escolha. Quem não achar digita o
+  código, como antes.
+- **A conta manda; o tipo é reserva.** Se a conta tem fornecedor, é o dela; se
+  não tem, vale o do tipo. Assim nada do que já estava configurado parou de
+  funcionar, e um tipo cobrado por um terceiro (não pelo banco) continua tendo
+  onde dizer isso.
+- Na **transferência**, a ponta que RECEBE usa o fornecedor da conta de
+  destino quando ela tem um — é o banco dela que está do outro lado.
+- **A recusa passou a dizer onde resolver**: *"a conta X está sem o fornecedor
+  do OMIE — é quem cobra a tarifa. Abra Contas, escolha o banco…"*. A antiga
+  mandava cadastrar no tipo, que é o lugar errado. Há teste exigindo que a
+  palavra "tipo" não volte a essa frase.
+
+#### E uma coluna nova na lista de contas: "Lança no OMIE?"
+
+⚠️ **O problema aparecia tarde demais.** Ele só descobria que faltava
+configuração quando o lançamento era recusado — com o lote já marcado e a
+tela do OMIE aberta. Agora cada conta diz, na própria lista, se está pronta e
+o que falta nela: a conta corrente, o fornecedor, ou os dois.
+
+**Verificado:** 66 testes com banco de verdade na conciliação (4 novos só da
+gravação do fornecedor) e 32 sem banco no lançamento ao OMIE (5 novos), mais a
+suíte do módulo inteira.
+
+#### E a pergunta dele sobre o código de integração
+
+> *"O código de integração tem limite de caracteres, salvo engano. Cheque."*
+
+**Não consegui checar, e digo isso em vez de chutar:** a documentação do OMIE
+não é alcançável do ambiente onde este chat roda — a rede bloqueia o domínio.
+
+O que se **sabe**, porque custou oito tentativas repetidas em 21/09, é que
+`numero_documento` é recusado acima de **20 caracteres**. O que este módulo
+**gera** como código de integração é `CONC` + o número da linha (+ `D` na
+segunda ponta da transferência): **10 a 11 caracteres** com os números de
+hoje, e 13 quando o extrato passar de um milhão de linhas.
+
+Então os dois campos passaram a ser tratados pelo teto de 20, que é o lado
+seguro: se o teto de verdade for maior, nada se perde; se for 20, já está
+respeitado. Há teste travando o tamanho — inclusive o da **segunda ponta**,
+porque um código que estourasse só nela deixaria a transferência pela metade,
+que é o pior estado possível aqui.
+
+**NÃO verificado:** nada num navegador, e **nenhum lançamento real no OMIE** —
+a tarifa de R$ 0,35 dele continua sem ser lançada até ele configurar a conta e
+tentar de novo. E o teto do `codigo_lancamento_integracao` continua sem
+confirmação na fonte.
+
+---
 ---
 
 ## Regras que não se discutem

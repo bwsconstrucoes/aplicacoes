@@ -588,8 +588,11 @@
       {% endif %}
       <br><b>Separe as palavras por ponto-e-vírgula.</b> Acento e maiúscula não
       contam. Quando duas casarem, vale a mais específica — "TARIFA PIX" ganha
-      de "TARIFA". Para tarifa, o fornecedor é o próprio banco; para
-      rentabilidade, o cliente é o banco também.
+      de "TARIFA".
+      <br><b>O fornecedor/cliente aqui é opcional</b> e serve de reserva: quem
+      vale é o <b>Fornecedor no OMIE da conta</b>, porque quem cobra a tarifa é
+      o banco daquela conta. Só preencha aqui se este tipo for cobrado por
+      alguém que não é o banco.
     </p>
     <p style="margin:10px 0 0">
       <button class="btn" type="submit">Gravar tipo</button>
@@ -611,7 +614,8 @@
 
   <table class="sps" style="margin-top:10px">
     <thead><tr><th>Nome</th><th>Banco</th><th>Agência / conta</th>
-      <th>Saldo inicial</th><th>Reconhece o extrato?</th><th></th></tr></thead>
+      <th>Saldo inicial</th><th>Reconhece o extrato?</th>
+      <th>Lança no OMIE?</th><th></th></tr></thead>
     <tbody>
       {% for c in contas %}
         <tr>
@@ -633,6 +637,24 @@
             {% else %}
               <span class="etiqueta">ainda não</span>
               <small>solte um extrato dela uma vez, e passa a reconhecer</small>
+            {% endif %}
+          </td>
+          {# ⚠️ ESTA COLUNA EXISTE PARA O PROBLEMA APARECER ANTES. O dono só
+             descobria que faltava configuração quando o lançamento era
+             recusado, com o lote já marcado — a conta diz agora, aqui, o que
+             falta nela. #}
+          <td>
+            {% if c.omie_conta_corrente and c.omie_fornecedor %}
+              <span class="etiqueta boa">sim</span>
+            {% elif not c.omie_conta_corrente and not c.omie_fornecedor %}
+              <span class="etiqueta">ainda não</span>
+              <small>faltam a conta corrente e o fornecedor do OMIE</small>
+            {% elif not c.omie_conta_corrente %}
+              <span class="etiqueta ruim">falta</span>
+              <small>a conta corrente do OMIE</small>
+            {% else %}
+              <span class="etiqueta ruim">falta</span>
+              <small>o fornecedor do OMIE — o banco que cobra a tarifa</small>
             {% endif %}
           </td>
           <td><button class="btn secundario editar-conta"
@@ -684,6 +706,29 @@
         {% else %}
           <input class="campo-largo" name="omie_conta_corrente"
                  placeholder="o código dela no OMIE">
+          <small>A lista do OMIE não veio — digite o código.</small>
+        {% endif %}</div>
+      {# ⚠️ O FORNECEDOR MORA NA CONTA, e não no tipo de movimento. Quem cobra
+         a tarifa é o BANCO DESTA CONTA: a do BD 50024 é do Bradesco, a da
+         Sicredi é da Sicredi. No tipo, seria preciso um "Tarifa Bradesco",
+         um "Tarifa Sicredi" e um "Tarifa BB", todos repetindo as mesmas
+         palavras do histórico e brigando entre si na hora de reconhecer.
+         Pedido do dono em 25/09/2026. #}
+      <div style="flex:2"><label class="rotulo-campo">Fornecedor no OMIE
+          <small>(o banco que cobra a tarifa)</small></label>
+        {% if listas_omie.fornecedores %}
+          <select class="campo-largo" name="omie_fornecedor">
+            <option value="">— escolha —</option>
+            {% for f in listas_omie.fornecedores %}
+              <option value="{{ f.codigo }}">{{ f.nome }}
+                {%- if f.documento %} · {{ f.documento }}{% endif %}</option>
+            {% endfor %}
+          </select>
+          <small>Não achou o banco na lista? Ela traz os cadastros do OMIE com
+            cara de banco. Se o seu não estiver aí, me diga.</small>
+        {% else %}
+          <input class="campo-largo" name="omie_fornecedor"
+                 placeholder="o código do banco no OMIE">
           <small>A lista do OMIE não veio — digite o código.</small>
         {% endif %}</div>
     </div>
@@ -1162,7 +1207,8 @@ if (formConta) {
     b.addEventListener("click", () => {
       const c = JSON.parse(b.dataset.conta);
       ["id", "nome", "banco", "agencia", "numero", "ordem",
-       "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente"].forEach(k => {
+       "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente",
+       "omie_fornecedor"].forEach(k => {
         const campo = formConta.querySelector('[name="' + k + '"]');
         if (campo) campo.value = c[k] === null || c[k] === undefined ? "" : c[k];
       });

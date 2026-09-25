@@ -1077,3 +1077,42 @@ def test_quem_conciliou_aparece_com_nome(banco_conc):
     assert quem["MARCELO"]["quantas"] == 1
     assert quem["JAYNE"]["quantas"] == 1
     assert quem["MARCELO"]["ultima"] is not None
+
+
+# ---------------------------------------------------------------------------
+# O FORNECEDOR DO OMIE NA CONTA — 25/09/2026
+# ---------------------------------------------------------------------------
+def test_o_fornecedor_do_omie_grava_na_CRIACAO_da_conta(banco_conc):
+    """⚠️ NA CRIAÇÃO, e não só na alteração. Foi exatamente esse o defeito do
+    saldo inicial: o campo aceitava o número, a tela dizia que gravou, e o
+    valor não estava lá. Uma vez basta para virar teste."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(omie_fornecedor="7777")
+    guardada = [c for c in conciliacao.contas() if c["id"] == conta_id][0]
+    assert guardada["omie_fornecedor"] == 7777
+
+
+def test_o_fornecedor_do_omie_grava_na_ALTERACAO(banco_conc):
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste()
+    assert conciliacao.contas()[0]["omie_fornecedor"] is None
+    conciliacao.gravar_conta({"id": conta_id, "nome": "BD 7011",
+                              "omie_fornecedor": "8888"}, quem="T")
+    assert conciliacao.contas()[0]["omie_fornecedor"] == 8888
+
+
+def test_o_fornecedor_aceita_o_codigo_com_lixo_em_volta(banco_conc):
+    """A pessoa cola "cod. 7777" da tela do OMIE. Guardar o texto inteiro faria
+    o lançamento falhar lá, com uma mensagem que não ajuda ninguém."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(omie_fornecedor=" cod. 7.777 ")
+    guardada = [c for c in conciliacao.contas() if c["id"] == conta_id][0]
+    assert guardada["omie_fornecedor"] == 7777
+
+
+def test_conta_sem_fornecedor_fica_NULA_e_nao_zero(banco_conc):
+    """Zero é um código do OMIE que não existe; nulo é "não configurado". A
+    diferença importa porque é ela que decide se vale a reserva do tipo."""
+    from app.apps.analisesps import conciliacao
+    conta_de_teste(omie_fornecedor="")
+    assert conciliacao.contas()[0]["omie_fornecedor"] is None
