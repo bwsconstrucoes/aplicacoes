@@ -436,6 +436,8 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .venc-hoje     { color: var(--ambar);    font-weight: 700; }
 .cancelada td  { opacity: .6; }
 .cancelada .id { text-decoration: line-through; }
+/* O risco da SP cancelada e do NUMERO, nao do selo colado nele. */
+.cancelada .id .selo { text-decoration: none; }
 
 .selo {
   display: inline-block; padding: 1px 7px; border-radius: 10px;
@@ -448,6 +450,8 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .selo.falha     { background: #FBE7E5; color: var(--vermelho); }
 .selo.risco     { background: #FBE7E5; color: var(--vermelho); }
 .selo.incompleto{ background: #FDF0D5; color: var(--ambar); }
+.selo.no-lote         { background: #E6F0F7; color: var(--ciano); }
+.selo.no-lote-de-outro{ background: #FDF0D5; color: var(--ambar); }
 
 /* Paginacao */
 .paginas {
@@ -585,8 +589,18 @@ a.kpi { display: block; }
 
 /* Codigos de pagamento */
 .qr { width: 230px; height: 230px; image-rendering: pixelated; border-radius: var(--raio-p); }
+/* O CODIGO DE BARRAS TEM TETO. Pedido do dono em 25/09/2026: numa tela de
+   34" o boleto ficava "muito exagerado" — o SVG sai com width="100%" e o
+   cartao, numa tela larga, passa de 1.500px: o codigo era desenhado com o
+   dobro do tamanho de projeto.
+
+   O teto e o TAMANHO NATIVO do proprio desenho (855 x 100px, do module_width
+   e do module_height que o `pagamentos.barcode_svg` pede). Nao e um numero
+   escolhido no olho: e o tamanho em que as barras foram pensadas, e por isso
+   nao ha risco de o celular deixar de ler. Abaixo disso ele continua
+   encolhendo com a tela, que e o que faz o notebook funcionar. */
 .codigo-barras { overflow-x: auto; padding: 6px 0 12px; }
-.codigo-barras svg { max-width: 100%; height: auto; }
+.codigo-barras svg { width: 100%; max-width: 855px; height: auto; }
 
 /* O texto cru do lote, para quem so consulta */
 .lote-texto {
@@ -612,6 +626,18 @@ a.kpi { display: block; }
 .selo.verificar { background: #EDEFF3; color: var(--cinza); }
 .selo.risco     { background: #FFE7E7; color: var(--sl-risco); }
 .selo.incompleto{ background: #FFF0DB; color: #A35F00; }
+
+/* A MARCA DE "JA ESTA NO LOTE" — pequena, colada no numero da SP.
+   Azul: e o SEU lote, so lembrete. Ambar: e o lote de OUTRA PESSOA, e ai e
+   aviso — separar de novo o que alguem ja separou leva a pagar duas vezes.
+   Letra menor que os outros selos de proposito: ela acompanha o numero, nao
+   compete com ele. */
+.selo.no-lote, .selo.no-lote-de-outro {
+  font-size: 9.5px; padding: 0 5px; margin-left: 5px;
+  vertical-align: middle; letter-spacing: .3px; text-transform: uppercase;
+}
+.selo.no-lote          { background: #E7F0FF; color: var(--sl-azul); }
+.selo.no-lote-de-outro { background: #FFF0DB; color: #A35F00; }
 
 /* O NUMERO DA SP NAO E PINTADO. O Streamlit tingia o ID de vermelho ou
    laranja conforme o alerta, e na conversao isso somou com o vencimento
@@ -1042,6 +1068,9 @@ a.cal-dia.nao-util:hover { background: #E8EEF9; }
   border-radius: var(--raio-p);
 }
 .ficha-codigo .qr { max-width: 190px; }
+/* Dentro da ficha tudo e menor — o QR ja e, e o boleto tem de acompanhar,
+   senao ele sozinho manda no tamanho do modal. */
+.ficha-codigo .codigo-barras svg { max-width: 560px; }
 
 /* ---------------------------------------------------------------------------
    COMPROVANTES — a area de soltar arquivo e o resultado de cada leva.

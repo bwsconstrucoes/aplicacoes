@@ -419,3 +419,98 @@ def montar(texto: str) -> dict:
         "total_geral": total_geral,
         "quantidade": quantidade,
     }
+
+
+# ---------------------------------------------------------------------------
+# A MARCA DE "JÁ ESTÁ NO LOTE", nas Solicitações
+# ---------------------------------------------------------------------------
+# Pedido do dono em 25/09/2026: *"se um lançamento em solicitações já estiver
+# no lote, exibir uma tag com essa informação. Não uma coluna a mais senão
+# fica grande demais, mas algo pequeno em algum canto."*
+#
+# O PROBLEMA QUE ISSO RESOLVE é pôr a mesma SP no lote duas vezes. A lista de
+# Solicitações tem centenas de linhas e o lote fica noutra tela: não havia como
+# saber, olhando a lista, o que já tinha sido separado. Quem montava a remessa
+# ia pela memória.
+#
+# OLHA O LOTE DE TODO MUNDO, e não só o de quem está na tela. Desde 04/09/2026
+# cada pessoa tem o seu lote, e o caso ruim de verdade é o outro: duas pessoas
+# separarem a mesma SP sem saber, e ela ser paga duas vezes. A tag diz de quem
+# é o lote quando não é o seu — é a informação que evita o pagamento em
+# duplicidade, e ela não existe em lugar nenhum hoje.
+def onde_no_lote(ids, pessoa: str) -> dict:
+    """Em que lote(s) cada uma destas SPs já está.
+
+    Devolve `{sp: {"minha": bool, "grupos": [títulos], "outros": [nomes]}}`,
+    só para as SPs que estão em algum lote — quem não aparece no resultado não
+    está em lote nenhum.
+
+    UMA CONSULTA SÓ, sem parâmetro: a tabela do lote tem uma linha por pessoa
+    (hoje, uma mão cheia), e filtrar por SP exigiria procurar número dentro de
+    texto livre no banco. Fazer o casamento aqui, com o mesmo `separar_grupos`
+    que a tela do Lote usa, garante que as duas leiam o texto igual — uma
+    segunda regra de leitura divergiria no primeiro formato estranho.
+
+    NUNCA DERRUBA A TELA. Sem esta marca as Solicitações continuam servindo;
+    com um erro no meio, não. Por isso o `except` largo: banco fora ou migração
+    por aplicar devolve "nenhuma SP em lote", que é o que se via antes."""
+    alvos = {str(i).strip() for i in (ids or []) if str(i).strip()}
+    if not alvos:
+        return {}
+
+    try:
+        if not por_pessoa():
+            # Janela entre a publicação e o botão "Aplicar atualizações do
+            # banco": o lote de cada um está no armário de reserva, e ler o de
+            # todo mundo custaria uma consulta por pessoa. Nessa janela a marca
+            # só enxerga o lote de quem está na tela — menos informação, nunca
+            # informação errada.
+            guardado = _reserva_ler(pessoa) or {}
+            lotes = [(str(pessoa or ""), guardado.get("conteudo") or "", None)]
+        else:
+            from .db import consultar
+            lotes = consultar(
+                "SELECT pessoa, conteudo, salvo_por FROM analisesps.lote")
+    except Exception:  # noqa: BLE001 — banco fora, ou migração por aplicar
+        logger.exception("Análise de SPs: não consegui conferir quem já tem "
+                         "estas SPs no lote")
+        return {}
+
+    achado: dict = {}
+    for dono, conteudo, salvo_por in lotes:
+        if not str(conteudo or "").strip():
+            continue
+        e_minha = str(dono or "") == str(pessoa or "")
+        for grupo in separar_grupos(conteudo):
+            titulo = grupo["titulo"] or SEM_TITULO
+            for sp in grupo["ids"]:
+                if sp not in alvos:
+                    continue
+                onde = achado.setdefault(
+                    sp, {"minha": False, "grupos": [], "outros": []})
+                if e_minha:
+                    onde["minha"] = True
+                    if titulo not in onde["grupos"]:
+                        onde["grupos"].append(titulo)
+                else:
+                    nome = str(salvo_por or dono or "").strip() or str(dono)
+                    if nome not in onde["outros"]:
+                        onde["outros"].append(nome)
+    return achado
+
+
+def marcar_nas_linhas(linhas, pessoa: str) -> None:
+    """Põe `no_lote` em cada linha da lista de Solicitações, no lugar.
+
+    Fica aqui, e não na tela, porque a tela não pode ter regra: se um dia a
+    ficha da SP quiser a mesma marca, chama esta mesma função e as duas dizem
+    a mesma coisa."""
+    if not linhas:
+        return
+    onde = onde_no_lote([l.get("id") for l in linhas], pessoa)
+    if not onde:
+        for linha in linhas:
+            linha["no_lote"] = None
+        return
+    for linha in linhas:
+        linha["no_lote"] = onde.get(str(linha.get("id") or ""))

@@ -4499,3 +4499,86 @@ def test_a_tela_desiste_de_esperar_e_diz_o_que_fazer(app_aportes):
     assert "AbortController" in html, "a espera continua sem fim"
     assert "Não mande de novo" in html
     assert "O que já foi lançado por aqui" in html
+
+
+# ---------------------------------------------------------------------------
+# A MARCA DE "JÁ ESTÁ NO LOTE", nas Solicitações
+# ---------------------------------------------------------------------------
+def test_a_sp_que_ja_esta_no_lote_sai_com_a_marca(app, monkeypatch):
+    """Pedido do dono em 25/09/2026. Sem isto, a lista de Solicitações não tem
+    como dizer o que já foi separado — e a mesma SP entra no lote duas vezes."""
+    from app.apps.analisesps import lote
+
+    monkeypatch.setattr(lote, "onde_no_lote", lambda ids, pessoa: {
+        "1": {"minha": True, "grupos": ["Pagar amanhã"], "outros": []}})
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+
+    assert "selo no-lote" in html
+    assert "Já está no seu lote — Pagar amanhã" in html
+    # A outra linha não está em lote nenhum e não ganha marca nenhuma.
+    assert html.count('class="selo no-lote"') == 1
+
+
+def test_a_sp_no_lote_de_OUTRA_pessoa_diz_de_quem_e(app, monkeypatch):
+    """É esta a marca que evita pagar duas vezes. Se ela aparecesse igual à do
+    lote próprio, quem visse pensaria que foi ele mesmo que separou."""
+    from app.apps.analisesps import lote
+
+    monkeypatch.setattr(lote, "onde_no_lote", lambda ids, pessoa: {
+        "1": {"minha": False, "grupos": [], "outros": ["Ana Paula"]}})
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+
+    assert "selo no-lote-de-outro" in html
+    assert "Já está no lote de Ana Paula" in html
+
+
+def test_a_marca_do_lote_NAO_aparece_na_tela_do_proprio_lote(app, monkeypatch):
+    """Lá a linha está no lote por definição: a marca em todas as linhas seria
+    só ruído."""
+    from app.apps.analisesps import lote
+
+    monkeypatch.setattr(lote, "ler", lambda pessoa: {
+        "conteudo": "Pagar amanhã\n1", "salvo_por": "MARCELO",
+        "salvo_em": None, "compartilhado": False})
+    monkeypatch.setattr(lote, "montar", lambda texto: {
+        "grupos": [{"titulo": "Pagar amanhã", "titulo_exibido": "Pagar amanhã",
+                    "ids": ["1"], "linhas": [linha_falsa("1")],
+                    "nao_encontrados": [], "total": Decimal("6750.00")}],
+        "linhas": {"1": linha_falsa("1")}, "nao_encontrados": [],
+        "total_geral": Decimal("6750.00"), "quantidade": 1})
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/lote").get_data(as_text=True)
+
+    assert "selo no-lote" not in html
+
+
+def test_quem_escondeu_a_coluna_ID_continua_vendo_a_marca(app, monkeypatch):
+    """A marca mora colada no número da SP. Esconder a coluna ID é uma escolha
+    de tabela — não pode apagar um aviso de pagamento em duplicidade."""
+    from app.apps.analisesps import lote, tabela
+
+    monkeypatch.setattr(lote, "onde_no_lote", lambda ids, pessoa: {
+        "1": {"minha": False, "grupos": [], "outros": ["Ana Paula"]}})
+    sem_id = [c for c in tabela.DEFINICOES if c.chave != "id"]
+    monkeypatch.setattr(tabela, "escolhidas", lambda guardado: sem_id)
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+
+    assert "selo no-lote-de-outro" in html
+
+
+def test_o_codigo_de_barras_do_boleto_tem_teto_de_largura():
+    """Pedido do dono em 25/09/2026: *"na tela de QR code/Boleto o tamanho do
+    qrcode tá ótimo, mas o do boleto fica muito exagerado numa tela de 34"."*
+
+    O SVG sai com `width="100%"`, então numa tela larga o cartão mandava no
+    tamanho do código. O teto é o tamanho nativo do desenho — abaixo dele o
+    código continua encolhendo com a tela."""
+    css = Path("app/apps/analisesps/static/analisesps.css").read_text(
+        encoding="utf-8")
+    assert ".codigo-barras svg { width: 100%; max-width: 855px" in css, (
+        "o código de barras voltou a crescer sem limite")
+    assert ".ficha-codigo .codigo-barras svg { max-width: 560px; }" in css, (
+        "dentro da ficha o boleto voltou a mandar no tamanho do modal")

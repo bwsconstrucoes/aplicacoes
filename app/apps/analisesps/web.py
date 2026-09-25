@@ -622,7 +622,7 @@ def inicio():
 @bp.route("/solicitacoes")
 @exige_consulta
 def solicitacoes():
-    from . import consultas
+    from . import consultas, lote
 
     # O FILTRO GUARDADO É CONFERIDO ANTES DE QUALQUER CONSULTA. Quem clica no
     # menu chega sem filtro na barra de endereço e é redirecionado para o
@@ -647,6 +647,11 @@ def solicitacoes():
         pagina = 1
 
     linhas = consultas.listar(filtros, ordem=ordem, pagina=pagina)
+
+    # A marca de "esta SP já está num lote" — ver `lote.onde_no_lote`. Custa
+    # uma consulta a uma tabela de meia dúzia de linhas, e evita separar duas
+    # vezes o mesmo pagamento.
+    lote.marcar_nas_linhas(linhas, auth.pessoa_atual())
 
     # Os números que o Streamlit mostrava embaixo da tabela. São SQL, não
     # contas sobre as 200 linhas da página: quem soma é o banco, sobre o

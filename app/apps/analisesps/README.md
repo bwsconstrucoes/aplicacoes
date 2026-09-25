@@ -314,6 +314,14 @@ Mais a **ficha de cada SP** e a tela de **códigos de pagamento**, que monta o
 QR Pix ou o código de barras das SPs marcadas — substitui abrir card por card
 no Pipefy para copiar a chave.
 
+**Nas Solicitações, a SP que já está num lote sai marcada** com um selo
+pequeno colado no número — azul quando é o SEU lote (o balãozinho diz o
+grupo), âmbar quando é o lote de OUTRA PESSOA (e diz de quem). O âmbar é o que
+importa: cada um tem o seu lote desde 04/09, e duas pessoas separarem a mesma
+SP sem saber é o caminho para pagar duas vezes. A marca olha o lote de todo
+mundo, e some sozinha se o banco estiver fora — perder a marca é aceitável,
+perder a tela não.
+
 ## Levar o que está na tela
 
 Toda tela que mostra número deixa levar o número:

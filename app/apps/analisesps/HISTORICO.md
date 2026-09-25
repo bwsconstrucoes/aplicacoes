@@ -7712,6 +7712,84 @@ tela não é resposta.
 **NÃO verificado:** nada num navegador, e a diferença de saldo acima.
 
 ---
+
+### Centésima leva (25/09) — a marca de "já está no lote", e o boleto com teto
+
+Dois pedidos dele no mesmo dia, independentes um do outro.
+
+#### 1. A tag de lote nas Solicitações
+
+> *"Se um lançamento em solicitações já estiver no lote, exibir uma tag com
+> essa informação. Não uma coluna a mais senão fica grande demais, mas algo
+> pequeno em algum canto."*
+
+A lista de Solicitações tem centenas de linhas e o lote fica noutra tela: não
+havia como saber, olhando a lista, o que já tinha sido separado. Quem montava
+a remessa ia pela memória — e pôr a mesma SP duas vezes no lote era só questão
+de tempo.
+
+Agora cada linha que já está num lote sai com um selo pequeno **colado no
+número da SP**. Não é coluna: é do tamanho de meia palavra, e quem não tem SP
+em lote nenhum não vê nada de diferente.
+
+**A decisão que vale registrar: a marca olha o lote de TODO MUNDO, não só o de
+quem está na tela.** Desde 04/09 cada pessoa tem o seu lote, e o caso ruim de
+verdade não é repetir no próprio — é duas pessoas separarem a mesma SP sem
+saber, e ela sair duas vezes. Por isso são **duas cores**:
+
+- **azul** — está no SEU lote; o balãozinho diz em que grupo. É lembrete.
+- **âmbar** — está no lote de OUTRA PESSOA, e o balãozinho diz de quem. É
+  aviso, e é a parte que protege dinheiro.
+
+Quando está nos dois, vale o azul e o balãozinho diz as duas coisas.
+
+**Onde ela mora:** colada no número da SP. Quem escondeu a coluna ID recebe a
+marca na primeira célula, ao lado da caixa de marcar — uma escolha de coluna
+não pode apagar um aviso de pagamento em duplicidade. Tem teste para isso.
+
+**Custo:** uma consulta a mais por página de Solicitações, numa tabela de meia
+dúzia de linhas (uma por pessoa). O casamento SP × lote é feito em Python,
+com o mesmo `separar_grupos` que a tela do Lote usa — uma segunda regra de
+leitura divergiria no primeiro formato estranho.
+
+**Nunca derruba a tela:** banco fora ou migração por aplicar devolve "nenhuma
+SP em lote", que é exatamente o que se via antes. Perder a marca é aceitável;
+perder a tela de Solicitações não é.
+
+**Na janela entre publicar e apertar o botão** (`pessoa` ainda sem coluna), a
+marca enxerga só o lote de quem está na tela — o de cada um está no armário de
+reserva, e lê-los todos custaria uma consulta por pessoa. Menos informação,
+nunca informação errada.
+
+#### 2. O código de barras do boleto tinha teto nenhum
+
+> *"Na tela de QR code/Boleto o tamanho do qrcode tá ótimo, mas o do boleto
+> fica muito exagerado numa tela de 34" como a minha. Tem como limitar?"*
+
+O SVG do boleto sai com `width="100%"`, então quem mandava no tamanho era o
+cartão — e numa tela de 34" o cartão passa de 1.500px. O código era desenhado
+com mais do que o dobro do tamanho para o qual foi feito.
+
+O teto agora é o **tamanho nativo do próprio desenho** (855 × 100px, que vem
+do `module_width` e do `module_height` pedidos na geração). Não é número
+escolhido no olho: é o tamanho em que as barras foram pensadas, e por isso não
+há risco de o celular deixar de ler. Abaixo disso ele continua encolhendo com
+a tela, que é o que faz o notebook funcionar. Dentro da ficha (o modal) o teto
+é menor, 560px, porque lá o QR já é menor e o boleto sozinho mandava no
+tamanho da janela.
+
+**O QR não foi tocado** — ele já tinha teto (230px na tela de códigos, 190px
+na ficha), e o dono disse que está ótimo.
+
+**Verificado:** a suíte inteira; os testes novos da marca (9 de regra, 4 de
+tela) e o do teto do boleto; e o de sempre — cada marca nova foi apagada do
+gabarito para conferir que o teste fica vermelho.
+
+**NÃO verificado:** nada num navegador. O tamanho do boleto na tela de 34"
+dele é o único jeito de saber se 855px é confortável — se ainda estiver
+grande, é um número num lugar só.
+
+---
 ---
 
 ## Regras que não se discutem

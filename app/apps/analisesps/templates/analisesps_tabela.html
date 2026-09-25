@@ -14,6 +14,32 @@
      colunas  a lista vinda de tabela.escolhidas()
      grupo    (opcional) o número do grupo, no Lote
 --------------------------------------------------------------------------- #}
+{# --- A MARCA DE "JÁ ESTÁ NO LOTE" -------------------------------------------
+   Pedido do dono em 25/09/2026: nas Solicitações, saber de relance o que já
+   foi separado — "algo pequeno em algum canto", não uma coluna a mais.
+
+   Só aparece onde a rota preencheu `no_lote` (as Solicitações). Na tela do
+   Lote a linha JÁ está no lote por definição, e a marca ali seria ruído em
+   todas as linhas.
+
+   DUAS CORES, e a diferença é o que importa: azul é o SEU lote — lembrete,
+   nada de errado. Âmbar é o lote de OUTRA PESSOA, e aí é aviso: separar de
+   novo o que alguém já separou é o caminho para pagar duas vezes. #}
+{% macro marca_lote(no) -%}
+  {%- if no -%}
+    {%- if no.minha -%}
+      <span class="selo no-lote" title="Já está no seu lote{% if no.grupos %} — {{ no.grupos|join(', ') }}{% endif %}{% if no.outros %}; e também no lote de {{ no.outros|join(', ') }}{% endif %}">lote</span>
+    {%- else -%}
+      <span class="selo no-lote-de-outro" title="Já está no lote de {{ no.outros|join(', ') }}">lote</span>
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{# Onde a marca cabe: junto do número da SP. Quem escondeu a coluna ID recebe
+   ela na primeira célula, ao lado da caixa de marcar — o alerta de pagamento
+   em duplicidade não pode sumir por causa de uma escolha de coluna. #}
+{% set tem_coluna_id = colunas|selectattr('chave', 'equalto', 'id')|list|length > 0 %}
+
 <div class="tabela-rolagem">
   <table class="sps">
     <thead>
@@ -61,6 +87,7 @@
                       marcado POR CONTA — que é o número que decide se a
                       remessa cabe no banco. Pedido do dono em 11/09/2026. #}
                    data-conta="{{ l.conta or '' }}">
+            {% if not tem_coluna_id %}{{ marca_lote(l.no_lote) }}{% endif %}
           </td>
 
           {% for c in colunas %}
@@ -72,6 +99,7 @@
                   <a href="{{ l.card_link }}" target="_blank" rel="noopener"
                      title="Abrir o card no Pipefy">{{ l.id }}</a>
                 {% else %}{{ l.id }}{% endif %}
+                {{ marca_lote(l.no_lote) }}
               </td>
 
             {% elif c.tipo == 'data' %}
