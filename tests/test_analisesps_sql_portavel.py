@@ -553,6 +553,13 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # sem ele. Enquanto houver Flask no requirements, ele está lá. Pedir
         # uma linha só para ele daria a impressão de que é escolha nossa.
         "markupsafe": "flask",
+        # Embaralhar e conferir a senha do cadastro de acesso (migração 023).
+        # ⚠️ Declarado como "flask" pelo mesmo motivo do markupsafe: o werkzeug
+        # É o Flask — não existe Flask sem ele, e é dele que vêm o
+        # `generate_password_hash` e o `check_password_hash` que o painel já
+        # usa. Escrever hash de senha à mão é o tipo de coisa que se erra em
+        # silêncio; usar o que já vem é a decisão certa, não economia.
+        "werkzeug": "flask",
         # A cifra que protege o certificado no banco, e a leitura do
         # .pfx. Já vinha instalada como dependência de outras, mas
         # agora é usada DIRETO — então tem de estar declarada.

@@ -18,7 +18,7 @@
       </div>
     </div>
 
-    {% if sem_senha %}
+    {% if sem_senha and not tem_cadastro %}
       <div class="aviso erro">
         <b>Este módulo ainda não tem senha.</b><br>
         Cadastre <code>ANALISESPS_SENHA_OPERADOR</code> e
@@ -32,7 +32,7 @@
          campo livre, digitar diferente um dia dava outra pessoa, e o lote
          aparecia vazio sem explicação. #}
       <label for="nome">Quem é você</label>
-      <select id="nome" name="nome" required autofocus
+      <select id="nome" name="nome" autofocus
               {% if not nome %}aria-describedby="dica-nome"{% endif %}>
         <option value="" {% if not nome %}selected{% endif %} disabled>
           escolha o seu nome</option>
@@ -41,13 +41,30 @@
                   {% if nome == pessoa %}selected{% endif %}>{{ pessoa }}</option>
         {% endfor %}
       </select>
+      {# ---------------------------------------------------------------
+         O USUÁRIO PRÓPRIO, para quem tem cadastro (desde 25/09/2026).
+
+         Fica DEPOIS do nome e antes da senha, e vazio por padrão: quem entra
+         pela senha geral não precisa tocar nele. O `autocomplete="off"` é de
+         propósito — no painel o gerenciador de senhas do navegador preencheu
+         este campo sozinho e trancou o dono para fora, porque o pedido caía
+         no caminho errado. Aqui a senha geral é conferida PRIMEIRO, então o
+         acidente não tranca mais ninguém; mesmo assim, não convidamos ele.
+      --------------------------------------------------------------- #}
+      <label for="usuario">Usuário <small>(só se você tem cadastro próprio)</small></label>
+      <input id="usuario" name="usuario" autocomplete="off"
+             value="{{ usuario or '' }}">
       <label for="senha">Senha</label>
       <input id="senha" name="senha" type="password"
              autocomplete="current-password" required>
       <button class="btn" type="submit">Entrar</button>
       <p class="sub" style="margin-top:14px">
-        A <b>senha</b> diz o que você pode fazer: uma abre em modo de consulta,
-        que vê e exporta; a outra abre como operador, que também altera.
+        <b>Tem cadastro próprio?</b> Digite o seu usuário e a sua senha — você
+        abre só as telas que foram liberadas para você, e o nome da lista acima
+        não precisa ser escolhido.<br>
+        <b>Entra pela senha geral?</b> Deixe o usuário em branco, escolha o seu
+        nome e digite a senha: uma delas abre em modo de consulta, que vê e
+        exporta; a outra abre como operador, que também altera.
       </p>
       <p class="sub" id="dica-nome">
         O <b>nome</b> não é senha e não dá poder nenhum a mais — ele separa o

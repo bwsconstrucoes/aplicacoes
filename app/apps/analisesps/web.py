@@ -164,7 +164,11 @@ TELAS = [
 
 @bp.app_context_processor
 def _versao_para_os_templates():
-    return {"versao_estatica": versao_publicada(), "telas": TELAS}
+    # ⚠️ O MENU MOSTRA SÓ AS TELAS DA PESSOA. Deixar no menu uma tela que
+    # responde 404 é pior do que não mostrá-la: a pessoa clica, não entende e
+    # liga para o dono. O mestre continua vendo todas.
+    return {"versao_estatica": versao_publicada(),
+            "telas": auth.telas_para_o_menu(TELAS)}
 
 
 @bp.after_request
@@ -295,19 +299,57 @@ def entrar():
     escolhido = auth.limpar_nome(request.form.get("nome", ""))
     nome = pessoas.da_lista(escolhido)
 
-    if request.method == "POST" and configurados:
-        perfil = auth.identificar(request.form.get("senha", ""))
-        if not nome:
-            erro = ("Escolha o seu nome na lista — é ele que separa o seu lote "
-                    "e os seus filtros dos das outras pessoas.")
-        elif perfil:
-            auth.entrar_na_sessao(perfil, nome)
-            destino = request.args.get("proximo") or ""
-            # Só aceita destino interno: um "proximo" apontando para fora
-            # viraria um jeito de usar o login da empresa como trampolim.
-            alvo = (destino if destino.startswith("/analisesps")
-                    else url_for("analisesps.solicitacoes"))
-            return _lembrar_o_nome(redirect(alvo), nome)
+    login = (request.form.get("usuario") or "").strip()
+
+    if request.method == "POST":
+        senha = request.form.get("senha", "")
+
+        # ⚠️ A SENHA DO RENDER DECIDE PRIMEIRO, com o campo de usuário
+        # preenchido ou não. Isto não é conveniência: é o conserto de um jeito
+        # de trancar o dono para fora, que aconteceu de verdade no painel em
+        # 22/09/2026. A tela passou a ter um campo novo, e o gerenciador de
+        # senhas do navegador o preenchia sozinho — o pedido caía no caminho
+        # do cadastro e a resposta era "usuário ou senha incorretos", com a
+        # senha certa digitada.
+        #
+        # Conferir a senha geral antes não afrouxa nada: quem a conhece JÁ vê
+        # tudo. O que se perde é só a chance de o navegador escolher o caminho.
+        perfil = auth.identificar(senha) if configurados else None
+        if perfil:
+            if not nome:
+                erro = ("Escolha o seu nome na lista — é ele que separa o seu "
+                        "lote e os seus filtros dos das outras pessoas.")
+            else:
+                auth.entrar_na_sessao(perfil, nome)
+                return _lembrar_o_nome(redirect(_para_onde_depois_de_entrar()),
+                                       nome)
+        elif login:
+            # Caminho do CADASTRO PRÓPRIO (migração 023).
+            from . import usuarios
+            pessoa = usuarios.buscar(login)
+            if not pessoa or not usuarios.senha_confere(pessoa, senha):
+                logger.warning("Análise de SPs: entrada recusada para o "
+                               "usuário %r.", login)
+                # A MESMA resposta para usuário que não existe e para senha
+                # errada: dizer qual dos dois falhou entrega metade da
+                # resposta a quem está tentando.
+                erro = ("Usuário ou senha incorretos. Se você entra com a "
+                        "senha geral do sistema, apague o que estiver no campo "
+                        "Usuário — o navegador às vezes preenche sozinho.")
+            elif not pessoa.get("telas"):
+                logger.warning("Análise de SPs: %s entrou sem nenhuma tela "
+                               "liberada.", login)
+                erro = ("O seu acesso ainda não tem nenhuma tela liberada. "
+                        "Fale com quem cuida do sistema.")
+            else:
+                oficial = auth.limpar_nome(pessoa.get("nome") or pessoa["usuario"])
+                auth.entrar_na_sessao(
+                    auth.OPERADOR if pessoa["pode_operar"] else auth.CONSULTA,
+                    oficial, usuario_id=pessoa["id"])
+                usuarios.marcar_acesso(pessoa["id"])
+                return redirect(_para_onde_depois_de_entrar(pessoa["telas"]))
+        elif not configurados:
+            erro = None                 # a tela já explica que falta senha
         else:
             erro = "Senha incorreta."
             logger.warning("Análise de SPs: tentativa de entrada com senha "
@@ -315,9 +357,37 @@ def entrar():
 
     # Na tela, já vem escolhido o nome da última vez NESTE navegador.
     lembrado = pessoas.da_lista(request.cookies.get(auth.COOKIE_NOME, ""))
+    from . import usuarios
+    try:
+        tem_cadastro = bool(usuarios.listar())
+    except Exception:  # noqa: BLE001 — a tela de entrada nunca cai por isto
+        logger.exception("Análise de SPs: não consegui saber se há cadastros")
+        tem_cadastro = False
+
     return render_template(
         "analisesps_login.html", sem_senha=not configurados, erro=erro,
-        equipe=equipe, nome=nome or lembrado)
+        equipe=equipe, nome=nome or lembrado, usuario=login,
+        tem_cadastro=tem_cadastro)
+
+
+def _para_onde_depois_de_entrar(telas=None) -> str:
+    """Para onde mandar quem acabou de entrar.
+
+    Quem tem cadastro pode NÃO TER a tela de Solicitações — mandá-lo para ela
+    daria um 404 logo depois de um login que funcionou, e ele concluiria que o
+    acesso não foi criado. Então vai para a primeira tela que ele tem, na
+    ordem do menu."""
+    destino = request.args.get("proximo") or ""
+    # Só aceita destino interno: um "proximo" apontando para fora viraria um
+    # jeito de usar o login da empresa como trampolim.
+    if destino.startswith("/analisesps"):
+        return destino
+    if telas:
+        permitidas = set(telas)
+        primeira = next((t for t in TELAS if t[0] in permitidas), None)
+        if primeira:
+            return url_for(primeira[2])
+    return url_for("analisesps.solicitacoes")
 
 
 def _lembrar_o_nome(resposta, nome: str):
@@ -1147,11 +1217,26 @@ def configuracoes():
     except Exception:  # noqa: BLE001 — migração 008 ainda não aplicada
         logger.exception("Análise de SPs: não consegui ler o estado da busca")
 
+    # QUEM ENTRA COM CADASTRO PRÓPRIO (migração 023). Dentro de um try porque
+    # esta é a tela que conserta o módulo: ela não pode ser a próxima a cair.
+    from . import usuarios
+    try:
+        pessoas_com_acesso = usuarios.listar()
+        cadastro_pronto = usuarios._pronto()
+    except Exception:  # noqa: BLE001 — a tela abre mesmo sem isto
+        logger.exception("Análise de SPs: não consegui listar quem tem acesso")
+        pessoas_com_acesso, cadastro_pronto = [], False
+
     return render_template(
         "analisesps_config.html",
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
         equipe=equipe, certificados=lista_certificados,
         buscas_por_cnpj=buscas_por_cnpj,
+        pessoas_com_acesso=pessoas_com_acesso,
+        cadastro_pronto=cadastro_pronto,
+        telas_liberaveis=usuarios.telas_liberaveis() if cadastro_pronto else [],
+        erro_usuario=request.args.get("erro_usuario") or None,
+        usuario_ok=request.args.get("usuario_ok") or None,
         cofre_ok=certificados.cofre_configurado(),
         aviso=request.args.get("aviso") or None,
         base=consultas.base_carregada(),
@@ -1160,6 +1245,45 @@ def configuracoes():
         modos=tarefas.MODOS, modos_da_base=tarefas.MODOS_DA_BASE,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
         pode_operar=auth.pode_operar())
+
+
+@bp.route("/usuarios", methods=["POST"])
+@exige_operador
+def usuarios_salvar():
+    """Cadastra, altera ou apaga quem entra com usuário e senha próprios.
+
+    ⚠️ SÓ O MESTRE CHEGA AQUI. Quem tem cadastro próprio é barrado pelo guarda,
+    porque `analisesps.usuarios_` está em `auth.SO_DO_MESTRE_POR_PREFIXO` — sem
+    isso, uma pessoa presa a uma tela poderia criar outro acesso, com todas.
+    Foi um defeito real do painel, pego por teste.
+
+    Responde com redirect e não JSON porque é formulário de tela: quem acabou
+    de cadastrar precisa VER a lista nova, não um `{ok: true}`."""
+    from . import usuarios
+
+    acao = (request.form.get("acao") or "").strip()
+    telas = [t for t in request.form.getlist("tela_do_usuario") if t.strip()]
+    uid = (request.form.get("usuario_id") or "").strip()
+    pode_operar = request.form.get("pode_operar") == "1"
+
+    if acao == "criar":
+        r = usuarios.criar(request.form.get("novo_usuario", ""),
+                           request.form.get("nova_senha", ""),
+                           nome=request.form.get("nome", ""),
+                           telas=telas, pode_operar=pode_operar)
+    elif acao == "apagar" and uid.isdigit():
+        r = usuarios.apagar(int(uid))
+    elif acao == "salvar" and uid.isdigit():
+        r = usuarios.atualizar(int(uid), nome=request.form.get("nome"),
+                               senha=request.form.get("nova_senha"),
+                               ativo=request.form.get("ativo") == "1",
+                               telas=telas, pode_operar=pode_operar)
+    else:
+        r = {"ok": False, "erro": "Pedido não reconhecido."}
+
+    return redirect(url_for("analisesps.configuracoes",
+                            **({"erro_usuario": r["erro"]} if not r.get("ok")
+                               else {"usuario_ok": "1"})))
 
 
 @bp.route("/api/pessoas", methods=["POST"])

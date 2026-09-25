@@ -14,10 +14,23 @@ DOIS PERFIS, DUAS SENHAS:
 Cada um tem a sua senha, numa variável do Render. Perfil sem senha configurada
 simplesmente não existe — ninguém entra por ele. Falha fechado, sempre.
 
-POR QUE SENHA E NÃO CADASTRO DE USUÁRIO. São até quatro pessoas, e este módulo
-tem prazo de validade: o ERP vai substituí-lo. Cadastro com nome, hash e tela
-de administração é o certo para o que fica; para o que sai de cena, é peso sem
-retorno.
+DESDE 25/09/2026 HÁ TAMBÉM CADASTRO PRÓPRIO — e os dois caminhos convivem:
+
+  - **a senha do Render** (as duas acima) é o **MESTRE**: vê todas as telas,
+    configura, aplica migração, mexe no certificado e cadastra as pessoas;
+  - **usuário e senha próprios** (`usuarios.py`, migração 023) alcançam SÓ as
+    telas marcadas, e alteram dado só se estiverem marcados como operador.
+
+⚠️ A SENHA DO RENDER CONTINUA VALENDO, e não é preguiça: é o que impede o dono
+de se trancar para fora. Se a migração não tiver rodado, se ele apagar o próprio
+cadastro sem querer, se o banco cair — a senha do Render ainda entra. Um
+cadastro capaz de trancar o único administrador não é segurança, é armadilha.
+
+O antigo comentário que ficava aqui dizia que cadastro de usuário era "peso sem
+retorno" porque o módulo tinha prazo de validade. Deixou de ser verdade quando
+o dono pediu o contrário, com todas as letras: *"vou poder cadastrar o operador,
+definir a senha, definir as telas que ele tem acesso. Aí vai ter um usuário
+master, e os outros a gente define as permissões."*
 
 QUEM AUTENTICA É A SENHA; O NOME APENAS IDENTIFICA. Desde 04/09/2026 a pessoa
 também informa o NOME dela ao entrar. Isso não é login: digitar "Marcelo" não
@@ -48,6 +61,14 @@ logger = logging.getLogger("analisesps.auth")
 
 CHAVE_SESSAO = "analisesps_perfil"
 CHAVE_NOME = "analisesps_nome"
+
+# Quem entrou por cadastro próprio guarda o NÚMERO dele aqui. Sessão sem este
+# número é o mestre — quem digitou a senha do Render.
+#
+# ⚠️ GUARDA-SE O NÚMERO, NÃO AS PERMISSÕES. As telas de cada pessoa são lidas
+# do banco a cada pedido: tirar uma tela de alguém tem de valer NA HORA, não
+# quando ele fechar o navegador.
+CHAVE_USUARIO = "analisesps_usuario_id"
 
 # Teto do nome. Não é regra de negócio: é para o campo não virar porta de
 # entrada de texto gigante, já que ele vai para o banco e para a tela.
@@ -168,18 +189,77 @@ def esta_logado() -> bool:
 
 
 def pode_operar() -> bool:
-    return perfil_atual() == OPERADOR
+    """Pode alterar dado? Para o mestre é o perfil da senha; para quem tem
+    cadastro, a marcação dele — lida do banco a cada pedido."""
+    if not esta_logado():
+        return False
+    if e_mestre():
+        return perfil_atual() == OPERADOR
+    pessoa = usuario_da_sessao()
+    return bool(pessoa and pessoa.get("pode_operar"))
 
 
-def entrar_na_sessao(perfil: str, nome: str = "") -> None:
+def entrar_na_sessao(perfil: str, nome: str = "", usuario_id=None) -> None:
     session[CHAVE_SESSAO] = perfil
     session[CHAVE_NOME] = limpar_nome(nome)
+    if usuario_id is None:
+        session.pop(CHAVE_USUARIO, None)       # o mestre
+    else:
+        session[CHAVE_USUARIO] = int(usuario_id)
     session.permanent = False      # a sessão morre quando o navegador fecha
 
 
 def sair_da_sessao() -> None:
     session.pop(CHAVE_SESSAO, None)
     session.pop(CHAVE_NOME, None)
+    session.pop(CHAVE_USUARIO, None)
+
+
+def e_mestre() -> bool:
+    """Entrou pela senha do Render. Quem entrou por cadastro próprio, nunca."""
+    return esta_logado() and not session.get(CHAVE_USUARIO)
+
+
+def usuario_da_sessao():
+    """A pessoa cadastrada que está logada, ou None quando é o mestre.
+
+    VAI AO BANCO, e de propósito: tirar uma tela de alguém tem de valer na
+    hora. Para não pagar isso várias vezes na mesma tela, o resultado fica
+    guardado no `g` do Flask, que morre no fim do pedido.
+
+    Se a pessoa foi apagada ou desativada no meio da sessão, ela cai fora
+    agora — não no próximo login."""
+    uid = session.get(CHAVE_USUARIO)
+    if not uid:
+        return None
+    from flask import g
+    guardado = getattr(g, "_analisesps_usuario", _NAO_PERGUNTEI)
+    if guardado is not _NAO_PERGUNTEI:
+        return guardado
+    from . import usuarios
+    try:
+        pessoa = usuarios.buscar_por_id(uid)
+    except Exception:  # noqa: BLE001 — banco fora do ar não vira acesso total
+        logger.exception("Análise de SPs: não consegui ler o usuário %s", uid)
+        pessoa = None
+    if pessoa is None:
+        sair_da_sessao()
+    g._analisesps_usuario = pessoa
+    return pessoa
+
+
+_NAO_PERGUNTEI = object()
+
+
+def telas_permitidas() -> set[str] | None:
+    """As telas que a pessoa logada alcança. `None` quer dizer TODAS (o mestre).
+
+    Distinguir `None` de conjunto vazio é o ponto: vazio quer dizer NENHUMA, e
+    é o que acontece com um cadastro sem tela marcada."""
+    if not esta_logado() or e_mestre():
+        return None
+    pessoa = usuario_da_sessao()
+    return set(pessoa.get("telas") or []) if pessoa else set()
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +301,138 @@ def pessoa_atual() -> str:
 
 
 # ---------------------------------------------------------------------------
+# QUAL TELA É CADA ROTA — e o que é só do mestre
+# ---------------------------------------------------------------------------
+# Isto existe porque proteger tela por tela é como esse tipo de coisa vaza. A
+# pergunta "esta pessoa pode abrir esta rota?" é respondida NUM lugar só, com
+# uma tabela, e há teste exigindo que toda rota do módulo esteja classificada.
+#
+# ⚠️ O PADRÃO É NEGAR. Rota que ninguém classificou aqui NÃO ABRE para quem tem
+# cadastro próprio — o log diz o que fazer. É a mesma escolha da declaração
+# `@exige_*`: esquecer fecha, nunca abre. Para o mestre nada disto se aplica.
+
+# As telas do menu que NÃO se pode liberar para ninguém. Configurações é de
+# onde se aplica migração, se troca o certificado digital e se cadastra gente —
+# é a tela que conserta o módulo, e ela é do dono.
+SO_DO_MESTRE_POR_TELA = frozenset({"configuracoes"})
+
+# Rotas que são só do mestre, por escreverem no OMIE, mexerem em segredo ou
+# configurarem o módulo. Nome exato, para não pegar vizinho por engano.
+SO_DO_MESTRE = frozenset({
+    "analisesps.configuracoes",
+    "analisesps.migrar",                 # aplica migração no banco
+    "analisesps.gravar_pessoas",         # a lista de nomes da entrada
+    "analisesps.gravar_pasta_drive",
+    "analisesps.conferir_drive",
+    "analisesps.subir_certificado",      # o A1 da empresa
+    "analisesps.conferir_certificado",
+    "analisesps.remover_certificado",
+    "analisesps.tela_credores",          # conserta nome de credor na base
+    "analisesps.aplicar_credor",
+    "analisesps.consultar_cnpj_credor",
+    "analisesps.sps_do_nome_credor",
+})
+
+# Famílias inteiras do mestre, por prefixo — rota nova dentro delas já nasce
+# fechada, em vez de esperar alguém lembrar de acrescentá-la acima.
+SO_DO_MESTRE_POR_PREFIXO = (
+    "analisesps.aportes_",     # lançam aporte e devolução direto no OMIE
+    "analisesps.tela_aportes",
+    "analisesps.usuarios_",    # o próprio cadastro de acesso
+)
+
+# Rota de apoio: não é tela de dado, e vale para qualquer pessoa logada. Cada
+# uma com o motivo escrito, porque é uma exceção ao padrão de negar.
+APOIO = {
+    "analisesps.inicio": "só manda para a primeira tela",
+    "analisesps.sair": "encerrar a sessão não pode depender de permissão",
+    "analisesps.escolher_colunas": "guarda as colunas DA PRÓPRIA pessoa",
+    "analisesps.frescor": "diz se a base mudou; não devolve dado da empresa",
+    "analisesps.andamento": "diz se a sincronização está rodando",
+}
+
+# Endpoint -> as telas que dão direito a ele. Quem tem QUALQUER uma delas
+# entra; quem não tem nenhuma, não.
+TELA_DA_ROTA = {
+    "analisesps.solicitacoes": ("solicitacoes",),
+    "analisesps.detalhe": ("solicitacoes",),
+    "analisesps.exportar": ("solicitacoes",),
+    "analisesps.alterar": ("solicitacoes",),
+    "analisesps.enviar_ao_lote": ("solicitacoes",),
+    "analisesps.sem_risco": ("solicitacoes",),
+    "analisesps.validar": ("solicitacoes",),
+    # O BeeVale e os códigos de pagamento servem as duas pontas do mesmo
+    # trabalho: quem monta a lista e quem paga. Uma tela das duas basta.
+    "analisesps.beevale_cadastro": ("solicitacoes", "lote"),
+    "analisesps.beevale_gerar": ("solicitacoes", "lote"),
+    "analisesps.beevale_executar": ("solicitacoes", "lote"),
+    "analisesps.codigos": ("solicitacoes", "lote"),
+    "analisesps.tela_lote": ("lote",),
+    "analisesps.exportar_lote": ("lote",),
+    "analisesps.lote_excel_rota": ("lote",),
+    "analisesps.lote_excel_todos": ("lote",),
+    "analisesps.lote_pdf": ("lote",),
+    "analisesps.tela_comprovantes": ("comprovantes",),
+    "analisesps.enviar_comprovantes": ("comprovantes",),
+    "analisesps.estado_comprovantes": ("comprovantes",),
+    "analisesps.reprocessar_comprovante": ("comprovantes",),
+    "analisesps.relatorio": ("relatorio",),
+    "analisesps.exportar_relatorio": ("relatorio",),
+    "analisesps.relatorio_pdf": ("relatorio",),
+    "analisesps.tela_fiscal": ("fiscal",),
+    "analisesps.tela_planilha": ("fiscal",),
+    "analisesps.nota_documento": ("fiscal",),
+    "analisesps.conferir_nota_fiscal": ("fiscal",),
+    "analisesps.comparar_fiscal": ("fiscal",),
+    "analisesps.reconferir_fiscal": ("fiscal",),
+    "analisesps.confirmar_fiscal": ("fiscal",),
+    "analisesps.decidir_fiscal_a_mao": ("fiscal",),
+    "analisesps.pedir_ia_fiscal": ("fiscal",),
+    "analisesps.importar_relatorio_fsist": ("fiscal",),
+    "analisesps.tela_agenda": ("agenda",),
+    "analisesps.tela_conciliacao": ("conciliacao",),
+    "analisesps.calendario": ("calendario",),
+    "analisesps.auditoria": ("auditoria",),
+    "analisesps.exportar_auditoria": ("auditoria",),
+    "analisesps.ratear": ("ratear",),
+    "analisesps.tela_bradesco": ("bradesco",),
+    "analisesps.log": ("log",),
+}
+
+# Famílias por prefixo, pelo mesmo motivo do mestre: a conciliação tem vinte
+# rotas e vai ter mais. Todas são a mesma tela.
+TELA_POR_PREFIXO = (
+    ("analisesps.conciliacao", ("conciliacao",)),
+)
+
+
+def telas_da_rota(endpoint: str):
+    """As telas que dão direito a esta rota, ou None se ninguém classificou."""
+    if endpoint in TELA_DA_ROTA:
+        return TELA_DA_ROTA[endpoint]
+    for prefixo, telas in TELA_POR_PREFIXO:
+        if endpoint.startswith(prefixo):
+            return telas
+    return None
+
+
+def e_so_do_mestre(endpoint: str) -> bool:
+    return (endpoint in SO_DO_MESTRE
+            or endpoint.startswith(SO_DO_MESTRE_POR_PREFIXO))
+
+
+def telas_para_o_menu(telas):
+    """Filtra a lista de telas do menu pelo que a pessoa logada alcança.
+
+    Mostrar no menu uma tela que responde 404 seria pior do que não mostrar:
+    a pessoa clica, não entende, e liga para o dono."""
+    permitidas = telas_permitidas()
+    if permitidas is None:
+        return list(telas)
+    return [t for t in telas if t[0] in permitidas]
+
+
+# ---------------------------------------------------------------------------
 # O guarda
 # ---------------------------------------------------------------------------
 # A folha de estilo. É o único endpoint que o próprio Flask cria, então não há
@@ -253,6 +465,43 @@ def exigir_login():
     if not esta_logado():
         return redirect(url_for("analisesps.entrar", proximo=request.full_path))
 
+    # ------------------------------------------------------------------
+    # PRIMEIRO O ALCANCE, DEPOIS A ALÇADA — e a ordem importa.
+    #
+    # Quem tem cadastro próprio alcança só as telas marcadas para ele. Essa
+    # conferência vem ANTES da de "pode alterar" de propósito: responder "sem
+    # permissão" numa rota que a pessoa não deveria nem saber que existe
+    # confirma a existência dela. Fora do alcance é "não encontrado"; dentro
+    # do alcance e sem alçada é "sem permissão", que é informação honesta.
+    #
+    # O mestre (senha do Render) passa direto — ele vê tudo, por definição.
+    # ------------------------------------------------------------------
+    if not e_mestre():
+        pessoa = usuario_da_sessao()
+        if pessoa is None:
+            # apagado ou desativado no meio da sessão: cai fora agora
+            return redirect(url_for("analisesps.entrar"))
+
+        if e_so_do_mestre(endpoint):
+            logger.warning("Análise de SPs: %s tentou abrir %s, que é só do "
+                           "administrador.", pessoa["usuario"], endpoint)
+            return _recusar()
+
+        if endpoint not in APOIO:
+            telas = telas_da_rota(endpoint)
+            if telas is None:
+                # Rota nova que ninguém classificou. Fecha para quem tem
+                # cadastro e diz o que fazer — no log, não na tela. Para o
+                # mestre continua aberta, o que evita o pior dos mundos: o dono
+                # descobrindo a coisa por um 404 na cara.
+                logger.error("Análise de SPs: a rota '%s' não está em "
+                             "TELA_DA_ROTA nem em APOIO (auth.py). Enquanto "
+                             "isso, está fechada para quem tem cadastro "
+                             "próprio. Classifique-a.", endpoint)
+                return _recusar()
+            if not (set(telas) & set(pessoa.get("telas") or [])):
+                return _recusar()
+
     if exigencia == OPERADOR and not pode_operar():
         return _sem_permissao()
 
@@ -276,8 +525,9 @@ def _sem_permissao():
     return render_template(
         "analisesps_erro.html",
         titulo="Sem permissão",
-        mensagem="Você entrou no perfil Consulta, que vê mas não altera. "
-                 "Para esta ação, entre com a senha de Operador."), 403
+        mensagem="O seu acesso vê e exporta, mas não altera. Para esta ação, "
+                 "é preciso ser operador — quem cuida do sistema pode marcar "
+                 "isso no seu cadastro, em Configurações."), 403
 
 
 def exigir_operador_json(f):
@@ -286,7 +536,7 @@ def exigir_operador_json(f):
     def dentro(*a, **kw):
         if not pode_operar():
             return {"ok": False,
-                    "erro": "O perfil Consulta não altera dados."}, 403
+                    "erro": "O seu acesso vê, mas não altera dados."}, 403
         return f(*a, **kw)
     return dentro
 

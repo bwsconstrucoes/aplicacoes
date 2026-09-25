@@ -547,7 +547,8 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 }
 textarea.campo-largo { font-family: var(--fonte-dados); font-size: 13px; resize: vertical; }
 .campo-largo:focus { outline: 2px solid var(--azul-claro); border-color: var(--azul-claro); }
-select, input[type=number], input[type=search], input[type=text], input[type=date] {
+select, input[type=number], input[type=search], input[type=text], input[type=date],
+input[type=password] {
   padding: 7px 9px; border: 1px solid var(--borda-forte);
   border-radius: var(--raio-p); font-size: 13.5px; font-family: inherit;
   background: var(--branco); color: var(--tinta);
@@ -2065,3 +2066,20 @@ tr.filtros-coluna input, tr.filtros-coluna select {
 }
 tr.filtros-coluna input.direita { text-align: right; }
 tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
+
+/* ---------------------------------------------------------------------------
+   AS TELAS DE CADA PESSOA, no cartão "Quem tem acesso" das Configurações.
+
+   Em coluna única a lista de doze telas empurra o botão de salvar para fora da
+   vista, e quem está marcando permissão precisa ver TODAS de uma vez para
+   perceber o que deixou de marcar — "sem tela marcada, não entra" só ajuda se
+   a pessoa vê a lista inteira.
+--------------------------------------------------------------------------- */
+.telas-do-usuario {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 4px 12px; margin: 4px 0 2px;
+}
+.telas-do-usuario label {
+  display: flex; align-items: center; gap: 6px; font-size: 13px;
+  padding: 2px 0; cursor: pointer;
+}

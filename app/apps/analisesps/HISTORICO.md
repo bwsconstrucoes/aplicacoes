@@ -7427,6 +7427,97 @@ aplicação sobe com os 18 blueprints.
 **NÃO verificado:** nada disto num navegador, e nenhum lançamento real no OMIE.
 
 ---
+
+### Nonagésima sexta leva (25/09) — cada um com a sua senha e as suas telas
+
+> *"Atualmente os usuários eu adiciono, eles estão com senha única. Eu quero
+> fazer similar ao painel. Vou poder cadastrar o operador, definir a senha,
+> definir as telas que ele tem acesso. Aí vai ter um usuário master, e os outros
+> a gente define as permissões."*
+
+Até aqui este módulo tinha **duas senhas só**, iguais para todo mundo: uma de
+Consulta e uma de Operador, nas variáveis do Render. Quem digitava a de Operador
+via e fazia **tudo** — e o nome escolhido na entrada era só uma etiqueta, sem
+tranca nenhuma por trás. Está escrito no histórico, com todas as letras, que
+cadastro de usuário aqui era *"peso sem retorno"* porque o módulo tinha prazo de
+validade. **Deixou de ser verdade quando ele pediu o contrário.**
+
+#### O que existe agora
+
+**Migração 023**: `analisesps.usuarios` (login, nome, senha embaralhada, ativo,
+pode_operar) e `analisesps.usuario_telas` (uma linha por tela liberada).
+
+Em **Configurações › Quem tem acesso**, o dono cadastra a pessoa: login, senha,
+se ela **pode alterar** ou só ver, e quais das **doze telas** ela abre. Trocar a
+senha de quem esqueceu e mudar as telas de quem passou a fazer outra coisa ficam
+a um clique, na própria linha da pessoa.
+
+#### ⚠️ A SENHA DO RENDER CONTINUA SENDO O MESTRE — e isso é decisão, não sobra
+
+É o que impede o dono de **se trancar para fora**. Se a migração não tiver
+rodado, se ele apagar o próprio cadastro sem querer, se o banco cair: a senha do
+Render ainda entra e ainda vê tudo. **Um cadastro capaz de trancar o único
+administrador não é segurança, é armadilha.**
+
+E, pela mesma razão, a senha do Render é **conferida PRIMEIRO**, com o campo de
+usuário preenchido ou não. Isso vem de um defeito real do painel (22/09): a tela
+ganhou um campo novo, o gerenciador de senhas do navegador o preencheu sozinho, o
+pedido caiu no caminho do cadastro e a resposta foi *"usuário ou senha
+incorretos"* — com a senha certa digitada. Há teste travando isso aqui.
+
+#### Três regras que falham FECHADO
+
+1. **Sem tela marcada, a pessoa não entra.** Lista vazia quer dizer NENHUMA,
+   nunca "todas" — senão um cadastro esquecido pela metade viraria acesso total.
+2. **Quem tem cadastro não abre Configurações**, não aplica migração, não
+   encosta no certificado digital, não lança aporte no OMIE e **não cria outro
+   acesso**. A última é a que faz as outras valerem: quem pode criar acesso pode
+   dar a si mesmo tudo — e isso passou batido na primeira versão do painel.
+3. **O padrão de "pode alterar" é NÃO.** Subir o poder de alguém é uma marcação
+   consciente, não o que acontece por descuido.
+
+#### O mapa, e por que ele tem inventário
+
+A permissão é decidida **num lugar só** (`auth.exigir_login`), com uma tabela
+dizendo de que tela é cada uma das 85 rotas do módulo. **Rota que ninguém
+classificou não abre** para quem tem cadastro — e um teste de inventário exige
+que toda rota esteja classificada. Sem esse teste, "o padrão é negar" viraria
+armadilha para quem só quisesse criar uma tela nova: ela nasceria dando 404 para
+metade da equipe, sem nenhuma pista.
+
+Uma armadilha concreta que o mapa evitou: fechar por prefixo `conferir_` teria
+levado `conferir_nota_fiscal` (que é da tela Doc. Fiscal) junto com
+`conferir_certificado` e `conferir_drive`, que são do mestre. Há teste só para
+esse caso.
+
+**O menu mostra só as telas da pessoa.** Deixar no menu uma tela que responde
+404 é pior do que não mostrá-la.
+
+**As permissões são lidas do banco a cada pedido**, de propósito: tirar uma tela
+de alguém vale **na hora**, não quando ele fechar o navegador — que é justamente
+o momento em que se tira o acesso de alguém. Custa duas consultas por chave
+primária, guardadas até o fim do pedido.
+
+#### O que fica de aviso para o dono
+
+- **O nome do cadastro é o que separa o lote e os filtros da pessoa.** Cadastrar
+  Thiago com o nome que ele já escolhia na entrada faz o lote dele continuar
+  sendo o mesmo; com nome diferente, ele abre o Lote e o encontra vazio sem
+  entender por quê. A tela avisa e oferece a lista de nomes que já existe.
+- **Aportes no OMIE e a tela de credores ficaram do mestre.** Quem usa aportes
+  hoje pela senha geral continua usando por ela. Liberar para alguém com
+  cadastro é uma linha — mas é decisão dele, não minha.
+- **A senha não se lê depois, só se troca.** Nem o dono. É PBKDF2 com sal, o
+  mesmo do painel.
+
+**Verificado:** 35 testes com banco de verdade (inclusive o que prova que tirar
+uma tela vale na hora, e o que prova que quem tem cadastro não cria outro
+acesso) e 29 sem banco; conferido por mutação que o guarda realmente barra —
+desligando a checagem, três testes ficam vermelhos.
+
+**NÃO verificado:** nada disto num navegador, e nenhum cadastro real criado.
+
+---
 ---
 
 ## Regras que não se discutem

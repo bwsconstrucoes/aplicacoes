@@ -24,7 +24,7 @@ página. O custo extra é zero.
 
 ```
 web.py             rotas e telas
-auth.py            login por senha, dois perfis, padrão NEGAR
+auth.py            login (senha do Render ou cadastro), telas por pessoa, padrão NEGAR
 consultas.py       as perguntas que as telas fazem ao banco
 auditoria.py       as sete checagens da tela de Auditoria
 lote.py            o lote de trabalho: agrupar, extrair SPs, guardar
@@ -80,36 +80,60 @@ apontou isso na primeira navegação, e o critério passou a ser este:
 Diferença proposital é bem-vinda — mas é *decidida*, não acidental, e fica
 escrita no `HISTORICO.md`.
 
-## Quem é quem
+## Quem é quem — DOIS JEITOS DE ENTRAR
 
-Não há cadastro de usuários: são até quatro pessoas e o módulo tem prazo de
-validade. Mas cada um **informa o nome ao entrar**, ao lado da senha.
+Desde 25/09/2026 há cadastro de acesso (migração 023), e os dois caminhos
+convivem de propósito.
 
-**O nome não é senha e não dá poder nenhum.** Quem autentica é a senha, e só
-ela: digitar "Diretor" com a senha de Consulta continua sendo Consulta. O nome
-serve para três coisas: separar o **lote** de cada um, guardar os **filtros**
-de cada um, e assinar o **registro de alterações** — que antes sabia só qual
-perfil mexeu.
-
-Se um dia for preciso IMPEDIR que alguém se passe por outro, o lugar é o
-cadastro de usuários do ERP. Aqui é etiqueta honesta entre colegas.
-
-## Os dois perfis
+### 1. A senha do Render — o MESTRE
 
 | Perfil | O que faz | Variável no Render |
 |---|---|---|
 | **Consulta** | vê tudo e exporta; não altera nada | `ANALISESPS_SENHA_CONSULTA` |
 | **Operador** | tudo o que o Consulta faz, mais alterar | `ANALISESPS_SENHA_OPERADOR` |
 
-Perfil sem senha configurada não existe — ninguém entra por ele. **Sem nenhuma
-das duas, o módulo não abre para ninguém.** Falha fechado, de propósito: são os
-pagamentos da empresa.
+Quem entra por aqui vê **todas** as telas, configura o módulo, aplica migração,
+mexe no certificado digital, lança aporte no OMIE e cadastra as pessoas. Ao
+entrar assim, escolhe o **nome** numa lista — e o nome não é senha nem dá poder
+nenhum: ele separa o **lote** de cada um, guarda os **filtros** de cada um e
+assina o **registro de alterações**.
 
-Não há cadastro de usuários porque são até quatro pessoas e o módulo tem prazo
-de validade — o ERP vai substituí-lo. A consequência, dita com clareza porque
-um dia vai incomodar: **o registro de alterações sabe que PERFIL mexeu, não
-qual PESSOA.** Quando isso passar a importar, o lugar certo é o cadastro de
-usuários do ERP, não um cadastro novo aqui.
+Perfil sem senha configurada não existe. **Sem nenhuma das duas, ninguém entra
+pelo caminho do mestre.** Falha fechado, de propósito: são os pagamentos da
+empresa.
+
+### 2. Usuário e senha próprios — o CADASTRO
+
+Cadastrado em **Configurações › Quem tem acesso**, pelo mestre. Cada pessoa tem
+login, senha (guardada embaralhada, ninguém lê depois — só troca), a marcação
+de **poder alterar** ou só ver, e a lista de **telas que ela abre**.
+
+⚠️ **Três regras que falham fechado:**
+
+1. **Sem tela marcada, a pessoa não entra.** Lista vazia quer dizer NENHUMA,
+   nunca "todas".
+2. **Quem tem cadastro não abre Configurações**, não aplica migração, não
+   encosta no certificado, não lança aporte no OMIE e **não cria outro
+   acesso** — a última é a que faz as outras valerem.
+3. **O padrão de "pode alterar" é NÃO.** Subir o poder de alguém é marcação
+   consciente.
+
+As permissões são lidas do banco **a cada pedido**: tirar uma tela de alguém
+vale na hora, não quando ele fechar o navegador.
+
+### Por que a senha do Render continua valendo
+
+Não é preguiça: é o que impede o dono de se trancar para fora. Se a migração
+não tiver rodado, se ele apagar o próprio cadastro sem querer, se o banco cair —
+a senha do Render ainda entra. **Um cadastro capaz de trancar o único
+administrador não é segurança, é armadilha.**
+
+### Onde a permissão é decidida
+
+Num lugar só: `auth.exigir_login()`, com o mapa `auth.TELA_DA_ROTA` dizendo de
+que tela é cada rota. **Rota que ninguém classificou não abre** para quem tem
+cadastro, e há teste de inventário exigindo que toda rota esteja classificada —
+é o que impede a próxima tela de nascer com brecha ou com 404 inexplicável.
 
 ## Toda rota declara o que exige
 

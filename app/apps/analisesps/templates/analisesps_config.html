@@ -333,10 +333,179 @@
    pode fazer continua sendo a senha. Serve para a mesma pessoa não se dividir
    em duas por ter digitado o nome diferente num dia.
 --------------------------------------------------------------------------- #}
+{# ---------------------------------------------------------------------------
+   QUEM TEM ACESSO — cadastro próprio, com senha e telas.
+
+   Pedido do dono em 25/09/2026: *"vou poder cadastrar o operador, definir a
+   senha, definir as telas que ele tem acesso. Aí vai ter um usuário master, e
+   os outros a gente define as permissões."*
+
+   A senha do Render continua sendo o mestre: é o que impede o dono de se
+   trancar para fora se algo der errado aqui.
+--------------------------------------------------------------------------- #}
 <div class="cartao">
-  <div class="cartao-cab"><h3>Quem entra</h3></div>
+  <div class="cartao-cab"><h3>Quem tem acesso</h3></div>
+
+  {% if erro_usuario %}<div class="aviso erro">{{ erro_usuario }}</div>{% endif %}
+  {% if usuario_ok %}<div class="aviso">Acesso atualizado.</div>{% endif %}
+
   <p class="cartao-dica" style="margin:0 0 10px">
-    Estes são os nomes que aparecem na lista da tela de entrada. É por eles que
+    Você entra com a <b>senha geral do sistema</b> e vê tudo — é o acesso mestre,
+    e ele continua valendo sempre, mesmo que algo aqui dê errado.<br>
+    Quem for cadastrado aqui entra com <b>usuário e senha próprios</b> e abre
+    <b>só as telas que você marcar</b>. <b>Sem tela marcada, a pessoa não
+    entra</b> — nenhuma marcada quer dizer nenhuma, nunca todas.<br>
+    Quem é cadastrado aqui <b>não abre esta tela de Configurações</b>, não aplica
+    atualização de banco, não mexe no certificado digital e não lança aporte no
+    OMIE. Isso é seu.
+  </p>
+
+  {% if not cadastro_pronto %}
+    <div class="aviso erro" style="margin:0">
+      O cadastro de acesso precisa da <b>atualização do banco</b> — aperte
+      “Aplicar atualizações do banco”, lá no alto desta tela, e volte aqui.
+    </div>
+  {% else %}
+
+  {% if pessoas_com_acesso %}
+  <div class="tabela-rolagem" style="margin-bottom:12px">
+    <table>
+      <thead><tr>
+        <th>Usuário</th><th>Nome</th><th>Pode</th><th>Telas</th>
+        <th>Último acesso</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for p in pessoas_com_acesso %}
+        <tr>
+          <td><b>{{ p.usuario }}</b>{% if not p.ativo %}
+            <br><small style="color:#c0392b">desativado</small>{% endif %}</td>
+          <td>{{ p.nome or '—' }}</td>
+          <td><small>{{ 'alterar' if p.pode_operar else 'só ver' }}</small></td>
+          <td><small>{% if p.telas %}{{ p.telas|length }}:
+              {% for chave, rotulo in telas_liberaveis %}{% if chave in p.telas %}{{ rotulo }}{% if not loop.last %}, {% endif %}{% endif %}{% endfor %}
+              {% else %}<b>nenhuma — não entra</b>{% endif %}</small></td>
+          <td><small>{{ p.ultimo_acesso|momento_br if p.ultimo_acesso
+                        else 'nunca entrou' }}</small></td>
+          <td>
+            {% if pode_operar %}
+            <form method="post" action="{{ url_for('analisesps.usuarios_salvar') }}"
+                  onsubmit="return confirm('Tirar o acesso de {{ p.usuario }}?')">
+              <input type="hidden" name="acao" value="apagar">
+              <input type="hidden" name="usuario_id" value="{{ p.id }}">
+              <button class="link-btn" type="submit"
+                      title="Tirar o acesso desta pessoa">✕</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% if pode_operar %}
+        {# A LINHA DE ALTERAR, logo abaixo da pessoa. Trocar a senha de quem
+           esqueceu e mudar as telas de quem passou a fazer outra coisa são as
+           duas coisas que mais vão acontecer — ficam a um clique. #}
+        <tr>
+          <td colspan="6" style="padding:0 0 12px">
+            <details>
+              <summary style="cursor:pointer; font-size:12px">
+                Alterar {{ p.usuario }} — senha, telas ou o que ele pode fazer
+              </summary>
+              <form method="post" style="margin-top:8px; padding-left:10px"
+                    action="{{ url_for('analisesps.usuarios_salvar') }}">
+                <input type="hidden" name="acao" value="salvar">
+                <input type="hidden" name="usuario_id" value="{{ p.id }}">
+                <label class="rotulo-campo" for="nome{{ p.id }}">Nome
+                  <small>(é o que separa o lote e os filtros dele)</small></label>
+                <input id="nome{{ p.id }}" name="nome" type="text"
+                       value="{{ p.nome }}" list="nomes-da-equipe">
+                <label class="rotulo-campo" for="senha{{ p.id }}">Nova senha
+                  <small>(em branco mantém a que ele já tem)</small></label>
+                <input id="senha{{ p.id }}" name="nova_senha" type="password"
+                       autocomplete="new-password">
+                <div style="margin:8px 0">
+                  <label><input type="checkbox" name="pode_operar" value="1"
+                         {% if p.pode_operar %}checked{% endif %}>
+                    Pode <b>alterar</b> (sem isto, só vê e exporta)</label><br>
+                  <label><input type="checkbox" name="ativo" value="1"
+                         {% if p.ativo %}checked{% endif %}>
+                    Acesso <b>ativo</b></label>
+                </div>
+                <div class="rotulo-campo">Telas que ele abre</div>
+                <div class="telas-do-usuario">
+                  {% for chave, rotulo in telas_liberaveis %}
+                    <label><input type="checkbox" name="tela_do_usuario"
+                           value="{{ chave }}"
+                           {% if chave in p.telas %}checked{% endif %}>
+                      {{ rotulo }}</label>
+                  {% endfor %}
+                </div>
+                <div style="margin-top:10px">
+                  <button class="btn" type="submit">Salvar {{ p.usuario }}</button>
+                </div>
+              </form>
+            </details>
+          </td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p style="margin:0 0 12px"><small>Ninguém cadastrado ainda — todo mundo
+      entra pela senha geral.</small></p>
+  {% endif %}
+
+  {% if pode_operar %}
+  <details>
+    <summary style="cursor:pointer"><b>Cadastrar uma pessoa</b></summary>
+    <form method="post" style="margin-top:10px"
+          action="{{ url_for('analisesps.usuarios_salvar') }}">
+      <input type="hidden" name="acao" value="criar">
+      <label class="rotulo-campo" for="novo_usuario">Usuário
+        <small>(o que a pessoa digita para entrar)</small></label>
+      <input id="novo_usuario" name="novo_usuario" type="text"
+             autocomplete="off" required>
+      <label class="rotulo-campo" for="nome_novo">Nome</label>
+      <input id="nome_novo" name="nome" type="text" list="nomes-da-equipe">
+      <p class="cartao-dica" style="margin:6px 0 0">
+        ⚠️ Use o <b>mesmo nome</b> que a pessoa já escolhia na entrada. É por ele
+        que o sistema sabe de quem é cada lote e cada filtro — com nome
+        diferente, ela abre o Lote e o encontra vazio, sem entender por quê.
+      </p>
+      <label class="rotulo-campo" for="senha_nova">Senha
+        <small>(pelo menos 6 letras; ninguém consegue lê-la depois, só trocar)</small></label>
+      <input id="senha_nova" name="nova_senha" type="password"
+             autocomplete="new-password" required>
+      <div style="margin:8px 0">
+        <label><input type="checkbox" name="pode_operar" value="1">
+          Pode <b>alterar</b> (sem isto, só vê e exporta)</label>
+      </div>
+      <div class="rotulo-campo">Telas que ele abre
+        <small>(sem nenhuma marcada, ele não entra)</small></div>
+      <div class="telas-do-usuario">
+        {% for chave, rotulo in telas_liberaveis %}
+          <label><input type="checkbox" name="tela_do_usuario"
+                 value="{{ chave }}"> {{ rotulo }}</label>
+        {% endfor %}
+      </div>
+      <div style="margin-top:10px">
+        <button class="btn" type="submit">Cadastrar</button>
+      </div>
+    </form>
+  </details>
+  {% endif %}
+
+  {# A lista de nomes que já existe, oferecida nos dois campos de nome. #}
+  <datalist id="nomes-da-equipe">
+    {% for pessoa in equipe %}<option value="{{ pessoa }}">{% endfor %}
+  </datalist>
+  {% endif %}
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Nomes na lista da entrada</h3></div>
+  <p class="cartao-dica" style="margin:0 0 10px">
+    Estes são os nomes que aparecem na lista da tela de entrada, para quem entra
+    pela <b>senha geral</b> — quem tem cadastro próprio não escolhe nome aqui. É por eles que
     o sistema sabe de quem é cada lote e cada filtro — <b>não</b> é senha e não
     dá permissão nenhuma a mais.
   </p>

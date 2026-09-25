@@ -111,6 +111,10 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/conciliacao/planilha/abas"),
     ("POST", "/analisesps/api/conciliacao/planilha/ler"),
     ("POST", "/analisesps/api/conciliacao/planilha/importar"),
+    # O CADASTRO DE ACESSO (25/09/2026). É a rota que cria acesso — se ela
+    # ficasse aberta, quem descobrisse o endereço criaria um usuário com todas
+    # as telas. Este inventário é o que garante que ninguém a esqueça.
+    ("POST", "/analisesps/usuarios"),
     ("GET", "/analisesps/auditoria"),
     ("GET", "/analisesps/ratear"),
     ("POST", "/analisesps/ratear"),
