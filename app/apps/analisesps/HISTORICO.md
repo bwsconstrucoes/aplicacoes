@@ -7655,6 +7655,63 @@ tentar de novo. E o teto do `codigo_lancamento_integracao` continua sem
 confirmação na fonte.
 
 ---
+
+### Nonagésima nona leva (25/09) — a mesma linha em duas listas que se contradizem
+
+Ele soltou um OFX e leu, no MESMO relatório:
+
+> *"Outros **110** já estão aqui vindos da planilha: eles não entram de novo…"*
+>
+> *"Atenção: **110** linha(s) que estão aqui e NÃO vêm neste extrato, dentro do
+> mesmo período."*
+
+E as duas listas traziam **as mesmas linhas** — o PAGAMENTO PIX CEDISA de
+11/09, o W NORTE, o José Soares. *"Veja que tem incoerência aqui, o leitor não
+detectou coisas já importadas."*
+
+#### As duas listas usavam réguas diferentes para a mesma pergunta
+
+- a **adoção** casa por **data e valor exato**, porque a linha que veio da
+  planilha não tem a identidade do arquivo do banco;
+- o **"está aqui e não veio"** comparava pela **impressão** — que é justamente
+  a identidade do arquivo do banco.
+
+Ou seja: **toda linha adotada caía, por construção, na lista das sumidas.** Os
+110 de uma lista eram exatamente os 110 da outra.
+
+#### Por que isso é pior do que um número errado
+
+Essa lista existe para acusar **uma** coisa: linha digitada errada, ou
+lançamento que o banco estornou. São poucas, e são as que importam. Afogá-las
+no meio de centenas de falsas não deixa a lista imprecisa — **faz ninguém ler a
+lista de novo**. E aí a próxima linha digitada errada passa.
+
+#### O conserto
+
+O casador de adoção passou a devolver **também o número da linha do banco** que
+casou, e o "está aqui e não veio" tira essas do caminho. Uma régua só para a
+mesma pergunta.
+
+Três testes novos, com os números que ele viu: a linha adotada **não** aparece
+como sumida; a que de fato sumiu **continua** aparecendo (consertar o falso
+positivo não podia apagar a lista); e, com duas iguais no mesmo dia e o extrato
+trazendo uma, **a outra continua sendo cobrada**. Conferido por mutação —
+desligando o conserto, dois deles ficam vermelhos.
+
+#### ⚠️ O que ele viu e ainda NÃO está explicado
+
+No mesmo relatório: *"Saldo que o banco declara: 966.136,60 · aqui: 1.030.164,39
+— não bate"*. São **R$ 64.027,79** de diferença, e o recado da tela chuta
+"pode ser extrato faltando antes deste período". **Isso não foi investigado.**
+Pode ser o saldo inicial da conta ainda não informado, extrato faltando, ou
+linha a mais/a menos. Fica anotado aqui porque é dinheiro, e porque o chute da
+tela não é resposta.
+
+**Verificado:** 69 testes com banco de verdade na conciliação e a suíte inteira.
+
+**NÃO verificado:** nada num navegador, e a diferença de saldo acima.
+
+---
 ---
 
 ## Regras que não se discutem

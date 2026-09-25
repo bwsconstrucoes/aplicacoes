@@ -300,8 +300,24 @@ def conferir(conta_id: int, lido) -> dict:
              if id(lanc) not in adotaveis]
 
     # O outro lado: o que temos no período e o arquivo não traz.
+    #
+    # ⚠️ AS QUE VÃO SER ADOTADAS NÃO ENTRAM AQUI — e foi o dono quem viu, em
+    # 25/09/2026: as MESMAS 110 linhas apareciam como "já estão aqui vindas da
+    # planilha" e, logo abaixo, como "estão aqui e NÃO vêm neste extrato".
+    #
+    # O motivo: esta consulta compara pela IMPRESSÃO, que é a identidade do
+    # arquivo do banco. A linha que veio da planilha tem identidade própria e
+    # nunca casa com nenhuma impressão do OFX — então toda linha adotada caía
+    # na lista das sumidas. As duas listas usavam réguas diferentes para a
+    # mesma pergunta.
+    #
+    # Esta lista existe para acusar linha digitada errada ou lançamento
+    # estornado pelo banco. Encher ela com as linhas que o próprio arquivo
+    # está reconhecendo faz o oposto: esconde as poucas de verdade no meio de
+    # centenas de falsas, e ninguém lê a lista de novo.
     so_aqui = []
     if lido.periodo_ini and lido.periodo_fim and _pronto():
+        serao_adotadas = set(adotaveis.values())
         linhas = consultar(
             "SELECT id, data, descricao, valor, origem, conciliado "
             "  FROM analisesps.conciliacao_extrato "
@@ -311,7 +327,8 @@ def conferir(conta_id: int, lido) -> dict:
             (conta_id, lido.periodo_ini, lido.periodo_fim,
              list(por_impressao) or [""]))
         so_aqui = [dict(zip(["id", "data", "descricao", "valor", "origem",
-                             "conciliado"], linha)) for linha in linhas]
+                             "conciliado"], linha)) for linha in linhas
+                   if linha[0] not in serao_adotadas]
 
     return {
         "conta_id": conta_id,
@@ -329,12 +346,19 @@ def conferir(conta_id: int, lido) -> dict:
     }
 
 
-def _adotaveis_da_planilha(conta_id: int, lancamentos: list) -> set:
+def _adotaveis_da_planilha(conta_id: int, lancamentos: list) -> dict:
     """Quais destes lançamentos já existem, vindos da planilha.
 
-    Devolve o `id()` de cada objeto que será ADOTADO em vez de criado — a
-    mesma regra de `_adotar_linha_da_planilha` (data e valor exato), feita
-    aqui só para CONTAR, sem escrever nada.
+    Devolve `{id(objeto): id da linha no banco}` — a mesma regra de
+    `_adotar_linha_da_planilha` (data e valor exato), feita aqui só para
+    CONFERIR, sem escrever nada.
+
+    ⚠️ DEVOLVE TAMBÉM A LINHA DO BANCO QUE CASOU, e isso não é detalhe: sem
+    esse número, quem confere não consegue tirar a linha adotada da lista do
+    "está aqui e não veio no extrato". Foi exatamente o que o dono viu em
+    25/09/2026 — as MESMAS 110 linhas apareciam como adotadas da planilha e,
+    logo abaixo, como sumidas do extrato. Ver a mesma linha nos dois lugares
+    faz a tela inteira perder o crédito.
 
     ⚠️ UMA LINHA DA PLANILHA SÓ CASA COM UM LANÇAMENTO. Dois débitos iguais no
     mesmo dia, com a planilha tendo trazido só um, têm de dar "1 adotável e 1
@@ -342,7 +366,7 @@ def _adotaveis_da_planilha(conta_id: int, lancamentos: list) -> set:
     vai gravar.
     """
     if not lancamentos or not _pronto():
-        return set()
+        return {}
     from .db import consultar
 
     candidatos: dict = {}
@@ -352,12 +376,11 @@ def _adotaveis_da_planilha(conta_id: int, lancamentos: list) -> set:
             " ORDER BY id", (int(conta_id),)):
         candidatos.setdefault((linha[1], linha[2]), []).append(linha[0])
 
-    achados = set()
+    achados: dict = {}
     for lanc in lancamentos:
         fila = candidatos.get((lanc.data, lanc.valor))
         if fila:
-            fila.pop(0)          # cada linha da planilha casa UMA vez
-            achados.add(id(lanc))
+            achados[id(lanc)] = fila.pop(0)   # cada uma casa UMA vez
     return achados
 
 

@@ -842,6 +842,89 @@ def test_a_conferencia_conta_a_parte_o_que_vem_da_planilha(banco_conc):
     assert conferido["ja_estavam"] == 0
 
 
+def test_a_linha_ADOTADA_nao_aparece_como_sumida_do_extrato(banco_conc):
+    """⚠️ A MESMA LINHA NOS DOIS LUGARES — achado pelo dono em 25/09/2026.
+
+    Ele soltou um OFX e leu, no mesmo relatório:
+
+        "Outros 110 já estão aqui vindos da planilha"
+        "Atenção: 110 linha(s) que estão aqui e NÃO vêm neste extrato"
+
+    com a MESMA linha nas duas listas (PAGAMENTO PIX CEDISA de 11/09, entre
+    outras). As duas usavam réguas diferentes para a mesma pergunta: a
+    primeira casa por data e valor; a segunda comparava pela IMPRESSÃO, que é
+    a identidade do arquivo do banco — e a linha vinda da planilha nunca casa
+    com nenhuma impressão do OFX.
+
+    O estrago não é o número: é que esta lista existe para acusar linha
+    digitada errada ou lançamento estornado, e afogar as poucas de verdade no
+    meio de centenas de falsas faz ninguém ler a lista de novo.
+    """
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        # esta vem no extrato: vai ser ADOTADA, e não pode constar como sumida
+        {"data": dt.date(2026, 9, 11), "descricao": "PAGAMENTO PIX CEDISA",
+         "documento": "", "valor": D("-26872.32"), "conciliado": True,
+         "observacao": ""},
+        # esta NÃO vem no extrato: é a única que a lista deve acusar
+        {"data": dt.date(2026, 9, 11), "descricao": "DIGITADA ERRADA",
+         "documento": "", "valor": D("-999.99"), "conciliado": False,
+         "observacao": ""}]), "T")
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(ofx(
+        [("20260911", "-26872.32", "A1", "PAGAMENTO PIX 27244680000145 CEDISA")],
+        ini="20260910", fim="20260925")))
+
+    assert conferido["adotaveis"] == 1
+    descricoes = [l["descricao"] for l in conferido["so_aqui"]]
+    assert "PAGAMENTO PIX CEDISA" not in descricoes, (
+        "a linha que vai ser adotada não pode aparecer como sumida do extrato")
+    assert descricoes == ["DIGITADA ERRADA"]
+
+
+def test_so_aqui_continua_acusando_o_que_de_fato_sumiu(banco_conc):
+    """O outro lado: consertar o falso positivo não pode ter apagado a lista.
+    Ela é o que acusa linha digitada errada e lançamento estornado."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        {"data": dt.date(2026, 9, 11), "descricao": "SO NA PLANILHA",
+         "documento": "", "valor": D("-123.45"), "conciliado": False,
+         "observacao": ""}]), "T")
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(ofx(
+        [("20260912", "-500.00", "B1", "OUTRA COISA")],
+        ini="20260910", fim="20260925")))
+
+    assert [l["descricao"] for l in conferido["so_aqui"]] == ["SO NA PLANILHA"]
+
+
+def test_com_DUAS_iguais_e_o_extrato_trazendo_UMA_a_outra_e_acusada(banco_conc):
+    """A régua fina: cada linha da planilha casa uma vez, então a segunda
+    continua sendo cobrada — e é a linha CERTA que sobra na lista."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        {"data": dt.date(2026, 9, 11), "descricao": "PIX REPETIDO",
+         "documento": "", "valor": D("-100.00"), "conciliado": False,
+         "observacao": ""},
+        {"data": dt.date(2026, 9, 11), "descricao": "PIX REPETIDO",
+         "documento": "", "valor": D("-100.00"), "conciliado": False,
+         "observacao": ""}]), "T")
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(ofx(
+        [("20260911", "-100.00", "C1", "PIX REPETIDO")],
+        ini="20260910", fim="20260925")))
+
+    assert conferido["adotaveis"] == 1
+    assert len(conferido["so_aqui"]) == 1, (
+        "uma casou e some da lista; a outra continua sendo cobrada")
+
+
 def test_o_que_a_conferencia_promete_e_o_que_a_gravacao_faz(banco_conc):
     """⚠️ A prova de que o relatório não mente mais: o número que ele lê antes
     tem de ser o que acontece depois."""
