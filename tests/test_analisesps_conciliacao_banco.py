@@ -582,6 +582,24 @@ def test_o_atraso_e_medido_pelo_ULTIMO_LANCAMENTO_e_nao_pela_importacao(
     assert linha["recado"]["grau"] == "ruim"
 
 
+def test_importado_agora_nunca_aparece_como_dias_NEGATIVOS(banco_conc):
+    """⚠️ ESTE TESTE PEGOU UM DEFEITO DE VERDADE, e só entre 21h e meia-noite.
+
+    A hora guardada pelo banco é UTC; a data da tela é de Brasília. Depois das
+    21h (UTC-3), em UTC já é o dia seguinte — e a subtração dava **-1**, com a
+    tela dizendo "importado há -1 dias". Quem lesse isso perderia a confiança
+    no painel inteiro, e o defeito desaparecia sozinho de manhã.
+    """
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20200115", "-100.00", "A1")])), "velho.ofx", "T")
+
+    linha = conciliacao.panorama(2020)["contas"][0]
+    assert linha["dias_sem_importar"] >= 0
+    assert linha["dias_sem_extrato"] >= 0
+
+
 def test_o_recado_diz_UMA_coisa_so_e_a_mais_urgente(banco_conc):
     """Listar tudo o que está imperfeito em cada conta faria a tela virar um
     mural que ninguém lê. A ordem é a do estrago."""
@@ -780,3 +798,282 @@ def test_o_filtro_de_cada_COLUNA_recorta_so_a_dela(banco_conc, filtro,
 
     achadas = conciliacao.listar(dict({"conta_id": conta_id}, **filtro))
     assert len(achadas) == esperado, porque
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O RELATÓRIO DA CONFERÊNCIA MENTIA — 24/09/2026
+#
+# O dono achou com um caso concreto: *"a leitura disse que nada no extrato
+# havia sido importado, mas veja: 01/09/2026 PAGTO ELETRON COBRANCA
+# 1423835099 −3.313,21 — e a importação da planilha tem essa mesma linha."*
+#
+# As duas estavam certas e a CONFERÊNCIA é que errava: a linha da planilha tem
+# identidade própria (sem FITID), a do OFX tem outra, e olhando só a
+# identidade a conferência via "não existe" e contava como NOVA — quando na
+# gravação ela seria ADOTADA, não criada.
+#
+# O resultado final estava certo; o número estava errado. Mas um relatório que
+# diz "47 novos" e grava 3 destrói a confiança na tela inteira — e é esta tela
+# que existe para responder "o que falta importar?".
+#
+# ⚠️ E AQUI ELE TAMBÉM ME CORRIGIU: eu cheguei a trocar o casamento para
+# "valor em módulo, e o banco decide o sinal", achando que havia erro de
+# sinal. *"A do sistema está no canto certo e está em vermelho, é débito."* O
+# que ele viu positivo era a coluna SAÍDA da tela, que mostra sem o sinal de
+# propósito. A troca foi desfeita — casar por módulo faria o OFX de uma saída
+# adotar uma ENTRADA de mesmo valor no mesmo dia e virar o sinal dela.
+# ---------------------------------------------------------------------------
+def test_a_conferencia_conta_a_parte_o_que_vem_da_planilha(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        {"data": dt.date(2026, 9, 1),
+         "descricao": "PAGTO ELETRON COBRANCA 1423835099", "documento": "",
+         "valor": D("-3313.21"), "conciliado": True,
+         "observacao": "conferir"}]), "T")
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-3313.21", "A1", "PAGTO ELETRON COBRANCA 1423835099"),
+        ("20260902", "-50.00", "A2", "OUTRA COISA")])))
+
+    assert conferido["adotaveis"] == 1
+    assert len(conferido["novas"]) == 1        # só a de 02/09
+    assert conferido["ja_estavam"] == 0
+
+
+def test_o_que_a_conferencia_promete_e_o_que_a_gravacao_faz(banco_conc):
+    """⚠️ A prova de que o relatório não mente mais: o número que ele lê antes
+    tem de ser o que acontece depois."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        {"data": dt.date(2026, 9, 1), "descricao": "PAGTO", "documento": "",
+         "valor": D("-3313.21"), "conciliado": False, "observacao": ""}]), "T")
+
+    arquivo = ofx([("20260901", "-3313.21", "A1", "PAGTO"),
+                   ("20260902", "-50.00", "A2", "OUTRA")])
+    prometido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(arquivo))
+    feito = conciliacao.importar(conta_id, conciliacao_ofx.ler(arquivo),
+                                 "x.ofx", "T")
+
+    assert len(prometido["novas"]) == feito["gravadas"]
+    assert prometido["adotaveis"] == feito["adotadas"]
+    assert len(conciliacao.listar({"conta_id": conta_id})) == 2
+
+
+def test_duas_linhas_iguais_com_a_planilha_tendo_UMA(banco_conc):
+    """⚠️ Cada linha da planilha casa UMA vez. Dois débitos iguais no mesmo
+    dia, com a planilha tendo trazido só um, têm de dar "1 adotável e 1 nova"
+    — e não "2 adotáveis", que faria a conferência prometer menos do que grava.
+    """
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        {"data": dt.date(2026, 9, 1), "descricao": "PIX", "documento": "",
+         "valor": D("-1500.00"), "conciliado": False, "observacao": ""}]), "T")
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-1500.00", "", "PIX FULANO"),
+        ("20260901", "-1500.00", "", "PIX FULANO")])))
+
+    assert conferido["adotaveis"] == 1
+    assert len(conferido["novas"]) == 1
+
+
+def test_o_casamento_e_por_valor_EXATO_e_nao_por_modulo(banco_conc):
+    """⚠️ Desfiz o casamento por módulo que eu tinha acabado de fazer: com ele,
+    o OFX de uma SAÍDA de 100 adotaria uma ENTRADA de 100 do mesmo dia e
+    viraria o sinal dela — trocando um lançamento verdadeiro por outro, em
+    silêncio."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        {"data": dt.date(2026, 9, 1), "descricao": "ENTRADA DE VERDADE",
+         "documento": "", "valor": D("100.00"), "conciliado": False,
+         "observacao": "não me toque"}]), "T")
+
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260901", "-100.00", "A1", "SAIDA")])), "x.ofx", "T")
+
+    linhas = {l["descricao"]: l for l in conciliacao.listar({"conta_id": conta_id})}
+    assert len(linhas) == 2, "a entrada foi adotada pela saída e virou de sinal"
+    assert linhas["ENTRADA DE VERDADE"]["valor"] == D("100.00")
+
+
+# ---------------------------------------------------------------------------
+# DESFAZER UMA IMPORTAÇÃO
+#
+# *"Tem que ter alguma forma de retroceder um erro, né?"*
+# ---------------------------------------------------------------------------
+def test_desfazer_um_OFX_tira_so_o_que_AQUELE_arquivo_trouxe(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    primeiro = conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260901", "-100.00", "A1")])), "um.ofx", "T")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260902", "-200.00", "B1")])), "dois.ofx", "T")
+
+    feito = conciliacao.desfazer(conta_id, arquivo_id=primeiro["arquivo_id"],
+                                 quem="MARCELO")
+
+    assert feito["apagadas"] == 1
+    restantes = conciliacao.listar({"conta_id": conta_id})
+    assert len(restantes) == 1
+    assert restantes[0]["valor"] == Decimal("-200.00")
+
+
+def test_desfazer_NAO_apaga_o_que_ja_foi_para_o_OMIE(banco_conc):
+    """⚠️ Lá fora existe um título com aquele número. Sumir com a linha daqui
+    deixaria o OMIE com um lançamento que nada mais explica."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from app.apps.analisesps.db import conexao
+    conta_id = conta_de_teste()
+    feito_import = conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-100.00", "A1"), ("20260902", "-200.00", "A2")])),
+        "x.ofx", "T")
+    linha = conciliacao.listar({"conta_id": conta_id})[0]
+    with conexao() as con:
+        con.execute("UPDATE analisesps.conciliacao_extrato "
+                    "   SET omie_codigo = 555 WHERE id = ?", (linha["id"],))
+        con.commit()
+
+    feito = conciliacao.desfazer(conta_id,
+                                 arquivo_id=feito_import["arquivo_id"],
+                                 quem="T")
+
+    assert feito["apagadas"] == 1
+    assert feito["ficaram_no_omie"] == 1
+    restantes = conciliacao.listar({"conta_id": conta_id})
+    assert len(restantes) == 1
+    assert restantes[0]["id"] == linha["id"]
+
+
+def test_o_desfazer_CONTA_ANTES_o_que_vai_sumir(banco_conc):
+    """⚠️ Conciliado e observação são trabalho de gente. Ele decide sabendo."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    feito_import = conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-100.00", "A1"), ("20260902", "-200.00", "A2")])),
+        "x.ofx", "T")
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    conciliacao.marcar([linhas[0]["id"]], True, "T")
+    conciliacao.anotar(linhas[1]["id"], "pendência", "T")
+
+    antes = conciliacao.o_que_o_desfazer_apaga(
+        conta_id, arquivo_id=feito_import["arquivo_id"])
+
+    assert antes["quantas"] == 2
+    assert antes["conciliadas"] == 1
+    assert antes["anotadas"] == 1
+    # E nada foi apagado só por perguntar.
+    assert len(conciliacao.listar({"conta_id": conta_id})) == 2
+
+
+def test_desfazer_a_planilha_nao_leva_o_que_veio_do_OFX(banco_conc):
+    """Desfazer uma aba tira o que a planilha trouxe — não o extrato do banco."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        {"data": dt.date(2026, 1, 5), "descricao": "DA PLANILHA",
+         "documento": "", "valor": D("-50.00"), "conciliado": False,
+         "observacao": ""}]), "T")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260901", "-100.00", "A1")])), "x.ofx", "T")
+
+    feito = conciliacao.desfazer(conta_id, aba="BD 7011", quem="T")
+
+    assert feito["apagadas"] == 1
+    restantes = conciliacao.listar({"conta_id": conta_id})
+    assert len(restantes) == 1
+    assert restantes[0]["origem"] == "ofx"
+
+
+# ---------------------------------------------------------------------------
+# O PANORAMA, SEGUNDA CAMADA — 24/09/2026
+#
+# *"O panorama das contas tá legal, mas eu tô achando ainda meio pobre."*
+#
+# ⚠️ E "mais coisa" não é mais número: total ninguém age sobre. O que entra
+# aqui responde pergunta — onde o dinheiro está parado, o que está velho, quem
+# está fazendo o trabalho.
+# ---------------------------------------------------------------------------
+def test_a_pendencia_VELHA_e_separada_da_de_ontem(banco_conc):
+    """⚠️ Pendência de ontem é fila; de três meses atrás é problema. Somá-las
+    num número só apagaria exatamente essa diferença."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from app.apps.analisesps.horario import agora
+    from decimal import Decimal as D
+    hoje = agora().date()
+    velha = (hoje - dt.timedelta(days=200)).strftime("%Y%m%d")
+    media = (hoje - dt.timedelta(days=60)).strftime("%Y%m%d")
+    nova = hoje.strftime("%Y%m%d")
+
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        (velha, "-5000.00", "A1"), (media, "-300.00", "A2"),
+        (nova, "-10.00", "A3")])), "x.ofx", "T")
+
+    fundo = conciliacao.panorama_do_ano(hoje.year)
+    assert fundo["pendente_velha"] == 1
+    assert fundo["pendente_velha_valor"] == D("-5000.00")
+    assert fundo["pendente_media"] == 1
+    assert fundo["pendente_mais_antiga"] == hoje - dt.timedelta(days=200)
+
+
+def test_os_MAIORES_sem_conferencia_vem_primeiro(banco_conc):
+    """⚠️ Uma pendência de R$ 200 mil não é igual a cem de R$ 2 mil. É onde o
+    risco está concentrado."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-100.00", "A1", "PEQUENO"),
+        ("20260902", "-200000.00", "A2", "GRANDE"),
+        ("20260903", "50000.00", "A3", "MEDIO")])), "x.ofx", "T")
+
+    maiores = conciliacao.panorama_do_ano(2026)["maiores_pendentes"]
+    assert [m["descricao"] for m in maiores] == ["GRANDE", "MEDIO", "PEQUENO"]
+    assert maiores[0]["valor"] == D("-200000.00")
+    # E o que já foi conciliado sai da lista: ela é do que FALTA.
+    linhas = {l["descricao"]: l for l in conciliacao.listar({"conta_id": conta_id})}
+    conciliacao.marcar([linhas["GRANDE"]["id"]], True, "T")
+    de_novo = conciliacao.panorama_do_ano(2026)["maiores_pendentes"]
+    assert [m["descricao"] for m in de_novo] == ["MEDIO", "PEQUENO"]
+
+
+def test_o_mes_a_mes_mostra_a_curva_e_nao_so_o_total(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260115", "1000.00", "A1"), ("20260116", "-300.00", "A2"),
+        ("20260320", "-500.00", "A3")])), "x.ofx", "T")
+
+    meses = {m["mes"]: m for m in conciliacao.panorama_do_ano(2026)["meses"]}
+    assert meses[1]["entradas"] == D("1000.00")
+    assert meses[1]["saidas"] == D("-300.00")
+    assert meses[3]["saidas"] == D("-500.00")
+    assert 2 not in meses            # fevereiro não teve movimento
+
+
+def test_quem_conciliou_aparece_com_nome(banco_conc):
+    """⚠️ Conciliação é trabalho de gente, e o gestor precisa saber se está
+    tudo nas costas de uma pessoa."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-100.00", "A1"), ("20260902", "-200.00", "A2")])),
+        "x.ofx", "T")
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    conciliacao.marcar([linhas[0]["id"]], True, "MARCELO")
+    conciliacao.marcar([linhas[1]["id"]], True, "JAYNE")
+
+    quem = {q["nome"]: q for q in conciliacao.panorama_do_ano(2026)["quem_conciliou"]}
+    assert quem["MARCELO"]["quantas"] == 1
+    assert quem["JAYNE"]["quantas"] == 1
+    assert quem["MARCELO"]["ultima"] is not None

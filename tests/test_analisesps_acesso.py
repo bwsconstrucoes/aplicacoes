@@ -107,6 +107,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/conciliacao/omie/ensaiar"),
     ("POST", "/analisesps/api/conciliacao/omie/lancar"),
     ("POST", "/analisesps/api/conciliacao/omie/tipo"),
+    ("POST", "/analisesps/api/conciliacao/desfazer"),
     ("POST", "/analisesps/api/conciliacao/planilha/abas"),
     ("POST", "/analisesps/api/conciliacao/planilha/ler"),
     ("POST", "/analisesps/api/conciliacao/planilha/importar"),

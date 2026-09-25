@@ -250,6 +250,35 @@ def conferir(conta_id: int, lido) -> dict:
     novas = [(marca, lanc) for marca, lanc in por_impressao.items()
              if marca not in ja]
 
+    # ⚠️ O RELATÓRIO MENTIA, E FOI O DONO QUEM ACHOU — 24/09/2026:
+    #
+    #   *"A leitura disse que nada no extrato havia sido importado, mas veja:
+    #   01/09/2026 PAGTO ELETRON COBRANCA 1423835099 −3.313,21 (…) e a
+    #   importação da planilha tem essa mesma linha."*
+    #
+    # As duas ESTAVAM certas e a conferência é que errava. A linha da planilha
+    # tem uma identidade própria (sem FITID); a do OFX tem outra. Olhando só a
+    # identidade, a conferência via "não existe" e contava como NOVA — quando
+    # na gravação ela seria ADOTADA, não criada.
+    #
+    # Ou seja: o número estava errado, o resultado final não. Mas um relatório
+    # que diz "47 novos" e grava 3 destrói a confiança na tela inteira — e é
+    # justamente esta tela que existe para responder "o que falta importar?".
+    #
+    # Agora a conferência procura também as linhas da planilha que serão
+    # adotadas, e as conta À PARTE: nem "novas" nem "já estavam", porque são
+    # uma terceira coisa — linhas que existem e vão ganhar a identidade do
+    # banco.
+    adotaveis = _adotaveis_da_planilha(conta_id, [l for _m, l in novas])
+    # ⚠️ AS DUAS LISTAS SAEM SEPARADAS, E AS DUAS VÃO PARA A GRAVAÇÃO. Na
+    # primeira versão disto eu tirei as adotáveis de `novas` e esqueci que é
+    # `novas` que a gravação percorre — o resultado foi que elas deixaram de
+    # ser adotadas: nem entravam, nem eram reconhecidas. Os testes pegaram.
+    para_adotar = [(marca, lanc) for marca, lanc in novas
+                   if id(lanc) in adotaveis]
+    novas = [(marca, lanc) for marca, lanc in novas
+             if id(lanc) not in adotaveis]
+
     # O outro lado: o que temos no período e o arquivo não traz.
     so_aqui = []
     if lido.periodo_ini and lido.periodo_fim and _pronto():
@@ -272,10 +301,44 @@ def conferir(conta_id: int, lido) -> dict:
         "saldo_em": lido.saldo_em,
         "lidas": len(lido.lancamentos),
         "novas": novas,
-        "ja_estavam": len(lido.lancamentos) - len(novas),
+        "para_adotar": para_adotar,
+        "adotaveis": len(para_adotar),
+        "ja_estavam": len(lido.lancamentos) - len(novas) - len(para_adotar),
         "so_aqui": so_aqui,
         "arquivo_repetido": _arquivo_ja_veio(lido.impressao),
     }
+
+
+def _adotaveis_da_planilha(conta_id: int, lancamentos: list) -> set:
+    """Quais destes lançamentos já existem, vindos da planilha.
+
+    Devolve o `id()` de cada objeto que será ADOTADO em vez de criado — a
+    mesma regra de `_adotar_linha_da_planilha` (data e valor exato), feita
+    aqui só para CONTAR, sem escrever nada.
+
+    ⚠️ UMA LINHA DA PLANILHA SÓ CASA COM UM LANÇAMENTO. Dois débitos iguais no
+    mesmo dia, com a planilha tendo trazido só um, têm de dar "1 adotável e 1
+    nova" — e não "2 adotáveis", que faria a conferência prometer menos do que
+    vai gravar.
+    """
+    if not lancamentos or not _pronto():
+        return set()
+    from .db import consultar
+
+    candidatos: dict = {}
+    for linha in consultar(
+            "SELECT id, data, valor FROM analisesps.conciliacao_extrato "
+            " WHERE conta_id = ? AND origem = 'planilha' AND fitid = '' "
+            " ORDER BY id", (int(conta_id),)):
+        candidatos.setdefault((linha[1], linha[2]), []).append(linha[0])
+
+    achados = set()
+    for lanc in lancamentos:
+        fila = candidatos.get((lanc.data, lanc.valor))
+        if fila:
+            fila.pop(0)          # cada linha da planilha casa UMA vez
+            achados.add(id(lanc))
+    return achados
 
 
 def _arquivo_ja_veio(impressao: str) -> dict | None:
@@ -309,7 +372,9 @@ def importar(conta_id: int, lido, nome_arquivo: str = "",
     from .conciliacao_ofx import impressao_da_linha
 
     conferido = conferir(conta_id, lido)
-    novas = conferido["novas"]
+    # A gravação percorre AS DUAS: o que é novo entra, e o que já existe vindo
+    # da planilha é adotado. Ver a nota em `conferir`.
+    novas = list(conferido["novas"]) + list(conferido.get("para_adotar") or [])
 
     with conexao() as con:
         cur = con.execute(
@@ -632,7 +697,7 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
     ninguém a decidir. Quem quiser ver tudo importa e olha na lista, que tem
     filtro e paginação.
     """
-    novas = conferido.get("novas") or []
+    novas = list(conferido.get("novas") or [])
     amostra = [{
         "data": lanc.data.isoformat(),
         "valor": str(lanc.valor),
@@ -654,6 +719,10 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
                         if conferido.get("periodo_fim") else ""),
         "lidas": conferido.get("lidas", 0),
         "novas": len(novas),
+        # As que já existem vindas da planilha e vão ganhar a identidade do
+        # banco. Nem "novas" nem "já estavam" — uma terceira coisa, e a tela
+        # diz isso com todas as letras.
+        "adotaveis": conferido.get("adotaveis", 0),
         "ja_estavam": conferido.get("ja_estavam", 0),
         "gravadas": conferido.get("gravadas"),
         "amostra": amostra,
@@ -842,7 +911,24 @@ def importar_da_planilha(conta_id: int, lido: dict, quem: str = "") -> dict:
 # mantém a marca de conciliado e a observação que já tinha.
 # ---------------------------------------------------------------------------
 def _adotar_linha_da_planilha(con, conta_id: int, lanc, marca: str) -> bool:
-    """Achou a mesma linha vinda da planilha? Então é ela, e não uma nova."""
+    """Achou a mesma linha vinda da planilha? Então é ela, e não uma nova.
+
+    ⚠️ CASA POR DATA E VALOR EXATO — E NÃO POR MÓDULO, de propósito.
+
+    Em 24/09/2026 eu cheguei a trocar isto por "valor em módulo, e o banco
+    decide o sinal", achando que havia um erro de sinal na importação da
+    planilha. **Não havia** — o dono conferiu: *"a do sistema está no canto
+    certo e está em vermelho, é débito"*. O que ele tinha visto positivo era a
+    coluna SAÍDA da tela, que mostra o valor sem o sinal de propósito.
+
+    E casar por módulo criaria um risco novo e pior: uma entrada de 100 e uma
+    saída de 100 no mesmo dia, com a planilha tendo trazido só uma delas,
+    faria o OFX adotar a errada **e virar o sinal dela** — trocando um
+    lançamento verdadeiro por outro, em silêncio.
+
+    Valor exato é a regra certa. O defeito que ele viu era outro, e está
+    consertado em `conferir`.
+    """
     cur = con.execute(
         "SELECT id FROM analisesps.conciliacao_extrato "
         " WHERE conta_id = ? AND data = ? AND valor = ? "
@@ -1023,11 +1109,16 @@ def _linha_do_panorama(conta: dict, meses: dict, ultimo: dict, ano: int,
     def soma(campo):
         return sum(v[campo] for v in meses.values())
 
+    # ⚠️ A HORA DO BANCO É UTC; `hoje` é a data de Brasília. Sem converter, uma
+    # importação feita às 22h aparecia como "importado há -1 dias" — porque em
+    # UTC já era o dia seguinte. O piso em 0 guarda o resto: relógio do banco
+    # adiantado não deve virar número negativo na tela.
     importado_em = ultimo.get("importado_em")
     dias_sem_importar = None
     if importado_em:
+        from .horario import para_brasilia
         try:
-            dias_sem_importar = (hoje - importado_em.date()).days
+            dias_sem_importar = max(0, (hoje - para_brasilia(importado_em).date()).days)
         except AttributeError:
             dias_sem_importar = None
 
@@ -1035,7 +1126,9 @@ def _linha_do_panorama(conta: dict, meses: dict, ultimo: dict, ano: int,
     # Importar um extrato velho hoje deixaria "importado há 0 dias" numa conta
     # que continua sem o mês passado — e a tela estaria mentindo.
     ate = ultimo.get("ate")
-    dias_sem_extrato = (hoje - ate).days if ate else None
+    # Piso em 0 pelo mesmo motivo: lançamento com data futura (acontece em
+    # agendamento) não deve virar "há -3 dias" na tela.
+    dias_sem_extrato = max(0, (hoje - ate).days) if ate else None
 
     quantidade = soma("quantidade")
     pendentes = soma("pendentes")
@@ -1123,3 +1216,224 @@ def _resumo_do_panorama(linhas: list) -> dict:
         "sem_saldo_inicial": sum(1 for x in linhas
                                  if not x["tem_saldo_inicial"]),
     }
+
+
+# ===========================================================================
+# DESFAZER UMA IMPORTAÇÃO — 24/09/2026
+#
+# *"Com isso, o que é que eu vejo? Tem que ter alguma forma de retroceder um
+# erro, né?"*
+#
+# Ele está certo, e o caso dele mostra por quê: uma aba importada com o sinal
+# trocado deixa o extrato errado, e sem desfazer a única saída seria apagar a
+# conta inteira e recomeçar.
+#
+# ⚠️ TRÊS COISAS QUE O DESFAZER NÃO PODE FAZER, e cada uma virou uma regra:
+#
+# 1. **Não apaga linha que já foi lançada no OMIE.** Lá fora existe um título
+#    com aquele número; sumir com a linha daqui deixaria o OMIE com um
+#    lançamento que nada mais explica, e ninguém descobriria a origem.
+# 2. **Não apaga em silêncio o que foi conciliado ou anotado.** Isso é
+#    trabalho de gente. A tela conta quantas são ANTES, e ele decide.
+# 3. **Não apaga o que veio de outra origem.** Desfazer um OFX tira o que
+#    AQUELE arquivo trouxe — não o que a planilha trouxe no mesmo dia.
+# ===========================================================================
+def o_que_o_desfazer_apaga(conta_id: int, arquivo_id: int = None,
+                           aba: str = "") -> dict:
+    """O que sumiria se desfizesse. NÃO apaga nada — é para ele decidir."""
+    if not _pronto():
+        return {"pode": False, "erro": "A conciliação ainda não foi ligada."}
+    from .db import consultar_um
+
+    onde, params = _onde_do_desfazer(conta_id, arquivo_id, aba)
+    if not onde:
+        return {"pode": False, "erro": "Diga o que desfazer."}
+
+    linha = consultar_um(
+        "SELECT count(*), coalesce(sum(valor), 0), "
+        "       count(*) FILTER (WHERE conciliado), "
+        "       count(*) FILTER (WHERE btrim(coalesce(observacao,'')) <> ''), "
+        "       count(*) FILTER (WHERE coalesce(omie_codigo, 0) <> 0) "
+        f"  FROM analisesps.conciliacao_extrato{onde}", tuple(params))
+    quantas, soma, conciliadas, anotadas, no_omie = linha or (0, 0, 0, 0, 0)
+    return {
+        "pode": True,
+        "quantas": int(quantas or 0),
+        "soma": soma or 0,
+        "conciliadas": int(conciliadas or 0),
+        "anotadas": int(anotadas or 0),
+        "no_omie": int(no_omie or 0),
+    }
+
+
+def _onde_do_desfazer(conta_id: int, arquivo_id=None, aba: str = ""):
+    """O recorte do desfazer. Fechado de propósito: ou um arquivo, ou uma aba."""
+    from .db import tem_coluna
+    if arquivo_id:
+        return (" WHERE conta_id = ? AND arquivo_id = ? AND origem = 'ofx'",
+                [int(conta_id), int(arquivo_id)])
+    if str(aba or "").strip():
+        # A aba não fica na linha; o que marca é a origem 'planilha' desta
+        # conta. Uma conta recebe UMA aba, então é o mesmo recorte.
+        return (" WHERE conta_id = ? AND origem = 'planilha'", [int(conta_id)])
+    return ("", [])
+
+
+def desfazer(conta_id: int, arquivo_id: int = None, aba: str = "",
+             levar_o_que_esta_no_omie: bool = False, quem: str = "") -> dict:
+    """Apaga o que aquela importação trouxe. Devolve o que foi e o que ficou.
+
+    ⚠️ O QUE ESTÁ NO OMIE FICA, a menos que ele mande o contrário — e mesmo
+    mandando, a linha só sai daqui: o título no OMIE continua lá, e é ele que
+    precisa ser desfeito por lá. A tela diz isso.
+    """
+    from .db import conexao, consultar
+
+    antes = o_que_o_desfazer_apaga(conta_id, arquivo_id, aba)
+    if not antes.get("pode"):
+        raise ErroDaConciliacao(antes.get("erro") or "Não dá para desfazer.")
+
+    onde, params = _onde_do_desfazer(conta_id, arquivo_id, aba)
+    if not levar_o_que_esta_no_omie:
+        onde += " AND coalesce(omie_codigo, 0) = 0"
+
+    # Guardados ANTES de apagar, para a tela poder dizer o que sumiu.
+    apagadas = consultar(
+        "SELECT id, data, descricao, valor "
+        f"  FROM analisesps.conciliacao_extrato{onde} ORDER BY data, id "
+        " LIMIT 2000", tuple(params))
+
+    with conexao() as con:
+        cur = con.execute(
+            f"DELETE FROM analisesps.conciliacao_extrato{onde}", tuple(params))
+        quantas = cur.rowcount or 0
+        if arquivo_id:
+            con.execute(
+                "DELETE FROM analisesps.conciliacao_arquivo "
+                " WHERE id = ? AND conta_id = ? "
+                "   AND NOT EXISTS (SELECT 1 FROM analisesps.conciliacao_extrato "
+                "                    WHERE arquivo_id = ?)",
+                (int(arquivo_id), int(conta_id), int(arquivo_id)))
+        con.commit()
+
+    logger.warning("Conciliação: %s DESFEZ uma importação na conta %s — "
+                   "%s linha(s) apagada(s).", quem or "?", conta_id, quantas)
+    return {
+        "apagadas": quantas,
+        "ficaram_no_omie": antes["no_omie"] if not levar_o_que_esta_no_omie else 0,
+        "conciliadas_que_sumiram": antes["conciliadas"],
+        "anotadas_que_sumiram": antes["anotadas"],
+        "amostra": [{"data": l[1], "descricao": (l[2] or "")[:80],
+                     "valor": l[3]} for l in apagadas[:10]],
+    }
+
+
+# ===========================================================================
+# O PANORAMA, SEGUNDA CAMADA — 24/09/2026
+#
+# *"O panorama das contas tá legal, mas eu tô achando ainda meio pobre. Dá
+# para ter mais coisa."*
+#
+# ⚠️ E "MAIS COISA" NÃO É MAIS NÚMERO. A tentação aqui é encher a tela de
+# totais — e total ninguém age sobre. O que um gestor faz com o panorama é
+# DECIDIR ONDE MEXER: onde o dinheiro está parado sem conferência, quem está
+# fazendo o trabalho, o que o mês passado esconde que este mês repete.
+#
+# Por isso o que entra aqui responde pergunta, não preenche espaço:
+#
+#   - **o mês a mês da empresa**, para ver a curva e não só o total do ano;
+#   - **o que está velho e ainda por conciliar** — pendência de três meses
+#     atrás é problema diferente de pendência de ontem;
+#   - **os maiores lançamentos sem conferência**, que é onde o risco está
+#     concentrado (uma pendência de R$ 200 mil não é igual a cem de R$ 2 mil);
+#   - **quem conciliou quanto**, porque conciliação é trabalho de gente e o
+#     gestor precisa saber se está tudo nas costas de uma pessoa;
+#   - **o que ainda não foi lançado no OMIE**, o outro trabalho que a tela
+#     tornou possível.
+# ===========================================================================
+def panorama_do_ano(ano: int) -> dict:
+    """A segunda camada do panorama: a curva, o risco e o trabalho."""
+    if not _pronto():
+        return {}
+    from .db import consultar, consultar_um
+    from .horario import agora
+
+    hoje = agora().date()
+
+    # 1) O mês a mês da empresa inteira — a curva, não o total.
+    meses = []
+    for linha in consultar(
+            "SELECT extract(month FROM data)::int, count(*), "
+            "       coalesce(sum(valor) FILTER (WHERE valor > 0), 0), "
+            "       coalesce(sum(valor) FILTER (WHERE valor < 0), 0), "
+            "       count(*) FILTER (WHERE NOT conciliado) "
+            "  FROM analisesps.conciliacao_extrato "
+            " WHERE extract(year FROM data) = ? GROUP BY 1 ORDER BY 1",
+            (int(ano),)):
+        meses.append({"mes": int(linha[0]), "quantidade": int(linha[1] or 0),
+                      "entradas": linha[2] or 0, "saidas": linha[3] or 0,
+                      "pendentes": int(linha[4] or 0)})
+
+    # 2) ⚠️ A PENDÊNCIA VELHA. Pendência de ontem é fila; de três meses atrás é
+    #    problema. Somá-las num número só apagaria exatamente essa diferença.
+    velhas = consultar_um(
+        "SELECT count(*) FILTER (WHERE data < ? - INTERVAL '90 days'), "
+        "       coalesce(sum(valor) FILTER (WHERE data < ? - INTERVAL '90 days'), 0), "
+        "       count(*) FILTER (WHERE data < ? - INTERVAL '30 days' "
+        "                          AND data >= ? - INTERVAL '90 days'), "
+        "       min(data) "
+        "  FROM analisesps.conciliacao_extrato WHERE NOT conciliado",
+        (hoje, hoje, hoje, hoje))
+
+    # 3) Onde o risco está concentrado: os maiores sem conferência.
+    maiores = [{
+        "id": l[0], "conta": l[1], "data": l[2],
+        "descricao": (l[3] or "")[:70], "valor": l[4], "conta_id": l[5],
+    } for l in consultar(
+        "SELECT e.id, c.nome, e.data, e.descricao, e.valor, e.conta_id "
+        "  FROM analisesps.conciliacao_extrato e "
+        "  JOIN analisesps.conciliacao_conta c ON c.id = e.conta_id "
+        " WHERE NOT e.conciliado "
+        " ORDER BY abs(e.valor) DESC LIMIT 10")]
+
+    # 4) Quem fez o trabalho. Conciliação é trabalho de gente.
+    quem = [{"nome": l[0] or "(sem nome)", "quantas": int(l[1] or 0),
+             "ultima": l[2]} for l in consultar(
+        "SELECT conciliado_por, count(*), max(conciliado_em) "
+        "  FROM analisesps.conciliacao_extrato "
+        " WHERE conciliado AND extract(year FROM data) = ? "
+        " GROUP BY 1 ORDER BY 2 DESC LIMIT 8", (int(ano),))]
+
+    return {
+        "meses": meses,
+        "pendente_velha": int((velhas or (0,))[0] or 0),
+        "pendente_velha_valor": (velhas or (0, 0))[1] or 0,
+        "pendente_media": int((velhas or (0, 0, 0))[2] or 0),
+        "pendente_mais_antiga": (velhas or (0, 0, 0, None))[3],
+        "maiores_pendentes": maiores,
+        "quem_conciliou": quem,
+        "no_omie": _resumo_do_omie(ano),
+    }
+
+
+def _resumo_do_omie(ano: int) -> dict:
+    """Quanto já foi lançado no OMIE, e quanto poderia ser.
+
+    ⚠️ NUNCA DERRUBA A TELA: as colunas do OMIE são da migração 021, e o
+    código sobe antes de o botão ser apertado.
+    """
+    from .db import consultar_um, tem_coluna
+    if not tem_coluna("conciliacao_extrato", "omie_codigo"):
+        return {"ligado": False}
+    linha = consultar_um(
+        "SELECT count(*) FILTER (WHERE coalesce(omie_codigo, 0) <> 0), "
+        "       coalesce(sum(valor) FILTER (WHERE coalesce(omie_codigo, 0) <> 0), 0), "
+        "       count(*) FILTER (WHERE omie_situacao IN ('falhou', 'sem_baixa', "
+        "                                               'enviando', "
+        "                                               'meia_transferencia')) "
+        "  FROM analisesps.conciliacao_extrato "
+        " WHERE extract(year FROM data) = ?", (int(ano),))
+    return {"ligado": True,
+            "lancados": int((linha or (0,))[0] or 0),
+            "lancados_valor": (linha or (0, 0))[1] or 0,
+            "com_problema": int((linha or (0, 0, 0))[2] or 0)}

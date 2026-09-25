@@ -162,6 +162,128 @@
   </p>
 </div>
 
+{# ---------------------------------------------------------------------------
+   A SEGUNDA CAMADA — 24/09/2026: *"o panorama tá legal, mas eu tô achando
+   ainda meio pobre, dá para ter mais coisa."*
+
+   ⚠️ E "MAIS COISA" NÃO É MAIS NÚMERO. Total ninguém age sobre. O que um
+   gestor faz com esta tela é DECIDIR ONDE MEXER — por isso o que entra aqui
+   responde pergunta: onde o dinheiro está parado sem conferência, o que está
+   velho, quem está fazendo o trabalho.
+--------------------------------------------------------------------------- #}
+{% if fundo %}
+
+{% if fundo.pendente_velha or fundo.pendente_media %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>A idade do que falta conciliar</h3>
+    <small>pendência de ontem é fila; de três meses atrás é problema</small>
+  </div>
+  <div class="kpis" style="margin-bottom:0">
+    <div class="kpi estatico vermelho">
+      <div class="kpi-rotulo">Parado há mais de 90 dias</div>
+      <div class="kpi-valor">{{ fundo.pendente_velha }}</div>
+      <div class="kpi-sub">{{ fundo.pendente_velha_valor|moeda }}
+        {%- if fundo.pendente_mais_antiga %} · a mais antiga é de
+          {{ fundo.pendente_mais_antiga|data_br }}{% endif %}</div>
+    </div>
+    <div class="kpi estatico laranja">
+      <div class="kpi-rotulo">Entre 30 e 90 dias</div>
+      <div class="kpi-valor">{{ fundo.pendente_media }}</div>
+      <div class="kpi-sub">ainda dá para lembrar o que era</div>
+    </div>
+    {% if fundo.no_omie.ligado %}
+      <div class="kpi estatico">
+        <div class="kpi-rotulo">Já lançado no OMIE em {{ ano }}</div>
+        <div class="kpi-valor">{{ fundo.no_omie.lancados }}</div>
+        <div class="kpi-sub">{{ fundo.no_omie.lancados_valor|moeda }}
+          {%- if fundo.no_omie.com_problema %} ·
+            <b>{{ fundo.no_omie.com_problema }} com problema</b>{% endif %}</div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if fundo.maiores_pendentes %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Os maiores sem conferência</h3>
+    <small>é onde o risco está concentrado — uma pendência de R$ 200 mil não é
+      igual a cem de R$ 2 mil</small>
+  </div>
+  <table class="sps">
+    <thead><tr><th>Conta</th><th>Data</th><th>Histórico</th>
+      <th class="direita">Valor</th><th></th></tr></thead>
+    <tbody>
+      {% for p in fundo.maiores_pendentes %}
+        <tr>
+          <td>{{ p.conta }}</td>
+          <td>{{ p.data|data_br }}</td>
+          <td>{{ p.descricao }}</td>
+          <td class="direita {{ 'valor-saida' if p.valor < 0 else 'valor-entrada' }}">
+            {{ p.valor|moeda }}</td>
+          <td><a class="link-btn"
+                 href="{{ url_for('analisesps.tela_conciliacao',
+                                  conta_id=p.conta_id, data=p.data,
+                                  situacao='pendentes') }}">ver</a></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if fundo.meses %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Mês a mês de {{ ano }}</h3>
+    <small>a curva da empresa — o total do ano esconde o mês que saiu da linha</small>
+  </div>
+  <table class="sps">
+    <thead><tr><th>Mês</th><th class="direita">Lançamentos</th>
+      <th class="direita">Entrou</th><th class="direita">Saiu</th>
+      <th class="direita">Líquido</th>
+      <th class="direita">Falta conciliar</th></tr></thead>
+    <tbody>
+      {% for m in fundo.meses %}
+        <tr>
+          <td>{{ meses[m.mes - 1] }}</td>
+          <td class="direita">{{ m.quantidade }}</td>
+          <td class="direita valor-entrada">{{ m.entradas|moeda }}</td>
+          <td class="direita valor-saida">{{ m.saidas|moeda }}</td>
+          <td class="direita">{{ (m.entradas + m.saidas)|moeda }}</td>
+          <td class="direita">
+            {% if m.pendentes %}<b>{{ m.pendentes }}</b>{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if fundo.quem_conciliou %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Quem conciliou em {{ ano }}</h3>
+    <small>conciliação é trabalho de gente — e é bom saber se está tudo nas
+      costas de uma pessoa</small>
+  </div>
+  <table class="sps">
+    <thead><tr><th>Quem</th><th class="direita">Linhas</th>
+      <th>Última vez</th></tr></thead>
+    <tbody>
+      {% for q in fundo.quem_conciliou %}
+        <tr><td>{{ q.nome }}</td>
+          <td class="direita">{{ q.quantas }}</td>
+          <td>{{ q.ultima|momento_br }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
+
 {% if pendencias_omie %}
 {# ⚠️ ESTA LISTA IMPEDE TRABALHO MANUAL ESQUECIDO. Um título criado no OMIE
    cuja baixa falhou fica lá, em aberto, dizendo que há algo a pagar que já

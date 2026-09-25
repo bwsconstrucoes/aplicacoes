@@ -1726,9 +1726,10 @@ def conciliacao_panorama():
         ano = anos[0] if anos else agora().date().year
 
     dados = conc.panorama(ano) if estado["pronto"] else {"contas": []}
+    fundo = conc.panorama_do_ano(ano) if estado["pronto"] else {}
     return render_template(
         "analisesps_conciliacao_panorama.html", aba="conciliacao",
-        estado=estado, ano=ano, anos=anos, panorama=dados,
+        estado=estado, ano=ano, anos=anos, panorama=dados, fundo=fundo,
         meses=conc.MESES_CURTOS,
         pendencias_omie=_pendencias_do_omie(),
         pode_operar=auth.pode_operar(),
@@ -2026,6 +2027,44 @@ def conciliacao_omie_tipo():
         logger.exception("Conciliação: falhou gravar tipo")
         return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
     return {"ok": True, "id": tipo_id}
+
+
+@bp.route("/api/conciliacao/desfazer", methods=["POST"])
+@exige_operador
+def conciliacao_desfazer():
+    """Desfaz uma importação — pedido do dono: *"tem que ter alguma forma de
+    retroceder um erro, né?"*
+
+    ⚠️ DUAS CHAMADAS, como tudo o que estraga: sem `confirmar`, ela só CONTA o
+    que sumiria (inclusive quantas foram conciliadas e anotadas por gente) e
+    devolve para ele decidir. Apagar contando depois não é escolha, é aviso.
+    """
+    from . import conciliacao as conc
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    arquivo_id = dados.get("arquivo_id")
+    aba = str(dados.get("aba") or "").strip()
+    arquivo_id = int(arquivo_id) if str(arquivo_id or "").isdigit() else None
+    if not arquivo_id and not aba:
+        return {"ok": False, "erro": "Diga o que desfazer."}
+
+    if not dados.get("confirmar"):
+        return {"ok": True, "so_contei": True,
+                **conc.o_que_o_desfazer_apaga(int(conta_id), arquivo_id, aba)}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = conc.desfazer(int(conta_id), arquivo_id, aba,
+                              bool(dados.get("levar_o_que_esta_no_omie")), quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou desfazer")
+        return {"ok": False, "erro": f"Não consegui desfazer: {e}"}, 500
+    return {"ok": True, "so_contei": False, **feito}
 
 
 @bp.route("/api/conciliacao/planilha/abas", methods=["POST"])

@@ -7318,6 +7318,115 @@ precisa de duas guardas. Quando a próxima área do módulo crescer assim, é aq
 que está o precedente.
 
 ---
+
+### Nonagésima quinta leva (24/09) — o relatório mentia, o desfazer, e o panorama
+
+Três coisas, e a primeira é uma lição sobre como eu errei o diagnóstico duas
+vezes antes de acertar.
+
+#### ⚠️ "A leitura disse que nada havia sido importado, mas veja…"
+
+Ele mostrou o caso:
+
+> *"01/09/2026 PAGTO ELETRON COBRANCA 1423835099 −3.313,21 — e a importação
+> da planilha tem essa mesma linha."*
+
+**As duas estavam certas; a CONFERÊNCIA é que errava.** A linha da planilha tem
+identidade própria (sem FITID); a do OFX tem outra. Olhando só a identidade, a
+conferência via "não existe" e contava como **nova** — quando na gravação ela
+seria **adotada**, não criada.
+
+O resultado final estava certo. **O número estava errado** — e um relatório que
+diz "47 novos" e grava 3 destrói a confiança na tela inteira, justamente a tela
+que existe para responder *"o que falta importar?"*.
+
+Agora há uma **terceira contagem**: nem "novas" nem "já estavam", mas *"já
+estão aqui vindas da planilha — vão ganhar o identificador do banco, e o que
+você marcou e anotou continua"*.
+
+#### ⚠️ E EU ERREI O DIAGNÓSTICO DUAS VEZES NO CAMINHO
+
+**Primeiro** achei que era erro de sinal, porque ele mostrou a planilha com
+`3.313,21` e o extrato com `−3.313,21`. Troquei o casamento para "valor em
+módulo, e o banco decide o sinal" — e escrevi três testes defendendo isso.
+
+**Ele me corrigiu:** *"a do sistema está no canto certo e está em vermelho, é
+débito."* O que ele viu positivo era a **coluna SAÍDA da tela**, que mostra o
+valor sem o sinal **de propósito**. Nunca houve erro de sinal.
+
+**Desfiz.** E a troca era pior do que inútil: casar por módulo faria o OFX de
+uma **saída** de 100 adotar uma **entrada** de 100 do mesmo dia e **virar o
+sinal dela** — trocando um lançamento verdadeiro por outro, em silêncio. Há
+teste travando isso agora.
+
+**Depois**, ao tirar as adotáveis da lista de "novas", esqueci que é essa lista
+que a gravação percorre — e elas deixaram de ser adotadas: nem entravam, nem
+eram reconhecidas. **Os testes com banco pegaram.**
+
+**A lição, e é sobre mim:** o relato dele descreve o SINTOMA. Correr para a
+causa mais parecida e escrever teste defendendo o palpite transforma um palpite
+em regra. Aqui os testes que eu escrevi para a causa errada tiveram de ser
+apagados — e se não tivessem sido, teriam protegido o defeito.
+
+#### O desfazer
+
+> *"Tem que ter alguma forma de retroceder um erro, né?"*
+
+Dá para desfazer uma importação de OFX (por arquivo) ou de planilha. Três
+regras:
+
+1. **Não apaga linha já lançada no OMIE.** Lá fora existe um título com aquele
+   número; sumir com a linha daqui deixaria o OMIE com um lançamento que nada
+   mais explica.
+2. **Conta ANTES o que vai sumir**, inclusive quantas foram conciliadas e
+   anotadas — isso é trabalho de gente, e ele decide sabendo. Apagar contando
+   depois não é escolha, é aviso.
+3. **Não atravessa origens:** desfazer um OFX não leva o que a planilha trouxe.
+
+#### O panorama, segunda camada
+
+> *"Tá legal, mas eu tô achando ainda meio pobre. Dá para ter mais coisa."*
+
+**⚠️ E "mais coisa" não é mais número.** Total ninguém age sobre. O que um
+gestor faz com esta tela é decidir onde mexer — então entrou o que responde
+pergunta:
+
+- **a idade da pendência**: mais de 90 dias separado de 30 a 90. Pendência de
+  ontem é fila; de três meses atrás é problema, e somá-las apagaria a
+  diferença.
+- **os dez maiores sem conferência**, com link para a linha. É onde o risco
+  está concentrado: uma pendência de R$ 200 mil não é igual a cem de R$ 2 mil.
+- **o mês a mês do ano** — o total do ano esconde o mês que saiu da linha.
+- **quem conciliou quanto**, porque conciliação é trabalho de gente e é bom
+  saber se está tudo nas costas de uma pessoa.
+- **quanto já foi lançado no OMIE**, e quantos ficaram com problema.
+
+#### ⚠️ E a suíte inteira pegou um defeito que só aparece de noite
+
+Rodando a suíte completa (6.623 testes, com banco de verdade) apareceu **um**
+vermelho, no panorama: *"importado há **-1** dias"*.
+
+A causa: a hora que o banco guarda é **UTC**; a data que a tela usa é de
+**Brasília**. Depois das 21h daqui, em UTC já é o dia seguinte — e a subtração
+virava negativa. De manhã o defeito desaparecia sozinho, o que é o pior tipo:
+ninguém consegue reproduzir, e quem viu perde a confiança na tela inteira.
+
+Corrigido convertendo a hora antes de comparar, com piso em zero (nos dois
+números: dias sem importar e dias sem extrato — lançamento com data futura
+existe, em agendamento). Teste novo trava os dois.
+
+**A lição, para a próxima área:** número de dias calculado a partir de hora do
+banco passa pela conversão de fuso. Sempre. O repositório já tinha o
+`horario.para_brasilia` pronto para isso desde o início — eu simplesmente não
+usei.
+
+**Verificado:** a suíte inteira do repositório — **6.623 testes passando**, 145
+pulados (os que precisam de coisa que não existe aqui), nada vermelho. A
+aplicação sobe com os 18 blueprints.
+
+**NÃO verificado:** nada disto num navegador, e nenhum lançamento real no OMIE.
+
+---
 ---
 
 ## Regras que não se discutem

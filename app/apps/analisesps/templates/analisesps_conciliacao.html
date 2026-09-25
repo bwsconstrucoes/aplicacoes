@@ -410,7 +410,8 @@
   <summary><b>Extratos já trazidos nesta conta</b> — responde "já mandei este mês?"</summary>
   <table class="sps" style="margin-top:10px">
     <thead><tr><th>Arquivo</th><th>Período</th><th class="direita">Linhas</th>
-      <th class="direita">Novas</th><th>Quando</th><th>Quem</th></tr></thead>
+      <th class="direita">Novas</th><th>Quando</th><th>Quem</th>
+      {% if pode_operar %}<th></th>{% endif %}</tr></thead>
     <tbody>
       {% for a in ultimos_arquivos %}
         <tr>
@@ -420,6 +421,15 @@
           <td class="direita">{{ a.linhas_novas }}</td>
           <td>{{ a.importado_em|momento_br }}</td>
           <td>{{ a.importado_por }}</td>
+          {% if pode_operar %}
+            {# ⚠️ *"Tem que ter alguma forma de retroceder um erro, né?"* —
+               24/09/2026. Ele não apaga direto: conta primeiro o que sumiria,
+               inclusive quantas linhas foram conciliadas e anotadas por
+               gente, e aí ele decide. #}
+            <td><button class="btn secundario desfazer-arquivo"
+                        data-arquivo="{{ a.id }}"
+                        data-nome="{{ a.nome_arquivo }}">Desfazer</button></td>
+          {% endif %}
         </tr>
       {% endfor %}
     </tbody>
@@ -927,8 +937,8 @@ async function conferirVarios(arquivos) {
 }
 
 function desenharLeva(ignorados) {
-  const bons = leva.filter(x => x.d.ok && x.d.novas > 0);
-  const semNovidade = leva.filter(x => x.d.ok && !x.d.novas);
+  const bons = leva.filter(x => x.d.ok && (x.d.novas + x.d.adotaveis) > 0);
+  const semNovidade = leva.filter(x => x.d.ok && !x.d.novas && !x.d.adotaveis);
   const ruins = leva.filter(x => !x.d.ok);
   const totalNovas = bons.reduce((s, x) => s + x.d.novas, 0);
 
@@ -950,7 +960,7 @@ function desenharLeva(ignorados) {
     html += '<tr><td>' + x.nome + '</td><td>' + x.d.conta + '</td><td>' +
       x.d.periodo_ini.split("-").reverse().join("/") + ' a ' +
       x.d.periodo_fim.split("-").reverse().join("/") + '</td>' +
-      '<td class="direita">' + x.d.ja_estavam + '</td>' +
+      '<td class="direita">' + (x.d.ja_estavam + x.d.adotaveis) + '</td>' +
       '<td class="direita"><b>' + x.d.novas + '</b></td><td>' +
       (x.d.saldo_banco ? (x.d.saldo_bate ? 'bate' : '⚠️ não bate') : '—') +
       '</td></tr>';
@@ -1060,8 +1070,21 @@ function desenharConferencia(d) {
     '</b> já estavam aqui e <b>' + d.novas + '</b> ' +
     (d.novas === 1 ? 'é novo' : 'são novos') + '.';
 
-  if (!d.novas) {
+  // ⚠️ A TERCEIRA CONTAGEM, e ela existe porque o relatório mentia: linha que
+  // veio da planilha tem identidade própria, e a conferência antiga a contava
+  // como NOVA — quando na gravação ela é ADOTADA, não criada. Dizer "47
+  // novos" e gravar 3 destrói a confiança na tela inteira.
+  if (d.adotaveis) {
+    html += ' Outros <b>' + d.adotaveis + '</b> já estão aqui <b>vindos da ' +
+      'planilha</b>: eles não entram de novo — ganham o identificador do ' +
+      'banco, e o que você marcou e anotou neles continua.';
+  }
+
+  if (!d.novas && !d.adotaveis) {
     html += '<br><b>Está tudo registrado.</b> Nada a fazer com este arquivo.';
+  } else if (!d.novas) {
+    html += '<br><b>Nenhum lançamento novo</b> — só o reconhecimento das ' +
+      'linhas que vieram da planilha.';
   }
 
   // O saldo do banco contra o daqui: a conferência que vale mais que contar
@@ -1095,9 +1118,11 @@ function desenharConferencia(d) {
     html += '</ul>';
   }
 
+  const aFazer = d.novas + d.adotaveis;
   html += '<br><button class="btn" id="btn-gravar-extrato"' +
-    (d.novas ? '' : ' disabled title="não há nada novo para gravar"') + '>' +
-    'Gravar ' + d.novas + ' lançamento(s)</button> ' +
+    (aFazer ? '' : ' disabled title="não há nada a fazer"') + '>' +
+    (d.novas ? 'Gravar ' + d.novas + ' lançamento(s)'
+             : 'Reconhecer ' + d.adotaveis + ' linha(s)') + '</button> ' +
     '<button class="btn secundario" id="btn-cancelar-extrato">Deixa pra lá</button>';
   html += '</div>';
   saida.innerHTML = html;
