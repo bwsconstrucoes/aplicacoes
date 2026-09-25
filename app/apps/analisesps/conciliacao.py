@@ -330,8 +330,20 @@ def conferir(conta_id: int, lido) -> dict:
                              "conciliado"], linha)) for linha in linhas
                    if linha[0] not in serao_adotadas]
 
+    # ⚠️ E O AVISO QUE FALTAVA: linha da planilha PRESA com um FITID antigo.
+    # Ela não é reconhecida pela identidade (que é de outro arquivo, às vezes
+    # de um arquivo já apagado) nem pode ser adotada (a adoção exige FITID
+    # vazio) — então o extrato a cria de novo, em duplicidade. Era o que o dono
+    # via como "0 já estavam e 1006 são novos". Ver `presas_da_planilha`.
+    presas = presas_da_planilha(conta_id, [l for _m, l in novas])
+    # E o outro motivo possível para a mesma linha não ser reconhecida: ela
+    # está aqui com o sinal contrário. Não adota (ver a função), mas avisa.
+    sinal_trocado = sinal_trocado_na_planilha(conta_id, [l for _m, l in novas])
+
     return {
+        "sinal_trocado": sinal_trocado,
         "conta_id": conta_id,
+        "presas": presas,
         "periodo_ini": lido.periodo_ini,
         "periodo_fim": lido.periodo_fim,
         "saldo": lido.saldo,
@@ -382,6 +394,152 @@ def _adotaveis_da_planilha(conta_id: int, lancamentos: list) -> dict:
         if fila:
             achados[id(lanc)] = fila.pop(0)   # cada uma casa UMA vez
     return achados
+
+
+# ---------------------------------------------------------------------------
+# AS LINHAS PRESAS — o estrago que a adoção sem volta já deixou no banco
+# ---------------------------------------------------------------------------
+# A migração 026 impede que aconteça de novo. Ela NÃO conserta o que já
+# aconteceu: as linhas adotadas antes dela não têm `impressao_planilha`, e por
+# isso não há como saber qual arquivo as adotou.
+#
+# Mas dá para reconhecê-las e dá para soltá-las, e isto existe para as duas
+# coisas. A identidade de uma linha da planilha é calculada a partir dos dados
+# DELA (data, valor, descrição e a ordem da repetição) — e a adoção não mexe em
+# nenhum desses. Ou seja: a identidade original é RECONSTRUÍVEL a qualquer
+# momento, mesmo sem ter sido guardada.
+#
+# ⚠️ SOLTAR NÃO PERDE NADA, e é isso que torna a operação segura: se o arquivo
+# que adotou a linha ainda existir, a próxima importação dele adota de novo, e
+# a linha volta ao estado de agora. Se não existir mais, ela deixa de ser um
+# fantasma. O conciliado e a observação não são tocados — aquilo é trabalho de
+# gente.
+def presas_da_planilha(conta_id: int, lancamentos: list) -> list:
+    """Linhas do arquivo iguais a linhas da planilha que estão PRESAS.
+
+    Presa = veio da planilha, já foi adotada (tem FITID), e a identidade que
+    ela carrega não é nenhuma das que este arquivo traz. Ou seja: o arquivo
+    está trazendo o mesmo lançamento, não vai reconhecê-lo, e vai criar uma
+    segunda linha.
+
+    É a resposta para o que o dono viu em 25/09/2026: *"está se tentando
+    colocar registro que já estão lançados"*.
+    """
+    if not lancamentos or not _pronto():
+        return []
+    from .db import consultar
+
+    procurados: dict = {}
+    for lanc in lancamentos:
+        procurados.setdefault((lanc.data, lanc.valor), 0)
+        procurados[(lanc.data, lanc.valor)] += 1
+    if not procurados:
+        return []
+
+    achadas = []
+    for linha in consultar(
+            "SELECT id, data, descricao, valor FROM analisesps.conciliacao_extrato "
+            " WHERE conta_id = ? AND origem = 'planilha' AND fitid <> '' "
+            " ORDER BY data, id", (int(conta_id),)):
+        chave = (linha[1], linha[3])
+        if procurados.get(chave):
+            procurados[chave] -= 1
+            achadas.append({"id": linha[0], "data": linha[1],
+                            "descricao": linha[2], "valor": linha[3]})
+    return achadas
+
+
+def sinal_trocado_na_planilha(conta_id: int, lancamentos: list) -> list:
+    """Linhas do arquivo que existem na planilha com o SINAL CONTRÁRIO.
+
+    ⚠️ ISTO NÃO ADOTA NADA — só avisa. A adoção casa por valor EXATO de
+    propósito (ver `_adotar_linha_da_planilha`): casar por módulo faria uma
+    entrada de 100 adotar uma saída de 100 e VIRAR O SINAL dela, trocando um
+    lançamento verdadeiro por outro em silêncio. Essa é a decisão, e ela fica.
+
+    Mas quem confere precisa saber. Sem este aviso, uma aba importada com o
+    sinal trocado aparece como "1.006 lançamentos novos" e o dono não tem como
+    descobrir que a causa é o sinal — ele só vê a duplicidade depois de gravar.
+    """
+    if not lancamentos or not _pronto():
+        return []
+    from .db import consultar
+
+    # Só interessa (data, valor) que o arquivo traz e que NÃO existe igual aqui.
+    procurados: dict = {}
+    for lanc in lancamentos:
+        procurados.setdefault((lanc.data, -lanc.valor), 0)
+        procurados[(lanc.data, -lanc.valor)] += 1
+
+    achadas = []
+    for linha in consultar(
+            "SELECT id, data, descricao, valor FROM analisesps.conciliacao_extrato "
+            " WHERE conta_id = ? AND origem = 'planilha' AND fitid = '' "
+            " ORDER BY data, id", (int(conta_id),)):
+        chave = (linha[1], linha[3])
+        if procurados.get(chave):
+            procurados[chave] -= 1
+            achadas.append({"id": linha[0], "data": linha[1],
+                            "descricao": linha[2], "valor": linha[3]})
+    return achadas
+
+
+def devolver_presas(conta_id: int, quem: str = "") -> dict:
+    """Solta as linhas da planilha que ficaram presas com um FITID.
+
+    Reconstrói a identidade de planilha de cada uma e limpa o FITID. Devolve
+    quantas voltaram e quantas não deram (ver o conflito lá embaixo).
+    """
+    if not _pronto():
+        raise ErroDaConciliacao("A conciliação ainda não foi ligada.")
+    from .db import conexao, consultar, tem_coluna
+
+    linhas = consultar(
+        "SELECT id, data, descricao, valor FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND origem = 'planilha' AND fitid <> '' "
+        " ORDER BY data, id", (int(conta_id),))
+    if not linhas:
+        return {"devolvidas": 0, "conflitos": 0}
+
+    # A ORDEM DA REPETIÇÃO tem de ser contada como na importação da planilha:
+    # por (data, valor, descrição normalizada), na ordem do id. Sem isso a
+    # segunda linha igual receberia a identidade da primeira e bateria no
+    # índice único.
+    vistas: dict = {}
+    tem_volta = tem_coluna("conciliacao_extrato", "impressao_planilha")
+    devolvidas = conflitos = 0
+    with conexao() as con:
+        for linha_id, data, descricao, valor in linhas:
+            base = (data, valor, (descricao or "").strip().lower())
+            vistas[base] = vistas.get(base, 0) + 1
+            marca_planilha = impressao_da_planilha(
+                int(conta_id),
+                {"data": data, "valor": valor, "descricao": descricao},
+                vistas[base])
+            extra = ", impressao_planilha = ''" if tem_volta else ""
+            try:
+                con.execute(
+                    "UPDATE analisesps.conciliacao_extrato "
+                    f"   SET impressao = ?, fitid = '', arquivo_id = NULL{extra}, "
+                    "       alterado_em = now() "
+                    " WHERE id = ?", (marca_planilha, int(linha_id)))
+                con.commit()
+                devolvidas += 1
+            except Exception:  # noqa: BLE001
+                # ⚠️ CONFLITO É ESTADO POSSÍVEL, NÃO ERRO DE PROGRAMA: a
+                # identidade reconstruída pode já estar ocupada por outra linha
+                # (por exemplo, se a planilha foi reimportada depois da adoção e
+                # recriou a linha). Cada uma no seu commit justamente por isso —
+                # uma que não dá não pode levar as outras.
+                con.rollback()
+                conflitos += 1
+                logger.exception("Conciliação: não consegui devolver à planilha "
+                                 "a linha %s da conta %s", linha_id, conta_id)
+
+    logger.warning("Conciliação: %s soltou %s linha(s) presa(s) na conta %s "
+                   "(%s conflito(s)).", quem or "?", devolvidas, conta_id,
+                   conflitos)
+    return {"devolvidas": devolvidas, "conflitos": conflitos}
 
 
 def _arquivo_ja_veio(impressao: str) -> dict | None:
@@ -437,7 +595,8 @@ def importar(conta_id: int, lido, nome_arquivo: str = "",
             # ⚠️ ANTES DE CRIAR, PROCURA a mesma linha vinda da planilha: ela é
             # o mesmo lançamento, e traz a anotação do dono junto. Ver o bloco
             # "O ENCONTRO DAS DUAS FONTES", mais abaixo.
-            if _adotar_linha_da_planilha(con, conta_id, lanc, marca):
+            if _adotar_linha_da_planilha(con, conta_id, lanc, marca,
+                                         arquivo_id):
                 adotadas += 1
                 continue
             descricao = (lanc.memo or "").strip()
@@ -777,6 +936,24 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
             "origem": l.get("origem", ""),
         } for l in (conferido.get("so_aqui") or [])[:15]],
         "so_aqui_total": len(conferido.get("so_aqui") or []),
+        # ⚠️ AS LINHAS PRESAS — o aviso que faltava, e que é a resposta ao que o
+        # dono viu em 25/09/2026: *"está se tentando colocar registro que já
+        # estão lançados"*. Linha da planilha com FITID de outro arquivo não é
+        # reconhecida nem adotável, e o extrato a cria em duplicidade. Sem este
+        # número na tela, o único jeito de descobrir era pagar duas vezes.
+        "presas": [{
+            "data": l["data"].isoformat() if l.get("data") else "",
+            "descricao": (l.get("descricao") or "")[:120],
+            "valor": str(l.get("valor") or 0),
+        } for l in (conferido.get("presas") or [])[:15]],
+        "presas_total": len(conferido.get("presas") or []),
+        # O outro motivo possível: a linha está aqui com o sinal contrário.
+        "sinal_trocado": [{
+            "data": l["data"].isoformat() if l.get("data") else "",
+            "descricao": (l.get("descricao") or "")[:120],
+            "valor": str(l.get("valor") or 0),
+        } for l in (conferido.get("sinal_trocado") or [])[:15]],
+        "sinal_trocado_total": len(conferido.get("sinal_trocado") or []),
         "arquivo_repetido": _arquivo_para_a_tela(
             conferido.get("arquivo_repetido")),
         # ⚠️ A CONFERÊNCIA QUE VALE MAIS QUE TODAS: o saldo que o banco declara
@@ -953,7 +1130,8 @@ def importar_da_planilha(conta_id: int, lido: dict, quem: str = "") -> dict:
 # banco. Achando, ela é ADOTADA: ganha o FITID e a identidade do banco, e
 # mantém a marca de conciliado e a observação que já tinha.
 # ---------------------------------------------------------------------------
-def _adotar_linha_da_planilha(con, conta_id: int, lanc, marca: str) -> bool:
+def _adotar_linha_da_planilha(con, conta_id: int, lanc, marca: str,
+                              arquivo_id: int = None) -> bool:
     """Achou a mesma linha vinda da planilha? Então é ela, e não uma nova.
 
     ⚠️ CASA POR DATA E VALOR EXATO — E NÃO POR MÓDULO, de propósito.
@@ -971,9 +1149,20 @@ def _adotar_linha_da_planilha(con, conta_id: int, lanc, marca: str) -> bool:
 
     Valor exato é a regra certa. O defeito que ele viu era outro, e está
     consertado em `conferir`.
+
+    ⚠️ A ADOÇÃO GUARDA O CAMINHO DE VOLTA — migração 026, 25/09/2026. A
+    identidade original da linha vai para `impressao_planilha` e o arquivo que
+    adotou fica anotado em `arquivo_id`. Sem os dois, desfazer a importação
+    deixava a linha com o FITID de um arquivo apagado: ela não era mais
+    reconhecida pela identidade nem podia ser adotada de novo (a adoção exige
+    FITID vazio), e o extrato seguinte a DUPLICAVA. Ver o comentário da
+    migração 026 — foi isto que o dono viu como "0 já estavam e 1006 são
+    novos".
     """
+    from .db import tem_coluna
+
     cur = con.execute(
-        "SELECT id FROM analisesps.conciliacao_extrato "
+        "SELECT id, impressao FROM analisesps.conciliacao_extrato "
         " WHERE conta_id = ? AND data = ? AND valor = ? "
         "   AND origem = 'planilha' AND fitid = '' "
         " ORDER BY id LIMIT 1",
@@ -981,11 +1170,28 @@ def _adotar_linha_da_planilha(con, conta_id: int, lanc, marca: str) -> bool:
     achada = cur.fetchone()
     if not achada:
         return False
-    con.execute(
-        "UPDATE analisesps.conciliacao_extrato "
-        "   SET impressao = ?, fitid = ?, alterado_em = now() "
-        " WHERE id = ?",
-        (marca, (lanc.fitid or "")[:120], int(achada[0])))
+    if tem_coluna("conciliacao_extrato", "impressao_planilha"):
+        con.execute(
+            "UPDATE analisesps.conciliacao_extrato "
+            "   SET impressao = ?, fitid = ?, arquivo_id = ?, "
+            # Só grava a volta na PRIMEIRA adoção: se por algum caminho a
+            # linha for adotada duas vezes, a identidade de planilha que vale
+            # é a original, não a intermediária.
+            "       impressao_planilha = CASE WHEN impressao_planilha = '' "
+            "                                THEN impressao "
+            "                                ELSE impressao_planilha END, "
+            "       alterado_em = now() "
+            " WHERE id = ?",
+            (marca, (lanc.fitid or "")[:120], arquivo_id, int(achada[0])))
+    else:
+        # Antes do botão "Aplicar atualizações do banco": segue como antes, sem
+        # volta. Melhor adotar sem poder desfazer do que deixar de adotar e
+        # duplicar a linha na hora.
+        con.execute(
+            "UPDATE analisesps.conciliacao_extrato "
+            "   SET impressao = ?, fitid = ?, alterado_em = now() "
+            " WHERE id = ?",
+            (marca, (lanc.fitid or "")[:120], int(achada[0])))
     return True
 
 
@@ -1306,7 +1512,55 @@ def o_que_o_desfazer_apaga(conta_id: int, arquivo_id: int = None,
         "conciliadas": int(conciliadas or 0),
         "anotadas": int(anotadas or 0),
         "no_omie": int(no_omie or 0),
+        # ⚠️ ESTAS NÃO SÃO APAGADAS, SÃO DEVOLVIDAS — ver `_devolver_adotadas`.
+        # Dizer o número separado importa: se elas entrassem em "quantas", a
+        # tela avisaria que vai apagar linha da planilha, o que é falso e
+        # faria qualquer um desistir de desfazer.
+        "devolvidas": _quantas_adotadas(conta_id, arquivo_id),
     }
+
+
+def _quantas_adotadas(conta_id: int, arquivo_id=None) -> int:
+    """Quantas linhas da planilha este arquivo adotou. 0 antes da migração."""
+    if not arquivo_id:
+        return 0
+    from .db import consultar_um, tem_coluna
+    if not tem_coluna("conciliacao_extrato", "impressao_planilha"):
+        return 0
+    linha = consultar_um(
+        "SELECT count(*) FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND arquivo_id = ? AND impressao_planilha <> ''",
+        (int(conta_id), int(arquivo_id)))
+    return int((linha or [0])[0] or 0)
+
+
+def _devolver_adotadas(con, conta_id: int, arquivo_id) -> int:
+    """Devolve à planilha as linhas que este arquivo havia adotado.
+
+    ⚠️ SEM ISTO O DESFAZER DEIXAVA UM FANTASMA, e é o defeito que o dono viu em
+    25/09/2026 como *"está se tentando colocar registro que já estão
+    lançados"*. A linha adotada tem origem 'planilha', então o desfazer (que
+    apaga só origem 'ofx') não a tocava — e ela ficava carregando o FITID e a
+    identidade de um arquivo apagado. Aí ela não era mais reconhecida pela
+    identidade NEM podia ser adotada de novo, porque a adoção exige FITID
+    vazio. A importação seguinte a criava outra vez, duplicando o lançamento.
+
+    Devolver é restaurar a identidade original (`impressao_planilha`) e limpar
+    o FITID. O que foi CONCILIADO e o que foi ANOTADO ficam: aquilo é trabalho
+    de gente e não veio do arquivo.
+    """
+    if not arquivo_id:
+        return 0
+    from .db import tem_coluna
+    if not tem_coluna("conciliacao_extrato", "impressao_planilha"):
+        return 0
+    cur = con.execute(
+        "UPDATE analisesps.conciliacao_extrato "
+        "   SET impressao = impressao_planilha, impressao_planilha = '', "
+        "       fitid = '', arquivo_id = NULL, alterado_em = now() "
+        " WHERE conta_id = ? AND arquivo_id = ? AND impressao_planilha <> ''",
+        (int(conta_id), int(arquivo_id)))
+    return cur.rowcount or 0
 
 
 def _onde_do_desfazer(conta_id: int, arquivo_id=None, aba: str = ""):
@@ -1347,6 +1601,10 @@ def desfazer(conta_id: int, arquivo_id: int = None, aba: str = "",
         " LIMIT 2000", tuple(params))
 
     with conexao() as con:
+        # ⚠️ DEVOLVER VEM ANTES DE APAGAR, e a ordem não é gosto: as linhas
+        # adotadas apontam para este arquivo, e apagar a ficha do arquivo
+        # primeiro tiraria delas o único jeito de serem encontradas.
+        devolvidas = _devolver_adotadas(con, conta_id, arquivo_id)
         cur = con.execute(
             f"DELETE FROM analisesps.conciliacao_extrato{onde}", tuple(params))
         quantas = cur.rowcount or 0
@@ -1360,9 +1618,11 @@ def desfazer(conta_id: int, arquivo_id: int = None, aba: str = "",
         con.commit()
 
     logger.warning("Conciliação: %s DESFEZ uma importação na conta %s — "
-                   "%s linha(s) apagada(s).", quem or "?", conta_id, quantas)
+                   "%s linha(s) apagada(s) e %s devolvida(s) à planilha.",
+                   quem or "?", conta_id, quantas, devolvidas)
     return {
         "apagadas": quantas,
+        "devolvidas": devolvidas,
         "ficaram_no_omie": antes["no_omie"] if not levar_o_que_esta_no_omie else 0,
         "conciliadas_que_sumiram": antes["conciliadas"],
         "anotadas_que_sumiram": antes["anotadas"],

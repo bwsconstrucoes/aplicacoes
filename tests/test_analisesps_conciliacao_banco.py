@@ -1199,3 +1199,266 @@ def test_conta_sem_fornecedor_fica_NULA_e_nao_zero(banco_conc):
     from app.apps.analisesps import conciliacao
     conta_de_teste(omie_fornecedor="")
     assert conciliacao.contas()[0]["omie_fornecedor"] is None
+
+
+# ---------------------------------------------------------------------------
+# A ADOÇÃO TEM DE TER VOLTA — 25/09/2026
+#
+# Relato do dono: *"Ainda tá tendo alguma falha na detecção. Está se tentando
+# colocar registro que já estão lançados. BD 50024 · Li 1006 lançamento(s):
+# 0 já estavam aqui e 1006 são novos."*
+#
+# O mecanismo: adotar uma linha da planilha grava nela a identidade do banco e
+# o FITID. Desfazer a importação apagava só as linhas de origem 'ofx' — a
+# adotada tem origem 'planilha' e FICAVA, carregando o FITID de um arquivo que
+# acabou de ser apagado. Com FITID preenchido ela deixa de ser adotável, e com
+# a identidade de um arquivo morto não é reconhecida: a importação seguinte a
+# criava outra vez.
+#
+# Este bloco é o ciclo inteiro, que é o único jeito de provar que fechou.
+# ---------------------------------------------------------------------------
+def _uma_linha_de_planilha(data, valor, descricao="PIX RECEBIDO SEFAZ"):
+    return aba_falsa([{"data": data, "descricao": descricao, "documento": "",
+                       "valor": valor, "conciliado": True,
+                       "observacao": "conferido na planilha"}])
+
+
+def test_adotar_guarda_a_identidade_de_planilha_para_poder_voltar(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from app.apps.analisesps.db import consultar_um
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(
+        conta_id, _uma_linha_de_planilha(dt.date(2026, 9, 1), D("2407.68")), "T")
+    antes = consultar_um(
+        "SELECT impressao FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))[0]
+
+    lido = conciliacao_ofx.ler(ofx([("20260901", "2407.68", "FIT-1",
+                                     "PIX RECEBIDO REM: SECRETARIA DA FAZENDA")]))
+    feito = conciliacao.importar(conta_id, lido, "extrato.ofx", "T")
+    assert feito["adotadas"] == 1
+
+    depois = consultar_um(
+        "SELECT impressao_planilha, arquivo_id, fitid "
+        "  FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))
+    assert depois[0] == antes, "a identidade de planilha tem de ficar guardada"
+    assert depois[1] == feito["arquivo_id"], "faltou anotar quem adotou"
+    assert depois[2] == "FIT-1"
+
+
+def test_desfazer_DEVOLVE_a_linha_da_planilha_em_vez_de_deixa_la_presa(banco_conc):
+    """O coração do defeito. Depois de desfazer, a linha tem de estar como
+    antes: sem FITID e com a identidade de planilha de volta."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from app.apps.analisesps.db import consultar_um
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(
+        conta_id, _uma_linha_de_planilha(dt.date(2026, 9, 1), D("2407.68")), "T")
+    antes = consultar_um(
+        "SELECT impressao FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))[0]
+
+    lido = conciliacao_ofx.ler(ofx([("20260901", "2407.68", "FIT-1", "PIX SEFAZ")]))
+    feito = conciliacao.importar(conta_id, lido, "extrato.ofx", "T")
+
+    desfeito = conciliacao.desfazer(conta_id, feito["arquivo_id"], quem="T")
+    assert desfeito["devolvidas"] == 1
+
+    linha = consultar_um(
+        "SELECT impressao, fitid, impressao_planilha, arquivo_id, conciliado, "
+        "       observacao FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))
+    assert linha[0] == antes, "a identidade de planilha não voltou"
+    assert linha[1] == "", "ficou com o FITID de um arquivo apagado"
+    assert linha[2] == ""
+    assert linha[3] is None
+    # O trabalho de gente não é tocado: marcar e anotar não vieram do arquivo.
+    assert linha[4] is True
+    assert "conferido na planilha" in (linha[5] or "")
+
+
+def test_depois_de_desfazer_o_MESMO_extrato_volta_a_ser_adotado(banco_conc):
+    """⚠️ ESTE É O TESTE QUE PROVA O QUE O DONO VIU. Sem a devolução, aqui dava
+    "1 nova" e a linha entrava em duplicidade — duas linhas do mesmo
+    lançamento, e o saldo passando a divergir do banco em silêncio."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from app.apps.analisesps.db import consultar_um
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(
+        conta_id, _uma_linha_de_planilha(dt.date(2026, 9, 1), D("2407.68")), "T")
+
+    arquivo = ofx([("20260901", "2407.68", "FIT-1", "PIX SEFAZ")])
+    feito = conciliacao.importar(conta_id, conciliacao_ofx.ler(arquivo), "e.ofx", "T")
+    conciliacao.desfazer(conta_id, feito["arquivo_id"], quem="T")
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(arquivo))
+    assert conferido["adotaveis"] == 1, "voltou a contar como NOVA — duplicaria"
+    assert len(conferido["novas"]) == 0
+    assert conferido["presas"] == []
+
+    de_novo = conciliacao.importar(conta_id, conciliacao_ofx.ler(arquivo), "e.ofx", "T")
+    assert de_novo["adotadas"] == 1
+    assert de_novo["gravadas"] == 0
+    quantas = consultar_um(
+        "SELECT count(*) FROM analisesps.conciliacao_extrato WHERE conta_id = ?",
+        (conta_id,))[0]
+    assert quantas == 1, f"duplicou: {quantas} linhas para um lançamento só"
+
+
+def test_a_linha_PRESA_e_acusada_antes_de_deixar_gravar(banco_conc):
+    """O aviso que faltava na tela. Uma linha da planilha com FITID de outro
+    arquivo não é reconhecida nem adotável — e gravar duplicaria."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from app.apps.analisesps.db import conexao
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(
+        conta_id, _uma_linha_de_planilha(dt.date(2026, 9, 1), D("2407.68")), "T")
+    # O estado herdado: adotada por um arquivo antigo, sem caminho de volta
+    # (é como ficavam as linhas adotadas antes da migração 026).
+    with conexao() as con:
+        con.execute(
+            "UPDATE analisesps.conciliacao_extrato "
+            "   SET fitid = 'FIT-VELHO', impressao = 'digital-de-arquivo-morto' "
+            " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))
+        con.commit()
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(
+        ofx([("20260901", "2407.68", "FIT-NOVO", "PIX SEFAZ")])))
+
+    assert len(conferido["novas"]) == 1      # é o que ela seria: duplicidade
+    assert conferido["adotaveis"] == 0
+    assert len(conferido["presas"]) == 1, "a tela deixaria duplicar sem avisar"
+    assert conferido["presas"][0]["valor"] == D("2407.68")
+
+
+def test_soltar_as_presas_devolve_a_identidade_e_a_adocao_volta_a_funcionar(banco_conc):
+    """Conserta estrago já feito: as linhas adotadas antes da migração 026 não
+    sabem quem as adotou, mas a identidade de planilha é reconstruível a partir
+    dos dados da própria linha."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from app.apps.analisesps.db import conexao, consultar_um
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(
+        conta_id, _uma_linha_de_planilha(dt.date(2026, 9, 1), D("2407.68")), "T")
+    original = consultar_um(
+        "SELECT impressao FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))[0]
+    with conexao() as con:
+        con.execute(
+            "UPDATE analisesps.conciliacao_extrato "
+            "   SET fitid = 'FIT-VELHO', impressao = 'digital-de-arquivo-morto' "
+            " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))
+        con.commit()
+
+    soltas = conciliacao.devolver_presas(conta_id, "T")
+    assert soltas == {"devolvidas": 1, "conflitos": 0}
+    assert consultar_um(
+        "SELECT impressao FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))[0] == original
+
+    arquivo = ofx([("20260901", "2407.68", "FIT-NOVO", "PIX SEFAZ")])
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(arquivo))
+    assert conferido["adotaveis"] == 1
+    assert conferido["presas"] == []
+    feito = conciliacao.importar(conta_id, conciliacao_ofx.ler(arquivo), "e.ofx", "T")
+    assert feito["gravadas"] == 0 and feito["adotadas"] == 1
+    assert consultar_um(
+        "SELECT count(*) FROM analisesps.conciliacao_extrato WHERE conta_id = ?",
+        (conta_id,))[0] == 1
+
+
+def test_soltar_duas_linhas_iguais_nao_bate_no_indice_unico(banco_conc):
+    """Duas linhas idênticas da planilha têm identidades diferentes (a ordem da
+    repetição entra nelas). Reconstruir sem respeitar a ordem faria a segunda
+    receber a identidade da primeira e bater no índice único."""
+    from app.apps.analisesps import conciliacao
+    from app.apps.analisesps.db import conexao, consultar
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    duas = [{"data": dt.date(2026, 9, 1), "descricao": "PIX IGUAL",
+             "documento": "", "valor": D("1500.00"), "conciliado": False,
+             "observacao": ""} for _ in range(2)]
+    conciliacao.importar_da_planilha(conta_id, aba_falsa(duas), "T")
+    with conexao() as con:
+        con.execute(
+            "UPDATE analisesps.conciliacao_extrato SET fitid = 'X' "
+            " WHERE conta_id = ? AND origem = 'planilha'", (conta_id,))
+        con.commit()
+
+    soltas = conciliacao.devolver_presas(conta_id, "T")
+    assert soltas["devolvidas"] == 2, f"conflitos: {soltas}"
+    marcas = [l[0] for l in consultar(
+        "SELECT impressao FROM analisesps.conciliacao_extrato "
+        " WHERE conta_id = ? ORDER BY id", (conta_id,))]
+    assert len(set(marcas)) == 2, "as duas receberam a mesma identidade"
+
+
+def test_o_desfazer_conta_as_que_serao_DEVOLVIDAS_separado(banco_conc):
+    """Se elas entrassem em "quantas", a tela avisaria que vai apagar linha da
+    planilha — o que é falso, e faria qualquer um desistir de desfazer."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(
+        conta_id, _uma_linha_de_planilha(dt.date(2026, 9, 1), D("2407.68")), "T")
+    feito = conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "2407.68", "FIT-1", "PIX SEFAZ"),
+        ("20260902", "-500.00", "FIT-2", "PAGTO ELETRON")])), "e.ofx", "T")
+    assert feito["adotadas"] == 1 and feito["gravadas"] == 1
+
+    conta = conciliacao.o_que_o_desfazer_apaga(conta_id, feito["arquivo_id"])
+    assert conta["quantas"] == 1, "a adotada não é apagada, é devolvida"
+    assert conta["devolvidas"] == 1
+
+
+def test_o_sinal_trocado_na_planilha_e_ACUSADO_sem_ser_adotado(banco_conc):
+    """⚠️ AVISA, NÃO JUNTA. A adoção casa por valor exato de propósito: casar
+    por módulo faria uma entrada de 100 adotar uma saída de 100 e virar o sinal
+    dela. Mas sem o aviso, uma aba importada com o sinal trocado aparece como
+    "tudo novo" e a causa fica invisível até alguém gravar em duplicidade."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa([
+        {"data": dt.date(2026, 9, 1), "descricao": "PIX RECEBIDO SEFAZ",
+         "documento": "", "valor": D("-2407.68"),   # errado: é entrada
+         "conciliado": False, "observacao": ""}]), "T")
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(
+        ofx([("20260901", "2407.68", "FIT-1", "PIX RECEBIDO SEFAZ")])))
+
+    assert conferido["adotaveis"] == 0, "juntou por módulo e viraria o sinal"
+    assert len(conferido["novas"]) == 1
+    assert len(conferido["sinal_trocado"]) == 1
+    assert conferido["sinal_trocado"][0]["valor"] == D("-2407.68")
+
+
+def test_sinal_igual_nao_e_confundido_com_sinal_trocado(banco_conc):
+    """O aviso não pode disparar no caso normal, senão vira ruído e ninguém lê
+    mais nenhum aviso desta tela."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(
+        conta_id, _uma_linha_de_planilha(dt.date(2026, 9, 1), D("2407.68")), "T")
+
+    conferido = conciliacao.conferir(conta_id, conciliacao_ofx.ler(
+        ofx([("20260901", "2407.68", "FIT-1", "PIX RECEBIDO SEFAZ")])))
+
+    assert conferido["adotaveis"] == 1
+    assert conferido["sinal_trocado"] == []

@@ -104,11 +104,31 @@ def ler(conteudo: bytes) -> ExtratoLido:
     ini = _data(_campo(texto, "DTSTART"))
     fim = _data(_campo(texto, "DTEND"))
     datas = [x.data for x in lancamentos]
+
+    # ⚠️ O PERÍODO DECLARADO PELO BANCO NÃO MANDA SOZINHO — ele mente.
+    #
+    # Achado em 25/09/2026, num extrato do Bradesco que o dono trouxe: o
+    # cabeçalho dizia DTSTART = DTEND = 25/09, e dentro vinham 1.006
+    # lançamentos, o mais antigo de 01/09. O banco escreveu ali a data do
+    # DOWNLOAD, não o intervalo do extrato.
+    #
+    # E isso não é cosmético: o período é a janela em que a conferência procura
+    # "o que está aqui e NÃO vem neste extrato" — a lista que acusa linha
+    # digitada errada e lançamento estornado. Com a janela de um dia só, ela
+    # olhava 25/09, não achava nada, e a tela passava a impressão de que estava
+    # tudo conferido.
+    #
+    # Agora o período é a UNIÃO do que o banco declarou com o que o arquivo de
+    # fato traz. Esticar é seguro (a janela cobre tudo); encolher nunca.
+    if datas:
+        ini = min([ini] + datas) if ini else min(datas)
+        fim = max([fim] + datas) if fim else max(datas)
+
     return ExtratoLido(
         bankid=re.sub(r"\D", "", _campo(texto, "BANKID")),
         acctid=_campo(texto, "ACCTID").strip(),
-        periodo_ini=ini or (min(datas) if datas else None),
-        periodo_fim=fim or (max(datas) if datas else None),
+        periodo_ini=ini,
+        periodo_fim=fim,
         saldo=_decimal(_campo(texto, "BALAMT")),
         saldo_em=_data(_campo(texto, "DTASOF")),
         lancamentos=lancamentos,

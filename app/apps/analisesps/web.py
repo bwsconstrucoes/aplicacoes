@@ -2186,6 +2186,38 @@ def conciliacao_desfazer():
     return {"ok": True, "so_contei": False, **feito}
 
 
+@bp.route("/api/conciliacao/soltar-presas", methods=["POST"])
+@exige_operador
+def conciliacao_soltar_presas():
+    """Solta as linhas da planilha que ficaram presas com um FITID antigo.
+
+    ⚠️ CONSERTA ESTRAGO JÁ FEITO, e por isso existe além da migração 026: as
+    linhas adotadas antes dela não sabem qual arquivo as adotou, e uma
+    importação desfeita deixava-as com o FITID de um arquivo apagado. Presas
+    assim, elas não eram reconhecidas nem adotadas — e o extrato seguinte
+    criava a linha de novo. Ver `conciliacao.presas_da_planilha`.
+
+    Soltar não perde nada: se o arquivo que adotou ainda existir, a próxima
+    importação dele adota outra vez.
+    """
+    from . import conciliacao as conc
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = conc.devolver_presas(int(conta_id), quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou soltar as linhas presas")
+        return {"ok": False, "erro": f"Não consegui soltar: {e}"}, 500
+    return {"ok": True, **feito}
+
+
 @bp.route("/api/conciliacao/planilha/abas", methods=["POST"])
 @exige_operador
 def conciliacao_abas_da_planilha():

@@ -264,9 +264,29 @@
      sem erro nenhum na tela. #}
   <form method="get" id="filtro-colunas" style="display:none">
     <input type="hidden" name="conta_id" value="{{ filtros.conta_id }}">
-    {% for chave, valores in args.lists() if chave in ('sentido', 'busca') %}
+    {# ⚠️ O QUE A BARRA LATERAL JÁ FILTROU VIAJA JUNTO. Antes só `sentido` e
+       `busca` vinham, e por isso digitar no cabeçalho APAGAVA em silêncio a
+       faixa de datas e a de valores que a pessoa tinha posto ao lado — ela
+       via a lista mudar e não fazia ideia de por quê. #}
+    {% for chave, valores in args.lists()
+       if chave in ('sentido', 'busca', 'data_ini', 'data_fim',
+                    'valor_ini', 'valor_fim') %}
       {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
     {% endfor %}
+    {# ⚠️ ESTE BOTÃO É O QUE FAZ O ENTER FUNCIONAR, e a falta dele era o
+       defeito que o dono relatou em 25/09/2026 (*"os filtros de cabeçalho
+       também não estão funcionando"*).
+
+       A regra do HTML: num formulário SEM botão de enviar, o Enter só envia
+       se houver UM único campo de texto. Aqui são seis (data, histórico,
+       documento, entrada, saída, observação) — então o Enter não fazia
+       absolutamente nada, sem erro nenhum na tela. Só a caixinha de situação
+       funcionava, porque ela envia no `onchange`.
+
+       Não é enfeite escondido: é o botão padrão do formulário. O script
+       abaixo ainda envia no Enter por conta própria, para não depender de
+       navegador nenhum. #}
+    <button type="submit" hidden aria-hidden="true" tabindex="-1">Filtrar</button>
   </form>
 
   <div class="rolagem-tabela">
@@ -1163,6 +1183,48 @@ function desenharConferencia(d) {
     html += '</ul>';
   }
 
+  // ⚠️ AS LINHAS PRESAS — o aviso mais importante desta tela, e ele vem ANTES
+  // do botão de gravar de propósito: se há linha presa, gravar DUPLICA
+  // lançamento. Relato do dono em 25/09/2026: *"está se tentando colocar
+  // registro que já estão lançados"*.
+  if (d.presas_total) {
+    html += '<div class="aviso erro" style="margin-top:12px">' +
+      '<b>PARE: ' + d.presas_total + ' linha(s) deste extrato já estão aqui, ' +
+      'vindas da planilha, mas estão PRESAS</b> — elas carregam o ' +
+      'identificador de uma importação anterior (às vezes de uma que foi ' +
+      'desfeita), e por isso o sistema não as reconhece nem as aproveita. ' +
+      'Se você gravar agora, elas entram DE NOVO e o lançamento fica em ' +
+      'duplicidade.<br><br>' +
+      'Solte-as primeiro. Soltar não apaga nada e não perde o que você ' +
+      'marcou ou anotou nelas.<ul>';
+    d.presas.forEach(l => {
+      html += '<li>' + l.data.split("-").reverse().join("/") + ' — ' +
+        l.descricao + ' (' + dinheiro(l.valor) + ')</li>';
+    });
+    html += '</ul>' +
+      '<button class="btn" id="btn-soltar-presas">Soltar as ' +
+      d.presas_total + ' linha(s) e conferir de novo</button></div>';
+  }
+
+  // O outro motivo possível para a mesma linha não ser reconhecida: ela está
+  // aqui com o SINAL CONTRÁRIO. A adoção não casa por módulo de propósito
+  // (casar viraria o sinal de um lançamento verdadeiro em silêncio) — mas quem
+  // confere tem de saber, senão a causa fica invisível.
+  if (d.sinal_trocado_total) {
+    html += '<div class="aviso atencao" style="margin-top:12px">' +
+      '<b>Atenção: ' + d.sinal_trocado_total + ' linha(s) deste extrato ' +
+      'existem aqui com o SINAL CONTRÁRIO</b> (o extrato diz entrada e aqui ' +
+      'está como saída, ou o inverso). O sistema não as junta de propósito — ' +
+      'juntar viraria o sinal de um lançamento verdadeiro sem ninguém ver. ' +
+      'Se a aba da planilha entrou com o sinal trocado, desfaça a aba e ' +
+      'traga de novo; se foi o banco que mudou, corrija a linha aqui.<ul>';
+    d.sinal_trocado.forEach(l => {
+      html += '<li>' + l.data.split("-").reverse().join("/") + ' — ' +
+        l.descricao + ' (aqui: ' + dinheiro(l.valor) + ')</li>';
+    });
+    html += '</ul></div>';
+  }
+
   const aFazer = d.novas + d.adotaveis;
   html += '<br><button class="btn" id="btn-gravar-extrato"' +
     (aFazer ? '' : ' disabled title="não há nada a fazer"') + '>' +
@@ -1174,6 +1236,27 @@ function desenharConferencia(d) {
 
   document.getElementById("btn-cancelar-extrato").addEventListener("click", () => {
     saida.innerHTML = ""; arquivoNaMao = null; campoArq.value = "";
+  });
+
+  // Soltar as presas e CONFERIR DE NOVO, não gravar: o número que ele viu
+  // estava errado, então o certo é refazer a pergunta, não agir sobre a
+  // resposta antiga.
+  const soltar = document.getElementById("btn-soltar-presas");
+  if (soltar) soltar.addEventListener("click", async () => {
+    soltar.disabled = true;
+    soltar.textContent = "soltando…";
+    const r = await pedir("{{ url_for('analisesps.conciliacao_soltar_presas') }}",
+                          {conta_id: d.conta_id});
+    if (!r.ok) {
+      soltar.disabled = false;
+      soltar.textContent = "Soltar e conferir de novo";
+      recado(r.erro || "não consegui soltar", "erro");
+      return;
+    }
+    soltar.textContent = r.devolvidas + " soltada(s) — conferindo de novo…";
+    // Reconferir o MESMO arquivo, na MESMA conta: é a resposta que estava
+    // errada, não o arquivo.
+    conferir(arquivoNaMao, d.conta_id);
   });
   const gravar = document.getElementById("btn-gravar-extrato");
   if (gravar && !gravar.disabled) {
@@ -1513,6 +1596,82 @@ if (formTipo) {
     const d = await pedir("{{ url_for('analisesps.conciliacao_omie_tipo') }}", corpo);
     if (!d.ok) { alvo.textContent = d.erro || "não gravou"; return; }
     location.reload();
+  });
+}
+
+// --- DESFAZER UMA IMPORTAÇÃO -----------------------------------------------
+// ⚠️ O BOTÃO EXISTIA E NÃO FAZIA NADA — relato do dono em 25/09/2026: *"o
+// botão desfazer o extrato importado não funciona"*. E não funcionava mesmo:
+// o `<button class="desfazer-arquivo">` foi escrito na tabela dos extratos,
+// a rota `/api/conciliacao/desfazer` foi escrita e testada, e ninguém ligou
+// os dois. Clicar não dava erro, não dava recado, não fazia nada.
+//
+// A ROTA PEDE DUAS CHAMADAS, de propósito: a primeira só CONTA o que sumiria
+// (inclusive quantas linhas foram conciliadas ou anotadas por gente, e
+// quantas já foram lançadas no OMIE), e a segunda executa. É por isso que
+// aqui há duas perguntas e não uma — apagar contando depois não é escolha.
+document.querySelectorAll(".desfazer-arquivo").forEach(botao => {
+  botao.addEventListener("click", async () => {
+    const arquivo_id = botao.dataset.arquivo;
+    const nome = botao.dataset.nome || "este extrato";
+    const antigo = botao.textContent;
+    botao.disabled = true;
+    botao.textContent = "conferindo…";
+
+    const conta = await pedir("{{ url_for('analisesps.conciliacao_desfazer') }}",
+                              {conta_id: CONTA_ID, arquivo_id: arquivo_id});
+    botao.disabled = false;
+    botao.textContent = antigo;
+    if (!conta.ok || !conta.pode) {
+      recado(conta.erro || "não consegui conferir o que sumiria", "erro");
+      return;
+    }
+
+    let aviso = "Desfazer \"" + nome + "\"?\n\n" +
+                conta.quantas + " linha(s) seriam apagadas.";
+    if (conta.conciliadas) aviso += "\n" + conta.conciliadas +
+      " delas estão CONCILIADAS — esse trabalho se perde.";
+    if (conta.anotadas) aviso += "\n" + conta.anotadas +
+      " delas têm OBSERVAÇÃO escrita aqui dentro — o texto se perde.";
+    if (conta.devolvidas) aviso += "\n" + conta.devolvidas +
+      " linha(s) da planilha voltam a ser da planilha (não são apagadas).";
+    if (conta.no_omie) aviso += "\n\n" + conta.no_omie +
+      " já foram lançadas no OMIE e NÃO serão apagadas — o título lá fora " +
+      "continua existindo e tem de ser desfeito por lá.";
+    aviso += "\n\nIsto não tem volta.";
+    if (!confirm(aviso)) return;
+
+    botao.disabled = true;
+    botao.textContent = "desfazendo…";
+    const f = await pedir("{{ url_for('analisesps.conciliacao_desfazer') }}",
+                          {conta_id: CONTA_ID, arquivo_id: arquivo_id,
+                           confirmar: true});
+    if (!f.ok) {
+      botao.disabled = false;
+      botao.textContent = antigo;
+      recado(f.erro || "não consegui desfazer", "erro");
+      return;
+    }
+    recado(f.apagadas + " linha(s) apagada(s)" +
+           (f.devolvidas ? ", " + f.devolvidas + " devolvida(s) à planilha" : "") +
+           ". A tela vai recarregar.", "");
+    setTimeout(() => location.reload(), 1500);
+  });
+});
+
+// --- os filtros de cabeçalho: Enter aplica -----------------------------------
+// O botão escondido dentro do formulário já resolve pela regra do HTML; isto
+// existe para não depender de navegador nenhum, e porque a caixinha de data
+// merece aplicar sozinha quando a pessoa escolhe o dia no calendário.
+const formColunas = document.getElementById("filtro-colunas");
+if (formColunas) {
+  document.querySelectorAll('[form="filtro-colunas"]').forEach(campo => {
+    campo.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); formColunas.submit(); }
+    });
+    if (campo.type === "date") {
+      campo.addEventListener("change", () => formColunas.submit());
+    }
   });
 }
 

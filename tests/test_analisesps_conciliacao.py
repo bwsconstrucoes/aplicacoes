@@ -85,6 +85,40 @@ def test_sem_periodo_declarado_ele_sai_das_proprias_transacoes():
     assert lido.periodo_fim == dt.date(2026, 9, 11)
 
 
+def test_o_periodo_DECLARADO_pelo_banco_nao_pode_encolher_o_arquivo():
+    """⚠️ O BANCO MENTE O PERÍODO — achado em 25/09/2026, num extrato do
+    Bradesco que o dono trouxe: o cabeçalho dizia DTSTART = DTEND = 25/09 e
+    dentro vinham 1.006 lançamentos, o mais antigo de 01/09. Ele escreveu ali a
+    data do download.
+
+    E o período não é enfeite: é a janela em que a conferência procura "o que
+    está aqui e NÃO vem neste extrato" — a lista que acusa linha digitada
+    errada e lançamento estornado. Com a janela de um dia só, ela não achava
+    nada e a tela passava a impressão de que estava tudo conferido."""
+    from app.apps.analisesps import conciliacao_ofx
+    import datetime as dt
+
+    mentiroso = EXTRATO.replace("<DTSTART>20260901<DTEND>20260930",
+                                "<DTSTART>20260925<DTEND>20260925")
+    lido = conciliacao_ofx.ler(mentiroso.encode("utf-8"))
+    # A união: cobre o que o banco declarou E o que o arquivo de fato traz.
+    assert lido.periodo_ini == dt.date(2026, 9, 10), (
+        "o período começou depois do lançamento mais antigo do arquivo")
+    assert lido.periodo_fim == dt.date(2026, 9, 25)
+
+
+def test_o_periodo_declarado_MAIOR_que_o_conteudo_continua_valendo():
+    """Um extrato de mês fechado sem movimento no fim do mês: o banco declara
+    até 30/09 e a última linha é 11/09. A janela é a do banco — encolher faria
+    a conferência deixar de olhar os dias em que só existe linha nossa."""
+    from app.apps.analisesps import conciliacao_ofx
+    import datetime as dt
+
+    lido = conciliacao_ofx.ler(EXTRATO.encode("utf-8"))
+    assert lido.periodo_ini == dt.date(2026, 9, 1)
+    assert lido.periodo_fim == dt.date(2026, 9, 30)
+
+
 @pytest.mark.parametrize("conteudo,pedaco", [
     (b"", "vazio"),
     (b"isto nao e um extrato", "OFX"),
@@ -936,3 +970,96 @@ def test_o_ensaio_sem_a_migracao_nao_manda_cadastrar_onde_nao_grava(
     assert plano["vai"] == []
     assert "Aplicar atualizações do banco" in plano["nao_vai"][0]["motivo"]
     assert "não reconheci" not in plano["nao_vai"][0]["motivo"]
+
+
+# ---------------------------------------------------------------------------
+# DOIS BOTÕES QUE NÃO FAZIAM NADA — 25/09/2026
+#
+# Relato do dono, numa frase: *"o botão desfazer o extrato importado não
+# funciona. os filtros de cabeçalho tb não estão funcionando."*
+#
+# As duas coisas existiam na tela, as duas rotas existiam e estavam testadas —
+# e nenhum dos dois estava LIGADO. É o pior tipo de defeito: nada estoura, nada
+# aparece no log, e a suíte inteira passa. Estes testes são a guarda contra a
+# ligação se perder outra vez.
+# ---------------------------------------------------------------------------
+def _template_da_conciliacao() -> str:
+    import pathlib
+    return (pathlib.Path(web.__file__).parent / "templates"
+            / "analisesps_conciliacao.html").read_text(encoding="utf-8")
+
+
+def test_o_botao_desfazer_esta_LIGADO_a_alguma_coisa():
+    """O botão tinha a classe `desfazer-arquivo` e ninguém escutava por ela:
+    clicar não dava erro, não dava recado, não fazia nada."""
+    html = _template_da_conciliacao()
+    assert 'class="btn secundario desfazer-arquivo"' in html
+    assert '.desfazer-arquivo").forEach' in html, (
+        "o botão Desfazer voltou a ficar sem quem o escute")
+    assert "conciliacao_desfazer" in html, "o botão não chama a rota"
+
+
+def test_o_desfazer_pergunta_ANTES_e_diz_o_que_se_perde():
+    """A rota tem duas chamadas de propósito: a primeira só conta o que
+    sumiria. Um botão que apagasse direto tornaria essa separação inútil."""
+    html = _template_da_conciliacao()
+    trecho = html[html.index('.desfazer-arquivo").forEach'):]
+    trecho = trecho[:trecho.index("// --- os filtros de cabeçalho")]
+    assert "confirmar: true" in trecho, "apagaria sem confirmar"
+    assert trecho.index("confirm(") < trecho.index("confirmar: true"), (
+        "confirmou depois de apagar")
+    for palavra in ("CONCILIADAS", "OBSERVAÇÃO", "OMIE"):
+        assert palavra in trecho, f"a pergunta não diz que se perde {palavra}"
+
+
+def test_o_filtro_de_cabecalho_tem_botao_de_enviar():
+    """⚠️ A REGRA DO HTML QUE FEZ O DEFEITO: num formulário SEM botão de enviar,
+    o Enter só envia se houver UM único campo de texto. O filtro de cabeçalho
+    tem seis (data, histórico, documento, entrada, saída, observação) — então o
+    Enter não fazia absolutamente nada, sem erro nenhum na tela. Só a caixinha
+    de situação funcionava, porque envia no `onchange`."""
+    html = _template_da_conciliacao()
+    inicio = html.index('id="filtro-colunas"')
+    forma = html[inicio:html.index("</form>", inicio)]
+    assert 'type="submit"' in forma, (
+        "o formulário do filtro de cabeçalho voltou a ficar sem botão de "
+        "enviar — e aí o Enter não aplica nada")
+
+
+def test_o_filtro_de_cabecalho_nao_apaga_o_que_a_barra_lateral_filtrou():
+    """Antes só `sentido` e `busca` viajavam. Digitar no cabeçalho apagava em
+    silêncio a faixa de datas e de valores posta ao lado, e a pessoa via a
+    lista mudar sem saber por quê."""
+    html = _template_da_conciliacao()
+    inicio = html.index('id="filtro-colunas"')
+    forma = html[inicio:html.index("</form>", inicio)]
+    for campo in ("sentido", "busca", "data_ini", "data_fim",
+                  "valor_ini", "valor_fim"):
+        assert f"'{campo}'" in forma, (
+            f"o filtro de cabeçalho voltou a perder o {campo} da barra lateral")
+
+
+def test_o_enter_no_filtro_de_cabecalho_tambem_e_tratado_no_script():
+    """O botão já resolve pela regra do HTML; o script existe para não depender
+    de navegador nenhum — e para a caixinha de data aplicar sozinha quando a
+    pessoa escolhe o dia no calendário."""
+    html = _template_da_conciliacao()
+    assert '[form="filtro-colunas"]' in html
+    assert 'e.key === "Enter"' in html
+
+
+def test_a_tela_PARA_o_dono_quando_ha_linha_presa():
+    """⚠️ Gravar com linha presa DUPLICA lançamento. O aviso tem de vir antes do
+    botão de gravar, senão ele chega ao botão sem ter lido."""
+    html = _template_da_conciliacao()
+    assert "d.presas_total" in html, "a tela não usa o aviso das linhas presas"
+    assert html.index("d.presas_total") < html.index('id="btn-gravar-extrato"'), (
+        "o aviso das presas ficou DEPOIS do botão de gravar")
+    assert "conciliacao_soltar_presas" in html, "não há como soltá-las pela tela"
+
+
+def test_o_aviso_de_sinal_trocado_tambem_vem_antes_do_botao_de_gravar():
+    """Mesmo motivo do aviso das presas: depois do botão, ninguém lê."""
+    html = _template_da_conciliacao()
+    assert "d.sinal_trocado_total" in html
+    assert html.index("d.sinal_trocado_total") < html.index('id="btn-gravar-extrato"')

@@ -7790,6 +7790,117 @@ dele é o único jeito de saber se 855px é confortável — se ainda estiver
 grande, é um número num lugar só.
 
 ---
+
+### Centésima primeira leva (25/09) — dois botões mortos e a adoção sem volta
+
+Três relatos dele, no mesmo dia, e o terceiro é o grave.
+
+#### 1. O botão "Desfazer" não fazia nada
+
+> *"O BOTAO DESFAZER o extrato importado nao funciona."*
+
+E não fazia mesmo. O botão estava na tabela dos extratos com a classe
+`desfazer-arquivo`, a rota `/api/conciliacao/desfazer` estava escrita e
+testada — e **ninguém ligou os dois**. Clicar não dava erro, não dava recado,
+não fazia nada.
+
+É o pior tipo de defeito que existe neste repositório: nada estoura, nada
+aparece no log, e a suíte inteira passa verde. Agora há teste exigindo que a
+ligação exista, e que a pergunta de confirmação venha antes da ação e diga o
+que se perde (conciliado, observação, o que já está no OMIE).
+
+#### 2. Os filtros de cabeçalho não funcionavam
+
+> *"os filtros de cabecalho tb nao estao funcionando"*
+
+Causa: **a regra do HTML que ninguém lembra.** Num formulário sem botão de
+enviar, o Enter só envia se houver **um único** campo de texto. O filtro de
+cabeçalho tem seis (data, histórico, documento, entrada, saída, observação) —
+então o Enter não fazia absolutamente nada. Só a caixinha de situação
+funcionava, porque ela envia no `onchange`.
+
+Dois consertos: um botão de enviar (escondido, é o botão padrão do formulário)
+e um tratamento de Enter no script, para não depender de navegador nenhum. A
+caixinha de data passou a aplicar sozinha quando se escolhe o dia.
+
+**E um defeito silencioso que estava junto:** o formulário do cabeçalho só
+levava `sentido` e `busca`. Digitar no cabeçalho **apagava** a faixa de datas e
+a de valores que a pessoa tinha posto na barra lateral — ela via a lista mudar
+e não fazia ideia de por quê. Agora os seis campos da barra viajam junto.
+
+#### 3. ⚠️ A ADOÇÃO DE UMA LINHA DA PLANILHA NÃO TINHA VOLTA
+
+> *"Ainda tá tendo alguma falha na detecção. Está se tentando colocar registro
+> que já estão lançados. (…) BD 50024 · Li 1006 lançamento(s): 0 já estavam
+> aqui e 1006 são novos."* — com oito linhas de PIX da SEFAZ de 01/09 que
+> estavam, as duas listas na tela, uma ao lado da outra.
+
+**O mecanismo, que é o que precisa ficar registrado:** quando um OFX reconhece
+uma linha que já veio da planilha, ele não cria outra — **adota** a que existe,
+gravando nela a identidade do banco e o FITID. Isso é certo, e está assim desde
+24/09.
+
+O que faltava era o caminho de volta, e a falta tem duas consequências:
+
+1. O "Desfazer" apaga só as linhas de origem `ofx`. A linha adotada tem origem
+   `planilha`, então ela **ficava** — carregando o FITID e a identidade de um
+   arquivo que acabou de ser apagado. Um fantasma.
+2. E com FITID preenchido ela deixa de ser adotável (a adoção exige FITID
+   vazio). Da próxima vez que o mesmo período fosse importado, ela não era
+   reconhecida pela identidade (de um arquivo morto) **nem** adotada — e o
+   extrato **criava a linha de novo, em duplicidade**.
+
+**O conserto tem três partes:**
+
+- **Migração 026**: a coluna `impressao_planilha` guarda a identidade que a
+  linha tinha antes de ser adotada, e o `arquivo_id` passa a ser anotado.
+- **O desfazer devolve** essas linhas à planilha (identidade original de volta,
+  FITID limpo) antes de apagar as de origem `ofx`. O conciliado e a observação
+  ficam — aquilo é trabalho de gente, não veio do arquivo. A tela conta as
+  devolvidas **separado** das apagadas: se entrassem juntas, o aviso diria que
+  vai apagar linha da planilha, o que é falso.
+- **As que já estão presas no banco podem ser soltas.** As adotadas antes da
+  026 não sabem quem as adotou — mas a identidade de planilha é calculada a
+  partir dos dados da própria linha (data, valor, descrição e a ordem da
+  repetição), e a adoção não mexe em nenhum deles. Ou seja: é
+  **reconstruível**. A conferência agora acusa "N linha(s) PRESAS" antes do
+  botão de gravar, e há um botão que solta e reconfere.
+
+  Soltar não perde nada: se o arquivo que adotou ainda existir, a próxima
+  importação dele adota de novo.
+
+#### Dois outros defeitos achados no mesmo caminho
+
+**O período declarado pelo banco mente.** O extrato dele dizia
+`DTSTART = DTEND = 25/09` e trazia 1.006 lançamentos, o mais antigo de 01/09 —
+o Bradesco escreveu ali a data do download. E o período é a janela em que a
+conferência procura "o que está aqui e NÃO vem neste extrato". Com a janela de
+um dia, ela não achava nada e a tela passava a impressão de que estava tudo
+conferido. Agora o período é a **união** do declarado com o que o arquivo de
+fato traz: esticar é seguro, encolher nunca.
+
+**O sinal trocado agora é acusado.** Se a linha existe aqui com o sinal
+contrário, a adoção continua **não** juntando — juntar viraria o sinal de um
+lançamento verdadeiro em silêncio, e essa decisão de 24/09 fica. Mas a tela
+passou a avisar, porque sem o aviso a causa era invisível: a aba com sinal
+trocado aparecia como "tudo novo".
+
+#### ⚠️ O que NÃO está confirmado, e é importante dizer
+
+**Não tenho como provar que foi isto que aconteceu na BD 50024.** Não olhei o
+banco de produção — o diagnóstico vem da leitura do código e de bater com o
+que ele viu na tela. Os dois mecanismos possíveis (linha presa e sinal
+trocado) agora **aparecem na conferência com nome e número**. Se os dois vierem
+zero, a causa é outra e o relatório passa a dizer isso em vez de esconder.
+
+**Verificado:** 9 testes novos com banco de verdade (o ciclo inteiro:
+adotar → desfazer → reimportar sem duplicar), 3 da leitura do OFX, 7 de guarda
+das telas; a suíte inteira. Mutação conferida: desligar a devolução deixa dois
+dos testes vermelhos.
+
+**NÃO verificado:** nada num navegador, e o banco de produção.
+
+---
 ---
 
 ## Regras que não se discutem
