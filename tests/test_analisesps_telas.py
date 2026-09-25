@@ -114,10 +114,22 @@ def app(monkeypatch):
 
 
 def como(app, senha, nome="MARCELO"):
-    """Entra no módulo. O NOME é obrigatório desde 04/09/2026 — ele separa o
-    lote e os filtros de cada pessoa, e assina o registro de alterações."""
+    """Entra no módulo com um NOME, que é o que separa o lote, os filtros e as
+    colunas de cada pessoa, e assina o registro de alterações.
+
+    ⚠️ DESDE 25/09/2026 O NOME NÃO SE DIGITA NA ENTRADA: ele vem do cadastro da
+    pessoa. Estes testes não sobem banco, então entram pela porta de emergência
+    (a senha do serviço) e põem o nome na sessão na mão — que é exatamente o
+    que o cadastro faz quando alguém entra de verdade. O que está sob teste
+    aqui é o que o sistema faz COM o nome, não de onde ele veio; de onde ele
+    vem tem teste próprio, com banco, em `test_analisesps_usuarios_banco.py`.
+    """
+    from app.apps.analisesps import auth as guarda
     cliente = app.test_client()
-    cliente.post("/analisesps/entrar", data={"senha": senha, "nome": nome})
+    cliente.post("/analisesps/entrar", data={"senha": senha})
+    if nome:
+        with cliente.session_transaction() as sessao:
+            sessao[guarda.CHAVE_NOME] = nome
     return cliente
 
 
@@ -1203,26 +1215,23 @@ def test_alternar_uma_coluna_nao_mexe_nas_outras(app, monkeypatch):
 # ---------------------------------------------------------------------------
 # O NOME, QUE É A CHAVE DO LOTE E DOS FILTROS
 # ---------------------------------------------------------------------------
-def test_o_navegador_lembra_o_nome_mas_nunca_a_senha(app):
-    """O dono perguntou se o nome ficaria gravado. Fica — NESTE navegador, e
-    só o nome. A sessão continua morrendo quando o navegador fecha: é ela que
-    diz que alguém digitou a senha, e isso não se lembra."""
-    from app.apps.analisesps import auth as guarda
+def test_a_entrada_nao_guarda_nada_no_navegador(app):
+    """⚠️ O COOKIE QUE LEMBRAVA O NOME FOI EMBORA em 25/09/2026, junto com a
+    lista de nomes da entrada: não havia mais o que lembrar, porque o nome
+    passou a vir do cadastro.
 
+    O que continua valendo, e é o que importa: a SENHA nunca vai para cookie
+    nenhum, e a sessão continua morrendo quando o navegador fecha."""
     cliente = app.test_client()
-    resposta = cliente.post("/analisesps/entrar",
-                            data={"senha": SENHA_OPERADOR, "nome": "MARCELO"})
+    resposta = cliente.post("/analisesps/entrar", data={"senha": SENHA_OPERADOR})
     biscoitos = "; ".join(str(v) for _, v in resposta.headers)
-    assert guarda.COOKIE_NOME in biscoitos, "o nome não ficou lembrado"
     assert SENHA_OPERADOR not in biscoitos, "a SENHA foi parar num cookie"
+    assert "ultimo_nome" not in biscoitos, "o cookie do nome voltou"
 
-    cliente.get("/analisesps/sair")
     login = cliente.get("/analisesps/entrar").get_data(as_text=True)
-    # Desde 09/09 o nome é escolhido numa LISTA, não digitado: o que o
-    # navegador lembra é qual opção já vem marcada.
-    assert '<option value="MARCELO"' in login, "o nome sumiu da lista"
-    assert "selected" in login, "a opção lembrada não veio marcada"
+    assert 'name="usuario"' in login, "sumiu o campo de usuário"
     assert 'type="password"' in login, "parou de pedir a senha"
+    assert "<select" not in login, "a lista de nomes voltou"
 
 
 def test_o_mesmo_nome_escrito_diferente_e_a_mesma_pessoa(app):

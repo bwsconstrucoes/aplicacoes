@@ -80,33 +80,49 @@ apontou isso na primeira navegação, e o critério passou a ser este:
 Diferença proposital é bem-vinda — mas é *decidida*, não acidental, e fica
 escrita no `HISTORICO.md`.
 
-## Quem é quem — DOIS JEITOS DE ENTRAR
+## Quem é quem — TODO MUNDO ENTRA PELO CADASTRO
 
-Desde 25/09/2026 há cadastro de acesso (migração 023), e os dois caminhos
-convivem de propósito.
+Desde 25/09/2026 a entrada é **só usuário e senha** (migrações 023 e 024). A
+lista de nomes ao lado da senha acabou — pedido do dono: *"elimine do login o
+login via Nomes na lista da entrada. Vamos ficar somente com os cadastrados."*
 
-### 1. A senha do Render — o MESTRE
+### O cadastro
+
+Feito em **Configurações › Quem tem acesso**, por um mestre. Cada pessoa tem
+login, senha (guardada embaralhada, ninguém lê depois — só troca), a marcação
+de **poder alterar** ou só ver, a marcação de **mestre**, e a lista de **telas
+que ela abre**.
+
+### O MESTRE é uma marcação, não uma senha
+
+Quem é mestre vê **todas** as telas, abre Configurações, aplica migração, mexe
+no certificado digital, lança aporte no OMIE e cadastra gente. As telas
+marcadas para um mestre não importam — ele alcança todas, e por isso entra
+mesmo sem nenhuma marcada.
+
+**O último mestre não pode ser apagado, desativado nem desmarcado.** Ficaria um
+sistema sem ninguém que administre, e o conserto passaria pela porta de
+emergência.
+
+### ⚠️ A PORTA DE EMERGÊNCIA — a senha do Render
 
 | Perfil | O que faz | Variável no Render |
 |---|---|---|
 | **Consulta** | vê tudo e exporta; não altera nada | `ANALISESPS_SENHA_CONSULTA` |
 | **Operador** | tudo o que o Consulta faz, mais alterar | `ANALISESPS_SENHA_OPERADOR` |
 
-Quem entra por aqui vê **todas** as telas, configura o módulo, aplica migração,
-mexe no certificado digital, lança aporte no OMIE e cadastra as pessoas. Ao
-entrar assim, escolhe o **nome** numa lista — e o nome não é senha nem dá poder
-nenhum: ele separa o **lote** de cada um, guarda os **filtros** de cada um e
-assina o **registro de alterações**.
+Entra-se por ela na tela de entrada **deixando o campo de usuário em branco**.
+Quem entra assim é mestre, e o registro de alterações marca "MESTRE
+(emergência)" — não há cadastro por trás, logo não há nome de gente.
 
-Perfil sem senha configurada não existe. **Sem nenhuma das duas, ninguém entra
-pelo caminho do mestre.** Falha fechado, de propósito: são os pagamentos da
-empresa.
+**Ela existe para dois casos, e só:** criar o **primeiro** mestre (logo depois
+da migração, quando ainda não há nenhum) e **destravar** o sistema se todos os
+acessos de mestre se perderem.
 
-### 2. Usuário e senha próprios — o CADASTRO
-
-Cadastrado em **Configurações › Quem tem acesso**, pelo mestre. Cada pessoa tem
-login, senha (guardada embaralhada, ninguém lê depois — só troca), a marcação
-de **poder alterar** ou só ver, e a lista de **telas que ela abre**.
+Por que não foi eliminada, embora o pedido tenha sido "só os cadastrados": sem
+ela, perder o último mestre tranca todo mundo para fora **sem volta** — não há
+e-mail de recuperação nem outro administrador. Está dita na tela de entrada, e
+tirá-la é decisão do dono, sabendo o preço.
 
 ⚠️ **Três regras que falham fechado:**
 
@@ -120,13 +136,6 @@ de **poder alterar** ou só ver, e a lista de **telas que ela abre**.
 
 As permissões são lidas do banco **a cada pedido**: tirar uma tela de alguém
 vale na hora, não quando ele fechar o navegador.
-
-### Por que a senha do Render continua valendo
-
-Não é preguiça: é o que impede o dono de se trancar para fora. Se a migração
-não tiver rodado, se ele apagar o próprio cadastro sem querer, se o banco cair —
-a senha do Render ainda entra. **Um cadastro capaz de trancar o único
-administrador não é segurança, é armadilha.**
 
 ### Onde a permissão é decidida
 

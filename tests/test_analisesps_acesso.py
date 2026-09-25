@@ -328,41 +328,52 @@ def test_login_nao_redireciona_para_fora_do_modulo(app, destino):
     assert resposta.headers["Location"].endswith("/analisesps/solicitacoes")
 
 
-def test_sem_nome_ninguem_entra(app):
-    """O nome não é senha, mas é obrigatório.
+def test_a_entrada_nao_pede_mais_nome(app):
+    """⚠️ A LISTA DE NOMES DA ENTRADA ACABOU em 25/09/2026.
 
-    Sem ele o módulo não sabe de quem é o lote nem de quem são os filtros, e o
-    registro de alterações volta a dizer só o perfil. Deixar entrar sem nome
-    seria criar de novo, e em silêncio, o problema que o dono pediu para
-    resolver."""
+    Pedido do dono: *"elimine do login o login via Nomes na lista da entrada.
+    Vamos ficar somente com os cadastrados."* Quem entra, entra com usuário e
+    senha, e o nome que assina o lote e o registro de alterações vem do
+    cadastro — não de uma escolha na tela, que nunca foi tranca nenhuma."""
+    with app.test_client() as cliente:
+        html = cliente.get("/analisesps/entrar").get_data(as_text=True)
+    assert 'name="nome"' not in html, "o campo de nome voltou para a entrada"
+    assert '<select' not in html, "a lista de nomes voltou para a entrada"
+    assert 'name="usuario"' in html and 'type="password"' in html
+
+
+def test_a_porta_de_emergencia_entra_sem_nome(app):
+    """A senha geral do serviço, com o usuário EM BRANCO.
+
+    Ela existe para um caso só: todos os acessos de mestre se perderem. Sem
+    ela, isso trancaria todo mundo para fora sem volta — não há e-mail de
+    recuperação nem outro administrador."""
     with app.test_client() as cliente:
         resposta = cliente.post("/analisesps/entrar",
-                                data={"senha": SENHA_OPERADOR, "nome": "   "})
-    assert resposta.status_code == 200, "não podia ter entrado"
-    assert "Escolha o seu nome na lista" in resposta.get_data(as_text=True)
+                                data={"senha": SENHA_OPERADOR})
+        assert resposta.status_code in (301, 302), "a emergência não abriu"
+        seguinte = cliente.get("/analisesps/solicitacoes")
+    assert seguinte.status_code == 200
 
+
+def test_quem_entra_pela_emergencia_fica_MARCADO_no_registro(app):
+    """Quem entra por ali não tem cadastro, e portanto não tem nome de gente.
+    Deixar vazio faria a auditoria dizer "—", que não diz nada — escrito assim,
+    quem lê sabe na hora por onde a pessoa entrou."""
+    from app.apps.analisesps import auth as guarda
     with app.test_client() as cliente:
-        cliente.post("/analisesps/entrar",
-                     data={"senha": SENHA_OPERADOR, "nome": ""})
-        # E continua fora: a tela seguinte manda de volta para o login.
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_OPERADOR})
+        with cliente.session_transaction() as sessao:
+            assert "emerg" in sessao[guarda.CHAVE_NOME].lower()
+
+
+def test_senha_errada_sem_usuario_nao_entra(app):
+    with app.test_client() as cliente:
+        resposta = cliente.post("/analisesps/entrar", data={"senha": "chute"})
+        assert resposta.status_code == 200, "não podia ter entrado"
         seguinte = cliente.get("/analisesps/solicitacoes")
     assert seguinte.status_code in (301, 302)
     assert "/analisesps/entrar" in seguinte.headers["Location"]
-
-
-def test_nome_de_fora_da_lista_nao_entra(app):
-    """Desde 09/09/2026 o nome é escolhido numa LISTA, não digitado.
-
-    Um pedido montado à mão poderia mandar qualquer texto no lugar da escolha
-    — e cada texto novo criaria uma pessoa a mais, com lote e filtros
-    próprios, sem ninguém pedir. O que vem da tela é conferido contra a lista;
-    o que não está nela não entra."""
-    with app.test_client() as cliente:
-        resposta = cliente.post(
-            "/analisesps/entrar",
-            data={"senha": SENHA_OPERADOR, "nome": "Fulano de Tal"})
-    assert resposta.status_code == 200, "entrou com nome que não existe"
-    assert "Escolha o seu nome na lista" in resposta.get_data(as_text=True)
 
 
 def test_o_nome_escolhido_volta_com_a_grafia_da_lista(app):
@@ -402,10 +413,9 @@ def test_senha_com_acento_e_recusada_e_nao_derruba_a_tela(app):
     o segredo do agendador e a senha de validação."""
     with app.test_client() as cliente:
         resposta = cliente.post("/analisesps/entrar",
-                                data={"senha": "não-é-a-senha-çãô",
-                                      "nome": "MARCELO"})
+                                data={"senha": "não-é-a-senha-çãô"})
     assert resposta.status_code == 200, "estourou em vez de recusar"
-    assert "Senha incorreta" in resposta.get_data(as_text=True)
+    assert "Digite o seu usuário e a sua senha" in resposta.get_data(as_text=True)
 
 
 def test_a_senha_certa_com_acento_entra(app, monkeypatch):

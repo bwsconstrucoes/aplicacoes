@@ -7518,6 +7518,69 @@ desligando a checagem, três testes ficam vermelhos.
 **NÃO verificado:** nada disto num navegador, e nenhum cadastro real criado.
 
 ---
+
+### Nonagésima sétima leva (25/09) — a lista de nomes acabou, e o mestre virou marcação
+
+Poucas horas depois de ver o cadastro no ar:
+
+> *"Elimine do login o login via Nomes na lista da entrada. Vamos ficar somente
+> com os cadastrados. Como ajustar o acesso master?"*
+
+**A entrada agora é só usuário e senha.** Some a lista de nomes, some o cookie
+que lembrava o nome, some o caminho antigo. Quem entra, entra pelo cadastro — e
+o nome que assina o lote, os filtros e o registro de alterações vem de lá.
+
+**O mestre virou uma marcação na pessoa** (migração 024), como "pode alterar".
+Quem é mestre vê todas as telas, abre Configurações, aplica migração, mexe no
+certificado, lança aporte no OMIE e cadastra gente. As telas marcadas para ele
+não importam — e ele **entra sem nenhuma marcada**, o que teve de ser tratado
+de propósito: sem essa exceção, o dono cadastraria a si mesmo como mestre e a
+própria tela o barraria na entrada seguinte, dizendo "sem tela liberada".
+
+#### ⚠️ A PORTA DE EMERGÊNCIA FICOU, e o dono precisa saber disso
+
+O pedido foi "somente com os cadastrados". A senha do Render **continua
+entrando**, com o campo de usuário em branco — e isso é uma diferença
+consciente em relação ao que ele pediu, não um esquecimento.
+
+**O motivo:** sem ela, perder o último cadastro de mestre tranca todo mundo
+para fora **sem volta**. Não há e-mail de recuperação, não há segundo
+administrador, não há suporte. E há um caso em que ela é obrigatória: logo
+depois de aplicar a migração **não existe nenhum mestre** — alguém precisa
+entrar para criar o primeiro.
+
+Ela está escrita na tela de entrada, com todas as letras, e o dono pode mandar
+tirá-la sabendo o preço. Enquanto ela existir, quem entra por ali aparece na
+auditoria como **"MESTRE (emergência)"** — não como uma pessoa.
+
+#### A trava do último mestre
+
+Apagar, desativar ou desmarcar o **único** mestre é recusado, com a frase
+dizendo o que fazer antes ("marque outra pessoa como mestre primeiro"). Com
+dois mestres, qualquer um dos dois sai normalmente — a trava é do último, senão
+trocar de administrador viraria um problema.
+
+#### O que aconteceu com os testes, e por que isso importa
+
+Onze testes ficaram vermelhos na hora — todos sobre o nome na entrada. Não foi
+defeito: era a mudança acontecendo. O que interessa é como foram consertados:
+
+- os que testavam **o que o sistema faz COM o nome** (lote por pessoa, filtros,
+  assinatura da auditoria) continuam existindo e continuam valendo. Eles agora
+  põem o nome na sessão, que é exatamente o que o cadastro faz;
+- os que testavam **a lista de nomes** viraram o contrário: garantem que ela
+  **não** volta — nem o campo, nem o `<select>`, nem o cookie.
+
+A regra que eu sigo aqui: teste que morre com a funcionalidade, morre; teste que
+descreve uma decisão, vira o teste da decisão nova.
+
+**Verificado:** 47 testes com banco de verdade nesta área (11 novos só do
+mestre), a suíte inteira do módulo, e conferido por mutação — desligando a
+marcação de mestre, três testes ficam vermelhos.
+
+**NÃO verificado:** nada num navegador, e nenhum cadastro real criado.
+
+---
 ---
 
 ## Regras que não se discutem

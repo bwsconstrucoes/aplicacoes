@@ -59,12 +59,18 @@ def app(banco_acesso):
 
 
 def criar(login="thiago", senha="senha-do-thiago", nome="THIAGO",
-          telas=("solicitacoes",), pode_operar=False):
+          telas=("solicitacoes",), pode_operar=False, mestre=False):
     from app.apps.analisesps import usuarios
     r = usuarios.criar(login, senha, nome=nome, telas=telas,
-                       pode_operar=pode_operar)
+                       pode_operar=pode_operar, mestre=mestre)
     assert r.get("ok"), r
     return r["id"]
+
+
+def criar_mestre(login="marcelo", senha="senha-do-dono", nome="MARCELO"):
+    """O dono, cadastrado como mestre. Sem tela nenhuma marcada de propósito:
+    mestre alcança todas, e é isso que estes testes provam."""
+    return criar(login=login, senha=senha, nome=nome, telas=(), mestre=True)
 
 
 # ---------------------------------------------------------------------------
@@ -477,3 +483,126 @@ def test_a_tela_de_configuracoes_lista_quem_tem_acesso(app):
     assert "Quem tem acesso" in html
     assert "thiago" in html
     assert "Cadastrar uma pessoa" in html
+
+
+# ---------------------------------------------------------------------------
+# O MESTRE É UMA MARCAÇÃO NO CADASTRO — 25/09/2026
+#
+# *"Elimine do login o login via Nomes na lista da entrada. Vamos ficar somente
+# com os cadastrados. Como ajustar o acesso master?"*
+# ---------------------------------------------------------------------------
+def test_o_mestre_cadastrado_abre_TUDO_sem_nenhuma_tela_marcada(app):
+    """⚠️ Mestre alcança todas as telas por definição. Se dependesse das
+    caixinhas, o dono cadastraria a si mesmo, esqueceria de marcar uma, e
+    descobriria pelo 404 — provavelmente na tela que ele mais usa."""
+    criar_mestre()
+    with app.test_client() as cliente:
+        entrar_como(cliente, "marcelo", "senha-do-dono")
+        for caminho in ("/analisesps/relatorio", "/analisesps/conciliacao",
+                        "/analisesps/lote", "/analisesps/configuracoes"):
+            assert cliente.get(caminho).status_code != 404, caminho
+
+
+def test_o_mestre_cadastrado_ALTERA_mesmo_sem_marcar_pode_operar(app):
+    """As duas marcações não podem discordar: um mestre que não altera seria
+    um administrador que não administra."""
+    criar_mestre()
+    with app.test_client() as cliente:
+        entrar_como(cliente, "marcelo", "senha-do-dono")
+        resposta = cliente.post("/analisesps/api/conciliacao/marcar",
+                                json={"ids": [], "conciliado": True})
+    assert resposta.status_code != 403
+
+
+def test_o_mestre_cadastrado_CADASTRA_gente(app):
+    """É o caminho normal a partir de agora — a porta de emergência deixa de
+    ser necessária assim que existe um mestre."""
+    from app.apps.analisesps import usuarios
+    criar_mestre()
+    with app.test_client() as cliente:
+        entrar_como(cliente, "marcelo", "senha-do-dono")
+        resposta = cliente.post("/analisesps/usuarios", data={
+            "acao": "criar", "novo_usuario": "karla", "nome": "KARLA",
+            "nova_senha": "senha-da-karla", "tela_do_usuario": "relatorio"})
+    assert resposta.status_code in (301, 302)
+    assert usuarios.buscar("karla") is not None
+
+
+def test_quem_NAO_e_mestre_continua_sem_abrir_configuracoes(app):
+    criar(telas=("relatorio",), pode_operar=True)
+    with app.test_client() as cliente:
+        entrar_como(cliente)
+        assert cliente.get("/analisesps/configuracoes").status_code == 404
+
+
+def test_o_ULTIMO_mestre_nao_pode_ser_apagado(app):
+    """Apagar o único mestre deixa o sistema sem ninguém que cadastre ou
+    configure, e o conserto passaria pela porta de emergência — que é
+    justamente o que não se quer usar no dia a dia."""
+    from app.apps.analisesps import usuarios
+    uid = criar_mestre()
+    r = usuarios.apagar(uid)
+    assert not r["ok"]
+    assert "único mestre" in r["erro"]
+    assert usuarios.buscar("marcelo") is not None
+
+
+def test_o_ULTIMO_mestre_nao_pode_se_desmarcar_nem_se_desativar(app):
+    from app.apps.analisesps import usuarios
+    uid = criar_mestre()
+    assert not usuarios.atualizar(uid, mestre=False)["ok"]
+    assert not usuarios.atualizar(uid, ativo=False)["ok"]
+    assert usuarios.buscar("marcelo")["mestre"] is True
+
+
+def test_com_DOIS_mestres_um_deles_pode_sair(app):
+    """A trava é do ÚLTIMO, não de qualquer um — senão trocar de administrador
+    viraria um problema."""
+    from app.apps.analisesps import usuarios
+    uid = criar_mestre()
+    criar_mestre(login="thiago", senha="senha-do-thiago-2", nome="THIAGO")
+    assert usuarios.apagar(uid)["ok"]
+    assert usuarios.buscar("marcelo") is None
+    assert usuarios.buscar("thiago")["mestre"] is True
+
+
+def test_ha_mestre_responde_certo_nos_dois_estados(app):
+    """É o que decide o recado da tela de entrada — sem ele, quem aplicasse a
+    atualização do banco ficaria olhando um login sem saber por onde começar."""
+    from app.apps.analisesps import usuarios
+    assert usuarios.ha_mestre() is False
+    criar(telas=("relatorio",))                  # gente comum não conta
+    assert usuarios.ha_mestre() is False
+    criar_mestre()
+    assert usuarios.ha_mestre() is True
+
+
+def test_a_tela_de_entrada_deixa_de_avisar_quando_ja_ha_mestre(app):
+    with app.test_client() as cliente:
+        antes = cliente.get("/analisesps/entrar").get_data(as_text=True)
+    assert "Ainda não há ninguém cadastrado como mestre" in antes
+    criar_mestre()
+    with app.test_client() as cliente:
+        depois = cliente.get("/analisesps/entrar").get_data(as_text=True)
+    assert "Ainda não há ninguém cadastrado como mestre" not in depois
+
+
+def test_a_porta_de_emergencia_continua_abrindo_com_mestre_cadastrado(app):
+    """Ela não é desligada por haver mestre: o caso que ela resolve é
+    justamente o mestre ter se perdido."""
+    criar_mestre()
+    with app.test_client() as cliente:
+        resposta = cliente.post("/analisesps/entrar",
+                                data={"senha": SENHA_MESTRE_OPERADOR})
+        assert resposta.status_code in (301, 302)
+        assert cliente.get("/analisesps/configuracoes").status_code == 200
+
+
+def test_a_tela_mostra_quem_e_mestre(app):
+    criar_mestre()
+    criar(telas=("relatorio",))
+    with app.test_client() as cliente:
+        entrar_como(cliente, "marcelo", "senha-do-dono")
+        html = cliente.get("/analisesps/configuracoes").get_data(as_text=True)
+    assert "MESTRE" in html
+    assert "É mestre" in html          # a caixinha de marcar

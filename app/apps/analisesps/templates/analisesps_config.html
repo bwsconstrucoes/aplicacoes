@@ -350,14 +350,19 @@
   {% if usuario_ok %}<div class="aviso">Acesso atualizado.</div>{% endif %}
 
   <p class="cartao-dica" style="margin:0 0 10px">
-    Você entra com a <b>senha geral do sistema</b> e vê tudo — é o acesso mestre,
-    e ele continua valendo sempre, mesmo que algo aqui dê errado.<br>
-    Quem for cadastrado aqui entra com <b>usuário e senha próprios</b> e abre
-    <b>só as telas que você marcar</b>. <b>Sem tela marcada, a pessoa não
-    entra</b> — nenhuma marcada quer dizer nenhuma, nunca todas.<br>
-    Quem é cadastrado aqui <b>não abre esta tela de Configurações</b>, não aplica
-    atualização de banco, não mexe no certificado digital e não lança aporte no
-    OMIE. Isso é seu.
+    <b>Todo mundo entra com usuário e senha próprios</b>, inclusive você. Cada
+    pessoa abre <b>só as telas marcadas para ela</b>, e <b>sem tela marcada não
+    entra</b> — nenhuma quer dizer nenhuma, nunca todas.<br>
+    Quem for marcado como <b>mestre</b> vê <b>tudo</b>: todas as telas, esta de
+    Configurações, o certificado digital, os aportes no OMIE e este cadastro. As
+    telas marcadas para um mestre não importam — ele alcança todas.<br>
+    Quem <b>não</b> é mestre não abre nada disso.
+  </p>
+  <p class="cartao-dica" style="margin:0 0 10px">
+    <b>Porta de emergência:</b> se todos os acessos de mestre se perderem, dá
+    para entrar na tela de entrada deixando o <b>usuário em branco</b> e usando
+    a <b>senha geral do serviço</b> (a do Render). Ela existe só para isso —
+    sem ela, perder o último mestre trancaria todo mundo para fora sem volta.
   </p>
 
   {% if not cadastro_pronto %}
@@ -366,6 +371,15 @@
       “Aplicar atualizações do banco”, lá no alto desta tela, e volte aqui.
     </div>
   {% else %}
+
+  {% if not pessoas_com_acesso|selectattr('mestre')|list %}
+    <div class="aviso erro" style="margin:0 0 12px">
+      <b>Ainda não há ninguém cadastrado como mestre.</b> Cadastre-se aqui
+      marcando <b>“É mestre”</b> — e use o mesmo nome que você já usava na
+      entrada, para o seu lote e os seus filtros continuarem sendo os seus.
+      Enquanto não houver mestre, só se entra pela porta de emergência.
+    </div>
+  {% endif %}
 
   {% if pessoas_com_acesso %}
   <div class="tabela-rolagem" style="margin-bottom:12px">
@@ -380,8 +394,10 @@
           <td><b>{{ p.usuario }}</b>{% if not p.ativo %}
             <br><small style="color:#c0392b">desativado</small>{% endif %}</td>
           <td>{{ p.nome or '—' }}</td>
-          <td><small>{{ 'alterar' if p.pode_operar else 'só ver' }}</small></td>
-          <td><small>{% if p.telas %}{{ p.telas|length }}:
+          <td><small>{% if p.mestre %}<b>MESTRE</b> — vê tudo
+              {%- elif p.pode_operar %}alterar{% else %}só ver{% endif %}</small></td>
+          <td><small>{% if p.mestre %}todas
+              {%- elif p.telas %}{{ p.telas|length }}:
               {% for chave, rotulo in telas_liberaveis %}{% if chave in p.telas %}{{ rotulo }}{% if not loop.last %}, {% endif %}{% endif %}{% endfor %}
               {% else %}<b>nenhuma — não entra</b>{% endif %}</small></td>
           <td><small>{{ p.ultimo_acesso|momento_br if p.ultimo_acesso
@@ -421,6 +437,10 @@
                 <input id="senha{{ p.id }}" name="nova_senha" type="password"
                        autocomplete="new-password">
                 <div style="margin:8px 0">
+                  <label><input type="checkbox" name="mestre" value="1"
+                         {% if p.mestre %}checked{% endif %}>
+                    <b>É mestre</b> — vê todas as telas, configura e cadastra
+                    gente</label><br>
                   <label><input type="checkbox" name="pode_operar" value="1"
                          {% if p.pode_operar %}checked{% endif %}>
                     Pode <b>alterar</b> (sem isto, só vê e exporta)</label><br>
@@ -476,6 +496,8 @@
       <input id="senha_nova" name="nova_senha" type="password"
              autocomplete="new-password" required>
       <div style="margin:8px 0">
+        <label><input type="checkbox" name="mestre" value="1">
+          <b>É mestre</b> — vê todas as telas, configura e cadastra gente</label><br>
         <label><input type="checkbox" name="pode_operar" value="1">
           Pode <b>alterar</b> (sem isto, só vê e exporta)</label>
       </div>
@@ -502,10 +524,14 @@
 </div>
 
 <div class="cartao">
-  <div class="cartao-cab"><h3>Nomes na lista da entrada</h3></div>
+  <div class="cartao-cab"><h3>Nomes já usados no sistema</h3></div>
   <p class="cartao-dica" style="margin:0 0 10px">
-    Estes são os nomes que aparecem na lista da tela de entrada, para quem entra
-    pela <b>senha geral</b> — quem tem cadastro próprio não escolhe nome aqui. É por eles que
+    ⚠️ <b>Isto não é mais a entrada</b> — desde 25/09/2026 ninguém escolhe nome
+    para entrar, o nome vem do cadastro. Esta lista sobrou por um motivo
+    prático: é por estes nomes que o <b>lote</b>, os <b>filtros</b> e as
+    <b>colunas</b> de cada um foram guardados até aqui. Ela aparece como
+    sugestão no campo Nome do cadastro, para você não separar alguém do próprio
+    trabalho por escrever o nome diferente. É por eles que
     o sistema sabe de quem é cada lote e cada filtro — <b>não</b> é senha e não
     dá permissão nenhuma a mais.
   </p>

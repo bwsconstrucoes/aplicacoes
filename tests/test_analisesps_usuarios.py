@@ -161,13 +161,25 @@ def test_menu_de_quem_nao_esta_logado_nao_quebra(app):
 # ---------------------------------------------------------------------------
 # A tela de entrada
 # ---------------------------------------------------------------------------
-def test_a_entrada_oferece_o_campo_de_usuario(app):
+def test_a_entrada_e_SO_usuario_e_senha(app):
+    """A lista de nomes acabou em 25/09/2026 — pedido do dono, com todas as
+    letras. Quem entra, entra pelo cadastro."""
     with app.test_client() as cliente:
         html = cliente.get("/analisesps/entrar").get_data(as_text=True)
     assert 'name="usuario"' in html
     assert 'name="senha"' in html
-    # e continua explicando os dois caminhos, porque a tela é para gente
-    assert "cadastro próprio" in html
+    assert 'name="nome"' not in html, "o campo de nome voltou"
+    assert "<select" not in html, "a lista de nomes voltou"
+
+
+def test_a_entrada_explica_como_criar_o_PRIMEIRO_mestre(app):
+    """Sem este recado, quem aplicasse a atualização do banco ficaria olhando
+    uma tela de login sem nenhum cadastro criado, sem saber por onde começar.
+    Ele só aparece enquanto não existe mestre nenhum."""
+    with app.test_client() as cliente:
+        html = cliente.get("/analisesps/entrar").get_data(as_text=True)
+    assert "usuário em branco" in html
+    assert "É mestre" in html or "mestre" in html
 
 
 def test_a_senha_geral_continua_entrando_mesmo_com_usuario_preenchido(app):
@@ -185,20 +197,23 @@ def test_a_senha_geral_continua_entrando_mesmo_com_usuario_preenchido(app):
         "a senha geral tem de entrar mesmo com o campo de usuário preenchido")
 
 
-def test_a_senha_geral_ainda_exige_escolher_o_nome(app):
-    """O nome é a chave do lote e dos filtros de quem entra pela senha geral."""
+def test_a_porta_de_emergencia_nao_pede_nome_nenhum(app):
+    """Ela existe para destravar quem perdeu o acesso — pedir uma escolha a
+    mais seria só mais uma coisa para dar errado na pior hora."""
     with app.test_client() as cliente:
-        html = cliente.post("/analisesps/entrar",
-                            data={"senha": SENHA_OPERADOR}).get_data(as_text=True)
-    assert "Escolha o seu nome" in html
+        resposta = cliente.post("/analisesps/entrar",
+                                data={"senha": SENHA_OPERADOR})
+    assert resposta.status_code in (301, 302)
 
 
-def test_senha_errada_sem_usuario_diz_senha_incorreta(app):
+def test_senha_errada_sem_usuario_recusa_e_ensina_a_emergencia(app):
+    """A recusa tem de dizer o que fazer. Quem cuida do sistema e perdeu o
+    acesso precisa descobrir a porta de emergência AQUI — não num chat."""
     with app.test_client() as cliente:
         html = cliente.post("/analisesps/entrar",
-                            data={"senha": "chute", "nome": "MARCELO"}
-                            ).get_data(as_text=True)
-    assert "Senha incorreta" in html
+                            data={"senha": "chute"}).get_data(as_text=True)
+    assert "Digite o seu usuário e a sua senha" in html
+    assert "usuário em branco" in html
 
 
 # ---------------------------------------------------------------------------

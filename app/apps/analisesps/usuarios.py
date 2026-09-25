@@ -7,26 +7,31 @@ eles estão com senha única. Eu quero fazer similar ao painel. Vou poder
 cadastrar o operador, definir a senha, definir as telas que ele tem acesso. Aí
 vai ter um usuário master, e os outros a gente define as permissões."*
 
-DOIS JEITOS DE ENTRAR, e eles são bem diferentes:
+TODO MUNDO ENTRA COM USUÁRIO E SENHA PRÓPRIOS — desde 25/09/2026, pedido do
+dono: *"elimine do login o login via Nomes na lista da entrada. Vamos ficar
+somente com os cadastrados."* A lista de nomes ao lado da senha acabou.
 
-  - **a senha do Render** (`ANALISESPS_SENHA_OPERADOR` / `..._CONSULTA`) é o
-    MESTRE. Vê todas as telas, configura, aplica migração, mexe no
-    certificado e cadastra as pessoas. É o dono;
-  - **usuário e senha próprios** (esta tabela, migração 023) alcançam SÓ as
-    telas marcadas, e alteram dado só se estiverem marcados como operador.
+O MESTRE É UMA MARCAÇÃO NA PESSOA (migração 024), como "pode alterar". Quem é
+mestre vê **todas** as telas, abre Configurações, aplica migração, mexe no
+certificado, lança aporte no OMIE e cadastra gente — as telas marcadas para ele
+não importam, ele alcança todas.
 
-⚠️ POR QUE A SENHA DO RENDER CONTINUA VALENDO. Não é preguiça: é o que impede o
-dono de se trancar para fora. Se a migração não tiver rodado, se ele apagar o
-próprio cadastro sem querer, se o banco estiver fora do ar — a senha do Render
-ainda entra. Um cadastro que pode trancar o único administrador não é segurança,
-é armadilha.
+⚠️ A SENHA DO RENDER (`ANALISESPS_SENHA_OPERADOR` / `..._CONSULTA`) CONTINUA
+EXISTINDO, mas só como **porta de emergência**: entra-se por ela deixando o
+campo de usuário em branco. Não é mais o caminho do dia a dia.
+
+Por que ela não foi eliminada, embora o pedido tenha sido "só os cadastrados":
+sem ela, perder o último cadastro de mestre tranca todo mundo para fora **sem
+volta** — não há e-mail de recuperação, não há outro administrador, não há
+nada. A porta fica, está dita na tela de entrada, e tirá-la é uma decisão que
+o dono pode tomar sabendo o preço.
 
 TRÊS REGRAS QUE FALHAM FECHADO:
 
 1. **Sem tela marcada, a pessoa não entra.** Lista vazia quer dizer NENHUMA,
    nunca "todas". Cadastro esquecido pela metade não vira acesso total.
-2. **Quem é cadastrado aqui nunca abre Configurações**, nem aplica migração,
-   nem encosta no certificado digital, nem lança aporte no OMIE, nem cadastra
+2. **Quem NÃO é mestre nunca abre Configurações**, nem aplica migração, nem
+   encosta no certificado digital, nem lança aporte no OMIE, nem cadastra
    outra pessoa. Isso é do mestre (a lista está em `auth.SO_DO_MESTRE`).
 3. **O padrão de `pode_operar` é FALSE** — vê e exporta, não altera. Subir o
    poder de alguém é uma marcação consciente, não o que acontece por descuido.
@@ -57,6 +62,14 @@ MAX_LOGIN = 40
 # O recado de quando a tabela ainda não existe — o botão não foi apertado.
 FALTA_MIGRAR = ("O cadastro de acesso precisa da atualização do banco. Vá em "
                 "Configurações e aperte “Aplicar atualizações do banco”.")
+
+FALTA_MIGRAR_MESTRE = ("A marcação de mestre precisa da atualização do banco "
+                       "(a 024). Aperte “Aplicar atualizações do banco” aqui "
+                       "mesmo, nesta tela, e tente de novo.")
+
+ERRO_ULTIMO_MESTRE = ("Este é o único mestre do sistema. Se ele sair, ninguém "
+                      "mais cadastra gente nem abre as Configurações. Marque "
+                      "outra pessoa como mestre primeiro.")
 
 
 def _pronto() -> bool:
@@ -111,10 +124,18 @@ def listar() -> list[dict]:
     if not _pronto():
         return []
     from .db import consultar
+    # ⚠️ A COLUNA `mestre` É DA MIGRAÇÃO 024, e o código sobe para o Render
+    # ANTES de alguém apertar o botão. Perguntar se ela existe é o que impede
+    # a tela de Configurações de estourar nesse intervalo — e Configurações é
+    # justamente a tela de onde se aperta o botão.
+    from .db import tem_coluna
+    tem_mestre = tem_coluna("usuarios", "mestre")
+    campo = "mestre" if tem_mestre else "FALSE"
     pessoas = [{"id": i, "usuario": u, "nome": n, "ativo": bool(a),
-                "pode_operar": bool(op), "ultimo_acesso": ult, "telas": []}
-               for i, u, n, a, op, ult in consultar(
-        "SELECT id, usuario, nome, ativo, pode_operar, ultimo_acesso"
+                "pode_operar": bool(op), "mestre": bool(m),
+                "ultimo_acesso": ult, "telas": []}
+               for i, u, n, a, op, m, ult in consultar(
+        f"SELECT id, usuario, nome, ativo, pode_operar, {campo}, ultimo_acesso"
         "  FROM analisesps.usuarios ORDER BY lower(usuario)")]
     por_id = {p["id"]: p for p in pessoas}
     for uid, tela in consultar("SELECT usuario_id, tela"
@@ -131,17 +152,24 @@ def buscar(login: str) -> dict | None:
     chave = normalizar_login(login)
     if not chave:
         return None
-    from .db import consultar
+    from .db import consultar, tem_coluna
+    campo = "mestre" if tem_coluna("usuarios", "mestre") else "FALSE"
     linhas = consultar(
-        "SELECT id, usuario, nome, senha_hash, pode_operar"
+        f"SELECT id, usuario, nome, senha_hash, pode_operar, {campo}"
         "  FROM analisesps.usuarios WHERE lower(usuario) = ? AND ativo",
         (chave,))
     if not linhas:
         return None
-    uid, login_real, nome, senha_hash, pode_operar = linhas[0]
+    uid, login_real, nome, senha_hash, pode_operar, mestre = linhas[0]
     return {
         "id": uid, "usuario": login_real, "nome": nome,
-        "senha_hash": senha_hash, "pode_operar": bool(pode_operar),
+        "senha_hash": senha_hash,
+        # ⚠️ MESTRE MANDA SOBRE TUDO. Ele altera e alcança todas as telas,
+        # esteja marcado como operador ou não — deixar essas duas coisas
+        # discordarem seria um jeito de o dono cadastrar a si mesmo e não
+        # conseguir salvar nada.
+        "mestre": bool(mestre),
+        "pode_operar": bool(pode_operar) or bool(mestre),
         "telas": [t for (t,) in consultar(
             "SELECT tela FROM analisesps.usuario_telas WHERE usuario_id = ?",
             (uid,))],
@@ -194,7 +222,7 @@ def _conferir_senha(senha) -> str:
 
 
 def criar(login: str, senha: str, nome: str = "", telas=(),
-          pode_operar: bool = False) -> dict:
+          pode_operar: bool = False, mestre: bool = False) -> dict:
     """Cadastra. Devolve {'ok': True, 'id': n} ou o erro em português."""
     if not _pronto():
         return {"ok": False, "erro": FALTA_MIGRAR}
@@ -212,18 +240,29 @@ def criar(login: str, senha: str, nome: str = "", telas=(),
                  (chave,)):
         return {"ok": False, "erro": f"Já existe um usuário “{chave}”."}
 
+    from .db import tem_coluna
+    tem_mestre = tem_coluna("usuarios", "mestre")
+    if mestre and not tem_mestre:
+        return {"ok": False, "erro": FALTA_MIGRAR_MESTRE}
+
     with conexao() as conn:
+        colunas = "usuario, nome, senha_hash, pode_operar"
+        valores = [chave, limpar_nome(nome), generate_password_hash(senha),
+                   bool(pode_operar) or bool(mestre)]
+        if tem_mestre:
+            colunas += ", mestre"
+            valores.append(bool(mestre))
         cur = conn.execute(
-            "INSERT INTO analisesps.usuarios (usuario, nome, senha_hash, pode_operar)"
-            " VALUES (?,?,?,?) RETURNING id",
-            (chave, limpar_nome(nome), generate_password_hash(senha),
-             bool(pode_operar)))
+            f"INSERT INTO analisesps.usuarios ({colunas})"
+            f" VALUES ({','.join('?' * len(valores))}) RETURNING id",
+            tuple(valores))
         uid = int(cur.fetchone()[0])
         cur.close()
         _gravar_telas(conn, uid, telas)
         conn.commit()
     logger.info("Análise de SPs: usuário %s criado (%s) com %d tela(s).",
-                chave, "operador" if pode_operar else "consulta",
+                chave,
+                "MESTRE" if mestre else ("operador" if pode_operar else "consulta"),
                 len(set(telas or [])))
     return {"ok": True, "id": uid}
 
@@ -241,16 +280,27 @@ def _gravar_telas(conn, uid: int, telas) -> None:
 
 
 def atualizar(uid, *, nome=None, senha=None, ativo=None, telas=None,
-              pode_operar=None) -> dict:
+              pode_operar=None, mestre=None) -> dict:
     """Muda o que foi pedido e só isso. Senha em branco mantém a que existe."""
     if not _pronto():
         return {"ok": False, "erro": FALTA_MIGRAR}
     from .auth import limpar_nome
-    from .db import conexao, consultar
+    from .db import conexao, consultar, tem_coluna
     from werkzeug.security import generate_password_hash
 
     if not consultar("SELECT 1 FROM analisesps.usuarios WHERE id = ?", (int(uid),)):
         return {"ok": False, "erro": "Usuário não encontrado."}
+
+    tem_mestre = tem_coluna("usuarios", "mestre")
+    if mestre and not tem_mestre:
+        return {"ok": False, "erro": FALTA_MIGRAR_MESTRE}
+    # ⚠️ NÃO DEIXAR O ÚLTIMO MESTRE SE DESFAZER. Tirar a marcação do único
+    # mestre, ou desativá-lo, deixa o sistema sem ninguém que possa cadastrar,
+    # configurar ou aplicar migração — e o conserto passaria pela porta de
+    # emergência, que é justamente o que não se quer usar no dia a dia.
+    if tem_mestre and (mestre is False or ativo is False):
+        if _e_o_ultimo_mestre(int(uid)):
+            return {"ok": False, "erro": ERRO_ULTIMO_MESTRE}
     trocar_senha = senha is not None and str(senha).strip() != ""
     if trocar_senha:
         erro = _conferir_senha(senha)
@@ -264,9 +314,14 @@ def atualizar(uid, *, nome=None, senha=None, ativo=None, telas=None,
         if ativo is not None:
             conn.execute("UPDATE analisesps.usuarios SET ativo = ? WHERE id = ?",
                          (bool(ativo), int(uid)))
+        if mestre is not None and tem_mestre:
+            conn.execute("UPDATE analisesps.usuarios SET mestre = ?"
+                         " WHERE id = ?", (bool(mestre), int(uid)))
         if pode_operar is not None:
+            # mestre altera sempre: as duas marcações não podem discordar
             conn.execute("UPDATE analisesps.usuarios SET pode_operar = ?"
-                         " WHERE id = ?", (bool(pode_operar), int(uid)))
+                         " WHERE id = ?",
+                         (bool(pode_operar) or bool(mestre), int(uid)))
         if trocar_senha:
             conn.execute("UPDATE analisesps.usuarios SET senha_hash = ?"
                          " WHERE id = ?",
@@ -282,7 +337,9 @@ def apagar(uid) -> dict:
     """Tira o acesso de vez. As telas vão junto (ON DELETE CASCADE)."""
     if not _pronto():
         return {"ok": False, "erro": FALTA_MIGRAR}
-    from .db import conexao
+    from .db import conexao, tem_coluna
+    if tem_coluna("usuarios", "mestre") and _e_o_ultimo_mestre(int(uid)):
+        return {"ok": False, "erro": ERRO_ULTIMO_MESTRE}
     with conexao() as conn:
         conn.execute("DELETE FROM analisesps.usuarios WHERE id = ?", (int(uid),))
         conn.commit()
@@ -305,3 +362,32 @@ def marcar_acesso(uid) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("Análise de SPs: não consegui marcar o acesso de %s", uid)
 
+
+
+def _e_o_ultimo_mestre(uid: int) -> bool:
+    """Esta pessoa é o único mestre ATIVO que existe?
+
+    Pergunta feita antes de apagar, desativar ou desmarcar — as três coisas
+    que deixariam o sistema sem administrador."""
+    from .db import consultar_um
+    linha = consultar_um(
+        "SELECT (SELECT count(*) FROM analisesps.usuarios WHERE mestre AND ativo), "
+        "       (SELECT count(*) FROM analisesps.usuarios "
+        "         WHERE id = ? AND mestre AND ativo)", (int(uid),))
+    if not linha:
+        return False
+    return int(linha[0] or 0) <= 1 and int(linha[1] or 0) == 1
+
+
+def ha_mestre() -> bool:
+    """Existe alguém que administra? Enquanto não houver, a tela de entrada
+    explica como entrar pela porta de emergência — senão o dono aplicaria a
+    migração e ficaria olhando uma tela de login sem saber o que fazer."""
+    if not _pronto():
+        return False
+    from .db import consultar_um, tem_coluna
+    if not tem_coluna("usuarios", "mestre"):
+        return False
+    linha = consultar_um("SELECT count(*) FROM analisesps.usuarios"
+                         " WHERE mestre AND ativo")
+    return bool(linha and int(linha[0] or 0) > 0)

@@ -74,19 +74,11 @@ CHAVE_USUARIO = "analisesps_usuario_id"
 # entrada de texto gigante, já que ele vai para o banco e para a tela.
 MAX_NOME = 40
 
-# O nome fica lembrado NESTE navegador, para a pessoa não redigitá-lo todo
-# dia. É um cookie separado da sessão, e de propósito:
-#
-#   - a SESSÃO morre quando o navegador fecha, e tem de continuar morrendo:
-#     é ela que diz que alguém digitou a senha;
-#   - o NOME não é segredo nem credencial. Lembrá-lo não abre nada — quem
-#     abrir o navegador continua vendo a tela de senha, com o campo do nome
-#     já preenchido.
-#
-# Guardar a senha "para facilitar" seria outra conversa, e a resposta seria
-# não. São os pagamentos da empresa.
-COOKIE_NOME = "analisesps_ultimo_nome"
-DIAS_LEMBRANDO_O_NOME = 180
+# ⚠️ O COOKIE QUE LEMBRAVA O NOME FOI EMBORA em 25/09/2026, junto com a lista
+# de nomes da entrada. Não havia mais o que lembrar: quem entra digita o
+# usuário do cadastro dele, e o nome vem de lá. Guardar a SENHA "para
+# facilitar" seria outra conversa, e a resposta continua sendo não — são os
+# pagamentos da empresa.
 
 CONSULTA = "consulta"
 OPERADOR = "operador"
@@ -193,7 +185,7 @@ def pode_operar() -> bool:
     cadastro, a marcação dele — lida do banco a cada pedido."""
     if not esta_logado():
         return False
-    if e_mestre():
+    if e_porta_de_emergencia():
         return perfil_atual() == OPERADOR
     pessoa = usuario_da_sessao()
     return bool(pessoa and pessoa.get("pode_operar"))
@@ -216,8 +208,22 @@ def sair_da_sessao() -> None:
 
 
 def e_mestre() -> bool:
-    """Entrou pela senha do Render. Quem entrou por cadastro próprio, nunca."""
-    return esta_logado() and not session.get(CHAVE_USUARIO)
+    """Vê tudo, configura e cadastra gente.
+
+    São dois jeitos de ser mestre, e a ordem importa:
+
+      1. entrou pela **porta de emergência** (a senha do Render, com o campo
+         de usuário em branco) — não há cadastro por trás, e por isso não há
+         o que consultar;
+      2. entrou pelo **cadastro** e a pessoa está marcada como mestre
+         (migração 024). É o caminho normal desde 25/09/2026.
+    """
+    if not esta_logado():
+        return False
+    if not session.get(CHAVE_USUARIO):
+        return True                      # porta de emergência
+    pessoa = usuario_da_sessao()
+    return bool(pessoa and pessoa.get("mestre"))
 
 
 def usuario_da_sessao():
@@ -260,6 +266,14 @@ def telas_permitidas() -> set[str] | None:
         return None
     pessoa = usuario_da_sessao()
     return set(pessoa.get("telas") or []) if pessoa else set()
+
+
+def e_porta_de_emergencia() -> bool:
+    """Entrou pela senha do Render, sem cadastro por trás.
+
+    A tela avisa, porque essa porta não é o caminho do dia a dia — e quem
+    entra por ela não tem lote nem filtros próprios, já que não tem nome."""
+    return esta_logado() and not session.get(CHAVE_USUARIO)
 
 
 # ---------------------------------------------------------------------------

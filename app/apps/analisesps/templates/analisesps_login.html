@@ -18,59 +18,50 @@
       </div>
     </div>
 
-    {% if sem_senha and not tem_cadastro %}
+    {% if sem_senha and not tem_mestre %}
       <div class="aviso erro">
-        <b>Este módulo ainda não tem senha.</b><br>
-        Cadastre <code>ANALISESPS_SENHA_OPERADOR</code> e
-        <code>ANALISESPS_SENHA_CONSULTA</code> nas configurações do serviço no
-        Render e recarregue esta página. Enquanto isso ninguém entra — nem
-        você. É de propósito: são os pagamentos da empresa.
+        <b>Este módulo ainda não tem como entrar.</b><br>
+        Não há ninguém cadastrado como mestre, e a senha geral do serviço
+        (<code>ANALISESPS_SENHA_OPERADOR</code>) não está configurada no Render.
+        Enquanto isso ninguém entra — nem você. É de propósito: são os
+        pagamentos da empresa.
       </div>
     {% else %}
       {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
-      {# LISTA, não campo livre. O nome é a chave do lote e dos filtros: com
-         campo livre, digitar diferente um dia dava outra pessoa, e o lote
-         aparecia vazio sem explicação. #}
-      <label for="nome">Quem é você</label>
-      <select id="nome" name="nome" autofocus
-              {% if not nome %}aria-describedby="dica-nome"{% endif %}>
-        <option value="" {% if not nome %}selected{% endif %} disabled>
-          escolha o seu nome</option>
-        {% for pessoa in equipe %}
-          <option value="{{ pessoa }}"
-                  {% if nome == pessoa %}selected{% endif %}>{{ pessoa }}</option>
-        {% endfor %}
-      </select>
-      {# ---------------------------------------------------------------
-         O USUÁRIO PRÓPRIO, para quem tem cadastro (desde 25/09/2026).
 
-         Fica DEPOIS do nome e antes da senha, e vazio por padrão: quem entra
-         pela senha geral não precisa tocar nele. O `autocomplete="off"` é de
-         propósito — no painel o gerenciador de senhas do navegador preencheu
-         este campo sozinho e trancou o dono para fora, porque o pedido caía
-         no caminho errado. Aqui a senha geral é conferida PRIMEIRO, então o
-         acidente não tranca mais ninguém; mesmo assim, não convidamos ele.
-      --------------------------------------------------------------- #}
-      <label for="usuario">Usuário <small>(só se você tem cadastro próprio)</small></label>
-      <input id="usuario" name="usuario" autocomplete="off"
-             value="{{ usuario or '' }}">
+      <label for="usuario">Usuário</label>
+      <input id="usuario" name="usuario" type="text" autofocus
+             autocomplete="username" value="{{ usuario or '' }}">
+
       <label for="senha">Senha</label>
       <input id="senha" name="senha" type="password"
              autocomplete="current-password" required>
       <button class="btn" type="submit">Entrar</button>
+
+      {% if not tem_mestre %}
+        {# ⚠️ ESTE RECADO SÓ APARECE ENQUANTO NÃO HÁ MESTRE. Sem ele, quem
+           aplicasse a atualização do banco ficaria olhando uma tela de login
+           sem nenhum cadastro criado e sem saber por onde começar. #}
+        <div class="aviso erro" style="margin-top:14px">
+          <b>Ainda não há ninguém cadastrado como mestre.</b><br>
+          Para criar o primeiro: deixe o <b>usuário em branco</b> e digite a
+          <b>senha geral do serviço</b>. Você entra por uma porta de
+          emergência, vai em <b>Configurações › Quem tem acesso</b> e cadastra
+          a si mesmo marcando <b>“É mestre”</b>. Depois disso, entre sempre
+          pelo seu usuário.
+        </div>
+      {% endif %}
+
       <p class="sub" style="margin-top:14px">
-        <b>Tem cadastro próprio?</b> Digite o seu usuário e a sua senha — você
-        abre só as telas que foram liberadas para você, e o nome da lista acima
-        não precisa ser escolhido.<br>
-        <b>Entra pela senha geral?</b> Deixe o usuário em branco, escolha o seu
-        nome e digite a senha: uma delas abre em modo de consulta, que vê e
-        exporta; a outra abre como operador, que também altera.
+        Cada pessoa entra com o <b>usuário e a senha dela</b>, e abre só as
+        telas que foram liberadas para ela. Esqueceu a senha? Quem cuida do
+        sistema troca em <b>Configurações</b> — ninguém consegue ler a sua,
+        nem ele.
       </p>
-      <p class="sub" id="dica-nome">
-        O <b>nome</b> não é senha e não dá poder nenhum a mais — ele separa o
-        que é seu do que é dos outros: o seu lote, os seus filtros, e o seu
-        nome no registro de quem alterou o quê. Quem faltar na lista se
-        acrescenta em <b>Configurações</b>.
+      <p class="sub">
+        <b>Porta de emergência:</b> se quem cuida do sistema perder o acesso,
+        dá para entrar deixando o <b>usuário em branco</b> e usando a senha
+        geral do serviço. É só para isso — o dia a dia é pelo cadastro.
       </p>
     {% endif %}
   </form>

@@ -139,6 +139,12 @@ def versao_publicada() -> str:
 # cópias divergiriam no dia em que uma tela nova entrasse em uma só, e a que
 # ficasse de fora seria justamente a do menu, que é o caminho de quem está no
 # celular e não tem como descobrir que faltou.
+# O nome que assina o que for feito pela PORTA DE EMERGÊNCIA. Ela não tem
+# cadastro por trás, então não tem nome de gente — e deixar vazio faria o
+# registro de alterações dizer "—", que não diz nada. Escrito assim, em
+# maiúsculas, quem ler a auditoria sabe na hora por onde a pessoa entrou.
+NOME_DA_EMERGENCIA = "MESTRE (emergência)"
+
 TELAS = [
     ("solicitacoes",  "Solicitações",  "analisesps.solicitacoes"),
     ("lote",          "Lote",          "analisesps.tela_lote"),
@@ -283,22 +289,20 @@ def _filtro_com_links(texto):
 @bp.route("/entrar", methods=["GET", "POST"])
 @publica("é a própria tela de login; sem ela ninguém consegue entrar")
 def entrar():
-    from . import pessoas
+    """A entrada. SÓ USUÁRIO E SENHA desde 25/09/2026.
 
+    A lista de nomes ao lado da senha acabou — pedido do dono: *"elimine do
+    login o login via Nomes na lista da entrada. Vamos ficar somente com os
+    cadastrados."* Quem entra, entra pelo cadastro, e o nome que assina o lote,
+    os filtros e o registro de alterações é o do cadastro dele.
+
+    ⚠️ SOBROU UMA PORTA DE EMERGÊNCIA: a senha do Render, com o campo de
+    usuário EM BRANCO. Ela não é o caminho do dia a dia, e a tela diz isso.
+    Sem ela, perder o último cadastro de mestre trancaria todo mundo para fora
+    sem volta — não há e-mail de recuperação nem outro administrador.
+    """
     configurados = auth.perfis_configurados()
     erro = None
-
-    # A entrada é uma LISTA, não um campo livre: o nome é a chave do lote e
-    # dos filtros, e digitar "Marcelo" hoje e "Marcelo Leitão" amanhã dava duas
-    # pessoas — a segunda encontrando o lote vazio sem entender por quê.
-    #
-    # O que a tela manda é conferido contra a lista, e volta com a grafia
-    # oficial: assim um pedido montado à mão não cria uma quinta pessoa por
-    # fora, e a mesma pessoa não se divide em duas por causa de um acento.
-    equipe = pessoas.listar()
-    escolhido = auth.limpar_nome(request.form.get("nome", ""))
-    nome = pessoas.da_lista(escolhido)
-
     login = (request.form.get("usuario") or "").strip()
 
     if request.method == "POST":
@@ -316,13 +320,10 @@ def entrar():
         # tudo. O que se perde é só a chance de o navegador escolher o caminho.
         perfil = auth.identificar(senha) if configurados else None
         if perfil:
-            if not nome:
-                erro = ("Escolha o seu nome na lista — é ele que separa o seu "
-                        "lote e os seus filtros dos das outras pessoas.")
-            else:
-                auth.entrar_na_sessao(perfil, nome)
-                return _lembrar_o_nome(redirect(_para_onde_depois_de_entrar()),
-                                       nome)
+            auth.entrar_na_sessao(perfil, NOME_DA_EMERGENCIA)
+            logger.warning("Análise de SPs: entrada pela PORTA DE EMERGÊNCIA "
+                           "(senha geral do serviço, sem cadastro por trás).")
+            return redirect(_para_onde_depois_de_entrar())
         elif login:
             # Caminho do CADASTRO PRÓPRIO (migração 023).
             from . import usuarios
@@ -336,7 +337,12 @@ def entrar():
                 erro = ("Usuário ou senha incorretos. Se você entra com a "
                         "senha geral do sistema, apague o que estiver no campo "
                         "Usuário — o navegador às vezes preenche sozinho.")
-            elif not pessoa.get("telas"):
+            elif not pessoa.get("telas") and not pessoa.get("mestre"):
+                # ⚠️ O MESTRE ESCAPA DESTA TRAVA, e tem de escapar: ele alcança
+                # todas as telas por definição, então as caixinhas dele estão
+                # vazias por ser desnecessárias — não por estarem faltando.
+                # Sem esta exceção, o dono cadastraria a si mesmo como mestre e
+                # a própria tela o barraria na entrada seguinte.
                 logger.warning("Análise de SPs: %s entrou sem nenhuma tela "
                                "liberada.", login)
                 erro = ("O seu acesso ainda não tem nenhuma tela liberada. "
@@ -347,27 +353,25 @@ def entrar():
                     auth.OPERADOR if pessoa["pode_operar"] else auth.CONSULTA,
                     oficial, usuario_id=pessoa["id"])
                 usuarios.marcar_acesso(pessoa["id"])
-                return redirect(_para_onde_depois_de_entrar(pessoa["telas"]))
-        elif not configurados:
-            erro = None                 # a tela já explica que falta senha
+                return redirect(_para_onde_depois_de_entrar(
+                    None if pessoa.get("mestre") else pessoa["telas"]))
         else:
-            erro = "Senha incorreta."
-            logger.warning("Análise de SPs: tentativa de entrada com senha "
-                           "errada (nome informado: %r).", nome)
+            erro = ("Digite o seu usuário e a sua senha. Se você cuida do "
+                    "sistema e perdeu o acesso, deixe o usuário em branco e "
+                    "use a senha geral do serviço.")
+            logger.warning("Análise de SPs: entrada recusada — sem usuário, e "
+                           "a senha não é a geral.")
 
-    # Na tela, já vem escolhido o nome da última vez NESTE navegador.
-    lembrado = pessoas.da_lista(request.cookies.get(auth.COOKIE_NOME, ""))
     from . import usuarios
     try:
-        tem_cadastro = bool(usuarios.listar())
+        tem_mestre = usuarios.ha_mestre()
     except Exception:  # noqa: BLE001 — a tela de entrada nunca cai por isto
-        logger.exception("Análise de SPs: não consegui saber se há cadastros")
-        tem_cadastro = False
+        logger.exception("Análise de SPs: não consegui saber se há mestre")
+        tem_mestre = False
 
     return render_template(
         "analisesps_login.html", sem_senha=not configurados, erro=erro,
-        equipe=equipe, nome=nome or lembrado, usuario=login,
-        tem_cadastro=tem_cadastro)
+        usuario=login, tem_mestre=tem_mestre)
 
 
 def _para_onde_depois_de_entrar(telas=None) -> str:
@@ -388,22 +392,6 @@ def _para_onde_depois_de_entrar(telas=None) -> str:
         if primeira:
             return url_for(primeira[2])
     return url_for("analisesps.solicitacoes")
-
-
-def _lembrar_o_nome(resposta, nome: str):
-    """Guarda o nome no navegador, para não redigitá-lo todo dia.
-
-    Só o NOME. A sessão continua morrendo quando o navegador fecha — é ela
-    que diz que alguém digitou a senha, e isso não se lembra. Quem abrir
-    amanhã vê a tela de senha com o campo do nome já preenchido, e nada mais.
-
-    `httponly` porque nenhum script da página precisa ler isto, e `samesite`
-    para o cookie não viajar em pedido vindo de outro site."""
-    resposta.set_cookie(
-        auth.COOKIE_NOME, auth.limpar_nome(nome),
-        max_age=auth.DIAS_LEMBRANDO_O_NOME * 24 * 3600,
-        httponly=True, samesite="Lax", secure=request.is_secure)
-    return resposta
 
 
 @bp.route("/sair")
@@ -1265,19 +1253,21 @@ def usuarios_salvar():
     telas = [t for t in request.form.getlist("tela_do_usuario") if t.strip()]
     uid = (request.form.get("usuario_id") or "").strip()
     pode_operar = request.form.get("pode_operar") == "1"
+    mestre = request.form.get("mestre") == "1"
 
     if acao == "criar":
         r = usuarios.criar(request.form.get("novo_usuario", ""),
                            request.form.get("nova_senha", ""),
                            nome=request.form.get("nome", ""),
-                           telas=telas, pode_operar=pode_operar)
+                           telas=telas, pode_operar=pode_operar, mestre=mestre)
     elif acao == "apagar" and uid.isdigit():
         r = usuarios.apagar(int(uid))
     elif acao == "salvar" and uid.isdigit():
         r = usuarios.atualizar(int(uid), nome=request.form.get("nome"),
                                senha=request.form.get("nova_senha"),
                                ativo=request.form.get("ativo") == "1",
-                               telas=telas, pode_operar=pode_operar)
+                               telas=telas, pode_operar=pode_operar,
+                               mestre=mestre)
     else:
         r = {"ok": False, "erro": "Pedido não reconhecido."}
 
