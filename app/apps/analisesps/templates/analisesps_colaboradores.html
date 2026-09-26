@@ -1,0 +1,194 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Colaboradores — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Colaboradores
+  <small>{{ colaboradores|length }}{{ '+' if no_teto else '' }} na lista</small>
+</h2>
+
+<p class="cartao-dica" style="margin-bottom:14px">
+  Este é o <b>espelho</b> do cadastro que vem do Pipefy. Para corrigir o valor de
+  um auxílio ou de uma gratificação, <b>clique no nome</b> e altere no card — e
+  depois aperte "Atualizar cadastro". Aqui nada se edita: o que fosse digitado
+  seria apagado na próxima atualização.
+</p>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui ler o cadastro.</b> {{ erro }}</div>
+{% endif %}
+
+{% if not cadastro.pronto %}
+  {# A migração 028 ainda não rodou. O código sobe para o Render antes de alguém
+     apertar o botão, e a tela tem de explicar isso em vez de estourar. #}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui.
+  </div>
+{% else %}
+
+<div class="cartao barra-cadastro">
+  <div>
+    {% if cadastro.quando %}
+      <b>{{ cadastro.pessoas }} pessoa(s)</b>
+      <span class="cartao-dica">trazidas da planilha em
+        {{ cadastro.quando[8:10] }}/{{ cadastro.quando[5:7] }} às
+        {{ cadastro.quando[11:16] }}</span>
+    {% else %}
+      <b>O cadastro ainda não foi trazido nenhuma vez.</b>
+      <span class="cartao-dica">Aperte o botão ao lado.</span>
+    {% endif %}
+    {% if cadastro.avisos %}
+      <div class="aviso atencao" style="margin-top:8px">
+        ⚠️ {{ cadastro.avisos|join('; ') }}
+      </div>
+    {% endif %}
+  </div>
+  {% if pode_operar %}
+    <button class="btn secundario" id="btn-atualizar-cadastro"
+            >Atualizar cadastro</button>
+  {% endif %}
+</div>
+
+<form class="barra-acoes" method="get"
+      action="{{ url_for('analisesps.tela_colaboradores') }}">
+  {# `nome` no campo porque o formato de campo é do erp_base/analisesps_base e é
+     reconhecido PELO NOME — a máscara e a busca vêm de graça. #}
+  <input class="campo-largo" type="search" name="q" id="q"
+         value="{{ procurado }}" placeholder="nome ou CPF…"
+         aria-label="Procurar por nome ou CPF">
+  <label class="cartao-dica" style="margin:0">
+    <input type="checkbox" name="desligados" value="1"
+           {{ 'checked' if incluir_desligados }}
+           onchange="this.form.submit()"> mostrar quem saiu
+  </label>
+  <button class="btn" type="submit">Procurar</button>
+  {% if procurado or incluir_desligados %}
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.tela_colaboradores') }}">Limpar</a>
+  {% endif %}
+</form>
+
+{# A TABELA É DESENHADA SEMPRE, com cabeçalho, mesmo sem nenhuma linha. Um
+   filtro que faz o cabeçalho desaparecer junto com as linhas deixa a pessoa sem
+   como desfazer o filtro — foi exatamente a armadilha que a conciliação tinha
+   até 26/09/2026. #}
+<table class="sps">
+  <thead>
+    <tr>
+      <th>Nome</th>
+      <th>CPF</th>
+      <th>Cargo</th>
+      <th>Contrato</th>
+      <th class="num">Alimentação</th>
+      <th class="num">Transporte</th>
+      <th class="num">Gratificação</th>
+      <th>Situação</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in colaboradores %}
+    <tr>
+      <td>
+        {% if c.link_pipefy %}
+          <a href="{{ c.link_pipefy }}" target="_blank" rel="noopener"
+             class="link-pipefy"
+             title="Abrir o card desta pessoa no Pipefy (nova aba)"
+             >{{ c.nome or '—' }} <span aria-hidden="true">↗</span></a>
+        {% else %}
+          {{ c.nome or '—' }}
+          <span class="cartao-dica"
+                title="O cadastro desta pessoa está sem o Nº Registro Pipefy, então não há card para abrir">sem card</span>
+        {% endif %}
+      </td>
+      <td class="cpf">{{ c.cpf }}</td>
+      <td>{{ c.cargo or '—' }}</td>
+      <td>{{ c.tipo_contrato or c.tipo or '—' }}</td>
+      {# VALOR EM BRANCO E VALOR ZERO SÃO COISAS DIFERENTES, e a tela não pode
+         confundi-los: "—" quer dizer "o cadastro não diz", e R$ 0,00 quer dizer
+         "o cadastro diz que é zero". Um é pergunta, o outro é resposta. #}
+      <td class="num">{{ c.valor_alimentacao|moeda if c.valor_alimentacao is not none else '—' }}
+        {% if c.modo_alimentacao %}<span class="cartao-dica">{{ c.modo_alimentacao }}</span>{% endif %}
+      </td>
+      <td class="num">{{ c.valor_transporte|moeda if c.valor_transporte is not none else '—' }}
+        {% if c.modo_transporte %}<span class="cartao-dica">{{ c.modo_transporte }}</span>{% endif %}
+      </td>
+      <td class="num">{{ c.valor_gratificacao|moeda if c.valor_gratificacao is not none else '—' }}</td>
+      <td>
+        {% if c.desligado %}
+          <span class="selo cancelado"
+                title="Data de saída no cadastro">saiu{% if c.data_saida %} em {{ c.data_saida|data_br }}{% endif %}</span>
+        {% else %}
+          <span class="cartao-dica">{{ c.fase or '—' }}</span>
+        {% endif %}
+        {% if c.paga_por_beevale == 'Sim' %}
+          <span class="selo no-lote" title="O cadastro marca pagamento pela BeeVale">BeeVale</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr>
+      <td colspan="8" class="cartao-dica">
+        {% if not cadastro.quando %}
+          O cadastro ainda não foi trazido. Aperte "Atualizar cadastro" acima.
+        {% elif procurado %}
+          Ninguém com "{{ procurado }}"{{ ' entre quem está na casa' if not incluir_desligados }}.
+          Mude a busca acima{{ ', ou marque "mostrar quem saiu"' if not incluir_desligados }}.
+        {% else %}
+          Nenhuma pessoa no cadastro.
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if no_teto %}
+  <p class="cartao-dica">Mostrando as primeiras {{ teto }}. Use a busca para
+    achar quem você procura — o cadastro tem alguns milhares de pessoas.</p>
+{% endif %}
+
+{% if pode_operar %}
+<script>
+// --- atualizar o cadastro --------------------------------------------------
+// ⚠️ MESMO CUIDADO DA TELA DE RATEIO: a leitura roda no processo separado e
+// leva alguns segundos. Sem acompanhar, quem aperta não sabe se começou, e
+// aperta de novo — e conclui que o sistema está quebrado.
+const btnCadastro = document.getElementById("btn-atualizar-cadastro");
+if (btnCadastro) btnCadastro.addEventListener("click", async () => {
+  btnCadastro.disabled = true;
+  const antes = btnCadastro.textContent;
+  btnCadastro.textContent = "trazendo…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.sincronizar') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "Accept": "application/json"},
+      body: JSON.stringify({modo: "colaboradores"})
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      alert(d.erro || "Não deu para começar.");
+      btnCadastro.disabled = false; btnCadastro.textContent = antes; return;
+    }
+    const relogio = setInterval(async () => {
+      try {
+        const a = await fetch("{{ url_for('analisesps.andamento') }}");
+        const e = await a.json();
+        if (e.rodando) {
+          btnCadastro.textContent = (e.progresso || e.etapa || "trazendo…");
+        } else {
+          clearInterval(relogio);
+          location.reload();
+        }
+      } catch (err) { /* rede oscilou: a próxima volta resolve */ }
+    }, 4000);
+  } catch (e) {
+    alert("Falhou: " + e);
+    btnCadastro.disabled = false; btnCadastro.textContent = antes;
+  }
+});
+</script>
+{% endif %}
+
+{% endif %}
+{% endblock %}

@@ -165,6 +165,9 @@ TELAS = [
     # Vizinha do Ratear de propósito: as duas respondem "para onde vai o
     # dinheiro". Esta é só do MESTRE, então só ele a vê no menu.
     ("folha_rateio",  "Rateio da Folha", "analisesps.tela_folha_rateio"),
+    # Vizinha do Rateio da Folha: é de lá que se chega ao card da pessoa no
+    # Pipefy, que é onde o auxílio e a gratificação se corrigem.
+    ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
     ("log",           "Log",           "analisesps.log"),
     ("configuracoes", "Configurações", "analisesps.configuracoes"),
@@ -2217,9 +2220,87 @@ def tela_folha_rateio():
     except Exception:  # noqa: BLE001 — a lista é apoio; sem ela dá recado
         logger.exception("Folha: não consegui ler a lista de obras")
         obras = []
+    regras = fr.listar() if pronto else []
+
+    # O CADASTRO ENTRA AQUI PARA DUAS COISAS, as duas pedidas em 27/09/2026:
+    #
+    #   1. O LINK PARA O CARD DO PIPEFY de cada pessoa. *"É bom ter um link
+    #      para clicar nele e ser direcionado, abre o card do Pipefy."* O lugar
+    #      de corrigir o auxílio ou a gratificação é o card — daqui só se vai
+    #      até lá.
+    #   2. O NOME DE VERDADE. A regra de rateio guarda o nome que quem cadastrou
+    #      digitou, para reconhecer na tela. Quando a pessoa está no cadastro,
+    #      o nome do cadastro é melhor: é o que a folha e o ponto usam.
+    #
+    # Num `try` porque a migração 028 pode não ter sido aplicada ainda: o código
+    # sobe para o Render antes do botão ser apertado, e esta tela não pode cair
+    # nesse intervalo.
+    from . import colaboradores
+    cadastro = {"quando": "", "pessoas": 0, "avisos": [], "pronto": False}
+    try:
+        cadastro = colaboradores.quando_atualizou()
+        cpfs = [p.get("cpf") for r in regras for p in (r.get("pessoas") or [])]
+        fichas = colaboradores.muitos_por_cpf(cpfs)
+        for regra in regras:
+            for pessoa in (regra.get("pessoas") or []):
+                ficha = fichas.get(pessoa.get("cpf")) or {}
+                pessoa["link_pipefy"] = ficha.get("link_pipefy", "")
+                pessoa["no_cadastro"] = bool(ficha)
+                pessoa["desligado"] = bool(ficha.get("desligado"))
+                if ficha.get("nome"):
+                    pessoa["nome_cadastro"] = ficha["nome"]
+    except Exception:  # noqa: BLE001 — a tela abre mesmo sem o cadastro
+        logger.exception("Folha: não consegui ler o cadastro de colaboradores")
+
     return render_template(
         "analisesps_folha_rateio.html", aba="folha_rateio",
-        pronto=pronto, regras=fr.listar() if pronto else [], obras=obras,
+        pronto=pronto, regras=regras, obras=obras, cadastro=cadastro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha/colaboradores")
+@exige_consulta
+def tela_colaboradores():
+    """O cadastro de colaboradores, espelhado da planilha.
+
+    POR QUE ESTA TELA EXISTE, e não é enfeite. Pedido do dono em 27/09/2026:
+    ele precisa achar uma pessoa e **pular para o card dela no Pipefy**, porque
+    é lá que se corrige o valor do auxílio alimentação, do transporte ou da
+    gratificação. Depois de corrigir, aperta "Atualizar cadastro" e o valor novo
+    aparece aqui.
+
+    ELA NÃO EDITA NADA, de propósito. Se editasse, a próxima atualização
+    apagaria a edição — o dado nasce no Pipefy e desce por automação até a
+    planilha. Tela que deixa escrever o que vai ser sobrescrito é armadilha.
+
+    A BUSCA TEM TETO (200): o cadastro tem ~3.500 pessoas, e desenhar todas de
+    uma vez não ajuda ninguém e pesa na instância."""
+    from . import colaboradores
+
+    procurado = " ".join((request.args.get("q") or "").split())
+    # "Mostrar quem saiu" desligado por padrão: quem foi desligado não entra em
+    # pagamento novo, e a lista do dia a dia é de quem está na casa.
+    incluir_desligados = request.args.get("desligados") == "1"
+
+    cadastro = {"quando": "", "pessoas": 0, "avisos": [], "pronto": False}
+    lista: list = []
+    erro = None
+    try:
+        cadastro = colaboradores.quando_atualizou()
+        if cadastro.get("pronto"):
+            lista = colaboradores.buscar(
+                procurado, so_ativos=not incluir_desligados)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: não consegui ler o cadastro")
+        erro = str(e)
+
+    return render_template(
+        "analisesps_colaboradores.html", aba="colaboradores",
+        cadastro=cadastro, colaboradores=lista, procurado=procurado,
+        incluir_desligados=incluir_desligados, erro=erro,
+        teto=200, no_teto=len(lista) >= 200,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())

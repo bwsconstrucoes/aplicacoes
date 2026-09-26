@@ -1133,6 +1133,7 @@ leitura do documento de fórmulas da planilha de Diaristas/Extras/GM (§7.14) �
 | aba **`Calendário`** (abaixo da linha 60) | duas críticas saem dela (`Descadastrar`, `Ponto CTPS`) e o script de fórmulas lê só as 60 primeiras linhas |
 | **conteúdo** (não fórmula) das abas `Feriados`, `Férias`, `Compensação` | as fórmulas eu já tenho (§7.14.6); o que falta é o dado, e isso vira **carga**, não cópia — `Férias` e `Compensação` têm CPF |
 | fórmulas da planilha **`Diaristas Barbalha`** e da aba **`AnáliseSaídas`** | aparecem referenciadas e não foram lidas |
+| ⚠️ **o nome exato das cinco colunas de auxílio** na aba `Dados Documentos` | são as únicas sem título confirmado (§7.15.3). O primeiro clique em "Atualizar cadastro" vai dizer se acertei: se não achar, a tela avisa com o cabeçalho de verdade |
 
 #### Perguntas que só ele responde — e uma delas é dinheiro
 
@@ -1546,6 +1547,106 @@ lista de obras escrita à mão: mudar uma obra obriga a lembrar das duas.
 - **A competência é automática.** `Período!C14`/`D14`: se hoje é dia **10 ou
   antes**, a competência é o **mês anterior**; senão, o mês corrente. Mesma regra
   que já está em §7.10, agora confirmada nesta planilha também.
+
+## 7.15 O CADASTRO ESPELHADO — feito em 27/09/2026
+
+Pedido dele, e é a primeira peça da folha que virou tela de verdade:
+
+> *"A planilha de cadastros dos colaboradores, tudo vem do Pipefy (…) às vezes é
+> preciso fazer a alteração do auxílio de alimentação, do valor de um auxílio de
+> transporte, ou um valor da gratificação. (…) o nome do colaborador já
+> redireciona (…) eu preciso poder atualizar as informações que estão na análise
+> SP que espelham o que está na planilha (…) um botão fácil."*
+
+### 7.15.1 O caminho do dado, e a regra que dele decorre
+
+```
+Pipefy (o card)  →  automação  →  "Registro de Colaboradores" / aba
+"Dados Documentos"  →  botão "Atualizar cadastro"  →  analisesps.colaborador
+```
+
+**Daí sai a regra da tela: ela NÃO edita.** O que fosse digitado aqui seria
+apagado na atualização seguinte, sem explicação para ninguém. Então o que a tela
+oferece é o contrário: **o nome da pessoa é link para o card do Pipefy**. Corrige
+lá, aperta o botão aqui.
+
+Isso responde a pergunta "onde o DP muda o valor de um auxílio": **no Pipefy,
+como hoje**. O sistema novo não toma isso para si — e é melhor assim, porque o
+card é onde mora o histórico e a aprovação.
+
+### 7.15.2 As 30 colunas — a planilha escolheu, não eu
+
+A aba `Dados Documentos` tem **78 colunas**. A aba oculta
+`CadastroColaboradores` da planilha de Diaristas/Extras/GM — que é quem alimenta
+alimentação, transporte, GM e diaristas — importa exatamente **30** delas:
+
+```
+Col1, Col5, Col23, Col24, Col25, Col26, Col47, Col49 … Col70, Col2
+```
+
+O espelho traz essas. Duas razões, e a segunda é a que importa:
+
+1. **Custo:** trazer as 78 leria mais que o dobro de células a cada botão.
+2. **Dado pessoal que não serve para nada aqui:** endereço, nome da mãe, RG,
+   PIS e salário **ficam na planilha**. O que o sistema não busca não pode vazar
+   por ele.
+
+Para conseguir as duas coisas a leitura pede **faixas de coluna** (5 faixas), não
+de A até a última — e há teste que falha se alguém trocar isso por uma faixa só.
+
+### 7.15.3 O que o espelho decifrou das colunas sem nome
+
+Cruzando a ordem da aba oculta com o uso nas abas de pagamento, dá para nomear o
+que antes era só "Col65":
+
+| Coluna da origem | O que é, pelo uso |
+|---|---|
+| `B` | **Nº Registro Pipefy** — é o número do card, e o que monta o link |
+| `BM` | modalidade do auxílio **alimentação** (Mês / Mensal / Seg-Qui / Seg-Sex) |
+| `BN` | **valor** do auxílio alimentação |
+| `BO` | modalidade do **transporte** — e é aqui que `Cartão` quer dizer "não paga em dinheiro" |
+| `BP` | **valor** do transporte |
+| `BF` | **Valor da Gratificação** |
+| `BH` | **Recebe Parcela Única** — `Sim` = valor inteiro no fim do mês, não metade |
+| `BI` | **a marcação que escolhe BeeVale × SomaPay** (§7.14.3) |
+| `AX` | **Fase Atual** — é onde mora `Colaboradores Desligados` e `Afastados` |
+| `AY` | **Tipo de Contrato** — CLT, PJ, Pró-labore, Estágio, Autônomo Mensalista |
+
+⚠️ **As cinco dos auxílios são as únicas cujo TÍTULO continua não confirmado.**
+As fórmulas provam que existem e o que fazem, mas chegam por `IMPORTRANGE` de uma
+faixa, sem nome. O módulo tenta os nomes prováveis e, **quando não acha, avisa na
+tela** com o cabeçalho de verdade e pede o nome exato — em vez de gravar em
+branco calado. **Campo de auxílio em branco vira pagamento a menos, e pagamento a
+menos ninguém nota tão rápido quanto um a mais.** É o primeiro clique no botão
+que vai fechar esse ponto.
+
+### 7.15.4 Duas armadilhas da planilha que o código já desvia
+
+1. **A linha 2 não é gente.** O cabeçalho está na linha 1 e a linha 2 guarda o
+   **número de cada coluna** (1, 2, 3…), para uma fórmula com `INDIRECT` da aba
+   `Dados Gerais`. Lida como dado, criaria um colaborador chamado "2" — que
+   entraria nas listas de pagamento. Os dados começam na **3**, como a própria
+   planilha faz (`QUERY('Dados Documentos'!A3:AX; …)`).
+
+2. **O Sheets corta o fim vazio de cada faixa.** Uma faixa cujas últimas linhas
+   estão em branco volta **mais curta** que as outras. Juntar por posição sem
+   repor essas linhas faz **o auxílio de uma pessoa ir para o CPF de outra**, em
+   silêncio. É o defeito mais caro possível aqui; tem teste próprio, conferido
+   com mutação.
+
+### 7.15.5 O que isto já destrava no desenho da folha
+
+- **A crítica "fora do cadastro"** deixa de ser ideia e passa a ser possível: a
+  tela de Rateio já marca o CPF que não está no cadastro. Uma regra de rateio com
+  CPF errado rateia o salário de ninguém, e o erro ficava invisível até a folha
+  não fechar.
+- **Quem saiu sai das listas** pela data de saída, sem ser apagado — a folha de
+  julho continua explicável.
+- **O link do card** vale para todas as telas da folha que vierem: é sempre o
+  mesmo número, no mesmo lugar.
+- **Falta ligar** o espelho ao `folha_apropriacao` (hoje ele recebe o cadastro
+  por parâmetro) e às futuras telas de alimentação, transporte e GM, que leem
+  daqui o valor e a modalidade de cada pessoa.
 
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 

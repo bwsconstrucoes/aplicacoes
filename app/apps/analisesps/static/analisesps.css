@@ -2173,3 +2173,27 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
   display: flex; align-items: center; gap: 6px; font-size: 13px;
   padding: 2px 0; cursor: pointer;
 }
+
+/* ---------------------------------------------------------------------------
+   O CADASTRO DE COLABORADORES na tela de Rateio da Folha (27/09/2026)
+
+   A barra põe a informação e o botão na mesma linha: "de quando é esta cópia"
+   e "trazer de novo" são a mesma decisão, e separá-los faria a pessoa apertar
+   sem saber se precisava.
+   --------------------------------------------------------------------------- */
+.barra-cadastro {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+}
+.barra-cadastro > div { flex: 1 1 320px; min-width: 0; }
+
+/* O nome que leva ao card do Pipefy. Sublinhado pontilhado em vez de sólido:
+   marca que é link sem fazer a lista de nomes virar um mural de azul. */
+.link-pipefy {
+  color: var(--azul); text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.link-pipefy:hover { text-decoration: underline solid; }
+/* A setinha do "abre em outra aba" é enfeite: menor e mais clara que o nome,
+   para não competir com ele na leitura. */
+.link-pipefy span { font-size: .85em; opacity: .65; }

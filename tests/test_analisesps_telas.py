@@ -4730,3 +4730,327 @@ def test_apagar_uma_regra_recomenda_DESATIVAR_antes():
     assert "DESATIVAR" in trecho
     assert "não tem volta" in trecho
     assert trecho.index("confirm(") < trecho.index("folha_rateio_apagar")
+
+
+# ---------------------------------------------------------------------------
+# O CADASTRO DE COLABORADORES — 27/09/2026
+#
+# Pedido do dono, com as palavras dele: *"Além de ter acesso fácil ao pipe, ao
+# card, o link (…) o nome do colaborador já redireciona, alguma coisa que clica
+# e direcione"* e *"eu preciso poder atualizar (…) um botão fácil para poder
+# atualizar imediatamente os dados, puxar os dados dessa planilha"*.
+#
+# Os dois pedidos são de TELA, e tela sem teste quebra calada.
+# ---------------------------------------------------------------------------
+def _cadastro_pronto(quando="2026-09-27T14:35:00", pessoas=3480, avisos=None):
+    return {"quando": quando, "pessoas": pessoas,
+            "avisos": avisos or [], "pronto": True}
+
+
+def test_a_tela_de_colaboradores_leva_ao_card_do_pipefy(app, monkeypatch):
+    """O nome tem de ser um LINK para o card. É lá que se corrige o valor do
+    auxílio — o caminho até lá é o pedido."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [{
+        "cpf": "99713349334", "nome": "GERLANIO GOMES LIMA",
+        "card_pipefy": "778899", "cargo": "ENCARREGADO",
+        "tipo_contrato": "CLT (tempo Indeterminado)", "tipo": "",
+        "fase": "Colaboradores Ativos", "matricula": "", "celular": "",
+        "convencao": "", "obra_cadastro": "",
+        "valor_alimentacao": Decimal("330.00"), "modo_alimentacao": "Segunda à Sexta",
+        "valor_transporte": Decimal("180.50"), "modo_transporte": "Mensal",
+        "valor_gratificacao": None, "parcela_unica": "", "paga_por_beevale": "Sim",
+        "aviso_previo": None, "ultimo_dia": None, "data_saida": None,
+        "link_pipefy": "https://app.pipefy.com/open-cards/778899",
+        "desligado": False}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    assert "GERLANIO GOMES LIMA" in html
+    assert 'href="https://app.pipefy.com/open-cards/778899"' in html, \
+        "o nome tem de levar ao card do Pipefy"
+    assert 'target="_blank"' in html, "abrir noutra aba: a tela não se perde"
+    assert 'rel="noopener"' in html, "link para fora leva noopener"
+    # Os três valores que ele disse que mais mudam aparecem na tela.
+    assert "330,00" in html
+    assert "180,50" in html
+    assert "Segunda à Sexta" in html
+
+
+def test_valor_em_branco_aparece_como_TRACO_e_nao_como_zero(app, monkeypatch):
+    """"O cadastro não diz" e "o cadastro diz R$ 0,00" são respostas
+    diferentes. Mostrar zero para o que está em branco esconderia o
+    preenchimento faltando."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [{
+        c: "" for c in col.CAMPOS} | {
+        "cpf": "99713349334", "nome": "SEM AUXILIO",
+        "valor_alimentacao": None, "valor_transporte": None,
+        "valor_gratificacao": None, "data_saida": None,
+        "aviso_previo": None, "ultimo_dia": None,
+        "link_pipefy": "", "desligado": False}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+    assert "SEM AUXILIO" in html
+    assert "0,00" not in html, "valor não preenchido não pode virar zero na tela"
+    assert "—" in html
+    # Sem número de card, a tela diz por quê em vez de oferecer um link morto.
+    assert "sem card" in html
+
+
+def test_a_tela_de_colaboradores_mostra_DE_QUANDO_e_a_copia(app, monkeypatch):
+    """Botão sem essa informação é caixa preta. O cadastro vem do Pipefy por
+    automação: quem corrigiu um auxílio precisa saber se esta cópia é de antes
+    ou de depois da correção."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    assert "27/09" in html
+    assert "14:35" in html
+    assert "3480" in html
+    assert 'id="btn-atualizar-cadastro"' in html
+
+
+def test_o_aviso_de_coluna_que_faltou_aparece_na_TELA(app, monkeypatch):
+    """⚠️ Campo de auxílio em branco vira pagamento a MENOS, e pagamento a menos
+    ninguém nota tão rápido quanto um a mais. O aviso não pode ficar no log do
+    serviço, que ele não tem como ler."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(
+        col, "quando_atualizou",
+        lambda: _cadastro_pronto(avisos=['não achei a coluna de "Valor Auxílio '
+                                         'Alimentação"']))
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+    assert "não achei a coluna" in html
+
+
+def test_sem_a_migracao_a_tela_de_colaboradores_AVISA_e_nao_estoura(app, monkeypatch):
+    """O código sobe para o Render antes do botão ser apertado."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", lambda: {
+        "quando": "", "pessoas": 0, "avisos": [], "pronto": False})
+    resposta = _como_mestre(app).get("/analisesps/folha/colaboradores")
+
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Aplicar atualizações do banco" in html
+    assert 'id="btn-atualizar-cadastro"' not in html
+
+
+def test_o_cadastro_fora_do_ar_nao_derruba_a_tela(app, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+
+    def explode():
+        raise RuntimeError("banco fora")
+
+    monkeypatch.setattr(col, "quando_atualizou", explode)
+    resposta = _como_mestre(app).get("/analisesps/folha/colaboradores")
+    assert resposta.status_code == 200
+    assert "banco fora" in resposta.get_data(as_text=True)
+
+
+def test_busca_sem_resultado_MANTEM_o_cabecalho_e_diz_o_que_fazer(app, monkeypatch):
+    """A armadilha que a conciliação tinha até 26/09/2026: o "não há nada"
+    engolia a tabela inteira, cabeçalho incluído — e o filtro mora no
+    cabeçalho. Filtro que não pode ser desfeito de onde foi feito é armadilha."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores?q=zzzz").get_data(as_text=True)
+
+    assert "<thead>" in html, "o cabeçalho da tabela tem de continuar"
+    assert 'name="q"' in html, "a caixa de busca tem de continuar na tela"
+    assert "zzzz" in html
+    assert "mostrar quem saiu" in html
+
+
+def test_quem_saiu_so_aparece_quando_se_pede(app, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+    pedidos = {}
+
+    def falso_buscar(texto="", so_ativos=True, teto=200):
+        pedidos["so_ativos"] = so_ativos
+        return []
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", falso_buscar)
+    cliente = _como_mestre(app)
+
+    cliente.get("/analisesps/folha/colaboradores")
+    assert pedidos["so_ativos"] is True, "por padrão, só quem está na casa"
+
+    cliente.get("/analisesps/folha/colaboradores?desligados=1")
+    assert pedidos["so_ativos"] is False
+
+
+def test_a_tela_de_colaboradores_NAO_TEM_como_editar(app, monkeypatch):
+    """Se editasse, a próxima atualização apagaria a edição — o dado nasce no
+    Pipefy. Tela que deixa escrever o que vai ser sobrescrito é armadilha."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    # Só o formulário de busca (method="get"). Nenhum POST nesta tela.
+    assert 'method="post"' not in html.lower()
+
+
+def test_o_cadastro_entra_na_tela_de_RATEIO_com_o_link(app, monkeypatch):
+    """A outra ponta do mesmo pedido: onde as pessoas já apareciam, o nome
+    passa a levar ao card."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import (colaboradores as col, folha_rateio as fr,
+                                     sincronizacao)
+
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [{
+        "id": 7, "nome": "Supervisores", "ativa": True, "observacao": "",
+        "criado_por": "", "alterado_em": None, "alterado_por": "",
+        "pessoas": [{"cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+                     "nome": "digitado na mão"}],
+        "obras": [{"obra": "CREPEAREIAS", "percentual": Decimal("100"),
+                   "resto": False}]}])
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "muitos_por_cpf", lambda cpfs: {
+        "99713349334": {"nome": "GERLANIO GOMES LIMA",
+                        "link_pipefy": "https://app.pipefy.com/open-cards/778899",
+                        "desligado": False}})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/rateio").get_data(as_text=True)
+
+    assert 'href="https://app.pipefy.com/open-cards/778899"' in html
+    # O NOME DO CADASTRO GANHA do digitado na mão: é o que a folha e o ponto
+    # usam, e é como a pessoa é conhecida nos outros sistemas.
+    assert "GERLANIO GOMES LIMA" in html
+    assert 'id="btn-atualizar-cadastro"' in html
+
+
+def test_cpf_que_NAO_esta_no_cadastro_e_marcado_na_tela_de_rateio(app, monkeypatch):
+    """Uma regra de rateio com CPF errado rateia o salário de ninguém — e o erro
+    fica invisível até a folha não fechar. A marca é o que o mostra."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import (colaboradores as col, folha_rateio as fr,
+                                     sincronizacao)
+
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [{
+        "id": 7, "nome": "Supervisores", "ativa": True, "observacao": "",
+        "criado_por": "", "alterado_em": None, "alterado_por": "",
+        "pessoas": [{"cpf": "00000000000", "cpf_bonito": "000.000.000-00",
+                     "nome": "NINGUÉM"}],
+        "obras": [{"obra": "X", "percentual": Decimal("100"), "resto": False}]}])
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "muitos_por_cpf", lambda cpfs: {})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/rateio").get_data(as_text=True)
+    assert "fora do cadastro" in html
+
+
+def test_o_cadastro_fora_do_ar_nao_derruba_a_tela_de_rateio(app, monkeypatch):
+    from decimal import Decimal
+
+    from app.apps.analisesps import (colaboradores as col, folha_rateio as fr,
+                                     sincronizacao)
+
+    def explode():
+        raise RuntimeError("banco fora")
+
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [{
+        "id": 7, "nome": "Supervisores", "ativa": True, "observacao": "",
+        "criado_por": "", "alterado_em": None, "alterado_por": "",
+        "pessoas": [{"cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+                     "nome": "GERLANIO"}],
+        "obras": [{"obra": "X", "percentual": Decimal("100"), "resto": False}]}])
+    monkeypatch.setattr(col, "quando_atualizou", explode)
+
+    resposta = _como_mestre(app).get("/analisesps/folha/rateio")
+    assert resposta.status_code == 200
+    assert "GERLANIO" in resposta.get_data(as_text=True)
+
+
+def test_o_botao_de_atualizar_o_cadastro_dispara_o_modo_certo(app):
+    """O botão manda `modo: "colaboradores"` para a rota de sincronizar. Se o
+    nome do modo mudasse num lugar só, o botão passaria a não fazer nada — e o
+    dono já viu isso acontecer com dois botões mortos (25/09/2026)."""
+    from app.apps.analisesps import tarefas
+
+    caminho = __import__("pathlib").Path(
+        __import__("app.apps.analisesps.web", fromlist=["web"]).__file__).parent
+    for nome in ("analisesps_colaboradores.html", "analisesps_folha_rateio.html"):
+        html = (caminho / "templates" / nome).read_text(encoding="utf-8")
+        assert 'modo: "colaboradores"' in html, f"{nome} não dispara o modo"
+        assert "analisesps.sincronizar" in html
+
+    # E o modo existe de verdade, com etapa própria e botão em Configurações.
+    assert "colaboradores" in tarefas.MODOS
+    assert "colaboradores" in tarefas.MODOS_DA_BASE
+    assert tarefas.ETAPAS["colaboradores"] == ["colaboradores"]
+
+
+def test_a_tela_de_colaboradores_esta_no_menu_e_classificada(app):
+    """Rota sem classificação é rota fechada — de propósito. Uma tela nova que
+    ninguém classificou não abre para ninguém."""
+    from app.apps.analisesps import auth as guarda, web
+
+    chaves = [c for c, _, _ in web.TELAS]
+    assert "colaboradores" in chaves
+    assert web.TELAS[chaves.index("colaboradores")][2] == \
+        "analisesps.tela_colaboradores"
+    assert guarda.telas_da_rota("analisesps.tela_colaboradores") == \
+        ("colaboradores",)
+    # ⚠️ NÃO é só do mestre: é LEITURA, e quem opera a folha precisa conferir o
+    # auxílio de alguém e chegar ao card. O RATEIO, que decide para qual obra vai
+    # o salário, continua só do mestre.
+    assert "colaboradores" not in guarda.SO_DO_MESTRE_POR_TELA
+    assert "analisesps.tela_colaboradores" not in guarda.SO_DO_MESTRE
+
+
+def test_o_recado_do_cadastro_NAO_diz_SPs(app):
+    """⚠️ DEFEITO PEGO NA REVISÃO, 27/09/2026. A mensagem final da execução tem
+    dois caminhos: os modos que trazem SPs dizem "N SPs em M min", e os outros
+    dizem o recado próprio. Sem entrar na segunda lista, atualizar o cadastro
+    terminaria anunciando "3.480 SPs" — que não são SPs, são pessoas.
+
+    Número com o nome errado é pior que número nenhum: parece certo."""
+    import inspect
+
+    from app.apps.analisesps import tarefas
+
+    fonte = inspect.getsource(tarefas.executar_trabalho)
+    # A linha que escolhe o caminho da mensagem tem de citar o modo.
+    trecho = fonte[fonte.index('if modo in ("apoios"'):]
+    trecho = trecho[:trecho.index("):") + 2]
+    assert '"colaboradores"' in trecho, (
+        "o modo do cadastro não está na lista dos que têm recado próprio — a "
+        "tela vai dizer 'N SPs' depois de atualizar o cadastro")

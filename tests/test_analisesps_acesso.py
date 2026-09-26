@@ -111,6 +111,10 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/conciliacao/soltar-presas"),
     ("POST", "/analisesps/api/conciliacao/apagar-linha"),
     ("GET",  "/analisesps/folha/rateio"),
+    # O CADASTRO mostra nome, CPF e o valor dos auxílios de ~3.500 pessoas. É
+    # dado pessoal em volume: esta linha é o que garante que a tela não fique
+    # aberta sem querer.
+    ("GET",  "/analisesps/folha/colaboradores"),
     ("POST", "/analisesps/api/folha/rateio"),
     ("POST", "/analisesps/api/folha/rateio/apagar"),
     ("POST", "/analisesps/api/folha/rateio/simular"),

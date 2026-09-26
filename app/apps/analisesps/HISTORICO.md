@@ -8185,11 +8185,12 @@ retrabalho garantido. Falta:
 
 #### Pendente AGORA nesta área
 
-1. **Migrações 019 a 027 não aplicadas** — o botão "Aplicar atualizações do
+1. **Migrações 019 a 028 não aplicadas** — o botão "Aplicar atualizações do
    banco" precisa ser apertado no mesmo momento em que este ramo for juntado.
+   (A 028 é a do cadastro de colaboradores, da leva seguinte.)
 2. **Dependência nova: `xlrd`** (ler o `.xls` antigo da Fortes). Está no
    `requirements.txt` com o motivo escrito.
-3. **Nada foi para a `main`** desde `bf958d9`. Este ramo tem 12 commits
+3. **Nada foi para a `main`** desde `bf958d9`. Este ramo tem 14 commits
    esperando o "pode" dele.
 4. **`MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY`** ainda não existem no
    Render.
@@ -8198,6 +8199,115 @@ retrabalho garantido. Falta:
 6. **Renomear "Análise de SPs" para "Análise de Pagamentos"** foi levantado por
    ele e não decidido. Minha recomendação: trocar só o que a pessoa lê na tela;
    **não** mexer em pasta, esquema de banco nem variável de ambiente.
+
+---
+
+### Centésima quinta leva (27/09) — o cadastro vem do Pipefy, e o nome leva ao card
+
+Duas coisas pedidas no mesmo recado, e as duas são a mesma ideia: **o cadastro
+de colaboradores não nasce aqui.**
+
+> *"A planilha de cadastros dos colaboradores, tudo vem do Pipefy, por isso que
+> é importante esse direcionamento para o cadastro do colaborador, porque às
+> vezes é preciso fazer a alteração do auxílio de alimentação, do valor de um
+> auxílio de transporte, ou um valor da gratificação. (…) o nome do colaborador
+> já redireciona, alguma coisa que clica e direcione. (…) eu preciso poder
+> atualizar as informações que estão na análise SP que espelham o que está na
+> planilha (…) um botão fácil para poder atualizar imediatamente os dados."*
+
+#### O caminho do dado, e por que a tela não deixa editar
+
+```
+Pipefy (o card da pessoa)  →  automação dele  →  planilha "Registro de
+Colaboradores", aba "Dados Documentos"  →  botão "Atualizar cadastro"  →  banco
+```
+
+**Nada é digitado no sistema, de propósito.** Uma tela que deixasse corrigir o
+valor do auxílio aqui teria a correção apagada na atualização seguinte — e
+ninguém descobriria por quê. Então o que existe é o contrário: **o nome da
+pessoa é um link para o card dela no Pipefy**, que é onde se corrige. Corrige
+lá, aperta o botão aqui.
+
+Isso vale nos dois lugares onde pessoa aparece: na tela nova de
+**Colaboradores** e na de **Rateio da Folha**.
+
+#### Só 30 das 78 colunas — e não fui eu quem escolheu
+
+A própria planilha respondeu. Ela tem uma aba oculta (`CadastroColaboradores`)
+que é quem alimenta as folhas de alimentação, transporte, GM e diaristas, e ela
+importa exatamente 30 colunas da aba `Dados Documentos`. Lido das fórmulas.
+
+Duas razões para não trazer as outras 48, e a segunda importa mais:
+
+1. **Custo.** Cada botão apertado leria mais que o dobro de células.
+2. **Dado pessoal que não serve para nada aqui.** Endereço, nome da mãe, RG,
+   PIS e salário ficam na planilha. **O que este módulo não busca não pode vazar
+   por ele.**
+
+Para conseguir as duas coisas, a leitura pede **faixas de coluna**, não de A até
+a última — e tem teste que falha se alguém trocar isso por uma faixa só.
+
+#### A armadilha que quase entrou, e o teste que a pega
+
+O Sheets **corta o fim vazio de cada faixa**: uma faixa cujas últimas linhas
+estão em branco volta mais curta que as outras. Juntar as faixas por posição sem
+repor essas linhas faz o dado de uma pessoa encostar na linha de outra — **o
+auxílio de uma pessoa vai para o CPF de outra**, em silêncio.
+
+É o defeito mais caro que este módulo pode ter, e é por isso que existe um teste
+só para ele. Conferido com mutação: trocando a reposição por "repete a última
+linha", o teste fica vermelho apontando exatamente o valor que vazou de uma
+pessoa para a seguinte.
+
+#### A linha 2 da planilha não é gente
+
+A aba tem o cabeçalho na linha 1 e, na **linha 2**, o número de cada coluna
+(1, 2, 3…) — serve a uma fórmula com `INDIRECT` da aba `Dados Gerais`. Lida
+como dado, criaria um colaborador chamado "2", com CPF "1", e ele entraria nas
+listas de pagamento. Os dados começam na **linha 3**, que é o que a própria
+planilha faz nas abas que consultam esta.
+
+#### ⚠️ O que ainda NÃO está confirmado: o nome das colunas de auxílio
+
+De todas as colunas, as **cinco dos auxílios** (valor e modalidade de
+alimentação, valor e modalidade de transporte, e a marcação BeeVale) são as
+únicas cujo TÍTULO eu não tenho. As fórmulas provam que elas existem e o que
+fazem, mas elas chegam na aba oculta por `IMPORTRANGE` de uma faixa
+(`Col65`…`Col70`), sem nome.
+
+Então o módulo tenta os nomes mais prováveis e, **quando não acha, avisa na
+tela** com o cabeçalho de verdade e pede o nome exato. Não grava em branco
+calado: **campo de auxílio em branco vira pagamento a MENOS, e pagamento a
+menos ninguém nota tão rápido quanto um a mais.**
+
+#### O que ficou pronto
+
+| Onde | O que |
+|---|---|
+| `migracoes/028_colaboradores.sql` | a tabela do espelho, com dinheiro em `NUMERIC` |
+| `colaboradores.py` | a leitura por faixas, a busca, e o link do card |
+| tela **Colaboradores** (nova) | procura por nome ou CPF, mostra os três valores, leva ao card |
+| tela **Rateio da Folha** | o nome virou link; marca quem está "fora do cadastro" e quem saiu |
+| modo `colaboradores` em `tarefas.py` | o botão, rodando no processo separado |
+
+**A tela de Colaboradores NÃO é só do mestre**, e isso foi decisão: é leitura, e
+quem opera a folha precisa conferir o auxílio de alguém e chegar ao card. O
+**Rateio**, que decide para qual obra vai o salário, continua só do mestre.
+
+**Verificado:** 38 testes sem banco (incluindo o do alinhamento, com mutação),
+23 com banco de verdade (o `ON CONFLICT` que atualiza em vez de duplicar, o
+`NUMERIC` do centavo, o filtro de quem saiu, a carga inteira com a planilha
+dublada) e 15 de tela. A rede de segurança do inventário de rotas pegou a tela
+nova antes de mim — ela recusou a publicação até a rota entrar na lista de quem
+exige login.
+
+**NÃO verificado:** nada num navegador, e **nada contra a planilha de verdade**
+— a aba foi dublada. Os nomes das colunas de auxílio são a parte que só o
+primeiro clique no botão vai confirmar.
+
+**Variável de ambiente nova, com padrão:** `ANALISESPS_SHEET_COLABORADORES`. Já
+vem com o endereço da planilha atual, então não precisa ser criada no Render —
+existe só para o dia em que a planilha mudar de lugar.
 
 ---
 

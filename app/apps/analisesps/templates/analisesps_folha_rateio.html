@@ -26,6 +26,44 @@
   <span id="recado-rateio" class="cartao-dica" style="margin:0"></span>
 </div>
 
+{# ------------------------------------------------------------------------
+   O CADASTRO DE COLABORADORES — o botão que o dono pediu em 27/09/2026.
+
+   Por que a HORA fica do lado do botão, e não escondida: o cadastro vem do
+   Pipefy por uma automação, e quem acabou de corrigir um auxílio no card
+   precisa saber se esta cópia é de antes ou de depois da correção. Botão sem
+   essa informação é caixa preta — e já houve um que dizia "concluída" sem ter
+   feito nada (10/09/2026).
+   ------------------------------------------------------------------------ #}
+<div class="cartao barra-cadastro">
+  <div>
+    <b>Cadastro de colaboradores</b>
+    {% if cadastro and cadastro.quando %}
+      <span class="cartao-dica">{{ cadastro.pessoas }} pessoa(s), trazidas em
+        {{ cadastro.quando[8:10] }}/{{ cadastro.quando[5:7] }} às
+        {{ cadastro.quando[11:16] }}</span>
+    {% elif cadastro and cadastro.pronto %}
+      <span class="cartao-dica">ainda não foi trazido nenhuma vez.</span>
+    {% else %}
+      <span class="cartao-dica">a atualização do banco ainda não foi aplicada —
+        aperte "Aplicar atualizações do banco" em Configurações.</span>
+    {% endif %}
+    <p class="cartao-dica" style="margin:.3rem 0 0">
+      O valor do auxílio alimentação, do transporte e da gratificação se corrige
+      <b>no card do Pipefy</b> — clique no nome da pessoa para abrir. Depois de
+      corrigir lá, aperte o botão ao lado para trazer para cá.
+    </p>
+    {% if cadastro and cadastro.avisos %}
+      <div class="aviso atencao">⚠️ {{ cadastro.avisos|join('; ') }}</div>
+    {% endif %}
+  </div>
+  {% if pode_operar %}
+    <button class="btn secundario" id="btn-atualizar-cadastro"
+            {% if not (cadastro and cadastro.pronto) %}disabled{% endif %}
+            >Atualizar cadastro</button>
+  {% endif %}
+</div>
+
 {% if not regras %}
   <p class="cartao-dica">Nenhuma regra ainda. Quem não tiver regra continua sendo
     apropriado pelo ponto, como sempre.</p>
@@ -54,7 +92,28 @@
         <label class="rotulo-campo">Quem ({{ r.pessoas|length }})</label>
         <ul class="lista-seca">
           {% for p in r.pessoas %}
-            <li>{{ p.nome or '—' }} <span class="cartao-dica">{{ p.cpf_bonito }}</span></li>
+            {# O NOME LEVA AO CARD DO PIPEFY quando a pessoa está no cadastro.
+               Pedido do dono em 27/09/2026: é no card que se corrige o auxílio
+               e a gratificação, então o caminho até lá tem de ser um clique.
+               Sem cadastro carregado, o nome fica texto — a tela não quebra. #}
+            <li>
+              {% if p.link_pipefy %}
+                <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
+                   class="link-pipefy"
+                   title="Abrir o card desta pessoa no Pipefy (nova aba)"
+                   >{{ p.nome_cadastro or p.nome or '—' }} <span aria-hidden="true">↗</span></a>
+              {% else %}
+                {{ p.nome_cadastro or p.nome or '—' }}
+              {% endif %}
+              <span class="cartao-dica">{{ p.cpf_bonito }}</span>
+              {% if p.desligado %}
+                <span class="selo cancelado"
+                      title="O cadastro tem data de saída para esta pessoa">desligado</span>
+              {% elif cadastro and cadastro.pronto and not p.no_cadastro %}
+                <span class="selo no-lote-de-outro"
+                      title="Este CPF não está no cadastro de colaboradores. Confira o CPF, ou atualize o cadastro.">fora do cadastro</span>
+              {% endif %}
+            </li>
           {% endfor %}
         </ul>
       </div>
@@ -286,6 +345,49 @@ document.querySelectorAll(".apagar-regra").forEach(b =>
     if (!d.ok) { b.disabled = false; recado(d.erro, "erro"); return; }
     location.reload();
   }));
+
+// --- atualizar o cadastro de colaboradores ---------------------------------
+// ⚠️ O BOTÃO NÃO PODE SER CAIXA PRETA. A leitura roda no processo separado e
+// leva alguns segundos; sem acompanhar, quem aperta não sabe se começou — e o
+// hábito de apertar de novo (e de novo) é o que faz concluir que o sistema
+// está quebrado. Então: desabilita, conta que está rodando, e recarrega a tela
+// quando termina, para a hora e a contagem aparecerem atualizadas.
+const btnCadastro = document.getElementById("btn-atualizar-cadastro");
+if (btnCadastro) btnCadastro.addEventListener("click", async () => {
+  btnCadastro.disabled = true;
+  const antes = btnCadastro.textContent;
+  btnCadastro.textContent = "trazendo…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.sincronizar') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "Accept": "application/json"},
+      body: JSON.stringify({modo: "colaboradores"})
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      recado(d.erro || "não deu para começar.", "erro");
+      btnCadastro.disabled = false; btnCadastro.textContent = antes; return;
+    }
+    recado("trazendo o cadastro… pode esperar aqui.");
+    // Pergunta ao servidor de quatro em quatro segundos. O andamento vem do
+    // BANCO, então continua certo mesmo se o serviço reiniciar no meio.
+    const relogio = setInterval(async () => {
+      try {
+        const a = await fetch("{{ url_for('analisesps.andamento') }}");
+        const e = await a.json();
+        if (e.rodando) {
+          btnCadastro.textContent = (e.progresso || e.etapa || "trazendo…");
+        } else {
+          clearInterval(relogio);
+          location.reload();
+        }
+      } catch (err) { /* rede oscilou: a próxima volta resolve */ }
+    }, 4000);
+  } catch (e) {
+    recado("falhou: " + e, "erro");
+    btnCadastro.disabled = false; btnCadastro.textContent = antes;
+  }
+});
 </script>
 {% endif %}
 {% endblock %}

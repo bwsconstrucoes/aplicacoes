@@ -54,6 +54,10 @@ MODOS = {
     "apoios": "Só as planilhas de apoio (contas e documentação fiscal)",
     "fila": "Só devolver para a planilha as alterações pendentes",
     "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
+    # O cadastro vem do Pipefy pela planilha "Registro de Colaboradores". Este
+    # é o botão que o dono pediu em 27/09/2026 para puxar uma alteração de
+    # auxílio ou de gratificação "imediatamente", sem esperar nada.
+    "colaboradores": "Atualizar o cadastro de colaboradores (traz da planilha)",
     "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
     "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
     "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
@@ -75,7 +79,7 @@ MODOS = {
 # criasse um modo novo ganhava um botão lá sem querer. Agora a divisão é
 # explícita, e um modo novo só aparece onde alguém escreveu que ele aparece.
 MODOS_DA_BASE = ["sincronizar", "carga_inicial", "apoios", "fila",
-                 "comprovantes"]
+                 "comprovantes", "colaboradores"]
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
@@ -85,6 +89,7 @@ ETAPAS = {
     "apoios": ["apoios"],
     "fila": ["fila"],
     "comprovantes": ["comprovantes"],
+    "colaboradores": ["colaboradores"],
     "fiscal": ["fiscal"],
     "fiscal_ia": ["fiscal_ia"],
     "notas_receita": ["notas_receita"],
@@ -447,6 +452,28 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + ". O XML de cada uma chega na PRÓXIMA busca na Receita, "
                       "e é guardado no Drive.")
 
+            elif etapa == "colaboradores":
+                # NO PROCESSO SEPARADO como toda leitura de planilha grande:
+                # são ~3.500 linhas em faixas de coluna, várias idas ao Sheets.
+                # Dentro do worker isso seguraria uma das quatro threads do
+                # gunicorn — e o gunicorn recicla o processo a cada 1000
+                # requisições, o que mataria a leitura no meio.
+                mudar_etapa("trazendo o cadastro de colaboradores")
+                from . import colaboradores as _colaboradores
+                c = _colaboradores.atualizar(anotar)
+                total_linhas[0] = c.get("pessoas", 0)
+                # ⚠️ OS AVISOS ENTRAM NO RECADO, e é o ponto todo: se uma
+                # coluna de auxílio não foi encontrada, o campo fica em branco
+                # e o pagamento sai a menos. Pagamento a menos ninguém nota tão
+                # rápido quanto a mais — então isto tem de estar na cara de
+                # quem apertou o botão, não no log do serviço.
+                recado_apoios[0] = (
+                    f"{c.get('pessoas', 0)} pessoa(s) no cadastro"
+                    + (f", {c['ignoradas']} linha(s) sem CPF válido"
+                       if c.get("ignoradas") else "")
+                    + (" — ATENÇÃO: " + "; ".join(c["avisos"])
+                       if c.get("avisos") else ""))
+
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
                     logger.info("Análise de SPs: planilhas de apoio ainda "
@@ -516,8 +543,12 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
+        # ⚠️ "colaboradores" ENTROU NESTA LISTA em 27/09/2026, e por pouco não
+        # entrou: sem ele, a tela terminaria dizendo "3.480 SPs em 0,2 min."
+        # depois de atualizar o CADASTRO. Não são SPs, são pessoas — e número
+        # com o nome errado é pior que número nenhum, porque parece certo.
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
-                    "notas_receita", "notas_ciencia"):
+                    "notas_receita", "notas_ciencia", "colaboradores"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]

@@ -417,6 +417,11 @@ TELA_DA_ROTA = {
     "analisesps.auditoria": ("auditoria",),
     "analisesps.exportar_auditoria": ("auditoria",),
     "analisesps.ratear": ("ratear",),
+    # O CADASTRO É LEITURA, e por isso não é só do mestre: quem opera a folha
+    # precisa conferir o valor do auxílio de alguém e chegar ao card. A tela não
+    # escreve nada — o dado nasce no Pipefy. O RATEIO, que decide para qual obra
+    # vai o salário, continua só do mestre.
+    "analisesps.tela_colaboradores": ("colaboradores",),
     "analisesps.tela_bradesco": ("bradesco",),
     "analisesps.log": ("log",),
 }
