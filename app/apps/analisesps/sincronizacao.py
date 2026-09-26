@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
+import re
 
 from . import colunas, formatos
 from .credenciais import cliente, com_retry
@@ -70,36 +71,69 @@ def achar_coluna(cabecalho_normalizado, aceitos):
 # Os nomes que a coluna do centro de custo e a da conta podem ter na aba
 # "C. Diários". O primeiro de cada lista é o que a planilha usa hoje.
 COLUNAS_CODIGO_DIARIOS = ["Centro de Custo", "Código Primário", "Obra"]
-COLUNAS_CONTA_DIARIOS = ["Conta", "Conta Corrente", "Conta de Pagamento",
+# "Conta de Pagamento" é o nome que a aba do "Registro de SPs" usa — confirmado
+# pelas fórmulas exportadas em 26/09/2026. Os outros ficam por segurança.
+COLUNAS_CONTA_DIARIOS = ["Conta de Pagamento", "Conta", "Conta Corrente",
                          "Conta Pagamento"]
 
 
+# A conta dentro do texto da "Conta de Pagamento".
+#
+# ⚠️ A COLUNA NÃO GUARDA A CONTA, GUARDA UM TEXTO COM A CONTA DENTRO. Descoberto
+# em 26/09/2026, lendo as fórmulas que o dono exportou: a coluna vem por
+# IMPORTRANGE da coluna AH da aba "C. Diários" da planilha "Bases de Dados
+# Pipefy", e aquele campo é um texto do Pipefy com a conta entre barras verticais:
+#
+#     BRADESCO ... | 0007011-4 | ...
+#
+# A planilha da folha extrai com este mesmo padrão (`REGEXEXTRACT` na coluna G da
+# aba C. Diários), e a aba SPsBD faz igual na coluna U. Ou seja: o zero à esquerda
+# sai, e o que vale é `7011-4`.
+#
+# Guardar o texto cru — que é o que estava sendo guardado — faz a conta não casar
+# com nada: nem com a conta da conciliação, nem com o que o OMIE conhece.
+CONTA_NO_TEXTO = re.compile(r"\|\s*0*(\d+-[0-9A-Za-z])\s*\|")
+
+
+def conta_do_texto(bruto) -> str:
+    """A conta de pagamento de dentro do texto. "" quando não há.
+
+    Aceita também o texto já limpo (`7011-4`), porque a coluna pode ser arrumada
+    na planilha um dia e aí a carga não pode parar de funcionar."""
+    texto = " ".join(str(bruto or "").split())
+    if not texto:
+        return ""
+    achado = CONTA_NO_TEXTO.search(texto)
+    if achado:
+        return achado.group(1)
+    # Já vem limpo? Aceita. Qualquer outra coisa não é conta.
+    limpo = re.fullmatch(r"0*(\d+-[0-9A-Za-z])", texto)
+    return limpo.group(1) if limpo else ""
+
+
 def _contas_da_aba(valores) -> tuple[list, str | None]:
-    """O de/para centro de custo → conta de pagamento, lido PELO NOME da coluna.
+    """O de/para centro de custo → conta de pagamento, da aba "C. Diários".
 
-    ⚠️ ISTO LIA PELA POSIÇÃO, E LIA A COLUNA ERRADA — achado em 26/09/2026,
-    quando o dono pediu para conferir de onde sai a conta corrente de cada obra.
+    ⚠️ CORREÇÃO DE UM ALARME FALSO MEU — 26/09/2026, e fica escrito porque eu
+    cheguei a dizer ao dono que a carga lia a coluna errada. **Não lia.**
 
-    A leitura antiga era `v[0]` e `v[1]`: a primeira coluna como código e a
-    SEGUNDA como conta. Mas o cabeçalho da aba é
+    Eu tinha lido o cabeçalho de uma CÓPIA da planilha da folha, onde a segunda
+    coluna é o ID do Pipefy, e concluí que a nossa carga (que lia `v[0]` e `v[1]`)
+    pegava o ID em vez da conta. Mas a aba que a nossa carga lê é a do "Registro
+    de SPs", e ela tem quatro colunas só:
 
-        Centro de Custo | ID | Código Primário | Centro de Custo |
-        Código Centro de Custo Pipefy | Código Omie (Código Primário) | Conta
+        A Código Primário | B Conta de Pagamento | C Projeto | D Código Omie
 
-    ou seja, a segunda coluna é o **ID do registro no Pipefy** (um número tipo
-    594904559), e a conta (`7011-4`) está no fim. A tabela
-    `analisesps.contas_diarios` vinha sendo preenchida com o ID desde a estreia.
+    Ou seja, a posição estava certa. Procurar pelo NOME continua sendo melhor
+    (coluna que muda de lugar deixa de quebrar a carga, e coluna que falta volta
+    com o motivo escrito), mas não conserta defeito nenhum — e dizer que consertava
+    era errado.
 
-    **NINGUÉM PERCEBEU PORQUE NENHUMA TELA LIA ESSA TABELA.** Ela era carregada
-    toda noite e nunca consultada — o defeito só ia aparecer no dia em que a
-    folha de pagamento fosse usá-la para decidir de qual conta o dinheiro sai.
-    É o tipo de erro que só existe enquanto ninguém usa o dado; no primeiro uso,
-    ele paga 500 pessoas da conta errada.
-
-    Agora procura PELO NOME, que é o que o resto deste arquivo já fazia (ver
-    `achar_coluna`) e o que o script do dono acertava. Coluna que muda de lugar
-    deixa de quebrar a carga; coluna que não existe volta com o motivo escrito,
-    e não em silêncio."""
+    ⚠️ O DEFEITO DE VERDADE É OUTRO, E ESTAVA NA MESMA COLUNA: ela não guarda a
+    conta, guarda um TEXTO com a conta dentro (ver `conta_do_texto`). A tabela
+    `analisesps.contas_diarios` vinha guardando o texto cru, que não casa com
+    nada — nem com a conta da conciliação, nem com o que o OMIE conhece. Isso sim
+    ia aparecer no primeiro uso, que seria a folha de pagamento."""
     if not valores:
         return [], 'a aba "C. Diários" está vazia.'
     cabecalho = [str(x).strip() for x in valores[0]]
@@ -121,9 +155,9 @@ def _contas_da_aba(valores) -> tuple[list, str | None]:
     saida = []
     for linha in valores[1:]:
         codigo = str(linha[i_codigo]).strip() if i_codigo < len(linha) else ""
-        conta = str(linha[i_conta]).strip() if i_conta < len(linha) else ""
+        bruto = str(linha[i_conta]).strip() if i_conta < len(linha) else ""
         if codigo:
-            saida.append((codigo, conta))
+            saida.append((codigo, conta_do_texto(bruto)))
     if not saida:
         return [], ('a aba "C. Diários" tem as colunas certas, mas nenhuma '
                     "linha com centro de custo preenchido.")

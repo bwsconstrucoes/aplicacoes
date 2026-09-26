@@ -446,38 +446,46 @@ da planilha `Registro de SPs`, e o Análise de SPs **já a carrega toda noite**:
 | `C. Diários` col. A (`Código Primário`) → col. B | centro de custo → **conta de pagamento** | `analisesps.contas_diarios` |
 | `C. Diários` (`Código Primário`/`Obra`) → (`Código Omie`) | obra → **código do departamento no OMIE** | `analisesps.referencias_rateio`, tipo `obra` |
 
-#### ⚠️ E ELA ESTAVA SENDO CARREGADA ERRADA — achado em 26/09/2026
+#### ⚠️ CORREÇÃO DE UM ALARME FALSO MEU — 27/09/2026
 
-O cabeçalho da aba `C. Diários` é:
+Eu disse ao dono, em 26/09, que a carga lia a coluna errada. **NÃO LIA.**
+
+Eu havia lido o cabeçalho de uma **cópia** da planilha da folha, onde a segunda
+coluna é o ID do Pipefy, e concluí que a nossa carga pegava o ID. As fórmulas que
+ele exportou mostraram a aba de verdade — a do `Registro de SPs` — e ela tem
+**quatro colunas só**:
+
+| A | B | C | D |
+|---|---|---|---|
+| Código Primário | **Conta de Pagamento** | Projeto | Código Omie |
+
+Todas vindas por `IMPORTRANGE` da planilha "Bases de Dados Pipefy" (colunas T, AH,
+AK e AJ da `C. Diários` de lá). A posição estava certa.
+
+#### ⚠️ MAS O DEFEITO DE VERDADE ESTÁ NA MESMA COLUNA
+
+A coluna **não guarda a conta — guarda um TEXTO com a conta dentro**, porque vem
+da coluna AH do Pipefy:
 
 ```
-Centro de Custo | ID | Código Primário | Centro de Custo |
-Código Centro de Custo Pipefy | Código Omie (Código Primário) | Conta
-CONS             | 594904559 | CONS | CONS | 384052839 | 583753491 | 7011-4
+BRADESCO S/A - AG 1234 | 0007011-4 | CONS
 ```
 
-O carregador lia **pela posição**: primeira coluna como código e **a segunda
-como conta**. A segunda coluna é o **ID do registro no Pipefy** (`594904559`). A
-conta (`7011-4`) está no fim.
+A planilha da folha extrai com `REGEXEXTRACT(...; "\|\s*0*(\d+-\d+)\s*\|")`
+(coluna G da `C. Diários` de lá), e a aba `SPsBD` faz igual na coluna U. O zero à
+esquerda sai: o que vale é **`7011-4`**.
 
-Ou seja: `analisesps.contas_diarios.conta_pagamento` vinha sendo preenchida com o
-ID do Pipefy desde a estreia do módulo.
+A nossa carga guardava **o texto cru**. Isso não casa com nada — nem com a conta
+da conciliação, nem com o que o OMIE conhece. E, como nenhuma tela lia a tabela,
+só ia aparecer no primeiro uso, que seria a folha decidindo de qual conta sai o
+dinheiro de ~500 pessoas.
 
-**Ninguém percebeu porque nenhuma tela lia essa tabela.** Era carregada toda
-noite e nunca consultada. É o tipo de erro que só existe enquanto o dado não é
-usado — e o primeiro uso seria justamente a folha de pagamento decidindo de qual
-conta sai o dinheiro de ~500 pessoas.
+**Consertado:** a carga extrai a conta do texto (e aceita o texto já limpo, para o
+dia em que a planilha for arrumada). Sete formatos testados.
 
-**Consertado:** agora procura **pelo NOME** da coluna (`Conta`, `Conta Corrente`,
-`Conta de Pagamento`), que é o que o resto daquele arquivo já fazia. Coluna que
-muda de lugar deixa de quebrar a carga, e coluna que não existe volta com o
-motivo escrito em vez de em silêncio.
-
-⚠️ **Falta uma conferência que só o dono faz:** o cabeçalho acima foi lido de uma
-**cópia** da planilha `Folha de Pagamento - Fortes`. A aba que o sistema lê é a
-do `Registro de SPs`, e as cópias divergem entre si. Ler pelo nome protege contra
-a posição, mas não contra a coluna se chamar outra coisa lá. Assim que a carga
-rodar, a tela de Configurações vai dizer se achou ou não — e o motivo.
+**A lição, para ficar:** eu reportei um defeito olhando o cabeçalho da planilha
+errada. O defeito existia, na mesma coluna, por outro motivo — sorte, não método.
+**Sem as fórmulas, o que eu digo sobre essas planilhas é palpite.**
 
 **D6 — Onde a tela mora.** O DP **não** opera junto com o financeiro: *"eu vou
 disponibilizar apenas aquela tela (…) quando eu for liberar para acessarem, aí eu
@@ -978,7 +986,571 @@ admitido no meio do período.
    classificação divergir da planilha justamente nos casos de cadastro incompleto.
    **Mas é candidato a pergunta:** é isso que ele quer, ou é acidente do Sheets?
 
-## 8. Segurança — três coisas que já são risco hoje
+## 7.10 O REGRAMENTO RECUPERADO DAS FÓRMULAS (27/09/2026)
+
+O dono rodou o script e pôs os documentos na pasta
+`1pc3UDuICXyN_OT_pVKUZpg621dNPnGNW`. Isto é o que as fórmulas da planilha
+**Folha de Pagamento - Fortes** dizem — lido, não suposto.
+
+⚠️ **Leia esta seção antes de escrever qualquer linha da tela.** Metade do que eu
+havia suposto estava certo; a outra metade, não.
+
+### 7.10.1 De onde cada coisa vem (a cadeia de planilhas)
+
+```
+Bases de Dados Pipefy ──┬─> C. Diários      (T=Código Primário, AH=Conta,
+                        │                    AJ=Código Omie, AK=Projeto)
+                        ├─> Centros de Custo (código, Pipefy, Omie)
+                        ├─> PlanoFinanceiro
+                        └─> BaseBancos      (conta → nCodCC do Omie → cód Pipefy)
+
+Registro de Colaboradores ─> CadastroColaboradores (16 colunas escolhidas)
+Mobponto (Geral Mensal)   ─> MobPonto  (4 blocos de 10.000 linhas por IMPORTRANGE)
+Mobponto (Presenças)      ─> Cadastros (cpf, nome, mes_atual.local)
+```
+
+⚠️ **O `MobPonto` da folha é montado em quatro `IMPORTRANGE` de 10.000 linhas cada**
+(`A1:R10000`, `A10001:R20000`, …) — 40.000 linhas. É o teto prático de hoje, e
+explica por que a planilha é lenta.
+
+### 7.10.2 As colunas calculadas do `MobPonto` — o coração de tudo
+
+| Col | Nome | O que faz |
+|---|---|---|
+| AG | HORAS TRABALHADAS | saída − entrada, escolhendo entre as marcações que existem |
+| **AH** | **CTPS ou DIÁRIA** | ver §7.9 — já implementado |
+| AI | CORRIGIR CONTRATO | Prestador com contrato CLT, ou CTPS com RPA/Estágio/PJ → erro de cadastro. E `início > admissão` → CORRIGIR ADMISSÃO |
+| AK–AN | centro de custo de cada uma das 4 marcações | `VLOOKUP` da obra na `C. Diários` |
+| **AO** | **CENTRO DE CUSTO do dia** | **`MODE.SNGL(AK:AN)`**, com a marcação de ENTRADA como desempate, e só quando é PRESENÇA ou PRESENÇA PARCIAL |
+| AQ | PAGAR DIÁRIA / PAGAR EXTRA | ver 7.10.3 |
+| AR | INFORMAR VALOR DIÁRIA | CTPS sem valor de diária cadastrado, com dia de DIÁRIA |
+| AT | OBRA NÃO INFORMADA | bateu ponto (hora > 0) e a obra veio vazia |
+| AU | FERIADO | `VLOOKUP` na aba `Feriados` |
+| AV/AY | compensação | casa com a aba `Compensação` pela chave `cpf-data` |
+| AW | FÉRIAS | `VLOOKUP` na aba `Férias`: o dia entre início e fim |
+| AX | DEMITIDO | CTPS cujo dia é depois da Data de Saída |
+| **AZ** | **VALOR POR DIA** | `VLOOKUP` do CPF na `Quinzena` ou `Fim de Mês`, coluna I |
+| **BA** | **PAGAR** | o marcador (`Pagar QZ` / `Pagar FM`) puxado da aba do pagamento |
+
+✔️ **A regra da obra do dia que eu implementei está CERTA**: é a moda das quatro
+marcações, com a entrada como desempate. Confirmado pela fórmula `AO`.
+
+### 7.10.3 `AQ` — quando o dia vira diária ou extra
+
+- **Prestador de Serviço + Autônomo (RPA)** → sempre `PAGAR DIÁRIA`
+- **CTPS cujo dia é DIÁRIA** (antes da admissão) → `PAGAR DIÁRIA`
+- **CTPS em dia de CTPS, num sábado, domingo ou feriado** → `PAGAR EXTRA`
+- **CTPS em dia de CTPS, de FÉRIAS** → `PAGAR EXTRA`
+- **CTPS em dia de CTPS, já DEMITIDO** → `PAGAR EXTRA`
+
+⚠️ **Isto responde o que ele perguntou sobre férias e feriados:** as duas regras
+**existem e estão ativas** na fórmula. Ele achava que a de feriado não estava em
+uso — está. O que talvez não esteja em uso é a aba `Feriados` estar preenchida.
+
+### 7.10.4 `AJ` — QTD DIÁRIAS, e a MEIA diária
+
+A fórmula devolve **1**, **0,5** ou vazio. Vale 1 quando há presença cheia; vale
+**0,5** quando é `PRESENÇA PARCIAL` com horas acima de `0,2916` (= **7h00**, que
+em fração de dia é 0,29166…), ou quando é falta justificada em sábado/domingo com
+mais de `0,2708` (= **6h30**).
+
+⚠️ **Dois limites de hora escritos como fração de dia, sem explicação na planilha.**
+7h e 6h30. Vou implementar com o número e o motivo escritos; e é candidato a
+pergunta: são esses mesmo?
+
+### 7.10.5 As abas `Quinzena` e `Fim de Mês` — como o pagamento é montado
+
+| Col | O que é |
+|---|---|
+| A | **link para o card do Pipefy** da pessoa (`HYPERLINK("https://app.pipefy.com/open-cards/"&…)`) — é o que ele pediu |
+| C | Empregado (nome, colado da Folha Sintética) |
+| F | valor líquido da pessoa; `F2` = soma de tudo |
+| **G** | **CPF, por `VLOOKUP` DO NOME** no cadastro, excluindo "Colaboradores Desligados". Não achou → **"Checar Cadastro"** |
+| H | **Dias** = `COUNTIFS` no MobPonto: mesmo CPF, coluna E (obra) não vazia, **diferente de "PAGAR EXTRA"**, e data no período |
+| I | Valor x Dia = `F/H` |
+| K1 | a data de fim do período, **calculada**: se hoje é dia ≤ 10, vale o **mês anterior** |
+| L | centro de custo sugerido = `mes_atual.local` do resumo de presença |
+| M | o marcador `Pagar QZ` / `Não Pagar` |
+| O | **o arquivo de pagamento**: `QUERY` de nome, CPF e valor dos marcados |
+| S | **"PT"** quando a pessoa tem **zero dias** de ponto; senão "OK" |
+| T/U | **o total por centro de custo**: soma `AO` × `AZ` do MobPonto (dia a dia!) **mais** os "PT", cujo centro de custo vem da aba **`Página37`** |
+| AA/AD | os códigos do Pipefy e do OMIE de cada centro de custo |
+| AE | **a conta**, com `REGEXEXTRACT(...;"^[^,]+")` — ou seja, **pega até a primeira vírgula: uma obra pode ter mais de uma conta, e vale a primeira** |
+| AF | **o bloco conta corrente × valor** que o Make lê |
+
+#### ⚠️ Cinco achados que mudam decisões
+
+1. **O cruzamento de hoje é POR NOME, não por ID Fortes.** A aba
+   `CadastroColaboradores` importa 16 colunas e **o ID Fortes não está entre
+   elas** — não há como cruzar por ID na planilha. Ou seja: **a planilha faz
+   exatamente o que ele me disse para não fazer** (*"por nome pode ter homônimo e
+   encontrar a pessoa errada"*). O sistema novo, cruzando por ID, **corrige um
+   risco que existe hoje** — e isso explica o "Checar Cadastro" aparecendo.
+2. **Dia com `PAGAR EXTRA` NÃO conta como dia da folha** (o `<>"PAGAR EXTRA"` do
+   `COUNTIFS`). Faz sentido: aquele dia vai ser pago como extra, à parte. Eu não
+   tinha isso.
+3. **Quem tem zero dias ("PT") tem o centro de custo vindo da aba `Página37`** —
+   uma tabela de 46 linhas, digitada à mão. **É a "regra de rateio" de hoje**, e é
+   o que o cadastro de regras que eu fiz em 26/09 substitui.
+4. **A competência é automática:** se hoje é dia ≤ 10, a folha é do **mês
+   anterior**. A tela deve sugerir assim.
+5. **O teto de 50 está explícito na planilha**, não só no Make: o link de envio só
+   aparece se `COUNTA(V4:V) <= 50` **e** não houver nenhum "Checar Cadastro".
+
+### 7.10.6 A aba `Pendências` — as críticas que existem HOJE
+
+Esta é a lista de verdade, e ela vale mais que a minha de §6:
+
+| Crítica | Como é detectada |
+|---|---|
+| Falta Data de Início ou Admissão | `AH = 'DT INÍCIO/ADMISSÃO'` |
+| Pessoa não encontrada no cadastro | `AH = 'NÃO ENCONTRADO'` |
+| Tipo de Cadastro × Tipo de Contrato incompatíveis | `AI = 'CORRIGIR CONTRATO'` |
+| Admissão anterior ao início | `AI = 'CORRIGIR ADMISSÃO'` |
+| Desligado com saída até o fim do mês anterior, ainda batendo ponto | fase = 'Colaboradores Desligados' e saída ≤ fim do mês anterior |
+| Falta valor da diária | `AP = 'CORRIGIR VALOR DIÁRIA'` |
+| Falta valor da diária para quem hoje é CTPS | `AR = 'VALOR DIÁRIA'` |
+| Descadastrar (no Mobponto) | aba `Calendário`, `U = 'Descadastrar'` |
+| **CTPS sem qualquer ponto** | aba `Calendário`, `U = 'Ponto CTPS'` |
+| **Ponto sem identificação de obra** | `AT = 'OBRA NÃO INFORMADA'` |
+
+⚠️ **Duas delas moram na aba `Calendário`**, que eu ainda não li. E a `Página37`
+(o rateio manual), a `Feriados`, a `Férias` e a `Compensação` **não têm fórmula** —
+são tabelas digitadas, então o script não as trouxe. **Preciso do conteúdo delas**,
+e aí não é fórmula: é dado. Ver §7.11.
+
+### 7.11 O que ainda falta para fechar o regramento
+
+⚠️ **Atualizado em 27/09/2026.** Metade do que estava aqui foi respondido pela
+leitura do documento de fórmulas da planilha de Diaristas/Extras/GM (§7.14) — que
+**estava na pasta**; eu tinha errado ao dizer que faltava. O que sobrou:
+
+#### Ainda preciso ver
+
+| O que | Por que preciso |
+|---|---|
+| aba **`Página37`** da Folha de Pagamento - Fortes | é o rateio manual de quem não tem ponto. São ~46 linhas; ele pode colar aqui se confirmar que não tem dado pessoal |
+| aba **`Calendário`** (abaixo da linha 60) | duas críticas saem dela (`Descadastrar`, `Ponto CTPS`) e o script de fórmulas lê só as 60 primeiras linhas |
+| **conteúdo** (não fórmula) das abas `Feriados`, `Férias`, `Compensação` | as fórmulas eu já tenho (§7.14.6); o que falta é o dado, e isso vira **carga**, não cópia — `Férias` e `Compensação` têm CPF |
+| fórmulas da planilha **`Diaristas Barbalha`** e da aba **`AnáliseSaídas`** | aparecem referenciadas e não foram lidas |
+
+#### Perguntas que só ele responde — e uma delas é dinheiro
+
+| Pergunta | Por que importa |
+|---|---|
+| ⚠️ **O transporte deve descontar feriado e férias?** Hoje **não desconta**; a alimentação desconta (§7.14.7) | É a pergunta mais cara daqui: multiplica por ~500 pessoas, todo mês. Pode ser regra do vale-transporte ou fórmula esquecida pela metade |
+| **`VIGIA` não recebe diária extra** — é regra ou remendo? (§7.14.5) | Está escrito só dentro de uma fórmula. Se for regra, vira cadastro; se for remendo, sai |
+| **Os +20 / +10 / +20** de feriado, sábado e domingo continuam? (§7.14.5) | São valores fixos escritos na fórmula. Viram cadastro no sistema novo |
+| **O que significa `E = "SIM"` na aba `Feriados`?** | Esse feriado deixa de contar. Suponho "foi trabalhado" ou "foi compensado" |
+| **SomaPay × BeeVale: por pessoa ou por obra/CNPJ?** | Hoje é **por pessoa**, na coluna `I` da GM (§7.14.3). Ele descreveu por obra→CNPJ. São desenhos diferentes |
+| **Os 1,5% da BeeVale** entram no valor do título? | Hoje o card vai **sem** a taxa; ela só aparece no texto (§7.12.4) |
+| **Quem paga a aba `Cesta`** e por onde? | Tem marcação, não tem botão (§7.12.1) |
+| **O Pipefy tem limite de linhas de rateio?** | As planilhas param em 30 (esta) e 50 (a da Fortes). Se o limite é do Pipefy, ele manda (§7.14.10) |
+
+## 7.12 OS OUTROS SEIS PAGAMENTOS — lidos do script `Diaristas, Extras e GM` (27/09/2026)
+
+Base: os seis arquivos de script da planilha **Folha de Pagamento - Diaristas,
+Extras e GM** (`BeeVale.gs`, `Código.gs`, `Code.gs`, `BloqueioPGT.gs`,
+`onOpen.gs`, `Sem título.gs`), lidos linha por linha. Isto é **código lido**, não
+relato — o que for suposição está marcado.
+
+### 7.12.1 Uma planilha, seis abas, quatro botões
+
+A planilha `1Q39sdTbZ4edNthTU3HsCc8ahkBLWfqOcffbBXp3_RI8` tem as abas
+`CTPS`, `Diaristas`, `GM`, `Cesta`, `Alimentação` e `Transporte`. O menu
+*Gerar SP* oferece **quatro** botões: BeeVale Transporte, BeeVale Alimentação,
+BeeVale GM e BeeVale Diaristas. Ou seja:
+
+- `Cesta` tem marcação (`R4:R`, "Pagar QZ") mas **não tem botão** no menu.
+- `CTPS` (as diárias de quem tem carteira assinada) tem marcação (`P4:P`) e tem
+  o botão de **bloqueio** (`openUrlBloqueiaPGT`), mas **não tem botão de gerar
+  pagamento** neste script. Ou o pagamento dela sai por outro caminho, ou a aba
+  entra num dos quatro botões por fórmula. **Não confirmado.**
+
+Todas as abas começam os dados na **linha 4** (cabeçalho na 3).
+
+### 7.12.2 O marcar/desmarcar em massa — e uma inconsistência real
+
+`Código.gs` tem um par marcar/desmarcar por aba, que preenche a coluna de
+decisão de cima a baixo:
+
+| Aba | Coluna preenchida | Valor escrito | Até a linha |
+|---|---|---|---|
+| CTPS | P | `Pagar` / `Não Pagar` | 500 |
+| Diaristas | **N** | `Pagar` / `Não Pagar` | 600 |
+| GM | O | **`Pagar QZ`** / `Não Pagar` | 500 |
+| Cesta | R | **`Pagar QZ`** / `Não Pagar` | 500 |
+| Alimentação | T | `Pagar` / `Não Pagar` | 500 |
+| Transporte | T | `Pagar` / `Não Pagar` | 500 |
+
+**Defeito encontrado:** a função `Entrada()`, que marca tudo de uma vez no
+começo do processo, escreve em `Diaristas` na coluna **M**, enquanto
+`DiaristaMarca()` escreve na coluna **N** — e é a **N** que o gerador de
+pagamento lê (`COL_PAGAR: 14`). Quem usar o `Entrada()` marca a coluna errada e
+a rodada sai **vazia** (ou pior, sai com o que sobrou de uma rodada anterior).
+Sinal típico de uma coluna inserida na planilha sem atualizar o script.
+
+**Segundo ponto de atenção:** o gerador filtra por `pagar === 'Pagar'`, texto
+exato. GM e Cesta são marcadas com `'Pagar QZ'`. Para GM funcionar, a coluna que
+o gerador lê (`BB`) tem de ser **outra** que a coluna marcada (`O`) — provável
+fórmula que traduz `Pagar QZ` → `Pagar`. ⚠️ **RESPONDIDO, e era pior: ver §7.14.2.** A fórmula de `BB` **não olha a
+marcação nenhuma** — e tem um defeito que faz o "Não Pagar" por pessoa não
+funcionar.
+
+### 7.12.3 Como o pagamento BeeVale é montado (o mesmo motor para as 4 abas)
+
+1. **Lê a aba** a partir da linha 4, com `getDisplayValues()` — ou seja, lê o
+   **texto formatado**, não o número. É por isso que existe um conversor de
+   número brasileiro no script.
+2. **Filtra** `Pagar` **e** conta preenchida. Linha marcada sem conta é
+   silenciosamente ignorada — **não há aviso**. Essa é uma crítica que o
+   sistema novo deve dar.
+3. **Consolida por conta + CPF + categoria de despesa.** Duas linhas da mesma
+   pessoa, na mesma conta e na mesma categoria, viram **uma**, somando o valor.
+   Se essas linhas tiverem **centros de custo diferentes**, o script fica com o
+   **primeiro** e só escreve um aviso no log técnico (que ninguém lê) — o
+   dinheiro da segunda obra é apropriado na primeira. **Isto é perda de
+   informação de rateio, e é silenciosa.** No sistema novo isso tem de ser uma
+   crítica na tela, não um log.
+4. **Pergunta a conta** numa caixinha de texto: a pessoa **digita** o nome da
+   conta, ou `TODAS`. Digitar errado aborta.
+5. **Um arquivo de pagamento por conta**, com 11 colunas fixas:
+   `Nome, Email, Carteira, Benefício, Valor, Tipo de Recarga, Dias úteis,
+   Documento de Identificação, Nome Completo, Centro de Custo, Categoria`.
+   - O **e-mail é inventado**: `<cpf só dígitos>@bwsconstrucoes.com.br`.
+   - `Benefício` = `Livre`, `Tipo de Recarga` = `Mensal`, `Dias úteis` = `0`,
+     `Categoria` = `BWS`, `Carteira` = o que vier da planilha ou `Produção`.
+   - O CPF vai **formatado** (`000.000.000-00`) na coluna de documento.
+6. **Confere três vezes** antes de subir o arquivo (isto é bom e vale copiar):
+   soma em memória × soma esperada; relê a planilha e soma de novo; e
+   **descompacta o próprio .xlsx exportado** para checar se os CPFs esperados
+   estão lá dentro. Esse terceiro teste existe porque o export do Drive **já
+   entregou o arquivo de outra conta** — está escrito no comentário do script.
+7. **Sobe dois arquivos ao Dropbox** (pasta `/BWS DP/DESPESAS COM
+   COLABORADORES/Pgt Conjunto`): o arquivo de pagamento e uma **cópia da
+   planilha de análise** (`1LoTJtYKHpSuxnvr03tBvxjpLK6c2Wvuyo4YbVk3IYEk`)
+   exportada em .xlsx.
+8. **Cria UM card no Pipefy por conta**, com o rateio por centro de custo e por
+   categoria em **percentual com 7 casas decimais**, ajustado para fechar 100%
+   exatos (sobra distribuída pelas maiores frações). O card vai com
+   `autoriza_o_dupla: SIM` e `anu_ncia_sp: Sim`.
+9. **Avisa por WhatsApp** (Z-API) dois telefones, com os links dos arquivos.
+10. **Registra** em três abas da própria planilha: `LogSP` (log da execução),
+    `HistoricoBeeVale` (uma linha por conta) e `HistoricoBeeValeItens` (uma
+    linha por pessoa). Isso é exatamente o log que o dono pediu para o sistema
+    novo — e a estrutura já está provada na prática.
+
+### 7.12.4 Os 1,5% da BeeVale
+
+O script calcula `Valor BeeVale = Valor × 1,015`, **truncado** em 2 casas (não
+arredondado). Esse valor vai na descrição do card como referência, mas o campo
+`valor` do card é o valor **original**, sem os 1,5%. Ou seja: a taxa é
+informada, não cobrada no título. **Confirmar com o dono** se é isso mesmo, ou
+se o título deveria sair com a taxa.
+
+### 7.12.5 O bloqueio de pagamento da aba CTPS
+
+`openUrlBloqueiaPGT` confere a célula `AC6` da aba `CTPS` (tem de estar `OK`),
+mostra o texto de `AC4` para a pessoa confirmar, abre a URL de `AC7` — que é um
+webhook do Make — espera 20 segundos e **apaga a coluna Q inteira**
+(`Q4:Q`). Se `AC6` não estiver `OK`, mostra a mensagem de `A62`.
+
+⚠️ **CORRIGIDO em §7.14.1: NÃO é uma trava de pagamento.** A fórmula de `AC6`
+só confere se alguém escreveu o bloqueio na coluna `Q` — é campo obrigatório, não
+regra de negócio. Eu supus regra onde havia formulário.
+
+O `Utilities.sleep(20000)` antes de limpar a coluna Q é uma aposta: se o Make
+demorar mais de 20 segundos para ler a planilha, o dado é apagado **antes** de
+ser lido. É frágil por construção.
+
+## 7.13 PJ e PRÓ-LABORE — lido do segundo blueprint (27/09/2026)
+
+Base: `DP - FIN - Botão Folha de Pagamento (🆕SP)`, blueprint 2, lido módulo por
+módulo.
+
+### 7.13.1 O caminho
+
+`webhook` → descarta `acao = atualizarobra` → descarta `grupo = Despesa com
+Colaboradores`, `acao = planilhadeanalise`, `grupo = cestabasica`,
+`grupo = bloqueiopgt`, `acao = dcbeevale` → se `tipo = SP`, lê a aba **`GM`**,
+faixa **`AC4:AS500`** → agrupa → **um card por pessoa** → avisa Luelia e
+Marcelo (WhatsApp Z-API **e** Telegram, os dois) → devolve uma página HTML de
+"pronto".
+
+Note a diferença de desenho: **BeeVale faz um card por conta; PJ/Pró-labore faz
+um card por pessoa.** São regras de negócio diferentes, não inconsistência — o
+PJ tem nota, CNPJ e credor próprios.
+
+### 7.13.2 O que vai no card
+
+Da faixa lida, usa as posições 0–6 e 16, que em coluna são
+`AC, AD, AE, AF, AG, AH, AI` e `AS`:
+nome, CPF, valor, centro de custo, código do centro de custo, CNPJ, razão
+social, e conta de origem.
+
+- `local` = o **nome da pessoa** em maiúsculas.
+- rateio múltiplo = **Não**; um centro de custo só.
+- tipo de despesa fixo (`383928967`).
+- `valida_o_sp_1: Sim`, `lan_amento_via_api: Sim`.
+
+### 7.13.3 O defeito grave: como ele decide PF ou PJ
+
+O blueprint decide pessoa física × jurídica assim: **se o texto do CNPJ tem 14
+caracteres, é Pessoa Física; senão, Pessoa Jurídica.**
+
+Isso funciona **só enquanto o documento vier formatado**: um CPF com pontuação
+(`000.000.000-00`) tem 14 caracteres, e um CNPJ com pontuação
+(`00.000.000/0000-00`) tem 18. Mas um **CNPJ sem pontuação tem exatamente 14
+dígitos** — e seria classificado como **Pessoa Física**. O card sairia com o
+CNPJ preenchido no campo de CPF e na chave Pix, e com o título errado.
+
+No sistema novo isso se resolve pelo **número de dígitos** (11 = CPF, 14 =
+CNPJ), nunca pelo tamanho do texto. Já é assim no `folha_rateio.cpf_valido`.
+
+## 7.14 AS FÓRMULAS DA PLANILHA DE DIARISTAS, EXTRAS E GM (27/09/2026)
+
+O documento de fórmulas **estava na pasta** — eu tinha errado ao dizer que
+faltava. São 26 abas. O que segue é **lido da fórmula**, não suposto. Isto
+responde quatro perguntas que eu havia deixado abertas em §7.11 e derruba duas
+coisas que eu tinha escrito em §7.12.
+
+### 7.14.1 ⚠️ CORREÇÃO: a "trava de pagamento" da aba CTPS não é trava nenhuma
+
+Em §7.12.5 eu escrevi que existia uma trava de pagamento governada por uma
+fórmula invisível em `AC6`. **Está errado.** A fórmula é:
+
+- `AB` = para cada linha com a coluna `Q` preenchida, monta um texto
+  "nome dia/mês/ano - dia da semana - <o que foi escrito em Q>".
+- `AC4` = junta todas essas linhas numa só.
+- `AC6` = `se AC4 está vazio → "Informe na Coluna Q o bloqueio de PGT"; senão → "OK"`.
+
+Ou seja: o botão **não decide** se o pagamento pode sair. Ele só **recusa
+disparar sem que alguém tenha escrito o bloqueio na coluna Q**. É um campo
+obrigatório, não uma regra de negócio. `AC7` é a URL do Make montada com esse
+texto.
+
+**O que isso muda no desenho:** eu ia procurar uma regra que não existe. O
+bloqueio é **digitado à mão**, por pessoa e por dia. No sistema novo isso é um
+campo de observação na linha, com o mesmo efeito — e sem apagar a coluna depois
+(hoje o script espera 20 segundos e apaga a `Q`; se o Make atrasar, o dado vai
+embora antes de ser lido).
+
+### 7.14.2 ⚠️ CORREÇÃO: a coluna `BB` da GM ignora a marcação — e tem um defeito
+
+Em §7.12.2 eu supus que alguma fórmula traduzia `Pagar QZ` → `Pagar`. **Não
+traduz.** A fórmula é:
+
+```
+BB = se R (CPF) está vazio → ""; senão → se BA4 está vazio → "Não Pagar"; senão → "Pagar"
+```
+
+Duas coisas graves aqui:
+
+1. **A marcação da coluna `O` (`Pagar QZ`) não entra nesta conta.** Quem decide o
+   pagamento **BeeVale** da GM é só "tem CPF e tem centro de custo resolvido".
+   O `Pagar QZ` que o DP marca alimenta **outra** lista — a do **SomaPay**
+   (`Q3`: `WHERE O = 'Pagar QZ' and M > 0 and I != 'Sim'`). São **dois portões
+   diferentes na mesma aba**, e só um obedece a marcação.
+2. **A fórmula é um `ARRAYFORMULA` que olha só a linha 4.** Ela varre `R4:R` mas
+   compara `BA4` — fixo, sem `:`. O resultado da linha 4 é **copiado para todas
+   as outras**. Se a linha 4 tiver centro de custo, **todo mundo vira "Pagar"**;
+   se não tiver, todo mundo vira "Não Pagar". O "Não Pagar" por pessoa,
+   nesta coluna, **não funciona**.
+
+No sistema novo o desmarcar é por pessoa, guardado no banco, e o arquivo de
+pagamento sai da mesma decisão que a tela mostra — não de uma segunda fórmula.
+
+### 7.14.3 RESPOSTA: SomaPay ou BeeVale já é escolha — é a coluna `I`
+
+Ele perguntou se daria para escolher entre pagar pela BeeVale ou pela SomaPay.
+**Na GM isso já existe:** a coluna `I` da aba GM decide, por pessoa.
+
+- `I = 'Sim'` → entra na lista **BeeVale** (`AC3`).
+- `I != 'Sim'` → entra na lista **SomaPay** (`Q3`).
+
+Então a liberdade que ele quer não é nova: é a que a planilha já tem, e que o
+sistema deve manter — **por pessoa**, não só por conta. Vale confirmar com ele se
+a escolha deve continuar por pessoa ou passar a ser por obra/CNPJ, como ele
+descreveu.
+
+### 7.14.4 A CONTA CORRENTE sai do NOME da obra — por expressão, com um perigo
+
+A aba CTPS decide a conta corrente assim (coluna `AI`), a partir do nome do
+centro de custo:
+
+| Nome do centro de custo começa com | Conta |
+|---|---|
+| `BIBLISOBRAL` | 7011-4 |
+| `MERCADOBARBALHA` | 22069-8 |
+| `IFPESANTACRUZ` | 2541-0 |
+| contém `BIBLI`, `IFSP`, `ESCABREU`, `CREFOSFATO`, `ESCCAETES`, `CABOPONTE` | 50302-9 |
+| contém `AREPE`, `CREPE`, `ESCCYNIRA`, `ESCBOAVISTA`, `CTBELOJARDIM`, `CREATAPUZ`, `CRESAOLOURENCO`, `CREPEDRAS`, `ESCVARZEA` | 50024-0 |
+| **qualquer outro** | **7011-4** |
+
+⚠️ **O perigo está na última linha.** Obra nova, com nome que não casa com nenhum
+desses pedaços, vai para a **7011-4 sem avisar ninguém**. Não dá erro, não dá
+aviso: paga pela conta errada e ninguém fica sabendo. As demais abas (GM,
+Alimentação, Transporte) resolvem a conta por uma **tabela** (`C. Diários`
+coluna G), que é o caminho certo.
+
+**No sistema novo:** a conta vem da obra, pela tabela, e **obra sem conta
+definida é crítica que segura o arquivo** — nunca um padrão silencioso.
+
+### 7.14.5 O valor da diária de quem tem carteira assinada (aba CTPS)
+
+A aba CTPS é o pagamento de **diária extra a quem é CTPS** — o que ele chamou de
+"gente que é carteira assinada, mas que trabalhou um feriado, um final de
+semana". A lista sai do ponto com **três filtros**:
+
+```
+dias entre o início e o fim do período
+  e  AQ = 'PAGAR EXTRA'
+  e  AJ (qtd de diárias) > 0
+  e  função != 'VIGIA'
+```
+
+**A exclusão do VIGIA eu não conhecia, e ela não está escrita em lugar nenhum.**
+Precisa ser confirmada: é regra (vigia tem escala e não recebe extra) ou é
+remendo antigo?
+
+**E o valor de cada dia (coluna `O`) tem adicional por tipo de dia:**
+
+| Dia | Valor pago |
+|---|---|
+| Feriado | qtd × valor **+ 20** |
+| Sábado | qtd × valor **+ 10** |
+| Domingo | qtd × valor **+ 20** |
+| Dia comum | qtd × valor |
+
+E, antes de tudo: **se o dia tem compensação, não paga** — a linha sai em branco
+quando a coluna `Compensação` está preenchida. A compensação é buscada por
+`CPF-data` na aba `Compensação` (que ainda marca `DUPLICADO` quando a mesma
+pessoa tem duas compensações no mesmo dia).
+
+Esses +20/+10/+20 são **dinheiro**, e nenhum deles estava no meu levantamento.
+
+### 7.14.6 Auxílio alimentação — a regra completa
+
+- **Quem entra:** cadastro que não está em `Colaboradores Desligados` **nem em
+  `Colaboradores Afastados`**, e que tem valor de alimentação preenchido no
+  cadastro. (Confirma o que ele disse: o valor vem do cadastro.)
+- **O período é o MÊS INTEIRO**, do dia 1 ao último — não quinzena.
+- **Quatro modalidades**, e cada uma tem sua base de dias:
+  - `Mensal` → todos os dias do mês **− 3**
+  - `Segunda à Sexta` → dias úteis (sáb/dom fora)
+  - `Segunda à Quinta` → dias úteis **menos as sextas**
+  - `Mês` → valor fixo, não conta dia
+- **Dos dias, desconta:** feriados nacionais, feriados estaduais/municipais **do
+  município da pessoa**, e os **dias de férias** — e soma um ajuste manual.
+- **Férias entra de verdade:** é buscada na aba `Férias` por `CPF-mês/ano`, e o
+  que se desconta é **dia útil dentro do período**, não dia de calendário. Ele
+  perguntou se as férias eram checadas: **são.**
+- **A sutileza que é fácil errar:** para quem é `Segunda à Quinta`, os feriados
+  que caem numa **sexta** são somados de volta — porque aquela sexta já não
+  contava. É para isso que a aba `Feriados` conta feriado de sexta à parte. Quem
+  reescrever isso sem saber vai descontar duas vezes.
+- **Feriado com `E = "SIM"` não conta.** (Provavelmente "foi trabalhado" ou "foi
+  compensado" — **confirmar o significado da coluna E**.)
+- Valor: `Mês` → valor fixo + ajuste; nas outras → valor do dia × dias.
+
+### 7.14.7 Auxílio transporte — quase igual, com UMA diferença que é dinheiro
+
+Transporte é a mesma planilha da alimentação, com `Despesas com Transporte` no
+lugar da categoria, e **duas diferenças**:
+
+1. **Quem tem `Cartão` no cadastro não entra** (só quem recebe em dinheiro).
+2. ⚠️ **NÃO desconta feriado nem férias.** Os dias são só a base da modalidade.
+   As colunas de feriado existem na aba, são calculadas… e **não entram na
+   conta**. A alimentação desconta; o transporte não.
+
+Isso quer dizer que **hoje se paga transporte de dia de férias e de feriado**. Pode
+ser de propósito (vale-transporte tem regra própria) ou pode ser uma fórmula que
+alguém esqueceu de completar. **Só ele decide** — e é a pergunta mais cara deste
+documento, porque multiplica por ~500 pessoas todo mês.
+
+Há ainda uma **inconsistência interna**: nas colunas de feriado da aba
+Transporte, a **linha 4** usa uma fórmula e a **linha 5 em diante** usa outra (a
+da alimentação, que desconta feriado de sexta). Sinal de fórmula copiada pela
+metade.
+
+### 7.14.8 O que a GM paga, e para quem
+
+A lista da GM sai do cadastro, com este filtro:
+
+```
+não está em 'Colaboradores Desligados'
+  e  (tipo = 'Autônomo Mensalista' ou 'PJ' ou 'Pró-labore' ou 'Estágio'
+       ou a marcação P = 'Sim')
+```
+
+Ou seja: **GM é a folha de quem não passa pela contabilidade** — PJ,
+pró-labore, autônomo mensalista, estágio — **mais** quem está marcado para
+receber gratificação. Isso fecha com o que ele descreveu.
+
+**Metade na quinzena, metade no fim do mês:** as colunas `J` e `K` dividem o
+valor mensal por 2, e a coluna `M` escolhe qual usar pelo dia final do período
+(dia 15 → quinzena; depois do 15 → fim de mês). Quem tem a marcação `H = "Sim"`
+recebe **o valor inteiro** no fim do mês, em vez de metade.
+
+Outras coisas úteis: a **chave Pix** sai da coluna 22 do cadastro, caindo para o
+próprio CPF quando está vazia; a **razão social**, da coluna 21; a categoria é
+sempre `Gratificações e Extras`.
+
+### 7.14.9 O link para o card do Pipefy — ele pediu, e já existe
+
+Ele pediu: *"eles estão associados a uma numeração no Pipefy, cada colaborador,
+então é bom ter um link para clicar nele e ser direcionado, abre o card do
+Pipefy."*
+
+Todas as abas fazem isso na coluna `A`:
+`https://app.pipefy.com/open-cards/` + a **coluna X (24) do
+`CadastroColaboradores`**. É daí que sai o número do card de cada pessoa, e é o
+que a carga do cadastro precisa trazer para o sistema novo poder montar o mesmo
+link.
+
+### 7.14.10 O teto de centros de custo é 30 aqui (e 50 na folha da contabilidade)
+
+Todas as abas desta planilha recusam disparar acima de **30 centros de custo**,
+com a frase "Mais de 30 Centros de Custo". Na planilha da Fortes o teto é **50**.
+Dois tetos diferentes, nenhum dos dois escrito em lugar nenhum além da fórmula.
+No sistema novo não há teto de planilha — mas **se o Pipefy tiver limite de
+rateio, é ele que manda**, e isso precisa ser confirmado antes de gerar card com
+mais de 30 linhas de rateio.
+
+### 7.14.12 Diaristas — o espelho da CTPS, com duas diferenças
+
+A aba `Diaristas` é montada igual à `CTPS`, do mesmo ponto, com o mesmo
+`+20 / +10 / +20` de feriado, sábado e domingo. As diferenças:
+
+| | CTPS (diária extra) | Diaristas |
+|---|---|---|
+| Filtro no ponto | `AQ = 'PAGAR EXTRA'` | `AQ = 'PAGAR DIÁRIA'` |
+| Também exige | — | `AP != 'CORRIGIR VALOR DIÁRIA'` (pula quem está sem valor) |
+| Exclui `VIGIA` | sim | sim |
+| Desconta dia compensado | **sim** | **não** |
+| Categoria | Pagamento de CTPS | `Salários e Ordenados` |
+
+A **compensação só vale para a diária extra de quem é CTPS** — faz sentido (quem
+é diarista não tem banco de horas), mas é uma assimetria que precisa ficar escrita,
+senão alguém "conserta" para os dois lados e passa a descontar do diarista.
+
+A conta corrente da aba Diaristas usa **a mesma expressão** da CTPS, com o mesmo
+**padrão silencioso para a 7011-4** (§7.14.4). São **dois** lugares com a mesma
+lista de obras escrita à mão: mudar uma obra obriga a lembrar das duas.
+
+### 7.14.11 Dois detalhes que valem lembrar
+
+- **`CONS` é especial.** O centro de custo `CONS` (consolidado/matriz) não passa
+  pela tabela: tem IDs fixos no OMIE escritos direto na fórmula
+  (`384052839` e `583753491`). Precisa virar cadastro, não número no código.
+- **A competência é automática.** `Período!C14`/`D14`: se hoje é dia **10 ou
+  antes**, a competência é o **mês anterior**; senão, o mês corrente. Mesma regra
+  que já está em §7.10, agora confirmada nesta planilha também.
+
+## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
+
+Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos
+scripts da planilha de Diaristas/Extras/GM, em 27/09/2026.
 
 1. **Credenciais do Mobponto estão escritas dentro dos Apps Script**, em duas
    planilhas. Quem abre a planilha e o editor de script lê a chave. Ao trazer
@@ -990,6 +1562,37 @@ admitido no meio do período.
 3. **As planilhas de pagamento e de análise são compartilhadas com `anyone`** e o
    link vai para o card do Pipefy. São nome, CPF e valor de ~500 pessoas num link
    sem senha. É dado pessoal em volume, e é o risco mais alto dos três.
+4. **O `BeeVale.gs` tem uma função que grava as credenciais do Dropbox escritas
+   no próprio código** — chave do app, segredo do app e *refresh token*. O
+   refresh token é o pior dos três: ele não expira e troca-se por um acesso novo
+   quando se quiser. Quem lê o script tem acesso à pasta do Dropbox da BWS.
+   A função existe para "rodar uma vez", mas o valor ficou lá. **Tem de ser
+   invalidado no painel de apps do Dropbox e gerado de novo** — não basta apagar
+   do script, porque quem já viu continua com ele. Existe no mesmo arquivo uma
+   função `setDropboxCredentials()` que pede os valores numa caixinha e salva nas
+   Script Properties: é esse o caminho certo, e é o que deve ficar.
+5. **O token do Z-API também está escrito no código**, junto com o identificador
+   da instância, na própria URL. Com esses dois, qualquer pessoa manda WhatsApp
+   pela conta da BWS. Vale trocar na origem igualmente.
+6. **O script FORÇA o link do Dropbox a ser público.** Ele não só cria o link
+   como público (`requested_visibility: public`, `audience: public`): se já
+   existir um link restrito à equipe, ele **revoga o restrito e cria um
+   público**. Depois converte para link de download direto (`dl=1`) e cola na
+   descrição do card e na mensagem de WhatsApp. Resultado: o arquivo com nome,
+   CPF e valor de todo mundo baixa **sem login**, para quem tiver a URL — e a URL
+   circula por WhatsApp, que é histórico que ninguém apaga. É o mesmo risco do
+   item 3, mas agora está confirmado no código, e é deliberado, não acidente de
+   configuração.
+
+**O que o sistema novo resolve disso sozinho:** o arquivo de pagamento passa a
+ser baixado de dentro do sistema, por quem tem login e permissão, e o card do
+Pipefy recebe um link para a tela — não um arquivo aberto. Os itens 3 e 6 morrem
+por construção. Os itens 1, 4 e 5 são credenciais que **já circularam** e
+precisam ser trocadas na origem, independentemente do sistema novo.
+
+⚠️ **Estes valores não devem ser colados aqui nem no chat.** O caminho é:
+abrir o editor de script, copiar direto de lá para o Render (ou para o painel do
+fornecedor, no caso da troca), e trocar na origem em seguida.
 
 ---
 

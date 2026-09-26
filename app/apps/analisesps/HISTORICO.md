@@ -8004,6 +8004,203 @@ ações some, o × só para quem opera, e a dupla confirmação com motivo).
 ---
 ---
 
+### Centésima quarta leva (26 e 27/09) — A FOLHA DE PAGAMENTO: o levantamento, e por que nada foi para a tela ainda
+
+Esta leva é diferente de todas as anteriores. O dono pediu a coisa maior que já
+pediu nesta área: **acabar com as planilhas da folha de pagamento**. Receber a
+Folha Sintética da contabilidade, cruzar com o cadastro e com o ponto, apropriar
+o valor de cada pessoa por obra e por dia, gerar o arquivo de pagamento por
+conta corrente, os relatórios em PDF e Excel com várias visões, e os cards do
+Pipefy como passo separado e opcional.
+
+> *"Faça uma varredura criteriosa e profunda… não se acanhe em me perguntar…
+> gostaria que você pensasse aí como gestor de departamento pessoal e sugerisse
+> também novas ideias."*
+
+**O DETALHE TODO MORA EM `docs/FOLHA_DE_PAGAMENTO.md`** — 1.350 linhas, na raiz
+do repositório, não nesta pasta, porque o assunto encosta em Pipefy, Make,
+Dropbox e OMIE. Quem for continuar este trabalho **lê aquele documento antes de
+escrever uma linha de código**. Aqui fica só o estado e o que dói.
+
+#### O que JÁ está escrito e testado (e não tem tela nenhuma)
+
+Sete módulos novos, todos com teste, **nenhum ligado a uma tela**:
+
+| Arquivo | O que faz |
+|---|---|
+| `folha_sintetica.py` | lê o `.xls` da Fortes (BIFF antigo, por isso o `xlrd` novo) |
+| `folha_rateio.py` | as regras de rateio por pessoa e por grupo |
+| `folha_apropriacao.py` | decide para qual obra vai cada real: mão > regra > ponto |
+| `folha_vinculo.py` | CTPS ou DIÁRIA, **por dia**, traduzido da fórmula da planilha |
+| `migracoes/027_folha_rateio.sql` | as três tabelas de rateio |
+| tela `folha_rateio` | a ÚNICA tela desta leva; só do mestre |
+| `docs/EXPORTAR_FORMULAS.md` | script para o dono me mandar as fórmulas das planilhas |
+
+#### As quatro vezes que eu estava errado, e ele me corrigiu
+
+Ficam registradas porque são o padrão do erro, não o erro:
+
+1. **Escondi o problema em vez de mostrar.** Pessoa sem ID Fortes no cadastro eu
+   tinha jogado numa lista lateral. *"Não pode ficar oculto, escondido."* Agora
+   ela fica **na lista principal**, marcada como pendente, e **conta no total** —
+   de propósito, para o total NÃO fechar. Um total que fecha escondendo gente é
+   pior que um total que não fecha.
+2. **Inventei uma crítica que seria só ruído.** Eu ia avisar sobre quem tem ponto
+   e não está na folha. Ele: o ponto tem **mais gente** que a folha da
+   contabilidade, por desenho — o resto entra em outra forma de pagamento. Virou
+   quatro listas separadas, e só uma é aviso de verdade.
+3. **Ia classificar CTPS × DIÁRIA por PESSOA.** A fórmula da coluna AH da
+   planilha classifica **por DIA**. Quem foi admitido no meio da quinzena tem
+   dias dos dois tipos: pela minha versão, metade do dinheiro dessa pessoa sairia
+   pelo método de pagamento errado.
+4. **Reportei um defeito olhando o cabeçalho da planilha errada.** Disse a ele
+   que o carregamento estava pegando o ID do Pipefy no lugar da conta. As
+   fórmulas provaram que não: a aba tem 4 colunas e a leitura por posição estava
+   certa. **O defeito real era outro, na mesma coluna** (veja abaixo).
+
+**A lição, e ele disse a frase que fecha o assunto:**
+
+> *"Mas você precisa ler as fórmulas das planilhas. Nelas foram criados todo o
+> regramento, do contrário você vai criar algo errado."*
+
+Ele está certo. **Sem as fórmulas, o que eu digo sobre essas planilhas é
+palpite.** Por isso existe o `docs/EXPORTAR_FORMULAS.md`: um script que ele roda
+uma vez e que exporta as fórmulas de oito planilhas de uma vez, sem mandar
+nenhum dado de pessoa. Duas já entraram e mudaram o código. Falta o resto — a
+lista está em `docs/FOLHA_DE_PAGAMENTO.md` §7.11.
+
+#### O defeito real que as fórmulas acharam: a conta vinha suja
+
+A aba `C. Diários` traz a conta de pagamento como **texto cru do Pipefy**:
+`BRADESCO S/A - AG 1234 | 0007011-4 | CONS`. O carregamento guardava isso
+inteiro. A própria planilha já resolvia com uma expressão que pega o trecho do
+meio e tira os zeros da frente → `7011-4`. Agora `sincronizacao.conta_do_texto`
+faz o mesmo. **Lugar único**: quem mexer na regra mexe ali.
+
+#### Duas armadilhas de número que quase passaram
+
+1. **O código virou valor.** O leitor da Folha Sintética pegava a primeira coluna
+   numérica da linha — que é o **código** da pessoa. Quem não tinha valor virava
+   "R$ 999". Agora a varredura começa depois do código.
+2. **A multiplicação por 100.** Eu apagava todos os pontos antes de converter:
+   o texto `1.198,84` ficava certo, mas `1198.84` virava `119884`. **A
+   conferência com o total da filial NÃO pegaria isso** — o total infla igual, e
+   os dois lados fecham errado juntos. A regra que ficou: **vírgula manda; sem
+   vírgula, ponto seguido de 1 ou 2 dígitos no fim é decimal; qualquer outro
+   ponto é separador de milhar.**
+
+#### Os outros seis pagamentos (27/09) — lidos, não implementados
+
+Ele mandou os scripts da planilha de **Diaristas, Extras e GM** e o segundo
+blueprint (PJ e Pró-labore). Foram lidos de ponta a ponta. O regramento está em
+`docs/FOLHA_DE_PAGAMENTO.md` §7.12 e §7.13. O que mais importa saber daqui:
+
+- **São seis folhas, não uma:** Folha da contabilidade, Alimentação, Transporte,
+  Gratificados (GM), Diaristas, PJ/Pró-labore — mais as diárias de quem tem
+  carteira assinada. Duas formas de pagar: **SomaPay** e **BeeVale**, e ele quer
+  **escolher** qual usar, porque depende da obra → CNPJ.
+- **BeeVale faz um card por CONTA; PJ faz um card por PESSOA.** Não é
+  inconsistência, é regra de negócio diferente.
+- **Dois defeitos reais nos scripts atuais**, que o sistema novo não deve herdar:
+  a função que marca tudo escreve numa coluna que o gerador não lê (rodada sai
+  vazia); e o PJ decide pessoa física × jurídica pelo **tamanho do texto** do
+  documento — um CNPJ sem pontuação tem 14 caracteres e seria tratado como CPF.
+- **Uma perda silenciosa:** o gerador da BeeVale junta linhas da mesma pessoa e,
+  se elas tiverem obras diferentes, fica com a **primeira** e só escreve um aviso
+  no log técnico. O rateio da segunda obra desaparece sem ninguém saber.
+- **O que copiar de lá:** as três conferências antes de subir o arquivo, incluindo
+  **abrir o próprio .xlsx gerado** e checar se os CPFs de dentro são os
+  esperados. Isso existe porque o Drive **já entregou o arquivo de outra conta**
+  — está escrito no comentário do script.
+
+#### As fórmulas chegaram — e derrubaram duas coisas que eu tinha escrito
+
+O documento de fórmulas da planilha de Diaristas/Extras/GM **estava na pasta**;
+eu tinha dito que faltava. Lido, ele respondeu metade das perguntas abertas e me
+corrigiu duas vezes. Detalhe em `docs/FOLHA_DE_PAGAMENTO.md` §7.14. O que
+importa saber daqui:
+
+- **A "trava de pagamento" que eu descrevi não existe.** Eu vi uma célula com
+  `"OK"` e supus regra de negócio. É só um campo obrigatório: recusa disparar se
+  ninguém escreveu o bloqueio à mão. **Eu supus regra onde havia formulário** —
+  é o mesmo erro do cabeçalho da planilha errada, de véspera.
+- **A marcação "Não Pagar" da GM não funciona por pessoa.** A fórmula que o
+  gerador lê olha **só a linha 4** e copia o resultado para todas as outras. E
+  ela não consulta a marcação que o DP faz: quem decide o pagamento BeeVale da GM
+  é "tem CPF e tem centro de custo". A marcação alimenta **outra** lista, a do
+  SomaPay. Dois portões na mesma aba, e só um obedece a pessoa.
+- **SomaPay × BeeVale já é escolha por pessoa** — é uma coluna do cadastro da GM.
+  Ele pediu essa liberdade achando que era nova.
+- **A conta corrente sai do NOME da obra, por expressão, com padrão silencioso.**
+  Obra cujo nome não casa com nenhum pedaço da lista vai para a `7011-4` **sem
+  avisar**. Paga pela conta errada e ninguém fica sabendo. No sistema novo a conta
+  vem da tabela, e obra sem conta **segura o arquivo**.
+- **Dinheiro que eu não sabia que existia:** a diária extra de quem é CTPS paga
+  **+20 em feriado, +10 no sábado, +20 no domingo**, e **não paga** o dia que tem
+  compensação. E **quem é VIGIA está excluído** — regra que só existe dentro de
+  uma fórmula.
+- **A alimentação desconta feriado e férias; o transporte NÃO.** As colunas de
+  feriado existem na aba do transporte, são calculadas e não entram na conta.
+  Hoje se paga transporte de dia de férias. **É a pergunta mais cara do
+  levantamento**, porque multiplica por ~500 pessoas todo mês — e só o dono
+  decide se é regra do vale-transporte ou fórmula esquecida pela metade.
+- **O link do card do Pipefy por pessoa já existe** nas planilhas: é uma coluna
+  do cadastro. Ele pediu isso; a carga do cadastro só precisa trazer o número.
+
+**A lição, de novo e mais curta:** duas vezes em dois dias eu afirmei uma regra
+que não existia, olhando o sintoma em vez da fórmula. Nesta área, **o que eu digo
+sobre as planilhas sem ter lido a fórmula é palpite** — e palpite que vira código
+custa dinheiro de verdade.
+
+#### ⚠️ Segurança: de três riscos, agora são SEIS
+
+Os três antigos (credencial do Mobponto dentro do script, um Web App aberto para
+qualquer pessoa, planilha de pagamento com link público) continuam. A leitura dos
+scripts da BeeVale achou três novos, e um deles é grave:
+
+4. **As credenciais do Dropbox estão escritas dentro do código** — incluindo o
+   *refresh token*, que não expira. Quem lê o script tem a pasta do Dropbox.
+5. **O token do Z-API também está no código.** Quem tem manda WhatsApp pela BWS.
+6. **O script FORÇA o link do Dropbox a ser público** — se achar um link
+   restrito à equipe, ele **revoga** e cria um aberto. Depois cola esse link na
+   descrição do card e na mensagem de WhatsApp. O arquivo com nome, CPF e valor
+   de ~500 pessoas baixa **sem login**.
+
+Os itens 3 e 6 morrem sozinhos quando o arquivo passar a ser baixado de dentro
+do sistema, com login. **Os itens 1, 4 e 5 são credenciais que já circularam e
+precisam ser trocadas na origem** — vale a mesma regra do `EL_NFSE_TOKEN`
+(`CONTEXTO.md` §9). **Nenhum desses valores entra no chat**: copia-se do editor
+de script direto para o Render ou para o painel do fornecedor.
+
+#### Por que NADA disso está numa tela ainda
+
+Porque o regramento não está completo, e tela feita com regra pela metade é
+retrabalho garantido. Falta:
+
+- as fórmulas das outras seis planilhas (lista em §7.11 do documento);
+- as abas `Página37`, `Feriados`, `Férias`, `Compensação` e `Calendário`;
+- a **trava de pagamento** da aba CTPS — existe uma célula que decide se o
+  pagamento pode sair, e o critério dela é invisível para mim;
+- quatro respostas dele, também em §7.11.
+
+#### Pendente AGORA nesta área
+
+1. **Migrações 019 a 027 não aplicadas** — o botão "Aplicar atualizações do
+   banco" precisa ser apertado no mesmo momento em que este ramo for juntado.
+2. **Dependência nova: `xlrd`** (ler o `.xls` antigo da Fortes). Está no
+   `requirements.txt` com o motivo escrito.
+3. **Nada foi para a `main`** desde `bf958d9`. Este ramo tem 12 commits
+   esperando o "pode" dele.
+4. **`MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY`** ainda não existem no
+   Render.
+5. **A diferença de saldo da BD 50024** (R$ 64.711,98) continua sem explicação
+   — ninguém investigou.
+6. **Renomear "Análise de SPs" para "Análise de Pagamentos"** foi levantado por
+   ele e não decidido. Minha recomendação: trocar só o que a pessoa lê na tela;
+   **não** mexer em pasta, esquema de banco nem variável de ambiente.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

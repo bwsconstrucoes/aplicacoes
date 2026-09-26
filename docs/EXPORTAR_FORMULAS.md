@@ -23,7 +23,7 @@ regra, não dos dados. Este script manda só a regra.
 1. Abra **script.google.com** e clique em **Novo projeto**.
 2. Apague o que estiver lá e **cole o código inteiro** que está mais abaixo.
 3. No alto do código, na lista `PLANILHAS`, **cole o endereço de cada planilha**
-   (o link da barra de endereços serve; o ID também). Já deixei as cinco que
+   (o link da barra de endereços serve; o ID também). Já deixei as oito que
    importam — **acrescente a do próximo trabalho na mesma lista**.
 4. Salve (o nome do projeto pode ser qualquer um, ex.: "Exportar Fórmulas BWS").
 5. Escolha a função **`exportarTodas`** e clique em **Executar**. Na primeira vez
@@ -56,6 +56,8 @@ const PLANILHAS = [
   "https://docs.google.com/spreadsheets/d/1Q2Qz3Uy1SiwBNWOyZMxHLTpl_ds_n4VR_mj1llRv2to",  // Mobponto - Relatório Geral Mensal
   "https://docs.google.com/spreadsheets/d/1fqi4QUOVGUd1_4Gg4vK5qP_IMOSgFaw8DD9MDgmM3vo",  // Registro de Colaboradores
   "https://docs.google.com/spreadsheets/d/1lrP1HOvwqyXiVdP2kuTgG7sJjl2QXl0WT4lwkd392DA",  // Registro de SPs (tem a aba C. Diários)
+  "https://docs.google.com/spreadsheets/d/1Q39sdTbZ4edNthTU3HsCc8ahkBLWfqOcffbBXp3_RI8",  // Diaristas, Extras e GM (abas CTPS, Diaristas, GM, Cesta, Alimentação, Transporte)
+  "https://docs.google.com/spreadsheets/d/1LoTJtYKHpSuxnvr03tBvxjpLK6c2Wvuyo4YbVk3IYEk",  // Planilha de Análise (a que vai anexada no card da BeeVale)
   // ↓ ACRESCENTE AQUI a planilha do próximo trabalho:
   // "cole o link aqui",
 ];

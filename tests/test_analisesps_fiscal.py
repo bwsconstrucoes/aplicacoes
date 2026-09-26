@@ -1427,45 +1427,70 @@ def test_a_busca_de_CTe_manda_o_CERTIFICADO_na_conexao():
 # ---------------------------------------------------------------------------
 # A CONTA DE CADA OBRA — a aba "C. Diários" (26/09/2026)
 #
-# ⚠️ ISTO LIA A COLUNA ERRADA, e o defeito ficou escondido porque nenhuma tela
-# lia a tabela. O dono pediu para conferir de onde sai a conta corrente de cada
-# obra, por causa da folha de pagamento — e a leitura era por POSIÇÃO: primeira
-# coluna o código, SEGUNDA a conta. A segunda coluna da aba é o ID do registro
-# no Pipefy. A tabela vinha sendo preenchida com o ID desde a estreia.
+# ⚠️ CORREÇÃO DE UM ALARME FALSO MEU, e fica registrado porque eu disse ao dono
+# que a carga lia a coluna errada. NÃO LIA.
 #
-# É o tipo de erro que só existe enquanto ninguém usa o dado. No primeiro uso,
-# ele paga 500 pessoas da conta errada.
+# Eu havia lido o cabeçalho de uma CÓPIA da planilha da folha, onde a segunda
+# coluna é o ID do Pipefy, e concluí que a nossa carga pegava o ID. A aba que a
+# nossa carga lê é a do "Registro de SPs", e as fórmulas exportadas por ele
+# mostraram que ela tem quatro colunas só:
+#
+#     A Código Primário | B Conta de Pagamento | C Projeto | D Código Omie
+#
+# ⚠️ MAS O DEFEITO DE VERDADE ESTÁ NA MESMA COLUNA: ela não guarda a conta,
+# guarda um TEXTO com a conta dentro, vindo da coluna AH do Pipefy:
+#
+#     BRADESCO ... | 0007011-4 | ...
+#
+# A planilha extrai com REGEXEXTRACT e tira os zeros à esquerda; a nossa carga
+# guardava o texto cru, que não casa com nada — nem com a conta da conciliação,
+# nem com o que o OMIE conhece.
 # ---------------------------------------------------------------------------
-CABECALHO_DIARIOS = ["Centro de Custo", "ID", "Código Primário",
-                     "Centro de Custo", "Código Centro de Custo Pipefy",
-                     "Código Omie (Código Primário)", "Conta"]
+# O cabeçalho REAL da aba que a carga lê, confirmado pelas fórmulas.
+CABECALHO_DIARIOS = ["Código Primário", "Conta de Pagamento", "Projeto",
+                     "Código Omie"]
 
 
-def test_a_conta_da_obra_vem_da_coluna_CONTA_e_nao_da_segunda():
-    """O caso real: a segunda coluna é o ID do Pipefy (594904559) e a conta é
-    7011-4, no fim da aba."""
+@pytest.mark.parametrize("bruto,esperado", [
+    # O formato real: o texto do Pipefy com a conta entre barras verticais.
+    ("BRADESCO S/A - AG 1234 | 0007011-4 | CONS", "7011-4"),
+    ("| 22005-1 |", "22005-1"),
+    ("| 12345-X |", "12345-X"),          # dígito verificador pode ser letra
+    # Já limpo: aceita, porque a coluna pode ser arrumada na planilha um dia e a
+    # carga não pode parar de funcionar por causa disso.
+    ("7011-4", "7011-4"),
+    ("0007011-4", "7011-4"),            # o zero à esquerda sai
+    # O que não é conta não vira conta.
+    ("BRADESCO sem conta nenhuma", ""),
+    ("", ""),
+])
+def test_a_conta_e_EXTRAIDA_de_dentro_do_texto(bruto, esperado):
+    from app.apps.analisesps import sincronizacao
+    assert sincronizacao.conta_do_texto(bruto) == esperado
+
+
+def test_a_carga_grava_a_conta_limpa_e_nao_o_texto_cru():
     from app.apps.analisesps import sincronizacao
 
     linhas, motivo = sincronizacao._contas_da_aba([
         CABECALHO_DIARIOS,
-        ["CONS", "594904559", "CONS", "CONS", "384052839", "583753491", "7011-4"],
-        ["CEIURU", "391218481", "CEIURU", "CEIURU", "383844535", "583764604", "7011-4"],
+        ["CONS", "BRADESCO S/A | 0007011-4 | CONS", "Matriz", "583753491"],
+        ["CEIURU", "BRADESCO S/A | 0022005-1 | CEIURU", "Creche", "583764604"],
     ])
 
     assert motivo is None
-    assert linhas == [("CONS", "7011-4"), ("CEIURU", "7011-4")]
-    # A prova do defeito antigo: o ID do Pipefy não pode virar conta.
-    assert all("5949" not in conta for _c, conta in linhas)
+    assert linhas == [("CONS", "7011-4"), ("CEIURU", "22005-1")]
 
 
 def test_a_coluna_da_conta_pode_mudar_de_lugar():
     """Procurar pelo NOME é o que faz a carga sobreviver a uma coluna nova no
-    meio da aba — e é o que o resto deste arquivo já fazia."""
+    meio da aba — e é o que o resto deste arquivo já fazia. Não conserta defeito
+    nenhum (a posição estava certa), mas evita o próximo."""
     from app.apps.analisesps import sincronizacao
 
     linhas, motivo = sincronizacao._contas_da_aba([
-        ["Conta", "Centro de Custo", "ID"],
-        ["7011-4", "CONS", "594904559"],
+        ["Conta de Pagamento", "Código Primário", "Projeto"],
+        ["| 7011-4 |", "CONS", "Matriz"],
     ])
     assert motivo is None
     assert linhas == [("CONS", "7011-4")]
@@ -1478,9 +1503,7 @@ def test_obra_sem_conta_entra_VAZIA_e_nao_desaparece():
     from app.apps.analisesps import sincronizacao
 
     linhas, motivo = sincronizacao._contas_da_aba([
-        CABECALHO_DIARIOS,
-        ["OBRANOVA", "1", "OBRANOVA", "OBRANOVA", "2", "3", ""],
-    ])
+        CABECALHO_DIARIOS, ["OBRANOVA", "", "", "3"]])
     assert motivo is None
     assert linhas == [("OBRANOVA", "")]
 
@@ -1492,8 +1515,8 @@ def test_sem_a_coluna_da_conta_o_motivo_volta_ESCRITO_com_o_cabecalho():
     from app.apps.analisesps import sincronizacao
 
     linhas, motivo = sincronizacao._contas_da_aba([
-        ["Centro de Custo", "ID", "Código Omie"],
-        ["CONS", "594904559", "583753491"],
+        ["Código Primário", "Projeto", "Código Omie"],
+        ["CONS", "Matriz", "583753491"],
     ])
     assert linhas == []
     assert "Conta" in motivo
