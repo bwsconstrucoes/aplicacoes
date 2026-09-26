@@ -1462,3 +1462,124 @@ def test_sinal_igual_nao_e_confundido_com_sinal_trocado(banco_conc):
 
     assert conferido["adotaveis"] == 1
     assert conferido["sinal_trocado"] == []
+
+
+# ---------------------------------------------------------------------------
+# APAGAR UMA LINHA DO EXTRATO — 26/09/2026
+#
+# Pedido do dono, com a ressalva dele junto: *"era interessante a gente poder
+# excluir um lançamento do extrato (…) e a exclusão tem uma confirmação, né?
+# (…) Porque não é o certo estar excluindo linhas, mas…"*
+#
+# É a operação mais perigosa desta tela: o extrato é a cópia do que o banco
+# diz, e uma linha que sai faz o saldo daqui deixar de bater com o banco — sem
+# deixar rastro na conta, porque a linha sumiu.
+# ---------------------------------------------------------------------------
+def test_apagar_uma_linha_tira_ela_do_extrato_e_do_saldo(banco_conc):
+    from app.apps.analisesps import conciliacao
+    from app.apps.analisesps.db import consultar_um
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    linha_id = conciliacao.acrescentar_a_mao(
+        conta_id, dt.date(2026, 9, 1), "DUPLICADA POR FALHA", D("-1500.00"),
+        quem="T")
+    antes = conciliacao.saldo_da_conta(conta_id)
+
+    feito = conciliacao.apagar_linha(linha_id, "veio duplicada da importação", "T")
+
+    assert feito["apagadas"] == 1
+    assert consultar_um(
+        "SELECT count(*) FROM analisesps.conciliacao_extrato WHERE id = ?",
+        (linha_id,))[0] == 0
+    assert conciliacao.saldo_da_conta(conta_id) == antes + D("1500.00")
+
+
+def test_apagar_SEM_motivo_e_recusado(banco_conc):
+    """⚠️ O MOTIVO NÃO É BUROCRACIA: quem olhar o saldo em março e vir que não
+    bate com o banco precisa conseguir descobrir por quê. Sem ele, a única
+    resposta possível é "alguém apagou uma linha em setembro"."""
+    from app.apps.analisesps import conciliacao
+    from app.apps.analisesps.db import consultar_um
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    linha_id = conciliacao.acrescentar_a_mao(
+        conta_id, dt.date(2026, 9, 1), "X", D("-10.00"), quem="T")
+
+    for vazio in ("", "   ", None):
+        with pytest.raises(conciliacao.ErroDaConciliacao) as erro:
+            conciliacao.apagar_linha(linha_id, vazio, "T")
+        assert "por que" in str(erro.value).lower()
+
+    assert consultar_um(
+        "SELECT count(*) FROM analisesps.conciliacao_extrato WHERE id = ?",
+        (linha_id,))[0] == 1, "apagou mesmo sem motivo"
+
+
+def test_a_linha_JA_LANCADA_no_omie_nao_pode_ser_apagada(banco_conc):
+    """Lá fora existe um título com aquele número. Sumir com a linha daqui
+    deixaria o OMIE com um lançamento que nada mais explica, e ninguém
+    descobriria a origem."""
+    from app.apps.analisesps import conciliacao
+    from app.apps.analisesps.db import conexao, consultar_um
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    linha_id = conciliacao.acrescentar_a_mao(
+        conta_id, dt.date(2026, 9, 1), "TARIFA", D("-9.00"), quem="T")
+    with conexao() as con:
+        con.execute("UPDATE analisesps.conciliacao_extrato "
+                    "   SET omie_codigo = 987654 WHERE id = ?", (linha_id,))
+        con.commit()
+
+    conta = conciliacao.o_que_apagar_a_linha_leva(linha_id)
+    assert conta["pode"] is False
+    assert "987654" in conta["erro"]
+    assert "OMIE" in conta["erro"]
+
+    with pytest.raises(conciliacao.ErroDaConciliacao):
+        conciliacao.apagar_linha(linha_id, "quero tirar", "T")
+    assert consultar_um(
+        "SELECT count(*) FROM analisesps.conciliacao_extrato WHERE id = ?",
+        (linha_id,))[0] == 1
+
+
+def test_a_conferencia_antes_de_apagar_diz_o_que_a_linha_E(banco_conc):
+    """A tela pergunta com informação, não no escuro: se estava conciliada, por
+    quem, e se tem observação escrita."""
+    from app.apps.analisesps import conciliacao
+    from decimal import Decimal as D
+
+    conta_id = conta_de_teste()
+    linha_id = conciliacao.acrescentar_a_mao(
+        conta_id, dt.date(2026, 9, 1), "PIX FULANO", D("-1500.00"),
+        observacao="conferido no banco", quem="T")
+    conciliacao.marcar([linha_id], True, "MARCELO")
+
+    conta = conciliacao.o_que_apagar_a_linha_leva(linha_id)
+
+    assert conta["pode"] is True
+    assert conta["data"] == "2026-09-01"
+    assert conta["descricao"] == "PIX FULANO"
+    # Vai para a tela em JSON: o valor sai como texto, para o navegador não
+    # arredondar centavo nenhum no caminho.
+    assert conta["valor"] == "-1500.00"
+    assert conta["origem"] == "mao"
+    assert conta["conciliado"] is True
+    assert conta["conciliado_por"] == "MARCELO"
+    assert conta["observacao"] == "conferido no banco"
+
+
+def test_apagar_uma_linha_que_nao_existe_mais_responde_frase_e_nao_estouro(
+        banco_conc):
+    """Duas pessoas na mesma tela: a segunda clica no × de uma linha que a
+    primeira já apagou."""
+    from app.apps.analisesps import conciliacao
+
+    conta = conciliacao.o_que_apagar_a_linha_leva(999999)
+    assert conta["pode"] is False
+    assert "não existe mais" in conta["erro"]
+
+    with pytest.raises(conciliacao.ErroDaConciliacao):
+        conciliacao.apagar_linha(999999, "qualquer", "T")

@@ -300,7 +300,7 @@ cobrável de quem preencheu.
 | Lote | a remessa que está sendo tratada agora, em grupos |
 | Relatório | quanto, por obra, projeto, tipo, conta e credor |
 | Conciliação › Panorama | o que falta em cada conta: buraco de extrato, atraso, o que falta conciliar. Responde "no que eu não posso confiar" |
-| Conciliação | o extrato bancário conta a conta: solta o OFX (ele descobre a conta sozinho), confere ANTES de gravar, marca o conciliado e anota pendência. Controle paralelo ao OMIE, a pedido do dono |
+| Conciliação | o extrato bancário conta a conta: solta o OFX (ele descobre a conta sozinho), confere ANTES de gravar, marca o conciliado e anota pendência. Dá para **desfazer uma importação** inteira e para **apagar uma linha solta** (com confirmação e motivo; a que já foi lançada no OMIE não sai). Controle paralelo ao OMIE, a pedido do dono |
 | Calendário | o MESMO filtro do Relatório e das Solicitações (**menos as datas** — quem manda aqui é o mês aberto), espalhado nos dias do mês, com uma linha colorida por situação (vermelho vencido, laranja a vencer, azul pago); o dia clicado abre a lista daquele dia |
 | Auditoria | sete checagens do que está errado na base |
 | Ratear | o JSON que atualiza o título no Omie |

@@ -7935,6 +7935,73 @@ entrelinha.
 dele é o único jeito de fechar isso.
 
 ---
+
+### Centésima terceira leva (26/09) — o filtro que travava a tela, e apagar linha
+
+#### 1. Filtrar por um dia vazio virava beco sem saída
+
+> *"Se eu colocar uma data que não tem nada, ele some com o extrato —
+> obviamente não tem nada, mas também ele some com os cabeçalhos. Aí você não
+> pode alterar o filtro."*
+
+Exato. O "se não há linhas" engolia a tabela **inteira**, cabeçalho incluído — e
+os filtros de cabeçalho moram no cabeçalho. Filtrar um dia sem movimento
+deixava a pessoa sem como voltar: só o "Limpar" da barra lateral salvava, e
+quem não soubesse concluiria que a tela travou.
+
+**A regra que fica:** um filtro que não pode ser desfeito de onde foi feito não
+é filtro, é armadilha. A tabela agora é desenhada sempre, com o cabeçalho, e o
+"nada aqui" virou uma linha dentro dela — dizendo também **o que fazer**
+("mude o filtro acima"). Quando a conta não tem extrato nenhum a frase é outra:
+mandar mexer no filtro faria procurar o que não existe.
+
+A barra de ações ("conciliar selecionados") continua escondida sem linhas —
+botão que não faz nada é pior que botão nenhum.
+
+#### 2. Apagar um lançamento do extrato
+
+> *"Era interessante a gente poder excluir um lançamento do extrato. De repente
+> teve alguma falha na importação e a gente poder excluir aquela linha. E a
+> exclusão tem uma confirmação, né? Para garantir que a pessoa está fazendo uma
+> coisa correta. Porque não é o certo estar excluindo linhas, mas…"*
+
+Ele está certo nas duas pontas, e por isso a operação é **chata de propósito**.
+Apagar linha de extrato é o que há de mais perigoso nesta tela: o extrato é a
+cópia do que o banco diz, e uma linha que sai faz o saldo daqui deixar de bater
+com o banco **sem deixar rastro na conta** — porque a linha sumiu.
+
+O caminho normal continua sendo o **Desfazer da importação** (tira o arquivo
+todo, com contagem antes). Isto é para a linha solta: a digitada errada, a que
+veio duplicada de uma falha.
+
+**Quatro travas:**
+
+1. **Um × discreto no fim da linha**, cinza, que só ganha cor ao passar o
+   mouse. Quem procura acha; quem não procura não tropeça.
+2. **Pergunta antes**, dizendo o que a linha é — data, valor, de onde veio, se
+   está **conciliada** (e por quem) e se tem observação escrita. E aponta o
+   caminho certo: "se o problema foi a importação inteira, prefira o Desfazer".
+3. **Exige o MOTIVO**, e o servidor recusa sem ele. Não é burocracia: quem
+   olhar o saldo em março e vir que não bate precisa conseguir descobrir por
+   quê. Sem o motivo, a única resposta possível seria "alguém apagou uma linha
+   em setembro".
+4. **A linha já lançada no OMIE não sai**, e a recusa diz o número do título.
+   Lá fora existe um lançamento que nada mais explicaria.
+
+**Limitação dita com todas as letras:** o registro vai para o **log do serviço**
+(Render), não para uma tela. É o mesmo lugar onde o desfazer de importação
+registra. Para achar depois, é preciso ir ao log — não há tela de "linhas
+apagadas". Se isso incomodar, é uma tabela nova e uma migração.
+
+**Verificado:** 5 testes com banco de verdade (apaga e o saldo muda; sem motivo
+recusa e a linha fica; a lançada no OMIE recusa e a linha fica; a conferência
+diz o que a linha é; linha que não existe mais responde com frase) e 6 de tela
+(os filtros continuam com zero linhas, a frase certa em cada caso, a barra de
+ações some, o × só para quem opera, e a dupla confirmação com motivo).
+
+**NÃO verificado:** nada num navegador.
+
+---
 ---
 
 ## Regras que não se discutem

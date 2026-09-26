@@ -852,6 +852,119 @@ def anotar(linha_id: int, texto: str, quem: str = "") -> str:
     return texto
 
 
+# ---------------------------------------------------------------------------
+# APAGAR UMA LINHA — 26/09/2026
+#
+# Pedido do dono, e ele mesmo pôs a ressalva junto:
+#
+#   *"Era interessante a gente poder excluir um lançamento do extrato. De
+#   repente teve alguma falha na importação e a gente poder excluir aquela
+#   linha. E a exclusão tem uma confirmação, né? Para garantir que a pessoa
+#   está fazendo uma coisa correta. Porque não é o certo estar excluindo
+#   linhas, mas…"*
+#
+# ⚠️ ELE ESTÁ CERTO NAS DUAS PONTAS, e é por isso que esta função é chata de
+# propósito. Apagar linha de extrato é a operação mais perigosa desta tela: o
+# extrato é a cópia do que o banco diz, e uma linha que sai daqui faz o saldo
+# desta tela deixar de bater com o banco — sem deixar rastro na conta, porque
+# a linha sumiu.
+#
+# Então: o desfazer de uma IMPORTAÇÃO continua sendo o caminho normal (tira o
+# arquivo todo, com contagem antes). Isto aqui é para a linha solta: a digitada
+# errada, a que veio duplicada de uma falha de importação.
+#
+# TRÊS TRAVAS, e cada uma responde a um jeito de se dar mal:
+#
+#   1. **O que está lançado no OMIE não sai.** Lá fora existe um título com
+#      aquele número; sumir com a linha daqui deixaria o OMIE com um lançamento
+#      que nada mais explica, e ninguém descobriria a origem.
+#   2. **Vai para o log do serviço com quem apagou, o que era e POR QUÊ.** Uma
+#      linha que desaparece sem dono é a diferença entre um erro corrigido e um
+#      buraco inexplicável no saldo seis meses depois. É o mesmo registro que o
+#      desfazer de uma importação usa — log do Render, não tela. Fica dito aqui
+#      porque é uma limitação de verdade: para achar, é preciso ir ao log.
+#   3. **A tela pergunta antes** (é a confirmação que ele pediu) e diz o que a
+#      linha é, incluindo se ela estava conciliada ou anotada.
+# ---------------------------------------------------------------------------
+def o_que_apagar_a_linha_leva(linha_id: int) -> dict:
+    """O que sumiria se apagasse esta linha. NÃO apaga nada.
+
+    Devolve `{"pode": bool, "erro": str, ...}` — os dados da linha, para a tela
+    poder perguntar com informação em vez de perguntar no escuro."""
+    if not _pronto():
+        return {"pode": False, "erro": "A conciliação ainda não foi ligada."}
+    from .db import consultar_um, tem_coluna
+
+    campos = ("id, conta_id, data, descricao, valor, origem, conciliado, "
+              "conciliado_por, observacao")
+    if tem_coluna("conciliacao_extrato", "omie_codigo"):
+        campos += ", omie_codigo"
+    linha = consultar_um(
+        f"SELECT {campos} FROM analisesps.conciliacao_extrato WHERE id = ?",
+        (int(linha_id),))
+    if not linha:
+        return {"pode": False, "erro": "Esta linha não existe mais."}
+
+    nomes = ["id", "conta_id", "data", "descricao", "valor", "origem",
+             "conciliado", "conciliado_por", "observacao", "omie_codigo"]
+    dados = dict(zip(nomes, list(linha) + [None]))
+    if dados.get("omie_codigo"):
+        return {
+            "pode": False,
+            "erro": ("Esta linha já foi lançada no OMIE (título "
+                     f"{dados['omie_codigo']}). Apagá-la aqui deixaria aquele "
+                     "título sem nada que o explique. Desfaça o lançamento no "
+                     "OMIE primeiro."),
+            **_linha_para_a_tela(dados)}
+    return {"pode": True, "erro": "", **_linha_para_a_tela(dados)}
+
+
+def _linha_para_a_tela(dados: dict) -> dict:
+    return {
+        "linha_id": dados["id"],
+        "conta_id": dados["conta_id"],
+        "data": dados["data"].isoformat() if dados.get("data") else "",
+        "descricao": (dados.get("descricao") or "")[:200],
+        "valor": str(dados.get("valor") or 0),
+        "origem": dados.get("origem") or "",
+        "conciliado": bool(dados.get("conciliado")),
+        "conciliado_por": dados.get("conciliado_por") or "",
+        "observacao": (dados.get("observacao") or "")[:200],
+    }
+
+
+def apagar_linha(linha_id: int, motivo: str = "", quem: str = "") -> dict:
+    """Apaga UMA linha do extrato. Recusa a que já foi lançada no OMIE.
+
+    ⚠️ O MOTIVO É OBRIGATÓRIO, e não é burocracia: quem olhar o saldo em março
+    e vir que ele não bate com o banco precisa conseguir descobrir por quê. Sem
+    o motivo no registro, a única resposta possível é "alguém apagou uma linha
+    em setembro" — o que não ajuda ninguém.
+    """
+    antes = o_que_apagar_a_linha_leva(linha_id)
+    if not antes.get("pode"):
+        raise ErroDaConciliacao(antes.get("erro") or "Não dá para apagar.")
+    motivo = str(motivo or "").strip()[:300]
+    if not motivo:
+        raise ErroDaConciliacao(
+            "Diga por que esta linha está saindo — é o que vai explicar, daqui "
+            "a meses, por que o saldo mudou.")
+
+    from .db import conexao
+    with conexao() as con:
+        cur = con.execute(
+            "DELETE FROM analisesps.conciliacao_extrato WHERE id = ?",
+            (int(linha_id),))
+        apagadas = cur.rowcount or 0
+        con.commit()
+
+    logger.warning(
+        "Conciliação: %s APAGOU a linha %s da conta %s — %s de %s (%s). "
+        "Motivo: %s", quem or "?", linha_id, antes.get("conta_id"),
+        antes.get("descricao"), antes.get("data"), antes.get("valor"), motivo)
+    return {"apagadas": apagadas, "motivo": motivo, **antes}
+
+
 def acrescentar_a_mao(conta_id: int, data, descricao: str, valor,
                       documento: str = "", observacao: str = "",
                       quem: str = "") -> int:

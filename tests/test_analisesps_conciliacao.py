@@ -1063,3 +1063,104 @@ def test_o_aviso_de_sinal_trocado_tambem_vem_antes_do_botao_de_gravar():
     html = _template_da_conciliacao()
     assert "d.sinal_trocado_total" in html
     assert html.index("d.sinal_trocado_total") < html.index('id="btn-gravar-extrato"')
+
+
+# ---------------------------------------------------------------------------
+# O FILTRO QUE NÃO DÁ PARA DESFAZER — 26/09/2026
+# ---------------------------------------------------------------------------
+def test_filtrar_por_um_dia_VAZIO_nao_pode_sumir_com_os_filtros(app_com_dados,
+                                                                monkeypatch):
+    """⚠️ DEFEITO ACHADO PELO DONO: *"Se eu colocar uma data que não tem nada,
+    ele some com o extrato — obviamente não tem nada, mas também ele some com
+    os cabeçalhos. Aí você não pode alterar o filtro."*
+
+    Os filtros de cabeçalho moram no cabeçalho da tabela, e a tabela inteira era
+    engolida quando não havia linha. Filtrar por um dia vazio virava um beco sem
+    saída: só o "Limpar" salvava, e quem não soubesse concluiria que travou.
+
+    Um filtro que não pode ser desfeito de onde foi feito não é filtro, é
+    armadilha."""
+    monkeypatch.setattr(conciliacao, "listar", lambda f, pagina=1: [])
+    monkeypatch.setattr(conciliacao, "resumo", lambda f: {
+        "quantidade": 0, "entradas": Decimal("0"), "saidas": Decimal("0"),
+        "saldo": Decimal("0"), "pendentes": 0,
+        "pendentes_valor": Decimal("0"), "com_observacao": 0})
+
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao?data=2026-01-01").get_data(as_text=True)
+
+    assert "Nada neste recorte" in html
+    # E os filtros CONTINUAM na tela — é isto que estava faltando.
+    assert 'id="filtro-colunas"' in html
+    assert 'name="historico" form="filtro-colunas"' in html
+    assert 'name="data" form="filtro-colunas"' in html
+    assert "Mude o filtro acima" in html
+
+
+def test_com_a_conta_sem_extrato_nenhum_a_tela_diz_isso_e_nao_culpa_o_filtro(
+        app_com_dados, monkeypatch):
+    """Base vazia e filtro vazio são coisas diferentes, e mandar mexer no filtro
+    quando não há extrato nenhum faria a pessoa procurar o que não existe."""
+    monkeypatch.setattr(conciliacao, "listar", lambda f, pagina=1: [])
+    monkeypatch.setattr(conciliacao, "resumo", lambda f: {
+        "quantidade": 0, "entradas": Decimal("0"), "saidas": Decimal("0"),
+        "saldo": Decimal("0"), "pendentes": 0,
+        "pendentes_valor": Decimal("0"), "com_observacao": 0})
+
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    assert "ainda não tem extrato importado" in html
+    assert "Mude o filtro acima" not in html
+
+
+def test_sem_linha_nenhuma_a_barra_de_acoes_nao_aparece(app_com_dados,
+                                                        monkeypatch):
+    """Botão de "conciliar selecionados" com zero linhas na tela é botão que não
+    faz nada — e botão que não faz nada é pior que botão nenhum."""
+    monkeypatch.setattr(conciliacao, "listar", lambda f, pagina=1: [])
+    monkeypatch.setattr(conciliacao, "resumo", lambda f: {
+        "quantidade": 0, "entradas": Decimal("0"), "saidas": Decimal("0"),
+        "saldo": Decimal("0"), "pendentes": 0,
+        "pendentes_valor": Decimal("0"), "com_observacao": 0})
+
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    assert 'id="btn-conciliar"' not in html
+
+
+# ---------------------------------------------------------------------------
+# APAGAR UMA LINHA — a tela
+# ---------------------------------------------------------------------------
+def test_cada_linha_tem_como_ser_apagada_e_quem_so_consulta_nao_ve(
+        app_com_dados):
+    """Pedido do dono em 26/09/2026. Quem só consulta não vê o ×: a rota recusa
+    de qualquer jeito, mas mostrar botão que vai recusar é maltratar quem
+    clica."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    assert 'class="apagar-linha"' in html
+
+    so_le = como(app_com_dados, SENHA_CONSULTA).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    assert 'class="apagar-linha"' not in so_le
+
+
+def test_apagar_uma_linha_pergunta_DUAS_vezes_e_exige_motivo():
+    """⚠️ A CONFIRMAÇÃO FOI PEDIDA JUNTO COM O RECURSO: *"a exclusão tem uma
+    confirmação, né? Para garantir que a pessoa está fazendo uma coisa correta.
+    Porque não é o certo estar excluindo linhas."*"""
+    html = _template_da_conciliacao()
+    trecho = html[html.index('.apagar-linha").forEach'):]
+    trecho = trecho[:trecho.index("// --- DESFAZER UMA IMPORTAÇÃO")]
+
+    assert "confirm(" in trecho, "apagaria sem perguntar"
+    assert "prompt(" in trecho, "não pede o motivo"
+    assert trecho.index("confirm(") < trecho.index("confirmar: true"), (
+        "perguntou depois de apagar")
+    assert trecho.index("prompt(") < trecho.index("confirmar: true")
+    # A pergunta tem de dizer o que se perde.
+    assert "CONCILIADA" in trecho and "observação" in trecho
+    assert "não tem volta" in trecho
+    assert "Desfazer do extrato" in trecho, (
+        "não aponta o caminho certo para quando o erro foi a importação toda")

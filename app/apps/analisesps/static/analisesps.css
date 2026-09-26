@@ -669,6 +669,19 @@ a.kpi { display: block; }
 .ponto-lote.no-lote-de-outro { background: #C87A00; }
 .sps .sel { white-space: nowrap; }
 
+/* O × QUE APAGA UMA LINHA DO EXTRATO. Discreto de proposito, e o dono disse
+   por que: "nao e o certo estar excluindo linhas, mas...". Quem procura acha;
+   quem nao procura nao tropeca. Fica cinza claro e so ganha cor ao passar o
+   mouse na linha. */
+.apagar-cel { text-align: center; padding-left: 0; padding-right: 4px; }
+.apagar-linha {
+  background: none; border: 0; cursor: pointer; padding: 0 4px;
+  font-size: 15px; line-height: 1; color: var(--borda);
+}
+.linha-extrato:hover .apagar-linha { color: var(--tinta-suave); }
+.apagar-linha:hover { color: var(--sl-vermelho); }
+.apagar-linha:disabled { opacity: .4; cursor: default; }
+
 /* O NUMERO DA SP NAO E PINTADO. O Streamlit tingia o ID de vermelho ou
    laranja conforme o alerta, e na conversao isso somou com o vencimento
    vermelho ao lado: a linha inteira ficava gritando. O dono pediu para tirar

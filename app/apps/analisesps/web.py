@@ -2186,6 +2186,41 @@ def conciliacao_desfazer():
     return {"ok": True, "so_contei": False, **feito}
 
 
+@bp.route("/api/conciliacao/apagar-linha", methods=["POST"])
+@exige_operador
+def conciliacao_apagar_linha():
+    """Apaga UMA linha do extrato — pedido do dono em 26/09/2026.
+
+    ⚠️ DUAS CHAMADAS, como o desfazer: sem `confirmar`, ela só DIZ o que a linha
+    é (data, valor, se estava conciliada, se tem observação) e se dá para
+    apagar. A segunda executa, e exige o motivo.
+
+    Ele pediu a confirmação junto com o pedido: *"a exclusão tem uma
+    confirmação, né? Para garantir que a pessoa está fazendo uma coisa correta.
+    Porque não é o certo estar excluindo linhas."*
+    """
+    from . import conciliacao as conc
+
+    dados = request.get_json(silent=True) or {}
+    linha_id = str(dados.get("linha_id") or "")
+    if not linha_id.isdigit():
+        return {"ok": False, "erro": "Diga qual linha."}
+
+    if not dados.get("confirmar"):
+        return {"ok": True, "so_contei": True,
+                **conc.o_que_apagar_a_linha_leva(int(linha_id))}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = conc.apagar_linha(int(linha_id), dados.get("motivo") or "", quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou apagar a linha")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    return {"ok": True, "so_contei": False, **feito}
+
+
 @bp.route("/api/conciliacao/soltar-presas", methods=["POST"])
 @exige_operador
 def conciliacao_soltar_presas():

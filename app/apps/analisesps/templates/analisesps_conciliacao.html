@@ -236,13 +236,22 @@
     <small>{{ resumo.quantidade or 0 }} linha(s) neste recorte</small>
   </div>
 
-  {% if not linhas %}
-    <p class="cartao-dica" style="margin:0">Nada neste recorte.
-      {% if resumo.quantidade == 0 and filtros.situacao == 'todos' and not filtros.busca %}
-        Esta conta ainda não tem extrato importado.
-      {% endif %}</p>
-  {% else %}
-  {% if pode_operar %}
+  {# ⚠️ A TABELA É DESENHADA MESMO SEM NENHUMA LINHA, e isto é conserto de um
+     defeito que o dono achou em 26/09/2026:
+
+       *"Se eu colocar uma data que não tem nada, ele some com o extrato —
+       obviamente não tem nada, mas também ele some com os cabeçalhos. Aí você
+       não pode alterar o filtro."*
+
+     E era isso mesmo: o "se não há linhas" engolia a tabela INTEIRA, cabeçalho
+     incluído — e os filtros de cabeçalho moram no cabeçalho. Filtrar por um dia
+     vazio virava um beco sem saída: a única saída era o "Limpar" ou a barra
+     lateral, e quem não soubesse disso concluiria que a tela travou.
+
+     Um filtro que não pode ser desfeito de onde foi feito não é filtro, é
+     armadilha. O cabeçalho fica SEMPRE; o "nada aqui" vira uma linha dentro
+     da tabela. #}
+  {% if pode_operar and linhas %}
     <div class="barra-acoes">
       <label class="opcao"><input type="checkbox" id="marcar-todos">
         <span class="rotulo">marcar todos da página</span></label>
@@ -305,6 +314,7 @@
       <col style="width:118px">
       <col style="width:76px">
       <col class="c-observacao">
+      {% if pode_operar %}<col style="width:30px">{% endif %}
     </colgroup>
     <thead>
       <tr>
@@ -317,6 +327,7 @@
         <th class="direita">Saldo</th>
         <th>Conc.</th>
         <th>Observação</th>
+        {% if pode_operar %}<th></th>{% endif %}
       </tr>
       {# ---------------------------------------------------------------------
          O FILTRO EM CADA COLUNA — pedido do dono em 24/09/2026: *"tem data,
@@ -359,6 +370,7 @@
         </th>
         <th><input name="observacao" form="filtro-colunas" placeholder="procurar…"
                    value="{{ filtros.observacao }}"></th>
+        {% if pode_operar %}<th></th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -401,7 +413,33 @@
               <span class="anotacao-lida">{{ l.observacao }}</span>
             {% endif %}
           </td>
+          {% if pode_operar %}
+            {# ⚠️ APAGAR UMA LINHA — pedido do dono em 26/09/2026, com a
+               ressalva dele junto: *"não é o certo estar excluindo linhas,
+               mas…"*. Por isso é um × discreto no fim da linha, e não um botão
+               convidativo: quem procura acha, quem não procura não tropeça.
+
+               A linha já lançada no OMIE é recusada pela rota, não escondida
+               aqui — esconder faria parecer que a tela não tem o recurso. #}
+            <td class="apagar-cel">
+              <button class="apagar-linha" data-id="{{ l.id }}"
+                      title="apagar esta linha do extrato">×</button>
+            </td>
+          {% endif %}
         </tr>
+      {% else %}
+        {# O recado que antes ficava no lugar da tabela. Aqui dentro ele
+           responde a mesma coisa e deixa os filtros alcançáveis. #}
+        <tr><td colspan="{{ 10 if pode_operar else 8 }}"
+                style="padding:22px; text-align:center; color:var(--tinta-suave)">
+          Nada neste recorte.
+          {% if resumo.quantidade == 0 and filtros.situacao == 'todos'
+                and not filtros.busca and not filtros.dia %}
+            Esta conta ainda não tem extrato importado.
+          {% else %}
+            Mude o filtro acima, ou use o <b>Limpar</b> na barra ao lado.
+          {% endif %}
+        </td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -421,7 +459,6 @@
            href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina+1, **base) }}">próxima ›</a>
       {% endif %}
     </div>
-  {% endif %}
   {% endif %}
 </div>
 
@@ -1598,6 +1635,57 @@ if (formTipo) {
     location.reload();
   });
 }
+
+// --- APAGAR UMA LINHA DO EXTRATO -------------------------------------------
+// ⚠️ A CONFIRMAÇÃO FOI PEDIDA JUNTO COM O RECURSO — 26/09/2026: *"a exclusão
+// tem uma confirmação, né? Para garantir que a pessoa está fazendo uma coisa
+// correta. Porque não é o certo estar excluindo linhas."*
+//
+// Duas chamadas: a primeira só diz o que a linha É e se dá para apagar (a
+// lançada no OMIE não dá). A segunda apaga, e exige o MOTIVO — é o que vai
+// explicar, meses depois, por que o saldo mudou. Sem motivo, o servidor recusa.
+document.querySelectorAll(".apagar-linha").forEach(botao => {
+  botao.addEventListener("click", async () => {
+    const linha_id = botao.dataset.id;
+    botao.disabled = true;
+    const d = await pedir("{{ url_for('analisesps.conciliacao_apagar_linha') }}",
+                          {linha_id: linha_id});
+    botao.disabled = false;
+    if (!d.ok) { recado(d.erro || "não consegui conferir", "erro"); return; }
+    if (!d.pode) { alert(d.erro); return; }
+
+    let aviso = "Apagar esta linha do extrato?\n\n" +
+      (d.data || "").split("-").reverse().join("/") + " — " + d.descricao +
+      "\n" + dinheiro(d.valor);
+    if (d.origem === "planilha") aviso += "\n(veio da planilha antiga)";
+    if (d.origem === "mao") aviso += "\n(foi digitada à mão)";
+    if (d.conciliado) aviso += "\n\nATENÇÃO: ela está CONCILIADA" +
+      (d.conciliado_por ? " por " + d.conciliado_por : "") + ".";
+    if (d.observacao) aviso += "\nTem observação escrita: \"" + d.observacao + "\"";
+    aviso += "\n\nO saldo desta tela vai mudar, e isto não tem volta. " +
+      "Se o problema foi a importação inteira, prefira o Desfazer do extrato.";
+    if (!confirm(aviso)) return;
+
+    // O MOTIVO É OBRIGATÓRIO, e a pergunta é a segunda trava: quem clicou sem
+    // querer para aqui.
+    const motivo = prompt("Por que esta linha está saindo? (fica registrado)");
+    if (!motivo || !motivo.trim()) {
+      recado("nada foi apagado — sem motivo, não apago", "");
+      return;
+    }
+
+    botao.disabled = true;
+    const f = await pedir("{{ url_for('analisesps.conciliacao_apagar_linha') }}",
+                          {linha_id: linha_id, confirmar: true, motivo: motivo});
+    if (!f.ok) {
+      botao.disabled = false;
+      recado(f.erro || "não consegui apagar", "erro");
+      return;
+    }
+    recado("linha apagada. A tela vai recarregar.", "");
+    setTimeout(() => location.reload(), 1200);
+  });
+});
 
 // --- DESFAZER UMA IMPORTAÇÃO -----------------------------------------------
 // ⚠️ O BOTÃO EXISTIA E NÃO FAZIA NADA — relato do dono em 25/09/2026: *"o
