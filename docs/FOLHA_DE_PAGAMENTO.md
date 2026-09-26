@@ -728,15 +728,44 @@ somando). O mesmo conteúdo, para os dois nunca divergirem.
 sistema lê o título, **sugere**, e a tela mostra a escolha já marcada — mas
 marcável.
 
-⚠️ **E quando o título não deixa claro, a tela PERGUNTA em vez de adivinhar.** Não
-conheço o título do relatório de fim de mês; nunca vi um. Chutar "fim de mês" só
-porque não diz adiantamento faria ler o pedaço errado do ponto (16 ao fim em vez
-de 1 a 15), e o erro sairia como um valor plausível, na obra errada. Já está
-implementado assim, com teste.
+**OS DOIS TÍTULOS DE VERDADE** — ele colou o de fim de mês em 26/09/2026:
 
-**Pedido pendente:** quando ele tiver um arquivo de **fim de mês** em mão, me
-mandar só o título dele (a primeira linha) — aí a sugestão passa a acertar os dois
-casos. A competência (`Mês/Ano: 08/2026`) já sai do arquivo.
+| Pagamento | Título do relatório | Dias do ponto |
+|---|---|---|
+| Quinzena (adiantamento) | `Folha Sintética - Adiantamento de Folha` | 1 a 15 |
+| Fim de mês | `Folha Sintética - Folha de Pagamento` | 16 ao último |
+
+⚠️ **A ordem da conferência importa:** o título de fim de mês é o mais genérico dos
+dois ("Folha de Pagamento"), então o **adiantamento é testado primeiro**. Um
+relatório que fosse "Adiantamento - Folha de Pagamento" tem de cair em quinzena.
+
+⚠️ **E quando o título não bate com nenhum dos dois, a tela PERGUNTA em vez de
+adivinhar.** Chutar faria ler o pedaço errado do ponto, e o erro sairia como um
+valor plausível, na obra errada. A competência (`Mês/Ano: 08/2026`) sai do arquivo.
+
+#### ⚠️ D18-b — A armadilha de cem vezes, achada ao ler a folha de fim de mês
+
+As linhas que ele colou trazem o valor em **dois formatos na mesma folha**:
+
+```
+000013  GERLANIO GOMES LIMA          1.074,64   ← texto, com ponto de milhar
+000387  LUELIA MADIDA GOMES TOMAS    1362,56    ← texto, sem milhar
+```
+
+E o arquivo de adiantamento trazia número de verdade na célula (`1198.84`). Ou
+seja: **não dá para assumir formato nenhum**.
+
+A leitura antiga apagava todo ponto e trocava vírgula por ponto. Isso acerta os
+dois de cima — mas um valor que venha como texto com **ponto decimal**
+(`1198.84`, que é o que sai de uma reexportação) viraria **119884**.
+
+**E a conferência de fechamento não pegaria:** o total da filial vem no mesmo
+formato e inflaria igual, então as duas somas continuariam batendo e a tela diria
+"fecha" com todo mundo recebendo cem vezes mais.
+
+A regra agora: **vírgula manda** (é decimal); sem vírgula, um ponto seguido de um
+ou dois dígitos no fim também é decimal; qualquer outro ponto é milhar. Onze casos
+testados, incluindo `R$`, negativo com sinal e negativo entre parênteses.
 
 #### D19 — O arquivo entra por uma área de soltar, como o OFX
 
@@ -795,6 +824,73 @@ O que a tela mostra, sempre visível:
 ⚠️ E uma coisa que o sistema deve fazer sozinho: se o ponto foi carregado **antes**
 de a folha ser importada, a tela avisa. É o caso em que a conta está velha sem
 ninguém ter feito nada errado.
+
+### 7.7 Correções e o que o dono precisa criar no Render
+
+#### ⚠️ D22 — Quem não tem ID Fortes no cadastro NÃO PODE FICAR ESCONDIDO
+
+Correção dele, sobre uma decisão minha que estava errada:
+
+> *"Pessoas sem ID Fortes no cadastro não entram. Na verdade, ela vai entrar após
+> tratamento. Vamos tratar para poder entrar. Então não pode ficar oculto,
+> escondido."*
+
+Eu havia tirado essas pessoas da lista e posto numa lista à parte. **Ele está certo
+e o erro é grave:** lista à parte é lista que alguém esquece de abrir — e aí a
+pessoa desaparece da folha. Trabalhou e não recebeu, sem nada na tela gritando.
+
+Como ficou (já implementado, com testes):
+
+- a pessoa fica na **mesma lista**, marcada como **pendente**, sem CPF e sem
+  apropriação, com a crítica escrita;
+- ela **conta no total a pagar** sem ter obra, então **a folha não fecha** até ser
+  tratada — que é exatamente o que tem de acontecer;
+- a lista de pendentes continua existindo, mas como **atalho** para a tela montar a
+  faixa "precisa da sua mão": são os MESMOS objetos, não uma cópia que pode
+  divergir;
+- tratada (o cadastro passa a ter o ID), ela entra normalmente na apropriação.
+
+**Duas formas de tratar**, e a tela vai oferecer as duas:
+
+1. **preencher o ID Fortes no cadastro** — o certo, porque resolve para sempre;
+2. **amarrar o CPF ali na tela** — rápido, para a folha não ficar travada esperando
+   uma ida à planilha. O sistema fica avisando que o cadastro continua sem o ID,
+   senão o mesmo trabalho volta na quinzena seguinte.
+
+#### D23 — As variáveis do Mobponto, para criar no Render
+
+Ele pediu os nomes. São **duas**, e as duas saem do Apps Script que ele mandou
+(cabeçalhos da requisição) — **copiadas de lá direto para o Render, sem passar por
+chat nenhum**:
+
+Ele mesmo identificou quais são, e acertou: *"acho que as variáveis do Mobponto
+são Authorization e api-key"*. Os nomes das variáveis seguem exatamente isso, para
+não haver dúvida sobre o que colar em cada uma:
+
+| Variável no Render | O que colar | Onde está hoje |
+|---|---|---|
+| `MOBPONTO_AUTHORIZATION` | o valor **inteiro** do cabeçalho `Authorization`, incluindo a palavra `Basic` e o espaço | no `Código.gs` / `Mobponto.gs`, em `CONF.headers` |
+| `MOBPONTO_API_KEY` | o valor **inteiro** do cabeçalho `api-key` | idem |
+
+⚠️ **Copiar inteiro, sem cortar nada.** O código aceita as duas formas do
+`Authorization` (com ou sem o `Basic ` na frente, ele completa se faltar) — mas a
+instrução para quem cria é uma só: **copie o valor inteiro**. Instrução com duas
+opções é instrução que se erra.
+
+E uma **opcional**, que eu não preciso que ele crie agora:
+
+| Variável | Para quê |
+|---|---|
+| `MOBPONTO_URL` | o endereço do endpoint, se um dia mudar. Sem ela, vale o de hoje, que fica no código |
+
+O `api-version: 1.0.0` é constante e fica no código — não é segredo.
+
+⚠️ **E o aviso que vem junto:** essas credenciais estão **escritas dentro de duas
+planilhas**, em Apps Script. Quem abre a planilha e o editor de script lê a chave.
+Depois de pôr no Render, **trocar a chave no Mobponto** — pelo mesmo motivo do
+token da NFS-e que já vazou (`CONTEXTO.md` §9): chave que circulou é chave a
+trocar. E o Web App publicado como "qualquer pessoa, sem login" deve ser
+despublicado quando o sistema assumir a carga.
 
 ## 8. Segurança — três coisas que já são risco hoje
 

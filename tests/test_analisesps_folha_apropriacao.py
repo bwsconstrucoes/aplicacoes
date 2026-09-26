@@ -269,15 +269,66 @@ def test_a_folha_inteira_fecha_e_soma_por_obra():
     assert feito["pessoas"][0]["nome_cadastro"] == "GERLANIO G. LIMA"
 
 
-def test_quem_NAO_esta_no_cadastro_fica_de_fora_e_e_listado():
-    """⚠️ BLOQUEIO, NÃO ALERTA: sem o ID Fortes no cadastro não há CPF, e o dono
-    proibiu buscar por nome — *"pode acontecer de ter um homônimo e encontrar a
-    pessoa errada"*."""
+def test_quem_NAO_esta_no_cadastro_CONTINUA_na_lista_como_pendente():
+    """⚠️ CORREÇÃO DO DONO EM 26/09/2026, sobre uma decisão minha que estava
+    errada:
+
+        *"Pessoas sem ID Fortes no cadastro não entram. Na verdade, ela vai entrar
+        após tratamento. Vamos tratar para poder entrar. Então não pode ficar
+        oculto, escondido."*
+
+    Eu havia tirado essas pessoas da lista e posto numa lista à parte. Lista à
+    parte é lista que alguém esquece de abrir — e aí a pessoa DESAPARECE da folha:
+    trabalhou e não recebeu, sem nada na tela gritando."""
     feito = ap.apropriar([Linha("500.00", "009999", "NINGUEM CONHECE")],
                          cadastro_por_id={})
-    assert feito["pessoas"] == []
-    assert feito["sem_cadastro"][0]["id_fortes"] == "009999"
-    assert feito["sem_cadastro"][0]["valor"] == D("500.00")
+
+    assert len(feito["pessoas"]) == 1, "a pessoa sumiu da lista"
+    pendente = feito["pessoas"][0]
+    assert pendente["pendente_cadastro"] is True
+    assert pendente["id_fortes"] == "009999"
+    assert pendente["nome"] == "NINGUEM CONHECE"
+    assert pendente["valor"] == D("500.00")
+    assert pendente["cpf"] == ""
+    assert pendente["por_obra"] == []
+    assert any("não está no cadastro" in c for c in pendente["criticas"])
+    # E o atalho para a faixa "precisa da sua mão" aponta para o MESMO objeto.
+    assert feito["sem_cadastro"][0] is pendente
+
+
+def test_a_folha_NAO_FECHA_enquanto_houver_pendente_de_cadastro():
+    """⚠️ Tirar o pendente da soma faria a tela dizer "fecha" com gente de fora —
+    o pior resultado possível, porque é o que convence alguém a apertar o botão."""
+    cadastro = {"000013": {"cpf": "99713349334", "nome": "X"}}
+    feito = ap.apropriar(
+        [Linha("100.00", "000013"), Linha("500.00", "009999", "SEM ID")],
+        {"99713349334": [dia(1, "A")]}, cadastro_por_id=cadastro,
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+
+    assert feito["total_da_folha"] == D("600.00")
+    assert feito["total_a_pagar"] == D("600.00")
+    assert feito["total_apropriado"] == D("100.00")
+    assert feito["fecha"] is False
+    assert len(feito["sem_apropriacao"]) == 1
+
+
+def test_depois_de_tratado_o_pendente_entra_normalmente():
+    """"Vamos tratar para poder entrar" — o que muda é só o cadastro ter o ID."""
+    linhas = [Linha("500.00", "009999", "AGORA CONHECE")]
+    antes = ap.apropriar(linhas, cadastro_por_id={})
+    assert antes["pessoas"][0]["pendente_cadastro"] is True
+
+    depois = ap.apropriar(
+        linhas, {"99713349334": [dia(1, "A"), dia(2, "B")]},
+        cadastro_por_id={"009999": {"cpf": "99713349334", "nome": "AGORA CONHECE"}},
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+
+    pessoa = depois["pessoas"][0]
+    assert pessoa["pendente_cadastro"] is False
+    assert pessoa["cpf"] == "99713349334"
+    assert sum(o["valor"] for o in pessoa["por_obra"]) == D("500.00")
+    assert depois["fecha"] is True
+    assert depois["sem_cadastro"] == []
 
 
 def test_quem_ficou_sem_apropriacao_aparece_na_lista_e_a_folha_NAO_fecha():

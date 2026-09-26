@@ -301,9 +301,28 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
     `cadastro_por_id` é o de/para **ID Fortes → {cpf, nome}**, que é a ponte entre
     a folha da contabilidade (que só traz o ID) e o ponto (que só traz o CPF).
 
-    ⚠️ SEM O ID FORTES NO CADASTRO, A PESSOA NÃO ENTRA — e isso é bloqueio, não
-    alerta. Foi o dono quem pôs a regra: *"se a gente for tentar por nome, pode
-    acontecer de ter um homônimo e encontrar a pessoa errada"*.
+    ⚠️ SEM O ID FORTES NO CADASTRO, A PESSOA FICA PENDENTE — E CONTINUA NA LISTA.
+    Correção do dono em 26/09/2026, sobre uma decisão minha que estava errada:
+
+        *"Pessoas sem ID Fortes no cadastro não entram. Na verdade, ela vai
+        entrar após tratamento. Vamos tratar para poder entrar. Então não pode
+        ficar oculto, escondido."*
+
+    Eu havia tirado essas pessoas da lista e posto numa lista à parte. Ele está
+    certo e o erro é grave: lista à parte é lista que alguém esquece de abrir, e
+    aí a pessoa **desaparece da folha** — trabalhou e não recebeu, sem nada na
+    tela gritando.
+
+    Agora ela fica na MESMA lista, marcada `pendente_cadastro`, sem CPF e sem
+    apropriação, com a crítica escrita. E como ela continua contando no total a
+    pagar sem ter obra, **a folha não fecha** enquanto ela não for tratada — o que
+    é exatamente o que tem de acontecer. `sem_cadastro` continua existindo, mas
+    como atalho para a tela montar a faixa "precisa da sua mão"; são os MESMOS
+    objetos, não uma cópia que pode divergir.
+
+    O que "tratar" significa: preencher o ID Fortes no cadastro (o certo, porque
+    resolve para sempre) ou amarrar o CPF ali na tela (rápido, e o sistema fica
+    avisando que o cadastro continua sem o ID).
     """
     dias_por_cpf = dias_por_cpf or {}
     regras_por_cpf = regras_por_cpf or {}
@@ -317,11 +336,28 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
         id_fortes = getattr(linha, "id_fortes", None) or linha.get("id_fortes")
         cadastro = cadastro_por_id.get(str(id_fortes))
         if not cadastro or not cadastro.get("cpf"):
-            sem_cadastro.append({
+            # ⚠️ FICA NA LISTA, VISÍVEL E PENDENTE — ver o aviso no alto desta
+            # função. Não é lista à parte, é a mesma lista.
+            pendente = {
                 "id_fortes": id_fortes,
+                "cpf": "",
                 "nome": getattr(linha, "nome", None) or linha.get("nome") or "",
+                "nome_cadastro": "",
                 "valor": Decimal(str(getattr(linha, "valor", None)
-                                     or linha.get("valor") or 0))})
+                                     or linha.get("valor") or 0)).quantize(CENTAVO),
+                "filial_contabilidade": (
+                    getattr(linha, "filial_nome", None)
+                    or (linha.get("filial_nome") if isinstance(linha, dict) else "")),
+                "dias_no_ponto": 0, "fora": False, "regra": "",
+                "pendente_cadastro": True, "origem": "",
+                "por_obra": [], "por_dia": [],
+                "criticas": [
+                    f"o ID Fortes {id_fortes} não está no cadastro de "
+                    "colaboradores — sem ele não há CPF, e sem CPF não há como "
+                    "pagar. Preencha o ID no cadastro, ou amarre o CPF aqui."],
+            }
+            pessoas.append(pendente)
+            sem_cadastro.append(pendente)   # o MESMO objeto, não uma cópia
             continue
         cpf = cadastro["cpf"]
         pessoa = apropriar_pessoa(
@@ -329,6 +365,7 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
             _dias_uteis_do_ponto(dias_por_cpf.get(cpf), ini, fim),
             regras_por_cpf.get(cpf), ajustes_por_cpf.get(cpf))
         pessoa["cpf"] = cpf
+        pessoa["pendente_cadastro"] = False
         # O nome do CADASTRO manda no arquivo de pagamento: é o que o banco
         # confere contra o CPF. O da contabilidade fica para a conferência.
         pessoa["nome_cadastro"] = cadastro.get("nome") or pessoa["nome"]
@@ -347,11 +384,16 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
             alvo["origens"].add(parte["origem"])
 
     apropriado = sum((o["valor"] for o in por_obra.values()), Decimal("0"))
+    # ⚠️ O PENDENTE CONTA NO "A PAGAR", e é isso que faz a folha NÃO FECHAR
+    # enquanto ele não for tratado. Tirá-lo da soma faria a tela dizer "fecha" com
+    # gente de fora — o pior resultado possível, porque é o que convence alguém a
+    # apertar o botão.
     a_pagar = sum((p["valor"] for p in pessoas if not p["fora"]),
                   Decimal("0"))
     return {
         "pessoas": pessoas,
         "sem_cadastro": sem_cadastro,
+        "total_da_folha": sum((p["valor"] for p in pessoas), Decimal("0")),
         "por_obra": sorted(
             [{**o, "origens": sorted(o["origens"])} for o in por_obra.values()],
             key=lambda o: o["obra"]),

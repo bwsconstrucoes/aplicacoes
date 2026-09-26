@@ -92,9 +92,18 @@ FIM_DE_MES = "fim_de_mes"
 
 # O que no título do relatório denuncia a quinzena.
 PALAVRAS_DE_ADIANTAMENTO = ("adiantamento", "adiant.", "quinzena")
-# E o que denuncia o fechamento. Ficam aqui para o dia em que ele mandar um
-# arquivo de fim de mês e a gente conferir o título de verdade.
-PALAVRAS_DE_FECHAMENTO = ("fim de m", "fechamento", "mensal", "folha mensal")
+# E o que denuncia o fechamento.
+#
+# ⚠️ OS DOIS TÍTULOS DE VERDADE, confirmados pelo dono em 26/09/2026:
+#
+#     quinzena   → "Folha Sintética - Adiantamento de Folha"
+#     fim de mês → "Folha Sintética - Folha de Pagamento"
+#
+# O de fim de mês é o mais genérico dos dois ("Folha de Pagamento"), e é por isso
+# que a ordem da conferência importa: o adiantamento é testado PRIMEIRO. Um
+# relatório que fosse "Adiantamento - Folha de Pagamento" tem de cair em quinzena.
+PALAVRAS_DE_FECHAMENTO = ("folha de pagamento", "fim de m", "fechamento",
+                          "mensal")
 
 
 def tipo_sugerido(titulo: str) -> str:
@@ -171,18 +180,53 @@ class FolhaLida:
 
 
 def _numero(valor) -> Decimal | None:
-    """O `Líquido` de uma linha. O Fortes grava número de verdade na célula."""
+    """O `Líquido` de uma linha, em qualquer dos formatos que o Fortes usa.
+
+    ⚠️ O MESMO RELATÓRIO MANDA VALOR EM DOIS FORMATOS, e foi o dono quem mostrou,
+    em 26/09/2026, ao colar a folha de fim de mês:
+
+        000013  GERLANIO GOMES LIMA      1.074,64     ← texto, ponto de milhar
+        000387  LUELIA MADIDA GOMES ...  1362,56      ← texto, sem milhar
+
+    enquanto o arquivo de adiantamento trazia número de verdade na célula
+    (`1198.84`). Ou seja: não dá para assumir formato nenhum.
+
+    ⚠️ E AQUI ESTAVA UMA ARMADILHA DE CEM VEZES. A leitura antiga apagava TODO
+    ponto e trocava vírgula por ponto. Isso acerta "1.074,64" e "1362,56", mas um
+    valor que venha como texto com ponto decimal — "1198.84", que é o que sai de
+    uma reexportação — viraria **119884**.
+
+    E o pior: a conferência de fechamento NÃO pegaria. O total da filial vem no
+    mesmo formato e inflaria igual, então as duas somas continuariam batendo, e a
+    tela diria "fecha" com todo mundo recebendo cem vezes mais.
+
+    A regra agora: **vírgula manda** (é decimal); sem vírgula, um ponto seguido de
+    UM ou DOIS dígitos no fim também é decimal; qualquer outro ponto é separador de
+    milhar.
+    """
     if valor is None or valor == "":
         return None
     if isinstance(valor, (int, float)):
         return Decimal(str(valor)).quantize(Decimal("0.01"))
-    texto = str(valor).strip().replace(".", "").replace(",", ".")
+
+    texto = " ".join(str(valor).split()).replace("R$", "").strip()
     if not texto:
         return None
+    negativo = texto.startswith("-") or (texto.startswith("(")
+                                         and texto.endswith(")"))
+    texto = texto.strip("()-").strip()
+
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    elif re.search(r"\.\d{1,2}$", texto):
+        pass                      # já é ponto decimal: "1198.84"
+    else:
+        texto = texto.replace(".", "")
     try:
-        return Decimal(texto).quantize(Decimal("0.01"))
+        numero = Decimal(texto).quantize(Decimal("0.01"))
     except InvalidOperation:
         return None
+    return -numero if negativo else numero
 
 
 def _texto(valor) -> str:

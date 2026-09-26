@@ -279,13 +279,77 @@ def test_titulo_que_NAO_deixa_claro_devolve_VAZIO_para_a_tela_perguntar():
 
 
 @pytest.mark.parametrize("titulo", [
+    # ⚠️ O TÍTULO DE VERDADE, colado pelo dono em 26/09/2026.
+    "Folha Sintética - Folha de Pagamento",
     "Folha Sintética - Fim de Mês", "Folha Sintética - Fechamento",
     "Folha Mensal Sintética",
 ])
 def test_titulos_de_FECHAMENTO_sugerem_fim_de_mes(titulo):
-    """Estes ficam prontos para o dia em que ele mandar um arquivo de fim de mês e
-    a gente conferir o título de verdade."""
+    """Os dois títulos reais são:
+
+        quinzena   → "Folha Sintética - Adiantamento de Folha"
+        fim de mês → "Folha Sintética - Folha de Pagamento"
+    """
     assert fs.tipo_sugerido(titulo) == "fim_de_mes"
+
+
+def test_o_ADIANTAMENTO_ganha_do_titulo_generico_de_fim_de_mes():
+    """O título de fim de mês é o mais genérico dos dois ("Folha de Pagamento"),
+    então a ordem da conferência importa: adiantamento é testado primeiro."""
+    assert fs.tipo_sugerido(
+        "Folha Sintética - Adiantamento - Folha de Pagamento") == "quinzena"
+
+
+# ---------------------------------------------------------------------------
+# O VALOR — o mesmo relatório manda em formatos diferentes
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("bruto,esperado", [
+    # Os dois formatos que o dono colou da folha de FIM DE MÊS (26/09/2026).
+    ("1.074,64", "1074.64"),
+    ("1362,56", "1362.56"),
+    # O que vem do arquivo de adiantamento: número de verdade na célula.
+    (1198.84, "1198.84"),
+    # ⚠️ A ARMADILHA DE CEM VEZES: texto com ponto DECIMAL, que sai de uma
+    # reexportação. A leitura antiga apagava todo ponto e isto virava 119884 —
+    # e a conferência de fechamento NÃO pegaria, porque o total da filial vem no
+    # mesmo formato e inflaria igual. A tela diria "fecha" com todo mundo
+    # recebendo cem vezes mais.
+    ("1198.84", "1198.84"),
+    # Ponto como milhar, sem centavo.
+    ("1.074", "1074.00"),
+    ("1.234.567,89", "1234567.89"),
+    ("119.884,00", "119884.00"),
+    ("R$ 958,90", "958.90"),
+    # Negativo, nos dois jeitos que relatório usa.
+    ("-50,00", "-50.00"),
+    ("(100,00)", "-100.00"),
+])
+def test_o_valor_e_lido_em_qualquer_formato_do_fortes(bruto, esperado):
+    from decimal import Decimal
+    assert fs._numero(bruto) == Decimal(esperado), bruto
+
+
+def test_a_folha_de_FIM_DE_MES_do_dono_e_lida_certo():
+    """As linhas que ele colou, com os dois formatos na mesma folha."""
+    from decimal import Decimal
+    linhas = [
+        ["Folha Sintética - Folha de Pagamento", "", "", "", ": 1"],
+        ["Empresa:", "BWS CONSTRUCOES LTDA  - CNPJ: 00.079.526/0001-09",
+         "Fortes Pessoal 8.27.1", "", ""],
+        ["Mês/Ano: 08/2026", "", "", "", ""],
+        ["Código", "Empregado", "", "", "Líquido"],
+        ["001 - CONSTRUTORA", "", "", "", ""],
+        ["000013", "GERLANIO GOMES LIMA", "", "", "1.074,64"],
+        ["000387", "LUELIA MADIDA GOMES TOMAS", "", "", "1362,56"],
+    ]
+    lida = fs.interpretar(linhas)
+
+    assert lida.tipo_sugerido == "fim_de_mes"
+    assert lida.competencia == "08/2026"
+    assert [l.valor for l in lida.linhas] == [Decimal("1074.64"),
+                                              Decimal("1362.56")]
+    assert lida.total == Decimal("2437.20")
+    assert lida.avisos == [], f"avisos: {lida.avisos}"
 
 
 def test_a_competencia_sai_pronta_para_a_tela():
