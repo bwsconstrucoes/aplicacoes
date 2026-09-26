@@ -715,6 +715,87 @@ tem como se explicar, e relatório que não se explica não serve de prova.
 **Os dois formatos**: PDF (para anexar e assinar) e Excel (para quem quer conferir
 somando). O mesmo conteúdo, para os dois nunca divergirem.
 
+### 7.6 A tela — o que ele pediu em 26/09/2026 (parte 3)
+
+#### D18 — Quinzena ou fim de mês: o arquivo sugere, ele confirma
+
+> *"Como é que a gente vai saber se a gente está tratando de quinzena, se está
+> tratando de fim de mês, e se a gente informa, se seleciona para informar de qual
+> arquivo é aquele dali que a gente está tratando."*
+
+**O título do relatório responde.** O arquivo real se chama "Folha Sintética -
+**Adiantamento** de Folha", e adiantamento é a quinzena (dias 1 a 15). Então: o
+sistema lê o título, **sugere**, e a tela mostra a escolha já marcada — mas
+marcável.
+
+⚠️ **E quando o título não deixa claro, a tela PERGUNTA em vez de adivinhar.** Não
+conheço o título do relatório de fim de mês; nunca vi um. Chutar "fim de mês" só
+porque não diz adiantamento faria ler o pedaço errado do ponto (16 ao fim em vez
+de 1 a 15), e o erro sairia como um valor plausível, na obra errada. Já está
+implementado assim, com teste.
+
+**Pedido pendente:** quando ele tiver um arquivo de **fim de mês** em mão, me
+mandar só o título dele (a primeira linha) — aí a sugestão passa a acertar os dois
+casos. A competência (`Mês/Ano: 08/2026`) já sai do arquivo.
+
+#### D19 — O arquivo entra por uma área de soltar, como o OFX
+
+> *"A questão do arquivo de importação, semelhante àquela do extrato bancário, o
+> OFX, aquele retangulozinho para você jogar o arquivo de importação dentro."*
+
+Mesmo padrão da Conciliação, e mesma sequência: solta → o sistema **lê e mostra o
+que entendeu** (competência, tipo, quantas pessoas, quanto, e as críticas) → e só
+grava depois que ele confere. É também a regra da casa (`CLAUDE.md`, 17/09): uma
+porta só, o documento entra DENTRO do formulário.
+
+#### D20 — Barra lateral com filtros, para analisar depois de importar
+
+> *"Na tela é interessante ter um sidebar para a gente poder filtrar (…) tipo
+> assim: eu já importei, o sistema já sugeriu, mas deixa eu ver o que é que tá
+> ficando na obra tal, o que é que tá ficando na conta tal."*
+
+Os filtros que a tela precisa ter (mesma barra lateral das outras telas do
+módulo):
+
+| Filtro | Responde |
+|---|---|
+| **Obra** | o que está ficando naquela obra |
+| **Conta corrente** | o que vai sair daquela conta |
+| **Origem** (ponto / regra / mão) | o que o sistema decidiu e o que foi decidido por gente |
+| **Situação** | só quem tem crítica, só quem está sem obra, só quem foi desmarcado, só quem foi ajustado |
+| **Nome ou CPF** | achar uma pessoa |
+| **Faixa de valor** | os maiores, que é onde o erro custa mais |
+| **Filial da contabilidade** | comparar com a obra do ponto |
+
+E os totais da tela respeitam o filtro — senão o número de cima não explica a
+lista de baixo.
+
+#### D21 — A idade do ponto tem de estar na cara, e atualizável na hora
+
+> *"Se a gente precisar atualizar o ponto naquele instante, aí a gente informar.
+> A gente tem que ter a visualização e a informação fácil da última atualização do
+> ponto que está lá, para a gente saber: de repente eu atualizei agora, eu quero
+> saber se é o ponto da atualização da madrugada ou se é o ponto que eu atualizei
+> recente."*
+
+⚠️ **É a informação mais importante da tela depois do valor**, e o motivo é seco: a
+apropriação inteira sai do ponto. Ponto de ontem com ajuste feito hoje de manhã
+gera uma apropriação que já nasceu errada — e nada na tela denunciaria isso.
+
+O que a tela mostra, sempre visível:
+
+- **de quando é o ponto** de cada competência que a folha usa (o mês corrente e,
+  quando o período atravessa, o anterior), em data e hora de Brasília;
+- **quanto tempo faz** ("há 3 horas", "ontem à noite"), porque é isso que ele lê
+  de relance;
+- **quem disparou** a última carga: a rotina da madrugada ou uma pessoa;
+- um botão **"atualizar o ponto agora"**, com o andamento à vista — a carga de um
+  mês leva minutos, e botão que não mostra andamento é apertado três vezes.
+
+⚠️ E uma coisa que o sistema deve fazer sozinho: se o ponto foi carregado **antes**
+de a folha ser importada, a tela avisa. É o caso em que a conta está velha sem
+ninguém ter feito nada errado.
+
 ## 8. Segurança — três coisas que já são risco hoje
 
 1. **Credenciais do Mobponto estão escritas dentro dos Apps Script**, em duas

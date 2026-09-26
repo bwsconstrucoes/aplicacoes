@@ -252,3 +252,44 @@ def test_o_valor_aceita_numero_de_celula_e_texto_em_portugues():
     assert fs._numero("1.198,84") == D("1198.84")
     assert fs._numero("") is None
     assert fs._numero(None) is None
+
+
+# ---------------------------------------------------------------------------
+# QUINZENA OU FIM DE MÊS — 26/09/2026
+#
+# Pergunta do dono: *"como é que a gente vai saber se a gente está tratando de
+# quinzena, se está tratando de fim de mês (…) de qual arquivo é aquele dali que
+# a gente está tratando."*
+# ---------------------------------------------------------------------------
+def test_o_titulo_ADIANTAMENTO_sugere_quinzena():
+    """O arquivo real de 08/2026 se chama "Folha Sintética - Adiantamento de
+    Folha", e adiantamento é a quinzena (dias 1 a 15)."""
+    assert fs.tipo_sugerido("Folha Sintética - Adiantamento de Folha") == "quinzena"
+    assert fs.interpretar(FOLHA_SIMPLES).tipo_sugerido == "quinzena"
+
+
+def test_titulo_que_NAO_deixa_claro_devolve_VAZIO_para_a_tela_perguntar():
+    """⚠️ A RESPOSTA MAIS IMPORTANTE DAS TRÊS. Eu não conheço o título do
+    relatório de fim de mês — nunca vi um. Chutar "fim de mês" só porque não é
+    adiantamento faria ler o pedaço errado do ponto (16 ao fim em vez de 1 a 15),
+    e o erro sairia como um valor plausível, na obra errada."""
+    assert fs.tipo_sugerido("Folha Sintética") == ""
+    assert fs.tipo_sugerido("Relatório de Pagamento") == ""
+    assert fs.tipo_sugerido("") == ""
+
+
+@pytest.mark.parametrize("titulo", [
+    "Folha Sintética - Fim de Mês", "Folha Sintética - Fechamento",
+    "Folha Mensal Sintética",
+])
+def test_titulos_de_FECHAMENTO_sugerem_fim_de_mes(titulo):
+    """Estes ficam prontos para o dia em que ele mandar um arquivo de fim de mês e
+    a gente conferir o título de verdade."""
+    assert fs.tipo_sugerido(titulo) == "fim_de_mes"
+
+
+def test_a_competencia_sai_pronta_para_a_tela():
+    assert fs.interpretar(FOLHA_SIMPLES).competencia == "08/2026"
+    sem = fs.interpretar([l for l in FOLHA_SIMPLES
+                          if not str(l[0]).startswith("Mês/Ano")])
+    assert sem.competencia == ""

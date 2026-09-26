@@ -70,6 +70,46 @@ PADRAO_TOTAL_GERAL = re.compile(r"Total:\s*Geral\s*\((\d+)\s*Empregado", re.I)
 CNPJ = re.compile(r"CNPJ:\s*([\d./-]+)")
 
 
+# ---------------------------------------------------------------------------
+# QUINZENA OU FIM DE MÊS — o próprio arquivo diz, e o dono confirma
+# ---------------------------------------------------------------------------
+# Pergunta dele em 26/09/2026: *"como é que a gente vai saber se a gente está
+# tratando de quinzena, se está tratando de fim de mês, e se a gente informa, se
+# seleciona para informar de qual arquivo é aquele dali que a gente está
+# tratando."*
+#
+# O TÍTULO DO RELATÓRIO RESPONDE, quando ele diz "Adiantamento": o arquivo real de
+# 08/2026 se chama "Folha Sintética - Adiantamento de Folha", e adiantamento é a
+# quinzena (dias 1 a 15).
+#
+# ⚠️ MAS A SUGESTÃO NÃO DECIDE SOZINHA. Não conheço o título do relatório de fim
+# de mês — nunca vi um. Então: quando o título diz "adiantamento", a tela vem com
+# QUINZENA já escolhido; quando não diz, ela vem SEM escolha e pergunta. Chutar
+# "fim de mês" só porque não é adiantamento leria o pedaço errado do ponto (16 ao
+# fim em vez de 1 a 15), e o erro sairia como valor plausível na obra errada.
+QUINZENA = "quinzena"
+FIM_DE_MES = "fim_de_mes"
+
+# O que no título do relatório denuncia a quinzena.
+PALAVRAS_DE_ADIANTAMENTO = ("adiantamento", "adiant.", "quinzena")
+# E o que denuncia o fechamento. Ficam aqui para o dia em que ele mandar um
+# arquivo de fim de mês e a gente conferir o título de verdade.
+PALAVRAS_DE_FECHAMENTO = ("fim de m", "fechamento", "mensal", "folha mensal")
+
+
+def tipo_sugerido(titulo: str) -> str:
+    """"quinzena", "fim_de_mes" ou "" quando o título não deixa claro.
+
+    Devolver "" é resposta legítima, e é a mais importante das três: é ela que
+    faz a tela PERGUNTAR em vez de adivinhar."""
+    t = " ".join(str(titulo or "").lower().split())
+    if any(p in t for p in PALAVRAS_DE_ADIANTAMENTO):
+        return QUINZENA
+    if any(p in t for p in PALAVRAS_DE_FECHAMENTO):
+        return FIM_DE_MES
+    return ""
+
+
 class ErroDaFolha(RuntimeError):
     """Arquivo ilegível ou que não é uma Folha Sintética. A frase vai para a tela."""
 
@@ -99,6 +139,21 @@ class FolhaLida:
     total_declarado: Decimal | None = None      # o rodapé, só para informação
     pessoas_declaradas: int | None = None       # idem
     avisos: list = field(default_factory=list)
+
+    @property
+    def tipo_sugerido(self) -> str:
+        """O que o TÍTULO do relatório sugere: "quinzena", "fim_de_mes" ou "".
+
+        Vazio quer dizer "não sei" — e a tela tem de perguntar. Ver
+        `tipo_sugerido` no alto deste arquivo."""
+        return tipo_sugerido(self.titulo)
+
+    @property
+    def competencia(self) -> str:
+        """"08/2026", para a tela e para o nome dos arquivos gerados."""
+        if not self.mes or not self.ano:
+            return ""
+        return f"{self.mes:02d}/{self.ano}"
 
     @property
     def total(self) -> Decimal:
