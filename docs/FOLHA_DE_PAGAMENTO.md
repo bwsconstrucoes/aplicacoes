@@ -242,6 +242,14 @@ que preenchem a coluna do marcador em massa, mais um exportador de abas para XLS
 > 1,1 MB + 11,9 MB e o acesso disponível devolve valores, não fórmulas. As
 > críticas que hoje vivem nelas estão listadas em §7 como pergunta, porque
 > adivinhar regra de conferência de pagamento é o pior lugar para adivinhar.
+>
+> **E ISSO TEM SOLUÇÃO — ver `EXPORTAR_FORMULAS.md`, ao lado.** O dono cobrou com
+> razão em 26/09/2026: *"você precisa ler as fórmulas das planilhas, nelas foi
+> criado todo o regramento, do contrário você vai criar algo errado"*. Há um
+> script de Apps Script pronto que junta **só as fórmulas** num documento do
+> Drive, que eu leio — sem trazer nome, CPF ou salário de ninguém para a
+> conversa. **Enquanto isso não for feito, tudo que depende de fórmula está em
+> suposição.**
 
 ---
 
@@ -924,6 +932,51 @@ pessoa aparecer numa lista que alguém vai olhar do que gerar alerta falso na fo
 
 **O que isso prepara:** a tela futura dos pagamentos que não vêm da contabilidade
 já tem a entrada dela pronta — quem tem ponto, quantos dias, em quais obras.
+
+### 7.9 CTPS ou DIÁRIA — a primeira fórmula recuperada (D25)
+
+O dono mandou, em 26/09/2026, a fórmula da **coluna AH da aba `Mobponto`** da
+planilha "Folha de Pagamento - Fortes", que é quem separa **CTPS** (vem da
+contabilidade) de **DIÁRIA**. Está traduzida fielmente em
+`app/apps/analisesps/folha_vinculo.py`, com a fórmula original no cabeçalho para
+conferência.
+
+#### ⚠️ E ela derrubou o que eu havia feito um dia antes
+
+Eu classificava pelo **`Tipo de Cadastro` da pessoa**. A fórmula classifica **por
+DIA**, comparando a data do dia de ponto com a **Data de Início** e a **Data de
+Admissão**:
+
+| Situação | Vínculo |
+|---|---|
+| o dia caiu **entre começar a trabalhar e ser registrada** (`início <= dia < admissão`) | **DIÁRIA** |
+| começou e **nunca foi registrada** (`início <= dia`, admissão em branco) | **DIÁRIA** |
+| **Prestador de Serviço + Autônomo (RPA)**, nos três arranjos de data que a fórmula lista | **DIÁRIA** |
+| as **duas datas em branco**, ou **CLT sem data de admissão** | **DT INÍCIO/ADMISSÃO** (pendência de cadastro) |
+| a pessoa **não está no cadastro** | **NÃO ENCONTRADO** |
+| o resto | **CTPS** |
+
+**Por que isso importa tanto:** quem foi admitido no dia 10 tem dias de diária
+(antes) e dias de CTPS (depois) **na mesma quinzena**. Classificando por pessoa,
+metade do dinheiro dela iria para o método de pagamento errado — a pessoa
+recebendo de menos num lado e de mais no outro, com os dois relatórios fechando.
+
+O que mudou no código: a separação de "quem tem ponto e não está nesta folha"
+agora tem **quatro** listas, não três — entrou `falta_data`, para o cadastro pela
+metade, que não é diarista nem CTPS. E basta **um** dia de CTPS para a pessoa ir
+para o alerta: exigir que todos fossem CTPS esconderia justamente o caso do
+admitido no meio do período.
+
+#### Duas coisas fielmente replicadas, e uma delas é candidata a pergunta
+
+1. **A ordem dos testes é a da fórmula**, e não pode ser "arrumada": vários casos
+   se sobrepõem, e a ordem é o que decide qual vence.
+2. ⚠️ **Célula vazia numa comparação de data vale ZERO no Google Sheets**
+   (30/12/1899). Então, com a Data de Início em branco, `início <= dia` é
+   **verdade** — e um dia antes da admissão cai em DIÁRIA. Não é escolha minha;
+   é o que está em produção. Replicado de propósito, porque mudar faria a
+   classificação divergir da planilha justamente nos casos de cadastro incompleto.
+   **Mas é candidato a pergunta:** é isso que ele quer, ou é acidente do Sheets?
 
 ## 8. Segurança — três coisas que já são risco hoje
 

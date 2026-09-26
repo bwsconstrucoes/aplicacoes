@@ -370,9 +370,16 @@ def test_quem_foi_desmarcado_NAO_conta_no_total():
 # por quinzena é o jeito mais rápido de fazer ninguém ler mais nenhum alerta desta
 # tela — inclusive os que importam.
 # ---------------------------------------------------------------------------
-CADASTRO_CTPS = {"cpf": "99713349334", "nome": "GERLANIO", "tipo": "CTPS"}
+# ⚠️ O CADASTRO PRECISA DAS DATAS, e não só do tipo: desde 26/09/2026 o vínculo é
+# decidido POR DIA, comparando o dia com a Data de Início e a de Admissão (ver
+# `folha_vinculo`, que é a tradução fiel da fórmula da planilha).
+CADASTRO_CTPS = {"cpf": "99713349334", "nome": "GERLANIO", "tipo": "CTPS",
+                 "contrato": "CLT (tempo Indeterminado)",
+                 "inicio": dt.date(2026, 1, 10),
+                 "admissao": dt.date(2026, 2, 1)}
 CADASTRO_RPA = {"cpf": "03513441363", "nome": "ABIMAEL",
-                "tipo": "Prestador de Serviço"}
+                "tipo": "Prestador de Serviço", "contrato": "Autônomo (RPA)",
+                "inicio": dt.date(2026, 7, 1), "admissao": None}
 
 
 def test_quem_bate_ponto_e_NAO_e_da_contabilidade_nao_e_alerta():
@@ -433,14 +440,34 @@ def test_quem_tem_ponto_e_NAO_tem_cadastro_sai_em_lista_propria():
     assert fora["deveria_estar"] == [] and fora["outro_metodo"] == []
 
 
-def test_cadastro_SEM_tipo_cai_no_outro_metodo_e_nao_em_alerta():
-    """Na dúvida, não alerta: é melhor a pessoa aparecer na lista que alguém vai
-    olhar do que gerar alerta falso na folha — alerta falso faz parar de ler
-    alerta."""
+def test_cadastro_SEM_as_DATAS_vai_para_falta_data_e_nao_para_alerta():
+    """⚠️ MUDOU EM 26/09/2026, com a fórmula que ele mandou: cadastro sem Data de
+    Início e sem Admissão não é diarista nem CTPS — é **pendência de cadastro**, e
+    tem lista própria. Chutar um dos dois lados mandaria a pessoa para o método de
+    pagamento errado; jogar no alerta da folha criaria alarme falso."""
     feito = ap.apropriar(
         [], {"03513441363": [dia(1, "A")]},
-        cadastro_por_id={"000387": {"cpf": "03513441363", "nome": "SEM TIPO"}},
+        cadastro_por_id={"000387": {"cpf": "03513441363", "nome": "SEM DATA"}},
         periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
 
-    assert feito["fora_da_folha"]["deveria_estar"] == []
-    assert len(feito["fora_da_folha"]["outro_metodo"]) == 1
+    fora = feito["fora_da_folha"]
+    assert fora["deveria_estar"] == []
+    assert fora["outro_metodo"] == []
+    assert [q["nome"] for q in fora["falta_data"]] == ["SEM DATA"]
+
+
+def test_quem_foi_admitido_no_MEIO_do_periodo_conta_nos_dois_lados():
+    """⚠️ O caso que a fórmula da planilha resolve e que eu ia errar: começou no
+    dia 1, foi registrada no dia 10. Os dias 1 a 9 são diária, do 10 em diante são
+    CTPS — na mesma quinzena. E ALGUM dia de CTPS já manda para o alerta."""
+    meio = {"cpf": "03513441363", "nome": "ADMITIDA NO MEIO",
+            "tipo": "CTPS", "contrato": "CLT (tempo Indeterminado)",
+            "inicio": dt.date(2026, 8, 1), "admissao": dt.date(2026, 8, 10)}
+    feito = ap.apropriar(
+        [], {"03513441363": [dia(5, "A"), dia(12, "A")]},
+        cadastro_por_id={"000387": meio},
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+
+    quem = feito["fora_da_folha"]["deveria_estar"][0]
+    assert quem["nome"] == "ADMITIDA NO MEIO"
+    assert quem["vinculos"] == {"DIÁRIA": 1, "CTPS": 1}

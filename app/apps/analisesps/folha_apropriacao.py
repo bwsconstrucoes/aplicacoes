@@ -310,27 +310,15 @@ def apropriar_pessoa(linha, dias_uteis=None, regra=None, ajuste=None) -> dict:
 # quinzena é o jeito mais rápido de fazer ninguém ler mais nenhum alerta desta
 # tela, inclusive os que importam.
 #
-# Então a separação é pelo TIPO DE CADASTRO:
+# ⚠️ E QUEM DECIDE SE UM DIA É CTPS OU DIÁRIA É `folha_vinculo`, que é a tradução
+# fiel da fórmula que já roda na planilha (coluna AH da aba Mobponto). Ele mandou
+# a fórmula em 26/09/2026, depois de eu classificar errado — eu olhava só o `Tipo
+# de Cadastro` da pessoa.
 #
-#   - quem é **CTPS** e tem ponto mas não está na folha da contabilidade → ISSO é
-#     alerta de verdade: alguém trabalhou e pode não receber;
-#   - quem **não é CTPS** → é o pessoal do outro método de pagamento. Não é alerta;
-#     é a lista de entrada da tela que ele vai pedir depois.
-#
-# As duas saem separadas, com nome próprio, porque misturá-las é o que criaria o
-# ruído.
-TIPOS_DA_CONTABILIDADE = ("ctps",)
-
-
-def _da_contabilidade(cadastro) -> bool:
-    """Esta pessoa deveria vir na folha da contabilidade?
-
-    Olha o `Tipo de Cadastro` do cadastro de colaboradores (CTPS / Prestador de
-    Serviço / …). Na dúvida — cadastro sem tipo — responde **False**: é melhor a
-    pessoa aparecer na lista do outro método (que alguém vai olhar) do que gerar
-    um alerta falso na folha (que faz parar de ler alertas)."""
-    tipo = str((cadastro or {}).get("tipo") or "").strip().lower()
-    return any(t in tipo for t in TIPOS_DA_CONTABILIDADE)
+# A diferença que isso faz: **a classificação é POR DIA.** Quem foi admitido no
+# dia 10 tem dias de diária (antes) e dias de CTPS (depois) na MESMA quinzena.
+# Classificando por pessoa, metade do dinheiro dela iria para o método de
+# pagamento errado.
 
 
 def com_ponto_fora_da_folha(linhas, dias_por_cpf, cadastro_por_id,
@@ -354,7 +342,10 @@ def com_ponto_fora_da_folha(linhas, dias_por_cpf, cadastro_por_id,
         if cadastro.get("cpf"):
             por_cpf[cadastro["cpf"]] = cadastro
 
-    saida = {"deveria_estar": [], "outro_metodo": [], "sem_cadastro": []}
+    from . import folha_vinculo
+
+    saida = {"deveria_estar": [], "outro_metodo": [], "sem_cadastro": [],
+             "falta_data": []}
     for cpf, dias in (dias_por_cpf or {}).items():
         if cpf in na_folha:
             continue
@@ -362,15 +353,26 @@ def com_ponto_fora_da_folha(linhas, dias_por_cpf, cadastro_por_id,
         if not uteis:
             continue        # não bateu ponto NESTE período: não é assunto daqui
         cadastro = por_cpf.get(cpf)
+        vinculos = folha_vinculo.classificar_dias(
+            [d["data"] for d in uteis], cadastro)
         quem = {"cpf": cpf,
                 "nome": (cadastro or {}).get("nome") or "",
                 "tipo": (cadastro or {}).get("tipo") or "",
                 "dias": len(uteis),
-                "obras": sorted({d["obra"] for d in uteis})}
+                "obras": sorted({d["obra"] for d in uteis}),
+                # Quantos dias de cada vínculo — é isto que mostra o caso de quem
+                # foi admitido no meio do período.
+                "vinculos": vinculos}
         if cadastro is None:
             saida["sem_cadastro"].append(quem)
-        elif _da_contabilidade(cadastro):
+        elif vinculos.get(folha_vinculo.CTPS, 0):
+            # ⚠️ ALGUM dia de CTPS já manda para o alerta. Exigir que TODOS fossem
+            # CTPS esconderia justamente quem foi admitido no meio da quinzena —
+            # o caso que mais dá confusão.
             saida["deveria_estar"].append(quem)
+        elif vinculos.get(folha_vinculo.FALTA_DATA, 0):
+            # Cadastro pela metade: não é diarista nem CTPS, é pendência.
+            saida["falta_data"].append(quem)
         else:
             saida["outro_metodo"].append(quem)
     for lista in saida.values():
