@@ -76,11 +76,16 @@ As linhas detalhadas e os totais por filial batem **na casa do centavo** entre s
 O **rodapé do próprio relatório não bate** com eles: sobram 16 pessoas e
 R$ 15.070,21.
 
-Hipótese (NÃO confirmada): o rodapé conta a folha inteira e o corpo lista só quem
-tem adiantamento a receber. **Isto é pergunta para o dono** (§7, P1), e a resposta
-decide qual número o sistema usa como conferência de fechamento. Enquanto não
-houver resposta, a conferência segura é *soma das linhas == soma dos totais por
-filial*, e o `Total: Geral` entra no relatório como informação, não como trava.
+**RESOLVIDO pelo dono em 26/09/2026:** *"vamos nos ocupar com as pessoas que
+aparecem no relatório. E o valor de cada uma. Então, se o somatório total final
+seja maior, ignore isso."*
+
+Ou seja: **a verdade é o corpo do relatório**, pessoa por pessoa. O `Total: Geral`
+do rodapé é ignorado — nem trava, nem alerta, nem aparece como divergência.
+
+A conferência de fechamento é outra, e continua valendo: *soma das linhas ==
+soma dos totais por filial* (as duas batem no centavo neste arquivo). Se essas
+duas divergirem, o arquivo veio truncado ou mal lido — aí sim é bloqueio.
 
 ### 2.2 O ponto (Mobponto, três endpoints)
 
@@ -263,9 +268,15 @@ Passo a passo, para a Quinzena:
 | `folha_presenca_mes` | o resumo `REL_PRESENCA_BWS` por competência | CPF + competência |
 | `folha_competencia` | a folha recebida: mês, tipo (quinzena/fim de mês/…), quem subiu, quando | competência + tipo |
 | `folha_linha` | uma linha por pessoa por folha: ID Fortes, líquido, filial da contabilidade | folha + id_fortes |
-| `folha_apropriacao` | o rateio: pessoa, dia, obra, valor do dia, de onde veio a obra (ponto ou mão) | folha + CPF + dia |
+| `folha_apropriacao` | o rateio: pessoa, dia, obra que o PONTO disse, obra que VALE, valor do dia | folha + CPF + dia |
+| `folha_ajuste` | cada ajuste de mão: nível, o que era, o que passou a valer, quem, quando, motivo | folha + CPF (+ dia) |
 | `folha_critica` | cada alerta levantado, com situação (aberto / tratado / ignorado com motivo) | folha + pessoa + tipo |
 | `folha_remessa` | o arquivo gerado por conta corrente, valor, quando, por quem, cards criados | folha + conta |
+
+⚠️ **`folha_apropriacao` guarda as DUAS obras — a do ponto e a que vale.** Uma
+coluna só, sobrescrita pelo ajuste, faria o relatório perder a capacidade de
+dizer "o ponto dizia A, mudaram para B" — que é justamente o que o relatório
+existe para provar. Ver §7.3.
 
 **Por que guardar o ponto e não ler na hora:** o download do mês inteiro hoje leva
 ~26 minutos (o Apps Script baixa 1 página por minuto). Uma tela não pode esperar
@@ -282,7 +293,9 @@ muda nesse período; depois disso congela.
    lista de críticas.
 3. O DP **trata as críticas**: resolve, ou marca "ciente, segue assim" **com
    motivo escrito**. Crítica que impede pagamento não tem "seguir assim".
-4. **Define à mão a obra de quem não bate ponto** (o dono já avisou que existem).
+4. **Faz o ajuste fino** — desmarcar pessoa, trocar a obra, dia a dia ou por
+   proporção. Ver §7.3; a tela junta num só lugar os ~10 casos que precisam da
+   mão dele, para o resto da folha não precisar ser aberto.
 5. **Gera**: um arquivo SomaPay **por conta corrente**, o relatório em PDF e em
    Excel, e os cards do Pipefy — com a mesma ligação DC ↔ SP de hoje.
 6. Fica **registrado**: o que foi gerado, por quem, quando, e com que números.
@@ -360,57 +373,133 @@ ordem de quanto dinheiro cada uma protege:
 
 ---
 
-## 7. Perguntas que travam trabalho de verdade
+## 7. Decisões do dono (26/09/2026) e o que ainda falta
 
-**P1 — O rodapé da Folha Sintética não bate com o corpo dela** (§2.1): 507
-pessoas / 445.199,96 declarado contra 491 / 430.129,75 somado. Qual dos dois é o
-que você paga? O sistema precisa saber qual número usar como trava de fechamento.
+### 7.1 Decidido — não reabrir sem motivo novo
 
-**P2 — De onde sai o "Dias" de cada pessoa?** É a contagem de dias com presença no
-ponto dentro da quinzena, ou é um número que a contabilidade manda? E dia de
-`FERIADO` e de `COMPENSAÇÃO` conta como dia para o rateio?
+**D1 — Qual número vale.** Só as pessoas que aparecem no relatório, com o valor de
+cada uma. O `Total: Geral` do rodapé é ignorado (§2.1).
 
-**P3 — Quem não bate ponto**: hoje você define a obra à mão. São sempre as mesmas
-pessoas (dá para deixar uma obra padrão no cadastro delas), ou muda a cada
-quinzena?
+**D2 — Os dias saem do PONTO, não da contabilidade.** *"Os dias de cada pessoa é
+baseado exatamente na folha do ponto. Cada dia, ele vai estar presente em uma
+determinada obra. Então o dia é o dia daquela obra."* A pessoa pode passar o mês
+todo numa obra ou variar; é por isso que se pesca o dia, para ratear o valor dela
+por dia.
 
-**P4 — A obra vira conta corrente onde?** Hoje esse "de/para" mora em qual
-planilha ou aba? Quero ler do nosso banco, não de planilha — o ERP já tem obras e
-o painel já tem as contas do OMIE.
+**D3 — Qual pedaço do ponto entra em cada pagamento.** Quinzena
+(adiantamento) = dias **1 a 15**. Fim de mês = **16 até o último dia do mês**.
+*"Se eu estou pagando a quinzena, eu só vou fazer a leitura dos dias de 1 ao 15."*
+Nada de ler o mês inteiro e dividir depois.
 
-**P5 — Empate no ponto do dia**: duas marcações numa obra e duas em outra. Vale a
-da entrada? A da saída? Ou entra como crítica para você decidir?
+**D4 — Empate no ponto do dia.** Vale a obra que **mais aparece** entre as quatro
+marcações. No empate 2×2, vale a obra das **duas primeiras marcações** (entrada e
+almoço). Pessoa em duas obras no mesmo dia é, na maioria dos casos, **erro de
+batida** — o dia vai inteiro para uma obra só, nunca dividido.
 
-**P6 — Pessoa que trabalhou em duas obras no mesmo dia**: o valor do dia vai
-inteiro para a obra que ganhou, ou é dividido entre as obras do dia? (Hoje,
-pelo que entendi, vai inteiro. Confirma?)
+**D5 — Obra → conta corrente: já está no nosso banco.** Mora na aba **`C. Diários`**
+da planilha `Registro de SPs`, e o Análise de SPs **já a carrega toda noite**:
 
-**P7 — Diferença de centavo no rateio**: dividir o líquido por dias e somar de
-volta quase nunca fecha exato. Onde cai a sobra — no primeiro dia, no último, na
-maior obra?
+| Onde | O que | Tabela nossa |
+|---|---|---|
+| `C. Diários` col. A (`Código Primário`) → col. B | centro de custo → **conta de pagamento** | `analisesps.contas_diarios` |
+| `C. Diários` (`Código Primário`/`Obra`) → (`Código Omie`) | obra → **código do departamento no OMIE** | `analisesps.referencias_rateio`, tipo `obra` |
 
-**P8 — Quais das dez "folhas" do Make entram nesta primeira tela?** Você disse
-começar pela folha da contabilidade (Quinzena e Fim de Mês). As outras oito
-(Diaristas, GM, Alimentação, Transporte, Décimo 1 e 2, CTPS, DC) ficam para depois
-— confirma?
+Ele também citou um **`Código Secundário` na coluna T** e disse que *"ao final da
+planilha tem a informação de conta"*. ⚠️ **Atenção real:** o carregador de
+`contas_diarios` lê **só as colunas A e B**, e **nenhuma tela lê essa tabela
+ainda** — ela é preenchida desde o primeiro dia e nunca foi usada. Ou seja:
+ninguém nunca conferiu se a coluna B é mesmo a conta que vale hoje. Ver §7.2, Q1.
 
-**P9 — O card de Despesa com Colaboradores tem 75 pares de centro de custo.** Já
-aconteceu uma folha passar de 50 obras? (É o teto silencioso do §4.)
+**D6 — Onde a tela mora.** O DP **não** opera junto com o financeiro: *"eu vou
+disponibilizar apenas aquela tela (…) quando eu for liberar para acessarem, aí eu
+libero só aquela tela."* Isso é exatamente o controle por tela que o Análise de
+SPs ganhou em 25/09/2026 (cadastro de usuários com as telas de cada um). Ver §7.2,
+Q2 para a confirmação que falta.
 
-**P10 — Quem pode gerar folha?** Hoje qualquer um com a planilha aberta. No
-sistema, é o mestre? Um perfil "DP"? E gerar arquivo de pagamento exige uma
-segunda pessoa aprovando, como o aval em duas pessoas do ERP?
+### 7.2 O que ainda falta responder
 
-**P11 — Onde esta tela mora?** Área nova (`app/apps/folha/`, como o Análise de
-SPs) ou dentro do ERP? A folha conversa com ponto, Pipefy, SomaPay e OMIE — tem
-cara de área própria; mas se o DP vai operar junto com o financeiro do ERP, talvez
-seja melhor dentro dele.
+**Q1 — A conta de pagamento é mesmo a coluna B de `C. Diários`?** Dá uma olhada no
+cabeçalho da aba e me diz qual coluna é a conta que vale hoje. Se for outra (a
+"do final"), é uma linha de código — mas se eu errar isso, o dinheiro sai da conta
+errada e o rateio inteiro fica errado junto.
 
-**P12 — O arquivo SomaPay**: o modelo que vi tem CPF com ponto e traço
-(`997.133.493-34`) mas o cabeçalho da planilha diz "deve conter 11 dígitos". Qual
-dos dois o SomaPay aceita de verdade? E o valor vai como `1.126,60` mesmo?
+**Q2 — Confirma que a tela nasce DENTRO do Análise de SPs**, como uma tela nova
+(Folha de Pagamento), e não como área separada? O que se ganha: o login, o
+controle por tela, o de/para obra→conta, o obra→código OMIE, os espelhos do OMIE,
+o registro de alterações e a exportação em PDF/Excel **já existem lá**. O que se
+perde: aquele módulo cresce mais.
 
----
+**Q3 — Diferença de centavo no rateio.** Dividir o líquido pelos dias e somar de
+volta quase nunca fecha exato (R$ 958,90 ÷ 7 dias). Onde cai a sobra: no primeiro
+dia, no último, ou na obra com mais dias?
+
+**Q4 — Quais das dez folhas entram nesta primeira tela?** Entendi Quinzena e Fim
+de Mês (as da contabilidade). As outras — Diaristas, Gratificados e Mensalistas,
+Auxílio Alimentação, Auxílio Transporte, Décimo Parcela 1 e 2, CTPS, DC — ficam
+para depois. Confirma?
+
+**Q5 — Gerar o arquivo exige segunda pessoa?** No ERP, valor alto pede aval de
+duas pessoas. Aqui o arquivo é a ordem de pagamento de ~500 pessoas. Uma pessoa
+só pode gerar, ou gerar pede confirmação de outra?
+
+**Q6 — O arquivo SomaPay**: o modelo tem CPF com ponto e traço (`997.133.493-34`)
+e o cabeçalho da própria planilha diz "deve conter 11 dígitos". Qual dos dois o
+SomaPay aceita? E o valor vai como `1.126,60`?
+
+**Q7 — Obra padrão para quem não bate ponto.** Você disse que são *"normalmente as
+10"* que precisam de ajuste. São sempre as MESMAS dez? Se sim, uma obra padrão no
+cadastro delas acaba com o trabalho repetido (ver §7.3, nível 0).
+
+### 7.3 O AJUSTE FINO — o que ele pediu, e como proponho fazer
+
+Pedido dele, com todas as letras:
+
+> *"Eu preciso ter a liberdade de escolher, de desmarcar uma pessoa para gerar o
+> pagamento ou não. Preciso ter a liberdade, caso eu queira alterar a obra que
+> aquela pessoa vai ficar apropriada, porque de repente tem um erro de ponto (…)
+> Às vezes tem umas pessoas — normalmente são as 10 que eu preciso alterar para
+> onde o valor delas vai — e às vezes eu distribuo em várias obras: bota um dia
+> numa obra, um dia em outra obra. Aí eu altero a planilha do ponto de onde ela
+> puxa. Eu não altero a base do ponto, altero só a planilha naquele momento, para
+> ajustar essa apropriação financeira."*
+
+**A regra que sustenta tudo isso: o ponto é FONTE, e fonte não se edita.** O
+ajuste mora na FOLHA, nunca no ponto. Três consequências, e são elas que fazem a
+coisa funcionar:
+
+1. Recarregar o ponto **não apaga** o ajuste que você fez.
+2. O ajuste de uma quinzena **não contamina** a próxima nem nenhum relatório.
+3. Dá para mostrar, linha por linha, **o que o ponto disse e o que você mudou** —
+   que é o que o relatório precisa provar.
+
+É exatamente o que você faz hoje (mexer na cópia, não na base), só que sem
+depender de você lembrar de não salvar na base errada.
+
+**Cinco níveis, do mais preguiçoso ao mais fino** — porque quase todo caso é do
+primeiro tipo, e obrigar a descer ao dia a dia em todos seria pior que a planilha:
+
+| Nível | O que faz | Para quê |
+|---|---|---|
+| **0 — obra padrão** | fica no CADASTRO da pessoa, não na folha | quem nunca bate ponto e é sempre a mesma obra. Resolve uma vez, vale para sempre |
+| **1 — fora** | tique "não pagar" na pessoa | o que você chamou de desmarcar. Sai do arquivo e do rateio; continua na prévia, riscada, com o motivo |
+| **2 — uma obra só** | escolhe a obra; **todos** os dias vão para lá | o caso mais comum: erro de ponto, a pessoa trabalhou noutro lugar. Um clique |
+| **3 — dia a dia** | abre os dias do período e troca a obra de cada um | o seu "bota um dia numa obra, um dia em outra" |
+| **4 — por proporção** | você diz "70% obra A, 30% obra B" e o sistema escolhe os dias | mais rápido que o nível 3 quando o que você quer é dividir o DINHEIRO, não escolher dias |
+
+Sobre o **nível 4**: é sugestão minha, não pedido seu. Hoje você conta dia por dia
+porque a planilha só permite isso — mas o que você quer no fim é o valor dividido
+entre as obras. O preço é que o sistema escolhe quais dias vão para onde, e isso é
+arbitrário; por isso ele **marca a linha como "dividido por proporção"** no
+relatório, para ninguém achar que aqueles dias vieram do ponto. Se você preferir
+não ter esse nível, ele sai.
+
+**O que a tela mostra para os ~10 casos**: uma faixa "**precisa da sua mão**" no
+alto, com as pessoas sem ponto, as com ponto estranho e as que você ajustou. O
+resto da folha nem precisa ser aberto.
+
+**O que fica registrado em cada ajuste:** quem fez, quando, o que o ponto dizia,
+o que passou a valer e o motivo. Sem isso, o relatório do mês que vem não explica
+por que a obra X custou mais.
 
 ## 8. Segurança — três coisas que já são risco hoje
 
