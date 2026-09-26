@@ -117,6 +117,10 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/colaboradores"),
     # A porta da área: manda para a primeira subtela que a pessoa alcança.
     ("GET",  "/analisesps/folha"),
+    ("GET",  "/analisesps/folha/importar"),
+    # Recebe a folha de pagamento inteira — nome e valor de ~500 pessoas.
+    ("POST", "/analisesps/api/folha/importar"),
+    ("POST", "/analisesps/api/folha/apagar"),
     # ⚠️ ESTA SUBSTITUI O RATEIO DO MÊS INTEIRO (desativando o que vale). Rota
     # sem login aqui deixaria qualquer um trocar para onde vai o salário de todo
     # mundo.

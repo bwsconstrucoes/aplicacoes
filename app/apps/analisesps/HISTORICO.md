@@ -8551,6 +8551,79 @@ a rede de segurança das rotas pegou as duas rotas novas antes de mim.
 
 ---
 
+### Centésima oitava leva (27/09) — a folha da contabilidade passa a ficar guardada
+
+Ele respondeu as quatro perguntas dos arquivos e, como não mudou a ordem que eu
+havia proposto, comecei pela peça que destrava o resto.
+
+#### As decisões dele
+
+| Pergunta | Resposta |
+|---|---|
+| Drive ou Dropbox? | **Tudo Drive.** O Dropbox sai do desenho — nada de credencial nova. |
+| Link público? | **Continua público**, decisão dele: *"é um simples arquivo de folha de pagamento, isso vai transitar só dentro da empresa."* |
+| O card recebe link de quê? | **Do arquivo.** |
+| Quantos arquivos? | **Dois, no mínimo:** o de pagamento e um de **análise da folha** — agrupado, por obra, por funcionário, com o rateio. |
+
+E acrescentou uma coisa que eu não tinha: **o log fica na aplicação**, com as
+informações e o link para baixar por lá — não só no Drive e no card.
+
+⚠️ **Sobre o link público, dito uma vez e registrado, sem reabrir:** o link do
+Drive **não depende de ter acesso à pasta** — quem recebe a URL baixa sem conta
+nenhuma. O risco é exposição de dado pessoal em volume (nome, CPF e salário de
+~500 pessoas), não alguém pagar no lugar dele. **Segue como ele decidiu**, e sem
+custo: é o que o código já faz. Fechar depois é uma linha.
+
+#### O que foi feito: a folha importada fica no banco (migração 029)
+
+**Sem isto não existe nada do que ele pediu depois.** Não há como somar por obra,
+por conta ou por verba o que morria em memória ao fim da requisição. Painel, tela
+por verba, arquivo de pagamento e log do que foi gerado — todos dependem daqui.
+
+- **`folha`**: a competência, o tipo (quinzena/fim de mês), quem importou, e os
+  totais que o relatório **declara** ao lado dos que nós **somamos**. Guardar os
+  dois é o que permite dizer "não fecha" depois, sem reabrir o arquivo.
+- **`folha_linha`**: uma pessoa como veio — código do Fortes **com os zeros**
+  (como número "000013" viraria 13, e o casamento com o cadastro morreria),
+  nome, valor em `NUMERIC`, filial.
+- **Nova subtela "Folha da contabilidade"**, e ela é a **primeira** da área: a
+  ordem é a do trabalho — entra o arquivo, confere-se o cadastro de quem está
+  nele, decide-se o rateio.
+- A **área de soltar é a mesma do extrato**, como ele pediu em 26/09. Dois jeitos
+  de receber arquivo no mesmo módulo obrigam a aprender duas vezes.
+
+**Três decisões de desenho que importam:**
+
+1. **A APROPRIAÇÃO NÃO ENTRA NESTA TABELA**, de propósito. Ela depende do ponto,
+   do rateio e do ajuste à mão, e muda depois de a folha estar importada.
+   Misturar as duas faria uma reimportação **apagar o ajuste fino** — que é o
+   trabalho mais caro do processo.
+2. **Reimportar a mesma competência SUBSTITUI.** Ele corrige algo na
+   contabilidade e manda de novo; duas folhas de 08/2026 quinzena deixariam
+   qualquer total ambíguo. Quinzena e fim de mês do mesmo mês convivem — a
+   unicidade é por competência **e** tipo.
+3. **Não fechar é aviso, não é recusa.** Ele precisa importar a folha que não
+   fecha para **descobrir por que** não fecha. Recusar deixaria o arquivo do lado
+   de fora, onde ninguém investiga. Mas a linha fica marcada e o motivo escrito.
+
+E **quando o título não diz** se é quinzena ou fim de mês, a tela **pergunta** em
+vez de adivinhar — adivinhar erraria o período do ponto, e o período errado
+apropria os dias errados nas obras. O arquivo fica guardado enquanto ele escolhe:
+pedir para soltar de novo seria mesquinho.
+
+**Verificado:** 19 testes com banco de verdade, incluindo **o arquivo real da
+contabilidade indo do `.xls` até o banco** — 491 pessoas, R$ 430.129,75, 47
+filiais, e a soma do que foi GRAVADO conferindo com o total (se o banco perdesse
+uma linha, é ali que apareceria). Mais 9 de tela. O arquivo real é pulado quando
+o anexo não está na máquina: ele não fica no repositório, porque é folha de
+pagamento com nome e valor de 491 pessoas.
+
+**NÃO verificado:** nada num navegador. E o **painel ainda não existe** — o que
+já dá para responder é o total por **filial** (`totais_por_filial`), porque é o
+que o arquivo traz; por **obra** depende da apropriação, que é o passo seguinte.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

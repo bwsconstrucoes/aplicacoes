@@ -1841,14 +1841,32 @@ significa credencial nova no Render e, antes disso, **trocar na origem a que
 está hoje escrita dentro do script** (§8, item 4). Dá para fazer, mas é
 trabalho a mais por um ganho que eu não sei qual é.
 
-### 7.17.5 O que preciso que ele decida
+### 7.17.5 ✅ RESPONDIDO por ele em 27/09/2026
 
-| Pergunta | Por que muda o trabalho |
+| Pergunta | Resposta dele |
 |---|---|
-| **Drive ou Dropbox** para os arquivos da folha? | Drive sai agora; Dropbox precisa de credencial nova no Render e da troca da que vazou |
-| Se Dropbox: **por que**? | Se for porque o DP trabalha naquelas pastas, é motivo bom e eu faço. Só preciso saber, para não escolher por ele |
-| **O arquivo pode deixar de ser público por link?** | É o que faz o risco morrer de verdade. Para a folha eu já faria assim; para o **BeeVale**, mudar quebraria os links dos cards já criados — e isso é decisão dele |
-| O card do Pipefy recebe link **da tela** ou **do arquivo**? | Da tela é mais seguro e mostra o histórico; do arquivo é o hábito de hoje |
+| Drive ou Dropbox? | **Tudo Drive**, sem problema nenhum. O Dropbox sai do desenho — nada de credencial nova. |
+| O arquivo pode deixar de ser público por link? | **Continua público, como está hoje.** Decisão dele, com o motivo: *"é um simples arquivo de folha de pagamento, isso vai transitar só dentro da empresa (…) e o que é que alguém vai fazer com isso? Pagar o funcionário?"* |
+| O card recebe link da tela ou do arquivo? | **Do arquivo.** |
+| Quantos arquivos? | **No mínimo dois:** o de **pagamento** e um de **análise da folha** — *"com as informações separadas, agrupadas, qual obra, qual funcionário, rateio de folhas, se for o caso"*. |
+
+E ele acrescentou uma coisa que eu não tinha: **o log tem de ficar na aplicação**,
+com as informações e o **link para baixar por lá** — não só no Drive e no card.
+Ou seja, a tela guarda o histórico do que foi gerado, e é de lá que ele baixa.
+
+#### ⚠️ Um fato sobre o link público, dito uma vez e registrado
+
+Ele decidiu, e a decisão é dele. Fica só o registro de um ponto factual do
+raciocínio, para quem ler isto depois: **o link público do Drive não depende de
+ter acesso à pasta.** Quem recebe a URL baixa o arquivo sem conta nenhuma — o
+"não é todo mundo que tem acesso a esse drive" vale para a pasta, não para o
+link, e o link circula por WhatsApp e fica no histórico do card.
+
+O risco é o de **exposição de dado pessoal em volume** (nome, CPF e salário de
+~500 pessoas), não o de alguém pagar no lugar dele. **Segue como ele decidiu**, e
+sem custo nenhum de implementação: é o comportamento que `drive.subir_arquivo` já
+tem. Se um dia ele quiser fechar, é uma linha — e aí os links dos cards antigos
+param de abrir para quem não tem conta Google da empresa.
 
 ## 7.18 A GERAÇÃO DOS ARQUIVOS — o que eu entendi, e o que ele acrescentou (27/09/2026)
 
@@ -2026,10 +2044,18 @@ público** (`{"role": "reader", "type": "anyone"}`), e o link vai para o card do
 Pipefy. É o mesmo risco, dentro do nosso código, com arquivos que têm nome, CPF
 e valor.
 
-Então os itens 3 e 6 só morrem se **a subida deixar de ser pública**. Para a
-folha, que é nova, já proponho assim (§7.17.4). Para o **BeeVale**, que está
-funcionando, mudar a permissão quebraria os links dos cards já criados — é
-decisão do dono, não minha, e está na lista de perguntas de §7.17.5. Os itens 1, 4 e 5 são credenciais que **já circularam** e
+Então os itens 3 e 6 só morrem se **a subida deixar de ser pública**.
+
+✅ **DECIDIDO PELO DONO em 27/09/2026: continua público, como está.** O motivo
+dele: *"é um simples arquivo de folha de pagamento, isso vai transitar só dentro
+da empresa (…) o que é que alguém vai fazer com isso? Pagar o funcionário?"*
+
+Então os itens **3 e 6 ficam como estão**, por decisão de negócio, e não por
+esquecimento. O que fica registrado, uma vez e sem reabrir: o link público **não
+depende de ter acesso à pasta** — quem recebe a URL baixa sem conta nenhuma — e o
+risco é de exposição de dado pessoal em volume, não de pagamento indevido. Os
+itens **1, 4 e 5 (credenciais que já circularam) continuam valendo** e não foram
+afetados por esta decisão. Os itens 1, 4 e 5 são credenciais que **já circularam** e
 precisam ser trocadas na origem, independentemente do sistema novo.
 
 ⚠️ **Estes valores não devem ser colados aqui nem no chat.** O caminho é:

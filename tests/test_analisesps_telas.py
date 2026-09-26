@@ -5214,7 +5214,9 @@ def test_a_porta_da_folha_manda_para_a_primeira_subtela(app):
     """Um índice com dois links seria um clique a mais para o mesmo lugar."""
     resposta = _como_mestre(app).get("/analisesps/folha")
     assert resposta.status_code in (301, 302)
-    assert "/folha/colaboradores" in resposta.headers.get("Location", "")
+    # A primeira subtela mudou em 27/09/2026, quando a folha da contabilidade
+    # entrou: a ordem é a do trabalho, e o arquivo é o que começa tudo.
+    assert "/folha/importar" in resposta.headers.get("Location", "")
 
 
 def test_as_subtelas_aparecem_dentro_da_tela_da_folha(app, monkeypatch):
@@ -5294,3 +5296,153 @@ def test_a_tela_do_rateio_NAO_repete_a_explicacao_do_card(app, monkeypatch):
         "/analisesps/folha/rateio").get_data(as_text=True)
     assert "se corrige" not in html
     assert "Depois de corrigir" not in html
+
+
+# ---------------------------------------------------------------------------
+# A SUBTELA DA FOLHA DA CONTABILIDADE — 27/09/2026
+# ---------------------------------------------------------------------------
+def test_a_tela_de_importar_tem_a_area_de_SOLTAR_igual_a_do_extrato(app, monkeypatch):
+    """Pedido do dono em 26/09/2026: *"semelhante àquela do extrato bancário, o
+    OFX, aquele retângulozinho para você jogar o arquivo dentro."* Dois jeitos
+    diferentes de receber arquivo no mesmo módulo obrigam a aprender duas vezes."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "_pronto", lambda: True)
+    monkeypatch.setattr(fa, "listar", lambda *a, **k: [])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/importar").get_data(as_text=True)
+
+    assert "solta-arquivo" in html, "a classe é a MESMA do extrato"
+    assert 'id="solta-folha"' in html
+    assert ".xls" in html
+    # A tabela é desenhada sempre, com cabeçalho — um "nada aqui" que engole a
+    # tabela deixa a pessoa sem referência (foi a armadilha da conciliação).
+    assert "<thead>" in html
+    assert "Nenhuma folha importada" in html
+
+
+def test_a_folha_que_NAO_FECHA_aparece_marcada_com_o_motivo(app, monkeypatch):
+    """⚠️ A crítica mais importante desta tela. Não fechar não impede importar —
+    ele precisa importar para descobrir por que não fecha — mas tem de estar na
+    cara."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "_pronto", lambda: True)
+    monkeypatch.setattr(fa, "listar", lambda *a, **k: [{
+        "id": 1, "ano": 2026, "mes": 8, "tipo": "quinzena",
+        "competencia": "08/2026", "rotulo_do_tipo": "Quinzena (dia 1 ao 15)",
+        "pessoas": 491, "total": Decimal("430129.75"),
+        "importado_em": None, "importado_por": "MARCELO",
+        "fecha": False,
+        "lista_de_avisos": ["a soma das pessoas é diferente dos subtotais"]}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/importar").get_data(as_text=True)
+
+    assert "não fecha" in html
+    assert "diferente dos subtotais" in html
+    assert "linha-alerta" in html
+    assert "430.129,75" in html
+
+
+def test_a_folha_que_fecha_nao_grita(app, monkeypatch):
+    from decimal import Decimal
+
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "_pronto", lambda: True)
+    monkeypatch.setattr(fa, "listar", lambda *a, **k: [{
+        "id": 1, "ano": 2026, "mes": 8, "tipo": "fim_de_mes",
+        "competencia": "08/2026", "rotulo_do_tipo": "Fim de mês (16 ao último dia)",
+        "pessoas": 10, "total": Decimal("1000.00"),
+        "importado_em": None, "importado_por": "", "fecha": True,
+        "lista_de_avisos": []}])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/importar").get_data(as_text=True)
+    assert "fecha" in html
+    assert "não fecha" not in html
+    assert "linha-alerta" not in html
+
+
+def test_sem_a_migracao_a_tela_de_importar_AVISA_e_nao_estoura(app, monkeypatch):
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "_pronto", lambda: False)
+    resposta = _como_mestre(app).get("/analisesps/folha/importar")
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Aplicar atualizações do banco" in html
+    assert 'id="solta-folha"' not in html
+
+
+def test_importar_SEM_arquivo_responde_direito(app):
+    resposta = _como_mestre(app).post("/analisesps/api/folha/importar", data={})
+    assert resposta.status_code == 400
+    assert "Nenhum arquivo" in resposta.get_json()["erro"]
+
+
+def test_quando_falta_o_TIPO_a_resposta_manda_a_tela_PERGUNTAR(app, monkeypatch):
+    """⚠️ É o ponto do desenho: em vez de mandar a pessoa tentar de novo
+    adivinhando, a tela pergunta — e guarda o arquivo, porque pedir para soltar
+    de novo seria mesquinho."""
+    import io
+
+    from app.apps.analisesps import folha_arquivo as fa
+
+    def explode(*a, **k):
+        raise fa.ErroDaImportacao(
+            'não deu para saber se esta folha é da QUINZENA ou do FIM DE MÊS. '
+            "Escolha na tela e importe de novo.")
+
+    monkeypatch.setattr(fa, "importar", explode)
+    resposta = _como_mestre(app).post(
+        "/analisesps/api/folha/importar",
+        data={"folha": (io.BytesIO(b"xls"), "folha.xls")},
+        content_type="multipart/form-data")
+
+    assert resposta.status_code == 400
+    corpo = resposta.get_json()
+    assert corpo["pergunte_o_tipo"] is True
+    assert "QUINZENA" in corpo["erro"]
+
+
+def test_outro_erro_de_importacao_NAO_pede_o_tipo(app, monkeypatch):
+    """Senão a tela mostraria os botões de período para um arquivo que nem é
+    folha — e a pessoa escolheria o período de um erro."""
+    import io
+
+    from app.apps.analisesps import folha_arquivo as fa
+
+    def explode(*a, **k):
+        raise fa.ErroDaImportacao("não achei nenhuma pessoa no arquivo.")
+
+    monkeypatch.setattr(fa, "importar", explode)
+    corpo = _como_mestre(app).post(
+        "/analisesps/api/folha/importar",
+        data={"folha": (io.BytesIO(b"xls"), "folha.xls")},
+        content_type="multipart/form-data").get_json()
+    assert corpo["pergunte_o_tipo"] is False
+
+
+def test_a_folha_da_contabilidade_e_a_PRIMEIRA_subtela(app):
+    """A ordem é a do trabalho: primeiro entra o arquivo, depois se confere o
+    cadastro de quem está nele, depois se decide o rateio. E é por isso que a
+    porta da área cai nela."""
+    from app.apps.analisesps import web
+
+    assert [s[0] for s in web.SUBTELAS_DA_FOLHA][0] == "importar"
+    resposta = _como_mestre(app).get("/analisesps/folha")
+    assert "/folha/importar" in resposta.headers.get("Location", "")
+
+
+def test_importar_a_folha_NAO_e_so_do_mestre(app):
+    """Decisão do dono: *"vai ter o usuário do DP que vai estar fazendo a
+    leitura, mas o usuário master, que sou eu, eu gero o arquivo"*. Trazer a
+    folha é o trabalho do DP; GERAR o arquivo de pagamento é que será do mestre."""
+    from app.apps.analisesps import auth as guarda
+
+    assert guarda.e_so_do_mestre("analisesps.folha_importar") is False
+    assert guarda.e_so_do_mestre("analisesps.tela_folha_importar") is False
+    assert guarda.telas_da_rota("analisesps.folha_importar") == ("folha",)

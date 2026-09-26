@@ -430,7 +430,15 @@ TELA_DA_ROTA = {
     # escreve nada — o dado nasce no Pipefy. O RATEIO, que decide para qual obra
     # vai o salário, continua só do mestre.
     "analisesps.tela_folha": ("folha",),
+    # ⚠️ IMPORTAR E APAGAR A FOLHA SÃO DE OPERADOR, não só do mestre: é o DP que
+    # traz o arquivo da contabilidade. Decisão do dono em 26/09/2026 — *"vai ter
+    # o usuário do DP que vai estar fazendo a leitura, mas o usuário master, que
+    # sou eu, eu gero o arquivo"*: trazer a folha é leitura do trabalho dele;
+    # GERAR o arquivo de pagamento é que será do mestre.
+    "analisesps.folha_importar": ("folha",),
+    "analisesps.folha_apagar": ("folha",),
     "analisesps.tela_colaboradores": ("folha",),
+    "analisesps.tela_folha_importar": ("folha",),
     "analisesps.tela_bradesco": ("bradesco",),
     "analisesps.log": ("log",),
 }

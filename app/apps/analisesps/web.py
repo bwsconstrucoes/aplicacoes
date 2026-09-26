@@ -136,6 +136,10 @@ def versao_publicada() -> str:
 # que não há, e faz a pessoa procurar o que não foi feito — o dono acabou de
 # passar por isso procurando telas que eu não tinha escrito.
 SUBTELAS_DA_FOLHA = [
+    # A ORDEM É A DO TRABALHO: primeiro entra o arquivo da contabilidade, depois
+    # se confere o cadastro de quem está nele, depois se decide o rateio.
+    ("importar",      "Folha da contabilidade",
+     "analisesps.tela_folha_importar"),
     ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
     ("rateio",        "Rateio das obras", "analisesps.tela_folha_rateio"),
 ]
@@ -2319,6 +2323,84 @@ def tela_folha():
         return render_template("analisesps_erro.html",
                                mensagem="Esta tela não existe aqui."), 404
     return redirect(url_for(permitidas[0][2]))
+
+
+@bp.route("/folha/importar")
+@exige_consulta
+def tela_folha_importar():
+    """A folha que a contabilidade manda, importada e guardada.
+
+    É a primeira peça da área, e é a que destrava o resto: sem a folha gravada
+    não há painel com total por obra, não há tela por verba e não há arquivo de
+    pagamento — não se soma o que não está em lugar nenhum."""
+    from . import folha_arquivo as fa
+
+    pronto = fa._pronto()
+    folhas = []
+    erro = None
+    try:
+        folhas = fa.listar() if pronto else []
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui listar as folhas importadas")
+        erro = str(e)
+
+    return render_template(
+        "analisesps_folha_importar.html", aba="folha", subaba="importar",
+        subtelas=subtelas_da_folha(), pronto=pronto, folhas=folhas, erro=erro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/importar", methods=["POST"])
+@exige_operador
+def folha_importar():
+    """Recebe o `.xls` da contabilidade, lê e guarda.
+
+    ⚠️ QUANDO NÃO DÁ PARA SABER O PERÍODO pelo título, a resposta volta com
+    `pergunte_o_tipo` — e a tela PERGUNTA, em vez de mandar a pessoa tentar de
+    novo adivinhando. Adivinhar erraria o período do ponto, e o período errado
+    apropria os dias errados nas obras."""
+    from . import folha_arquivo as fa
+
+    arquivo = request.files.get("folha")
+    if arquivo is None or not (arquivo.filename or "").strip():
+        return {"ok": False, "erro": "Nenhum arquivo chegou."}, 400
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        resultado = fa.importar(
+            arquivo.read(), nome_do_arquivo=arquivo.filename,
+            tipo=str(request.form.get("tipo") or ""), quem=quem)
+    except fa.ErroDaImportacao as e:
+        frase = str(e)
+        return {"ok": False, "erro": frase,
+                "pergunte_o_tipo": "Escolha na tela" in frase}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou importar o arquivo da contabilidade")
+        return {"ok": False, "erro": f"Não consegui importar: {e}"}, 500
+    return {"ok": True, **{k: str(v) if k == "total" else v
+                           for k, v in resultado.items()}}
+
+
+@bp.route("/api/folha/apagar", methods=["POST"])
+@exige_operador
+def folha_apagar():
+    """Apaga uma folha importada. O arquivo original continua com a
+    contabilidade, e a apropriação mora em outro lugar — então isto não perde
+    decisão nenhuma."""
+    from . import folha_arquivo as fa
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        apagou = fa.apagar(int(dados.get("id") or 0), quem=quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou apagar a folha importada")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    if not apagou:
+        return {"ok": False, "erro": "Esta folha não está mais aqui."}, 404
+    return {"ok": True}
 
 
 @bp.route("/folha/colaboradores")
