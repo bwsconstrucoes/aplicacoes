@@ -19,6 +19,12 @@ Quem começar uma sessão da folha de pagamento lê isto primeiro.
 | **Leitor da Folha Sintética** | `app/apps/analisesps/folha_sintetica.py` | pronto e testado contra o arquivo real de 08/2026: 491 pessoas, R$ 430.129,75, 47 filiais, fechando no centavo |
 | **Conserto do de/para obra → conta** | `sincronizacao.py`, `_contas_da_aba` | pronto; lia a coluna errada (ver D5) |
 | **Regras de rateio + tela** | `folha_rateio.py`, migração 027, tela "Rateio da Folha" | pronto; é o que ele pediu em 26/09 para quem o ponto não apropria (ver §7.4) |
+| **A apropriação** (para qual obra vai cada real) | `folha_apropriacao.py` | pronta e testada: obra do dia pelas 4 marcações, rateio pelos dias, mão > regra > ponto, e a ORIGEM de cada valor |
+
+⚠️ **O RELATÓRIO AINDA NÃO EXISTE.** Ele perguntou (*"espero que já tenha sido
+gerado esses relatórios"*) — não foram. Existe a conta que o relatório precisa
+para ter o que mostrar, incluindo a origem de cada valor; falta desenhar o
+relatório e a tela. O que o relatório tem de trazer está em §7.5.
 
 Nada mais. Não há tela, nem tabela nova, nem carga de ponto ainda.
 
@@ -629,6 +635,85 @@ regra automática esconderia a decisão dele atrás de uma conta.
 está sendo distribuída, com o clique que abre a regra para ver e editar. Falta
 porque **a tela da folha ainda não existe** — é a próxima peça. A regra e a conta
 estão prontas e testadas; a tag é uma linha quando houver onde pendurá-la.
+
+### 7.5 Gerar, relatar e lançar — decidido em 26/09/2026 (parte 2)
+
+#### D14 — Gerar os arquivos e os relatórios NÃO cria os cards do Pipefy
+
+> *"Eu vou poder gerar, por exemplo, arquivo de pagamento e folha e relatórios,
+> tudo sem necessariamente gerar os cards do Pipefy. É melhor dessa forma."*
+
+São **duas ações separadas**, e a segunda é opcional. O que isso resolve: hoje o
+botão do Make faz tudo de uma vez, então conferir o relatório obriga a criar dois
+cards no Pipefy — e se o relatório estiver errado, os cards já existem. Separando,
+o relatório pode ser gerado quantas vezes quiser sem sujar nada lá fora.
+
+#### D15 — Regerar é normal, e os dois lados NÃO ficam interligados
+
+> *"Pode ser que seja necessário gerar novamente os arquivos (…) não vai estar
+> interligado, mas a gente faz o cancelamento no Pipefy e gera de novo quando for
+> necessário, se a gente detectar posteriormente alguma falha."*
+
+Ou seja: o sistema **não** tenta consertar o Pipefy. Gerar de novo é livre; o
+cancelamento do card antigo é feito por ele, à mão, lá. O sistema só precisa
+**registrar** que gerou de novo, e quando.
+
+⚠️ E aqui vale uma nota de risco que ele não pediu mas que a decisão cria: nada
+impede lançar a mesma competência duas vezes no Pipefy. Vou fazer a tela **avisar**
+("esta quinzena já foi lançada em tal dia, nos cards X e Y — quer lançar de novo?")
+em vez de impedir. Avisar respeita a decisão dele; impedir seria eu decidindo no
+lugar dele.
+
+#### D16 — O mínimo de requisições ao Pipefy, e um log de tudo
+
+> *"Precisa ser inteligente. O mínimo de requisições ao Pipefy possível. E
+> registrar isso aí (…) ter um log de tudo que foi gravado. Foi quinzena, período
+> tal, foi gravado, foi dos cards tais e tais. Tudo sem tela de sistema, né? Não
+> precisa nem mandar pelo Telegram, porque tendo no sistema é até melhor."*
+
+Duas coisas:
+
+1. **Poucas chamadas.** O cenário do Make de hoje faz, por lançamento: 1 leitura de
+   planilha, 1 criação de card, 2 uploads, 2 compartilhamentos, 2 atualizações de
+   campo, mais 1 card por conta de origem, mais a ligação entre eles. O caminho
+   novo cria o card de Despesa com **todos os centros de custo numa chamada só**
+   (é assim que a API aceita) e as SPs de transferência numa por conta — sem
+   upload nem compartilhamento, porque o arquivo fica no nosso sistema.
+2. **O log fica AQUI, não no Telegram.** Competência, tipo (quinzena/fim de mês),
+   período, quem gerou, quando, os arquivos gerados, os cards criados e o que cada
+   chamada respondeu. É o que permite responder "o que foi pago nessa quinzena, e
+   para onde foi" meses depois, sem depender de ninguém lembrar.
+
+#### D17 — O relatório é a prova, e tem de explicar a apropriação
+
+> *"É importante a questão do relatório: estar detalhado toda essa, como é que foi
+> feita essa divisão, essa apropriação. Se for uma pessoa que tem ponto completo
+> na obra, beleza, está tudo certo — mas se for uma pessoa que tem uma
+> distribuição, dias em obras diferentes, isso tem que estar exposto nesse
+> relatório. Mostrar o valor global, o valor por obra, o valor de cada colaborador
+> e a distribuição de como é que foi feito de cada um. (…) No relatório tem várias
+> visões: agrupado, desagrupado, analítico, resumido, para poder uma auditoria
+> futura, se alguém precisar compreender, entender. E saber até de onde é que foi
+> que veio aquela informação, se foi do ponto, se foi colocada de forma manual."*
+
+**As visões que o relatório precisa ter:**
+
+| Visão | Responde |
+|---|---|
+| **Resumo** | quanto, quantas pessoas, quantas obras, quanto por conta corrente — a capa |
+| **Por obra** (agrupado) | quanto cada obra carregou, e com quantas pessoas |
+| **Por conta corrente** | o que sai de cada conta — é o que amarra com o arquivo de pagamento |
+| **Por colaborador** | o valor de cada pessoa e em que obras ele se dividiu |
+| **Analítico** (desagrupado) | uma linha por pessoa × dia × obra, com o valor do dia |
+| **O que precisou de mão** | só quem teve regra ou ajuste, com o que era antes e o que passou a valer |
+
+**E em toda linha, a ORIGEM**: `do ponto`, `da regra` (com o nome da regra) ou
+`da mão` (com quem mudou, quando e por quê). É por isso que
+`folha_apropriacao.py` carrega a origem em cada nível — sem ela o relatório não
+tem como se explicar, e relatório que não se explica não serve de prova.
+
+**Os dois formatos**: PDF (para anexar e assinar) e Excel (para quem quer conferir
+somando). O mesmo conteúdo, para os dois nunca divergirem.
 
 ## 8. Segurança — três coisas que já são risco hoje
 
