@@ -12,6 +12,15 @@ Quem começar uma sessão da folha de pagamento lê isto primeiro.
 
 ---
 
+## 0. O que já está escrito (26/09/2026)
+
+| O quê | Onde | Estado |
+|---|---|---|
+| **Leitor da Folha Sintética** | `app/apps/analisesps/folha_sintetica.py` | pronto e testado contra o arquivo real de 08/2026: 491 pessoas, R$ 430.129,75, 47 filiais, fechando no centavo |
+| **Conserto do de/para obra → conta** | `sincronizacao.py`, `_contas_da_aba` | pronto; lia a coluna errada (ver D5) |
+
+Nada mais. Não há tela, nem tabela nova, nem carga de ponto ainda.
+
 ## 1. O que o processo faz hoje, em uma frase
 
 A contabilidade (externa) manda a **Folha Sintética**; o DP cruza aquilo com o
@@ -86,6 +95,21 @@ do rodapé é ignorado — nem trava, nem alerta, nem aparece como divergência.
 A conferência de fechamento é outra, e continua valendo: *soma das linhas ==
 soma dos totais por filial* (as duas batem no centavo neste arquivo). Se essas
 duas divergirem, o arquivo veio truncado ou mal lido — aí sim é bloqueio.
+
+#### O formato do arquivo SomaPay — respondido pelo arquivo, não por suposição
+
+A `Planilha de Pagamento Quinzena CTPS (Fortes)` — o arquivo que o Make anexa ao
+card, ou seja, o que de fato é enviado — tem uma aba `Valores` assim:
+
+```
+Nome do funcionário | CPF* (obrigatório) | Valor* (obrigatório)
+GERLANIO GOMES LIMA | 997.133.493-34     | 1.126,60
+```
+
+Ou seja: **CPF formatado, com ponto e traço**, e **valor em formato brasileiro**.
+O texto de instrução no alto da planilha diz "deve conter 11 dígitos", mas as
+linhas que vêm sendo enviadas usam o CPF formatado — e funcionam. O sistema vai
+gerar igual ao que já funciona.
 
 ### 2.2 O ponto (Mobponto, três endpoints)
 
@@ -404,11 +428,38 @@ da planilha `Registro de SPs`, e o Análise de SPs **já a carrega toda noite**:
 | `C. Diários` col. A (`Código Primário`) → col. B | centro de custo → **conta de pagamento** | `analisesps.contas_diarios` |
 | `C. Diários` (`Código Primário`/`Obra`) → (`Código Omie`) | obra → **código do departamento no OMIE** | `analisesps.referencias_rateio`, tipo `obra` |
 
-Ele também citou um **`Código Secundário` na coluna T** e disse que *"ao final da
-planilha tem a informação de conta"*. ⚠️ **Atenção real:** o carregador de
-`contas_diarios` lê **só as colunas A e B**, e **nenhuma tela lê essa tabela
-ainda** — ela é preenchida desde o primeiro dia e nunca foi usada. Ou seja:
-ninguém nunca conferiu se a coluna B é mesmo a conta que vale hoje. Ver §7.2, Q1.
+#### ⚠️ E ELA ESTAVA SENDO CARREGADA ERRADA — achado em 26/09/2026
+
+O cabeçalho da aba `C. Diários` é:
+
+```
+Centro de Custo | ID | Código Primário | Centro de Custo |
+Código Centro de Custo Pipefy | Código Omie (Código Primário) | Conta
+CONS             | 594904559 | CONS | CONS | 384052839 | 583753491 | 7011-4
+```
+
+O carregador lia **pela posição**: primeira coluna como código e **a segunda
+como conta**. A segunda coluna é o **ID do registro no Pipefy** (`594904559`). A
+conta (`7011-4`) está no fim.
+
+Ou seja: `analisesps.contas_diarios.conta_pagamento` vinha sendo preenchida com o
+ID do Pipefy desde a estreia do módulo.
+
+**Ninguém percebeu porque nenhuma tela lia essa tabela.** Era carregada toda
+noite e nunca consultada. É o tipo de erro que só existe enquanto o dado não é
+usado — e o primeiro uso seria justamente a folha de pagamento decidindo de qual
+conta sai o dinheiro de ~500 pessoas.
+
+**Consertado:** agora procura **pelo NOME** da coluna (`Conta`, `Conta Corrente`,
+`Conta de Pagamento`), que é o que o resto daquele arquivo já fazia. Coluna que
+muda de lugar deixa de quebrar a carga, e coluna que não existe volta com o
+motivo escrito em vez de em silêncio.
+
+⚠️ **Falta uma conferência que só o dono faz:** o cabeçalho acima foi lido de uma
+**cópia** da planilha `Folha de Pagamento - Fortes`. A aba que o sistema lê é a
+do `Registro de SPs`, e as cópias divergem entre si. Ler pelo nome protege contra
+a posição, mas não contra a coluna se chamar outra coisa lá. Assim que a carga
+rodar, a tela de Configurações vai dizer se achou ou não — e o motivo.
 
 **D6 — Onde a tela mora.** O DP **não** opera junto com o financeiro: *"eu vou
 disponibilizar apenas aquela tela (…) quando eu for liberar para acessarem, aí eu
@@ -416,39 +467,77 @@ libero só aquela tela."* Isso é exatamente o controle por tela que o Análise 
 SPs ganhou em 25/09/2026 (cadastro de usuários com as telas de cada um). Ver §7.2,
 Q2 para a confirmação que falta.
 
+**D7 — A sobra de centavo do rateio vai para a obra com MAIS DIAS.**
+
+**D8 — Só Quinzena e Fim de Mês nesta primeira tela.** As outras oito folhas
+(Diaristas, Gratificados e Mensalistas, Auxílio Alimentação, Auxílio Transporte,
+Décimo Parcela 1 e 2, CTPS, DC) ficam para depois.
+
+**D9 — Quem faz o quê.** Por enquanto **não** tem aval em duas pessoas. O
+desenho é: *"vai ter o usuário do DP que vai estar fazendo a leitura, mas o
+usuário master, que sou eu, administrador, eu gero o arquivo."* Ou seja: o DP
+sobe a folha, cruza, trata as críticas e olha a prévia; **gerar o arquivo e criar
+os cards é só do mestre**. Isso é exatamente o `SO_DO_MESTRE` que o Análise de
+SPs já tem.
+
+**D10 — A tela nasce dentro do Análise de SPs.** Confirmado. E ele levantou uma
+coisa que faz sentido: *"a gente pode até alterar essa Análise de SPs para
+Análise de Pagamentos, que já fica mais abrangente"* — ver §7.2, Q2, sobre o
+tamanho certo dessa mudança.
+
+**D11 — Por que aqui e não no ERP (com as palavras dele).** *"Tem algumas coisas
+que a gente está trabalhando aqui na Análise de SPs porque eu ainda não consegui
+implantar o ERP. São coisas que a gente precisa hoje, mas que provavelmente a
+gente vai utilizar no ERP depois. Esse início de folha de pagamento já é algo que
+a gente deve utilizar lá no futuro."* Fica registrado: **isto vai migrar para o
+ERP um dia.** O que a decisão obriga na prática: regra de negócio em módulo
+próprio (`folha_*.py`), longe da tela, para a migração ser mover arquivo e não
+reescrever.
+
+**D12 — Quem não bate ponto: são DOIS casos, e não um.** Eu havia entendido
+errado (achei que fosse "obra padrão no cadastro"); ele corrigiu:
+
+1. **Quem não bate ponto por dinâmica da função** — *"normalmente supervisores de
+   obras, mas ainda assim a gente precisa apropriar"*. Não há dia nenhum no ponto
+   para ratear.
+2. **Quem bate ponto na MATRIZ ou na FILIAL** (`CONS`, `BWSNE`) — o ponto existe,
+   mas aponta para a matriz, e o valor tem de ser **rateado entre obras** depois.
+
+São problemas diferentes: no primeiro não há dia; no segundo há dia, mas no lugar
+"errado" de propósito. Como decidir a divisão em cada um é a pergunta Q1 de §7.2.
+
 ### 7.2 O que ainda falta responder
 
-**Q1 — A conta de pagamento é mesmo a coluna B de `C. Diários`?** Dá uma olhada no
-cabeçalho da aba e me diz qual coluna é a conta que vale hoje. Se for outra (a
-"do final"), é uma linha de código — mas se eu errar isso, o dinheiro sai da conta
-errada e o rateio inteiro fica errado junto.
+**Q1 — Como o valor do supervisor (e de quem bate na matriz) se divide entre as
+obras?** É a única coisa que falta para o rateio ficar completo. O cadastro já tem
+uma coluna **`Responsável por Obras`**, que parece ser exatamente a lista das obras
+dele. As formas possíveis, da mais simples à mais justa:
 
-**Q2 — Confirma que a tela nasce DENTRO do Análise de SPs**, como uma tela nova
-(Folha de Pagamento), e não como área separada? O que se ganha: o login, o
-controle por tela, o de/para obra→conta, o obra→código OMIE, os espelhos do OMIE,
-o registro de alterações e a exportação em PDF/Excel **já existem lá**. O que se
-perde: aquele módulo cresce mais.
+- **igual** entre as obras que ele responde (fácil de explicar, fácil de auditar);
+- **proporcional ao valor da folha** de cada uma dessas obras (a obra maior
+  absorve mais — costuma ser o que o custo real parece);
+- **proporcional ao número de pessoas** de cada obra no período;
+- **na mão**, obra por obra, como o ajuste fino do §7.3.
 
-**Q3 — Diferença de centavo no rateio.** Dividir o líquido pelos dias e somar de
-volta quase nunca fecha exato (R$ 958,90 ÷ 7 dias). Onde cai a sobra: no primeiro
-dia, no último, ou na obra com mais dias?
+Minha sugestão: **proporcional ao valor da folha das obras que ele responde**,
+com o ajuste na mão sempre disponível por cima. Mas é decisão sua — muda o custo
+declarado de cada obra.
 
-**Q4 — Quais das dez folhas entram nesta primeira tela?** Entendi Quinzena e Fim
-de Mês (as da contabilidade). As outras — Diaristas, Gratificados e Mensalistas,
-Auxílio Alimentação, Auxílio Transporte, Décimo Parcela 1 e 2, CTPS, DC — ficam
-para depois. Confirma?
+**Q2 — Renomear "Análise de SPs" para "Análise de Pagamentos": até onde?** Eu
+recomendo mudar **só o que gente lê** — o nome no menu, o título das telas, os
+textos. E **não** mexer na pasta, no nome do schema do banco (`analisesps`) nem
+nas variáveis de ambiente (`ANALISESPS_*`). O motivo é seco: renomear aquilo é
+migração de banco, troca de variável no Render e risco de o módulo não subir, em
+troca de zero diferença para quem usa. O nome técnico ninguém vê.
 
-**Q5 — Gerar o arquivo exige segunda pessoa?** No ERP, valor alto pede aval de
-duas pessoas. Aqui o arquivo é a ordem de pagamento de ~500 pessoas. Uma pessoa
-só pode gerar, ou gerar pede confirmação de outra?
-
-**Q6 — O arquivo SomaPay**: o modelo tem CPF com ponto e traço (`997.133.493-34`)
-e o cabeçalho da própria planilha diz "deve conter 11 dígitos". Qual dos dois o
-SomaPay aceita? E o valor vai como `1.126,60`?
-
-**Q7 — Obra padrão para quem não bate ponto.** Você disse que são *"normalmente as
-10"* que precisam de ajuste. São sempre as MESMAS dez? Se sim, uma obra padrão no
-cadastro delas acaba com o trabalho repetido (ver §7.3, nível 0).
+**Q3 — E sobre "aquele módulo cresce mais":** eu me expressei mal. Não é um
+problema técnico, é um alerta sobre um arquivo grande. O Análise de SPs já tem
+umas 50 telas e rotinas; enfiando a folha de pagamento ali, ele vira o módulo
+mais gordo do repositório, e um chat novo leva mais tempo para entender onde
+mexer. A alternativa era área separada, com a desvantagem de ter que recriar
+login, permissão e navegação. **Sua decisão de deixar dentro está certa** — e o
+jeito de pagar esse preço é o que a D11 já obriga: a regra da folha em arquivos
+próprios, para poder sair inteira quando for para o ERP.
 
 ### 7.3 O AJUSTE FINO — o que ele pediu, e como proponho fazer
 
@@ -480,7 +569,7 @@ primeiro tipo, e obrigar a descer ao dia a dia em todos seria pior que a planilh
 
 | Nível | O que faz | Para quê |
 |---|---|---|
-| **0 — obra padrão** | fica no CADASTRO da pessoa, não na folha | quem nunca bate ponto e é sempre a mesma obra. Resolve uma vez, vale para sempre |
+| **0 — regra de quem não tem dia** | vem da resposta da Q1 (§7.2): supervisor rateado entre as obras que responde, ou quem bate na matriz rateado depois | ⚠️ NÃO é "obra padrão no cadastro" — eu havia entendido errado. Ver D12 |
 | **1 — fora** | tique "não pagar" na pessoa | o que você chamou de desmarcar. Sai do arquivo e do rateio; continua na prévia, riscada, com o motivo |
 | **2 — uma obra só** | escolhe a obra; **todos** os dias vão para lá | o caso mais comum: erro de ponto, a pessoa trabalhou noutro lugar. Um clique |
 | **3 — dia a dia** | abre os dias do período e troca a obra de cada um | o seu "bota um dia numa obra, um dia em outra" |
@@ -496,6 +585,10 @@ não ter esse nível, ele sai.
 **O que a tela mostra para os ~10 casos**: uma faixa "**precisa da sua mão**" no
 alto, com as pessoas sem ponto, as com ponto estranho e as que você ajustou. O
 resto da folha nem precisa ser aberto.
+
+⚠️ **Quem GERA é o mestre (D9).** O DP faz tudo isto — sobe a folha, cruza, trata
+crítica, ajusta obra, olha a prévia — e para no botão de gerar. O arquivo de
+pagamento e os cards saem com o mestre.
 
 **O que fica registrado em cada ajuste:** quem fez, quando, o que o ponto dizia,
 o que passou a valer e o motivo. Sem isso, o relatório do mês que vem não explica

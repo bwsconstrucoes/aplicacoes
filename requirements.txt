@@ -26,6 +26,15 @@ pillow
 python-barcode>=0.15
 openpyxl  # relatorio do painel em Excel (uma aba por assunto)
 
+# DEPENDENCIA NOVA, 26/09/2026 - avisada ao dono no mesmo dia.
+#
+# A Folha Sintetica que a contabilidade manda e gerada pelo Fortes Pessoal no
+# formato BIFF do Excel 97 (.xls). O openpyxl NAO abre .xls, so .xlsx - e pedir
+# para a contabilidade externa trocar o formato do relatorio nao e uma opcao que
+# esteja na nossa mao. O xlrd e a biblioteca padrao para isso, so faz leitura, e
+# nao tem dependencia nenhuma alem da propria.
+xlrd
+
 # Busca automatica de notas na Receita (NF-e), para o Analise de SPs.
 # CODIGO DE TERCEIRO DE PROPOSITO: ela resolve a assinatura digital do pedido
 # com o certificado A1, que e a parte onde escrever do zero custa caro - o erro

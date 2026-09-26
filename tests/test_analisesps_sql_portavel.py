@@ -560,6 +560,12 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # usa. Escrever hash de senha à mão é o tipo de coisa que se erra em
         # silêncio; usar o que já vem é a decisão certa, não economia.
         "werkzeug": "flask",
+        # Ler a Folha Sintética que a contabilidade manda: o Fortes Pessoal
+        # gera o formato BIFF do Excel 97 (.xls), e o openpyxl só abre .xlsx.
+        # Pedir para a contabilidade externa mudar o formato do relatório dela
+        # não está na nossa mão. Dependência nova de 26/09/2026, avisada ao dono
+        # no mesmo dia — só leitura, e sem dependência própria nenhuma.
+        "xlrd": "xlrd",
         # A cifra que protege o certificado no banco, e a leitura do
         # .pfx. Já vinha instalada como dependência de outras, mas
         # agora é usada DIRETO — então tem de estar declarada.

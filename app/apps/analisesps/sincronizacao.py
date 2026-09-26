@@ -67,6 +67,69 @@ def achar_coluna(cabecalho_normalizado, aceitos):
     return None
 
 
+# Os nomes que a coluna do centro de custo e a da conta podem ter na aba
+# "C. Diários". O primeiro de cada lista é o que a planilha usa hoje.
+COLUNAS_CODIGO_DIARIOS = ["Centro de Custo", "Código Primário", "Obra"]
+COLUNAS_CONTA_DIARIOS = ["Conta", "Conta Corrente", "Conta de Pagamento",
+                         "Conta Pagamento"]
+
+
+def _contas_da_aba(valores) -> tuple[list, str | None]:
+    """O de/para centro de custo → conta de pagamento, lido PELO NOME da coluna.
+
+    ⚠️ ISTO LIA PELA POSIÇÃO, E LIA A COLUNA ERRADA — achado em 26/09/2026,
+    quando o dono pediu para conferir de onde sai a conta corrente de cada obra.
+
+    A leitura antiga era `v[0]` e `v[1]`: a primeira coluna como código e a
+    SEGUNDA como conta. Mas o cabeçalho da aba é
+
+        Centro de Custo | ID | Código Primário | Centro de Custo |
+        Código Centro de Custo Pipefy | Código Omie (Código Primário) | Conta
+
+    ou seja, a segunda coluna é o **ID do registro no Pipefy** (um número tipo
+    594904559), e a conta (`7011-4`) está no fim. A tabela
+    `analisesps.contas_diarios` vinha sendo preenchida com o ID desde a estreia.
+
+    **NINGUÉM PERCEBEU PORQUE NENHUMA TELA LIA ESSA TABELA.** Ela era carregada
+    toda noite e nunca consultada — o defeito só ia aparecer no dia em que a
+    folha de pagamento fosse usá-la para decidir de qual conta o dinheiro sai.
+    É o tipo de erro que só existe enquanto ninguém usa o dado; no primeiro uso,
+    ele paga 500 pessoas da conta errada.
+
+    Agora procura PELO NOME, que é o que o resto deste arquivo já fazia (ver
+    `achar_coluna`) e o que o script do dono acertava. Coluna que muda de lugar
+    deixa de quebrar a carga; coluna que não existe volta com o motivo escrito,
+    e não em silêncio."""
+    if not valores:
+        return [], 'a aba "C. Diários" está vazia.'
+    cabecalho = [str(x).strip() for x in valores[0]]
+    normalizado = _normalizar_cabecalho(cabecalho)
+    i_codigo = achar_coluna(normalizado, COLUNAS_CODIGO_DIARIOS)
+    i_conta = achar_coluna(normalizado, COLUNAS_CONTA_DIARIOS)
+    if i_codigo is None or i_conta is None:
+        faltando = ([COLUNAS_CODIGO_DIARIOS] if i_codigo is None else []) + \
+                   ([COLUNAS_CONTA_DIARIOS] if i_conta is None else [])
+        quais = "; ".join(" ou ".join(f'"{n}"' for n in g) for g in faltando)
+        return [], (f'a aba "C. Diários" não tem a(s) coluna(s) {quais}. '
+                    f'O cabeçalho dela é: {", ".join(cabecalho) or "(vazio)"}.')
+
+    # ⚠️ A CONTA PODE VIR VAZIA, e isso é estado legítimo: obra nova cadastrada
+    # antes de alguém dizer de qual conta ela paga. Guardar vazio é melhor que
+    # pular a linha — pular faria a obra desaparecer do de/para, e aí o erro
+    # viraria "obra não existe" em vez de "obra sem conta", que é o problema de
+    # verdade e o que a tela precisa dizer.
+    saida = []
+    for linha in valores[1:]:
+        codigo = str(linha[i_codigo]).strip() if i_codigo < len(linha) else ""
+        conta = str(linha[i_conta]).strip() if i_conta < len(linha) else ""
+        if codigo:
+            saida.append((codigo, conta))
+    if not saida:
+        return [], ('a aba "C. Diários" tem as colunas certas, mas nenhuma '
+                    "linha com centro de custo preenchido.")
+    return saida, None
+
+
 # Quantas linhas por ida à planilha na carga inicial.
 #
 # Cinco mil é o meio-termo medido: blocos menores multiplicam as idas ao Google
@@ -527,8 +590,9 @@ def sincronizar_apoios(anotar=None) -> dict:
     anotar("trazendo as contas de pagamento")
     try:
         valores = com_retry(_aba(PLANILHA_SPS, "C. Diários").get_all_values)
-        linhas = [(str(v[0]).strip(), str(v[1]).strip() if len(v) > 1 else "")
-                  for v in valores[1:] if v and str(v[0]).strip()]
+        linhas, motivo = _contas_da_aba(valores)
+        if motivo:
+            avisos.append(motivo)
         if linhas:
             with conexao() as conn:
                 conn.executemany(
@@ -539,7 +603,7 @@ def sincronizar_apoios(anotar=None) -> dict:
                     "       IS DISTINCT FROM EXCLUDED.conta_pagamento", linhas)
                 conn.commit()
             contas = len(linhas)
-        else:
+        elif not motivo:
             avisos.append('a aba "C. Diários" não trouxe nenhuma conta.')
     except Exception as e:  # noqa: BLE001 — apoio que falta não derruba a carga
         logger.exception("Análise de SPs: falhou ler 'C. Diários'")
