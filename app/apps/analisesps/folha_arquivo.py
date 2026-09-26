@@ -188,9 +188,21 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
               l.filial_nome) for l in lida.linhas])
         conn.commit()
 
+    # CASA COM O CADASTRO NA HORA: a tela que vem depois já mostra quem está
+    # pendente. Num `try` porque a folha já está gravada — um tropeço no
+    # casamento não pode desfazer a importação, e o casamento roda de novo a cada
+    # visita à tela.
+    casamento = {"casadas": 0, "pendentes": 0}
+    try:
+        casamento = casar_com_o_cadastro(folha_id)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou casar a folha com o cadastro")
+        avisos.append(f"não deu para casar a folha com o cadastro: {e}")
+
     logger.info("Análise de SPs: folha %02d/%d (%s) importada — %d pessoa(s), "
                 "total %s.", mes_final, ano_final, tipo_final, pessoas, total)
-    return {"id": folha_id, "ano": int(ano_final), "mes": int(mes_final),
+    return {"casadas": casamento["casadas"], "pendentes": casamento["pendentes"],
+            "id": folha_id, "ano": int(ano_final), "mes": int(mes_final),
             "tipo": tipo_final, "pessoas": pessoas, "total": total,
             "avisos": avisos, "substituiu": substituiu, "fecha": lida.fecha}
 
@@ -263,6 +275,208 @@ def totais_por_filial(folha_id: int) -> list:
         (int(folha_id),))
     return [{"codigo": l[0], "nome": l[1], "pessoas": l[2], "total": l[3]}
             for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# CASAR A FOLHA COM AS PESSOAS
+# ---------------------------------------------------------------------------
+def casar_com_o_cadastro(folha_id: int) -> dict:
+    """Preenche o CPF de cada linha, pelo ID Fortes do cadastro.
+
+    ⚠️ É O PASSO QUE FAZ A FOLHA CONVERSAR COM O RESTO DO SISTEMA. A Folha
+    Sintética traz **código do empregado e nome**; o ponto, o cadastro, o rateio
+    e o pagamento são todos por **CPF**. Sem casar, a folha é uma lista de nomes.
+
+    NÃO CASA POR NOME, e isso é decisão com preço pago: as planilhas cruzam por
+    nome hoje, e é frágil — dois "JOSE DA SILVA", um acento diferente, um nome do
+    meio abreviado, e o salário vai para a pessoa errada. Aqui é pelo código, e
+    quem não tem código **fica pendente, visível**, em vez de casar com um
+    parecido.
+
+    Roda sozinho depois de importar, e de novo a cada visita à tela: o cadastro
+    pode ter sido atualizado no meio, e aí gente que estava pendente passa a
+    casar sem ninguém reimportar nada.
+
+    Devolve `{"casadas", "pendentes"}`.
+    """
+    from . import colaboradores
+    from .db import conexao
+
+    if not _pronto():
+        return {"casadas": 0, "pendentes": 0}
+    from .db import consultar
+    de_para = colaboradores.de_para_do_fortes()
+    linhas = consultar(
+        "SELECT id, id_fortes, cpf FROM analisesps.folha_linha "
+        " WHERE folha_id = ?", (int(folha_id),))
+
+    if not de_para:
+        # Sem de/para não há o que casar, e zerar o que já estava casado seria
+        # perder informação por causa de uma planilha fora do ar.
+        #
+        # ⚠️ MAS A CONTAGEM SAI CERTA MESMO ASSIM, e o teste pegou isto: eu
+        # devolvia "0 pendentes" quando TODO MUNDO estava pendente. Número com o
+        # significado errado é pior que número nenhum — ele diria que a folha
+        # está pronta para pagar.
+        faltam = sum(1 for _i, _f, cpf in linhas if not cpf)
+        return {"casadas": len(linhas) - faltam, "pendentes": faltam}
+
+    mudar = []
+    pendentes = 0
+    for linha_id, id_fortes, cpf_atual in linhas:
+        achado = de_para.get(str(id_fortes or "").strip())
+        cpf_novo = achado["cpf"] if achado else ""
+        if not cpf_novo:
+            pendentes += 1
+        if cpf_novo != (cpf_atual or ""):
+            mudar.append((cpf_novo, linha_id))
+
+    if mudar:
+        with conexao() as conn:
+            conn.executemany(
+                "UPDATE analisesps.folha_linha SET cpf = ? WHERE id = ?", mudar)
+            conn.commit()
+
+    casadas = len(linhas) - pendentes
+    return {"casadas": casadas, "pendentes": pendentes}
+
+
+def criticas(folha_id: int) -> dict:
+    """O que precisa da mão de alguém nesta folha, antes de pagar.
+
+    ⚠️ AS TRÊS PERGUNTAS QUE DECIDEM DINHEIRO:
+
+      1. **quem está na folha e não está no cadastro** — sem CPF não há
+         apropriação, não há auxílio, não há pagamento. Correção do dono em
+         26/09/2026: essa pessoa **não pode ficar escondida** numa lista à parte;
+         ela fica na folha, marcada, e o total não fecha enquanto ela estiver
+         assim — que é exatamente o que tem de acontecer;
+      2. **quem já saiu** e está na folha — *"não podemos pagar salário ou
+         diárias pra quem saiu"*;
+      3. **quem está saindo** — pode haver valor devido até o último dia, então é
+         aviso para conferir, não trava.
+
+    A situação de cada pessoa vem de `colaboradores.situacao_no_pagamento`, a
+    MESMA função das outras telas — duas respostas para "esta pessoa pode
+    receber?" divergiriam no primeiro caso de borda.
+    """
+    from . import colaboradores
+    from .db import consultar
+
+    vazio = {"pendentes": [], "sairam": [], "saindo": [], "total_pendente": 0,
+             "total_de_quem_saiu": 0}
+    if not _pronto():
+        return vazio
+
+    folha = consultar(
+        "SELECT id_fortes, nome, cpf, valor FROM analisesps.folha_linha "
+        " WHERE folha_id = ? ORDER BY lower(nome)", (int(folha_id),))
+    if not folha:
+        return vazio
+
+    # O FIM DO PERÍODO é o que decide "saiu" × "está saindo": quem saiu depois do
+    # fim da quinzena trabalhou a quinzena inteira e recebe. Ver
+    # `situacao_no_pagamento`.
+    cabeca = consultar(
+        "SELECT ano, mes, tipo FROM analisesps.folha WHERE id = ?",
+        (int(folha_id),))
+    ate = None
+    if cabeca:
+        ano, mes, tipo = cabeca[0]
+        from . import folha_apropriacao
+        periodo = folha_apropriacao.periodo_do_pagamento(ano, mes, tipo)
+        ate = periodo[1] if periodo else None
+
+    fichas = colaboradores.muitos_por_cpf(
+        [c for _i, _n, c, _v in folha if c], ate=ate)
+
+    saida = {"pendentes": [], "sairam": [], "saindo": [],
+             "total_pendente": 0, "total_de_quem_saiu": 0}
+    for id_fortes, nome, cpf, valor in folha:
+        if not cpf:
+            saida["pendentes"].append(
+                {"id_fortes": id_fortes, "nome": nome, "valor": valor})
+            saida["total_pendente"] += valor or 0
+            continue
+        ficha = fichas.get(cpf)
+        if not ficha:
+            # Tem CPF pelo de/para, mas o cadastro não devolveu — cadastro
+            # apagado depois do casamento. É pendente do mesmo jeito.
+            saida["pendentes"].append(
+                {"id_fortes": id_fortes, "nome": nome, "valor": valor})
+            saida["total_pendente"] += valor or 0
+            continue
+        situacao = ficha.get("situacao")
+        item = {"id_fortes": id_fortes, "nome": ficha.get("nome") or nome,
+                "cpf": cpf, "valor": valor, "motivo": ficha.get("motivo", ""),
+                "link_pipefy": ficha.get("link_pipefy", "")}
+        if situacao == colaboradores.SITUACAO_SAIU:
+            saida["sairam"].append(item)
+            saida["total_de_quem_saiu"] += valor or 0
+        elif situacao == colaboradores.SITUACAO_SAINDO:
+            saida["saindo"].append(item)
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# O PAINEL
+# ---------------------------------------------------------------------------
+def panorama() -> dict:
+    """Os totais que o dono pediu, no que já dá para responder hoje.
+
+    Palavras dele, em 27/09/2026:
+
+        "Tem que ter informação gerencial, tipo dashboard, para poder estar vendo
+         qual é o total por obra, porque isso já ajuda nessa questão do rateio.
+         (…) a folha da contabilidade, conseguir em um ambiente visualizar tudo."
+
+    ⚠️ O QUE FALTA, DITO AQUI PARA NÃO PARECER ESQUECIMENTO: o total **por obra**
+    depende da apropriação (ponto + rateio + ajuste), que ainda não está
+    guardada. O que o arquivo da contabilidade traz é **filial**, e é isso que
+    esta função responde. Quando a apropriação existir, o total por obra entra
+    aqui — no mesmo lugar, e não numa tela paralela.
+
+    E as outras verbas (alimentação, transporte, diaristas, GM) também não
+    entram ainda: elas não têm de onde vir. A tela diz isso, em vez de mostrar
+    um total que parece completo e não é.
+    """
+    from .db import consultar, consultar_um
+    vazio = {"folhas": [], "total": Decimal("0"), "pessoas": 0,
+             "competencias": 0, "pendentes": 0, "por_filial": [],
+             "pronto": False}
+    if not _pronto():
+        return vazio
+
+    folhas = listar()
+    if not folhas:
+        return {**vazio, "pronto": True}
+
+    # ⚠️ O TOTAL GERAL SOMA AS FOLHAS, e não é a soma de tudo o que a empresa
+    # paga: são só as folhas da contabilidade que foram importadas. Dizer
+    # "total da folha" sem essa ressalva faria o número parecer o custo de
+    # pessoal inteiro — que ainda inclui alimentação, transporte e diaristas.
+    total = sum((f["total"] for f in folhas), Decimal("0"))
+    pessoas = sum(f["pessoas"] for f in folhas)
+
+    # `consultar_um` devolve a LINHA; `consultar` devolve a lista de linhas. Usar
+    # o segundo aqui dava `int(tupla)` — e o teste pegou na primeira rodada.
+    pendentes = consultar_um(
+        "SELECT count(*) FROM analisesps.folha_linha WHERE cpf = ''")
+    por_filial = consultar(
+        "SELECT l.filial_codigo, max(l.filial_nome), count(*), sum(l.valor) "
+        "  FROM analisesps.folha_linha l "
+        " GROUP BY l.filial_codigo ORDER BY sum(l.valor) DESC LIMIT 60")
+
+    return {
+        "folhas": folhas,
+        "total": total,
+        "pessoas": pessoas,
+        "competencias": len({(f["ano"], f["mes"]) for f in folhas}),
+        "pendentes": int((pendentes or [0])[0] or 0),
+        "por_filial": [{"codigo": l[0], "nome": l[1], "pessoas": l[2],
+                        "total": l[3]} for l in por_filial],
+        "pronto": True,
+    }
 
 
 def apagar(folha_id: int, quem: str = "") -> bool:

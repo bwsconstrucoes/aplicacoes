@@ -469,6 +469,8 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 # quem apertou o botão, não no log do serviço.
                 recado_apoios[0] = (
                     f"{c.get('pessoas', 0)} pessoa(s) no cadastro"
+                    + (f", {c['com_id_fortes']} com o código do Fortes"
+                       if c.get("com_id_fortes") else "")
                     + (f", {c['ignoradas']} linha(s) sem CPF válido"
                        if c.get("ignoradas") else "")
                     + (" — ATENÇÃO: " + "; ".join(c["avisos"])

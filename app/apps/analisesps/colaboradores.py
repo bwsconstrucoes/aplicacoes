@@ -56,6 +56,26 @@ PLANILHA_COLABORADORES = os.getenv(
     "1fqi4QUOVGUd1_4Gg4vK5qP_IMOSgFaw8DD9MDgmM3vo")
 ABA_COLABORADORES = "Dados Documentos"
 
+# ⚠️ A SEGUNDA ABA: o de/para ID Fortes → CPF.
+#
+# A Folha Sintética da contabilidade traz **código do empregado e nome** — não
+# traz CPF. O ponto, o cadastro, o rateio e o pagamento são todos por CPF. O que
+# liga os dois mundos é este de/para, e ele mora numa aba própria da mesma
+# planilha.
+#
+# Vem no MESMO botão "Atualizar cadastro": duas atualizações separadas para a
+# mesma planilha seria pedir para alguém esquecer uma delas — e a folha passaria
+# a não achar gente que está cadastrada.
+ABA_ID_FORTES = "ID Fortes"
+
+# Os nomes que as duas colunas podem ter. O primeiro de cada lista é o mais
+# provável; a carga AVISA com o cabeçalho de verdade quando não acha nenhum,
+# porque adivinhar posição aqui trocaria o código de uma pessoa pelo de outra.
+COLUNAS_DO_ID_FORTES = ["ID Fortes", "Id Fortes", "Código", "Codigo",
+                        "Matrícula", "Matricula", "Código Fortes"]
+COLUNAS_DO_CPF_NO_DE_PARA = ["CPF", "CPF (Cadastro de Pessoa Física)",
+                             "CPF Números", "cpf"]
+
 # O cabeçalho está na linha 1. A LINHA 2 NÃO É DADO: ela guarda o número de
 # cada coluna (1, 2, 3…), e serve a uma fórmula da aba "Dados Gerais" que monta
 # o endereço da coluna com INDIRECT. Ler a linha 2 como pessoa criaria um
@@ -86,6 +106,9 @@ MAXIMO_DE_LINHAS = 50_000
 # ---------------------------------------------------------------------------
 COLUNAS = {
     "cpf": ["CPF (Cadastro de Pessoa Física)", "CPF", "CPF Números"],
+    # O ID Fortes NÃO vem desta aba: vem da aba "ID Fortes" (ver `ABA_ID_FORTES`).
+    # Fica fora de `COLUNAS` de propósito — procurá-lo aqui geraria um aviso de
+    # coluna faltando toda vez, e aviso que sempre aparece vira enfeite.
     "nome": ["Nome Completo", "Nome", "Colaborador"],
     "card_pipefy": ["Nº Registro Pipefy", "N Registro Pipefy",
                     "Numero Registro Pipefy", "Registro Pipefy"],
@@ -163,12 +186,20 @@ DATAS = ("aviso_previo", "ultimo_dia", "data_saida")
 NUMEROS = ("valor_alimentacao", "valor_transporte", "valor_gratificacao")
 
 # Os campos que a tela pede sem parar, na ordem em que a tabela os guarda.
+# ⚠️ `id_fortes` NÃO ENTRA EM `CAMPOS`, e não é esquecimento: `CAMPOS` é o que a
+# carga da aba "Dados Documentos" grava, e o ID Fortes vem de OUTRA aba. Se
+# entrasse aqui, cada carga do cadastro sobrescreveria o ID com vazio — e a folha
+# deixaria de achar as pessoas na atualização seguinte. Ele é gravado à parte, por
+# `atualizar_ids_fortes`, e LIDO junto (ver `CAMPOS_LIDOS`).
 CAMPOS = ["cpf", "nome", "card_pipefy", "matricula", "celular", "cargo",
           "tipo", "tipo_contrato", "fase", "convencao", "obra_cadastro",
           "valor_alimentacao", "modo_alimentacao",
           "valor_transporte", "modo_transporte", "valor_gratificacao",
           "parcela_unica", "paga_por_beevale",
           "aviso_previo", "ultimo_dia", "data_saida"]
+
+# O que as telas leem: os campos gravados pela aba principal MAIS o ID Fortes.
+CAMPOS_LIDOS = CAMPOS + ["id_fortes"]
 
 
 class ErroDoCadastro(RuntimeError):
@@ -422,6 +453,21 @@ def atualizar(anotar=None) -> dict:
             f"{ignoradas} linha(s) da planilha ficaram de fora por não terem "
             "um CPF válido de 11 dígitos.")
 
+    # ⚠️ O DE/PARA DO ID FORTES VEM NO MESMO BOTÃO. Sem ele a folha da
+    # contabilidade não acha ninguém: ela traz código e nome, e todo o resto do
+    # sistema é por CPF. Duas atualizações separadas para a mesma planilha seria
+    # pedir para alguém esquecer uma delas.
+    #
+    # Num `try` largo porque o cadastro já está gravado a esta altura: um
+    # tropeço aqui não pode desfazer o que deu certo.
+    fortes = {"casados": 0}
+    try:
+        fortes = atualizar_ids_fortes(anotar)
+        avisos.extend(fortes.get("avisos") or [])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou o de/para do ID Fortes")
+        avisos.append(f"não deu para trazer o de/para do ID Fortes: {e}")
+
     with conexao() as conn:
         from .sincronizacao import _meta_gravar
         from .horario import agora
@@ -431,7 +477,167 @@ def atualizar(anotar=None) -> dict:
 
     logger.info("Análise de SPs: cadastro atualizado — %d pessoa(s), "
                 "%d aviso(s).", gravadas, len(avisos))
-    return {"pessoas": gravadas, "ignoradas": ignoradas, "avisos": avisos}
+    return {"pessoas": gravadas, "ignoradas": ignoradas, "avisos": avisos,
+            "com_id_fortes": fortes.get("casados", 0)}
+
+
+# ---------------------------------------------------------------------------
+# O DE/PARA ID FORTES → CPF
+# ---------------------------------------------------------------------------
+def atualizar_ids_fortes(anotar=None) -> dict:
+    """Lê a aba "ID Fortes" e grava o código de cada pessoa no cadastro.
+
+    ⚠️ RODA JUNTO com `atualizar`, no mesmo botão: duas atualizações separadas
+    para a mesma planilha seria pedir para alguém esquecer uma delas — e a folha
+    passaria a não achar gente que ESTÁ cadastrada, sem nada na tela explicando.
+
+    NÃO APAGA O QUE JÁ ESTÁ GRAVADO quando a aba não vem ou está vazia: devolve
+    aviso e deixa como está. Zerar o de/para por causa de uma aba renomeada faria
+    a folha inteira virar "pendente de cadastro" de uma hora para outra.
+
+    Devolve `{"casados", "sem_cadastro", "repetidos", "avisos"}`.
+    """
+    from .db import conexao
+
+    anotar = anotar or (lambda *a, **k: None)
+    if not _pronto():
+        return {"casados": 0, "sem_cadastro": [], "repetidos": [],
+                "avisos": ["a tabela do cadastro ainda não existe."]}
+    if not tem_id_fortes():
+        return {"casados": 0, "sem_cadastro": [], "repetidos": [],
+                "avisos": ['falta a atualização 030 do banco para guardar o ID '
+                           'Fortes. Aperte "Aplicar atualizações do banco".']}
+
+    anotar("trazendo o de/para do ID Fortes")
+    try:
+        aba = _aba(PLANILHA_COLABORADORES, ABA_ID_FORTES)
+        valores = com_retry(lambda: aba.get_all_values()) or []
+    except Exception as e:  # noqa: BLE001
+        return {"casados": 0, "sem_cadastro": [], "repetidos": [],
+                "avisos": [_explicar_aba(PLANILHA_COLABORADORES,
+                                         ABA_ID_FORTES, e)]}
+
+    # ESTA ABA É PEQUENA (~1.000 linhas por 8 colunas), então `get_all_values` é
+    # aceitável aqui — ao contrário da aba principal, que tem 78 colunas e é lida
+    # em faixas. O teto existe para o caso de a aba vir esticada por fórmula.
+    if len(valores) > 20_000:
+        valores = valores[:20_000]
+    if not valores:
+        return {"casados": 0, "sem_cadastro": [], "repetidos": [],
+                "avisos": [f'a aba "{ABA_ID_FORTES}" está vazia — o de/para '
+                           "anterior foi mantido."]}
+
+    # O CABEÇALHO PODE NÃO ESTAR NA PRIMEIRA LINHA: esta aba tem título acima da
+    # tabela em algumas versões. Procura nas primeiras linhas a que tem as duas
+    # colunas, em vez de assumir a linha 1.
+    posicoes = None
+    for i, linha in enumerate(valores[:10]):
+        normalizado = _normalizar_cabecalho(linha)
+        i_id = achar_coluna(normalizado, COLUNAS_DO_ID_FORTES)
+        i_cpf = achar_coluna(normalizado, COLUNAS_DO_CPF_NO_DE_PARA)
+        if i_id is not None and i_cpf is not None:
+            posicoes = (i, i_id, i_cpf)
+            break
+    if posicoes is None:
+        cabecalhos = " / ".join(
+            ", ".join(str(c) for c in linha if str(c).strip())
+            for linha in valores[:3]) or "(vazio)"
+        return {"casados": 0, "sem_cadastro": [], "repetidos": [],
+                "avisos": [f'na aba "{ABA_ID_FORTES}" não achei as colunas de '
+                           f'"{COLUNAS_DO_ID_FORTES[0]}" e "'
+                           f'{COLUNAS_DO_CPF_NO_DE_PARA[0]}". As primeiras '
+                           f"linhas dela são: {cabecalhos}. Me diga os nomes "
+                           "certos e eu ajusto."]}
+
+    linha_do_cabecalho, i_id, i_cpf = posicoes
+    from .folha_rateio import so_digitos
+
+    de_para: dict = {}
+    repetidos: list = []
+    for linha in valores[linha_do_cabecalho + 1:]:
+        id_fortes = " ".join(str(
+            linha[i_id] if i_id < len(linha) else "").split())
+        cpf = so_digitos(linha[i_cpf] if i_cpf < len(linha) else "")
+        if not id_fortes or len(cpf) != 11:
+            continue
+        if id_fortes in de_para and de_para[id_fortes] != cpf:
+            # ⚠️ O MESMO CÓDIGO PARA DUAS PESSOAS é o pior erro possível aqui:
+            # o salário de uma iria para a obra da outra. Não é resolvido
+            # calado — vira crítica, e o primeiro vale (para não trocar o que
+            # já estava certo por um duplicado digitado depois).
+            repetidos.append(id_fortes)
+            continue
+        de_para[id_fortes] = cpf
+
+    if not de_para:
+        return {"casados": 0, "sem_cadastro": [], "repetidos": repetidos,
+                "avisos": [f'a aba "{ABA_ID_FORTES}" tem as colunas certas, mas '
+                           "nenhuma linha com código e CPF válido — o de/para "
+                           "anterior foi mantido."]}
+
+    # GRAVA SÓ EM QUEM ESTÁ NO CADASTRO. Um ID Fortes de alguém que não está
+    # cadastrado não tem onde morar, e é notícia: a folha vai encontrar esse
+    # código e não vai achar a pessoa.
+    casados = 0
+    sem_cadastro: list = []
+    with conexao() as conn:
+        for id_fortes, cpf in de_para.items():
+            cur = conn.execute(
+                "UPDATE analisesps.colaborador SET id_fortes = ? WHERE cpf = ?",
+                (id_fortes, cpf))
+            if cur.rowcount and cur.rowcount > 0:
+                casados += 1
+            else:
+                sem_cadastro.append(id_fortes)
+            cur.close()
+        conn.commit()
+
+    avisos = []
+    if repetidos:
+        avisos.append(
+            f"{len(repetidos)} código(s) do Fortes aparecem para mais de uma "
+            f"pessoa na aba \"{ABA_ID_FORTES}\" ({', '.join(repetidos[:5])}"
+            f"{'…' if len(repetidos) > 5 else ''}). Enquanto isso não for "
+            "corrigido, o salário de uma pode ir para a obra de outra.")
+    if sem_cadastro:
+        avisos.append(
+            f"{len(sem_cadastro)} código(s) do Fortes são de gente que não está "
+            "no cadastro. A folha vai encontrar esses códigos e não vai achar a "
+            "pessoa.")
+
+    logger.info("Análise de SPs: de/para do ID Fortes — %d casado(s), "
+                "%d sem cadastro, %d repetido(s).",
+                casados, len(sem_cadastro), len(repetidos))
+    return {"casados": casados, "sem_cadastro": sem_cadastro,
+            "repetidos": repetidos, "avisos": avisos}
+
+
+def tem_id_fortes() -> bool:
+    """A migração 030 já rodou? A coluna pode não existir ainda."""
+    from .db import tem_coluna
+    try:
+        # ⚠️ SEM O SCHEMA NO NOME: `tem_coluna` já acrescenta o schema. Passar
+        # "analisesps.colaborador" faz a consulta procurar uma tabela com esse
+        # nome literal e responder SEMPRE que a coluna não existe — foi o que
+        # aconteceu, e o teste da carga pegou.
+        return tem_coluna("colaborador", "id_fortes")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def de_para_do_fortes() -> dict:
+    """`{"000013": {"cpf": ..., "nome": ...}}` — o que a apropriação pede.
+
+    É a ponte entre a folha da contabilidade (que só traz o código) e todo o
+    resto (que é por CPF). Ver `folha_apropriacao.apropriar`, parâmetro
+    `cadastro_por_id`."""
+    from .db import consultar
+    if not _pronto() or not tem_id_fortes():
+        return {}
+    linhas = consultar(
+        "SELECT id_fortes, cpf, nome FROM analisesps.colaborador "
+        " WHERE id_fortes <> ''")
+    return {l[0]: {"cpf": l[1], "nome": l[2]} for l in linhas}
 
 
 # ---------------------------------------------------------------------------
@@ -593,7 +799,7 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
 
 
 def _dicionario(linha, ate=None) -> dict:
-    registro = {campo: linha[i] for i, campo in enumerate(CAMPOS)}
+    registro = {campo: linha[i] for i, campo in enumerate(CAMPOS_LIDOS)}
     registro["link_pipefy"] = link_do_card(registro.get("card_pipefy"))
     registro["desligado"] = registro.get("data_saida") is not None
     registro.update(situacao_no_pagamento(registro, ate))
@@ -614,7 +820,7 @@ def por_cpf(cpf: str, ate=None) -> dict | None:
     if len(digitos) != 11:
         return None
     linha = consultar_um(
-        "SELECT " + ", ".join(CAMPOS) + " FROM analisesps.colaborador "
+        "SELECT " + ", ".join(CAMPOS_LIDOS) + " FROM analisesps.colaborador "
         " WHERE cpf = ?", (digitos,))
     return _dicionario(linha, ate) if linha else None
 
@@ -634,7 +840,7 @@ def muitos_por_cpf(cpfs, ate=None) -> dict:
         return {}
     marcadores = ", ".join(["?"] * len(limpos))
     linhas = consultar(
-        "SELECT " + ", ".join(CAMPOS) + " FROM analisesps.colaborador "
+        "SELECT " + ", ".join(CAMPOS_LIDOS) + " FROM analisesps.colaborador "
         f" WHERE cpf IN ({marcadores})", tuple(limpos))
     return {l[0]: _dicionario(l, ate) for l in linhas}
 
@@ -678,7 +884,7 @@ def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200,
 
     onde = (" WHERE " + " AND ".join(condicoes)) if condicoes else ""
     linhas = consultar(
-        "SELECT " + ", ".join(CAMPOS) + " FROM analisesps.colaborador "
+        "SELECT " + ", ".join(CAMPOS_LIDOS) + " FROM analisesps.colaborador "
         + onde + " ORDER BY nome LIMIT ?", tuple(params) + (int(teto),))
     return [_dicionario(l, ate) for l in linhas]
 

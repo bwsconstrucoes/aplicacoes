@@ -1998,6 +1998,108 @@ O que o painel mostra, pelo que ele descreveu:
 obra o que não está gravado. É o próximo passo, e é o que destrava tanto o painel
 quanto as telas por verba.
 
+## 7.20 A FOLHA LIGADA ÀS PESSOAS, E O PAINEL (27/09/2026)
+
+Ele pediu para eu **seguir até o fim**. Isto é o que deu para fazer sem inventar
+dado que não existe, e o §7.21 diz, item por item, o que ficou travado e em quê.
+
+### 7.20.1 A ponte que faltava: o ID Fortes
+
+⚠️ **A Folha Sintética não traz CPF.** Ela traz **código do empregado e nome**. E
+o ponto, o cadastro, o rateio, os auxílios e o pagamento são **todos por CPF**.
+Sem o de/para, a folha importada era uma lista de nomes — não dava para saber de
+quem era cada valor.
+
+O de/para mora numa aba própria da planilha "Registro de Colaboradores"
+(`ID Fortes`), e agora vem **no mesmo botão "Atualizar cadastro"**: duas
+atualizações separadas para a mesma planilha seria pedir para alguém esquecer
+uma delas, e a folha passaria a não achar gente que ESTÁ cadastrada.
+
+**Três cuidados que o código tem, e o motivo de cada um:**
+
+1. **NÃO casa por nome.** As planilhas cruzam por nome hoje, e é frágil: dois
+   "JOSE DA SILVA", um acento diferente, um nome do meio abreviado — e o salário
+   vai para a pessoa errada. Aqui é pelo código; quem não tem código **fica
+   pendente, visível**, em vez de casar com um parecido.
+2. **O mesmo código para duas pessoas vira crítica**, e o primeiro vale. É o pior
+   erro possível aqui: o salário de uma iria para a obra da outra.
+3. **Aba vazia ou fora do ar não apaga o que já casou.** Zerar o de/para por
+   causa de uma aba renomeada faria a folha inteira virar "pendente" de uma hora
+   para outra.
+
+E o campo **não entra na lista que a carga principal grava** — ele vem de outra
+aba. Se entrasse, cada atualização do cadastro o sobrescreveria com vazio, e a
+folha deixaria de achar as pessoas na atualização seguinte. Tem teste para isso.
+
+### 7.20.2 As três críticas da folha, aplicadas ao arquivo de verdade
+
+Com a folha ligada às pessoas, as regras que já existiam passam a valer **sobre a
+folha**:
+
+| Crítica | O que faz |
+|---|---|
+| **não casou com o cadastro** | fica na lista, marcada, e o valor dela aparece somado à parte. Sem CPF não há apropriação nem pagamento |
+| **já saiu** | *"não podemos pagar salário ou diárias pra quem saiu"* — com o valor que está nesta folha |
+| **está saindo** | aviso para conferir o que é devido até o último dia; rescisão não sai por aqui |
+
+⚠️ **O período da folha é o que decide "saiu" × "está saindo"**, não hoje: quem
+saiu no dia 20 trabalhou a **quinzena** (1 a 15) inteira e recebe; na folha de
+**fim de mês** do mesmo mês, não. Tem teste com as duas folhas do mesmo mês
+dando respostas diferentes para a mesma pessoa.
+
+E as críticas ficam **antes da lista** na tela: são o que impede pagar, e ninguém
+as encontraria rolando 491 linhas.
+
+### 7.20.3 O painel — e por que ele é a primeira subtela
+
+Ele explicou o motivo, e isso mudou a ordem: **é olhando o total por obra que ele
+decide o rateio do mês.** Então o painel vem **antes** do rateio na ordem de uso,
+mesmo tendo sido pedido depois. Quem entra na área cai nele.
+
+O que ele mostra hoje: total das folhas importadas, pessoas, competências, quantas
+pessoas **não casaram** com o cadastro (âmbar quando há alguma), e o **total por
+filial, da maior para a menor, com o percentual de cada uma** — que é a lista que
+responde "quais obras estão em evidência".
+
+⚠️ **E a tela diz o que ainda não sabe, em cima, antes dos números.** Isso não é
+modéstia: um painel que mostrasse "total da folha" sem avisar que faltam
+alimentação, transporte, diaristas, gratificações e PJ faria o número parecer o
+**custo de pessoal inteiro**. E o total por **obra** depende da apropriação, que
+depende do ponto. Número que parece completo e não é vale menos que número nenhum.
+
+## 7.21 O QUE FALTA, E EXATAMENTE EM QUÊ (27/09/2026)
+
+Ele pediu para seguir até o fim. Três peças **não dependem de mim** — elas
+dependem de dado que só ele pode trazer. Está tudo aqui para não parecer
+esquecimento.
+
+| O que falta | Depende de | O que já está pronto esperando |
+|---|---|---|
+| **total por OBRA** (no painel e no rateio) | o **ponto** carregado | `folha_apropriacao` inteiro: a apropriação por dia, mão > regra > ponto, a sobra de centavo |
+| **carga do ponto (Mobponto)** | ⚠️ `MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY` no Render — **ele ainda não criou** | nada; é o próximo código a escrever, e não dá para testar contra a API sem as chaves |
+| **tela de alimentação e de transporte** | as abas **`Feriados`** e **`Férias`** | a regra completa está lida das fórmulas (§7.14.6/§7.14.7) e os valores e modalidades já vêm no cadastro |
+| **marca "está de férias"** e **desconto proporcional no transporte** | o **relatório de férias** que ele vai mandar | a decisão dele já está registrada (§7.16.1) |
+| **tela de diaristas e de CTPS extra** | o **ponto** | as regras (+20 feriado, +10 sábado, +20 domingo, VIGIA fora, compensação) estão em §7.14.5 e §7.14.12 |
+| **gerar o arquivo de pagamento** | a apropriação guardada | as regras de juntar/separar e a trava do CPF repetido no SomaPay estão em §7.18.2 |
+| **cards no Pipefy** | o arquivo gerado | o módulo `pipefy.py` já existe e já escreve em card |
+| **log do que foi gerado, na aplicação** | o gerador | a decisão dele está em §7.17.5 |
+
+**A ordem que isso impõe, e ela não é escolha minha:**
+
+1. **O ponto.** É o gargalo de tudo: sem ele não há obra, não há diária, não há
+   painel por obra. E para o ponto entrar, as duas variáveis precisam existir no
+   Render.
+2. **Feriados e férias.** Destravam alimentação e transporte, que são duas telas
+   inteiras e não dependem do ponto.
+3. **A apropriação guardada** (migração nova), que é o que liga a folha às obras.
+4. **Os geradores e os cards.**
+
+⚠️ **O que eu NÃO vou fazer sem ele:** escrever a carga do Mobponto adivinhando o
+formato da resposta da API. Já errei uma vez por afirmar coisa de planilha sem ler
+a fórmula (§7.14.1 e §7.14.2), e a lição vale igual aqui: **cliente de API escrito
+sem ver uma resposta de verdade é palpite com cara de código.** Com as duas
+variáveis no Render eu leio uma resposta real e escrevo em cima dela.
+
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

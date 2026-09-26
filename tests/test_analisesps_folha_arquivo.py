@@ -14,9 +14,9 @@ dublê da suíte não alcança nenhum dos dois.
   - e a transação é o que impede uma folha existir com a antiga já apagada e a
     nova não gravada — que mostraria total zero como se fosse verdade.
 """
-from decimal import Decimal
-
+import datetime as dt
 import pathlib
+from decimal import Decimal
 
 import pytest
 
@@ -350,3 +350,264 @@ def test_o_arquivo_REAL_da_contabilidade_e_guardado_inteiro(banco_folha_arquivo)
     filiais = fa.totais_por_filial(resultado["id"])
     assert len(filiais) == 47
     assert sum((f["total"] for f in filiais), Decimal("0")) == Decimal("430129.75")
+
+
+# ---------------------------------------------------------------------------
+# CASAR A FOLHA COM AS PESSOAS, E AS CRÍTICAS — 27/09/2026
+#
+# ⚠️ É O PASSO QUE FAZ A FOLHA CONVERSAR COM O RESTO. A Folha Sintética traz
+# código e nome; o ponto, o cadastro, o rateio e o pagamento são por CPF.
+# ---------------------------------------------------------------------------
+def cadastrar(*pessoas):
+    """Põe gente no cadastro, já com o código do Fortes."""
+    from app.apps.analisesps import colaboradores as col
+    from app.apps.analisesps.db import conexao
+
+    registros = []
+    for cpf, nome, id_fortes, extra in pessoas:
+        r = {c: "" for c in col.CAMPOS}
+        r.update({"cpf": cpf, "nome": nome, "valor_alimentacao": None,
+                  "valor_transporte": None, "valor_gratificacao": None,
+                  "aviso_previo": None, "ultimo_dia": None, "data_saida": None})
+        r.update(extra or {})
+        registros.append((r, id_fortes))
+    with conexao() as conn:
+        col._gravar(conn, [r for r, _ in registros])
+        for r, id_fortes in registros:
+            if id_fortes:
+                conn.execute(
+                    "UPDATE analisesps.colaborador SET id_fortes = ? "
+                    " WHERE cpf = ?", (id_fortes, r["cpf"]))
+        conn.commit()
+
+
+def test_a_folha_casa_com_o_cadastro_PELO_CODIGO(banco_folha_arquivo, monkeypatch):
+    from app.apps.analisesps import folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO DO CADASTRO", "000013", None),
+              ("03513441363", "LUELIA DO CADASTRO", "000387", None))
+    resultado = guardar(monkeypatch)
+
+    assert resultado["casadas"] == 2
+    assert resultado["pendentes"] == 0
+    cpfs = {l["cpf"] for l in fa.abrir(resultado["id"])["linhas"]}
+    assert cpfs == {"99713349334", "03513441363"}
+
+
+def test_quem_NAO_tem_codigo_no_cadastro_fica_PENDENTE_e_VISIVEL(
+        banco_folha_arquivo, monkeypatch):
+    """⚠️ Correção do dono em 26/09/2026: *"pessoas sem ID Fortes no cadastro não
+    entram. Na verdade ela vai entrar após tratamento (…) não pode ficar oculto,
+    escondido."*
+
+    Lista à parte é lista que alguém esquece de abrir — e aí a pessoa desaparece
+    da folha: trabalhou e não recebeu, sem nada na tela gritando."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO", "000013", None))   # só um dos dois
+    resultado = guardar(monkeypatch)
+
+    assert resultado["casadas"] == 1
+    assert resultado["pendentes"] == 1
+
+    # A pessoa CONTINUA na folha, com o valor dela.
+    folha = fa.abrir(resultado["id"])
+    assert len(folha["linhas"]) == 2
+    assert folha["total"] == Decimal("2437.20")
+
+    criticas = fa.criticas(resultado["id"])
+    assert [p["nome"] for p in criticas["pendentes"]] == \
+        ["LUELIA MADIDA GOMES TOMAS"]
+    assert criticas["total_pendente"] == Decimal("1362.56")
+
+
+def test_a_folha_NAO_casa_por_NOME(banco_folha_arquivo, monkeypatch):
+    """⚠️ As planilhas cruzam por nome hoje, e é frágil: dois "JOSE DA SILVA", um
+    acento diferente, um nome do meio abreviado — e o salário vai para a pessoa
+    errada. Aqui, sem código, fica pendente em vez de casar com um parecido."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    # Mesmo nome exato da folha, mas SEM o código do Fortes.
+    cadastrar(("99713349334", "GERLANIO GOMES LIMA", "", None))
+    resultado = guardar(monkeypatch)
+
+    assert resultado["casadas"] == 0
+    assert resultado["pendentes"] == 2
+    assert all(not l["cpf"] for l in fa.abrir(resultado["id"])["linhas"])
+
+
+def test_casar_DE_NOVO_resolve_quem_passou_a_ter_codigo(banco_folha_arquivo,
+                                                        monkeypatch):
+    """O cadastro pode ser atualizado depois da importação. Aí gente que estava
+    pendente passa a casar, sem ninguém reimportar nada."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    resultado = guardar(monkeypatch)
+    assert resultado["pendentes"] == 2
+
+    cadastrar(("99713349334", "GERLANIO", "000013", None),
+              ("03513441363", "LUELIA", "000387", None))
+    assert fa.casar_com_o_cadastro(resultado["id"]) == {"casadas": 2,
+                                                       "pendentes": 0}
+
+
+def test_sem_de_para_nenhum_o_casamento_NAO_apaga_o_que_ja_casou(
+        banco_folha_arquivo, monkeypatch):
+    """Perder o CPF já resolvido por causa de uma planilha fora do ar faria a
+    folha inteira virar pendente de uma hora para outra."""
+    from app.apps.analisesps import colaboradores as col, folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO", "000013", None))
+    resultado = guardar(monkeypatch)
+    assert resultado["casadas"] == 1
+
+    monkeypatch.setattr(col, "de_para_do_fortes", lambda: {})
+    fa.casar_com_o_cadastro(resultado["id"])
+    cpfs = [l["cpf"] for l in fa.abrir(resultado["id"])["linhas"] if l["cpf"]]
+    assert cpfs == ["99713349334"], "o que já estava casado tem de continuar"
+
+
+def test_quem_JA_SAIU_aparece_na_critica_da_folha(banco_folha_arquivo, monkeypatch):
+    """⚠️ *"Não podemos pagar salário ou diárias pra quem saiu."* Esta é a
+    crítica aplicada à folha de verdade."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO", "000013",
+               {"data_saida": dt.date(2026, 7, 31)}),
+              ("03513441363", "LUELIA", "000387", None))
+    resultado = guardar(monkeypatch)      # folha de 08/2026, fim de mês
+
+    criticas = fa.criticas(resultado["id"])
+    assert [p["nome"] for p in criticas["sairam"]] == ["GERLANIO"]
+    assert criticas["total_de_quem_saiu"] == Decimal("1074.64")
+    assert "Não pague" in criticas["sairam"][0]["motivo"]
+    assert criticas["saindo"] == []
+
+
+def test_quem_esta_SAINDO_e_aviso_e_nao_entra_como_quem_saiu(banco_folha_arquivo,
+                                                            monkeypatch):
+    """Pode haver valor devido até o último dia: é conferência, não trava."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO", "000013",
+               {"aviso_previo": dt.date(2026, 8, 20)}),
+              ("03513441363", "LUELIA", "000387", None))
+    resultado = guardar(monkeypatch)
+
+    criticas = fa.criticas(resultado["id"])
+    assert [p["nome"] for p in criticas["saindo"]] == ["GERLANIO"]
+    assert criticas["sairam"] == []
+
+
+def test_o_PERIODO_DA_FOLHA_decide_quem_saiu_e_quem_esta_saindo(
+        banco_folha_arquivo, monkeypatch):
+    """⚠️ A data que manda é o FIM DO PERÍODO da folha, não hoje. Quem saiu no
+    dia 20 trabalhou a quinzena (1 a 15) inteira e RECEBE; na folha de fim de mês
+    (16 ao último dia) do mesmo mês, não."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO", "000013",
+               {"data_saida": dt.date(2026, 8, 20)}))
+
+    quinzena = guardar(monkeypatch,
+                       titulo="Folha Sintética - Adiantamento de Folha",
+                       pessoas=(("000013", "GERLANIO GOMES LIMA", "500,00"),))
+    fim = guardar(monkeypatch, titulo="Folha Sintética - Folha de Pagamento",
+                  pessoas=(("000013", "GERLANIO GOMES LIMA", "500,00"),))
+
+    # Na quinzena (até 15/08) ela ainda não tinha saído: é "está saindo".
+    assert [p["nome"] for p in fa.criticas(quinzena["id"])["saindo"]] == ["GERLANIO"]
+    assert fa.criticas(quinzena["id"])["sairam"] == []
+    # No fim do mês (até 31/08) ela já saiu.
+    assert [p["nome"] for p in fa.criticas(fim["id"])["sairam"]] == ["GERLANIO"]
+
+
+def test_folha_toda_certa_nao_gera_critica_nenhuma(banco_folha_arquivo, monkeypatch):
+    """⚠️ Se o caso normal gerasse crítica, a crítica viraria ruído — e ruído faz
+    ignorar o aviso que importa."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO", "000013",
+               {"fase": "Colaboradores Ativos"}),
+              ("03513441363", "LUELIA", "000387",
+               {"fase": "Colaboradores Ativos"}))
+    resultado = guardar(monkeypatch)
+
+    criticas = fa.criticas(resultado["id"])
+    assert criticas["pendentes"] == []
+    assert criticas["sairam"] == []
+    assert criticas["saindo"] == []
+    assert criticas["total_pendente"] == 0
+
+
+def test_a_critica_traz_o_link_do_card_para_resolver(banco_folha_arquivo,
+                                                     monkeypatch):
+    """O lugar de tratar é o card do Pipefy. A crítica que não leva até lá deixa
+    a pessoa procurando."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO", "000013",
+               {"data_saida": dt.date(2026, 7, 31), "card_pipefy": "778899"}))
+    resultado = guardar(monkeypatch,
+                        pessoas=(("000013", "GERLANIO GOMES LIMA", "100,00"),))
+    achado = fa.criticas(resultado["id"])["sairam"][0]
+    assert achado["link_pipefy"].endswith("778899")
+
+
+def test_criticas_de_folha_que_nao_existe_nao_estoura(banco_folha_arquivo):
+    from app.apps.analisesps import folha_arquivo as fa
+    assert fa.criticas(99999)["pendentes"] == []
+
+
+# ---------------------------------------------------------------------------
+# O PANORAMA, com banco de verdade
+# ---------------------------------------------------------------------------
+def test_o_panorama_soma_TODAS_as_folhas_importadas(banco_folha_arquivo, monkeypatch):
+    from app.apps.analisesps import folha_arquivo as fa
+
+    guardar(monkeypatch, mes=8, titulo="Folha Sintética - Adiantamento de Folha")
+    guardar(monkeypatch, mes=8, titulo="Folha Sintética - Folha de Pagamento")
+
+    panorama = fa.panorama()
+    assert panorama["pronto"] is True
+    assert len(panorama["folhas"]) == 2
+    assert panorama["total"] == Decimal("4874.40")      # 2.437,20 × 2
+    assert panorama["pessoas"] == 4
+    assert panorama["competencias"] == 1, "as duas são de 08/2026"
+
+
+def test_o_panorama_conta_quem_NAO_casou(banco_folha_arquivo, monkeypatch):
+    from app.apps.analisesps import folha_arquivo as fa
+
+    cadastrar(("99713349334", "GERLANIO", "000013", None))
+    guardar(monkeypatch)
+    assert fa.panorama()["pendentes"] == 1
+
+
+def test_o_panorama_por_filial_vem_do_MAIOR_para_o_menor(banco_folha_arquivo,
+                                                         monkeypatch):
+    from app.apps.analisesps import folha_arquivo as fa, folha_sintetica as fs
+
+    linhas = [
+        ["Folha Sintética - Folha de Pagamento"],
+        ["Empresa:", "BWS", "CNPJ: 00.079.526/0001-09"], ["Mês/Ano: 08/2026"],
+        ["001 - MATRIZ"], ["Código", "Nome", "", "", "Líquido"],
+        ["000001", "PEQUENA", "", "", "100,00"],
+        ["", "", "", "Total:", "100,00"],
+        ["002 - GRANDE"], ["Código", "Nome", "", "", "Líquido"],
+        ["000002", "GRANDE UM", "", "", "900,00"],
+        ["", "", "", "Total:", "900,00"],
+    ]
+    monkeypatch.setattr(fs, "ler", lambda c: fs.interpretar(linhas))
+    fa.importar(b"x", quem="EU")
+
+    filiais = fa.panorama()["por_filial"]
+    assert [f["codigo"] for f in filiais] == ["002", "001"]
+
+
+def test_o_panorama_vazio_nao_estoura(banco_folha_arquivo):
+    from app.apps.analisesps import folha_arquivo as fa
+    panorama = fa.panorama()
+    assert panorama["pronto"] is True
+    assert panorama["folhas"] == []
+    assert panorama["total"] == Decimal("0")

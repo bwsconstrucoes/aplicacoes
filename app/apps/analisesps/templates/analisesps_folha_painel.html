@@ -1,0 +1,112 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Panorama da folha — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Panorama da folha</h2>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui montar o panorama.</b> {{ erro }}</div>
+{% endif %}
+
+{% if not panorama.pronto %}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui.
+  </div>
+{% elif not panorama.folhas %}
+  <div class="aviso">
+    <b>Nenhuma folha importada ainda.</b>
+    Em <b>Folha da contabilidade</b>, solte o arquivo que a contabilidade manda —
+    é dele que sai tudo o que aparece aqui.
+  </div>
+{% else %}
+
+{# ------------------------------------------------------------------------
+   ⚠️ ESTA TELA DIZ O QUE AINDA NÃO SABE, e não é modéstia. Um painel que
+   mostrasse "total da folha" sem avisar que faltam alimentação, transporte e
+   diaristas faria o número parecer o custo de pessoal inteiro. Número que parece
+   completo e não é vale menos que número nenhum.
+   ------------------------------------------------------------------------ #}
+<div class="aviso atencao">
+  <b>Este panorama é só da folha da contabilidade.</b> Alimentação, transporte,
+  diaristas, gratificações e PJ ainda não entram — eles não têm de onde vir no
+  sistema. E o total <b>por obra</b> depende da apropriação (ponto + rateio), que
+  também falta: o que dá para mostrar hoje é <b>por filial</b>, que é o que o
+  arquivo traz.
+</div>
+
+<div class="kpis">
+  <div class="kpi">
+    <span class="kpi-rotulo">Total das folhas importadas</span>
+    <b class="kpi-valor">{{ panorama.total|moeda }}</b>
+  </div>
+  <div class="kpi">
+    <span class="kpi-rotulo">Pessoas</span>
+    <b class="kpi-valor">{{ panorama.pessoas }}</b>
+  </div>
+  <div class="kpi">
+    <span class="kpi-rotulo">Competências</span>
+    <b class="kpi-valor">{{ panorama.competencias }}</b>
+  </div>
+  {# ⚠️ PENDENTE DE CADASTRO É O NÚMERO QUE DECIDE SE DÁ PARA PAGAR. Fica âmbar
+     quando há algum, e discreto quando não há — indicador que grita sempre não
+     é indicador. #}
+  <div class="kpi {{ 'ambar' if panorama.pendentes }}">
+    <span class="kpi-rotulo">Sem casar com o cadastro</span>
+    <b class="kpi-valor">{{ panorama.pendentes }}</b>
+  </div>
+</div>
+
+<h3 style="margin-top:20px">Por filial <small>da maior para a menor</small></h3>
+<p class="cartao-dica">
+  É a lista que responde <b>quais obras estão em evidência</b> — o que você disse
+  que usa para decidir o rateio do mês. Enquanto o ponto não entra no sistema, o
+  corte é por filial da contabilidade, não por obra.
+</p>
+<table class="sps">
+  <thead>
+    <tr><th>Filial</th><th class="num">Pessoas</th><th class="num">Total</th>
+      <th class="num">% da folha</th></tr>
+  </thead>
+  <tbody>
+  {% for f in panorama.por_filial %}
+    <tr>
+      <td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
+      <td class="num">{{ f.pessoas }}</td>
+      <td class="num">{{ f.total|moeda }}</td>
+      <td class="num">
+        {% if panorama.total %}{{ (f.total / panorama.total * 100)|round(1) }}%{% else %}—{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h3 style="margin-top:20px">As folhas importadas</h3>
+<table class="sps">
+  <thead>
+    <tr><th>Competência</th><th>Período</th><th class="num">Pessoas</th>
+      <th class="num">Total</th><th>Confere?</th></tr>
+  </thead>
+  <tbody>
+  {% for f in panorama.folhas %}
+    <tr class="{{ 'linha-alerta' if not f.fecha }}">
+      <td><a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
+             >{{ f.competencia }}</a></td>
+      <td>{{ f.rotulo_do_tipo }}</td>
+      <td class="num">{{ f.pessoas }}</td>
+      <td class="num">{{ f.total|moeda }}</td>
+      <td>
+        {% if f.fecha %}<span class="selo no-lote">fecha</span>
+        {% else %}<span class="selo cancelado">não fecha</span>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% endif %}
+{% endblock %}

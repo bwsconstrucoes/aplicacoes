@@ -136,8 +136,13 @@ def versao_publicada() -> str:
 # que não há, e faz a pessoa procurar o que não foi feito — o dono acabou de
 # passar por isso procurando telas que eu não tinha escrito.
 SUBTELAS_DA_FOLHA = [
-    # A ORDEM É A DO TRABALHO: primeiro entra o arquivo da contabilidade, depois
-    # se confere o cadastro de quem está nele, depois se decide o rateio.
+    # ⚠️ O PAINEL É A PRIMEIRA, e por um motivo que o dono explicou em
+    # 27/09/2026: é olhando o total por obra que ele decide o rateio do mês. Ou
+    # seja, o painel vem ANTES do rateio na ordem de USO, mesmo tendo sido
+    # pedido depois. Quem chega na área cai nele.
+    ("painel",        "Panorama",      "analisesps.tela_folha_painel"),
+    # Depois a ordem do trabalho: entra o arquivo da contabilidade, confere-se o
+    # cadastro de quem está nele, decide-se o rateio.
     ("importar",      "Folha da contabilidade",
      "analisesps.tela_folha_importar"),
     ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
@@ -2323,6 +2328,72 @@ def tela_folha():
         return render_template("analisesps_erro.html",
                                mensagem="Esta tela não existe aqui."), 404
     return redirect(url_for(permitidas[0][2]))
+
+
+@bp.route("/folha/painel")
+@exige_consulta
+def tela_folha_painel():
+    """O panorama da folha: totais, e o que precisa da mão de alguém.
+
+    ⚠️ ELA DIZ O QUE AINDA NÃO SABE, e isso não é modéstia: um painel que
+    mostrasse "total da folha" sem avisar que faltam alimentação, transporte e
+    diaristas faria o número parecer o custo de pessoal inteiro. Número que
+    parece completo e não é vale menos que número nenhum."""
+    from . import folha_arquivo as fa
+
+    panorama = {"pronto": False}
+    erro = None
+    try:
+        panorama = fa.panorama()
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar o panorama")
+        erro = str(e)
+
+    return render_template(
+        "analisesps_folha_painel.html", aba="folha", subaba="painel",
+        subtelas=subtelas_da_folha(), panorama=panorama, erro=erro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha/<int:folha_id>")
+@exige_consulta
+def tela_folha_aberta(folha_id: int):
+    """Uma folha, pessoa por pessoa, com as críticas na frente.
+
+    ⚠️ AS CRÍTICAS VÊM ANTES DA LISTA, de propósito: quem está pendente de
+    cadastro, quem já saiu e quem está saindo são as três coisas que impedem
+    pagar — e elas têm de ser vistas antes de alguém rolar 491 linhas."""
+    from . import folha_arquivo as fa
+
+    folha = None
+    criticas = None
+    erro = None
+    try:
+        # CASA DE NOVO A CADA VISITA: o cadastro pode ter sido atualizado depois
+        # da importação, e aí gente que estava pendente passa a casar sem
+        # ninguém reimportar nada.
+        fa.casar_com_o_cadastro(folha_id)
+        folha = fa.abrir(folha_id)
+        if folha is not None:
+            criticas = fa.criticas(folha_id)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: não consegui abrir a folha %s", folha_id)
+        erro = str(e)
+
+    if folha is None and erro is None:
+        # Fora do escopo responde "não encontrado", nunca "sem permissão".
+        return render_template("analisesps_erro.html",
+                               mensagem="Esta folha não está mais aqui."), 404
+
+    return render_template(
+        "analisesps_folha_aberta.html", aba="folha", subaba="importar",
+        subtelas=subtelas_da_folha(), folha=folha, criticas=criticas, erro=erro,
+        filiais=fa.totais_por_filial(folha_id) if folha else [],
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 @bp.route("/folha/importar")

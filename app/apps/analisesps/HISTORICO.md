@@ -8624,6 +8624,95 @@ que o arquivo traz; por **obra** depende da apropriação, que é o passo seguin
 
 ---
 
+### Centésima nona leva (27/09) — a folha ligada às pessoas, e o painel
+
+Ele pediu para eu **seguir até o fim**. Isto é o que deu para fazer sem inventar
+dado que não existe; o que ficou travado, e em quê, está em
+`docs/FOLHA_DE_PAGAMENTO.md` §7.21 e repetido no fim desta leva.
+
+#### A ponte que faltava: o ID Fortes
+
+⚠️ **A Folha Sintética não traz CPF** — traz código do empregado e nome. E o
+ponto, o cadastro, o rateio, os auxílios e o pagamento são **todos por CPF**. Sem
+o de/para, a folha importada era uma lista de nomes: não dava para saber de quem
+era cada valor.
+
+O de/para vem da aba `ID Fortes` da planilha de colaboradores, **no mesmo botão
+"Atualizar cadastro"**. Duas atualizações separadas para a mesma planilha seria
+pedir para alguém esquecer uma delas.
+
+**Três cuidados, e o motivo de cada um:**
+
+1. **NÃO casa por nome.** As planilhas cruzam por nome hoje e é frágil: dois "JOSE
+   DA SILVA", um acento, um nome do meio abreviado — e o salário vai para a pessoa
+   errada. Aqui é pelo código; sem código a pessoa **fica pendente, visível**.
+2. **O mesmo código para duas pessoas vira crítica**, e o primeiro vale. É o pior
+   erro possível: o salário de uma iria para a obra da outra.
+3. **Aba vazia ou fora do ar não apaga o que já casou.** Zerar o de/para faria a
+   folha inteira virar "pendente" de uma hora para outra.
+
+E o campo **não entra na lista que a carga principal grava**, porque vem de outra
+aba: se entrasse, cada atualização do cadastro o apagaria, e a folha deixaria de
+achar as pessoas na atualização seguinte. Tem teste só para isso.
+
+#### As críticas passam a valer sobre a folha de verdade
+
+Quem não casou com o cadastro, quem já saiu e quem está saindo — as três com o
+valor que está naquela folha, e o link para o card de cada um.
+
+⚠️ **O período da folha decide "saiu" × "está saindo"**, não hoje: quem saiu no
+dia 20 trabalhou a **quinzena** inteira e recebe; na folha de **fim de mês** do
+mesmo mês, não. Tem teste com as duas folhas do mesmo mês dando respostas
+diferentes para a mesma pessoa.
+
+As críticas ficam **antes da lista**: são o que impede pagar, e ninguém as
+encontraria rolando 491 linhas. E a pessoa pendente **continua na lista**,
+marcada — não numa lista à parte que alguém esquece de abrir.
+
+#### O painel, e por que ele é a PRIMEIRA subtela
+
+Ele explicou o motivo e isso mudou a ordem: **é olhando o total por obra que ele
+decide o rateio.** O painel vem **antes** do rateio na ordem de uso, mesmo tendo
+sido pedido depois. Quem entra na área cai nele.
+
+⚠️ **E a tela diz o que ainda não sabe, em cima, antes dos números.** Um painel
+que mostrasse "total da folha" sem avisar que faltam alimentação, transporte,
+diaristas, gratificações e PJ faria o número parecer o **custo de pessoal
+inteiro**. Número que parece completo e não é vale menos que número nenhum.
+
+#### Dois defeitos que os testes pegaram
+
+1. **`tem_coluna` recebia o nome com o schema junto** (`"analisesps.colaborador"`),
+   e ele já acrescenta o schema — então respondia SEMPRE que a coluna não existe,
+   e o de/para nunca gravava.
+2. **Com o de/para vazio, eu devolvia "0 pendentes" quando TODO MUNDO estava
+   pendente.** Número com o significado errado é pior que número nenhum: esse
+   diria que a folha está pronta para pagar.
+
+#### ⚠️ Pendente AGORA — o que falta e em QUÊ
+
+| Falta | Depende de |
+|---|---|
+| **total por OBRA** | o ponto carregado |
+| **carga do ponto** | `MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY` no Render — **ele ainda não criou** |
+| **telas de alimentação e transporte** | as abas `Feriados` e `Férias` |
+| **marca de férias / desconto no transporte** | o relatório de férias que ele vai mandar |
+| **telas de diaristas e CTPS extra** | o ponto |
+| **gerar arquivo e cards** | a apropriação guardada |
+
+**O que eu NÃO vou fazer sem ele:** escrever a carga do Mobponto adivinhando o
+formato da resposta da API. Já errei duas vezes nesta semana afirmando coisa de
+planilha sem ler a fórmula — **cliente de API escrito sem ver uma resposta de
+verdade é palpite com cara de código.** Com as duas variáveis no Render, eu leio
+uma resposta real e escrevo em cima dela.
+
+**Verificado:** 11 testes novos com banco para o de/para, 15 com banco para o
+casamento, as críticas e o painel, e 10 de tela. As migrações vão até a **030**.
+
+**NÃO verificado:** nada num navegador.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

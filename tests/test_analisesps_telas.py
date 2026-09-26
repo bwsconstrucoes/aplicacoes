@@ -5214,9 +5214,10 @@ def test_a_porta_da_folha_manda_para_a_primeira_subtela(app):
     """Um índice com dois links seria um clique a mais para o mesmo lugar."""
     resposta = _como_mestre(app).get("/analisesps/folha")
     assert resposta.status_code in (301, 302)
-    # A primeira subtela mudou em 27/09/2026, quando a folha da contabilidade
-    # entrou: a ordem é a do trabalho, e o arquivo é o que começa tudo.
-    assert "/folha/importar" in resposta.headers.get("Location", "")
+    # ⚠️ A PRIMEIRA SUBTELA É O PANORAMA desde 27/09/2026, e o motivo é do dono:
+    # é olhando o total por obra que ele decide o rateio do mês. O painel vem
+    # ANTES do rateio na ordem de USO, mesmo tendo sido pedido depois.
+    assert "/folha/painel" in resposta.headers.get("Location", "")
 
 
 def test_as_subtelas_aparecem_dentro_da_tela_da_folha(app, monkeypatch):
@@ -5426,15 +5427,14 @@ def test_outro_erro_de_importacao_NAO_pede_o_tipo(app, monkeypatch):
     assert corpo["pergunte_o_tipo"] is False
 
 
-def test_a_folha_da_contabilidade_e_a_PRIMEIRA_subtela(app):
-    """A ordem é a do trabalho: primeiro entra o arquivo, depois se confere o
-    cadastro de quem está nele, depois se decide o rateio. E é por isso que a
-    porta da área cai nela."""
+def test_a_ordem_das_subtelas_e_a_do_USO(app):
+    """O panorama primeiro — é onde ele decide o rateio. Depois a ordem do
+    trabalho: entra o arquivo, confere-se o cadastro de quem está nele,
+    decide-se o rateio."""
     from app.apps.analisesps import web
 
-    assert [s[0] for s in web.SUBTELAS_DA_FOLHA][0] == "importar"
-    resposta = _como_mestre(app).get("/analisesps/folha")
-    assert "/folha/importar" in resposta.headers.get("Location", "")
+    assert [s[0] for s in web.SUBTELAS_DA_FOLHA] == [
+        "painel", "importar", "colaboradores", "rateio"]
 
 
 def test_importar_a_folha_NAO_e_so_do_mestre(app):
@@ -5446,3 +5446,182 @@ def test_importar_a_folha_NAO_e_so_do_mestre(app):
     assert guarda.e_so_do_mestre("analisesps.folha_importar") is False
     assert guarda.e_so_do_mestre("analisesps.tela_folha_importar") is False
     assert guarda.telas_da_rota("analisesps.folha_importar") == ("folha",)
+
+
+# ---------------------------------------------------------------------------
+# O PANORAMA E A FOLHA ABERTA — 27/09/2026
+# ---------------------------------------------------------------------------
+def _panorama(**extra):
+    from decimal import Decimal
+    base = {
+        "pronto": True, "total": Decimal("430129.75"), "pessoas": 491,
+        "competencias": 1, "pendentes": 0,
+        "por_filial": [{"codigo": "002", "nome": "CREPEOLINDA", "pessoas": 30,
+                        "total": Decimal("300000.00")},
+                       {"codigo": "001", "nome": "MATRIZ", "pessoas": 461,
+                        "total": Decimal("130129.75")}],
+        "folhas": [{"id": 1, "ano": 2026, "mes": 8, "tipo": "quinzena",
+                    "competencia": "08/2026",
+                    "rotulo_do_tipo": "Quinzena (dia 1 ao 15)",
+                    "pessoas": 491, "total": Decimal("430129.75"),
+                    "fecha": True, "lista_de_avisos": []}],
+    }
+    base.update(extra)
+    return base
+
+
+def test_o_panorama_mostra_os_totais_e_a_filial_MAIOR_primeiro(app, monkeypatch):
+    """Pedido do dono: *"saber qual é o total por obra, porque isso já ajuda nessa
+    questão do rateio."* É a lista que responde quais obras estão em evidência."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "panorama", lambda: _panorama())
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+
+    assert "430.129,75" in html
+    assert "491" in html
+    # A maior filial aparece antes da menor.
+    assert html.index("CREPEOLINDA") < html.index("MATRIZ")
+    # E o percentual de cada uma, que é o que dá a noção de peso.
+    assert "69.7%" in html or "69,7%" in html
+
+
+def test_o_panorama_DIZ_o_que_ainda_nao_sabe(app, monkeypatch):
+    """⚠️ Um painel que mostrasse "total da folha" sem avisar que faltam
+    alimentação, transporte e diaristas faria o número parecer o custo de pessoal
+    inteiro. Número que parece completo e não é vale menos que número nenhum."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "panorama", lambda: _panorama())
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+
+    assert "só da folha da contabilidade" in html
+    assert "por obra" in html
+    assert "por filial" in html
+
+
+def test_o_panorama_destaca_quem_NAO_casou_com_o_cadastro(app, monkeypatch):
+    """É o número que decide se dá para pagar."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "panorama", lambda: _panorama(pendentes=7))
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+    assert "Sem casar com o cadastro" in html
+    assert "kpi ambar" in html, "com pendente, o indicador tem de ficar âmbar"
+
+
+def test_sem_pendente_o_indicador_NAO_fica_ambar(app, monkeypatch):
+    """Indicador que grita sempre não é indicador."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "panorama", lambda: _panorama(pendentes=0))
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+    assert "kpi ambar" not in html
+
+
+def test_o_panorama_SEM_FOLHA_manda_a_pessoa_para_a_importacao(app, monkeypatch):
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "panorama",
+                        lambda: {"pronto": True, "folhas": []})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+    assert "Nenhuma folha importada" in html
+    assert "Folha da contabilidade" in html
+
+
+def test_a_folha_aberta_poe_as_CRITICAS_antes_da_lista(app, monkeypatch):
+    """⚠️ São as três coisas que impedem pagar. Ninguém as encontraria rolando
+    491 linhas."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "casar_com_o_cadastro", lambda i: None)
+    monkeypatch.setattr(fa, "totais_por_filial", lambda i: [])
+    monkeypatch.setattr(fa, "abrir", lambda i: {
+        "id": 1, "competencia": "08/2026",
+        "rotulo_do_tipo": "Quinzena (dia 1 ao 15)", "pessoas": 2,
+        "total": Decimal("2437.20"), "importado_em": None,
+        "importado_por": "MARCELO", "lista_de_avisos": [], "fecha": True,
+        "linhas": [
+            {"id": 1, "id_fortes": "000013", "nome": "GERLANIO",
+             "cpf": "99713349334", "valor": Decimal("1074.64"),
+             "filial_codigo": "001", "filial_nome": "MATRIZ"},
+            {"id": 2, "id_fortes": "000387", "nome": "LUELIA", "cpf": "",
+             "valor": Decimal("1362.56"), "filial_codigo": "001",
+             "filial_nome": "MATRIZ"}]})
+    monkeypatch.setattr(fa, "criticas", lambda i: {
+        "pendentes": [{"id_fortes": "000387", "nome": "LUELIA",
+                       "valor": Decimal("1362.56")}],
+        "sairam": [{"id_fortes": "000013", "nome": "GERLANIO",
+                    "cpf": "99713349334", "valor": Decimal("1074.64"),
+                    "motivo": "saiu em 31/07/2026. Não pague folha.",
+                    "link_pipefy": "https://app.pipefy.com/open-cards/778899"}],
+        "saindo": [], "total_pendente": Decimal("1362.56"),
+        "total_de_quem_saiu": Decimal("1074.64")})
+
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "Precisa da sua mão antes de pagar" in html
+    assert html.index("Precisa da sua mão") < html.index("Pessoa por pessoa")
+    assert "não casaram com o cadastro" in html
+    assert "já saíram" in html
+    assert "Não pague folha" in html
+    assert 'href="https://app.pipefy.com/open-cards/778899"' in html
+    # ⚠️ A pessoa pendente CONTINUA na lista, marcada — não numa lista à parte
+    # que alguém esquece de abrir.
+    assert "fora do cadastro" in html
+    assert "linha-alerta" in html
+
+
+def test_a_folha_aberta_CASA_de_novo_a_cada_visita(app, monkeypatch):
+    """O cadastro pode ter sido atualizado depois da importação: aí gente que
+    estava pendente passa a casar, sem ninguém reimportar nada."""
+    from app.apps.analisesps import folha_arquivo as fa
+    chamou = {}
+
+    monkeypatch.setattr(fa, "casar_com_o_cadastro",
+                        lambda i: chamou.setdefault("id", i))
+    monkeypatch.setattr(fa, "abrir", lambda i: None)
+    _como_mestre(app).get("/analisesps/folha/7")
+    assert chamou.get("id") == 7
+
+
+def test_folha_que_nao_existe_responde_404_e_nao_403(app, monkeypatch):
+    """Dizer "sem permissão" para um número que não existe confirmaria a
+    existência dele — e varrer os números mapearia o sistema."""
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "casar_com_o_cadastro", lambda i: None)
+    monkeypatch.setattr(fa, "abrir", lambda i: None)
+    resposta = _como_mestre(app).get("/analisesps/folha/99999")
+    assert resposta.status_code == 404
+
+
+def test_folha_toda_certa_NAO_mostra_a_faixa_de_criticas(app, monkeypatch):
+    """Faixa que aparece sempre vira enfeite."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "casar_com_o_cadastro", lambda i: None)
+    monkeypatch.setattr(fa, "totais_por_filial", lambda i: [])
+    monkeypatch.setattr(fa, "abrir", lambda i: {
+        "id": 1, "competencia": "08/2026", "rotulo_do_tipo": "Quinzena",
+        "pessoas": 1, "total": Decimal("100.00"), "importado_em": None,
+        "importado_por": "", "lista_de_avisos": [], "fecha": True,
+        "linhas": [{"id": 1, "id_fortes": "000013", "nome": "GERLANIO",
+                    "cpf": "99713349334", "valor": Decimal("100.00"),
+                    "filial_codigo": "001", "filial_nome": "MATRIZ"}]})
+    monkeypatch.setattr(fa, "criticas", lambda i: {
+        "pendentes": [], "sairam": [], "saindo": [], "total_pendente": 0,
+        "total_de_quem_saiu": 0})
+
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert "Precisa da sua mão" not in html
+    assert "linha-alerta" not in html

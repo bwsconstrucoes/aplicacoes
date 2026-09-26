@@ -1,0 +1,141 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Folha {{ folha.competencia if folha }} — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui abrir a folha.</b> {{ erro }}</div>
+{% else %}
+
+<h2>Folha de {{ folha.competencia }}
+  <small>{{ folha.rotulo_do_tipo }} · {{ folha.pessoas }} pessoa(s) ·
+    {{ folha.total|moeda }}</small>
+</h2>
+<p class="cartao-dica">
+  Importada em {{ folha.importado_em|momento_br }}{% if folha.importado_por %}
+  por {{ folha.importado_por }}{% endif %}.
+  <a href="{{ url_for('analisesps.tela_folha_importar') }}">voltar</a>
+</p>
+
+{% if folha.lista_de_avisos %}
+  <div class="aviso atencao">⚠️ {{ folha.lista_de_avisos|join('; ') }}</div>
+{% endif %}
+
+{# ------------------------------------------------------------------------
+   ⚠️ AS CRÍTICAS VÊM ANTES DA LISTA, de propósito: são as três coisas que
+   impedem pagar, e ninguém as encontraria rolando 491 linhas.
+   ------------------------------------------------------------------------ #}
+{% if criticas and (criticas.pendentes or criticas.sairam or criticas.saindo) %}
+<div class="cartao">
+  <h3 style="margin:0 0 8px">Precisa da sua mão antes de pagar</h3>
+
+  {% if criticas.pendentes %}
+    <div class="aviso erro">
+      <b>{{ criticas.pendentes|length }} pessoa(s) não casaram com o cadastro</b>
+      — {{ criticas.total_pendente|moeda }} sem dono.
+      <p style="margin:6px 0 0">
+        Elas estão na folha e <b>continuam na lista abaixo</b>, marcadas. Sem o
+        código do Fortes no cadastro não há CPF, e sem CPF não há apropriação nem
+        pagamento. O conserto é no cadastro da pessoa, na aba <b>ID Fortes</b> da
+        planilha de colaboradores — depois aperte "Atualizar cadastro".
+      </p>
+      <ul class="lista-seca" style="margin-top:6px">
+        {% for p in criticas.pendentes[:15] %}
+          <li><b>{{ p.nome }}</b>
+            <span class="cartao-dica">código {{ p.id_fortes }} ·
+              {{ p.valor|moeda }}</span></li>
+        {% endfor %}
+        {% if criticas.pendentes|length > 15 %}
+          <li class="cartao-dica">…e outras
+            {{ criticas.pendentes|length - 15 }}. Veja todas marcadas na lista
+            abaixo.</li>
+        {% endif %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if criticas.sairam %}
+    <div class="aviso erro">
+      <b>{{ criticas.sairam|length }} pessoa(s) já saíram</b> —
+      {{ criticas.total_de_quem_saiu|moeda }} nesta folha.
+      Não pague folha, diária nem auxílio deste período para elas.
+      <ul class="lista-seca" style="margin-top:6px">
+        {% for p in criticas.sairam %}
+          <li>
+            {% if p.link_pipefy %}
+              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
+                 class="link-pipefy">{{ p.nome }} <span aria-hidden="true">↗</span></a>
+            {% else %}<b>{{ p.nome }}</b>{% endif %}
+            <span class="cartao-dica">{{ p.valor|moeda }} · {{ p.motivo }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if criticas.saindo %}
+    <div class="aviso atencao">
+      <b>{{ criticas.saindo|length }} pessoa(s) estão saindo.</b>
+      Confira o que é devido até o último dia — rescisão não se paga por aqui.
+      <ul class="lista-seca" style="margin-top:6px">
+        {% for p in criticas.saindo %}
+          <li>
+            {% if p.link_pipefy %}
+              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
+                 class="link-pipefy">{{ p.nome }} <span aria-hidden="true">↗</span></a>
+            {% else %}<b>{{ p.nome }}</b>{% endif %}
+            <span class="cartao-dica">{{ p.valor|moeda }} · {{ p.motivo }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if filiais %}
+<h3 style="margin-top:18px">Por filial <small>da maior para a menor</small></h3>
+<table class="sps">
+  <thead><tr><th>Filial</th><th class="num">Pessoas</th>
+    <th class="num">Total</th></tr></thead>
+  <tbody>
+  {% for f in filiais %}
+    <tr><td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
+      <td class="num">{{ f.pessoas }}</td>
+      <td class="num">{{ f.total|moeda }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h3 style="margin-top:18px">Pessoa por pessoa</h3>
+<table class="sps">
+  <thead>
+    <tr><th>Nome</th><th>Código</th><th>CPF</th><th>Filial</th>
+      <th class="num">Valor</th></tr>
+  </thead>
+  <tbody>
+  {% for l in folha.linhas %}
+    <tr class="{{ 'linha-alerta' if not l.cpf }}">
+      <td>{{ l.nome }}</td>
+      <td>{{ l.id_fortes }}</td>
+      <td class="cpf">
+        {% if l.cpf %}{{ l.cpf }}
+        {% else %}
+          {# ⚠️ A PESSOA FICA NA LISTA, MARCADA — não numa lista à parte que
+             alguém esquece de abrir. Correção do dono em 26/09/2026. #}
+          <span class="selo cancelado"
+                title="Sem o código do Fortes no cadastro não há CPF, e sem CPF não há pagamento">fora do cadastro</span>
+        {% endif %}
+      </td>
+      <td><span class="cartao-dica">{{ l.filial_codigo }}{% if l.filial_nome %} — {{ l.filial_nome }}{% endif %}</span></td>
+      <td class="num">{{ l.valor|moeda }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% endif %}
+{% endblock %}

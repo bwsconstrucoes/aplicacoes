@@ -118,6 +118,9 @@ TODAS_AS_TELAS = [
     # A porta da área: manda para a primeira subtela que a pessoa alcança.
     ("GET",  "/analisesps/folha"),
     ("GET",  "/analisesps/folha/importar"),
+    ("GET",  "/analisesps/folha/painel"),
+    # Mostra a folha pessoa por pessoa: nome, CPF e valor de ~500 gente.
+    ("GET",  "/analisesps/folha/123"),
     # Recebe a folha de pagamento inteira — nome e valor de ~500 pessoas.
     ("POST", "/analisesps/api/folha/importar"),
     ("POST", "/analisesps/api/folha/apagar"),
@@ -230,6 +233,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
         if isinstance(exigencia, tuple) or regra.endpoint == auth.ENDPOINT_ESTILO:
             continue                          # pública, com motivo escrito
         caminho = (str(regra).replace("<sp_id>", "123")
+                   .replace("<int:folha_id>", "123")
                    .replace("<path:filename>", "x")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
