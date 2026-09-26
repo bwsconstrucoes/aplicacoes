@@ -58,6 +58,10 @@ MODOS = {
     # é o botão que o dono pediu em 27/09/2026 para puxar uma alteração de
     # auxílio ou de gratificação "imediatamente", sem esperar nada.
     "colaboradores": "Atualizar o cadastro de colaboradores (traz da planilha)",
+    # ⚠️ O PONTO É O GARGALO DA FOLHA: sem ele não há total por obra, não há
+    # diária e não há apropriação. Roda no processo separado porque são várias
+    # páginas da API do Mobponto, e um mês pode ter dezenas de milhares de dias.
+    "ponto": "Trazer o ponto do Mobponto (o mês escolhido na tela da folha)",
     "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
     "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
     "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
@@ -80,6 +84,9 @@ MODOS = {
 # explícita, e um modo novo só aparece onde alguém escreveu que ele aparece.
 MODOS_DA_BASE = ["sincronizar", "carga_inicial", "apoios", "fila",
                  "comprovantes", "colaboradores"]
+# ⚠️ "ponto" NÃO ENTRA em MODOS_DA_BASE de propósito: ele precisa saber QUAL MÊS
+# trazer, e um botão em Configurações sem essa escolha traria sempre o mesmo mês.
+# Ele é disparado pela tela da folha, que pergunta a competência.
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
@@ -90,6 +97,7 @@ ETAPAS = {
     "fila": ["fila"],
     "comprovantes": ["comprovantes"],
     "colaboradores": ["colaboradores"],
+    "ponto": ["ponto"],
     "fiscal": ["fiscal"],
     "fiscal_ia": ["fiscal_ia"],
     "notas_receita": ["notas_receita"],
@@ -476,6 +484,35 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + (" — ATENÇÃO: " + "; ".join(c["avisos"])
                        if c.get("avisos") else ""))
 
+            elif etapa == "ponto":
+                # QUAL MÊS: vem do banco, escrito pela tela antes de disparar.
+                # Passar pelo banco em vez de por parâmetro é o que faz a
+                # retomada funcionar — o processo separado pode ser reiniciado.
+                mudar_etapa("trazendo o ponto do Mobponto")
+                from . import ponto as _ponto
+                with conexao() as conn:
+                    alvo = sincronizacao._meta_ler(conn, "ponto_competencia", "")
+                partes = str(alvo or "").split("-")
+                if len(partes) != 2 or not all(p.strip().isdigit() for p in partes):
+                    raise RuntimeError(
+                        "não sei de qual mês trazer o ponto. Escolha a "
+                        "competência na tela da folha e dispare de lá.")
+                p = _ponto.carregar(int(partes[0]), int(partes[1]), anotar,
+                                    quem=quem_disparou or "manual")
+                total_linhas[0] = p.get("dias", 0)
+                # ⚠️ OS CAMPOS QUE VIERAM ENTRAM NO RECADO. É a descoberta que
+                # destrava o mapeamento da obra e das marcações: sem eles na
+                # cara de quem apertou, a informação ficaria no log do serviço,
+                # que ele não tem como ler.
+                recado_apoios[0] = (
+                    f"{p.get('dias', 0)} dia(s) de {p.get('pessoas', 0)} "
+                    f"pessoa(s), {p.get('paginas_lidas', 0)} de "
+                    f"{p.get('paginas', 0)} página(s)"
+                    + (" · campos de cada dia: " + ", ".join(p.get("campos") or [])
+                       if p.get("campos") else "")
+                    + (" — ATENÇÃO: " + "; ".join(p["avisos"])
+                       if p.get("avisos") else ""))
+
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
                     logger.info("Análise de SPs: planilhas de apoio ainda "
@@ -550,7 +587,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
         # depois de atualizar o CADASTRO. Não são SPs, são pessoas — e número
         # com o nome errado é pior que número nenhum, porque parece certo.
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
-                    "notas_receita", "notas_ciencia", "colaboradores"):
+                    "notas_receita", "notas_ciencia", "colaboradores", "ponto"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]

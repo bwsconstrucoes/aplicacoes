@@ -2076,7 +2076,7 @@ esquecimento.
 | O que falta | Depende de | O que já está pronto esperando |
 |---|---|---|
 | **total por OBRA** (no painel e no rateio) | o **ponto** carregado | `folha_apropriacao` inteiro: a apropriação por dia, mão > regra > ponto, a sobra de centavo |
-| **carga do ponto (Mobponto)** | ⚠️ `MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY` no Render — **ele ainda não criou** | nada; é o próximo código a escrever, e não dá para testar contra a API sem as chaves |
+| ~~**carga do ponto (Mobponto)**~~ | ✅ **FEITA em 27/09/2026 — ver §7.22.** Eu havia dito que era palpite escrever isso; **o contrato da API está nos Apps Script que ele mandou**, e eu não os tinha lido até o fim. Falta só criar as duas variáveis no Render | o módulo, a tela e 22 testes |
 | **tela de alimentação e de transporte** | as abas **`Feriados`** e **`Férias`** | a regra completa está lida das fórmulas (§7.14.6/§7.14.7) e os valores e modalidades já vêm no cadastro |
 | **marca "está de férias"** e **desconto proporcional no transporte** | o **relatório de férias** que ele vai mandar | a decisão dele já está registrada (§7.16.1) |
 | **tela de diaristas e de CTPS extra** | o **ponto** | as regras (+20 feriado, +10 sábado, +20 domingo, VIGIA fora, compensação) estão em §7.14.5 e §7.14.12 |
@@ -2094,12 +2094,110 @@ esquecimento.
 3. **A apropriação guardada** (migração nova), que é o que liga a folha às obras.
 4. **Os geradores e os cards.**
 
-⚠️ **O que eu NÃO vou fazer sem ele:** escrever a carga do Mobponto adivinhando o
-formato da resposta da API. Já errei uma vez por afirmar coisa de planilha sem ler
-a fórmula (§7.14.1 e §7.14.2), e a lição vale igual aqui: **cliente de API escrito
-sem ver uma resposta de verdade é palpite com cara de código.** Com as duas
-variáveis no Render eu leio uma resposta real e escrevo em cima dela.
+⚠️ **CORREÇÃO DESTA SEÇÃO, feita no mesmo dia.** Eu escrevi aqui que não faria a
+carga do Mobponto para não adivinhar o formato da API. **O formato não precisava
+ser adivinhado: estava nos Apps Script que ele já tinha mandado**, e eu não os
+havia lido até o fim antes de declarar a coisa travada (§7.22.1). A carga está
+feita.
 
+**O que continua verdade, e agora é preciso:** os **campos de cada dia** são
+dinâmicos — o script do dono os descobre em tempo de execução, e ninguém escreveu
+quais são. Um deles é a obra. Esse eu **não** adivinhei: o módulo guarda o dia
+inteiro e **mostra na tela os campos que vieram de verdade**, com um dia de
+exemplo. Com essa lista, ligar o total por obra é uma linha de código.
+
+## 7.22 O PONTO — e a correção de uma coisa que eu disse (27/09/2026)
+
+### 7.22.1 Eu disse que estava travado. Estava errado.
+
+Em §7.21 eu escrevi que não escreveria a carga do Mobponto porque não podia
+adivinhar o formato da API. **O formato não precisava ser adivinhado: ele está
+nos Apps Script que o dono mandou.** Eu não tinha lido esses dois arquivos com
+atenção suficiente antes de declarar a coisa bloqueada.
+
+É a terceira vez na semana que eu erro na mesma direção — afirmar sobre uma fonte
+que eu tinha em mãos e não li até o fim. Fica registrado.
+
+### 7.22.2 O contrato da API, lido do script
+
+Dois scripts, três endpoints, e as credenciais nos mesmos três cabeçalhos:
+
+```
+GET https://www.mobponto.com.br/ponto/api/endpoint.php
+Headers: Authorization: Basic …   api-key: …   api-version: 1.0.0
+
+type_data=FOLHA_BWS_EXCEL&status=false&mes=<M>&ano=<AAAA>&pagina=<N>
+  → {"result": {"total_paginas": N,
+                "funcionarios": [{"cpf", "nome",
+                                  "relatorio": [{"dia", "matricula", …}]}]}}
+
+type_data=REL_PRESENCA_BWS&tp_relatorio=M&dia_inicial=1&dia_final=<D>&mes&ano
+  → {"result": {"funcionarios": [{"cpf", "nome",
+                                  "mes_anterior": {"desc","qtde","local"},
+                                  "mes_atual":    {"desc","qtde","local"},
+                                  "mudou"}]}}
+
+type_data=FUNCIONARIOS
+  → {"result": [ …um objeto por funcionário, chaves dinâmicas… ]}
+```
+
+O primeiro é o ponto por dia, e é o que este módulo traz. Os outros dois ficam
+registrados para quando forem necessários — o segundo tem o **`local`** (a obra do
+mês) e o **`mudou`**, que respondem "esta pessoa trocou de obra".
+
+### 7.22.3 O que EU não sei, e por que não inventei
+
+⚠️ **Os campos de cada dia são dinâmicos.** O próprio script do dono os descobre
+em tempo de execução (`Object.keys` do primeiro dia do primeiro funcionário que
+tiver relatório). Ninguém escreveu em lugar nenhum quais são.
+
+Um desses campos é a **obra**, e outros são as **quatro marcações** — é o que
+`folha_apropriacao.obra_do_dia` precisa. **Adivinhar o nome deles decidiria em
+qual obra cai o salário de 500 pessoas com base num palpite.**
+
+Então o módulo faz o que é honesto:
+
+1. **traz e guarda o dia inteiro como veio** (em JSON, na coluna `campos`);
+2. resolve só o que dá sem adivinhar: a **data**, o **CPF** e a **matrícula**;
+3. deixa `obra`, `presenca` e `falta` **nulas** — coluna vazia é pergunta aberta;
+   coluna preenchida por palpite é resposta errada com cara de certa;
+4. **anota quais campos vieram** e mostra a lista na tela, com **um dia de
+   exemplo de verdade**.
+
+Com essa lista na mão, ligar o total por obra é uma linha de código e nenhuma
+suposição. E não é preciso recarregar nada da API depois: o dia inteiro já está
+guardado, então uma migração preenche as colunas resolvidas a partir do que há.
+
+### 7.22.4 O que o módulo cuida
+
+- **Página por página**, gravando cada bloco antes de pedir o seguinte: o pico de
+  memória fica em poucos MB, e um mês tem dezenas de milhares de dias.
+- **Retentativa com espera crescente** (1s, 2s, 4s), como o script do dono — a
+  API cai de vez em quando, e uma página perdida deixa buraco no mês.
+- **401 e 403 não são repetidos:** credencial errada não melhora na terceira
+  tentativa, e a frase diz o que conferir.
+- **Página vazia no meio para a leitura**, em vez de insistir: é o sinal de fim
+  que a API dá quando `total_paginas` vem otimista. E a tela marca o mês como
+  **"veio pela metade"** — um mês incompleto mostrado como completo faria o total
+  por obra sair a menos, sem ninguém saber.
+- **Teto de páginas**, para a API dizer um número absurdo não travar o processo
+  por horas.
+- **Recarregar o mesmo mês substitui**, e o botão avisa antes.
+- **Dia sem data legível continua guardado**, com aviso: jogar a linha fora
+  esconderia o problema.
+
+### 7.22.5 ⚠️ As credenciais, outra vez em claro
+
+Os dois scripts do Mobponto trazem o `Authorization` e o `api-key` **escritos no
+código**. Eu os vi ao ler o contrato — e **não os escrevi no repositório**.
+
+O caminho é o mesmo de sempre: abrir o editor de script, copiar **direto para o
+Render** (`MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY`), e **trocar a chave na
+origem depois**. São as mesmas credenciais do item 1 de §8 — o que mudou é que
+agora existe para onde levá-las.
+
+Enquanto elas não existirem, a tela do ponto **não oferece o botão** e explica o
+que fazer: botão que só dá erro é armadilha.
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

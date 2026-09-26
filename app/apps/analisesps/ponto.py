@@ -1,0 +1,395 @@
+# -*- coding: utf-8 -*-
+"""
+O ponto do Mobponto, dia por dia.
+
+⚠️ É O GARGALO DE TUDO NA FOLHA: sem o ponto não há total por obra, não há
+diária, não há apropriação — e sem apropriação não há arquivo de pagamento.
+
+O CONTRATO DA API FOI LIDO DOS APPS SCRIPT do dono, não suposto. Dois scripts,
+três endpoints:
+
+    FOLHA_BWS_EXCEL   o ponto por dia, paginado por mês/ano  ← este módulo
+    REL_PRESENCA_BWS  o resumo de presença por mês, com o local
+    FUNCIONARIOS      o cadastro do Mobponto
+
+    GET https://www.mobponto.com.br/ponto/api/endpoint.php
+        ?type_data=FOLHA_BWS_EXCEL&status=false&mes=<M>&ano=<AAAA>&pagina=<N>
+
+    {"result": {"total_paginas": N,
+                "funcionarios": [{"cpf": ..., "nome": ...,
+                                  "relatorio": [{"dia": ..., "matricula": ...,
+                                                 …campos dinâmicos…}]}]}}
+
+⚠️ OS CAMPOS DE CADA DIA SÃO DINÂMICOS, e o próprio script do dono os descobre em
+tempo de execução. **Eu não os conheço**, e inventar nome de campo aqui decidiria
+em qual obra cai o salário de 500 pessoas com base num palpite — o mesmo erro que
+já cometi duas vezes nesta semana afirmando coisa de planilha sem ler a fórmula.
+
+Então este módulo faz o que é honesto: **traz e guarda o dia inteiro como veio**,
+resolve o que dá para resolver sem adivinhar (a data), e **anota quais campos
+vieram**. A tela mostra essa lista. Com ela, o mapeamento das marcações e da obra
+é uma linha de código e nenhuma suposição.
+
+AS CREDENCIAIS vêm de `MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY` no Render.
+Elas estão hoje escritas dentro dos Apps Script, em claro — ao trazer para cá,
+**trocar na origem**, pelo mesmo motivo do `EL_NFSE_TOKEN` (CONTEXTO.md §9):
+chave que já circulou é chave a trocar.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import time
+
+from . import formatos
+
+logger = logging.getLogger("analisesps.ponto")
+
+URL = os.getenv("MOBPONTO_URL",
+                "https://www.mobponto.com.br/ponto/api/endpoint.php")
+VERSAO_DA_API = os.getenv("MOBPONTO_API_VERSION", "1.0.0")
+
+TIPO_FOLHA = "FOLHA_BWS_EXCEL"
+
+# Quanto esperar por página, e quantas vezes tentar. O script do dono usa
+# backoff de 1s/2s/4s; aqui é o mesmo, porque a razão é a mesma: a API cai de vez
+# em quando e uma página perdida deixa buraco no mês.
+SEGUNDOS_DE_ESPERA = 60
+TENTATIVAS = 3
+
+# Teto de páginas por carga. A API diz quantas há; o teto existe para o caso de
+# ela dizer um número absurdo — ler mil páginas travaria o processo por horas.
+MAXIMO_DE_PAGINAS = 400
+
+# Quantos dias se gravam por vez. 60 mil linhas num mês é normal (500 pessoas ×
+# 31 dias × 4 marcações, dependendo do formato), e gravar tudo de uma vez faria o
+# pico de memória subir numa instância de 2 GB dividida com 17 módulos.
+DIAS_POR_BLOCO = 2000
+
+
+class ErroDoPonto(RuntimeError):
+    """Não deu para trazer o ponto. A frase vai inteira para a tela."""
+
+
+def _pronto() -> bool:
+    """A migração 031 já rodou? Enquanto não, a tela avisa em vez de estourar."""
+    from .db import consultar_um
+    try:
+        consultar_um("SELECT 1 FROM analisesps.ponto_carga LIMIT 1")
+        return True
+    except Exception:  # noqa: BLE001 — tabela que ainda não existe é normal
+        return False
+
+
+def configurado() -> bool:
+    """As duas credenciais existem? A tela pergunta antes de oferecer o botão."""
+    return bool((os.getenv("MOBPONTO_AUTHORIZATION") or "").strip()
+                and (os.getenv("MOBPONTO_API_KEY") or "").strip())
+
+
+def _cabecalhos() -> dict:
+    """Os três cabeçalhos que a API exige.
+
+    ⚠️ O VALOR DO `Authorization` VEM INTEIRO da variável de ambiente, com o
+    "Basic " na frente. É como ele está no script do dono, e montar a
+    codificação aqui obrigaria a guardar usuário e senha separados — mais peças
+    para dar errado, e nenhuma vantagem."""
+    auth = (os.getenv("MOBPONTO_AUTHORIZATION") or "").strip()
+    chave = (os.getenv("MOBPONTO_API_KEY") or "").strip()
+    if not auth or not chave:
+        raise ErroDoPonto(
+            "faltam as credenciais do Mobponto. Crie MOBPONTO_AUTHORIZATION e "
+            "MOBPONTO_API_KEY no Render — os valores estão nos Apps Script das "
+            "planilhas do ponto. Copie de lá direto para o Render e troque a "
+            "chave na origem depois.")
+    return {"Authorization": auth, "api-key": chave,
+            "api-version": VERSAO_DA_API}
+
+
+def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
+    """Uma página do relatório. Tenta até três vezes, com espera crescente."""
+    import requests
+
+    parametros = {"type_data": TIPO_FOLHA, "status": "false",
+                  "mes": str(int(mes)), "ano": str(int(ano)),
+                  "pagina": str(int(pagina))}
+    cabecalhos = _cabecalhos()
+    ultimo = "falha desconhecida"
+
+    for tentativa in range(1, TENTATIVAS + 1):
+        try:
+            resposta = requests.get(URL, params=parametros,
+                                    headers=cabecalhos,
+                                    timeout=SEGUNDOS_DE_ESPERA)
+        except Exception as e:  # noqa: BLE001 — rede oscila
+            ultimo = str(e)
+        else:
+            if 200 <= resposta.status_code < 300:
+                try:
+                    return resposta.json() or {}
+                except Exception as e:  # noqa: BLE001
+                    ultimo = (f"a resposta não é JSON: {e}. Começo dela: "
+                              f"{resposta.text[:200]}")
+            else:
+                # ⚠️ 401 e 403 NÃO SÃO PARA REPETIR: credencial errada não
+                # melhora na terceira tentativa, e insistir só demora.
+                if resposta.status_code in (401, 403):
+                    raise ErroDoPonto(
+                        f"o Mobponto recusou a credencial (HTTP "
+                        f"{resposta.status_code}). Confira "
+                        "MOBPONTO_AUTHORIZATION e MOBPONTO_API_KEY no Render.")
+                ultimo = f"HTTP {resposta.status_code}"
+        if tentativa < TENTATIVAS:
+            time.sleep(min(2 ** tentativa, 8))
+
+    raise ErroDoPonto(
+        f"não consegui ler a página {pagina} do ponto de {mes:02d}/{ano}: "
+        f"{ultimo}.")
+
+
+def _dias_do_funcionario(bruto) -> tuple:
+    """`(cpf, nome, [dias])` de um funcionário da resposta."""
+    cpf = str((bruto or {}).get("cpf") or "").strip()
+    nome = " ".join(str((bruto or {}).get("nome") or "").split())
+    dias = (bruto or {}).get("relatorio") or []
+    return cpf, nome, dias if isinstance(dias, list) else []
+
+
+def _linha_do_dia(carga_id: int, cpf: str, nome: str, dia) -> tuple | None:
+    """Uma linha da tabela, a partir de um dia da resposta.
+
+    ⚠️ GUARDA O DIA INTEIRO em `campos`, e resolve só a data. Os nomes dos campos
+    de marcação e de obra ainda não são conhecidos (ver o topo do arquivo), e
+    coluna preenchida por palpite é resposta errada com cara de certa."""
+    if not isinstance(dia, dict):
+        return None
+    from .folha_rateio import so_digitos
+    return (carga_id, so_digitos(cpf), nome,
+            formatos.para_data(dia.get("dia")),
+            str(dia.get("matricula") or "").strip(),
+            json.dumps(dia, ensure_ascii=False, default=str)[:8000])
+
+
+def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
+    """Traz o ponto do mês e guarda. É o que o botão chama.
+
+    Página por página, gravando cada bloco antes de pedir o seguinte: o pico de
+    memória fica em poucos MB, não importa o tamanho do mês.
+    """
+    from .db import conexao
+
+    anotar = anotar or (lambda *a, **k: None)
+    if not _pronto():
+        raise ErroDoPonto(
+            "a tabela do ponto ainda não existe. Aperte "
+            '"Aplicar atualizações do banco" em Configurações e tente de novo.')
+    if not configurado():
+        raise ErroDoPonto(
+            "faltam as credenciais do Mobponto. Crie MOBPONTO_AUTHORIZATION e "
+            "MOBPONTO_API_KEY no Render.")
+
+    anotar("pedindo a primeira página do ponto")
+    primeira = _pedir_pagina(ano, mes, 1)
+    resultado = (primeira or {}).get("result") or {}
+    funcionarios = resultado.get("funcionarios") or []
+    if not funcionarios:
+        raise ErroDoPonto(
+            f"o Mobponto não devolveu ninguém para {mes:02d}/{ano}. Confira se "
+            "o mês está certo e se há ponto lançado nele.")
+
+    total_paginas = 0
+    try:
+        total_paginas = int(resultado.get("total_paginas") or 0)
+    except (TypeError, ValueError):
+        total_paginas = 0
+    if total_paginas <= 0:
+        total_paginas = 1
+    avisos = []
+    if total_paginas > MAXIMO_DE_PAGINAS:
+        avisos.append(
+            f"a API disse que há {total_paginas} páginas e o teto é "
+            f"{MAXIMO_DE_PAGINAS} — li só até lá. Se o mês tiver mais, o ponto "
+            "está incompleto.")
+        total_paginas = MAXIMO_DE_PAGINAS
+
+    # SUBSTITUI a carga daquele mês. O CASCADE leva os dias junto, e é numa
+    # transação: uma carga sem dias (a antiga apagada, a nova não gravada)
+    # mostraria "nenhum dia" como se fosse verdade.
+    with conexao() as conn:
+        conn.execute("DELETE FROM analisesps.ponto_carga WHERE ano = ? AND mes = ?",
+                     (int(ano), int(mes)))
+        cur = conn.execute(
+            "INSERT INTO analisesps.ponto_carga "
+            "  (ano, mes, paginas, carregado_por) VALUES (?,?,?,?) RETURNING id",
+            (int(ano), int(mes), total_paginas, str(quem or "")[:120]))
+        carga_id = cur.fetchone()[0]
+        cur.close()
+        conn.commit()
+
+    campos_vistos: dict = {}
+    pessoas = set()
+    dias_gravados = 0
+    paginas_lidas = 0
+    pagina = 1
+    pendentes: list = []
+
+    def descarregar():
+        nonlocal dias_gravados, pendentes
+        if not pendentes:
+            return
+        with conexao() as conn:
+            conn.executemany(
+                "INSERT INTO analisesps.ponto_dia "
+                "  (carga_id, cpf, nome, data, matricula, campos) "
+                " VALUES (?,?,?,?,?,?)", pendentes)
+            conn.commit()
+        dias_gravados += len(pendentes)
+        pendentes = []
+
+    while pagina <= total_paginas:
+        if pagina == 1:
+            dados = primeira
+        else:
+            anotar("trazendo o ponto", f"página {pagina} de {total_paginas}")
+            dados = _pedir_pagina(ano, mes, pagina)
+        resultado = (dados or {}).get("result") or {}
+        funcionarios = resultado.get("funcionarios") or []
+        paginas_lidas += 1
+
+        if not funcionarios:
+            # Página vazia no meio é o sinal de fim que a API dá quando
+            # `total_paginas` vem otimista. Para em vez de insistir.
+            break
+
+        for bruto in funcionarios:
+            cpf, nome, dias = _dias_do_funcionario(bruto)
+            if cpf:
+                pessoas.add(cpf)
+            for dia in dias:
+                if isinstance(dia, dict):
+                    for campo in dia:
+                        campos_vistos[str(campo)] = True
+                linha = _linha_do_dia(carga_id, cpf, nome, dia)
+                if linha is not None:
+                    pendentes.append(linha)
+            if len(pendentes) >= DIAS_POR_BLOCO:
+                descarregar()
+        descarregar()
+        anotar("trazendo o ponto",
+               f"{dias_gravados} dia(s) de {len(pessoas)} pessoa(s)")
+        pagina += 1
+
+    sem_data = 0
+    from .db import consultar_um
+    achado = consultar_um(
+        "SELECT count(*) FROM analisesps.ponto_dia "
+        " WHERE carga_id = ? AND data IS NULL", (carga_id,))
+    sem_data = int((achado or [0])[0] or 0)
+    if sem_data:
+        avisos.append(
+            f"{sem_data} dia(s) vieram sem data que eu consiga ler. Eles ficaram "
+            "guardados, com o conteúdo original, para conferência.")
+
+    # ⚠️ OS NOMES DOS CAMPOS SÃO A DESCOBERTA QUE DESTRAVA A APROPRIAÇÃO. Ficam
+    # guardados e aparecem na tela: é com eles que se mapeia a obra e as
+    # marcações, sem palpite.
+    campos = sorted(campos_vistos)
+    with conexao() as conn:
+        conn.execute(
+            "UPDATE analisesps.ponto_carga "
+            "   SET paginas_lidas = ?, pessoas = ?, dias = ?, "
+            "       campos_vistos = ?, avisos = ? "
+            " WHERE id = ?",
+            (paginas_lidas, len(pessoas), dias_gravados, "|".join(campos),
+             " | ".join(avisos), carga_id))
+        conn.commit()
+
+    logger.info("Análise de SPs: ponto %02d/%d — %d dia(s) de %d pessoa(s) em "
+                "%d página(s). Campos: %s", mes, ano, dias_gravados,
+                len(pessoas), paginas_lidas, ", ".join(campos))
+    return {"id": carga_id, "ano": int(ano), "mes": int(mes),
+            "pessoas": len(pessoas), "dias": dias_gravados,
+            "paginas": total_paginas, "paginas_lidas": paginas_lidas,
+            "campos": campos, "avisos": avisos}
+
+
+# ---------------------------------------------------------------------------
+# Ler de volta
+# ---------------------------------------------------------------------------
+CAMPOS_DA_CARGA = ("id", "ano", "mes", "paginas", "paginas_lidas", "pessoas",
+                   "dias", "campos_vistos", "avisos", "carregado_em",
+                   "carregado_por")
+
+
+def _carga(linha) -> dict:
+    carga = {c: linha[i] for i, c in enumerate(CAMPOS_DA_CARGA)}
+    carga["competencia"] = f"{carga['mes']:02d}/{carga['ano']}"
+    carga["campos"] = [c for c in (carga["campos_vistos"] or "").split("|") if c]
+    carga["lista_de_avisos"] = [a for a in (carga["avisos"] or "").split(" | ")
+                                if a]
+    carga["completa"] = carga["paginas_lidas"] >= carga["paginas"]
+    return carga
+
+
+def cargas(teto: int = 36) -> list:
+    """As cargas do ponto, da mais recente para a mais antiga."""
+    from .db import consultar
+    if not _pronto():
+        return []
+    return [_carga(l) for l in consultar(
+        "SELECT " + ", ".join(CAMPOS_DA_CARGA) + " FROM analisesps.ponto_carga "
+        " ORDER BY ano DESC, mes DESC LIMIT ?", (int(teto),))]
+
+
+def carga_do_mes(ano: int, mes: int) -> dict | None:
+    """A carga de uma competência, ou None."""
+    from .db import consultar_um
+    if not _pronto():
+        return None
+    linha = consultar_um(
+        "SELECT " + ", ".join(CAMPOS_DA_CARGA) + " FROM analisesps.ponto_carga "
+        " WHERE ano = ? AND mes = ?", (int(ano), int(mes)))
+    return _carga(linha) if linha else None
+
+
+def amostra_de_dias(carga_id: int, quantos: int = 5) -> list:
+    """Alguns dias como vieram, para a tela mostrar o formato de verdade.
+
+    ⚠️ É O QUE TRANSFORMA "não sei os campos" EM "olha os campos". Sem ver um dia
+    de verdade, o mapeamento da obra e das marcações continuaria sendo palpite."""
+    from .db import consultar
+    if not _pronto():
+        return []
+    linhas = consultar(
+        "SELECT cpf, nome, data, matricula, campos FROM analisesps.ponto_dia "
+        " WHERE carga_id = ? ORDER BY id LIMIT ?", (int(carga_id), int(quantos)))
+    saida = []
+    for cpf, nome, data, matricula, campos in linhas:
+        try:
+            conteudo = json.loads(campos or "{}")
+        except Exception:  # noqa: BLE001 — JSON torto continua sendo mostrado
+            conteudo = {"(não deu para ler)": campos}
+        saida.append({"cpf": cpf, "nome": nome, "data": data,
+                      "matricula": matricula, "campos": conteudo})
+    return saida
+
+
+def apagar(carga_id: int, quem: str = "") -> bool:
+    """Apaga uma carga do ponto e os dias dela.
+
+    Seguro: o que está guardado é cópia do que o Mobponto tem. Recarregar não
+    perde decisão nenhuma — a apropriação e o ajuste fino moram em outro lugar."""
+    from .db import conexao
+    if not _pronto():
+        return False
+    with conexao() as conn:
+        cur = conn.execute("DELETE FROM analisesps.ponto_carga WHERE id = ?",
+                           (int(carga_id),))
+        apagou = bool(cur.rowcount and cur.rowcount > 0)
+        cur.close()
+        conn.commit()
+    if apagou:
+        logger.info("Análise de SPs: carga do ponto %s apagada por %s.",
+                    carga_id, quem or "(sem nome)")
+    return apagou

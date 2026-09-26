@@ -119,6 +119,10 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha"),
     ("GET",  "/analisesps/folha/importar"),
     ("GET",  "/analisesps/folha/painel"),
+    ("GET",  "/analisesps/folha/ponto"),
+    # Dispara a carga do ponto e apaga carga — trabalho longo e destrutivo.
+    ("POST", "/analisesps/api/folha/ponto"),
+    ("POST", "/analisesps/api/folha/ponto/apagar"),
     # Mostra a folha pessoa por pessoa: nome, CPF e valor de ~500 gente.
     ("GET",  "/analisesps/folha/123"),
     # Recebe a folha de pagamento inteira — nome e valor de ~500 pessoas.

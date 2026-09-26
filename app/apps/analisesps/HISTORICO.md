@@ -8713,6 +8713,88 @@ casamento, as críticas e o painel, e 10 de tela. As migrações vão até a **0
 
 ---
 
+### Centésima décima leva (27/09) — o ponto entra, e eu me corrijo outra vez
+
+#### Eu disse que estava travado. Estava errado.
+
+Na leva anterior eu escrevi que não escreveria a carga do Mobponto para não
+adivinhar o formato da API. **O formato não precisava ser adivinhado: está nos
+Apps Script que o dono mandou**, e eu não os havia lido até o fim antes de
+declarar a coisa bloqueada.
+
+**É a terceira vez na semana que eu erro na mesma direção:** afirmar sobre uma
+fonte que eu tinha em mãos e não li inteira. Antes foi o cabeçalho da planilha
+errada, depois a "trava de pagamento" que não era trava. O padrão é o mesmo, e
+fica registrado para quem vier: **nesta área, antes de dizer "não dá", conferir se
+a resposta já não chegou junto com o pedido.**
+
+#### O contrato, lido do script
+
+Três endpoints, e as credenciais nos mesmos três cabeçalhos:
+
+| `type_data` | O que traz |
+|---|---|
+| `FOLHA_BWS_EXCEL` | o ponto **por dia**, paginado por mês/ano — é o que este módulo traz |
+| `REL_PRESENCA_BWS` | o resumo do mês, com o **`local`** (a obra) e um **`mudou`** |
+| `FUNCIONARIOS` | o cadastro do Mobponto |
+
+A resposta do primeiro: `result.total_paginas` e `result.funcionarios[]`, cada um
+com `cpf`, `nome` e `relatorio[]` — uma entrada por dia.
+
+#### ⚠️ O que eu NÃO sei, e não inventei
+
+**Os campos de cada dia são dinâmicos.** O próprio script do dono os descobre em
+tempo de execução. Um deles é a **obra**, outros são as **quatro marcações** — é o
+que a apropriação precisa. **Adivinhar o nome deles decidiria em qual obra cai o
+salário de 500 pessoas com base num palpite.**
+
+Então o módulo:
+
+1. **guarda o dia inteiro como veio**, em JSON;
+2. resolve só o que dá sem adivinhar: data, CPF, matrícula;
+3. deixa `obra`, `presenca` e `falta` **nulas** — coluna vazia é pergunta aberta;
+   preenchida por palpite é resposta errada com cara de certa;
+4. **anota quais campos vieram e mostra na tela**, com um dia de exemplo de
+   verdade.
+
+Com essa lista, ligar o total por obra é uma linha de código. E **não precisa
+recarregar nada da API depois**: o dia inteiro já está guardado, então uma migração
+preenche as colunas a partir do que há.
+
+#### O que o módulo cuida
+
+Página por página (o pico de memória fica em poucos MB); retentativa 1s/2s/4s
+como o script dele; **401 e 403 não são repetidos** (credencial errada não melhora
+na terceira tentativa); **página vazia no meio para a leitura** e a tela marca o
+mês como **"veio pela metade"** — mês incompleto mostrado como completo faria o
+total por obra sair a menos sem ninguém saber; teto de páginas; recarregar o mesmo
+mês substitui, com aviso antes.
+
+**O botão do ponto NÃO está em Configurações**, e é de propósito: ele precisa saber
+qual mês trazer, e um botão sem essa escolha traria sempre o mesmo. Ele fica na
+subtela do Ponto, que pergunta a competência.
+
+#### ⚠️ As credenciais, outra vez em claro
+
+Os dois scripts do Mobponto trazem o `Authorization` e o `api-key` escritos no
+código. Eu os vi ao ler o contrato e **não os escrevi no repositório**. O caminho
+é o de sempre: copiar do editor de script **direto para o Render**
+(`MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY`) e **trocar na origem depois**.
+
+Enquanto não existirem, a tela **não oferece o botão** e explica o que fazer:
+botão que só dá erro é armadilha.
+
+**Verificado:** 22 testes novos — 16 com banco de verdade (páginas, substituição,
+teto, dia sem data, apagar em cascata) e 6 dublando o `requests` para provar a URL,
+os três cabeçalhos, a retentativa e o 401 que não se repete. Mais 9 de tela.
+Migrações até a **031**.
+
+**NÃO verificado:** nada num navegador, e **nada contra a API de verdade** — ela é
+dublada nos testes. O primeiro clique com as credenciais no Render é que confirma
+o formato, e é ele que revela os nomes dos campos.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

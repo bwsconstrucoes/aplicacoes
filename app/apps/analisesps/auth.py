@@ -440,6 +440,10 @@ TELA_DA_ROTA = {
     "analisesps.tela_colaboradores": ("folha",),
     "analisesps.tela_folha_importar": ("folha",),
     "analisesps.tela_folha_painel": ("folha",),
+    "analisesps.tela_folha_ponto": ("folha",),
+    # Trazer o ponto é trabalho do DP, como trazer a folha da contabilidade.
+    "analisesps.folha_ponto_carregar": ("folha",),
+    "analisesps.folha_ponto_apagar": ("folha",),
     "analisesps.tela_folha_aberta": ("folha",),
     "analisesps.tela_bradesco": ("bradesco",),
     "analisesps.log": ("log",),

@@ -5427,14 +5427,6 @@ def test_outro_erro_de_importacao_NAO_pede_o_tipo(app, monkeypatch):
     assert corpo["pergunte_o_tipo"] is False
 
 
-def test_a_ordem_das_subtelas_e_a_do_USO(app):
-    """O panorama primeiro — é onde ele decide o rateio. Depois a ordem do
-    trabalho: entra o arquivo, confere-se o cadastro de quem está nele,
-    decide-se o rateio."""
-    from app.apps.analisesps import web
-
-    assert [s[0] for s in web.SUBTELAS_DA_FOLHA] == [
-        "painel", "importar", "colaboradores", "rateio"]
 
 
 def test_importar_a_folha_NAO_e_so_do_mestre(app):
@@ -5625,3 +5617,155 @@ def test_folha_toda_certa_NAO_mostra_a_faixa_de_criticas(app, monkeypatch):
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
     assert "Precisa da sua mão" not in html
     assert "linha-alerta" not in html
+
+
+# ---------------------------------------------------------------------------
+# A SUBTELA DO PONTO — 27/09/2026
+# ---------------------------------------------------------------------------
+def test_a_tela_do_ponto_MOSTRA_os_campos_que_a_api_manda(app, monkeypatch):
+    """⚠️ É O QUE DESTRAVA A APROPRIAÇÃO, e por isso está na tela e não num log.
+
+    A API manda, em cada dia, campos que o próprio script do dono descobre em
+    tempo de execução — ninguém escreveu em lugar nenhum quais são. Eu não vou
+    adivinhar qual é a obra: palpite aqui decide em qual obra cai o salário de
+    500 pessoas."""
+    from app.apps.analisesps import ponto as _ponto
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [{
+        "id": 1, "ano": 2026, "mes": 8, "competencia": "08/2026",
+        "pessoas": 500, "dias": 15000, "paginas": 5, "paginas_lidas": 5,
+        "completa": True, "campos": ["dia", "local_trabalho", "hora_entrada"],
+        "lista_de_avisos": [], "carregado_em": None, "carregado_por": "MARCELO"}])
+    monkeypatch.setattr(_ponto, "amostra_de_dias", lambda i, quantos=5: [{
+        "cpf": "99713349334", "nome": "GERLANIO", "data": None,
+        "matricula": "1234",
+        "campos": {"dia": "01/08/2026", "local_trabalho": "CREPEOLINDA",
+                   "hora_entrada": "07:58"}}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/ponto").get_data(as_text=True)
+
+    assert "Os campos que a API manda em cada dia" in html
+    assert "local_trabalho" in html
+    assert "hora_entrada" in html
+    # E um dia de exemplo, com o que veio de verdade.
+    assert "CREPEOLINDA" in html
+    assert "07:58" in html
+
+
+def test_sem_credencial_a_tela_do_ponto_diz_ONDE_criar_e_manda_TROCAR(app, monkeypatch):
+    """O recado tem de dizer o que fazer, onde, e o cuidado — sem nunca pedir
+    para colar a chave numa conversa."""
+    from app.apps.analisesps import ponto as _ponto
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: False)
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/ponto").get_data(as_text=True)
+
+    assert "MOBPONTO_AUTHORIZATION" in html
+    assert "MOBPONTO_API_KEY" in html
+    assert "Apps Script" in html
+    assert "direto para o Render" in html
+    assert "troque a chave na origem" in html
+    # E sem credencial não oferece o botão: botão que só dá erro é armadilha.
+    assert 'id="btn-trazer-ponto"' not in html
+
+
+def test_mes_que_veio_PELA_METADE_e_marcado(app, monkeypatch):
+    """Um mês incompleto mostrado como completo faria o total por obra sair a
+    menos, sem ninguém saber."""
+    from app.apps.analisesps import ponto as _ponto
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    monkeypatch.setattr(_ponto, "amostra_de_dias", lambda i, quantos=5: [])
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [{
+        "id": 1, "ano": 2026, "mes": 8, "competencia": "08/2026",
+        "pessoas": 100, "dias": 1000, "paginas": 9, "paginas_lidas": 3,
+        "completa": False, "campos": [],
+        "lista_de_avisos": ["a API disse que há 9 páginas e eu li 3"],
+        "carregado_em": None, "carregado_por": ""}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/ponto").get_data(as_text=True)
+    assert "veio pela metade" in html
+    assert "3 de 9" in html
+    assert "linha-alerta" in html
+
+
+def test_o_ponto_NAO_tem_botao_em_configuracoes(app):
+    """⚠️ Ele precisa saber QUAL MÊS trazer. Um botão em Configurações sem essa
+    escolha traria sempre o mesmo mês — e o dono descobriria quando o total por
+    obra viesse errado."""
+    from app.apps.analisesps import tarefas
+
+    assert "ponto" in tarefas.MODOS
+    assert "ponto" not in tarefas.MODOS_DA_BASE
+    assert tarefas.ETAPAS["ponto"] == ["ponto"]
+
+
+def test_o_recado_do_ponto_NAO_diz_SPs(app):
+    """Mesmo cuidado do cadastro: são dias de ponto, não SPs."""
+    import inspect
+
+    from app.apps.analisesps import tarefas
+
+    fonte = inspect.getsource(tarefas.executar_trabalho)
+    trecho = fonte[fonte.index('if modo in ("apoios"'):]
+    trecho = trecho[:trecho.index("):") + 2]
+    assert '"ponto"' in trecho
+
+
+def test_carregar_o_ponto_SEM_mes_e_recusado(app):
+    resposta = _como_mestre(app).post("/analisesps/api/folha/ponto", json={})
+    assert resposta.status_code == 400
+    assert "Escolha o mês" in resposta.get_json()["erro"]
+
+
+def test_carregar_o_ponto_SEM_credencial_e_recusado_com_o_caminho(app, monkeypatch):
+    from app.apps.analisesps import ponto as _ponto
+
+    monkeypatch.setattr(_ponto, "configurado", lambda: False)
+    resposta = _como_mestre(app).post("/analisesps/api/folha/ponto",
+                                      json={"ano": 2026, "mes": 8})
+    assert resposta.status_code == 400
+    assert "MOBPONTO_API_KEY" in resposta.get_json()["erro"]
+
+
+def test_a_competencia_escolhida_vai_para_o_BANCO_antes_de_disparar(app, monkeypatch):
+    """O trabalho roda no processo separado, que pode ser reiniciado: passar a
+    escolha por parâmetro a perderia numa retomada."""
+    from app.apps.analisesps import ponto as _ponto, sincronizacao, tarefas
+    gravado = {}
+
+    import contextlib
+
+    from app.apps.analisesps import db as db_analisesps
+
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    # A rota abre uma conexão de verdade para gravar a competência. Aqui ela é
+    # dublada: o que está sob teste é QUAL competência foi gravada, não o banco.
+    monkeypatch.setattr(db_analisesps, "conexao",
+                        lambda: contextlib.nullcontext(object()))
+    monkeypatch.setattr(sincronizacao, "_meta_gravar",
+                        lambda conn, chave, valor: gravado.update({chave: valor}))
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="": {"ok": True})
+
+    resposta = _como_mestre(app).post("/analisesps/api/folha/ponto",
+                                      json={"ano": 2026, "mes": 8})
+    assert resposta.get_json()["ok"] is True
+    assert gravado["ponto_competencia"] == "2026-8"
+
+
+def test_o_ponto_e_a_PRIMEIRA_coisa_depois_da_folha_na_ordem_das_subtelas(app):
+    """A ordem é a do trabalho: panorama, folha da contabilidade, ponto (que diz
+    em qual obra cada um estava), cadastro, rateio."""
+    from app.apps.analisesps import web
+
+    assert [s[0] for s in web.SUBTELAS_DA_FOLHA] == [
+        "painel", "importar", "ponto", "colaboradores", "rateio"]

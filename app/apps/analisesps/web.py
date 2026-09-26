@@ -145,6 +145,7 @@ SUBTELAS_DA_FOLHA = [
     # cadastro de quem está nele, decide-se o rateio.
     ("importar",      "Folha da contabilidade",
      "analisesps.tela_folha_importar"),
+    ("ponto",         "Ponto",         "analisesps.tela_folha_ponto"),
     ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
     ("rateio",        "Rateio das obras", "analisesps.tela_folha_rateio"),
 ]
@@ -2471,6 +2472,95 @@ def folha_apagar():
         return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
     if not apagou:
         return {"ok": False, "erro": "Esta folha não está mais aqui."}, 404
+    return {"ok": True}
+
+
+@bp.route("/folha/ponto")
+@exige_consulta
+def tela_folha_ponto():
+    """O ponto do Mobponto, mês por mês.
+
+    ⚠️ É O GARGALO DA FOLHA: sem o ponto não há total por obra, não há diária e
+    não há apropriação. A tela existe para trazer o mês e para MOSTRAR QUAIS
+    CAMPOS a API manda em cada dia — é com essa lista que se mapeia a obra e as
+    marcações, sem palpite."""
+    from . import ponto as _ponto
+
+    pronto = _ponto._pronto()
+    cargas = []
+    amostra = []
+    erro = None
+    try:
+        cargas = _ponto.cargas() if pronto else []
+        if cargas:
+            amostra = _ponto.amostra_de_dias(cargas[0]["id"])
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui listar as cargas do ponto")
+        erro = str(e)
+
+    from .horario import agora
+    hoje = agora().date()
+    return render_template(
+        "analisesps_folha_ponto.html", aba="folha", subaba="ponto",
+        subtelas=subtelas_da_folha(), pronto=pronto, cargas=cargas,
+        amostra=amostra, erro=erro, configurado=_ponto.configurado(),
+        ano_padrao=hoje.year, mes_padrao=hoje.month,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/ponto", methods=["POST"])
+@exige_operador
+def folha_ponto_carregar():
+    """Dispara a carga do ponto do mês escolhido.
+
+    A competência vai para o banco antes de disparar: o trabalho roda no processo
+    separado, que pode ser reiniciado, e passar por parâmetro perderia a escolha
+    numa retomada."""
+    from . import ponto as _ponto, sincronizacao, tarefas
+    from .db import conexao
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        ano = int(dados.get("ano") or 0)
+        mes = int(dados.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        return {"ok": False, "erro": "Escolha o mês e o ano."}, 400
+    if not _ponto.configurado():
+        return {"ok": False, "erro":
+                "Faltam as credenciais do Mobponto. Crie "
+                "MOBPONTO_AUTHORIZATION e MOBPONTO_API_KEY no Render — os "
+                "valores estão nos Apps Script das planilhas do ponto."}, 400
+
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_competencia", f"{ano}-{mes}")
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    resultado = tarefas.disparar("ponto", disparo=quem or "ponto")
+    if not resultado.get("ok"):
+        return {"ok": False, "erro": resultado.get("erro")
+                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+    return {"ok": True}
+
+
+@bp.route("/api/folha/ponto/apagar", methods=["POST"])
+@exige_operador
+def folha_ponto_apagar():
+    """Apaga uma carga do ponto. Seguro: é cópia do que o Mobponto tem."""
+    from . import ponto as _ponto
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        apagou = _ponto.apagar(int(dados.get("id") or 0), quem=quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou apagar a carga do ponto")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    if not apagou:
+        return {"ok": False, "erro": "Esta carga não está mais aqui."}, 404
     return {"ok": True}
 
 
