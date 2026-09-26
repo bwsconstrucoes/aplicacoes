@@ -3,6 +3,8 @@
 {% block classe_corpo %}sem-filtros{% endblock %}
 
 {% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
 <h2>Colaboradores
   <small>{{ colaboradores|length }}{{ '+' if no_teto else '' }} na lista</small>
 </h2>

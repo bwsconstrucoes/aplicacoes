@@ -328,11 +328,18 @@ def pessoa_atual() -> str:
 # As telas do menu que NÃO se pode liberar para ninguém. Configurações é de
 # onde se aplica migração, se troca o certificado digital e se cadastra gente —
 # é a tela que conserta o módulo, e ela é do dono.
-SO_DO_MESTRE_POR_TELA = frozenset({"configuracoes", "folha_rateio"})
-# ⚠️ "folha_rateio" entrou em 26/09/2026: ela define para qual obra vai o
-# salário de alguém, toda quinzena, até alguém mudar. O DP opera a folha; o
-# rateio é do dono — decisão dele: *"o usuário do DP faz a leitura, mas o
-# usuário master, que sou eu, eu gero o arquivo"*.
+SO_DO_MESTRE_POR_TELA = frozenset({"configuracoes"})
+# ⚠️ "folha_rateio" SAIU DAQUI em 27/09/2026, e a proteção NÃO afrouxou — ela
+# ficou mais estrita. Motivo: a folha virou UMA tela no menu ("folha"), com as
+# subtelas por dentro, então "folha_rateio" deixou de existir como chave de
+# tela. Quem barra o rateio agora é `SO_DO_MESTRE`, que nomeia CADA rota dele —
+# a lista por nome exato é mais apertada que a por tela, porque não depende de
+# ninguém lembrar de classificar a tela.
+#
+# O que continua valendo, e é decisão do dono: *"o usuário do DP faz a leitura,
+# mas o usuário master, que sou eu, eu gero o arquivo"*. O DP ganha "folha" e vê
+# o cadastro; o rateio, que define para qual obra vai o salário de alguém,
+# continua só do mestre — e a subtela dele nem aparece para quem não é.
 
 # Rotas que são só do mestre, por escreverem no OMIE, mexerem em segredo ou
 # configurarem o módulo. Nome exato, para não pegar vizinho por engano.
@@ -340,6 +347,7 @@ SO_DO_MESTRE = frozenset({
     "analisesps.configuracoes",
     "analisesps.tela_folha_rateio",      # decide o rateio do salário
     "analisesps.folha_rateio_gravar",
+    "analisesps.folha_rateio_colar",   # substitui o rateio do mês inteiro
     "analisesps.folha_rateio_apagar",
     "analisesps.folha_rateio_simular",
     "analisesps.migrar",                 # aplica migração no banco
@@ -421,7 +429,8 @@ TELA_DA_ROTA = {
     # precisa conferir o valor do auxílio de alguém e chegar ao card. A tela não
     # escreve nada — o dado nasce no Pipefy. O RATEIO, que decide para qual obra
     # vai o salário, continua só do mestre.
-    "analisesps.tela_colaboradores": ("colaboradores",),
+    "analisesps.tela_folha": ("folha",),
+    "analisesps.tela_colaboradores": ("folha",),
     "analisesps.tela_bradesco": ("bradesco",),
     "analisesps.log": ("log",),
 }

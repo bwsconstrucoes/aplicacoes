@@ -8444,6 +8444,113 @@ nasce sem link público (§7.17.4).
 
 ---
 
+### Centésima sétima leva (27/09) — uma tela só para a folha, e o rateio colado
+
+Ele abriu o sistema, viu **duas entradas novas no menu** e me corrigiu em quatro
+coisas. Três eram erro de desenho meu, e as três têm a mesma raiz: **eu resolvi o
+caso e ignorei o uso.**
+
+#### 1. Duas entradas no menu viraram UMA
+
+> *"Eles têm que estar dentro de uma tela só. E lá ter as subtelas, porque senão
+> vai ficar tela demais, fica até misturado com o restante, que tem mais a ver
+> com o financeiro. (…) pode botar abreviado, Folha PGT."*
+
+Ele está certo: este menu é de **financeiro**, e cada peça nova da folha ia virar
+um item nele. Agora é **uma entrada, "Folha PGT"**, e por dentro as subtelas —
+como as abas da planilha que ela vai substituir.
+
+**A proteção do rateio não afrouxou, ficou mais estrita.** Antes ela vinha da
+chave de tela `folha_rateio`; agora vem da lista de **rotas** do mestre, que
+nomeia cada uma — e não depende de ninguém lembrar de classificar uma tela nova.
+Quem não é mestre **não vê a aba** do rateio.
+
+#### 2. O formulário do rateio era absurdo, e ele mediu
+
+> *"Imagina, eu tenho 10 funcionários, eu quero ratear em 10 obras diferentes. Aí
+> imagina preencher 10 funcionários 10 vezes cada campozinho. 10 vezes 10 dá 100.
+> Imagina preencher 100 campos. É absurdo."*
+
+Agora se **cola uma tabela**: uma linha por pessoa, `CPF ; nome ; obra, obra,
+obra`. E a ideia dele, que é a melhor parte: **repetir a obra é o peso dela.**
+`A, B, B` é 33,33% e 66,67% — sem ninguém digitar percentual.
+
+Detalhes que valem:
+
+- **Quem tem a mesma distribuição vira UMA regra.** Dez pessoas com o mesmo
+  rateio não são dez cartões na tela.
+- **Aplicar substitui o que está valendo — DESATIVANDO, não apagando.** A regra
+  desativada continua explicando como a folha do mês passado foi rateada. Era o
+  ponto dele: *"o rateio muda todo mês, não existe rateio fixo."*
+- **"Copiar para a tabela"** em cada regra devolve as linhas prontas, com a obra
+  já repetida no peso certo. É o "reaplicar o mês anterior" sem eu inventar um
+  segundo jeito de guardar rateio.
+- **Confere tudo antes de escrever.** Se a linha 28 estiver errada, nada foi
+  mexido — e o erro diz **o número da linha**, não "não entendi a tabela".
+- A mesma pessoa em duas linhas é recusada dizendo **em quais linhas**: só uma
+  regra ativa pode valer para alguém, e a segunda derrubaria a primeira calada.
+
+⚠️ **Um defeito que o primeiro teste pegou:** a sobra do arredondamento estava
+indo para a obra de **menor** peso (66,6666 / 33,3334 em vez de 66,6667 /
+33,3333), porque era a última da lista que fechava a conta. A sobra vai para a de
+**maior** peso — a mesma regra da sobra de centavo que ele decidiu em 26/09.
+
+#### 3. A explicação do card era ênfase demais
+
+> *"Não precisa dar aquela ênfase, porque a gente já sabe, ali a gente clica no
+> nome da pessoa, já abre o card do Pipefy e lá atualiza."*
+
+Tirei o parágrafo e o botão de atualizar da tela de Rateio. O botão mora na
+subtela **Colaboradores**, que é onde o cadastro é mostrado. O mesmo botão em
+duas telas faz a pessoa perguntar se são a mesma coisa.
+
+#### 4. As telas que ele procurou e não achou
+
+Ele procurou as telas de **alimentação, transporte, diaristas e importação** —
+que é como ele trabalha na planilha, uma aba por verba. **Elas não existem**, e
+eu não as tinha anunciado como pendentes com clareza suficiente. A barra de
+subtelas mostra só o que existe, de propósito: aba que abre vazia promete o que
+não há.
+
+#### O que respondi sobre a geração dos arquivos (§7.18 do documento)
+
+Ele cobrou que eu nunca tinha dito se havia **entendido** a geração. Está tudo
+escrito lá — o BeeVale (um card por conta, consolidação por conta+CPF+categoria,
+três conferências antes de subir), o PJ (um card por pessoa) e a **categoria**,
+que é a peça que amarra tudo: ela entra na chave de consolidação, na linha de
+categorias do rateio e no tipo de despesa do card.
+
+**E ele acrescentou uma regra nova, que é dinheiro e é trava:**
+
+| | BeeVale | SomaPay |
+|---|---|---|
+| juntar verbas diferentes num arquivo | **pode** — e ele quer escolher | — |
+| mesmo CPF duas vezes | **pode**, se a natureza da verba for diferente | **NÃO PODE** |
+
+⚠️ O SomaPay **recusa** o arquivo com CPF repetido. Então o gerador tem de
+conferir antes de gravar e dizer quem está repetido — arquivo rejeitado depois de
+subir custa a rodada inteira.
+
+#### E o painel, que não é enfeite
+
+Ele pediu dashboard com os totais por obra, por conta e por verba — **e disse por
+quê**: é olhando o total por obra que ele decide o rateio do mês. Ou seja, o
+painel vem **antes** do rateio na ordem de uso, mesmo tendo sido pedido depois.
+
+**Depende da folha guardada no banco**, que é o próximo passo e o que destrava
+tudo: hoje o cálculo existe em memória, sem lugar para ficar. A ordem está em
+§7.18.3: guardar a folha → telas por verba → painel → geradores → cards.
+
+**Verificado:** 20 testes novos sem banco (a repetição como peso, a tabela colada,
+cada erro com o número da linha) e 8 com banco de verdade (substituir desativando,
+colagem com erro não mexe em nada, dez pessoas em dez obras). Cinco testes antigos
+meus ficaram vermelhos com a mudança do menu e foram atualizados ao desenho novo —
+a rede de segurança das rotas pegou as duas rotas novas antes de mim.
+
+**NÃO verificado:** nada num navegador.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

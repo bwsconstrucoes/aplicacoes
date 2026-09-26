@@ -1850,6 +1850,136 @@ trabalho a mais por um ganho que eu não sei qual é.
 | **O arquivo pode deixar de ser público por link?** | É o que faz o risco morrer de verdade. Para a folha eu já faria assim; para o **BeeVale**, mudar quebraria os links dos cards já criados — e isso é decisão dele |
 | O card do Pipefy recebe link **da tela** ou **do arquivo**? | Da tela é mais seguro e mostra o histórico; do arquivo é o hábito de hoje |
 
+## 7.18 A GERAÇÃO DOS ARQUIVOS — o que eu entendi, e o que ele acrescentou (27/09/2026)
+
+Ele cobrou, com razão, que eu nunca tinha dito se havia **entendido** a geração
+dos arquivos. Esta seção é a resposta, e vale como prova: o que está aqui saiu
+do script e do blueprint, não de suposição.
+
+### 7.18.1 O que eu entendi da geração de HOJE
+
+**SomaPay** (o que a planilha da Fortes gera): um arquivo por **conta corrente**,
+com uma linha por pessoa. É o caminho da folha da contabilidade.
+
+**BeeVale** (`BeeVale.gs`, quatro botões — Transporte, Alimentação, GM,
+Diaristas): para cada aba,
+
+1. lê a aba a partir da linha 4, com o **texto formatado** (não o número);
+2. filtra `Pagar` **e** conta preenchida — linha marcada sem conta é ignorada em
+   silêncio (crítica que o sistema novo deve dar);
+3. **consolida por conta + CPF + categoria de despesa**: duas linhas da mesma
+   pessoa, mesma conta e mesma categoria viram uma, somando o valor;
+4. pergunta **qual conta** (digitada, ou `TODAS`);
+5. monta **um arquivo por conta**, com 11 colunas fixas — e o **e-mail é
+   inventado** (`<cpf>@bwsconstrucoes.com.br`), `Benefício` = `Livre`,
+   `Tipo de Recarga` = `Mensal`, `Dias úteis` = `0`, `Categoria` = `BWS`;
+6. **confere três vezes** antes de subir, incluindo **abrir o .xlsx gerado** e
+   checar se os CPFs esperados estão dentro — porque o Drive já entregou o
+   arquivo de outra conta (está escrito no comentário do script);
+7. sobe dois arquivos ao Dropbox (o de pagamento e uma cópia da planilha de
+   análise) e **cria um card por conta** no Pipefy;
+8. o rateio do card vai em **percentual com 7 casas**, ajustado para fechar 100%;
+9. avisa dois telefones por WhatsApp e registra em `LogSP`, `HistoricoBeeVale` e
+   `HistoricoBeeValeItens`.
+
+**PJ e Pró-labore** (blueprint 2): lê a faixa `AC4:AS500` da aba `GM` e cria
+**um card por PESSOA** — diferente do BeeVale, que é um por conta. Decide pessoa
+física × jurídica pelo **tamanho do texto** do documento, o que é frágil
+(§7.13.3).
+
+**A "categoria" que ele mencionou** é a peça que eu já tinha mapeado e que
+amarra tudo: cada aba busca três valores fixos por tipo de verba —
+`Código Categoria da Despesa` e `Tipo de Despesa Omie` na aba `PlanoFinanceiro`,
+e `Categoria BeeVale` na aba `DatabaseBeeVale`, pela descrição da verba
+("Despesas com Alimentação", "Despesas com Transporte",
+"Gratificações e Extras", "Salários e Ordenados"). É essa categoria que:
+
+- entra na **chave de consolidação** (conta + CPF + categoria);
+- vira a linha de **categorias do rateio** do card;
+- define o **tipo de despesa** do card no Pipefy.
+
+**Sim, está compreendido.** O que eu NÃO tenho é a tabela `DatabaseBeeVale` e a
+`PlanoFinanceiro` em si (são abas ocultas de poucas linhas) — elas precisam virar
+cadastro no sistema, e é carga, não cópia.
+
+### 7.18.2 O que ele acrescentou: poder JUNTAR verbas no mesmo arquivo
+
+> *"Normalmente a gente gera para cada tipo de verba, e para cada tipo de conta,
+> um arquivo. Mas de repente eu quero gerar alimentação e transporte no mesmo
+> arquivo do BeeVale. (…) ao invés de fazer três pagamentos, a gente faz só um.
+> Então isso facilita. Então eu quero ter essa opção."*
+
+A regra que fica:
+
+| | BeeVale | SomaPay |
+|---|---|---|
+| juntar **verbas diferentes** no mesmo arquivo | **pode**, e ele quer poder escolher | — |
+| o **mesmo CPF** aparecer duas vezes | **pode**, se a **natureza da verba** for diferente | **NÃO PODE** — o SomaPay recusa |
+| um arquivo por **conta** | sim | sim |
+
+⚠️ **A restrição do SomaPay é uma trava, não uma preferência.** Palavras dele:
+*"o Soma tem uma particularidade, tem que ser separado, porque eu não posso
+juntar no mesmo arquivo de pagamento mais de uma pessoa — quer dizer, aparecer
+uma, o mesmo CPF duas vezes. Não pode. O Soma não aceita."*
+
+Então o gerador tem de **conferir antes de gravar** e recusar com o nome de quem
+está repetido. Um arquivo que o SomaPay rejeita depois de subir custa a rodada
+inteira.
+
+**O desenho que isso pede:** a tela oferece as verbas e as contas, a pessoa marca
+o que quer junto, e o sistema:
+
+1. agrupa **sempre por conta** (isso não é escolha — a conta define de onde sai o
+   dinheiro);
+2. dentro da conta, junta as verbas marcadas **se o destino for BeeVale**;
+3. **se for SomaPay, separa por verba automaticamente** e explica na tela por que
+   não juntou — em vez de deixar a pessoa marcar e receber um erro;
+4. mostra, antes de gerar, **quantos arquivos vão sair e com que total cada um**.
+
+### 7.18.3 O que ainda não existe, e por que
+
+**Nada disso está implementado.** Não existe gerador de arquivo nenhum (§7.17.1).
+Para existir, falta a peça que sustenta tudo: **a folha guardada no banco** — a
+competência, as pessoas, os valores por verba e a apropriação por obra. Hoje o
+cálculo existe em memória (`folha_apropriacao`), sem lugar para ficar.
+
+A ordem, então, é:
+
+1. **guardar a folha** (a migração e a tela de importação do arquivo da
+   contabilidade);
+2. as telas por verba (alimentação, transporte, diaristas, GM) — que é como ele
+   trabalha hoje na planilha, uma aba por verba;
+3. o **painel** com os totais por obra e por conta (§7.19);
+4. os **geradores** de arquivo, com a escolha de juntar ou separar;
+5. os **cards** do Pipefy, como passo separado e opcional (já decidido em 26/09).
+
+## 7.19 O PAINEL QUE ELE PEDIU (27/09/2026)
+
+> *"Tem que ter informação gerencial, né, tipo dashboard, para poder estar vendo
+> qual é o total por obra, porque isso já ajuda nessa questão do rateio. (…) eu
+> queria poder ter dashboard com os totais da folha, de alimentação e transporte,
+> a folha da contabilidade, conseguir em um ambiente visualizar tudo, saber como
+> é que está a distribuição por obra, por conta."*
+
+**Isto não é enfeite: é entrada do trabalho dele.** Ele disse por quê — é olhando
+o total por obra que ele decide o rateio do mês ("as obras que estão em
+evidência"). Então o painel vem ANTES do rateio na ordem de uso, mesmo tendo sido
+pedido depois.
+
+O que o painel mostra, pelo que ele descreveu:
+
+- **total geral** da folha do mês, e por **tipo de verba** (contabilidade,
+  alimentação, transporte, diaristas, GM, PJ/pró-labore);
+- **total por obra**, ordenado do maior para o menor — é a lista que responde
+  "quais obras estão em evidência";
+- **total por conta corrente** — é o que diz quantos pagamentos vão sair;
+- os **somatórios** conferindo com a folha da contabilidade (o "fecha ou não
+  fecha" que já existe em `folha_apropriacao`).
+
+**Depende da folha guardada no banco** (§7.18.3, passo 1): não há como somar por
+obra o que não está gravado. É o próximo passo, e é o que destrava tanto o painel
+quanto as telas por verba.
+
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

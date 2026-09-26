@@ -4706,18 +4706,32 @@ def test_o_rateio_da_folha_e_SO_DO_MESTRE():
     opera a folha; o rateio é do dono."""
     from app.apps.analisesps import auth as guarda
 
-    assert "folha_rateio" in guarda.SO_DO_MESTRE_POR_TELA
+    # ⚠️ EM 27/09/2026 A PROTEÇÃO MUDOU DE LUGAR, e ficou MAIS estrita, não menos.
+    # A folha virou UMA tela no menu ("folha") com as subtelas por dentro, então
+    # "folha_rateio" deixou de existir como chave de tela. Quem barra o rateio
+    # agora é a lista por NOME DE ROTA — que não depende de ninguém lembrar de
+    # classificar uma tela.
+    assert "folha_rateio" not in guarda.SO_DO_MESTRE_POR_TELA
     for rota in ("analisesps.tela_folha_rateio", "analisesps.folha_rateio_gravar",
                  "analisesps.folha_rateio_apagar",
-                 "analisesps.folha_rateio_simular"):
+                 "analisesps.folha_rateio_simular",
+                 "analisesps.folha_rateio_colar"):
         assert guarda.e_so_do_mestre(rota) is True, rota
+    # E a tela do CADASTRO não é do mestre: é leitura, e o DP precisa dela.
+    assert guarda.e_so_do_mestre("analisesps.tela_colaboradores") is False
+    assert guarda.e_so_do_mestre("analisesps.tela_folha") is False
 
 
 def test_a_tela_de_rateio_NAO_e_oferecida_no_cadastro_de_acesso(monkeypatch):
     """Tela que só o mestre abre não pode aparecer na lista de telas liberáveis —
     liberar e a pessoa levar 404 é pior que não liberar."""
     from app.apps.analisesps import usuarios
-    assert "folha_rateio" not in [t[0] for t in usuarios.telas_liberaveis()]
+    liberaveis = [t[0] for t in usuarios.telas_liberaveis()]
+    # "folha_rateio" não é mais chave de tela nenhuma (ver o teste acima).
+    assert "folha_rateio" not in liberaveis
+    # A ÁREA da folha é liberável — é assim que o DP ganha o cadastro. O rateio
+    # por dentro continua barrado pela lista de rotas do mestre.
+    assert "folha" in liberaveis
 
 
 def test_apagar_uma_regra_recomenda_DESATIVAR_antes():
@@ -4951,7 +4965,11 @@ def test_o_cadastro_entra_na_tela_de_RATEIO_com_o_link(app, monkeypatch):
     # O NOME DO CADASTRO GANHA do digitado na mão: é o que a folha e o ponto
     # usam, e é como a pessoa é conhecida nos outros sistemas.
     assert "GERLANIO GOMES LIMA" in html
-    assert 'id="btn-atualizar-cadastro"' in html
+    # ⚠️ O BOTÃO DE ATUALIZAR O CADASTRO NÃO FICA MAIS AQUI — 27/09/2026. Ele
+    # mora na subtela Colaboradores, que é onde o cadastro é mostrado. O dono:
+    # *"não precisa dar aquela ênfase, porque a gente já sabe."* O mesmo botão em
+    # duas telas faz a pessoa perguntar se são a mesma coisa.
+    assert 'id="btn-atualizar-cadastro"' not in html
 
 
 def test_cpf_que_NAO_esta_no_cadastro_e_marcado_na_tela_de_rateio(app, monkeypatch):
@@ -5012,10 +5030,14 @@ def test_o_botao_de_atualizar_o_cadastro_dispara_o_modo_certo(app):
 
     caminho = __import__("pathlib").Path(
         __import__("app.apps.analisesps.web", fromlist=["web"]).__file__).parent
-    for nome in ("analisesps_colaboradores.html", "analisesps_folha_rateio.html"):
-        html = (caminho / "templates" / nome).read_text(encoding="utf-8")
-        assert 'modo: "colaboradores"' in html, f"{nome} não dispara o modo"
-        assert "analisesps.sincronizar" in html
+    html = (caminho / "templates" / "analisesps_colaboradores.html").read_text(
+        encoding="utf-8")
+    assert 'modo: "colaboradores"' in html
+    assert "analisesps.sincronizar" in html
+    # E o botão NÃO está duplicado na tela de rateio (ver o teste acima).
+    rateio = (caminho / "templates" / "analisesps_folha_rateio.html").read_text(
+        encoding="utf-8")
+    assert 'id="btn-atualizar-cadastro"' not in rateio
 
     # E o modo existe de verdade, com etapa própria e botão em Configurações.
     assert "colaboradores" in tarefas.MODOS
@@ -5028,16 +5050,22 @@ def test_a_tela_de_colaboradores_esta_no_menu_e_classificada(app):
     ninguém classificou não abre para ninguém."""
     from app.apps.analisesps import auth as guarda, web
 
+    # ⚠️ UMA ENTRADA SÓ NO MENU para toda a folha — 27/09/2026. O dono, depois de
+    # ver duas entradas novas: *"eles têm que estar dentro de uma tela só. E lá
+    # ter as subtelas, porque senão vai ficar tela demais, fica até misturado com
+    # o restante, que tem mais a ver com o financeiro."*
     chaves = [c for c, _, _ in web.TELAS]
-    assert "colaboradores" in chaves
-    assert web.TELAS[chaves.index("colaboradores")][2] == \
-        "analisesps.tela_colaboradores"
-    assert guarda.telas_da_rota("analisesps.tela_colaboradores") == \
-        ("colaboradores",)
-    # ⚠️ NÃO é só do mestre: é LEITURA, e quem opera a folha precisa conferir o
-    # auxílio de alguém e chegar ao card. O RATEIO, que decide para qual obra vai
-    # o salário, continua só do mestre.
-    assert "colaboradores" not in guarda.SO_DO_MESTRE_POR_TELA
+    assert "folha" in chaves
+    assert web.TELAS[chaves.index("folha")][2] == "analisesps.tela_folha"
+    assert "colaboradores" not in chaves, "a subtela não pode virar item de menu"
+    assert "folha_rateio" not in chaves
+    # As duas subtelas respondem pela MESMA tela de permissão.
+    assert guarda.telas_da_rota("analisesps.tela_colaboradores") == ("folha",)
+    assert guarda.telas_da_rota("analisesps.tela_folha") == ("folha",)
+    # ⚠️ A área NÃO é só do mestre: é leitura, e quem opera a folha precisa
+    # conferir o auxílio de alguém e chegar ao card. O RATEIO, que decide para
+    # qual obra vai o salário, continua só do mestre — por rota.
+    assert "folha" not in guarda.SO_DO_MESTRE_POR_TELA
     assert "analisesps.tela_colaboradores" not in guarda.SO_DO_MESTRE
 
 
@@ -5177,3 +5205,92 @@ def test_quem_esta_saindo_e_marcado_tambem_na_tela_de_RATEIO(app, monkeypatch):
         "/analisesps/folha/rateio").get_data(as_text=True)
     assert "está saindo" in html
     assert "18/09/2026" in html
+
+
+# ---------------------------------------------------------------------------
+# UMA TELA SÓ PARA A FOLHA, COM SUBTELAS — 27/09/2026
+# ---------------------------------------------------------------------------
+def test_a_porta_da_folha_manda_para_a_primeira_subtela(app):
+    """Um índice com dois links seria um clique a mais para o mesmo lugar."""
+    resposta = _como_mestre(app).get("/analisesps/folha")
+    assert resposta.status_code in (301, 302)
+    assert "/folha/colaboradores" in resposta.headers.get("Location", "")
+
+
+def test_as_subtelas_aparecem_dentro_da_tela_da_folha(app, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    monkeypatch.setattr(col, "contar_quem_esta_saindo",
+                        lambda *a, **k: {"com_sinal": 0, "saiu": 0,
+                                         "afastado": 0})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    assert "abas-folha" in html, "a barra de subtelas tem de aparecer"
+    assert "Colaboradores" in html
+    assert "Rateio das obras" in html
+    # E o menu de cima tem UMA entrada para a folha, não duas.
+    assert html.count(">Folha PGT<") == html.count("Folha PGT")
+
+
+def test_quem_NAO_e_mestre_nao_ve_a_subtela_do_rateio(app, monkeypatch):
+    """Aba que responde 404 é pior do que aba nenhuma — mesmo motivo do menu de
+    cima. O rateio decide para qual obra vai o salário: é do dono."""
+    from app.apps.analisesps import auth as guarda, web
+
+    monkeypatch.setattr(guarda, "e_mestre", lambda: False)
+    nomes = [s[1] for s in web.subtelas_da_folha()]
+    assert "Colaboradores" in nomes
+    assert "Rateio das obras" not in nomes
+
+    monkeypatch.setattr(guarda, "e_mestre", lambda: True)
+    assert "Rateio das obras" in [s[1] for s in web.subtelas_da_folha()]
+
+
+def test_a_caixa_de_colar_a_tabela_e_o_caminho_PRINCIPAL_do_rateio(app, monkeypatch):
+    """⚠️ Correção do dono em 27/09/2026: preencher campo por campo para dez
+    pessoas em dez obras seriam cem campos. *"É absurdo."*"""
+    from app.apps.analisesps import (colaboradores as col, folha_rateio as fr,
+                                     sincronizacao)
+
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "muitos_por_cpf", lambda cpfs, ate=None: {})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/rateio").get_data(as_text=True)
+
+    assert 'id="tabela-rateio"' in html
+    assert "Repetir a obra é o peso dela" in html
+    # O formato tem de estar escrito na tela: ninguém adivinha um formato.
+    assert "CPF ; nome ; obra, obra, obra" in html
+    # E o "à mão" continua existindo, mas como caminho secundário.
+    assert "uma regra à mão" in html
+    assert "secundario" in html
+    # Substituir avisa que DESATIVA, não apaga.
+    assert "desativa" in html
+
+
+def test_a_tela_do_rateio_NAO_repete_a_explicacao_do_card(app, monkeypatch):
+    """*"Não precisa dar aquela ênfase, porque a gente já sabe, ali a gente clica
+    no nome da pessoa, já abre o card do Pipefy e lá atualiza."* Explicar numa
+    tela o que a pessoa faz todo dia é ocupar espaço com o óbvio."""
+    from app.apps.analisesps import (colaboradores as col, folha_rateio as fr,
+                                     sincronizacao)
+
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "muitos_por_cpf", lambda cpfs, ate=None: {})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/rateio").get_data(as_text=True)
+    assert "se corrige" not in html
+    assert "Depois de corrigir" not in html

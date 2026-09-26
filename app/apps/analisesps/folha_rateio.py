@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import re
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 logger = logging.getLogger("analisesps.folha")
 
@@ -150,6 +150,159 @@ def conferir_obras(obras) -> list:
             f"Os percentuais somam {soma:.2f}% — têm de somar 100%. "
             "Ou marque uma obra como \"o resto\" e eu faço a conta.")
     return arrumadas
+
+
+# ---------------------------------------------------------------------------
+# REPETIR A OBRA É O PESO DELA — e colar a tabela de uma vez
+#
+# ⚠️ POR QUE ISTO EXISTE, nas palavras do dono em 27/09/2026:
+#
+#   "Imagina, eu tenho 10 funcionários, eu quero ratear em 10 obras diferentes.
+#    Aí imagina preencher 10 funcionários 10 vezes cada campozinho. 10 vezes 10
+#    dá 100. Imagina preencher 100 campos. É absurdo. (…) Para eu não precisar
+#    trabalhar com percentual, imagina que eu coloco código da obra 1, código da
+#    obra 2 e código da obra 2 de novo. O que é que o sistema teria que
+#    entender? 66% para uma e os 33% para outra."
+#
+# Ele está certo, e o formulário campo-por-campo era meu erro de desenho: eu
+# resolvi o CASO de uma regra e ignorei o VOLUME de dez.
+#
+# O MODELO NO BANCO NÃO MUDA. A repetição é só a forma de ENTRAR: ela é contada
+# e virada percentual aqui, e daí para baixo é o mesmo `conferir_obras` de
+# sempre. Uma segunda forma de guardar rateio divergiria da primeira no dia em
+# que alguém mexesse numa só.
+# ---------------------------------------------------------------------------
+def obras_por_repeticao(codigos) -> list:
+    """`["A", "B", "B"]` -> A com 33,3333% e B com 66,6667%.
+
+    O peso de cada obra é QUANTAS VEZES ela aparece. Fecha exatamente 100%: a
+    sobra do arredondamento vai para a obra de maior peso, que é a mesma regra
+    que `distribuir` usa para a sobra de centavo (decisão do dono em
+    26/09/2026 — "pode botar na obra com mais dias").
+    """
+    contagem: dict = {}
+    for bruto in codigos or []:
+        nome = " ".join(str(bruto or "").split()).upper()
+        if not nome:
+            continue
+        contagem[nome] = contagem.get(nome, 0) + 1
+    if not contagem:
+        raise ErroDoRateio("Escolha ao menos uma obra para a regra.")
+
+    total = sum(contagem.values())
+    # A de maior peso primeiro; empate, a que foi digitada primeiro. Assim a
+    # sobra cai sempre no mesmo lugar, e duas colagens iguais dão o mesmo
+    # resultado — rateio que muda sozinho entre duas rodadas é impossível de
+    # conferir.
+    ordem = sorted(contagem.items(), key=lambda p: (-p[1], list(contagem).index(p[0])))
+
+    # Todas por baixo primeiro (ROUND_DOWN), e a sobra inteira vai para a
+    # PRIMEIRA — que é a de maior peso. Fazer o contrário (a última fechar a
+    # conta) daria a sobra para a obra de MENOR peso, e foi exatamente o defeito
+    # que apareceu no primeiro teste desta função.
+    saida = [{"obra": nome, "resto": False,
+              "percentual": (CEM * Decimal(vezes) / Decimal(total)).quantize(
+                  Decimal("0.0001"), rounding=ROUND_DOWN)}
+             for nome, vezes in ordem]
+    sobra = CEM - sum((o["percentual"] for o in saida), Decimal("0"))
+    if sobra:
+        saida[0]["percentual"] = (saida[0]["percentual"] + sobra).quantize(
+            Decimal("0.0001"))
+    return saida
+
+
+def ler_tabela_de_rateio(texto: str) -> list:
+    """Lê a tabela colada e devolve as regras prontas para gravar.
+
+    UMA LINHA POR PESSOA:
+
+        997.133.493-34 ; GERLANIO GOMES LIMA ; CREPEAREIAS, CREPEOLINDA, CREPEOLINDA
+
+    O separador entre os três blocos é `;` ou tabulação (é o que sai ao copiar
+    de uma planilha). As obras vêm separadas por vírgula, e **repetir a obra é o
+    peso dela**.
+
+    O NOME DA PESSOA É OPCIONAL: quem manda é o CPF, e o nome de verdade vem do
+    cadastro. Aceita também `CPF ; obras` sem nome no meio — é o que acontece
+    quando se cola duas colunas em vez de três.
+
+    JUNTA QUEM TEM A MESMA DISTRIBUIÇÃO numa regra só. Dez pessoas com o mesmo
+    rateio não são dez regras: são uma, com dez pessoas. É o que faz a tela
+    continuar legível depois de colar trinta linhas.
+
+    Devolve `[{"obras": [...], "pessoas": [...], "linhas": [n, ...]}, ...]`.
+    Levanta `ErroDoRateio` com o número da linha quando algo não dá para ler —
+    "não entendi a tabela" mandaria a pessoa procurar agulha em trinta linhas.
+    """
+    grupos: dict = {}
+    ordem: list = []
+
+    for numero, bruta in enumerate(str(texto or "").splitlines(), start=1):
+        linha = bruta.strip()
+        if not linha or linha.startswith("#"):
+            continue
+        # `;` e tabulação separam os blocos. A vírgula NÃO separa blocos: ela
+        # separa obras, e também aparece dentro de nome ("SOUSA, ANA").
+        partes = [p.strip() for p in re.split(r"[;\t]+", linha) if p.strip()]
+        if len(partes) < 2:
+            raise ErroDoRateio(
+                f"Linha {numero}: falta o CPF ou a lista de obras. O formato é "
+                "CPF ; nome ; obra, obra, obra — o nome pode faltar.")
+
+        cpf = so_digitos(partes[0])
+        if len(cpf) != 11:
+            raise ErroDoRateio(
+                f'Linha {numero}: "{partes[0]}" não é um CPF de 11 dígitos.')
+        if not cpf_valido(cpf):
+            raise ErroDoRateio(
+                f"Linha {numero}: o CPF {cpf_bonito(cpf)} tem dígito "
+                "verificador errado — confira se não trocou um número.")
+
+        # O último bloco é sempre o das obras. O do meio, quando existe, é o
+        # nome — e se houver mais de três blocos, o nome é o que está no meio.
+        obras_cru = partes[-1]
+        nome = " ".join(partes[1:-1]).strip() if len(partes) > 2 else ""
+        codigos = [c.strip() for c in obras_cru.split(",") if c.strip()]
+        if not codigos:
+            raise ErroDoRateio(
+                f"Linha {numero}: não achei nenhuma obra depois do nome.")
+
+        try:
+            obras = obras_por_repeticao(codigos)
+        except ErroDoRateio as e:
+            raise ErroDoRateio(f"Linha {numero}: {e}") from e
+
+        # A chave do grupo é a distribuição, não a ordem de digitação: quem
+        # escreveu "A, B, B" e quem escreveu "B, A, B" tem o MESMO rateio.
+        chave = tuple(sorted((o["obra"], str(o["percentual"])) for o in obras))
+        if chave not in grupos:
+            grupos[chave] = {"obras": obras, "pessoas": [], "linhas": []}
+            ordem.append(chave)
+        grupos[chave]["pessoas"].append({"cpf": cpf, "nome": nome})
+        grupos[chave]["linhas"].append(numero)
+
+    if not ordem:
+        raise ErroDoRateio(
+            "Não achei nenhuma linha para ler. Uma linha por pessoa: "
+            "CPF ; nome ; obra, obra, obra.")
+
+    # A MESMA PESSOA EM DUAS LINHAS é erro, e tem de dizer quais: só uma regra
+    # pode valer para alguém (é a trava que já existe na gravação), então duas
+    # linhas do mesmo CPF fariam a segunda derrubar a primeira sem avisar.
+    onde: dict = {}
+    for chave in ordem:
+        for pessoa, numero in zip(grupos[chave]["pessoas"], grupos[chave]["linhas"]):
+            onde.setdefault(pessoa["cpf"], []).append(numero)
+    repetidos = {c: ns for c, ns in onde.items() if len(ns) > 1}
+    if repetidos:
+        detalhe = "; ".join(
+            f"{cpf_bonito(c)} nas linhas {', '.join(str(n) for n in ns)}"
+            for c, ns in list(repetidos.items())[:4])
+        raise ErroDoRateio(
+            f"A mesma pessoa aparece em mais de uma linha: {detalhe}. "
+            "Junte as obras dela numa linha só — repetir a obra é o peso.")
+
+    return [grupos[c] for c in ordem]
 
 
 def percentuais_efetivos(obras) -> list:
@@ -374,6 +527,69 @@ def gravar(dados: dict, quem: str = "") -> int:
                 "%s obra(s).", quem or "?", regra_id, nome, len(pessoas),
                 len(obras))
     return regra_id
+
+
+def aplicar_tabela(texto: str, quem: str = "",
+                   substituir: bool = True) -> dict:
+    """Grava de uma vez todas as regras da tabela colada.
+
+    ⚠️ `substituir=True` DESATIVA as regras que estão valendo antes de criar as
+    novas — não apaga. É o que o dono descreveu do trabalho de verdade:
+
+        "O rateio muda todo mês. Não existe um rateio fixo. Todo mês eu tenho
+         que analisar as obras que estão em evidência."
+
+    DESATIVAR E NÃO APAGAR é o que preserva a explicação da folha passada: a
+    regra desativada continua dizendo como março foi rateado. Apagar deixaria
+    um total de obra sem resposta.
+
+    E é também o que faz a colagem FUNCIONAR: só uma regra ativa pode valer para
+    uma pessoa (a trava em `gravar`), então sem desativar antes, colar a tabela
+    do mês seguinte seria recusado pela do mês anterior.
+
+    Tudo numa transação: uma colagem pela metade — com as regras velhas
+    desativadas e as novas não criadas — deixaria gente sem rateio nenhum, e o
+    valor cairia na obra do ponto sem ninguém pedir.
+    """
+    if not _pronto():
+        raise ErroDoRateio(FALTA_MIGRAR)
+    from .db import conexao
+
+    # Lê e confere TUDO antes de escrever qualquer coisa. Se a linha 28 estiver
+    # errada, nada foi mexido.
+    grupos = ler_tabela_de_rateio(texto)
+
+    desativadas = 0
+    with conexao() as conn:
+        if substituir:
+            cur = conn.execute(
+                "UPDATE analisesps.folha_regra_rateio SET ativa = false, "
+                "       alterado_em = now(), alterado_por = ? "
+                " WHERE ativa", (quem or "",))
+            desativadas = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+            cur.close()
+        conn.commit()
+
+    criadas = []
+    for grupo in grupos:
+        # O NOME SAI DAS OBRAS, porque é como ele vai reconhecer a regra na
+        # tela. Nome pedido a cada colagem seria uma pergunta por grupo — e em
+        # trinta linhas isso é trinta perguntas.
+        nomes = [o["obra"] for o in grupo["obras"]]
+        nome = " + ".join(nomes)
+        if len(nome) > 70:
+            nome = f"{nomes[0]} + {len(nomes) - 1} obra(s)"
+        criadas.append(gravar({
+            "nome": nome,
+            "observacao": f"colado da tabela ({len(grupo['pessoas'])} pessoa(s))",
+            "ativa": True,
+            "pessoas": grupo["pessoas"],
+            "obras": grupo["obras"],
+        }, quem=quem))
+
+    return {"regras": len(criadas), "ids": criadas,
+            "pessoas": sum(len(g["pessoas"]) for g in grupos),
+            "desativadas": desativadas}
 
 
 def apagar(regra_id: int, quem: str = "") -> bool:

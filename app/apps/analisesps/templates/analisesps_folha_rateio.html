@@ -3,6 +3,8 @@
 {% block classe_corpo %}sem-filtros{% endblock %}
 
 {% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
 <h2>Rateio da Folha <small>{{ regras|length }} regra(s)</small></h2>
 
 <p class="cartao-dica" style="margin-bottom:14px">
@@ -21,8 +23,51 @@
   </div>
 {% else %}
 
+{# ------------------------------------------------------------------------
+   COLAR A TABELA DO MÊS — o caminho principal desde 27/09/2026.
+
+   ⚠️ O FORMULÁRIO CAMPO A CAMPO ERA ERRO DE DESENHO MEU, e o dono foi direto:
+   *"imagina, eu tenho 10 funcionários, eu quero ratear em 10 obras diferentes.
+   Aí imagina preencher 10 funcionários 10 vezes cada campozinho. 10 vezes 10 dá
+   100. Imagina preencher 100 campos. É absurdo."*
+
+   Eu resolvi o CASO de uma regra e ignorei o VOLUME de dez. O "+ uma regra à
+   mão" continua, para ajustar UMA pessoa — mas não é mais a porta de entrada.
+
+   REPETIR A OBRA É O PESO DELA: é o que tira o percentual da frente de quem
+   digita. "A, B, B" é um terço e dois terços, e a conta fecha em 100% exatos.
+   ------------------------------------------------------------------------ #}
+{% if pode_operar %}
+<div class="cartao">
+  <label class="rotulo-campo" for="tabela-rateio">Colar a tabela do mês</label>
+  <p class="cartao-dica" style="margin:0 0 8px">
+    Uma linha por pessoa: <b>CPF ; nome ; obra, obra, obra</b> — o nome pode
+    faltar, e o separador pode ser <b>;</b> ou uma tabulação (é o que sai ao
+    copiar da planilha). <b>Repetir a obra é o peso dela:</b> escrever
+    <code>OBRA1, OBRA2, OBRA2</code> dá 33,33% para a primeira e 66,67% para a
+    segunda. Quem tiver a mesma distribuição vira uma regra só.
+  </p>
+  <textarea id="tabela-rateio" rows="6" class="campo-largo"
+            spellcheck="false"
+            placeholder="997.133.493-34 ; GERLANIO GOMES LIMA ; CREPEAREIAS, CREPEOLINDA, CREPEOLINDA"></textarea>
+  <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <button class="btn" id="btn-colar-tabela">Aplicar a tabela</button>
+    <label class="cartao-dica" style="margin:0">
+      <input type="checkbox" id="tabela-substituir" checked>
+      substituir o rateio que está valendo
+    </label>
+    <span id="recado-tabela" class="cartao-dica" style="margin:0"></span>
+  </div>
+  <p class="cartao-dica" style="margin:8px 0 0">
+    Substituir <b>desativa</b> as regras de agora — não apaga. A regra desativada
+    continua explicando como a folha do mês passado foi rateada, e o botão
+    "copiar para a tabela" dela devolve as linhas prontas para você ajustar.
+  </p>
+</div>
+{% endif %}
+
 <div class="barra-acoes">
-  <button class="btn" id="btn-nova-regra">+ Nova regra</button>
+  <button class="btn secundario" id="btn-nova-regra">+ uma regra à mão</button>
   <span id="recado-rateio" class="cartao-dica" style="margin:0"></span>
 </div>
 
@@ -35,34 +80,14 @@
    essa informação é caixa preta — e já houve um que dizia "concluída" sem ter
    feito nada (10/09/2026).
    ------------------------------------------------------------------------ #}
-<div class="cartao barra-cadastro">
-  <div>
-    <b>Cadastro de colaboradores</b>
-    {% if cadastro and cadastro.quando %}
-      <span class="cartao-dica">{{ cadastro.pessoas }} pessoa(s), trazidas em
-        {{ cadastro.quando[8:10] }}/{{ cadastro.quando[5:7] }} às
-        {{ cadastro.quando[11:16] }}</span>
-    {% elif cadastro and cadastro.pronto %}
-      <span class="cartao-dica">ainda não foi trazido nenhuma vez.</span>
-    {% else %}
-      <span class="cartao-dica">a atualização do banco ainda não foi aplicada —
-        aperte "Aplicar atualizações do banco" em Configurações.</span>
-    {% endif %}
-    <p class="cartao-dica" style="margin:.3rem 0 0">
-      O valor do auxílio alimentação, do transporte e da gratificação se corrige
-      <b>no card do Pipefy</b> — clique no nome da pessoa para abrir. Depois de
-      corrigir lá, aperte o botão ao lado para trazer para cá.
-    </p>
-    {% if cadastro and cadastro.avisos %}
-      <div class="aviso atencao">⚠️ {{ cadastro.avisos|join('; ') }}</div>
-    {% endif %}
-  </div>
-  {% if pode_operar %}
-    <button class="btn secundario" id="btn-atualizar-cadastro"
-            {% if not (cadastro and cadastro.pronto) %}disabled{% endif %}
-            >Atualizar cadastro</button>
-  {% endif %}
-</div>
+{# A BARRA DO CADASTRO FICOU ENXUTA em 27/09/2026. O dono: *"não precisa dar
+   aquela ênfase, porque a gente já sabe, ali a gente clica no nome da pessoa, já
+   abre o card do Pipefy e lá atualiza."* Ele está certo: explicar numa tela o
+   que a pessoa já faz todo dia é ocupar espaço com o óbvio. Sobra a informação
+   que ele NÃO tem de cabeça — de quando é a cópia — e o aviso, se houver. #}
+{% if cadastro and cadastro.avisos %}
+  <div class="aviso atencao">⚠️ {{ cadastro.avisos|join('; ') }}</div>
+{% endif %}
 
 {% if not regras %}
   <p class="cartao-dica">Nenhuma regra ainda. Quem não tiver regra continua sendo
@@ -89,7 +114,17 @@
 
     <div class="regra-dois-lados">
       <div>
-        <label class="rotulo-campo">Quem ({{ r.pessoas|length }})</label>
+        <label class="rotulo-campo">Quem ({{ r.pessoas|length }})
+          {% if pode_operar %}
+            {# É o "reaplicar o mês anterior" que ele pediu: pega a regra —
+               inclusive uma desativada — e devolve as linhas prontas, já com a
+               obra repetida no peso certo. #}
+            <button class="btn secundario copiar-para-tabela"
+                    data-regra="{{ r|tojson|forceescape }}"
+                    style="font-size:11.5px; padding:2px 8px"
+                    title="Põe estas pessoas e obras na caixa de colar, para você ajustar">copiar para a tabela</button>
+          {% endif %}
+        </label>
         <ul class="lista-seca">
           {% for p in r.pessoas %}
             {# O NOME LEVA AO CARD DO PIPEFY quando a pessoa está no cadastro.
@@ -355,48 +390,85 @@ document.querySelectorAll(".apagar-regra").forEach(b =>
     location.reload();
   }));
 
-// --- atualizar o cadastro de colaboradores ---------------------------------
-// ⚠️ O BOTÃO NÃO PODE SER CAIXA PRETA. A leitura roda no processo separado e
-// leva alguns segundos; sem acompanhar, quem aperta não sabe se começou — e o
-// hábito de apertar de novo (e de novo) é o que faz concluir que o sistema
-// está quebrado. Então: desabilita, conta que está rodando, e recarrega a tela
-// quando termina, para a hora e a contagem aparecerem atualizadas.
-const btnCadastro = document.getElementById("btn-atualizar-cadastro");
-if (btnCadastro) btnCadastro.addEventListener("click", async () => {
-  btnCadastro.disabled = true;
-  const antes = btnCadastro.textContent;
-  btnCadastro.textContent = "trazendo…";
+// O botão de atualizar o cadastro mora na subtela Colaboradores, que é onde o
+// cadastro é mostrado. Ter o mesmo botão em duas telas faria a pessoa perguntar
+// se são a mesma coisa.
+
+// --- colar a tabela do mês ------------------------------------------------
+const caixaTabela = document.getElementById("tabela-rateio");
+const recadoTabela = document.getElementById("recado-tabela");
+const btnColar = document.getElementById("btn-colar-tabela");
+
+function recadoDaTabela(texto, classe) {
+  if (!recadoTabela) return;
+  recadoTabela.textContent = texto || "";
+  recadoTabela.className = "cartao-dica" + (classe ? " " + classe : "");
+}
+
+if (btnColar) btnColar.addEventListener("click", async () => {
+  const tabela = (caixaTabela.value || "").trim();
+  if (!tabela) { recadoDaTabela("Cole a tabela primeiro.", "erro"); return; }
+  const substituir = document.getElementById("tabela-substituir").checked;
+  // ⚠️ SUBSTITUIR MEXE EM TUDO, então pergunta antes — e diz o que substituir
+  // FAZ (desativa, não apaga), porque é a diferença entre perder e não perder a
+  // explicação da folha passada.
+  if (substituir && !confirm(
+      "Aplicar a tabela e substituir o rateio que está valendo?\n\n" +
+      "As regras de agora ficam DESATIVADAS (não são apagadas): elas continuam " +
+      "explicando como a folha do mês passado foi rateada.")) return;
+
+  btnColar.disabled = true;
+  recadoDaTabela("conferindo…");
   try {
-    const r = await fetch("{{ url_for('analisesps.sincronizar') }}", {
+    const r = await fetch("{{ url_for('analisesps.folha_rateio_colar') }}", {
       method: "POST",
-      headers: {"Content-Type": "application/json", "Accept": "application/json"},
-      body: JSON.stringify({modo: "colaboradores"})
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tabela: tabela, substituir: substituir})
     });
     const d = await r.json();
-    if (!d.ok) {
-      recado(d.erro || "não deu para começar.", "erro");
-      btnCadastro.disabled = false; btnCadastro.textContent = antes; return;
-    }
-    recado("trazendo o cadastro… pode esperar aqui.");
-    // Pergunta ao servidor de quatro em quatro segundos. O andamento vem do
-    // BANCO, então continua certo mesmo se o serviço reiniciar no meio.
-    const relogio = setInterval(async () => {
-      try {
-        const a = await fetch("{{ url_for('analisesps.andamento') }}");
-        const e = await a.json();
-        if (e.rodando) {
-          btnCadastro.textContent = (e.progresso || e.etapa || "trazendo…");
-        } else {
-          clearInterval(relogio);
-          location.reload();
-        }
-      } catch (err) { /* rede oscilou: a próxima volta resolve */ }
-    }, 4000);
+    if (!d.ok) { recadoDaTabela(d.erro, "erro"); btnColar.disabled = false; return; }
+    location.reload();
   } catch (e) {
-    recado("falhou: " + e, "erro");
-    btnCadastro.disabled = false; btnCadastro.textContent = antes;
+    recadoDaTabela("falhou: " + e, "erro");
+    btnColar.disabled = false;
   }
 });
+
+// --- copiar uma regra existente para a caixa de colar ----------------------
+// Devolve as linhas no MESMO formato que se cola, com a obra repetida no peso.
+// É assim que "reaplicar o mês anterior" funciona sem eu inventar um segundo
+// jeito de guardar rateio.
+document.querySelectorAll(".copiar-para-tabela").forEach(b =>
+  b.addEventListener("click", () => {
+    const regra = JSON.parse(b.dataset.regra);
+    // O peso vira repetição. O menor percentual da regra é uma "parte"; as
+    // outras obras entram tantas vezes quanto couberem nela. Com pesos que não
+    // são múltiplos exatos, arredonda para a parte mais próxima — e a tela
+    // avisa, porque aí o que volta não é idêntico ao que estava gravado.
+    const comPercentual = (regra.obras || []).filter(o => o.percentual);
+    if (!comPercentual.length) {
+      recadoDaTabela("Esta regra usa \"o resto\"; ajuste-a pelo Editar.", "erro");
+      return;
+    }
+    const menor = Math.min(...comPercentual.map(o => parseFloat(o.percentual)));
+    let exato = true;
+    const codigos = [];
+    comPercentual.forEach(o => {
+      const vezes = Math.max(1, Math.round(parseFloat(o.percentual) / menor));
+      if (Math.abs(parseFloat(o.percentual) / menor - vezes) > 0.01) exato = false;
+      for (let i = 0; i < vezes; i++) codigos.push(o.obra);
+    });
+    const obras = codigos.join(", ");
+    const linhas = (regra.pessoas || []).map(
+      p => `${p.cpf_bonito} ; ${p.nome || ""} ; ${obras}`);
+    const atual = (caixaTabela.value || "").trim();
+    caixaTabela.value = (atual ? atual + "\n" : "") + linhas.join("\n");
+    caixaTabela.focus();
+    recadoDaTabela(
+      linhas.length + " linha(s) na caixa" +
+      (exato ? "." : " — os pesos foram arredondados, confira antes de aplicar."),
+      exato ? "" : "erro");
+  }));
 </script>
 {% endif %}
 {% endblock %}

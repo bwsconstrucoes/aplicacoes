@@ -2210,3 +2210,24 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
 /* A linha inteira ganha um talho âmbar à esquerda. Fundo colorido na linha toda
    brigaria com a leitura dos valores, que é o que se vem ler nesta tela. */
 .sps tr.linha-alerta > td:first-child { box-shadow: inset 3px 0 0 var(--ambar); }
+
+/* ---------------------------------------------------------------------------
+   AS SUBTELAS DA FOLHA (27/09/2026)
+
+   Menores e mais discretas que as abas do topo, de propósito: são telas DENTRO
+   de uma área, não áreas do módulo. Se tivessem o mesmo peso visual, voltariam
+   a parecer "tela demais" — que é justamente o que o dono reclamou.
+   --------------------------------------------------------------------------- */
+.abas-folha {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  margin: 0 0 16px; border-bottom: 1px solid var(--linha, #E3E5EA);
+}
+.aba-folha {
+  padding: 7px 14px; font-size: 13.5px; color: var(--cinza, #6B7280);
+  text-decoration: none; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; white-space: nowrap;
+}
+.aba-folha:hover { color: var(--azul); }
+.aba-folha.ativa {
+  color: var(--azul); font-weight: 600; border-bottom-color: var(--azul);
+}

@@ -126,6 +126,32 @@ def versao_publicada() -> str:
 
 
 # ---------------------------------------------------------------------------
+# AS SUBTELAS DA FOLHA
+#
+# Uma entrada no menu ("Folha PGT") e, por dentro, as telas de cada trabalho —
+# do jeito que a planilha que ela substitui é organizada: uma aba para
+# alimentação, uma para transporte, uma para diaristas, uma para importar.
+#
+# ⚠️ AS QUE AINDA NÃO EXISTEM NÃO APARECEM AQUI. Aba que abre vazia promete o
+# que não há, e faz a pessoa procurar o que não foi feito — o dono acabou de
+# passar por isso procurando telas que eu não tinha escrito.
+SUBTELAS_DA_FOLHA = [
+    ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
+    ("rateio",        "Rateio das obras", "analisesps.tela_folha_rateio"),
+]
+
+
+def subtelas_da_folha() -> list:
+    """As subtelas que a pessoa logada alcança.
+
+    Mesmo motivo do menu de cima: aba que responde 404 é pior do que aba
+    nenhuma. O Rateio é só do mestre (ele decide para qual obra vai o salário),
+    então quem opera a folha não vê essa aba."""
+    return [s for s in SUBTELAS_DA_FOLHA
+            if not (auth.e_so_do_mestre(s[2]) and not auth.e_mestre())]
+
+
+# ---------------------------------------------------------------------------
 # AS TELAS DO MÓDULO, NA ORDEM EM QUE ELE TRABALHA
 #
 # A ordem é do dono, pedida em 13/09/2026: *"eu queria colocar solicitações
@@ -162,12 +188,19 @@ TELAS = [
     ("conciliacao",   "Conciliação",   "analisesps.tela_conciliacao"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
-    # Vizinha do Ratear de propósito: as duas respondem "para onde vai o
-    # dinheiro". Esta é só do MESTRE, então só ele a vê no menu.
-    ("folha_rateio",  "Rateio da Folha", "analisesps.tela_folha_rateio"),
-    # Vizinha do Rateio da Folha: é de lá que se chega ao card da pessoa no
-    # Pipefy, que é onde o auxílio e a gratificação se corrigem.
-    ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
+    # ⚠️ UMA ENTRADA SÓ PARA A FOLHA, e por dentro as subtelas. Correção do dono
+    # em 27/09/2026, depois de ver duas entradas novas no menu:
+    #
+    #   "Eles têm que estar dentro de uma tela só. E lá ter as subtelas, porque
+    #    senão vai ficar tela demais, fica até misturado com o restante, que tem
+    #    mais a ver com o financeiro. (…) pode chamar uma tela de folha. Pode
+    #    botar abreviado, Folha PGT."
+    #
+    # Ele está certo, e o erro era de desenho meu: cada peça nova da folha viraria
+    # uma entrada no menu, e o menu deste módulo é de FINANCEIRO. A folha é uma
+    # área com telas próprias por dentro — como as abas da planilha que ela vai
+    # substituir (alimentação, transporte, diaristas, importação).
+    ("folha",         "Folha PGT",     "analisesps.tela_folha"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
     ("log",           "Log",           "analisesps.log"),
     ("configuracoes", "Configurações", "analisesps.configuracoes"),
@@ -2261,11 +2294,31 @@ def tela_folha_rateio():
         logger.exception("Folha: não consegui ler o cadastro de colaboradores")
 
     return render_template(
-        "analisesps_folha_rateio.html", aba="folha_rateio",
+        "analisesps_folha_rateio.html", aba="folha", subaba="rateio",
+        subtelas=subtelas_da_folha(),
         pronto=pronto, regras=regras, obras=obras, cadastro=cadastro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/folha")
+@exige_consulta
+def tela_folha():
+    """A porta da área da Folha. Manda para a primeira subtela que a pessoa vê.
+
+    POR QUE REDIRECIONA em vez de mostrar um índice: um índice com dois links
+    seria um clique a mais para chegar ao mesmo lugar. Quando o painel com os
+    totais por obra e por conta existir, ELE passa a ser esta tela — é o lugar
+    natural de quem chega."""
+    permitidas = subtelas_da_folha()
+    if not permitidas:
+        # Não deve acontecer — quem chega aqui já tem a tela "folha". Mas se
+        # acontecer, a resposta é 404, não 403: dizer "sem permissão" confirma
+        # o que existe do outro lado.
+        return render_template("analisesps_erro.html",
+                               mensagem="Esta tela não existe aqui."), 404
+    return redirect(url_for(permitidas[0][2]))
 
 
 @bp.route("/folha/colaboradores")
@@ -2315,7 +2368,8 @@ def tela_colaboradores():
         erro = str(e)
 
     return render_template(
-        "analisesps_colaboradores.html", aba="colaboradores",
+        "analisesps_colaboradores.html", aba="folha", subaba="colaboradores",
+        subtelas=subtelas_da_folha(),
         cadastro=cadastro, colaboradores=lista, procurado=procurado,
         incluir_desligados=incluir_desligados, so_saindo=so_saindo,
         saindo=saindo, erro=erro,
@@ -2323,6 +2377,31 @@ def tela_colaboradores():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/rateio/colar", methods=["POST"])
+@exige_operador
+def folha_rateio_colar():
+    """Grava de uma vez a tabela colada. Uma linha por pessoa.
+
+    ⚠️ ISTO SUBSTITUI O QUE ESTÁ VALENDO (desativando, não apagando). Pedido do
+    dono em 27/09/2026 — o rateio muda todo mês, e preencher campo por campo
+    para dez pessoas em dez obras seriam cem campos."""
+    from . import folha_rateio as fr
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    substituir = dados.get("substituir", True) is not False
+    try:
+        resultado = fr.aplicar_tabela(
+            str(dados.get("tabela") or ""), quem=quem, substituir=substituir)
+    except fr.ErroDoRateio as e:
+        # A frase vai inteira para a tela: ela diz a LINHA e o que consertar.
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou aplicar a tabela de rateio")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, **resultado}
 
 
 @bp.route("/api/folha/rateio", methods=["POST"])

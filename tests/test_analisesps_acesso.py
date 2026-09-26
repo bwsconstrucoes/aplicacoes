@@ -115,6 +115,12 @@ TODAS_AS_TELAS = [
     # dado pessoal em volume: esta linha é o que garante que a tela não fique
     # aberta sem querer.
     ("GET",  "/analisesps/folha/colaboradores"),
+    # A porta da área: manda para a primeira subtela que a pessoa alcança.
+    ("GET",  "/analisesps/folha"),
+    # ⚠️ ESTA SUBSTITUI O RATEIO DO MÊS INTEIRO (desativando o que vale). Rota
+    # sem login aqui deixaria qualquer um trocar para onde vai o salário de todo
+    # mundo.
+    ("POST", "/analisesps/api/folha/rateio/colar"),
     ("POST", "/analisesps/api/folha/rateio"),
     ("POST", "/analisesps/api/folha/rateio/apagar"),
     ("POST", "/analisesps/api/folha/rateio/simular"),

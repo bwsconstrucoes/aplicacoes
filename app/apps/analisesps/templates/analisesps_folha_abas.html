@@ -1,0 +1,20 @@
+{# ---------------------------------------------------------------------------
+   AS SUBTELAS DA FOLHA
+
+   Uma entrada no menu de cima ("Folha PGT") e, aqui, as telas de cada trabalho.
+   Correção do dono em 27/09/2026: *"eles têm que estar dentro de uma tela só. E
+   lá ter as subtelas, porque senão vai ficar tela demais, fica até misturado com
+   o restante, que tem mais a ver com o financeiro."*
+
+   A lista vem do Python (`web.subtelas_da_folha`) já filtrada pelo que a pessoa
+   alcança — aba que responde 404 é pior do que aba nenhuma.
+   --------------------------------------------------------------------------- #}
+{% if subtelas and subtelas|length > 1 %}
+<nav class="abas-folha" aria-label="Telas da folha de pagamento">
+  {% for chave, rotulo, rota in subtelas %}
+    <a class="aba-folha {% if subaba == chave %}ativa{% endif %}"
+       href="{{ url_for(rota) }}"
+       {% if subaba == chave %}aria-current="page"{% endif %}>{{ rotulo }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
