@@ -2247,6 +2247,14 @@ def tela_folha_rateio():
                 pessoa["link_pipefy"] = ficha.get("link_pipefy", "")
                 pessoa["no_cadastro"] = bool(ficha)
                 pessoa["desligado"] = bool(ficha.get("desligado"))
+                # ⚠️ A SITUAÇÃO VEM DA MESMA FUNÇÃO que a tela de Colaboradores
+                # usa, e é o que impede as duas telas de divergirem. Uma regra
+                # de rateio que aponta para quem saiu apropria salário de
+                # ninguém — e o erro fica invisível até a folha não fechar.
+                pessoa["situacao"] = ficha.get("situacao", "")
+                pessoa["motivo_situacao"] = ficha.get("motivo", "")
+                pessoa["desacordo"] = ficha.get("desacordo", "")
+                pessoa["alerta"] = bool(ficha.get("alerta"))
                 if ficha.get("nome"):
                     pessoa["nome_cadastro"] = ficha["nome"]
     except Exception:  # noqa: BLE001 — a tela abre mesmo sem o cadastro
@@ -2283,15 +2291,25 @@ def tela_colaboradores():
     # "Mostrar quem saiu" desligado por padrão: quem foi desligado não entra em
     # pagamento novo, e a lista do dia a dia é de quem está na casa.
     incluir_desligados = request.args.get("desligados") == "1"
+    # ⚠️ "SÓ QUEM ESTÁ SAINDO" — pedido do dono em 27/09/2026: *"não podemos
+    # pagar (…) salário ou diárias pra quem saiu, tá saindo. Tem que ter
+    # cuidados e alerta."* O alerta sem um lugar para ver a lista seria só
+    # susto; este filtro é o lugar. Ele TRAZ quem saiu junto, senão a lista
+    # esconderia metade do que ela existe para mostrar.
+    so_saindo = request.args.get("saindo") == "1"
 
     cadastro = {"quando": "", "pessoas": 0, "avisos": [], "pronto": False}
     lista: list = []
+    saindo = {"com_sinal": 0, "saiu": 0, "afastado": 0}
     erro = None
     try:
         cadastro = colaboradores.quando_atualizou()
         if cadastro.get("pronto"):
             lista = colaboradores.buscar(
-                procurado, so_ativos=not incluir_desligados)
+                procurado,
+                so_ativos=not (incluir_desligados or so_saindo),
+                so_saindo=so_saindo)
+            saindo = colaboradores.contar_quem_esta_saindo()
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Análise de SPs: não consegui ler o cadastro")
         erro = str(e)
@@ -2299,7 +2317,8 @@ def tela_colaboradores():
     return render_template(
         "analisesps_colaboradores.html", aba="colaboradores",
         cadastro=cadastro, colaboradores=lista, procurado=procurado,
-        incluir_desligados=incluir_desligados, erro=erro,
+        incluir_desligados=incluir_desligados, so_saindo=so_saindo,
+        saindo=saindo, erro=erro,
         teto=200, no_teto=len(lista) >= 200,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),

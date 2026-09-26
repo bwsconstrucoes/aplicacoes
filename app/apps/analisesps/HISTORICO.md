@@ -8311,6 +8311,95 @@ existe só para o dia em que a planilha mudar de lugar.
 
 ---
 
+### Centésima sexta leva (27/09) — não pagar quem saiu, e a conta das férias decidida
+
+Ele respondeu a pergunta que estava aberta e, no mesmo recado, levantou um
+cuidado maior. As duas coisas estão em `docs/FOLHA_DE_PAGAMENTO.md` §7.16;
+aqui fica o essencial e o estado.
+
+#### A resposta sobre o transporte
+
+> *"O fato de se estar de férias e um feriado em dia de semana poderia sim afetar
+> o cálculo do auxílio transporte. (…) Um único dia não precisaria, mas férias,
+> como são mais dias, sim, deveríamos proporcionalizar."*
+
+**Férias descontam, proporcional. Feriado de um dia não desconta.** E depende da
+modalidade: quem é mensal tem desconto sobre o mês; quem é por dia, sobre os dias
+úteis.
+
+**Não dá para implementar ainda** — o sistema não sabe quem está de férias. Isso
+vive numa aba da planilha que ele vai mandar como relatório. A ordem é:
+relatório → carga → marca na tela → desconto. Nada dos três últimos existe sem o
+primeiro.
+
+⚠️ **E não mexi na alimentação**, que hoje desconta feriado de um dia. Ele falou
+do transporte. Alimentação é refeição: não pagar o feriado faz sentido, porque
+não houve refeição. Inferir dali uma mudança na alimentação seria eu decidindo no
+lugar dele.
+
+#### O cuidado que já deu para fazer: quem saiu não recebe
+
+> *"Não podemos pagar esse tipo de verba indenizatória ou ainda pagar salário ou
+> diárias pra quem saiu, tá saindo. Tem que ter cuidados e alerta."*
+
+**Isto não esperou o relatório de demissão**, porque o cadastro que vem do Pipefy
+já traz aviso prévio, último dia, data de saída e a fase. O relatório que ele vai
+mandar será uma **segunda fonte** para conferir uma contra a outra — não é a
+primeira.
+
+Uma função só (`situacao_no_pagamento`) responde para as duas telas e para o
+gerador de pagamento que vier: **saiu** (trava), **saindo** (alerta),
+**afastado** (trava os auxílios) ou ativo.
+
+**Três coisas do desenho que não são óbvias, e cada uma tem teste:**
+
+1. **A data que manda é o FIM DO PERÍODO pago, não hoje.** Pagar a quinzena de 1
+   a 15 no dia 20 é normal; quem saiu no dia 18 trabalhou a quinzena inteira e
+   **recebe**. Usar "hoje" bloquearia pagamento devido — e bloquear o devido gera
+   reclamação trabalhista, que é o outro lado do mesmo risco.
+2. **A fase do Pipefy manda, e não fui eu quem decidiu.** As abas de alimentação
+   e transporte já excluem quem está `Desligado` ou `Afastado` pela fase. Uma
+   segunda regra aqui criaria duas respostas para a mesma pergunta.
+3. **O desacordo entre os sinais fica ESCRITO.** Fase dizendo desligado sem data
+   de saída, data de saída com a fase dizendo ativo, último dia já passado sem
+   saída lançada. **Cadastro pela metade é por onde se paga quem já saiu** — e
+   quem tem desacordo **continua na lista**, marcado. Esconder o caso
+   inconsistente é o erro que ele me corrigiu em 26/09.
+
+Na tela: aviso no alto com a contagem do **cadastro inteiro** (não da lista, que
+tem teto de 200 — número que conta só o visível diria "3 saindo" havendo trinta),
+filtro "só quem está saindo" que **traz quem já saiu** junto, a frase do que não
+pagar em cada linha, e a linha destacada. Âmbar para "está saindo", cinza para
+"saiu": cor igual faria tratar do mesmo jeito dois casos em que um tem pagamento
+legítimo.
+
+**Rescisão não se calcula nem se paga por este módulo** — está escrito na tela.
+O que ele faz é impedir que folha, diária ou auxílio do período saiam para quem
+já saiu.
+
+**Verificado:** 14 testes novos sem banco (cada caso e cada desacordo, incluindo
+as bordas de data), 6 com banco de verdade (o filtro e a contagem são `WHERE`
+puro, que o dublê ignora) e 5 de tela. O caso que mais importa tem teste próprio:
+**quem tem a fase dizendo desligado sem data continua aparecendo na lista.**
+
+**NÃO verificado:** nada num navegador.
+
+#### Pendente AGORA nesta área (atualizado)
+
+1. **Migração 028 aplicada?** A publicação de 27/09 levou o código; o botão
+   "Aplicar atualizações do banco" tem de ter sido apertado.
+2. **O primeiro clique em "Atualizar cadastro"** é o que confirma se os nomes das
+   cinco colunas de auxílio estão certos. Se não, a tela avisa com o nome de
+   verdade.
+3. **Falta o relatório de férias e o de demissão** para as cargas — e sem o de
+   férias, o desconto no transporte e a marca "está de férias" não existem.
+4. **A diferença de saldo da BD 50024** (R$ 64.711,98) continua sem explicação.
+5. **`MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY`** ainda não existem no Render.
+6. **Três credenciais para trocar na origem** (Mobponto, Dropbox e Z-API) — ver a
+   leva 104.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

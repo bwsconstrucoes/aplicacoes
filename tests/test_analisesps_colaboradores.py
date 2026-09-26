@@ -331,3 +331,148 @@ def test_todo_campo_do_banco_tem_uma_coluna_procurada():
     assert set(col.CAMPOS) == procurados, (
         "sobrando no banco: " + str(set(col.CAMPOS) - procurados) +
         " / procurado e sem lugar no banco: " + str(procurados - set(col.CAMPOS)))
+
+
+# ---------------------------------------------------------------------------
+# QUEM SAIU, QUEM ESTÁ SAINDO, QUEM ESTÁ AFASTADO — 27/09/2026
+#
+# Pedido do dono: *"não podemos pagar esse tipo de verba indenizatória ou ainda
+# pagar salário ou diárias pra quem saiu, tá saindo. Tem que ter cuidados e
+# alerta."*
+#
+# ⚠️ ISTO É DINHEIRO SAINDO DA EMPRESA PARA QUEM NÃO TEM DIREITO, e o erro não
+# estoura: ele passa. Por isso cada caso tem um teste, incluindo os que se
+# contradizem.
+# ---------------------------------------------------------------------------
+def ficha(**extra):
+    base = {"fase": "", "data_saida": None, "ultimo_dia": None,
+            "aviso_previo": None}
+    base.update(extra)
+    return base
+
+
+PERIODO = dt.date(2026, 9, 15)      # fim da quinzena que se está pagando
+
+
+def test_quem_ja_saiu_TRAVA_o_pagamento():
+    r = col.situacao_no_pagamento(
+        ficha(data_saida=dt.date(2026, 8, 31),
+              fase="Colaboradores Desligados"), PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAIU
+    assert r["trava"] is True
+    assert "31/08/2026" in r["motivo"]
+    # A frase diz o que NÃO fazer — selo sozinho não instrui ninguém.
+    assert "Não pague" in r["motivo"]
+
+
+def test_quem_SAI_DEPOIS_do_fim_do_periodo_nao_trava(vazio=None):
+    """⚠️ A DATA QUE MANDA É O FIM DO PERÍODO, NÃO HOJE. Pagar a quinzena de 1 a
+    15 no dia 20 é normal; quem saiu no dia 18 trabalhou a quinzena inteira e
+    RECEBE. Usar "hoje" bloquearia um pagamento devido."""
+    r = col.situacao_no_pagamento(
+        ficha(data_saida=dt.date(2026, 9, 18)), PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAINDO
+    assert r["trava"] is False
+    assert "18/09/2026" in r["motivo"]
+    # E avisa o que NÃO sai por aqui.
+    assert "rescisão" in r["motivo"].lower()
+
+
+def test_quem_saiu_no_ULTIMO_DIA_do_periodo_trava():
+    """A borda: saída no próprio dia 15. O dia 15 está dentro do período pago,
+    e a pessoa não recebe o período seguinte."""
+    r = col.situacao_no_pagamento(ficha(data_saida=PERIODO), PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAIU
+    assert r["trava"] is True
+
+
+def test_a_FASE_dizendo_desligado_trava_mesmo_sem_data():
+    """A fase manda, e não fui eu quem decidiu: as abas de alimentação e de
+    transporte já excluem "Colaboradores Desligados" pela fase. Fazer diferente
+    aqui criaria duas respostas para a mesma pergunta."""
+    r = col.situacao_no_pagamento(ficha(fase="Colaboradores Desligados"),
+                                  PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAIU
+    assert r["trava"] is True
+
+
+def test_fase_desligado_SEM_data_de_saida_e_DESACORDO_escrito():
+    """Cadastro pela metade é por onde se paga quem já saiu. Não pode ser
+    resolvido calado."""
+    r = col.situacao_no_pagamento(ficha(fase="Colaboradores Desligados"),
+                                  PERIODO)
+    assert r["desacordo"]
+    assert "data de saída" in r["desacordo"]
+
+
+def test_data_de_saida_com_a_fase_dizendo_ATIVO_tambem_e_desacordo():
+    """O contrário também é notícia: a fase pode ter ficado para trás, e quem
+    olhar só a fase paga."""
+    r = col.situacao_no_pagamento(
+        ficha(data_saida=dt.date(2026, 8, 31), fase="Colaboradores Ativos"),
+        PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAIU
+    assert r["desacordo"]
+    assert "Colaboradores Ativos" in r["desacordo"]
+
+
+def test_aviso_previo_dado_marca_que_esta_saindo():
+    r = col.situacao_no_pagamento(
+        ficha(aviso_previo=dt.date(2026, 9, 10)), PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAINDO
+    assert r["trava"] is False
+    assert "10/09/2026" in r["motivo"]
+
+
+def test_ultimo_dia_JA_PASSADO_sem_saida_lancada_e_desacordo():
+    r = col.situacao_no_pagamento(
+        ficha(ultimo_dia=dt.date(2026, 9, 5)), PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAINDO
+    assert "pela metade" in r["desacordo"]
+
+
+def test_ultimo_dia_AINDA_POR_VIR_e_so_aviso():
+    r = col.situacao_no_pagamento(
+        ficha(ultimo_dia=dt.date(2026, 9, 30)), PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAINDO
+    assert r["desacordo"] == ""
+
+
+def test_afastado_nao_recebe_auxilio():
+    """A mesma exclusão que as abas de alimentação e transporte já fazem."""
+    r = col.situacao_no_pagamento(ficha(fase="Colaboradores Afastados"),
+                                  PERIODO)
+    assert r["situacao"] == col.SITUACAO_AFASTADO
+    assert r["trava"] is True
+    assert "alimenta" in r["motivo"].lower()
+
+
+def test_quem_esta_na_casa_nao_gera_alerta_nenhum():
+    """⚠️ Se o caso normal acendesse alerta, o alerta viraria ruído — e ruído
+    faz ignorar o aviso que importa. A maioria das ~3.500 pessoas é este caso."""
+    r = col.situacao_no_pagamento(ficha(fase="Colaboradores Ativos"), PERIODO)
+    assert r["situacao"] == col.SITUACAO_ATIVO
+    assert r["trava"] is False
+    assert r["motivo"] == ""
+    assert r["desacordo"] == ""
+
+
+def test_fase_com_espaco_e_caixa_diferente_ainda_casa():
+    r = col.situacao_no_pagamento(ficha(fase="  COLABORADORES DESLIGADOS "),
+                                  PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAIU
+
+
+def test_cadastro_sem_fase_nenhuma_nao_inventa_desacordo():
+    """Muita gente tem a fase em branco. Isso não é contradição."""
+    r = col.situacao_no_pagamento(
+        ficha(data_saida=dt.date(2026, 8, 31), fase=""), PERIODO)
+    assert r["situacao"] == col.SITUACAO_SAIU
+    assert r["desacordo"] == ""
+
+
+def test_sem_informar_o_periodo_a_conta_usa_hoje():
+    """A função tem de funcionar sem `ate` — a tela de cadastro não está pagando
+    nada, só mostrando."""
+    r = col.situacao_no_pagamento(ficha(data_saida=dt.date(2020, 1, 1)))
+    assert r["situacao"] == col.SITUACAO_SAIU

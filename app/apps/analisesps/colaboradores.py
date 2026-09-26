@@ -464,14 +464,147 @@ def quando_atualizou() -> dict:
     }
 
 
-def _dicionario(linha) -> dict:
+# ---------------------------------------------------------------------------
+# QUEM SAIU, QUEM ESTÁ SAINDO, QUEM ESTÁ AFASTADO
+#
+# Pedido do dono em 27/09/2026, e é o cuidado mais caro desta área:
+#
+#   "Não podemos pagar esse tipo de verba indenizatória ou ainda pagar salário
+#    ou diárias pra quem saiu, tá saindo. Tem que ter cuidados e alerta."
+#
+# ⚠️ POR QUE ISTO JÁ DÁ PARA FAZER, sem esperar o relatório que ele vai mandar:
+# o cadastro que vem do Pipefy já traz **data do aviso prévio, último dia
+# trabalhado, data de saída e a fase**. O relatório de demissão que ele
+# mencionou será uma SEGUNDA fonte, para conferir uma contra a outra — não é a
+# primeira.
+#
+# A FASE MANDA, e não fui eu quem decidiu: as folhas de alimentação e de
+# transporte já excluem `Colaboradores Desligados` e `Colaboradores Afastados`
+# pela fase (lido das fórmulas, ver docs/FOLHA_DE_PAGAMENTO.md §7.14.6). Fazer
+# diferente aqui criaria duas respostas para a mesma pergunta.
+#
+# O DESACORDO ENTRE OS SINAIS É NOTÍCIA, não é para ser resolvido calado. Fase
+# dizendo desligado sem data de saída, ou último dia já passado sem saída
+# lançada, é cadastro pela metade — e cadastro pela metade é como se paga quem
+# já saiu. Quem tem desacordo continua APARECENDO na lista, marcado. Esconder
+# o caso inconsistente é o erro que o dono já me corrigiu em 26/09/2026:
+# *"não pode ficar oculto, escondido."*
+# ---------------------------------------------------------------------------
+SITUACAO_ATIVO = "ativo"
+SITUACAO_SAINDO = "saindo"
+SITUACAO_SAIU = "saiu"
+SITUACAO_AFASTADO = "afastado"
+
+# Os valores que a coluna "Fase Atual" usa no Pipefy. São os mesmos textos que
+# as abas de alimentação e transporte comparam.
+FASE_DESLIGADO = "colaboradores desligados"
+FASE_AFASTADO = "colaboradores afastados"
+
+
+def _hoje():
+    from .horario import agora
+    return agora().date()
+
+
+def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
+    """Esta pessoa pode receber, considerando um pagamento até `ate`?
+
+    `ate` é o ÚLTIMO DIA DO PERÍODO que se está pagando — não é hoje. Pagar a
+    quinzena de 1 a 15 no dia 20 é normal; quem saiu no dia 18 trabalhou a
+    quinzena inteira e recebe. Usar "hoje" no lugar do fim do período
+    bloquearia um pagamento devido.
+
+    Devolve:
+      situacao  — ativo / saindo / saiu / afastado
+      motivo    — a frase que vai para a tela, em português
+      trava     — True quando NÃO se deve gerar pagamento de folha, diária ou
+                  auxílio para esta pessoa neste período
+      desacordo — "" ou a frase que descreve sinais que se contradizem
+    """
+    ate = ate or _hoje()
+    fase = " ".join(str(ficha.get("fase") or "").split()).lower()
+    saida = ficha.get("data_saida")
+    ultimo = ficha.get("ultimo_dia")
+    aviso = ficha.get("aviso_previo")
+
+    desacordo = ""
+    if fase == FASE_DESLIGADO and not saida:
+        desacordo = ("a fase no Pipefy diz desligado, mas o cadastro não tem "
+                     "data de saída — confira antes de pagar.")
+    elif saida and fase not in (FASE_DESLIGADO, ""):
+        desacordo = (f"o cadastro tem data de saída, mas a fase no Pipefy "
+                     f"ainda diz \"{ficha.get('fase')}\".")
+    elif ultimo and not saida and ultimo <= ate:
+        desacordo = ("o último dia trabalhado já passou e não há data de saída "
+                     "lançada — o desligamento está pela metade.")
+
+    def resposta(situacao, motivo, trava):
+        return {"situacao": situacao, "motivo": motivo, "trava": trava,
+                "desacordo": desacordo}
+
+    # 1. JÁ SAIU — nada de folha, diária ou auxílio novo.
+    if saida and saida <= ate:
+        return resposta(
+            SITUACAO_SAIU,
+            f"saiu em {saida.strftime('%d/%m/%Y')}. Não pague folha, diária "
+            "nem auxílio deste período por aqui.",
+            True)
+    if fase == FASE_DESLIGADO:
+        return resposta(
+            SITUACAO_SAIU,
+            "a fase no Pipefy diz desligado. Não pague por aqui até "
+            "confirmar.",
+            True)
+
+    # 2. ESTÁ SAINDO — pode haver valor devido, mas não o período inteiro, e
+    #    verba indenizatória (rescisão) NÃO sai por este caminho.
+    if saida and saida > ate:
+        return resposta(
+            SITUACAO_SAINDO,
+            f"sai em {saida.strftime('%d/%m/%Y')}. Confira o que é devido só "
+            "até lá; rescisão não se paga por aqui.",
+            False)
+    if ultimo and ultimo <= ate:
+        return resposta(
+            SITUACAO_SAINDO,
+            f"o último dia trabalhado foi {ultimo.strftime('%d/%m/%Y')}. "
+            "Confira o que é devido só até lá.",
+            False)
+    if ultimo:
+        return resposta(
+            SITUACAO_SAINDO,
+            f"último dia previsto em {ultimo.strftime('%d/%m/%Y')}.",
+            False)
+    if aviso:
+        return resposta(
+            SITUACAO_SAINDO,
+            f"aviso prévio em {aviso.strftime('%d/%m/%Y')} — está saindo.",
+            False)
+
+    # 3. AFASTADO — não recebe auxílio alimentação nem transporte. É a mesma
+    #    exclusão que as abas da planilha já fazem pela fase.
+    if fase == FASE_AFASTADO:
+        return resposta(
+            SITUACAO_AFASTADO,
+            "está afastado. Não pague auxílio alimentação nem transporte.",
+            True)
+
+    return resposta(SITUACAO_ATIVO, "", False)
+
+
+def _dicionario(linha, ate=None) -> dict:
     registro = {campo: linha[i] for i, campo in enumerate(CAMPOS)}
     registro["link_pipefy"] = link_do_card(registro.get("card_pipefy"))
     registro["desligado"] = registro.get("data_saida") is not None
+    registro.update(situacao_no_pagamento(registro, ate))
+    # `alerta` é o que a tela usa para decidir se destaca a linha: qualquer
+    # coisa que não seja "ativo e sem contradição" merece ser vista.
+    registro["alerta"] = (registro["situacao"] != SITUACAO_ATIVO
+                          or bool(registro["desacordo"]))
     return registro
 
 
-def por_cpf(cpf: str) -> dict | None:
+def por_cpf(cpf: str, ate=None) -> dict | None:
     """Uma pessoa, pelo CPF. None quando não está no cadastro."""
     from .db import consultar_um
     from .folha_rateio import so_digitos
@@ -483,10 +616,10 @@ def por_cpf(cpf: str) -> dict | None:
     linha = consultar_um(
         "SELECT " + ", ".join(CAMPOS) + " FROM analisesps.colaborador "
         " WHERE cpf = ?", (digitos,))
-    return _dicionario(linha) if linha else None
+    return _dicionario(linha, ate) if linha else None
 
 
-def muitos_por_cpf(cpfs) -> dict:
+def muitos_por_cpf(cpfs, ate=None) -> dict:
     """Vários de uma vez, para a tela não consultar um por um.
 
     A tela de Rateio mostra dezenas de pessoas; uma consulta por pessoa faria
@@ -503,10 +636,11 @@ def muitos_por_cpf(cpfs) -> dict:
     linhas = consultar(
         "SELECT " + ", ".join(CAMPOS) + " FROM analisesps.colaborador "
         f" WHERE cpf IN ({marcadores})", tuple(limpos))
-    return {l[0]: _dicionario(l) for l in linhas}
+    return {l[0]: _dicionario(l, ate) for l in linhas}
 
 
-def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200) -> list:
+def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200,
+           so_saindo: bool = False, ate=None) -> list:
     """Procura por nome ou por CPF. Lista curta, para caixa de busca.
 
     `teto` existe porque o cadastro tem ~3.500 pessoas e desenhar tudo numa
@@ -528,10 +662,50 @@ def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200) -> list:
             condicoes.append("lower(nome) LIKE ?")
             params.append(f"%{procurado.lower()}%")
     if so_ativos:
+        # ⚠️ SÓ A DATA DE SAÍDA ESCONDE ALGUÉM DAQUI, e de propósito. Quem tem a
+        # FASE dizendo desligado sem data continua aparecendo: é justamente o
+        # cadastro pela metade, e é por onde se paga quem já saiu. Esconder o
+        # caso inconsistente é o erro que o dono corrigiu em 26/09/2026 —
+        # *"não pode ficar oculto, escondido"*. Ele aparece com a marca.
         condicoes.append("data_saida IS NULL")
+    if so_saindo:
+        # Qualquer sinal de saída. A conta fina de quem está saindo × quem já
+        # saiu é de `situacao_no_pagamento`; aqui só se traz quem tem sinal.
+        condicoes.append(
+            "(data_saida IS NOT NULL OR ultimo_dia IS NOT NULL "
+            " OR aviso_previo IS NOT NULL OR lower(fase) IN (?, ?))")
+        params += [FASE_DESLIGADO, FASE_AFASTADO]
 
     onde = (" WHERE " + " AND ".join(condicoes)) if condicoes else ""
     linhas = consultar(
         "SELECT " + ", ".join(CAMPOS) + " FROM analisesps.colaborador "
         + onde + " ORDER BY nome LIMIT ?", tuple(params) + (int(teto),))
-    return [_dicionario(l) for l in linhas]
+    return [_dicionario(l, ate) for l in linhas]
+
+
+def contar_quem_esta_saindo(ate=None) -> dict:
+    """Quantas pessoas têm sinal de saída ou de afastamento no cadastro.
+
+    POR QUE UMA CONTA À PARTE, em vez de contar a lista da tela: a lista tem
+    teto de 200. Um número que só conta o que caberia na tela é pior que número
+    nenhum — ele diria "3 saindo" havendo trinta.
+
+    Conta pelos SINAIS (data ou fase); a classificação fina de cada pessoa é de
+    `situacao_no_pagamento`, que precisa do fim do período."""
+    from .db import consultar_um
+    if not _pronto():
+        return {"com_sinal": 0, "saiu": 0, "afastado": 0}
+    ate = ate or _hoje()
+    linha = consultar_um(
+        "SELECT "
+        "  sum(CASE WHEN data_saida IS NOT NULL OR ultimo_dia IS NOT NULL "
+        "            OR aviso_previo IS NOT NULL "
+        "            OR lower(fase) IN (?, ?) THEN 1 ELSE 0 END), "
+        "  sum(CASE WHEN (data_saida IS NOT NULL AND data_saida <= ?) "
+        "            OR lower(fase) = ? THEN 1 ELSE 0 END), "
+        "  sum(CASE WHEN lower(fase) = ? THEN 1 ELSE 0 END) "
+        " FROM analisesps.colaborador",
+        (FASE_DESLIGADO, FASE_AFASTADO, ate, FASE_DESLIGADO, FASE_AFASTADO))
+    com_sinal, saiu, afastado = (linha or (0, 0, 0))
+    return {"com_sinal": int(com_sinal or 0), "saiu": int(saiu or 0),
+            "afastado": int(afastado or 0)}

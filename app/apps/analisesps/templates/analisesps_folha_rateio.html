@@ -106,7 +106,16 @@
                 {{ p.nome_cadastro or p.nome or '—' }}
               {% endif %}
               <span class="cartao-dica">{{ p.cpf_bonito }}</span>
-              {% if p.desligado %}
+              {# ⚠️ REGRA DE RATEIO APONTANDO PARA QUEM SAIU apropria salário de
+                 ninguém, e o erro fica invisível até a folha não fechar. A
+                 situação vem da MESMA função da tela de Colaboradores. #}
+              {% if p.situacao == 'saiu' %}
+                <span class="selo cancelado" title="{{ p.motivo_situacao }}">saiu</span>
+              {% elif p.situacao == 'saindo' %}
+                <span class="selo saindo" title="{{ p.motivo_situacao }}">está saindo</span>
+              {% elif p.situacao == 'afastado' %}
+                <span class="selo cancelado" title="{{ p.motivo_situacao }}">afastado</span>
+              {% elif p.desligado %}
                 <span class="selo cancelado"
                       title="O cadastro tem data de saída para esta pessoa">desligado</span>
               {% elif cadastro and cadastro.pronto and not p.no_cadastro %}

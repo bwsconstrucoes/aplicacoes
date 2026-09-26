@@ -50,6 +50,26 @@
   {% endif %}
 </div>
 
+{# ⚠️ O ALERTA DE QUEM ESTÁ SAINDO — pedido do dono em 27/09/2026:
+   *"não podemos pagar esse tipo de verba indenizatória ou ainda pagar salário
+   ou diárias pra quem saiu, tá saindo. Tem que ter cuidados e alerta."*
+
+   O número conta o cadastro INTEIRO, não a lista da tela (que tem teto de
+   200): um número que só contasse o visível diria "3 saindo" havendo trinta. #}
+{% if saindo.com_sinal %}
+  <div class="aviso atencao">
+    <b>{{ saindo.com_sinal }} pessoa(s) com sinal de saída ou afastamento no
+      cadastro.</b>
+    {% if saindo.saiu %}{{ saindo.saiu }} já saiu/saíram.{% endif %}
+    {% if saindo.afastado %}{{ saindo.afastado }} afastada(s).{% endif %}
+    Não se paga folha, diária, auxílio nem rescisão por aqui para quem saiu.
+    {% if not so_saindo %}
+      <a href="{{ url_for('analisesps.tela_colaboradores', saindo=1) }}"
+         >Ver a lista</a>.
+    {% endif %}
+  </div>
+{% endif %}
+
 <form class="barra-acoes" method="get"
       action="{{ url_for('analisesps.tela_colaboradores') }}">
   {# `nome` no campo porque o formato de campo é do erp_base/analisesps_base e é
@@ -61,6 +81,11 @@
     <input type="checkbox" name="desligados" value="1"
            {{ 'checked' if incluir_desligados }}
            onchange="this.form.submit()"> mostrar quem saiu
+  </label>
+  <label class="cartao-dica" style="margin:0">
+    <input type="checkbox" name="saindo" value="1"
+           {{ 'checked' if so_saindo }}
+           onchange="this.form.submit()"> <b>só quem está saindo</b>
   </label>
   <button class="btn" type="submit">Procurar</button>
   {% if procurado or incluir_desligados %}
@@ -88,7 +113,7 @@
   </thead>
   <tbody>
   {% for c in colaboradores %}
-    <tr>
+    <tr class="{{ 'linha-alerta' if c.alerta }}">
       <td>
         {% if c.link_pipefy %}
           <a href="{{ c.link_pipefy }}" target="_blank" rel="noopener"
@@ -115,14 +140,25 @@
       </td>
       <td class="num">{{ c.valor_gratificacao|moeda if c.valor_gratificacao is not none else '—' }}</td>
       <td>
-        {% if c.desligado %}
-          <span class="selo cancelado"
-                title="Data de saída no cadastro">saiu{% if c.data_saida %} em {{ c.data_saida|data_br }}{% endif %}</span>
+        {# A FRASE INTEIRA vai no title: ela diz o que NÃO pagar, e é o ponto
+           todo do alerta. O selo sozinho ("saiu") não instrui ninguém. #}
+        {% if c.situacao == 'saiu' %}
+          <span class="selo cancelado" title="{{ c.motivo }}">saiu{% if c.data_saida %} em {{ c.data_saida|data_br }}{% endif %}</span>
+        {% elif c.situacao == 'saindo' %}
+          <span class="selo saindo" title="{{ c.motivo }}">está saindo</span>
+        {% elif c.situacao == 'afastado' %}
+          <span class="selo cancelado" title="{{ c.motivo }}">afastado</span>
         {% else %}
           <span class="cartao-dica">{{ c.fase or '—' }}</span>
         {% endif %}
         {% if c.paga_por_beevale == 'Sim' %}
           <span class="selo no-lote" title="O cadastro marca pagamento pela BeeVale">BeeVale</span>
+        {% endif %}
+        {% if c.motivo %}<div class="cartao-dica">{{ c.motivo }}</div>{% endif %}
+        {# ⚠️ O DESACORDO ENTRE OS SINAIS é cadastro pela metade — e é por onde
+           se paga quem já saiu. Fica escrito, não escondido. #}
+        {% if c.desacordo %}
+          <div class="aviso atencao" style="margin:4px 0 0">⚠️ {{ c.desacordo }}</div>
         {% endif %}
       </td>
     </tr>
@@ -131,9 +167,12 @@
       <td colspan="8" class="cartao-dica">
         {% if not cadastro.quando %}
           O cadastro ainda não foi trazido. Aperte "Atualizar cadastro" acima.
+        {% elif so_saindo and not procurado %}
+          Ninguém com sinal de saída ou afastamento no cadastro. É a notícia
+          boa: nenhum pagamento em risco por esse motivo.
         {% elif procurado %}
-          Ninguém com "{{ procurado }}"{{ ' entre quem está na casa' if not incluir_desligados }}.
-          Mude a busca acima{{ ', ou marque "mostrar quem saiu"' if not incluir_desligados }}.
+          Ninguém com "{{ procurado }}"{{ ' entre quem está saindo' if so_saindo else (' entre quem está na casa' if not incluir_desligados else '') }}.
+          Mude a busca acima{{ ', ou marque "mostrar quem saiu"' if not (incluir_desligados or so_saindo) }}.
         {% else %}
           Nenhuma pessoa no cadastro.
         {% endif %}

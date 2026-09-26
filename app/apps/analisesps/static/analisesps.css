@@ -2197,3 +2197,16 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
 /* A setinha do "abre em outra aba" é enfeite: menor e mais clara que o nome,
    para não competir com ele na leitura. */
 .link-pipefy span { font-size: .85em; opacity: .65; }
+
+/* ---------------------------------------------------------------------------
+   QUEM ESTÁ SAINDO (27/09/2026)
+
+   Âmbar, não vermelho: "está saindo" é para CONFERIR — pode haver valor devido
+   até o último dia. Vermelho é de quem já saiu, e esse usa `.selo.cancelado`,
+   que já existe. Cor igual para os dois faria a pessoa tratar os dois casos do
+   mesmo jeito, e um deles tem pagamento legítimo.
+   --------------------------------------------------------------------------- */
+.selo.saindo { background: #FDF0D5; color: #6B4A00; }
+/* A linha inteira ganha um talho âmbar à esquerda. Fundo colorido na linha toda
+   brigaria com a leitura dos valores, que é o que se vem ler nesta tela. */
+.sps tr.linha-alerta > td:first-child { box-shadow: inset 3px 0 0 var(--ambar); }

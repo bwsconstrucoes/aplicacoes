@@ -1139,7 +1139,7 @@ leitura do documento de fórmulas da planilha de Diaristas/Extras/GM (§7.14) �
 
 | Pergunta | Por que importa |
 |---|---|
-| ⚠️ **O transporte deve descontar feriado e férias?** Hoje **não desconta**; a alimentação desconta (§7.14.7) | É a pergunta mais cara daqui: multiplica por ~500 pessoas, todo mês. Pode ser regra do vale-transporte ou fórmula esquecida pela metade |
+| ~~**O transporte deve descontar feriado e férias?**~~ | ✅ **RESPONDIDO em 27/09/2026 — ver §7.16:** férias **sim**, proporcional; feriado de um dia **não**. Falta só o dado de férias para implementar |
 | **`VIGIA` não recebe diária extra** — é regra ou remendo? (§7.14.5) | Está escrito só dentro de uma fórmula. Se for regra, vira cadastro; se for remendo, sai |
 | **Os +20 / +10 / +20** de feriado, sábado e domingo continuam? (§7.14.5) | São valores fixos escritos na fórmula. Viram cadastro no sistema novo |
 | **O que significa `E = "SIM"` na aba `Feriados`?** | Esse feriado deixa de contar. Suponho "foi trabalhado" ou "foi compensado" |
@@ -1647,6 +1647,122 @@ que vai fechar esse ponto.
 - **Falta ligar** o espelho ao `folha_apropriacao` (hoje ele recebe o cadastro
   por parâmetro) e às futuras telas de alimentação, transporte e GM, que leem
   daqui o valor e a modalidade de cada pessoa.
+
+## 7.16 FÉRIAS, FERIADO E DESLIGAMENTO — a decisão dele (27/09/2026)
+
+Esta seção fecha a pergunta que estava aberta em §7.11 ("o transporte deve
+descontar feriado e férias?") e abre um cuidado novo que ele levantou.
+
+### 7.16.1 A resposta: sim, mas proporcional — e depende da modalidade
+
+Palavras dele:
+
+> *"O fato de se estar de férias e um feriado em dia de semana poderia sim afetar
+> o cálculo do auxílio transporte. Isso depende também do tipo. Tem uns que são
+> mensal. Um único dia não precisaria, mas férias, como são mais dias, sim,
+> deveríamos proporcionalizar. É importante sinalizar que a pessoa está de
+> férias."*
+
+Traduzido em regra:
+
+| Situação | Transporte | Por quê |
+|---|---|---|
+| **um feriado** no meio do mês | **não desconta** | um dia solto não move a conta o bastante para valer o risco de errar |
+| **férias** (vários dias) | **desconta, proporcional** | são muitos dias; pagar o mês cheio é pagar transporte de quem não foi trabalhar |
+| modalidade **mensal** | o desconto é **sobre o mês**, não por dia | quem recebe valor fechado não tem "valor do dia" para multiplicar |
+| modalidade **por dia** (Seg-Sex, Seg-Qui) | desconta os **dias úteis** de férias | é o mesmo caminho que a alimentação já usa |
+
+⚠️ **Isto é DIFERENTE do que a planilha faz hoje.** Hoje o transporte não
+desconta nada (§7.14.7): as colunas de feriado existem na aba, são calculadas e
+não entram na conta. A alimentação desconta feriado **e** férias. Então:
+
+- **na alimentação**, a mudança é tirar o desconto de **feriado de um dia**?
+  **NÃO — não mexer sem ele dizer.** Ele falou do transporte. A alimentação é
+  refeição: faz sentido não pagar o feriado, porque não houve refeição. Não
+  inferir dali uma mudança na alimentação.
+- **no transporte**, a mudança é acrescentar o desconto de **férias**, e **não**
+  o de feriado.
+
+### 7.16.2 O que falta para fazer: o dado de férias
+
+A regra está decidida e **não dá para implementar ainda**, porque o sistema não
+sabe quem está de férias. Hoje isso vive na aba `Férias` da planilha, que o
+sistema não lê.
+
+Ele já disse o caminho:
+
+> *"Depois vou ver o modelo de relatório de férias e de pessoas em demissão para
+> importar pra ser feito a crítica."*
+
+Então a ordem é: **relatório de férias → carga → sinalizar na tela → descontar no
+transporte.** Sem o primeiro, os outros três não existem. A marca "está de
+férias" que ele pediu entra junto com a carga, no mesmo lugar onde a marca de
+desligamento já está (§7.16.3).
+
+### 7.16.3 Desligamento: FEITO em 27/09/2026, e por que não esperou o relatório
+
+Palavras dele, e é o cuidado mais caro desta área:
+
+> *"Isso impacta em tudo, pois não podemos pagar esse tipo de verba indenizatória
+> ou ainda pagar salário ou diárias pra quem saiu, tá saindo. Tem que ter
+> cuidados e alerta."*
+
+**Isto já deu para fazer sem o relatório**, porque o cadastro que vem do Pipefy
+já traz **data do aviso prévio, último dia trabalhado, data de saída e a fase**.
+O relatório que ele vai mandar será uma **segunda fonte**, para conferir uma
+contra a outra — não é a primeira.
+
+`colaboradores.situacao_no_pagamento(ficha, ate)` responde, num lugar só, para as
+duas telas e para o gerador de pagamento que vier:
+
+| Situação | Trava o pagamento? | Quando |
+|---|---|---|
+| **saiu** | **sim** | data de saída até o fim do período, **ou** a fase diz `Colaboradores Desligados` |
+| **saindo** | não | saída depois do fim do período, último dia marcado, ou aviso prévio dado |
+| **afastado** | **sim** (auxílios) | a fase diz `Colaboradores Afastados` |
+| ativo | não | nada disso |
+
+Três coisas nesse desenho que não são óbvias:
+
+1. **A data que manda é o FIM DO PERÍODO que se paga, não hoje.** Pagar a
+   quinzena de 1 a 15 no dia 20 é normal; quem saiu no dia 18 trabalhou a
+   quinzena inteira e **recebe**. Usar "hoje" bloquearia pagamento devido — e
+   bloquear o que é devido gera reclamação trabalhista, que é o outro lado do
+   mesmo risco.
+2. **A fase manda, e não fui eu quem decidiu.** As abas de alimentação e de
+   transporte já excluem pela fase (§7.14.6). Uma segunda regra aqui criaria
+   duas respostas para a mesma pergunta.
+3. **O desacordo entre os sinais é notícia, não é para resolver calado.** Fase
+   dizendo desligado sem data de saída, data de saída com a fase dizendo ativo,
+   último dia já passado sem saída lançada — os três ficam escritos na tela.
+   **Cadastro pela metade é por onde se paga quem já saiu**, e quem tem desacordo
+   **continua aparecendo na lista**, marcado (esconder o caso inconsistente é o
+   erro que ele corrigiu em 26/09/2026).
+
+Na tela: um aviso no alto com a **contagem do cadastro inteiro** (não da lista,
+que tem teto de 200), um filtro "só quem está saindo" que **traz quem já saiu**
+junto, a frase do que não pagar em cada linha, e a linha destacada. Âmbar para
+"está saindo" e cinza para "saiu": cores iguais fariam tratar do mesmo jeito dois
+casos em que um tem pagamento legítimo.
+
+### 7.16.4 O que a rescisão NÃO faz por aqui
+
+Ele falou de **verba indenizatória**. Fica escrito, porque é limite de escopo:
+**rescisão não se calcula nem se paga por este módulo.** O aviso da tela diz
+isso com todas as letras ("rescisão não se paga por aqui"). O que o módulo faz é
+impedir que a folha, a diária ou o auxílio do período saiam para quem já saiu —
+e mostrar quem está saindo, para alguém conferir o que é devido até o último dia.
+
+### 7.16.5 O que fica pendente desta conversa
+
+| O que | Depende de |
+|---|---|
+| carga do **relatório de férias** | ele mandar o modelo |
+| **marca "está de férias"** na tela | a carga acima |
+| **desconto proporcional de férias no transporte** | a carga acima |
+| carga do **relatório de demissão** (segunda fonte) | ele mandar o modelo |
+| conferir uma fonte contra a outra (cadastro × relatório) | as duas cargas |
+| **o feriado de um dia continua sem descontar no transporte** — decidido | nada; já é o comportamento |
 
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 

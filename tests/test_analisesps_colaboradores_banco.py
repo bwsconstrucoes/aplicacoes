@@ -473,3 +473,94 @@ def test_planilha_de_muitas_linhas_e_lida_em_MAIS_DE_UM_bloco(
     resultado = col.atualizar()
     assert resultado["pessoas"] == 8
     assert len(aba.faixas_pedidas) >= 3, "leu tudo de uma vez"
+
+
+# ---------------------------------------------------------------------------
+# O FILTRO E A CONTA DE QUEM ESTÁ SAINDO — 27/09/2026, com banco de verdade
+#
+# ⚠️ São WHERE puro, que o dublê da suíte ignora. Errado aqui, o alerta não
+# acende — e o alerta é o que impede pagar quem saiu.
+# ---------------------------------------------------------------------------
+def test_quem_tem_a_FASE_desligado_sem_data_CONTINUA_na_lista(banco_cadastro):
+    """⚠️ É o caso que mais importa ver, e o mais fácil de esconder por engano:
+    cadastro pela metade é por onde se paga quem já saiu.
+
+    Só a DATA de saída tira alguém da lista do dia a dia. A fase sozinha marca,
+    não esconde. Esconder o caso inconsistente é o erro que o dono corrigiu em
+    26/09/2026: "não pode ficar oculto, escondido"."""
+    from app.apps.analisesps import colaboradores as col
+    gravar(pessoa("99713349334", "SO A FASE DIZ",
+                  fase="Colaboradores Desligados"))
+
+    lista = col.buscar()
+    assert [c["nome"] for c in lista] == ["SO A FASE DIZ"]
+    assert lista[0]["situacao"] == col.SITUACAO_SAIU
+    assert lista[0]["desacordo"], "o desacordo tem de vir escrito"
+    assert lista[0]["alerta"] is True
+
+
+def test_o_filtro_de_quem_esta_saindo_traz_todos_os_sinais(banco_cadastro):
+    from app.apps.analisesps import colaboradores as col
+    gravar(
+        pessoa("99713349334", "NORMAL", fase="Colaboradores Ativos"),
+        pessoa("03513441363", "COM SAIDA", data_saida=dt.date(2026, 8, 31)),
+        pessoa("11144477735", "COM AVISO", aviso_previo=dt.date(2026, 9, 10)),
+        pessoa("52998224725", "COM ULTIMO DIA", ultimo_dia=dt.date(2026, 9, 30)),
+        pessoa("11122233396", "AFASTADA", fase="Colaboradores Afastados"),
+    )
+    nomes = {c["nome"] for c in col.buscar(so_saindo=True, so_ativos=False)}
+    assert nomes == {"COM SAIDA", "COM AVISO", "COM ULTIMO DIA", "AFASTADA"}
+    assert "NORMAL" not in nomes
+
+
+def test_a_conta_de_quem_esta_saindo_olha_o_cadastro_INTEIRO(banco_cadastro):
+    """⚠️ A lista da tela tem teto de 200. Um número que só contasse o visível
+    diria "3 saindo" havendo trinta — e número errado com cara de certo é pior
+    que número nenhum."""
+    from app.apps.analisesps import colaboradores as col
+    gravar(
+        pessoa("99713349334", "NORMAL", fase="Colaboradores Ativos"),
+        pessoa("03513441363", "SAIU", data_saida=dt.date(2026, 8, 31)),
+        pessoa("11144477735", "SAINDO", aviso_previo=dt.date(2026, 9, 10)),
+        pessoa("11122233396", "AFASTADA", fase="Colaboradores Afastados"),
+    )
+    conta = col.contar_quem_esta_saindo(ate=dt.date(2026, 9, 15))
+    assert conta["com_sinal"] == 3
+    assert conta["saiu"] == 1
+    assert conta["afastado"] == 1
+
+
+def test_a_conta_nao_estoura_com_o_cadastro_vazio(banco_cadastro):
+    from app.apps.analisesps import colaboradores as col
+    assert col.contar_quem_esta_saindo() == {"com_sinal": 0, "saiu": 0,
+                                            "afastado": 0}
+
+
+def test_a_situacao_vem_junto_na_busca_e_na_ficha(banco_cadastro):
+    """As telas leem daqui. Se a situação não viesse na lista, cada tela teria
+    de calcular a sua — e elas divergiriam."""
+    from app.apps.analisesps import colaboradores as col
+    gravar(pessoa("03513441363", "SAINDO", data_saida=dt.date(2026, 9, 18)))
+
+    da_busca = col.buscar(so_ativos=False, ate=dt.date(2026, 9, 15))[0]
+    da_ficha = col.por_cpf("03513441363", ate=dt.date(2026, 9, 15))
+    de_varios = col.muitos_por_cpf(["03513441363"],
+                                   ate=dt.date(2026, 9, 15))["03513441363"]
+
+    for r in (da_busca, da_ficha, de_varios):
+        assert r["situacao"] == col.SITUACAO_SAINDO
+        assert r["trava"] is False
+        assert "18/09/2026" in r["motivo"]
+
+
+def test_o_periodo_muda_a_resposta_para_a_MESMA_pessoa(banco_cadastro):
+    """Mesma pessoa, dois períodos: a quinzena que ela trabalhou inteira recebe;
+    a seguinte, não. É por isso que `ate` existe."""
+    from app.apps.analisesps import colaboradores as col
+    gravar(pessoa("03513441363", "SAIU DIA 18", data_saida=dt.date(2026, 9, 18)))
+
+    na_quinzena = col.por_cpf("03513441363", ate=dt.date(2026, 9, 15))
+    no_fim_do_mes = col.por_cpf("03513441363", ate=dt.date(2026, 9, 30))
+
+    assert na_quinzena["trava"] is False
+    assert no_fim_do_mes["trava"] is True

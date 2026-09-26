@@ -4886,7 +4886,12 @@ def test_quem_saiu_so_aparece_quando_se_pede(app, monkeypatch):
     from app.apps.analisesps import colaboradores as col
     pedidos = {}
 
-    def falso_buscar(texto="", so_ativos=True, teto=200):
+    # ⚠️ O DUBLÊ ACEITA **kwargs de propósito. Este teste quebrou em 27/09/2026
+    # quando `buscar` ganhou o parâmetro `so_saindo`: o dublê recusou o
+    # argumento novo e a tela caiu no `except`, então o teste passou a falhar
+    # por um motivo que não era o dele. Dublê preso à assinatura de hoje
+    # transforma cada parâmetro novo numa falha falsa.
+    def falso_buscar(texto="", so_ativos=True, teto=200, **resto):
         pedidos["so_ativos"] = so_ativos
         return []
 
@@ -5054,3 +5059,121 @@ def test_o_recado_do_cadastro_NAO_diz_SPs(app):
     assert '"colaboradores"' in trecho, (
         "o modo do cadastro não está na lista dos que têm recado próprio — a "
         "tela vai dizer 'N SPs' depois de atualizar o cadastro")
+
+
+def test_a_tela_avisa_quem_esta_saindo_e_oferece_a_lista(app, monkeypatch):
+    """Pedido do dono em 27/09/2026: *"não podemos pagar (…) salário ou diárias
+    pra quem saiu, tá saindo. Tem que ter cuidados e alerta."*
+
+    Alerta sem um lugar para ver a lista é só susto."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    monkeypatch.setattr(col, "contar_quem_esta_saindo",
+                        lambda *a, **k: {"com_sinal": 7, "saiu": 3,
+                                         "afastado": 1})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    assert "7 pessoa(s) com sinal de saída" in html
+    assert "3 já saiu" in html
+    assert "1 afastada" in html
+    assert "rescisão" in html.lower()
+    assert "saindo=1" in html, "o aviso tem de levar à lista"
+
+
+def test_sem_ninguem_saindo_o_aviso_NAO_aparece(app, monkeypatch):
+    """⚠️ Aviso que aparece sempre vira enfeite, e enfeite ninguém lê. A maioria
+    dos dias não tem ninguém saindo."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    monkeypatch.setattr(col, "contar_quem_esta_saindo",
+                        lambda *a, **k: {"com_sinal": 0, "saiu": 0,
+                                         "afastado": 0})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+    assert "sinal de saída" not in html
+
+
+def test_o_filtro_de_quem_esta_saindo_TRAZ_quem_ja_saiu(app, monkeypatch):
+    """Senão a lista esconderia metade do que ela existe para mostrar."""
+    from app.apps.analisesps import colaboradores as col
+    pedidos = {}
+
+    def falso_buscar(texto="", so_ativos=True, teto=200, so_saindo=False,
+                     ate=None):
+        pedidos.update(so_ativos=so_ativos, so_saindo=so_saindo)
+        return []
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "buscar", falso_buscar)
+    monkeypatch.setattr(col, "contar_quem_esta_saindo",
+                        lambda *a, **k: {"com_sinal": 0, "saiu": 0,
+                                         "afastado": 0})
+
+    _como_mestre(app).get("/analisesps/folha/colaboradores?saindo=1")
+    assert pedidos["so_saindo"] is True
+    assert pedidos["so_ativos"] is False, \
+        "o filtro de quem está saindo não pode esconder quem já saiu"
+
+
+def test_a_linha_de_quem_esta_saindo_mostra_a_frase_e_o_desacordo(app, monkeypatch):
+    """O selo sozinho ("saiu") não instrui ninguém: a frase diz o que NÃO
+    pagar, e é o ponto do alerta."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "contar_quem_esta_saindo",
+                        lambda *a, **k: {"com_sinal": 1, "saiu": 1,
+                                         "afastado": 0})
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [{
+        c: "" for c in col.CAMPOS} | {
+        "cpf": "99713349334", "nome": "QUEM SAIU",
+        "valor_alimentacao": None, "valor_transporte": None,
+        "valor_gratificacao": None, "aviso_previo": None, "ultimo_dia": None,
+        "data_saida": dt.date(2026, 8, 31), "link_pipefy": "",
+        "desligado": True, "situacao": "saiu", "alerta": True,
+        "motivo": "saiu em 31/08/2026. Não pague folha, diária nem auxílio "
+                  "deste período por aqui.",
+        "desacordo": "a fase no Pipefy ainda diz \"Colaboradores Ativos\"."}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    assert "Não pague folha" in html
+    assert "linha-alerta" in html, "a linha tem de ficar destacada"
+    assert "ainda diz" in html, "o desacordo tem de aparecer escrito"
+
+
+def test_quem_esta_saindo_e_marcado_tambem_na_tela_de_RATEIO(app, monkeypatch):
+    """Uma regra de rateio apontando para quem saiu apropria salário de
+    ninguém, e o erro fica invisível até a folha não fechar."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import (colaboradores as col, folha_rateio as fr,
+                                     sincronizacao)
+
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [{
+        "id": 7, "nome": "Supervisores", "ativa": True, "observacao": "",
+        "criado_por": "", "alterado_em": None, "alterado_por": "",
+        "pessoas": [{"cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+                     "nome": "QUEM SAI"}],
+        "obras": [{"obra": "X", "percentual": Decimal("100"), "resto": False}]}])
+    monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
+    monkeypatch.setattr(col, "muitos_por_cpf", lambda cpfs, ate=None: {
+        "99713349334": {"nome": "QUEM SAI", "link_pipefy": "",
+                        "desligado": False, "situacao": "saindo",
+                        "motivo": "sai em 18/09/2026.", "desacordo": "",
+                        "alerta": True}})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/rateio").get_data(as_text=True)
+    assert "está saindo" in html
+    assert "18/09/2026" in html
