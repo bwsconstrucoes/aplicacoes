@@ -4612,3 +4612,121 @@ def test_o_codigo_de_barras_do_boleto_tem_teto_de_largura():
         "o código de barras voltou a crescer sem limite")
     assert ".ficha-codigo .codigo-barras svg { max-width: 560px; }" in css, (
         "dentro da ficha o boleto voltou a mandar no tamanho do modal")
+
+
+# ---------------------------------------------------------------------------
+# A TELA DE RATEIO DA FOLHA — 26/09/2026
+# ---------------------------------------------------------------------------
+def _como_mestre(app):
+    """Entra pela porta de emergência, que é mestre por definição."""
+    cliente = app.test_client()
+    cliente.post("/analisesps/entrar", data={"senha": SENHA_OPERADOR})
+    return cliente
+
+
+def test_a_tela_de_rateio_da_folha_monta_com_as_regras(app, monkeypatch):
+    """Pedido do dono em 26/09/2026: um lugar para eleger quem é rateado e dizer
+    para quais obras o valor vai, com peso."""
+    from app.apps.analisesps import folha_rateio as fr, sincronizacao
+    from decimal import Decimal
+
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio", lambda: {
+        "obras": [{"nome": "CREPEAREIAS", "codigo": "1"},
+                  {"nome": "CREPEOLINDA", "codigo": "2"}], "categorias": []})
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [{
+        "id": 7, "nome": "Supervisores de Pernambuco", "ativa": True,
+        "observacao": "não batem ponto", "criado_por": "MARCELO",
+        "alterado_em": None, "alterado_por": "",
+        "pessoas": [{"cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+                     "nome": "GERLANIO GOMES LIMA"}],
+        "obras": [{"obra": "CREPEAREIAS", "percentual": Decimal("50.0000"),
+                   "resto": False},
+                  {"obra": "CREPEOLINDA", "percentual": None, "resto": True}]}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/rateio").get_data(as_text=True)
+
+    assert "Supervisores de Pernambuco" in html
+    assert "GERLANIO GOMES LIMA" in html
+    assert "997.133.493-34" in html
+    assert "CREPEAREIAS" in html
+    assert "o resto" in html, "a obra marcada como resto não aparece como tal"
+
+
+def test_sem_a_migracao_a_tela_de_rateio_AVISA_e_nao_estoura(app, monkeypatch):
+    """O código sobe antes do botão. Uma tela que estourasse nessa janela
+    derrubaria a confiança na publicação inteira."""
+    from app.apps.analisesps import folha_rateio as fr, sincronizacao
+
+    monkeypatch.setattr(fr, "_pronto", lambda: False)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    resposta = _como_mestre(app).get("/analisesps/folha/rateio")
+
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Aplicar atualizações do banco" in html
+    assert 'id="btn-nova-regra"' not in html
+
+
+def test_a_lista_de_obras_do_rateio_e_a_MESMA_do_ratear(app, monkeypatch):
+    """Uma segunda lista de obras divergiria da primeira no dia em que alguém
+    cadastrasse obra nova."""
+    from app.apps.analisesps import folha_rateio as fr, sincronizacao
+    chamou = {}
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: chamou.setdefault("sim", True) and {
+                            "obras": [{"nome": "OBRAX", "codigo": "9"}],
+                            "categorias": []})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/rateio").get_data(as_text=True)
+
+    assert chamou.get("sim") is True
+    assert "OBRAX" in html
+
+
+def test_a_lista_de_obras_fora_do_ar_nao_derruba_a_tela(app, monkeypatch):
+    from app.apps.analisesps import folha_rateio as fr, sincronizacao
+
+    def explode():
+        raise RuntimeError("banco fora")
+
+    monkeypatch.setattr(fr, "_pronto", lambda: True)
+    monkeypatch.setattr(fr, "listar", lambda so_ativas=False: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio", explode)
+    assert _como_mestre(app).get(
+        "/analisesps/folha/rateio").status_code == 200
+
+
+def test_o_rateio_da_folha_e_SO_DO_MESTRE():
+    """Isto decide para qual obra vai o salário de alguém, toda quinzena. O DP
+    opera a folha; o rateio é do dono."""
+    from app.apps.analisesps import auth as guarda
+
+    assert "folha_rateio" in guarda.SO_DO_MESTRE_POR_TELA
+    for rota in ("analisesps.tela_folha_rateio", "analisesps.folha_rateio_gravar",
+                 "analisesps.folha_rateio_apagar",
+                 "analisesps.folha_rateio_simular"):
+        assert guarda.e_so_do_mestre(rota) is True, rota
+
+
+def test_a_tela_de_rateio_NAO_e_oferecida_no_cadastro_de_acesso(monkeypatch):
+    """Tela que só o mestre abre não pode aparecer na lista de telas liberáveis —
+    liberar e a pessoa levar 404 é pior que não liberar."""
+    from app.apps.analisesps import usuarios
+    assert "folha_rateio" not in [t[0] for t in usuarios.telas_liberaveis()]
+
+
+def test_apagar_uma_regra_recomenda_DESATIVAR_antes():
+    """A regra desativada explica como a folha de março foi rateada. Apagar existe
+    para a regra criada errada, que nunca rateou nada."""
+    from pathlib import Path
+    html = Path("app/apps/analisesps/templates/"
+                "analisesps_folha_rateio.html").read_text(encoding="utf-8")
+    trecho = html[html.index('.apagar-regra").forEach'):]
+    assert "DESATIVAR" in trecho
+    assert "não tem volta" in trecho
+    assert trecho.index("confirm(") < trecho.index("folha_rateio_apagar")

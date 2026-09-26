@@ -328,12 +328,20 @@ def pessoa_atual() -> str:
 # As telas do menu que NÃO se pode liberar para ninguém. Configurações é de
 # onde se aplica migração, se troca o certificado digital e se cadastra gente —
 # é a tela que conserta o módulo, e ela é do dono.
-SO_DO_MESTRE_POR_TELA = frozenset({"configuracoes"})
+SO_DO_MESTRE_POR_TELA = frozenset({"configuracoes", "folha_rateio"})
+# ⚠️ "folha_rateio" entrou em 26/09/2026: ela define para qual obra vai o
+# salário de alguém, toda quinzena, até alguém mudar. O DP opera a folha; o
+# rateio é do dono — decisão dele: *"o usuário do DP faz a leitura, mas o
+# usuário master, que sou eu, eu gero o arquivo"*.
 
 # Rotas que são só do mestre, por escreverem no OMIE, mexerem em segredo ou
 # configurarem o módulo. Nome exato, para não pegar vizinho por engano.
 SO_DO_MESTRE = frozenset({
     "analisesps.configuracoes",
+    "analisesps.tela_folha_rateio",      # decide o rateio do salário
+    "analisesps.folha_rateio_gravar",
+    "analisesps.folha_rateio_apagar",
+    "analisesps.folha_rateio_simular",
     "analisesps.migrar",                 # aplica migração no banco
     "analisesps.gravar_pessoas",         # a lista de nomes da entrada
     "analisesps.gravar_pasta_drive",

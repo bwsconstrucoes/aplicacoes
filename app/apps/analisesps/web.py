@@ -162,6 +162,9 @@ TELAS = [
     ("conciliacao",   "Conciliação",   "analisesps.tela_conciliacao"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
+    # Vizinha do Ratear de propósito: as duas respondem "para onde vai o
+    # dinheiro". Esta é só do MESTRE, então só ele a vê no menu.
+    ("folha_rateio",  "Rateio da Folha", "analisesps.tela_folha_rateio"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
     ("log",           "Log",           "analisesps.log"),
     ("configuracoes", "Configurações", "analisesps.configuracoes"),
@@ -2184,6 +2187,105 @@ def conciliacao_desfazer():
         logger.exception("Conciliação: falhou desfazer")
         return {"ok": False, "erro": f"Não consegui desfazer: {e}"}, 500
     return {"ok": True, "so_contei": False, **feito}
+
+
+# ===========================================================================
+# O RATEIO DA FOLHA — para quem o ponto não pode apropriar (26/09/2026)
+#
+# Pedido do dono: *"em algum local a gente eleger as pessoas que vão ser rateadas
+# e, para cada uma — ou para um grupo — definir para quais obras o valor dela vai
+# ser rateado (…) pode ser que uma obra entre mais que a outra."*
+#
+# ⚠️ SÓ DO MESTRE. Isto decide para qual obra vai o salário de alguém, toda
+# quinzena, até alguém mudar. O DP opera a folha; quem define o rateio é o dono
+# (decisão dele em 26/09/2026: *"o usuário do DP faz a leitura, mas o usuário
+# master, que sou eu, eu gero o arquivo"*).
+# ===========================================================================
+@bp.route("/folha/rateio")
+@exige_operador
+def tela_folha_rateio():
+    from . import folha_rateio as fr
+
+    pronto = fr._pronto()
+    # A lista de obras é a MESMA do Ratear — a aba "C. Diários", carregada toda
+    # noite. Uma segunda lista de obras divergiria da primeira no dia em que
+    # alguém cadastrasse obra nova.
+    from . import sincronizacao
+    try:
+        obras = [o["nome"] for o in
+                 (sincronizacao.referencias_rateio().get("obras") or [])]
+    except Exception:  # noqa: BLE001 — a lista é apoio; sem ela dá recado
+        logger.exception("Folha: não consegui ler a lista de obras")
+        obras = []
+    return render_template(
+        "analisesps_folha_rateio.html", aba="folha_rateio",
+        pronto=pronto, regras=fr.listar() if pronto else [], obras=obras,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/rateio", methods=["POST"])
+@exige_operador
+def folha_rateio_gravar():
+    """Cria ou altera uma regra de rateio."""
+    from . import folha_rateio as fr
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        regra_id = fr.gravar(dados, quem)
+    except fr.ErroDoRateio as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Folha: falhou gravar a regra de rateio")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": regra_id}
+
+
+@bp.route("/api/folha/rateio/apagar", methods=["POST"])
+@exige_operador
+def folha_rateio_apagar():
+    """Apaga uma regra. A tela recomenda DESATIVAR antes de oferecer isto."""
+    from . import folha_rateio as fr
+
+    dados = request.get_json(silent=True) or {}
+    regra_id = str(dados.get("id") or "")
+    if not regra_id.isdigit():
+        return {"ok": False, "erro": "Diga qual regra."}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        apagou = fr.apagar(int(regra_id), quem)
+    except fr.ErroDoRateio as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou apagar a regra de rateio")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    if not apagou:
+        return {"ok": False, "erro": "Esta regra não existe mais."}
+    return {"ok": True}
+
+
+@bp.route("/api/folha/rateio/simular", methods=["POST"])
+@exige_operador
+def folha_rateio_simular():
+    """Mostra a divisão ANTES de gravar — o dono vê o valor em cada obra.
+
+    ⚠️ USA A MESMA CONTA DA GRAVAÇÃO (`distribuir`). Uma prévia calculada por
+    outro caminho divergiria no primeiro arredondamento, e aí a tela prometeria
+    um número e o sistema pagaria outro."""
+    from . import folha_rateio as fr
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        partes = fr.distribuir(dados.get("valor") or 0, dados.get("obras"))
+    except fr.ErroDoRateio as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "erro": f"Não consegui calcular: {e}"}, 500
+    return {"ok": True, "partes": [
+        {"obra": p["obra"], "percentual": str(p["percentual"]),
+         "valor": str(p["valor"])} for p in partes]}
 
 
 @bp.route("/api/conciliacao/apagar-linha", methods=["POST"])

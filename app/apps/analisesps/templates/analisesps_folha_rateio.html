@@ -1,0 +1,291 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Rateio da Folha — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Rateio da Folha <small>{{ regras|length }} regra(s)</small></h2>
+
+<p class="cartao-dica" style="margin-bottom:14px">
+  Para quem o ponto <b>não</b> pode apropriar: o supervisor que não bate ponto por
+  causa da função, e quem bate ponto na matriz ou na filial. Aqui você diz, de uma
+  vez, <b>para quais obras o valor daquela pessoa vai</b> — e com que peso. Vale
+  para toda quinzena, até você mudar.
+</p>
+
+{% if not pronto %}
+  {# A migração 027 ainda não rodou. O código sobe antes do botão ser apertado, e
+     uma tela que estourasse aqui derrubaria a confiança na publicação inteira. #}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui.
+  </div>
+{% else %}
+
+<div class="barra-acoes">
+  <button class="btn" id="btn-nova-regra">+ Nova regra</button>
+  <span id="recado-rateio" class="cartao-dica" style="margin:0"></span>
+</div>
+
+{% if not regras %}
+  <p class="cartao-dica">Nenhuma regra ainda. Quem não tiver regra continua sendo
+    apropriado pelo ponto, como sempre.</p>
+{% endif %}
+
+{% for r in regras %}
+  <div class="cartao {{ 'regra-inativa' if not r.ativa }}">
+    <div class="cartao-cab">
+      <h3>{{ r.nome }}
+        {% if not r.ativa %}<span class="selo cancelado">desativada</span>{% endif %}
+      </h3>
+      <small>
+        {% if pode_operar %}
+          <button class="btn secundario editar-regra"
+                  data-regra="{{ r|tojson|forceescape }}">Editar</button>
+          <button class="btn secundario apagar-regra"
+                  data-id="{{ r.id }}" data-nome="{{ r.nome }}">Apagar</button>
+        {% endif %}
+      </small>
+    </div>
+
+    {% if r.observacao %}<p class="cartao-dica">{{ r.observacao }}</p>{% endif %}
+
+    <div class="regra-dois-lados">
+      <div>
+        <label class="rotulo-campo">Quem ({{ r.pessoas|length }})</label>
+        <ul class="lista-seca">
+          {% for p in r.pessoas %}
+            <li>{{ p.nome or '—' }} <span class="cartao-dica">{{ p.cpf_bonito }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <label class="rotulo-campo">Para onde ({{ r.obras|length }} obra(s))</label>
+        <ul class="lista-seca">
+          {% for o in r.obras %}
+            <li><b>{{ o.obra }}</b>
+              {% if o.resto %}<span class="selo no-lote">o resto</span>
+              {% else %}<span class="cartao-dica">{{ o.percentual }}%</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+
+{# ---------------------------------------------------------------------------
+   O FORMULÁRIO — uma porta só, como manda a regra da casa: não há "criar" de um
+   lado e "editar" de outro. É o mesmo diálogo; editar só chega com os campos
+   preenchidos.
+--------------------------------------------------------------------------- #}
+<dialog class="dialogo" id="cartao-regra">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3 id="titulo-regra">Nova regra de rateio</h3>
+
+  <input type="hidden" id="regra-id">
+  <label class="rotulo-campo">Nome da regra</label>
+  <input class="campo-largo" id="regra-nome"
+         placeholder="ex.: Supervisores de Pernambuco">
+
+  <label class="rotulo-campo">Observação (opcional)</label>
+  <input class="campo-largo" id="regra-observacao"
+         placeholder="por que essas pessoas são rateadas assim">
+
+  <label class="opcao" style="margin-top:8px">
+    <input type="checkbox" id="regra-ativa" checked>
+    <span class="rotulo">valendo (desmarque para guardar como histórico)</span>
+  </label>
+
+  <label class="rotulo-campo" style="margin-top:14px">Quem entra nesta regra</label>
+  <p class="cartao-dica" style="margin:0 0 6px">
+    Um por linha: <b>CPF e nome</b>, separados por vírgula ou ponto e vírgula. O
+    nome é só para você reconhecer na tela — quem manda é o CPF.
+  </p>
+  <textarea class="campo-largo" id="regra-pessoas" rows="5"
+            placeholder="997.133.493-34, GERLANIO GOMES LIMA&#10;035.134.413-63; LUELIA MADIDA GOMES TOMAS"></textarea>
+
+  <label class="rotulo-campo" style="margin-top:14px">Para quais obras, e com que peso</label>
+  <p class="cartao-dica" style="margin:0 0 6px">
+    Ou você diz o percentual de cada obra (somando 100%), ou marca algumas como
+    <b>"o resto"</b> — aí eu divido o que sobrou entre elas, em partes iguais.
+    É o "uma obra com 50% e o restante dividido entre as outras".
+  </p>
+  <div id="regra-obras"></div>
+  <button class="btn secundario" id="btn-mais-obra" style="margin-top:6px">+ obra</button>
+
+  <div style="margin-top:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <label class="rotulo-campo" style="margin:0">Conferir com um valor</label>
+    <input id="regra-simular-valor" name="valor" style="width:140px"
+           placeholder="1.000,00">
+    <button class="btn secundario" id="btn-simular">Ver a divisão</button>
+  </div>
+  <div id="saida-simulacao"></div>
+
+  <div style="margin-top:16px; display:flex; gap:8px">
+    <button class="btn" id="btn-gravar-regra">Gravar</button>
+    <span id="recado-regra" class="cartao-dica" style="margin:0"></span>
+  </div>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if pronto and pode_operar %}
+<script>
+// ===========================================================================
+// As obras vêm da MESMA lista do Ratear (a aba "C. Diários"), para as duas telas
+// nunca divergirem.
+// ===========================================================================
+const OBRAS = {{ obras|tojson }};
+
+function recado(texto, classe) {
+  const alvo = document.getElementById("recado-rateio");
+  alvo.textContent = texto;
+  alvo.className = "cartao-dica " + (classe || "");
+  if (texto) setTimeout(() => { if (alvo.textContent === texto) alvo.textContent = ""; }, 5000);
+}
+
+async function pedir(url, corpo) {
+  const r = await fetch(url, {method: "POST",
+    headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+  return await r.json();
+}
+
+// --- as linhas de obra do formulário ---------------------------------------
+function linhaDeObra(obra, percentual, resto) {
+  const div = document.createElement("div");
+  div.className = "linha-obra";
+  const opcoes = OBRAS.map(o =>
+    '<option value="' + o + '"' + (o === obra ? " selected" : "") + '>' + o + '</option>').join("");
+  div.innerHTML =
+    '<select class="obra-nome"><option value="">escolha a obra…</option>' + opcoes + '</select>' +
+    '<input class="obra-pct" style="width:90px" placeholder="%" value="' +
+      (percentual === null || percentual === undefined ? "" : percentual) + '">' +
+    '<label class="opcao"><input type="checkbox" class="obra-resto"' +
+      (resto ? " checked" : "") + '><span class="rotulo">o resto</span></label>' +
+    '<button class="btn secundario tirar-obra" title="tirar esta obra">×</button>';
+  // Marcar "o resto" apaga e tranca o percentual: as duas coisas juntas na mesma
+  // linha seriam duas respostas para a mesma pergunta.
+  const caixa = div.querySelector(".obra-resto");
+  const pct = div.querySelector(".obra-pct");
+  const sincronizar = () => {
+    pct.disabled = caixa.checked;
+    if (caixa.checked) pct.value = "";
+  };
+  caixa.addEventListener("change", sincronizar);
+  sincronizar();
+  div.querySelector(".tirar-obra").addEventListener("click", () => div.remove());
+  return div;
+}
+
+function obrasDoFormulario() {
+  return Array.from(document.querySelectorAll("#regra-obras .linha-obra"))
+    .map(l => ({
+      obra: l.querySelector(".obra-nome").value,
+      percentual: l.querySelector(".obra-pct").value,
+      resto: l.querySelector(".obra-resto").checked,
+    }))
+    .filter(o => o.obra);
+}
+
+function pessoasDoFormulario() {
+  return document.getElementById("regra-pessoas").value.split("\n")
+    .map(linha => linha.trim()).filter(Boolean)
+    .map(linha => {
+      const partes = linha.split(/[;,]/);
+      return {cpf: (partes[0] || "").trim(),
+              nome: partes.slice(1).join(",").trim()};
+    });
+}
+
+function abrirRegra(regra) {
+  document.getElementById("titulo-regra").textContent =
+    regra ? "Editar regra de rateio" : "Nova regra de rateio";
+  document.getElementById("regra-id").value = regra ? regra.id : "";
+  document.getElementById("regra-nome").value = regra ? regra.nome : "";
+  document.getElementById("regra-observacao").value = regra ? (regra.observacao || "") : "";
+  document.getElementById("regra-ativa").checked = regra ? !!regra.ativa : true;
+  document.getElementById("regra-pessoas").value = regra
+    ? regra.pessoas.map(p => p.cpf_bonito + (p.nome ? ", " + p.nome : "")).join("\n")
+    : "";
+  const caixaObras = document.getElementById("regra-obras");
+  caixaObras.innerHTML = "";
+  const lista = (regra && regra.obras.length) ? regra.obras : [{}, {}];
+  lista.forEach(o => caixaObras.appendChild(
+    linhaDeObra(o.obra, o.percentual, o.resto)));
+  document.getElementById("saida-simulacao").innerHTML = "";
+  document.getElementById("recado-regra").textContent = "";
+  document.getElementById("cartao-regra").showModal();
+}
+
+document.getElementById("btn-nova-regra").addEventListener("click", () => abrirRegra(null));
+document.querySelectorAll(".editar-regra").forEach(b =>
+  b.addEventListener("click", () => abrirRegra(JSON.parse(b.dataset.regra))));
+document.getElementById("btn-mais-obra").addEventListener("click", () =>
+  document.getElementById("regra-obras").appendChild(linhaDeObra()));
+
+// --- conferir a divisão ANTES de gravar -------------------------------------
+document.getElementById("btn-simular").addEventListener("click", async () => {
+  const alvo = document.getElementById("saida-simulacao");
+  const d = await pedir("{{ url_for('analisesps.folha_rateio_simular') }}",
+    {valor: document.getElementById("regra-simular-valor").value,
+     obras: obrasDoFormulario()});
+  if (!d.ok) {
+    alvo.innerHTML = '<div class="aviso erro">' + d.erro + "</div>";
+    return;
+  }
+  let html = '<table class="sps" style="margin-top:8px"><thead><tr>' +
+    "<th>Obra</th><th class=\"direita\">%</th><th class=\"direita\">Valor</th>" +
+    "</tr></thead><tbody>";
+  let soma = 0;
+  d.partes.forEach(p => {
+    soma += parseFloat(p.valor);
+    html += "<tr><td>" + p.obra + '</td><td class="direita">' +
+      parseFloat(p.percentual).toFixed(2).replace(".", ",") +
+      '%</td><td class="direita">' +
+      parseFloat(p.valor).toLocaleString("pt-BR", {minimumFractionDigits: 2}) +
+      "</td></tr>";
+  });
+  html += '</tbody><tfoot><tr><th>Soma</th><th></th><th class="direita">' +
+    soma.toLocaleString("pt-BR", {minimumFractionDigits: 2}) +
+    "</th></tr></tfoot></table>";
+  alvo.innerHTML = html;
+});
+
+// --- gravar -----------------------------------------------------------------
+document.getElementById("btn-gravar-regra").addEventListener("click", async () => {
+  const alvo = document.getElementById("recado-regra");
+  alvo.textContent = "gravando…";
+  const corpo = {
+    nome: document.getElementById("regra-nome").value,
+    observacao: document.getElementById("regra-observacao").value,
+    ativa: document.getElementById("regra-ativa").checked,
+    pessoas: pessoasDoFormulario(),
+    obras: obrasDoFormulario(),
+  };
+  const id = document.getElementById("regra-id").value;
+  if (id) corpo.id = id;
+  const d = await pedir("{{ url_for('analisesps.folha_rateio_gravar') }}", corpo);
+  if (!d.ok) { alvo.textContent = d.erro; alvo.className = "cartao-dica erro"; return; }
+  location.reload();
+});
+
+// --- apagar, com a recomendação na frente ----------------------------------
+// ⚠️ DESATIVAR É QUASE SEMPRE MELHOR: a regra desativada explica como a folha de
+// março foi rateada. Apagar existe para a regra criada errada, que nunca rateou.
+document.querySelectorAll(".apagar-regra").forEach(b =>
+  b.addEventListener("click", async () => {
+    const nome = b.dataset.nome;
+    if (!confirm('Apagar a regra "' + nome + '"?\n\n' +
+        "Se ela já foi usada em alguma folha, prefira DESATIVAR: desativada, " +
+        "ela continua explicando como aquela folha foi rateada.\n\n" +
+        "Isto não tem volta.")) return;
+    b.disabled = true;
+    const d = await pedir("{{ url_for('analisesps.folha_rateio_apagar') }}",
+                          {id: b.dataset.id});
+    if (!d.ok) { b.disabled = false; recado(d.erro, "erro"); return; }
+    location.reload();
+  }));
+</script>
+{% endif %}
+{% endblock %}

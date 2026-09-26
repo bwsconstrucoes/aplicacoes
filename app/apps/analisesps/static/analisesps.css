@@ -682,6 +682,24 @@ a.kpi { display: block; }
 .apagar-linha:hover { color: var(--sl-vermelho); }
 .apagar-linha:disabled { opacity: .4; cursor: default; }
 
+/* ---------------------------------------------------------------------------
+   RATEIO DA FOLHA — quem, e para onde o valor vai (26/09/2026)
+--------------------------------------------------------------------------- */
+.regra-inativa { opacity: .65; }
+.regra-dois-lados {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px;
+}
+@media (max-width: 720px) { .regra-dois-lados { grid-template-columns: 1fr; } }
+.lista-seca { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
+.lista-seca li { margin-bottom: 3px; }
+/* Uma linha do formulario: obra, percentual, "o resto" e o x de tirar. */
+.linha-obra {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.linha-obra .obra-nome { flex: 1; min-width: 180px; }
+.linha-obra .obra-pct:disabled { background: var(--papel); opacity: .6; }
+
 /* O NUMERO DA SP NAO E PINTADO. O Streamlit tingia o ID de vermelho ou
    laranja conforme o alerta, e na conversao isso somou com o vencimento
    vermelho ao lado: a linha inteira ficava gritando. O dono pediu para tirar

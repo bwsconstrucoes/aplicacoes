@@ -18,6 +18,7 @@ Quem começar uma sessão da folha de pagamento lê isto primeiro.
 |---|---|---|
 | **Leitor da Folha Sintética** | `app/apps/analisesps/folha_sintetica.py` | pronto e testado contra o arquivo real de 08/2026: 491 pessoas, R$ 430.129,75, 47 filiais, fechando no centavo |
 | **Conserto do de/para obra → conta** | `sincronizacao.py`, `_contas_da_aba` | pronto; lia a coluna errada (ver D5) |
+| **Regras de rateio + tela** | `folha_rateio.py`, migração 027, tela "Rateio da Folha" | pronto; é o que ele pediu em 26/09 para quem o ponto não apropria (ver §7.4) |
 
 Nada mais. Não há tela, nem tabela nova, nem carga de ponto ainda.
 
@@ -508,21 +509,6 @@ São problemas diferentes: no primeiro não há dia; no segundo há dia, mas no 
 
 ### 7.2 O que ainda falta responder
 
-**Q1 — Como o valor do supervisor (e de quem bate na matriz) se divide entre as
-obras?** É a única coisa que falta para o rateio ficar completo. O cadastro já tem
-uma coluna **`Responsável por Obras`**, que parece ser exatamente a lista das obras
-dele. As formas possíveis, da mais simples à mais justa:
-
-- **igual** entre as obras que ele responde (fácil de explicar, fácil de auditar);
-- **proporcional ao valor da folha** de cada uma dessas obras (a obra maior
-  absorve mais — costuma ser o que o custo real parece);
-- **proporcional ao número de pessoas** de cada obra no período;
-- **na mão**, obra por obra, como o ajuste fino do §7.3.
-
-Minha sugestão: **proporcional ao valor da folha das obras que ele responde**,
-com o ajuste na mão sempre disponível por cima. Mas é decisão sua — muda o custo
-declarado de cada obra.
-
 **Q2 — Renomear "Análise de SPs" para "Análise de Pagamentos": até onde?** Eu
 recomendo mudar **só o que gente lê** — o nome no menu, o título das telas, os
 textos. E **não** mexer na pasta, no nome do schema do banco (`analisesps`) nem
@@ -593,6 +579,56 @@ pagamento e os cards saem com o mestre.
 **O que fica registrado em cada ajuste:** quem fez, quando, o que o ponto dizia,
 o que passou a valer e o motivo. Sem isso, o relatório do mês que vem não explica
 por que a obra X custou mais.
+
+### 7.4 As regras de rateio — decidido e FEITO (26/09/2026)
+
+A resposta dele à minha pergunta sobre como dividir o valor de quem o ponto não
+apropria:
+
+> *"Em algum local a gente eleger as pessoas que vão ser rateadas e, para cada
+> uma — ou para um grupo, porque pode ser que tenha variação entre uma e outra —
+> definir para quais obras o valor dela vai ser rateado. Um detalhe: pode ser que
+> uma obra entre mais que a outra. Tipo assim, uma obra é 50% e o restante
+> dividido entre outras. (…) Tem que ter algum ambiente aí, alguma telinha. E na
+> leitura da tela, algum indicador, uma tag, dizendo que aquela pessoa ali está
+> tendo o distribuído, e eu clicar e abrir de novo e poder editar, poder ver."*
+
+Ou seja: **não é regra automática, é cadastro** — ele elege quem e diz para onde.
+Nada de "proporcional ao valor da folha", que era a minha sugestão. Está certo:
+regra automática esconderia a decisão dele atrás de uma conta.
+
+**O que existe agora** (migração 027, `folha_rateio.py`, tela "Rateio da Folha"):
+
+- **Regra por GRUPO**, com uma ou muitas pessoas. Grupo de um é o caso individual
+  — assim existe uma forma só de perguntar "como essa pessoa é rateada?".
+- **Peso por obra**: percentual por obra somando 100%, **ou** algumas obras
+  marcadas como **"o resto"** — e o resto é dividido em partes iguais entre elas.
+  É o "50% numa obra e o restante dividido entre as outras", sem ninguém fazer a
+  conta de cabeça.
+- **Não fecha 100% → recusa, e não arredonda por conta própria.** Rateio que não
+  fecha esconde ou inventa dinheiro, e a diferença apareceria depois num total de
+  obra que ninguém consegue explicar.
+- **A soma das partes é sempre igual ao valor.** A sobra do centavo vai para a
+  **maior fatia** — a mesma regra que ele escolheu para o rateio por dias (D7).
+- **Conferir antes de gravar**: um campo de valor na tela mostra quanto vai para
+  cada obra, usando a MESMA conta da gravação.
+- **Uma pessoa só pode estar em uma regra VALENDO.** Duas não têm resposta certa.
+  ⚠️ Esta trava é no **código**, não no banco: o Postgres não aceita subconsulta
+  na condição de um índice parcial, e a coluna `ativa` mora na outra tabela. Está
+  escrito na migração e tem teste com banco de verdade — é o único sustento dela.
+- **Desativar em vez de apagar**: regra desativada explica como a folha de março
+  foi rateada. A pessoa pode reaparecer numa regra desativada; em duas ativas,
+  não.
+- **O CPF é conferido pelo dígito verificador.** Não é frescura: um dígito trocado
+  faz a regra nunca encontrar a pessoa, e ela volta a ser apropriada pelo ponto da
+  matriz — com a regra ali, escrita, sem pegar.
+- **Só do MESTRE** (D9): a tela não aparece no menu de quem não é, e não pode ser
+  liberada no cadastro de acesso.
+
+**O que FALTA desse pedido:** a **tag na tela da folha**, dizendo que aquela pessoa
+está sendo distribuída, com o clique que abre a regra para ver e editar. Falta
+porque **a tela da folha ainda não existe** — é a próxima peça. A regra e a conta
+estão prontas e testadas; a tag é uma linha quando houver onde pendurá-la.
 
 ## 8. Segurança — três coisas que já são risco hoje
 
