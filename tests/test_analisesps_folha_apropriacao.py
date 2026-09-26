@@ -353,3 +353,94 @@ def test_quem_foi_desmarcado_NAO_conta_no_total():
     assert feito["total_a_pagar"] == D("100.00")
     assert feito["fecha"] is True
     assert len(feito["fora"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# QUEM TEM PONTO E NÃO ESTÁ NESTA FOLHA — 26/09/2026
+#
+# Aviso do dono, que mudou uma crítica que eu havia proposto:
+#
+#   *"No ponto tem mais informação de pessoas do que tem na folha de pagamento,
+#   no arquivo. Até porque esse arquivo é de parte do pessoal. Outros entram num
+#   outro método de pagamento — o pessoal que não vem da contabilidade, mas tem
+#   ponto batido. Aí depois a gente vai criar uma outra tela para verificar eles."*
+#
+# ⚠️ EU IA TRANSFORMAR ISSO NUM ALERTA, E SERIA RUÍDO: para essas pessoas, não
+# estar na folha da contabilidade é o estado NORMAL. Centenas de alertas esperados
+# por quinzena é o jeito mais rápido de fazer ninguém ler mais nenhum alerta desta
+# tela — inclusive os que importam.
+# ---------------------------------------------------------------------------
+CADASTRO_CTPS = {"cpf": "99713349334", "nome": "GERLANIO", "tipo": "CTPS"}
+CADASTRO_RPA = {"cpf": "03513441363", "nome": "ABIMAEL",
+                "tipo": "Prestador de Serviço"}
+
+
+def test_quem_bate_ponto_e_NAO_e_da_contabilidade_nao_e_alerta():
+    """É o pessoal do outro método de pagamento. Sai em lista própria, que é a
+    entrada da tela que ele vai pedir depois."""
+    feito = ap.apropriar(
+        [], {"03513441363": [dia(1, "A"), dia(2, "A")]},
+        cadastro_por_id={"000387": CADASTRO_RPA},
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+
+    fora = feito["fora_da_folha"]
+    assert fora["deveria_estar"] == [], "virou alerta o que é normal"
+    assert len(fora["outro_metodo"]) == 1
+    assert fora["outro_metodo"][0]["nome"] == "ABIMAEL"
+    assert fora["outro_metodo"][0]["dias"] == 2
+    assert fora["outro_metodo"][0]["obras"] == ["A"]
+
+
+def test_quem_e_CTPS_com_ponto_e_sem_linha_na_folha_E_alerta():
+    """⚠️ ESSE é o alerta de verdade: alguém trabalhou, é da folha da
+    contabilidade, e pode não receber."""
+    feito = ap.apropriar(
+        [], {"99713349334": [dia(3, "B")]},
+        cadastro_por_id={"000013": CADASTRO_CTPS},
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+
+    fora = feito["fora_da_folha"]
+    assert [q["nome"] for q in fora["deveria_estar"]] == ["GERLANIO"]
+    assert fora["outro_metodo"] == []
+
+
+def test_quem_esta_NA_folha_nao_aparece_como_fora_dela():
+    feito = ap.apropriar(
+        [Linha("100.00", "000013")], {"99713349334": [dia(1, "A")]},
+        cadastro_por_id={"000013": CADASTRO_CTPS},
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+    assert feito["fora_da_folha"]["deveria_estar"] == []
+
+
+def test_ponto_de_OUTRO_periodo_nao_conta_como_fora_da_folha():
+    """Bateu ponto no dia 20 e estamos pagando a quinzena: não é assunto daqui."""
+    feito = ap.apropriar(
+        [], {"99713349334": [dia(20, "A")]},
+        cadastro_por_id={"000013": CADASTRO_CTPS},
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+    assert feito["fora_da_folha"]["deveria_estar"] == []
+
+
+def test_quem_tem_ponto_e_NAO_tem_cadastro_sai_em_lista_propria():
+    """Pode ser admissão nova; pode ser gente que não existe. Nos dois casos
+    alguém tem de olhar, e não é a mesma conversa das outras duas listas."""
+    feito = ap.apropriar(
+        [], {"11122233396": [dia(1, "A")]}, cadastro_por_id={},
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+
+    fora = feito["fora_da_folha"]
+    assert [q["cpf"] for q in fora["sem_cadastro"]] == ["11122233396"]
+    assert fora["deveria_estar"] == [] and fora["outro_metodo"] == []
+
+
+def test_cadastro_SEM_tipo_cai_no_outro_metodo_e_nao_em_alerta():
+    """Na dúvida, não alerta: é melhor a pessoa aparecer na lista que alguém vai
+    olhar do que gerar alerta falso na folha — alerta falso faz parar de ler
+    alerta."""
+    feito = ap.apropriar(
+        [], {"03513441363": [dia(1, "A")]},
+        cadastro_por_id={"000387": {"cpf": "03513441363", "nome": "SEM TIPO"}},
+        periodo=(dt.date(2026, 8, 1), dt.date(2026, 8, 15)))
+
+    assert feito["fora_da_folha"]["deveria_estar"] == []
+    assert len(feito["fora_da_folha"]["outro_metodo"]) == 1

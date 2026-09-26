@@ -381,8 +381,11 @@ ordem de quanto dinheiro cada uma protege:
     `presenca_ausencia` já traz o motivo do ajuste; concentração de ajuste numa
     obra é onde fraude aparece.
 17. **Marcação nas quatro pontas em obras diferentes** (2×2), sem desempate claro.
-18. **Pessoa no cadastro ativa, com presença, e SEM linha na folha.** O inverso do
-    que ele pediu — e é o que faz alguém trabalhar e não receber.
+18. **Pessoa CTPS, com presença, e SEM linha na folha da contabilidade.** O
+    inverso do que ele pediu — e é o que faz alguém trabalhar e não receber.
+    ⚠️ **Só para quem é CTPS**, e o porquê está em D24: o ponto tem mais gente do
+    que a folha da contabilidade, de propósito. Sem essa qualificação, esta
+    crítica dispararia centenas de vezes por quinzena para gente que está certa.
 19. **Pessoa na folha da contabilidade que não existe no Mobponto** (nem cadastro
     de ponto). Pode ser admissão nova; pode ser gente que não existe.
 20. **Presença em obra que já foi encerrada** no nosso cadastro de obras.
@@ -891,6 +894,36 @@ Depois de pôr no Render, **trocar a chave no Mobponto** — pelo mesmo motivo d
 token da NFS-e que já vazou (`CONTEXTO.md` §9): chave que circulou é chave a
 trocar. E o Web App publicado como "qualquer pessoa, sem login" deve ser
 despublicado quando o sistema assumir a carga.
+
+### 7.8 O ponto tem mais gente do que a folha — e isso é NORMAL (D24)
+
+> *"No ponto tem mais informação de pessoas do que tem na folha de pagamento, no
+> arquivo. Até porque esse arquivo é de parte do pessoal. Outros entram num outro
+> método de pagamento — o pessoal que não vem da contabilidade, mas tem ponto
+> batido. Aí depois a gente vai criar uma outra tela para verificar eles."*
+
+⚠️ **ISSO DESFEZ UMA CRÍTICA QUE EU HAVIA PROPOSTO.** Na minha lista (§6, item 18)
+estava "pessoa ativa, com presença, e SEM linha na folha" — como alerta. Para essas
+pessoas, **não estar na folha da contabilidade é o estado normal**. Centenas de
+alertas esperados por quinzena é o jeito mais rápido de fazer ninguém ler mais
+nenhum alerta desta tela, inclusive os que importam.
+
+**Como ficou** (já implementado, com testes): quem bateu ponto no período e não
+está nesta folha sai em **três listas separadas**, e a separação é pelo
+`Tipo de Cadastro`:
+
+| Lista | Quem | O que é |
+|---|---|---|
+| **deveria estar** | é **CTPS** e tem ponto, mas não está na folha | ⚠️ alerta de verdade: trabalhou e pode não receber |
+| **outro método** | não é CTPS (prestador, RPA, diarista…) | **normal.** É a lista de entrada da tela que ele vai pedir depois |
+| **sem cadastro** | tem ponto e não está no cadastro de colaboradores | pode ser admissão nova; pode ser gente que não existe. Outra conversa |
+
+E **na dúvida não alerta**: cadastro sem tipo cai em "outro método". É melhor a
+pessoa aparecer numa lista que alguém vai olhar do que gerar alerta falso na folha
+— alerta falso faz parar de ler alerta.
+
+**O que isso prepara:** a tela futura dos pagamentos que não vêm da contabilidade
+já tem a entrada dela pronta — quem tem ponto, quantos dias, em quais obras.
 
 ## 8. Segurança — três coisas que já são risco hoje
 

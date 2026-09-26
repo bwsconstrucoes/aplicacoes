@@ -293,6 +293,91 @@ def apropriar_pessoa(linha, dias_uteis=None, regra=None, ajuste=None) -> dict:
                 por_dia=feito["por_dia"])
 
 
+# ---------------------------------------------------------------------------
+# QUEM TEM PONTO E NÃO ESTÁ NESTA FOLHA
+# ---------------------------------------------------------------------------
+# Aviso do dono em 26/09/2026, e ele mudou uma crítica que eu havia proposto:
+#
+#     *"No ponto tem mais informação de pessoas do que tem na folha de pagamento,
+#     no arquivo. Até porque esse arquivo é de parte do pessoal. Outros entram num
+#     outro método de pagamento — o pessoal que não vem da contabilidade, mas tem
+#     ponto batido. Aí depois a gente vai criar uma outra tela para verificar
+#     eles."*
+#
+# ⚠️ EU IA TRANSFORMAR ISSO NUM ALERTA, E SERIA RUÍDO. Na minha lista de críticas
+# estava "pessoa ativa, com presença, e SEM linha na folha" — que para essas
+# pessoas é o estado NORMAL, não um erro. Centenas de alertas esperados por
+# quinzena é o jeito mais rápido de fazer ninguém ler mais nenhum alerta desta
+# tela, inclusive os que importam.
+#
+# Então a separação é pelo TIPO DE CADASTRO:
+#
+#   - quem é **CTPS** e tem ponto mas não está na folha da contabilidade → ISSO é
+#     alerta de verdade: alguém trabalhou e pode não receber;
+#   - quem **não é CTPS** → é o pessoal do outro método de pagamento. Não é alerta;
+#     é a lista de entrada da tela que ele vai pedir depois.
+#
+# As duas saem separadas, com nome próprio, porque misturá-las é o que criaria o
+# ruído.
+TIPOS_DA_CONTABILIDADE = ("ctps",)
+
+
+def _da_contabilidade(cadastro) -> bool:
+    """Esta pessoa deveria vir na folha da contabilidade?
+
+    Olha o `Tipo de Cadastro` do cadastro de colaboradores (CTPS / Prestador de
+    Serviço / …). Na dúvida — cadastro sem tipo — responde **False**: é melhor a
+    pessoa aparecer na lista do outro método (que alguém vai olhar) do que gerar
+    um alerta falso na folha (que faz parar de ler alertas)."""
+    tipo = str((cadastro or {}).get("tipo") or "").strip().lower()
+    return any(t in tipo for t in TIPOS_DA_CONTABILIDADE)
+
+
+def com_ponto_fora_da_folha(linhas, dias_por_cpf, cadastro_por_id,
+                            periodo) -> dict:
+    """Quem bateu ponto no período e NÃO está nesta folha.
+
+    Devolve `{"deveria_estar": [...], "outro_metodo": [...], "sem_cadastro": [...]}`
+    — ver o aviso acima para o porquê de serem três listas e não uma.
+    """
+    ini, fim = periodo or (dt.date.min, dt.date.max)
+    na_folha = set()
+    for linha in linhas or []:
+        id_fortes = str(getattr(linha, "id_fortes", None)
+                        or (linha or {}).get("id_fortes") or "")
+        cadastro = cadastro_por_id.get(id_fortes) or {}
+        if cadastro.get("cpf"):
+            na_folha.add(cadastro["cpf"])
+
+    por_cpf = {}
+    for cadastro in (cadastro_por_id or {}).values():
+        if cadastro.get("cpf"):
+            por_cpf[cadastro["cpf"]] = cadastro
+
+    saida = {"deveria_estar": [], "outro_metodo": [], "sem_cadastro": []}
+    for cpf, dias in (dias_por_cpf or {}).items():
+        if cpf in na_folha:
+            continue
+        uteis = [d for d in _dias_uteis_do_ponto(dias, ini, fim) if d["obra"]]
+        if not uteis:
+            continue        # não bateu ponto NESTE período: não é assunto daqui
+        cadastro = por_cpf.get(cpf)
+        quem = {"cpf": cpf,
+                "nome": (cadastro or {}).get("nome") or "",
+                "tipo": (cadastro or {}).get("tipo") or "",
+                "dias": len(uteis),
+                "obras": sorted({d["obra"] for d in uteis})}
+        if cadastro is None:
+            saida["sem_cadastro"].append(quem)
+        elif _da_contabilidade(cadastro):
+            saida["deveria_estar"].append(quem)
+        else:
+            saida["outro_metodo"].append(quem)
+    for lista in saida.values():
+        lista.sort(key=lambda q: (q["nome"] or q["cpf"]))
+    return saida
+
+
 def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
               ajustes_por_cpf=None, cadastro_por_id=None,
               periodo=None) -> dict:
@@ -406,4 +491,8 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
         "sem_apropriacao": [p for p in pessoas
                             if not p["fora"] and not p["por_obra"]],
         "fora": [p for p in pessoas if p["fora"]],
+        # Quem bateu ponto e não está nesta folha — separado por tipo, para o
+        # esperado não virar alerta. Ver `com_ponto_fora_da_folha`.
+        "fora_da_folha": com_ponto_fora_da_folha(
+            linhas, dias_por_cpf, cadastro_por_id, (ini, fim)),
     }
