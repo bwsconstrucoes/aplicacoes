@@ -1764,6 +1764,92 @@ e mostrar quem está saindo, para alguém conferir o que é devido até o últim
 | conferir uma fonte contra a outra (cadastro × relatório) | as duas cargas |
 | **o feriado de um dia continua sem descontar no transporte** — decidido | nada; já é o comportamento |
 
+## 7.17 ONDE OS ARQUIVOS DA FOLHA VÃO SER GUARDADOS (27/09/2026)
+
+Pergunta dele:
+
+> *"Você tá salvando as planilhas e relatórios onde? Quero que seja salvo no
+> drive/dropbox, conforme o cenário do make. Fez assim? Isso os que são gerados
+> e processados completo. Os que foram gerados só o relatório a partir da tela,
+> não precisa salvar em canto nenhum."*
+
+### 7.17.1 A resposta honesta: ainda não salvo em lugar nenhum, porque ainda não gero
+
+**Nenhum arquivo da folha é gerado hoje.** Não existe gerador de arquivo SomaPay,
+nem PDF, nem Excel da folha. O que existe é a leitura (Folha Sintética, ponto,
+cadastro) e o cálculo (rateio, apropriação, vínculo). Então a pergunta é sobre
+algo que ainda não foi escrito — e a regra dele fica valendo para quando for.
+
+### 7.17.2 A regra, do jeito que ele definiu
+
+| Tipo de saída | Guarda? | Onde |
+|---|---|---|
+| **arquivo de pagamento gerado e processado completo** (com card no Pipefy) | **sim** | Drive/Dropbox, como o Make fazia |
+| **relatório tirado da tela** (PDF/Excel para olhar ou conferir) | **não** | vai direto para o navegador de quem pediu, e acabou |
+
+A segunda linha já é como o módulo funciona hoje em `exportar.py`: monta e
+devolve numa `Response`, sem passar por armazenamento. Nada a fazer ali.
+
+### 7.17.3 ⚠️ O que descobri conferindo, e muda a conversa
+
+**O módulo já sobe arquivo para o Drive hoje — e todo arquivo que ele sobe fica
+PÚBLICO por link.** Está em `drive.subir_arquivo`: depois de criar e enviar o
+conteúdo, ele faz uma terceira chamada concedendo `{"role": "reader", "type":
+"anyone"}`. O link vai para a descrição do card do Pipefy.
+
+Isso é o caminho da geração do **BeeVale** (`beevale.gerar`), que está em
+produção e cujos arquivos têm **nome, CPF e valor** de quem recebe.
+
+**Ou seja: é o mesmo risco que eu apontei no script da BeeVale (§8, itens 3 e
+6) — só que dentro do nosso código.** E o comentário do próprio
+`subir_arquivo` explica por que está assim: sem liberar por link, quem clica no
+card recebe "sem permissão". Foi uma escolha para o fluxo funcionar, não
+descuido.
+
+⚠️ **Isto corrige uma frase minha de §8.** Eu escrevi que os itens 3 e 6
+"morrem por construção" quando o arquivo passa a sair de dentro do sistema.
+**Só morrem se a subida deixar de ser pública.** Do jeito que o upload está
+escrito hoje, mudar de Dropbox para Drive não resolveria nada: trocaria um link
+aberto por outro.
+
+**Não mexi no `subir_arquivo`.** Mudar a permissão hoje quebraria os links dos
+cards do BeeVale para quem clica sem conta Google na organização — é fluxo que
+funciona, e a decisão é do dono, não minha. Fica como pergunta (§7.17.5).
+
+### 7.17.4 O desenho que proponho para a folha (é novo, então nada quebra)
+
+1. **Guarda no Drive**, na pasta que o módulo já tem configurada
+   (`DRIVE_FOLDER_ID`, ou a que ele cola na tela de Configurações), numa
+   subpasta por competência e tipo — `Folha/2026-09 quinzena/`.
+2. **Sem liberar por link.** O arquivo fica na pasta, visível para quem tem
+   acesso à pasta. Isso já é o time do DP e ele.
+3. **O card do Pipefy recebe o link da TELA do sistema**, não do arquivo. Quem
+   abre passa pelo login e pela permissão, e vê o relatório com o histórico —
+   não um arquivo solto que pode estar velho.
+4. **O nome do arquivo carrega competência, tipo e a hora da geração**, como o
+   script da BeeVale aprendeu na dor: sem hora no nome, duas gerações no mesmo
+   dia sobrescrevem a primeira e o card antigo passa a apontar para o arquivo
+   novo (está escrito no comentário dele — "contaminando cards já criados").
+5. **Guarda no banco o que foi gerado**: competência, tipo, quem gerou, quando,
+   o total, e o identificador do arquivo. É o log que ele pediu em 26/09, e é o
+   que permite gerar de novo sem duplicar.
+
+**Por que Drive e não Dropbox:** o Drive já está funcionando aqui, com a mesma
+credencial de serviço que lê as planilhas, e a pasta já é configurável pela
+tela. O Dropbox **não existe no código Python** — só no Apps Script. Trazê-lo
+significa credencial nova no Render e, antes disso, **trocar na origem a que
+está hoje escrita dentro do script** (§8, item 4). Dá para fazer, mas é
+trabalho a mais por um ganho que eu não sei qual é.
+
+### 7.17.5 O que preciso que ele decida
+
+| Pergunta | Por que muda o trabalho |
+|---|---|
+| **Drive ou Dropbox** para os arquivos da folha? | Drive sai agora; Dropbox precisa de credencial nova no Render e da troca da que vazou |
+| Se Dropbox: **por que**? | Se for porque o DP trabalha naquelas pastas, é motivo bom e eu faço. Só preciso saber, para não escolher por ele |
+| **O arquivo pode deixar de ser público por link?** | É o que faz o risco morrer de verdade. Para a folha eu já faria assim; para o **BeeVale**, mudar quebraria os links dos cards já criados — e isso é decisão dele |
+| O card do Pipefy recebe link **da tela** ou **do arquivo**? | Da tela é mais seguro e mostra o histórico; do arquivo é o hábito de hoje |
+
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos
@@ -1801,10 +1887,19 @@ scripts da planilha de Diaristas/Extras/GM, em 27/09/2026.
    item 3, mas agora está confirmado no código, e é deliberado, não acidente de
    configuração.
 
-**O que o sistema novo resolve disso sozinho:** o arquivo de pagamento passa a
-ser baixado de dentro do sistema, por quem tem login e permissão, e o card do
-Pipefy recebe um link para a tela — não um arquivo aberto. Os itens 3 e 6 morrem
-por construção. Os itens 1, 4 e 5 são credenciais que **já circularam** e
+**O que o sistema novo resolve — e a correção de uma frase minha.** Eu havia
+escrito que os itens 3 e 6 "morrem por construção" quando o arquivo passa a sair
+de dentro do sistema. **Não é verdade automaticamente:** conferindo em
+27/09/2026, descobri que `drive.subir_arquivo` — o caminho que a geração do
+BeeVale deste módulo já usa em produção — **libera todo arquivo por link
+público** (`{"role": "reader", "type": "anyone"}`), e o link vai para o card do
+Pipefy. É o mesmo risco, dentro do nosso código, com arquivos que têm nome, CPF
+e valor.
+
+Então os itens 3 e 6 só morrem se **a subida deixar de ser pública**. Para a
+folha, que é nova, já proponho assim (§7.17.4). Para o **BeeVale**, que está
+funcionando, mudar a permissão quebraria os links dos cards já criados — é
+decisão do dono, não minha, e está na lista de perguntas de §7.17.5. Os itens 1, 4 e 5 são credenciais que **já circularam** e
 precisam ser trocadas na origem, independentemente do sistema novo.
 
 ⚠️ **Estes valores não devem ser colados aqui nem no chat.** O caminho é:

@@ -8400,6 +8400,50 @@ puro, que o dublê ignora) e 5 de tela. O caso que mais importa tem teste própr
 
 ---
 
+### Nota da mesma conversa (27/09) — onde os arquivos vão ser guardados
+
+Ele perguntou onde eu estou salvando as planilhas e os relatórios, e pediu
+Drive/Dropbox "conforme o cenário do Make" — **mas só para o que é gerado e
+processado completo**; relatório tirado da tela não se guarda em canto nenhum.
+
+**A resposta honesta é que ainda não salvo nada, porque ainda não gero nada.**
+Não existe gerador de arquivo SomaPay, nem PDF, nem Excel da folha. A regra dele
+fica registrada em `docs/FOLHA_DE_PAGAMENTO.md` §7.17 para quando for.
+
+#### ⚠️ Mas conferindo eu achei uma coisa que muda a conversa
+
+**Todo arquivo que este módulo sobe para o Drive fica PÚBLICO por link.** Está em
+`drive.subir_arquivo`: depois de criar e enviar o conteúdo, ele concede
+`{"role": "reader", "type": "anyone"}` — e o link vai para a descrição do card do
+Pipefy. É o caminho que a geração do **BeeVale** usa, em produção, com arquivos
+que têm **nome, CPF e valor**.
+
+Ou seja: é o mesmo risco que eu tinha apontado no script da BeeVale, **só que
+dentro do nosso código**. E não foi descuido: o comentário do próprio
+`subir_arquivo` explica que, sem liberar por link, quem clica no card recebe "sem
+permissão".
+
+**Isso corrige uma frase minha.** Eu havia escrito que esse risco "morre por
+construção" quando o arquivo passa a sair de dentro do sistema. **Só morre se a
+subida deixar de ser pública.** Trocar Dropbox por Drive, do jeito que o upload
+está escrito, trocaria um link aberto por outro.
+
+**Não mexi no `subir_arquivo`.** Mudar a permissão hoje quebraria os links dos
+cards do BeeVale para quem clica sem conta Google na organização — é fluxo que
+funciona, e a decisão é dele. Para a folha, que é nova, o desenho proposto já
+nasce sem link público (§7.17.4).
+
+#### Quatro perguntas esperando ele
+
+1. **Drive ou Dropbox** para os arquivos da folha? (Drive sai agora; Dropbox
+   precisa de credencial nova no Render e da troca da que vazou no script.)
+2. Se Dropbox, **por quê**? Se for porque o DP trabalha naquelas pastas, é motivo
+   bom — só não quero escolher por ele.
+3. **O arquivo pode deixar de ser público por link?** É o que faz o risco morrer.
+4. O card do Pipefy recebe link **da tela** ou **do arquivo**?
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória
