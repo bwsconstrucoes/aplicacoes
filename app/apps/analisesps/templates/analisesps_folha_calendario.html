@@ -1,0 +1,359 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Feriados e férias — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Feriados e férias</h2>
+
+<p class="cartao-dica" style="margin-bottom:14px">
+  É daqui que sai o desconto de dias no auxílio: a <b>alimentação</b> desconta
+  feriado e férias; o <b>transporte</b> desconta férias, mas não feriado de um dia
+  só — foi o que você decidiu.
+</p>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui ler os cadastros.</b> {{ erro }}</div>
+{% endif %}
+
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui.
+  </div>
+{% else %}
+
+{# ======================================================================
+   FÉRIAS — vem primeiro porque é o que ele pediu com mais urgência, e é o que
+   ele vai usar todo mês.
+   ====================================================================== #}
+<h3>Férias <small>{{ ferias|length }} período(s)</small></h3>
+
+{% if pode_operar %}
+<div class="cartao">
+  <label class="rotulo-campo">Lançar férias de alguém</label>
+  <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
+    <div style="flex:1 1 260px; min-width:0; position:relative">
+      <label class="cartao-dica" for="ferias-pessoa">Quem (nome ou CPF)</label>
+      {# A busca vai ao cadastro: quem manda é o CPF, e o nome é para reconhecer.
+         Digitar o CPF na mão daria erro de digitação em cima da chave de tudo. #}
+      <input id="ferias-pessoa" name="nome" autocomplete="off"
+             placeholder="comece a digitar o nome…">
+      <input type="hidden" id="ferias-cpf">
+      <div id="ferias-sugestoes" class="sugestoes" hidden></div>
+      <span class="cartao-dica" id="ferias-escolhida"></span>
+    </div>
+    <div>
+      <label class="cartao-dica" for="ferias-inicio">Primeiro dia</label>
+      <input id="ferias-inicio" name="data" style="width:130px"
+             placeholder="dd/mm/aaaa">
+    </div>
+    <div>
+      <label class="cartao-dica" for="ferias-fim">Último dia</label>
+      <input id="ferias-fim" name="data" style="width:130px"
+             placeholder="dd/mm/aaaa">
+    </div>
+    <button class="btn" id="btn-gravar-ferias">Gravar</button>
+    <span id="recado-ferias" class="cartao-dica" style="margin:0"></span>
+  </div>
+  <p class="cartao-dica" style="margin:8px 0 0">
+    A pessoa pode ter <b>mais de um período</b> no ano — férias fracionadas são
+    normais. O que não pode é dois períodos que se cruzem, e aí eu aviso qual é o
+    outro.
+  </p>
+</div>
+{% endif %}
+
+<form class="barra-acoes" method="get"
+      action="{{ url_for('analisesps.tela_folha_calendario') }}">
+  <input class="campo-largo" type="search" name="q" id="q"
+         value="{{ procurado }}" placeholder="procurar por nome ou CPF…"
+         aria-label="Procurar férias por nome ou CPF">
+  <button class="btn secundario" type="submit">Procurar</button>
+  {% if procurado %}
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.tela_folha_calendario') }}">Limpar</a>
+  {% endif %}
+</form>
+
+<table class="sps">
+  <thead>
+    <tr><th>Quem</th><th>CPF</th><th>De</th><th>Até</th><th class="num">Dias</th>
+      <th>Lançado por</th>{% if pode_operar %}<th></th>{% endif %}</tr>
+  </thead>
+  <tbody>
+  {% for f in ferias %}
+    <tr>
+      <td>{{ f.nome or '—' }}</td>
+      <td class="cpf">{{ f.cpf_bonito }}</td>
+      <td>{{ f.inicio|data_br }}</td>
+      <td>{{ f.fim|data_br }}</td>
+      <td class="num">{{ f.dias }}</td>
+      <td><span class="cartao-dica">{{ f.criado_por or '—' }}</span></td>
+      {% if pode_operar %}
+        <td class="num">
+          <button class="apagar-linha apagar-ferias" title="Apagar este período"
+                  data-id="{{ f.id }}" data-nome="{{ f.nome }}"
+                  data-periodo="{{ f.inicio|data_br }} a {{ f.fim|data_br }}"
+                  >&times;</button>
+        </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ 7 if pode_operar else 6 }}" class="cartao-dica">
+      {% if procurado %}Ninguém com "{{ procurado }}". Mude a busca acima.
+      {% else %}Nenhum período de férias lançado ainda.{% endif %}
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{# ======================================================================
+   FERIADOS
+   ====================================================================== #}
+<h3 style="margin-top:24px">Feriados <small>{{ feriados|length }}</small></h3>
+
+{% if pode_operar %}
+<div class="cartao">
+  <label class="rotulo-campo">Cadastrar um feriado</label>
+  <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
+    <div>
+      <label class="cartao-dica" for="feriado-data">Dia</label>
+      <input id="feriado-data" name="data" style="width:130px"
+             placeholder="dd/mm/aaaa">
+    </div>
+    <div>
+      <label class="cartao-dica" for="feriado-abrangencia">Vale para</label>
+      <select id="feriado-abrangencia" style="width:170px">
+        <option value="nacional">Todo mundo (nacional)</option>
+        <option value="obra">Só uma obra</option>
+      </select>
+    </div>
+    {# ⚠️ A OBRA SÓ APARECE quando ela é necessária. Campo que fica na tela sem
+       servir faz a pessoa se perguntar se devia preencher. #}
+    <div id="feriado-obra-bloco" hidden>
+      <label class="cartao-dica" for="feriado-obra">Qual obra</label>
+      <select id="feriado-obra" style="width:200px">
+        <option value="">escolha…</option>
+        {% for o in obras %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+      </select>
+    </div>
+    <div style="flex:1 1 200px; min-width:0">
+      <label class="cartao-dica" for="feriado-descricao">O que é (opcional)</label>
+      <input id="feriado-descricao" placeholder="Independência, aniversário da cidade…">
+    </div>
+    <button class="btn" id="btn-gravar-feriado">Gravar</button>
+    <span id="recado-feriado" class="cartao-dica" style="margin:0"></span>
+  </div>
+  {% if not obras %}
+    <p class="cartao-dica" style="margin:8px 0 0">
+      A lista de obras está vazia — ela vem da planilha, pelo botão "Só as
+      planilhas de apoio" em Configurações. Sem ela, dá para cadastrar feriado
+      nacional, mas não o de uma obra.
+    </p>
+  {% endif %}
+</div>
+{% endif %}
+
+<form class="barra-acoes" method="get"
+      action="{{ url_for('analisesps.tela_folha_calendario') }}">
+  <input type="hidden" name="q" value="{{ procurado }}">
+  <label class="cartao-dica" style="margin:0" for="ano">Ano</label>
+  <select name="ano" id="ano" onchange="this.form.submit()" style="width:120px">
+    <option value="">todos</option>
+    {% for a in range(ano_padrao - 2, ano_padrao + 3) %}
+      <option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<table class="sps">
+  <thead>
+    <tr><th>Dia</th><th>Vale para</th><th>O que é</th>
+      {% if pode_operar %}<th></th>{% endif %}</tr>
+  </thead>
+  <tbody>
+  {% for f in feriados %}
+    <tr>
+      <td>{{ f.data|data_br }}</td>
+      <td>
+        {% if f.abrangencia == 'nacional' %}
+          <span class="selo no-lote">nacional</span>
+        {% else %}
+          <span class="selo no-lote-de-outro">{{ f.obra }}</span>
+        {% endif %}
+      </td>
+      <td>{{ f.descricao or '—' }}</td>
+      {% if pode_operar %}
+        <td class="num">
+          <button class="apagar-linha apagar-feriado" title="Apagar este feriado"
+                  data-id="{{ f.id }}"
+                  data-quando="{{ f.data|data_br }}"
+                  data-onde="{{ 'nacional' if f.abrangencia == 'nacional' else f.obra }}"
+                  >&times;</button>
+        </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ 4 if pode_operar else 3 }}" class="cartao-dica">
+      Nenhum feriado cadastrado{{ ' em ' ~ ano if ano }}.
+      {% if pode_operar %}Cadastre acima — sem eles o auxílio alimentação paga o
+        mês cheio.{% endif %}
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if pode_operar %}
+<script>
+function diz(id, texto, classe) {
+  const alvo = document.getElementById(id);
+  if (!alvo) return;
+  alvo.textContent = texto || "";
+  alvo.className = "cartao-dica" + (classe ? " " + classe : "");
+}
+
+async function mandar(url, corpo) {
+  const r = await fetch(url, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(corpo)
+  });
+  return await r.json();
+}
+
+// --- a obra só aparece quando o feriado é de obra ---------------------------
+const abrangencia = document.getElementById("feriado-abrangencia");
+const blocoObra = document.getElementById("feriado-obra-bloco");
+if (abrangencia) {
+  const mostrar = () => { blocoObra.hidden = abrangencia.value !== "obra"; };
+  abrangencia.addEventListener("change", mostrar);
+  mostrar();
+}
+
+// --- procurar a pessoa, para não digitar CPF na mão -------------------------
+// ⚠️ O CPF é a chave de TUDO: digitado na mão, um número trocado lança as férias
+// de outra pessoa — e o auxílio da certa sai errado sem ninguém saber.
+const campoPessoa = document.getElementById("ferias-pessoa");
+const campoCpf = document.getElementById("ferias-cpf");
+const caixaSugestoes = document.getElementById("ferias-sugestoes");
+let relogioBusca = null;
+
+function escolher(pessoa) {
+  campoCpf.value = pessoa.cpf;
+  campoPessoa.value = pessoa.nome;
+  caixaSugestoes.hidden = true;
+  document.getElementById("ferias-escolhida").textContent =
+    "escolhido: " + pessoa.nome + (pessoa.desligado ? " (já saiu)" : "");
+}
+
+if (campoPessoa) campoPessoa.addEventListener("input", () => {
+  campoCpf.value = "";
+  document.getElementById("ferias-escolhida").textContent = "";
+  if (relogioBusca) clearTimeout(relogioBusca);
+  const texto = campoPessoa.value.trim();
+  if (texto.length < 2) { caixaSugestoes.hidden = true; return; }
+  // Espera a pessoa parar de digitar: uma consulta por tecla faria dezenas de
+  // idas ao banco para um nome de dez letras.
+  relogioBusca = setTimeout(async () => {
+    try {
+      const r = await fetch(
+        "{{ url_for('analisesps.folha_procurar_pessoa') }}?q=" +
+        encodeURIComponent(texto));
+      const d = await r.json();
+      if (!d.ok || !d.pessoas.length) {
+        caixaSugestoes.innerHTML =
+          '<div class="sugestao-vazia">ninguém com esse nome no cadastro</div>';
+        caixaSugestoes.hidden = false;
+        return;
+      }
+      caixaSugestoes.innerHTML = "";
+      d.pessoas.forEach(p => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "sugestao";
+        item.textContent = p.nome + (p.cargo ? " · " + p.cargo : "") +
+                           (p.desligado ? " · já saiu" : "");
+        item.addEventListener("click", () => escolher(p));
+        caixaSugestoes.appendChild(item);
+      });
+      caixaSugestoes.hidden = false;
+    } catch (e) { /* rede oscilou: a próxima tecla tenta de novo */ }
+  }, 300);
+});
+
+document.addEventListener("click", e => {
+  if (caixaSugestoes && !caixaSugestoes.contains(e.target) &&
+      e.target !== campoPessoa) caixaSugestoes.hidden = true;
+});
+
+// --- gravar as férias ------------------------------------------------------
+const btnFerias = document.getElementById("btn-gravar-ferias");
+if (btnFerias) btnFerias.addEventListener("click", async () => {
+  if (!campoCpf.value) {
+    diz("recado-ferias", "Escolha a pessoa na lista que aparece.", "erro");
+    return;
+  }
+  btnFerias.disabled = true;
+  diz("recado-ferias", "gravando…");
+  try {
+    const d = await mandar("{{ url_for('analisesps.folha_ferias_gravar') }}", {
+      cpf: campoCpf.value, nome: campoPessoa.value,
+      inicio: document.getElementById("ferias-inicio").value,
+      fim: document.getElementById("ferias-fim").value
+    });
+    if (!d.ok) { diz("recado-ferias", d.erro, "erro"); btnFerias.disabled = false; return; }
+    location.reload();
+  } catch (e) {
+    diz("recado-ferias", "falhou: " + e, "erro");
+    btnFerias.disabled = false;
+  }
+});
+
+// --- gravar o feriado -----------------------------------------------------
+const btnFeriado = document.getElementById("btn-gravar-feriado");
+if (btnFeriado) btnFeriado.addEventListener("click", async () => {
+  btnFeriado.disabled = true;
+  diz("recado-feriado", "gravando…");
+  try {
+    const d = await mandar("{{ url_for('analisesps.folha_feriado_gravar') }}", {
+      data: document.getElementById("feriado-data").value,
+      abrangencia: abrangencia.value,
+      obra: document.getElementById("feriado-obra").value,
+      descricao: document.getElementById("feriado-descricao").value
+    });
+    if (!d.ok) { diz("recado-feriado", d.erro, "erro"); btnFeriado.disabled = false; return; }
+    location.reload();
+  } catch (e) {
+    diz("recado-feriado", "falhou: " + e, "erro");
+    btnFeriado.disabled = false;
+  }
+});
+
+// --- apagar ---------------------------------------------------------------
+document.querySelectorAll(".apagar-ferias").forEach(b =>
+  b.addEventListener("click", async () => {
+    if (!confirm("Apagar as férias de " + (b.dataset.nome || "esta pessoa") +
+                 " (" + b.dataset.periodo + ")?")) return;
+    b.disabled = true;
+    const d = await mandar("{{ url_for('analisesps.folha_ferias_apagar') }}",
+                           {id: b.dataset.id});
+    if (!d.ok) { alert(d.erro); b.disabled = false; return; }
+    location.reload();
+  }));
+
+document.querySelectorAll(".apagar-feriado").forEach(b =>
+  b.addEventListener("click", async () => {
+    if (!confirm("Apagar o feriado de " + b.dataset.quando +
+                 " (" + b.dataset.onde + ")?")) return;
+    b.disabled = true;
+    const d = await mandar("{{ url_for('analisesps.folha_feriado_apagar') }}",
+                           {id: b.dataset.id});
+    if (!d.ok) { alert(d.erro); b.disabled = false; return; }
+    location.reload();
+  }));
+</script>
+{% endif %}
+
+{% endif %}
+{% endblock %}

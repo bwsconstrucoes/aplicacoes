@@ -8795,6 +8795,75 @@ o formato, e é ele que revela os nomes dos campos.
 
 ---
 
+### Centésima décima primeira leva (27/09) — feriados e férias, e três coisas que eu expliquei mal
+
+#### A tela que ele pediu
+
+> *"Você já cria uma telazinha onde eu vou inserir as férias de cada funcionário.
+> Eu posso buscar pelo nome, pelo CPF e incluo o período. Só isso."*
+
+Feita, junto com os feriados: **uma subtela para os dois**, porque são dois
+lançamentos pequenos que servem ao mesmo cálculo — e ele acabou de corrigir tela
+demais. As férias vêm primeiro, porque é o que ele usa todo mês.
+
+⚠️ **A pessoa é ESCOLHIDA da busca, não digitada.** O CPF é a chave de tudo:
+digitado na mão, um número trocado lança as férias de outra pessoa, e o auxílio da
+certa sai errado sem ninguém saber. A busca devolve **só nome, cargo e se saiu** —
+caixa de sugestão não é lugar de mostrar salário.
+
+**Feriado é por OBRA, não por município.** Ele falou dos dois; por município
+exigiria um de/para obra → município que não existe no sistema, e inventá-lo seria
+mais uma peça para dar errado. Por obra ele escolhe da lista que já existe.
+
+#### As travas, e o que cada uma evita
+
+| Trava | Evita |
+|---|---|
+| feriado não entra duas vezes | um 7 de setembro duplicado descontaria **dois** dias de todo mundo |
+| o mesmo dia pode ser feriado em duas obras | cada município tem o seu |
+| férias com fim antes do início | contagem negativa, e auxílio **a mais** |
+| período > 400 dias | é o ano digitado errado, e descontaria meses |
+| dois períodos que se **cruzam** | descontariam o mesmo dia duas vezes |
+| dois períodos **encostados** podem | férias fracionadas são a regra |
+
+**Duas sutilezas saíram de graça** porque a conta é dia a dia, não aritmética de
+semanas: **feriado no fim de semana não desconta** (aquele dia já não contava) e
+**feriado na sexta não desconta de quem é "Segunda à Quinta"**. É a mesma sutileza
+que a planilha resolve contando feriado de sexta à parte.
+
+#### ⚠️ Três coisas que eu expliquei mal, e as respostas
+
+Ele disse, com razão: *"eu não compreendi bem o que você botou falta"*.
+
+**1. "Total por obra".** Ele me explicou a regra achando que era ela que faltava —
+a obra que mais aparece nas quatro marcações, e no empate a primeira. **Essa regra
+está escrita e testada desde 26/09.** O que falta é o **nome do campo**: quando a
+API devolve um dia, ela manda campos com nomes que ninguém documentou (o script
+antigo os descobre na hora). Eu preciso saber qual deles carrega a obra. **Não é a
+regra: é o rótulo da caixa onde o dado vem** — e um clique na tela do Ponto mostra.
+
+**2. "Apropriação guardada" foi jargão meu.** Apropriar é dizer para qual obra vai
+o dinheiro de cada pessoa. O sistema já sabe calcular; o resultado morre na tela.
+Guardar serve para três coisas que ele pediu: o relatório de auditoria ("de onde
+veio este número" precisa de um lugar onde o número esteja), o arquivo de
+pagamento, e — a mais importante — **o ajuste à mão dele sobreviver**: sem
+guardar, cada recálculo apagaria o "um dia nesta obra, um dia naquela" que ele
+fez.
+
+**3. Diaristas.** Ele está certo: é o mesmo ponto, e os critérios estão nas
+fórmulas. **Eles já estão implementados** — `folha_vinculo` decide CTPS × DIÁRIA
+por dia, a diária sai de `PAGAR DIÁRIA` (sem VIGIA), e a extra de CTPS sai de
+`PAGAR EXTRA` com +20 feriado, +10 sábado, +20 domingo. A tela espera o **mesmo
+mapeamento de campos do ponto**. Um clique destrava as duas.
+
+**Verificado:** 30 testes com banco de verdade (cada trava, a sobreposição de
+períodos, a contagem de dias úteis, o feriado de fim de semana e o de sexta) e 10
+de tela. Migrações até a **032**.
+
+**NÃO verificado:** nada num navegador.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

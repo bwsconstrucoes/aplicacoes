@@ -2231,3 +2231,23 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
 .aba-folha.ativa {
   color: var(--azul); font-weight: 600; border-bottom-color: var(--azul);
 }
+
+/* ---------------------------------------------------------------------------
+   A CAIXA DE SUGESTÃO DE PESSOA (27/09/2026)
+
+   Serve ao lançamento de férias: o CPF é a chave de tudo, e digitá-lo na mão
+   lançaria as férias de outra pessoa com um número trocado. Então se escolhe da
+   lista, e o CPF vai escondido.
+   --------------------------------------------------------------------------- */
+.sugestoes {
+  position: absolute; z-index: 30; left: 0; right: 0; top: 100%;
+  background: var(--branco); border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); box-shadow: 0 6px 18px rgba(11,44,92,.16);
+  max-height: 240px; overflow-y: auto;
+}
+.sugestao {
+  display: block; width: 100%; text-align: left; border: 0; background: none;
+  padding: 7px 10px; font-size: 13px; cursor: pointer; font-family: inherit;
+}
+.sugestao:hover, .sugestao:focus { background: #EEF4FF; }
+.sugestao-vazia { padding: 7px 10px; font-size: 12.5px; color: var(--cinza); }

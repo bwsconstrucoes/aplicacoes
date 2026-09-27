@@ -120,6 +120,12 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/importar"),
     ("GET",  "/analisesps/folha/painel"),
     ("GET",  "/analisesps/folha/ponto"),
+    ("GET",  "/analisesps/folha/calendario"),
+    ("GET",  "/analisesps/api/folha/procurar-pessoa"),
+    ("POST", "/analisesps/api/folha/feriado"),
+    ("POST", "/analisesps/api/folha/feriado/apagar"),
+    ("POST", "/analisesps/api/folha/ferias"),
+    ("POST", "/analisesps/api/folha/ferias/apagar"),
     # Dispara a carga do ponto e apaga carga — trabalho longo e destrutivo.
     ("POST", "/analisesps/api/folha/ponto"),
     ("POST", "/analisesps/api/folha/ponto/apagar"),

@@ -5762,10 +5762,180 @@ def test_a_competencia_escolhida_vai_para_o_BANCO_antes_de_disparar(app, monkeyp
     assert gravado["ponto_competencia"] == "2026-8"
 
 
-def test_o_ponto_e_a_PRIMEIRA_coisa_depois_da_folha_na_ordem_das_subtelas(app):
-    """A ordem é a do trabalho: panorama, folha da contabilidade, ponto (que diz
-    em qual obra cada um estava), cadastro, rateio."""
+
+
+# ---------------------------------------------------------------------------
+# A SUBTELA DE FERIADOS E FÉRIAS — 27/09/2026
+#
+# Pedido do dono: *"você já cria uma telazinha onde eu vou inserir as férias de
+# cada funcionário. Eu posso buscar pelo nome, pelo CPF e incluo o período. Só
+# isso."*
+# ---------------------------------------------------------------------------
+def test_a_tela_de_ferias_busca_a_pessoa_em_vez_de_pedir_o_CPF(app, monkeypatch):
+    """⚠️ O CPF é a chave de TUDO. Digitado na mão, um número trocado lança as
+    férias de outra pessoa — e o auxílio da certa sai errado sem ninguém saber."""
+    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+
+    assert 'id="ferias-pessoa"' in html
+    assert 'id="ferias-cpf"' in html, "o CPF vai escondido, escolhido da lista"
+    assert "comece a digitar o nome" in html
+    assert "ferias-sugestoes" in html
+    # E os dois dias do período.
+    assert "Primeiro dia" in html and "Último dia" in html
+
+
+def test_a_obra_do_feriado_so_aparece_quando_e_de_obra(app, monkeypatch):
+    """Campo que fica na tela sem servir faz a pessoa se perguntar se devia
+    preencher."""
+    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [{"nome": "CREPEOLINDA", "codigo": "1"}],
+                                 "categorias": []})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+    assert 'id="feriado-obra-bloco" hidden' in html
+    assert "CREPEOLINDA" in html, "a lista de obras é a MESMA do rateio"
+    assert "Todo mundo (nacional)" in html
+
+
+def test_a_lista_de_obras_vazia_explica_o_que_fazer(app, monkeypatch):
+    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+    assert "planilhas de apoio" in html
+
+
+def test_os_feriados_e_as_ferias_aparecem_na_tela(app, monkeypatch):
+    import datetime as dt
+
+    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [
+        {"id": 1, "data": dt.date(2026, 9, 7), "abrangencia": "nacional",
+         "obra": "", "descricao": "Independência", "criado_por": "MARCELO",
+         "rotulo": "Nacional"},
+        {"id": 2, "data": dt.date(2026, 9, 12), "abrangencia": "obra",
+         "obra": "CREPEOLINDA", "descricao": "Aniversário", "criado_por": "",
+         "rotulo": "Só nesta obra"}])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [
+        {"id": 5, "cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+         "nome": "GERLANIO GOMES LIMA", "inicio": dt.date(2026, 9, 1),
+         "fim": dt.date(2026, 9, 20), "observacao": "",
+         "criado_por": "MARCELO", "dias": 20}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+
+    assert "GERLANIO GOMES LIMA" in html
+    assert "997.133.493-34" in html
+    assert "01/09/2026" in html and "20/09/2026" in html
+    assert "Independência" in html
+    assert "CREPEOLINDA" in html
+    assert "nacional" in html
+
+
+def test_sem_a_migracao_a_tela_do_calendario_AVISA(app, monkeypatch):
+    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+
+    monkeypatch.setattr(fc, "_pronto", lambda: False)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    resposta = _como_mestre(app).get("/analisesps/folha/calendario")
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Aplicar atualizações do banco" in html
+    assert 'id="btn-gravar-ferias"' not in html
+
+
+def test_a_tela_explica_a_DIFERENCA_entre_alimentacao_e_transporte(app, monkeypatch):
+    """A alimentação desconta feriado e férias; o transporte só férias. É decisão
+    dele, e quem lança os dados tem de saber para que serve."""
+    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+    assert "alimenta" in html.lower()
+    assert "transporte" in html.lower()
+
+
+def test_procurar_pessoa_devolve_POUCO(app, monkeypatch):
+    """⚠️ A caixa de sugestão não é lugar de mostrar salário nem auxílio."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [{
+        "cpf": "99713349334", "nome": "GERLANIO", "cargo": "ENCARREGADO",
+        "desligado": False, "valor_alimentacao": 330,
+        "valor_gratificacao": 5000}])
+
+    corpo = _como_mestre(app).get(
+        "/analisesps/api/folha/procurar-pessoa?q=ger").get_json()
+
+    assert corpo["pessoas"][0]["nome"] == "GERLANIO"
+    assert set(corpo["pessoas"][0]) == {"cpf", "nome", "cargo", "desligado"}
+
+
+def test_procurar_pessoa_com_UMA_letra_nao_vai_ao_banco(app, monkeypatch):
+    """Uma consulta por tecla faria dezenas de idas ao banco para um nome de dez
+    letras."""
+    from app.apps.analisesps import colaboradores as col
+    chamou = {}
+
+    monkeypatch.setattr(col, "buscar",
+                        lambda *a, **k: chamou.setdefault("sim", True) or [])
+    corpo = _como_mestre(app).get(
+        "/analisesps/api/folha/procurar-pessoa?q=g").get_json()
+    assert corpo["pessoas"] == []
+    assert "sim" not in chamou
+
+
+def test_gravar_ferias_devolve_a_frase_do_erro_para_a_tela(app, monkeypatch):
+    """A frase diz qual é o outro período que cruza — é o que permite consertar."""
+    from app.apps.analisesps import folha_calendario as fc
+
+    def explode(*a, **k):
+        raise fc.ErroDoCalendario(
+            "esta pessoa já tem férias de 01/09/2026 a 20/09/2026, e os "
+            "períodos se cruzam.")
+
+    monkeypatch.setattr(fc, "gravar_ferias", explode)
+    resposta = _como_mestre(app).post("/analisesps/api/folha/ferias",
+                                      json={"cpf": "99713349334"})
+    assert resposta.status_code == 400
+    assert "se cruzam" in resposta.get_json()["erro"]
+
+
+def test_a_ordem_das_subtelas_com_o_calendario(app):
+    """A ordem é a do trabalho, e o calendário fica junto do cadastro: são os dois
+    lançamentos que alimentam o cálculo."""
     from app.apps.analisesps import web
 
     assert [s[0] for s in web.SUBTELAS_DA_FOLHA] == [
-        "painel", "importar", "ponto", "colaboradores", "rateio"]
+        "painel", "importar", "ponto", "colaboradores", "calendario", "rateio"]

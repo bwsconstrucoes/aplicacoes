@@ -441,6 +441,13 @@ TELA_DA_ROTA = {
     "analisesps.tela_folha_importar": ("folha",),
     "analisesps.tela_folha_painel": ("folha",),
     "analisesps.tela_folha_ponto": ("folha",),
+    "analisesps.tela_folha_calendario": ("folha",),
+    # Feriados e férias são lançamento do DP, como trazer a folha e o ponto.
+    "analisesps.folha_feriado_gravar": ("folha",),
+    "analisesps.folha_feriado_apagar": ("folha",),
+    "analisesps.folha_ferias_gravar": ("folha",),
+    "analisesps.folha_ferias_apagar": ("folha",),
+    "analisesps.folha_procurar_pessoa": ("folha",),
     # Trazer o ponto é trabalho do DP, como trazer a folha da contabilidade.
     "analisesps.folha_ponto_carregar": ("folha",),
     "analisesps.folha_ponto_apagar": ("folha",),

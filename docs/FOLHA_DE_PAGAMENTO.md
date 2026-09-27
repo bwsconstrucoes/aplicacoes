@@ -2198,6 +2198,130 @@ agora existe para onde levá-las.
 
 Enquanto elas não existirem, a tela do ponto **não oferece o botão** e explica o
 que fazer: botão que só dá erro é armadilha.
+## 7.23 FERIADOS E FÉRIAS (27/09/2026) — e três coisas que eu expliquei mal
+
+### 7.23.1 O que ele decidiu, e a tela que saiu
+
+> *"Feriado nós vamos alimentar o sistema com os feriados (…) quais são os
+> feriados que são nacionais, quais são os feriados que é por obra, porque as
+> obras são em municípios diferentes."*
+>
+> *"Férias (…) você já cria uma telazinha onde eu vou inserir as férias de cada
+> funcionário. Eu posso buscar pelo nome, pelo CPF e incluo o período. Só isso. E
+> depois a gente pensa em numa forma de importar a informação via arquivo."*
+
+Feito: uma subtela **"Feriados e férias"**, com os dois cadastros. **Uma tela para
+os dois** porque são dois lançamentos pequenos que servem ao mesmo cálculo —
+separá-los daria duas entradas para quem procura a mesma resposta, e ele acabou de
+corrigir tela demais.
+
+**As férias vêm primeiro na tela**, porque é o que ele vai usar todo mês.
+
+⚠️ **A pessoa é ESCOLHIDA, não digitada.** O CPF é a chave de tudo: digitado na
+mão, um número trocado lança as férias de outra pessoa — e o auxílio da certa sai
+errado sem ninguém saber. A tela busca no cadastro por nome ou CPF e guarda o CPF
+escondido. A busca devolve **só nome, cargo e se a pessoa saiu**: caixa de sugestão
+não é lugar de mostrar salário nem auxílio.
+
+### 7.23.2 Por OBRA, não por município — e por quê
+
+Ele falou dos dois: *"por obra, porque as obras são em municípios diferentes"*.
+
+Guardar por **município** exigiria um de/para obra → município que o sistema não
+tem, e inventá-lo agora seria mais uma peça para dar errado. Guardar por **obra**
+ele escolhe da lista que já existe (a mesma do rateio e do Ratear), e a conta sai
+certa.
+
+Se um dia o município entrar no cadastro da obra, o feriado municipal passa a valer
+para todas as obras daquele município — **e esta tabela não muda**, só ganha uma
+consulta nova.
+
+### 7.23.3 As travas que o cadastro tem, e o que cada uma evita
+
+| Trava | O que ela evita |
+|---|---|
+| o mesmo feriado não entra duas vezes | um 7 de setembro em duplicidade descontaria **dois** dias do auxílio de todo mundo |
+| o mesmo dia pode ser feriado em duas obras diferentes | cada município tem o seu, e o dia pode coincidir |
+| feriado "nacional" ignora a obra que vier | nacional com obra escrita deixaria a consulta ambígua |
+| férias com o fim antes do início são recusadas | daria contagem negativa, e o auxílio sairia **a mais** |
+| período maior que 400 dias é recusado | é quase sempre o ano digitado errado, e descontaria meses |
+| dois períodos da mesma pessoa não podem se **cruzar** | descontariam o mesmo dia duas vezes, e o auxílio sairia a menos |
+| dois períodos **encostados** (um acaba dia 15, o outro começa dia 16) podem | férias fracionadas são a regra, não a exceção |
+
+### 7.23.4 Duas sutilezas da contagem que saíram de graça
+
+A conta é **dia a dia** (no máximo 31 iterações), e não aritmética de semanas —
+porque o mês começa e termina em dias da semana diferentes, e a conta fechada erra
+na borda. Daí saem duas coisas certas sem esforço:
+
+1. **Feriado que cai no fim de semana não desconta nada**, porque aquele dia já não
+   contava.
+2. **Feriado na sexta não desconta de quem é "Segunda à Quinta"** — a sexta já não
+   contava para essa modalidade. É a mesma sutileza que a planilha resolve contando
+   os feriados de sexta à parte (§7.14.6); aqui ela é consequência da conta.
+
+E o desconto de férias é em **dias úteis**, não de calendário — como
+`NETWORKDAYS.INTL` na planilha. Não se desconta refeição de um domingo que já não
+era pago.
+
+## 7.24 TRÊS COISAS QUE EU EXPLIQUEI MAL (27/09/2026)
+
+Ele disse, com razão: *"eu não compreendi bem o que você botou falta"*. As três
+respostas, em português:
+
+### 7.24.1 "Total por obra" — a regra eu já tenho; o nome do campo é que falta
+
+Ele explicou a regra achando que era isso que me faltava:
+
+> *"Cada dia, eu determino qual obra mais aparece, já que são quatro marcações, e
+> a que mais aparece é a que vai valer para o dia. Se tiver duas de uma e duas de
+> outra, vamos considerar a primeira obra."*
+
+**Essa regra está escrita e testada desde 26/09** (`folha_apropriacao.obra_do_dia`,
+com o empate resolvido pela primeira marcação, exatamente assim).
+
+**O que falta é outra coisa, e é banal:** quando a API do Mobponto devolve um dia,
+ela manda um conjunto de campos com **nomes que ninguém documentou** — o script
+antigo dele os descobre na hora de rodar. Eu preciso saber **qual desses nomes
+carrega a obra de cada marcação**. Não é a regra: é o rótulo da caixa onde o dado
+vem.
+
+**E isso se resolve num clique:** a tela do Ponto mostra, depois do primeiro
+carregamento, a lista dos campos que vieram e um dia de exemplo de verdade.
+
+### 7.24.2 "Apropriação guardada" — jargão meu; quer dizer isto
+
+**Apropriar** é dizer para qual obra vai o dinheiro de cada pessoa. Hoje o sistema
+sabe **calcular** isso, mas o resultado morre na tela: não fica gravado.
+
+**Guardar** a apropriação é ter isso escrito no banco, e serve para três coisas
+que ele pediu:
+
+1. o **relatório** de auditoria — "de onde veio este número" precisa de um lugar
+   onde o número esteja;
+2. o **arquivo de pagamento**, que sai da apropriação e não do cálculo do momento;
+3. **o ajuste dele sobreviver.** Ele disse: *"às vezes eu distribuo em várias
+   obras, bota um dia numa obra, um dia em outra (…) eu altero só a planilha
+   naquele momento."* Se a apropriação não estiver guardada, esse ajuste se perde
+   a cada vez que a tela recalcular — e ele teria de refazer.
+
+### 7.24.3 Diaristas — sim, é o mesmo ponto
+
+Ele está certo: *"é o mesmo ponto, a diferença do que para pagar o diarista é que
+ele não é um carteira assinada. E os critérios para isso tem nas planilhas
+também."*
+
+**Os critérios já estão lidos e implementados**, das fórmulas:
+
+- `folha_vinculo` traduz a fórmula da coluna AH, que decide **por dia** se aquele
+  dia é **CTPS** ou **DIÁRIA** (§7.9);
+- a diária sai de `AQ = 'PAGAR DIÁRIA'`, exclui quem está sem valor de diária e
+  exclui a função **VIGIA** (§7.14.12);
+- a diária extra de quem é CTPS sai de `AQ = 'PAGAR EXTRA'`, com **+20 em feriado,
+  +10 no sábado, +20 no domingo**, e não paga dia compensado (§7.14.5).
+
+Ou seja: **a tela de diaristas espera o mesmo mapeamento de campos do ponto que o
+total por obra espera.** Um clique destrava as duas.
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

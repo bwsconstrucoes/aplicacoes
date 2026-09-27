@@ -147,6 +147,8 @@ SUBTELAS_DA_FOLHA = [
      "analisesps.tela_folha_importar"),
     ("ponto",         "Ponto",         "analisesps.tela_folha_ponto"),
     ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
+    ("calendario",     "Feriados e férias",
+     "analisesps.tela_folha_calendario"),
     ("rateio",        "Rateio das obras", "analisesps.tela_folha_rateio"),
 ]
 
@@ -2620,6 +2622,140 @@ def tela_colaboradores():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/folha/calendario")
+@exige_consulta
+def tela_folha_calendario():
+    """Feriados e férias — o que tira dias do auxílio.
+
+    AS DUAS COISAS NUMA TELA SÓ, e é a correção que o dono fez em 27/09/2026
+    sobre tela demais: são dois cadastros pequenos que servem ao mesmo cálculo.
+    Separá-los daria duas entradas para quem procura a mesma resposta."""
+    from . import folha_calendario as fc, sincronizacao
+
+    pronto = fc._pronto()
+    procurado = " ".join((request.args.get("q") or "").split())
+    try:
+        ano = int(request.args.get("ano") or 0)
+    except (TypeError, ValueError):
+        ano = 0
+
+    feriados, ferias, obras = [], [], []
+    erro = None
+    try:
+        if pronto:
+            feriados = fc.listar_feriados(ano or None)
+            ferias = fc.listar_ferias(procurado)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui ler feriados e férias")
+        erro = str(e)
+    try:
+        # A MESMA LISTA DE OBRAS do rateio e do Ratear. Uma segunda lista
+        # divergiria da primeira no dia em que alguém cadastrasse obra nova.
+        obras = [o["nome"] for o in
+                 (sincronizacao.referencias_rateio().get("obras") or [])]
+    except Exception:  # noqa: BLE001 — a lista é apoio; sem ela dá recado
+        logger.exception("Folha: não consegui ler a lista de obras")
+
+    from .horario import agora
+    return render_template(
+        "analisesps_folha_calendario.html", aba="folha", subaba="calendario",
+        subtelas=subtelas_da_folha(), pronto=pronto, feriados=feriados,
+        ferias=ferias, obras=obras, procurado=procurado, ano=ano,
+        ano_padrao=agora().year, erro=erro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/feriado", methods=["POST"])
+@exige_operador
+def folha_feriado_gravar():
+    """Cadastra um feriado, nacional ou de uma obra."""
+    from . import folha_calendario as fc
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        novo = fc.gravar_feriado(
+            dados.get("data"), str(dados.get("abrangencia") or ""),
+            obra=str(dados.get("obra") or ""),
+            descricao=str(dados.get("descricao") or ""), quem=quem)
+    except fc.ErroDoCalendario as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o feriado")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": novo}
+
+
+@bp.route("/api/folha/feriado/apagar", methods=["POST"])
+@exige_operador
+def folha_feriado_apagar():
+    from . import folha_calendario as fc
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    if not fc.apagar_feriado(int(dados.get("id") or 0), quem=quem):
+        return {"ok": False, "erro": "Este feriado não está mais aqui."}, 404
+    return {"ok": True}
+
+
+@bp.route("/api/folha/ferias", methods=["POST"])
+@exige_operador
+def folha_ferias_gravar():
+    """Cadastra o período de férias de uma pessoa."""
+    from . import folha_calendario as fc
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        novo = fc.gravar_ferias(
+            str(dados.get("cpf") or ""), dados.get("inicio"), dados.get("fim"),
+            nome=str(dados.get("nome") or ""),
+            observacao=str(dados.get("observacao") or ""), quem=quem)
+    except fc.ErroDoCalendario as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar as férias")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": novo}
+
+
+@bp.route("/api/folha/ferias/apagar", methods=["POST"])
+@exige_operador
+def folha_ferias_apagar():
+    from . import folha_calendario as fc
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    if not fc.apagar_ferias(int(dados.get("id") or 0), quem=quem):
+        return {"ok": False, "erro": "Estas férias não estão mais aqui."}, 404
+    return {"ok": True}
+
+
+@bp.route("/api/folha/procurar-pessoa")
+@exige_consulta
+def folha_procurar_pessoa():
+    """Procura no cadastro, para a tela oferecer a pessoa ao lançar férias.
+
+    Pedido do dono: *"eu posso buscar pelo nome, pelo CPF e incluo o período."*
+    Devolve pouco de propósito — a caixa de sugestão não é lugar de mostrar
+    salário nem auxílio."""
+    from . import colaboradores
+
+    procurado = " ".join((request.args.get("q") or "").split())
+    if len(procurado) < 2:
+        return {"ok": True, "pessoas": []}
+    try:
+        achados = colaboradores.buscar(procurado, so_ativos=False, teto=12)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou procurar pessoa")
+        return {"ok": False, "erro": str(e)}, 500
+    return {"ok": True, "pessoas": [
+        {"cpf": p["cpf"], "nome": p["nome"], "cargo": p.get("cargo") or "",
+         "desligado": bool(p.get("desligado"))} for p in achados]}
 
 
 @bp.route("/api/folha/rateio/colar", methods=["POST"])
