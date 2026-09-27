@@ -5938,4 +5938,546 @@ def test_a_ordem_das_subtelas_com_o_calendario(app):
     from app.apps.analisesps import web
 
     assert [s[0] for s in web.SUBTELAS_DA_FOLHA] == [
-        "painel", "importar", "ponto", "colaboradores", "calendario", "rateio"]
+        "painel", "importar", "ponto", "colaboradores", "calendario",
+        "auxilios", "rateio", "pagamento"]
+
+
+
+# ---------------------------------------------------------------------------
+# A SUBTELA DE ALIMENTAÇÃO E TRANSPORTE — 27/09/2026
+#
+# A planilha tem uma aba para cada; aqui as duas dividem uma subtela com uma aba
+# cada, porque ele reclamou de tela demais no menu e a conta é quase a mesma.
+# ---------------------------------------------------------------------------
+def _auxilio_calculado(**mudancas):
+    """Um resultado de `folha_auxilio.calcular` pronto, para a tela desenhar."""
+    import datetime as dt
+    from decimal import Decimal as D
+
+    pessoa = {
+        "cpf": "99713349334", "nome": "GERLANIO GOMES LIMA",
+        "cargo": "ENCARREGADO", "link_pipefy": "https://app.pipefy.com/open-cards/9",
+        "modo": "Segunda à Sexta", "valor_unitario": D("15.00"),
+        "obra": "CREPEOLINDA", "obra_ajustada": False,
+        "dias_base": 22, "feriados": 1, "ferias": 0, "dias_ajuste": 0,
+        "dias": 21, "valor": D("315.00"), "observacao": "",
+        "ajuste_pagar": None, "motivos": [], "pagar": True, "impossivel": False,
+    }
+    saida = {
+        "tipo": "alimentacao", "rotulo": "Auxílio alimentação",
+        "ano": 2026, "mes": 9, "competencia": "09/2026",
+        "inicio": dt.date(2026, 9, 1), "fim": dt.date(2026, 9, 30),
+        "pessoas": [pessoa], "quantos": 1, "quantos_a_pagar": 1,
+        "total": D("315.00"), "com_problema": [],
+        "por_obra": [{"obra": "CREPEOLINDA", "pessoas": 1, "total": D("315.00")}],
+        "desconta_feriado": True,
+    }
+    saida.update(mudancas)
+    return saida
+
+
+def _preparar_auxilio(monkeypatch, resultado=None, pronto=True):
+    from app.apps.analisesps import folha_auxilio as fx, sincronizacao
+
+    monkeypatch.setattr(fx, "_pronto", lambda: pronto)
+    monkeypatch.setattr(fx, "calcular",
+                        lambda *a, **k: resultado if resultado is not None
+                        else _auxilio_calculado())
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [{"nome": "CREPEOLINDA", "codigo": "1"}],
+                                 "categorias": []})
+
+
+def test_a_tela_do_auxilio_mostra_o_CAMINHO_da_conta(app, monkeypatch):
+    """⚠️ NÃO É ENFEITE: ele pediu *"saber até de onde é que foi que veio aquela
+    informação"*. Um total sozinho não se audita."""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+
+    assert "GERLANIO GOMES LIMA" in html
+    assert "Segunda à Sexta" in html
+    assert "CREPEOLINDA" in html
+    # A base, o desconto e o resultado, todos à vista na mesma linha.
+    assert ">22<" in html, "os dias da modalidade"
+    assert "315,00" in html
+    assert "Base" in html and "Feriados" in html and "Férias" in html
+
+
+def test_a_tela_do_auxilio_diz_QUAL_REGUA_esta_vendo(app, monkeypatch):
+    """As colunas das duas verbas são iguais e o número muda. Sem dizer qual
+    régua está na tela, quem confere confere errado."""
+    cliente = _como_mestre(app)
+
+    _preparar_auxilio(monkeypatch)
+    alimentacao = cliente.get(
+        "/analisesps/folha/auxilios?tipo=alimentacao").get_data(as_text=True)
+    assert "desconta <b>feriado</b> e <b>férias</b>" in alimentacao
+
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(
+        tipo="transporte", rotulo="Auxílio transporte", desconta_feriado=False))
+    transporte = cliente.get(
+        "/analisesps/folha/auxilios?tipo=transporte").get_data(as_text=True)
+    assert "<b>não</b> desconta feriado" in transporte
+    assert "Cartão" in transporte, "o cartão não sai em dinheiro"
+
+
+def test_no_transporte_a_coluna_de_feriado_nao_finge_numero(app, monkeypatch):
+    """O transporte não desconta feriado. Mostrar a contagem ali faria parecer
+    que desconta, e ninguém conferindo perceberia."""
+    cliente = _como_mestre(app)
+    # 17 é um número que não aparece em nenhum outro lugar da tela — dá para
+    # afirmar com segurança se a célula de feriado o mostrou ou não.
+    pessoa = dict(_auxilio_calculado()["pessoas"][0], feriados=17)
+
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(pessoas=[pessoa]))
+    alimentacao = cliente.get(
+        "/analisesps/folha/auxilios?tipo=alimentacao").get_data(as_text=True)
+    assert "17" in alimentacao, "na alimentação o feriado desconta e aparece"
+
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(
+        tipo="transporte", rotulo="Auxílio transporte", desconta_feriado=False,
+        pessoas=[pessoa]))
+    transporte = cliente.get(
+        "/analisesps/folha/auxilios?tipo=transporte").get_data(as_text=True)
+    assert "17" not in transporte, "no transporte a célula do feriado é um travessão"
+
+
+def test_quem_precisa_de_mao_aparece_marcado(app, monkeypatch):
+    """A linha com problema tem de se ver de longe — ele rola a lista no
+    celular."""
+    from decimal import Decimal as D
+
+    problema = dict(_auxilio_calculado()["pessoas"][0])
+    problema.update({
+        "pagar": False, "impossivel": True, "valor": D("0.00"), "dias": 0,
+        "valor_unitario": None, "dias_base": 0,
+        "motivos": ["o cadastro não diz o valor deste auxílio. Corrija no card "
+                    "do Pipefy e atualize o cadastro."]})
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(
+        pessoas=[problema], quantos=1, quantos_a_pagar=0, total=D("0.00"),
+        com_problema=[problema], por_obra=[]))
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+
+    assert "linha-alerta" in html
+    assert "não diz o valor deste auxílio" in html
+    assert "Precisam de olho" in html
+
+
+def test_o_ajuste_tem_TRES_estados_e_nao_dois(app, monkeypatch):
+    """⚠️ "segue o cálculo" não é "não pagar". Se a tela mostrasse os dois iguais,
+    o padrão do sistema pareceria decisão dele."""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "segue o cálculo" in html
+    assert ">pagar<" in html and ">não pagar<" in html
+
+
+def test_o_nome_leva_ao_card_do_pipefy(app, monkeypatch):
+    """É no card que ele corrige o valor do auxílio — o cadastro é espelho."""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "https://app.pipefy.com/open-cards/9" in html
+
+
+def test_a_tela_do_auxilio_sem_a_migracao_AVISA(app, monkeypatch):
+    _preparar_auxilio(monkeypatch, pronto=False)
+    resposta = _como_mestre(app).get("/analisesps/folha/auxilios")
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Aplicar atualizações do banco" in html
+    assert "btn-gravar-ajuste" not in html
+
+
+def test_a_tela_do_auxilio_nao_cai_quando_o_calculo_estoura(app, monkeypatch):
+    """Tela branca não diz nada a quem está com o pagamento para fechar."""
+    from app.apps.analisesps import folha_auxilio as fx, sincronizacao
+
+    def explode(*a, **k):
+        raise fx.ErroDoAuxilio("o cadastro está vazio.")
+
+    monkeypatch.setattr(fx, "_pronto", lambda: True)
+    monkeypatch.setattr(fx, "calcular", explode)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+
+    resposta = _como_mestre(app).get("/analisesps/folha/auxilios")
+    assert resposta.status_code == 200
+    assert "o cadastro está vazio" in resposta.get_data(as_text=True)
+
+
+def test_competencia_torta_na_URL_cai_no_mes_de_hoje(app, monkeypatch):
+    """Endereço colado errado não pode virar erro 500."""
+    visto = {}
+    from app.apps.analisesps import folha_auxilio as fx, sincronizacao
+
+    monkeypatch.setattr(fx, "_pronto", lambda: True)
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+
+    def espiar(tipo, ano, mes):
+        visto.update({"tipo": tipo, "ano": ano, "mes": mes})
+        return _auxilio_calculado()
+
+    monkeypatch.setattr(fx, "calcular", espiar)
+    resposta = _como_mestre(app).get(
+        "/analisesps/folha/auxilios?tipo=inventada&ano=abc&mes=99")
+    assert resposta.status_code == 200
+    assert visto["tipo"] == "alimentacao", "verba desconhecida cai na primeira"
+    assert 1 <= visto["mes"] <= 12
+
+
+def test_quem_so_consulta_nao_ve_os_campos_de_ajuste(app, monkeypatch):
+    """Ajuste é operação: muda o que vai ser pago."""
+    _preparar_auxilio(monkeypatch)
+    html = como(app, SENHA_CONSULTA).get(
+        "/analisesps/folha/auxilios", follow_redirects=True).get_data(as_text=True)
+    assert "GERLANIO GOMES LIMA" in html
+    assert "btn-gravar-ajuste" not in html
+    assert "campo-pagar" not in html
+
+
+def test_gravar_o_ajuste_guarda_os_TRES_estados(app, monkeypatch):
+    from app.apps.analisesps import folha_auxilio as fx
+    gravado = {}
+
+    monkeypatch.setattr(fx, "_pronto", lambda: True)
+    monkeypatch.setattr(fx, "gravar_ajuste",
+                        lambda *a, **k: gravado.update({"a": a, "k": k}))
+    monkeypatch.setattr(fx, "limpar_ajuste",
+                        lambda *a, **k: gravado.update({"limpou": a}) or True)
+
+    cliente = _como_mestre(app)
+    resposta = cliente.post("/analisesps/api/folha/auxilio/ajuste", json={
+        "tipo": "alimentacao", "ano": 2026, "mes": 9, "cpf": "99713349334",
+        "pagar": False})
+    assert resposta.get_json()["ok"] is True
+    assert gravado["k"]["pagar"] is False
+
+    # Nada mexido: TIRA o ajuste, para voltar a valer o cálculo.
+    gravado.clear()
+    cliente.post("/analisesps/api/folha/auxilio/ajuste", json={
+        "tipo": "alimentacao", "ano": 2026, "mes": 9, "cpf": "99713349334",
+        "pagar": None})
+    assert "limpou" in gravado and "k" not in gravado
+
+
+def test_gravar_o_ajuste_recusa_competencia_invalida(app, monkeypatch):
+    from app.apps.analisesps import folha_auxilio as fx
+
+    monkeypatch.setattr(fx, "_pronto", lambda: True)
+    monkeypatch.setattr(fx, "gravar_ajuste", lambda *a, **k: None)
+    resposta = _como_mestre(app).post("/analisesps/api/folha/auxilio/ajuste",
+                                      json={"tipo": "alimentacao", "mes": 99})
+    assert resposta.status_code == 400
+    assert resposta.get_json()["ok"] is False
+
+
+def test_gravar_o_ajuste_devolve_a_frase_do_erro(app, monkeypatch):
+    from app.apps.analisesps import folha_auxilio as fx
+
+    def explode(*a, **k):
+        raise fx.ErroDoAuxilio("não reconheci o CPF desta pessoa.")
+
+    monkeypatch.setattr(fx, "_pronto", lambda: True)
+    monkeypatch.setattr(fx, "gravar_ajuste", explode)
+    resposta = _como_mestre(app).post("/analisesps/api/folha/auxilio/ajuste",
+                                      json={"tipo": "transporte", "ano": 2026,
+                                            "mes": 9, "cpf": "1", "pagar": True})
+    assert resposta.status_code == 400
+    assert "CPF" in resposta.get_json()["erro"]
+
+
+# ---------------------------------------------------------------------------
+# A SUBTELA DE GERAR PAGAMENTO — 27/09/2026
+#
+# ⚠️ É A TELA MAIS SENSÍVEL DA ÁREA: daqui sai o arquivo que vai para o portal do
+# banco. Só do mestre, e com conferência antes de gerar.
+# ---------------------------------------------------------------------------
+def _preparar_pagamento(monkeypatch, fechados=None, log=None, pronto=True):
+    from app.apps.analisesps import (folha_apropriacao_guardada as ag,
+                                     folha_pagamento as fpg)
+
+    monkeypatch.setattr(fpg, "_pronto", lambda: pronto)
+    monkeypatch.setattr(fpg, "log", lambda *a, **k: log or [])
+    monkeypatch.setattr(ag, "fechamentos", lambda *a, **k: fechados or [])
+
+
+def _fechado(verba="alimentacao", fecha=True, ano=2026, mes=9):
+    from decimal import Decimal as D
+    return {"ano": ano, "mes": mes, "tipo": "quinzena", "verba": verba,
+            "total": D("330.00"), "pessoas": 1, "fecha": fecha,
+            "fechado_em": None, "fechado_por": "MARCELO"}
+
+
+def test_a_tela_de_pagamento_diz_AS_DUAS_REGRAS_antes_do_botao(app, monkeypatch):
+    """Descobrir a regra do SomaPay depois de subir no portal custa a rodada
+    inteira: já se gerou, subiu, criou o card e avisou a equipe."""
+    _preparar_pagamento(monkeypatch, fechados=[_fechado()])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/pagamento").get_data(as_text=True)
+
+    assert "Um arquivo por conta, sempre" in html
+    assert "mesmo CPF duas vezes" in html
+    assert "BeeVale" in html and "SomaPay" in html
+
+
+def test_sem_apropriacao_fechada_a_tela_EXPLICA_em_vez_de_oferecer(app,
+                                                                   monkeypatch):
+    """Oferecer o botão sem ter o que pagar só gera erro depois de ele escolher
+    tudo."""
+    _preparar_pagamento(monkeypatch, fechados=[])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/pagamento").get_data(as_text=True)
+
+    assert "Nada fechado" in html
+    assert 'id="btn-gerar"' not in html
+
+
+def test_a_verba_que_NAO_BATE_aparece_marcada_e_nao_escondida(app, monkeypatch):
+    """Um fechamento que não batia continua dizendo que não batia, e quem gera
+    decide sabendo. Esconder faria a folha sair com gente de fora."""
+    _preparar_pagamento(monkeypatch, fechados=[_fechado(fecha=False)])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/pagamento").get_data(as_text=True)
+    assert "não bate" in html
+    assert "Alimentação" in html
+
+
+def test_a_tela_de_pagamento_e_SO_DO_MESTRE(app):
+    """O log mostra o link de arquivos com nome, CPF e valor de ~500 pessoas."""
+    from app.apps.analisesps import auth
+
+    assert auth.e_so_do_mestre("analisesps.tela_folha_pagamento") is True
+    assert auth.e_so_do_mestre("analisesps.folha_pagamento_gerar") is True
+    assert auth.e_so_do_mestre("analisesps.folha_pagamento_preparar") is True
+
+    resposta = como(app, SENHA_CONSULTA).get("/analisesps/folha/pagamento")
+    assert resposta.status_code in (302, 403, 404)
+
+
+def test_o_log_mostra_o_LINK_de_baixar(app, monkeypatch):
+    """Pedido dele: *"que tenha também o log na aplicação, com as informações e o
+    link que a gente quer baixar por lá"*."""
+    from decimal import Decimal as D
+
+    _preparar_pagamento(monkeypatch, fechados=[], log=[{
+        "id": 1, "ano": 2026, "mes": 9, "tipo": "quinzena",
+        "destino": "beevale", "rotulo_destino": "BeeVale",
+        "verbas": "alimentacao+transporte",
+        "rotulo_verbas": "Alimentação + Transporte", "conta": "50024",
+        "nome": "BeeVale - 09-2026.xlsx", "pessoas": 12, "total": D("4200.00"),
+        "link": "https://drive.google.com/file/d/abc/view", "card_pipefy": "",
+        "link_card": "", "avisos": "", "criado_em": None,
+        "criado_por": "MARCELO", "competencia": "09/2026"}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/pagamento").get_data(as_text=True)
+
+    assert "https://drive.google.com/file/d/abc/view" in html
+    assert "Alimentação + Transporte" in html
+    assert "50024" in html
+    assert "4.200,00" in html
+
+
+def test_o_arquivo_com_AVISO_fica_marcado_no_log(app, monkeypatch):
+    """Aviso que só existiu na tela não explica diferença nenhuma três meses
+    depois."""
+    from decimal import Decimal as D
+
+    _preparar_pagamento(monkeypatch, log=[{
+        "id": 1, "ano": 2026, "mes": 9, "tipo": "quinzena",
+        "destino": "beevale", "rotulo_destino": "BeeVale", "verbas": "folha",
+        "rotulo_verbas": "Folha", "conta": "", "nome": "x.xlsx", "pessoas": 1,
+        "total": D("10.00"), "link": "https://drive/x", "card_pipefy": "",
+        "link_card": "", "avisos": "estas linhas estão sem conta de pagamento.",
+        "criado_em": None, "criado_por": "MARCELO", "competencia": "09/2026"}])
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/pagamento").get_data(as_text=True)
+    assert "linha-alerta" in html
+    assert "sem conta de pagamento" in html
+
+
+def test_sem_a_migracao_a_tela_de_pagamento_AVISA(app, monkeypatch):
+    _preparar_pagamento(monkeypatch, pronto=False)
+    resposta = _como_mestre(app).get("/analisesps/folha/pagamento")
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Aplicar atualizações do banco" in html
+    assert 'id="btn-gerar"' not in html
+
+
+def test_conferir_NAO_gera_nada(app, monkeypatch):
+    """Conferir é o passo que ele pediu para ver antes: não grava e não sobe."""
+    from app.apps.analisesps import folha_pagamento as fpg
+    from decimal import Decimal as D
+    chamou = {}
+
+    monkeypatch.setattr(fpg, "gerar",
+                        lambda *a, **k: chamou.setdefault("gerou", True))
+    monkeypatch.setattr(fpg, "preparar", lambda *a, **k: {
+        "pode_juntar": True, "motivo_nao_junta": "",
+        "resumo": {"arquivos": 2, "pessoas": 5, "total": D("100.00"),
+                   "pode_gerar": True, "com_critica": []},
+        "lotes": [{"conta": "50024", "quantos": 5, "total": D("100.00"),
+                   "verbas": ["alimentacao"], "criticas": []}]})
+
+    corpo = _como_mestre(app).post(
+        "/analisesps/api/folha/pagamento/preparar",
+        json={"ano": 2026, "mes": 9, "tipo": "quinzena",
+              "verbas": ["alimentacao"], "destino": "beevale"}).get_json()
+
+    assert corpo["ok"] is True
+    assert corpo["resumo"]["arquivos"] == 2
+    assert "gerou" not in chamou
+
+
+def test_gerar_devolve_os_LINKS_dos_arquivos(app, monkeypatch):
+    from app.apps.analisesps import folha_pagamento as fpg
+    from decimal import Decimal as D
+
+    monkeypatch.setattr(fpg, "gerar", lambda *a, **k: {
+        "ok": True, "competencia": "09/2026",
+        "resumo": {"arquivos": 1},
+        "arquivos": [{"id": 1, "nome": "BeeVale.xlsx", "link": "https://drive/1",
+                      "conta": "50024", "destino": "beevale",
+                      "total": D("100.00"), "avisos": ""},
+                     {"id": 2, "nome": "Analise.xlsx", "link": "https://drive/2",
+                      "conta": "", "destino": "analise", "total": D("100.00"),
+                      "avisos": ""}]})
+
+    corpo = _como_mestre(app).post(
+        "/analisesps/api/folha/pagamento/gerar",
+        json={"ano": 2026, "mes": 9, "tipo": "quinzena",
+              "verbas": ["alimentacao"], "destino": "beevale"}).get_json()
+
+    assert corpo["ok"] is True
+    assert [a["link"] for a in corpo["arquivos"]] == ["https://drive/1",
+                                                      "https://drive/2"]
+
+
+def test_gerar_devolve_a_frase_do_erro_para_a_tela(app, monkeypatch):
+    """A frase diz o que consertar — é o que evita gerar de novo errado."""
+    from app.apps.analisesps import folha_pagamento as fpg
+
+    def explode(*a, **k):
+        raise fpg.ErroDoPagamento(
+            "Transporte não tem apropriação fechada em 09/2026.")
+
+    monkeypatch.setattr(fpg, "gerar", explode)
+    resposta = _como_mestre(app).post(
+        "/analisesps/api/folha/pagamento/gerar",
+        json={"ano": 2026, "mes": 9, "tipo": "quinzena",
+              "verbas": ["transporte"], "destino": "somapay"})
+    assert resposta.status_code == 400
+    assert "apropriação fechada" in resposta.get_json()["erro"]
+
+
+def test_a_obra_so_e_gravada_quando_MUDA(app, monkeypatch):
+    """⚠️ Mandar a obra que já vinha do cadastro faria a linha dizer "obra trocada
+    por você" sem ele ter trocado nada — e o relatório de auditoria mentiria sobre
+    quem decidiu o quê."""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+
+    assert 'data-cadastro="CREPEOLINDA"' in html, (
+        "a obra do cadastro vai no atributo, para o JS comparar")
+    assert "function obraSeMudou" in html
+
+
+# ---------------------------------------------------------------------------
+# O GERENCIAL NO PANORAMA — 27/09/2026
+#
+# *"Tem que ter informação gerencial, né, tipo dashboard (…) saber qual é o total
+#  por obra, porque isso já ajuda nessa questão do rateio."*
+# ---------------------------------------------------------------------------
+def _preparar_painel(monkeypatch, gerencial=None):
+    from app.apps.analisesps import folha_arquivo as fa, folha_pagamento as fpg
+
+    monkeypatch.setattr(fa, "panorama", lambda *a, **k: {"pronto": False})
+    monkeypatch.setattr(fpg, "gerencial", lambda *a, **k: gerencial
+                        if gerencial is not None else {"pronto": False})
+
+
+def test_o_painel_mostra_o_total_POR_OBRA_por_conta_e_por_verba(app, monkeypatch):
+    """É a lista que responde "quais obras estão em evidência" — e é com ela que ele
+    decide o rateio do mês."""
+    from decimal import Decimal as D
+
+    _preparar_painel(monkeypatch, {
+        "pronto": True, "ano": 2026, "mes": 9, "competencia": "09/2026",
+        "total": D("1400.00"),
+        "verbas": [{"verba": "folha", "rotulo": "Folha", "total": D("1000.00"),
+                    "pessoas": 3},
+                   {"verba": "alimentacao", "rotulo": "Alimentação",
+                    "total": D("400.00"), "pessoas": 3}],
+        "obras": [{"obra": "CREPEOLINDA", "total": D("1000.00"),
+                   "verbas": ["Folha"]},
+                  {"obra": "CREPEAREIAS", "total": D("400.00"),
+                   "verbas": ["Alimentação"]}],
+        "contas": [{"conta": "50024", "total": D("1400.00"), "obras": 2}],
+        "fechamentos": [],
+        "percentuais": [{"obra": "CREPEOLINDA", "total": D("1000.00"),
+                         "percentual": D("71.4285714")},
+                        {"obra": "CREPEAREIAS", "total": D("400.00"),
+                         "percentual": D("28.5714286")}]})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+
+    assert "Por obra" in html and "Por conta" in html and "Por verba" in html
+    assert "CREPEOLINDA" in html and "CREPEAREIAS" in html
+    assert "1.400,00" in html
+    assert "71,43%" in html or "71.43%" in html
+
+
+def test_obra_sem_conta_fica_MARCADA_no_painel(app, monkeypatch):
+    """Esconder faria a surpresa aparecer só na hora de pagar."""
+    from decimal import Decimal as D
+
+    _preparar_painel(monkeypatch, {
+        "pronto": True, "ano": 2026, "mes": 9, "competencia": "09/2026",
+        "total": D("500.00"), "verbas": [],
+        "obras": [{"obra": "SEM CONTA", "total": D("500.00"), "verbas": []}],
+        "contas": [{"conta": "(sem conta)", "total": D("500.00"), "obras": 1}],
+        "fechamentos": [], "percentuais": []})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+    assert "linha-alerta" in html
+    assert "trava a\n            geração do arquivo" in html or \
+        "trava a" in html
+
+
+def test_mes_sem_nada_fechado_EXPLICA_no_painel(app, monkeypatch):
+    """"Nada aqui" sem motivo faz a pessoa achar que o sistema está quebrado."""
+    from decimal import Decimal as D
+
+    _preparar_painel(monkeypatch, {
+        "pronto": True, "ano": 2026, "mes": 9, "competencia": "09/2026",
+        "total": D("0.00"), "verbas": [], "obras": [], "contas": [],
+        "fechamentos": [], "percentuais": []})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+    assert "Nada fechado" in html
+    assert "o que foi pago" in html
+
+
+def test_o_painel_nao_cai_quando_o_gerencial_estoura(app, monkeypatch):
+    """O gerencial é um bloco da tela, não a tela: se ele falhar, o resto abre."""
+    from app.apps.analisesps import folha_arquivo as fa, folha_pagamento as fpg
+
+    def explode(*a, **k):
+        raise RuntimeError("banco fora do ar")
+
+    monkeypatch.setattr(fa, "panorama", lambda *a, **k: {"pronto": False})
+    monkeypatch.setattr(fpg, "gerencial", explode)
+    resposta = _como_mestre(app).get("/analisesps/folha/painel")
+    assert resposta.status_code == 200
+    assert "Panorama da folha" in resposta.get_data(as_text=True)

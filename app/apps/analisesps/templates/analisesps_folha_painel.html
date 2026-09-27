@@ -7,6 +7,125 @@
 
 <h2>Panorama da folha</h2>
 
+{# ===========================================================================
+   O GERENCIAL — por verba, por obra e por conta, num lugar só.
+
+   ⚠️ NÃO É ENFEITE, É ENTRADA DO TRABALHO DELE. Palavras dele em 27/09/2026:
+   *"saber qual é o total por obra, porque isso já ajuda nessa questão do
+   rateio"*. Por isso ele vem ANTES do resto do painel: é a primeira coisa que
+   ele abre quando vai decidir o mês.
+
+   E sai do que está FECHADO, não de um recálculo: o rateio do mês seguinte se
+   decide sobre o que foi PAGO.
+   =========================================================================== #}
+<form class="barra-acoes" method="get"
+      action="{{ url_for('analisesps.tela_folha_painel') }}">
+  <label class="cartao-dica" for="mes" style="margin:0">Competência</label>
+  <select name="mes" id="mes">
+    {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
+                           (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
+                           (9,'setembro'),(10,'outubro'),(11,'novembro'),
+                           (12,'dezembro')] %}
+      <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
+    {% endfor %}
+  </select>
+  <select name="ano" id="ano">
+    {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
+      <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn secundario" type="submit">Ver</button>
+</form>
+
+{% if gerencial and gerencial.pronto and gerencial.obras %}
+<div class="kpis">
+  <div class="kpi">
+    <span class="kpi-rotulo">Pago em {{ gerencial.competencia }}</span>
+    <b class="kpi-valor">{{ gerencial.total|moeda }}</b>
+  </div>
+  <div class="kpi">
+    <span class="kpi-rotulo">Obras</span>
+    <b class="kpi-valor">{{ gerencial.obras|length }}</b>
+  </div>
+  <div class="kpi">
+    <span class="kpi-rotulo">Contas</span>
+    <b class="kpi-valor">{{ gerencial.contas|length }}</b>
+  </div>
+  <div class="kpi">
+    <span class="kpi-rotulo">Verbas fechadas</span>
+    <b class="kpi-valor">{{ gerencial.verbas|length }}</b>
+  </div>
+</div>
+
+<h3 style="margin-top:20px">
+  Por obra <small>é esta lista que responde "quais obras estão em evidência"</small>
+</h3>
+<table class="sps">
+  <thead>
+    <tr><th>Obra</th><th>Verbas</th><th class="num">Total</th>
+      <th class="num">% do mês</th></tr>
+  </thead>
+  <tbody>
+  {% set pct = {} %}
+  {% for p in gerencial.percentuais %}{% if pct.update({p.obra: p.percentual}) %}{% endif %}{% endfor %}
+  {% for o in gerencial.obras %}
+    <tr>
+      <td>{{ o.obra }}</td>
+      <td><span class="cartao-dica">{{ o.verbas|join(', ') }}</span></td>
+      <td class="num">{{ o.total|moeda }}</td>
+      {# O percentual é o MESMO que vai no rateio do card: sete casas, fechando
+         100%. Mostrado com duas, porque é para ler. #}
+      <td class="num">{{ '%.2f'|format(pct.get(o.obra, 0)|float) }}%</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h3 style="margin-top:20px">Por conta <small>quantos pagamentos vão sair</small></h3>
+<table class="sps">
+  <thead><tr><th>Conta</th><th class="num">Obras</th><th class="num">Total</th></tr></thead>
+  <tbody>
+  {% for c in gerencial.contas %}
+    <tr class="{{ 'linha-alerta' if c.conta == '(sem conta)' }}">
+      <td>{{ c.conta }}
+        {% if c.conta == '(sem conta)' %}
+          <br><span class="cartao-dica">obra sem conta de pagamento — isto trava a
+            geração do arquivo</span>
+        {% endif %}</td>
+      <td class="num">{{ c.obras }}</td>
+      <td class="num">{{ c.total|moeda }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h3 style="margin-top:20px">Por verba</h3>
+<table class="sps">
+  <thead><tr><th>Verba</th><th class="num">Total</th>
+    <th class="num">% do mês</th></tr></thead>
+  <tbody>
+  {% for v in gerencial.verbas %}
+    <tr>
+      <td>{{ v.rotulo }}</td>
+      <td class="num">{{ v.total|moeda }}</td>
+      <td class="num">
+        {% if gerencial.total %}{{ (v.total / gerencial.total * 100)|round(1) }}%
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% elif gerencial and gerencial.pronto %}
+<div class="aviso">
+  <b>Nada fechado em {{ "%02d"|format(mes) }}/{{ ano }}.</b>
+  Os totais por obra, por conta e por verba saem do que foi <b>fechado</b> — é o
+  que garante que o número embaixo da sua decisão de rateio seja o que foi pago, e
+  não o que a conta diria hoje.
+</div>
+{% endif %}
+
+
 {% if erro %}
   <div class="aviso erro"><b>Não consegui montar o panorama.</b> {{ erro }}</div>
 {% endif %}

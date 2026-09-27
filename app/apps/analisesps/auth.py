@@ -350,6 +350,14 @@ SO_DO_MESTRE = frozenset({
     "analisesps.folha_rateio_colar",   # substitui o rateio do mês inteiro
     "analisesps.folha_rateio_apagar",
     "analisesps.folha_rateio_simular",
+    # ⚠️ GERAR PAGAMENTO É A AÇÃO MAIS SENSÍVEL DA ÁREA: o arquivo vai para o
+    # portal do banco e o dinheiro sai. A tela também é do mestre porque o log
+    # mostra o link de arquivos com nome, CPF e valor de ~500 pessoas.
+    "analisesps.tela_folha_pagamento",
+    "analisesps.folha_pagamento_preparar",
+    "analisesps.folha_pagamento_gerar",
+    "analisesps.folha_pipe_conferir",
+    "analisesps.folha_card_lancar",     # cria card no Pipefy: sem volta
     "analisesps.migrar",                 # aplica migração no banco
     "analisesps.gravar_pessoas",         # a lista de nomes da entrada
     "analisesps.gravar_pasta_drive",
@@ -442,6 +450,15 @@ TELA_DA_ROTA = {
     "analisesps.tela_folha_painel": ("folha",),
     "analisesps.tela_folha_ponto": ("folha",),
     "analisesps.tela_folha_calendario": ("folha",),
+    "analisesps.tela_folha_auxilio": ("folha",),
+    "analisesps.folha_auxilio_ajustar": ("folha",),
+    # A geração do arquivo mora na mesma tela, e além disto é só do mestre
+    # (SO_DO_MESTRE): a tela decide quem entra, o mestre decide quem paga.
+    "analisesps.tela_folha_pagamento": ("folha",),
+    "analisesps.folha_pagamento_preparar": ("folha",),
+    "analisesps.folha_pagamento_gerar": ("folha",),
+    "analisesps.folha_pipe_conferir": ("folha",),
+    "analisesps.folha_card_lancar": ("folha",),
     # Feriados e férias são lançamento do DP, como trazer a folha e o ponto.
     "analisesps.folha_feriado_gravar": ("folha",),
     "analisesps.folha_feriado_apagar": ("folha",),

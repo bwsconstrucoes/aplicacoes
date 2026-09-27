@@ -487,8 +487,13 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     # que percorre o arquivo em vez de abri-lo inteiro, e com teto de 20 MB
     # recusado antes de qualquer leitura. Sem as duas coisas, esta liberação
     # não valeria.
+    # E a quarta, de 27/09/2026: os arquivos de pagamento da FOLHA. Mesmo
+    # raciocínio do BeeVale — é planilha que sobe para o portal do banco, e o que
+    # se monta são ~500 linhas por conta, não as 59 mil da base. O teto está no
+    # próprio gerador (`MAXIMO_POR_ARQUIVO`), recusado antes de montar o arquivo.
     LIBERADO_EM = {"beevale.py": {"openpyxl"},
                    "lote_excel.py": {"openpyxl"},
+                   "folha_geracao.py": {"openpyxl"},
                    "sincronizacao.py": {"openpyxl"}}
 
     achados = []

@@ -49,6 +49,21 @@ lote_excel.py      o lote em .xlsx de verdade — valor somável, código como t
 pdf.py             os relatórios em PDF (fpdf2, que o serviço já tem)
 migracoes/         .sql numerados; aplicados por botão, nunca no boot
 
+a folha de pagamento (tela "Folha PGT"; ver docs/FOLHA_DE_PAGAMENTO.md):
+  colaboradores.py            o cadastro espelhado da planilha do Pipefy
+  folha_arquivo.py            a Folha Sintética da contabilidade, guardada
+  folha_sintetica.py          a LEITURA do arquivo da contabilidade (sem banco)
+  ponto.py                    a carga do ponto do Mobponto, dia por dia
+  folha_calendario.py         feriados (nacional × por obra) e férias
+  folha_auxilio.py            alimentação e transporte, mês por mês
+  folha_vinculo.py            CTPS × diária, dia por dia
+  folha_rateio.py             as regras de rateio de quem não bate ponto
+  folha_apropriacao.py        ⚠️ a conta pura: de quem é o dinheiro. SEM banco
+  folha_apropriacao_guardada.py  o ajuste dele + o resultado congelado
+  folha_geracao.py            os layouts BeeVale/SomaPay e a divisão em lotes
+  folha_pagamento.py          orquestra: lê, gera, sobe no Drive, registra
+  folha_cards.py              os cards do Pipefy (campos lidos do pipe)
+
 reaproveitados do Streamlit, quase sem mudança:
   pagamentos.py    QR Pix e código de barras
   pix_brcode.py    montagem do BR Code e o dígito verificador
@@ -309,6 +324,7 @@ cobrável de quem preencheu.
 | Log | toda alteração feita por aqui, e se já subiu |
 | Configurações | migrações do banco e a sincronização |
 | Aportes | lançar aporte e devolução de aporte no OMIE (dentro de Configurações) |
+| **Folha PGT** | a folha de pagamento inteira, em subtelas (ver abaixo) |
 
 Mais a **ficha de cada SP** e a tela de **códigos de pagamento**, que monta o
 QR Pix ou o código de barras das SPs marcadas — substitui abrir card por card
@@ -321,6 +337,34 @@ importa: cada um tem o seu lote desde 04/09, e duas pessoas separarem a mesma
 SP sem saber é o caminho para pagar duas vezes. A marca olha o lote de todo
 mundo, e some sozinha se o banco estiver fora — perder a marca é aceitável,
 perder a tela não.
+
+## Folha PGT — as subtelas
+
+Uma entrada no menu e, por dentro, o caminho do trabalho. Correção do dono em
+27/09/2026: *"eles têm que estar dentro de uma tela só (…) senão vai ficar tela
+demais, fica até misturado com o restante, que tem mais a ver com o financeiro."*
+
+| Subtela | O que responde |
+|---|---|
+| Panorama | os totais da folha guardada, por filial, e o que ainda não entra |
+| Folha da contabilidade | solta o arquivo da Fortes; casa com o cadastro pelo **ID Fortes**, nunca pelo nome |
+| Ponto | traz o ponto do Mobponto, mês a mês, e **mostra os nomes dos campos que vieram** |
+| Colaboradores | o cadastro espelhado, com link para o card do Pipefy e botão de atualizar |
+| Feriados e férias | lança feriado (nacional ou por obra) e o período de férias de cada pessoa |
+| Alimentação e transporte | a conta das duas verbas, com o caminho inteiro à vista e o ajuste de mão |
+| Rateio das obras | só do mestre: quem não bate ponto e para quais obras vai o valor |
+| Gerar pagamento | só do mestre: os arquivos BeeVale/SomaPay, o log com o link e o card |
+
+⚠️ **Três coisas que não se mexem sem ler o `docs/FOLHA_DE_PAGAMENTO.md`:**
+
+1. **A apropriação é função pura** (`folha_apropriacao.py`): sem banco, sem tela. É
+   a conta que decide o dinheiro de ~500 pessoas por quinzena, e conta que só se
+   verifica abrindo tela não é verificada.
+2. **Só se gera pagamento de apropriação FECHADA**, e o resultado fica congelado.
+   Recalcular mudaria a história de um dinheiro que já saiu.
+3. **O SomaPay não aceita o mesmo CPF duas vezes** — é trava, não preferência. O
+   BeeVale aceita, se a natureza da verba for outra, e é isso que permite juntar
+   alimentação e transporte num pagamento só.
 
 ## Levar o que está na tela
 

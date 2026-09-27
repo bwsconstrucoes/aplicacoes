@@ -2077,22 +2077,29 @@ esquecimento.
 |---|---|---|
 | **total por OBRA** (no painel e no rateio) | o **ponto** carregado | `folha_apropriacao` inteiro: a apropriação por dia, mão > regra > ponto, a sobra de centavo |
 | ~~**carga do ponto (Mobponto)**~~ | ✅ **FEITA em 27/09/2026 — ver §7.22.** Eu havia dito que era palpite escrever isso; **o contrato da API está nos Apps Script que ele mandou**, e eu não os tinha lido até o fim. Falta só criar as duas variáveis no Render | o módulo, a tela e 22 testes |
-| **tela de alimentação e de transporte** | as abas **`Feriados`** e **`Férias`** | a regra completa está lida das fórmulas (§7.14.6/§7.14.7) e os valores e modalidades já vêm no cadastro |
-| **marca "está de férias"** e **desconto proporcional no transporte** | o **relatório de férias** que ele vai mandar | a decisão dele já está registrada (§7.16.1) |
-| **tela de diaristas e de CTPS extra** | o **ponto** | as regras (+20 feriado, +10 sábado, +20 domingo, VIGIA fora, compensação) estão em §7.14.5 e §7.14.12 |
-| **gerar o arquivo de pagamento** | a apropriação guardada | as regras de juntar/separar e a trava do CPF repetido no SomaPay estão em §7.18.2 |
-| **cards no Pipefy** | o arquivo gerado | o módulo `pipefy.py` já existe e já escreve em card |
-| **log do que foi gerado, na aplicação** | o gerador | a decisão dele está em §7.17.5 |
+| ~~**tela de alimentação e de transporte**~~ | ✅ **FEITA em 27/09/2026 — ver §7.25** | — |
+| ~~**marca "está de férias"** e **desconto proporcional no transporte**~~ | ✅ **FEITOS — §7.23 e §7.25.** A tela de férias é o lançamento; o relatório em arquivo entra depois, para facilitar | — |
+| **tela de diaristas e de CTPS extra** | o **nome dos campos do ponto** | as regras (+20 feriado, +10 sábado, +20 domingo, VIGIA fora, compensação) estão em §7.14.5 e §7.14.12, e `folha_vinculo` já as implementa |
+| ~~**gerar o arquivo de pagamento**~~ | ✅ **FEITO — §7.27**, com a trava do CPF repetido conferida antes de gravar | — |
+| ~~**cards no Pipefy**~~ | ✅ **FEITOS — §7.29**, com os campos lidos do pipe em vez de escritos no código | — |
+| ~~**log do que foi gerado, na aplicação**~~ | ✅ **FEITO — §7.28** (migração 035) | — |
+| ~~**o gerencial por obra, conta e verba**~~ | ✅ **FEITO — §7.30**, no alto do Panorama | — |
+| **conferir o layout do BeeVale e do SomaPay** | abrir o **primeiro arquivo gerado** antes de subir no portal | duas suposições estão nomeadas em §7.27.5 |
+| **o de/para de categoria do card** (`DatabaseBeeVale`, `PlanoFinanceiro`) | são **abas ocultas** da planilha — precisam virar cadastro | o card já sai com descrição, valor e os dois links |
 
-**A ordem que isso impõe, e ela não é escolha minha:**
+**A ordem que isso impôs, e o que sobrou** (atualizado no fim de 27/09/2026):
 
-1. **O ponto.** É o gargalo de tudo: sem ele não há obra, não há diária, não há
-   painel por obra. E para o ponto entrar, as duas variáveis precisam existir no
-   Render.
-2. **Feriados e férias.** Destravam alimentação e transporte, que são duas telas
-   inteiras e não dependem do ponto.
-3. **A apropriação guardada** (migração nova), que é o que liga a folha às obras.
-4. **Os geradores e os cards.**
+1. ~~**O ponto.**~~ Feito — falta só o **nome dos campos de cada dia**, que um
+   clique na tela do Ponto revela. É o que ainda trava o total por obra vindo do
+   ponto, os diaristas e a CTPS extra.
+2. ~~**Feriados e férias.**~~ Feitos (§7.23).
+3. ~~**A apropriação guardada.**~~ Feita (§7.26, migração 034).
+4. ~~**Os geradores e os cards.**~~ Feitos (§7.27 a §7.29, migração 035).
+5. ~~**O gerencial.**~~ Feito (§7.30).
+
+**Sobrou UMA coisa que depende dele, e uma que depende de conferência:** o nome dos
+campos do ponto (um clique), e abrir o primeiro arquivo gerado para conferir as duas
+suposições de layout (§7.27.5).
 
 ⚠️ **CORREÇÃO DESTA SEÇÃO, feita no mesmo dia.** Eu escrevi aqui que não faria a
 carga do Mobponto para não adivinhar o formato da API. **O formato não precisava
@@ -2322,6 +2329,248 @@ também."*
 
 Ou seja: **a tela de diaristas espera o mesmo mapeamento de campos do ponto que o
 total por obra espera.** Um clique destrava as duas.
+## 7.25 ALIMENTAÇÃO E TRANSPORTE — a tela, pronta (27/09/2026)
+
+Uma subtela para as duas verbas, com uma aba para cada. Ele descreveu a planilha
+tendo *"uma aba que eu trato alimentação, uma que eu trato transporte"* e, no mesmo
+pedido, reclamou de tela demais no menu. A conta das duas é 90% a mesma; a
+diferença é uma linha, e **fica escrita na tela**:
+
+| | Alimentação | Transporte |
+|---|---|---|
+| desconta **feriado** | sim | **não** |
+| desconta **férias** | sim | sim |
+| quem tem **"Cartão"** no cadastro | recebe | **não recebe em dinheiro** |
+
+Se ele preferir separadas, é uma linha em `SUBTELAS_DA_FOLHA`.
+
+### 7.25.1 A conta, passo por passo, à vista
+
+A tela mostra o **caminho inteiro** de cada pessoa: dias da modalidade, feriados
+descontados, férias descontadas, o ajuste de mão, os dias que sobraram e o valor.
+Não é enfeite — é o que ele pediu: *"saber até de onde é que foi que veio aquela
+informação"*. Um total sozinho não se audita.
+
+    Mês               valor fixo, não conta dia
+    Mensal            todos os dias do mês − 3
+    Segunda à Sexta   dias úteis
+    Segunda à Quinta  dias úteis menos as sextas
+
+    dias = base − feriados − férias + ajuste      (nunca negativo)
+    valor = valor do dia × dias
+
+### 7.25.2 O ajuste tem TRÊS estados, e não dois
+
+"Segue o cálculo" **não** é "não pagar". Se a tela mostrasse os dois iguais, o
+padrão do sistema pareceria decisão dele — e ninguém saberia mais quem decidiu o
+quê. Por isso o campo é um seletor de três opções, e o banco guarda `NULL`, `true`
+e `false` como coisas diferentes (migração 033).
+
+⚠️ **Marcar "pagar" não vence falta de dado no cadastro.** Duas situações são
+diferentes:
+
+- **política** (saiu, está afastada, tem cartão): o valor DÁ para calcular, e a
+  última palavra é dele — se marcar, paga;
+- **impossível** (o cadastro não diz o valor ou a modalidade): não há valor nenhum
+  a pagar, e marcar pagaria **zero em silêncio**, que é pior que não pagar. A tela
+  recusa e diz o que consertar, e onde.
+
+### 7.25.3 Quem precisa de mão vem primeiro
+
+A lista é ordenada com os problemas **no topo**. Na primeira versão eu havia
+escrito a chave ao contrário e os problemas iam para o fim da lista, onde ninguém
+rola até — num cadastro de ~3.500 pessoas isso é o mesmo que esconder.
+
+## 7.26 A APROPRIAÇÃO GUARDADA — o que era, e o que ficou pronto (27/09/2026)
+
+Ele perguntou: *"apropriação guardada. Não entendi o que é isso aqui."* A §7.24
+explicou; esta seção registra o que foi construído (migração 034).
+
+São **duas coisas diferentes**, e confundi-las é o erro que a migração existe para
+impedir:
+
+| | O que guarda | Quantas linhas | Recalcula? |
+|---|---|---|---|
+| `apropriacao_ajuste` | **o que ELE mexeu à mão** | poucas por pagamento | não se aplica |
+| `apropriacao` + `apropriacao_linha` | **o resultado de um pagamento já feito** | uma por pessoa × obra | **nunca** |
+
+**Por que o ajuste fica separado do cálculo.** Se eu guardasse o resultado com o
+ajuste dentro, uma correção no cadastro — ou um ponto que veio pela metade e foi
+recarregado — deixaria de aparecer na tela, e ninguém entenderia por quê.
+
+**Por que o resultado é congelado.** Depois que o arquivo foi para o banco, "qual
+obra pagou o salário do Fulano em 09/2026" tem **uma** resposta, para sempre.
+Recalcular isso faria recarregar o ponto de setembro, em outubro, mudar a história
+de um dinheiro que já saiu — e o rateio do mês seguinte, que ele decide olhando o
+total por obra, sairia sobre número que **não foi o pago**.
+
+O ajuste guarda três caminhos, e só um por pessoa:
+
+1. **tirar do pagamento** — exige motivo escrito. Não é burocracia: quem abrir o
+   relatório três meses depois precisa saber por que faltou gente. "Sumiu" é a
+   pior resposta possível num pagamento;
+2. **tudo numa obra só** — o caso comum ("o ponto dele está errado, joga tudo na
+   CREPEOLINDA");
+3. **dividir obra por obra** — "um dia nesta obra, um dia naquela".
+
+Os caminhos 2 e 3 **juntos são recusados**: deixariam o valor ambíguo, e a conta
+usaria um enquanto a tela mostrava o outro.
+
+## 7.27 OS ARQUIVOS DE PAGAMENTO — feitos (27/09/2026)
+
+### 7.27.1 A divisão em arquivos, como ele pediu
+
+| | BeeVale | SomaPay |
+|---|---|---|
+| um arquivo por **conta** | sempre | sempre |
+| **juntar verbas** num arquivo | **pode**, e é escolha dele | **não** — separo sozinho |
+| mesmo **CPF duas vezes** | pode, se a natureza da verba for outra | **trava** |
+
+A tela **diz por que o SomaPay não junta**, em vez de deixar marcar e devolver erro
+depois de ele escolher tudo. E a trava é conferida **antes de gravar o arquivo**,
+com o CPF de quem está repetido: um arquivo que o portal recusa depois de subir
+custa a rodada inteira — já se gerou, subiu, criou o card e avisou a equipe.
+
+Dentro de cada arquivo, a consolidação é **conta + CPF + natureza da verba**, igual
+à do `BeeVale.gs`. É ela que impede o CPF repetido sem perder dinheiro: duas linhas
+da mesma pessoa, mesma conta e mesma natureza viram uma, somando.
+
+### 7.27.2 De qual conta sai o dinheiro
+
+**A conta vem da OBRA**, não da pessoa: obra → código → conta. As duas pontas já
+existiam no banco — o nome e o código em `referencias_rateio`, a conta em
+`contas_diarios` (a aba "C. Diários"). Obra **sem** conta não desaparece da lista:
+entra com conta vazia e vira um aviso que diz onde consertar. Omiti-la faria o
+recado virar "obra não existe", que é o problema errado.
+
+### 7.27.3 São sempre DOIS arquivos
+
+Pedido dele: *"tem que ter no mínimo o do arquivo de pagamento e um de análise da
+folha, com as informações separadas, agrupadas, qual obra, qual funcionário, rateio
+de folhas"*. Então:
+
+- **o de pagamento** (um por conta) é para o PORTAL: três colunas no SomaPay, onze
+  no BeeVale, nada que explique nada;
+- **o de análise** é para GENTE, com quatro abas — Resumo, Por obra, Por
+  funcionário e Rateio (percentual com sete casas, fechando 100% exato).
+
+Um arquivo só, servindo aos dois, não serviria a nenhum: ou o portal recusa colunas
+a mais, ou a conferência não tem o que olhar.
+
+⚠️ **Os avisos entram no arquivo de análise**, não só na tela. Aviso que só existiu
+na tela não explica diferença nenhuma três meses depois.
+
+### 7.27.4 Só se paga apropriação FECHADA
+
+Se o arquivo pudesse sair de um cálculo em memória, recarregar o ponto depois
+mudaria a explicação de um dinheiro que já saiu. E verba **sem** fechamento recusa a
+geração inteira: gerar pela metade sai com cara de completo, e a pessoa recebe a
+menos sem nada avisando.
+
+O botão de gerar só aparece **depois de conferir** — que é o passo que ele pediu:
+*"mostrar, antes de gerar, quantos arquivos vão sair e com que total cada um"*.
+Conferir não grava nem sobe nada.
+
+### 7.27.5 O que está confirmado no layout, e o que é suposição
+
+Isto importa, porque arquivo recusado pelo portal custa a rodada:
+
+| Peça | De onde veio |
+|---|---|
+| SomaPay: aba `Valores`, três colunas, **CPF formatado** | do arquivo que o Make anexa ao card **hoje** — o que de fato é enviado e funciona (§2.1) |
+| BeeVale: as 11 colunas, `Benefício` = Livre, `Tipo de Recarga` = Mensal, `Dias úteis` = 0, e-mail `<cpf>@bwsconstrucoes.com.br`, `Categoria` = BWS | do `BeeVale.gs` |
+| **SUPOSIÇÃO:** o `Centro de Custo` do BeeVale — usei a obra | no fluxo das SPs é o número do card; para a folha a obra é o que faz sentido |
+| **SUPOSIÇÃO:** o valor do SomaPay vai como **número** com máscara brasileira | o arquivo enviado mostra "1.126,60"; se o portal exigir TEXTO, é uma linha |
+
+**As duas suposições têm de ser conferidas no primeiro arquivo gerado, abrindo o
+.xlsx, antes de subir no portal.**
+
+## 7.28 O LOG NA APLICAÇÃO (27/09/2026)
+
+Pedido dele, com todas as letras: *"que tenha também o log na aplicação que a gente
+está construindo aqui, com as informações e o link que a gente quer baixar por
+lá"*. É a migração 035.
+
+Hoje o histórico da geração está em três lugares que não conversam: a pasta do
+Drive (que diz o nome do arquivo e nada mais), o card do Pipefy (que diz o link e
+nada mais) e as abas `HistoricoBeeVale` da planilha. Para responder "este arquivo
+foi gerado quando, por quem, com que total, e bateu?" é preciso abrir os três.
+
+Agora é uma linha: competência, pagamento, destino, verbas, conta, pessoas, total,
+quem gerou, o link do arquivo, o link do card e **os avisos que havia na hora**.
+
+⚠️ **Gerar duas vezes deixa DUAS linhas**, de propósito. Apagar a primeira
+esconderia que houve duas — e é justamente isso que alguém precisa ver quando o
+portal recebeu dois arquivos.
+
+## 7.29 OS CARDS DO PIPEFY (27/09/2026)
+
+Lançar no Pipefy é um **segundo botão**, separado de gerar — decisão dele em
+26/09/2026 (D14): assim ele gera e confere o arquivo sem sujar nada lá fora.
+
+⚠️ **Os campos do pipe são lidos do Pipefy na hora, não escritos no código.** O
+motivo é concreto: o blueprint do Make tem defeito conhecido de campo trocado (o
+par 62 grava em `valor_centro_de_custo_63` — §4), e copiar a lista de lá copiaria
+o defeito. Um valor de centro de custo caindo no vizinho **só aparece no
+fechamento da obra, meses depois**.
+
+Então: a tela tem um botão "conferir os campos do pipe" (só leitura, não cria
+nada), que mostra o que eu reconheço e **o que não reconheço**. Campo não
+reconhecido fica **vazio e dito**, nunca preenchido por parecença — campo parecido é
+pior que campo vazio, porque vazio alguém vê e preenche, e errado ninguém vê.
+
+**Dois defeitos meus, achados por teste durante a construção** — os dois da mesma
+família, o campo parecido:
+
+1. eu procurava o campo da planilha de análise por "planilha" + "an", e "an" está
+   dentro de "**plan**ilha" — o campo da planilha de PAGAMENTO era reconhecido como
+   o da análise, e o link errado iria para o campo errado. Corrigido para "analis".
+2. eu procurava o campo do total por conter "valor", e o pipe tem **um** campo
+   "Valor" e **setenta e cinco** "Valor Centro de Custo N" — o total da despesa
+   poderia ser escrito dentro do valor de um centro de custo, que é **exatamente o
+   defeito que o blueprint do Make tem hoje**. Corrigido: o rótulo **exato** ganha
+   do parecido, e "centro de custo" desqualifica o campo.
+
+Os dois com teste travando, e o segundo com o teste montando os campos na ordem que
+fazia a busca errar.
+
+O card recebe: a descrição inteira (competência, pagamento, verbas, conta, pessoas,
+total, os **dois** links), o valor e os dois campos de link, quando existirem no
+pipe. O arquivo de análise **não tem card próprio** — ele vai como link dentro do
+card do pagamento.
+
+E, seguindo a decisão dele (D15), o sistema **avisa e não impede** o lançamento
+repetido: lançar o mesmo arquivo duas vezes é recusado (é distração), mas lançar a
+mesma competência de novo é livre, porque o cancelamento do card antigo é feito por
+ele, no Pipefy.
+
+## 7.30 O GERENCIAL, FEITO (27/09/2026) — e por que ele sai do congelado
+
+A §7.19 registrou o pedido. Isto registra o que ficou pronto, no alto do
+**Panorama**: totais da competência **por obra**, **por conta** e **por verba**, mais
+o percentual de rateio já calculado.
+
+**Ele vem primeiro na tela**, antes do resto do painel, porque é a primeira coisa
+que ele abre quando vai decidir o mês: *"saber qual é o total por obra, porque isso
+já ajuda nessa questão do rateio"*.
+
+⚠️ **E sai do que foi FECHADO, não de um recálculo.** Esta é a decisão de desenho
+que importa: o rateio do mês seguinte se decide sobre **o que foi pago**. Se o
+número viesse de um recálculo, recarregar o ponto de setembro — em outubro, por
+qualquer motivo — mudaria o número embaixo de uma decisão já tomada, sem nada na
+tela avisando.
+
+Três detalhes que não são estética:
+
+1. **Obra sem conta aparece marcada**, em "(sem conta)". Esconder faria a surpresa
+   aparecer só na hora de pagar — e é justamente isso que trava a geração do
+   arquivo.
+2. **O percentual é o MESMO que vai no rateio do card** (sete casas, fechando 100%,
+   sobra para a maior fatia). Duas contas de percentual em dois lugares divergiriam
+   no primeiro arredondamento, e o card deixaria de bater com a tela.
+3. **Mês sem nada fechado explica por quê**, em vez de mostrar tabela vazia. "Nada
+   aqui" sem motivo faz a pessoa achar que o sistema quebrou.
+
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

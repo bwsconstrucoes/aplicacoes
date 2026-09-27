@@ -1,0 +1,402 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Gerar pagamento — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Gerar pagamento</h2>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui montar a tela.</b> {{ erro }}</div>
+{% endif %}
+
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui.
+  </div>
+{% else %}
+
+{# ---------------------------------------------------------------------------
+   ⚠️ A TELA DIZ AS DUAS REGRAS ANTES DE OFERECER O BOTÃO. Elas mudam quantos
+   arquivos saem, e descobrir isso depois de subir no portal custa a rodada
+   inteira: já se gerou, subiu, criou o card e avisou a equipe.
+   --------------------------------------------------------------------------- #}
+<div class="aviso">
+  <b>Um arquivo por conta, sempre</b> — é a conta que define de onde o dinheiro
+  sai. Dentro da conta:
+  <ul style="margin:6px 0 0 18px">
+    <li><b>BeeVale:</b> você pode juntar alimentação e transporte num arquivo só,
+      porque ele aceita o mesmo CPF duas vezes quando a verba é de outra
+      natureza. Três pagamentos viram um.</li>
+    <li><b>SomaPay:</b> eu separo por verba sozinho. Ele não aceita o mesmo CPF
+      duas vezes, e o arquivo inteiro seria recusado.</li>
+  </ul>
+</div>
+
+{# ======================================================================
+   O QUE DÁ PARA PAGAR — só verba com apropriação FECHADA.
+   ====================================================================== #}
+<form class="barra-acoes" method="get"
+      action="{{ url_for('analisesps.tela_folha_pagamento') }}">
+  <label class="cartao-dica" for="mes" style="margin:0">Competência</label>
+  <select name="mes" id="mes">
+    {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
+                           (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
+                           (9,'setembro'),(10,'outubro'),(11,'novembro'),
+                           (12,'dezembro')] %}
+      <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
+    {% endfor %}
+  </select>
+  <select name="ano" id="ano">
+    {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
+      <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn secundario" type="submit">Ver</button>
+</form>
+
+{% if not fechados %}
+  <div class="aviso atencao">
+    <b>Nada fechado em {{ "%02d"|format(mes) }}/{{ ano }}.</b>
+    Só se gera pagamento de apropriação <b>fechada</b> — é o que garante que o
+    arquivo enviado ao banco tenha uma explicação que não muda depois. Feche a
+    apropriação da competência antes de gerar.
+  </div>
+{% else %}
+
+<div class="cartao">
+  <label class="rotulo-campo">O que pagar</label>
+  <table class="sps" style="margin:8px 0">
+    <thead>
+      <tr><th></th><th>Verba</th><th>Pagamento</th><th class="num">Pessoas</th>
+        <th class="num">Total</th><th>Fecha?</th></tr>
+    </thead>
+    <tbody>
+    {% for f in fechados %}
+      <tr>
+        <td><input type="checkbox" class="marca-verba" value="{{ f.verba }}"
+                   data-tipo="{{ f.tipo }}"
+                   aria-label="Pagar {{ rotulo_da_verba(f.verba) }}"></td>
+        <td>{{ rotulo_da_verba(f.verba) }}</td>
+        <td>{{ "Quinzena" if f.tipo == "quinzena" else "Fim de mês" }}</td>
+        <td class="num">{{ f.pessoas }}</td>
+        <td class="num">{{ f.total|moeda }}</td>
+        {# ⚠️ "NÃO FECHA" NÃO ESCONDE A VERBA, mas fica dito: um fechamento que não
+           batia continua dizendo que não batia, e quem gera decide sabendo. #}
+        <td>{% if f.fecha %}<span class="selo">bate</span>
+            {% else %}<span class="selo saindo">não bate</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
+    <div>
+      <label class="cartao-dica" for="destino">Para onde</label>
+      <select id="destino">
+        {% for chave, rotulo in destinos %}
+          <option value="{{ chave }}">{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <label class="cartao-dica" style="margin:0">
+      <input type="checkbox" id="juntar"> juntar as verbas num arquivo só
+      <span id="aviso-juntar" class="cartao-dica"></span>
+    </label>
+    <button class="btn secundario" id="btn-conferir" type="button">
+      Conferir antes de gerar
+    </button>
+  </div>
+  <p class="cartao-dica" style="margin:8px 0 0">
+    Conferir não gera nada e não sobe nada: mostra quantos arquivos vão sair e com
+    que total cada um.
+  </p>
+</div>
+
+<div id="conferencia" hidden></div>
+
+{# O botão de gerar só aparece DEPOIS de conferir: é o passo em que o dinheiro
+   sai, e ele pediu para ver antes. #}
+<div id="bloco-gerar" class="cartao" hidden>
+  <label class="cartao-dica" style="margin:0">
+    <input type="checkbox" id="forcar"> gerar mesmo com aviso
+  </label>
+  <p class="cartao-dica" style="margin:4px 0 10px">
+    Cada aviso diz o que consertar. Marque isto só se você já sabe qual é e aceita
+    — o aviso existe porque o arquivo sairia errado.
+  </p>
+  <button class="btn" id="btn-gerar" type="button">Gerar e salvar no Drive</button>
+  <span id="recado-gerar" class="cartao-dica" style="margin-left:8px"></span>
+</div>
+
+{% endif %}
+
+{# ======================================================================
+   O LOG — pedido dele com todas as letras: *"que tenha também o log na
+   aplicação, com as informações e o link que a gente quer baixar por lá"*.
+   ====================================================================== #}
+<h3 style="margin-top:24px">
+  Arquivos gerados <small>{{ log|length }} · do mais novo para o mais antigo</small>
+</h3>
+<table class="sps">
+  <thead>
+    <tr><th>Quando</th><th>Competência</th><th>Para onde</th><th>Verbas</th>
+      <th>Conta</th><th class="num">Pessoas</th><th class="num">Total</th>
+      <th>Arquivo</th><th>Card</th><th>Por quem</th></tr>
+  </thead>
+  <tbody>
+  {% for a in log %}
+    <tr class="{{ 'linha-alerta' if a.avisos }}">
+      <td>{{ a.criado_em|momento_br }}</td>
+      <td>{{ a.competencia }}
+        <span class="cartao-dica">
+          {{ "quinzena" if a.tipo == "quinzena" else "fim de mês" }}</span></td>
+      <td>{{ a.rotulo_destino }}</td>
+      <td>{{ a.rotulo_verbas or '—' }}</td>
+      <td>{{ a.conta or '—' }}</td>
+      <td class="num">{{ a.pessoas }}</td>
+      <td class="num">{{ a.total|moeda }}</td>
+      <td>
+        {% if a.link %}
+          <a href="{{ a.link }}" target="_blank" rel="noopener"
+             title="{{ a.nome }}">baixar</a>
+        {% else %}—{% endif %}
+        {% if a.avisos %}
+          <br><span class="cartao-dica">⚠ {{ a.avisos }}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if a.link_card %}
+          <a href="{{ a.link_card }}" target="_blank" rel="noopener"
+             >{{ a.card_pipefy or 'card' }}</a>
+        {% elif a.destino == 'analise' %}
+          {# A análise vai como LINK dentro do card do pagamento — ela não tem
+             card próprio, e oferecer um botão aqui prometeria o que não existe. #}
+          <span class="cartao-dica">vai no card do pagamento</span>
+        {% elif pode_operar %}
+          <button class="btn secundario btn-lancar-card" type="button"
+                  data-arquivo="{{ a.id }}" data-nome="{{ a.nome }}"
+                  >lançar no Pipefy</button>
+        {% else %}<span class="cartao-dica">—</span>{% endif %}
+      </td>
+      <td><span class="cartao-dica">{{ a.criado_por or '—' }}</span></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="10" class="cartao-dica">
+      Nenhum arquivo gerado ainda. O que sair daqui fica listado com o link para
+      baixar.
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if pode_operar %}
+<div class="cartao" style="margin-top:14px">
+  <label class="rotulo-campo">Antes de lançar no Pipefy</label>
+  <p class="cartao-dica" style="margin:4px 0 8px">
+    ⚠️ <b>Card criado no Pipefy não se apaga por aqui</b> — quem cancela é você, lá.
+    Lançar é um passo separado de propósito: você gera e confere o arquivo primeiro,
+    sem sujar nada no Pipefy. E eu leio os campos do pipe na hora, em vez de
+    confiar numa lista guardada: campo que eu não reconheço fica <b>vazio e dito</b>,
+    nunca preenchido no escuro.
+  </p>
+  <button class="btn secundario" id="btn-conferir-pipe" type="button">
+    Conferir os campos do pipe
+  </button>
+  <div id="conferencia-pipe" style="margin-top:10px"></div>
+</div>
+
+<script>
+document.getElementById("btn-conferir-pipe").addEventListener("click",
+  async () => {
+    const caixa = document.getElementById("conferencia-pipe");
+    caixa.innerHTML = '<p class="cartao-dica">lendo o pipe…</p>';
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_pipe_conferir') }}",
+                            {method: "POST"});
+      const d = await r.json();
+      if (!d.ok) {
+        caixa.innerHTML = '<div class="aviso erro">' + d.erro + "</div>";
+        return;
+      }
+      let html = '<div class="aviso"><b>' + d.pipe.nome + "</b> — " +
+        d.pipe.quantos_campos + " campos no formulário.</div><ul>";
+      Object.entries(d.pipe.reconhecidos).forEach(([chave, campo]) => {
+        html += "<li>" + chave + ": <b>" + campo.label + "</b></li>";
+      });
+      html += "</ul>";
+      if (d.pipe.nao_encontrados.length) {
+        html += '<div class="aviso atencao">Eu não achei campo para: <b>' +
+          d.pipe.nao_encontrados.join(", ") +
+          "</b>. Esses ficam vazios no card, e você preenche lá.</div>";
+      }
+      caixa.innerHTML = html;
+    } catch (e) {
+      caixa.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
+    }
+  });
+
+document.querySelectorAll(".btn-lancar-card").forEach(botao =>
+  botao.addEventListener("click", async () => {
+    // ⚠️ CONFIRMA: card criado no Pipefy não se apaga por aqui.
+    if (!confirm("Criar o card no Pipefy para \"" + botao.dataset.nome +
+                 "\"?\n\nCard criado não se apaga pelo sistema — o " +
+                 "cancelamento é feito no Pipefy.")) return;
+    botao.disabled = true;
+    botao.textContent = "lançando…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_card_lancar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({arquivo: botao.dataset.arquivo})
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        alert(d.erro);
+        botao.disabled = false;
+        botao.textContent = "lançar no Pipefy";
+        return;
+      }
+      if (d.sem_mapeamento && d.sem_mapeamento.length) {
+        alert("Card " + d.card + " criado. Ficaram sem campo no pipe: " +
+              d.sem_mapeamento.join(", ") + " — estão na descrição do card.");
+      }
+      location.reload();
+    } catch (e) {
+      alert("falhou: " + e);
+      botao.disabled = false;
+      botao.textContent = "lançar no Pipefy";
+    }
+  }));
+</script>
+{% endif %}
+
+{% if fechados %}
+<script>
+function diz(id, texto, classe) {
+  const alvo = document.getElementById(id);
+  if (!alvo) return;
+  alvo.textContent = texto || "";
+  alvo.className = "cartao-dica" + (classe ? " " + classe : "");
+}
+
+const destino = document.getElementById("destino");
+const juntar = document.getElementById("juntar");
+
+// ⚠️ NO SOMAPAY NÃO EXISTE JUNTAR, e a tela DIZ por quê em vez de deixar marcar e
+// devolver erro depois de ele escolher tudo.
+function ajustarJuntar() {
+  const eSoma = destino.value === "somapay";
+  juntar.disabled = eSoma;
+  if (eSoma) juntar.checked = false;
+  document.getElementById("aviso-juntar").textContent = eSoma
+    ? "— o SomaPay não aceita o mesmo CPF duas vezes, então cada verba sai no seu"
+    : "";
+}
+destino.addEventListener("change", ajustarJuntar);
+ajustarJuntar();
+
+function escolhido() {
+  const marcadas = [...document.querySelectorAll(".marca-verba:checked")];
+  return {
+    verbas: marcadas.map(m => m.value),
+    // O tipo do pagamento vem da verba marcada: quinzena e fim de mês são
+    // pagamentos diferentes e não se misturam num arquivo.
+    tipos: [...new Set(marcadas.map(m => m.dataset.tipo))]
+  };
+}
+
+async function mandar(url, corpo) {
+  const r = await fetch(url, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(corpo)
+  });
+  return await r.json();
+}
+
+function corpoDoPedido() {
+  const marcado = escolhido();
+  if (!marcado.verbas.length) return {erro: "Marque ao menos uma verba."};
+  if (marcado.tipos.length > 1) {
+    return {erro: "Quinzena e fim de mês são pagamentos diferentes — " +
+                  "gere um de cada vez."};
+  }
+  return {
+    ano: {{ ano }}, mes: {{ mes }}, tipo: marcado.tipos[0],
+    verbas: marcado.verbas, destino: destino.value, juntar: juntar.checked
+  };
+}
+
+const caixa = document.getElementById("conferencia");
+const blocoGerar = document.getElementById("bloco-gerar");
+
+document.getElementById("btn-conferir").addEventListener("click", async () => {
+  const corpo = corpoDoPedido();
+  if (corpo.erro) { alert(corpo.erro); return; }
+  caixa.hidden = false;
+  caixa.innerHTML = '<p class="cartao-dica">conferindo…</p>';
+  blocoGerar.hidden = true;
+  try {
+    const d = await mandar(
+      "{{ url_for('analisesps.folha_pagamento_preparar') }}", corpo);
+    if (!d.ok) {
+      caixa.innerHTML = '<div class="aviso erro">' + d.erro + "</div>";
+      return;
+    }
+    let html = '<div class="aviso"><b>' + d.resumo.arquivos +
+      " arquivo(s) de pagamento</b> — " + d.resumo.pessoas + " pessoa(s), " +
+      d.resumo.total.toLocaleString("pt-BR",
+        {style: "currency", currency: "BRL"}) +
+      ". E mais um arquivo de análise, sempre.</div>";
+    html += '<table class="sps"><thead><tr><th>Conta</th><th>Verbas</th>' +
+      '<th class="num">Pessoas</th><th class="num">Total</th><th>Avisos</th>' +
+      "</tr></thead><tbody>";
+    d.lotes.forEach(l => {
+      html += "<tr" + (l.criticas.length ? ' class="linha-alerta"' : "") + ">" +
+        "<td>" + (l.conta || "—") + "</td><td>" + l.verbas.join(" + ") +
+        '</td><td class="num">' + l.quantos + '</td><td class="num">' +
+        l.total.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) +
+        "</td><td>" + (l.criticas.length
+          ? '<span class="cartao-dica">⚠ ' + l.criticas.join(" ") + "</span>"
+          : "") + "</td></tr>";
+    });
+    html += "</tbody></table>";
+    caixa.innerHTML = html;
+    blocoGerar.hidden = false;
+    document.getElementById("forcar").checked = false;
+  } catch (e) {
+    caixa.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
+  }
+});
+
+document.getElementById("btn-gerar").addEventListener("click", async () => {
+  const corpo = corpoDoPedido();
+  if (corpo.erro) { alert(corpo.erro); return; }
+  corpo.forcar = document.getElementById("forcar").checked;
+  // ⚠️ CONFIRMA ANTES: daqui sai o arquivo que vai para o portal do banco.
+  if (!confirm("Gerar os arquivos de pagamento de " +
+               corpo.verbas.join(", ") + " e salvar no Drive?")) return;
+  const botao = document.getElementById("btn-gerar");
+  botao.disabled = true;
+  diz("recado-gerar", "gerando e subindo no Drive…");
+  try {
+    const d = await mandar(
+      "{{ url_for('analisesps.folha_pagamento_gerar') }}", corpo);
+    if (!d.ok) {
+      diz("recado-gerar", d.erro, "erro");
+      botao.disabled = false;
+      return;
+    }
+    // Recarrega para o log aparecer com os links — é por ele que ele baixa.
+    location.reload();
+  } catch (e) {
+    diz("recado-gerar", "falhou: " + e, "erro");
+    botao.disabled = false;
+  }
+});
+</script>
+{% endif %}
+
+{% endif %}
+{% endblock %}

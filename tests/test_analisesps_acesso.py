@@ -121,6 +121,16 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/painel"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),
+    # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.
+    ("GET",  "/analisesps/folha/auxilios"),
+    ("POST", "/analisesps/api/folha/auxilio/ajuste"),
+    # ⚠️ A GERAÇÃO DO PAGAMENTO É A ROTA MAIS SENSÍVEL DA ÁREA: daqui sai o arquivo
+    # que vai para o portal do banco. Só do mestre.
+    ("GET",  "/analisesps/folha/pagamento"),
+    ("POST", "/analisesps/api/folha/pagamento/preparar"),
+    ("POST", "/analisesps/api/folha/pagamento/gerar"),
+    ("POST", "/analisesps/api/folha/pipe/conferir"),
+    ("POST", "/analisesps/api/folha/card"),
     ("GET",  "/analisesps/api/folha/procurar-pessoa"),
     ("POST", "/analisesps/api/folha/feriado"),
     ("POST", "/analisesps/api/folha/feriado/apagar"),

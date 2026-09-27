@@ -1,0 +1,287 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}{{ resultado.rotulo if resultado else 'Alimentação e transporte' }} — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Alimentação e transporte</h2>
+
+{# ---------------------------------------------------------------------------
+   AS DUAS VERBAS DIVIDEM UMA SUBTELA, com uma aba cada. Ele descreveu abas por
+   verba ("uma tela que eu trato alimentação, uma que eu trato transporte") e, no
+   mesmo pedido, reclamou de tela demais. A conta é quase a mesma; o que muda é o
+   desconto. Se preferir separado, é uma linha para mudar.
+   --------------------------------------------------------------------------- #}
+<nav class="abas-folha" aria-label="Verba">
+  {% for chave, rotulo in tipos %}
+    <a class="aba-folha {% if tipo == chave %}ativa{% endif %}"
+       href="{{ url_for('analisesps.tela_folha_auxilio', tipo=chave, ano=ano, mes=mes) }}"
+       {% if tipo == chave %}aria-current="page"{% endif %}>{{ rotulo }}</a>
+  {% endfor %}
+</nav>
+
+{# ⚠️ A RÉGUA FICA ESCRITA NA TELA. Quem confere precisa saber qual das duas está
+   vendo — as colunas são as mesmas, e o número muda. #}
+<p class="cartao-dica" style="margin:12px 0 14px">
+  {% if tipo == 'alimentacao' %}
+    A <b>alimentação</b> desconta <b>feriado</b> e <b>férias</b> dos dias do mês.
+  {% else %}
+    O <b>transporte</b> desconta <b>férias</b>, e <b>não</b> desconta feriado —
+    foi o que você decidiu: um dia só não muda o vale, férias mudam.
+    Quem tem <b>"Cartão"</b> no cadastro não recebe em dinheiro.
+  {% endif %}
+  Os feriados e as férias vêm da tela
+  <a href="{{ url_for('analisesps.tela_folha_calendario') }}">Feriados e férias</a>;
+  o valor e a modalidade de cada pessoa vêm do
+  <a href="{{ url_for('analisesps.tela_colaboradores') }}">cadastro</a>, que nasce
+  no Pipefy.
+</p>
+
+<form class="barra-acoes" method="get"
+      action="{{ url_for('analisesps.tela_folha_auxilio') }}">
+  <input type="hidden" name="tipo" value="{{ tipo }}">
+  <label class="cartao-dica" for="mes" style="margin:0">Competência</label>
+  <select name="mes" id="mes">
+    {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
+                           (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
+                           (9,'setembro'),(10,'outubro'),(11,'novembro'),
+                           (12,'dezembro')] %}
+      <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
+    {% endfor %}
+  </select>
+  <select name="ano" id="ano">
+    {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
+      <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn secundario" type="submit">Ver</button>
+</form>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui calcular.</b> {{ erro }}</div>
+{% endif %}
+
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui. Sem isso eu não tenho onde
+    guardar o que você ajustar à mão.
+  </div>
+{% elif not resultado %}
+  <div class="aviso">Nada a mostrar nesta competência.</div>
+{% elif not resultado.pessoas %}
+  <div class="aviso atencao">
+    <b>Ninguém com esta verba no cadastro.</b> Só entra aqui quem tem valor ou
+    modalidade desta verba no cadastro. Se você espera gente aqui, aperte
+    <b>Atualizar cadastro</b> na tela de
+    <a href="{{ url_for('analisesps.tela_colaboradores') }}">Colaboradores</a>.
+  </div>
+{% else %}
+
+<div class="kpis">
+  <div class="kpi">
+    <span class="kpi-rotulo">Total de {{ resultado.competencia }}</span>
+    <b class="kpi-valor">{{ resultado.total|moeda }}</b>
+  </div>
+  <div class="kpi">
+    <span class="kpi-rotulo">A pagar</span>
+    <b class="kpi-valor">{{ resultado.quantos_a_pagar }}</b>
+  </div>
+  {# Fica âmbar só quando há problema: indicador que grita sempre não é
+     indicador. #}
+  <div class="kpi {{ 'ambar' if resultado.com_problema }}">
+    <span class="kpi-rotulo">Precisam de olho</span>
+    <b class="kpi-valor">{{ resultado.com_problema|length }}</b>
+  </div>
+  <div class="kpi">
+    <span class="kpi-rotulo">Na lista</span>
+    <b class="kpi-valor">{{ resultado.quantos }}</b>
+  </div>
+</div>
+
+<p class="cartao-dica">
+  Período contado: <b>{{ resultado.inicio|data_br }}</b> a
+  <b>{{ resultado.fim|data_br }}</b> — o mês inteiro, não a quinzena.
+</p>
+
+{# ======================================================================
+   POR OBRA — é o corte que ele usa para decidir o rateio do mês.
+   ====================================================================== #}
+<h3 style="margin-top:20px">Por obra <small>da maior para a menor</small></h3>
+<table class="sps">
+  <thead>
+    <tr><th>Obra</th><th class="num">Pessoas</th><th class="num">Total</th>
+      <th class="num">% da verba</th></tr>
+  </thead>
+  <tbody>
+  {% for o in resultado.por_obra %}
+    <tr>
+      <td>{{ o.obra }}</td>
+      <td class="num">{{ o.pessoas }}</td>
+      <td class="num">{{ o.total|moeda }}</td>
+      <td class="num">
+        {% if resultado.total %}{{ (o.total / resultado.total * 100)|round(1) }}%{% else %}—{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="cartao-dica">Nada a pagar nesta competência.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{# ======================================================================
+   PESSOA POR PESSOA — com o caminho inteiro da conta à vista.
+
+   ⚠️ AS COLUNAS DO MEIO NÃO SÃO ENFEITE: é por elas que você confere de onde
+   veio o valor. Um total sozinho não se audita, e foi isso que ele pediu.
+   Quem precisa de mão vem primeiro na lista, de propósito.
+   ====================================================================== #}
+<h3 style="margin-top:24px">
+  Pessoa por pessoa <small>quem precisa de mão vem primeiro</small>
+</h3>
+
+<table class="sps">
+  <thead>
+    <tr>
+      <th>Quem</th><th>CPF</th><th>Obra</th><th>Modalidade</th>
+      <th class="num">Valor do dia</th>
+      <th class="num" title="Dias da modalidade no mês">Base</th>
+      <th class="num">Feriados</th><th class="num">Férias</th>
+      <th class="num" title="Dias que você somou ou tirou à mão">Ajuste</th>
+      <th class="num">Dias</th><th class="num">Valor</th>
+      {% if pode_operar %}<th>Pagar</th><th></th>{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in resultado.pessoas %}
+    <tr class="{{ 'linha-alerta' if not p.pagar }}" data-cpf="{{ p.cpf }}">
+      <td>
+        {% if p.link_pipefy %}
+          <a class="link-pipefy" href="{{ p.link_pipefy }}" target="_blank"
+             rel="noopener" title="abrir o card no Pipefy">{{ p.nome or '—' }}</a>
+        {% else %}{{ p.nome or '—' }}{% endif %}
+        {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
+        {% for motivo in p.motivos %}
+          <br><span class="cartao-dica">⚠ {{ motivo }}</span>
+        {% endfor %}
+        {% if p.observacao %}
+          <br><span class="cartao-dica">obs.: {{ p.observacao }}</span>
+        {% endif %}
+      </td>
+      <td class="cpf">{{ p.cpf }}</td>
+      <td>
+        {% if pode_operar %}
+          {# `data-original` existe para o gravar só mandar a obra quando ela
+             MUDOU. Sem isso, salvar sem mexer na obra guardaria a obra do cadastro
+             como se fosse escolha dele — e a linha passaria a dizer "obra trocada
+             por você", que é mentira. #}
+          <input class="campo-obra" list="obras-do-rateio" value="{{ p.obra }}"
+                 data-original="{{ p.obra if p.obra_ajustada else '' }}"
+                 data-cadastro="{{ '' if p.obra_ajustada else p.obra }}"
+                 style="width:130px" placeholder="—"
+                 aria-label="Obra de {{ p.nome }}">
+        {% else %}{{ p.obra or '—' }}{% endif %}
+        {% if p.obra_ajustada %}
+          <br><span class="cartao-dica">obra trocada por você</span>
+        {% endif %}
+      </td>
+      <td>{{ p.modo or '—' }}</td>
+      <td class="num">
+        {% if p.valor_unitario is none %}—{% else %}{{ p.valor_unitario|moeda }}{% endif %}
+      </td>
+      <td class="num">{{ p.dias_base or '—' }}</td>
+      <td class="num">
+        {% if tipo == 'alimentacao' %}{{ p.feriados or '' }}{% else %}—{% endif %}
+      </td>
+      <td class="num">{{ p.ferias or '' }}</td>
+      <td class="num">
+        {% if pode_operar %}
+          <input class="campo-dias" type="number" step="1" value="{{ p.dias_ajuste or '' }}"
+                 style="width:60px" placeholder="0"
+                 aria-label="Ajuste de dias de {{ p.nome }}">
+        {% else %}{{ p.dias_ajuste or '' }}{% endif %}
+      </td>
+      <td class="num"><b>{{ p.dias }}</b></td>
+      <td class="num"><b>{{ p.valor|moeda }}</b></td>
+      {% if pode_operar %}
+        <td>
+          {# Três estados, e eles não são dois: "segue o cálculo" é diferente de
+             "eu decidi não pagar". Por isso é um seletor, não uma caixinha. #}
+          <select class="campo-pagar" aria-label="Pagar a {{ p.nome }}?">
+            <option value="" {% if p.ajuste_pagar is none %}selected{% endif %}>segue o cálculo</option>
+            <option value="1" {% if p.ajuste_pagar is true %}selected{% endif %}>pagar</option>
+            <option value="0" {% if p.ajuste_pagar is false %}selected{% endif %}>não pagar</option>
+          </select>
+        </td>
+        <td class="num">
+          <button class="btn secundario btn-gravar-ajuste" type="button">Gravar</button>
+        </td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<datalist id="obras-do-rateio">
+  {% for o in obras %}<option value="{{ o }}"></option>{% endfor %}
+</datalist>
+
+{% if pode_operar %}
+<p class="cartao-dica" style="margin-top:10px">
+  O que você ajustar aqui <b>fica guardado nesta competência</b> e sobrevive ao
+  recálculo — não se perde quando você voltar à tela. Deixar tudo em branco
+  ("segue o cálculo", sem dias e sem obra) apaga o ajuste e volta a valer a conta.
+</p>
+
+<script>
+// A obra só vai quando ela MUDOU: mandar a obra que já vinha do cadastro faria a
+// linha dizer "obra trocada por você" sem ele ter trocado nada.
+function obraSeMudou(campo) {
+  const agora = (campo.value || "").trim();
+  const doCadastro = (campo.dataset.cadastro || "").trim();
+  if (agora === doCadastro) return "";
+  return agora;
+}
+
+// ⚠️ UM BOTÃO POR LINHA, e não "salvar tudo". Ele mexe em duas ou três pessoas
+// por mês; um salvamento em lote gravaria centenas de linhas sem ninguém pedir, e
+// um erro no meio deixaria metade gravada.
+document.querySelectorAll(".btn-gravar-ajuste").forEach(botao =>
+  botao.addEventListener("click", async () => {
+    const linha = botao.closest("tr");
+    const escolha = linha.querySelector(".campo-pagar").value;
+    const corpo = {
+      tipo: "{{ tipo }}", ano: {{ ano }}, mes: {{ mes }},
+      cpf: linha.dataset.cpf,
+      pagar: escolha === "" ? null : escolha === "1",
+      dias: parseInt(linha.querySelector(".campo-dias").value || "0", 10) || null,
+      obra: obraSeMudou(linha.querySelector(".campo-obra"))
+    };
+    const rotulo = botao.textContent;
+    botao.disabled = true;
+    botao.textContent = "gravando…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_auxilio_ajustar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(corpo)
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        alert(d.erro || "não consegui gravar");
+        botao.disabled = false; botao.textContent = rotulo;
+        return;
+      }
+      // Recarrega porque o valor da linha MUDA com o ajuste: deixar o número
+      // velho na tela depois de gravar é mostrar mentira.
+      location.reload();
+    } catch (e) {
+      alert("falhou: " + e);
+      botao.disabled = false; botao.textContent = rotulo;
+    }
+  }));
+</script>
+{% endif %}
+
+{% endif %}
+{% endblock %}

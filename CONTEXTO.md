@@ -747,6 +747,30 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 27/09/2026 — A regra da FILA no `CLAUDE.md` ganhou dentes (atravessa áreas)
+
+O dono cobrou **três vezes**, em chats diferentes, a mesma coisa: quando ele passa
+três, quatro tarefas num pedido só, aquilo é uma **fila, não um cardápio**. A
+terceira vez foi com irritação explícita:
+
+> *"O que é que eu preciso fazer para não haver essa pausa? Que é irritante e
+> constante."*
+
+A resposta honesta é **nada — a falha é do assistente**. O `CLAUDE.md` já tinha a
+seção da fila; faltava o gatilho concreto, porque a pausa acontece por um motivo que
+parece cuidado: anunciar "agora vou fazer X" **sente-se** como transparência, e é
+uma ida e volta dele, que pode demorar horas.
+
+Entraram no `CLAUDE.md`: dois itens novos em "O que NÃO é motivo para parar"
+(**anunciar o que você vai fazer em seguida** e **ter algo travado**) e um teste
+literal antes de enviar qualquer resposta:
+
+> *"Existe, na minha própria resposta, alguma frase do tipo 'vou fazer X'? Se existe
+> e X não depende dele → NÃO ENCERRE. FAÇA X AGORA."*
+
+Fica aqui, e não só no `CLAUDE.md`, porque **é comportamento das cinco áreas**: o
+mesmo erro foi cobrado no chat do ERP e no do Análise de SPs no mesmo dia.
+
 ### 24/09/2026 — O Análise de SPs passou a IMPORTAR código do ERP (atravessa áreas)
 
 A Conciliação Bancária nova (`app/apps/analisesps/conciliacao*.py`) lê extrato

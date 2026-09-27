@@ -149,7 +149,18 @@ SUBTELAS_DA_FOLHA = [
     ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
     ("calendario",     "Feriados e férias",
      "analisesps.tela_folha_calendario"),
+    # ⚠️ AS DUAS VERBAS NUMA SUBTELA SÓ, com uma aba para cada. Ele descreveu a
+    # planilha tendo "uma aba que eu trato alimentação, uma que eu trato
+    # transporte" — mas também reclamou de tela demais no menu. A conta das duas é
+    # 90% a mesma, e a diferença (o transporte não desconta feriado) fica escrita
+    # na tela. Se ele preferir separadas, é uma linha.
+    ("auxilios",      "Alimentação e transporte",
+     "analisesps.tela_folha_auxilio"),
     ("rateio",        "Rateio das obras", "analisesps.tela_folha_rateio"),
+    # ⚠️ A GERAÇÃO É A ÚLTIMA, e é onde termina o caminho: painel → arquivo da
+    # contabilidade → ponto → cadastro → feriados → auxílios → rateio → PAGAR.
+    # Só do mestre, porque é o passo em que o dinheiro sai.
+    ("pagamento",     "Gerar pagamento", "analisesps.tela_folha_pagamento"),
 ]
 
 
@@ -2342,7 +2353,17 @@ def tela_folha_painel():
     mostrasse "total da folha" sem avisar que faltam alimentação, transporte e
     diaristas faria o número parecer o custo de pessoal inteiro. Número que
     parece completo e não é vale menos que número nenhum."""
-    from . import folha_arquivo as fa
+    from . import folha_arquivo as fa, folha_pagamento as fpg
+    from .horario import agora
+
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except (TypeError, ValueError):
+        ano, mes = hoje.year, hoje.month
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        ano, mes = hoje.year, hoje.month
 
     panorama = {"pronto": False}
     erro = None
@@ -2352,9 +2373,19 @@ def tela_folha_painel():
         logger.exception("Folha: não consegui montar o panorama")
         erro = str(e)
 
+    # ⚠️ O GERENCIAL É ENTRADA DO TRABALHO DELE, não enfeite: é olhando o total por
+    # obra que ele decide o rateio do mês. Sai do que está FECHADO, não de um
+    # recálculo — o rateio se decide sobre o que foi pago.
+    gerencial = {"pronto": False}
+    try:
+        gerencial = fpg.gerencial(ano, mes)
+    except Exception:  # noqa: BLE001 — é um bloco da tela, não a tela
+        logger.exception("Folha: não consegui montar o gerencial")
+
     return render_template(
         "analisesps_folha_painel.html", aba="folha", subaba="painel",
         subtelas=subtelas_da_folha(), panorama=panorama, erro=erro,
+        gerencial=gerencial, ano=ano, mes=mes, ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -2667,6 +2698,257 @@ def tela_folha_calendario():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/folha/auxilios")
+@exige_consulta
+def tela_folha_auxilio():
+    """Auxílio alimentação e auxílio transporte, mês por mês.
+
+    ⚠️ A DIFERENÇA ENTRE AS DUAS FICA ESCRITA NA TELA: a alimentação desconta
+    feriado e férias; o transporte desconta férias e não feriado de um dia. É
+    decisão do dono, e quem confere precisa saber qual régua está vendo."""
+    from . import folha_auxilio as fx
+    from .horario import agora
+
+    hoje = agora().date()
+    tipo = (request.args.get("tipo") or fx.ALIMENTACAO).strip().lower()
+    if tipo not in fx.TIPOS:
+        tipo = fx.ALIMENTACAO
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except (TypeError, ValueError):
+        ano, mes = hoje.year, hoje.month
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        ano, mes = hoje.year, hoje.month
+
+    pronto = fx._pronto()
+    resultado = None
+    erro = None
+    try:
+        if pronto:
+            resultado = fx.calcular(tipo, ano, mes)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui calcular o auxílio")
+        erro = str(e)
+
+    obras = []
+    try:
+        from . import sincronizacao
+        obras = [o["nome"] for o in
+                 (sincronizacao.referencias_rateio().get("obras") or [])]
+    except Exception:  # noqa: BLE001 — a lista é apoio
+        logger.exception("Folha: não consegui ler a lista de obras")
+
+    return render_template(
+        "analisesps_folha_auxilio.html", aba="folha", subaba="auxilios",
+        subtelas=subtelas_da_folha(), pronto=pronto, resultado=resultado,
+        tipo=tipo, ano=ano, mes=mes, obras=obras, erro=erro,
+        tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
+        ano_padrao=hoje.year,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/auxilio/ajuste", methods=["POST"])
+@exige_operador
+def folha_auxilio_ajustar():
+    """Guarda o que ele mexeu numa pessoa: pagar ou não, dias e obra.
+
+    ⚠️ É O QUE FAZ O AJUSTE SOBREVIVER ao recálculo. Sem isto, cada visita à tela
+    apagaria o que ele decidiu, e ele refaria tudo todo mês."""
+    from . import folha_auxilio as fx
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    tipo = str(dados.get("tipo") or "").strip().lower()
+    try:
+        ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if tipo not in fx.TIPOS or not (1 <= mes <= 12) or not (2000 <= ano <= 2100):
+        return {"ok": False, "erro": "Verba ou competência inválida."}, 400
+
+    # `pagar` vem como true / false / null. NULO é "não mexi": diferente de
+    # false, que é "decidi não pagar".
+    pagar = dados.get("pagar")
+    if pagar not in (True, False, None):
+        pagar = None
+
+    try:
+        if (pagar is None and dados.get("dias") in (None, "", 0)
+                and not str(dados.get("obra") or "").strip()
+                and not str(dados.get("observacao") or "").strip()):
+            # Nada mexido: tira o ajuste em vez de guardar um vazio, para a pessoa
+            # voltar a seguir o cálculo.
+            fx.limpar_ajuste(tipo, ano, mes, str(dados.get("cpf") or ""))
+        else:
+            fx.gravar_ajuste(
+                tipo, ano, mes, str(dados.get("cpf") or ""), pagar=pagar,
+                dias=dados.get("dias") or None,
+                obra=str(dados.get("obra") or ""),
+                observacao=str(dados.get("observacao") or ""), quem=quem)
+    except fx.ErroDoAuxilio as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o ajuste do auxílio")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True}
+
+
+@bp.route("/folha/pagamento")
+@exige_operador
+def tela_folha_pagamento():
+    """Gerar o arquivo de pagamento, e o log do que já foi gerado.
+
+    ⚠️ SÓ DO MESTRE (`auth.SO_DO_MESTRE`): é o passo em que o dinheiro sai, e o log
+    mostra o link de arquivos com nome, CPF e valor de ~500 pessoas."""
+    from . import folha_geracao as fg, folha_pagamento as fpg
+    from .horario import agora
+
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except (TypeError, ValueError):
+        ano, mes = hoje.year, hoje.month
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        ano, mes = hoje.year, hoje.month
+
+    pronto = fpg._pronto()
+    registro, fechados, erro = [], [], None
+    try:
+        registro = fpg.log(teto=100)
+        # As verbas que TÊM apropriação fechada nesta competência: só elas podem
+        # ser pagas, e oferecer o que não pode ser pago só gera erro depois.
+        for fechamento in guardada_fechamentos():
+            if fechamento["ano"] == ano and fechamento["mes"] == mes:
+                fechados.append(fechamento)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar a tela de pagamento")
+        erro = str(e)
+
+    return render_template(
+        "analisesps_folha_pagamento.html", aba="folha", subaba="pagamento",
+        subtelas=subtelas_da_folha(), pronto=pronto, log=registro,
+        fechados=fechados, ano=ano, mes=mes, ano_padrao=hoje.year, erro=erro,
+        destinos=[(d, fg.ROTULO_DO_DESTINO[d]) for d in fg.DESTINOS],
+        rotulo_da_verba=fg.rotulo_da_verba,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+def guardada_fechamentos() -> list:
+    """Os fechamentos da apropriação, para a tela oferecer o que dá para pagar."""
+    from . import folha_apropriacao_guardada as ag
+    try:
+        return ag.fechamentos(teto=60)
+    except Exception:  # noqa: BLE001 — lista de apoio
+        logger.exception("Folha: não consegui ler os fechamentos")
+        return []
+
+
+@bp.route("/api/folha/pagamento/preparar", methods=["POST"])
+@exige_operador
+def folha_pagamento_preparar():
+    """O que vai sair, antes de sair. NÃO grava nada e não sobe nada.
+
+    ⚠️ ESTE PASSO EXISTE PARA ELE CONFERIR: *"mostrar, antes de gerar, quantos
+    arquivos vão sair e com que total cada um"*."""
+    from . import folha_pagamento as fpg
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        plano = fpg.preparar(
+            int(dados.get("ano") or 0), int(dados.get("mes") or 0),
+            str(dados.get("tipo") or ""), dados.get("verbas") or [],
+            str(dados.get("destino") or ""), bool(dados.get("juntar")))
+    except (fpg.ErroDoPagamento, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou preparar o pagamento")
+        return {"ok": False, "erro": f"Não consegui montar: {e}"}, 500
+
+    return {"ok": True, "pode_juntar": plano["pode_juntar"],
+            "motivo_nao_junta": plano["motivo_nao_junta"],
+            "resumo": {"arquivos": plano["resumo"]["arquivos"],
+                       "pessoas": plano["resumo"]["pessoas"],
+                       "total": float(plano["resumo"]["total"]),
+                       "pode_gerar": plano["resumo"]["pode_gerar"]},
+            "lotes": [{"conta": l["conta"], "quantos": l["quantos"],
+                       "total": float(l["total"]),
+                       "verbas": l["verbas"], "criticas": l["criticas"]}
+                      for l in plano["lotes"]]}
+
+
+@bp.route("/api/folha/pagamento/gerar", methods=["POST"])
+@exige_operador
+def folha_pagamento_gerar():
+    """Gera, sobe no Drive e registra no log. ⚠️ É O PASSO QUE PAGA."""
+    from . import folha_pagamento as fpg
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        saida = fpg.gerar(
+            int(dados.get("ano") or 0), int(dados.get("mes") or 0),
+            str(dados.get("tipo") or ""), dados.get("verbas") or [],
+            str(dados.get("destino") or ""), bool(dados.get("juntar")),
+            quem=quem, forcar=bool(dados.get("forcar")))
+    except (fpg.ErroDoPagamento, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gerar o pagamento")
+        return {"ok": False, "erro": f"Não consegui gerar: {e}"}, 500
+
+    return {"ok": True, "competencia": saida["competencia"],
+            "arquivos": [{"id": a["id"], "nome": a["nome"], "link": a["link"],
+                          "conta": a["conta"], "destino": a["destino"],
+                          "total": float(a["total"]), "avisos": a["avisos"]}
+                         for a in saida["arquivos"]]}
+
+
+@bp.route("/api/folha/pipe/conferir", methods=["POST"])
+@exige_operador
+def folha_pipe_conferir():
+    """Lê os campos do pipe de Despesa e diz quais eu reconheço. NÃO CRIA NADA.
+
+    ⚠️ ESTE PASSO É O QUE IMPEDE CARD PREENCHIDO NO ESCURO. O blueprint do Make tem
+    campo trocado (o par 62 grava no campo do 63), e um valor de centro de custo no
+    vizinho só aparece no fechamento da obra, meses depois."""
+    from . import folha_cards as fcd
+
+    try:
+        return {"ok": True, "pipe": fcd.conferir_pipe()}
+    except fcd.ErroDosCards as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou conferir o pipe")
+        return {"ok": False, "erro": f"Não consegui ler o pipe: {e}"}, 500
+
+
+@bp.route("/api/folha/card", methods=["POST"])
+@exige_operador
+def folha_card_lancar():
+    """Cria o card do Pipefy para um arquivo já gerado. ⚠️ SEM VOLTA.
+
+    Passo separado de propósito (decisão do dono em 26/09/2026): gerar o arquivo
+    não cria card, para conferir sem sujar nada lá fora."""
+    from . import folha_cards as fcd
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        return {"ok": True, **fcd.lancar(int(dados.get("arquivo") or 0),
+                                         quem=quem)}
+    except (fcd.ErroDosCards, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou lançar o card")
+        return {"ok": False, "erro": f"Não consegui lançar: {e}"}, 500
 
 
 @bp.route("/api/folha/feriado", methods=["POST"])

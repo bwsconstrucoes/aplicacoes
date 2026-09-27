@@ -14,6 +14,16 @@ mexer; atualize este ao encerrar a sessão.
 
 ## Onde o trabalho está
 
+> ⚠️ **ESTE ARQUIVO É CRONOLÓGICO, e o começo dele é de 02/09/2026.** Se você abriu
+> agora para saber em que pé as coisas estão, vá direto à **última leva** (busque
+> "Pendente AGORA" e pegue a ÚLTIMA ocorrência). O que está aqui embaixo é história
+> da estreia do módulo, e boa parte já foi resolvida.
+>
+> **Em 27/09/2026 o trabalho é a folha de pagamento** (tela "Folha PGT"), e o mapa
+> dela é o `docs/FOLHA_DE_PAGAMENTO.md`. O `README.md` desta pasta tem a lista das
+> subtelas e dos módulos.
+
+
 Era um programa em Streamlit no computador do dono, lendo uma base local de
 60 MB (59.055 SPs). Virou módulo Flask em `/analisesps`, no serviço que já
 existe, com login próprio, dados no Postgres do ERP em schema próprio
@@ -8861,6 +8871,140 @@ períodos, a contagem de dias úteis, o feriado de fim de semana e o de sexta) e
 de tela. Migrações até a **032**.
 
 **NÃO verificado:** nada num navegador.
+
+---
+
+### Centésima décima segunda leva (27/09) — a folha vira pagamento de verdade
+
+Uma tanda inteira, sem parar no meio: alimentação e transporte, a apropriação
+guardada, os arquivos de pagamento, o log e os cards. Ordem dele: *"a alimentação e
+transporte, siga"* e *"o que é que eu preciso fazer para não haver essa pausa?"*
+
+#### 1. Alimentação e transporte (tela)
+
+Uma subtela com uma aba para cada verba. A diferença fica **escrita na tela**: a
+alimentação desconta feriado e férias; o transporte desconta férias e **não**
+feriado (decisão dele), e quem tem "Cartão" no cadastro não recebe em dinheiro.
+
+A tela mostra o **caminho inteiro da conta** — base da modalidade, feriados, férias,
+ajuste, dias, valor. E o ajuste tem **três estados**: "segue o cálculo" não é "não
+pagar". Se a tela mostrasse os dois iguais, o padrão do sistema pareceria decisão
+dele.
+
+⚠️ **Dois defeitos meus, corrigidos antes de commitar:**
+
+1. O "pagar mesmo assim" **não funcionava** justamente nos casos que mais precisam
+   dele: os dois caminhos de recusa saíam da função antes de consultar o ajuste.
+2. A lista vinha com os **problemas no fim**, onde ninguém rola até — em ~3.500
+   pessoas isso é o mesmo que esconder. Chave de ordenação escrita ao contrário.
+
+#### 2. A apropriação guardada (migração 034)
+
+Duas tabelas, e a diferença entre elas é o ponto:
+
+- `apropriacao_ajuste` — **o que ele mexeu à mão**. Guarda o AJUSTE, não o
+  resultado: guardar o resultado faria uma correção no cadastro parar de aparecer
+  na tela, e ninguém entenderia por quê.
+- `apropriacao` + `apropriacao_linha` — **o resultado congelado** de um pagamento
+  já feito, escrito uma vez e nunca recalculado. Depois que o arquivo foi para o
+  banco, "qual obra pagou o salário do Fulano em 09/2026" tem UMA resposta, para
+  sempre. Recalcular faria recarregar o ponto de setembro, em outubro, mudar a
+  história de um dinheiro que já saiu.
+
+Tirar alguém do pagamento **exige motivo escrito**. Quem abrir o relatório três
+meses depois precisa saber por que faltou gente; "sumiu" é a pior resposta possível
+num pagamento.
+
+#### 3. Os arquivos de pagamento (BeeVale e SomaPay)
+
+A regra dele, implementada: **um arquivo por conta, sempre**; o BeeVale pode
+**juntar verbas** (três pagamentos viram um); o SomaPay **separa sozinho**, porque
+não aceita o mesmo CPF duas vezes — e a tela diz por quê em vez de deixar marcar e
+devolver erro depois.
+
+A trava do CPF repetido é conferida **antes de gravar o arquivo**: um arquivo que o
+portal recusa depois de subir custa a rodada inteira.
+
+**São sempre DOIS arquivos**, como ele pediu: o de pagamento (para o portal) e o de
+análise (para gente) — quatro abas: Resumo, Por obra, Por funcionário e Rateio, com
+percentual de sete casas fechando 100%. **Os avisos entram no arquivo**, não só na
+tela: aviso que só existiu na tela não explica diferença nenhuma meses depois.
+
+⚠️ **O que é suposição no layout, e precisa ser conferido abrindo o primeiro
+arquivo:** o `Centro de Custo` do BeeVale (usei a obra) e o valor do SomaPay como
+número com máscara brasileira. O resto saiu do arquivo que hoje é enviado e do
+`BeeVale.gs`. Está na §7.27.5 do `docs/FOLHA_DE_PAGAMENTO.md`.
+
+#### 4. O log na aplicação (migração 035)
+
+Pedido dele com todas as letras. Hoje o histórico da geração está em três lugares
+que não conversam (pasta do Drive, card do Pipefy, abas da planilha). Agora é uma
+linha: competência, pagamento, destino, verbas, conta, pessoas, total, quem gerou, o
+link do arquivo, o link do card e os avisos que havia na hora.
+
+Gerar duas vezes deixa **duas linhas**, de propósito: apagar a primeira esconderia
+que o portal recebeu dois arquivos.
+
+#### 5. Os cards do Pipefy
+
+Segundo botão, separado de gerar (decisão dele, D14). E uma decisão de desenho que
+vale registrar: **os campos do pipe são lidos do Pipefy na hora, não escritos no
+código**. O blueprint do Make tem defeito conhecido de campo trocado (o par 62 grava
+no campo do 63), e copiar a lista de lá copiaria o defeito — um valor de centro de
+custo caindo no vizinho só aparece no fechamento da obra, meses depois.
+
+Campo que eu não reconheço fica **vazio e dito**. Campo parecido é pior que campo
+vazio: vazio alguém vê e preenche, errado ninguém vê.
+
+⚠️ **Dois defeitos meus achados por teste, os dois da mesma família — o campo
+parecido:**
+
+1. procurar o campo da planilha de análise por "planilha" + "an": "an" está dentro
+   de "**plan**ilha", e o campo da planilha de PAGAMENTO era reconhecido como o da
+   análise. O link errado iria para o campo errado.
+2. procurar o campo do total por conter "valor": o pipe tem **um** "Valor" e
+   **setenta e cinco** "Valor Centro de Custo N". O total da despesa poderia cair
+   dentro do valor de um centro de custo — **o mesmo defeito que o blueprint do Make
+   tem hoje**, e que eu tinha escrito o módulo inteiro para evitar.
+
+Corrigidos: o rótulo **exato** ganha do parecido, e "centro de custo" desqualifica.
+A lição, porque ela se repete: **buscar por pedaço de texto é armadilha quando os
+rótulos se parecem.** O teste que pega isso monta os campos na ordem que faz a busca
+errar.
+
+#### 6. O gerencial no Panorama
+
+Totais da competência por **obra**, por **conta** e por **verba**, no alto do
+Panorama — e o percentual de rateio já calculado. Ele vem primeiro na tela porque é
+a primeira coisa que ele abre para decidir o mês.
+
+Sai do que está **fechado**, não de um recálculo: o rateio do mês seguinte se decide
+sobre o que foi pago. Obra sem conta aparece em "(sem conta)" e marcada — é ela que
+trava a geração depois, e esconder faria a surpresa aparecer na hora de pagar.
+
+#### ⚠️ Pendente AGORA — o que falta e em QUÊ
+
+| Falta | Depende de |
+|---|---|
+| **total por OBRA a partir do ponto** | o **nome dos campos do dia** na resposta do Mobponto — um clique em Folha PGT → Ponto revela |
+| **telas de diaristas e CTPS extra** | o mesmo nome de campos |
+| **conferir o layout do BeeVale e do SomaPay** | abrir o primeiro arquivo gerado antes de subir no portal (§7.27.5) |
+| **o de/para de categoria do card** (`DatabaseBeeVale`, `PlanoFinanceiro`) | são abas ocultas da planilha; precisam virar cadastro |
+| **as migrações 019–035** | o botão "Aplicar atualizações do banco" |
+
+**O que está aberto para ele no sistema:** apertar "Aplicar atualizações do banco";
+"Atualizar cadastro" (confirma os 5 nomes de coluna de auxílio que eu não pude
+confirmar); "Trazer o ponto" e me mandar a lista de campos; **trocar na origem** as
+credenciais de Mobponto, Dropbox e Z-API que estão fixas nos Apps Script; despublicar
+o Web App ANYONE_ANONYMOUS.
+
+**Verificado:** 27 testes com banco para a apropriação guardada, 13 com banco para a
+geração, 32 para os layouts dos arquivos, 12 para os cards e 21 de tela. A aplicação
+sobe com os 18 blueprints. Migrações até a **035**.
+
+**NÃO verificado:** nada num navegador, e nenhum arquivo foi subido ao Drive nem
+nenhum card criado no Pipefy — as duas chamadas de verdade só rodam quando ele
+apertar o botão.
 
 ---
 
