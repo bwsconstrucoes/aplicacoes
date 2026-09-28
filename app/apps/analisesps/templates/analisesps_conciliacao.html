@@ -1172,6 +1172,27 @@ function desenharConferencia(d) {
     '</b> já estavam aqui e <b>' + d.novas + '</b> ' +
     (d.novas === 1 ? 'é novo' : 'são novos') + '.';
 
+  // ⚠️ O ARQUIVO TINHA QUANTAS, E EU RECONHECI QUANTAS.
+  //
+  // Em 28/09/2026 um extrato do banco 520 com 211 transações foi importado com
+  // QUATRO, e esta mesma linha disse "Li 4 lançamento(s)" com ar de tudo certo.
+  // O defeito estava na identidade da linha (aquele banco usa o FITID como
+  // código do tipo, não como identificador) — mas o que fez ele custar uma
+  // investigação inteira foi o SILÊNCIO: nada na tela dizia que 207 linhas
+  // tinham sido jogadas fora.
+  //
+  // Enquanto os dois números baterem, isto não aparece. Quando não baterem, é a
+  // primeira coisa que se lê — em vermelho, antes de qualquer botão de gravar.
+  if (d.descartadas_na_leitura > 0) {
+    html += '<div class="aviso erro" style="margin-top:8px"><b>Atenção: o ' +
+      'arquivo tem ' + d.transacoes_no_arquivo + ' transações e eu só reconheci ' +
+      d.lidas + '.</b> ' + d.descartadas_na_leitura + ' foram descartadas por ' +
+      'parecerem ' +
+      'repetidas. Isso quase sempre quer dizer que este banco identifica as ' +
+      'transações de um jeito que eu ainda não entendo — <b>não grave antes ' +
+      'de conferir</b>, e me mostre este arquivo.</div>';
+  }
+
   // ⚠️ A TERCEIRA CONTAGEM, e ela existe porque o relatório mentia: linha que
   // veio da planilha tem identidade própria, e a conferência antiga a contava
   // como NOVA — quando na gravação ela é ADOTADA, não criada. Dizer "47

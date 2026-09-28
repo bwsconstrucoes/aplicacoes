@@ -349,6 +349,14 @@ def conferir(conta_id: int, lido) -> dict:
         "saldo": lido.saldo,
         "saldo_em": lido.saldo_em,
         "lidas": len(lido.lancamentos),
+        # ⚠️ O ARQUIVO TINHA QUANTAS, E EU RECONHECI QUANTAS. Em 28/09/2026 um
+        # extrato de 211 transações entrou com 4 e a tela disse "li 4" com ar de
+        # tudo certo. Enquanto os dois números baterem, isto não aparece; quando
+        # não baterem, a tela grita — porque extrato que perde linha e não avisa
+        # deixa o saldo errado sem ninguém saber por quê.
+        "transacoes_no_arquivo": getattr(lido, "transacoes_no_arquivo", 0),
+        "descartadas_na_leitura": max(
+            0, getattr(lido, "transacoes_no_arquivo", 0) - len(lido.lancamentos)),
         "novas": novas,
         "para_adotar": para_adotar,
         "adotaveis": len(para_adotar),
@@ -1033,6 +1041,10 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
         "periodo_fim": (conferido["periodo_fim"].isoformat()
                         if conferido.get("periodo_fim") else ""),
         "lidas": conferido.get("lidas", 0),
+        # Ver o comentário em `conferir`: enquanto os dois baterem a tela não
+        # mostra nada; quando não baterem, ela avisa.
+        "transacoes_no_arquivo": conferido.get("transacoes_no_arquivo", 0),
+        "descartadas_na_leitura": conferido.get("descartadas_na_leitura", 0),
         "novas": len(novas),
         # As que já existem vindas da planilha e vão ganhar a identidade do
         # banco. Nem "novas" nem "já estavam" — uma terceira coisa, e a tela

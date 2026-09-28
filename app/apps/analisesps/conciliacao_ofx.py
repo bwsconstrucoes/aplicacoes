@@ -47,6 +47,10 @@ class ExtratoLido:
     saldo_em: date | None
     lancamentos: list          # LancamentoOFX, do parser do ERP
     impressao: str             # a digital do arquivo inteiro
+    # Quantas transações o arquivo TEM, antes de qualquer decisão. Comparado com
+    # `len(lancamentos)`, é o que denuncia linha perdida na leitura — ver
+    # `contar_transacoes` no parser e o incidente de 28/09/2026.
+    transacoes_no_arquivo: int = 0
 
 
 def _campo(texto: str, tag: str) -> str:
@@ -91,7 +95,8 @@ def ler(conteudo: bytes) -> ExtratoLido:
             "O arquivo tem mais de 12 MB. Extrato desse tamanho costuma ser "
             "outra coisa — confira se é mesmo um OFX de extrato.")
 
-    from app.apps.erp.core.pagamentos.ofx import ErroOFX, _decodificar, parsear_ofx
+    from app.apps.erp.core.pagamentos.ofx import (ErroOFX, _decodificar,
+                                                 contar_transacoes, parsear_ofx)
 
     texto = _decodificar(conteudo)
     try:
@@ -133,21 +138,23 @@ def ler(conteudo: bytes) -> ExtratoLido:
         saldo_em=_data(_campo(texto, "DTASOF")),
         lancamentos=lancamentos,
         impressao=hashlib.sha256(conteudo).hexdigest(),
+        transacoes_no_arquivo=contar_transacoes(conteudo),
     )
 
 
 def impressao_da_linha(conta_id: int, lanc) -> str:
     """A identidade de uma linha DENTRO de uma conta.
 
-    ⚠️ É a mesma receita do parser do ERP, refeita aqui com a conta certa: lá
-    ela é calculada com a conta que for passada, e na leitura ainda não se
-    sabe qual é. Refazer é mais seguro do que adivinhar na hora da gravação.
+    ⚠️ A RECEITA NÃO MORA MAIS AQUI, e a razão custou caro. Esta função
+    RECALCULAVA a identidade — `fitid or (data|valor|memo|doc)` — porque na
+    leitura a conta ainda não é conhecida. Era uma SEGUNDA CÓPIA da regra do
+    parser, e em 28/09/2026 as duas divergiram do mesmo jeito: um extrato do
+    banco 520 (SOMABWS) com 211 transações entrou com 4, porque aquele banco usa
+    o FITID como código do TIPO da transação. Corrigir só o parser não teria
+    adiantado — esta cópia recolapsaria as 211 em 4 de novo.
+
+    Agora o parser devolve a identidade pronta (`lanc.identidade`) e aqui só se
+    acrescenta a conta. Uma regra, um lugar.
     """
-    base = lanc.fitid or (
-        f"{lanc.data.isoformat()}|{lanc.valor}|{lanc.memo}|{lanc.documento or ''}")
-    # Sem FITID, o parser já acrescentou "|#2" à segunda linha igual do
-    # arquivo — e essa marca vem dentro do `hash_linha`, não do memo. Por isso
-    # a digital sem FITID usa o hash que ele calculou, que já carrega a ordem.
-    if not lanc.fitid:
-        base = lanc.hash_linha
+    base = getattr(lanc, "identidade", "") or lanc.hash_linha
     return hashlib.sha256(f"conta{conta_id}|{base}".encode("utf-8")).hexdigest()

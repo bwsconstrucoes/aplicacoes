@@ -1164,3 +1164,76 @@ def test_apagar_uma_linha_pergunta_DUAS_vezes_e_exige_motivo():
     assert "não tem volta" in trecho
     assert "Desfazer do extrato" in trecho, (
         "não aponta o caminho certo para quando o erro foi a importação toda")
+
+
+# ---------------------------------------------------------------------------
+# 28/09/2026 — A SEGUNDA CÓPIA DA RECEITA, E O QUE ELA CUSTOU
+#
+# A identidade da linha era calculada em DOIS lugares: no parser do ERP e de
+# novo em `conciliacao_ofx.impressao_da_linha` (porque na leitura a conta ainda
+# não é conhecida). As duas cópias tinham a MESMA suposição errada — "FITID
+# repetido é a mesma transação" — então corrigir só o parser não teria
+# adiantado: esta cópia recolapsaria as 211 linhas em 4 de novo.
+#
+# Agora o parser devolve a identidade pronta e aqui só se acrescenta a conta.
+# ---------------------------------------------------------------------------
+EXTRATO_FITID_DE_TIPO = """OFXHEADER:100
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS>
+<BANKACCTFROM><BANKID>520</BANKID><ACCTID>0000022005-1</ACCTID></BANKACCTFROM>
+<BANKTRANLIST><DTSTART>20260901</DTSTART><DTEND>20260928</DTEND>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260925<TRNAMT>-1249.20<FITID>3121
+<MEMO>Liberação de folha</STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260924<TRNAMT>-2412.61<FITID>3121
+<MEMO>Liberação de folha</STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260924<TRNAMT>-2429.48<FITID>3121
+<MEMO>Liberação de folha</STMTTRN>
+<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20260924<TRNAMT>2412.61<FITID>3029
+<MEMO>Recebimento Pix</STMTTRN>
+</BANKTRANLIST><LEDGERBAL><BALAMT>-1249.2</BALAMT><DTASOF>20260925</DTASOF>
+</LEDGERBAL></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"""
+
+
+def test_a_digital_da_linha_nao_recolapsa_o_fitid_de_tipo():
+    """⚠️ O defeito de 28/09/2026, do lado do Análise de SPs. As quatro linhas
+    têm de ter quatro digitais diferentes DENTRO da conta."""
+    from app.apps.analisesps import conciliacao_ofx as co
+
+    lido = co.ler(EXTRATO_FITID_DE_TIPO.encode("utf-8"))
+    assert len(lido.lancamentos) == 4
+
+    digitais = {co.impressao_da_linha(7, l) for l in lido.lancamentos}
+    assert len(digitais) == 4, (
+        "a segunda cópia da receita voltou a tratar FITID repetido como a "
+        "mesma transação")
+
+
+def test_a_digital_da_linha_e_estavel_ao_reler():
+    """Reler o mesmo arquivo tem de dar as mesmas digitais — senão o conserto
+    trocaria linha perdida por linha duplicada."""
+    from app.apps.analisesps import conciliacao_ofx as co
+
+    dados = EXTRATO_FITID_DE_TIPO.encode("utf-8")
+    a = [co.impressao_da_linha(7, l) for l in co.ler(dados).lancamentos]
+    b = [co.impressao_da_linha(7, l) for l in co.ler(dados).lancamentos]
+    assert a == b
+
+
+def test_a_digital_separa_as_contas():
+    """A mesma linha em duas contas continua sendo duas coisas diferentes."""
+    from app.apps.analisesps import conciliacao_ofx as co
+
+    lido = co.ler(EXTRATO_FITID_DE_TIPO.encode("utf-8"))
+    primeira = lido.lancamentos[0]
+    assert co.impressao_da_linha(7, primeira) != co.impressao_da_linha(8, primeira)
+
+
+def test_a_leitura_conta_quantas_transacoes_o_arquivo_TEM():
+    """⚠️ A rede de proteção: é este número, comparado com o que foi
+    reconhecido, que faz a tela gritar em vez de dizer "li 4" com ar de tudo
+    certo."""
+    from app.apps.analisesps import conciliacao_ofx as co
+
+    lido = co.ler(EXTRATO_FITID_DE_TIPO.encode("utf-8"))
+    assert lido.transacoes_no_arquivo == 4
+    assert lido.transacoes_no_arquivo == len(lido.lancamentos), (
+        "nada foi descartado neste arquivo")

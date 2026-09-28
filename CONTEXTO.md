@@ -747,6 +747,67 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 28/09/2026 — O FITID nem sempre identifica: 207 lançamentos perdidos em silêncio (atravessa áreas)
+
+**O que o dono viu:** importou um extrato OFX da conta SOMABWS 22005 (banco
+**520**), com período de 01/09 a 28/09, e a tela disse:
+
+> *"Li 4 lançamento(s): 0 já estavam aqui e 4 são novos."*
+
+**O arquivo tinha 211 transações.** 207 foram descartadas, sem nenhum aviso.
+
+**A causa.** O parser (`app/apps/erp/core/pagamentos/ofx.py`) usa o `FITID` como
+identidade da linha quando o banco o manda — premissa correta para Bradesco,
+Itaú, BB, Caixa e Santander. **O banco 520 usa o FITID como CÓDIGO DO TIPO da
+transação:**
+
+| FITID | O que é | Quantas linhas no arquivo |
+|---|---|---|
+| `3121` | "Liberação de folha" | **110**, com valores e datas diferentes |
+| `3029` | "Recebimento Pix" | **95**, idem |
+| `7101` | — | 4 |
+| `3074` | — | 2 |
+
+Quatro FITIDs para 211 transações. O parser via "FITID repetido" e descartava
+como duplicata — comportamento que estava até **escrito num teste** como se
+fosse a verdade (*"quando o banco MANDA o identificador, ele manda a verdade"*).
+
+**A regra nova, e ela é conservadora de propósito:** o FITID continua mandando
+**enquanto se comportar como identificador**. Só quando o MESMO FITID aparece com
+**conteúdo diferente** (outra data, outro valor, outro histórico) é que ele deixa
+de ser identidade — porque aí, por definição, ele não identifica transação
+nenhuma, e vale o mesmo caminho de quem não manda FITID (data+valor+histórico, com
+a ordem da repetição).
+
+⚠️ **Banco de FITID único não sente diferença alguma** — a identidade das linhas
+dele continua byte a byte a mesma. Isso não é detalhe: se mudasse, **todo extrato
+já importado voltaria a entrar em duplicidade** na próxima importação. Há teste
+travando exatamente isso.
+
+### A lição que vale mais que o conserto: a receita estava em DOIS lugares
+
+`conciliacao_ofx.impressao_da_linha`, no Análise de SPs, **recalculava** a
+identidade — `fitid or (data|valor|memo|doc)` — porque na leitura a conta ainda
+não é conhecida. Era uma segunda cópia da regra, com a mesma suposição errada.
+**Consertar só o parser não teria adiantado:** aquela cópia recolapsaria as 211
+linhas em 4 de novo, e o defeito voltaria com cara de outro defeito.
+
+É exatamente o risco registrado na decisão de 24/09/2026 (importar em vez de
+copiar), só que uma cópia havia sobrado. Agora o parser devolve a identidade
+pronta no campo `LancamentoOFX.identidade`, e quem grava só acrescenta a conta.
+**Uma regra, um lugar.**
+
+### E a rede de proteção, que é o que impede a próxima
+
+O que custou a investigação não foi perder as linhas: foi **a tela não avisar**.
+"Li 4 lançamento(s)" com ar de tudo certo é pior que um erro, porque convence.
+
+Entrou `contar_transacoes()` no parser: quantos blocos `<STMTTRN>` o arquivo TEM,
+antes de qualquer decisão. A conferência compara com o que foi reconhecido e,
+quando os dois não batem, a tela mostra **em vermelho, antes de qualquer botão de
+gravar**: *"o arquivo tem 211 transações e eu só reconheci 4"*. Enquanto baterem,
+não aparece nada.
+
 ### 27/09/2026 — A regra da FILA no `CLAUDE.md` ganhou dentes (atravessa áreas)
 
 O dono cobrou **três vezes**, em chats diferentes, a mesma coisa: quando ele passa

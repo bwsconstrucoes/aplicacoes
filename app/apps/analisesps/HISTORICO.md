@@ -9008,6 +9008,67 @@ apertar o botão.
 
 ---
 
+### Centésima décima terceira leva (28/09) — o extrato que entrava com 4 de 211
+
+#### O que ele viu
+
+Importou o extrato da conta **SOMABWS 22005** (banco 520), 01/09 a 28/09, e a
+tela disse *"Li 4 lançamento(s)"*. **O arquivo tem 211 transações.**
+
+#### A causa: nem todo banco usa o FITID como identificador
+
+O parser identifica cada linha pelo `FITID` quando o banco o manda — e está certo
+para Bradesco, Itaú, BB, Caixa e Santander. **O banco 520 usa o FITID como código
+do TIPO da transação:** `3121` = "Liberação de folha" (110 linhas, valores
+diferentes), `3029` = "Recebimento Pix" (95 linhas). Quatro FITIDs para 211
+transações. O parser via repetição e descartava.
+
+**A regra nova é conservadora:** o FITID só deixa de ser identidade quando o mesmo
+FITID aparece com **conteúdo diferente** — aí ele não identifica nada, por
+definição. Banco de FITID único **não sente diferença alguma**, e isso está
+travado por teste: se a identidade daquelas linhas mudasse, todo extrato já
+importado voltaria a entrar em duplicidade.
+
+#### A lição, e ela é maior que o conserto: a receita estava em DOIS lugares
+
+`conciliacao_ofx.impressao_da_linha` **recalculava** a identidade, porque na
+leitura a conta ainda não é conhecida. Era uma segunda cópia da regra do parser,
+com a mesma suposição errada. **Consertar só o parser não teria adiantado** — a
+cópia recolapsaria as 211 em 4, e o defeito voltaria com cara de outro defeito.
+
+Agora o parser devolve a identidade pronta (`LancamentoOFX.identidade`) e aqui só
+se acrescenta a conta. Uma regra, um lugar.
+
+#### E o que fez isso custar caro: o silêncio
+
+Perder linha é ruim; **perder linha e dizer "li 4 lançamentos" com ar de tudo
+certo é pior**, porque convence. Entrou `contar_transacoes()`: quantas transações
+o arquivo TEM, antes de qualquer decisão. Quando esse número não bate com o
+reconhecido, a tela avisa em vermelho **antes de qualquer botão de gravar**.
+Enquanto baterem, não aparece nada — indicador que grita sempre não é indicador.
+
+#### ⚠️ O que ele precisa fazer
+
+**Se aquelas 4 linhas chegaram a ser GRAVADAS**, desfaça a importação na própria
+tela (a conciliação tem "desfazer uma importação") e importe o arquivo de novo.
+As 4 antigas foram gravadas com a identidade velha e não seriam reconhecidas —
+virariam duplicidade. Se ele só olhou a conferência e não gravou, é só importar.
+
+**Depois de importar as 211:** o saldo continua sem bater com o que o banco
+declara (−1.249,20 em 25/09), e isso não é defeito — a soma das 211 linhas é
+−66.802,97, então falta o extrato de **antes de 01/09** nesta conta. A tela já diz
+isso.
+
+**Verificado:** 11 testes no parser (o formato real do banco 520, a estabilidade
+ao reimportar, o extrato maior que reconhece o que já entrou, e a garantia de que
+banco de FITID único não muda) e 4 no lado do Análise de SPs. Conferido contra o
+arquivo de verdade que ele mandou: **211 lidas, 211 identidades distintas**, soma
+−66.802,97, e reimportar dá os mesmos identificadores.
+
+**NÃO verificado:** nada num navegador.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória
