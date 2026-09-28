@@ -2571,6 +2571,196 @@ Três detalhes que não são estética:
 3. **Mês sem nada fechado explica por quê**, em vez de mostrar tabela vazia. "Nada
    aqui" sem motivo faz a pessoa achar que o sistema quebrou.
 
+## 7.31 A PRIMEIRA VEZ QUE ELE USOU AS TELAS (28/09/2026) — e o que estava errado
+
+Ele abriu as telas da folha e a conclusão foi: *"no geral, eu estou achando tudo
+muito ruim, muito ruim mesmo."* A lista era longa e toda justa. Está aqui inteira,
+com o que mudou, porque cada item virou uma regra que não deve voltar.
+
+### 7.31.1 O que fazia a tela de auxílio não calcular NADA
+
+**A causa era um nome de coluna que eu chutei.** Ele ditou os certos, olhando a
+planilha:
+
+| Coluna | Nome de verdade | Eu havia chutado |
+|---|---|---|
+| BM | **Categoria** Auxílio Alimentação | "Modalidade Auxílio Alimentação" |
+| BN | Valor Auxílio Alimentação | (certo) |
+| BO | **Categoria** Auxílio Transporte | "Modalidade Auxílio Transporte" |
+| BP | Valor Auxílio Transporte | (certo) |
+| BQ | Observação | (não existia) |
+
+Sem a categoria, **toda pessoa caía em "o cadastro não diz a modalidade"** — zero
+dias, zero valor, tudo com cara de ajuste pendente. Era exatamente o que ele viu:
+*"nenhum está dando valor, aí tudo está botando ajuste, aí zero dias, não está
+calculando nada isso aqui."*
+
+⚠️ **A lição, e ela já tinha sido paga duas vezes esta semana:** eu chutei o nome e
+segui. O aviso "não achei a coluna X" existia e funcionou — mas ficava numa tela
+que ele não abriu antes de usar a outra. Coluna que o sistema não acha tem de
+aparecer **na tela que depende dela**, não só na de origem.
+
+### 7.31.2 O layout: a barra errada
+
+*"Está aqui desalinhado competência, aí está uns botões gigantescos da largura da
+tela toda, o mês, o ano, aí tem o ver e ainda está desalinhado (…) está feio."*
+
+Eu pus os campos direto dentro de `.barra-acoes`, que é a barra das **Solicitações**
+— e ela é uma GRADE de três colunas (`1fr auto 1fr`), desenhada para "grupo à
+esquerda / total no centro / grupo à direita". Cada campo solto virou uma célula e
+esticou até a largura da tela. Agora existe `.barra-mes`, uma fileira compacta.
+
+### 7.31.3 A obra é o CÓDIGO, e não se digita
+
+Duas correções na mesma frase: *"em obra tem que colocar o código da obra e não a
+obra por extenso. Todo mundo tem código da obra. Aqui tem vários vazios"* e *"eu
+não sei por que você colocou um campo editável. Essa informação vem do cadastro."*
+
+- A carga lia `Objeto Obra [ ]`, que é a obra **por extenso**. O **código** é outra
+  coluna, e é ele que casa com a conta de pagamento e com o rateio. Agora são dois
+  campos separados (migração 036), e as telas mostram o código.
+- Quando o cadastro antigo não tem o código, o sistema chega nele **pelo nome**
+  (`resolver_obra`). Não achando, fica vazio — vazio é pergunta aberta, e é melhor
+  que um nome por extenso no lugar de um código.
+- **O campo editável saiu.** Obra digitada na tela divergiria do cadastro e do
+  rateio, e ninguém saberia qual das duas manda.
+
+⚠️ **Um detalhe que quase passou:** o feriado por obra é cadastrado **pelo nome** (é
+o que a tela de Feriados oferece). Passar o código no desconto de feriado faria o
+feriado municipal deixar de descontar, em silêncio. O cálculo usa o nome para o
+feriado e o código para agrupar.
+
+### 7.31.4 O fluxo: selecionar e salvar de uma vez
+
+> *"Fica muito dificultoso trabalhar da forma que está aqui, a gente vai gravando
+> um por um. (…) A princípio tudo que está atendendo os critérios se paga. Ela
+> exibe tudo que tem coerência, já faz o cálculo, já deixa tudo pronto. O que eu
+> faço é só selecionar quem vai e quem não vai ser pago (…) e eu salvar como um
+> todo, não linha a linha."*
+
+Saíram: o seletor de três estados (*"que diabo é segue cálculo?"*) e o botão
+**Gravar por linha**. Entraram: uma **caixinha por pessoa**, já marcada para quem
+atende os critérios, um "marcar todos", e **um** botão Salvar numa barra colada
+embaixo que só aparece quando há mudança não salva.
+
+⚠️ **O QUE SE GUARDA É A EXCEÇÃO, NÃO A LISTA.** Se eu gravasse uma linha por
+pessoa, o padrão ("paga") viraria uma decisão registrada — e no mês seguinte
+ninguém saberia mais o que ele decidiu e o que o sistema calculou. Guardando só
+quem ele desmarcou, a tabela tem três linhas em vez de quinhentas, e cada linha é
+uma decisão de verdade.
+
+Para isso o cálculo passou a devolver **as duas decisões**: `pagar_calculado` (o que
+a conta diz sozinha) e `pagar` (o que vale depois do ajuste). Antes eu estava
+adivinhando a diferença comparando textos de motivo — que quebra no dia em que
+alguém reescreve uma frase.
+
+⚠️ **A caixinha de quem não tem valor no cadastro fica DESABILITADA.** Marcar
+pagaria zero em silêncio, e zero tem cara de resposta.
+
+### 7.31.5 Os filtros, que faltavam em todas as telas
+
+*"Era para ter uma na lateral aqui, filtro, para a gente poder estar filtrando. A
+obra tal, pessoa tal. Eu preciso às vezes tratar só uma obra."*
+
+O módulo **já tinha** a lateral de filtros (é o padrão das Solicitações e da
+Documentação Fiscal) e eu declarei as telas da folha como `sem-filtros`. Agora
+alimentação/transporte, colaboradores e diaristas têm filtro por **quem** (nome ou
+CPF), por **obra** e por **situação**.
+
+⚠️ **O filtro recorta a LISTA, nunca a CONTA.** Os totais do alto continuam sendo
+os da verba inteira — filtrar a conta faria o total mudar conforme o filtro, e aí
+ninguém saberia mais qual é o valor do pagamento.
+
+### 7.31.6 Colaboradores: quem saiu não aparece mais — mas não desaparece
+
+*"O que é colaborador desligado não deveria nem estar sendo exibido. Ele está
+desligado, ele não está trabalhando."*
+
+⚠️ **ISTO CONTRARIA UMA INSTRUÇÃO DELE DE 26/09** (*"não pode ficar oculto,
+escondido"*, sobre o cadastro pela metade). A leitura que atende as duas: a lista do
+dia a dia é de quem está **trabalhando**, e quem está desligado sai dela — mas a
+conta aparece no alto da tela e uma caixinha o traz de volta. O que 26/09 proibia
+era esconder **e não dizer**.
+
+E a tabela ganhou uma frase dizendo **para que ela serve** (*"ninguém entende nem
+para que serve essa tabela"*), a obra, o CPF pontuado e a linha clicável.
+
+### 7.31.7 Clicar na pessoa: a ficha com o ponto do mês
+
+*"Além de associar ao cadastro das pessoas, clicando abre o pipe — eu quero também
+poder visualizar o ponto do mês daquela pessoa. Eu clicar e visualizar o ponto da
+pessoa no modal, e de lá abrir o card."*
+
+Feito, e a mesma rota serve as duas telas (auxílios e colaboradores): cadastro,
+categoria e valor dos dois auxílios, **a observação da coluna BQ**, o ponto do mês
+**dia por dia** e o botão do card.
+
+⚠️ **O ponto aparece COMO VEIO**, sem interpretar. Enquanto o nome dos campos de
+cada dia não for conhecido, inventar significado para eles poria o salário na obra
+errada — e é justamente mostrar o dado cru que permite descobrir o nome certo.
+
+### 7.31.8 O ponto: dizer se está carregando
+
+*"A gente bota aqui trazer o ponto, mas aí se o ponto veio, se o ponto não veio, só
+Deus sabe o que está acontecendo aqui em relação a essa API."*
+
+A tela só acompanhava a carga se **você tivesse apertado o botão naquela aba**. Quem
+abrisse depois — ou de outro computador — não via nada. Agora o estado vem do banco
+junto com a página: ela já abre dizendo "está trazendo dado agora", com o passo, e
+se atualiza sozinha quando termina. E se a carga foi **interrompida** (uma
+publicação reinicia o serviço), a tela diz isso e diz o que fazer.
+
+### 7.31.9 Os diaristas, que não existiam na tela
+
+*"E cadê os diaristas? Não entrou diaristas."*
+
+A regra existia e estava testada desde 26/09 (`folha_vinculo.py`, tradução fiel da
+coluna AH). Faltava **ligá-la**, e faltavam duas colunas no cadastro: **Data de
+Início** e **Data de Admissão** — sem elas todo dia caía em "falta data para
+decidir".
+
+A tela nova mostra, por pessoa, **quantos dias de diária e quantos de CTPS** no mês.
+A regra é **por dia**, e isso fica escrito porque é contraintuitivo: a mesma pessoa
+tem dias dos dois tipos no mês em que foi registrada.
+
+⚠️ **O que ela AINDA NÃO faz é dizer quanto pagar**, e diz isso em vez de mostrar
+zero: falta o **valor** da diária (não achei a coluna) e o nome dos campos do ponto,
+que é o que diz a obra do dia e se foi sábado, domingo ou feriado (+10/+20).
+
+### 7.31.10 A ordem das subtelas
+
+*"Não tem lógica nas telas aqui (…) folha da contabilidade, alimentação, ambos são
+PAGAMENTOS. Então acho que era para estar junto. O que é CADASTRO é para estar
+junto."*
+
+A ordem anterior era a ordem em que **eu** construí as peças. Agora são três grupos,
+com o nome à vista na faixa de abas:
+
+| Grupo | Telas |
+|---|---|
+| — | Panorama |
+| **Pagamentos** | Folha da contabilidade · Alimentação e transporte · Diaristas · Arquivos gerados |
+| **Cadastro e base do cálculo** | Colaboradores · Ponto · Feriados e férias · Rateio das obras |
+
+### 7.31.11 Gerar o pagamento de dentro de cada tela
+
+*"Eu não sei por que você botou gerar pagamento separado (…) na folha da
+contabilidade eu gero o pagamento de lá, na folha da alimentação eu gero de lá."*
+
+A tela de auxílio ganhou o bloco de geração. **A geração em si continua exigindo a
+apropriação fechada** — e isso não é teimosia minha: é o que garante que o arquivo
+enviado ao banco tenha uma explicação que não muda depois (§7.26). A tela de
+"Arquivos gerados" continua existindo como **log**, que foi o que ele pediu em
+27/09, não como a única porta.
+
+### 7.31.12 O que ele pediu e AINDA não está atendido
+
+| O que | Por quê |
+|---|---|
+| o **valor** do auxílio e da diária saindo certo para todos | depende de ele apertar "Atualizar cadastro" com os nomes de coluna novos — é o que traz categoria, valor, código da obra, observação e as duas datas |
+| **total por obra vindo do ponto**, diária em dinheiro | depende do **nome dos campos de cada dia** do ponto |
+| gerar o arquivo **de dentro** de cada tela, com um clique | depende da apropriação fechada, que depende do ponto |
+
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

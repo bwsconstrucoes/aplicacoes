@@ -343,14 +343,23 @@ def test_ajuste_NULO_e_diferente_de_FALSO(banco_auxilio):
                               ajuste={"pagar": None})["pagar"] is True
 
 
-def test_a_OBRA_ajustada_ganha_da_do_cadastro(banco_auxilio):
-    """*"Caso eu queira alterar a obra que aquela pessoa vai ficar apropriada."*"""
+def test_a_OBRA_e_o_CODIGO_e_vem_do_cadastro(banco_auxilio):
+    """⚠️ MUDOU EM 28/09/2026, por correção do dono: *"em obra tem que colocar o
+    CÓDIGO da obra e não a obra por extenso"* e *"eu não sei por que você colocou
+    um campo editável; essa informação vem do cadastro."*
+
+    Obra digitada na tela divergiria do cadastro e do rateio, e ninguém saberia
+    qual das duas manda."""
     from app.apps.analisesps import folha_auxilio as fx
 
     r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM,
-                           ajuste={"obra": "CREPEAREIAS"})
-    assert r["obra"] == "CREPEAREIAS"
-    assert r["obra_ajustada"] is True
+                           codigo_da_obra="1042")
+    assert r["obra"] == "1042", "a tela mostra o CÓDIGO"
+    assert "obra_ajustada" not in r, "não existe mais obra editável"
+
+    # E o nome por extenso continua vindo, porque é por ele que o feriado
+    # municipal é cadastrado na tela de Feriados.
+    assert "obra_nome" in r
 
 
 def test_o_ajuste_SOBREVIVE_ao_recalculo(banco_auxilio):
@@ -419,10 +428,11 @@ def cadastrar(*pessoas):
     registros = []
     for cpf, nome, extra in pessoas:
         r = {c: "" for c in col.CAMPOS}
-        r.update({"cpf": cpf, "nome": nome, "valor_alimentacao": None,
-                  "valor_transporte": None, "valor_gratificacao": None,
-                  "aviso_previo": None, "ultimo_dia": None, "data_saida": None,
-                  "fase": "Colaboradores Ativos"})
+        r.update({"cpf": cpf, "nome": nome, "fase": "Colaboradores Ativos"})
+        # Toda data e todo número vazio é None, e a lista vem do módulo — ver o
+        # comentário igual em test_analisesps_colaboradores_banco.py.
+        for campo in col.DATAS + col.NUMEROS:
+            r[campo] = None
         r.update(extra or {})
         registros.append(r)
     with conexao() as conn:
@@ -450,16 +460,17 @@ def test_a_verba_inteira_soma_POR_OBRA(banco_auxilio):
     """É o corte que ele pediu para o painel, aplicado à verba."""
     from app.apps.analisesps import folha_auxilio as fx
 
+    # ⚠️ AGRUPA PELO CÓDIGO da obra, não pelo nome (correção de 28/09/2026).
     cadastrar(
         (GERLANIO, "UM", {"modo_alimentacao": "Mês",
                           "valor_alimentacao": D("100.00"),
-                          "obra_cadastro": "OBRAA"}),
+                          "obra_codigo": "OBRAA"}),
         ("03513441363", "DOIS", {"modo_alimentacao": "Mês",
                                  "valor_alimentacao": D("300.00"),
-                                 "obra_cadastro": "OBRAB"}),
+                                 "obra_codigo": "OBRAB"}),
         ("11144477735", "TRES", {"modo_alimentacao": "Mês",
                                  "valor_alimentacao": D("50.00"),
-                                 "obra_cadastro": "OBRAA"}),
+                                 "obra_codigo": "OBRAA"}),
     )
     resultado = fx.calcular(fx.ALIMENTACAO, 2026, 9)
     assert resultado["total"] == D("450.00")

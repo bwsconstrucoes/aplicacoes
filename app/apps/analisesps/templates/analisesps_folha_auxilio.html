@@ -1,18 +1,98 @@
 {% extends "analisesps_base.html" %}
 {% block titulo %}{{ resultado.rotulo if resultado else 'Alimentação e transporte' }} — Análise de SPs{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   ⚠️ ESTA TELA FOI REFEITA EM 28/09/2026, e vale dizer o que estava errado,
+   porque cada item virou uma regra:
+
+   "Está aqui desalinhado competência, aí está uns botões gigantescos da largura
+    da tela toda (…) está feio."            → a barra era a das Solicitações, que
+                                              é grade de 3 colunas. Agora é
+                                              `.barra-mes`, compacta.
+   "Em obra tem que colocar o CÓDIGO da obra e não a obra por extenso."
+   "Eu não sei por que você colocou um campo editável; essa informação vem do
+    cadastro."                              → obra é código, e é leitura.
+   "A gente vai gravando um por um (…) o que eu faço é só selecionar quem vai e
+    quem não vai ser pago (…) e eu salvar como um todo, não linha a linha."
+                                            → caixinha por linha + UM salvar.
+   "Que diabo é segue cálculo?"             → o seletor de três estados saiu.
+   "O CPF não está com a pontuação."        → sai pontuado.
+   "Aqui não diz a modalidade mês, mensal." → coluna própria.
+   "Era para ter uma na lateral aqui, filtro."→ bloco `filtros`.
+   "Clicar na pessoa e visualizar."         → modal com observação e ponto.
+   --------------------------------------------------------------------------- #}
+
+{% block filtros %}
+{% if pronto and resultado %}
+<form method="get" action="{{ url_for('analisesps.tela_folha_auxilio') }}"
+      id="form-filtros">
+  <input type="hidden" name="tipo" value="{{ tipo }}">
+  <input type="hidden" name="ano" value="{{ ano }}">
+  <input type="hidden" name="mes" value="{{ mes }}">
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Quem</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <input type="search" name="q" value="{{ procurado }}" autocomplete="off"
+             placeholder="nome ou CPF…" aria-label="Procurar pessoa">
+    </div>
+  </div>
+
+  {# A obra é o primeiro corte de verdade: *"eu preciso às vezes tratar só uma
+     obra (…) os auxílios de transporte da obra tal, eu vejo um por um."* #}
+  <div class="filtro {% if obra_filtro %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Obra</span>
+      {% if obra_filtro %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="obra" aria-label="Obra">
+        <option value="">todas as obras</option>
+        {% for o in obras_na_lista %}
+          <option value="{{ o }}" {% if obra_filtro == o %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="filtro {% if so %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Situação</span>
+      {% if so %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        <label class="opcao"><input type="radio" name="so" value=""
+          {% if not so %}checked{% endif %}><span class="rotulo">todos</span></label>
+        <label class="opcao"><input type="radio" name="so" value="pagar"
+          {% if so == 'pagar' %}checked{% endif %}><span class="rotulo">só quem vai receber</span></label>
+        <label class="opcao"><input type="radio" name="so" value="problema"
+          {% if so == 'problema' %}checked{% endif %}><span class="rotulo">só quem precisa de olho</span></label>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:6px; margin-top:10px">
+    <button class="btn secundario" type="submit">Filtrar</button>
+    {% if filtrando %}
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.tela_folha_auxilio', tipo=tipo, ano=ano, mes=mes) }}"
+         >Limpar</a>
+    {% endif %}
+  </div>
+</form>
+{% endif %}
+{% endblock %}
 
 {% block conteudo %}
 {% include "analisesps_folha_abas.html" %}
 
-<h2>Alimentação e transporte</h2>
+<h2>{{ resultado.rotulo if resultado else 'Alimentação e transporte' }}</h2>
 
-{# ---------------------------------------------------------------------------
-   AS DUAS VERBAS DIVIDEM UMA SUBTELA, com uma aba cada. Ele descreveu abas por
-   verba ("uma tela que eu trato alimentação, uma que eu trato transporte") e, no
-   mesmo pedido, reclamou de tela demais. A conta é quase a mesma; o que muda é o
-   desconto. Se preferir separado, é uma linha para mudar.
-   --------------------------------------------------------------------------- #}
 <nav class="abas-folha" aria-label="Verba">
   {% for chave, rotulo in tipos %}
     <a class="aba-folha {% if tipo == chave %}ativa{% endif %}"
@@ -21,42 +101,55 @@
   {% endfor %}
 </nav>
 
-{# ⚠️ A RÉGUA FICA ESCRITA NA TELA. Quem confere precisa saber qual das duas está
-   vendo — as colunas são as mesmas, e o número muda. #}
-<p class="cartao-dica" style="margin:12px 0 14px">
+{# A barra compacta. Não é `.barra-acoes` — ver o comentário no alto. #}
+<form class="barra-mes" method="get"
+      action="{{ url_for('analisesps.tela_folha_auxilio') }}">
+  <input type="hidden" name="tipo" value="{{ tipo }}">
+  <input type="hidden" name="q" value="{{ procurado }}">
+  <input type="hidden" name="obra" value="{{ obra_filtro }}">
+  <input type="hidden" name="so" value="{{ so }}">
+  <label class="campo-mes"><span>Mês trabalhado</span>
+    <select name="mes" aria-label="Mês">
+      {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
+                             (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
+                             (9,'setembro'),(10,'outubro'),(11,'novembro'),
+                             (12,'dezembro')] %}
+        <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="campo-mes"><span>Ano</span>
+    <select name="ano" class="ano" aria-label="Ano">
+      {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
+        <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn secundario" type="submit">Ver</button>
+  {% if resultado %}
+    {# ⚠️ AS DUAS DATAS JUNTAS, porque ele paga o auxílio no mês SEGUINTE ao
+       trabalhado. Sem isso, quem abre a tela em outubro procura outubro e
+       encontra o mês errado. #}
+    <span class="barra-mes-dica">
+      contei os dias de <b>{{ resultado.inicio|data_br }}</b> a
+      <b>{{ resultado.fim|data_br }}</b> — este auxílio é pago em
+      <b>{{ resultado.pagamento_em }}</b>
+    </span>
+  {% endif %}
+</form>
+
+<p class="cartao-dica" style="margin:0 0 14px">
   {% if tipo == 'alimentacao' %}
     A <b>alimentação</b> desconta <b>feriado</b> e <b>férias</b> dos dias do mês.
   {% else %}
-    O <b>transporte</b> desconta <b>férias</b>, e <b>não</b> desconta feriado —
-    foi o que você decidiu: um dia só não muda o vale, férias mudam.
-    Quem tem <b>"Cartão"</b> no cadastro não recebe em dinheiro.
+    O <b>transporte</b> desconta <b>férias</b> e <b>não</b> desconta feriado.
+    Quem tem <b>"Cartão"</b> na categoria do cadastro não recebe em dinheiro.
   {% endif %}
-  Os feriados e as férias vêm da tela
-  <a href="{{ url_for('analisesps.tela_folha_calendario') }}">Feriados e férias</a>;
-  o valor e a modalidade de cada pessoa vêm do
-  <a href="{{ url_for('analisesps.tela_colaboradores') }}">cadastro</a>, que nasce
-  no Pipefy.
+  A categoria e o valor de cada pessoa vêm do
+  <a href="{{ url_for('analisesps.tela_colaboradores') }}">cadastro</a>;
+  os feriados e as férias, da tela de
+  <a href="{{ url_for('analisesps.tela_folha_calendario') }}">feriados e férias</a>.
 </p>
-
-<form class="barra-acoes" method="get"
-      action="{{ url_for('analisesps.tela_folha_auxilio') }}">
-  <input type="hidden" name="tipo" value="{{ tipo }}">
-  <label class="cartao-dica" for="mes" style="margin:0">Competência</label>
-  <select name="mes" id="mes">
-    {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
-                           (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
-                           (9,'setembro'),(10,'outubro'),(11,'novembro'),
-                           (12,'dezembro')] %}
-      <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
-    {% endfor %}
-  </select>
-  <select name="ano" id="ano">
-    {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
-      <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
-    {% endfor %}
-  </select>
-  <button class="btn secundario" type="submit">Ver</button>
-</form>
 
 {% if erro %}
   <div class="aviso erro"><b>Não consegui calcular.</b> {{ erro }}</div>
@@ -65,127 +158,110 @@
 {% if not pronto %}
   <div class="aviso atencao">
     <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
-    "Aplicar atualizações do banco" e volte aqui. Sem isso eu não tenho onde
-    guardar o que você ajustar à mão.
+    "Aplicar atualizações do banco" e volte aqui.
   </div>
-{% elif not resultado %}
-  <div class="aviso">Nada a mostrar nesta competência.</div>
-{% elif not resultado.pessoas %}
+{% elif not resultado or not resultado.pessoas %}
   <div class="aviso atencao">
-    <b>Ninguém com esta verba no cadastro.</b> Só entra aqui quem tem valor ou
-    modalidade desta verba no cadastro. Se você espera gente aqui, aperte
-    <b>Atualizar cadastro</b> na tela de
-    <a href="{{ url_for('analisesps.tela_colaboradores') }}">Colaboradores</a>.
+    <b>Ninguém com esta verba no cadastro.</b> Só entra aqui quem tem categoria ou
+    valor desta verba no cadastro. Se você espera gente aqui, aperte
+    <b>Atualizar cadastro</b> em
+    <a href="{{ url_for('analisesps.tela_colaboradores') }}">Colaboradores</a> —
+    é de lá que vêm a categoria e o valor.
   </div>
 {% else %}
 
 <div class="kpis">
   <div class="kpi">
-    <span class="kpi-rotulo">Total de {{ resultado.competencia }}</span>
+    <span class="kpi-rotulo">A pagar em {{ resultado.pagamento_em }}</span>
     <b class="kpi-valor">{{ resultado.total|moeda }}</b>
   </div>
   <div class="kpi">
-    <span class="kpi-rotulo">A pagar</span>
+    <span class="kpi-rotulo">Pessoas</span>
     <b class="kpi-valor">{{ resultado.quantos_a_pagar }}</b>
   </div>
-  {# Fica âmbar só quando há problema: indicador que grita sempre não é
-     indicador. #}
   <div class="kpi {{ 'ambar' if resultado.com_problema }}">
     <span class="kpi-rotulo">Precisam de olho</span>
     <b class="kpi-valor">{{ resultado.com_problema|length }}</b>
   </div>
   <div class="kpi">
-    <span class="kpi-rotulo">Na lista</span>
-    <b class="kpi-valor">{{ resultado.quantos }}</b>
+    <span class="kpi-rotulo">Obras</span>
+    <b class="kpi-valor">{{ resultado.por_obra|length }}</b>
   </div>
 </div>
 
-<p class="cartao-dica">
-  Período contado: <b>{{ resultado.inicio|data_br }}</b> a
-  <b>{{ resultado.fim|data_br }}</b> — o mês inteiro, não a quinzena.
-</p>
-
-{# ======================================================================
-   POR OBRA — é o corte que ele usa para decidir o rateio do mês.
-   ====================================================================== #}
-<h3 style="margin-top:20px">Por obra <small>da maior para a menor</small></h3>
+<h3 style="margin-top:20px">Por obra <small>código da obra</small></h3>
 <table class="sps">
-  <thead>
-    <tr><th>Obra</th><th class="num">Pessoas</th><th class="num">Total</th>
-      <th class="num">% da verba</th></tr>
-  </thead>
+  <thead><tr><th>Obra</th><th class="num">Pessoas</th><th class="num">Total</th></tr></thead>
   <tbody>
   {% for o in resultado.por_obra %}
-    <tr>
-      <td>{{ o.obra }}</td>
-      <td class="num">{{ o.pessoas }}</td>
-      <td class="num">{{ o.total|moeda }}</td>
-      <td class="num">
-        {% if resultado.total %}{{ (o.total / resultado.total * 100)|round(1) }}%{% else %}—{% endif %}
-      </td>
-    </tr>
+    <tr><td>{{ o.obra }}</td><td class="num">{{ o.pessoas }}</td>
+      <td class="num">{{ o.total|moeda }}</td></tr>
   {% else %}
-    <tr><td colspan="4" class="cartao-dica">Nada a pagar nesta competência.</td></tr>
+    <tr><td colspan="3" class="cartao-dica">Nada a pagar nesta competência.</td></tr>
   {% endfor %}
   </tbody>
 </table>
 
 {# ======================================================================
-   PESSOA POR PESSOA — com o caminho inteiro da conta à vista.
-
-   ⚠️ AS COLUNAS DO MEIO NÃO SÃO ENFEITE: é por elas que você confere de onde
-   veio o valor. Um total sozinho não se audita, e foi isso que ele pediu.
-   Quem precisa de mão vem primeiro na lista, de propósito.
+   A LISTA — já calculada, e ele só marca quem vai.
    ====================================================================== #}
 <h3 style="margin-top:24px">
-  Pessoa por pessoa <small>quem precisa de mão vem primeiro</small>
+  Pessoa por pessoa
+  <small>
+    {% if filtrando %}{{ pessoas|length }} de {{ resultado.quantos }} · filtrado
+    {% else %}{{ pessoas|length }}{% endif %}
+    · quem precisa de olho vem primeiro
+  </small>
 </h3>
 
-<table class="sps">
+{% if pode_operar %}
+<p class="cartao-dica" style="margin:0 0 8px">
+  Já vem <b>tudo marcado para pagar</b> quem atende os critérios. Desmarque quem
+  não vai receber e aperte <b>Salvar</b> uma vez, no fim. Clique no nome para ver
+  a observação do cadastro e o ponto do mês.
+</p>
+{% endif %}
+
+<table class="sps" id="tabela-auxilio">
   <thead>
     <tr>
-      <th>Quem</th><th>CPF</th><th>Obra</th><th>Modalidade</th>
+      {% if pode_operar %}
+        <th class="marca"><input type="checkbox" id="marcar-todos"
+              title="marcar ou desmarcar todos os visíveis"
+              aria-label="Marcar todos"></th>
+      {% endif %}
+      <th>Quem</th><th>CPF</th><th>Obra</th><th>Categoria</th>
       <th class="num">Valor do dia</th>
-      <th class="num" title="Dias da modalidade no mês">Base</th>
+      <th class="num" title="Dias da categoria no mês">Base</th>
       <th class="num">Feriados</th><th class="num">Férias</th>
-      <th class="num" title="Dias que você somou ou tirou à mão">Ajuste</th>
       <th class="num">Dias</th><th class="num">Valor</th>
-      {% if pode_operar %}<th>Pagar</th><th></th>{% endif %}
     </tr>
   </thead>
   <tbody>
-  {% for p in resultado.pessoas %}
-    <tr class="{{ 'linha-alerta' if not p.pagar }}" data-cpf="{{ p.cpf }}">
+  {% for p in pessoas %}
+    <tr class="clicavel {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel }}"
+        data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}"
+        data-valor="{{ p.valor }}"
+        data-impossivel="{{ '1' if p.impossivel else '' }}">
+      {% if pode_operar %}
+        <td class="marca">
+          {# ⚠️ Desabilitada quando NÃO HÁ o que pagar: marcar pagaria zero em
+             silêncio, e zero em silêncio é pior que não pagar. #}
+          <input type="checkbox" class="marca-pessoa"
+                 {% if p.pagar %}checked{% endif %}
+                 {% if p.impossivel %}disabled{% endif %}
+                 aria-label="Pagar {{ p.nome }}">
+        </td>
+      {% endif %}
       <td>
-        {% if p.link_pipefy %}
-          <a class="link-pipefy" href="{{ p.link_pipefy }}" target="_blank"
-             rel="noopener" title="abrir o card no Pipefy">{{ p.nome or '—' }}</a>
-        {% else %}{{ p.nome or '—' }}{% endif %}
+        <b>{{ p.nome or '—' }}</b>
         {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
         {% for motivo in p.motivos %}
           <br><span class="cartao-dica">⚠ {{ motivo }}</span>
         {% endfor %}
-        {% if p.observacao %}
-          <br><span class="cartao-dica">obs.: {{ p.observacao }}</span>
-        {% endif %}
       </td>
-      <td class="cpf">{{ p.cpf }}</td>
-      <td>
-        {% if pode_operar %}
-          {# `data-original` existe para o gravar só mandar a obra quando ela
-             MUDOU. Sem isso, salvar sem mexer na obra guardaria a obra do cadastro
-             como se fosse escolha dele — e a linha passaria a dizer "obra trocada
-             por você", que é mentira. #}
-          <input class="campo-obra" list="obras-do-rateio" value="{{ p.obra }}"
-                 data-original="{{ p.obra if p.obra_ajustada else '' }}"
-                 data-cadastro="{{ '' if p.obra_ajustada else p.obra }}"
-                 style="width:130px" placeholder="—"
-                 aria-label="Obra de {{ p.nome }}">
-        {% else %}{{ p.obra or '—' }}{% endif %}
-        {% if p.obra_ajustada %}
-          <br><span class="cartao-dica">obra trocada por você</span>
-        {% endif %}
-      </td>
+      <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
+      <td>{{ p.obra or '—' }}</td>
       <td>{{ p.modo or '—' }}</td>
       <td class="num">
         {% if p.valor_unitario is none %}—{% else %}{{ p.valor_unitario|moeda }}{% endif %}
@@ -195,93 +271,235 @@
         {% if tipo == 'alimentacao' %}{{ p.feriados or '' }}{% else %}—{% endif %}
       </td>
       <td class="num">{{ p.ferias or '' }}</td>
-      <td class="num">
-        {% if pode_operar %}
-          <input class="campo-dias" type="number" step="1" value="{{ p.dias_ajuste or '' }}"
-                 style="width:60px" placeholder="0"
-                 aria-label="Ajuste de dias de {{ p.nome }}">
-        {% else %}{{ p.dias_ajuste or '' }}{% endif %}
-      </td>
       <td class="num"><b>{{ p.dias }}</b></td>
-      <td class="num"><b>{{ p.valor|moeda }}</b></td>
-      {% if pode_operar %}
-        <td>
-          {# Três estados, e eles não são dois: "segue o cálculo" é diferente de
-             "eu decidi não pagar". Por isso é um seletor, não uma caixinha. #}
-          <select class="campo-pagar" aria-label="Pagar a {{ p.nome }}?">
-            <option value="" {% if p.ajuste_pagar is none %}selected{% endif %}>segue o cálculo</option>
-            <option value="1" {% if p.ajuste_pagar is true %}selected{% endif %}>pagar</option>
-            <option value="0" {% if p.ajuste_pagar is false %}selected{% endif %}>não pagar</option>
-          </select>
-        </td>
-        <td class="num">
-          <button class="btn secundario btn-gravar-ajuste" type="button">Gravar</button>
-        </td>
-      {% endif %}
+      <td class="num valor-final"><b>{{ p.valor|moeda }}</b></td>
     </tr>
+  {% else %}
+    <tr><td colspan="11" class="cartao-dica">
+      Ninguém com esse filtro. Mude o filtro na lateral.
+    </td></tr>
   {% endfor %}
   </tbody>
 </table>
 
-<datalist id="obras-do-rateio">
-  {% for o in obras %}<option value="{{ o }}"></option>{% endfor %}
-</datalist>
-
 {% if pode_operar %}
-<p class="cartao-dica" style="margin-top:10px">
-  O que você ajustar aqui <b>fica guardado nesta competência</b> e sobrevive ao
-  recálculo — não se perde quando você voltar à tela. Deixar tudo em branco
-  ("segue o cálculo", sem dias e sem obra) apaga o ajuste e volta a valer a conta.
-</p>
+{# A barra fica colada embaixo e só aparece quando há mudança não salva. #}
+<div class="barra-salvar" id="barra-salvar" hidden>
+  <span class="conta-selecao">
+    Marcados: <span id="quantos-marcados">0</span>
+    <span class="total-selecao" id="total-marcado">R$ 0,00</span>
+  </span>
+  <span class="cartao-dica" id="recado-selecao"></span>
+  <span class="sobra">
+    <button class="btn secundario" type="button" id="btn-desfazer">Desfazer</button>
+    <button class="btn" type="button" id="btn-salvar-selecao">Salvar seleção</button>
+  </span>
+</div>
+{% endif %}
+
+{# ======================================================================
+   GERAR O PAGAMENTO DAQUI — e não numa tela à parte.
+
+   Correção dele: *"eu não sei por que você botou gerar pagamento separado (…) eu
+   acho que em cada um, na folha da contabilidade eu gero o pagamento de lá, na
+   folha da alimentação eu gero o pagamento de lá."*
+   ====================================================================== #}
+{% if pode_operar %}
+<div class="cartao" style="margin-top:18px">
+  <label class="rotulo-campo">Gerar o pagamento desta verba</label>
+  <p class="cartao-dica" style="margin:4px 0 10px">
+    Sai um arquivo por conta de pagamento, mais o de análise. Antes de gerar eu
+    mostro quantos arquivos saem e com que total cada um.
+  </p>
+  <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap">
+    <label class="campo-mes"><span>Para onde</span>
+      <select id="destino-verba">
+        <option value="beevale">BeeVale</option>
+        <option value="somapay">SomaPay</option>
+      </select>
+    </label>
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}"
+       >Conferir e gerar</a>
+    <span class="cartao-dica">
+      A geração precisa da apropriação <b>fechada</b> desta verba — é o que garante
+      que o arquivo enviado ao banco tenha uma explicação que não muda depois.
+    </span>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+
+<dialog class="dialogo" id="ficha-pessoa-modal">
+  <button class="btn secundario dialogo-fechar" type="button"
+          onclick="document.getElementById('ficha-pessoa-modal').close()"
+          >Fechar</button>
+  <h3 id="ficha-pessoa-titulo">Pessoa</h3>
+  <div id="ficha-pessoa-corpo">carregando…</div>
+</dialog>
 
 <script>
-// A obra só vai quando ela MUDOU: mandar a obra que já vinha do cadastro faria a
-// linha dizer "obra trocada por você" sem ele ter trocado nada.
-function obraSeMudou(campo) {
-  const agora = (campo.value || "").trim();
-  const doCadastro = (campo.dataset.cadastro || "").trim();
-  if (agora === doCadastro) return "";
-  return agora;
+// ---------------------------------------------------------------------------
+// A SELEÇÃO EM BLOCO
+//
+// ⚠️ O estado de partida é o que o cálculo decidiu, e ele fica guardado aqui para
+// o "Desfazer" e para a barra só aparecer quando houver mudança de verdade.
+// ---------------------------------------------------------------------------
+const tabela = document.getElementById("tabela-auxilio");
+const barra = document.getElementById("barra-salvar");
+const caixas = [...document.querySelectorAll(".marca-pessoa")];
+const inicial = caixas.map(c => c.checked);
+
+function linhaDa(caixa) { return caixa.closest("tr"); }
+
+function dinheiro(n) {
+  return n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
 }
 
-// ⚠️ UM BOTÃO POR LINHA, e não "salvar tudo". Ele mexe em duas ou três pessoas
-// por mês; um salvamento em lote gravaria centenas de linhas sem ninguém pedir, e
-// um erro no meio deixaria metade gravada.
-document.querySelectorAll(".btn-gravar-ajuste").forEach(botao =>
-  botao.addEventListener("click", async () => {
-    const linha = botao.closest("tr");
-    const escolha = linha.querySelector(".campo-pagar").value;
-    const corpo = {
-      tipo: "{{ tipo }}", ano: {{ ano }}, mes: {{ mes }},
-      cpf: linha.dataset.cpf,
-      pagar: escolha === "" ? null : escolha === "1",
-      dias: parseInt(linha.querySelector(".campo-dias").value || "0", 10) || null,
-      obra: obraSeMudou(linha.querySelector(".campo-obra"))
-    };
-    const rotulo = botao.textContent;
-    botao.disabled = true;
-    botao.textContent = "gravando…";
-    try {
-      const r = await fetch("{{ url_for('analisesps.folha_auxilio_ajustar') }}", {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(corpo)
-      });
-      const d = await r.json();
-      if (!d.ok) {
-        alert(d.erro || "não consegui gravar");
-        botao.disabled = false; botao.textContent = rotulo;
-        return;
-      }
-      // Recarrega porque o valor da linha MUDA com o ajuste: deixar o número
-      // velho na tela depois de gravar é mostrar mentira.
-      location.reload();
-    } catch (e) {
-      alert("falhou: " + e);
-      botao.disabled = false; botao.textContent = rotulo;
+function atualizar() {
+  let quantos = 0, total = 0, mudou = false;
+  caixas.forEach((caixa, i) => {
+    const linha = linhaDa(caixa);
+    linha.classList.toggle("nao-vai", !caixa.checked);
+    if (caixa.checked) {
+      quantos += 1;
+      total += parseFloat(linha.dataset.valor || "0") || 0;
     }
-  }));
-</script>
-{% endif %}
+    if (caixa.checked !== inicial[i]) mudou = true;
+  });
+  const q = document.getElementById("quantos-marcados");
+  const t = document.getElementById("total-marcado");
+  if (q) q.textContent = quantos;
+  if (t) t.textContent = dinheiro(total);
+  if (barra) barra.hidden = !mudou;
+}
 
-{% endif %}
+caixas.forEach(caixa => caixa.addEventListener("change", atualizar));
+atualizar();
+
+// Clicar na linha abre a ficha; clicar na caixinha só marca.
+if (tabela) tabela.addEventListener("click", e => {
+  if (e.target.closest(".marca")) return;
+  if (e.target.closest("a")) return;
+  const linha = e.target.closest("tr.clicavel");
+  if (linha) abrirFichaDaPessoa(linha.dataset.cpf, linha.dataset.nome);
+});
+
+const marcarTodos = document.getElementById("marcar-todos");
+if (marcarTodos) marcarTodos.addEventListener("change", () => {
+  caixas.forEach(c => { if (!c.disabled) c.checked = marcarTodos.checked; });
+  atualizar();
+});
+
+const desfazer = document.getElementById("btn-desfazer");
+if (desfazer) desfazer.addEventListener("click", () => {
+  caixas.forEach((c, i) => { c.checked = inicial[i]; });
+  atualizar();
+});
+
+const salvar = document.getElementById("btn-salvar-selecao");
+if (salvar) salvar.addEventListener("click", async () => {
+  // ⚠️ MANDA A LISTA INTEIRA DO QUE ESTÁ NA TELA, e o servidor guarda só as
+  // exceções. Mandar apenas o que mudou faria o servidor precisar adivinhar o
+  // estado de quem não veio — e o estado dele é justamente o que se está salvando.
+  const decisoes = caixas.map(c => ({
+    cpf: linhaDa(c).dataset.cpf, pagar: c.checked
+  }));
+  salvar.disabled = true;
+  const recado = document.getElementById("recado-selecao");
+  recado.textContent = "salvando…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_auxilio_selecao') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tipo: "{{ tipo }}", ano: {{ ano }}, mes: {{ mes }},
+                            decisoes: decisoes})
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      recado.textContent = d.erro;
+      recado.className = "cartao-dica erro";
+      salvar.disabled = false;
+      return;
+    }
+    location.reload();
+  } catch (e) {
+    recado.textContent = "falhou: " + e;
+    salvar.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A FICHA DA PESSOA — cadastro, observação e o PONTO do mês
+// ---------------------------------------------------------------------------
+async function abrirFichaDaPessoa(cpf, nome) {
+  const modal = document.getElementById("ficha-pessoa-modal");
+  document.getElementById("ficha-pessoa-titulo").textContent = nome || "Pessoa";
+  const corpo = document.getElementById("ficha-pessoa-corpo");
+  corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
+  modal.showModal();
+  try {
+    const r = await fetch("/analisesps/api/folha/pessoa/" + cpf +
+                          "?ano={{ ano }}&mes={{ mes }}");
+    const d = await r.json();
+    if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + d.erro + "</div>"; return; }
+    const p = d.pessoa;
+    let html = '<div class="ficha-pessoa"><div>';
+    const par = (r, v) => '<div class="par"><span>' + r + "</span><span>" +
+                          (v || "—") + "</span></div>";
+    html += par("CPF", p.cpf_bonito) + par("Matrícula", p.matricula) +
+            par("Cargo", p.cargo) +
+            par("Obra", p.obra_codigo + (p.obra_nome ? " — " + p.obra_nome : "")) +
+            par("Fase no cadastro", p.fase) +
+            par("Tipo de contrato", p.tipo_contrato) +
+            par("Categoria alimentação", p.modo_alimentacao) +
+            par("Valor alimentação", p.valor_alimentacao === null ? "" :
+                dinheiro(p.valor_alimentacao)) +
+            par("Categoria transporte", p.modo_transporte) +
+            par("Valor transporte", p.valor_transporte === null ? "" :
+                dinheiro(p.valor_transporte)) +
+            par("Observação do cadastro", p.observacao);
+    if (p.motivo) html += par("Atenção", p.motivo);
+    html += "</div>";
+
+    // O PONTO DO MÊS. Mostra os campos COMO VIERAM — enquanto o nome deles não
+    // for conhecido, interpretar poria o salário na obra errada.
+    html += "<div><h4 style='margin:0 0 6px'>Ponto de " + d.ponto.competencia +
+            "</h4>";
+    if (!d.ponto.tem_carga) {
+      html += '<p class="cartao-dica">O ponto deste mês ainda não foi trazido. ' +
+              'Na aba <b>Ponto</b> tem o botão.</p>';
+    } else if (!d.ponto.dias.length) {
+      html += '<p class="cartao-dica">Esta pessoa não tem dia de ponto neste ' +
+              'mês. Pode ser CPF diferente no Mobponto.</p>';
+    } else {
+      const campos = d.ponto.campos;
+      html += '<div class="ponto-dias"><table class="sps"><thead><tr><th>Dia</th>';
+      campos.forEach(c => { html += "<th>" + c + "</th>"; });
+      html += "</tr></thead><tbody>";
+      d.ponto.dias.forEach(dia => {
+        html += "<tr><td>" + (dia.data || "—") + "</td>";
+        campos.forEach(c => {
+          const v = dia.campos[c];
+          html += "<td>" + (v === undefined || v === null ? "" : v) + "</td>";
+        });
+        html += "</tr>";
+      });
+      html += "</tbody></table></div>";
+    }
+    html += "</div>";
+
+    if (p.link_pipefy) {
+      html += '<p><a class="btn secundario" href="' + p.link_pipefy +
+              '" target="_blank" rel="noopener">Abrir o card no Pipefy</a> ' +
+              '<span class="cartao-dica">é lá que se corrige a categoria e o ' +
+              'valor do auxílio</span></p>';
+    }
+    html += "</div>";
+    corpo.innerHTML = html;
+  } catch (e) {
+    corpo.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
+  }
+}
+</script>
 {% endblock %}

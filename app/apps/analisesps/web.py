@@ -135,32 +135,44 @@ def versao_publicada() -> str:
 # ⚠️ AS QUE AINDA NÃO EXISTEM NÃO APARECEM AQUI. Aba que abre vazia promete o
 # que não há, e faz a pessoa procurar o que não foi feito — o dono acabou de
 # passar por isso procurando telas que eu não tinha escrito.
+# ⚠️ AGRUPADAS POR ASSUNTO, e a ordem é correção do dono em 28/09/2026:
+#
+#   "Não tem lógica nas telas aqui. Tipo assim, tem folha, depois tem ponto,
+#    depois tem colaboradores, depois tem feriado, depois tem alimentação e
+#    transporte (…) Folha da contabilidade, alimentação, ambos são PAGAMENTOS,
+#    né? Então acho que era para estar junto. O que é CADASTRO é para estar
+#    junto. Ou seja, tem que ter uma lógica aí nas sequências dessas telas."
+#
+# Ele está certo, e o erro era meu: a ordem anterior era a ordem em que EU
+# construí as peças, não a ordem em que ele trabalha. Agora são três grupos:
+#
+#   visão   — onde se olha o resultado
+#   paga    — o que vira dinheiro saindo
+#   base    — o que alimenta o cálculo (cadastro, ponto, calendário, rateio)
+#
+# Cada entrada é (chave, rótulo, rota, grupo).
+GRUPOS_DA_FOLHA = [("visao", ""), ("paga", "Pagamentos"),
+                   ("base", "Cadastro e base do cálculo")]
+
 SUBTELAS_DA_FOLHA = [
-    # ⚠️ O PAINEL É A PRIMEIRA, e por um motivo que o dono explicou em
-    # 27/09/2026: é olhando o total por obra que ele decide o rateio do mês. Ou
-    # seja, o painel vem ANTES do rateio na ordem de USO, mesmo tendo sido
-    # pedido depois. Quem chega na área cai nele.
-    ("painel",        "Panorama",      "analisesps.tela_folha_painel"),
-    # Depois a ordem do trabalho: entra o arquivo da contabilidade, confere-se o
-    # cadastro de quem está nele, decide-se o rateio.
-    ("importar",      "Folha da contabilidade",
-     "analisesps.tela_folha_importar"),
-    ("ponto",         "Ponto",         "analisesps.tela_folha_ponto"),
-    ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores"),
-    ("calendario",     "Feriados e férias",
-     "analisesps.tela_folha_calendario"),
-    # ⚠️ AS DUAS VERBAS NUMA SUBTELA SÓ, com uma aba para cada. Ele descreveu a
-    # planilha tendo "uma aba que eu trato alimentação, uma que eu trato
-    # transporte" — mas também reclamou de tela demais no menu. A conta das duas é
-    # 90% a mesma, e a diferença (o transporte não desconta feriado) fica escrita
-    # na tela. Se ele preferir separadas, é uma linha.
-    ("auxilios",      "Alimentação e transporte",
-     "analisesps.tela_folha_auxilio"),
-    ("rateio",        "Rateio das obras", "analisesps.tela_folha_rateio"),
-    # ⚠️ A GERAÇÃO É A ÚLTIMA, e é onde termina o caminho: painel → arquivo da
-    # contabilidade → ponto → cadastro → feriados → auxílios → rateio → PAGAR.
-    # Só do mestre, porque é o passo em que o dinheiro sai.
-    ("pagamento",     "Gerar pagamento", "analisesps.tela_folha_pagamento"),
+    ("painel", "Panorama", "analisesps.tela_folha_painel", "visao"),
+
+    # OS PAGAMENTOS, na ordem do mês: a folha da contabilidade é a maior e a
+    # primeira; os auxílios saem depois; os diaristas fecham.
+    ("importar", "Folha da contabilidade", "analisesps.tela_folha_importar",
+     "paga"),
+    ("auxilios", "Alimentação e transporte", "analisesps.tela_folha_auxilio",
+     "paga"),
+    ("diaristas", "Diaristas", "analisesps.tela_folha_diaristas", "paga"),
+    ("pagamento", "Arquivos gerados", "analisesps.tela_folha_pagamento", "paga"),
+
+    # A BASE. Vem depois porque é o que se arruma quando algo não fecha — mas é
+    # onde tudo começa, e por isso o Panorama aponta para cá.
+    ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores", "base"),
+    ("ponto", "Ponto", "analisesps.tela_folha_ponto", "base"),
+    ("calendario", "Feriados e férias", "analisesps.tela_folha_calendario",
+     "base"),
+    ("rateio", "Rateio das obras", "analisesps.tela_folha_rateio", "base"),
 ]
 
 
@@ -172,6 +184,21 @@ def subtelas_da_folha() -> list:
     então quem opera a folha não vê essa aba."""
     return [s for s in SUBTELAS_DA_FOLHA
             if not (auth.e_so_do_mestre(s[2]) and not auth.e_mestre())]
+
+
+def subtelas_agrupadas() -> list:
+    """As subtelas em grupos, na ordem dos grupos. `[(rótulo, [subtelas])]`.
+
+    ⚠️ A LÓGICA DOS GRUPOS FICA NO PYTHON, não no HTML: a faixa de abas do alto e
+    o menu de tela pequena desenham a MESMA lista, e duas cópias divergiriam no
+    dia em que uma tela nova entrasse em uma só."""
+    alcancadas = subtelas_da_folha()
+    saida = []
+    for chave, rotulo in GRUPOS_DA_FOLHA:
+        doGrupo = [s for s in alcancadas if s[3] == chave]
+        if doGrupo:
+            saida.append((rotulo, doGrupo))
+    return saida
 
 
 # ---------------------------------------------------------------------------
@@ -2318,7 +2345,7 @@ def tela_folha_rateio():
 
     return render_template(
         "analisesps_folha_rateio.html", aba="folha", subaba="rateio",
-        subtelas=subtelas_da_folha(),
+        grupos=subtelas_agrupadas(),
         pronto=pronto, regras=regras, obras=obras, cadastro=cadastro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -2384,7 +2411,7 @@ def tela_folha_painel():
 
     return render_template(
         "analisesps_folha_painel.html", aba="folha", subaba="painel",
-        subtelas=subtelas_da_folha(), panorama=panorama, erro=erro,
+        grupos=subtelas_agrupadas(), panorama=panorama, erro=erro,
         gerencial=gerencial, ano=ano, mes=mes, ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -2423,7 +2450,7 @@ def tela_folha_aberta(folha_id: int):
 
     return render_template(
         "analisesps_folha_aberta.html", aba="folha", subaba="importar",
-        subtelas=subtelas_da_folha(), folha=folha, criticas=criticas, erro=erro,
+        grupos=subtelas_agrupadas(), folha=folha, criticas=criticas, erro=erro,
         filiais=fa.totais_por_filial(folha_id) if folha else [],
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -2451,7 +2478,7 @@ def tela_folha_importar():
 
     return render_template(
         "analisesps_folha_importar.html", aba="folha", subaba="importar",
-        subtelas=subtelas_da_folha(), pronto=pronto, folhas=folhas, erro=erro,
+        grupos=subtelas_agrupadas(), pronto=pronto, folhas=folhas, erro=erro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -2531,12 +2558,33 @@ def tela_folha_ponto():
         logger.exception("Folha: não consegui listar as cargas do ponto")
         erro = str(e)
 
+    # ⚠️ O ESTADO DA CARGA AO ABRIR A TELA. Reclamação dele em 28/09/2026: *"a
+    # gente bota aqui trazer o ponto, mas aí se o ponto veio, se o ponto não veio,
+    # só Deus sabe o que está acontecendo com essa API. Se ela está carregando, se
+    # ela não está."*
+    #
+    # Antes a tela só acompanhava uma carga se VOCÊ tivesse apertado o botão
+    # naquela aba. Quem abria depois — ou de outro computador — não via nada. Agora
+    # o estado vem do banco junto com a página, e a tela já abre acompanhando.
+    from . import tarefas
+    andando = {"rodando": False}
+    try:
+        estado = tarefas.estado()
+        detalhe = estado.get("detalhe") or {}
+        andando = {"rodando": bool(estado.get("rodando")),
+                   "etapa": detalhe.get("etapa") or "",
+                   "progresso": detalhe.get("progresso") or "",
+                   "interrompida": bool(estado.get("interrompida"))}
+    except Exception:  # noqa: BLE001 — é informação de apoio
+        logger.exception("Folha: não consegui ler o andamento")
+
     from .horario import agora
     hoje = agora().date()
     return render_template(
         "analisesps_folha_ponto.html", aba="folha", subaba="ponto",
-        subtelas=subtelas_da_folha(), pronto=pronto, cargas=cargas,
+        grupos=subtelas_agrupadas(), pronto=pronto, cargas=cargas,
         amostra=amostra, erro=erro, configurado=_ponto.configurado(),
+        andando=andando,
         ano_padrao=hoje.year, mes_padrao=hoje.month,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -2627,9 +2675,15 @@ def tela_colaboradores():
     # esconderia metade do que ela existe para mostrar.
     so_saindo = request.args.get("saindo") == "1"
 
+    # ⚠️ O FILTRO POR OBRA é pedido dele em 28/09/2026: *"na parte de
+    # colaboradores, a mesma coisa, tem que ter o filtro (…) tem que ter os filtros
+    # certinho, para a gente poder estar tratando esse pessoal aqui."*
+    obra_filtro = " ".join((request.args.get("obra") or "").split())
+
     cadastro = {"quando": "", "pessoas": 0, "avisos": [], "pronto": False}
     lista: list = []
     saindo = {"com_sinal": 0, "saiu": 0, "afastado": 0}
+    obras_na_lista: list = []
     erro = None
     try:
         cadastro = colaboradores.quando_atualizou()
@@ -2638,6 +2692,13 @@ def tela_colaboradores():
                 procurado,
                 so_ativos=not (incluir_desligados or so_saindo),
                 so_saindo=so_saindo)
+            # O código da obra resolvido de uma vez para a lista inteira.
+            por_nome = colaboradores.codigos_das_obras()
+            for ficha in lista:
+                ficha["obra"] = colaboradores.resolver_obra(ficha, por_nome)
+            obras_na_lista = sorted({f["obra"] for f in lista if f["obra"]})
+            if obra_filtro:
+                lista = [f for f in lista if f["obra"] == obra_filtro]
             saindo = colaboradores.contar_quem_esta_saindo()
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Análise de SPs: não consegui ler o cadastro")
@@ -2645,10 +2706,13 @@ def tela_colaboradores():
 
     return render_template(
         "analisesps_colaboradores.html", aba="folha", subaba="colaboradores",
-        subtelas=subtelas_da_folha(),
+        grupos=subtelas_agrupadas(),
         cadastro=cadastro, colaboradores=lista, procurado=procurado,
         incluir_desligados=incluir_desligados, so_saindo=so_saindo,
-        saindo=saindo, erro=erro,
+        saindo=saindo, erro=erro, obra_filtro=obra_filtro,
+        obras_na_lista=obras_na_lista,
+        filtrando=bool(procurado or obra_filtro or incluir_desligados
+                       or so_saindo),
         teto=200, no_teto=len(lista) >= 200,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -2692,7 +2756,7 @@ def tela_folha_calendario():
     from .horario import agora
     return render_template(
         "analisesps_folha_calendario.html", aba="folha", subaba="calendario",
-        subtelas=subtelas_da_folha(), pronto=pronto, feriados=feriados,
+        grupos=subtelas_agrupadas(), pronto=pronto, feriados=feriados,
         ferias=ferias, obras=obras, procurado=procurado, ano=ano,
         ano_padrao=agora().year, erro=erro,
         pode_operar=auth.pode_operar(),
@@ -2733,23 +2797,138 @@ def tela_folha_auxilio():
         logger.exception("Folha: não consegui calcular o auxílio")
         erro = str(e)
 
-    obras = []
-    try:
-        from . import sincronizacao
-        obras = [o["nome"] for o in
-                 (sincronizacao.referencias_rateio().get("obras") or [])]
-    except Exception:  # noqa: BLE001 — a lista é apoio
-        logger.exception("Folha: não consegui ler a lista de obras")
+    # ⚠️ OS FILTROS SÃO DE PEDIDO DELE, em 28/09/2026: *"era para ter uma na
+    # lateral aqui, filtro (…) eu preciso às vezes tratar só uma obra, é o filtro,
+    # os auxílios de transporte da obra tal, eu vejo um por um."*
+    #
+    # E eles filtram a LISTA MONTADA, não a consulta: os totais do alto continuam
+    # sendo os da verba inteira. Filtrar a conta faria o total mudar conforme o
+    # filtro, e aí ninguém saberia mais qual é o valor do pagamento.
+    procurado = " ".join((request.args.get("q") or "").split())
+    obra_filtro = " ".join((request.args.get("obra") or "").split())
+    so = (request.args.get("so") or "").strip()
+    pessoas = list((resultado or {}).get("pessoas") or [])
+    obras_na_lista = sorted({p["obra"] for p in pessoas if p["obra"]})
+    if obra_filtro:
+        pessoas = [p for p in pessoas if p["obra"] == obra_filtro]
+    if procurado:
+        from .folha_rateio import so_digitos
+        digitos = so_digitos(procurado)
+        alvo = procurado.lower()
+        pessoas = [p for p in pessoas
+                   if alvo in (p["nome"] or "").lower()
+                   or (digitos and digitos in (p["cpf"] or ""))]
+    if so == "problema":
+        pessoas = [p for p in pessoas if not p["pagar"]]
+    elif so == "pagar":
+        pessoas = [p for p in pessoas if p["pagar"]]
 
     return render_template(
         "analisesps_folha_auxilio.html", aba="folha", subaba="auxilios",
-        subtelas=subtelas_da_folha(), pronto=pronto, resultado=resultado,
-        tipo=tipo, ano=ano, mes=mes, obras=obras, erro=erro,
+        grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
+        tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=pessoas,
+        obras_na_lista=obras_na_lista, procurado=procurado,
+        obra_filtro=obra_filtro, so=so,
+        filtrando=bool(procurado or obra_filtro or so),
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
         ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/auxilio/selecao", methods=["POST"])
+@exige_operador
+def folha_auxilio_selecao():
+    """Salva DE UMA VEZ quem vai e quem não vai ser pago.
+
+    ⚠️ SUBSTITUI O "GRAVAR" LINHA A LINHA, por correção do dono em 28/09/2026:
+    *"fica muito dificultoso trabalhar da forma que está aqui, a gente vai
+    gravando um por um (…) o que eu faço é só selecionar quem vai e quem não vai
+    ser pago (…) e eu salvar como um todo, não linha a linha."*"""
+    from . import folha_auxilio as fx
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    tipo = str(dados.get("tipo") or "").strip().lower()
+    try:
+        ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if tipo not in fx.TIPOS or not (1 <= mes <= 12) or not (2000 <= ano <= 2100):
+        return {"ok": False, "erro": "Verba ou competência inválida."}, 400
+
+    try:
+        saida = fx.salvar_selecao(tipo, ano, mes, dados.get("decisoes") or [],
+                                  quem=quem)
+    except fx.ErroDoAuxilio as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou salvar a seleção do auxílio")
+        return {"ok": False, "erro": f"Não consegui salvar: {e}"}, 500
+    return {"ok": True, **saida}
+
+
+@bp.route("/api/folha/pessoa/<cpf>")
+@exige_consulta
+def folha_ficha_da_pessoa(cpf: str):
+    """A ficha de uma pessoa: cadastro, observação e o PONTO do mês.
+
+    Pedido do dono em 28/09/2026: *"eu quero também poder visualizar o ponto do
+    mês daquela pessoa. Eu clicar e visualizar o ponto da pessoa no modal"* — e de
+    lá abrir o card do Pipefy."""
+    from . import colaboradores, ponto
+    from .horario import agora
+
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except (TypeError, ValueError):
+        ano, mes = hoje.year, hoje.month
+
+    ficha = None
+    try:
+        ficha = colaboradores.por_cpf(cpf)
+    except Exception:  # noqa: BLE001 — o modal tem de dizer o que houve
+        logger.exception("Folha: não consegui ler a ficha da pessoa")
+    if not ficha:
+        return {"ok": False, "erro": "Não achei esta pessoa no cadastro."}, 404
+
+    do_ponto = {"tem_carga": False, "dias": [], "campos": []}
+    try:
+        do_ponto = ponto.dias_da_pessoa(cpf, ano, mes)
+    except Exception:  # noqa: BLE001 — o ponto é um bloco do modal, não o modal
+        logger.exception("Folha: não consegui ler o ponto da pessoa")
+
+    return {"ok": True, "pessoa": {
+        "cpf": ficha.get("cpf", ""), "cpf_bonito": ficha.get("cpf_bonito", ""),
+        "nome": ficha.get("nome", ""), "cargo": ficha.get("cargo", ""),
+        "matricula": ficha.get("matricula", ""),
+        "obra_codigo": colaboradores.resolver_obra(
+            ficha, colaboradores.codigos_das_obras()),
+        "obra_nome": ficha.get("obra_cadastro", ""),
+        "fase": ficha.get("fase", ""),
+        "tipo_contrato": ficha.get("tipo_contrato", ""),
+        "convencao": ficha.get("convencao", ""),
+        "modo_alimentacao": ficha.get("modo_alimentacao", ""),
+        "modo_transporte": ficha.get("modo_transporte", ""),
+        "valor_alimentacao": (None if ficha.get("valor_alimentacao") is None
+                              else float(ficha["valor_alimentacao"])),
+        "valor_transporte": (None if ficha.get("valor_transporte") is None
+                             else float(ficha["valor_transporte"])),
+        "observacao": ficha.get("observacao_auxilio", ""),
+        "situacao": ficha.get("situacao", ""), "motivo": ficha.get("motivo", ""),
+        "link_pipefy": ficha.get("link_pipefy", ""),
+    }, "ponto": {
+        "tem_carga": bool(do_ponto.get("tem_carga")),
+        "competencia": f"{int(mes):02d}/{int(ano)}",
+        "campos": do_ponto.get("campos") or [],
+        "dias": [{"data": (d["data"].isoformat() if d.get("data") else ""),
+                  "matricula": d.get("matricula", ""),
+                  "campos": d.get("campos") or {}}
+                 for d in (do_ponto.get("dias") or [])],
+    }}
 
 
 @bp.route("/api/folha/auxilio/ajuste", methods=["POST"])
@@ -2798,6 +2977,58 @@ def folha_auxilio_ajustar():
     return {"ok": True}
 
 
+@bp.route("/folha/diaristas")
+@exige_consulta
+def tela_folha_diaristas():
+    """Quem tem dia de DIÁRIA no mês, e quantos.
+
+    *"E cadê os diaristas? Não entrou diaristas."* (dono, 28/09/2026). A regra
+    existia e estava testada; faltava ligá-la ao ponto e ao cadastro."""
+    from . import folha_diaristas as fd
+    from .horario import agora
+
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except (TypeError, ValueError):
+        ano, mes = hoje.year, hoje.month
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        ano, mes = hoje.year, hoje.month
+
+    levantamento = {"tem_ponto": False, "pessoas": []}
+    erro = None
+    try:
+        levantamento = fd.levantar(ano, mes)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui levantar os diaristas")
+        erro = str(e)
+
+    procurado = " ".join((request.args.get("q") or "").split())
+    obra_filtro = " ".join((request.args.get("obra") or "").split())
+    pessoas = list(levantamento.get("pessoas") or [])
+    obras_na_lista = sorted({p["obra"] for p in pessoas if p["obra"]})
+    if obra_filtro:
+        pessoas = [p for p in pessoas if p["obra"] == obra_filtro]
+    if procurado:
+        from .folha_rateio import so_digitos
+        digitos = so_digitos(procurado)
+        alvo = procurado.lower()
+        pessoas = [p for p in pessoas
+                   if alvo in (p["nome"] or "").lower()
+                   or (digitos and digitos in (p["cpf"] or ""))]
+
+    return render_template(
+        "analisesps_folha_diaristas.html", aba="folha", subaba="diaristas",
+        grupos=subtelas_agrupadas(), levantamento=levantamento, erro=erro,
+        pessoas=pessoas, obras_na_lista=obras_na_lista, procurado=procurado,
+        obra_filtro=obra_filtro, filtrando=bool(procurado or obra_filtro),
+        ano=ano, mes=mes, ano_padrao=hoje.year,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
 @bp.route("/folha/pagamento")
 @exige_operador
 def tela_folha_pagamento():
@@ -2832,7 +3063,7 @@ def tela_folha_pagamento():
 
     return render_template(
         "analisesps_folha_pagamento.html", aba="folha", subaba="pagamento",
-        subtelas=subtelas_da_folha(), pronto=pronto, log=registro,
+        grupos=subtelas_agrupadas(), pronto=pronto, log=registro,
         fechados=fechados, ano=ano, mes=mes, ano_padrao=hoje.year, erro=erro,
         destinos=[(d, fg.ROTULO_DO_DESTINO[d]) for d in fg.DESTINOS],
         rotulo_da_verba=fg.rotulo_da_verba,

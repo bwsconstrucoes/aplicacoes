@@ -5932,14 +5932,49 @@ def test_gravar_ferias_devolve_a_frase_do_erro_para_a_tela(app, monkeypatch):
     assert "se cruzam" in resposta.get_json()["erro"]
 
 
-def test_a_ordem_das_subtelas_com_o_calendario(app):
-    """A ordem é a do trabalho, e o calendário fica junto do cadastro: são os dois
-    lançamentos que alimentam o cálculo."""
+def test_as_subtelas_ficam_AGRUPADAS_POR_ASSUNTO(app):
+    """⚠️ REORDENADAS EM 28/09/2026, por correção do dono: *"não tem lógica nas
+    telas aqui (…) folha da contabilidade, alimentação, ambos são PAGAMENTOS. Então
+    acho que era para estar junto. O que é CADASTRO é para estar junto."*
+
+    A ordem anterior era a ordem em que EU construí as peças, não a ordem em que
+    ele trabalha."""
     from app.apps.analisesps import web
 
     assert [s[0] for s in web.SUBTELAS_DA_FOLHA] == [
-        "painel", "importar", "ponto", "colaboradores", "calendario",
-        "auxilios", "rateio", "pagamento"]
+        "painel",
+        "importar", "auxilios", "diaristas", "pagamento",     # pagamentos
+        "colaboradores", "ponto", "calendario", "rateio"]      # base
+
+    # E cada uma declara a que grupo pertence — é o que a faixa de abas desenha.
+    assert {s[3] for s in web.SUBTELAS_DA_FOLHA} == {"visao", "paga", "base"}
+
+
+def test_a_faixa_de_abas_mostra_o_nome_dos_grupos(app, monkeypatch):
+    """O rótulo do grupo é o que faz a lógica ficar visível na tela."""
+    from app.apps.analisesps import folha_arquivo as fa, folha_pagamento as fpg
+
+    monkeypatch.setattr(fa, "panorama", lambda *a, **k: {"pronto": False})
+    monkeypatch.setattr(fpg, "gerencial", lambda *a, **k: {"pronto": False})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/painel").get_data(as_text=True)
+
+    assert "Pagamentos" in html
+    assert "Cadastro e base do cálculo" in html
+    assert "grupo-abas" in html
+
+
+def test_os_grupos_escondem_o_que_a_pessoa_nao_alcanca(app):
+    """Aba que responde 404 é pior do que aba nenhuma — e grupo que fica vazio não
+    deve aparecer com o rótulo sozinho."""
+    from app.apps.analisesps import web
+
+    with app.test_request_context():
+        with app.test_client() as cliente:
+            cliente.post("/analisesps/entrar", data={"senha": SENHA_CONSULTA})
+            grupos = web.subtelas_agrupadas()
+    assert all(telas for _rotulo, telas in grupos), (
+        "nenhum grupo pode vir vazio")
 
 
 
@@ -5955,18 +5990,23 @@ def _auxilio_calculado(**mudancas):
     from decimal import Decimal as D
 
     pessoa = {
-        "cpf": "99713349334", "nome": "GERLANIO GOMES LIMA",
+        "cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+        "nome": "GERLANIO GOMES LIMA", "matricula": "4821",
         "cargo": "ENCARREGADO", "link_pipefy": "https://app.pipefy.com/open-cards/9",
         "modo": "Segunda à Sexta", "valor_unitario": D("15.00"),
-        "obra": "CREPEOLINDA", "obra_ajustada": False,
+        # A obra é o CÓDIGO (correção de 28/09/2026); o nome vem ao lado, porque é
+        # por ele que o feriado municipal é cadastrado.
+        "obra": "1042", "obra_nome": "CREPEOLINDA",
         "dias_base": 22, "feriados": 1, "ferias": 0, "dias_ajuste": 0,
         "dias": 21, "valor": D("315.00"), "observacao": "",
-        "ajuste_pagar": None, "motivos": [], "pagar": True, "impossivel": False,
+        "observacao_cadastro": "", "ajuste_pagar": None, "motivos": [],
+        "pagar": True, "pagar_calculado": True, "impossivel": False,
     }
     saida = {
         "tipo": "alimentacao", "rotulo": "Auxílio alimentação",
         "ano": 2026, "mes": 9, "competencia": "09/2026",
         "inicio": dt.date(2026, 9, 1), "fim": dt.date(2026, 9, 30),
+        "pagamento_em": "10/2026",
         "pessoas": [pessoa], "quantos": 1, "quantos_a_pagar": 1,
         "total": D("315.00"), "com_problema": [],
         "por_obra": [{"obra": "CREPEOLINDA", "pessoas": 1, "total": D("315.00")}],
@@ -6066,22 +6106,218 @@ def test_quem_precisa_de_mao_aparece_marcado(app, monkeypatch):
     assert "Precisam de olho" in html
 
 
-def test_o_ajuste_tem_TRES_estados_e_nao_dois(app, monkeypatch):
-    """⚠️ "segue o cálculo" não é "não pagar". Se a tela mostrasse os dois iguais,
-    o padrão do sistema pareceria decisão dele."""
+def test_a_selecao_e_CAIXINHA_e_salva_de_uma_vez(app, monkeypatch):
+    """⚠️ REFEITO EM 28/09/2026. O desenho anterior tinha um seletor de três
+    estados ("segue o cálculo" / pagar / não pagar) e um botão Gravar POR LINHA.
+    Ele reprovou os dois:
+
+      "Que diabo é segue cálculo?"
+      "Fica muito dificultoso, a gente vai gravando um por um (…) o que eu faço é
+       só selecionar quem vai e quem não vai ser pago (…) e eu salvar como um
+       todo, não linha a linha."
+    """
     _preparar_auxilio(monkeypatch)
     html = _como_mestre(app).get(
         "/analisesps/folha/auxilios").get_data(as_text=True)
-    assert "segue o cálculo" in html
-    assert ">pagar<" in html and ">não pagar<" in html
+
+    assert "segue o cálculo" not in html, "o jargão saiu"
+    assert "btn-gravar-ajuste" not in html, "não há mais Gravar por linha"
+    assert 'class="marca-pessoa"' in html, "uma caixinha por pessoa"
+    assert 'id="btn-salvar-selecao"' in html, "e UM salvar, no fim"
+    assert 'id="marcar-todos"' in html
 
 
-def test_o_nome_leva_ao_card_do_pipefy(app, monkeypatch):
-    """É no card que ele corrige o valor do auxílio — o cadastro é espelho."""
+def test_quem_atende_os_criterios_JA_VEM_MARCADO(app, monkeypatch):
+    """*"A princípio tudo que está atendendo os critérios se paga. Ela exibe tudo
+    que tem coerência, já faz o cálculo, já deixa tudo pronto."*"""
     _preparar_auxilio(monkeypatch)
     html = _como_mestre(app).get(
         "/analisesps/folha/auxilios").get_data(as_text=True)
-    assert "https://app.pipefy.com/open-cards/9" in html
+    # A caixinha de quem o cálculo paga vem marcada; a de quem ele não paga, não.
+    # Comparar a CONTAGEM é o que amarra as duas coisas sem depender do espaçamento
+    # do HTML gerado.
+    marcadas = html.count("checked")
+    assert marcadas >= 1, "quem atende os critérios já vem marcado"
+
+    recusada = dict(_auxilio_calculado()["pessoas"][0])
+    recusada.update({"pagar": False, "pagar_calculado": False})
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(pessoas=[recusada]))
+    outra = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert outra.count("checked") < marcadas, (
+        "quem o cálculo não paga vem DESmarcado")
+
+
+def test_quem_NAO_TEM_VALOR_no_cadastro_nao_da_para_marcar(app, monkeypatch):
+    """Marcar pagaria ZERO em silêncio, que é pior do que não pagar."""
+    from decimal import Decimal as D
+
+    problema = dict(_auxilio_calculado()["pessoas"][0])
+    problema.update({"pagar": False, "pagar_calculado": False,
+                     "impossivel": True, "valor": D("0.00"), "dias": 0,
+                     "valor_unitario": None, "dias_base": 0,
+                     "motivos": ["o cadastro não diz o valor deste auxílio."]})
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(
+        pessoas=[problema], quantos=1, quantos_a_pagar=0, total=D("0.00"),
+        com_problema=[problema], por_obra=[]))
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "disabled" in html
+    assert "não diz o valor deste auxílio" in html
+
+
+def test_o_CPF_sai_PONTUADO(app, monkeypatch):
+    """*"O CPF não está com a pontuação, isso facilita visualmente."*"""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "997.133.493-34" in html
+
+
+def test_a_CATEGORIA_aparece_na_tabela(app, monkeypatch):
+    """*"Aqui não diz a modalidade mês, mensal, se o na sexta."* É a coluna
+    "Categoria Auxílio Alimentação" do cadastro, e é ela que decide a conta."""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "Categoria" in html
+    assert "Segunda à Sexta" in html
+
+
+def test_a_obra_e_o_CODIGO_e_nao_da_para_digitar(app, monkeypatch):
+    """*"Em obra tem que colocar o código da obra e não a obra por extenso"* e
+    *"eu não sei por que você colocou um campo editável."*"""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert ">1042<" in html, "o código"
+    assert "campo-obra" not in html, "o campo de digitar obra saiu"
+    assert "obras-do-rateio" not in html, "e a lista de nomes também"
+
+
+def test_a_tela_diz_que_o_auxilio_e_pago_no_mes_SEGUINTE(app, monkeypatch):
+    """*"O auxílio transporte, alimentação, a gente sempre paga o mês seguinte."*
+    Sem isso, quem abre a tela em outubro procura outubro e acha o mês errado."""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "10/2026" in html
+    assert "pago em" in html
+
+
+def test_a_tela_do_auxilio_TEM_FILTRO_na_lateral(app, monkeypatch):
+    """*"Era para ter uma na lateral aqui, filtro (…) eu preciso às vezes tratar
+    só uma obra."*"""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert 'name="obra"' in html and 'name="q"' in html
+    assert "sem-filtros" not in html, "a lateral de filtros precisa existir"
+
+
+def test_o_filtro_por_obra_recorta_a_lista_mas_nao_o_TOTAL(app, monkeypatch):
+    """⚠️ Filtrar a CONTA faria o total mudar conforme o filtro, e aí ninguém
+    saberia mais qual é o valor do pagamento."""
+    from decimal import Decimal as D
+
+    outra = dict(_auxilio_calculado()["pessoas"][0])
+    outra.update({"cpf": "03513441363", "cpf_bonito": "035.134.413-63",
+                  "nome": "ANA", "obra": "2050", "valor": D("100.00")})
+    base = _auxilio_calculado()
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(
+        pessoas=base["pessoas"] + [outra], quantos=2, quantos_a_pagar=2,
+        total=D("415.00")))
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios?obra=2050").get_data(as_text=True)
+    assert "ANA" in html
+    assert "GERLANIO GOMES LIMA" not in html, "a lista foi recortada"
+    assert "415,00" in html, "o total continua sendo o da verba inteira"
+
+
+def test_clicar_na_pessoa_abre_a_FICHA_com_o_ponto(app, monkeypatch):
+    """*"Eu quero também poder visualizar o ponto do mês daquela pessoa. Eu clicar
+    e visualizar o ponto da pessoa no modal."*"""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert 'id="ficha-pessoa-modal"' in html
+    assert "abrirFichaDaPessoa" in html
+    assert 'class="clicavel' in html
+
+
+def test_a_ficha_da_pessoa_traz_cadastro_ponto_e_o_card(app, monkeypatch):
+    """O card do Pipefy passou para DENTRO do modal: é de lá que ele corrige a
+    categoria e o valor."""
+    from app.apps.analisesps import colaboradores as col, ponto
+
+    monkeypatch.setattr(col, "por_cpf", lambda *a, **k: {
+        "cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+        "nome": "GERLANIO", "cargo": "ENCARREGADO", "matricula": "4821",
+        "obra_cadastro": "CREPEOLINDA", "obra_codigo": "1042",
+        "fase": "Colaboradores Ativos", "tipo_contrato": "CTPS",
+        "convencao": "", "modo_alimentacao": "Segunda à Sexta",
+        "modo_transporte": "Cartão", "valor_alimentacao": 15,
+        "valor_transporte": None, "observacao_auxilio": "entrou dia 10",
+        "situacao": "ativo", "motivo": "",
+        "link_pipefy": "https://app.pipefy.com/open-cards/9"})
+    monkeypatch.setattr(col, "codigos_das_obras", lambda: {})
+    monkeypatch.setattr(ponto, "dias_da_pessoa", lambda *a, **k: {
+        "tem_carga": True, "campos": ["obra_entrada", "presenca"],
+        "dias": [{"data": __import__("datetime").date(2026, 9, 1),
+                  "matricula": "4821",
+                  "campos": {"obra_entrada": "CREPEOLINDA", "presenca": "OK"}}]})
+
+    corpo = _como_mestre(app).get(
+        "/analisesps/api/folha/pessoa/99713349334?ano=2026&mes=9").get_json()
+
+    assert corpo["ok"] is True
+    assert corpo["pessoa"]["observacao"] == "entrou dia 10"
+    assert corpo["pessoa"]["obra_codigo"] == "1042"
+    assert corpo["pessoa"]["link_pipefy"].endswith("/9")
+    assert corpo["ponto"]["tem_carga"] is True
+    assert corpo["ponto"]["campos"] == ["obra_entrada", "presenca"]
+    assert corpo["ponto"]["dias"][0]["data"] == "2026-09-01"
+
+
+def test_a_ficha_de_quem_nao_esta_no_cadastro_responde_404(app, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "por_cpf", lambda *a, **k: None)
+    resposta = _como_mestre(app).get("/analisesps/api/folha/pessoa/99713349334")
+    assert resposta.status_code == 404
+    assert resposta.get_json()["ok"] is False
+
+
+def test_salvar_a_selecao_manda_a_lista_inteira(app, monkeypatch):
+    from app.apps.analisesps import folha_auxilio as fx
+    visto = {}
+
+    monkeypatch.setattr(fx, "_pronto", lambda: True)
+    monkeypatch.setattr(fx, "salvar_selecao",
+                        lambda tipo, ano, mes, decisoes, quem="": visto.update(
+                            {"tipo": tipo, "decisoes": decisoes}) or
+                        {"gravados": 1, "limpos": 0, "ignorados": []})
+
+    corpo = _como_mestre(app).post(
+        "/analisesps/api/folha/auxilio/selecao",
+        json={"tipo": "alimentacao", "ano": 2026, "mes": 9,
+              "decisoes": [{"cpf": "99713349334", "pagar": False},
+                           {"cpf": "03513441363", "pagar": True}]}).get_json()
+
+    assert corpo["ok"] is True and corpo["gravados"] == 1
+    assert len(visto["decisoes"]) == 2
+
+
+def test_salvar_a_selecao_recusa_competencia_invalida(app, monkeypatch):
+    from app.apps.analisesps import folha_auxilio as fx
+
+    monkeypatch.setattr(fx, "salvar_selecao", lambda *a, **k: {})
+    resposta = _como_mestre(app).post(
+        "/analisesps/api/folha/auxilio/selecao",
+        json={"tipo": "alimentacao", "ano": 2026, "mes": 99})
+    assert resposta.status_code == 400
 
 
 def test_a_tela_do_auxilio_sem_a_migracao_AVISA(app, monkeypatch):
@@ -6378,17 +6614,17 @@ def test_gerar_devolve_a_frase_do_erro_para_a_tela(app, monkeypatch):
     assert "apropriação fechada" in resposta.get_json()["erro"]
 
 
-def test_a_obra_so_e_gravada_quando_MUDA(app, monkeypatch):
-    """⚠️ Mandar a obra que já vinha do cadastro faria a linha dizer "obra trocada
-    por você" sem ele ter trocado nada — e o relatório de auditoria mentiria sobre
-    quem decidiu o quê."""
+def test_nao_existe_mais_obra_editavel_na_tela_de_auxilio(app, monkeypatch):
+    """⚠️ A obra editável saiu em 28/09/2026: *"essa informação vem do cadastro."*
+    Obra digitada aqui divergiria do cadastro e do rateio, e ninguém saberia qual
+    das duas manda. Este teste existe para ela não voltar."""
     _preparar_auxilio(monkeypatch)
     html = _como_mestre(app).get(
         "/analisesps/folha/auxilios").get_data(as_text=True)
 
-    assert 'data-cadastro="CREPEOLINDA"' in html, (
-        "a obra do cadastro vai no atributo, para o JS comparar")
-    assert "function obraSeMudou" in html
+    assert "campo-obra" not in html
+    assert "obraSeMudou" not in html
+    assert "obra trocada por você" not in html
 
 
 # ---------------------------------------------------------------------------
@@ -6481,3 +6717,164 @@ def test_o_painel_nao_cai_quando_o_gerencial_estoura(app, monkeypatch):
     resposta = _como_mestre(app).get("/analisesps/folha/painel")
     assert resposta.status_code == 200
     assert "Panorama da folha" in resposta.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# A TELA DE DIARISTAS — 28/09/2026
+#
+# *"E cadê os diaristas? Não entrou diaristas."*
+# ---------------------------------------------------------------------------
+def _preparar_diaristas(monkeypatch, levantamento=None):
+    from app.apps.analisesps import folha_diaristas as fd
+
+    monkeypatch.setattr(fd, "levantar", lambda *a, **k: levantamento
+                        if levantamento is not None
+                        else {"tem_ponto": False, "pessoas": []})
+
+
+def test_a_tela_de_diaristas_existe_e_explica_a_regra_POR_DIA(app, monkeypatch):
+    """⚠️ A regra é contraintuitiva e precisa estar escrita: a MESMA pessoa tem
+    dias de diária e dias de CTPS no mês em que foi registrada."""
+    import datetime as dt
+
+    _preparar_diaristas(monkeypatch, {
+        "tem_ponto": True, "carga": {"id": 1}, "quantos": 1,
+        "dias_de_diaria": 7, "com_pendencia": [], "sem_cadastro": [],
+        "falta_para_pagar": ["o VALOR da diária de cada pessoa"],
+        "pessoas": [{"cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+                     "nome": "GERLANIO", "cargo": "SERVENTE", "obra": "1042",
+                     "link_pipefy": "", "dias_de_diaria": 7,
+                     "dias_de_ctps": 8, "dias_sem_decidir": 0,
+                     "data_inicio": dt.date(2026, 9, 1),
+                     "data_admissao": dt.date(2026, 9, 8),
+                     "tipo_contrato": "CTPS", "contagem": {}}]})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/diaristas").get_data(as_text=True)
+
+    assert "dia por dia" in html
+    assert "GERLANIO" in html
+    assert ">7<" in html and ">8<" in html, "os dias de diária e os de CTPS"
+    assert "997.133.493-34" in html, "o CPF pontuado"
+    assert "1042" in html, "a obra pelo código"
+
+
+def test_a_tela_de_diaristas_diz_o_que_falta_para_virar_DINHEIRO(app, monkeypatch):
+    """⚠️ Mostrar "R$ 0,00" onde falta o valor da diária seria pior: zero tem cara
+    de resposta."""
+    _preparar_diaristas(monkeypatch, {
+        "tem_ponto": True, "carga": {"id": 1}, "quantos": 0,
+        "dias_de_diaria": 0, "com_pendencia": [], "sem_cadastro": [],
+        "pessoas": [],
+        "falta_para_pagar": ["o VALOR da diária de cada pessoa",
+                             "o nome dos campos de cada dia do ponto"]})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/diaristas").get_data(as_text=True)
+    assert "o VALOR ainda não sai daqui" in html
+    assert "o nome dos campos de cada dia do ponto" in html
+
+
+def test_sem_o_ponto_a_tela_de_diaristas_diz_o_que_fazer(app, monkeypatch):
+    _preparar_diaristas(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/diaristas").get_data(as_text=True)
+    assert "ainda não foi trazido" in html
+    assert "Trazer o ponto" in html
+
+
+def test_quem_bate_ponto_e_NAO_esta_no_cadastro_aparece(app, monkeypatch):
+    """⚠️ Esconder faria alguém trabalhar e não receber, sem nada na tela."""
+    _preparar_diaristas(monkeypatch, {
+        "tem_ponto": True, "carga": {"id": 1}, "quantos": 0,
+        "dias_de_diaria": 0, "com_pendencia": [], "pessoas": [],
+        "falta_para_pagar": [],
+        "sem_cadastro": [{"cpf": "11144477735", "nome": "JOAO DO PONTO",
+                          "dias": 12}]})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/diaristas").get_data(as_text=True)
+    assert "JOAO DO PONTO" in html
+    assert "não estão no cadastro" in html
+
+
+# ---------------------------------------------------------------------------
+# O PONTO: dizer se está carregando — 28/09/2026
+#
+# *"Se o ponto veio, se o ponto não veio, só Deus sabe o que está acontecendo com
+#  essa API. Se ela está carregando, se ela não está."*
+# ---------------------------------------------------------------------------
+def test_a_tela_do_ponto_DIZ_que_esta_carregando_ao_abrir(app, monkeypatch):
+    """Antes a tela só acompanhava se VOCÊ tivesse apertado o botão naquela aba.
+    Quem abria depois — ou de outro computador — não via nada."""
+    from app.apps.analisesps import ponto as _ponto, tarefas
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
+    monkeypatch.setattr(tarefas, "estado", lambda: {
+        "rodando": True, "detalhe": {"etapa": "ponto",
+                                     "progresso": "página 3 de 12"}})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/ponto").get_data(as_text=True)
+    assert "Está trazendo dado agora" in html
+    assert "página 3 de 12" in html
+    assert "acompanharSozinho" in html
+
+
+def test_a_tela_do_ponto_avisa_quando_a_carga_foi_INTERROMPIDA(app, monkeypatch):
+    """Publicar reinicia o serviço e mata carga longa — e a tela tem de dizer o
+    que fazer, não deixar a pessoa achando que o mês veio."""
+    from app.apps.analisesps import ponto as _ponto, tarefas
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
+    monkeypatch.setattr(tarefas, "estado", lambda: {
+        "rodando": False, "interrompida": {"etapa": "ponto"}, "detalhe": {}})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/ponto").get_data(as_text=True)
+    assert "interrompida no meio" in html
+    assert "substitui" in html
+
+
+# ---------------------------------------------------------------------------
+# COLABORADORES: filtro, e quem saiu fora da lista — 28/09/2026
+# ---------------------------------------------------------------------------
+def test_a_tela_de_colaboradores_TEM_FILTRO_na_lateral(app, monkeypatch):
+    """*"Na parte de colaboradores, a mesma coisa, tem que ter o filtro."*"""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", lambda: {
+        "pronto": True, "quando": "", "pessoas": 3, "avisos": []})
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    monkeypatch.setattr(col, "codigos_das_obras", lambda: {})
+    monkeypatch.setattr(col, "contar_quem_esta_saindo",
+                        lambda *a, **k: {"com_sinal": 0, "saiu": 0,
+                                         "afastado": 0})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+    assert 'name="obra"' in html and 'name="q"' in html
+    assert "sem-filtros" not in html
+    assert "Para que serve esta tela" in html, (
+        "ele disse que ninguém entende para que ela serve")
+
+
+def test_a_tela_de_colaboradores_diz_que_quem_saiu_ficou_FORA(app, monkeypatch):
+    """*"O que é colaborador desligado não deveria nem estar sendo exibido."* Mas
+    esconder e não dizer seria o erro que ele corrigiu em 26/09."""
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", lambda: {
+        "pronto": True, "quando": "", "pessoas": 3, "avisos": []})
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: [])
+    monkeypatch.setattr(col, "codigos_das_obras", lambda: {})
+    monkeypatch.setattr(col, "contar_quem_esta_saindo",
+                        lambda *a, **k: {"com_sinal": 5, "saiu": 3,
+                                         "afastado": 2})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+    assert "estão fora da lista abaixo" in html
+    assert "incluir todos" in html

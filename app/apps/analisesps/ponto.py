@@ -393,3 +393,48 @@ def apagar(carga_id: int, quem: str = "") -> bool:
         logger.info("Análise de SPs: carga do ponto %s apagada por %s.",
                     carga_id, quem or "(sem nome)")
     return apagou
+
+
+def dias_da_pessoa(cpf: str, ano: int, mes: int) -> dict:
+    """O ponto de UMA pessoa no mês: o que veio, dia por dia.
+
+    Pedido do dono em 28/09/2026: *"eu quero também poder visualizar o ponto do
+    mês daquela pessoa. Eu clicar e visualizar o ponto da pessoa no modal."*
+
+    ⚠️ DEVOLVE OS CAMPOS COMO VIERAM, sem interpretar. Enquanto o nome dos campos
+    de cada dia não for conhecido (é o que trava o total por obra), inventar
+    significado para eles poria o salário na obra errada — e a tela mostrando o
+    dado cru é justamente o que permite descobrir o nome certo."""
+    import json
+
+    from .db import consultar
+    from .folha_rateio import so_digitos
+
+    digitos = so_digitos(cpf)
+    carga = carga_do_mes(ano, mes)
+    if not _pronto() or not carga or len(digitos) != 11:
+        return {"tem_carga": bool(carga), "dias": [], "campos": [],
+                "carga": carga}
+
+    linhas = consultar(
+        "SELECT data, matricula, campos, obra, presenca, falta "
+        "  FROM analisesps.ponto_dia "
+        " WHERE carga_id = ? AND cpf = ? ORDER BY data NULLS LAST",
+        (carga["id"], digitos))
+
+    dias, nomes = [], []
+    for data, matricula, bruto, obra, presenca, falta in linhas:
+        try:
+            campos = json.loads(bruto) if bruto else {}
+        except Exception:  # noqa: BLE001 — JSON torto não pode derrubar o modal
+            campos = {}
+        if isinstance(campos, dict):
+            for chave in campos:
+                if chave not in nomes:
+                    nomes.append(chave)
+        else:
+            campos = {}
+        dias.append({"data": data, "matricula": matricula or "",
+                     "obra": obra or "", "presenca": presenca or "",
+                     "falta": falta or "", "campos": campos})
+    return {"tem_carga": True, "carga": carga, "dias": dias, "campos": nomes}

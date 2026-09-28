@@ -2251,3 +2251,91 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
 }
 .sugestao:hover, .sugestao:focus { background: #EEF4FF; }
 .sugestao-vazia { padding: 7px 10px; font-size: 12.5px; color: var(--cinza); }
+
+/* --------------------------------------------------------------------------
+   A BARRA DE COMPETÊNCIA DA FOLHA — 28/09/2026
+
+   ⚠️ CONSERTO DE UM ERRO MEU, e vale escrever qual foi. O dono viu a tela de
+   alimentação e transporte e disse: *"está aqui desalinhado competência, aí está
+   uns botões gigantescos da largura da tela toda, o mês, o ano, aí tem o ver e
+   ainda está desalinhado (...) está feio."*
+
+   A causa: eu pus os campos direto dentro de `.barra-acoes`, que é a barra das
+   Solicitações — e ela é uma GRADE de três colunas (`1fr auto 1fr`), desenhada
+   para "grupo à esquerda / total no centro / grupo à direita". Cada campo solto
+   virou uma célula dessa grade e esticou até a largura da tela.
+
+   Esta barra é outra coisa: uma fileira compacta, alinhada pela base, com os
+   campos do tamanho do conteúdo deles. Nada de grade.
+   -------------------------------------------------------------------------- */
+.barra-mes {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 10px 14px; background: var(--branco);
+  border: 1px solid var(--borda); border-radius: var(--raio);
+}
+.barra-mes .campo-mes { display: flex; flex-direction: column; gap: 3px; }
+.barra-mes .campo-mes > span {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
+  font-weight: 700; color: var(--tinta-suave);
+}
+/* Largura pelo conteúdo: "setembro" e "2026" não precisam de meia tela. */
+.barra-mes select { width: auto; min-width: 118px; }
+.barra-mes select.ano { min-width: 92px; }
+.barra-mes .barra-mes-sobra { margin-left: auto; display: flex; gap: 8px;
+  align-items: flex-end; flex-wrap: wrap; }
+.barra-mes .barra-mes-dica { font-size: 12.5px; color: var(--tinta-suave); }
+
+@media (max-width: 720px) {
+  .barra-mes .barra-mes-sobra { margin-left: 0; width: 100%; }
+}
+
+/* --------------------------------------------------------------------------
+   A TABELA DE SELEÇÃO DOS AUXÍLIOS — 28/09/2026
+
+   Pedido do dono, e ele muda o desenho: *"a princípio tudo que está atendendo os
+   critérios se paga (...) o que eu faço é só selecionar quem vai e quem não vai
+   ser pago (...) e eu salvar como um todo, não linha a linha."*
+
+   Então a primeira coluna é uma caixinha, a linha inteira é clicável, e quem está
+   desmarcado fica visivelmente apagado — é o estado que decide dinheiro.
+   -------------------------------------------------------------------------- */
+.sps td.marca, .sps th.marca { width: 34px; text-align: center; padding: 6px 4px; }
+.sps tr.nao-vai > td:not(.marca) { opacity: .45; }
+.sps tr.nao-vai > td.valor-final { text-decoration: line-through; }
+.sps tr.clicavel { cursor: pointer; }
+.sps tr.clicavel:hover { background: var(--fundo-hover, #F5F8FD); }
+
+/* A barra que fica colada embaixo enquanto há mudança não salva. Ela existe
+   porque "salvar como um todo" precisa de um lugar fixo para o botão — e porque
+   sair da tela com seleção não salva é o jeito de perder o trabalho inteiro. */
+.barra-salvar {
+  position: sticky; bottom: 0; z-index: 30;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 14px 0 0; padding: 12px 14px;
+  background: var(--branco); border: 1px solid var(--azul-claro);
+  border-radius: var(--raio); box-shadow: var(--sombra-forte);
+}
+.barra-salvar .conta-selecao { font-weight: 700; }
+.barra-salvar .conta-selecao .total-selecao {
+  font-family: var(--fonte-dados); font-size: 20px; margin-left: 6px;
+}
+.barra-salvar .sobra { margin-left: auto; display: flex; gap: 8px; }
+
+/* O modal da pessoa: a observação do cadastro, o ponto do mês e o link do card. */
+.ficha-pessoa { display: grid; gap: 14px; }
+.ficha-pessoa .par { display: grid; grid-template-columns: 170px 1fr; gap: 8px;
+  font-size: 13.5px; padding: 4px 0; border-bottom: 1px solid var(--borda); }
+.ficha-pessoa .par > span:first-child { color: var(--tinta-suave); }
+.ficha-pessoa .ponto-dias { max-height: 320px; overflow: auto; }
+
+/* O rótulo do grupo dentro da faixa de abas da folha ("Pagamentos", "Cadastro e
+   base do cálculo"). Ele não é clicável: só separa os assuntos, que foi o que o
+   dono pediu em 28/09/2026 ao dizer que a sequência não tinha lógica. */
+.abas-folha .grupo-abas {
+  align-self: center; margin: 0 2px 0 10px; padding: 0 0 0 10px;
+  border-left: 1px solid var(--borda);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; color: var(--tinta-suave); white-space: nowrap;
+}
+.abas-folha .grupo-abas:first-child { margin-left: 0; padding-left: 0;
+  border-left: 0; }

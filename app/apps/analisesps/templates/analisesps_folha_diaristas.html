@@ -1,0 +1,197 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Diaristas — Análise de SPs{% endblock %}
+
+{% block filtros %}
+{% if levantamento.pessoas %}
+<form method="get" action="{{ url_for('analisesps.tela_folha_diaristas') }}">
+  <input type="hidden" name="ano" value="{{ ano }}">
+  <input type="hidden" name="mes" value="{{ mes }}">
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Quem</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <input type="search" name="q" value="{{ procurado }}" autocomplete="off"
+             placeholder="nome ou CPF…" aria-label="Procurar pessoa">
+    </div>
+  </div>
+  <div class="filtro {% if obra_filtro %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Obra</span>
+      {% if obra_filtro %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="obra" aria-label="Obra">
+        <option value="">todas as obras</option>
+        {% for o in obras_na_lista %}
+          <option value="{{ o }}" {% if obra_filtro == o %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div style="display:flex; gap:6px; margin-top:10px">
+    <button class="btn secundario" type="submit">Filtrar</button>
+    {% if filtrando %}
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.tela_folha_diaristas', ano=ano, mes=mes) }}"
+         >Limpar</a>
+    {% endif %}
+  </div>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Diaristas</h2>
+
+<form class="barra-mes" method="get"
+      action="{{ url_for('analisesps.tela_folha_diaristas') }}">
+  <label class="campo-mes"><span>Mês</span>
+    <select name="mes" aria-label="Mês">
+      {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
+                             (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
+                             (9,'setembro'),(10,'outubro'),(11,'novembro'),
+                             (12,'dezembro')] %}
+        <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="campo-mes"><span>Ano</span>
+    <select name="ano" class="ano" aria-label="Ano">
+      {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
+        <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn secundario" type="submit">Ver</button>
+</form>
+
+{# ⚠️ A REGRA É POR DIA, e isso fica escrito porque é contraintuitivo: a MESMA
+   pessoa pode ter dias de diária e dias de CTPS no mesmo mês. #}
+<p class="cartao-dica" style="margin:0 0 14px">
+  O vínculo é decidido <b>dia por dia</b>, comparando o dia de ponto com a
+  <b>Data de Início</b> e a <b>Data de Admissão</b> do cadastro: os dias entre
+  começar a trabalhar e ser registrada são <b>diária</b>; do registro em diante,
+  <b>CTPS</b> (e aí vêm na folha da contabilidade). Quem foi admitido no meio do
+  mês aparece nas duas colunas — é o caso que mais dá confusão.
+</p>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui levantar.</b> {{ erro }}</div>
+{% endif %}
+
+{% if not levantamento.tem_ponto %}
+  <div class="aviso atencao">
+    <b>O ponto deste mês ainda não foi trazido.</b> Sem ele não há dia nenhum para
+    classificar. Na aba <b>Ponto</b> tem o botão "Trazer o ponto".
+  </div>
+{% else %}
+
+<div class="kpis">
+  <div class="kpi">
+    <span class="kpi-rotulo">Pessoas com dia de diária</span>
+    <b class="kpi-valor">{{ levantamento.quantos }}</b>
+  </div>
+  <div class="kpi">
+    <span class="kpi-rotulo">Dias de diária no mês</span>
+    <b class="kpi-valor">{{ levantamento.dias_de_diaria }}</b>
+  </div>
+  <div class="kpi {{ 'ambar' if levantamento.com_pendencia }}">
+    <span class="kpi-rotulo">Com data faltando</span>
+    <b class="kpi-valor">{{ levantamento.com_pendencia|length }}</b>
+  </div>
+  <div class="kpi {{ 'ambar' if levantamento.sem_cadastro }}">
+    <span class="kpi-rotulo">Bateram ponto e não estão no cadastro</span>
+    <b class="kpi-valor">{{ levantamento.sem_cadastro|length }}</b>
+  </div>
+</div>
+
+{# ⚠️ O QUE FALTA PARA VIRAR DINHEIRO, dito antes da tabela. Mostrar "R$ 0,00"
+   onde falta o valor da diária seria pior: zero tem cara de resposta. #}
+<div class="aviso atencao" style="margin-top:14px">
+  <b>Os dias já estão certos; o VALOR ainda não sai daqui.</b> Falta:
+  <ul style="margin:6px 0 0 18px">
+  {% for o_que in levantamento.falta_para_pagar %}
+    <li>{{ o_que }}</li>
+  {% endfor %}
+  </ul>
+</div>
+
+<h3 style="margin-top:20px">
+  Pessoa por pessoa
+  <small>{% if filtrando %}{{ pessoas|length }} de {{ levantamento.quantos }} ·
+    filtrado{% else %}{{ pessoas|length }}{% endif %} ·
+    quem tem data faltando vem primeiro</small>
+</h3>
+<table class="sps">
+  <thead>
+    <tr><th>Quem</th><th>CPF</th><th>Obra</th><th>Contrato</th>
+      <th>Início</th><th>Admissão</th>
+      <th class="num">Dias de diária</th><th class="num">Dias de CTPS</th>
+      <th class="num">Sem decidir</th></tr>
+  </thead>
+  <tbody>
+  {% for p in pessoas %}
+    <tr class="{{ 'linha-alerta' if p.dias_sem_decidir }}">
+      <td>
+        {% if p.link_pipefy %}
+          <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
+             >{{ p.nome or '—' }}</a>
+        {% else %}{{ p.nome or '—' }}{% endif %}
+        {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
+      </td>
+      <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
+      <td>{{ p.obra or '—' }}</td>
+      <td>{{ p.tipo_contrato or '—' }}</td>
+      <td>{{ p.data_inicio|data_br if p.data_inicio else '—' }}</td>
+      <td>{{ p.data_admissao|data_br if p.data_admissao else '—' }}</td>
+      <td class="num"><b>{{ p.dias_de_diaria }}</b></td>
+      <td class="num">{{ p.dias_de_ctps or '' }}</td>
+      <td class="num">
+        {% if p.dias_sem_decidir %}
+          <span class="selo saindo">{{ p.dias_sem_decidir }}</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="9" class="cartao-dica">
+      {% if filtrando %}Ninguém com esse filtro.
+      {% else %}Nenhum dia de diária neste mês — todos os dias de ponto são CTPS,
+        e vêm na folha da contabilidade.{% endif %}
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if levantamento.sem_cadastro %}
+{# ⚠️ NÃO É LISTA ESCONDIDA. Quem bate ponto e não está no cadastro é o caso que
+   faz alguém trabalhar e não receber. #}
+<h3 style="margin-top:24px">
+  Bateram ponto e não estão no cadastro
+  <small>{{ levantamento.sem_cadastro|length }} — sem cadastro não há como pagar</small>
+</h3>
+<table class="sps">
+  <thead><tr><th>CPF no ponto</th><th>Nome no ponto</th>
+    <th class="num">Dias</th></tr></thead>
+  <tbody>
+  {% for p in levantamento.sem_cadastro %}
+    <tr class="linha-alerta">
+      <td class="cpf">{{ p.cpf }}</td><td>{{ p.nome or '—' }}</td>
+      <td class="num">{{ p.dias }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="cartao-dica">
+  Pode ser gente nova que ainda não entrou no cadastro, ou CPF digitado diferente
+  no Mobponto. Aperte <b>Atualizar cadastro</b> em
+  <a href="{{ url_for('analisesps.tela_colaboradores') }}">Colaboradores</a> e
+  confira.
+</p>
+{% endif %}
+
+{% endif %}
+{% endblock %}

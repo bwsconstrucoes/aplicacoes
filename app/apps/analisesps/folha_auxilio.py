@@ -128,7 +128,8 @@ def _valor(bruto) -> Decimal | None:
 
 
 def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
-                    ajuste: dict | None = None) -> dict:
+                    ajuste: dict | None = None,
+                    codigo_da_obra: str = "") -> dict:
     """A conta de uma pessoa. Devolve tudo o que a tela mostra, passo a passo.
 
     ⚠️ DEVOLVE O CAMINHO INTEIRO, não só o valor: base, feriados, férias, ajuste e
@@ -143,13 +144,24 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
 
     saida = {
         "cpf": ficha.get("cpf", ""),
+        "cpf_bonito": ficha.get("cpf_bonito", ""),
         "nome": ficha.get("nome", ""),
         "cargo": ficha.get("cargo", ""),
+        "matricula": ficha.get("matricula", ""),
         "link_pipefy": ficha.get("link_pipefy", ""),
+        # A coluna BQ da planilha: é onde o DP escreve o porquê de uma exceção, e
+        # é o que ele quer ver clicando na pessoa.
+        "observacao_cadastro": ficha.get("observacao_auxilio", ""),
         "modo": modo,
         "valor_unitario": valor_unitario,
-        "obra": (ajuste.get("obra") or ficha.get("obra_cadastro") or ""),
-        "obra_ajustada": bool(ajuste.get("obra")),
+        # ⚠️ A OBRA É O CÓDIGO, e vem do CADASTRO — não é campo de digitar.
+        # Correção do dono em 28/09/2026: *"em obra tem que colocar o código da
+        # obra e não a obra por extenso"* e *"eu não sei por que você colocou um
+        # campo editável; essa informação vem do cadastro."* Ele está certo: obra
+        # digitada na tela de auxílio divergiria do cadastro e do rateio, e
+        # ninguém saberia qual das duas manda.
+        "obra": codigo_da_obra or "",
+        "obra_nome": ficha.get("obra_cadastro") or "",
         "dias_base": 0, "feriados": 0, "ferias": 0,
         "dias_ajuste": int(ajuste.get("dias") or 0),
         "dias": 0, "valor": Decimal("0.00"),
@@ -236,7 +248,11 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     # OS DESCONTOS, com a MESMA régua da modalidade.
     if e_alimentacao:
         saida["feriados"] = folha_calendario.dias_de_feriado_no_periodo(
-            inicio, fim, saida["obra"], sabado=sabado, sexta=sexta)
+            # ⚠️ PELO NOME, não pelo código: o feriado por obra é cadastrado na
+            # tela de Feriados, que oferece a lista de obras POR NOME. Passar o
+            # código aqui faria o feriado municipal deixar de descontar, em
+            # silêncio. Se um dia o feriado passar a guardar código, muda aqui.
+            inicio, fim, saida["obra_nome"], sabado=sabado, sexta=sexta)
     saida["ferias"] = folha_calendario.dias_de_ferias_no_periodo(
         saida["cpf"], inicio, fim, sabado=sabado, sexta=sexta)
 
@@ -254,7 +270,15 @@ def _decidir(saida: dict, ajuste: dict) -> dict:
 
     ⚠️ NULO É DIFERENTE DE FALSO. Nulo quer dizer "não mexi" — vale o cálculo.
     Falso é "eu decidi não pagar". Confundir os dois faria o padrão virar
-    decisão."""
+    decisão.
+
+    ⚠️ E GUARDA AS DUAS DECISÕES: `pagar_calculado` é o que a conta diz sozinha,
+    `pagar` é o que vale depois do ajuste. Parece redundante e não é — é o que
+    permite à tela saber se uma caixinha desmarcada é decisão dele ou resultado da
+    conta, e é o que permite salvar a seleção guardando SÓ as exceções. Sem isso
+    eu estava adivinhando a diferença comparando textos de motivo, que quebra no
+    dia em que alguém reescreve uma frase."""
+    saida["pagar_calculado"] = bool(saida["pagar"])
     if ajuste.get("pagar") is False:
         saida["pagar"] = False
         saida["motivos"].append("você desmarcou esta pessoa.")
@@ -280,6 +304,9 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
     ate = fim
     fichas = colaboradores.buscar(so_ativos=False, teto=5000, ate=ate)
     ajustes = ajustes_do_mes(tipo, ano, mes)
+    # Uma consulta só para todas as obras: resolver pessoa por pessoa faria uma
+    # ida ao banco por linha, e a lista tem centenas.
+    obras_por_nome = colaboradores.codigos_das_obras()
 
     pessoas = []
     for ficha in fichas:
@@ -292,8 +319,9 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
                 else ficha.get("modo_transporte"))
         if tem is None and not modo:
             continue
-        pessoas.append(calcular_pessoa(tipo, ficha, inicio, fim,
-                                       ajustes.get(ficha["cpf"])))
+        pessoas.append(calcular_pessoa(
+            tipo, ficha, inicio, fim, ajustes.get(ficha["cpf"]),
+            codigo_da_obra=colaboradores.resolver_obra(ficha, obras_por_nome)))
 
     # ⚠️ QUEM PRECISA DE MÃO VEM PRIMEIRO. `False` ordena antes de `True`, então a
     # chave é `pagar` direto — na primeira versão eu escrevi `not pagar`, e a
@@ -315,6 +343,12 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         "rotulo": ROTULO_DO_TIPO[tipo],
         "ano": int(ano), "mes": int(mes),
         "competencia": f"{int(mes):02d}/{int(ano)}",
+        # ⚠️ O AUXÍLIO É PAGO NO MÊS SEGUINTE AO TRABALHADO. Dito por ele em
+        # 28/09/2026: *"o auxílio transporte, alimentação, a gente sempre paga o
+        # mês seguinte."* A tela mostra as duas coisas — a competência (os dias
+        # que foram contados) e o mês em que o dinheiro sai. Sem isso, quem abre a
+        # tela em outubro procura outubro e encontra o mês errado.
+        "pagamento_em": mes_do_pagamento(ano, mes),
         "inicio": inicio, "fim": fim,
         "pessoas": pessoas,
         "quantos": len(pessoas),
@@ -402,3 +436,83 @@ def limpar_ajuste(tipo: str, ano: int, mes: int, cpf: str) -> bool:
         cur.close()
         conn.commit()
     return apagou
+
+
+def mes_do_pagamento(ano: int, mes: int) -> str:
+    """O mês em que a competência é paga: o SEGUINTE ao trabalhado.
+
+    *"O auxílio transporte, alimentação, a gente sempre paga o mês seguinte."*
+    (dono, 28/09/2026). Devolve "10/2026" para a competência 09/2026."""
+    ano, mes = int(ano), int(mes)
+    return f"01/{ano + 1}" if mes == 12 else f"{mes + 1:02d}/{ano}"
+
+
+# ---------------------------------------------------------------------------
+# A SELEÇÃO EM BLOCO — como ele trabalha de verdade
+# ---------------------------------------------------------------------------
+# Correção do dono em 28/09/2026, e ela muda o desenho da tela:
+#
+#   "Fica muito dificultoso trabalhar da forma que está aqui, a gente vai gravando
+#    um por um. (…) A princípio tudo que está atendendo os critérios que a gente
+#    definiu se paga. Ela exibe tudo que tem coerência, já faz o cálculo, já deixa
+#    tudo pronto. O que eu faço é só selecionar quem vai e quem não vai ser pago.
+#    (…) e eu salvar como um todo, não linha a linha."
+#
+# ⚠️ O QUE SE GUARDA É A EXCEÇÃO, NÃO A LISTA. Se eu gravasse uma linha por
+# pessoa, o padrão ("paga") viraria uma decisão registrada — e no mês seguinte
+# ninguém saberia mais o que ele decidiu e o que o sistema calculou. Guardando só
+# quem ele DESMARCOU (e quem ele mandou pagar apesar do cálculo), a tabela tem
+# três linhas em vez de quinhentas, e cada linha é uma decisão de verdade.
+# ---------------------------------------------------------------------------
+def salvar_selecao(tipo: str, ano: int, mes: int, decisoes, quem: str = "") -> dict:
+    """Guarda de uma vez quem vai e quem não vai ser pago.
+
+    `decisoes`: `[{"cpf": "...", "pagar": True/False}]` — o estado das caixinhas
+    como a tela as mostra. Devolve o que mudou, para a tela poder dizer."""
+    if tipo not in TIPOS:
+        raise ErroDoAuxilio(f'não conheço a verba "{tipo}".')
+    if not _pronto():
+        raise ErroDoAuxilio(
+            'a tabela dos ajustes ainda não existe. Aperte "Aplicar '
+            'atualizações do banco" em Configurações.')
+
+    calculado = calcular(tipo, ano, mes)
+    por_cpf = {p["cpf"]: p for p in calculado["pessoas"]}
+    ajustes = ajustes_do_mes(tipo, ano, mes)
+
+    gravados, limpos, ignorados = 0, 0, []
+    for item in (decisoes or []):
+        cpf = str((item or {}).get("cpf") or "")
+        from .folha_rateio import so_digitos
+        cpf = so_digitos(cpf)
+        pessoa = por_cpf.get(cpf)
+        if not pessoa:
+            ignorados.append(cpf)
+            continue
+        querido = bool((item or {}).get("pagar"))
+
+        # O que o CÁLCULO diria sem ajuste nenhum — vem pronto de
+        # `calcular_pessoa`, e é a comparação que decide se isto é exceção.
+        ajuste_atual = ajustes.get(cpf) or {}
+        do_calculo = bool(pessoa.get("pagar_calculado"))
+
+        if querido == do_calculo:
+            # Bate com o cálculo: não é exceção. Tira o ajuste se havia um.
+            if ajuste_atual:
+                limpar_ajuste(tipo, ano, mes, cpf)
+                limpos += 1
+            continue
+        # ⚠️ MARCAR NÃO RESOLVE FALTA DE DADO NO CADASTRO: pagaria zero em
+        # silêncio. A pessoa fica de fora e a tela diz por quê.
+        if querido and pessoa.get("impossivel"):
+            ignorados.append(cpf)
+            continue
+        gravar_ajuste(tipo, ano, mes, cpf, pagar=querido, quem=quem)
+        gravados += 1
+
+    logger.info(
+        "Folha: seleção do auxílio %s de %02d/%d salva por %s — %d exceção(ões) "
+        "gravada(s), %d voltaram ao cálculo, %d ignorada(s).",
+        tipo, int(mes), int(ano), quem or "(sem nome)", gravados, limpos,
+        len(ignorados))
+    return {"gravados": gravados, "limpos": limpos, "ignorados": ignorados}

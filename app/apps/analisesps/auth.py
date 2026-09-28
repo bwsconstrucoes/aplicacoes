@@ -452,6 +452,11 @@ TELA_DA_ROTA = {
     "analisesps.tela_folha_calendario": ("folha",),
     "analisesps.tela_folha_auxilio": ("folha",),
     "analisesps.folha_auxilio_ajustar": ("folha",),
+    "analisesps.folha_auxilio_selecao": ("folha",),
+    # A ficha da pessoa no modal: cadastro + ponto do mês. É da folha, e mostra
+    # dado pessoal — quem não alcança a folha não alcança isto.
+    "analisesps.folha_ficha_da_pessoa": ("folha",),
+    "analisesps.tela_folha_diaristas": ("folha",),
     # A geração do arquivo mora na mesma tela, e além disto é só do mestre
     # (SO_DO_MESTRE): a tela decide quem entra, o mestre decide quem paga.
     "analisesps.tela_folha_pagamento": ("folha",),

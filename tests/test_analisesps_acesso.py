@@ -123,7 +123,11 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/calendario"),
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.
     ("GET",  "/analisesps/folha/auxilios"),
+    ("GET",  "/analisesps/folha/diaristas"),
     ("POST", "/analisesps/api/folha/auxilio/ajuste"),
+    ("POST", "/analisesps/api/folha/auxilio/selecao"),
+    # Mostra cadastro e ponto de uma pessoa: dado pessoal.
+    ("GET",  "/analisesps/api/folha/pessoa/99713349334"),
     # ⚠️ A GERAÇÃO DO PAGAMENTO É A ROTA MAIS SENSÍVEL DA ÁREA: daqui sai o arquivo
     # que vai para o portal do banco. Só do mestre.
     ("GET",  "/analisesps/folha/pagamento"),
@@ -255,6 +259,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
         caminho = (str(regra).replace("<sp_id>", "123")
                    .replace("<int:folha_id>", "123")
                    .replace("<path:filename>", "x")
+                   .replace("<cpf>", "99713349334")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)

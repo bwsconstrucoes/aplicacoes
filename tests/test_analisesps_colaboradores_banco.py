@@ -51,12 +51,14 @@ def banco_cadastro(banco, monkeypatch):
 def pessoa(cpf, nome, **extra):
     from app.apps.analisesps import colaboradores as col
     registro = {c: "" for c in col.CAMPOS}
-    registro.update({
-        "cpf": cpf, "nome": nome,
-        "valor_alimentacao": None, "valor_transporte": None,
-        "valor_gratificacao": None,
-        "aviso_previo": None, "ultimo_dia": None, "data_saida": None,
-    })
+    registro.update({"cpf": cpf, "nome": nome})
+    # ⚠️ TODA COLUNA DE DATA E DE NÚMERO VAZIA É `None`, e a lista vem do módulo —
+    # não escrita à mão. Em 28/09/2026 entraram duas colunas de data novas
+    # (`data_inicio`, `data_admissao`) e este ajudante, que preenchia tudo com "",
+    # fez QUINZE testes falharem com "invalid input syntax for type date". Derivar
+    # de `col.DATAS` e `col.NUMEROS` faz o ajudante acompanhar o módulo sozinho.
+    for campo in col.DATAS + col.NUMEROS:
+        registro[campo] = None
     registro.update(extra)
     return registro
 
@@ -225,12 +227,18 @@ CABECALHO_DE_VERDADE = (
      "Data de Nascimento", "Nome Completo"]                    # A..E
     + [f"coluna que não interessa {i}" for i in range(6, 23)]  # F..V
     + ["Celular", "não interessa", "não interessa", "Cargo [ ]"]  # W,X,Y,Z
-    + ["Valor Auxílio Alimentação", "Modalidade Auxílio Alimentação",
-       "Valor Auxílio Transporte", "Modalidade Auxílio Transporte"]  # AA..AD
+    # ⚠️ "CATEGORIA", e não "Modalidade". Confirmado pelo dono em 28/09/2026,
+    # olhando a planilha (colunas BM..BQ) — e foi o nome errado que fazia a tela
+    # de auxílio não calcular NADA: sem a modalidade, toda pessoa caía em "o
+    # cadastro não diz a modalidade", com zero dias e zero valor.
+    + ["Valor Auxílio Alimentação", "Categoria Auxílio Alimentação",
+       "Valor Auxílio Transporte", "Categoria Auxílio Transporte"]  # AA..AD
     + ["Tipo", "Tipo de Contrato", "Fase Atual", "Convenção",
        "Objeto Obra [ ]", "Valor da Gratificação", "Recebe Parcela Única",
        "Paga por BeeVale", "Data do Aviso Prévio", "Último dia Trabalhado",
-       "Data de Saída"]                                        # AE..AO
+       "Data de Saída",
+       # O código da obra e a observação (coluna BQ), que entraram em 28/09/2026.
+       "Código da Obra", "Observação"]                          # AE..AQ
 )
 
 
@@ -522,22 +530,37 @@ def test_planilha_de_muitas_linhas_e_lida_em_MAIS_DE_UM_bloco(
 # ⚠️ São WHERE puro, que o dublê da suíte ignora. Errado aqui, o alerta não
 # acende — e o alerta é o que impede pagar quem saiu.
 # ---------------------------------------------------------------------------
-def test_quem_tem_a_FASE_desligado_sem_data_CONTINUA_na_lista(banco_cadastro):
-    """⚠️ É o caso que mais importa ver, e o mais fácil de esconder por engano:
-    cadastro pela metade é por onde se paga quem já saiu.
+def test_quem_tem_a_FASE_desligado_sem_data_sai_da_lista_mas_CONTINUA_MARCADO(
+        banco_cadastro):
+    """⚠️ ESTE TESTE AFIRMAVA O CONTRÁRIO ATÉ 28/09/2026, e as duas versões são
+    instrução dele. Vale registrar as duas, porque a diferença é fina:
 
-    Só a DATA de saída tira alguém da lista do dia a dia. A fase sozinha marca,
-    não esconde. Esconder o caso inconsistente é o erro que o dono corrigiu em
-    26/09/2026: "não pode ficar oculto, escondido"."""
+    26/09 — *"não pode ficar oculto, escondido"*, sobre o cadastro pela metade
+    (fase dizendo desligado, sem data de saída). Eu passei a esconder só quem tinha
+    DATA de saída, e o caso inconsistente continuava na lista, marcado.
+
+    28/09, usando a tela — *"o que é colaborador desligado não deveria nem estar
+    sendo exibido. Ele está desligado, ele não está trabalhando."*
+
+    A leitura que atende as duas: a lista do dia a dia é de quem está TRABALHANDO,
+    e quem está desligado sai dela; mas ele não desaparece do sistema — a conta
+    aparece no alto da tela e uma caixinha o traz de volta. O que 26/09 proibia era
+    esconder E NÃO DIZER."""
     from app.apps.analisesps import colaboradores as col
     gravar(pessoa("99713349334", "SO A FASE DIZ",
                   fase="Colaboradores Desligados"))
 
-    lista = col.buscar()
-    assert [c["nome"] for c in lista] == ["SO A FASE DIZ"]
-    assert lista[0]["situacao"] == col.SITUACAO_SAIU
-    assert lista[0]["desacordo"], "o desacordo tem de vir escrito"
-    assert lista[0]["alerta"] is True
+    assert col.buscar() == [], "fora da lista do dia a dia"
+
+    # Mas continua alcançável, e com a marca e o desacordo escritos — que é o que
+    # impede pagar quem já saiu.
+    todos = col.buscar(so_ativos=False)
+    assert [c["nome"] for c in todos] == ["SO A FASE DIZ"]
+    assert todos[0]["situacao"] == col.SITUACAO_SAIU
+    assert todos[0]["desacordo"], "o desacordo tem de vir escrito"
+    assert todos[0]["alerta"] is True
+    # E a CONTA que a tela mostra no alto, para que esconder não seja calado.
+    assert col.contar_quem_esta_saindo()["com_sinal"] == 1
 
 
 def test_o_filtro_de_quem_esta_saindo_traz_todos_os_sinais(banco_cadastro):
@@ -771,3 +794,64 @@ def test_a_aba_do_de_para_fora_do_ar_nao_derruba_a_carga(banco_cadastro, monkeyp
     resultado = col.atualizar()
     assert resultado["pessoas"] == 1, "o cadastro entrou"
     assert any("ID Fortes" in a for a in resultado["avisos"])
+
+
+def test_quem_esta_DESLIGADO_pela_fase_sai_da_lista_do_dia_a_dia(banco_cadastro):
+    """⚠️ ESTA REGRA MUDOU EM 28/09/2026, e as duas versões são dele.
+
+    26/09, sobre quem tem a FASE dizendo desligado mas sem data de saída: *"não
+    pode ficar oculto, escondido."* → eu escondia só quem tinha data de saída.
+
+    28/09, vendo a tela: *"o que é colaborador desligado não deveria nem estar
+    sendo exibido. Ele está desligado, ele não está trabalhando."*
+
+    A leitura que concilia: a lista do dia a dia é de quem está trabalhando, e quem
+    está desligado sai dela — mas continua contado e a um clique. Esconder E não
+    dizer é que seria o erro de 26/09."""
+    from app.apps.analisesps import colaboradores as col
+
+    gravar(
+        pessoa("99713349334", "ATIVO", fase="Colaboradores Ativos"),
+        pessoa("03513441363", "DESLIGADO SEM DATA",
+               fase="Colaboradores Desligados"),
+        pessoa("11144477735", "AFASTADO", fase="Colaboradores Afastados"),
+    )
+
+    nomes = [c["nome"] for c in col.buscar(so_ativos=True)]
+    assert nomes == ["ATIVO"], (
+        "a lista do dia a dia é de quem está trabalhando")
+
+    # Mas eles continuam existindo, e uma consulta sem o filtro os traz.
+    todos = {c["nome"] for c in col.buscar(so_ativos=False)}
+    assert "DESLIGADO SEM DATA" in todos and "AFASTADO" in todos
+
+    # E a CONTA existe, que é o que a tela usa para dizer "estão fora da lista".
+    contagem = col.contar_quem_esta_saindo()
+    assert contagem["com_sinal"] >= 2
+
+
+def test_o_CODIGO_da_obra_e_a_observacao_entram_no_cadastro(banco_cadastro):
+    """As três colunas que ele ditou em 28/09/2026 (BM, BO, BQ) mais o código da
+    obra — sem elas a tela de auxílio não calculava nada e agrupava por nome."""
+    from app.apps.analisesps import colaboradores as col
+
+    gravar(pessoa("99713349334", "GERLANIO", fase="Colaboradores Ativos",
+                  obra_codigo="1042", obra_cadastro="CREPEOLINDA",
+                  observacao_auxilio="entrou dia 10",
+                  modo_alimentacao="Segunda à Sexta"))
+
+    ficha = col.por_cpf("99713349334")
+    assert ficha["obra_codigo"] == "1042"
+    assert ficha["observacao_auxilio"] == "entrou dia 10"
+    assert ficha["modo_alimentacao"] == "Segunda à Sexta"
+    # E o CPF sai pontuado para a tela, com o banco continuando só com dígitos.
+    assert ficha["cpf_bonito"] == "997.133.493-34"
+    assert ficha["cpf"] == "99713349334"
+
+    # O código vem do cadastro; quando ele falta, dá para chegar nele pelo NOME.
+    assert col.resolver_obra(ficha) == "1042"
+    sem_codigo = dict(ficha, obra_codigo="")
+    assert col.resolver_obra(sem_codigo, {"CREPEOLINDA": "77"}) == "77"
+    assert col.resolver_obra(sem_codigo, {}) == "", (
+        "sem como saber, fica vazio — que é uma pergunta aberta, e é melhor do "
+        "que mostrar o nome por extenso no lugar do código")

@@ -119,12 +119,26 @@ COLUNAS = {
     "tipo_contrato": ["Tipo de Contrato"],
     "fase": ["Fase Atual"],
     "convencao": ["Convenção", "Convencao"],
-    "obra_cadastro": ["Objeto Obra [ ]", "Objeto Obra", "Código da Obra"],
+    # ⚠️ A OBRA SÃO DUAS COLUNAS, e confundi-las foi correção do dono em
+    # 28/09/2026: *"em obra tem que colocar o CÓDIGO da obra e não a obra por
+    # extenso. Todo mundo tem código da obra."* O extenso serve para ler; o
+    # CÓDIGO é o que casa com a conta de pagamento (aba "C. Diários") e com o
+    # rateio. As telas mostram o código.
+    "obra_cadastro": ["Objeto Obra [ ]", "Objeto Obra"],
+    "obra_codigo": ["Código da Obra", "Codigo da Obra", "Cód. Obra",
+                    "Cod Obra", "Código Obra", "Codigo Obra"],
     "valor_gratificacao": ["Valor da Gratificação", "Valor da Gratificacao"],
     "parcela_unica": ["Recebe Parcela Única", "Recebe Parcela Unica"],
     "aviso_previo": ["Data do Aviso Prévio", "Data do Aviso Previo"],
     "ultimo_dia": ["Último dia Trabalhado", "Ultimo dia Trabalhado"],
     "data_saida": ["Data de Saída", "Data de Saida"],
+    # ⚠️ AS DUAS DATAS QUE DECIDEM DIARISTA × CTPS, por dia (ver `folha_vinculo`).
+    # Sem elas todo dia de ponto cai em "falta data para decidir", e a tela de
+    # diaristas não tem o que mostrar. Os nomes são os mais prováveis — a fórmula
+    # original chama as colunas de "Data de Início" (U) e "Data de Admissão" (V).
+    "data_inicio": ["Data de Início", "Data de Inicio", "Início", "Data Início"],
+    "data_admissao": ["Data de Admissão", "Data de Admissao", "Admissão",
+                      "Data Admissão"],
 }
 
 # ---------------------------------------------------------------------------
@@ -141,19 +155,42 @@ COLUNAS = {
 # ela AVISA com o cabeçalho de verdade em vez de gravar em branco calada —
 # valor de auxílio em branco vira pagamento a menos, e ninguém repara num
 # pagamento a menos tão rápido quanto num a mais.
+# ⚠️ CONFIRMADOS PELO DONO EM 28/09/2026 — e o nome era CATEGORIA, não
+# "Modalidade". Palavras dele, olhando a planilha:
+#
+#   "Existe aqui na coluna BM, o nome da coluna é Categoria Auxílio Alimentação.
+#    Aí na coluna seguinte tem Valor Auxílio Alimentação. E o transporte, mesma
+#    coisa: na coluna BO tem Categoria Auxílio Transporte, e na seguinte tem
+#    Valor Auxílio Transporte. E ainda tem a coluna BQ, que é observação."
+#
+# ⚠️ FOI ISSO QUE FEZ A TELA NÃO CALCULAR NADA. Eu havia chutado "Modalidade
+# Auxílio Alimentação"; a coluna não existia, o campo ficava vazio, e cada pessoa
+# caía em "o cadastro não diz a modalidade" — zero dias, zero valor, tudo com
+# cara de ajuste pendente. Os nomes chutados ficam ao final da lista como
+# alternativa, mas o PRIMEIRO é o que a planilha usa.
 COLUNAS_DOS_AUXILIOS = {
-    "modo_alimentacao": ["Modalidade Auxílio Alimentação",
-                         "Modalidade Alimentação", "Auxílio Alimentação",
-                         "Tipo Auxílio Alimentação", "Alimentação"],
+    "modo_alimentacao": ["Categoria Auxílio Alimentação",
+                         "Categoria Auxilio Alimentacao",
+                         "Categoria Alimentação",
+                         "Modalidade Auxílio Alimentação",
+                         "Modalidade Alimentação"],
     "valor_alimentacao": ["Valor Auxílio Alimentação",
+                          "Valor Auxilio Alimentacao",
                           "Valor do Auxílio Alimentação",
                           "Valor Alimentação"],
-    "modo_transporte": ["Modalidade Auxílio Transporte",
-                        "Modalidade Transporte", "Auxílio Transporte",
-                        "Tipo Auxílio Transporte", "Transporte"],
+    "modo_transporte": ["Categoria Auxílio Transporte",
+                        "Categoria Auxilio Transporte",
+                        "Categoria Transporte",
+                        "Modalidade Auxílio Transporte",
+                        "Modalidade Transporte"],
     "valor_transporte": ["Valor Auxílio Transporte",
+                         "Valor Auxilio Transporte",
                          "Valor do Auxílio Transporte",
                          "Valor Transporte"],
+    # A coluna BQ. Vale para os dois auxílios — é onde o DP escreve o porquê de
+    # uma exceção, e é o que ele quer ver clicando na pessoa.
+    "observacao_auxilio": ["Observação", "Observacao", "Obs",
+                           "Observação Auxílio", "Observações"],
     "paga_por_beevale": ["Paga por BeeVale", "BeeVale", "Pagamento BeeVale"],
 }
 
@@ -179,10 +216,15 @@ COLUNAS_DOS_AUXILIOS = {
 COLUNAS_QUE_AVISAM = frozenset({
     "card_pipefy", "tipo_contrato", "fase", "data_saida",
     "valor_gratificacao", "parcela_unica",
+    # ⚠️ O CÓDIGO DA OBRA AVISA porque sem ele a tela de auxílio não consegue
+    # agrupar por obra, e é por obra que ele confere e decide o rateio. Ficar
+    # em branco calado foi o que ele viu em 28/09/2026 ("aqui tem vários vazios").
+    "obra_codigo",
 } | {"modo_alimentacao", "valor_alimentacao",
      "modo_transporte", "valor_transporte", "paga_por_beevale"})
 
-DATAS = ("aviso_previo", "ultimo_dia", "data_saida")
+DATAS = ("aviso_previo", "ultimo_dia", "data_saida",
+         "data_inicio", "data_admissao")
 NUMEROS = ("valor_alimentacao", "valor_transporte", "valor_gratificacao")
 
 # Os campos que a tela pede sem parar, na ordem em que a tabela os guarda.
@@ -193,10 +235,12 @@ NUMEROS = ("valor_alimentacao", "valor_transporte", "valor_gratificacao")
 # `atualizar_ids_fortes`, e LIDO junto (ver `CAMPOS_LIDOS`).
 CAMPOS = ["cpf", "nome", "card_pipefy", "matricula", "celular", "cargo",
           "tipo", "tipo_contrato", "fase", "convencao", "obra_cadastro",
+          "obra_codigo", "observacao_auxilio",
           "valor_alimentacao", "modo_alimentacao",
           "valor_transporte", "modo_transporte", "valor_gratificacao",
           "parcela_unica", "paga_por_beevale",
-          "aviso_previo", "ultimo_dia", "data_saida"]
+          "aviso_previo", "ultimo_dia", "data_saida",
+          "data_inicio", "data_admissao"]
 
 # O que as telas leem: os campos gravados pela aba principal MAIS o ID Fortes.
 CAMPOS_LIDOS = CAMPOS + ["id_fortes"]
@@ -799,8 +843,14 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
 
 
 def _dicionario(linha, ate=None) -> dict:
+    from .folha_rateio import cpf_bonito
+
     registro = {campo: linha[i] for i, campo in enumerate(CAMPOS_LIDOS)}
     registro["link_pipefy"] = link_do_card(registro.get("card_pipefy"))
+    # ⚠️ O CPF SAI PONTUADO PARA A TELA. Pedido do dono em 28/09/2026: *"o CPF
+    # não está com a pontuação, isso facilita visualmente."* O banco continua
+    # guardando só dígitos — quem compara compara dígito, quem lê lê pontuado.
+    registro["cpf_bonito"] = cpf_bonito(registro.get("cpf"))
     registro["desligado"] = registro.get("data_saida") is not None
     registro.update(situacao_no_pagamento(registro, ate))
     # `alerta` é o que a tela usa para decidir se destaca a linha: qualquer
@@ -868,12 +918,22 @@ def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200,
             condicoes.append("lower(nome) LIKE ?")
             params.append(f"%{procurado.lower()}%")
     if so_ativos:
-        # ⚠️ SÓ A DATA DE SAÍDA ESCONDE ALGUÉM DAQUI, e de propósito. Quem tem a
-        # FASE dizendo desligado sem data continua aparecendo: é justamente o
-        # cadastro pela metade, e é por onde se paga quem já saiu. Esconder o
-        # caso inconsistente é o erro que o dono corrigiu em 26/09/2026 —
-        # *"não pode ficar oculto, escondido"*. Ele aparece com a marca.
+        # ⚠️ ESTA REGRA MUDOU EM 28/09/2026, e as duas versões são dele.
+        #
+        # Em 26/09 ele disse, sobre quem tem a FASE dizendo desligado mas sem data
+        # de saída: *"não pode ficar oculto, escondido"* — e eu passei a esconder
+        # só quem tinha data de saída.
+        #
+        # Em 28/09, vendo a tela: *"o que é colaborador desligado (…) não deveria
+        # nem estar sendo exibido. Ele está desligado, ele não está trabalhando."*
+        #
+        # A leitura que concilia as duas: a lista do dia a dia é de quem está
+        # trabalhando, e quem está desligado sai dela — MAS não desaparece do
+        # sistema. A tela conta quantos foram escondidos e tem um clique para
+        # trazê-los. Esconder e não dizer é que seria o erro de 26/09.
         condicoes.append("data_saida IS NULL")
+        condicoes.append("lower(coalesce(fase, '')) NOT IN (?, ?)")
+        params += [FASE_DESLIGADO, FASE_AFASTADO]
     if so_saindo:
         # Qualquer sinal de saída. A conta fina de quem está saindo × quem já
         # saiu é de `situacao_no_pagamento`; aqui só se traz quem tem sinal.
@@ -915,3 +975,40 @@ def contar_quem_esta_saindo(ate=None) -> dict:
     com_sinal, saiu, afastado = (linha or (0, 0, 0))
     return {"com_sinal": int(com_sinal or 0), "saiu": int(saiu or 0),
             "afastado": int(afastado or 0)}
+
+
+# ---------------------------------------------------------------------------
+# O CÓDIGO DA OBRA
+# ---------------------------------------------------------------------------
+def codigos_das_obras() -> dict:
+    """`{NOME DA OBRA: código}`, das referências do rateio.
+
+    ⚠️ EXISTE PARA O CADASTRO ANTIGO. O dono pediu que as telas mostrem o CÓDIGO
+    da obra, não o nome por extenso — e o código passou a ser lido do cadastro
+    (migração 036). Mas o cadastro só ganha o código na PRÓXIMA atualização, e
+    algumas linhas podem nunca tê-lo. Nesses casos dá para chegar nele pelo nome,
+    que é o que esta função permite.
+
+    Uma consulta só, e o resultado é usado para a lista inteira — resolver obra
+    por obra faria uma ida ao banco por pessoa."""
+    try:
+        from . import sincronizacao
+        obras = (sincronizacao.referencias_rateio() or {}).get("obras") or []
+    except Exception:  # noqa: BLE001 — é apoio: sem ele mostra-se o que há
+        logger.exception("Colaboradores: não consegui ler os códigos das obras")
+        return {}
+    return {" ".join(str(o.get("nome") or "").split()).upper(): str(o.get("codigo") or "")
+            for o in obras if o.get("nome")}
+
+
+def resolver_obra(ficha: dict, por_nome: dict | None = None) -> str:
+    """O código da obra desta pessoa, do jeito mais confiável disponível.
+
+    A ordem: o código que o cadastro traz; senão, o código da obra cujo NOME
+    bate. Devolve "" quando não há como saber — e "" na tela é uma pergunta
+    aberta, que é melhor do que um nome por extenso no lugar de um código."""
+    codigo = " ".join(str(ficha.get("obra_codigo") or "").split())
+    if codigo:
+        return codigo
+    nome = " ".join(str(ficha.get("obra_cadastro") or "").split()).upper()
+    return (por_nome or {}).get(nome, "")

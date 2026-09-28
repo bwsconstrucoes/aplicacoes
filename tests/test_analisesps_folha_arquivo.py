@@ -366,9 +366,12 @@ def cadastrar(*pessoas):
     registros = []
     for cpf, nome, id_fortes, extra in pessoas:
         r = {c: "" for c in col.CAMPOS}
-        r.update({"cpf": cpf, "nome": nome, "valor_alimentacao": None,
-                  "valor_transporte": None, "valor_gratificacao": None,
-                  "aviso_previo": None, "ultimo_dia": None, "data_saida": None})
+        r.update({"cpf": cpf, "nome": nome})
+        # Toda data e todo número vazio é None, e a lista vem do módulo — ver o
+        # comentário igual em test_analisesps_colaboradores_banco.py: um ajudante
+        # que enumera os campos à mão quebra na próxima coluna de data que entrar.
+        for campo in col.DATAS + col.NUMEROS:
+            r[campo] = None
         r.update(extra or {})
         registros.append((r, id_fortes))
     with conexao() as conn:

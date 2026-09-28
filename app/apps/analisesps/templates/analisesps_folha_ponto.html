@@ -16,6 +16,28 @@
   <div class="aviso erro"><b>Não consegui ler as cargas do ponto.</b> {{ erro }}</div>
 {% endif %}
 
+{# ⚠️ O ESTADO, DITO AO ABRIR A TELA. Reclamação dele em 28/09/2026: *"se o ponto
+   veio, se o ponto não veio, só Deus sabe o que está acontecendo com essa API. Se
+   ela está carregando, se ela não está."*
+
+   Antes a tela só acompanhava se VOCÊ tivesse apertado o botão naquela aba. Agora
+   o estado vem junto com a página, e ela já abre acompanhando. #}
+{% if andando.rodando %}
+  <div class="aviso" id="aviso-andando">
+    <b>Está trazendo dado agora.</b>
+    <span id="andando-etapa">{{ andando.progresso or andando.etapa or
+      'a carga começou e ainda não disse em que passo está' }}</span>
+    <br><span class="cartao-dica">Esta tela se atualiza sozinha quando terminar —
+      pode fechar a página, o trabalho continua no servidor.</span>
+  </div>
+{% elif andando.interrompida %}
+  <div class="aviso atencao">
+    <b>A última carga foi interrompida no meio.</b> Isso acontece quando o serviço
+    reinicia (uma publicação, por exemplo). Aperte "Trazer o ponto" de novo do
+    mesmo mês: trazer duas vezes o mesmo mês <b>substitui</b>, não duplica.
+  </div>
+{% endif %}
+
 {% if not pronto %}
   <div class="aviso atencao">
     <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
@@ -193,6 +215,27 @@ if (btnPonto) btnPonto.addEventListener("click", async () => {
     btnPonto.disabled = false;
   }
 });
+
+// ⚠️ SE JÁ HÁ CARGA RODANDO AO ABRIR A TELA, acompanha sozinho — sem depender de
+// ninguém ter apertado o botão nesta aba. Era isso que faltava para a pergunta
+// "está carregando ou não?" ter resposta.
+{% if andando.rodando %}
+(function acompanharSozinho() {
+  const relogio = setInterval(async () => {
+    try {
+      const a = await fetch("{{ url_for('analisesps.andamento') }}");
+      const e = await a.json();
+      const alvo = document.getElementById("andando-etapa");
+      if (e.rodando) {
+        if (alvo) alvo.textContent = e.progresso || e.etapa || "trabalhando…";
+      } else {
+        clearInterval(relogio);
+        location.reload();
+      }
+    } catch (err) { /* rede oscilou: a próxima volta resolve */ }
+  }, 4000);
+})();
+{% endif %}
 
 document.querySelectorAll(".apagar-ponto").forEach(b =>
   b.addEventListener("click", async () => {

@@ -9069,6 +9069,98 @@ arquivo de verdade que ele mandou: **211 lidas, 211 identidades distintas**, som
 
 ---
 
+### Centésima décima quarta leva (28/09) — a primeira vez que ele usou as telas
+
+Ele abriu as telas da folha e disse: *"no geral, eu estou achando tudo muito ruim,
+muito ruim mesmo."* A lista era longa e toda justa. O detalhe de cada item está em
+`docs/FOLHA_DE_PAGAMENTO.md` §7.31; aqui fica o que muda para quem vier depois.
+
+#### O que fazia a tela de auxílio não calcular NADA
+
+Um nome de coluna que eu chutei. O certo é **"Categoria Auxílio Alimentação"** e
+**"Categoria Auxílio Transporte"** (colunas BM e BO), não "Modalidade". Sem a
+categoria, TODA pessoa caía em "o cadastro não diz a modalidade": zero dias, zero
+valor, tudo com cara de ajuste pendente.
+
+⚠️ **A lição:** o aviso "não achei a coluna X" existia e funcionou — mas aparecia só
+na tela de Colaboradores, e ele usou a de auxílio primeiro. **Coluna que o sistema
+não acha tem de aparecer na tela que DEPENDE dela**, não só na de origem.
+
+#### As sete correções de desenho
+
+1. **A barra da competência** usava `.barra-acoes`, que é uma GRADE de três colunas
+   (a barra das Solicitações). Cada campo virou célula e esticou até a largura da
+   tela. Agora existe `.barra-mes`, compacta.
+2. **A obra é o CÓDIGO**, vem do cadastro e **não se digita**. Campo editável ali
+   divergiria do cadastro e do rateio. ⚠️ Mas o **feriado por obra** é cadastrado
+   pelo NOME — passar o código no desconto faria o feriado municipal deixar de
+   descontar em silêncio. O cálculo usa nome para feriado, código para agrupar.
+3. **Seleção em bloco**: caixinha por pessoa, já marcada para quem atende os
+   critérios, e UM botão salvar. Saíram o seletor de três estados ("segue o
+   cálculo" — ele perguntou *"que diabo é"*) e o Gravar por linha.
+   ⚠️ Guarda-se a **exceção**, não a lista: senão o padrão viraria decisão
+   registrada e no mês seguinte ninguém saberia o que ele decidiu.
+   Para isso o cálculo devolve `pagar_calculado` além de `pagar` — antes eu
+   adivinhava a diferença comparando textos de motivo, que quebra sozinho.
+4. **Filtros na lateral** (quem, obra, situação) em auxílios, colaboradores e
+   diaristas. O módulo JÁ tinha o padrão e eu declarei as telas `sem-filtros`.
+   ⚠️ O filtro recorta a LISTA, nunca a CONTA.
+5. **CPF pontuado** na tela, dígitos no banco.
+6. **Clicar na pessoa** abre ficha com cadastro, a observação da coluna BQ, o
+   **ponto do mês dia por dia** e o botão do card. Uma rota serve as duas telas.
+7. **Quem está desligado sai da lista** de colaboradores — ⚠️ isto CONTRARIA a
+   instrução dele de 26/09 (*"não pode ficar oculto"*), e a leitura que atende as
+   duas é: a lista do dia a dia é de quem trabalha, mas a conta aparece no alto e
+   uma caixinha traz de volta. O proibido era esconder **e não dizer**.
+
+#### O ponto: dizer se está carregando
+
+*"Se o ponto veio, se o ponto não veio, só Deus sabe."* A tela só acompanhava se
+VOCÊ tivesse apertado o botão naquela aba. Agora o estado vem do banco junto com a
+página, ela abre acompanhando e avisa quando a carga foi interrompida (publicar
+reinicia o serviço e mata carga longa).
+
+#### Os diaristas entraram
+
+A regra existia e estava testada; faltava ligá-la, e faltavam duas colunas no
+cadastro (**Data de Início** e **Data de Admissão**). A tela mostra por pessoa
+quantos dias de diária e quantos de CTPS — a regra é **por dia**, e a mesma pessoa
+tem dias dos dois tipos no mês em que foi registrada.
+
+⚠️ Ela **não** diz quanto pagar, e diz isso em vez de mostrar zero: falta o valor da
+diária e o nome dos campos do ponto (os acréscimos de sábado/domingo/feriado).
+
+#### A ordem das subtelas passou a ter lógica
+
+Três grupos, com o nome à vista: Panorama · **Pagamentos** (folha da contabilidade,
+alimentação e transporte, diaristas, arquivos gerados) · **Cadastro e base do
+cálculo** (colaboradores, ponto, feriados e férias, rateio). A ordem anterior era a
+ordem em que EU construí as peças.
+
+#### Uma armadilha de teste que custou 15 falhas
+
+Três ajudantes de teste montavam a ficha com `{campo: "" for campo in CAMPOS}` e
+depois listavam **à mão** os campos de data que deviam ser `None`. Ao entrar duas
+colunas de data novas, os três estouraram com "invalid input syntax for type date".
+Agora os três derivam de `col.DATAS + col.NUMEROS` — o ajudante acompanha o módulo
+sozinho. Vale para qualquer ajudante que enumere campos.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o valor do auxílio saindo certo para todos | ele apertar **"Atualizar cadastro"**: é o que traz categoria, valor, código da obra, observação e as duas datas novas |
+| **total por obra vindo do ponto**, diária em dinheiro, CTPS extra | o **nome dos campos de cada dia** do ponto — um clique em Folha PGT → Ponto revela |
+| gerar o arquivo de dentro de cada tela com um clique | a apropriação fechada, que depende do ponto |
+| o de/para de categoria do card (`DatabaseBeeVale`, `PlanoFinanceiro`) | são abas ocultas da planilha; precisam virar cadastro |
+| as migrações 019–036 | o botão "Aplicar atualizações do banco" |
+
+**Verificado:** 7.439 testes passando, zero falhas. A aplicação sobe com os 18
+blueprints. **NÃO verificado:** nada num navegador — e desta vez isso pesa, porque
+o que ele reprovou foi justamente o que só se vê abrindo a tela.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória
