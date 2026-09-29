@@ -83,37 +83,45 @@
      href="{{ url_for('analisesps.tela_folha_calendario') }}">Limpar</a>
 </form>
 
-<table class="sps">
-  <thead>
-    <tr><th>Quem</th><th>CPF</th><th>De</th><th>Até</th><th class="num">Dias</th>
-      <th>Lançado por</th>{% if pode_operar %}<th></th>{% endif %}</tr>
-  </thead>
-  <tbody>
-  {% for f in ferias %}
-    <tr>
-      <td>{{ f.nome or '—' }}</td>
-      <td class="cpf">{{ f.cpf_bonito }}</td>
-      <td>{{ f.inicio|data_br }}</td>
-      <td>{{ f.fim|data_br }}</td>
-      <td class="num">{{ f.dias }}</td>
-      <td><span class="cartao-dica">{{ f.criado_por or '—' }}</span></td>
-      {% if pode_operar %}
-        <td class="num">
-          <button class="apagar-linha apagar-ferias" title="Apagar este período"
-                  data-id="{{ f.id }}" data-nome="{{ f.nome }}"
-                  data-periodo="{{ f.inicio|data_br }} a {{ f.fim|data_br }}"
-                  >&times;</button>
-        </td>
-      {% endif %}
-    </tr>
-  {% else %}
-    <tr><td colspan="{{ 7 if pode_operar else 6 }}" class="cartao-dica">
-      {% if procurado %}Ninguém com "{{ procurado }}". Mude a busca acima.
-      {% else %}Nenhum período de férias lançado ainda.{% endif %}
-    </td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+
+  <div class="tabela-rolagem livre">
+
+    <table class="sps">
+      <thead>
+        <tr><th>Quem</th><th>CPF</th><th>De</th><th>Até</th><th class="num">Dias</th>
+          <th>Lançado por</th>{% if pode_operar %}<th></th>{% endif %}</tr>
+      </thead>
+      <tbody>
+      {% for f in ferias %}
+        <tr>
+          <td>{{ f.nome or '—' }}</td>
+          <td class="cpf">{{ f.cpf_bonito }}</td>
+          <td>{{ f.inicio|data_br }}</td>
+          <td>{{ f.fim|data_br }}</td>
+          <td class="num">{{ f.dias }}</td>
+          <td><span class="cartao-dica">{{ f.criado_por or '—' }}</span></td>
+          {% if pode_operar %}
+            <td class="num">
+              <button class="apagar-linha apagar-ferias" title="Apagar este período"
+                      data-id="{{ f.id }}" data-nome="{{ f.nome }}"
+                      data-periodo="{{ f.inicio|data_br }} a {{ f.fim|data_br }}"
+                      >&times;</button>
+            </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        <tr><td colspan="{{ 7 if pode_operar else 6 }}" class="cartao-dica">
+          {% if procurado %}Ninguém com "{{ procurado }}". Mude a busca acima.
+          {% else %}Nenhum período de férias lançado ainda.{% endif %}
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+
+</div>
 
 {# ======================================================================
    FERIADOS
@@ -179,42 +187,50 @@
   </label>
 </form>
 
-<table class="sps">
-  <thead>
-    <tr><th>Dia</th><th>Vale para</th><th>O que é</th>
-      {% if pode_operar %}<th></th>{% endif %}</tr>
-  </thead>
-  <tbody>
-  {% for f in feriados %}
-    <tr>
-      <td>{{ f.data|data_br }}</td>
-      <td>
-        {% if f.abrangencia == 'nacional' %}
-          <span class="selo no-lote">nacional</span>
-        {% else %}
-          <span class="selo no-lote-de-outro">{{ f.obra }}</span>
-        {% endif %}
-      </td>
-      <td>{{ f.descricao or '—' }}</td>
-      {% if pode_operar %}
-        <td class="num">
-          <button class="apagar-linha apagar-feriado" title="Apagar este feriado"
-                  data-id="{{ f.id }}"
-                  data-quando="{{ f.data|data_br }}"
-                  data-onde="{{ 'nacional' if f.abrangencia == 'nacional' else f.obra }}"
-                  >&times;</button>
-        </td>
-      {% endif %}
-    </tr>
-  {% else %}
-    <tr><td colspan="{{ 4 if pode_operar else 3 }}" class="cartao-dica">
-      Nenhum feriado cadastrado{{ ' em ' ~ ano if ano }}.
-      {% if pode_operar %}Cadastre acima — sem eles o auxílio alimentação paga o
-        mês cheio.{% endif %}
-    </td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+
+  <div class="tabela-rolagem livre">
+
+    <table class="sps">
+      <thead>
+        <tr><th>Dia</th><th>Vale para</th><th>O que é</th>
+          {% if pode_operar %}<th></th>{% endif %}</tr>
+      </thead>
+      <tbody>
+      {% for f in feriados %}
+        <tr>
+          <td>{{ f.data|data_br }}</td>
+          <td>
+            {% if f.abrangencia == 'nacional' %}
+              <span class="selo no-lote">nacional</span>
+            {% else %}
+              <span class="selo no-lote-de-outro">{{ f.obra }}</span>
+            {% endif %}
+          </td>
+          <td>{{ f.descricao or '—' }}</td>
+          {% if pode_operar %}
+            <td class="num">
+              <button class="apagar-linha apagar-feriado" title="Apagar este feriado"
+                      data-id="{{ f.id }}"
+                      data-quando="{{ f.data|data_br }}"
+                      data-onde="{{ 'nacional' if f.abrangencia == 'nacional' else f.obra }}"
+                      >&times;</button>
+            </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        <tr><td colspan="{{ 4 if pode_operar else 3 }}" class="cartao-dica">
+          Nenhum feriado cadastrado{{ ' em ' ~ ano if ano }}.
+          {% if pode_operar %}Cadastre acima — sem eles o auxílio alimentação paga o
+            mês cheio.{% endif %}
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+
+</div>
 
 {% if pode_operar %}
 <script>

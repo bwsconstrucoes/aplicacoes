@@ -247,92 +247,96 @@
    filtro que faz o cabeçalho desaparecer junto com as linhas deixa a pessoa sem
    como desfazer o filtro — foi exatamente a armadilha que a conciliação tinha
    até 26/09/2026. #}
-<table class="sps">
-  <thead>
-    <tr>
-      <th>Nome</th>
-      <th>CPF</th>
-      <th>Obra</th>
-      <th>Cargo</th>
-      <th>Contrato</th>
-      <th class="num">Alimentação</th>
-      <th class="num">Transporte</th>
-      <th class="num">Gratificação</th>
-      <th>Situação</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for c in colaboradores %}
-    <tr class="clicavel {{ 'linha-alerta' if c.alerta }}"
-        data-cpf="{{ c.cpf }}" data-nome="{{ c.nome }}">
-      <td>
-        {% if c.link_pipefy %}
-          <a href="{{ c.link_pipefy }}" target="_blank" rel="noopener"
-             class="link-pipefy"
-             title="Abrir o card desta pessoa no Pipefy (nova aba)"
-             >{{ c.nome or '—' }} <span aria-hidden="true">↗</span></a>
-        {% else %}
-          {{ c.nome or '—' }}
-          <span class="cartao-dica"
-                title="O cadastro desta pessoa está sem o Nº Registro Pipefy, então não há card para abrir">sem card</span>
-        {% endif %}
-      </td>
-      <td class="cpf">{{ c.cpf_bonito or c.cpf }}</td>
-      <td>{{ c.obra or '—' }}</td>
-      <td>{{ c.cargo or '—' }}</td>
-      <td>{{ c.tipo_contrato or c.tipo or '—' }}</td>
-      {# VALOR EM BRANCO E VALOR ZERO SÃO COISAS DIFERENTES, e a tela não pode
-         confundi-los: "—" quer dizer "o cadastro não diz", e R$ 0,00 quer dizer
-         "o cadastro diz que é zero". Um é pergunta, o outro é resposta. #}
-      <td class="num">{{ c.valor_alimentacao|moeda if c.valor_alimentacao is not none else '—' }}
-        {% if c.modo_alimentacao %}<span class="cartao-dica">{{ c.modo_alimentacao }}</span>{% endif %}
-      </td>
-      <td class="num">{{ c.valor_transporte|moeda if c.valor_transporte is not none else '—' }}
-        {% if c.modo_transporte %}<span class="cartao-dica">{{ c.modo_transporte }}</span>{% endif %}
-      </td>
-      <td class="num">{{ c.valor_gratificacao|moeda if c.valor_gratificacao is not none else '—' }}</td>
-      <td>
-        {# A FRASE INTEIRA vai no title: ela diz o que NÃO pagar, e é o ponto
-           todo do alerta. O selo sozinho ("saiu") não instrui ninguém. #}
-        {% if c.situacao == 'saiu' %}
-          <span class="selo cancelado" title="{{ c.motivo }}">saiu{% if c.data_saida %} em {{ c.data_saida|data_br }}{% endif %}</span>
-        {% elif c.situacao == 'saindo' %}
-          <span class="selo saindo" title="{{ c.motivo }}">está saindo</span>
-        {% elif c.situacao == 'afastado' %}
-          <span class="selo cancelado" title="{{ c.motivo }}">afastado</span>
-        {% else %}
-          <span class="cartao-dica">{{ c.fase or '—' }}</span>
-        {% endif %}
-        {% if c.paga_por_beevale == 'Sim' %}
-          <span class="selo no-lote" title="O cadastro marca pagamento pela BeeVale">BeeVale</span>
-        {% endif %}
-        {% if c.motivo %}<div class="cartao-dica">{{ c.motivo }}</div>{% endif %}
-        {# ⚠️ O DESACORDO ENTRE OS SINAIS é cadastro pela metade — e é por onde
-           se paga quem já saiu. Fica escrito, não escondido. #}
-        {% if c.desacordo %}
-          <div class="aviso atencao" style="margin:4px 0 0">⚠️ {{ c.desacordo }}</div>
-        {% endif %}
-      </td>
-    </tr>
-  {% else %}
-    <tr>
-      <td colspan="9" class="cartao-dica">
-        {% if not cadastro.quando %}
-          O cadastro ainda não foi trazido. Aperte "Atualizar cadastro" acima.
-        {% elif so_saindo and not procurado %}
-          Ninguém com sinal de saída ou afastamento no cadastro. É a notícia
-          boa: nenhum pagamento em risco por esse motivo.
-        {% elif procurado %}
-          Ninguém com "{{ procurado }}"{{ ' entre quem está saindo' if so_saindo else (' entre quem está na casa' if not incluir_desligados else '') }}.
-          Mude a busca acima{{ ', ou marque "mostrar quem saiu"' if not (incluir_desligados or so_saindo) }}.
-        {% else %}
-          Nenhuma pessoa no cadastro.
-        {% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>CPF</th>
+          <th>Obra</th>
+          <th>Cargo</th>
+          <th>Contrato</th>
+          <th class="num">Alimentação</th>
+          <th class="num">Transporte</th>
+          <th class="num">Gratificação</th>
+          <th>Situação</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in colaboradores %}
+        <tr class="clicavel {{ 'linha-alerta' if c.alerta }}"
+            data-cpf="{{ c.cpf }}" data-nome="{{ c.nome }}">
+          <td>
+            {% if c.link_pipefy %}
+              <a href="{{ c.link_pipefy }}" target="_blank" rel="noopener"
+                 class="link-pipefy"
+                 title="Abrir o card desta pessoa no Pipefy (nova aba)"
+                 >{{ c.nome or '—' }} <span aria-hidden="true">↗</span></a>
+            {% else %}
+              {{ c.nome or '—' }}
+              <span class="cartao-dica"
+                    title="O cadastro desta pessoa está sem o Nº Registro Pipefy, então não há card para abrir">sem card</span>
+            {% endif %}
+          </td>
+          <td class="cpf">{{ c.cpf_bonito or c.cpf }}</td>
+          <td>{{ c.obra or '—' }}</td>
+          <td>{{ c.cargo or '—' }}</td>
+          <td>{{ c.tipo_contrato or c.tipo or '—' }}</td>
+          {# VALOR EM BRANCO E VALOR ZERO SÃO COISAS DIFERENTES, e a tela não pode
+             confundi-los: "—" quer dizer "o cadastro não diz", e R$ 0,00 quer dizer
+             "o cadastro diz que é zero". Um é pergunta, o outro é resposta. #}
+          <td class="num">{{ c.valor_alimentacao|moeda if c.valor_alimentacao is not none else '—' }}
+            {% if c.modo_alimentacao %}<span class="cartao-dica">{{ c.modo_alimentacao }}</span>{% endif %}
+          </td>
+          <td class="num">{{ c.valor_transporte|moeda if c.valor_transporte is not none else '—' }}
+            {% if c.modo_transporte %}<span class="cartao-dica">{{ c.modo_transporte }}</span>{% endif %}
+          </td>
+          <td class="num">{{ c.valor_gratificacao|moeda if c.valor_gratificacao is not none else '—' }}</td>
+          <td>
+            {# A FRASE INTEIRA vai no title: ela diz o que NÃO pagar, e é o ponto
+               todo do alerta. O selo sozinho ("saiu") não instrui ninguém. #}
+            {% if c.situacao == 'saiu' %}
+              <span class="selo cancelado" title="{{ c.motivo }}">saiu{% if c.data_saida %} em {{ c.data_saida|data_br }}{% endif %}</span>
+            {% elif c.situacao == 'saindo' %}
+              <span class="selo saindo" title="{{ c.motivo }}">está saindo</span>
+            {% elif c.situacao == 'afastado' %}
+              <span class="selo cancelado" title="{{ c.motivo }}">afastado</span>
+            {% else %}
+              <span class="cartao-dica">{{ c.fase or '—' }}</span>
+            {% endif %}
+            {% if c.paga_por_beevale == 'Sim' %}
+              <span class="selo no-lote" title="O cadastro marca pagamento pela BeeVale">BeeVale</span>
+            {% endif %}
+            {% if c.motivo %}<div class="cartao-dica">{{ c.motivo }}</div>{% endif %}
+            {# ⚠️ O DESACORDO ENTRE OS SINAIS é cadastro pela metade — e é por onde
+               se paga quem já saiu. Fica escrito, não escondido. #}
+            {% if c.desacordo %}
+              <div class="aviso atencao" style="margin:4px 0 0">⚠️ {{ c.desacordo }}</div>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="9" class="cartao-dica">
+            {% if not cadastro.quando %}
+              O cadastro ainda não foi trazido. Aperte "Atualizar cadastro" acima.
+            {% elif so_saindo and not procurado %}
+              Ninguém com sinal de saída ou afastamento no cadastro. É a notícia
+              boa: nenhum pagamento em risco por esse motivo.
+            {% elif procurado %}
+              Ninguém com "{{ procurado }}"{{ ' entre quem está saindo' if so_saindo else (' entre quem está na casa' if not incluir_desligados else '') }}.
+              Mude a busca acima{{ ', ou marque "mostrar quem saiu"' if not (incluir_desligados or so_saindo) }}.
+            {% else %}
+              Nenhuma pessoa no cadastro.
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 {% if no_teto %}
   <p class="cartao-dica">Mostrando as primeiras {{ teto }}. Use a busca para

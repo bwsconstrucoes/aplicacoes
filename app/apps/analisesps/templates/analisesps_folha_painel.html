@@ -61,62 +61,74 @@
 <h3 style="margin-top:20px">
   Por obra <small>é esta lista que responde "quais obras estão em evidência"</small>
 </h3>
-<table class="sps">
-  <thead>
-    <tr><th>Obra</th><th>Verbas</th><th class="num">Total</th>
-      <th class="num">% do mês</th></tr>
-  </thead>
-  <tbody>
-  {% set pct = {} %}
-  {% for p in gerencial.percentuais %}{% if pct.update({p.obra: p.percentual}) %}{% endif %}{% endfor %}
-  {% for o in gerencial.obras %}
-    <tr>
-      <td>{{ o.obra }}</td>
-      <td><span class="cartao-dica">{{ o.verbas|join(', ') }}</span></td>
-      <td class="num">{{ o.total|moeda }}</td>
-      {# O percentual é o MESMO que vai no rateio do card: sete casas, fechando
-         100%. Mostrado com duas, porque é para ler. #}
-      <td class="num">{{ '%.2f'|format(pct.get(o.obra, 0)|float) }}%</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead>
+        <tr><th>Obra</th><th>Verbas</th><th class="num">Total</th>
+          <th class="num">% do mês</th></tr>
+      </thead>
+      <tbody>
+      {% set pct = {} %}
+      {% for p in gerencial.percentuais %}{% if pct.update({p.obra: p.percentual}) %}{% endif %}{% endfor %}
+      {% for o in gerencial.obras %}
+        <tr>
+          <td>{{ o.obra }}</td>
+          <td><span class="cartao-dica">{{ o.verbas|join(', ') }}</span></td>
+          <td class="num">{{ o.total|moeda }}</td>
+          {# O percentual é o MESMO que vai no rateio do card: sete casas, fechando
+             100%. Mostrado com duas, porque é para ler. #}
+          <td class="num">{{ '%.2f'|format(pct.get(o.obra, 0)|float) }}%</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 <h3 style="margin-top:20px">Por conta <small>quantos pagamentos vão sair</small></h3>
-<table class="sps">
-  <thead><tr><th>Conta</th><th class="num">Obras</th><th class="num">Total</th></tr></thead>
-  <tbody>
-  {% for c in gerencial.contas %}
-    <tr class="{{ 'linha-alerta' if c.conta == '(sem conta)' }}">
-      <td>{{ c.conta }}
-        {% if c.conta == '(sem conta)' %}
-          <br><span class="cartao-dica">obra sem conta de pagamento — isto trava a
-            geração do arquivo</span>
-        {% endif %}</td>
-      <td class="num">{{ c.obras }}</td>
-      <td class="num">{{ c.total|moeda }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Conta</th><th class="num">Obras</th><th class="num">Total</th></tr></thead>
+      <tbody>
+      {% for c in gerencial.contas %}
+        <tr class="{{ 'linha-alerta' if c.conta == '(sem conta)' }}">
+          <td>{{ c.conta }}
+            {% if c.conta == '(sem conta)' %}
+              <br><span class="cartao-dica">obra sem conta de pagamento — isto trava a
+                geração do arquivo</span>
+            {% endif %}</td>
+          <td class="num">{{ c.obras }}</td>
+          <td class="num">{{ c.total|moeda }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 <h3 style="margin-top:20px">Por verba</h3>
-<table class="sps">
-  <thead><tr><th>Verba</th><th class="num">Total</th>
-    <th class="num">% do mês</th></tr></thead>
-  <tbody>
-  {% for v in gerencial.verbas %}
-    <tr>
-      <td>{{ v.rotulo }}</td>
-      <td class="num">{{ v.total|moeda }}</td>
-      <td class="num">
-        {% if gerencial.total %}{{ (v.total / gerencial.total * 100)|round(1) }}%
-        {% else %}—{% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Verba</th><th class="num">Total</th>
+        <th class="num">% do mês</th></tr></thead>
+      <tbody>
+      {% for v in gerencial.verbas %}
+        <tr>
+          <td>{{ v.rotulo }}</td>
+          <td class="num">{{ v.total|moeda }}</td>
+          <td class="num">
+            {% if gerencial.total %}{{ (v.total / gerencial.total * 100)|round(1) }}%
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% elif gerencial and gerencial.pronto %}
 <div class="aviso">
   <b>Nada fechado em {{ "%02d"|format(mes) }}/{{ ano }}.</b>
@@ -186,47 +198,55 @@
   que usa para decidir o rateio do mês. Enquanto o ponto não entra no sistema, o
   corte é por filial da contabilidade, não por obra.
 </p>
-<table class="sps">
-  <thead>
-    <tr><th>Filial</th><th class="num">Pessoas</th><th class="num">Total</th>
-      <th class="num">% da folha</th></tr>
-  </thead>
-  <tbody>
-  {% for f in panorama.por_filial %}
-    <tr>
-      <td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
-      <td class="num">{{ f.pessoas }}</td>
-      <td class="num">{{ f.total|moeda }}</td>
-      <td class="num">
-        {% if panorama.total %}{{ (f.total / panorama.total * 100)|round(1) }}%{% else %}—{% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead>
+        <tr><th>Filial</th><th class="num">Pessoas</th><th class="num">Total</th>
+          <th class="num">% da folha</th></tr>
+      </thead>
+      <tbody>
+      {% for f in panorama.por_filial %}
+        <tr>
+          <td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
+          <td class="num">{{ f.pessoas }}</td>
+          <td class="num">{{ f.total|moeda }}</td>
+          <td class="num">
+            {% if panorama.total %}{{ (f.total / panorama.total * 100)|round(1) }}%{% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 <h3 style="margin-top:20px">As folhas importadas</h3>
-<table class="sps">
-  <thead>
-    <tr><th>Competência</th><th>Período</th><th class="num">Pessoas</th>
-      <th class="num">Total</th><th>Confere?</th></tr>
-  </thead>
-  <tbody>
-  {% for f in panorama.folhas %}
-    <tr class="{{ 'linha-alerta' if not f.fecha }}">
-      <td><a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
-             >{{ f.competencia }}</a></td>
-      <td>{{ f.rotulo_do_tipo }}</td>
-      <td class="num">{{ f.pessoas }}</td>
-      <td class="num">{{ f.total|moeda }}</td>
-      <td>
-        {% if f.fecha %}<span class="selo no-lote">fecha</span>
-        {% else %}<span class="selo cancelado">não fecha</span>{% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead>
+        <tr><th>Competência</th><th>Período</th><th class="num">Pessoas</th>
+          <th class="num">Total</th><th>Confere?</th></tr>
+      </thead>
+      <tbody>
+      {% for f in panorama.folhas %}
+        <tr class="{{ 'linha-alerta' if not f.fecha }}">
+          <td><a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
+                 >{{ f.competencia }}</a></td>
+          <td>{{ f.rotulo_do_tipo }}</td>
+          <td class="num">{{ f.pessoas }}</td>
+          <td class="num">{{ f.total|moeda }}</td>
+          <td>
+            {% if f.fecha %}<span class="selo no-lote">fecha</span>
+            {% else %}<span class="selo cancelado">não fecha</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 {% endif %}
 {% endblock %}

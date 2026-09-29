@@ -339,7 +339,8 @@ document.getElementById("btn-simular").addEventListener("click", async () => {
     alvo.innerHTML = '<div class="aviso erro">' + d.erro + "</div>";
     return;
   }
-  let html = '<table class="sps" style="margin-top:8px"><thead><tr>' +
+  let html = '<div class="tabela-wrap" style="margin-top:8px">' +
+    '<div class="tabela-rolagem livre"><table class="sps"><thead><tr>' +
     "<th>Obra</th><th class=\"direita\">%</th><th class=\"direita\">Valor</th>" +
     "</tr></thead><tbody>";
   let soma = 0;
@@ -353,7 +354,7 @@ document.getElementById("btn-simular").addEventListener("click", async () => {
   });
   html += '</tbody><tfoot><tr><th>Soma</th><th></th><th class="direita">' +
     soma.toLocaleString("pt-BR", {minimumFractionDigits: 2}) +
-    "</th></tr></tfoot></table>";
+    "</th></tr></tfoot></table></div></div>";
   alvo.innerHTML = html;
 });
 

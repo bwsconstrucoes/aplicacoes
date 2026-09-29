@@ -2883,6 +2883,79 @@ número que a conferência usa. Dois testes pegaram; ela foi para depois dos tot
   reorganizar."* Os rótulos saíram. Os grupos continuam definindo a ordem, com um
   risco fino entre eles.
 
+## 7.33 "AS CORES DA TABELA" — o que eu não entendi, e não perguntei (29/09/2026)
+
+Ele cobrou, direto: *"eu tô vendo que tem coisa que você não compreende e não
+pergunta. Eu falei sobre as cores das tabelas, não falei? Você entendeu o quê sobre
+isso e fez o quê sobre isso?"*
+
+**O que eu havia feito: nada.** Ele pediu *"siga o mesmo padrão de cabeçalho, de cor
+da tabela e etc... pra todas as telas"*, eu conferi que as tabelas dele e as minhas
+usavam a mesma classe `sps`, concluí "então já está igual" e segui para outro item.
+**Não perguntei o que ele queria dizer com cor, e não fui ler o que o padrão
+acrescenta.**
+
+Fui ler. São **três** coisas, e eu tinha uma:
+
+| O padrão das Solicitações | Eu tinha |
+|---|---|
+| `class="sps"` | ✔ |
+| a tabela DENTRO de `.tabela-wrap` (cartão branco, cantos, sombra) e `.tabela-rolagem` (rolagem horizontal, **cabeçalho grudado no topo**) | ✘ tabela nua, direto no fundo da página |
+| o **estado da linha lido pela COR**, com a paleta dele | ✘ estado em texto miúdo |
+
+⚠️ **A segunda linha é a resposta para "cor da tabela", e é mais óbvia do que eu
+supus:** não é a cor das células, é a **superfície** em que a tabela está. A das
+Solicitações é um cartão branco sobre o fundo da página; as minhas eram tabelas nuas
+*no* fundo. Duas cores diferentes de tabela, literalmente.
+
+### O que o próprio CSS já dizia, e eu não tinha lido
+
+> *"AS CORES DO STREAMLIT. O dono trabalhou anos com elas e **lê a tabela pela cor
+> antes de ler o texto** — trocar a paleta na conversão custou tempo de leitura a
+> cada linha."*
+>
+> Status Pgt: Pagar **vermelho** · Pago **azul** — Agendamento: Agendar **roxo** ·
+> Agendado **verde** · Falha **laranja** — risco **vermelho forte**
+
+Estava escrito no arquivo, com data e motivo. As minhas tabelas da folha diziam o
+estado em **texto miúdo** — quem lê por cor não achava nada.
+
+### O que ficou feito
+
+1. **As 21 tabelas da folha** (nove telas) foram para dentro dos dois invólucros,
+   **inclusive as três montadas dentro do JavaScript** — fazer exceção para elas
+   deixaria a regra com um buraco, e o modal do ponto é onde o cabeçalho grudado
+   ajuda mais, porque a lista tem trinta dias.
+2. **Uma diferença deliberada, e vale dizer qual:** nas telas da folha as tabelas
+   são **empilhadas** (o Panorama tem cinco). O teto de altura do original criaria
+   cinco caixas de rolagem na mesma tela — pior do que uma página comprida. Daí o
+   modificador `.livre`, que tira o teto e mantém o cabeçalho grudando contra a
+   rolagem da página.
+3. **A coluna "Situação" na tabela do auxílio**, com os selos que JÁ existem no
+   módulo — não com selos novos. Vermelho não pode significar uma coisa aqui e
+   outra nas Solicitações.
+
+### ⚠️ E o erro que eu quase publiquei no meio do conserto
+
+Eu ia usar **`.selo.pagar`** para "vai receber" — pelo nome, parecia óbvio. **Na
+paleta dele `.selo.pagar` é VERMELHO**, porque nas Solicitações "Pagar" quer dizer
+*pendente, urgente, ainda não saiu*. Usar vermelho para "está tudo certo, vai
+receber" faria a mesma cor significar coisas opostas em telas vizinhas — que é
+exatamente o que a paleta existe para impedir.
+
+Ficou **verde** (`.selo.aprovado`) para quem vai receber, **cinza**
+(`.selo.cancelado`) para quem não vai, **âmbar** (`.selo.saindo`) para quem tem
+aviso, **vermelho forte** (`.selo.risco`) para falta de dado no cadastro. Com teste
+travando que `.selo.pagar` não volta a aparecer ali.
+
+### A lição, que é sobre mim e não sobre CSS
+
+O pedido dele tinha uma palavra que eu não sabia traduzir — "cor" — e eu resolvi com
+a interpretação que exigia menos trabalho, sem conferir e sem perguntar. **Quando a
+resposta é "conferi que é a mesma classe", eu conferi o que era fácil, não o que foi
+pedido.** O certo, nesta ordem: ler o que o padrão faz de verdade; se ainda restar
+dúvida, perguntar **uma** coisa precisa.
+
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

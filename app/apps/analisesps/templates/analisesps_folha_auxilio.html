@@ -190,17 +190,21 @@
 </div>
 
 <h3 style="margin-top:20px">Por obra <small>código da obra</small></h3>
-<table class="sps">
-  <thead><tr><th>Obra</th><th class="num">Pessoas</th><th class="num">Total</th></tr></thead>
-  <tbody>
-  {% for o in resultado.por_obra %}
-    <tr><td>{{ o.obra }}</td><td class="num">{{ o.pessoas }}</td>
-      <td class="num">{{ o.total|moeda }}</td></tr>
-  {% else %}
-    <tr><td colspan="3" class="cartao-dica">Nada a pagar nesta competência.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Obra</th><th class="num">Pessoas</th><th class="num">Total</th></tr></thead>
+      <tbody>
+      {% for o in resultado.por_obra %}
+        <tr><td>{{ o.obra }}</td><td class="num">{{ o.pessoas }}</td>
+          <td class="num">{{ o.total|moeda }}</td></tr>
+      {% else %}
+        <tr><td colspan="3" class="cartao-dica">Nada a pagar nesta competência.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 {# ======================================================================
    A LISTA — já calculada, e ele só marca quem vai.
@@ -222,65 +226,94 @@
 </p>
 {% endif %}
 
-<table class="sps" id="tabela-auxilio">
-  <thead>
-    <tr>
-      {% if pode_operar %}
-        <th class="marca"><input type="checkbox" id="marcar-todos"
-              title="marcar ou desmarcar todos os visíveis"
-              aria-label="Marcar todos"></th>
-      {% endif %}
-      <th>Quem</th><th>CPF</th><th>Obra</th><th>Categoria</th>
-      <th class="num">Valor do dia</th>
-      <th class="num" title="Dias da categoria no mês">Base</th>
-      <th class="num">Feriados</th><th class="num">Férias</th>
-      <th class="num">Dias</th><th class="num">Valor</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for p in pessoas %}
-    <tr class="clicavel {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel }}"
-        data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}"
-        data-valor="{{ p.valor }}"
-        data-impossivel="{{ '1' if p.impossivel else '' }}">
-      {% if pode_operar %}
-        <td class="marca">
-          {# ⚠️ Desabilitada quando NÃO HÁ o que pagar: marcar pagaria zero em
-             silêncio, e zero em silêncio é pior que não pagar. #}
-          <input type="checkbox" class="marca-pessoa"
-                 {% if p.pagar %}checked{% endif %}
-                 {% if p.impossivel %}disabled{% endif %}
-                 aria-label="Pagar {{ p.nome }}">
-        </td>
-      {% endif %}
+<div class="tabela-wrap">
+
+  <div class="tabela-rolagem livre">
+
+    <table class="sps" id="tabela-auxilio">
+      <thead>
+        <tr>
+          {% if pode_operar %}
+            <th class="marca"><input type="checkbox" id="marcar-todos"
+                  title="marcar ou desmarcar todos os visíveis"
+                  aria-label="Marcar todos"></th>
+          {% endif %}
+          <th>Quem</th><th>Situação</th><th>CPF</th><th>Obra</th><th>Categoria</th>
+          <th class="num">Valor do dia</th>
+          <th class="num" title="Dias da categoria no mês">Base</th>
+          <th class="num">Feriados</th><th class="num">Férias</th>
+          <th class="num">Dias</th><th class="num">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in pessoas %}
+        <tr class="clicavel {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel }}"
+            data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}"
+            data-valor="{{ p.valor }}"
+            data-impossivel="{{ '1' if p.impossivel else '' }}">
+          {% if pode_operar %}
+            <td class="marca">
+              {# ⚠️ Desabilitada quando NÃO HÁ o que pagar: marcar pagaria zero em
+                 silêncio, e zero em silêncio é pior que não pagar. #}
+              <input type="checkbox" class="marca-pessoa"
+                     {% if p.pagar %}checked{% endif %}
+                     {% if p.impossivel %}disabled{% endif %}
+                     aria-label="Pagar {{ p.nome }}">
+            </td>
+          {% endif %}
+          <td>
+            <b>{{ p.nome or '—' }}</b>
+            {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
+            {% for motivo in p.motivos %}
+              <br><span class="cartao-dica">⚠ {{ motivo }}</span>
+            {% endfor %}
+          </td>
+          {# A COR DIZ O ESTADO ANTES DO TEXTO. Os selos são os MESMOS das
+         Solicitações — vermelho não pode significar uma coisa aqui e outra lá. #}
       <td>
-        <b>{{ p.nome or '—' }}</b>
-        {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
-        {% for motivo in p.motivos %}
-          <br><span class="cartao-dica">⚠ {{ motivo }}</span>
-        {% endfor %}
+        {% if p.impossivel %}
+          <span class="selo risco" title="{{ p.motivos|join(' ') }}"
+            >falta dado</span>
+        {% elif not p.pagar %}
+          <span class="selo cancelado" title="{{ p.motivos|join(' ') }}"
+            >não paga</span>
+        {% elif p.motivos %}
+          <span class="selo saindo" title="{{ p.motivos|join(' ') }}"
+            >atenção</span>
+        {% else %}
+          {# ⚠️ VERDE (`aprovado`), NÃO `.selo.pagar`. Eu ia usar `pagar` por causa
+             do nome e ele é VERMELHO na paleta dele — nas Solicitações "Pagar"
+             quer dizer "pendente, urgente". A mesma cor significaria coisas
+             opostas em telas vizinhas, que é justamente o que a paleta existe para
+             impedir: ele lê a cor antes do texto. #}
+          <span class="selo aprovado">vai receber</span>
+        {% endif %}
       </td>
       <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
-      <td>{{ p.obra or '—' }}</td>
-      <td>{{ p.modo or '—' }}</td>
-      <td class="num">
-        {% if p.valor_unitario is none %}—{% else %}{{ p.valor_unitario|moeda }}{% endif %}
-      </td>
-      <td class="num">{{ p.dias_base or '—' }}</td>
-      <td class="num">
-        {% if tipo == 'alimentacao' %}{{ p.feriados or '' }}{% else %}—{% endif %}
-      </td>
-      <td class="num">{{ p.ferias or '' }}</td>
-      <td class="num"><b>{{ p.dias }}</b></td>
-      <td class="num valor-final"><b>{{ p.valor|moeda }}</b></td>
-    </tr>
-  {% else %}
-    <tr><td colspan="11" class="cartao-dica">
-      Ninguém com esse filtro. Mude o filtro na lateral.
-    </td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+          <td>{{ p.obra or '—' }}</td>
+          <td>{{ p.modo or '—' }}</td>
+          <td class="num">
+            {% if p.valor_unitario is none %}—{% else %}{{ p.valor_unitario|moeda }}{% endif %}
+          </td>
+          <td class="num">{{ p.dias_base or '—' }}</td>
+          <td class="num">
+            {% if tipo == 'alimentacao' %}{{ p.feriados or '' }}{% else %}—{% endif %}
+          </td>
+          <td class="num">{{ p.ferias or '' }}</td>
+          <td class="num"><b>{{ p.dias }}</b></td>
+          <td class="num valor-final"><b>{{ p.valor|moeda }}</b></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="12" class="cartao-dica">
+          Ninguém com esse filtro. Mude o filtro na lateral.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+
+</div>
 
 {% if pode_operar %}
 {# A barra fica colada embaixo e só aparece quando há mudança não salva. #}
@@ -474,7 +507,9 @@ async function abrirFichaDaPessoa(cpf, nome) {
               'mês. Pode ser CPF diferente no Mobponto.</p>';
     } else {
       const campos = d.ponto.campos;
-      html += '<div class="ponto-dias"><table class="sps"><thead><tr><th>Dia</th>';
+      html += '<div class="ponto-dias tabela-wrap">' +
+              '<div class="tabela-rolagem">' +
+              '<table class="sps"><thead><tr><th>Dia</th>';
       campos.forEach(c => { html += "<th>" + c + "</th>"; });
       html += "</tr></thead><tbody>";
       d.ponto.dias.forEach(dia => {
@@ -485,7 +520,7 @@ async function abrirFichaDaPessoa(cpf, nome) {
         });
         html += "</tr>";
       });
-      html += "</tbody></table></div>";
+      html += "</tbody></table></div></div>";
     }
     html += "</div>";
 

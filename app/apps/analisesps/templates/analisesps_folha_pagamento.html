@@ -69,29 +69,33 @@
 
 <div class="cartao">
   <label class="rotulo-campo">O que pagar</label>
-  <table class="sps" style="margin:8px 0">
-    <thead>
-      <tr><th></th><th>Verba</th><th>Pagamento</th><th class="num">Pessoas</th>
-        <th class="num">Total</th><th>Fecha?</th></tr>
-    </thead>
-    <tbody>
-    {% for f in fechados %}
-      <tr>
-        <td><input type="checkbox" class="marca-verba" value="{{ f.verba }}"
-                   data-tipo="{{ f.tipo }}"
-                   aria-label="Pagar {{ rotulo_da_verba(f.verba) }}"></td>
-        <td>{{ rotulo_da_verba(f.verba) }}</td>
-        <td>{{ "Quinzena" if f.tipo == "quinzena" else "Fim de mês" }}</td>
-        <td class="num">{{ f.pessoas }}</td>
-        <td class="num">{{ f.total|moeda }}</td>
-        {# ⚠️ "NÃO FECHA" NÃO ESCONDE A VERBA, mas fica dito: um fechamento que não
-           batia continua dizendo que não batia, e quem gera decide sabendo. #}
-        <td>{% if f.fecha %}<span class="selo">bate</span>
-            {% else %}<span class="selo saindo">não bate</span>{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="tabela-wrap">
+    <div class="tabela-rolagem livre">
+      <table class="sps" style="margin:8px 0">
+        <thead>
+          <tr><th></th><th>Verba</th><th>Pagamento</th><th class="num">Pessoas</th>
+            <th class="num">Total</th><th>Fecha?</th></tr>
+        </thead>
+        <tbody>
+        {% for f in fechados %}
+          <tr>
+            <td><input type="checkbox" class="marca-verba" value="{{ f.verba }}"
+                       data-tipo="{{ f.tipo }}"
+                       aria-label="Pagar {{ rotulo_da_verba(f.verba) }}"></td>
+            <td>{{ rotulo_da_verba(f.verba) }}</td>
+            <td>{{ "Quinzena" if f.tipo == "quinzena" else "Fim de mês" }}</td>
+            <td class="num">{{ f.pessoas }}</td>
+            <td class="num">{{ f.total|moeda }}</td>
+            {# ⚠️ "NÃO FECHA" NÃO ESCONDE A VERBA, mas fica dito: um fechamento que não
+               batia continua dizendo que não batia, e quem gera decide sabendo. #}
+            <td>{% if f.fecha %}<span class="selo">bate</span>
+                {% else %}<span class="selo saindo">não bate</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 
   <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
     <div>
@@ -141,57 +145,61 @@
 <h3 style="margin-top:24px">
   Arquivos gerados <small>{{ log|length }} · do mais novo para o mais antigo</small>
 </h3>
-<table class="sps">
-  <thead>
-    <tr><th>Quando</th><th>Competência</th><th>Para onde</th><th>Verbas</th>
-      <th>Conta</th><th class="num">Pessoas</th><th class="num">Total</th>
-      <th>Arquivo</th><th>Card</th><th>Por quem</th></tr>
-  </thead>
-  <tbody>
-  {% for a in log %}
-    <tr class="{{ 'linha-alerta' if a.avisos }}">
-      <td>{{ a.criado_em|momento_br }}</td>
-      <td>{{ a.competencia }}
-        <span class="cartao-dica">
-          {{ "quinzena" if a.tipo == "quinzena" else "fim de mês" }}</span></td>
-      <td>{{ a.rotulo_destino }}</td>
-      <td>{{ a.rotulo_verbas or '—' }}</td>
-      <td>{{ a.conta or '—' }}</td>
-      <td class="num">{{ a.pessoas }}</td>
-      <td class="num">{{ a.total|moeda }}</td>
-      <td>
-        {% if a.link %}
-          <a href="{{ a.link }}" target="_blank" rel="noopener"
-             title="{{ a.nome }}">baixar</a>
-        {% else %}—{% endif %}
-        {% if a.avisos %}
-          <br><span class="cartao-dica">⚠ {{ a.avisos }}</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if a.link_card %}
-          <a href="{{ a.link_card }}" target="_blank" rel="noopener"
-             >{{ a.card_pipefy or 'card' }}</a>
-        {% elif a.destino == 'analise' %}
-          {# A análise vai como LINK dentro do card do pagamento — ela não tem
-             card próprio, e oferecer um botão aqui prometeria o que não existe. #}
-          <span class="cartao-dica">vai no card do pagamento</span>
-        {% elif pode_operar %}
-          <button class="btn secundario btn-lancar-card" type="button"
-                  data-arquivo="{{ a.id }}" data-nome="{{ a.nome }}"
-                  >lançar no Pipefy</button>
-        {% else %}<span class="cartao-dica">—</span>{% endif %}
-      </td>
-      <td><span class="cartao-dica">{{ a.criado_por or '—' }}</span></td>
-    </tr>
-  {% else %}
-    <tr><td colspan="10" class="cartao-dica">
-      Nenhum arquivo gerado ainda. O que sair daqui fica listado com o link para
-      baixar.
-    </td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead>
+        <tr><th>Quando</th><th>Competência</th><th>Para onde</th><th>Verbas</th>
+          <th>Conta</th><th class="num">Pessoas</th><th class="num">Total</th>
+          <th>Arquivo</th><th>Card</th><th>Por quem</th></tr>
+      </thead>
+      <tbody>
+      {% for a in log %}
+        <tr class="{{ 'linha-alerta' if a.avisos }}">
+          <td>{{ a.criado_em|momento_br }}</td>
+          <td>{{ a.competencia }}
+            <span class="cartao-dica">
+              {{ "quinzena" if a.tipo == "quinzena" else "fim de mês" }}</span></td>
+          <td>{{ a.rotulo_destino }}</td>
+          <td>{{ a.rotulo_verbas or '—' }}</td>
+          <td>{{ a.conta or '—' }}</td>
+          <td class="num">{{ a.pessoas }}</td>
+          <td class="num">{{ a.total|moeda }}</td>
+          <td>
+            {% if a.link %}
+              <a href="{{ a.link }}" target="_blank" rel="noopener"
+                 title="{{ a.nome }}">baixar</a>
+            {% else %}—{% endif %}
+            {% if a.avisos %}
+              <br><span class="cartao-dica">⚠ {{ a.avisos }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if a.link_card %}
+              <a href="{{ a.link_card }}" target="_blank" rel="noopener"
+                 >{{ a.card_pipefy or 'card' }}</a>
+            {% elif a.destino == 'analise' %}
+              {# A análise vai como LINK dentro do card do pagamento — ela não tem
+                 card próprio, e oferecer um botão aqui prometeria o que não existe. #}
+              <span class="cartao-dica">vai no card do pagamento</span>
+            {% elif pode_operar %}
+              <button class="btn secundario btn-lancar-card" type="button"
+                      data-arquivo="{{ a.id }}" data-nome="{{ a.nome }}"
+                      >lançar no Pipefy</button>
+            {% else %}<span class="cartao-dica">—</span>{% endif %}
+          </td>
+          <td><span class="cartao-dica">{{ a.criado_por or '—' }}</span></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10" class="cartao-dica">
+          Nenhum arquivo gerado ainda. O que sair daqui fica listado com o link para
+          baixar.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 {% if pode_operar %}
 <div class="cartao" style="margin-top:14px">
@@ -350,7 +358,8 @@ document.getElementById("btn-conferir").addEventListener("click", async () => {
       d.resumo.total.toLocaleString("pt-BR",
         {style: "currency", currency: "BRL"}) +
       ". E mais um arquivo de análise, sempre.</div>";
-    html += '<table class="sps"><thead><tr><th>Conta</th><th>Verbas</th>' +
+    html += '<div class="tabela-wrap"><div class="tabela-rolagem livre">' +
+      '<table class="sps"><thead><tr><th>Conta</th><th>Verbas</th>' +
       '<th class="num">Pessoas</th><th class="num">Total</th><th>Avisos</th>' +
       "</tr></thead><tbody>";
     d.lotes.forEach(l => {
@@ -362,7 +371,7 @@ document.getElementById("btn-conferir").addEventListener("click", async () => {
           ? '<span class="cartao-dica">⚠ ' + l.criticas.join(" ") + "</span>"
           : "") + "</td></tr>";
     });
-    html += "</tbody></table>";
+    html += "</tbody></table></div></div>";
     caixa.innerHTML = html;
     blocoGerar.hidden = false;
     document.getElementById("forcar").checked = false;

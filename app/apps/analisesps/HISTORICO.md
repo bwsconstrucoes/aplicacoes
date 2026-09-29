@@ -9244,6 +9244,51 @@ pela segunda rodada seguida foi exatamente aí que estavam os problemas.
 
 ---
 
+### Centésima décima sexta leva (29/09) — "as cores da tabela", que eu não entendi
+
+Ele cobrou direto: *"tem coisa que você não compreende e não pergunta. Eu falei sobre
+as cores das tabelas, não falei? Você entendeu o quê sobre isso e fez o quê sobre
+isso?"*
+
+**Eu não havia feito nada.** Conferi que as tabelas usavam a mesma classe `sps`,
+concluí "já está igual" e segui. O detalhe está em `docs/FOLHA_DE_PAGAMENTO.md` §7.33.
+
+#### O padrão de tabela do módulo são TRÊS coisas
+
+1. `class="sps"`;
+2. a tabela DENTRO de **`.tabela-wrap`** (cartão branco, cantos, sombra) e
+   **`.tabela-rolagem`** (rolagem horizontal, cabeçalho grudado no topo);
+3. o **estado da linha lido pela COR**, com a paleta que o CSS descreve como dele:
+   *"o dono trabalhou anos com elas e lê a tabela pela cor antes de ler o texto"*.
+
+⚠️ **"Cor da tabela" era a SUPERFÍCIE, não a célula.** A das Solicitações é um cartão
+branco sobre o fundo da página; as minhas eram tabelas nuas *no* fundo. Vinte e uma
+tabelas em nove telas foram para dentro dos invólucros — inclusive as três montadas
+dentro do JavaScript, porque exceção deixa buraco na regra.
+
+⚠️ **`.livre` é diferença deliberada:** nas telas da folha as tabelas são empilhadas
+(o Panorama tem cinco). O teto de altura do original criaria cinco caixas de rolagem
+na mesma tela, pior que uma página comprida.
+
+#### O erro que eu quase publiquei no meio do conserto
+
+Eu ia usar `.selo.pagar` para "vai receber", pelo nome. **`.selo.pagar` é VERMELHO na
+paleta dele** — nas Solicitações "Pagar" quer dizer *pendente, urgente*. Usar vermelho
+para "está tudo certo" faria a mesma cor significar coisas opostas em telas vizinhas.
+Ficou verde (`aprovado`), com teste travando que `pagar` não volta a aparecer ali.
+
+#### A lição, que é sobre mim
+
+O pedido tinha uma palavra que eu não sabia traduzir — "cor" — e eu resolvi com a
+interpretação que exigia menos trabalho, sem conferir e sem perguntar. **"Conferi que
+é a mesma classe" era conferir o que era fácil, não o que foi pedido.** A ordem certa:
+ler o que o padrão faz de verdade; restando dúvida, perguntar UMA coisa precisa.
+
+**Verificado:** 7.452 testes, zero falhas — incluindo um que lê os templates e falha
+se qualquer tela da folha nascer com tabela fora do invólucro.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

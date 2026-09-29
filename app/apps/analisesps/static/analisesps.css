@@ -2369,3 +2369,31 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
 
 /* Os filtros da lateral: o campo acompanha a coluna, e a coluna já tem largura. */
 .filtros input, .filtros select { width: 100%; max-width: none; }
+
+/* --------------------------------------------------------------------------
+   AS TABELAS DA FOLHA PASSAM A TER A MESMA SUPERFÍCIE DAS SOLICITAÇÕES —
+   29/09/2026
+
+   ⚠️ CONSERTO DE UMA COISA QUE EU NÃO HAVIA ENTENDIDO. O dono mandou *"siga o
+   mesmo padrão de cabeçalho, de cor da tabela e etc... pra todas as telas"*, eu
+   conferi que as duas usavam `class="sps"`, concluí "já está igual" e segui.
+
+   Não estava. O padrão das Solicitações é a tabela DENTRO de dois invólucros:
+
+     .tabela-wrap      cartão branco, cantos, sombra — a tabela é um objeto
+     .tabela-rolagem   rolagem horizontal e CABEÇALHO GRUDADO no topo
+
+   Sem eles a tabela fica nua, direto no fundo da página — e é exatamente isso
+   que se lê como "outra cor de tabela": não é a cor das células, é a superfície
+   em que ela está.
+
+   ⚠️ E UMA DIFERENÇA DELIBERADA: nas telas da folha as tabelas são EMPILHADAS
+   (o Panorama tem cinco). O teto de altura do original criaria cinco caixas de
+   rolagem na mesma tela, o que é pior do que uma página comprida. Por isso
+   `.livre` tira o teto — o cabeçalho continua grudando, agora contra a rolagem
+   da página.
+   -------------------------------------------------------------------------- */
+.tabela-rolagem.livre { max-height: none; }
+.tabela-wrap + .tabela-wrap { margin-top: 14px; }
+/* Tabela dentro de cartão branco pede respiro entre ela e o título de cima. */
+h3 + .tabela-wrap, p + .tabela-wrap, div + .tabela-wrap { margin-top: 10px; }

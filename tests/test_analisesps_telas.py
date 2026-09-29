@@ -7120,3 +7120,75 @@ def test_o_CSS_poe_TETO_na_largura_dos_campos():
     assert ".solta-arquivo, .caixa-arquivo, .area-arquivo { max-width: 760px; }" in css
     # E os filtros da lateral continuam acompanhando a coluna.
     assert ".filtros input, .filtros select { width: 100%; max-width: none; }" in css
+
+
+# ---------------------------------------------------------------------------
+# O PADRÃO DE TABELA — 29/09/2026
+#
+# Ele mandou *"siga o mesmo padrão de cabeçalho, de cor da tabela e etc... pra todas
+# as telas"*, eu conferi que as duas usavam `class="sps"`, concluí "já está igual" e
+# segui. Não estava: faltavam os DOIS invólucros e faltava a cor dizer o estado.
+# ---------------------------------------------------------------------------
+def test_as_tabelas_da_folha_usam_a_MESMA_superficie_das_solicitacoes(app,
+                                                                     monkeypatch):
+    """⚠️ NÃO É A COR DAS CÉLULAS, É A SUPERFÍCIE. O padrão é a tabela dentro de
+    `.tabela-wrap` (cartão branco, sombra, cantos) e `.tabela-rolagem` (cabeçalho
+    grudado no topo). Sem eles a tabela fica nua, direto no fundo da página — e é
+    isso que se lê como "outra cor de tabela"."""
+    _preparar_auxilio(monkeypatch)
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+
+    assert "tabela-wrap" in html
+    assert "tabela-rolagem" in html
+    # ⚠️ `livre`: nas telas da folha as tabelas são EMPILHADAS (o Panorama tem
+    # cinco). O teto de altura do original criaria cinco caixas de rolagem na mesma
+    # tela, pior do que uma página comprida.
+    assert "tabela-rolagem livre" in html
+
+
+def test_TODA_tela_da_folha_envolve_as_tabelas():
+    """Uma tela nova nascer com a tabela nua é o defeito voltando. Este teste lê os
+    templates, porque é mais barato que abrir nove telas."""
+    base = Path("app/apps/analisesps/templates")
+    nus = []
+    for nome in sorted(base.glob("analisesps_folha_*.html")):
+        texto = nome.read_text(encoding="utf-8")
+        for pedaco in texto.split('<table class="sps"')[1:]:
+            # Onde vem ANTES desta tabela: tem de haver o invólucro por perto.
+            antes = texto[:texto.index('<table class="sps"' + pedaco[:40])]
+            if "tabela-rolagem" not in antes[-260:]:
+                nus.append(nome.name)
+                break
+    # `analisesps_colaboradores.html` não tem o prefixo folha_, mas é da mesma área.
+    extra = base / "analisesps_colaboradores.html"
+    texto = extra.read_text(encoding="utf-8")
+    if '<table class="sps"' in texto and "tabela-rolagem" not in texto:
+        nus.append(extra.name)
+    assert not nus, ("estas telas da folha têm tabela fora do invólucro padrão: "
+                     + ", ".join(sorted(set(nus))))
+
+
+def test_a_COR_diz_o_estado_da_linha_do_auxilio(app, monkeypatch):
+    """*"Ele lê a tabela pela cor antes de ler o texto"* — está escrito no CSS, sobre
+    a paleta que ele usa há anos. As minhas tabelas diziam o estado em texto miúdo."""
+    from decimal import Decimal as D
+
+    _preparar_auxilio(monkeypatch)
+    ok = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    # ⚠️ VERDE para quem vai receber, e NÃO `.selo.pagar` — que é VERMELHO na paleta
+    # dele, porque nas Solicitações "Pagar" quer dizer "pendente, urgente". A mesma
+    # cor não pode significar coisas opostas em telas vizinhas.
+    assert "selo aprovado" in ok
+    assert "selo pagar" not in ok
+
+    problema = dict(_auxilio_calculado()["pessoas"][0])
+    problema.update({"pagar": False, "pagar_calculado": False,
+                     "impossivel": True, "valor": D("0.00"), "dias": 0,
+                     "valor_unitario": None,
+                     "motivos": ["o cadastro não diz o valor"]})
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(pessoas=[problema]))
+    ruim = _como_mestre(app).get(
+        "/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "selo risco" in ruim, "falta de dado no cadastro é vermelho forte"

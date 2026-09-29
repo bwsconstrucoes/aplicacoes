@@ -126,45 +126,49 @@
     filtrado{% else %}{{ pessoas|length }}{% endif %} ·
     quem tem data faltando vem primeiro</small>
 </h3>
-<table class="sps">
-  <thead>
-    <tr><th>Quem</th><th>CPF</th><th>Obra</th><th>Contrato</th>
-      <th>Início</th><th>Admissão</th>
-      <th class="num">Dias de diária</th><th class="num">Dias de CTPS</th>
-      <th class="num">Sem decidir</th></tr>
-  </thead>
-  <tbody>
-  {% for p in pessoas %}
-    <tr class="{{ 'linha-alerta' if p.dias_sem_decidir }}">
-      <td>
-        {% if p.link_pipefy %}
-          <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
-             >{{ p.nome or '—' }}</a>
-        {% else %}{{ p.nome or '—' }}{% endif %}
-        {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
-      </td>
-      <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
-      <td>{{ p.obra or '—' }}</td>
-      <td>{{ p.tipo_contrato or '—' }}</td>
-      <td>{{ p.data_inicio|data_br if p.data_inicio else '—' }}</td>
-      <td>{{ p.data_admissao|data_br if p.data_admissao else '—' }}</td>
-      <td class="num"><b>{{ p.dias_de_diaria }}</b></td>
-      <td class="num">{{ p.dias_de_ctps or '' }}</td>
-      <td class="num">
-        {% if p.dias_sem_decidir %}
-          <span class="selo saindo">{{ p.dias_sem_decidir }}</span>
-        {% endif %}
-      </td>
-    </tr>
-  {% else %}
-    <tr><td colspan="9" class="cartao-dica">
-      {% if filtrando %}Ninguém com esse filtro.
-      {% else %}Nenhum dia de diária neste mês — todos os dias de ponto são CTPS,
-        e vêm na folha da contabilidade.{% endif %}
-    </td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead>
+        <tr><th>Quem</th><th>CPF</th><th>Obra</th><th>Contrato</th>
+          <th>Início</th><th>Admissão</th>
+          <th class="num">Dias de diária</th><th class="num">Dias de CTPS</th>
+          <th class="num">Sem decidir</th></tr>
+      </thead>
+      <tbody>
+      {% for p in pessoas %}
+        <tr class="{{ 'linha-alerta' if p.dias_sem_decidir }}">
+          <td>
+            {% if p.link_pipefy %}
+              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
+                 >{{ p.nome or '—' }}</a>
+            {% else %}{{ p.nome or '—' }}{% endif %}
+            {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
+          </td>
+          <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
+          <td>{{ p.obra or '—' }}</td>
+          <td>{{ p.tipo_contrato or '—' }}</td>
+          <td>{{ p.data_inicio|data_br if p.data_inicio else '—' }}</td>
+          <td>{{ p.data_admissao|data_br if p.data_admissao else '—' }}</td>
+          <td class="num"><b>{{ p.dias_de_diaria }}</b></td>
+          <td class="num">{{ p.dias_de_ctps or '' }}</td>
+          <td class="num">
+            {% if p.dias_sem_decidir %}
+              <span class="selo saindo">{{ p.dias_sem_decidir }}</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="cartao-dica">
+          {% if filtrando %}Ninguém com esse filtro.
+          {% else %}Nenhum dia de diária neste mês — todos os dias de ponto são CTPS,
+            e vêm na folha da contabilidade.{% endif %}
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 {% if levantamento.sem_cadastro %}
 {# ⚠️ NÃO É LISTA ESCONDIDA. Quem bate ponto e não está no cadastro é o caso que
@@ -173,18 +177,22 @@
   Bateram ponto e não estão no cadastro
   <small>{{ levantamento.sem_cadastro|length }} — sem cadastro não há como pagar</small>
 </h3>
-<table class="sps">
-  <thead><tr><th>CPF no ponto</th><th>Nome no ponto</th>
-    <th class="num">Dias</th></tr></thead>
-  <tbody>
-  {% for p in levantamento.sem_cadastro %}
-    <tr class="linha-alerta">
-      <td class="cpf">{{ p.cpf }}</td><td>{{ p.nome or '—' }}</td>
-      <td class="num">{{ p.dias }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>CPF no ponto</th><th>Nome no ponto</th>
+        <th class="num">Dias</th></tr></thead>
+      <tbody>
+      {% for p in levantamento.sem_cadastro %}
+        <tr class="linha-alerta">
+          <td class="cpf">{{ p.cpf }}</td><td>{{ p.nome or '—' }}</td>
+          <td class="num">{{ p.dias }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 <p class="cartao-dica">
   Pode ser gente nova que ainda não entrou no cadastro, ou CPF digitado diferente
   no Mobponto. Aperte <b>Atualizar cadastro</b> em

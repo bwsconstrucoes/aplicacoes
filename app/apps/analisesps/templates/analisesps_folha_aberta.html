@@ -97,45 +97,53 @@
 
 {% if filiais %}
 <h3 style="margin-top:18px">Por filial <small>da maior para a menor</small></h3>
-<table class="sps">
-  <thead><tr><th>Filial</th><th class="num">Pessoas</th>
-    <th class="num">Total</th></tr></thead>
-  <tbody>
-  {% for f in filiais %}
-    <tr><td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
-      <td class="num">{{ f.pessoas }}</td>
-      <td class="num">{{ f.total|moeda }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Filial</th><th class="num">Pessoas</th>
+        <th class="num">Total</th></tr></thead>
+      <tbody>
+      {% for f in filiais %}
+        <tr><td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
+          <td class="num">{{ f.pessoas }}</td>
+          <td class="num">{{ f.total|moeda }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endif %}
 
 <h3 style="margin-top:18px">Pessoa por pessoa</h3>
-<table class="sps">
-  <thead>
-    <tr><th>Nome</th><th>Código</th><th>CPF</th><th>Filial</th>
-      <th class="num">Valor</th></tr>
-  </thead>
-  <tbody>
-  {% for l in folha.linhas %}
-    <tr class="{{ 'linha-alerta' if not l.cpf }}">
-      <td>{{ l.nome }}</td>
-      <td>{{ l.id_fortes }}</td>
-      <td class="cpf">
-        {% if l.cpf %}{{ l.cpf }}
-        {% else %}
-          {# ⚠️ A PESSOA FICA NA LISTA, MARCADA — não numa lista à parte que
-             alguém esquece de abrir. Correção do dono em 26/09/2026. #}
-          <span class="selo cancelado"
-                title="Sem o código do Fortes no cadastro não há CPF, e sem CPF não há pagamento">fora do cadastro</span>
-        {% endif %}
-      </td>
-      <td><span class="cartao-dica">{{ l.filial_codigo }}{% if l.filial_nome %} — {{ l.filial_nome }}{% endif %}</span></td>
-      <td class="num">{{ l.valor|moeda }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead>
+        <tr><th>Nome</th><th>Código</th><th>CPF</th><th>Filial</th>
+          <th class="num">Valor</th></tr>
+      </thead>
+      <tbody>
+      {% for l in folha.linhas %}
+        <tr class="{{ 'linha-alerta' if not l.cpf }}">
+          <td>{{ l.nome }}</td>
+          <td>{{ l.id_fortes }}</td>
+          <td class="cpf">
+            {% if l.cpf %}{{ l.cpf }}
+            {% else %}
+              {# ⚠️ A PESSOA FICA NA LISTA, MARCADA — não numa lista à parte que
+                 alguém esquece de abrir. Correção do dono em 26/09/2026. #}
+              <span class="selo cancelado"
+                    title="Sem o código do Fortes no cadastro não há CPF, e sem CPF não há pagamento">fora do cadastro</span>
+            {% endif %}
+          </td>
+          <td><span class="cartao-dica">{{ l.filial_codigo }}{% if l.filial_nome %} — {{ l.filial_nome }}{% endif %}</span></td>
+          <td class="num">{{ l.valor|moeda }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 
 {% endif %}
 {% endblock %}
