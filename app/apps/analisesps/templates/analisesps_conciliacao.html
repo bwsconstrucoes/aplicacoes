@@ -93,6 +93,32 @@
   <p style="margin:12px 2px"><button class="btn" type="submit">Aplicar</button></p>
 </form>
 
+{# ---------------------------------------------------------------------------
+   "ONDE ESTÁ ESSE LANÇAMENTO?" — a busca que ignora TUDO.
+
+   ⚠️ Ela não obedece conta escolhida, período, situação, nem o filtro guardado
+   da visita anterior. Existe porque "não importou" e "não estou vendo" são a
+   mesma coisa na tela e coisas diferentes no banco — e a diferença entre as
+   duas custou a ele duas rodadas em 29/09/2026, procurando um valor que estava
+   gravado. A resposta é um FATO: está, e nesta conta; ou não está.
+
+   ⚠️ FORA DO <form> DOS FILTROS, de propósito: lá dentro, o Enter numa caixa
+   recarregaria a tela com os filtros, em vez de procurar. A resposta aparece
+   no meio da tela (`#achados-gerais`), onde há largura.
+--------------------------------------------------------------------------- #}
+<div class="filtro aberto procura-geral">
+  <div class="filtro-cab"><span>Não acha um lançamento?</span></div>
+  <div class="filtro-cont">
+    <input type="text" id="procura-valor" placeholder="valor, ex.: 56.284,17"
+           aria-label="Valor a procurar em todas as contas">
+    <input type="text" id="procura-texto" placeholder="ou um pedaço do histórico"
+           aria-label="Histórico a procurar em todas as contas">
+    <button class="btn secundario" type="button" id="btn-procurar-tudo"
+            >Procurar em todas as contas</button>
+    <span class="cartao-dica">ignora conta, período e qualquer filtro</span>
+  </div>
+</div>
+
 {% if pode_operar %}
 {# ---------------------------------------------------------------------------
    O EXTRATO ENTRA POR AQUI — na barra lateral, abaixo dos filtros.
@@ -259,16 +285,9 @@
      duas custou a ele duas rodadas em 29/09/2026, procurando um valor que estava
      gravado. Aqui a resposta é um FATO: está, e nesta conta; ou não está.
      ------------------------------------------------------------------------ #}
-  <div class="procura-geral">
-    <label class="rotulo-campo" style="margin:0">Não acha um lançamento?</label>
-    <input type="text" id="procura-valor" class="curto" placeholder="valor, ex.: 56.284,17"
-           aria-label="Valor a procurar em todas as contas">
-    <input type="text" id="procura-texto" placeholder="ou um pedaço do histórico"
-           aria-label="Histórico a procurar em todas as contas">
-    <button class="btn secundario" type="button" id="btn-procurar-tudo"
-            >Procurar em todas as contas</button>
-    <span class="cartao-dica">ignora conta, período e qualquer filtro</span>
-  </div>
+  {# A caixa da busca mora na barra lateral (pedido dele, 29/09/2026: *"essa
+     pesquisa de um lançamento precisa estar no sidebar"*). A RESPOSTA fica aqui,
+     onde há largura para listar conta, data, valor e arquivo. #}
   <div id="achados-gerais"></div>
 
   {% set escondidas = (total_da_conta or 0) - (resumo.quantidade or 0) %}
@@ -307,17 +326,24 @@
      armadilha. O cabeçalho fica SEMPRE; o "nada aqui" vira uma linha dentro
      da tabela. #}
   {% if pode_operar and linhas %}
+    {# ⚠️ TUDO DENTRO DE `.ba-esquerda`. A barra é uma grade de três colunas
+       (esquerda / total / direita), feita para a tela do lote. Botão solto
+       direto na grade cai numa coluna que ESTICA — foi o que ele viu em
+       29/09/2026: *"os botões lançar no omie e desmarcar estão muito grandes e
+       desalinhados"*. Dentro do grupo, cada botão tem o tamanho do texto. #}
     <div class="barra-acoes">
-      <label class="opcao"><input type="checkbox" id="marcar-todos">
-        <span class="rotulo">marcar todos da página</span></label>
-      <button class="btn secundario" id="btn-conciliar">Conciliar selecionados</button>
-      <button class="btn secundario" id="btn-desmarcar">Desmarcar selecionados</button>
-      {# ⚠️ ESTE BOTÃO ESCREVE NO OMIE. Ele não lança direto: abre o ensaio,
-         que mostra linha a linha o que vai acontecer. #}
-      <button class="btn secundario" id="btn-omie"
-              {% if not omie_pronto %}disabled
-              title="falta aplicar a atualização do banco que liga a parte do OMIE"
-              {% endif %}>Lançar no OMIE…</button>
+      <div class="ba-esquerda">
+        <label class="opcao"><input type="checkbox" id="marcar-todos">
+          <span class="rotulo">marcar todos da página</span></label>
+        <button class="btn secundario" id="btn-conciliar">Conciliar selecionados</button>
+        <button class="btn secundario" id="btn-desmarcar">Desmarcar selecionados</button>
+        {# ⚠️ ESTE BOTÃO ESCREVE NO OMIE. Ele não lança direto: abre o ensaio,
+           que mostra linha a linha o que vai acontecer. #}
+        <button class="btn secundario" id="btn-omie"
+                {% if not omie_pronto %}disabled
+                title="falta aplicar a atualização do banco que liga a parte do OMIE"
+                {% endif %}>Lançar no OMIE…</button>
+      </div>
       <span id="recado-acao" class="cartao-dica" style="margin:0"></span>
     </div>
   {% endif %}
@@ -1909,6 +1935,14 @@ if (formColunas) {
 // "não importou" e "não estou vendo" são indistinguíveis.
 // ---------------------------------------------------------------------------
 const btnProcurarTudo = document.getElementById("btn-procurar-tudo");
+// Enter em qualquer das duas caixas procura — elas estão fora do formulário
+// dos filtros justamente para o Enter não recarregar a tela.
+["procura-valor", "procura-texto"].forEach(id => {
+  const caixa = document.getElementById(id);
+  if (caixa) caixa.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); btnProcurarTudo.click(); }
+  });
+});
 if (btnProcurarTudo) btnProcurarTudo.addEventListener("click", async () => {
   const valor = document.getElementById("procura-valor").value.trim();
   const texto = document.getElementById("procura-texto").value.trim();

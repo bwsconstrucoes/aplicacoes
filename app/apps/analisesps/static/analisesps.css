@@ -2472,14 +2472,10 @@ h3 + .tabela-wrap, p + .tabela-wrap, div + .tabela-wrap { margin-top: 10px; }
 .ajuste-obra .linha-divisao { margin-bottom: 6px; }
 .ajuste-obra .conta-divisao { margin-left: 4px; }
 
-/* A busca que ignora todo filtro. Compacta e discreta: ela é a saída de emergência
-   de quem não acha um lançamento, não o caminho normal de procurar. */
-.procura-geral {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin: 0 0 10px;
-}
-.procura-geral input { max-width: 260px; }
-.procura-geral input.curto { max-width: 160px; }
+/* A busca que ignora todo filtro, na barra lateral (29/09/2026, pedido dele).
+   Empilhada: valor, histórico, botão — a lateral não tem largura para linha. */
+.filtros .procura-geral .filtro-cont { display: grid; gap: 6px; }
+.filtros .procura-geral .btn { width: 100%; }
 
 /* --------------------------------------------------------------------------
    A TABELA DA CONCILIAÇÃO NÃO SE APERTA ATÉ QUEBRAR — 29/09/2026

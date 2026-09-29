@@ -451,6 +451,38 @@ def test_o_soltar_o_extrato_fica_na_BARRA_LATERAL(app_com_dados):
     assert html.index('id="saida-extrato"') > conteudo
 
 
+def test_a_busca_geral_fica_na_BARRA_LATERAL_e_a_resposta_no_meio(app_com_dados):
+    """Pedido dele em 29/09/2026: *"essa pesquisa de um lançamento precisa estar
+    no sidebar"*. A resposta continua no meio, onde há largura para listar."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    conteudo = html.index("<h2>Conciliação")
+    assert html.index('id="procura-valor"') < conteudo
+    assert html.index('id="btn-procurar-tudo"') < conteudo
+    assert html.index('id="achados-gerais"') > conteudo
+    # E FORA do formulário dos filtros: dentro dele o Enter recarregaria a tela.
+    fim_do_form = html.index("</form>", html.index('id="filtros-conciliacao"'))
+    assert html.index('id="procura-valor"') > fim_do_form
+
+
+def test_os_botoes_da_barra_de_acoes_nao_esticam(app_com_dados):
+    """⚠️ A barra é uma grade de três colunas feita para a tela do lote. Botão
+    solto direto nela cai numa coluna que estica — *"os botões lançar no omie e
+    desmarcar estão muito grandes e desalinhados"* (29/09/2026). Todos os botões
+    ficam dentro do grupo da esquerda."""
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+
+    inicio = html.index('class="barra-acoes"')
+    fim = html.index('id="recado-acao"', inicio)
+    barra = html[inicio:fim]
+    assert 'class="ba-esquerda"' in barra
+    grupo = barra[barra.index('class="ba-esquerda"'):]
+    for botao in ("btn-conciliar", "btn-desmarcar", "btn-omie"):
+        assert f'id="{botao}"' in grupo, f"{botao} está solto na grade"
+
+
 def test_os_numeros_do_topo_SAO_FILTROS(app_com_dados):
     """Pedido dele: *"se eu clicar em falta conciliar, eu já sei listado
     imediatamente as que faltam. Isso aqui não está acontecendo."*"""
