@@ -10043,9 +10043,9 @@ automático diário seria um jeito de estragar o mês todo dia.
 | as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
 | o primeiro `IncluirLancCC` conferido no OMIE | ele |
 
-**Verificado:** 45 testes do ponto (retomada, não-duplicação, tentativa velha,
-avisos, execução órfã), as telas da folha e do ponto; suíte inteira em andamento
-no momento do commit.
+**Verificado:** suíte inteira — 7.600 passando, 145 pulados, zero falhas —
+com os 45 testes do ponto (retomada, não-duplicação, tentativa velha, avisos,
+execução órfã) e as telas da folha e do ponto.
 **NÃO verificado:** o `ponto_diario` disparado pelo agendador de verdade, e o
 WhatsApp de aviso chegando de verdade — o canal é o mesmo do BaixaBradesco.
 
