@@ -744,9 +744,19 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
     corte = " AND data > ? " if desde else " "
     antes = [desde] if desde else []
 
+    # ⚠️ O ESTADO NO OMIE VEM JUNTO, e isto é conserto de 29/09/2026. O dono:
+    # *"não fica nenhuma informação na tabela dizendo que aquela tarifa foi
+    # lançada, precisa pra não ser lançada novamente."*
+    #
+    # Ele estava certo sobre a TELA, não sobre o banco: o estado era gravado
+    # (`omie_situacao`, `omie_codigo`, `omie_em`) e simplesmente nunca era lido
+    # pela lista. Quem olhava o extrato não tinha como distinguir uma tarifa já
+    # lançada de uma que nunca foi — e o único jeito de descobrir era mandar de
+    # novo e ver o OMIE recusar pelo código de integração repetido.
     linhas = consultar(
         "SELECT id, data, descricao, documento, valor, conciliado, "
-        "       observacao, origem, conciliado_por, conciliado_em, saldo "
+        "       observacao, origem, conciliado_por, conciliado_em, saldo, "
+        "       omie_situacao, omie_codigo, omie_em, omie_por, omie_erro "
         "  FROM ( "
         "    SELECT e.*, ? + sum(valor) OVER (PARTITION BY conta_id "
         "                                     ORDER BY data, id "
@@ -758,7 +768,8 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
         tuple([inicial, int(f.get("conta_id") or 0)] + antes + params
               + [POR_PAGINA, (pagina - 1) * POR_PAGINA]))
     nomes = ["id", "data", "descricao", "documento", "valor", "conciliado",
-             "observacao", "origem", "conciliado_por", "conciliado_em", "saldo"]
+             "observacao", "origem", "conciliado_por", "conciliado_em", "saldo",
+             "omie_situacao", "omie_codigo", "omie_em", "omie_por", "omie_erro"]
     return [dict(zip(nomes, linha)) for linha in linhas]
 
 
@@ -781,6 +792,29 @@ def resumo(f: dict) -> dict:
     nomes = ["quantidade", "entradas", "saidas", "saldo", "pendentes",
              "pendentes_valor", "com_observacao"]
     return dict(zip(nomes, linha or (0,) * 7))
+
+
+def quantas_na_conta(conta_id: int) -> int:
+    """Quantas linhas esta conta tem, SEM filtro nenhum.
+
+    ⚠️ EXISTE PARA A TELA PODER DIZER O QUE ESTÁ ESCONDENDO. Em 29/09/2026 o dono
+    mandou um extrato dizendo *"não foi importado o valor de 56.284,17, não tá sendo
+    reconhecido"*. Importado ele foi — a leitura, a conferência e a gravação desse
+    arquivo foram refeitas aqui, com banco de verdade, e as 53 linhas entram,
+    inclusive essa. O que não entrava era na tela: **o filtro fica guardado de uma
+    visita para a outra** (ver `_lembrar_filtro`), e um período ou um "só saídas" de
+    ontem esconde hoje uma linha que está gravada.
+
+    A tela dizia "N linha(s) neste recorte" e nunca dizia quantas havia fora dele.
+    Recorte que não se anuncia é indistinguível de dado que não existe — e a
+    conclusão de quem olha é sempre a pior: "não importou"."""
+    if not _pronto():
+        return 0
+    from .db import consultar_um
+    linha = consultar_um(
+        "SELECT count(*) FROM analisesps.conciliacao_extrato WHERE conta_id = ?",
+        (int(conta_id or 0),))
+    return int(linha[0]) if linha else 0
 
 
 def saldo_da_conta(conta_id: int, ate=None) -> Decimal:

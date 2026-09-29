@@ -241,17 +241,22 @@ DESTINO = {"id": 2, "nome": "BB 1234", "omie_conta_corrente": 8888}
 
 
 class ClienteQueAnota:
-    def __init__(self, falhar_em=None):
+    """⚠️ `falhar_na_chamada` existe desde 29/09/2026: as duas pontas da
+    transferência passaram a usar a MESMA ação (`IncluirLancCC`), então falhar
+    "pela ação" deixou de conseguir distinguir a segunda da primeira."""
+
+    def __init__(self, falhar_em=None, falhar_na_chamada=None):
         self.chamadas = []
         self.falhar_em = falhar_em or []
+        self.falhar_na_chamada = falhar_na_chamada
         self.proximo = 100
 
     def _call(self, url, acao, param):
         self.chamadas.append((acao, param))
-        if acao in self.falhar_em:
+        if acao in self.falhar_em or len(self.chamadas) == self.falhar_na_chamada:
             raise RuntimeError("o OMIE recusou")
         self.proximo += 1
-        return {"codigo_lancamento_omie": self.proximo}
+        return {"nCodLanc": self.proximo}
 
 
 def test_transferencia_SEM_destino_escolhido_e_recusada():
@@ -285,15 +290,22 @@ def test_a_transferencia_cria_AS_DUAS_PONTAS(monkeypatch):
     cli = ClienteQueAnota()
     feito = co.lancar(plano["vai"], "MARCELO", cli)
 
+    # ⚠️ DUAS CHAMADAS, NÃO QUATRO — mudou em 29/09/2026. Antes cada ponta era um
+    # título mais uma baixa; agora cada ponta é UM lançamento de conta corrente.
+    # A baixa sumiu porque não havia título em aberto para consumir — e era ela
+    # que respondia 404. Ver `montar_lancamento_cc`.
     acoes = [a for a, _ in cli.chamadas]
-    assert acoes == ["IncluirContaPagar", "LancarPagamento",
-                     "IncluirContaReceber", "LancarRecebimento"]
+    assert acoes == ["IncluirLancCC", "IncluirLancCC"]
 
     saida = cli.chamadas[0][1]
-    entrada = cli.chamadas[2][1]
-    assert saida["id_conta_corrente"] == 9999      # origem
-    assert entrada["id_conta_corrente"] == 8888    # destino
-    assert saida["valor_documento"] == entrada["valor_documento"] == 30000.0
+    entrada = cli.chamadas[1][1]
+    assert saida["cabecalho"]["nCodCC"] == 9999      # origem
+    assert entrada["cabecalho"]["nCodCC"] == 8888    # destino
+    assert (saida["cabecalho"]["nValorLanc"]
+            == entrada["cabecalho"]["nValorLanc"] == 30000.0)
+    # As DUAS pontas marcadas como transferência: é assim que o OMIE as tira do
+    # resultado em vez de contar como despesa e receita.
+    assert saida["detalhes"]["cTipo"] == entrada["detalhes"]["cTipo"] == "TRA"
     assert feito["feitos"][0]["codigo_par"]
 
 
@@ -308,8 +320,8 @@ def test_a_segunda_ponta_tem_codigo_de_integracao_PROPRIO(monkeypatch):
     cli = ClienteQueAnota()
     co.lancar(plano["vai"], "T", cli)
 
-    saida = cli.chamadas[0][1]["codigo_lancamento_integracao"]
-    entrada = cli.chamadas[2][1]["codigo_lancamento_integracao"]
+    saida = cli.chamadas[0][1]["cCodIntLanc"]
+    entrada = cli.chamadas[1][1]["cCodIntLanc"]
     assert saida == "CONC42"
     assert entrada == "CONC42D"
     assert saida != entrada
@@ -323,7 +335,9 @@ def test_meia_transferencia_GRITA(monkeypatch):
     monkeypatch.setattr(co, "_pronto", lambda: True)
     plano = co.planejar([linha(descricao="TRANSF CC PARA CC PJ")], CONTA,
                         [TIPO_TRANSF], destinos={10: DESTINO})
-    cli = ClienteQueAnota(falhar_em=["IncluirContaReceber"])
+    # A segunda ponta é a SEGUNDA chamada de `IncluirLancCC` — as duas usam a
+    # mesma ação agora, então o dublê falha pela ordem.
+    cli = ClienteQueAnota(falhar_na_chamada=2)
 
     feito = co.lancar(plano["vai"], "T", cli)
 
@@ -343,8 +357,9 @@ def test_o_tipo_normal_NAO_cria_segunda_ponta(monkeypatch):
     cli = ClienteQueAnota()
     co.lancar(plano["vai"], "T", cli)
 
-    assert [a for a, _ in cli.chamadas] == ["IncluirContaPagar",
-                                            "LancarPagamento"]
+    # UMA chamada só: o lançamento de conta corrente não tem baixa.
+    assert [a for a, _ in cli.chamadas] == ["IncluirLancCC"]
+    assert cli.chamadas[0][1]["detalhes"]["cTipo"] == "DEB", "saída é débito"
 
 
 # ---------------------------------------------------------------------------
@@ -385,3 +400,115 @@ def test_o_numero_do_documento_continua_cortado_em_20():
     from app.apps.analisesps.conciliacao_omie import MAX_CODIGO
     item = co.planejar([linha(documento="1" * 60)], CONTA, TIPOS)["vai"][0]
     assert len(co.montar_inclusao(item)["numero_documento"]) == MAX_CODIGO
+
+
+# ---------------------------------------------------------------------------
+# O LANÇAMENTO DE CONTA CORRENTE — 29/09/2026
+#
+# O dono olhou o resultado de uma tarifa e achou o erro de conceito:
+#
+#   *"Acho que você criou uma conta a pagar para a tarifa, e não um lançamento de
+#   conta corrente."*
+#   *"Esse lançamento acho que não precisa de baixa, e ainda assim, acho que isso
+#   não existe: https://app.omie.com.br/api/v1/financas/contapagarbaixa/"*
+#
+# Ele estava certo nas duas. Uma linha do extrato é dinheiro que JÁ se moveu; o
+# título é compromisso a vencer. E a baixa respondia 404, deixando título criado,
+# baixa falhando e um recado mandando ele terminar o serviço na mão.
+# ---------------------------------------------------------------------------
+def test_a_tarifa_vira_LANCAMENTO_DE_CONTA_CORRENTE_e_nao_titulo(monkeypatch):
+    """A forma é a do blueprint do Make dele: cabeçalho, detalhes e
+    departamentos."""
+    monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    monkeypatch.setattr(co, "_pronto", lambda: True)
+    plano = co.planejar([linha()], CONTA, TIPOS)
+    cli = ClienteQueAnota()
+    co.lancar(plano["vai"], "T", cli)
+
+    acao, param = cli.chamadas[0]
+    assert acao == "IncluirLancCC"
+    assert set(param) >= {"cCodIntLanc", "cabecalho", "detalhes"}
+    assert set(param["cabecalho"]) == {"nCodCC", "dDtLanc", "nValorLanc"}
+    assert set(param["detalhes"]) == {"cCodCateg", "cTipo", "nCodCliente",
+                                      "cObs"}
+    # Nada de campo de título aqui: campo sobrando faz a chamada inteira falhar.
+    assert "valor_documento" not in param
+    assert "data_vencimento" not in param
+
+
+def test_NAO_existe_mais_chamada_de_BAIXA(monkeypatch):
+    """⚠️ A baixa era a chamada que respondia 404. Sem título em aberto, não há o
+    que baixar — e o dono para de receber "dê a baixa por lá"."""
+    monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    monkeypatch.setattr(co, "_pronto", lambda: True)
+    plano = co.planejar([linha()], CONTA, TIPOS)
+    cli = ClienteQueAnota()
+    feito = co.lancar(plano["vai"], "T", cli)
+
+    acoes = [a for a, _ in cli.chamadas]
+    assert "LancarPagamento" not in acoes
+    assert "LancarRecebimento" not in acoes
+    assert feito["falhas"] == []
+
+
+def test_o_valor_vai_POSITIVO_e_quem_diz_a_direcao_e_o_cTipo(monkeypatch):
+    """⚠️ Regra do OMIE e do Make dele (o blueprint tira o sinal com `replace`).
+    Mandar negativo com `cTipo` DEB debitaria o sinal duas vezes."""
+    monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    monkeypatch.setattr(co, "_pronto", lambda: True)
+
+    saida = co.planejar([linha(valor="-35.50")], CONTA, TIPOS)["vai"][0]
+    param = co.montar_lancamento_cc(saida)
+    assert param["cabecalho"]["nValorLanc"] == 35.5
+    assert param["detalhes"]["cTipo"] == "DEB"
+
+    entrada = co.planejar([linha(valor="35.50")], CONTA, TIPOS)["vai"][0]
+    param = co.montar_lancamento_cc(entrada)
+    assert param["cabecalho"]["nValorLanc"] == 35.5
+    assert param["detalhes"]["cTipo"] == "CRE"
+
+
+def test_o_departamento_vai_em_VALOR_e_nao_em_percentual():
+    """⚠️ É a diferença para o título (`distribuicao`/`nPerDep`), e está no
+    blueprint dele: `nValDep` com o valor do lançamento."""
+    import datetime as dt
+
+    param = co.montar_lancamento_cc({
+        "codigo_integracao": "CONC1", "id_conta_corrente": 9999,
+        "data": dt.date(2026, 9, 28), "valor": 0.35,
+        "codigo_categoria": "1.01.02", "codigo_cliente": 77,
+        "descricao": "TARIFA  BANCARIA", "cod_departamento": "DEP1",
+        "sentido": "pagar", "transferencia": False})
+    assert param["departamentos"] == [{"cCodDep": "DEP1", "nValDep": 0.35}]
+    assert "distribuicao" not in param
+
+
+def test_sem_departamento_o_campo_nao_vai(monkeypatch):
+    """Campo vazio sobrando faz a chamada inteira falhar, e o OMIE não diz qual
+    foi o culpado."""
+    import datetime as dt
+
+    param = co.montar_lancamento_cc({
+        "codigo_integracao": "CONC1", "id_conta_corrente": 9999,
+        "data": dt.date(2026, 9, 28), "valor": 0.35,
+        "codigo_categoria": "1.01.02", "codigo_cliente": 77,
+        "descricao": "TARIFA", "cod_departamento": "",
+        "sentido": "pagar", "transferencia": False})
+    assert "departamentos" not in param
+
+
+def test_o_numero_do_lancamento_e_lido_de_nCodLanc(monkeypatch):
+    """⚠️ Sem ler o número, a linha ficaria marcada como "aceitou mas não sei o
+    número" — e ninguém saberia se pode mandar de novo."""
+    monkeypatch.setattr(co, "_registrar", lambda *a, **k: None)
+    monkeypatch.setattr(co, "_pronto", lambda: True)
+    plano = co.planejar([linha()], CONTA, TIPOS)
+
+    class SoNCodLanc:
+        chamadas = []
+
+        def _call(self, url, acao, param):
+            return {"nCodLanc": 7788}
+
+    feito = co.lancar(plano["vai"], "T", SoNCodLanc())
+    assert feito["feitos"][0]["codigo"] == 7788

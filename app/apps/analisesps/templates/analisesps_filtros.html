@@ -119,6 +119,20 @@
     </div>
   </div>
 
+  {# ------------------------------------------------------------------------
+     ⚠️ BARRA SEM OPÇÃO NENHUMA TEM DE DIZER POR QUÊ. Em 29/09/2026 ele abriu
+     Solicitações e encontrou *"os filtros todos vazios"* — e não havia como saber
+     se era defeito da tela, base fora do ar ou carga em andamento.
+
+     Cada bloco some sozinho quando não tem valor (`{% raw %}{% if valores %}{% endraw %}` no macro), e
+     oito blocos sumindo juntos deixavam uma coluna em branco explicando nada.
+     ------------------------------------------------------------------------ #}
+  {% if recado_dos_filtros %}
+    <div class="aviso atencao" style="margin:0 0 10px">
+      <b>Os filtros estão sem opções.</b> {{ recado_dos_filtros }}
+    </div>
+  {% endif %}
+
   {{ bloco('Status de pagamento', 'status_pgt', opcoes.status_pgt, filtros.status_pgt) }}
   {{ bloco('Agendamento', 'status_agend', opcoes.status_agend, filtros.status_agend) }}
   {{ bloco('Forma de pagamento', 'forma', opcoes.forma, filtros.forma) }}

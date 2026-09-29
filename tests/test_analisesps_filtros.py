@@ -716,3 +716,102 @@ def test_dimensao_desconhecida_nao_entra_no_sql():
     sem conferência — é a porta aberta clássica."""
     from app.apps.analisesps import consultas
     assert consultas.agregar_varias({}, ["nao_existe; DROP TABLE"]) == {}
+
+
+# ---------------------------------------------------------------------------
+# A BARRA QUE FICOU VAZIA PARA SEMPRE — 29/09/2026
+#
+# Ele abriu Solicitações e encontrou *"os filtros da parte de solicitações todos
+# vazios"*. O motivo não era a tela: a carga da base REESCREVE a tabela `sps`, e
+# quem abrisse qualquer tela no meio disso recebia sete listas vazias — que eram
+# GUARDADAS com o carimbo da sincronização anterior, ainda vigente.
+#
+# A partir daí o cache respondia "já sei, é nada" a cada requisição e nunca mais
+# perguntava ao banco: a barra ficava vazia até a próxima carga. O teste de
+# validade era `if guardado["valores"]`, e um dicionário de sete chaves é
+# verdadeiro mesmo com todas as listas vazias.
+# ---------------------------------------------------------------------------
+def test_lista_de_filtro_VAZIA_nao_entra_no_cache(monkeypatch):
+    """⚠️ Guardar a ausência de resposta como se fosse resposta é o que fazia o
+    estado ruim durar para sempre. Sem guardar, a próxima tela pergunta de novo."""
+    from app.apps.analisesps import consultas
+
+    consultas.esquecer_opcoes_de_filtro()
+    perguntas = []
+
+    def nada(coluna, limite=400):
+        perguntas.append(coluna)
+        return []
+
+    monkeypatch.setattr(consultas, "opcoes", nada)
+    consultas.opcoes_de_filtro(carimbo="2026-09-29T10:00")
+    quantas_na_primeira = len(perguntas)
+    assert quantas_na_primeira > 0
+
+    # A SEGUNDA CHAMADA TEM DE PERGUNTAR DE NOVO. Era aqui que o cache respondia
+    # "nada" para sempre.
+    consultas.opcoes_de_filtro(carimbo="2026-09-29T10:00")
+    assert len(perguntas) == quantas_na_primeira * 2
+
+
+def test_lista_COM_valor_continua_sendo_guardada(monkeypatch):
+    """O cache existe por um motivo medido: montar as sete listas custa 194 ms, e
+    era isso a cada clique no filtro. O conserto não pode custar o cache."""
+    from app.apps.analisesps import consultas
+
+    consultas.esquecer_opcoes_de_filtro()
+    perguntas = []
+
+    def alguma(coluna, limite=400):
+        perguntas.append(coluna)
+        return ["Pagar"]
+
+    monkeypatch.setattr(consultas, "opcoes", alguma)
+    consultas.opcoes_de_filtro(carimbo="2026-09-29T10:00")
+    quantas = len(perguntas)
+    consultas.opcoes_de_filtro(carimbo="2026-09-29T10:00")
+    assert len(perguntas) == quantas, "a segunda vez saiu do cache"
+
+
+def test_o_recado_separa_CARGA_EM_ANDAMENTO_de_base_nao_carregada(monkeypatch):
+    """⚠️ Os três motivos de uma barra vazia têm três respostas diferentes, e a
+    conta que os separa é uma só: a base DECLARA um número (guardado pela última
+    carga) e a tabela RESPONDE outro."""
+    from app.apps.analisesps import consultas
+
+    monkeypatch.setattr("app.apps.analisesps.db.consultar",
+                        lambda *a, **k: [(0,)])
+
+    # Declara 59 mil e a tabela está vazia: é a carga reescrevendo tudo.
+    recado = consultas.por_que_os_filtros_estao_vazios(
+        {}, {"quantidade": 59055})
+    assert "carga" in recado and "59.055" in recado
+
+    # Não declara nada: a base nunca foi carregada.
+    recado = consultas.por_que_os_filtros_estao_vazios({}, {"quantidade": 0})
+    assert "ainda não foi carregada" in recado
+
+
+def test_base_CHEIA_com_filtros_vazios_aponta_para_a_planilha(monkeypatch):
+    """Linhas existem e as colunas de filtro vieram todas em branco: isso é a
+    carga tendo trazido as linhas sem as colunas, e o conserto é na origem."""
+    from app.apps.analisesps import consultas
+
+    monkeypatch.setattr("app.apps.analisesps.db.consultar",
+                        lambda *a, **k: [(59055,)])
+    recado = consultas.por_que_os_filtros_estao_vazios(
+        {}, {"quantidade": 59055})
+    assert "planilha de origem" in recado
+
+
+def test_com_opcoes_o_recado_e_VAZIO_e_nao_custa_consulta(monkeypatch):
+    """⚠️ O caminho normal não pode pagar por este conserto: com opções na tela, a
+    função devolve "" sem encostar no banco."""
+    from app.apps.analisesps import consultas
+
+    def nao_pode_ser_chamado(*a, **k):
+        raise AssertionError("não devia consultar o banco quando há opções")
+
+    monkeypatch.setattr("app.apps.analisesps.db.consultar", nao_pode_ser_chamado)
+    assert consultas.por_que_os_filtros_estao_vazios(
+        {"status_pgt": ["Pagar"]}, {"quantidade": 59055}) == ""

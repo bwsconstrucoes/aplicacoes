@@ -9572,6 +9572,110 @@ navegador, e a apropriação continua sem nunca ter rodado sobre ponto de verdad
 
 ---
 
+### Centésima décima nona leva (29/09) — o extrato, o OMIE e dois valores guardados que mentiam
+
+Três reclamações dele numa tarde, e as três tinham a mesma raiz: **algo guardado
+que continuou valendo depois de deixar de ser verdade.**
+
+#### 1. "Os filtros de Solicitações estão todos vazios"
+
+⚠️ **E ficariam vazios para sempre.** A carga da base REESCREVE a tabela `sps`.
+Quem abrisse qualquer tela no meio disso fazia as sete consultas de filtro contra
+uma tabela momentaneamente vazia, recebia sete listas vazias — e elas eram
+**guardadas** com o carimbo da sincronização anterior, que ainda era o vigente.
+
+Daí em diante o cache respondia "já sei, é nada" a cada requisição e nunca mais
+perguntava ao banco. O teste de validade era `if guardado["valores"]`, e um
+dicionário de sete chaves é verdadeiro mesmo com todas as listas vazias.
+
+**Conserto:** lista vazia **não entra no cache**. E a barra passou a dizer por que
+está vazia, separando os três casos (carga em andamento, base não carregada,
+colunas sem valor) — barra vazia sem frase é indistinguível de defeito da tela.
+
+#### 2. "Não foi importado o valor de 56.284,17"
+
+**Foi.** Refiz a leitura, a conferência e a gravação daquele arquivo com banco de
+verdade: as 53 linhas entram, a de 56.284,17 fica gravada e aparece na lista.
+
+⚠️ **O que escondia a linha era o FILTRO, que fica guardado de uma visita para a
+outra.** A tela dizia "N linha(s) neste recorte" e nunca dizia quantas havia fora
+dele — recorte que não se anuncia é indistinguível de dado que não existe, e a
+conclusão de quem olha é sempre a pior. Agora ela diz "N de M na conta" e, quando
+esconde algo, um aviso com "ver todas".
+
+#### 3. ⚠️ MAS O TESTE QUE ESCREVI PARA AQUELE ARQUIVO ACHOU UM DEFEITO DE VERDADE
+
+Ao montar um extrato com as **vinte tarifas de PIX de R$ 0,35** daquele arquivo —
+mesmo dia, mesmo histórico, mesmo FITID — o parser leu **uma**.
+
+A regra do conserto de 28/09 dizia: *"FITID que carrega mais de um CONTEÚDO é
+código de tipo"*. Ela cobria o banco 520 (FITIDs repetidos com conteúdos
+diferentes) e deixava passar o caso oposto: FITID repetido em linhas **idênticas**
+carrega um conteúdo só, passava no teste, virava identidade — e dezenove cobranças
+de verdade sumiam em silêncio.
+
+**Agora um FITID só identifica quando aparece UMA VEZ no arquivo.** Continua
+idempotente (a identidade carrega a ordem da repetição). O preço, dito por
+inteiro: se um banco mandar de verdade a mesma transação duas vezes, entram as
+duas — é o lado certo para errar, porque linha a mais aparece na conferência de
+saldo e linha a menos não aparece em lugar nenhum.
+
+#### 4. ⚠️ A tarifa virava CONTA A PAGAR, e devia ser LANÇAMENTO DE CONTA CORRENTE
+
+Ele achou olhando o resultado:
+
+> *"Acho que você criou uma conta a pagar para a tarifa, e não um lançamento de
+> conta corrente."*
+> *"Esse lançamento acho que não precisa de baixa, e ainda assim, acho que isso
+> não existe: `.../financas/contapagarbaixa/`"*
+
+Certo nas duas. Uma linha do extrato é dinheiro que **já se moveu**; título é
+compromisso a vencer. O sistema inventava um título em aberto e precisava dar
+baixa nele em seguida — e a baixa respondia **404**, deixando título criado, baixa
+falhando e um recado mandando ele terminar o serviço na mão.
+
+**O caminho certo ele já usava no Make**, e mandou o blueprint: `IncluirLancCC`,
+em `financas/contacorrentelancamentos/`. Um lançamento, direto na conta corrente,
+**sem título e sem baixa**. A transferência continua com duas pontas, as duas
+como lançamento e as duas com `cTipo` = TRA.
+
+⚠️ **Uma divergência deliberada do blueprint dele, para ele poder discordar:** lá o
+`cTipo` mapeia Receita → "TRA" junto com Transferência; aqui receita vira "CRE".
+Naquele fluxo as receitas eram todas transferência entre contas da empresa; aqui o
+sentido vem do sinal da linha do extrato, e uma entrada que não é transferência
+marcada como TRA apareceria no OMIE como movimento entre contas, sem a outra
+ponta. **Se ele preferir o mapa do Make, é uma linha.**
+
+#### 5. "Não fica nenhuma informação na tabela dizendo que aquela tarifa foi lançada"
+
+Ele estava certo sobre a **tela**, não sobre o banco: o estado era gravado
+(`omie_situacao`, `omie_codigo`, `omie_em`, `omie_por`) desde a migração 021 e a
+**lista nunca o lia**. Quem olhava o extrato não tinha como distinguir uma tarifa
+já lançada de uma que nunca foi — e o único jeito de descobrir era mandar de novo
+e ver o OMIE recusar pelo código de integração repetido.
+
+Agora há a coluna **"No OMIE"**, com quatro estados que têm consequências
+diferentes: `lançado` (não mande de novo), `falhou` (pode mandar), `sem resposta`
+(a resposta se perdeu — PODE ter entrado, confira lá antes) e vazio (nunca foi).
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto entrar | o certificado do Mobponto no Render |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` do `docs/EXPORTAR_FORMULAS.md` |
+| confirmar o `cTipo` de uma RECEITA que não é transferência | só ele — hoje está CRE, o Make dele usava TRA |
+| o nome da coluna **"Paga por BeeVale"** | só ele tem |
+| trocar na origem as credenciais do Mobponto, Dropbox e Z-API | ele |
+
+**Verificado:** suíte inteira em blocos — 7.684 passando, 145 pulados, zero falhas
+—, o arquivo de extrato dele lido e gravado num Postgres de verdade (53 de 53), e
+o `app.main` subindo com os 18 blueprints. **NÃO verificado:** o `IncluirLancCC`
+contra o OMIE de verdade — a forma é a do blueprint dele, mas nenhuma chamada real
+foi feita daqui.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

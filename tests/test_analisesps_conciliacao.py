@@ -1237,3 +1237,99 @@ def test_a_leitura_conta_quantas_transacoes_o_arquivo_TEM():
     assert lido.transacoes_no_arquivo == 4
     assert lido.transacoes_no_arquivo == len(lido.lancamentos), (
         "nada foi descartado neste arquivo")
+
+
+# ---------------------------------------------------------------------------
+# O EXTRATO COM VÍRGULA DECIMAL E UMA ENTRADA GRANDE — 29/09/2026
+#
+# O dono mandou um extrato do Bradesco dizendo: *"não foi importado o valor de
+# <TRNAMT>56284,17. Não tá sendo reconhecido."*
+#
+# ⚠️ ELE FOI IMPORTADO. A leitura, a conferência e a gravação daquele arquivo foram
+# refeitas com banco de verdade: as 53 linhas entram, a de 56.284,17 fica gravada e
+# aparece na lista. O que escondia a linha era o FILTRO da tela, que fica guardado
+# de uma visita para a outra.
+#
+# Estes casos travam o que o arquivo dele tem de particular, para nunca mais ser
+# dúvida: vírgula como separador decimal, uma ENTRADA no meio de dezenas de saídas,
+# e vinte lançamentos idênticos no mesmo dia (as tarifas de PIX de R$ 0,35).
+# ---------------------------------------------------------------------------
+def _ofx_do_bradesco():
+    """Um extrato no formato exato do arquivo dele: vírgula decimal, uma entrada
+    grande e tarifas repetidas."""
+    tarifas = "\n".join(
+        "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260928<TRNAMT>-0,35"
+        "<FITID>520<MEMO>TARIFA BANCARIA TRANSF PGTO PIX</STMTTRN>"
+        for _ in range(20))
+    return f"""OFXHEADER:100
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL
+<BANKACCTFROM><BANKID>0237<ACCTID>50024<ACCTTYPE>CHECKING</BANKACCTFROM>
+<BANKTRANLIST><DTSTART>20260925<DTEND>20260929
+<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20260925<TRNAMT>0,34<FITID>101
+<MEMO>RENTAB.INVEST FACILCRED*</STMTTRN>
+<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20260928<TRNAMT>56284,17<FITID>624227
+<MEMO>TRANSF CC PARA CC PJ BWS CONSTRUCOES LTDA</STMTTRN>
+{tarifas}
+</BANKTRANLIST><LEDGERBAL><BALAMT>625442,18<DTASOF>20260929</LEDGERBAL>
+</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>""".encode("utf-8")
+
+
+def test_a_ENTRADA_grande_do_extrato_do_bradesco_e_lida():
+    """⚠️ O caso que ele reportou. A vírgula é o separador decimal do arquivo, e
+    uma entrada no meio de saídas não pode ser tratada diferente de nenhuma outra
+    linha."""
+    from decimal import Decimal
+
+    from app.apps.analisesps.conciliacao_ofx import ler
+
+    lido = ler(_ofx_do_bradesco())
+    valores = [l.valor for l in lido.lancamentos]
+    assert Decimal("56284.17") in valores, "a entrada grande tem de estar lá"
+    assert lido.transacoes_no_arquivo == len(lido.lancamentos) == 22
+
+
+def test_as_VINTE_tarifas_iguais_do_mesmo_dia_nao_viram_uma_so():
+    """⚠️ Mesmo FITID, mesmo valor, mesmo dia, mesmo histórico — e são vinte
+    cobranças de verdade. O banco 520 usa o FITID como tipo de transação, não como
+    identificador: tratá-lo como único apagaria dezenove tarifas."""
+    from app.apps.analisesps.conciliacao_ofx import impressao_da_linha, ler
+
+    lido = ler(_ofx_do_bradesco())
+    tarifas = [l for l in lido.lancamentos if "TARIFA" in (l.memo or "")]
+    assert len(tarifas) == 20
+    marcas = {impressao_da_linha(1, l) for l in tarifas}
+    assert len(marcas) == 20, "cada tarifa tem identidade própria"
+
+
+def test_nenhuma_linha_do_extrato_dele_colide_de_identidade():
+    """A colisão é o jeito silencioso de perder lançamento: a conferência monta um
+    dicionário por identidade, e duas linhas com a mesma chave viram uma."""
+    from app.apps.analisesps.conciliacao_ofx import impressao_da_linha, ler
+
+    lido = ler(_ofx_do_bradesco())
+    marcas = [impressao_da_linha(1, l) for l in lido.lancamentos]
+    assert len(set(marcas)) == len(marcas)
+
+
+def test_a_lista_do_extrato_traz_o_ESTADO_NO_OMIE_de_cada_linha():
+    """⚠️ Conserto de 29/09/2026. O dono: *"não fica nenhuma informação na tabela
+    dizendo que aquela tarifa foi lançada, precisa pra não ser lançada
+    novamente."*
+
+    Ele estava certo sobre a TELA, não sobre o banco: o estado era gravado
+    (`omie_situacao`, `omie_codigo`, `omie_em`) e simplesmente nunca era lido pela
+    lista. Quem olhava o extrato não tinha como distinguir uma tarifa já lançada de
+    uma que nunca foi.
+
+    Este teste lê o SQL da listagem — não precisa de banco para afirmar que as
+    colunas foram pedidas, e é o bastante para uma delas não sumir num refactor."""
+    import inspect
+
+    from app.apps.analisesps import conciliacao
+
+    fonte = inspect.getsource(conciliacao.listar)
+    for coluna in ("omie_situacao", "omie_codigo", "omie_em", "omie_por",
+                   "omie_erro"):
+        assert coluna in fonte, f"a lista não traz {coluna}"
+    # E os nomes têm de casar com o SELECT, senão o dicionário sai trocado.
+    assert fonte.index("omie_situacao") < fonte.index("nomes = [")

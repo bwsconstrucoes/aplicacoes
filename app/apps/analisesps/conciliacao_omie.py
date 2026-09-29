@@ -346,8 +346,92 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
                          else -x["valor"] for x in vai)}
 
 
+# ---------------------------------------------------------------------------
+# O LANÇAMENTO DE CONTA CORRENTE — e por que ele substituiu o título
+#
+# ⚠️ ISTO É CORREÇÃO DE 29/09/2026, e o dono achou o erro olhando o resultado:
+#
+#     *"Acho que você criou uma conta a pagar para a tarifa, e não um lançamento
+#     de conta corrente."*
+#
+# Ele está certo, e o erro era de conceito. Uma linha do EXTRATO é dinheiro que
+# JÁ se moveu na conta — não é um compromisso a vencer. Criando conta a pagar, o
+# sistema inventava um título em aberto e precisava dar baixa nele em seguida
+# para "consumir" o que nunca devia existir. Dois passos onde há um, e o primeiro
+# deles sujando o contas a pagar do OMIE.
+#
+# E o segundo passo nem funcionava: a baixa respondia **404** em
+# `financas/contapagarbaixa/`. Ele desconfiou disso também — *"ainda assim, acho
+# que isso não existe"* — e o resultado era o pior dos mundos: título criado,
+# baixa falhando, e um recado mandando ele dar baixa na mão.
+#
+# O CAMINHO CERTO ele já usava no Make, e mandou o blueprint: `IncluirLancCC`,
+# em `financas/contacorrentelancamentos/`. Um lançamento, direto na conta
+# corrente, sem título e sem baixa.
+#
+# ⚠️ UMA DIVERGÊNCIA DELIBERADA EM RELAÇÃO AO BLUEPRINT DELE, e está aqui para ele
+# poder discordar: lá o `cTipo` mapeia Receita → "TRA", junto com Transferência.
+# Aqui receita vira "CRE". A razão é que naquele fluxo as receitas eram todas
+# transferência entre contas da empresa; aqui o sentido vem do SINAL da linha do
+# extrato, e uma entrada que não é transferência marcada como TRA apareceria no
+# OMIE como movimento entre contas — sem a outra ponta. Se ele preferir o mapa do
+# Make, é uma linha.
+# ---------------------------------------------------------------------------
+URL_LANC_CC = "https://app.omie.com.br/api/v1/financas/contacorrentelancamentos/"
+ACAO_LANC_CC = "IncluirLancCC"
+
+# O tipo do lançamento, no vocabulário do OMIE.
+TIPO_DEBITO = "DEB"
+TIPO_CREDITO = "CRE"
+TIPO_TRANSFERENCIA = "TRA"
+
+
+def tipo_do_lancamento(item: dict) -> str:
+    """`DEB`, `CRE` ou `TRA`. Ver o aviso acima sobre a divergência do Make."""
+    if item.get("transferencia"):
+        return TIPO_TRANSFERENCIA
+    return TIPO_DEBITO if item.get("sentido") == "pagar" else TIPO_CREDITO
+
+
+def montar_lancamento_cc(item: dict) -> dict:
+    """O `param` do `IncluirLancCC`. A forma é a do blueprint do Make dele.
+
+    ⚠️ O VALOR VAI SEMPRE POSITIVO, e quem diz a direção é o `cTipo` — é assim no
+    Make dele (o blueprint tira o sinal com um `replace`) e é assim no OMIE. Mandar
+    negativo com `cTipo` DEB debitaria duas vezes o sinal.
+    """
+    valor = float(item["valor"])
+    param = {
+        "cCodIntLanc": item["codigo_integracao"],
+        "cabecalho": {
+            "nCodCC": int(item["id_conta_corrente"]),
+            "dDtLanc": item["data"].strftime("%d/%m/%Y"),
+            "nValorLanc": valor,
+        },
+        "detalhes": {
+            "cCodCateg": item["codigo_categoria"],
+            "cTipo": tipo_do_lancamento(item),
+            "nCodCliente": int(item["codigo_cliente"]),
+            # O histórico do banco vira a observação, numa linha só: a descrição
+            # do Bradesco vem com quebra de linha dentro.
+            "cObs": re.sub(r"\s+", " ", item["descricao"])[:200],
+        },
+    }
+    if item.get("cod_departamento"):
+        # ⚠️ AQUI O DEPARTAMENTO VAI EM VALOR, não em percentual — é a diferença
+        # para o título (`distribuicao`/`nPerDep`), e está no blueprint dele.
+        param["departamentos"] = [{"cCodDep": item["cod_departamento"],
+                                   "nValDep": valor}]
+    return param
+
+
 def montar_inclusao(item: dict) -> dict:
-    """O `param` da inclusão no OMIE. Os campos são os do aporte, que roda.
+    """O `param` da inclusão no OMIE como TÍTULO (conta a pagar / a receber).
+
+    ⚠️ NÃO É MAIS O CAMINHO DA CONCILIAÇÃO — ver o aviso acima. Fica porque os
+    APORTES continuam sendo título de verdade (um compromisso a vencer), e porque
+    apagar uma função que o aporte usa para "limpar" seria trocar um problema por
+    outro.
 
     ⚠️ CAMPO SOBRANDO FAZ A CHAMADA INTEIRA FALHAR, e a mensagem do OMIE não
     diz qual foi o culpado. Vai o mínimo que resolve, e nada de enfeite — a
@@ -379,12 +463,16 @@ def montar_inclusao(item: dict) -> dict:
 
 
 def montar_baixa(item: dict, codigo_lancamento: int) -> dict:
-    """A baixa — o que faz o dinheiro constar como movimentado.
+    """A baixa de um TÍTULO.
 
-    ⚠️ AQUI A BAIXA NÃO É OPCIONAL, e é diferente do aporte. A linha veio do
-    EXTRATO DO BANCO: o dinheiro já saiu ou já entrou, isso é fato consumado.
-    Criar o título em aberto deixaria um saldo falso no OMIE dizendo que ainda
-    há algo a pagar que já foi pago.
+    ⚠️ A CONCILIAÇÃO NÃO USA MAIS ISTO, e o motivo está no aviso de
+    `montar_lancamento_cc`: a linha do extrato virou lançamento de conta corrente,
+    que já é o dinheiro movimentado — não há título em aberto para consumir, e era
+    justamente esta chamada que respondia 404.
+
+    Fica porque o formato continua descrito em teste e porque o dia em que alguém
+    precisar baixar um título por aqui, o molde está pronto e com a URL num lugar
+    só. Não deve ser usada sem antes conferir a rota no OMIE.
     """
     return {
         "codigo_lancamento": int(codigo_lancamento),
@@ -418,7 +506,11 @@ def _cliente():
 
 
 def _numero_do_titulo(resposta: dict):
-    for chave in ("codigo_lancamento_omie", "codigo_lancamento", "nCodTitulo"):
+    """O número que o OMIE devolveu. `nCodLanc` é o do lançamento de conta
+    corrente; os outros são dos títulos, e continuam valendo porque o aporte
+    ainda os usa."""
+    for chave in ("nCodLanc", "codigo_lancamento_omie", "codigo_lancamento",
+                  "nCodTitulo"):
         valor = (resposta or {}).get(chave)
         if valor:
             try:
@@ -429,7 +521,7 @@ def _numero_do_titulo(resposta: dict):
 
 
 def lancar(itens: list, quem: str = "", cliente=None) -> dict:
-    """Cria e baixa no OMIE, um por um. Devolve o que deu e o que não deu.
+    """Lança na conta corrente do OMIE, um por um. Devolve o que deu e o que não.
 
     ⚠️ AQUI CADA LINHA É INDEPENDENTE, e é o CONTRÁRIO do aporte. No aporte, um
     título sem o outro é meio aporte — um lado do dinheiro sem o outro —, e por
@@ -455,24 +547,22 @@ def lancar(itens: list, quem: str = "", cliente=None) -> dict:
     feitos, falhas = [], []
 
     for item in itens:
-        # ⚠️ AS PORTAS SÃO AS MESMAS DO APORTE, importadas de lá em vez de
-        # reescritas. Elas já estão certas e em produção; uma segunda lista de
-        # URLs neste repositório seria uma cópia esperando divergir.
-        from .aportes_omie import PORTAS
-        url, acao, _excluir, url_baixa, acao_baixa = PORTAS[
-            "P" if item["sentido"] == "pagar" else "R"]
         # ⚠️ REGISTRA "ENVIANDO" ANTES DE ENVIAR. Se a resposta se perder no
-        # caminho, o título pode ter entrado no OMIE — e a linha precisa
+        # caminho, o lançamento pode ter entrado no OMIE — e a linha precisa
         # apontar isso, em vez de parecer que nada aconteceu. Foi assim que o
         # aporte ficou seguro.
         _registrar(item["linha_id"], item["tipo_id"],
                    item["codigo_integracao"], "enviando", quem)
         try:
-            resposta = cli._call(url, acao, montar_inclusao(item))
+            # ⚠️ LANÇAMENTO DE CONTA CORRENTE, não título — ver o aviso longo em
+            # `montar_lancamento_cc`. Uma linha do extrato é dinheiro que JÁ se
+            # moveu; título é compromisso a vencer.
+            resposta = cli._call(URL_LANC_CC, ACAO_LANC_CC,
+                                 montar_lancamento_cc(item))
             codigo = _numero_do_titulo(resposta)
             if not codigo:
                 raise ErroDoLancamento(
-                    "o OMIE aceitou mas não devolveu o número do título")
+                    "o OMIE aceitou mas não devolveu o número do lançamento")
         except Exception as e:  # noqa: BLE001 — a tela precisa da frase
             logger.exception("Conciliação: falhou lançar a linha %s",
                              item["linha_id"])
@@ -484,17 +574,10 @@ def lancar(itens: list, quem: str = "", cliente=None) -> dict:
                            "erro": str(e)[:300]})
             continue
 
-        # A baixa. Se ela falhar, o título JÁ EXISTE — e a linha tem de dizer
-        # isso, senão alguém lança de novo e duplica no OMIE.
-        baixa_ok = True
-        erro_baixa = ""
-        try:
-            cli._call(url_baixa, acao_baixa, montar_baixa(item, codigo))
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Conciliação: título %s criado, baixa falhou",
-                             codigo)
-            baixa_ok = False
-            erro_baixa = str(e)[:400]
+        # ⚠️ NÃO HÁ MAIS BAIXA, e a ausência dela é o conserto. O lançamento de
+        # conta corrente JÁ É o dinheiro movimentado: não existe título em aberto
+        # para consumir. Era a baixa que respondia 404 e mandava o dono terminar o
+        # serviço na mão.
 
         # ⚠️ A TRANSFERÊNCIA TEM DUAS PONTAS, e a segunda é feita AQUI, depois
         # da primeira ter entrado. No OMIE a transferência é um PAR DE TÍTULOS
@@ -506,7 +589,7 @@ def lancar(itens: list, quem: str = "", cliente=None) -> dict:
         # transferência é dinheiro que saiu de uma conta e não entrou em
         # nenhuma — o saldo das duas fica errado, e é o pior estado possível.
         codigo_par = None
-        if item.get("transferencia") and baixa_ok:
+        if item.get("transferencia"):
             codigo_par, erro_par = _outra_ponta(cli, item, quem)
             if erro_par:
                 _registrar(item["linha_id"], item["tipo_id"],
@@ -522,24 +605,16 @@ def lancar(itens: list, quem: str = "", cliente=None) -> dict:
                              f"saldo das duas contas está errado no OMIE até "
                              f"alguém lançar a outra ponta. ({erro_par[:150]})")})
                 feitos.append({"linha_id": item["linha_id"], "codigo": codigo,
-                               "baixado": baixa_ok,
                                "descricao": item["descricao"][:90]})
                 continue
 
         _registrar(item["linha_id"], item["tipo_id"],
-                   item["codigo_integracao"],
-                   "gravado" if baixa_ok else "sem_baixa", quem,
-                   codigo=codigo, erro=erro_baixa, codigo_par=codigo_par,
+                   item["codigo_integracao"], "gravado", quem,
+                   codigo=codigo, codigo_par=codigo_par,
                    conta_par=item.get("destino_id"))
         feitos.append({"linha_id": item["linha_id"], "codigo": codigo,
-                       "codigo_par": codigo_par, "baixado": baixa_ok,
+                       "codigo_par": codigo_par,
                        "descricao": item["descricao"][:90]})
-        if not baixa_ok:
-            falhas.append({
-                "linha_id": item["linha_id"],
-                "descricao": item["descricao"][:90],
-                "erro": (f"o título {codigo} FOI CRIADO no OMIE, mas a baixa "
-                         f"falhou — dê a baixa por lá. ({erro_baixa[:180]})")})
 
     logger.info("Conciliação: %s lançou %s de %s no OMIE.", quem or "?",
                 len(feitos), len(itens))
@@ -553,23 +628,25 @@ def _outra_ponta(cli, item: dict, quem: str):
     a segunda ponta como repetição da primeira — e a transferência ficaria
     pela metade toda vez, sem ninguém entender por quê.
     """
-    from .aportes_omie import PORTAS
-    url, acao, _excluir, url_baixa, acao_baixa = PORTAS["R"]
     entrada = dict(item,
                    sentido="receber",
                    id_conta_corrente=int(item["destino_conta_corrente"]),
                    codigo_integracao=item["codigo_integracao"] + "D",
                    descricao=f"{item['descricao']} (entrada da transferência)")
-    # O título que ENTRA é do banco de destino. Quando ele tem fornecedor
+    # O lançamento que ENTRA é do banco de destino. Quando ele tem fornecedor
     # próprio, é o dele — senão fica o da origem, que é melhor que nenhum.
     if item.get("destino_fornecedor"):
         entrada["codigo_cliente"] = int(item["destino_fornecedor"])
     try:
-        resposta = cli._call(url, acao, montar_inclusao(entrada))
+        # ⚠️ AS DUAS PONTAS SÃO LANÇAMENTOS DE CONTA CORRENTE, e as duas com
+        # `cTipo` = TRA: no OMIE a transferência é isso — uma saída numa conta e
+        # uma entrada em outra, marcadas como transferência para não entrarem no
+        # resultado. E não há baixa em nenhuma das duas.
+        resposta = cli._call(URL_LANC_CC, ACAO_LANC_CC,
+                             montar_lancamento_cc(entrada))
         codigo = _numero_do_titulo(resposta)
         if not codigo:
-            return None, "o OMIE aceitou mas não devolveu o número do título"
-        cli._call(url_baixa, acao_baixa, montar_baixa(entrada, codigo))
+            return None, "o OMIE aceitou mas não devolveu o número do lançamento"
         return codigo, ""
     except Exception as e:  # noqa: BLE001 — quem lê a frase é o dono
         logger.exception("Conciliação: falhou a outra ponta da transferência")

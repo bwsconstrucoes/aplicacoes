@@ -72,12 +72,53 @@ def test_a_mesma_linha_em_contas_diferentes_nao_se_confunde():
     assert a != b
 
 
-def test_fitid_repetido_com_o_MESMO_conteudo_continua_sendo_uma_linha_so():
-    """FITID repetido E conteúdo igual: é a mesma transação duas vezes no
-    arquivo. Isso não mudou — e não pode mudar, senão extrato já importado
-    voltaria a entrar em duplicidade."""
+def test_fitid_repetido_com_o_MESMO_conteudo_sao_DUAS_linhas():
+    """⚠️ ESTA REGRA MUDOU EM 29/09/2026, e a versão anterior estava errada.
+
+    Ela dizia: "FITID repetido E conteúdo igual é a mesma transação duas vezes no
+    arquivo", e justificava-se com o medo de que extrato já importado voltasse a
+    entrar em duplicidade.
+
+    O medo era infundado, e o custo era real. O dono trouxe um extrato do Bradesco
+    com **vinte tarifas de PIX de R$ 0,35** — mesmo dia, mesmo histórico, mesmo
+    FITID, porque são vinte cobranças iguais de verdade. Sob a regra antiga elas
+    viravam UMA: dezenove cobranças sumiam em silêncio, e o extrato passava a
+    divergir do banco sem nada na tela.
+
+    Não duplicar continua garantido pelo teste seguinte: a identidade carrega a
+    ORDEM da repetição, e reimportar o mesmo arquivo reproduz as mesmas posições.
+
+    O que se perde, dito por inteiro: se um banco mandar de verdade a mesma
+    transação duas vezes por engano, agora entram as duas. É o lado certo para
+    errar — linha a mais aparece na conferência de saldo e alguém apaga; linha a
+    menos não aparece em lugar nenhum."""
     arquivo = _arquivo(_linha(fitid="ABC123"), _linha(fitid="ABC123"))
-    assert len(parsear_ofx(arquivo, conta_bancaria_id=1)) == 1
+    lidos = parsear_ofx(arquivo, conta_bancaria_id=1)
+    assert len(lidos) == 2
+    assert lidos[0].hash_linha != lidos[1].hash_linha
+
+
+def test_reimportar_o_arquivo_com_FITIDs_repetidos_NAO_duplica():
+    """⚠️ O teste que sustenta a mudança acima. A identidade da 2ª linha igual é
+    "conteúdo|#2" — determinística e ligada à posição dentro do arquivo. Ler o
+    mesmo arquivo de novo produz exatamente as mesmas identidades."""
+    arquivo = _arquivo(_linha(fitid="ABC123"), _linha(fitid="ABC123"),
+                       _linha(fitid="ABC123"))
+    primeira = [l.hash_linha for l in parsear_ofx(arquivo, conta_bancaria_id=1)]
+    segunda = [l.hash_linha for l in parsear_ofx(arquivo, conta_bancaria_id=1)]
+    assert primeira == segunda
+    assert len(set(primeira)) == 3
+
+
+def test_vinte_tarifas_iguais_no_mesmo_dia_entram_as_VINTE():
+    """O caso exato do extrato que ele mandou em 29/09/2026."""
+    arquivo = _arquivo(*[_linha(valor="-0.35", fitid="520",
+                                memo="TARIFA BANCARIA TRANSF PGTO PIX")
+                         for _ in range(20)])
+    lidos = parsear_ofx(arquivo, conta_bancaria_id=1)
+    assert len(lidos) == 20
+    assert len({l.hash_linha for l in lidos}) == 20
+    assert sum(l.valor for l in lidos) == __import__("decimal").Decimal("-7.00")
 
 
 # ---------------------------------------------------------------------------

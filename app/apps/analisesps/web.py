@@ -627,6 +627,25 @@ def _opcoes_dos_filtros(carimbo=None) -> dict:
     return consultas.opcoes_de_filtro(carimbo)
 
 
+def _recado_dos_filtros(base=None, opcoes=None) -> str:
+    """Por que a barra lateral está sem opção nenhuma. "" quando há opções.
+
+    ⚠️ BARRA VAZIA NÃO EXPLICA NADA, e foi o que ele encontrou em 29/09/2026:
+    *"alguma coisa de errada aconteceu com os filtros da parte de solicitações.
+    Estão todos vazios."* Sem uma frase ali, os três motivos possíveis (carga em
+    andamento, base não carregada, colunas sem valor) têm a mesma cara."""
+    from . import consultas
+    try:
+        if base is None:
+            base = consultas.base_carregada()
+        if opcoes is None:
+            opcoes = _opcoes_dos_filtros(base.get("ultima"))
+        return consultas.por_que_os_filtros_estao_vazios(opcoes, base)
+    except Exception:  # noqa: BLE001 — é um recado, não pode derrubar a tela
+        logger.exception("Análise de SPs: falhou explicar os filtros vazios")
+        return ""
+
+
 def _lembrar_filtro(endpoint: str, gaveta: str = None):
     """Guarda o filtro desta tela, ou traz de volta o da última vez.
 
@@ -771,6 +790,7 @@ def solicitacoes():
         agendamento=agendamento, por_conta=por_conta, por_forma=por_forma,
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         args=request.args, opcoes=_opcoes_dos_filtros(base.get("ultima")),
+        recado_dos_filtros=_recado_dos_filtros(base),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -1638,6 +1658,7 @@ def relatorio():
         tipos=consultas.TIPOS, periodos=consultas.PERIODOS,
         dimensoes=consultas.DIMENSOES,
         args=request.args, filtros=filtros, opcoes=_opcoes_dos_filtros(),
+        recado_dos_filtros=_recado_dos_filtros(),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -1732,6 +1753,7 @@ def calendario():
         situacoes_possiveis=grade_do_mes.SITUACOES,
         tipo=tipo, tipos=consultas.TIPOS,
         args=request.args, filtros=filtros, opcoes=opcoes,
+        recado_dos_filtros=_recado_dos_filtros(base, opcoes),
         status_do_dia=status_do_dia,
         # A barra de filtros é a mesma das outras telas; estas duas dizem a
         # ela que aqui a data não manda, e se havia alguma marcada.
@@ -1898,6 +1920,12 @@ def tela_conciliacao():
         "analisesps_conciliacao.html", aba="conciliacao", estado=estado,
         contas=contas, conta=conta, linhas=linhas, filtros=filtros,
         resumo=resumo, situacoes=conc.SITUACOES, pagina=pagina,
+        # ⚠️ QUANTAS A CONTA TEM NO TOTAL, para a tela poder dizer o que o filtro
+        # está escondendo. O filtro fica guardado de uma visita para a outra, e um
+        # período de ontem esconde hoje uma linha que está gravada — foi o que fez
+        # o dono concluir, em 29/09/2026, que um lançamento "não foi importado".
+        total_da_conta=conc.quantas_na_conta(filtros["conta_id"])
+        if filtros["conta_id"] else 0,
         por_pagina=conc.POR_PAGINA,
         tem_proxima=len(linhas) == conc.POR_PAGINA,
         saldo_total=conc.saldo_da_conta(filtros["conta_id"])
@@ -4756,6 +4784,7 @@ def tela_fiscal():
         resumo=resumo, filtros=filtros, args=request.args,
         quadro_categorias=quadro_categorias,
         opcoes=_opcoes_dos_filtros(base.get("ultima")),
+        recado_dos_filtros=_recado_dos_filtros(base),
         pagina=pagina, por_pagina=consultas.POR_PAGINA,
         primeira_linha=(pagina - 1) * consultas.POR_PAGINA + 1,
         ultima_linha=ultima, tem_proxima=ultima < resumo["quantidade"],

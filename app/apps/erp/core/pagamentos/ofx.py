@@ -145,6 +145,7 @@ def parsear_ofx(conteudo: bytes, conta_bancaria_id: int) -> list[LancamentoOFX]:
         return f"{data.isoformat()}|{valor}|{memo}|{doc or ''}"
 
     brutos = []
+    vezes_por_fitid: dict[str, int] = {}
     conteudos_por_fitid: dict[str, set] = {}
     for m in _RE_TRN.finditer(texto):
         bloco = m.group(1)
@@ -163,18 +164,46 @@ def parsear_ofx(conteudo: bytes, conta_bancaria_id: int) -> list[LancamentoOFX]:
         }
         brutos.append(item)
         if item["fitid"]:
+            vezes_por_fitid[item["fitid"]] = vezes_por_fitid.get(
+                item["fitid"], 0) + 1
             conteudos_por_fitid.setdefault(item["fitid"], set()).add(
                 _conteudo(item["data"], item["valor"], item["memo"], item["doc"]))
 
-    # Os FITIDs que carregam mais de um conteúdo são código de tipo, não
-    # identificador. Para eles vale o mesmo caminho de quem não manda FITID.
-    fitid_nao_identifica = {f for f, c in conteudos_por_fitid.items() if len(c) > 1}
+    # ------------------------------------------------------------------
+    # ⚠️ UM FITID SÓ IDENTIFICA QUANDO APARECE UMA VEZ NO ARQUIVO.
+    #
+    # A regra anterior era mais frouxa — "FITID que carrega mais de um CONTEÚDO
+    # é código de tipo" — e ela deixava passar exatamente o caso que o dono
+    # trouxe em 29/09/2026: um extrato do Bradesco com **vinte tarifas de PIX de
+    # R$ 0,35**, todas no mesmo dia, mesmo histórico e mesmo FITID.
+    #
+    # Como as vinte linhas eram IDÊNTICAS, o FITID delas carregava um conteúdo
+    # só — passava no teste antigo, virava identidade, e as vinte viravam UMA.
+    # Dezenove cobranças de verdade sumiam em silêncio, e o extrato passava a
+    # divergir do banco sem ninguém saber por quê.
+    #
+    # Contar as APARIÇÕES em vez dos conteúdos cobre os dois casos de uma vez: o
+    # banco que usa o FITID como código de tipo (conteúdos diferentes) e o banco
+    # que repete o mesmo FITID em cobranças iguais (conteúdo igual). Nos dois, o
+    # FITID deixa de ser identidade e vale data+valor+histórico+ordem.
+    #
+    # E continua idempotente: reimportar o mesmo arquivo reproduz as mesmas
+    # posições, então nada duplica.
+    #
+    # O preço, dito por inteiro: se um banco mandar DE VERDADE a mesma transação
+    # duas vezes no mesmo arquivo, agora entram as duas. É o lado certo para
+    # errar — linha a mais aparece na conferência de saldo e alguém apaga; linha
+    # a menos não aparece em lugar nenhum.
+    # ------------------------------------------------------------------
+    fitid_nao_identifica = {f for f, n in vezes_por_fitid.items() if n > 1}
     if fitid_nao_identifica:
-        logger_aviso = (
-            f"OFX: {len(fitid_nao_identifica)} FITID(s) se repetem com conteúdo "
-            "diferente — este banco usa o FITID como código de tipo. A "
-            "identidade das linhas passou a ser data+valor+histórico.")
-        _avisar(logger_aviso)
+        repetem_conteudo = {f for f in fitid_nao_identifica
+                            if len(conteudos_por_fitid.get(f, ())) == 1}
+        _avisar(
+            f"OFX: {len(fitid_nao_identifica)} FITID(s) aparecem mais de uma vez "
+            f"({len(repetem_conteudo)} deles em linhas idênticas) — este banco não "
+            "usa o FITID como identificador. A identidade das linhas passou a ser "
+            "data+valor+histórico+ordem.")
 
     lancamentos: list[LancamentoOFX] = []
     vistos: set[str] = set()

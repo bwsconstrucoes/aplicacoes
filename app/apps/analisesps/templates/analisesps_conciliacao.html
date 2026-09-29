@@ -233,8 +233,33 @@
 <div class="cartao">
   <div class="cartao-cab">
     <h3>Extrato</h3>
-    <small>{{ resumo.quantidade or 0 }} linha(s) neste recorte</small>
+    <small>
+      {{ resumo.quantidade or 0 }} linha(s) neste recorte
+      {% if total_da_conta %}de {{ total_da_conta }} na conta{% endif %}
+    </small>
   </div>
+
+  {# ------------------------------------------------------------------------
+     ⚠️ O RECORTE TEM DE ANUNCIAR O QUE ESCONDE. Conserto de 29/09/2026: o dono
+     mandou um extrato dizendo *"não foi importado o valor de 56.284,17, não tá
+     sendo reconhecido"*. Importado ele foi — as 53 linhas daquele arquivo entram,
+     conferido com banco de verdade. O que acontecia era a tela: o filtro fica
+     GUARDADO de uma visita para a outra, e um período ou um "só saídas" de ontem
+     esconde hoje uma linha que está gravada.
+
+     "N linhas neste recorte", sozinho, é indistinguível de "N linhas existem" — e
+     a conclusão de quem olha é sempre a pior.
+     ------------------------------------------------------------------------ #}
+  {% set escondidas = (total_da_conta or 0) - (resumo.quantidade or 0) %}
+  {% if escondidas > 0 %}
+    <div class="aviso atencao" style="margin:0 0 10px">
+      <b>O filtro está escondendo {{ escondidas }} linha(s) desta conta.</b>
+      Elas estão gravadas — só não entram neste recorte. O filtro fica guardado de
+      uma visita para a outra, então pode ser de outro dia.
+      <a href="{{ url_for('analisesps.conciliacao', f='1',
+                          conta_id=filtros.conta_id) }}">ver todas</a>
+    </div>
+  {% endif %}
 
   {# ⚠️ A TABELA É DESENHADA MESMO SEM NENHUMA LINHA, e isto é conserto de um
      defeito que o dono achou em 26/09/2026:
@@ -326,6 +351,11 @@
         <th class="direita">Saída</th>
         <th class="direita">Saldo</th>
         <th>Conc.</th>
+        {# ⚠️ COLUNA NOVA em 29/09/2026, por cobrança dele: *"não fica nenhuma
+           informação na tabela dizendo que aquela tarifa foi lançada, precisa pra
+           não ser lançada novamente."* O estado já era gravado; a lista é que
+           nunca o lia. #}
+        <th>No OMIE</th>
         <th>Observação</th>
         {% if pode_operar %}<th></th>{% endif %}
       </tr>
@@ -356,6 +386,7 @@
                    class="direita" value="{{ filtros.entrada or '' }}"></th>
         <th><input name="saida" form="filtro-colunas" placeholder="valor"
                    class="direita" value="{{ filtros.saida or '' }}"></th>
+        <th></th>
         <th></th>
         <th>
           <select name="situacao" form="filtro-colunas"
@@ -401,6 +432,33 @@
               {{ '✓' if l.conciliado else '—' }}
             {% endif %}
           </td>
+          {# ------------------------------------------------------------------
+             O QUE ACONTECEU COM ESTA LINHA NO OMIE. Quatro estados, e cada um
+             tem consequência diferente para quem olha:
+
+               lançado          já foi, não mande de novo
+               falhou           não entrou; dá para mandar de novo
+               enviando         a resposta se perdeu no caminho — PODE ter
+                                entrado, e mandar de novo arrisca duplicar
+               (vazio)          nunca foi mandada
+             ------------------------------------------------------------------ #}
+          <td class="no-omie">
+            {% if l.omie_situacao in ('gravado', 'sem_baixa') %}
+              <span class="selo aprovado"
+                    title="lançado{% if l.omie_em %} em {{ l.omie_em|momento_br }}{% endif %}{% if l.omie_por %} por {{ l.omie_por }}{% endif %}"
+                    >{{ l.omie_codigo or 'lançado' }}</span>
+            {% elif l.omie_situacao == 'meia_transferencia' %}
+              <span class="selo risco" title="{{ l.omie_erro }}">meia transf.</span>
+            {% elif l.omie_situacao == 'enviando' %}
+              <span class="selo saindo"
+                    title="a resposta do OMIE se perdeu — confira lá antes de mandar de novo"
+                    >sem resposta</span>
+            {% elif l.omie_situacao == 'falhou' %}
+              <span class="selo pagar" title="{{ l.omie_erro }}">falhou</span>
+            {% else %}
+              <span class="cartao-dica">—</span>
+            {% endif %}
+          </td>
           <td>
             {# ⚠️ CAMPO DE VÁRIAS LINHAS, pedido dele em 24/09/2026: *"na
                observação, permita a quebra de linha"*. Ele cresce sozinho
@@ -430,7 +488,7 @@
       {% else %}
         {# O recado que antes ficava no lugar da tabela. Aqui dentro ele
            responde a mesma coisa e deixa os filtros alcançáveis. #}
-        <tr><td colspan="{{ 10 if pode_operar else 8 }}"
+        <tr><td colspan="{{ 11 if pode_operar else 9 }}"
                 style="padding:22px; text-align:center; color:var(--tinta-suave)">
           Nada neste recorte.
           {% if resumo.quantidade == 0 and filtros.situacao == 'todos'

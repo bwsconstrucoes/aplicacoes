@@ -709,7 +709,7 @@ def test_lancar_no_OMIE_marca_a_linha_e_nao_deixa_lancar_de_novo(banco_conc):
 
         def _call(self, url, acao, param):
             self.chamadas.append((acao, param))
-            return {"codigo_lancamento_omie": 555}
+            return {"nCodLanc": 555}
 
     cli = ClienteFalso()
     plano = conciliacao_omie.planejar([linha], conta)
@@ -717,8 +717,8 @@ def test_lancar_no_OMIE_marca_a_linha_e_nao_deixa_lancar_de_novo(banco_conc):
     feito = conciliacao_omie.lancar(plano["vai"], "MARCELO", cli)
 
     assert feito["gravados"] == 1
-    assert [a for a, _ in cli.chamadas] == ["IncluirContaPagar",
-                                            "LancarPagamento"]
+    # ⚠️ UMA CHAMADA SÓ desde 29/09/2026: lançamento de conta corrente, sem baixa.
+    assert [a for a, _ in cli.chamadas] == ["IncluirLancCC"]
 
     # A linha ficou marcada, e um novo plano não a oferece mais.
     de_novo = conciliacao.listar({"conta_id": conta_id})[0]
@@ -728,10 +728,17 @@ def test_lancar_no_OMIE_marca_a_linha_e_nao_deixa_lancar_de_novo(banco_conc):
     assert tipo_id
 
 
-def test_o_titulo_criado_com_baixa_falhando_VIRA_PENDENCIA(banco_conc):
-    """⚠️ Um título criado no OMIE cuja baixa falhou fica lá em aberto,
-    dizendo que há algo a pagar que já foi pago — e ninguém descobre isso
-    olhando o extrato daqui."""
+def test_o_lancamento_QUE_FALHA_vira_pendencia(banco_conc):
+    """⚠️ ESTE TESTE MUDOU EM 29/09/2026, junto com a regra que ele testava.
+
+    Ele cobria "título criado e baixa falhando" — o estado que o dono encontrou na
+    tela, com o recado "dê a baixa por lá" e um 404 na URL da baixa. Esse estado
+    deixou de existir: a linha do extrato virou lançamento de conta corrente, que
+    não tem título em aberto nem baixa.
+
+    O que continua valendo, e é o que importa: **o que falha vira pendência**, com o
+    erro do OMIE inteiro, para ninguém precisar descobrir sozinho que ficou coisa
+    pelo caminho."""
     from app.apps.analisesps import (conciliacao, conciliacao_ofx,
                                      conciliacao_omie)
     conta_id = conta_de_teste(omie_conta_corrente="1234567")
@@ -743,23 +750,54 @@ def test_o_titulo_criado_com_baixa_falhando_VIRA_PENDENCIA(banco_conc):
         {"nome": "Tarifa", "palavras": "TARIFA",
          "codigo_categoria": "2.01.05", "codigo_cliente": 111}, "T")
 
-    class ClienteQueFalhaNaBaixa:
+    class ClienteQueRecusa:
         def _call(self, url, acao, param):
-            if "Lancar" in acao:
-                raise RuntimeError("conta corrente bloqueada")
-            return {"codigo_lancamento_omie": 777}
+            raise RuntimeError("conta corrente bloqueada")
 
     plano = conciliacao_omie.planejar([linha], conta)
-    feito = conciliacao_omie.lancar(plano["vai"], "T", ClienteQueFalhaNaBaixa())
+    feito = conciliacao_omie.lancar(plano["vai"], "T", ClienteQueRecusa())
 
-    assert feito["gravados"] == 1          # o título entrou
-    assert len(feito["falhas"]) == 1       # e a baixa não
-    assert "FOI CRIADO" in feito["falhas"][0]["erro"]
+    assert feito["gravados"] == 0
+    assert len(feito["falhas"]) == 1
+    assert "conta corrente bloqueada" in feito["falhas"][0]["erro"]
 
     pendentes = conciliacao_omie.pendencias()
     assert len(pendentes) == 1
-    assert pendentes[0]["omie_situacao"] == "sem_baixa"
-    assert pendentes[0]["omie_codigo"] == 777
+    assert pendentes[0]["omie_situacao"] == "falhou"
+
+
+def test_a_linha_lancada_GUARDA_o_numero_e_a_hora(banco_conc):
+    """⚠️ *"Não fica nenhuma informação na tabela dizendo que aquela tarifa foi
+    lançada, precisa pra não ser lançada novamente."* (dono, 29/09/2026)
+
+    A informação era gravada e a LISTA não a trazia. Este caso trava as duas
+    pontas: o que é gravado e o que a listagem devolve."""
+    from app.apps.analisesps import (conciliacao, conciliacao_ofx,
+                                     conciliacao_omie)
+    conta_id = conta_de_teste(omie_conta_corrente="1234567")
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(
+        ofx([("20260910", "-9.00", "A1", "TARIFA BANCARIA")])), "x.ofx", "T")
+    linha = conciliacao.listar({"conta_id": conta_id})[0]
+    assert linha["omie_situacao"] == "", "ainda não foi lançada"
+    assert linha["omie_codigo"] is None
+
+    conta = [c for c in conciliacao.contas() if c["id"] == conta_id][0]
+    conciliacao_omie.gravar_tipo(
+        {"nome": "Tarifa", "palavras": "TARIFA",
+         "codigo_categoria": "2.01.05", "codigo_cliente": 111}, "T")
+
+    class ClienteOK:
+        def _call(self, url, acao, param):
+            return {"nCodLanc": 4321}
+
+    plano = conciliacao_omie.planejar([linha], conta)
+    conciliacao_omie.lancar(plano["vai"], "MARCELO", ClienteOK())
+
+    depois = conciliacao.listar({"conta_id": conta_id})[0]
+    assert depois["omie_situacao"] == "gravado"
+    assert depois["omie_codigo"] == 4321
+    assert depois["omie_por"] == "MARCELO"
+    assert depois["omie_em"] is not None
 
 
 @pytest.mark.parametrize("filtro,esperado,porque", [
