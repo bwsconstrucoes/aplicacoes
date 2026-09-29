@@ -9289,6 +9289,63 @@ se qualquer tela da folha nascer com tabela fora do invólucro.
 
 ---
 
+### Centésima décima sétima leva (29/09) — a presunção, e dois avisos que eram lixo
+
+#### ⚠️ A REGRA NOVA, e ela é sobre como responder
+
+Ao explicar a correção das cores eu citei **"Streamlit"** como se fosse palavra dele.
+Não era — está num comentário do CSS. A reação:
+
+> *"Mais uma vez, presunção pura. Se eu falei eu sei o que tô dizendo, isso é
+> irritante. E não conseguimos evoluir. (…) Eu não falei nada de Streamlit. (…)
+> Quando você falou em Streamlit me assustei."*
+
+**NÃO DEVOLVER A ELE UMA PALAVRA QUE ELE NÃO USOU.** Termo que está no código é meu;
+se precisa aparecer, aparece como "está escrito no CSS", nunca como "você disse".
+Atribuir a ele algo que ele não disse o obriga a checar se está maluco — e isso é o
+oposto do trabalho. Some-se a isto o padrão que ele já apontou antes: eu enfeito a
+resposta com coisa que não foi pedida, e o enfeite atrapalha.
+
+**A definição dele de "cor da tabela", que é melhor que a minha:** *"a tabela tem uma
+cor mais clara. E algo em volta. Na folha de PGT não tava assim, tava mais escuro."*
+Em número: fundo da página #F2F4F8, cartão da tabela #FFFFFF, com cantos e sombra. E
+o padrão é o das Solicitações, dito por ele: *"é seguir o padrão de Solicitação, só
+pra deixar bem claro."*
+
+#### Sim, dá para excluir folha importada
+
+Na tela **Folha da contabilidade**, o **×** na ponta de cada linha. Seguro por três
+motivos: o arquivo original fica com a contabilidade; a apropriação mora em outra
+tabela (034), então não se perde decisão; e reimportar a mesma competência
+**substitui**, então nem precisa apagar antes.
+
+#### O aviso de "Paga por BeeVale" era lixo meu
+
+Ele: *"não entendi essa pergunta."* Fui procurar: **`paga_por_beevale` não é lido em
+lugar nenhum**. Eu pedia o nome de uma coluna para preencher campo que nada consulta.
+
+1. **Saiu da lista de avisos.** Volta quando a geração de arquivo precisar dele de
+   verdade. ⚠️ **Aviso sem consequência é o que faz ninguém ler os avisos que
+   importam.**
+2. **O aviso parou de fazer pergunta.** Ele terminava com "me diga o nome exato dela
+   na planilha" — pergunta numa tela sem campo de resposta. Agora diz **o que para de
+   funcionar** ("o auxílio ALIMENTAÇÃO não calcula para ninguém"), com um mapa
+   `EFEITO_DE_FALTAR` e teste obrigando campo-que-avisa a ter efeito escrito.
+3. **A segunda linha explicava epistemologia** ("não é o estado de agora") e ele não
+   entendeu. Agora diz o que fazer: corrigir a planilha e reler.
+
+#### A notícia boa escondida na reclamação
+
+O aviso que ele colou é da carga de **28/09 às 23:15** e lista UMA coluna; antes eram
+três. Ele apertou "Atualizar cadastro" depois da correção e **as duas colunas de
+Categoria foram achadas** — alimentação e transporte passaram a calcular. A que sobrou
+era justamente a que não servia para nada.
+
+**Verificado:** suíte inteira sem falha, e as 21 tabelas da folha no invólucro padrão,
+com teste que lê os templates e falha se uma nascer fora.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

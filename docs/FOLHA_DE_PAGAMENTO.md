@@ -2903,16 +2903,34 @@ Fui ler. São **três** coisas, e eu tinha uma:
 | a tabela DENTRO de `.tabela-wrap` (cartão branco, cantos, sombra) e `.tabela-rolagem` (rolagem horizontal, **cabeçalho grudado no topo**) | ✘ tabela nua, direto no fundo da página |
 | o **estado da linha lido pela COR**, com a paleta dele | ✘ estado em texto miúdo |
 
-⚠️ **A segunda linha é a resposta para "cor da tabela", e é mais óbvia do que eu
-supus:** não é a cor das células, é a **superfície** em que a tabela está. A das
-Solicitações é um cartão branco sobre o fundo da página; as minhas eram tabelas nuas
-*no* fundo. Duas cores diferentes de tabela, literalmente.
+⚠️ **A segunda linha é a resposta para "cor da tabela"**, e ele mesmo a formulou
+melhor do que eu: *"a tabela tem uma cor mais clara. E algo em volta. Na folha de
+PGT não tava assim, tava mais escuro. É isso, deve ser o padrão."*
+
+Em número: o fundo da página é **#F2F4F8** (mais escuro) e o cartão da tabela é
+**#FFFFFF** (mais claro), com cantos e sombra — o "algo em volta". A tabela nua não
+pinta as próprias células, então ela mostrava o fundo escuro. É isso, e nada mais
+sofisticado do que isso.
+
+**E o padrão é o das Solicitações**, dito por ele com todas as letras: *"voltando à
+tela, é seguir o padrão de Solicitação, só pra deixar bem claro."*
 
 ### O que o próprio CSS já dizia, e eu não tinha lido
 
-> *"AS CORES DO STREAMLIT. O dono trabalhou anos com elas e **lê a tabela pela cor
-> antes de ler o texto** — trocar a paleta na conversão custou tempo de leitura a
-> cada linha."*
+⚠️ **NOTA DE CORREÇÃO, 29/09/2026.** Ao explicar isto eu citei "Streamlit" como se
+fosse palavra dele, e não era — ela está num comentário do CSS. Ele reagiu:
+*"presunção pura. Se eu falei, eu sei o que tô dizendo (…) eu não falei nada de
+Streamlit (…) quando você falou em Streamlit me assustei."*
+
+**A regra que fica: não devolver a ele uma palavra que ele não usou.** Termo que
+está no código é meu; se precisa aparecer, aparece como "está escrito no CSS", nunca
+como "você disse". Atribuir a ele algo que ele não disse o obriga a checar se está
+maluco — e esse é o oposto do trabalho.
+
+O comentário, citado como o que é (um comentário do CSS):
+
+> *"O dono trabalhou anos com elas e **lê a tabela pela cor antes de ler o texto** —
+> trocar a paleta na conversão custou tempo de leitura a cada linha."*
 >
 > Status Pgt: Pagar **vermelho** · Pago **azul** — Agendamento: Agendar **roxo** ·
 > Agendado **verde** · Falha **laranja** — risco **vermelho forte**
@@ -2955,6 +2973,58 @@ a interpretação que exigia menos trabalho, sem conferir e sem perguntar. **Qua
 resposta é "conferi que é a mesma classe", eu conferi o que era fácil, não o que foi
 pedido.** O certo, nesta ordem: ler o que o padrão faz de verdade; se ainda restar
 dúvida, perguntar **uma** coisa precisa.
+
+## 7.34 DUAS RESPOSTAS DIRETAS E UM AVISO QUE ERA LIXO (29/09/2026)
+
+### 7.34.1 "Consigo excluir um arquivo previamente importado?"
+
+**Sim.** Na tela **Folha da contabilidade**, cada linha da lista tem um **×** na
+ponta direita. Ele pede confirmação dizendo a competência e quantas pessoas a folha
+tinha.
+
+E é seguro por três motivos, que vale registrar: o **arquivo original continua com a
+contabilidade**; a **apropriação mora em outra tabela** (migração 034), então apagar
+a folha importada não apaga decisão nenhuma; e **reimportar a mesma competência
+substitui** em vez de duplicar, então nem é preciso apagar antes de trazer de novo.
+
+### 7.34.2 O aviso de "Paga por BeeVale" era lixo meu
+
+Ele leu o aviso e disse: *"não entendi essa pergunta."* Fui procurar o campo:
+**`paga_por_beevale` não é lido em lugar nenhum do sistema.** Eu estava pedindo o
+nome de uma coluna para preencher um campo que nada consulta.
+
+Duas correções saíram disso:
+
+1. **O campo saiu da lista de avisos.** A carga continua tentando achá-lo; quando a
+   geração de arquivo precisar de verdade saber quem recebe por BeeVale, o aviso
+   volta — e aí com um motivo que se explica. **Aviso sem consequência é o que faz
+   ninguém ler os avisos que importam.**
+2. **O aviso parou de fazer pergunta.** Ele terminava com *"me diga o nome exato dela
+   na planilha"* — uma pergunta numa tela onde não há como responder. Agora diz **o
+   que para de funcionar**, que é o que permite decidir se corre atrás agora ou
+   depois:
+
+   | Coluna faltando | O que o aviso diz agora |
+   |---|---|
+   | Categoria Auxílio Alimentação | *o auxílio ALIMENTAÇÃO não calcula para ninguém* |
+   | Valor Auxílio Transporte | *o auxílio TRANSPORTE sai zerado* |
+   | Código da Obra | *as telas não conseguem agrupar por obra* |
+   | Fase Atual | *quem foi desligado deixa de ser escondido — e entra em pagamento sem ninguém ver* |
+
+   Há teste obrigando a dupla a andar junta: campo que avisa e não explica o efeito
+   faz a suíte falhar.
+
+3. **A segunda linha do aviso também mudou.** Ela explicava epistemologia — *"este
+   aviso é daquela carga, não é o estado de agora"* — e ele não entendeu. A data já
+   está na frase de cima; agora a segunda linha diz o que fazer: *"corrija o nome da
+   coluna na planilha e aperte Atualizar cadastro para reler."*
+
+### 7.34.3 E a notícia boa que estava escondida na reclamação dele
+
+O aviso que ele colou é da carga de **28/09 às 23:15** e lista **uma** coluna. Antes
+listava três. Ou seja: ele apertou "Atualizar cadastro" depois da correção, e **as
+duas colunas de Categoria foram encontradas** — o cálculo de alimentação e transporte
+passou a funcionar. A única que sobrou era justamente a que não servia para nada.
 
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 

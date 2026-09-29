@@ -6928,7 +6928,12 @@ def test_o_aviso_do_cadastro_LEVA_A_DATA_da_carga(app, monkeypatch):
 
     assert "Na carga de" in html
     assert "26/09" in html and "18:35" in html
-    assert "não é o estado" in html, "tem de dizer que não é o agora"
+    # ⚠️ A SEGUNDA FRASE MUDOU EM 29/09/2026. Ela explicava epistemologia ("este
+    # aviso é daquela carga — não é o estado de agora") e ele respondeu *"não
+    # entendi essa pergunta"*. A data já está na frase de cima; o que faltava era
+    # dizer o que FAZER.
+    assert "não é o estado" not in html
+    assert "Corrija o nome da coluna na planilha" in html
     assert "Atualizar cadastro" in html
 
 

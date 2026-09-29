@@ -172,13 +172,24 @@ def test_coluna_de_auxilio_que_FALTA_vira_AVISO_escrito():
     juntos = " ".join(avisos)
     assert "Alimenta" in juntos
     assert "Transporte" in juntos
-    assert "em branco" in juntos
+    # ⚠️ MUDOU EM 29/09/2026: o aviso dizia "este campo vai ficar em branco", que
+    # não diz nada a quem lê. Agora diz o TAMANHO do problema.
+    assert "não calcula para ninguém" in juntos or "sai zerado" in juntos
 
 
-def test_o_aviso_da_coluna_que_falta_PEDE_o_nome_certo():
-    """Aviso que só diz "não achei" deixa o dono sem saber o que fazer."""
+def test_o_aviso_da_coluna_que_falta_DIZ_O_QUE_PARA_de_funcionar():
+    """⚠️ ESTE TESTE AFIRMAVA O CONTRÁRIO ATÉ 29/09/2026: ele exigia que o aviso
+    terminasse pedindo *"me diga o nome exato dela na planilha"*.
+
+    O dono reclamou justamente disso — *"não entendi essa pergunta"* — e ele está
+    certo: é uma pergunta numa tela onde não há como responder. O aviso útil diz o
+    que para de funcionar; quem lê decide se corre atrás agora ou depois."""
     _, avisos = col._achar_colunas(CABECALHO)
-    assert any("nome exato" in a for a in avisos)
+    juntos = " ".join(avisos)
+    assert "nome exato" not in juntos
+    assert "não existe na planilha com esse nome" in juntos
+    assert any(pedaco in juntos for pedaco in
+               ("não calcula", "sai zerado", "não leva ao card", "não decide"))
 
 
 # ---------------------------------------------------------------------------
@@ -476,3 +487,55 @@ def test_sem_informar_o_periodo_a_conta_usa_hoje():
     nada, só mostrando."""
     r = col.situacao_no_pagamento(ficha(data_saida=dt.date(2020, 1, 1)))
     assert r["situacao"] == col.SITUACAO_SAIU
+
+
+# ---------------------------------------------------------------------------
+# O AVISO DE COLUNA FALTANDO — 29/09/2026
+# ---------------------------------------------------------------------------
+def test_o_aviso_diz_O_QUE_PARA_DE_FUNCIONAR_e_nao_faz_pergunta():
+    """⚠️ O aviso terminava com *"me diga o nome exato dela na planilha"* — uma
+    pergunta numa tela onde não há como responder. Reclamação do dono em 29/09/2026:
+    *"não entendi essa pergunta."*
+
+    Agora ele diz o TAMANHO do problema, que é o que permite decidir se corre atrás
+    agora ou depois."""
+    from app.apps.analisesps import colaboradores as col
+
+    # Um cabeçalho sem a categoria da alimentação.
+    cabecalho = ["CPF (Cadastro de Pessoa Física)", "Nome Completo",
+                 "Valor Auxílio Alimentação"]
+    _posicoes, avisos = col._achar_colunas(cabecalho)
+    texto = " ".join(avisos)
+
+    assert "Me diga o nome exato" not in texto, "não pergunta onde não dá resposta"
+    assert "não calcula para ninguém" in texto, "diz o que para de funcionar"
+    assert "ALIMENTAÇÃO" in texto
+
+
+def test_NAO_avisa_sobre_campo_que_nada_le():
+    """⚠️ "Paga por BeeVale" saiu da lista de avisos: o campo NÃO É LIDO em lugar
+    nenhum do sistema. Eu estava pedindo o nome de uma coluna para preencher um
+    campo que nada consulta — e aviso sem consequência é o que faz ninguém ler os
+    avisos que importam."""
+    from app.apps.analisesps import colaboradores as col
+
+    assert "paga_por_beevale" not in col.COLUNAS_QUE_AVISAM
+    # Mas a carga continua tentando achá-la: quando a geração de arquivo precisar
+    # saber quem recebe por BeeVale, o campo está lá.
+    assert "paga_por_beevale" in col.COLUNAS_DOS_AUXILIOS
+
+    _posicoes, avisos = col._achar_colunas(
+        ["CPF (Cadastro de Pessoa Física)", "Nome Completo"])
+    assert not any("BeeVale" in a for a in avisos)
+
+
+def test_TODO_campo_que_avisa_explica_o_efeito():
+    """Um aviso sem efeito escrito volta a ser "este campo fica em branco", que não
+    diz nada. Este teste obriga a dupla a andar junta."""
+    from app.apps.analisesps import colaboradores as col
+
+    sem_explicacao = sorted(c for c in col.COLUNAS_QUE_AVISAM
+                            if c not in col.EFEITO_DE_FALTAR)
+    assert not sem_explicacao, (
+        "estes campos avisam e não dizem o que para de funcionar: "
+        + ", ".join(sem_explicacao))

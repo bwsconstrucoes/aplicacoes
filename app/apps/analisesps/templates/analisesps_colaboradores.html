@@ -206,9 +206,11 @@
         {% if cadastro.quando %}{{ cadastro.quando[8:10] }}/{{ cadastro.quando[5:7] }}
           às {{ cadastro.quando[11:16] }}{% else %}antes{% endif %}</b>:
         {{ cadastro.avisos|join('; ') }}
-        <br><span class="cartao-dica">Este aviso é daquela carga — não é o estado
-          de agora. Aperte <b>Atualizar cadastro</b> para refazer a leitura e ver
-          o que continua faltando.</span>
+        {# ⚠️ ANTES ESTA LINHA EXPLICAVA EPISTEMOLOGIA ("não é o estado de
+           agora"), e ele respondeu *"não entendi essa pergunta"*. Agora diz o que
+           FAZER: corrigir a planilha e reler. A data já está na frase de cima. #}
+        <br><span class="cartao-dica">Corrija o nome da coluna na planilha e
+          aperte <b>Atualizar cadastro</b> para reler.</span>
       </div>
     {% endif %}
   </div>

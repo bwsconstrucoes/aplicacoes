@@ -227,7 +227,51 @@ COLUNAS_QUE_AVISAM = frozenset({
     # em branco calado foi o que ele viu em 28/09/2026 ("aqui tem vários vazios").
     "obra_codigo",
 } | {"modo_alimentacao", "valor_alimentacao",
-     "modo_transporte", "valor_transporte", "paga_por_beevale"})
+     "modo_transporte", "valor_transporte"})
+
+# ⚠️ "Paga por BeeVale" SAIU DA LISTA DE AVISOS em 29/09/2026, e o motivo é que o
+# aviso era lixo: o dono disse *"não entendi essa pergunta"* sobre ele, e ao
+# procurar descobri que **o campo não é lido em lugar nenhum do sistema**. Eu
+# estava pedindo o nome de uma coluna para preencher um campo que nada consulta.
+#
+# A carga continua tentando achá-la (o nome está em `COLUNAS_DOS_AUXILIOS`); só não
+# enche a tela por causa dela. Quando a geração de arquivo precisar de verdade
+# saber quem recebe por BeeVale, o aviso volta — e aí com um motivo que se explica.
+#
+# A regra geral: só avisa o que muda decisão ou dinheiro AGORA. Aviso sem
+# consequência é o que faz ninguém ler os avisos que importam.
+
+# ⚠️ O QUE PARA DE FUNCIONAR quando cada coluna falta. É isto que vai no aviso, em
+# vez de uma pergunta: quem lê a tela precisa saber o TAMANHO do problema para
+# decidir se corre atrás agora ou depois. "Este campo fica em branco" não diz nada.
+EFEITO_DE_FALTAR = {
+    "modo_alimentacao":
+        "o auxílio ALIMENTAÇÃO não calcula para ninguém (sem a categoria não há "
+        "como contar os dias).",
+    "valor_alimentacao":
+        "o auxílio ALIMENTAÇÃO sai zerado (sem valor do dia não há o que "
+        "multiplicar).",
+    "modo_transporte":
+        "o auxílio TRANSPORTE não calcula para ninguém.",
+    "valor_transporte":
+        "o auxílio TRANSPORTE sai zerado.",
+    "obra_codigo":
+        "as telas não conseguem agrupar por obra — e é por obra que você confere "
+        "e decide o rateio.",
+    "card_pipefy":
+        "o nome da pessoa não leva ao card, e é no card que se corrige o auxílio.",
+    "tipo_contrato":
+        "a regra de diarista × CTPS não decide, porque ela olha o contrato.",
+    "fase":
+        "quem foi desligado deixa de ser escondido da lista — e entra em "
+        "pagamento sem ninguém ver.",
+    "data_saida":
+        "quem já saiu deixa de ser travado no pagamento.",
+    "valor_gratificacao":
+        "a gratificação sai zerada.",
+    "parcela_unica":
+        "quem recebe parcela única deixa de ser reconhecido.",
+}
 
 DATAS = ("aviso_previo", "ultimo_dia", "data_saida",
          "data_inicio", "data_admissao")
@@ -364,9 +408,13 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
                 f'não achei a coluna de "{aceitos[0]}" na aba '
                 f'"{ABA_COLABORADORES}".')
         elif campo in COLUNAS_QUE_AVISAM:
+            # ⚠️ O AVISO DIZ O QUE PARA DE FUNCIONAR, e não faz pergunta. Ele
+            # terminava com "me diga o nome exato dela na planilha" — uma pergunta
+            # numa tela onde não há como responder. Reclamação dele em 29/09/2026:
+            # *"não entendi essa pergunta."*
             avisos.append(
-                f'não achei a coluna de "{aceitos[0]}" — este campo vai ficar '
-                f"em branco. Me diga o nome exato dela na planilha.")
+                f'a coluna "{aceitos[0]}" não existe na planilha com esse nome, '
+                f"então {EFEITO_DE_FALTAR.get(campo, 'este campo fica em branco')}")
         # else: fica em branco calado. Ver COLUNAS_QUE_AVISAM.
 
     return posicoes, avisos
