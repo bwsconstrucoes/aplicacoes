@@ -399,15 +399,20 @@ def test_o_OFX_ADOTA_a_linha_da_planilha_em_vez_de_duplicar(banco_conc):
 
 def test_depois_de_adotada_a_linha_nao_e_adotada_de_novo(banco_conc):
     """Um segundo OFX com outro lançamento igual em data e valor não pode
-    roubar a linha que o primeiro já casou."""
+    roubar a linha que o primeiro já casou.
+
+    ⚠️ O "outro lançamento" tem de ser OUTRO de verdade: outro histórico. Até
+    29/09/2026 este teste usava o mesmo histórico e só trocava o FITID — e isso
+    era a mesma transação vista em dois downloads do Bradesco, que agora entra
+    uma vez só (ver `conciliacao_ofx.identidade_da_linha`)."""
     from app.apps.analisesps import conciliacao, conciliacao_ofx
     conta_id = conta_de_teste()
     conciliacao.importar_da_planilha(conta_id, aba_falsa(), "T")
     conciliacao.importar(conta_id, conciliacao_ofx.ler(
-        ofx([("20260910", "-1500.00", "A1")])), "um.ofx", "T")
+        ofx([("20260910", "-1500.00", "A1", "PIX FULANO")])), "um.ofx", "T")
 
     segundo = conciliacao.importar(conta_id, conciliacao_ofx.ler(
-        ofx([("20260910", "-1500.00", "B9")])), "dois.ofx", "T")
+        ofx([("20260910", "-1500.00", "B9", "PIX BELTRANO")])), "dois.ofx", "T")
 
     assert segundo["adotadas"] == 0
     assert segundo["gravadas"] == 1
@@ -1694,3 +1699,182 @@ def test_NAO_ACHAR_e_uma_resposta_e_nao_um_erro(banco_conc):
         ofx([("20260910", "-9.00", "A1", "TARIFA")])), "a.ofx", "T")
 
     assert conciliacao.procurar_em_todas(valor=Decimal("56284.17")) == []
+
+
+# ---------------------------------------------------------------------------
+# 29/09/2026 — O FITID DO BRADESCO É UM CONTADOR DO ARQUIVO
+#
+# O dono trouxe o extrato de 29/09 e a transferência de R$ 56.284,17 "não
+# importava": a conferência dizia "53 já estavam aqui e 0 são novos", e 36 das
+# 53 nunca tinham entrado. O FITID de cada uma já existia no banco — vindo de
+# OUTRA linha, de um download anterior, porque o Bradesco numera o FITID por
+# arquivo (N10127, N1013B, N10151… de 22 em 22) e recomeça a cada download.
+# E o contrário também: a mesma transação em dois downloads, com dois FITIDs,
+# entrava duas vezes. Ver `conciliacao_ofx.identidade_da_linha`.
+# ---------------------------------------------------------------------------
+def _ler(transacoes, **kw):
+    from app.apps.analisesps import conciliacao_ofx
+    return conciliacao_ofx.ler(ofx(transacoes, **kw))
+
+
+def test_o_download_seguinte_REUSA_os_fitids_e_nada_pode_sumir(banco_conc):
+    """O de sexta e o de segunda usam N1013B e N10151 para coisas diferentes."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste()
+    sexta = [("20260925", "-0.35", "N1013B", "TARIFA BANCARIA TRANSF PGTO PIX"),
+             ("20260925", "-100.00", "N10151", "PIX ENVIADO DES: POLICLINICA")]
+    conciliacao.importar(conta_id, _ler(sexta), "sexta.ofx", "T")
+
+    segunda = [("20260928", "56284.17", "N1013B", "TRANSF CC PARA CC PJ BWS"),
+               ("20260928", "-700.00", "N10151", "PIX ENVIADO DES: HERALDO")]
+    feito = conciliacao.importar(conta_id, _ler(segunda), "segunda.ofx", "T")
+
+    assert feito["ja_estavam"] == 0, "o FITID reaproveitado escondeu linha nova"
+    assert feito["gravadas"] == 2
+    valores = [l["valor"] for l in conciliacao.listar({"conta_id": conta_id})]
+    assert Decimal("56284.17") in valores
+    assert len(valores) == 4
+
+
+def test_a_MESMA_transacao_em_dois_downloads_entra_UMA_vez(banco_conc):
+    """Os PIX de 146,00 e 4.616,22 que o dono viu em dobro."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste()
+    ana = ("20260928", "-146.00", "N1052D", "PIX QR CODE ESTATICO DES: ANA E G NOBRE")
+    conciliacao.importar(conta_id, _ler([ana]), "a.ofx", "T")
+
+    de_novo = [("20260928", "-146.00", "N10ABC", "PIX QR CODE ESTATICO DES: ANA E G NOBRE"),
+               ("20260929", "-740.00", "N1059B", "PIX ENVIADO DES: FERMAD LTDA")]
+    conferido = conciliacao.conferir(conta_id, _ler(de_novo))
+    assert conferido["ja_estavam"] == 1
+    assert len(conferido["novas"]) == 1
+
+    conciliacao.importar(conta_id, _ler(de_novo), "b.ofx", "T")
+    assert conciliacao.resumo({"conta_id": conta_id})["quantidade"] == 2
+
+
+def _envelhecer_as_identidades(conta_id):
+    """Deixa o banco como ele ERA até 29/09/2026: identidade = hash do FITID."""
+    from app.apps.analisesps.conciliacao_ofx import impressao_de
+    from app.apps.analisesps.db import conexao, consultar
+    linhas = consultar(
+        "SELECT id, fitid FROM analisesps.conciliacao_extrato WHERE conta_id = ?",
+        (conta_id,))
+    with conexao() as con:
+        for linha_id, fitid in linhas:
+            con.execute("UPDATE analisesps.conciliacao_extrato SET impressao = ? "
+                        "WHERE id = ?", (impressao_de(conta_id, fitid), linha_id))
+        con.commit()
+    return {impressao_de(conta_id, f) for _i, f in linhas}
+
+
+def test_as_identidades_ANTIGAS_sao_refeitas_ANTES_de_conferir(banco_conc):
+    """⚠️ O conserto tem de valer para as 19.926 linhas que já estão lá — senão
+    o próximo extrato veria tudo como novo e duplicaria a conta inteira."""
+    from app.apps.analisesps import conciliacao
+    from app.apps.analisesps.db import consultar
+    conta_id = conta_de_teste()
+    setembro = [("20260925", "-0.35", "N1013B", "TARIFA BANCARIA TRANSF PGTO PIX"),
+                ("20260925", "-0.35", "N10151", "TARIFA BANCARIA TRANSF PGTO PIX"),
+                ("20260925", "-100.00", "N10165", "PIX ENVIADO DES: POLICLINICA")]
+    conciliacao.importar(conta_id, _ler(setembro), "velho.ofx", "T")
+    antigas = _envelhecer_as_identidades(conta_id)
+
+    # O mesmo período, baixado de novo: outros FITIDs, as mesmas transações.
+    de_novo = [("20260925", "-0.35", "N90001", "TARIFA BANCARIA TRANSF PGTO PIX"),
+               ("20260925", "-0.35", "N90002", "TARIFA BANCARIA TRANSF PGTO PIX"),
+               ("20260925", "-100.00", "N90003", "PIX ENVIADO DES: POLICLINICA")]
+    conferido = conciliacao.conferir(conta_id, _ler(de_novo))
+    assert conferido["ja_estavam"] == 3, "as identidades antigas não foram refeitas"
+    assert conferido["novas"] == []
+    assert conferido["so_aqui"] == []
+
+    no_banco = {l[0] for l in consultar(
+        "SELECT impressao FROM analisesps.conciliacao_extrato WHERE conta_id = ?",
+        (conta_id,))}
+    assert not (no_banco & antigas), "alguma linha ficou com a identidade por FITID"
+    # E da segunda vez não há mais nada a fazer.
+    assert conciliacao.refazer_identidades(conta_id) == {"refeitas": 0, "devolvidas": 0}
+
+
+def test_refazer_identidades_nao_bate_no_indice_unico(banco_conc):
+    """A identidade nova de uma linha pode ser a identidade ATUAL de outra (a
+    tarifa velha vira #1, e a #1 de hoje vira #2). Tem de trocar sem estourar."""
+    from app.apps.analisesps import conciliacao
+    from app.apps.analisesps.conciliacao_ofx import identidade_da_linha, impressao_de
+    from app.apps.analisesps.db import conexao, consultar
+    conta_id = conta_de_teste()
+    tarifa = ("20260925", "-0.35", "N1013B", "TARIFA BANCARIA TRANSF PGTO PIX")
+    conciliacao.importar(conta_id, _ler([tarifa]), "a.ofx", "T")
+    _envelhecer_as_identidades(conta_id)                      # id 1: hash(N1013B)
+    numero_um = impressao_de(conta_id, identidade_da_linha(
+        dt.date(2026, 9, 25), Decimal("-0.35"), "TARIFA BANCARIA TRANSF PGTO PIX", ""))
+    with conexao() as con:                                     # id 2: já é a #1
+        con.execute(
+            "INSERT INTO analisesps.conciliacao_extrato (conta_id, data, descricao, "
+            "documento, valor, origem, impressao, fitid) VALUES (?, ?, ?, '', ?, "
+            "'ofx', ?, 'N90001')",
+            (conta_id, dt.date(2026, 9, 25), "TARIFA BANCARIA TRANSF PGTO PIX",
+             Decimal("-0.35"), numero_um))
+        con.commit()
+
+    assert conciliacao.refazer_identidades(conta_id) == {"refeitas": 2, "devolvidas": 0}
+    numero_dois = impressao_de(conta_id, identidade_da_linha(
+        dt.date(2026, 9, 25), Decimal("-0.35"), "TARIFA BANCARIA TRANSF PGTO PIX", "", 2))
+    assert consultar("SELECT impressao FROM analisesps.conciliacao_extrato "
+                     "WHERE conta_id = ? ORDER BY id", (conta_id,)) == [
+        (numero_um,), (numero_dois,)]
+
+
+def test_a_linha_da_planilha_ADOTADA_na_regra_antiga_volta_e_e_readotada(banco_conc):
+    """A adoção gravava na linha da planilha o hash do FITID. Essa identidade não
+    casa com nenhum arquivo de hoje — e a linha, com FITID preenchido, nem era
+    adotável. Ela volta ao estado de planilha e o extrato a adota de novo."""
+    from app.apps.analisesps import conciliacao
+    from app.apps.analisesps.conciliacao_ofx import impressao_de
+    from app.apps.analisesps.db import conexao, consultar
+    conta_id = conta_de_teste()
+    conciliacao.importar_da_planilha(conta_id, aba_falsa(), "TESTE")
+    with conexao() as con:
+        con.execute(
+            "UPDATE analisesps.conciliacao_extrato "
+            "   SET impressao_planilha = impressao, impressao = ?, fitid = 'N1' "
+            " WHERE conta_id = ? AND descricao = 'PIX FULANO'",
+            (impressao_de(conta_id, "N1"), conta_id))
+        con.commit()
+
+    extrato = [("20260910", "-1500.00", "N77777", "PIX FULANO")]
+    conferido = conciliacao.conferir(conta_id, _ler(extrato))
+    assert conferido["adotaveis"] == 1
+    assert conferido["novas"] == []
+    assert conferido["presas"] == []
+
+    conciliacao.importar(conta_id, _ler(extrato), "x.ofx", "T")
+    assert conciliacao.resumo({"conta_id": conta_id})["quantidade"] == 2
+    linha = consultar("SELECT origem, fitid, observacao FROM analisesps.conciliacao_extrato "
+                      "WHERE conta_id = ? AND descricao = 'PIX FULANO'", (conta_id,))
+    assert linha == [("planilha", "N77777", "Obs. 1: conferir")]
+    # E reimportar continua reconhecendo.
+    assert conciliacao.conferir(conta_id, _ler(extrato))["ja_estavam"] == 1
+
+
+def test_a_linha_que_esta_aqui_A_MAIS_e_apontada_como_repetida(banco_conc):
+    """A sobra que a regra antiga deixou (o mesmo PIX gravado duas vezes) é
+    apontada na conferência — e não apagada: apagar é decisão dele."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste()
+    ana = "PIX QR CODE ESTATICO DES: ANA E G NOBRE"
+    conciliacao.importar(conta_id, _ler([("20260928", "-146.00", "N1", ana),
+                                         ("20260928", "-146.00", "N2", ana)]),
+                         "dobro.ofx", "T")
+
+    conferido = conciliacao.conferir(conta_id, _ler([("20260928", "-146.00", "N9", ana)]))
+    assert conferido["ja_estavam"] == 1 and conferido["novas"] == []
+    assert [l["repetida"] for l in conferido["so_aqui"]] == [True]
+
+    resumo = conciliacao.resumo_para_a_tela(conferido, conta_id, "x.ofx")
+    assert resumo["repetidas_total"] == 1
+
+    # O que simplesmente não vem no arquivo não é "repetida" — é só sumida.
+    outro = conciliacao.conferir(conta_id, _ler([("20260928", "-999.00", "N9", "OUTRA COISA")]))
+    assert [l["repetida"] for l in outro["so_aqui"]] == [False, False]

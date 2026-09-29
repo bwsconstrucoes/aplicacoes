@@ -492,6 +492,30 @@ def test_a_largura_das_colunas_e_declarada(app_com_dados):
     assert 'class="c-observacao"' in html
 
 
+def test_ha_um_col_para_CADA_coluna_da_tabela(app_com_dados):
+    """⚠️ O estrago de 29/09/2026, que levou três tentativas para achar. A tabela
+    é `table-layout: fixed`: a largura vem do <col> NA MESMA POSIÇÃO. Quando a
+    coluna "No OMIE" nasceu sem o <col> dela, os 26% da observação caíram na "No
+    OMIE" e a observação ficou com zero — o campo de anotar virou uma letra por
+    linha. O dono: *"Continua quebrada. Tem algo sério e muito errado."*
+
+    `min-width` na célula não conserta isso: em `fixed` o navegador ignora."""
+    import re
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    tabela = html[html.index('<table class="sps conciliacao">'):]
+    colgroup = tabela[tabela.index("<colgroup>"):tabela.index("</colgroup>")]
+    thead = tabela[tabela.index("<thead>"):tabela.index("</thead>")]
+    primeira_linha = thead[thead.index("<tr"):thead.index("</tr>")]
+
+    cols = len(re.findall(r"<col\b", colgroup))
+    ths = len(re.findall(r"<th\b", primeira_linha))
+    assert cols == ths, (
+        f"{cols} <col> para {ths} colunas: as larguras escorregam de coluna "
+        "e a última fica sem nada")
+    assert 'class="c-no-omie"' in colgroup
+
+
 def test_o_saldo_avisa_quando_a_conta_nao_tem_saldo_inicial(app_com_dados):
     """⚠️ É a explicação de "o saldo não está batendo": sem saldo inicial, o
     número soma só o que foi importado, e o que veio antes disso falta."""
@@ -1201,7 +1225,7 @@ def test_a_digital_da_linha_nao_recolapsa_o_fitid_de_tipo():
     lido = co.ler(EXTRATO_FITID_DE_TIPO.encode("utf-8"))
     assert len(lido.lancamentos) == 4
 
-    digitais = {co.impressao_da_linha(7, l) for l in lido.lancamentos}
+    digitais = {m for m, _l in co.marcas_do_arquivo(7, lido.lancamentos)}
     assert len(digitais) == 4, (
         "a segunda cópia da receita voltou a tratar FITID repetido como a "
         "mesma transação")
@@ -1213,8 +1237,8 @@ def test_a_digital_da_linha_e_estavel_ao_reler():
     from app.apps.analisesps import conciliacao_ofx as co
 
     dados = EXTRATO_FITID_DE_TIPO.encode("utf-8")
-    a = [co.impressao_da_linha(7, l) for l in co.ler(dados).lancamentos]
-    b = [co.impressao_da_linha(7, l) for l in co.ler(dados).lancamentos]
+    a = [m for m, _l in co.marcas_do_arquivo(7, co.ler(dados).lancamentos)]
+    b = [m for m, _l in co.marcas_do_arquivo(7, co.ler(dados).lancamentos)]
     assert a == b
 
 
@@ -1292,22 +1316,22 @@ def test_as_VINTE_tarifas_iguais_do_mesmo_dia_nao_viram_uma_so():
     """⚠️ Mesmo FITID, mesmo valor, mesmo dia, mesmo histórico — e são vinte
     cobranças de verdade. O banco 520 usa o FITID como tipo de transação, não como
     identificador: tratá-lo como único apagaria dezenove tarifas."""
-    from app.apps.analisesps.conciliacao_ofx import impressao_da_linha, ler
+    from app.apps.analisesps.conciliacao_ofx import ler, marcas_do_arquivo
 
     lido = ler(_ofx_do_bradesco())
-    tarifas = [l for l in lido.lancamentos if "TARIFA" in (l.memo or "")]
+    tarifas = [(m, l) for m, l in marcas_do_arquivo(1, lido.lancamentos)
+               if "TARIFA" in (l.memo or "")]
     assert len(tarifas) == 20
-    marcas = {impressao_da_linha(1, l) for l in tarifas}
-    assert len(marcas) == 20, "cada tarifa tem identidade própria"
+    assert len({m for m, _l in tarifas}) == 20, "cada tarifa tem identidade própria"
 
 
 def test_nenhuma_linha_do_extrato_dele_colide_de_identidade():
     """A colisão é o jeito silencioso de perder lançamento: a conferência monta um
     dicionário por identidade, e duas linhas com a mesma chave viram uma."""
-    from app.apps.analisesps.conciliacao_ofx import impressao_da_linha, ler
+    from app.apps.analisesps.conciliacao_ofx import ler, marcas_do_arquivo
 
     lido = ler(_ofx_do_bradesco())
-    marcas = [impressao_da_linha(1, l) for l in lido.lancamentos]
+    marcas = [m for m, _l in marcas_do_arquivo(1, lido.lancamentos)]
     assert len(set(marcas)) == len(marcas)
 
 
@@ -1333,3 +1357,86 @@ def test_a_lista_do_extrato_traz_o_ESTADO_NO_OMIE_de_cada_linha():
         assert coluna in fonte, f"a lista não traz {coluna}"
     # E os nomes têm de casar com o SELECT, senão o dicionário sai trocado.
     assert fonte.index("omie_situacao") < fonte.index("nomes = [")
+
+
+# ---------------------------------------------------------------------------
+# 29/09/2026 — O FITID DO BRADESCO É UM CONTADOR DO ARQUIVO, NÃO UMA IDENTIDADE
+#
+# N10127, N1013B, N10151, N10165… cresce de 22 em 22 (em hexadecimal) dentro do
+# arquivo e RECOMEÇA a cada download. Dois extratos baixados em dias diferentes
+# repetem os mesmos FITIDs para transações diferentes. Foi isso que fez a
+# transferência de R$ 56.284,17 "não importar" — "já estava aqui", dizia a
+# conferência, porque o FITID dela já existia numa OUTRA linha — e que gravou
+# em dobro os PIX que vieram em dois downloads com FITIDs diferentes.
+# ---------------------------------------------------------------------------
+def _extrato(transacoes):
+    corpo = "\n".join(
+        f"<STMTTRN><TRNTYPE>{'CREDIT' if not v.startswith('-') else 'DEBIT'}"
+        f"<DTPOSTED>{d}120000<TRNAMT>{v}<FITID>{f}<CHECKNUM>{doc}<MEMO>{memo}</STMTTRN>"
+        for d, v, f, doc, memo in transacoes)
+    return (f"OFXHEADER:100\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL"
+            f"<BANKACCTFROM><BANKID>0237<ACCTID>0007011-4</BANKACCTFROM>"
+            f"<BANKTRANLIST><DTSTART>20260929<DTEND>20260929\n{corpo}\n"
+            f"</BANKTRANLIST><LEDGERBAL><BALAMT>1<DTASOF>20260929</LEDGERBAL>"
+            f"</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>").encode("utf-8")
+
+
+def _marcas(transacoes, conta=1):
+    from app.apps.analisesps.conciliacao_ofx import ler, marcas_do_arquivo
+    return [m for m, _l in marcas_do_arquivo(conta, ler(_extrato(transacoes)).lancamentos)]
+
+
+def test_o_MESMO_fitid_em_transacoes_diferentes_da_identidades_DIFERENTES():
+    """O download de sexta e o de segunda usam N1013B para coisas diferentes."""
+    sexta = _marcas([("20260925", "-0,35", "N1013B", "230926", "TARIFA BANCARIA TRANSF PGTO PIX")])
+    segunda = _marcas([("20260928", "56284,17", "N1013B", "624227",
+                        "TRANSF CC PARA CC PJ BWS CONSTRUCOES LTDA")])
+    assert sexta != segunda, (
+        "o FITID voltou a mandar na identidade — a transferência de 56.284,17 "
+        "vai 'já estar aqui' de novo sem nunca ter entrado")
+
+
+def test_a_MESMA_transacao_com_fitid_diferente_da_a_MESMA_identidade():
+    """A mesma transação em dois downloads ganha dois FITIDs. É uma só."""
+    a = _marcas([("20260928", "-146,00", "N1052D", "1131478",
+                  "PIX QR CODE ESTATICO DES: ANA E G NOBRE RESTAUR 28/09")])
+    b = _marcas([("20260928", "-146,00", "N10ABC", "1131478",
+                  "PIX QR CODE ESTATICO DES: ANA E G NOBRE RESTAUR 28/09")])
+    assert a == b, "a mesma transação entraria duas vezes, uma por download"
+
+
+def test_a_identidade_nao_depende_de_QUEM_MAIS_esta_no_arquivo():
+    """A linha tem de dar a mesma identidade no arquivo curto e no arquivo do
+    mês inteiro — senão a conferência do extrato grande não reconhece o que o
+    extrato pequeno já trouxe."""
+    linha = ("20260928", "-700,00", "N10501", "1907352", "PIX ENVIADO DES: HERALDO MENEZES DE SA 28/09")
+    outra = ("20260928", "-800,00", "N104EB", "1907329", "PIX ENVIADO DES: LUIZ CARLOS DE SIQUEI 28/09")
+    assert _marcas([linha]) == [_marcas([outra, linha])[1]]
+
+
+def test_as_repeticoes_sao_numeradas_e_a_numeracao_e_a_do_conteudo():
+    """Vinte e duas tarifas iguais são 22 identidades — e a 3ª tarifa de hoje é
+    a 3ª tarifa de hoje em qualquer download."""
+    tarifa = ("20260928", "-0,35", "N1", "240926", "TARIFA BANCARIA TRANSF PGTO PIX")
+    vinte_e_duas = _marcas([tarifa] * 22)
+    assert len(set(vinte_e_duas)) == 22
+    # Em outro download, com FITIDs diferentes, as 22 são as MESMAS 22.
+    fitids_outros = [("20260928", "-0,35", f"N9{i}", "240926", "TARIFA BANCARIA TRANSF PGTO PIX") for i in range(22)]
+    assert _marcas(fitids_outros) == vinte_e_duas
+
+
+def test_a_identidade_refeita_a_partir_do_banco_bate_com_a_do_arquivo():
+    """⚠️ É isto que torna o conserto aplicável ao que já existe: a identidade
+    tem de ser reconstruível só com o que foi GRAVADO (data, valor NUMERIC(14,2),
+    histórico, documento) — sem o arquivo original."""
+    import datetime as dt
+    from decimal import Decimal
+    from app.apps.analisesps.conciliacao_ofx import (identidade_da_linha,
+                                                     impressao_de)
+    do_arquivo = _marcas([("20260928", "56284,17", "N1013B", "624227",
+                           "TRANSF CC PARA CC PJ BWS CONSTRUCOES LTDA")])[0]
+    do_banco = impressao_de(1, identidade_da_linha(
+        dt.date(2026, 9, 28), Decimal("56284.17"),
+        "TRANSF CC PARA CC PJ BWS CONSTRUCOES LTDA", "624227"))
+    assert do_arquivo == do_banco
+

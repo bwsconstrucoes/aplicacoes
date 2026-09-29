@@ -747,6 +747,24 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 29/09/2026 — o FITID do Bradesco é um contador do arquivo (aviso para o ERP)
+
+Achado no Análise de SPs (`HISTORICO.md`, leva 123): o Bradesco escreve no
+`<FITID>` um contador que cresce de 22 em 22 dentro do arquivo e **recomeça a
+cada download** — dois extratos baixados em dias diferentes repetem os mesmos
+FITIDs para transações diferentes. O parser compartilhado
+(`app/apps/erp/core/pagamentos/ofx.py`) usa o FITID como identidade sempre que
+ele aparece uma vez só no arquivo, e isso produz dois estragos silenciosos:
+linha nova tratada como "já importada" (36 de 53 num extrato real) e a mesma
+transação importada duas vezes.
+
+**O Análise de SPs deixou de usar a identidade do parser** e calcula a dele
+pelo conteúdo (`conciliacao_ofx.identidade_da_linha`). **O parser do ERP não foi
+tocado** — é outra área, e mudar a identidade lá muda o que o ERP já gravou. O
+chat do ERP precisa decidir se a importação de extrato dele
+(`core/pagamentos/service.py`) sofre do mesmo problema com o Bradesco e, se
+sim, aplicar a mesma regra com uma refeitura das identidades já gravadas.
+
 ### 29/09/2026 — a suíte de testes, de inviável a um comando
 
 **Cobrança do dono, e procedente:** *"está demorando meia hora, uma hora para

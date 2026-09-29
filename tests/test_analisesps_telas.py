@@ -7708,21 +7708,27 @@ def test_a_linha_aberta_deixa_TROCAR_A_OBRA_e_dividir_por_dias(app, monkeypatch)
 
 
 def test_a_tabela_da_CONCILIACAO_tem_piso_de_largura():
-    """⚠️ CONSERTO DE UM ESTRAGO MEU, em 29/09/2026. Ao acrescentar a coluna "No
-    OMIE", a tabela passou de dez para onze colunas — e como ela é `width: 100%`
-    sem piso, o navegador espremeu todas. O dono: *"as linhas estão quebradas,
-    observação tá achatado, tá todo desmantelado"*.
+    """⚠️ CONSERTO DE UM ESTRAGO MEU, em 29/09/2026 — EM TRÊS TENTATIVAS. Ao
+    acrescentar a coluna "No OMIE" eu não acrescentei o <col> dela; a tabela é
+    `table-layout: fixed`, então as larguras escorregaram de coluna e a observação
+    ficou com zero. As duas primeiras tentativas (piso na tabela, `min-width` na
+    célula) erraram a causa: em `fixed` o navegador IGNORA `min-width` de célula.
+    O dono: *"Continua quebrada. Tem algo sério e muito errado."*
 
-    O piso resolve sem tirar nada: abaixo dele o invólucro rola na horizontal, que
-    é para isso que ele existe. Espremer é pior que rolar — informação ilegível é
-    informação perdida, e esta é uma tela de conferência."""
+    O que vale em `fixed` é a largura NO <col>. Este teste garante que é lá que
+    ela está — e que a versão que não funcionava não volta."""
     css = Path("app/apps/analisesps/static/analisesps.css").read_text(
         encoding="utf-8")
+    assert "table.conciliacao { table-layout: fixed;" in css
+    # O piso continua: abaixo dele o invólucro rola em vez de espremer.
     assert "table.conciliacao { min-width:" in css
-    # A observação é campo de ESCREVER: sem piso ela vira um risco.
-    assert "table.conciliacao th.obs, table.conciliacao td.obs" in css
-    # E o selo do OMIE não pode roubar espaço de quem carrega texto.
-    assert "table.conciliacao th.no-omie, table.conciliacao td.no-omie" in css
+    # A largura do selo do OMIE está no <col>, o único lugar que vale.
+    assert "table.conciliacao col.c-no-omie { width:" in css
+    # E a regra que NÃO funcionava não pode voltar com cara de conserto.
+    import re
+    sem_comentarios = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    assert "td.obs { min-width" not in sem_comentarios
+    assert "th.obs, table.conciliacao td.obs" not in sem_comentarios
 
 
 def test_a_coluna_do_OMIE_e_a_da_OBSERVACAO_tem_nome_no_html():

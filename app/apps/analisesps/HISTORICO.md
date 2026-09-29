@@ -9876,6 +9876,110 @@ dublê; o certificado real só o Render alcança.
 
 ---
 
+### Centésima vigésima terceira leva (29/09) — o FITID do Bradesco não identifica nada, e a coluna que faltava no template
+
+Relato dele, com a tela na mão: *"Sinceramente, não sei mais o que fazer. Tem
+algo sério e muito errado. (…) veja a imagem da tela de conciliação. Continua
+quebrada. Copiei e colei o extrato que está na tela. Veja se você encontra o
+lançamento a seguir."* E o ponto: *"parece que está baixando. veja a msg: 7500
+dia(s) de 250 pessoa(s)"*.
+
+Ele tinha razão nas duas coisas, e eu tinha errado a causa das duas — na
+conciliação, DUAS VEZES na mesma tarde (leva 121 e 122). Esta leva registra o
+que era de verdade.
+
+**1. A transferência de R$ 56.284,17 NUNCA tinha entrado — e a conferência
+dizia que sim.** Na leva anterior eu concluí, pela mensagem "53 já estavam aqui e
+0 são novos", que ela estava no banco e que a busca falhou por ele ter digitado
+`,27`. Errado. O extrato colado da tela prova: das 53 linhas do arquivo de 29/09,
+**36 não estavam lá** — a transferência, a rentabilidade de R$ 1,00, as 22
+tarifas de 28/09 e doze PIX (CENTERLOC, CERAMICA R&G, TALIA, Fernandes Cosme ×3,
+JAKELINE, KR, ALBERTO…). E duas linhas estavam **em dobro** (o PIX de 146,00
+para ANA E G NOBRE e o de 4.616,22 para Beevale).
+
+A causa é uma só: **o FITID do Bradesco é um contador do arquivo, não o número
+da transação.** N10127, N1013B, N10151, N10165… cresce de 22 em 22 (em
+hexadecimal) a cada lançamento e RECOMEÇA a cada download. O download de sexta
+e o de segunda usam os mesmos FITIDs para transações diferentes. Com o FITID
+como identidade:
+
+- linha nova cujo FITID já existia (vindo de outra linha, de outro download) →
+  "já estava aqui", e nunca entrava — **36 sumidas em silêncio**;
+- a mesma transação em dois downloads, com FITIDs diferentes → "nova" duas
+  vezes — **as duplicadas**.
+
+O banco 520 já tinha mostrado o outro jeito de o FITID mentir (código do tipo,
+28/09). Dos dois bancos que ele usa, nenhum manda FITID que identifique algo.
+
+**Decisão: a identidade da linha passa a ser o CONTEÚDO** — data, valor,
+histórico e documento — mais a ordem da repetição dentro do arquivo (a 1ª e a
+2ª tarifa iguais são #1 e #2). O FITID fica gravado na linha para consulta, mas
+não decide nada. A receita vive em `conciliacao_ofx.identidade_da_linha`, e o
+que vai para o banco (`descricao_da_linha`, `documento_da_linha`) é exatamente o
+que entra na identidade — por isso ela é **reconstruível só com o que está
+gravado**, sem o arquivo original.
+
+**E as 19.926 linhas que já estão lá?** `conciliacao.refazer_identidades(conta)`
+roda antes de toda conferência: recalcula a identidade de cada linha do OFX a
+partir das colunas gravadas (em duas fases, por causa do índice único — a 2ª
+tarifa vira #1 e a 1ª vira #2), e devolve ao estado de planilha as linhas
+adotadas com identidade antiga (a mesma volta do "Desfazer"; a próxima
+importação as adota de novo). Não cria, não apaga, não muda conteúdo. Depois da
+primeira vez não encontra nada a fazer. **Sem migração, sem botão.**
+
+**As duplicadas NÃO são apagadas sozinhas** — é dado dele. A conferência passou
+a apontar: na lista "está aqui e não vem neste extrato", a linha cujo conteúdo o
+arquivo traz MENOS vezes do que há no banco ganha o selo "parece repetida", com a
+contagem no aviso. Ele apaga pelo × da linha.
+
+**O preço, dito por inteiro:** se o banco reescrever o histórico de uma linha
+entre dois downloads (lançamento provisório que vira definitivo), ela entra de
+novo — e aparece como "parece repetida". Linha a mais se vê; linha a menos, não.
+
+**Um teste antigo mudou de premissa** (`test_depois_de_adotada_a_linha_nao_e_adotada_de_novo`):
+ele usava o mesmo histórico e só trocava o FITID para dizer "outro lançamento".
+Isso era a mesma transação em dois downloads. Agora o "outro" tem outro histórico.
+
+**2. A tela quebrada era UMA LINHA faltando no template.** Ao criar a coluna "No
+OMIE" (leva 120) eu não acrescentei o `<col>` dela no `<colgroup>`. A tabela é
+`table-layout: fixed`: a largura vem do `<col>` na mesma posição. Com dez `<col>`
+para onze colunas, os 26% da observação caíam na "No OMIE" (por isso o `todos`
+dela aparecia enorme na imagem) e a observação de verdade ficava com ZERO — o
+campo de anotar virava uma letra por linha, e cada linha da tabela crescia dez
+vezes. As duas tentativas anteriores (piso na tabela, `min-width` na célula)
+**não podiam funcionar**: em `fixed` o navegador ignora `min-width` de célula.
+Agora há o `<col class="c-no-omie">`, a largura está nele, e um teste conta
+`<col>` contra `<th>` para isso não voltar.
+
+**3. O ponto está baixando** — "7500 dia(s) de 250 pessoa(s)". O intermediário
+que o Mobponto esquece de mandar está sendo buscado sozinho (leva 122). Sem
+variável, sem desligar nada.
+
+**Lição, a segunda do dia sobre o mesmo defeito:** eu tinha uma explicação que
+encaixava no sintoma ("ele digitou ,27") e parei nela. O dado dele (o extrato
+colado) desmentia em dois minutos de leitura. **Antes de dizer "está lá", olhar
+onde está.**
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar esta leva** — e o ponto está baixando: publicar reinicia o serviço e mata o download | ele dizer "pode", depois que o ponto terminar |
+| reimportar o extrato de 29/09 depois de publicado: as 36 linhas entram; as 2 duplicadas aparecem como "parece repetida" | ele |
+| apagar as duplicadas (146,00 ANA E G NOBRE e 4.616,22 Beevale, de 28/09 — e as que a conferência apontar em outros períodos) | ele, pelo × da linha |
+| o parser do ERP (`erp/core/pagamentos/ofx.py`) tem o MESMO ponto fraco com o Bradesco — anotado no `CONTEXTO.md` §9 | o chat do ERP |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** os 258 testes da conciliação (com banco de verdade), as telas e
+o acesso; a aplicação importa. Suíte inteira em andamento no momento do commit —
+resultado no próximo registro.
+**NÃO verificado:** a primeira rodada do `refazer_identidades` nas 19.926 linhas
+de produção — daqui não dá; o que garante é o teste com o índice único e a
+propriedade de ser refazível (o FITID continua na linha).
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

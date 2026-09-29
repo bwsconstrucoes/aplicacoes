@@ -2484,23 +2484,26 @@ h3 + .tabela-wrap, p + .tabela-wrap, div + .tabela-wrap { margin-top: 10px; }
 /* --------------------------------------------------------------------------
    A TABELA DA CONCILIAÇÃO NÃO SE APERTA ATÉ QUEBRAR — 29/09/2026
 
-   ⚠️ CONSERTO DE UM ESTRAGO MEU, do mesmo dia. Ao acrescentar a coluna "No OMIE"
-   (para a linha já lançada não ser lançada de novo), a tabela passou a ter onze
-   colunas em vez de dez — e como ela é `width: 100%` sem piso, o navegador
-   espremeu todas. O dono: *"as linhas estão quebradas, observação tá achatado,
-   tá todo desmantelado"*.
+   ⚠️ CONSERTO DE UM ESTRAGO MEU, EM TRÊS TENTATIVAS — e as duas primeiras
+   erraram a causa. Ao acrescentar a coluna "No OMIE" eu não acrescentei o
+   <col> dela no <colgroup> do template. Como a tabela é `table-layout: fixed`,
+   a largura de cada coluna vem do <col> na mesma posição: com dez <col> para
+   onze colunas, os 26% da observação caíam na "No OMIE" e a observação de
+   verdade ficava com ZERO — o campo de anotar virava uma letra por linha, e
+   cada linha da tabela crescia até dez vezes a altura.
 
-   O piso resolve sem tirar nada: abaixo dele o invólucro `.tabela-rolagem` rola
-   na horizontal, que é para isso que ele existe. Espremer é pior que rolar —
-   informação ilegível é informação perdida, e esta é uma tela de conferência.
+   As duas tentativas anteriores (piso de largura na tabela, `min-width` na
+   célula) não podiam funcionar: em `table-layout: fixed` o navegador IGNORA
+   `min-width` de célula. O dono: *"Continua quebrada. Tem algo sério e muito
+   errado."* Tinha, e era uma linha faltando no template. O <col> está lá agora
+   e há um teste que conta <col> contra <th>.
+
+   O piso na tabela fica: abaixo dele o invólucro `.tabela-rolagem` rola na
+   horizontal em vez de espremer — informação ilegível é informação perdida.
    -------------------------------------------------------------------------- */
 table.conciliacao { min-width: 1140px; }
 
-/* A observação é um campo de escrever: abaixo disto ela deixa de servir. */
-table.conciliacao th.obs, table.conciliacao td.obs { min-width: 220px; }
-
-/* O estado no OMIE é um selo curto — não precisa de espaço e não pode roubar
-   o das colunas que carregam texto. */
-table.conciliacao th.no-omie, table.conciliacao td.no-omie {
-  width: 104px; white-space: nowrap;
-}
+/* O estado no OMIE é um selo curto — a largura é DECLARADA NO <col>, que é o
+   único lugar que vale em `table-layout: fixed`. */
+table.conciliacao col.c-no-omie { width: 104px; }
+table.conciliacao td.no-omie { white-space: nowrap; }

@@ -243,16 +243,29 @@ def conferir(conta_id: int, lido) -> dict:
     ou lançamento que o banco estornou.
     """
     from .db import consultar
-    from .conciliacao_ofx import impressao_da_linha
+    from .conciliacao_ofx import (descricao_da_linha, documento_da_linha,
+                                  marcas_do_arquivo)
 
     if len(lido.lancamentos) > MAX_LINHAS_POR_ARQUIVO:
         raise ErroDaConciliacao(
             f"O arquivo tem {len(lido.lancamentos)} lançamentos, acima do teto "
             f"de {MAX_LINHAS_POR_ARQUIVO}. Traga por períodos menores.")
 
-    por_impressao = {}
-    for lanc in lido.lancamentos:
-        por_impressao[impressao_da_linha(conta_id, lanc)] = lanc
+    # ⚠️ ANTES DE COMPARAR, AS IDENTIDADES DO BANCO TÊM DE ESTAR NA REGRA DE
+    # HOJE. Até 29/09/2026 a identidade era o FITID, e o FITID do Bradesco é um
+    # contador de arquivo (ver `conciliacao_ofx.identidade_da_linha`). Comparar
+    # um arquivo novo com identidades antigas daria exatamente o que o dono
+    # viu: "53 já estavam aqui" com 36 delas faltando. Isto não cria, não
+    # apaga e não altera linha nenhuma — só refaz o índice delas; e depois da
+    # primeira vez não encontra nada para fazer.
+    refazer_identidades(conta_id)
+
+    # ⚠️ NÃO É UM DICIONÁRIO POR MARCA. Era — e duas linhas iguais caíam na
+    # mesma chave, viravam uma, e a diferença era contada como "já estava".
+    # `marcas_do_arquivo` numera as repetições, então nunca há duas iguais.
+    marcadas = marcas_do_arquivo(conta_id, lido.lancamentos)
+    por_impressao = dict(marcadas)
+    assert len(por_impressao) == len(marcadas), "duas linhas com a mesma marca"
 
     ja = set()
     if por_impressao and _pronto():
@@ -319,16 +332,33 @@ def conferir(conta_id: int, lido) -> dict:
     if lido.periodo_ini and lido.periodo_fim and _pronto():
         serao_adotadas = set(adotaveis.values())
         linhas = consultar(
-            "SELECT id, data, descricao, valor, origem, conciliado "
+            "SELECT id, data, descricao, valor, origem, conciliado, documento "
             "  FROM analisesps.conciliacao_extrato "
             " WHERE conta_id = ? AND data >= ? AND data <= ? "
             "   AND impressao <> ALL(?) "
             " ORDER BY data, id",
             (conta_id, lido.periodo_ini, lido.periodo_fim,
              list(por_impressao) or [""]))
-        so_aqui = [dict(zip(["id", "data", "descricao", "valor", "origem",
-                             "conciliado"], linha)) for linha in linhas
-                   if linha[0] not in serao_adotadas]
+        # ⚠️ "REPETIDA" É A LINHA QUE ESTÁ AQUI A MAIS. O arquivo traz a mesma
+        # transação (mesmo dia, valor, histórico e documento) MENOS vezes do
+        # que há no banco — sobra uma, e a sobra é o que a identidade por FITID
+        # duplicou até 29/09/2026 (os PIX de 146,00 e 4.616,22 que o dono viu em
+        # dobro). É apontada, não apagada: apagar é decisão dele, pelo × da
+        # linha.
+        conteudos = {(l.data, Decimal(l.valor), descricao_da_linha(l).strip(),
+                      documento_da_linha(l).strip()) for l in lido.lancamentos}
+        so_aqui = []
+        for linha in linhas:
+            if linha[0] in serao_adotadas:
+                continue
+            item = dict(zip(["id", "data", "descricao", "valor", "origem",
+                             "conciliado", "documento"], linha))
+            item["repetida"] = (
+                item["origem"] == "ofx"
+                and (item["data"], Decimal(item["valor"]),
+                     (item["descricao"] or "").strip(),
+                     (item["documento"] or "").strip()) in conteudos)
+            so_aqui.append(item)
 
     # ⚠️ E O AVISO QUE FALTAVA: linha da planilha PRESA com um FITID antigo.
     # Ela não é reconhecida pela identidade (que é de outro arquivo, às vezes
@@ -550,6 +580,119 @@ def devolver_presas(conta_id: int, quem: str = "") -> dict:
     return {"devolvidas": devolvidas, "conflitos": conflitos}
 
 
+# ---------------------------------------------------------------------------
+# REFAZER AS IDENTIDADES ANTIGAS — o conserto do FITID, aplicado ao que já existe
+#
+# Até 29/09/2026 a identidade de uma linha do OFX era o FITID (quando ele
+# aparecia uma vez só no arquivo). O FITID do Bradesco é um contador do
+# arquivo, então essas identidades não valem nada: a próxima importação as
+# compara com contadores de OUTRO download. Ver `conciliacao_ofx`.
+#
+# Isto reconstrói a identidade de cada linha a partir do que está GRAVADO
+# (data, valor, histórico, documento), numerando as repetições na ordem em que
+# entraram — a mesma regra que a leitura de um arquivo aplica. Roda antes de
+# toda conferência e, depois da primeira vez, não encontra nada para mudar.
+#
+# ⚠️ NÃO APAGA, NÃO CRIA, NÃO MUDA CONTEÚDO. Muda só a coluna `impressao` (e,
+# nas linhas da planilha que foram adotadas com identidade antiga, devolve a
+# identidade de planilha — a mesma volta do "Desfazer"). O FITID continua na
+# linha, então a identidade antiga é reconstruível a qualquer momento.
+# ---------------------------------------------------------------------------
+def refazer_identidades(conta_id: int) -> dict:
+    """Coloca as identidades da conta na regra de hoje. Idempotente.
+
+    Devolve `{"refeitas": n, "devolvidas": m}`: linhas do OFX cuja identidade
+    mudou, e linhas da planilha adotadas com identidade antiga que voltaram ao
+    estado de planilha (a próxima importação as adota de novo).
+    """
+    if not _pronto():
+        return {"refeitas": 0, "devolvidas": 0}
+    from .db import conexao, consultar, tem_coluna
+    from .conciliacao_ofx import identidade_da_linha, impressao_de
+
+    conta_id = int(conta_id)
+
+    # 1. As linhas do OFX: identidade pelo conteúdo, numerando repetições.
+    vezes: dict = {}
+    mudar = []
+    for linha_id, data, valor, descricao, documento, impressao in consultar(
+            "SELECT id, data, valor, descricao, documento, impressao "
+            "  FROM analisesps.conciliacao_extrato "
+            " WHERE conta_id = ? AND origem = 'ofx' ORDER BY id", (conta_id,)):
+        chave = identidade_da_linha(data, valor, descricao, documento)
+        vezes[chave] = vezes.get(chave, 0) + 1
+        nova = impressao_de(conta_id, identidade_da_linha(
+            data, valor, descricao, documento, vezes[chave]))
+        if nova != impressao:
+            mudar.append((nova, int(linha_id)))
+
+    # 2. As linhas da planilha ADOTADAS com a identidade antiga (= o hash do
+    # FITID). As adotadas na regra nova têm identidade de conteúdo e ficam.
+    antigas = []
+    tem_volta = tem_coluna("conciliacao_extrato", "impressao_planilha")
+    for linha in consultar(
+            "SELECT id, data, descricao, valor, fitid, impressao"
+            + (", impressao_planilha" if tem_volta else ", ''")
+            + "  FROM analisesps.conciliacao_extrato "
+            " WHERE conta_id = ? AND origem = 'planilha' AND fitid <> '' "
+            " ORDER BY data, id", (conta_id,)):
+        if linha[5] == impressao_de(conta_id, linha[4]):
+            antigas.append(linha)
+
+    if not mudar and not antigas:
+        return {"refeitas": 0, "devolvidas": 0}
+
+    refeitas = devolvidas = 0
+    with conexao() as con:
+        if mudar:
+            # ⚠️ EM DUAS FASES, por causa do índice único: a identidade nova
+            # de uma linha pode ser a identidade ATUAL de outra que ainda não
+            # foi trocada (a 2ª tarifa vira #1 e a 1ª vira #2). Primeiro todas
+            # saem do caminho, depois todas recebem a definitiva.
+            con.executemany(
+                "UPDATE analisesps.conciliacao_extrato "
+                "   SET impressao = 'refazendo|' || id WHERE id = ?",
+                [(i,) for _n, i in mudar])
+            con.executemany(
+                "UPDATE analisesps.conciliacao_extrato "
+                "   SET impressao = ?, alterado_em = now() WHERE id = ?",
+                mudar)
+            refeitas = len(mudar)
+        con.commit()
+
+    if antigas:
+        # A volta é a mesma do "Desfazer" e do "Soltar as presas": identidade
+        # de planilha guardada (migração 026) ou reconstruída, FITID limpo.
+        # Cada uma no seu commit — uma que conflite não pode levar as outras.
+        vistas: dict = {}
+        with conexao() as con:
+            for linha_id, data, descricao, valor, _fitid, _imp, guardada in antigas:
+                base = (data, valor, (descricao or "").strip().lower())
+                vistas[base] = vistas.get(base, 0) + 1
+                marca = guardada or impressao_da_planilha(
+                    conta_id, {"data": data, "valor": valor,
+                               "descricao": descricao}, vistas[base])
+                extra = ", impressao_planilha = ''" if tem_volta else ""
+                try:
+                    con.execute(
+                        "UPDATE analisesps.conciliacao_extrato "
+                        f"   SET impressao = ?, fitid = '', arquivo_id = NULL{extra}, "
+                        "       alterado_em = now() WHERE id = ?",
+                        (marca, int(linha_id)))
+                    con.commit()
+                    devolvidas += 1
+                except Exception:  # noqa: BLE001
+                    con.rollback()
+                    logger.exception("Conciliação: não consegui devolver à "
+                                     "planilha a linha %s da conta %s",
+                                     linha_id, conta_id)
+
+    logger.warning("Conciliação: identidades da conta %s refeitas na regra de "
+                   "29/09/2026 — %s linha(s) do OFX, %s devolvida(s) à "
+                   "planilha.", conta_id, refeitas, devolvidas)
+    return {"refeitas": refeitas, "devolvidas": devolvidas}
+
+
 def _arquivo_ja_veio(impressao: str) -> dict | None:
     """Este arquivo EXATO já foi importado? Responde antes de qualquer conta."""
     if not impressao or not _pronto():
@@ -578,7 +721,7 @@ def importar(conta_id: int, lido, nome_arquivo: str = "",
     conferência feita só aqui em cima não pega.
     """
     from .db import conexao
-    from .conciliacao_ofx import impressao_da_linha
+    from .conciliacao_ofx import descricao_da_linha, documento_da_linha
 
     conferido = conferir(conta_id, lido)
     # A gravação percorre AS DUAS: o que é novo entra, e o que já existe vindo
@@ -607,17 +750,16 @@ def importar(conta_id: int, lido, nome_arquivo: str = "",
                                          arquivo_id):
                 adotadas += 1
                 continue
-            descricao = (lanc.memo or "").strip()
-            if lanc.nome and lanc.nome not in descricao:
-                descricao = f"{lanc.nome} — {descricao}".strip(" —")
+            # ⚠️ O QUE VAI PARA O BANCO É O QUE ENTROU NA IDENTIDADE — as duas
+            # funções são as mesmas de propósito. Ver `conciliacao_ofx`.
             cur = con.execute(
                 "INSERT INTO analisesps.conciliacao_extrato "
                 "  (conta_id, data, descricao, documento, valor, origem, "
                 "   arquivo_id, impressao, fitid) "
                 "VALUES (?, ?, ?, ?, ?, 'ofx', ?, ?, ?) "
                 "ON CONFLICT (conta_id, impressao) DO NOTHING",
-                (conta_id, lanc.data, descricao[:500],
-                 (lanc.documento or "")[:60], lanc.valor, arquivo_id, marca,
+                (conta_id, lanc.data, descricao_da_linha(lanc),
+                 documento_da_linha(lanc), lanc.valor, arquivo_id, marca,
                  (lanc.fitid or "")[:120]))
             gravadas += (cur.rowcount or 0)
         con.commit()
@@ -1143,8 +1285,11 @@ def resumo_para_a_tela(conferido: dict, conta_id: int,
             "descricao": (l.get("descricao") or "")[:120],
             "valor": str(l.get("valor") or 0),
             "origem": l.get("origem", ""),
+            "repetida": bool(l.get("repetida")),
         } for l in (conferido.get("so_aqui") or [])[:15]],
         "so_aqui_total": len(conferido.get("so_aqui") or []),
+        "repetidas_total": sum(1 for l in (conferido.get("so_aqui") or [])
+                               if l.get("repetida")),
         # ⚠️ AS LINHAS PRESAS — o aviso que faltava, e que é a resposta ao que o
         # dono viu em 25/09/2026: *"está se tentando colocar registro que já
         # estão lançados"*. Linha da planilha com FITID de outro arquivo não é

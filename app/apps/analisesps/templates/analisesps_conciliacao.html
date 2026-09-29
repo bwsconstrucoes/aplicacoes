@@ -368,6 +368,14 @@
       <col style="width:106px">
       <col style="width:118px">
       <col style="width:76px">
+      {# ⚠️ ESTA LINHA FALTOU quando a coluna "No OMIE" nasceu (29/09/2026), e
+         foi ISSO que desmontou a tela — não a largura. A tabela é
+         `table-layout: fixed`: as larguras vêm DESTA lista, coluna por coluna.
+         Com dez <col> para onze colunas, a largura da observação (26%) caía
+         na "No OMIE", e a observação de verdade ficava com NADA — o campo de
+         anotar virava uma letra por linha. Há um teste que conta <col> contra
+         <th>, para não acontecer de novo. #}
+      <col class="c-no-omie">
       <col class="c-observacao">
       {% if pode_operar %}<col style="width:30px">{% endif %}
     </colgroup>
@@ -1324,9 +1332,21 @@ function desenharConferencia(d) {
       'digitada errada, ou algo que o banco estornou:<ul>';
     d.so_aqui.forEach(l => {
       html += '<li>' + l.data.split("-").reverse().join("/") + ' — ' + l.descricao +
-        ' (' + dinheiro(l.valor) + ')' + (l.origem === 'mao' ? ' <i>digitada à mão</i>' : '') + '</li>';
+        ' (' + dinheiro(l.valor) + ')' + (l.origem === 'mao' ? ' <i>digitada à mão</i>' : '') +
+        // ⚠️ A LINHA QUE ESTÁ AQUI A MAIS: o extrato traz a mesma transação
+        // menos vezes do que há no banco. É o rastro da identidade por FITID
+        // (até 29/09/2026), que gravou a mesma transação duas vezes. Apagar
+        // é decisão dele, pelo × da linha na lista.
+        (l.repetida ? ' <b class="selo risco">parece repetida — o extrato traz menos vezes do que há aqui</b>' : '') +
+        '</li>';
     });
     html += '</ul>';
+    if (d.repetidas_total) {
+      html += '<div class="aviso atencao">' + d.repetidas_total + ' dela(s) parece(m) ' +
+        'a MESMA transação gravada duas vezes. Confira na lista e apague a ' +
+        'sobra pelo × da linha — a identidade antiga (por FITID) fazia isso, ' +
+        'e a de hoje não faz mais.</div>';
+    }
   }
 
   // ⚠️ AS LINHAS PRESAS — o aviso mais importante desta tela, e ele vem ANTES
