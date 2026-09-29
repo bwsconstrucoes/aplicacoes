@@ -451,6 +451,9 @@ TELA_DA_ROTA = {
     "analisesps.tela_folha_ponto": ("folha",),
     "analisesps.tela_folha_calendario": ("folha",),
     "analisesps.tela_folha_auxilio": ("folha",),
+    # Procurar um lançamento em todas as contas: é da conciliação, e mostra
+    # histórico e valor — quem não alcança a conciliação não alcança isto.
+    "analisesps.conciliacao_procurar": ("conciliacao",),
     "analisesps.folha_auxilio_ajustar": ("folha",),
     # ⚠️ AJUSTAR E FECHAR A APROPRIAÇÃO SÃO DE OPERADOR, como importar a folha: é
     # o DP que trabalha a lista (quem entra, quem sai, para qual obra vai). GERAR

@@ -9676,6 +9676,84 @@ foi feita daqui.
 
 ---
 
+### Centésima vigésima leva (29/09) — "os filtros estão vazios" era CSS, e o CSS era meu
+
+Ele mandou o print, e o print encerrou duas rodadas de investigação errada.
+
+**Os blocos de filtro estavam todos lá.** As caixas de marcar estavam lá, algumas
+até marcadas. O que tinha sumido era **o texto ao lado de cada caixa** — inclusive
+em "Situação", cujos rótulos são texto FIXO no template e não vêm do banco.
+
+#### A causa, e ela é de uma linha escrita por mim na mesma manhã
+
+```
+.filtros input, .filtros select { width: 100%; max-width: none; }
+```
+
+Escrita para os campos de TEXTO da lateral não esticarem. Só que `.filtros input`
+alcança também as **caixas de marcar** de cada opção: cada `checkbox` virou um
+retângulo da largura inteira da coluna, e o rótulo ao lado foi empurrado para fora
+da vista. Como a regra estava mais abaixo no arquivo e com a mesma especificidade
+de `.opcao input` (que dá os 15 px), ela venceu.
+
+⚠️ **E ela afetava TODAS as barras laterais do módulo** — Solicitações, Relatório,
+Calendário, Conciliação, Alimentação e transporte, Colaboradores, Diaristas —
+porque `.filtros` é o `<aside>` do template base.
+
+#### ⚠️ Por que eu procurei dois dias no lugar errado
+
+Eu li "os filtros estão todos vazios" como **falta de dado** e fui para o banco.
+Achei lá um defeito real (o cache guardando listas vazias, ver a leva anterior) e
+**parei de procurar**, porque o defeito que achei explicava o sintoma. Explicava,
+mas não era o dele.
+
+**A lição, e é diferente das outras da semana:** achar UMA causa que explica o
+sintoma não prova que é A causa. O print resolveu em dez segundos o que duas
+rodadas de dedução não resolveram — e eu só pedi o print na terceira.
+
+#### O conserto, e o teste que ele exigiu
+
+O seletor agora exclui o tipo: `.filtros input:not([type=checkbox]):not([type=radio])`.
+E **nenhuma regra nova foi escrita para a caixa de marcar** — repetir aqui, ainda
+que com `width: auto`, desfaria os 15 px de `.opcao input` pelo mesmo mecanismo que
+causou o estrago.
+
+⚠️ **Nenhum teste de tela pegaria isto: o texto ESTAVA no HTML.** Por isso o teste
+novo é sobre o CSS — ele varre as regras (sem os comentários, que citam a regra
+errada) e falha se alguma mexer em largura alcançando `checkbox` ou `radio` dentro
+de `.filtros`.
+
+#### E a busca que encerra a discussão "não importou × não estou vendo"
+
+Ele disse duas vezes que o valor de **56.284,17** não entrava. Eu refiz aquele
+arquivo com banco de verdade — 53 de 53 entram, essa inclusive — e mesmo assim não
+consegui responder, **porque eu não enxergo o banco dele**.
+
+Agora a tela de conciliação tem **"Não acha um lançamento?"**: procura por valor ou
+histórico em **todas as contas, ignorando conta escolhida, período, situação e o
+filtro guardado**. Diz em qual conta está e de qual arquivo veio — ou diz, com
+todas as letras, que **não existe em conta nenhuma**, e aí o problema é a
+importação e não a tela.
+
+⚠️ **E é provável que o 56.284,17 seja consequência do mesmo CSS:** com os rótulos
+invisíveis, a barra da conciliação tem as opções de **entrada/saída** ilegíveis — e
+"só saídas" marcado esconde exatamente essa linha, que é a única entrada grande do
+arquivo. A busca nova responde isso sem depender de suposição minha.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| confirmar se o 56.284,17 aparece na busca nova | ele abrir a conciliação e procurar |
+| o ponto entrar | o certificado do Mobponto no Render |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** suíte inteira em blocos — 7.693 passando, 145 pulados, zero falhas.
+**NÃO verificado:** a tela dele depois do conserto.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

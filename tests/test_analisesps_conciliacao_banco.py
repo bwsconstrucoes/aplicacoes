@@ -1621,3 +1621,87 @@ def test_apagar_uma_linha_que_nao_existe_mais_responde_frase_e_nao_estouro(
 
     with pytest.raises(conciliacao.ErroDaConciliacao):
         conciliacao.apagar_linha(999999, "qualquer", "T")
+
+
+# ---------------------------------------------------------------------------
+# "ONDE ESTÁ ESSE LANÇAMENTO?" — a busca que ignora todo filtro (29/09/2026)
+#
+# ⚠️ Ela existe porque "não importou" e "não estou vendo" são a mesma coisa na tela
+# e coisas diferentes no banco. O dono disse duas vezes que o valor de 56.284,17 do
+# extrato dele não havia entrado; eu refiz aquele arquivo com banco de verdade e as
+# 53 linhas entram — mas não consegui responder à pergunta dele, porque eu não
+# enxergo o banco dele. Isto enxerga.
+# ---------------------------------------------------------------------------
+def test_a_busca_geral_acha_em_QUALQUER_conta_e_ignora_o_filtro(banco_conc):
+    from decimal import Decimal
+
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+
+    uma = conta_de_teste(nome="BD 7011", ofx_acctid="0007011-4")
+    outra = conta_de_teste(nome="BD 50024", numero="50024",
+                           ofx_acctid="0050024-0")
+    conciliacao.importar(uma, conciliacao_ofx.ler(
+        ofx([("20260910", "-9.00", "A1", "TARIFA")])), "a.ofx", "T")
+    conciliacao.importar(outra, conciliacao_ofx.ler(
+        ofx([("20260928", "56284.17", "B1", "TRANSF CC PARA CC PJ")],
+            conta="0050024-0")), "b.ofx", "T")
+
+    # Procurando a partir da PRIMEIRA conta, que não tem esse valor.
+    achados = conciliacao.procurar_em_todas(valor=Decimal("56284.17"))
+    assert len(achados) == 1
+    assert achados[0]["conta"] == "BD 50024"
+    assert achados[0]["arquivo"] == "b.ofx"
+
+
+def test_a_busca_geral_casa_o_valor_em_MODULO(banco_conc):
+    """⚠️ Quem procura um valor não sabe de cabeça o sinal com que ele foi
+    gravado. Procurar 9,00 tem de achar a saída de -9,00."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+
+    conta = conta_de_teste()
+    conciliacao.importar(conta, conciliacao_ofx.ler(
+        ofx([("20260910", "-9.00", "A1", "TARIFA")])), "a.ofx", "T")
+
+    assert len(conciliacao.procurar_em_todas(valor=Decimal("9.00"))) == 1
+    assert len(conciliacao.procurar_em_todas(valor=Decimal("-9.00"))) == 1
+
+
+def test_a_busca_geral_acha_pelo_HISTORICO(banco_conc):
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+
+    conta = conta_de_teste()
+    conciliacao.importar(conta, conciliacao_ofx.ler(
+        ofx([("20260910", "-9.00", "A1", "TARIFA BANCARIA TRANSF PGTO PIX")])),
+        "a.ofx", "T")
+
+    assert len(conciliacao.procurar_em_todas(texto="pgto pix")) == 1
+    assert len(conciliacao.procurar_em_todas(texto="boleto")) == 0
+
+
+def test_a_busca_geral_SEM_criterio_devolve_vazio(banco_conc):
+    """Sem valor e sem texto, devolver a tabela inteira seria um despejo de dados
+    com cara de resposta."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+
+    conta = conta_de_teste()
+    conciliacao.importar(conta, conciliacao_ofx.ler(
+        ofx([("20260910", "-9.00", "A1", "TARIFA")])), "a.ofx", "T")
+
+    assert conciliacao.procurar_em_todas() == []
+    assert conciliacao.procurar_em_todas(texto="   ") == []
+
+
+def test_NAO_ACHAR_e_uma_resposta_e_nao_um_erro(banco_conc):
+    """⚠️ É o caso que encerra a discussão: se a busca que ignora tudo não acha, a
+    linha não está no banco — e o problema é a importação, não a tela."""
+    from decimal import Decimal
+
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+
+    conta = conta_de_teste()
+    conciliacao.importar(conta, conciliacao_ofx.ler(
+        ofx([("20260910", "-9.00", "A1", "TARIFA")])), "a.ofx", "T")
+
+    assert conciliacao.procurar_em_todas(valor=Decimal("56284.17")) == []

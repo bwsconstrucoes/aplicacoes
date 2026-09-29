@@ -815,3 +815,88 @@ def test_com_opcoes_o_recado_e_VAZIO_e_nao_custa_consulta(monkeypatch):
     monkeypatch.setattr("app.apps.analisesps.db.consultar", nao_pode_ser_chamado)
     assert consultas.por_que_os_filtros_estao_vazios(
         {"status_pgt": ["Pagar"]}, {"quantidade": 59055}) == ""
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ A CAIXA DE MARCAR NÃO PODE ESTICAR — 29/09/2026
+#
+# O dono mandou o print: sete blocos de filtro com as caixas soltas no meio da
+# coluna e NENHUM texto ao lado — inclusive em "Situação", cujos rótulos são texto
+# fixo no template. Ele descreveu como *"os filtros de Solicitações estão todos
+# vazios"*, e eu passei duas rodadas procurando no banco um defeito que era de CSS.
+#
+# A causa foi uma regra minha, escrita na mesma manhã para os campos de texto não
+# esticarem: `.filtros input, .filtros select { width: 100% }`. Ela alcançava
+# também as caixas de marcar, e cada `checkbox` virou um retângulo da largura da
+# coluna, empurrando o rótulo para fora da vista.
+#
+# ⚠️ NENHUM TESTE DE TELA PEGARIA ISSO: o texto ESTAVA no HTML. Por isso o teste é
+# sobre o CSS, e é o único jeito honesto de travar essa classe de erro.
+# ---------------------------------------------------------------------------
+def _css():
+    import pathlib
+
+    from app.apps.analisesps import db
+
+    caminho = (pathlib.Path(db.__file__).parent / "static" / "analisesps.css")
+    return caminho.read_text(encoding="utf-8")
+
+
+def _regras(css):
+    """`[(seletor, corpo)]` — sem os comentários, que falam de `input` o tempo
+    todo e envenenariam qualquer busca por texto."""
+    import re
+
+    limpo = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    return [(m.group(1).strip(), m.group(2))
+            for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", limpo)]
+
+
+def test_nenhuma_regra_de_LARGURA_alcanca_a_caixa_de_marcar_do_filtro():
+    """⚠️ O defeito exato do print dele. Uma regra que case `.filtros input` sem
+    excluir `checkbox` e `radio`, e que mexa em largura, apaga o rótulo de todos os
+    filtros do módulo — Solicitações, Relatório, Calendário e Conciliação."""
+    culpadas = []
+    for seletor, corpo in _regras(_css()):
+        if "width" not in corpo:
+            continue
+        for parte in seletor.split(","):
+            parte = parte.strip()
+            if not parte.endswith("input"):
+                continue          # `input[type=text]` e afins já são específicos
+            # ⚠️ `.filtros` COMO CLASSE INTEIRA, e não como pedaço: existe
+            # `tr.filtros-coluna` (os campos de cabeçalho da tabela da
+            # conciliação), que não tem caixa de marcar nenhuma dentro e legitimamente
+            # estica os campos de texto dela. Casar por pedaço acusaria essa regra e
+            # o teste viraria ruído — e teste que acusa o inocente deixa de ser lido.
+            import re as _re
+            tem_filtros = bool(_re.search(r"\.filtros(?![\w-])", parte))
+            if not tem_filtros and ".opcao" not in parte:
+                continue
+            if ".opcao" in parte:
+                continue          # é a regra que DÁ o tamanho certo à caixinha
+            if ":not([type=checkbox])" in parte:
+                continue          # exclui explicitamente — é o conserto
+            culpadas.append(f"{parte} {{{corpo.strip()}}}")
+    assert not culpadas, (
+        "estas regras esticam a caixa de marcar da barra de filtros e apagam o "
+        "rótulo ao lado dela:\n" + "\n".join(culpadas))
+
+
+def test_a_caixa_de_marcar_continua_com_o_tamanho_declarado():
+    """O conserto não pode ter tirado o tamanho dela junto: `.opcao input` é quem
+    define os 15 px e a cor, e tem de continuar sendo a última palavra."""
+    css = _css()
+    assert ".opcao input" in css
+    # Nenhuma regra DEPOIS dela pode redefinir a largura da caixa do filtro —
+    # foi exatamente assim (regra igual, mais abaixo) que o estrago aconteceu.
+    depois = css[css.index(".opcao input"):]
+    assert ".filtros input[type=checkbox]" not in depois
+
+
+def test_o_campo_de_TEXTO_do_filtro_continua_ocupando_a_coluna():
+    """O conserto não pode ter desfeito o que a regra existia para fazer: a caixa
+    de busca e as listas suspensas continuam acompanhando a largura da coluna."""
+    css = _css()
+    assert ".filtros input:not([type=checkbox]):not([type=radio])" in css
+    assert ".filtros select" in css

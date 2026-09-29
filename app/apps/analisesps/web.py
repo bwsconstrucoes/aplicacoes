@@ -1778,6 +1778,43 @@ def calendario():
 FILTRO_CONCILIACAO = "filtro_conciliacao"
 
 
+@bp.route("/api/conciliacao/procurar")
+@exige_consulta
+def conciliacao_procurar():
+    """Onde está um lançamento — em TODAS as contas, sem filtro nenhum.
+
+    ⚠️ ELA EXISTE PARA ACABAR COM UMA DISCUSSÃO QUE NÃO TEM COMO SER GANHA NA
+    CONVERSA. "Não importou" e "não estou vendo" são a mesma coisa na tela e coisas
+    diferentes no banco — e eu não enxergo o banco dele. Isto enxerga."""
+    from . import conciliacao as conc
+    from .formatos import para_numero
+
+    bruto = (request.args.get("valor") or "").strip()
+    texto = (request.args.get("q") or "").strip()
+    valor = None
+    if bruto:
+        valor = para_numero(bruto)
+        if valor is None:
+            return {"ok": False, "erro": f'não entendi o valor "{bruto}".'}, 400
+    if valor is None and not texto:
+        return {"ok": False, "erro": "diga um valor ou um pedaço do histórico."}, 400
+
+    try:
+        achados = conc.procurar_em_todas(valor=valor, texto=texto)
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou a busca em todas as contas")
+        return {"ok": False, "erro": f"Não consegui procurar: {e}"}, 500
+
+    return {"ok": True, "quantos": len(achados), "achados": [
+        {"conta": a["conta"], "conta_id": a["conta_id"],
+         "data": a["data"].strftime("%d/%m/%Y") if a["data"] else "",
+         "descricao": a["descricao"], "documento": a["documento"] or "",
+         "valor": str(a["valor"]), "origem": a["origem"],
+         "conciliado": bool(a["conciliado"]),
+         "omie": a["omie_situacao"] or "", "omie_codigo": a["omie_codigo"],
+         "arquivo": a["arquivo"]} for a in achados]}
+
+
 def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
     """O que a barra desta tela manda, com um padrão sensato para cada coisa."""
     from . import conciliacao as conc

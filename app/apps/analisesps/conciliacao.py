@@ -794,6 +794,56 @@ def resumo(f: dict) -> dict:
     return dict(zip(nomes, linha or (0,) * 7))
 
 
+def procurar_em_todas(valor=None, texto: str = "", teto: int = 40) -> list:
+    """Onde está um lançamento — em TODAS as contas e IGNORANDO todo filtro.
+
+    ⚠️ ESTA FUNÇÃO EXISTE PORQUE "NÃO IMPORTOU" E "NÃO ESTOU VENDO" SÃO A MESMA
+    COISA NA TELA, e não são a mesma coisa no banco. Em 29/09/2026 o dono importou
+    um extrato e disse, duas vezes, que o valor de 56.284,17 não tinha entrado. Eu
+    refiz aquele arquivo inteiro com banco de verdade — as 53 linhas entram, essa
+    inclusive — e mesmo assim não consegui responder à pergunta dele, porque eu não
+    enxergo o banco dele.
+
+    Isto responde. Ela não obedece conta escolhida, nem período, nem situação, nem
+    o filtro guardado da visita anterior: se a linha existe em qualquer lugar, ela
+    aparece aqui, dizendo EM QUAL CONTA e de qual arquivo veio. E se não aparecer,
+    a resposta passa a ser um fato — a linha não está no banco — em vez de uma
+    discussão sobre o que a tela mostra.
+
+    `valor` casa em MÓDULO: procurar 56284,17 acha tanto a entrada quanto a saída.
+    Quem procura um valor não sabe de cabeça o sinal com que ele foi gravado.
+    """
+    if not _pronto():
+        return []
+    from .db import consultar
+
+    onde, params = [], []
+    if valor is not None:
+        onde.append("abs(e.valor) = ?")
+        params.append(abs(Decimal(str(valor))))
+    alvo = " ".join(str(texto or "").split()).lower()
+    if alvo:
+        onde.append("(lower(e.descricao) || ' ' || lower(coalesce(e.documento,'')))"
+                    " LIKE ?")
+        params.append(f"%{alvo.replace('%', '').replace('_', '')}%")
+    if not onde:
+        return []
+
+    linhas = consultar(
+        "SELECT e.id, e.conta_id, c.nome, e.data, e.descricao, e.documento, "
+        "       e.valor, e.origem, e.conciliado, e.omie_situacao, e.omie_codigo, "
+        "       coalesce(a.nome_arquivo, ''), a.importado_em "
+        "  FROM analisesps.conciliacao_extrato e "
+        "  JOIN analisesps.conciliacao_conta c ON c.id = e.conta_id "
+        "  LEFT JOIN analisesps.conciliacao_arquivo a ON a.id = e.arquivo_id "
+        f" WHERE {' AND '.join(onde)} "
+        " ORDER BY e.data DESC, e.id DESC LIMIT ?", tuple(params + [int(teto)]))
+    nomes = ["id", "conta_id", "conta", "data", "descricao", "documento",
+             "valor", "origem", "conciliado", "omie_situacao", "omie_codigo",
+             "arquivo", "importado_em"]
+    return [dict(zip(nomes, linha)) for linha in linhas]
+
+
 def quantas_na_conta(conta_id: int) -> int:
     """Quantas linhas esta conta tem, SEM filtro nenhum.
 

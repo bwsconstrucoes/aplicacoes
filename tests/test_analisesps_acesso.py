@@ -124,6 +124,7 @@ TODAS_AS_TELAS = [
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.
     ("GET",  "/analisesps/folha/auxilios"),
     ("GET",  "/analisesps/folha/diaristas"),
+    ("GET",  "/analisesps/api/conciliacao/procurar"),
     ("POST", "/analisesps/api/folha/auxilio/ajuste"),
     # A gestão da folha da contabilidade: quem entra, quem sai, para qual obra vai
     # o valor — e o fechamento que autoriza o arquivo a sair.

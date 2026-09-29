@@ -250,6 +250,27 @@
      "N linhas neste recorte", sozinho, é indistinguível de "N linhas existem" — e
      a conclusão de quem olha é sempre a pior.
      ------------------------------------------------------------------------ #}
+  {# ------------------------------------------------------------------------
+     "ONDE ESTÁ ESSE LANÇAMENTO?" — a busca que ignora TUDO.
+
+     ⚠️ Ela não obedece conta escolhida, período, situação, nem o filtro guardado
+     da visita anterior. Existe porque "não importou" e "não estou vendo" são a
+     mesma coisa na tela e coisas diferentes no banco — e a diferença entre as
+     duas custou a ele duas rodadas em 29/09/2026, procurando um valor que estava
+     gravado. Aqui a resposta é um FATO: está, e nesta conta; ou não está.
+     ------------------------------------------------------------------------ #}
+  <div class="procura-geral">
+    <label class="rotulo-campo" style="margin:0">Não acha um lançamento?</label>
+    <input type="text" id="procura-valor" class="curto" placeholder="valor, ex.: 56.284,17"
+           aria-label="Valor a procurar em todas as contas">
+    <input type="text" id="procura-texto" placeholder="ou um pedaço do histórico"
+           aria-label="Histórico a procurar em todas as contas">
+    <button class="btn secundario" type="button" id="btn-procurar-tudo"
+            >Procurar em todas as contas</button>
+    <span class="cartao-dica">ignora conta, período e qualquer filtro</span>
+  </div>
+  <div id="achados-gerais"></div>
+
   {% set escondidas = (total_da_conta or 0) - (resumo.quantidade or 0) %}
   {% if escondidas > 0 %}
     <div class="aviso atencao" style="margin:0 0 10px">
@@ -1850,6 +1871,59 @@ if (formColunas) {
   const b = document.getElementById(botao);
   if (b) b.addEventListener("click", () => abrir(alvo));
 });
+
+// ---------------------------------------------------------------------------
+// PROCURAR EM TODAS AS CONTAS, SEM FILTRO NENHUM
+//
+// ⚠️ A resposta tem de ser um FATO, não uma impressão: ou a linha existe e a tela
+// diz em qual conta e de qual arquivo veio, ou ela não está no banco. Sem isso,
+// "não importou" e "não estou vendo" são indistinguíveis.
+// ---------------------------------------------------------------------------
+const btnProcurarTudo = document.getElementById("btn-procurar-tudo");
+if (btnProcurarTudo) btnProcurarTudo.addEventListener("click", async () => {
+  const valor = document.getElementById("procura-valor").value.trim();
+  const texto = document.getElementById("procura-texto").value.trim();
+  const caixa = document.getElementById("achados-gerais");
+  if (!valor && !texto) {
+    caixa.innerHTML = '<div class="aviso atencao">Diga um valor ou um pedaço do histórico.</div>';
+    return;
+  }
+  caixa.innerHTML = '<p class="cartao-dica">procurando…</p>';
+  btnProcurarTudo.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.conciliacao_procurar') }}?valor="
+                          + encodeURIComponent(valor) + "&q=" + encodeURIComponent(texto));
+    const d = await r.json();
+    if (!d.ok) { caixa.innerHTML = '<div class="aviso erro">' + d.erro + "</div>"; return; }
+    if (!d.quantos) {
+      // ⚠️ A FRASE IMPORTA: isto é resposta, não falha. Quer dizer que o
+      // lançamento NÃO está no banco — nem nesta conta nem em nenhuma outra.
+      caixa.innerHTML =
+        '<div class="aviso erro"><b>Não existe em conta nenhuma.</b> ' +
+        'Nenhum lançamento com esse valor ou histórico está gravado aqui — ' +
+        'em qualquer conta, em qualquer data, com ou sem filtro. Se você esperava ' +
+        'que estivesse, o problema é na importação e não na tela.</div>';
+      return;
+    }
+    let html = '<div class="aviso atencao"><b>Achei ' + d.quantos +
+      ' lançamento(s)</b>, ignorando conta, período e filtro:<ul class="lista-seca">';
+    d.achados.forEach(a => {
+      html += "<li><b>" + a.conta + "</b> · " + a.data + " · " +
+        Number(a.valor).toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) +
+        " · " + a.descricao +
+        (a.arquivo ? ' <span class="cartao-dica">(de ' + a.arquivo + ")</span>" : "") +
+        (a.conciliado ? " · conciliado" : "") +
+        (a.omie_codigo ? " · no OMIE " + a.omie_codigo : "") +
+        "</li>";
+    });
+    caixa.innerHTML = html + "</ul></div>";
+  } catch (e) {
+    caixa.innerHTML = '<div class="aviso erro">Falhou: ' + e + "</div>";
+  } finally {
+    btnProcurarTudo.disabled = false;
+  }
+});
+
 </script>
 {% endif %}
 {% endblock %}

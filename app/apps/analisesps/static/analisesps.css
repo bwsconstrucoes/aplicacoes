@@ -2367,8 +2367,34 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
    ser grande), mas não colada nas bordas da tela. */
 .solta-arquivo, .caixa-arquivo, .area-arquivo { max-width: 760px; }
 
-/* Os filtros da lateral: o campo acompanha a coluna, e a coluna já tem largura. */
-.filtros input, .filtros select { width: 100%; max-width: none; }
+/* --------------------------------------------------------------------------
+   ⚠️ OS FILTROS DA LATERAL: A CAIXA DE MARCAR FICA DE FORA, E ISSO É CONSERTO
+   DE UM ESTRAGO MEU — 29/09/2026.
+
+   A regra era `.filtros input, .filtros select { width: 100% }`, escrita hoje de
+   manhã para os campos de texto não esticarem. Só que `.filtros input` alcança
+   TAMBÉM as caixas de marcar de cada opção: cada `checkbox` virou um retângulo da
+   largura inteira da coluna, e o rótulo ao lado dele — "Pagar", "Agendado", o nome
+   da obra — foi empurrado para fora da vista.
+
+   O resultado na tela dele: sete blocos de filtro com caixas soltas e NENHUM
+   texto, inclusive em "Situação", cujos rótulos são texto fixo no código. Foi o
+   que ele descreveu como *"os filtros de solicitações estão todos vazios"* — e eu
+   passei duas rodadas procurando no banco de dados um defeito que era de CSS.
+
+   ⚠️ A LIÇÃO, e é o mesmo erro de sempre desta semana: seletor largo mexe em coisa
+   que não estava na tela em que se olhou. A regra nasceu para caixa de texto e
+   pegou caixa de marcar, que é o elemento mais importante de uma barra de filtro.
+   O tipo agora está escrito.
+   -------------------------------------------------------------------------- */
+.filtros input:not([type=checkbox]):not([type=radio]),
+.filtros select { width: 100%; max-width: none; }
+
+/* ⚠️ E NÃO SE ESCREVE REGRA NENHUMA PARA A CAIXA DE MARCAR AQUI. O tamanho dela
+   (15px) já está em `.opcao input`, lá em cima, junto da cor. Repetir aqui — ainda
+   que com `width: auto` — desfaria aquele tamanho por ser regra mais específica e
+   mais abaixo no arquivo, que é EXATAMENTE o mecanismo que causou este estrago.
+   O conserto é a regra de texto deixar de alcançá-la, não uma regra a mais. */
 
 /* --------------------------------------------------------------------------
    AS TABELAS DA FOLHA PASSAM A TER A MESMA SUPERFÍCIE DAS SOLICITAÇÕES —
@@ -2445,3 +2471,12 @@ h3 + .tabela-wrap, p + .tabela-wrap, div + .tabela-wrap { margin-top: 10px; }
 .ajuste-obra .dias-parte { max-width: 90px; }
 .ajuste-obra .linha-divisao { margin-bottom: 6px; }
 .ajuste-obra .conta-divisao { margin-left: 4px; }
+
+/* A busca que ignora todo filtro. Compacta e discreta: ela é a saída de emergência
+   de quem não acha um lançamento, não o caminho normal de procurar. */
+.procura-geral {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+.procura-geral input { max-width: 260px; }
+.procura-geral input.curto { max-width: 160px; }

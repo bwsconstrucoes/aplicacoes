@@ -7145,8 +7145,23 @@ def test_o_CSS_poe_TETO_na_largura_dos_campos():
     assert ".cartao input[type=text]" in css
     assert "max-width: 420px" in css
     assert ".solta-arquivo, .caixa-arquivo, .area-arquivo { max-width: 760px; }" in css
-    # E os filtros da lateral continuam acompanhando a coluna.
-    assert ".filtros input, .filtros select { width: 100%; max-width: none; }" in css
+    # ⚠️ ESTA LINHA MUDOU NO MESMO DIA EM QUE FOI ESCRITA, e o motivo está em
+    # `test_analisesps_filtros.py`: `.filtros input` alcançava também as CAIXAS DE
+    # MARCAR de cada opção. Cada `checkbox` virava um retângulo da largura da
+    # coluna e o rótulo ao lado sumia — sete blocos de filtro sem texto nenhum, que
+    # foi o que o dono viu e descreveu como "os filtros estão todos vazios".
+    #
+    # O campo de TEXTO continua acompanhando a coluna; a caixa de marcar ficou de
+    # fora, e o tipo agora está escrito no seletor.
+    assert (".filtros input:not([type=checkbox]):not([type=radio])" in css
+            and ".filtros select { width: 100%; max-width: none; }" in css)
+    # ⚠️ SEM OS COMENTÁRIOS: o comentário que explica o estrago CITA a regra
+    # errada, e uma busca por texto cru acusaria a própria explicação. Foi o que
+    # aconteceu na primeira versão deste teste.
+    import re as _re
+    sem_comentario = _re.sub(r"/\*.*?\*/", "", css, flags=_re.S)
+    assert ".filtros input, .filtros select {" not in sem_comentario, (
+        "a regra larga voltou — ela apaga o rótulo de todos os filtros do módulo")
 
 
 # ---------------------------------------------------------------------------
