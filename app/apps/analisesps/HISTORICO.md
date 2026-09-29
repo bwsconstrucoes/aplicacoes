@@ -9814,6 +9814,68 @@ certificado do Mobponto não passa por aqui.
 
 ---
 
+### Centésima vigésima segunda leva (29/09) — o "Deu erro" era meu, e o certificado passou a se resolver sozinho
+
+**1. ⚠️ O 56.284,17 SEMPRE ESTEVE IMPORTADO.**
+
+A própria reimportação dele diz: *"Li 53 lançamento(s): 53 já estavam aqui e 0 são
+novos"*. As 53 linhas do arquivo, aquela inclusive, estão gravadas desde 12:08.
+
+A busca respondeu "não existe em conta nenhuma" porque ele procurou por
+**56.284,27** — o arquivo tem **56.284,17**. A busca estava certa; o número
+digitado é que tinha um dígito trocado.
+
+**2. ⚠️ O "Deu erro" ao filtrar pela coluna Entrada era um defeito meu, de horas
+antes — e o estrago era cirúrgico.**
+
+Eu escrevi `url_for('analisesps.conciliacao')` onde a rota se chama
+`tela_conciliacao`. Aquele pedaço da tela só é desenhado **quando o filtro esconde
+alguma linha** — então a conciliação quebrava com 500 **exatamente** quando ele
+procurava um valor que não casava com nada. Filtrar por algo que existe
+funcionava; filtrar por algo que não existe quebrava.
+
+Nenhum teste de tela pegaria: as telas eram exercitadas no estado normal, e o que
+quebrava era o excepcional. Agora há um teste que **lê todos os templates** e
+confere se cada rota citada existe — a classe inteira de erro, travada de uma vez.
+
+⚠️ E `url_for` é o jeito certo justamente porque GRITA. Endereço montado à mão não
+daria erro nenhum: daria "não encontrado" em silêncio, o que é pior.
+
+**3. O certificado do Mobponto passou a se resolver SOZINHO.**
+
+É o que o navegador faz e o `requests` não: o certificado do site carrega dentro
+de si o **endereço de quem o assinou**. Agora, ao levar
+`CERTIFICATE_VERIFY_FAILED`, o sistema lê esse endereço, **baixa a peça que
+falta** e refaz a chamada — com a verificação ligada.
+
+⚠️ **E isso não abre buraco**, ainda que pareça: o certificado baixado entra como
+**candidato**, não como confiança. A verificação continua acontecendo e só passa
+se a corrente terminar numa **raiz que já era confiável** — um intermediário falso
+não chega a raiz nenhuma. O que se ganha é a peça do meio; quem decide continua
+sendo a raiz.
+
+Se não der (o certificado não diz onde está a peça, ou o servidor dela não
+responde), a mensagem agora **diz que já tentou** e aí sim oferece as duas saídas
+manuais, a segura primeiro.
+
+**4. O layout: a tabela ganhou piso de largura** (leva anterior), e a coluna da
+observação tem piso próprio — era ela que quebrava as linhas.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto entrar | agora talvez de nada: o sistema tenta completar a cadeia sozinho. Se não der, a mensagem diz e as duas saídas manuais continuam |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** suíte inteira, 7.571 passando, 145 pulados, zero falhas, 5min15s.
+**NÃO verificado:** o download do intermediário contra o Mobponto de verdade —
+daqui não dá, porque este ambiente intercepta TLS. A mecânica está testada com
+dublê; o certificado real só o Render alcança.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

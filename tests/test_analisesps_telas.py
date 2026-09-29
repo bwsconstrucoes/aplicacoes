@@ -7744,3 +7744,37 @@ def test_a_coluna_do_OMIE_e_a_da_OBSERVACAO_tem_nome_no_html():
     assert '<th class="obs">Observação</th>' in html
     assert '<td class="no-omie">' in html
     assert '<td class="obs">' in html
+
+
+def test_TODO_url_for_dos_templates_aponta_para_uma_rota_QUE_EXISTE(app):
+    """⚠️ CLASSE INTEIRA DE ERRO, travada de uma vez — 29/09/2026.
+
+    Eu escrevi `url_for('analisesps.conciliacao')` onde a rota se chama
+    `tela_conciliacao`. O estrago foi cirúrgico: aquele pedaço da tela só é
+    desenhado quando o filtro esconde alguma linha, então a conciliação quebrava
+    com erro 500 EXATAMENTE quando ele procurava um valor que não casava com nada.
+    Foi o "Deu erro" que ele viu ao filtrar pela coluna Entrada.
+
+    Nenhum teste de tela pegaria: as telas eram desenhadas no estado normal, e o
+    estado que quebrava era o excepcional. Este teste não desenha nada — lê os
+    templates e confere se cada nome de rota citado existe de verdade.
+
+    ⚠️ `url_for` é o jeito CERTO justamente porque grita. Endereço montado à mão
+    ("/analisesps/conciliacao?...") não daria erro nenhum: daria uma página de
+    "não encontrado" em silêncio, o que é pior. O que faltou foi eu exercitar a
+    tela naquele estado."""
+    import re
+
+    pasta = Path("app/apps/analisesps/templates")
+    rotas = {r.endpoint for r in app.url_map.iter_rules()}
+    erradas = []
+    for arquivo in sorted(pasta.glob("*.html")):
+        texto = arquivo.read_text(encoding="utf-8")
+        for nome in re.findall(r"url_for\(\s*['\"]([\w.]+)['\"]", texto):
+            if nome.startswith("static") or "." not in nome:
+                continue          # `static` é do Flask, não uma rota nossa
+            if nome not in rotas:
+                erradas.append(f"{arquivo.name}: url_for('{nome}')")
+    assert not erradas, (
+        "estes templates citam rota que não existe — a tela quebra com 500 no "
+        "momento em que aquele pedaço for desenhado:\n" + "\n".join(erradas))

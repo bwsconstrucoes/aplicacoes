@@ -210,6 +210,80 @@ def _confianca_tls():
     return pacote or True
 
 
+def _intermediario_do_servidor(url: str) -> str:
+    """Baixa sozinho o certificado que falta na cadeia. `""` quando não dá.
+
+    ⚠️ É O QUE O NAVEGADOR FAZ, e é por isso que o site "funciona no navegador e
+    não aqui". Quando o servidor manda a cadeia incompleta, o certificado dele
+    carrega dentro de si o ENDEREÇO de quem o assinou (o campo `caIssuers`, da
+    extensão AIA). O navegador vai lá, baixa a peça que falta e completa a
+    corrente. O `requests` não faz isso — e era essa a diferença.
+
+    ⚠️ BAIXAR O INTERMEDIÁRIO SEM VERIFICAR NÃO ABRE BURACO, e vale explicar por
+    quê, porque parece que abre: o certificado baixado **não passa a ser
+    confiável**. Ele só entra no pacote como candidato; a verificação de verdade
+    continua acontecendo depois, e só passa se a corrente inteira terminar numa
+    RAIZ que já era confiável. Um intermediário falso não chega a raiz nenhuma e
+    a conexão falha do mesmo jeito. O que se ganha é a peça do meio; o que decide
+    continua sendo a raiz.
+
+    Devolve o PEM do intermediário, ou "" quando não houver endereço, o download
+    falhar, ou o arquivo não for um certificado."""
+    import ssl
+    from urllib.parse import urlparse
+
+    import requests
+
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives.serialization import Encoding
+    except Exception:  # noqa: BLE001 — sem a biblioteca, não há o que fazer
+        logger.warning("Análise de SPs: sem `cryptography` para ler a cadeia.")
+        return ""
+
+    alvo = urlparse(url)
+    host, porta = alvo.hostname, alvo.port or 443
+    if not host:
+        return ""
+
+    try:
+        # ⚠️ SEM VERIFICAR, e SÓ PARA LER. Ver o aviso acima: o que sai daqui é
+        # candidato, não confiança.
+        bruto = ssl.get_server_certificate((host, porta),
+                                           timeout=SEGUNDOS_DE_ESPERA)
+        folha = x509.load_pem_x509_certificate(bruto.encode())
+        aia = folha.extensions.get_extension_for_class(
+            x509.AuthorityInformationAccess).value
+        enderecos = [d.access_location.value for d in aia
+                     if d.access_method == x509.oid.AuthorityInformationAccessOID
+                     .CA_ISSUERS]
+    except Exception:  # noqa: BLE001 — sem AIA, ou site fora do ar
+        logger.info("Análise de SPs: o certificado do %s não diz onde está o "
+                    "intermediário (sem AIA) — não dá para completar sozinho.",
+                    host)
+        return ""
+
+    for endereco in enderecos:
+        try:
+            resposta = requests.get(endereco, timeout=SEGUNDOS_DE_ESPERA)
+            resposta.raise_for_status()
+            corpo = resposta.content
+            # O arquivo vem em DER quase sempre (`.crt`/`.cer`); em PEM às vezes.
+            if b"BEGIN CERTIFICATE" in corpo:
+                pem = corpo.decode("utf-8", "replace")
+            else:
+                pem = x509.load_der_x509_certificate(corpo).public_bytes(
+                    Encoding.PEM).decode()
+            logger.info("Análise de SPs: intermediário do %s baixado de %s — a "
+                        "cadeia pode ser completada sem baixar a segurança.",
+                        host, endereco)
+            return pem
+        except Exception:  # noqa: BLE001 — tenta o próximo endereço
+            logger.info("Análise de SPs: não consegui baixar o intermediário de "
+                        "%s", endereco)
+    return ""
+
+
 def _pacote_com_o_extra(pacote, extra: str):
     """Junta o certificado que falta ao pacote de raízes. Devolve o caminho.
 
@@ -284,12 +358,34 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
             # tentativa, e o recado precisa dizer o que é, porque "falha de
             # conexão" mandaria tentar de novo para sempre.
             if "CERTIFICATE_VERIFY_FAILED" in str(e) or "SSLError" in type(e).__name__:
+                # ⚠️ UMA TENTATIVA DE COMPLETAR A CADEIA SOZINHO, antes de
+                # devolver o erro. É o que o navegador faz: o certificado do site
+                # diz onde está a peça que falta, e ela se baixa. Ver
+                # `_intermediario_do_servidor` — inclusive por que isso NÃO abre
+                # buraco de segurança.
+                #
+                # ⚠️ SÓ NA PRIMEIRA TENTATIVA e só quando a verificação está
+                # LIGADA: se ele já desligou, não há cadeia a completar; e tentar
+                # a cada volta faria a tela esperar três downloads para dar o
+                # mesmo recado.
+                if tentativa == 1 and confianca is not False:
+                    remendo = _intermediario_do_servidor(URL)
+                    if remendo:
+                        novo_pacote = _pacote_com_o_extra(confianca if
+                                                          isinstance(confianca, str)
+                                                          else None, remendo)
+                        if novo_pacote:
+                            confianca = novo_pacote
+                            ultimo = str(e)
+                            continue
                 raise ErroDoPonto(
                     "o certificado do site do Mobponto não pôde ser verificado "
                     "(CERTIFICATE_VERIFY_FAILED). Isto NÃO é credencial errada nem "
                     "instabilidade: falta uma peça do meio da corrente de "
-                    "certificados — o site manda a cadeia incompleta e o navegador "
-                    "disfarça, mas este caminho não. "
+                    "certificados. EU JÁ TENTEI BAIXAR ESSA PEÇA SOZINHO, do jeito "
+                    "que o navegador faz, e não consegui — ou o certificado do "
+                    "Mobponto não diz onde ela está, ou o servidor dela não "
+                    "respondeu daqui. "
                     "HÁ DOIS JEITOS DE RESOLVER, e o primeiro é o certo: "
                     "(1) abra https://www.mobponto.com.br no navegador, clique no "
                     "cadeado, exporte o certificado do MEIO da cadeia (o que não é "

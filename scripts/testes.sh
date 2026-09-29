@@ -25,7 +25,7 @@ BANCO="${ERP_TEST_DATABASE_URL:-postgresql://postgres:teste@localhost:5432/erp_t
 # ⚠️ O POSTGRES PRECISA SER CONFERIDO A CADA VEZ, não uma vez por sessão: neste
 # ambiente ele é um processo de fundo e morre sozinho entre um comando e outro.
 # Descobrir isso pelo erro dos testes custa uma rodada inteira.
-if ! pg_isready -q -h localhost 2>/dev/null; then
+if ! pg_isready -q -h localhost -U postgres -d postgres 2>/dev/null; then
   echo "→ subindo o Postgres de teste…"
   # ⚠️ SEM DURABILIDADE, DE PROPÓSITO: este banco é descartável. `fsync=off` e
   # companhia cortam a maior parte da espera de disco. NUNCA em produção — com

@@ -277,7 +277,16 @@
       <b>O filtro está escondendo {{ escondidas }} linha(s) desta conta.</b>
       Elas estão gravadas — só não entram neste recorte. O filtro fica guardado de
       uma visita para a outra, então pode ser de outro dia.
-      <a href="{{ url_for('analisesps.conciliacao', f='1',
+      {# ⚠️ `tela_conciliacao`, NÃO `conciliacao`. Escrevi o nome errado em
+         29/09/2026 e o estrago foi cirúrgico: este bloco só é desenhado quando o
+         filtro esconde alguma linha — ou seja, a tela quebrava com 500 EXATAMENTE
+         quando ele procurava um valor que não casava com nada. Foi o "Deu erro"
+         que ele viu ao filtrar pela coluna Entrada.
+
+         Endereço montado à mão não teria dado erro nenhum: teria dado uma página
+         de "não encontrado" em silêncio, o que é pior. O `url_for` gritar aqui é
+         o comportamento certo — o que faltou foi eu rodar a tela neste estado. #}
+      <a href="{{ url_for('analisesps.tela_conciliacao', f='1',
                           conta_id=filtros.conta_id) }}">ver todas</a>
     </div>
   {% endif %}

@@ -527,3 +527,145 @@ def test_a_mensagem_do_erro_oferece_o_caminho_SEGURO_primeiro(monkeypatch):
     assert "MOBPONTO_CA_EXTRA" in frase
     assert frase.index("MOBPONTO_CA_EXTRA") < frase.index("MOBPONTO_TLS_INSEGURO")
     assert "nada de segurança é perdido" in frase
+
+
+# ---------------------------------------------------------------------------
+# COMPLETAR A CADEIA SOZINHO — 29/09/2026
+#
+# ⚠️ É O QUE O NAVEGADOR FAZ, e é a diferença entre "funciona no navegador" e
+# "não funciona aqui". O certificado do site carrega dentro de si o ENDEREÇO de
+# quem o assinou; o navegador vai lá e baixa a peça que falta. O `requests` não.
+#
+# ⚠️ E NÃO ABRE BURACO: o certificado baixado entra como CANDIDATO, não como
+# confiança. A verificação continua acontecendo e só passa se a corrente terminar
+# numa raiz que já era confiável — um intermediário falso não chega a raiz nenhuma.
+# ---------------------------------------------------------------------------
+def test_o_intermediario_e_baixado_do_endereco_que_o_certificado_indica(
+        monkeypatch):
+    import ssl
+
+    import requests
+
+    from app.apps.analisesps import ponto
+
+    pem_falso = ("-----BEGIN CERTIFICATE-----\n"
+                 "INTERMEDIARIODEMENTIRA\n"
+                 "-----END CERTIFICATE-----\n")
+
+    class FolhaFalsa:
+        class extensions:
+            @staticmethod
+            def get_extension_for_class(_classe):
+                class Valor:
+                    def __iter__(self):
+                        from cryptography import x509
+
+                        class Acesso:
+                            access_method = (x509.oid
+                                             .AuthorityInformationAccessOID
+                                             .CA_ISSUERS)
+
+                            class access_location:
+                                value = "http://ca.exemplo/intermediario.crt"
+                        return iter([Acesso()])
+
+                class Ext:
+                    value = Valor()
+                return Ext()
+
+    monkeypatch.setattr(ssl, "get_server_certificate",
+                        lambda *a, **k: "-----BEGIN CERTIFICATE-----\nX\n"
+                                        "-----END CERTIFICATE-----")
+    from cryptography import x509
+    monkeypatch.setattr(x509, "load_pem_x509_certificate",
+                        lambda *a, **k: FolhaFalsa())
+
+    class Resposta:
+        content = pem_falso.encode()
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: Resposta())
+
+    achado = ponto._intermediario_do_servidor(
+        "https://www.mobponto.com.br/ponto/api/endpoint.php")
+    assert "INTERMEDIARIODEMENTIRA" in achado
+
+
+def test_sem_endereco_no_certificado_ele_NAO_INVENTA(monkeypatch):
+    """⚠️ Devolver vazio é o certo: a falha original volta por inteiro, e a
+    mensagem manda ele colar o certificado à mão. Inventar um caminho aqui daria
+    um erro diferente do de verdade."""
+    import ssl
+
+    from app.apps.analisesps import ponto
+
+    def sem_certificado(*a, **k):
+        raise OSError("não deu para falar com o site")
+
+    monkeypatch.setattr(ssl, "get_server_certificate", sem_certificado)
+    assert ponto._intermediario_do_servidor("https://exemplo.com/x") == ""
+
+
+def test_a_mensagem_diz_que_JA_TENTOU_sozinho(monkeypatch):
+    """Sem isso, a primeira coisa que ele pensaria é "será que o sistema tentou?"
+    — e a resposta tem de estar na frase, não na cabeça de quem escreveu."""
+    import requests
+
+    from app.apps.analisesps import ponto
+
+    monkeypatch.setenv("MOBPONTO_AUTHORIZATION", "Basic x")
+    monkeypatch.setenv("MOBPONTO_API_KEY", "y")
+    monkeypatch.delenv("MOBPONTO_TLS_INSEGURO", raising=False)
+    monkeypatch.delenv("MOBPONTO_CA_EXTRA", raising=False)
+    monkeypatch.setattr(ponto, "_intermediario_do_servidor", lambda url: "")
+
+    def explode(*a, **k):
+        raise requests.exceptions.SSLError("CERTIFICATE_VERIFY_FAILED")
+
+    monkeypatch.setattr(requests, "get", explode)
+    with pytest.raises(ponto.ErroDoPonto) as erro:
+        ponto._pedir_pagina(2026, 9, 1)
+    assert "JÁ TENTEI BAIXAR ESSA PEÇA SOZINHO" in str(erro.value)
+
+
+def test_quando_o_intermediario_APARECE_a_chamada_e_refeita(monkeypatch):
+    """⚠️ O teste que prova o ganho: o erro de certificado deixa de ser final. A
+    primeira tentativa falha, a peça é baixada, e a SEGUNDA tentativa já vai com o
+    pacote completo."""
+    import requests
+
+    from app.apps.analisesps import ponto
+
+    monkeypatch.setenv("MOBPONTO_AUTHORIZATION", "Basic x")
+    monkeypatch.setenv("MOBPONTO_API_KEY", "y")
+    monkeypatch.delenv("MOBPONTO_TLS_INSEGURO", raising=False)
+    monkeypatch.delenv("MOBPONTO_CA_EXTRA", raising=False)
+    monkeypatch.setattr(
+        ponto, "_intermediario_do_servidor",
+        lambda url: "-----BEGIN CERTIFICATE-----\nPECAQUEFALTAVA\n"
+                    "-----END CERTIFICATE-----\n")
+
+    chamadas = []
+
+    class Ok:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"result": {"total_paginas": 1, "funcionarios": []}}
+
+    def falso_get(url, **k):
+        chamadas.append(k.get("verify"))
+        if len(chamadas) == 1:
+            raise requests.exceptions.SSLError("CERTIFICATE_VERIFY_FAILED")
+        return Ok()
+
+    monkeypatch.setattr(requests, "get", falso_get)
+    ponto._pedir_pagina(2026, 9, 1)
+
+    assert len(chamadas) == 2, "a segunda tentativa tem de acontecer"
+    assert chamadas[1] != chamadas[0], "e com o pacote NOVO"
+    assert "PECAQUEFALTAVA" in open(chamadas[1], encoding="utf-8").read()
+    assert chamadas[1] is not False, "sem nunca desligar a verificação"
