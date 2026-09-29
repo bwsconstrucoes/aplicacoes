@@ -9971,9 +9971,8 @@ onde está.**
 | as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
 | o primeiro `IncluirLancCC` conferido no OMIE | ele |
 
-**Verificado:** os 258 testes da conciliação (com banco de verdade), as telas e
-o acesso; a aplicação importa. Suíte inteira em andamento no momento do commit —
-resultado no próximo registro.
+**Verificado:** suíte inteira — 7.583 passando, 145 pulados, zero falhas,
+5min14s; a aplicação importa.
 **NÃO verificado:** a primeira rodada do `refazer_identidades` nas 19.926 linhas
 de produção — daqui não dá; o que garante é o teste com o índice único e a
 propriedade de ser refazível (o FITID continua na linha).
