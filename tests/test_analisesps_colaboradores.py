@@ -280,9 +280,24 @@ def test_ha_teto_de_linhas_e_ele_cabe_o_cadastro_de_verdade():
     assert col.LINHAS_POR_BLOCO <= 1000
 
 
-def test_sem_a_tabela_a_tela_recebe_vazio_em_vez_de_estourar():
+def test_sem_a_tabela_a_tela_recebe_vazio_em_vez_de_estourar(monkeypatch):
     """O código sobe para o Render ANTES de alguém apertar "Aplicar
-    atualizações do banco". No intervalo, a tela tem de abrir."""
+    atualizações do banco". No intervalo, a tela tem de abrir.
+
+    ⚠️ ELE PASSAVA POR ACIDENTE ATÉ 29/09/2026, e isso só apareceu quando a suíte
+    ficou rápida. Ele não dizia de onde vinha o "sem a tabela": dependia de algum
+    teste ANTERIOR ter derrubado o schema e não o ter reconstruído. Quando o schema
+    passou a nascer uma vez por sessão, a tabela existia — e o teste caiu, por um
+    motivo que não era dele.
+
+    Agora a condição é DITA: sem `DATABASE_URL` não há banco nenhum, que é
+    exatamente o estado de um serviço recém-publicado. A engine é reiniciada para
+    a próxima consulta reler o ambiente."""
+    from app.apps.analisesps import db as db_analisesps
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    db_analisesps._engine = None
+
     assert col.por_cpf("11144477735") is None
     assert col.muitos_por_cpf(["11144477735"]) == {}
     assert col.buscar("ana") == []

@@ -28,43 +28,31 @@ pytestmark = pytest.mark.banco
 
 
 @pytest.fixture
-def banco_aportes(banco, monkeypatch):
-    """Sobe os dois schemas: o `analisesps` (pelas migrações de verdade) e o
-    `painel`, que é de onde sai todo o de-para.
+def banco_aportes(banco_analisesps, banco):
+    """O `analisesps` limpo (rápido) e o `painel` refeito (do jeito antigo).
 
-    As migrações são os MESMOS arquivos que o botão da tela aplica em
-    produção — erro de sintaxe na 018 aparece aqui, não no Render."""
+    ⚠️ O `painel` CONTINUA SENDO REFEITO A CADA TESTE, e isso é escolha. Ele é o
+    chão de outra área, com testes e fixtures próprios; uma tentativa de acelerá-lo
+    daqui, em 29/09/2026, derrubou dezesseis testes do painel que não tinham
+    defeito nenhum. São 26 testes aqui — acelerar 26 não vale mexer na casa alheia.
+
+    ⚠️ AS MIGRAÇÕES DO PAINEL VÃO TODAS, e não é excesso de zelo: a 010 troca as
+    colunas de dinheiro de REAL para NUMERIC, inclusive `movimentos.nvalpago`, que
+    é justamente a coluna que a crítica de transferência compara com tolerância de
+    centavo. Testando só contra a 001, a crítica rodaria sobre um tipo que a
+    produção não tem mais."""
     from sqlalchemy import text
 
-    from app.apps.analisesps import db as db_analisesps
-
-    url = str(banco.url.render_as_string(hide_password=False))
-    monkeypatch.setenv("DATABASE_URL", url)
-    db_analisesps._engine = None
-
-    raiz = pathlib.Path(db_analisesps.__file__).parent.parent
+    raiz = pathlib.Path(__file__).resolve().parents[1] / "app" / "apps"
     with banco.connect() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS painel CASCADE"))
-        for caminho in sorted((raiz / "analisesps" / "migracoes").glob("*.sql")):
-            conn.execute(text(caminho.read_text(encoding="utf-8")))
-        # ⚠️ AS MIGRAÇÕES DO PAINEL VÃO TODAS, e isso não é excesso de zelo.
-        #
-        # A 010 (20/09/2026) troca as colunas de dinheiro de REAL para
-        # NUMERIC — inclusive `movimentos.nvalpago`, que é justamente a coluna
-        # que a crítica de transferência compara com tolerância de centavo.
-        # Testando só contra a 001, a crítica seria exercitada sobre um tipo
-        # que a produção não tem mais, e uma incompatibilidade de tipo
-        # apareceria na tela do dono em vez de aqui.
         for caminho in sorted((raiz / "painel" / "migracoes").glob("*.sql")):
             conn.execute(text(caminho.read_text(encoding="utf-8")))
         conn.commit()
     yield banco
     with banco.connect() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
         conn.execute(text("DROP SCHEMA IF EXISTS painel CASCADE"))
         conn.commit()
-    db_analisesps._engine = None
 
 
 def semear_espelho(banco, categorias=(), contas=(), movimentos=(), rateios=()):

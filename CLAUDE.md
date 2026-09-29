@@ -285,8 +285,33 @@ a memória, não remover a rede de proteção.
 
 ```
 pip install -r requirements-dev.txt
-python -m pytest
+python -m pytest -n auto --dist loadfile
 ```
+
+**⚠️ `-n auto` NÃO É ENFEITE, e a regra abaixo também não.** Em 29/09/2026 o dono
+cobrou, com razão: *"está demorando meia hora, uma hora para fechar alguma coisa
+relativamente simples (…) está praticamente inviável evoluir"*. A suíte rodava a
+construção inteira do schema **a cada teste** — 727 testes de banco × 36 arquivos
+de migração. Agora o schema nasce uma vez por sessão e os testes rodam em
+paralelo, cada trabalhador no seu banco.
+
+### ⚠️ CONSERTO PEQUENO NÃO RODA A SUÍTE INTEIRA
+
+Regra dele, do mesmo dia, e ela vale tanto quanto a de ir até o fim da fila:
+
+| O que você mexeu | O que rodar |
+|---|---|
+| uma tela, um texto, um CSS | os testes daquele arquivo e da tela |
+| uma regra de negócio | o arquivo de teste dela + os que a importam |
+| algo que atravessa áreas (`conftest.py`, `main.py`, `requirements`) | tudo |
+| **antes de juntar na `main`** | **tudo** |
+
+Rodar 7.700 testes para trocar uma linha de CSS não é cuidado — é uma hora
+parada, e ela sai do tempo dele. O oposto também é verdade: publicar sem rodar
+tudo é como o `PAGAR EXTRA` chegou à produção.
+
+**E registro pequeno para conserto pequeno:** commit de três linhas, sem ensaio no
+`HISTORICO.md`. O histórico ganha DECISÃO, não digitação.
 
 São 108 testes sobre os fluxos críticos do ERP, em `tests/`: aval em duas
 pessoas, atribuição ótima da conciliação, medição de empreita consumindo saldo

@@ -25,28 +25,17 @@ pytestmark = pytest.mark.banco
 
 
 @pytest.fixture
-def banco_cadastro(banco, monkeypatch):
-    """Sobe o schema pelas migrações de verdade — as mesmas que o botão aplica."""
-    from sqlalchemy import text
+def banco_cadastro(banco_analisesps):
+    """O schema `analisesps` limpo para este teste.
 
-    from app.apps.analisesps import db as db_analisesps
+    ⚠️ ERA UM REFAZ-TUDO: `DROP SCHEMA` mais os 36 arquivos de migração, A CADA
+    TESTE. Com 727 testes de banco na suíte, isso dava ~26 mil execuções de
+    arquivo SQL por rodada para construir sempre a mesma coisa — e era a maior
+    conta do tempo que o dono cobrou em 29/09/2026.
 
-    url = str(banco.url.render_as_string(hide_password=False))
-    monkeypatch.setenv("DATABASE_URL", url)
-    db_analisesps._engine = None
-
-    pasta = pathlib.Path(db_analisesps.__file__).parent / "migracoes"
-    with banco.connect() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
-        for caminho in sorted(pasta.glob("*.sql")):
-            conn.execute(text(caminho.read_text(encoding="utf-8")))
-        conn.commit()
-    yield
-    with banco.connect() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
-        conn.commit()
-    db_analisesps._engine = None
-
+    Agora o schema nasce uma vez por sessão e as tabelas são esvaziadas entre os
+    testes. O isolamento é o mesmo: tabelas vazias e contadores de `id` zerados.
+    Ver `banco_analisesps` no `conftest.py`."""
 
 def pessoa(cpf, nome, **extra):
     from app.apps.analisesps import colaboradores as col

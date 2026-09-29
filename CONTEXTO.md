@@ -747,6 +747,55 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 29/09/2026 — a suíte de testes, de inviável a um comando
+
+**Cobrança do dono, e procedente:** *"está demorando meia hora, uma hora para
+fechar alguma coisa relativamente simples (…) está praticamente inviável
+evoluir"*.
+
+Três causas medidas, em ordem de custo:
+
+1. **O schema era reconstruído A CADA TESTE.** Doze arquivos de teste faziam
+   `DROP SCHEMA analisesps` e executavam os 36 arquivos de migração, por teste.
+   São 727 testes de banco — cerca de **26 mil execuções de arquivo SQL por
+   rodada**, todas construindo a mesma coisa. Agora o schema nasce **uma vez por
+   sessão** (`banco_analisesps`, no `tests/conftest.py`) e as tabelas são
+   esvaziadas entre os testes. Os cinco testes que apagam tabela de propósito
+   (para provar que a tela avisa quando falta migração) usam
+   `banco_analisesps_mutilado`, que reconstrói no fim.
+2. **O banco de teste engordava até travar.** Aquele refaz-tudo deixava arquivos
+   órfãos: 1,4 milhão deles. Com tanta coisa no diretório, a consulta que mede o
+   tamanho do banco passou a levar **14 segundos por teste** — 83 s só no
+   `test_saude_banco.py`. Recriado, caiu para 3 s. E a limpeza entre testes virou
+   `DELETE` em vez de `TRUNCATE`, porque o `TRUNCATE` cria um arquivo novo por
+   tabela: a sujeira por rodada caiu de 1,4 milhão para ~47 mil.
+3. **Rodava tudo em um processo só.** Agora roda em paralelo (`pytest-xdist`,
+   dependência NOVA e só de teste), **um banco por trabalhador** — e o que escolhe
+   o banco é a própria **variável de ambiente**, porque vários testes a leem
+   direto em vez de passar pela fixture. Trocar só a fixture derrubou 16 testes do
+   painel na primeira tentativa, nenhum deles com defeito.
+
+**Resultado:** a suíte inteira roda em **um comando, ~5min30s, 7.559 passando e
+145 pulados**. Antes precisava ser quebrada em seis pedaços para caber no limite
+de tempo de um comando.
+
+⚠️ **A regra vale tanto quanto o conserto** (está no `CLAUDE.md`): **conserto
+pequeno roda teste pequeno.** Rodar 7.700 testes para trocar uma linha de CSS não
+é cuidado, é uma hora parada — e ela sai do tempo dele. A suíte inteira roda antes
+de juntar na `main`, e quando se mexe em algo que atravessa áreas.
+
+⚠️ **O Postgres de teste roda sem durabilidade** (`fsync=off`, `synchronous_commit=off`,
+`full_page_writes=off`), no GitHub Actions e no `docker-compose.teste.yml`. É um
+banco descartável: pagar por segurança de disco ali é comprar garantia que ninguém
+usa. **Nunca em produção** — com fsync desligado, uma queda de energia corrompe o
+banco.
+
+⚠️ **E um teste que passava por acidente apareceu quando a suíte ficou rápida:**
+`test_sem_a_tabela_a_tela_recebe_vazio_em_vez_de_estourar` dependia de outro teste
+ter derrubado o schema antes. Agora ele diz a própria condição (sem
+`DATABASE_URL`). Suíte lenta esconde teste frágil.
+
+
 ### 28/09/2026 — O FITID nem sempre identifica: 207 lançamentos perdidos em silêncio (atravessa áreas)
 
 **O que o dono viu:** importou um extrato OFX da conta SOMABWS 22005 (banco

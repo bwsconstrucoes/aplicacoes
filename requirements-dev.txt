@@ -3,3 +3,13 @@
 # models) e do Flask (o pacote app.apps.erp importa o blueprint no __init__).
 -r requirements.txt
 pytest>=8
+
+# ⚠️ RODAR A SUÍTE EM PARALELO — dependência nova em 29/09/2026, e o dono foi
+# avisado no mesmo dia. Ela existe por uma cobrança dele: *"está demorando meia
+# hora, uma hora para fechar alguma coisa relativamente simples (…) está
+# praticamente inviável evoluir"*.
+#
+# É só de teste: não entra no `requirements.txt`, não sobe para o Render e não
+# toca em nada de produção. Cada trabalhador ganha um banco próprio
+# (`erp_teste_gw0`, `gw1`…) — ver `banco` no `tests/conftest.py`.
+pytest-xdist>=3.6
