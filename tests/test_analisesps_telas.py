@@ -7705,3 +7705,42 @@ def test_a_linha_aberta_deixa_TROCAR_A_OBRA_e_dividir_por_dias(app, monkeypatch)
     assert "ou dividir por dias" in html
     assert "você não digita dinheiro" in html
     assert 'id="obras-da-folha"' in html, "as obras conhecidas sugerem o código"
+
+
+def test_a_tabela_da_CONCILIACAO_tem_piso_de_largura():
+    """⚠️ CONSERTO DE UM ESTRAGO MEU, em 29/09/2026. Ao acrescentar a coluna "No
+    OMIE", a tabela passou de dez para onze colunas — e como ela é `width: 100%`
+    sem piso, o navegador espremeu todas. O dono: *"as linhas estão quebradas,
+    observação tá achatado, tá todo desmantelado"*.
+
+    O piso resolve sem tirar nada: abaixo dele o invólucro rola na horizontal, que
+    é para isso que ele existe. Espremer é pior que rolar — informação ilegível é
+    informação perdida, e esta é uma tela de conferência."""
+    css = Path("app/apps/analisesps/static/analisesps.css").read_text(
+        encoding="utf-8")
+    assert "table.conciliacao { min-width:" in css
+    # A observação é campo de ESCREVER: sem piso ela vira um risco.
+    assert "table.conciliacao th.obs, table.conciliacao td.obs" in css
+    # E o selo do OMIE não pode roubar espaço de quem carrega texto.
+    assert "table.conciliacao th.no-omie, table.conciliacao td.no-omie" in css
+
+
+def test_a_coluna_do_OMIE_e_a_da_OBSERVACAO_tem_nome_no_html():
+    """Sem o nome na célula, o CSS não teria como dar largura a elas — e foi a
+    falta de largura que desmontou a tela.
+
+    ⚠️ LÊ O TEMPLATE, NÃO A ROTA, e isso é conserto de um teste instável que eu
+    mesmo criei há minutos. A primeira versão abria `/analisesps/conciliacao` como
+    mestre — e essa tela GUARDA o filtro de quem a visita. Rodando antes dos testes
+    da conciliação, ela deixava um filtro guardado que mudava o HTML deles: sete
+    testes falharam uma vez e passaram na seguinte.
+
+    Teste que falha às vezes é pior que teste que falta: ensina a rodar de novo em
+    vez de investigar. Aqui não há sessão, não há filtro guardado, e o que se quer
+    afirmar — que as duas colunas têm nome — está no template."""
+    html = Path("app/apps/analisesps/templates/"
+                "analisesps_conciliacao.html").read_text(encoding="utf-8")
+    assert '<th class="no-omie">No OMIE</th>' in html
+    assert '<th class="obs">Observação</th>' in html
+    assert '<td class="no-omie">' in html
+    assert '<td class="obs">' in html

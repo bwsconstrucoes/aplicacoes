@@ -376,8 +376,8 @@
            informação na tabela dizendo que aquela tarifa foi lançada, precisa pra
            não ser lançada novamente."* O estado já era gravado; a lista é que
            nunca o lia. #}
-        <th>No OMIE</th>
-        <th>Observação</th>
+        <th class="no-omie">No OMIE</th>
+        <th class="obs">Observação</th>
         {% if pode_operar %}<th></th>{% endif %}
       </tr>
       {# ---------------------------------------------------------------------
@@ -480,7 +480,7 @@
               <span class="cartao-dica">—</span>
             {% endif %}
           </td>
-          <td>
+          <td class="obs">
             {# ⚠️ CAMPO DE VÁRIAS LINHAS, pedido dele em 24/09/2026: *"na
                observação, permita a quebra de linha"*. Ele cresce sozinho
                conforme se escreve (está no script), e Enter quebra a linha —

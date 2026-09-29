@@ -174,12 +174,20 @@ def _confianca_tls():
     que vem com a biblioteca e é atualizado com ela — em vez de depender do que
     estiver no sistema ou do que uma variável de ambiente disser.
 
-    ⚠️ A CAUSA 1 NÃO SE RESOLVE NO NOSSO LADO sem baixar a segurança, e por isso a
-    decisão é DELE, por variável de ambiente, nunca por padrão: com
-    `MOBPONTO_TLS_INSEGURO=1` a verificação é dispensada. O risco, dito por escrito:
-    sem verificar o certificado, alguém no caminho da rede poderia se passar pelo
-    Mobponto e receber a credencial que vai no cabeçalho. Em rede de servidor o
-    risco é baixo, mas não é zero — e quem decide correr esse risco é ele."""
+    ⚠️ A CAUSA 1 TEM CONSERTO SEM BAIXAR A SEGURANÇA, e ele é a saída preferida:
+    **`MOBPONTO_CA_EXTRA`**. É o certificado que está faltando, colado ali em
+    texto (o bloco `-----BEGIN CERTIFICATE-----`). Com ele, a verificação
+    CONTINUA LIGADA — o que faltava era só a peça do meio da corrente, e agora ela
+    está no bolso. É o que o navegador faz sozinho, e o `requests` não faz.
+
+    Acrescentado em 29/09/2026, depois de a primeira versão deste arquivo oferecer
+    só o desligar. Oferecer apenas a saída insegura empurra para ela.
+
+    ⚠️ E `MOBPONTO_TLS_INSEGURO=1` continua existindo, como ÚLTIMO recurso e
+    decisão DELE, nunca por padrão. O risco, dito por escrito: sem verificar o
+    certificado, alguém no caminho da rede poderia se passar pelo Mobponto e
+    receber a credencial que vai no cabeçalho. Em rede de servidor o risco é baixo,
+    mas não é zero — e quem decide correr esse risco é ele."""
     import os
     if (os.getenv("MOBPONTO_TLS_INSEGURO") or "").strip() in ("1", "true", "sim"):
         logger.warning(
@@ -187,11 +195,72 @@ def _confianca_tls():
             "Mobponto (MOBPONTO_TLS_INSEGURO ligado). A credencial vai no "
             "cabeçalho desta chamada.")
         return False
+
     try:
         import certifi
-        return certifi.where()
+        pacote = certifi.where()
     except Exception:  # noqa: BLE001 — sem certifi, vale o padrão do requests
-        return True
+        pacote = None
+
+    extra = (os.getenv("MOBPONTO_CA_EXTRA") or "").strip()
+    if extra:
+        juntado = _pacote_com_o_extra(pacote, extra)
+        if juntado:
+            return juntado
+    return pacote or True
+
+
+def _pacote_com_o_extra(pacote, extra: str):
+    """Junta o certificado que falta ao pacote de raízes. Devolve o caminho.
+
+    ⚠️ O ARQUIVO É ESCRITO UMA VEZ E REAPROVEITADO. Escrever a cada chamada faria
+    a carga do ponto criar centenas de arquivos temporários num serviço que divide
+    2 GB com outros treze módulos — e o conteúdo é sempre o mesmo.
+
+    ⚠️ ACEITA O CERTIFICADO EM TEXTO OU EM BASE64. O painel do Render engole
+    quebra de linha em variável de ambiente com facilidade, e um PEM sem as
+    quebras certas não vale nada. Com base64 não há como estragar no caminho.
+
+    Devolve `None` quando não deu para montar — e aí vale o pacote normal, com a
+    falha original aparecendo por inteiro. Silenciar aqui trocaria um erro claro
+    por um erro confuso."""
+    import base64
+    import hashlib
+    import os
+    import tempfile
+
+    texto = extra
+    if "BEGIN CERTIFICATE" not in texto:
+        try:
+            texto = base64.b64decode(extra, validate=True).decode("utf-8")
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Análise de SPs: MOBPONTO_CA_EXTRA não parece um certificado "
+                "(nem PEM, nem base64 de PEM) — ignorando e usando o pacote "
+                "normal.")
+            return None
+    if "BEGIN CERTIFICATE" not in texto:
+        logger.warning("Análise de SPs: MOBPONTO_CA_EXTRA sem bloco CERTIFICATE.")
+        return None
+
+    marca = hashlib.sha256(texto.encode("utf-8")).hexdigest()[:16]
+    destino = os.path.join(tempfile.gettempdir(), f"mobponto-ca-{marca}.pem")
+    if not os.path.exists(destino):
+        try:
+            base = ""
+            if pacote and os.path.exists(pacote):
+                with open(pacote, encoding="utf-8") as f:
+                    base = f.read()
+            with open(destino, "w", encoding="utf-8") as f:
+                f.write(base.rstrip() + "\n" + texto.strip() + "\n")
+        except Exception:  # noqa: BLE001 — disco cheio, permissão…
+            logger.exception(
+                "Análise de SPs: não consegui montar o pacote de certificados "
+                "com o MOBPONTO_CA_EXTRA")
+            return None
+    logger.info("Análise de SPs: ponto usando o pacote de certificados com o "
+                "intermediário do MOBPONTO_CA_EXTRA.")
+    return destino
 
 
 def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
@@ -218,13 +287,20 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
                 raise ErroDoPonto(
                     "o certificado do site do Mobponto não pôde ser verificado "
                     "(CERTIFICATE_VERIFY_FAILED). Isto NÃO é credencial errada nem "
-                    "instabilidade: ou o site do Mobponto está mandando a cadeia de "
-                    "certificados incompleta, ou falta a raiz aqui no servidor. "
-                    "Quem resolve de vez é o suporte do Mobponto (pedir para "
-                    "instalar o certificado intermediário). Para seguir sem esperar "
-                    "por eles, crie no Render a variável MOBPONTO_TLS_INSEGURO=1 — "
-                    "isso dispensa a verificação, e o risco está explicado no "
-                    "código e no docs/FOLHA_DE_PAGAMENTO.md.") from e
+                    "instabilidade: falta uma peça do meio da corrente de "
+                    "certificados — o site manda a cadeia incompleta e o navegador "
+                    "disfarça, mas este caminho não. "
+                    "HÁ DOIS JEITOS DE RESOLVER, e o primeiro é o certo: "
+                    "(1) abra https://www.mobponto.com.br no navegador, clique no "
+                    "cadeado, exporte o certificado do MEIO da cadeia (o que não é "
+                    "o do site nem a raiz) e cole o conteúdo dele na variável "
+                    "MOBPONTO_CA_EXTRA, no Render — a verificação continua ligada e "
+                    "nada de segurança é perdido; "
+                    "(2) se não der, MOBPONTO_TLS_INSEGURO=1 dispensa a "
+                    "verificação — funciona na hora, mas alguém no caminho da rede "
+                    "poderia se passar pelo Mobponto e pegar a credencial. "
+                    "O conserto de vez é o suporte do Mobponto instalar o "
+                    "certificado intermediário no servidor deles.") from e
             ultimo = str(e)
         else:
             if 200 <= resposta.status_code < 300:

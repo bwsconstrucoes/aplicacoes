@@ -427,3 +427,103 @@ def test_sem_credencial_a_montagem_dos_cabecalhos_ja_recusa(monkeypatch):
     # E diz de onde tirar os valores, sem os valores.
     assert "Apps Script" in str(erro.value)
     assert "troque a chave na origem" in str(erro.value)
+
+
+# ---------------------------------------------------------------------------
+# O CERTIFICADO QUE FALTA — 29/09/2026
+#
+# A carga do ponto morria com CERTIFICATE_VERIFY_FAILED. A primeira versão do
+# conserto oferecia só uma saída: DESLIGAR a verificação. Oferecer apenas a saída
+# insegura empurra para ela — então agora existe a saída certa também.
+# ---------------------------------------------------------------------------
+def test_o_certificado_que_FALTA_pode_ser_colado_sem_baixar_a_seguranca(
+        monkeypatch, tmp_path):
+    """⚠️ `MOBPONTO_CA_EXTRA`: a peça do meio da corrente, colada em texto. A
+    verificação CONTINUA ligada — o que faltava era só a peça."""
+    from app.apps.analisesps import ponto
+
+    pem = ("-----BEGIN CERTIFICATE-----\n"
+           "REMENDODEMENTIRAPARAOTESTE\n"
+           "-----END CERTIFICATE-----\n")
+    monkeypatch.delenv("MOBPONTO_TLS_INSEGURO", raising=False)
+    monkeypatch.setenv("MOBPONTO_CA_EXTRA", pem)
+
+    caminho = ponto._confianca_tls()
+    assert isinstance(caminho, str) and caminho.endswith(".pem")
+    conteudo = open(caminho, encoding="utf-8").read()
+    assert "REMENDODEMENTIRAPARAOTESTE" in conteudo
+    # ⚠️ E as raízes de sempre continuam lá: o extra SOMA, não substitui. Trocar o
+    # pacote inteiro por um certificado só faria toda a internet deixar de ser
+    # confiável para este caminho.
+    assert len(conteudo) > len(pem) * 2
+
+
+def test_o_certificado_tambem_pode_vir_em_BASE64(monkeypatch):
+    """⚠️ O painel do Render engole quebra de linha em variável de ambiente com
+    facilidade, e um PEM sem as quebras certas não vale nada. Com base64 não há
+    como estragar no caminho."""
+    import base64
+
+    from app.apps.analisesps import ponto
+
+    pem = ("-----BEGIN CERTIFICATE-----\n"
+           "OUTROREMENDODEMENTIRA\n"
+           "-----END CERTIFICATE-----\n")
+    monkeypatch.delenv("MOBPONTO_TLS_INSEGURO", raising=False)
+    monkeypatch.setenv("MOBPONTO_CA_EXTRA",
+                       base64.b64encode(pem.encode()).decode())
+
+    caminho = ponto._confianca_tls()
+    assert "OUTROREMENDODEMENTIRA" in open(caminho, encoding="utf-8").read()
+
+
+def test_texto_que_NAO_e_certificado_nao_estraga_a_verificacao(monkeypatch):
+    """⚠️ Devolver o pacote normal é o certo: a falha original volta a aparecer
+    por inteiro, em vez de virar um erro diferente e confuso."""
+    from app.apps.analisesps import ponto
+
+    monkeypatch.delenv("MOBPONTO_TLS_INSEGURO", raising=False)
+    monkeypatch.setenv("MOBPONTO_CA_EXTRA", "isto aqui não é certificado nenhum")
+
+    valor = ponto._confianca_tls()
+    assert valor is not False, "não pode desligar a verificação por engano"
+    assert "mobponto-ca-" not in str(valor)
+
+
+def test_desligar_a_verificacao_continua_sendo_o_ULTIMO_recurso(monkeypatch):
+    """Ela existe, é decisão dele, e o log grita quando está ligada."""
+    from app.apps.analisesps import ponto
+
+    monkeypatch.setenv("MOBPONTO_TLS_INSEGURO", "1")
+    monkeypatch.setenv("MOBPONTO_CA_EXTRA", "-----BEGIN CERTIFICATE-----\nX\n"
+                                            "-----END CERTIFICATE-----")
+    # ⚠️ O desligar VENCE o extra: se ele ligou o inseguro, é porque o extra não
+    # resolveu. Tentar o extra primeiro faria a carga falhar de novo com o mesmo
+    # erro, depois de ele já ter tomado a decisão.
+    assert ponto._confianca_tls() is False
+
+
+def test_a_mensagem_do_erro_oferece_o_caminho_SEGURO_primeiro(monkeypatch):
+    """⚠️ A primeira versão oferecia só o desligar — e oferecer apenas a saída
+    insegura empurra para ela."""
+    import requests
+
+    from app.apps.analisesps import ponto
+
+    monkeypatch.setenv("MOBPONTO_AUTHORIZATION", "Basic x")
+    monkeypatch.setenv("MOBPONTO_API_KEY", "y")
+    monkeypatch.delenv("MOBPONTO_TLS_INSEGURO", raising=False)
+    monkeypatch.delenv("MOBPONTO_CA_EXTRA", raising=False)
+
+    def explode(*a, **k):
+        raise requests.exceptions.SSLError(
+            "CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate")
+
+    monkeypatch.setattr(requests, "get", explode)
+    with pytest.raises(ponto.ErroDoPonto) as erro:
+        ponto._pedir_pagina(2026, 9, 1)
+
+    frase = str(erro.value)
+    assert "MOBPONTO_CA_EXTRA" in frase
+    assert frase.index("MOBPONTO_CA_EXTRA") < frase.index("MOBPONTO_TLS_INSEGURO")
+    assert "nada de segurança é perdido" in frase

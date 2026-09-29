@@ -9754,6 +9754,66 @@ arquivo. A busca nova responde isso sem depender de suposição minha.
 
 ---
 
+### Centésima vigésima primeira leva (29/09) — a coluna que desmontou a tela, e o certificado que falta
+
+**1. O layout da conciliação quebrou, e a culpa foi minha.**
+
+A coluna "No OMIE" que eu acrescentei horas antes levou a tabela de dez para onze
+colunas. Ela é `width: 100%` sem piso — o navegador espremeu todas. O dono: *"as
+linhas estão quebradas, observação tá achatado, tá todo desmantelado"*.
+
+Agora a tabela tem **piso de largura** (`min-width: 1140px`): abaixo disso o
+invólucro rola na horizontal, que é para isso que ele existe. Espremer é pior que
+rolar — informação ilegível é informação perdida, e esta é tela de conferência. A
+observação tem piso próprio (é campo de escrever) e o selo do OMIE tem teto (é
+selo curto e não pode roubar espaço de quem carrega texto).
+
+⚠️ **E o layout quebrado provavelmente escondia dele duas coisas que eu havia
+acabado de publicar**: a busca "Não acha um lançamento?" e o aviso de quantas
+linhas o filtro está escondendo — que são justamente o que responde sobre o
+lançamento de 56.284,17.
+
+**2. O certificado do Mobponto ganhou a saída CERTA.**
+
+A primeira versão do conserto oferecia uma saída só: `MOBPONTO_TLS_INSEGURO=1`,
+que desliga a verificação. ⚠️ **Oferecer apenas a saída insegura empurra para
+ela.**
+
+Agora existe **`MOBPONTO_CA_EXTRA`**: ele cola ali o certificado do meio da cadeia
+(exportado do cadeado do navegador, em texto ou em base64) e **a verificação
+continua ligada**. O que faltava era só a peça do meio da corrente — é o que o
+navegador vai buscar sozinho e o `requests` não. O desligar continua existindo
+como último recurso, e vence o extra quando ligado: se ele o ligou, é porque o
+extra não resolveu.
+
+A mensagem da tela agora oferece o caminho seguro **primeiro**, com o passo a
+passo de onde exportar o certificado.
+
+**3. ⚠️ Um teste instável que eu criei e matei na mesma hora.**
+
+O teste novo do layout abria `/analisesps/conciliacao` como mestre — e essa tela
+**guarda o filtro de quem a visita**. Rodando antes dos testes da conciliação, ele
+deixava um filtro guardado que mudava o HTML deles: sete testes falharam uma vez e
+passaram na seguinte. Agora ele lê o template, sem sessão e sem efeito. **Teste que
+falha às vezes é pior que teste que falta** — ensina a rodar de novo em vez de
+investigar.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto entrar | ele colar o certificado em `MOBPONTO_CA_EXTRA` (preferido) ou ligar o inseguro |
+| dizer se o 56.284,17 aparece | ele abrir a conciliação com o layout consertado e usar a busca |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** suíte inteira **duas vezes seguidas**, 7.566 passando, 145 pulados,
+zero falhas, 5min30s cada. **NÃO verificado:** a tela dele depois do conserto, e o
+`MOBPONTO_CA_EXTRA` contra o certificado de verdade — a forma está testada, o
+certificado do Mobponto não passa por aqui.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória
