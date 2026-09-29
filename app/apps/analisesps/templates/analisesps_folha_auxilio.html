@@ -77,7 +77,6 @@
   </div>
 
   <div style="display:flex; gap:6px; margin-top:10px">
-    <button class="btn secundario" type="submit">Filtrar</button>
     {% if filtrando %}
       <a class="btn secundario"
          href="{{ url_for('analisesps.tela_folha_auxilio', tipo=tipo, ano=ano, mes=mes) }}"
@@ -85,6 +84,7 @@
     {% endif %}
   </div>
 </form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
 {% endif %}
 {% endblock %}
 

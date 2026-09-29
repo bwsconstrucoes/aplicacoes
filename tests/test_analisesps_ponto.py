@@ -318,9 +318,13 @@ def dublar_requests(monkeypatch, respostas):
     chamadas = []
     fila = list(respostas)
 
-    def falso_get(url, params=None, headers=None, timeout=None):
+    # ⚠️ O `**resto` NÃO É PREGUIÇA. Dublê com assinatura fechada já quebrou esta
+    # suíte duas vezes: quando o código real ganha um argumento novo (`verify`, a
+    # confiança do TLS), a chamada estoura DENTRO do `try` do módulo e o teste
+    # falha dizendo outra coisa — some com o motivo verdadeiro.
+    def falso_get(url, params=None, headers=None, timeout=None, **resto):
         chamadas.append({"url": url, "params": params, "headers": headers,
-                         "timeout": timeout})
+                         "timeout": timeout, **resto})
         if not fila:
             raise AssertionError("pediu mais vezes do que o esperado")
         proxima = fila.pop(0)

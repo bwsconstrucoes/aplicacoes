@@ -12,7 +12,8 @@
    --------------------------------------------------------------------------- #}
 {% block filtros %}
 {% if cadastro.pronto %}
-<form method="get" action="{{ url_for('analisesps.tela_colaboradores') }}">
+<form method="get" action="{{ url_for('analisesps.tela_colaboradores') }}"
+      id="form-filtros">
   <div class="filtro aberto">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
       <span>Quem</span><span class="seta">▾</span>
@@ -99,13 +100,13 @@
   </div>
 
   <div style="display:flex; gap:6px; margin-top:10px">
-    <button class="btn secundario" type="submit">Filtrar</button>
     {% if filtrando %}
       <a class="btn secundario"
          href="{{ url_for('analisesps.tela_colaboradores') }}">Limpar</a>
     {% endif %}
   </div>
 </form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
 {% endif %}
 {% endblock %}
 

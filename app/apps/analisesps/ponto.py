@@ -107,6 +107,51 @@ def _cabecalhos() -> dict:
             "api-version": VERSAO_DA_API}
 
 
+def _confianca_tls():
+    """Qual pacote de certificados usar para falar com o Mobponto.
+
+    ⚠️ ISTO EXISTE POR CAUSA DE UMA FALHA REAL, em 29/09/2026. A carga do ponto
+    morreu com:
+
+        SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED]
+        certificate verify failed: unable to get local issuer certificate'))
+
+    "unable to get local issuer certificate" NÃO é credencial recusada e NÃO é
+    instabilidade de rede — é o Python não conseguindo montar a cadeia de confiança
+    até uma raiz que ele conheça. As duas causas possíveis:
+
+      1. o servidor manda a cadeia INCOMPLETA (falta o certificado intermediário).
+         Navegador e Google Apps Script disfarçam isso indo buscar o intermediário;
+         o `requests` não — e é por isso que o script antigo do dono funcionava e
+         este caminho não;
+      2. o pacote de raízes do container está velho, ausente, ou uma variável de
+         ambiente (`REQUESTS_CA_BUNDLE`, `SSL_CERT_FILE`) aponta para um arquivo
+         que não tem a raiz certa.
+
+    A causa 2 se resolve aqui, apontando explicitamente para o pacote do `certifi`,
+    que vem com a biblioteca e é atualizado com ela — em vez de depender do que
+    estiver no sistema ou do que uma variável de ambiente disser.
+
+    ⚠️ A CAUSA 1 NÃO SE RESOLVE NO NOSSO LADO sem baixar a segurança, e por isso a
+    decisão é DELE, por variável de ambiente, nunca por padrão: com
+    `MOBPONTO_TLS_INSEGURO=1` a verificação é dispensada. O risco, dito por escrito:
+    sem verificar o certificado, alguém no caminho da rede poderia se passar pelo
+    Mobponto e receber a credencial que vai no cabeçalho. Em rede de servidor o
+    risco é baixo, mas não é zero — e quem decide correr esse risco é ele."""
+    import os
+    if (os.getenv("MOBPONTO_TLS_INSEGURO") or "").strip() in ("1", "true", "sim"):
+        logger.warning(
+            "Análise de SPs: ponto sendo lido SEM verificar o certificado do "
+            "Mobponto (MOBPONTO_TLS_INSEGURO ligado). A credencial vai no "
+            "cabeçalho desta chamada.")
+        return False
+    try:
+        import certifi
+        return certifi.where()
+    except Exception:  # noqa: BLE001 — sem certifi, vale o padrão do requests
+        return True
+
+
 def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
     """Uma página do relatório. Tenta até três vezes, com espera crescente."""
     import requests
@@ -115,14 +160,29 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
                   "mes": str(int(mes)), "ano": str(int(ano)),
                   "pagina": str(int(pagina))}
     cabecalhos = _cabecalhos()
+    confianca = _confianca_tls()
     ultimo = "falha desconhecida"
 
     for tentativa in range(1, TENTATIVAS + 1):
         try:
             resposta = requests.get(URL, params=parametros,
-                                    headers=cabecalhos,
+                                    headers=cabecalhos, verify=confianca,
                                     timeout=SEGUNDOS_DE_ESPERA)
         except Exception as e:  # noqa: BLE001 — rede oscila
+            # ⚠️ ERRO DE CERTIFICADO NÃO SE REPETE: ele não melhora na terceira
+            # tentativa, e o recado precisa dizer o que é, porque "falha de
+            # conexão" mandaria tentar de novo para sempre.
+            if "CERTIFICATE_VERIFY_FAILED" in str(e) or "SSLError" in type(e).__name__:
+                raise ErroDoPonto(
+                    "o certificado do site do Mobponto não pôde ser verificado "
+                    "(CERTIFICATE_VERIFY_FAILED). Isto NÃO é credencial errada nem "
+                    "instabilidade: ou o site do Mobponto está mandando a cadeia de "
+                    "certificados incompleta, ou falta a raiz aqui no servidor. "
+                    "Quem resolve de vez é o suporte do Mobponto (pedir para "
+                    "instalar o certificado intermediário). Para seguir sem esperar "
+                    "por eles, crie no Render a variável MOBPONTO_TLS_INSEGURO=1 — "
+                    "isso dispensa a verificação, e o risco está explicado no "
+                    "código e no docs/FOLHA_DE_PAGAMENTO.md.") from e
             ultimo = str(e)
         else:
             if 200 <= resposta.status_code < 300:

@@ -7197,3 +7197,38 @@ def test_a_COR_diz_o_estado_da_linha_do_auxilio(app, monkeypatch):
     ruim = _como_mestre(app).get(
         "/analisesps/folha/auxilios").get_data(as_text=True)
     assert "selo risco" in ruim, "falta de dado no cadastro é vermelho forte"
+
+
+def test_o_filtro_de_SITUACAO_recorta_a_lista_de_verdade(app, monkeypatch):
+    """⚠️ Ele disse em 29/09/2026: *"Situação nem funciona."* Este teste existe para
+    provar se recorta ou não — e para não voltar a não recortar."""
+    from decimal import Decimal as D
+
+    vai = dict(_auxilio_calculado()["pessoas"][0],
+               cpf="11111111111", nome="VAIRECEBER", pagar=True,
+               pagar_calculado=True, obra="1042")
+    nao = dict(_auxilio_calculado()["pessoas"][0],
+               cpf="22222222222", nome="NAOVAI", pagar=False,
+               pagar_calculado=False, obra="2050")
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(
+        pessoas=[nao, vai], quantos=2, quantos_a_pagar=1, total=D("330.00"),
+        com_problema=[nao]))
+
+    cliente = _como_mestre(app)
+
+    todos = cliente.get("/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "VAIRECEBER" in todos and "NAOVAI" in todos
+
+    so_paga = cliente.get(
+        "/analisesps/folha/auxilios?so=pagar").get_data(as_text=True)
+    assert "VAIRECEBER" in so_paga
+    assert "NAOVAI" not in so_paga, "o filtro de situação não recortou"
+
+    so_problema = cliente.get(
+        "/analisesps/folha/auxilios?so=problema").get_data(as_text=True)
+    assert "NAOVAI" in so_problema
+    assert "VAIRECEBER" not in so_problema
+
+    por_obra = cliente.get(
+        "/analisesps/folha/auxilios?obra=2050").get_data(as_text=True)
+    assert "NAOVAI" in por_obra and "VAIRECEBER" not in por_obra

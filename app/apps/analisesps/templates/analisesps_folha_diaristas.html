@@ -3,7 +3,8 @@
 
 {% block filtros %}
 {% if levantamento.pessoas %}
-<form method="get" action="{{ url_for('analisesps.tela_folha_diaristas') }}">
+<form method="get" action="{{ url_for('analisesps.tela_folha_diaristas') }}"
+      id="form-filtros">
   <input type="hidden" name="ano" value="{{ ano }}">
   <input type="hidden" name="mes" value="{{ mes }}">
   <div class="filtro aberto">
@@ -31,7 +32,6 @@
     </div>
   </div>
   <div style="display:flex; gap:6px; margin-top:10px">
-    <button class="btn secundario" type="submit">Filtrar</button>
     {% if filtrando %}
       <a class="btn secundario"
          href="{{ url_for('analisesps.tela_folha_diaristas', ano=ano, mes=mes) }}"
@@ -39,6 +39,7 @@
     {% endif %}
   </div>
 </form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
 {% endif %}
 {% endblock %}
 

@@ -1,0 +1,41 @@
+{# ---------------------------------------------------------------------------
+   OS FILTROS SE APLICAM SOZINHOS — igual à barra das Solicitações.
+
+   ⚠️ ISTO É O CONSERTO DE "SITUAÇÃO NEM FUNCIONA", dito pelo dono em 29/09/2026.
+   O filtro RECORTAVA a lista corretamente no servidor (há teste provando). O que
+   não funcionava era o gesto: nas Solicitações marcar a opção **já refaz a tela**,
+   e nas telas da folha eu tinha posto um botão "Filtrar". Ele marcou, nada
+   aconteceu, e concluiu — com razão — que estava quebrado.
+
+   Comportamento igual ao do padrão: meio segundo depois do último clique (marcar
+   cinco opções seguidas não vira cinco recarregamentos), e mais tempo para quem
+   está digitando.
+
+   Este include é chamado pelas telas da folha que têm bloco `filtros`, e espera um
+   formulário com `id="form-filtros"`.
+   --------------------------------------------------------------------------- #}
+<script>
+(function () {
+  const form = document.getElementById("form-filtros");
+  if (!form) return;
+  let relogio = null;
+
+  function agendar(espera) {
+    if (relogio) clearTimeout(relogio);
+    relogio = setTimeout(() => form.submit(), espera);
+  }
+
+  form.addEventListener("change", e => {
+    if (e.target.matches(
+        "input[type=checkbox], input[type=radio], select, input[type=date]")) {
+      agendar(400);
+    }
+  });
+  form.addEventListener("input", e => {
+    if (e.target.matches("input[type=search], input[type=text]")) agendar(900);
+  });
+  form.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); agendar(0); }
+  });
+})();
+</script>
