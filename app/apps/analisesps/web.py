@@ -2383,17 +2383,20 @@ def tela_folha_painel():
     mostrasse "total da folha" sem avisar que faltam alimentação, transporte e
     diaristas faria o número parecer o custo de pessoal inteiro. Número que
     parece completo e não é vale menos que número nenhum."""
-    from . import folha_arquivo as fa, folha_pagamento as fpg
+    from . import folha_apropriacao, folha_arquivo as fa, folha_pagamento as fpg
     from .horario import agora
 
     hoje = agora().date()
+    # ⚠️ ATÉ O DIA 10, ABRE NO MÊS ANTERIOR — regra da planilha (célula K1), não
+    # minha. Ver `folha_apropriacao.competencia_sugerida`.
+    padrao_ano, padrao_mes = folha_apropriacao.competencia_sugerida(hoje)
     try:
-        ano = int(request.args.get("ano") or hoje.year)
-        mes = int(request.args.get("mes") or hoje.month)
+        ano = int(request.args.get("ano") or padrao_ano)
+        mes = int(request.args.get("mes") or padrao_mes)
     except (TypeError, ValueError):
-        ano, mes = hoje.year, hoje.month
+        ano, mes = padrao_ano, padrao_mes
     if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
-        ano, mes = hoje.year, hoje.month
+        ano, mes = padrao_ano, padrao_mes
 
     panorama = {"pronto": False}
     erro = None
@@ -2510,6 +2513,21 @@ def folha_apropriacao_ajustar():
     entra = dados.get("entra")
     por_obra = dados.get("por_obra") or []
     obra_unica = str(dados.get("obra") or "").strip()
+
+    # ⚠️ A DIVISÃO ENTRA EM DIAS, E O VALOR É CALCULADO AQUI — nível 3 do ajuste
+    # fino (§7.3): *"bota um dia numa obra, um dia em outra obra."* O valor por dia
+    # é o líquido dividido pelos dias (coluna I da planilha), e a sobra do centavo
+    # segue a mesma regra do ponto. Aceitar valor digitado deixaria a mesma pessoa
+    # com dois valores por dia diferentes no mesmo período.
+    if dados.get("dias_por_obra"):
+        from . import folha_gestao as fg
+        try:
+            por_obra = fg.dividir_por_dias(dados.get("valor"),
+                                           dados.get("dias_por_obra"))
+        except fg.ErroDaGestao as e:
+            return {"ok": False, "erro": str(e)}, 400
+        obra_unica = ""
+
     try:
         if dados.get("limpar"):
             # Volta a seguir o ponto e a regra: é o desfazer da tela.
@@ -2923,20 +2941,24 @@ def tela_folha_auxilio():
     ⚠️ A DIFERENÇA ENTRE AS DUAS FICA ESCRITA NA TELA: a alimentação desconta
     feriado e férias; o transporte desconta férias e não feriado de um dia. É
     decisão do dono, e quem confere precisa saber qual régua está vendo."""
-    from . import folha_auxilio as fx
+    from . import folha_apropriacao, folha_auxilio as fx
     from .horario import agora
 
     hoje = agora().date()
     tipo = (request.args.get("tipo") or fx.ALIMENTACAO).strip().lower()
     if tipo not in fx.TIPOS:
         tipo = fx.ALIMENTACAO
+    # ⚠️ ATÉ O DIA 10, ABRE NO MÊS ANTERIOR — e aqui pesa duas vezes: o auxílio é
+    # pago no mês SEGUINTE ao trabalhado, então nos primeiros dias de outubro o que
+    # está sendo pago é setembro. Abrir em outubro mostrava lista vazia.
+    padrao_ano, padrao_mes = folha_apropriacao.competencia_sugerida(hoje)
     try:
-        ano = int(request.args.get("ano") or hoje.year)
-        mes = int(request.args.get("mes") or hoje.month)
+        ano = int(request.args.get("ano") or padrao_ano)
+        mes = int(request.args.get("mes") or padrao_mes)
     except (TypeError, ValueError):
-        ano, mes = hoje.year, hoje.month
+        ano, mes = padrao_ano, padrao_mes
     if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
-        ano, mes = hoje.year, hoje.month
+        ano, mes = padrao_ano, padrao_mes
 
     pronto = fx._pronto()
     resultado = None
@@ -3142,17 +3164,19 @@ def tela_folha_diaristas():
 
     *"E cadê os diaristas? Não entrou diaristas."* (dono, 28/09/2026). A regra
     existia e estava testada; faltava ligá-la ao ponto e ao cadastro."""
-    from . import folha_diaristas as fd
+    from . import folha_apropriacao, folha_diaristas as fd
     from .horario import agora
 
     hoje = agora().date()
+    # ⚠️ ATÉ O DIA 10, ABRE NO MÊS ANTERIOR — mesma regra da planilha.
+    padrao_ano, padrao_mes = folha_apropriacao.competencia_sugerida(hoje)
     try:
-        ano = int(request.args.get("ano") or hoje.year)
-        mes = int(request.args.get("mes") or hoje.month)
+        ano = int(request.args.get("ano") or padrao_ano)
+        mes = int(request.args.get("mes") or padrao_mes)
     except (TypeError, ValueError):
-        ano, mes = hoje.year, hoje.month
+        ano, mes = padrao_ano, padrao_mes
     if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
-        ano, mes = hoje.year, hoje.month
+        ano, mes = padrao_ano, padrao_mes
 
     levantamento = {"tem_ponto": False, "pessoas": []}
     erro = None

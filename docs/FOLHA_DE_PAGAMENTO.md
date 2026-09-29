@@ -3026,6 +3026,131 @@ listava três. Ou seja: ele apertou "Atualizar cadastro" depois da correção, e
 duas colunas de Categoria foram encontradas** — o cálculo de alimentação e transporte
 passou a funcionar. A única que sobrou era justamente a que não servia para nada.
 
+## 7.35 A RELEITURA QUE ELE MANDOU FAZER (29/09/2026) — e o que ela devolveu
+
+Eu fiz cinco perguntas. Ele respondeu as cinco e disse o que elas revelavam:
+
+> *"Pelas suas perguntas, vejo que a análise das planilhas foi muito fraca mesmo.
+> (…) Não é melhor você fazer uma releitura do que eu já propus?"*
+
+Era melhor, sim. **Quatro das cinco perguntas já estavam respondidas neste
+documento** — algumas por ele, outras por mim e aprovadas por ele. Segue o que a
+releitura devolveu, e a correção de cada coisa.
+
+### 7.35.1 As respostas dele, curtas
+
+| Pergunta minha | Resposta dele |
+|---|---|
+| qual planilha compartilhar? | *"São muitas planilhas e abas"* — a pergunta estava mal feita, ver §7.35.6 |
+| o arquivo de pagamento da folha é qual? | *"O arquivo da folha é o que importamos, e dele fazemos a gestão e geramos o arquivo de pagamento. Isso eu havia explicado no começo."* |
+| quem não entra, o que acontece? | *"Não pago e ponto final. A gestão do pagamento é minha, eu decido."* |
+| o rateio é diário? | **confirma** |
+| de qual obra sai o dinheiro? | *"A obra que paga é a obra onde o ponto foi batido, isso tb era pra ter sido deduzido desde lá no começo pela regra do rateio."* |
+
+### 7.35.2 ⚠️ "PAGAR EXTRA" não era obra, e eu deixei ser — isto é dinheiro
+
+Está na fórmula desde sempre, eu li em 27/09 e **anotei neste documento** (§7.10.5,
+coluna H): a contagem de dias da folha é um `COUNTIFS` com a obra **não vazia E
+DIFERENTE DE "PAGAR EXTRA"**. Escrevi ali, com estas palavras, *"eu não tinha
+isso"* — e continuei sem ter.
+
+**O que acontecia:** o dia marcado para pagar como extra entrava na conta da folha.
+O líquido era dividido por um dia a mais, o valor por dia saía menor, e uma fatia do
+salário ia para "PAGAR EXTRA" como se fosse obra. A pessoa recebia o total certo e
+**a obra errada levava o custo** — em silêncio.
+
+Consertado em `folha_apropriacao.obra_do_dia`, e as marcações de extra saem da
+contagem **antes** do desempate: saindo depois, um dia com duas marcações de obra e
+duas de extra empataria e a obra poderia perder para um destino de pagamento.
+
+### 7.35.3 Três colunas da planilha que a minha tela não tinha
+
+| Coluna | O que é | Estava escrito em |
+|---|---|---|
+| **I — Valor x Dia** | o líquido dividido pelos dias; é o número COM O QUAL o valor é rateado | §3 e §7.10.5 |
+| **AF — por conta corrente** | cada conta vira um arquivo e uma SP de transferência | §3, §5.2 e §7.10.5 |
+| **AE — a conta até a primeira vírgula** | uma obra pode ter mais de uma conta, e vale a primeira | §7.10.5 |
+
+O `Valor x Dia` é o que ele confere de cabeça: "valor por dia × dias na obra" se
+verifica; o total da obra, não. O bloco por conta corrente é o que responde, **antes
+de gerar**, quantos arquivos vão sair e quanto sai de cada conta — e era item do
+desenho que eu mesmo escrevi em §5.2.
+
+⚠️ **E um defeito achado ao ligar a conta:** `conta_por_obra()` indexava só pelo
+NOME da obra, mas a apropriação identifica a obra pelo que o **ponto** escreve na
+marcação, que pode ser o código. Quem procurasse por código não achava conta
+nenhuma, e **toda linha da folha viraria a crítica "obra sem conta"** — um arquivo
+inteiro barrado por um de/para que existia e não era consultado. Agora indexa pelas
+duas pontas.
+
+### 7.35.4 O motivo obrigatório era regra minha, e saiu
+
+Eu exigia motivo para tirar alguém do pagamento, e escrevi aqui em §7.3 que a pessoa
+*"continua na prévia, riscada, com o motivo"*. A parte do motivo era minha invenção:
+o que ele faz na planilha é marcar `Pagar QZ` / `Não Pagar` numa célula — um tique,
+sem campo de justificativa.
+
+> *"Quem não entra de onde do arquivo de pagamento? Não pago e ponto final. A gestão
+> do pagamento é minha, eu decido."*
+
+O campo continua, **opcional**. O que saiu foi a obrigação — que em 400 linhas
+transformava um clique em formulário. **A parte "riscada" era a que eu devia ter
+feito e não fiz**: agora a linha apaga e o valor fica riscado.
+
+### 7.35.5 Os níveis 2 e 3 do ajuste fino, que ele pediu em 26/09 e eu não fiz
+
+§7.3 lista cinco níveis. Eu tinha o 0 (regra de rateio) e o 1 (fora). Faltavam:
+
+- **nível 2 — uma obra só**, o caso comum: *"de repente tem um erro de ponto"*;
+- **nível 3 — dia a dia**: *"bota um dia numa obra, um dia em outra obra"*.
+
+Agora os dois estão na **linha aberta**, junto dos dias do ponto — e é por isso que
+funciona: ele troca a obra **olhando** os dias que o ponto trouxe. Num diálogo à
+parte, a informação que justifica a troca sai da tela no momento da troca.
+
+⚠️ **NO NÍVEL 3 ENTRA DIA, NUNCA VALOR.** O valor por dia é o líquido dividido pelos
+dias (coluna I), e é ele que mantém a conta conferível. Se ele digitasse valores, a
+mesma pessoa poderia ficar com dois valores por dia diferentes no mesmo período, e o
+relatório deixaria de explicar qualquer coisa. A sobra do centavo segue a **mesma**
+regra do ponto — duas regras de centavo fariam a tela e o arquivo divergirem em um
+real a cada quinhentas pessoas, que é o tipo de diferença que ninguém acha.
+
+O **nível 4** (por proporção) era sugestão minha e segue não feito; o nível 3 por
+dias cobre o caso dele.
+
+### 7.35.6 A pergunta sobre a planilha estava mal feita — e o caminho já existe
+
+Perguntei "preciso da planilha de novo?". Ele: *"Sobre qual planilha você pergunta?
+Todas? São muitas planilhas e abas."* Justo — a pergunta não tinha alvo.
+
+**O alvo, dito com precisão:** as **fórmulas** da planilha `Folha de Pagamento -
+Fortes`, abas **`Quinzena`** e **`Fim de Mês`** — que são as que montam este
+pagamento (§7.10.5). E o caminho para me entregar isso **já está escrito desde
+26/09**, em `docs/EXPORTAR_FORMULAS.md`: um Apps Script que junta **só as fórmulas**
+num documento, sem levar nome, CPF nem salário de ninguém. É rodar `exportarTodas`.
+
+⚠️ **Enquanto isso não for feito, o que depende de fórmula segue em suposição** — e
+esta leva mostrou o custo disso: o `PAGAR EXTRA` só apareceu porque uma fórmula
+específica havia sido lida. As que não foram lidas ainda podem esconder outros.
+
+### 7.35.7 O que a competência da tela passou a fazer
+
+§7.10.5, achado 4: *"a competência é automática: se hoje é dia ≤ 10, a folha é do
+mês anterior. A tela deve sugerir assim."* Eu não havia sugerido. Agora as três telas
+que escolhem competência (Panorama, Alimentação e transporte, Diaristas) abrem no mês
+anterior até o dia 10 — nos primeiros dias do mês, o trabalho em cima da mesa é o
+fechamento do mês que acabou.
+
+### 7.35.8 A lição, que é a mesma de §7.33
+
+Em 29/09, pela manhã, eu não havia entendido "as cores da tabela" e **não perguntei**.
+À tarde eu perguntei — e perguntei o que já estava respondido neste arquivo. As duas
+falhas têm a mesma raiz: **tratar o que está escrito como se não estivesse**. O
+documento tem 3.100 linhas porque cada decisão dele foi registrada; ler antes de
+perguntar é a única coisa que o torna útil.
+
+---
+
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

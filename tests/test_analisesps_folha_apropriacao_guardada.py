@@ -159,19 +159,28 @@ def test_a_quinzena_e_o_fim_do_mes_nao_se_misturam(banco_apropriacao):
             == "OBRA C")
 
 
-def test_tirar_alguem_do_pagamento_EXIGE_motivo(banco_apropriacao):
-    """Não é burocracia: quem abrir o relatório três meses depois precisa saber
-    por que faltou gente. "Sumiu" é a pior resposta num pagamento."""
-    from app.apps.analisesps import folha_apropriacao_guardada as ag
+def test_tirar_alguem_do_pagamento_NAO_exige_motivo(banco_apropriacao):
+    """⚠️ CORREÇÃO DE 29/09/2026, contra uma regra que eu inventei. Eu exigia o
+    motivo; ele respondeu: *"Quem não entra de onde do arquivo de pagamento? Não
+    pago e ponto final. A gestão do pagamento é minha, eu decido."*
 
-    with pytest.raises(ag.ErroDaApropriacao) as erro:
-        ag.gravar_ajuste(2026, 9, "quinzena", GERLANIO, fora=True)
-    assert "motivo" in str(erro.value)
+    O que ele faz hoje na planilha é marcar `Pagar QZ` / `Não Pagar` numa célula —
+    um tique, sem justificativa. Exigir motivo virava formulário em 400 linhas.
 
-    ag.gravar_ajuste(2026, 9, "quinzena", GERLANIO, fora=True,
-                     motivo="pediu demissão e recebe na rescisão")
-    ajuste = ag.ajustes_do_pagamento(2026, 9, "quinzena")[GERLANIO]
+    O campo segue existindo, opcional, e quando escrito tem de aparecer inteiro no
+    relatório: é a única parte da regra que era minha e continua valendo."""
+    from app.apps.analisesps import folha_apropriacao_guardada as guardada
+
+    guardada.gravar_ajuste(2026, 9, "quinzena", "99713349334", nome="GERLANIO",
+                           fora=True, quem="MARCELO")
+    ajuste = guardada.ajustes_do_pagamento(2026, 9, "quinzena")["99713349334"]
     assert ajuste["fora"] is True
+    assert ajuste["motivo"] == ""
+
+    guardada.gravar_ajuste(2026, 9, "quinzena", "99713349334", nome="GERLANIO",
+                           fora=True, quem="MARCELO",
+                           motivo="pediu demissão e recebe na rescisão")
+    ajuste = guardada.ajustes_do_pagamento(2026, 9, "quinzena")["99713349334"]
     assert "rescisão" in ajuste["motivo"]
 
 

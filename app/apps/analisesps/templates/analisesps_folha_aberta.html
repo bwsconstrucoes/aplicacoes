@@ -338,6 +338,13 @@
    ------------------------------------------------------------------------ #}
 <h3 style="margin-top:18px">Pessoa por pessoa
   <small>marque quem entra neste pagamento</small></h3>
+{# As obras que a folha já conhece, para o campo de obra sugerir em vez de exigir
+   memória. Não é trava: obra nova pode ser digitada, e obra sem conta cadastrada
+   aparece na tabela por conta corrente como crítica. #}
+<datalist id="obras-da-folha">
+  {% for o in montado.obras %}<option value="{{ o }}"></option>{% endfor %}
+</datalist>
+
 <div class="tabela-wrap">
   <div class="tabela-rolagem">
     <table class="sps" id="tabela-folha">
@@ -351,14 +358,21 @@
           <th>Código</th>
           <th>Fase Atual</th>
           <th>Obra — do ponto</th>
+          {# A ORDEM É A DA PLANILHA (col H, I, F das abas Quinzena e Fim de Mês):
+             Dias, Valor x Dia, Valor. É nessa sequência que ele lê e confere —
+             "valor por dia × dias na obra" se verifica de cabeça. #}
           <th class="num">Dias</th>
+          <th class="num" title="o líquido dividido pelos dias — coluna I da planilha">Valor x Dia</th>
           <th class="num">Valor</th>
           <th>Situação</th>
         </tr>
       </thead>
       <tbody>
       {% for p in montado.pessoas %}
-        <tr class="linha-pessoa {% if p.situacao in ('sem_cadastro','sem_obra','saiu') %}linha-alerta{% endif %}"
+        {# RISCADA quando sai do pagamento — é o que o próprio desenho dizia (§7.3:
+           *"continua na prévia, riscada"*), e é o que faz a lista inteira ser lida
+           de relance sem contar caixinhas. #}
+        <tr class="linha-pessoa {% if not p.entra %}nao-vai{% endif %} {% if p.situacao in ('sem_cadastro','sem_obra','saiu') %}linha-alerta{% endif %}"
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome_na_tela }}"
             data-valor="{{ p.valor }}">
           <td>
@@ -419,7 +433,15 @@
             {% endif %}
           </td>
           <td class="num">{{ p.dias_no_ponto }}</td>
-          <td class="num">{{ p.valor|moeda }}</td>
+          <td class="num">
+            {# Traço, não zero: zero dias é o caso que precisa da mão dele, e
+               "R$ 0,00 por dia" pareceria um valor calculado. #}
+            {% if p.valor_por_dia is none %}—{% else %}{{ p.valor_por_dia|moeda }}{% endif %}
+          </td>
+          {# `valor-final` é o que o CSS risca quando a linha é `nao-vai` — o
+             mesmo par que a tela de auxílio já usa. Riscar o VALOR, e não a linha
+             inteira, mantém o nome legível para ele procurar a pessoa. #}
+          <td class="num valor-final">{{ p.valor|moeda }}</td>
           <td>
             <span class="selo {{ p.selo }}">{{ p.situacao_rotulo }}</span>
             {% if p.motivo_fora %}
@@ -437,7 +459,7 @@
            pessoa faria 491 chamadas para conferir uma folha. #}
         <tr class="dias-da-pessoa" hidden>
           <td></td>
-          <td colspan="8">
+          <td colspan="9">
             {% if p.por_dia %}
               <div class="dias-lista">
                 {% for d in p.por_dia %}
@@ -458,16 +480,76 @@
               </p>
             {% else %}
               <p class="cartao-dica" style="margin:0">
-                Nenhum dia de ponto no período e nenhuma regra de rateio. Diga a
-                obra na coluna ao lado, ou cadastre uma regra em
+                Nenhum dia de ponto no período e nenhuma regra de rateio. Diga
+                abaixo para onde vai o valor, ou cadastre uma regra em
                 <a href="{{ url_for('analisesps.tela_folha_rateio') }}">Rateio das
                 obras</a>.
               </p>
             {% endif %}
+
+            {# ------------------------------------------------------------------
+               ⚠️ OS NÍVEIS 2 E 3 DO AJUSTE FINO, que ele pediu em 26/09/2026 e eu
+               não havia feito:
+
+                 *"Preciso ter a liberdade, caso eu queira alterar a obra que
+                 aquela pessoa vai ficar apropriada, porque de repente tem um erro
+                 de ponto (…) às vezes eu distribuo em várias obras: bota um dia
+                 numa obra, um dia em outra obra."*
+
+               Nível 2 é uma obra só (um clique, o caso comum). Nível 3 é a divisão
+               por DIAS — entra dia, nunca valor: o valor por dia é o líquido
+               dividido pelos dias, e é ele que mantém a conta conferível.
+               ------------------------------------------------------------------ #}
+            {% if pode_operar and p.cpf %}
+            <div class="ajuste-obra" data-cpf="{{ p.cpf }}"
+                 data-nome="{{ p.nome_na_tela }}" data-valor="{{ p.valor }}"
+                 data-dias="{{ p.dias_no_ponto }}">
+              <div class="ajuste-linha">
+                <label class="rotulo-campo" style="margin:0">Tudo numa obra só</label>
+                <input type="text" class="obra-unica" name="obra"
+                       list="obras-da-folha" placeholder="código da obra"
+                       aria-label="Obra única de {{ p.nome_na_tela }}">
+                <button type="button" class="btn secundario gravar-obra-unica"
+                        >Aplicar</button>
+                <button type="button" class="link-btn abrir-divisao"
+                        >ou dividir por dias</button>
+                {% if p.tem_ajuste %}
+                  <button type="button" class="link-btn limpar-ajuste"
+                          title="a pessoa volta a seguir o ponto e a regra"
+                          >voltar ao ponto</button>
+                {% endif %}
+              </div>
+
+              <div class="divisao-por-dias" hidden>
+                <p class="cartao-dica" style="margin:6px 0">
+                  Quantos dias em cada obra. O valor de cada obra sai do
+                  <b>valor por dia</b> — você não digita dinheiro.
+                  {% if p.dias_no_ponto %}
+                    O ponto contou <b>{{ p.dias_no_ponto }}</b> dia(s).
+                  {% endif %}
+                </p>
+                <div class="linhas-divisao"></div>
+                <button type="button" class="link-btn mais-uma-obra"
+                        >+ outra obra</button>
+                <span class="conta-divisao cartao-dica"></span>
+                <button type="button" class="btn secundario gravar-divisao"
+                        >Gravar a divisão</button>
+              </div>
+
+              <div class="ajuste-linha" style="margin-top:6px">
+                <label class="rotulo-campo" style="margin:0">Observação
+                  <small>(opcional)</small></label>
+                <input type="text" class="observacao-ajuste" name="observacao"
+                       maxlength="300" value="{{ p.ajuste.observacao or '' }}"
+                       placeholder="se quiser deixar escrito por quê"
+                       aria-label="Observação sobre {{ p.nome_na_tela }}">
+              </div>
+            </div>
+            {% endif %}
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="9" class="cartao-dica">
+        <tr><td colspan="10" class="cartao-dica">
           Nenhuma pessoa com esses filtros.
         </td></tr>
       {% endfor %}
@@ -519,6 +601,51 @@
     </table>
   </div>
 </div>
+
+{# ------------------------------------------------------------------------
+   POR CONTA CORRENTE. Estava na planilha (o bloco da direita), está na fórmula
+   (coluna AF) e estava no desenho que ele aprovou — e não estava na minha tela.
+   Cada conta vira um arquivo de pagamento e uma SP de transferência: é aqui que
+   ele vê, ANTES de gerar, quantos arquivos saem e quanto sai de cada conta.
+   ------------------------------------------------------------------------ #}
+<h3 style="margin-top:22px">Por conta corrente
+  <small>cada conta vira um arquivo e uma SP de transferência</small></h3>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Conta</th><th>Obras</th><th class="num">Pessoas</th>
+        <th class="num">Valor</th></tr></thead>
+      <tbody>
+      {% for c in montado.por_conta %}
+        <tr class="{{ 'linha-alerta' if c.sem_conta }}">
+          <td>
+            {% if c.sem_conta %}
+              <span class="selo pagar"
+                    title="Sem conta cadastrada o arquivo não sai — e um padrão silencioso pagaria pela conta errada">sem conta</span>
+            {% else %}<b>{{ c.conta }}</b>{% endif %}
+          </td>
+          <td><span class="cartao-dica">{{ c.obras|join(', ') }}</span></td>
+          <td class="num">{{ c.pessoas }}</td>
+          <td class="num">{{ c.valor|moeda }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="cartao-dica">
+          Nada apropriado ainda — sem obra não há conta.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if montado.obras_sem_conta %}
+  <div class="aviso erro">
+    <b>{{ montado.obras_sem_conta|length }} obra(s) sem conta de pagamento
+    cadastrada:</b> {{ montado.obras_sem_conta|join(', ') }}.
+    O arquivo não sai assim. A conta de cada obra vem da aba <b>C. Diários</b> da
+    planilha de apoio — cadastre lá e atualize as referências.
+  </div>
+{% endif %}
 
 {% if filiais %}
 <h3 style="margin-top:18px">Por filial
@@ -611,29 +738,23 @@ function recontar() {
   recado.textContent = mudou ? mudou + " mudança(s) para salvar" : "";
 }
 
-// ⚠️ TIRAR ALGUÉM DO PAGAMENTO PEDE MOTIVO, e o campo nasce na hora do
-// desmarque. Sem motivo, o relatório de três meses adiante não explica a falta
-// de ninguém — e "sumiu" é a pior resposta possível num pagamento.
-function pedirMotivo(tr) {
-  let campo = tr.querySelector(".motivo-fora");
-  if (!campo) {
-    const celula = tr.querySelector("td:last-child");
-    const caixa = document.createElement("div");
-    caixa.style.marginTop = "6px";
-    caixa.innerHTML = '<input type="text" class="motivo-fora" name="motivo" ' +
-      'placeholder="por que sai do pagamento?" maxlength="300" ' +
-      'aria-label="Motivo de sair do pagamento">';
-    celula.appendChild(caixa);
-    campo = caixa.querySelector(".motivo-fora");
-    campo.focus();
-  }
-  return campo;
+// ⚠️ TIRAR ALGUÉM NÃO PEDE MOTIVO — correção de 29/09/2026 contra uma regra que eu
+// inventei. Ele foi direto: *"Quem não entra de onde do arquivo de pagamento? Não
+// pago e ponto final. A gestão do pagamento é minha, eu decido."*
+//
+// O que ele faz na planilha é marcar `Pagar QZ` / `Não Pagar` numa célula. Exigir
+// justificativa transformava um tique em formulário, quatrocentas vezes. O campo de
+// observação continua, opcional, na linha aberta.
+//
+// A linha fica RISCADA na hora, que é o retorno que o tique precisa dar.
+function riscar(tr) {
+  const caixa = tr.querySelector(".entra");
+  if (caixa) tr.classList.toggle("nao-vai", !caixa.checked);
 }
 
 tabela.addEventListener("change", e => {
   if (!e.target.classList.contains("entra")) return;
-  const tr = e.target.closest("tr.linha-pessoa");
-  if (!e.target.checked) pedirMotivo(tr);
+  riscar(e.target.closest("tr.linha-pessoa"));
   recontar();
 });
 
@@ -641,7 +762,7 @@ document.getElementById("marcar-todos").addEventListener("change", e => {
   linhas().forEach(tr => {
     const caixa = tr.querySelector(".entra");
     if (caixa && !caixa.disabled) caixa.checked = e.target.checked;
-    if (caixa && !caixa.checked) pedirMotivo(tr);
+    riscar(tr);
   });
   recontar();
 });
@@ -650,8 +771,7 @@ botaoDesfazer.addEventListener("click", () => {
   linhas().forEach(tr => {
     const caixa = tr.querySelector(".entra");
     if (caixa) caixa.checked = inicial.get(tr.dataset.cpf);
-    const m = tr.querySelector(".motivo-fora");
-    if (m) m.parentNode.remove();
+    riscar(tr);
   });
   recontar();
 });
@@ -692,24 +812,19 @@ async function mandar(mudancas) {
 
 botaoSalvar.addEventListener("click", async () => {
   const mudancas = [];
-  let faltaMotivo = null;
   linhas().forEach(tr => {
     const caixa = tr.querySelector(".entra");
     if (!caixa || inicial.get(tr.dataset.cpf) === caixa.checked) return;
-    const motivo = (tr.querySelector(".motivo-fora") || {}).value || "";
-    if (!caixa.checked && !motivo.trim() && !faltaMotivo) faltaMotivo = tr;
+    const editor = (tr.nextElementSibling || {}).querySelector
+      ? tr.nextElementSibling.querySelector(".observacao-ajuste") : null;
     mudancas.push({cpf: tr.dataset.cpf, nome: tr.dataset.nome,
-                   entra: caixa.checked, motivo: motivo,
+                   entra: caixa.checked,
+                   observacao: editor ? editor.value : "",
                    // Voltar a entrar é TIRAR o ajuste: a pessoa volta a seguir o
                    // ponto e a regra, em vez de ficar com um ajuste vazio que
                    // esconderia uma mudança de ponto depois.
                    limpar: caixa.checked});
   });
-  if (faltaMotivo) {
-    recado.textContent = "escreva o motivo de " + faltaMotivo.dataset.nome + " sair";
-    pedirMotivo(faltaMotivo).focus();
-    return;
-  }
   botaoSalvar.disabled = true;
   recado.textContent = "salvando " + mudancas.length + "…";
   try {
@@ -721,6 +836,100 @@ botaoSalvar.addEventListener("click", async () => {
     botaoSalvar.disabled = false;
   }
 });
+
+// ---------------------------------------------------------------------------
+// TROCAR A OBRA DE UMA PESSOA — níveis 2 e 3 do ajuste fino
+//
+// ⚠️ NÍVEL 2 (uma obra só) É UM CLIQUE, e é o caso comum: erro de ponto, a pessoa
+// trabalhou noutro lugar. O nível 3 divide por DIAS, nunca por valor — o valor por
+// dia é o líquido dividido pelos dias, e o servidor é que faz a conta, com a mesma
+// regra de centavo do ponto. Duas contas de centavo divergiriam em um real a cada
+// quinhentas pessoas, e essa diferença ninguém acha.
+// ---------------------------------------------------------------------------
+function linhaDivisao(obras) {
+  const div = document.createElement("div");
+  div.className = "ajuste-linha linha-divisao";
+  div.innerHTML =
+    '<input type="text" class="obra-parte" list="obras-da-folha" ' +
+    'placeholder="código da obra" aria-label="Obra">' +
+    '<input type="number" class="dias-parte" min="1" step="1" ' +
+    'placeholder="dias" aria-label="Dias nesta obra">' +
+    '<button type="button" class="apagar-linha tirar-parte" ' +
+    'title="tirar esta obra">&times;</button>';
+  return div;
+}
+
+function contarDivisao(editor) {
+  const partes = [...editor.querySelectorAll(".linha-divisao")];
+  const dias = partes.reduce(
+    (t, p) => t + (parseInt(p.querySelector(".dias-parte").value, 10) || 0), 0);
+  const total = parseFloat(editor.dataset.valor || "0") || 0;
+  const conta = editor.querySelector(".conta-divisao");
+  if (!dias) { conta.textContent = ""; return; }
+  conta.textContent = dias + " dia(s) · " + moeda(total / dias) + " por dia";
+}
+
+tabela.addEventListener("input", e => {
+  const editor = e.target.closest(".ajuste-obra");
+  if (editor && e.target.classList.contains("dias-parte")) contarDivisao(editor);
+});
+
+tabela.addEventListener("click", async e => {
+  const editor = e.target.closest(".ajuste-obra");
+  if (!editor) return;
+
+  if (e.target.classList.contains("abrir-divisao")) {
+    const bloco = editor.querySelector(".divisao-por-dias");
+    bloco.hidden = !bloco.hidden;
+    const lista = editor.querySelector(".linhas-divisao");
+    if (!lista.children.length) { lista.appendChild(linhaDivisao()); }
+    return;
+  }
+  if (e.target.classList.contains("mais-uma-obra")) {
+    editor.querySelector(".linhas-divisao").appendChild(linhaDivisao());
+    return;
+  }
+  if (e.target.classList.contains("tirar-parte")) {
+    e.target.closest(".linha-divisao").remove();
+    contarDivisao(editor);
+    return;
+  }
+
+  if (e.target.classList.contains("gravar-obra-unica")) {
+    const obra = editor.querySelector(".obra-unica").value.trim();
+    if (!obra) { alert("Diga o código da obra."); return; }
+    await gravarAjuste(e.target, editor, {obra: obra});
+    return;
+  }
+  if (e.target.classList.contains("gravar-divisao")) {
+    const partes = [...editor.querySelectorAll(".linha-divisao")].map(p => ({
+      obra: p.querySelector(".obra-parte").value.trim(),
+      dias: parseInt(p.querySelector(".dias-parte").value, 10) || 0
+    }));
+    await gravarAjuste(e.target, editor,
+                       {dias_por_obra: partes, valor: editor.dataset.valor});
+    return;
+  }
+  if (e.target.classList.contains("limpar-ajuste")) {
+    if (!confirm(editor.dataset.nome + " volta a seguir o ponto e a regra de " +
+                 "rateio. Confirma?")) return;
+    await gravarAjuste(e.target, editor, {limpar: true});
+  }
+});
+
+async function gravarAjuste(botao, editor, corpo) {
+  botao.disabled = true;
+  try {
+    await mandar([Object.assign({
+      cpf: editor.dataset.cpf, nome: editor.dataset.nome, entra: true,
+      observacao: (editor.querySelector(".observacao-ajuste") || {}).value || ""
+    }, corpo)]);
+    location.reload();
+  } catch (err) {
+    alert("Não consegui gravar: " + err.message);
+    botao.disabled = false;
+  }
+}
 
 // --- fechar a apropriação -------------------------------------------------
 const botaoFechar = document.getElementById("fechar-apropriacao");

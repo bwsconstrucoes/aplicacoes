@@ -400,3 +400,38 @@ def test_sem_a_pasta_do_drive_nao_gera_NADA(banco_pagamento, monkeypatch):
     assert "pasta do Drive" in str(erro.value)
     assert subidos == []
     assert fp.log() == []
+
+
+# ---------------------------------------------------------------------------
+# A CONTA DA OBRA — duas regras da planilha que eu não seguia (29/09/2026)
+# ---------------------------------------------------------------------------
+def test_a_conta_vai_ate_a_PRIMEIRA_VIRGULA():
+    """⚠️ Regra da planilha, coluna AE: `REGEXEXTRACT(...;"^[^,]+")`. Uma obra pode
+    ter mais de uma conta cadastrada, e vale a primeira. Sem isto o arquivo sairia
+    endereçado a "7011-4, 22069-8" — uma conta que não existe."""
+    from app.apps.analisesps.folha_pagamento import _primeira_conta
+
+    assert _primeira_conta("7011-4, 22069-8") == "7011-4"
+    assert _primeira_conta("  2541-0  ") == "2541-0"
+    assert _primeira_conta("") == ""
+    assert _primeira_conta(None) == ""
+
+
+def test_a_conta_e_achavel_pelo_NOME_e_pelo_CODIGO_da_obra(monkeypatch):
+    """⚠️ CONSERTO DE 29/09/2026. A apropriação identifica a obra pelo que o PONTO
+    escreve na marcação, que pode ser o CÓDIGO; este dicionário era só por nome.
+    Quem procurasse por código não achava conta nenhuma, e TODA linha da folha
+    viraria a crítica "obra sem conta" — um arquivo inteiro barrado por um de/para
+    que existia e não era consultado."""
+    from app.apps.analisesps import folha_pagamento
+
+    def falsa_consulta(sql, params=None):
+        if "contas_diarios" in sql:
+            return [("CRE1", "50024-0, 7011-4")]
+        return [("CREPEOLINDA", "CRE1")]
+
+    monkeypatch.setattr("app.apps.analisesps.db.consultar", falsa_consulta)
+    contas = folha_pagamento.conta_por_obra()
+
+    assert contas["CREPEOLINDA"] == "50024-0", "pelo nome, e só a primeira conta"
+    assert contas["CRE1"] == "50024-0", "e pelo código também"

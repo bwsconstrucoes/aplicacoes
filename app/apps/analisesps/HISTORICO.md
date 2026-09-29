@@ -9495,6 +9495,83 @@ testada; o dado que ela consome, não chegou.
 
 ---
 
+### Centésima décima oitava leva (29/09) — a releitura que ele mandou fazer
+
+Eu fiz cinco perguntas sobre a folha. Ele respondeu as cinco e disse o que elas
+mostravam:
+
+> *"Pelas suas perguntas, vejo que a análise das planilhas foi muito fraca mesmo.
+> (…) Não é melhor você fazer uma releitura do que eu já propus?"*
+
+Era melhor. **Quatro das cinco perguntas já estavam respondidas no
+`docs/FOLHA_DE_PAGAMENTO.md`** — algumas por ele, outras por mim e aprovadas por
+ele. O detalhe inteiro está lá, em §7.35. O que a releitura devolveu:
+
+| O que estava escrito e eu não segui | Onde estava | Por que importa |
+|---|---|---|
+| dia marcado **"PAGAR EXTRA" não é dia da folha** | §7.10.5, col H — e eu havia anotado "eu não tinha isso" | **dinheiro**: o salário era dividido por um dia a mais e uma fatia ia para um destino de pagamento como se fosse obra, em silêncio |
+| coluna **Valor x Dia** (líquido ÷ dias) | §3 e §7.10.5, col I | é o número que ele confere de cabeça |
+| bloco **por conta corrente** | §3, §5.2 e §7.10.5, col AF | cada conta vira um arquivo e uma SP de transferência |
+| a conta vai **até a primeira vírgula** | §7.10.5, col AE | uma obra pode ter duas contas; vale a primeira |
+| **níveis 2 e 3 do ajuste fino** (uma obra só; dia a dia) | §7.3, pedido dele em 26/09 | é o *"bota um dia numa obra, um dia em outra"* |
+| quem sai aparece **riscado** | §7.3 | a lista se lê de relance |
+| até o dia **10 a tela abre no mês anterior** | §7.10.5, achado 4 | nos primeiros dias do mês o trabalho é o fechamento do anterior |
+
+#### E uma regra minha que caiu
+
+Eu exigia **motivo** para tirar alguém do pagamento, e havia escrito que "sumiu é a
+pior resposta possível num pagamento". Ele:
+
+> *"Quem não entra de onde do arquivo de pagamento? Não pago e ponto final. A gestão
+> do pagamento é minha, eu decido."*
+
+Ele está certo: na planilha isso é um tique numa célula (`Pagar QZ` / `Não Pagar`),
+sem campo de justificativa. Exigir motivo virava formulário quatrocentas vezes. O
+campo ficou **opcional**.
+
+#### ⚠️ Um defeito achado ao ligar a conta corrente
+
+`conta_por_obra()` indexava só pelo **nome** da obra, mas a apropriação identifica a
+obra pelo que o **ponto** escreve na marcação — que pode ser o código. Quem
+procurasse por código não achava conta nenhuma, e **toda linha da folha viraria a
+crítica "obra sem conta"**: um arquivo inteiro barrado por um de/para que existia e
+não era consultado. Agora indexa pelas duas pontas.
+
+#### A pergunta sobre a planilha estava mal feita
+
+Perguntei "preciso da planilha de novo?" sem dizer qual. O alvo certo: as
+**fórmulas** da planilha `Folha de Pagamento - Fortes`, abas **`Quinzena`** e **`Fim
+de Mês`**. E o caminho já está escrito desde 26/09 em `docs/EXPORTAR_FORMULAS.md` —
+um Apps Script que manda **só as fórmulas**, sem nome, CPF nem salário. É rodar
+`exportarTodas`.
+
+⚠️ **O custo de não ter as fórmulas ficou medido nesta leva:** o `PAGAR EXTRA` só
+apareceu porque uma fórmula específica havia sido lida. As que não foram lidas podem
+esconder outros erros do mesmo tamanho.
+
+#### A lição, e é a mesma da leva anterior
+
+Pela manhã eu não entendi "as cores da tabela" e **não perguntei**. À tarde eu
+perguntei — e perguntei o que já estava respondido no arquivo. A raiz é a mesma:
+**tratar o que está escrito como se não estivesse.**
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto entrar (alimenta TODA a obra por dia) | o certificado do Mobponto no Render |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` do `docs/EXPORTAR_FORMULAS.md` |
+| o nível 4 do ajuste fino (por proporção) | era sugestão minha; o nível 3 por dias cobre o caso dele |
+| o nome da coluna **"Paga por BeeVale"** | só ele tem |
+| trocar na origem as credenciais do Mobponto, Dropbox e Z-API | ele |
+
+**Verificado:** suíte inteira em blocos, sem falha, com os casos novos desta leva
+(PAGAR EXTRA no rateio, valor por dia, divisão por dias, conta por nome e por
+código, competência sugerida, e as seis da tela). **NÃO verificado:** nada num
+navegador, e a apropriação continua sem nunca ter rodado sobre ponto de verdade.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

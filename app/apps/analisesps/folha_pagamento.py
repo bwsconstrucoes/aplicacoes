@@ -60,24 +60,48 @@ def _pronto() -> bool:
 # ---------------------------------------------------------------------------
 # DE QUAL CONTA SAI O DINHEIRO DE CADA OBRA
 # ---------------------------------------------------------------------------
+def _primeira_conta(texto) -> str:
+    """A conta até a PRIMEIRA VÍRGULA.
+
+    ⚠️ REGRA DA PLANILHA, não minha: a coluna `AE` das abas Quinzena e Fim de Mês
+    faz `REGEXEXTRACT(...;"^[^,]+")`. Lido em 27/09/2026 e anotado em
+    `docs/FOLHA_DE_PAGAMENTO.md` §7.10.5 com a explicação: **uma obra pode ter mais
+    de uma conta, e vale a primeira**.
+
+    Sem isto, uma obra com duas contas cadastradas viraria um nome de conta
+    inexistente ("7011-4, 22069-8"), e o arquivo sairia endereçado a lugar nenhum."""
+    return str(texto or "").split(",")[0].strip()
+
+
 def conta_por_obra() -> dict:
-    """`{NOME DA OBRA: conta de pagamento}`.
+    """`{obra: conta de pagamento}` — pelo NOME e também pelo CÓDIGO.
 
     ⚠️ A CONTA VEM DA OBRA, e não da pessoa: é a obra que define de onde o dinheiro
     sai. O caminho é obra → código → conta, e as duas pontas já existem no banco: o
     nome e o código em `referencias_rateio`, a conta em `contas_diarios` (a aba
     "C. Diários" da planilha de apoio).
 
+    ⚠️ INDEXADO PELAS DUAS PONTAS, e isto é conserto de 29/09/2026. A apropriação da
+    folha identifica a obra pelo que o PONTO escreve na marcação, que pode ser o
+    código; este dicionário era só por nome. Quem procurasse por código não achava
+    conta nenhuma, e TODA linha da folha viraria a crítica "obra sem conta" — um
+    arquivo inteiro barrado por um de/para que existia e não era consultado.
+
     ⚠️ OBRA SEM CONTA NÃO DESAPARECE DAQUI: entra com conta vazia, e o gerador
     transforma isso numa crítica que diz onde consertar. Omitir a obra faria o
-    recado virar "obra não existe", que é o problema errado."""
+    recado virar "obra não existe", que é o problema errado.
+
+    ⚠️ E NUNCA UM PADRÃO SILENCIOSO. A planilha da aba CTPS resolve a conta por
+    expressão sobre o nome da obra e cai numa conta padrão quando nada casa
+    (§7.14.4) — obra nova paga pela conta errada sem avisar. Aqui é tabela, e o que
+    falta é crítica."""
     from .db import consultar
     contas = {}
     try:
         for codigo, conta in consultar(
                 "SELECT codigo, coalesce(conta_pagamento, '') "
                 "  FROM analisesps.contas_diarios"):
-            contas[str(codigo or "").strip()] = str(conta or "").strip()
+            contas[str(codigo or "").strip()] = _primeira_conta(conta)
     except Exception:  # noqa: BLE001 — tabela pode não existir em base nova
         logger.exception("Folha: não consegui ler as contas das obras")
         return {}
@@ -88,8 +112,14 @@ def conta_por_obra() -> dict:
                 "SELECT nome, coalesce(codigo, '') "
                 "  FROM analisesps.referencias_rateio WHERE tipo = 'obra'"):
             nome = " ".join(str(nome or "").split()).upper()
+            codigo = str(codigo or "").strip()
+            conta = contas.get(codigo, "")
             if nome:
-                saida[nome] = contas.get(str(codigo or "").strip(), "")
+                saida[nome] = conta
+            # O CÓDIGO TAMBÉM É CHAVE — ver o aviso acima. Só entra quando não
+            # colide com o nome de outra obra, que seria ambiguidade sobre dinheiro.
+            if codigo and codigo.upper() not in saida:
+                saida[codigo.upper()] = conta
     except Exception:  # noqa: BLE001
         logger.exception("Folha: não consegui ler as obras")
     return saida

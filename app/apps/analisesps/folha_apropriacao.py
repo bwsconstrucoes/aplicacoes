@@ -57,6 +57,41 @@ DA_MAO = "mao"
 # uma linha.
 SEM_OBRA = ("feriado", "compensação", "compensacao", "")
 
+# ⚠️ "PAGAR EXTRA" NÃO É OBRA, É UM DESTINO DE PAGAMENTO — e este é dinheiro.
+#
+# Está na fórmula da planilha desde sempre, e eu a li em 27/09/2026 e anotei em
+# `docs/FOLHA_DE_PAGAMENTO.md` §7.10.5: a contagem de dias da folha é um `COUNTIFS`
+# com a obra **não vazia E DIFERENTE DE "PAGAR EXTRA"**. Anotei e não implementei —
+# o documento diz, com estas palavras, *"eu não tinha isso"*.
+#
+# O que acontece sem isto: o dia marcado para pagar como extra entra na conta da
+# folha. O líquido da pessoa é dividido por um dia a mais, o valor por dia sai
+# menor, e uma fatia do salário vai para o "PAGAR EXTRA" como se fosse obra. A
+# pessoa recebe o total certo e **a obra errada leva o custo** — em silêncio, que é
+# o pior jeito de errar aqui.
+#
+# O dia continua existindo e visível: ele só não é dia de obra desta folha.
+PAGAR_EXTRA = "PAGAR EXTRA"
+
+
+def competencia_sugerida(hoje=None) -> tuple:
+    """`(ano, mes)` que a tela deve abrir. Até o dia 10, o mês ANTERIOR.
+
+    ⚠️ REGRA DA PLANILHA, não minha: a célula `K1` das abas Quinzena e Fim de Mês
+    calcula o fim do período e, **se hoje é dia ≤ 10, vale o mês anterior**. Lido em
+    27/09/2026 e anotado em `docs/FOLHA_DE_PAGAMENTO.md` §7.10.5, achado 4, com a
+    frase "a tela deve sugerir assim" — e eu não havia sugerido.
+
+    POR QUE ELA EXISTE: nos primeiros dias do mês o trabalho em cima da mesa é o
+    fechamento do mês que acabou. Abrir no mês corrente faz a tela mostrar uma folha
+    vazia justamente nos dias em que há mais o que fazer — e quem não souber da
+    regra conclui que o sistema perdeu o dado."""
+    hoje = hoje or dt.date.today()
+    if hoje.day > 10:
+        return hoje.year, hoje.month
+    anterior = hoje.replace(day=1) - dt.timedelta(days=1)
+    return anterior.year, anterior.month
+
 
 def periodo_do_pagamento(ano: int, mes: int, tipo: str) -> tuple:
     """Os dias que este pagamento enxerga. `tipo` é "quinzena" ou "fim_de_mes".
@@ -105,6 +140,14 @@ def obra_do_dia(marcacoes, presenca: str = "", falta: str = "") -> dict:
     if situacao and any(s in situacao for s in SEM_OBRA if s):
         return {"obra": None, "empate": False, "marcou": len(presentes),
                 "motivo": situacao}
+
+    # ⚠️ AS MARCAÇÕES DE "PAGAR EXTRA" SAEM DA CONTAGEM ANTES DO DESEMPATE, não
+    # depois: se saíssem depois, um dia com duas marcações de obra e duas de
+    # "PAGAR EXTRA" empataria e a obra poderia perder para um destino de pagamento.
+    presentes = [m for m in presentes if m != PAGAR_EXTRA]
+    if not presentes:
+        return {"obra": None, "empate": False, "marcou": 0,
+                "motivo": "dia marcado para pagar como EXTRA — não conta na folha"}
 
     contagem: dict = {}
     for m in presentes:

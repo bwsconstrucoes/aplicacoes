@@ -154,9 +154,20 @@ def gravar_ajuste(ano: int, mes: int, tipo: str, cpf: str, nome: str = "",
                   por_obra=None, observacao: str = "", quem: str = "") -> int:
     """Guarda o que ele decidiu para UMA pessoa neste pagamento. Devolve o id.
 
-    ⚠️ TIRAR ALGUÉM DO PAGAMENTO EXIGE MOTIVO. Não é burocracia: quem abrir o
-    relatório depois — ele mesmo, três meses adiante — precisa saber por que
-    faltou gente. "Sumiu" é a pior resposta possível num pagamento."""
+    ⚠️ TIRAR ALGUÉM DO PAGAMENTO **NÃO** EXIGE MOTIVO — e isto é correção de
+    29/09/2026, contra uma regra que eu inventei. Eu exigia o motivo e escrevi aqui
+    que "sumiu é a pior resposta possível num pagamento". Ele respondeu:
+
+        *"Quem não entra de onde do arquivo de pagamento? Não pago e ponto final.
+        A gestão do pagamento é minha, eu decido."*
+
+    Ele está certo e o erro é de quem eu pensei que estava servindo: o que ele faz
+    hoje na planilha é marcar `Pagar QZ` / `Não Pagar` numa célula — um tique, sem
+    campo de justificativa. Exigir motivo transformava um clique em formulário, e
+    em 400 linhas isso é trabalho inventado por mim para tranquilizar a mim.
+
+    O campo continua existindo e **opcional**: quando ele quiser escrever, o
+    relatório mostra. O que saiu é a obrigação."""
     from .db import conexao
     from .folha_rateio import cpf_bonito, cpf_valido, so_digitos
 
@@ -175,10 +186,6 @@ def gravar_ajuste(ano: int, mes: int, tipo: str, cpf: str, nome: str = "",
 
     fora = bool(fora)
     motivo = " ".join(str(motivo or "").split())[:300]
-    if fora and not motivo:
-        raise ErroDaApropriacao(
-            "escreva por que esta pessoa sai do pagamento — sem o motivo, o "
-            "relatório não explica a falta dela.")
 
     unica = _obra(obra_unica)
     partes = []

@@ -7328,6 +7328,10 @@ def _preparar_folha_aberta(monkeypatch, dias=None, ajustes=None,
                         "link_pipefy": ""}})
 
     monkeypatch.setattr(folha_rateio, "listar", lambda *a, **k: [])
+    # A conta de cada obra: é ela que faz o bloco "por conta corrente" existir.
+    from app.apps.analisesps import folha_pagamento
+    monkeypatch.setattr(folha_pagamento, "conta_por_obra",
+                        lambda: {"CRE1": "7011-4"})
     monkeypatch.setattr(guardada, "ajustes_do_pagamento",
                         lambda *a, **k: ajustes or {})
     monkeypatch.setattr(guardada, "fechamento", lambda *a, **k: fechamento)
@@ -7602,3 +7606,87 @@ def test_o_filtro_de_FASE_do_auxilio_recorta_a_lista_de_verdade(app, monkeypatch
 
     assert "LUELIA" in html
     assert "GERLANIO GOMES LIMA" not in html
+
+
+# ---------------------------------------------------------------------------
+# O QUE A RELEITURA DEVOLVEU PARA A TELA DA FOLHA (29/09/2026)
+#
+# Ele mandou reler o que já havia proposto. Estas quatro coisas estavam escritas em
+# `docs/FOLHA_DE_PAGAMENTO.md` — algumas por ele, outras por mim e aprovadas por ele
+# — e não estavam na tela.
+# ---------------------------------------------------------------------------
+def test_a_folha_mostra_VALOR_X_DIA_na_ordem_da_planilha(app, monkeypatch):
+    """Coluna I das abas Quinzena e Fim de Mês (`F/H`). É o número com o qual o
+    valor é rateado, e o que ele confere de cabeça: valor por dia × dias na obra."""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes(quantos=10))
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "Valor x Dia" in html
+    # 1074,64 em 10 dias = 107,46 (o centavo que sobra fica no total, não no dia)
+    assert "107,46" in html
+    assert html.index("Dias") < html.index("Valor x Dia")
+
+
+def test_a_folha_tem_o_bloco_POR_CONTA_CORRENTE(app, monkeypatch):
+    """⚠️ Estava na planilha (bloco da direita), na fórmula (coluna AF) e no desenho
+    aprovado (§5.2) — e não estava na tela. Cada conta vira um arquivo de pagamento
+    e uma SP de transferência: é aqui que ele vê quantos arquivos vão sair."""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "Por conta corrente" in html
+    assert "7011-4" in html
+    assert html.index("Total por obra") < html.index("Por conta corrente")
+
+
+def test_obra_SEM_CONTA_segura_o_arquivo_e_diz_onde_consertar(app, monkeypatch):
+    """⚠️ Nunca um padrão silencioso: a planilha da aba CTPS cai numa conta padrão
+    quando o nome não casa com nada, e paga pela conta errada sem avisar."""
+    from app.apps.analisesps import folha_pagamento
+
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes(obra="XYZ9"))
+    monkeypatch.setattr(folha_pagamento, "conta_por_obra", lambda: {})
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "sem conta" in html
+    assert "obra(s) sem conta de pagamento" in html
+    assert "C. Diários" in html
+
+
+def test_tirar_alguem_do_pagamento_NAO_pede_motivo_na_tela(app, monkeypatch):
+    """⚠️ CORREÇÃO contra uma regra que eu inventei. Ele: *"Não pago e ponto final.
+    A gestão do pagamento é minha, eu decido."* O campo de observação continua,
+    opcional; o que saiu foi a obrigação e a caixa que nascia no desmarque."""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "motivo-fora" not in html
+    assert "por que sai do pagamento" not in html
+    assert "observacao-ajuste" in html
+    assert "se quiser deixar escrito por quê" in html
+
+
+def test_quem_sai_do_pagamento_aparece_RISCADO(app, monkeypatch):
+    """*"Continua na prévia, riscada"* — estava no desenho do ajuste fino (§7.3) e a
+    lista não riscava nada. Riscar o VALOR e apagar a linha mantém o nome legível."""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes(), ajustes={
+        "11122233396": {"cpf": "11122233396", "nome": "LUELIA", "fora": True,
+                        "motivo": "", "obra_unica": "", "observacao": "",
+                        "por_obra": []}})
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "nao-vai" in html
+    assert "valor-final" in html
+
+
+def test_a_linha_aberta_deixa_TROCAR_A_OBRA_e_dividir_por_dias(app, monkeypatch):
+    """⚠️ Níveis 2 e 3 do ajuste fino, pedidos em 26/09/2026: *"caso eu queira
+    alterar a obra que aquela pessoa vai ficar apropriada (…) bota um dia numa obra,
+    um dia em outra obra."* A tela mostrava os dias e não deixava mexer neles."""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "Tudo numa obra só" in html
+    assert "ou dividir por dias" in html
+    assert "você não digita dinheiro" in html
+    assert 'id="obras-da-folha"' in html, "as obras conhecidas sugerem o código"

@@ -522,3 +522,87 @@ def test_sem_nenhum_dia_com_obra_devolve_VAZIO_e_nao_chuta():
 
     assert obra_com_mais_dias([]) == {"obra": "", "dias": 0}
     assert obra_com_mais_dias(None) == {"obra": "", "dias": 0}
+
+
+# ---------------------------------------------------------------------------
+# "PAGAR EXTRA" NÃO É OBRA — e isto é dinheiro
+#
+# ⚠️ ESTAVA NA FÓRMULA DESDE SEMPRE e eu li em 27/09/2026: a contagem de dias da
+# folha é um `COUNTIFS` com a obra não vazia E DIFERENTE DE "PAGAR EXTRA"
+# (`docs/FOLHA_DE_PAGAMENTO.md` §7.10.5, coluna H). Anotei, escrevi "eu não tinha
+# isso", e continuei sem ter — até ele mandar reler o que já havia proposto.
+#
+# O que acontecia: o dia do extra entrava na conta da folha, o líquido era dividido
+# por um dia a mais, e uma fatia do salário ia para "PAGAR EXTRA" como se fosse
+# obra. A pessoa recebia o total certo e a obra errada levava o custo, em silêncio.
+# ---------------------------------------------------------------------------
+def test_dia_todo_de_PAGAR_EXTRA_nao_e_dia_da_folha():
+    from app.apps.analisesps.folha_apropriacao import obra_do_dia
+
+    achado = obra_do_dia(["PAGAR EXTRA"] * 4, "Presença", "")
+    assert achado["obra"] is None
+    assert "EXTRA" in achado["motivo"]
+
+
+def test_PAGAR_EXTRA_sai_da_contagem_ANTES_do_desempate():
+    """⚠️ A ORDEM IMPORTA: se saísse depois, um dia com duas marcações de obra e
+    duas de "PAGAR EXTRA" empataria — e a obra poderia perder para um destino de
+    pagamento, que não é lugar nenhum."""
+    from app.apps.analisesps.folha_apropriacao import obra_do_dia
+
+    achado = obra_do_dia(["AAA", "PAGAR EXTRA", "PAGAR EXTRA", "AAA"],
+                         "Presença", "")
+    assert achado["obra"] == "AAA"
+    assert achado["empate"] is False
+
+
+def test_o_dia_de_extra_nao_entra_no_rateio_da_pessoa():
+    """O teste que vale: o valor não pode ser dividido pelo dia do extra."""
+    import datetime as dt
+    from decimal import Decimal
+
+    from app.apps.analisesps.folha_apropriacao import apropriar_pessoa
+
+    dias = [
+        {"data": dt.date(2026, 9, 1), "marcacoes": ["AAA"] * 4,
+         "presenca": "Presença", "falta": ""},
+        {"data": dt.date(2026, 9, 2), "marcacoes": ["AAA"] * 4,
+         "presenca": "Presença", "falta": ""},
+        {"data": dt.date(2026, 9, 3), "marcacoes": ["PAGAR EXTRA"] * 4,
+         "presenca": "Presença", "falta": ""},
+    ]
+    from app.apps.analisesps.folha_apropriacao import _dias_uteis_do_ponto
+    uteis = _dias_uteis_do_ponto(dias, dt.date(2026, 9, 1), dt.date(2026, 9, 15))
+    feito = apropriar_pessoa({"id_fortes": "1", "cpf": "99713349334",
+                              "nome": "GERLANIO", "valor": Decimal("300.00")},
+                             uteis)
+    assert feito["dias_no_ponto"] == 2, "o dia do extra não conta"
+    assert [o["obra"] for o in feito["por_obra"]] == ["AAA"]
+    assert feito["por_obra"][0]["valor"] == Decimal("300.00")
+    assert len(feito["por_dia"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# A COMPETÊNCIA QUE A TELA ABRE — regra da planilha (célula K1)
+# ---------------------------------------------------------------------------
+def test_ate_o_dia_10_a_tela_abre_no_MES_ANTERIOR():
+    """⚠️ Regra da planilha, lida em 27/09/2026 e anotada com a frase "a tela deve
+    sugerir assim" — e eu não havia sugerido. Nos primeiros dias do mês o trabalho
+    em cima da mesa é o fechamento do mês que acabou; abrir no mês corrente mostrava
+    tela vazia justamente quando há mais o que fazer."""
+    import datetime as dt
+
+    from app.apps.analisesps.folha_apropriacao import competencia_sugerida
+
+    assert competencia_sugerida(dt.date(2026, 10, 3)) == (2026, 9)
+    assert competencia_sugerida(dt.date(2026, 10, 10)) == (2026, 9)
+    assert competencia_sugerida(dt.date(2026, 10, 11)) == (2026, 10)
+
+
+def test_no_comeco_de_JANEIRO_a_sugestao_volta_o_ANO():
+    """Dezembro do ano anterior. Um `mes - 1` sem cuidado daria mês zero."""
+    import datetime as dt
+
+    from app.apps.analisesps.folha_apropriacao import competencia_sugerida
+
+    assert competencia_sugerida(dt.date(2026, 1, 5)) == (2025, 12)

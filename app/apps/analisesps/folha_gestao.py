@@ -115,6 +115,18 @@ def _dinheiro(valor) -> Decimal:
         return Decimal("0.00")
 
 
+def _por_dia(valor, dias) -> Decimal | None:
+    """O líquido dividido pelos dias de presença. `None` quando não há dia.
+
+    ⚠️ `None` E NÃO ZERO: quem tem zero dias de ponto é justamente o caso que
+    precisa da mão dele (o "PT" da planilha), e "R$ 0,00 por dia" pareceria um
+    valor calculado. Traço na tela é pergunta aberta; zero é resposta errada."""
+    dias = int(dias or 0)
+    if dias <= 0:
+        return None
+    return (_dinheiro(valor) / dias).quantize(CENTAVO)
+
+
 # ---------------------------------------------------------------------------
 # O RESUMO DAS OBRAS DE UMA PESSOA
 # ---------------------------------------------------------------------------
@@ -195,6 +207,47 @@ def totais_por_obra(por_obra) -> list:
             "percentual": percentuais.get(obra),
         })
     return sorted(saida, key=lambda o: -o["valor"])
+
+
+# ---------------------------------------------------------------------------
+# POR CONTA CORRENTE — o bloco que existia na planilha e faltava aqui
+#
+# ⚠️ ELE NÃO PRECISOU PEDIR: está na planilha (o "bloco da direita", §3), está na
+# fórmula (coluna `AF` das abas Quinzena e Fim de Mês, §7.10.5) e está no desenho
+# que EU escrevi e ele aprovou (§5.2: a prévia mostra "quantas pessoas, quanto, por
+# obra, **por conta corrente**, e a lista de críticas").
+#
+# Para que serve, e é por isso que não é enfeite: cada conta corrente vira uma **SP
+# de Transferência de Recursos** e um arquivo de pagamento próprio. Sem este bloco
+# ele não tem como saber, ANTES de gerar, quantos arquivos vão sair nem quanto sai
+# de cada conta — que é exatamente o que ele confere hoje olhando a planilha.
+# ---------------------------------------------------------------------------
+def totais_por_conta(por_obra) -> list:
+    """Conta corrente por conta corrente: quais obras, quanto, e o que falta.
+
+    Obra sem conta cadastrada entra numa linha própria, marcada — ela é a crítica
+    que segura o arquivo (§7.14.4), e some-la numa conta qualquer seria o padrão
+    silencioso que a planilha tem e que este sistema existe para não repetir."""
+    from . import folha_pagamento
+
+    try:
+        contas = folha_pagamento.conta_por_obra()
+    except Exception:  # noqa: BLE001 — é um bloco da tela, não a tela
+        logger.exception("Folha: não consegui ler as contas das obras")
+        contas = {}
+
+    juntas: dict = {}
+    for o in (por_obra or []):
+        obra = str(o.get("obra") or "").upper()
+        conta = contas.get(obra, "")
+        alvo = juntas.setdefault(conta, {"conta": conta, "obras": [],
+                                         "valor": Decimal("0.00"),
+                                         "pessoas": 0, "sem_conta": not conta})
+        alvo["obras"].append(obra)
+        alvo["valor"] += _dinheiro(o.get("valor"))
+        alvo["pessoas"] += int(o.get("pessoas") or 0)
+    # A sem conta vem PRIMEIRO, porque é a que impede gerar; depois pela maior.
+    return sorted(juntas.values(), key=lambda c: (not c["sem_conta"], -c["valor"]))
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +347,13 @@ def montar(folha_id: int, filtros=None) -> dict:
             # NÃO entra na conta — aparece na tela para ele decidir, porque
             # apropriar por ela em silêncio poria o custo na obra errada.
             "obra_do_cadastro": colaboradores.resolver_obra(ficha, obras_por_nome),
+            # ⚠️ O "VALOR X DIA" É COLUNA DA PLANILHA (col I das abas Quinzena e Fim
+            # de Mês: `F/H`, o líquido dividido pelos dias). Anotado em
+            # `docs/FOLHA_DE_PAGAMENTO.md` §3 como o número COM O QUAL o valor é
+            # rateado — e é o que ele confere: "valor por dia × dias na obra" se
+            # verifica de cabeça, o total da obra não.
+            "valor_por_dia": _por_dia(pessoa.get("valor"),
+                                      pessoa.get("dias_no_ponto")),
             "obras_resumo": resumo_das_obras(pessoa.get("por_obra")),
             "obra_principal": obra_principal(pessoa.get("por_obra")),
             "situacao": situacao,
@@ -336,6 +396,7 @@ def montar(folha_id: int, filtros=None) -> dict:
 
     # --- O TOTAL POR OBRA, que é o que ele usa para decidir o rateio ------
     por_obra = totais_por_obra(apropriado["por_obra"])
+    por_conta = totais_por_conta(por_obra)
 
     # --- os filtros -------------------------------------------------------
     mostradas = _filtrar(pessoas, filtros)
@@ -351,6 +412,9 @@ def montar(folha_id: int, filtros=None) -> dict:
         "totais": totais,
         "contagem": contagem,
         "por_obra": por_obra,
+        "por_conta": por_conta,
+        "obras_sem_conta": [o for c in por_conta if c["sem_conta"]
+                            for o in c["obras"]],
         "fases": sorted({p["fase"] for p in pessoas if p["fase"]}),
         "obras": sorted({p["obra_principal"] for p in pessoas
                          if p["obra_principal"]}),
@@ -405,6 +469,55 @@ def _filtrar(pessoas, filtros) -> list:
             continue
         saida.append(p)
     return saida
+
+
+# ---------------------------------------------------------------------------
+# DIVIDIR OS DIAS DE UMA PESSOA ENTRE OBRAS — o nível 3 do ajuste fino
+#
+# ⚠️ ELE JÁ PEDIU ISTO, com estas palavras (26/09/2026, §7.3):
+#
+#     *"Às vezes eu distribuo em várias obras: bota um dia numa obra, um dia em
+#     outra obra. Aí eu altero a planilha do ponto de onde ela puxa."*
+#
+# ⚠️ ENTRA DIA, NÃO VALOR, e isto não é atalho: o valor por dia é o líquido dividido
+# pelos dias de presença (coluna I da planilha), e é ele que mantém a conta
+# verificável de cabeça. Se ele digitasse valores, duas obras poderiam ficar com
+# valores por dia diferentes para a mesma pessoa no mesmo período — e aí o relatório
+# não explicaria mais nada.
+#
+# A sobra do centavo segue a MESMA regra do ponto (`_repartir`): fica com a obra de
+# mais dias. Duas regras de centavo fariam a tela e o arquivo divergirem em um real
+# a cada quinhentas pessoas, que é o tipo de diferença que ninguém acha.
+# ---------------------------------------------------------------------------
+def dividir_por_dias(valor, partes) -> list:
+    """`[{obra, dias}]` + o valor da pessoa → `[{obra, dias, valor}]`.
+
+    Levanta `ErroDaGestao` quando não há dia nenhum: dividir por zero dias não é
+    divisão, é apagar o valor da pessoa."""
+    from .folha_apropriacao import _repartir
+
+    limpas = []
+    for p in (partes or []):
+        obra = " ".join(str((p or {}).get("obra") or "").split()).upper()
+        dias = int((p or {}).get("dias") or 0)
+        if not obra:
+            raise ErroDaGestao("uma das linhas da divisão está sem obra.")
+        if dias <= 0:
+            raise ErroDaGestao(
+                f'a obra "{obra}" está com zero dia. Tire a linha ou diga os dias.')
+        limpas.append({"obra": obra, "dias": dias})
+    if not limpas:
+        raise ErroDaGestao("diga em quais obras entram os dias desta pessoa.")
+
+    repetida = next((p["obra"] for p in limpas
+                     if [x["obra"] for x in limpas].count(p["obra"]) > 1), "")
+    if repetida:
+        raise ErroDaGestao(
+            f'a obra "{repetida}" aparece mais de uma vez. Junte os dias dela '
+            "numa linha só.")
+
+    valores = _repartir(_dinheiro(valor), [p["dias"] for p in limpas])
+    return [{**p, "valor": v} for p, v in zip(limpas, valores)]
 
 
 # ---------------------------------------------------------------------------

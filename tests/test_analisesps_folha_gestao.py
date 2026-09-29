@@ -268,3 +268,97 @@ def test_os_filtros_se_SOMAM():
                _linha(cpf="11122233396", nome_na_tela="LUELIA", origem="mao")]
     assert not fg._filtrar(pessoas, {"busca": "luelia", "origem": "ponto"})
     assert fg._filtrar(pessoas, {"busca": "luelia", "origem": "mao"})
+
+
+# ---------------------------------------------------------------------------
+# O QUE A RELEITURA DE 29/09/2026 DEVOLVEU
+#
+# ⚠️ Ele mandou reler o que já havia proposto — *"não é melhor você fazer uma
+# releitura do que eu já propus?"* — e a releitura de `docs/FOLHA_DE_PAGAMENTO.md`
+# devolveu três colunas e uma regra que já estavam escritas e que eu não tinha
+# feito. Cada teste abaixo trava uma delas.
+# ---------------------------------------------------------------------------
+def test_o_valor_por_dia_e_o_liquido_dividido_pelos_dias():
+    """Coluna I das abas Quinzena e Fim de Mês: `F/H`. É o número com o qual o valor
+    é rateado, e o que ele confere de cabeça."""
+    assert fg._por_dia(Decimal("1000.00"), 20) == Decimal("50.00")
+    assert fg._por_dia(Decimal("1074.64"), 11) == Decimal("97.69")
+
+
+def test_sem_dia_o_valor_por_dia_e_TRACO_e_nao_zero():
+    """⚠️ Zero dias é o "PT" da planilha — o caso que precisa da mão dele. "R$ 0,00
+    por dia" pareceria um valor calculado; traço é pergunta aberta."""
+    assert fg._por_dia(Decimal("1000.00"), 0) is None
+    assert fg._por_dia(Decimal("1000.00"), None) is None
+
+
+def test_a_divisao_por_dias_calcula_o_valor_e_nao_aceita_dinheiro_digitado():
+    """⚠️ Nível 3 do ajuste fino: *"bota um dia numa obra, um dia em outra obra."*
+    Entra DIA; o valor sai do valor por dia. Valor digitado deixaria a mesma pessoa
+    com dois valores por dia diferentes no mesmo período."""
+    partes = fg.dividir_por_dias(Decimal("900.00"), [
+        {"obra": "AAA", "dias": 2}, {"obra": "BBB", "dias": 1}])
+    assert [p["valor"] for p in partes] == [Decimal("600.00"), Decimal("300.00")]
+    assert sum(p["valor"] for p in partes) == Decimal("900.00")
+
+
+def test_a_sobra_do_centavo_da_divisao_fecha_o_valor_da_pessoa():
+    """⚠️ Mesma regra de centavo do ponto. Duas regras diferentes fariam a tela e o
+    arquivo divergirem em um real a cada quinhentas pessoas."""
+    partes = fg.dividir_por_dias(Decimal("1000.00"), [
+        {"obra": "AAA", "dias": 1}, {"obra": "BBB", "dias": 1},
+        {"obra": "CCC", "dias": 1}])
+    assert sum(p["valor"] for p in partes) == Decimal("1000.00")
+
+
+def test_divisao_sem_dia_ou_com_obra_repetida_e_RECUSADA():
+    """Dividir por zero dias não é divisão, é apagar o valor da pessoa. E obra
+    repetida é erro de digitação — somar as duas caladamente esconderia o erro
+    dentro de um total que parece certo."""
+    import pytest
+
+    with pytest.raises(fg.ErroDaGestao):
+        fg.dividir_por_dias(Decimal("100.00"), [])
+    with pytest.raises(fg.ErroDaGestao):
+        fg.dividir_por_dias(Decimal("100.00"), [{"obra": "AAA", "dias": 0}])
+    with pytest.raises(fg.ErroDaGestao):
+        fg.dividir_por_dias(Decimal("100.00"), [{"obra": "AAA", "dias": 1},
+                                                {"obra": "aaa", "dias": 2}])
+
+
+def test_o_total_por_CONTA_CORRENTE_junta_as_obras_da_mesma_conta(monkeypatch):
+    """⚠️ Estava na planilha (bloco da direita), na fórmula (coluna AF) e no desenho
+    que ele aprovou (§5.2: a prévia mostra "por obra, POR CONTA CORRENTE") — e não
+    estava na minha tela. Cada conta vira um arquivo e uma SP de transferência."""
+    from app.apps.analisesps import folha_pagamento
+
+    monkeypatch.setattr(folha_pagamento, "conta_por_obra",
+                        lambda: {"AAA": "7011-4", "BBB": "7011-4",
+                                 "CCC": "22069-8"})
+    contas = fg.totais_por_conta([
+        {"obra": "AAA", "valor": Decimal("100.00"), "pessoas": 1},
+        {"obra": "BBB", "valor": Decimal("200.00"), "pessoas": 2},
+        {"obra": "CCC", "valor": Decimal("50.00"), "pessoas": 1}])
+
+    por_conta = {c["conta"]: c for c in contas}
+    assert por_conta["7011-4"]["valor"] == Decimal("300.00")
+    assert por_conta["7011-4"]["pessoas"] == 3
+    assert sorted(por_conta["7011-4"]["obras"]) == ["AAA", "BBB"]
+    assert por_conta["22069-8"]["valor"] == Decimal("50.00")
+
+
+def test_obra_SEM_CONTA_vira_linha_propria_e_vem_PRIMEIRO(monkeypatch):
+    """⚠️ NUNCA um padrão silencioso. A planilha da aba CTPS cai numa conta padrão
+    quando o nome da obra não casa com nada (§7.14.4) — obra nova paga pela conta
+    errada sem avisar. Aqui é crítica, e vem na frente porque é o que impede gerar."""
+    from app.apps.analisesps import folha_pagamento
+
+    monkeypatch.setattr(folha_pagamento, "conta_por_obra",
+                        lambda: {"AAA": "7011-4"})
+    contas = fg.totais_por_conta([
+        {"obra": "AAA", "valor": Decimal("1000.00"), "pessoas": 9},
+        {"obra": "NOVA", "valor": Decimal("10.00"), "pessoas": 1}])
+
+    assert contas[0]["sem_conta"] is True, "a sem conta vem antes da maior"
+    assert contas[0]["obras"] == ["NOVA"]
+    assert contas[1]["conta"] == "7011-4"

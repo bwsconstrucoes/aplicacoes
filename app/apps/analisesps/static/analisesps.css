@@ -2423,3 +2423,25 @@ h3 + .tabela-wrap, p + .tabela-wrap, div + .tabela-wrap { margin-top: 10px; }
 /* O campo do motivo de sair do pagamento, criado na hora do desmarque. Estreito
    de propósito: é uma frase curta, não um parecer. */
 .motivo-fora { max-width: 260px; font-size: 13px; }
+
+/* --------------------------------------------------------------------------
+   O EDITOR DE OBRA DENTRO DA LINHA — os níveis 2 e 3 do ajuste fino (29/09/2026)
+
+   ⚠️ FICA NA LINHA ABERTA, junto dos dias do ponto, e é por isso que funciona: ele
+   troca a obra OLHANDO os dias que o ponto trouxe. Num diálogo separado a
+   informação que justifica a troca sai da tela no momento da troca.
+
+   Os campos são estreitos de propósito — código de obra e número de dias. Campo
+   largo aqui foi reclamação dele em 29/09: *"os campos em várias telas estão
+   esticados demais, ocupa de ponta a ponta a tela"*.
+   -------------------------------------------------------------------------- */
+.ajuste-obra { margin-top: 10px; padding-top: 8px;
+  border-top: 1px solid var(--borda); }
+.ajuste-obra .ajuste-linha {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.ajuste-obra input[type="text"] { max-width: 220px; }
+.ajuste-obra .obra-parte { max-width: 180px; }
+.ajuste-obra .dias-parte { max-width: 90px; }
+.ajuste-obra .linha-divisao { margin-bottom: 6px; }
+.ajuste-obra .conta-divisao { margin-left: 4px; }
