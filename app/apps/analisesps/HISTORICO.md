@@ -10043,7 +10043,7 @@ automático diário seria um jeito de estragar o mês todo dia.
 | as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
 | o primeiro `IncluirLancCC` conferido no OMIE | ele |
 
-**Verificado:** suíte inteira — 7.600 passando, 145 pulados, zero falhas —
+**Verificado:** suíte inteira — 7.599 passando, 145 pulados, zero falhas —
 com os 45 testes do ponto (retomada, não-duplicação, tentativa velha, avisos,
 execução órfã) e as telas da folha e do ponto.
 **NÃO verificado:** o `ponto_diario` disparado pelo agendador de verdade, e o
