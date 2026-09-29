@@ -452,6 +452,12 @@ TELA_DA_ROTA = {
     "analisesps.tela_folha_calendario": ("folha",),
     "analisesps.tela_folha_auxilio": ("folha",),
     "analisesps.folha_auxilio_ajustar": ("folha",),
+    # ⚠️ AJUSTAR E FECHAR A APROPRIAÇÃO SÃO DE OPERADOR, como importar a folha: é
+    # o DP que trabalha a lista (quem entra, quem sai, para qual obra vai). GERAR
+    # o arquivo continua só do mestre — a decisão do dono de 26/09/2026 separa as
+    # duas coisas, e é ela que faz a alçada aqui.
+    "analisesps.folha_apropriacao_ajustar": ("folha",),
+    "analisesps.folha_apropriacao_fechar": ("folha",),
     "analisesps.folha_auxilio_selecao": ("folha",),
     # A ficha da pessoa no modal: cadastro + ponto do mês. É da folha, e mostra
     # dado pessoal — quem não alcança a folha não alcança isto.

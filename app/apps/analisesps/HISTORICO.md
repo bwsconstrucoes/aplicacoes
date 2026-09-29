@@ -9346,6 +9346,155 @@ com teste que lê os templates e falha se uma nascer fora.
 
 ---
 
+### Centésima décima sétima leva (29/09) — a folha da contabilidade ganhou gestão, e a obra passou a sair do PONTO
+
+Ele abriu a folha importada e não tinha o que fazer nela:
+
+> *"Eu importo o arquivo e não tenho gestão nenhuma sobre as informações dele. Quem
+> vai, quem não vai. (…) Cadê as informações de cada funcionário, cadê os dados
+> deles, cadê uma tabela mostrando as informações, cadê a possibilidade de seleção
+> deles de quem entra e quem não entra, cadê onde gera o arquivo de pagamento? (…)
+> A planilha era um fundamento. Parece que foi totalmente ignorada."*
+
+E, depois:
+
+> *"A informação do arquivo não é absoluta e é toda gerenciável, e ainda tem toda a
+> relação com o ponto. Mas aqui já devemos usar a folha de ponto mesmo, visto que
+> tem o rateio diário pra formar os totalizadores por obra."*
+
+#### ⚠️ O DEFEITO DE VERDADE ERA A FALTA DE PORTA, e ele é o mais importante desta leva
+
+A tela pessoa por pessoa **existia**. O único caminho até ela era o número embaixo
+da coluna "Precisam de olho" — que **desaparece quando não há ninguém pendente**. A
+competência não era clicável. Quem importava a folha e não adivinhava que aquele
+número era um link não tinha porta nenhuma.
+
+Isto é o tipo de erro que nenhum teste pegava, porque cada peça funcionava. O que
+faltava era o caminho entre elas.
+
+**Consertado:** a aba "Folha da contabilidade" agora **leva direto para a última
+folha aberta**. A tela de importar continua existindo como estante (soltar arquivo,
+apagar o que veio errado), em `?lista=1`, e a competência da lista é um link.
+
+#### Os nomes dos campos do ponto: o gargalo caiu, e a fonte não fui eu
+
+O `ponto.py` dizia, com todas as letras, que **não conhecia os nomes dos campos de
+cada dia** — e era essa falta que travava o total por obra desde 26/09. Ele mandou,
+em 29/09, o programa que já roda em cima do mesmo relatório. Os nomes saíram de lá
+(`analysis_engine.py`, `normalize_folha` e `merge_folha_group`):
+
+    hr_entrada, hr_almoco, hr_retorno, hr_saida     as quatro marcações
+    obra_entrada, obra_almoco, obra_retorno,        a obra DE CADA marcação
+    obra_saida
+    presenca_ausencia, desc_falta                   presença e falta
+    totalHrs, dia_semana                            conferência
+
+⚠️ **NÃO copiei a regra deles para escolher a obra do dia.** Lá a obra do dia é a
+**primeira preenchida** das quatro; aqui é a **mais frequente**, com o empate 2×2
+resolvido pela primeira — que é a decisão dele, de 26/09. A diferença muda dinheiro:
+quem entra numa obra e passa o resto do dia em outra tem o dia contado na segunda.
+
+⚠️ **A interpretação é na LEITURA, não na carga.** O `campos` continua guardado cru.
+Se um nome mudar, conserta-se num lugar e o ponto já gravado continua valendo —
+gravar interpretado obrigaria a recarregar meses de ponto para corrigir uma coluna.
+
+#### A tela nova da folha (`analisesps_folha_aberta.html` + `folha_gestao.py`)
+
+| O que ele pediu | O que está na tela |
+|---|---|
+| "quem entra e quem não entra" | caixa por linha e **um** salvar; desmarcar pede o motivo |
+| "cadê os dados deles" | nome, CPF, código Fortes, cargo, **Fase Atual**, obra, dias, valor, situação |
+| "cadê onde gera o arquivo" | **na lateral**, no alto — não no fim da tela |
+| "à medida que vamos marcando já vamos vendo os valores" | barra grudada embaixo, somando ao marcar |
+| "a lista por obra fica um troço gigantesco no começo" | o total por obra é o **último** bloco |
+| "o rateio diário pra formar os totalizadores por obra" | cada linha abre os **dias do ponto**, obra por obra |
+| "até o termo usado é ruim" | "Precisam de olho" virou **"Travam o pagamento"** |
+
+⚠️ **Nenhuma conta nova foi escrita.** `folha_apropriacao.py` (a conta pura),
+`folha_apropriacao_guardada.py` (o ajuste e o fechamento), `folha_geracao.py` (os
+layouts) e `folha_pagamento.py` (gerar e registrar) já existiam e estavam testados.
+O `folha_gestao.py` só **junta e filtra** — e o `apropriar_a_folha` é o único lugar
+que monta a conta, para a tela e o fechamento nunca divergirem.
+
+#### O fechamento da verba `folha` não tinha caminho de tela
+
+`folha_pagamento.gerar` só paga apropriação **fechada**, e nenhuma tela fechava a
+verba `folha`. Na prática o arquivo da folha da contabilidade era **impossível de
+gerar**. Agora há o botão, na lateral, e ele recusa enquanto houver dinheiro sem
+obra — dizendo quanto falta.
+
+#### Alimentação e transporte: a obra que paga passou a vir do ponto
+
+> *"Em Alimentação a informação de obra deveria ser a do Ponto. Caso não tenha, usar
+> a de cadastro."* / *"A questão da obra que paga é fundamental."*
+
+⚠️ **A REGRA DO AUXÍLIO É DIFERENTE DA DA FOLHA, de propósito.** A folha **divide** o
+valor entre as obras dos dias (salário se rateia). O auxílio **não divide**: o dia é
+valor fechado, e a pergunta é de qual conta sai o dinheiro. Então uma obra ganha — a
+de mais dias, e no empate a primeira do período (`folha_apropriacao.obra_com_mais_dias`).
+
+E a célula **diz de onde a obra veio**: "18 dia(s) no ponto" ou "do cadastro — sem
+ponto no mês". A tabela por obra diz quantas pessoas da linha caíram no cadastro.
+Obra de cadastro desatualizado tiraria dinheiro da conta errada em silêncio.
+
+Também nesta tela: coluna e filtro de **Fase Atual** (pedido duas vezes), o botão de
+gerar foi para a **lateral**, o bloco por obra foi para **depois** da lista, e a barra
+do total **parou de sumir** — antes ela só aparecia quando havia mudança não salva, o
+que resolvia "tem coisa para salvar" e ignorava o que ele usa a barra para fazer.
+
+#### O que o backend que ele mandou respondeu sobre o ponto
+
+Ele mandou o zip perguntando se dava ideia. Respondeu duas coisas:
+
+1. **Não há truque de TLS.** Aquele backend mantém a verificação ligada, igual à
+   nossa, e tem o mesmo botão de desligar. Funciona na máquina dele porque o
+   computador confia no certificado do Mobponto; o Render não confia. O erro
+   "unable to get local issuer certificate" é de **cadeia de confiança**, não de
+   senha nem de instabilidade — e a mensagem da tela dizia as duas coisas erradas.
+2. **Ele não lê o ponto pela API**: lê um **Excel exportado**. O que ele faz pela API
+   é *escrever* — incluir batida (`CAD_EDT_PONTO`) e aplicar falta (`CAD_EDT_FALTA`).
+
+⚠️ **CREDENCIAL NO ARQUIVO, DE NOVO.** O `local_backend.py` traz a chave da API e a
+senha do Mobponto **em texto puro**, mais o CPF e o nome do responsável. O arquivo
+chegou por upload, então essa senha circulou: **tem de ser trocada na origem**, junto
+com as do Dropbox e da Z-API. E esse arquivo não entra no repositório.
+
+#### Pergunta minha que segue aberta, e ela trava trabalho
+
+Pedi a planilha de novo — *"Preciso compartilhar novamente?"*, ele perguntou; a
+resposta é **sim**. O que serve, sem expor dado de ninguém: **nomes das abas,
+cabeçalhos e fórmulas**, principalmente as que somam por obra e as que decidem quem
+entra no arquivo. E quatro perguntas seguem sem resposta:
+
+1. o **arquivo de pagamento da folha da contabilidade é qual layout?** (os auxílios
+   saem em BeeVale e SomaPay; a folha pode ser outro) — **assumi, por ora, os mesmos
+   dois destinos**, porque é o que existe escrito e testado;
+2. **quem não entra** fica para a rodada seguinte, é pago por fora, ou só não sai
+   neste arquivo? — assumi "só não sai neste arquivo", com motivo obrigatório;
+3. o total por obra precisa **bater com algo da planilha**, ou é ele o resultado?
+4. **ponto e folha discordando** (na folha e sem dia de ponto, ou com ponto e fora da
+   folha) — a tela hoje **segura** e marca; não trava o resto.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto de verdade entrar (é ele que alimenta TODA a obra por dia) | o certificado do Mobponto no Render — a tela agora diz que é isso, e existe `MOBPONTO_TLS_INSEGURO=1` como saída, desligada, com o risco escrito |
+| a planilha como norte | ele mandar as abas, os cabeçalhos e as fórmulas |
+| o layout do arquivo de pagamento da folha | só ele tem |
+| o nome da coluna **"Paga por BeeVale"** | só ele tem |
+| o de/para de categoria do card | abas ocultas da planilha |
+| trocar na origem as credenciais do Mobponto, Dropbox e Z-API | ele — e o `local_backend.py` que ele mandou tem a do Mobponto em claro |
+
+**Verificado:** suíte inteira em blocos, sem falha, com 60 casos novos (a gestão da
+folha, os nomes dos campos do ponto, a obra do auxílio, as sete correções de tela) e
+o `app.main` subindo com os 18 blueprints. **NÃO verificado:** nada num navegador
+com dado real — e, principalmente, **a apropriação nunca rodou sobre ponto de
+verdade**, porque a carga do ponto continua falhando por certificado. A conta está
+testada; o dado que ela consome, não chegou.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

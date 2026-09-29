@@ -575,6 +575,16 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # .pfx. Já vinha instalada como dependência de outras, mas
         # agora é usada DIRETO — então tem de estar declarada.
         "cryptography": "cryptography",
+        # ⚠️ O PACOTE DE CERTIFICADOS DE CONFIANÇA, declarado como "requests"
+        # porque É do requests: ele não funciona sem certifi, e é o certifi que o
+        # `requests` usa por padrão para verificar TLS.
+        #
+        # O `ponto.py` passou a usá-lo DIRETO em 29/09/2026, quando o ponto do
+        # Mobponto começou a falhar no Render com "unable to get local issuer
+        # certificate": apontar o `verify` para o pacote do certifi, em vez de
+        # deixar no padrão, elimina o depósito do sistema operacional como
+        # variável. Não é dependência nova — só deixou de ser indireta.
+        "certifi": "requests",
         # `app` é o PRÓPRIO repositório, não uma biblioteca — o
         # `comprovantes.py` chama o robô do `baixabradesco` por
         # `from app.apps.baixabradesco...`. Não tem o que conferir no

@@ -20,15 +20,38 @@ três endpoints:
                                   "relatorio": [{"dia": ..., "matricula": ...,
                                                  …campos dinâmicos…}]}]}}
 
-⚠️ OS CAMPOS DE CADA DIA SÃO DINÂMICOS, e o próprio script do dono os descobre em
-tempo de execução. **Eu não os conheço**, e inventar nome de campo aqui decidiria
-em qual obra cai o salário de 500 pessoas com base num palpite — o mesmo erro que
-já cometi duas vezes nesta semana afirmando coisa de planilha sem ler a fórmula.
+⚠️ OS CAMPOS DE CADA DIA SÃO DINÂMICOS, e por isso este módulo **guarda o dia
+inteiro como veio**, em `campos`. Quem interpreta é a leitura, não a gravação: se
+o nome de um campo mudar, conserta-se num lugar e o histórico já gravado continua
+valendo. Gravar interpretado obrigaria a recarregar meses inteiros de ponto para
+corrigir um nome de coluna.
 
-Então este módulo faz o que é honesto: **traz e guarda o dia inteiro como veio**,
-resolve o que dá para resolver sem adivinhar (a data), e **anota quais campos
-vieram**. A tela mostra essa lista. Com ela, o mapeamento das marcações e da obra
-é uma linha de código e nenhuma suposição.
+OS NOMES DOS CAMPOS SÃO CONHECIDOS DESDE 29/09/2026, e não foram supostos: o dono
+mandou o programa que já roda em cima deste mesmo relatório, e é dele que eles
+saem (`analysis_engine.py`, funções `normalize_folha` e `merge_folha_group`).
+Antes disso este módulo dizia, com todas as letras, que não os conhecia — e era
+essa falta que travava o total por obra da folha.
+
+    cpf, nome, data          quem e quando
+    hr_entrada, hr_almoco,   as QUATRO marcações do dia, nesta ordem
+    hr_retorno, hr_saida
+    obra_entrada,            a obra DE CADA marcação — é daqui que sai a
+    obra_almoco,             apropriação: o dia pertence à obra que mais
+    obra_retorno,            aparece nas quatro, e no empate 2x2 vale a
+    obra_saida               obra em que o dia começou (decisão do dono)
+    presenca_ausencia        presença, falta, férias, atestado…
+    desc_falta               a descrição da falta, quando há
+    totalHrs, dia_semana     conferência
+
+⚠️ A ORDEM DAS QUATRO OBRAS É A ORDEM DO DIA, e não pode ser alterada: o
+desempate do `folha_apropriacao.obra_do_dia` é justamente "vale a primeira".
+Ordenar a lista antes de contar faria o desempate virar sorteio alfabético.
+
+⚠️ NÃO COPIEI A REGRA DO PROGRAMA DELE PARA ESCOLHER A OBRA DO DIA. Lá a obra do
+dia é a **primeira preenchida** das quatro (`bfill`); aqui é a **mais frequente**,
+com o empate resolvido pela primeira. A diferença é decisão do dono, de
+26/09/2026, e ela muda dinheiro: quem entra numa obra e passa o resto do dia em
+outra tem o dia contado na segunda, não na primeira.
 
 AS CREDENCIAIS vêm de `MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY` no Render.
 Elas estão hoje escritas dentro dos Apps Script, em claro — ao trazer para cá,
@@ -51,6 +74,25 @@ URL = os.getenv("MOBPONTO_URL",
 VERSAO_DA_API = os.getenv("MOBPONTO_API_VERSION", "1.0.0")
 
 TIPO_FOLHA = "FOLHA_BWS_EXCEL"
+
+# ---------------------------------------------------------------------------
+# OS NOMES DOS CAMPOS DE UM DIA
+#
+# Lidos do programa do dono em 29/09/2026 (ver o topo do arquivo). Ficam aqui, em
+# constante, por dois motivos: a leitura toda passa por eles — então um nome que
+# mude se conserta num lugar — e um teste pode afirmar quais são, o que faz um
+# rename silencioso quebrar a suíte em vez de esvaziar a apropriação em produção.
+# ---------------------------------------------------------------------------
+# As quatro marcações, NA ORDEM DO DIA. A ordem é regra de negócio, não estética.
+CAMPOS_DAS_HORAS = ("hr_entrada", "hr_almoco", "hr_retorno", "hr_saida")
+
+# A obra de cada marcação, na MESMA ordem das horas.
+CAMPOS_DAS_OBRAS = ("obra_entrada", "obra_almoco", "obra_retorno", "obra_saida")
+
+CAMPO_PRESENCA = "presenca_ausencia"
+CAMPO_FALTA = "desc_falta"
+CAMPO_TOTAL_DE_HORAS = "totalHrs"
+CAMPO_DIA_DA_SEMANA = "dia_semana"
 
 # Quanto esperar por página, e quantas vezes tentar. O script do dono usa
 # backoff de 1s/2s/4s; aqui é o mesmo, porque a razão é a mesma: a API cai de vez
@@ -494,7 +536,102 @@ def dias_da_pessoa(cpf: str, ano: int, mes: int) -> dict:
                     nomes.append(chave)
         else:
             campos = {}
+        # ⚠️ A OBRA DO DIA SAI DAS QUATRO MARCAÇÕES, não da coluna `obra` da
+        # tabela: essa coluna nasceu vazia, porque na carga os nomes dos campos
+        # ainda não eram conhecidos. Resolver na LEITURA faz o ponto que já está
+        # guardado passar a mostrar obra sem ninguém recarregar mês nenhum.
+        lido = _dia_lido(data, campos)
+        resolvido = _obra_do_dia(lido)
         dias.append({"data": data, "matricula": matricula or "",
-                     "obra": obra or "", "presenca": presenca or "",
-                     "falta": falta or "", "campos": campos})
+                     "obra": resolvido["obra"] or obra or "",
+                     "empate": resolvido["empate"],
+                     "marcacoes": lido["marcacoes"], "horas": lido["horas"],
+                     "presenca": lido["presenca"] or presenca or "",
+                     "falta": lido["falta"] or falta or "",
+                     "total_de_horas": lido["total_de_horas"],
+                     "campos": campos})
     return {"tem_carga": True, "carga": carga, "dias": dias, "campos": nomes}
+
+
+# ---------------------------------------------------------------------------
+# O DIA LIDO: das marcações cruas para a obra do dia
+#
+# ⚠️ ESTE É O PEDAÇO QUE DESTRAVA O TOTAL POR OBRA DA FOLHA. Até 29/09/2026 a
+# apropriação existia inteira (`folha_apropriacao.py`) e não tinha de onde tirar
+# a obra de cada dia — o cálculo estava escrito, testado, e sem dado.
+# ---------------------------------------------------------------------------
+def obras_do_dia(campos) -> list:
+    """As quatro obras do dia, na ordem do dia. Vazio onde não houve marcação.
+
+    Devolve sempre quatro posições: `folha_apropriacao.obra_do_dia` conta as
+    preenchidas, e uma lista curta mudaria a contagem sem avisar."""
+    if not isinstance(campos, dict):
+        return ["", "", "", ""]
+    return [" ".join(str(campos.get(c) or "").split()).upper()
+            for c in CAMPOS_DAS_OBRAS]
+
+
+def horas_do_dia(campos) -> list:
+    """As quatro marcações de hora, na ordem do dia. Só para a tela conferir."""
+    if not isinstance(campos, dict):
+        return ["", "", "", ""]
+    return [str(campos.get(c) or "").strip() for c in CAMPOS_DAS_HORAS]
+
+
+def _dia_lido(data, campos) -> dict:
+    """Um dia no formato que `folha_apropriacao` espera.
+
+    As chaves são `data`, `marcacoes`, `presenca` e `falta` — o contrato de
+    `folha_apropriacao._dias_uteis_do_ponto`. `marcacoes` são as OBRAS, não as
+    horas: é a obra que se conta para decidir de quem é o dia."""
+    campos = campos if isinstance(campos, dict) else {}
+    return {
+        "data": data,
+        "marcacoes": obras_do_dia(campos),
+        "horas": horas_do_dia(campos),
+        "presenca": " ".join(str(campos.get(CAMPO_PRESENCA) or "").split()),
+        "falta": " ".join(str(campos.get(CAMPO_FALTA) or "").split()),
+        "total_de_horas": str(campos.get(CAMPO_TOTAL_DE_HORAS) or "").strip(),
+        "dia_da_semana": str(campos.get(CAMPO_DIA_DA_SEMANA) or "").strip(),
+    }
+
+
+def _obra_do_dia(lido) -> dict:
+    """A obra de um dia lido. O import fica DENTRO porque `folha_apropriacao`
+    puxa o rateio, que puxa o banco — e este módulo é chamado na carga, antes de
+    qualquer tela."""
+    from .folha_apropriacao import obra_do_dia
+    return obra_do_dia(lido["marcacoes"], lido["presenca"], lido["falta"])
+
+
+def dias_por_cpf(ano: int, mes: int) -> dict:
+    """`{cpf: [dias]}` do mês inteiro, pronto para a apropriação.
+
+    ⚠️ UMA CONSULTA PARA O MÊS TODO, não uma por pessoa. São ~500 pessoas × 31
+    dias: perguntar dentro do laço faria 500 idas ao banco para montar uma tela,
+    e é o jeito mais fácil de deixar a folha lenta sem ninguém entender por quê.
+
+    ⚠️ DEVOLVE `{}` QUANDO NÃO HÁ CARGA DO MÊS, e quem chama tem de DIZER isso na
+    tela em vez de mostrar zero: folha sem ponto e folha com ponto vazio são
+    coisas diferentes, e a segunda é um erro a consertar."""
+    import json as _json
+
+    from .db import consultar
+
+    carga = carga_do_mes(ano, mes)
+    if not _pronto() or not carga:
+        return {}
+
+    saida: dict = {}
+    for cpf, data, bruto in consultar(
+            "SELECT cpf, data, campos FROM analisesps.ponto_dia "
+            " WHERE carga_id = ? AND data IS NOT NULL ORDER BY cpf, data",
+            (carga["id"],)):
+        if not cpf:
+            continue
+        try:
+            campos = _json.loads(bruto) if bruto else {}
+        except Exception:  # noqa: BLE001 — JSON torto de um dia não pode
+            campos = {}    # derrubar o mês inteiro; o dia fica sem obra e cai
+        saida.setdefault(cpf, []).append(_dia_lido(data, campos))
+    return saida

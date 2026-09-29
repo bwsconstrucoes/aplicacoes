@@ -125,6 +125,10 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/auxilios"),
     ("GET",  "/analisesps/folha/diaristas"),
     ("POST", "/analisesps/api/folha/auxilio/ajuste"),
+    # A gestão da folha da contabilidade: quem entra, quem sai, para qual obra vai
+    # o valor — e o fechamento que autoriza o arquivo a sair.
+    ("POST", "/analisesps/api/folha/apropriacao/ajuste"),
+    ("POST", "/analisesps/api/folha/apropriacao/fechar"),
     ("POST", "/analisesps/api/folha/auxilio/selecao"),
     # Mostra cadastro e ponto de uma pessoa: dado pessoal.
     ("GET",  "/analisesps/api/folha/pessoa/99713349334"),

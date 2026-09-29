@@ -513,3 +513,91 @@ def test_verba_desconhecida_e_recusada(banco_auxilio):
     from app.apps.analisesps import folha_auxilio as fx
     with pytest.raises(fx.ErroDoAuxilio):
         fx.calcular("cesta", 2026, 9)
+
+
+# ---------------------------------------------------------------------------
+# A OBRA QUE PAGA VEM DO PONTO — 29/09/2026
+#
+# *"Em Alimentação a informação de obra deveria ser a do Ponto. Caso não tenha,
+# usar a de cadastro."* E, no mesmo dia: *"a questão da obra que paga é
+# fundamental."*
+# ---------------------------------------------------------------------------
+def test_a_obra_do_ponto_e_lida_do_mes_e_recortada_pelo_PERIODO(monkeypatch):
+    """⚠️ RECORTA PELO PERÍODO: o auxílio conta os dias do mês trabalhado, e um dia
+    fora dele não pode decidir a obra que paga."""
+    import datetime as dt
+
+    from app.apps.analisesps import folha_auxilio as fx, ponto
+
+    monkeypatch.setattr(ponto, "dias_por_cpf", lambda a, m: {
+        "99713349334": [
+            {"data": dt.date(2026, 9, 2), "marcacoes": ["AAA"] * 4,
+             "presenca": "Presença", "falta": ""},
+            {"data": dt.date(2026, 9, 3), "marcacoes": ["AAA"] * 4,
+             "presenca": "Presença", "falta": ""},
+            # FORA do período: se contasse, "BBB" empataria e poderia ganhar.
+            {"data": dt.date(2026, 10, 5), "marcacoes": ["BBB"] * 4,
+             "presenca": "Presença", "falta": ""},
+            {"data": dt.date(2026, 10, 6), "marcacoes": ["BBB"] * 4,
+             "presenca": "Presença", "falta": ""},
+            {"data": dt.date(2026, 10, 7), "marcacoes": ["BBB"] * 4,
+             "presenca": "Presença", "falta": ""}]})
+
+    achado = fx._obra_do_ponto_por_cpf(
+        2026, 9, dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+    assert achado == {"99713349334": {"obra": "AAA", "dias": 2}}
+
+
+def test_sem_ponto_do_mes_o_auxilio_NAO_ESTOURA_e_cai_no_cadastro(monkeypatch):
+    """⚠️ O auxílio é calculado todo mês, inclusive antes de alguém trazer o ponto.
+    Uma tela de erro aqui esconderia a lista inteira por causa de uma coluna."""
+    import datetime as dt
+
+    from app.apps.analisesps import folha_auxilio as fx, ponto
+
+    monkeypatch.setattr(ponto, "dias_por_cpf", lambda a, m: {})
+    assert fx._obra_do_ponto_por_cpf(
+        2026, 9, dt.date(2026, 9, 1), dt.date(2026, 9, 30)) == {}
+
+
+def test_ponto_que_falha_nao_derruba_o_calculo_do_auxilio(monkeypatch):
+    """O ponto vinha falhando por certificado no Render. Se isso derrubasse o
+    auxílio, ele perderia as duas telas por causa de uma."""
+    import datetime as dt
+
+    from app.apps.analisesps import folha_auxilio as fx, ponto
+
+    def explode(a, m):
+        raise RuntimeError("certificate verify failed")
+
+    monkeypatch.setattr(ponto, "dias_por_cpf", explode)
+    assert fx._obra_do_ponto_por_cpf(
+        2026, 9, dt.date(2026, 9, 1), dt.date(2026, 9, 30)) == {}
+
+
+def test_a_pessoa_guarda_DE_ONDE_veio_a_obra():
+    """⚠️ Sem a origem, obra de cadastro desatualizado paga pela conta errada e
+    ninguém tem como desconfiar."""
+    import datetime as dt
+
+    from app.apps.analisesps import folha_auxilio as fx
+
+    ficha = {"cpf": "99713349334", "nome": "GERLANIO", "fase": "Ativos",
+             "valor_alimentacao": "15.00", "modo_alimentacao": "Segunda à Sexta",
+             "obra_cadastro": "CREPEOLINDA"}
+    do_ponto = fx.calcular_pessoa(
+        fx.ALIMENTACAO, ficha, dt.date(2026, 9, 1), dt.date(2026, 9, 30),
+        codigo_da_obra="AAA", obra_do_ponto="AAA", dias_na_obra=18)
+    assert do_ponto["obra_de_onde"] == "ponto"
+    assert do_ponto["dias_na_obra"] == 18
+    assert do_ponto["fase"] == "Ativos"
+
+    do_cadastro = fx.calcular_pessoa(
+        fx.ALIMENTACAO, ficha, dt.date(2026, 9, 1), dt.date(2026, 9, 30),
+        codigo_da_obra="CRE1")
+    assert do_cadastro["obra_de_onde"] == "cadastro"
+    assert do_cadastro["dias_na_obra"] == 0
+
+    sem_nada = fx.calcular_pessoa(
+        fx.ALIMENTACAO, ficha, dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+    assert sem_nada["obra_de_onde"] == ""

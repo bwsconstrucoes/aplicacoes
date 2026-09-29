@@ -2424,40 +2424,136 @@ def tela_folha_painel():
 @bp.route("/folha/<int:folha_id>")
 @exige_consulta
 def tela_folha_aberta(folha_id: int):
-    """Uma folha, pessoa por pessoa, com as críticas na frente.
+    """A FOLHA ABERTA PARA TRABALHAR: pessoa por pessoa, com obra e seleção.
 
-    ⚠️ AS CRÍTICAS VÊM ANTES DA LISTA, de propósito: quem está pendente de
-    cadastro, quem já saiu e quem está saindo são as três coisas que impedem
-    pagar — e elas têm de ser vistas antes de alguém rolar 491 linhas."""
+    ⚠️ ESTA TELA FOI REFEITA EM 29/09/2026, e o motivo é uma cobrança dele:
+
+        *"Eu importo o arquivo e não tenho gestão nenhuma sobre as informações
+        dele. Quem vai, quem não vai. (…) Cadê os dados deles, cadê uma tabela
+        mostrando as informações, cadê a possibilidade de seleção de quem entra e
+        quem não entra, cadê onde gera o arquivo de pagamento?"*
+
+    Antes ela era só leitura — nome, código, CPF, filial e valor — e o ÚNICO
+    caminho até aqui era o número embaixo de "Precisam de olho", que desaparece
+    quando não há ninguém pendente. Quem importava a folha e não achava aquele
+    número não tinha porta nenhuma.
+
+    ⚠️ E O TOTAL POR OBRA SAI DO PONTO, dia por dia, como ele disse no mesmo dia:
+    *"aqui já devemos usar a folha de ponto mesmo, visto que tem o rateio diário
+    pra formar os totalizadores por obra."*"""
     from . import folha_arquivo as fa
+    from . import folha_gestao as fg
 
-    folha = None
-    criticas = None
+    montado = {}
     erro = None
     try:
         # CASA DE NOVO A CADA VISITA: o cadastro pode ter sido atualizado depois
         # da importação, e aí gente que estava pendente passa a casar sem
         # ninguém reimportar nada.
         fa.casar_com_o_cadastro(folha_id)
-        folha = fa.abrir(folha_id)
-        if folha is not None:
-            criticas = fa.criticas(folha_id)
-    except Exception as e:  # noqa: BLE001
+        montado = fg.montar(folha_id, {
+            "busca": request.args.get("q") or "",
+            "obra": request.args.get("obra") or "",
+            "fase": request.args.get("fase") or "",
+            "situacao": request.args.get("situacao") or "",
+            "origem": request.args.get("origem") or "",
+        })
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui abrir a folha %s", folha_id)
         erro = str(e)
 
-    if folha is None and erro is None:
+    if not montado and erro is None:
         # Fora do escopo responde "não encontrado", nunca "sem permissão".
         return render_template("analisesps_erro.html",
                                mensagem="Esta folha não está mais aqui."), 404
 
     return render_template(
         "analisesps_folha_aberta.html", aba="folha", subaba="importar",
-        grupos=subtelas_agrupadas(), folha=folha, criticas=criticas, erro=erro,
-        filiais=fa.totais_por_filial(folha_id) if folha else [],
+        grupos=subtelas_agrupadas(), montado=montado, erro=erro,
+        folha=montado.get("folha"), folhas=fa.listar(teto=24),
+        criticas=fa.criticas(folha_id) if montado else None,
+        filiais=fa.totais_por_filial(folha_id) if montado else [],
+        situacoes=[(c, fg.ROTULO_DA_SITUACAO[c]) for c in fg.ORDEM_DAS_SITUACOES],
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/apropriacao/ajuste", methods=["POST"])
+@exige_operador
+def folha_apropriacao_ajustar():
+    """Quem entra, quem sai, e para qual obra vai o valor de uma pessoa.
+
+    ⚠️ É A "GESTÃO SOBRE O ARQUIVO" que ele cobrou. Três decisões, uma pessoa por
+    chamada: tirar do pagamento (com motivo, sempre), jogar tudo numa obra, ou
+    dividir entre obras.
+
+    ⚠️ O AJUSTE É DO PAGAMENTO, NÃO DA FOLHA IMPORTADA. Guardar por `folha_id`
+    faria uma reimportação — que é normal, ele corrige e manda de novo — apagar o
+    trabalho mais caro do processo. Por isso a chave é competência + tipo + CPF,
+    igual ao auxílio."""
+    from . import folha_apropriacao_guardada as guardada
+    from . import folha_arquivo as fa
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        folha_id = int(dados.get("folha_id") or 0)
+    except (TypeError, ValueError):
+        folha_id = 0
+    folha = fa.abrir(folha_id) if folha_id else None
+    if not folha:
+        # Número que não existe responde "não encontrado", nunca "sem permissão".
+        return {"ok": False, "erro": "Esta folha não está mais aqui."}, 404
+
+    cpf = str(dados.get("cpf") or "")
+    entra = dados.get("entra")
+    por_obra = dados.get("por_obra") or []
+    obra_unica = str(dados.get("obra") or "").strip()
+    try:
+        if dados.get("limpar"):
+            # Volta a seguir o ponto e a regra: é o desfazer da tela.
+            guardada.limpar_ajuste(folha["ano"], folha["mes"], folha["tipo"], cpf)
+        else:
+            guardada.gravar_ajuste(
+                folha["ano"], folha["mes"], folha["tipo"], cpf,
+                nome=str(dados.get("nome") or ""),
+                fora=(entra is False),
+                motivo=str(dados.get("motivo") or ""),
+                obra_unica=obra_unica, por_obra=por_obra,
+                observacao=str(dados.get("observacao") or ""), quem=quem)
+    except guardada.ErroDaApropriacao as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o ajuste da apropriação")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True}
+
+
+@bp.route("/api/folha/apropriacao/fechar", methods=["POST"])
+@exige_operador
+def folha_apropriacao_fechar():
+    """Congela a apropriação desta folha — o passo antes de gerar o arquivo.
+
+    ⚠️ SEM ESTE BOTÃO NÃO HAVIA COMO GERAR O ARQUIVO DA FOLHA. O gerador só paga
+    apropriação fechada (`folha_pagamento.gerar`), e nenhuma tela fechava a verba
+    `folha` — então o arquivo era, na prática, impossível de sair."""
+    from . import folha_gestao as fg
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        folha_id = int(dados.get("folha_id") or 0)
+    except (TypeError, ValueError):
+        folha_id = 0
+    try:
+        feito = fg.fechar(folha_id, quem=quem)
+    except fg.ErroDaGestao as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou fechar a apropriação")
+        return {"ok": False, "erro": f"Não consegui fechar: {e}"}, 500
+    return {"ok": True, **{k: str(v) for k, v in feito.items()}}
 
 
 @bp.route("/folha/importar")
@@ -2465,12 +2561,25 @@ def tela_folha_aberta(folha_id: int):
 def tela_folha_importar():
     """A folha que a contabilidade manda, importada e guardada.
 
-    É a primeira peça da área, e é a que destrava o resto: sem a folha gravada
-    não há painel com total por obra, não há tela por verba e não há arquivo de
-    pagamento — não se soma o que não está em lugar nenhum."""
+    ⚠️ QUANDO JÁ HÁ FOLHA IMPORTADA, ESTA TELA NÃO É O DESTINO — ela manda direto
+    para a última folha aberta, que é onde se trabalha. Correção do dono em
+    29/09/2026: *"eu estou em Folha Contabilidade e a única coisa que aparece é um
+    botão pra clicar nas pessoas que 'PRECISAM DE OLHO'."*
+
+    Ele estava certo e o erro era de desenho: esta tela é uma ESTANTE (a área de
+    soltar o arquivo e a lista do que já veio), e uma estante não é trabalho. A
+    lista continua alcançável — `?lista=1`, e o seletor de competência da própria
+    folha aberta aponta para cá — mas quem chega pela aba cai onde há o que fazer.
+
+    Sem folha nenhuma, ela é o destino certo: é onde se solta o arquivo."""
     from . import folha_arquivo as fa
 
     pronto = fa._pronto()
+    if pronto and not request.args.get("lista"):
+        ultima = (fa.listar(teto=1) or [None])[0]
+        if ultima:
+            return redirect(url_for("analisesps.tela_folha_aberta",
+                                    folha_id=ultima["id"]))
     folhas = []
     erro = None
     try:
@@ -2849,10 +2958,16 @@ def tela_folha_auxilio():
     procurado = " ".join((request.args.get("q") or "").split())
     obra_filtro = " ".join((request.args.get("obra") or "").split())
     so = (request.args.get("so") or "").strip()
+    # ⚠️ A FASE ATUAL É FILTRO AQUI TAMBÉM, e ele pediu duas vezes: *"havia falado
+    # de colocar a coluna Fase Atual, não foi colocado."* É a coluna que diz em que
+    # ponto do processo a pessoa está, e é o corte mais usado da lista.
+    fase_filtro = " ".join((request.args.get("fase") or "").split())
     pessoas = list((resultado or {}).get("pessoas") or [])
     obras_na_lista = sorted({p["obra"] for p in pessoas if p["obra"]})
     if obra_filtro:
         pessoas = [p for p in pessoas if p["obra"] == obra_filtro]
+    if fase_filtro:
+        pessoas = [p for p in pessoas if (p.get("fase") or "") == fase_filtro]
     if procurado:
         from .folha_rateio import so_digitos
         digitos = so_digitos(procurado)
@@ -2870,8 +2985,9 @@ def tela_folha_auxilio():
         grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
         tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=pessoas,
         obras_na_lista=obras_na_lista, procurado=procurado,
-        obra_filtro=obra_filtro, so=so,
-        filtrando=bool(procurado or obra_filtro or so),
+        obra_filtro=obra_filtro, so=so, fase_filtro=fase_filtro,
+        fases=(resultado or {}).get("fases") or [],
+        filtrando=bool(procurado or obra_filtro or so or fase_filtro),
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
         ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(),

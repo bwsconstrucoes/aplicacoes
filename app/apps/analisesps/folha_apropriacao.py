@@ -117,6 +117,39 @@ def obra_do_dia(marcacoes, presenca: str = "", falta: str = "") -> dict:
             "marcou": len(presentes), "motivo": ""}
 
 
+def obra_com_mais_dias(dias_uteis) -> dict:
+    """A obra em que a pessoa mais trabalhou no período. `{"obra", "dias"}`.
+
+    ⚠️ EXISTE PARA O AUXÍLIO, e a regra é do dono, de 29/09/2026: *"em Alimentação
+    a informação de obra deveria ser a do Ponto. Caso não tenha, usar a de
+    cadastro."*
+
+    A DIFERENÇA PARA A FOLHA importa e é de propósito: a folha **divide** o valor
+    entre todas as obras dos dias (o dia pertence à obra do dia), porque salário
+    se rateia. O auxílio **não se divide** — o dia do auxílio é um valor fechado
+    por dia, e o que se pergunta é de qual obra sai o dinheiro. Então aqui uma
+    obra ganha: a de mais dias, e no empate a que apareceu primeiro no período.
+
+    Devolve `{"obra": "", "dias": 0}` quando não há dia com obra — e aí quem chama
+    cai no cadastro, DIZENDO que caiu."""
+    contagem: dict = {}
+    ordem = []
+    for dia in dias_uteis or []:
+        obra = dia.get("obra")
+        if not obra:
+            continue
+        if obra not in contagem:
+            contagem[obra] = 0
+            ordem.append(obra)
+        contagem[obra] += 1
+    if not ordem:
+        return {"obra": "", "dias": 0}
+    # `ordem` preserva a sequência dos dias, então o `max` com chave só na
+    # contagem devolve, no empate, a obra que apareceu primeiro.
+    melhor = max(ordem, key=lambda o: contagem[o])
+    return {"obra": melhor, "dias": contagem[melhor]}
+
+
 def _dias_uteis_do_ponto(dias, ini, fim) -> list:
     """Os dias COM obra dentro do período, já resolvidos. Ordenados por data."""
     saida = []

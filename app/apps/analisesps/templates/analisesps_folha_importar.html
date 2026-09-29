@@ -6,6 +6,11 @@
 {% include "analisesps_folha_abas.html" %}
 
 <h2>Folha da contabilidade <small>{{ folhas|length }} importada(s)</small></h2>
+<p class="cartao-dica" style="margin:0 0 12px">
+  Esta tela é a estante: é aqui que se solta o arquivo e se apaga o que veio
+  errado. <b>O trabalho é dentro da folha</b> — clique na competência para abrir a
+  lista pessoa por pessoa, marcar quem entra e gerar o pagamento.
+</p>
 
 {% if not pronto %}
   {# A migração 029 ainda não rodou. O código sobe para o Render antes de alguém
@@ -70,8 +75,13 @@
              quando a preocupação deve ser linha a linha de cada colaborador."*
 
              "Não fecha" é uma pista; o que decide se dá para pagar é QUANTAS PESSOAS
-             estão sem cadastro, já saíram ou estão saindo. #}
-          <th class="num">Precisam de olho</th>
+             estão sem cadastro, já saíram ou estão saindo.
+
+             ⚠️ O NOME MUDOU no mesmo dia: era "Precisam de olho", e ele disse *"até
+             o termo usado é ruim"*. Está certo — "precisam de olho" descreve o que
+             a PESSOA tem de fazer, não o que a coisa faz. O que a coisa faz é
+             travar o pagamento, e é isso que o cabeçalho diz agora. #}
+          <th class="num">Travam o pagamento</th>
           <th>Importada</th>
           <th>Confere?</th>
           {% if pode_operar %}<th></th>{% endif %}
@@ -83,7 +93,13 @@
            para pagar. "Não fecha" continua acendendo também: é problema de verdade,
            só não é mais a ÚNICA coisa que acende. #}
         <tr class="{{ 'linha-alerta' if f.precisa_de_mao or not f.fecha }}">
-          <td><b>{{ f.competencia }}</b></td>
+          {# ⚠️ A COMPETÊNCIA É A PORTA. Antes, o único caminho para a folha aberta
+             era o número da coluna "travam o pagamento" — que desaparece quando
+             não há ninguém pendente. Quem importava a folha e não achava aquele
+             número não tinha porta nenhuma, e foi exatamente o que aconteceu com
+             ele em 29/09/2026. #}
+          <td><a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
+                 title="abrir esta folha para trabalhar"><b>{{ f.competencia }}</b></a></td>
           <td>{{ f.rotulo_do_tipo }}</td>
           <td class="num">{{ f.pessoas }}</td>
           <td class="num">{{ f.total|moeda }}</td>

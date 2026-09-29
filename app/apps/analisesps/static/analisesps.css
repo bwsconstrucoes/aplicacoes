@@ -2397,3 +2397,29 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
 .tabela-wrap + .tabela-wrap { margin-top: 14px; }
 /* Tabela dentro de cartão branco pede respiro entre ela e o título de cima. */
 h3 + .tabela-wrap, p + .tabela-wrap, div + .tabela-wrap { margin-top: 10px; }
+
+/* --------------------------------------------------------------------------
+   OS DIAS DO PONTO DE UMA PESSOA, dentro da folha — 29/09/2026
+
+   ⚠️ FICAM NA PRÓPRIA LINHA, abrindo por baixo, e não num modal: ele confere a
+   obra do dia CONTRA a linha de cima (nome, obra, valor). Num modal a linha
+   desaparece atrás da caixa, e a conferência passa a depender da memória.
+
+   O dia empatado — marcações em duas obras no mesmo dia — é o único destacado,
+   porque é o único que quase sempre é erro de batida de ponto.
+   -------------------------------------------------------------------------- */
+.dias-da-pessoa > td { background: var(--papel); }
+.dias-lista { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+.dia-chip {
+  font-family: var(--fonte-dados); font-size: 12.5px;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--branco); border: 1px solid var(--borda);
+  white-space: nowrap;
+}
+.dia-chip.empatado {
+  border-color: var(--ambar); background: #FFF6E5;
+}
+
+/* O campo do motivo de sair do pagamento, criado na hora do desmarque. Estreito
+   de propósito: é uma frase curta, não um parecer. */
+.motivo-fora { max-width: 260px; font-size: 13px; }

@@ -1,102 +1,528 @@
 {% extends "analisesps_base.html" %}
 {% block titulo %}Folha {{ folha.competencia if folha }} — Análise de SPs{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   A FOLHA DA CONTABILIDADE, ABERTA PARA TRABALHAR — refeita em 29/09/2026.
+
+   O que ele disse, e que virou cada pedaço desta tela:
+
+   "Eu importo o arquivo e não tenho gestão nenhuma sobre as informações dele.
+    Quem vai, quem não vai."                  → caixa de marcar por linha e UM
+                                                salvar, igual ao auxílio.
+   "Cadê os dados deles, cadê uma tabela mostrando as informações."
+                                              → a tabela abaixo, com fase, obra,
+                                                dias, origem e situação.
+   "Cadê onde gera o arquivo de pagamento?"   → na LATERAL, não no fim da tela.
+   "O botão de gerar folha deveria ser no side bar ao invés de ser no final."
+   "Na planilha à medida que vamos marcando já vamos vendo os valores. Aqui fica
+    um KPI lá em cima que some quando rolo a tela."
+                                              → a barra grudada embaixo, que
+                                                soma enquanto ele marca.
+   "A lista por obra fica um troço gigantesco no começo pra depois chegar nos
+    colaboradores."                           → o total por obra é o ÚLTIMO
+                                                bloco, depois da lista.
+   "Havia falado de colocar a coluna Fase Atual, não foi colocado."
+                                              → coluna própria.
+   "Em Alimentação a informação de obra deveria ser a do Ponto. Caso não tenha,
+    usar a de cadastro."                      → a coluna Obra mostra a do ponto;
+                                                sem ponto, mostra a do cadastro
+                                                DITA como do cadastro.
+   "Aqui já devemos usar a folha de ponto mesmo, visto que tem o rateio diário
+    pra formar os totalizadores por obra."    → a obra de cada dia sai das quatro
+                                                marcações, e cada linha abre os
+                                                dias.
+   "Até o termo usado é ruim" (sobre "PRECISAM DE OLHO")
+                                              → agora é "Travam o pagamento", que
+                                                diz o que a coisa faz.
+   --------------------------------------------------------------------------- #}
+
+{% block filtros %}
+{% if montado %}
+<form method="get" action="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}"
+      id="form-filtros">
+
+  {# ⚠️ GERAR VEM PRIMEIRO, no alto da lateral: é o pedido dele, e é o fim do
+     trabalho — quem chega ao fim não deve procurar o botão rolando a tela. #}
+  {% if pode_operar %}
+  <div class="cartao" style="margin:0 0 12px; padding:12px">
+    <b style="display:block; margin-bottom:6px">Gerar o pagamento</b>
+    <p class="cartao-dica" style="margin:0 0 8px">
+      {% if montado.totais.falta_apropriar %}
+        Falta apropriar
+        <b class="ruim">{{ montado.totais.falta_apropriar|moeda }}</b> —
+        {{ montado.totais.sem_obra + montado.totais.sem_cadastro }} pessoa(s) sem
+        obra. Enquanto isso, o arquivo sairia faltando dinheiro.
+      {% elif montado.fechamento %}
+        Apropriação fechada em
+        {{ montado.fechamento.fechado_em|momento_br }}. Os arquivos saem na tela
+        de <a href="{{ url_for('analisesps.tela_folha_pagamento') }}">Arquivos
+        gerados</a>.
+      {% else %}
+        Tudo apropriado. Feche a apropriação para liberar o arquivo.
+      {% endif %}
+    </p>
+    <button type="button" class="btn" id="fechar-apropriacao"
+            data-folha="{{ folha.id }}" style="width:100%">
+      {% if montado.fechamento %}Refazer o fechamento{% else %}Fechar a apropriação{% endif %}
+    </button>
+    {% if montado.fechamento %}
+      <a class="btn secundario" style="width:100%; margin-top:6px; text-align:center"
+         href="{{ url_for('analisesps.tela_folha_pagamento') }}">Ir gerar os arquivos</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Quem</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <input type="search" name="q" value="{{ montado.filtros.busca }}"
+             autocomplete="off" placeholder="nome, CPF ou código Fortes…"
+             aria-label="Procurar pessoa">
+    </div>
+  </div>
+
+  <div class="filtro {% if montado.filtros.obra %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Obra</span>
+      {% if montado.filtros.obra %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="obra" aria-label="Obra">
+        <option value="">todas as obras</option>
+        {% for o in montado.obras %}
+          <option value="{{ o }}" {% if montado.filtros.obra == o %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+      <p class="cartao-dica" style="margin:6px 0 0">
+        quem tem 2 dias numa obra também aparece nela
+      </p>
+    </div>
+  </div>
+
+  <div class="filtro {% if montado.filtros.situacao %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Situação</span>
+      {% if montado.filtros.situacao %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        <label class="opcao"><input type="radio" name="situacao" value=""
+          {% if not montado.filtros.situacao %}checked{% endif %}
+          ><span class="rotulo">todas</span></label>
+        {% for chave, rotulo in situacoes %}
+          <label class="opcao"><input type="radio" name="situacao" value="{{ chave }}"
+            {% if montado.filtros.situacao == chave %}checked{% endif %}
+            ><span class="rotulo">{{ rotulo }}
+              <span class="cartao-dica">{{ montado.contagem.get(chave, 0) }}</span>
+            </span></label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# A FASE ATUAL, que ele pediu duas vezes. Sai do cadastro; fase nova no Pipefy
+     aparece aqui sozinha. #}
+  <div class="filtro {% if montado.filtros.fase %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Fase Atual</span>
+      {% if montado.filtros.fase %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="fase" aria-label="Fase Atual">
+        <option value="">todas as fases</option>
+        {% for f in montado.fases %}
+          <option value="{{ f }}" {% if montado.filtros.fase == f %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="filtro {% if montado.filtros.origem %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>De onde veio a obra</span>
+      {% if montado.filtros.origem %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        <label class="opcao"><input type="radio" name="origem" value=""
+          {% if not montado.filtros.origem %}checked{% endif %}
+          ><span class="rotulo">tanto faz</span></label>
+        {% for chave, rotulo in [('ponto','do ponto'), ('regra','de regra de rateio'),
+                                 ('mao','da minha mão')] %}
+          <label class="opcao"><input type="radio" name="origem" value="{{ chave }}"
+            {% if montado.filtros.origem == chave %}checked{% endif %}
+            ><span class="rotulo">{{ rotulo }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
+        or montado.filtros.situacao or montado.filtros.origem %}
+    <div style="margin-top:10px">
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}"
+         >Limpar</a>
+    </div>
+  {% endif %}
+</form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
+{% endif %}
+{% endblock %}
 
 {% block conteudo %}
 {% include "analisesps_folha_abas.html" %}
 
 {% if erro %}
   <div class="aviso erro"><b>Não consegui abrir a folha.</b> {{ erro }}</div>
-{% else %}
+{% endif %}
 
-<h2>Folha de {{ folha.competencia }}
-  <small>{{ folha.rotulo_do_tipo }} · {{ folha.pessoas }} pessoa(s) ·
-    {{ folha.total|moeda }}</small>
+{% if montado %}
+
+<h2>Folha da contabilidade
+  <small>{{ folha.competencia }} · {{ folha.rotulo_do_tipo }}</small>
 </h2>
-<p class="cartao-dica">
-  Importada em {{ folha.importado_em|momento_br }}{% if folha.importado_por %}
-  por {{ folha.importado_por }}{% endif %}.
-  <a href="{{ url_for('analisesps.tela_folha_importar') }}">voltar</a>
-</p>
 
-{% if folha.lista_de_avisos %}
-  <div class="aviso atencao">⚠️ {{ folha.lista_de_avisos|join('; ') }}</div>
+{# A TROCA DE COMPETÊNCIA, compacta. Não é `.barra-acoes` (grade de 3 colunas, que
+   estica campo de ponta a ponta) — é a `.barra-mes` das outras telas da folha. #}
+<form class="barra-mes" method="get" onchange="this.submit()"
+      action="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}">
+  <label class="campo-mes"><span>Folha</span>
+    <select name="ir" aria-label="Competência"
+            onchange="location.href=this.value">
+      {% for f in folhas %}
+        <option value="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
+                {% if f.id == folha.id %}selected{% endif %}>
+          {{ f.competencia }} — {{ f.rotulo_do_tipo }} ({{ f.pessoas }} pessoas)
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <span class="barra-mes-dica">
+    importada em {{ folha.importado_em|momento_br }}{% if folha.importado_por %}
+    por {{ folha.importado_por }}{% endif %} ·
+    <a href="{{ url_for('analisesps.tela_folha_importar', lista=1) }}">importar
+    outra ou apagar</a>
+    {% if montado.periodo %}
+      · o ponto lido é de <b>{{ montado.periodo[0]|data_br }}</b> a
+      <b>{{ montado.periodo[1]|data_br }}</b>
+    {% endif %}
+  </span>
+</form>
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">A folha inteira</div>
+    <div class="kpi-valor">{{ montado.totais.total_da_folha|moeda }}</div>
+    <div class="kpi-sub">{{ montado.totais.pessoas }} pessoa(s) no arquivo</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Vai receber</div>
+    <div class="kpi-valor">{{ montado.totais.valor_entra|moeda }}</div>
+    <div class="kpi-sub">{{ montado.totais.entram }} pessoa(s) marcada(s)</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Fora do pagamento</div>
+    <div class="kpi-valor">{{ montado.totais.valor_fora|moeda }}</div>
+    <div class="kpi-sub">{{ montado.totais.fora }} pessoa(s) que você tirou</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Sem obra</div>
+    <div class="kpi-valor {% if montado.totais.falta_apropriar %}ruim{% endif %}">
+      {{ montado.totais.falta_apropriar|moeda }}</div>
+    <div class="kpi-sub">
+      {{ montado.totais.sem_obra }} sem dia de ponto ·
+      {{ montado.totais.sem_cadastro }} sem cadastro
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------------
+   O QUE TRAVA O PAGAMENTO, antes da lista. O nome mudou por pedido dele —
+   "precisam de olho" não dizia o que a coisa fazia. Este bloco é CURTO de
+   propósito: ele aponta e a lista resolve, porque a decisão é por pessoa.
+   ------------------------------------------------------------------------ #}
+{% if not montado.ponto.tem_carga %}
+  <div class="aviso erro">
+    <b>Não há ponto de {{ folha.competencia }} aqui.</b> Sem o ponto não há como
+    saber de qual obra é cada dia, e a folha inteira fica sem obra. Traga o ponto
+    em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a> e volte.
+  </div>
+{% elif montado.totais.falta_apropriar %}
+  <div class="aviso atencao">
+    <b>{{ montado.totais.sem_obra + montado.totais.sem_cadastro }} pessoa(s)
+    travam o pagamento</b> — {{ montado.totais.falta_apropriar|moeda }} sem obra.
+    Use o filtro <b>Situação</b> na lateral para ver só elas, e diga na linha para
+    onde vai o valor. O ponto de {{ folha.competencia }} trouxe
+    {{ montado.ponto.pessoas_no_ponto }} pessoa(s).
+  </div>
+{% endif %}
+
+{% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
+      or montado.filtros.situacao or montado.filtros.origem %}
+  <p class="cartao-dica" style="margin:0 0 8px">
+    O filtro mostra <b>{{ montado.quantas_mostradas }}</b> de
+    {{ montado.totais.pessoas }} pessoa(s), somando
+    <b>{{ montado.subtotal_do_filtro|moeda }}</b>. Os quadros de cima continuam
+    sendo da folha inteira.
+  </p>
 {% endif %}
 
 {# ------------------------------------------------------------------------
-   ⚠️ AS CRÍTICAS VÊM ANTES DA LISTA, de propósito: são as três coisas que
-   impedem pagar, e ninguém as encontraria rolando 491 linhas.
+   ⚠️ O QUE IMPEDE PAGAR VEM ANTES DA LISTA, e continua vindo: ninguém encontraria
+   isto rolando 491 linhas. Mas é um RESUMO, não a lista inteira aberta — era esse
+   o "troço gigantesco no começo" de que ele reclamou. Cada linha aponta para o
+   filtro que mostra só aquele grupo, e a decisão se toma na linha da pessoa.
    ------------------------------------------------------------------------ #}
 {% if criticas and (criticas.pendentes or criticas.sairam or criticas.saindo) %}
 <div class="cartao">
   <h3 style="margin:0 0 8px">Precisa da sua mão antes de pagar</h3>
 
   {% if criticas.pendentes %}
-    <div class="aviso erro">
+    <div class="aviso erro" style="margin:0 0 8px">
       <b>{{ criticas.pendentes|length }} pessoa(s) não casaram com o cadastro</b>
-      — {{ criticas.total_pendente|moeda }} sem dono.
-      <p style="margin:6px 0 0">
-        Elas estão na folha e <b>continuam na lista abaixo</b>, marcadas. Sem o
-        código do Fortes no cadastro não há CPF, e sem CPF não há apropriação nem
-        pagamento. O conserto é no cadastro da pessoa, na aba <b>ID Fortes</b> da
-        planilha de colaboradores — depois aperte "Atualizar cadastro".
-      </p>
+      — {{ criticas.total_pendente|moeda }} sem dono. Sem o código do Fortes no
+      cadastro não há CPF, e sem CPF não há apropriação nem pagamento. O conserto
+      é na aba <b>ID Fortes</b> da planilha de colaboradores; depois aperte
+      "Atualizar cadastro".
+      <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='sem_cadastro') }}"
+         >ver só elas</a>
+    </div>
+  {% endif %}
+
+  {% if criticas.sairam %}
+    <div class="aviso erro" style="margin:0 0 8px">
+      <b>{{ criticas.sairam|length }} pessoa(s) já saíram</b> —
+      {{ criticas.total_de_quem_saiu|moeda }} nesta folha.
+      Não pague folha, diária nem auxílio deste período para elas.
+      <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='saiu') }}"
+         >ver só elas</a>
       <ul class="lista-seca" style="margin-top:6px">
-        {% for p in criticas.pendentes[:15] %}
-          <li><b>{{ p.nome }}</b>
-            <span class="cartao-dica">código {{ p.id_fortes }} ·
-              {{ p.valor|moeda }}</span></li>
+        {% for p in criticas.sairam[:8] %}
+          <li>
+            {% if p.link_pipefy %}
+              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
+                 class="link-pipefy">{{ p.nome }}
+                <span aria-hidden="true">↗</span></a>
+            {% else %}<b>{{ p.nome }}</b>{% endif %}
+            <span class="cartao-dica">{{ p.valor|moeda }} · {{ p.motivo }}</span>
+          </li>
         {% endfor %}
-        {% if criticas.pendentes|length > 15 %}
+        {% if criticas.sairam|length > 8 %}
           <li class="cartao-dica">…e outras
-            {{ criticas.pendentes|length - 15 }}. Veja todas marcadas na lista
-            abaixo.</li>
+            {{ criticas.sairam|length - 8 }} — todas marcadas na lista abaixo.</li>
         {% endif %}
       </ul>
     </div>
   {% endif %}
 
-  {% if criticas.sairam %}
-    <div class="aviso erro">
-      <b>{{ criticas.sairam|length }} pessoa(s) já saíram</b> —
-      {{ criticas.total_de_quem_saiu|moeda }} nesta folha.
-      Não pague folha, diária nem auxílio deste período para elas.
-      <ul class="lista-seca" style="margin-top:6px">
-        {% for p in criticas.sairam %}
-          <li>
-            {% if p.link_pipefy %}
-              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
-                 class="link-pipefy">{{ p.nome }} <span aria-hidden="true">↗</span></a>
-            {% else %}<b>{{ p.nome }}</b>{% endif %}
-            <span class="cartao-dica">{{ p.valor|moeda }} · {{ p.motivo }}</span>
-          </li>
-        {% endfor %}
-      </ul>
-    </div>
-  {% endif %}
-
   {% if criticas.saindo %}
-    <div class="aviso atencao">
+    <div class="aviso atencao" style="margin:0">
       <b>{{ criticas.saindo|length }} pessoa(s) estão saindo.</b>
       Confira o que é devido até o último dia — rescisão não se paga por aqui.
-      <ul class="lista-seca" style="margin-top:6px">
-        {% for p in criticas.saindo %}
-          <li>
-            {% if p.link_pipefy %}
-              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
-                 class="link-pipefy">{{ p.nome }} <span aria-hidden="true">↗</span></a>
-            {% else %}<b>{{ p.nome }}</b>{% endif %}
-            <span class="cartao-dica">{{ p.valor|moeda }} · {{ p.motivo }}</span>
-          </li>
-        {% endfor %}
-      </ul>
+      <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='saindo') }}"
+         >ver só elas</a>
     </div>
   {% endif %}
 </div>
 {% endif %}
 
+{# ------------------------------------------------------------------------
+   PESSOA POR PESSOA. É a tela. Cada linha abre os dias do ponto dela.
+   ------------------------------------------------------------------------ #}
+<h3 style="margin-top:18px">Pessoa por pessoa
+  <small>marque quem entra neste pagamento</small></h3>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem">
+    <table class="sps" id="tabela-folha">
+      <thead>
+        <tr>
+          <th style="width:34px" title="Quem entra no pagamento">
+            <input type="checkbox" id="marcar-todos"
+                   aria-label="Marcar todos os mostrados"></th>
+          <th>Nome</th>
+          <th>CPF</th>
+          <th>Código</th>
+          <th>Fase Atual</th>
+          <th>Obra — do ponto</th>
+          <th class="num">Dias</th>
+          <th class="num">Valor</th>
+          <th>Situação</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in montado.pessoas %}
+        <tr class="linha-pessoa {% if p.situacao in ('sem_cadastro','sem_obra','saiu') %}linha-alerta{% endif %}"
+            data-cpf="{{ p.cpf }}" data-nome="{{ p.nome_na_tela }}"
+            data-valor="{{ p.valor }}">
+          <td>
+            {# Sem CPF não há como guardar decisão nenhuma: a chave do ajuste é o
+               CPF. A caixa fica desligada e o título diz por quê, em vez de
+               aceitar o clique e perder o que ele marcou. #}
+            <input type="checkbox" class="entra"
+                   {% if p.entra %}checked{% endif %}
+                   {% if not p.cpf or not pode_operar %}disabled{% endif %}
+                   title="{% if not p.cpf %}sem CPF no cadastro não há como guardar esta decisão{% else %}entra neste pagamento{% endif %}"
+                   aria-label="Pagar {{ p.nome_na_tela }}">
+          </td>
+          <td>
+            {% if p.link_pipefy %}
+              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
+                 class="link-pipefy">{{ p.nome_na_tela }}
+                <span aria-hidden="true">↗</span></a>
+            {% else %}{{ p.nome_na_tela }}{% endif %}
+            <button type="button" class="link-btn ver-dias"
+                    title="ver os dias do ponto desta pessoa">dias</button>
+            {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
+            {% if p.nome_contabilidade and p.nome_contabilidade != p.nome_na_tela %}
+              <br><span class="cartao-dica"
+                        title="o nome como a contabilidade mandou">na folha:
+                {{ p.nome_contabilidade }}</span>
+            {% endif %}
+          </td>
+          <td class="cpf">
+            {% if p.cpf %}{{ p.cpf_bonito }}
+            {% else %}<span class="selo cancelado"
+              title="Sem o código do Fortes no cadastro não há CPF, e sem CPF não há pagamento"
+              >fora do cadastro</span>{% endif %}
+          </td>
+          <td>{{ p.id_fortes }}</td>
+          <td>{{ p.fase or '—' }}</td>
+          <td>
+            {% if p.obras_resumo %}
+              {{ p.obras_resumo }}
+              {% if p.origem == 'regra' %}
+                <br><span class="cartao-dica">regra de rateio{% if p.regra %}:
+                  {{ p.regra }}{% endif %}</span>
+              {% elif p.origem == 'mao' %}
+                <br><span class="cartao-dica">você definiu à mão</span>
+              {% endif %}
+            {% elif p.obra_do_cadastro %}
+              {# ⚠️ A OBRA DO CADASTRO APARECE, MAS NÃO APROPRIA. Decisão do dono:
+                 a obra é a do ponto; sem ponto, "usar a de cadastro" — e usar
+                 significa ele decidir, com um clique, não o sistema jogar o custo
+                 lá em silêncio. #}
+              <span class="cartao-dica">no cadastro: <b>{{ p.obra_do_cadastro }}</b></span>
+              {% if pode_operar and p.cpf %}
+                <button type="button" class="link-btn usar-cadastro"
+                        data-obra="{{ p.obra_do_cadastro }}"
+                        >usar esta</button>
+              {% endif %}
+            {% else %}
+              <span class="cartao-dica">—</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ p.dias_no_ponto }}</td>
+          <td class="num">{{ p.valor|moeda }}</td>
+          <td>
+            <span class="selo {{ p.selo }}">{{ p.situacao_rotulo }}</span>
+            {% if p.motivo_fora %}
+              <br><span class="cartao-dica">{{ p.motivo_fora }}</span>
+            {% elif p.motivo_cadastral %}
+              <br><span class="cartao-dica">{{ p.motivo_cadastral }}</span>
+            {% endif %}
+            {% for c in p.criticas %}
+              <br><span class="cartao-dica">{{ c }}</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {# A LINHA DOS DIAS, escondida até ele pedir. Fica no HTML em vez de vir
+           por uma chamada nova: o dado já está montado, e uma ida ao servidor por
+           pessoa faria 491 chamadas para conferir uma folha. #}
+        <tr class="dias-da-pessoa" hidden>
+          <td></td>
+          <td colspan="8">
+            {% if p.por_dia %}
+              <div class="dias-lista">
+                {% for d in p.por_dia %}
+                  <span class="dia-chip {% if d.empate %}empatado{% endif %}"
+                        {% if d.empate %}title="marcações em duas obras neste dia — valeu a obra em que o dia começou"{% endif %}>
+                    {{ d.data|data_br }} · <b>{{ d.obra }}</b> ·
+                    {{ d.valor|moeda }}{% if d.empate %} ⚠{% endif %}
+                  </span>
+                {% endfor %}
+              </div>
+            {% elif p.por_obra %}
+              <p class="cartao-dica" style="margin:0">
+                Esta pessoa não tem dia de ponto: a divisão veio
+                {% if p.origem == 'regra' %}da regra de rateio{% else %}da sua mão{% endif %}.
+                {% for o in p.por_obra %}
+                  <b>{{ o.obra }}</b> {{ o.valor|moeda }}{% if not loop.last %} · {% endif %}
+                {% endfor %}
+              </p>
+            {% else %}
+              <p class="cartao-dica" style="margin:0">
+                Nenhum dia de ponto no período e nenhuma regra de rateio. Diga a
+                obra na coluna ao lado, ou cadastre uma regra em
+                <a href="{{ url_for('analisesps.tela_folha_rateio') }}">Rateio das
+                obras</a>.
+              </p>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="cartao-dica">
+          Nenhuma pessoa com esses filtros.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if montado.passou_do_teto %}
+  <div class="aviso atencao">
+    Mostrei as primeiras {{ montado.pessoas|length }} de
+    {{ montado.quantas_mostradas }}. Use os filtros da lateral para chegar em
+    quem você procura.
+  </div>
+{% endif %}
+
+{# ------------------------------------------------------------------------
+   O TOTAL POR OBRA, DEPOIS DA LISTA. Pedido dele: antes era "um troço gigantesco
+   no começo pra depois chegar nos colaboradores".
+   ------------------------------------------------------------------------ #}
+<h3 style="margin-top:22px">Total por obra
+  <small>é este número que decide o rateio do mês</small></h3>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Obra</th><th class="num">Pessoas</th>
+        <th class="num">Valor</th><th class="num">% da folha</th>
+        <th>De onde veio</th></tr></thead>
+      <tbody>
+      {% for o in montado.por_obra %}
+        <tr>
+          <td><b>{{ o.obra }}</b></td>
+          <td class="num">{{ o.pessoas }}</td>
+          <td class="num">{{ o.valor|moeda }}</td>
+          <td class="num">{{ o.percentual }}</td>
+          <td><span class="cartao-dica">{{ o.origens|join(', ') }}</span></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="cartao-dica">
+          Nada apropriado ainda — sem o ponto do mês não há obra em dia nenhum.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+      {% if montado.por_obra %}
+      <tfoot><tr><th>Total apropriado</th><th></th>
+        <th class="num">{{ montado.totais.total_apropriado|moeda }}</th>
+        <th class="num">100</th><th></th></tr></tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
 {% if filiais %}
-<h3 style="margin-top:18px">Por filial <small>da maior para a menor</small></h3>
+<h3 style="margin-top:18px">Por filial
+  <small>o que o arquivo da contabilidade traz, para conferir</small></h3>
 <div class="tabela-wrap">
   <div class="tabela-rolagem livre">
     <table class="sps">
@@ -114,36 +540,210 @@
 </div>
 {% endif %}
 
-<h3 style="margin-top:18px">Pessoa por pessoa</h3>
-<div class="tabela-wrap">
-  <div class="tabela-rolagem livre">
-    <table class="sps">
-      <thead>
-        <tr><th>Nome</th><th>Código</th><th>CPF</th><th>Filial</th>
-          <th class="num">Valor</th></tr>
-      </thead>
-      <tbody>
-      {% for l in folha.linhas %}
-        <tr class="{{ 'linha-alerta' if not l.cpf }}">
-          <td>{{ l.nome }}</td>
-          <td>{{ l.id_fortes }}</td>
-          <td class="cpf">
-            {% if l.cpf %}{{ l.cpf }}
-            {% else %}
-              {# ⚠️ A PESSOA FICA NA LISTA, MARCADA — não numa lista à parte que
-                 alguém esquece de abrir. Correção do dono em 26/09/2026. #}
-              <span class="selo cancelado"
-                    title="Sem o código do Fortes no cadastro não há CPF, e sem CPF não há pagamento">fora do cadastro</span>
-            {% endif %}
-          </td>
-          <td><span class="cartao-dica">{{ l.filial_codigo }}{% if l.filial_nome %} — {{ l.filial_nome }}{% endif %}</span></td>
-          <td class="num">{{ l.valor|moeda }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+{# ------------------------------------------------------------------------
+   A BARRA GRUDADA EMBAIXO: o total anda enquanto ele marca. É a resposta ao
+   *"na planilha à medida que vamos marcando já vamos vendo os valores"*.
+   ------------------------------------------------------------------------ #}
+{% if pode_operar %}
+<div class="barra-salvar" id="barra-folha">
+  <span class="conta-selecao">
+    Vai receber:
+    <span class="total-selecao" id="total-marcado">{{ montado.totais.valor_entra|moeda }}</span>
+    <span class="cartao-dica" id="conta-marcado">{{ montado.totais.entram }} pessoa(s)</span>
+  </span>
+  <span class="cartao-dica" id="recado-folha"></span>
+  <span class="sobra">
+    <button type="button" class="btn secundario" id="desfazer-folha" hidden
+            >Desfazer</button>
+    <button type="button" class="btn" id="salvar-folha" disabled
+            >Salvar quem entra</button>
+  </span>
 </div>
+{% endif %}
 
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if montado and pode_operar %}
+<script>
+// ---------------------------------------------------------------------------
+// QUEM ENTRA NO PAGAMENTO: marca, vê o total andar, e salva UMA vez.
+//
+// ⚠️ NÃO SALVA A CADA CLIQUE, por pedido dele em 28/09/2026: *"o que eu faço é só
+// selecionar quem vai e quem não vai ser pago (…) e eu salvar como um todo, não
+// linha a linha."* Salvar por clique também faria 491 chamadas numa folha.
+// ---------------------------------------------------------------------------
+const tabela = document.getElementById("tabela-folha");
+const botaoSalvar = document.getElementById("salvar-folha");
+const botaoDesfazer = document.getElementById("desfazer-folha");
+const totalMarcado = document.getElementById("total-marcado");
+const contaMarcado = document.getElementById("conta-marcado");
+const recado = document.getElementById("recado-folha");
+const FOLHA = {{ folha.id }};
+
+const moeda = v => v.toLocaleString("pt-BR",
+  {style: "currency", currency: "BRL"});
+
+function linhas() {
+  return Array.from(tabela.querySelectorAll("tr.linha-pessoa"));
+}
+
+// O estado de partida, para saber o que MUDOU — só o mudado vai para o servidor.
+const inicial = new Map();
+linhas().forEach(tr => {
+  const caixa = tr.querySelector(".entra");
+  if (caixa) inicial.set(tr.dataset.cpf, caixa.checked);
+});
+
+function recontar() {
+  let total = 0, quantos = 0, mudou = 0;
+  linhas().forEach(tr => {
+    const caixa = tr.querySelector(".entra");
+    if (!caixa) return;
+    if (caixa.checked) { total += parseFloat(tr.dataset.valor || 0); quantos++; }
+    if (inicial.get(tr.dataset.cpf) !== caixa.checked) mudou++;
+  });
+  totalMarcado.textContent = moeda(total);
+  contaMarcado.textContent = quantos + " pessoa(s)";
+  botaoSalvar.disabled = mudou === 0;
+  botaoDesfazer.hidden = mudou === 0;
+  recado.textContent = mudou ? mudou + " mudança(s) para salvar" : "";
+}
+
+// ⚠️ TIRAR ALGUÉM DO PAGAMENTO PEDE MOTIVO, e o campo nasce na hora do
+// desmarque. Sem motivo, o relatório de três meses adiante não explica a falta
+// de ninguém — e "sumiu" é a pior resposta possível num pagamento.
+function pedirMotivo(tr) {
+  let campo = tr.querySelector(".motivo-fora");
+  if (!campo) {
+    const celula = tr.querySelector("td:last-child");
+    const caixa = document.createElement("div");
+    caixa.style.marginTop = "6px";
+    caixa.innerHTML = '<input type="text" class="motivo-fora" name="motivo" ' +
+      'placeholder="por que sai do pagamento?" maxlength="300" ' +
+      'aria-label="Motivo de sair do pagamento">';
+    celula.appendChild(caixa);
+    campo = caixa.querySelector(".motivo-fora");
+    campo.focus();
+  }
+  return campo;
+}
+
+tabela.addEventListener("change", e => {
+  if (!e.target.classList.contains("entra")) return;
+  const tr = e.target.closest("tr.linha-pessoa");
+  if (!e.target.checked) pedirMotivo(tr);
+  recontar();
+});
+
+document.getElementById("marcar-todos").addEventListener("change", e => {
+  linhas().forEach(tr => {
+    const caixa = tr.querySelector(".entra");
+    if (caixa && !caixa.disabled) caixa.checked = e.target.checked;
+    if (caixa && !caixa.checked) pedirMotivo(tr);
+  });
+  recontar();
+});
+
+botaoDesfazer.addEventListener("click", () => {
+  linhas().forEach(tr => {
+    const caixa = tr.querySelector(".entra");
+    if (caixa) caixa.checked = inicial.get(tr.dataset.cpf);
+    const m = tr.querySelector(".motivo-fora");
+    if (m) m.parentNode.remove();
+  });
+  recontar();
+});
+
+// --- os dias do ponto de uma pessoa ---------------------------------------
+tabela.addEventListener("click", e => {
+  if (e.target.classList.contains("ver-dias")) {
+    const tr = e.target.closest("tr.linha-pessoa");
+    const dias = tr.nextElementSibling;
+    if (dias && dias.classList.contains("dias-da-pessoa")) dias.hidden = !dias.hidden;
+    return;
+  }
+  // "usar esta": joga o valor inteiro na obra do cadastro. É um ajuste de mão, e
+  // fica marcado como tal — a tela nunca apropria pelo cadastro sozinha.
+  if (e.target.classList.contains("usar-cadastro")) {
+    const tr = e.target.closest("tr.linha-pessoa");
+    const obra = e.target.dataset.obra;
+    if (!confirm("Jogar os " + moeda(parseFloat(tr.dataset.valor || 0)) +
+                 " de " + tr.dataset.nome + " na obra " + obra + "?\n\n" +
+                 "Fica marcado como decisão sua, não do ponto.")) return;
+    e.target.disabled = true;
+    mandar([{cpf: tr.dataset.cpf, nome: tr.dataset.nome, entra: true,
+             obra: obra}]).then(() => location.reload())
+      .catch(err => { alert(err); e.target.disabled = false; });
+  }
+});
+
+async function mandar(mudancas) {
+  for (const m of mudancas) {
+    const r = await fetch("{{ url_for('analisesps.folha_apropriacao_ajustar') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(Object.assign({folha_id: FOLHA}, m))
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro || "não consegui gravar");
+  }
+}
+
+botaoSalvar.addEventListener("click", async () => {
+  const mudancas = [];
+  let faltaMotivo = null;
+  linhas().forEach(tr => {
+    const caixa = tr.querySelector(".entra");
+    if (!caixa || inicial.get(tr.dataset.cpf) === caixa.checked) return;
+    const motivo = (tr.querySelector(".motivo-fora") || {}).value || "";
+    if (!caixa.checked && !motivo.trim() && !faltaMotivo) faltaMotivo = tr;
+    mudancas.push({cpf: tr.dataset.cpf, nome: tr.dataset.nome,
+                   entra: caixa.checked, motivo: motivo,
+                   // Voltar a entrar é TIRAR o ajuste: a pessoa volta a seguir o
+                   // ponto e a regra, em vez de ficar com um ajuste vazio que
+                   // esconderia uma mudança de ponto depois.
+                   limpar: caixa.checked});
+  });
+  if (faltaMotivo) {
+    recado.textContent = "escreva o motivo de " + faltaMotivo.dataset.nome + " sair";
+    pedirMotivo(faltaMotivo).focus();
+    return;
+  }
+  botaoSalvar.disabled = true;
+  recado.textContent = "salvando " + mudancas.length + "…";
+  try {
+    await mandar(mudancas);
+    location.reload();
+  } catch (e) {
+    recado.textContent = "";
+    alert("Não consegui salvar: " + e.message);
+    botaoSalvar.disabled = false;
+  }
+});
+
+// --- fechar a apropriação -------------------------------------------------
+const botaoFechar = document.getElementById("fechar-apropriacao");
+if (botaoFechar) botaoFechar.addEventListener("click", async () => {
+  if (!confirm("Fechar a apropriação de {{ folha.competencia }}?\n\n" +
+               "Isso congela para qual obra vai o dinheiro de cada pessoa, e é " +
+               "o que libera o arquivo de pagamento. Dá para refazer enquanto o " +
+               "arquivo não foi gerado.")) return;
+  botaoFechar.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_apropriacao_fechar') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({folha_id: FOLHA})
+    });
+    const d = await r.json();
+    if (!d.ok) { alert(d.erro); botaoFechar.disabled = false; return; }
+    location.reload();
+  } catch (e) {
+    alert("Falhou: " + e); botaoFechar.disabled = false;
+  }
+});
+
+recontar();
+</script>
 {% endif %}
 {% endblock %}

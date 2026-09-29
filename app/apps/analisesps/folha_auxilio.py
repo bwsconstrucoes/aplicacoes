@@ -129,7 +129,8 @@ def _valor(bruto) -> Decimal | None:
 
 def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
                     ajuste: dict | None = None,
-                    codigo_da_obra: str = "") -> dict:
+                    codigo_da_obra: str = "",
+                    obra_do_ponto: str = "", dias_na_obra: int = 0) -> dict:
     """A conta de uma pessoa. Devolve tudo o que a tela mostra, passo a passo.
 
     ⚠️ DEVOLVE O CAMINHO INTEIRO, não só o valor: base, feriados, férias, ajuste e
@@ -154,14 +155,27 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         "observacao_cadastro": ficha.get("observacao_auxilio", ""),
         "modo": modo,
         "valor_unitario": valor_unitario,
-        # ⚠️ A OBRA É O CÓDIGO, e vem do CADASTRO — não é campo de digitar.
-        # Correção do dono em 28/09/2026: *"em obra tem que colocar o código da
-        # obra e não a obra por extenso"* e *"eu não sei por que você colocou um
-        # campo editável; essa informação vem do cadastro."* Ele está certo: obra
-        # digitada na tela de auxílio divergiria do cadastro e do rateio, e
-        # ninguém saberia qual das duas manda.
+        # ⚠️ A OBRA É O CÓDIGO, e NÃO é campo de digitar. Correção do dono em
+        # 28/09/2026: *"em obra tem que colocar o código da obra e não a obra por
+        # extenso"* e *"eu não sei por que você colocou um campo editável"*. Obra
+        # digitada aqui divergiria do cadastro e do rateio, e ninguém saberia qual
+        # das duas manda.
+        #
+        # ⚠️ DE ONDE ELA VEM MUDOU EM 29/09/2026, por pedido dele: *"em Alimentação
+        # a informação de obra deveria ser a do Ponto. Caso não tenha, usar a de
+        # cadastro."* Quem escolhe é `calcular`; aqui guarda-se a escolha E A
+        # ORIGEM. A origem não é enfeite: é a obra que PAGA — *"a questão da obra
+        # que paga é fundamental"* — e uma obra de cadastro desatualizado tiraria
+        # dinheiro da conta errada sem ninguém perceber.
         "obra": codigo_da_obra or "",
+        "obra_do_ponto": obra_do_ponto or "",
+        "dias_na_obra": int(dias_na_obra or 0),
+        "obra_de_onde": ("ponto" if obra_do_ponto
+                         else ("cadastro" if codigo_da_obra else "")),
         "obra_nome": ficha.get("obra_cadastro") or "",
+        # A Fase Atual, que ele pediu duas vezes. Vem do cadastro (coluna AX da
+        # planilha) e é o corte mais usado da lista.
+        "fase": ficha.get("fase") or "",
         "dias_base": 0, "feriados": 0, "ferias": 0,
         "dias_ajuste": int(ajuste.get("dias") or 0),
         "dias": 0, "valor": Decimal("0.00"),
@@ -295,6 +309,29 @@ def _decidir(saida: dict, ajuste: dict) -> dict:
     return saida
 
 
+def _obra_do_ponto_por_cpf(ano: int, mes: int, inicio, fim) -> dict:
+    """`{cpf: {"obra", "dias"}}` — a obra em que cada pessoa mais trabalhou.
+
+    ⚠️ NÃO ESTOURA SEM PONTO, e não pode: o auxílio é calculado todo mês, e um mês
+    cujo ponto ainda não foi trazido tem de mostrar a lista com a obra do cadastro,
+    não uma tela de erro. Devolve `{}` e quem chama cai no cadastro."""
+    from . import folha_apropriacao, ponto
+
+    try:
+        dias_por_cpf = ponto.dias_por_cpf(ano, mes)
+    except Exception:  # noqa: BLE001 — o ponto é apoio aqui, não o cálculo
+        logger.exception("Auxílio: não consegui ler o ponto de %02d/%s", mes, ano)
+        return {}
+
+    saida = {}
+    for cpf, dias in (dias_por_cpf or {}).items():
+        uteis = folha_apropriacao._dias_uteis_do_ponto(dias, inicio, fim)
+        achado = folha_apropriacao.obra_com_mais_dias(uteis)
+        if achado["obra"]:
+            saida[cpf] = achado
+    return saida
+
+
 def calcular(tipo: str, ano: int, mes: int) -> dict:
     """A verba inteira do mês. Devolve as pessoas e os totais."""
     if tipo not in TIPOS:
@@ -308,6 +345,14 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
     # ida ao banco por linha, e a lista tem centenas.
     obras_por_nome = colaboradores.codigos_das_obras()
 
+    # ⚠️ A OBRA QUE PAGA VEM DO PONTO. *"Em Alimentação a informação de obra
+    # deveria ser a do Ponto. Caso não tenha, usar a de cadastro."* (29/09/2026)
+    #
+    # Uma leitura do mês inteiro, não uma por pessoa: são centenas de linhas. Sem
+    # carga do mês o dicionário sai vazio e TODO MUNDO cai no cadastro — a tela diz
+    # isso, em vez de mostrar obra de cadastro como se fosse do ponto.
+    obra_do_ponto_por_cpf = _obra_do_ponto_por_cpf(ano, mes, inicio, fim)
+
     pessoas = []
     for ficha in fichas:
         # SÓ QUEM TEM ESTE AUXÍLIO NO CADASTRO entra na lista. É o que a planilha
@@ -319,9 +364,14 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
                 else ficha.get("modo_transporte"))
         if tem is None and not modo:
             continue
+        do_ponto = obra_do_ponto_por_cpf.get(ficha["cpf"]) or {}
+        do_cadastro = colaboradores.resolver_obra(ficha, obras_por_nome)
         pessoas.append(calcular_pessoa(
             tipo, ficha, inicio, fim, ajustes.get(ficha["cpf"]),
-            codigo_da_obra=colaboradores.resolver_obra(ficha, obras_por_nome)))
+            # O ponto manda; o cadastro é o segundo recurso.
+            codigo_da_obra=do_ponto.get("obra") or do_cadastro,
+            obra_do_ponto=do_ponto.get("obra") or "",
+            dias_na_obra=do_ponto.get("dias") or 0))
 
     # ⚠️ QUEM PRECISA DE MÃO VEM PRIMEIRO. `False` ordena antes de `True`, então a
     # chave é `pagar` direto — na primeira versão eu escrevi `not pagar`, e a
@@ -334,9 +384,15 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
     for p in a_pagar:
         chave = p["obra"] or "(sem obra)"
         atual = por_obra.setdefault(chave, {"obra": chave, "pessoas": 0,
-                                            "total": Decimal("0.00")})
+                                            "total": Decimal("0.00"),
+                                            "do_cadastro": 0})
         atual["pessoas"] += 1
         atual["total"] += p["valor"]
+        # ⚠️ QUANTAS PESSOAS DESTA OBRA VIERAM DO CADASTRO, não do ponto. É a
+        # medida de confiança da linha: obra que paga sustentada em cadastro
+        # desatualizado tira dinheiro da conta errada.
+        if p.get("obra_de_onde") == "cadastro":
+            atual["do_cadastro"] += 1
 
     return {
         "tipo": tipo,
@@ -357,6 +413,12 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         "com_problema": [p for p in pessoas if not p["pagar"]],
         "por_obra": sorted(por_obra.values(), key=lambda o: -o["total"]),
         "desconta_feriado": tipo == ALIMENTACAO,
+        # A tela avisa quando NÃO houve ponto: sem isso, a coluna Obra mostraria
+        # cadastro para todo mundo sem dizer que é cadastro.
+        "tem_ponto": bool(obra_do_ponto_por_cpf),
+        "quantos_do_ponto": len([p for p in pessoas
+                                 if p.get("obra_de_onde") == "ponto"]),
+        "fases": sorted({p["fase"] for p in pessoas if p.get("fase")}),
     }
 
 

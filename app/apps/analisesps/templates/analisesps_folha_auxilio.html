@@ -24,6 +24,23 @@
 
 {% block filtros %}
 {% if pronto and resultado %}
+{# ⚠️ GERAR VEM NO ALTO DA LATERAL. Pedido dele em 29/09/2026: *"o botão de gerar
+   folha deveria ser no side bar ao invés de ser no final da tela."* Ele está certo
+   — quem termina de marcar 400 pessoas não deve rolar a tela inteira de volta para
+   achar o botão. #}
+{% if pode_operar %}
+<div class="cartao" style="margin:0 0 12px; padding:12px">
+  <b style="display:block; margin-bottom:6px">Gerar o pagamento</b>
+  <p class="cartao-dica" style="margin:0 0 8px">
+    Sai um arquivo por conta de pagamento, mais o de análise. Antes de gerar eu
+    mostro quantos arquivos saem e com que total cada um. A geração precisa da
+    apropriação <b>fechada</b> desta verba.
+  </p>
+  <a class="btn" style="width:100%; text-align:center"
+     href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}"
+     >Conferir e gerar</a>
+</div>
+{% endif %}
 <form method="get" action="{{ url_for('analisesps.tela_folha_auxilio') }}"
       id="form-filtros">
   <input type="hidden" name="tipo" value="{{ tipo }}">
@@ -53,6 +70,24 @@
         <option value="">todas as obras</option>
         {% for o in obras_na_lista %}
           <option value="{{ o }}" {% if obra_filtro == o %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  {# A FASE ATUAL, que ele pediu duas vezes (28 e 29/09/2026). Sai do cadastro;
+     fase nova no Pipefy aparece aqui sozinha. #}
+  <div class="filtro {% if fase_filtro %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Fase Atual</span>
+      {% if fase_filtro %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="fase" aria-label="Fase Atual">
+        <option value="">todas as fases</option>
+        {% for f in fases %}
+          <option value="{{ f }}" {% if fase_filtro == f %}selected{% endif %}>{{ f }}</option>
         {% endfor %}
       </select>
     </div>
@@ -180,29 +215,15 @@
     <div class="kpi-valor">{{ resultado.quantos_a_pagar }}</div>
   </div>
   <div class="kpi estatico {{ 'ambar' if resultado.com_problema }}">
-    <div class="kpi-rotulo">Precisam de olho</div>
+    {# ⚠️ ERA "Precisam de olho", e ele mandou trocar em 29/09/2026: *"até o termo
+       usado é ruim"*. O rótulo agora diz o que a coisa FAZ — travar o pagamento —
+       em vez de descrever o que a pessoa deveria sentir. #}
+    <div class="kpi-rotulo">Travam o pagamento</div>
     <div class="kpi-valor">{{ resultado.com_problema|length }}</div>
   </div>
   <div class="kpi estatico">
     <div class="kpi-rotulo">Obras</div>
     <div class="kpi-valor">{{ resultado.por_obra|length }}</div>
-  </div>
-</div>
-
-<h3 style="margin-top:20px">Por obra <small>código da obra</small></h3>
-<div class="tabela-wrap">
-  <div class="tabela-rolagem livre">
-    <table class="sps">
-      <thead><tr><th>Obra</th><th class="num">Pessoas</th><th class="num">Total</th></tr></thead>
-      <tbody>
-      {% for o in resultado.por_obra %}
-        <tr><td>{{ o.obra }}</td><td class="num">{{ o.pessoas }}</td>
-          <td class="num">{{ o.total|moeda }}</td></tr>
-      {% else %}
-        <tr><td colspan="3" class="cartao-dica">Nada a pagar nesta competência.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
   </div>
 </div>
 
@@ -238,7 +259,8 @@
                   title="marcar ou desmarcar todos os visíveis"
                   aria-label="Marcar todos"></th>
           {% endif %}
-          <th>Quem</th><th>Situação</th><th>CPF</th><th>Obra</th><th>Categoria</th>
+          <th>Quem</th><th>Situação</th><th>CPF</th><th>Fase Atual</th>
+          <th>Obra — do ponto</th><th>Categoria</th>
           <th class="num">Valor do dia</th>
           <th class="num" title="Dias da categoria no mês">Base</th>
           <th class="num">Feriados</th><th class="num">Férias</th>
@@ -290,7 +312,21 @@
         {% endif %}
       </td>
       <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
-          <td>{{ p.obra or '—' }}</td>
+          <td>{{ p.fase or '—' }}</td>
+          {# ⚠️ A OBRA QUE PAGA, e DE ONDE ELA VEIO. O ponto manda; o cadastro é o
+             segundo recurso, e quando é o cadastro a célula DIZ isso — obra de
+             cadastro desatualizado tiraria o dinheiro da conta errada em
+             silêncio. #}
+          <td>
+            {% if p.obra %}
+              <b>{{ p.obra }}</b>
+              {% if p.obra_de_onde == 'ponto' %}
+                <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto</span>
+              {% else %}
+                <br><span class="cartao-dica">do cadastro — sem ponto no mês</span>
+              {% endif %}
+            {% else %}—{% endif %}
+          </td>
           <td>{{ p.modo or '—' }}</td>
           <td class="num">
             {% if p.valor_unitario is none %}—{% else %}{{ p.valor_unitario|moeda }}{% endif %}
@@ -315,12 +351,61 @@
 
 </div>
 
+{# ======================================================================
+   POR OBRA — DEPOIS DA LISTA, e por pedido dele em 29/09/2026: *"minha tela é
+   grande e a lista por obra fica um troço gigantesco no começo pra depois chegar
+   nos colaboradores."*
+
+   ⚠️ ELE CHAMOU ISSO DE FUNDAMENTAL — *"a questão da obra que paga é
+   fundamental"* — então a tabela diz de onde a obra veio: quantas pessoas da
+   linha foram apropriadas pelo PONTO e quantas caíram no cadastro. Obra que paga
+   sustentada em cadastro desatualizado tira dinheiro da conta errada.
+   ====================================================================== #}
+<h3 style="margin-top:24px">Por obra
+  <small>é esta obra que paga</small></h3>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Obra</th><th class="num">Pessoas</th>
+        <th class="num">Total</th><th>De onde veio a obra</th></tr></thead>
+      <tbody>
+      {% for o in resultado.por_obra %}
+        <tr><td><b>{{ o.obra }}</b></td><td class="num">{{ o.pessoas }}</td>
+          <td class="num">{{ o.total|moeda }}</td>
+          <td>
+            {% if o.do_cadastro %}
+              <span class="cartao-dica">{{ o.pessoas - o.do_cadastro }} do ponto ·
+                <b>{{ o.do_cadastro }} do cadastro</b></span>
+            {% else %}
+              <span class="cartao-dica">todas do ponto</span>
+            {% endif %}
+          </td></tr>
+      {% else %}
+        <tr><td colspan="4" class="cartao-dica">Nada a pagar nesta competência.</td></tr>
+      {% endfor %}
+      </tbody>
+      {% if resultado.por_obra %}
+      <tfoot><tr><th>Total</th>
+        <th class="num">{{ resultado.quantos_a_pagar }}</th>
+        <th class="num">{{ resultado.total|moeda }}</th><th></th></tr></tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
 {% if pode_operar %}
-{# A barra fica colada embaixo e só aparece quando há mudança não salva. #}
-<div class="barra-salvar" id="barra-salvar" hidden>
+{# ⚠️ A BARRA FICA SEMPRE VISÍVEL, e isso mudou em 29/09/2026. Antes ela só
+   aparecia quando havia mudança não salva — e ele reclamou de justamente não ver
+   o valor andando: *"na planilha à medida que vamos marcando já vamos vendo os
+   valores. Aqui eu tô numa lista enorme, fica um KPI lá em cima que some quando
+   rolo a tela."*
+
+   Aparecer só na mudança resolvia "tem coisa para salvar" e ignorava o que ele
+   usa a barra para fazer: conferir o total enquanto marca. #}
+<div class="barra-salvar" id="barra-salvar">
   <span class="conta-selecao">
-    Marcados: <span id="quantos-marcados">0</span>
-    <span class="total-selecao" id="total-marcado">R$ 0,00</span>
+    Vai receber: <span id="quantos-marcados">{{ resultado.quantos_a_pagar }}</span>
+    <span class="total-selecao" id="total-marcado">{{ resultado.total|moeda }}</span>
   </span>
   <span class="cartao-dica" id="recado-selecao"></span>
   <span class="sobra">
@@ -330,37 +415,7 @@
 </div>
 {% endif %}
 
-{# ======================================================================
-   GERAR O PAGAMENTO DAQUI — e não numa tela à parte.
 
-   Correção dele: *"eu não sei por que você botou gerar pagamento separado (…) eu
-   acho que em cada um, na folha da contabilidade eu gero o pagamento de lá, na
-   folha da alimentação eu gero o pagamento de lá."*
-   ====================================================================== #}
-{% if pode_operar %}
-<div class="cartao" style="margin-top:18px">
-  <label class="rotulo-campo">Gerar o pagamento desta verba</label>
-  <p class="cartao-dica" style="margin:4px 0 10px">
-    Sai um arquivo por conta de pagamento, mais o de análise. Antes de gerar eu
-    mostro quantos arquivos saem e com que total cada um.
-  </p>
-  <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap">
-    <label class="campo-mes"><span>Para onde</span>
-      <select id="destino-verba">
-        <option value="beevale">BeeVale</option>
-        <option value="somapay">SomaPay</option>
-      </select>
-    </label>
-    <a class="btn secundario"
-       href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}"
-       >Conferir e gerar</a>
-    <span class="cartao-dica">
-      A geração precisa da apropriação <b>fechada</b> desta verba — é o que garante
-      que o arquivo enviado ao banco tenha uma explicação que não muda depois.
-    </span>
-  </div>
-</div>
-{% endif %}
 
 {% endif %}
 
@@ -405,7 +460,15 @@ function atualizar() {
   const t = document.getElementById("total-marcado");
   if (q) q.textContent = quantos;
   if (t) t.textContent = dinheiro(total);
-  if (barra) barra.hidden = !mudou;
+  // ⚠️ A BARRA NÃO SOME MAIS. O que muda com `mudou` são os BOTÕES: sem mudança
+  // não há o que salvar nem o que desfazer, mas o total continua à vista — é para
+  // isso que ele olha a barra enquanto marca.
+  const salvar = document.getElementById("btn-salvar-selecao");
+  const desfazer = document.getElementById("btn-desfazer");
+  if (salvar) salvar.disabled = !mudou;
+  if (desfazer) desfazer.hidden = !mudou;
+  const recado = document.getElementById("recado-selecao");
+  if (recado && !mudou) recado.textContent = "";
 }
 
 caixas.forEach(caixa => caixa.addEventListener("change", atualizar));

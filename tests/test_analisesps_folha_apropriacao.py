@@ -471,3 +471,54 @@ def test_quem_foi_admitido_no_MEIO_do_periodo_conta_nos_dois_lados():
     quem = feito["fora_da_folha"]["deveria_estar"][0]
     assert quem["nome"] == "ADMITIDA NO MEIO"
     assert quem["vinculos"] == {"DIÁRIA": 1, "CTPS": 1}
+
+
+# ---------------------------------------------------------------------------
+# A OBRA EM QUE A PESSOA MAIS TRABALHOU — para o AUXÍLIO, não para a folha
+#
+# ⚠️ A DIFERENÇA ENTRE AS DUAS REGRAS É DINHEIRO, e é de propósito:
+#
+#   folha   → DIVIDE o valor entre todas as obras dos dias (o dia pertence à obra
+#             do dia), porque salário se rateia;
+#   auxílio → UMA obra ganha, porque o dia do auxílio é valor fechado e a pergunta
+#             é de qual conta o dinheiro sai.
+#
+# Regra do dono em 29/09/2026: *"em Alimentação a informação de obra deveria ser a
+# do Ponto. Caso não tenha, usar a de cadastro."*
+# ---------------------------------------------------------------------------
+def test_a_obra_do_auxilio_e_a_de_MAIS_DIAS():
+    from app.apps.analisesps.folha_apropriacao import obra_com_mais_dias
+
+    achado = obra_com_mais_dias([
+        {"obra": "AAA"}, {"obra": "BBB"}, {"obra": "BBB"}, {"obra": "BBB"}])
+    assert achado == {"obra": "BBB", "dias": 3}
+
+
+def test_empatados_os_dias_vale_a_obra_que_APARECEU_PRIMEIRO():
+    """⚠️ Mesmo critério do desempate do dia: vale onde começou. Um `max` sobre um
+    dicionário sem ordem faria isto virar sorteio, e o sorteio mudaria de resposta
+    entre duas visitas à mesma tela."""
+    from app.apps.analisesps.folha_apropriacao import obra_com_mais_dias
+
+    assert obra_com_mais_dias(
+        [{"obra": "ZZZ"}, {"obra": "AAA"}])["obra"] == "ZZZ"
+    assert obra_com_mais_dias(
+        [{"obra": "AAA"}, {"obra": "ZZZ"}])["obra"] == "AAA"
+
+
+def test_dia_sem_obra_nao_conta_para_a_obra_do_auxilio():
+    """Falta, férias e dia sem marcação não dizem obra nenhuma. Contá-los como
+    obra vazia faria "(sem obra)" ganhar de uma obra de verdade."""
+    from app.apps.analisesps.folha_apropriacao import obra_com_mais_dias
+
+    achado = obra_com_mais_dias([{"obra": None}, {"obra": ""}, {"obra": "AAA"}])
+    assert achado == {"obra": "AAA", "dias": 1}
+
+
+def test_sem_nenhum_dia_com_obra_devolve_VAZIO_e_nao_chuta():
+    """⚠️ Devolver vazio é o que faz quem chama cair no cadastro DIZENDO que caiu.
+    Chutar uma obra aqui poria o auxílio na conta errada em silêncio."""
+    from app.apps.analisesps.folha_apropriacao import obra_com_mais_dias
+
+    assert obra_com_mais_dias([]) == {"obra": "", "dias": 0}
+    assert obra_com_mais_dias(None) == {"obra": "", "dias": 0}
