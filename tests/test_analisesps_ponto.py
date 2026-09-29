@@ -669,3 +669,119 @@ def test_quando_o_intermediario_APARECE_a_chamada_e_refeita(monkeypatch):
     assert chamadas[1] != chamadas[0], "e com o pacote NOVO"
     assert "PECAQUEFALTAVA" in open(chamadas[1], encoding="utf-8").read()
     assert chamadas[1] is not False, "sem nunca desligar a verificação"
+
+
+# ---------------------------------------------------------------------------
+# 29/09/2026 — A CARGA QUE CAI NO MEIO NÃO PODE LEVAR A ANTERIOR JUNTO
+#
+# O dono: *"O que acontece se o ponto der problema pra baixar no meio do
+# caminho?"* Até aqui: a carga antiga era apagada ANTES de a nova começar, e a
+# folha passava a usar o pedaço que sobrou como se fosse o mês inteiro — sem
+# aviso. Agora a antiga só sai quando a nova termina.
+# ---------------------------------------------------------------------------
+def dublar_que_cai_na_pagina_2(monkeypatch, primeira):
+    from app.apps.analisesps import ponto
+
+    def falso(ano, mes, pagina):
+        if pagina == 1:
+            return primeira
+        raise ponto.ErroDoPonto("a rede caiu na página 2")
+
+    monkeypatch.setattr(ponto, "_pedir_pagina", falso)
+
+
+def test_carga_que_FALHA_no_meio_nao_destroi_a_anterior(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto
+
+    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=3)])])
+    ponto.carregar(2026, 8)
+
+    dublar_que_cai_na_pagina_2(
+        monkeypatch, resposta([pessoa_no_ponto(dias=1)], total_paginas=2))
+    with pytest.raises(ponto.ErroDoPonto):
+        ponto.carregar(2026, 8)
+
+    # O mês continua valendo a carga que TERMINOU.
+    assert ponto.carga_do_mes(2026, 8)["dias"] == 3
+    assert len(ponto.dias_por_cpf(2026, 8)["99713349334"]) == 3
+    # E a que caiu aparece na lista, dita como tal — não como "0 de 2".
+    lista = ponto.cargas()
+    assert [c["interrompida"] for c in lista] == [True, False]
+
+
+def test_a_carga_seguinte_LIMPA_a_interrompida(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto
+
+    dublar_que_cai_na_pagina_2(
+        monkeypatch, resposta([pessoa_no_ponto(dias=1)], total_paginas=2))
+    with pytest.raises(ponto.ErroDoPonto):
+        ponto.carregar(2026, 8)
+    assert ponto.carga_do_mes(2026, 8) is None, "pedaço de mês não é mês"
+
+    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=2)])])
+    ponto.carregar(2026, 8)
+    assert len(ponto.cargas()) == 1
+    assert ponto.carga_do_mes(2026, 8)["dias"] == 2
+
+
+def test_a_carga_terminada_SUBSTITUI_a_anterior_de_uma_vez(banco_ponto, monkeypatch):
+    """Ou o mês troca de carga inteiro, ou não troca: nunca duas terminadas."""
+    from app.apps.analisesps import ponto
+
+    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=3)])])
+    ponto.carregar(2026, 8)
+    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=5)])])
+    ponto.carregar(2026, 8)
+
+    assert len(ponto.cargas()) == 1
+    assert ponto.carga_do_mes(2026, 8)["dias"] == 5
+
+
+# ---------------------------------------------------------------------------
+# O AUTOMÁTICO DO DIA — *"Ele já está configurado pra baixar automático
+# diariamente?"* Não estava. Agora há um modo para o agendador chamar.
+# ---------------------------------------------------------------------------
+def test_o_ponto_diario_traz_o_mes_corrente_e_ate_o_dia_10_o_anterior():
+    import datetime as dt
+    from app.apps.analisesps import ponto
+
+    assert ponto.meses_do_ponto_diario(dt.date(2026, 9, 15)) == [(2026, 9)]
+    assert ponto.meses_do_ponto_diario(dt.date(2026, 9, 10)) == [(2026, 8), (2026, 9)]
+    # A virada do ano não confunde o mês anterior.
+    assert ponto.meses_do_ponto_diario(dt.date(2027, 1, 3)) == [(2026, 12), (2027, 1)]
+
+
+def test_o_ponto_diario_e_um_modo_que_o_agendador_pode_chamar():
+    from app.apps.analisesps import tarefas
+
+    assert "ponto_diario" in tarefas.MODOS
+    assert tarefas.ETAPAS["ponto_diario"] == ["ponto_diario"]
+    # E continua fora dos botões de Configurações, como o "ponto": ele não é
+    # para gente apertar sem saber o mês — é para a máquina.
+    assert "ponto_diario" not in tarefas.MODOS_DA_BASE
+
+
+def test_SEM_a_migracao_037_a_carga_continua_funcionando_e_AVISA(
+        banco_analisesps_mutilado, banco_ponto, monkeypatch):
+    """O intervalo entre o código subir e o botão ser apertado: o índice ainda é
+    o antigo (uma carga por mês, terminada ou não). A carga tem de continuar
+    entrando — do jeito antigo, apagando antes — e dizer que foi assim."""
+    from sqlalchemy import text
+    from app.apps.analisesps import ponto
+    from app.apps.analisesps.db import obter_engine
+
+    with obter_engine().connect() as conn:
+        conn.execute(text("DROP INDEX analisesps.ix_analisesps_ponto_carga_competencia"))
+        conn.execute(text("CREATE UNIQUE INDEX ix_analisesps_ponto_carga_competencia "
+                          "ON analisesps.ponto_carga (ano, mes)"))
+        conn.commit()
+    assert ponto._substituicao_segura() is False
+
+    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=3)])])
+    ponto.carregar(2026, 8)
+    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=5)])])
+    feito = ponto.carregar(2026, 8)
+
+    assert len(ponto.cargas()) == 1
+    assert ponto.carga_do_mes(2026, 8)["dias"] == 5
+    assert any("037" in a for a in feito["avisos"])

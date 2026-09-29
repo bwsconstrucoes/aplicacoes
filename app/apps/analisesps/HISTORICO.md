@@ -9979,6 +9979,61 @@ propriedade de ser refazível (o FITID continua na linha).
 
 ---
 
+### Centésima vigésima quarta leva (29/09) — o ponto que cai no meio não estraga o mês, e o automático do dia
+
+Duas perguntas dele: *"O que acontece se o ponto der problema pra baixar no meio
+do caminho? Ele já está configurado pra baixar automático diariamente?"*
+
+**A primeira resposta era ruim, e virou conserto.** A carga anterior do mês era
+apagada ANTES de a nova começar. Se a nova caísse no meio — rede, Mobponto fora
+do ar, o serviço reiniciando numa publicação — o mês ficava com um pedaço, e a
+folha usava o pedaço como se fosse o mês inteiro, sem aviso: gente com "menos
+dias", obra errada, e um mês que antes estava certo passava a estar errado.
+
+Agora:
+
+- a carga nova nasce **"em andamento"** (`paginas_lidas = 0`) ao lado da antiga,
+  e só quando termina a antiga é apagada, **na mesma transação**. Quem lê o mês
+  (`carga_do_mes`, e por ela a folha, o auxílio, as diaristas) só enxerga carga
+  terminada;
+- a que caiu aparece na tela do Ponto como **"interrompida — não vale"** e é
+  varrida pela próxima carga do mês;
+- a **folha avisa em vermelho** quando a carga terminou com menos páginas do que
+  a API prometeu ("veio pela metade") — antes só a tela do Ponto sabia;
+- **migração 037**: o índice único por competência passa a valer só para cargas
+  terminadas. Antes do botão, a carga continua entrando do jeito antigo (apaga
+  antes) e diz isso num aviso — testado com o índice antigo de propósito.
+
+**A segunda resposta era "não".** Nada trazia o ponto sem alguém apertar. Agora
+há o modo **`ponto_diario`**: traz o mês corrente e, até o dia 10, o anterior
+também (a régua da competência sugerida). É para o agendador (cron-job.org),
+pela mesma porta `/api/sincronizar` da sincronização, com `ANALISESPS_SECRET`.
+Um mês que falhe não impede o outro; a falha aparece em Configurações. **Ele não
+entra nos botões de Configurações**, como o "ponto": é para a máquina. O
+`README.md` tem a chamada.
+
+**Decisão registrada:** o automático substitui o mês a cada dia. É seguro porque
+a substituição agora é atômica — sem a leva anterior deste conserto, um
+automático diário seria um jeito de estragar o mês todo dia.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** as levas 123 e 124 — o ponto está baixando: publicar reinicia o serviço e mata o download | ele dizer "pode", depois que o ponto terminar |
+| **apertar "Aplicar atualizações do banco" no mesmo momento da publicação** (migração 037) | ele |
+| configurar no cron-job.org a chamada diária do `ponto_diario` (a chamada está no `README.md`) | ele |
+| reimportar o extrato de 29/09 e apagar as 2 duplicadas apontadas | ele |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** 461 testes (ponto, folha, banco), as telas da folha e do ponto;
+suíte inteira em andamento no momento do commit.
+**NÃO verificado:** o `ponto_diario` disparado pelo agendador de verdade — a
+porta é a mesma da sincronização, que já roda assim há semanas.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

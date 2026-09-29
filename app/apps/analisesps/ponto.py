@@ -124,6 +124,24 @@ def _pronto() -> bool:
         return False
 
 
+def _substituicao_segura() -> bool:
+    """A migração 037 já rodou? Ela deixa a carga nova nascer AO LADO da antiga.
+
+    Sem ela, o índice único por competência não admite duas cargas do mês, e
+    `carregar` tem de apagar a antiga antes — o comportamento de antes, com um
+    aviso na carga. Diante de qualquer falha responde False: o caminho antigo
+    funciona nos dois bancos."""
+    from .db import consultar_um
+    try:
+        return bool(consultar_um(
+            "SELECT 1 FROM pg_indexes WHERE schemaname = 'analisesps' "
+            "   AND indexname = 'ix_analisesps_ponto_carga_competencia' "
+            "   AND indexdef ILIKE '%WHERE%'"))
+    except Exception:  # noqa: BLE001 — banco fora do ar
+        logger.exception("Análise de SPs: não consegui conferir o índice da carga")
+        return False
+
+
 def configurado() -> bool:
     """As duas credenciais existem? A tela pergunta antes de oferecer o botão."""
     return bool((os.getenv("MOBPONTO_AUTHORIZATION") or "").strip()
@@ -487,11 +505,31 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
             "está incompleto.")
         total_paginas = MAXIMO_DE_PAGINAS
 
-    # SUBSTITUI a carga daquele mês. O CASCADE leva os dias junto, e é numa
-    # transação: uma carga sem dias (a antiga apagada, a nova não gravada)
-    # mostraria "nenhum dia" como se fosse verdade.
+    # ⚠️ A CARGA ANTERIOR DO MÊS FICA DE PÉ ATÉ ESTA TERMINAR — 29/09/2026.
+    #
+    # Até aqui a carga antiga era apagada ANTES de a nova começar. Se a nova
+    # caísse no meio (rede, o serviço reiniciando numa publicação, o Mobponto
+    # fora do ar), o mês ficava com um pedaço: a folha usava aquele pedaço
+    # como se fosse o ponto inteiro, sem aviso — gente com "menos dias", obra
+    # errada, e um mês que ANTES estava certo passava a estar errado. O dono
+    # perguntou exatamente isso: *"O que acontece se o ponto der problema pra
+    # baixar no meio do caminho?"* A resposta tinha de ser "nada de ruim".
+    #
+    # Agora a carga nova nasce com `paginas_lidas = 0` ("em andamento") e só no
+    # fim, na mesma transação em que é dada por terminada, a antiga é apagada.
+    # Quem lê o mês (`carga_do_mes`) só enxerga carga terminada. Uma carga que
+    # morreu no meio fica na lista como "interrompida" e é varrida na próxima.
+    segura = _substituicao_segura()
+    if not segura:
+        avisos.append(
+            'a atualização 037 do banco ainda não foi aplicada ("Aplicar '
+            'atualizações do banco", em Configurações): a carga anterior deste '
+            "mês foi apagada antes de esta começar. Se esta tivesse caído no "
+            "meio, o mês teria ficado pela metade.")
     with conexao() as conn:
-        conn.execute("DELETE FROM analisesps.ponto_carga WHERE ano = ? AND mes = ?",
+        conn.execute("DELETE FROM analisesps.ponto_carga "
+                     " WHERE ano = ? AND mes = ?"
+                     + ("" if not segura else " AND paginas_lidas = 0"),
                      (int(ano), int(mes)))
         cur = conn.execute(
             "INSERT INTO analisesps.ponto_carga "
@@ -570,13 +608,19 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
     # marcações, sem palpite.
     campos = sorted(campos_vistos)
     with conexao() as conn:
+        # A anterior apagada E esta dada por terminada (paginas_lidas >= 1),
+        # numa transação só: ou o mês troca de carga inteiro, ou não troca.
+        # Nesta ordem: o índice único só admite UMA terminada por mês.
+        conn.execute("DELETE FROM analisesps.ponto_carga "
+                     " WHERE ano = ? AND mes = ? AND id <> ?",
+                     (int(ano), int(mes), carga_id))
         conn.execute(
             "UPDATE analisesps.ponto_carga "
             "   SET paginas_lidas = ?, pessoas = ?, dias = ?, "
             "       campos_vistos = ?, avisos = ? "
             " WHERE id = ?",
-            (paginas_lidas, len(pessoas), dias_gravados, "|".join(campos),
-             " | ".join(avisos), carga_id))
+            (max(1, paginas_lidas), len(pessoas), dias_gravados,
+             "|".join(campos), " | ".join(avisos), carga_id))
         conn.commit()
 
     logger.info("Análise de SPs: ponto %02d/%d — %d dia(s) de %d pessoa(s) em "
@@ -603,6 +647,9 @@ def _carga(linha) -> dict:
     carga["lista_de_avisos"] = [a for a in (carga["avisos"] or "").split(" | ")
                                 if a]
     carga["completa"] = carga["paginas_lidas"] >= carga["paginas"]
+    # Nunca chegou ao fim: o processo caiu no meio. O mês continua valendo a
+    # carga anterior (ver `carregar`), e a tela diz isso.
+    carga["interrompida"] = carga["paginas_lidas"] == 0
     return carga
 
 
@@ -613,18 +660,39 @@ def cargas(teto: int = 36) -> list:
         return []
     return [_carga(l) for l in consultar(
         "SELECT " + ", ".join(CAMPOS_DA_CARGA) + " FROM analisesps.ponto_carga "
-        " ORDER BY ano DESC, mes DESC LIMIT ?", (int(teto),))]
+        " ORDER BY ano DESC, mes DESC, id DESC LIMIT ?", (int(teto),))]
 
 
 def carga_do_mes(ano: int, mes: int) -> dict | None:
-    """A carga de uma competência, ou None."""
+    """A carga TERMINADA de uma competência, ou None.
+
+    Uma carga em andamento ou interrompida (`paginas_lidas = 0`) não é o ponto
+    do mês — é um pedaço dele. Ver `carregar`."""
     from .db import consultar_um
     if not _pronto():
         return None
     linha = consultar_um(
         "SELECT " + ", ".join(CAMPOS_DA_CARGA) + " FROM analisesps.ponto_carga "
-        " WHERE ano = ? AND mes = ?", (int(ano), int(mes)))
+        " WHERE ano = ? AND mes = ? AND paginas_lidas > 0 "
+        " ORDER BY id DESC LIMIT 1", (int(ano), int(mes)))
     return _carga(linha) if linha else None
+
+
+def meses_do_ponto_diario(hoje=None) -> list:
+    """Quais meses a carga automática do dia traz: `[(ano, mes), …]`.
+
+    O mês corrente sempre; até o dia 10, TAMBÉM o anterior — é a mesma régua
+    de `folha_apropriacao.competencia_sugerida`: nos primeiros dias do mês o
+    trabalho é o fechamento do mês que acabou, e o ponto dele ainda recebe
+    abono e acerto. O anterior vem primeiro, porque é o que está na mesa.
+    """
+    import datetime as _dt
+    hoje = hoje or _dt.date.today()
+    meses = [(hoje.year, hoje.month)]
+    if hoje.day <= 10:
+        anterior = (hoje.replace(day=1) - _dt.timedelta(days=1))
+        meses.insert(0, (anterior.year, anterior.month))
+    return meses
 
 
 def amostra_de_dias(carga_id: int, quantos: int = 5) -> list:

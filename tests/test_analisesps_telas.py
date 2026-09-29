@@ -7422,6 +7422,26 @@ def test_sem_ponto_a_tela_MOSTRA_a_obra_do_cadastro_dizendo_que_e_do_cadastro(
     assert "Não há ponto de 09/2026 aqui" in html
 
 
+def test_a_folha_aberta_DIZ_quando_o_ponto_veio_pela_metade(app, monkeypatch):
+    """⚠️ Até 29/09/2026 só a tela do Ponto sabia que a API prometeu mais páginas
+    do que entregou. A folha em cima disso sai com gente faltando dia e obra
+    errada — e quem está na folha não olha a tela do Ponto. O dono: *"O que
+    acontece se o ponto der problema pra baixar no meio do caminho?"*"""
+    from app.apps.analisesps import ponto
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    monkeypatch.setattr(ponto, "carga_do_mes", lambda a, m: {
+        "id": 9, "ano": a, "mes": m, "completa": False, "interrompida": False})
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "veio pela metade" in html
+    assert "antes de\n    gerar o pagamento" in html or "antes de gerar o pagamento" in html.replace("\n    ", " ")
+    # E com a carga completa o aviso NÃO aparece.
+    monkeypatch.setattr(ponto, "carga_do_mes", lambda a, m: {
+        "id": 9, "ano": a, "mes": m, "completa": True, "interrompida": False})
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert "veio pela metade" not in html
+
+
 def test_o_total_por_obra_vem_DEPOIS_da_lista_de_pessoas(app, monkeypatch):
     """*"Minha tela é grande e a lista por obra fica um troço gigantesco no começo
     pra depois chegar nos colaboradores."*"""

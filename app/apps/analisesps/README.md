@@ -348,12 +348,38 @@ demais, fica até misturado com o restante, que tem mais a ver com o financeiro.
 |---|---|
 | Panorama | os totais da folha guardada, por filial, e o que ainda não entra |
 | Folha da contabilidade | solta o arquivo da Fortes; casa com o cadastro pelo **ID Fortes**, nunca pelo nome |
-| Ponto | traz o ponto do Mobponto, mês a mês, e **mostra os nomes dos campos que vieram** |
+| Ponto | traz o ponto do Mobponto, mês a mês, e **mostra os nomes dos campos que vieram** — ver "O ponto, sozinho e sem estragar" abaixo |
 | Colaboradores | o cadastro espelhado, com link para o card do Pipefy e botão de atualizar |
 | Feriados e férias | lança feriado (nacional ou por obra) e o período de férias de cada pessoa |
 | Alimentação e transporte | a conta das duas verbas, com o caminho inteiro à vista e o ajuste de mão |
 | Rateio das obras | só do mestre: quem não bate ponto e para quais obras vai o valor |
 | Gerar pagamento | só do mestre: os arquivos BeeVale/SomaPay, o log com o link e o card |
+
+### O ponto, sozinho e sem estragar (29/09/2026)
+
+**Se a carga cair no meio** (rede, Mobponto fora do ar, o serviço reiniciando
+numa publicação), **o mês continua valendo a carga anterior.** A carga nova
+nasce "em andamento" ao lado da antiga e só a substitui quando termina, na
+mesma transação. A que caiu aparece na tela do Ponto como "interrompida — não
+vale" e é varrida pela próxima. A folha avisa, em vermelho, quando a carga do
+mês terminou com menos páginas do que a API prometeu. Isso depende da
+**migração 037**; antes do botão, a carga continua entrando do jeito antigo
+(apaga antes) e diz isso num aviso.
+
+**Ninguém precisa apertar o botão todo dia.** O modo `ponto_diario` traz o mês
+corrente — e, até o dia 10, o anterior também (a mesma régua da competência
+sugerida). É para o agendador, pela mesma porta da sincronização:
+
+```
+POST https://<o serviço>/analisesps/api/sincronizar
+Content-Type: application/json
+{"modo": "ponto_diario", "secret": "<ANALISESPS_SECRET>"}
+```
+
+Uma vez por dia, de madrugada, é o bastante: o Mobponto fecha o dia anterior à
+noite. Um mês que falhe não impede o outro, e a falha aparece em Configurações
+como qualquer atualização que falhou. **Ele não substitui o botão**: um mês
+antigo que precise ser refeito continua sendo trazido pela tela do Ponto.
 
 ⚠️ **Três coisas que não se mexem sem ler o `docs/FOLHA_DE_PAGAMENTO.md`:**
 

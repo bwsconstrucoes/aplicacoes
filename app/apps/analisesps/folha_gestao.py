@@ -421,6 +421,10 @@ def montar(folha_id: int, filtros=None) -> dict:
         "ponto": {
             "tem_carga": bool(carga),
             "carga": carga,
+            # Carga terminada mas com menos páginas do que a API prometeu: a
+            # folha em cima dela sai com gente faltando dia, e isso tem de
+            # estar escrito na tela, não só na tela do Ponto.
+            "completa": bool(carga.get("completa", True)) if carga else True,
             "pessoas_no_ponto": len(dias_por_cpf),
         },
         "fechamento": guardada.fechamento(ano, mes, tipo),

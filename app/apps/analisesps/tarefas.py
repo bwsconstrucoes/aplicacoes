@@ -62,6 +62,14 @@ MODOS = {
     # diária e não há apropriação. Roda no processo separado porque são várias
     # páginas da API do Mobponto, e um mês pode ter dezenas de milhares de dias.
     "ponto": "Trazer o ponto do Mobponto (o mês escolhido na tela da folha)",
+    # ⚠️ O AUTOMÁTICO DO DIA — 29/09/2026. O dono: *"Ele já está configurado
+    # pra baixar automático diariamente?"* Não estava: nada trazia o ponto sem
+    # alguém apertar. Este modo é o que o agendador (cron-job.org) chama, pela
+    # mesma porta `/api/sincronizar` da sincronização, com o segredo do módulo.
+    # Ele decide o mês sozinho (`ponto.meses_do_ponto_diario`), por isso não
+    # precisa da competência escrita pela tela.
+    "ponto_diario": "Trazer o ponto de hoje sozinho (mês corrente; até o dia "
+                    "10, o anterior também)",
     "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
     "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
     "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
@@ -98,6 +106,7 @@ ETAPAS = {
     "comprovantes": ["comprovantes"],
     "colaboradores": ["colaboradores"],
     "ponto": ["ponto"],
+    "ponto_diario": ["ponto_diario"],
     "fiscal": ["fiscal"],
     "fiscal_ia": ["fiscal_ia"],
     "notas_receita": ["notas_receita"],
@@ -368,6 +377,31 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                        if c.get("destravados") else "")
                     + (f", {c['sem_arquivo']} sem o arquivo no servidor"
                        if c.get("sem_arquivo") else ""))
+
+            elif etapa == "ponto_diario":
+                # Um mês que falha não impede o outro: os dois são tentados, e
+                # a falha de qualquer um vira falha da execução — visível na
+                # tela — DEPOIS de o outro ter entrado.
+                from . import ponto as _ponto
+                recados, falhas = [], []
+                for ano, mes in _ponto.meses_do_ponto_diario():
+                    mudar_etapa(f"trazendo o ponto de {mes:02d}/{ano}")
+                    try:
+                        p = _ponto.carregar(ano, mes, anotar,
+                                            quem=quem_disparou or "agendador")
+                        total_linhas[0] += p.get("dias", 0)
+                        recados.append(
+                            f"{mes:02d}/{ano}: {p.get('dias', 0)} dia(s) de "
+                            f"{p.get('pessoas', 0)} pessoa(s)"
+                            + (" — " + "; ".join(p["avisos"]) if p.get("avisos") else ""))
+                    except Exception as e:  # noqa: BLE001 — o outro mês segue
+                        logger.exception("Análise de SPs: ponto de %02d/%d falhou", mes, ano)
+                        falhas.append(f"{mes:02d}/{ano}: {e}")
+                recado_apoios[0] = " | ".join(recados)
+                if falhas:
+                    raise RuntimeError(
+                        "ponto que NÃO entrou — " + " | ".join(falhas)
+                        + (" (entrou: " + "; ".join(recados) + ")" if recados else ""))
 
             elif etapa == "fiscal":
                 # NO PROCESSO SEPARADO pelo mesmo motivo da baixa: são até

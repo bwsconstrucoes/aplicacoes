@@ -136,7 +136,10 @@
           <td class="num">{{ c.dias }}</td>
           <td>
             {{ c.paginas_lidas }} de {{ c.paginas }}
-            {% if not c.completa %}
+            {% if c.interrompida %}
+              <span class="selo risco"
+                    title="Esta carga caiu no meio e não vale: o mês continua com a carga anterior, se houver. A próxima carga do mês limpa esta.">interrompida — não vale</span>
+            {% elif not c.completa %}
               <span class="selo cancelado"
                     title="A API disse que havia mais páginas do que foram lidas — o mês pode estar incompleto">veio pela metade</span>
             {% endif %}

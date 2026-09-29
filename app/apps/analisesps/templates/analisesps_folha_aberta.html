@@ -254,6 +254,14 @@
     saber de qual obra é cada dia, e a folha inteira fica sem obra. Traga o ponto
     em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a> e volte.
   </div>
+{% elif not montado.ponto.completa %}
+  <div class="aviso erro">
+    <b>O ponto de {{ folha.competencia }} veio pela metade</b> — o Mobponto
+    prometeu mais páginas do que entregou. A folha em cima dele sai com gente
+    faltando dia e obra errada. Traga o ponto de novo em
+    <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a> antes de
+    gerar o pagamento.
+  </div>
 {% elif montado.totais.falta_apropriar %}
   <div class="aviso atencao">
     <b>{{ montado.totais.sem_obra + montado.totais.sem_cadastro }} pessoa(s)
