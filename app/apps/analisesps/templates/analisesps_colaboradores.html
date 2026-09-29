@@ -39,6 +39,42 @@
     </div>
   </div>
 
+  {# ⚠️ A FASE ATUAL (coluna AX) é o corte mais usado — *"é super importante"*
+     (dono, 29/09/2026). A lista vem do banco, então fase nova no Pipefy aparece
+     aqui sozinha, com quantos em cada uma. #}
+  <div class="filtro {% if fase_filtro %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Fase atual</span>
+      {% if fase_filtro %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="fase" aria-label="Fase atual">
+        <option value="">todas as fases</option>
+        {% for f in lista_de_fases %}
+          <option value="{{ f.fase }}" {% if fase_filtro == f.fase %}selected{% endif %}
+            >{{ f.fase }} ({{ f.quantos }})</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  {# As datas: *"tem tanta informação nos dados que podemos usar também como
+     filtro. Datas por exemplo."* A de ADMISSÃO recorta "quem entrou neste mês". #}
+  <div class="filtro {% if de or ate %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Admissão</span>
+      {% if de or ate %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <label class="cartao-dica" for="de">De</label>
+      <input id="de" name="de" value="{{ de }}" placeholder="dd/mm/aaaa">
+      <label class="cartao-dica" for="ate" style="margin-top:6px">Até</label>
+      <input id="ate" name="ate" value="{{ ate }}" placeholder="dd/mm/aaaa">
+    </div>
+  </div>
+
   {# ⚠️ Por padrão a lista é de quem está TRABALHANDO. Quem saiu ou está afastado
      fica fora — mas não desaparece: é uma caixinha aqui, e a conta aparece no
      aviso do alto. Esconder e não dizer é que seria o erro. #}
@@ -76,9 +112,55 @@
 {% block conteudo %}
 {% include "analisesps_folha_abas.html" %}
 
-<h2>Colaboradores
+{# ⚠️ OS KPIs VÊM PRIMEIRO, no mesmo molde das Solicitações (`.kpi.estatico`).
+   Correção dele em 29/09/2026: *"3531 pessoa(s) trazidas da planilha em 26/09 às
+   18:35. Isso vai aparecer sempre assim? Não tem nada de KPI essa tela."*
+
+   Ele está certo: "quantas linhas vieram e quando" é registro de CARGA, não
+   informação de trabalho. O que decide o que ele faz é quantos estão trabalhando,
+   quantos têm cada auxílio e quantos estão com o cadastro pela metade — que é o
+   que trava pagamento. O registro da carga continua, mas discreto, ao lado do
+   botão. #}
+{% if quadro.pronto %}
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Trabalhando</div>
+    <div class="kpi-valor">{{ quadro.ativos }}</div>
+    <div class="kpi-sub">de {{ quadro.total }} no cadastro</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Com alimentação</div>
+    <div class="kpi-valor">{{ quadro.com_alimentacao }}</div>
+    <div class="kpi-sub">têm categoria ou valor no cadastro</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Com transporte</div>
+    <div class="kpi-valor">{{ quadro.com_transporte }}</div>
+    <div class="kpi-sub">têm categoria ou valor no cadastro</div>
+  </div>
+  {# Os três que TRAVAM pagamento. Ficam âmbar só quando há algum — indicador que
+     grita sempre não é indicador. #}
+  <div class="kpi estatico {{ 'ambar' if quadro.sem_obra }}">
+    <div class="kpi-rotulo">Sem código de obra</div>
+    <div class="kpi-valor">{{ quadro.sem_obra }}</div>
+    <div class="kpi-sub">sem ele não dá para agrupar por obra</div>
+  </div>
+  <div class="kpi estatico {{ 'ambar' if quadro.sem_id_fortes }}">
+    <div class="kpi-rotulo">Sem ID Fortes</div>
+    <div class="kpi-valor">{{ quadro.sem_id_fortes }}</div>
+    <div class="kpi-sub">a folha da contabilidade não acha essas pessoas</div>
+  </div>
+  <div class="kpi estatico {{ 'ambar' if quadro.sem_card }}">
+    <div class="kpi-rotulo">Sem card no Pipefy</div>
+    <div class="kpi-valor">{{ quadro.sem_card }}</div>
+    <div class="kpi-sub">não há onde corrigir o auxílio</div>
+  </div>
+</div>
+{% endif %}
+
+<h3>Colaboradores
   <small>{{ colaboradores|length }}{{ '+' if no_teto else '' }} na lista</small>
-</h2>
+</h3>
 
 <p class="cartao-dica" style="margin-bottom:14px">
   <b>Para que serve esta tela:</b> é daqui que a folha tira a categoria e o valor
@@ -114,8 +196,19 @@
       <span class="cartao-dica">Aperte o botão ao lado.</span>
     {% endif %}
     {% if cadastro.avisos %}
+      {# ⚠️ O AVISO LEVA A DATA DA CARGA QUE O ESCREVEU, e isto custou uma
+         confusão inteira em 29/09/2026: ele leu um aviso de três dias antes
+         ("não achei a coluna Modalidade…"), escrito pelo código ANTIGO, e
+         concluiu que a correção não havia funcionado. Aviso guardado sem data
+         parece estado de agora. #}
       <div class="aviso atencao" style="margin-top:8px">
-        ⚠️ {{ cadastro.avisos|join('; ') }}
+        ⚠️ <b>Na carga de
+        {% if cadastro.quando %}{{ cadastro.quando[8:10] }}/{{ cadastro.quando[5:7] }}
+          às {{ cadastro.quando[11:16] }}{% else %}antes{% endif %}</b>:
+        {{ cadastro.avisos|join('; ') }}
+        <br><span class="cartao-dica">Este aviso é daquela carga — não é o estado
+          de agora. Aperte <b>Atualizar cadastro</b> para refazer a leitura e ver
+          o que continua faltando.</span>
       </div>
     {% endif %}
   </div>

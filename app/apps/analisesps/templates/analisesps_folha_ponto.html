@@ -30,6 +30,38 @@
     <br><span class="cartao-dica">Esta tela se atualiza sozinha quando terminar —
       pode fechar a página, o trabalho continua no servidor.</span>
   </div>
+{% elif ultima %}
+  {# ⚠️ A ÚLTIMA TENTATIVA, DITA NA CARA. Ele reclamou TRÊS VEZES de apertar o
+     botão e não saber o que aconteceu. O registro sempre existiu — com o erro da
+     API dentro — e ficava só no log do serviço, que ele não tem como ler. #}
+  {% if ultima.ok %}
+    <div class="aviso">
+      <b>Última tentativa: deu certo.</b>
+      {{ ultima.fim|momento_br }}, por {{ ultima.disparo or '—' }}.
+      {% if ultima.mensagem %}<br>{{ ultima.mensagem }}{% endif %}
+      {% if not cargas %}
+        <br><span class="cartao-dica">Mas não há mês carregado abaixo — se a
+          mensagem acima diz "0 dia(s)", a API respondeu sem nenhum lançamento
+          para esse mês. Confira o mês escolhido.</span>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="aviso erro">
+      <b>A última tentativa FALHOU.</b>
+      {{ ultima.fim|momento_br }}, por {{ ultima.disparo or '—' }}.
+      {% if ultima.mensagem %}
+        <br><b>O que o sistema respondeu:</b> {{ ultima.mensagem }}
+      {% else %}
+        <br>Não ficou registrado o motivo — o processo morreu antes de escrever.
+      {% endif %}
+      <br><span class="cartao-dica">
+        Se fala de <b>401</b> ou <b>403</b>, as credenciais do Mobponto estão
+        recusadas (é trocar no Render). Se fala de <b>tempo</b> ou de
+        <b>conexão</b>, a API não respondeu — tentar de novo costuma resolver.
+        Se fala de <b>0 página(s)</b>, ela respondeu sem dado para esse mês.
+      </span>
+    </div>
+  {% endif %}
 {% elif andando.interrompida %}
   <div class="aviso atencao">
     <b>A última carga foi interrompida no meio.</b> Isso acontece quando o serviço

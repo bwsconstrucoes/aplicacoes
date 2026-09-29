@@ -91,21 +91,21 @@
 {% else %}
 
 <div class="kpis">
-  <div class="kpi">
-    <span class="kpi-rotulo">Pessoas com dia de diária</span>
-    <b class="kpi-valor">{{ levantamento.quantos }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Pessoas com dia de diária</div>
+    <div class="kpi-valor">{{ levantamento.quantos }}</div>
   </div>
-  <div class="kpi">
-    <span class="kpi-rotulo">Dias de diária no mês</span>
-    <b class="kpi-valor">{{ levantamento.dias_de_diaria }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Dias de diária no mês</div>
+    <div class="kpi-valor">{{ levantamento.dias_de_diaria }}</div>
   </div>
-  <div class="kpi {{ 'ambar' if levantamento.com_pendencia }}">
-    <span class="kpi-rotulo">Com data faltando</span>
-    <b class="kpi-valor">{{ levantamento.com_pendencia|length }}</b>
+  <div class="kpi estatico {{ 'ambar' if levantamento.com_pendencia }}">
+    <div class="kpi-rotulo">Com data faltando</div>
+    <div class="kpi-valor">{{ levantamento.com_pendencia|length }}</div>
   </div>
-  <div class="kpi {{ 'ambar' if levantamento.sem_cadastro }}">
-    <span class="kpi-rotulo">Bateram ponto e não estão no cadastro</span>
-    <b class="kpi-valor">{{ levantamento.sem_cadastro|length }}</b>
+  <div class="kpi estatico {{ 'ambar' if levantamento.sem_cadastro }}">
+    <div class="kpi-rotulo">Bateram ponto e não estão no cadastro</div>
+    <div class="kpi-valor">{{ levantamento.sem_cadastro|length }}</div>
   </div>
 </div>
 

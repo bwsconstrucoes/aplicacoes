@@ -2761,6 +2761,128 @@ enviado ao banco tenha uma explicação que não muda depois (§7.26). A tela de
 | **total por obra vindo do ponto**, diária em dinheiro | depende do **nome dos campos de cada dia** do ponto |
 | gerar o arquivo **de dentro** de cada tela, com um clique | depende da apropriação fechada, que depende do ponto |
 
+## 7.32 SEGUNDA RODADA DE USO (29/09/2026) — e a confusão que eu mesmo criei
+
+Ele voltou às telas e a lista veio maior. No fim: *"a verdade é que tem tanta
+coisa, que até desanima."*
+
+### 7.32.1 A confusão que custou a rodada inteira: aviso guardado sem data
+
+Ele leu, na tela de Colaboradores:
+
+> ⚠️ não achei a coluna de **"Modalidade Auxílio Alimentação"** (…)
+
+E concluiu, com razão, que a correção não havia funcionado — *"eu já havia falado
+sobre a coluna BM, cujo header é Categoria Auxílio Alimentação"*.
+
+**Mas aquele aviso era de 26/09 às 18:35**, escrito pelo código ANTIGO e **guardado
+no banco**. O texto "Modalidade" não pode sair do código de hoje: a lista de nomes
+começa por "Categoria", e a mensagem usa o primeiro nome da lista. O que aconteceu é
+que **"Atualizar cadastro" não foi apertado desde a correção** — então a leitura
+nunca foi refeita, e o aviso velho continuou lá parecendo estado de agora.
+
+⚠️ **A lição, e ela vale para qualquer aviso guardado:** aviso sem a data da carga
+que o escreveu **parece o presente**. Agora o aviso sai como *"Na carga de 26/09 às
+18:35: …"*, com uma linha dizendo que não é o estado de agora e que basta atualizar.
+Sem isso, qualquer correção futura no cadastro vai gerar a mesma conversa.
+
+### 7.32.2 As colunas, de novo — e uma que eu havia encurtado
+
+Ele repetiu as cinco, e uma estava errada no meu lado: a de observação chama-se
+**"Observação Ajuda de Custo"**, não "Observação". A planilha tem mais de uma coluna
+de observação; o nome curto poderia casar com a errada e a tela mostraria a
+observação de outro assunto.
+
+Continua sem nome confirmado: **"Paga por BeeVale"**. Ela não afeta o cálculo do
+auxílio — decide por qual portal a pessoa recebe — mas segue avisando.
+
+### 7.32.3 Os desligados continuavam aparecendo, e o motivo era comparação exata
+
+*"Você continua exibindo Colaboradores Desligados na tela de cadastro. Esses devem
+aparecer ocultos. Eu já havia dito isso."*
+
+A regra estava escrita, e estava **comparando texto exato**:
+`lower(fase) = 'colaboradores desligados'`. Qualquer variação na planilha —
+"Desligados", "Colaborador Desligado", um espaço a mais — deixava de casar, e a
+pessoa voltava para a lista sem nada avisando.
+
+Agora casa por **pedaço** ("desligad", "afastad"), que cobre plural e singular de uma
+vez. E — o detalhe que quase escapou — **os dois predicados moram num lugar só**
+(`fase_diz_desligado` / `fase_diz_afastado`), porque o `WHERE` que ESCONDE e a regra
+que CLASSIFICA a pessoa tinham de concordar sempre. Eu havia corrigido um e quase
+deixado o outro; se divergissem, a tela mostraria como ativo quem ela esconde do
+pagamento.
+
+### 7.32.4 A tela de cadastro não tinha informação de trabalho
+
+*"3531 pessoa(s) trazidas da planilha em 26/09 às 18:35. Isso vai aparecer sempre
+assim? Não tem nada de KPI essa tela."*
+
+Ele está certo: "quantas linhas vieram e quando" é **registro de carga**, não
+informação de trabalho. Entraram seis indicadores, e os três últimos são os que
+travam pagamento: quantos estão trabalhando, quantos têm cada auxílio, e quantos
+estão **sem código de obra**, **sem ID Fortes** e **sem card no Pipefy**. Os três
+ficam âmbar só quando há algum.
+
+E entrou o filtro que ele já havia pedido: a **Fase Atual** (coluna AX), com a lista
+vindo do banco e a contagem de cada fase — fase nova no Pipefy aparece sozinha. Mais
+o recorte por **data de admissão**, que responde "quem entrou neste mês".
+
+### 7.32.5 O ponto: a terceira vez que ele reclama da mesma coisa
+
+*"Eu já disse e vou dizer novamente: clico em trazer o ponto, sistema diz que vai
+trazer e NÃO TRAZ nada. Não sei se ele conseguiu conectar, se tá indo, se não tá,
+ninguém sabe de nada."*
+
+⚠️ **O registro da tentativa SEMPRE existiu** — na tabela `execucoes`, com `ok`, com
+a mensagem e com o erro da API dentro dela. O que faltava era **a tela mostrar**.
+Falha que só aparece no log do serviço é falha que ele não tem como ler, e aí o botão
+vira caixa preta.
+
+Agora a tela do Ponto abre com a última tentativa: quando foi, por quem, se deu certo
+e **o que o sistema respondeu**. E traduz os três casos que importam: *401/403* é
+credencial recusada (trocar no Render); *tempo/conexão* é a API que não respondeu
+(tentar de novo resolve); *0 página(s)* é a API respondendo sem dado para o mês. E
+quando a carga diz "deu certo" mas não há mês carregado, isso é dito em vez de a tela
+ficar muda.
+
+### 7.32.6 A importação olhava o totalizador, não as pessoas
+
+*"Você tá muito preocupado com os totalizadores do arquivo de importação, quando a
+preocupação deve ser linha a linha de cada colaborador."*
+
+A lista de folhas importadas mostrava "fecha / não fecha". Agora a coluna que vem
+antes é **"Precisam de olho"**: quantas pessoas estão sem cadastro, já saíram ou
+estão saindo, com link para a folha pessoa por pessoa. Esse número já era calculado e
+só aparecia abrindo a folha. "Não fecha" continua dito — é problema de verdade — mas
+não é mais a única coisa que acende.
+
+E o aviso falso `linha que não reconheci: Empregado(s))` sumiu: é rótulo do rodapé do
+Fortes. ⚠️ **O lugar dessa verificação importou:** na primeira tentativa eu a pus no
+alto do laço e ela **engoliu o "Total: Geral (406 Empregado(s))"** — justamente o
+número que a conferência usa. Dois testes pegaram; ela foi para depois dos totais.
+
+### 7.32.7 Padrão visual, campos esticados, e o que eu coloquei sem ele pedir
+
+- *"A tela de Folha de PGT não seguiu o mesmo padrão de Solicitações. Siga o mesmo
+  padrão de cabeçalho, de cor da tabela."* Os KPIs da folha usavam `<span>`/`<b>` e
+  não tinham a classe `estatico` — então **subiam no hover e mostravam cursor de
+  mão**, como se fossem clicáveis. Agora usam o mesmo molde das Solicitações
+  (`.kpi.estatico` com `kpi-rotulo` / `kpi-valor` / `kpi-sub`).
+- *"Os campos em várias telas estão esticados demais, ocupa de ponta a ponta a tela.
+  Fica horrível numa tela grande."* `input` e `select` dentro de `.cartao` não tinham
+  largura declarada. Agora há teto **por tipo de campo** (420 px para texto, 170 para
+  data, 150 para os curtos), e a caixa de soltar arquivo para em 760 px. Quem precisa
+  da linha inteira pede (`.campo-largo`).
+- E **cinco barras** ainda usavam `.barra-acoes`, que é a **grade de três colunas** das
+  Solicitações: era ela que esticava campo de mês até meia tela e jogava botão e
+  recado para pontas opostas. Todas viraram `.barra-mes`.
+- *"Campo procurar de férias, bota limpar."* Feito — e o "Limpar" aparece **sempre**:
+  botão que só existe depois de filtrar obriga a pessoa a descobrir que ele existe.
+- *"Eu não pedi pra colocar Pagamentos e Cadastro e base do cálculo. Era apenas pra
+  reorganizar."* Os rótulos saíram. Os grupos continuam definindo a ordem, com um
+  risco fino entre eles.
+
 ## 8. Segurança — SEIS coisas que já são risco hoje (atualizado 27/09/2026)
 
 Os três primeiros já estavam aqui. Os três últimos apareceram na leitura dos

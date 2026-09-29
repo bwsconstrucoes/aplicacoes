@@ -151,8 +151,11 @@ def versao_publicada() -> str:
 #   base    — o que alimenta o cálculo (cadastro, ponto, calendário, rateio)
 #
 # Cada entrada é (chave, rótulo, rota, grupo).
-GRUPOS_DA_FOLHA = [("visao", ""), ("paga", "Pagamentos"),
-                   ("base", "Cadastro e base do cálculo")]
+# ⚠️ OS RÓTULOS SAÍRAM em 29/09/2026: *"eu não pedi pra colocar Pagamentos e
+# Cadastro e base do cálculo. Era apenas pra reorganizar."* Os grupos continuam
+# existindo — é o que mantém a ordem com lógica — mas não aparecem escritos. Um
+# separador fino entre eles é o suficiente.
+GRUPOS_DA_FOLHA = [("visao", ""), ("paga", ""), ("base", "")]
 
 SUBTELAS_DA_FOLHA = [
     ("painel", "Panorama", "analisesps.tela_folha_painel", "visao"),
@@ -2472,6 +2475,27 @@ def tela_folha_importar():
     erro = None
     try:
         folhas = fa.listar() if pronto else []
+        # ⚠️ AS PESSOAS PENDENTES ENTRAM NA LISTA, e isso é correção do dono em
+        # 29/09/2026: *"você tá muito preocupado com os totalizadores do arquivo de
+        # importação, quando a preocupação deve ser linha a linha de cada
+        # colaborador."*
+        #
+        # Ele está certo. "Não fecha" é uma pista; o que decide se dá para pagar é
+        # QUANTAS PESSOAS estão sem cadastro, já saíram ou estão saindo. Isso já era
+        # calculado (`criticas`) e só aparecia abrindo a folha.
+        for f in folhas:
+            try:
+                c = fa.criticas(f["id"])
+                f["pendentes"] = len(c.get("pendentes") or [])
+                f["sairam"] = len(c.get("sairam") or [])
+                f["saindo"] = len(c.get("saindo") or [])
+                f["precisa_de_mao"] = (f["pendentes"] + f["sairam"]
+                                       + f["saindo"])
+            except Exception:  # noqa: BLE001 — uma folha torta não derruba a lista
+                logger.exception("Folha: não consegui criticar a folha %s",
+                                 f.get("id"))
+                f["pendentes"] = f["sairam"] = f["saindo"] = None
+                f["precisa_de_mao"] = None
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui listar as folhas importadas")
         erro = str(e)
@@ -2568,6 +2592,7 @@ def tela_folha_ponto():
     # o estado vem do banco junto com a página, e a tela já abre acompanhando.
     from . import tarefas
     andando = {"rodando": False}
+    ultima = None
     try:
         estado = tarefas.estado()
         detalhe = estado.get("detalhe") or {}
@@ -2575,6 +2600,11 @@ def tela_folha_ponto():
                    "etapa": detalhe.get("etapa") or "",
                    "progresso": detalhe.get("progresso") or "",
                    "interrompida": bool(estado.get("interrompida"))}
+        # ⚠️ A ÚLTIMA TENTATIVA, COM O ERRO DENTRO. É a resposta para a reclamação
+        # que ele já fez três vezes: *"clico em trazer o ponto, sistema diz que vai
+        # trazer e NÃO TRAZ nada. Não sei se conseguiu conectar, ninguém sabe de
+        # nada."* O registro sempre existiu; faltava a tela mostrar.
+        ultima = tarefas.ultima_do_tipo("ponto")
     except Exception:  # noqa: BLE001 — é informação de apoio
         logger.exception("Folha: não consegui ler o andamento")
 
@@ -2584,7 +2614,7 @@ def tela_folha_ponto():
         "analisesps_folha_ponto.html", aba="folha", subaba="ponto",
         grupos=subtelas_agrupadas(), pronto=pronto, cargas=cargas,
         amostra=amostra, erro=erro, configurado=_ponto.configurado(),
-        andando=andando,
+        andando=andando, ultima=ultima,
         ano_padrao=hoje.year, mes_padrao=hoje.month,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -2679,19 +2709,28 @@ def tela_colaboradores():
     # colaboradores, a mesma coisa, tem que ter o filtro (…) tem que ter os filtros
     # certinho, para a gente poder estar tratando esse pessoal aqui."*
     obra_filtro = " ".join((request.args.get("obra") or "").split())
+    fase_filtro = " ".join((request.args.get("fase") or "").split())
+    from .formatos import para_data
+    admitido_de = para_data(request.args.get("de") or "")
+    admitido_ate = para_data(request.args.get("ate") or "")
 
     cadastro = {"quando": "", "pessoas": 0, "avisos": [], "pronto": False}
     lista: list = []
     saindo = {"com_sinal": 0, "saiu": 0, "afastado": 0}
     obras_na_lista: list = []
+    quadro = {"pronto": False}
+    lista_de_fases: list = []
     erro = None
     try:
         cadastro = colaboradores.quando_atualizou()
         if cadastro.get("pronto"):
+            quadro = colaboradores.panorama()
+            lista_de_fases = colaboradores.fases()
             lista = colaboradores.buscar(
                 procurado,
                 so_ativos=not (incluir_desligados or so_saindo),
-                so_saindo=so_saindo)
+                so_saindo=so_saindo, fase=fase_filtro,
+                admitido_de=admitido_de, admitido_ate=admitido_ate)
             # O código da obra resolvido de uma vez para a lista inteira.
             por_nome = colaboradores.codigos_das_obras()
             for ficha in lista:
@@ -2710,9 +2749,12 @@ def tela_colaboradores():
         cadastro=cadastro, colaboradores=lista, procurado=procurado,
         incluir_desligados=incluir_desligados, so_saindo=so_saindo,
         saindo=saindo, erro=erro, obra_filtro=obra_filtro,
-        obras_na_lista=obras_na_lista,
+        obras_na_lista=obras_na_lista, quadro=quadro,
+        lista_de_fases=lista_de_fases, fase_filtro=fase_filtro,
+        de=request.args.get("de") or "", ate=request.args.get("ate") or "",
         filtrando=bool(procurado or obra_filtro or incluir_desligados
-                       or so_saindo),
+                       or so_saindo or fase_filtro or admitido_de
+                       or admitido_ate),
         teto=200, no_teto=len(lista) >= 200,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),

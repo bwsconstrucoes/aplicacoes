@@ -18,42 +18,43 @@
    E sai do que está FECHADO, não de um recálculo: o rateio do mês seguinte se
    decide sobre o que foi PAGO.
    =========================================================================== #}
-<form class="barra-acoes" method="get"
+<form class="barra-mes" method="get"
       action="{{ url_for('analisesps.tela_folha_painel') }}">
-  <label class="cartao-dica" for="mes" style="margin:0">Competência</label>
-  <select name="mes" id="mes">
+  <label class="campo-mes"><span>Competência</span>
+  <select name="mes" id="mes" aria-label="Mês">
     {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
                            (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
                            (9,'setembro'),(10,'outubro'),(11,'novembro'),
                            (12,'dezembro')] %}
       <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
     {% endfor %}
-  </select>
-  <select name="ano" id="ano">
+  </select></label>
+  <label class="campo-mes"><span>Ano</span>
+  <select name="ano" id="ano" class="ano" aria-label="Ano">
     {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
       <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
     {% endfor %}
-  </select>
+  </select></label>
   <button class="btn secundario" type="submit">Ver</button>
 </form>
 
 {% if gerencial and gerencial.pronto and gerencial.obras %}
 <div class="kpis">
-  <div class="kpi">
-    <span class="kpi-rotulo">Pago em {{ gerencial.competencia }}</span>
-    <b class="kpi-valor">{{ gerencial.total|moeda }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Pago em {{ gerencial.competencia }}</div>
+    <div class="kpi-valor">{{ gerencial.total|moeda }}</div>
   </div>
-  <div class="kpi">
-    <span class="kpi-rotulo">Obras</span>
-    <b class="kpi-valor">{{ gerencial.obras|length }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Obras</div>
+    <div class="kpi-valor">{{ gerencial.obras|length }}</div>
   </div>
-  <div class="kpi">
-    <span class="kpi-rotulo">Contas</span>
-    <b class="kpi-valor">{{ gerencial.contas|length }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Contas</div>
+    <div class="kpi-valor">{{ gerencial.contas|length }}</div>
   </div>
-  <div class="kpi">
-    <span class="kpi-rotulo">Verbas fechadas</span>
-    <b class="kpi-valor">{{ gerencial.verbas|length }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Verbas fechadas</div>
+    <div class="kpi-valor">{{ gerencial.verbas|length }}</div>
   </div>
 </div>
 
@@ -158,24 +159,24 @@
 </div>
 
 <div class="kpis">
-  <div class="kpi">
-    <span class="kpi-rotulo">Total das folhas importadas</span>
-    <b class="kpi-valor">{{ panorama.total|moeda }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Total das folhas importadas</div>
+    <div class="kpi-valor">{{ panorama.total|moeda }}</div>
   </div>
-  <div class="kpi">
-    <span class="kpi-rotulo">Pessoas</span>
-    <b class="kpi-valor">{{ panorama.pessoas }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Pessoas</div>
+    <div class="kpi-valor">{{ panorama.pessoas }}</div>
   </div>
-  <div class="kpi">
-    <span class="kpi-rotulo">Competências</span>
-    <b class="kpi-valor">{{ panorama.competencias }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Competências</div>
+    <div class="kpi-valor">{{ panorama.competencias }}</div>
   </div>
   {# ⚠️ PENDENTE DE CADASTRO É O NÚMERO QUE DECIDE SE DÁ PARA PAGAR. Fica âmbar
      quando há algum, e discreto quando não há — indicador que grita sempre não
      é indicador. #}
-  <div class="kpi {{ 'ambar' if panorama.pendentes }}">
-    <span class="kpi-rotulo">Sem casar com o cadastro</span>
-    <b class="kpi-valor">{{ panorama.pendentes }}</b>
+  <div class="kpi estatico {{ 'ambar' if panorama.pendentes }}">
+    <div class="kpi-rotulo">Sem casar com o cadastro</div>
+    <div class="kpi-valor">{{ panorama.pendentes }}</div>
   </div>
 </div>
 

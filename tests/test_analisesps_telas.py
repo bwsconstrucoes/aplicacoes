@@ -5132,9 +5132,13 @@ def test_o_filtro_de_quem_esta_saindo_TRAZ_quem_ja_saiu(app, monkeypatch):
     from app.apps.analisesps import colaboradores as col
     pedidos = {}
 
+    # ⚠️ `**resto` NÃO É DESCUIDO: sem ele, um argumento novo em `buscar` (foi
+    # `so_saindo` em 27/09, foram `fase` e as datas em 29/09) faz este dublê
+    # estourar, a rota cair no seu `except` e o teste falhar pelo motivo ERRADO —
+    # dizendo "o filtro não foi pedido" quando o que houve foi TypeError.
     def falso_buscar(texto="", so_ativos=True, teto=200, so_saindo=False,
-                     ate=None):
-        pedidos.update(so_ativos=so_ativos, so_saindo=so_saindo)
+                     ate=None, **resto):
+        pedidos.update(so_ativos=so_ativos, so_saindo=so_saindo, **resto)
         return []
 
     monkeypatch.setattr(col, "quando_atualizou", _cadastro_pronto)
@@ -5502,7 +5506,8 @@ def test_o_panorama_destaca_quem_NAO_casou_com_o_cadastro(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/painel").get_data(as_text=True)
     assert "Sem casar com o cadastro" in html
-    assert "kpi ambar" in html, "com pendente, o indicador tem de ficar âmbar"
+    assert "estatico ambar" in html, (
+        "com pendente, o indicador tem de ficar âmbar")
 
 
 def test_sem_pendente_o_indicador_NAO_fica_ambar(app, monkeypatch):
@@ -5950,8 +5955,13 @@ def test_as_subtelas_ficam_AGRUPADAS_POR_ASSUNTO(app):
     assert {s[3] for s in web.SUBTELAS_DA_FOLHA} == {"visao", "paga", "base"}
 
 
-def test_a_faixa_de_abas_mostra_o_nome_dos_grupos(app, monkeypatch):
-    """O rótulo do grupo é o que faz a lógica ficar visível na tela."""
+def test_a_faixa_de_abas_SEPARA_os_grupos_sem_escrever_o_nome(app, monkeypatch):
+    """⚠️ EU HAVIA ESCRITO OS RÓTULOS e ele mandou tirar, em 29/09/2026: *"eu não
+    pedi pra colocar Pagamentos e Cadastro e base do cálculo. Era apenas pra
+    reorganizar."*
+
+    Os grupos continuam existindo — é o que mantém a ordem com lógica — e ganham um
+    risco fino entre eles. Este teste existe para os rótulos não voltarem."""
     from app.apps.analisesps import folha_arquivo as fa, folha_pagamento as fpg
 
     monkeypatch.setattr(fa, "panorama", lambda *a, **k: {"pronto": False})
@@ -5959,9 +5969,11 @@ def test_a_faixa_de_abas_mostra_o_nome_dos_grupos(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/painel").get_data(as_text=True)
 
-    assert "Pagamentos" in html
-    assert "Cadastro e base do cálculo" in html
-    assert "grupo-abas" in html
+    assert "Pagamentos</span>" not in html
+    assert "Cadastro e base do cálculo" not in html
+    assert "risco-abas" in html, "o separador fino continua"
+    # E a ordem segue sendo a agrupada.
+    assert html.index("Folha da contabilidade") < html.index("Colaboradores")
 
 
 def test_os_grupos_escondem_o_que_a_pessoa_nao_alcanca(app):
@@ -6878,3 +6890,233 @@ def test_a_tela_de_colaboradores_diz_que_quem_saiu_ficou_FORA(app, monkeypatch):
         "/analisesps/folha/colaboradores").get_data(as_text=True)
     assert "estão fora da lista abaixo" in html
     assert "incluir todos" in html
+
+
+# ---------------------------------------------------------------------------
+# AS CORREÇÕES DE 29/09/2026 — a segunda rodada de uso
+# ---------------------------------------------------------------------------
+def _cadastro_com(monkeypatch, avisos=None, quando="2026-09-26T18:35:00",
+                  quadro=None, fases=None, lista=None):
+    from app.apps.analisesps import colaboradores as col
+
+    monkeypatch.setattr(col, "quando_atualizou", lambda: {
+        "pronto": True, "quando": quando, "pessoas": 3531,
+        "avisos": avisos or []})
+    monkeypatch.setattr(col, "panorama", lambda: quadro or {
+        "pronto": True, "total": 3531, "ativos": 512,
+        "com_alimentacao": 480, "com_transporte": 300,
+        "sem_card": 0, "sem_obra": 0, "sem_id_fortes": 0})
+    monkeypatch.setattr(col, "fases", lambda: fases or [
+        {"fase": "Colaboradores Ativos", "quantos": 512},
+        {"fase": "Colaboradores Desligados", "quantos": 3000}])
+    monkeypatch.setattr(col, "buscar", lambda *a, **k: lista or [])
+    monkeypatch.setattr(col, "codigos_das_obras", lambda: {})
+    monkeypatch.setattr(col, "contar_quem_esta_saindo",
+                        lambda *a, **k: {"com_sinal": 0, "saiu": 0,
+                                         "afastado": 0})
+
+
+def test_o_aviso_do_cadastro_LEVA_A_DATA_da_carga(app, monkeypatch):
+    """⚠️ ISTO CUSTOU UMA CONFUSÃO INTEIRA em 29/09/2026. Ele leu um aviso de três
+    dias antes — "não achei a coluna Modalidade…", escrito pelo código ANTIGO — e
+    concluiu que a correção não havia funcionado. O aviso fica GUARDADO no banco, e
+    sem data parece estado de agora."""
+    _cadastro_com(monkeypatch, avisos=[
+        'não achei a coluna de "Modalidade Auxílio Alimentação"'])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    assert "Na carga de" in html
+    assert "26/09" in html and "18:35" in html
+    assert "não é o estado" in html, "tem de dizer que não é o agora"
+    assert "Atualizar cadastro" in html
+
+
+def test_a_tela_de_colaboradores_tem_KPIs(app, monkeypatch):
+    """*"3531 pessoa(s) trazidas da planilha em 26/09 às 18:35. Isso vai aparecer
+    sempre assim? Não tem nada de KPI essa tela."*"""
+    _cadastro_com(monkeypatch, quadro={
+        "pronto": True, "total": 3531, "ativos": 512, "com_alimentacao": 480,
+        "com_transporte": 300, "sem_card": 12, "sem_obra": 7,
+        "sem_id_fortes": 40})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    assert "Trabalhando" in html and ">512<" in html
+    assert "de 3531 no cadastro" in html
+    assert "Sem código de obra" in html
+    assert "Sem ID Fortes" in html
+    # ⚠️ NO MESMO MOLDE DAS SOLICITAÇÕES: `.kpi.estatico`. Sem `estatico` o quadro
+    # sobe no hover e mostra cursor de mão, como se fosse clicável.
+    assert "kpi estatico" in html
+    assert "kpi-sub" in html
+
+
+def test_os_indicadores_que_TRAVAM_pagamento_ficam_ambar(app, monkeypatch):
+    """E ficam discretos quando não há nada — indicador que grita sempre não é
+    indicador."""
+    _cadastro_com(monkeypatch, quadro={
+        "pronto": True, "total": 10, "ativos": 10, "com_alimentacao": 5,
+        "com_transporte": 5, "sem_card": 0, "sem_obra": 3, "sem_id_fortes": 0})
+    com = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+    assert "estatico ambar" in com
+
+    _cadastro_com(monkeypatch, quadro={
+        "pronto": True, "total": 10, "ativos": 10, "com_alimentacao": 5,
+        "com_transporte": 5, "sem_card": 0, "sem_obra": 0, "sem_id_fortes": 0})
+    sem = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+    assert "estatico ambar" not in sem
+
+
+def test_o_filtro_por_FASE_ATUAL_existe_e_vem_do_banco(app, monkeypatch):
+    """*"Havia falado que a Fase Atual, coluna AX, é super importante. Não tem isso
+    como filtro em colaboradores."* E a lista vem do banco: fase nova no Pipefy
+    aparece sozinha, com quantos em cada."""
+    _cadastro_com(monkeypatch, fases=[
+        {"fase": "Colaboradores Ativos", "quantos": 512},
+        {"fase": "Aguardando Documentos", "quantos": 18}])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/colaboradores").get_data(as_text=True)
+
+    assert 'name="fase"' in html
+    assert "Fase atual" in html
+    assert "Aguardando Documentos (18)" in html
+
+
+def test_o_filtro_por_FASE_chega_ao_buscar(app, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+    pedidos = {}
+
+    def falso_buscar(texto="", **resto):
+        pedidos.update(resto)
+        return []
+
+    _cadastro_com(monkeypatch)
+    monkeypatch.setattr(col, "buscar", falso_buscar)
+    _como_mestre(app).get(
+        "/analisesps/folha/colaboradores?fase=Colaboradores+Ativos"
+        "&de=01/09/2026&ate=30/09/2026")
+
+    assert pedidos["fase"] == "Colaboradores Ativos"
+    assert pedidos["admitido_de"].isoformat() == "2026-09-01"
+    assert pedidos["admitido_ate"].isoformat() == "2026-09-30"
+
+
+def test_a_tela_do_ponto_MOSTRA_a_ultima_tentativa_que_falhou(app, monkeypatch):
+    """⚠️ A RECLAMAÇÃO REPETIDA TRÊS VEZES: *"clico em trazer o ponto, sistema diz
+    que vai trazer e NÃO TRAZ nada. Não sei se conseguiu conectar, se tá indo, se
+    não tá, ninguém sabe de nada."*
+
+    O registro da tentativa SEMPRE existiu, com o erro da API dentro. Faltava a tela
+    mostrar — e falha que só aparece no log do serviço é falha que ele não lê."""
+    import datetime as dt
+
+    from app.apps.analisesps import ponto as _ponto, tarefas
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
+    monkeypatch.setattr(tarefas, "estado", lambda: {
+        "rodando": False, "detalhe": None, "interrompida": None})
+    monkeypatch.setattr(tarefas, "ultima_do_tipo", lambda tipo: {
+        "tipo": "ponto", "disparo": "MARCELO",
+        "inicio": dt.datetime(2026, 9, 29, 10, 0),
+        "fim": dt.datetime(2026, 9, 29, 10, 2), "ok": False,
+        "mensagem": "o Mobponto recusou (HTTP 401): api-key inválida",
+        "linhas": 0, "visto_em": None, "em_andamento": False})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/ponto").get_data(as_text=True)
+
+    assert "última tentativa FALHOU" in html
+    assert "HTTP 401" in html
+    assert "credenciais do Mobponto estão" in html, (
+        "o recado tem de dizer o que fazer com um 401, não só mostrar o erro")
+
+
+def test_a_tela_do_ponto_mostra_a_ultima_que_DEU_CERTO_mas_veio_vazia(
+        app, monkeypatch):
+    """O caso que ele descreveu: "diz que vai trazer e não traz nada". Se a API
+    respondeu sem lançamento, a tela tem de dizer isso — e não ficar muda."""
+    import datetime as dt
+
+    from app.apps.analisesps import ponto as _ponto, tarefas
+
+    monkeypatch.setattr(_ponto, "_pronto", lambda: True)
+    monkeypatch.setattr(_ponto, "configurado", lambda: True)
+    monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [])
+    monkeypatch.setattr(tarefas, "estado", lambda: {
+        "rodando": False, "detalhe": None, "interrompida": None})
+    monkeypatch.setattr(tarefas, "ultima_do_tipo", lambda tipo: {
+        "tipo": "ponto", "disparo": "MARCELO",
+        "inicio": dt.datetime(2026, 9, 29, 10, 0),
+        "fim": dt.datetime(2026, 9, 29, 10, 1), "ok": True,
+        "mensagem": "0 dia(s) de 0 pessoa(s), 0 de 0 página(s)",
+        "linhas": 0, "visto_em": None, "em_andamento": False})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/ponto").get_data(as_text=True)
+
+    assert "deu certo" in html
+    assert "0 dia(s)" in html
+    assert "não há mês carregado" in html, (
+        "sucesso sem nada carregado tem de ser explicado")
+
+
+def test_a_folha_importada_mostra_QUANTAS_PESSOAS_precisam_de_olho(app,
+                                                                  monkeypatch):
+    """*"Você tá muito preocupado com os totalizadores do arquivo de importação,
+    quando a preocupação deve ser linha a linha de cada colaborador."*"""
+    from decimal import Decimal as D
+
+    from app.apps.analisesps import folha_arquivo as fa
+
+    monkeypatch.setattr(fa, "_pronto", lambda: True)
+    monkeypatch.setattr(fa, "listar", lambda *a, **k: [{
+        "id": 1, "competencia": "09/2026", "rotulo_do_tipo": "Quinzena",
+        "pessoas": 406, "total": D("353069.48"), "importado_em": None,
+        "importado_por": "MARCELO", "fecha": False,
+        "lista_de_avisos": ["linha que não reconheci: Empregado(s))"]}])
+    monkeypatch.setattr(fa, "criticas", lambda folha_id: {
+        "pendentes": [{"id_fortes": "123"}, {"id_fortes": "124"}],
+        "sairam": [{"nome": "QUEM SAIU"}], "saindo": []})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/importar").get_data(as_text=True)
+
+    assert "Precisam de olho" in html
+    assert "3</b> pessoa(s)" in html
+    assert "2 sem cadastro" in html
+    assert "1 já saiu" in html
+
+
+def test_a_busca_de_ferias_tem_SEMPRE_o_limpar(app, monkeypatch):
+    """*"Campo procurar de férias, bota limpar."* Botão que só existe depois de
+    filtrar obriga a pessoa a descobrir que ele existe."""
+    from app.apps.analisesps import folha_calendario as fc, sincronizacao
+
+    monkeypatch.setattr(fc, "_pronto", lambda: True)
+    monkeypatch.setattr(fc, "listar_feriados", lambda *a, **k: [])
+    monkeypatch.setattr(fc, "listar_ferias", lambda *a, **k: [])
+    monkeypatch.setattr(sincronizacao, "referencias_rateio",
+                        lambda: {"obras": [], "categorias": []})
+
+    html = _como_mestre(app).get(
+        "/analisesps/folha/calendario").get_data(as_text=True)
+    assert "Limpar" in html
+    assert "barra-acoes" not in html, (
+        "a barra das Solicitações esticava o campo de ponta a ponta")
+
+
+def test_o_CSS_poe_TETO_na_largura_dos_campos():
+    """*"Os campos em várias telas estão esticados demais, ocupa de ponta a ponta a
+    tela. Fica horrível numa tela grande."*"""
+    css = Path("app/apps/analisesps/static/analisesps.css").read_text(
+        encoding="utf-8")
+    assert ".cartao input[type=text]" in css
+    assert "max-width: 420px" in css
+    assert ".solta-arquivo, .caixa-arquivo, .area-arquivo { max-width: 760px; }" in css
+    # E os filtros da lateral continuam acompanhando a coluna.
+    assert ".filtros input, .filtros select { width: 100%; max-width: none; }" in css

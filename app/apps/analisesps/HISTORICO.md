@@ -9161,6 +9161,89 @@ o que ele reprovou foi justamente o que só se vê abrindo a tela.
 
 ---
 
+### Centésima décima quinta leva (29/09) — segunda rodada de uso, e uma confusão minha
+
+Ele voltou às telas. No fim: *"a verdade é que tem tanta coisa, que até desanima."*
+O detalhe está em `docs/FOLHA_DE_PAGAMENTO.md` §7.32; aqui, o que muda para quem
+vier depois.
+
+#### ⚠️ A confusão que custou a rodada: AVISO GUARDADO SEM DATA
+
+Ele leu na tela *"não achei a coluna de **Modalidade** Auxílio Alimentação"* e
+concluiu, com razão, que a correção não havia pegado. **Mas aquele aviso era de
+26/09 às 18:35**, guardado no banco, escrito pelo código antigo — e "Atualizar
+cadastro" não foi apertado desde a correção.
+
+**A lição vale para qualquer aviso guardado: sem a data da carga que o escreveu, ele
+PARECE o presente.** Agora sai como "Na carga de 26/09 às 18:35: …", dizendo que não
+é o agora. Sem isso, toda correção futura no cadastro geraria a mesma conversa.
+
+#### Os desligados continuavam aparecendo — comparação exata
+
+A regra existia e comparava texto EXATO (`lower(fase) = 'colaboradores desligados'`).
+Qualquer variação na planilha ("Desligados", um espaço a mais) deixava de casar.
+Agora casa por **pedaço** ("desligad", "afastad").
+
+⚠️ E o detalhe que quase escapou: os predicados moram **num lugar só**
+(`fase_diz_desligado` / `fase_diz_afastado`), porque o `WHERE` que ESCONDE e a regra
+que CLASSIFICA tinham de concordar sempre. Eu corrigi um e quase deixei o outro — e
+divergindo, a tela mostraria como ativo quem ela esconde do pagamento.
+
+#### O ponto: TERCEIRA vez que ele reclama do mesmo
+
+*"Clico em trazer o ponto, sistema diz que vai trazer e NÃO TRAZ nada. Ninguém sabe
+de nada."*
+
+⚠️ **O registro da tentativa SEMPRE existiu** — em `execucoes`, com `ok`, mensagem e
+o erro da API dentro. Faltava a TELA MOSTRAR. Falha que só existe no log do serviço
+é falha que o dono não lê, e aí o botão vira caixa preta. Entrou
+`tarefas.ultima_do_tipo("ponto")`, e a tela traduz 401/403 (credencial), tempo/conexão
+(API muda) e 0 página(s) (API sem dado para o mês).
+
+**Vale como regra geral do módulo:** botão que dispara trabalho em segundo plano tem
+de mostrar o resultado da ÚLTIMA tentativa ao abrir a tela — não só enquanto alguém
+está olhando.
+
+#### O resto da lista
+
+- **Colaboradores** ganhou seis KPIs (no molde das Solicitações), filtro por **Fase
+  Atual** (coluna AX, com contagem por fase, vinda do banco) e por **data de
+  admissão**. "3531 linhas em 26/09" é registro de carga, não informação de trabalho.
+- **A importação** passou a mostrar **quantas PESSOAS precisam de olho** antes do
+  "fecha / não fecha" — o número já era calculado e só aparecia abrindo a folha.
+- **O aviso falso `Empregado(s))`** sumiu. ⚠️ Mas o LUGAR da verificação importou: no
+  alto do laço ela engoliu o "Total: Geral (406 Empregado(s))", que é o número da
+  conferência. Dois testes pegaram.
+- **Padrão visual:** os KPIs da folha não tinham `.estatico`, então subiam no hover e
+  mostravam cursor de mão, como se fossem clicáveis.
+- **Campos esticados:** `input`/`select` dentro de `.cartao` não tinham largura. Agora
+  há teto por TIPO de campo. E **cinco barras** ainda usavam `.barra-acoes` — a grade
+  de três colunas das Solicitações — que é o que esticava campo de mês até meia tela.
+- **"Observação Ajuda de Custo"** é o nome completo da coluna BQ; eu havia guardado
+  só "Observação", e a planilha tem mais de uma.
+- Os rótulos "Pagamentos"/"Cadastro e base" saíram: *"era apenas pra reorganizar."*
+
+#### A armadilha de dublê que voltou
+
+`falso_buscar` tinha assinatura fixa. Ao ganhar `fase` e as datas, ele estourou, a
+rota caiu no `except` e o teste falhou **dizendo que o filtro não foi pedido** — quando
+o que houve foi TypeError. É a segunda vez (foi `so_saindo` em 27/09). Agora tem
+`**resto` e o comentário explicando.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o valor do auxílio saindo certo | ele apertar **"Atualizar cadastro"** — sem isso a leitura não é refeita e os nomes novos não valem |
+| o nome da coluna **"Paga por BeeVale"** | só ele tem |
+| total por obra do ponto, diária em dinheiro, CTPS extra | o **nome dos campos de cada dia** do ponto — e agora, se a carga falhar, a tela diz por quê |
+| o de/para de categoria do card | abas ocultas da planilha |
+
+**Verificado:** suíte inteira sem falha. **NÃO verificado:** nada num navegador — e
+pela segunda rodada seguida foi exatamente aí que estavam os problemas.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

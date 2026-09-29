@@ -321,6 +321,18 @@ def interpretar(linhas_brutas) -> FolhaLida:
                                   "total": valor or Decimal("0")}
             continue
 
+        # ⚠️ A CONTAGEM DE EMPREGADOS SOLTA — "Empregado(s))", com o parêntese
+        # sobrando que o próprio relatório escreve. Ele mandou o aviso em
+        # 29/09/2026: `linha que não reconheci: Empregado(s))`.
+        #
+        # ⚠️ E O LUGAR DESTA VERIFICAÇÃO IMPORTA: na primeira tentativa eu a pus no
+        # alto do laço, e ela ENGOLIU o "Total: Geral (406 Empregado(s))" — que é o
+        # total declarado do relatório, justamente o número que a conferência usa.
+        # Dois testes pegaram. Tem de vir DEPOIS dos totais, onde já sobrou só o
+        # rótulo solto.
+        if "empregado" in primeira.lower():
+            continue
+
         achado = PADRAO_FILIAL.match(primeira)
         if achado and not PADRAO_CODIGO.match(primeira):
             codigo, nome = achado.group(1), achado.group(2).strip()

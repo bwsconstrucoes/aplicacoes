@@ -189,8 +189,14 @@ COLUNAS_DOS_AUXILIOS = {
                          "Valor Transporte"],
     # A coluna BQ. Vale para os dois auxílios — é onde o DP escreve o porquê de
     # uma exceção, e é o que ele quer ver clicando na pessoa.
-    "observacao_auxilio": ["Observação", "Observacao", "Obs",
-                           "Observação Auxílio", "Observações"],
+    # ⚠️ "OBSERVAÇÃO AJUDA DE CUSTO" — o nome completo, que ele deu em
+    # 29/09/2026 depois de eu ter guardado só "Observação". A planilha tem mais de
+    # uma coluna de observação; procurar pelo nome curto poderia casar com a
+    # errada, e aí a tela mostraria a observação de outro assunto.
+    "observacao_auxilio": ["Observação Ajuda de Custo",
+                           "Observacao Ajuda de Custo",
+                           "Observação Ajuda Custo", "Observação Auxílio",
+                           "Observação", "Observacao"],
     "paga_por_beevale": ["Paga por BeeVale", "BeeVale", "Pagamento BeeVale"],
 }
 
@@ -750,6 +756,35 @@ SITUACAO_AFASTADO = "afastado"
 FASE_DESLIGADO = "colaboradores desligados"
 FASE_AFASTADO = "colaboradores afastados"
 
+# ⚠️ A FASE CASA POR PEDAÇO, NÃO POR IGUALDADE — e isto é correção de 29/09/2026.
+# O dono, pela segunda vez: *"você continua exibindo Colaboradores Desligados na
+# tela de cadastro. Esses devem aparecer ocultos. Eu já havia dito isso."*
+#
+# A comparação era `lower(fase) = 'colaboradores desligados'`, exata. Qualquer
+# variação na planilha — "Desligados", "Colaborador Desligado", um espaço a mais,
+# "Colaboradores Desligados " — deixava de casar, e a pessoa voltava para a lista
+# sem nada avisando. Procurar o PEDAÇO ("desligad", "afastad") cobre as variações
+# de plural e de singular de uma vez, e é o que um cadastro digitado por gente
+# exige.
+PEDACO_DESLIGADO = "desligad"
+PEDACO_AFASTADO = "afastad"
+
+
+def fase_diz_desligado(fase) -> bool:
+    """A fase do Pipefy indica desligamento?
+
+    ⚠️ UM LUGAR SÓ, de propósito. O `WHERE` que ESCONDE da lista e a regra que
+    CLASSIFICA a pessoa tinham de concordar sempre — e não concordavam: o WHERE
+    usava igualdade exata e a classificação também, mas eu corrigi um e quase
+    deixei o outro. Se divergirem, a tela esconde alguém que ela mesma diria estar
+    ativo, ou pior, mostra como ativo quem ela esconde do pagamento."""
+    return PEDACO_DESLIGADO in " ".join(str(fase or "").split()).lower()
+
+
+def fase_diz_afastado(fase) -> bool:
+    """A fase do Pipefy indica afastamento? Ver `fase_diz_desligado`."""
+    return PEDACO_AFASTADO in " ".join(str(fase or "").split()).lower()
+
 
 def _hoje():
     from .horario import agora
@@ -778,10 +813,10 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
     aviso = ficha.get("aviso_previo")
 
     desacordo = ""
-    if fase == FASE_DESLIGADO and not saida:
+    if fase_diz_desligado(fase) and not saida:
         desacordo = ("a fase no Pipefy diz desligado, mas o cadastro não tem "
                      "data de saída — confira antes de pagar.")
-    elif saida and fase not in (FASE_DESLIGADO, ""):
+    elif saida and fase and not fase_diz_desligado(fase):
         desacordo = (f"o cadastro tem data de saída, mas a fase no Pipefy "
                      f"ainda diz \"{ficha.get('fase')}\".")
     elif ultimo and not saida and ultimo <= ate:
@@ -799,7 +834,7 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
             f"saiu em {saida.strftime('%d/%m/%Y')}. Não pague folha, diária "
             "nem auxílio deste período por aqui.",
             True)
-    if fase == FASE_DESLIGADO:
+    if fase_diz_desligado(fase):
         return resposta(
             SITUACAO_SAIU,
             "a fase no Pipefy diz desligado. Não pague por aqui até "
@@ -833,7 +868,7 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
 
     # 3. AFASTADO — não recebe auxílio alimentação nem transporte. É a mesma
     #    exclusão que as abas da planilha já fazem pela fase.
-    if fase == FASE_AFASTADO:
+    if fase_diz_afastado(fase):
         return resposta(
             SITUACAO_AFASTADO,
             "está afastado. Não pague auxílio alimentação nem transporte.",
@@ -896,7 +931,8 @@ def muitos_por_cpf(cpfs, ate=None) -> dict:
 
 
 def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200,
-           so_saindo: bool = False, ate=None) -> list:
+           so_saindo: bool = False, ate=None, fase: str = "",
+           admitido_de=None, admitido_ate=None) -> list:
     """Procura por nome ou por CPF. Lista curta, para caixa de busca.
 
     `teto` existe porque o cadastro tem ~3.500 pessoas e desenhar tudo numa
@@ -932,15 +968,37 @@ def buscar(texto: str = "", so_ativos: bool = True, teto: int = 200,
         # sistema. A tela conta quantos foram escondidos e tem um clique para
         # trazê-los. Esconder e não dizer é que seria o erro de 26/09.
         condicoes.append("data_saida IS NULL")
-        condicoes.append("lower(coalesce(fase, '')) NOT IN (?, ?)")
-        params += [FASE_DESLIGADO, FASE_AFASTADO]
+        condicoes.append("lower(coalesce(fase, '')) NOT LIKE ?")
+        condicoes.append("lower(coalesce(fase, '')) NOT LIKE ?")
+        params += [f"%{PEDACO_DESLIGADO}%", f"%{PEDACO_AFASTADO}%"]
     if so_saindo:
         # Qualquer sinal de saída. A conta fina de quem está saindo × quem já
         # saiu é de `situacao_no_pagamento`; aqui só se traz quem tem sinal.
         condicoes.append(
             "(data_saida IS NOT NULL OR ultimo_dia IS NOT NULL "
-            " OR aviso_previo IS NOT NULL OR lower(fase) IN (?, ?))")
-        params += [FASE_DESLIGADO, FASE_AFASTADO]
+            " OR aviso_previo IS NOT NULL "
+            " OR lower(coalesce(fase, '')) LIKE ? "
+            " OR lower(coalesce(fase, '')) LIKE ?)")
+        params += [f"%{PEDACO_DESLIGADO}%", f"%{PEDACO_AFASTADO}%"]
+
+    # ⚠️ A FASE ATUAL É O CORTE MAIS USADO — *"a Fase Atual, coluna AX, é super
+    # importante"* (dono, 29/09/2026). Casa exato pelo texto que a tela ofereceu, e
+    # a tela oferece só o que existe no banco.
+    if fase:
+        if fase == "(sem fase)":
+            condicoes.append("coalesce(btrim(fase), '') = ''")
+        else:
+            condicoes.append("btrim(fase) = ?")
+            params.append(fase.strip())
+    # E as datas, que ele pediu junto: *"tem tanta informação nos dados que podemos
+    # usar também como filtro. Datas por exemplo."* A de ADMISSÃO é a que recorta
+    # "quem entrou neste mês", que é a pergunta do dia a dia.
+    if admitido_de:
+        condicoes.append("data_admissao >= ?")
+        params.append(admitido_de)
+    if admitido_ate:
+        condicoes.append("data_admissao <= ?")
+        params.append(admitido_ate)
 
     onde = (" WHERE " + " AND ".join(condicoes)) if condicoes else ""
     linhas = consultar(
@@ -966,12 +1024,14 @@ def contar_quem_esta_saindo(ate=None) -> dict:
         "SELECT "
         "  sum(CASE WHEN data_saida IS NOT NULL OR ultimo_dia IS NOT NULL "
         "            OR aviso_previo IS NOT NULL "
-        "            OR lower(fase) IN (?, ?) THEN 1 ELSE 0 END), "
+        "            OR lower(coalesce(fase, '')) LIKE ? "
+        "            OR lower(coalesce(fase, '')) LIKE ? THEN 1 ELSE 0 END), "
         "  sum(CASE WHEN (data_saida IS NOT NULL AND data_saida <= ?) "
-        "            OR lower(fase) = ? THEN 1 ELSE 0 END), "
-        "  sum(CASE WHEN lower(fase) = ? THEN 1 ELSE 0 END) "
+        "            OR lower(coalesce(fase, '')) LIKE ? THEN 1 ELSE 0 END), "
+        "  sum(CASE WHEN lower(coalesce(fase, '')) LIKE ? THEN 1 ELSE 0 END) "
         " FROM analisesps.colaborador",
-        (FASE_DESLIGADO, FASE_AFASTADO, ate, FASE_DESLIGADO, FASE_AFASTADO))
+        (f"%{PEDACO_DESLIGADO}%", f"%{PEDACO_AFASTADO}%", ate,
+         f"%{PEDACO_DESLIGADO}%", f"%{PEDACO_AFASTADO}%"))
     com_sinal, saiu, afastado = (linha or (0, 0, 0))
     return {"com_sinal": int(com_sinal or 0), "saiu": int(saiu or 0),
             "afastado": int(afastado or 0)}
@@ -1012,3 +1072,61 @@ def resolver_obra(ficha: dict, por_nome: dict | None = None) -> str:
         return codigo
     nome = " ".join(str(ficha.get("obra_cadastro") or "").split()).upper()
     return (por_nome or {}).get(nome, "")
+
+
+def panorama() -> dict:
+    """Os números do cadastro, para o quadro do alto da tela.
+
+    ⚠️ Pedido do dono em 29/09/2026: *"3531 pessoa(s) trazidas da planilha em 26/09
+    às 18:35. Isso vai aparecer sempre assim? Não tem nada de KPI essa tela."*
+
+    Ele tem razão: a tela dizia só quantas linhas vieram e quando. Isso é registro
+    de carga, não informação de trabalho. O que decide o que ele faz é: quantos
+    estão trabalhando, quantos têm cada auxílio, e **quantos estão com o cadastro
+    pela metade** — porque é isso que trava pagamento.
+
+    Uma consulta só: são ~3.500 linhas e a tela abre a cada filtro."""
+    from .db import consultar_um
+    if not _pronto():
+        return {"pronto": False}
+    linha = consultar_um(
+        "SELECT count(*), "
+        "  sum(CASE WHEN data_saida IS NULL "
+        "        AND lower(coalesce(fase, '')) NOT LIKE ? "
+        "        AND lower(coalesce(fase, '')) NOT LIKE ? THEN 1 ELSE 0 END), "
+        "  sum(CASE WHEN valor_alimentacao IS NOT NULL "
+        "        OR coalesce(modo_alimentacao, '') <> '' THEN 1 ELSE 0 END), "
+        "  sum(CASE WHEN valor_transporte IS NOT NULL "
+        "        OR coalesce(modo_transporte, '') <> '' THEN 1 ELSE 0 END), "
+        "  sum(CASE WHEN coalesce(card_pipefy, '') = '' THEN 1 ELSE 0 END), "
+        "  sum(CASE WHEN coalesce(obra_codigo, '') = '' THEN 1 ELSE 0 END), "
+        "  sum(CASE WHEN coalesce(id_fortes, '') = '' THEN 1 ELSE 0 END) "
+        " FROM analisesps.colaborador",
+        (f"%{PEDACO_DESLIGADO}%", f"%{PEDACO_AFASTADO}%"))
+    total, ativos, com_ali, com_tra, sem_card, sem_obra, sem_fortes = (
+        linha or (0,) * 7)
+    return {
+        "pronto": True,
+        "total": int(total or 0), "ativos": int(ativos or 0),
+        "com_alimentacao": int(com_ali or 0), "com_transporte": int(com_tra or 0),
+        "sem_card": int(sem_card or 0), "sem_obra": int(sem_obra or 0),
+        "sem_id_fortes": int(sem_fortes or 0),
+    }
+
+
+def fases() -> list:
+    """As Fases Atuais que existem no cadastro, com quantos em cada.
+
+    ⚠️ Pedido dele em 29/09/2026: *"havia falado que a Fase Atual, coluna AX, é
+    super importante. Não tem isso como filtro em colaboradores."*
+
+    É a coluna que diz em que ponto do processo a pessoa está no Pipefy — e por isso
+    é o corte mais usado. Sai do banco, não de uma lista escrita à mão: fase nova no
+    Pipefy aparece aqui sozinha."""
+    from .db import consultar
+    if not _pronto():
+        return []
+    linhas = consultar(
+        "SELECT coalesce(NULLIF(btrim(fase), ''), '(sem fase)'), count(*) "
+        "  FROM analisesps.colaborador GROUP BY 1 ORDER BY count(*) DESC")
+    return [{"fase": l[0], "quantos": int(l[1] or 0)} for l in linhas]

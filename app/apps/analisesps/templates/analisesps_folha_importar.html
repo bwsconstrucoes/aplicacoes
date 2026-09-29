@@ -63,6 +63,13 @@
       <th>Período</th>
       <th class="num">Pessoas</th>
       <th class="num">Total</th>
+      {# ⚠️ ESTA COLUNA VEM ANTES DO "Confere?", por correção dele em 29/09/2026:
+         *"você tá muito preocupado com os totalizadores do arquivo de importação,
+         quando a preocupação deve ser linha a linha de cada colaborador."*
+
+         "Não fecha" é uma pista; o que decide se dá para pagar é QUANTAS PESSOAS
+         estão sem cadastro, já saíram ou estão saindo. #}
+      <th class="num">Precisam de olho</th>
       <th>Importada</th>
       <th>Confere?</th>
       {% if pode_operar %}<th></th>{% endif %}
@@ -70,11 +77,30 @@
   </thead>
   <tbody>
   {% for f in folhas %}
-    <tr class="{{ 'linha-alerta' if not f.fecha }}">
+    {# O alerta da linha passa a considerar as PESSOAS — que é o que decide se dá
+       para pagar. "Não fecha" continua acendendo também: é problema de verdade,
+       só não é mais a ÚNICA coisa que acende. #}
+    <tr class="{{ 'linha-alerta' if f.precisa_de_mao or not f.fecha }}">
       <td><b>{{ f.competencia }}</b></td>
       <td>{{ f.rotulo_do_tipo }}</td>
       <td class="num">{{ f.pessoas }}</td>
       <td class="num">{{ f.total|moeda }}</td>
+      <td class="num">
+        {% if f.precisa_de_mao is none %}
+          <span class="cartao-dica">não deu para conferir</span>
+        {% elif f.precisa_de_mao %}
+          <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
+             title="abrir a folha pessoa por pessoa">
+            <b>{{ f.precisa_de_mao }}</b> pessoa(s)</a>
+          <br><span class="cartao-dica">
+            {% if f.pendentes %}{{ f.pendentes }} sem cadastro{% endif %}
+            {% if f.sairam %}{% if f.pendentes %} · {% endif %}{{ f.sairam }} já saiu{% endif %}
+            {% if f.saindo %}{% if f.pendentes or f.sairam %} · {% endif %}{{ f.saindo }} saindo{% endif %}
+          </span>
+        {% else %}
+          <span class="selo no-lote">nenhuma</span>
+        {% endif %}
+      </td>
       <td>
         <span class="cartao-dica">{{ f.importado_em|momento_br }}{% if f.importado_por %} · {{ f.importado_por }}{% endif %}</span>
       </td>
@@ -102,7 +128,7 @@
     </tr>
   {% else %}
     <tr>
-      <td colspan="{{ 7 if pode_operar else 6 }}" class="cartao-dica">
+      <td colspan="{{ 8 if pode_operar else 7 }}" class="cartao-dica">
         Nenhuma folha importada ainda.
         {% if pode_operar %}Solte o arquivo da contabilidade acima.{% endif %}
       </td>

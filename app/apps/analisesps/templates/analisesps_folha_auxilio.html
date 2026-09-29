@@ -171,21 +171,21 @@
 {% else %}
 
 <div class="kpis">
-  <div class="kpi">
-    <span class="kpi-rotulo">A pagar em {{ resultado.pagamento_em }}</span>
-    <b class="kpi-valor">{{ resultado.total|moeda }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">A pagar em {{ resultado.pagamento_em }}</div>
+    <div class="kpi-valor">{{ resultado.total|moeda }}</div>
   </div>
-  <div class="kpi">
-    <span class="kpi-rotulo">Pessoas</span>
-    <b class="kpi-valor">{{ resultado.quantos_a_pagar }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Pessoas</div>
+    <div class="kpi-valor">{{ resultado.quantos_a_pagar }}</div>
   </div>
-  <div class="kpi {{ 'ambar' if resultado.com_problema }}">
-    <span class="kpi-rotulo">Precisam de olho</span>
-    <b class="kpi-valor">{{ resultado.com_problema|length }}</b>
+  <div class="kpi estatico {{ 'ambar' if resultado.com_problema }}">
+    <div class="kpi-rotulo">Precisam de olho</div>
+    <div class="kpi-valor">{{ resultado.com_problema|length }}</div>
   </div>
-  <div class="kpi">
-    <span class="kpi-rotulo">Obras</span>
-    <b class="kpi-valor">{{ resultado.por_obra|length }}</b>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Obras</div>
+    <div class="kpi-valor">{{ resultado.por_obra|length }}</div>
   </div>
 </div>
 

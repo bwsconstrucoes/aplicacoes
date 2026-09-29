@@ -65,16 +65,22 @@
 </div>
 {% endif %}
 
-<form class="barra-acoes" method="get"
+{# A busca das férias. ⚠️ NÃO usa `.barra-acoes` (que é a grade de três colunas
+   das Solicitações e esticava o campo de ponta a ponta), e o "Limpar" aparece
+   SEMPRE — ele pediu em 29/09/2026: *"campo procurar de férias, bota limpar"*.
+   Botão que só existe depois de filtrar obriga a pessoa a descobrir que ele
+   existe. #}
+<form class="barra-mes" method="get"
       action="{{ url_for('analisesps.tela_folha_calendario') }}">
-  <input class="campo-largo" type="search" name="q" id="q"
-         value="{{ procurado }}" placeholder="procurar por nome ou CPF…"
-         aria-label="Procurar férias por nome ou CPF">
+  <label class="campo-mes" style="flex:0 1 320px">
+    <span>Procurar pessoa</span>
+    <input type="search" name="q" id="q" value="{{ procurado }}"
+           placeholder="nome ou CPF…"
+           aria-label="Procurar férias por nome ou CPF">
+  </label>
   <button class="btn secundario" type="submit">Procurar</button>
-  {% if procurado %}
-    <a class="btn secundario"
-       href="{{ url_for('analisesps.tela_folha_calendario') }}">Limpar</a>
-  {% endif %}
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.tela_folha_calendario') }}">Limpar</a>
 </form>
 
 <table class="sps">
@@ -156,16 +162,21 @@
 </div>
 {% endif %}
 
-<form class="barra-acoes" method="get"
+{# O ano dos feriados. Mesma correção da busca acima: `.barra-acoes` é a grade de
+   três colunas das Solicitações, e esticava este seletor de ano até a largura da
+   tela. Aqui é uma fileira compacta. #}
+<form class="barra-mes" method="get"
       action="{{ url_for('analisesps.tela_folha_calendario') }}">
   <input type="hidden" name="q" value="{{ procurado }}">
-  <label class="cartao-dica" style="margin:0" for="ano">Ano</label>
-  <select name="ano" id="ano" onchange="this.form.submit()" style="width:120px">
-    <option value="">todos</option>
-    {% for a in range(ano_padrao - 2, ano_padrao + 3) %}
-      <option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>
-    {% endfor %}
-  </select>
+  <label class="campo-mes"><span>Ano</span>
+    <select name="ano" id="ano" class="ano" onchange="this.form.submit()"
+            aria-label="Ano dos feriados">
+      <option value="">todos</option>
+      {% for a in range(ano_padrao - 2, ano_padrao + 3) %}
+        <option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </label>
 </form>
 
 <table class="sps">

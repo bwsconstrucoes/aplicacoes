@@ -2331,11 +2331,41 @@ tr.filtros-coluna input::placeholder { color: var(--borda-forte); }
 /* O rótulo do grupo dentro da faixa de abas da folha ("Pagamentos", "Cadastro e
    base do cálculo"). Ele não é clicável: só separa os assuntos, que foi o que o
    dono pediu em 28/09/2026 ao dizer que a sequência não tinha lógica. */
-.abas-folha .grupo-abas {
-  align-self: center; margin: 0 2px 0 10px; padding: 0 0 0 10px;
-  border-left: 1px solid var(--borda);
-  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
-  font-weight: 700; color: var(--tinta-suave); white-space: nowrap;
+/* O separador entre grupos de subtelas. Era um rótulo escrito ("Pagamentos"), e
+   ele mandou tirar em 29/09/2026: *"era apenas pra reorganizar"*. O risco mantém
+   a leitura em blocos sem escrever nada. */
+.abas-folha .risco-abas {
+  align-self: stretch; width: 1px; margin: 4px 6px;
+  background: var(--borda);
 }
-.abas-folha .grupo-abas:first-child { margin-left: 0; padding-left: 0;
-  border-left: 0; }
+
+/* --------------------------------------------------------------------------
+   OS CAMPOS PARAM DE ESTICAR DE PONTA A PONTA — 29/09/2026
+
+   ⚠️ Reclamação do dono, e ela vale para o módulo todo: *"os campos em várias
+   telas estão esticados demais, ocupa de ponta a ponta a tela. Fica horrível numa
+   tela grande. A caixa de jogar arquivos de folha, por exemplo."*
+
+   A causa: `input` e `select` dentro de um `.cartao` não tinham largura nenhuma
+   declarada, e num monitor de 34" um campo de mês virava meio metro de campo.
+
+   O teto é por TIPO de campo, não um valor só: uma data precisa de 150 px, um
+   nome precisa de 420, e um endereço de arquivo precisa da linha. Campo que
+   precisar de mais pede explicitamente (`.campo-largo` continua esticando).
+   -------------------------------------------------------------------------- */
+.cartao input[type=text], .cartao input[type=search], .cartao input[type=number],
+.cartao input[type=password], .cartao select, .cartao textarea {
+  max-width: 420px; width: 100%;
+}
+.cartao input[type=date] { max-width: 170px; }
+/* O campo de mês/ano e os de valor não passam do tamanho do que cabe neles. */
+.cartao select.curto, .cartao input.curto { max-width: 150px; }
+/* A exceção declarada: quem pede a linha inteira continua tendo. */
+.cartao .campo-largo, .cartao textarea.campo-largo { max-width: none; }
+
+/* A caixa de soltar arquivo: ela É larga de propósito (o alvo do arraste tem de
+   ser grande), mas não colada nas bordas da tela. */
+.solta-arquivo, .caixa-arquivo, .area-arquivo { max-width: 760px; }
+
+/* Os filtros da lateral: o campo acompanha a coluna, e a coluna já tem largura. */
+.filtros input, .filtros select { width: 100%; max-width: none; }

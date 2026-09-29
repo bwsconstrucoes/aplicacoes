@@ -812,3 +812,35 @@ def ultimas_por_tipo(tipos: list) -> dict:
         return {}
     nomes = ["tipo", "fim", "ok", "mensagem", "linhas", "disparo"]
     return {l[0]: dict(zip(nomes, l)) for l in linhas}
+
+
+def ultima_do_tipo(tipo: str) -> dict | None:
+    """A última execução DE UM TIPO, terminada ou em andamento.
+
+    ⚠️ EXISTE POR UMA RECLAMAÇÃO REPETIDA TRÊS VEZES. O dono, sobre o ponto:
+    *"clico em trazer o ponto, sistema diz que vai trazer e NÃO TRAZ nada. Não sei
+    se ele conseguiu conectar, se tá indo, se não tá, ninguém sabe de nada."*
+
+    O registro da tentativa SEMPRE existiu — com `ok`, com a mensagem e com o erro
+    da API dentro dela. O que faltava era a tela mostrar. Falha que só aparece no
+    log do serviço é falha que o dono não tem como ler, e aí o botão vira caixa
+    preta: aperta, nada acontece, e não há como saber por quê.
+
+    Devolve também `em_andamento`, para a tela distinguir "está trabalhando" de
+    "terminou e deu isso"."""
+    try:
+        from .db import consultar_um
+        linha = consultar_um(
+            "SELECT tipo, disparo, inicio, fim, ok, mensagem, linhas, visto_em "
+            "  FROM analisesps.execucoes WHERE tipo = ? "
+            " ORDER BY inicio DESC LIMIT 1", (str(tipo),))
+    except Exception:  # noqa: BLE001 — banco atrasado não pode derrubar a tela
+        logger.exception("Análise de SPs: não consegui ler a última execução "
+                         "de %s", tipo)
+        return None
+    if not linha:
+        return None
+    return {"tipo": linha[0], "disparo": linha[1], "inicio": linha[2],
+            "fim": linha[3], "ok": linha[4], "mensagem": linha[5],
+            "linhas": linha[6], "visto_em": linha[7],
+            "em_andamento": linha[3] is None}

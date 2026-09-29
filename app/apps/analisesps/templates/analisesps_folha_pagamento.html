@@ -38,22 +38,23 @@
 {# ======================================================================
    O QUE DÁ PARA PAGAR — só verba com apropriação FECHADA.
    ====================================================================== #}
-<form class="barra-acoes" method="get"
+<form class="barra-mes" method="get"
       action="{{ url_for('analisesps.tela_folha_pagamento') }}">
-  <label class="cartao-dica" for="mes" style="margin:0">Competência</label>
-  <select name="mes" id="mes">
+  <label class="campo-mes"><span>Competência</span>
+  <select name="mes" id="mes" aria-label="Mês">
     {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
                            (5,'maio'),(6,'junho'),(7,'julho'),(8,'agosto'),
                            (9,'setembro'),(10,'outubro'),(11,'novembro'),
                            (12,'dezembro')] %}
       <option value="{{ n }}" {% if mes == n %}selected{% endif %}>{{ nome_mes }}</option>
     {% endfor %}
-  </select>
-  <select name="ano" id="ano">
+  </select></label>
+  <label class="campo-mes"><span>Ano</span>
+  <select name="ano" id="ano" class="ano" aria-label="Ano">
     {% for a in range(ano_padrao - 3, ano_padrao + 2) %}
       <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
     {% endfor %}
-  </select>
+  </select></label>
   <button class="btn secundario" type="submit">Ver</button>
 </form>
 
