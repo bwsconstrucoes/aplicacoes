@@ -125,21 +125,19 @@ def _pronto() -> bool:
 
 
 def _substituicao_segura() -> bool:
-    """A migração 037 já rodou? Ela deixa a carga nova nascer AO LADO da antiga.
+    """A migração 037 já rodou? Ela é o que permite a carga nova nascer AO LADO
+    da antiga e a que caiu RETOMAR de onde parou.
 
-    Sem ela, o índice único por competência não admite duas cargas do mês, e
-    `carregar` tem de apagar a antiga antes — o comportamento de antes, com um
-    aviso na carga. Diante de qualquer falha responde False: o caminho antigo
-    funciona nos dois bancos."""
-    from .db import consultar_um
-    try:
-        return bool(consultar_um(
-            "SELECT 1 FROM pg_indexes WHERE schemaname = 'analisesps' "
-            "   AND indexname = 'ix_analisesps_ponto_carga_competencia' "
-            "   AND indexdef ILIKE '%WHERE%'"))
-    except Exception:  # noqa: BLE001 — banco fora do ar
-        logger.exception("Análise de SPs: não consegui conferir o índice da carga")
-        return False
+    Sem ela, `carregar` faz o de antes: apaga a antiga e recomeça da página 1,
+    com um aviso na carga. Diante de qualquer falha responde False: o caminho
+    antigo funciona nos dois bancos."""
+    from .db import tem_coluna
+    return tem_coluna("ponto_carga", "terminada_em")
+
+
+# Uma carga que caiu há mais tempo do que isto não é retomada: o Mobponto já
+# mudou o suficiente para as páginas não casarem mais com as da tentativa.
+HORAS_PARA_RETOMAR = 24
 
 
 def configurado() -> bool:
@@ -464,12 +462,36 @@ def _linha_do_dia(carga_id: int, cpf: str, nome: str, dia) -> tuple | None:
 
 
 def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
-    """Traz o ponto do mês e guarda. É o que o botão chama.
+    """Traz o ponto do mês e guarda. É o que o botão e o automático chamam.
 
-    Página por página, gravando cada bloco antes de pedir o seguinte: o pico de
-    memória fica em poucos MB, não importa o tamanho do mês.
+    Página por página, cada uma gravada por inteiro na sua transação, com o
+    andamento anotado na carga: é isso que permite RETOMAR de onde parou.
+
+    ⚠️ A CARGA ANTERIOR DO MÊS FICA DE PÉ ATÉ ESTA TERMINAR — 29/09/2026.
+
+    Até aqui a carga antiga era apagada ANTES de a nova começar. Se a nova
+    caísse no meio (rede, o serviço reiniciando numa publicação, o Mobponto
+    fora do ar), o mês ficava com um pedaço: a folha usava aquele pedaço como
+    se fosse o ponto inteiro, sem aviso — gente com "menos dias", obra errada,
+    e um mês que ANTES estava certo passava a estar errado. O dono perguntou
+    exatamente isso: *"O que acontece se o ponto der problema pra baixar no
+    meio do caminho?"* — e pediu: *"que possa ser retomada de onde parou e que
+    sejamos avisados"*.
+
+    Agora a carga nova nasce "em andamento" (`terminada_em` vazio) ao lado da
+    antiga, e só no fim, na mesma transação em que é dada por terminada, a
+    antiga é apagada. Quem lê o mês (`carga_do_mes`) só enxerga carga
+    terminada. Uma carga que caiu fica na lista como "parou na página N de M"
+    e a próxima chamada para o mesmo mês (botão ou automático) CONTINUA dela,
+    se for recente (`HORAS_PARA_RETOMAR`). O aviso a quem cuida sai em
+    `tarefas`, que é quem sabe que a execução morreu.
+
+    O preço da retomada, dito por inteiro: as páginas antigas são da tentativa
+    anterior, e quem mudou de página no Mobponto entre as duas pode faltar (a
+    página é gravada por pessoa, então não duplica). Fica escrito nos avisos
+    da carga, e a próxima carga completa do mês refaz tudo.
     """
-    from .db import conexao
+    from .db import conexao, consultar_um
 
     anotar = anotar or (lambda *a, **k: None)
     if not _pronto():
@@ -481,155 +503,197 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
             "faltam as credenciais do Mobponto. Crie MOBPONTO_AUTHORIZATION e "
             "MOBPONTO_API_KEY no Render.")
 
-    anotar("pedindo a primeira página do ponto")
-    primeira = _pedir_pagina(ano, mes, 1)
-    resultado = (primeira or {}).get("result") or {}
-    funcionarios = resultado.get("funcionarios") or []
-    if not funcionarios:
-        raise ErroDoPonto(
-            f"o Mobponto não devolveu ninguém para {mes:02d}/{ano}. Confira se "
-            "o mês está certo e se há ponto lançado nele.")
-
-    total_paginas = 0
-    try:
-        total_paginas = int(resultado.get("total_paginas") or 0)
-    except (TypeError, ValueError):
-        total_paginas = 0
-    if total_paginas <= 0:
-        total_paginas = 1
     avisos = []
-    if total_paginas > MAXIMO_DE_PAGINAS:
-        avisos.append(
-            f"a API disse que há {total_paginas} páginas e o teto é "
-            f"{MAXIMO_DE_PAGINAS} — li só até lá. Se o mês tiver mais, o ponto "
-            "está incompleto.")
-        total_paginas = MAXIMO_DE_PAGINAS
-
-    # ⚠️ A CARGA ANTERIOR DO MÊS FICA DE PÉ ATÉ ESTA TERMINAR — 29/09/2026.
-    #
-    # Até aqui a carga antiga era apagada ANTES de a nova começar. Se a nova
-    # caísse no meio (rede, o serviço reiniciando numa publicação, o Mobponto
-    # fora do ar), o mês ficava com um pedaço: a folha usava aquele pedaço
-    # como se fosse o ponto inteiro, sem aviso — gente com "menos dias", obra
-    # errada, e um mês que ANTES estava certo passava a estar errado. O dono
-    # perguntou exatamente isso: *"O que acontece se o ponto der problema pra
-    # baixar no meio do caminho?"* A resposta tinha de ser "nada de ruim".
-    #
-    # Agora a carga nova nasce com `paginas_lidas = 0` ("em andamento") e só no
-    # fim, na mesma transação em que é dada por terminada, a antiga é apagada.
-    # Quem lê o mês (`carga_do_mes`) só enxerga carga terminada. Uma carga que
-    # morreu no meio fica na lista como "interrompida" e é varrida na próxima.
     segura = _substituicao_segura()
     if not segura:
         avisos.append(
             'a atualização 037 do banco ainda não foi aplicada ("Aplicar '
             'atualizações do banco", em Configurações): a carga anterior deste '
-            "mês foi apagada antes de esta começar. Se esta tivesse caído no "
-            "meio, o mês teria ficado pela metade.")
-    with conexao() as conn:
-        conn.execute("DELETE FROM analisesps.ponto_carga "
-                     " WHERE ano = ? AND mes = ?"
-                     + ("" if not segura else " AND paginas_lidas = 0"),
-                     (int(ano), int(mes)))
-        cur = conn.execute(
-            "INSERT INTO analisesps.ponto_carga "
-            "  (ano, mes, paginas, carregado_por) VALUES (?,?,?,?) RETURNING id",
-            (int(ano), int(mes), total_paginas, str(quem or "")[:120]))
-        carga_id = cur.fetchone()[0]
-        cur.close()
-        conn.commit()
+            "mês foi apagada antes de esta começar, e uma carga que caia no "
+            "meio não retoma. Aplique a atualização.")
 
-    campos_vistos: dict = {}
-    pessoas = set()
-    dias_gravados = 0
-    paginas_lidas = 0
-    pagina = 1
-    pendentes: list = []
+    retomada = carga_em_andamento(ano, mes) if segura else None
+    if retomada and not (retomada["paginas_lidas"] > 0 and _recente(retomada)):
+        retomada = None
 
-    def descarregar():
-        nonlocal dias_gravados, pendentes
-        if not pendentes:
-            return
+    if retomada:
+        carga_id = int(retomada["id"])
+        total_paginas = int(retomada["paginas"] or 1)
+        pagina = int(retomada["paginas_lidas"]) + 1
+        primeira = None
+        avisos.append(
+            f"retomada da página {pagina} de {total_paginas}: as páginas "
+            f"anteriores são da tentativa de "
+            f"{retomada['carregado_em']:%d/%m %H:%M}. Quem mudou de página no "
+            "Mobponto entre as duas tentativas pode faltar — a próxima carga "
+            "completa do mês refaz tudo.")
+        anotar("retomando o ponto", f"da página {pagina} de {total_paginas}")
         with conexao() as conn:
-            conn.executemany(
-                "INSERT INTO analisesps.ponto_dia "
-                "  (carga_id, cpf, nome, data, matricula, campos) "
-                " VALUES (?,?,?,?,?,?)", pendentes)
+            # Outras tentativas que também caíram não servem mais.
+            conn.execute("DELETE FROM analisesps.ponto_carga "
+                         " WHERE ano = ? AND mes = ? AND terminada_em IS NULL "
+                         "   AND id <> ?", (int(ano), int(mes), carga_id))
             conn.commit()
-        dias_gravados += len(pendentes)
-        pendentes = []
+        logger.info("Análise de SPs: ponto %02d/%d retomado da página %d de %d "
+                    "(carga %d).", mes, ano, pagina, total_paginas, carga_id)
+    else:
+        anotar("pedindo a primeira página do ponto")
+        primeira = _pedir_pagina(ano, mes, 1)
+        resultado = (primeira or {}).get("result") or {}
+        funcionarios = resultado.get("funcionarios") or []
+        if not funcionarios:
+            raise ErroDoPonto(
+                f"o Mobponto não devolveu ninguém para {mes:02d}/{ano}. Confira "
+                "se o mês está certo e se há ponto lançado nele.")
+        try:
+            total_paginas = int(resultado.get("total_paginas") or 0)
+        except (TypeError, ValueError):
+            total_paginas = 0
+        if total_paginas <= 0:
+            total_paginas = 1
+        if total_paginas > MAXIMO_DE_PAGINAS:
+            avisos.append(
+                f"a API disse que há {total_paginas} páginas e o teto é "
+                f"{MAXIMO_DE_PAGINAS} — li só até lá. Se o mês tiver mais, o "
+                "ponto está incompleto.")
+            total_paginas = MAXIMO_DE_PAGINAS
 
+        with conexao() as conn:
+            # Com a 037: só as tentativas que não terminaram saem do caminho;
+            # a carga que vale fica até esta terminar. Sem ela: como antes.
+            conn.execute("DELETE FROM analisesps.ponto_carga "
+                         " WHERE ano = ? AND mes = ?"
+                         + (" AND terminada_em IS NULL" if segura else ""),
+                         (int(ano), int(mes)))
+            cur = conn.execute(
+                "INSERT INTO analisesps.ponto_carga "
+                "  (ano, mes, paginas, carregado_por) VALUES (?,?,?,?) "
+                "RETURNING id",
+                (int(ano), int(mes), total_paginas, str(quem or "")[:120]))
+            carga_id = int(cur.fetchone()[0])
+            cur.close()
+            conn.commit()
+        pagina = 1
+
+    paginas_gravadas = pagina - 1
     while pagina <= total_paginas:
-        if pagina == 1:
+        if pagina == 1 and primeira is not None:
             dados = primeira
         else:
             anotar("trazendo o ponto", f"página {pagina} de {total_paginas}")
             dados = _pedir_pagina(ano, mes, pagina)
         resultado = (dados or {}).get("result") or {}
         funcionarios = resultado.get("funcionarios") or []
-        paginas_lidas += 1
 
         if not funcionarios:
             # Página vazia no meio é o sinal de fim que a API dá quando
             # `total_paginas` vem otimista. Para em vez de insistir.
             break
 
+        from .folha_rateio import so_digitos
+        linhas, cpfs, campos = [], set(), set()
         for bruto in funcionarios:
             cpf, nome, dias = _dias_do_funcionario(bruto)
             if cpf:
-                pessoas.add(cpf)
+                # Como vai para o banco (só dígitos): é por ele que a página
+                # apaga o que já tinha da pessoa antes de gravar de novo.
+                cpfs.add(so_digitos(cpf))
             for dia in dias:
                 if isinstance(dia, dict):
-                    for campo in dia:
-                        campos_vistos[str(campo)] = True
+                    campos.update(str(c) for c in dia)
                 linha = _linha_do_dia(carga_id, cpf, nome, dia)
                 if linha is not None:
-                    pendentes.append(linha)
-            if len(pendentes) >= DIAS_POR_BLOCO:
-                descarregar()
-        descarregar()
+                    linhas.append(linha)
+        _gravar_pagina(carga_id, pagina, cpfs, linhas, campos)
+        paginas_gravadas = pagina
+        feito = consultar_um(
+            "SELECT count(*), count(DISTINCT cpf) FROM analisesps.ponto_dia "
+            " WHERE carga_id = ?", (carga_id,)) or (0, 0)
         anotar("trazendo o ponto",
-               f"{dias_gravados} dia(s) de {len(pessoas)} pessoa(s)")
+               f"{feito[0]} dia(s) de {feito[1]} pessoa(s) — página {pagina} "
+               f"de {total_paginas}")
         pagina += 1
 
-    sem_data = 0
-    from .db import consultar_um
-    achado = consultar_um(
-        "SELECT count(*) FROM analisesps.ponto_dia "
-        " WHERE carga_id = ? AND data IS NULL", (carga_id,))
-    sem_data = int((achado or [0])[0] or 0)
+    totais = consultar_um(
+        "SELECT count(*), count(DISTINCT cpf), "
+        "       count(*) FILTER (WHERE data IS NULL) "
+        "  FROM analisesps.ponto_dia WHERE carga_id = ?", (carga_id,)) or (0, 0, 0)
+    dias_gravados, pessoas, sem_data = int(totais[0]), int(totais[1]), int(totais[2])
     if sem_data:
         avisos.append(
             f"{sem_data} dia(s) vieram sem data que eu consiga ler. Eles ficaram "
             "guardados, com o conteúdo original, para conferência.")
 
-    # ⚠️ OS NOMES DOS CAMPOS SÃO A DESCOBERTA QUE DESTRAVA A APROPRIAÇÃO. Ficam
-    # guardados e aparecem na tela: é com eles que se mapeia a obra e as
-    # marcações, sem palpite.
-    campos = sorted(campos_vistos)
     with conexao() as conn:
-        # A anterior apagada E esta dada por terminada (paginas_lidas >= 1),
-        # numa transação só: ou o mês troca de carga inteiro, ou não troca.
-        # Nesta ordem: o índice único só admite UMA terminada por mês.
+        # A anterior apagada E esta dada por terminada, numa transação só: ou
+        # o mês troca de carga inteiro, ou não troca. Nesta ordem, porque o
+        # índice único só admite UMA terminada por mês.
         conn.execute("DELETE FROM analisesps.ponto_carga "
                      " WHERE ano = ? AND mes = ? AND id <> ?",
                      (int(ano), int(mes), carga_id))
         conn.execute(
             "UPDATE analisesps.ponto_carga "
-            "   SET paginas_lidas = ?, pessoas = ?, dias = ?, "
-            "       campos_vistos = ?, avisos = ? "
-            " WHERE id = ?",
-            (max(1, paginas_lidas), len(pessoas), dias_gravados,
-             "|".join(campos), " | ".join(avisos), carga_id))
+            "   SET paginas_lidas = ?, pessoas = ?, dias = ?, avisos = ?"
+            + (", terminada_em = now()" if segura else "")
+            + " WHERE id = ?",
+            (max(1, paginas_gravadas), pessoas, dias_gravados,
+             " | ".join(avisos), carga_id))
         conn.commit()
 
+    campos_vistos = (consultar_um(
+        "SELECT campos_vistos FROM analisesps.ponto_carga WHERE id = ?",
+        (carga_id,)) or [""])[0] or ""
+    campos = [c for c in campos_vistos.split("|") if c]
     logger.info("Análise de SPs: ponto %02d/%d — %d dia(s) de %d pessoa(s) em "
                 "%d página(s). Campos: %s", mes, ano, dias_gravados,
-                len(pessoas), paginas_lidas, ", ".join(campos))
+                pessoas, paginas_gravadas, ", ".join(campos))
     return {"id": carga_id, "ano": int(ano), "mes": int(mes),
-            "pessoas": len(pessoas), "dias": dias_gravados,
-            "paginas": total_paginas, "paginas_lidas": paginas_lidas,
-            "campos": campos, "avisos": avisos}
+            "pessoas": pessoas, "dias": dias_gravados,
+            "paginas": total_paginas, "paginas_lidas": paginas_gravadas,
+            "campos": campos, "avisos": avisos,
+            "retomada": bool(retomada)}
+
+
+def _gravar_pagina(carga_id: int, pagina: int, cpfs: set, linhas: list,
+                   campos: set) -> None:
+    """Uma página inteira, numa transação: os dias, o andamento e os campos.
+
+    ⚠️ POR PESSOA, E POR ISSO NÃO DUPLICA: antes de gravar, os dias que esta
+    carga já tem das pessoas desta página são apagados. É o que torna a
+    retomada segura mesmo se a mesma pessoa vier de novo em outra página.
+    """
+    from .db import conexao
+    with conexao() as conn:
+        if cpfs:
+            conn.execute("DELETE FROM analisesps.ponto_dia "
+                         " WHERE carga_id = ? AND cpf = ANY(?)",
+                         (int(carga_id), sorted(cpfs)))
+        if linhas:
+            conn.executemany(
+                "INSERT INTO analisesps.ponto_dia "
+                "  (carga_id, cpf, nome, data, matricula, campos) "
+                " VALUES (?,?,?,?,?,?)", linhas)
+        cur = conn.execute("SELECT campos_vistos FROM analisesps.ponto_carga "
+                           " WHERE id = ? FOR UPDATE", (int(carga_id),))
+        atuais = ((cur.fetchone() or [""])[0] or "").split("|")
+        cur.close()
+        todos = sorted({c for c in atuais if c} | set(campos))
+        conn.execute("UPDATE analisesps.ponto_carga "
+                     "   SET paginas_lidas = ?, campos_vistos = ? WHERE id = ?",
+                     (int(pagina), "|".join(todos), int(carga_id)))
+        conn.commit()
+
+
+def _recente(carga: dict) -> bool:
+    """A tentativa é de menos de `HORAS_PARA_RETOMAR` horas?"""
+    import datetime as _dt
+    quando = carga.get("carregado_em")
+    if not quando:
+        return False
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=_dt.timezone.utc)
+    return (_dt.datetime.now(_dt.timezone.utc) - quando
+            ) < _dt.timedelta(hours=HORAS_PARA_RETOMAR)
 
 
 # ---------------------------------------------------------------------------
@@ -640,16 +704,26 @@ CAMPOS_DA_CARGA = ("id", "ano", "mes", "paginas", "paginas_lidas", "pessoas",
                    "carregado_por")
 
 
+def _campos_da_carga() -> tuple:
+    """Os campos a ler — com `terminada_em` só depois da migração 037."""
+    if _substituicao_segura():
+        return CAMPOS_DA_CARGA + ("terminada_em",)
+    return CAMPOS_DA_CARGA
+
+
 def _carga(linha) -> dict:
-    carga = {c: linha[i] for i, c in enumerate(CAMPOS_DA_CARGA)}
+    campos = _campos_da_carga()
+    carga = {c: linha[i] for i, c in enumerate(campos)}
+    carga.setdefault("terminada_em", carga.get("carregado_em"))
     carga["competencia"] = f"{carga['mes']:02d}/{carga['ano']}"
     carga["campos"] = [c for c in (carga["campos_vistos"] or "").split("|") if c]
     carga["lista_de_avisos"] = [a for a in (carga["avisos"] or "").split(" | ")
                                 if a]
     carga["completa"] = carga["paginas_lidas"] >= carga["paginas"]
     # Nunca chegou ao fim: o processo caiu no meio. O mês continua valendo a
-    # carga anterior (ver `carregar`), e a tela diz isso.
-    carga["interrompida"] = carga["paginas_lidas"] == 0
+    # carga anterior (ver `carregar`), a tela diz isso, e a próxima chamada do
+    # mês continua da página em que parou.
+    carga["interrompida"] = carga["terminada_em"] is None
     return carga
 
 
@@ -659,23 +733,43 @@ def cargas(teto: int = 36) -> list:
     if not _pronto():
         return []
     return [_carga(l) for l in consultar(
-        "SELECT " + ", ".join(CAMPOS_DA_CARGA) + " FROM analisesps.ponto_carga "
+        "SELECT " + ", ".join(_campos_da_carga()) + " FROM analisesps.ponto_carga "
         " ORDER BY ano DESC, mes DESC, id DESC LIMIT ?", (int(teto),))]
 
 
 def carga_do_mes(ano: int, mes: int) -> dict | None:
     """A carga TERMINADA de uma competência, ou None.
 
-    Uma carga em andamento ou interrompida (`paginas_lidas = 0`) não é o ponto
+    Uma carga em andamento ou que caiu (`terminada_em` vazio) não é o ponto
     do mês — é um pedaço dele. Ver `carregar`."""
     from .db import consultar_um
     if not _pronto():
         return None
     linha = consultar_um(
-        "SELECT " + ", ".join(CAMPOS_DA_CARGA) + " FROM analisesps.ponto_carga "
-        " WHERE ano = ? AND mes = ? AND paginas_lidas > 0 "
+        "SELECT " + ", ".join(_campos_da_carga()) + " FROM analisesps.ponto_carga "
+        " WHERE ano = ? AND mes = ?"
+        + (" AND terminada_em IS NOT NULL" if _substituicao_segura() else "")
+        + " ORDER BY id DESC LIMIT 1", (int(ano), int(mes)))
+    return _carga(linha) if linha else None
+
+
+def carga_em_andamento(ano: int, mes: int) -> dict | None:
+    """A tentativa mais recente do mês que NÃO terminou, ou None."""
+    from .db import consultar_um
+    if not _pronto() or not _substituicao_segura():
+        return None
+    linha = consultar_um(
+        "SELECT " + ", ".join(_campos_da_carga()) + " FROM analisesps.ponto_carga "
+        " WHERE ano = ? AND mes = ? AND terminada_em IS NULL "
         " ORDER BY id DESC LIMIT 1", (int(ano), int(mes)))
     return _carga(linha) if linha else None
+
+
+def cargas_paradas() -> list:
+    """Todas as tentativas que não terminaram, da mais recente para trás.
+
+    É o que o aviso a quem cuida lista: "09/2026 parou na página 12 de 40"."""
+    return [c for c in cargas() if c.get("interrompida")]
 
 
 def meses_do_ponto_diario(hoje=None) -> list:

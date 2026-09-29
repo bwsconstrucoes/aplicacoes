@@ -240,6 +240,7 @@ seria ou perdido, ou versionado por engano.
 | `ANALISESPS_SENHA_OPERADOR` | senha de quem altera. **Sem ela, ninguém opera** |
 | `ANALISESPS_SENHA_CONSULTA` | senha de quem só olha. **Sem ela, ninguém consulta** |
 | `ANALISESPS_SECRET` | autoriza a chamada do agendador |
+| `ANALISESPS_AVISO_TELEFONE` | para quem vai o WhatsApp quando a carga do ponto PARA (vários números, separados por vírgula). **Opcional**: sem ela valem os dois números do aviso do BaixaBradesco — o financeiro e o dono |
 | `ANALISESPS_HOOK_OMIE` | gancho do Make dos botões "Consulta" e "Atualizar" da ficha. **Opcional**: sem ela os dois botões não aparecem |
 | `ANALISESPS_CHAVE_COFRE` | frase secreta que cifra os certificados digitais no banco. **Sem ela, o sistema recusa guardar certificado** — e sem certificado a busca de notas na Receita não roda. ⚠️ **Trocar a frase torna ilegível o que já foi guardado**: os certificados teriam de ser subidos de novo |
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |
@@ -355,20 +356,37 @@ demais, fica até misturado com o restante, que tem mais a ver com o financeiro.
 | Rateio das obras | só do mestre: quem não bate ponto e para quais obras vai o valor |
 | Gerar pagamento | só do mestre: os arquivos BeeVale/SomaPay, o log com o link e o card |
 
-### O ponto, sozinho e sem estragar (29/09/2026)
+### O ponto: se parar, retoma e avisa; e traz sozinho todo dia (29/09/2026)
 
-**Se a carga cair no meio** (rede, Mobponto fora do ar, o serviço reiniciando
-numa publicação), **o mês continua valendo a carga anterior.** A carga nova
-nasce "em andamento" ao lado da antiga e só a substitui quando termina, na
-mesma transação. A que caiu aparece na tela do Ponto como "interrompida — não
-vale" e é varrida pela próxima. A folha avisa, em vermelho, quando a carga do
-mês terminou com menos páginas do que a API prometeu. Isso depende da
-**migração 037**; antes do botão, a carga continua entrando do jeito antigo
-(apaga antes) e diz isso num aviso.
+Pedido do dono: *"caso a carga pare, que possa ser retomada de onde parou e que
+sejamos avisados"*.
+
+**Se a carga parar no meio** (rede, Mobponto fora do ar, o serviço reiniciando
+numa publicação), **o mês continua valendo a carga anterior** — a nova nasce
+"em andamento" ao lado da antiga e só a substitui quando termina, na mesma
+transação. Cada página é gravada por inteiro, na sua transação, com o andamento
+anotado na carga. **A próxima chamada do mês — botão ou automático — continua
+da página em que parou**, se a tentativa tem menos de 24 horas (depois disso o
+Mobponto mudou demais e recomeça). A página é gravada por pessoa, então quem
+mudar de página entre as duas tentativas não duplica; pode faltar, e isso fica
+escrito nos avisos da carga — a próxima carga completa do mês refaz tudo. Na
+tela do Ponto a tentativa aparece como "parou na página N — retoma na próxima
+carga".
+
+**Quem cuida é avisado por WhatsApp** (`avisos_ponto.py`) quando o ponto para —
+por erro ou porque o serviço reiniciou no meio —, com o mês, a página e o que
+acontece em seguida. Só o que parou avisa. Destinatários em
+`ANALISESPS_AVISO_TELEFONE`; sem ela, o financeiro e o dono, como no aviso do
+BaixaBradesco. A folha também avisa, em vermelho, quando a carga do mês
+terminou com menos páginas do que a API prometeu.
+
+Tudo isso depende da **migração 037**; antes do botão, a carga continua
+entrando do jeito antigo (apaga antes, não retoma) e diz isso num aviso.
 
 **Ninguém precisa apertar o botão todo dia.** O modo `ponto_diario` traz o mês
 corrente — e, até o dia 10, o anterior também (a mesma régua da competência
-sugerida). É para o agendador, pela mesma porta da sincronização:
+sugerida) — em duas tentativas, a segunda retomando de onde a primeira parou.
+É para o agendador, pela mesma porta da sincronização:
 
 ```
 POST https://<o serviço>/analisesps/api/sincronizar
@@ -378,8 +396,8 @@ Content-Type: application/json
 
 Uma vez por dia, de madrugada, é o bastante: o Mobponto fecha o dia anterior à
 noite. Um mês que falhe não impede o outro, e a falha aparece em Configurações
-como qualquer atualização que falhou. **Ele não substitui o botão**: um mês
-antigo que precise ser refeito continua sendo trazido pela tela do Ponto.
+e no WhatsApp. **Ele não substitui o botão**: um mês antigo que precise ser
+refeito continua sendo trazido pela tela do Ponto.
 
 ⚠️ **Três coisas que não se mexem sem ler o `docs/FOLHA_DE_PAGAMENTO.md`:**
 

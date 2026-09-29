@@ -96,6 +96,10 @@ MODOS_DA_BASE = ["sincronizar", "carga_inicial", "apoios", "fila",
 # trazer, e um botão em Configurações sem essa escolha traria sempre o mesmo mês.
 # Ele é disparado pela tela da folha, que pergunta a competência.
 
+# Os modos que trazem o ponto: quando um deles para, alguém é avisado
+# (`avisos_ponto`), porque a folha inteira depende dele.
+MODOS_DO_PONTO = ("ponto", "ponto_diario")
+
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
 ETAPAS = {
@@ -181,16 +185,26 @@ def _fechar_orfas(conn) -> int:
     cur = conn.execute(
         "UPDATE analisesps.execucoes SET fim = now(), ok = FALSE, mensagem = ? "
         " WHERE fim IS NULL "
-        "   AND (visto_em IS NULL OR now() - visto_em >= make_interval(secs => ?))",
+        "   AND (visto_em IS NULL OR now() - visto_em >= make_interval(secs => ?))"
+        " RETURNING tipo",
         ("Interrompida: o serviço reiniciou durante a atualização. Nada foi "
          "corrompido — é só rodar de novo, que ela retoma de onde parou.",
          SEGUNDOS_ATE_DAR_POR_MORTA))
-    quantas = cur.rowcount or 0
+    tipos = [linha[0] for linha in cur.fetchall()]
+    quantas = len(tipos)
     cur.close()
     conn.commit()
     if quantas:
         logger.warning("Análise de SPs: %d execução(ões) órfã(s) encerrada(s).",
                        quantas)
+    if any(t in MODOS_DO_PONTO for t in tipos):
+        # O ponto morreu com o serviço (uma publicação, um reinício do Render).
+        # Só se descobre aqui, quando a próxima tarefa abre — e é aqui que se
+        # avisa. A carga retoma da página em que parou na próxima chamada.
+        from . import avisos_ponto
+        avisos_ponto.avisar_que_parou(
+            "o serviço reiniciou durante a carga (publicação ou reinício do "
+            "Render).")
     return quantas
 
 
@@ -385,18 +399,28 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 from . import ponto as _ponto
                 recados, falhas = [], []
                 for ano, mes in _ponto.meses_do_ponto_diario():
-                    mudar_etapa(f"trazendo o ponto de {mes:02d}/{ano}")
-                    try:
-                        p = _ponto.carregar(ano, mes, anotar,
-                                            quem=quem_disparou or "agendador")
-                        total_linhas[0] += p.get("dias", 0)
-                        recados.append(
-                            f"{mes:02d}/{ano}: {p.get('dias', 0)} dia(s) de "
-                            f"{p.get('pessoas', 0)} pessoa(s)"
-                            + (" — " + "; ".join(p["avisos"]) if p.get("avisos") else ""))
-                    except Exception as e:  # noqa: BLE001 — o outro mês segue
-                        logger.exception("Análise de SPs: ponto de %02d/%d falhou", mes, ano)
-                        falhas.append(f"{mes:02d}/{ano}: {e}")
+                    # Duas tentativas: a segunda RETOMA da página em que a
+                    # primeira parou (ver `ponto.carregar`), então uma queda
+                    # de rede no meio não custa o dia.
+                    for tentativa in (1, 2):
+                        mudar_etapa(f"trazendo o ponto de {mes:02d}/{ano}"
+                                    + (" (2ª tentativa)" if tentativa == 2 else ""))
+                        try:
+                            p = _ponto.carregar(ano, mes, anotar,
+                                                quem=quem_disparou or "agendador")
+                            total_linhas[0] += p.get("dias", 0)
+                            recados.append(
+                                f"{mes:02d}/{ano}: {p.get('dias', 0)} dia(s) de "
+                                f"{p.get('pessoas', 0)} pessoa(s)"
+                                + (" — " + "; ".join(p["avisos"]) if p.get("avisos") else ""))
+                            break
+                        except Exception as e:  # noqa: BLE001 — o outro mês segue
+                            logger.exception("Análise de SPs: ponto de %02d/%d falhou "
+                                             "(tentativa %d)", mes, ano, tentativa)
+                            if tentativa == 2:
+                                falhas.append(f"{mes:02d}/{ano}: {e}")
+                            else:
+                                time.sleep(30)
                 recado_apoios[0] = " | ".join(recados)
                 if falhas:
                     raise RuntimeError(
@@ -643,6 +667,11 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 _fechar_execucao(conn, execucao_id, False, str(e), None)
         except Exception:  # noqa: BLE001
             logger.exception("Análise de SPs: não consegui registrar a falha")
+        if modo in MODOS_DO_PONTO:
+            # *"que sejamos avisados"* — o ponto que para não pode depender de
+            # alguém abrir a tela para ser descoberto.
+            from . import avisos_ponto
+            avisos_ponto.avisar_que_parou(str(e))
         return False
 
 

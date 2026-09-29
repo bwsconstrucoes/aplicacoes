@@ -38,6 +38,10 @@ def banco_ponto(banco_analisesps, monkeypatch):
     # As credenciais são de mentira: a API é dublada, nenhuma requisição sai.
     monkeypatch.setenv("MOBPONTO_AUTHORIZATION", "Basic de-mentira")
     monkeypatch.setenv("MOBPONTO_API_KEY", "chave-de-mentira")
+    # A guarda da migração 037 é uma pergunta ao banco guardada em memória; o
+    # teste que tira a coluna de propósito não pode contaminar os seguintes.
+    from app.apps.analisesps import db
+    db.esquecer_colunas()
 
 def dia(numero, **extra):
     """Um dia como a API devolve. Os campos além de `dia` e `matricula` são
@@ -709,7 +713,8 @@ def test_carga_que_FALHA_no_meio_nao_destroi_a_anterior(banco_ponto, monkeypatch
     assert [c["interrompida"] for c in lista] == [True, False]
 
 
-def test_a_carga_seguinte_LIMPA_a_interrompida(banco_ponto, monkeypatch):
+def test_a_carga_seguinte_COMPLETA_a_interrompida(banco_ponto, monkeypatch):
+    """Um pedaço de mês não é mês; a chamada seguinte continua o pedaço."""
     from app.apps.analisesps import ponto
 
     dublar_que_cai_na_pagina_2(
@@ -718,10 +723,13 @@ def test_a_carga_seguinte_LIMPA_a_interrompida(banco_ponto, monkeypatch):
         ponto.carregar(2026, 8)
     assert ponto.carga_do_mes(2026, 8) is None, "pedaço de mês não é mês"
 
-    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=2)])])
+    pedidas = dublar(monkeypatch, [
+        resposta([pessoa_no_ponto(dias=1)], total_paginas=2),
+        resposta([pessoa_no_ponto(cpf="222.222.222-22", dias=2)], total_paginas=2)])
     ponto.carregar(2026, 8)
+    assert [p[2] for p in pedidas] == [2], "só a página que faltava"
     assert len(ponto.cargas()) == 1
-    assert ponto.carga_do_mes(2026, 8)["dias"] == 2
+    assert ponto.carga_do_mes(2026, 8)["dias"] == 3
 
 
 def test_a_carga_terminada_SUBSTITUI_a_anterior_de_uma_vez(banco_ponto, monkeypatch):
@@ -770,11 +778,14 @@ def test_SEM_a_migracao_037_a_carga_continua_funcionando_e_AVISA(
     from app.apps.analisesps import ponto
     from app.apps.analisesps.db import obter_engine
 
+    from app.apps.analisesps import db
     with obter_engine().connect() as conn:
         conn.execute(text("DROP INDEX analisesps.ix_analisesps_ponto_carga_competencia"))
+        conn.execute(text("ALTER TABLE analisesps.ponto_carga DROP COLUMN terminada_em"))
         conn.execute(text("CREATE UNIQUE INDEX ix_analisesps_ponto_carga_competencia "
                           "ON analisesps.ponto_carga (ano, mes)"))
         conn.commit()
+    db.esquecer_colunas()
     assert ponto._substituicao_segura() is False
 
     dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=3)])])
@@ -785,3 +796,183 @@ def test_SEM_a_migracao_037_a_carga_continua_funcionando_e_AVISA(
     assert len(ponto.cargas()) == 1
     assert ponto.carga_do_mes(2026, 8)["dias"] == 5
     assert any("037" in a for a in feito["avisos"])
+
+
+# ---------------------------------------------------------------------------
+# *"Precisa que caso a carga pare que possa ser retomada de onde parou e que
+# sejamos avisados."* — 29/09/2026
+# ---------------------------------------------------------------------------
+def dublar_que_cai_uma_vez(monkeypatch, paginas, cai_na):
+    """A API de mentira: cai na página `cai_na` UMA vez; depois responde."""
+    from app.apps.analisesps import ponto
+    pedidas = []
+    caiu = []
+
+    def falso(ano, mes, pagina):
+        pedidas.append(pagina)
+        if pagina == cai_na and not caiu:
+            caiu.append(True)
+            raise ponto.ErroDoPonto(f"a rede caiu na página {pagina}")
+        return paginas[pagina - 1]
+
+    monkeypatch.setattr(ponto, "_pedir_pagina", falso)
+    return pedidas
+
+
+def _tres_paginas():
+    return [resposta([pessoa_no_ponto(cpf="111.111.111-11", nome="UM", dias=2)], 3),
+            resposta([pessoa_no_ponto(cpf="222.222.222-22", nome="DOIS", dias=3)], 3),
+            resposta([pessoa_no_ponto(cpf="333.333.333-33", nome="TRES", dias=4)], 3)]
+
+
+def test_a_carga_que_caiu_RETOMA_da_pagina_em_que_parou(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto
+    pedidas = dublar_que_cai_uma_vez(monkeypatch, _tres_paginas(), cai_na=3)
+
+    with pytest.raises(ponto.ErroDoPonto):
+        ponto.carregar(2026, 8)
+    parada = ponto.carga_em_andamento(2026, 8)
+    assert parada["paginas_lidas"] == 2, "as duas páginas gravadas contam"
+    assert ponto.carga_do_mes(2026, 8) is None
+    assert [c["competencia"] for c in ponto.cargas_paradas()] == ["08/2026"]
+
+    pedidas.clear()
+    feito = ponto.carregar(2026, 8)
+
+    assert pedidas == [3], "retomou da página 3 — não voltou à 1"
+    assert feito["retomada"] is True
+    assert any("retomada da página 3 de 3" in a for a in feito["avisos"])
+    carga = ponto.carga_do_mes(2026, 8)
+    assert carga["id"] == parada["id"], "é a MESMA carga, completada"
+    assert carga["dias"] == 2 + 3 + 4 and carga["pessoas"] == 3
+    assert carga["completa"] and not carga["interrompida"]
+    assert len(ponto.cargas()) == 1
+    assert ponto.cargas_paradas() == []
+
+
+def test_a_retomada_NAO_duplica_quem_vier_de_novo(banco_ponto, monkeypatch):
+    """Entre uma tentativa e outra, a pessoa pode mudar de página no Mobponto:
+    a página é gravada POR PESSOA, então ela entra uma vez só."""
+    from app.apps.analisesps import ponto
+    paginas = _tres_paginas()
+    dublar_que_cai_uma_vez(monkeypatch, paginas, cai_na=3)
+    with pytest.raises(ponto.ErroDoPonto):
+        ponto.carregar(2026, 8)
+    # Na volta, a pessoa UM (já gravada na página 1) aparece de novo na 3.
+    paginas[2] = resposta([pessoa_no_ponto(cpf="111.111.111-11", nome="UM", dias=5),
+                           pessoa_no_ponto(cpf="333.333.333-33", nome="TRES", dias=4)], 3)
+    ponto.carregar(2026, 8)
+
+    dias = ponto.dias_por_cpf(2026, 8)
+    assert len(dias["11111111111"]) == 5, "vale a versão mais nova, uma vez só"
+    assert ponto.carga_do_mes(2026, 8)["pessoas"] == 3
+
+
+def test_uma_tentativa_VELHA_nao_e_retomada(banco_ponto, monkeypatch):
+    """Depois de um dia o Mobponto já mudou demais: recomeça do zero."""
+    from app.apps.analisesps import ponto
+    from app.apps.analisesps.db import conexao
+    pedidas = dublar_que_cai_uma_vez(monkeypatch, _tres_paginas(), cai_na=3)
+    with pytest.raises(ponto.ErroDoPonto):
+        ponto.carregar(2026, 8)
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.ponto_carga SET carregado_em = now() - "
+                     "interval '2 days'")
+        conn.commit()
+
+    pedidas.clear()
+    feito = ponto.carregar(2026, 8)
+    assert pedidas == [1, 2, 3]
+    assert feito["retomada"] is False
+    assert len(ponto.cargas()) == 1
+
+
+def test_o_aviso_diz_o_mes_a_pagina_e_que_retoma(banco_ponto, monkeypatch):
+    from app.apps.analisesps import avisos_ponto, ponto
+    dublar_que_cai_uma_vez(monkeypatch, _tres_paginas(), cai_na=3)
+    with pytest.raises(ponto.ErroDoPonto):
+        ponto.carregar(2026, 8)
+
+    mandados = []
+    import app.apps.notificador as notificador
+    monkeypatch.setattr(notificador, "notificar",
+                        lambda **kw: mandados.append(kw) or {"whatsapp": {"ok": True}})
+    monkeypatch.setenv("ANALISESPS_AVISO_TELEFONE", "85 99999-0001; 85 99999-0002")
+
+    resultado = avisos_ponto.avisar_que_parou("a rede caiu na página 3")
+
+    assert sorted(resultado) == ["85999990001", "85999990002"]
+    texto = mandados[0]["mensagem"]
+    assert "08/2026" in texto
+    assert "página 3 de 3" in texto
+    assert "2 página(s) já guardada(s)" in texto
+    assert "a rede caiu" in texto
+    assert "continua de onde parou" in texto
+
+
+def test_o_aviso_NUNCA_derruba_a_tarefa(monkeypatch):
+    from app.apps.analisesps import avisos_ponto
+    import app.apps.notificador as notificador
+
+    def estoura(**kw):
+        raise RuntimeError("Z-API fora do ar")
+    monkeypatch.setattr(notificador, "notificar", estoura)
+    monkeypatch.setenv("ANALISESPS_AVISO_TELEFONE", "85999990001")
+    from app.apps.analisesps import ponto
+    monkeypatch.setattr(ponto, "cargas_paradas", lambda: [])
+
+    resultado = avisos_ponto.avisar_que_parou("x")
+    assert resultado["85999990001"]["ok"] is False
+
+
+def test_sem_telefone_configurado_vale_a_lista_do_baixabradesco(monkeypatch):
+    from app.apps.analisesps import avisos_ponto
+    monkeypatch.delenv("ANALISESPS_AVISO_TELEFONE", raising=False)
+    from app.apps.baixabradesco.avisos import TELEFONES_AVISO
+    assert avisos_ponto.telefones() == [t for t in TELEFONES_AVISO]
+
+
+def test_a_execucao_do_ponto_que_MORREU_com_o_servico_avisa(banco_ponto, monkeypatch):
+    """O serviço reiniciou no meio (uma publicação). Ninguém vê o erro: a
+    execução só é dada por morta quando a próxima abre — e é aí que se avisa."""
+    from app.apps.analisesps import avisos_ponto, tarefas
+    from app.apps.analisesps.db import conexao
+
+    avisados = []
+    monkeypatch.setattr(avisos_ponto, "avisar_que_parou",
+                        lambda motivo: avisados.append(motivo) or {})
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                     "VALUES ('ponto', 'botão', 'trazendo', now() - interval '1 hour')")
+        conn.commit()
+        assert tarefas._fechar_orfas(conn) == 1
+    assert len(avisados) == 1 and "reiniciou" in avisados[0]
+
+    # A sincronização que morre não avisa ninguém: ela roda de 5 em 5 minutos.
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                     "VALUES ('sincronizar', 'tela', 'lendo', now() - interval '1 hour')")
+        conn.commit()
+        assert tarefas._fechar_orfas(conn) == 1
+    assert len(avisados) == 1
+
+
+def test_a_execucao_do_ponto_que_FALHA_avisa_e_a_da_sincronizacao_nao(banco_ponto, monkeypatch):
+    from app.apps.analisesps import avisos_ponto, ponto, tarefas
+    from app.apps.analisesps.db import conexao
+
+    avisados = []
+    monkeypatch.setattr(avisos_ponto, "avisar_que_parou",
+                        lambda motivo: avisados.append(motivo) or {})
+    monkeypatch.setattr(ponto, "meses_do_ponto_diario", lambda hoje=None: [(2026, 8)])
+    monkeypatch.setattr(tarefas.time, "sleep", lambda s: None)
+
+    def cai(*a, **k):
+        raise ponto.ErroDoPonto("a rede caiu")
+    monkeypatch.setattr(ponto, "carregar", cai)
+
+    with conexao() as conn:
+        execucao = tarefas._abrir_execucao(conn, "ponto_diario", "agendador")
+    assert tarefas.executar_trabalho("ponto_diario", execucao) is False
+    assert avisados and "a rede caiu" in avisados[0]
+

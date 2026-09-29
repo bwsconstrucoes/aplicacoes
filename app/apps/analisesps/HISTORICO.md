@@ -9979,58 +9979,75 @@ propriedade de ser refazível (o FITID continua na linha).
 
 ---
 
-### Centésima vigésima quarta leva (29/09) — o ponto que cai no meio não estraga o mês, e o automático do dia
+### Centésima vigésima quarta leva (29/09) — o ponto que para retoma de onde parou, avisa, e traz sozinho todo dia
 
-Duas perguntas dele: *"O que acontece se o ponto der problema pra baixar no meio
-do caminho? Ele já está configurado pra baixar automático diariamente?"*
+Perguntas dele: *"O que acontece se o ponto der problema pra baixar no meio do
+caminho? Ele já está configurado pra baixar automático diariamente?"* — e, em
+seguida, o pedido: *"Precisa que caso a carga pare que possa ser retomada de
+onde parou e que sejamos avisados."*
 
-**A primeira resposta era ruim, e virou conserto.** A carga anterior do mês era
-apagada ANTES de a nova começar. Se a nova caísse no meio — rede, Mobponto fora
-do ar, o serviço reiniciando numa publicação — o mês ficava com um pedaço, e a
-folha usava o pedaço como se fosse o mês inteiro, sem aviso: gente com "menos
-dias", obra errada, e um mês que antes estava certo passava a estar errado.
+**A primeira resposta era ruim.** A carga anterior do mês era apagada ANTES de
+a nova começar. Se a nova caísse no meio — rede, Mobponto fora do ar, o serviço
+reiniciando numa publicação — o mês ficava com um pedaço, e a folha usava o
+pedaço como se fosse o mês inteiro, sem aviso: gente com "menos dias", obra
+errada, e um mês que antes estava certo passava a estar errado. E a tentativa
+seguinte recomeçava da página 1.
 
-Agora:
+**O que ficou:**
 
-- a carga nova nasce **"em andamento"** (`paginas_lidas = 0`) ao lado da antiga,
-  e só quando termina a antiga é apagada, **na mesma transação**. Quem lê o mês
-  (`carga_do_mes`, e por ela a folha, o auxílio, as diaristas) só enxerga carga
-  terminada;
-- a que caiu aparece na tela do Ponto como **"interrompida — não vale"** e é
-  varrida pela próxima carga do mês;
-- a **folha avisa em vermelho** quando a carga terminou com menos páginas do que
-  a API prometeu ("veio pela metade") — antes só a tela do Ponto sabia;
-- **migração 037**: o índice único por competência passa a valer só para cargas
-  terminadas. Antes do botão, a carga continua entrando do jeito antigo (apaga
-  antes) e diz isso num aviso — testado com o índice antigo de propósito.
+- **Migração 037** — `terminada_em` na carga (vazio = em andamento ou caiu);
+  `paginas_lidas` vira o ANDAMENTO; o índice único por competência vale só para
+  cargas terminadas. As cargas que já existem ganham `terminada_em` na própria
+  migração — sem isso todas virariam "em andamento" e sumiriam.
+- **A carga nova nasce ao lado da antiga** e só a substitui quando termina, na
+  mesma transação. `carga_do_mes` (e por ela a folha, o auxílio, as diaristas)
+  só enxerga carga terminada.
+- **Cada página é uma transação** (os dias, o andamento, os campos vistos) e é
+  gravada **por pessoa** — apaga o que a carga já tinha das pessoas da página e
+  grava de novo. É isso que torna a retomada segura: quem mudar de página no
+  Mobponto entre duas tentativas não duplica.
+- **Retomada**: a próxima chamada do mês — botão ou automático — continua da
+  página seguinte à última gravada, se a tentativa tem menos de 24 h
+  (`HORAS_PARA_RETOMAR`); mais velha que isso, recomeça, porque as páginas do
+  Mobponto já não casam. O aviso da carga diz de onde retomou e que quem mudou
+  de página pode faltar — a próxima carga completa refaz tudo.
+- **Aviso por WhatsApp** (`avisos_ponto.py`) quando o ponto para: por erro
+  (a execução falha) ou porque o serviço reiniciou no meio (descoberto quando a
+  próxima tarefa abre, em `_fechar_orfas`). Diz o mês, a página, o motivo e que
+  retoma. Só o ponto avisa — a sincronização roda de 5 em 5 minutos e avisaria
+  demais. Destinatários: `ANALISESPS_AVISO_TELEFONE`; sem ela, os dois números
+  do aviso do BaixaBradesco (financeiro e dono — decisão dele de 11/09), lidos
+  de lá para não haver duas listas. O envio nunca derruba a tarefa.
+- **A folha avisa em vermelho** quando a carga do mês terminou com menos páginas
+  do que a API prometeu ("veio pela metade").
+- **Modo `ponto_diario`** para o agendador (cron-job.org, mesma porta e segredo
+  da sincronização): mês corrente e, até o dia 10, o anterior; duas tentativas
+  por mês, a segunda retomando de onde a primeira parou. Não entra nos botões
+  de Configurações, como o "ponto": é para a máquina. Chamada no `README.md`.
+- Antes do botão da 037, a carga entra do jeito antigo (apaga antes, não
+  retoma) e diz isso num aviso — testado com o índice e a coluna antigos.
 
-**A segunda resposta era "não".** Nada trazia o ponto sem alguém apertar. Agora
-há o modo **`ponto_diario`**: traz o mês corrente e, até o dia 10, o anterior
-também (a régua da competência sugerida). É para o agendador (cron-job.org),
-pela mesma porta `/api/sincronizar` da sincronização, com `ANALISESPS_SECRET`.
-Um mês que falhe não impede o outro; a falha aparece em Configurações. **Ele não
-entra nos botões de Configurações**, como o "ponto": é para a máquina. O
-`README.md` tem a chamada.
-
-**Decisão registrada:** o automático substitui o mês a cada dia. É seguro porque
-a substituição agora é atômica — sem a leva anterior deste conserto, um
+**Decisão registrada:** o automático substitui o mês a cada dia. É seguro
+porque a substituição agora é atômica e a queda retoma — sem isso, um
 automático diário seria um jeito de estragar o mês todo dia.
 
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
 |---|---|
-| **publicar** as levas 123 e 124 — o ponto está baixando: publicar reinicia o serviço e mata o download | ele dizer "pode", depois que o ponto terminar |
+| **publicar** as levas 123 e 124 — o ponto está baixando: publicar reinicia o serviço e mata o download (agora ele retomaria, mas a 037 ainda não está lá) | ele dizer "pode", depois que o ponto terminar |
 | **apertar "Aplicar atualizações do banco" no mesmo momento da publicação** (migração 037) | ele |
 | configurar no cron-job.org a chamada diária do `ponto_diario` (a chamada está no `README.md`) | ele |
+| conferir que o WhatsApp de aviso chega (`ANALISESPS_AVISO_TELEFONE`, ou os dois números padrão) — o primeiro aviso de verdade só sai quando algo parar | ele |
 | reimportar o extrato de 29/09 e apagar as 2 duplicadas apontadas | ele |
 | as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
 | o primeiro `IncluirLancCC` conferido no OMIE | ele |
 
-**Verificado:** 461 testes (ponto, folha, banco), as telas da folha e do ponto;
-suíte inteira em andamento no momento do commit.
-**NÃO verificado:** o `ponto_diario` disparado pelo agendador de verdade — a
-porta é a mesma da sincronização, que já roda assim há semanas.
+**Verificado:** 45 testes do ponto (retomada, não-duplicação, tentativa velha,
+avisos, execução órfã), as telas da folha e do ponto; suíte inteira em andamento
+no momento do commit.
+**NÃO verificado:** o `ponto_diario` disparado pelo agendador de verdade, e o
+WhatsApp de aviso chegando de verdade — o canal é o mesmo do BaixaBradesco.
 
 ---
 

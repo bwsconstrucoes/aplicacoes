@@ -138,7 +138,7 @@
             {{ c.paginas_lidas }} de {{ c.paginas }}
             {% if c.interrompida %}
               <span class="selo risco"
-                    title="Esta carga caiu no meio e não vale: o mês continua com a carga anterior, se houver. A próxima carga do mês limpa esta.">interrompida — não vale</span>
+                    title="Esta carga parou no meio e não vale: o mês continua com a carga anterior, se houver. A próxima carga do mês (botão ou automático) continua da página em que parou.">parou na página {{ c.paginas_lidas + 1 }} — retoma na próxima carga</span>
             {% elif not c.completa %}
               <span class="selo cancelado"
                     title="A API disse que havia mais páginas do que foram lidas — o mês pode estar incompleto">veio pela metade</span>
