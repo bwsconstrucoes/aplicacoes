@@ -10100,6 +10100,59 @@ incluindo o `url_for` de todos os templates contra as rotas; a aplicação impor
 
 ---
 
+### Centésima vigésima sexta leva (30/09) — o ponto ganha a paciência do script que funciona
+
+Ele: *"ponto não conclui, não sai disso. A última tentativa FALHOU (…) não
+consegui ler a página 7 do ponto de 09/2026: Read timed out. (read
+timeout=60)."*
+
+**A causa:** o Mobponto monta cada página na hora, e algumas levam mais de um
+minuto. O sistema esperava 60 s por página, tentava três vezes em sete segundos
+e desistia do mês inteiro. E pedia as páginas emendadas, sem pausa.
+
+**O script dele que funciona** (o "Relatório Geral Mensal", no Apps Script,
+lido do arquivo que ele mandou) faz o oposto nas duas coisas: pede **uma página
+por minuto** (`batchPagesPerRun: 1`, gatilho de minuto em minuto) e, quando uma
+falha, **não mata o trabalho** — anota o erro e tenta de novo no minuto
+seguinte, indefinidamente.
+
+**O que ficou:**
+
+- **3 minutos por página** para responder (20 s para conectar — servidor que
+  nem atende não merece 3 minutos).
+- **Seis tentativas por página**, com espera crescente: 15 s, 30 s, 1, 2 e 4
+  minutos — uns 8 minutos de paciência antes de parar.
+- **Sinal de vida durante as esperas** (`_mantendo_vivo`, a cada 30 s): sem
+  isso, 3 minutos calado fariam a tarefa ser dada por morta com a carga ainda
+  andando (`SEGUNDOS_ATE_DAR_POR_MORTA = 180`).
+- **Pausa de 3 s entre páginas.** O script dele espera um minuto; 3 s é um meio
+  termo para o mês não levar meia hora. Se o Mobponto continuar engasgando, é o
+  primeiro número a subir.
+- **O botão retoma sozinho uma vez**, como o automático: se ainda assim parar,
+  espera 2 minutos e continua da página em que parou. Credencial recusada,
+  certificado e "mês sem ninguém" não são retomados — esperar não muda nada.
+- **A tela diz de onde continua:** quando a última tentativa falhou e há uma
+  carga parada, o recado diz "parou na página N de M — aperte de novo e ele
+  continua dali".
+
+**O preço:** um mês ruim pode levar bem mais tempo para entrar — até uns 8
+minutos por página difícil. É a troca certa: devagar e completo, em vez de
+rápido e parado.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** esta leva | ele dizer "pode" |
+| **a 037 aplicada** — sem ela, cada nova tentativa volta à página 1, e o mês lento nunca termina | ele confirmar que apertou "Aplicar atualizações do banco" |
+| trazer o ponto de 09/2026 de novo depois de publicar | ele |
+| o cronjob, as duplicadas da conciliação, as fórmulas, o primeiro `IncluirLancCC` | ele |
+
+**NÃO verificado:** o Mobponto de verdade — daqui não se alcança. A mecânica
+(tempo, esperas, sinal de vida, pausa, retomada) está coberta por teste.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

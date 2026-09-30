@@ -555,8 +555,24 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     raise RuntimeError(
                         "não sei de qual mês trazer o ponto. Escolha a "
                         "competência na tela da folha e dispare de lá.")
-                p = _ponto.carregar(int(partes[0]), int(partes[1]), anotar,
-                                    quem=quem_disparou or "manual")
+                # Duas tentativas, como no automático: a segunda RETOMA da
+                # página em que a primeira parou (ver `ponto.carregar`). Cada
+                # página já tem uns 8 minutos de paciência lá dentro; isto é
+                # para a queda que passa disso.
+                for tentativa_do_mes in (1, 2):
+                    try:
+                        p = _ponto.carregar(int(partes[0]), int(partes[1]), anotar,
+                                            quem=quem_disparou or "manual")
+                        break
+                    except _ponto.ErroDoPonto as e:
+                        if tentativa_do_mes == 2 or "credencial" in str(e) \
+                                or "certificado" in str(e) or "não devolveu" in str(e):
+                            raise
+                        logger.warning("Análise de SPs: o ponto parou (%s) — "
+                                       "retomo em 2 minutos.", e)
+                        mudar_etapa("o Mobponto parou de responder",
+                                    "retomo de onde parou em 2 minutos")
+                        time.sleep(120)
                 total_linhas[0] = p.get("dias", 0)
                 # ⚠️ OS CAMPOS QUE VIERAM ENTRAM NO RECADO. É a descoberta que
                 # destrava o mapeamento da obra e das marcações: sem eles na

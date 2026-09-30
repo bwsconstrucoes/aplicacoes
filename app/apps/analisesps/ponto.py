@@ -94,11 +94,31 @@ CAMPO_FALTA = "desc_falta"
 CAMPO_TOTAL_DE_HORAS = "totalHrs"
 CAMPO_DIA_DA_SEMANA = "dia_semana"
 
-# Quanto esperar por página, e quantas vezes tentar. O script do dono usa
-# backoff de 1s/2s/4s; aqui é o mesmo, porque a razão é a mesma: a API cai de vez
-# em quando e uma página perdida deixa buraco no mês.
-SEGUNDOS_DE_ESPERA = 60
-TENTATIVAS = 3
+# ⚠️ QUANTO ESPERAR, E QUANTAS VEZES TENTAR — refeito em 30/09/2026.
+#
+# O dono: *"ponto não conclui, não sai disso"* — "Read timed out (read
+# timeout=60)" na página 7. O Mobponto monta cada página na hora, e algumas
+# levam mais de um minuto. Esperávamos 60 s, tentávamos três vezes em sete
+# segundos e desistíamos do mês inteiro.
+#
+# O script dele que funciona (o "Relatório Geral Mensal", no Apps Script) faz o
+# oposto nas duas coisas: pede UMA página por minuto, e quando uma falha NÃO
+# desiste — tenta de novo no minuto seguinte, indefinidamente. Aqui:
+#
+#   - espera até 3 minutos pela resposta de uma página (conexão: 20 s);
+#   - quando falha, tenta de novo com espera crescente: 15 s, 30 s, 1, 2 e 4
+#     minutos — seis tentativas, uns 8 minutos de paciência por página;
+#   - entre uma página e outra, uma pausa curta, para não emendar pedidos num
+#     servidor que já está lento (o script dele espera um minuto inteiro).
+#
+# Durante as esperas o processo continua "dando sinal de vida" (ver
+# `_mantendo_vivo`): sem isso, uma espera de 3 minutos faria a tarefa ser dada
+# por morta (`tarefas.SEGUNDOS_ATE_DAR_POR_MORTA`).
+SEGUNDOS_PARA_CONECTAR = 20
+SEGUNDOS_DE_ESPERA = 180
+ESPERAS_ENTRE_TENTATIVAS = (15, 30, 60, 120, 240)
+TENTATIVAS = len(ESPERAS_ENTRE_TENTATIVAS) + 1
+PAUSA_ENTRE_PAGINAS = 3
 
 # Teto de páginas por carga. A API diz quantas há; o teto existe para o caso de
 # ela dizer um número absurdo — ler mil páginas travaria o processo por horas.
@@ -353,8 +373,39 @@ def _pacote_com_o_extra(pacote, extra: str):
     return destino
 
 
+def _mantendo_vivo(anotar, etapa: str, progresso: str):
+    """Enquanto o bloco roda, anota sinal de vida a cada 30 s.
+
+    Um pedido ao Mobponto pode levar 3 minutos, e as esperas entre tentativas
+    chegam a 4. Sem isto, a tarefa ficaria calada tempo bastante para ser dada
+    por morta e encerrada — com a carga ainda andando."""
+    import contextlib
+    import threading
+
+    @contextlib.contextmanager
+    def _bloco():
+        parar = threading.Event()
+
+        def bater():
+            while not parar.wait(30):
+                try:
+                    anotar(etapa, progresso)
+                except Exception:  # noqa: BLE001 — sinal de vida nunca derruba
+                    logger.exception("Análise de SPs: sinal de vida do ponto falhou")
+
+        fio = threading.Thread(target=bater, daemon=True)
+        fio.start()
+        try:
+            yield
+        finally:
+            parar.set()
+            fio.join(timeout=5)
+
+    return _bloco()
+
+
 def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
-    """Uma página do relatório. Tenta até três vezes, com espera crescente."""
+    """Uma página do relatório, com paciência. Ver `ESPERAS_ENTRE_TENTATIVAS`."""
     import requests
 
     parametros = {"type_data": TIPO_FOLHA, "status": "false",
@@ -368,7 +419,8 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
         try:
             resposta = requests.get(URL, params=parametros,
                                     headers=cabecalhos, verify=confianca,
-                                    timeout=SEGUNDOS_DE_ESPERA)
+                                    timeout=(SEGUNDOS_PARA_CONECTAR,
+                                             SEGUNDOS_DE_ESPERA))
         except Exception as e:  # noqa: BLE001 — rede oscila
             # ⚠️ ERRO DE CERTIFICADO NÃO SE REPETE: ele não melhora na terceira
             # tentativa, e o recado precisa dizer o que é, porque "falha de
@@ -431,11 +483,17 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
                         "MOBPONTO_AUTHORIZATION e MOBPONTO_API_KEY no Render.")
                 ultimo = f"HTTP {resposta.status_code}"
         if tentativa < TENTATIVAS:
-            time.sleep(min(2 ** tentativa, 8))
+            espera = ESPERAS_ENTRE_TENTATIVAS[tentativa - 1]
+            logger.warning("Análise de SPs: página %d do ponto %02d/%d falhou "
+                           "(%s) — tentativa %d de %d, de novo em %d s.",
+                           pagina, mes, ano, ultimo, tentativa, TENTATIVAS, espera)
+            time.sleep(espera)
 
     raise ErroDoPonto(
-        f"não consegui ler a página {pagina} do ponto de {mes:02d}/{ano}: "
-        f"{ultimo}.")
+        f"não consegui ler a página {pagina} do ponto de {mes:02d}/{ano} depois "
+        f"de {TENTATIVAS} tentativas em uns {sum(ESPERAS_ENTRE_TENTATIVAS) // 60} "
+        f"minutos: {ultimo}. O que já entrou ficou guardado — a próxima carga "
+        f"continua da página {pagina}.")
 
 
 def _dias_do_funcionario(bruto) -> tuple:
@@ -538,7 +596,9 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
                     "(carga %d).", mes, ano, pagina, total_paginas, carga_id)
     else:
         anotar("pedindo a primeira página do ponto")
-        primeira = _pedir_pagina(ano, mes, 1)
+        with _mantendo_vivo(anotar, "pedindo a primeira página do ponto",
+                            "esperando o Mobponto responder"):
+            primeira = _pedir_pagina(ano, mes, 1)
         resultado = (primeira or {}).get("result") or {}
         funcionarios = resultado.get("funcionarios") or []
         if not funcionarios:
@@ -580,8 +640,13 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
         if pagina == 1 and primeira is not None:
             dados = primeira
         else:
-            anotar("trazendo o ponto", f"página {pagina} de {total_paginas}")
-            dados = _pedir_pagina(ano, mes, pagina)
+            if PAUSA_ENTRE_PAGINAS and paginas_gravadas:
+                time.sleep(PAUSA_ENTRE_PAGINAS)
+            etapa = f"página {pagina} de {total_paginas}"
+            anotar("trazendo o ponto", etapa)
+            with _mantendo_vivo(anotar, "trazendo o ponto",
+                                f"{etapa} — esperando o Mobponto responder"):
+                dados = _pedir_pagina(ano, mes, pagina)
         resultado = (dados or {}).get("result") or {}
         funcionarios = resultado.get("funcionarios") or []
 

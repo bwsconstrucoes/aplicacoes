@@ -54,10 +54,19 @@
       {% else %}
         <br>Não ficou registrado o motivo — o processo morreu antes de escrever.
       {% endif %}
+      {% set parada = (cargas or [])|selectattr('interrompida')|first %}
+      {% if parada %}
+        <br><b>O que já entrou está guardado:</b> {{ parada.competencia }} parou
+        na página {{ parada.paginas_lidas + 1 }} de {{ parada.paginas }}.
+        Aperte "trazer o ponto" de novo e ele <b>continua dali</b> — não volta ao
+        começo. Enquanto isso, o mês vale a carga anterior.
+      {% endif %}
       <br><span class="cartao-dica">
         Se fala de <b>401</b> ou <b>403</b>, as credenciais do Mobponto estão
         recusadas (é trocar no Render). Se fala de <b>tempo</b> ou de
-        <b>conexão</b>, a API não respondeu — tentar de novo costuma resolver.
+        <b>conexão</b>, o Mobponto demorou demais — o sistema já esperou e
+        tentou de novo por alguns minutos antes de parar; tentar mais tarde
+        costuma resolver.
         Se fala de <b>0 página(s)</b>, ela respondeu sem dado para esse mês.
       </span>
     </div>

@@ -38,6 +38,9 @@ def banco_ponto(banco_analisesps, monkeypatch):
     # As credenciais são de mentira: a API é dublada, nenhuma requisição sai.
     monkeypatch.setenv("MOBPONTO_AUTHORIZATION", "Basic de-mentira")
     monkeypatch.setenv("MOBPONTO_API_KEY", "chave-de-mentira")
+    # A pausa entre páginas é para o Mobponto de verdade; aqui só atrasaria.
+    from app.apps.analisesps import ponto as _ponto
+    monkeypatch.setattr(_ponto, "PAUSA_ENTRE_PAGINAS", 0)
     # A guarda da migração 037 é uma pergunta ao banco guardada em memória; o
     # teste que tira a coluna de propósito não pode contaminar os seguintes.
     from app.apps.analisesps import db
@@ -389,19 +392,25 @@ def test_falha_de_rede_e_TENTADA_de_novo(monkeypatch):
     assert len(chamadas) == 3
 
 
-def test_depois_de_TRES_tentativas_desiste_dizendo_a_pagina(monkeypatch):
+def test_depois_de_SEIS_tentativas_desiste_dizendo_a_pagina(monkeypatch):
+    """Eram três tentativas em sete segundos; o Mobponto lento derrubava o mês
+    inteiro (30/09/2026). Agora são seis, em uns oito minutos — e a frase diz que
+    o que entrou ficou guardado e que a próxima carga continua dali."""
     from app.apps.analisesps import ponto
 
     monkeypatch.setenv("MOBPONTO_AUTHORIZATION", "Basic abc")
     monkeypatch.setenv("MOBPONTO_API_KEY", "chave")
-    monkeypatch.setattr(ponto.time, "sleep", lambda s: None)
-    dublar_requests(monkeypatch, [RespostaFalsa(status=500)] * 3)
+    esperas = []
+    monkeypatch.setattr(ponto.time, "sleep", esperas.append)
+    dublar_requests(monkeypatch, [RespostaFalsa(status=500)] * 6)
 
     with pytest.raises(ponto.ErroDoPonto) as erro:
         ponto._pedir_pagina(2026, 8, 7)
     frase = str(erro.value)
     assert "página 7" in frase
     assert "08/2026" in frase
+    assert "continua da página 7" in frase
+    assert esperas == [15, 30, 60, 120, 240], "a paciência cresce a cada falha"
 
 
 def test_resposta_que_NAO_e_JSON_diz_o_comeco_dela(monkeypatch):
@@ -413,7 +422,7 @@ def test_resposta_que_NAO_e_JSON_diz_o_comeco_dela(monkeypatch):
     monkeypatch.setenv("MOBPONTO_API_KEY", "chave")
     monkeypatch.setattr(ponto.time, "sleep", lambda s: None)
     dublar_requests(monkeypatch, [
-        RespostaFalsa(corpo=None, texto="<html>erro do servidor</html>")] * 3)
+        RespostaFalsa(corpo=None, texto="<html>erro do servidor</html>")] * 6)
 
     with pytest.raises(ponto.ErroDoPonto) as erro:
         ponto._pedir_pagina(2026, 8, 1)
@@ -975,4 +984,131 @@ def test_a_execucao_do_ponto_que_FALHA_avisa_e_a_da_sincronizacao_nao(banco_pont
         execucao = tarefas._abrir_execucao(conn, "ponto_diario", "agendador")
     assert tarefas.executar_trabalho("ponto_diario", execucao) is False
     assert avisados and "a rede caiu" in avisados[0]
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — *"ponto não conclui, não sai disso"*: "Read timed out (read
+# timeout=60)" na página 7. O Mobponto monta cada página na hora e algumas
+# levam mais de um minuto. O script dele que funciona pede UMA página por minuto
+# e, quando uma falha, tenta de novo no minuto seguinte — nunca desiste do mês.
+# ---------------------------------------------------------------------------
+def test_uma_pagina_tem_TRES_MINUTOS_para_responder(monkeypatch):
+    from app.apps.analisesps import ponto
+
+    monkeypatch.setenv("MOBPONTO_AUTHORIZATION", "Basic abc")
+    monkeypatch.setenv("MOBPONTO_API_KEY", "chave")
+    chamadas = dublar_requests(monkeypatch, [
+        RespostaFalsa(corpo={"result": {"total_paginas": 1, "funcionarios": []}})])
+    ponto._pedir_pagina(2026, 9, 7)
+
+    conectar, ler = chamadas[0]["timeout"]
+    assert ler >= 180, "60 s foi pouco para a página 7"
+    assert conectar <= 30, "servidor que nem atende não merece 3 minutos"
+
+
+def test_o_tempo_esgotado_e_TENTADO_DE_NOVO_com_paciencia(monkeypatch):
+    import requests
+    from app.apps.analisesps import ponto
+
+    monkeypatch.setenv("MOBPONTO_AUTHORIZATION", "Basic abc")
+    monkeypatch.setenv("MOBPONTO_API_KEY", "chave")
+    esperas = []
+    monkeypatch.setattr(ponto.time, "sleep", esperas.append)
+    dublar_requests(monkeypatch, [
+        requests.exceptions.ReadTimeout("Read timed out. (read timeout=180)"),
+        requests.exceptions.ReadTimeout("Read timed out. (read timeout=180)"),
+        RespostaFalsa(corpo={"result": {"total_paginas": 9, "funcionarios": []}})])
+
+    assert ponto._pedir_pagina(2026, 9, 7)["result"]["total_paginas"] == 9
+    assert esperas == [15, 30]
+
+
+def test_durante_a_espera_a_tarefa_DA_SINAL_DE_VIDA(monkeypatch):
+    """Sem isto, 3 minutos calado fariam a tarefa ser dada por morta."""
+    import threading
+    from app.apps.analisesps import ponto
+
+    batidas = []
+    liberar = threading.Event()
+
+    # Encurta o intervalo de 30 s para o teste não esperar.
+    original = threading.Event.wait
+
+    def espera_curta(self, timeout=None):
+        return original(self, 0.01 if timeout == 30 else timeout)
+
+    monkeypatch.setattr(threading.Event, "wait", espera_curta)
+    with ponto._mantendo_vivo(lambda e, p: batidas.append(p), "trazendo o ponto",
+                              "página 7 de 12 — esperando o Mobponto responder"):
+        original(liberar, 0.2)
+
+    assert batidas, "nenhum sinal de vida enquanto esperava"
+    assert all("página 7 de 12" in b for b in batidas)
+
+
+def test_o_sinal_de_vida_que_FALHA_nao_derruba_a_carga(monkeypatch):
+    import threading
+    from app.apps.analisesps import ponto
+
+    original = threading.Event.wait
+    monkeypatch.setattr(threading.Event, "wait",
+                        lambda self, timeout=None: original(self, 0.01 if timeout == 30 else timeout))
+
+    def estoura(e, p):
+        raise RuntimeError("banco fora")
+    with ponto._mantendo_vivo(estoura, "x", "y"):
+        original(threading.Event(), 0.1)
+    # Chegou aqui: o bloco terminou normalmente.
+
+
+def test_ha_uma_PAUSA_entre_as_paginas(banco_ponto, monkeypatch):
+    """O script dele espera um minuto entre páginas; emendar pedidos num servidor
+    lento é o jeito mais fácil de fazê-lo parar de responder."""
+    from app.apps.analisesps import ponto
+    monkeypatch.setattr(ponto, "PAUSA_ENTRE_PAGINAS", 3)
+    esperas = []
+    monkeypatch.setattr(ponto.time, "sleep", esperas.append)
+    dublar(monkeypatch, _tres_paginas())
+
+    ponto.carregar(2026, 8)
+    assert esperas == [3, 3], "uma pausa antes da 2ª e outra antes da 3ª página"
+
+
+def test_o_botao_RETOMA_sozinho_uma_vez_quando_o_mobponto_para(banco_ponto, monkeypatch):
+    """O botão faz o que o automático faz: se o Mobponto parar no meio, espera e
+    continua de onde parou, sem ninguém apertar de novo."""
+    from app.apps.analisesps import avisos_ponto, ponto, sincronizacao, tarefas
+    from app.apps.analisesps.db import conexao
+
+    monkeypatch.setattr(tarefas.time, "sleep", lambda s: None)
+    monkeypatch.setattr(avisos_ponto, "avisar_que_parou", lambda m: {})
+    pedidas = dublar_que_cai_uma_vez(monkeypatch, _tres_paginas(), cai_na=3)
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_competencia", "2026-8")
+        execucao = tarefas._abrir_execucao(conn, "ponto", "MARCELO")
+
+    assert tarefas.executar_trabalho("ponto", execucao) is True
+    assert pedidas == [1, 2, 3, 3], "a segunda volta pediu SÓ a página 3"
+    carga = ponto.carga_do_mes(2026, 8)
+    assert carga["dias"] == 2 + 3 + 4 and carga["completa"]
+
+
+def test_credencial_recusada_NAO_e_retomada(banco_ponto, monkeypatch):
+    """Esperar 2 minutos para ouvir o mesmo "credencial recusada" só atrasa."""
+    from app.apps.analisesps import avisos_ponto, ponto, sincronizacao, tarefas
+    from app.apps.analisesps.db import conexao
+
+    esperas = []
+    monkeypatch.setattr(tarefas.time, "sleep", esperas.append)
+    monkeypatch.setattr(avisos_ponto, "avisar_que_parou", lambda m: {})
+
+    def recusa(*a, **k):
+        raise ponto.ErroDoPonto("o Mobponto recusou a credencial (HTTP 401).")
+    monkeypatch.setattr(ponto, "_pedir_pagina", recusa)
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_competencia", "2026-8")
+        execucao = tarefas._abrir_execucao(conn, "ponto", "MARCELO")
+
+    assert tarefas.executar_trabalho("ponto", execucao) is False
+    assert esperas == []
 
