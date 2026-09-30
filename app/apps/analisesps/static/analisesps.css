@@ -2565,3 +2565,6 @@ table.ponto-dia-a-dia tr.dia-sem-obra td { background: #F7F7F4; color: var(--tin
   table.ponto-dia-a-dia tr { break-inside: avoid; }
 }
 
+/* Botão de ação que apaga: secundário, com a cor do perigo. */
+.btn.secundario.perigo { color: var(--vermelho); border-color: var(--vermelho); }
+

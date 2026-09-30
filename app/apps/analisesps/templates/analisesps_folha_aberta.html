@@ -112,6 +112,20 @@
     <a class="link-btn" style="display:block; margin-top:8px"
        href="{{ url_for('analisesps.tela_folha_importar', lista=1) }}"
        >todas as folhas importadas</a>
+    {# ⚠️ APAGAR FICA AQUI, NA FOLHA QUE ESTÁ ABERTA. Ele, em 30/09/2026: *"onde eu
+       excluo a folha importada? Não é nenhum pouco claro isso."* Só havia um "×"
+       pequeno numa lista a que se chegava por um link. Apagar é seguro — o arquivo
+       continua com a contabilidade, e as decisões (quem entra, obra ajustada,
+       fechamento) são guardadas por competência e CPF, e voltam ao importar de
+       novo —, mas pergunta antes, com o que vai sumir escrito. #}
+    {% if pode_operar %}
+      <button type="button" class="btn secundario perigo" id="apagar-esta-folha"
+              style="width:100%; margin-top:10px"
+              data-id="{{ folha.id }}" data-competencia="{{ folha.competencia }}"
+              data-rotulo="{{ folha.rotulo_do_tipo }}"
+              data-pessoas="{{ montado.totais.pessoas }}"
+              >Apagar esta folha</button>
+    {% endif %}
   </div>
 
   {# ------------------------------------------------------------------------
@@ -1040,6 +1054,29 @@
       recado.textContent = "Falhou: " + erro;
       b.disabled = false;
     }
+  });
+})();
+
+// APAGAR ESTA FOLHA — pergunta antes, dizendo o que some e o que fica.
+(function () {
+  const b = document.getElementById("apagar-esta-folha");
+  if (!b) return;
+  b.addEventListener("click", async () => {
+    if (!confirm("Apagar a folha de " + b.dataset.competencia + " (" +
+                 b.dataset.rotulo + "), com " + b.dataset.pessoas + " pessoa(s)?\n\n" +
+                 "O arquivo original continua com a contabilidade: dá para " +
+                 "importar de novo. O que você decidiu (quem entra, obra ajustada, " +
+                 "fechamento) fica guardado e volta quando a folha for importada " +
+                 "de novo.")) return;
+    b.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_apagar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({id: b.dataset.id})});
+      const d = await r.json();
+      if (!d.ok) { alert(d.erro); b.disabled = false; return; }
+      location.href = "{{ url_for('analisesps.tela_folha_importar') }}";
+    } catch (e) { alert("Falhou: " + e); b.disabled = false; }
   });
 })();
 

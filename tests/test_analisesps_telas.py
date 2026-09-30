@@ -8071,3 +8071,19 @@ def test_atualizar_o_ponto_de_uma_pessoa_DISPARA_a_tarefa(app, monkeypatch):
     assert r.status_code == 200, r.get_json()
     assert disparado["modo"] == "ponto_pessoa"
     assert gravado["ponto_pessoa_alvo"] == "2026|9|99713349334|GERLANIO"
+
+
+def test_APAGAR_a_folha_fica_na_propria_folha_aberta(app, monkeypatch):
+    """*"Onde eu excluo a folha importada? Não é nenhum pouco claro isso."*"""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    principal = html.index('<main class="principal">')
+    assert html.index('id="apagar-esta-folha"') < principal, "na lateral"
+    assert "Apagar esta folha" in html
+
+
+def test_quem_so_CONSULTA_nao_ve_o_botao_de_apagar(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = como(app, SENHA_CONSULTA).get("/analisesps/folha/1").get_data(as_text=True)
+    assert 'id="apagar-esta-folha"' not in html
+
