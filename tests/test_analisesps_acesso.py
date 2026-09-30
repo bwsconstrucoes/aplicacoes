@@ -122,6 +122,8 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/api/folha/123/ponto/99713349334"),
     # O analítico do funcionário (e a página de imprimir): dado pessoal.
     ("GET",  "/analisesps/folha/123/pessoa/99713349334"),
+    # Por que uma linha da folha não casou com o cadastro (dado pessoal).
+    ("GET",  "/analisesps/folha/123/pendente/000013"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.
@@ -271,6 +273,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<int:folha_id>", "123")
                    .replace("<path:filename>", "x")
                    .replace("<cpf>", "99713349334")
+                   .replace("<id_fortes>", "000013")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)

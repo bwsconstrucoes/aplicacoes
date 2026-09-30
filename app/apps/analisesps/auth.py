@@ -461,6 +461,7 @@ TELA_DA_ROTA = {
     "analisesps.folha_apropriacao_ajustar": ("folha",),
     "analisesps.folha_ponto_da_pessoa": ("folha",),
     "analisesps.tela_folha_pessoa": ("folha",),
+    "analisesps.tela_folha_pendente": ("folha",),
     "analisesps.folha_ponto_pessoa_atualizar": ("folha",),
     "analisesps.folha_ponto_pessoa_estado": ("folha",),
     "analisesps.folha_apropriacao_fechar": ("folha",),

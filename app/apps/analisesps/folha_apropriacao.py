@@ -73,6 +73,13 @@ SEM_OBRA = ("feriado", "compensação", "compensacao", "")
 # O dia continua existindo e visível: ele só não é dia de obra desta folha.
 PAGAR_EXTRA = "PAGAR EXTRA"
 
+# ⚠️ "NI" NÃO É OBRA — é marcação VAZIA. Ele, em 30/09/2026: *"NI não é uma obra.
+# Quando tiver NI, no ponto, é para considerar vazio."* Diferente do PAGAR EXTRA
+# (que é um destino de pagamento e tira o dia da folha), o NI some da contagem
+# como se a batida não tivesse obra: as outras batidas do dia decidem, e um dia só
+# de NI é um dia sem marcação.
+MARCACOES_VAZIAS = frozenset({"NI"})
+
 
 def competencia_sugerida(hoje=None) -> tuple:
     """`(ano, mes)` que a tela deve abrir. Até o dia 10, o mês ANTERIOR.
@@ -121,6 +128,7 @@ def obra_do_dia(marcacoes, presenca: str = "", falta: str = "") -> dict:
     desempate virar sorteio alfabético, e ninguém notaria."""
     situacao = str(presenca or "").strip().lower()
     limpas = [str(m or "").strip().upper() for m in (marcacoes or [])]
+    limpas = ["" if m in MARCACOES_VAZIAS else m for m in limpas]
     presentes = [m for m in limpas if m]
 
     if not presentes:

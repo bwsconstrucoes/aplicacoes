@@ -589,7 +589,16 @@
               <button type="button" class="link-btn abrir-ponto nome-pessoa"
                       data-cpf="{{ p.cpf }}" data-nome="{{ p.nome_na_tela }}"
                       title="ver o ponto dia a dia">{{ p.nome_na_tela }}</button>
-            {% else %}{{ p.nome_na_tela }}{% endif %}
+            {% else %}
+              {# Quem não casou com o cadastro: o nome abre o DIAGNÓSTICO — o que o
+                 sistema tem guardado para esse código e esse nome, e o que fazer. #}
+              <button type="button" class="link-btn abrir-pendente nome-pessoa"
+                      data-id-fortes="{{ p.id_fortes }}" data-nome="{{ p.nome_na_tela }}"
+                      title="por que não casou com o cadastro?">{{ p.nome_na_tela }}</button>
+              <br><button type="button" class="link-btn abrir-pendente"
+                      data-id-fortes="{{ p.id_fortes }}" data-nome="{{ p.nome_na_tela }}"
+                      >por que não casou?</button>
+            {% endif %}
             {% if p.link_pipefy %}
               <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
                  class="link-pipefy" title="abrir o card no Pipefy"
@@ -1023,6 +1032,22 @@
     carregar(b.dataset.cpf);
   });
   window.recarregarAnalitico = carregar;
+
+  // POR QUE NÃO CASOU — o diagnóstico de quem está sem cadastro.
+  document.addEventListener("click", async e => {
+    const b = e.target.closest(".abrir-pendente");
+    if (!b) return;
+    titulo.textContent = "Por que não casou — " + (b.dataset.nome || "");
+    corpo.innerHTML = '<p class="cartao-dica">procurando no cadastro…</p>';
+    if (dialogo.showModal) dialogo.showModal(); else dialogo.setAttribute("open", "");
+    try {
+      const url = "{{ url_for('analisesps.tela_folha_pendente', folha_id=folha.id, id_fortes='COD') }}"
+        .replace("COD", encodeURIComponent(b.dataset.idFortes));
+      corpo.innerHTML = await (await fetch(url)).text();
+    } catch (erro) {
+      corpo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
+    }
+  });
 
   // ATUALIZAR O PONTO DE UMA PESSOA: dispara, acompanha e, no fim, relê o
   // analítico — a folha é recalculada a cada leitura, então o novo ponto já

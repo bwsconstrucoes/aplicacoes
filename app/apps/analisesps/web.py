@@ -2623,6 +2623,30 @@ def folha_ponto_pessoa_estado():
             "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or ""}
 
 
+@bp.route("/folha/<int:folha_id>/pendente/<id_fortes>")
+@exige_consulta
+def tela_folha_pendente(folha_id: int, id_fortes: str):
+    """Por que esta linha da folha não casou com o cadastro — o miolo da janela.
+
+    Mostra o que o sistema TEM guardado para o código e para o nome, a data da
+    última atualização do cadastro, e a frase que diz o que fazer."""
+    from . import colaboradores, folha_arquivo as fa
+    folha = fa.abrir(folha_id)
+    if not folha:
+        return '<div class="aviso erro">Esta folha não está mais aqui.</div>', 404
+    alvo = colaboradores.normalizar_id_fortes(id_fortes)
+    linha = next((l for l in folha["linhas"]
+                  if colaboradores.normalizar_id_fortes(l.get("id_fortes")) == alvo), None)
+    if not linha:
+        return '<div class="aviso erro">Este código não está nesta folha.</div>', 404
+    try:
+        d = colaboradores.por_que_nao_casou(alvo, linha.get("nome") or "")
+    except Exception as e:  # noqa: BLE001 — a janela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar o diagnóstico do cadastro")
+        return f'<div class="aviso erro">Não consegui procurar: {e}</div>', 500
+    return render_template("_folha_pendente.html", d=d, linha=linha)
+
+
 @bp.route("/folha/<int:folha_id>/pessoa/<cpf>")
 @exige_consulta
 def tela_folha_pessoa(folha_id: int, cpf: str):

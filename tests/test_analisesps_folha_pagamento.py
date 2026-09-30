@@ -425,3 +425,30 @@ def test_a_conta_e_achavel_pelo_NOME_e_pelo_CODIGO_da_obra(monkeypatch):
 
     assert contas["CREPEOLINDA"] == "50024-0", "pelo nome, e só a primeira conta"
     assert contas["CRE1"] == "50024-0", "e pelo código também"
+
+
+def test_a_conta_e_achada_pelo_CODIGO_DA_OBRA_como_a_C_DIARIOS_guarda(banco_pagamento):
+    """⚠️ O DEFEITO DE 30/09/2026. *"Tem várias obras que está dizendo que não tem
+    conta. Mas é impossível. Lá na planilha C. Diários tem essas contas."*
+
+    As duas tabelas vêm da mesma aba: `contas_diarios` pelo CÓDIGO PRIMÁRIO,
+    `referencias_rateio` com nome = Código Primário e codigo = Código OMIE. A
+    conta era procurada pelo código OMIE — que não está em `contas_diarios`."""
+    from app.apps.analisesps import folha_pagamento as fp
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        # Como a carga de verdade grava as duas, a partir da mesma linha da aba.
+        conn.execute("INSERT INTO analisesps.referencias_rateio (tipo, nome, codigo) "
+                     " VALUES ('obra', 'CREPEBELEM', '8765432101')")
+        conn.execute("INSERT INTO analisesps.contas_diarios (codigo, conta_pagamento) "
+                     " VALUES ('CREPEBELEM', '50031-2')")
+        # E uma obra que está SÓ na C. Diários de contas.
+        conn.execute("INSERT INTO analisesps.contas_diarios (codigo, conta_pagamento) "
+                     " VALUES ('CREPESOLTA', '7011-4')")
+        conn.commit()
+
+    contas = fp.conta_por_obra()
+    assert contas["CREPEBELEM"] == "50031-2"
+    assert contas["8765432101"] == "50031-2", "pelo código do OMIE também"
+    assert contas["CREPESOLTA"] == "7011-4", "a obra que só está na tabela de contas"
+

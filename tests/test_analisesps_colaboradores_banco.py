@@ -947,3 +947,36 @@ def test_a_MATRICULA_da_ficha_nao_e_confundida_com_o_codigo_do_fortes(banco_cada
     col.atualizar()
     assert "127348894A" not in col.de_para_do_fortes()
 
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — POR QUE NÃO CASOU: o que o sistema TEM para o código e o nome
+# ---------------------------------------------------------------------------
+def test_o_diagnostico_acha_a_pessoa_SEM_codigo_e_manda_atualizar(banco_cadastro):
+    """O caso do Abraão: está no cadastro guardado, mas o código do Fortes não
+    foi gravado (cadastro trazido antes de o sistema ler a coluna da ficha)."""
+    from app.apps.analisesps import colaboradores as col
+    gravar(pessoa("12734889463", "ABRAAO MARCULA NOGUEIRA"))
+    d = col.por_que_nao_casou("4031", "ABRAAO MARCULA NOGUEIRA")
+    assert d["codigo"] == "004031"
+    assert d["pelo_codigo"] == []
+    assert [p["cpf"] for p in d["pelo_nome"]] == ["12734889463"]
+    assert "SEM o código do Fortes" in d["diagnostico"]
+    assert "Atualizar cadastro" in d["diagnostico"]
+
+
+def test_o_diagnostico_aponta_CODIGO_DIFERENTE(banco_cadastro, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+    from app.apps.analisesps.db import conexao
+    gravar(pessoa("12734889463", "ABRAAO MARCULA NOGUEIRA"))
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.colaborador SET id_fortes = '004099'")
+        conn.commit()
+    d = col.por_que_nao_casou("004031", "ABRAAO MARCULA NOGUEIRA")
+    assert "OUTRO código do Fortes (004099)" in d["diagnostico"]
+
+
+def test_o_diagnostico_de_quem_NAO_esta_no_cadastro(banco_cadastro):
+    from app.apps.analisesps import colaboradores as col
+    d = col.por_que_nao_casou("004031", "ABRAAO MARCULA NOGUEIRA")
+    assert "não achei ninguém com esse nome" in d["diagnostico"]

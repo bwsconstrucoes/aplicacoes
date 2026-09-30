@@ -95,31 +95,48 @@ def conta_por_obra() -> dict:
     expressão sobre o nome da obra e cai numa conta padrão quando nada casa
     (§7.14.4) — obra nova paga pela conta errada sem avisar. Aqui é tabela, e o que
     falta é crítica."""
+    # ⚠️ O CAMINHO ESTAVA ERRADO ATÉ 30/09/2026, E ERA DINHEIRO SEM CONTA. O dono:
+    # *"tem várias obras que está dizendo que não tem conta. Mas é impossível. Lá
+    # na planilha C. Diários tem essas contas."* Tinha.
+    #
+    # As duas tabelas vêm da MESMA aba ("C. Diários": Código Primário | Conta de
+    # Pagamento | Projeto | Código Omie):
+    #   - `contas_diarios`:     codigo = CÓDIGO PRIMÁRIO  → conta;
+    #   - `referencias_rateio`: nome   = CÓDIGO PRIMÁRIO, codigo = CÓDIGO OMIE.
+    # E eu procurava a conta pelo CÓDIGO OMIE — um número que não existe em
+    # `contas_diarios`. Só achava por coincidência. Agora a conta é achada pelo
+    # código da obra (direto), e a ponte pelo código do OMIE continua valendo
+    # para quem o usar.
     from .db import consultar
+
+    def _chave(texto) -> str:
+        return " ".join(str(texto or "").split()).upper()
+
     contas = {}
     try:
         for codigo, conta in consultar(
                 "SELECT codigo, coalesce(conta_pagamento, '') "
                 "  FROM analisesps.contas_diarios"):
-            contas[str(codigo or "").strip()] = _primeira_conta(conta)
+            if _chave(codigo):
+                contas[_chave(codigo)] = _primeira_conta(conta)
     except Exception:  # noqa: BLE001 — tabela pode não existir em base nova
         logger.exception("Folha: não consegui ler as contas das obras")
         return {}
 
-    saida = {}
+    # A própria linha da C. Diários: a obra, pelo código dela, e a conta.
+    saida = dict(contas)
     try:
         for nome, codigo in consultar(
                 "SELECT nome, coalesce(codigo, '') "
                 "  FROM analisesps.referencias_rateio WHERE tipo = 'obra'"):
-            nome = " ".join(str(nome or "").split()).upper()
-            codigo = str(codigo or "").strip()
-            conta = contas.get(codigo, "")
-            if nome:
+            nome, codigo = _chave(nome), _chave(codigo)
+            conta = contas.get(nome) or contas.get(codigo, "")
+            if nome and not saida.get(nome):
                 saida[nome] = conta
-            # O CÓDIGO TAMBÉM É CHAVE — ver o aviso acima. Só entra quando não
-            # colide com o nome de outra obra, que seria ambiguidade sobre dinheiro.
-            if codigo and codigo.upper() not in saida:
-                saida[codigo.upper()] = conta
+            # O CÓDIGO (do OMIE) TAMBÉM É CHAVE — só quando não colide com o nome
+            # de outra obra, que seria ambiguidade sobre dinheiro.
+            if codigo and codigo not in saida:
+                saida[codigo] = conta
     except Exception:  # noqa: BLE001
         logger.exception("Folha: não consegui ler as obras")
     return saida

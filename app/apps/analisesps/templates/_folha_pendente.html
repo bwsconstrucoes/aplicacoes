@@ -1,0 +1,46 @@
+{# POR QUE ESTA PESSOA NÃO CASOU COM O CADASTRO — ver
+   `colaboradores.por_que_nao_casou`. Mostra o que o sistema TEM, não o que
+   deveria ter: é isso que deixa ele comparar com a planilha. #}
+<div class="analitico">
+  <p><b>Na folha da contabilidade:</b> código <b>{{ d.codigo }}</b> —
+    {{ linha.nome }} — {{ linha.valor|moeda }}</p>
+
+  <div class="aviso {{ 'ok' if d.pelo_codigo else 'atencao' }}">
+    <b>O que fazer:</b> {{ d.diagnostico }}
+  </div>
+
+  <h4>No cadastro guardado, com este código</h4>
+  {% if d.pelo_codigo %}
+    <ul class="lista-seca">{% for p in d.pelo_codigo %}
+      <li><b>{{ p.nome }}</b> · CPF {{ p.cpf }} · código {{ p.id_fortes }} · {{ p.fase or '—' }}</li>
+    {% endfor %}</ul>
+  {% else %}<p class="cartao-dica">Ninguém.</p>{% endif %}
+
+  <h4>No cadastro guardado, com este nome</h4>
+  {% if d.pelo_nome %}
+    <table class="sps">
+      <thead><tr><th>Nome</th><th>CPF</th><th>Código do Fortes guardado</th>
+        <th>Fase</th><th>Admissão</th></tr></thead>
+      <tbody>{% for p in d.pelo_nome %}
+        <tr><td>{{ p.nome }}</td><td>{{ p.cpf }}</td>
+          <td>{% if p.id_fortes %}{{ p.id_fortes }}{% else %}<span class="selo pagar">vazio</span>{% endif %}</td>
+          <td>{{ p.fase or '—' }}</td>
+          <td>{% if p.admissao %}{{ p.admissao|data_br }}{% else %}—{% endif %}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+  {% else %}<p class="cartao-dica">Ninguém com o primeiro e o último nome de
+    "{{ linha.nome }}".</p>{% endif %}
+
+  <p class="cartao-dica" style="margin-top:10px">
+    O cadastro foi trazido da planilha pela última vez em
+    <b>{{ d.atualizado.quando or 'nunca' }}</b>{% if d.atualizado.pessoas %}
+    ({{ d.atualizado.pessoas }} pessoas){% endif %}. É o botão "Atualizar
+    cadastro", em Folha PGT › Colaboradores.
+  </p>
+  {% if d.atualizado.avisos %}
+    <details><summary class="cartao-dica">o que a última atualização avisou
+      ({{ d.atualizado.avisos|length }})</summary>
+      <ul class="lista-seca">{% for a in d.atualizado.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+    </details>
+  {% endif %}
+</div>

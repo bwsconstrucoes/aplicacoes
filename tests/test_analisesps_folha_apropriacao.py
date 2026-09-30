@@ -606,3 +606,17 @@ def test_no_comeco_de_JANEIRO_a_sugestao_volta_o_ANO():
     from app.apps.analisesps.folha_apropriacao import competencia_sugerida
 
     assert competencia_sugerida(dt.date(2026, 1, 5)) == (2025, 12)
+
+
+def test_NI_no_ponto_e_marcacao_VAZIA_e_nao_obra():
+    """*"NI não é uma obra. Quando tiver NI, no ponto, é para considerar vazio."*"""
+    from app.apps.analisesps.folha_apropriacao import obra_do_dia
+    # Duas batidas NI e duas na CRE1: não é empate — o NI não conta.
+    r = obra_do_dia(["NI", "NI", "CRE1", "CRE1"], "Presença", "")
+    assert r["obra"] == "CRE1" and r["empate"] is False
+    # Minúsculo e com espaço também.
+    assert obra_do_dia([" ni", "CRE1", "", ""], "Presença", "")["obra"] == "CRE1"
+    # Um dia só de NI é um dia sem marcação: não vira obra "NI".
+    r = obra_do_dia(["NI", "NI", "NI", "NI"], "Presença", "")
+    assert r["obra"] is None
+

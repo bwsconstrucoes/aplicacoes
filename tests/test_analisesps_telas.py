@@ -8114,3 +8114,26 @@ def test_quem_tem_VALOR_ZERO_nao_e_marcavel_e_a_linha_diz_por_que(app, monkeypat
     assert "valor zero não se paga" in html
     assert "não dá para marcar: sem cadastro" in html, "e quem não casou também diz"
 
+
+
+def test_quem_NAO_CASOU_tem_o_nome_abrindo_o_diagnostico(app, monkeypatch):
+    """*"Onde é que eu posso olhar para dirimir esse problema? Como é que eu vejo
+    o que o sistema está importando?"*"""
+    from app.apps.analisesps import colaboradores
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    monkeypatch.setattr(colaboradores, "de_para_do_fortes", lambda: {
+        "000013": {"cpf": "99713349334", "nome": "GERLANIO GOMES LIMA"}})
+    cliente = _como_mestre(app)
+    html = cliente.get("/analisesps/folha/1").get_data(as_text=True)
+    assert 'class="link-btn abrir-pendente nome-pessoa"' in html
+    assert "por que não casou?" in html
+
+    monkeypatch.setattr(colaboradores, "por_que_nao_casou", lambda c, n: {
+        "codigo": c, "nome": n, "pelo_codigo": [], "atualizado": {"quando": "29/09/2026 10:00"},
+        "pelo_nome": [{"cpf": "11122233396", "nome": n, "id_fortes": "", "fase": "", "admissao": None}],
+        "diagnostico": "a pessoa ESTÁ no cadastro, mas SEM o código do Fortes guardado."})
+    miolo = cliente.get("/analisesps/folha/1/pendente/000387").get_data(as_text=True)
+    assert "SEM o código do Fortes" in miolo
+    assert "29/09/2026 10:00" in miolo
+    assert ">vazio</span>" in miolo
+    assert cliente.get("/analisesps/folha/1/pendente/999999").status_code == 404

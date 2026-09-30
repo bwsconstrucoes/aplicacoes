@@ -853,6 +853,76 @@ def de_para_do_fortes() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# POR QUE ESTA PESSOA NÃO CASOU — o diagnóstico que a folha abre
+#
+# Ele, em 30/09/2026: *"aquele exemplo do Abraão continua aparecendo como não
+# casaram com o cadastro (…) eu olhei a planilha e está lá. Como é que a gente
+# resolve isso? Onde é que eu posso olhar? Como é que eu vejo o que o sistema está
+# importando?"* A resposta é mostrar O QUE O SISTEMA TEM, e não o que deveria ter.
+# ---------------------------------------------------------------------------
+def por_que_nao_casou(id_fortes: str, nome: str) -> dict:
+    """O que o cadastro guardado tem para este código e para este nome.
+
+    Devolve `{"pelo_codigo": [...], "pelo_nome": [...], "atualizado": {...},
+    "diagnostico": str}` — `diagnostico` é a frase que diz o que fazer.
+    """
+    from .db import consultar
+    if not _pronto():
+        return {"pelo_codigo": [], "pelo_nome": [], "atualizado": {},
+                "diagnostico": "a tabela do cadastro ainda não existe."}
+    codigo = normalizar_id_fortes(id_fortes)
+    campos = "cpf, nome, " + ("id_fortes" if tem_id_fortes() else "''") + \
+             ", fase, data_admissao"
+
+    def _pessoa(l):
+        return {"cpf": l[0], "nome": l[1], "id_fortes": l[2] or "",
+                "fase": l[3] or "", "admissao": l[4]}
+
+    pelo_codigo = []
+    if codigo and tem_id_fortes():
+        pelo_codigo = [_pessoa(l) for l in consultar(
+            f"SELECT {campos} FROM analisesps.colaborador "
+            " WHERE ltrim(id_fortes, '0') = ltrim(?, '0') AND id_fortes <> ''",
+            (codigo,))]
+    # Pelo nome: o primeiro e o último, para pegar "ABRAAO … NOGUEIRA" mesmo com
+    # nome do meio abreviado ou diferente.
+    partes = [p for p in " ".join(str(nome or "").split()).lower().split() if len(p) > 1]
+    pelo_nome = []
+    if partes:
+        pelo_nome = [_pessoa(l) for l in consultar(
+            f"SELECT {campos} FROM analisesps.colaborador "
+            " WHERE lower(nome) LIKE ? AND lower(nome) LIKE ? "
+            " ORDER BY nome LIMIT 10", (f"{partes[0]}%", f"%{partes[-1]}%"))]
+    atualizado = quando_atualizou()
+
+    if pelo_codigo:
+        diagnostico = ("o código está no cadastro — a folha deve casar na próxima "
+                       "vez que for aberta.")
+    elif pelo_nome and all(not p["id_fortes"] for p in pelo_nome):
+        diagnostico = (
+            "a pessoa ESTÁ no cadastro, mas SEM o código do Fortes guardado. Se a "
+            "ficha dela na planilha tem o código na coluna \"ID Fortes\", o "
+            "cadastro foi atualizado antes de o sistema passar a ler essa coluna "
+            "(30/09/2026) — aperte \"Atualizar cadastro\" em Colaboradores. Se "
+            "depois disso continuar assim, a coluna dela está vazia na planilha.")
+    elif pelo_nome:
+        outros = ", ".join(sorted({p["id_fortes"] for p in pelo_nome if p["id_fortes"]}))
+        diagnostico = (
+            f"a pessoa está no cadastro com OUTRO código do Fortes ({outros}), e "
+            f"a folha da contabilidade diz {codigo}. Um dos dois está errado: "
+            "confira a ficha na planilha e o arquivo do Fortes.")
+    else:
+        diagnostico = (
+            "não achei ninguém com esse nome no cadastro guardado. Ou a ficha não "
+            "tem um CPF válido de 11 dígitos (sem CPF a linha é ignorada na carga), "
+            "ou o cadastro não foi atualizado desde que ela entrou — aperte "
+            "\"Atualizar cadastro\" em Colaboradores.")
+    return {"codigo": codigo, "nome": nome, "pelo_codigo": pelo_codigo,
+            "pelo_nome": pelo_nome, "atualizado": atualizado,
+            "diagnostico": diagnostico}
+
+
+# ---------------------------------------------------------------------------
 # O que as telas perguntam
 # ---------------------------------------------------------------------------
 def quando_atualizou() -> dict:

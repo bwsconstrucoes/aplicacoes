@@ -10484,6 +10484,61 @@ navegador de verdade.
 
 ---
 
+### Centésima trigésima terceira leva (30/09) — contas das obras (erro meu), o "NI", por que não casou, apagar a folha, valor zero
+
+Cinco relatos dele em sequência, olhando a folha com dado de verdade.
+
+**1. "Várias obras dizendo que não têm conta. Mas é impossível: na C. Diários
+tem."** — **Erro meu, e era dinheiro sem conta.** As duas tabelas vêm da mesma
+aba "C. Diários" (Código Primário | Conta de Pagamento | Projeto | Código Omie):
+`contas_diarios` guarda Código Primário → conta; `referencias_rateio` guarda
+nome = Código Primário e codigo = Código Omie. `conta_por_obra` procurava a
+conta pelo **Código Omie**, que não existe em `contas_diarios` — só achava por
+coincidência. Os testes antigos repetiam a suposição errada (montavam as duas
+tabelas ligadas pelo código do OMIE). Agora a conta é achada pelo código da
+obra, direto; a ponte pelo código do OMIE continua; e obra que está só na
+tabela de contas também entra. Teste novo com o formato real das tabelas.
+
+**2. "NI não é obra. Quando tiver NI no ponto, é para considerar vazio."** —
+`MARCACOES_VAZIAS` em `folha_apropriacao`: a batida "NI" some da contagem como
+batida sem obra (diferente de PAGAR EXTRA, que tira o dia da folha). Dia só de
+NI é dia sem marcação.
+
+**3. "O Abraão continua não casando (…) onde eu olho? Como eu vejo o que o
+sistema está importando?"** — O nome de quem não casou (e um "por que não
+casou?") abre um **diagnóstico** (`colaboradores.por_que_nao_casou`): o que o
+cadastro GUARDADO tem com aquele código, e com o primeiro e o último nome
+(com o código do Fortes gravado de cada um, "vazio" em vermelho), quando o
+cadastro foi trazido pela última vez, o que aquela atualização avisou, e a frase
+do que fazer. O caso provável dele: a pessoa está no cadastro **sem o código**,
+porque o cadastro foi atualizado antes de a leitura da coluna da ficha ser
+publicada — é apertar "Atualizar cadastro". **Não confirmado**: depende de ele
+abrir o diagnóstico.
+
+**4. "Onde eu excluo a folha importada? Não é nenhum pouco claro."** — botão
+**"Apagar esta folha"** no cartão "Esta folha" da lateral (só quem opera), com a
+pergunta dizendo o que some e o que fica.
+
+**5. "Qual o critério para umas ficarem manipuláveis e outras não? Todas estão
+zeradas."** — A caixa só desligava para quem **não casou com o cadastro** (sem
+CPF, a decisão não tem onde ser guardada), e o motivo ficava no passar do mouse.
+Agora **valor zero também desliga** (o arquivo de pagamento já pulava: o portal
+recusa), e a coluna Situação escreve o motivo ("não dá para marcar: sem
+cadastro" / "valor zero").
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** esta leva | ele dizer "pode" |
+| abrir o diagnóstico do Abraão e, se for o caso, "Atualizar cadastro" | ele |
+| conferir que as obras "sem conta" sumiram | ele |
+
+**Verificado:** suíte inteira (ver o commit); JavaScript da tela; a aplicação
+importa.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória
