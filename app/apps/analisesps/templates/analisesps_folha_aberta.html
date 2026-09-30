@@ -205,20 +205,51 @@
 
   <div class="filtro {% if montado.filtros.obra %}aberto{% endif %}">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>Obra</span>
+      <span>Obra do ponto</span>
       {% if montado.filtros.obra %}<span class="filtro-badge">1</span>{% endif %}
       <span class="seta">▾</span>
     </div>
     <div class="filtro-cont">
-      <select name="obra" aria-label="Obra">
-        <option value="">todas as obras</option>
-        {% for o in montado.obras %}
-          <option value="{{ o }}" {% if montado.filtros.obra == o %}selected{% endif %}>{{ o }}</option>
-        {% endfor %}
-      </select>
-      <p class="cartao-dica" style="margin:6px 0 0">
-        quem tem 2 dias numa obra também aparece nela
-      </p>
+      {# ⚠️ SEM OBRA NENHUMA, A LISTA DIZ ISSO. Antes ela mostrava só "todas as
+         obras" — e ele leu, com razão: *"se não tem nenhuma, como é que pode?"* #}
+      {% if montado.obras %}
+        <select name="obra" aria-label="Obra do ponto">
+          <option value="">qualquer obra</option>
+          {% for o in montado.obras %}
+            <option value="{{ o }}" {% if montado.filtros.obra == o %}selected{% endif %}>{{ o }}</option>
+          {% endfor %}
+        </select>
+        <p class="cartao-dica" style="margin:6px 0 0">
+          Mostra quem trabalhou nesta obra em algum dia. O subtotal soma só os
+          dias nesta obra.
+        </p>
+      {% else %}
+        <p class="cartao-dica" style="margin:0">
+          Nenhuma obra associada ainda — o ponto do mês não trouxe obra para
+          ninguém.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="filtro {% if montado.filtros.obra_cadastro %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Obra do cadastro</span>
+      {% if montado.filtros.obra_cadastro %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      {% if montado.obras_do_cadastro %}
+        <select name="obra_cadastro" aria-label="Obra do cadastro">
+          <option value="">qualquer obra</option>
+          {% for o in montado.obras_do_cadastro %}
+            <option value="{{ o }}" {% if montado.filtros.obra_cadastro == o %}selected{% endif %}>{{ o }}</option>
+          {% endfor %}
+        </select>
+      {% else %}
+        <p class="cartao-dica" style="margin:0">Ninguém desta folha tem obra no
+          cadastro.</p>
+      {% endif %}
     </div>
   </div>
 
@@ -264,7 +295,7 @@
 
   <div class="filtro {% if montado.filtros.origem %}aberto{% endif %}">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>De onde veio a obra</span>
+      <span>Como a obra foi definida</span>
       {% if montado.filtros.origem %}<span class="filtro-badge">1</span>{% endif %}
       <span class="seta">▾</span>
     </div>
@@ -272,9 +303,12 @@
       <div class="filtro-opcoes">
         <label class="opcao"><input type="radio" name="origem" value=""
           {% if not montado.filtros.origem %}checked{% endif %}
-          ><span class="rotulo">tanto faz</span></label>
-        {% for chave, rotulo in [('ponto','do ponto'), ('regra','de regra de rateio'),
-                                 ('mao','da minha mão')] %}
+          ><span class="rotulo">de qualquer jeito</span></label>
+        {# Os nomes dizem o que aconteceu, não o nome interno. Ele: *"os termos do
+           filtro estão esquisitos"* (30/09/2026). #}
+        {% for chave, rotulo in [('ponto','pelas batidas de ponto'),
+                                 ('regra','pela regra de rateio (quem não bate ponto)'),
+                                 ('mao','ajustada por você na linha')] %}
           <label class="opcao"><input type="radio" name="origem" value="{{ chave }}"
             {% if montado.filtros.origem == chave %}checked{% endif %}
             ><span class="rotulo">{{ rotulo }}</span></label>
@@ -284,7 +318,8 @@
   </div>
 
   {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
-        or montado.filtros.situacao or montado.filtros.origem %}
+        or montado.filtros.situacao or montado.filtros.origem
+        or montado.filtros.obra_cadastro %}
     <div style="margin-top:10px">
       <a class="btn secundario"
          href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}"
@@ -358,11 +393,14 @@
 {% endif %}
 
 {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
-      or montado.filtros.situacao or montado.filtros.origem %}
+      or montado.filtros.situacao or montado.filtros.origem
+      or montado.filtros.obra_cadastro %}
   <p class="cartao-dica" style="margin:0 0 8px">
     O filtro mostra <b>{{ montado.quantas_mostradas }}</b> de
     {{ montado.totais.pessoas }} pessoa(s), somando
-    <b>{{ montado.subtotal_do_filtro|moeda }}</b>. Os quadros de cima continuam
+    <b>{{ montado.subtotal_do_filtro|moeda }}</b>{% if montado.subtotal_da_obra is not none %}
+    — dos quais <b>{{ montado.subtotal_da_obra|moeda }}</b> são dos dias em
+    <b>{{ montado.filtros.obra }}</b>{% endif %}. Os quadros de cima continuam
     sendo da folha inteira.
   </p>
 {% endif %}
@@ -392,6 +430,11 @@
           <th>Código</th>
           <th>Fase Atual</th>
           <th>Obra — do ponto</th>
+          {# SEMPRE AO LADO DA DO PONTO, para confrontar (pedido dele, 30/09/2026):
+             *"sempre tem que ser trazida a informação da obra de cadastro aqui (…)
+             ver se essa obra de cadastro precisa ser atualizada, ver se bate com
+             a obra do ponto."* #}
+          <th>Obra — cadastro</th>
           {# A ORDEM É A DA PLANILHA (col H, I, F das abas Quinzena e Fim de Mês):
              Dias, Valor x Dia, Valor. É nessa sequência que ele lê e confere —
              "valor por dia × dias na obra" se verifica de cabeça. #}
@@ -466,6 +509,16 @@
               <span class="cartao-dica">—</span>
             {% endif %}
           </td>
+          <td>
+            {% if p.obra_do_cadastro %}
+              {{ p.obra_do_cadastro }}
+              {% if p.obra_diverge %}
+                <br><span class="selo saindo"
+                  title="O ponto diz {{ p.obra_principal }}; o cadastro diz {{ p.obra_do_cadastro }}. Talvez a ficha precise ser atualizada."
+                  >difere do ponto</span>
+              {% endif %}
+            {% else %}<span class="cartao-dica">—</span>{% endif %}
+          </td>
           <td class="num">{{ p.dias_no_ponto }}</td>
           <td class="num">
             {# Traço, não zero: zero dias é o caso que precisa da mão dele, e
@@ -493,7 +546,7 @@
            pessoa faria 491 chamadas para conferir uma folha. #}
         <tr class="dias-da-pessoa" hidden>
           <td></td>
-          <td colspan="9">
+          <td colspan="10">
             {% if p.por_dia %}
               <div class="dias-lista">
                 {% for d in p.por_dia %}
@@ -583,7 +636,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="10" class="cartao-dica">
+        <tr><td colspan="11" class="cartao-dica">
           Nenhuma pessoa com esses filtros.
         </td></tr>
       {% endfor %}

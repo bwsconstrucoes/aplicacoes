@@ -219,8 +219,16 @@ def _dicionario(linha) -> dict:
     folha = {campo: linha[i] for i, campo in enumerate(CAMPOS)}
     folha["competencia"] = f"{folha['mes']:02d}/{folha['ano']}"
     folha["rotulo_do_tipo"] = ROTULO_DO_TIPO.get(folha["tipo"], folha["tipo"])
-    folha["lista_de_avisos"] = [a for a in (folha["avisos"] or "").split(" | ")
-                               if a]
+    # ⚠️ AS FOLHAS JÁ IMPORTADAS guardaram o separador de setor ("001.01 -
+    # CONSTRUTORA/ESCRITORIO") como "linha que não reconheci" — o leitor não o
+    # conhecia até 30/09/2026. Filtrado aqui, elas deixam de acusar erro sem
+    # precisar reimportar. Ver `folha_sintetica.PADRAO_SETOR`.
+    from .folha_sintetica import PADRAO_SETOR
+    prefixo = "linha que não reconheci: "
+    folha["lista_de_avisos"] = [
+        a for a in (folha["avisos"] or "").split(" | ")
+        if a and not (a.startswith(prefixo)
+                      and PADRAO_SETOR.match(a[len(prefixo):].strip()))]
     # `fecha` não é guardado: ele é a mesma pergunta que os avisos já
     # respondem, e um campo derivado guardado é um campo que pode mentir depois.
     folha["fecha"] = not folha["lista_de_avisos"]

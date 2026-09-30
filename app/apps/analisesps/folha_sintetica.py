@@ -61,6 +61,15 @@ PADRAO_CODIGO = re.compile(r"^\d{6}$")
 # "001 - CONSTRUTORA" / "090 - OBRA ESTADIOITA CONST ESTADIO ITAITINGA"
 PADRAO_FILIAL = re.compile(r"^(\d{1,4})\s*-\s*(.+)$")
 
+# ⚠️ O SETOR DENTRO DA FILIAL — "001.01 - CONSTRUTORA/ESCRITORIO",
+# "001.08 - CONSTRUTORA/AFASTADO INSS", "123.01 - OBRA". É um SEPARADOR do
+# relatório (a lotação), não uma pessoa e não um erro. Ele reclamou em 30/09/2026:
+# *"tem umas linhas que não são reconhecidas, porque não são funcionárias (…) é um
+# separador de informações, e você ainda está considerando como se fosse erro.
+# Isso a gente vê em todas as folhas importadas."* O `PADRAO_FILIAL` não o pegava
+# por causa do ".01", e cada setor virava um "linha que não reconheci".
+PADRAO_SETOR = re.compile(r"^(\d{1,4})\.(\d{1,3})\s*-\s*(.+)$")
+
 # "Mês/Ano: 08/2026"
 PADRAO_COMPETENCIA = re.compile(r"M[êe]s/Ano:\s*(\d{1,2})\s*/\s*(\d{4})")
 
@@ -309,6 +318,11 @@ def interpretar(linhas_brutas) -> FolhaLida:
             lida.total_declarado = valor
             continue
 
+        if primeira.startswith("Total:") and PADRAO_SETOR.match(
+                primeira[len("Total:"):].strip()):
+            # Subtotal de um SETOR: não é o da filial, e não pode sobrescrevê-lo.
+            continue
+
         if primeira.startswith("Total:"):
             # Subtotal da filial. O nome dentro do "Total:" vem CORTADO pelo
             # relatório, então o grupo é achado pelo CÓDIGO, não pelo nome.
@@ -332,6 +346,9 @@ def interpretar(linhas_brutas) -> FolhaLida:
         # rótulo solto.
         if "empregado" in primeira.lower():
             continue
+
+        if PADRAO_SETOR.match(primeira):
+            continue      # o separador de setor — ver PADRAO_SETOR
 
         achado = PADRAO_FILIAL.match(primeira)
         if achado and not PADRAO_CODIGO.match(primeira):

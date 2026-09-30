@@ -356,6 +356,14 @@ def montar(folha_id: int, filtros=None) -> dict:
                                       pessoa.get("dias_no_ponto")),
             "obras_resumo": resumo_das_obras(pessoa.get("por_obra")),
             "obra_principal": obra_principal(pessoa.get("por_obra")),
+            # O cadastro diz uma obra e o ponto outra: é o sinal de que a ficha
+            # precisa ser atualizada (pedido dele: *"ver se essa obra de cadastro
+            # precisa ser atualizada, ver se bate com a obra do ponto"*).
+            "obra_diverge": bool(
+                obra_principal(pessoa.get("por_obra"))
+                and colaboradores.resolver_obra(ficha, obras_por_nome)
+                and obra_principal(pessoa.get("por_obra")).upper()
+                != colaboradores.resolver_obra(ficha, obras_por_nome).upper()),
             "situacao": situacao,
             "situacao_rotulo": ROTULO_DA_SITUACAO.get(situacao, situacao),
             "selo": SELO_DA_SITUACAO.get(situacao, ""),
@@ -401,6 +409,18 @@ def montar(folha_id: int, filtros=None) -> dict:
     # --- os filtros -------------------------------------------------------
     mostradas = _filtrar(pessoas, filtros)
     subtotal = sum((_dinheiro(p["valor"]) for p in mostradas), Decimal("0.00"))
+    # ⚠️ COM A OBRA DO PONTO NO FILTRO, O SUBTOTAL É O DA OBRA, não o das pessoas:
+    # quem trabalhou 2 dias nela e 8 em outra aparece na lista, mas só os 2 dias
+    # dela entram na conta. Somar o valor inteiro da pessoa faria a obra parecer
+    # mais cara do que é — e é olhando esse número que ele decide o rateio.
+    obra_filtrada = " ".join(str(filtros.get("obra") or "").split()).upper()
+    subtotal_da_obra = None
+    if obra_filtrada:
+        subtotal_da_obra = sum(
+            (_dinheiro(x.get("valor")) for p in mostradas
+             for x in (p.get("por_obra") or [])
+             if str(x.get("obra") or "").upper() == obra_filtrada),
+            Decimal("0.00"))
 
     return {
         "folha": folha,
@@ -409,6 +429,7 @@ def montar(folha_id: int, filtros=None) -> dict:
         "quantas_mostradas": len(mostradas),
         "passou_do_teto": len(mostradas) > TETO_DA_LISTA,
         "subtotal_do_filtro": subtotal,
+        "subtotal_da_obra": subtotal_da_obra,
         "totais": totais,
         "contagem": contagem,
         "por_obra": por_obra,
@@ -416,8 +437,17 @@ def montar(folha_id: int, filtros=None) -> dict:
         "obras_sem_conta": [o for c in por_conta if c["sem_conta"]
                             for o in c["obras"]],
         "fases": sorted({p["fase"] for p in pessoas if p["fase"]}),
-        "obras": sorted({p["obra_principal"] for p in pessoas
-                         if p["obra_principal"]}),
+        # AS DUAS VISÕES DA OBRA, pedido dele em 30/09/2026: *"tanto a obra do
+        # cadastro (…) e a obra do ponto. Tem que ter essas duas visões."*
+        #
+        # A do PONTO é toda obra em que alguém teve dia apropriado — não só a
+        # principal de cada um: quem procura a obra quer o custo dela inteiro.
+        # Vazia quando o ponto ainda não trouxe obra, e a tela DIZ isso em vez de
+        # oferecer "todas as obras" de uma lista que não tem nenhuma.
+        "obras": sorted({str(x.get("obra") or "") for p in pessoas
+                         for x in (p.get("por_obra") or []) if x.get("obra")}),
+        "obras_do_cadastro": sorted({p["obra_do_cadastro"] for p in pessoas
+                                     if p.get("obra_do_cadastro")}),
         "ponto": {
             "tem_carga": bool(carga),
             "carga": carga,
@@ -443,6 +473,7 @@ def _filtrar(pessoas, filtros) -> list:
     busca = " ".join(str(filtros.get("busca") or "").split()).lower()
     digitos = so_digitos(busca)
     obra = " ".join(str(filtros.get("obra") or "").split()).upper()
+    obra_cadastro = " ".join(str(filtros.get("obra_cadastro") or "").split()).upper()
     fase = " ".join(str(filtros.get("fase") or "").split())
     situacao = str(filtros.get("situacao") or "").strip()
     origem = str(filtros.get("origem") or "").strip()
@@ -458,10 +489,12 @@ def _filtrar(pessoas, filtros) -> list:
                 achou = busca == str(p.get("id_fortes") or "").lower()
             if not achou:
                 continue
+        if obra_cadastro and str(p.get("obra_do_cadastro") or "").upper() != obra_cadastro:
+            continue
         if obra:
-            # A obra casa em QUALQUER parte da divisão, não só na principal: quem
-            # tem 2 dias numa obra também é dessa obra, e quem procura pela obra
-            # quer ver o custo dela inteiro.
+            # A obra casa em QUALQUER dia da pessoa, não só na principal: quem
+            # procura a obra quer o custo dela inteiro. O subtotal, nesse caso,
+            # soma só os dias nesta obra (ver `subtotal_da_obra`).
             if obra not in {str(x.get("obra") or "").upper()
                             for x in (p.get("por_obra") or [])}:
                 continue

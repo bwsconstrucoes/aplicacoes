@@ -10258,6 +10258,65 @@ vieram, e é lá que se confirma.
 
 ---
 
+### Centésima vigésima nona leva (30/09) — as duas obras na folha, e o separador de setor do Fortes
+
+Um relato longo dele, olhando a folha aberta. Item a item:
+
+1. *"Quem tem 2 dias numa obra também aparece nela. Não compreendi."* — era o
+   texto do filtro de obra. **Saiu.** No lugar: "Mostra quem trabalhou nesta obra
+   em algum dia. O subtotal soma só os dias nesta obra." E o subtotal passou a
+   fazer isso mesmo: com a obra no filtro, a tela diz o total das pessoas **e**
+   quanto disso é dos dias naquela obra (antes somava o valor inteiro da pessoa,
+   o que fazia a obra parecer mais cara).
+2. **A regra da obra do dia foi reafirmada por ele** — cada dia uma obra, a que
+   mais aparece nas quatro batidas; no 2×2, a das duas primeiras; o valor
+   dividido pelos dias. **É o que está implementado** (`obra_do_dia`), inclusive
+   o desempate pela ordem das batidas. Nada mudou na conta.
+3. *"O filtro Obras deve ser as obras do ponto (…) aparece no filtro todas as
+   obras. Se não tem nenhuma, como é que pode?"* — a lista mostrava só a opção
+   "todas as obras" quando o ponto não tinha trazido obra nenhuma. Agora diz
+   **"Nenhuma obra associada ainda — o ponto do mês não trouxe obra para
+   ninguém"**. E a lista é de toda obra em que alguém teve dia, não só da
+   principal de cada um.
+4. **Duas visões:** filtro **"Obra do ponto"** e filtro novo **"Obra do
+   cadastro"**.
+5. **A obra do cadastro aparece sempre**, numa coluna ao lado da do ponto, com o
+   selo **"difere do ponto"** quando as duas não batem — é o sinal de que a ficha
+   precisa ser atualizada.
+6. **Data de saída:** ele mesmo conferiu na conversa ("saiu e aparece aqui, está
+   tudo certo"). O alerta usa a data de saída; nada mudou.
+7. *"De onde veio a obra? Esquisito esse filtro. Os termos estão esquisitos."* —
+   virou **"Como a obra foi definida"**: pelas batidas de ponto / pela regra de
+   rateio (quem não bate ponto) / ajustada por você na linha.
+8. *"Linha que não reconheci: 001.01 - CONSTRUTORA/ESCRITORIO (…) é um separador
+   de informações, e você ainda está considerando como se fosse erro. Isso a
+   gente vê em todas as folhas."* — o leitor do Fortes conhecia a filial ("001 -
+   CONSTRUTORA") mas não o **setor** dentro dela ("001.01 - …", "001.08 -
+   CONSTRUTORA/AFASTADO INSS", "123.01 - OBRA"). Agora reconhece
+   (`PADRAO_SETOR`), e o subtotal do setor não sobrescreve o da filial. **As
+   folhas já importadas deixam de acusar** sem reimportar: o aviso é filtrado na
+   leitura (`folha_arquivo._dicionario`), e com isso elas também passam a
+   "fechar".
+
+**O que ficou de fora, e pode valer a pena:** o setor não é guardado. "AFASTADO
+INSS" e "DESATIVAR" são informação sobre a pessoa que o arquivo da contabilidade
+já traz — guardar exigiria uma coluna nova na linha da folha (migração). Fica
+como sugestão.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| depois de publicar: **"Atualizar cadastro"** (traz o código do Fortes das fichas) e abrir a folha | ele |
+| conferir que o ponto de 09/2026 casou (sem baixar de novo) e que as obras aparecem no filtro | ele |
+| trocar a credencial do Mobponto; o cronjob de hora em hora | ele |
+
+**Verificado:** suíte inteira antes da publicação (ver o commit). A aplicação
+importa.
+**NÃO verificado:** a tela de verdade.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

@@ -7761,3 +7761,54 @@ def test_o_topo_da_folha_e_so_a_troca_de_competencia(app, monkeypatch):
     assert 'class="kpis"' not in topo
     assert "Precisa da sua mão" not in topo
 
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — AS DUAS VISÕES DA OBRA, E OS TERMOS QUE ELE NÃO ENTENDEU
+# ---------------------------------------------------------------------------
+def test_sem_obra_do_ponto_o_filtro_DIZ_que_nao_ha_nenhuma(app, monkeypatch):
+    """*"Se não tem nenhuma, como é que pode?"* — a lista mostrava só "todas as
+    obras" quando o ponto não tinha trazido obra nenhuma."""
+    _preparar_folha_aberta(monkeypatch, dias=None)
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert "Nenhuma obra associada ainda" in html
+    assert "todas as obras" not in html
+
+
+def test_o_texto_que_ele_nao_entendeu_saiu(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert "quem tem 2 dias numa obra" not in html
+    assert "Mostra quem trabalhou nesta obra em algum dia" in html
+
+
+def test_ha_filtro_pela_obra_do_CADASTRO_alem_da_do_ponto(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes(obra="XYZ9"))
+    cliente = _como_mestre(app)
+    html = cliente.get("/analisesps/folha/1").get_data(as_text=True)
+    assert 'name="obra_cadastro"' in html and 'name="obra"' in html
+
+    so_cre1 = cliente.get("/analisesps/folha/1?obra_cadastro=CRE1").get_data(as_text=True)
+    assert "GERLANIO" in so_cre1
+    nenhum = cliente.get("/analisesps/folha/1?obra_cadastro=OUTRA").get_data(as_text=True)
+    assert "Nenhuma pessoa com esses filtros" in nenhum
+
+
+def test_a_obra_do_CADASTRO_aparece_sempre_e_avisa_quando_difere_do_ponto(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes(obra="XYZ9"))
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert "Obra — cadastro" in html
+    assert "difere do ponto" in html
+
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes(obra="CRE1"))
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert "difere do ponto" not in html
+
+
+def test_os_termos_do_filtro_de_ORIGEM_dizem_o_que_aconteceu(app, monkeypatch):
+    """*"Os termos do filtro estão esquisitos."*"""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert "Como a obra foi definida" in html
+    assert "pelas batidas de ponto" in html
+    assert "De onde veio a obra" not in html and "da minha mão" not in html

@@ -357,3 +357,52 @@ def test_a_competencia_sai_pronta_para_a_tela():
     sem = fs.interpretar([l for l in FOLHA_SIMPLES
                           if not str(l[0]).startswith("Mês/Ano")])
     assert sem.competencia == ""
+
+
+def test_o_SEPARADOR_DE_SETOR_nao_vira_aviso_nem_pessoa():
+    """⚠️ 30/09/2026, ele: *"tem umas linhas que não são reconhecidas, porque não
+    são funcionárias (…) é um separador de informações, e você ainda está
+    considerando como se fosse erro. Isso a gente vê em todas as folhas."*
+    "001.01 - CONSTRUTORA/ESCRITORIO" é o setor dentro da filial."""
+    com_setores = (
+        cab()[:2] + [["Mês/Ano: 08/2026", "", "", "", ""]] + [cab()[2]]
+        + [["001 - CONSTRUTORA", "", "", "", ""],
+           ["001.01 - CONSTRUTORA/ESCRITORIO", "", "", "", ""],
+           ["000013", "GERLANIO GOMES LIMA", "", "", 1198.84],
+           ["Total: 001.01 - CONSTRUTORA/ESCRITORIO", "", "", "", 1198.84],
+           ["001.08 - CONSTRUTORA/AFASTADO INSS", "", "", "", ""],
+           ["000387", "LUELIA MADIDA GOMES TOMAS", "", "", 1198.84],
+           ["Total: 001.08 - CONSTRUTORA/AFAST", "", "", "", 1198.84],
+           ["Total: 001 - CONSTRUTORA  ", "", "", "", 2397.68],
+           ["123 - OBRA X", "", "", "", ""],
+           ["123.01 - OBRA", "", "", "", ""],
+           ["000901", "FRANCISCO", "", "", 771.42],
+           ["Total: 123 - OBRA X", "", "", "", 771.42],
+           ["Total: Geral (3 Empregado(s))", "", "", "", 3169.10],
+           ["", "", "", "", "Fim"]])
+    lida = fs.interpretar(com_setores)
+
+    assert lida.avisos == [], f"sobrou aviso: {lida.avisos}"
+    assert len(lida.linhas) == 3
+    # Cada pessoa continua na FILIAL, e o subtotal do setor não substitui o dela.
+    assert {l.filial_codigo for l in lida.linhas} == {"001", "123"}
+    assert lida.filiais["001"]["total"] == D("2397.68")
+    assert "001.01" not in lida.filiais
+
+
+def test_folha_JA_IMPORTADA_com_aviso_de_setor_deixa_de_acusar_erro():
+    """As folhas importadas antes guardaram o separador como aviso. A leitura
+    filtra, sem precisar importar de novo."""
+    from app.apps.analisesps import folha_arquivo as fa
+    valores = {c: None for c in fa.CAMPOS}
+    valores.update({"id": 1, "ano": 2026, "mes": 9, "tipo": "quinzena",
+                    "avisos": "linha que não reconheci: 001.01 - CONSTRUTORA/"
+                              "ESCRITORIO | linha que não reconheci: 123.01 - OBRA"})
+    folha = fa._dicionario([valores[c] for c in fa.CAMPOS])
+    assert folha["lista_de_avisos"] == []
+    assert folha["fecha"] is True
+
+    valores["avisos"] = ("linha que não reconheci: 001.01 - X | "
+                         "linha que não reconheci: TOTAL ESTRANHO")
+    folha = fa._dicionario([valores[c] for c in fa.CAMPOS])
+    assert folha["lista_de_avisos"] == ["linha que não reconheci: TOTAL ESTRANHO"]

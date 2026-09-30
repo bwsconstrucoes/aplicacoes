@@ -362,3 +362,19 @@ def test_obra_SEM_CONTA_vira_linha_propria_e_vem_PRIMEIRO(monkeypatch):
     assert contas[0]["sem_conta"] is True, "a sem conta vem antes da maior"
     assert contas[0]["obras"] == ["NOVA"]
     assert contas[1]["conta"] == "7011-4"
+
+
+def test_com_filtro_de_OBRA_o_subtotal_soma_so_os_dias_daquela_obra():
+    """Quem trabalhou 2 dias na obra e 8 em outra aparece, mas só os 2 dias dela
+    contam no subtotal da obra — senão a obra parece mais cara do que é."""
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_gestao as fg
+    pessoas = [{"nome_na_tela": "A", "nome_contabilidade": "A", "cpf": "1",
+                "valor": D("1000.00"),
+                "por_obra": [{"obra": "CRE1", "valor": D("200.00")},
+                             {"obra": "XYZ9", "valor": D("800.00")}]},
+               {"nome_na_tela": "B", "nome_contabilidade": "B", "cpf": "2",
+                "valor": D("500.00"),
+                "por_obra": [{"obra": "XYZ9", "valor": D("500.00")}]}]
+    mostradas = fg._filtrar(pessoas, {"obra": "CRE1"})
+    assert [p["nome_na_tela"] for p in mostradas] == ["A"]
