@@ -1112,3 +1112,107 @@ def test_credencial_recusada_NAO_e_retomada(banco_ponto, monkeypatch):
     assert tarefas.executar_trabalho("ponto", execucao) is False
     assert esperas == []
 
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — O QUE SE APROVEITOU DO SCRIPT DA PLANILHA ("funciona perfeito")
+# ---------------------------------------------------------------------------
+def test_SEM_total_de_paginas_le_ATE_A_PAGINA_VAZIA(banco_ponto, monkeypatch):
+    """O script trata total ausente como "infinito prático" e para na página
+    vazia. O sistema tratava como "1 página" — o mês entrava com a primeira
+    página só, dizendo que estava completo."""
+    from app.apps.analisesps import ponto
+    paginas = [resposta([pessoa_no_ponto(cpf="111.111.111-11", dias=2)], total_paginas=0),
+               resposta([pessoa_no_ponto(cpf="222.222.222-22", dias=3)], total_paginas=0),
+               resposta([], total_paginas=0)]
+    pedidas = dublar(monkeypatch, paginas)
+
+    feito = ponto.carregar(2026, 8)
+
+    assert [p[2] for p in pedidas] == [1, 2, 3], "parou na vazia, não na primeira"
+    carga = ponto.carga_do_mes(2026, 8)
+    assert carga["dias"] == 5 and carga["pessoas"] == 2
+    assert carga["paginas"] == 2 and carga["completa"], "o total é o que foi lido"
+    assert feito["paginas"] == 2
+
+
+def test_quando_o_mobponto_DEMORA_o_ritmo_vira_UMA_PAGINA_POR_MINUTO(banco_ponto, monkeypatch):
+    """O ritmo do script dele. Começa rápido; na primeira página lenta, passa a
+    esperar um minuto entre páginas até o fim da carga — e diz isso."""
+    from app.apps.analisesps import ponto
+    monkeypatch.setattr(ponto, "PAUSA_ENTRE_PAGINAS", 3)
+    esperas = []
+    monkeypatch.setattr(ponto.time, "sleep", esperas.append)
+    relogio = iter([0, 45,      # página 2: 45 s — lenta
+                    100, 101,   # página 3: rápida, mas o ritmo já mudou
+                    ])
+    monkeypatch.setattr(ponto.time, "monotonic", lambda: next(relogio))
+    dublar(monkeypatch, _tres_paginas())
+
+    feito = ponto.carregar(2026, 8)
+
+    assert esperas == [3, 60]
+    assert any("uma página por minuto" in a for a in feito["avisos"])
+
+
+def test_com_o_mobponto_RAPIDO_o_ritmo_continua_rapido(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto
+    monkeypatch.setattr(ponto, "PAUSA_ENTRE_PAGINAS", 3)
+    esperas = []
+    monkeypatch.setattr(ponto.time, "sleep", esperas.append)
+    relogio = iter([0, 2, 10, 12])
+    monkeypatch.setattr(ponto.time, "monotonic", lambda: next(relogio))
+    dublar(monkeypatch, _tres_paginas())
+
+    feito = ponto.carregar(2026, 8)
+    assert esperas == [3, 3]
+    assert not any("por minuto" in a for a in feito["avisos"])
+
+
+def test_o_automatico_de_hora_em_hora_RETOMA_TRAZ_ou_PULA(banco_ponto, monkeypatch):
+    """O "não mata o job" do script, com relógio de hora em hora: retoma o que
+    parou, traz o que não veio hoje, pula o que já entrou inteiro hoje."""
+    import datetime as dt
+    from app.apps.analisesps import ponto
+    from app.apps.analisesps.horario import agora
+    hoje = agora().date()
+
+    assert ponto.o_que_fazer_no_automatico(2026, 8, hoje) == "trazer"
+
+    dublar_que_cai_uma_vez(monkeypatch, _tres_paginas(), cai_na=3)
+    with pytest.raises(ponto.ErroDoPonto):
+        ponto.carregar(2026, 8)
+    assert ponto.o_que_fazer_no_automatico(2026, 8, hoje) == "retomar"
+
+    ponto.carregar(2026, 8)
+    assert ponto.o_que_fazer_no_automatico(2026, 8, hoje) == "pular"
+    # No dia seguinte, traz de novo.
+    assert ponto.o_que_fazer_no_automatico(2026, 8, hoje + dt.timedelta(days=1)) == "trazer"
+
+
+def test_o_mes_que_veio_PELA_METADE_hoje_NAO_e_pulado(banco_ponto, monkeypatch):
+    """Pular um mês incompleto seria deixá-lo incompleto até amanhã."""
+    from app.apps.analisesps import ponto
+    from app.apps.analisesps.horario import agora
+    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=1)], total_paginas=3),
+                         resposta([], total_paginas=3)])
+    ponto.carregar(2026, 8)
+    assert ponto.carga_do_mes(2026, 8)["completa"] is False
+    assert ponto.o_que_fazer_no_automatico(2026, 8, agora().date()) == "trazer"
+
+
+def test_o_automatico_PULA_o_mes_que_ja_entrou_hoje_sem_pedir_nada(banco_ponto, monkeypatch):
+    from app.apps.analisesps import avisos_ponto, ponto, tarefas
+    from app.apps.analisesps.db import conexao
+    dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=2)])])
+    ponto.carregar(2026, 8)
+
+    pedidas = dublar(monkeypatch, [resposta([pessoa_no_ponto(dias=9)])])
+    monkeypatch.setattr(ponto, "meses_do_ponto_diario", lambda hoje=None: [(2026, 8)])
+    monkeypatch.setattr(avisos_ponto, "avisar_que_parou", lambda m: {})
+    with conexao() as conn:
+        execucao = tarefas._abrir_execucao(conn, "ponto_diario", "agendador")
+
+    assert tarefas.executar_trabalho("ponto_diario", execucao) is True
+    assert pedidas == [], "o Mobponto não foi incomodado"
+    assert ponto.carga_do_mes(2026, 8)["dias"] == 2

@@ -10153,6 +10153,48 @@ rápido e parado.
 
 ---
 
+### Centésima vigésima sétima leva (30/09) — o que se aproveitou do script da planilha
+
+Ele colou o script do Apps Script que atualiza a planilha do ponto ("funciona
+perfeito") e pediu para ver o que dá para aproveitar.
+
+⚠️ **O script traz a credencial do Mobponto por extenso** (`Authorization` e
+`api-key`) e foi colado no chat. Não entrou no repositório nem foi repetida.
+Recomendação feita a ele: trocar as duas no Mobponto e atualizar Render e
+script. O endereço do Web App (`/exec`) também dispara a carga sem senha.
+
+**Comparação, item a item:**
+
+| O script faz | O sistema | Decisão |
+|---|---|---|
+| 1 página por minuto (gatilho de minuto) | pausa de 3 s | **aproveitado, adaptado:** começa em 3 s e, na primeira página que demorar mais de 30 s, passa a 1 por minuto até o fim da carga, com aviso |
+| falha não mata o trabalho: tenta de novo no minuto seguinte, sem fim | 6 tentativas por página (~8 min) e uma retomada | **aproveitado, adaptado:** o automático (`ponto_diario`) pode ser chamado de hora em hora e, mês a mês, **retoma** o que parou, **traz** o que não veio hoje e **pula** o que já entrou inteiro hoje |
+| `total_paginas` ausente = "infinito", para na página vazia | ausente = 1 página (o mês entrava com a primeira página só, dizendo completo) | **aproveitado:** lê até a página vazia; o total gravado é o que foi lido |
+| retoma se a última página foi há menos de 30 min; senão recomeça limpando a aba | retoma se a tentativa tem menos de 24 h, sem apagar o que vale | **o nosso fica:** a página é gravada por pessoa, então retomar tarde não duplica; e o mês antigo continua valendo até o novo terminar — o script apaga a aba antes de começar |
+| cabeçalho a partir das chaves do primeiro dia | o dia inteiro guardado como veio | o nosso fica |
+| trava contra dois trabalhadores ao mesmo tempo | uma execução por vez no banco | equivalente |
+| endereço `?acao=status` | a tela do Ponto e Configurações | equivalente |
+| carrega corrente e anterior sempre | corrente; até o dia 10, o anterior também | fica a regra da planilha (K1) — ver `competencia_sugerida` |
+| verificação de certificado ligada | ligada, completando a cadeia sozinho | o Google busca o certificado do meio; o nosso agora também |
+
+**O cronjob muda de uma vez por dia para de hora em hora** (README). Sem isso a
+retomada automática só acontece no dia seguinte.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** as levas 126 e 127 | ele dizer "pode" |
+| trocar o cronjob para **de hora em hora** (se já criou) | ele |
+| **trocar a credencial do Mobponto** (foi colada no chat) e depois Render + script | ele |
+| trazer o ponto de 09/2026 de novo | ele |
+
+**Verificado:** testes do ponto (58, com banco de verdade) e das telas; a
+aplicação importa. Suíte inteira em andamento no momento do commit.
+**NÃO verificado:** o Mobponto de verdade.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

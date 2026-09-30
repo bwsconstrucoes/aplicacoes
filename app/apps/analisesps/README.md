@@ -393,9 +393,13 @@ Content-Type: application/json
 {"modo": "ponto_diario", "secret": "<ANALISESPS_SECRET>"}
 ```
 
-Uma vez por dia, de madrugada, é o bastante: o Mobponto fecha o dia anterior à
-noite. Um mês que falhe não impede o outro, e a falha aparece em Configurações
-e no WhatsApp. **Ele não substitui o botão**: um mês antigo que precise ser
+**De hora em hora** (desde 30/09/2026). Cada chamada, mês a mês: **retoma** a
+carga que parou no meio, **traz** o mês se ele ainda não entrou hoje, e **pula**
+o que já entrou inteiro hoje — então o mês é refeito uma vez por dia, e uma
+queda é retomada em até uma hora, sem ninguém apertar nada. É o "não mata o
+job" do script da planilha (que tenta de novo a cada minuto), com um relógio
+mais folgado. Um mês que falhe não impede o outro, e a falha aparece em
+Configurações e no WhatsApp. **Ele não substitui o botão**: um mês antigo que precise ser
 refeito continua sendo trazido pela tela do Ponto.
 
 ⚠️ **Três coisas que não se mexem sem ler o `docs/FOLHA_DE_PAGAMENTO.md`:**

@@ -120,6 +120,15 @@ ESPERAS_ENTRE_TENTATIVAS = (15, 30, 60, 120, 240)
 TENTATIVAS = len(ESPERAS_ENTRE_TENTATIVAS) + 1
 PAUSA_ENTRE_PAGINAS = 3
 
+# ⚠️ O RITMO DO SCRIPT DELE, quando o Mobponto mostra que está lento — 30/09/2026.
+# O script que "funciona perfeito" pede UMA página por minuto (`batchPagesPerRun:
+# 1`, gatilho de minuto em minuto). Um minuto por página em todo mês seria lento
+# à toa quando o servidor está bem; então o ritmo começa rápido e, na primeira
+# página que demorar (ou precisar de nova tentativa), passa a ser o dele até o
+# fim da carga.
+SEGUNDOS_PARA_SER_LENTA = 30
+PAUSA_SE_LENTO = 60
+
 # Teto de páginas por carga. A API diz quantas há; o teto existe para o caso de
 # ela dizer um número absurdo — ler mil páginas travaria o processo por horas.
 MAXIMO_DE_PAGINAS = 400
@@ -576,7 +585,7 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
 
     if retomada:
         carga_id = int(retomada["id"])
-        total_paginas = int(retomada["paginas"] or 1)
+        total_paginas = int(retomada["paginas"] or 0)
         pagina = int(retomada["paginas_lidas"]) + 1
         primeira = None
         avisos.append(
@@ -609,8 +618,12 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
             total_paginas = int(resultado.get("total_paginas") or 0)
         except (TypeError, ValueError):
             total_paginas = 0
+        # ⚠️ SEM `total_paginas`, LÊ ATÉ A PÁGINA VAZIA — como o script dele
+        # ("999999, infinito prático"). Antes, total ausente virava "1 página":
+        # o mês inteiro entrava com a primeira página só, e dizia que estava
+        # completo. `0` fica gravado como "não sei"; o teto continua valendo.
         if total_paginas <= 0:
-            total_paginas = 1
+            total_paginas = 0
         if total_paginas > MAXIMO_DE_PAGINAS:
             avisos.append(
                 f"a API disse que há {total_paginas} páginas e o teto é "
@@ -636,17 +649,29 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
         pagina = 1
 
     paginas_gravadas = pagina - 1
-    while pagina <= total_paginas:
+    limite = total_paginas or MAXIMO_DE_PAGINAS
+    pausa = PAUSA_ENTRE_PAGINAS
+    while pagina <= limite:
         if pagina == 1 and primeira is not None:
             dados = primeira
         else:
-            if PAUSA_ENTRE_PAGINAS and paginas_gravadas:
-                time.sleep(PAUSA_ENTRE_PAGINAS)
-            etapa = f"página {pagina} de {total_paginas}"
+            if pausa and paginas_gravadas:
+                time.sleep(pausa)
+            etapa = (f"página {pagina} de {total_paginas}" if total_paginas
+                     else f"página {pagina}")
             anotar("trazendo o ponto", etapa)
+            comeco = time.monotonic()
             with _mantendo_vivo(anotar, "trazendo o ponto",
                                 f"{etapa} — esperando o Mobponto responder"):
                 dados = _pedir_pagina(ano, mes, pagina)
+            if (pausa < PAUSA_SE_LENTO
+                    and time.monotonic() - comeco > SEGUNDOS_PARA_SER_LENTA):
+                pausa = PAUSA_SE_LENTO
+                logger.warning("Análise de SPs: o Mobponto está lento (página %d "
+                               "de %02d/%d) — passo a pedir uma página por "
+                               "minuto, como o script da planilha.", pagina, mes, ano)
+                avisos.append("o Mobponto estava lento: a carga passou a pedir "
+                              "uma página por minuto, como o script da planilha.")
         resultado = (dados or {}).get("result") or {}
         funcionarios = resultado.get("funcionarios") or []
 
@@ -699,10 +724,14 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
         conn.execute(
             "UPDATE analisesps.ponto_carga "
             "   SET paginas_lidas = ?, pessoas = ?, dias = ?, avisos = ?"
+            # Total que a API não disse: é o que foi lido até a página vazia.
+            + (", paginas = ?" if not total_paginas else "")
             + (", terminada_em = now()" if segura else "")
             + " WHERE id = ?",
-            (max(1, paginas_gravadas), pessoas, dias_gravados,
-             " | ".join(avisos), carga_id))
+            tuple([max(1, paginas_gravadas), pessoas, dias_gravados,
+                   " | ".join(avisos)]
+                  + ([max(1, paginas_gravadas)] if not total_paginas else [])
+                  + [carga_id]))
         conn.commit()
 
     campos_vistos = (consultar_um(
@@ -714,7 +743,8 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
                 pessoas, paginas_gravadas, ", ".join(campos))
     return {"id": carga_id, "ano": int(ano), "mes": int(mes),
             "pessoas": pessoas, "dias": dias_gravados,
-            "paginas": total_paginas, "paginas_lidas": paginas_gravadas,
+            "paginas": total_paginas or max(1, paginas_gravadas),
+            "paginas_lidas": paginas_gravadas,
             "campos": campos, "avisos": avisos,
             "retomada": bool(retomada)}
 
@@ -835,6 +865,31 @@ def cargas_paradas() -> list:
 
     É o que o aviso a quem cuida lista: "09/2026 parou na página 12 de 40"."""
     return [c for c in cargas() if c.get("interrompida")]
+
+
+def o_que_fazer_no_automatico(ano: int, mes: int, hoje=None) -> str:
+    """"retomar", "trazer" ou "pular" — a decisão do automático para um mês.
+
+    ⚠️ É O "NÃO MATA O JOB" DO SCRIPT DELE, com um relógio mais folgado. Lá, a
+    página que falha é tentada de novo no minuto seguinte, sem fim. Aqui o
+    agendador pode chamar DE HORA EM HORA, e cada chamada:
+
+      - RETOMA a carga do mês que parou no meio (da página em que parou);
+      - TRAZ o mês se ele ainda não foi trazido HOJE;
+      - PULA o mês que já entrou inteiro hoje — sem isso, chamar de hora em
+        hora refaria o mês inteiro 24 vezes por dia, e é justamente carga em
+        cima do Mobponto que o deixa lento.
+    """
+    from .horario import agora, para_brasilia
+    hoje = hoje or agora().date()
+    parada = carga_em_andamento(ano, mes)
+    if parada and parada.get("paginas_lidas", 0) > 0 and _recente(parada):
+        return "retomar"
+    feita = carga_do_mes(ano, mes)
+    quando = para_brasilia((feita or {}).get("terminada_em"))
+    if quando and quando.date() >= hoje and (feita or {}).get("completa"):
+        return "pular"
+    return "trazer"
 
 
 def meses_do_ponto_diario(hoje=None) -> list:

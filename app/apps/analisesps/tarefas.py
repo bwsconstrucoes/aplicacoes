@@ -68,8 +68,9 @@ MODOS = {
     # mesma porta `/api/sincronizar` da sincronização, com o segredo do módulo.
     # Ele decide o mês sozinho (`ponto.meses_do_ponto_diario`), por isso não
     # precisa da competência escrita pela tela.
-    "ponto_diario": "Trazer o ponto de hoje sozinho (mês corrente; até o dia "
-                    "10, o anterior também)",
+    "ponto_diario": "Trazer o ponto sozinho (mês corrente; até o dia 10, o "
+                    "anterior também) — retoma o que parou, pula o que já "
+                    "entrou hoje",
     "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
     "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
     "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
@@ -399,6 +400,14 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 from . import ponto as _ponto
                 recados, falhas = [], []
                 for ano, mes in _ponto.meses_do_ponto_diario():
+                    # Retomar o que parou, trazer o que ainda não veio hoje,
+                    # pular o que já entrou inteiro hoje — é o que deixa o
+                    # agendador chamar de hora em hora sem martelar o Mobponto.
+                    # Ver `ponto.o_que_fazer_no_automatico`.
+                    decisao = _ponto.o_que_fazer_no_automatico(ano, mes)
+                    if decisao == "pular":
+                        recados.append(f"{mes:02d}/{ano}: já entrou hoje")
+                        continue
                     # Duas tentativas: a segunda RETOMA da página em que a
                     # primeira parou (ver `ponto.carregar`), então uma queda
                     # de rede no meio não custa o dia.
