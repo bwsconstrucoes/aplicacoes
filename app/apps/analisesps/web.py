@@ -2582,6 +2582,24 @@ def folha_apropriacao_ajustar():
     return {"ok": True}
 
 
+@bp.route("/api/folha/<int:folha_id>/ponto/<cpf>")
+@exige_consulta
+def folha_ponto_da_pessoa(folha_id: int, cpf: str):
+    """O ponto de uma pessoa, dia a dia, para a janela que abre no nome.
+
+    Sai da mesma conta da tela (`folha_gestao.ponto_da_pessoa`). Folha ou pessoa
+    que não existe responde 404, "não encontrado" — nunca "sem permissão"."""
+    from . import folha_gestao as fg
+    try:
+        visto = fg.ponto_da_pessoa(folha_id, cpf)
+    except Exception as e:  # noqa: BLE001 — a janela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar o ponto da pessoa")
+        return {"ok": False, "erro": f"Não consegui montar o ponto: {e}"}, 500
+    if not visto or not visto.get("achou"):
+        return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
+    return {"ok": True, **visto}
+
+
 @bp.route("/api/folha/apropriacao/fechar", methods=["POST"])
 @exige_operador
 def folha_apropriacao_fechar():

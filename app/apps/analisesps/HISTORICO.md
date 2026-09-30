@@ -10375,6 +10375,45 @@ aplicação importa. Suíte inteira em andamento no momento do commit.
 
 ---
 
+### Centésima trigésima primeira leva (30/09) — o nome abre o ponto da pessoa, dia a dia
+
+Ele: *"Quando eu clico em cima do funcionário (…) hoje abre o cadastro do
+Pipefy. Eu queria poder clicar e visualizar o ponto dele, para eu saber
+exatamente, dia após dia, em quais locais ele bateu e qual obra foi considerada
+daquele dia. E o valor do dia também."*
+
+**O que ficou:**
+
+- **O nome abre uma janela** com todos os dias do período (quinzena ou fim de
+  mês), inclusive os sem registro no ponto: as **quatro batidas** com hora e
+  obra de cada uma, a **situação** (presença, falta, horas), a **obra do dia** e
+  o **valor do dia**. Em cima: líquido, dias com obra, valor por dia e a divisão
+  por obra.
+- Dia **2×2** aparece marcado "empate 2×2" (valeu a obra em que o dia começou).
+  Dia **ajustado à mão** mostra as duas: a que valeu e "o ponto dizia X". Dia sem
+  obra diz o porquê (falta, feriado, sem marcação, PAGAR EXTRA, sem registro).
+  Quem é da **regra de rateio** vê um aviso: os dias são só para conferência.
+- **O Pipefy virou a setinha ↗** ao lado do nome. O antigo botão "dias" virou
+  **"ajustar"** (ou "divisão", para quem só consulta) — é a linha com o ajuste
+  de obra.
+- **Mesma conta da tela:** a janela pede ao servidor, que apropria a folha
+  inteira e tira a pessoa (`folha_gestao.ponto_da_pessoa`); não há uma segunda
+  conta. O teste confere que os valores dos dias somam o líquido.
+- Rota nova `/api/folha/<folha>/ponto/<cpf>`, só leitura, para quem vê a folha
+  (inclusive quem só consulta). Pessoa fora da folha responde 404.
+
+**O preço:** cada clique refaz a apropriação da folha inteira no servidor (a
+mesma que a tela faz ao abrir). É o que garante que a janela não discorde da
+tela; se ficar lento com a folha cheia, o caminho é guardar a apropriação da
+visita.
+
+**Verificado:** testes da tela e do acesso, e o JavaScript da tela passou pela
+checagem de sintaxe. Suíte inteira em andamento no momento do commit.
+**NÃO verificado:** a janela com o ponto real — depende do ponto de 09/2026
+casar (leva 128).
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

@@ -293,6 +293,113 @@ def apropriar_a_folha(folha) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# O PONTO DE UMA PESSOA, DIA A DIA — a janela que abre ao clicar no nome
+#
+# Pedido dele em 30/09/2026: *"Eu queria poder clicar e visualizar o ponto dele,
+# para eu saber exatamente, dia após dia, em quais locais ele bateu e qual obra
+# foi considerada daquele dia. E o valor do dia também."*
+#
+# ⚠️ SAI DA MESMA CONTA DA TELA, não de uma conta paralela: a apropriação é
+# feita pela folha inteira (`apropriar_a_folha`) e daqui só se tira a pessoa.
+# Uma segunda conta "só para mostrar" um dia discordaria da primeira, e a janela
+# passaria a mentir sobre o dinheiro que vai sair.
+# ---------------------------------------------------------------------------
+DIAS_DA_SEMANA = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+
+
+def ponto_da_pessoa(folha_id: int, cpf: str) -> dict | None:
+    """Todos os dias do período desta pessoa. None quando a folha não existe.
+
+    Para cada dia: as quatro batidas (hora e obra de cada uma), a situação
+    (presença, falta), a obra que o ponto deu ao dia, a obra que VALEU (pode ser
+    outra, se ele ajustou à mão) e o valor do dia. Dia sem registro no ponto
+    também aparece — sumir com ele esconderia justamente o dia que pede pergunta.
+    """
+    import datetime as dt
+
+    from . import folha_apropriacao, folha_arquivo
+    from .folha_rateio import cpf_bonito, so_digitos
+
+    folha = folha_arquivo.abrir(folha_id)
+    if folha is None:
+        return None
+    cpf = so_digitos(cpf)
+    feito = apropriar_a_folha(folha)
+    pessoa = next((p for p in feito["apropriado"]["pessoas"]
+                   if (p.get("cpf") or "") == cpf), None)
+    if pessoa is None:
+        return {"achou": False}
+
+    ini, fim = feito["periodo"]
+    por_data: dict = {}
+    for dia in feito["dias_por_cpf"].get(cpf) or []:
+        if dia.get("data"):
+            por_data.setdefault(dia["data"], []).append(dia)
+    valor_do_dia = {d["data"]: d for d in (pessoa.get("por_dia") or [])}
+
+    dias = []
+    data = ini
+    while data <= fim:
+        registros = por_data.get(data) or []
+        lido = registros[0] if registros else None
+        apropriado = valor_do_dia.get(data)
+        if lido:
+            decidido = folha_apropriacao.obra_do_dia(
+                lido.get("marcacoes"), lido.get("presenca", ""),
+                lido.get("falta", ""))
+            batidas = [{"hora": h, "obra": o} for h, o in
+                       zip(lido.get("horas") or ["", "", "", ""],
+                           lido.get("marcacoes") or ["", "", "", ""])]
+        else:
+            decidido = {"obra": None, "empate": False,
+                        "motivo": "sem registro no ponto"}
+            batidas = [{"hora": "", "obra": ""} for _ in range(4)]
+        obra_ponto = decidido.get("obra") or ""
+        obra_valeu = (apropriado or {}).get("obra") or ""
+        dias.append({
+            "data": data.isoformat(),
+            "data_br": data.strftime("%d/%m/%Y"),
+            "semana": (lido or {}).get("dia_da_semana")
+                      or DIAS_DA_SEMANA[data.weekday()],
+            "batidas": batidas,
+            "presenca": (lido or {}).get("presenca", ""),
+            "falta": (lido or {}).get("falta", ""),
+            "horas": (lido or {}).get("total_de_horas", ""),
+            "obra_ponto": obra_ponto,
+            "empate": bool(decidido.get("empate")),
+            "motivo": "" if obra_ponto else (decidido.get("motivo") or ""),
+            "obra_valeu": obra_valeu,
+            "ajustado": bool(obra_valeu and obra_ponto
+                             and obra_valeu != obra_ponto),
+            "valor": (str(_dinheiro(apropriado["valor"]))
+                      if apropriado else None),
+            "mais_de_um_registro": len(registros) > 1,
+        })
+        data += dt.timedelta(days=1)
+
+    return {
+        "achou": True,
+        "nome": pessoa.get("nome_cadastro") or pessoa.get("nome") or "",
+        "cpf_bonito": cpf_bonito(cpf),
+        "periodo": [ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")],
+        "valor": str(_dinheiro(pessoa.get("valor"))),
+        "dias_no_ponto": int(pessoa.get("dias_no_ponto") or 0),
+        "valor_por_dia": (None if _por_dia(pessoa.get("valor"),
+                                           pessoa.get("dias_no_ponto")) is None
+                          else str(_por_dia(pessoa.get("valor"),
+                                            pessoa.get("dias_no_ponto")))),
+        "origem": pessoa.get("origem") or "",
+        "regra": pessoa.get("regra") or "",
+        "fora": bool(pessoa.get("fora")),
+        "por_obra": [{"obra": o.get("obra"), "dias": o.get("dias"),
+                      "valor": str(_dinheiro(o.get("valor")))}
+                     for o in (pessoa.get("por_obra") or [])],
+        "tem_ponto": bool(feito["dias_por_cpf"]),
+        "dias": dias,
+    }
+
+
+# ---------------------------------------------------------------------------
 # MONTAR A TELA
 # ---------------------------------------------------------------------------
 def montar(folha_id: int, filtros=None) -> dict:

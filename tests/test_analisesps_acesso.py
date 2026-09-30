@@ -118,6 +118,8 @@ TODAS_AS_TELAS = [
     # A porta da área: manda para a primeira subtela que a pessoa alcança.
     ("GET",  "/analisesps/folha"),
     ("GET",  "/analisesps/folha/importar"),
+    # O ponto dia a dia de uma pessoa (janela do nome): dado pessoal — só logado.
+    ("GET",  "/analisesps/api/folha/123/ponto/99713349334"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.

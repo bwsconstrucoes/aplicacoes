@@ -536,13 +536,23 @@
                    aria-label="Pagar {{ p.nome_na_tela }}">
           </td>
           <td>
+            {# ⚠️ O NOME ABRE O PONTO, e o Pipefy vira a setinha. Pedido dele em
+               30/09/2026: *"eu queria poder clicar e visualizar o ponto dele (…)
+               dia após dia, em quais locais ele bateu e qual obra foi considerada
+               daquele dia. E o valor do dia também."* #}
+            {% if p.cpf %}
+              <button type="button" class="link-btn abrir-ponto nome-pessoa"
+                      data-cpf="{{ p.cpf }}" data-nome="{{ p.nome_na_tela }}"
+                      title="ver o ponto dia a dia">{{ p.nome_na_tela }}</button>
+            {% else %}{{ p.nome_na_tela }}{% endif %}
             {% if p.link_pipefy %}
               <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
-                 class="link-pipefy">{{ p.nome_na_tela }}
-                <span aria-hidden="true">↗</span></a>
-            {% else %}{{ p.nome_na_tela }}{% endif %}
+                 class="link-pipefy" title="abrir o card no Pipefy"
+                 aria-label="abrir o card de {{ p.nome_na_tela }} no Pipefy">↗</a>
+            {% endif %}
             <button type="button" class="link-btn ver-dias"
-                    title="ver os dias do ponto desta pessoa">dias</button>
+                    title="a divisão por obra e o ajuste desta pessoa"
+                    >{% if pode_operar %}ajustar{% else %}divisão{% endif %}</button>
             {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
             {% if p.nome_contabilidade and p.nome_contabilidade != p.nome_na_tela %}
               <br><span class="cartao-dica"
@@ -736,6 +746,16 @@
 {% endif %}
 
 {# ------------------------------------------------------------------------
+   O PONTO DE UMA PESSOA, DIA A DIA — abre ao clicar no nome.
+   ------------------------------------------------------------------------ #}
+<dialog class="dialogo" id="cartao-ponto">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3 id="ponto-titulo">Ponto</h3>
+  <div id="ponto-corpo"><p class="cartao-dica">carregando…</p></div>
+</dialog>
+
+{# ------------------------------------------------------------------------
    A DIVISÃO POR OBRA, NUMA JANELA. Pedido dele em 30/09/2026: *"quero poder ver
    (…) a divisão por obra clicando em algo pra abrir um modal"*. Antes eram três
    tabelas no fim da tela, depois da lista — e a lista tem 400 linhas.
@@ -916,6 +936,99 @@
 {% block scripts %}
 {% if montado %}
 <script>
+// ---------------------------------------------------------------------------
+// O PONTO DA PESSOA, DIA A DIA. Busca ao clicar (a conta é a mesma da tela, feita
+// no servidor) em vez de embutir 400 × 15 dias na página.
+// ---------------------------------------------------------------------------
+(function () {
+  const dialogo = document.getElementById("cartao-ponto");
+  const titulo = document.getElementById("ponto-titulo");
+  const corpo = document.getElementById("ponto-corpo");
+  if (!dialogo) return;
+  const moeda = v => (v === null || v === undefined || v === "") ? "—" :
+    Number(v).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g,
+    c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+  function batida(b) {
+    if (!b.hora && !b.obra) return '<td class="cartao-dica">—</td>';
+    return "<td>" + esc(b.hora || "—") +
+      (b.obra ? '<br><span class="cartao-dica">' + esc(b.obra) + "</span>" : "") +
+      "</td>";
+  }
+
+  function desenhar(d) {
+    titulo.innerHTML = esc(d.nome) + " <small>" + esc(d.cpf_bonito) + " · " +
+      esc(d.periodo[0]) + " a " + esc(d.periodo[1]) + "</small>";
+    let html = '<p class="ponto-resumo">Líquido <b>' + moeda(d.valor) +
+      "</b> · <b>" + d.dias_no_ponto + "</b> dia(s) com obra · valor por dia <b>" +
+      moeda(d.valor_por_dia) + "</b>";
+    if (d.por_obra.length) {
+      html += " · " + d.por_obra.map(o => "<b>" + esc(o.obra) + "</b> " +
+        (o.dias ? o.dias + " dia(s), " : "") + moeda(o.valor)).join(" · ");
+    }
+    html += "</p>";
+    if (d.fora) html += '<div class="aviso atencao">Você tirou esta pessoa deste pagamento.</div>';
+    if (d.origem === "regra") {
+      html += '<div class="aviso info">A divisão desta pessoa vem da <b>regra de rateio</b>' +
+        (d.regra ? " (" + esc(d.regra) + ")" : "") + ", não dos dias: os dias abaixo são " +
+        "só para conferência.</div>";
+    }
+    if (!d.tem_ponto) {
+      html += '<div class="aviso erro">O ponto deste mês ainda não foi trazido.</div>';
+    }
+    html += '<div class="tabela-wrap"><div class="tabela-rolagem livre">' +
+      '<table class="sps ponto-dia-a-dia"><thead><tr><th>Dia</th>' +
+      "<th>Entrada</th><th>Almoço</th><th>Retorno</th><th>Saída</th>" +
+      "<th>Situação</th><th>Obra do dia</th><th class=\"num\">Valor do dia</th>" +
+      "</tr></thead><tbody>";
+    d.dias.forEach(x => {
+      const semObra = !x.obra_ponto && !x.obra_valeu;
+      let obra;
+      if (x.ajustado) {
+        obra = "<b>" + esc(x.obra_valeu) + '</b><br><span class="cartao-dica">o ponto dizia ' +
+          esc(x.obra_ponto) + " — ajustado por você</span>";
+      } else if (x.obra_valeu || x.obra_ponto) {
+        obra = "<b>" + esc(x.obra_valeu || x.obra_ponto) + "</b>" +
+          (x.empate ? '<br><span class="selo saindo" title="duas batidas em cada obra: ' +
+            'valeu a obra em que o dia começou">empate 2×2</span>' : "");
+      } else {
+        obra = '<span class="cartao-dica">' + esc(x.motivo || "sem obra") + "</span>";
+      }
+      const situacao = [x.presenca, x.falta].filter(Boolean).map(esc).join("<br>") ||
+        '<span class="cartao-dica">—</span>';
+      html += '<tr class="' + (semObra ? "dia-sem-obra" : "") + '">' +
+        "<td>" + esc(x.data_br.slice(0, 5)) + ' <span class="cartao-dica">' +
+          esc(x.semana) + "</span></td>" +
+        x.batidas.map(batida).join("") +
+        "<td>" + situacao + (x.horas ? '<br><span class="cartao-dica">' +
+          esc(x.horas) + " h</span>" : "") + "</td>" +
+        "<td>" + obra + "</td>" +
+        '<td class="num">' + moeda(x.valor) + "</td></tr>";
+    });
+    html += "</tbody></table></div></div>";
+    corpo.innerHTML = html;
+  }
+
+  document.addEventListener("click", async e => {
+    const b = e.target.closest(".abrir-ponto");
+    if (!b) return;
+    titulo.textContent = b.dataset.nome || "Ponto";
+    corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
+    if (dialogo.showModal) dialogo.showModal(); else dialogo.setAttribute("open", "");
+    try {
+      const url = "{{ url_for('analisesps.folha_ponto_da_pessoa', folha_id=folha.id, cpf='CPF') }}"
+        .replace("CPF", encodeURIComponent(b.dataset.cpf));
+      const r = await fetch(url);
+      const d = await r.json();
+      if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + esc(d.erro) + "</div>"; return; }
+      desenhar(d);
+    } catch (erro) {
+      corpo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
+    }
+  });
+})();
+
 // A janela "Divisão por obra": abre por cima, para qualquer perfil.
 (function () {
   const b = document.getElementById("btn-divisao");

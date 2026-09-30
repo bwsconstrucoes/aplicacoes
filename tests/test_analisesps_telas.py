@@ -7885,3 +7885,78 @@ def test_a_OBRA_DA_CONTABILIDADE_aparece_na_linha_e_tem_filtro(app, monkeypatch)
     nenhuma = cliente.get("/analisesps/folha/1?filial=999+-+X").get_data(as_text=True)
     assert "Nenhuma pessoa com esses filtros" in nenhuma
 
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — *"Eu queria poder clicar e visualizar o ponto dele, para eu saber
+# exatamente, dia após dia, em quais locais ele bateu e qual obra foi considerada
+# daquele dia. E o valor do dia também."*
+# ---------------------------------------------------------------------------
+def _dias_com_batidas():
+    """Três dias: um inteiro na CRE1, um 2×2 CRE1/XYZ9 (vale CRE1, onde começou),
+    e uma falta. Formato de `ponto.dias_por_cpf`."""
+    import datetime as dt
+    return {"99713349334": [
+        {"data": dt.date(2026, 9, 1), "marcacoes": ["CRE1"] * 4,
+         "horas": ["07:00", "11:00", "13:00", "17:00"], "presenca": "Presença",
+         "falta": "", "total_de_horas": "08:00", "dia_da_semana": "ter"},
+        {"data": dt.date(2026, 9, 2), "marcacoes": ["CRE1", "CRE1", "XYZ9", "XYZ9"],
+         "horas": ["07:00", "11:00", "13:00", "17:00"], "presenca": "Presença",
+         "falta": "", "total_de_horas": "08:00", "dia_da_semana": "qua"},
+        {"data": dt.date(2026, 9, 3), "marcacoes": ["", "", "", ""],
+         "horas": ["", "", "", ""], "presenca": "Falta", "falta": "Falta injustificada",
+         "total_de_horas": "", "dia_da_semana": "qui"},
+    ]}
+
+
+def test_o_NOME_abre_o_ponto_e_o_pipefy_vira_a_setinha(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert 'class="link-btn abrir-ponto nome-pessoa"' in html
+    assert 'data-cpf="99713349334"' in html
+    assert 'id="cartao-ponto"' in html
+
+
+def test_o_ponto_da_pessoa_traz_BATIDAS_OBRA_DO_DIA_e_VALOR_DO_DIA(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_com_batidas())
+    r = _como_mestre(app).get("/analisesps/api/folha/1/ponto/997.133.493-34")
+    d = r.get_json()
+    assert r.status_code == 200 and d["ok"], d
+
+    por_data = {x["data"]: x for x in d["dias"]}
+    assert len(d["dias"]) == 15, "todo dia do período aparece, com ou sem ponto"
+
+    dia1 = por_data["2026-09-01"]
+    assert dia1["batidas"][0] == {"hora": "07:00", "obra": "CRE1"}
+    assert dia1["obra_ponto"] == "CRE1" and dia1["valor"] is not None
+
+    empate = por_data["2026-09-02"]
+    assert empate["obra_ponto"] == "CRE1", "no 2×2 vale a obra em que o dia começou"
+    assert empate["empate"] is True
+    assert [b["obra"] for b in empate["batidas"]] == ["CRE1", "CRE1", "XYZ9", "XYZ9"]
+
+    falta = por_data["2026-09-03"]
+    assert falta["obra_ponto"] == "" and falta["valor"] is None
+    assert falta["motivo"] == "falta"
+
+    sem = por_data["2026-09-04"]
+    assert sem["motivo"] == "sem registro no ponto"
+
+    # Os valores dos dias somam o líquido: é a mesma conta da tela.
+    from decimal import Decimal as D
+    soma = sum(D(x["valor"]) for x in d["dias"] if x["valor"])
+    assert soma == D(d["valor"])
+    assert d["dias_no_ponto"] == 2
+
+
+def test_pessoa_que_NAO_esta_na_folha_responde_404(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_com_batidas())
+    r = _como_mestre(app).get("/analisesps/api/folha/1/ponto/52998224725")
+    assert r.status_code == 404
+
+
+def test_quem_so_CONSULTA_tambem_ve_o_ponto_da_pessoa(app, monkeypatch):
+    """É leitura: quem confere a folha precisa ver o ponto."""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_com_batidas())
+    r = como(app, SENHA_CONSULTA).get("/analisesps/api/folha/1/ponto/99713349334")
+    assert r.status_code == 200

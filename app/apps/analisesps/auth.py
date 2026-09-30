@@ -459,6 +459,7 @@ TELA_DA_ROTA = {
     # o arquivo continua só do mestre — a decisão do dono de 26/09/2026 separa as
     # duas coisas, e é ela que faz a alçada aqui.
     "analisesps.folha_apropriacao_ajustar": ("folha",),
+    "analisesps.folha_ponto_da_pessoa": ("folha",),
     "analisesps.folha_apropriacao_fechar": ("folha",),
     "analisesps.folha_auxilio_selecao": ("folha",),
     # A ficha da pessoa no modal: cadastro + ponto do mês. É da folha, e mostra
