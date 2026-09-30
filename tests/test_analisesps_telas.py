@@ -8087,3 +8087,30 @@ def test_quem_so_CONSULTA_nao_ve_o_botao_de_apagar(app, monkeypatch):
     html = como(app, SENHA_CONSULTA).get("/analisesps/folha/1").get_data(as_text=True)
     assert 'id="apagar-esta-folha"' not in html
 
+
+def test_quem_tem_VALOR_ZERO_nao_e_marcavel_e_a_linha_diz_por_que(app, monkeypatch):
+    """*"Qual é o critério para umas ficarem manipuláveis e outras não? Está
+    estranho, já que todas estão zeradas."* Valor zero não vai para o arquivo
+    (o portal recusa); a caixa fica desligada e a linha diz por quê."""
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_arquivo as fa
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    original = fa.abrir
+
+    def abrir(i):
+        folha = original(i)
+        for l in folha["linhas"]:
+            if l["id_fortes"] == "000013":
+                l["valor"] = D("0.00")
+        return folha
+    monkeypatch.setattr(fa, "abrir", abrir)
+    # E uma pessoa que não casou com o cadastro (o código do Fortes não está lá).
+    from app.apps.analisesps import colaboradores
+    monkeypatch.setattr(colaboradores, "de_para_do_fortes", lambda: {
+        "000013": {"cpf": "99713349334", "nome": "GERLANIO GOMES LIMA"}})
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert ">valor zero</span>" in html
+    assert "valor zero não se paga" in html
+    assert "não dá para marcar: sem cadastro" in html, "e quem não casou também diz"
+

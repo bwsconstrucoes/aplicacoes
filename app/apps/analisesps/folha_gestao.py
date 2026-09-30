@@ -555,6 +555,12 @@ def montar(folha_id: int, filtros=None) -> dict:
             # ganham destaque: é a contabilidade dizendo que aquela pessoa pede
             # conferência antes de pagar.
             "filial": filial_por_id.get(str(pessoa.get("id_fortes") or ""), ""),
+            # VALOR ZERO não se paga: o arquivo de pagamento pula (o portal
+            # recusa). A caixa fica desligada e diz por quê — antes ela ficava
+            # marcável em uns e não em outros, e ele não via o critério
+            # (30/09/2026: *"qual é o critério para umas ficarem manipuláveis e
+            # outras não? Está estranho, já que todas estão zeradas"*).
+            "valor_zero": _dinheiro(pessoa.get("valor")) <= 0,
             # AS CONTAS DE PAGAMENTO DA PESSOA — pedido dele em 30/09/2026: *"quais
             # funcionários estão sendo pagos em mais de uma conta. Isso é
             # importante também até para saber se não tem nada errado no

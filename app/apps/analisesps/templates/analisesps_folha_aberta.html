@@ -576,8 +576,8 @@
                aceitar o clique e perder o que ele marcou. #}
             <input type="checkbox" class="entra"
                    {% if p.entra %}checked{% endif %}
-                   {% if not p.cpf or not pode_operar %}disabled{% endif %}
-                   title="{% if not p.cpf %}sem CPF no cadastro não há como guardar esta decisão{% else %}entra neste pagamento{% endif %}"
+                   {% if not p.cpf or p.valor_zero or not pode_operar %}disabled{% endif %}
+                   title="{% if not p.cpf %}não dá para marcar: esta pessoa não casou com o cadastro (sem CPF) — corrija o código do Fortes na ficha e aperte Atualizar cadastro{% elif p.valor_zero %}não dá para marcar: valor zero não se paga — fica fora do arquivo{% else %}entra neste pagamento{% endif %}"
                    aria-label="Pagar {{ p.nome_na_tela }}">
           </td>
           <td>
@@ -668,6 +668,14 @@
           <td class="num valor-final">{{ p.valor|moeda }}</td>
           <td>
             <span class="selo {{ p.selo }}">{{ p.situacao_rotulo }}</span>
+            {# POR QUE A CAIXA ESTÁ DESLIGADA, escrito na linha — e não só no
+               passar do mouse, que ele não tinha como adivinhar. #}
+            {% if not p.cpf %}
+              <br><span class="cartao-dica">não dá para marcar: sem cadastro</span>
+            {% elif p.valor_zero %}
+              <br><span class="selo cancelado" title="valor zero não se paga — fica fora do arquivo de pagamento"
+                >valor zero</span>
+            {% endif %}
             {% if p.motivo_fora %}
               <br><span class="cartao-dica">{{ p.motivo_fora }}</span>
             {% elif p.motivo_cadastral %}
