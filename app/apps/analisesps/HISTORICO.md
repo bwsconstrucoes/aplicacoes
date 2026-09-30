@@ -10195,6 +10195,69 @@ com os 58 testes do ponto em banco de verdade; a aplicação importa.
 
 ---
 
+### Centésima vigésima oitava leva (30/09) — o código do Fortes na ficha, e a data do ponto no campo certo
+
+Dois relatos dele, no mesmo dia:
+
+1. *"Vários colaboradores estão no cadastro, mas diz que não tá"* — com a ficha
+   de uma pessoa admitida em 16/09 mostrando o código **004031** na última coluna
+   da aba "Dados Documentos".
+2. *"O ponto foi baixado, mas ninguém foi associado ao ponto."*
+
+**1. O código do Fortes vinha só da aba separada "ID Fortes".** A coluna "ID
+Fortes" da ficha (aba principal) era ignorada — de propósito, numa época em que
+ela não existia. Quem ainda não estava na aba separada (gente admitida há
+poucos dias) aparecia na folha como "fora do cadastro", sem CPF e sem pagamento,
+com o código escrito na própria ficha.
+
+- **A ficha manda:** o código vem da coluna da própria pessoa. A aba separada só
+  **completa** quem não tem código na ficha; quando as duas discordam, vale a
+  ficha e a carga avisa quem ("discordam da ficha").
+- **Vazio na ficha não apaga** o código que a aba separada deu.
+- **Um código, uma pessoa:** o mesmo código em duas fichas vira aviso, vale a
+  primeira; código que mudou de dono na ficha sai do dono antigo.
+- **Seis dígitos com os zeros da frente** (`normalizar_id_fortes`): a planilha às
+  vezes guarda "004031" como o número 4031, que não casaria com a folha.
+- "Matrícula" **não** é código do Fortes na ficha (lá é o CPF com uma letra).
+- Nada muda no banco: é a mesma coluna `id_fortes`.
+
+**2. A data do dia de ponto era lida do campo errado — erro meu, e ele zerava a
+folha.** Eu lia a data de `dia`. O script da planilha dele **descarta** `dia`
+(`filter(c => c !== "dia" && c !== "matricula")`) e o programa dele
+(`analysis_engine.py`) lê a data de **`data`**. Com `dia` sem data completa, todo
+dia do ponto ficava sem data, e dia sem data não entra em período nenhum:
+ninguém casava.
+
+- A data vem de `data`; sem ela, de `dia` como data completa; se `dia` for só o
+  número do dia, do mês da carga.
+- O CPF do ponto ganha os zeros da frente, como no `normalize_cpf` dele
+  (`zfill(11)`).
+- **As cargas já baixadas são consertadas sem baixar de novo**
+  (`consertar_carga`, chamado por `carga_do_mes`): o dia inteiro está guardado
+  em `campos`. Idempotente — da segunda vez não acha nada.
+
+**Lição:** a data do ponto foi decidida em 26/09 lendo o formato de UM arquivo
+("os campos de cada dia são dinâmicos"). O script dele mostrava, desde que
+chegou, que `dia` não era o campo da data. Ler o que já estava na mesa teria
+evitado o dia perdido.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** | ele dizer "pode" |
+| depois de publicar: **apertar "Atualizar cadastro"** (traz o código das fichas) e abrir a folha — ela casa de novo sozinha a cada visita | ele |
+| conferir que o ponto de 09/2026 casou (sem baixar de novo) | ele |
+| trocar a credencial do Mobponto; o cronjob de hora em hora | ele |
+
+**Verificado:** testes do ponto (63), do cadastro, da folha e das telas; a
+aplicação importa. Suíte inteira em andamento no momento do commit.
+**NÃO verificado:** o formato real do dia do Mobponto — a leitura aceita `data`,
+`dia` completo e `dia` só com o número; a tela do Ponto mostra os campos que
+vieram, e é lá que se confirma.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

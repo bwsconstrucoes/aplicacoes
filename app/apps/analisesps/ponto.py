@@ -513,7 +513,83 @@ def _dias_do_funcionario(bruto) -> tuple:
     return cpf, nome, dias if isinstance(dias, list) else []
 
 
-def _linha_do_dia(carga_id: int, cpf: str, nome: str, dia) -> tuple | None:
+# ---------------------------------------------------------------------------
+# A DATA E O CPF DE CADA DIA — 30/09/2026
+#
+# ⚠️ ERRO MEU, E ELE ZERAVA A FOLHA INTEIRA. O dono: *"o ponto foi baixado, mas
+# ninguém foi associado ao ponto."* Eu lia a data do campo `dia`. O script dele
+# que alimenta a planilha DESCARTA esse campo (`filter(c => c !== "dia" && c !==
+# "matricula")`), e o programa dele lê a data de `data`. Quando `dia` não é uma
+# data completa ("01", ou o dia da semana), todo dia do ponto ficava sem data —
+# e dia sem data não entra em período nenhum: ninguém casava.
+#
+# Agora a data vem de `data`; se não houver, de `dia` como data completa; se
+# `dia` for só o número do dia, do mês da carga. E o CPF ganha os zeros da
+# frente, como no programa dele (`normalize_cpf` faz `zfill(11)`): o Mobponto às
+# vezes manda o CPF como número, e "01234567890" chegaria como "1234567890".
+#
+# As cargas JÁ BAIXADAS são consertadas sem baixar de novo (`consertar_carga`):
+# o dia inteiro está guardado em `campos`, do jeito que veio.
+# ---------------------------------------------------------------------------
+def _cpf_do_ponto(cpf) -> str:
+    from .folha_rateio import so_digitos
+    digitos = so_digitos(cpf)
+    return digitos.zfill(11) if 0 < len(digitos) < 11 else digitos
+
+
+def _data_do_dia(dia: dict, ano: int | None = None, mes: int | None = None):
+    """A data de um dia do ponto. Ver o bloco acima."""
+    import datetime as _dt
+    if not isinstance(dia, dict):
+        return None
+    for campo in ("data", "dia"):
+        achada = formatos.para_data(dia.get(campo))
+        if achada:
+            return achada
+    bruto = str(dia.get("dia") or "").strip()
+    if ano and mes:
+        numero = bruto.split("/")[0].strip()
+        if numero.isdigit() and 1 <= int(numero) <= 31:
+            try:
+                return _dt.date(int(ano), int(mes), int(numero))
+            except ValueError:
+                return None
+    return None
+
+
+def consertar_carga(carga_id: int, ano: int, mes: int) -> int:
+    """Dá data e CPF certos aos dias já guardados que ficaram sem. Idempotente.
+
+    Não baixa nada: recalcula a partir do dia inteiro, guardado em `campos`.
+    Devolve quantos dias foram consertados."""
+    from .db import conexao, consultar
+    linhas = consultar(
+        "SELECT id, cpf, campos FROM analisesps.ponto_dia "
+        " WHERE carga_id = ? AND (data IS NULL "
+        "       OR (length(cpf) BETWEEN 1 AND 10))", (int(carga_id),))
+    if not linhas:
+        return 0
+    mudar = []
+    for linha_id, cpf, bruto in linhas:
+        try:
+            dia = json.loads(bruto or "{}")
+        except Exception:  # noqa: BLE001 — dia torto fica como está
+            dia = {}
+        mudar.append((_data_do_dia(dia, ano, mes), _cpf_do_ponto(cpf), int(linha_id)))
+    with conexao() as conn:
+        conn.executemany(
+            "UPDATE analisesps.ponto_dia SET data = COALESCE(?, data), cpf = ? "
+            " WHERE id = ?", mudar)
+        conn.commit()
+    consertados = sum(1 for d, _c, _i in mudar if d)
+    logger.warning("Análise de SPs: carga %d do ponto — %d dia(s) consertado(s) "
+                   "(data lida de `data` / CPF com os zeros da frente).",
+                   carga_id, len(mudar))
+    return consertados
+
+
+def _linha_do_dia(carga_id: int, cpf: str, nome: str, dia,
+                  ano: int | None = None, mes: int | None = None) -> tuple | None:
     """Uma linha da tabela, a partir de um dia da resposta.
 
     ⚠️ GUARDA O DIA INTEIRO em `campos`, e resolve só a data. Os nomes dos campos
@@ -521,9 +597,8 @@ def _linha_do_dia(carga_id: int, cpf: str, nome: str, dia) -> tuple | None:
     coluna preenchida por palpite é resposta errada com cara de certa."""
     if not isinstance(dia, dict):
         return None
-    from .folha_rateio import so_digitos
-    return (carga_id, so_digitos(cpf), nome,
-            formatos.para_data(dia.get("dia")),
+    return (carga_id, _cpf_do_ponto(cpf), nome,
+            _data_do_dia(dia, ano, mes),
             str(dia.get("matricula") or "").strip(),
             json.dumps(dia, ensure_ascii=False, default=str)[:8000])
 
@@ -680,18 +755,17 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
             # `total_paginas` vem otimista. Para em vez de insistir.
             break
 
-        from .folha_rateio import so_digitos
         linhas, cpfs, campos = [], set(), set()
         for bruto in funcionarios:
             cpf, nome, dias = _dias_do_funcionario(bruto)
             if cpf:
-                # Como vai para o banco (só dígitos): é por ele que a página
-                # apaga o que já tinha da pessoa antes de gravar de novo.
-                cpfs.add(so_digitos(cpf))
+                # Como vai para o banco: é por ele que a página apaga o que já
+                # tinha da pessoa antes de gravar de novo.
+                cpfs.add(_cpf_do_ponto(cpf))
             for dia in dias:
                 if isinstance(dia, dict):
                     campos.update(str(c) for c in dia)
-                linha = _linha_do_dia(carga_id, cpf, nome, dia)
+                linha = _linha_do_dia(carga_id, cpf, nome, dia, ano, mes)
                 if linha is not None:
                     linhas.append(linha)
         _gravar_pagina(carga_id, pagina, cpfs, linhas, campos)
@@ -845,7 +919,17 @@ def carga_do_mes(ano: int, mes: int) -> dict | None:
         " WHERE ano = ? AND mes = ?"
         + (" AND terminada_em IS NOT NULL" if _substituicao_segura() else "")
         + " ORDER BY id DESC LIMIT 1", (int(ano), int(mes)))
-    return _carga(linha) if linha else None
+    if not linha:
+        return None
+    carga = _carga(linha)
+    # As cargas baixadas antes de 30/09/2026 guardaram os dias sem data (ver
+    # `consertar_carga`). Conserta na primeira leitura; depois não acha nada.
+    try:
+        consertar_carga(carga["id"], ano, mes)
+    except Exception:  # noqa: BLE001 — ler o mês não pode cair por isto
+        logger.exception("Análise de SPs: não consegui consertar a carga %s",
+                         carga.get("id"))
+    return carga
 
 
 def carga_em_andamento(ano: int, mes: int) -> dict | None:

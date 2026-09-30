@@ -324,7 +324,7 @@ def casar_com_o_cadastro(folha_id: int) -> dict:
     mudar = []
     pendentes = 0
     for linha_id, id_fortes, cpf_atual in linhas:
-        achado = de_para.get(str(id_fortes or "").strip())
+        achado = de_para.get(colaboradores.normalizar_id_fortes(id_fortes))
         cpf_novo = achado["cpf"] if achado else ""
         if not cpf_novo:
             pendentes += 1

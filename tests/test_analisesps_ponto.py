@@ -1216,3 +1216,87 @@ def test_o_automatico_PULA_o_mes_que_ja_entrou_hoje_sem_pedir_nada(banco_ponto, 
     assert tarefas.executar_trabalho("ponto_diario", execucao) is True
     assert pedidas == [], "o Mobponto não foi incomodado"
     assert ponto.carga_do_mes(2026, 8)["dias"] == 2
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — *"o ponto foi baixado, mas ninguém foi associado ao ponto."*
+#
+# Eu lia a data do campo `dia`. O script da planilha DESCARTA esse campo e o
+# programa dele lê a data de `data`. Com `dia` sem data completa, todo dia do
+# ponto ficava sem data — e ninguém casava.
+# ---------------------------------------------------------------------------
+def dia_de_verdade(numero, **extra):
+    """Um dia com `data` completa e `dia` só com o número — o formato que o
+    script da planilha sugere."""
+    base = {"dia": f"{numero:02d}", "data": f"{numero:02d}/09/2026",
+            "matricula": "1234", "hr_entrada": "07:00", "obra_entrada": "CRE1"}
+    base.update(extra)
+    return base
+
+
+def test_a_data_vem_do_campo_DATA_e_nao_do_dia(banco_ponto, monkeypatch):
+    import datetime as dt
+    from app.apps.analisesps import ponto
+    dublar(monkeypatch, [resposta([{"cpf": "997.133.493-34", "nome": "GERLANIO",
+                                    "relatorio": [dia_de_verdade(1), dia_de_verdade(2)]}])])
+    feito = ponto.carregar(2026, 9)
+
+    dias = ponto.dias_por_cpf(2026, 9)["99713349334"]
+    assert [d["data"] for d in dias] == [dt.date(2026, 9, 1), dt.date(2026, 9, 2)]
+    assert not any("sem data" in a for a in feito["avisos"])
+
+
+def test_sem_DATA_e_com_DIA_so_o_numero_usa_o_mes_da_carga(banco_ponto, monkeypatch):
+    import datetime as dt
+    from app.apps.analisesps import ponto
+    dublar(monkeypatch, [resposta([{"cpf": "99713349334", "nome": "G",
+                                    "relatorio": [{"dia": "7", "matricula": "1"}]}])])
+    ponto.carregar(2026, 9)
+    assert ponto.dias_por_cpf(2026, 9)["99713349334"][0]["data"] == dt.date(2026, 9, 7)
+
+
+def test_o_CPF_sem_os_zeros_da_frente_ganha_os_zeros(banco_ponto, monkeypatch):
+    """O programa dele faz `zfill(11)`: o Mobponto às vezes manda o CPF como
+    número, e 035.134.413-63 chegaria como 3513441363."""
+    from app.apps.analisesps import ponto
+    dublar(monkeypatch, [resposta([{"cpf": 3513441363, "nome": "LUELIA",
+                                    "relatorio": [dia_de_verdade(1)]}])])
+    ponto.carregar(2026, 9)
+    assert "03513441363" in ponto.dias_por_cpf(2026, 9)
+
+
+def test_a_carga_JA_BAIXADA_sem_data_e_consertada_sem_baixar_de_novo(banco_ponto, monkeypatch):
+    """O que ele já trouxe hoje não precisa vir de novo: o dia inteiro está
+    guardado, e a data é recalculada dele na primeira leitura."""
+    import datetime as dt
+    import json as _json
+    from app.apps.analisesps import ponto
+    from app.apps.analisesps.db import conexao
+    dublar(monkeypatch, [resposta([{"cpf": "99713349334", "nome": "G",
+                                    "relatorio": [dia_de_verdade(3)]}])])
+    ponto.carregar(2026, 9)
+    # Deixa como a versão antiga deixava: data vazia, CPF sem o zero.
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.ponto_dia SET data = NULL")
+        conn.commit()
+    pedidas = dublar(monkeypatch, [])
+
+    dias = ponto.dias_por_cpf(2026, 9)
+    assert dias["99713349334"][0]["data"] == dt.date(2026, 9, 3)
+    assert pedidas == [], "não pediu nada ao Mobponto"
+    # E da segunda vez não há o que consertar.
+    carga = ponto.carga_do_mes(2026, 9)
+    assert ponto.consertar_carga(carga["id"], 2026, 9) == 0
+
+
+def test_a_folha_ACHA_os_dias_do_ponto_de_verdade(banco_ponto, monkeypatch):
+    """O efeito que ele viu, de ponta a ponta: com o formato de verdade, a pessoa
+    da folha tem dias no período da quinzena."""
+    from app.apps.analisesps import folha_apropriacao, ponto
+    dublar(monkeypatch, [resposta([{"cpf": "997.133.493-34", "nome": "GERLANIO",
+                                    "relatorio": [dia_de_verdade(n) for n in range(1, 16)]}])])
+    ponto.carregar(2026, 9)
+    ini, fim = folha_apropriacao.periodo_do_pagamento(2026, 9, "quinzena")
+    dias = [d for d in ponto.dias_por_cpf(2026, 9)["99713349334"]
+            if ini <= d["data"] <= fim]
+    assert len(dias) == 15

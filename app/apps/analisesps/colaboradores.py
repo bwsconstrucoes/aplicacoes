@@ -76,6 +76,38 @@ COLUNAS_DO_ID_FORTES = ["ID Fortes", "Id Fortes", "Código", "Codigo",
 COLUNAS_DO_CPF_NO_DE_PARA = ["CPF", "CPF (Cadastro de Pessoa Física)",
                              "CPF Números", "cpf"]
 
+# ⚠️ O CÓDIGO DO FORTES NA PRÓPRIA FICHA — 30/09/2026.
+#
+# O dono: *"vários colaboradores estão no cadastro, mas diz que não tá"* — e
+# mostrou a ficha de uma pessoa admitida em 16/09 com o código 004031 na ÚLTIMA
+# coluna da aba "Dados Documentos". O sistema só lia a aba separada "ID Fortes",
+# e quem ainda não estava nela aparecia na folha como "fora do cadastro", sem CPF
+# e sem pagamento — com o código escrito na ficha.
+#
+# Agora a ficha manda: o código vem da coluna da própria pessoa, e a aba "ID
+# Fortes" só completa quem não tem código na ficha. Quando as duas discordam,
+# vale a ficha, e a tela diz quem.
+#
+# ⚠️ "Matrícula" NÃO entra aqui, ao contrário da lista da aba separada: na ficha
+# ela é outra coisa (o CPF com uma letra no fim, "127348894A").
+COLUNAS_DO_ID_NA_FICHA = ["ID Fortes", "Id Fortes", "Código Fortes",
+                          "Codigo Fortes"]
+
+
+def normalizar_id_fortes(valor) -> str:
+    """O código como a folha da contabilidade o escreve: seis dígitos, com os
+    zeros da frente.
+
+    A planilha às vezes guarda o código como NÚMERO, e aí "004031" chega como
+    "4031" — que não casaria com o "004031" da folha. Código que não é só
+    dígitos fica como veio (sem espaços), para não inventar nada."""
+    texto = "".join(str(valor or "").split())
+    if texto.endswith(".0") and texto[:-2].isdigit():
+        texto = texto[:-2]
+    if texto.isdigit() and len(texto) < 6:
+        return texto.zfill(6)
+    return texto
+
 # O cabeçalho está na linha 1. A LINHA 2 NÃO É DADO: ela guarda o número de
 # cada coluna (1, 2, 3…), e serve a uma fórmula da aba "Dados Gerais" que monta
 # o endereço da coluna com INDIRECT. Ler a linha 2 como pessoa criaria um
@@ -417,6 +449,12 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
                 f"então {EFEITO_DE_FALTAR.get(campo, 'este campo fica em branco')}")
         # else: fica em branco calado. Ver COLUNAS_QUE_AVISAM.
 
+    # O código do Fortes na ficha: opcional e calado quando falta — a aba "ID
+    # Fortes" continua sendo o caminho de quem não tem a coluna.
+    i_id = achar_coluna(normalizado, COLUNAS_DO_ID_NA_FICHA)
+    if i_id is not None:
+        posicoes["id_fortes"] = i_id
+
     return posicoes, avisos
 
 
@@ -432,7 +470,9 @@ def _registro(linha: dict, posicoes: dict) -> dict | None:
     if len(cpf) != 11:
         return None
 
-    registro = {"cpf": cpf}
+    registro = {"cpf": cpf,
+                # Fora de CAMPOS de propósito: ver `_gravar_ids_da_ficha`.
+                "_id_fortes_ficha": normalizar_id_fortes(cru.get("id_fortes"))}
     for campo in CAMPOS[1:]:
         valor = cru.get(campo, "")
         if campo in DATAS:
@@ -461,6 +501,41 @@ def _gravar(conn, registros: list) -> int:
         [tuple(r.get(c) for c in CAMPOS) for r in registros])
     conn.commit()
     return len(registros)
+
+
+def _gravar_ids_da_ficha(da_ficha: dict) -> dict:
+    """Grava o código do Fortes que veio na ficha de cada pessoa.
+
+    `da_ficha` é `{cpf: codigo}`, só com quem tem código preenchido — VAZIO NA
+    FICHA NÃO APAGA NADA: a pessoa pode ter o código vindo da aba "ID Fortes".
+
+    ⚠️ UM CÓDIGO, UMA PESSOA. Se o mesmo código aparece em duas fichas, vale a
+    primeira e o repetido vira aviso (o salário de uma iria para a obra da
+    outra). E se o código estava gravado em OUTRA pessoa — vindo da aba
+    separada, numa carga antiga — ele sai de lá: a ficha manda.
+
+    Devolve `{"gravados", "repetidos"}`.
+    """
+    from .db import conexao
+    if not da_ficha or not tem_id_fortes():
+        return {"gravados": 0, "repetidos": []}
+    dono: dict = {}
+    repetidos: list = []
+    for cpf, codigo in da_ficha.items():
+        if codigo in dono and dono[codigo] != cpf:
+            repetidos.append(codigo)
+            continue
+        dono[codigo] = cpf
+    with conexao() as conn:
+        conn.executemany(
+            "UPDATE analisesps.colaborador SET id_fortes = '' "
+            " WHERE id_fortes = ? AND cpf <> ?",
+            [(codigo, cpf) for codigo, cpf in dono.items()])
+        conn.executemany(
+            "UPDATE analisesps.colaborador SET id_fortes = ? WHERE cpf = ?",
+            [(codigo, cpf) for codigo, cpf in dono.items()])
+        conn.commit()
+    return {"gravados": len(dono), "repetidos": sorted(set(repetidos))}
 
 
 def atualizar(anotar=None) -> dict:
@@ -514,6 +589,7 @@ def atualizar(anotar=None) -> dict:
 
     gravadas = 0
     ignoradas = 0
+    da_ficha: dict = {}
     linha = PRIMEIRA_LINHA_DADOS
     while linha <= total_linhas:
         fim = min(linha + LINHAS_POR_BLOCO - 1, total_linhas)
@@ -535,6 +611,8 @@ def atualizar(anotar=None) -> dict:
                 if any(bruta.values()):
                     ignoradas += 1
                 continue
+            if r.get("_id_fortes_ficha"):
+                da_ficha.setdefault(r["cpf"], r["_id_fortes_ficha"])
             registros.append(r)
 
         if registros:
@@ -559,8 +637,21 @@ def atualizar(anotar=None) -> dict:
     # Num `try` largo porque o cadastro já está gravado a esta altura: um
     # tropeço aqui não pode desfazer o que deu certo.
     fortes = {"casados": 0}
+    ficha = {"gravados": 0, "repetidos": []}
     try:
-        fortes = atualizar_ids_fortes(anotar)
+        ficha = _gravar_ids_da_ficha(da_ficha)
+        if ficha["repetidos"]:
+            avisos.append(
+                f"{len(ficha['repetidos'])} código(s) do Fortes aparecem em mais "
+                f"de uma ficha ({', '.join(ficha['repetidos'][:5])}"
+                f"{'…' if len(ficha['repetidos']) > 5 else ''}). Valeu a "
+                "primeira; enquanto não for corrigido, o salário de uma pessoa "
+                "pode ir para a obra de outra.")
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gravar o ID Fortes da ficha")
+        avisos.append(f"não deu para gravar o código do Fortes das fichas: {e}")
+    try:
+        fortes = atualizar_ids_fortes(anotar, da_ficha=da_ficha)
         avisos.extend(fortes.get("avisos") or [])
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou o de/para do ID Fortes")
@@ -576,13 +667,13 @@ def atualizar(anotar=None) -> dict:
     logger.info("Análise de SPs: cadastro atualizado — %d pessoa(s), "
                 "%d aviso(s).", gravadas, len(avisos))
     return {"pessoas": gravadas, "ignoradas": ignoradas, "avisos": avisos,
-            "com_id_fortes": fortes.get("casados", 0)}
+            "com_id_fortes": ficha.get("gravados", 0) + fortes.get("casados", 0)}
 
 
 # ---------------------------------------------------------------------------
 # O DE/PARA ID FORTES → CPF
 # ---------------------------------------------------------------------------
-def atualizar_ids_fortes(anotar=None) -> dict:
+def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
     """Lê a aba "ID Fortes" e grava o código de cada pessoa no cadastro.
 
     ⚠️ RODA JUNTO com `atualizar`, no mesmo botão: duas atualizações separadas
@@ -593,11 +684,17 @@ def atualizar_ids_fortes(anotar=None) -> dict:
     aviso e deixa como está. Zerar o de/para por causa de uma aba renomeada faria
     a folha inteira virar "pendente de cadastro" de uma hora para outra.
 
-    Devolve `{"casados", "sem_cadastro", "repetidos", "avisos"}`.
+    ⚠️ DESDE 30/09/2026 ELA SÓ COMPLETA. `da_ficha` (`{cpf: codigo}`) é o que
+    veio na coluna "ID Fortes" da própria ficha — e a ficha manda: quem tem
+    código lá não é tocado aqui, e quando as duas discordam a tela diz quem.
+
+    Devolve `{"casados", "sem_cadastro", "repetidos", "divergentes", "avisos"}`.
     """
     from .db import conexao
 
     anotar = anotar or (lambda *a, **k: None)
+    da_ficha = da_ficha or {}
+    codigos_da_ficha = set(da_ficha.values())
     if not _pronto():
         return {"casados": 0, "sem_cadastro": [], "repetidos": [],
                 "avisos": ["a tabela do cadastro ainda não existe."]}
@@ -653,8 +750,8 @@ def atualizar_ids_fortes(anotar=None) -> dict:
     de_para: dict = {}
     repetidos: list = []
     for linha in valores[linha_do_cabecalho + 1:]:
-        id_fortes = " ".join(str(
-            linha[i_id] if i_id < len(linha) else "").split())
+        id_fortes = normalizar_id_fortes(
+            linha[i_id] if i_id < len(linha) else "")
         cpf = so_digitos(linha[i_cpf] if i_cpf < len(linha) else "")
         if not id_fortes or len(cpf) != 11:
             continue
@@ -678,8 +775,15 @@ def atualizar_ids_fortes(anotar=None) -> dict:
     # código e não vai achar a pessoa.
     casados = 0
     sem_cadastro: list = []
+    divergentes: list = []
     with conexao() as conn:
         for id_fortes, cpf in de_para.items():
+            # A ficha manda: quem tem código lá não é tocado, e um código que a
+            # ficha deu a OUTRA pessoa não é repetido aqui.
+            if cpf in da_ficha or id_fortes in codigos_da_ficha:
+                if da_ficha.get(cpf) != id_fortes:
+                    divergentes.append(id_fortes)
+                continue
             cur = conn.execute(
                 "UPDATE analisesps.colaborador SET id_fortes = ? WHERE cpf = ?",
                 (id_fortes, cpf))
@@ -702,12 +806,19 @@ def atualizar_ids_fortes(anotar=None) -> dict:
             f"{len(sem_cadastro)} código(s) do Fortes são de gente que não está "
             "no cadastro. A folha vai encontrar esses códigos e não vai achar a "
             "pessoa.")
+    if divergentes:
+        avisos.append(
+            f"{len(divergentes)} código(s) da aba \"{ABA_ID_FORTES}\" discordam "
+            f"da ficha da pessoa ({', '.join(sorted(divergentes)[:5])}"
+            f"{'…' if len(divergentes) > 5 else ''}). Valeu a ficha; vale a pena "
+            "corrigir a aba para as duas não contarem histórias diferentes.")
 
     logger.info("Análise de SPs: de/para do ID Fortes — %d casado(s), "
                 "%d sem cadastro, %d repetido(s).",
                 casados, len(sem_cadastro), len(repetidos))
     return {"casados": casados, "sem_cadastro": sem_cadastro,
-            "repetidos": repetidos, "avisos": avisos}
+            "repetidos": repetidos, "divergentes": sorted(divergentes),
+            "avisos": avisos}
 
 
 def tem_id_fortes() -> bool:
@@ -735,7 +846,10 @@ def de_para_do_fortes() -> dict:
     linhas = consultar(
         "SELECT id_fortes, cpf, nome FROM analisesps.colaborador "
         " WHERE id_fortes <> ''")
-    return {l[0]: {"cpf": l[1], "nome": l[2]} for l in linhas}
+    # A chave sai normalizada (seis dígitos): um código gravado antes como
+    # "4031" continua casando com o "004031" da folha.
+    return {normalizar_id_fortes(l[0]): {"cpf": l[1], "nome": l[2]}
+            for l in linhas}
 
 
 # ---------------------------------------------------------------------------

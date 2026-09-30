@@ -844,3 +844,106 @@ def test_o_CODIGO_da_obra_e_a_observacao_entram_no_cadastro(banco_cadastro):
     assert col.resolver_obra(sem_codigo, {}) == "", (
         "sem como saber, fica vazio — que é uma pergunta aberta, e é melhor do "
         "que mostrar o nome por extenso no lugar do código")
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — O CÓDIGO DO FORTES NA PRÓPRIA FICHA
+#
+# *"Vários colaboradores estão no cadastro, mas diz que não tá."* A ficha dele
+# tinha o código 004031 na última coluna da aba "Dados Documentos"; o sistema só
+# lia a aba separada "ID Fortes", onde a pessoa (admitida dias antes) não estava.
+# ---------------------------------------------------------------------------
+CABECALHO_COM_ID = CABECALHO_DE_VERDADE + ["ID Fortes"]
+I_ID = len(CABECALHO_DE_VERDADE)
+
+
+def _aba_com_id(*pessoas):
+    linhas = {2: {i: str(i + 1) for i in range(len(CABECALHO_COM_ID))}}
+    for n, dados in enumerate(pessoas, start=3):
+        linhas[n] = dados
+    return AbaFalsa(CABECALHO_COM_ID, linhas)
+
+
+def test_o_codigo_da_FICHA_casa_a_pessoa_mesmo_fora_da_aba_separada(banco_cadastro, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+    aba = _aba_com_id({I_CPF: "127.348.894-63", I_NOME: "ABRAAO", I_ID: "004031"})
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba, de_para=[["ID Fortes", "CPF"]]))
+
+    resultado = col.atualizar()
+
+    assert col.de_para_do_fortes()["004031"]["cpf"] == "12734889463"
+    assert resultado["com_id_fortes"] >= 1
+
+
+def test_o_codigo_guardado_como_NUMERO_ganha_os_zeros_da_frente(banco_cadastro, monkeypatch):
+    """A planilha às vezes guarda "004031" como o número 4031."""
+    from app.apps.analisesps import colaboradores as col
+    aba = _aba_com_id({I_CPF: "127.348.894-63", I_NOME: "ABRAAO", I_ID: "4031"})
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba, de_para=[["ID Fortes", "CPF"]]))
+    col.atualizar()
+    assert "004031" in col.de_para_do_fortes()
+
+
+def test_a_ficha_MANDA_e_a_aba_separada_so_completa(banco_cadastro, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+    aba = _aba_com_id(
+        {I_CPF: "997.133.493-34", I_NOME: "GERLANIO", I_ID: "000099"},  # ficha diz 99
+        {I_CPF: "035.134.413-63", I_NOME: "LUELIA"})                    # sem código na ficha
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba))   # a aba separada diz 13 e 387
+
+    resultado = col.atualizar()
+
+    de_para = col.de_para_do_fortes()
+    assert de_para["000099"]["cpf"] == "99713349334", "vale a ficha"
+    assert "000013" not in de_para, "a aba separada não sobrescreve a ficha"
+    assert de_para["000387"]["cpf"] == "03513441363", "a aba separada completa"
+    assert any("discordam da ficha" in a for a in resultado["avisos"])
+
+
+def test_ficha_SEM_codigo_nao_apaga_o_que_a_aba_separada_deu(banco_cadastro, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+    aba = _aba_com_id({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"})
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba))
+    col.atualizar()
+    col.atualizar()
+    assert col.de_para_do_fortes()["000013"]["cpf"] == "99713349334"
+
+
+def test_o_MESMO_codigo_em_duas_FICHAS_vira_aviso_e_vale_a_primeira(banco_cadastro, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+    aba = _aba_com_id(
+        {I_CPF: "997.133.493-34", I_NOME: "GERLANIO", I_ID: "004031"},
+        {I_CPF: "035.134.413-63", I_NOME: "LUELIA", I_ID: "004031"})
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba, de_para=[["ID Fortes", "CPF"]]))
+
+    resultado = col.atualizar()
+    assert col.de_para_do_fortes()["004031"]["cpf"] == "99713349334"
+    assert any("mais de uma ficha" in a for a in resultado["avisos"])
+
+
+def test_codigo_que_MUDOU_DE_DONO_na_ficha_sai_do_antigo(banco_cadastro, monkeypatch):
+    """Uma carga antiga da aba separada deu 000013 a GERLANIO; a ficha agora diz
+    que 000013 é de LUELIA. Não pode ficar com os dois."""
+    from app.apps.analisesps import colaboradores as col
+    aba = _aba_com_id({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"},
+                      {I_CPF: "035.134.413-63", I_NOME: "LUELIA"})
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba))
+    col.atualizar()
+    assert col.de_para_do_fortes()["000013"]["cpf"] == "99713349334"
+
+    aba = _aba_com_id({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"},
+                      {I_CPF: "035.134.413-63", I_NOME: "LUELIA", I_ID: "000013"})
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba))
+    col.atualizar()
+    assert col.de_para_do_fortes()["000013"]["cpf"] == "03513441363"
+    assert col.por_cpf("99713349334")["id_fortes"] == ""
+
+
+def test_a_MATRICULA_da_ficha_nao_e_confundida_com_o_codigo_do_fortes(banco_cadastro, monkeypatch):
+    """Na ficha, "Matrícula" é o CPF com uma letra ("127348894A") — outra coisa."""
+    from app.apps.analisesps import colaboradores as col
+    aba = _aba_com({I_CPF: "127.348.894-63", I_NOME: "ABRAAO", 2: "127348894A"})
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba, de_para=[["ID Fortes", "CPF"]]))
+    col.atualizar()
+    assert "127348894A" not in col.de_para_do_fortes()
+
