@@ -8137,3 +8137,35 @@ def test_quem_NAO_CASOU_tem_o_nome_abrindo_o_diagnostico(app, monkeypatch):
     assert "29/09/2026 10:00" in miolo
     assert ">vazio</span>" in miolo
     assert cliente.get("/analisesps/folha/1/pendente/999999").status_code == 404
+
+
+def test_quem_NAO_CASOU_nasce_DESMARCADO_e_fora_do_vai_receber(app, monkeypatch):
+    """*"Ele está marcado e eu não consigo desmarcar. Ou seja, eu não tenho gestão
+    no pagamento."* Sem CPF não há pagamento: a caixa não pode dizer que há."""
+    import re
+    from app.apps.analisesps import colaboradores
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    monkeypatch.setattr(colaboradores, "de_para_do_fortes", lambda: {
+        "000013": {"cpf": "99713349334", "nome": "GERLANIO GOMES LIMA"}})
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    caixas = re.findall(r'<input type="checkbox" class="entra"[^>]*>', html)
+    desligadas = [c for c in caixas if "disabled" in c]
+    assert desligadas, "quem não casou tem a caixa desligada"
+    assert all("checked" not in c for c in desligadas), "e DESMARCADA"
+    assert "Não pode ser pago" in html
+    # O "Vai receber" é só o GERLANIO (1.074,64), não os dois.
+    lateral = html[:html.index('<main class="principal">')]
+    trecho = lateral[lateral.index("Vai receber"):lateral.index("Fora do pagamento")]
+    assert "1.074,64" in trecho and "2.437,20" not in trecho
+
+
+def test_o_NOME_nao_tem_cor_de_esmaecido():
+    """*"Tem outra pessoa com o nome esmaecido, clarinho. A impressão que dá é
+    que não vai entrar."* Era a cor de link."""
+    from pathlib import Path
+    css = Path("app/apps/analisesps/static/analisesps.css").read_text(encoding="utf-8")
+    bloco = css[css.index(".link-btn.nome-pessoa {"):]
+    bloco = bloco[:bloco.index("}")]
+    assert "color: var(--tinta)" in bloco
+

@@ -2532,7 +2532,13 @@ table.conciliacao td.no-omie { white-space: nowrap; }
 .dialogo h4 small { font-weight: 500; color: var(--tinta-suave); font-size: 12.5px; }
 
 /* O ponto de uma pessoa, dia a dia (janela que abre no nome) — 30/09/2026. */
-.link-btn.nome-pessoa { font-weight: 600; text-align: left; padding: 0; }
+/* ⚠️ O NOME COM A COR DO TEXTO, não a do link. Em azul-claro ele parecia
+   ESMAECIDO — o dono leu "este não vai entrar" em quem ia receber normalmente
+   (30/09/2026). O sublinhado pontilhado diz que clica; a cor não diz nada. */
+.link-btn.nome-pessoa { font-weight: 600; text-align: left; padding: 0;
+  color: var(--tinta); text-decoration: underline dotted var(--tinta-suave);
+  text-underline-offset: 3px; }
+.link-btn.nome-pessoa:hover { color: var(--azul); }
 .ponto-resumo { margin: 0 0 10px; }
 table.ponto-dia-a-dia td { vertical-align: top; }
 table.ponto-dia-a-dia tr.dia-sem-obra td { background: #F7F7F4; color: var(--tinta-suave); }

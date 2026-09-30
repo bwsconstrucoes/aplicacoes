@@ -96,6 +96,13 @@
     <div class="lat-num"><span>Fora do pagamento</span>
       <b>{{ montado.totais.valor_fora|moeda }}</b>
       <small>{{ montado.totais.fora }} que você tirou</small></div>
+    {% if montado.totais.nao_pagaveis %}
+      <div class="lat-num ruim"><span>Não pode ser pago</span>
+        <b>{{ montado.totais.valor_nao_pagavel|moeda }}</b>
+        <small>{{ montado.totais.nao_pagaveis }} sem cadastro ou com valor zero —
+          <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='sem_cadastro') }}"
+             >ver quem não casou</a></small></div>
+    {% endif %}
     <div class="lat-num {% if montado.totais.falta_apropriar %}ruim{% endif %}">
       <span>Sem obra</span>
       <b>{{ montado.totais.falta_apropriar|moeda }}</b>

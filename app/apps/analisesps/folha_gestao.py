@@ -607,7 +607,15 @@ def montar(folha_id: int, filtros=None) -> dict:
             "situacao": situacao,
             "situacao_rotulo": ROTULO_DA_SITUACAO.get(situacao, situacao),
             "selo": SELO_DA_SITUACAO.get(situacao, ""),
-            "entra": not pessoa.get("fora"),
+            # ⚠️ "ENTRA" É "VAI SER PAGO DE VERDADE" — 30/09/2026. Era só "você não
+            # tirou", e quem não casou com o cadastro aparecia MARCADO e travado:
+            # a tela dizia que ia pagar alguém que o arquivo não paga (sem CPF não
+            # há pagamento), e ele não conseguia desmarcar. O dono: *"ele está
+            # marcado e eu não consigo desmarcar. Ou seja, eu não tenho gestão no
+            # pagamento."* Agora sem CPF e valor zero nascem DESMARCADOS, com o
+            # motivo escrito, e não entram no "Vai receber".
+            "entra": (not pessoa.get("fora") and bool(pessoa.get("cpf"))
+                      and _dinheiro(pessoa.get("valor")) > 0),
             "tem_ajuste": bool(ajuste),
             "ajuste": ajuste,
             "dias_empatados": sorted({d["data"] for d in
@@ -629,8 +637,15 @@ def montar(folha_id: int, filtros=None) -> dict:
         "valor_entra": sum((_dinheiro(p["valor"]) for p in entram),
                            Decimal("0.00")),
         "fora": contagem.get(FORA, 0),
+        # Só quem VOCÊ tirou — quem não pode ser pago (sem cadastro, valor zero)
+        # tem o seu próprio número, e misturar os dois esconderia os dois.
         "valor_fora": sum((_dinheiro(p["valor"]) for p in pessoas
-                           if not p["entra"]), Decimal("0.00")),
+                           if p.get("fora")), Decimal("0.00")),
+        "nao_pagaveis": sum(1 for p in pessoas
+                            if not p.get("fora") and not p["entra"]),
+        "valor_nao_pagavel": sum((_dinheiro(p["valor"]) for p in pessoas
+                                  if not p.get("fora") and not p["entra"]),
+                                 Decimal("0.00")),
         "sem_obra": contagem.get(SEM_OBRA, 0),
         "sem_cadastro": contagem.get(SEM_CADASTRO, 0),
         "empatados": contagem.get(EMPATE, 0),

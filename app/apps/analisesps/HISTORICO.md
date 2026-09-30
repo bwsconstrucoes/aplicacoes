@@ -10526,6 +10526,22 @@ Agora **valor zero também desliga** (o arquivo de pagamento já pulava: o porta
 recusa), e a coluna Situação escreve o motivo ("não dá para marcar: sem
 cadastro" / "valor zero").
 
+**6. (mesma leva, relato seguinte) "Um está fora do cadastro, com o nome bem
+vivo, marcado, e eu não consigo desmarcar. Outro está com o nome esmaecido,
+clarinho — parece que não vai entrar — e eu consigo marcar. Não deu para
+entender a lógica."** — Eram dois defeitos meus:
+- **O nome clarinho** era a cor de link (azul-claro) que o nome ganhou quando
+  passou a abrir o analítico. Agora tem a cor do texto, com sublinhado
+  pontilhado.
+- **Quem não casou aparecia MARCADO e travado** — a tela dizia que ia pagar
+  alguém que o arquivo não paga (sem CPF não há pagamento), e ele não tinha
+  como tirar. E o **"Vai receber" somava essa gente**. Agora `entra` quer dizer
+  "vai ser pago de verdade": sem CPF e valor zero nascem **desmarcados**, com o
+  motivo, e não entram no "Vai receber". Na lateral, linha própria **"Não pode
+  ser pago"** (valor e quantos, com "ver quem não casou"). "Fora do pagamento"
+  voltou a ser só quem ele tirou. O fechamento e o arquivo não mudam: eles já
+  não pagavam essa gente.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
