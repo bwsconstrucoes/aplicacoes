@@ -10189,8 +10189,8 @@ retomada automática só acontece no dia seguinte.
 | **trocar a credencial do Mobponto** (foi colada no chat) e depois Render + script | ele |
 | trazer o ponto de 09/2026 de novo | ele |
 
-**Verificado:** testes do ponto (58, com banco de verdade) e das telas; a
-aplicação importa. Suíte inteira em andamento no momento do commit.
+**Verificado:** suíte inteira — 7.612 passando, 145 pulados, zero falhas —
+com os 58 testes do ponto em banco de verdade; a aplicação importa.
 **NÃO verificado:** o Mobponto de verdade.
 
 ---
