@@ -180,12 +180,24 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
         folha_id = cur.fetchone()[0]
         cur.close()
 
-        conn.executemany(
-            "INSERT INTO analisesps.folha_linha "
-            "  (folha_id, id_fortes, nome, valor, filial_codigo, filial_nome) "
-            " VALUES (?,?,?,?,?,?)",
-            [(folha_id, l.id_fortes, l.nome, l.valor, l.filial_codigo,
-              l.filial_nome) for l in lida.linhas])
+        if tem_setor():
+            conn.executemany(
+                "INSERT INTO analisesps.folha_linha "
+                "  (folha_id, id_fortes, nome, valor, filial_codigo, filial_nome,"
+                "   setor_codigo, setor_nome) "
+                " VALUES (?,?,?,?,?,?,?,?)",
+                [(folha_id, l.id_fortes, l.nome, l.valor, l.filial_codigo,
+                  l.filial_nome, l.setor_codigo, l.setor_nome)
+                 for l in lida.linhas])
+        else:
+            # Antes do botão "Aplicar atualizações do banco" (migração 038): a
+            # folha entra sem o setor, do jeito de antes.
+            conn.executemany(
+                "INSERT INTO analisesps.folha_linha "
+                "  (folha_id, id_fortes, nome, valor, filial_codigo, filial_nome) "
+                " VALUES (?,?,?,?,?,?)",
+                [(folha_id, l.id_fortes, l.nome, l.valor, l.filial_codigo,
+                  l.filial_nome) for l in lida.linhas])
         conn.commit()
 
     # CASA COM O CADASTRO NA HORA: a tela que vem depois já mostra quem está
@@ -257,14 +269,59 @@ def abrir(folha_id: int) -> dict | None:
     if not linha:
         return None
     folha = _dicionario(linha)
+    com_setor = tem_setor()
+    folha["tem_setor"] = com_setor
     folha["linhas"] = [
         {"id": r[0], "id_fortes": r[1], "nome": r[2], "cpf": r[3],
-         "valor": r[4], "filial_codigo": r[5], "filial_nome": r[6]}
+         "valor": r[4], "filial_codigo": r[5], "filial_nome": r[6],
+         "setor_codigo": r[7] if com_setor else "",
+         "setor_nome": r[8] if com_setor else ""}
         for r in consultar(
             "SELECT id, id_fortes, nome, cpf, valor, filial_codigo, filial_nome"
-            "  FROM analisesps.folha_linha WHERE folha_id = ? "
+            + (", setor_codigo, setor_nome" if com_setor else "")
+            + "  FROM analisesps.folha_linha WHERE folha_id = ? "
             " ORDER BY lower(nome)", (int(folha_id),))]
     return folha
+
+
+def tem_setor() -> bool:
+    """A migração 038 já rodou? Sem ela a folha funciona, só sem o setor."""
+    from .db import tem_coluna
+    return tem_coluna("folha_linha", "setor_nome")
+
+
+# O setor que pede atenção antes de pagar. A contabilidade já separou essa gente
+# no arquivo — "AFASTADO INSS", "DESATIVAR" —, e pagar folha a quem está afastado
+# ou saindo é o erro que ninguém vê numa lista de 400 nomes.
+PALAVRAS_DE_ATENCAO = ("AFASTAD", "DESATIV", "INSS", "LICEN", "DEMIT")
+
+
+def setor_pede_atencao(setor_nome: str) -> bool:
+    nome = str(setor_nome or "").upper()
+    return any(p in nome for p in PALAVRAS_DE_ATENCAO)
+
+
+def setor_curto(setor_nome: str) -> str:
+    """"CONSTRUTORA/AFASTADO INSS" → "AFASTADO INSS": a filial já está na
+    linha, e repetir o nome dela em cada pessoa só empurra o que importa."""
+    nome = " ".join(str(setor_nome or "").split())
+    return nome.rsplit("/", 1)[-1].strip() if "/" in nome else nome
+
+
+def totais_por_setor(folha_id: int) -> list:
+    """Quanto cada setor soma nesta folha — a mesma conferência da filial, um
+    nível abaixo. Vazio antes da migração 038 ou numa folha sem setor."""
+    from .db import consultar
+    if not _pronto() or not tem_setor():
+        return []
+    linhas = consultar(
+        "SELECT filial_codigo, setor_codigo, max(setor_nome), count(*), sum(valor) "
+        "  FROM analisesps.folha_linha WHERE folha_id = ? AND setor_codigo <> '' "
+        " GROUP BY filial_codigo, setor_codigo ORDER BY setor_codigo",
+        (int(folha_id),))
+    return [{"filial": l[0], "codigo": l[1], "nome": l[2],
+             "curto": setor_curto(l[2]), "atencao": setor_pede_atencao(l[2]),
+             "pessoas": l[3], "total": l[4]} for l in linhas]
 
 
 def totais_por_filial(folha_id: int) -> list:

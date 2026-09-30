@@ -140,6 +140,10 @@ class LinhaDaFolha:
     valor: Decimal
     filial_codigo: str      # "001"
     filial_nome: str
+    # O SETOR dentro da filial ("001.08", "CONSTRUTORA/AFASTADO INSS"). Vazio
+    # quando o arquivo não separa por setor. Ver PADRAO_SETOR.
+    setor_codigo: str = ""
+    setor_nome: str = ""
 
 
 @dataclass
@@ -262,6 +266,7 @@ def interpretar(linhas_brutas) -> FolhaLida:
     """
     lida = FolhaLida(titulo="", empresa="", cnpj="", mes=None, ano=None)
     filial_atual = ("", "")
+    setor_atual = ("", "")
     vistos: dict = {}
 
     for bruta in linhas_brutas:
@@ -347,12 +352,21 @@ def interpretar(linhas_brutas) -> FolhaLida:
         if "empregado" in primeira.lower():
             continue
 
-        if PADRAO_SETOR.match(primeira):
-            continue      # o separador de setor — ver PADRAO_SETOR
+        setor = PADRAO_SETOR.match(primeira)
+        if setor:
+            # O separador de setor — ver PADRAO_SETOR. Guardado desde 30/09/2026
+            # (migração 038): vale para as pessoas que vêm abaixo dele.
+            setor_atual = (f"{setor.group(1)}.{setor.group(2)}",
+                           " ".join(setor.group(3).split()))
+            continue
 
         achado = PADRAO_FILIAL.match(primeira)
         if achado and not PADRAO_CODIGO.match(primeira):
             codigo, nome = achado.group(1), achado.group(2).strip()
+            if codigo != filial_atual[0]:
+                # Filial nova: o setor da anterior não vale aqui. (A mesma filial
+                # repetida depois da quebra de página mantém o setor.)
+                setor_atual = ("", "")
             filial_atual = (codigo, nome)
             # Nome mais COMPRIDO ganha: a repetição depois da quebra de página às
             # vezes vem cortada, e ficar com a versão cortada faria o relatório
@@ -372,7 +386,8 @@ def interpretar(linhas_brutas) -> FolhaLida:
                 continue
             lida.linhas.append(LinhaDaFolha(
                 id_fortes=primeira, nome=nome, valor=valor,
-                filial_codigo=filial_atual[0], filial_nome=filial_atual[1]))
+                filial_codigo=filial_atual[0], filial_nome=filial_atual[1],
+                setor_codigo=setor_atual[0], setor_nome=setor_atual[1]))
             continue
 
         # Qualquer outra coisa: não inventa. Guarda o aviso para a tela mostrar.

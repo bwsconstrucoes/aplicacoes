@@ -326,6 +326,10 @@ def montar(folha_id: int, filtros=None) -> dict:
     fichas = colaboradores.muitos_por_cpf(cpfs, ate=periodo[1] if periodo else None)
     obras_por_nome = colaboradores.codigos_das_obras()
 
+    # --- o setor que a contabilidade deu a cada pessoa (migração 038) ----
+    setor_por_id = {str(l.get("id_fortes") or ""): l.get("setor_nome") or ""
+                    for l in (folha.get("linhas") or [])}
+
     # --- a linha da tela --------------------------------------------------
     pessoas = []
     for pessoa in apropriado["pessoas"]:
@@ -333,7 +337,15 @@ def montar(folha_id: int, filtros=None) -> dict:
         ajuste = ajustes.get(pessoa.get("cpf") or "") or {}
         situacao = situacao_da_pessoa(pessoa, ficha)
         linha = dict(pessoa)
+        setor = setor_por_id.get(str(pessoa.get("id_fortes") or ""), "")
         linha.update({
+            # O SETOR DO FORTES — pedido dele em 30/09/2026: "vamos guardar essa
+            # informação e expor ela em tela". "AFASTADO INSS" e "DESATIVAR"
+            # ganham destaque: é a contabilidade dizendo que aquela pessoa pede
+            # conferência antes de pagar.
+            "setor": setor,
+            "setor_curto": folha_arquivo.setor_curto(setor),
+            "setor_atencao": folha_arquivo.setor_pede_atencao(setor),
             "nome_na_tela": (pessoa.get("nome_cadastro")
                              or pessoa.get("nome") or ""),
             "nome_contabilidade": pessoa.get("nome") or "",
@@ -437,6 +449,10 @@ def montar(folha_id: int, filtros=None) -> dict:
         "obras_sem_conta": [o for c in por_conta if c["sem_conta"]
                             for o in c["obras"]],
         "fases": sorted({p["fase"] for p in pessoas if p["fase"]}),
+        "setores": sorted({p["setor"] for p in pessoas if p.get("setor")}),
+        "setores_curtos": {p["setor"]: p["setor_curto"] for p in pessoas
+                           if p.get("setor")},
+        "em_setor_de_atencao": [p for p in pessoas if p.get("setor_atencao")],
         # AS DUAS VISÕES DA OBRA, pedido dele em 30/09/2026: *"tanto a obra do
         # cadastro (…) e a obra do ponto. Tem que ter essas duas visões."*
         #
@@ -463,6 +479,11 @@ def montar(folha_id: int, filtros=None) -> dict:
     }
 
 
+# O valor do filtro de setor que junta todos os setores que pedem atenção
+# (afastado, desativar…) — é o "ver só elas" do alerta da lateral.
+SETOR_DE_ATENCAO = "__atencao"
+
+
 def _filtrar(pessoas, filtros) -> list:
     """Recorta a lista. Filtro vazio não recorta nada.
 
@@ -475,6 +496,7 @@ def _filtrar(pessoas, filtros) -> list:
     obra = " ".join(str(filtros.get("obra") or "").split()).upper()
     obra_cadastro = " ".join(str(filtros.get("obra_cadastro") or "").split()).upper()
     fase = " ".join(str(filtros.get("fase") or "").split())
+    setor = " ".join(str(filtros.get("setor") or "").split())
     situacao = str(filtros.get("situacao") or "").strip()
     origem = str(filtros.get("origem") or "").strip()
 
@@ -499,6 +521,11 @@ def _filtrar(pessoas, filtros) -> list:
                             for x in (p.get("por_obra") or [])}:
                 continue
         if fase and (p.get("fase") or "") != fase:
+            continue
+        if setor == SETOR_DE_ATENCAO:
+            if not p.get("setor_atencao"):
+                continue
+        elif setor and (p.get("setor") or "") != setor:
             continue
         if situacao and p.get("situacao") != situacao:
             continue

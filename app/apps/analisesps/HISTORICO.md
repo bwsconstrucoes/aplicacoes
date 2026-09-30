@@ -10317,6 +10317,53 @@ importa.
 
 ---
 
+### Centésima trigésima leva (30/09) — o setor do Fortes, guardado e na tela
+
+Ele: *"Vamos guardar essa informação e expor ela em tela"* — o setor dentro da
+filial que o arquivo da contabilidade traz ("001.08 - CONSTRUTORA/AFASTADO
+INSS", "001.09 - CONSTRUTORA/DESATIVAR"), que a leva anterior passou a
+reconhecer mas jogava fora.
+
+**O que ficou:**
+
+- **Migração 038:** `setor_codigo` e `setor_nome` em `folha_linha`. Antes do
+  botão, a folha entra sem o setor (testado com as colunas apagadas).
+- **Leitura:** cada pessoa leva o setor da linha de setor acima dela; filial nova
+  zera o setor (a mesma filial repetida depois da quebra de página mantém).
+- **Na linha:** coluna **"Setor"** ao lado do Código, com o nome curto
+  ("AFASTADO INSS", sem repetir a filial — o nome inteiro fica no passar do
+  mouse).
+- **Destaque:** setor com AFASTAD, DESATIV, INSS, LICEN ou DEMIT
+  (`PALAVRAS_DE_ATENCAO`) ganha selo âmbar, e a lateral "Precisa da sua mão"
+  diz quantos são, com "ver só elas".
+- **Filtro "Setor (arquivo da contabilidade)"**, com a opção "só afastados e
+  desativar".
+- **Na janela "Divisão por obra":** o total **por setor**, com "confira" nos
+  que pedem atenção.
+- **As folhas já importadas não têm o setor** — o arquivo não fica guardado. É
+  importar o mesmo arquivo de novo: substitui a folha da mesma competência e
+  tipo, e as decisões dele (quem entra, obra ajustada, fechamento) são guardadas
+  por competência e CPF, então continuam. A tela diz isso quando a folha não
+  tem setor.
+
+**Decisão minha, a confirmar com ele:** a lista de palavras que marcam "pede
+atenção". Tirei das que ele mostrou (AFASTADO INSS, DESATIVAR) e acrescentei
+INSS, LICEN(ÇA) e DEMIT(IDO) por parecerem da mesma família. Se algum setor
+comum cair nisso, é tirar a palavra.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** e **apertar "Aplicar atualizações do banco" no mesmo momento** (migração 038) | ele dizer "pode" |
+| importar de novo o arquivo de 09/2026 (quinzena) para trazer o setor | ele |
+| conferir se a lista de palavras de "pede atenção" está boa | ele |
+
+**Verificado:** testes da leitura, do banco (com e sem a 038) e da tela; a
+aplicação importa. Suíte inteira em andamento no momento do commit.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

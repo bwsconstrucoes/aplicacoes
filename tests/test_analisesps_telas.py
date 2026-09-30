@@ -7812,3 +7812,47 @@ def test_os_termos_do_filtro_de_ORIGEM_dizem_o_que_aconteceu(app, monkeypatch):
     assert "Como a obra foi definida" in html
     assert "pelas batidas de ponto" in html
     assert "De onde veio a obra" not in html and "da minha mão" not in html
+
+
+def _com_setores(monkeypatch, setor_gerlanio="CONSTRUTORA/AFASTADO INSS"):
+    """A folha de teste com o setor de cada pessoa preenchido."""
+    from app.apps.analisesps import folha_arquivo as fa
+    original = fa.abrir
+
+    def abrir(i):
+        folha = original(i)
+        folha["tem_setor"] = True
+        for l in folha["linhas"]:
+            l["setor_nome"] = setor_gerlanio if l["id_fortes"] == "000013" else ""
+        return folha
+    monkeypatch.setattr(fa, "abrir", abrir)
+
+
+def test_o_SETOR_aparece_na_linha_e_o_de_afastado_ganha_destaque(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _com_setores(monkeypatch)
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    assert "<th>Setor</th>" in html
+    assert ">AFASTADO INSS</span>" in html, "o nome curto, sem repetir a filial"
+    assert "em setor de afastado ou" in html
+    assert "setor=__atencao" in html
+
+
+def test_o_filtro_de_SETOR_recorta_e_o_de_atencao_junta_os_afastados(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _com_setores(monkeypatch)
+    cliente = _como_mestre(app)
+
+    so_atencao = cliente.get("/analisesps/folha/1?setor=__atencao").get_data(as_text=True)
+    assert "GERLANIO" in so_atencao
+    outro = cliente.get("/analisesps/folha/1?setor=CONSTRUTORA%2FESCRITORIO").get_data(as_text=True)
+    assert "Nenhuma pessoa com esses filtros" in outro
+
+
+def test_setor_comum_NAO_vira_alerta(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _com_setores(monkeypatch, setor_gerlanio="CONSTRUTORA/ESCRITORIO")
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert ">ESCRITORIO</span>" in html
+    assert "em setor de afastado ou" not in html

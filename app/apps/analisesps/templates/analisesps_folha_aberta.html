@@ -112,10 +112,23 @@
      O QUE TRAVA O PAGAMENTO — curto, na lateral. Cada linha é um filtro: a
      decisão se toma na linha da pessoa, na lista.
      ------------------------------------------------------------------------ #}
-  {% if criticas and (criticas.pendentes or criticas.sairam or criticas.saindo) %}
+  {% if (criticas and (criticas.pendentes or criticas.sairam or criticas.saindo))
+        or montado.em_setor_de_atencao %}
   <div class="cartao lateral-folha">
     <b class="lateral-titulo">Precisa da sua mão antes de pagar</b>
-    {% if criticas.pendentes %}
+    {% if montado.em_setor_de_atencao %}
+      {# O setor que a CONTABILIDADE deu à pessoa no arquivo — afastado pelo INSS,
+         para desativar. Não é o sistema adivinhando: é o Fortes dizendo. #}
+      <div class="lat-critica atencao">
+        <b>{{ montado.em_setor_de_atencao|length }} em setor de afastado ou
+          desativar</b> no arquivo da contabilidade.
+        <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, setor='__atencao') }}"
+           >ver só elas</a>
+        <small>Confira antes de pagar: quem está afastado pelo INSS ou marcado
+          para desativar normalmente não recebe esta folha.</small>
+      </div>
+    {% endif %}
+    {% if criticas and criticas.pendentes %}
       <div class="lat-critica erro">
         <b>{{ criticas.pendentes|length }} não casaram com o cadastro</b>
         — {{ criticas.total_pendente|moeda }} sem dono.
@@ -126,7 +139,7 @@
           colaboradores; depois "Atualizar cadastro".</small>
       </div>
     {% endif %}
-    {% if criticas.sairam %}
+    {% if criticas and criticas.sairam %}
       <div class="lat-critica erro">
         <b>{{ criticas.sairam|length }} já saíram</b> —
         {{ criticas.total_de_quem_saiu|moeda }} nesta folha.
@@ -151,7 +164,7 @@
         </ul>
       </div>
     {% endif %}
-    {% if criticas.saindo %}
+    {% if criticas and criticas.saindo %}
       <div class="lat-critica atencao">
         <b>{{ criticas.saindo|length }} estão saindo.</b>
         <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='saindo') }}"
@@ -293,6 +306,37 @@
     </div>
   </div>
 
+  <div class="filtro {% if montado.filtros.setor %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Setor (arquivo da contabilidade)</span>
+      {% if montado.filtros.setor %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      {% if montado.setores %}
+        <select name="setor" aria-label="Setor">
+          <option value="">qualquer setor</option>
+          {% if montado.em_setor_de_atencao %}
+            <option value="__atencao" {% if montado.filtros.setor == '__atencao' %}selected{% endif %}
+              >só afastados e desativar</option>
+          {% endif %}
+          {% for s in montado.setores %}
+            <option value="{{ s }}" {% if montado.filtros.setor == s %}selected{% endif %}
+              >{{ montado.setores_curtos.get(s, s) }}</option>
+          {% endfor %}
+        </select>
+      {% else %}
+        <p class="cartao-dica" style="margin:0">
+          {% if folha.tem_setor %}Nenhuma pessoa desta folha tem setor. Se ela foi
+            importada antes de 30/09/2026, importe o mesmo arquivo de novo para
+            trazê-lo — o que você já decidiu (quem entra, obra ajustada)
+            continua.
+          {% else %}Falta aplicar a atualização do banco que guarda o setor.{% endif %}
+        </p>
+      {% endif %}
+    </div>
+  </div>
+
   <div class="filtro {% if montado.filtros.origem %}aberto{% endif %}">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
       <span>Como a obra foi definida</span>
@@ -319,7 +363,7 @@
 
   {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
         or montado.filtros.situacao or montado.filtros.origem
-        or montado.filtros.obra_cadastro %}
+        or montado.filtros.obra_cadastro or montado.filtros.setor %}
     <div style="margin-top:10px">
       <a class="btn secundario"
          href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}"
@@ -394,7 +438,7 @@
 
 {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
       or montado.filtros.situacao or montado.filtros.origem
-      or montado.filtros.obra_cadastro %}
+      or montado.filtros.obra_cadastro or montado.filtros.setor %}
   <p class="cartao-dica" style="margin:0 0 8px">
     O filtro mostra <b>{{ montado.quantas_mostradas }}</b> de
     {{ montado.totais.pessoas }} pessoa(s), somando
@@ -428,6 +472,9 @@
           <th>Nome</th>
           <th>CPF</th>
           <th>Código</th>
+          {# O SETOR QUE A CONTABILIDADE DEU (migração 038) — ao lado do código,
+             porque os dois vêm do mesmo arquivo. #}
+          <th>Setor</th>
           <th>Fase Atual</th>
           <th>Obra — do ponto</th>
           {# SEMPRE AO LADO DA DO PONTO, para confrontar (pedido dele, 30/09/2026):
@@ -484,6 +531,14 @@
               >fora do cadastro</span>{% endif %}
           </td>
           <td>{{ p.id_fortes }}</td>
+          <td>
+            {% if p.setor_atencao %}
+              <span class="selo saindo" title="{{ p.setor }} — confira antes de pagar"
+                >{{ p.setor_curto }}</span>
+            {% elif p.setor %}
+              <span title="{{ p.setor }}">{{ p.setor_curto }}</span>
+            {% else %}<span class="cartao-dica">—</span>{% endif %}
+          </td>
           <td>{{ p.fase or '—' }}</td>
           <td>
             {% if p.obras_resumo %}
@@ -546,7 +601,7 @@
            pessoa faria 491 chamadas para conferir uma folha. #}
         <tr class="dias-da-pessoa" hidden>
           <td></td>
-          <td colspan="10">
+          <td colspan="11">
             {% if p.por_dia %}
               <div class="dias-lista">
                 {% for d in p.por_dia %}
@@ -636,7 +691,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="11" class="cartao-dica">
+        <tr><td colspan="12" class="cartao-dica">
           Nenhuma pessoa com esses filtros.
         </td></tr>
       {% endfor %}
@@ -753,6 +808,27 @@
           <tr><td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
             <td class="num">{{ f.pessoas }}</td>
             <td class="num">{{ f.total|moeda }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if setores %}
+  <h4>Por setor <small>como a contabilidade separou as pessoas no arquivo</small></h4>
+  <div class="tabela-wrap">
+    <div class="tabela-rolagem livre">
+      <table class="sps">
+        <thead><tr><th>Setor</th><th class="num">Pessoas</th>
+          <th class="num">Total</th></tr></thead>
+        <tbody>
+        {% for s in setores %}
+          <tr class="{{ 'linha-alerta' if s.atencao }}">
+            <td>{{ s.codigo }} — {{ s.nome }}
+              {% if s.atencao %}<span class="selo saindo">confira</span>{% endif %}</td>
+            <td class="num">{{ s.pessoas }}</td>
+            <td class="num">{{ s.total|moeda }}</td></tr>
         {% endfor %}
         </tbody>
       </table>

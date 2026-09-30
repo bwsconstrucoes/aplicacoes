@@ -603,3 +603,82 @@ def test_o_panorama_vazio_nao_estoura(banco_folha_arquivo):
     assert panorama["pronto"] is True
     assert panorama["folhas"] == []
     assert panorama["total"] == Decimal("0")
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — O SETOR DO FORTES, GUARDADO (migração 038)
+#
+# Ele: *"vamos guardar essa informação e expor ela em tela"* — o setor dentro da
+# filial ("001.08 - CONSTRUTORA/AFASTADO INSS") era jogado fora na leitura.
+# ---------------------------------------------------------------------------
+def _folha_com_setores():
+    return [
+        ["Folha Sintética - Adiantamento de Folha", "", "", "", ": 1"],
+        ["Empresa:", "BWS CONSTRUCOES LTDA - CNPJ: 00.079.526/0001-09", "", "", ""],
+        ["Mês/Ano: 08/2026", "", "", "", ""],
+        ["Código", "Empregado", "", "", "Líquido"],
+        ["001 - CONSTRUTORA", "", "", "", ""],
+        ["001.01 - CONSTRUTORA/ESCRITORIO", "", "", "", ""],
+        ["000013", "GERLANIO GOMES LIMA", "", "", 1198.84],
+        ["Total: 001.01 - CONSTRUTORA/ESCRITORIO", "", "", "", 1198.84],
+        ["001.08 - CONSTRUTORA/AFASTADO INSS", "", "", "", ""],
+        ["000387", "LUELIA MADIDA GOMES TOMAS", "", "", 1000.00],
+        ["Total: 001 - CONSTRUTORA", "", "", "", 2198.84],
+        ["090 - OBRA X", "", "", "", ""],
+        ["000901", "FRANCISCO", "", "", 771.42],
+        ["Total: 090 - OBRA X", "", "", "", 771.42],
+        ["Total: Geral (3 Empregado(s))", "", "", "", 2970.26],
+        ["", "", "", "", "Fim"]]
+
+
+def test_o_SETOR_de_cada_pessoa_e_guardado_e_lido_de_volta(banco_folha_arquivo, monkeypatch):
+    from app.apps.analisesps import folha_arquivo as fa
+    from app.apps.analisesps import folha_sintetica as fs
+    linhas = _folha_com_setores()
+    monkeypatch.setattr(fs, "ler", lambda c: fs.interpretar(linhas))
+
+    feito = fa.importar(b"x", "folha.xls", tipo="quinzena", quem="T")
+    lidas = {l["id_fortes"]: l for l in fa.abrir(feito["id"])["linhas"]}
+
+    assert lidas["000013"]["setor_nome"] == "CONSTRUTORA/ESCRITORIO"
+    assert lidas["000387"]["setor_codigo"] == "001.08"
+    # Filial nova sem setor: não herda o setor da anterior.
+    assert lidas["000901"]["setor_nome"] == ""
+    assert feito["avisos"] == [], feito["avisos"]
+
+
+def test_o_total_por_SETOR_e_o_destaque_de_quem_pede_atencao(banco_folha_arquivo, monkeypatch):
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_arquivo as fa
+    from app.apps.analisesps import folha_sintetica as fs
+    linhas = _folha_com_setores()
+    monkeypatch.setattr(fs, "ler", lambda c: fs.interpretar(linhas))
+    feito = fa.importar(b"x", "folha.xls", tipo="quinzena", quem="T")
+
+    setores = {s["codigo"]: s for s in fa.totais_por_setor(feito["id"])}
+    assert setores["001.08"]["curto"] == "AFASTADO INSS"
+    assert setores["001.08"]["atencao"] is True
+    assert setores["001.01"]["atencao"] is False
+    assert setores["001.01"]["total"] == D("1198.84")
+
+
+def test_SEM_a_migracao_038_a_folha_entra_sem_o_setor(banco_analisesps_mutilado, banco_folha_arquivo, monkeypatch):
+    """O intervalo entre o código subir e o botão ser apertado."""
+    from sqlalchemy import text
+    from app.apps.analisesps import db
+    from app.apps.analisesps import folha_arquivo as fa
+    from app.apps.analisesps import folha_sintetica as fs
+    with db.obter_engine().connect() as conn:
+        conn.execute(text("ALTER TABLE analisesps.folha_linha DROP COLUMN setor_nome"))
+        conn.execute(text("ALTER TABLE analisesps.folha_linha DROP COLUMN setor_codigo"))
+        conn.commit()
+    db.esquecer_colunas()
+    linhas = _folha_com_setores()
+    monkeypatch.setattr(fs, "ler", lambda c: fs.interpretar(linhas))
+
+    feito = fa.importar(b"x", "folha.xls", tipo="quinzena", quem="T")
+    folha = fa.abrir(feito["id"])
+    assert len(folha["linhas"]) == 3
+    assert folha["tem_setor"] is False
+    assert fa.totais_por_setor(feito["id"]) == []
+    db.esquecer_colunas()
