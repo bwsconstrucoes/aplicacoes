@@ -2475,6 +2475,7 @@ def tela_folha_aberta(folha_id: int):
             "obra": request.args.get("obra") or "",
             "obra_cadastro": request.args.get("obra_cadastro") or "",
             "setor": request.args.get("setor") or "",
+            "filial": request.args.get("filial") or "",
             "fase": request.args.get("fase") or "",
             "situacao": request.args.get("situacao") or "",
             "origem": request.args.get("origem") or "",

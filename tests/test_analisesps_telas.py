@@ -7833,7 +7833,7 @@ def test_o_SETOR_aparece_na_linha_e_o_de_afastado_ganha_destaque(app, monkeypatc
     _com_setores(monkeypatch)
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
-    assert "<th>Setor</th>" in html
+    assert "<th>Contabilidade</th>" in html
     assert ">AFASTADO INSS</span>" in html, "o nome curto, sem repetir a filial"
     assert "em setor de afastado ou" in html
     assert "setor=__atencao" in html
@@ -7856,3 +7856,32 @@ def test_setor_comum_NAO_vira_alerta(app, monkeypatch):
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
     assert ">ESCRITORIO</span>" in html
     assert "em setor de afastado ou" not in html
+
+
+def test_a_OBRA_DA_CONTABILIDADE_aparece_na_linha_e_tem_filtro(app, monkeypatch):
+    """*"Isso aí é o nome da obra também (…) é o cadastro da contabilidade. Até
+    para a gente visualizar e entender se o cadastro da contabilidade está
+    batendo com o ponto."* A filial do arquivo é a obra na contabilidade."""
+    from app.apps.analisesps import folha_arquivo as fa
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    original = fa.abrir
+
+    def abrir(i):
+        folha = original(i)
+        for l in folha["linhas"]:
+            l["filial_codigo"], l["filial_nome"] = ("090", "OBRA ESTADIOITA CONST") \
+                if l["id_fortes"] == "000013" else ("001", "CONSTRUTORA")
+        return folha
+    monkeypatch.setattr(fa, "abrir", abrir)
+    cliente = _como_mestre(app)
+
+    html = cliente.get("/analisesps/folha/1").get_data(as_text=True)
+    assert "090 - OBRA ESTADIOITA CONST" in html
+    assert 'name="filial"' in html
+
+    so_090 = cliente.get("/analisesps/folha/1?filial=090+-+OBRA+ESTADIOITA+CONST"
+                         ).get_data(as_text=True)
+    assert "GERLANIO" in so_090
+    nenhuma = cliente.get("/analisesps/folha/1?filial=999+-+X").get_data(as_text=True)
+    assert "Nenhuma pessoa com esses filtros" in nenhuma
+

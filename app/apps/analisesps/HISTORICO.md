@@ -10346,6 +10346,17 @@ reconhecer mas jogava fora.
   por competência e CPF, então continuam. A tela diz isso quando a folha não
   tem setor.
 
+**E a filial, na linha, como "obra da contabilidade".** Ele, na mesma
+conversa: *"isso aí é o nome da obra também (…) é o cadastro da contabilidade.
+Até para a gente visualizar e entender se o cadastro da contabilidade está
+batendo com o ponto."* A coluna virou **"Contabilidade"**: a filial ("090 - OBRA
+ESTADIOITA …") e, abaixo, o setor. Filtro **"Obra da contabilidade"**. A linha
+agora tem as três obras lado a lado — ponto, cadastro, contabilidade. **Sem
+marca automática de diferença** entre a da contabilidade e a do ponto: uma
+escreve o nome da obra e a outra o código, e casar os dois por palpite marcaria
+diferença onde não há. Se ele quiser a marca, precisa de uma tabela de/para
+nome → código (a aba "C. Diários" talvez sirva).
+
 **Decisão minha, a confirmar com ele:** a lista de palavras que marcam "pede
 atenção". Tirei das que ele mostrou (AFASTADO INSS, DESATIVAR) e acrescentei
 INSS, LICEN(ÇA) e DEMIT(IDO) por parecerem da mesma família. Se algum setor
@@ -10355,7 +10366,7 @@ comum cair nisso, é tirar a palavra.
 
 | Falta | Depende de |
 |---|---|
-| **publicar** e **apertar "Aplicar atualizações do banco" no mesmo momento** (migração 038) | ele dizer "pode" |
+| **apertar "Aplicar atualizações do banco"** (migração 038) — publicado em 30/09/2026 com o "pode" dele | ele |
 | importar de novo o arquivo de 09/2026 (quinzena) para trazer o setor | ele |
 | conferir se a lista de palavras de "pede atenção" está boa | ele |
 

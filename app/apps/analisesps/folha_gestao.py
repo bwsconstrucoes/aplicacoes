@@ -329,6 +329,19 @@ def montar(folha_id: int, filtros=None) -> dict:
     # --- o setor que a contabilidade deu a cada pessoa (migração 038) ----
     setor_por_id = {str(l.get("id_fortes") or ""): l.get("setor_nome") or ""
                     for l in (folha.get("linhas") or [])}
+    # A FILIAL É A OBRA NO CADASTRO DA CONTABILIDADE ("090 - OBRA ESTADIOITA
+    # …"). Ele, em 30/09/2026: *"isso aí é o nome da obra também (…) é o
+    # cadastro da contabilidade. Até para a gente visualizar e entender se o
+    # cadastro da contabilidade está batendo com o ponto."* Mostrada ao lado da
+    # obra do ponto e da do cadastro — sem comparar sozinha: a contabilidade
+    # escreve o NOME da obra e o ponto o CÓDIGO, e casar os dois por palpite
+    # marcaria diferença onde não há.
+    filial_por_id = {
+        str(l.get("id_fortes") or ""):
+            " - ".join(x for x in (str(l.get("filial_codigo") or "").strip(),
+                                   " ".join(str(l.get("filial_nome") or "").split()))
+                       if x)
+        for l in (folha.get("linhas") or [])}
 
     # --- a linha da tela --------------------------------------------------
     pessoas = []
@@ -343,6 +356,7 @@ def montar(folha_id: int, filtros=None) -> dict:
             # informação e expor ela em tela". "AFASTADO INSS" e "DESATIVAR"
             # ganham destaque: é a contabilidade dizendo que aquela pessoa pede
             # conferência antes de pagar.
+            "filial": filial_por_id.get(str(pessoa.get("id_fortes") or ""), ""),
             "setor": setor,
             "setor_curto": folha_arquivo.setor_curto(setor),
             "setor_atencao": folha_arquivo.setor_pede_atencao(setor),
@@ -450,6 +464,7 @@ def montar(folha_id: int, filtros=None) -> dict:
                             for o in c["obras"]],
         "fases": sorted({p["fase"] for p in pessoas if p["fase"]}),
         "setores": sorted({p["setor"] for p in pessoas if p.get("setor")}),
+        "filiais": sorted({p["filial"] for p in pessoas if p.get("filial")}),
         "setores_curtos": {p["setor"]: p["setor_curto"] for p in pessoas
                            if p.get("setor")},
         "em_setor_de_atencao": [p for p in pessoas if p.get("setor_atencao")],
@@ -497,6 +512,7 @@ def _filtrar(pessoas, filtros) -> list:
     obra_cadastro = " ".join(str(filtros.get("obra_cadastro") or "").split()).upper()
     fase = " ".join(str(filtros.get("fase") or "").split())
     setor = " ".join(str(filtros.get("setor") or "").split())
+    filial = " ".join(str(filtros.get("filial") or "").split())
     situacao = str(filtros.get("situacao") or "").strip()
     origem = str(filtros.get("origem") or "").strip()
 
@@ -521,6 +537,8 @@ def _filtrar(pessoas, filtros) -> list:
                             for x in (p.get("por_obra") or [])}:
                 continue
         if fase and (p.get("fase") or "") != fase:
+            continue
+        if filial and " ".join(str(p.get("filial") or "").split()) != filial:
             continue
         if setor == SETOR_DE_ATENCAO:
             if not p.get("setor_atencao"):

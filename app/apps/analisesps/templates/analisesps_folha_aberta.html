@@ -306,6 +306,28 @@
     </div>
   </div>
 
+  <div class="filtro {% if montado.filtros.filial %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Obra da contabilidade</span>
+      {% if montado.filtros.filial %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      {% if montado.filiais %}
+        <select name="filial" aria-label="Obra da contabilidade">
+          <option value="">qualquer obra</option>
+          {% for f in montado.filiais %}
+            <option value="{{ f }}" {% if montado.filtros.filial == f %}selected{% endif %}>{{ f }}</option>
+          {% endfor %}
+        </select>
+        <p class="cartao-dica" style="margin:6px 0 0">A filial do arquivo do
+          Fortes — é a obra como a contabilidade a cadastrou.</p>
+      {% else %}
+        <p class="cartao-dica" style="margin:0">O arquivo não trouxe filial.</p>
+      {% endif %}
+    </div>
+  </div>
+
   <div class="filtro {% if montado.filtros.setor %}aberto{% endif %}">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
       <span>Setor (arquivo da contabilidade)</span>
@@ -363,7 +385,8 @@
 
   {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
         or montado.filtros.situacao or montado.filtros.origem
-        or montado.filtros.obra_cadastro or montado.filtros.setor %}
+        or montado.filtros.obra_cadastro or montado.filtros.setor
+        or montado.filtros.filial %}
     <div style="margin-top:10px">
       <a class="btn secundario"
          href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}"
@@ -438,7 +461,8 @@
 
 {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
       or montado.filtros.situacao or montado.filtros.origem
-      or montado.filtros.obra_cadastro or montado.filtros.setor %}
+      or montado.filtros.obra_cadastro or montado.filtros.setor
+      or montado.filtros.filial %}
   <p class="cartao-dica" style="margin:0 0 8px">
     O filtro mostra <b>{{ montado.quantas_mostradas }}</b> de
     {{ montado.totais.pessoas }} pessoa(s), somando
@@ -472,9 +496,11 @@
           <th>Nome</th>
           <th>CPF</th>
           <th>Código</th>
-          {# O SETOR QUE A CONTABILIDADE DEU (migração 038) — ao lado do código,
-             porque os dois vêm do mesmo arquivo. #}
-          <th>Setor</th>
+          {# O QUE A CONTABILIDADE DIZ: a filial (que é a obra no cadastro dela) e o
+             setor dentro dela. Ao lado do código, porque os três vêm do mesmo
+             arquivo; e na mesma linha das obras do ponto e do cadastro, para
+             confrontar as três. #}
+          <th>Contabilidade</th>
           <th>Fase Atual</th>
           <th>Obra — do ponto</th>
           {# SEMPRE AO LADO DA DO PONTO, para confrontar (pedido dele, 30/09/2026):
@@ -532,12 +558,13 @@
           </td>
           <td>{{ p.id_fortes }}</td>
           <td>
+            {% if p.filial %}{{ p.filial }}{% else %}<span class="cartao-dica">—</span>{% endif %}
             {% if p.setor_atencao %}
-              <span class="selo saindo" title="{{ p.setor }} — confira antes de pagar"
+              <br><span class="selo saindo" title="setor {{ p.setor }} — confira antes de pagar"
                 >{{ p.setor_curto }}</span>
             {% elif p.setor %}
-              <span title="{{ p.setor }}">{{ p.setor_curto }}</span>
-            {% else %}<span class="cartao-dica">—</span>{% endif %}
+              <br><span class="cartao-dica" title="setor {{ p.setor }}">{{ p.setor_curto }}</span>
+            {% endif %}
           </td>
           <td>{{ p.fase or '—' }}</td>
           <td>
