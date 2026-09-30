@@ -72,6 +72,126 @@
   </div>
   {% endif %}
 
+  {# ------------------------------------------------------------------------
+     ESTA FOLHA, EM NÚMEROS — na lateral, não no alto da tela. Pedido dele em
+     30/09/2026: *"tá muito poluído a parte superior. Aproveite mais o sidebar
+     para informações."* Os quatro quadros grandes viraram quatro linhas; a
+     divisão por obra abre numa janela, por cima; e a caixa de trazer outra
+     folha fica aqui, com a lista do que já veio a um clique.
+     ------------------------------------------------------------------------ #}
+  <div class="cartao lateral-folha">
+    <b class="lateral-titulo">Esta folha</b>
+    <p class="cartao-dica">
+      importada em {{ folha.importado_em|momento_br }}{% if folha.importado_por %}
+      por {{ folha.importado_por }}{% endif %}{% if montado.periodo %} · ponto
+      de <b>{{ montado.periodo[0]|data_br }}</b> a
+      <b>{{ montado.periodo[1]|data_br }}</b>{% endif %}
+    </p>
+    <div class="lat-num"><span>A folha inteira</span>
+      <b>{{ montado.totais.total_da_folha|moeda }}</b>
+      <small>{{ montado.totais.pessoas }} pessoa(s) no arquivo</small></div>
+    <div class="lat-num"><span>Vai receber</span>
+      <b>{{ montado.totais.valor_entra|moeda }}</b>
+      <small>{{ montado.totais.entram }} marcada(s)</small></div>
+    <div class="lat-num"><span>Fora do pagamento</span>
+      <b>{{ montado.totais.valor_fora|moeda }}</b>
+      <small>{{ montado.totais.fora }} que você tirou</small></div>
+    <div class="lat-num {% if montado.totais.falta_apropriar %}ruim{% endif %}">
+      <span>Sem obra</span>
+      <b>{{ montado.totais.falta_apropriar|moeda }}</b>
+      <small>{{ montado.totais.sem_obra }} sem dia de ponto ·
+        {{ montado.totais.sem_cadastro }} sem cadastro</small></div>
+    <button type="button" class="btn secundario" id="btn-divisao"
+            style="width:100%; margin-top:8px">Divisão por obra…</button>
+    <a class="link-btn" style="display:block; margin-top:8px"
+       href="{{ url_for('analisesps.tela_folha_importar', lista=1) }}"
+       >todas as folhas importadas</a>
+  </div>
+
+  {# ------------------------------------------------------------------------
+     O QUE TRAVA O PAGAMENTO — curto, na lateral. Cada linha é um filtro: a
+     decisão se toma na linha da pessoa, na lista.
+     ------------------------------------------------------------------------ #}
+  {% if criticas and (criticas.pendentes or criticas.sairam or criticas.saindo) %}
+  <div class="cartao lateral-folha">
+    <b class="lateral-titulo">Precisa da sua mão antes de pagar</b>
+    {% if criticas.pendentes %}
+      <div class="lat-critica erro">
+        <b>{{ criticas.pendentes|length }} não casaram com o cadastro</b>
+        — {{ criticas.total_pendente|moeda }} sem dono.
+        <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='sem_cadastro') }}"
+           >ver só elas</a>
+        <small>Sem o código do Fortes no cadastro não há CPF, e sem CPF não há
+          pagamento. O conserto é na aba <b>ID Fortes</b> da planilha de
+          colaboradores; depois "Atualizar cadastro".</small>
+      </div>
+    {% endif %}
+    {% if criticas.sairam %}
+      <div class="lat-critica erro">
+        <b>{{ criticas.sairam|length }} já saíram</b> —
+        {{ criticas.total_de_quem_saiu|moeda }} nesta folha.
+        <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='saiu') }}"
+           >ver só elas</a>
+        <small>Não pague folha, diária nem auxílio deste período para elas.</small>
+        <ul class="lista-seca">
+          {% for p in criticas.sairam[:8] %}
+            <li>
+              {% if p.link_pipefy %}
+                <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
+                   class="link-pipefy">{{ p.nome }}
+                  <span aria-hidden="true">↗</span></a>
+              {% else %}<b>{{ p.nome }}</b>{% endif %}
+              <small>{{ p.valor|moeda }} · {{ p.motivo }}</small>
+            </li>
+          {% endfor %}
+          {% if criticas.sairam|length > 8 %}
+            <li><small>…e outras {{ criticas.sairam|length - 8 }}, marcadas
+              na lista.</small></li>
+          {% endif %}
+        </ul>
+      </div>
+    {% endif %}
+    {% if criticas.saindo %}
+      <div class="lat-critica atencao">
+        <b>{{ criticas.saindo|length }} estão saindo.</b>
+        <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='saindo') }}"
+           >ver só elas</a>
+        <small>Confira o que é devido até o último dia — rescisão não se paga
+          por aqui.</small>
+      </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ------------------------------------------------------------------------
+     TRAZER OUTRA FOLHA — a mesma área de soltar do extrato e da tela de
+     importar, aqui na lateral (pedido dele, 30/09/2026: *"nela quero poder
+     importar nova folha. Põe caixa de anexar arquivo de folha"*). Os botões
+     são `type="button"`: estão dentro do formulário dos filtros.
+     ------------------------------------------------------------------------ #}
+  {% if pode_operar %}
+  <div class="cartao lateral-folha">
+    <b class="lateral-titulo">Trazer outra folha</b>
+    <div class="solta-arquivo compacta" id="solta-folha">
+      <p><b>Solte aqui a Folha Sintética</b><br>
+        <label class="link-btn" for="arq-folha">ou escolha no computador</label>
+        <br><small>o <code>.xls</code> da contabilidade</small></p>
+      <input type="file" id="arq-folha" accept=".xls,.XLS" hidden>
+    </div>
+    <div id="escolher-tipo" hidden style="margin-top:8px">
+      <div class="aviso atencao" id="motivo-tipo"></div>
+      <label class="rotulo-campo">Esta folha é de qual período?</label>
+      <div style="display:grid; gap:6px">
+        <button type="button" class="btn secundario escolhe-tipo" data-tipo="quinzena"
+                >Quinzena (dia 1 ao 15)</button>
+        <button type="button" class="btn secundario escolhe-tipo" data-tipo="fim_de_mes"
+                >Fim de mês (16 ao último dia)</button>
+      </div>
+    </div>
+    <div id="saida-folha" style="margin-top:8px"></div>
+  </div>
+  {% endif %}
+
   <div class="filtro aberto">
     <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
       <span>Quem</span><span class="seta">▾</span>
@@ -204,44 +324,9 @@
       {% endfor %}
     </select>
   </label>
-  <span class="barra-mes-dica">
-    importada em {{ folha.importado_em|momento_br }}{% if folha.importado_por %}
-    por {{ folha.importado_por }}{% endif %} ·
-    <a href="{{ url_for('analisesps.tela_folha_importar', lista=1) }}">importar
-    outra ou apagar</a>
-    {% if montado.periodo %}
-      · o ponto lido é de <b>{{ montado.periodo[0]|data_br }}</b> a
-      <b>{{ montado.periodo[1]|data_br }}</b>
-    {% endif %}
-  </span>
+  <span class="barra-mes-dica">os números, os alertas e a divisão por obra
+    estão na lateral</span>
 </form>
-
-<div class="kpis">
-  <div class="kpi estatico">
-    <div class="kpi-rotulo">A folha inteira</div>
-    <div class="kpi-valor">{{ montado.totais.total_da_folha|moeda }}</div>
-    <div class="kpi-sub">{{ montado.totais.pessoas }} pessoa(s) no arquivo</div>
-  </div>
-  <div class="kpi estatico">
-    <div class="kpi-rotulo">Vai receber</div>
-    <div class="kpi-valor">{{ montado.totais.valor_entra|moeda }}</div>
-    <div class="kpi-sub">{{ montado.totais.entram }} pessoa(s) marcada(s)</div>
-  </div>
-  <div class="kpi estatico">
-    <div class="kpi-rotulo">Fora do pagamento</div>
-    <div class="kpi-valor">{{ montado.totais.valor_fora|moeda }}</div>
-    <div class="kpi-sub">{{ montado.totais.fora }} pessoa(s) que você tirou</div>
-  </div>
-  <div class="kpi estatico">
-    <div class="kpi-rotulo">Sem obra</div>
-    <div class="kpi-valor {% if montado.totais.falta_apropriar %}ruim{% endif %}">
-      {{ montado.totais.falta_apropriar|moeda }}</div>
-    <div class="kpi-sub">
-      {{ montado.totais.sem_obra }} sem dia de ponto ·
-      {{ montado.totais.sem_cadastro }} sem cadastro
-    </div>
-  </div>
-</div>
 
 {# ------------------------------------------------------------------------
    O QUE TRAVA O PAGAMENTO, antes da lista. O nome mudou por pedido dele —
@@ -280,65 +365,6 @@
     <b>{{ montado.subtotal_do_filtro|moeda }}</b>. Os quadros de cima continuam
     sendo da folha inteira.
   </p>
-{% endif %}
-
-{# ------------------------------------------------------------------------
-   ⚠️ O QUE IMPEDE PAGAR VEM ANTES DA LISTA, e continua vindo: ninguém encontraria
-   isto rolando 491 linhas. Mas é um RESUMO, não a lista inteira aberta — era esse
-   o "troço gigantesco no começo" de que ele reclamou. Cada linha aponta para o
-   filtro que mostra só aquele grupo, e a decisão se toma na linha da pessoa.
-   ------------------------------------------------------------------------ #}
-{% if criticas and (criticas.pendentes or criticas.sairam or criticas.saindo) %}
-<div class="cartao">
-  <h3 style="margin:0 0 8px">Precisa da sua mão antes de pagar</h3>
-
-  {% if criticas.pendentes %}
-    <div class="aviso erro" style="margin:0 0 8px">
-      <b>{{ criticas.pendentes|length }} pessoa(s) não casaram com o cadastro</b>
-      — {{ criticas.total_pendente|moeda }} sem dono. Sem o código do Fortes no
-      cadastro não há CPF, e sem CPF não há apropriação nem pagamento. O conserto
-      é na aba <b>ID Fortes</b> da planilha de colaboradores; depois aperte
-      "Atualizar cadastro".
-      <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='sem_cadastro') }}"
-         >ver só elas</a>
-    </div>
-  {% endif %}
-
-  {% if criticas.sairam %}
-    <div class="aviso erro" style="margin:0 0 8px">
-      <b>{{ criticas.sairam|length }} pessoa(s) já saíram</b> —
-      {{ criticas.total_de_quem_saiu|moeda }} nesta folha.
-      Não pague folha, diária nem auxílio deste período para elas.
-      <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='saiu') }}"
-         >ver só elas</a>
-      <ul class="lista-seca" style="margin-top:6px">
-        {% for p in criticas.sairam[:8] %}
-          <li>
-            {% if p.link_pipefy %}
-              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
-                 class="link-pipefy">{{ p.nome }}
-                <span aria-hidden="true">↗</span></a>
-            {% else %}<b>{{ p.nome }}</b>{% endif %}
-            <span class="cartao-dica">{{ p.valor|moeda }} · {{ p.motivo }}</span>
-          </li>
-        {% endfor %}
-        {% if criticas.sairam|length > 8 %}
-          <li class="cartao-dica">…e outras
-            {{ criticas.sairam|length - 8 }} — todas marcadas na lista abaixo.</li>
-        {% endif %}
-      </ul>
-    </div>
-  {% endif %}
-
-  {% if criticas.saindo %}
-    <div class="aviso atencao" style="margin:0">
-      <b>{{ criticas.saindo|length }} pessoa(s) estão saindo.</b>
-      Confira o que é devido até o último dia — rescisão não se paga por aqui.
-      <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, situacao='saindo') }}"
-         >ver só elas</a>
-    </div>
-  {% endif %}
-</div>
 {% endif %}
 
 {# ------------------------------------------------------------------------
@@ -575,105 +601,137 @@
 {% endif %}
 
 {# ------------------------------------------------------------------------
-   O TOTAL POR OBRA, DEPOIS DA LISTA. Pedido dele: antes era "um troço gigantesco
-   no começo pra depois chegar nos colaboradores".
+   A DIVISÃO POR OBRA, NUMA JANELA. Pedido dele em 30/09/2026: *"quero poder ver
+   (…) a divisão por obra clicando em algo pra abrir um modal"*. Antes eram três
+   tabelas no fim da tela, depois da lista — e a lista tem 400 linhas.
+
+   Aqui dentro: o total por obra desta folha (é este número que decide o rateio
+   do mês), o que sai de cada conta corrente (cada conta vira um arquivo e uma SP
+   de transferência), a conferência por filial do arquivo da contabilidade — e o
+   que JÁ FOI PAGO no mês, todas as verbas fechadas, que era o Panorama.
    ------------------------------------------------------------------------ #}
-<h3 style="margin-top:22px">Total por obra
-  <small>é este número que decide o rateio do mês</small></h3>
-<div class="tabela-wrap">
-  <div class="tabela-rolagem livre">
-    <table class="sps">
-      <thead><tr><th>Obra</th><th class="num">Pessoas</th>
-        <th class="num">Valor</th><th class="num">% da folha</th>
-        <th>De onde veio</th></tr></thead>
-      <tbody>
-      {% for o in montado.por_obra %}
-        <tr>
-          <td><b>{{ o.obra }}</b></td>
-          <td class="num">{{ o.pessoas }}</td>
-          <td class="num">{{ o.valor|moeda }}</td>
-          <td class="num">{{ o.percentual }}</td>
-          <td><span class="cartao-dica">{{ o.origens|join(', ') }}</span></td>
-        </tr>
-      {% else %}
-        <tr><td colspan="5" class="cartao-dica">
-          Nada apropriado ainda — sem o ponto do mês não há obra em dia nenhum.
-        </td></tr>
-      {% endfor %}
-      </tbody>
-      {% if montado.por_obra %}
-      <tfoot><tr><th>Total apropriado</th><th></th>
-        <th class="num">{{ montado.totais.total_apropriado|moeda }}</th>
-        <th class="num">100</th><th></th></tr></tfoot>
-      {% endif %}
-    </table>
-  </div>
-</div>
+<dialog class="dialogo" id="cartao-divisao">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Divisão por obra <small>{{ folha.competencia }} · {{ folha.rotulo_do_tipo }}</small></h3>
 
-{# ------------------------------------------------------------------------
-   POR CONTA CORRENTE. Estava na planilha (o bloco da direita), está na fórmula
-   (coluna AF) e estava no desenho que ele aprovou — e não estava na minha tela.
-   Cada conta vira um arquivo de pagamento e uma SP de transferência: é aqui que
-   ele vê, ANTES de gerar, quantos arquivos saem e quanto sai de cada conta.
-   ------------------------------------------------------------------------ #}
-<h3 style="margin-top:22px">Por conta corrente
-  <small>cada conta vira um arquivo e uma SP de transferência</small></h3>
-<div class="tabela-wrap">
-  <div class="tabela-rolagem livre">
-    <table class="sps">
-      <thead><tr><th>Conta</th><th>Obras</th><th class="num">Pessoas</th>
-        <th class="num">Valor</th></tr></thead>
-      <tbody>
-      {% for c in montado.por_conta %}
-        <tr class="{{ 'linha-alerta' if c.sem_conta }}">
-          <td>
-            {% if c.sem_conta %}
-              <span class="selo pagar"
-                    title="Sem conta cadastrada o arquivo não sai — e um padrão silencioso pagaria pela conta errada">sem conta</span>
-            {% else %}<b>{{ c.conta }}</b>{% endif %}
-          </td>
-          <td><span class="cartao-dica">{{ c.obras|join(', ') }}</span></td>
-          <td class="num">{{ c.pessoas }}</td>
-          <td class="num">{{ c.valor|moeda }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="4" class="cartao-dica">
-          Nada apropriado ainda — sem obra não há conta.
-        </td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+  <h4>Total por obra <small>é este número que decide o rateio do mês</small></h4>
+  <div class="tabela-wrap">
+    <div class="tabela-rolagem livre">
+      <table class="sps">
+        <thead><tr><th>Obra</th><th class="num">Pessoas</th>
+          <th class="num">Valor</th><th class="num">% da folha</th>
+          <th>De onde veio</th></tr></thead>
+        <tbody>
+        {% for o in montado.por_obra %}
+          <tr>
+            <td><b>{{ o.obra }}</b></td>
+            <td class="num">{{ o.pessoas }}</td>
+            <td class="num">{{ o.valor|moeda }}</td>
+            <td class="num">{{ o.percentual }}</td>
+            <td><span class="cartao-dica">{{ o.origens|join(', ') }}</span></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="cartao-dica">
+            Nada apropriado ainda — sem o ponto do mês não há obra em dia nenhum.
+          </td></tr>
+        {% endfor %}
+        </tbody>
+        {% if montado.por_obra %}
+        <tfoot><tr><th>Total apropriado</th><th></th>
+          <th class="num">{{ montado.totais.total_apropriado|moeda }}</th>
+          <th class="num">100</th><th></th></tr></tfoot>
+        {% endif %}
+      </table>
+    </div>
   </div>
-</div>
 
-{% if montado.obras_sem_conta %}
-  <div class="aviso erro">
-    <b>{{ montado.obras_sem_conta|length }} obra(s) sem conta de pagamento
-    cadastrada:</b> {{ montado.obras_sem_conta|join(', ') }}.
-    O arquivo não sai assim. A conta de cada obra vem da aba <b>C. Diários</b> da
-    planilha de apoio — cadastre lá e atualize as referências.
+  {# POR CONTA CORRENTE. Estava na planilha (o bloco da direita), está na fórmula
+     (coluna AF) e no desenho que ele aprovou. Cada conta vira um arquivo de
+     pagamento e uma SP de transferência: é aqui que ele vê, ANTES de gerar,
+     quantos arquivos saem e quanto sai de cada conta. #}
+  <h4>Por conta corrente <small>cada conta vira um arquivo e uma SP de transferência</small></h4>
+  <div class="tabela-wrap">
+    <div class="tabela-rolagem livre">
+      <table class="sps">
+        <thead><tr><th>Conta</th><th>Obras</th><th class="num">Pessoas</th>
+          <th class="num">Valor</th></tr></thead>
+        <tbody>
+        {% for c in montado.por_conta %}
+          <tr class="{{ 'linha-alerta' if c.sem_conta }}">
+            <td>
+              {% if c.sem_conta %}
+                <span class="selo pagar"
+                      title="Sem conta cadastrada o arquivo não sai — e um padrão silencioso pagaria pela conta errada">sem conta</span>
+              {% else %}<b>{{ c.conta }}</b>{% endif %}
+            </td>
+            <td><span class="cartao-dica">{{ c.obras|join(', ') }}</span></td>
+            <td class="num">{{ c.pessoas }}</td>
+            <td class="num">{{ c.valor|moeda }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="cartao-dica">
+            Nada apropriado ainda — sem obra não há conta.
+          </td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-{% endif %}
 
-{% if filiais %}
-<h3 style="margin-top:18px">Por filial
-  <small>o que o arquivo da contabilidade traz, para conferir</small></h3>
-<div class="tabela-wrap">
-  <div class="tabela-rolagem livre">
-    <table class="sps">
-      <thead><tr><th>Filial</th><th class="num">Pessoas</th>
-        <th class="num">Total</th></tr></thead>
-      <tbody>
-      {% for f in filiais %}
-        <tr><td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
-          <td class="num">{{ f.pessoas }}</td>
-          <td class="num">{{ f.total|moeda }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+  {% if montado.obras_sem_conta %}
+    <div class="aviso erro">
+      <b>{{ montado.obras_sem_conta|length }} obra(s) sem conta de pagamento
+      cadastrada:</b> {{ montado.obras_sem_conta|join(', ') }}.
+      O arquivo não sai assim. A conta de cada obra vem da aba <b>C. Diários</b> da
+      planilha de apoio — cadastre lá e atualize as referências.
+    </div>
+  {% endif %}
+
+  {% if filiais %}
+  <h4>Por filial <small>o que o arquivo da contabilidade traz, para conferir</small></h4>
+  <div class="tabela-wrap">
+    <div class="tabela-rolagem livre">
+      <table class="sps">
+        <thead><tr><th>Filial</th><th class="num">Pessoas</th>
+          <th class="num">Total</th></tr></thead>
+        <tbody>
+        {% for f in filiais %}
+          <tr><td>{{ f.codigo }}{% if f.nome %} — {{ f.nome }}{% endif %}</td>
+            <td class="num">{{ f.pessoas }}</td>
+            <td class="num">{{ f.total|moeda }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-</div>
-{% endif %}
+  {% endif %}
+
+  {# O QUE JÁ FOI PAGO NO MÊS — todas as verbas fechadas, por obra. Era o
+     Panorama; é a entrada do rateio do mês, e sai do que está FECHADO. #}
+  <h4>Já pago em {{ folha.competencia }}
+    <small>todas as verbas fechadas — folha, auxílios, diaristas</small></h4>
+  {% if gerencial and gerencial.pronto and gerencial.obras %}
+  <div class="tabela-wrap">
+    <div class="tabela-rolagem livre">
+      <table class="sps">
+        <thead><tr><th>Obra</th><th class="num">Pago</th><th class="num">% do mês</th></tr></thead>
+        <tbody>
+        {% for o in gerencial.obras %}
+          <tr><td><b>{{ o.obra }}</b></td>
+            <td class="num">{{ o.total|moeda }}</td>
+            <td class="num">{% if gerencial.total %}{{ ("%.1f"|format(o.total / gerencial.total * 100))|replace(".", ",") }}%{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+        <tfoot><tr><th>Total pago</th><th class="num">{{ gerencial.total|moeda }}</th><th></th></tr></tfoot>
+      </table>
+    </div>
+  </div>
+  {% else %}
+    <p class="cartao-dica">Nada fechado neste mês ainda. Quando a folha, os
+      auxílios ou os diaristas forem fechados, o pago por obra aparece aqui.</p>
+  {% endif %}
+</dialog>
 
 {# ------------------------------------------------------------------------
    A BARRA GRUDADA EMBAIXO: o total anda enquanto ele marca. É a resposta ao
@@ -700,7 +758,89 @@
 {% endblock %}
 
 {% block scripts %}
+{% if montado %}
+<script>
+// A janela "Divisão por obra": abre por cima, para qualquer perfil.
+(function () {
+  const b = document.getElementById("btn-divisao");
+  const d = document.getElementById("cartao-divisao");
+  if (b && d) b.addEventListener("click", () => {
+    if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+  });
+})();
+</script>
+{% endif %}
 {% if montado and pode_operar %}
+<script>
+// ---------------------------------------------------------------------------
+// TRAZER OUTRA FOLHA, pela lateral. O mesmo caminho da tela de importar: o
+// servidor lê, e quando não sabe se é quinzena ou fim de mês, PERGUNTA — o
+// arquivo fica guardado, sem pedir para soltar de novo.
+// ---------------------------------------------------------------------------
+(function () {
+  const areaFolha = document.getElementById("solta-folha");
+  const campoFolha = document.getElementById("arq-folha");
+  const saidaFolha = document.getElementById("saida-folha");
+  const blocoTipo = document.getElementById("escolher-tipo");
+  const motivoTipo = document.getElementById("motivo-tipo");
+  let arquivoGuardado = null;
+  if (!areaFolha) return;
+
+  function recadoFolha(html, classe) {
+    saidaFolha.innerHTML = html
+      ? '<div class="aviso ' + (classe || "") + '">' + html + "</div>" : "";
+  }
+
+  async function mandarFolha(arquivo, tipo) {
+    const dados = new FormData();
+    dados.append("folha", arquivo);
+    if (tipo) dados.append("tipo", tipo);
+    recadoFolha("lendo <b>" + arquivo.name + "</b>…");
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_importar') }}",
+                            {method: "POST", body: dados});
+      const d = await r.json();
+      if (!d.ok) {
+        if (d.pergunte_o_tipo) {
+          arquivoGuardado = arquivo;
+          motivoTipo.innerHTML = d.erro;
+          blocoTipo.hidden = false;
+          recadoFolha("");
+          return;
+        }
+        recadoFolha(d.erro, "erro");
+        return;
+      }
+      // A folha nova é a última importada: a aba leva até ela.
+      location.href = "{{ url_for('analisesps.tela_folha_importar') }}";
+    } catch (e) {
+      recadoFolha("Falhou: " + e, "erro");
+    }
+  }
+
+  ["dragenter", "dragover"].forEach(ev => areaFolha.addEventListener(ev, e => {
+    e.preventDefault(); areaFolha.classList.add("por-cima");
+  }));
+  ["dragleave", "drop"].forEach(ev => areaFolha.addEventListener(ev, e => {
+    e.preventDefault(); areaFolha.classList.remove("por-cima");
+  }));
+  areaFolha.addEventListener("drop", e => {
+    if (e.dataTransfer.files.length) mandarFolha(e.dataTransfer.files[0], "");
+  });
+  areaFolha.addEventListener("click", e => {
+    if (e.target.tagName !== "LABEL") campoFolha.click();
+  });
+  campoFolha.addEventListener("change", () => {
+    if (campoFolha.files.length) mandarFolha(campoFolha.files[0], "");
+  });
+  document.querySelectorAll(".escolhe-tipo").forEach(b =>
+    b.addEventListener("click", () => {
+      if (!arquivoGuardado) return;
+      blocoTipo.hidden = true;
+      mandarFolha(arquivoGuardado, b.dataset.tipo);
+    }));
+})();
+</script>
 <script>
 // ---------------------------------------------------------------------------
 // QUEM ENTRA NO PAGAMENTO: marca, vê o total andar, e salva UMA vez.

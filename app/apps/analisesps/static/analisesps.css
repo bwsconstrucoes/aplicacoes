@@ -2503,3 +2503,30 @@ table.conciliacao { min-width: 1140px; }
    único lugar que vale em `table-layout: fixed`. */
 table.conciliacao col.c-no-omie { width: 104px; }
 table.conciliacao td.no-omie { white-space: nowrap; }
+
+/* --------------------------------------------------------------------------
+   A FOLHA DA CONTABILIDADE USA A LATERAL PARA INFORMAÇÃO — 30/09/2026
+
+   Pedido dele: *"tá muito poluído a parte superior. Aproveite mais o sidebar
+   para informações."* Os quatro quadros grandes do topo viraram quatro linhas
+   na lateral; os alertas viraram um cartão curto; a divisão por obra abre numa
+   janela; e a caixa de trazer outra folha mora aqui, compacta.
+   -------------------------------------------------------------------------- */
+.filtros .lateral-folha { margin: 0 0 12px; padding: 12px; }
+.filtros .lateral-titulo { display: block; margin-bottom: 6px; }
+.lat-num { display: grid; grid-template-columns: 1fr auto; column-gap: 8px;
+  padding: 5px 0; border-top: 1px solid var(--borda); font-size: 13px; }
+.lat-num:first-of-type { border-top: 0; }
+.lat-num > span { color: var(--tinta-suave); }
+.lat-num > b { font-family: var(--fonte-dados); text-align: right; }
+.lat-num > small { grid-column: 1 / -1; color: var(--tinta-suave); font-size: 11.5px; }
+.lat-num.ruim > b { color: var(--vermelho); }
+.lat-critica { padding: 8px 10px; border-radius: var(--raio-p); margin-top: 8px;
+  font-size: 13px; border-left: 3px solid var(--ambar); background: #FDF0D5; }
+.lat-critica.erro { border-left-color: var(--vermelho); background: #FBE7E5; }
+.lat-critica small { display: block; color: var(--tinta-suave); margin-top: 3px; }
+.lat-critica .lista-seca { margin: 6px 0 0; padding-left: 16px; }
+.solta-arquivo.compacta { padding: 12px 10px; font-size: 13px; }
+.dialogo h4 { margin: 18px 0 8px; }
+.dialogo h4:first-of-type { margin-top: 4px; }
+.dialogo h4 small { font-weight: 500; color: var(--tinta-suave); font-size: 12.5px; }

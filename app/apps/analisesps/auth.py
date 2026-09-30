@@ -447,7 +447,6 @@ TELA_DA_ROTA = {
     "analisesps.folha_apagar": ("folha",),
     "analisesps.tela_colaboradores": ("folha",),
     "analisesps.tela_folha_importar": ("folha",),
-    "analisesps.tela_folha_painel": ("folha",),
     "analisesps.tela_folha_ponto": ("folha",),
     "analisesps.tela_folha_calendario": ("folha",),
     "analisesps.tela_folha_auxilio": ("folha",),

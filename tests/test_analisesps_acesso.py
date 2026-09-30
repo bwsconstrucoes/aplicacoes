@@ -118,7 +118,6 @@ TODAS_AS_TELAS = [
     # A porta da área: manda para a primeira subtela que a pessoa alcança.
     ("GET",  "/analisesps/folha"),
     ("GET",  "/analisesps/folha/importar"),
-    ("GET",  "/analisesps/folha/painel"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.

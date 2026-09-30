@@ -347,8 +347,7 @@ demais, fica até misturado com o restante, que tem mais a ver com o financeiro.
 
 | Subtela | O que responde |
 |---|---|
-| Panorama | os totais da folha guardada, por filial, e o que ainda não entra |
-| Folha da contabilidade | solta o arquivo da Fortes; casa com o cadastro pelo **ID Fortes**, nunca pelo nome |
+| Folha da contabilidade | a folha aberta pessoa por pessoa; na lateral, os números, os alertas, a caixa de trazer outra folha e a lista do que já veio; a divisão por obra (e o já pago do mês, todas as verbas) abre numa janela. Casa com o cadastro pelo **ID Fortes**, nunca pelo nome. (O "Panorama" saiu em 30/09/2026: *"tá sem sentido"*) |
 | Ponto | traz o ponto do Mobponto, mês a mês, e **mostra os nomes dos campos que vieram** — ver "O ponto, sozinho e sem estragar" abaixo |
 | Colaboradores | o cadastro espelhado, com link para o card do Pipefy e botão de atualizar |
 | Feriados e férias | lança feriado (nacional ou por obra) e o período de férias de cada pessoa |

@@ -157,9 +157,11 @@ def versao_publicada() -> str:
 # separador fino entre eles é o suficiente.
 GRUPOS_DA_FOLHA = [("visao", ""), ("paga", ""), ("base", "")]
 
+# ⚠️ O PANORAMA SAIU em 30/09/2026, por decisão dele: *"a tela Panorama tá sem
+# sentido. A tela que precisamos é Folha da Contabilidade."* O que ele tinha de
+# útil — o que já foi pago no mês, por obra e por conta — mora agora na janela
+# "Divisão por obra" da própria folha aberta.
 SUBTELAS_DA_FOLHA = [
-    ("painel", "Panorama", "analisesps.tela_folha_painel", "visao"),
-
     # OS PAGAMENTOS, na ordem do mês: a folha da contabilidade é a maior e a
     # primeira; os auxílios saem depois; os diaristas fecham.
     ("importar", "Folha da contabilidade", "analisesps.tela_folha_importar",
@@ -170,7 +172,7 @@ SUBTELAS_DA_FOLHA = [
     ("pagamento", "Arquivos gerados", "analisesps.tela_folha_pagamento", "paga"),
 
     # A BASE. Vem depois porque é o que se arruma quando algo não fecha — mas é
-    # onde tudo começa, e por isso o Panorama aponta para cá.
+    # onde tudo começa.
     ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores", "base"),
     ("ponto", "Ponto", "analisesps.tela_folha_ponto", "base"),
     ("calendario", "Feriados e férias", "analisesps.tela_folha_calendario",
@@ -2426,9 +2428,8 @@ def tela_folha():
     """A porta da área da Folha. Manda para a primeira subtela que a pessoa vê.
 
     POR QUE REDIRECIONA em vez de mostrar um índice: um índice com dois links
-    seria um clique a mais para chegar ao mesmo lugar. Quando o painel com os
-    totais por obra e por conta existir, ELE passa a ser esta tela — é o lugar
-    natural de quem chega."""
+    seria um clique a mais para chegar ao mesmo lugar. A primeira subtela é a
+    folha da contabilidade, que por sua vez abre a última folha importada."""
     permitidas = subtelas_da_folha()
     if not permitidas:
         # Não deve acontecer — quem chega aqui já tem a tela "folha". Mas se
@@ -2437,56 +2438,6 @@ def tela_folha():
         return render_template("analisesps_erro.html",
                                mensagem="Esta tela não existe aqui."), 404
     return redirect(url_for(permitidas[0][2]))
-
-
-@bp.route("/folha/painel")
-@exige_consulta
-def tela_folha_painel():
-    """O panorama da folha: totais, e o que precisa da mão de alguém.
-
-    ⚠️ ELA DIZ O QUE AINDA NÃO SABE, e isso não é modéstia: um painel que
-    mostrasse "total da folha" sem avisar que faltam alimentação, transporte e
-    diaristas faria o número parecer o custo de pessoal inteiro. Número que
-    parece completo e não é vale menos que número nenhum."""
-    from . import folha_apropriacao, folha_arquivo as fa, folha_pagamento as fpg
-    from .horario import agora
-
-    hoje = agora().date()
-    # ⚠️ ATÉ O DIA 10, ABRE NO MÊS ANTERIOR — regra da planilha (célula K1), não
-    # minha. Ver `folha_apropriacao.competencia_sugerida`.
-    padrao_ano, padrao_mes = folha_apropriacao.competencia_sugerida(hoje)
-    try:
-        ano = int(request.args.get("ano") or padrao_ano)
-        mes = int(request.args.get("mes") or padrao_mes)
-    except (TypeError, ValueError):
-        ano, mes = padrao_ano, padrao_mes
-    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
-        ano, mes = padrao_ano, padrao_mes
-
-    panorama = {"pronto": False}
-    erro = None
-    try:
-        panorama = fa.panorama()
-    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
-        logger.exception("Folha: não consegui montar o panorama")
-        erro = str(e)
-
-    # ⚠️ O GERENCIAL É ENTRADA DO TRABALHO DELE, não enfeite: é olhando o total por
-    # obra que ele decide o rateio do mês. Sai do que está FECHADO, não de um
-    # recálculo — o rateio se decide sobre o que foi pago.
-    gerencial = {"pronto": False}
-    try:
-        gerencial = fpg.gerencial(ano, mes)
-    except Exception:  # noqa: BLE001 — é um bloco da tela, não a tela
-        logger.exception("Folha: não consegui montar o gerencial")
-
-    return render_template(
-        "analisesps_folha_painel.html", aba="folha", subaba="painel",
-        grupos=subtelas_agrupadas(), panorama=panorama, erro=erro,
-        gerencial=gerencial, ano=ano, mes=mes, ano_padrao=hoje.year,
-        pode_operar=auth.pode_operar(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
-        nome=auth.nome_atual())
 
 
 @bp.route("/folha/<int:folha_id>")
@@ -2535,12 +2486,26 @@ def tela_folha_aberta(folha_id: int):
         return render_template("analisesps_erro.html",
                                mensagem="Esta folha não está mais aqui."), 404
 
+    # O QUE JÁ FOI PAGO NO MÊS, todas as verbas, por obra e por conta — era o
+    # Panorama, e continua sendo a entrada do rateio do mês. Sai do que está
+    # FECHADO. É um bloco da janela "Divisão por obra", não a tela: se estourar,
+    # a tela abre sem ele.
+    gerencial = {"pronto": False}
+    if montado:
+        try:
+            from . import folha_pagamento as fpg
+            f = montado.get("folha") or {}
+            gerencial = fpg.gerencial(int(f["ano"]), int(f["mes"]))
+        except Exception:  # noqa: BLE001
+            logger.exception("Folha: não consegui montar o já pago do mês")
+
     return render_template(
         "analisesps_folha_aberta.html", aba="folha", subaba="importar",
         grupos=subtelas_agrupadas(), montado=montado, erro=erro,
         folha=montado.get("folha"), folhas=fa.listar(teto=24),
         criticas=fa.criticas(folha_id) if montado else None,
         filiais=fa.totais_por_filial(folha_id) if montado else [],
+        gerencial=gerencial,
         situacoes=[(c, fg.ROTULO_DA_SITUACAO[c]) for c in fg.ORDEM_DAS_SITUACOES],
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),

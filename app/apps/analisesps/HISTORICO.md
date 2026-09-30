@@ -10051,6 +10051,56 @@ WhatsApp de aviso chegando de verdade — o canal é o mesmo do BaixaBradesco.
 
 ---
 
+### Centésima vigésima quinta leva (30/09) — a folha da contabilidade usa a lateral, e o Panorama saiu
+
+Ele, com a tela na mão: *"a tela Panorama tá sem sentido. A tela que precisamos é
+Folha da Contabilidade. Nela quero poder importar nova folha. Põe caixa de anexar
+arquivo de folha. Nela quero poder ver o que tá importado, a divisão por obra
+clicando em algo pra abrir um modal. (…) tá muito poluído a parte superior.
+Aproveite mais o sidebar para informações."*
+
+**O que ficou:**
+
+- **O topo é só a troca de competência.** Os quatro quadros grandes, o bloco
+  "Precisa da sua mão" com lista de nomes e a linha longa de "importada em… ·
+  importar outra ou apagar · ponto lido de…" saíram do meio da tela.
+- **Na lateral, em ordem:** "Gerar o pagamento" (como estava); **"Esta folha"**
+  (importada quando e por quem, o período do ponto, e quatro linhas: a folha
+  inteira, vai receber, fora do pagamento, sem obra — mais o botão "Divisão por
+  obra…" e o link "todas as folhas importadas"); **"Precisa da sua mão antes de
+  pagar"** (as três críticas em curto, cada uma com o "ver só elas", que é o
+  filtro de Situação); **"Trazer outra folha"** (a mesma área de soltar da tela
+  de importar, compacta, com a pergunta quinzena/fim de mês quando o título não
+  diz — só para quem opera); e os filtros. Os botões da lateral são
+  `type="button"`: estão dentro do formulário dos filtros, e um botão comum
+  recarregaria a tela.
+- **A divisão por obra abre numa janela** (`#cartao-divisao`): total por obra,
+  por conta corrente, obra sem conta, por filial — e **"Já pago em MM/AAAA"**,
+  todas as verbas fechadas por obra, que era o que o Panorama tinha de útil.
+  Sai do que está fechado; se estourar, a tela abre sem esse bloco.
+- **O Panorama saiu**: a aba, a rota, o template e os testes dele. A porta
+  `/folha` leva à folha da contabilidade, que leva à última folha importada. A
+  tela de lista (`/folha/importar?lista=1`) continua, é onde se apaga uma folha.
+
+**O que ele ganha:** a lista de 400 pessoas começa logo abaixo do título; tudo
+que é número, alerta ou ação está na lateral, à vista sem rolar; a divisão por
+obra é um clique, e a folha nova entra sem trocar de tela.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** esta leva | ele dizer "pode" |
+| olhar a tela de verdade — a lateral ficou mais longa, e só ele diz se a ordem dos cartões está boa | ele |
+| a 037, o cronjob, as duplicadas da conciliação, as fórmulas, o primeiro `IncluirLancCC` — como na leva 124 | ele |
+
+**Verificado:** os testes das telas, do acesso e da conciliação (o `url_for` de
+todos os templates contra as rotas); a aplicação importa. Suíte inteira em
+andamento no momento do commit.
+**NÃO verificado:** a tela de verdade — daqui não dá.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

@@ -5218,10 +5218,9 @@ def test_a_porta_da_folha_manda_para_a_primeira_subtela(app):
     """Um índice com dois links seria um clique a mais para o mesmo lugar."""
     resposta = _como_mestre(app).get("/analisesps/folha")
     assert resposta.status_code in (301, 302)
-    # ⚠️ A PRIMEIRA SUBTELA É O PANORAMA desde 27/09/2026, e o motivo é do dono:
-    # é olhando o total por obra que ele decide o rateio do mês. O painel vem
-    # ANTES do rateio na ordem de USO, mesmo tendo sido pedido depois.
-    assert "/folha/painel" in resposta.headers.get("Location", "")
+    # ⚠️ O PANORAMA SAIU em 30/09/2026 (*"tá sem sentido"*): a primeira subtela é
+    # a folha da contabilidade, que leva à última folha importada.
+    assert "/folha/importar" in resposta.headers.get("Location", "")
 
 
 def test_as_subtelas_aparecem_dentro_da_tela_da_folha(app, monkeypatch):
@@ -5476,71 +5475,6 @@ def _panorama(**extra):
     }
     base.update(extra)
     return base
-
-
-def test_o_panorama_mostra_os_totais_e_a_filial_MAIOR_primeiro(app, monkeypatch):
-    """Pedido do dono: *"saber qual é o total por obra, porque isso já ajuda nessa
-    questão do rateio."* É a lista que responde quais obras estão em evidência."""
-    from app.apps.analisesps import folha_arquivo as fa
-
-    monkeypatch.setattr(fa, "panorama", lambda: _panorama())
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
-
-    assert "430.129,75" in html
-    assert "491" in html
-    # A maior filial aparece antes da menor.
-    assert html.index("CREPEOLINDA") < html.index("MATRIZ")
-    # E o percentual de cada uma, que é o que dá a noção de peso.
-    assert "69.7%" in html or "69,7%" in html
-
-
-def test_o_panorama_DIZ_o_que_ainda_nao_sabe(app, monkeypatch):
-    """⚠️ Um painel que mostrasse "total da folha" sem avisar que faltam
-    alimentação, transporte e diaristas faria o número parecer o custo de pessoal
-    inteiro. Número que parece completo e não é vale menos que número nenhum."""
-    from app.apps.analisesps import folha_arquivo as fa
-
-    monkeypatch.setattr(fa, "panorama", lambda: _panorama())
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
-
-    assert "só da folha da contabilidade" in html
-    assert "por obra" in html
-    assert "por filial" in html
-
-
-def test_o_panorama_destaca_quem_NAO_casou_com_o_cadastro(app, monkeypatch):
-    """É o número que decide se dá para pagar."""
-    from app.apps.analisesps import folha_arquivo as fa
-
-    monkeypatch.setattr(fa, "panorama", lambda: _panorama(pendentes=7))
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
-    assert "Sem casar com o cadastro" in html
-    assert "estatico ambar" in html, (
-        "com pendente, o indicador tem de ficar âmbar")
-
-
-def test_sem_pendente_o_indicador_NAO_fica_ambar(app, monkeypatch):
-    """Indicador que grita sempre não é indicador."""
-    from app.apps.analisesps import folha_arquivo as fa
-
-    monkeypatch.setattr(fa, "panorama", lambda: _panorama(pendentes=0))
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
-    assert "kpi ambar" not in html
-
-
-def test_o_panorama_SEM_FOLHA_manda_a_pessoa_para_a_importacao(app, monkeypatch):
-    from app.apps.analisesps import folha_arquivo as fa
-
-    monkeypatch.setattr(fa, "panorama",
-                        lambda: {"pronto": True, "folhas": []})
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
-    assert "Nenhuma folha importada" in html
-    assert "Folha da contabilidade" in html
 
 
 def test_a_folha_aberta_poe_as_CRITICAS_antes_da_lista(app, monkeypatch):
@@ -5960,12 +5894,12 @@ def test_as_subtelas_ficam_AGRUPADAS_POR_ASSUNTO(app):
     from app.apps.analisesps import web
 
     assert [s[0] for s in web.SUBTELAS_DA_FOLHA] == [
-        "painel",
         "importar", "auxilios", "diaristas", "pagamento",     # pagamentos
         "colaboradores", "ponto", "calendario", "rateio"]      # base
 
     # E cada uma declara a que grupo pertence — é o que a faixa de abas desenha.
-    assert {s[3] for s in web.SUBTELAS_DA_FOLHA} == {"visao", "paga", "base"}
+    # (O grupo "visao" era só o Panorama, que saiu em 30/09/2026.)
+    assert {s[3] for s in web.SUBTELAS_DA_FOLHA} == {"paga", "base"}
 
 
 def test_a_faixa_de_abas_SEPARA_os_grupos_sem_escrever_o_nome(app, monkeypatch):
@@ -5975,18 +5909,17 @@ def test_a_faixa_de_abas_SEPARA_os_grupos_sem_escrever_o_nome(app, monkeypatch):
 
     Os grupos continuam existindo — é o que mantém a ordem com lógica — e ganham um
     risco fino entre eles. Este teste existe para os rótulos não voltarem."""
-    from app.apps.analisesps import folha_arquivo as fa, folha_pagamento as fpg
-
-    monkeypatch.setattr(fa, "panorama", lambda *a, **k: {"pronto": False})
-    monkeypatch.setattr(fpg, "gerencial", lambda *a, **k: {"pronto": False})
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
     assert "Pagamentos</span>" not in html
     assert "Cadastro e base do cálculo" not in html
     assert "risco-abas" in html, "o separador fino continua"
-    # E a ordem segue sendo a agrupada.
-    assert html.index("Folha da contabilidade") < html.index("Colaboradores")
+    # E a ordem segue sendo a agrupada — lida na faixa de abas, não na tela
+    # inteira (a lateral tem a fase "Colaboradores afastados" antes dela).
+    inicio = html.index('<nav class="abas-folha"')
+    abas = html[inicio:html.index("</nav>", inicio)]
+    assert abas.index("Folha da contabilidade") < abas.index("Colaboradores")
 
 
 def test_os_grupos_escondem_o_que_a_pessoa_nao_alcanca(app):
@@ -6660,102 +6593,6 @@ def test_nao_existe_mais_obra_editavel_na_tela_de_auxilio(app, monkeypatch):
     assert "obra trocada por você" not in html
 
 
-# ---------------------------------------------------------------------------
-# O GERENCIAL NO PANORAMA — 27/09/2026
-#
-# *"Tem que ter informação gerencial, né, tipo dashboard (…) saber qual é o total
-#  por obra, porque isso já ajuda nessa questão do rateio."*
-# ---------------------------------------------------------------------------
-def _preparar_painel(monkeypatch, gerencial=None):
-    from app.apps.analisesps import folha_arquivo as fa, folha_pagamento as fpg
-
-    monkeypatch.setattr(fa, "panorama", lambda *a, **k: {"pronto": False})
-    monkeypatch.setattr(fpg, "gerencial", lambda *a, **k: gerencial
-                        if gerencial is not None else {"pronto": False})
-
-
-def test_o_painel_mostra_o_total_POR_OBRA_por_conta_e_por_verba(app, monkeypatch):
-    """É a lista que responde "quais obras estão em evidência" — e é com ela que ele
-    decide o rateio do mês."""
-    from decimal import Decimal as D
-
-    _preparar_painel(monkeypatch, {
-        "pronto": True, "ano": 2026, "mes": 9, "competencia": "09/2026",
-        "total": D("1400.00"),
-        "verbas": [{"verba": "folha", "rotulo": "Folha", "total": D("1000.00"),
-                    "pessoas": 3},
-                   {"verba": "alimentacao", "rotulo": "Alimentação",
-                    "total": D("400.00"), "pessoas": 3}],
-        "obras": [{"obra": "CREPEOLINDA", "total": D("1000.00"),
-                   "verbas": ["Folha"]},
-                  {"obra": "CREPEAREIAS", "total": D("400.00"),
-                   "verbas": ["Alimentação"]}],
-        "contas": [{"conta": "50024", "total": D("1400.00"), "obras": 2}],
-        "fechamentos": [],
-        "percentuais": [{"obra": "CREPEOLINDA", "total": D("1000.00"),
-                         "percentual": D("71.4285714")},
-                        {"obra": "CREPEAREIAS", "total": D("400.00"),
-                         "percentual": D("28.5714286")}]})
-
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
-
-    assert "Por obra" in html and "Por conta" in html and "Por verba" in html
-    assert "CREPEOLINDA" in html and "CREPEAREIAS" in html
-    assert "1.400,00" in html
-    assert "71,43%" in html or "71.43%" in html
-
-
-def test_obra_sem_conta_fica_MARCADA_no_painel(app, monkeypatch):
-    """Esconder faria a surpresa aparecer só na hora de pagar."""
-    from decimal import Decimal as D
-
-    _preparar_painel(monkeypatch, {
-        "pronto": True, "ano": 2026, "mes": 9, "competencia": "09/2026",
-        "total": D("500.00"), "verbas": [],
-        "obras": [{"obra": "SEM CONTA", "total": D("500.00"), "verbas": []}],
-        "contas": [{"conta": "(sem conta)", "total": D("500.00"), "obras": 1}],
-        "fechamentos": [], "percentuais": []})
-
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
-    assert "linha-alerta" in html
-    assert "trava a\n            geração do arquivo" in html or \
-        "trava a" in html
-
-
-def test_mes_sem_nada_fechado_EXPLICA_no_painel(app, monkeypatch):
-    """"Nada aqui" sem motivo faz a pessoa achar que o sistema está quebrado."""
-    from decimal import Decimal as D
-
-    _preparar_painel(monkeypatch, {
-        "pronto": True, "ano": 2026, "mes": 9, "competencia": "09/2026",
-        "total": D("0.00"), "verbas": [], "obras": [], "contas": [],
-        "fechamentos": [], "percentuais": []})
-    html = _como_mestre(app).get(
-        "/analisesps/folha/painel").get_data(as_text=True)
-    assert "Nada fechado" in html
-    assert "o que foi pago" in html
-
-
-def test_o_painel_nao_cai_quando_o_gerencial_estoura(app, monkeypatch):
-    """O gerencial é um bloco da tela, não a tela: se ele falhar, o resto abre."""
-    from app.apps.analisesps import folha_arquivo as fa, folha_pagamento as fpg
-
-    def explode(*a, **k):
-        raise RuntimeError("banco fora do ar")
-
-    monkeypatch.setattr(fa, "panorama", lambda *a, **k: {"pronto": False})
-    monkeypatch.setattr(fpg, "gerencial", explode)
-    resposta = _como_mestre(app).get("/analisesps/folha/painel")
-    assert resposta.status_code == 200
-    assert "Panorama da folha" in resposta.get_data(as_text=True)
-
-
-# ---------------------------------------------------------------------------
-# A TELA DE DIARISTAS — 28/09/2026
-#
-# *"E cadê os diaristas? Não entrou diaristas."*
 # ---------------------------------------------------------------------------
 def _preparar_diaristas(monkeypatch, levantamento=None):
     from app.apps.analisesps import folha_diaristas as fd
@@ -7804,3 +7641,123 @@ def test_TODO_url_for_dos_templates_aponta_para_uma_rota_QUE_EXISTE(app):
     assert not erradas, (
         "estes templates citam rota que não existe — a tela quebra com 500 no "
         "momento em que aquele pedaço for desenhado:\n" + "\n".join(erradas))
+
+
+# ---------------------------------------------------------------------------
+# A FOLHA DA CONTABILIDADE USA A LATERAL — 30/09/2026
+#
+# *"A tela Panorama tá sem sentido. A tela que precisamos é Folha da
+# Contabilidade. Nela quero poder importar nova folha. Põe caixa de anexar
+# arquivo de folha. Nela quero poder ver o que tá importado, a divisão por obra
+# clicando em algo pra abrir um modal. (…) tá muito poluído a parte superior.
+# Aproveite mais o sidebar para informações."*
+# ---------------------------------------------------------------------------
+def test_os_numeros_da_folha_ficam_na_LATERAL_e_nao_no_topo(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    principal = html.index('<main class="principal">')
+    for rotulo in ("A folha inteira", "Fora do pagamento", "Sem obra"):
+        assert html.index(rotulo) < principal, f"{rotulo} continua no topo"
+    # E os quadros grandes não existem mais nesta tela.
+    assert 'class="kpi estatico"' not in html
+
+
+def test_os_alertas_da_folha_ficam_na_LATERAL(app, monkeypatch):
+    from decimal import Decimal
+    from app.apps.analisesps import folha_arquivo as fa
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    monkeypatch.setattr(fa, "criticas", lambda i: {
+        "pendentes": [{"id_fortes": "000387", "nome": "LUELIA",
+                       "valor": Decimal("1362.56")}],
+        "sairam": [], "saindo": [{"nome": "X"}],
+        "total_pendente": Decimal("1362.56"), "total_de_quem_saiu": 0})
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    principal = html.index('<main class="principal">')
+    assert html.index("Precisa da sua mão antes de pagar") < principal
+    assert html.index("não casaram com o cadastro") < principal
+    assert "situacao=sem_cadastro" in html and "situacao=saindo" in html
+
+
+def test_a_caixa_de_TRAZER_OUTRA_FOLHA_fica_na_lateral(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    principal = html.index('<main class="principal">')
+    assert html.index('id="solta-folha"') < principal
+    assert 'accept=".xls,.XLS"' in html
+    # Dentro do formulário dos filtros, todo botão é `type="button"` — senão
+    # escolher "Quinzena" recarregaria a tela com os filtros.
+    import re
+    lateral = html[:principal]
+    for m in re.finditer(r"<button[^>]*escolhe-tipo[^>]*>", lateral):
+        assert 'type="button"' in m.group(0)
+    # E a lista do que já veio está a um clique.
+    assert "todas as folhas importadas" in lateral
+    assert "/folha/importar?lista=1" in lateral
+
+
+def test_quem_so_consulta_NAO_ve_a_caixa_de_trazer_folha(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = como(app, SENHA_CONSULTA).get("/analisesps/folha/1").get_data(as_text=True)
+    assert 'id="solta-folha"' not in html
+    # Mas vê os números e abre a divisão por obra.
+    assert "A folha inteira" in html
+    assert 'id="btn-divisao"' in html and 'id="cartao-divisao"' in html
+
+
+def test_a_divisao_por_obra_abre_numa_JANELA(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    janela = html.index('<dialog class="dialogo" id="cartao-divisao">')
+    fim = html.index("</dialog>", janela)
+    dentro = html[janela:fim]
+    for bloco in ("Total por obra", "Por conta corrente", "Já pago em"):
+        assert bloco in dentro, f"{bloco} ficou fora da janela"
+    # Nada dessas tabelas sobrou no corpo da tela, antes da janela.
+    corpo = html[html.index("Pessoa por pessoa"):janela]
+    assert "Total por obra" not in corpo and "Por conta corrente" not in corpo
+    assert 'id="btn-divisao"' in html
+
+
+def test_o_ja_pago_do_mes_entra_na_janela_quando_ha_verba_fechada(app, monkeypatch):
+    """O que o Panorama tinha de útil — o pago por obra, todas as verbas — mora
+    na janela. Sai do que está FECHADO."""
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_pagamento as fpg
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    monkeypatch.setattr(fpg, "gerencial", lambda a, m: {
+        "pronto": True, "competencia": "09/2026", "total": D("1400.00"),
+        "obras": [{"obra": "CREPEOLINDA", "total": D("1000.00")},
+                  {"obra": "CREPEAREIAS", "total": D("400.00")}],
+        "contas": [], "verbas": []})
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert "CREPEAREIAS" in html and "1.400,00" in html and "71,4%" in html
+
+
+def test_a_janela_NAO_derruba_a_tela_quando_o_ja_pago_estoura(app, monkeypatch):
+    from app.apps.analisesps import folha_pagamento as fpg
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+
+    def estoura(a, m):
+        raise RuntimeError("banco fora")
+    monkeypatch.setattr(fpg, "gerencial", estoura)
+    r = _como_mestre(app).get("/analisesps/folha/1")
+    assert r.status_code == 200
+    assert "Nada fechado neste mês ainda" in r.get_data(as_text=True)
+
+
+def test_o_topo_da_folha_e_so_a_troca_de_competencia(app, monkeypatch):
+    """O que estava no topo e saiu: os quatro quadros, o bloco de alertas com
+    lista de nomes, e a linha longa de "importada em… importar outra ou apagar"."""
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+
+    principal = html.index('<main class="principal">')
+    topo = html[principal:html.index("Pessoa por pessoa")]
+    assert "importar outra ou apagar" not in topo
+    assert 'class="kpis"' not in topo
+    assert "Precisa da sua mão" not in topo
+
