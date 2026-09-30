@@ -10094,9 +10094,8 @@ obra é um clique, e a folha nova entra sem trocar de tela.
 | olhar a tela de verdade — a lateral ficou mais longa, e só ele diz se a ordem dos cartões está boa | ele |
 | a 037, o cronjob, as duplicadas da conciliação, as fórmulas, o primeiro `IncluirLancCC` — como na leva 124 | ele |
 
-**Verificado:** os testes das telas, do acesso e da conciliação (o `url_for` de
-todos os templates contra as rotas); a aplicação importa. Suíte inteira em
-andamento no momento do commit.
+**Verificado:** suíte inteira — 7.599 passando. 145 pulados. zero falhas —
+incluindo o `url_for` de todos os templates contra as rotas; a aplicação importa.
 **NÃO verificado:** a tela de verdade — daqui não dá.
 
 ---
