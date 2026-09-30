@@ -460,6 +460,9 @@ TELA_DA_ROTA = {
     # duas coisas, e é ela que faz a alçada aqui.
     "analisesps.folha_apropriacao_ajustar": ("folha",),
     "analisesps.folha_ponto_da_pessoa": ("folha",),
+    "analisesps.tela_folha_pessoa": ("folha",),
+    "analisesps.folha_ponto_pessoa_atualizar": ("folha",),
+    "analisesps.folha_ponto_pessoa_estado": ("folha",),
     "analisesps.folha_apropriacao_fechar": ("folha",),
     "analisesps.folha_auxilio_selecao": ("folha",),
     # A ficha da pessoa no modal: cadastro + ponto do mês. É da folha, e mostra

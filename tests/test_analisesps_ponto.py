@@ -1300,3 +1300,109 @@ def test_a_folha_ACHA_os_dias_do_ponto_de_verdade(banco_ponto, monkeypatch):
     dias = [d for d in ponto.dias_por_cpf(2026, 9)["99713349334"]
             if ini <= d["data"] <= fim]
     assert len(dias) == 15
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — TRAZER O PONTO DE UMA PESSOA SÓ
+#
+# *"É possível eu baixar só o ponto de um funcionário específico? (…) Se adivinhar
+# qual página aquele funcionário está do relatório, tentar baixar só aquela
+# página. Se não encontrar, vai na página seguinte ou na anterior. Pelo nome dá
+# para entender em qual posição vai estar."*
+# ---------------------------------------------------------------------------
+def _pessoa(cpf, nome, dias=2, hora="07:00"):
+    return {"cpf": cpf, "nome": nome,
+            "relatorio": [dict(dia_de_verdade(n), hr_entrada=hora) for n in range(1, dias + 1)]}
+
+
+def _mes_em_ordem_alfabetica():
+    """Quatro páginas, duas pessoas por página, em ordem de nome."""
+    return [resposta([_pessoa("11111111111", "ANA"), _pessoa("22222222222", "BRUNO")], 4),
+            resposta([_pessoa("33333333333", "CARLA"), _pessoa("44444444444", "DIEGO")], 4),
+            resposta([_pessoa("55555555555", "ELISA"), _pessoa("66666666666", "FABIO")], 4),
+            resposta([_pessoa("77777777777", "GABI"), _pessoa("88888888888", "HUGO")], 4)]
+
+
+def test_uma_pessoa_vai_DIRETO_a_pagina_guardada(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto
+    paginas = _mes_em_ordem_alfabetica()
+    dublar(monkeypatch, paginas)
+    ponto.carregar(2026, 9)
+
+    # No Mobponto, a hora de entrada de ELISA mudou.
+    paginas[2] = resposta([_pessoa("55555555555", "ELISA", hora="06:30"),
+                           _pessoa("66666666666", "FABIO")], 4)
+    pedidas = dublar(monkeypatch, paginas)
+    r = ponto.atualizar_pessoa(2026, 9, "555.555.555-55")
+
+    assert r["achou"] and r["pagina"] == 3
+    assert [p[2] for p in pedidas] == [3], "foi direto à página 3"
+    dias = ponto.dias_por_cpf(2026, 9)["55555555555"]
+    assert dias[0]["horas"][0] == "06:30"
+    assert len(dias) == 2, "não duplicou"
+    carga = ponto.carga_do_mes(2026, 9)
+    assert carga["completa"] and carga["paginas_lidas"] == 4, "a carga do mês continua inteira"
+
+
+def test_sem_pagina_guardada_ADIVINHA_pelo_nome_e_anda_na_direcao_certa(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto
+    from app.apps.analisesps.db import conexao
+    dublar(monkeypatch, _mes_em_ordem_alfabetica())
+    ponto.carregar(2026, 9)
+    with conexao() as conn:      # como uma carga feita antes da migração 039
+        conn.execute("UPDATE analisesps.ponto_dia SET pagina = NULL")
+        conn.commit()
+
+    # O Mobponto de hoje empurrou todo mundo uma página para frente (gente nova
+    # no começo da lista): GABI, que o chute põe na 4, está na... 4 ainda; e
+    # CARLA, chutada na 2, foi para a 3.
+    novas = [resposta([_pessoa("00000000191", "AARAO"), _pessoa("11111111111", "ANA")], 4),
+             resposta([_pessoa("22222222222", "BRUNO"), _pessoa("20000000000", "BRUNA")], 4),
+             resposta([_pessoa("33333333333", "CARLA", hora="06:00"),
+                        _pessoa("44444444444", "DIEGO")], 4),
+             resposta([_pessoa("55555555555", "ELISA"), _pessoa("66666666666", "FABIO")], 4)]
+    pedidas = dublar(monkeypatch, novas)
+    r = ponto.atualizar_pessoa(2026, 9, "33333333333")
+
+    assert r["achou"] and r["pagina"] == 3
+    assert [p[2] for p in pedidas] == [2, 3], "chutou a 2, viu nomes antes do dela, avançou"
+    assert ponto.dias_por_cpf(2026, 9)["33333333333"][0]["horas"][0] == "06:00"
+
+
+def test_quem_NAO_esta_no_mobponto_desiste_dizendo_onde_olhou(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto
+    paginas = _mes_em_ordem_alfabetica()
+    dublar(monkeypatch, paginas)
+    ponto.carregar(2026, 9)
+    # DIEGO saiu do Mobponto.
+    paginas[1] = resposta([_pessoa("33333333333", "CARLA")], 4)
+    dublar(monkeypatch, paginas)
+
+    r = ponto.atualizar_pessoa(2026, 9, "44444444444")
+    assert r["achou"] is False
+    assert r["olhadas"][0] == 2 and len(r["olhadas"]) <= ponto.TENTATIVAS_POR_PESSOA
+    assert len(set(r["olhadas"])) == len(r["olhadas"]), "não repete página"
+
+
+def test_sem_o_ponto_do_mes_recusa_com_frase_util(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto
+    with pytest.raises(ponto.ErroDoPonto) as erro:
+        ponto.atualizar_pessoa(2026, 9, "55555555555")
+    assert "Traga o mês inteiro primeiro" in str(erro.value)
+
+
+def test_a_tarefa_de_UMA_PESSOA_roda_e_diz_o_que_fez(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto, sincronizacao, tarefas
+    from app.apps.analisesps.db import conexao
+    paginas = _mes_em_ordem_alfabetica()
+    dublar(monkeypatch, paginas)
+    ponto.carregar(2026, 9)
+    dublar(monkeypatch, paginas)
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_pessoa_alvo", "2026|9|55555555555|ELISA")
+        execucao = tarefas._abrir_execucao(conn, "ponto_pessoa", "MARCELO")
+
+    assert tarefas.executar_trabalho("ponto_pessoa", execucao) is True
+    ultima = tarefas.ultima_do_tipo("ponto_pessoa")
+    assert ultima["ok"] is True
+    assert "pela página 3" in (ultima["mensagem"] or "")

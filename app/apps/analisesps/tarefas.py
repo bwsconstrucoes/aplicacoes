@@ -68,6 +68,8 @@ MODOS = {
     # mesma porta `/api/sincronizar` da sincronização, com o segredo do módulo.
     # Ele decide o mês sozinho (`ponto.meses_do_ponto_diario`), por isso não
     # precisa da competência escrita pela tela.
+    # O ponto de UMA pessoa — o botão do analítico. Ver `ponto.atualizar_pessoa`.
+    "ponto_pessoa": "Trazer de novo o ponto de uma pessoa (a página dela)",
     "ponto_diario": "Trazer o ponto sozinho (mês corrente; até o dia 10, o "
                     "anterior também) — retoma o que parou, pula o que já "
                     "entrou hoje",
@@ -112,6 +114,7 @@ ETAPAS = {
     "colaboradores": ["colaboradores"],
     "ponto": ["ponto"],
     "ponto_diario": ["ponto_diario"],
+    "ponto_pessoa": ["ponto_pessoa"],
     "fiscal": ["fiscal"],
     "fiscal_ia": ["fiscal_ia"],
     "notas_receita": ["notas_receita"],
@@ -392,6 +395,33 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                        if c.get("destravados") else "")
                     + (f", {c['sem_arquivo']} sem o arquivo no servidor"
                        if c.get("sem_arquivo") else ""))
+
+            elif etapa == "ponto_pessoa":
+                # QUEM e DE QUE MÊS: vem do banco, escrito pela tela antes de
+                # disparar — mesmo motivo do "ponto".
+                from . import ponto as _ponto
+                with conexao() as conn:
+                    alvo = sincronizacao._meta_ler(conn, "ponto_pessoa_alvo", "")
+                partes = str(alvo or "").split("|")
+                if len(partes) < 3 or not partes[0].isdigit() or not partes[1].isdigit():
+                    raise RuntimeError("não sei de quem trazer o ponto. Abra o "
+                                       "analítico da pessoa e aperte de novo.")
+                mudar_etapa("trazendo o ponto de uma pessoa")
+                r = _ponto.atualizar_pessoa(int(partes[0]), int(partes[1]),
+                                            partes[2], partes[3] if len(partes) > 3 else "",
+                                            anotar)
+                if not r["achou"]:
+                    raise RuntimeError(
+                        "não achei esta pessoa no ponto do Mobponto de "
+                        f"{int(partes[1]):02d}/{partes[0]} — olhei as páginas "
+                        f"{', '.join(str(x) for x in r['olhadas'])}. Se ela bateu "
+                        "ponto no mês, traga o mês inteiro de novo.")
+                total_linhas[0] = r["dias"]
+                recado_apoios[0] = (
+                    f"{r['dias']} dia(s) desta pessoa, pela página {r['pagina']} "
+                    f"(olhei {len(r['olhadas'])} página(s)); os outros "
+                    f"{max(0, r['pessoas_da_pagina'] - 1)} dessa página vieram "
+                    "atualizados junto")
 
             elif etapa == "ponto_diario":
                 # Um mês que falha não impede o outro: os dois são tentados, e

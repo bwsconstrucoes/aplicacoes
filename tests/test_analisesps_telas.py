@@ -7960,3 +7960,114 @@ def test_quem_so_CONSULTA_tambem_ve_o_ponto_da_pessoa(app, monkeypatch):
     _preparar_folha_aberta(monkeypatch, dias=_dias_com_batidas())
     r = como(app, SENHA_CONSULTA).get("/analisesps/api/folha/1/ponto/99713349334")
     assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# 30/09/2026 — O ANALÍTICO DO FUNCIONÁRIO, e QUEM É PAGO EM MAIS DE UMA CONTA
+# ---------------------------------------------------------------------------
+def _dias_em_duas_obras():
+    import datetime as dt
+    dias = []
+    for n in range(1, 7):
+        obra = "CRE1" if n <= 4 else "XYZ9"
+        dias.append({"data": dt.date(2026, 9, n), "marcacoes": [obra] * 4,
+                     "horas": ["07:00", "11:00", "13:00", "17:00"],
+                     "presenca": "Presença", "falta": "", "total_de_horas": "08:00",
+                     "dia_da_semana": ""})
+    return {"99713349334": dias}
+
+
+def test_o_ANALITICO_traz_contabilidade_cadastro_ponto_calculo_e_rateio(app, monkeypatch):
+    from app.apps.analisesps import folha_pagamento
+    _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
+    monkeypatch.setattr(folha_pagamento, "conta_por_obra",
+                        lambda: {"CRE1": "7011-4", "XYZ9": "22069-1"})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
+
+    for bloco in ("Contabilidade (arquivo do Fortes)", "Cadastro", "Ponto (Mobponto)",
+                  "O cálculo", "Por obra", "Por conta corrente", "O ponto, dia a dia"):
+        assert bloco in html, f"faltou: {bloco}"
+    assert "000013" in html                        # o código do Fortes
+    assert "7011-4" in html and "22069-1" in html  # as duas contas
+    assert "paga em mais de uma conta" in html
+    assert "Relatório para imprimir" in html
+    assert "Atualizar o ponto desta pessoa" in html
+
+
+def test_a_pagina_de_IMPRIMIR_tem_o_mesmo_analitico_e_o_botao(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
+    html = _como_mestre(app).get(
+        "/analisesps/folha/1/pessoa/99713349334").get_data(as_text=True)
+    assert "window.print()" in html
+    assert "Analítico do funcionário" in html
+    assert "O ponto, dia a dia" in html
+    assert "Relatório para imprimir" not in html, "na página, o botão é Imprimir"
+
+
+def test_quem_so_CONSULTA_ve_o_analitico_mas_nao_o_botao_de_atualizar(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
+    html = como(app, SENHA_CONSULTA).get(
+        "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
+    assert "O cálculo" in html
+    assert "Atualizar o ponto desta pessoa" not in html
+
+
+def test_analitico_de_quem_NAO_esta_na_folha_responde_404(app, monkeypatch):
+    _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
+    r = _como_mestre(app).get("/analisesps/folha/1/pessoa/52998224725?parcial=1")
+    assert r.status_code == 404
+
+
+def test_o_filtro_de_quem_e_pago_em_MAIS_DE_UMA_CONTA(app, monkeypatch):
+    """*"Quais funcionários estão sendo pagos em mais de uma conta. Isso é
+    importante também até para saber se não tem nada errado no ponto."*"""
+    from app.apps.analisesps import folha_pagamento
+    _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
+    monkeypatch.setattr(folha_pagamento, "conta_por_obra",
+                        lambda: {"CRE1": "7011-4", "XYZ9": "22069-1"})
+    cliente = _como_mestre(app)
+
+    html = cliente.get("/analisesps/folha/1").get_data(as_text=True)
+    assert "Pagas em mais de uma conta" in html
+    assert "conta=__varias" in html
+
+    varias = cliente.get("/analisesps/folha/1?conta=__varias").get_data(as_text=True)
+    assert "GERLANIO" in varias
+    por_conta = cliente.get("/analisesps/folha/1?conta=22069-1").get_data(as_text=True)
+    assert "GERLANIO" in por_conta
+    outra = cliente.get("/analisesps/folha/1?conta=9999-9").get_data(as_text=True)
+    assert "Nenhuma pessoa com esses filtros" in outra
+
+
+def test_quem_fica_numa_conta_so_NAO_entra_no_filtro_de_varias(app, monkeypatch):
+    from app.apps.analisesps import folha_pagamento
+    _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
+    monkeypatch.setattr(folha_pagamento, "conta_por_obra",
+                        lambda: {"CRE1": "7011-4", "XYZ9": "7011-4"})
+    html = _como_mestre(app).get("/analisesps/folha/1?conta=__varias").get_data(as_text=True)
+    assert "Nenhuma pessoa com esses filtros" in html
+
+
+def test_atualizar_o_ponto_de_uma_pessoa_DISPARA_a_tarefa(app, monkeypatch):
+    from app.apps.analisesps import sincronizacao, tarefas
+    _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
+    gravado, disparado = {}, {}
+    monkeypatch.setattr(sincronizacao, "_meta_gravar",
+                        lambda conn, k, v: gravado.setdefault(k, v))
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="": disparado.setdefault("modo", modo) and {"ok": True})
+    from contextlib import contextmanager
+    from app.apps.analisesps import db
+
+    @contextmanager
+    def conexao_falsa():
+        yield None
+    monkeypatch.setattr(db, "conexao", conexao_falsa)
+
+    r = _como_mestre(app).post("/analisesps/api/folha/ponto/pessoa",
+                               json={"folha_id": 1, "cpf": "997.133.493-34",
+                                     "nome": "GERLANIO"})
+    assert r.status_code == 200, r.get_json()
+    assert disparado["modo"] == "ponto_pessoa"
+    assert gravado["ponto_pessoa_alvo"] == "2026|9|99713349334|GERLANIO"

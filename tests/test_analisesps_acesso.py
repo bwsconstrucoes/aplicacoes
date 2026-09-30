@@ -120,6 +120,8 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/importar"),
     # O ponto dia a dia de uma pessoa (janela do nome): dado pessoal — só logado.
     ("GET",  "/analisesps/api/folha/123/ponto/99713349334"),
+    # O analítico do funcionário (e a página de imprimir): dado pessoal.
+    ("GET",  "/analisesps/folha/123/pessoa/99713349334"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.
@@ -131,6 +133,9 @@ TODAS_AS_TELAS = [
     # o valor — e o fechamento que autoriza o arquivo a sair.
     ("POST", "/analisesps/api/folha/apropriacao/ajuste"),
     ("POST", "/analisesps/api/folha/apropriacao/fechar"),
+    # Trazer o ponto de UMA pessoa, e como terminou.
+    ("POST", "/analisesps/api/folha/ponto/pessoa"),
+    ("GET",  "/analisesps/api/folha/ponto/pessoa/estado"),
     ("POST", "/analisesps/api/folha/auxilio/selecao"),
     # Mostra cadastro e ponto de uma pessoa: dado pessoal.
     ("GET",  "/analisesps/api/folha/pessoa/99713349334"),

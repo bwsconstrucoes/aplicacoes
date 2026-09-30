@@ -307,6 +307,17 @@ def apropriar_a_folha(folha) -> dict:
 DIAS_DA_SEMANA = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 
 
+def _contas_das_obras() -> dict:
+    """`{OBRA: conta}` — de onde sai o dinheiro de cada obra. Vazio se falhar:
+    é um bloco da tela, e a obra sem conta já é crítica em outro lugar."""
+    from . import folha_pagamento
+    try:
+        return {str(k).upper(): v for k, v in folha_pagamento.conta_por_obra().items()}
+    except Exception:  # noqa: BLE001
+        logger.exception("Folha: não consegui ler as contas das obras")
+        return {}
+
+
 def ponto_da_pessoa(folha_id: int, cpf: str) -> dict | None:
     """Todos os dias do período desta pessoa. None quando a folha não existe.
 
@@ -377,9 +388,88 @@ def ponto_da_pessoa(folha_id: int, cpf: str) -> dict | None:
         })
         data += dt.timedelta(days=1)
 
+    # --- O ANALÍTICO: o que veio de cada fonte, e a conta inteira -----------
+    # Pedido dele em 30/09/2026: *"a informação que veio da contabilidade, a
+    # informação que foi extraída do ponto, o ponto dia a dia, o cálculo, o
+    # rateio, quanto em cada conta corrente para pagamento, em cada obra, todos
+    # os totalizadores (…) para a gente ver o panorama do funcionário."*
+    from . import colaboradores
+    linha_da_folha = next(
+        (l for l in (folha.get("linhas") or [])
+         if (l.get("cpf") or "") == cpf
+         or str(l.get("id_fortes") or "") == str(pessoa.get("id_fortes") or "")),
+        {}) or {}
+    ficha = {}
+    try:
+        ficha = colaboradores.muitos_por_cpf([cpf]).get(cpf) or {}
+    except Exception:  # noqa: BLE001 — o cadastro é um bloco, não o analítico
+        logger.exception("Folha: não consegui ler a ficha para o analítico")
+    try:
+        obra_do_cadastro = colaboradores.resolver_obra(
+            ficha, colaboradores.codigos_das_obras()) if ficha else ""
+    except Exception:  # noqa: BLE001
+        obra_do_cadastro = ficha.get("obra_cadastro", "") if ficha else ""
+    contas = _contas_das_obras()
+    total = _dinheiro(pessoa.get("valor"))
+    por_obra = []
+    por_conta: dict = {}
+    for o in (pessoa.get("por_obra") or []):
+        obra = str(o.get("obra") or "")
+        conta = contas.get(obra.upper(), "")
+        valor = _dinheiro(o.get("valor"))
+        por_obra.append({
+            "obra": obra, "dias": int(o.get("dias") or 0), "valor": str(valor),
+            "percentual": (f"{(valor / total * 100):.1f}".replace(".", ",")
+                           if total else ""),
+            "conta": conta, "origem": o.get("origem") or ""})
+        alvo = por_conta.setdefault(conta, {"conta": conta, "obras": [],
+                                            "valor": Decimal("0.00")})
+        alvo["obras"].append(obra)
+        alvo["valor"] += valor
+    contagem = {
+        "dias_no_periodo": len(dias),
+        "com_obra": sum(1 for x in dias if x["obra_valeu"] or x["obra_ponto"]),
+        "faltas": sum(1 for x in dias if x["motivo"] == "falta"),
+        "sem_registro": sum(1 for x in dias
+                            if x["motivo"] == "sem registro no ponto"),
+        "sem_marcacao": sum(1 for x in dias
+                            if x["motivo"] == "sem marcação e sem falta"),
+        "empates": sum(1 for x in dias if x["empate"]),
+        "ajustados": sum(1 for x in dias if x["ajustado"]),
+    }
+
     return {
         "achou": True,
+        "folha_id": int(folha_id),
+        "competencia": folha.get("competencia", ""),
+        "rotulo_do_tipo": folha.get("rotulo_do_tipo", ""),
+        "contabilidade": {
+            "id_fortes": str(pessoa.get("id_fortes") or ""),
+            "nome": linha_da_folha.get("nome") or pessoa.get("nome") or "",
+            "filial": " - ".join(x for x in (
+                str(linha_da_folha.get("filial_codigo") or "").strip(),
+                " ".join(str(linha_da_folha.get("filial_nome") or "").split()))
+                if x),
+            "setor": linha_da_folha.get("setor_nome") or "",
+            "valor": str(total),
+        },
+        "cadastro": {
+            "nome": ficha.get("nome", ""), "cargo": ficha.get("cargo", ""),
+            "fase": ficha.get("fase", ""), "obra": obra_do_cadastro,
+            "situacao": ficha.get("situacao", ""),
+            "motivo": ficha.get("motivo", ""),
+            "link_pipefy": ficha.get("link_pipefy", ""),
+            "tipo_contrato": ficha.get("tipo_contrato", ""),
+        },
+        "contagem": contagem,
+        "por_conta": [{"conta": c["conta"], "obras": c["obras"],
+                       "valor": str(c["valor"])}
+                      for c in sorted(por_conta.values(),
+                                      key=lambda c: -c["valor"])],
+        "mais_de_uma_conta": len([c for c in por_conta if c]) > 1,
+        "criticas": list(pessoa.get("criticas") or []),
         "nome": pessoa.get("nome_cadastro") or pessoa.get("nome") or "",
+        "cpf": cpf,
         "cpf_bonito": cpf_bonito(cpf),
         "periodo": [ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")],
         "valor": str(_dinheiro(pessoa.get("valor"))),
@@ -391,9 +481,7 @@ def ponto_da_pessoa(folha_id: int, cpf: str) -> dict | None:
         "origem": pessoa.get("origem") or "",
         "regra": pessoa.get("regra") or "",
         "fora": bool(pessoa.get("fora")),
-        "por_obra": [{"obra": o.get("obra"), "dias": o.get("dias"),
-                      "valor": str(_dinheiro(o.get("valor")))}
-                     for o in (pessoa.get("por_obra") or [])],
+        "por_obra": por_obra,
         "tem_ponto": bool(feito["dias_por_cpf"]),
         "dias": dias,
     }
@@ -433,6 +521,9 @@ def montar(folha_id: int, filtros=None) -> dict:
     fichas = colaboradores.muitos_por_cpf(cpfs, ate=periodo[1] if periodo else None)
     obras_por_nome = colaboradores.codigos_das_obras()
 
+    # --- de qual conta sai o dinheiro de cada obra -------------------------
+    contas_por_obra = _contas_das_obras()
+
     # --- o setor que a contabilidade deu a cada pessoa (migração 038) ----
     setor_por_id = {str(l.get("id_fortes") or ""): l.get("setor_nome") or ""
                     for l in (folha.get("linhas") or [])}
@@ -464,9 +555,19 @@ def montar(folha_id: int, filtros=None) -> dict:
             # ganham destaque: é a contabilidade dizendo que aquela pessoa pede
             # conferência antes de pagar.
             "filial": filial_por_id.get(str(pessoa.get("id_fortes") or ""), ""),
+            # AS CONTAS DE PAGAMENTO DA PESSOA — pedido dele em 30/09/2026: *"quais
+            # funcionários estão sendo pagos em mais de uma conta. Isso é
+            # importante também até para saber se não tem nada errado no
+            # ponto."* Uma pessoa em duas contas trabalhou em obras de contas
+            # diferentes — às vezes é certo, às vezes é batida no lugar errado.
+            "contas": sorted({contas_por_obra.get(str(o.get("obra") or "").upper(), "")
+                              for o in (pessoa.get("por_obra") or [])}),
             "setor": setor,
             "setor_curto": folha_arquivo.setor_curto(setor),
             "setor_atencao": folha_arquivo.setor_pede_atencao(setor),
+            "mais_de_uma_conta": len({contas_por_obra.get(str(o.get("obra") or "").upper(), "")
+                                      for o in (pessoa.get("por_obra") or [])
+                                      if contas_por_obra.get(str(o.get("obra") or "").upper(), "")}) > 1,
             "nome_na_tela": (pessoa.get("nome_cadastro")
                              or pessoa.get("nome") or ""),
             "nome_contabilidade": pessoa.get("nome") or "",
@@ -575,6 +676,9 @@ def montar(folha_id: int, filtros=None) -> dict:
         "setores_curtos": {p["setor"]: p["setor_curto"] for p in pessoas
                            if p.get("setor")},
         "em_setor_de_atencao": [p for p in pessoas if p.get("setor_atencao")],
+        "em_mais_de_uma_conta": [p for p in pessoas if p.get("mais_de_uma_conta")],
+        "contas_de_pagamento": sorted({c for p in pessoas
+                                       for c in (p.get("contas") or []) if c}),
         # AS DUAS VISÕES DA OBRA, pedido dele em 30/09/2026: *"tanto a obra do
         # cadastro (…) e a obra do ponto. Tem que ter essas duas visões."*
         #
@@ -605,6 +709,9 @@ def montar(folha_id: int, filtros=None) -> dict:
 # (afastado, desativar…) — é o "ver só elas" do alerta da lateral.
 SETOR_DE_ATENCAO = "__atencao"
 
+# O valor do filtro de conta que junta quem é pago em mais de uma conta.
+CONTA_VARIAS = "__varias"
+
 
 def _filtrar(pessoas, filtros) -> list:
     """Recorta a lista. Filtro vazio não recorta nada.
@@ -620,6 +727,7 @@ def _filtrar(pessoas, filtros) -> list:
     fase = " ".join(str(filtros.get("fase") or "").split())
     setor = " ".join(str(filtros.get("setor") or "").split())
     filial = " ".join(str(filtros.get("filial") or "").split())
+    conta = str(filtros.get("conta") or "").strip()
     situacao = str(filtros.get("situacao") or "").strip()
     origem = str(filtros.get("origem") or "").strip()
 
@@ -646,6 +754,11 @@ def _filtrar(pessoas, filtros) -> list:
         if fase and (p.get("fase") or "") != fase:
             continue
         if filial and " ".join(str(p.get("filial") or "").split()) != filial:
+            continue
+        if conta == CONTA_VARIAS:
+            if not p.get("mais_de_uma_conta"):
+                continue
+        elif conta and conta not in (p.get("contas") or []):
             continue
         if setor == SETOR_DE_ATENCAO:
             if not p.get("setor_atencao"):

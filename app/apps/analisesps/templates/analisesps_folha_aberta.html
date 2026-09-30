@@ -101,6 +101,12 @@
       <b>{{ montado.totais.falta_apropriar|moeda }}</b>
       <small>{{ montado.totais.sem_obra }} sem dia de ponto ·
         {{ montado.totais.sem_cadastro }} sem cadastro</small></div>
+    {% if montado.em_mais_de_uma_conta %}
+      <div class="lat-num"><span>Pagas em mais de uma conta</span>
+        <b>{{ montado.em_mais_de_uma_conta|length }}</b>
+        <small><a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, conta='__varias') }}"
+          >ver quem</a> — confira se o ponto está certo</small></div>
+    {% endif %}
     <button type="button" class="btn secundario" id="btn-divisao"
             style="width:100%; margin-top:8px">Divisão por obra…</button>
     <a class="link-btn" style="display:block; margin-top:8px"
@@ -213,6 +219,31 @@
       <input type="search" name="q" value="{{ montado.filtros.busca }}"
              autocomplete="off" placeholder="nome, CPF ou código Fortes…"
              aria-label="Procurar pessoa">
+    </div>
+  </div>
+
+  <div class="filtro {% if montado.filtros.conta %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Conta de pagamento</span>
+      {% if montado.filtros.conta %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      {% if montado.contas_de_pagamento %}
+        <select name="conta" aria-label="Conta de pagamento">
+          <option value="">qualquer conta</option>
+          <option value="__varias" {% if montado.filtros.conta == '__varias' %}selected{% endif %}
+            >pagas em mais de uma conta</option>
+          {% for c in montado.contas_de_pagamento %}
+            <option value="{{ c }}" {% if montado.filtros.conta == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+        <p class="cartao-dica" style="margin:6px 0 0">A conta sai da obra de cada dia.
+          Quem tem dias em obras de contas diferentes aparece nas duas.</p>
+      {% else %}
+        <p class="cartao-dica" style="margin:0">Nenhuma conta ainda — sem obra não
+          há conta.</p>
+      {% endif %}
     </div>
   </div>
 
@@ -386,7 +417,7 @@
   {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
         or montado.filtros.situacao or montado.filtros.origem
         or montado.filtros.obra_cadastro or montado.filtros.setor
-        or montado.filtros.filial %}
+        or montado.filtros.filial or montado.filtros.conta %}
     <div style="margin-top:10px">
       <a class="btn secundario"
          href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id) }}"
@@ -462,7 +493,7 @@
 {% if montado.filtros.busca or montado.filtros.obra or montado.filtros.fase
       or montado.filtros.situacao or montado.filtros.origem
       or montado.filtros.obra_cadastro or montado.filtros.setor
-      or montado.filtros.filial %}
+      or montado.filtros.filial or montado.filtros.conta %}
   <p class="cartao-dica" style="margin:0 0 8px">
     O filtro mostra <b>{{ montado.quantas_mostradas }}</b> de
     {{ montado.totais.pessoas }} pessoa(s), somando
@@ -821,7 +852,8 @@
               {% else %}<b>{{ c.conta }}</b>{% endif %}
             </td>
             <td><span class="cartao-dica">{{ c.obras|join(', ') }}</span></td>
-            <td class="num">{{ c.pessoas }}</td>
+            <td class="num">{% if c.conta %}<a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, conta=c.conta) }}"
+              title="ver quem é pago por esta conta">{{ c.pessoas }}</a>{% else %}{{ c.pessoas }}{% endif %}</td>
             <td class="num">{{ c.valor|moeda }}</td>
           </tr>
         {% else %}
@@ -937,94 +969,76 @@
 {% if montado %}
 <script>
 // ---------------------------------------------------------------------------
-// O PONTO DA PESSOA, DIA A DIA. Busca ao clicar (a conta é a mesma da tela, feita
-// no servidor) em vez de embutir 400 × 15 dias na página.
+// O ANALÍTICO DA PESSOA — abre ao clicar no nome. O miolo vem PRONTO do servidor
+// (o mesmo desenho da página de imprimir), em vez de ser montado aqui: dois
+// desenhos da mesma conta divergiriam um dia.
 // ---------------------------------------------------------------------------
 (function () {
   const dialogo = document.getElementById("cartao-ponto");
   const titulo = document.getElementById("ponto-titulo");
   const corpo = document.getElementById("ponto-corpo");
   if (!dialogo) return;
-  const moeda = v => (v === null || v === undefined || v === "") ? "—" :
-    Number(v).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g,
     c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 
-  function batida(b) {
-    if (!b.hora && !b.obra) return '<td class="cartao-dica">—</td>';
-    return "<td>" + esc(b.hora || "—") +
-      (b.obra ? '<br><span class="cartao-dica">' + esc(b.obra) + "</span>" : "") +
-      "</td>";
-  }
-
-  function desenhar(d) {
-    titulo.innerHTML = esc(d.nome) + " <small>" + esc(d.cpf_bonito) + " · " +
-      esc(d.periodo[0]) + " a " + esc(d.periodo[1]) + "</small>";
-    let html = '<p class="ponto-resumo">Líquido <b>' + moeda(d.valor) +
-      "</b> · <b>" + d.dias_no_ponto + "</b> dia(s) com obra · valor por dia <b>" +
-      moeda(d.valor_por_dia) + "</b>";
-    if (d.por_obra.length) {
-      html += " · " + d.por_obra.map(o => "<b>" + esc(o.obra) + "</b> " +
-        (o.dias ? o.dias + " dia(s), " : "") + moeda(o.valor)).join(" · ");
+  async function carregar(cpf) {
+    corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
+    try {
+      const url = "{{ url_for('analisesps.tela_folha_pessoa', folha_id=folha.id, cpf='CPF') }}"
+        .replace("CPF", encodeURIComponent(cpf)) + "?parcial=1";
+      const r = await fetch(url);
+      corpo.innerHTML = await r.text();
+    } catch (erro) {
+      corpo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
     }
-    html += "</p>";
-    if (d.fora) html += '<div class="aviso atencao">Você tirou esta pessoa deste pagamento.</div>';
-    if (d.origem === "regra") {
-      html += '<div class="aviso info">A divisão desta pessoa vem da <b>regra de rateio</b>' +
-        (d.regra ? " (" + esc(d.regra) + ")" : "") + ", não dos dias: os dias abaixo são " +
-        "só para conferência.</div>";
-    }
-    if (!d.tem_ponto) {
-      html += '<div class="aviso erro">O ponto deste mês ainda não foi trazido.</div>';
-    }
-    html += '<div class="tabela-wrap"><div class="tabela-rolagem livre">' +
-      '<table class="sps ponto-dia-a-dia"><thead><tr><th>Dia</th>' +
-      "<th>Entrada</th><th>Almoço</th><th>Retorno</th><th>Saída</th>" +
-      "<th>Situação</th><th>Obra do dia</th><th class=\"num\">Valor do dia</th>" +
-      "</tr></thead><tbody>";
-    d.dias.forEach(x => {
-      const semObra = !x.obra_ponto && !x.obra_valeu;
-      let obra;
-      if (x.ajustado) {
-        obra = "<b>" + esc(x.obra_valeu) + '</b><br><span class="cartao-dica">o ponto dizia ' +
-          esc(x.obra_ponto) + " — ajustado por você</span>";
-      } else if (x.obra_valeu || x.obra_ponto) {
-        obra = "<b>" + esc(x.obra_valeu || x.obra_ponto) + "</b>" +
-          (x.empate ? '<br><span class="selo saindo" title="duas batidas em cada obra: ' +
-            'valeu a obra em que o dia começou">empate 2×2</span>' : "");
-      } else {
-        obra = '<span class="cartao-dica">' + esc(x.motivo || "sem obra") + "</span>";
-      }
-      const situacao = [x.presenca, x.falta].filter(Boolean).map(esc).join("<br>") ||
-        '<span class="cartao-dica">—</span>';
-      html += '<tr class="' + (semObra ? "dia-sem-obra" : "") + '">' +
-        "<td>" + esc(x.data_br.slice(0, 5)) + ' <span class="cartao-dica">' +
-          esc(x.semana) + "</span></td>" +
-        x.batidas.map(batida).join("") +
-        "<td>" + situacao + (x.horas ? '<br><span class="cartao-dica">' +
-          esc(x.horas) + " h</span>" : "") + "</td>" +
-        "<td>" + obra + "</td>" +
-        '<td class="num">' + moeda(x.valor) + "</td></tr>";
-    });
-    html += "</tbody></table></div></div>";
-    corpo.innerHTML = html;
   }
 
   document.addEventListener("click", async e => {
     const b = e.target.closest(".abrir-ponto");
     if (!b) return;
-    titulo.textContent = b.dataset.nome || "Ponto";
-    corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
+    titulo.textContent = "Analítico — " + (b.dataset.nome || "");
     if (dialogo.showModal) dialogo.showModal(); else dialogo.setAttribute("open", "");
+    carregar(b.dataset.cpf);
+  });
+  window.recarregarAnalitico = carregar;
+
+  // ATUALIZAR O PONTO DE UMA PESSOA: dispara, acompanha e, no fim, relê o
+  // analítico — a folha é recalculada a cada leitura, então o novo ponto já
+  // aparece na conta.
+  corpo.addEventListener("click", async e => {
+    const b = e.target.closest(".atualizar-ponto-pessoa");
+    if (!b) return;
+    const recado = corpo.querySelector(".recado-ponto-pessoa");
+    b.disabled = true;
+    recado.textContent = "pedindo ao Mobponto…";
     try {
-      const url = "{{ url_for('analisesps.folha_ponto_da_pessoa', folha_id=folha.id, cpf='CPF') }}"
-        .replace("CPF", encodeURIComponent(b.dataset.cpf));
-      const r = await fetch(url);
+      const r = await fetch("{{ url_for('analisesps.folha_ponto_pessoa_atualizar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({folha_id: b.dataset.folha, cpf: b.dataset.cpf,
+                              nome: titulo.textContent.replace("Analítico — ", "")})});
       const d = await r.json();
-      if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + esc(d.erro) + "</div>"; return; }
-      desenhar(d);
+      if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
+      const acompanhar = async () => {
+        const a = await (await fetch("{{ url_for('analisesps.andamento') }}")).json();
+        if (a.rodando) {
+          recado.textContent = (a.etapa || "trabalhando") + (a.progresso ? " — " + a.progresso : "");
+          setTimeout(acompanhar, 4000);
+          return;
+        }
+        const f = await (await fetch("{{ url_for('analisesps.folha_ponto_pessoa_estado') }}")).json();
+        if (f.sucesso) {
+          await carregar(b.dataset.cpf);
+          const novo = corpo.querySelector(".recado-ponto-pessoa");
+          if (novo) novo.textContent = "Atualizado: " + f.mensagem;
+        } else {
+          recado.textContent = "Não deu: " + (f.mensagem || "motivo não registrado");
+          b.disabled = false;
+        }
+      };
+      setTimeout(acompanhar, 3000);
     } catch (erro) {
-      corpo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
+      recado.textContent = "Falhou: " + erro;
+      b.disabled = false;
     }
   });
 })();

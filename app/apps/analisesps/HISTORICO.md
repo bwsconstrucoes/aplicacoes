@@ -10414,6 +10414,76 @@ casar (leva 128).
 
 ---
 
+### Centésima trigésima segunda leva (30/09) — o analítico do funcionário, quem é pago em mais de uma conta, e o ponto de uma pessoa só
+
+Três pedidos dele na mesma mensagem, feitos em fila.
+
+**1. O analítico do funcionário.** *"Nesse quadrinho, um analítico do
+funcionário: a informação que veio da contabilidade, a que foi extraída do
+ponto, o ponto dia a dia, o cálculo, o rateio, quanto em cada conta corrente,
+em cada obra, todos os totalizadores (…) Inclusive poder gerar um relatório,
+poder imprimir."*
+
+- A janela que abre no nome virou o **analítico**: três cartões lado a lado com
+  o que veio de cada fonte — **contabilidade** (código, nome na folha, obra da
+  contabilidade, setor, líquido), **cadastro** (cargo, fase, obra, contrato,
+  situação) e **ponto** (dias no período, com obra, faltas, sem batida, sem
+  registro, empates, ajustados) —, **o cálculo** escrito por extenso (líquido ÷
+  dias = valor por dia), **o rateio por obra** (dias, %, valor, conta),
+  **por conta corrente**, o que o sistema apontou, e **o ponto dia a dia**.
+- **Um desenho só** (`_folha_analitico.html`) para a janela e para a **página de
+  imprimir** (`/folha/<folha>/pessoa/<cpf>`, com botão "Imprimir" — o navegador
+  salva em PDF). A janela carrega o miolo pronto do servidor
+  (`?parcial=1`); o JavaScript que montava a tabela saiu.
+
+**2. Quem é pago em mais de uma conta.** *"Quais funcionários estão sendo pagos
+em mais de uma conta. Isso é importante até para saber se não tem nada errado
+no ponto."*
+
+- Cada pessoa leva as contas de onde sai o dinheiro dela (a conta de cada obra
+  dos dias dela). Na lateral, em "Esta folha": **"Pagas em mais de uma conta:
+  N — ver quem"**. Filtro novo **"Conta de pagamento"** (uma conta, ou "pagas
+  em mais de uma conta"). Na janela da divisão, o número de pessoas de cada
+  conta leva ao filtro daquela conta. No analítico, o selo "paga em mais de uma
+  conta".
+
+**3. O ponto de uma pessoa só.** *"É possível baixar só o ponto de um
+funcionário específico? (…) Se adivinhar qual página ele está, tentar baixar só
+aquela página. Se não encontrar, vai na seguinte ou na anterior. Pelo nome dá
+para entender."*
+
+- É exatamente isso (`ponto.atualizar_pessoa`). A API não filtra por pessoa.
+  **Migração 039** guarda em que página cada pessoa veio; com ela, a busca vai
+  direto à página. Sem ela (cargas antigas), **adivinha pela ordem do nome**
+  (posição entre todos ÷ pessoas por página). Não achou: olha os nomes da página
+  — todos depois do dela, volta; todos antes, avança; se a ordem não ajudar,
+  procura em volta. Desiste depois de 8 páginas, dizendo quais olhou.
+- **Regrava a página inteira**, por pessoa (sem duplicar): os outros daquela
+  página vieram tão atualizados quanto ela. **A carga do mês não muda de
+  andamento** (senão viraria "veio pela metade").
+- Botão **"Atualizar o ponto desta pessoa"** no analítico (só quem opera). Roda
+  no processo separado (tarefa `ponto_pessoa`); a janela acompanha e, no fim,
+  relê o analítico — a folha é recalculada a cada leitura.
+- **Suposição que só o Mobponto de verdade confirma:** que as páginas vêm em
+  ordem de nome. Se não vierem, a busca ainda acha (procura em volta), só gasta
+  mais páginas; e depois da primeira carga com a 039, nem precisa adivinhar.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** e **apertar "Aplicar atualizações do banco" no mesmo momento** (migração 039; a 038 também, se ainda não foi) | ele dizer "pode" |
+| trazer o ponto do mês de novo **depois** da 039 — é o que guarda a página de cada pessoa | ele (ou o automático de hora em hora) |
+| conferir o analítico e a impressão com gente de verdade | ele |
+
+**Verificado:** testes das telas, do acesso e do ponto (68, com banco de
+verdade, incluindo a busca pela página guardada, pelo nome, a desistência e a
+tarefa); JavaScript da tela passou pela checagem de sintaxe; a aplicação importa.
+**NÃO verificado:** a ordem real das páginas do Mobponto, e a impressão num
+navegador de verdade.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

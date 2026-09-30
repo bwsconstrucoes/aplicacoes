@@ -2537,3 +2537,31 @@ table.conciliacao td.no-omie { white-space: nowrap; }
 table.ponto-dia-a-dia td { vertical-align: top; }
 table.ponto-dia-a-dia tr.dia-sem-obra td { background: #F7F7F4; color: var(--tinta-suave); }
 
+/* O analítico do funcionário (janela e página de imprimir) — 30/09/2026. */
+#cartao-ponto { width: min(1180px, 96vw); }
+.analitico-cab { display: flex; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 8px; }
+.analitico-nome { font-size: 17px; display: block; }
+.analitico-selos .selo { margin-left: 4px; }
+.analitico-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin: 0 0 12px; }
+.analitico-fontes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px; margin-bottom: 8px; }
+.analitico-fontes .cartao { margin: 0; padding: 12px; }
+.analitico-dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px;
+  margin: 6px 0 0; font-size: 13px; }
+.analitico-dl dt { color: var(--tinta-suave); }
+.analitico-dl dd { margin: 0; text-align: right; }
+.analitico-conta { margin: 0 0 10px; }
+.analitico-rateio { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px; }
+.analitico h4 { margin: 14px 0 6px; }
+
+@media print {
+  .topo, nav, .abas-folha, .nao-imprimir, .filtros, .analitico-acoes { display: none !important; }
+  .corpo, .principal { display: block !important; padding: 0 !important; margin: 0 !important; }
+  .analitico .cartao, .tabela-wrap { box-shadow: none !important; border: 1px solid #999; }
+  .tabela-rolagem { max-height: none !important; overflow: visible !important; }
+  table.ponto-dia-a-dia tr { break-inside: avoid; }
+}
+

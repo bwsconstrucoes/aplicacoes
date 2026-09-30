@@ -824,7 +824,7 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
 
 
 def _gravar_pagina(carga_id: int, pagina: int, cpfs: set, linhas: list,
-                   campos: set) -> None:
+                   campos: set, andamento: bool = True) -> None:
     """Uma página inteira, numa transação: os dias, o andamento e os campos.
 
     ⚠️ POR PESSOA, E POR ISSO NÃO DUPLICA: antes de gravar, os dias que esta
@@ -838,19 +838,184 @@ def _gravar_pagina(carga_id: int, pagina: int, cpfs: set, linhas: list,
                          " WHERE carga_id = ? AND cpf = ANY(?)",
                          (int(carga_id), sorted(cpfs)))
         if linhas:
-            conn.executemany(
-                "INSERT INTO analisesps.ponto_dia "
-                "  (carga_id, cpf, nome, data, matricula, campos) "
-                " VALUES (?,?,?,?,?,?)", linhas)
+            if _tem_pagina():
+                # Em que página a pessoa veio (migração 039): é o que deixa
+                # trazer UMA pessoa depois indo direto à página certa.
+                conn.executemany(
+                    "INSERT INTO analisesps.ponto_dia "
+                    "  (carga_id, cpf, nome, data, matricula, campos, pagina) "
+                    " VALUES (?,?,?,?,?,?,?)",
+                    [tuple(l) + (int(pagina),) for l in linhas])
+            else:
+                conn.executemany(
+                    "INSERT INTO analisesps.ponto_dia "
+                    "  (carga_id, cpf, nome, data, matricula, campos) "
+                    " VALUES (?,?,?,?,?,?)", linhas)
         cur = conn.execute("SELECT campos_vistos FROM analisesps.ponto_carga "
                            " WHERE id = ? FOR UPDATE", (int(carga_id),))
         atuais = ((cur.fetchone() or [""])[0] or "").split("|")
         cur.close()
         todos = sorted({c for c in atuais if c} | set(campos))
-        conn.execute("UPDATE analisesps.ponto_carga "
-                     "   SET paginas_lidas = ?, campos_vistos = ? WHERE id = ?",
-                     (int(pagina), "|".join(todos), int(carga_id)))
+        if andamento:
+            conn.execute("UPDATE analisesps.ponto_carga "
+                         "   SET paginas_lidas = ?, campos_vistos = ? WHERE id = ?",
+                         (int(pagina), "|".join(todos), int(carga_id)))
+        else:
+            # Atualização de UMA pessoa numa carga já terminada: o andamento da
+            # carga não muda (senão ela passaria a "veio pela metade").
+            conn.execute("UPDATE analisesps.ponto_carga "
+                         "   SET campos_vistos = ? WHERE id = ?",
+                         ("|".join(todos), int(carga_id)))
         conn.commit()
+
+
+def _tem_pagina() -> bool:
+    """A migração 039 já rodou?"""
+    from .db import tem_coluna
+    return tem_coluna("ponto_dia", "pagina")
+
+
+# ---------------------------------------------------------------------------
+# TRAZER O PONTO DE UMA PESSOA SÓ — 30/09/2026
+#
+# Pedido dele: *"é possível eu baixar só o ponto de um funcionário específico?
+# (…) eu fiz uma atualização no ponto do funcionário, aí eu quero que reflita só
+# aquele trecho, para a folha ser recalculada de forma corrigida (…) talvez o
+# endpoint do Mobponto não permita. Se adivinhar qual página aquele funcionário
+# está do relatório, tentar baixar só aquela página. Se não encontrar, vai na
+# página seguinte ou na anterior. Pelo nome dá para entender em qual posição vai
+# estar."*
+#
+# É exatamente isso. A API não filtra por pessoa; ela entrega o mês em páginas.
+#
+#   1. Se a última carga guardou EM QUE PÁGINA a pessoa veio (migração 039), a
+#      busca começa lá.
+#   2. Se não, ADIVINHA pela ordem do nome: a posição da pessoa entre todas as da
+#      carga, dividida por quantas pessoas cabem numa página.
+#   3. Na página pedida: achou → regrava a PÁGINA INTEIRA (todos os dessa página,
+#      por pessoa, sem duplicar). Não achou → olha os nomes da página: se todos
+#      vêm DEPOIS do dela, volta uma; se todos vêm ANTES, avança uma. Se a ordem
+#      não ajudar (a API não estiver em ordem alfabética), procura em volta da
+#      página chutada, uma para cada lado.
+#   4. Desiste depois de `TENTATIVAS_POR_PESSOA` páginas, dizendo quais olhou.
+#
+# ⚠️ REGRAVAR A PÁGINA INTEIRA, e não só a pessoa, é de propósito: a página veio
+# inteira, e os outros dela estão tão atualizados quanto ela.
+# ---------------------------------------------------------------------------
+TENTATIVAS_POR_PESSOA = 8
+
+
+def _chave_do_nome(nome: str) -> str:
+    """O nome como a ordem alfabética o vê: sem acento, maiúsculo, espaços únicos."""
+    import unicodedata
+    sem_acento = "".join(c for c in unicodedata.normalize("NFD", str(nome or ""))
+                         if unicodedata.category(c) != "Mn")
+    return " ".join(sem_acento.upper().split())
+
+
+def _pagina_chutada(carga: dict, cpf: str) -> tuple:
+    """`(pagina, nome)` — onde a pessoa deve estar, e o nome dela na carga."""
+    from .db import consultar, consultar_um
+    nome = ""
+    guardada = None
+    if _tem_pagina():
+        linha = consultar_um(
+            "SELECT nome, max(pagina) FROM analisesps.ponto_dia "
+            " WHERE carga_id = ? AND cpf = ? GROUP BY nome LIMIT 1",
+            (int(carga["id"]), cpf))
+        if linha:
+            nome, guardada = linha[0] or "", linha[1]
+    pessoas = consultar(
+        "SELECT cpf, max(nome) FROM analisesps.ponto_dia WHERE carga_id = ? "
+        " GROUP BY cpf", (int(carga["id"]),))
+    if not nome:
+        nome = next((n for c, n in pessoas if c == cpf), "") or ""
+    if guardada:
+        return int(guardada), nome
+    total = max(1, int(carga.get("paginas") or 1))
+    if not pessoas:
+        return 1, nome
+    chaves = sorted(_chave_do_nome(n) for _c, n in pessoas)
+    import bisect
+    posicao = bisect.bisect_left(chaves, _chave_do_nome(nome)) if nome else 0
+    por_pagina = max(1, -(-len(chaves) // total))
+    return min(total, posicao // por_pagina + 1), nome
+
+
+def atualizar_pessoa(ano: int, mes: int, cpf: str, nome: str = "",
+                     anotar=None) -> dict:
+    """Traz de novo do Mobponto só a página em que a pessoa está. Ver acima.
+
+    Devolve `{"achou", "pagina", "olhadas", "dias", "pessoas_da_pagina"}`.
+    Levanta `ErroDoPonto` quando não há carga do mês ou a API falha.
+    """
+    anotar = anotar or (lambda *a, **k: None)
+    cpf = _cpf_do_ponto(cpf)
+    carga = carga_do_mes(ano, mes)
+    if not carga:
+        raise ErroDoPonto(
+            f"não há ponto de {mes:02d}/{ano} guardado. Traga o mês inteiro "
+            "primeiro — é a partir dele que se acha a página de cada pessoa.")
+    if not configurado():
+        raise ErroDoPonto("faltam as credenciais do Mobponto.")
+
+    total = max(1, int(carga.get("paginas") or 1))
+    chute, nome_guardado = _pagina_chutada(carga, cpf)
+    alvo = _chave_do_nome(nome or nome_guardado)
+
+    olhadas: list = []
+    em_volta = [chute]
+    for d in range(1, total + 1):
+        em_volta += [chute + d, chute - d]
+    em_volta = [p for p in em_volta if 1 <= p <= total]
+
+    proxima = chute
+    while proxima and len(olhadas) < TENTATIVAS_POR_PESSOA:
+        pagina = proxima
+        olhadas.append(pagina)
+        anotar("trazendo o ponto de uma pessoa", f"olhando a página {pagina} de {total}")
+        with _mantendo_vivo(anotar, "trazendo o ponto de uma pessoa",
+                            f"página {pagina} — esperando o Mobponto responder"):
+            dados = _pedir_pagina(ano, mes, pagina)
+        funcionarios = ((dados or {}).get("result") or {}).get("funcionarios") or []
+
+        cpfs_da_pagina = {_cpf_do_ponto(_dias_do_funcionario(f)[0]) for f in funcionarios}
+        if cpf in cpfs_da_pagina:
+            linhas, cpfs, campos = [], set(), set()
+            dias_dela = 0
+            for bruto in funcionarios:
+                c, n, dias = _dias_do_funcionario(bruto)
+                if c:
+                    cpfs.add(_cpf_do_ponto(c))
+                for dia in dias:
+                    if isinstance(dia, dict):
+                        campos.update(str(k) for k in dia)
+                    linha = _linha_do_dia(int(carga["id"]), c, n, dia, ano, mes)
+                    if linha is not None:
+                        linhas.append(linha)
+                        if linha[1] == cpf:
+                            dias_dela += 1
+            _gravar_pagina(int(carga["id"]), pagina, cpfs, linhas, campos,
+                           andamento=False)
+            logger.info("Análise de SPs: ponto de %s (%02d/%d) atualizado pela "
+                        "página %d — %d dia(s). Páginas olhadas: %s.",
+                        cpf, mes, ano, pagina, dias_dela, olhadas)
+            return {"achou": True, "pagina": pagina, "olhadas": olhadas,
+                    "dias": dias_dela, "pessoas_da_pagina": len(cpfs)}
+
+        # Não está aqui: a ordem dos nomes diz para onde ir.
+        proxima = None
+        nomes = sorted(_chave_do_nome(_dias_do_funcionario(f)[1]) for f in funcionarios)
+        if alvo and nomes:
+            if alvo < nomes[0] and pagina - 1 >= 1 and pagina - 1 not in olhadas:
+                proxima = pagina - 1
+            elif alvo > nomes[-1] and pagina + 1 <= total and pagina + 1 not in olhadas:
+                proxima = pagina + 1
+        if proxima is None:
+            proxima = next((p for p in em_volta if p not in olhadas), None)
+
+    return {"achou": False, "pagina": None, "olhadas": olhadas, "dias": 0,
+            "pessoas_da_pagina": 0}
 
 
 def _recente(carga: dict) -> bool:

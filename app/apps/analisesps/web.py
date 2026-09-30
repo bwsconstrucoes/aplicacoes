@@ -2476,6 +2476,7 @@ def tela_folha_aberta(folha_id: int):
             "obra_cadastro": request.args.get("obra_cadastro") or "",
             "setor": request.args.get("setor") or "",
             "filial": request.args.get("filial") or "",
+            "conta": request.args.get("conta") or "",
             "fase": request.args.get("fase") or "",
             "situacao": request.args.get("situacao") or "",
             "origem": request.args.get("origem") or "",
@@ -2580,6 +2581,80 @@ def folha_apropriacao_ajustar():
         logger.exception("Folha: falhou gravar o ajuste da apropriação")
         return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
     return {"ok": True}
+
+
+@bp.route("/api/folha/ponto/pessoa", methods=["POST"])
+@exige_operador
+def folha_ponto_pessoa_atualizar():
+    """Dispara a atualização do ponto de UMA pessoa (a página dela no Mobponto).
+
+    Roda no processo separado, como o ponto do mês: são pedidos de minutos à API.
+    Quem e de que mês vão para o banco antes de disparar."""
+    from . import folha_arquivo as fa, sincronizacao, tarefas
+    from .db import conexao
+    from .folha_rateio import so_digitos
+    dados = request.get_json(silent=True) or {}
+    try:
+        folha = fa.abrir(int(dados.get("folha_id") or 0))
+    except (TypeError, ValueError):
+        folha = None
+    cpf = so_digitos(dados.get("cpf"))
+    if not folha or len(cpf) != 11:
+        return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
+    nome = str(dados.get("nome") or "").replace("|", " ")[:120]
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_pessoa_alvo",
+                                   f"{folha['ano']}|{folha['mes']}|{cpf}|{nome}")
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    resultado = tarefas.disparar("ponto_pessoa", disparo=quem or "ponto de uma pessoa")
+    if not resultado.get("ok"):
+        return {"ok": False, "erro": resultado.get("erro")
+                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+    return {"ok": True}
+
+
+@bp.route("/api/folha/ponto/pessoa/estado")
+@exige_consulta
+def folha_ponto_pessoa_estado():
+    """Como terminou a última atualização do ponto de uma pessoa."""
+    from . import tarefas
+    ultima = tarefas.ultima_do_tipo("ponto_pessoa") or {}
+    return {"ok": True, "em_andamento": bool(ultima.get("em_andamento")),
+            "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or ""}
+
+
+@bp.route("/folha/<int:folha_id>/pessoa/<cpf>")
+@exige_consulta
+def tela_folha_pessoa(folha_id: int, cpf: str):
+    """O analítico de um funcionário na folha — página para imprimir, e (com
+    `?parcial=1`) o miolo da janela que abre no nome. Um desenho só para os dois.
+
+    Pessoa ou folha que não existe: 404, "não encontrado"."""
+    from . import folha_gestao as fg
+    from .horario import agora
+    try:
+        a = fg.ponto_da_pessoa(folha_id, cpf)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar o analítico")
+        if request.args.get("parcial"):
+            return (f'<div class="aviso erro">Não consegui montar o analítico: '
+                    f"{e}</div>"), 500
+        return render_template("analisesps_erro.html",
+                               mensagem=f"Não consegui montar o analítico: {e}"), 500
+    if not a or not a.get("achou"):
+        if request.args.get("parcial"):
+            return '<div class="aviso erro">Esta pessoa não está nesta folha.</div>', 404
+        return render_template("analisesps_erro.html",
+                               mensagem="Esta pessoa não está nesta folha."), 404
+    if request.args.get("parcial"):
+        return render_template("_folha_analitico.html", a=a, parcial=True,
+                               pode_operar=auth.pode_operar())
+    return render_template(
+        "analisesps_folha_pessoa.html", a=a, aba="folha", subaba="importar",
+        gerado_em=agora().strftime("%d/%m/%Y %H:%M"),
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 @bp.route("/api/folha/<int:folha_id>/ponto/<cpf>")
