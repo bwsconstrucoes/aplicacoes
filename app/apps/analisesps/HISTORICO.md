@@ -11054,7 +11054,7 @@ foi lendo o arquivo gerado com o openpyxl.
 | soltar a folha analítica de 09/2026 | ele |
 | decidir se passa a importar só a analítica | ele |
 | ~~publicar a leva 142~~ — **publicada em 01/10/2026** (main em `23a96dd`), sem migração nova | — |
-| publicar a leva 143 (arquivo SomaPay no modelo do Soma) e o dono gerar de novo e subir no portal | ele |
+| ~~publicar a leva 143~~ — **publicada em 01/10/2026**. Falta o dono gerar de novo e subir no portal do Soma | ele |
 | dizer qual valor o link do botão da folha manda em `tipo` (vai no campo `automa_o_2` da SP) | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 
