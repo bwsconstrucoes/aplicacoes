@@ -10691,6 +10691,60 @@ verdade (≈500 pessoas) — o PDF da lista inteira deve passar de 15 páginas.
 
 ---
 
+### Centésima trigésima quinta leva (01/10) — o ponto de uma pessoa não espera a carga do mês; o "lançar" do dia
+
+Primeiro uso dele depois da publicação, três relatos:
+
+**1. "Tentei atualizar um ponto, mas deu: já existe uma atualização em andamento
+(trazendo o ponto). Uma coisa não deveria ter nada a ver com a outra. Ou seja,
+tento lançar e nada acontece."** — Ele está certo. A migração 004 deixava UMA
+execução viva no sistema inteiro, e a carga do mês (que roda de hora em hora e
+leva dezenas de minutos) prendia o "Atualizar o ponto desta pessoa" e o
+"Lançar". **Migração 041**: duas pistas — a GERAL e a DA PESSOA (`ponto_pessoa`,
+`ponto_lancar`, em `tarefas.MODOS_DA_PESSOA`). Cada pista continua com no máximo
+uma viva (o índice agora é sobre "é da pista da pessoa?"). `tarefas.estado()`
+olha a pista geral por padrão (Configurações e a barra de andamento não mudam);
+a tela da pessoa acompanha a PRÓPRIA tarefa pelo estado do tipo dela, com o
+andamento ("batida 12 de 40"). Antes de a 041 ser aplicada, o recado diz para
+apertar o botão.
+- Risco aceito: se a carga do mês terminar no meio de um "ponto da pessoa", a
+  carga antiga é trocada e a gravação da pessoa pode falhar — o recado diz, e a
+  carga nova já traz a pessoa.
+
+**2. "O botão lançar do dia tá sem função."** — Duas causas possíveis, as duas
+consertadas: com o quadro mostrando só o aviso do que falta configurar (as
+variáveis do responsável, ou a lista da C. Diários), o botão saía calado; e,
+funcionando, ele só trocava duas datas lá em cima, sem rolar. Agora o "lançar"
+rola até o quadro e o destaca; com o quadro utilizável, põe o dia e **já mostra o
+que vai ser lançado** (a obra vem marcada). A justificativa vazia é avisada
+antes da confirmação.
+
+**3. "E se eu quiser trocar a obra de um dia que já tenha ponto?" / "Acho que se
+somente gravar o ponto por cima de uma que já existe [não] funciona. Precisaria
+primeiro excluir o que está e depois gravar novamente."** — Concordo, e é o
+desenho: para cada batida do dia, excluir e incluir de novo **na mesma hora**, só
+com a obra nova. **Não feito**: a API que tenho só INCLUI (`CAD_EDT_PONTO`, ação
+`C`). Não há, no `local_backend.py` nem nos Apps Script dele, a chamada de
+excluir batida (conferido: só `incluir-ponto` e `aplicar-falta`). Inventar seria
+apagar ponto no Mobponto às cegas. **Pedido a ele:** o trecho que exclui uma
+batida (ou a documentação do Mobponto), sem credenciais. Até lá: trocar no
+próprio Mobponto e apertar "Atualizar o ponto desta pessoa" — que agora não
+espera a carga do mês.
+
+Também: um teste antigo de pagamento (`NAO_BATE`) dependia do mês corrente e
+quebrou na virada para outubro — passou a pedir 09/2026 explicitamente.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** — **com migração 041** (e a 040, se ainda não aplicada): apertar "Aplicar atualizações do banco" na hora | ele dizer "pode" |
+| a chamada de EXCLUIR batida do Mobponto (para "trocar a obra do dia") | ele |
+| criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
+| primeiro lançamento de verdade: UM dia de UMA pessoa, conferido no Mobponto | ele |
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

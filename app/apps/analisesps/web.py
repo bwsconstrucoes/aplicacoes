@@ -2780,7 +2780,9 @@ def folha_ponto_lancar_estado():
     from . import tarefas
     ultima = tarefas.ultima_do_tipo("ponto_lancar") or {}
     return {"ok": True, "em_andamento": bool(ultima.get("em_andamento")),
-            "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or ""}
+            "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or "",
+            "etapa": ultima.get("etapa") or "",
+            "progresso": ultima.get("progresso") or ""}
 
 
 @bp.route("/api/folha/ponto/pessoa/estado")
@@ -2790,7 +2792,9 @@ def folha_ponto_pessoa_estado():
     from . import tarefas
     ultima = tarefas.ultima_do_tipo("ponto_pessoa") or {}
     return {"ok": True, "em_andamento": bool(ultima.get("em_andamento")),
-            "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or ""}
+            "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or "",
+            "etapa": ultima.get("etapa") or "",
+            "progresso": ultima.get("progresso") or ""}
 
 
 @bp.route("/folha/<int:folha_id>/pendente/<id_fortes>")

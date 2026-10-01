@@ -967,14 +967,16 @@
                               nome: titulo.textContent.replace("Analítico — ", "")})});
       const d = await r.json();
       if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
+      // ⚠️ ACOMPANHA A PRÓPRIA TAREFA, não a barra geral: desde 01/10/2026 o
+      // ponto de uma pessoa corre numa pista própria, junto com a carga do mês
+      // — olhar a barra geral faria a tela esperar a carga terminar.
       const acompanhar = async () => {
-        const a = await (await fetch("{{ url_for('analisesps.andamento') }}")).json();
-        if (a.rodando) {
-          recado.textContent = (a.etapa || "trabalhando") + (a.progresso ? " — " + a.progresso : "");
-          setTimeout(acompanhar, 4000);
+        const f = await (await fetch("{{ url_for('analisesps.folha_ponto_pessoa_estado') }}")).json();
+        if (f.em_andamento) {
+          recado.textContent = (f.etapa || "trabalhando") + (f.progresso ? " — " + f.progresso : "");
+          setTimeout(acompanhar, 3000);
           return;
         }
-        const f = await (await fetch("{{ url_for('analisesps.folha_ponto_pessoa_estado') }}")).json();
         if (f.sucesso) {
           await carregar(b.dataset.cpf);
           const novo = corpo.querySelector(".recado-ponto-pessoa");
@@ -1003,16 +1005,30 @@
     hora_avulsa: q.querySelector(".lancar-avulsa").value,
     justificativa: q.querySelector(".lancar-justificativa").value});
 
+  // ⚠️ O "lançar" DO DIA TEM DE FAZER ALGO VISÍVEL. Em 01/10/2026 ele disse que
+  // o botão estava "sem função": o quadro pode estar só com o aviso do que falta
+  // configurar (e aí o botão saía calado), e mesmo funcionando ele só trocava
+  // duas datas lá em cima. Agora: sem quadro utilizável, rola até o aviso e o
+  // destaca; com quadro, põe o dia, rola até lá e já mostra o que vai ser lançado.
   corpo.addEventListener("click", e => {
     const b = e.target.closest(".lancar-dia");
+    if (!b) return;
     const q = quadroLancar();
-    if (!b || !q || !q.querySelector(".lancar-de")) return;
+    if (!q) return;
+    q.scrollIntoView({behavior: "smooth", block: "start"});
+    q.classList.remove("destaque"); void q.offsetWidth; q.classList.add("destaque");
+    if (!q.querySelector(".lancar-de")) return;
     q.querySelector(".lancar-de").value = b.dataset.data;
     q.querySelector(".lancar-ate").value = b.dataset.data;
     q.querySelector(".lancar-plano").innerHTML = "";
     q.querySelector(".lancar-enviar").hidden = true;
-    q.scrollIntoView({behavior: "smooth", block: "nearest"});
-    q.querySelector(".lancar-obra").focus();
+    if (q.querySelector(".lancar-obra").value) {
+      q.querySelector(".lancar-ver").click();
+    } else {
+      q.querySelector(".lancar-recado").textContent =
+        "Dia " + b.dataset.dataBr + " escolhido — escolha a obra e veja o que vai ser lançado.";
+      q.querySelector(".lancar-obra").focus();
+    }
   });
 
   // Mexeu em qualquer campo, o plano mostrado deixa de valer.
@@ -1066,6 +1082,11 @@
     const q = quadroLancar();
     const recado = q.querySelector(".lancar-recado");
     const pedido = pedidoLancar(q);
+    if ((pedido.justificativa || "").trim().length < 5) {
+      recado.textContent = "Escreva a justificativa — ela vai para o Mobponto em cada batida.";
+      q.querySelector(".lancar-justificativa").focus();
+      return;
+    }
     if (!confirm(b.textContent + " para " + q.dataset.nome + ", na obra " +
                  pedido.obra.toUpperCase() + "?\n\nAntes de lançar o sistema confere " +
                  "o ponto dela de novo no Mobponto, e o que já estiver batido não é " +
@@ -1079,13 +1100,12 @@
       const d = await r.json();
       if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
       const acompanhar = async () => {
-        const a = await (await fetch("{{ url_for('analisesps.andamento') }}")).json();
-        if (a.rodando) {
-          recado.textContent = (a.progresso || a.etapa || "trabalhando");
+        const f = await (await fetch("{{ url_for('analisesps.folha_ponto_lancar_estado') }}")).json();
+        if (f.em_andamento) {
+          recado.textContent = (f.progresso || f.etapa || "trabalhando");
           setTimeout(acompanhar, 3000);
           return;
         }
-        const f = await (await fetch("{{ url_for('analisesps.folha_ponto_lancar_estado') }}")).json();
         await carregar(q.dataset.cpf);
         const novo = corpo.querySelector("#lancar-ponto .lancar-recado");
         const texto = (f.sucesso ? "Pronto: " : "ATENÇÃO: ") + (f.mensagem || "");

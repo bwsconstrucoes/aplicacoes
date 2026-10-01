@@ -106,6 +106,13 @@ MODOS_DA_BASE = ["sincronizar", "carga_inicial", "apoios", "fila",
 # (`avisos_ponto`), porque a folha inteira depende dele.
 MODOS_DO_PONTO = ("ponto", "ponto_diario")
 
+# ⚠️ A PISTA DA PESSOA (migração 041, 01/10/2026). O dono: *"tentei atualizar um
+# ponto, mas deu: já existe uma atualização em andamento (trazendo o ponto). Uma
+# coisa não deveria ter nada a ver com a outra."* Estes dois modos mexem em UMA
+# pessoa, levam segundos, e não podem ficar presos atrás da carga do mês. Correm
+# numa pista própria: no máximo uma viva aqui, e uma viva na pista geral.
+MODOS_DA_PESSOA = ("ponto_pessoa", "ponto_lancar")
+
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
 ETAPAS = {
@@ -129,16 +136,28 @@ ETAPAS = {
 # ---------------------------------------------------------------------------
 # O que a tela mostra
 # ---------------------------------------------------------------------------
-def estado() -> dict:
-    """Lido do banco — a única fonte que os dois processos enxergam."""
+def pista_do(modo: str) -> str:
+    """"pessoa" para os modos de uma pessoa só; "geral" para o resto."""
+    return "pessoa" if modo in MODOS_DA_PESSOA else "geral"
+
+
+def estado(pista: str = "geral") -> dict:
+    """Lido do banco — a única fonte que os dois processos enxergam.
+
+    `pista`: "geral" (o padrão — o que Configurações e a barra de andamento
+    mostram) ou "pessoa" (ver `MODOS_DA_PESSOA`)."""
+    marcas = ",".join(["?"] * len(MODOS_DA_PESSOA))
+    filtro = (f"tipo IN ({marcas})" if pista == "pessoa"
+              else f"tipo NOT IN ({marcas})")
     try:
         from .db import consultar_um
         linha = consultar_um(
             "SELECT id, tipo, disparo, inicio, etapa, progresso, visto_em, "
             "       (visto_em IS NOT NULL AND "
             "        now() - visto_em < make_interval(secs => ?)) AS viva "
-            "  FROM analisesps.execucoes WHERE fim IS NULL "
-            " ORDER BY inicio DESC LIMIT 1", (SEGUNDOS_ATE_DAR_POR_MORTA,))
+            f"  FROM analisesps.execucoes WHERE fim IS NULL AND {filtro} "
+            " ORDER BY inicio DESC LIMIT 1",
+            (SEGUNDOS_ATE_DAR_POR_MORTA,) + tuple(MODOS_DA_PESSOA))
     except Exception:      # banco fora do ar, ou migração ainda não aplicada
         return {"rodando": False, "detalhe": None, "interrompida": None}
 
@@ -861,7 +880,7 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
 
     from .db import conexao
 
-    atual = estado()
+    atual = estado(pista_do(modo))
     if atual["rodando"]:
         etapa = (atual["detalhe"] or {}).get("etapa", "começando")
         return {"ok": False,
@@ -878,6 +897,15 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
         # tela voltou a buscar atualizações de 90 em 90 segundos, com quatro
         # pessoas perguntando quase ao mesmo tempo. Recusar é o certo: a
         # atualização que já começou faz o mesmo trabalho.
+        if ("ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower()) \
+                and modo in MODOS_DA_PESSOA:
+            # Sem a migração 041, o índice antigo ainda deixa UMA viva no
+            # sistema inteiro — e a pista da pessoa esbarra na carga do mês.
+            return {"ok": False,
+                    "erro": "Há outra tarefa rodando e o banco ainda não foi "
+                            'atualizado para rodar as duas juntas: aperte '
+                            '"Aplicar atualizações do banco" em Configurações. '
+                            "Até lá, espere a outra terminar."}
         if "ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower():
             logger.info("Análise de SPs: pedido de atualização recusado — "
                         "outra começou no mesmo instante.")
@@ -976,7 +1004,8 @@ def ultima_do_tipo(tipo: str) -> dict | None:
     try:
         from .db import consultar_um
         linha = consultar_um(
-            "SELECT tipo, disparo, inicio, fim, ok, mensagem, linhas, visto_em "
+            "SELECT tipo, disparo, inicio, fim, ok, mensagem, linhas, visto_em, "
+            "       etapa, progresso "
             "  FROM analisesps.execucoes WHERE tipo = ? "
             " ORDER BY inicio DESC LIMIT 1", (str(tipo),))
     except Exception:  # noqa: BLE001 — banco atrasado não pode derrubar a tela
@@ -988,4 +1017,6 @@ def ultima_do_tipo(tipo: str) -> dict | None:
     return {"tipo": linha[0], "disparo": linha[1], "inicio": linha[2],
             "fim": linha[3], "ok": linha[4], "mensagem": linha[5],
             "linhas": linha[6], "visto_em": linha[7],
+            "etapa": linha[8] if len(linha) > 8 else None,
+            "progresso": linha[9] if len(linha) > 9 else None,
             "em_andamento": linha[3] is None}

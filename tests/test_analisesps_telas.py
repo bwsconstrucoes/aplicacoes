@@ -6451,7 +6451,7 @@ def test_a_verba_que_NAO_BATE_aparece_marcada_e_nao_escondida(app, monkeypatch):
     decide sabendo. Esconder faria a folha sair com gente de fora."""
     _preparar_pagamento(monkeypatch, fechados=[_fechado(fecha=False)])
     html = _como_mestre(app).get(
-        "/analisesps/folha/pagamento").get_data(as_text=True)
+        "/analisesps/folha/pagamento?ano=2026&mes=9").get_data(as_text=True)
     assert "não bate" in html
     assert "Alimentação" in html
 

@@ -2613,3 +2613,7 @@ a.lat-critica .lat-valor { float: right; font-family: var(--fonte-dados); font-w
 .lancar-campos .lancar-just-campo { flex: 1 1 260px; }
 .lancar-campos .lancar-just-campo input { width: 100%; }
 .lancar-plano table { margin-top: 8px; }
+/* O quadro pisca ao ser chamado pelo "lançar" de um dia — sem isso o clique
+   parecia não fazer nada (01/10/2026). */
+@keyframes destaque-quadro { from { box-shadow: 0 0 0 3px var(--ambar); } to { box-shadow: 0 0 0 0 transparent; } }
+.lancar-ponto.destaque { animation: destaque-quadro 1.6s ease-out; }

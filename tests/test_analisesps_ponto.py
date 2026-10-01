@@ -1406,3 +1406,61 @@ def test_a_tarefa_de_UMA_PESSOA_roda_e_diz_o_que_fez(banco_ponto, monkeypatch):
     ultima = tarefas.ultima_do_tipo("ponto_pessoa")
     assert ultima["ok"] is True
     assert "pela página 3" in (ultima["mensagem"] or "")
+
+
+# ---------------------------------------------------------------------------
+# 01/10/2026 — A PISTA DA PESSOA (migração 041). *"Já existe uma atualização em
+# andamento (trazendo o ponto). Uma coisa não deveria ter nada a ver com a
+# outra."*
+# ---------------------------------------------------------------------------
+def _abrir_viva(conn, tipo):
+    conn.execute("INSERT INTO analisesps.execucoes (tipo, disparo, etapa, visto_em) "
+                 "VALUES (?, 'teste', 'trabalhando', now())", (tipo,))
+    conn.commit()
+
+
+@pytest.fixture
+def fecha_as_vivas_no_fim(banco_ponto):
+    """Execução viva deixada para trás contamina o teste de tela seguinte, que lê
+    a última execução do banco ainda apontado para cá."""
+    yield
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM analisesps.execucoes")
+        conn.commit()
+
+
+def test_o_ponto_de_UMA_PESSOA_corre_junto_com_a_carga_do_mes(banco_ponto, fecha_as_vivas_no_fim, monkeypatch):
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao
+
+    iniciados = []
+    monkeypatch.setattr(tarefas, "_iniciar_processo",
+                        lambda modo, i: iniciados.append(modo))
+    with conexao() as conn:
+        _abrir_viva(conn, "ponto")          # a carga do mês, rodando
+    for modo in ("ponto_lancar",):
+        r = tarefas.disparar(modo, disparo="teste")
+        assert r["ok"], r
+    assert iniciados == ["ponto_lancar"]
+    # A barra geral continua mostrando a carga do mês, não o lançamento.
+    assert tarefas.estado()["detalhe"]["tipo"] == "ponto"
+    assert tarefas.estado("pessoa")["detalhe"]["tipo"] == "ponto_lancar"
+
+
+def test_cada_pista_continua_com_UMA_viva(banco_ponto, fecha_as_vivas_no_fim, monkeypatch):
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao
+
+    monkeypatch.setattr(tarefas, "_iniciar_processo", lambda modo, i: None)
+    with conexao() as conn:
+        _abrir_viva(conn, "ponto")
+        _abrir_viva(conn, "ponto_pessoa")
+    # Duas da pessoa, ou duas gerais, ao mesmo tempo: não.
+    assert not tarefas.disparar("ponto_lancar")["ok"]
+    assert not tarefas.disparar("ponto")["ok"]
+    # E o banco recusa mesmo quem passar pela pergunta (o índice da 041).
+    import pytest as _pytest
+    with conexao() as conn:
+        with _pytest.raises(Exception):
+            _abrir_viva(conn, "ponto_lancar")
