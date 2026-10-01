@@ -208,6 +208,117 @@ def preparar(ano: int, mes: int, tipo: str, verbas, destino: str,
 
 
 # ---------------------------------------------------------------------------
+# A PRÉVIA: o arquivo como sairia HOJE, sem fechar nada
+#
+# Pedido dele em 01/10/2026: *"se eu quiser gerar um arquivo de pagamento sem
+# fechar, como fazer? até pra saber como tá saindo"*.
+#
+# ⚠️ A PRÉVIA NÃO É O PAGAMENTO, e tudo nela diz isso:
+#   - sai da conta de AGORA (a folha aberta, com as marcações da tela), não de
+#     um fechamento — recarregar o ponto muda a prévia, e é para mudar;
+#   - não sobe para o Drive, não entra no log, não libera nada;
+#   - cada arquivo leva "PREVIA - NAO SUBIR" no nome. O conteúdo é IGUAL ao do
+#     arquivo de verdade (é esse o ponto: ver como sai), então o nome é a única
+#     coisa que impede alguém de subir a prévia no portal. Está dito ao dono.
+# ---------------------------------------------------------------------------
+PREFIXO_DA_PREVIA = "PREVIA - NAO SUBIR - "
+
+
+def linhas_da_previa(folha_id: int) -> tuple:
+    """As linhas de pagamento da folha aberta, sem fechamento. Devolve
+    `(folha, apropriado, linhas)`; `linhas` no formato de `linhas_para_pagar`.
+
+    Usa a MESMA regra do fechamento (`guardada.linhas_do_apropriado`): quem está
+    fora não entra, e cada obra da pessoa vira uma linha com a conta da obra."""
+    from . import folha_arquivo
+    from . import folha_gestao
+
+    folha = folha_arquivo.abrir(folha_id)
+    if folha is None:
+        raise ErroDoPagamento("esta folha não está mais aqui.")
+    apropriado = folha_gestao.apropriar_a_folha(folha)["apropriado"]
+    contas = conta_por_obra()
+    linhas = []
+    for cpf, nome, obra, dias, valor, _origem in guardada.linhas_do_apropriado(
+            apropriado):
+        linhas.append({"cpf": cpf, "nome": nome, "obra": obra,
+                       "conta": contas.get(obra, ""),
+                       "verba": guardada.VERBA_FOLHA, "dias": dias,
+                       "valor": Decimal(str(valor or 0)).quantize(CENTAVO)})
+    return folha, apropriado, linhas
+
+
+def previa(folha_id: int, destino: str) -> dict:
+    """Os lotes que sairiam hoje desta folha. Nada é gravado nem sobe."""
+    folha, apropriado, linhas = linhas_da_previa(folha_id)
+    lotes = geracao.montar_lotes(linhas, destino)
+    return {"folha": folha, "apropriado": apropriado, "lotes": lotes,
+            "resumo": geracao.resumo_dos_lotes(lotes)}
+
+
+def previa_zip(folha_id: int, destino: str) -> tuple:
+    """A prévia num .zip só: um arquivo por conta, a análise e um LEIA-ME com
+    os avisos. Devolve `(bytes, nome_do_zip)`.
+
+    ⚠️ GERA MESMO COM AVISO — ao contrário do `gerar`. A prévia existe justamente
+    para ver o que está errado antes de fechar; recusar por aviso tiraria dela o
+    seu único uso. Os avisos vão no LEIA-ME, por arquivo."""
+    import io
+    import zipfile
+
+    feito = previa(folha_id, destino)
+    folha, lotes, resumo = feito["folha"], feito["lotes"], feito["resumo"]
+    ano, mes, tipo = folha["ano"], folha["mes"], folha["tipo"]
+    if not lotes:
+        raise ErroDoPagamento(
+            "não há ninguém para pagar nesta folha agora — confira se as "
+            "pessoas estão marcadas e se o valor delas não é zero.")
+
+    memoria = io.BytesIO()
+    leia = [
+        "PRÉVIA DO ARQUIVO DE PAGAMENTO — NÃO SUBA NO PORTAL",
+        "",
+        f"Folha {folha.get('competencia') or ''}, montada da conta de agora "
+        "(sem fechar a apropriação).",
+        "Não foi para o Drive e não entrou no registro dos arquivos gerados.",
+        "Se o ponto, o cadastro ou as marcações mudarem, a prévia muda junto.",
+        "",
+        f"Arquivos: {resumo['arquivos']}   Pessoas: {resumo['pessoas']}   "
+        f"Total: R$ {_br(resumo['total'])}",
+        "",
+    ]
+    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as pacote:
+        for lote in lotes:
+            nome = PREFIXO_DA_PREVIA + geracao.nome_do_arquivo(lote, ano, mes, tipo)
+            pacote.writestr(nome, geracao.arquivo_do_lote(lote))
+            leia.append(f"- {nome}: {lote['quantos']} pessoa(s), "
+                        f"R$ {_br(lote['total'])}")
+            for critica in lote.get("criticas") or []:
+                leia.append(f"    AVISO: {critica}")
+        nome_analise = PREFIXO_DA_PREVIA + geracao.nome_do_arquivo(
+            {"destino": ANALISE, "conta": "", "verbas": [guardada.VERBA_FOLHA]},
+            ano, mes, tipo)
+        pacote.writestr(nome_analise,
+                        geracao.analise_xlsx(lotes, ano=ano, mes=mes, tipo=tipo))
+        if not resumo["pode_gerar"]:
+            leia += ["", "Com estes avisos, o arquivo de verdade NÃO sairia sem "
+                         "você marcar a opção de gerar com aviso."]
+        pacote.writestr("LEIA-ME.txt", "\r\n".join(leia).encode("utf-8-sig"))
+
+    rotulo = geracao.ROTULO_DO_DESTINO.get(destino, destino)
+    nome_zip = f"PREVIA - {rotulo} - {int(mes):02d}-{int(ano)}.zip"
+    logger.info("Folha: prévia do pagamento de %02d/%d (%s) baixada — %d "
+                "arquivo(s).", int(mes), int(ano), destino, len(lotes))
+    return memoria.getvalue(), nome_zip
+
+
+def _br(valor) -> str:
+    """1234.5 → '1.234,50', para o LEIA-ME."""
+    texto = f"{Decimal(str(valor or 0)).quantize(CENTAVO):,.2f}"
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+# ---------------------------------------------------------------------------
 # GERAR DE VERDADE: sobe no Drive e registra no log
 # ---------------------------------------------------------------------------
 def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,

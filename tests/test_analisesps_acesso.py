@@ -124,6 +124,10 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/123/pessoa/99713349334"),
     # Por que uma linha da folha não casou com o cadastro (dado pessoal).
     ("GET",  "/analisesps/folha/123/pendente/000013"),
+    # A prévia do arquivo de pagamento (nome, CPF e valor): só do mestre.
+    ("GET",  "/analisesps/folha/123/previa-pagamento"),
+    # O relatório da folha em Excel e PDF: dado pessoal.
+    ("GET",  "/analisesps/folha/123/relatorio.pdf"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.
@@ -274,6 +278,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<path:filename>", "x")
                    .replace("<cpf>", "99713349334")
                    .replace("<id_fortes>", "000013")
+                   .replace("<formato>", "pdf")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)

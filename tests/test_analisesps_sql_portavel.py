@@ -491,9 +491,13 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     # raciocínio do BeeVale — é planilha que sobe para o portal do banco, e o que
     # se monta são ~500 linhas por conta, não as 59 mil da base. O teto está no
     # próprio gerador (`MAXIMO_POR_ARQUIVO`), recusado antes de montar o arquivo.
+    # E a quinta, de 01/10/2026: o relatório da folha aberta em Excel
+    # (`folha_relatorio.py`). Monta a lista da tela — as pessoas de UMA folha,
+    # ~500 — e os agrupamentos, que são dezenas de linhas. Não lê a base de SPs.
     LIBERADO_EM = {"beevale.py": {"openpyxl"},
                    "lote_excel.py": {"openpyxl"},
                    "folha_geracao.py": {"openpyxl"},
+                   "folha_relatorio.py": {"openpyxl"},
                    "sincronizacao.py": {"openpyxl"}}
 
     achados = []

@@ -2572,5 +2572,35 @@ table.ponto-dia-a-dia tr.dia-sem-obra td { background: #F7F7F4; color: var(--tin
 }
 
 /* Botão de ação que apaga: secundário, com a cor do perigo. */
-.btn.secundario.perigo { color: var(--vermelho); border-color: var(--vermelho); }
+.btn.secundario.perigo { background: var(--branco); color: var(--vermelho); border-color: var(--vermelho); }
 
+
+/* --------------------------------------------------------------------------
+   A LATERAL DA FOLHA, COM PADRÃO — 01/10/2026. Ele: *"Botões com sublinhado
+   outros sem, e a disposição deles tá estranha."* Ação é botão, empilhado e da
+   largura do cartão; pendência é um bloco inteiro clicável, sem sublinhado.
+   -------------------------------------------------------------------------- */
+.filtros .lateral-titulo small { font-weight: 500; color: var(--tinta-suave); font-size: 12px; margin-left: 4px; }
+.lat-estado { margin: 10px 0 8px; }
+.lat-acoes { display: grid; gap: 6px; }
+.lat-acoes > .btn { width: 100%; text-align: center; justify-content: center; text-decoration: none; }
+.lat-previa { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.lat-previa select { min-width: 0; padding: 7px 8px; border: 1px solid var(--borda-forte); border-radius: 6px; background: var(--branco); }
+.lat-previa .btn { text-decoration: none; }
+a.lat-critica { display: block; color: var(--tinta); text-decoration: none; cursor: pointer; }
+a.lat-critica:hover { filter: brightness(.97); box-shadow: 0 0 0 1px var(--borda-forte) inset; }
+a.lat-critica .lat-valor { float: right; font-family: var(--fonte-dados); font-weight: 600; }
+.lateral-filtros { margin-top: 4px; }
+
+/* O título da lista com os botões do relatório à direita — 01/10/2026. */
+.cab-com-acoes { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin: 18px 0 8px; }
+.cab-com-acoes h3 { margin: 0; }
+.cab-acoes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cab-acoes .btn { text-decoration: none; }
+
+/* A lupa da busca da lateral não pode ficar por cima do texto: a regra geral de
+   `input[type=search]`, mais abaixo no arquivo, desfazia o recuo do `.busca`. */
+.busca input[type=search] { padding: 10px 12px 10px 34px; }
+/* "Limpar" da lateral sem sublinhado, como os demais botões-texto. */
+.filtros-cab .link-btn { text-decoration: none; }

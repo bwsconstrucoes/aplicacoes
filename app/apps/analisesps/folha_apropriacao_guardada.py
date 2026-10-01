@@ -274,6 +274,27 @@ def listar_ajustes(ano: int, mes: int, tipo: str) -> list:
 # ---------------------------------------------------------------------------
 # 2. O FECHAMENTO — o que já foi pago
 # ---------------------------------------------------------------------------
+def linhas_do_apropriado(apropriado: dict) -> list:
+    """As linhas que o fechamento grava: `(cpf, nome, obra, dias, valor, origem)`.
+
+    ⚠️ SEPARADA DO `fechar` PARA A PRÉVIA USAR A MESMA REGRA. A prévia do arquivo
+    de pagamento (`folha_pagamento.previa`) tem de sair igual ao que o fechamento
+    gravaria — se cada uma montasse as linhas do seu jeito, a prévia mostraria um
+    arquivo e o fechamento pagaria outro."""
+    linhas = []
+    for pessoa in (apropriado or {}).get("pessoas") or []:
+        if pessoa.get("fora"):
+            continue
+        for parte in pessoa.get("por_obra") or []:
+            linhas.append((
+                str(pessoa.get("cpf") or "")[:11],
+                str(pessoa.get("nome_cadastro") or pessoa.get("nome") or "")[:160],
+                _obra(parte.get("obra")), int(parte.get("dias") or 0),
+                _dinheiro(parte.get("valor")),
+                str(parte.get("origem") or "")[:20]))
+    return linhas
+
+
 def fechar(ano: int, mes: int, tipo: str, apropriado: dict,
            verba: str = VERBA_FOLHA, quem: str = "") -> int:
     """Congela o resultado de `folha_apropriacao.apropriar`. Devolve o id.
@@ -295,17 +316,7 @@ def fechar(ano: int, mes: int, tipo: str, apropriado: dict,
     if not isinstance(apropriado, dict) or "pessoas" not in apropriado:
         raise ErroDaApropriacao("não recebi a apropriação para guardar.")
 
-    linhas = []
-    for pessoa in apropriado.get("pessoas") or []:
-        if pessoa.get("fora"):
-            continue
-        for parte in pessoa.get("por_obra") or []:
-            linhas.append((
-                str(pessoa.get("cpf") or "")[:11],
-                str(pessoa.get("nome_cadastro") or pessoa.get("nome") or "")[:160],
-                _obra(parte.get("obra")), int(parte.get("dias") or 0),
-                _dinheiro(parte.get("valor")),
-                str(parte.get("origem") or "")[:20]))
+    linhas = linhas_do_apropriado(apropriado)
     if len(linhas) > MAXIMO_DE_LINHAS:
         raise ErroDaApropriacao(
             f"a apropriação tem {len(linhas)} linhas, acima do teto de "

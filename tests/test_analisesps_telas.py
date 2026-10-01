@@ -5511,12 +5511,18 @@ def test_a_folha_aberta_poe_as_CRITICAS_antes_da_lista(app, monkeypatch):
 
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
-    assert "Precisa da sua mão antes de pagar" in html
-    assert html.index("Precisa da sua mão") < html.index("Pessoa por pessoa")
+    # O nome mudou em 01/10/2026 — "Precisa da sua mão" *"não é termo pra usar
+    # em sistema"*.
+    assert "Precisa da sua mão" not in html
+    assert "Pendências antes do pagamento" in html
+    assert html.index("Pendências antes do pagamento") < html.index("Pessoa por pessoa")
     assert "não casaram com o cadastro" in html
     assert "já saíram" in html
     assert "Não pague folha" in html
-    assert 'href="https://app.pipefy.com/open-cards/778899"' in html
+    # A lista de nomes com o link do Pipefy saiu da lateral em 01/10/2026 (ela
+    # ficou limpa, pedido dele): o item filtra a lista, e é na linha da pessoa
+    # que o link do card aparece.
+    assert "situacao=saiu" in html
     # ⚠️ A pessoa pendente CONTINUA na lista, marcada — não numa lista à parte
     # que alguém esquece de abrir.
     assert "fora do cadastro" in html
@@ -5567,7 +5573,7 @@ def test_folha_toda_certa_NAO_mostra_a_faixa_de_criticas(app, monkeypatch):
         "total_de_quem_saiu": 0})
 
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
-    assert "Precisa da sua mão" not in html
+    assert "Pendências antes do pagamento" not in html
     assert "linha-alerta" not in html
 
 
@@ -7296,7 +7302,7 @@ def test_o_botao_de_gerar_fica_na_LATERAL_e_nao_no_fim_da_tela(app, monkeypatch)
 
     lateral = html.index('<aside class="filtros">')
     principal = html.index('<main class="principal">')
-    assert lateral < html.index("Gerar o pagamento") < principal
+    assert lateral < html.index('id="fechar-apropriacao"') < principal
 
 
 def test_o_total_do_que_vai_receber_fica_GRUDADO_na_tela(app, monkeypatch):
@@ -7675,7 +7681,7 @@ def test_os_alertas_da_folha_ficam_na_LATERAL(app, monkeypatch):
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
     principal = html.index('<main class="principal">')
-    assert html.index("Precisa da sua mão antes de pagar") < principal
+    assert html.index("Pendências antes do pagamento") < principal
     assert html.index("não casaram com o cadastro") < principal
     assert "situacao=sem_cadastro" in html and "situacao=saindo" in html
 
@@ -7694,7 +7700,7 @@ def test_a_caixa_de_TRAZER_OUTRA_FOLHA_fica_na_lateral(app, monkeypatch):
     for m in re.finditer(r"<button[^>]*escolhe-tipo[^>]*>", lateral):
         assert 'type="button"' in m.group(0)
     # E a lista do que já veio está a um clique.
-    assert "todas as folhas importadas" in lateral
+    assert "Todas as folhas importadas" in lateral
     assert "/folha/importar?lista=1" in lateral
 
 
@@ -7771,7 +7777,7 @@ def test_sem_obra_do_ponto_o_filtro_DIZ_que_nao_ha_nenhuma(app, monkeypatch):
     obras" quando o ponto não tinha trazido obra nenhuma."""
     _preparar_folha_aberta(monkeypatch, dias=None)
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
-    assert "Nenhuma obra associada ainda" in html
+    assert "Nenhuma obra do ponto para filtrar ainda" in html
     assert "todas as obras" not in html
 
 
@@ -7779,7 +7785,7 @@ def test_o_texto_que_ele_nao_entendeu_saiu(app, monkeypatch):
     _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
     assert "quem tem 2 dias numa obra" not in html
-    assert "Mostra quem trabalhou nesta obra em algum dia" in html
+    assert "Mostra quem trabalhou nestas obras em algum dia" in html
 
 
 def test_ha_filtro_pela_obra_do_CADASTRO_alem_da_do_ponto(app, monkeypatch):
@@ -8029,7 +8035,7 @@ def test_o_filtro_de_quem_e_pago_em_MAIS_DE_UMA_CONTA(app, monkeypatch):
     cliente = _como_mestre(app)
 
     html = cliente.get("/analisesps/folha/1").get_data(as_text=True)
-    assert "Pagas em mais de uma conta" in html
+    assert "pagas em mais de uma conta" in html
     assert "conta=__varias" in html
 
     varias = cliente.get("/analisesps/folha/1?conta=__varias").get_data(as_text=True)

@@ -668,13 +668,13 @@ def montar(folha_id: int, filtros=None) -> dict:
     # quem trabalhou 2 dias nela e 8 em outra aparece na lista, mas só os 2 dias
     # dela entram na conta. Somar o valor inteiro da pessoa faria a obra parecer
     # mais cara do que é — e é olhando esse número que ele decide o rateio.
-    obra_filtrada = " ".join(str(filtros.get("obra") or "").split()).upper()
+    obras_filtradas = _marcados(filtros, "obra", maiusculo=True)
     subtotal_da_obra = None
-    if obra_filtrada:
+    if obras_filtradas:
         subtotal_da_obra = sum(
             (_dinheiro(x.get("valor")) for p in mostradas
              for x in (p.get("por_obra") or [])
-             if str(x.get("obra") or "").upper() == obra_filtrada),
+             if str(x.get("obra") or "").upper() in obras_filtradas),
             Decimal("0.00"))
 
     return {
@@ -723,7 +723,16 @@ def montar(folha_id: int, filtros=None) -> dict:
         "fechamento": guardada.fechamento(ano, mes, tipo),
         "fora_da_folha": apropriado["fora_da_folha"],
         "filtros": dict(filtros),
+        "obras_filtradas": sorted(obras_filtradas),
+        "tem_filtro": bool(
+            str(filtros.get("busca") or "").strip()
+            or any(_marcados(filtros, c) for c in CHAVES_DE_FILTRO)),
     }
+
+
+# Os blocos de caixinha da lateral (a busca é à parte).
+CHAVES_DE_FILTRO = ("conta", "obra", "obra_cadastro", "situacao", "fase",
+                    "filial", "setor", "origem")
 
 
 # O valor do filtro de setor que junta todos os setores que pedem atenção
@@ -734,23 +743,49 @@ SETOR_DE_ATENCAO = "__atencao"
 CONTA_VARIAS = "__varias"
 
 
+def _marcados(filtros, chave, maiusculo=False) -> set:
+    """Os valores marcados num bloco do filtro, como conjunto.
+
+    ⚠️ ACEITA TEXTO OU LISTA. Desde 01/10/2026 a lateral é de caixinhas de marcar,
+    no padrão das Solicitações (pedido dele: *"ajuste o filtro do sidebar no mesmo
+    padrão que o de solicitações"*) — então cada bloco pode trazer vários valores.
+    Os links "ver só elas" dos alertas continuam mandando um valor só, como texto."""
+    bruto = (filtros or {}).get(chave)
+    if bruto is None:
+        return set()
+    if isinstance(bruto, str):
+        bruto = [bruto]
+    saida = set()
+    for valor in bruto:
+        limpo = " ".join(str(valor or "").split())
+        if maiusculo:
+            limpo = limpo.upper()
+        if limpo:
+            saida.add(limpo)
+    return saida
+
+
 def _filtrar(pessoas, filtros) -> list:
     """Recorta a lista. Filtro vazio não recorta nada.
+
+    Dentro de um bloco, marcar duas opções mostra quem tem UMA OU OUTRA (duas
+    obras: quem trabalhou numa ou na outra). Entre blocos, vale tudo junto (obra
+    X E fase Y) — como nas Solicitações.
 
     ⚠️ RECORTA NO SERVIDOR, e é de propósito: esconder linha no navegador faria o
     subtotal do filtro mentir, porque ele é somado aqui."""
     from .folha_rateio import so_digitos
 
-    busca = " ".join(str(filtros.get("busca") or "").split()).lower()
+    busca = " ".join(str((filtros or {}).get("busca") or "").split()).lower()
     digitos = so_digitos(busca)
-    obra = " ".join(str(filtros.get("obra") or "").split()).upper()
-    obra_cadastro = " ".join(str(filtros.get("obra_cadastro") or "").split()).upper()
-    fase = " ".join(str(filtros.get("fase") or "").split())
-    setor = " ".join(str(filtros.get("setor") or "").split())
-    filial = " ".join(str(filtros.get("filial") or "").split())
-    conta = str(filtros.get("conta") or "").strip()
-    situacao = str(filtros.get("situacao") or "").strip()
-    origem = str(filtros.get("origem") or "").strip()
+    obras = _marcados(filtros, "obra", maiusculo=True)
+    obras_cadastro = _marcados(filtros, "obra_cadastro", maiusculo=True)
+    fases = _marcados(filtros, "fase")
+    setores = _marcados(filtros, "setor")
+    filiais = _marcados(filtros, "filial")
+    contas = _marcados(filtros, "conta")
+    situacoes = _marcados(filtros, "situacao")
+    origens = _marcados(filtros, "origem")
 
     saida = []
     for p in pessoas:
@@ -763,32 +798,35 @@ def _filtrar(pessoas, filtros) -> list:
                 achou = busca == str(p.get("id_fortes") or "").lower()
             if not achou:
                 continue
-        if obra_cadastro and str(p.get("obra_do_cadastro") or "").upper() != obra_cadastro:
+        if obras_cadastro and str(p.get("obra_do_cadastro") or "").upper() \
+                not in obras_cadastro:
             continue
-        if obra:
+        if obras:
             # A obra casa em QUALQUER dia da pessoa, não só na principal: quem
             # procura a obra quer o custo dela inteiro. O subtotal, nesse caso,
-            # soma só os dias nesta obra (ver `subtotal_da_obra`).
-            if obra not in {str(x.get("obra") or "").upper()
+            # soma só os dias nestas obras (ver `subtotal_da_obra`).
+            if not obras & {str(x.get("obra") or "").upper()
                             for x in (p.get("por_obra") or [])}:
                 continue
-        if fase and (p.get("fase") or "") != fase:
+        if fases and (p.get("fase") or "") not in fases:
             continue
-        if filial and " ".join(str(p.get("filial") or "").split()) != filial:
+        if filiais and " ".join(str(p.get("filial") or "").split()) not in filiais:
             continue
-        if conta == CONTA_VARIAS:
-            if not p.get("mais_de_uma_conta"):
+        if contas:
+            casa = bool(contas & set(p.get("contas") or []))
+            if CONTA_VARIAS in contas and p.get("mais_de_uma_conta"):
+                casa = True
+            if not casa:
                 continue
-        elif conta and conta not in (p.get("contas") or []):
-            continue
-        if setor == SETOR_DE_ATENCAO:
-            if not p.get("setor_atencao"):
+        if setores:
+            casa = (p.get("setor") or "") in setores
+            if SETOR_DE_ATENCAO in setores and p.get("setor_atencao"):
+                casa = True
+            if not casa:
                 continue
-        elif setor and (p.get("setor") or "") != setor:
+        if situacoes and p.get("situacao") not in situacoes:
             continue
-        if situacao and p.get("situacao") != situacao:
-            continue
-        if origem and (p.get("origem") or "") != origem:
+        if origens and (p.get("origem") or "") not in origens:
             continue
         saida.append(p)
     return saida

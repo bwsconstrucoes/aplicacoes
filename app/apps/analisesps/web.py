@@ -2470,17 +2470,7 @@ def tela_folha_aberta(folha_id: int):
         # da importação, e aí gente que estava pendente passa a casar sem
         # ninguém reimportar nada.
         fa.casar_com_o_cadastro(folha_id)
-        montado = fg.montar(folha_id, {
-            "busca": request.args.get("q") or "",
-            "obra": request.args.get("obra") or "",
-            "obra_cadastro": request.args.get("obra_cadastro") or "",
-            "setor": request.args.get("setor") or "",
-            "filial": request.args.get("filial") or "",
-            "conta": request.args.get("conta") or "",
-            "fase": request.args.get("fase") or "",
-            "situacao": request.args.get("situacao") or "",
-            "origem": request.args.get("origem") or "",
-        })
+        montado = fg.montar(folha_id, _filtros_da_folha())
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui abrir a folha %s", folha_id)
         erro = str(e)
@@ -2513,8 +2503,86 @@ def tela_folha_aberta(folha_id: int):
         gerencial=gerencial,
         situacoes=[(c, fg.ROTULO_DA_SITUACAO[c]) for c in fg.ORDEM_DAS_SITUACOES],
         pode_operar=auth.pode_operar(),
+        # A prévia do pagamento é do mestre, como gerar: o arquivo tem nome, CPF
+        # e valor de todo mundo. Quem não é mestre nem vê o botão.
+        pode_gerar=auth.e_mestre(),
+        destinos=_destinos_do_pagamento(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+def _filtros_da_folha() -> dict:
+    """Os filtros da lateral, lidos do endereço. Cada bloco é de caixinhas
+    (padrão das Solicitações), então pode vir mais de um valor por chave. O
+    relatório lê daqui também — é o que garante que ele sai igual à tela."""
+    from . import folha_gestao as fg
+    filtros = {"busca": request.args.get("q") or ""}
+    for chave in fg.CHAVES_DE_FILTRO:
+        filtros[chave] = [v for v in request.args.getlist(chave) if v]
+    return filtros
+
+
+@bp.route("/folha/<int:folha_id>/relatorio.<formato>")
+@exige_consulta
+def folha_relatorio(folha_id: int, formato: str):
+    """O relatório do que está na tela — Excel ou PDF —, com os agrupamentos.
+
+    Pedido dele em 01/10/2026: *"o relatório do que eu visualizo em tela, além
+    de poder ver o agrupamento do pagamento. Por obra, por conta e etc."*"""
+    from . import folha_gestao as fg, folha_relatorio as fr
+
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    try:
+        montado = fg.montar(folha_id, _filtros_da_folha())
+        if not montado:
+            return render_template("analisesps_erro.html", titulo="Não encontrado",
+                                   mensagem="Esta folha não está mais aqui."), 404
+        dados = fr.montar(montado, fg._contas_das_obras())
+        if formato == "xlsx":
+            conteudo, tipo = fr.excel(dados), fr.MIME_XLSX
+        else:
+            conteudo, tipo = fr.pdf(dados), "application/pdf"
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou o relatório %s da folha %s", formato, folha_id)
+        return render_template("analisesps_erro.html", titulo="Relatório da folha",
+                               mensagem=f"Não consegui montar o relatório: {e}"), 500
+    nome = fr.nome_do_arquivo(dados, formato)
+    return Response(conteudo, mimetype=tipo, headers={
+        "Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+def _destinos_do_pagamento() -> list:
+    from . import folha_geracao as fger
+    return [(d, fger.ROTULO_DO_DESTINO[d]) for d in fger.DESTINOS]
+
+
+@bp.route("/folha/<int:folha_id>/previa-pagamento")
+@exige_operador
+def folha_previa_pagamento(folha_id: int):
+    """Baixa a PRÉVIA do arquivo de pagamento desta folha, sem fechar nada.
+
+    Pedido dele em 01/10/2026: *"se eu quiser gerar um arquivo de pagamento sem
+    fechar, como fazer? até pra saber como tá saindo"*. Não sobe para o Drive,
+    não entra no log — ver `folha_pagamento.previa_zip`."""
+    from . import folha_geracao as fger, folha_pagamento as fpg
+
+    destino = str(request.args.get("destino") or fger.BEEVALE).strip().lower()
+    try:
+        conteudo, nome = fpg.previa_zip(folha_id, destino)
+    except (fpg.ErroDoPagamento, fger.ErroDaGeracao) as e:
+        return render_template(
+            "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
+            mensagem=f"Não consegui montar a prévia: {e}"), 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou a prévia do pagamento")
+        return render_template(
+            "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
+            mensagem=f"Não consegui montar a prévia: {e}"), 500
+    return Response(
+        conteudo, mimetype="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 @bp.route("/api/folha/apropriacao/ajuste", methods=["POST"])

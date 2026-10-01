@@ -356,6 +356,7 @@ SO_DO_MESTRE = frozenset({
     "analisesps.tela_folha_pagamento",
     "analisesps.folha_pagamento_preparar",
     "analisesps.folha_pagamento_gerar",
+    "analisesps.folha_previa_pagamento",  # mesmo arquivo, só não sobe
     "analisesps.folha_pipe_conferir",
     "analisesps.folha_card_lancar",     # cria card no Pipefy: sem volta
     "analisesps.migrar",                 # aplica migração no banco
@@ -474,6 +475,8 @@ TELA_DA_ROTA = {
     # (SO_DO_MESTRE): a tela decide quem entra, o mestre decide quem paga.
     "analisesps.tela_folha_pagamento": ("folha",),
     "analisesps.folha_pagamento_preparar": ("folha",),
+    "analisesps.folha_previa_pagamento": ("folha",),
+    "analisesps.folha_relatorio": ("folha",),
     "analisesps.folha_pagamento_gerar": ("folha",),
     "analisesps.folha_pipe_conferir": ("folha",),
     "analisesps.folha_card_lancar": ("folha",),

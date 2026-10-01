@@ -10555,6 +10555,81 @@ importa.
 
 ---
 
+### Centésima trigésima quarta leva (01/10) — prévia do pagamento, relatório Excel/PDF, lateral da folha com padrão
+
+Seis pedidos dele, em sequência, olhando a folha aberta.
+
+**1. "O botão Apagar esta folha tá integralmente vermelho, texto e fundo."** —
+`.btn.perigo` pinta o fundo de vermelho e `.btn.secundario.perigo` só trocava a
+cor do texto. Agora o secundário perigoso volta o fundo para branco.
+
+**2. "O Fechar apropriação funciona como? Se eu quiser gerar um arquivo de
+pagamento sem fechar, como fazer? Até pra saber como tá saindo."** — Fechar
+congela a apropriação (para qual obra vai o dinheiro de cada pessoa); o arquivo
+de verdade só sai do que foi fechado (motivo na docstring de
+`folha_pagamento`). Para ver sem fechar: **"Baixar prévia"** no cartão
+Pagamento da lateral (só mestre, como gerar), com a escolha BeeVale/SomaPay.
+Baixa um .zip com os mesmos arquivos que o gerar faria (um por conta + análise)
+e um LEIA-ME com os avisos de cada arquivo.
+- **Decisão: a prévia sai MESMO COM AVISO** (o gerar recusa) — ela existe para
+  mostrar o que está errado antes de fechar.
+- **Não sobe no Drive, não entra no log, não libera nada.**
+- **Risco, dito a ele:** o conteúdo é idêntico ao arquivo de verdade (é o ponto);
+  o que impede subir a prévia no portal é só o nome "PREVIA - NAO SUBIR - …".
+- As linhas da prévia e do fechamento saem da MESMA função
+  (`guardada.linhas_do_apropriado`) — se cada um montasse do seu jeito, a prévia
+  mostraria um arquivo e o fechamento pagaria outro.
+
+**3. "Ajuste o filtro do sidebar no mesmo padrão que o de Solicitações (…) não
+tá uma caixinha pra marcar."** — os filtros da folha viraram **caixinhas de
+marcar** (eram listas de escolha e bolinhas), com o cabeçalho "Filtros" +
+Limpar e a busca com lupa, como nas Solicitações. Dentro de um bloco, marcar
+duas opções mostra quem tem uma OU outra; entre blocos, vale tudo junto.
+`_filtrar` aceita texto ou lista (os links dos alertas mandam um valor só).
+Bloco com 12 opções ou mais ganha a procura interna, igual às Solicitações.
+
+**4. "Pondere o que está no sidebar. Desorganizado, sem padrão, botões com
+sublinhado e outros sem, muitos assuntos desconexos" / "todas as folhas
+importadas é um texto".** — a lateral virou quatro cartões, sempre na mesma
+ordem: **Pagamento** (números + Fechar + Prévia + Divisão por obra e conta),
+**Pendências antes do pagamento**, **Filtros**, **Arquivo da contabilidade**
+(de onde veio, trazer outra, todas as importadas, apagar). Ação é sempre botão
+da largura do cartão; pendência é um bloco inteiro clicável (sem "ver só elas"
+sublinhado). A lista de nomes de quem saiu, com link do Pipefy, saiu da
+lateral: o item filtra a lista, e o link está na linha da pessoa.
+
+**5. "Precisa da sua mão antes de pagar não é termo pra usar em sistema."** —
+virou **"Pendências antes do pagamento"**; "a divisão veio da sua mão" virou
+"do ajuste manual feito na linha".
+
+**6. "Relatórios Excel e PDF (…) o relatório do que eu visualizo em tela, além
+de poder ver o agrupamento do pagamento. Por obra, por conta e etc."** —
+botões **Excel** e **PDF** ao lado de "Pessoa por pessoa", levando os filtros
+marcados (`folha_relatorio.py`, rota `/folha/<id>/relatorio.xlsx|pdf`). Trazem
+a lista da tela e os agrupamentos: por conta, por obra do ponto, por obra da
+contabilidade, por setor e por situação.
+- **Decisão: por obra e por conta somam só quem vai receber**, e cada pessoa é
+  dividida pelos dias em cada obra (a mesma divisão do arquivo). Quem foi
+  tirado, não casou ou tem valor zero aparece na lista e no "por situação".
+- O relatório é da conta de agora, igual à tela — o cabeçalho diz isso e diz
+  os filtros.
+- Qualquer perfil que abre a folha baixa o relatório (a tela já mostra os
+  mesmos dados). A prévia é só do mestre.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** esta leva (sem migração) | ele dizer "pode" |
+| baixar uma prévia e conferir contra o que ele espera | ele |
+| abrir o diagnóstico do Abraão e conferir as obras "sem conta" (leva 133) | ele |
+
+**Verificado:** suíte inteira; JavaScript da tela; a tela e o PDF olhados em
+navegador/visualizador com dados de teste. **Não verificado:** com a folha de
+verdade (≈500 pessoas) — o PDF da lista inteira deve passar de 15 páginas.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória
