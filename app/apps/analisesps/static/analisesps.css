@@ -2638,3 +2638,17 @@ table.contracheque td:first-child { white-space: normal; }
 #cartao-cadastro { width: min(820px, 96vw); }
 .cadastro-completo { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
 .cadastro-completo .cartao { margin: 0; padding: 12px; }
+
+/* O TOPO DO ANALÍTICO PRESO NA JANELA — 01/10/2026 (*"trava os dados do topo
+   até os botões"*). A janela rola por inteiro; o nome, os selos e os botões
+   grudam no alto, com o "Fechar" por cima, à direita. Só na janela: na página
+   de imprimir o topo rola normal. */
+#cartao-ponto { padding-top: 0; }
+#cartao-ponto > .dialogo-fechar { position: sticky; top: 14px; z-index: 7; margin-top: 14px; }
+#cartao-ponto > h3 { margin-top: 18px; }
+#cartao-ponto .analitico-topo {
+  position: sticky; top: 0; z-index: 6; background: var(--branco);
+  padding: 14px 110px 8px 0; margin: 0 0 8px;
+  border-bottom: 1px solid var(--borda);
+}
+#cartao-ponto .analitico-topo .analitico-acoes { margin-bottom: 4px; }

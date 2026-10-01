@@ -12,6 +12,10 @@
    `a` é o que `folha_gestao.ponto_da_pessoa` devolve.
    --------------------------------------------------------------------------- #}
 <div class="analitico">
+  {# O TOPO FICA PRESO na janela enquanto o resto rola — pedido dele, 01/10/2026:
+     *"no modal analítico, trava os dados do topo da tela até os botões."* Só na
+     janela (ver o CSS de #cartao-ponto); na página de imprimir, rola normal. #}
+  <div class="analitico-topo">
   <div class="analitico-cab">
     <div>
       <b class="analitico-nome">{{ a.nome }}</b>
@@ -53,6 +57,9 @@
          href="{{ a.cadastro.link_pipefy }}">Pipefy</a>{% endif %}
     <span class="cartao-dica recado-ponto-pessoa"></span>
   </div>
+  {% endif %}
+  </div>{# .analitico-topo #}
+  {% if parcial %}
   {# O ÚLTIMO PEDIDO DA FILA DESTA PESSOA (migração 042): quem pediu, saiu e
      voltou vê aqui o que aconteceu — e, se ainda está na fila, acompanha. #}
   {% set f = fila_da_pessoa %}
