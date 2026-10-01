@@ -10618,31 +10618,53 @@ contabilidade, por setor e por situação.
 
 **7. "Quero poder fazer a edição da folha do ponto a partir daquela tela onde
 detalha as informações do colaborador (…) altera a obra ou adiciona uma obra que
-não existia, salva e grava as alterações."** — No analítico do funcionário, cada
-dia ganhou **"corrigir"** (só mestre): abre um quadro com as quatro batidas do
-dia; as que já existem ficam travadas, as que faltam recebem hora + obra +
-justificativa. **"Gravar no Mobponto"** manda cada batida ao Mobponto e, se
-entrou alguma, **traz de novo o ponto daquela pessoa** (a atualização de uma
-pessoa só, que já existia) — a folha recalcula sozinha. Módulo
-`ponto_edicao.py`; migração **040** (`ponto_batida_enviada`) registra quem
-mandou o quê e o que o Mobponto respondeu.
+não existia, salva e grava."** — e logo depois, mudando o desenho: *"de forma que
+eu possa ajustar uma única batida, ou um dia todo ou um período todo (…) não
+lançar informação que sobreponha o que já existe (…) são dezenas de batidas,
+então não pode ser um a um."*
+
+No analítico do funcionário, em cima do ponto dia a dia, o quadro **"Lançar ponto
+no Mobponto"** (só mestre): De / Até (vem preenchido com o período da folha; o
+"lançar" de cada dia põe De = Até = aquele dia), Obra, Justificativa e,
+opcional, "Só uma batida às" (a batida avulsa, para pequeno ajuste).
+**"Ver o que vai ser lançado"** mostra dia a dia o que já tem, o que vai entrar e
+o que fica de fora, com o motivo. Só então **"Lançar N batidas no Mobponto"**.
+Módulo `ponto_edicao.py`; modo `ponto_lancar` em `tarefas`; migração **040**
+(`ponto_batida_enviada`) registra cada batida mandada e a resposta.
+
+**A regra, escrita no código (`HORARIO_PADRAO`), como ele ditou:** entrada 7h,
+almoço 12h, retorno 13h, saída 17h de segunda a quinta e **16h na sexta**. Só dia
+útil: sábado e domingo ficam fora (a batida avulsa num dia só é a exceção).
+
+**Não sobrepor — como o plano decide cada dia:**
+- dia vazio → as quatro batidas do padrão;
+- dia com parte das batidas → **só as que faltam**. O casamento é por
+  HORÁRIO, não pela posição: quem bateu só às 13h05 bateu o retorno, então
+  faltam 7h, 12h e 17h. Se as batidas que existem não deixam encaixar o padrão
+  em ordem (duas na mesma hora, por exemplo), o dia fica para ajuste à mão;
+- dia completo, fim de semana, feriado cadastrado (nacional ou da obra), férias
+  cadastradas, falta lançada no ponto (atestado etc.) e dia que o ponto chama de
+  feriado/férias/folga/afastamento → **não são tocados**. A ausência sem falta
+  lançada ("FALTA" na presença, sem descrição) É preenchida — é o caso dele.
+
+**O lançamento roda no processo separado** e, antes de mandar, **traz o ponto da
+pessoa de novo e refaz o plano** — o da tela pode estar velho. Manda uma batida
+por vez (meio segundo entre elas), **para na primeira que falhar**, e no fim traz
+o ponto outra vez para a folha recalcular. Sem nova tentativa automática:
+gravar de novo depois de tempo esgotado pode duplicar a batida.
+
 - **O contrato é o do `local_backend.py` dele**: `CAD_EDT_PONTO`, ação `C`
-  (incluir), com CPF e nome do responsável, `dt_ponto_new` "AAAA-MM-DD HH:MM",
-  justificativa e `local`. É o único de ponto que eu tenho.
-- **MUDAR A OBRA DE UMA BATIDA QUE JÁ EXISTE NÃO ESTÁ FEITO**: não há, no
-  material dele, a ação de editar nem o identificador da batida. Perguntado a
-  ele — precisa do trecho do script que edita (sem as credenciais).
-- **Sem nova tentativa automática** (a leitura tem): gravar de novo depois de
-  um tempo esgotado pode duplicar a batida. A tela diz "não sei se gravou".
-- **Para na primeira batida que falhar** e diz exatamente o que entrou.
+  (incluir). **Mudar a obra de uma batida que já existe NÃO está feito**: não há,
+  no material dele, a ação de editar nem o identificador da batida. Perguntado.
 - **Novas variáveis no Render:** `MOBPONTO_RESPONSAVEL_CPF` e
-  `MOBPONTO_RESPONSAVEL_NOME` (as do script dele). Sem elas, o quadro diz o que
-  falta e não grava.
+  `MOBPONTO_RESPONSAVEL_NOME`.
 - **Não verificado contra o Mobponto** (não há ambiente de teste dele): se o
-  `local` aceita o código da obra como aparece no ponto, e o formato da hora. O
-  fluxo da tela foi exercitado em navegador com o Mobponto simulado. **A
-  primeira gravação de verdade é o teste** — sugerido a ele fazer num dia de
-  uma pessoa e conferir no Mobponto.
+  `local` aceita o código da obra como aparece no ponto, e se o Mobponto põe
+  cada batida no campo certo pela hora. O fluxo da tela foi exercitado em
+  navegador com o Mobponto simulado. **A primeira vez de verdade deve ser um dia
+  de uma pessoa**, conferido no Mobponto.
+- Um período longo é rápido de pedir, mas não instantâneo de gravar: 15 dias
+  úteis são 60 chamadas, cerca de 1 a 2 minutos. A tela mostra "batida 12 de 60".
 
 #### ⚠️ Pendente AGORA
 
@@ -10650,7 +10672,7 @@ mandou o quê e o que o Mobponto respondeu.
 |---|---|
 | **publicar** esta leva — **com migração 040**: apertar "Aplicar atualizações do banco" na hora | ele dizer "pode" |
 | criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
-| primeira batida de verdade: incluir uma, conferir no Mobponto que entrou na obra certa | ele |
+| primeiro lançamento de verdade: UM dia de UMA pessoa, conferir no Mobponto (obra certa, campo certo) | ele |
 | o trecho do script que EDITA uma batida (para "mudar a obra") | ele |
 | baixar uma prévia e conferir contra o que ele espera | ele |
 | abrir o diagnóstico do Abraão e conferir as obras "sem conta" (leva 133) | ele |

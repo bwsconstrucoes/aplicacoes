@@ -70,6 +70,9 @@ MODOS = {
     # precisa da competência escrita pela tela.
     # O ponto de UMA pessoa — o botão do analítico. Ver `ponto.atualizar_pessoa`.
     "ponto_pessoa": "Trazer de novo o ponto de uma pessoa (a página dela)",
+    # ⚠️ ESTE ESCREVE NO MOBPONTO (01/10/2026): lança as batidas que faltam
+    # num período, pelo analítico do funcionário. Ver `ponto_edicao.lancar`.
+    "ponto_lancar": "Lançar no Mobponto as batidas que faltam (analítico da folha)",
     "ponto_diario": "Trazer o ponto sozinho (mês corrente; até o dia 10, o "
                     "anterior também) — retoma o que parou, pula o que já "
                     "entrou hoje",
@@ -115,6 +118,7 @@ ETAPAS = {
     "ponto": ["ponto"],
     "ponto_diario": ["ponto_diario"],
     "ponto_pessoa": ["ponto_pessoa"],
+    "ponto_lancar": ["ponto_lancar"],
     "fiscal": ["fiscal"],
     "fiscal_ia": ["fiscal_ia"],
     "notas_receita": ["notas_receita"],
@@ -423,6 +427,28 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     f"{max(0, r['pessoas_da_pagina'] - 1)} dessa página vieram "
                     "atualizados junto")
 
+            elif etapa == "ponto_lancar":
+                # O PEDIDO vem do banco, escrito pela tela antes de disparar:
+                # quem, que período, que obra. O plano é REFEITO aqui, com o
+                # ponto trazido de novo — ver `ponto_edicao.lancar`.
+                import json as _json
+                from . import ponto_edicao as _edicao
+                with conexao() as conn:
+                    bruto = sincronizacao._meta_ler(conn, "ponto_lancar_pedido", "")
+                try:
+                    pedido = _json.loads(bruto or "{}")
+                except ValueError:
+                    pedido = {}
+                if not pedido.get("cpf"):
+                    raise RuntimeError("não sei o que lançar. Abra o analítico "
+                                       "da pessoa e peça de novo.")
+                mudar_etapa("lançando o ponto no Mobponto")
+                feito = _edicao.lancar(pedido, anotar)
+                total_linhas[0] = len(feito["enviadas"])
+                recado_apoios[0] = _edicao.recado_do_lancamento(feito)
+                if feito["falhou"]:
+                    raise RuntimeError(recado_apoios[0])
+
             elif etapa == "ponto_diario":
                 # Um mês que falha não impede o outro: os dois são tentados, e
                 # a falha de qualquer um vira falha da execução — visível na
@@ -700,7 +726,8 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
         # depois de atualizar o CADASTRO. Não são SPs, são pessoas — e número
         # com o nome errado é pior que número nenhum, porque parece certo.
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
-                    "notas_receita", "notas_ciencia", "colaboradores", "ponto"):
+                    "notas_receita", "notas_ciencia", "colaboradores", "ponto",
+                    "ponto_pessoa", "ponto_lancar"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]

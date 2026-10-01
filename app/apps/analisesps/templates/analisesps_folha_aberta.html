@@ -991,96 +991,109 @@
     }
   });
 
-  // CORRIGIR O PONTO NO MOBPONTO (01/10/2026): "corrigir" no dia abre o quadro
-  // embaixo da tabela com aquele dia; as batidas que o dia já tem ficam
-  // travadas (incluir de novo duplicaria). Gravar manda ao Mobponto e, se
-  // entrou alguma, acompanha a atualização do ponto da pessoa e relê o analítico.
-  const PADRAO_DAS_HORAS = ["07:00", "11:00", "13:00", "17:00"];
-  corpo.addEventListener("click", e => {
-    const b = e.target.closest(".corrigir-dia");
-    if (!b) return;
-    const quadro = corpo.querySelector("#corrigir-ponto");
-    if (!quadro) return;
-    quadro.hidden = false;
-    quadro.querySelector(".corrigir-dia-rotulo").textContent = b.dataset.dataBr;
-    const campoData = quadro.querySelector(".corrigir-data");
-    if (!campoData) { quadro.scrollIntoView({behavior: "smooth"}); return; }
-    campoData.value = b.dataset.data;
-    const horas = (b.dataset.horas || "").split("|");
-    quadro.querySelectorAll(".corrigir-linha").forEach((linha, i) => {
-      const hora = linha.querySelector(".corrigir-hora");
-      const obra = linha.querySelector(".corrigir-obra");
-      const ja = (horas[i] || "").trim();
-      hora.value = ja ? ja.slice(0, 5) : "";
-      hora.disabled = obra.disabled = !!ja;
-      hora.placeholder = ja ? "" : PADRAO_DAS_HORAS[i];
-      obra.value = "";
-      obra.placeholder = ja ? "já batida" : "obra";
-    });
-    quadro.querySelector(".corrigir-recado").textContent = "";
-    quadro.scrollIntoView({behavior: "smooth", block: "nearest"});
-  });
+  // LANÇAR O PONTO NO MOBPONTO (01/10/2026). "lançar" no dia põe De = Até =
+  // aquele dia; "Ver o que vai ser lançado" pede o plano ao servidor (nada é
+  // gravado); "Lançar" dispara o processo separado, que confere o ponto de
+  // novo, lança uma batida por vez e traz o ponto atualizado.
+  const quadroLancar = () => corpo.querySelector("#lancar-ponto");
+  const pedidoLancar = q => ({
+    folha_id: q.dataset.folha, cpf: q.dataset.cpf, nome: q.dataset.nome,
+    de: q.querySelector(".lancar-de").value, ate: q.querySelector(".lancar-ate").value,
+    obra: q.querySelector(".lancar-obra").value,
+    hora_avulsa: q.querySelector(".lancar-avulsa").value,
+    justificativa: q.querySelector(".lancar-justificativa").value});
 
   corpo.addEventListener("click", e => {
-    if (!e.target.closest(".corrigir-cancelar")) return;
-    const quadro = corpo.querySelector("#corrigir-ponto");
-    if (quadro) quadro.hidden = true;
+    const b = e.target.closest(".lancar-dia");
+    const q = quadroLancar();
+    if (!b || !q || !q.querySelector(".lancar-de")) return;
+    q.querySelector(".lancar-de").value = b.dataset.data;
+    q.querySelector(".lancar-ate").value = b.dataset.data;
+    q.querySelector(".lancar-plano").innerHTML = "";
+    q.querySelector(".lancar-enviar").hidden = true;
+    q.scrollIntoView({behavior: "smooth", block: "nearest"});
+    q.querySelector(".lancar-obra").focus();
+  });
+
+  // Mexeu em qualquer campo, o plano mostrado deixa de valer.
+  corpo.addEventListener("input", e => {
+    const q = quadroLancar();
+    if (!q || !q.contains(e.target)) return;
+    q.querySelector(".lancar-enviar").hidden = true;
   });
 
   corpo.addEventListener("click", async e => {
-    const b = e.target.closest(".corrigir-enviar");
-    if (!b) return;
-    const quadro = corpo.querySelector("#corrigir-ponto");
-    const recado = quadro.querySelector(".corrigir-recado");
-    const batidas = [];
-    quadro.querySelectorAll(".corrigir-linha").forEach(linha => {
-      const hora = linha.querySelector(".corrigir-hora");
-      const obra = linha.querySelector(".corrigir-obra");
-      if (hora.disabled) return;
-      if (hora.value || obra.value) batidas.push({hora: hora.value, obra: obra.value});
-    });
-    if (!batidas.length) { recado.textContent = "Preencha hora e obra de pelo menos uma batida."; return; }
-    const lista = batidas.map(x => x.hora + " em " + (x.obra || "?")).join(", ");
-    if (!confirm("Gravar no MOBPONTO, para " + quadro.dataset.nome + " em " +
-                 quadro.querySelector(".corrigir-dia-rotulo").textContent + ":\n\n" +
-                 lista + "\n\nO que entra no Mobponto não se desfaz por aqui.")) return;
-    b.disabled = true;
-    recado.textContent = "gravando no Mobponto…";
+    if (!e.target.closest(".lancar-ver")) return;
+    const q = quadroLancar();
+    const recado = q.querySelector(".lancar-recado");
+    const area = q.querySelector(".lancar-plano");
+    const enviar = q.querySelector(".lancar-enviar");
+    recado.textContent = "montando…";
+    enviar.hidden = true;
     try {
-      const r = await fetch("{{ url_for('analisesps.folha_ponto_incluir_batida') }}", {
+      const r = await fetch("{{ url_for('analisesps.folha_ponto_plano') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({folha_id: quadro.dataset.folha, cpf: quadro.dataset.cpf,
-                              nome: quadro.dataset.nome,
-                              data: quadro.querySelector(".corrigir-data").value,
-                              batidas: batidas,
-                              justificativa: quadro.querySelector(".corrigir-justificativa").value})});
+        body: JSON.stringify(pedidoLancar(q))});
       const d = await r.json();
-      const entraram = (d.enviadas || []).map(x => x.hora + " " + x.obra).join(", ");
-      let texto = entraram ? "Entrou no Mobponto: " + entraram + ". " : "";
-      if (d.falhou || (!d.ok && d.erro)) {
-        texto += "NÃO entrou" + (d.falhou ? " a das " + d.falhou.hora : "") + ": " + (d.erro || "");
-        if (d.falhou && entraram) texto += " As seguintes nem foram mandadas.";
+      if (!d.ok) { recado.textContent = d.erro; area.innerHTML = ""; return; }
+      const p = d.plano;
+      recado.textContent = p.batidas
+        ? p.batidas + " batida(s) em " + p.dias_com_lancamento + " dia(s)" +
+          (p.pulados.length ? "; " + p.pulados.length + " dia(s) ficam como estão" : "")
+        : "Nada a lançar neste período — veja o motivo de cada dia.";
+      let html = '<table class="sps plano-lancar"><thead><tr><th>Dia</th>' +
+                 '<th>Já tem</th><th>Vai lançar</th><th>Fica de fora</th></tr></thead><tbody>';
+      p.dias.forEach(x => {
+        html += '<tr class="' + (x.lancar.length ? "" : "dia-sem-obra") + '"><td>' +
+                esc(x.data_br) + ' <span class="cartao-dica">' + esc(x.semana) + "</span></td><td>" +
+                (x.ja.length ? esc(x.ja.join(", ")) : "—") + "</td><td><b>" +
+                (x.lancar.length ? esc(x.lancar.join(", ")) : "") + "</b></td><td>" +
+                '<span class="cartao-dica">' + esc(x.motivo || "") + "</span></td></tr>";
+      });
+      area.innerHTML = html + "</tbody></table>";
+      if (p.batidas) {
+        enviar.textContent = "Lançar " + p.batidas + " batida(s) no Mobponto";
+        enviar.hidden = false;
       }
-      recado.textContent = texto;
-      if (!d.atualizando) { b.disabled = false; return; }
-      recado.textContent = texto + " Trazendo o ponto de novo…";
+    } catch (erro) {
+      recado.textContent = "Falhou: " + erro;
+    }
+  });
+
+  corpo.addEventListener("click", async e => {
+    const b = e.target.closest(".lancar-enviar");
+    if (!b) return;
+    const q = quadroLancar();
+    const recado = q.querySelector(".lancar-recado");
+    const pedido = pedidoLancar(q);
+    if (!confirm(b.textContent + " para " + q.dataset.nome + ", na obra " +
+                 pedido.obra.toUpperCase() + "?\n\nAntes de lançar o sistema confere " +
+                 "o ponto dela de novo no Mobponto, e o que já estiver batido não é " +
+                 "tocado.\n\nO que entra no Mobponto não se desfaz por aqui.")) return;
+    b.disabled = true;
+    recado.textContent = "começando…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_ponto_lancar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(pedido)});
+      const d = await r.json();
+      if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
       const acompanhar = async () => {
         const a = await (await fetch("{{ url_for('analisesps.andamento') }}")).json();
-        if (a.rodando) { setTimeout(acompanhar, 4000); return; }
-        const f = await (await fetch("{{ url_for('analisesps.folha_ponto_pessoa_estado') }}")).json();
-        if (f.sucesso) {
-          await carregar(quadro.dataset.cpf);
-          const novo = corpo.querySelector(".recado-ponto-pessoa");
-          if (novo) novo.textContent = texto + " Ponto atualizado: " + f.mensagem;
-        } else {
-          recado.textContent = texto + " Mas não consegui trazer o ponto de novo: " +
-            (f.mensagem || "motivo não registrado") + " — use \"Atualizar o ponto desta pessoa\".";
-          b.disabled = false;
+        if (a.rodando) {
+          recado.textContent = (a.progresso || a.etapa || "trabalhando");
+          setTimeout(acompanhar, 3000);
+          return;
         }
+        const f = await (await fetch("{{ url_for('analisesps.folha_ponto_lancar_estado') }}")).json();
+        await carregar(q.dataset.cpf);
+        const novo = corpo.querySelector("#lancar-ponto .lancar-recado");
+        const texto = (f.sucesso ? "Pronto: " : "ATENÇÃO: ") + (f.mensagem || "");
+        if (novo) novo.textContent = texto; else alert(texto);
       };
-      setTimeout(acompanhar, 3000);
+      setTimeout(acompanhar, 2000);
     } catch (erro) {
-      recado.textContent = "Falhou: " + erro + " — confira no Mobponto se entrou antes de mandar de novo.";
+      recado.textContent = "Falhou: " + erro + " — confira no Mobponto antes de mandar de novo.";
       b.disabled = false;
     }
   });

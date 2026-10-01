@@ -1307,6 +1307,30 @@ def _obra_do_dia(lido) -> dict:
     return obra_do_dia(lido["marcacoes"], lido["presenca"], lido["falta"])
 
 
+def dias_de_um_cpf(ano: int, mes: int, cpf: str) -> list:
+    """Os dias de UMA pessoa no mês, no formato de `dias_por_cpf`. Lista vazia
+    sem carga do mês. Usado para planejar o lançamento de batidas — ler o mês
+    inteiro de todo mundo para olhar uma pessoa seria desperdício."""
+    import json as _json
+
+    from .db import consultar
+
+    carga = carga_do_mes(ano, mes)
+    if not _pronto() or not carga:
+        return []
+    saida = []
+    for data, bruto in consultar(
+            "SELECT data, campos FROM analisesps.ponto_dia "
+            " WHERE carga_id = ? AND cpf = ? AND data IS NOT NULL ORDER BY data",
+            (carga["id"], _cpf_do_ponto(cpf))):
+        try:
+            campos = _json.loads(bruto) if bruto else {}
+        except Exception:  # noqa: BLE001
+            campos = {}
+        saida.append(_dia_lido(data, campos))
+    return saida
+
+
 def dias_por_cpf(ano: int, mes: int) -> dict:
     """`{cpf: [dias]}` do mês inteiro, pronto para a apropriação.
 

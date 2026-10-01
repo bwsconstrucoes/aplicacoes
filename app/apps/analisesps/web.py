@@ -2687,17 +2687,11 @@ def _trazer_o_ponto_da_pessoa(folha: dict, cpf: str, nome) -> dict:
     return tarefas.disparar("ponto_pessoa", disparo=quem or "ponto de uma pessoa")
 
 
-@bp.route("/api/folha/ponto/batida", methods=["POST"])
-@exige_operador
-def folha_ponto_incluir_batida():
-    """Inclui batidas no MOBPONTO para uma pessoa da folha, e traz o ponto dela
-    de novo. Ver `ponto_edicao` — inclusive o que a API conhecida NÃO faz.
-
-    ⚠️ SÓ DO MESTRE (`auth.SO_DO_MESTRE`): grava em sistema de terceiro, e o que
-    entra lá não se desfaz por aqui."""
-    from . import folha_arquivo as fa, ponto_edicao
+def _pedido_de_lancamento():
+    """Lê e confere o pedido de lançamento. Devolve (folha, cpf, dados) ou a
+    resposta de recusa."""
+    from . import folha_arquivo as fa
     from .folha_rateio import so_digitos
-
     dados = request.get_json(silent=True) or {}
     try:
         folha = fa.abrir(int(dados.get("folha_id") or 0))
@@ -2706,30 +2700,87 @@ def folha_ponto_incluir_batida():
     cpf = so_digitos(dados.get("cpf"))
     cpfs_da_folha = {so_digitos(l.get("cpf")) for l in ((folha or {}).get("linhas") or [])}
     if not folha or len(cpf) != 11 or cpf not in cpfs_da_folha:
-        return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
-    data = str(dados.get("data") or "")[:10]
-    if not data.startswith(f"{int(folha['ano']):04d}-{int(folha['mes']):02d}"):
-        return {"ok": False, "erro": "Este dia não é do mês desta folha."}, 400
-    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+        return None, None, None, ({"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404)
+    return folha, cpf, dados, None
+
+
+@bp.route("/api/folha/ponto/plano", methods=["POST"])
+@exige_operador
+def folha_ponto_plano():
+    """O que SERIA lançado no Mobponto, dia a dia, e o que fica de fora — sem
+    lançar nada. É o que a pessoa confere antes de apertar "Lançar".
+
+    ⚠️ SÓ DO MESTRE, como o lançamento: mostra o ponto e prepara a escrita."""
+    from . import ponto_edicao
+    folha, cpf, dados, recusa = _pedido_de_lancamento()
+    if recusa:
+        return recusa
     try:
-        feito = ponto_edicao.incluir_batidas(
-            cpf, str(dados.get("nome") or ""), data, dados.get("batidas") or [],
-            str(dados.get("justificativa") or ""), quem=quem)
-    except ponto_edicao.ErroDaEdicao as e:
+        obra, _ = ponto_edicao.validar_pedido(dados.get("obra"), "x" * 10)
+        plano = ponto_edicao.plano_da_pessoa(
+            folha["ano"], folha["mes"], cpf, dados.get("de") or "",
+            dados.get("ate") or dados.get("de") or "", obra,
+            dados.get("hora_avulsa") or "")
+    except (ponto_edicao.ErroDaEdicao, ValueError) as e:
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
-        logger.exception("Ponto: falhou incluir batida no Mobponto")
-        return {"ok": False, "erro": f"Não consegui gravar no Mobponto: {e}"}, 500
+        logger.exception("Ponto: falhou montar o plano de lançamento")
+        return {"ok": False, "erro": f"Não consegui montar o plano: {e}"}, 500
+    return {"ok": True, "plano": plano, "falta": ponto_edicao.o_que_falta()}
 
-    # O QUE ENTROU NO MOBPONTO VOLTA PARA A CÓPIA BAIXADA: sem isto a folha
-    # continuaria calculando pelo ponto antigo até a próxima carga.
-    atualizando = False
-    if feito["enviadas"]:
-        disparo = _trazer_o_ponto_da_pessoa(folha, cpf, dados.get("nome"))
-        atualizando = bool(disparo.get("ok"))
-    return {"ok": not feito["falhou"], "enviadas": feito["enviadas"],
-            "falhou": feito["falhou"], "atualizando": atualizando,
-            "erro": (feito["falhou"] or {}).get("motivo", "")}
+
+@bp.route("/api/folha/ponto/lancar", methods=["POST"])
+@exige_operador
+def folha_ponto_lancar():
+    """Lança no MOBPONTO as batidas que faltam no período, no processo separado.
+
+    O plano é refeito lá, com o ponto trazido de novo antes — ver
+    `ponto_edicao.lancar`. ⚠️ SÓ DO MESTRE: grava em sistema de terceiro."""
+    import json as _json
+
+    from . import ponto_edicao, sincronizacao, tarefas
+    from .db import conexao
+    folha, cpf, dados, recusa = _pedido_de_lancamento()
+    if recusa:
+        return recusa
+    falta = ponto_edicao.o_que_falta()
+    if falta:
+        return {"ok": False, "erro": falta}, 400
+    try:
+        obra, texto = ponto_edicao.validar_pedido(dados.get("obra"),
+                                                  dados.get("justificativa"))
+        # Confere o período agora, para a recusa sair na tela e não na tarefa.
+        ponto_edicao.plano_da_pessoa(folha["ano"], folha["mes"], cpf,
+                                     dados.get("de") or "",
+                                     dados.get("ate") or dados.get("de") or "",
+                                     obra, dados.get("hora_avulsa") or "")
+    except (ponto_edicao.ErroDaEdicao, ValueError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    pedido = {"ano": folha["ano"], "mes": folha["mes"], "cpf": cpf,
+              "nome": str(dados.get("nome") or "")[:160],
+              "de": str(dados.get("de") or "")[:10],
+              "ate": str(dados.get("ate") or dados.get("de") or "")[:10],
+              "obra": obra, "justificativa": texto,
+              "hora_avulsa": str(dados.get("hora_avulsa") or "")[:5], "quem": quem}
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_lancar_pedido",
+                                   _json.dumps(pedido, ensure_ascii=False))
+    resultado = tarefas.disparar("ponto_lancar", disparo=quem or "lançar ponto")
+    if not resultado.get("ok"):
+        return {"ok": False, "erro": resultado.get("erro")
+                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+    return {"ok": True}
+
+
+@bp.route("/api/folha/ponto/lancar/estado")
+@exige_consulta
+def folha_ponto_lancar_estado():
+    """Como terminou o último lançamento no Mobponto."""
+    from . import tarefas
+    ultima = tarefas.ultima_do_tipo("ponto_lancar") or {}
+    return {"ok": True, "em_andamento": bool(ultima.get("em_andamento")),
+            "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or ""}
 
 
 @bp.route("/api/folha/ponto/pessoa/estado")

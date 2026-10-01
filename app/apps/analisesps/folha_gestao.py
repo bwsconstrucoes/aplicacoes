@@ -472,6 +472,7 @@ def ponto_da_pessoa(folha_id: int, cpf: str) -> dict | None:
         "cpf": cpf,
         "cpf_bonito": cpf_bonito(cpf),
         "periodo": [ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")],
+        "periodo_iso": [ini.isoformat(), fim.isoformat()],
         "valor": str(_dinheiro(pessoa.get("valor"))),
         "dias_no_ponto": int(pessoa.get("dias_no_ponto") or 0),
         "valor_por_dia": (None if _por_dia(pessoa.get("valor"),
