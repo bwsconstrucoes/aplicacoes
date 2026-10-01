@@ -42,7 +42,7 @@ logger = logging.getLogger("analisesps.ponto")
 PESSOA = "pessoa"
 LANCAR = "lancar"
 TIPOS = (PESSOA, LANCAR)
-ROTULO_DO_TIPO = {PESSOA: "atualizar o ponto", LANCAR: "lançar batidas"}
+ROTULO_DO_TIPO = {PESSOA: "Atualização do ponto", LANCAR: "Lançamento de batidas"}
 
 ESPERANDO, RODANDO, FEITO, FALHOU = "esperando", "rodando", "feito", "falhou"
 
@@ -153,7 +153,7 @@ def _pegar_o_proximo() -> dict | None:
     with conexao() as conn:
         cur = conn.execute(
             "UPDATE analisesps.ponto_fila SET situacao = ?, inicio = now(), "
-            "       progresso = 'começando' "
+            "       progresso = 'iniciando' "
             " WHERE id = (SELECT id FROM analisesps.ponto_fila "
             "              WHERE situacao = ? ORDER BY id LIMIT 1) "
             f"RETURNING {_CAMPOS}", (RODANDO, ESPERANDO))
@@ -194,11 +194,11 @@ def _resolver(pedido_da_fila: dict, anotar) -> tuple:
                                    anotar)
         if not r.get("achou"):
             return False, (
-                "não achei esta pessoa no ponto do Mobponto de "
-                f"{int(pedido_da_fila['mes']):02d}/{pedido_da_fila['ano']} — olhei as "
-                f"páginas {', '.join(str(x) for x in r.get('olhadas') or [])}. Se ela "
-                "bateu ponto no mês, traga o mês inteiro de novo.")
-        return True, (f"{r.get('dias', 0)} dia(s) trazido(s) do Mobponto "
+                "colaborador não encontrado no ponto do Mobponto de "
+                f"{int(pedido_da_fila['mes']):02d}/{pedido_da_fila['ano']} — páginas "
+                f"consultadas: {', '.join(str(x) for x in r.get('olhadas') or [])}. Se houve "
+                "registro de ponto na competência, importe novamente o mês completo.")
+        return True, (f"{r.get('dias', 0)} dia(s) importado(s) do Mobponto "
                       f"(página {r.get('pagina')}).")
 
     pedido = json.loads(pedido_da_fila["pedido"] or "{}")
@@ -225,7 +225,7 @@ def processar(anotar=None) -> dict:
             _anotar_no_item(_id, texto)
             anotar(etapa, f"{_nome}: {texto}")
 
-        anotar_aqui(f"{ROTULO_DO_TIPO.get(atual['tipo'])} — {nome}", "começando")
+        anotar_aqui(f"{ROTULO_DO_TIPO.get(atual['tipo'])} — {nome}", "iniciando")
         try:
             ok, mensagem = _resolver(atual, anotar_aqui)
         except Exception as e:  # noqa: BLE001 — a falha fica no pedido
@@ -260,7 +260,7 @@ def cutucar() -> None:
         with conexao() as conn:
             conn.execute(
                 "UPDATE analisesps.ponto_fila SET situacao = ?, "
-                "       progresso = 'retomando: o serviço reiniciou no meio' "
+                "       progresso = 'retomando: o serviço foi reiniciado durante a execução' "
                 " WHERE situacao = ?", (ESPERANDO, RODANDO))
             conn.commit()
         tarefas.disparar("ponto_pessoa", disparo="fila do ponto")

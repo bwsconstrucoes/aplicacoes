@@ -96,9 +96,9 @@ def o_que_falta() -> str:
         faltam.append("MOBPONTO_RESPONSAVEL_NOME")
     if not faltam:
         return ""
-    return ("Para gravar no Mobponto por aqui, falta criar no Render: "
-            + ", ".join(faltam) + ". O CPF e o nome do responsável são os que o "
-            "seu script de ajuste usa.")
+    return ("Gravação no Mobponto indisponível: variáveis ausentes no Render: "
+            + ", ".join(faltam) + ". O CPF e o nome do responsável devem ser os "
+            "mesmos utilizados no script de ajuste.")
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +184,7 @@ def _dia_parado(dia_do_ponto: dict) -> str:
         return f"o ponto tem falta lançada ({falta})"
     presenca = " ".join(str(dia_do_ponto.get("presenca") or "").split())
     if any(p in presenca.lower() for p in PALAVRAS_DE_DIA_PARADO):
-        return f"o ponto diz {presenca}"
+        return f"o ponto registra {presenca}"
     return ""
 
 
@@ -207,12 +207,12 @@ def planejar(dias_do_ponto, de, ate, feriados=None, ferias=None,
     if isinstance(ate, str):
         ate = dt.date.fromisoformat(ate[:10])
     if ate < de:
-        raise ErroDaEdicao("o fim do período é antes do começo.")
+        raise ErroDaEdicao("a data final do período é anterior à data inicial.")
     if (ate - de).days + 1 > MAXIMO_DE_DIAS:
-        raise ErroDaEdicao(f"no máximo {MAXIMO_DE_DIAS} dias por vez.")
+        raise ErroDaEdicao(f"limite de {MAXIMO_DE_DIAS} dias por lançamento.")
     avulsa = str(hora_avulsa or "").strip()[:5]
     if avulsa and not PADRAO_DA_HORA.match(avulsa):
-        raise ErroDaEdicao(f'a hora "{avulsa}" não está no formato 07:30.')
+        raise ErroDaEdicao(f'hora "{avulsa}" fora do formato 07:30.')
     feriados = feriados or {}
     ferias = ferias or set()
     um_dia_so = de == ate
@@ -245,20 +245,20 @@ def planejar(dias_do_ponto, de, ate, feriados=None, ferias=None,
         elif _dia_parado(registro):
             linha["motivo"] = _dia_parado(registro)
         elif any(_minutos(h) is None for h in existentes):
-            linha["motivo"] = ("tem batida sem hora no ponto — ajuste no "
+            linha["motivo"] = ("há batida sem hora no ponto — corrija no "
                                "Mobponto")
         elif avulsa:
             if len(existentes) >= 4:
-                linha["motivo"] = "o dia já tem as quatro batidas"
+                linha["motivo"] = "o dia já possui as quatro batidas"
             elif any(abs(_minutos(h) - _minutos(avulsa)) <= 5 for h in existentes):
-                linha["motivo"] = f"já há batida perto das {avulsa}"
+                linha["motivo"] = f"já existe batida próxima às {avulsa}"
             else:
                 linha["lancar"] = [avulsa]
         else:
             faltam = encaixar(existentes, horario_do_dia(dia))
             if faltam is None:
-                linha["motivo"] = ("as batidas que já existem não deixam encaixar "
-                                   "o horário padrão — ajuste à mão")
+                linha["motivo"] = ("as batidas existentes impedem o encaixe "
+                                   "do horário padrão — ajuste manualmente")
             elif not faltam:
                 linha["motivo"] = "o dia já está completo"
             else:
@@ -307,20 +307,20 @@ def validar_pedido(obra: str, justificativa: str, permitidas=None) -> tuple:
     que ele não conhece — com sorte recusado, sem sorte gravado errado."""
     obra = " ".join(str(obra or "").split()).upper()
     if not obra:
-        raise ErroDaEdicao("escolha a obra.")
+        raise ErroDaEdicao("selecione a obra.")
     permitidas = obras_permitidas() if permitidas is None else permitidas
     if not permitidas:
         raise ErroDaEdicao(
-            'não tenho a lista de obras da aba "C. Diários" — atualize as '
-            "planilhas de apoio em Configurações e tente de novo. Sem ela, nada "
-            "é lançado.")
+            'lista de obras da aba "C. Diários" indisponível — atualize as '
+            "planilhas de apoio em Configurações e repita a operação. Sem ela, "
+            "nenhuma batida é lançada.")
     if obra not in permitidas:
         raise ErroDaEdicao(f'a obra "{obra}" não está na aba "C. Diários". '
-                           "Escolha uma da lista.")
+                           "Selecione uma obra da lista.")
     texto = " ".join(str(justificativa or "").split())
     if len(texto) < MINIMO_DA_JUSTIFICATIVA:
-        raise ErroDaEdicao("escreva a justificativa — ela vai para o Mobponto "
-                           "junto com cada batida.")
+        raise ErroDaEdicao("informe a justificativa — ela é enviada ao Mobponto "
+                           "com cada batida.")
     return obra, texto[:500]
 
 
@@ -353,8 +353,8 @@ def plano_da_pessoa(ano: int, mes: int, cpf: str, de, ate, obra: str,
     ate = dt.date.fromisoformat(str(ate)[:10])
     if (de.year, de.month) != (int(ano), int(mes)) or \
             (ate.year, ate.month) != (int(ano), int(mes)):
-        raise ErroDaEdicao(f"o período tem de estar dentro de {int(mes):02d}/{int(ano)}, "
-                           "o mês do ponto desta folha.")
+        raise ErroDaEdicao(f"o período deve estar contido em {int(mes):02d}/{int(ano)}, "
+                           "competência do ponto desta folha.")
     dias = ponto.dias_de_um_cpf(ano, mes, cpf)
     feriados, ferias = _feriados_e_ferias(cpf, de, ate, obra)
     return planejar(dias, de, ate, feriados, ferias, hora_avulsa)
@@ -423,17 +423,17 @@ def _mandar(payload: dict) -> tuple:
                 raise
             resposta = enviar(remendada)
     except requests.exceptions.ReadTimeout:
-        return None, ("o Mobponto não respondeu a tempo. NÃO SEI SE GRAVOU — "
-                      "confira o ponto da pessoa antes de mandar de novo, senão a "
-                      "batida pode entrar duas vezes.")
+        return None, ("o Mobponto não respondeu no tempo limite. GRAVAÇÃO NÃO CONFIRMADA — "
+                      "verifique o ponto do colaborador antes de reenviar, para evitar "
+                      "batida duplicada.")
     except Exception as e:  # noqa: BLE001 — rede, certificado
         if _erro_de_certificado(e):
             return False, (
-                "o certificado do Mobponto não pôde ser verificado, e não consegui "
-                "completar a cadeia sozinho. Nada foi gravado. O conserto é colar "
-                "o certificado do meio da cadeia em MOBPONTO_CA_EXTRA, no Render "
+                "o certificado do Mobponto não pôde ser verificado e a cadeia não pôde "
+                "ser completada automaticamente. Nenhuma batida foi gravada. Correção: "
+                "informar o certificado intermediário da cadeia em MOBPONTO_CA_EXTRA, no Render "
                 f"(detalhe: {e})")
-        return False, f"não consegui falar com o Mobponto: {e}"
+        return False, f"não foi possível comunicar com o Mobponto: {e}"
     texto = (resposta.text or "")[:1000]
     try:
         corpo = resposta.json()
@@ -500,7 +500,7 @@ def lancar(pedido: dict, anotar=None) -> dict:
     obra, texto = validar_pedido(pedido.get("obra"), pedido.get("justificativa"))
     cpf_resp, nome_resp = responsavel()
 
-    anotar("lançando o ponto", "montando o que falta, pelo ponto já baixado")
+    anotar("Lançando o ponto", "montando as batidas faltantes a partir do ponto importado")
     plano = plano_da_pessoa(ano, mes, cpf, pedido["de"], pedido["ate"], obra,
                             pedido.get("hora_avulsa") or "")
 
@@ -509,7 +509,7 @@ def lancar(pedido: dict, anotar=None) -> dict:
     for linha in plano["dias"]:
         aceitas_no_dia = []
         for hora in linha["lancar"]:
-            anotar("lançando o ponto",
+            anotar("Lançando o ponto",
                    f"batida {len(enviadas) + 1} de {total} — {linha['data_br']} {hora}")
             dia = dt.date.fromisoformat(linha["data"])
             ok, resposta = _mandar({
@@ -548,10 +548,10 @@ def recado_do_lancamento(feito: dict) -> str:
     dias = len({d for d, _ in enviadas})
     partes = [f"{len(enviadas)} batida(s) lançada(s) em {dias} dia(s)"]
     if plano["pulados"]:
-        partes.append(f"{len(plano['pulados'])} dia(s) não mexidos")
+        partes.append(f"{len(plano['pulados'])} dia(s) sem alteração")
     if falhou:
         partes.append(
-            f"PAROU em {falhou['data']} {falhou['hora']}: {falhou['motivo']}"
-            + (" — confira no Mobponto se essa entrou antes de mandar de novo"
+            f"INTERROMPIDO em {falhou['data']} {falhou['hora']}: {falhou['motivo']}"
+            + (" — verifique no Mobponto se esta batida foi gravada antes de reenviar"
                if falhou.get("talvez_gravou") else ""))
     return "; ".join(partes)

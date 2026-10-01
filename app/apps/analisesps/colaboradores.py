@@ -250,8 +250,8 @@ COLUNAS_OPCIONAIS = {
 # As opcionais que AVISAM quando faltam — só as que mudam dinheiro.
 OPCIONAIS_QUE_AVISAM = {
     "valor_diaria":
-        "os diaristas ficam sem valor: a tela mostra quem e quantos dias, mas "
-        "não calcula quanto pagar.",
+        "os diaristas ficam sem valor: a tela exibe colaboradores e dias, mas "
+        "não calcula o valor a pagar.",
 }
 
 # ---------------------------------------------------------------------------
@@ -300,31 +300,31 @@ COLUNAS_QUE_AVISAM = frozenset({
 # decidir se corre atrás agora ou depois. "Este campo fica em branco" não diz nada.
 EFEITO_DE_FALTAR = {
     "modo_alimentacao":
-        "o auxílio ALIMENTAÇÃO não calcula para ninguém (sem a categoria não há "
-        "como contar os dias).",
+        "o auxílio ALIMENTAÇÃO não é calculado para nenhum colaborador (sem a "
+        "categoria não é possível contar os dias).",
     "valor_alimentacao":
-        "o auxílio ALIMENTAÇÃO sai zerado (sem valor do dia não há o que "
-        "multiplicar).",
+        "o auxílio ALIMENTAÇÃO é calculado com valor zero (sem o valor do dia "
+        "não há base de cálculo).",
     "modo_transporte":
-        "o auxílio TRANSPORTE não calcula para ninguém.",
+        "o auxílio TRANSPORTE não é calculado para nenhum colaborador.",
     "valor_transporte":
-        "o auxílio TRANSPORTE sai zerado.",
+        "o auxílio TRANSPORTE é calculado com valor zero.",
     "obra_codigo":
-        "as telas não conseguem agrupar por obra — e é por obra que você confere "
-        "e decide o rateio.",
+        "as telas não agrupam por obra, critério usado na conferência "
+        "e na definição do rateio.",
     "card_pipefy":
-        "o nome da pessoa não leva ao card, e é no card que se corrige o auxílio.",
+        "o nome do colaborador não leva ao card do Pipefy, onde o auxílio é corrigido.",
     "tipo_contrato":
-        "a regra de diarista × CTPS não decide, porque ela olha o contrato.",
+        "a regra de diarista × CTPS não é aplicada, pois depende do tipo de contrato.",
     "fase":
-        "quem foi desligado deixa de ser escondido da lista — e entra em "
-        "pagamento sem ninguém ver.",
+        "colaboradores desligados deixam de ser ocultados da lista e podem "
+        "entrar em pagamento sem alerta.",
     "data_saida":
-        "quem já saiu deixa de ser travado no pagamento.",
+        "colaboradores desligados deixam de ser bloqueados no pagamento.",
     "valor_gratificacao":
-        "a gratificação sai zerada.",
+        "a gratificação é calculada com valor zero.",
     "parcela_unica":
-        "quem recebe parcela única deixa de ser reconhecido.",
+        "colaboradores com parcela única deixam de ser identificados.",
 }
 
 DATAS = ("aviso_previo", "ultimo_dia", "data_saida",
@@ -459,7 +459,7 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
         # e o recado de lá diz o cabeçalho de verdade.
         if campo in ("cpf", "nome"):
             avisos.append(
-                f'não achei a coluna de "{aceitos[0]}" na aba '
+                f'coluna "{aceitos[0]}" não encontrada na aba '
                 f'"{ABA_COLABORADORES}".')
         elif campo in COLUNAS_QUE_AVISAM:
             # ⚠️ O AVISO DIZ O QUE PARA DE FUNCIONAR, e não faz pergunta. Ele
@@ -467,8 +467,8 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
             # numa tela onde não há como responder. Reclamação dele em 29/09/2026:
             # *"não entendi essa pergunta."*
             avisos.append(
-                f'a coluna "{aceitos[0]}" não existe na planilha com esse nome, '
-                f"então {EFEITO_DE_FALTAR.get(campo, 'este campo fica em branco')}")
+                f'a coluna "{aceitos[0]}" não existe na planilha com esse nome. '
+                f"Consequência: {EFEITO_DE_FALTAR.get(campo, 'este campo fica em branco')}")
         # else: fica em branco calado. Ver COLUNAS_QUE_AVISAM.
 
     for campo, aceitos in COLUNAS_OPCIONAIS.items():
@@ -477,8 +477,8 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
             posicoes[campo] = i
         elif campo in OPCIONAIS_QUE_AVISAM:
             avisos.append(
-                f'a coluna "{aceitos[0]}" não existe na planilha com esse nome, '
-                f"então {OPCIONAIS_QUE_AVISAM[campo]}")
+                f'a coluna "{aceitos[0]}" não existe na planilha com esse nome. '
+                f"Consequência: {OPCIONAIS_QUE_AVISAM[campo]}")
 
     # O código do Fortes na ficha: opcional e calado quando falta — a aba "ID
     # Fortes" continua sendo o caminho de quem não tem a coluna.
@@ -655,10 +655,10 @@ def atualizar(anotar=None) -> dict:
     anotar = anotar or (lambda *a, **k: None)
     if not _pronto():
         raise ErroDoCadastro(
-            "a tabela do cadastro ainda não existe. Aperte "
-            '"Aplicar atualizações do banco" em Configurações e tente de novo.')
+            "tabela do cadastro não encontrada no banco. Clique em "
+            '"Aplicar atualizações do banco" em Configurações e repita a operação.')
 
-    anotar("abrindo a planilha do cadastro")
+    anotar("Abrindo a planilha do cadastro")
     try:
         aba = _aba(PLANILHA_COLABORADORES, ABA_COLABORADORES)
     except Exception as e:  # noqa: BLE001
@@ -672,14 +672,14 @@ def atualizar(anotar=None) -> dict:
             lambda: aba.row_values(LINHA_DO_CABECALHO)) or []
     except Exception as e:  # noqa: BLE001
         raise ErroDoCadastro(
-            f'não deu para ler o cabeçalho da aba "{ABA_COLABORADORES}": '
+            f'não foi possível ler o cabeçalho da aba "{ABA_COLABORADORES}": '
             f"{e}") from e
 
     posicoes, avisos = _achar_colunas(cabecalho)
     if "cpf" not in posicoes or "nome" not in posicoes:
         raise ErroDoCadastro(
-            f'a aba "{ABA_COLABORADORES}" não tem a coluna do CPF ou a do '
-            f"nome, e sem as duas não há cadastro. O cabeçalho dela é: "
+            f'a aba "{ABA_COLABORADORES}" não possui a coluna do CPF ou a do '
+            f"nome, ambas obrigatórias para o cadastro. Cabeçalho encontrado: "
             f"{', '.join(str(c) for c in cabecalho if str(c).strip()) or '(vazio)'}.")
 
     grupos = _faixas_das_colunas(list(posicoes.values()))
@@ -701,7 +701,7 @@ def atualizar(anotar=None) -> dict:
             blocos = com_retry(lambda f=faixas: aba.batch_get(f))
         except Exception as e:  # noqa: BLE001
             raise ErroDoCadastro(
-                f"não deu para ler as linhas {linha} a {fim} do cadastro: "
+                f"não foi possível ler as linhas {linha} a {fim} do cadastro: "
                 f"{e}") from e
 
         linhas = _juntar(list(blocos), grupos, fim - linha + 1)
@@ -720,7 +720,7 @@ def atualizar(anotar=None) -> dict:
         if registros:
             with conexao() as conn:
                 gravadas += _gravar(conn, registros)
-        anotar("trazendo o cadastro de colaboradores",
+        anotar("Importando o cadastro de colaboradores",
                f"{gravadas} pessoa(s)")
         # `blocos`, `linhas` e `registros` saem de escopo aqui: o bloco
         # seguinte não soma memória com este.
@@ -728,8 +728,8 @@ def atualizar(anotar=None) -> dict:
 
     if ignoradas:
         avisos.append(
-            f"{ignoradas} linha(s) da planilha ficaram de fora por não terem "
-            "um CPF válido de 11 dígitos.")
+            f"{ignoradas} linha(s) da planilha desconsiderada(s) por não conter(em) "
+            "CPF válido de 11 dígitos.")
 
     # ⚠️ O DE/PARA DO ID FORTES VEM NO MESMO BOTÃO. Sem ele a folha da
     # contabilidade não acha ninguém: ela traz código e nome, e todo o resto do
@@ -746,18 +746,18 @@ def atualizar(anotar=None) -> dict:
             avisos.append(
                 f"{len(ficha['repetidos'])} código(s) do Fortes aparecem em mais "
                 f"de uma ficha ({', '.join(ficha['repetidos'][:5])}"
-                f"{'…' if len(ficha['repetidos']) > 5 else ''}). Valeu a "
-                "primeira; enquanto não for corrigido, o salário de uma pessoa "
-                "pode ir para a obra de outra.")
+                f"{'…' if len(ficha['repetidos']) > 5 else ''}). Considerada a "
+                "primeira ocorrência; até a correção, o salário de um colaborador "
+                "pode ser apropriado na obra de outro.")
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou gravar o ID Fortes da ficha")
-        avisos.append(f"não deu para gravar o código do Fortes das fichas: {e}")
+        avisos.append(f"não foi possível gravar o código do Fortes das fichas: {e}")
     try:
         fortes = atualizar_ids_fortes(anotar, da_ficha=da_ficha)
         avisos.extend(fortes.get("avisos") or [])
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou o de/para do ID Fortes")
-        avisos.append(f"não deu para trazer o de/para do ID Fortes: {e}")
+        avisos.append(f"não foi possível importar o de/para do ID Fortes: {e}")
 
     with conexao() as conn:
         from .sincronizacao import _meta_gravar
@@ -798,7 +798,7 @@ def _linha_da_pessoa(cpf: str) -> tuple:
     i_cpf = achar_coluna(_normalizar_cabecalho(cabecalho), COLUNAS["cpf"])
     if i_cpf is None:
         raise ErroDoCadastro(
-            f'a aba "{ABA_COLABORADORES}" não tem a coluna do CPF.')
+            f'a aba "{ABA_COLABORADORES}" não possui a coluna do CPF.')
     coluna = com_retry(lambda: aba.col_values(i_cpf + 1)) or []
     numero = None
     for n, valor in enumerate(coluna, start=1):
@@ -808,7 +808,7 @@ def _linha_da_pessoa(cpf: str) -> tuple:
     del coluna
     if numero is None:
         raise ErroDoCadastro(
-            "esta pessoa não está na planilha de cadastro (procurei pelo CPF).")
+            "colaborador não encontrado na planilha de cadastro (busca pelo CPF).")
     linha = com_retry(lambda: aba.row_values(numero)) or []
     return cabecalho, linha
 
@@ -817,13 +817,13 @@ def atualizar_uma(cpf: str) -> dict:
     """Traz de novo da planilha o cadastro de UMA pessoa. Devolve o registro."""
     from .db import conexao
     if not _pronto():
-        raise ErroDoCadastro('a tabela do cadastro ainda não existe. Aperte '
+        raise ErroDoCadastro('tabela do cadastro não encontrada no banco. Clique em '
                              '"Aplicar atualizações do banco" em Configurações.')
     cabecalho, linha = _linha_da_pessoa(cpf)
     posicoes, _avisos = _achar_colunas(cabecalho)
     registro = _registro({i: v for i, v in enumerate(linha)}, posicoes)
     if registro is None:
-        raise ErroDoCadastro("a linha desta pessoa na planilha está sem CPF válido.")
+        raise ErroDoCadastro("a linha deste colaborador na planilha não contém CPF válido.")
     with conexao() as conn:
         _gravar(conn, [registro])
     if registro.get("_id_fortes_ficha"):
@@ -931,13 +931,13 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
     codigos_da_ficha = set(da_ficha.values())
     if not _pronto():
         return {"casados": 0, "sem_cadastro": [], "repetidos": [],
-                "avisos": ["a tabela do cadastro ainda não existe."]}
+                "avisos": ["tabela do cadastro não encontrada no banco."]}
     if not tem_id_fortes():
         return {"casados": 0, "sem_cadastro": [], "repetidos": [],
-                "avisos": ['falta a atualização 030 do banco para guardar o ID '
-                           'Fortes. Aperte "Aplicar atualizações do banco".']}
+                "avisos": ['atualização 030 do banco não aplicada (necessária para gravar o ID '
+                           'Fortes). Clique em "Aplicar atualizações do banco".']}
 
-    anotar("trazendo o de/para do ID Fortes")
+    anotar("Importando o de/para do ID Fortes")
     try:
         aba = _aba(PLANILHA_COLABORADORES, ABA_ID_FORTES)
         valores = com_retry(lambda: aba.get_all_values()) or []
@@ -972,11 +972,11 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
             ", ".join(str(c) for c in linha if str(c).strip())
             for linha in valores[:3]) or "(vazio)"
         return {"casados": 0, "sem_cadastro": [], "repetidos": [],
-                "avisos": [f'na aba "{ABA_ID_FORTES}" não achei as colunas de '
+                "avisos": [f'colunas não encontradas na aba "{ABA_ID_FORTES}": '
                            f'"{COLUNAS_DO_ID_FORTES[0]}" e "'
                            f'{COLUNAS_DO_CPF_NO_DE_PARA[0]}". As primeiras '
-                           f"linhas dela são: {cabecalhos}. Me diga os nomes "
-                           "certos e eu ajusto."]}
+                           f"linhas da aba são: {cabecalhos}. Informe os nomes corretos "
+                           "das colunas ao responsável técnico."]}
 
     linha_do_cabecalho, i_id, i_cpf = posicoes
     from .folha_rateio import so_digitos
@@ -1000,8 +1000,8 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
 
     if not de_para:
         return {"casados": 0, "sem_cadastro": [], "repetidos": repetidos,
-                "avisos": [f'a aba "{ABA_ID_FORTES}" tem as colunas certas, mas '
-                           "nenhuma linha com código e CPF válido — o de/para "
+                "avisos": [f'a aba "{ABA_ID_FORTES}" possui as colunas esperadas, mas '
+                           "nenhuma linha com código e CPF válidos — o de/para "
                            "anterior foi mantido."]}
 
     # GRAVA SÓ EM QUEM ESTÁ NO CADASTRO. Um ID Fortes de alguém que não está
@@ -1033,19 +1033,19 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
         avisos.append(
             f"{len(repetidos)} código(s) do Fortes aparecem para mais de uma "
             f"pessoa na aba \"{ABA_ID_FORTES}\" ({', '.join(repetidos[:5])}"
-            f"{'…' if len(repetidos) > 5 else ''}). Enquanto isso não for "
-            "corrigido, o salário de uma pode ir para a obra de outra.")
+            f"{'…' if len(repetidos) > 5 else ''}). Até a correção, o "
+            "salário de um colaborador pode ser apropriado na obra de outro.")
     if sem_cadastro:
         avisos.append(
-            f"{len(sem_cadastro)} código(s) do Fortes são de gente que não está "
-            "no cadastro. A folha vai encontrar esses códigos e não vai achar a "
-            "pessoa.")
+            f"{len(sem_cadastro)} código(s) do Fortes pertencem a pessoas fora do "
+            "cadastro. A folha não localizará o colaborador correspondente a "
+            "esses códigos.")
     if divergentes:
         avisos.append(
             f"{len(divergentes)} código(s) da aba \"{ABA_ID_FORTES}\" discordam "
             f"da ficha da pessoa ({', '.join(sorted(divergentes)[:5])}"
-            f"{'…' if len(divergentes) > 5 else ''}). Valeu a ficha; vale a pena "
-            "corrigir a aba para as duas não contarem histórias diferentes.")
+            f"{'…' if len(divergentes) > 5 else ''}). Prevaleceu a ficha; corrija "
+            "a aba para eliminar a divergência.")
 
     logger.info("Análise de SPs: de/para do ID Fortes — %d casado(s), "
                 "%d sem cadastro, %d repetido(s).",
@@ -1103,7 +1103,7 @@ def por_que_nao_casou(id_fortes: str, nome: str) -> dict:
     from .db import consultar
     if not _pronto():
         return {"pelo_codigo": [], "pelo_nome": [], "atualizado": {},
-                "diagnostico": "a tabela do cadastro ainda não existe."}
+                "diagnostico": "tabela do cadastro não encontrada no banco."}
     codigo = normalizar_id_fortes(id_fortes)
     campos = "cpf, nome, " + ("id_fortes" if tem_id_fortes() else "''") + \
              ", fase, data_admissao"
@@ -1130,26 +1130,26 @@ def por_que_nao_casou(id_fortes: str, nome: str) -> dict:
     atualizado = quando_atualizou()
 
     if pelo_codigo:
-        diagnostico = ("o código está no cadastro — a folha deve casar na próxima "
-                       "vez que for aberta.")
+        diagnostico = ("o código consta no cadastro — o vínculo com a folha será feito na "
+                       "próxima abertura.")
     elif pelo_nome and all(not p["id_fortes"] for p in pelo_nome):
         diagnostico = (
-            "a pessoa ESTÁ no cadastro, mas SEM o código do Fortes guardado. Se a "
-            "ficha dela na planilha tem o código na coluna \"ID Fortes\", o "
+            "o colaborador CONSTA no cadastro, mas SEM o código do Fortes gravado. Se "
+            "a ficha na planilha contém o código na coluna \"ID Fortes\", o "
             "cadastro foi atualizado antes de o sistema passar a ler essa coluna "
-            "(30/09/2026) — aperte \"Atualizar cadastro\" em Colaboradores. Se "
-            "depois disso continuar assim, a coluna dela está vazia na planilha.")
+            "(30/09/2026) — clique em \"Atualizar cadastro\" em Colaboradores. Se "
+            "a pendência persistir, a coluna está vazia na planilha.")
     elif pelo_nome:
         outros = ", ".join(sorted({p["id_fortes"] for p in pelo_nome if p["id_fortes"]}))
         diagnostico = (
-            f"a pessoa está no cadastro com OUTRO código do Fortes ({outros}), e "
-            f"a folha da contabilidade diz {codigo}. Um dos dois está errado: "
-            "confira a ficha na planilha e o arquivo do Fortes.")
+            f"o colaborador consta no cadastro com OUTRO código do Fortes ({outros}), e "
+            f"a folha da contabilidade informa {codigo}. Há divergência: "
+            "verifique a ficha na planilha e o arquivo do Fortes.")
     else:
         diagnostico = (
-            "não achei ninguém com esse nome no cadastro guardado. Ou a ficha não "
-            "tem um CPF válido de 11 dígitos (sem CPF a linha é ignorada na carga), "
-            "ou o cadastro não foi atualizado desde que ela entrou — aperte "
+            "nenhum colaborador com este nome no cadastro gravado. Possíveis causas: a "
+            "ficha não contém CPF válido de 11 dígitos (sem CPF a linha é ignorada na "
+            "importação), ou o cadastro não foi atualizado após a admissão — clique em "
             "\"Atualizar cadastro\" em Colaboradores.")
     return {"codigo": codigo, "nome": nome, "pelo_codigo": pelo_codigo,
             "pelo_nome": pelo_nome, "atualizado": atualizado,
@@ -1280,14 +1280,14 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
 
     desacordo = ""
     if fase_diz_desligado(fase) and not saida:
-        desacordo = ("a fase no Pipefy diz desligado, mas o cadastro não tem "
-                     "data de saída — confira antes de pagar.")
+        desacordo = ("a fase no Pipefy indica desligado, mas o cadastro não possui "
+                     "data de saída — verifique antes de efetuar o pagamento.")
     elif saida and fase and not fase_diz_desligado(fase):
-        desacordo = (f"o cadastro tem data de saída, mas a fase no Pipefy "
-                     f"ainda diz \"{ficha.get('fase')}\".")
+        desacordo = (f"o cadastro possui data de saída, mas a fase no Pipefy "
+                     f"ainda indica \"{ficha.get('fase')}\".")
     elif ultimo and not saida and ultimo <= ate:
         desacordo = ("o último dia trabalhado já passou e não há data de saída "
-                     "lançada — o desligamento está pela metade.")
+                     "lançada — desligamento com registro incompleto.")
 
     def resposta(situacao, motivo, trava):
         return {"situacao": situacao, "motivo": motivo, "trava": trava,
@@ -1297,14 +1297,14 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
     if saida and saida <= ate:
         return resposta(
             SITUACAO_SAIU,
-            f"saiu em {saida.strftime('%d/%m/%Y')}. Não pague folha, diária "
-            "nem auxílio deste período por aqui.",
+            f"desligado em {saida.strftime('%d/%m/%Y')}. Folha, diária e auxílio "
+            "deste período não devem ser pagos por este sistema.",
             True)
     if fase_diz_desligado(fase):
         return resposta(
             SITUACAO_SAIU,
-            "a fase no Pipefy diz desligado. Não pague por aqui até "
-            "confirmar.",
+            "a fase no Pipefy indica desligado. Não efetue pagamento por este "
+            "sistema até a confirmação.",
             True)
 
     # 2. ESTÁ SAINDO — pode haver valor devido, mas não o período inteiro, e
@@ -1312,14 +1312,14 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
     if saida and saida > ate:
         return resposta(
             SITUACAO_SAINDO,
-            f"sai em {saida.strftime('%d/%m/%Y')}. Confira o que é devido só "
-            "até lá; rescisão não se paga por aqui.",
+            f"desligamento em {saida.strftime('%d/%m/%Y')}. Verifique os valores devidos "
+            "somente até essa data; verbas rescisórias não são pagas por este sistema.",
             False)
     if ultimo and ultimo <= ate:
         return resposta(
             SITUACAO_SAINDO,
             f"o último dia trabalhado foi {ultimo.strftime('%d/%m/%Y')}. "
-            "Confira o que é devido só até lá.",
+            "Verifique os valores devidos somente até essa data.",
             False)
     if ultimo:
         return resposta(
@@ -1329,7 +1329,7 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
     if aviso:
         return resposta(
             SITUACAO_SAINDO,
-            f"aviso prévio em {aviso.strftime('%d/%m/%Y')} — está saindo.",
+            f"aviso prévio em {aviso.strftime('%d/%m/%Y')} — em desligamento.",
             False)
 
     # 3. AFASTADO — não recebe auxílio alimentação nem transporte. É a mesma
@@ -1337,7 +1337,7 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
     if fase_diz_afastado(fase):
         return resposta(
             SITUACAO_AFASTADO,
-            "está afastado. Não pague auxílio alimentação nem transporte.",
+            "colaborador afastado. Auxílio alimentação e transporte não devem ser pagos.",
             True)
 
     return resposta(SITUACAO_ATIVO, "", False)

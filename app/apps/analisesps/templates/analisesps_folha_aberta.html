@@ -1041,7 +1041,7 @@
     c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 
   async function carregar(cpf) {
-    corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
     try {
       const url = "{{ url_for('analisesps.tela_folha_pessoa', folha_id=folha.id, cpf='CPF') }}"
         .replace("CPF", encodeURIComponent(cpf)) + "?parcial=1";
@@ -1051,7 +1051,7 @@
       const pendente = corpo.querySelector('.fila-recado[data-pendente="1"]');
       if (pendente) acompanharFila(+pendente.dataset.id);
     } catch (erro) {
-      corpo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
+      corpo.innerHTML = '<div class="aviso erro">Não foi possível carregar o analítico: ' + esc(erro) + "</div>";
     }
   }
 
@@ -1068,10 +1068,10 @@
   function textoDaFila(it) {
     const r = it.rotulo.charAt(0).toUpperCase() + it.rotulo.slice(1);
     if (it.situacao === "esperando")
-      return r + " — na fila" + (it.posicao ? ", " + it.posicao + " pedido(s) antes deste." : ", é o próximo.");
-    if (it.situacao === "rodando") return r + " — trabalhando: " + (it.progresso || "começando");
-    if (it.situacao === "feito") return r + " — pronto: " + it.mensagem;
-    return r + " — NÃO DEU: " + it.mensagem;
+      return r + " — em fila" + (it.posicao ? ": " + it.posicao + " solicitação(ões) à frente." : ": próxima a ser processada.");
+    if (it.situacao === "rodando") return r + " — em processamento: " + (it.progresso || "iniciando");
+    if (it.situacao === "feito") return r + " — concluído: " + it.mensagem;
+    return r + " — falha: " + it.mensagem;
   }
 
   function mostrarNaPessoa(it) {
@@ -1094,9 +1094,9 @@
         '<li class="fila-' + esc(i.situacao) + '"><button type="button" ' +
         'class="link-btn nome-pessoa abrir-ponto" data-cpf="' + esc(i.cpf) +
         '" data-nome="' + esc(i.nome) + '">' + esc(i.nome || i.cpf) + "</button> <small>" +
-        esc(i.rotulo) + " — " + (i.situacao === "esperando" ? "na fila" + (i.posicao ? " (" + i.posicao + " antes)" : "")
-          : i.situacao === "rodando" ? "trabalhando" + (i.progresso ? ": " + esc(i.progresso) : "")
-          : i.situacao === "feito" ? "pronto" : '<b class="ruim">não deu</b>') +
+        esc(i.rotulo) + " — " + (i.situacao === "esperando" ? "em fila" + (i.posicao ? " (" + i.posicao + " à frente)" : "")
+          : i.situacao === "rodando" ? "em processamento" + (i.progresso ? ": " + esc(i.progresso) : "")
+          : i.situacao === "feito" ? "concluído" : '<b class="ruim">falha</b>') +
         "</small></li>").join("");
       return d.itens.some(i => i.situacao === "esperando" || i.situacao === "rodando");
     } catch (e) { return false; }
@@ -1148,15 +1148,15 @@
   document.addEventListener("click", async e => {
     const b = e.target.closest(".abrir-pendente");
     if (!b) return;
-    titulo.textContent = "Por que não casou — " + (b.dataset.nome || "");
-    corpo.innerHTML = '<p class="cartao-dica">procurando no cadastro…</p>';
+    titulo.textContent = "Diagnóstico de cadastro — " + (b.dataset.nome || "");
+    corpo.innerHTML = '<p class="cartao-dica">Consultando o cadastro…</p>';
     if (dialogo.showModal) dialogo.showModal(); else dialogo.setAttribute("open", "");
     try {
       const url = "{{ url_for('analisesps.tela_folha_pendente', folha_id=folha.id, id_fortes='COD') }}"
         .replace("COD", encodeURIComponent(b.dataset.idFortes));
       corpo.innerHTML = await (await fetch(url)).text();
     } catch (erro) {
-      corpo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
+      corpo.innerHTML = '<div class="aviso erro">Não foi possível consultar o cadastro: ' + esc(erro) + "</div>";
     }
   });
 
@@ -1168,7 +1168,7 @@
     if (!b) return;
     const recado = corpo.querySelector(".recado-ponto-pessoa");
     b.disabled = true;
-    recado.textContent = "pedindo ao Mobponto…";
+    recado.textContent = "Solicitando ao Mobponto…";
     try {
       const r = await fetch("{{ url_for('analisesps.folha_ponto_pessoa_atualizar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -1178,7 +1178,7 @@
       if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
       if (d.fila_id) {
         // A FILA: o pedido entrou; dá para sair daqui e pedir a próxima pessoa.
-        recado.textContent = "Pedido na fila — pode sair e pedir a próxima pessoa.";
+        recado.textContent = "Solicitação incluída na fila. É possível prosseguir com outro colaborador.";
         b.disabled = false;
         acompanharFila(d.fila_id);
         return;
@@ -1189,7 +1189,7 @@
       const acompanhar = async () => {
         const f = await (await fetch("{{ url_for('analisesps.folha_ponto_pessoa_estado') }}")).json();
         if (f.em_andamento) {
-          recado.textContent = (f.etapa || "trabalhando") + (f.progresso ? " — " + f.progresso : "");
+          recado.textContent = (f.etapa || "em processamento") + (f.progresso ? " — " + f.progresso : "");
           setTimeout(acompanhar, 3000);
           return;
         }
@@ -1198,13 +1198,13 @@
           const novo = corpo.querySelector(".recado-ponto-pessoa");
           if (novo) novo.textContent = "Atualizado: " + f.mensagem;
         } else {
-          recado.textContent = "Não deu: " + (f.mensagem || "motivo não registrado");
+          recado.textContent = "Não foi possível atualizar o ponto: " + (f.mensagem || "motivo não registrado") + ".";
           b.disabled = false;
         }
       };
       setTimeout(acompanhar, 3000);
     } catch (erro) {
-      recado.textContent = "Falhou: " + erro;
+      recado.textContent = "Não foi possível atualizar o ponto: " + erro + ".";
       b.disabled = false;
     }
   });
@@ -1216,14 +1216,14 @@
     const caixa = document.getElementById("cartao-cadastro");
     const miolo = document.getElementById("cadastro-corpo");
     document.getElementById("cadastro-titulo").textContent = "Cadastro — " + (b.dataset.nome || "");
-    miolo.innerHTML = '<p class="cartao-dica">lendo a planilha de cadastro…</p>';
+    miolo.innerHTML = '<p class="cartao-dica">Carregando a planilha de cadastro…</p>';
     if (caixa.showModal) caixa.showModal(); else caixa.setAttribute("open", "");
     try {
       const url = "{{ url_for('analisesps.tela_folha_cadastro_completo', folha_id=folha.id, cpf='CPF') }}"
         .replace("CPF", encodeURIComponent(b.dataset.cpf));
       miolo.innerHTML = await (await fetch(url)).text();
     } catch (erro) {
-      miolo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
+      miolo.innerHTML = '<div class="aviso erro">Não foi possível carregar o cadastro: ' + esc(erro) + "</div>";
     }
   });
   corpo.addEventListener("click", async e => {
@@ -1231,7 +1231,7 @@
     if (!b) return;
     const recado = corpo.querySelector(".recado-ponto-pessoa");
     b.disabled = true;
-    recado.textContent = "lendo a planilha de cadastro…";
+    recado.textContent = "Lendo a planilha de cadastro…";
     try {
       const r = await fetch("{{ url_for('analisesps.folha_cadastro_pessoa_atualizar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -1240,9 +1240,9 @@
       if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
       await carregar(b.dataset.cpf);
       const novo = corpo.querySelector(".recado-ponto-pessoa");
-      if (novo) novo.textContent = d.mensagem + " A folha já recalculou com ele.";
+      if (novo) novo.textContent = d.mensagem + " Folha recalculada com o cadastro atualizado.";
     } catch (erro) {
-      recado.textContent = "Falhou: " + erro;
+      recado.textContent = "Não foi possível atualizar o cadastro: " + erro + ".";
       b.disabled = false;
     }
   });
@@ -1280,7 +1280,7 @@
       q.querySelector(".lancar-ver").click();
     } else {
       q.querySelector(".lancar-recado").textContent =
-        "Dia " + b.dataset.dataBr + " escolhido — escolha a obra e veja o que vai ser lançado.";
+        "Dia " + b.dataset.dataBr + " selecionado. Selecione a obra e clique em Pré-visualizar lançamento.";
       q.querySelector(".lancar-obra").focus();
     }
   });
@@ -1298,7 +1298,7 @@
     const recado = q.querySelector(".lancar-recado");
     const area = q.querySelector(".lancar-plano");
     const enviar = q.querySelector(".lancar-enviar");
-    recado.textContent = "montando…";
+    recado.textContent = "Gerando pré-visualização…";
     enviar.hidden = true;
     try {
       const r = await fetch("{{ url_for('analisesps.folha_ponto_plano') }}", {
@@ -1309,10 +1309,10 @@
       const p = d.plano;
       recado.textContent = p.batidas
         ? p.batidas + " batida(s) em " + p.dias_com_lancamento + " dia(s)" +
-          (p.pulados.length ? "; " + p.pulados.length + " dia(s) ficam como estão" : "")
-        : "Nada a lançar neste período — veja o motivo de cada dia.";
+          (p.pulados.length ? "; " + p.pulados.length + " dia(s) sem alteração" : "")
+        : "Nenhuma batida a lançar neste período. Confira o motivo de cada dia.";
       let html = '<table class="sps plano-lancar"><thead><tr><th>Dia</th>' +
-                 '<th>Já tem</th><th>Vai lançar</th><th>Fica de fora</th></tr></thead><tbody>';
+                 '<th>Existentes</th><th>A lançar</th><th>Desconsiderado</th></tr></thead><tbody>';
       p.dias.forEach(x => {
         html += '<tr class="' + (x.lancar.length ? "" : "dia-sem-obra") + '"><td>' +
                 esc(x.data_br) + ' <span class="cartao-dica">' + esc(x.semana) + "</span></td><td>" +
@@ -1326,7 +1326,7 @@
         enviar.hidden = false;
       }
     } catch (erro) {
-      recado.textContent = "Falhou: " + erro;
+      recado.textContent = "Não foi possível gerar a pré-visualização: " + erro + ".";
     }
   });
 
@@ -1337,16 +1337,16 @@
     const recado = q.querySelector(".lancar-recado");
     const pedido = pedidoLancar(q);
     if ((pedido.justificativa || "").trim().length < 5) {
-      recado.textContent = "Escreva a justificativa — ela vai para o Mobponto em cada batida.";
+      recado.textContent = "Informe a justificativa (mínimo de 5 caracteres). Ela é enviada ao Mobponto em cada batida.";
       q.querySelector(".lancar-justificativa").focus();
       return;
     }
     if (!confirm(b.textContent + " para " + q.dataset.nome + ", na obra " +
-                 pedido.obra.toUpperCase() + "?\n\nO que já estiver batido no ponto " +
-                 "baixado não é tocado.\n\nO que entra no Mobponto não se desfaz " +
-                 "por aqui.")) return;
+                 pedido.obra.toUpperCase() + "?\n\nAs batidas já registradas no ponto " +
+                 "importado não serão alteradas.\n\nLançamentos enviados ao Mobponto " +
+                 "não podem ser desfeitos por esta tela.")) return;
     b.disabled = true;
-    recado.textContent = "começando…";
+    recado.textContent = "Iniciando…";
     try {
       const r = await fetch("{{ url_for('analisesps.folha_ponto_lancar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -1354,7 +1354,7 @@
       const d = await r.json();
       if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
       if (d.fila_id) {
-        recado.textContent = "Pedido na fila — pode sair e pedir a próxima pessoa.";
+        recado.textContent = "Solicitação incluída na fila. É possível prosseguir com outro colaborador.";
         b.disabled = false;
         b.hidden = true;
         acompanharFila(d.fila_id);
@@ -1363,18 +1363,18 @@
       const acompanhar = async () => {
         const f = await (await fetch("{{ url_for('analisesps.folha_ponto_lancar_estado') }}")).json();
         if (f.em_andamento) {
-          recado.textContent = (f.progresso || f.etapa || "trabalhando");
+          recado.textContent = (f.progresso || f.etapa || "em processamento");
           setTimeout(acompanhar, 3000);
           return;
         }
         await carregar(q.dataset.cpf);
         const novo = corpo.querySelector("#lancar-ponto .lancar-recado");
-        const texto = (f.sucesso ? "Pronto: " : "ATENÇÃO: ") + (f.mensagem || "");
+        const texto = (f.sucesso ? "Concluído: " : "Atenção: ") + (f.mensagem || "");
         if (novo) novo.textContent = texto; else alert(texto);
       };
       setTimeout(acompanhar, 2000);
     } catch (erro) {
-      recado.textContent = "Falhou: " + erro + " — confira no Mobponto antes de mandar de novo.";
+      recado.textContent = "Não foi possível lançar o ponto: " + erro + ". Confira no Mobponto antes de reenviar.";
       b.disabled = false;
     }
   });
@@ -1386,11 +1386,11 @@
   if (!b) return;
   b.addEventListener("click", async () => {
     if (!confirm("Apagar a folha de " + b.dataset.competencia + " (" +
-                 b.dataset.rotulo + "), com " + b.dataset.pessoas + " pessoa(s)?\n\n" +
-                 "O arquivo original continua com a contabilidade: dá para " +
-                 "importar de novo. O que você decidiu (quem entra, obra ajustada, " +
-                 "fechamento) fica guardado e volta quando a folha for importada " +
-                 "de novo.")) return;
+                 b.dataset.rotulo + "), com " + b.dataset.pessoas + " colaborador(es)?\n\n" +
+                 "O arquivo original permanece com a contabilidade e pode ser " +
+                 "importado novamente. As definições registradas (inclusão, obra " +
+                 "ajustada, fechamento) ficam preservadas e são restauradas na " +
+                 "reimportação.")) return;
     b.disabled = true;
     try {
       const r = await fetch("{{ url_for('analisesps.folha_apagar') }}", {
@@ -1399,7 +1399,7 @@
       const d = await r.json();
       if (!d.ok) { alert(d.erro); b.disabled = false; return; }
       location.href = d.ir || "{{ url_for('analisesps.tela_folha_importar') }}";
-    } catch (e) { alert("Falhou: " + e); b.disabled = false; }
+    } catch (e) { alert("Não foi possível apagar a folha: " + e + "."); b.disabled = false; }
   });
 })();
 
@@ -1450,7 +1450,7 @@
     const dados = new FormData();
     dados.append("folha", arquivo);
     if (tipo) dados.append("tipo", tipo);
-    recadoFolha("lendo <b>" + arquivo.name + "</b>…");
+    recadoFolha("Lendo <b>" + arquivo.name + "</b>…");
     try {
       const r = await fetch("{{ url_for('analisesps.folha_importar') }}",
                             {method: "POST", body: dados});
@@ -1469,7 +1469,7 @@
       // A folha nova é a última importada: a aba leva até ela.
       location.href = d.ir || "{{ url_for('analisesps.tela_folha_importar') }}";
     } catch (e) {
-      recadoFolha("Falhou: " + e, "erro");
+      recadoFolha("Não foi possível importar a folha: " + e + ".", "erro");
     }
   }
 
@@ -1535,10 +1535,10 @@ function recontar() {
     if (inicial.get(tr.dataset.cpf) !== caixa.checked) mudou++;
   });
   totalMarcado.textContent = moeda(total);
-  contaMarcado.textContent = quantos + " pessoa(s)";
+  contaMarcado.textContent = quantos + " colaborador(es)";
   botaoSalvar.disabled = mudou === 0;
   botaoDesfazer.hidden = mudou === 0;
-  recado.textContent = mudou ? mudou + " mudança(s) para salvar" : "";
+  recado.textContent = mudou ? mudou + " alteração(ões) não salva(s)" : "";
 }
 
 // ⚠️ TIRAR ALGUÉM NÃO PEDE MOTIVO — correção de 29/09/2026 contra uma regra que eu
@@ -1592,9 +1592,9 @@ tabela.addEventListener("click", e => {
   if (e.target.classList.contains("usar-cadastro")) {
     const tr = e.target.closest("tr.linha-pessoa");
     const obra = e.target.dataset.obra;
-    if (!confirm("Jogar os " + moeda(parseFloat(tr.dataset.valor || 0)) +
+    if (!confirm("Apropriar " + moeda(parseFloat(tr.dataset.valor || 0)) +
                  " de " + tr.dataset.nome + " na obra " + obra + "?\n\n" +
-                 "Fica marcado como decisão sua, não do ponto.")) return;
+                 "O registro será identificado como ajuste manual, não como apropriação pelo ponto.")) return;
     e.target.disabled = true;
     mandar([{cpf: tr.dataset.cpf, nome: tr.dataset.nome, entra: true,
              obra: obra}]).then(() => location.reload())
@@ -1619,7 +1619,7 @@ tabela.addEventListener("click", e => {
     linha = b.closest("tr.linha-pessoa");
     document.getElementById("dialogo-obra-quem").textContent =
       linha.dataset.nome + " — " + moeda(parseFloat(linha.dataset.valor || 0)) +
-      ". O valor inteiro vai para a obra escolhida.";
+      ". O valor integral será apropriado na obra selecionada.";
     if (lista) {
       procura.value = "";
       [...lista.options].forEach(o => { o.hidden = false; });
@@ -1648,14 +1648,14 @@ tabela.addEventListener("click", e => {
 
   usar.addEventListener("click", async () => {
     const obra = ((lista ? lista.value : texto.value) || "").trim().toUpperCase();
-    if (!obra || !linha) { alert("Escolha a obra."); return; }
+    if (!obra || !linha) { alert("Selecione a obra."); return; }
     usar.disabled = true;
     try {
       await mandar([{cpf: linha.dataset.cpf, nome: linha.dataset.nome, entra: true,
                      obra: obra}]);
       location.reload();
     } catch (err) {
-      alert("Não consegui gravar: " + err.message);
+      alert("Não foi possível salvar: " + err.message);
       usar.disabled = false;
     }
   });
@@ -1668,7 +1668,7 @@ async function mandar(mudancas) {
       body: JSON.stringify(Object.assign({folha_id: FOLHA}, m))
     });
     const d = await r.json();
-    if (!d.ok) throw new Error(d.erro || "não consegui gravar");
+    if (!d.ok) throw new Error(d.erro || "não foi possível salvar");
   }
 }
 
@@ -1688,13 +1688,13 @@ botaoSalvar.addEventListener("click", async () => {
                    limpar: caixa.checked});
   });
   botaoSalvar.disabled = true;
-  recado.textContent = "salvando " + mudancas.length + "…";
+  recado.textContent = "Salvando " + mudancas.length + " alteração(ões)…";
   try {
     await mandar(mudancas);
     location.reload();
   } catch (e) {
     recado.textContent = "";
-    alert("Não consegui salvar: " + e.message);
+    alert("Não foi possível salvar: " + e.message);
     botaoSalvar.disabled = false;
   }
 });
@@ -1717,7 +1717,7 @@ function linhaDivisao(obras) {
     '<input type="number" class="dias-parte" min="1" step="1" ' +
     'placeholder="dias" aria-label="Dias nesta obra">' +
     '<button type="button" class="apagar-linha tirar-parte" ' +
-    'title="tirar esta obra">&times;</button>';
+    'title="Remover esta obra">&times;</button>';
   return div;
 }
 
@@ -1759,7 +1759,7 @@ tabela.addEventListener("click", async e => {
 
   if (e.target.classList.contains("gravar-obra-unica")) {
     const obra = editor.querySelector(".obra-unica").value.trim();
-    if (!obra) { alert("Diga o código da obra."); return; }
+    if (!obra) { alert("Informe o código da obra."); return; }
     await gravarAjuste(e.target, editor, {obra: obra});
     return;
   }
@@ -1773,8 +1773,8 @@ tabela.addEventListener("click", async e => {
     return;
   }
   if (e.target.classList.contains("limpar-ajuste")) {
-    if (!confirm(editor.dataset.nome + " volta a seguir o ponto e a regra de " +
-                 "rateio. Confirma?")) return;
+    if (!confirm("Remover o ajuste de " + editor.dataset.nome + "? O colaborador " +
+                 "volta a seguir o ponto e a regra de rateio.")) return;
     await gravarAjuste(e.target, editor, {limpar: true});
   }
 });
@@ -1788,7 +1788,7 @@ async function gravarAjuste(botao, editor, corpo) {
     }, corpo)]);
     location.reload();
   } catch (err) {
-    alert("Não consegui gravar: " + err.message);
+    alert("Não foi possível salvar: " + err.message);
     botao.disabled = false;
   }
 }
@@ -1797,9 +1797,9 @@ async function gravarAjuste(botao, editor, corpo) {
 const botaoFechar = document.getElementById("fechar-apropriacao");
 if (botaoFechar) botaoFechar.addEventListener("click", async () => {
   if (!confirm("Fechar a apropriação de {{ folha.competencia }}?\n\n" +
-               "Isso congela para qual obra vai o dinheiro de cada pessoa, e é " +
-               "o que libera o arquivo de pagamento. Dá para refazer enquanto o " +
-               "arquivo não foi gerado.")) return;
+               "O fechamento fixa a obra de destino do valor de cada colaborador " +
+               "e libera o arquivo de pagamento. É possível refazê-lo enquanto o " +
+               "arquivo não for gerado.")) return;
   botaoFechar.disabled = true;
   try {
     const r = await fetch("{{ url_for('analisesps.folha_apropriacao_fechar') }}", {
@@ -1810,7 +1810,7 @@ if (botaoFechar) botaoFechar.addEventListener("click", async () => {
     if (!d.ok) { alert(d.erro); botaoFechar.disabled = false; return; }
     location.reload();
   } catch (e) {
-    alert("Falhou: " + e); botaoFechar.disabled = false;
+    alert("Não foi possível fechar a apropriação: " + e + "."); botaoFechar.disabled = false;
   }
 });
 
