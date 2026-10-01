@@ -158,9 +158,13 @@ def configurado(monkeypatch):
     monkeypatch.setenv("MOBPONTO_RESPONSAVEL_NOME", "MARCELO")
 
 
+aplicadas = []   # o que foi posto na cópia baixada, por dia
+
+
 def _dublar(monkeypatch, respostas=(), dias_antes=None, dias_depois=None):
     from app.apps.analisesps import folha_calendario, ponto, ponto_edicao
     mandados, trazidos = [], []
+    aplicadas.clear()
     fila = list(respostas)
 
     def falso(payload):
@@ -171,6 +175,9 @@ def _dublar(monkeypatch, respostas=(), dias_antes=None, dias_depois=None):
     monkeypatch.setattr(ponto_edicao, "PAUSA_ENTRE_BATIDAS", 0)
     monkeypatch.setattr(ponto, "atualizar_pessoa",
                         lambda *a, **k: trazidos.append(a) or {"achou": True})
+    monkeypatch.setattr(ponto, "aplicar_batidas_na_copia",
+                        lambda ano, mes, cpf, nome, data, novas:
+                        aplicadas.append((data, list(novas))) or True)
     monkeypatch.setattr(ponto, "dias_de_um_cpf",
                         lambda a, m, c: list(dias_antes or []))
     monkeypatch.setattr(folha_calendario, "feriados_no_periodo", lambda *a: [])
@@ -189,11 +196,14 @@ def _pedido(**extra):
     return base
 
 
-def test_lancar_CONFERE_ANTES_manda_uma_por_vez_e_TRAZ_DEPOIS(configurado, monkeypatch):
+def test_lancar_NAO_VAI_AO_MOBPONTO_antes_nem_depois_e_aplica_na_copia(configurado,
+                                                                       monkeypatch):
+    """O dono, 01/10/2026: *"não tem sentido buscar antes, leva muito tempo. A base
+    de informações já existe, precisa somente aplicar."*"""
     from app.apps.analisesps import ponto_edicao as pe
     mandados, trazidos = _dublar(monkeypatch)
     feito = pe.lancar(_pedido())
-    assert len(trazidos) == 2, "tem de trazer o ponto antes e depois"
+    assert trazidos == [], "foi ao Mobponto buscar a pessoa"
     assert len(mandados) == 12          # 16, 17 e 18/09 × 4
     p = mandados[0]
     assert p["type_data"] == "CAD_EDT_PONTO" and p["acao"] == "C"
@@ -203,6 +213,9 @@ def test_lancar_CONFERE_ANTES_manda_uma_por_vez_e_TRAZ_DEPOIS(configurado, monke
     assert mandados[-1]["dt_ponto_new"] == "2026-09-18 16:00"   # sexta
     assert feito["falhou"] is None
     assert "12 batida(s) lançada(s) em 3 dia(s)" in pe.recado_do_lancamento(feito)
+    # Cada dia lançado foi posto na cópia, com as horas que o Mobponto aceitou.
+    assert [d for d, _ in aplicadas] == ["2026-09-16", "2026-09-17", "2026-09-18"]
+    assert aplicadas[2][1][-1] == ("16:00", "CRE1")
 
 
 def test_o_plano_e_REFEITO_com_o_ponto_novo(configurado, monkeypatch):
@@ -217,13 +230,14 @@ def test_o_plano_e_REFEITO_com_o_ponto_novo(configurado, monkeypatch):
 
 def test_PARA_na_primeira_que_falha(configurado, monkeypatch):
     from app.apps.analisesps import ponto_edicao as pe
-    mandados, trazidos = _dublar(monkeypatch, [(True, "ok"), (None, "NÃO SEI SE GRAVOU")])
+    mandados, _ = _dublar(monkeypatch, [(True, "ok"), (None, "NÃO SEI SE GRAVOU")])
     feito = pe.lancar(_pedido())
     assert len(mandados) == 2
     assert feito["falhou"]["talvez_gravou"] is True
     recado = pe.recado_do_lancamento(feito)
     assert "PAROU em 16/09 12:00" in recado and "confira no Mobponto" in recado
-    assert len(trazidos) == 2, "entrou uma: o ponto tem de vir de novo"
+    # A que entrou foi para a cópia; a que não se sabe, não.
+    assert aplicadas == [("2026-09-16", [("07:00", "CRE1")])]
 
 
 def test_obra_FORA_DA_C_DIARIOS_e_recusada_antes_de_mandar(configurado, monkeypatch):
@@ -255,13 +269,49 @@ def test_a_lista_de_obras_e_o_CODIGO_PRIMARIO_das_duas_tabelas(monkeypatch):
     assert pe.obras_permitidas() == ["CRE1", "SEDE", "XYZ9"]
 
 
-def test_sem_achar_a_pessoa_NAO_LANCA_NADA(configurado, monkeypatch):
+def test_o_ERRO_DE_CERTIFICADO_e_remendado_como_na_leitura(configurado, monkeypatch):
+    """Falha real, 01/10/2026: *"PAROU em 16/09 07:00 (…) CERTIFICATE_VERIFY_FAILED
+    (…) unable to get local issuer certificate"*. A leitura completava a cadeia
+    sozinha; o envio não. O erro de certificado acontece ANTES de o pedido sair,
+    então repetir uma vez não duplica a batida."""
+    import requests
     from app.apps.analisesps import ponto, ponto_edicao as pe
-    mandados, _ = _dublar(monkeypatch)
-    monkeypatch.setattr(ponto, "atualizar_pessoa", lambda *a, **k: {"achou": False})
-    with pytest.raises(pe.ErroDaEdicao, match="Nada foi lançado"):
-        pe.lancar(_pedido())
-    assert mandados == []
+    monkeypatch.setattr(pe, "_CONFIANCA_REMENDADA", None)
+    chamadas = []
+
+    class Resposta:
+        ok, status_code, text = True, 200, '{"status": true}'
+        def json(self):
+            return {"status": True}
+
+    def post(url, data=None, headers=None, verify=None, timeout=None):
+        chamadas.append(verify)
+        if len(chamadas) == 1:
+            raise requests.exceptions.SSLError(
+                "[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate")
+        return Resposta()
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setattr(ponto, "_intermediario_do_servidor", lambda url: "PEM")
+    monkeypatch.setattr(ponto, "_pacote_com_o_extra", lambda pacote, extra: "/tmp/remendo.pem")
+    ok, _ = pe._mandar({"type_data": "CAD_EDT_PONTO"})
+    assert ok is True
+    assert chamadas[-1] == "/tmp/remendo.pem" and len(chamadas) == 2
+    # A próxima batida já sai com o pacote remendado, sem tropeçar de novo.
+    pe._mandar({"type_data": "CAD_EDT_PONTO"})
+    assert chamadas[-1] == "/tmp/remendo.pem" and len(chamadas) == 3
+
+
+def test_sem_conseguir_remendar_o_recado_diz_que_NADA_FOI_GRAVADO(configurado, monkeypatch):
+    import requests
+    from app.apps.analisesps import ponto, ponto_edicao as pe
+    monkeypatch.setattr(pe, "_CONFIANCA_REMENDADA", None)
+
+    def post(*a, **k):
+        raise requests.exceptions.SSLError("CERTIFICATE_VERIFY_FAILED")
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setattr(ponto, "_intermediario_do_servidor", lambda url: "")
+    ok, recado = pe._mandar({})
+    assert ok is False and "Nada foi gravado" in recado and "MOBPONTO_CA_EXTRA" in recado
 
 
 def test_sem_o_responsavel_NAO_GRAVA_e_diz_o_que_criar(monkeypatch):

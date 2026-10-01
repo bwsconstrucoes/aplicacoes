@@ -16,9 +16,10 @@ O desenho:
   - `planejar` decide, dia a dia, o que FALTA no horário padrão e o que fica de
     fora (fim de semana, feriado, férias, falta lançada, dia completo, horário
     que não encaixa) — e a tela mostra isso antes de lançar;
-  - "Lançar" roda no processo separado (`lancar`): traz o ponto da pessoa de
-    novo, REFAZ o plano com ele, manda uma batida por vez e traz o ponto outra
-    vez, para a folha recalcular;
+  - "Lançar" entra na fila do ponto (`lancar`): refaz o plano com o ponto já
+    baixado, manda uma batida por vez e escreve na cópia baixada o que o
+    Mobponto aceitou — a folha recalcula na hora (desde 01/10/2026 não vai mais
+    ao Mobponto antes nem depois: levava minutos, e ele decidiu que não);
   - a batida avulsa (uma hora só) fica para pequeno ajuste.
 
 O caminho é gravar no Mobponto (a fonte) e trazer de volta. Corrigir só na cópia
@@ -356,21 +357,79 @@ def plano_da_pessoa(ano: int, mes: int, cpf: str, de, ate, obra: str,
     return planejar(dias, de, ate, feriados, ferias, hora_avulsa)
 
 
+# O pacote de certificados que funcionou, guardado para as próximas batidas do
+# mesmo lançamento — completar a cadeia uma vez basta.
+_CONFIANCA_REMENDADA = None
+
+
+def _erro_de_certificado(e) -> bool:
+    return "CERTIFICATE_VERIFY_FAILED" in str(e) or "SSLError" in type(e).__name__
+
+
+def _confianca():
+    from . import ponto
+    return _CONFIANCA_REMENDADA or ponto._confianca_tls()
+
+
+def _remendar_confianca():
+    """Completa a cadeia de certificados do Mobponto, como a LEITURA já fazia.
+
+    ⚠️ FALHA REAL, 01/10/2026: *"PAROU em 16/09 07:00: não consegui falar com o
+    Mobponto: (…) CERTIFICATE_VERIFY_FAILED (…) unable to get local issuer
+    certificate"*. A leitura do ponto (`ponto._pedir_pagina`) baixa sozinha o
+    certificado do meio da cadeia, que o servidor do Mobponto não manda; o
+    envio da batida não fazia isso — e parou na primeira. Ver `ponto._confianca_tls`."""
+    global _CONFIANCA_REMENDADA
+    from . import ponto
+    atual = ponto._confianca_tls()
+    if atual is False:
+        return None
+    remendo = ponto._intermediario_do_servidor(ponto.URL)
+    if not remendo:
+        return None
+    pacote = ponto._pacote_com_o_extra(atual if isinstance(atual, str) else None,
+                                       remendo)
+    if pacote:
+        _CONFIANCA_REMENDADA = pacote
+    return pacote
+
+
 def _mandar(payload: dict) -> tuple:
-    """Uma chamada ao Mobponto. Devolve (ok, resposta em texto). Sem repetir."""
+    """Uma chamada ao Mobponto. Devolve (ok, resposta em texto).
+
+    Repete UMA vez, e só no erro de certificado: ele acontece no aperto de mão,
+    ANTES de o pedido sair — a batida não chegou ao Mobponto, e mandar de novo
+    não duplica nada. Qualquer outro erro não se repete (ver o topo)."""
     import requests
 
     from . import ponto
+
+    def enviar(confianca):
+        return requests.post(ponto.URL, data=payload, headers=ponto._cabecalhos(),
+                             verify=confianca,
+                             timeout=(SEGUNDOS_PARA_CONECTAR, SEGUNDOS_DE_ESPERA))
+
     try:
-        resposta = requests.post(ponto.URL, data=payload,
-                                 headers=ponto._cabecalhos(),
-                                 verify=ponto._confianca_tls(),
-                                 timeout=(SEGUNDOS_PARA_CONECTAR, SEGUNDOS_DE_ESPERA))
+        try:
+            resposta = enviar(_confianca())
+        except requests.exceptions.SSLError as e:
+            if not _erro_de_certificado(e):
+                raise
+            remendada = _remendar_confianca()
+            if not remendada:
+                raise
+            resposta = enviar(remendada)
     except requests.exceptions.ReadTimeout:
         return None, ("o Mobponto não respondeu a tempo. NÃO SEI SE GRAVOU — "
                       "confira o ponto da pessoa antes de mandar de novo, senão a "
                       "batida pode entrar duas vezes.")
     except Exception as e:  # noqa: BLE001 — rede, certificado
+        if _erro_de_certificado(e):
+            return False, (
+                "o certificado do Mobponto não pôde ser verificado, e não consegui "
+                "completar a cadeia sozinho. Nada foi gravado. O conserto é colar "
+                "o certificado do meio da cadeia em MOBPONTO_CA_EXTRA, no Render "
+                f"(detalhe: {e})")
         return False, f"não consegui falar com o Mobponto: {e}"
     texto = (resposta.text or "")[:1000]
     try:
@@ -407,17 +466,23 @@ PAUSA_ENTRE_BATIDAS = 0.5
 
 
 def lancar(pedido: dict, anotar=None) -> dict:
-    """Roda no processo separado (modo `ponto_lancar`). Na ordem:
+    """Roda no processo separado (pela fila do ponto). Na ordem:
 
-      1. traz de novo o ponto da pessoa — o plano da tela pode estar velho
-         (alguém bateu ou ajustou no Mobponto depois da carga);
-      2. refaz o plano com o ponto novo — é ELE que vale, não o da tela;
-      3. manda as batidas UMA POR VEZ, e para na primeira que falhar;
-      4. traz o ponto de novo, para a folha recalcular com o que entrou.
+      1. refaz o plano com o ponto BAIXADO — o que está na cópia agora, que pode
+         ter mudado desde a tela;
+      2. manda as batidas UMA POR VEZ, e para na primeira que falhar;
+      3. escreve na cópia baixada o que o Mobponto aceitou, dia a dia
+         (`ponto.aplicar_batidas_na_copia`) — a folha recalcula na hora.
 
-    ⚠️ Os passos 1 e 4 existem pelo pedido dele: *"não lançar informação que
-    sobreponha o que já existe"*. Planejar em cima de cópia velha é o jeito de
-    sobrepor sem ver."""
+    ⚠️ NÃO VAI MAIS AO MOBPONTO ANTES NEM DEPOIS — decisão do dono, 01/10/2026:
+    *"não tem sentido buscar antes, leva muito tempo. A base de informações já
+    existe, precisa somente aplicar."* Buscar uma pessoa obriga a varrer páginas
+    do mês (a API não filtra por pessoa) e levava minutos.
+
+    ⚠️ O RISCO, aceito por ele: o plano olha a CÓPIA. Batida feita no Mobponto
+    depois da última carga do mês não é vista, e o lançamento pode encostar
+    nela. A carga automática de hora em hora é o que mantém a cópia fresca, e é
+    ela que, na próxima passada, substitui a cópia pelo que o Mobponto tiver."""
     import time
 
     from . import ponto
@@ -432,25 +497,14 @@ def lancar(pedido: dict, anotar=None) -> dict:
     obra, texto = validar_pedido(pedido.get("obra"), pedido.get("justificativa"))
     cpf_resp, nome_resp = responsavel()
 
-    anotar("lançando o ponto", "conferindo o ponto atual da pessoa no Mobponto")
-
-    def conferindo(etapa, progresso=""):
-        # Diz que é a CONFERÊNCIA de antes de lançar — sem isto, "página 5 de
-        # 13" parecia o lançamento andando de página em página.
-        anotar("lançando o ponto",
-               "antes de lançar, conferindo o que ela já tem — " + (progresso or etapa))
-
-    antes = ponto.atualizar_pessoa(ano, mes, cpf, nome, conferindo)
-    if not antes.get("achou"):
-        raise ErroDaEdicao(
-            "não achei esta pessoa no ponto do Mobponto deste mês, então não sei "
-            "o que ela já tem batido. Nada foi lançado.")
+    anotar("lançando o ponto", "montando o que falta, pelo ponto já baixado")
     plano = plano_da_pessoa(ano, mes, cpf, pedido["de"], pedido["ate"], obra,
                             pedido.get("hora_avulsa") or "")
 
     enviadas, falhou = [], None
     total = plano["batidas"]
     for linha in plano["dias"]:
+        aceitas_no_dia = []
         for hora in linha["lancar"]:
             anotar("lançando o ponto",
                    f"batida {len(enviadas) + 1} de {total} — {linha['data_br']} {hora}")
@@ -469,19 +523,18 @@ def lancar(pedido: dict, anotar=None) -> dict:
                           "talvez_gravou": ok is None}
                 break
             enviadas.append((linha["data_br"], hora))
+            aceitas_no_dia.append((hora, obra))
             time.sleep(PAUSA_ENTRE_BATIDAS)
+        # O QUE O MOBPONTO ACEITOU vai para a cópia, dia a dia — inclusive o dia
+        # em que parou no meio: o que entrou, entrou.
+        if aceitas_no_dia:
+            try:
+                ponto.aplicar_batidas_na_copia(ano, mes, cpf, nome, linha["data"],
+                                               aceitas_no_dia)
+            except Exception:  # noqa: BLE001 — o Mobponto já tem; o recado diz
+                logger.exception("Ponto: lancei, mas não consegui pôr na cópia")
         if falhou:
             break
-
-    if enviadas:
-        anotar("lançando o ponto", "trazendo o ponto de novo, com o que entrou")
-        try:
-            ponto.atualizar_pessoa(
-                ano, mes, cpf, nome,
-                lambda e, p="": anotar("lançando o ponto",
-                                       "lançado; trazendo o ponto de novo — " + (p or e)))
-        except Exception:  # noqa: BLE001 — o que entrou, entrou; o recado diz
-            logger.exception("Ponto: lancei, mas não consegui trazer de novo")
     return {"plano": plano, "enviadas": enviadas, "falhou": falhou}
 
 

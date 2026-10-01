@@ -1531,3 +1531,41 @@ def test_CUTUCAR_devolve_o_que_ficou_rodando_e_dispara_o_trabalhador(
     with conexao() as conn:
         conn.execute("DELETE FROM analisesps.ponto_fila")
         conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# 01/10/2026 — o lançamento põe na CÓPIA o que o Mobponto aceitou. *"A base de
+# informações já existe, precisa somente aplicar."*
+# ---------------------------------------------------------------------------
+def test_as_batidas_lancadas_vao_para_a_COPIA_e_a_folha_as_ve(banco_ponto, monkeypatch):
+    import datetime as _dt
+    from app.apps.analisesps import ponto
+    dublar(monkeypatch, _mes_em_ordem_alfabetica())
+    ponto.carregar(2026, 9)
+
+    # Dia sem registro na cópia: ganha um, com as batidas em ordem de hora.
+    assert ponto.aplicar_batidas_na_copia(
+        2026, 9, "555.555.555-55", "ELISA", "2026-09-16",
+        [("17:00", "XYZ9"), ("07:00", "XYZ9"), ("12:00", "XYZ9"), ("13:00", "XYZ9")])
+    dias = {d["data"]: d for d in ponto.dias_de_um_cpf(2026, 9, "55555555555")}
+    novo = dias[_dt.date(2026, 9, 16)]
+    assert novo["horas"] == ["07:00", "12:00", "13:00", "17:00"]
+    assert novo["marcacoes"] == ["XYZ9"] * 4
+
+    # Dia que já tinha batida: as novas entram junto, sem apagar a que havia.
+    antes = dias[_dt.date(2026, 9, 1)]
+    ja = [h for h in antes["horas"] if h]
+    ponto.aplicar_batidas_na_copia(2026, 9, "55555555555", "ELISA", "2026-09-01",
+                                   [("23:00", "XYZ9")])
+    depois = {d["data"]: d for d in ponto.dias_de_um_cpf(2026, 9, "55555555555")}
+    horas = [h for h in depois[_dt.date(2026, 9, 1)]["horas"] if h]
+    assert all(h in horas for h in ja[:3])
+    assert len(ponto.dias_de_um_cpf(2026, 9, "55555555555")) == 3, "não duplicou o dia"
+    # A apropriação lê a cópia: o dia novo tem obra.
+    assert ponto.dias_por_cpf(2026, 9)["55555555555"]
+
+
+def test_sem_ponto_do_mes_nao_ha_onde_aplicar(banco_ponto):
+    from app.apps.analisesps import ponto
+    assert ponto.aplicar_batidas_na_copia(2026, 9, "55555555555", "", "2026-09-16",
+                                          [("07:00", "A")]) is False

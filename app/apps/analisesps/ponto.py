@@ -1314,6 +1314,69 @@ def _obra_do_dia(lido) -> dict:
     return obra_do_dia(lido["marcacoes"], lido["presenca"], lido["falta"])
 
 
+def aplicar_batidas_na_copia(ano: int, mes: int, cpf: str, nome: str, data,
+                             novas) -> bool:
+    """Põe na CÓPIA BAIXADA as batidas que acabaram de ser lançadas no Mobponto.
+
+    O dono, 01/10/2026, sobre o lançamento ir ao Mobponto antes e depois: *"não
+    tem sentido buscar antes, leva muito tempo. A base de informações já existe,
+    precisa somente aplicar."* Então o lançamento não traz mais o ponto da pessoa
+    de volta: o que foi aceito pelo Mobponto é escrito aqui, no dia dela, e a
+    folha recalcula na hora. A próxima carga do mês substitui esta cópia pelo que
+    o Mobponto tiver — é ela que confere.
+
+    As batidas do dia (as que já havia e as novas) são postas em ordem de hora
+    nos quatro campos — entrada, almoço, retorno, saída —, como o Mobponto faz.
+    Dia sem registro na cópia ganha um. Devolve False quando não há ponto do mês
+    guardado (aí não há onde escrever)."""
+    import datetime as _dt
+    from .db import conexao
+
+    carga = carga_do_mes(ano, mes)
+    if not carga or not novas:
+        return False
+    cpf = _cpf_do_ponto(cpf)
+    if isinstance(data, str):
+        data = _dt.date.fromisoformat(data[:10])
+    with conexao() as conn:
+        cur = conn.execute(
+            "SELECT id, campos FROM analisesps.ponto_dia "
+            " WHERE carga_id = ? AND cpf = ? AND data = ? ORDER BY id LIMIT 1",
+            (int(carga["id"]), cpf, data))
+        linha = cur.fetchone()
+        cur.close()
+        try:
+            campos = json.loads(linha[1]) if linha and linha[1] else {}
+        except ValueError:
+            campos = {}
+        if not isinstance(campos, dict):
+            campos = {}
+        batidas = [(str(campos.get(h) or "").strip()[:5],
+                    " ".join(str(campos.get(o) or "").split()).upper())
+                   for h, o in zip(CAMPOS_DAS_HORAS, CAMPOS_DAS_OBRAS)]
+        batidas = [b for b in batidas if b[0] or b[1]]
+        batidas += [(str(h)[:5], " ".join(str(o).split()).upper()) for h, o in novas]
+        batidas.sort(key=lambda b: b[0] or "99:99")
+        for i, (campo_h, campo_o) in enumerate(zip(CAMPOS_DAS_HORAS, CAMPOS_DAS_OBRAS)):
+            h, o = batidas[i] if i < len(batidas) else ("", "")
+            campos[campo_h] = h
+            campos[campo_o] = o
+        campos.setdefault("data", data.isoformat())
+        campos["lancado_por_aqui"] = True
+        texto = json.dumps(campos, ensure_ascii=False, default=str)[:8000]
+        if linha:
+            conn.execute("UPDATE analisesps.ponto_dia SET campos = ? WHERE id = ?",
+                         (texto, linha[0]))
+        else:
+            conn.execute(
+                "INSERT INTO analisesps.ponto_dia "
+                "  (carga_id, cpf, nome, data, matricula, campos) "
+                " VALUES (?,?,?,?,?,?)",
+                (int(carga["id"]), cpf, str(nome or "")[:160], data, "", texto))
+        conn.commit()
+    return True
+
+
 def dias_de_um_cpf(ano: int, mes: int, cpf: str) -> list:
     """Os dias de UMA pessoa no mês, no formato de `dias_por_cpf`. Lista vazia
     sem carga do mês. Usado para planejar o lançamento de batidas — ler o mês

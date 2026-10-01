@@ -10832,6 +10832,36 @@ arredondamento do navegador). Só do que está marcado NESTA página.
 
 ---
 
+### Centésima trigésima nona leva (01/10) — o lançamento não vai mais ao Mobponto buscar; certificado no envio
+
+Primeiro lançamento de verdade dele (ROGERIO PEREIRA RAMOS JUNIOR), dois relatos:
+
+**1. "Olhando a página 5 de 13. Pq página a página? (…) Não tem sentido buscar
+antes, leva muito tempo. A base de informações já existe, precisa somente
+aplicar."** — O lançamento trazia o ponto da pessoa do Mobponto ANTES (para não
+sobrepor) e DEPOIS (para a folha recalcular). Como a API não busca por pessoa,
+isso varre páginas do mês — minutos. **Decisão dele:** o plano usa a cópia
+baixada, e o que o Mobponto aceita é escrito direto na cópia
+(`ponto.aplicar_batidas_na_copia`: as batidas do dia em ordem de hora nos quatro
+campos; dia sem registro ganha um; marca `lancado_por_aqui`). A folha recalcula
+na hora; a próxima carga do mês substitui a cópia pelo que o Mobponto tiver.
+- **Risco aceito, dito a ele:** batida feita no Mobponto depois da última carga
+  não é vista pelo plano. A carga automática de hora em hora é o que mantém a
+  cópia fresca.
+- O andamento passou a dizer "procurando a pessoa no Mobponto… o Mobponto não
+  busca por pessoa" quando o "Atualizar o ponto desta pessoa" anda de página.
+
+**2. "NÃO DEU: PAROU em 16/09 07:00: não consegui falar com o Mobponto (…)
+CERTIFICATE_VERIFY_FAILED (…) unable to get local issuer certificate."** — A
+LEITURA do ponto completa sozinha a cadeia de certificados (o servidor do
+Mobponto não manda o certificado do meio — ver `ponto._confianca_tls`); o ENVIO
+da batida não fazia isso. Agora faz (`ponto_edicao._remendar_confianca`) e
+guarda o pacote para as próximas batidas. Repetir nesse caso é seguro: o erro de
+certificado acontece no aperto de mão, antes de o pedido sair. **Nada foi
+gravado** no Mobponto na tentativa que falhou.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

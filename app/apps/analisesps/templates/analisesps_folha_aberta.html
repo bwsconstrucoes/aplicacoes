@@ -1105,8 +1105,8 @@
 
   // LANÇAR O PONTO NO MOBPONTO (01/10/2026). "lançar" no dia põe De = Até =
   // aquele dia; "Ver o que vai ser lançado" pede o plano ao servidor (nada é
-  // gravado); "Lançar" dispara o processo separado, que confere o ponto de
-  // novo, lança uma batida por vez e traz o ponto atualizado.
+  // gravado); "Lançar" põe o pedido na fila, que lança uma batida por vez e
+  // escreve na cópia baixada o que o Mobponto aceitou (sem ir buscar de novo).
   const quadroLancar = () => corpo.querySelector("#lancar-ponto");
   const pedidoLancar = q => ({
     folha_id: q.dataset.folha, cpf: q.dataset.cpf, nome: q.dataset.nome,
@@ -1198,9 +1198,9 @@
       return;
     }
     if (!confirm(b.textContent + " para " + q.dataset.nome + ", na obra " +
-                 pedido.obra.toUpperCase() + "?\n\nAntes de lançar o sistema confere " +
-                 "o ponto dela de novo no Mobponto, e o que já estiver batido não é " +
-                 "tocado.\n\nO que entra no Mobponto não se desfaz por aqui.")) return;
+                 pedido.obra.toUpperCase() + "?\n\nO que já estiver batido no ponto " +
+                 "baixado não é tocado.\n\nO que entra no Mobponto não se desfaz " +
+                 "por aqui.")) return;
     b.disabled = true;
     recado.textContent = "começando…";
     try {
