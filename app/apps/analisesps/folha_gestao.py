@@ -159,6 +159,17 @@ def obra_principal(por_obra) -> str:
 # ---------------------------------------------------------------------------
 # A SITUAÇÃO DE UMA LINHA
 # ---------------------------------------------------------------------------
+def _situacao_cadastral(ficha) -> str:
+    """SAIU, SAINDO ou "" — o que o cadastro diz, sem a prioridade da linha."""
+    from . import colaboradores
+    situacao = (ficha or {}).get("situacao")
+    if situacao == colaboradores.SITUACAO_SAIU:
+        return SAIU
+    if situacao == colaboradores.SITUACAO_SAINDO:
+        return SAINDO
+    return ""
+
+
 def situacao_da_pessoa(pessoa, ficha) -> str:
     """Uma situação só, pela ordem de prioridade do alto do arquivo."""
     from . import colaboradores
@@ -641,6 +652,13 @@ def montar(folha_id: int, filtros=None) -> dict:
                 and obra_principal(pessoa.get("por_obra")).upper()
                 != colaboradores.resolver_obra(ficha, obras_por_nome).upper()),
             "situacao": situacao,
+            # ⚠️ A SITUAÇÃO NO CADASTRO, À PARTE da situação da linha. A linha
+            # tem UMA situação, pela prioridade (sem cadastro > fora > sem obra
+            # > saiu…), e quem saiu costuma estar também sem obra (não tem ponto
+            # no período) — aí "já saiu" nunca aparecia no filtro. O dono, em
+            # 01/10/2026: *"Pendências: 2 já saíram da empresa (…) mas no filtro:
+            # já saiu (0)."* Filtro e contagem de saiu/saindo olham isto também.
+            "situacao_cadastral": _situacao_cadastral(ficha),
             "situacao_rotulo": ROTULO_DA_SITUACAO.get(situacao, situacao),
             "selo": SELO_DA_SITUACAO.get(situacao, ""),
             # ⚠️ "ENTRA" É "VAI SER PAGO DE VERDADE" — 30/09/2026. Era só "você não
@@ -664,6 +682,11 @@ def montar(folha_id: int, filtros=None) -> dict:
     contagem = {chave: 0 for chave in ORDEM_DAS_SITUACOES}
     for p in pessoas:
         contagem[p["situacao"]] = contagem.get(p["situacao"], 0) + 1
+        # Saiu/saindo contam pelo CADASTRO, mesmo quando a linha tem outra
+        # situação na frente — é o mesmo número da lateral (Pendências).
+        cad = p.get("situacao_cadastral")
+        if cad in (SAIU, SAINDO) and p["situacao"] != cad:
+            contagem[cad] = contagem.get(cad, 0) + 1
 
     entram = [p for p in pessoas if p["entra"]]
     totais = {
@@ -860,7 +883,8 @@ def _filtrar(pessoas, filtros) -> list:
                 casa = True
             if not casa:
                 continue
-        if situacoes and p.get("situacao") not in situacoes:
+        if situacoes and p.get("situacao") not in situacoes \
+                and p.get("situacao_cadastral") not in situacoes:
             continue
         if origens and (p.get("origem") or "") not in origens:
             continue

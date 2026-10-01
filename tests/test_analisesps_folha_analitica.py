@@ -334,3 +334,27 @@ def test_a_folha_MOSTRA_o_que_mudou(app, monkeypatch):
     assert "1 com valor diferente, 0 entraram," in html and "1 saíram" in html
     assert "refaça o fechamento" in html
     assert "saiu da folha" in html and "valor mudou" in html
+
+
+# ---------------------------------------------------------------------------
+# 01/10/2026 — *"Pendências: 2 já saíram da empresa (…) mas no filtro: já saiu (0)"*
+# ---------------------------------------------------------------------------
+def test_quem_SAIU_e_esta_SEM_OBRA_aparece_no_filtro_ja_saiu(app, monkeypatch):
+    import datetime as dt
+    from app.apps.analisesps import colaboradores
+    # LUELIA não tem ponto (sem obra) e saiu no cadastro.
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes(), cadastro={
+        "99713349334": {"cpf": "99713349334", "nome": "GERLANIO", "fase": "Colaboradores ativos",
+                        "obra_cadastro": "CREPEOLINDA", "obra_codigo": "",
+                        "situacao": colaboradores.SITUACAO_ATIVO, "motivo": "", "link_pipefy": ""},
+        "11122233396": {"cpf": "11122233396", "nome": "LUELIA", "fase": "Desligados",
+                        "obra_cadastro": "CREPEOLINDA", "obra_codigo": "",
+                        "situacao": colaboradores.SITUACAO_SAIU,
+                        "motivo": "saiu em 31/08/2026", "link_pipefy": ""}})
+    cliente = _como_mestre(app)
+    html = cliente.get("/analisesps/folha/1").get_data(as_text=True)
+    import re
+    rotulo = re.search(r'value="saiu"[^>]*>\s*<span class="rotulo"[^>]*>([^<]+)<', html)
+    assert rotulo and "(1)" in rotulo.group(1), rotulo and rotulo.group(1)
+    so_saiu = cliente.get("/analisesps/folha/1?situacao=saiu").get_data(as_text=True)
+    assert "LUELIA" in so_saiu and "GERLANIO GOMES" not in so_saiu
