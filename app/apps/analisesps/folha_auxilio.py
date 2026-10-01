@@ -216,15 +216,15 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
                     colaboradores.SITUACAO_AFASTADO):
         saida["pagar"] = False
         saida["motivos"].append(ficha.get("motivo")
-                                or "não está ativa no cadastro.")
+                                or "colaborador inativo no cadastro.")
     elif situacao == colaboradores.SITUACAO_SAINDO:
         # Não trava: pode haver valor devido até o último dia. Mas fica dito.
-        saida["motivos"].append(ficha.get("motivo") or "está saindo.")
+        saida["motivos"].append(ficha.get("motivo") or "em processo de desligamento.")
 
     if not e_alimentacao and _sem_acento(modo) == MODO_CARTAO:
         saida["pagar"] = False
         saida["motivos"].append(
-            "o cadastro diz \"Cartão\" — o transporte dela não sai em dinheiro.")
+            "modalidade \"Cartão\" no cadastro — o auxílio transporte não é pago em dinheiro.")
 
     # OS IMPEDIMENTOS DE VERDADE: sem estes não há o que pagar, e o ajuste dele
     # não muda isso — marcar "pagar" pagaria zero sem dizer.
@@ -232,14 +232,14 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         saida["pagar"] = False
         saida["impossivel"] = True
         saida["motivos"].append(
-            "o cadastro não diz o valor deste auxílio. Corrija no card do Pipefy "
+            "o cadastro não informa o valor deste auxílio. Corrija no card do Pipefy "
             "e atualize o cadastro.")
         return _decidir(saida, ajuste)
     if not modo:
         saida["pagar"] = False
         saida["impossivel"] = True
         saida["motivos"].append(
-            "o cadastro não diz a modalidade (Mês, Mensal, Segunda à Sexta ou "
+            "o cadastro não informa a modalidade (Mês, Mensal, Segunda à Sexta ou "
             "Segunda à Quinta).")
         return _decidir(saida, ajuste)
 
@@ -248,8 +248,8 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         saida["pagar"] = False
         saida["impossivel"] = True
         saida["motivos"].append(
-            f'não sei contar os dias da modalidade "{modo}". As que eu conheço '
-            "são: Mês, Mensal, Segunda à Sexta e Segunda à Quinta.")
+            f'modalidade "{modo}" não reconhecida para contagem de dias. Modalidades '
+            "aceitas: Mês, Mensal, Segunda à Sexta e Segunda à Quinta.")
         return _decidir(saida, ajuste)
     saida["dias_base"] = base
 
@@ -259,7 +259,7 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         saida["valor"] = valor_unitario
         if saida["dias_ajuste"]:
             saida["motivos"].append(
-                "o ajuste de dias não vale para quem recebe valor fechado "
+                "o ajuste de dias não se aplica à modalidade de valor fixo "
                 '("Mês").')
         return _decidir(saida, ajuste)
 
@@ -279,7 +279,7 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     saida["dias"] = max(0, dias)
     saida["valor"] = (valor_unitario * saida["dias"]).quantize(CENTAVO)
     if saida["dias"] == 0:
-        saida["motivos"].append("não sobrou nenhum dia a pagar neste mês.")
+        saida["motivos"].append("nenhum dia a pagar nesta competência.")
     return _decidir(saida, ajuste)
 
 
@@ -299,17 +299,17 @@ def _decidir(saida: dict, ajuste: dict) -> dict:
     saida["pagar_calculado"] = bool(saida["pagar"])
     if ajuste.get("pagar") is False:
         saida["pagar"] = False
-        saida["motivos"].append("você desmarcou esta pessoa.")
+        saida["motivos"].append("colaborador desmarcado manualmente.")
     elif ajuste.get("pagar") is True and not saida["pagar"]:
         if saida.get("impossivel"):
             # Marcar não resolve falta de valor no cadastro: pagaria zero em
             # silêncio. O recado diz o que consertar, e onde.
             saida["motivos"].append(
-                "você marcou para pagar, mas ainda falta o dado no cadastro — "
-                "sem ele não há valor nenhum a pagar.")
+                "marcado manualmente para pagamento, mas o cadastro está incompleto — "
+                "sem esse dado não há valor a pagar.")
         else:
             saida["pagar"] = True
-            saida["motivos"].append("você marcou para pagar mesmo assim.")
+            saida["motivos"].append("marcado manualmente para pagamento, apesar da pendência.")
     return saida
 
 
@@ -339,7 +339,7 @@ def _obra_do_ponto_por_cpf(ano: int, mes: int, inicio, fim) -> dict:
 def calcular(tipo: str, ano: int, mes: int) -> dict:
     """A verba inteira do mês. Devolve as pessoas e os totais."""
     if tipo not in TIPOS:
-        raise ErroDoAuxilio(f'não conheço a verba "{tipo}".')
+        raise ErroDoAuxilio(f'verba "{tipo}" não reconhecida.')
 
     inicio, fim = periodo_do_mes(ano, mes)
     ate = fim
@@ -453,24 +453,24 @@ def gravar_ajuste(tipo: str, ano: int, mes: int, cpf: str, pagar=None,
 
     if not _pronto():
         raise ErroDoAuxilio(
-            'a tabela dos ajustes ainda não existe. Aperte "Aplicar '
+            'tabela de ajustes não encontrada no banco. Clique em "Aplicar '
             'atualizações do banco" em Configurações.')
     if tipo not in TIPOS:
-        raise ErroDoAuxilio(f'não conheço a verba "{tipo}".')
+        raise ErroDoAuxilio(f'verba "{tipo}" não reconhecida.')
     digitos = so_digitos(cpf)
     if len(digitos) != 11:
-        raise ErroDoAuxilio("não reconheci o CPF desta pessoa.")
+        raise ErroDoAuxilio("CPF do colaborador não reconhecido.")
 
     if dias is not None:
         try:
             dias = int(dias)
         except (TypeError, ValueError):
-            raise ErroDoAuxilio("o ajuste de dias tem de ser um número.")
+            raise ErroDoAuxilio("o ajuste de dias deve ser numérico.")
         # Um ajuste absurdo é quase sempre digitação, e mudaria o valor em
         # centenas de reais sem ninguém notar.
         if abs(dias) > 62:
             raise ErroDoAuxilio(
-                f"{dias} dias de ajuste é mais que dois meses. Confira o número.")
+                f"ajuste de {dias} dias excede dois meses. Verifique o número.")
 
     with conexao() as conn:
         conn.execute(
@@ -537,10 +537,10 @@ def salvar_selecao(tipo: str, ano: int, mes: int, decisoes, quem: str = "") -> d
     `decisoes`: `[{"cpf": "...", "pagar": True/False}]` — o estado das caixinhas
     como a tela as mostra. Devolve o que mudou, para a tela poder dizer."""
     if tipo not in TIPOS:
-        raise ErroDoAuxilio(f'não conheço a verba "{tipo}".')
+        raise ErroDoAuxilio(f'verba "{tipo}" não reconhecida.')
     if not _pronto():
         raise ErroDoAuxilio(
-            'a tabela dos ajustes ainda não existe. Aperte "Aplicar '
+            'tabela de ajustes não encontrada no banco. Clique em "Aplicar '
             'atualizações do banco" em Configurações.')
 
     calculado = calcular(tipo, ano, mes)
@@ -614,16 +614,16 @@ def fechar(tipo: str, ano: int, mes: int, pagamento: str = "fim_de_mes",
     """Congela o auxílio do mês: quem recebe, quanto e de qual obra sai."""
     from . import folha_apropriacao_guardada as guardada
     if pagamento not in TIPOS_DO_FECHAMENTO:
-        raise ErroDoAuxilio("escolha se o auxílio sai na quinzena ou no fim de mês.")
+        raise ErroDoAuxilio("selecione se o auxílio será pago na quinzena ou no fim de mês.")
     calculado = calcular(tipo, ano, mes)
     a_pagar = [p for p in calculado["pessoas"] if p["pagar"] and p["valor"] > 0]
     if not a_pagar:
-        raise ErroDoAuxilio("ninguém marcado para receber este auxílio.")
+        raise ErroDoAuxilio("nenhum colaborador marcado para receber este auxílio.")
     sem_obra = [p["nome"] for p in a_pagar if not p.get("obra")]
     if sem_obra:
         raise ErroDoAuxilio(
-            "há quem vá receber sem obra (nem no ponto nem no cadastro): "
-            + ", ".join(sem_obra[:5]) + ". Sem obra não há conta para pagar.")
+            "há colaboradores a receber sem obra (nem no ponto nem no cadastro): "
+            + ", ".join(sem_obra[:5]) + ". Sem obra não há conta de pagamento.")
     # Fechar um pagamento tira o fechamento do outro — senão a mesma verba do
     # mês sairia duas vezes.
     for outro in TIPOS_DO_FECHAMENTO:

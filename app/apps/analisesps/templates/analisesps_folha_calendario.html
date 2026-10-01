@@ -8,19 +8,19 @@
 <h2>Feriados e férias</h2>
 
 <p class="cartao-dica" style="margin-bottom:14px">
-  É daqui que sai o desconto de dias no auxílio: a <b>alimentação</b> desconta
-  feriado e férias; o <b>transporte</b> desconta férias, mas não feriado de um dia
-  só — foi o que você decidiu.
+  Base para o desconto de dias nos auxílios: o auxílio <b>alimentação</b> desconta
+  feriados e férias; o auxílio <b>transporte</b> desconta férias, mas não feriados
+  isolados de um dia.
 </p>
 
 {% if erro %}
-  <div class="aviso erro"><b>Não consegui ler os cadastros.</b> {{ erro }}</div>
+  <div class="aviso erro"><b>Não foi possível ler os cadastros.</b> {{ erro }}</div>
 {% endif %}
 
 {% if not pronto %}
   <div class="aviso atencao">
-    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
-    "Aplicar atualizações do banco" e volte aqui.
+    <b>Atualização do banco pendente.</b> Em <b>Configurações</b>, clique em
+    "Aplicar atualizações do banco" e retorne a esta tela.
   </div>
 {% else %}
 
@@ -32,25 +32,25 @@
 
 {% if pode_operar %}
 <div class="cartao">
-  <label class="rotulo-campo">Lançar férias de alguém</label>
+  <label class="rotulo-campo">Lançar férias de colaborador</label>
   <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
     <div style="flex:1 1 260px; min-width:0; position:relative">
-      <label class="cartao-dica" for="ferias-pessoa">Quem (nome ou CPF)</label>
+      <label class="cartao-dica" for="ferias-pessoa">Colaborador (nome ou CPF)</label>
       {# A busca vai ao cadastro: quem manda é o CPF, e o nome é para reconhecer.
          Digitar o CPF na mão daria erro de digitação em cima da chave de tudo. #}
       <input id="ferias-pessoa" name="nome" autocomplete="off"
-             placeholder="comece a digitar o nome…">
+             placeholder="Digite o nome do colaborador…">
       <input type="hidden" id="ferias-cpf">
       <div id="ferias-sugestoes" class="sugestoes" hidden></div>
       <span class="cartao-dica" id="ferias-escolhida"></span>
     </div>
     <div>
-      <label class="cartao-dica" for="ferias-inicio">Primeiro dia</label>
+      <label class="cartao-dica" for="ferias-inicio">Data inicial</label>
       <input id="ferias-inicio" name="data" style="width:130px"
              placeholder="dd/mm/aaaa">
     </div>
     <div>
-      <label class="cartao-dica" for="ferias-fim">Último dia</label>
+      <label class="cartao-dica" for="ferias-fim">Data final</label>
       <input id="ferias-fim" name="data" style="width:130px"
              placeholder="dd/mm/aaaa">
     </div>
@@ -58,9 +58,9 @@
     <span id="recado-ferias" class="cartao-dica" style="margin:0"></span>
   </div>
   <p class="cartao-dica" style="margin:8px 0 0">
-    A pessoa pode ter <b>mais de um período</b> no ano — férias fracionadas são
-    normais. O que não pode é dois períodos que se cruzem, e aí eu aviso qual é o
-    outro.
+    O colaborador pode ter <b>mais de um período</b> no ano (férias fracionadas).
+    Não são permitidos períodos sobrepostos; nesse caso, o sistema indica o período
+    conflitante.
   </p>
 </div>
 {% endif %}
@@ -73,12 +73,12 @@
 <form class="barra-mes" method="get"
       action="{{ url_for('analisesps.tela_folha_calendario') }}">
   <label class="campo-mes" style="flex:0 1 320px">
-    <span>Procurar pessoa</span>
+    <span>Pesquisar colaborador</span>
     <input type="search" name="q" id="q" value="{{ procurado }}"
            placeholder="nome ou CPF…"
            aria-label="Procurar férias por nome ou CPF">
   </label>
-  <button class="btn secundario" type="submit">Procurar</button>
+  <button class="btn secundario" type="submit">Pesquisar</button>
   <a class="btn secundario"
      href="{{ url_for('analisesps.tela_folha_calendario') }}">Limpar</a>
 </form>
@@ -89,7 +89,7 @@
 
     <table class="sps">
       <thead>
-        <tr><th>Quem</th><th>CPF</th><th>De</th><th>Até</th><th class="num">Dias</th>
+        <tr><th>Colaborador</th><th>CPF</th><th>Início</th><th>Fim</th><th class="num">Dias</th>
           <th>Lançado por</th>{% if pode_operar %}<th></th>{% endif %}</tr>
       </thead>
       <tbody>
@@ -103,7 +103,7 @@
           <td><span class="cartao-dica">{{ f.criado_por or '—' }}</span></td>
           {% if pode_operar %}
             <td class="num">
-              <button class="apagar-linha apagar-ferias" title="Apagar este período"
+              <button class="apagar-linha apagar-ferias" title="Excluir este período"
                       data-id="{{ f.id }}" data-nome="{{ f.nome }}"
                       data-periodo="{{ f.inicio|data_br }} a {{ f.fim|data_br }}"
                       >&times;</button>
@@ -112,8 +112,8 @@
         </tr>
       {% else %}
         <tr><td colspan="{{ 7 if pode_operar else 6 }}" class="cartao-dica">
-          {% if procurado %}Ninguém com "{{ procurado }}". Mude a busca acima.
-          {% else %}Nenhum período de férias lançado ainda.{% endif %}
+          {% if procurado %}Nenhum resultado para "{{ procurado }}". Altere os critérios de pesquisa.
+          {% else %}Nenhum período de férias lançado.{% endif %}
         </td></tr>
       {% endfor %}
       </tbody>
@@ -130,41 +130,41 @@
 
 {% if pode_operar %}
 <div class="cartao">
-  <label class="rotulo-campo">Cadastrar um feriado</label>
+  <label class="rotulo-campo">Cadastrar feriado</label>
   <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
     <div>
-      <label class="cartao-dica" for="feriado-data">Dia</label>
+      <label class="cartao-dica" for="feriado-data">Data</label>
       <input id="feriado-data" name="data" style="width:130px"
              placeholder="dd/mm/aaaa">
     </div>
     <div>
-      <label class="cartao-dica" for="feriado-abrangencia">Vale para</label>
+      <label class="cartao-dica" for="feriado-abrangencia">Abrangência</label>
       <select id="feriado-abrangencia" style="width:170px">
-        <option value="nacional">Todo mundo (nacional)</option>
-        <option value="obra">Só uma obra</option>
+        <option value="nacional">Feriado nacional</option>
+        <option value="obra">Feriado da obra</option>
       </select>
     </div>
     {# ⚠️ A OBRA SÓ APARECE quando ela é necessária. Campo que fica na tela sem
        servir faz a pessoa se perguntar se devia preencher. #}
     <div id="feriado-obra-bloco" hidden>
-      <label class="cartao-dica" for="feriado-obra">Qual obra</label>
+      <label class="cartao-dica" for="feriado-obra">Obra</label>
       <select id="feriado-obra" style="width:200px">
-        <option value="">escolha…</option>
+        <option value="">Selecione…</option>
         {% for o in obras %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
       </select>
     </div>
     <div style="flex:1 1 200px; min-width:0">
-      <label class="cartao-dica" for="feriado-descricao">O que é (opcional)</label>
-      <input id="feriado-descricao" placeholder="Independência, aniversário da cidade…">
+      <label class="cartao-dica" for="feriado-descricao">Descrição (opcional)</label>
+      <input id="feriado-descricao" placeholder="Ex.: Independência do Brasil, aniversário do município">
     </div>
     <button class="btn" id="btn-gravar-feriado">Gravar</button>
     <span id="recado-feriado" class="cartao-dica" style="margin:0"></span>
   </div>
   {% if not obras %}
     <p class="cartao-dica" style="margin:8px 0 0">
-      A lista de obras está vazia — ela vem da planilha, pelo botão "Só as
-      planilhas de apoio" em Configurações. Sem ela, dá para cadastrar feriado
-      nacional, mas não o de uma obra.
+      A lista de obras está vazia. Ela é carregada da planilha pelo botão "Só as
+      planilhas de apoio", em Configurações. Sem ela, só é possível cadastrar
+      feriados nacionais.
     </p>
   {% endif %}
 </div>
@@ -193,7 +193,7 @@
 
     <table class="sps">
       <thead>
-        <tr><th>Dia</th><th>Vale para</th><th>O que é</th>
+        <tr><th>Data</th><th>Abrangência</th><th>Descrição</th>
           {% if pode_operar %}<th></th>{% endif %}</tr>
       </thead>
       <tbody>
@@ -210,7 +210,7 @@
           <td>{{ f.descricao or '—' }}</td>
           {% if pode_operar %}
             <td class="num">
-              <button class="apagar-linha apagar-feriado" title="Apagar este feriado"
+              <button class="apagar-linha apagar-feriado" title="Excluir este feriado"
                       data-id="{{ f.id }}"
                       data-quando="{{ f.data|data_br }}"
                       data-onde="{{ 'nacional' if f.abrangencia == 'nacional' else f.obra }}"
@@ -221,8 +221,8 @@
       {% else %}
         <tr><td colspan="{{ 4 if pode_operar else 3 }}" class="cartao-dica">
           Nenhum feriado cadastrado{{ ' em ' ~ ano if ano }}.
-          {% if pode_operar %}Cadastre acima — sem eles o auxílio alimentação paga o
-            mês cheio.{% endif %}
+          {% if pode_operar %}Cadastre os feriados acima; sem eles, o auxílio
+            alimentação é calculado sobre o mês integral.{% endif %}
         </td></tr>
       {% endfor %}
       </tbody>
@@ -271,7 +271,7 @@ function escolher(pessoa) {
   campoPessoa.value = pessoa.nome;
   caixaSugestoes.hidden = true;
   document.getElementById("ferias-escolhida").textContent =
-    "escolhido: " + pessoa.nome + (pessoa.desligado ? " (já saiu)" : "");
+    "Selecionado: " + pessoa.nome + (pessoa.desligado ? " (desligado)" : "");
 }
 
 if (campoPessoa) campoPessoa.addEventListener("input", () => {
@@ -290,7 +290,7 @@ if (campoPessoa) campoPessoa.addEventListener("input", () => {
       const d = await r.json();
       if (!d.ok || !d.pessoas.length) {
         caixaSugestoes.innerHTML =
-          '<div class="sugestao-vazia">ninguém com esse nome no cadastro</div>';
+          '<div class="sugestao-vazia">Nenhum colaborador encontrado com esse nome.</div>';
         caixaSugestoes.hidden = false;
         return;
       }
@@ -300,7 +300,7 @@ if (campoPessoa) campoPessoa.addEventListener("input", () => {
         item.type = "button";
         item.className = "sugestao";
         item.textContent = p.nome + (p.cargo ? " · " + p.cargo : "") +
-                           (p.desligado ? " · já saiu" : "");
+                           (p.desligado ? " · desligado" : "");
         item.addEventListener("click", () => escolher(p));
         caixaSugestoes.appendChild(item);
       });
@@ -318,11 +318,11 @@ document.addEventListener("click", e => {
 const btnFerias = document.getElementById("btn-gravar-ferias");
 if (btnFerias) btnFerias.addEventListener("click", async () => {
   if (!campoCpf.value) {
-    diz("recado-ferias", "Escolha a pessoa na lista que aparece.", "erro");
+    diz("recado-ferias", "Selecione o colaborador na lista de sugestões.", "erro");
     return;
   }
   btnFerias.disabled = true;
-  diz("recado-ferias", "gravando…");
+  diz("recado-ferias", "Gravando…");
   try {
     const d = await mandar("{{ url_for('analisesps.folha_ferias_gravar') }}", {
       cpf: campoCpf.value, nome: campoPessoa.value,
@@ -332,7 +332,7 @@ if (btnFerias) btnFerias.addEventListener("click", async () => {
     if (!d.ok) { diz("recado-ferias", d.erro, "erro"); btnFerias.disabled = false; return; }
     location.reload();
   } catch (e) {
-    diz("recado-ferias", "falhou: " + e, "erro");
+    diz("recado-ferias", "Não foi possível gravar as férias: " + e, "erro");
     btnFerias.disabled = false;
   }
 });
@@ -341,7 +341,7 @@ if (btnFerias) btnFerias.addEventListener("click", async () => {
 const btnFeriado = document.getElementById("btn-gravar-feriado");
 if (btnFeriado) btnFeriado.addEventListener("click", async () => {
   btnFeriado.disabled = true;
-  diz("recado-feriado", "gravando…");
+  diz("recado-feriado", "Gravando…");
   try {
     const d = await mandar("{{ url_for('analisesps.folha_feriado_gravar') }}", {
       data: document.getElementById("feriado-data").value,
@@ -352,7 +352,7 @@ if (btnFeriado) btnFeriado.addEventListener("click", async () => {
     if (!d.ok) { diz("recado-feriado", d.erro, "erro"); btnFeriado.disabled = false; return; }
     location.reload();
   } catch (e) {
-    diz("recado-feriado", "falhou: " + e, "erro");
+    diz("recado-feriado", "Não foi possível gravar o feriado: " + e, "erro");
     btnFeriado.disabled = false;
   }
 });
@@ -360,7 +360,7 @@ if (btnFeriado) btnFeriado.addEventListener("click", async () => {
 // --- apagar ---------------------------------------------------------------
 document.querySelectorAll(".apagar-ferias").forEach(b =>
   b.addEventListener("click", async () => {
-    if (!confirm("Apagar as férias de " + (b.dataset.nome || "esta pessoa") +
+    if (!confirm("Excluir as férias de " + (b.dataset.nome || "este colaborador") +
                  " (" + b.dataset.periodo + ")?")) return;
     b.disabled = true;
     const d = await mandar("{{ url_for('analisesps.folha_ferias_apagar') }}",
@@ -371,7 +371,7 @@ document.querySelectorAll(".apagar-ferias").forEach(b =>
 
 document.querySelectorAll(".apagar-feriado").forEach(b =>
   b.addEventListener("click", async () => {
-    if (!confirm("Apagar o feriado de " + b.dataset.quando +
+    if (!confirm("Excluir o feriado de " + b.dataset.quando +
                  " (" + b.dataset.onde + ")?")) return;
     b.disabled = true;
     const d = await mandar("{{ url_for('analisesps.folha_feriado_apagar') }}",

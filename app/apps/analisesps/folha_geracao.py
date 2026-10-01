@@ -155,7 +155,7 @@ def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
     destino = str(destino or "").strip().lower()
     if destino not in DESTINOS:
         raise ErroDaGeracao(
-            f'não conheço o destino "{destino}". São BeeVale e SomaPay.')
+            f'destino "{destino}" não reconhecido. Destinos aceitos: BeeVale e SomaPay.')
     # ⚠️ NO SOMAPAY NÃO EXISTE JUNTAR, e a tela diz por quê em vez de deixar
     # marcar e devolver erro depois.
     if destino == SOMAPAY:
@@ -197,20 +197,20 @@ def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
         for item in itens:
             if not item["cpf"]:
                 criticas.append(
-                    f'{item["nome"] or "uma pessoa"} está sem CPF — sem ele o '
-                    "portal não tem como pagar.")
+                    f'{item["nome"] or "colaborador"} sem CPF — sem ele o '
+                    "portal não efetua o pagamento.")
             if not item["nome"]:
                 criticas.append(
-                    f'o CPF {item["cpf"]} está sem nome — o banco confere o nome '
+                    f'o CPF {item["cpf"]} está sem nome — o banco valida o nome '
                     "contra o CPF e recusa a linha.")
         if not lote["conta"]:
             criticas.append(
-                "estas linhas estão sem conta de pagamento. A conta vem da obra "
-                '(aba "C. Diários"); obra sem conta precisa ser preenchida antes.')
+                "linhas sem conta de pagamento. A conta é definida pela obra "
+                '(aba "C. Diários"); preencha a conta da obra antes de gerar.')
         if len(itens) > MAXIMO_POR_ARQUIVO:
             criticas.append(
-                f"{len(itens)} linhas num arquivo só, acima do teto de "
-                f"{MAXIMO_POR_ARQUIVO}. Isso não parece um pagamento.")
+                f"{len(itens)} linhas em um único arquivo, acima do limite de "
+                f"{MAXIMO_POR_ARQUIVO}. Quantidade incompatível com um pagamento.")
 
         repetido = _cpf_repetido(itens)
         if destino == SOMAPAY and repetido:
@@ -327,7 +327,7 @@ def somapay_xlsx(linhas) -> bytes:
     if repetido:
         raise ErroDaGeracao(
             f"o CPF {formata_cpf(repetido)} aparece mais de uma vez, e o SomaPay "
-            "recusa o arquivo inteiro. Separe as verbas.")
+            "recusa o arquivo inteiro. Gere as verbas em arquivos separados.")
 
     with zipfile.ZipFile(MODELO_SOMAPAY) as modelo:
         partes = [(info, modelo.read(info.filename)) for info in modelo.infolist()]
@@ -405,7 +405,7 @@ def beevale_xlsx(linhas) -> bytes:
 def arquivo_do_lote(lote) -> bytes:
     """O .xlsx deste lote, no layout do destino dele."""
     if not lote or not lote.get("linhas"):
-        raise ErroDaGeracao("este lote não tem nenhuma linha para pagar.")
+        raise ErroDaGeracao("lote sem linhas a pagar.")
     if lote.get("destino") == SOMAPAY:
         return somapay_xlsx(lote["linhas"])
     return beevale_xlsx(lote["linhas"])
@@ -526,7 +526,7 @@ def analise_xlsx(lotes, pessoas=None, ano: int = 0, mes: int = 0,
                 for c in (l.get("criticas") or [])]
     if criticas:
         aba.append([])
-        aba.append(["Avisos na hora de gerar"])
+        aba.append(["Avisos da geração"])
         for conta, texto in criticas:
             aba.append([conta, texto])
 

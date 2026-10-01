@@ -60,21 +60,21 @@ def gravar_feriado(data, abrangencia: str, obra: str = "",
     from .db import conexao
     if not _pronto():
         raise ErroDoCalendario(
-            'a tabela dos feriados ainda não existe. Aperte "Aplicar '
-            'atualizações do banco" em Configurações e tente de novo.')
+            'tabela de feriados não encontrada no banco. Clique em "Aplicar '
+            'atualizações do banco" em Configurações e repita a operação.')
 
     quando = formatos.para_data(data)
     if quando is None:
         raise ErroDoCalendario(
-            f'"{data}" não é uma data que eu consiga ler. Use dia/mês/ano.')
+            f'data inválida: "{data}". Use o formato dia/mês/ano.')
 
     abrangencia = str(abrangencia or "").strip().lower()
     if abrangencia not in (NACIONAL, POR_OBRA):
         raise ErroDoCalendario(
-            "diga se o feriado é nacional ou de uma obra só.")
+            "informe se o feriado é nacional ou restrito a uma obra.")
     obra = " ".join(str(obra or "").split()).upper()
     if abrangencia == POR_OBRA and not obra:
-        raise ErroDoCalendario("escolha a obra deste feriado.")
+        raise ErroDoCalendario("selecione a obra deste feriado.")
     if abrangencia == NACIONAL:
         # Feriado nacional COM obra escrita deixaria a consulta ambígua. O banco
         # também recusa; aqui a frase explica antes.
@@ -181,15 +181,15 @@ def gravar_ferias(cpf: str, inicio, fim, nome: str = "",
 
     if not _pronto():
         raise ErroDoCalendario(
-            'a tabela das férias ainda não existe. Aperte "Aplicar atualizações '
-            'do banco" em Configurações e tente de novo.')
+            'tabela de férias não encontrada no banco. Clique em "Aplicar atualizações '
+            'do banco" em Configurações e repita a operação.')
 
     digitos = so_digitos(cpf)
     if len(digitos) != 11:
-        raise ErroDoCalendario("escolha a pessoa — o CPF não veio completo.")
+        raise ErroDoCalendario("selecione o colaborador — CPF incompleto.")
     if not cpf_valido(digitos):
         raise ErroDoCalendario(
-            f"o CPF {cpf_bonito(digitos)} tem dígito verificador errado.")
+            f"o CPF {cpf_bonito(digitos)} tem dígito verificador inválido.")
 
     de = formatos.para_data(inicio)
     ate = formatos.para_data(fim)
@@ -197,21 +197,21 @@ def gravar_ferias(cpf: str, inicio, fim, nome: str = "",
         raise ErroDoCalendario("informe o primeiro e o último dia das férias.")
     if ate < de:
         raise ErroDoCalendario(
-            "o último dia é antes do primeiro — confira as datas.")
+            "a data final é anterior à data inicial — verifique as datas.")
     # Um período absurdo é quase sempre ano digitado errado, e descontaria meses
     # de auxílio de alguém.
     if (ate - de).days > 400:
         raise ErroDoCalendario(
-            f"o período tem {(ate - de).days} dias. Confira o ano das datas.")
+            f"período de {(ate - de).days} dias. Verifique o ano das datas.")
 
     conflito = ferias_que_cruzam(digitos, de, ate)
     if conflito:
         outro = conflito[0]
         raise ErroDoCalendario(
-            f"esta pessoa já tem férias de "
+            f"o colaborador já possui férias de "
             f"{outro['inicio'].strftime('%d/%m/%Y')} a "
             f"{outro['fim'].strftime('%d/%m/%Y')}, e os períodos se cruzam. "
-            "Apague o outro ou ajuste as datas.")
+            "Exclua o outro período ou ajuste as datas.")
 
     nome = " ".join(str(nome or "").split())[:160]
     with conexao() as conn:

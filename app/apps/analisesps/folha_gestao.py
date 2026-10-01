@@ -80,10 +80,10 @@ ROTULO_DA_SITUACAO = {
     SEM_CADASTRO: "sem cadastro",
     SEM_OBRA: "sem obra",
     FORA: "fora do pagamento",
-    SAIU: "já saiu",
-    SAINDO: "está saindo",
-    EMPATE: "dia empatado",
-    PAGA: "vai receber",
+    SAIU: "desligado",
+    SAINDO: "em desligamento",
+    EMPATE: "empate de obra",
+    PAGA: "a pagar",
 }
 
 # ⚠️ A COR DE CADA SITUAÇÃO, e o `selo.pagar` é VERMELHO neste módulo — é o selo
@@ -922,20 +922,20 @@ def dividir_por_dias(valor, partes) -> list:
         obra = " ".join(str((p or {}).get("obra") or "").split()).upper()
         dias = int((p or {}).get("dias") or 0)
         if not obra:
-            raise ErroDaGestao("uma das linhas da divisão está sem obra.")
+            raise ErroDaGestao("há linha da divisão sem obra.")
         if dias <= 0:
             raise ErroDaGestao(
-                f'a obra "{obra}" está com zero dia. Tire a linha ou diga os dias.')
+                f'a obra "{obra}" está com zero dia. Remova a linha ou informe os dias.')
         limpas.append({"obra": obra, "dias": dias})
     if not limpas:
-        raise ErroDaGestao("diga em quais obras entram os dias desta pessoa.")
+        raise ErroDaGestao("informe as obras em que os dias deste colaborador devem ser apropriados.")
 
     repetida = next((p["obra"] for p in limpas
                      if [x["obra"] for x in limpas].count(p["obra"]) > 1), "")
     if repetida:
         raise ErroDaGestao(
-            f'a obra "{repetida}" aparece mais de uma vez. Junte os dias dela '
-            "numa linha só.")
+            f'a obra "{repetida}" aparece mais de uma vez. Consolide os dias '
+            "em uma única linha.")
 
     valores = _repartir(_dinheiro(valor), [p["dias"] for p in limpas])
     return [{**p, "valor": v} for p, v in zip(limpas, valores)]
@@ -961,7 +961,7 @@ def fechar(folha_id: int, quem: str = "") -> dict:
 
     folha = folha_arquivo.abrir(folha_id)
     if folha is None:
-        raise ErroDaGestao("esta folha não está mais aqui.")
+        raise ErroDaGestao("folha não encontrada.")
     apropriado = apropriar_a_folha(folha)["apropriado"]
 
     novo = guardada.fechar(folha["ano"], folha["mes"], folha["tipo"],

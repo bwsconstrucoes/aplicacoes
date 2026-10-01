@@ -246,9 +246,9 @@ def interpretar(linhas) -> FolhaAnalitica:
 def ler(conteudo: bytes) -> FolhaAnalitica:
     """Abre o `.xls` do Fortes e devolve a folha analítica. Levanta ErroDaFolha."""
     if not conteudo:
-        raise ErroDaFolha("O arquivo chegou vazio.")
+        raise ErroDaFolha("Arquivo vazio.")
     if len(conteudo) > 30 * 1024 * 1024:
-        raise ErroDaFolha("O arquivo tem mais de 30 MB — confira se é a folha "
+        raise ErroDaFolha("Arquivo acima de 30 MB. Verifique se é a folha "
                           "analítica do Fortes.")
     import xlrd
     try:
@@ -257,13 +257,13 @@ def ler(conteudo: bytes) -> FolhaAnalitica:
         linhas = [[aba.cell_value(r, c) for c in range(aba.ncols)]
                   for r in range(aba.nrows)]
     except Exception as e:  # noqa: BLE001
-        raise ErroDaFolha(f"Não consegui abrir o arquivo como Excel antigo (.xls): {e}") from e
+        raise ErroDaFolha(f"Não foi possível abrir o arquivo como Excel antigo (.xls): {e}") from e
     folha = interpretar(linhas)
     if not folha.pessoas:
-        raise ErroDaFolha("Não achei nenhum empregado neste arquivo. Confira se é a "
+        raise ErroDaFolha("Nenhum empregado encontrado no arquivo. Verifique se é a "
                           "Folha de Pagamento (analítica) do Fortes.")
     if folha.mes is None:
-        raise ErroDaFolha('Não achei o "Mês/Ano" no arquivo.')
+        raise ErroDaFolha('Campo "Mês/Ano" não encontrado no arquivo.')
     return folha
 
 

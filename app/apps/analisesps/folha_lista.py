@@ -24,13 +24,13 @@ from __future__ import annotations
 from . import colaboradores
 
 SITUACOES = [
-    ("vai", "vai receber"),
-    ("nao_vai", "não vai receber"),
-    ("falta_dado", "falta dado no cadastro"),
-    ("saindo", "está saindo"),
+    ("vai", "a pagar"),
+    ("nao_vai", "sem pagamento"),
+    ("falta_dado", "cadastro incompleto"),
+    ("saindo", "em desligamento"),
     ("afastado", "afastado"),
-    ("vigia", "vigia (não recebe diária)"),
-    ("saiu", "já saiu da empresa"),
+    ("vigia", "vigia (sem direito a diária)"),
+    ("saiu", "desligado"),
 ]
 ESCONDIDAS_SEM_FILTRO = {"saiu"}
 

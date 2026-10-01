@@ -382,7 +382,7 @@ def interpretar(linhas_brutas) -> FolhaLida:
             nome = celulas[1] if len(celulas) > 1 else ""
             if valor is None:
                 lida.avisos.append(
-                    f"a linha do código {primeira} ({nome}) veio sem valor.")
+                    f"a linha do código {primeira} ({nome}) está sem valor.")
                 continue
             lida.linhas.append(LinhaDaFolha(
                 id_fortes=primeira, nome=nome, valor=valor,
@@ -391,7 +391,7 @@ def interpretar(linhas_brutas) -> FolhaLida:
             continue
 
         # Qualquer outra coisa: não inventa. Guarda o aviso para a tela mostrar.
-        lida.avisos.append(f"linha que não reconheci: {primeira[:60]}")
+        lida.avisos.append(f"linha não reconhecida: {primeira[:60]}")
 
     lida.filiais = vistos
     return lida
@@ -405,17 +405,17 @@ def ler(conteudo: bytes) -> FolhaLida:
     é aqui que se escolhe o leitor — o `interpretar` não muda.
     """
     if not conteudo:
-        raise ErroDaFolha("O arquivo chegou vazio.")
+        raise ErroDaFolha("Arquivo vazio.")
     if len(conteudo) > 20 * 1024 * 1024:
         raise ErroDaFolha(
-            "O arquivo tem mais de 20 MB. Folha sintética desse tamanho "
-            "costuma ser outra coisa — confira se é o relatório certo.")
+            "Arquivo acima de 20 MB, tamanho incompatível com uma folha sintética. "
+            "Verifique se o relatório está correto.")
     try:
         import xlrd
     except ImportError as e:  # pragma: no cover — dependência declarada
         raise ErroDaFolha(
-            "Falta a biblioteca que lê o formato antigo do Excel (xlrd). "
-            "Avise quem cuida do sistema.") from e
+            "Biblioteca de leitura do formato antigo do Excel (xlrd) não instalada. "
+            "Contate o responsável técnico pelo sistema.") from e
     try:
         livro = xlrd.open_workbook(file_contents=conteudo)
         aba = livro.sheet_by_index(0)
@@ -425,15 +425,15 @@ def ler(conteudo: bytes) -> FolhaLida:
         raise
     except Exception as e:  # noqa: BLE001 — a tela precisa da frase
         raise ErroDaFolha(
-            f"Não consegui abrir o arquivo como Excel antigo (.xls): {e}") from e
+            f"Não foi possível abrir o arquivo como Excel antigo (.xls): {e}") from e
 
     lida = interpretar(linhas)
     if not lida.linhas:
         raise ErroDaFolha(
-            "Não achei nenhuma linha de empregado neste arquivo. Confira se é a "
+            "Nenhuma linha de empregado encontrada no arquivo. Verifique se é a "
             "Folha Sintética do Fortes.")
     if lida.mes is None or lida.ano is None:
         raise ErroDaFolha(
-            'Não achei o "Mês/Ano" no arquivo. Sem a competência não dá para '
-            "saber a qual folha ele pertence.")
+            'Campo "Mês/Ano" não encontrado no arquivo. Sem a competência não é '
+            "possível identificar a folha correspondente.")
     return lida

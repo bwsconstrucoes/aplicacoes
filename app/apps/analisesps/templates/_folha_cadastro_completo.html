@@ -6,10 +6,10 @@
 {% if erro %}
   <div class="aviso erro">{{ erro }}</div>
 {% elif not grupos %}
-  <p class="cartao-dica">A ficha desta pessoa está vazia na planilha.</p>
+  <p class="cartao-dica">A ficha deste colaborador está vazia na planilha de cadastro.</p>
 {% else %}
-  <p class="cartao-dica">Lido agora da planilha de cadastro. Para corrigir, é no
-    card do Pipefy — daqui não se edita.</p>
+  <p class="cartao-dica">Dados lidos da planilha de cadastro neste momento, somente
+    para consulta. Correções devem ser feitas no card do Pipefy.</p>
   <div class="cadastro-completo">
     {% for grupo, campos in grupos %}
       <div class="cartao">

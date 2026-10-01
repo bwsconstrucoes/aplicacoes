@@ -128,8 +128,8 @@ def grupo_da_verba(verba: str, tipo: str) -> tuple:
     achado = GRUPOS.get((verba, tipo if verba == "folha" else ""))
     if not achado:
         raise ErroDosCards(
-            f'não sei lançar a verba "{geracao.rotulo_da_verba(verba)}" no Pipefy: '
-            "o cenário do Make não tem grupo para ela.")
+            f'não é possível lançar a verba "{geracao.rotulo_da_verba(verba)}" no Pipefy: '
+            "o cenário do Make não possui grupo para ela.")
     return achado
 
 
@@ -173,11 +173,11 @@ def rodada(analise_id: int) -> dict:
     todos = fpg.log(teto=400)
     analise = next((a for a in todos if a["id"] == int(analise_id)), None)
     if not analise:
-        raise ErroDosCards("não achei este arquivo no log de gerados.")
+        raise ErroDosCards("arquivo não encontrado no log de arquivos gerados.")
     if analise["destino"] != fpg.ANALISE:
         raise ErroDosCards(
-            "o lançamento no Pipefy sai pelo arquivo de ANÁLISE, que junta o "
-            "pagamento inteiro — não por um arquivo de conta.")
+            "o lançamento no Pipefy é feito pelo arquivo de ANÁLISE, que consolida o "
+            "pagamento completo — não por um arquivo de conta.")
     mesmos = [a for a in todos if a["ano"] == analise["ano"]
               and a["mes"] == analise["mes"] and a["tipo"] == analise["tipo"]]
     piso = max((a["id"] for a in mesmos
@@ -186,7 +186,7 @@ def rodada(analise_id: int) -> dict:
     arquivos = sorted((a for a in mesmos if a["destino"] != fpg.ANALISE
                        and piso < a["id"] < analise["id"]), key=lambda a: a["id"])
     if not arquivos:
-        raise ErroDosCards("não achei os arquivos de pagamento desta rodada.")
+        raise ErroDosCards("arquivos de pagamento desta rodada não encontrados.")
     return {"analise": analise, "arquivos": arquivos,
             "verbas": [v for v in (analise["verbas"] or "").split("+") if v]}
 
@@ -219,7 +219,7 @@ def _centros_do_pipefy(campos: dict) -> tuple:
     ligado = campo.get("ligado_a") or {}
     if tipo == "connector":
         if ligado.get("tipo") != "tabela" or not ligado.get("id"):
-            return (lambda obra: None), "conexão que eu não consigo ler"
+            return (lambda obra: None), "conexão de tipo não suportado"
         registros = pipefy.registros_da_tabela(ligado["id"])
         por_nome: dict = {}
         for r in registros:
@@ -306,12 +306,12 @@ def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
             if faltam:
                 bloqueios.append(
                     f'o pipe "{pipe["nome"]}" não tem mais o(s) campo(s) '
-                    + ", ".join(faltam) + " que o Make usa. Alguém mexeu no pipe — "
-                    "nada foi criado.")
+                    + ", ".join(faltam) + " utilizados pelo Make. O pipe foi alterado — "
+                    "nenhum card foi criado.")
         try:
             centro_de, como_centro = _centros_do_pipefy(despesa["inicio"])
         except pipefy.ErroDoPipefy as e:
-            bloqueios.append(f"não consegui ler os centros de custo do Pipefy: {e}")
+            bloqueios.append(f"não foi possível ler os centros de custo do Pipefy: {e}")
 
     omie = _codigos_omie()
     grupos, esperado_por_conta = [], {}
@@ -358,7 +358,7 @@ def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
         if len(centros) > MAXIMO_DE_CENTROS:
             bloqueios.append(
                 f"{geracao.rotulo_da_verba(verba)}: {len(centros)} obras, e o card "
-                f"de Despesa só tem {MAXIMO_DE_CENTROS} pares de centro de custo.")
+                f"de Despesa comporta apenas {MAXIMO_DE_CENTROS} pares de centro de custo.")
 
         links = [a["link"] for a in arquivos
                  if verba in (a["verbas"] or "").split("+") and a["link"]]
@@ -374,7 +374,7 @@ def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
         if len(sps) > MAXIMO_DE_SPS:
             bloqueios.append(
                 f"{geracao.rotulo_da_verba(verba)}: {len(sps)} contas de origem, "
-                f"e o card de Despesa só liga {MAXIMO_DE_SPS} SPs.")
+                f"e o card de Despesa comporta apenas {MAXIMO_DE_SPS} SPs.")
 
         grupos.append({
             "verba": verba, "rotulo_verba": geracao.rotulo_da_verba(verba),
@@ -393,8 +393,8 @@ def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
             a["conta"], Decimal("0.00")) + Decimal(str(a["total"]))
     if grupos and gerado_por_conta != esperado_por_conta:
         bloqueios.append(
-            "o fechamento mudou depois que estes arquivos foram gerados (os valores "
-            "por conta não batem mais). Gere os arquivos de novo antes de lançar.")
+            "o fechamento foi alterado após a geração destes arquivos (divergência "
+            "nos valores por conta). Gere os arquivos novamente antes de lançar.")
 
     andamento = _andamento(analise["id"])
     return {"analise": analise["id"], "competencia": analise["competencia"],
@@ -511,11 +511,11 @@ def lancar(analise_id: int, quem: str = "") -> dict:
 
     vista, despesa, sp_pipe = _previa(analise_id)
     if vista["bloqueios"]:
-        raise ErroDosCards("nada foi criado: " + " ".join(vista["bloqueios"]))
+        raise ErroDosCards("nenhum card foi criado: " + " ".join(vista["bloqueios"]))
     if vista["ja_lancado"]:
         raise ErroDosCards(
-            "este pagamento já foi lançado no Pipefy. Para lançar de novo, cancele "
-            "os cards lá e gere os arquivos de novo.")
+            "pagamento já lançado no Pipefy. Para relançar, cancele os cards "
+            "no Pipefy e gere os arquivos novamente.")
 
     r = rodada(analise_id)
     andamento = vista["andamento"]
@@ -572,8 +572,8 @@ def lancar(analise_id: int, quem: str = "") -> dict:
         logger.exception("Folha: lançamento no Pipefy parou no meio")
         ja = (" Já criados: " + ", ".join(criados) + "." if criados else "")
         raise ErroDosCards(
-            f"o Pipefy recusou no meio do caminho: {e}.{ja} Apertar de novo "
-            "continua de onde parou, sem repetir o que já foi criado.") from e
+            f"o Pipefy recusou a operação durante o lançamento: {e}.{ja} Uma nova "
+            "tentativa retoma do ponto de parada, sem duplicar o que já foi criado.") from e
 
     # Amarra no log: cada arquivo de conta à(s) SP(s) dela; a análise à(s)
     # Despesa(s).

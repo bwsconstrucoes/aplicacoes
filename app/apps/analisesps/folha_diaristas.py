@@ -124,9 +124,9 @@ def levantar(ano: int, mes: int) -> dict:
         # ⚠️ O QUE FALTA PARA VIRAR DINHEIRO. Fica no resultado para a tela dizer,
         # em vez de mostrar zero com cara de resposta.
         "falta_para_pagar": [
-            "o VALOR da diária de cada pessoa (não achei a coluna no cadastro)",
-            "o nome dos campos de cada dia do ponto, que é o que diz a OBRA do dia "
-            "e se foi sábado, domingo ou feriado (os acréscimos de +10 e +20)",
+            "o VALOR da diária de cada colaborador (coluna não encontrada no cadastro)",
+            "o nome dos campos de cada dia do ponto, que identificam a OBRA do dia "
+            "e se foi sábado, domingo ou feriado (acréscimos de +10 e +20)",
         ],
     }
 
@@ -211,7 +211,7 @@ def quantidade_do_dia(lido: dict, tem_obra: bool) -> tuple:
     if "parcial" in presenca:
         if minutos > MINUTOS_MEIA_PARCIAL:
             return Decimal("0.5"), "presença parcial acima de 7h: meia diária"
-        return Decimal("0"), "presença parcial de até 7h: não conta"
+        return Decimal("0"), "presença parcial de até 7h: não computada"
     if fim_de_semana and "justific" in (presenca + " " + falta) \
             and minutos > MINUTOS_MEIA_FIM_DE_SEMANA:
         return Decimal("0.5"), "falta justificada no fim de semana acima de 6h30"
@@ -333,23 +333,23 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
     if saida["situacao"] == colaboradores.SITUACAO_SAIU:
         saida["desligado"] = True
         saida["pagar"] = False
-        saida["motivos"].append(ficha.get("motivo") or "já saiu da empresa.")
+        saida["motivos"].append(ficha.get("motivo") or "colaborador desligado.")
     elif saida["situacao"] == colaboradores.SITUACAO_SAINDO:
-        saida["motivos"].append(ficha.get("motivo") or "está saindo.")
+        saida["motivos"].append(ficha.get("motivo") or "em processo de desligamento.")
     if saida["vigia"]:
         saida["pagar"] = False
         saida["motivos"].append(
-            "vigia não recebe diária por aqui (regra da planilha de diaristas).")
+            "vigia não recebe diária por este módulo (regra da planilha de diaristas).")
     if saida["dias_sem_decidir"]:
         saida["motivos"].append(
             f"{saida['dias_sem_decidir']} dia(s) sem data de início ou admissão "
-            "no cadastro — não dá para saber se são diária.")
+            "no cadastro — não é possível determinar se são diária.")
     # IMPOSSÍVEL — não há valor para pagar, e marcar pagaria zero.
     if valor_diaria is None:
         saida["pagar"] = False
         saida["impossivel"] = True
         saida["motivos"].append(
-            "o cadastro não tem o valor da diária. Corrija no card do Pipefy e "
+            "o cadastro não informa o valor da diária. Corrija no card do Pipefy e "
             "atualize o cadastro.")
     elif not saida["quantidade"]:
         saida["pagar"] = False
@@ -456,7 +456,7 @@ def salvar_selecao(ano: int, mes: int, qual: str, decisoes, quem: str = "") -> d
     from .folha_rateio import so_digitos
     if not folha_auxilio._pronto():
         raise folha_auxilio.ErroDoAuxilio(
-            'a tabela dos ajustes ainda não existe. Aperte "Aplicar '
+            'tabela de ajustes não encontrada no banco. Clique em "Aplicar '
             'atualizações do banco" em Configurações.')
     calculado = calcular(ano, mes, qual)
     por_cpf = {p["cpf"]: p for p in calculado["pessoas"]}
@@ -521,15 +521,15 @@ def fechar(ano: int, mes: int, qual: str, quem: str = "") -> dict:
     calculado = calcular(ano, mes, qual)
     if not calculado["tem_ponto"]:
         raise guardada.ErroDaApropriacao(
-            "o ponto deste mês ainda não foi trazido — não há diária para fechar.")
+            "o ponto desta competência ainda não foi importado — não há diária para fechar.")
     if not calculado["quantos_a_pagar"]:
-        raise guardada.ErroDaApropriacao("ninguém marcado para receber diária.")
+        raise guardada.ErroDaApropriacao("nenhum colaborador marcado para receber diária.")
     sem_obra = [p["nome"] for p in calculado["pessoas"] if p["pagar"]
                 and any(o["obra"] == "(SEM OBRA)" for o in p["por_obra"])]
     if sem_obra:
         raise guardada.ErroDaApropriacao(
             "há diária sem obra (sem marcação no ponto e sem obra no cadastro): "
-            + ", ".join(sem_obra[:5]) + ". Sem obra não há conta para pagar.")
+            + ", ".join(sem_obra[:5]) + ". Sem obra não há conta de pagamento.")
     novo = guardada.fechar(ano, mes, TIPO_DO_FECHAMENTO[calculado["qual"]],
                            apropriado(calculado), verba=VERBA, quem=quem)
     return {"id": novo, "pessoas": calculado["quantos_a_pagar"],

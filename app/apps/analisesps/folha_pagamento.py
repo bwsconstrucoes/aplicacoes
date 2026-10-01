@@ -154,7 +154,7 @@ def linhas_para_pagar(ano: int, mes: int, tipo: str, verbas) -> list:
 
     pedidas = [str(v or "").strip().lower() for v in (verbas or []) if v]
     if not pedidas:
-        raise ErroDoPagamento("escolha pelo menos uma verba para pagar.")
+        raise ErroDoPagamento("selecione ao menos uma verba para pagamento.")
 
     contas = conta_por_obra()
     linhas = []
@@ -178,8 +178,8 @@ def linhas_para_pagar(ano: int, mes: int, tipo: str, verbas) -> list:
         # com cara de completo, e a pessoa recebe a menos sem nada avisando.
         quais = ", ".join(geracao.rotulo_da_verba(v) for v in faltando)
         raise ErroDoPagamento(
-            f"{quais} não tem apropriação fechada em {int(mes):02d}/{int(ano)}. "
-            "Feche a apropriação dessa verba antes de gerar o pagamento.")
+            f"{quais} sem apropriação fechada em {int(mes):02d}/{int(ano)}. "
+            "Feche a apropriação da verba antes de gerar o pagamento.")
     return linhas
 
 
@@ -202,8 +202,8 @@ def preparar(ano: int, mes: int, tipo: str, verbas, destino: str,
         "pode_juntar": destino == geracao.BEEVALE,
         "motivo_nao_junta": (
             "" if destino == geracao.BEEVALE else
-            "o SomaPay não aceita o mesmo CPF duas vezes no arquivo, então cada "
-            "verba sai no seu."),
+            "o SomaPay não aceita CPF repetido no mesmo arquivo; cada "
+            "verba é gerada em arquivo próprio."),
     }
 
 
@@ -235,7 +235,7 @@ def linhas_da_previa(folha_id: int) -> tuple:
 
     folha = folha_arquivo.abrir(folha_id)
     if folha is None:
-        raise ErroDoPagamento("esta folha não está mais aqui.")
+        raise ErroDoPagamento("folha não encontrada.")
     apropriado = folha_gestao.apropriar_a_folha(folha)["apropriado"]
     contas = conta_por_obra()
     linhas = []
@@ -272,17 +272,17 @@ def previa_zip(folha_id: int, destino: str) -> tuple:
     ano, mes, tipo = folha["ano"], folha["mes"], folha["tipo"]
     if not lotes:
         raise ErroDoPagamento(
-            "não há ninguém para pagar nesta folha agora — confira se as "
-            "pessoas estão marcadas e se o valor delas não é zero.")
+            "nenhum colaborador a pagar nesta folha — verifique se os "
+            "colaboradores estão marcados e se os valores são diferentes de zero.")
 
     memoria = io.BytesIO()
     leia = [
-        "PRÉVIA DO ARQUIVO DE PAGAMENTO — NÃO SUBA NO PORTAL",
+        "PRÉVIA DO ARQUIVO DE PAGAMENTO — NÃO ENVIAR AO PORTAL",
         "",
-        f"Folha {folha.get('competencia') or ''}, montada da conta de agora "
-        "(sem fechar a apropriação).",
-        "Não foi para o Drive e não entrou no registro dos arquivos gerados.",
-        "Se o ponto, o cadastro ou as marcações mudarem, a prévia muda junto.",
+        f"Folha {folha.get('competencia') or ''}, gerada com os valores atuais "
+        "(apropriação não fechada).",
+        "Não enviada ao Drive e não incluída no registro de arquivos gerados.",
+        "Alterações no ponto, no cadastro ou nas marcações alteram a prévia.",
         "",
         f"Arquivos: {resumo['arquivos']}   Pessoas: {resumo['pessoas']}   "
         f"Total: R$ {_br(resumo['total'])}",
@@ -303,8 +303,8 @@ def previa_zip(folha_id: int, destino: str) -> tuple:
                         geracao.analise_xlsx(lotes, ano=ano, mes=mes, tipo=tipo,
                                              detalhe=feito["linhas"]))
         if not resumo["pode_gerar"]:
-            leia += ["", "Com estes avisos, o arquivo de verdade NÃO sairia sem "
-                         "você marcar a opção de gerar com aviso."]
+            leia += ["", "Com estes avisos, o arquivo definitivo NÃO é gerado sem "
+                         "a opção \"gerar com aviso\" marcada."]
         pacote.writestr("LEIA-ME.txt", "\r\n".join(leia).encode("utf-8-sig"))
 
     rotulo = geracao.ROTULO_DO_DESTINO.get(destino, destino)
@@ -341,20 +341,20 @@ def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
 
     if not _pronto():
         raise ErroDoPagamento(
-            'a tabela do log ainda não existe. Aperte "Aplicar atualizações do '
-            'banco" em Configurações e tente de novo.')
+            'tabela do log não encontrada no banco. Clique em "Aplicar atualizações do '
+            'banco" em Configurações e repita a operação.')
 
     plano = preparar(ano, mes, tipo, verbas, destino, juntar_verbas)
     lotes = plano["lotes"]
     if not lotes:
         raise ErroDoPagamento(
-            "não há nada a pagar com essas verbas nesta competência.")
+            "nenhum valor a pagar com estas verbas nesta competência.")
     if not plano["resumo"]["pode_gerar"] and not forcar:
         quantos = len(plano["resumo"]["com_critica"])
         raise ErroDoPagamento(
-            f"{quantos} arquivo(s) têm aviso e eu não gerei. Veja a lista na tela: "
-            "cada aviso diz o que consertar. Se você já sabe o que é e quer gerar "
-            "assim mesmo, marque a opção de gerar com aviso.")
+            f"{quantos} arquivo(s) com aviso não foram gerados. Consulte a lista na tela: "
+            "cada aviso indica a correção necessária. Para gerar mesmo assim, "
+            "marque a opção \"gerar com aviso\".")
 
     # ⚠️ CONFERE A PASTA ANTES DE MONTAR NADA. Sem isso, o erro só apareceria na
     # subida do primeiro arquivo — depois de gerar tudo — e viraria um 500 em vez de
@@ -362,8 +362,8 @@ def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
     pasta, _ = pasta_do_drive()
     if not pasta:
         raise ErroDoPagamento(
-            "a pasta do Drive não está configurada. Em Configurações, cole o "
-            "identificador da pasta onde os arquivos devem ficar.")
+            "pasta do Drive não configurada. Em Configurações, informe o "
+            "identificador da pasta de destino dos arquivos.")
     gerados = []
     for lote in lotes:
         nome = geracao.nome_do_arquivo(lote, ano, mes, tipo)

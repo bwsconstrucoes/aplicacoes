@@ -78,7 +78,7 @@ def _competencia(ano, mes, tipo) -> tuple:
     tipo = str(tipo or "").strip()
     if tipo not in TIPOS:
         raise ErroDaApropriacao(
-            f'não conheço o pagamento "{tipo}". São "quinzena" e "fim_de_mes".')
+            f'tipo de pagamento "{tipo}" não reconhecido. Valores aceitos: "quinzena" e "fim_de_mes".')
     return ano, mes, tipo
 
 
@@ -173,16 +173,16 @@ def gravar_ajuste(ano: int, mes: int, tipo: str, cpf: str, nome: str = "",
 
     if not _pronto():
         raise ErroDaApropriacao(
-            'a tabela dos ajustes ainda não existe. Aperte "Aplicar atualizações '
-            'do banco" em Configurações e tente de novo.')
+            'tabela de ajustes não encontrada no banco. Clique em "Aplicar atualizações '
+            'do banco" em Configurações e repita a operação.')
     ano, mes, tipo = _competencia(ano, mes, tipo)
 
     digitos = so_digitos(cpf)
     if len(digitos) != 11:
-        raise ErroDaApropriacao("escolha a pessoa — o CPF não veio completo.")
+        raise ErroDaApropriacao("selecione o colaborador — CPF incompleto.")
     if not cpf_valido(digitos):
         raise ErroDaApropriacao(
-            f"o CPF {cpf_bonito(digitos)} tem dígito verificador errado.")
+            f"o CPF {cpf_bonito(digitos)} tem dígito verificador inválido.")
 
     fora = bool(fora)
     motivo = " ".join(str(motivo or "").split())[:300]
@@ -199,12 +199,12 @@ def gravar_ajuste(ano: int, mes: int, tipo: str, cpf: str, nome: str = "",
         # Os dois caminhos juntos é ambiguidade sobre dinheiro: a divisão manda, e
         # isso fica DITO em vez de escolhido em silêncio.
         raise ErroDaApropriacao(
-            "escolha um caminho: ou tudo numa obra só, ou a divisão obra por "
-            "obra. Os dois juntos deixariam o valor ambíguo.")
+            "selecione apenas uma opção: obra única ou divisão por "
+            "obra. As duas juntas tornam o valor ambíguo.")
     if not fora and not unica and not partes:
         raise ErroDaApropriacao(
-            "diga o que fazer com esta pessoa: tirar do pagamento, jogar tudo "
-            "numa obra ou dividir entre obras.")
+            "informe o tratamento deste colaborador: retirar do pagamento, apropriar "
+            "em obra única ou dividir entre obras.")
 
     # ⚠️ OBRA REPETIDA NA DIVISÃO É ERRO DE DIGITAÇÃO, e somar as duas caladamente
     # esconderia o erro dentro de um total que parece certo.
@@ -213,7 +213,7 @@ def gravar_ajuste(ano: int, mes: int, tipo: str, cpf: str, nome: str = "",
     if repetida:
         raise ErroDaApropriacao(
             f'a obra "{repetida}" aparece mais de uma vez na divisão. '
-            "Junte as linhas dela.")
+            "Consolide as linhas em uma só.")
 
     nome = " ".join(str(nome or "").split())[:160]
     observacao = " ".join(str(observacao or "").split())[:300]
@@ -309,19 +309,19 @@ def fechar(ano: int, mes: int, tipo: str, apropriado: dict,
     from .db import conexao
     if not _pronto():
         raise ErroDaApropriacao(
-            'as tabelas da apropriação ainda não existem. Aperte "Aplicar '
+            'tabelas da apropriação não encontradas no banco. Clique em "Aplicar '
             'atualizações do banco" em Configurações.')
     ano, mes, tipo = _competencia(ano, mes, tipo)
     verba = " ".join(str(verba or VERBA_FOLHA).split()).lower()[:40] or VERBA_FOLHA
     if not isinstance(apropriado, dict) or "pessoas" not in apropriado:
-        raise ErroDaApropriacao("não recebi a apropriação para guardar.")
+        raise ErroDaApropriacao("apropriação não recebida para gravação.")
 
     linhas = linhas_do_apropriado(apropriado)
     if len(linhas) > MAXIMO_DE_LINHAS:
         raise ErroDaApropriacao(
             f"a apropriação tem {len(linhas)} linhas, acima do teto de "
-            f"{MAXIMO_DE_LINHAS}. Isso não parece um pagamento — confira antes "
-            "de guardar.")
+            f"{MAXIMO_DE_LINHAS}. Quantidade incompatível com um pagamento — verifique "
+            "antes de gravar.")
 
     with conexao() as conn:
         conn.execute(

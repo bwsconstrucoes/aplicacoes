@@ -62,8 +62,8 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", quem: str = "") -> dict
     from .db import conexao
     if not _pronto():
         raise ErroDaAnalitica(
-            'falta aplicar a atualização do banco que guarda a folha analítica. '
-            'Aperte "Aplicar atualizações do banco" em Configurações.')
+            'Atualização do banco da folha analítica não aplicada. '
+            'Clique em "Aplicar atualizações do banco" em Configurações.')
     try:
         lida = fan.ler(conteudo)
     except fan.ErroDaFolha as e:
@@ -72,9 +72,9 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", quem: str = "") -> dict
     folha, resumo = _folha_que_bate(lida)
     if folha is None:
         raise ErroDaAnalitica(
-            f"Esta é a folha ANALÍTICA de {lida.competencia}, mas ela não bate com "
-            "nenhuma Folha Sintética importada deste mês. Importe primeiro a "
-            "sintética (é ela que diz se é quinzena ou fim de mês) e depois esta.")
+            f"Folha analítica de {lida.competencia} sem folha sintética correspondente "
+            "importada nesta competência. Importe primeiro a folha sintética "
+            "(ela define se é quinzena ou fim de mês) e, em seguida, a analítica.")
 
     with conexao() as conn:
         conn.execute("DELETE FROM analisesps.folha_analitica "

@@ -23,12 +23,12 @@
       {% if pode_operar %}
         <button type="button" class="btn secundario ficha-atualizar-ponto" data-cpf="{{ p.cpf }}"
                 data-nome="{{ p.nome }}" data-ano="{{ ano }}" data-mes="{{ mes }}"
-                title="traz de novo do Mobponto só o ponto desta pessoa">Atualizar ponto</button>
+                title="Reimporta do Mobponto somente o ponto deste colaborador">Atualizar ponto</button>
         <button type="button" class="btn secundario ficha-atualizar-cadastro" data-cpf="{{ p.cpf }}"
-                title="traz de novo da planilha de cadastro só a ficha desta pessoa">Atualizar cadastro</button>
+                title="Reimporta da planilha de cadastro somente a ficha deste colaborador">Atualizar cadastro</button>
       {% endif %}
       <button type="button" class="btn secundario ficha-cadastro-completo" data-cpf="{{ p.cpf }}"
-              title="a ficha inteira da planilha de cadastro">Cadastro completo</button>
+              title="Ficha completa da planilha de cadastro">Cadastro completo</button>
       {% if p.link_pipefy %}<a class="btn secundario" target="_blank" rel="noopener"
          href="{{ p.link_pipefy }}">Pipefy</a>{% endif %}
       <span class="cartao-dica ficha-recado"></span>
@@ -71,9 +71,9 @@
 
   <h4 style="margin:14px 0 6px">Ponto de {{ '%02d'|format(mes) }}/{{ ano }}</h4>
   {% if not ponto.tem_carga %}
-    <p class="cartao-dica">O ponto deste mês ainda não foi trazido. Na aba <b>Ponto</b> tem o botão.</p>
+    <p class="cartao-dica">O ponto deste mês ainda não foi importado. A importação é feita na aba <b>Ponto</b>.</p>
   {% elif not ponto.dias %}
-    <p class="cartao-dica">Esta pessoa não tem dia de ponto neste mês. Pode ser CPF diferente no Mobponto.</p>
+    <p class="cartao-dica">Nenhuma batida deste colaborador no mês. Verifique se o CPF no Mobponto é o mesmo do cadastro.</p>
   {% else %}
     <div class="tabela-wrap"><div class="tabela-rolagem livre">
       <table class="sps mini">

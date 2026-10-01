@@ -8,18 +8,19 @@
 <h2>Rateio da Folha <small>{{ regras|length }} regra(s)</small></h2>
 
 <p class="cartao-dica" style="margin-bottom:14px">
-  Para quem o ponto <b>não</b> pode apropriar: o supervisor que não bate ponto por
-  causa da função, e quem bate ponto na matriz ou na filial. Aqui você diz, de uma
-  vez, <b>para quais obras o valor daquela pessoa vai</b> — e com que peso. Vale
-  para toda quinzena, até você mudar.
+  Aplica-se aos colaboradores que o ponto <b>não</b> permite apropriar: supervisores
+  dispensados do registro de ponto em razão da função e colaboradores que registram
+  ponto na matriz ou na filial. Defina <b>as obras de destino do valor de cada
+  colaborador</b> e o respectivo peso. A regra vale para todas as quinzenas até ser
+  alterada.
 </p>
 
 {% if not pronto %}
   {# A migração 027 ainda não rodou. O código sobe antes do botão ser apertado, e
      uma tela que estourasse aqui derrubaria a confiança na publicação inteira. #}
   <div class="aviso atencao">
-    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
-    "Aplicar atualizações do banco" e volte aqui.
+    <b>Atualização do banco pendente.</b> Em <b>Configurações</b>, clique em
+    "Aplicar atualizações do banco" e retorne a esta tela.
   </div>
 {% else %}
 
@@ -41,11 +42,12 @@
 <div class="cartao">
   <label class="rotulo-campo" for="tabela-rateio">Colar a tabela do mês</label>
   <p class="cartao-dica" style="margin:0 0 8px">
-    Uma linha por pessoa: <b>CPF ; nome ; obra, obra, obra</b> — o nome pode
-    faltar, e o separador pode ser <b>;</b> ou uma tabulação (é o que sai ao
-    copiar da planilha). <b>Repetir a obra é o peso dela:</b> escrever
-    <code>OBRA1, OBRA2, OBRA2</code> dá 33,33% para a primeira e 66,67% para a
-    segunda. Quem tiver a mesma distribuição vira uma regra só.
+    Uma linha por colaborador: <b>CPF ; nome ; obra, obra, obra</b>. O nome é
+    opcional, e o separador pode ser <b>;</b> ou tabulação (formato gerado ao copiar
+    da planilha). <b>A repetição da obra define o peso:</b>
+    <code>OBRA1, OBRA2, OBRA2</code> resulta em 33,33% para a primeira e 66,67% para
+    a segunda. Colaboradores com a mesma distribuição são agrupados em uma única
+    regra.
   </p>
   <textarea id="tabela-rateio" rows="6" class="campo-largo"
             spellcheck="false"
@@ -54,14 +56,14 @@
     <button class="btn" id="btn-colar-tabela">Aplicar a tabela</button>
     <label class="cartao-dica" style="margin:0">
       <input type="checkbox" id="tabela-substituir" checked>
-      substituir o rateio que está valendo
+      substituir o rateio vigente
     </label>
     <span id="recado-tabela" class="cartao-dica" style="margin:0"></span>
   </div>
   <p class="cartao-dica" style="margin:8px 0 0">
-    Substituir <b>desativa</b> as regras de agora — não apaga. A regra desativada
-    continua explicando como a folha do mês passado foi rateada, e o botão
-    "copiar para a tabela" dela devolve as linhas prontas para você ajustar.
+    A substituição <b>desativa</b> as regras vigentes, sem excluí-las. A regra
+    desativada mantém o registro do rateio das folhas anteriores, e o botão
+    "copiar para a tabela" devolve as linhas dela para ajuste.
   </p>
 </div>
 {% endif %}
@@ -69,7 +71,7 @@
 {# Fileira compacta, não a grade de três colunas das Solicitações — nela o botão
    e o recado iam para as pontas opostas da tela. #}
 <div class="barra-mes">
-  <button class="btn secundario" id="btn-nova-regra">+ uma regra à mão</button>
+  <button class="btn secundario" id="btn-nova-regra">+ Incluir regra manualmente</button>
   <span id="recado-rateio" class="cartao-dica" style="margin:0"></span>
 </div>
 
@@ -92,8 +94,8 @@
 {% endif %}
 
 {% if not regras %}
-  <p class="cartao-dica">Nenhuma regra ainda. Quem não tiver regra continua sendo
-    apropriado pelo ponto, como sempre.</p>
+  <p class="cartao-dica">Nenhuma regra cadastrada. Colaboradores sem regra
+    continuam sendo apropriados pelo ponto.</p>
 {% endif %}
 
 {% for r in regras %}
@@ -107,7 +109,7 @@
           <button class="btn secundario editar-regra"
                   data-regra="{{ r|tojson|forceescape }}">Editar</button>
           <button class="btn secundario apagar-regra"
-                  data-id="{{ r.id }}" data-nome="{{ r.nome }}">Apagar</button>
+                  data-id="{{ r.id }}" data-nome="{{ r.nome }}">Excluir</button>
         {% endif %}
       </small>
     </div>
@@ -116,7 +118,7 @@
 
     <div class="regra-dois-lados">
       <div>
-        <label class="rotulo-campo">Quem ({{ r.pessoas|length }})
+        <label class="rotulo-campo">Colaboradores ({{ r.pessoas|length }})
           {% if pode_operar %}
             {# É o "reaplicar o mês anterior" que ele pediu: pega a regra —
                inclusive uma desativada — e devolve as linhas prontas, já com a
@@ -124,7 +126,7 @@
             <button class="btn secundario copiar-para-tabela"
                     data-regra="{{ r|tojson|forceescape }}"
                     style="font-size:11.5px; padding:2px 8px"
-                    title="Põe estas pessoas e obras na caixa de colar, para você ajustar">copiar para a tabela</button>
+                    title="Copia estes colaboradores e obras para a caixa de colagem, para ajuste">copiar para a tabela</button>
           {% endif %}
         </label>
         <ul class="lista-seca">
@@ -137,7 +139,7 @@
               {% if p.link_pipefy %}
                 <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
                    class="link-pipefy"
-                   title="Abrir o card desta pessoa no Pipefy (nova aba)"
+                   title="Abrir o card do colaborador no Pipefy (nova aba)"
                    >{{ p.nome_cadastro or p.nome or '—' }} <span aria-hidden="true">↗</span></a>
               {% else %}
                 {{ p.nome_cadastro or p.nome or '—' }}
@@ -147,28 +149,28 @@
                  ninguém, e o erro fica invisível até a folha não fechar. A
                  situação vem da MESMA função da tela de Colaboradores. #}
               {% if p.situacao == 'saiu' %}
-                <span class="selo cancelado" title="{{ p.motivo_situacao }}">saiu</span>
+                <span class="selo cancelado" title="{{ p.motivo_situacao }}">desligado</span>
               {% elif p.situacao == 'saindo' %}
-                <span class="selo saindo" title="{{ p.motivo_situacao }}">está saindo</span>
+                <span class="selo saindo" title="{{ p.motivo_situacao }}">em desligamento</span>
               {% elif p.situacao == 'afastado' %}
                 <span class="selo cancelado" title="{{ p.motivo_situacao }}">afastado</span>
               {% elif p.desligado %}
                 <span class="selo cancelado"
-                      title="O cadastro tem data de saída para esta pessoa">desligado</span>
+                      title="O cadastro registra data de desligamento para este colaborador">desligado</span>
               {% elif cadastro and cadastro.pronto and not p.no_cadastro %}
                 <span class="selo no-lote-de-outro"
-                      title="Este CPF não está no cadastro de colaboradores. Confira o CPF, ou atualize o cadastro.">fora do cadastro</span>
+                      title="Este CPF não consta no cadastro de colaboradores. Confira o CPF ou atualize o cadastro.">fora do cadastro</span>
               {% endif %}
             </li>
           {% endfor %}
         </ul>
       </div>
       <div>
-        <label class="rotulo-campo">Para onde ({{ r.obras|length }} obra(s))</label>
+        <label class="rotulo-campo">Obras de destino ({{ r.obras|length }})</label>
         <ul class="lista-seca">
           {% for o in r.obras %}
             <li><b>{{ o.obra }}</b>
-              {% if o.resto %}<span class="selo no-lote">o resto</span>
+              {% if o.resto %}<span class="selo no-lote">restante</span>
               {% else %}<span class="cartao-dica">{{ o.percentual }}%</span>{% endif %}
             </li>
           {% endfor %}
@@ -190,39 +192,39 @@
   <input type="hidden" id="regra-id">
   <label class="rotulo-campo">Nome da regra</label>
   <input class="campo-largo" id="regra-nome"
-         placeholder="ex.: Supervisores de Pernambuco">
+         placeholder="Ex.: Supervisores de Pernambuco">
 
   <label class="rotulo-campo">Observação (opcional)</label>
   <input class="campo-largo" id="regra-observacao"
-         placeholder="por que essas pessoas são rateadas assim">
+         placeholder="Critério adotado para este rateio">
 
   <label class="opcao" style="margin-top:8px">
     <input type="checkbox" id="regra-ativa" checked>
-    <span class="rotulo">valendo (desmarque para guardar como histórico)</span>
+    <span class="rotulo">Ativa (desmarque para manter apenas como histórico)</span>
   </label>
 
-  <label class="rotulo-campo" style="margin-top:14px">Quem entra nesta regra</label>
+  <label class="rotulo-campo" style="margin-top:14px">Colaboradores incluídos na regra</label>
   <p class="cartao-dica" style="margin:0 0 6px">
     Um por linha: <b>CPF e nome</b>, separados por vírgula ou ponto e vírgula. O
-    nome é só para você reconhecer na tela — quem manda é o CPF.
+    nome serve apenas para identificação; a chave é o CPF.
   </p>
   <textarea class="campo-largo" id="regra-pessoas" rows="5"
             placeholder="997.133.493-34, GERLANIO GOMES LIMA&#10;035.134.413-63; LUELIA MADIDA GOMES TOMAS"></textarea>
 
-  <label class="rotulo-campo" style="margin-top:14px">Para quais obras, e com que peso</label>
+  <label class="rotulo-campo" style="margin-top:14px">Obras de destino e pesos</label>
   <p class="cartao-dica" style="margin:0 0 6px">
-    Ou você diz o percentual de cada obra (somando 100%), ou marca algumas como
-    <b>"o resto"</b> — aí eu divido o que sobrou entre elas, em partes iguais.
-    É o "uma obra com 50% e o restante dividido entre as outras".
+    Informe o percentual de cada obra (total de 100%) ou marque obras como
+    <b>"restante"</b>: o saldo não atribuído é dividido entre elas em partes iguais
+    (ex.: uma obra com 50% e o restante dividido entre as demais).
   </p>
   <div id="regra-obras"></div>
   <button class="btn secundario" id="btn-mais-obra" style="margin-top:6px">+ obra</button>
 
   <div style="margin-top:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-    <label class="rotulo-campo" style="margin:0">Conferir com um valor</label>
+    <label class="rotulo-campo" style="margin:0">Simular com um valor</label>
     <input id="regra-simular-valor" name="valor" style="width:140px"
            placeholder="1.000,00">
-    <button class="btn secundario" id="btn-simular">Ver a divisão</button>
+    <button class="btn secundario" id="btn-simular">Simular divisão</button>
   </div>
   <div id="saida-simulacao"></div>
 
@@ -263,12 +265,12 @@ function linhaDeObra(obra, percentual, resto) {
   const opcoes = OBRAS.map(o =>
     '<option value="' + o + '"' + (o === obra ? " selected" : "") + '>' + o + '</option>').join("");
   div.innerHTML =
-    '<select class="obra-nome"><option value="">escolha a obra…</option>' + opcoes + '</select>' +
+    '<select class="obra-nome"><option value="">Selecione a obra…</option>' + opcoes + '</select>' +
     '<input class="obra-pct" style="width:90px" placeholder="%" value="' +
       (percentual === null || percentual === undefined ? "" : percentual) + '">' +
     '<label class="opcao"><input type="checkbox" class="obra-resto"' +
-      (resto ? " checked" : "") + '><span class="rotulo">o resto</span></label>' +
-    '<button class="btn secundario tirar-obra" title="tirar esta obra">×</button>';
+      (resto ? " checked" : "") + '><span class="rotulo">restante</span></label>' +
+    '<button class="btn secundario tirar-obra" title="Remover esta obra">×</button>';
   // Marcar "o resto" apaga e tranca o percentual: as duas coisas juntas na mesma
   // linha seriam duas respostas para a mesma pergunta.
   const caixa = div.querySelector(".obra-resto");
@@ -361,7 +363,7 @@ document.getElementById("btn-simular").addEventListener("click", async () => {
 // --- gravar -----------------------------------------------------------------
 document.getElementById("btn-gravar-regra").addEventListener("click", async () => {
   const alvo = document.getElementById("recado-regra");
-  alvo.textContent = "gravando…";
+  alvo.textContent = "Gravando…";
   const corpo = {
     nome: document.getElementById("regra-nome").value,
     observacao: document.getElementById("regra-observacao").value,
@@ -382,10 +384,10 @@ document.getElementById("btn-gravar-regra").addEventListener("click", async () =
 document.querySelectorAll(".apagar-regra").forEach(b =>
   b.addEventListener("click", async () => {
     const nome = b.dataset.nome;
-    if (!confirm('Apagar a regra "' + nome + '"?\n\n' +
-        "Se ela já foi usada em alguma folha, prefira DESATIVAR: desativada, " +
-        "ela continua explicando como aquela folha foi rateada.\n\n" +
-        "Isto não tem volta.")) return;
+    if (!confirm('Excluir a regra "' + nome + '"?\n\n' +
+        "Se a regra já foi aplicada em alguma folha, recomenda-se DESATIVAR: " +
+        "a regra desativada mantém o registro do rateio daquela folha.\n\n" +
+        "A exclusão não tem volta.")) return;
     b.disabled = true;
     const d = await pedir("{{ url_for('analisesps.folha_rateio_apagar') }}",
                           {id: b.dataset.id});
@@ -410,18 +412,18 @@ function recadoDaTabela(texto, classe) {
 
 if (btnColar) btnColar.addEventListener("click", async () => {
   const tabela = (caixaTabela.value || "").trim();
-  if (!tabela) { recadoDaTabela("Cole a tabela primeiro.", "erro"); return; }
+  if (!tabela) { recadoDaTabela("Cole a tabela antes de aplicar.", "erro"); return; }
   const substituir = document.getElementById("tabela-substituir").checked;
   // ⚠️ SUBSTITUIR MEXE EM TUDO, então pergunta antes — e diz o que substituir
   // FAZ (desativa, não apaga), porque é a diferença entre perder e não perder a
   // explicação da folha passada.
   if (substituir && !confirm(
-      "Aplicar a tabela e substituir o rateio que está valendo?\n\n" +
-      "As regras de agora ficam DESATIVADAS (não são apagadas): elas continuam " +
-      "explicando como a folha do mês passado foi rateada.")) return;
+      "Aplicar a tabela e substituir o rateio vigente?\n\n" +
+      "As regras atuais serão DESATIVADAS (não excluídas) e manterão o registro " +
+      "do rateio das folhas anteriores.")) return;
 
   btnColar.disabled = true;
-  recadoDaTabela("conferindo…");
+  recadoDaTabela("Validando…");
   try {
     const r = await fetch("{{ url_for('analisesps.folha_rateio_colar') }}", {
       method: "POST",
@@ -432,7 +434,7 @@ if (btnColar) btnColar.addEventListener("click", async () => {
     if (!d.ok) { recadoDaTabela(d.erro, "erro"); btnColar.disabled = false; return; }
     location.reload();
   } catch (e) {
-    recadoDaTabela("falhou: " + e, "erro");
+    recadoDaTabela("Não foi possível aplicar a tabela: " + e, "erro");
     btnColar.disabled = false;
   }
 });
@@ -450,7 +452,7 @@ document.querySelectorAll(".copiar-para-tabela").forEach(b =>
     // avisa, porque aí o que volta não é idêntico ao que estava gravado.
     const comPercentual = (regra.obras || []).filter(o => o.percentual);
     if (!comPercentual.length) {
-      recadoDaTabela("Esta regra usa \"o resto\"; ajuste-a pelo Editar.", "erro");
+      recadoDaTabela("Esta regra usa \"restante\"; ajuste-a pelo botão Editar.", "erro");
       return;
     }
     const menor = Math.min(...comPercentual.map(o => parseFloat(o.percentual)));
@@ -468,8 +470,8 @@ document.querySelectorAll(".copiar-para-tabela").forEach(b =>
     caixaTabela.value = (atual ? atual + "\n" : "") + linhas.join("\n");
     caixaTabela.focus();
     recadoDaTabela(
-      linhas.length + " linha(s) na caixa" +
-      (exato ? "." : " — os pesos foram arredondados, confira antes de aplicar."),
+      linhas.length + " linha(s) copiada(s) para a tabela" +
+      (exato ? "." : "; os pesos foram arredondados. Confira antes de aplicar."),
       exato ? "" : "erro");
   }));
 </script>

@@ -91,28 +91,28 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
     """
     if not _pronto():
         raise ErroDaImportacao(
-            "a tabela da folha ainda não existe. Aperte "
-            '"Aplicar atualizações do banco" em Configurações e tente de novo.')
+            "tabela da folha não encontrada no banco. Clique em "
+            '"Aplicar atualizações do banco" em Configurações e repita a operação.')
 
     if not conteudo:
-        raise ErroDaImportacao("o arquivo chegou vazio.")
+        raise ErroDaImportacao("arquivo vazio.")
     if len(conteudo) > MAXIMO_DO_ARQUIVO:
         raise ErroDaImportacao(
-            f"o arquivo tem {len(conteudo) / 1024 / 1024:.1f} MB e o teto é "
-            f"{MAXIMO_DO_ARQUIVO // 1024 // 1024} MB. A Folha Sintética de "
-            "500 pessoas tem menos de um MB — confira se não trocou o arquivo.")
+            f"arquivo com {len(conteudo) / 1024 / 1024:.1f} MB; o limite é "
+            f"{MAXIMO_DO_ARQUIVO // 1024 // 1024} MB. Uma Folha Sintética de "
+            "500 colaboradores tem menos de 1 MB — verifique se o arquivo está correto.")
 
     try:
         lida = folha_sintetica.ler(conteudo)
     except folha_sintetica.ErroDaFolha:
         raise
     except Exception as e:  # noqa: BLE001
-        raise ErroDaImportacao(f"não consegui ler o arquivo: {e}") from e
+        raise ErroDaImportacao(f"não foi possível ler o arquivo: {e}") from e
 
     if not lida.linhas:
         raise ErroDaImportacao(
-            "não achei nenhuma pessoa no arquivo. Confira se é a Folha "
-            "Sintética do Fortes, e não outro relatório.")
+            "nenhum colaborador encontrado no arquivo. Verifique se é a Folha "
+            "Sintética do Fortes.")
 
     # A COMPETÊNCIA: a do arquivo manda; a da tela só entra quando o arquivo não
     # diz. O contrário faria a tela sobrescrever o que o relatório afirma — e o
@@ -121,16 +121,16 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
     mes_final = lida.mes or mes
     if not ano_final or not mes_final:
         raise ErroDaImportacao(
-            "o arquivo não diz de que mês é a folha. Escolha a competência na "
-            "tela e importe de novo.")
+            "o arquivo não informa a competência da folha. Selecione a competência "
+            "na tela e importe novamente.")
 
     tipo_final = lida.tipo_sugerido or str(tipo or "").strip()
     if tipo_final not in TIPOS:
         raise ErroDaImportacao(
-            'não deu para saber se esta folha é da QUINZENA ou do FIM DE MÊS '
-            f'pelo título ("{lida.titulo or "sem título"}"). Escolha na tela e '
-            "importe de novo — o tipo decide o período do ponto, então não dá "
-            "para adivinhar.")
+            'não foi possível identificar se a folha é de QUINZENA ou de FIM DE MÊS '
+            f'pelo título ("{lida.titulo or "sem título"}"). Selecione o tipo na '
+            "tela e importe novamente — o tipo define o período de apuração do "
+            "ponto.")
 
     total = lida.total
     pessoas = len(lida.linhas)
@@ -141,7 +141,7 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
     if not lida.fecha:
         avisos.append(
             f"a soma das pessoas ({total}) é diferente da soma dos subtotais "
-            f"por filial ({lida.total_das_filiais}). Confira o arquivo.")
+            f"por filial ({lida.total_das_filiais}). Verifique o arquivo.")
     if lida.total_declarado is not None and lida.total_declarado != total:
         avisos.append(
             f"o rodapé do relatório declara {lida.total_declarado} e as linhas "
@@ -149,7 +149,7 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
     if (lida.pessoas_declaradas is not None
             and lida.pessoas_declaradas != pessoas):
         avisos.append(
-            f"o rodapé declara {lida.pessoas_declaradas} pessoa(s) e eu li "
+            f"o rodapé declara {lida.pessoas_declaradas} pessoa(s); foram lidas "
             f"{pessoas}.")
 
     from .db import conexao
@@ -221,7 +221,7 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
         casamento = casar_com_o_cadastro(folha_id)
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou casar a folha com o cadastro")
-        avisos.append(f"não deu para casar a folha com o cadastro: {e}")
+        avisos.append(f"não foi possível vincular a folha ao cadastro: {e}")
 
     logger.info("Análise de SPs: folha %02d/%d (%s) importada — %d pessoa(s), "
                 "total %s.", mes_final, ano_final, tipo_final, pessoas, total)

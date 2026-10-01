@@ -7,11 +7,11 @@
 <p class="nao-imprimir" style="margin:0 0 12px">
   <button type="button" class="btn" onclick="window.print()">Imprimir</button>
   <a class="link-btn" href="{{ url_for('analisesps.tela_folha_aberta', folha_id=a.folha_id) }}"
-     >voltar para a folha</a>
-  <span class="cartao-dica">Para guardar como PDF, escolha "Salvar como PDF" na
+     >Voltar para a folha</a>
+  <span class="cartao-dica">Para gerar PDF, selecione "Salvar como PDF" na
     janela de impressão.</span>
 </p>
-<h2>Analítico do funcionário</h2>
+<h2>Analítico do colaborador</h2>
 {% set parcial = False %}
 {% include "_folha_analitico.html" %}
 <p class="cartao-dica">Gerado em {{ gerado_em }}{% if nome %} por {{ nome }}{% endif %}.</p>

@@ -155,7 +155,7 @@ def obra_do_dia(marcacoes, presenca: str = "", falta: str = "") -> dict:
     presentes = [m for m in presentes if m != PAGAR_EXTRA]
     if not presentes:
         return {"obra": None, "empate": False, "marcou": 0,
-                "motivo": "dia marcado para pagar como EXTRA — não conta na folha"}
+                "motivo": "dia marcado como PAGAR EXTRA — não computado na folha"}
 
     contagem: dict = {}
     for m in presentes:
@@ -335,7 +335,7 @@ def apropriar_pessoa(linha, dias_uteis=None, regra=None, ajuste=None) -> dict:
         soma = sum((p["valor"] for p in partes), Decimal("0"))
         if soma != valor:
             base["criticas"].append(
-                f"o ajuste de mão soma {soma} e o valor da pessoa é {valor}")
+                f"o ajuste manual soma {soma}, divergente do valor do colaborador ({valor})")
         return dict(base, por_obra=partes, por_dia=[], origem=DA_MAO)
 
     if ajuste and ajuste.get("obra_unica"):
@@ -364,15 +364,15 @@ def apropriar_pessoa(linha, dias_uteis=None, regra=None, ajuste=None) -> dict:
         # mão". Chutar a obra da contabilidade aqui pareceria funcionar e poria o
         # custo na obra errada em silêncio.
         base["criticas"].append(
-            "sem dia de ponto no período e sem regra de rateio — diga para onde "
-            "vai o valor desta pessoa")
+            "sem dia de ponto no período e sem regra de rateio — informe a obra "
+            "de destino do valor deste colaborador")
         return dict(base, origem="", por_obra=[], por_dia=[])
 
     if any(d["empate"] for d in feito["por_dia"]):
         quantos = len({d["data"] for d in feito["por_dia"] if d["empate"]})
         base["criticas"].append(
-            f"{quantos} dia(s) com marcação empatada entre duas obras — valeu a "
-            "obra em que o dia começou")
+            f"{quantos} dia(s) com marcação empatada entre duas obras — considerada a "
+            "obra do início do dia")
     return dict(base, origem=DO_PONTO, por_obra=feito["por_obra"],
                 por_dia=feito["por_dia"])
 
@@ -523,9 +523,9 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
                 "pendente_cadastro": True, "origem": "",
                 "por_obra": [], "por_dia": [],
                 "criticas": [
-                    f"o ID Fortes {id_fortes} não está no cadastro de "
-                    "colaboradores — sem ele não há CPF, e sem CPF não há como "
-                    "pagar. Preencha o ID no cadastro, ou amarre o CPF aqui."],
+                    f"o ID Fortes {id_fortes} não consta no cadastro de "
+                    "colaboradores. Sem o ID não há CPF, e sem CPF o pagamento "
+                    "não pode ser efetuado. Informe o ID no cadastro ou vincule o CPF aqui."],
             }
             pessoas.append(pendente)
             sem_cadastro.append(pendente)   # o MESMO objeto, não uma cópia

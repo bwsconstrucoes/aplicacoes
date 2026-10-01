@@ -8,13 +8,13 @@
 <h2>Gerar pagamento</h2>
 
 {% if erro %}
-  <div class="aviso erro"><b>Não consegui montar a tela.</b> {{ erro }}</div>
+  <div class="aviso erro"><b>Não foi possível carregar a tela.</b> {{ erro }}</div>
 {% endif %}
 
 {% if not pronto %}
   <div class="aviso atencao">
-    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
-    "Aplicar atualizações do banco" e volte aqui.
+    <b>Atualização do banco pendente.</b> Em <b>Configurações</b>, clique em
+    "Aplicar atualizações do banco" e retorne a esta tela.
   </div>
 {% else %}
 
@@ -24,14 +24,14 @@
    inteira: já se gerou, subiu, criou o card e avisou a equipe.
    --------------------------------------------------------------------------- #}
 <div class="aviso">
-  <b>Um arquivo por conta, sempre</b> — é a conta que define de onde o dinheiro
-  sai. Dentro da conta:
+  <b>Um arquivo por conta, sempre</b> — a conta de origem define a saída dos
+  recursos. Dentro de cada conta:
   <ul style="margin:6px 0 0 18px">
-    <li><b>BeeVale:</b> você pode juntar alimentação e transporte num arquivo só,
-      porque ele aceita o mesmo CPF duas vezes quando a verba é de outra
-      natureza. Três pagamentos viram um.</li>
-    <li><b>SomaPay:</b> eu separo por verba sozinho. Ele não aceita o mesmo CPF
-      duas vezes, e o arquivo inteiro seria recusado.</li>
+    <li><b>BeeVale:</b> é possível unificar alimentação e transporte em um único
+      arquivo, pois o BeeVale aceita o mesmo CPF duas vezes em verbas de natureza
+      diferente.</li>
+    <li><b>SomaPay:</b> o sistema gera um arquivo por verba. O SomaPay não aceita
+      o mesmo CPF duas vezes e recusaria o arquivo inteiro.</li>
   </ul>
 </div>
 
@@ -55,41 +55,40 @@
       <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
     {% endfor %}
   </select></label>
-  <button class="btn secundario" type="submit">Ver</button>
+  <button class="btn secundario" type="submit">Consultar</button>
 </form>
 
 {% if not fechados %}
   <div class="aviso atencao">
     <b>Nada fechado em {{ "%02d"|format(mes) }}/{{ ano }}.</b>
-    Só se gera pagamento de apropriação <b>fechada</b> — é o que garante que o
-    arquivo enviado ao banco tenha uma explicação que não muda depois. Feche a
-    apropriação da competência antes de gerar.
+    O pagamento é gerado somente a partir de apropriação <b>fechada</b>. Realize o
+    fechamento da apropriação da competência antes de gerar.
   </div>
 {% else %}
 
 <div class="cartao">
-  <label class="rotulo-campo">O que pagar</label>
+  <label class="rotulo-campo">Verbas a pagar</label>
   <div class="tabela-wrap">
     <div class="tabela-rolagem livre">
       <table class="sps" style="margin:8px 0">
         <thead>
-          <tr><th></th><th>Verba</th><th>Pagamento</th><th class="num">Pessoas</th>
-            <th class="num">Total</th><th>Fecha?</th></tr>
+          <tr><th></th><th>Verba</th><th>Pagamento</th><th class="num">Colaboradores</th>
+            <th class="num">Total</th><th>Conferência</th></tr>
         </thead>
         <tbody>
         {% for f in fechados %}
           <tr>
             <td><input type="checkbox" class="marca-verba" value="{{ f.verba }}"
                        data-tipo="{{ f.tipo }}"
-                       aria-label="Pagar {{ rotulo_da_verba(f.verba) }}"></td>
+                       aria-label="Selecionar {{ rotulo_da_verba(f.verba) }}"></td>
             <td>{{ rotulo_da_verba(f.verba) }}</td>
             <td>{{ "Quinzena" if f.tipo == "quinzena" else "Fim de mês" }}</td>
             <td class="num">{{ f.pessoas }}</td>
             <td class="num">{{ f.total|moeda }}</td>
             {# ⚠️ "NÃO FECHA" NÃO ESCONDE A VERBA, mas fica dito: um fechamento que não
                batia continua dizendo que não batia, e quem gera decide sabendo. #}
-            <td>{% if f.fecha %}<span class="selo">bate</span>
-                {% else %}<span class="selo saindo">não bate</span>{% endif %}</td>
+            <td>{% if f.fecha %}<span class="selo">conferido</span>
+                {% else %}<span class="selo saindo">divergente</span>{% endif %}</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -99,7 +98,7 @@
 
   <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
     <div>
-      <label class="cartao-dica" for="destino">Para onde</label>
+      <label class="cartao-dica" for="destino">Destino</label>
       <select id="destino">
         {% for chave, rotulo in destinos %}
           <option value="{{ chave }}">{{ rotulo }}</option>
@@ -107,7 +106,7 @@
       </select>
     </div>
     <label class="cartao-dica" style="margin:0">
-      <input type="checkbox" id="juntar"> juntar as verbas num arquivo só
+      <input type="checkbox" id="juntar"> Unificar as verbas em um único arquivo
       <span id="aviso-juntar" class="cartao-dica"></span>
     </label>
     <button class="btn secundario" id="btn-conferir" type="button">
@@ -115,8 +114,8 @@
     </button>
   </div>
   <p class="cartao-dica" style="margin:8px 0 0">
-    Conferir não gera nada e não sobe nada: mostra quantos arquivos vão sair e com
-    que total cada um.
+    A conferência não gera nem envia arquivos: exibe a quantidade de arquivos e o
+    total de cada um.
   </p>
 </div>
 
@@ -126,11 +125,11 @@
    sai, e ele pediu para ver antes. #}
 <div id="bloco-gerar" class="cartao" hidden>
   <label class="cartao-dica" style="margin:0">
-    <input type="checkbox" id="forcar"> gerar mesmo com aviso
+    <input type="checkbox" id="forcar"> Gerar mesmo com avisos
   </label>
   <p class="cartao-dica" style="margin:4px 0 10px">
-    Cada aviso diz o que consertar. Marque isto só se você já sabe qual é e aceita
-    — o aviso existe porque o arquivo sairia errado.
+    Cada aviso indica a correção necessária. Marque esta opção somente após
+    analisar os avisos: o arquivo pode ser gerado com erro.
   </p>
   <button class="btn" id="btn-gerar" type="button">Gerar e salvar no Drive</button>
   <span id="recado-gerar" class="cartao-dica" style="margin-left:8px"></span>
@@ -149,9 +148,9 @@
   <div class="tabela-rolagem livre">
     <table class="sps">
       <thead>
-        <tr><th>Quando</th><th>Competência</th><th>Para onde</th><th>Verbas</th>
-          <th>Conta</th><th class="num">Pessoas</th><th class="num">Total</th>
-          <th>Arquivo</th><th>Card</th><th>Por quem</th></tr>
+        <tr><th>Data</th><th>Competência</th><th>Destino</th><th>Verbas</th>
+          <th>Conta</th><th class="num">Colaboradores</th><th class="num">Total</th>
+          <th>Arquivo</th><th>Card</th><th>Responsável</th></tr>
       </thead>
       <tbody>
       {% for a in log %}
@@ -168,7 +167,7 @@
           <td>
             {% if a.link %}
               <a href="{{ a.link }}" target="_blank" rel="noopener"
-                 title="{{ a.nome }}">baixar</a>
+                 title="{{ a.nome }}">Baixar</a>
             {% else %}—{% endif %}
             {% if a.avisos %}
               <br><span class="cartao-dica">⚠ {{ a.avisos }}</span>
@@ -183,17 +182,17 @@
                  para o pagamento inteiro e UMA SP por conta de origem. #}
               <button class="btn secundario btn-lancar-card" type="button"
                       data-analise="{{ a.id }}"
-                      >lançar no Pipefy</button>
+                      >Lançar no Pipefy</button>
             {% elif a.destino != 'analise' %}
-              <span class="cartao-dica">sai pela linha da análise</span>
+              <span class="cartao-dica">lançado pela linha da análise</span>
             {% else %}<span class="cartao-dica">—</span>{% endif %}
           </td>
           <td><span class="cartao-dica">{{ a.criado_por or '—' }}</span></td>
         </tr>
       {% else %}
         <tr><td colspan="10" class="cartao-dica">
-          Nenhum arquivo gerado ainda. O que sair daqui fica listado com o link para
-          baixar.
+          Nenhum arquivo gerado. Os arquivos gerados são listados aqui com o link
+          para download.
         </td></tr>
       {% endfor %}
       </tbody>
@@ -205,12 +204,12 @@
 <div class="cartao" style="margin-top:14px">
   <label class="rotulo-campo">Lançar no Pipefy</label>
   <p class="cartao-dica" style="margin:4px 0 8px">
-    É o mesmo que o botão do Make fazia: <b>um card de Despesa com Colaboradores</b>
-    para o pagamento inteiro, com cada obra como centro de custo e o código do OMIE
-    da aba "C. Diários", e <b>uma SP de Transferência de Recursos para cada conta de
-    origem</b>, ligada à Despesa. O botão fica na linha do arquivo de análise e
-    mostra tudo antes de criar. ⚠️ <b>Card criado no Pipefy não se apaga por
-    aqui</b> — quem cancela é você, lá.
+    Cria <b>um card de Despesa com Colaboradores</b> para o pagamento completo, com
+    cada obra como centro de custo e o código do OMIE da aba "C. Diários", e <b>uma
+    SP de Transferência de Recursos para cada conta de origem</b>, vinculada à
+    Despesa (mesmo procedimento do Make). O botão fica na linha do arquivo de
+    análise e exibe uma prévia antes da criação. ⚠️ <b>Card criado no Pipefy não
+    pode ser excluído pelo sistema</b> — o cancelamento é feito no Pipefy.
   </p>
   <button class="btn secundario" id="btn-conferir-pipe" type="button">
     Conferir os campos dos pipes
@@ -222,7 +221,7 @@
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
   <h3>Lançar no Pipefy</h3>
-  <div id="dialogo-cards-corpo"><p class="cartao-dica">montando a prévia…</p></div>
+  <div id="dialogo-cards-corpo"><p class="cartao-dica">Gerando a prévia…</p></div>
   <div class="lat-acoes" style="margin-top:12px">
     <button type="button" class="btn" id="dialogo-cards-criar" hidden>Criar os cards</button>
   </div>
@@ -241,7 +240,7 @@ function moedaBr(v) {
 document.getElementById("btn-conferir-pipe").addEventListener("click",
   async () => {
     const caixa = document.getElementById("conferencia-pipe");
-    caixa.innerHTML = '<p class="cartao-dica">lendo os pipes…</p>';
+    caixa.innerHTML = '<p class="cartao-dica">Consultando os pipes…</p>';
     try {
       const r = await fetch("{{ url_for('analisesps.folha_pipe_conferir') }}",
                             {method: "POST"});
@@ -254,10 +253,10 @@ document.getElementById("btn-conferir-pipe").addEventListener("click",
         '<div class="aviso' + (p.faltam.length ? " erro" : "") + '"><b>' +
         escapa(p.nome) + "</b> — " + p.quantos_campos + " campos. " +
         (p.faltam.length
-          ? "Faltam campos que o Make usa: <b>" + escapa(p.faltam.join(", ")) + "</b>."
-          : "Tem todos os campos que o Make usa.") + "</div>").join("");
+          ? "Campos utilizados pelo Make ausentes: <b>" + escapa(p.faltam.join(", ")) + "</b>."
+          : "Todos os campos utilizados pelo Make estão presentes.") + "</div>").join("");
     } catch (e) {
-      caixa.innerHTML = '<div class="aviso erro">falhou: ' + escapa(e) + "</div>";
+      caixa.innerHTML = '<div class="aviso erro">Não foi possível conferir os pipes: ' + escapa(e) + "</div>";
     }
   });
 
@@ -273,21 +272,21 @@ function desenhaPrevia(d) {
     html += '<div class="aviso">Este pagamento já foi lançado no Pipefy.</div>';
   }
   if (d.bloqueios.length) {
-    html += '<div class="aviso erro"><b>Não dá para lançar ainda — nada será ' +
+    html += '<div class="aviso erro"><b>Lançamento bloqueado — nenhum card será ' +
       "criado:</b><ul>" + d.bloqueios.map(b => "<li>" + escapa(b) + "</li>").join("") +
       "</ul></div>";
   }
   d.grupos.forEach(g => {
     html += '<div class="cartao" style="margin-top:10px"><b>Card de Despesa — ' +
       escapa(g.grupo) + "</b> · R$ " + moedaBr(g.total) + " · " + g.pessoas +
-      " pessoa(s) · " + g.centros.length + " centro(s) de custo" +
+      " colaborador(es) · " + g.centros.length + " centro(s) de custo" +
       '<div class="tabela-rolagem livre" style="margin-top:6px">' +
       '<table class="sps"><thead><tr><th>Obra</th>' +
-      '<th>Centro no Pipefy</th><th>Código OMIE</th><th class="num">Valor</th>' +
+      '<th>Centro de custo no Pipefy</th><th>Código OMIE</th><th class="num">Valor</th>' +
       "</tr></thead><tbody>" +
       g.centros.map(c => "<tr><td>" + escapa(c.obra) + "</td><td>" +
-        (c.centro ? escapa(c.centro) : '<b class="ruim">não achei</b>') + "</td><td>" +
-        (c.omie ? escapa(c.omie) : '<b class="ruim">falta</b>') +
+        (c.centro ? escapa(c.centro) : '<b class="ruim">não encontrado</b>') + "</td><td>" +
+        (c.omie ? escapa(c.omie) : '<b class="ruim">ausente</b>') +
         '</td><td class="num">' + moedaBr(c.valor) + "</td></tr>").join("") +
       "</tbody></table></div>" +
       "<p style=\"margin:8px 0 4px\"><b>SPs de Transferência de Recursos</b> (" +
@@ -302,7 +301,7 @@ function desenhaPrevia(d) {
 
 document.querySelectorAll(".btn-lancar-card").forEach(botao =>
   botao.addEventListener("click", async () => {
-    corpoCards.innerHTML = '<p class="cartao-dica">montando a prévia — lendo ' +
+    corpoCards.innerHTML = '<p class="cartao-dica">Gerando a prévia: consultando ' +
       "os pipes e os centros de custo no Pipefy…</p>";
     criarCards.hidden = true;
     dialogoCards.showModal();
@@ -318,16 +317,16 @@ document.querySelectorAll(".btn-lancar-card").forEach(botao =>
       }
       desenhaPrevia(d);
     } catch (e) {
-      corpoCards.innerHTML = '<div class="aviso erro">falhou: ' + escapa(e) + "</div>";
+      corpoCards.innerHTML = '<div class="aviso erro">Não foi possível gerar a prévia: ' + escapa(e) + "</div>";
     }
   }));
 
 criarCards.addEventListener("click", async () => {
   // ⚠️ CONFIRMA: card criado no Pipefy não se apaga por aqui.
-  if (!confirm("Criar os cards no Pipefy?\n\nCard criado não se apaga pelo " +
-               "sistema — o cancelamento é feito no Pipefy.")) return;
+  if (!confirm("Criar os cards no Pipefy?\n\nCard criado não pode ser excluído pelo " +
+               "sistema; o cancelamento deve ser feito no Pipefy.")) return;
   criarCards.disabled = true;
-  criarCards.textContent = "criando…";
+  criarCards.textContent = "Criando…";
   try {
     const r = await fetch("{{ url_for('analisesps.folha_card_lancar') }}", {
       method: "POST", headers: {"Content-Type": "application/json"},
@@ -338,10 +337,10 @@ criarCards.addEventListener("click", async () => {
       corpoCards.insertAdjacentHTML("afterbegin",
         '<div class="aviso erro">' + escapa(d.erro) + "</div>");
       criarCards.disabled = false;
-      criarCards.textContent = "Tentar de novo";
+      criarCards.textContent = "Tentar novamente";
       return;
     }
-    corpoCards.innerHTML = '<div class="aviso">Pronto. ' +
+    corpoCards.innerHTML = '<div class="aviso">Cards criados: ' +
       d.despesas.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
         'rel="noopener">Despesa ' + escapa(x.id) + "</a>").join(", ") + " · " +
       d.sps.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
@@ -351,9 +350,9 @@ criarCards.addEventListener("click", async () => {
     dialogoCards.addEventListener("close", () => location.reload(), {once: true});
   } catch (e) {
     corpoCards.insertAdjacentHTML("afterbegin",
-      '<div class="aviso erro">falhou: ' + escapa(e) + "</div>");
+      '<div class="aviso erro">Não foi possível criar os cards: ' + escapa(e) + "</div>");
     criarCards.disabled = false;
-    criarCards.textContent = "Tentar de novo";
+    criarCards.textContent = "Tentar novamente";
   }
 });
 </script>
@@ -378,7 +377,7 @@ function ajustarJuntar() {
   juntar.disabled = eSoma;
   if (eSoma) juntar.checked = false;
   document.getElementById("aviso-juntar").textContent = eSoma
-    ? "— o SomaPay não aceita o mesmo CPF duas vezes, então cada verba sai no seu"
+    ? "— indisponível no SomaPay, que não aceita CPF repetido; é gerado um arquivo por verba"
     : "";
 }
 destino.addEventListener("change", ajustarJuntar);
@@ -404,10 +403,10 @@ async function mandar(url, corpo) {
 
 function corpoDoPedido() {
   const marcado = escolhido();
-  if (!marcado.verbas.length) return {erro: "Marque ao menos uma verba."};
+  if (!marcado.verbas.length) return {erro: "Selecione ao menos uma verba."};
   if (marcado.tipos.length > 1) {
-    return {erro: "Quinzena e fim de mês são pagamentos diferentes — " +
-                  "gere um de cada vez."};
+    return {erro: "Quinzena e fim de mês são pagamentos distintos. " +
+                  "Gere um de cada vez."};
   }
   return {
     ano: {{ ano }}, mes: {{ mes }}, tipo: marcado.tipos[0],
@@ -422,7 +421,7 @@ document.getElementById("btn-conferir").addEventListener("click", async () => {
   const corpo = corpoDoPedido();
   if (corpo.erro) { alert(corpo.erro); return; }
   caixa.hidden = false;
-  caixa.innerHTML = '<p class="cartao-dica">conferindo…</p>';
+  caixa.innerHTML = '<p class="cartao-dica">Conferindo…</p>';
   blocoGerar.hidden = true;
   try {
     const d = await mandar(
@@ -432,13 +431,13 @@ document.getElementById("btn-conferir").addEventListener("click", async () => {
       return;
     }
     let html = '<div class="aviso"><b>' + d.resumo.arquivos +
-      " arquivo(s) de pagamento</b> — " + d.resumo.pessoas + " pessoa(s), " +
+      " arquivo(s) de pagamento</b> — " + d.resumo.pessoas + " colaborador(es), " +
       d.resumo.total.toLocaleString("pt-BR",
         {style: "currency", currency: "BRL"}) +
-      ". E mais um arquivo de análise, sempre.</div>";
+      ". Um arquivo de análise é gerado em todos os casos.</div>";
     html += '<div class="tabela-wrap"><div class="tabela-rolagem livre">' +
       '<table class="sps"><thead><tr><th>Conta</th><th>Verbas</th>' +
-      '<th class="num">Pessoas</th><th class="num">Total</th><th>Avisos</th>' +
+      '<th class="num">Colaboradores</th><th class="num">Total</th><th>Avisos</th>' +
       "</tr></thead><tbody>";
     d.lotes.forEach(l => {
       html += "<tr" + (l.criticas.length ? ' class="linha-alerta"' : "") + ">" +
@@ -454,7 +453,7 @@ document.getElementById("btn-conferir").addEventListener("click", async () => {
     blocoGerar.hidden = false;
     document.getElementById("forcar").checked = false;
   } catch (e) {
-    caixa.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
+    caixa.innerHTML = '<div class="aviso erro">Não foi possível conferir: ' + e + "</div>";
   }
 });
 
@@ -467,7 +466,7 @@ document.getElementById("btn-gerar").addEventListener("click", async () => {
                corpo.verbas.join(", ") + " e salvar no Drive?")) return;
   const botao = document.getElementById("btn-gerar");
   botao.disabled = true;
-  diz("recado-gerar", "gerando e subindo no Drive…");
+  diz("recado-gerar", "Gerando e salvando no Drive…");
   try {
     const d = await mandar(
       "{{ url_for('analisesps.folha_pagamento_gerar') }}", corpo);
@@ -479,7 +478,7 @@ document.getElementById("btn-gerar").addEventListener("click", async () => {
     // Recarrega para o log aparecer com os links — é por ele que ele baixa.
     location.reload();
   } catch (e) {
-    diz("recado-gerar", "falhou: " + e, "erro");
+    diz("recado-gerar", "Não foi possível gerar os arquivos: " + e, "erro");
     botao.disabled = false;
   }
 });

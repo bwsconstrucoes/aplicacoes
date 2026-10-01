@@ -97,15 +97,15 @@
 {# --- 1. PAGAMENTO ---------------------------------------------------------- #}
 <div class="cartao lateral-folha">
   <b class="lateral-titulo">Pagamento <small>{{ folha.competencia }}</small></b>
-  <div class="lat-num"><span>A folha inteira</span>
+  <div class="lat-num"><span>Total da folha</span>
     <b>{{ t.total_da_folha|moeda }}</b>
-    <small>{{ t.pessoas }} pessoa(s) no arquivo</small></div>
-  <div class="lat-num"><span>Vai receber</span>
+    <small>{{ t.pessoas }} colaborador(es) no arquivo</small></div>
+  <div class="lat-num"><span>Incluído no pagamento</span>
     <b>{{ t.valor_entra|moeda }}</b>
-    <small>{{ t.entram }} marcada(s)</small></div>
+    <small>{{ t.entram }} selecionado(s)</small></div>
   <div class="lat-num"><span>Fora do pagamento</span>
     <b>{{ t.valor_fora|moeda }}</b>
-    <small>{{ t.fora }} que você tirou</small></div>
+    <small>{{ t.fora }} excluído(s) manualmente</small></div>
   {% if t.nao_pagaveis %}
     <div class="lat-num ruim"><span>Não pode ser pago</span>
       <b>{{ t.valor_nao_pagavel|moeda }}</b>
@@ -122,14 +122,14 @@
       <b>Apropriação fechada</b> em
       {{ montado.fechamento.fechado_em|momento_br }}{% if montado.fechamento.fechado_por %}
       por {{ montado.fechamento.fechado_por }}{% endif %}. O arquivo de
-      verdade sai do que foi fechado.
+      pagamento definitivo é gerado a partir do fechamento.
     {% elif t.falta_apropriar %}
-      <b>Ainda não fechada.</b> Falta apropriar
-      {{ t.falta_apropriar|moeda }}: fechando agora, esse valor fica sem obra
-      e sem conta.
+      <b>Apropriação não fechada.</b> Falta apropriar
+      {{ t.falta_apropriar|moeda }}; se fechada agora, esse valor ficará sem
+      obra e sem conta.
     {% else %}
-      <b>Ainda não fechada.</b> Tudo apropriado — feche para liberar o
-      arquivo.
+      <b>Apropriação não fechada.</b> Valores integralmente apropriados; feche a
+      apropriação para liberar o arquivo de pagamento.
     {% endif %}
   </p>
 
@@ -137,7 +137,7 @@
     {% if pode_operar %}
       <button type="button" class="btn" id="fechar-apropriacao"
               data-folha="{{ folha.id }}">
-        {% if montado.fechamento %}Refazer o fechamento{% else %}Fechar a apropriação{% endif %}
+        {% if montado.fechamento %}Refazer fechamento{% else %}Fechar apropriação{% endif %}
       </button>
     {% endif %}
     {% if pode_gerar %}
@@ -153,13 +153,13 @@
         <a class="btn secundario" id="baixar-previa"
            data-base="{{ url_for('analisesps.folha_previa_pagamento', folha_id=folha.id) }}"
            href="{{ url_for('analisesps.folha_previa_pagamento', folha_id=folha.id) }}"
-           title="Baixa os arquivos como sairiam agora, sem fechar nada e sem subir no Drive"
+           title="Baixa os arquivos conforme a situação atual, sem fechar a apropriação e sem enviar ao Drive"
            >Baixar prévia</a>
       </div>
       {% if montado.fechamento %}
         <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_folha_pagamento') }}">Gerar os
-          arquivos de verdade</a>
+           href="{{ url_for('analisesps.tela_folha_pagamento') }}">Gerar
+          arquivos definitivos</a>
       {% endif %}
     {% endif %}
     <button type="button" class="btn secundario" id="btn-divisao"
@@ -178,41 +178,42 @@
   <b class="lateral-titulo">Pendências antes do pagamento</b>
   {% if criticas and criticas.pendentes %}
     <a class="lat-critica erro" href="{{ url_folha }}?situacao=sem_cadastro">
-      <b>{{ criticas.pendentes|length }} não casaram com o cadastro</b>
+      <b>{{ criticas.pendentes|length }} sem correspondência no cadastro</b>
       <span class="lat-valor">{{ criticas.total_pendente|moeda }}</span>
-      <small>Sem o código do Fortes no cadastro não há CPF, e sem CPF não há
+      <small>Sem código Fortes no cadastro não há CPF, e sem CPF não há
         pagamento. Corrija na aba ID Fortes da planilha de colaboradores e
-        aperte "Atualizar cadastro".</small>
+        clique em "Atualizar cadastro".</small>
     </a>
   {% endif %}
   {% if criticas and criticas.sairam %}
     <a class="lat-critica erro" href="{{ url_folha }}?situacao=saiu">
-      <b>{{ criticas.sairam|length }} já saíram da empresa</b>
+      <b>{{ criticas.sairam|length }} colaborador(es) desligado(s)</b>
       <span class="lat-valor">{{ criticas.total_de_quem_saiu|moeda }}</span>
-      <small>Não pague folha, diária nem auxílio deste período para elas.</small>
+      <small>Não pague folha, diária nem auxílio deste período a esses
+        colaboradores.</small>
     </a>
   {% endif %}
   {% if criticas and criticas.saindo %}
     <a class="lat-critica atencao" href="{{ url_folha }}?situacao=saindo">
-      <b>{{ criticas.saindo|length }} estão saindo</b>
-      <small>Confira o que é devido até o último dia — rescisão não se paga
-        por aqui.</small>
+      <b>{{ criticas.saindo|length }} em processo de desligamento</b>
+      <small>Confira os valores devidos até o último dia. A rescisão não é paga
+        por esta tela.</small>
     </a>
   {% endif %}
   {% if montado.em_setor_de_atencao %}
     <a class="lat-critica atencao" href="{{ url_folha }}?setor=__atencao">
       <b>{{ montado.em_setor_de_atencao|length }} em setor de afastado ou
         desativar</b>
-      <small>É o setor do arquivo da contabilidade. Quem está afastado pelo INSS
-        ou marcado para desativar normalmente não recebe esta folha.</small>
+      <small>Setor informado no arquivo da contabilidade. Colaboradores afastados
+        pelo INSS ou marcados para desativação normalmente não recebem esta
+        folha.</small>
     </a>
   {% endif %}
   {% if montado.em_mais_de_uma_conta %}
     <a class="lat-critica atencao" href="{{ url_folha }}?conta=__varias">
-      <b>{{ montado.em_mais_de_uma_conta|length }} pagas em mais de uma
+      <b>{{ montado.em_mais_de_uma_conta|length }} pagos em mais de uma
         conta</b>
-      <small>Trabalharam em obras de contas diferentes. Confira se o ponto
-        está certo.</small>
+      <small>Dias em obras de contas diferentes. Confira o ponto.</small>
     </a>
   {% endif %}
 </div>
@@ -229,10 +230,10 @@
         <button type="button" class="link-btn nome-pessoa abrir-ponto"
                 data-cpf="{{ i.cpf }}" data-nome="{{ i.nome }}">{{ i.nome or i.cpf }}</button>
         <small>{{ i.rotulo }} —
-          {% if i.situacao == 'esperando' %}na fila{% if i.posicao %} ({{ i.posicao }} antes){% endif %}
-          {% elif i.situacao == 'rodando' %}trabalhando{% if i.progresso %}: {{ i.progresso }}{% endif %}
-          {% elif i.situacao == 'feito' %}pronto
-          {% else %}<b class="ruim">não deu</b>{% endif %}</small>
+          {% if i.situacao == 'esperando' %}em fila{% if i.posicao %} ({{ i.posicao }} à frente){% endif %}
+          {% elif i.situacao == 'rodando' %}em processamento{% if i.progresso %}: {{ i.progresso }}{% endif %}
+          {% elif i.situacao == 'feito' %}concluído
+          {% else %}<b class="ruim">falha</b>{% endif %}</small>
       </li>
     {% endfor %}
   </ul>
@@ -248,7 +249,7 @@
   <div class="busca">
     <span class="lupa">⌕</span>
     <input type="search" name="q" value="{{ f.busca }}" autocomplete="off"
-           placeholder="nome, CPF ou código Fortes…" aria-label="Procurar pessoa">
+           placeholder="nome, CPF ou código Fortes…" aria-label="Procurar colaborador">
   </div>
 
   {% set opcoes_situacao = [] %}
@@ -257,15 +258,15 @@
   {% endfor %}
   {{ bloco('Situação', 'situacao', opcoes_situacao, f.situacao or []) }}
 
-  {% set opcoes_conta = [('__varias', 'pagas em mais de uma conta')] if montado.em_mais_de_uma_conta else [] %}
+  {% set opcoes_conta = [('__varias', 'pagos em mais de uma conta')] if montado.em_mais_de_uma_conta else [] %}
   {% for c in montado.contas_de_pagamento %}{% set _ = opcoes_conta.append((c, c)) %}{% endfor %}
   {{ bloco('Conta de pagamento', 'conta', opcoes_conta, f.conta or [],
-           'A conta sai da obra de cada dia. Quem tem dias em obras de contas diferentes aparece nas duas.') }}
+           'A conta é definida pela obra de cada dia. Colaboradores com dias em obras de contas diferentes aparecem em ambas.') }}
 
   {% set opcoes_obra = [] %}
   {% for o in montado.obras %}{% set _ = opcoes_obra.append((o, o)) %}{% endfor %}
   {{ bloco('Obra do ponto', 'obra', opcoes_obra, f.obra or [],
-           'Mostra quem trabalhou nestas obras em algum dia. O subtotal soma só os dias nelas.') }}
+           'Mostra quem trabalhou nestas obras em algum dia. O subtotal considera apenas os dias nelas.') }}
 
   {% set opcoes_obra_cad = [] %}
   {% for o in montado.obras_do_cadastro %}{% set _ = opcoes_obra_cad.append((o, o)) %}{% endfor %}
@@ -274,7 +275,7 @@
   {% set opcoes_filial = [] %}
   {% for o in montado.filiais %}{% set _ = opcoes_filial.append((o, o)) %}{% endfor %}
   {{ bloco('Obra da contabilidade', 'filial', opcoes_filial, f.filial or [],
-           'A filial do arquivo do Fortes — a obra como a contabilidade a cadastrou.') }}
+           'Filial do arquivo do Fortes, conforme o cadastro da contabilidade.') }}
 
   {% set opcoes_setor = [('__atencao', 'afastados e desativar (todos)')] if montado.em_setor_de_atencao else [] %}
   {% for s in montado.setores %}{% set _ = opcoes_setor.append((s, montado.setores_curtos.get(s, s))) %}{% endfor %}
@@ -286,17 +287,17 @@
 
   {{ bloco('Como a obra foi definida', 'origem',
            [('ponto', 'pelas batidas de ponto'),
-            ('regra', 'pela regra de rateio (quem não bate ponto)'),
-            ('mao', 'ajustada por você na linha')], f.origem or []) }}
+            ('regra', 'pela regra de rateio (sem registro de ponto)'),
+            ('mao', 'por ajuste manual')], f.origem or []) }}
 
   {% if not montado.obras %}
     <p class="cartao-dica" style="margin:8px 2px 0">
-      Nenhuma obra do ponto para filtrar ainda — o ponto do mês não trouxe obra
-      para ninguém.</p>
+      Nenhuma obra do ponto para filtrar ainda: o ponto da competência não
+      registrou obra para nenhum colaborador.</p>
   {% endif %}
   {% if not montado.setores and not folha.tem_setor %}
-    <p class="cartao-dica" style="margin:8px 2px 0">O filtro de setor aparece
-      depois de aplicar a atualização do banco que guarda o setor.</p>
+    <p class="cartao-dica" style="margin:8px 2px 0">O filtro de setor fica
+      disponível após a aplicação da atualização do banco que registra o setor.</p>
   {% endif %}
   <noscript>
     <button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button>
@@ -310,32 +311,32 @@
   <p class="cartao-dica">
     {{ folha.rotulo_do_tipo }}.{% if folha.importado_em %} Importado em
     {{ folha.importado_em|momento_br }}{% if folha.importado_por %} por
-    {{ folha.importado_por }}{% endif %}.{% endif %}{% if montado.periodo %} Ponto de
-    <b>{{ montado.periodo[0]|data_br }}</b> a
+    {{ folha.importado_por }}{% endif %}.{% endif %}{% if montado.periodo %} Período do
+    ponto: <b>{{ montado.periodo[0]|data_br }}</b> a
     <b>{{ montado.periodo[1]|data_br }}</b>.{% endif %}
   </p>
   <p class="cartao-dica">
-    {% if analitica %}Analítica (o detalhe de cada pessoa) importada em
+    {% if analitica %}Folha analítica (detalhamento por colaborador) importada em
       {{ analitica.importado_em|momento_br }}.
-    {% else %}A analítica (o detalhe de cada pessoa, evento por evento) ainda não
-      foi importada.{% endif %}
+    {% else %}Folha analítica (detalhamento por colaborador e evento) ainda não
+      importada.{% endif %}
   </p>
   {% if pode_operar %}
     <div class="solta-arquivo compacta" id="solta-folha">
-      <p><b>Trazer outra folha:</b> solte aqui a Folha Sintética ou a
-        analítica ("Folha de Pagamento")<br>
-        <label class="link-btn" for="arq-folha">ou escolha no computador</label>
-        <br><small>o .xls da contabilidade</small></p>
+      <p><b>Importar outra folha:</b> arraste para esta área a Folha Sintética
+        ou a analítica ("Folha de Pagamento")<br>
+        <label class="link-btn" for="arq-folha">ou selecione o arquivo</label>
+        <br><small>arquivo .xls da contabilidade</small></p>
       <input type="file" id="arq-folha" accept=".xls,.XLS" hidden>
     </div>
     <div id="escolher-tipo" hidden style="margin-top:8px">
       <div class="aviso atencao" id="motivo-tipo"></div>
-      <label class="rotulo-campo">Esta folha é de qual período?</label>
+      <label class="rotulo-campo">Selecione o período desta folha</label>
       <div class="lat-acoes">
         <button type="button" class="btn secundario escolhe-tipo" data-tipo="quinzena"
-                >Quinzena (dia 1 ao 15)</button>
+                >Quinzena (dias 1 a 15)</button>
         <button type="button" class="btn secundario escolhe-tipo" data-tipo="fim_de_mes"
-                >Fim de mês (16 ao último dia)</button>
+                >Fim de mês (dia 16 ao último dia)</button>
       </div>
     </div>
     <div id="saida-folha" style="margin-top:8px"></div>
@@ -364,7 +365,7 @@
 {% include "analisesps_folha_abas.html" %}
 
 {% if erro %}
-  <div class="aviso erro"><b>Não consegui abrir a folha.</b> {{ erro }}</div>
+  <div class="aviso erro"><b>Não foi possível abrir a folha.</b> {{ erro }}</div>
 {% endif %}
 
 {% if montado %}
@@ -383,13 +384,13 @@
       {% for f in folhas %}
         <option value="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
                 {% if f.id == folha.id %}selected{% endif %}>
-          {{ f.competencia }} — {{ f.rotulo_do_tipo }} ({{ f.pessoas }} pessoas)
+          {{ f.competencia }} — {{ f.rotulo_do_tipo }} ({{ f.pessoas }} colaboradores)
         </option>
       {% endfor %}
     </select>
   </label>
-  <span class="barra-mes-dica">os números, os alertas e a divisão por obra
-    estão na lateral</span>
+  <span class="barra-mes-dica">Totais, pendências e divisão por obra na barra
+    lateral.</span>
 </form>
 
 {# ------------------------------------------------------------------------
@@ -399,25 +400,25 @@
    ------------------------------------------------------------------------ #}
 {% if not montado.ponto.tem_carga %}
   <div class="aviso erro">
-    <b>Não há ponto de {{ folha.competencia }} aqui.</b> Sem o ponto não há como
-    saber de qual obra é cada dia, e a folha inteira fica sem obra. Traga o ponto
-    em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a> e volte.
+    <b>Não há ponto de {{ folha.competencia }} carregado.</b> Sem o ponto não é
+    possível apropriar os dias por obra, e a folha fica integralmente sem obra.
+    Importe o ponto em <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a>.
   </div>
 {% elif not montado.ponto.completa %}
   <div class="aviso erro">
-    <b>O ponto de {{ folha.competencia }} veio pela metade</b> — o Mobponto
-    prometeu mais páginas do que entregou. A folha em cima dele sai com gente
-    faltando dia e obra errada. Traga o ponto de novo em
+    <b>O ponto de {{ folha.competencia }} está incompleto</b>: o Mobponto
+    retornou menos páginas do que o informado. A folha calculada sobre ele terá
+    dias ausentes e obras incorretas. Importe o ponto novamente em
     <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a> antes de
     gerar o pagamento.
   </div>
 {% elif montado.totais.falta_apropriar %}
   <div class="aviso atencao">
-    <b>{{ montado.totais.sem_obra + montado.totais.sem_cadastro }} pessoa(s)
-    travam o pagamento</b> — {{ montado.totais.falta_apropriar|moeda }} sem obra.
-    Use o filtro <b>Situação</b> na lateral para ver só elas, e diga na linha para
-    onde vai o valor. O ponto de {{ folha.competencia }} trouxe
-    {{ montado.ponto.pessoas_no_ponto }} pessoa(s).
+    <b>{{ montado.totais.sem_obra + montado.totais.sem_cadastro }} colaborador(es)
+    com pagamento bloqueado</b> — {{ montado.totais.falta_apropriar|moeda }} sem obra.
+    Utilize o filtro <b>Situação</b> na barra lateral para listá-los e informe a
+    obra de destino em cada linha. O ponto de {{ folha.competencia }} contém
+    {{ montado.ponto.pessoas_no_ponto }} colaborador(es).
   </div>
 {% endif %}
 
@@ -429,22 +430,22 @@
   {% set m = mudancas %}
   <div class="aviso {{ 'ok' if m.nada_mudou else 'atencao' }} mudancas-reimportacao">
     {% if m.nada_mudou %}
-      <b>Folha reimportada: nada mudou</b> em relação à versão anterior.
+      <b>Folha reimportada: sem alterações</b> em relação à versão anterior.
     {% else %}
       <b>O que mudou nesta reimportação</b> —
       {{ m.mudaram|length }} com valor diferente, {{ m.entraram|length }} entraram,
-      {{ m.sairam|length }} saíram. Total de {{ m.total_antes|moeda }} para
-      <b>{{ m.total_depois|moeda }}</b>. O que você já tinha decidido (quem entra,
-      obra, divisão) continua valendo.
+      {{ m.sairam|length }} saíram. Total: de {{ m.total_antes|moeda }} para
+      <b>{{ m.total_depois|moeda }}</b>. As definições anteriores (inclusão, obra,
+      divisão) foram mantidas.
       {% if m.fechada_antes %}<br><b class="ruim">A apropriação estava fechada antes
-        desta reimportação</b> — refaça o fechamento para o arquivo de pagamento
-        sair com os valores novos.{% endif %}
-      {% if analitica %}<br>A folha analítica é a da versão anterior: se a
-        contabilidade mandou uma nova, solte-a também.{% endif %}
-      <details style="margin-top:6px"><summary>ver quem</summary>
+        desta reimportação</b> — refaça o fechamento para que o arquivo de pagamento
+        reflita os novos valores.{% endif %}
+      {% if analitica %}<br>A folha analítica corresponde à versão anterior; caso
+        a contabilidade tenha enviado uma nova, importe-a também.{% endif %}
+      <details style="margin-top:6px"><summary>ver colaboradores</summary>
         <div class="tabela-wrap" style="margin-top:6px"><div class="tabela-rolagem livre">
         <table class="sps">
-          <thead><tr><th>Código</th><th>Nome</th><th>O que houve</th>
+          <thead><tr><th>Código</th><th>Nome</th><th>Ocorrência</th>
             <th class="num">Antes</th><th class="num">Agora</th></tr></thead>
           <tbody>
           {% for x in m.mudaram %}
@@ -469,12 +470,12 @@
 
 {% if montado.tem_filtro %}
   <p class="cartao-dica" style="margin:0 0 8px">
-    O filtro mostra <b>{{ montado.quantas_mostradas }}</b> de
-    {{ montado.totais.pessoas }} pessoa(s), somando
+    Filtro: <b>{{ montado.quantas_mostradas }}</b> de
+    {{ montado.totais.pessoas }} colaborador(es), total de
     <b>{{ montado.subtotal_do_filtro|moeda }}</b>{% if montado.subtotal_da_obra is not none %}
-    — dos quais <b>{{ montado.subtotal_da_obra|moeda }}</b> são dos dias em
-    <b>{{ montado.obras_filtradas|join(', ') }}</b>{% endif %}. Os números da
-    lateral continuam sendo da folha inteira.
+    — dos quais <b>{{ montado.subtotal_da_obra|moeda }}</b> referem-se aos dias em
+    <b>{{ montado.obras_filtradas|join(', ') }}</b>{% endif %}. Os totais da
+    barra lateral referem-se à folha completa.
   </p>
 {% endif %}
 
@@ -482,14 +483,14 @@
    PESSOA POR PESSOA. É a tela. Cada linha abre os dias do ponto dela.
    ------------------------------------------------------------------------ #}
 <div class="cab-com-acoes">
-  <h3>Pessoa por pessoa
-    <small>marque quem entra neste pagamento</small></h3>
+  <h3>Colaboradores
+    <small>selecione os incluídos neste pagamento</small></h3>
   {# O RELATÓRIO DO QUE ESTÁ NA TELA, com os mesmos filtros (01/10/2026: *"o
      relatório do que eu visualizo em tela, além de poder ver o agrupamento do
      pagamento. Por obra, por conta e etc."*). O endereço leva os filtros. #}
   {% set args_da_tela = request.args.to_dict(flat=false) %}
   <div class="cab-acoes">
-    <span class="cartao-dica">Relatório desta lista, com os agrupamentos:</span>
+    <span class="cartao-dica">Relatório desta lista, com agrupamentos:</span>
     <a class="btn secundario" id="relatorio-xlsx"
        href="{{ url_for('analisesps.folha_relatorio', folha_id=folha.id, formato='xlsx', **args_da_tela) }}"
        >Excel</a>
@@ -512,9 +513,9 @@
     <table class="sps" id="tabela-folha">
       <thead>
         <tr>
-          <th style="width:34px" title="Quem entra no pagamento">
+          <th style="width:34px" title="Incluído no pagamento">
             <input type="checkbox" id="marcar-todos"
-                   aria-label="Marcar todos os mostrados"></th>
+                   aria-label="Selecionar todos os exibidos"></th>
           <th>Nome</th>
           <th>CPF</th>
           <th>Código</th>
@@ -534,7 +535,7 @@
              Dias, Valor x Dia, Valor. É nessa sequência que ele lê e confere —
              "valor por dia × dias na obra" se verifica de cabeça. #}
           <th class="num">Dias</th>
-          <th class="num" title="o líquido dividido pelos dias — coluna I da planilha">Valor x Dia</th>
+          <th class="num" title="Líquido dividido pelos dias (coluna I da planilha)">Valor x Dia</th>
           <th class="num">Valor</th>
           <th>Situação</th>
         </tr>
@@ -554,7 +555,7 @@
             <input type="checkbox" class="entra"
                    {% if p.entra %}checked{% endif %}
                    {% if not p.cpf or p.valor_zero or not pode_operar %}disabled{% endif %}
-                   title="{% if not p.cpf %}não dá para marcar: esta pessoa não casou com o cadastro (sem CPF) — corrija o código do Fortes na ficha e aperte Atualizar cadastro{% elif p.valor_zero %}não dá para marcar: valor zero não se paga — fica fora do arquivo{% else %}entra neste pagamento{% endif %}"
+                   title="{% if not p.cpf %}Seleção indisponível: sem correspondência no cadastro (sem CPF). Corrija o código Fortes na ficha e clique em Atualizar cadastro{% elif p.valor_zero %}Seleção indisponível: valor zero não se paga e fica fora do arquivo{% else %}Incluir neste pagamento{% endif %}"
                    aria-label="Pagar {{ p.nome_na_tela }}">
           </td>
           <td>
@@ -565,16 +566,16 @@
             {% if p.cpf %}
               <button type="button" class="link-btn abrir-ponto nome-pessoa"
                       data-cpf="{{ p.cpf }}" data-nome="{{ p.nome_na_tela }}"
-                      title="ver o ponto dia a dia">{{ p.nome_na_tela }}</button>
+                      title="Abrir o analítico do colaborador">{{ p.nome_na_tela }}</button>
             {% else %}
               {# Quem não casou com o cadastro: o nome abre o DIAGNÓSTICO — o que o
                  sistema tem guardado para esse código e esse nome, e o que fazer. #}
               <button type="button" class="link-btn abrir-pendente nome-pessoa"
                       data-id-fortes="{{ p.id_fortes }}" data-nome="{{ p.nome_na_tela }}"
-                      title="por que não casou com o cadastro?">{{ p.nome_na_tela }}</button>
+                      title="Diagnóstico da divergência de cadastro">{{ p.nome_na_tela }}</button>
               <br><button type="button" class="link-btn abrir-pendente"
                       data-id-fortes="{{ p.id_fortes }}" data-nome="{{ p.nome_na_tela }}"
-                      >por que não casou?</button>
+                      >diagnóstico do cadastro</button>
             {% endif %}
             {% if p.link_pipefy %}
               <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
@@ -582,26 +583,26 @@
                  aria-label="abrir o card de {{ p.nome_na_tela }} no Pipefy">↗</a>
             {% endif %}
             <button type="button" class="link-btn ver-dias"
-                    title="a divisão por obra e o ajuste desta pessoa"
+                    title="Divisão por obra e ajuste deste colaborador"
                     >{% if pode_operar %}ajustar{% else %}divisão{% endif %}</button>
             {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
             {% if p.nome_contabilidade and p.nome_contabilidade != p.nome_na_tela %}
               <br><span class="cartao-dica"
-                        title="o nome como a contabilidade mandou">na folha:
+                        title="Nome conforme o arquivo da contabilidade">na folha:
                 {{ p.nome_contabilidade }}</span>
             {% endif %}
           </td>
           <td class="cpf">
             {% if p.cpf %}{{ p.cpf_bonito }}
             {% else %}<span class="selo cancelado"
-              title="Sem o código do Fortes no cadastro não há CPF, e sem CPF não há pagamento"
+              title="Sem código Fortes no cadastro não há CPF; sem CPF não há pagamento"
               >fora do cadastro</span>{% endif %}
           </td>
           <td>{{ p.id_fortes }}</td>
           <td>
             {% if p.filial %}{{ p.filial }}{% else %}<span class="cartao-dica">—</span>{% endif %}
             {% if p.setor_atencao %}
-              <br><span class="selo saindo" title="setor {{ p.setor }} — confira antes de pagar"
+              <br><span class="selo saindo" title="Setor {{ p.setor }}: conferir antes do pagamento"
                 >{{ p.setor_curto }}</span>
             {% elif p.setor %}
               <br><span class="cartao-dica" title="setor {{ p.setor }}">{{ p.setor_curto }}</span>
@@ -615,7 +616,7 @@
                 <br><span class="cartao-dica">regra de rateio{% if p.regra %}:
                   {{ p.regra }}{% endif %}</span>
               {% elif p.origem == 'mao' %}
-                <br><span class="cartao-dica">você definiu à mão</span>
+                <br><span class="cartao-dica">ajuste manual</span>
               {% endif %}
             {% elif p.obra_do_cadastro %}
               {# ⚠️ A OBRA DO CADASTRO APARECE, MAS NÃO APROPRIA. Decisão do dono:
@@ -626,7 +627,7 @@
               {% if pode_operar and p.cpf %}
                 <button type="button" class="link-btn usar-cadastro"
                         data-obra="{{ p.obra_do_cadastro }}"
-                        >usar esta</button>
+                        >usar esta obra</button>
                 {# OUTRA OBRA, NUMA JANELA DE ESCOLHA — pedido dele, 01/10/2026:
                    *"e se quisermos colocar outra obra? Deveríamos poder abrir algum
                    modal de seleção."* #}
@@ -637,7 +638,7 @@
               <span class="cartao-dica">—</span>
               {% if pode_operar and p.cpf and not p.fora %}
                 <button type="button" class="link-btn escolher-obra"
-                        data-sugerida="">escolher obra…</button>
+                        data-sugerida="">selecionar obra…</button>
               {% endif %}
             {% endif %}
           </td>
@@ -646,7 +647,7 @@
               {{ p.obra_do_cadastro }}
               {% if p.obra_diverge %}
                 <br><span class="selo saindo"
-                  title="O ponto diz {{ p.obra_principal }}; o cadastro diz {{ p.obra_do_cadastro }}. Talvez a ficha precise ser atualizada."
+                  title="Ponto: {{ p.obra_principal }}; cadastro: {{ p.obra_do_cadastro }}. Verifique se a ficha precisa ser atualizada."
                   >difere do ponto</span>
               {% endif %}
             {% else %}<span class="cartao-dica">—</span>{% endif %}
@@ -666,9 +667,9 @@
             {# POR QUE A CAIXA ESTÁ DESLIGADA, escrito na linha — e não só no
                passar do mouse, que ele não tinha como adivinhar. #}
             {% if not p.cpf %}
-              <br><span class="cartao-dica">não dá para marcar: sem cadastro</span>
+              <br><span class="cartao-dica">seleção indisponível: sem cadastro</span>
             {% elif p.valor_zero %}
-              <br><span class="selo cancelado" title="valor zero não se paga — fica fora do arquivo de pagamento"
+              <br><span class="selo cancelado" title="valor zero não se paga: fica fora do arquivo de pagamento"
                 >valor zero</span>
             {% endif %}
             {% if p.motivo_fora %}
@@ -691,7 +692,7 @@
               <div class="dias-lista">
                 {% for d in p.por_dia %}
                   <span class="dia-chip {% if d.empate %}empatado{% endif %}"
-                        {% if d.empate %}title="marcações em duas obras neste dia — valeu a obra em que o dia começou"{% endif %}>
+                        {% if d.empate %}title="Batidas em duas obras neste dia: prevalece a obra de início do dia"{% endif %}>
                     {{ d.data|data_br }} · <b>{{ d.obra }}</b> ·
                     {{ d.valor|moeda }}{% if d.empate %} ⚠{% endif %}
                   </span>
@@ -699,16 +700,16 @@
               </div>
             {% elif p.por_obra %}
               <p class="cartao-dica" style="margin:0">
-                Esta pessoa não tem dia de ponto: a divisão veio
-                {% if p.origem == 'regra' %}da regra de rateio{% else %}do ajuste manual feito na linha{% endif %}.
+                Colaborador sem dia de ponto: divisão definida
+                {% if p.origem == 'regra' %}pela regra de rateio{% else %}por ajuste manual{% endif %}.
                 {% for o in p.por_obra %}
                   <b>{{ o.obra }}</b> {{ o.valor|moeda }}{% if not loop.last %} · {% endif %}
                 {% endfor %}
               </p>
             {% else %}
               <p class="cartao-dica" style="margin:0">
-                Nenhum dia de ponto no período e nenhuma regra de rateio. Diga
-                abaixo para onde vai o valor, ou cadastre uma regra em
+                Sem dia de ponto no período e sem regra de rateio. Informe
+                abaixo a obra de destino do valor ou cadastre uma regra em
                 <a href="{{ url_for('analisesps.tela_folha_rateio') }}">Rateio das
                 obras</a>.
               </p>
@@ -732,7 +733,7 @@
                  data-nome="{{ p.nome_na_tela }}" data-valor="{{ p.valor }}"
                  data-dias="{{ p.dias_no_ponto }}">
               <div class="ajuste-linha">
-                <label class="rotulo-campo" style="margin:0">Tudo numa obra só</label>
+                <label class="rotulo-campo" style="margin:0">Apropriar em uma única obra</label>
                 <input type="text" class="obra-unica" name="obra"
                        list="obras-da-folha" placeholder="código da obra"
                        aria-label="Obra única de {{ p.nome_na_tela }}">
@@ -742,25 +743,25 @@
                         >ou dividir por dias</button>
                 {% if p.tem_ajuste %}
                   <button type="button" class="link-btn limpar-ajuste"
-                          title="a pessoa volta a seguir o ponto e a regra"
-                          >voltar ao ponto</button>
+                          title="O colaborador volta a seguir o ponto e a regra de rateio"
+                          >remover ajuste</button>
                 {% endif %}
               </div>
 
               <div class="divisao-por-dias" hidden>
                 <p class="cartao-dica" style="margin:6px 0">
-                  Quantos dias em cada obra. O valor de cada obra sai do
-                  <b>valor por dia</b> — você não digita dinheiro.
+                  Informe a quantidade de dias em cada obra. O valor de cada
+                  obra é calculado pelo <b>valor por dia</b>.
                   {% if p.dias_no_ponto %}
-                    O ponto contou <b>{{ p.dias_no_ponto }}</b> dia(s).
+                    O ponto registrou <b>{{ p.dias_no_ponto }}</b> dia(s).
                   {% endif %}
                 </p>
                 <div class="linhas-divisao"></div>
                 <button type="button" class="link-btn mais-uma-obra"
-                        >+ outra obra</button>
+                        >+ adicionar obra</button>
                 <span class="conta-divisao cartao-dica"></span>
                 <button type="button" class="btn secundario gravar-divisao"
-                        >Gravar a divisão</button>
+                        >Salvar divisão</button>
               </div>
 
               <div class="ajuste-linha" style="margin-top:6px">
@@ -768,7 +769,7 @@
                   <small>(opcional)</small></label>
                 <input type="text" class="observacao-ajuste" name="observacao"
                        maxlength="300" value="{{ p.ajuste.observacao or '' }}"
-                       placeholder="se quiser deixar escrito por quê"
+                       placeholder="motivo do ajuste"
                        aria-label="Observação sobre {{ p.nome_na_tela }}">
               </div>
             </div>
@@ -777,7 +778,7 @@
         </tr>
       {% else %}
         <tr><td colspan="12" class="cartao-dica">
-          Nenhuma pessoa com esses filtros.
+          Nenhum colaborador encontrado com esses filtros.
         </td></tr>
       {% endfor %}
       </tbody>
@@ -787,9 +788,9 @@
 
 {% if montado.passou_do_teto %}
   <div class="aviso atencao">
-    Mostrei as primeiras {{ montado.pessoas|length }} de
-    {{ montado.quantas_mostradas }}. Use os filtros da lateral para chegar em
-    quem você procura.
+    Exibindo os primeiros {{ montado.pessoas|length }} de
+    {{ montado.quantas_mostradas }} colaboradores. Utilize os filtros da barra
+    lateral para refinar a lista.
   </div>
 {% endif %}
 
@@ -803,20 +804,20 @@
 <dialog class="dialogo" id="dialogo-obra">
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
-  <h3>Para qual obra vai o valor?</h3>
+  <h3>Selecionar obra de destino</h3>
   <p class="cartao-dica" id="dialogo-obra-quem"></p>
   {% if obras_c_diarios %}
     <input type="search" id="dialogo-obra-procura" autocomplete="off" data-sem-busca
-           placeholder="procurar a obra…" aria-label="Procurar a obra">
+           placeholder="Procurar obra…" aria-label="Procurar obra">
     <select id="dialogo-obra-lista" size="12" data-sem-busca aria-label="Obras da C. Diários">
       {% for o in obras_c_diarios %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
     </select>
-    <p class="cartao-dica">As obras da aba "C. Diários". Clique duas vezes para usar.</p>
+    <p class="cartao-dica">Obras da aba "C. Diários". Clique duas vezes para selecionar.</p>
   {% else %}
     <input type="text" id="dialogo-obra-texto" list="obras-da-folha"
            placeholder="código da obra" aria-label="Código da obra">
-    <p class="cartao-dica">A lista da "C. Diários" não foi carregada — digite o
-      código da obra.</p>
+    <p class="cartao-dica">A lista da aba "C. Diários" não foi carregada.
+      Informe o código da obra.</p>
   {% endif %}
   <div class="analitico-acoes" style="margin-top:10px">
     <button type="button" class="btn" id="dialogo-obra-usar">Usar esta obra</button>
@@ -832,14 +833,14 @@
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
   <h3 id="cadastro-titulo">Cadastro</h3>
-  <div id="cadastro-corpo"><p class="cartao-dica">lendo a planilha…</p></div>
+  <div id="cadastro-corpo"><p class="cartao-dica">Carregando a planilha de cadastro…</p></div>
 </dialog>
 
 <dialog class="dialogo" id="cartao-ponto">
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
   <h3 id="ponto-titulo">Ponto</h3>
-  <div id="ponto-corpo"><p class="cartao-dica">carregando…</p></div>
+  <div id="ponto-corpo"><p class="cartao-dica">Carregando…</p></div>
 </dialog>
 
 {# ------------------------------------------------------------------------
@@ -857,13 +858,13 @@
           onclick="this.closest('dialog').close()">Fechar</button>
   <h3>Divisão por obra <small>{{ folha.competencia }} · {{ folha.rotulo_do_tipo }}</small></h3>
 
-  <h4>Total por obra <small>é este número que decide o rateio do mês</small></h4>
+  <h4>Total por obra <small>base para o rateio do mês</small></h4>
   <div class="tabela-wrap">
     <div class="tabela-rolagem livre">
       <table class="sps">
-        <thead><tr><th>Obra</th><th class="num">Pessoas</th>
+        <thead><tr><th>Obra</th><th class="num">Colaboradores</th>
           <th class="num">Valor</th><th class="num">% da folha</th>
-          <th>De onde veio</th></tr></thead>
+          <th>Origem</th></tr></thead>
         <tbody>
         {% for o in montado.por_obra %}
           <tr>
@@ -875,7 +876,7 @@
           </tr>
         {% else %}
           <tr><td colspan="5" class="cartao-dica">
-            Nada apropriado ainda — sem o ponto do mês não há obra em dia nenhum.
+            Nenhum valor apropriado: sem o ponto da competência não há obra atribuída aos dias.
           </td></tr>
         {% endfor %}
         </tbody>
@@ -892,11 +893,11 @@
      (coluna AF) e no desenho que ele aprovou. Cada conta vira um arquivo de
      pagamento e uma SP de transferência: é aqui que ele vê, ANTES de gerar,
      quantos arquivos saem e quanto sai de cada conta. #}
-  <h4>Por conta corrente <small>cada conta vira um arquivo e uma SP de transferência</small></h4>
+  <h4>Por conta corrente <small>cada conta gera um arquivo e uma SP de transferência</small></h4>
   <div class="tabela-wrap">
     <div class="tabela-rolagem livre">
       <table class="sps">
-        <thead><tr><th>Conta</th><th>Obras</th><th class="num">Pessoas</th>
+        <thead><tr><th>Conta</th><th>Obras</th><th class="num">Colaboradores</th>
           <th class="num">Valor</th></tr></thead>
         <tbody>
         {% for c in montado.por_conta %}
@@ -904,17 +905,17 @@
             <td>
               {% if c.sem_conta %}
                 <span class="selo pagar"
-                      title="Sem conta cadastrada o arquivo não sai — e um padrão silencioso pagaria pela conta errada">sem conta</span>
+                      title="Sem conta cadastrada, o arquivo de pagamento não é gerado">sem conta</span>
               {% else %}<b>{{ c.conta }}</b>{% endif %}
             </td>
             <td><span class="cartao-dica">{{ c.obras|join(', ') }}</span></td>
             <td class="num">{% if c.conta %}<a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=folha.id, conta=c.conta) }}"
-              title="ver quem é pago por esta conta">{{ c.pessoas }}</a>{% else %}{{ c.pessoas }}{% endif %}</td>
+              title="Listar colaboradores pagos por esta conta">{{ c.pessoas }}</a>{% else %}{{ c.pessoas }}{% endif %}</td>
             <td class="num">{{ c.valor|moeda }}</td>
           </tr>
         {% else %}
           <tr><td colspan="4" class="cartao-dica">
-            Nada apropriado ainda — sem obra não há conta.
+            Nenhum valor apropriado: sem obra não há conta.
           </td></tr>
         {% endfor %}
         </tbody>
@@ -926,17 +927,18 @@
     <div class="aviso erro">
       <b>{{ montado.obras_sem_conta|length }} obra(s) sem conta de pagamento
       cadastrada:</b> {{ montado.obras_sem_conta|join(', ') }}.
-      O arquivo não sai assim. A conta de cada obra vem da aba <b>C. Diários</b> da
-      planilha de apoio — cadastre lá e atualize as referências.
+      Nesta condição, o arquivo de pagamento não é gerado. A conta de cada obra
+      provém da aba <b>C. Diários</b> da planilha de apoio; cadastre-a e atualize
+      as referências.
     </div>
   {% endif %}
 
   {% if filiais %}
-  <h4>Por filial <small>o que o arquivo da contabilidade traz, para conferir</small></h4>
+  <h4>Por filial <small>conforme o arquivo da contabilidade, para conferência</small></h4>
   <div class="tabela-wrap">
     <div class="tabela-rolagem livre">
       <table class="sps">
-        <thead><tr><th>Filial</th><th class="num">Pessoas</th>
+        <thead><tr><th>Filial</th><th class="num">Colaboradores</th>
           <th class="num">Total</th></tr></thead>
         <tbody>
         {% for f in filiais %}
@@ -951,17 +953,17 @@
   {% endif %}
 
   {% if setores %}
-  <h4>Por setor <small>como a contabilidade separou as pessoas no arquivo</small></h4>
+  <h4>Por setor <small>conforme a classificação da contabilidade</small></h4>
   <div class="tabela-wrap">
     <div class="tabela-rolagem livre">
       <table class="sps">
-        <thead><tr><th>Setor</th><th class="num">Pessoas</th>
+        <thead><tr><th>Setor</th><th class="num">Colaboradores</th>
           <th class="num">Total</th></tr></thead>
         <tbody>
         {% for s in setores %}
           <tr class="{{ 'linha-alerta' if s.atencao }}">
             <td>{{ s.codigo }} — {{ s.nome }}
-              {% if s.atencao %}<span class="selo saindo">confira</span>{% endif %}</td>
+              {% if s.atencao %}<span class="selo saindo">conferir</span>{% endif %}</td>
             <td class="num">{{ s.pessoas }}</td>
             <td class="num">{{ s.total|moeda }}</td></tr>
         {% endfor %}
@@ -992,8 +994,9 @@
     </div>
   </div>
   {% else %}
-    <p class="cartao-dica">Nada fechado neste mês ainda. Quando a folha, os
-      auxílios ou os diaristas forem fechados, o pago por obra aparece aqui.</p>
+    <p class="cartao-dica">Nenhuma verba fechada nesta competência. Os valores
+      pagos por obra são exibidos após o fechamento da folha, dos auxílios ou dos
+      diaristas.</p>
   {% endif %}
 </dialog>
 
@@ -1004,16 +1007,16 @@
 {% if pode_operar %}
 <div class="barra-salvar" id="barra-folha">
   <span class="conta-selecao">
-    Vai receber:
+    Incluído no pagamento:
     <span class="total-selecao" id="total-marcado">{{ montado.totais.valor_entra|moeda }}</span>
-    <span class="cartao-dica" id="conta-marcado">{{ montado.totais.entram }} pessoa(s)</span>
+    <span class="cartao-dica" id="conta-marcado">{{ montado.totais.entram }} colaborador(es)</span>
   </span>
   <span class="cartao-dica" id="recado-folha"></span>
   <span class="sobra">
     <button type="button" class="btn secundario" id="desfazer-folha" hidden
             >Desfazer</button>
     <button type="button" class="btn" id="salvar-folha" disabled
-            >Salvar quem entra</button>
+            >Salvar seleção</button>
   </span>
 </div>
 {% endif %}

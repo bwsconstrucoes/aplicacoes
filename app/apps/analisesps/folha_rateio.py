@@ -108,7 +108,7 @@ def conferir_obras(obras) -> list:
         if not nome:
             continue
         if nome in vistas:
-            raise ErroDoRateio(f'A obra "{nome}" está duas vezes na regra.')
+            raise ErroDoRateio(f'A obra "{nome}" está duplicada na regra.')
         vistas.add(nome)
         resto = bool((bruta or {}).get("resto"))
         bruto = (bruta or {}).get("percentual")
@@ -123,17 +123,17 @@ def conferir_obras(obras) -> list:
                     f'O percentual da obra "{nome}" não é um número.') from e
             if percentual <= 0:
                 raise ErroDoRateio(
-                    f'O percentual da obra "{nome}" tem de ser maior que zero.')
+                    f'O percentual da obra "{nome}" deve ser maior que zero.')
             if percentual > CEM:
                 raise ErroDoRateio(
-                    f'O percentual da obra "{nome}" passa de 100%.')
+                    f'O percentual da obra "{nome}" excede 100%.')
         elif not resto:
             raise ErroDoRateio(
-                f'Diga o percentual da obra "{nome}", ou marque-a como "o resto".')
+                f'Informe o percentual da obra "{nome}" ou marque-a como "o resto".')
         arrumadas.append({"obra": nome, "percentual": percentual, "resto": resto})
 
     if not arrumadas:
-        raise ErroDoRateio("Escolha ao menos uma obra para a regra.")
+        raise ErroDoRateio("Selecione ao menos uma obra para a regra.")
 
     fixas = [o for o in arrumadas if not o["resto"]]
     restos = [o for o in arrumadas if o["resto"]]
@@ -142,13 +142,13 @@ def conferir_obras(obras) -> list:
     if restos:
         if soma >= CEM:
             raise ErroDoRateio(
-                f"Os percentuais já somam {soma:.2f}%, então não sobra nada para "
+                f"Os percentuais já somam {soma:.2f}%; não há saldo para "
                 f"{'a obra' if len(restos) == 1 else 'as obras'} marcada"
                 f"{'' if len(restos) == 1 else 's'} como \"o resto\".")
     elif soma != CEM:
         raise ErroDoRateio(
-            f"Os percentuais somam {soma:.2f}% — têm de somar 100%. "
-            "Ou marque uma obra como \"o resto\" e eu faço a conta.")
+            f"Os percentuais somam {soma:.2f}% — o total deve ser 100%. "
+            "Alternativamente, marque uma obra como \"o resto\" para cálculo automático.")
     return arrumadas
 
 
@@ -187,7 +187,7 @@ def obras_por_repeticao(codigos) -> list:
             continue
         contagem[nome] = contagem.get(nome, 0) + 1
     if not contagem:
-        raise ErroDoRateio("Escolha ao menos uma obra para a regra.")
+        raise ErroDoRateio("Selecione ao menos uma obra para a regra.")
 
     total = sum(contagem.values())
     # A de maior peso primeiro; empate, a que foi digitada primeiro. Assim a
@@ -246,8 +246,8 @@ def ler_tabela_de_rateio(texto: str) -> list:
         partes = [p.strip() for p in re.split(r"[;\t]+", linha) if p.strip()]
         if len(partes) < 2:
             raise ErroDoRateio(
-                f"Linha {numero}: falta o CPF ou a lista de obras. O formato é "
-                "CPF ; nome ; obra, obra, obra — o nome pode faltar.")
+                f"Linha {numero}: CPF ou lista de obras ausente. Formato: "
+                "CPF ; nome ; obra, obra, obra — o nome é opcional.")
 
         cpf = so_digitos(partes[0])
         if len(cpf) != 11:
@@ -256,7 +256,7 @@ def ler_tabela_de_rateio(texto: str) -> list:
         if not cpf_valido(cpf):
             raise ErroDoRateio(
                 f"Linha {numero}: o CPF {cpf_bonito(cpf)} tem dígito "
-                "verificador errado — confira se não trocou um número.")
+                "verificador inválido — verifique a digitação.")
 
         # O último bloco é sempre o das obras. O do meio, quando existe, é o
         # nome — e se houver mais de três blocos, o nome é o que está no meio.
@@ -265,7 +265,7 @@ def ler_tabela_de_rateio(texto: str) -> list:
         codigos = [c.strip() for c in obras_cru.split(",") if c.strip()]
         if not codigos:
             raise ErroDoRateio(
-                f"Linha {numero}: não achei nenhuma obra depois do nome.")
+                f"Linha {numero}: nenhuma obra informada após o nome.")
 
         try:
             obras = obras_por_repeticao(codigos)
@@ -283,7 +283,7 @@ def ler_tabela_de_rateio(texto: str) -> list:
 
     if not ordem:
         raise ErroDoRateio(
-            "Não achei nenhuma linha para ler. Uma linha por pessoa: "
+            "Nenhuma linha válida encontrada. Informe uma linha por colaborador: "
             "CPF ; nome ; obra, obra, obra.")
 
     # A MESMA PESSOA EM DUAS LINHAS é erro, e tem de dizer quais: só uma regra
@@ -299,8 +299,8 @@ def ler_tabela_de_rateio(texto: str) -> list:
             f"{cpf_bonito(c)} nas linhas {', '.join(str(n) for n in ns)}"
             for c, ns in list(repetidos.items())[:4])
         raise ErroDoRateio(
-            f"A mesma pessoa aparece em mais de uma linha: {detalhe}. "
-            "Junte as obras dela numa linha só — repetir a obra é o peso.")
+            f"O mesmo colaborador aparece em mais de uma linha: {detalhe}. "
+            "Consolide as obras em uma única linha — a repetição da obra define o peso.")
 
     return [grupos[c] for c in ordem]
 
@@ -364,8 +364,8 @@ def distribuir(valor, obras) -> list:
 # ---------------------------------------------------------------------------
 # ONDE AS REGRAS FICAM
 # ---------------------------------------------------------------------------
-FALTA_MIGRAR = ('A parte do rateio da folha ainda não foi ligada no banco. '
-                'Em Configurações, aperte "Aplicar atualizações do banco".')
+FALTA_MIGRAR = ('Tabelas do rateio da folha não encontradas no banco. '
+                'Em Configurações, clique em "Aplicar atualizações do banco".')
 
 
 def listar(so_ativas: bool = False) -> list:
@@ -443,7 +443,7 @@ def gravar(dados: dict, quem: str = "") -> int:
 
     nome = str(dados.get("nome") or "").strip()
     if not nome:
-        raise ErroDoRateio("Dê um nome à regra — é como você vai achá-la depois.")
+        raise ErroDoRateio("Informe um nome para a regra.")
     obras = conferir_obras(dados.get("obras"))
 
     pessoas = []
@@ -454,16 +454,16 @@ def gravar(dados: dict, quem: str = "") -> int:
             continue
         if not cpf_valido(cpf):
             raise ErroDoRateio(
-                f"O CPF {cpf_bonito(cpf) or cpf} não é válido — confira os "
-                "dígitos. Sem o CPF certo a regra não encontra a pessoa, e ela "
-                "volta a ser apropriada pelo ponto sem ninguém perceber.")
+                f"O CPF {cpf_bonito(cpf) or cpf} é inválido — verifique os "
+                "dígitos. Com CPF incorreto a regra não localiza o colaborador, que "
+                "passa a ser apropriado pelo ponto sem qualquer alerta.")
         if cpf in vistos:
             raise ErroDoRateio(
-                f"O CPF {cpf_bonito(cpf)} está duas vezes nesta regra.")
+                f"O CPF {cpf_bonito(cpf)} está duplicado nesta regra.")
         vistos.add(cpf)
         pessoas.append((cpf, str((bruta or {}).get("nome") or "").strip()[:120]))
     if not pessoas:
-        raise ErroDoRateio("Escolha ao menos uma pessoa para a regra.")
+        raise ErroDoRateio("Selecione ao menos um colaborador para a regra.")
 
     regra_id = dados.get("id")
     regra_id = int(regra_id) if str(regra_id or "").strip().isdigit() else None
@@ -484,8 +484,8 @@ def gravar(dados: dict, quem: str = "") -> int:
             cpf, nome_pessoa, nome_regra = ja[0]
             raise ErroDoRateio(
                 f"{nome_pessoa or cpf_bonito(cpf)} já está na regra "
-                f'"{nome_regra}". Uma pessoa em duas regras ativas não tem '
-                "resposta certa: tire dela de uma das duas.")
+                f'"{nome_regra}". Um colaborador não pode constar em duas regras '
+                "ativas: remova-o de uma delas.")
 
     with conexao() as con:
         if regra_id:
@@ -497,7 +497,7 @@ def gravar(dados: dict, quem: str = "") -> int:
                 (nome, ativa, str(dados.get("observacao") or "").strip()[:500],
                  quem, regra_id))
             if not (cur.rowcount or 0):
-                raise ErroDoRateio("Esta regra não existe mais.")
+                raise ErroDoRateio("Regra não encontrada.")
             con.execute("DELETE FROM analisesps.folha_regra_obra "
                         " WHERE regra_id = ?", (regra_id,))
             con.execute("DELETE FROM analisesps.folha_regra_pessoa "
@@ -581,7 +581,7 @@ def aplicar_tabela(texto: str, quem: str = "",
             nome = f"{nomes[0]} + {len(nomes) - 1} obra(s)"
         criadas.append(gravar({
             "nome": nome,
-            "observacao": f"colado da tabela ({len(grupo['pessoas'])} pessoa(s))",
+            "observacao": f"importado da tabela ({len(grupo['pessoas'])} pessoa(s))",
             "ativa": True,
             "pessoas": grupo["pessoas"],
             "obras": grupo["obras"],

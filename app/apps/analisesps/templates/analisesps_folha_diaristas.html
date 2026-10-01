@@ -17,17 +17,17 @@
 
 <div class="cartao lateral-folha">
   <b class="lateral-titulo">Pagamento <small>{{ r.competencia }} · {{ r.rotulo_periodo }}</small></b>
-  <div class="lat-num"><span>Vai receber</span>
+  <div class="lat-num"><span>A pagar</span>
     <b>{{ r.total|moeda }}</b>
-    <small>{{ r.quantos_a_pagar }} pessoa(s) marcada(s)</small></div>
+    <small>{{ r.quantos_a_pagar }} colaborador(es) selecionado(s)</small></div>
   <p class="cartao-dica lat-estado">
     {% if r.fechamento %}
       <b>Diária fechada</b> em {{ r.fechamento.fechado_em|momento_br }}{% if r.fechamento.fechado_por %}
       por {{ r.fechamento.fechado_por }}{% endif %}
-      ({{ r.fechamento.total_apropriado|moeda }}). O arquivo sai do que foi fechado
-      — mudou alguma marcação, refaça o fechamento.
+      ({{ r.fechamento.total_apropriado|moeda }}). O arquivo é gerado a partir deste
+      fechamento; após alterar a seleção, refaça o fechamento.
     {% else %}
-      <b>Ainda não fechada.</b> Feche para liberar o arquivo de pagamento.
+      <b>Diária não fechada.</b> O fechamento é necessário para gerar o arquivo de pagamento.
     {% endif %}
   </p>
   {% if pode_operar %}
@@ -50,22 +50,22 @@
   {% if c.get('falta_dado') %}
     <a class="lat-critica erro" href="{{ url_tela }}{{ base_qs }}&situacao=falta_dado">
       <b>{{ c.falta_dado }} sem valor da diária ou sem dia válido</b>
-      <small>Sem o valor da diária no cadastro não há o que pagar. Corrija no
-        card do Pipefy e aperte "Atualizar cadastro".</small>
+      <small>Sem o valor da diária no cadastro, não há valor a pagar. Corrija no
+        card do Pipefy e clique em "Atualizar cadastro".</small>
     </a>
   {% endif %}
   {% if lista.escondidos %}
     <a class="lat-critica atencao" href="{{ url_tela }}{{ base_qs }}&situacao=saiu">
-      <b>{{ lista.escondidos }} já {{ 'saiu' if lista.escondidos == 1 else 'saíram' }} — fora da lista</b>
-      <small>Têm dia de diária no período, mas o cadastro diz que saíram. Não
-        entram no pagamento; clique para ver quem é.</small>
+      <b>{{ lista.escondidos }} {{ 'desligado' if lista.escondidos == 1 else 'desligados' }} — fora da lista</b>
+      <small>Possuem dias de diária no período, mas constam como desligados no
+        cadastro. Não entram no pagamento. Clique para consultar.</small>
     </a>
   {% endif %}
   {% if r.sem_cadastro %}
     <div class="lat-critica atencao">
-      <b>{{ r.sem_cadastro|length }} bateram ponto e não estão no cadastro</b>
+      <b>{{ r.sem_cadastro|length }} colaboradores com batida de ponto que não estão no cadastro</b>
       <small>{% for s in r.sem_cadastro[:6] %}{{ s.nome or s.cpf }} ({{ s.dias }} dia(s)){% if not loop.last %}, {% endif %}{% endfor %}{% if r.sem_cadastro|length > 6 %}…{% endif %}.
-        Sem cadastro não há como saber se é diária.</small>
+        Sem cadastro, não é possível identificar o vínculo de diarista.</small>
     </div>
   {% endif %}
 </div>
@@ -82,12 +82,12 @@
   <div class="busca">
     <span class="lupa">⌕</span>
     <input type="search" name="q" value="{{ lista.filtros.q }}" autocomplete="off"
-           placeholder="nome ou CPF…" aria-label="Procurar pessoa">
+           placeholder="Nome ou CPF…" aria-label="Pesquisar colaborador">
   </div>
   {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao,
-           'Sem nada marcado, quem já saiu fica fora da lista.') }}
+           'Sem seleção, os desligados ficam fora da lista.') }}
   {{ bloco('Obra do ponto', 'obra', lista.opcoes_obra, lista.filtros.obra,
-           'Quem teve dia de diária nesta obra.') }}
+           'Colaboradores com diária nesta obra.') }}
   {{ bloco('Fase Atual', 'fase', lista.opcoes_fase, lista.filtros.fase) }}
   <noscript><button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button></noscript>
 </form>
@@ -125,63 +125,64 @@
       {% endfor %}
     </select>
   </label>
-  <button class="btn secundario" type="submit">Ver</button>
+  <button class="btn secundario" type="submit">Consultar</button>
   {% if r.inicio %}
-    <span class="barra-mes-dica">dias de <b>{{ r.inicio|data_br }}</b> a <b>{{ r.fim|data_br }}</b></span>
+    <span class="barra-mes-dica">Período de apuração: <b>{{ r.inicio|data_br }}</b> a <b>{{ r.fim|data_br }}</b></span>
   {% endif %}
 </form>
 
 <p class="cartao-dica" style="margin:0 0 14px">
-  A regra é a da aba <b>Diaristas</b> da planilha. O vínculo é decidido
-  <b>dia por dia</b> (Data de Início e de Admissão do cadastro): só os dias de <b>diária</b>
-  entram — do registro em diante a pessoa é CTPS e vem na folha da contabilidade.
-  Cada dia vale <b>1 diária</b> com presença, <b>meia</b> em presença parcial
-  acima de 7h ou em falta justificada de fim de semana acima de 6h30, e ganha
-  <b>+20 no feriado, +10 no sábado e +20 no domingo</b>. <b>Vigia</b> não recebe
-  diária. Clique em "dia a dia" para ver a conta de cada pessoa.
+  Regra da aba <b>Diaristas</b> da planilha. O vínculo é apurado
+  <b>dia por dia</b> (Data de Início e Data de Admissão do cadastro): somente os dias de
+  <b>diária</b> são considerados; a partir do registro, o colaborador passa a CTPS e
+  integra a folha da contabilidade. Cada dia corresponde a <b>1 diária</b> com presença
+  e a <b>meia diária</b> em presença parcial acima de 7h ou em falta justificada de fim
+  de semana acima de 6h30. Adicionais:
+  <b>+20 no feriado, +10 no sábado e +20 no domingo</b>. <b>Vigia</b> não recebe diária. O cálculo de cada colaborador consta em
+  "Detalhamento diário".
 </p>
 
 {% if erro %}
-  <div class="aviso erro"><b>Não consegui calcular.</b> {{ erro }}</div>
+  <div class="aviso erro"><b>Não foi possível calcular.</b> {{ erro }}</div>
 {% endif %}
 
 {% if not r.tem_ponto %}
   <div class="aviso atencao">
-    <b>O ponto deste mês ainda não foi trazido.</b> Os diaristas saem do ponto: na
-    aba <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a> tem o botão
-    "Trazer o ponto".
+    <b>O ponto deste mês ainda não foi importado.</b> As diárias são apuradas a
+    partir do ponto. Utilize o botão "Trazer o ponto" na aba
+    <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a>.
   </div>
 {% else %}
   {% if not r.tem_coluna_da_diaria %}
     <div class="aviso atencao">
-      <b>Falta uma atualização do banco para o valor da diária.</b> Em
-      <b>Configurações</b>, aperte "Aplicar atualizações do banco"; depois, em
+      <b>Atualização do banco pendente para o valor da diária.</b> Em
+      <b>Configurações</b>, clique em "Aplicar atualizações do banco"; em seguida, em
       <a href="{{ url_for('analisesps.tela_colaboradores') }}">Colaboradores</a>,
-      aperte "Atualizar cadastro" para trazer o valor de cada pessoa.
+      clique em "Atualizar cadastro" para importar o valor de cada colaborador.
     </div>
   {% endif %}
 
 <div class="kpis">
-  <div class="kpi estatico"><div class="kpi-rotulo">Vai receber</div>
+  <div class="kpi estatico"><div class="kpi-rotulo">A pagar</div>
     <div class="kpi-valor">{{ r.total|moeda }}</div></div>
-  <div class="kpi estatico"><div class="kpi-rotulo">Pessoas</div>
+  <div class="kpi estatico"><div class="kpi-rotulo">Colaboradores</div>
     <div class="kpi-valor">{{ r.quantos_a_pagar }}</div></div>
   <div class="kpi estatico {{ 'ambar' if lista.contagem.get('falta_dado') }}">
-    <div class="kpi-rotulo">Travam o pagamento</div>
+    <div class="kpi-rotulo">Pendências</div>
     <div class="kpi-valor">{{ lista.contagem.get('falta_dado', 0) }}</div></div>
   <div class="kpi estatico"><div class="kpi-rotulo">Obras</div>
     <div class="kpi-valor">{{ r.por_obra|length }}</div></div>
 </div>
 
-<h3 style="margin-top:24px">Pessoa por pessoa
+<h3 style="margin-top:24px">Detalhamento por colaborador
   <small>{{ pessoas|length }}{% if lista.filtrando %} · filtrado{% endif %}
-    {% if lista.escondidos %} · {{ lista.escondidos }} que já {{ 'saiu' if lista.escondidos == 1 else 'saíram' }} fora da lista{% endif %}
-    · quem trava o pagamento vem primeiro</small></h3>
+    {% if lista.escondidos %} · {{ lista.escondidos }} {{ 'desligado' if lista.escondidos == 1 else 'desligados' }} fora da lista{% endif %}
+    · pendências listadas primeiro</small></h3>
 
 {% if pode_operar %}
 <p class="cartao-dica" style="margin:0 0 8px">
-  Já vem <b>marcado para pagar</b> quem atende a regra. Desmarque quem não vai
-  receber e aperte <b>Salvar seleção</b> uma vez, no fim.
+  Os colaboradores que atendem à regra vêm <b>selecionados para pagamento</b>.
+  Desmarque os que não devem ser pagos e clique em <b>Salvar seleção</b> ao final.
 </p>
 {% endif %}
 
@@ -190,8 +191,8 @@
     <table class="sps" id="tabela-diaristas">
       <thead><tr>
         {% if pode_operar %}<th class="marca"><input type="checkbox" id="marcar-todos"
-            title="marcar ou desmarcar todos os visíveis" aria-label="Marcar todos"></th>{% endif %}
-        <th>Quem</th><th>Situação</th><th>CPF</th><th>Fase Atual</th><th>Obra(s)</th>
+            title="Selecionar ou desmarcar todos os visíveis" aria-label="Selecionar todos"></th>{% endif %}
+        <th>Colaborador</th><th>Situação</th><th>CPF</th><th>Fase Atual</th><th>Obra(s)</th>
         <th class="num">Diárias</th><th class="num">Valor da diária</th>
         <th class="num">Adicionais</th><th class="num">Valor</th>
       </tr></thead>
@@ -202,16 +203,16 @@
           {% if pode_operar %}
             <td class="marca"><input type="checkbox" class="marca-pessoa"
                 {% if p.pagar %}checked{% endif %} {% if p.impossivel %}disabled{% endif %}
-                aria-label="Pagar {{ p.nome }}"></td>
+                aria-label="Selecionar {{ p.nome }} para pagamento"></td>
           {% endif %}
           <td>
             <button type="button" class="link-btn nome-pessoa abrir-ficha"
-                    data-cpf="{{ p.cpf }}" title="cadastro, valores e ponto do mês"
+                    data-cpf="{{ p.cpf }}" title="Cadastro, valores e ponto do mês"
                     ><b>{{ p.nome or '—' }}</b></button>
             {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
             {% for motivo in p.motivos %}<br><span class="cartao-dica">⚠ {{ motivo }}</span>{% endfor %}
             <details class="dia-a-dia">
-              <summary class="cartao-dica">dia a dia ({{ p.dias|length }} dia(s) de diária{% if p.dias_de_ctps %}, {{ p.dias_de_ctps }} de CTPS{% endif %})</summary>
+              <summary class="cartao-dica">Detalhamento diário ({{ p.dias|length }} dia(s) de diária{% if p.dias_de_ctps %}, {{ p.dias_de_ctps }} de CTPS{% endif %})</summary>
               <table class="sps mini">
                 <thead><tr><th>Dia</th><th>Obra</th><th>Situação no ponto</th>
                   <th>Horas</th><th class="num">Diária</th><th class="num">Adicional</th>
@@ -231,17 +232,17 @@
               </table>
               {% if p.data_inicio or p.data_admissao %}
                 <p class="cartao-dica">Início {{ p.data_inicio|data_br if p.data_inicio else '—' }}
-                  · admissão {{ p.data_admissao|data_br if p.data_admissao else '—' }}
+                  · Admissão {{ p.data_admissao|data_br if p.data_admissao else '—' }}
                   · {{ p.tipo_contrato or 'contrato não informado' }}</p>
               {% endif %}
             </details>
           </td>
           <td>
-            {% if p.impossivel %}<span class="selo risco">falta dado</span>
-            {% elif p.desligado %}<span class="selo cancelado">já saiu</span>
-            {% elif not p.pagar %}<span class="selo cancelado">não paga</span>
+            {% if p.impossivel %}<span class="selo risco">dados incompletos</span>
+            {% elif p.desligado %}<span class="selo cancelado">desligado</span>
+            {% elif not p.pagar %}<span class="selo cancelado">não selecionado</span>
             {% elif p.motivos %}<span class="selo saindo">atenção</span>
-            {% else %}<span class="selo aprovado">vai receber</span>{% endif %}
+            {% else %}<span class="selo aprovado">a pagar</span>{% endif %}
           </td>
           <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
           <td>{{ p.fase or '—' }}</td>
@@ -253,26 +254,26 @@
         </tr>
       {% else %}
         <tr><td colspan="10" class="cartao-dica">
-          {% if lista.filtrando %}Ninguém com esse filtro.{% else %}Nenhum dia de
-          diária neste período.{% endif %}</td></tr>
+          {% if lista.filtrando %}Nenhum colaborador corresponde ao filtro.{% else %}Nenhum
+          dia de diária neste período.{% endif %}</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
-<h3 style="margin-top:24px">Por obra <small>é esta obra que paga</small></h3>
+<h3 style="margin-top:24px">Por obra <small>obra responsável pelo pagamento</small></h3>
 <div class="tabela-wrap">
   <div class="tabela-rolagem livre">
     <table class="sps">
-      <thead><tr><th>Obra</th><th class="num">Pessoas</th><th class="num">Diárias</th>
+      <thead><tr><th>Obra</th><th class="num">Colaboradores</th><th class="num">Diárias</th>
         <th class="num">Total</th></tr></thead>
       <tbody>
       {% for o in r.por_obra %}
         <tr><td><b>{{ o.obra }}</b></td><td class="num">{{ o.pessoas }}</td>
           <td class="num">{{ qtd(o.dias) }}</td><td class="num">{{ o.total|moeda }}</td></tr>
       {% else %}
-        <tr><td colspan="4" class="cartao-dica">Nada a pagar neste período.</td></tr>
+        <tr><td colspan="4" class="cartao-dica">Nenhum valor a pagar neste período.</td></tr>
       {% endfor %}
       </tbody>
       {% if r.por_obra %}<tfoot><tr><th>Total</th><th class="num">{{ r.quantos_a_pagar }}</th>
@@ -283,7 +284,7 @@
 
 {% if pode_operar %}
 <div class="barra-salvar" id="barra-salvar">
-  <span class="conta-selecao">Vai receber:
+  <span class="conta-selecao">Selecionados para pagamento:
     <span id="quantos-marcados">{{ r.quantos_a_pagar }}</span>
     <span class="total-selecao" id="total-marcado">{{ r.total|moeda }}</span></span>
   <span class="cartao-dica" id="recado-selecao"></span>
@@ -338,7 +339,7 @@ if (salvar) salvar.addEventListener("click", async () => {
   const decisoes = caixas.map(c => ({cpf: c.closest("tr").dataset.cpf, pagar: c.checked}));
   const recado = document.getElementById("recado-selecao");
   salvar.disabled = true;
-  recado.textContent = "salvando…";
+  recado.textContent = "Salvando…";
   try {
     const r = await fetch("{{ url_for('analisesps.folha_diaristas_selecao') }}", {
       method: "POST", headers: {"Content-Type": "application/json"},
@@ -347,18 +348,18 @@ if (salvar) salvar.addEventListener("click", async () => {
     const d = await r.json();
     if (!d.ok) { recado.textContent = d.erro; salvar.disabled = false; return; }
     location.reload();
-  } catch (e) { recado.textContent = "falhou: " + e; salvar.disabled = false; }
+  } catch (e) { recado.textContent = "Não foi possível salvar: " + e; salvar.disabled = false; }
 });
 
 const fechar = document.getElementById("fechar-diaria");
 if (fechar) fechar.addEventListener("click", async () => {
   if (caixas.some((c, i) => c.checked !== inicial[i])) {
-    alert("Salve a seleção antes de fechar — o fechamento usa o que está salvo.");
+    alert("Salve a seleção antes do fechamento. O fechamento utiliza a seleção salva.");
     return;
   }
   if (!confirm("Fechar a diária de {{ r.competencia }} ({{ r.rotulo_periodo }})?\n\n" +
-               "Isso congela quem recebe e de qual obra sai o dinheiro, e libera o " +
-               "arquivo de pagamento. Dá para refazer.")) return;
+               "O fechamento registra os colaboradores selecionados e a obra de origem " +
+               "de cada valor, e libera o arquivo de pagamento. É possível refazê-lo.")) return;
   fechar.disabled = true;
   try {
     const r = await fetch("{{ url_for('analisesps.folha_diaristas_fechar') }}", {
@@ -367,7 +368,7 @@ if (fechar) fechar.addEventListener("click", async () => {
     const d = await r.json();
     if (!d.ok) { alert(d.erro); fechar.disabled = false; return; }
     location.reload();
-  } catch (e) { alert("Falhou: " + e); fechar.disabled = false; }
+  } catch (e) { alert("Não foi possível fechar a diária: " + e); fechar.disabled = false; }
 });
 </script>
 {% endblock %}

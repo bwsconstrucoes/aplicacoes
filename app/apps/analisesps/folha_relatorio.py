@@ -50,7 +50,7 @@ ROTULO_DO_VALOR_ESPECIAL = {
     "__atencao": "afastados e desativar",
     "ponto": "pelas batidas de ponto",
     "regra": "pela regra de rateio",
-    "mao": "ajustada na linha",
+    "mao": "ajuste manual na linha",
 }
 
 MIME_XLSX = ("application/vnd.openxmlformats-officedocument"
@@ -190,12 +190,12 @@ def montar(montado: dict, contas_por_obra: dict) -> dict:
 
 
 def _aviso_de_origem(dados) -> str:
-    base = ("Montado da conta de agora, igual à tela."
+    base = ("Gerado com os valores atuais, conforme a tela."
             if not dados["fechada"] else
-            "Montado da conta de agora, igual à tela (a apropriação está "
-            "fechada; o arquivo de pagamento sai do fechamento).")
-    return base + (" Por obra e por conta somam só quem vai receber; cada pessoa "
-                   "é dividida pelos dias em cada obra.")
+            "Gerado com os valores atuais, conforme a tela (apropriação "
+            "fechada; o arquivo de pagamento é gerado a partir do fechamento).")
+    return base + (" Os totais por obra e por conta consideram apenas os valores a "
+                   "pagar; cada colaborador é rateado pelos dias em cada obra.")
 
 
 def _sim_nao(p) -> str:
@@ -236,14 +236,14 @@ def excel(dados: dict) -> bytes:
     # --- RESUMO --------------------------------------------------------
     resumo = aba_nova("Resumo", [dados["titulo"], dados["subtitulo"]], primeira=True)
     resumo.append(["Pessoas na lista", dados["quantas"]])
-    resumo.append(["De quantas na folha", dados["de_quantas"]])
+    resumo.append(["Total de pessoas na folha", dados["de_quantas"]])
     resumo.append(["Total da lista", float(dados["total_da_lista"])])
-    resumo.append(["Vai receber (pessoas)", dados["grupos"]["pessoas_pagas"]])
-    resumo.append(["Vai receber (valor)", float(dados["grupos"]["total_pago"])])
+    resumo.append(["A pagar (pessoas)", dados["grupos"]["pessoas_pagas"]])
+    resumo.append(["A pagar (valor)", float(dados["grupos"]["total_pago"])])
     resumo.append([])
     resumo.append(["Filtros"])
     resumo.cell(row=resumo.max_row, column=1).font = negrito
-    for texto in dados["filtros"] or ["nenhum — a folha inteira"]:
+    for texto in dados["filtros"] or ["nenhum — folha completa"]:
         resumo.append([texto])
     resumo.append([])
     resumo.append([_aviso_de_origem(dados)])
@@ -274,7 +274,7 @@ def excel(dados: dict) -> bytes:
     # --- OS AGRUPAMENTOS ----------------------------------------------
     g = dados["grupos"]
     aba = aba_nova("Por obra", ["Obra", "Conta", "Pessoas", "Dias", "Valor",
-                                "% do que vai receber"])
+                                "% do total a pagar"])
     for o in g["por_obra"]:
         aba.append([o["obra"], o["conta"], o["pessoas"], o["dias"],
                     float(o["valor"]), float(o["percentual"])])
@@ -283,7 +283,7 @@ def excel(dados: dict) -> bytes:
     larguras(aba, [30, 16, 10, 8, 15, 20])
 
     aba = aba_nova("Por conta", ["Conta", "Obras", "Pessoas", "Valor",
-                                 "% do que vai receber"])
+                                 "% do total a pagar"])
     for c in g["por_conta"]:
         aba.append([c["conta"], ", ".join(c["obras"]), c["pessoas"],
                     float(c["valor"]), float(c["percentual"])])
@@ -294,7 +294,7 @@ def excel(dados: dict) -> bytes:
     for titulo, chave, rotulo in (("Por obra da contabilidade", "por_filial", "Filial"),
                                   ("Por setor", "por_setor", "Setor")):
         aba = aba_nova(titulo[:31], [rotulo, "Pessoas", "Valor",
-                                     "% do que vai receber"])
+                                     "% do total a pagar"])
         for linha in g[chave]:
             aba.append([linha["nome"], linha["pessoas"], float(linha["valor"]),
                         float(linha["percentual"])])
@@ -333,12 +333,12 @@ def pdf(dados: dict) -> bytes:
     doc.numeros([
         ("Pessoas na lista", f"{dados['quantas']} de {dados['de_quantas']}"),
         ("Total da lista", "R$ " + _moeda_br(dados["total_da_lista"])),
-        ("Vai receber", f"{g['pessoas_pagas']} pessoa(s), R$ "
+        ("A pagar", f"{g['pessoas_pagas']} pessoa(s), R$ "
                         + _moeda_br(g["total_pago"])),
     ])
     doc.observacao("Filtros: " + ("; ".join(dados["filtros"])
                                   if dados["filtros"] else
-                                  "nenhum - a folha inteira") + ". "
+                                  "nenhum - folha completa") + ". "
                    + _aviso_de_origem(dados))
 
     doc.titulo_secao("Por conta de pagamento")
