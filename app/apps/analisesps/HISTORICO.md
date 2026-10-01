@@ -10943,11 +10943,23 @@ saíram, total antes e depois, e a lista (antes/agora); aviso para **refazer o
 fechamento** quando a apropriação estava fechada, e para trazer a analítica
 nova quando há uma da versão anterior.
 
+#### Três consertos pequenos, publicados em 01/10/2026 (main em `df9ce97`)
+
+- **Data da batida no Mobponto:** ele recusou `2026-09-16 07:00`; o campo
+  `dt_ponto_new` só aceita `DD/MM/AAAA HH:MM`. Corrigido — o lançamento do
+  Rogério (16 a 30/09) precisa ser pedido de novo.
+- **"Já saiu" com dois números diferentes:** as pendências contavam pelo
+  cadastro e o filtro pela folha, e davam 2 contra 0. Os dois agora olham a
+  situação do cadastro.
+- **Topo do analítico preso:** nome, dados e botões ficam visíveis ao rolar.
+
+Nenhuma migração nova nestes três.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
 |---|---|
-| ~~publicar~~ — **publicada em 01/10/2026** (main em `6ecc3c3`, com as levas 139 e 140). Conferir que ele apertou "Aplicar atualizações do banco" (043) | ele |
+| ~~publicar~~ — **publicada em 01/10/2026** (main em `df9ce97`, levas 139 a 141 e os três consertos acima). Conferir que ele apertou "Aplicar atualizações do banco" (043) | ele |
 | depois do botão: "Atualizar cadastro" (geral) para trazer a data de nascimento de todos | ele |
 | soltar a folha analítica de 09/2026 | ele |
 | decidir se passa a importar só a analítica | ele |
