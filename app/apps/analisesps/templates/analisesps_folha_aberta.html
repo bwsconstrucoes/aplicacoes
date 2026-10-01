@@ -990,6 +990,100 @@
       b.disabled = false;
     }
   });
+
+  // CORRIGIR O PONTO NO MOBPONTO (01/10/2026): "corrigir" no dia abre o quadro
+  // embaixo da tabela com aquele dia; as batidas que o dia já tem ficam
+  // travadas (incluir de novo duplicaria). Gravar manda ao Mobponto e, se
+  // entrou alguma, acompanha a atualização do ponto da pessoa e relê o analítico.
+  const PADRAO_DAS_HORAS = ["07:00", "11:00", "13:00", "17:00"];
+  corpo.addEventListener("click", e => {
+    const b = e.target.closest(".corrigir-dia");
+    if (!b) return;
+    const quadro = corpo.querySelector("#corrigir-ponto");
+    if (!quadro) return;
+    quadro.hidden = false;
+    quadro.querySelector(".corrigir-dia-rotulo").textContent = b.dataset.dataBr;
+    const campoData = quadro.querySelector(".corrigir-data");
+    if (!campoData) { quadro.scrollIntoView({behavior: "smooth"}); return; }
+    campoData.value = b.dataset.data;
+    const horas = (b.dataset.horas || "").split("|");
+    quadro.querySelectorAll(".corrigir-linha").forEach((linha, i) => {
+      const hora = linha.querySelector(".corrigir-hora");
+      const obra = linha.querySelector(".corrigir-obra");
+      const ja = (horas[i] || "").trim();
+      hora.value = ja ? ja.slice(0, 5) : "";
+      hora.disabled = obra.disabled = !!ja;
+      hora.placeholder = ja ? "" : PADRAO_DAS_HORAS[i];
+      obra.value = "";
+      obra.placeholder = ja ? "já batida" : "obra";
+    });
+    quadro.querySelector(".corrigir-recado").textContent = "";
+    quadro.scrollIntoView({behavior: "smooth", block: "nearest"});
+  });
+
+  corpo.addEventListener("click", e => {
+    if (!e.target.closest(".corrigir-cancelar")) return;
+    const quadro = corpo.querySelector("#corrigir-ponto");
+    if (quadro) quadro.hidden = true;
+  });
+
+  corpo.addEventListener("click", async e => {
+    const b = e.target.closest(".corrigir-enviar");
+    if (!b) return;
+    const quadro = corpo.querySelector("#corrigir-ponto");
+    const recado = quadro.querySelector(".corrigir-recado");
+    const batidas = [];
+    quadro.querySelectorAll(".corrigir-linha").forEach(linha => {
+      const hora = linha.querySelector(".corrigir-hora");
+      const obra = linha.querySelector(".corrigir-obra");
+      if (hora.disabled) return;
+      if (hora.value || obra.value) batidas.push({hora: hora.value, obra: obra.value});
+    });
+    if (!batidas.length) { recado.textContent = "Preencha hora e obra de pelo menos uma batida."; return; }
+    const lista = batidas.map(x => x.hora + " em " + (x.obra || "?")).join(", ");
+    if (!confirm("Gravar no MOBPONTO, para " + quadro.dataset.nome + " em " +
+                 quadro.querySelector(".corrigir-dia-rotulo").textContent + ":\n\n" +
+                 lista + "\n\nO que entra no Mobponto não se desfaz por aqui.")) return;
+    b.disabled = true;
+    recado.textContent = "gravando no Mobponto…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_ponto_incluir_batida') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({folha_id: quadro.dataset.folha, cpf: quadro.dataset.cpf,
+                              nome: quadro.dataset.nome,
+                              data: quadro.querySelector(".corrigir-data").value,
+                              batidas: batidas,
+                              justificativa: quadro.querySelector(".corrigir-justificativa").value})});
+      const d = await r.json();
+      const entraram = (d.enviadas || []).map(x => x.hora + " " + x.obra).join(", ");
+      let texto = entraram ? "Entrou no Mobponto: " + entraram + ". " : "";
+      if (d.falhou || (!d.ok && d.erro)) {
+        texto += "NÃO entrou" + (d.falhou ? " a das " + d.falhou.hora : "") + ": " + (d.erro || "");
+        if (d.falhou && entraram) texto += " As seguintes nem foram mandadas.";
+      }
+      recado.textContent = texto;
+      if (!d.atualizando) { b.disabled = false; return; }
+      recado.textContent = texto + " Trazendo o ponto de novo…";
+      const acompanhar = async () => {
+        const a = await (await fetch("{{ url_for('analisesps.andamento') }}")).json();
+        if (a.rodando) { setTimeout(acompanhar, 4000); return; }
+        const f = await (await fetch("{{ url_for('analisesps.folha_ponto_pessoa_estado') }}")).json();
+        if (f.sucesso) {
+          await carregar(quadro.dataset.cpf);
+          const novo = corpo.querySelector(".recado-ponto-pessoa");
+          if (novo) novo.textContent = texto + " Ponto atualizado: " + f.mensagem;
+        } else {
+          recado.textContent = texto + " Mas não consegui trazer o ponto de novo: " +
+            (f.mensagem || "motivo não registrado") + " — use \"Atualizar o ponto desta pessoa\".";
+          b.disabled = false;
+        }
+      };
+      setTimeout(acompanhar, 3000);
+    } catch (erro) {
+      recado.textContent = "Falhou: " + erro + " — confira no Mobponto se entrou antes de mandar de novo.";
+      b.disabled = false;
+    }
+  });
 })();
 
 // APAGAR ESTA FOLHA — pergunta antes, dizendo o que some e o que fica.

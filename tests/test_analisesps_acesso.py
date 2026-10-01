@@ -128,6 +128,8 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/folha/123/previa-pagamento"),
     # O relatório da folha em Excel e PDF: dado pessoal.
     ("GET",  "/analisesps/folha/123/relatorio.pdf"),
+    # Incluir batida no Mobponto: grava em sistema de terceiro.
+    ("POST", "/analisesps/api/folha/ponto/batida"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.

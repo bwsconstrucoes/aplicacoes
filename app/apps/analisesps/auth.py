@@ -357,6 +357,7 @@ SO_DO_MESTRE = frozenset({
     "analisesps.folha_pagamento_preparar",
     "analisesps.folha_pagamento_gerar",
     "analisesps.folha_previa_pagamento",  # mesmo arquivo, só não sobe
+    "analisesps.folha_ponto_incluir_batida",  # grava no Mobponto: sem volta
     "analisesps.folha_pipe_conferir",
     "analisesps.folha_card_lancar",     # cria card no Pipefy: sem volta
     "analisesps.migrar",                 # aplica migração no banco
@@ -477,6 +478,7 @@ TELA_DA_ROTA = {
     "analisesps.folha_pagamento_preparar": ("folha",),
     "analisesps.folha_previa_pagamento": ("folha",),
     "analisesps.folha_relatorio": ("folha",),
+    "analisesps.folha_ponto_incluir_batida": ("folha",),
     "analisesps.folha_pagamento_gerar": ("folha",),
     "analisesps.folha_pipe_conferir": ("folha",),
     "analisesps.folha_card_lancar": ("folha",),

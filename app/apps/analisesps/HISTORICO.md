@@ -10555,9 +10555,9 @@ importa.
 
 ---
 
-### Centésima trigésima quarta leva (01/10) — prévia do pagamento, relatório Excel/PDF, lateral da folha com padrão
+### Centésima trigésima quarta leva (01/10) — prévia do pagamento, relatório Excel/PDF, lateral da folha com padrão, corrigir o ponto no Mobponto
 
-Seis pedidos dele, em sequência, olhando a folha aberta.
+Sete pedidos dele, em sequência, olhando a folha aberta.
 
 **1. "O botão Apagar esta folha tá integralmente vermelho, texto e fundo."** —
 `.btn.perigo` pinta o fundo de vermelho e `.btn.secundario.perigo` só trocava a
@@ -10616,11 +10616,42 @@ contabilidade, por setor e por situação.
 - Qualquer perfil que abre a folha baixa o relatório (a tela já mostra os
   mesmos dados). A prévia é só do mestre.
 
+**7. "Quero poder fazer a edição da folha do ponto a partir daquela tela onde
+detalha as informações do colaborador (…) altera a obra ou adiciona uma obra que
+não existia, salva e grava as alterações."** — No analítico do funcionário, cada
+dia ganhou **"corrigir"** (só mestre): abre um quadro com as quatro batidas do
+dia; as que já existem ficam travadas, as que faltam recebem hora + obra +
+justificativa. **"Gravar no Mobponto"** manda cada batida ao Mobponto e, se
+entrou alguma, **traz de novo o ponto daquela pessoa** (a atualização de uma
+pessoa só, que já existia) — a folha recalcula sozinha. Módulo
+`ponto_edicao.py`; migração **040** (`ponto_batida_enviada`) registra quem
+mandou o quê e o que o Mobponto respondeu.
+- **O contrato é o do `local_backend.py` dele**: `CAD_EDT_PONTO`, ação `C`
+  (incluir), com CPF e nome do responsável, `dt_ponto_new` "AAAA-MM-DD HH:MM",
+  justificativa e `local`. É o único de ponto que eu tenho.
+- **MUDAR A OBRA DE UMA BATIDA QUE JÁ EXISTE NÃO ESTÁ FEITO**: não há, no
+  material dele, a ação de editar nem o identificador da batida. Perguntado a
+  ele — precisa do trecho do script que edita (sem as credenciais).
+- **Sem nova tentativa automática** (a leitura tem): gravar de novo depois de
+  um tempo esgotado pode duplicar a batida. A tela diz "não sei se gravou".
+- **Para na primeira batida que falhar** e diz exatamente o que entrou.
+- **Novas variáveis no Render:** `MOBPONTO_RESPONSAVEL_CPF` e
+  `MOBPONTO_RESPONSAVEL_NOME` (as do script dele). Sem elas, o quadro diz o que
+  falta e não grava.
+- **Não verificado contra o Mobponto** (não há ambiente de teste dele): se o
+  `local` aceita o código da obra como aparece no ponto, e o formato da hora. O
+  fluxo da tela foi exercitado em navegador com o Mobponto simulado. **A
+  primeira gravação de verdade é o teste** — sugerido a ele fazer num dia de
+  uma pessoa e conferir no Mobponto.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
 |---|---|
-| **publicar** esta leva (sem migração) | ele dizer "pode" |
+| **publicar** esta leva — **com migração 040**: apertar "Aplicar atualizações do banco" na hora | ele dizer "pode" |
+| criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
+| primeira batida de verdade: incluir uma, conferir no Mobponto que entrou na obra certa | ele |
+| o trecho do script que EDITA uma batida (para "mudar a obra") | ele |
 | baixar uma prévia e conferir contra o que ele espera | ele |
 | abrir o diagnóstico do Abraão e conferir as obras "sem conta" (leva 133) | ele |
 

@@ -2604,3 +2604,9 @@ a.lat-critica .lat-valor { float: right; font-family: var(--fonte-dados); font-w
 .busca input[type=search] { padding: 10px 12px 10px 34px; }
 /* "Limpar" da lateral sem sublinhado, como os demais botões-texto. */
 .filtros-cab .link-btn { text-decoration: none; }
+
+/* Incluir batidas no Mobponto, embaixo do ponto dia a dia — 01/10/2026. */
+.corrigir-ponto { margin-top: 12px; padding: 12px; border-left: 3px solid var(--ambar); }
+.corrigir-batidas { display: grid; gap: 6px; margin: 8px 0; max-width: 560px; }
+.corrigir-linha { display: grid; grid-template-columns: 70px 110px 1fr; gap: 6px; align-items: center; font-size: 13px; }
+.corrigir-ponto .corrigir-justificativa { width: 100%; max-width: 560px; display: block; margin-top: 4px; }

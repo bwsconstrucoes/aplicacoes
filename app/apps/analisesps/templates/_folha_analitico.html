@@ -153,7 +153,8 @@
   <table class="sps ponto-dia-a-dia">
     <thead><tr><th>Dia</th><th>Entrada</th><th>Almoço</th><th>Retorno</th>
       <th>Saída</th><th>Situação</th><th>Obra do dia</th>
-      <th class="num">Valor do dia</th></tr></thead>
+      <th class="num">Valor do dia</th>
+      {% if parcial and editar_ponto %}<th class="nao-imprimir"></th>{% endif %}</tr></thead>
     <tbody>
     {% for x in a.dias %}
       <tr class="{{ 'dia-sem-obra' if not x.obra_ponto and not x.obra_valeu }}">
@@ -171,11 +172,57 @@
           {% else %}<span class="cartao-dica">{{ x.motivo or 'sem obra' }}</span>{% endif %}
         </td>
         <td class="num">{% if x.valor %}{{ x.valor|moeda }}{% else %}—{% endif %}</td>
+        {% if parcial and editar_ponto %}
+          <td class="nao-imprimir">
+            <button type="button" class="link-btn corrigir-dia" data-data="{{ x.data }}"
+                    data-data-br="{{ x.data_br }}"
+                    data-horas="{{ x.batidas|map(attribute='hora')|join('|') }}"
+                    title="incluir batida neste dia, no Mobponto">corrigir</button>
+          </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
     <tfoot><tr><th colspan="7">Total dos dias</th>
-      <th class="num">{% if a.dias_no_ponto and a.origem != 'regra' %}{{ a.valor|moeda }}{% else %}—{% endif %}</th></tr></tfoot>
+      <th class="num">{% if a.dias_no_ponto and a.origem != 'regra' %}{{ a.valor|moeda }}{% else %}—{% endif %}</th>
+      {% if parcial and editar_ponto %}<th class="nao-imprimir"></th>{% endif %}</tr></tfoot>
   </table>
   </div></div>
+
+  {# --- CORRIGIR O PONTO NO MOBPONTO — 01/10/2026 --------------------------
+     Pedido dele: *"altera a obra ou adiciona uma obra que não existia, salva e
+     grava as alterações."* Grava NO MOBPONTO e traz o ponto da pessoa de novo;
+     ver `ponto_edicao.py`, inclusive o que a API conhecida não faz. #}
+  {% if parcial and editar_ponto %}
+  <div class="cartao corrigir-ponto nao-imprimir" id="corrigir-ponto" hidden
+       data-cpf="{{ a.cpf }}" data-folha="{{ a.folha_id }}" data-nome="{{ a.nome }}">
+    <b class="lateral-titulo">Incluir batidas no Mobponto —
+      <span class="corrigir-dia-rotulo"></span></b>
+    {% if falta_para_editar %}
+      <div class="aviso atencao" style="margin:6px 0 0">{{ falta_para_editar }}</div>
+    {% else %}
+      <p class="cartao-dica">Grava no Mobponto e, em seguida, traz de novo o ponto
+        desta pessoa — a folha recalcula. <b>O que entra no Mobponto não se desfaz
+        por aqui.</b> Mudar a obra de uma batida que já existe ainda não dá por
+        aqui: só incluir batida nova. Preencha só as que faltam.</p>
+      <input type="hidden" class="corrigir-data">
+      <div class="corrigir-batidas">
+        {% for rotulo in ['Entrada', 'Almoço', 'Retorno', 'Saída'] %}
+          <label class="corrigir-linha"><span>{{ rotulo }}</span>
+            <input type="time" class="corrigir-hora" aria-label="Hora — {{ rotulo }}">
+            <input type="text" class="corrigir-obra" list="obras-da-folha"
+                   placeholder="obra" aria-label="Obra — {{ rotulo }}"></label>
+        {% endfor %}
+      </div>
+      <label class="rotulo-campo">Justificativa (vai para o Mobponto)
+        <input type="text" class="corrigir-justificativa" maxlength="500"
+               placeholder="ex.: esqueceu de bater na obra CRE1"></label>
+      <div class="analitico-acoes" style="margin-top:8px">
+        <button type="button" class="btn corrigir-enviar">Gravar no Mobponto</button>
+        <button type="button" class="btn secundario corrigir-cancelar">Cancelar</button>
+        <span class="cartao-dica corrigir-recado"></span>
+      </div>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>

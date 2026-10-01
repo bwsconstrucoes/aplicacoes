@@ -241,6 +241,7 @@ seria ou perdido, ou versionado por engano.
 | `ANALISESPS_SENHA_CONSULTA` | senha de quem só olha. **Sem ela, ninguém consulta** |
 | `ANALISESPS_SECRET` | autoriza a chamada do agendador |
 | `ANALISESPS_AVISO_TELEFONE` | para quem vai o WhatsApp quando a carga do ponto PARA (vários números, separados por vírgula). **Opcional**: sem ela valem os dois números do aviso do BaixaBradesco — o financeiro e o dono |
+| `MOBPONTO_RESPONSAVEL_CPF` / `MOBPONTO_RESPONSAVEL_NOME` | quem assina, no Mobponto, a batida incluída pela janela do funcionário na folha ("corrigir" no dia). São os mesmos CPF e nome que o script de ajuste do ponto usa. **Sem elas, o quadro de corrigir diz o que falta e não grava.** Não são senha, mas o CPF é dado pessoal: vão direto no Render |
 | `ANALISESPS_HOOK_OMIE` | gancho do Make dos botões "Consulta" e "Atualizar" da ficha. **Opcional**: sem ela os dois botões não aparecem |
 | `ANALISESPS_CHAVE_COFRE` | frase secreta que cifra os certificados digitais no banco. **Sem ela, o sistema recusa guardar certificado** — e sem certificado a busca de notas na Receita não roda. ⚠️ **Trocar a frase torna ilegível o que já foi guardado**: os certificados teriam de ser subidos de novo |
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |

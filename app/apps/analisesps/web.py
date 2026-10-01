@@ -2658,8 +2658,7 @@ def folha_ponto_pessoa_atualizar():
 
     Roda no processo separado, como o ponto do mês: são pedidos de minutos à API.
     Quem e de que mês vão para o banco antes de disparar."""
-    from . import folha_arquivo as fa, sincronizacao, tarefas
-    from .db import conexao
+    from . import folha_arquivo as fa
     from .folha_rateio import so_digitos
     dados = request.get_json(silent=True) or {}
     try:
@@ -2669,16 +2668,68 @@ def folha_ponto_pessoa_atualizar():
     cpf = so_digitos(dados.get("cpf"))
     if not folha or len(cpf) != 11:
         return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
-    nome = str(dados.get("nome") or "").replace("|", " ")[:120]
-    with conexao() as conn:
-        sincronizacao._meta_gravar(conn, "ponto_pessoa_alvo",
-                                   f"{folha['ano']}|{folha['mes']}|{cpf}|{nome}")
-    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    resultado = tarefas.disparar("ponto_pessoa", disparo=quem or "ponto de uma pessoa")
+    resultado = _trazer_o_ponto_da_pessoa(folha, cpf, dados.get("nome"))
     if not resultado.get("ok"):
         return {"ok": False, "erro": resultado.get("erro")
                 or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
     return {"ok": True}
+
+
+def _trazer_o_ponto_da_pessoa(folha: dict, cpf: str, nome) -> dict:
+    """Dispara, no processo separado, a atualização do ponto de UMA pessoa."""
+    from . import sincronizacao, tarefas
+    from .db import conexao
+    nome = str(nome or "").replace("|", " ")[:120]
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_pessoa_alvo",
+                                   f"{folha['ano']}|{folha['mes']}|{cpf}|{nome}")
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    return tarefas.disparar("ponto_pessoa", disparo=quem or "ponto de uma pessoa")
+
+
+@bp.route("/api/folha/ponto/batida", methods=["POST"])
+@exige_operador
+def folha_ponto_incluir_batida():
+    """Inclui batidas no MOBPONTO para uma pessoa da folha, e traz o ponto dela
+    de novo. Ver `ponto_edicao` — inclusive o que a API conhecida NÃO faz.
+
+    ⚠️ SÓ DO MESTRE (`auth.SO_DO_MESTRE`): grava em sistema de terceiro, e o que
+    entra lá não se desfaz por aqui."""
+    from . import folha_arquivo as fa, ponto_edicao
+    from .folha_rateio import so_digitos
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        folha = fa.abrir(int(dados.get("folha_id") or 0))
+    except (TypeError, ValueError):
+        folha = None
+    cpf = so_digitos(dados.get("cpf"))
+    cpfs_da_folha = {so_digitos(l.get("cpf")) for l in ((folha or {}).get("linhas") or [])}
+    if not folha or len(cpf) != 11 or cpf not in cpfs_da_folha:
+        return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
+    data = str(dados.get("data") or "")[:10]
+    if not data.startswith(f"{int(folha['ano']):04d}-{int(folha['mes']):02d}"):
+        return {"ok": False, "erro": "Este dia não é do mês desta folha."}, 400
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = ponto_edicao.incluir_batidas(
+            cpf, str(dados.get("nome") or ""), data, dados.get("batidas") or [],
+            str(dados.get("justificativa") or ""), quem=quem)
+    except ponto_edicao.ErroDaEdicao as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Ponto: falhou incluir batida no Mobponto")
+        return {"ok": False, "erro": f"Não consegui gravar no Mobponto: {e}"}, 500
+
+    # O QUE ENTROU NO MOBPONTO VOLTA PARA A CÓPIA BAIXADA: sem isto a folha
+    # continuaria calculando pelo ponto antigo até a próxima carga.
+    atualizando = False
+    if feito["enviadas"]:
+        disparo = _trazer_o_ponto_da_pessoa(folha, cpf, dados.get("nome"))
+        atualizando = bool(disparo.get("ok"))
+    return {"ok": not feito["falhou"], "enviadas": feito["enviadas"],
+            "falhou": feito["falhou"], "atualizando": atualizando,
+            "erro": (feito["falhou"] or {}).get("motivo", "")}
 
 
 @bp.route("/api/folha/ponto/pessoa/estado")
@@ -2739,8 +2790,12 @@ def tela_folha_pessoa(folha_id: int, cpf: str):
         return render_template("analisesps_erro.html",
                                mensagem="Esta pessoa não está nesta folha."), 404
     if request.args.get("parcial"):
+        from . import ponto_edicao
         return render_template("_folha_analitico.html", a=a, parcial=True,
-                               pode_operar=auth.pode_operar())
+                               pode_operar=auth.pode_operar(),
+                               # Corrigir o ponto grava no Mobponto: só o mestre.
+                               editar_ponto=auth.e_mestre(),
+                               falta_para_editar=ponto_edicao.o_que_falta())
     return render_template(
         "analisesps_folha_pessoa.html", a=a, aba="folha", subaba="importar",
         gerado_em=agora().strftime("%d/%m/%Y %H:%M"),
