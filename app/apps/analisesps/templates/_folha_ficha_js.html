@@ -1,0 +1,76 @@
+{# A janela do funcionário das outras folhas. Quem inclui chama
+   `abrirFichaDoFuncionario(cpf, ano, mes)`. #}
+<dialog class="dialogo" id="cartao-ficha">
+  <button class="btn secundario dialogo-fechar" type="button"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <div id="cartao-ficha-corpo"><p class="cartao-dica">carregando…</p></div>
+</dialog>
+<script>
+(function () {
+  const dialogo = document.getElementById("cartao-ficha");
+  const corpo = document.getElementById("cartao-ficha-corpo");
+  let aberto = null;
+
+  async function carregar(cpf, ano, mes) {
+    aberto = {cpf, ano, mes};
+    corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
+    if (!dialogo.open) dialogo.showModal();
+    try {
+      const r = await fetch("/analisesps/folha/pessoa/" + cpf + "/ficha" +
+                            (ano ? "?ano=" + ano + "&mes=" + mes : ""));
+      corpo.innerHTML = await r.text();
+    } catch (e) {
+      corpo.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
+    }
+  }
+  window.abrirFichaDoFuncionario = carregar;
+
+  function recado(texto, ruim) {
+    const alvo = corpo.querySelector(".ficha-recado");
+    if (alvo) { alvo.textContent = texto; alvo.classList.toggle("ruim", !!ruim); }
+  }
+
+  corpo.addEventListener("click", async e => {
+    const botao = e.target.closest("button");
+    if (!botao) return;
+    if (botao.classList.contains("ficha-cadastro-completo")) {
+      const caixa = corpo.querySelector(".ficha-cadastro-completo-caixa");
+      caixa.hidden = false;
+      caixa.innerHTML = '<p class="cartao-dica">lendo a planilha de cadastro…</p>';
+      try {
+        const r = await fetch("/analisesps/folha/pessoa/" + botao.dataset.cpf + "/cadastro");
+        caixa.innerHTML = await r.text();
+      } catch (err) { caixa.innerHTML = '<div class="aviso erro">falhou: ' + err + "</div>"; }
+      return;
+    }
+    if (botao.classList.contains("ficha-atualizar-cadastro")) {
+      botao.disabled = true;
+      recado("atualizando o cadastro…");
+      try {
+        const r = await fetch("{{ url_for('analisesps.folha_cadastro_pessoa_atualizar') }}", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({cpf: botao.dataset.cpf})});
+        const d = await r.json();
+        if (!d.ok) { recado(d.erro, true); botao.disabled = false; return; }
+        await carregar(aberto.cpf, aberto.ano, aberto.mes);
+        recado(d.mensagem + " Recarregue a lista para ver o efeito.");
+      } catch (err) { recado("falhou: " + err, true); botao.disabled = false; }
+      return;
+    }
+    if (botao.classList.contains("ficha-atualizar-ponto")) {
+      botao.disabled = true;
+      recado("pedindo o ponto ao Mobponto…");
+      try {
+        const r = await fetch("{{ url_for('analisesps.folha_ponto_pessoa_atualizar') }}", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({cpf: botao.dataset.cpf, nome: botao.dataset.nome,
+                                ano: botao.dataset.ano, mes: botao.dataset.mes})});
+        const d = await r.json();
+        if (!d.ok) { recado(d.erro, true); botao.disabled = false; return; }
+        recado(d.posicao ? "na fila — " + d.posicao + " pedido(s) antes deste. Pode fechar a janela."
+                         : "pedido feito — o ponto chega em alguns minutos. Pode fechar a janela.");
+      } catch (err) { recado("falhou: " + err, true); botao.disabled = false; }
+    }
+  });
+})();
+</script>

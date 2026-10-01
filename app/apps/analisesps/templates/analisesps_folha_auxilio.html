@@ -1,4 +1,5 @@
 {% extends "analisesps_base.html" %}
+{% from "_folha_macros.html" import bloco %}
 {% block titulo %}{{ resultado.rotulo if resultado else 'Alimentação e transporte' }} — Análise de SPs{% endblock %}
 
 {# ---------------------------------------------------------------------------
@@ -24,100 +25,87 @@
 
 {% block filtros %}
 {% if pronto and resultado %}
-{# ⚠️ GERAR VEM NO ALTO DA LATERAL. Pedido dele em 29/09/2026: *"o botão de gerar
-   folha deveria ser no side bar ao invés de ser no final da tela."* Ele está certo
-   — quem termina de marcar 400 pessoas não deve rolar a tela inteira de volta para
-   achar o botão. #}
-{% if pode_operar %}
-<div class="cartao" style="margin:0 0 12px; padding:12px">
-  <b style="display:block; margin-bottom:6px">Gerar o pagamento</b>
-  <p class="cartao-dica" style="margin:0 0 8px">
-    Sai um arquivo por conta de pagamento, mais o de análise. Antes de gerar eu
-    mostro quantos arquivos saem e com que total cada um. A geração precisa da
-    apropriação <b>fechada</b> desta verba.
+{% set url_tela = url_for('analisesps.tela_folha_auxilio') %}
+{% set base_qs = '?tipo=' ~ tipo ~ '&ano=' ~ ano ~ '&mes=' ~ mes %}
+{# A LATERAL NO PADRÃO DA FOLHA DA CONTABILIDADE (01/10/2026): pagamento,
+   pendências, filtros de caixinha. Ele: *"o botão de gerar folha deveria ser no
+   side bar"* (29/09) e que as outras folhas herdem o que a da contabilidade
+   ganhou (01/10). #}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pagamento <small>{{ resultado.competencia }}</small></b>
+  <div class="lat-num"><span>Vai receber</span>
+    <b>{{ resultado.total|moeda }}</b>
+    <small>{{ resultado.quantos_a_pagar }} pessoa(s) · pago em {{ resultado.pagamento_em }}</small></div>
+  <p class="cartao-dica lat-estado">
+    {% if resultado.fechamento %}
+      <b>Fechado</b> em {{ resultado.fechamento.fechado_em|momento_br }}{% if resultado.fechamento.fechado_por %}
+      por {{ resultado.fechamento.fechado_por }}{% endif %}, junto do pagamento de
+      <b>{{ 'quinzena' if resultado.fechamento.tipo == 'quinzena' else 'fim de mês' }}</b>
+      ({{ resultado.fechamento.total_apropriado|moeda }}). O arquivo sai do que foi
+      fechado — mudou alguma marcação, refaça.
+    {% else %}
+      <b>Ainda não fechado.</b> Feche para liberar o arquivo de pagamento.
+    {% endif %}
   </p>
-  <a class="btn" style="width:100%; text-align:center"
-     href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}"
-     >Conferir e gerar</a>
+  {% if pode_operar %}
+    <label class="cartao-dica" style="display:block; margin:0 0 6px">Sai junto do pagamento de
+      <select id="pagamento-do-auxilio" aria-label="Junto de qual pagamento">
+        {% for chave, rotulo in pagamentos %}
+          <option value="{{ chave }}" {% if resultado.fechamento and resultado.fechamento.tipo == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <div class="lat-acoes">
+      <button type="button" class="btn" id="fechar-auxilio">
+        {% if resultado.fechamento %}Refazer o fechamento{% else %}Fechar {{ 'a alimentação' if tipo == 'alimentacao' else 'o transporte' }}{% endif %}</button>
+      {% if resultado.fechamento %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}">Gerar os arquivos</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+{% set c = lista.contagem %}
+{% if c.get('falta_dado') or lista.escondidos %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pendências antes do pagamento</b>
+  {% if c.get('falta_dado') %}
+    <a class="lat-critica erro" href="{{ url_tela }}{{ base_qs }}&situacao=falta_dado">
+      <b>{{ c.falta_dado }} com dado faltando no cadastro</b>
+      <small>Sem valor ou categoria do auxílio não há o que pagar. Corrija no
+        card do Pipefy e aperte "Atualizar cadastro".</small>
+    </a>
+  {% endif %}
+  {% if lista.escondidos %}
+    <a class="lat-critica atencao" href="{{ url_tela }}{{ base_qs }}&situacao=saiu">
+      <b>{{ lista.escondidos }} já {{ 'saiu' if lista.escondidos == 1 else 'saíram' }} — fora da lista</b>
+      <small>Não recebem auxílio. Clique para ver quem é.</small>
+    </a>
+  {% endif %}
 </div>
 {% endif %}
-<form method="get" action="{{ url_for('analisesps.tela_folha_auxilio') }}"
-      id="form-filtros">
+
+<form method="get" action="{{ url_tela }}" id="form-filtros" class="lateral-filtros">
   <input type="hidden" name="tipo" value="{{ tipo }}">
   <input type="hidden" name="ano" value="{{ ano }}">
   <input type="hidden" name="mes" value="{{ mes }}">
-
-  <div class="filtro aberto">
-    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>Quem</span><span class="seta">▾</span>
-    </div>
-    <div class="filtro-cont">
-      <input type="search" name="q" value="{{ procurado }}" autocomplete="off"
-             placeholder="nome ou CPF…" aria-label="Procurar pessoa">
-    </div>
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_tela }}{{ base_qs }}">Limpar</a>
   </div>
-
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="q" value="{{ lista.filtros.q }}" autocomplete="off"
+           placeholder="nome ou CPF…" aria-label="Procurar pessoa">
+  </div>
+  {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao,
+           'Sem nada marcado, quem já saiu fica fora da lista.') }}
   {# A obra é o primeiro corte de verdade: *"eu preciso às vezes tratar só uma
      obra (…) os auxílios de transporte da obra tal, eu vejo um por um."* #}
-  <div class="filtro {% if obra_filtro %}aberto{% endif %}">
-    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>Obra</span>
-      {% if obra_filtro %}<span class="filtro-badge">1</span>{% endif %}
-      <span class="seta">▾</span>
-    </div>
-    <div class="filtro-cont">
-      <select name="obra" aria-label="Obra">
-        <option value="">todas as obras</option>
-        {% for o in obras_na_lista %}
-          <option value="{{ o }}" {% if obra_filtro == o %}selected{% endif %}>{{ o }}</option>
-        {% endfor %}
-      </select>
-    </div>
-  </div>
-
-  {# A FASE ATUAL, que ele pediu duas vezes (28 e 29/09/2026). Sai do cadastro;
-     fase nova no Pipefy aparece aqui sozinha. #}
-  <div class="filtro {% if fase_filtro %}aberto{% endif %}">
-    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>Fase Atual</span>
-      {% if fase_filtro %}<span class="filtro-badge">1</span>{% endif %}
-      <span class="seta">▾</span>
-    </div>
-    <div class="filtro-cont">
-      <select name="fase" aria-label="Fase Atual">
-        <option value="">todas as fases</option>
-        {% for f in fases %}
-          <option value="{{ f }}" {% if fase_filtro == f %}selected{% endif %}>{{ f }}</option>
-        {% endfor %}
-      </select>
-    </div>
-  </div>
-
-  <div class="filtro {% if so %}aberto{% endif %}">
-    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>Situação</span>
-      {% if so %}<span class="filtro-badge">1</span>{% endif %}
-      <span class="seta">▾</span>
-    </div>
-    <div class="filtro-cont">
-      <div class="filtro-opcoes">
-        <label class="opcao"><input type="radio" name="so" value=""
-          {% if not so %}checked{% endif %}><span class="rotulo">todos</span></label>
-        <label class="opcao"><input type="radio" name="so" value="pagar"
-          {% if so == 'pagar' %}checked{% endif %}><span class="rotulo">só quem vai receber</span></label>
-        <label class="opcao"><input type="radio" name="so" value="problema"
-          {% if so == 'problema' %}checked{% endif %}><span class="rotulo">só quem precisa de olho</span></label>
-      </div>
-    </div>
-  </div>
-
-  <div style="display:flex; gap:6px; margin-top:10px">
-    {% if filtrando %}
-      <a class="btn secundario"
-         href="{{ url_for('analisesps.tela_folha_auxilio', tipo=tipo, ano=ano, mes=mes) }}"
-         >Limpar</a>
-    {% endif %}
-  </div>
+  {{ bloco('Obra', 'obra', lista.opcoes_obra, lista.filtros.obra) }}
+  {# A FASE ATUAL, que ele pediu duas vezes (28 e 29/09/2026). #}
+  {{ bloco('Fase Atual', 'fase', lista.opcoes_fase, lista.filtros.fase) }}
+  <noscript><button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button></noscript>
 </form>
 {% include "analisesps_filtros_aplicam_sozinhos.html" %}
 {% endif %}
@@ -140,9 +128,6 @@
 <form class="barra-mes" method="get"
       action="{{ url_for('analisesps.tela_folha_auxilio') }}">
   <input type="hidden" name="tipo" value="{{ tipo }}">
-  <input type="hidden" name="q" value="{{ procurado }}">
-  <input type="hidden" name="obra" value="{{ obra_filtro }}">
-  <input type="hidden" name="so" value="{{ so }}">
   <label class="campo-mes"><span>Mês trabalhado</span>
     <select name="mes" aria-label="Mês">
       {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
@@ -235,6 +220,7 @@
   <small>
     {% if filtrando %}{{ pessoas|length }} de {{ resultado.quantos }} · filtrado
     {% else %}{{ pessoas|length }}{% endif %}
+    {% if lista.escondidos %} · {{ lista.escondidos }} que já {{ 'saiu' if lista.escondidos == 1 else 'saíram' }} fora da lista{% endif %}
     · quem precisa de olho vem primeiro
   </small>
 </h3>
@@ -419,13 +405,7 @@
 
 {% endif %}
 
-<dialog class="dialogo" id="ficha-pessoa-modal">
-  <button class="btn secundario dialogo-fechar" type="button"
-          onclick="document.getElementById('ficha-pessoa-modal').close()"
-          >Fechar</button>
-  <h3 id="ficha-pessoa-titulo">Pessoa</h3>
-  <div id="ficha-pessoa-corpo">carregando…</div>
-</dialog>
+{% include "_folha_ficha_js.html" %}
 
 <script>
 // ---------------------------------------------------------------------------
@@ -479,7 +459,7 @@ if (tabela) tabela.addEventListener("click", e => {
   if (e.target.closest(".marca")) return;
   if (e.target.closest("a")) return;
   const linha = e.target.closest("tr.clicavel");
-  if (linha) abrirFichaDaPessoa(linha.dataset.cpf, linha.dataset.nome);
+  if (linha) abrirFichaDoFuncionario(linha.dataset.cpf, {{ ano }}, {{ mes }});
 });
 
 const marcarTodos = document.getElementById("marcar-todos");
@@ -525,79 +505,28 @@ if (salvar) salvar.addEventListener("click", async () => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// A FICHA DA PESSOA — cadastro, observação e o PONTO do mês
-// ---------------------------------------------------------------------------
-async function abrirFichaDaPessoa(cpf, nome) {
-  const modal = document.getElementById("ficha-pessoa-modal");
-  document.getElementById("ficha-pessoa-titulo").textContent = nome || "Pessoa";
-  const corpo = document.getElementById("ficha-pessoa-corpo");
-  corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
-  modal.showModal();
-  try {
-    const r = await fetch("/analisesps/api/folha/pessoa/" + cpf +
-                          "?ano={{ ano }}&mes={{ mes }}");
-    const d = await r.json();
-    if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + d.erro + "</div>"; return; }
-    const p = d.pessoa;
-    let html = '<div class="ficha-pessoa"><div>';
-    const par = (r, v) => '<div class="par"><span>' + r + "</span><span>" +
-                          (v || "—") + "</span></div>";
-    html += par("CPF", p.cpf_bonito) + par("Matrícula", p.matricula) +
-            par("Cargo", p.cargo) +
-            par("Obra", p.obra_codigo + (p.obra_nome ? " — " + p.obra_nome : "")) +
-            par("Fase no cadastro", p.fase) +
-            par("Tipo de contrato", p.tipo_contrato) +
-            par("Categoria alimentação", p.modo_alimentacao) +
-            par("Valor alimentação", p.valor_alimentacao === null ? "" :
-                dinheiro(p.valor_alimentacao)) +
-            par("Categoria transporte", p.modo_transporte) +
-            par("Valor transporte", p.valor_transporte === null ? "" :
-                dinheiro(p.valor_transporte)) +
-            par("Observação do cadastro", p.observacao);
-    if (p.motivo) html += par("Atenção", p.motivo);
-    html += "</div>";
-
-    // O PONTO DO MÊS. Mostra os campos COMO VIERAM — enquanto o nome deles não
-    // for conhecido, interpretar poria o salário na obra errada.
-    html += "<div><h4 style='margin:0 0 6px'>Ponto de " + d.ponto.competencia +
-            "</h4>";
-    if (!d.ponto.tem_carga) {
-      html += '<p class="cartao-dica">O ponto deste mês ainda não foi trazido. ' +
-              'Na aba <b>Ponto</b> tem o botão.</p>';
-    } else if (!d.ponto.dias.length) {
-      html += '<p class="cartao-dica">Esta pessoa não tem dia de ponto neste ' +
-              'mês. Pode ser CPF diferente no Mobponto.</p>';
-    } else {
-      const campos = d.ponto.campos;
-      html += '<div class="ponto-dias tabela-wrap">' +
-              '<div class="tabela-rolagem">' +
-              '<table class="sps"><thead><tr><th>Dia</th>';
-      campos.forEach(c => { html += "<th>" + c + "</th>"; });
-      html += "</tr></thead><tbody>";
-      d.ponto.dias.forEach(dia => {
-        html += "<tr><td>" + (dia.data || "—") + "</td>";
-        campos.forEach(c => {
-          const v = dia.campos[c];
-          html += "<td>" + (v === undefined || v === null ? "" : v) + "</td>";
-        });
-        html += "</tr>";
-      });
-      html += "</tbody></table></div></div>";
-    }
-    html += "</div>";
-
-    if (p.link_pipefy) {
-      html += '<p><a class="btn secundario" href="' + p.link_pipefy +
-              '" target="_blank" rel="noopener">Abrir o card no Pipefy</a> ' +
-              '<span class="cartao-dica">é lá que se corrige a categoria e o ' +
-              'valor do auxílio</span></p>';
-    }
-    html += "</div>";
-    corpo.innerHTML = html;
-  } catch (e) {
-    corpo.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
+// --- fechar o auxílio do mês -------------------------------------------------
+const fecharAux = document.getElementById("fechar-auxilio");
+if (fecharAux) fecharAux.addEventListener("click", async () => {
+  if (caixas.some((c, i) => c.checked !== inicial[i])) {
+    alert("Salve a seleção antes de fechar — o fechamento usa o que está salvo.");
+    return;
   }
-}
+  const pagamento = document.getElementById("pagamento-do-auxilio").value;
+  if (!confirm("Fechar {{ resultado.rotulo if resultado else '' }} de {{ '%02d'|format(mes) }}/{{ ano }}?\n\n" +
+               "Isso congela quem recebe e de qual obra sai o dinheiro, e libera o " +
+               "arquivo de pagamento. Dá para refazer.")) return;
+  fecharAux.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_auxilio_fechar') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tipo: "{{ tipo }}", ano: {{ ano }}, mes: {{ mes }},
+                            pagamento: pagamento})});
+    const d = await r.json();
+    if (!d.ok) { alert(d.erro); fecharAux.disabled = false; return; }
+    location.reload();
+  } catch (e) { alert("Falhou: " + e); fecharAux.disabled = false; }
+});
+
 </script>
 {% endblock %}

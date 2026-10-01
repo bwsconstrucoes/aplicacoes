@@ -176,6 +176,10 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         # A Fase Atual, que ele pediu duas vezes. Vem do cadastro (coluna AX da
         # planilha) e é o corte mais usado da lista.
         "fase": ficha.get("fase") or "",
+        # A situação do cadastro: é o que a lista usa para esconder quem já saiu
+        # (`folha_lista`), como a planilha faz.
+        "situacao": ficha.get("situacao") or "",
+        "desligado": ficha.get("situacao") == colaboradores.SITUACAO_SAIU,
         "dias_base": 0, "feriados": 0, "ferias": 0,
         "dias_ajuste": int(ajuste.get("dias") or 0),
         "dias": 0, "valor": Decimal("0.00"),
@@ -419,6 +423,7 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         "quantos_do_ponto": len([p for p in pessoas
                                  if p.get("obra_de_onde") == "ponto"]),
         "fases": sorted({p["fase"] for p in pessoas if p.get("fase")}),
+        "fechamento": fechamento(tipo, ano, mes),
     }
 
 
@@ -578,3 +583,62 @@ def salvar_selecao(tipo: str, ano: int, mes: int, decisoes, quem: str = "") -> d
         tipo, int(mes), int(ano), quem or "(sem nome)", gravados, limpos,
         len(ignorados))
     return {"gravados": gravados, "limpos": limpos, "ignorados": ignorados}
+
+
+# ---------------------------------------------------------------------------
+# FECHAR — o passo que faltava para o arquivo sair (01/10/2026)
+#
+# A tela de gerar só paga verba com apropriação FECHADA, e nenhuma tela fechava
+# alimentação nem transporte: o botão "Conferir e gerar" levava a uma tela que
+# dizia "nada fechado". O mesmo buraco que a folha da contabilidade teve.
+# ---------------------------------------------------------------------------
+TIPOS_DO_FECHAMENTO = {"fim_de_mes": "Fim de mês", "quinzena": "Quinzena"}
+
+
+def fechamento(tipo: str, ano: int, mes: int) -> dict | None:
+    """O fechamento desta verba no mês, em qualquer dos dois pagamentos."""
+    from . import folha_apropriacao_guardada as guardada
+    for pagamento in TIPOS_DO_FECHAMENTO:
+        try:
+            achado = guardada.fechamento(ano, mes, pagamento, tipo)
+        except Exception:  # noqa: BLE001
+            logger.exception("Auxílio: não consegui ler o fechamento")
+            achado = None
+        if achado:
+            return achado
+    return None
+
+
+def fechar(tipo: str, ano: int, mes: int, pagamento: str = "fim_de_mes",
+           quem: str = "") -> dict:
+    """Congela o auxílio do mês: quem recebe, quanto e de qual obra sai."""
+    from . import folha_apropriacao_guardada as guardada
+    if pagamento not in TIPOS_DO_FECHAMENTO:
+        raise ErroDoAuxilio("escolha se o auxílio sai na quinzena ou no fim de mês.")
+    calculado = calcular(tipo, ano, mes)
+    a_pagar = [p for p in calculado["pessoas"] if p["pagar"] and p["valor"] > 0]
+    if not a_pagar:
+        raise ErroDoAuxilio("ninguém marcado para receber este auxílio.")
+    sem_obra = [p["nome"] for p in a_pagar if not p.get("obra")]
+    if sem_obra:
+        raise ErroDoAuxilio(
+            "há quem vá receber sem obra (nem no ponto nem no cadastro): "
+            + ", ".join(sem_obra[:5]) + ". Sem obra não há conta para pagar.")
+    # Fechar um pagamento tira o fechamento do outro — senão a mesma verba do
+    # mês sairia duas vezes.
+    for outro in TIPOS_DO_FECHAMENTO:
+        if outro != pagamento:
+            guardada.reabrir(ano, mes, outro, tipo, quem=quem)
+    pessoas = [{"cpf": p["cpf"], "nome": p["nome"], "nome_cadastro": p["nome"],
+                "fora": not (p["pagar"] and p["valor"] > 0),
+                "por_obra": ([{"obra": p["obra"], "dias": int(p["dias"] or 0),
+                               "valor": p["valor"],
+                               "origem": p.get("obra_de_onde") or ""}]
+                             if p["pagar"] and p["valor"] > 0 else [])}
+               for p in calculado["pessoas"]]
+    total = calculado["total"]
+    novo = guardada.fechar(ano, mes, pagamento, {
+        "pessoas": pessoas, "total_da_folha": total, "total_apropriado": total,
+        "fecha": True}, verba=tipo, quem=quem)
+    return {"id": novo, "pessoas": len(a_pagar), "total": total,
+            "pagamento": pagamento}

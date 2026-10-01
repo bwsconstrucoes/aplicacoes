@@ -2718,6 +2718,17 @@ def folha_ponto_pessoa_atualizar():
     except (TypeError, ValueError):
         folha = None
     cpf = so_digitos(dados.get("cpf"))
+    if not folha and dados.get("ano") and dados.get("mes") and len(cpf) == 11:
+        # AS OUTRAS FOLHAS (diaristas, alimentação e transporte — 01/10/2026) não
+        # têm arquivo da contabilidade: vale o mês da tela, para quem está no
+        # cadastro.
+        from . import colaboradores
+        try:
+            ano, mes = int(dados["ano"]), int(dados["mes"])
+        except (TypeError, ValueError):
+            ano = mes = 0
+        if 2000 <= ano <= 2100 and 1 <= mes <= 12 and colaboradores.por_cpf(cpf):
+            folha = {"ano": ano, "mes": mes}
     if not folha or len(cpf) != 11:
         return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
     from . import ponto_fila
@@ -3504,50 +3515,47 @@ def tela_folha_auxilio():
         erro = str(e)
 
     # ⚠️ OS FILTROS SÃO DE PEDIDO DELE, em 28/09/2026: *"era para ter uma na
-    # lateral aqui, filtro (…) eu preciso às vezes tratar só uma obra, é o filtro,
-    # os auxílios de transporte da obra tal, eu vejo um por um."*
+    # lateral aqui, filtro (…) eu preciso às vezes tratar só uma obra"*. Desde
+    # 01/10/2026 são de caixinha, no padrão das Solicitações, e quem já saiu fica
+    # fora da lista sem filtro marcado (`folha_lista`).
     #
     # E eles filtram a LISTA MONTADA, não a consulta: os totais do alto continuam
-    # sendo os da verba inteira. Filtrar a conta faria o total mudar conforme o
-    # filtro, e aí ninguém saberia mais qual é o valor do pagamento.
-    procurado = " ".join((request.args.get("q") or "").split())
-    obra_filtro = " ".join((request.args.get("obra") or "").split())
-    so = (request.args.get("so") or "").strip()
-    # ⚠️ A FASE ATUAL É FILTRO AQUI TAMBÉM, e ele pediu duas vezes: *"havia falado
-    # de colocar a coluna Fase Atual, não foi colocado."* É a coluna que diz em que
-    # ponto do processo a pessoa está, e é o corte mais usado da lista.
-    fase_filtro = " ".join((request.args.get("fase") or "").split())
-    pessoas = list((resultado or {}).get("pessoas") or [])
-    obras_na_lista = sorted({p["obra"] for p in pessoas if p["obra"]})
-    if obra_filtro:
-        pessoas = [p for p in pessoas if p["obra"] == obra_filtro]
-    if fase_filtro:
-        pessoas = [p for p in pessoas if (p.get("fase") or "") == fase_filtro]
-    if procurado:
-        from .folha_rateio import so_digitos
-        digitos = so_digitos(procurado)
-        alvo = procurado.lower()
-        pessoas = [p for p in pessoas
-                   if alvo in (p["nome"] or "").lower()
-                   or (digitos and digitos in (p["cpf"] or ""))]
-    if so == "problema":
-        pessoas = [p for p in pessoas if not p["pagar"]]
-    elif so == "pagar":
-        pessoas = [p for p in pessoas if p["pagar"]]
+    # sendo os da verba inteira.
+    from . import folha_lista
+    lista = folha_lista.filtrar(list((resultado or {}).get("pessoas") or []),
+                                request.args, campo_da_obra="obra")
 
     return render_template(
         "analisesps_folha_auxilio.html", aba="folha", subaba="auxilios",
         grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
-        tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=pessoas,
-        obras_na_lista=obras_na_lista, procurado=procurado,
-        obra_filtro=obra_filtro, so=so, fase_filtro=fase_filtro,
-        fases=(resultado or {}).get("fases") or [],
-        filtrando=bool(procurado or obra_filtro or so or fase_filtro),
+        tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=lista["pessoas"],
+        lista=lista, filtrando=lista["filtrando"],
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
+        pagamentos=list(fx.TIPOS_DO_FECHAMENTO.items()),
         ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/auxilio/fechar", methods=["POST"])
+@exige_operador
+def folha_auxilio_fechar():
+    """Congela o auxílio do mês — o passo que faltava para o arquivo sair."""
+    from . import folha_auxilio as fx
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = fx.fechar(str(dados.get("tipo") or ""), int(dados.get("ano") or 0),
+                          int(dados.get("mes") or 0),
+                          str(dados.get("pagamento") or "fim_de_mes"), quem=quem)
+    except (fx.ErroDoAuxilio, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou fechar o auxílio")
+        return {"ok": False, "erro": f"Não consegui fechar: {e}"}, 500
+    return {"ok": True, **{k: str(v) for k, v in feito.items()}}
 
 
 @bp.route("/api/folha/auxilio/selecao", methods=["POST"])
@@ -3580,6 +3588,68 @@ def folha_auxilio_selecao():
         logger.exception("Folha: falhou salvar a seleção do auxílio")
         return {"ok": False, "erro": f"Não consegui salvar: {e}"}, 500
     return {"ok": True, **saida}
+
+
+@bp.route("/folha/pessoa/<cpf>/ficha")
+@exige_consulta
+def tela_ficha_do_funcionario(cpf: str):
+    """A janela do funcionário nas OUTRAS folhas (diaristas, alimentação e
+    transporte): cadastro, ponto do mês dia a dia e os botões de atualizar.
+
+    O dono, 01/10/2026: as outras folhas devem herdar o que a da contabilidade
+    ganhou, e *"aquele modal que aparece as informações dele"* é parte disso. A
+    janela da folha da contabilidade depende do arquivo da contabilidade (líquido,
+    contracheque, apropriação); esta é o pedaço que vale para qualquer folha.
+    Pessoa fora do cadastro: 404."""
+    from . import colaboradores, ponto
+    from .folha_rateio import so_digitos
+    from .horario import agora
+
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except (TypeError, ValueError):
+        ano, mes = hoje.year, hoje.month
+    digitos = so_digitos(cpf)
+    ficha = colaboradores.por_cpf(digitos) if len(digitos) == 11 else None
+    if not ficha:
+        return '<div class="aviso erro">Esta pessoa não está no cadastro.</div>', 404
+    try:
+        ficha["data_nascimento"] = colaboradores.nascimento_de(digitos)
+        ficha["valor_diaria"] = colaboradores.valores_de_diaria([digitos]).get(digitos)
+        ficha["obra_resolvida"] = colaboradores.resolver_obra(
+            ficha, colaboradores.codigos_das_obras())
+    except Exception:  # noqa: BLE001 — a janela abre sem estes detalhes
+        logger.exception("Folha: não consegui completar a ficha")
+    do_ponto = {"tem_carga": False, "dias": []}
+    try:
+        do_ponto = ponto.dias_da_pessoa(digitos, ano, mes)
+    except Exception:  # noqa: BLE001 — o ponto é um bloco da janela
+        logger.exception("Folha: não consegui ler o ponto da pessoa")
+    return render_template("_folha_ficha.html", p=ficha, ponto=do_ponto, ano=ano,
+                           mes=mes, pode_operar=auth.pode_operar())
+
+
+@bp.route("/folha/pessoa/<cpf>/cadastro")
+@exige_consulta
+def tela_ficha_cadastro_completo(cpf: str):
+    """A ficha inteira da planilha de cadastro, para as outras folhas. Só de
+    quem está no cadastro; fora dele, 404."""
+    from . import colaboradores
+    from .folha_rateio import so_digitos
+    digitos = so_digitos(cpf)
+    if len(digitos) != 11 or not colaboradores.por_cpf(digitos):
+        return '<div class="aviso erro">Esta pessoa não está no cadastro.</div>', 404
+    try:
+        grupos = colaboradores.ficha_completa(digitos)
+    except colaboradores.ErroDoCadastro as e:
+        return render_template("_folha_cadastro_completo.html", grupos=[], erro=str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou ler a ficha completa")
+        return render_template("_folha_cadastro_completo.html", grupos=[],
+                               erro=f"Não consegui ler a planilha de cadastro: {e}")
+    return render_template("_folha_cadastro_completo.html", grupos=grupos, erro="")
 
 
 @bp.route("/api/folha/pessoa/<cpf>")
@@ -3693,11 +3763,13 @@ def folha_auxilio_ajustar():
 @bp.route("/folha/diaristas")
 @exige_consulta
 def tela_folha_diaristas():
-    """Quem tem dia de DIÁRIA no mês, e quantos.
+    """Os diaristas do período: quem, quantos dias, quanto — e o pagamento.
 
-    *"E cadê os diaristas? Não entrou diaristas."* (dono, 28/09/2026). A regra
-    existia e estava testada; faltava ligá-la ao ponto e ao cadastro."""
-    from . import folha_apropriacao, folha_diaristas as fd
+    *"E cadê os diaristas? Não entrou diaristas."* (dono, 28/09/2026). Desde
+    01/10/2026 a tela calcula o valor (a regra da aba "Diaristas" da planilha),
+    esconde quem já saiu, filtra por caixinha, guarda quem vai receber e fecha a
+    diária para o arquivo sair — o mesmo caminho da folha da contabilidade."""
+    from . import folha_apropriacao, folha_diaristas as fd, folha_lista
     from .horario import agora
 
     hoje = agora().date()
@@ -3710,38 +3782,67 @@ def tela_folha_diaristas():
         ano, mes = padrao_ano, padrao_mes
     if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
         ano, mes = padrao_ano, padrao_mes
+    qual = request.args.get("periodo") or "mes"
+    if qual not in fd.PERIODOS:
+        qual = "mes"
 
-    levantamento = {"tem_ponto": False, "pessoas": []}
+    resultado = {"tem_ponto": False, "pessoas": [], "sem_cadastro": []}
     erro = None
     try:
-        levantamento = fd.levantar(ano, mes)
+        resultado = fd.calcular(ano, mes, qual)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
-        logger.exception("Folha: não consegui levantar os diaristas")
+        logger.exception("Folha: não consegui calcular os diaristas")
         erro = str(e)
-
-    procurado = " ".join((request.args.get("q") or "").split())
-    obra_filtro = " ".join((request.args.get("obra") or "").split())
-    pessoas = list(levantamento.get("pessoas") or [])
-    obras_na_lista = sorted({p["obra"] for p in pessoas if p["obra"]})
-    if obra_filtro:
-        pessoas = [p for p in pessoas if p["obra"] == obra_filtro]
-    if procurado:
-        from .folha_rateio import so_digitos
-        digitos = so_digitos(procurado)
-        alvo = procurado.lower()
-        pessoas = [p for p in pessoas
-                   if alvo in (p["nome"] or "").lower()
-                   or (digitos and digitos in (p["cpf"] or ""))]
+    lista = folha_lista.filtrar(resultado.get("pessoas") or [], request.args)
 
     return render_template(
         "analisesps_folha_diaristas.html", aba="folha", subaba="diaristas",
-        grupos=subtelas_agrupadas(), levantamento=levantamento, erro=erro,
-        pessoas=pessoas, obras_na_lista=obras_na_lista, procurado=procurado,
-        obra_filtro=obra_filtro, filtrando=bool(procurado or obra_filtro),
-        ano=ano, mes=mes, ano_padrao=hoje.year,
+        grupos=subtelas_agrupadas(), r=resultado, erro=erro, lista=lista,
+        pessoas=lista["pessoas"], ano=ano, mes=mes, qual=qual,
+        periodos=list(fd.PERIODOS.items()), ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/diaristas/selecao", methods=["POST"])
+@exige_operador
+def folha_diaristas_selecao():
+    """Salva de uma vez quem vai e quem não vai receber a diária."""
+    from . import folha_auxilio as fx, folha_diaristas as fd
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = fd.salvar_selecao(int(dados.get("ano") or 0),
+                                  int(dados.get("mes") or 0),
+                                  str(dados.get("periodo") or "mes"),
+                                  dados.get("decisoes") or [], quem=quem)
+    except (fx.ErroDoAuxilio, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou salvar a seleção dos diaristas")
+        return {"ok": False, "erro": f"Não consegui salvar: {e}"}, 500
+    return {"ok": True, **feito}
+
+
+@bp.route("/api/folha/diaristas/fechar", methods=["POST"])
+@exige_operador
+def folha_diaristas_fechar():
+    """Congela a diária do período — o passo antes de gerar o arquivo."""
+    from . import folha_apropriacao_guardada as guardada, folha_diaristas as fd
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = fd.fechar(int(dados.get("ano") or 0), int(dados.get("mes") or 0),
+                          str(dados.get("periodo") or "mes"), quem=quem)
+    except (guardada.ErroDaApropriacao, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou fechar a diária")
+        return {"ok": False, "erro": f"Não consegui fechar: {e}"}, 500
+    return {"ok": True, **{k: str(v) for k, v in feito.items()}}
 
 
 @bp.route("/folha/pagamento")

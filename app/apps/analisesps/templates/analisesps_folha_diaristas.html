@@ -1,43 +1,95 @@
 {% extends "analisesps_base.html" %}
+{% from "_folha_macros.html" import bloco, qtd %}
 {% block titulo %}Diaristas — Análise de SPs{% endblock %}
 
+{# ---------------------------------------------------------------------------
+   REFEITA EM 01/10/2026. O dono: *"a prioridade agora é a de diaristas, que é o
+   próximo que eu vou gerar"*, e que as outras folhas herdem o que a da
+   contabilidade ganhou. A lateral tem os mesmos quatro assuntos, na mesma
+   ordem: pagamento, pendências, filtros (caixinha) — e quem já saiu não
+   aparece sem filtro, mas a contagem fica dita.
+   --------------------------------------------------------------------------- #}
+
 {% block filtros %}
-{% if levantamento.pessoas %}
-<form method="get" action="{{ url_for('analisesps.tela_folha_diaristas') }}"
-      id="form-filtros">
+{% if r.tem_ponto %}
+{% set url_tela = url_for('analisesps.tela_folha_diaristas') %}
+{% set base_qs = '?ano=' ~ ano ~ '&mes=' ~ mes ~ '&periodo=' ~ qual %}
+
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pagamento <small>{{ r.competencia }} · {{ r.rotulo_periodo }}</small></b>
+  <div class="lat-num"><span>Vai receber</span>
+    <b>{{ r.total|moeda }}</b>
+    <small>{{ r.quantos_a_pagar }} pessoa(s) marcada(s)</small></div>
+  <p class="cartao-dica lat-estado">
+    {% if r.fechamento %}
+      <b>Diária fechada</b> em {{ r.fechamento.fechado_em|momento_br }}{% if r.fechamento.fechado_por %}
+      por {{ r.fechamento.fechado_por }}{% endif %}
+      ({{ r.fechamento.total_apropriado|moeda }}). O arquivo sai do que foi fechado
+      — mudou alguma marcação, refaça o fechamento.
+    {% else %}
+      <b>Ainda não fechada.</b> Feche para liberar o arquivo de pagamento.
+    {% endif %}
+  </p>
+  {% if pode_operar %}
+    <div class="lat-acoes">
+      <button type="button" class="btn" id="fechar-diaria">
+        {% if r.fechamento %}Refazer o fechamento{% else %}Fechar a diária{% endif %}</button>
+      {% if r.fechamento %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}"
+           >Gerar os arquivos</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+{% set c = lista.contagem %}
+{% if c.get('falta_dado') or lista.escondidos or r.sem_cadastro %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pendências antes do pagamento</b>
+  {% if c.get('falta_dado') %}
+    <a class="lat-critica erro" href="{{ url_tela }}{{ base_qs }}&situacao=falta_dado">
+      <b>{{ c.falta_dado }} sem valor da diária ou sem dia válido</b>
+      <small>Sem o valor da diária no cadastro não há o que pagar. Corrija no
+        card do Pipefy e aperte "Atualizar cadastro".</small>
+    </a>
+  {% endif %}
+  {% if lista.escondidos %}
+    <a class="lat-critica atencao" href="{{ url_tela }}{{ base_qs }}&situacao=saiu">
+      <b>{{ lista.escondidos }} já {{ 'saiu' if lista.escondidos == 1 else 'saíram' }} — fora da lista</b>
+      <small>Têm dia de diária no período, mas o cadastro diz que saíram. Não
+        entram no pagamento; clique para ver quem é.</small>
+    </a>
+  {% endif %}
+  {% if r.sem_cadastro %}
+    <div class="lat-critica atencao">
+      <b>{{ r.sem_cadastro|length }} bateram ponto e não estão no cadastro</b>
+      <small>{% for s in r.sem_cadastro[:6] %}{{ s.nome or s.cpf }} ({{ s.dias }} dia(s)){% if not loop.last %}, {% endif %}{% endfor %}{% if r.sem_cadastro|length > 6 %}…{% endif %}.
+        Sem cadastro não há como saber se é diária.</small>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="get" action="{{ url_tela }}" id="form-filtros" class="lateral-filtros">
   <input type="hidden" name="ano" value="{{ ano }}">
   <input type="hidden" name="mes" value="{{ mes }}">
-  <div class="filtro aberto">
-    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>Quem</span><span class="seta">▾</span>
-    </div>
-    <div class="filtro-cont">
-      <input type="search" name="q" value="{{ procurado }}" autocomplete="off"
-             placeholder="nome ou CPF…" aria-label="Procurar pessoa">
-    </div>
+  <input type="hidden" name="periodo" value="{{ qual }}">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_tela }}{{ base_qs }}">Limpar</a>
   </div>
-  <div class="filtro {% if obra_filtro %}aberto{% endif %}">
-    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>Obra</span>
-      {% if obra_filtro %}<span class="filtro-badge">1</span>{% endif %}
-      <span class="seta">▾</span>
-    </div>
-    <div class="filtro-cont">
-      <select name="obra" aria-label="Obra">
-        <option value="">todas as obras</option>
-        {% for o in obras_na_lista %}
-          <option value="{{ o }}" {% if obra_filtro == o %}selected{% endif %}>{{ o }}</option>
-        {% endfor %}
-      </select>
-    </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="q" value="{{ lista.filtros.q }}" autocomplete="off"
+           placeholder="nome ou CPF…" aria-label="Procurar pessoa">
   </div>
-  <div style="display:flex; gap:6px; margin-top:10px">
-    {% if filtrando %}
-      <a class="btn secundario"
-         href="{{ url_for('analisesps.tela_folha_diaristas', ano=ano, mes=mes) }}"
-         >Limpar</a>
-    {% endif %}
-  </div>
+  {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao,
+           'Sem nada marcado, quem já saiu fica fora da lista.') }}
+  {{ bloco('Obra do ponto', 'obra', lista.opcoes_obra, lista.filtros.obra,
+           'Quem teve dia de diária nesta obra.') }}
+  {{ bloco('Fase Atual', 'fase', lista.opcoes_fase, lista.filtros.fase) }}
+  <noscript><button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button></noscript>
 </form>
 {% include "analisesps_filtros_aplicam_sozinhos.html" %}
 {% endif %}
@@ -48,8 +100,7 @@
 
 <h2>Diaristas</h2>
 
-<form class="barra-mes" method="get"
-      action="{{ url_for('analisesps.tela_folha_diaristas') }}">
+<form class="barra-mes" method="get" action="{{ url_for('analisesps.tela_folha_diaristas') }}">
   <label class="campo-mes"><span>Mês</span>
     <select name="mes" aria-label="Mês">
       {% for n, nome_mes in [(1,'janeiro'),(2,'fevereiro'),(3,'março'),(4,'abril'),
@@ -67,140 +118,256 @@
       {% endfor %}
     </select>
   </label>
+  <label class="campo-mes"><span>Período</span>
+    <select name="periodo" aria-label="Período">
+      {% for chave, rotulo in periodos %}
+        <option value="{{ chave }}" {% if qual == chave %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <button class="btn secundario" type="submit">Ver</button>
+  {% if r.inicio %}
+    <span class="barra-mes-dica">dias de <b>{{ r.inicio|data_br }}</b> a <b>{{ r.fim|data_br }}</b></span>
+  {% endif %}
 </form>
 
-{# ⚠️ A REGRA É POR DIA, e isso fica escrito porque é contraintuitivo: a MESMA
-   pessoa pode ter dias de diária e dias de CTPS no mesmo mês. #}
 <p class="cartao-dica" style="margin:0 0 14px">
-  O vínculo é decidido <b>dia por dia</b>, comparando o dia de ponto com a
-  <b>Data de Início</b> e a <b>Data de Admissão</b> do cadastro: os dias entre
-  começar a trabalhar e ser registrada são <b>diária</b>; do registro em diante,
-  <b>CTPS</b> (e aí vêm na folha da contabilidade). Quem foi admitido no meio do
-  mês aparece nas duas colunas — é o caso que mais dá confusão.
+  A regra é a da aba <b>Diaristas</b> da planilha. O vínculo é decidido
+  <b>dia por dia</b> (Data de Início e de Admissão do cadastro): só os dias de <b>diária</b>
+  entram — do registro em diante a pessoa é CTPS e vem na folha da contabilidade.
+  Cada dia vale <b>1 diária</b> com presença, <b>meia</b> em presença parcial
+  acima de 7h ou em falta justificada de fim de semana acima de 6h30, e ganha
+  <b>+20 no feriado, +10 no sábado e +20 no domingo</b>. <b>Vigia</b> não recebe
+  diária. Clique em "dia a dia" para ver a conta de cada pessoa.
 </p>
 
 {% if erro %}
-  <div class="aviso erro"><b>Não consegui levantar.</b> {{ erro }}</div>
+  <div class="aviso erro"><b>Não consegui calcular.</b> {{ erro }}</div>
 {% endif %}
 
-{% if not levantamento.tem_ponto %}
+{% if not r.tem_ponto %}
   <div class="aviso atencao">
-    <b>O ponto deste mês ainda não foi trazido.</b> Sem ele não há dia nenhum para
-    classificar. Na aba <b>Ponto</b> tem o botão "Trazer o ponto".
+    <b>O ponto deste mês ainda não foi trazido.</b> Os diaristas saem do ponto: na
+    aba <a href="{{ url_for('analisesps.tela_folha_ponto') }}">Ponto</a> tem o botão
+    "Trazer o ponto".
   </div>
 {% else %}
+  {% if not r.tem_coluna_da_diaria %}
+    <div class="aviso atencao">
+      <b>Falta uma atualização do banco para o valor da diária.</b> Em
+      <b>Configurações</b>, aperte "Aplicar atualizações do banco"; depois, em
+      <a href="{{ url_for('analisesps.tela_colaboradores') }}">Colaboradores</a>,
+      aperte "Atualizar cadastro" para trazer o valor de cada pessoa.
+    </div>
+  {% endif %}
 
 <div class="kpis">
-  <div class="kpi estatico">
-    <div class="kpi-rotulo">Pessoas com dia de diária</div>
-    <div class="kpi-valor">{{ levantamento.quantos }}</div>
-  </div>
-  <div class="kpi estatico">
-    <div class="kpi-rotulo">Dias de diária no mês</div>
-    <div class="kpi-valor">{{ levantamento.dias_de_diaria }}</div>
-  </div>
-  <div class="kpi estatico {{ 'ambar' if levantamento.com_pendencia }}">
-    <div class="kpi-rotulo">Com data faltando</div>
-    <div class="kpi-valor">{{ levantamento.com_pendencia|length }}</div>
-  </div>
-  <div class="kpi estatico {{ 'ambar' if levantamento.sem_cadastro }}">
-    <div class="kpi-rotulo">Bateram ponto e não estão no cadastro</div>
-    <div class="kpi-valor">{{ levantamento.sem_cadastro|length }}</div>
-  </div>
+  <div class="kpi estatico"><div class="kpi-rotulo">Vai receber</div>
+    <div class="kpi-valor">{{ r.total|moeda }}</div></div>
+  <div class="kpi estatico"><div class="kpi-rotulo">Pessoas</div>
+    <div class="kpi-valor">{{ r.quantos_a_pagar }}</div></div>
+  <div class="kpi estatico {{ 'ambar' if lista.contagem.get('falta_dado') }}">
+    <div class="kpi-rotulo">Travam o pagamento</div>
+    <div class="kpi-valor">{{ lista.contagem.get('falta_dado', 0) }}</div></div>
+  <div class="kpi estatico"><div class="kpi-rotulo">Obras</div>
+    <div class="kpi-valor">{{ r.por_obra|length }}</div></div>
 </div>
 
-{# ⚠️ O QUE FALTA PARA VIRAR DINHEIRO, dito antes da tabela. Mostrar "R$ 0,00"
-   onde falta o valor da diária seria pior: zero tem cara de resposta. #}
-<div class="aviso atencao" style="margin-top:14px">
-  <b>Os dias já estão certos; o VALOR ainda não sai daqui.</b> Falta:
-  <ul style="margin:6px 0 0 18px">
-  {% for o_que in levantamento.falta_para_pagar %}
-    <li>{{ o_que }}</li>
-  {% endfor %}
-  </ul>
-</div>
+<h3 style="margin-top:24px">Pessoa por pessoa
+  <small>{{ pessoas|length }}{% if lista.filtrando %} · filtrado{% endif %}
+    {% if lista.escondidos %} · {{ lista.escondidos }} que já {{ 'saiu' if lista.escondidos == 1 else 'saíram' }} fora da lista{% endif %}
+    · quem trava o pagamento vem primeiro</small></h3>
 
-<h3 style="margin-top:20px">
-  Pessoa por pessoa
-  <small>{% if filtrando %}{{ pessoas|length }} de {{ levantamento.quantos }} ·
-    filtrado{% else %}{{ pessoas|length }}{% endif %} ·
-    quem tem data faltando vem primeiro</small>
-</h3>
-<div class="tabela-wrap">
-  <div class="tabela-rolagem livre">
-    <table class="sps">
-      <thead>
-        <tr><th>Quem</th><th>CPF</th><th>Obra</th><th>Contrato</th>
-          <th>Início</th><th>Admissão</th>
-          <th class="num">Dias de diária</th><th class="num">Dias de CTPS</th>
-          <th class="num">Sem decidir</th></tr>
-      </thead>
-      <tbody>
-      {% for p in pessoas %}
-        <tr class="{{ 'linha-alerta' if p.dias_sem_decidir }}">
-          <td>
-            {% if p.link_pipefy %}
-              <a href="{{ p.link_pipefy }}" target="_blank" rel="noopener"
-                 >{{ p.nome or '—' }}</a>
-            {% else %}{{ p.nome or '—' }}{% endif %}
-            {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
-          </td>
-          <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
-          <td>{{ p.obra or '—' }}</td>
-          <td>{{ p.tipo_contrato or '—' }}</td>
-          <td>{{ p.data_inicio|data_br if p.data_inicio else '—' }}</td>
-          <td>{{ p.data_admissao|data_br if p.data_admissao else '—' }}</td>
-          <td class="num"><b>{{ p.dias_de_diaria }}</b></td>
-          <td class="num">{{ p.dias_de_ctps or '' }}</td>
-          <td class="num">
-            {% if p.dias_sem_decidir %}
-              <span class="selo saindo">{{ p.dias_sem_decidir }}</span>
-            {% endif %}
-          </td>
-        </tr>
-      {% else %}
-        <tr><td colspan="9" class="cartao-dica">
-          {% if filtrando %}Ninguém com esse filtro.
-          {% else %}Nenhum dia de diária neste mês — todos os dias de ponto são CTPS,
-            e vêm na folha da contabilidade.{% endif %}
-        </td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-{% if levantamento.sem_cadastro %}
-{# ⚠️ NÃO É LISTA ESCONDIDA. Quem bate ponto e não está no cadastro é o caso que
-   faz alguém trabalhar e não receber. #}
-<h3 style="margin-top:24px">
-  Bateram ponto e não estão no cadastro
-  <small>{{ levantamento.sem_cadastro|length }} — sem cadastro não há como pagar</small>
-</h3>
-<div class="tabela-wrap">
-  <div class="tabela-rolagem livre">
-    <table class="sps">
-      <thead><tr><th>CPF no ponto</th><th>Nome no ponto</th>
-        <th class="num">Dias</th></tr></thead>
-      <tbody>
-      {% for p in levantamento.sem_cadastro %}
-        <tr class="linha-alerta">
-          <td class="cpf">{{ p.cpf }}</td><td>{{ p.nome or '—' }}</td>
-          <td class="num">{{ p.dias }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-<p class="cartao-dica">
-  Pode ser gente nova que ainda não entrou no cadastro, ou CPF digitado diferente
-  no Mobponto. Aperte <b>Atualizar cadastro</b> em
-  <a href="{{ url_for('analisesps.tela_colaboradores') }}">Colaboradores</a> e
-  confira.
+{% if pode_operar %}
+<p class="cartao-dica" style="margin:0 0 8px">
+  Já vem <b>marcado para pagar</b> quem atende a regra. Desmarque quem não vai
+  receber e aperte <b>Salvar seleção</b> uma vez, no fim.
 </p>
 {% endif %}
 
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps" id="tabela-diaristas">
+      <thead><tr>
+        {% if pode_operar %}<th class="marca"><input type="checkbox" id="marcar-todos"
+            title="marcar ou desmarcar todos os visíveis" aria-label="Marcar todos"></th>{% endif %}
+        <th>Quem</th><th>Situação</th><th>CPF</th><th>Fase Atual</th><th>Obra(s)</th>
+        <th class="num">Diárias</th><th class="num">Valor da diária</th>
+        <th class="num">Adicionais</th><th class="num">Valor</th>
+      </tr></thead>
+      <tbody>
+      {% for p in pessoas %}
+        <tr class="{{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel }}"
+            data-cpf="{{ p.cpf }}" data-valor="{{ p.valor }}">
+          {% if pode_operar %}
+            <td class="marca"><input type="checkbox" class="marca-pessoa"
+                {% if p.pagar %}checked{% endif %} {% if p.impossivel %}disabled{% endif %}
+                aria-label="Pagar {{ p.nome }}"></td>
+          {% endif %}
+          <td>
+            <button type="button" class="link-btn nome-pessoa abrir-ficha"
+                    data-cpf="{{ p.cpf }}" title="cadastro, valores e ponto do mês"
+                    ><b>{{ p.nome or '—' }}</b></button>
+            {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}</span>{% endif %}
+            {% for motivo in p.motivos %}<br><span class="cartao-dica">⚠ {{ motivo }}</span>{% endfor %}
+            <details class="dia-a-dia">
+              <summary class="cartao-dica">dia a dia ({{ p.dias|length }} dia(s) de diária{% if p.dias_de_ctps %}, {{ p.dias_de_ctps }} de CTPS{% endif %})</summary>
+              <table class="sps mini">
+                <thead><tr><th>Dia</th><th>Obra</th><th>Situação no ponto</th>
+                  <th>Horas</th><th class="num">Diária</th><th class="num">Adicional</th>
+                  <th class="num">Valor</th></tr></thead>
+                <tbody>
+                {% for d in p.dias %}
+                  <tr class="{{ 'nao-vai' if not d.quantidade }}">
+                    <td>{{ d.data|data_br }}</td><td>{{ d.obra or '—' }}</td>
+                    <td>{{ d.presenca or '—' }}{% if d.motivo %}<br><span class="cartao-dica">{{ d.motivo }}</span>{% endif %}</td>
+                    <td>{{ d.horas or '—' }}</td>
+                    <td class="num">{{ qtd(d.quantidade) }}</td>
+                    <td class="num">{% if d.adicional %}{{ d.adicional|moeda }} <span class="cartao-dica">{{ d.porque_adicional }}</span>{% endif %}</td>
+                    <td class="num">{{ d.valor|moeda }}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+              {% if p.data_inicio or p.data_admissao %}
+                <p class="cartao-dica">Início {{ p.data_inicio|data_br if p.data_inicio else '—' }}
+                  · admissão {{ p.data_admissao|data_br if p.data_admissao else '—' }}
+                  · {{ p.tipo_contrato or 'contrato não informado' }}</p>
+              {% endif %}
+            </details>
+          </td>
+          <td>
+            {% if p.impossivel %}<span class="selo risco">falta dado</span>
+            {% elif p.desligado %}<span class="selo cancelado">já saiu</span>
+            {% elif not p.pagar %}<span class="selo cancelado">não paga</span>
+            {% elif p.motivos %}<span class="selo saindo">atenção</span>
+            {% else %}<span class="selo aprovado">vai receber</span>{% endif %}
+          </td>
+          <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
+          <td>{{ p.fase or '—' }}</td>
+          <td>{% for o in p.por_obra %}<b>{{ o.obra }}</b> <span class="cartao-dica">{{ qtd(o.dias) }}</span>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
+          <td class="num"><b>{{ qtd(p.quantidade) }}</b></td>
+          <td class="num">{% if p.valor_diaria is none %}—{% else %}{{ p.valor_diaria|moeda }}{% endif %}</td>
+          <td class="num">{{ p.adicionais|moeda if p.adicionais else '' }}</td>
+          <td class="num valor-final"><b>{{ p.valor|moeda }}</b></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10" class="cartao-dica">
+          {% if lista.filtrando %}Ninguém com esse filtro.{% else %}Nenhum dia de
+          diária neste período.{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h3 style="margin-top:24px">Por obra <small>é esta obra que paga</small></h3>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Obra</th><th class="num">Pessoas</th><th class="num">Diárias</th>
+        <th class="num">Total</th></tr></thead>
+      <tbody>
+      {% for o in r.por_obra %}
+        <tr><td><b>{{ o.obra }}</b></td><td class="num">{{ o.pessoas }}</td>
+          <td class="num">{{ qtd(o.dias) }}</td><td class="num">{{ o.total|moeda }}</td></tr>
+      {% else %}
+        <tr><td colspan="4" class="cartao-dica">Nada a pagar neste período.</td></tr>
+      {% endfor %}
+      </tbody>
+      {% if r.por_obra %}<tfoot><tr><th>Total</th><th class="num">{{ r.quantos_a_pagar }}</th>
+        <th></th><th class="num">{{ r.total|moeda }}</th></tr></tfoot>{% endif %}
+    </table>
+  </div>
+</div>
+
+{% if pode_operar %}
+<div class="barra-salvar" id="barra-salvar">
+  <span class="conta-selecao">Vai receber:
+    <span id="quantos-marcados">{{ r.quantos_a_pagar }}</span>
+    <span class="total-selecao" id="total-marcado">{{ r.total|moeda }}</span></span>
+  <span class="cartao-dica" id="recado-selecao"></span>
+  <span class="sobra">
+    <button class="btn secundario" type="button" id="btn-desfazer">Desfazer</button>
+    <button class="btn" type="button" id="btn-salvar-selecao">Salvar seleção</button>
+  </span>
+</div>
 {% endif %}
+{% endif %}
+
+{% include "_folha_ficha_js.html" %}
+<script>
+document.querySelectorAll(".abrir-ficha").forEach(b => b.addEventListener("click",
+  () => abrirFichaDoFuncionario(b.dataset.cpf, {{ ano }}, {{ mes }})));
+const caixas = [...document.querySelectorAll(".marca-pessoa")];
+const inicial = caixas.map(c => c.checked);
+function dinheiro(n) { return n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"}); }
+function atualizar() {
+  let quantos = 0, total = 0, mudou = false;
+  caixas.forEach((c, i) => {
+    const linha = c.closest("tr");
+    linha.classList.toggle("nao-vai", !c.checked);
+    if (c.checked) { quantos += 1; total += parseFloat(linha.dataset.valor || "0") || 0; }
+    if (c.checked !== inicial[i]) mudou = true;
+  });
+  const q = document.getElementById("quantos-marcados");
+  const t = document.getElementById("total-marcado");
+  if (q) q.textContent = quantos;
+  if (t) t.textContent = dinheiro(total);
+  const salvar = document.getElementById("btn-salvar-selecao");
+  const desfazer = document.getElementById("btn-desfazer");
+  if (salvar) salvar.disabled = !mudou;
+  if (desfazer) desfazer.hidden = !mudou;
+}
+caixas.forEach(c => c.addEventListener("change", atualizar));
+atualizar();
+
+const marcarTodos = document.getElementById("marcar-todos");
+if (marcarTodos) marcarTodos.addEventListener("change", () => {
+  caixas.forEach(c => { if (!c.disabled) c.checked = marcarTodos.checked; });
+  atualizar();
+});
+const desfazer = document.getElementById("btn-desfazer");
+if (desfazer) desfazer.addEventListener("click", () => {
+  caixas.forEach((c, i) => { c.checked = inicial[i]; });
+  atualizar();
+});
+
+const salvar = document.getElementById("btn-salvar-selecao");
+if (salvar) salvar.addEventListener("click", async () => {
+  const decisoes = caixas.map(c => ({cpf: c.closest("tr").dataset.cpf, pagar: c.checked}));
+  const recado = document.getElementById("recado-selecao");
+  salvar.disabled = true;
+  recado.textContent = "salvando…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_diaristas_selecao') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ano: {{ ano }}, mes: {{ mes }}, periodo: "{{ qual }}",
+                            decisoes: decisoes})});
+    const d = await r.json();
+    if (!d.ok) { recado.textContent = d.erro; salvar.disabled = false; return; }
+    location.reload();
+  } catch (e) { recado.textContent = "falhou: " + e; salvar.disabled = false; }
+});
+
+const fechar = document.getElementById("fechar-diaria");
+if (fechar) fechar.addEventListener("click", async () => {
+  if (caixas.some((c, i) => c.checked !== inicial[i])) {
+    alert("Salve a seleção antes de fechar — o fechamento usa o que está salvo.");
+    return;
+  }
+  if (!confirm("Fechar a diária de {{ r.competencia }} ({{ r.rotulo_periodo }})?\n\n" +
+               "Isso congela quem recebe e de qual obra sai o dinheiro, e libera o " +
+               "arquivo de pagamento. Dá para refazer.")) return;
+  fechar.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_diaristas_fechar') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ano: {{ ano }}, mes: {{ mes }}, periodo: "{{ qual }}"})});
+    const d = await r.json();
+    if (!d.ok) { alert(d.erro); fechar.disabled = false; return; }
+    location.reload();
+  } catch (e) { alert("Falhou: " + e); fechar.disabled = false; }
+});
+</script>
 {% endblock %}

@@ -228,7 +228,11 @@ CABECALHO_DE_VERDADE = (
        "Data de Saída",
        # O código da obra e a observação (coluna BQ), que entraram em 28/09/2026.
        "Código da Obra", "Observação"]                          # AE..AQ
+    # O valor da diária (migração 044, 01/10/2026), no fim para não mexer nos
+    # índices de cima.
+    + ["Valor da Diária"]                                       # AR
 )
+I_DIARIA = len(CABECALHO_DE_VERDADE) - 1
 
 
 class AbaFalsa:

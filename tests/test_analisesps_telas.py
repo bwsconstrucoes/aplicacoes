@@ -6214,9 +6214,51 @@ def test_clicar_na_pessoa_abre_a_FICHA_com_o_ponto(app, monkeypatch):
     _preparar_auxilio(monkeypatch)
     html = _como_mestre(app).get(
         "/analisesps/folha/auxilios").get_data(as_text=True)
-    assert 'id="ficha-pessoa-modal"' in html
-    assert "abrirFichaDaPessoa" in html
+    # Desde 01/10/2026 é a janela do funcionário COMUM às folhas.
+    assert 'id="cartao-ficha"' in html
+    assert "abrirFichaDoFuncionario" in html
     assert 'class="clicavel' in html
+
+
+def test_a_JANELA_DO_FUNCIONARIO_das_outras_folhas_traz_cadastro_e_ponto(app, monkeypatch):
+    """O dono, 01/10/2026: as outras folhas herdam *"aquele modal que aparece as
+    informações dele"*. Cadastro, valores, ponto dia a dia e os botões."""
+    import datetime as dt
+    from decimal import Decimal as D
+    from app.apps.analisesps import colaboradores as col, ponto
+
+    monkeypatch.setattr(col, "por_cpf", lambda *a, **k: {
+        "cpf": "99713349334", "cpf_bonito": "997.133.493-34", "nome": "GERLANIO",
+        "cargo": "SERVENTE", "fase": "Colaboradores Ativos", "tipo": "Prestador",
+        "tipo_contrato": "Autônomo (RPA)", "obra_cadastro": "CREPE OLINDA",
+        "obra_codigo": "1042", "situacao": "ativo", "motivo": "",
+        "data_inicio": dt.date(2026, 9, 1), "data_admissao": None,
+        "valor_alimentacao": D("15.00"), "modo_alimentacao": "Mês",
+        "valor_transporte": None, "modo_transporte": "", "valor_gratificacao": None,
+        "observacao_auxilio": "", "link_pipefy": "https://app.pipefy.com/open-cards/1"})
+    monkeypatch.setattr(col, "nascimento_de", lambda *a: dt.date(1990, 5, 4))
+    monkeypatch.setattr(col, "valores_de_diaria", lambda *a: {"99713349334": D("120.00")})
+    monkeypatch.setattr(col, "codigos_das_obras", lambda: {})
+    monkeypatch.setattr(ponto, "dias_da_pessoa", lambda *a, **k: {
+        "tem_carga": True, "dias": [{"data": dt.date(2026, 9, 8), "obra": "1042",
+                                     "empate": False, "horas": ["07:00", "", "", "17:00"],
+                                     "marcacoes": ["1042", "", "", "1042"],
+                                     "presenca": "PRESENÇA", "falta": "",
+                                     "total_de_horas": "10:00"}]})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/pessoa/99713349334/ficha?ano=2026&mes=9").get_data(as_text=True)
+    assert "GERLANIO" in html and "04/05/1990" in html
+    assert "120,00" in html, "o valor da diária"
+    assert "08/09/2026" in html and "07:00" in html
+    assert "Atualizar ponto" in html and "Cadastro completo" in html
+    assert "Pipefy" in html
+
+
+def test_a_janela_do_funcionario_de_quem_NAO_esta_no_cadastro_e_404(app, monkeypatch):
+    from app.apps.analisesps import colaboradores as col
+    monkeypatch.setattr(col, "por_cpf", lambda *a, **k: None)
+    r = _como_mestre(app).get("/analisesps/folha/pessoa/99713349334/ficha")
+    assert r.status_code == 404
 
 
 def test_a_ficha_da_pessoa_traz_cadastro_ponto_e_o_card(app, monkeypatch):
@@ -6600,54 +6642,96 @@ def test_nao_existe_mais_obra_editavel_na_tela_de_auxilio(app, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-def _preparar_diaristas(monkeypatch, levantamento=None):
-    from app.apps.analisesps import folha_diaristas as fd
-
-    monkeypatch.setattr(fd, "levantar", lambda *a, **k: levantamento
-                        if levantamento is not None
-                        else {"tem_ponto": False, "pessoas": []})
-
-
-def test_a_tela_de_diaristas_existe_e_explica_a_regra_POR_DIA(app, monkeypatch):
-    """⚠️ A regra é contraintuitiva e precisa estar escrita: a MESMA pessoa tem
-    dias de diária e dias de CTPS no mês em que foi registrada."""
+def _diarista(**mudancas):
     import datetime as dt
+    from decimal import Decimal as D
+    base = {"cpf": "99713349334", "cpf_bonito": "997.133.493-34",
+            "nome": "GERLANIO", "cargo": "SERVENTE", "fase": "Colaboradores Ativos",
+            "situacao": "ativo", "link_pipefy": "", "tipo_contrato": "CTPS",
+            "data_inicio": dt.date(2026, 9, 1), "data_admissao": dt.date(2026, 9, 8),
+            "obra_cadastro": "1042", "valor_diaria": D("100.00"),
+            "dias": [{"data": dt.date(2026, 9, 5), "obra": "1042",
+                      "quantidade": D("1"), "motivo": "", "adicional": D("10.00"),
+                      "porque_adicional": "sábado", "valor": D("110.00"),
+                      "presenca": "PRESENÇA", "horas": "08:00", "batidas": []}],
+            "quantidade": D("7"), "adicionais": D("10.00"), "valor": D("710.00"),
+            "por_obra": [{"obra": "1042", "dias": D("7"), "valor": D("710.00")}],
+            "obra": "1042", "obras": ["1042"], "dias_de_ctps": 8,
+            "dias_sem_decidir": 0, "motivos": [], "pagar": True,
+            "pagar_calculado": True, "impossivel": False, "desligado": False,
+            "vigia": False, "ajuste_pagar": None}
+    base.update(mudancas)
+    return base
 
-    _preparar_diaristas(monkeypatch, {
-        "tem_ponto": True, "carga": {"id": 1}, "quantos": 1,
-        "dias_de_diaria": 7, "com_pendencia": [], "sem_cadastro": [],
-        "falta_para_pagar": ["o VALOR da diária de cada pessoa"],
-        "pessoas": [{"cpf": "99713349334", "cpf_bonito": "997.133.493-34",
-                     "nome": "GERLANIO", "cargo": "SERVENTE", "obra": "1042",
-                     "link_pipefy": "", "dias_de_diaria": 7,
-                     "dias_de_ctps": 8, "dias_sem_decidir": 0,
-                     "data_inicio": dt.date(2026, 9, 1),
-                     "data_admissao": dt.date(2026, 9, 8),
-                     "tipo_contrato": "CTPS", "contagem": {}}]})
 
+def _diaristas_calculado(pessoas=None, **mudancas):
+    import datetime as dt
+    from decimal import Decimal as D
+    pessoas = [_diarista()] if pessoas is None else pessoas
+    a_pagar = [p for p in pessoas if p["pagar"]]
+    base = {"ano": 2026, "mes": 9, "qual": "mes", "rotulo_periodo": "Mês inteiro",
+            "competencia": "09/2026", "inicio": dt.date(2026, 9, 1),
+            "fim": dt.date(2026, 9, 30), "tem_ponto": True,
+            "tem_coluna_da_diaria": True, "pessoas": pessoas, "sem_cadastro": [],
+            "quantos": len(pessoas), "quantos_a_pagar": len(a_pagar),
+            "total": sum((p["valor"] for p in a_pagar), D("0.00")),
+            "por_obra": [{"obra": "1042", "pessoas": 1, "dias": D("7"),
+                          "total": D("710.00")}], "fechamento": None}
+    base.update(mudancas)
+    return base
+
+
+def _preparar_diaristas(monkeypatch, calculado=None):
+    from app.apps.analisesps import folha_diaristas as fd
+    monkeypatch.setattr(fd, "calcular", lambda *a, **k: calculado
+                        if calculado is not None
+                        else {"tem_ponto": False, "pessoas": [],
+                              "sem_cadastro": []})
+
+
+def test_a_tela_de_diaristas_mostra_QUANTO_e_explica_a_regra(app, monkeypatch):
+    """⚠️ A regra é contraintuitiva e precisa estar escrita: a MESMA pessoa tem
+    dias de diária e dias de CTPS no mês em que foi registrada. E desde
+    01/10/2026 a tela diz quanto pagar."""
+    _preparar_diaristas(monkeypatch, _diaristas_calculado())
     html = _como_mestre(app).get(
         "/analisesps/folha/diaristas").get_data(as_text=True)
-
     assert "dia por dia" in html
+    assert "GERLANIO" in html and "997.133.493-34" in html
+    assert "710,00" in html, "o valor da pessoa"
+    assert "+20 no feriado, +10 no sábado e +20 no domingo" in html
+    assert "8 de CTPS" in html, "os dias de CTPS ficam ditos no dia a dia"
+    assert "sábado" in html, "o adicional do dia, com o porquê"
+    assert 'id="fechar-diaria"' in html
+
+
+def test_quem_JA_SAIU_nao_aparece_sem_filtro_mas_fica_contado(app, monkeypatch):
+    """*"Está aparecendo colaboradores desligados (…) já saiu. Ou seja, é uma fase
+    que não se utiliza."* (01/10/2026) — e esconder sem dizer faria quem
+    trabalhou e saiu no meio do mês não receber sem ninguém ver."""
+    saiu = _diarista(cpf="22222222222", nome="JASAIU", situacao="saiu",
+                     desligado=True, pagar=False, pagar_calculado=False,
+                     motivos=["saiu em 20/09/2026."])
+    _preparar_diaristas(monkeypatch, _diaristas_calculado([_diarista(), saiu]))
+    cliente = _como_mestre(app)
+    html = cliente.get("/analisesps/folha/diaristas").get_data(as_text=True)
     assert "GERLANIO" in html
-    assert ">7<" in html and ">8<" in html, "os dias de diária e os de CTPS"
-    assert "997.133.493-34" in html, "o CPF pontuado"
-    assert "1042" in html, "a obra pelo código"
+    assert "JASAIU" not in html
+    assert "1 já saiu — fora da lista" in html
+    com_filtro = cliente.get(
+        "/analisesps/folha/diaristas?situacao=saiu").get_data(as_text=True)
+    assert "JASAIU" in com_filtro and "GERLANIO" not in com_filtro
 
 
-def test_a_tela_de_diaristas_diz_o_que_falta_para_virar_DINHEIRO(app, monkeypatch):
-    """⚠️ Mostrar "R$ 0,00" onde falta o valor da diária seria pior: zero tem cara
-    de resposta."""
-    _preparar_diaristas(monkeypatch, {
-        "tem_ponto": True, "carga": {"id": 1}, "quantos": 0,
-        "dias_de_diaria": 0, "com_pendencia": [], "sem_cadastro": [],
-        "pessoas": [],
-        "falta_para_pagar": ["o VALOR da diária de cada pessoa",
-                             "o nome dos campos de cada dia do ponto"]})
+def test_sem_o_VALOR_DA_DIARIA_a_pessoa_trava_e_a_lateral_diz(app, monkeypatch):
+    sem = _diarista(valor_diaria=None, valor=__import__("decimal").Decimal("0.00"),
+                    pagar=False, pagar_calculado=False, impossivel=True,
+                    motivos=["o cadastro não tem o valor da diária."])
+    _preparar_diaristas(monkeypatch, _diaristas_calculado([sem]))
     html = _como_mestre(app).get(
         "/analisesps/folha/diaristas").get_data(as_text=True)
-    assert "o VALOR ainda não sai daqui" in html
-    assert "o nome dos campos de cada dia do ponto" in html
+    assert "sem valor da diária" in html
+    assert "falta dado" in html
 
 
 def test_sem_o_ponto_a_tela_de_diaristas_diz_o_que_fazer(app, monkeypatch):
@@ -6660,16 +6744,20 @@ def test_sem_o_ponto_a_tela_de_diaristas_diz_o_que_fazer(app, monkeypatch):
 
 def test_quem_bate_ponto_e_NAO_esta_no_cadastro_aparece(app, monkeypatch):
     """⚠️ Esconder faria alguém trabalhar e não receber, sem nada na tela."""
-    _preparar_diaristas(monkeypatch, {
-        "tem_ponto": True, "carga": {"id": 1}, "quantos": 0,
-        "dias_de_diaria": 0, "com_pendencia": [], "pessoas": [],
-        "falta_para_pagar": [],
-        "sem_cadastro": [{"cpf": "11144477735", "nome": "JOAO DO PONTO",
-                          "dias": 12}]})
+    _preparar_diaristas(monkeypatch, _diaristas_calculado(
+        sem_cadastro=[{"cpf": "11144477735", "nome": "JOAO DO PONTO", "dias": 12}]))
     html = _como_mestre(app).get(
         "/analisesps/folha/diaristas").get_data(as_text=True)
     assert "JOAO DO PONTO" in html
     assert "não estão no cadastro" in html
+
+
+def test_os_filtros_dos_diaristas_sao_de_CAIXINHA(app, monkeypatch):
+    _preparar_diaristas(monkeypatch, _diaristas_calculado())
+    html = _como_mestre(app).get(
+        "/analisesps/folha/diaristas").get_data(as_text=True)
+    assert 'type="checkbox" name="situacao"' in html
+    assert 'type="checkbox" name="obra"' in html
 
 
 # ---------------------------------------------------------------------------
@@ -7441,7 +7529,8 @@ def test_o_botao_de_gerar_do_auxilio_fica_na_LATERAL(app, monkeypatch):
 
     lateral = html.index('<aside class="filtros">')
     principal = html.index('<main class="principal">')
-    assert lateral < html.index("Gerar o pagamento") < principal
+    # Desde 01/10/2026 o caminho até o arquivo começa por FECHAR, na lateral.
+    assert lateral < html.index('id="fechar-auxilio"') < principal
 
 
 def test_por_obra_vem_DEPOIS_da_lista_de_pessoas_no_auxilio(app, monkeypatch):

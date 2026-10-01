@@ -1,0 +1,33 @@
+{# Os blocos de filtro de caixinha da lateral — o padrão das Solicitações, o
+   mesmo da folha da contabilidade. `opcoes`: lista de (valor, rótulo). #}
+{% macro bloco(titulo, nome, opcoes, marcados, dica='') %}
+  {% if opcoes %}
+    <div class="filtro {% if marcados %}aberto{% endif %}">
+      <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+        <span>{{ titulo }}</span>
+        {% if marcados %}<span class="filtro-badge">{{ marcados|length }}</span>{% endif %}
+        <span class="seta">▾</span>
+      </div>
+      <div class="filtro-cont">
+        {% if opcoes|length >= 12 %}
+          <input type="search" class="procura-opcao" autocomplete="off"
+                 placeholder="Procurar {{ titulo|lower }}…"
+                 aria-label="Procurar em {{ titulo|lower }}">
+          <p class="procura-nada" hidden>Nenhuma opção com esse texto.</p>
+        {% endif %}
+        <div class="filtro-opcoes">
+          {% for valor, rotulo in opcoes %}
+            <label class="opcao">
+              <input type="checkbox" name="{{ nome }}" value="{{ valor }}"
+                     {% if valor in marcados %}checked{% endif %}>
+              <span class="rotulo" title="{{ rotulo }}">{{ rotulo }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if dica %}<p class="cartao-dica" style="margin:8px 2px 0">{{ dica }}</p>{% endif %}
+      </div>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro qtd(n) %}{{ ('%g' % n)|replace('.', ',') }}{% endmacro %}

@@ -2652,3 +2652,15 @@ table.contracheque td:first-child { white-space: normal; }
   border-bottom: 1px solid var(--borda);
 }
 #cartao-ponto .analitico-topo .analitico-acoes { margin-bottom: 4px; }
+
+/* Diaristas: o dia a dia de cada pessoa, aberto na própria linha (01/10/2026). */
+details.dia-a-dia { margin-top: 4px; }
+details.dia-a-dia > summary { cursor: pointer; }
+table.sps.mini { margin-top: 6px; font-size: 12.5px; }
+table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
+
+/* A janela do funcionário das outras folhas: topo preso, como no analítico. */
+#cartao-ficha { padding-top: 0; }
+#cartao-ficha > .dialogo-fechar { position: sticky; top: 14px; z-index: 7; margin-top: 14px; }
+#cartao-ficha .analitico-topo { position: sticky; top: 0; z-index: 6; background: var(--branco);
+  padding: 14px 110px 8px 0; margin: 0 0 8px; border-bottom: 1px solid var(--borda); }

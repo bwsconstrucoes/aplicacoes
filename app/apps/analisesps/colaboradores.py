@@ -239,6 +239,19 @@ COLUNAS_DOS_AUXILIOS = {
 COLUNAS_OPCIONAIS = {
     "data_nascimento": ["Data de Nascimento", "Data Nascimento", "Nascimento",
                         "Dt. Nascimento", "Data de nascimento"],
+    # O VALOR DA DIÁRIA (migração 044, 01/10/2026) — o que faltava para a folha
+    # dos diaristas virar dinheiro. A planilha de diaristas pula quem está sem ele
+    # ("CORRIGIR VALOR DIÁRIA"). Os nomes são os prováveis; a carga AVISA quando
+    # não acha nenhum, com o efeito escrito.
+    "valor_diaria": ["Valor da Diária", "Valor Diária", "Valor da Diaria",
+                     "Valor Diaria", "Valor do Dia", "Diária", "Diaria"],
+}
+
+# As opcionais que AVISAM quando faltam — só as que mudam dinheiro.
+OPCIONAIS_QUE_AVISAM = {
+    "valor_diaria":
+        "os diaristas ficam sem valor: a tela mostra quem e quantos dias, mas "
+        "não calcula quanto pagar.",
 }
 
 # ---------------------------------------------------------------------------
@@ -462,6 +475,10 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
         i = achar_coluna(normalizado, aceitos)
         if i is not None:
             posicoes[campo] = i
+        elif campo in OPCIONAIS_QUE_AVISAM:
+            avisos.append(
+                f'a coluna "{aceitos[0]}" não existe na planilha com esse nome, '
+                f"então {OPCIONAIS_QUE_AVISAM[campo]}")
 
     # O código do Fortes na ficha: opcional e calado quando falta — a aba "ID
     # Fortes" continua sendo o caminho de quem não tem a coluna.
@@ -489,6 +506,8 @@ def _registro(linha: dict, posicoes: dict) -> dict | None:
                 "_id_fortes_ficha": normalizar_id_fortes(cru.get("id_fortes"))}
     if "data_nascimento" in cru:
         registro["_data_nascimento"] = _data_de_nascimento(cru.get("data_nascimento"))
+    if "valor_diaria" in cru:
+        registro["_valor_diaria"] = formatos.para_numero(cru.get("valor_diaria"))
     for campo in CAMPOS[1:]:
         valor = cru.get(campo, "")
         if campo in DATAS:
@@ -521,6 +540,15 @@ def _gravar(conn, registros: list) -> int:
         conn.executemany(
             "UPDATE analisesps.colaborador SET data_nascimento = ? WHERE cpf = ?",
             nascimentos)
+    # O valor da diária: só quando a coluna veio na planilha. Vazio na planilha
+    # LIMPA o valor guardado — a diária que saiu do cadastro não pode continuar
+    # sendo paga pelo valor antigo.
+    diarias = [(r["_valor_diaria"], r["cpf"]) for r in registros
+               if "_valor_diaria" in r]
+    if diarias and tem_valor_diaria():
+        conn.executemany(
+            "UPDATE analisesps.colaborador SET valor_diaria = ? WHERE cpf = ?",
+            diarias)
     conn.commit()
     return len(registros)
 
@@ -543,6 +571,27 @@ def tem_nascimento() -> bool:
     """A migração 043 já rodou? (a coluna da data de nascimento)"""
     from .db import tem_coluna
     return tem_coluna("colaborador", "data_nascimento")
+
+
+def tem_valor_diaria() -> bool:
+    """A migração 044 já rodou? (a coluna do valor da diária)"""
+    from .db import tem_coluna
+    return tem_coluna("colaborador", "valor_diaria")
+
+
+def valores_de_diaria(cpfs) -> dict:
+    """`{cpf: Decimal ou None}` — o valor da diária de cada um. Vazio sem a
+    migração 044."""
+    from .db import consultar
+    from .folha_rateio import so_digitos
+    limpos = sorted({so_digitos(c) for c in (cpfs or [])
+                     if len(so_digitos(c)) == 11})
+    if not limpos or not tem_valor_diaria():
+        return {}
+    marcadores = ", ".join(["?"] * len(limpos))
+    return {cpf: valor for cpf, valor in consultar(
+        "SELECT cpf, valor_diaria FROM analisesps.colaborador "
+        f" WHERE cpf IN ({marcadores})", tuple(limpos))}
 
 
 def nascimento_de(cpf: str):

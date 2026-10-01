@@ -344,10 +344,21 @@ def test_o_cabecalho_COMPLETO_nao_gera_aviso_nenhum():
     """A prova de que os nomes que o módulo procura são os que a planilha usa:
     com o cabeçalho de verdade, silêncio."""
     cabecalho = [aceitos[0] for aceitos in col.COLUNAS.values()] + \
-                [aceitos[0] for aceitos in col.COLUNAS_DOS_AUXILIOS.values()]
+                [aceitos[0] for aceitos in col.COLUNAS_DOS_AUXILIOS.values()] + \
+                [aceitos[0] for aceitos in col.COLUNAS_OPCIONAIS.values()]
     posicoes, avisos = col._achar_colunas(cabecalho)
     assert avisos == [], avisos
-    assert set(posicoes) == set(col.COLUNAS) | set(col.COLUNAS_DOS_AUXILIOS)
+    assert set(posicoes) == (set(col.COLUNAS) | set(col.COLUNAS_DOS_AUXILIOS)
+                             | set(col.COLUNAS_OPCIONAIS))
+
+
+def test_sem_a_coluna_do_VALOR_DA_DIARIA_a_carga_avisa_o_efeito():
+    """O valor da diária é o que faz a folha dos diaristas virar dinheiro."""
+    cabecalho = [aceitos[0] for aceitos in col.COLUNAS.values()] + \
+                [aceitos[0] for aceitos in col.COLUNAS_DOS_AUXILIOS.values()]
+    _, avisos = col._achar_colunas(cabecalho)
+    assert len(avisos) == 1 and "Valor da Diária" in avisos[0]
+    assert "diaristas ficam sem valor" in avisos[0]
 
 
 def test_todo_campo_do_banco_tem_uma_coluna_procurada():

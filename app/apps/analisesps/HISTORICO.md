@@ -11045,6 +11045,56 @@ dizia que o arquivo que funcionava tinha CPF com ponto e traço. Segui o modelo
 ambiente não abre arquivo nenhum (nem o modelo original), então a conferência
 foi lendo o arquivo gerado com o openpyxl.
 
+#### Leva 144 — as outras folhas herdam o que a da contabilidade ganhou; diaristas viram pagamento (01/10/2026)
+
+**O pedido.** *"A gente vai ter que aplicar vários critérios (…) que a gente
+utilizou na folha da contabilidade para essas outras folhas (…) está aparecendo
+colaboradores desligados (…) os filtros (…) aquele modal que aparece as
+informações dele (…) a geração dos arquivos (…) A prioridade agora é a de
+diaristas, que é o próximo que eu vou gerar."*
+
+**Diaristas — de "quem e quantos dias" para pagamento de verdade:**
+- **Valor da diária** lido do cadastro (migração **044**, coluna
+  `colaborador.valor_diaria`; nomes procurados: "Valor da Diária", "Valor
+  Diária"…). Se a planilha não tiver a coluna com esses nomes, a carga do cadastro
+  **avisa** o efeito. ⚠️ O nome da coluna não foi confirmado com o dono.
+- **A conta** é a da aba Diaristas (§7.10.4 e §7.14.12 do
+  `docs/FOLHA_DE_PAGAMENTO.md`): só dia que a regra de vínculo diz DIÁRIA; vigia
+  fora; 1 diária com presença, **meia** em presença parcial acima de 7h ou falta
+  justificada de fim de semana acima de 6h30; +20 feriado, +10 sábado, +20
+  domingo (feriado de sábado paga o de feriado). ⚠️ A meia diária foi escrita da
+  LEITURA da fórmula, que não está mais à mão — por isso cada pessoa tem o "dia a
+  dia" com quanto cada dia contou e por quê.
+- **Período** escolhido na tela: mês inteiro (padrão), 1 a 15, 16 ao fim. O
+  fechamento fica guardado como quinzena (1 a 15) ou fim de mês (os outros dois).
+  ⚠️ Escolha minha: não sei se a BWS paga diarista por quinzena ou por mês.
+- **Seleção** em bloco (só as exceções ficam guardadas, na mesma tabela de
+  ajustes do auxílio, com o tipo `diaria_<período>`), **fechar** (verba `diaria`)
+  e daí o caminho que já existe: gerar o arquivo (o do SomaPay já sai no modelo
+  do Soma) e lançar no Pipefy (grupo "Pagamento de Diárias" do Make).
+
+**Alimentação e transporte:** ganharam o **fechar** — que não existia; o "Conferir
+e gerar" levava a uma tela que dizia "nada fechado". O fechamento escolhe se a
+verba sai junto da quinzena ou do fim de mês (padrão: fim de mês), e fechar num
+tira o fechamento do outro, para a verba não sair duas vezes.
+
+**Comum às três telas (`folha_lista.py`):**
+- **Quem já saiu não aparece** sem filtro (é o que a planilha faz) — mas a
+  lateral diz quantos ficaram de fora e o filtro "já saiu" mostra quem é.
+  Esconder calado faria quem trabalhou e saiu no meio do mês não receber.
+- **Filtros de caixinha** no padrão das Solicitações (situação, obra, fase), com
+  a lateral nos mesmos assuntos da folha: pagamento, pendências, filtros.
+- **A janela do funcionário** (`_folha_ficha.html`): cadastro, valores (diária,
+  alimentação, transporte), ponto do mês dia a dia, e os botões Atualizar ponto,
+  Atualizar cadastro, Cadastro completo e Pipefy. Vale em diaristas, alimentação
+  e transporte, e na tela de Colaboradores. ⚠️ **Lançar batidas** continua só na
+  janela da folha da contabilidade.
+
+**Verificado:** 12 testes novos da diária (5 com banco, do ponto ao arquivo do
+SomaPay), 3 do fechamento do auxílio, telas e acessos; suíte inteira (7.805);
+as três telas e a janela abertas num navegador com dado de teste. **Não
+verificado:** com dado real — depende da migração 044 e de "Atualizar cadastro".
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11055,6 +11105,8 @@ foi lendo o arquivo gerado com o openpyxl.
 | decidir se passa a importar só a analítica | ele |
 | ~~publicar a leva 142~~ — **publicada em 01/10/2026** (main em `23a96dd`), sem migração nova | — |
 | ~~publicar a leva 143~~ — **publicada em 01/10/2026**. Falta o dono gerar de novo e subir no portal do Soma | ele |
+| publicar a leva 144 **com a migração 044** (apertar o botão junto) e depois "Atualizar cadastro" | ele |
+| confirmar o nome da coluna do valor da diária na planilha, a regra da meia diária e se diarista é pago por quinzena ou por mês | ele |
 | dizer qual valor o link do botão da folha manda em `tipo` (vai no campo `automa_o_2` da SP) | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 

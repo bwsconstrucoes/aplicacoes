@@ -1,0 +1,100 @@
+{# ---------------------------------------------------------------------------
+   A JANELA DO FUNCIONÁRIO NAS OUTRAS FOLHAS — 01/10/2026.
+
+   O dono pediu que diaristas, alimentação e transporte herdem o que a folha da
+   contabilidade ganhou, e *"aquele modal que aparece as informações dele"* é
+   parte disso. Mesmo desenho do analítico da folha (topo preso, botões iguais e
+   sem sublinhado, cadastro em bloco); o que é só da contabilidade — líquido,
+   contracheque, apropriação — fica lá.
+   --------------------------------------------------------------------------- #}
+<div class="analitico">
+  <div class="analitico-topo">
+    <div class="analitico-cab">
+      <div>
+        <b class="analitico-nome">{{ p.nome }}</b>
+        <span class="cartao-dica">{{ p.cpf_bonito }} · ponto de {{ '%02d'|format(mes) }}/{{ ano }}</span>
+      </div>
+      <div class="analitico-selos">
+        {% if p.situacao and p.situacao != 'ativo' %}
+          <span class="selo risco" title="{{ p.motivo }}">{{ p.situacao }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="analitico-acoes">
+      {% if pode_operar %}
+        <button type="button" class="btn secundario ficha-atualizar-ponto" data-cpf="{{ p.cpf }}"
+                data-nome="{{ p.nome }}" data-ano="{{ ano }}" data-mes="{{ mes }}"
+                title="traz de novo do Mobponto só o ponto desta pessoa">Atualizar ponto</button>
+        <button type="button" class="btn secundario ficha-atualizar-cadastro" data-cpf="{{ p.cpf }}"
+                title="traz de novo da planilha de cadastro só a ficha desta pessoa">Atualizar cadastro</button>
+      {% endif %}
+      <button type="button" class="btn secundario ficha-cadastro-completo" data-cpf="{{ p.cpf }}"
+              title="a ficha inteira da planilha de cadastro">Cadastro completo</button>
+      {% if p.link_pipefy %}<a class="btn secundario" target="_blank" rel="noopener"
+         href="{{ p.link_pipefy }}">Pipefy</a>{% endif %}
+      <span class="cartao-dica ficha-recado"></span>
+    </div>
+  </div>
+
+  <div class="analitico-fontes">
+    <div class="cartao">
+      <b class="lateral-titulo">Cadastro</b>
+      <dl class="analitico-dl">
+        <dt>CPF</dt><dd>{{ p.cpf_bonito or '—' }}</dd>
+        <dt>Nascimento</dt><dd>{{ p.data_nascimento|data_br if p.data_nascimento else '—' }}</dd>
+        <dt>Cargo</dt><dd>{{ p.cargo or '—' }}</dd>
+        <dt>Início</dt><dd>{{ p.data_inicio|data_br if p.data_inicio else '—' }}</dd>
+        <dt>Admissão</dt><dd>{{ p.data_admissao|data_br if p.data_admissao else '—' }}</dd>
+        {% if p.aviso_previo %}<dt>Aviso prévio</dt><dd>{{ p.aviso_previo|data_br }}</dd>{% endif %}
+        {% if p.ultimo_dia %}<dt>Último dia</dt><dd>{{ p.ultimo_dia|data_br }}</dd>{% endif %}
+        {% if p.data_saida %}<dt>Saída</dt><dd><b class="ruim">{{ p.data_saida|data_br }}</b></dd>{% endif %}
+        <dt>Fase</dt><dd>{{ p.fase or '—' }}</dd>
+        <dt>Tipo / contrato</dt><dd>{{ p.tipo or '—' }} · {{ p.tipo_contrato or '—' }}</dd>
+        <dt>Obra do cadastro</dt><dd>{{ p.obra_resolvida or '—' }}{% if p.obra_cadastro %}<br><span class="cartao-dica">{{ p.obra_cadastro }}</span>{% endif %}</dd>
+        {% if p.matricula %}<dt>Matrícula</dt><dd>{{ p.matricula }}</dd>{% endif %}
+        {% if p.celular %}<dt>Celular</dt><dd>{{ p.celular }}</dd>{% endif %}
+        <dt>Situação</dt><dd>{{ p.situacao or '—' }}{% if p.motivo %}<br><span class="cartao-dica">{{ p.motivo }}</span>{% endif %}</dd>
+      </dl>
+    </div>
+    <div class="cartao">
+      <b class="lateral-titulo">Valores do cadastro</b>
+      <dl class="analitico-dl">
+        <dt>Diária</dt><dd>{% if p.valor_diaria is not none %}{{ p.valor_diaria|moeda }}{% else %}—{% endif %}</dd>
+        <dt>Alimentação</dt><dd>{{ p.modo_alimentacao or '—' }}{% if p.valor_alimentacao is not none %} · {{ p.valor_alimentacao|moeda }}{% endif %}</dd>
+        <dt>Transporte</dt><dd>{{ p.modo_transporte or '—' }}{% if p.valor_transporte is not none %} · {{ p.valor_transporte|moeda }}{% endif %}</dd>
+        {% if p.valor_gratificacao is not none %}<dt>Gratificação</dt><dd>{{ p.valor_gratificacao|moeda }}</dd>{% endif %}
+        <dt>Observação</dt><dd>{{ p.observacao_auxilio or '—' }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="ficha-cadastro-completo-caixa" hidden></div>
+
+  <h4 style="margin:14px 0 6px">Ponto de {{ '%02d'|format(mes) }}/{{ ano }}</h4>
+  {% if not ponto.tem_carga %}
+    <p class="cartao-dica">O ponto deste mês ainda não foi trazido. Na aba <b>Ponto</b> tem o botão.</p>
+  {% elif not ponto.dias %}
+    <p class="cartao-dica">Esta pessoa não tem dia de ponto neste mês. Pode ser CPF diferente no Mobponto.</p>
+  {% else %}
+    <div class="tabela-wrap"><div class="tabela-rolagem livre">
+      <table class="sps mini">
+        <thead><tr><th>Dia</th><th>Entrada</th><th>Almoço</th><th>Retorno</th>
+          <th>Saída</th><th>Situação</th><th>Horas</th><th>Obra do dia</th></tr></thead>
+        <tbody>
+        {% for d in ponto.dias %}
+          <tr>
+            <td>{{ d.data|data_br if d.data else '—' }}</td>
+            {% for i in range(4) %}
+              {% set h = (d.horas or [])[i] if (d.horas or [])|length > i else '' %}
+              {% set o = (d.marcacoes or [])[i] if (d.marcacoes or [])|length > i else '' %}
+              <td>{{ h or '' }}{% if o %}<br><span class="cartao-dica">{{ o }}</span>{% endif %}</td>
+            {% endfor %}
+            <td>{{ d.presenca or d.falta or '—' }}</td>
+            <td>{{ d.total_de_horas or '' }}</td>
+            <td><b>{{ d.obra or '—' }}</b>{% if d.empate %} <span class="cartao-dica">empate</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  {% endif %}
+</div>

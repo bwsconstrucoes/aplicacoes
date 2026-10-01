@@ -489,6 +489,11 @@ TELA_DA_ROTA = {
     "analisesps.folha_pipe_conferir": ("folha",),
     "analisesps.folha_card_lancar": ("folha",),
     "analisesps.folha_card_preparar": ("folha",),
+    "analisesps.folha_diaristas_selecao": ("folha",),
+    "analisesps.folha_diaristas_fechar": ("folha",),
+    "analisesps.folha_auxilio_fechar": ("folha",),
+    "analisesps.tela_ficha_do_funcionario": ("folha",),
+    "analisesps.tela_ficha_cadastro_completo": ("folha",),
     # Feriados e férias são lançamento do DP, como trazer a folha e o ponto.
     "analisesps.folha_feriado_gravar": ("folha",),
     "analisesps.folha_feriado_apagar": ("folha",),

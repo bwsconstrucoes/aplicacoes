@@ -388,88 +388,16 @@ if (btnCadastro) btnCadastro.addEventListener("click", async () => {
 </script>
 {% endif %}
 
-<dialog class="dialogo" id="ficha-pessoa-modal">
-  <button class="btn secundario dialogo-fechar" type="button"
-          onclick="document.getElementById('ficha-pessoa-modal').close()"
-          >Fechar</button>
-  <h3 id="ficha-pessoa-titulo">Pessoa</h3>
-  <div id="ficha-pessoa-corpo">carregando…</div>
-</dialog>
-
+{# A JANELA DO FUNCIONÁRIO — a mesma das folhas (01/10/2026): cadastro, valores,
+   ponto do mês dia a dia, e os botões de atualizar. O link do nome continua
+   levando ao card, e por isso cliques em <a> não abrem a janela. #}
+{% include "_folha_ficha_js.html" %}
 <script>
-// Clicar na linha abre a ficha: cadastro, observação e o ponto do mês. O link do
-// nome continua levando ao card, e por isso cliques em <a> não abrem o modal.
 document.querySelectorAll("tr.clicavel").forEach(linha =>
   linha.addEventListener("click", e => {
     if (e.target.closest("a")) return;
-    abrirFichaDaPessoa(linha.dataset.cpf, linha.dataset.nome);
+    abrirFichaDoFuncionario(linha.dataset.cpf);
   }));
-
-function dinheiro(n) {
-  return n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
-}
-
-async function abrirFichaDaPessoa(cpf, nome) {
-  const modal = document.getElementById("ficha-pessoa-modal");
-  document.getElementById("ficha-pessoa-titulo").textContent = nome || "Pessoa";
-  const corpo = document.getElementById("ficha-pessoa-corpo");
-  corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
-  modal.showModal();
-  try {
-    const r = await fetch("/analisesps/api/folha/pessoa/" + cpf);
-    const d = await r.json();
-    if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + d.erro + "</div>"; return; }
-    const p = d.pessoa;
-    const par = (r, v) => '<div class="par"><span>' + r + "</span><span>" +
-                          (v || "—") + "</span></div>";
-    let html = '<div class="ficha-pessoa"><div>' +
-      par("CPF", p.cpf_bonito) + par("Matrícula", p.matricula) +
-      par("Cargo", p.cargo) +
-      par("Obra", p.obra_codigo + (p.obra_nome ? " — " + p.obra_nome : "")) +
-      par("Fase no cadastro", p.fase) + par("Tipo de contrato", p.tipo_contrato) +
-      par("Categoria alimentação", p.modo_alimentacao) +
-      par("Valor alimentação", p.valor_alimentacao === null ? "" :
-          dinheiro(p.valor_alimentacao)) +
-      par("Categoria transporte", p.modo_transporte) +
-      par("Valor transporte", p.valor_transporte === null ? "" :
-          dinheiro(p.valor_transporte)) +
-      par("Observação do cadastro", p.observacao);
-    if (p.motivo) html += par("Atenção", p.motivo);
-    html += "</div>";
-
-    html += "<div><h4 style='margin:0 0 6px'>Ponto de " + d.ponto.competencia +
-            "</h4>";
-    if (!d.ponto.tem_carga) {
-      html += '<p class="cartao-dica">O ponto deste mês ainda não foi trazido.</p>';
-    } else if (!d.ponto.dias.length) {
-      html += '<p class="cartao-dica">Esta pessoa não tem dia de ponto neste ' +
-              'mês. Pode ser CPF diferente no Mobponto.</p>';
-    } else {
-      const campos = d.ponto.campos;
-      html += '<div class="ponto-dias"><table class="sps"><thead><tr><th>Dia</th>';
-      campos.forEach(c => { html += "<th>" + c + "</th>"; });
-      html += "</tr></thead><tbody>";
-      d.ponto.dias.forEach(dia => {
-        html += "<tr><td>" + (dia.data || "—") + "</td>";
-        campos.forEach(c => {
-          const v = dia.campos[c];
-          html += "<td>" + (v === undefined || v === null ? "" : v) + "</td>";
-        });
-        html += "</tr>";
-      });
-      html += "</tbody></table></div>";
-    }
-    html += "</div>";
-    if (p.link_pipefy) {
-      html += '<p><a class="btn secundario" href="' + p.link_pipefy +
-              '" target="_blank" rel="noopener">Abrir o card no Pipefy</a></p>';
-    }
-    html += "</div>";
-    corpo.innerHTML = html;
-  } catch (e) {
-    corpo.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
-  }
-}
 </script>
 
 {% endif %}
