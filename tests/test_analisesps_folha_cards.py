@@ -1,260 +1,433 @@
 # -*- coding: utf-8 -*-
 """
-Os cards do Pipefy da folha — 27/09/2026.
+Os cards do Pipefy da folha — cópia fiel do cenário do Make (01/10/2026).
 
 ⚠️ O QUE ESTES TESTES PROTEGEM. Card criado no Pipefy **não se apaga** pelo
-sistema, e o risco mais silencioso não é criar card errado: é criar card com valor
-no campo do vizinho. O blueprint do Make faz isso hoje (o par 62 grava em
-`valor_centro_de_custo_63` — `docs/FOLHA_DE_PAGAMENTO.md` §4), e um valor de centro
-de custo trocado só aparece no fechamento da obra, meses depois.
+sistema. A primeira versão criava um card por conta com três campos, e o Pipefy
+recusou o primeiro lançamento de verdade por falta de obrigatórios. O dono:
+*"existe a criação de dois cards. O script está funcionando 100%, você precisa
+olhar com detalhe a forma que o card é criado, não precisa errar."*
 
-Daí o desenho testado aqui: **os campos são lidos do pipe**, e campo que não foi
-reconhecido fica **vazio e dito**, nunca preenchido por parecença.
+Daí o desenho testado aqui, igual ao blueprint `DP - FIN - Botão Folha de
+Pagamento (🆕SP)`:
+
+  - **UM card de Despesa** por pagamento, com cada obra como centro de custo, o
+    código do OMIE da "C. Diários", e os números fixos do Make;
+  - **UMA SP de Transferência de Recursos por conta de origem**, ligada à
+    Despesa nos dois sentidos;
+  - **nada é criado** com obra sem código, obra sem centro no Pipefy, campo
+    sumido do pipe, ou fechamento que mudou depois de gerar;
+  - **parou no meio, continua de onde parou** — sem criar o mesmo card de novo.
 """
+import datetime as dt
+from decimal import Decimal as D
+
 import pytest
 
 from app.apps.analisesps import folha_cards as fcd
 
 
-def _campos(*pares):
-    return {"id": "301433085", "nome": "Despesa com Colaboradores",
-            "campos": {cid: {"label": label, "tipo": "short_text", "opcoes": []}
-                       for cid, label in pares},
-            "fases": [{"id": "1", "nome": "Entrada"}]}
-
-
 # ---------------------------------------------------------------------------
-# CONFERIR O PIPE — o passo que não cria nada
+# OS IDS E OS NÚMEROS FIXOS DO MAKE
 # ---------------------------------------------------------------------------
-def test_conferir_o_pipe_diz_o_que_reconheceu(monkeypatch):
-    from app.apps.analisesps import pipefy
-
-    monkeypatch.setattr(pipefy, "campos_do_pipe", lambda *a, **k: _campos(
-        ("descri_o", "Descrição"), ("valor", "Valor"),
-        ("tipo_de_despesa", "Tipo de Despesa"),
-        ("planilha_de_pagamento", "Planilha de Pagamento"),
-        ("planilha_de_an_lise", "Planilha de Análise"),
-        ("centro_de_custo_1", "Centro de Custo 1"),
-        ("valor_centro_de_custo_1", "Valor Centro de Custo 1")))
-
-    saida = fcd.conferir_pipe()
-    assert saida["nome"] == "Despesa com Colaboradores"
-    assert saida["reconhecidos"]["descricao"]["id"] == "descri_o"
-    assert saida["reconhecidos"]["link_pagamento"]["id"] == "planilha_de_pagamento"
-    assert saida["reconhecidos"]["link_analise"]["id"] == "planilha_de_an_lise"
-    assert saida["nao_encontrados"] == []
-    assert saida["centros_de_custo"] == ["centro_de_custo_1",
-                                         "valor_centro_de_custo_1"]
+def test_os_pares_62_e_72_usam_o_id_que_o_pipefy_deu_ao_campo():
+    """No blueprint, o valor do par 62 vai em `valor_centro_de_custo_63` e o do 63
+    em `valor_centro_de_custo_63_1`. Não é defeito: é o id do campo no Pipefy."""
+    assert fcd.campos_do_par(1) == ("centro_de_custo_1", "valor_centro_de_custo_1",
+                                    "departamento_omie_c_digo_centro_de_custo_1")
+    assert fcd.campos_do_par(62)[1] == "valor_centro_de_custo_63"
+    assert fcd.campos_do_par(63)[1] == "valor_centro_de_custo_63_1"
+    assert fcd.campos_do_par(72)[1] == "valor_centro_de_custo_73"
+    assert fcd.campos_do_par(73)[1] == "valor_centro_de_custo_73_1"
+    assert fcd.campos_do_par(74)[1] == "valor_centro_de_custo_74"
 
 
-def test_campo_que_nao_existe_fica_DITO_e_nao_adivinhado(monkeypatch):
-    """⚠️ Campo parecido é pior que campo vazio: vazio alguém vê e preenche;
-    errado ninguém vê."""
-    from app.apps.analisesps import pipefy
-
-    monkeypatch.setattr(pipefy, "campos_do_pipe", lambda *a, **k: _campos(
-        ("descri_o", "Descrição"), ("valor", "Valor")))
-
-    saida = fcd.conferir_pipe()
-    assert sorted(saida["nao_encontrados"]) == ["link_analise",
-                                               "link_pagamento",
-                                               "tipo_de_despesa"]
-
-
-def test_conferir_o_pipe_devolve_a_frase_do_erro(monkeypatch):
-    from app.apps.analisesps import pipefy
-
-    def explode(*a, **k):
-        raise pipefy.ErroDoPipefy("falta o PIPEFY_TOKEN.")
-
-    monkeypatch.setattr(pipefy, "campos_do_pipe", explode)
-    with pytest.raises(fcd.ErroDosCards) as erro:
-        fcd.conferir_pipe()
-    assert "PIPEFY_TOKEN" in str(erro.value)
+def test_o_grupo_e_os_tipos_de_despesa_sao_os_do_switch_do_make():
+    assert fcd.grupo_da_verba("folha", "quinzena") == (
+        "Folha de Pagamento - Quinzena", "386045084", "383928967")
+    assert fcd.grupo_da_verba("folha", "fim_de_mes")[0] == \
+        "Folha de Pagamento - Fim de Mês"
+    assert fcd.grupo_da_verba("alimentacao", "quinzena") == (
+        "Auxílio Alimentação", "386045055", "383846061")
+    assert fcd.grupo_da_verba("transporte", "fim_de_mes") == (
+        "Auxílio Transporte", "386045060", "383846062")
+    assert fcd.grupo_da_verba("diaria", "quinzena")[1:] == ("404847566", "383928967")
+    with pytest.raises(fcd.ErroDosCards):
+        fcd.grupo_da_verba("cesta", "quinzena")
 
 
-# ---------------------------------------------------------------------------
-# A DESCRIÇÃO — ela é a prova
-# ---------------------------------------------------------------------------
-def test_a_descricao_do_card_diz_TUDO_o_que_alguem_vai_querer_saber():
-    """Quem abrir o card meses depois precisa saber de que competência é, que
-    verbas entraram, de qual conta saiu e onde está o arquivo."""
-    texto = fcd.descricao_do_card(
-        "09/2026", "quinzena", ["alimentacao", "transporte"], "50024", 12,
-        "4200.00", "https://drive/pag", "https://drive/ana")
-
-    assert "Competência: 09/2026" in texto
-    assert "Quinzena (dias 1 a 15)" in texto
-    assert "Alimentação + Transporte" in texto
-    assert "Conta de pagamento: 50024" in texto
-    assert "Pessoas: 12" in texto
-    assert "R$ 4.200,00" in texto, "o card é lido por gente, com vírgula"
-    assert "https://drive/pag" in texto
-    assert "https://drive/ana" in texto
-
-
-def test_a_descricao_nao_deixa_linha_vazia_de_campo_que_nao_se_aplica():
-    """"Conta de pagamento:" sozinha faria parecer que faltou preencher."""
-    texto = fcd.descricao_do_card("09/2026", "fim_de_mes", ["folha"], "", 3,
-                                  "10.00")
-    assert "Conta de pagamento" not in texto
-    assert "Planilha de pagamento" not in texto
-    assert texto.endswith("Gerado pelo Análise de SPs.")
-
-
-# ---------------------------------------------------------------------------
-# LANÇAR — a chamada sem volta
-# ---------------------------------------------------------------------------
-def _log_com(arquivo):
-    return [arquivo]
-
-
-def _arquivo(**mudancas):
-    from decimal import Decimal as D
-    base = {"id": 7, "ano": 2026, "mes": 9, "tipo": "quinzena",
-            "destino": "beevale", "verbas": "alimentacao", "conta": "50024",
-            "nome": "BeeVale.xlsx", "pessoas": 12, "total": D("4200.00"),
-            "link": "https://drive/pag", "card_pipefy": "", "link_card": "",
-            "avisos": "", "criado_em": None, "criado_por": "MARCELO",
-            "competencia": "09/2026"}
+def _grupo(**mudancas):
+    base = {"verba": "folha", "grupo": "Folha de Pagamento - Quinzena",
+            "tipo_dc": "386045084", "tipo_sp": "383928967",
+            "total": D("1500.00"), "pessoas": 2, "descricao": "Competência: 09/2026",
+            "links_pagamento": ["https://drive/pag1", "https://drive/pag2"],
+            "centros": [{"obra": "CREPEOLINDA", "valor": D("1000.00"),
+                         "centro": "555", "omie": "111"},
+                        {"obra": "CREPEAREIAS", "valor": D("500.00"),
+                         "centro": "556", "omie": "222"}],
+            "sps": [{"conta": "50024", "valor": D("1000.00"),
+                     "link": "https://drive/pag1"}]}
     base.update(mudancas)
     return base
 
 
-def _preparar(monkeypatch, arquivos, campos=None):
-    from app.apps.analisesps import folha_pagamento as fpg, pipefy
-    criados = {}
-
-    monkeypatch.setattr(fpg, "log", lambda *a, **k: list(arquivos))
-    monkeypatch.setattr(fpg, "registrar_card",
-                        lambda *a, **k: criados.setdefault("amarrou", a) or True)
-    monkeypatch.setattr(pipefy, "campos_do_pipe", lambda *a, **k: campos
-                        if campos is not None else _campos(
-                            ("descri_o", "Descrição"), ("valor", "Valor"),
-                            ("planilha_de_pagamento", "Planilha de Pagamento"),
-                            ("planilha_de_an_lise", "Planilha de Análise")))
-    monkeypatch.setattr(pipefy, "criar_card", lambda pipe, titulo, valores,
-                        **k: criados.update({"titulo": titulo,
-                                             "valores": valores}) or
-                        {"id": "9999", "titulo": titulo,
-                         "link": "https://app.pipefy.com/open-cards/9999"})
-    return criados
+AGORA = dt.datetime(2026, 10, 1, 14, 5)
 
 
-def test_lancar_cria_o_card_e_amarra_ao_log(monkeypatch):
-    criados = _preparar(monkeypatch, [
-        _arquivo(),
-        _arquivo(id=8, destino="analise", conta="",
-                 link="https://drive/ana")])
-
-    saida = fcd.lancar(7, quem="MARCELO")
-    assert saida["card"] == "9999"
-    assert saida["link"].endswith("/9999")
-    assert criados["amarrou"][0] == 7, "amarrou o card ao arquivo do log"
-    assert "conta 50024" in criados["titulo"]
-
-    # ⚠️ O LINK DA ANÁLISE ENTRA NO CARD DO PAGAMENTO: são os dois arquivos que
-    # ele pediu, e o card é onde a equipe os encontra.
-    valores = {v["campo"]: v["valor"] for v in criados["valores"]}
-    assert valores["planilha_de_pagamento"] == "https://drive/pag"
-    assert valores["planilha_de_an_lise"] == "https://drive/ana"
-    assert "09/2026" in valores["descri_o"]
-
-
-def test_lancar_NAO_preenche_campo_que_nao_reconheceu(monkeypatch):
-    criados = _preparar(monkeypatch, [_arquivo()],
-                        campos=_campos(("descri_o", "Descrição")))
-
-    saida = fcd.lancar(7, quem="MARCELO")
-    assert [v["campo"] for v in criados["valores"]] == ["descri_o"]
-    assert "link_pagamento" in saida["sem_mapeamento"]
-    # E o que ficou de fora está na DESCRIÇÃO, que é o campo que sempre existe.
-    assert "https://drive/pag" in saida["descricao"]
+def test_o_card_de_despesa_tem_os_campos_do_make():
+    campos = {c["campo"]: c["valor"] for c in fcd.campos_da_despesa(_grupo(), AGORA)}
+    assert campos["data"] == "01/10/2026 14:05"
+    assert campos["data_de_pagamento"] == "01/10/2026 14:05"
+    assert campos["valor"] == "1500.00"
+    assert campos["tipo_de_despesa"] == "386045084"
+    # ⚠️ "Pgt Conjunto" e o responsável fixo: sem eles o Pipefy cobra campos
+    # que o Make nunca precisou mandar.
+    assert campos["op_o"] == "Pgt Conjunto"
+    assert campos["respons_vel_pela_solicita_ox"] == "383926874"
+    assert campos["centro_de_custo_1"] == "555"
+    assert campos["valor_centro_de_custo_1"] == "1000.00"
+    assert campos["departamento_omie_c_digo_centro_de_custo_1"] == "111"
+    assert campos["centro_de_custo_2"] == "556"
+    assert "centro_de_custo_3" not in campos
+    assert campos["banco_do_pagamento"] == "395832004"
+    assert campos["valor_total_pago"] == "1500.00"
+    assert campos["valida_o_dc"] == "Sim"
 
 
-def test_sem_NENHUM_campo_reconhecido_nao_cria_card(monkeypatch):
-    """É melhor não lançar do que lançar um card vazio: alguém confiaria nele."""
-    criados = _preparar(monkeypatch, [_arquivo()],
-                        campos=_campos(("outra_coisa", "Outra coisa")))
+def test_a_sp_de_transferencia_tem_os_campos_do_make():
+    grupo = _grupo()
+    campos = {c["campo"]: c["valor"] for c in fcd.campos_da_sp(
+        grupo, grupo["sps"][0], "9001", "https://drive/ana", AGORA)}
+    assert campos["descri_o"].startswith("Conta Origem: 50024\nCompetência")
+    assert campos["data"] == "01/10/2026"
+    assert campos["data_de_pagamento"] == "02/10/2026", "o Make põe o dia seguinte"
+    assert campos["valor"] == "1000.00"
+    assert campos["colaborador_solicitante"] == "383926874"
+    assert campos["tipo_de_pagamento"] == "Pix"
+    assert campos["tipo_de_despesa"] == "383928967"
+    assert campos["selecione_o_procedimento"] == "Transferência de Recursos"
+    assert campos["alimenta_o_de_equipe"] == "Não"
+    assert campos["parcelas"] == "1x Parcela"
+    assert campos["chave_pix_aleat_ria"] == "a7398865-d869-4437-b7a9-fc6fe904c4d7"
+    assert campos["radio_horizontal_t_tulo"] == "Pessoa Jurídica"
+    assert campos["tipo"] == "Aleatória"
+    assert campos["cnpj"] == "00.079.526/0001-09"
+    assert campos["link_planilha_de_an_lise"] == "https://drive/ana"
+    assert campos["conex_o_dc_id"] == "9001"
+    assert campos["etiquetas"] == "307726886"
+    assert campos["valida_o_sp_1"] == "Sim"
 
+
+def test_campo_de_fase_vai_DEPOIS_da_criacao():
+    """O que está no formulário inicial vai na criação — é ali que o Pipefy cobra
+    os obrigatórios. O resto é gravado no card já criado."""
+    na, depois = fcd._separar(
+        [{"campo": "valor", "valor": "1"}, {"campo": "banco_do_pagamento",
+                                           "valor": "395832004"},
+         {"campo": "descri_o", "valor": ""}],
+        {"valor": {}, "descri_o": {}})
+    assert [v["campo"] for v in na] == ["valor"]
+    assert [v["campo"] for v in depois] == ["banco_do_pagamento"]
+
+
+def test_a_descricao_do_card_diz_TUDO_o_que_alguem_vai_querer_saber():
+    texto = fcd.descricao_do_card(
+        "09/2026", "quinzena", ["alimentacao", "transporte"], "50024", 12,
+        "4200.00", "https://drive/pag", "https://drive/ana")
+    assert "Competência: 09/2026" in texto
+    assert "Quinzena (dias 1 a 15)" in texto
+    assert "Alimentação + Transporte" in texto
+    assert "R$ 4.200,00" in texto, "o card é lido por gente, com vírgula"
+    assert "https://drive/pag" in texto and "https://drive/ana" in texto
+
+
+# ---------------------------------------------------------------------------
+# PONTA A PONTA, COM BANCO: gerar → prévia → lançar
+# ---------------------------------------------------------------------------
+GERLANIO = "99713349334"
+ANA = "03513441363"
+
+
+def _campos_de(ids, obrigatorios=()):
+    return {i: {"label": i, "tipo": "short_text", "opcoes": [],
+                "obrigatorio": i in obrigatorios, "ligado_a": None} for i in ids}
+
+
+class PipefyFalso:
+    """Os dois pipes com os campos do Make, e o registro do que foi criado."""
+
+    def __init__(self, monkeypatch, registros=None, falhar_na=None):
+        from app.apps.analisesps import pipefy
+        self.criados, self.atualizados = [], []
+        self.falhar_na = falhar_na
+        inicio_dc = _campos_de(
+            ["data", "data_de_pagamento", "descri_o", "valor", "tipo_de_despesa",
+             "op_o", "respons_vel_pela_solicita_ox"]
+            + [c for n in range(1, 76) for c in fcd.campos_do_par(n)[:2]])
+        inicio_dc["centro_de_custo_1"].update(
+            {"tipo": "connector", "ligado_a": {"tipo": "tabela", "id": "T1",
+                                               "nome": "Centros de Custo"}})
+        fases_dc = _campos_de(
+            ["banco_do_pagamento", "valor_total_pago", "valida_o_dc",
+             "link_para_planilha_de_pagamento", "link_para_planilha_de_an_lise",
+             "conex_o_sp"]
+            + [fcd.campos_do_par(n)[2] for n in range(1, 76)])
+        inicio_sp = _campos_de([c for c in fcd.CAMPOS_DA_SP
+                                if c not in ("valida_o_sp_1", "conex_o_dc_id",
+                                             "etiquetas", "conex_o_dc")])
+        fases_sp = _campos_de(["valida_o_sp_1", "conex_o_dc_id", "etiquetas",
+                               "conex_o_dc"])
+        self.pipes = {
+            fcd.PIPE_DESPESA: {"id": fcd.PIPE_DESPESA, "nome": "Despesa",
+                               "campos": inicio_dc, "campos_das_fases": fases_dc},
+            fcd.PIPE_SP: {"id": fcd.PIPE_SP, "nome": "SP", "campos": inicio_sp,
+                          "campos_das_fases": fases_sp}}
+        self.registros = registros if registros is not None else [
+            {"id": "555", "nome": "CREPEOLINDA"},
+            {"id": "556", "nome": "CREPEAREIAS"}]
+        monkeypatch.setattr(pipefy, "campos_do_pipe",
+                            lambda pipe, *a, **k: self.pipes[str(pipe)])
+        monkeypatch.setattr(pipefy, "registros_da_tabela",
+                            lambda *a, **k: list(self.registros))
+        monkeypatch.setattr(pipefy, "criar_card", self.criar)
+        monkeypatch.setattr(pipefy, "atualizar_campos", self.atualizar)
+
+    def criar(self, pipe, titulo, valores, **k):
+        from app.apps.analisesps import pipefy
+        if self.falhar_na is not None and len(self.criados) == self.falhar_na:
+            self.falhar_na = None
+            raise pipefy.ErroDoPipefy("O Pipefy devolveu erro: caiu")
+        novo = str(9000 + len(self.criados))
+        self.criados.append({"pipe": str(pipe), "titulo": titulo, "id": novo,
+                             "valores": {v["campo"]: v["valor"] for v in valores}})
+        return {"id": novo, "titulo": titulo,
+                "link": f"https://app.pipefy.com/open-cards/{novo}"}
+
+    def atualizar(self, card, valores, **k):
+        self.atualizados.append((str(card), {v["campo"]: v["valor"]
+                                             for v in valores}))
+        return len(valores)
+
+    def do_pipe(self, pipe):
+        return [c for c in self.criados if c["pipe"] == pipe]
+
+    def atualizacoes_de(self, card):
+        saida = {}
+        for c, v in self.atualizados:
+            if c == card:
+                saida.update(v)
+        return saida
+
+
+@pytest.fixture
+def banco_cards(banco_analisesps):
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        for nome, codigo in [("CREPEOLINDA", "111"), ("CREPEAREIAS", "222"),
+                             ("SEMOMIE", "")]:
+            conn.execute(
+                "INSERT INTO analisesps.referencias_rateio (tipo, nome, codigo) "
+                " VALUES ('obra', ?, ?)", (nome, codigo))
+        for codigo, conta in [("CREPEOLINDA", "50024"), ("CREPEAREIAS", "50025"),
+                              ("SEMOMIE", "50024")]:
+            conn.execute(
+                "INSERT INTO analisesps.contas_diarios (codigo, conta_pagamento) "
+                " VALUES (?, ?)", (codigo, conta))
+        conn.commit()
+    return banco_analisesps
+
+
+def _fechar(partes=(("CREPEOLINDA", "1000.00"), ("CREPEAREIAS", "500.00")),
+            verba="folha"):
+    from app.apps.analisesps import folha_apropriacao_guardada as ag
+    pessoas = [{"cpf": cpf, "nome": cpf, "nome_cadastro": f"PESSOA {cpf}",
+                "fora": False,
+                "por_obra": [{"obra": obra, "dias": 11, "valor": D(valor),
+                              "origem": "ponto"}]}
+               for cpf, (obra, valor) in zip((GERLANIO, ANA, "11144477735"), partes)]
+    total = sum((D(v) for _, v in partes), D("0"))
+    ag.fechar(2026, 9, "quinzena", {"pessoas": pessoas, "total_da_folha": total,
+                                    "total_apropriado": total, "fecha": True},
+              verba=verba, quem="MARCELO")
+
+
+def _gerar(monkeypatch):
+    from app.apps.analisesps import (beevale, drive, folha_geracao as g,
+                                     folha_pagamento as fp)
+    subidos = []
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
+    monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta,
+                        **k: subidos.append(nome) or
+                        {"id": f"id{len(subidos)}",
+                         "link": f"https://drive/{len(subidos)}"})
+    fp.gerar(2026, 9, "quinzena", ["folha"], g.SOMAPAY, quem="MARCELO")
+    return next(a["id"] for a in fp.log() if a["destino"] == "analise")
+
+
+@pytest.mark.banco
+def test_lancar_cria_UMA_despesa_e_UMA_SP_POR_CONTA_ligadas(banco_cards,
+                                                           monkeypatch):
+    from app.apps.analisesps import folha_pagamento as fp
+    pipe = PipefyFalso(monkeypatch)
+    _fechar()
+    analise = _gerar(monkeypatch)
+
+    vista = fcd.previa(analise)
+    assert vista["bloqueios"] == []
+    assert vista["como_centro"] == 'tabela "Centros de Custo"'
+
+    saida = fcd.lancar(analise, quem="MARCELO")
+    despesas, sps = pipe.do_pipe(fcd.PIPE_DESPESA), pipe.do_pipe(fcd.PIPE_SP)
+    assert len(despesas) == 1, "UM card de Despesa para o pagamento inteiro"
+    assert len(sps) == 2, "UMA SP por conta de origem (50024 e 50025)"
+
+    dc = despesas[0]
+    assert dc["titulo"].count("/") == 2, "o título é a data, como no Make"
+    assert dc["valores"]["valor"] == "1500.00"
+    assert dc["valores"]["op_o"] == "Pgt Conjunto"
+    # O centro de custo é o REGISTRO do Pipefy com o nome da obra.
+    centros = {dc["valores"]["centro_de_custo_1"], dc["valores"]["centro_de_custo_2"]}
+    assert centros == {"555", "556"}
+    # O banco e os códigos do OMIE são campos de fase: vão depois.
+    depois = pipe.atualizacoes_de(dc["id"])
+    assert depois["banco_do_pagamento"] == "395832004"
+    assert {depois["departamento_omie_c_digo_centro_de_custo_1"],
+            depois["departamento_omie_c_digo_centro_de_custo_2"]} == {"111", "222"}
+    assert depois["link_para_planilha_de_an_lise"].startswith("https://drive/")
+    assert sorted(depois["conex_o_sp"]) == sorted(s["id"] for s in sps)
+
+    por_conta = {s["valores"]["descri_o"].split("\n")[0]: s for s in sps}
+    assert por_conta["Conta Origem: 50024"]["valores"]["valor"] == "1000.00"
+    assert por_conta["Conta Origem: 50025"]["valores"]["valor"] == "500.00"
+    for s in sps:
+        assert s["titulo"] == "Folha de Pagamento - Quinzena"
+        assert pipe.atualizacoes_de(s["id"])["conex_o_dc"] == [dc["id"]]
+        assert pipe.atualizacoes_de(s["id"])["conex_o_dc_id"] == dc["id"]
+
+    # O log amarra: a análise à Despesa, cada arquivo de conta à SP dele.
+    log = {a["id"]: a for a in fp.log()}
+    assert log[analise]["card_pipefy"] == dc["id"]
+    contas = {a["conta"]: a["card_pipefy"] for a in log.values()
+              if a["destino"] != "analise"}
+    assert contas["50024"] == por_conta["Conta Origem: 50024"]["id"]
+    assert saida["despesas"][0]["id"] == dc["id"]
+
+    # E de novo não cria nada.
     with pytest.raises(fcd.ErroDosCards) as erro:
-        fcd.lancar(7)
-    assert "não criei card" in str(erro.value)
-    assert "valores" not in criados
+        fcd.lancar(analise)
+    assert "já foi lançado" in str(erro.value)
+    assert len(pipe.criados) == 3
 
 
-def test_o_arquivo_de_ANALISE_nao_tem_card_proprio(monkeypatch):
-    """Ele vai como link DENTRO do card do pagamento."""
-    _preparar(monkeypatch, [_arquivo(id=8, destino="analise")])
-    with pytest.raises(fcd.ErroDosCards) as erro:
-        fcd.lancar(8)
-    assert "DENTRO do card" in str(erro.value)
+@pytest.mark.banco
+def test_obra_SEM_CODIGO_OMIE_bloqueia_e_nada_e_criado(banco_cards, monkeypatch):
+    pipe = PipefyFalso(monkeypatch, registros=[
+        {"id": "555", "nome": "CREPEOLINDA"}, {"id": "557", "nome": "SEMOMIE"}])
+    _fechar(partes=(("CREPEOLINDA", "1000.00"), ("SEMOMIE", "200.00")))
+    analise = _gerar(monkeypatch)
 
-
-def test_lancar_duas_vezes_o_MESMO_arquivo_e_recusado(monkeypatch):
-    """Regerar é livre (decisão dele), mas lançar o mesmo arquivo duas vezes é
-    distração — e o cancelamento do card é feito no Pipefy, por ele."""
-    _preparar(monkeypatch, [_arquivo(card_pipefy="1234")])
-    with pytest.raises(fcd.ErroDosCards) as erro:
-        fcd.lancar(7)
-    assert "1234" in str(erro.value)
-    assert "Cancele o card no Pipefy" in str(erro.value)
-
-
-def test_arquivo_que_nao_esta_no_log_nao_lanca(monkeypatch):
-    _preparar(monkeypatch, [])
+    vista = fcd.previa(analise)
+    assert any("SEMOMIE" in b and "Código Omie" in b for b in vista["bloqueios"])
     with pytest.raises(fcd.ErroDosCards):
-        fcd.lancar(7)
+        fcd.lancar(analise)
+    assert pipe.criados == []
 
 
-def test_ja_lancado_AVISA_em_vez_de_impedir(monkeypatch):
-    """Decisão dele (D15): impedir seria eu decidindo no lugar dele."""
-    from app.apps.analisesps import folha_pagamento as fpg
+@pytest.mark.banco
+def test_obra_SEM_CENTRO_DE_CUSTO_no_pipefy_bloqueia(banco_cards, monkeypatch):
+    pipe = PipefyFalso(monkeypatch, registros=[{"id": "555", "nome": "CREPEOLINDA"}])
+    _fechar()
+    analise = _gerar(monkeypatch)
+    vista = fcd.previa(analise)
+    assert any("CREPEAREIAS" in b and "centro de custo no Pipefy" in b
+               for b in vista["bloqueios"])
+    with pytest.raises(fcd.ErroDosCards):
+        fcd.lancar(analise)
+    assert pipe.criados == []
 
-    monkeypatch.setattr(fpg, "log", lambda *a, **k: [
-        _arquivo(card_pipefy="1234"), _arquivo(id=9, card_pipefy="")])
-    assert [a["id"] for a in fcd.ja_lancado(2026, 9, "quinzena")] == [7]
-    assert fcd.ja_lancado(2026, 9, "fim_de_mes") == []
+
+@pytest.mark.banco
+def test_campo_que_SUMIU_do_pipe_bloqueia(banco_cards, monkeypatch):
+    """Alguém renomeou um campo no Pipefy: o valor cairia em lugar nenhum."""
+    pipe = PipefyFalso(monkeypatch)
+    del pipe.pipes[fcd.PIPE_DESPESA]["campos"]["op_o"]
+    _fechar()
+    analise = _gerar(monkeypatch)
+    vista = fcd.previa(analise)
+    assert any("op_o" in b for b in vista["bloqueios"])
+
+
+@pytest.mark.banco
+def test_fechamento_que_MUDOU_depois_de_gerar_bloqueia(banco_cards, monkeypatch):
+    """O card contaria uma história e o arquivo outra."""
+    pipe = PipefyFalso(monkeypatch)
+    _fechar()
+    analise = _gerar(monkeypatch)
+    _fechar(partes=(("CREPEOLINDA", "1200.00"), ("CREPEAREIAS", "500.00")))
+    vista = fcd.previa(analise)
+    assert any("fechamento mudou" in b for b in vista["bloqueios"])
+    assert pipe.criados == []
+
+
+@pytest.mark.banco
+def test_parou_no_meio_CONTINUA_sem_repetir_o_que_ja_foi_criado(banco_cards,
+                                                              monkeypatch):
+    pipe = PipefyFalso(monkeypatch, falhar_na=2)   # cai na segunda SP
+    _fechar()
+    analise = _gerar(monkeypatch)
+
+    with pytest.raises(fcd.ErroDosCards) as erro:
+        fcd.lancar(analise)
+    assert "Já criados" in str(erro.value)
+    assert "continua de onde parou" in str(erro.value)
+    assert len(pipe.criados) == 2          # a Despesa e a primeira SP
+
+    fcd.lancar(analise)
+    assert len(pipe.do_pipe(fcd.PIPE_DESPESA)) == 1, "a Despesa não se repete"
+    assert len(pipe.do_pipe(fcd.PIPE_SP)) == 2
+    dc = pipe.do_pipe(fcd.PIPE_DESPESA)[0]["id"]
+    assert len(pipe.atualizacoes_de(dc)["conex_o_sp"]) == 2
+
+
+@pytest.mark.banco
+def test_o_lancamento_sai_pela_ANALISE_e_nao_por_arquivo_de_conta(banco_cards,
+                                                                monkeypatch):
+    from app.apps.analisesps import folha_pagamento as fp
+    PipefyFalso(monkeypatch)
+    _fechar()
+    _gerar(monkeypatch)
+    conta = next(a["id"] for a in fp.log() if a["destino"] != "analise")
+    with pytest.raises(fcd.ErroDosCards) as erro:
+        fcd.previa(conta)
+    assert "ANÁLISE" in str(erro.value)
+
+
+@pytest.mark.banco
+def test_a_rodada_pega_SO_os_arquivos_da_mesma_geracao(banco_cards, monkeypatch):
+    """Regerar é normal (D15): a segunda geração tem a sua análise e os seus
+    arquivos, e o lançamento de uma não leva os da outra."""
+    from app.apps.analisesps import folha_pagamento as fp
+    PipefyFalso(monkeypatch)
+    _fechar()
+    primeira = _gerar(monkeypatch)
+    segunda = _gerar(monkeypatch)
+    a, b = fcd.rodada(primeira), fcd.rodada(segunda)
+    assert len(a["arquivos"]) == len(b["arquivos"]) == 2
+    assert not {x["id"] for x in a["arquivos"]} & {x["id"] for x in b["arquivos"]}
+    assert len(fp.log()) == 6
 
 
 # ---------------------------------------------------------------------------
-# ⚠️ O CAMPO PARECIDO — o defeito que este bloco existe para impedir
+# O CAMPO PARECIDO — continua valendo para a busca por rótulo
 # ---------------------------------------------------------------------------
-def test_o_rotulo_EXATO_ganha_do_parecido(monkeypatch):
-    """⚠️ O pipe tem um campo "Valor" e setenta e cinco "Valor Centro de Custo N".
-    Procurando só por conter "valor", o TOTAL da despesa poderia ser escrito dentro
-    do valor de um centro de custo — e valor de centro de custo trocado só aparece
-    no fechamento da obra, meses depois. É exatamente o defeito que o blueprint do
-    Make tem hoje."""
+def test_o_rotulo_EXATO_ganha_do_parecido():
     from app.apps.analisesps import pipefy
-
-    # De propósito com os campos de centro de custo ANTES, que é a ordem que fazia
-    # a busca antiga errar.
-    monkeypatch.setattr(pipefy, "campos_do_pipe", lambda *a, **k: _campos(
-        ("valor_centro_de_custo_1", "Valor Centro de Custo 1"),
-        ("valor_centro_de_custo_2", "Valor Centro de Custo 2"),
-        ("valor", "Valor"),
-        ("descri_o", "Descrição")))
-
-    saida = fcd.conferir_pipe()
-    assert saida["reconhecidos"]["valor"]["id"] == "valor"
-
-
-def test_sem_o_campo_exato_a_busca_FOGE_do_centro_de_custo(monkeypatch):
-    """Se o campo "Valor" não existir com esse nome, é melhor ficar sem do que cair
-    num "Valor Centro de Custo"."""
-    from app.apps.analisesps import pipefy
-
-    monkeypatch.setattr(pipefy, "campos_do_pipe", lambda *a, **k: _campos(
-        ("valor_centro_de_custo_1", "Valor Centro de Custo 1"),
-        ("descri_o", "Descrição")))
-
-    saida = fcd.conferir_pipe()
-    assert "valor" in saida["nao_encontrados"]
+    campos = {"valor_centro_de_custo_1": {"label": "Valor Centro de Custo 1"},
+              "valor": {"label": "Valor"}}
+    assert pipefy.achar_campo(campos, "valor", fora=("centro de custo",)) == "valor"
 
 
 def test_achar_campo_sem_pedaco_nenhum_devolve_vazio():
-    """Chamada torta não pode virar "o primeiro campo que aparecer"."""
     from app.apps.analisesps import pipefy
     assert pipefy.achar_campo({"a": {"label": "Qualquer"}}) == ""
     assert pipefy.achar_campo({}, "valor") == ""

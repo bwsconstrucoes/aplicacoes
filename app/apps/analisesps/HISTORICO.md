@@ -10955,6 +10955,67 @@ nova quando há uma da versão anterior.
 
 Nenhuma migração nova nestes três.
 
+#### Leva 142 — os cards do Pipefy iguais aos do Make, e a análise por obra certa (01/10/2026)
+
+**O que aconteceu.** O primeiro lançamento de verdade no Pipefy voltou recusado:
+"Data de Vencimento", "Tipo de Despesa", "Requisição Solicitada por um
+Terceiro?", "Responsável pela Solicitação"… obrigatórios. O dono: *"existe a
+criação de dois cards. O script está funcionando 100%, você precisa olhar com
+detalhe a forma que o card é criado, não precisa errar."*
+
+**O erro era de desenho, não de campo.** A primeira versão criava UM card por
+conta, com descrição, valor e links — desenho meu. O blueprint do Make
+(`DP - FIN - Botão Folha de Pagamento (🆕SP)`, que ele subiu em 26/09) faz:
+
+1. **UM card de Despesa com Colaboradores** (pipe 301433085) por pagamento:
+   título = a data; `op_o` = "Pgt Conjunto" (é ele que dispensa os obrigatórios
+   que o Pipefy cobrou); responsável `383926874`; tipo de despesa pelo grupo;
+   **cada obra como centro de custo** (até 75 pares) com o **código do OMIE da
+   aba "C. Diários"** (o dono confirmou a origem); banco `395832004`; links das
+   planilhas.
+2. **UMA SP de Transferência de Recursos** (pipe 301426645) **por conta de
+   origem**, com o valor da conta, Pix aleatório e CNPJ da BWS, vencimento no dia
+   seguinte, ligada à Despesa nos dois sentidos (`conex_o_dc` / `conex_o_sp`).
+
+Copiado campo a campo em `folha_cards.py`. Os números fixos e os ids são os do
+blueprint. O valor dos pares 62 e 72 vai em `valor_centro_de_custo_63`/`_73` — e
+**não é defeito**, como eu tinha anotado em `docs/FOLHA_DE_PAGAMENTO.md` §4: é o
+id do campo no Pipefy. Corrigido lá.
+
+**Decisões tomadas sem perguntar (trocáveis):**
+- O lançamento sai pela **linha do arquivo de análise** (uma rodada de geração =
+  um lançamento), com **prévia** do que vai ser criado. Campo do formulário
+  inicial vai na criação; campo de fase vai logo depois, no card criado — o
+  sistema descobre qual é qual lendo o pipe.
+- **Nada é criado** se: falta campo do Make no pipe; obra sem Código Omie; obra
+  sem centro de custo no Pipefy (o centro é achado na tabela ligada ao campo,
+  pelo nome da obra); linha sem conta; mais de 75 obras ou 10 contas; ou o
+  fechamento mudou depois de gerar (valores por conta não batem com os arquivos).
+- **Parou no meio, continua de onde parou**: o andamento é gravado após cada
+  card (`analisesps.meta`, chave `folha_cards_rodada:<id>`), e apertar de novo
+  não repete o que já existe.
+- No card de Despesa, a "Planilha de Pagamento" leva **os links de todas as
+  contas**, separados por " ; " — no Make era um arquivo só. Cada SP leva na
+  descrição o link do arquivo da conta dela (o Make não tinha isso).
+- O título da Despesa é a data e o da SP é o nome do grupo, como no Make.
+
+**O que ficou de fora — e por quê:** o campo `automa_o_2` da SP recebe, no Make,
+o parâmetro `tipo` do link do botão da planilha, e eu não sei qual valor a aba da
+folha manda. **Não está sendo preenchido.** Perguntado ao dono. Também ficou de
+fora o Telegram do Make: a decisão D16 manda registrar no sistema, não avisar.
+
+**Não verificado contra o Pipefy de verdade:** que o campo "Centro de Custo" é
+mesmo uma conexão com tabela, e que os títulos dos registros são o código da
+obra. Se não forem, a prévia mostra "não achei" em cada obra e não deixa criar,
+sem estragar nada.
+
+**Conserto junto — a planilha de análise mostrava a obra errada.** Ela era
+montada das linhas do ARQUIVO, que juntam a pessoa por conta: quem tinha duas
+obras pagas pela mesma conta aparecia só na primeira, com o dinheiro todo nela
+("Por obra" e "Rateio" inclusive), e os dias saíam zerados. Agora a análise usa
+as linhas do fechamento (uma por pessoa e obra, com dias e origem), no `gerar`
+e na prévia.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -10963,6 +11024,9 @@ Nenhuma migração nova nestes três.
 | depois do botão: "Atualizar cadastro" (geral) para trazer a data de nascimento de todos | ele |
 | soltar a folha analítica de 09/2026 | ele |
 | decidir se passa a importar só a analítica | ele |
+| publicar a leva 142 (cards do Pipefy) — sem migração nova | ele |
+| dizer qual valor o link do botão da folha manda em `tipo` (vai no campo `automa_o_2` da SP) | ele |
+| primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 
 ---
 

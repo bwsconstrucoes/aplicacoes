@@ -359,6 +359,7 @@ SO_DO_MESTRE = frozenset({
     "analisesps.folha_previa_pagamento",  # mesmo arquivo, só não sobe
     "analisesps.folha_pipe_conferir",
     "analisesps.folha_card_lancar",     # cria card no Pipefy: sem volta
+    "analisesps.folha_card_preparar",   # lê o pipe e o log de arquivos
     "analisesps.migrar",                 # aplica migração no banco
     "analisesps.gravar_pessoas",         # a lista de nomes da entrada
     "analisesps.gravar_pasta_drive",
@@ -487,6 +488,7 @@ TELA_DA_ROTA = {
     "analisesps.folha_pagamento_gerar": ("folha",),
     "analisesps.folha_pipe_conferir": ("folha",),
     "analisesps.folha_card_lancar": ("folha",),
+    "analisesps.folha_card_preparar": ("folha",),
     # Feriados e férias são lançamento do DP, como trazer a folha e o ponto.
     "analisesps.folha_feriado_gravar": ("folha",),
     "analisesps.folha_feriado_apagar": ("folha",),

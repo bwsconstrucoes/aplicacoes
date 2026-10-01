@@ -287,6 +287,27 @@ def test_a_analise_tem_as_QUATRO_visoes_que_ele_pediu():
                                "Rateio"]
 
 
+def test_a_analise_mostra_CADA_OBRA_da_pessoa_mesmo_paga_pela_mesma_conta():
+    """⚠️ Conserto de 01/10/2026. O arquivo junta a pessoa por conta — então quem
+    tinha duas obras pagas pela mesma conta aparecia só na primeira, com o
+    dinheiro todo nela, e os dias saíam zerados. O detalhe (uma linha por pessoa
+    e obra) é o que a análise usa agora."""
+    detalhe = [_linha(valor="200.00", obra="CREPEOLINDA"),
+               _linha(valor="130.00", obra="CREPEAREIAS")]
+    for linha, dias in zip(detalhe, (6, 5)):
+        linha.update({"dias": dias, "origem": "ponto"})
+    lotes = g.montar_lotes(detalhe, g.BEEVALE)
+    assert lotes[0]["quantos"] == 1, "no arquivo, a pessoa é uma linha só"
+
+    livro = _analise(lotes, ano=2026, mes=9, tipo="quinzena", detalhe=detalhe)
+    por_obra = {r[0].value: r[2].value for r in livro["Por obra"].iter_rows(min_row=2)}
+    assert por_obra == {"CREPEOLINDA": 200, "CREPEAREIAS": 130}
+    gente = [[c.value for c in r] for r in livro["Por funcionário"].iter_rows(min_row=2)]
+    assert sorted((l[4], l[5], l[6]) for l in gente) == [
+        ("CREPEAREIAS", 5, 130), ("CREPEOLINDA", 6, 200)]
+    assert {l[7] for l in gente} == {"ponto"}
+
+
 def test_a_analise_agrupa_por_obra_e_por_funcionario():
     lotes = g.montar_lotes([_linha(valor="330.00"),
                             _linha(cpf=ANA, nome="ANA", obra="CREPEAREIAS",

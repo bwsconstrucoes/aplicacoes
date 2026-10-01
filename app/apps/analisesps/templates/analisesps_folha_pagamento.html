@@ -177,15 +177,15 @@
           <td>
             {% if a.link_card %}
               <a href="{{ a.link_card }}" target="_blank" rel="noopener"
-                 >{{ a.card_pipefy or 'card' }}</a>
-            {% elif a.destino == 'analise' %}
-              {# A análise vai como LINK dentro do card do pagamento — ela não tem
-                 card próprio, e oferecer um botão aqui prometeria o que não existe. #}
-              <span class="cartao-dica">vai no card do pagamento</span>
-            {% elif pode_operar %}
+                 >{{ ("Despesa " if a.destino == 'analise' else "SP ") ~ (a.card_pipefy or '') }}</a>
+            {% elif a.destino == 'analise' and pode_operar %}
+              {# O LANÇAMENTO SAI PELA ANÁLISE, como no Make: UM card de Despesa
+                 para o pagamento inteiro e UMA SP por conta de origem. #}
               <button class="btn secundario btn-lancar-card" type="button"
-                      data-arquivo="{{ a.id }}" data-nome="{{ a.nome }}"
+                      data-analise="{{ a.id }}"
                       >lançar no Pipefy</button>
+            {% elif a.destino != 'analise' %}
+              <span class="cartao-dica">sai pela linha da análise</span>
             {% else %}<span class="cartao-dica">—</span>{% endif %}
           </td>
           <td><span class="cartao-dica">{{ a.criado_por or '—' }}</span></td>
@@ -203,81 +203,159 @@
 
 {% if pode_operar %}
 <div class="cartao" style="margin-top:14px">
-  <label class="rotulo-campo">Antes de lançar no Pipefy</label>
+  <label class="rotulo-campo">Lançar no Pipefy</label>
   <p class="cartao-dica" style="margin:4px 0 8px">
-    ⚠️ <b>Card criado no Pipefy não se apaga por aqui</b> — quem cancela é você, lá.
-    Lançar é um passo separado de propósito: você gera e confere o arquivo primeiro,
-    sem sujar nada no Pipefy. E eu leio os campos do pipe na hora, em vez de
-    confiar numa lista guardada: campo que eu não reconheço fica <b>vazio e dito</b>,
-    nunca preenchido no escuro.
+    É o mesmo que o botão do Make fazia: <b>um card de Despesa com Colaboradores</b>
+    para o pagamento inteiro, com cada obra como centro de custo e o código do OMIE
+    da aba "C. Diários", e <b>uma SP de Transferência de Recursos para cada conta de
+    origem</b>, ligada à Despesa. O botão fica na linha do arquivo de análise e
+    mostra tudo antes de criar. ⚠️ <b>Card criado no Pipefy não se apaga por
+    aqui</b> — quem cancela é você, lá.
   </p>
   <button class="btn secundario" id="btn-conferir-pipe" type="button">
-    Conferir os campos do pipe
+    Conferir os campos dos pipes
   </button>
   <div id="conferencia-pipe" style="margin-top:10px"></div>
 </div>
 
+<dialog class="dialogo" id="dialogo-cards">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Lançar no Pipefy</h3>
+  <div id="dialogo-cards-corpo"><p class="cartao-dica">montando a prévia…</p></div>
+  <div class="lat-acoes" style="margin-top:12px">
+    <button type="button" class="btn" id="dialogo-cards-criar" hidden>Criar os cards</button>
+  </div>
+</dialog>
+
 <script>
+function escapa(t) {
+  return String(t == null ? "" : t).replace(/[&<>"]/g,
+    c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+}
+function moedaBr(v) {
+  return Number(v || 0).toLocaleString("pt-BR",
+    {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
 document.getElementById("btn-conferir-pipe").addEventListener("click",
   async () => {
     const caixa = document.getElementById("conferencia-pipe");
-    caixa.innerHTML = '<p class="cartao-dica">lendo o pipe…</p>';
+    caixa.innerHTML = '<p class="cartao-dica">lendo os pipes…</p>';
     try {
       const r = await fetch("{{ url_for('analisesps.folha_pipe_conferir') }}",
                             {method: "POST"});
       const d = await r.json();
       if (!d.ok) {
-        caixa.innerHTML = '<div class="aviso erro">' + d.erro + "</div>";
+        caixa.innerHTML = '<div class="aviso erro">' + escapa(d.erro) + "</div>";
         return;
       }
-      let html = '<div class="aviso"><b>' + d.pipe.nome + "</b> — " +
-        d.pipe.quantos_campos + " campos no formulário.</div><ul>";
-      Object.entries(d.pipe.reconhecidos).forEach(([chave, campo]) => {
-        html += "<li>" + chave + ": <b>" + campo.label + "</b></li>";
-      });
-      html += "</ul>";
-      if (d.pipe.nao_encontrados.length) {
-        html += '<div class="aviso atencao">Eu não achei campo para: <b>' +
-          d.pipe.nao_encontrados.join(", ") +
-          "</b>. Esses ficam vazios no card, e você preenche lá.</div>";
-      }
-      caixa.innerHTML = html;
+      caixa.innerHTML = d.pipe.pipes.map(p =>
+        '<div class="aviso' + (p.faltam.length ? " erro" : "") + '"><b>' +
+        escapa(p.nome) + "</b> — " + p.quantos_campos + " campos. " +
+        (p.faltam.length
+          ? "Faltam campos que o Make usa: <b>" + escapa(p.faltam.join(", ")) + "</b>."
+          : "Tem todos os campos que o Make usa.") + "</div>").join("");
     } catch (e) {
-      caixa.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
+      caixa.innerHTML = '<div class="aviso erro">falhou: ' + escapa(e) + "</div>";
     }
   });
 
+const dialogoCards = document.getElementById("dialogo-cards");
+const corpoCards = document.getElementById("dialogo-cards-corpo");
+const criarCards = document.getElementById("dialogo-cards-criar");
+
+function desenhaPrevia(d) {
+  let html = '<p class="cartao-dica">' + escapa(d.competencia) + " · " +
+    (d.tipo === "quinzena" ? "quinzena" : "fim de mês") +
+    ". Centro de custo no Pipefy: " + escapa(d.como_centro) + ".</p>";
+  if (d.ja_lancado) {
+    html += '<div class="aviso">Este pagamento já foi lançado no Pipefy.</div>';
+  }
+  if (d.bloqueios.length) {
+    html += '<div class="aviso erro"><b>Não dá para lançar ainda — nada será ' +
+      "criado:</b><ul>" + d.bloqueios.map(b => "<li>" + escapa(b) + "</li>").join("") +
+      "</ul></div>";
+  }
+  d.grupos.forEach(g => {
+    html += '<div class="cartao" style="margin-top:10px"><b>Card de Despesa — ' +
+      escapa(g.grupo) + "</b> · R$ " + moedaBr(g.total) + " · " + g.pessoas +
+      " pessoa(s) · " + g.centros.length + " centro(s) de custo" +
+      '<div class="tabela-rolagem livre" style="margin-top:6px">' +
+      '<table class="sps"><thead><tr><th>Obra</th>' +
+      '<th>Centro no Pipefy</th><th>Código OMIE</th><th class="num">Valor</th>' +
+      "</tr></thead><tbody>" +
+      g.centros.map(c => "<tr><td>" + escapa(c.obra) + "</td><td>" +
+        (c.centro ? escapa(c.centro) : '<b class="ruim">não achei</b>') + "</td><td>" +
+        (c.omie ? escapa(c.omie) : '<b class="ruim">falta</b>') +
+        '</td><td class="num">' + moedaBr(c.valor) + "</td></tr>").join("") +
+      "</tbody></table></div>" +
+      "<p style=\"margin:8px 0 4px\"><b>SPs de Transferência de Recursos</b> (" +
+      g.sps.length + ")</p><ul>" +
+      g.sps.map(s => "<li>Conta " + escapa(s.conta || "(sem conta)") + " — R$ " +
+        moedaBr(s.valor) + "</li>").join("") + "</ul></div>";
+  });
+  corpoCards.innerHTML = html;
+  criarCards.hidden = !!(d.bloqueios.length || d.ja_lancado);
+  criarCards.dataset.analise = d.analise;
+}
+
 document.querySelectorAll(".btn-lancar-card").forEach(botao =>
   botao.addEventListener("click", async () => {
-    // ⚠️ CONFIRMA: card criado no Pipefy não se apaga por aqui.
-    if (!confirm("Criar o card no Pipefy para \"" + botao.dataset.nome +
-                 "\"?\n\nCard criado não se apaga pelo sistema — o " +
-                 "cancelamento é feito no Pipefy.")) return;
-    botao.disabled = true;
-    botao.textContent = "lançando…";
+    corpoCards.innerHTML = '<p class="cartao-dica">montando a prévia — lendo ' +
+      "os pipes e os centros de custo no Pipefy…</p>";
+    criarCards.hidden = true;
+    dialogoCards.showModal();
     try {
-      const r = await fetch("{{ url_for('analisesps.folha_card_lancar') }}", {
+      const r = await fetch("{{ url_for('analisesps.folha_card_preparar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({arquivo: botao.dataset.arquivo})
+        body: JSON.stringify({analise: botao.dataset.analise})
       });
       const d = await r.json();
       if (!d.ok) {
-        alert(d.erro);
-        botao.disabled = false;
-        botao.textContent = "lançar no Pipefy";
+        corpoCards.innerHTML = '<div class="aviso erro">' + escapa(d.erro) + "</div>";
         return;
       }
-      if (d.sem_mapeamento && d.sem_mapeamento.length) {
-        alert("Card " + d.card + " criado. Ficaram sem campo no pipe: " +
-              d.sem_mapeamento.join(", ") + " — estão na descrição do card.");
-      }
-      location.reload();
+      desenhaPrevia(d);
     } catch (e) {
-      alert("falhou: " + e);
-      botao.disabled = false;
-      botao.textContent = "lançar no Pipefy";
+      corpoCards.innerHTML = '<div class="aviso erro">falhou: ' + escapa(e) + "</div>";
     }
   }));
+
+criarCards.addEventListener("click", async () => {
+  // ⚠️ CONFIRMA: card criado no Pipefy não se apaga por aqui.
+  if (!confirm("Criar os cards no Pipefy?\n\nCard criado não se apaga pelo " +
+               "sistema — o cancelamento é feito no Pipefy.")) return;
+  criarCards.disabled = true;
+  criarCards.textContent = "criando…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_card_lancar') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({analise: criarCards.dataset.analise})
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      corpoCards.insertAdjacentHTML("afterbegin",
+        '<div class="aviso erro">' + escapa(d.erro) + "</div>");
+      criarCards.disabled = false;
+      criarCards.textContent = "Tentar de novo";
+      return;
+    }
+    corpoCards.innerHTML = '<div class="aviso">Pronto. ' +
+      d.despesas.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
+        'rel="noopener">Despesa ' + escapa(x.id) + "</a>").join(", ") + " · " +
+      d.sps.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
+        'rel="noopener">SP ' + escapa(x.id) + "</a> (conta " + escapa(x.conta) +
+        ")").join(", ") + "</div>";
+    criarCards.hidden = true;
+    dialogoCards.addEventListener("close", () => location.reload(), {once: true});
+  } catch (e) {
+    corpoCards.insertAdjacentHTML("afterbegin",
+      '<div class="aviso erro">falhou: ' + escapa(e) + "</div>");
+    criarCards.disabled = false;
+    criarCards.textContent = "Tentar de novo";
+  }
+});
 </script>
 {% endif %}
 

@@ -422,12 +422,21 @@ def percentuais_por_obra(por_obra) -> list:
 
 
 def analise_xlsx(lotes, pessoas=None, ano: int = 0, mes: int = 0,
-                 tipo: str = "", por_obra=None) -> bytes:
+                 tipo: str = "", por_obra=None, detalhe=None) -> bytes:
     """A planilha de análise: resumo, por obra, por funcionário e o rateio.
 
-    `pessoas` é a apropriação (`folha_apropriacao.apropriar()["pessoas"]`) quando
-    houver; sem ela, a aba por funcionário sai do próprio pagamento, que é o
-    mínimo. `por_obra` idem."""
+    `detalhe` são as linhas ANTES da consolidação do arquivo — uma por pessoa e
+    obra, com os dias (`folha_pagamento.linhas_para_pagar`). É o que o `gerar`
+    e a prévia passam.
+
+    ⚠️ CONSERTO DE 01/10/2026. Sem o detalhe, as abas saíam das linhas do
+    ARQUIVO, que juntam a pessoa por conta: quem tinha duas obras pagas pela
+    mesma conta aparecia só na primeira — com o dinheiro todo nela, inclusive
+    no "Por obra" e no "Rateio" —, e os dias saíam zerados.
+
+    `pessoas` (a apropriação) e `por_obra` continuam aceitos; sem nenhum dos
+    três, as abas saem do próprio pagamento, que é o mínimo."""
+    detalhe = [d for d in (detalhe or []) if _dinheiro(d.get("valor")) > 0]
     from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
 
@@ -469,6 +478,17 @@ def analise_xlsx(lotes, pessoas=None, ano: int = 0, mes: int = 0,
 
     # --- POR OBRA ----------------------------------------------------------
     total_obra = por_obra
+    if total_obra is None and detalhe:
+        juntado = {}
+        for item in detalhe:
+            chave = str(item.get("obra") or "").strip() or "(sem obra)"
+            alvo = juntado.setdefault(chave, {"obra": chave,
+                                              "total": Decimal("0.00"),
+                                              "pessoas": set()})
+            alvo["total"] += _dinheiro(item.get("valor"))
+            alvo["pessoas"].add(item.get("cpf"))
+        total_obra = [{"obra": v["obra"], "total": v["total"],
+                       "pessoas": len(v["pessoas"])} for v in juntado.values()]
     if total_obra is None:
         juntado: dict = {}
         for lote in lotes:
@@ -495,7 +515,15 @@ def analise_xlsx(lotes, pessoas=None, ano: int = 0, mes: int = 0,
     gente = planilha.create_sheet("Por funcionário")
     gente.append(["Nome", "CPF", "Conta", "Verba", "Obra", "Dias", "Valor",
                   "De onde veio"])
-    if pessoas:
+    if detalhe:
+        for item in sorted(detalhe, key=lambda i: (
+                str(i.get("nome") or "").lower(), str(i.get("obra") or ""))):
+            gente.append([item.get("nome", ""), formata_cpf(item.get("cpf")),
+                          item.get("conta", ""), rotulo_da_verba(item.get("verba")),
+                          item.get("obra", ""), int(item.get("dias") or 0),
+                          float(_dinheiro(item.get("valor"))),
+                          item.get("origem", "")])
+    elif pessoas:
         for pessoa in pessoas:
             for parte in pessoa.get("por_obra") or []:
                 gente.append([

@@ -3860,11 +3860,8 @@ def folha_pagamento_gerar():
 @bp.route("/api/folha/pipe/conferir", methods=["POST"])
 @exige_operador
 def folha_pipe_conferir():
-    """Lê os campos do pipe de Despesa e diz quais eu reconheço. NÃO CRIA NADA.
-
-    ⚠️ ESTE PASSO É O QUE IMPEDE CARD PREENCHIDO NO ESCURO. O blueprint do Make tem
-    campo trocado (o par 62 grava no campo do 63), e um valor de centro de custo no
-    vizinho só aparece no fechamento da obra, meses depois."""
+    """Confere que os pipes de Despesa e de SP têm todos os campos que o cenário
+    do Make usa. NÃO CRIA NADA."""
     from . import folha_cards as fcd
 
     try:
@@ -3876,10 +3873,34 @@ def folha_pipe_conferir():
         return {"ok": False, "erro": f"Não consegui ler o pipe: {e}"}, 500
 
 
+@bp.route("/api/folha/card/preparar", methods=["POST"])
+@exige_operador
+def folha_card_preparar():
+    """A prévia dos cards: o de Despesa e as SPs de cada conta, com cada valor, e
+    o que impede de criar. NÃO CRIA NADA.
+
+    Nasceu do primeiro lançamento de verdade (01/10/2026), recusado pelo Pipefy.
+    Os cards seguem o cenário do Make campo a campo (`folha_cards`)."""
+    import json as _json
+    from . import folha_cards as fcd
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        vista = fcd.previa(int(dados.get("analise") or 0))
+        vista.pop("andamento", None)
+        # Dinheiro vira texto: o JSON não tem decimal.
+        return {"ok": True, **_json.loads(_json.dumps(vista, default=str))}
+    except (fcd.ErroDosCards, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou montar a prévia dos cards")
+        return {"ok": False, "erro": f"Não consegui montar a prévia: {e}"}, 500
+
+
 @bp.route("/api/folha/card", methods=["POST"])
 @exige_operador
 def folha_card_lancar():
-    """Cria o card do Pipefy para um arquivo já gerado. ⚠️ SEM VOLTA.
+    """Cria o card de Despesa e as SPs de cada conta. ⚠️ SEM VOLTA.
 
     Passo separado de propósito (decisão do dono em 26/09/2026): gerar o arquivo
     não cria card, para conferir sem sujar nada lá fora."""
@@ -3888,8 +3909,7 @@ def folha_card_lancar():
     dados = request.get_json(silent=True) or {}
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
-        return {"ok": True, **fcd.lancar(int(dados.get("arquivo") or 0),
-                                         quem=quem)}
+        return fcd.lancar(int(dados.get("analise") or 0), quem=quem)
     except (fcd.ErroDosCards, ValueError, TypeError) as e:
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001

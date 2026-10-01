@@ -162,6 +162,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/folha/pagamento/gerar"),
     ("POST", "/analisesps/api/folha/pipe/conferir"),
     ("POST", "/analisesps/api/folha/card"),
+    ("POST", "/analisesps/api/folha/card/preparar"),
     ("GET",  "/analisesps/api/folha/procurar-pessoa"),
     ("POST", "/analisesps/api/folha/feriado"),
     ("POST", "/analisesps/api/folha/feriado/apagar"),

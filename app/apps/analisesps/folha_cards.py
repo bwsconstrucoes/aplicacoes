@@ -1,32 +1,50 @@
 # -*- coding: utf-8 -*-
 """
-OS CARDS DO PIPEFY PARA A FOLHA: um por conta, com o link do arquivo.
+OS CARDS DO PIPEFY PARA A FOLHA — cópia fiel do cenário do Make.
 
-Decisões do dono que desenham este módulo:
+⚠️ A FORMA DO CARD NÃO É DECISÃO MINHA: É A DO MAKE, QUE FUNCIONA. Em 01/10/2026 o
+primeiro lançamento de verdade foi recusado pelo Pipefy ("Data de Vencimento",
+"Tipo de Despesa", "Requisição Solicitada por um Terceiro?", "Responsável pela
+Solicitação"… obrigatórios), e o dono cobrou com razão:
 
-**26/09/2026 — gerar arquivo NÃO cria card.** *"Eu vou poder gerar, por exemplo,
-arquivo de pagamento e folha e relatórios, tudo sem necessariamente gerar os cards
-do Pipefy. É melhor dessa forma."* Então lançar no Pipefy é um segundo botão, e o
-arquivo já existe no Drive antes dele ser apertado. Se o relatório estiver errado,
-nada foi criado lá fora.
+    "existe a criação de dois cards. O script está funcionando 100%, você precisa
+     olhar com detalhe a forma que o card é criado, não precisa errar."
 
-**26/09/2026 — regerar é normal, e os dois lados não se interligam.** *"A gente faz
-o cancelamento no Pipefy e gera de novo quando for necessário."* O sistema não tenta
-consertar o Pipefy: só registra o que lançou, e AVISA quando a competência já foi
-lançada, em vez de impedir.
+A primeira versão deste módulo criava UM card por conta, só com descrição, valor e
+links — um desenho meu, não o do processo. O cenário `DP - FIN - Botão Folha de
+Pagamento (🆕SP)` (blueprint lido campo a campo em 01/10/2026) faz outra coisa:
 
-**27/09/2026 — o card recebe o link do arquivo.** *"O importante é que tenha o
-arquivo salvo, e que tenha link em card."*
+1. **UM card de Despesa com Colaboradores** (pipe 301433085) por pagamento, com o
+   total, o tipo de despesa do grupo, "Pgt Conjunto", o responsável fixo, e **cada
+   obra como centro de custo** (até 75 pares centro + valor), mais o **código do
+   departamento no OMIE** de cada uma — que vem da aba "C. Diários".
+2. **UMA SP de Transferência de Recursos** (pipe 301426645) **por conta de
+   origem**, com o valor daquela conta, ligada ao card de Despesa.
+3. Os links das planilhas de pagamento e de análise no card de Despesa, e as
+   conexões nos dois sentidos (`conex_o_dc` na SP, `conex_o_sp` na Despesa).
 
-⚠️ OS CAMPOS DO PIPE SÃO LIDOS DO PIPEFY, NÃO ESCRITOS AQUI. O blueprint do Make
-tem defeito conhecido de campo trocado (o par 62 grava no campo do 63 —
-`docs/FOLHA_DE_PAGAMENTO.md` §4), e copiar a lista de lá copiaria o defeito. Campo
-que eu não reconheço fica **dito**, nunca preenchido no escuro: valor de centro de
-custo caindo no vizinho só aparece no fechamento da obra, meses depois.
+Os números fixos (responsável, banco, etiqueta, tipos de despesa, Pix e CNPJ da
+BWS) são os do blueprint, copiados como estão. Os ids dos campos também — inclusive
+os pares 62 e 72, cujo campo de valor tem id `valor_centro_de_custo_63` e
+`valor_centro_de_custo_73`: é o id que o Pipefy deu ao campo quando foi criado, e o
+Make grava certo. (Eu tinha anotado isso como defeito em `docs/FOLHA_DE_PAGAMENTO.md`
+§4; não é — corrigido lá.)
+
+O que continua decisão do dono (26/09/2026): **gerar o arquivo não cria card**
+(D14) e **regerar é normal** (D15). Lançar é um passo à parte, com prévia.
+
+⚠️ NADA AQUI É ADIVINHADO. Antes de criar qualquer coisa, a prévia confere: todos
+os campos que o Make usa existem nos dois pipes; toda obra tem código do OMIE e
+centro de custo no Pipefy; toda linha tem conta; e o que está fechado bate, conta
+a conta, com os arquivos gerados. Qualquer falha impede o lançamento inteiro — card
+criado no Pipefy não se apaga por aqui.
 """
 from __future__ import annotations
 
+import datetime as _dt
+import json
 import logging
+import unicodedata
 from decimal import Decimal
 
 from . import folha_geracao as geracao
@@ -36,73 +54,83 @@ logger = logging.getLogger("analisesps.folha")
 
 CENTAVO = Decimal("0.01")
 
-# Os pipes, lidos do blueprint do Make (§4). São só os números do pipe — os campos
-# vêm da API.
+# Os dois pipes do cenário.
 PIPE_DESPESA = "301433085"        # Despesa com Colaboradores
+PIPE_SP = "301426645"             # Solicitações Financeiro (SP)
+
+# Os números fixos do blueprint. São ids de registros do Pipefy.
+RESPONSAVEL = "383926874"         # responsável pela solicitação / solicitante
+BANCO_DO_PAGAMENTO = "395832004"
+ETIQUETA_DA_SP = "307726886"
+PIX_DA_BWS = "a7398865-d869-4437-b7a9-fc6fe904c4d7"   # chave aleatória
+CNPJ_DA_BWS = "00.079.526/0001-09"
+
+# O "grupo" do Make — o nome que vira título da SP — e os dois tipos de despesa
+# (um id no pipe de Despesa, outro no de SP). Copiados do `switch(157.grupo; …)`.
+GRUPOS = {
+    ("folha", "quinzena"): ("Folha de Pagamento - Quinzena", "386045084", "383928967"),
+    ("folha", "fim_de_mes"): ("Folha de Pagamento - Fim de Mês", "386045084", "383928967"),
+    ("transporte", ""): ("Auxílio Transporte", "386045060", "383846062"),
+    ("alimentacao", ""): ("Auxílio Alimentação", "386045055", "383846061"),
+    ("diaria", ""): ("Pagamento de Diárias", "404847566", "383928967"),
+    ("gratificacao", ""): ("Gratificados e Mensalistas", "386045084", "383928967"),
+}
+
+# Os tetos do cenário: 75 pares de centro de custo no card de Despesa, e a conexão
+# de volta liga até 10 SPs.
+MAXIMO_DE_CENTROS = 75
+MAXIMO_DE_SPS = 10
+
+# Os ids dos campos de valor que não seguem o padrão — ver a docstring.
+_VALOR_DO_PAR = {62: "valor_centro_de_custo_63", 63: "valor_centro_de_custo_63_1",
+                 72: "valor_centro_de_custo_73", 73: "valor_centro_de_custo_73_1"}
+
+# O relógio do Make é o da BWS.
+FUSO = "America/Fortaleza"
+
+CHAVE_DO_ANDAMENTO = "folha_cards_rodada:{}"
 
 
 class ErroDosCards(RuntimeError):
     """Não deu para lançar. A frase vai inteira para a tela."""
 
 
-def conferir_pipe(pipe_id: str = PIPE_DESPESA) -> dict:
-    """Lê os campos do pipe e diz quais eu reconheço. NÃO CRIA NADA.
+# ---------------------------------------------------------------------------
+# PEQUENOS
+# ---------------------------------------------------------------------------
+def _chave(texto) -> str:
+    sem = unicodedata.normalize("NFKD", " ".join(str(texto or "").split()))
+    return "".join(c for c in sem if not unicodedata.combining(c)).upper()
 
-    É o passo honesto antes de deixar alguém lançar: mostra o que vai ser
-    preenchido, o que vai ficar vazio e por quê."""
+
+def _valor(numero) -> str:
+    """Dinheiro como o Pipefy aceita: ponto decimal, sem milhar."""
+    return f"{Decimal(str(numero or 0)).quantize(CENTAVO)}"
+
+
+def _agora() -> _dt.datetime:
     try:
-        pipe = pipefy.campos_do_pipe(pipe_id)
-    except pipefy.ErroDoPipefy as e:
-        raise ErroDosCards(str(e)) from e
-
-    campos = pipe.get("campos") or {}
-    achados = {
-        "descricao": pipefy.achar_campo(campos, "descri"),
-        # ⚠️ "VALOR" TEM DE FUGIR DOS SETENTA E CINCO "Valor Centro de Custo N".
-        # O total da despesa caindo no valor de um centro de custo é o defeito que
-        # o blueprint do Make já tem, e que só aparece no fechamento da obra.
-        "valor": pipefy.achar_campo(campos, "valor", fora=("centro de custo",)),
-        "tipo_de_despesa": pipefy.achar_campo(campos, "tipo", "despesa"),
-        "link_pagamento": pipefy.achar_campo(campos, "planilha", "pagamento"),
-        # ⚠️ "analis" E NÃO "an": "an" está dentro de "plan" (de "planilha"), e o
-        # campo da planilha de PAGAMENTO era reconhecido como o da análise — o link
-        # errado indo para o campo errado no card. Achado por teste.
-        "link_analise": pipefy.achar_campo(campos, "planilha", "analis"),
-    }
-    return {
-        "pipe": pipe.get("id"), "nome": pipe.get("nome"),
-        "quantos_campos": len(campos),
-        "reconhecidos": {k: {"id": v, "label": campos.get(v, {}).get("label", "")}
-                         for k, v in achados.items() if v},
-        "nao_encontrados": [k for k, v in achados.items() if not v],
-        # Os pares de centro de custo, que é onde o blueprint do Make erra.
-        "centros_de_custo": sorted(
-            campo_id for campo_id, d in campos.items()
-            if "centro de custo" in (d.get("label") or "").lower()),
-        "fases": pipe.get("fases") or [],
-    }
+        from zoneinfo import ZoneInfo
+        return _dt.datetime.now(ZoneInfo(FUSO))
+    except Exception:  # noqa: BLE001 — sem base de fusos, UTC-3 fixo
+        return _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3)))
 
 
-def _valores_do_card(reconhecidos: dict, descricao: str, total,
-                     link_pagamento: str, link_analise: str) -> tuple:
-    """Monta os pares campo/valor, e devolve também o que ficou de fora.
+def campos_do_par(n: int) -> tuple:
+    """(centro de custo, valor, departamento OMIE) do par `n`, com os ids do Make."""
+    return (f"centro_de_custo_{n}",
+            _VALOR_DO_PAR.get(n, f"valor_centro_de_custo_{n}"),
+            f"departamento_omie_c_digo_centro_de_custo_{n}")
 
-    ⚠️ SÓ PREENCHE O QUE FOI RECONHECIDO. Um campo parecido é pior que campo vazio:
-    vazio alguém vê e preenche; errado ninguém vê."""
-    mapa = {
-        "descricao": descricao,
-        "valor": f"{Decimal(str(total or 0)).quantize(CENTAVO)}",
-        "link_pagamento": link_pagamento or "",
-        "link_analise": link_analise or "",
-    }
-    valores, de_fora = [], []
-    for chave, valor in mapa.items():
-        campo = (reconhecidos.get(chave) or {}).get("id")
-        if campo and valor:
-            valores.append({"campo": campo, "valor": valor})
-        elif valor:
-            de_fora.append(chave)
-    return valores, de_fora
+
+def grupo_da_verba(verba: str, tipo: str) -> tuple:
+    verba = str(verba or "").strip().lower()
+    achado = GRUPOS.get((verba, tipo if verba == "folha" else ""))
+    if not achado:
+        raise ErroDosCards(
+            f'não sei lançar a verba "{geracao.rotulo_da_verba(verba)}" no Pipefy: '
+            "o cenário do Make não tem grupo para ela.")
+    return achado
 
 
 def descricao_do_card(competencia: str, tipo: str, verbas, conta: str,
@@ -128,75 +156,442 @@ def descricao_do_card(competencia: str, tipo: str, verbas, conta: str,
         linhas.append(f"Planilha de pagamento: {link_pagamento}")
     if link_analise:
         linhas.append(f"Planilha de análise: {link_analise}")
-    # As vazias são as que não se aplicam (conta em branco, por exemplo); elas
-    # saem, e só depois entra a linha em branco de separação.
     corpo = [l for l in linhas if l]
     return "\n".join(corpo + ["", "Gerado pelo Análise de SPs."])
 
 
-def ja_lancado(ano: int, mes: int, tipo: str) -> list:
-    """Os arquivos desta competência que JÁ têm card.
+# ---------------------------------------------------------------------------
+# A RODADA: os arquivos gerados juntos, e o arquivo de análise que os fecha
+# ---------------------------------------------------------------------------
+def rodada(analise_id: int) -> dict:
+    """O arquivo de análise e os de pagamento gerados NA MESMA VEZ.
 
-    ⚠️ AVISA, NÃO IMPEDE — decisão dele (D15): *"a gente faz o cancelamento no
-    Pipefy e gera de novo quando for necessário"*. Impedir seria eu decidindo no
-    lugar dele; avisar respeita a decisão e evita o lançamento duplicado por
-    distração."""
+    `gerar` registra os de pagamento e, por último, o de análise — então a rodada
+    é tudo o que entrou no log, da mesma competência e pagamento, entre a análise
+    anterior e esta."""
     from . import folha_pagamento as fpg
-    return [a for a in fpg.log(teto=200, ano=ano, mes=mes)
-            if a.get("card_pipefy") and (not tipo or a.get("tipo") == tipo)]
-
-
-def lancar(arquivo_id: int, pipe_id: str = PIPE_DESPESA,
-           quem: str = "") -> dict:
-    """Cria UM card para um arquivo já gerado, e amarra o card ao log.
-
-    ⚠️ CHAMADA SEM VOLTA. O card não se apaga por aqui."""
-    from . import folha_pagamento as fpg
-
-    registros = [a for a in fpg.log(teto=400) if a["id"] == int(arquivo_id)]
-    if not registros:
+    todos = fpg.log(teto=400)
+    analise = next((a for a in todos if a["id"] == int(analise_id)), None)
+    if not analise:
         raise ErroDosCards("não achei este arquivo no log de gerados.")
-    arquivo = registros[0]
-    if arquivo.get("card_pipefy"):
+    if analise["destino"] != fpg.ANALISE:
         raise ErroDosCards(
-            f"este arquivo já foi lançado no card {arquivo['card_pipefy']}. "
-            "Cancele o card no Pipefy antes de lançar de novo.")
-    if arquivo["destino"] == fpg.ANALISE:
+            "o lançamento no Pipefy sai pelo arquivo de ANÁLISE, que junta o "
+            "pagamento inteiro — não por um arquivo de conta.")
+    mesmos = [a for a in todos if a["ano"] == analise["ano"]
+              and a["mes"] == analise["mes"] and a["tipo"] == analise["tipo"]]
+    piso = max((a["id"] for a in mesmos
+                if a["destino"] == fpg.ANALISE and a["id"] < analise["id"]),
+               default=0)
+    arquivos = sorted((a for a in mesmos if a["destino"] != fpg.ANALISE
+                       and piso < a["id"] < analise["id"]), key=lambda a: a["id"])
+    if not arquivos:
+        raise ErroDosCards("não achei os arquivos de pagamento desta rodada.")
+    return {"analise": analise, "arquivos": arquivos,
+            "verbas": [v for v in (analise["verbas"] or "").split("+") if v]}
+
+
+def _codigos_omie() -> dict:
+    """`{obra: código do OMIE}` — da aba "C. Diários" (Código Primário → Código
+    Omie), que é de onde o dono disse que ele vem."""
+    from .db import consultar
+    saida = {}
+    for nome, codigo in consultar(
+            "SELECT nome, coalesce(codigo, '') FROM analisesps.referencias_rateio "
+            " WHERE tipo = 'obra'"):
+        if _chave(nome) and str(codigo or "").strip():
+            saida[_chave(nome)] = str(codigo).strip()
+    # A apropriação pode identificar a obra pelo próprio código do OMIE (é o que o
+    # ponto às vezes escreve — ver `folha_pagamento.conta_por_obra`).
+    for codigo in list(saida.values()):
+        saida.setdefault(_chave(codigo), codigo)
+    return saida
+
+
+def _centros_do_pipefy(campos: dict) -> tuple:
+    """Como o campo "Centro de Custo" do pipe de Despesa recebe a obra.
+
+    Devolve (função obra → valor ou None, descrição do campo). Se o campo é uma
+    conexão com uma tabela, a obra vira o id do registro de mesmo nome; se é
+    lista de opções, a opção de mesmo nome; se é texto, o próprio código."""
+    campo = campos.get("centro_de_custo_1") or {}
+    tipo = campo.get("tipo") or ""
+    ligado = campo.get("ligado_a") or {}
+    if tipo == "connector":
+        if ligado.get("tipo") != "tabela" or not ligado.get("id"):
+            return (lambda obra: None), "conexão que eu não consigo ler"
+        registros = pipefy.registros_da_tabela(ligado["id"])
+        por_nome: dict = {}
+        for r in registros:
+            por_nome.setdefault(_chave(r["nome"]), []).append(r["id"])
+
+        def achar(obra):
+            achados = por_nome.get(_chave(obra)) or []
+            return achados[0] if len(achados) == 1 else None
+        return achar, f'tabela "{ligado.get("nome") or ligado["id"]}"'
+    if tipo in ("select", "radio_vertical", "radio_horizontal"):
+        opcoes = {_chave(o): o for o in campo.get("opcoes") or []}
+        return (lambda obra: opcoes.get(_chave(obra))), "lista de opções"
+    return (lambda obra: _chave(obra) or None), "texto"
+
+
+# Os campos que o Make usa em cada pipe. Se algum sumir ou mudar de id no Pipefy,
+# a prévia diz qual — em vez de o card sair com o valor caindo em lugar nenhum.
+CAMPOS_DA_DESPESA = (
+    "data", "data_de_pagamento", "descri_o", "valor", "tipo_de_despesa", "op_o",
+    "respons_vel_pela_solicita_ox", "banco_do_pagamento", "valor_total_pago",
+    "valida_o_dc", "link_para_planilha_de_pagamento",
+    "link_para_planilha_de_an_lise", "conex_o_sp")
+CAMPOS_DA_SP = (
+    "data", "data_de_pagamento", "descri_o", "valor", "colaborador_solicitante",
+    "tipo_de_pagamento", "link_planilha_de_an_lise", "tipo_de_despesa",
+    "selecione_o_procedimento", "alimenta_o_de_equipe", "parcelas",
+    "chave_pix_aleat_ria", "radio_horizontal_t_tulo", "tipo", "cnpj",
+    "valida_o_sp_1", "conex_o_dc_id", "etiquetas", "conex_o_dc")
+
+
+def _ler_pipe(pipe_id: str) -> dict:
+    try:
+        pipe = pipefy.campos_do_pipe(pipe_id)
+    except pipefy.ErroDoPipefy as e:
+        raise ErroDosCards(str(e)) from e
+    inicio = pipe.get("campos") or {}
+    fases = pipe.get("campos_das_fases") or {}
+    return {"nome": pipe.get("nome") or pipe_id, "inicio": inicio,
+            "todos": {**fases, **inicio}}
+
+
+def conferir_pipe() -> dict:
+    """Confere que os dois pipes têm todos os campos que o Make usa. NÃO CRIA NADA."""
+    saida = []
+    for pipe_id, usados in ((PIPE_DESPESA, CAMPOS_DA_DESPESA), (PIPE_SP, CAMPOS_DA_SP)):
+        pipe = _ler_pipe(pipe_id)
+        exigidos = list(usados)
+        if pipe_id == PIPE_DESPESA:
+            exigidos += list(campos_do_par(1))
+        faltam = [c for c in exigidos if c not in pipe["todos"]]
+        saida.append({"pipe": pipe_id, "nome": pipe["nome"],
+                      "quantos_campos": len(pipe["todos"]), "faltam": faltam,
+                      "obrigatorios": [d.get("label") or cid
+                                       for cid, d in pipe["inicio"].items()
+                                       if d.get("obrigatorio")]})
+    return {"pipes": saida}
+
+
+# ---------------------------------------------------------------------------
+# A PRÉVIA — exatamente o que vai ser criado. NÃO CRIA NADA.
+# ---------------------------------------------------------------------------
+def previa(analise_id: int) -> dict:
+    """Os cards que vão ser criados, com cada valor, e o que impede de criar.
+
+    `bloqueios` vazio é a única situação em que `lancar` cria alguma coisa."""
+    return _previa(analise_id)[0]
+
+
+def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
+    """(prévia, pipe de Despesa, pipe de SP) — os pipes lidos uma vez só."""
+    from . import folha_pagamento as fpg
+
+    r = rodada(analise_id)
+    analise, arquivos = r["analise"], r["arquivos"]
+    ano, mes, tipo = analise["ano"], analise["mes"], analise["tipo"]
+    bloqueios: list = []
+
+    despesa = _ler_pipe(PIPE_DESPESA) if ler_pipes else None
+    sp = _ler_pipe(PIPE_SP) if ler_pipes else None
+    centro_de, como_centro = (lambda obra: _chave(obra)), "texto"
+    if ler_pipes:
+        for pipe, usados in ((despesa, CAMPOS_DA_DESPESA), (sp, CAMPOS_DA_SP)):
+            faltam = [c for c in usados if c not in pipe["todos"]]
+            if faltam:
+                bloqueios.append(
+                    f'o pipe "{pipe["nome"]}" não tem mais o(s) campo(s) '
+                    + ", ".join(faltam) + " que o Make usa. Alguém mexeu no pipe — "
+                    "nada foi criado.")
+        try:
+            centro_de, como_centro = _centros_do_pipefy(despesa["inicio"])
+        except pipefy.ErroDoPipefy as e:
+            bloqueios.append(f"não consegui ler os centros de custo do Pipefy: {e}")
+
+    omie = _codigos_omie()
+    grupos, esperado_por_conta = [], {}
+    for verba in r["verbas"]:
+        try:
+            nome_grupo, tipo_dc, tipo_sp = grupo_da_verba(verba, tipo)
+        except ErroDosCards as e:
+            bloqueios.append(str(e))
+            continue
+        try:
+            linhas = [l for l in fpg.linhas_para_pagar(ano, mes, tipo, [verba])
+                      if l["valor"] > 0]
+        except fpg.ErroDoPagamento as e:
+            bloqueios.append(str(e))
+            continue
+
+        por_obra: dict = {}
+        por_conta: dict = {}
+        pessoas = set()
+        for l in linhas:
+            obra = _chave(l["obra"]) or "(SEM OBRA)"
+            por_obra[obra] = por_obra.get(obra, Decimal("0.00")) + l["valor"]
+            conta = " ".join(str(l.get("conta") or "").split())
+            por_conta[conta] = por_conta.get(conta, Decimal("0.00")) + l["valor"]
+            pessoas.add(l["cpf"])
+        for conta, valor in por_conta.items():
+            esperado_por_conta[conta] = esperado_por_conta.get(
+                conta, Decimal("0.00")) + valor
+        total = sum(por_obra.values(), Decimal("0.00"))
+
+        centros = []
+        for obra, valor in sorted(por_obra.items()):
+            centro = centro_de(obra)
+            codigo = omie.get(obra, "")
+            if not codigo:
+                bloqueios.append(
+                    f'a obra "{obra}" não tem Código Omie na aba "C. Diários".')
+            if not centro:
+                bloqueios.append(
+                    f'a obra "{obra}" não tem centro de custo no Pipefy '
+                    f"({como_centro}) com esse nome.")
+            centros.append({"obra": obra, "valor": valor, "centro": centro or "",
+                            "omie": codigo})
+        if len(centros) > MAXIMO_DE_CENTROS:
+            bloqueios.append(
+                f"{geracao.rotulo_da_verba(verba)}: {len(centros)} obras, e o card "
+                f"de Despesa só tem {MAXIMO_DE_CENTROS} pares de centro de custo.")
+
+        links = [a["link"] for a in arquivos
+                 if verba in (a["verbas"] or "").split("+") and a["link"]]
+        sps = []
+        for conta, valor in sorted(por_conta.items()):
+            if not conta:
+                bloqueios.append(
+                    f"{geracao.rotulo_da_verba(verba)}: R$ {formatos.moeda(valor)} "
+                    'sem conta de origem (obra sem conta na aba "C. Diários").')
+            link = next((a["link"] for a in arquivos if a["conta"] == conta
+                         and verba in (a["verbas"] or "").split("+")), "")
+            sps.append({"conta": conta, "valor": valor, "link": link})
+        if len(sps) > MAXIMO_DE_SPS:
+            bloqueios.append(
+                f"{geracao.rotulo_da_verba(verba)}: {len(sps)} contas de origem, "
+                f"e o card de Despesa só liga {MAXIMO_DE_SPS} SPs.")
+
+        grupos.append({
+            "verba": verba, "rotulo_verba": geracao.rotulo_da_verba(verba),
+            "grupo": nome_grupo, "tipo_dc": tipo_dc, "tipo_sp": tipo_sp,
+            "total": total, "pessoas": len(pessoas), "centros": centros,
+            "sps": sps, "links_pagamento": links,
+            "descricao": descricao_do_card(
+                analise["competencia"], tipo, [verba], "", len(pessoas), total,
+                " ; ".join(links), analise["link"])})
+
+    # ⚠️ O QUE ESTÁ FECHADO TEM DE SER O QUE FOI GERADO. Se alguém refez o
+    # fechamento depois de gerar, o card contaria uma história e o arquivo outra.
+    gerado_por_conta: dict = {}
+    for a in arquivos:
+        gerado_por_conta[a["conta"]] = gerado_por_conta.get(
+            a["conta"], Decimal("0.00")) + Decimal(str(a["total"]))
+    if grupos and gerado_por_conta != esperado_por_conta:
+        bloqueios.append(
+            "o fechamento mudou depois que estes arquivos foram gerados (os valores "
+            "por conta não batem mais). Gere os arquivos de novo antes de lançar.")
+
+    andamento = _andamento(analise["id"])
+    return {"analise": analise["id"], "competencia": analise["competencia"],
+            "tipo": tipo, "link_analise": analise["link"],
+            "como_centro": como_centro, "grupos": grupos,
+            "bloqueios": list(dict.fromkeys(bloqueios)),
+            "andamento": andamento, "ja_lancado": _completo(andamento, grupos),
+            "arquivos": [a["id"] for a in arquivos]}, despesa, sp
+
+
+# ---------------------------------------------------------------------------
+# O ANDAMENTO — o que já foi criado, para continuar de onde parou
+# ---------------------------------------------------------------------------
+def _andamento(analise_id: int) -> dict:
+    from .db import consultar_um
+    try:
+        linha = consultar_um("SELECT valor FROM analisesps.meta WHERE chave = ?",
+                             (CHAVE_DO_ANDAMENTO.format(int(analise_id)),))
+        return json.loads(linha[0]) if linha and linha[0] else {}
+    except Exception:  # noqa: BLE001
+        logger.exception("Folha: não consegui ler o andamento dos cards")
+        return {}
+
+
+def _guardar_andamento(analise_id: int, andamento: dict) -> None:
+    """Grava DEPOIS DE CADA card criado: se a próxima chamada cair, apertar de
+    novo continua de onde parou, sem criar o mesmo card duas vezes."""
+    from .db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.meta (chave, valor) VALUES (?, ?) "
+            "ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor",
+            (CHAVE_DO_ANDAMENTO.format(int(analise_id)),
+             json.dumps(andamento, ensure_ascii=False)))
+        conn.commit()
+
+
+def _completo(andamento: dict, grupos: list) -> bool:
+    return bool(grupos) and all(
+        (andamento.get(g["verba"]) or {}).get("ligado") for g in grupos)
+
+
+# ---------------------------------------------------------------------------
+# OS CAMPOS DE CADA CARD — os do Make, valor por valor
+# ---------------------------------------------------------------------------
+def campos_da_despesa(grupo: dict, agora: _dt.datetime) -> list:
+    """Os campos do card de Despesa, na forma do módulo 2 do cenário."""
+    quando = agora.strftime("%d/%m/%Y %H:%M")
+    campos = [
+        ("data", quando), ("data_de_pagamento", quando),
+        ("descri_o", grupo["descricao"]), ("valor", _valor(grupo["total"])),
+        ("tipo_de_despesa", grupo["tipo_dc"]),
+        ("op_o", "Pgt Conjunto"), ("respons_vel_pela_solicita_ox", RESPONSAVEL),
+    ]
+    for n, centro in enumerate(grupo["centros"], start=1):
+        id_centro, id_valor, id_omie = campos_do_par(n)
+        campos += [(id_centro, centro["centro"]), (id_valor, _valor(centro["valor"])),
+                   (id_omie, centro["omie"])]
+    campos += [("banco_do_pagamento", BANCO_DO_PAGAMENTO),
+               ("valor_total_pago", _valor(grupo["total"])), ("valida_o_dc", "Sim")]
+    return [{"campo": c, "valor": v} for c, v in campos]
+
+
+def campos_depois_da_despesa(grupo: dict, link_analise: str) -> list:
+    """Os links das planilhas — que no Make entram depois de o card existir."""
+    return [{"campo": "link_para_planilha_de_pagamento",
+             "valor": " ; ".join(grupo["links_pagamento"])},
+            {"campo": "link_para_planilha_de_an_lise", "valor": link_analise}]
+
+
+def campos_da_sp(grupo: dict, sp: dict, id_despesa: str, link_analise: str,
+                 agora: _dt.datetime) -> list:
+    """Os campos da SP de Transferência de Recursos, na forma do módulo 165."""
+    descricao = f"Conta Origem: {sp['conta']}\n{grupo['descricao']}"
+    if sp.get("link"):
+        descricao += f"\nPlanilha de pagamento desta conta: {sp['link']}"
+    campos = [
+        ("data", agora.strftime("%d/%m/%Y")),
+        ("data_de_pagamento", (agora + _dt.timedelta(days=1)).strftime("%d/%m/%Y")),
+        ("descri_o", descricao), ("valor", _valor(sp["valor"])),
+        ("colaborador_solicitante", RESPONSAVEL), ("tipo_de_pagamento", "Pix"),
+        ("link_planilha_de_an_lise", link_analise),
+        ("tipo_de_despesa", grupo["tipo_sp"]),
+        ("selecione_o_procedimento", "Transferência de Recursos"),
+        ("alimenta_o_de_equipe", "Não"), ("parcelas", "1x Parcela"),
+        ("chave_pix_aleat_ria", PIX_DA_BWS),
+        ("radio_horizontal_t_tulo", "Pessoa Jurídica"), ("tipo", "Aleatória"),
+        ("cnpj", CNPJ_DA_BWS),
+        ("valida_o_sp_1", "Sim"), ("conex_o_dc_id", str(id_despesa)),
+        ("etiquetas", ETIQUETA_DA_SP),
+    ]
+    return [{"campo": c, "valor": v} for c, v in campos]
+
+
+def _separar(valores: list, inicio: dict) -> tuple:
+    """(os que vão na criação, os que vão depois). Campo do formulário inicial vai
+    na criação — é ali que o Pipefy cobra os obrigatórios; campo de fase vai
+    depois, gravado no card já criado."""
+    na_criacao = [v for v in valores if v["campo"] in inicio and v["valor"] != ""]
+    depois = [v for v in valores if v["campo"] not in inicio and v["valor"] != ""]
+    return na_criacao, depois
+
+
+# ---------------------------------------------------------------------------
+# LANÇAR — sem volta
+# ---------------------------------------------------------------------------
+def lancar(analise_id: int, quem: str = "") -> dict:
+    """Cria o card de Despesa e as SPs de cada conta, como o Make.
+
+    ⚠️ CHAMADA SEM VOLTA: card criado no Pipefy não se apaga por aqui. Por isso só
+    roda com a prévia limpa, e grava o andamento a cada card — se cair no meio,
+    apertar de novo continua de onde parou."""
+    from . import folha_pagamento as fpg
+
+    vista, despesa, sp_pipe = _previa(analise_id)
+    if vista["bloqueios"]:
+        raise ErroDosCards("nada foi criado: " + " ".join(vista["bloqueios"]))
+    if vista["ja_lancado"]:
         raise ErroDosCards(
-            "o arquivo de análise vai como link DENTRO do card do pagamento — "
-            "ele não tem card próprio.")
+            "este pagamento já foi lançado no Pipefy. Para lançar de novo, cancele "
+            "os cards lá e gere os arquivos de novo.")
 
-    conferencia = conferir_pipe(pipe_id)
-    # O arquivo de análise da MESMA competência, para o link entrar no card.
-    analise = next((a for a in fpg.log(teto=400, ano=arquivo["ano"],
-                                       mes=arquivo["mes"])
-                    if a["destino"] == fpg.ANALISE and a["tipo"] == arquivo["tipo"]),
-                   None)
-    verbas = [v for v in (arquivo["verbas"] or "").split("+") if v]
-    descricao = descricao_do_card(
-        arquivo["competencia"], arquivo["tipo"], verbas, arquivo["conta"],
-        arquivo["pessoas"], arquivo["total"], arquivo["link"],
-        (analise or {}).get("link", ""))
+    r = rodada(analise_id)
+    andamento = vista["andamento"]
+    agora = _agora()
+    criados = []
+    try:
+        for grupo in vista["grupos"]:
+            estado = andamento.setdefault(grupo["verba"], {"sps": {}})
+            if not estado.get("despesa"):
+                na_criacao, depois = _separar(campos_da_despesa(grupo, agora),
+                                              despesa["inicio"])
+                card = pipefy.criar_card(PIPE_DESPESA, agora.strftime("%d/%m/%Y"),
+                                         na_criacao)
+                estado.update({"despesa": card["id"], "link": card["link"],
+                               "depois": depois})
+                _guardar_andamento(analise_id, andamento)
+                criados.append(f"Despesa {card['id']}")
+            if not estado.get("despesa_completa"):
+                pipefy.atualizar_campos(
+                    estado["despesa"], (estado.get("depois") or [])
+                    + campos_depois_da_despesa(grupo, vista["link_analise"]))
+                estado["despesa_completa"] = True
+                estado.pop("depois", None)
+                _guardar_andamento(analise_id, andamento)
 
-    valores, de_fora = _valores_do_card(
-        conferencia["reconhecidos"], descricao, arquivo["total"],
-        arquivo["link"], (analise or {}).get("link", ""))
-    if not valores:
+            for sp in grupo["sps"]:
+                feito = (estado["sps"].get(sp["conta"]) or {})
+                if not feito.get("id"):
+                    na_criacao, depois = _separar(
+                        campos_da_sp(grupo, sp, estado["despesa"],
+                                     vista["link_analise"], agora),
+                        sp_pipe["inicio"])
+                    card = pipefy.criar_card(PIPE_SP, grupo["grupo"], na_criacao)
+                    feito = {"id": card["id"], "link": card["link"],
+                             "depois": depois}
+                    estado["sps"][sp["conta"]] = feito
+                    _guardar_andamento(analise_id, andamento)
+                    criados.append(f"SP {card['id']}")
+                if not feito.get("ligada"):
+                    pipefy.atualizar_campos(
+                        feito["id"], (feito.get("depois") or [])
+                        + [{"campo": "conex_o_dc", "valor": [estado["despesa"]]}])
+                    feito["ligada"] = True
+                    feito.pop("depois", None)
+                    _guardar_andamento(analise_id, andamento)
+
+            if not estado.get("ligado"):
+                pipefy.atualizar_campos(estado["despesa"], [{
+                    "campo": "conex_o_sp",
+                    "valor": [s["id"] for s in estado["sps"].values()]}])
+                estado["ligado"] = True
+                _guardar_andamento(analise_id, andamento)
+    except pipefy.ErroDoPipefy as e:
+        logger.exception("Folha: lançamento no Pipefy parou no meio")
+        ja = (" Já criados: " + ", ".join(criados) + "." if criados else "")
         raise ErroDosCards(
-            "não reconheci nenhum campo deste pipe, então eu não criei card "
-            "nenhum. Confira o pipe na tela: é melhor não lançar do que lançar "
-            "com os campos vazios.")
+            f"o Pipefy recusou no meio do caminho: {e}.{ja} Apertar de novo "
+            "continua de onde parou, sem repetir o que já foi criado.") from e
 
-    titulo = (f"{geracao.ROTULO_DO_DESTINO.get(arquivo['destino'], '')} "
-              f"{arquivo['competencia']}"
-              + (f" - conta {arquivo['conta']}" if arquivo["conta"] else "")
-              ).strip()
-    card = pipefy.criar_card(pipe_id, titulo, valores)
-    fpg.registrar_card(arquivo["id"], card["id"], card["link"])
-    logger.info(
-        "Folha: card %s criado para o arquivo %s (%s) por %s. Campos sem "
-        "mapeamento: %s.", card["id"], arquivo["id"], arquivo["nome"],
-        quem or "(sem nome)", ", ".join(de_fora) or "nenhum")
-    return {"ok": True, "card": card["id"], "link": card["link"],
-            "titulo": titulo, "sem_mapeamento": de_fora,
-            "descricao": descricao}
+    # Amarra no log: cada arquivo de conta à(s) SP(s) dela; a análise à(s)
+    # Despesa(s).
+    for arquivo in r["arquivos"]:
+        sps = [((andamento.get(v) or {}).get("sps") or {}).get(arquivo["conta"])
+               for v in (arquivo["verbas"] or "").split("+")]
+        sps = [s for s in sps if s]
+        if sps:
+            fpg.registrar_card(arquivo["id"], ",".join(s["id"] for s in sps),
+                               sps[0]["link"])
+    despesas = [andamento[g["verba"]] for g in vista["grupos"]]
+    fpg.registrar_card(analise_id, ",".join(d["despesa"] for d in despesas),
+                       despesas[0]["link"])
+    logger.info("Folha: %s lançado no Pipefy por %s — %s.",
+                vista["competencia"], quem or "(sem nome)",
+                ", ".join(criados) or "nada novo")
+    return {"ok": True, "competencia": vista["competencia"],
+            "despesas": [{"id": d["despesa"], "link": d["link"]} for d in despesas],
+            "sps": [{"conta": conta, "id": s["id"], "link": s["link"]}
+                    for d in despesas for conta, s in d["sps"].items()],
+            "criados": criados}

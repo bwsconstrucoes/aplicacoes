@@ -164,14 +164,14 @@ def linhas_para_pagar(ano: int, mes: int, tipo: str, verbas) -> list:
         if not fechamento:
             faltando.append(verba)
             continue
-        for cpf, nome, obra, dias, valor in consultar(
-                "SELECT cpf, nome, obra, dias, valor "
+        for cpf, nome, obra, dias, valor, origem in consultar(
+                "SELECT cpf, nome, obra, dias, valor, coalesce(origem, '') "
                 "  FROM analisesps.apropriacao_linha "
                 " WHERE apropriacao_id = ? ORDER BY nome", (fechamento["id"],)):
             obra = str(obra or "").strip().upper()
             linhas.append({"cpf": cpf, "nome": nome, "obra": obra,
                            "conta": contas.get(obra, ""), "verba": verba,
-                           "dias": int(dias or 0),
+                           "dias": int(dias or 0), "origem": origem,
                            "valor": Decimal(str(valor or 0)).quantize(CENTAVO)})
     if faltando:
         # ⚠️ RECUSA EM VEZ DE GERAR PELA METADE. Um arquivo faltando uma verba sai
@@ -197,7 +197,7 @@ def preparar(ano: int, mes: int, tipo: str, verbas, destino: str,
         "competencia": f"{int(mes):02d}/{int(ano)}",
         "destino": destino, "juntar_verbas": bool(juntar_verbas),
         "verbas": [str(v).lower() for v in (verbas or [])],
-        "lotes": lotes, "resumo": resumo,
+        "lotes": lotes, "resumo": resumo, "linhas": linhas,
         # No SomaPay não existe juntar, e a tela diz por quê em vez de oferecer.
         "pode_juntar": destino == geracao.BEEVALE,
         "motivo_nao_junta": (
@@ -239,11 +239,12 @@ def linhas_da_previa(folha_id: int) -> tuple:
     apropriado = folha_gestao.apropriar_a_folha(folha)["apropriado"]
     contas = conta_por_obra()
     linhas = []
-    for cpf, nome, obra, dias, valor, _origem in guardada.linhas_do_apropriado(
+    for cpf, nome, obra, dias, valor, origem in guardada.linhas_do_apropriado(
             apropriado):
         linhas.append({"cpf": cpf, "nome": nome, "obra": obra,
                        "conta": contas.get(obra, ""),
                        "verba": guardada.VERBA_FOLHA, "dias": dias,
+                       "origem": origem,
                        "valor": Decimal(str(valor or 0)).quantize(CENTAVO)})
     return folha, apropriado, linhas
 
@@ -253,7 +254,7 @@ def previa(folha_id: int, destino: str) -> dict:
     folha, apropriado, linhas = linhas_da_previa(folha_id)
     lotes = geracao.montar_lotes(linhas, destino)
     return {"folha": folha, "apropriado": apropriado, "lotes": lotes,
-            "resumo": geracao.resumo_dos_lotes(lotes)}
+            "linhas": linhas, "resumo": geracao.resumo_dos_lotes(lotes)}
 
 
 def previa_zip(folha_id: int, destino: str) -> tuple:
@@ -299,7 +300,8 @@ def previa_zip(folha_id: int, destino: str) -> tuple:
             {"destino": ANALISE, "conta": "", "verbas": [guardada.VERBA_FOLHA]},
             ano, mes, tipo)
         pacote.writestr(nome_analise,
-                        geracao.analise_xlsx(lotes, ano=ano, mes=mes, tipo=tipo))
+                        geracao.analise_xlsx(lotes, ano=ano, mes=mes, tipo=tipo,
+                                             detalhe=feito["linhas"]))
         if not resumo["pode_gerar"]:
             leia += ["", "Com estes avisos, o arquivo de verdade NÃO sairia sem "
                          "você marcar a opção de gerar com aviso."]
@@ -375,7 +377,8 @@ def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
 
     # O ARQUIVO DE ANÁLISE, sempre, e por último: se algo falhar antes, ninguém
     # fica com um relatório de um pagamento que não foi gerado.
-    analise = geracao.analise_xlsx(lotes, ano=ano, mes=mes, tipo=tipo)
+    analise = geracao.analise_xlsx(lotes, ano=ano, mes=mes, tipo=tipo,
+                                   detalhe=plano["linhas"])
     nome_analise = geracao.nome_do_arquivo(
         {"destino": ANALISE, "conta": "", "verbas": plano["verbas"]},
         ano, mes, tipo)

@@ -283,10 +283,12 @@ Passo a passo, para a Quinzena:
 
 ### Três defeitos encontrados no blueprint
 
-1. **Campo repetido, valor no lugar errado.** O par 62 grava em
-   `valor_centro_de_custo_63` (e existe um `valor_centro_de_custo_63_1`); o mesmo
-   acontece no par 72/73. Ou seja: **com 62 ou mais centros de custo, valor de
-   centro de custo cai no campo do vizinho.** Merece conferência no Pipefy.
+1. ~~**Campo repetido, valor no lugar errado.**~~ **NÃO É DEFEITO — corrigido em
+   01/10/2026**, lendo o blueprint campo a campo: o par 62 grava em
+   `valor_centro_de_custo_63` e o par 63 em `valor_centro_de_custo_63_1` (idem
+   72/73). É o id que o Pipefy deu a esses campos quando foram criados, e o Make
+   grava cada valor no seu par. O sistema usa os mesmos ids
+   (`folha_cards.campos_do_par`).
 2. **Teto silencioso em 50 linhas.** As faixas param em `53` (linha 4 até 53). Com
    mais de 50 centros de custo ou mais de 50 contas de origem, o que passa disso
    **não entra e ninguém é avisado**.

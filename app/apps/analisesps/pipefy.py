@@ -135,8 +135,11 @@ def graphql(consulta: str, token: str | None = None) -> dict:
         raise ErroDoPipefy(f"O Pipefy recusou (HTTP {resposta.status_code}): "
                            f"{resposta.text[:240]}")
     if dados.get("errors"):
-        raise ErroDoPipefy("O Pipefy devolveu erro: "
-                           + json.dumps(dados["errors"], ensure_ascii=False)[:300])
+        # ⚠️ A FRASE INTEIRA, NÃO OS PRIMEIROS 300 CARACTERES. Em 01/10/2026 o
+        # recado de "campo obrigatório" chegou cortado no meio do quarto nome de
+        # campo — justamente a lista que diz o que falta preencher.
+        frases = [str((e or {}).get("message") or e) for e in dados["errors"]]
+        raise ErroDoPipefy("O Pipefy devolveu erro: " + " | ".join(frases)[:1500])
     return dados.get("data") or {}
 
 
@@ -358,24 +361,75 @@ def atualizar_documentacao_fiscal(atualizacoes, token=None) -> dict:
 # passa a aparecer com o nome novo, e campo que eu não reconheço fica DITO em vez
 # de preenchido no escuro.
 # ---------------------------------------------------------------------------
+# As três formas de perguntar os campos, da mais completa à mais simples. A
+# primeira traz o OBRIGATÓRIO e a tabela ligada a um campo de conexão; se o
+# Pipefy recusar alguma dessas palavras, cai para a seguinte em vez de deixar a
+# conferência inteira de pé no chão.
+_CONSULTAS_DOS_CAMPOS = (
+    "id label type options required "
+    "connectedRepo { __typename ... on Table { id name } ... on Pipe { id name } }",
+    "id label type options required",
+    "id label type options",
+)
+
+
 def campos_do_pipe(pipe_id, token=None) -> dict:
-    """Os campos do formulário inicial do pipe: `{id: {label, tipo, opcoes}}`.
+    """Os campos do formulário inicial do pipe:
+    `{id: {label, tipo, opcoes, obrigatorio, ligado_a}}`.
 
     Só leitura — não cria nem muda nada. É o passo de conferência antes de deixar
-    alguém apertar "lançar no Pipefy"."""
+    alguém apertar "lançar no Pipefy".
+
+    ⚠️ O "OBRIGATÓRIO" É O QUE FALTAVA. Em 01/10/2026 o primeiro lançamento de
+    verdade voltou recusado: "Data de Vencimento", "Tipo de Despesa",
+    "Requisição Solicitada por um Terceiro?", "Responsável pela Solicitação"…
+    são obrigatórios no pipe, e o card saía sem eles. Sabendo quais são, a tela
+    pergunta antes de criar, em vez de o Pipefy recusar depois."""
     pipe = _numero_do_card(pipe_id)
-    dados = graphql(
-        "{ pipe(id: %d) { id name start_form_fields { id label type options } "
-        "  phases { id name } } }" % pipe, token)
+    dados, ultimo_erro = None, None
+    for pedaco in _CONSULTAS_DOS_CAMPOS:
+        try:
+            dados = graphql(
+                "{ pipe(id: %d) { id name start_form_fields { %s } "
+                "  phases { id name } } }" % (pipe, pedaco), token)
+            break
+        except ErroDoPipefy as e:
+            # Token ausente ou rede caída não melhoram com consulta menor.
+            if "devolveu erro" not in str(e):
+                raise
+            ultimo_erro = e
+    if dados is None:
+        raise ultimo_erro
     bruto = (dados or {}).get("pipe") or {}
     campos = {}
     for campo in bruto.get("start_form_fields") or []:
+        repo = campo.get("connectedRepo") or {}
         campos[str(campo.get("id") or "")] = {
             "label": str(campo.get("label") or ""),
             "tipo": str(campo.get("type") or ""),
-            "opcoes": campo.get("options") or []}
+            "opcoes": campo.get("options") or [],
+            "obrigatorio": bool(campo.get("required")),
+            "ligado_a": ({"tipo": "tabela" if repo.get("__typename") == "Table"
+                          else "pipe", "id": str(repo.get("id") or ""),
+                          "nome": str(repo.get("name") or "")}
+                         if repo.get("id") else None)}
+    # Os campos das FASES (o que não está no formulário inicial). Leitura à parte e
+    # tolerante: serve para saber o que vai na criação e o que vai depois, e uma
+    # recusa aqui não pode derrubar a conferência.
+    das_fases = {}
+    try:
+        fases = graphql("{ pipe(id: %d) { phases { id fields { id label type } } } }"
+                        % pipe, token)
+        for fase in ((fases or {}).get("pipe") or {}).get("phases") or []:
+            for campo in (fase or {}).get("fields") or []:
+                das_fases[str(campo.get("id") or "")] = {
+                    "label": str(campo.get("label") or ""),
+                    "tipo": str(campo.get("type") or ""),
+                    "fase": str((fase or {}).get("id") or "")}
+    except ErroDoPipefy:
+        logger.exception("Análise de SPs: não consegui ler os campos das fases")
     return {"id": str(bruto.get("id") or ""), "nome": bruto.get("name") or "",
-            "campos": campos,
+            "campos": campos, "campos_das_fases": das_fases,
             "fases": [{"id": str(f.get("id") or ""), "nome": f.get("name") or ""}
                       for f in (bruto.get("phases") or [])]}
 
@@ -419,6 +473,36 @@ def achar_campo(campos: dict, *pedacos, fora=()) -> str:
     return ""
 
 
+# Teto de registros lidos de uma tabela de conexão: 10 páginas de 50. Tabela de
+# tipo de despesa ou de pessoas cabe com folga; uma maior que isso não deveria
+# virar lista de escolher.
+PAGINAS_DE_REGISTROS = 10
+
+
+def registros_da_tabela(tabela_id, token=None) -> list:
+    """`[{'id', 'nome'}]` — os registros de uma tabela do Pipefy (campo de
+    conexão). Só leitura."""
+    tabela = _texto_gql(str(tabela_id or "").strip())
+    saida, depois = [], None
+    for _ in range(PAGINAS_DE_REGISTROS):
+        cursor = f", after: {_texto_gql(depois)}" if depois else ""
+        dados = graphql(
+            "{ table_records(table_id: %s, first: 50%s) { "
+            "  pageInfo { hasNextPage endCursor } "
+            "  edges { node { id title } } } }" % (tabela, cursor), token)
+        bloco = (dados or {}).get("table_records") or {}
+        for aresta in bloco.get("edges") or []:
+            no = (aresta or {}).get("node") or {}
+            if no.get("id"):
+                saida.append({"id": str(no["id"]),
+                              "nome": str(no.get("title") or no["id"])})
+        pagina = bloco.get("pageInfo") or {}
+        if not pagina.get("hasNextPage") or not pagina.get("endCursor"):
+            break
+        depois = pagina["endCursor"]
+    return sorted(saida, key=lambda x: x["nome"].lower())
+
+
 def criar_card(pipe_id, titulo: str, valores: list, token=None) -> dict:
     """Cria um card. `valores`: `[{'campo': id, 'valor': texto}]`.
 
@@ -433,8 +517,15 @@ def criar_card(pipe_id, titulo: str, valores: list, token=None) -> dict:
             continue
         # O id do campo vai entre aspas na consulta, então escapá-lo fecha a porta
         # de injeção do mesmo jeito que o `_numero_do_card` fecha a dos ids.
+        valor = (item or {}).get("valor")
+        # Responsável, conexão, etiqueta e lista de marcar vão como LISTA de ids
+        # (ou de opções) — é assim que a API os aceita; o resto, como texto.
+        if isinstance(valor, (list, tuple)):
+            literal = "[" + ", ".join(_texto_gql(v) for v in valor) + "]"
+        else:
+            literal = _texto_gql(valor)
         pedacos.append(f"{{ field_id: {_texto_gql(campo)}, "
-                       f"field_value: {_texto_gql((item or {}).get('valor'))} }}")
+                       f"field_value: {literal} }}")
     consulta = ("mutation { createCard(input: { pipe_id: %d, title: %s, "
                 "fields_attributes: [%s] }) { card { id title url } } }"
                 % (pipe, _texto_gql(titulo), " ".join(pedacos)))
@@ -446,3 +537,36 @@ def criar_card(pipe_id, titulo: str, valores: list, token=None) -> dict:
     logger.info("Análise de SPs: card %s criado no pipe %s.", card["id"], pipe)
     return {"id": str(card["id"]), "titulo": card.get("title") or titulo,
             "link": card.get("url") or f"https://app.pipefy.com/open-cards/{card['id']}"}
+
+
+# Quantos campos por ida à API na atualização em lote. O Make liga até dez SPs
+# numa chamada só; trinta campos curtos cabem com folga numa requisição.
+CAMPOS_POR_VEZ = 30
+
+
+def atualizar_campos(card_id, valores: list, token=None) -> int:
+    """Grava vários campos de um card já criado, em poucas idas à API.
+
+    `valores`: `[{'campo': id, 'valor': texto ou lista}]`. É o que o Make faz
+    depois de criar o card (links das planilhas, banco, códigos do OMIE, a
+    conexão entre os cards). Devolve quantos campos foram gravados.
+
+    ⚠️ SEM VOLTA, como criar o card."""
+    card = _numero_do_card(card_id)
+    gravados = 0
+    for bloco in _blocos([v for v in valores or [] if (v or {}).get("campo")],
+                         CAMPOS_POR_VEZ):
+        partes = []
+        for i, item in enumerate(bloco):
+            valor = item.get("valor")
+            if isinstance(valor, (list, tuple)):
+                literal = "[" + ", ".join(_texto_gql(v) for v in valor) + "]"
+            else:
+                literal = _texto_gql(valor)
+            partes.append(
+                f"c{i}: updateCardField(input: {{card_id: {card}, "
+                f"field_id: {_texto_gql(item['campo'])}, new_value: {literal}}}) "
+                "{ clientMutationId }")
+        graphql("mutation { " + " ".join(partes) + " }", token)
+        gravados += len(bloco)
+    return gravados
