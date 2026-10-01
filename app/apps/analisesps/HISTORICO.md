@@ -10731,6 +10731,17 @@ batida (ou a documentação do Mobponto), sem credenciais. Até lá: trocar no
 próprio Mobponto e apertar "Atualizar o ponto desta pessoa" — que agora não
 espera a carga do mês.
 
+**O que o suporte do Mobponto mandou (01/10/2026), repassado por ele:** o método
+`CAD_FUNCIONARIO` virou `CAD_EDT_FUNCIONARIO`, com `acao` = `INSERIR` ou
+`ALTERAR`; no ALTERAR **todos os campos têm de ir, mesmo os que não mudam — o
+que faltar é APAGADO** no Mobponto; o CPF não se altera. É o CADASTRO do
+funcionário, não a batida: **não resolve o "trocar a obra do dia"**. Serve de
+pista (as ações de escrita da API são `CAD_EDT_*` com um parâmetro `acao`) e de
+aviso: nada neste repositório usa `CAD_FUNCIONARIO`, mas script dele que
+cadastre funcionário no Mobponto pelo nome antigo parou de funcionar. Pedido a
+ele que pergunte ao suporte, pelo `CAD_EDT_PONTO`, quais `acao` existem além do
+`C` e como se exclui ou altera uma batida.
+
 Também: um teste antigo de pagamento (`NAO_BATE`) dependia do mês corrente e
 quebrou na virada para outubro — passou a pedir 09/2026 explicitamente.
 
