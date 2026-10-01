@@ -10757,6 +10757,47 @@ quebrou na virada para outubro — passou a pedir 09/2026 explicitamente.
 
 ---
 
+### Centésima trigésima sexta leva (01/10) — a fila do ponto por pessoa
+
+Ele perguntou: *"se eu clicar pra ajeitar o ponto de uma pessoa, posso sair do
+analítico dela e ir resolver de outro enquanto o sistema trabalha em segundo
+plano?"* Podia sair (a tarefa roda no servidor), mas não podia PEDIR a próxima
+pessoa: era uma por vez, e o segundo pedido era recusado. Ofereci a fila; *"sim,
+faça uma fila"*.
+
+**Migração 042** (`ponto_fila`) e módulo `ponto_fila.py`. Cada pedido —
+"Atualizar o ponto desta pessoa" ou "Lançar" — vira uma linha (esperando →
+rodando → feito | falhou) e a tela volta na hora: *"Pedido na fila — pode sair e
+pedir a próxima pessoa."* Um trabalhador só (a tarefa `ponto_pessoa`, na pista da
+pessoa da 041) resolve tudo em ordem; **uma falha não para a fila**, fica escrita
+no pedido. O mesmo pedido apertado duas vezes não entra duas vezes.
+- **A janela da pessoa** mostra o último pedido dela (na fila com N antes /
+  trabalhando: andamento / pronto / não deu, com o motivo) — quem saiu e voltou
+  vê o que aconteceu. Ao terminar, o analítico se relê com o ponto novo.
+- **A lateral da folha** ganhou o cartão "Fila do ponto" (só aparece quando há
+  pedido nas últimas 12 h), que se atualiza sozinho enquanto há algo andando.
+- **O trabalhador pode faltar** — pedido que entra quando ele está encerrando,
+  ou publicação que o mata no meio. `cutucar`, chamado a cada consulta de
+  andamento da tela, devolve à fila o que ficou "rodando" sem trabalhador e
+  dispara um. Devolver um LANÇAMENTO interrompido é seguro: o `lancar` traz o
+  ponto de novo antes e não manda o que já entrou.
+- Antes de a 042 ser aplicada, tudo segue pelo caminho anterior (uma por vez).
+
+Junto, conserto do mesmo dia: sem a fila, o pedido da segunda pessoa era gravado
+ANTES de ser recusado e podia fazer a tarefa em curso trabalhar para a pessoa
+errada — agora a pista é conferida antes de gravar.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| apertar "Aplicar atualizações do banco" (042, e 040/041 se faltarem) — publicada com o "pode" dele | ele |
+| criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
+| resposta do suporte do Mobponto sobre alterar/excluir batida | ele |
+| primeiro lançamento de verdade: UM dia de UMA pessoa, conferido no Mobponto | ele |
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

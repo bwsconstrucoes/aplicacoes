@@ -482,6 +482,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_ponto_plano": ("folha",),
     "analisesps.folha_ponto_lancar": ("folha",),
     "analisesps.folha_ponto_lancar_estado": ("folha",),
+    "analisesps.folha_ponto_fila": ("folha",),
+    "analisesps.folha_ponto_fila_item": ("folha",),
     "analisesps.folha_pagamento_gerar": ("folha",),
     "analisesps.folha_pipe_conferir": ("folha",),
     "analisesps.folha_card_lancar": ("folha",),

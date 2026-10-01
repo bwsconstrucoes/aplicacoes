@@ -69,7 +69,7 @@ MODOS = {
     # Ele decide o mês sozinho (`ponto.meses_do_ponto_diario`), por isso não
     # precisa da competência escrita pela tela.
     # O ponto de UMA pessoa — o botão do analítico. Ver `ponto.atualizar_pessoa`.
-    "ponto_pessoa": "Trazer de novo o ponto de uma pessoa (a página dela)",
+    "ponto_pessoa": "Fila do ponto por pessoa (trazer de novo e lançar batidas)",
     # ⚠️ ESTE ESCREVE NO MOBPONTO (01/10/2026): lança as batidas que faltam
     # num período, pelo analítico do funcionário. Ver `ponto_edicao.lancar`.
     "ponto_lancar": "Lançar no Mobponto as batidas que faltam (analítico da folha)",
@@ -136,6 +136,11 @@ ETAPAS = {
 # ---------------------------------------------------------------------------
 # O que a tela mostra
 # ---------------------------------------------------------------------------
+def _fila_do_ponto_pronta() -> bool:
+    from . import ponto_fila
+    return ponto_fila._pronto()
+
+
 def pista_do(modo: str) -> str:
     """"pessoa" para os modos de uma pessoa só; "geral" para o resto."""
     return "pessoa" if modo in MODOS_DA_PESSOA else "geral"
@@ -419,9 +424,23 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + (f", {c['sem_arquivo']} sem o arquivo no servidor"
                        if c.get("sem_arquivo") else ""))
 
+            elif etapa == "ponto_pessoa" and _fila_do_ponto_pronta():
+                # A FILA (migração 042): este processo é o trabalhador dela e
+                # resolve todos os pedidos esperando, um por vez. O resultado de
+                # cada um fica no próprio pedido — ver `ponto_fila`.
+                from . import ponto_fila as _fila
+                mudar_etapa("resolvendo a fila do ponto")
+                r = _fila.processar(anotar)
+                total_linhas[0] = r["feitos"]
+                recado_apoios[0] = (
+                    f"fila do ponto: {r['feitos']} pedido(s) resolvido(s)"
+                    + (f", {r['falhas']} com falha (o motivo está em cada um)"
+                       if r["falhas"] else ""))
+
             elif etapa == "ponto_pessoa":
                 # QUEM e DE QUE MÊS: vem do banco, escrito pela tela antes de
-                # disparar — mesmo motivo do "ponto".
+                # disparar — mesmo motivo do "ponto". (Caminho de antes da fila,
+                # para o intervalo entre publicar e apertar o botão da 042.)
                 from . import ponto as _ponto
                 with conexao() as conn:
                     alvo = sincronizacao._meta_ler(conn, "ponto_pessoa_alvo", "")

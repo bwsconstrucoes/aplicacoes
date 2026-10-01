@@ -2507,6 +2507,7 @@ def tela_folha_aberta(folha_id: int):
         # e valor de todo mundo. Quem não é mestre nem vê o botão.
         pode_gerar=auth.e_mestre(),
         destinos=_destinos_do_pagamento(),
+        fila_do_ponto=_fila_do_ponto_recente(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
 
@@ -2551,6 +2552,16 @@ def folha_relatorio(folha_id: int, formato: str):
     nome = fr.nome_do_arquivo(dados, formato)
     return Response(conteudo, mimetype=tipo, headers={
         "Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+def _fila_do_ponto_recente() -> list:
+    """Os pedidos recentes da fila do ponto, para a lateral. Vazia se falhar."""
+    from . import ponto_fila
+    try:
+        return [_item_para_a_tela(i) for i in ponto_fila.recentes()]
+    except Exception:  # noqa: BLE001 — bloco da lateral, não a tela
+        logger.exception("Ponto: não consegui ler a fila")
+        return []
 
 
 def _destinos_do_pagamento() -> list:
@@ -2668,6 +2679,15 @@ def folha_ponto_pessoa_atualizar():
     cpf = so_digitos(dados.get("cpf"))
     if not folha or len(cpf) != 11:
         return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
+    from . import ponto_fila
+    if ponto_fila._pronto():
+        # A FILA (migração 042): o pedido entra e a tela volta na hora, dizendo
+        # quantos estão na frente. Dá para pedir a próxima pessoa em seguida.
+        quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+        feito = ponto_fila.enfileirar(ponto_fila.PESSOA, folha["ano"], folha["mes"],
+                                      cpf, str(dados.get("nome") or ""), quem=quem)
+        ponto_fila.cutucar()
+        return {"ok": True, "fila_id": feito["id"], "posicao": feito["posicao"]}
     resultado = _trazer_o_ponto_da_pessoa(folha, cpf, dados.get("nome"))
     if not resultado.get("ok"):
         return {"ok": False, "erro": resultado.get("erro")
@@ -2768,9 +2788,6 @@ def folha_ponto_lancar():
     falta = ponto_edicao.o_que_falta()
     if falta:
         return {"ok": False, "erro": falta}, 400
-    ocupada = _pista_da_pessoa_ocupada()
-    if ocupada:
-        return ocupada, 409
     try:
         obra, texto = ponto_edicao.validar_pedido(dados.get("obra"),
                                                   dados.get("justificativa"))
@@ -2788,6 +2805,15 @@ def folha_ponto_lancar():
               "ate": str(dados.get("ate") or dados.get("de") or "")[:10],
               "obra": obra, "justificativa": texto,
               "hora_avulsa": str(dados.get("hora_avulsa") or "")[:5], "quem": quem}
+    from . import ponto_fila
+    if ponto_fila._pronto():
+        feito = ponto_fila.enfileirar(ponto_fila.LANCAR, folha["ano"], folha["mes"],
+                                      cpf, pedido["nome"], pedido, quem=quem)
+        ponto_fila.cutucar()
+        return {"ok": True, "fila_id": feito["id"], "posicao": feito["posicao"]}
+    ocupada = _pista_da_pessoa_ocupada()
+    if ocupada:
+        return ocupada, 409
     with conexao() as conn:
         sincronizacao._meta_gravar(conn, "ponto_lancar_pedido",
                                    _json.dumps(pedido, ensure_ascii=False))
@@ -2796,6 +2822,36 @@ def folha_ponto_lancar():
         return {"ok": False, "erro": resultado.get("erro")
                 or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
     return {"ok": True}
+
+
+def _item_para_a_tela(item: dict) -> dict:
+    from .formatos import momento_br
+    return {"id": item["id"], "tipo": item["tipo"], "rotulo": item["rotulo"],
+            "cpf": item["cpf"], "nome": item["nome"], "situacao": item["situacao"],
+            "posicao": item.get("posicao", 0), "progresso": item["progresso"],
+            "mensagem": item["mensagem"], "pedido_por": item["pedido_por"],
+            "criado_em": momento_br(item.get("criado_em"))}
+
+
+@bp.route("/api/folha/ponto/fila/<int:item_id>")
+@exige_consulta
+def folha_ponto_fila_item(item_id: int):
+    """Onde está um pedido da fila do ponto — e cutuca a fila (ver `cutucar`)."""
+    from . import ponto_fila
+    ponto_fila.cutucar()
+    item = ponto_fila.item(item_id)
+    if item is None:
+        return {"ok": False, "erro": "Este pedido não está mais na fila."}, 404
+    return {"ok": True, "item": _item_para_a_tela(item)}
+
+
+@bp.route("/api/folha/ponto/fila")
+@exige_consulta
+def folha_ponto_fila():
+    """Os pedidos recentes da fila do ponto, para a lateral da folha."""
+    from . import ponto_fila
+    ponto_fila.cutucar()
+    return {"ok": True, "itens": [_item_para_a_tela(i) for i in ponto_fila.recentes()]}
 
 
 @bp.route("/api/folha/ponto/lancar/estado")
@@ -2870,8 +2926,14 @@ def tela_folha_pessoa(folha_id: int, cpf: str):
         return render_template("analisesps_erro.html",
                                mensagem="Esta pessoa não está nesta folha."), 404
     if request.args.get("parcial"):
-        from . import ponto_edicao
+        from . import ponto_edicao, ponto_fila
+        try:
+            fila_da_pessoa = ponto_fila.ultimo_da_pessoa(a["cpf"])
+        except Exception:  # noqa: BLE001 — o analítico abre sem isto
+            logger.exception("Ponto: não consegui ler a fila desta pessoa")
+            fila_da_pessoa = None
         return render_template("_folha_analitico.html", a=a, parcial=True,
+                               fila_da_pessoa=fila_da_pessoa,
                                pode_operar=auth.pode_operar(),
                                # Corrigir o ponto grava no Mobponto: só o mestre.
                                editar_ponto=auth.e_mestre(),

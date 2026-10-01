@@ -132,6 +132,9 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/folha/ponto/plano"),
     ("POST", "/analisesps/api/folha/ponto/lancar"),
     ("GET",  "/analisesps/api/folha/ponto/lancar/estado"),
+    # A fila do ponto por pessoa (nome e CPF de quem está nela).
+    ("GET",  "/analisesps/api/folha/ponto/fila"),
+    ("GET",  "/analisesps/api/folha/ponto/fila/123"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),
     # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.
@@ -283,6 +286,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<cpf>", "99713349334")
                    .replace("<id_fortes>", "000013")
                    .replace("<formato>", "pdf")
+                   .replace("<int:item_id>", "123")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)

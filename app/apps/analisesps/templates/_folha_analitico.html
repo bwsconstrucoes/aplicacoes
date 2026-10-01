@@ -42,6 +42,20 @@
          >card no Pipefy ↗</a>{% endif %}
     <span class="cartao-dica recado-ponto-pessoa"></span>
   </div>
+  {# O ÚLTIMO PEDIDO DA FILA DESTA PESSOA (migração 042): quem pediu, saiu e
+     voltou vê aqui o que aconteceu — e, se ainda está na fila, acompanha. #}
+  {% set f = fila_da_pessoa %}
+  <div class="fila-recado aviso {% if f and f.situacao == 'falhou' %}erro{% elif f and f.situacao == 'feito' %}ok{% else %}atencao{% endif %}"
+       data-cpf="{{ a.cpf }}" {% if not f %}hidden{% endif %}
+       {% if f %}data-id="{{ f.id }}" data-pendente="{{ 1 if f.situacao in ('esperando', 'rodando') else 0 }}"{% endif %}>
+    {% if f %}
+      <b>{{ f.rotulo|capitalize }}</b> —
+      {% if f.situacao == 'esperando' %}na fila{% if f.posicao %}, {{ f.posicao }} pedido(s) antes deste{% else %}, é o próximo{% endif %}.
+      {% elif f.situacao == 'rodando' %}trabalhando: {{ f.progresso or 'começando' }}
+      {% elif f.situacao == 'feito' %}pronto ({{ f.fim|momento_br }}): {{ f.mensagem }}
+      {% else %}NÃO DEU ({{ f.fim|momento_br }}): {{ f.mensagem }}{% endif %}
+    {% endif %}
+  </div>
   {% endif %}
 
   {# --- DE ONDE VEIO CADA COISA: as três fontes, lado a lado ---------------- #}

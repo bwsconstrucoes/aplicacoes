@@ -1392,8 +1392,10 @@ def test_sem_o_ponto_do_mes_recusa_com_frase_util(banco_ponto, monkeypatch):
 
 
 def test_a_tarefa_de_UMA_PESSOA_roda_e_diz_o_que_fez(banco_ponto, monkeypatch):
+    """O caminho de ANTES da fila (sem a migração 042): o pedido no `meta`."""
     from app.apps.analisesps import ponto, sincronizacao, tarefas
     from app.apps.analisesps.db import conexao
+    monkeypatch.setattr(tarefas, "_fila_do_ponto_pronta", lambda: False)
     paginas = _mes_em_ordem_alfabetica()
     dublar(monkeypatch, paginas)
     ponto.carregar(2026, 9)
@@ -1464,3 +1466,68 @@ def test_cada_pista_continua_com_UMA_viva(banco_ponto, fecha_as_vivas_no_fim, mo
     with conexao() as conn:
         with _pytest.raises(Exception):
             _abrir_viva(conn, "ponto_lancar")
+
+
+# ---------------------------------------------------------------------------
+# 01/10/2026 — A FILA DO PONTO POR PESSOA (migração 042). *"Sim, faça uma fila."*
+# ---------------------------------------------------------------------------
+def test_a_fila_ENFILEIRA_em_ordem_e_nao_repete_o_mesmo_pedido(banco_ponto):
+    from app.apps.analisesps import ponto_fila as fila
+    a = fila.enfileirar(fila.PESSOA, 2026, 9, "99713349334", "GERLANIO", quem="M")
+    b = fila.enfileirar(fila.PESSOA, 2026, 9, "11122233396", "LUELIA", quem="M")
+    de_novo = fila.enfileirar(fila.PESSOA, 2026, 9, "99713349334", "GERLANIO", quem="M")
+    assert a["posicao"] == 0 and b["posicao"] == 1
+    assert de_novo["repetido"] and de_novo["id"] == a["id"]
+    assert [i["nome"] for i in fila.recentes()] == ["LUELIA", "GERLANIO"]
+
+
+def test_o_trabalhador_resolve_TODOS_e_uma_falha_nao_para_a_fila(banco_ponto, monkeypatch):
+    from app.apps.analisesps import ponto, ponto_edicao, ponto_fila as fila
+    feitos = []
+
+    def atualizar(ano, mes, cpf, nome="", anotar=None):
+        feitos.append(cpf)
+        if cpf == "11122233396":
+            raise RuntimeError("Mobponto fora do ar")
+        anotar("trazendo", "página 3")
+        return {"achou": True, "dias": 15, "pagina": 3}
+    monkeypatch.setattr(ponto, "atualizar_pessoa", atualizar)
+    monkeypatch.setattr(ponto_edicao, "lancar", lambda pedido, anotar=None: {
+        "plano": {"pulados": []}, "enviadas": [("14/09", "07:00")], "falhou": None})
+    a = fila.enfileirar(fila.PESSOA, 2026, 9, "11122233396", "LUELIA")
+    b = fila.enfileirar(fila.PESSOA, 2026, 9, "99713349334", "GERLANIO")
+    c = fila.enfileirar(fila.LANCAR, 2026, 9, "99713349334", "GERLANIO",
+                        {"de": "2026-09-14", "obra": "CRE1"})
+
+    r = fila.processar()
+    assert r == {"feitos": 2, "falhas": 1}
+    assert feitos == ["11122233396", "99713349334"], "fora de ordem"
+    assert fila.item(a["id"])["situacao"] == "falhou"
+    assert "fora do ar" in fila.item(a["id"])["mensagem"]
+    assert fila.item(b["id"])["situacao"] == "feito"
+    assert "15 dia(s)" in fila.item(b["id"])["mensagem"]
+    assert "1 batida(s) lançada(s)" in fila.item(c["id"])["mensagem"]
+    assert fila.ultimo_da_pessoa("99713349334")["id"] == c["id"]
+
+
+def test_CUTUCAR_devolve_o_que_ficou_rodando_e_dispara_o_trabalhador(
+        banco_ponto, fecha_as_vivas_no_fim, monkeypatch):
+    """A publicação mata o trabalhador no meio de um pedido; e um pedido pode
+    entrar no instante em que o trabalhador está encerrando."""
+    from app.apps.analisesps import ponto_fila as fila, tarefas
+    from app.apps.analisesps.db import conexao
+    iniciados = []
+    monkeypatch.setattr(tarefas, "_iniciar_processo",
+                        lambda modo, i: iniciados.append(modo))
+    a = fila.enfileirar(fila.PESSOA, 2026, 9, "99713349334", "GERLANIO")
+    fila._pegar_o_proximo()                   # ficou "rodando" e o processo morreu
+    assert fila.item(a["id"])["situacao"] == "rodando"
+    fila.cutucar()
+    assert fila.item(a["id"])["situacao"] == "esperando"
+    assert iniciados == ["ponto_pessoa"]
+    # Com o trabalhador vivo, cutucar não mexe em nada.
+    fila.cutucar()
+    assert iniciados == ["ponto_pessoa"]
+    with conexao() as conn:
+        conn.execute("DELETE FROM analisesps.ponto_fila")
+        conn.commit()

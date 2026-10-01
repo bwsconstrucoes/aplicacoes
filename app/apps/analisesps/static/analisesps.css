@@ -2617,3 +2617,11 @@ a.lat-critica .lat-valor { float: right; font-family: var(--fonte-dados); font-w
    parecia não fazer nada (01/10/2026). */
 @keyframes destaque-quadro { from { box-shadow: 0 0 0 3px var(--ambar); } to { box-shadow: 0 0 0 0 transparent; } }
 .lancar-ponto.destaque { animation: destaque-quadro 1.6s ease-out; }
+
+/* A fila do ponto das pessoas — 01/10/2026 (migração 042). */
+.lista-fila { list-style: none; margin: 4px 0 0; padding: 0; font-size: 13px; }
+.lista-fila li { padding: 5px 0; border-top: 1px solid var(--borda); }
+.lista-fila li:first-child { border-top: 0; }
+.lista-fila li small { display: block; color: var(--tinta-suave); }
+.lista-fila li.fila-rodando small { color: var(--azul); }
+.fila-recado { margin: 0 0 10px; }

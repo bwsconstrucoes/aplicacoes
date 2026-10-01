@@ -218,6 +218,26 @@
 </div>
 {% endif %}
 
+{# --- A FILA DO PONTO DAS PESSOAS (migração 042) ----------------------------
+   *"Sim, faça uma fila."* Os pedidos de atualizar o ponto e de lançar batidas
+   das últimas horas, com a situação de cada um. Só aparece quando há algum. #}
+<div class="cartao lateral-folha" id="fila-do-ponto" {% if not fila_do_ponto %}hidden{% endif %}>
+  <b class="lateral-titulo">Fila do ponto</b>
+  <ul class="lista-fila">
+    {% for i in fila_do_ponto %}
+      <li class="fila-{{ i.situacao }}">
+        <button type="button" class="link-btn nome-pessoa abrir-ponto"
+                data-cpf="{{ i.cpf }}" data-nome="{{ i.nome }}">{{ i.nome or i.cpf }}</button>
+        <small>{{ i.rotulo }} —
+          {% if i.situacao == 'esperando' %}na fila{% if i.posicao %} ({{ i.posicao }} antes){% endif %}
+          {% elif i.situacao == 'rodando' %}trabalhando{% if i.progresso %}: {{ i.progresso }}{% endif %}
+          {% elif i.situacao == 'feito' %}pronto
+          {% else %}<b class="ruim">não deu</b>{% endif %}</small>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+
 {# --- 3. FILTROS — o padrão das Solicitações -------------------------------- #}
 <form method="get" action="{{ url_folha }}" id="form-filtros" class="lateral-filtros">
   <div class="filtros-cab">
@@ -921,10 +941,93 @@
         .replace("CPF", encodeURIComponent(cpf)) + "?parcial=1";
       const r = await fetch(url);
       corpo.innerHTML = await r.text();
+      // O pedido desta pessoa ainda está na fila: acompanha daqui.
+      const pendente = corpo.querySelector('.fila-recado[data-pendente="1"]');
+      if (pendente) acompanharFila(+pendente.dataset.id);
     } catch (erro) {
       corpo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
     }
   }
+
+  // -------------------------------------------------------------------------
+  // A FILA DO PONTO (migração 042). Cada pedido é acompanhado pelo número dele:
+  // na fila → trabalhando → pronto/não deu. Se o analítico daquela pessoa está
+  // aberto, o recado dela anda junto e, no fim, o analítico é relido com o
+  // ponto novo. A lateral "Fila do ponto" é refeita a cada passo.
+  // -------------------------------------------------------------------------
+  const URL_FILA = "{{ url_for('analisesps.folha_ponto_fila') }}";
+  const URL_FILA_ITEM = "{{ url_for('analisesps.folha_ponto_fila_item', item_id=0) }}";
+  const acompanhando = new Set();
+
+  function textoDaFila(it) {
+    const r = it.rotulo.charAt(0).toUpperCase() + it.rotulo.slice(1);
+    if (it.situacao === "esperando")
+      return r + " — na fila" + (it.posicao ? ", " + it.posicao + " pedido(s) antes deste." : ", é o próximo.");
+    if (it.situacao === "rodando") return r + " — trabalhando: " + (it.progresso || "começando");
+    if (it.situacao === "feito") return r + " — pronto: " + it.mensagem;
+    return r + " — NÃO DEU: " + it.mensagem;
+  }
+
+  function mostrarNaPessoa(it) {
+    const el = corpo.querySelector('.fila-recado[data-cpf="' + it.cpf + '"]');
+    if (!el) return;
+    el.hidden = false;
+    el.className = "fila-recado aviso " + (it.situacao === "falhou" ? "erro"
+                   : it.situacao === "feito" ? "ok" : "atencao");
+    el.textContent = textoDaFila(it);
+  }
+
+  async function atualizarLateralFila() {
+    const caixa = document.getElementById("fila-do-ponto");
+    if (!caixa) return;
+    try {
+      const d = await (await fetch(URL_FILA)).json();
+      if (!d.ok) return;
+      caixa.hidden = !d.itens.length;
+      caixa.querySelector(".lista-fila").innerHTML = d.itens.map(i =>
+        '<li class="fila-' + esc(i.situacao) + '"><button type="button" ' +
+        'class="link-btn nome-pessoa abrir-ponto" data-cpf="' + esc(i.cpf) +
+        '" data-nome="' + esc(i.nome) + '">' + esc(i.nome || i.cpf) + "</button> <small>" +
+        esc(i.rotulo) + " — " + (i.situacao === "esperando" ? "na fila" + (i.posicao ? " (" + i.posicao + " antes)" : "")
+          : i.situacao === "rodando" ? "trabalhando" + (i.progresso ? ": " + esc(i.progresso) : "")
+          : i.situacao === "feito" ? "pronto" : '<b class="ruim">não deu</b>') +
+        "</small></li>").join("");
+      return d.itens.some(i => i.situacao === "esperando" || i.situacao === "rodando");
+    } catch (e) { return false; }
+  }
+
+  async function acompanharFila(id) {
+    if (!id || acompanhando.has(id)) return;
+    acompanhando.add(id);
+    const passo = async () => {
+      let d = null;
+      try { d = await (await fetch(URL_FILA_ITEM.replace(/0$/, String(id)))).json(); }
+      catch (e) { setTimeout(passo, 5000); return; }
+      if (!d || !d.ok) { acompanhando.delete(id); return; }
+      const it = d.item;
+      atualizarLateralFila();
+      if (it.situacao === "esperando" || it.situacao === "rodando") {
+        mostrarNaPessoa(it);
+        setTimeout(passo, 3000);
+        return;
+      }
+      acompanhando.delete(id);
+      const aberto = corpo.querySelector('.fila-recado[data-cpf="' + it.cpf + '"]');
+      if (aberto && it.situacao === "feito") await carregar(it.cpf);
+      else mostrarNaPessoa(it);
+    };
+    passo();
+  }
+
+  // Abriu a folha com pedido andando: a lateral acompanha sozinha.
+  (async function vigiarLateral() {
+    const caixa = document.getElementById("fila-do-ponto");
+    if (!caixa || caixa.hidden) return;
+    if (caixa.querySelector(".fila-esperando, .fila-rodando")) {
+      const ainda = await atualizarLateralFila();
+      if (ainda) setTimeout(vigiarLateral, 4000);
+    }
+  })();
 
   document.addEventListener("click", async e => {
     const b = e.target.closest(".abrir-ponto");
@@ -967,6 +1070,13 @@
                               nome: titulo.textContent.replace("Analítico — ", "")})});
       const d = await r.json();
       if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
+      if (d.fila_id) {
+        // A FILA: o pedido entrou; dá para sair daqui e pedir a próxima pessoa.
+        recado.textContent = "Pedido na fila — pode sair e pedir a próxima pessoa.";
+        b.disabled = false;
+        acompanharFila(d.fila_id);
+        return;
+      }
       // ⚠️ ACOMPANHA A PRÓPRIA TAREFA, não a barra geral: desde 01/10/2026 o
       // ponto de uma pessoa corre numa pista própria, junto com a carga do mês
       // — olhar a barra geral faria a tela esperar a carga terminar.
@@ -1099,6 +1209,13 @@
         body: JSON.stringify(pedido)});
       const d = await r.json();
       if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
+      if (d.fila_id) {
+        recado.textContent = "Pedido na fila — pode sair e pedir a próxima pessoa.";
+        b.disabled = false;
+        b.hidden = true;
+        acompanharFila(d.fila_id);
+        return;
+      }
       const acompanhar = async () => {
         const f = await (await fetch("{{ url_for('analisesps.folha_ponto_lancar_estado') }}")).json();
         if (f.em_andamento) {

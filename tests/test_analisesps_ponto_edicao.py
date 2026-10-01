@@ -292,7 +292,9 @@ def test_a_rota_do_PLANO_nao_grava_nada(app, configurado, monkeypatch):
 
 
 def test_a_rota_de_LANCAR_dispara_o_processo_separado(app, configurado, monkeypatch):
-    from app.apps.analisesps import sincronizacao, tarefas
+    """Sem a fila (antes da migração 042): o pedido vai para o `meta`."""
+    from app.apps.analisesps import ponto_fila, sincronizacao, tarefas
+    monkeypatch.setattr(ponto_fila, "_pronto", lambda: False)
     _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
     _dublar(monkeypatch)
     gravado, disparos = {}, []
@@ -381,8 +383,9 @@ def test_a_pagina_de_imprimir_NAO_tem_o_lancar(app, configurado, monkeypatch):
 def test_com_tarefa_de_pessoa_rodando_o_pedido_novo_NAO_SOBRESCREVE_o_anterior(
         app, configurado, monkeypatch):
     """O pedido mora num lugar só e o processo o lê ao começar: escrever o de B
-    enquanto o de A está para começar faria A trabalhar para B."""
-    from app.apps.analisesps import sincronizacao, tarefas
+    enquanto o de A está para começar faria A trabalhar para B. (Sem a fila.)"""
+    from app.apps.analisesps import ponto_fila, sincronizacao, tarefas
+    monkeypatch.setattr(ponto_fila, "_pronto", lambda: False)
     _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
     _dublar(monkeypatch)
     gravado = []
@@ -399,3 +402,44 @@ def test_com_tarefa_de_pessoa_rodando_o_pedido_novo_NAO_SOBRESCREVE_o_anterior(
         "folha_id": 1, "cpf": "99713349334"})
     assert r.status_code == 409
     assert gravado == [], "o pedido de quem está rodando foi sobrescrito"
+
+
+# ---------------------------------------------------------------------------
+# A FILA (migração 042): o pedido entra e a tela volta na hora
+# ---------------------------------------------------------------------------
+def test_com_a_FILA_o_lancamento_entra_nela_e_nao_espera(app, configurado, monkeypatch):
+    from app.apps.analisesps import ponto_fila
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _dublar(monkeypatch)
+    entrou, cutucadas = [], []
+    monkeypatch.setattr(ponto_fila, "_pronto", lambda: True)
+    monkeypatch.setattr(ponto_fila, "enfileirar", lambda tipo, ano, mes, cpf, nome="",
+                        pedido=None, quem="": entrou.append((tipo, cpf, pedido)) or
+                        {"id": 7, "posicao": 2, "repetido": False})
+    monkeypatch.setattr(ponto_fila, "cutucar", lambda: cutucadas.append(1))
+    cliente = _como_mestre(app)
+    r = cliente.post("/analisesps/api/folha/ponto/lancar", json={
+        "folha_id": 1, "cpf": "99713349334", "nome": "GERLANIO",
+        "de": "2026-09-14", "ate": "2026-09-15", "obra": "cre1",
+        "justificativa": "bateu no lugar errado"})
+    assert r.get_json() == {"ok": True, "fila_id": 7, "posicao": 2}
+    assert entrou[0][0] == "lancar" and entrou[0][2]["obra"] == "CRE1"
+    r = cliente.post("/analisesps/api/folha/ponto/pessoa", json={
+        "folha_id": 1, "cpf": "99713349334", "nome": "GERLANIO"})
+    assert r.get_json()["fila_id"] == 7 and entrou[1][0] == "pessoa"
+    assert len(cutucadas) == 2
+
+
+def test_o_analitico_mostra_o_ULTIMO_PEDIDO_da_pessoa(app, configurado, monkeypatch):
+    import datetime as _dt
+    from app.apps.analisesps import ponto_fila
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _dublar(monkeypatch)
+    monkeypatch.setattr(ponto_fila, "ultimo_da_pessoa", lambda cpf: {
+        "id": 9, "tipo": "lancar", "rotulo": "lançar batidas", "situacao": "esperando",
+        "posicao": 1, "progresso": "", "mensagem": "", "fim": None,
+        "criado_em": _dt.datetime(2026, 10, 1, 12)})
+    html = _como_mestre(app).get(
+        "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
+    assert 'data-pendente="1"' in html and 'data-id="9"' in html
+    assert "1 pedido(s) antes deste" in html

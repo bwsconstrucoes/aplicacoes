@@ -8056,7 +8056,9 @@ def test_quem_fica_numa_conta_so_NAO_entra_no_filtro_de_varias(app, monkeypatch)
 
 
 def test_atualizar_o_ponto_de_uma_pessoa_DISPARA_a_tarefa(app, monkeypatch):
-    from app.apps.analisesps import sincronizacao, tarefas
+    """O caminho de antes da fila (sem a migração 042)."""
+    from app.apps.analisesps import ponto_fila, sincronizacao, tarefas
+    monkeypatch.setattr(ponto_fila, "_pronto", lambda: False)
     _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
     gravado, disparado = {}, {}
     monkeypatch.setattr(sincronizacao, "_meta_gravar",
