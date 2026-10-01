@@ -983,4 +983,4 @@ def test_o_diagnostico_aponta_CODIGO_DIFERENTE(banco_cadastro, monkeypatch):
 def test_o_diagnostico_de_quem_NAO_esta_no_cadastro(banco_cadastro):
     from app.apps.analisesps import colaboradores as col
     d = col.por_que_nao_casou("004031", "ABRAAO MARCULA NOGUEIRA")
-    assert "não achei ninguém com esse nome" in d["diagnostico"]
+    assert "nenhum colaborador com este nome" in d["diagnostico"]

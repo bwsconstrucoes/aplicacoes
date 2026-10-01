@@ -129,7 +129,7 @@ def test_analitica_que_nao_bate_com_nenhuma_folha_e_RECUSADA(banco_analisesps, m
     from app.apps.analisesps import folha_analitica_guardada as fag
     monkeypatch.setattr(fan, "ler", lambda c: fan.interpretar(_relatorio()))
     monkeypatch.setattr(folha_arquivo, "listar", lambda teto=60: [])
-    with pytest.raises(fag.ErroDaAnalitica, match="Importe primeiro a sintética"):
+    with pytest.raises(fag.ErroDaAnalitica, match="Importe primeiro a folha sintética"):
         fag.importar(b"x")
 
 

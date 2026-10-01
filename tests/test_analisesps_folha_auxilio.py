@@ -295,7 +295,7 @@ def test_DESMARCAR_a_pessoa_manda_mais_que_o_calculo(banco_auxilio):
     r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM,
                            ajuste={"pagar": False})
     assert r["pagar"] is False
-    assert "desmarcou" in " ".join(r["motivos"])
+    assert "desmarcado manualmente" in " ".join(r["motivos"])
 
 
 def test_MARCAR_quem_o_calculo_recusou_POR_POLITICA_vale(banco_auxilio):
@@ -307,7 +307,7 @@ def test_MARCAR_quem_o_calculo_recusou_POR_POLITICA_vale(banco_auxilio):
         fx.ALIMENTACAO, ficha(situacao=col.SITUACAO_SAIU), INICIO, FIM,
         ajuste={"pagar": True})
     assert r["pagar"] is True
-    assert "mesmo assim" in " ".join(r["motivos"])
+    assert "apesar da pendência" in " ".join(r["motivos"])
     assert r["valor"] == D("330.00")
 
 
@@ -321,7 +321,7 @@ def test_MARCAR_nao_resolve_falta_de_dado_no_cadastro(banco_auxilio):
                            INICIO, FIM, ajuste={"pagar": True})
     assert r["pagar"] is False
     assert r["impossivel"] is True
-    assert "falta o dado no cadastro" in " ".join(r["motivos"])
+    assert "o cadastro está incompleto" in " ".join(r["motivos"])
 
 
 def test_ajuste_NULO_e_diferente_de_FALSO(banco_auxilio):

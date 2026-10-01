@@ -229,7 +229,7 @@ def test_arquivo_VAZIO_e_arquivo_GRANDE_demais_sao_recusados(
     monkeypatch.setattr(fa, "MAXIMO_DO_ARQUIVO", 10)
     with pytest.raises(fa.ErroDaImportacao) as erro:
         fa.importar(b"x" * 100)
-    assert "teto" in str(erro.value)
+    assert "o limite é" in str(erro.value)
 
 
 def test_os_totais_por_filial_saem_do_MAIOR_para_o_menor(banco_folha_arquivo,

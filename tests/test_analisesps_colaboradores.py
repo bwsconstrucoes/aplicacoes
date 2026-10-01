@@ -174,7 +174,8 @@ def test_coluna_de_auxilio_que_FALTA_vira_AVISO_escrito():
     assert "Transporte" in juntos
     # ⚠️ MUDOU EM 29/09/2026: o aviso dizia "este campo vai ficar em branco", que
     # não diz nada a quem lê. Agora diz o TAMANHO do problema.
-    assert "não calcula para ninguém" in juntos or "sai zerado" in juntos
+    assert ("não é calculado para nenhum colaborador" in juntos
+            or "calculado com valor zero" in juntos)
 
 
 def test_o_aviso_da_coluna_que_falta_DIZ_O_QUE_PARA_de_funcionar():
@@ -465,7 +466,7 @@ def test_ultimo_dia_JA_PASSADO_sem_saida_lancada_e_desacordo():
     r = col.situacao_no_pagamento(
         ficha(ultimo_dia=dt.date(2026, 9, 5)), PERIODO)
     assert r["situacao"] == col.SITUACAO_SAINDO
-    assert "pela metade" in r["desacordo"]
+    assert "registro incompleto" in r["desacordo"]
 
 
 def test_ultimo_dia_AINDA_POR_VIR_e_so_aviso():
@@ -534,7 +535,8 @@ def test_o_aviso_diz_O_QUE_PARA_DE_FUNCIONAR_e_nao_faz_pergunta():
     texto = " ".join(avisos)
 
     assert "Me diga o nome exato" not in texto, "não pergunta onde não dá resposta"
-    assert "não calcula para ninguém" in texto, "diz o que para de funcionar"
+    assert "não é calculado para nenhum colaborador" in texto, \
+        "diz o que para de funcionar"
     assert "ALIMENTAÇÃO" in texto
 
 
