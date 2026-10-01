@@ -10947,7 +10947,7 @@ nova quando há uma da versão anterior.
 
 | Falta | Depende de |
 |---|---|
-| **publicar** esta leva e as duas anteriores (lançar sem buscar + certificado; escolher outra obra) — **com migração 043** | ele dizer "pode" |
+| ~~publicar~~ — **publicada em 01/10/2026** (main em `6ecc3c3`, com as levas 139 e 140). Conferir que ele apertou "Aplicar atualizações do banco" (043) | ele |
 | depois do botão: "Atualizar cadastro" (geral) para trazer a data de nascimento de todos | ele |
 | soltar a folha analítica de 09/2026 | ele |
 | decidir se passa a importar só a analítica | ele |
