@@ -747,6 +747,18 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 01/10/2026 — a suíte em paralelo caía inteira no GitHub (driver do banco)
+
+Desde a mudança de 29/09 (cada trabalhador do `-n auto` no seu banco), o
+GitHub Actions falhava na `main` com 7.889 erros de preparação: o
+`_banco_do_trabalhador` do `tests/conftest.py` abria a conexão com
+`postgresql://` puro, e o SQLAlchemy 2.1 passou a ler isso como o driver
+`psycopg` (versão 3), que não está no `requirements.txt` — só o `psycopg2`.
+Rodando sem `-n`, o caminho nem é usado; por isso passou despercebido. Agora
+o driver vai explícito, como o `db.py` de cada área já faz. A produção não foi
+afetada: as três áreas com banco convertem a URL para `psycopg2` antes de
+conectar. Achado e corrigido pelo chat do painel.
+
 ### 29/09/2026 — o FITID do Bradesco é um contador do arquivo (aviso para o ERP)
 
 Achado no Análise de SPs (`HISTORICO.md`, leva 123): o Bradesco escreve no
