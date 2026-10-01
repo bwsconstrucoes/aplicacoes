@@ -514,7 +514,7 @@ def lancar(analise_id: int, quem: str = "") -> dict:
         raise ErroDosCards("nenhum card foi criado: " + " ".join(vista["bloqueios"]))
     if vista["ja_lancado"]:
         raise ErroDosCards(
-            "pagamento já lançado no Pipefy. Para relançar, cancele os cards "
+            "este pagamento já foi lançado no Pipefy. Para relançar, cancele os cards "
             "no Pipefy e gere os arquivos novamente.")
 
     r = rodada(analise_id)

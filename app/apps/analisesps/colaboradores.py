@@ -748,7 +748,7 @@ def atualizar(anotar=None) -> dict:
                 f"de uma ficha ({', '.join(ficha['repetidos'][:5])}"
                 f"{'…' if len(ficha['repetidos']) > 5 else ''}). Considerada a "
                 "primeira ocorrência; até a correção, o salário de um colaborador "
-                "pode ser apropriado na obra de outro.")
+                "pode ser apropriado na obra de outra pessoa.")
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou gravar o ID Fortes da ficha")
         avisos.append(f"não foi possível gravar o código do Fortes das fichas: {e}")
@@ -1034,10 +1034,10 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
             f"{len(repetidos)} código(s) do Fortes aparecem para mais de uma "
             f"pessoa na aba \"{ABA_ID_FORTES}\" ({', '.join(repetidos[:5])}"
             f"{'…' if len(repetidos) > 5 else ''}). Até a correção, o "
-            "salário de um colaborador pode ser apropriado na obra de outro.")
+            "salário de um colaborador pode ser apropriado na obra de outra pessoa.")
     if sem_cadastro:
         avisos.append(
-            f"{len(sem_cadastro)} código(s) do Fortes pertencem a pessoas fora do "
+            f"{len(sem_cadastro)} código(s) do Fortes pertencem a quem não está no "
             "cadastro. A folha não localizará o colaborador correspondente a "
             "esses códigos.")
     if divergentes:
@@ -1297,14 +1297,14 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
     if saida and saida <= ate:
         return resposta(
             SITUACAO_SAIU,
-            f"desligado em {saida.strftime('%d/%m/%Y')}. Folha, diária e auxílio "
-            "deste período não devem ser pagos por este sistema.",
+            f"desligado em {saida.strftime('%d/%m/%Y')}. Não pague folha, diária "
+            "nem auxílio deste período por este sistema.",
             True)
     if fase_diz_desligado(fase):
         return resposta(
             SITUACAO_SAIU,
-            "a fase no Pipefy indica desligado. Não efetue pagamento por este "
-            "sistema até a confirmação.",
+            "a fase no Pipefy indica desligado. Não pague por este sistema "
+            "até a confirmação.",
             True)
 
     # 2. ESTÁ SAINDO — pode haver valor devido, mas não o período inteiro, e
@@ -1313,7 +1313,7 @@ def situacao_no_pagamento(ficha: dict, ate=None) -> dict:
         return resposta(
             SITUACAO_SAINDO,
             f"desligamento em {saida.strftime('%d/%m/%Y')}. Verifique os valores devidos "
-            "somente até essa data; verbas rescisórias não são pagas por este sistema.",
+            "somente até essa data; a rescisão não é paga por este sistema.",
             False)
     if ultimo and ultimo <= ate:
         return resposta(

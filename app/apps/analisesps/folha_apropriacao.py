@@ -523,7 +523,7 @@ def apropriar(linhas, dias_por_cpf=None, regras_por_cpf=None,
                 "pendente_cadastro": True, "origem": "",
                 "por_obra": [], "por_dia": [],
                 "criticas": [
-                    f"o ID Fortes {id_fortes} não consta no cadastro de "
+                    f"o ID Fortes {id_fortes} não está no cadastro de "
                     "colaboradores. Sem o ID não há CPF, e sem CPF o pagamento "
                     "não pode ser efetuado. Informe o ID no cadastro ou vincule o CPF aqui."],
             }

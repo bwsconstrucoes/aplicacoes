@@ -202,7 +202,7 @@ def preparar(ano: int, mes: int, tipo: str, verbas, destino: str,
         "pode_juntar": destino == geracao.BEEVALE,
         "motivo_nao_junta": (
             "" if destino == geracao.BEEVALE else
-            "o SomaPay não aceita CPF repetido no mesmo arquivo; cada "
+            "o SomaPay não aceita o mesmo CPF duas vezes no arquivo; cada "
             "verba é gerada em arquivo próprio."),
     }
 

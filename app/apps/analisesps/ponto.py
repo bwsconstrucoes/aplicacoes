@@ -189,7 +189,7 @@ def _cabecalhos() -> dict:
             "credenciais do Mobponto não configuradas. Crie MOBPONTO_AUTHORIZATION e "
             "MOBPONTO_API_KEY no Render — os valores constam nos Apps Script das "
             "planilhas do ponto. Copie-os diretamente para o Render e, em seguida, "
-            "substitua a chave na origem.")
+            "troque a chave na origem.")
     return {"Authorization": auth, "api-key": chave,
             "api-version": VERSAO_DA_API}
 
@@ -501,7 +501,7 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
         f"não foi possível ler a página {pagina} do ponto de {mes:02d}/{ano} após "
         f"{TENTATIVAS} tentativas em cerca de {sum(ESPERAS_ENTRE_TENTATIVAS) // 60} "
         f"minutos: {ultimo}. O que já foi importado permanece gravado — a próxima "
-        f"carga continua a partir da página {pagina}.")
+        f"carga continua da página {pagina}.")
 
 
 def _dias_do_funcionario(bruto) -> tuple:

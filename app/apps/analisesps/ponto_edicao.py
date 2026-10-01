@@ -251,7 +251,7 @@ def planejar(dias_do_ponto, de, ate, feriados=None, ferias=None,
             if len(existentes) >= 4:
                 linha["motivo"] = "o dia já possui as quatro batidas"
             elif any(abs(_minutos(h) - _minutos(avulsa)) <= 5 for h in existentes):
-                linha["motivo"] = f"já existe batida próxima às {avulsa}"
+                linha["motivo"] = f"já existe batida perto das {avulsa}"
             else:
                 linha["lancar"] = [avulsa]
         else:
@@ -430,7 +430,7 @@ def _mandar(payload: dict) -> tuple:
         if _erro_de_certificado(e):
             return False, (
                 "o certificado do Mobponto não pôde ser verificado e a cadeia não pôde "
-                "ser completada automaticamente. Nenhuma batida foi gravada. Correção: "
+                "ser completada automaticamente. Nada foi gravado. Correção: "
                 "informar o certificado intermediário da cadeia em MOBPONTO_CA_EXTRA, no Render "
                 f"(detalhe: {e})")
         return False, f"não foi possível comunicar com o Mobponto: {e}"

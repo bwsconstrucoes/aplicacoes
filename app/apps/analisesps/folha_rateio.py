@@ -108,7 +108,7 @@ def conferir_obras(obras) -> list:
         if not nome:
             continue
         if nome in vistas:
-            raise ErroDoRateio(f'A obra "{nome}" está duplicada na regra.')
+            raise ErroDoRateio(f'A obra "{nome}" consta duas vezes na regra.')
         vistas.add(nome)
         resto = bool((bruta or {}).get("resto"))
         bruto = (bruta or {}).get("percentual")
@@ -454,16 +454,16 @@ def gravar(dados: dict, quem: str = "") -> int:
             continue
         if not cpf_valido(cpf):
             raise ErroDoRateio(
-                f"O CPF {cpf_bonito(cpf) or cpf} é inválido — verifique os "
+                f"O CPF {cpf_bonito(cpf) or cpf} não é válido — verifique os "
                 "dígitos. Com CPF incorreto a regra não localiza o colaborador, que "
                 "passa a ser apropriado pelo ponto sem qualquer alerta.")
         if cpf in vistos:
             raise ErroDoRateio(
-                f"O CPF {cpf_bonito(cpf)} está duplicado nesta regra.")
+                f"O CPF {cpf_bonito(cpf)} consta duas vezes nesta regra.")
         vistos.add(cpf)
         pessoas.append((cpf, str((bruta or {}).get("nome") or "").strip()[:120]))
     if not pessoas:
-        raise ErroDoRateio("Selecione ao menos um colaborador para a regra.")
+        raise ErroDoRateio("Selecione ao menos uma pessoa para a regra.")
 
     regra_id = dados.get("id")
     regra_id = int(regra_id) if str(regra_id or "").strip().isdigit() else None

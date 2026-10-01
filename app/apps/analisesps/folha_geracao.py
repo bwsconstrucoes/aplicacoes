@@ -209,7 +209,7 @@ def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
                 '(aba "C. Diários"); preencha a conta da obra antes de gerar.')
         if len(itens) > MAXIMO_POR_ARQUIVO:
             criticas.append(
-                f"{len(itens)} linhas em um único arquivo, acima do limite de "
+                f"{len(itens)} linhas em um único arquivo, acima do teto de "
                 f"{MAXIMO_POR_ARQUIVO}. Quantidade incompatível com um pagamento.")
 
         repetido = _cpf_repetido(itens)
