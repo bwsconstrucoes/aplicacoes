@@ -329,8 +329,14 @@ def _banco_do_trabalhador(url: str, worker_id: str) -> str:
 
     nome = f"{url.rsplit('/', 1)[1]}_{worker_id}"
     base = url.rsplit("/", 1)[0]
+    # O driver vai explícito, como em `db.py` de cada área: o SQLAlchemy 2.1
+    # passou a entender `postgresql://` como `psycopg` (versão 3), que não está
+    # instalado — e a suíte em paralelo caiu inteira no GitHub em 01/10/2026.
+    admin = f"{base}/postgres"
+    if admin.startswith("postgresql://"):
+        admin = admin.replace("postgresql://", "postgresql+psycopg2://", 1)
     # A criação de banco não roda dentro de transação: `AUTOCOMMIT` é obrigatório.
-    eng = sqlalchemy.create_engine(f"{base}/postgres", isolation_level="AUTOCOMMIT")
+    eng = sqlalchemy.create_engine(admin, isolation_level="AUTOCOMMIT")
     with eng.connect() as conn:
         existe = conn.execute(sqlalchemy.text(
             "SELECT 1 FROM pg_database WHERE datname = :n"), {"n": nome}).first()

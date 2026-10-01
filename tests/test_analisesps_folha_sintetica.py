@@ -13,6 +13,7 @@ divergência do rodapé (491 pessoas / 430.129,75 no corpo contra 507 /
 """
 from __future__ import annotations
 
+import os
 from decimal import Decimal as D
 
 import pytest
@@ -184,7 +185,9 @@ def test_o_arquivo_REAL_de_08_2026_e_lido_inteiro(arquivo):
     Pulado quando o arquivo não está na máquina (ele veio por anexo, não fica no
     repositório: é folha de pagamento, com nome e valor de 491 pessoas)."""
     import pathlib
-    if not pathlib.Path(arquivo).exists():
+    # `os.path.isfile`, e não `Path.exists()`: no GitHub a pasta do anexo nem
+    # pode ser lida, e `exists()` levanta PermissionError em vez de dizer não.
+    if not os.path.isfile(arquivo):
         pytest.skip("o arquivo real não está nesta máquina")
 
     lida = fs.ler(pathlib.Path(arquivo).read_bytes())

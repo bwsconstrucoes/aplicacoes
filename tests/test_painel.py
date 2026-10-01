@@ -1893,3 +1893,53 @@ def test_os_dividendos_abrem_os_lancamentos(painel):
     assert (l["data"], l["codigo"], l["socio"], l["documento"]) == (
         "2025-06-30", 4455, "SÓCIO A", "DIV-06")
     assert painel.get("/painel/dre/dividendos?sentido=x").get_json()["sentido"] == "pago"
+
+
+# ===========================================================================
+# O PDF não espreme número — 01/10/2026
+# ===========================================================================
+# O dono: "na parte mais analítica fica muito imprensado e não aparece; em
+# coluna de valor sai só o R$ e não sai o número". O Analítico tem 23 colunas;
+# repartidas numa folha, "-R$ 3.000,00" virava "-R$ 3." e a data "01/0.".
+
+def _pdf_do_analitico_pesado():
+    import datetime as _dt
+    from app.apps.painel import excel, pdf
+    linhas = [{
+        "data": _dt.date(2026, 5, 11), "data_vencimento": _dt.date(2026, 5, 1),
+        "data_pagamento": _dt.date(2026, 5, 11), "atraso": 10,
+        "credor": "SH FORMAS ANDAIMES E ESCORAMENTOS LTDA", "cnpj": "12.345.678/0001-90",
+        "grupo": "Despesas Administrativas", "categoria": "Locação de Equipamentos",
+        "obra": "MERCADOBARBALHA", "projeto": "MERCADO BARBALHA",
+        "documento": "SP1343985444", "observacao": "locação de andaimes de abril",
+        "conta": "Bradesco 22069-8", "situacao": "Pago",
+        "link": "https://app.pipefy.com/open-cards/1", "vencimento": "Quitado",
+        "pedido": "PC-4471", "medicao": "Medição 12", "lancamento": 11204772585,
+        "pago": -1234567.89, "a_pagar": -987654.32, "juros": -72.38,
+        "multa": -1500.0, "total": -2222222.21} for _ in range(60)]
+    return pdf.montar([("Despesas Analitico", excel.COLUNAS["analitico"], linhas)],
+                      "Relatório Financeiro BWS Construções")
+
+
+def test_o_pdf_nao_corta_valor_nem_data():
+    import io as _io
+    import pypdf
+    leitor = pypdf.PdfReader(_io.BytesIO(_pdf_do_analitico_pesado()))
+    texto = "\n".join(p.extract_text() for p in leitor.pages)
+    for inteiro in ("-R$ 1.234.567,89", "-R$ 987.654,32", "-R$ 72,38",
+                    "-R$ 1.500,00", "-R$ 2.222.222,21", "11/05/2026", "01/05/2026"):
+        assert inteiro in texto, f"{inteiro} saiu cortado"
+    # o número do título no OMIE sai como se digita no OMIE
+    assert "11204772585" in texto and "11.204.772.585" not in texto
+
+
+def test_o_pdf_diz_quais_colunas_ficaram_de_fora():
+    import io as _io
+    import pypdf
+    leitor = pypdf.PdfReader(_io.BytesIO(_pdf_do_analitico_pesado()))
+    texto = " ".join(p.extract_text() for p in leitor.pages).replace("\n", " ")
+    assert "ficaram de fora" in texto and "CNPJ/CPF" in texto
+    assert "planilha" in texto
+    # o que identifica e o dinheiro nunca saem
+    for fica in ("Credor", "Pago", "Total", "Obra"):
+        assert fica in texto

@@ -632,7 +632,9 @@ def test_secao_vazia_avisa_em_vez_de_sumir():
 def test_texto_comprido_e_cortado_para_nao_invadir_a_coluna_vizinha():
     """Sem cortar, o `fpdf2` escreve por cima da coluna do lado e a tabela vira
     uma mancha ilegível justamente nas linhas mais longas."""
-    nome = "Fornecedor com um nome absurdamente comprido " * 4
+    # Comprido o bastante para não caber nem com a folha inteira para ele:
+    # desde 01/10/2026 a coluna de texto ganha a largura que sobrar na página.
+    nome = "Fornecedor com um nome absurdamente comprido " * 12
     texto = _texto_do_pdf(pdf.montar(
         [("T", [("n", "Credor"), ("v", "Valor")], [{"n": nome, "v": -1.0}])], "R"))
     assert nome not in texto, "o nome inteiro não cabia e tem de sair cortado"

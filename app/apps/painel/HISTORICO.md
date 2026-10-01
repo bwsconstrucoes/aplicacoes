@@ -2182,6 +2182,32 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## O PDF espremia os números — 01/10/2026
+
+O dono: *"na parte mais analítica fica muito imprensado e não aparece; em
+coluna de valor sai só o R$ e não sai o número."* Reproduzido: o Despesas
+Analítico tem 23 colunas, e o PDF repartia a folha deitada entre todas, pela
+contagem de letras. A coluna de valor ficava com ~11 mm e o corte escrevia
+"-R$ 3." no lugar de "-R$ 3.000,00"; a data saía "01/0."; os títulos das
+colunas invadiam o vizinho.
+
+**Conserto (vale para todo PDF do painel, `pdf.py`)**:
+- **Dinheiro, data e número nunca são cortados.** A coluna ganha a largura
+  do maior valor dela, MEDIDA na fonte do PDF (`get_string_width`), e se por
+  algum motivo não couber a letra diminui só naquela célula.
+- **O texto divide o que sobra**, com um mínimo de 21 mm, e é cortado medindo
+  — não estimando por letra.
+- **Não cabendo, saem colunas de detalhe** numa ordem fixa
+  (`ORDEM_DE_SAIDA`: CNPJ, observação, pedido, medição, situação do
+  vencimento, projeto, …) e só no fim a letra desce (6,5 → 6 → 5,5). Uma nota
+  no topo da seção diz o que ficou de fora; a planilha continua com tudo.
+- **O título da coluna quebra em até duas linhas** em vez de invadir.
+- **O nº do título no OMIE sai sem ponto de milhar**, como se digita lá.
+
+No Analítico com valores na casa do milhão, saem do PDF: CNPJ, observação,
+pedido, medição, situação do vencimento e projeto. Teste com 60 linhas
+pesadas confere que nenhum valor nem data sai cortado.
+
 ## Dividendos: clicar no valor e ver os lançamentos — 24/09/2026
 
 O dono: *"não tem nenhum canto que eu clique e me sejam listados os
