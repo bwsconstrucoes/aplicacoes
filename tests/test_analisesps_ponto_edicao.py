@@ -175,6 +175,9 @@ def _dublar(monkeypatch, respostas=(), dias_antes=None, dias_depois=None):
                         lambda a, m, c: list(dias_antes or []))
     monkeypatch.setattr(folha_calendario, "feriados_no_periodo", lambda *a: [])
     monkeypatch.setattr(folha_calendario, "ferias_que_cruzam", lambda *a: [])
+    # As obras da C. Diários — as mesmas do Mobponto.
+    monkeypatch.setattr(ponto_edicao, "obras_permitidas",
+                        lambda: ["CRE1", "XYZ9", "SEDE"])
     return mandados, trazidos
 
 
@@ -221,6 +224,35 @@ def test_PARA_na_primeira_que_falha(configurado, monkeypatch):
     recado = pe.recado_do_lancamento(feito)
     assert "PAROU em 16/09 12:00" in recado and "confira no Mobponto" in recado
     assert len(trazidos) == 2, "entrou uma: o ponto tem de vir de novo"
+
+
+def test_obra_FORA_DA_C_DIARIOS_e_recusada_antes_de_mandar(configurado, monkeypatch):
+    """*"As obras do Mobponto são as mesmas do cadastro C. Diários."*"""
+    from app.apps.analisesps import ponto_edicao as pe
+    mandados, _ = _dublar(monkeypatch)
+    with pytest.raises(pe.ErroDaEdicao, match="C. Diários"):
+        pe.lancar(_pedido(obra="OBRA INVENTADA"))
+    assert mandados == []
+
+
+def test_sem_a_lista_da_C_DIARIOS_nada_e_lancado(configurado, monkeypatch):
+    from app.apps.analisesps import ponto_edicao as pe
+    mandados, _ = _dublar(monkeypatch)
+    monkeypatch.setattr(pe, "obras_permitidas", lambda: [])
+    with pytest.raises(pe.ErroDaEdicao, match="planilhas de apoio"):
+        pe.lancar(_pedido())
+    assert mandados == []
+
+
+def test_a_lista_de_obras_e_o_CODIGO_PRIMARIO_das_duas_tabelas(monkeypatch):
+    from app.apps.analisesps import db, ponto_edicao as pe
+
+    def falso(sql, params=()):
+        if "contas_diarios" in sql:
+            return [("cre1",), ("XYZ9 ",)]
+        return [("CRE1",), ("SEDE",), ("",)]
+    monkeypatch.setattr(db, "consultar", falso)
+    assert pe.obras_permitidas() == ["CRE1", "SEDE", "XYZ9"]
 
 
 def test_sem_achar_a_pessoa_NAO_LANCA_NADA(configurado, monkeypatch):
@@ -305,13 +337,29 @@ def test_lancar_no_mobponto_e_SO_DO_MESTRE(app):
 
 def test_o_analitico_tem_o_quadro_de_LANCAR(app, configurado, monkeypatch):
     _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _dublar(monkeypatch)
     html = _como_mestre(app).get(
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
     assert 'id="lancar-ponto"' in html and "Ver o que vai ser lançado" in html
+    # A obra é escolhida numa LISTA da C. Diários, com a do ponto já marcada.
+    assert '<select class="lancar-obra"' in html
+    assert '<option value="CRE1" selected>' in html
+    assert '<option value="SEDE"' in html
     assert 'class="link-btn lancar-dia"' in html
     assert 'value="2026-09-01"' in html and 'value="2026-09-15"' in html
     # O quadro vem ANTES da tabela do dia a dia: não se rola a tela para achar.
     assert html.index('id="lancar-ponto"') < html.index("ponto-dia-a-dia")
+
+
+def test_sem_a_lista_da_C_DIARIOS_o_quadro_DIZ_e_nao_oferece(app, configurado, monkeypatch):
+    from app.apps.analisesps import ponto_edicao as pe
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _dublar(monkeypatch)
+    monkeypatch.setattr(pe, "obras_permitidas", lambda: [])
+    html = _como_mestre(app).get(
+        "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
+    assert "planilhas de apoio" in html
+    assert "Ver o que vai ser lançado" not in html
 
 
 def test_sem_configuracao_o_quadro_DIZ_O_QUE_FALTA(app, monkeypatch):

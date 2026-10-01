@@ -269,13 +269,50 @@ def planejar(dias_do_ponto, de, ate, feriados=None, ferias=None,
             "pulados": [d for d in dias if not d["lancar"]]}
 
 
-def validar_pedido(obra: str, justificativa: str) -> tuple:
-    """A obra e a justificativa, limpas — ou a recusa, antes de qualquer envio."""
+def obras_permitidas() -> list:
+    """As obras que podem ir para o Mobponto: os CÓDIGOS PRIMÁRIOS da aba
+    "C. Diários".
+
+    O dono, 01/10/2026: *"As obras do Mobponto são as mesmas do cadastro C.
+    Diários. Usar elas como base para seleção."* As duas tabelas que vêm dessa aba
+    guardam o código primário: `contas_diarios.codigo` e
+    `referencias_rateio.nome` (ver `folha_pagamento.conta_por_obra`). O código do
+    OMIE, que também está lá, NÃO entra: não é o que o ponto usa.
+
+    Lista vazia quando as planilhas de apoio não foram lidas — e aí nada é
+    lançado (ver `validar_pedido`)."""
+    from .db import consultar
+
+    def _chave(texto) -> str:
+        return " ".join(str(texto or "").split()).upper()
+
+    obras = set()
+    for sql in ("SELECT codigo FROM analisesps.contas_diarios",
+                "SELECT nome FROM analisesps.referencias_rateio WHERE tipo = 'obra'"):
+        try:
+            obras.update(_chave(l[0]) for l in consultar(sql) if _chave(l[0]))
+        except Exception:  # noqa: BLE001 — tabela pode não existir em base nova
+            logger.exception("Ponto: não consegui ler as obras da C. Diários")
+    return sorted(obras)
+
+
+def validar_pedido(obra: str, justificativa: str, permitidas=None) -> tuple:
+    """A obra e a justificativa, limpas — ou a recusa, antes de qualquer envio.
+
+    ⚠️ A OBRA TEM DE ESTAR NA C. DIÁRIOS. Texto livre mandaria ao Mobponto um local
+    que ele não conhece — com sorte recusado, sem sorte gravado errado."""
     obra = " ".join(str(obra or "").split()).upper()
     if not obra:
         raise ErroDaEdicao("escolha a obra.")
-    if len(obra) > 120:
-        raise ErroDaEdicao("o nome da obra está comprido demais.")
+    permitidas = obras_permitidas() if permitidas is None else permitidas
+    if not permitidas:
+        raise ErroDaEdicao(
+            'não tenho a lista de obras da aba "C. Diários" — atualize as '
+            "planilhas de apoio em Configurações e tente de novo. Sem ela, nada "
+            "é lançado.")
+    if obra not in permitidas:
+        raise ErroDaEdicao(f'a obra "{obra}" não está na aba "C. Diários". '
+                           "Escolha uma da lista.")
     texto = " ".join(str(justificativa or "").split())
     if len(texto) < MINIMO_DA_JUSTIFICATIVA:
         raise ErroDaEdicao("escreva a justificativa — ela vai para o Mobponto "

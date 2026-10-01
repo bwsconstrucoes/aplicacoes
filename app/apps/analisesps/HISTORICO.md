@@ -10653,6 +10653,14 @@ por vez (meio segundo entre elas), **para na primeira que falhar**, e no fim tra
 o ponto outra vez para a folha recalcular. Sem nova tentativa automática:
 gravar de novo depois de tempo esgotado pode duplicar a batida.
 
+- **A obra é escolhida numa LISTA, a da aba "C. Diários"** (o dono: *"As obras
+  do Mobponto são as mesmas do cadastro C. Diários. Usar elas como base para
+  seleção."*). São os códigos primários de `contas_diarios` e
+  `referencias_rateio` (`ponto_edicao.obras_permitidas`); vem marcada a obra de
+  mais dias do ponto da pessoa, ou a do cadastro. Obra fora da lista é recusada
+  no servidor também, e **sem a lista nada é lançado** — texto livre mandaria ao
+  Mobponto um local que ele não conhece. (Ele escreveu "deleção"; li como
+  "seleção", pelo contexto — dito na resposta.)
 - **O contrato é o do `local_backend.py` dele**: `CAD_EDT_PONTO`, ação `C`
   (incluir). **Mudar a obra de uma batida que já existe NÃO está feito**: não há,
   no material dele, a ação de editar nem o identificador da batida. Perguntado.

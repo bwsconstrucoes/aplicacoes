@@ -2846,7 +2846,11 @@ def tela_folha_pessoa(folha_id: int, cpf: str):
                                pode_operar=auth.pode_operar(),
                                # Corrigir o ponto grava no Mobponto: só o mestre.
                                editar_ponto=auth.e_mestre(),
-                               falta_para_editar=ponto_edicao.o_que_falta())
+                               falta_para_editar=ponto_edicao.o_que_falta(),
+                               # A lista de obras é a da C. Diários — as mesmas
+                               # do Mobponto (o dono, 01/10/2026).
+                               obras_do_mobponto=(ponto_edicao.obras_permitidas()
+                                                  if auth.e_mestre() else []))
     return render_template(
         "analisesps_folha_pessoa.html", a=a, aba="folha", subaba="importar",
         gerado_em=agora().strftime("%d/%m/%Y %H:%M"),

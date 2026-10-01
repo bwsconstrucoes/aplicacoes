@@ -165,6 +165,10 @@
     <b class="lateral-titulo">Lançar ponto no Mobponto</b>
     {% if falta_para_editar %}
       <div class="aviso atencao" style="margin:6px 0 0">{{ falta_para_editar }}</div>
+    {% elif not obras_do_mobponto %}
+      <div class="aviso atencao" style="margin:6px 0 0">Não tenho a lista de obras
+        da aba "C. Diários" — atualize as planilhas de apoio em Configurações.
+        Sem ela, nada é lançado.</div>
     {% else %}
       <p class="cartao-dica">Completa só o que falta em cada dia, no horário padrão
         (7h, 12h, 13h e 17h — 16h na sexta). Fim de semana, feriado, férias, falta
@@ -175,8 +179,17 @@
                          min="{{ a.periodo_iso[0][:8] }}01" max="{{ a.periodo_iso[1] }}"></label>
         <label>Até <input type="date" class="lancar-ate" value="{{ a.periodo_iso[1] }}"
                           min="{{ a.periodo_iso[0][:8] }}01" max="{{ a.periodo_iso[1] }}"></label>
-        <label class="lancar-obra-campo">Obra <input type="text" class="lancar-obra"
-                         list="obras-da-folha" placeholder="ex.: CRE1"></label>
+        {# A OBRA SAI DA LISTA DA C. DIÁRIOS — as mesmas do Mobponto. Vem
+           escolhida a obra do ponto da pessoa (a de mais dias) ou, sem ponto, a
+           do cadastro, quando estão na lista. #}
+        {% set sugerida = ((a.por_obra|sort(attribute='dias', reverse=true)|first).obra if a.por_obra else (a.cadastro.obra or ''))|upper %}
+        <label class="lancar-obra-campo">Obra (C. Diários)
+          <select class="lancar-obra" data-sem-busca>
+            <option value="">escolha a obra</option>
+            {% for o in obras_do_mobponto %}
+              <option value="{{ o }}" {% if o == sugerida %}selected{% endif %}>{{ o }}</option>
+            {% endfor %}
+          </select></label>
         <label>Só uma batida às <input type="time" class="lancar-avulsa"
                          title="deixe vazio para completar o dia inteiro"></label>
         <label class="lancar-just-campo">Justificativa
