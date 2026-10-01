@@ -470,3 +470,129 @@ def test_tirar_a_ULTIMA_SP_deixa_o_lote_realmente_vazio():
 
     assert por_marcacao.strip() == "", f"sobrou: {por_marcacao!r}"
     assert por_status.strip() == "", f"sobrou: {por_status!r}"
+
+
+# ---------------------------------------------------------------------------
+# A marca de "já está no lote", nas Solicitações
+# ---------------------------------------------------------------------------
+# Pedido do dono em 25/09/2026. O que se testa aqui não é a cor da tag: é
+# QUEM ela acusa. A parte que evita dinheiro saindo duas vezes é a SP que está
+# no lote de OUTRA pessoa — e essa é a mais fácil de quebrar sem ninguém ver,
+# porque no dia a dia quase tudo cai no caso "é o meu lote mesmo".
+def _lotes(monkeypatch, linhas, por_pessoa=True):
+    """Finge a tabela `analisesps.lote`: (pessoa, conteúdo, salvo_por)."""
+    from app.apps.analisesps import db, lote as mod
+
+    monkeypatch.setattr(mod, "por_pessoa", lambda: por_pessoa)
+    monkeypatch.setattr(db, "consultar", lambda *a, **k: list(linhas))
+
+
+def test_a_SP_que_esta_no_MEU_lote_vem_marcada_com_o_grupo(monkeypatch):
+    from app.apps.analisesps import lote
+
+    _lotes(monkeypatch, [("marcelo", "Pagar amanhã\n1384831053", "Marcelo")])
+    onde = lote.onde_no_lote(["1384831053", "1384844943"], "marcelo")
+
+    assert onde["1384831053"]["minha"] is True
+    assert onde["1384831053"]["grupos"] == ["Pagar amanhã"]
+    assert onde["1384831053"]["outros"] == []
+    # A que não está em lote nenhum simplesmente não aparece.
+    assert "1384844943" not in onde
+
+
+def test_a_SP_no_lote_de_OUTRA_pessoa_acusa_o_nome_dela(monkeypatch):
+    """A marca que evita pagar duas vezes. Sem o nome, quem vê a tag pensa que
+    foi ele mesmo que separou e tira do lote do colega sem saber."""
+    from app.apps.analisesps import lote
+
+    _lotes(monkeypatch, [("ana", "Pagar amanhã\n1384831053", "Ana Paula")])
+    onde = lote.onde_no_lote(["1384831053"], "marcelo")
+
+    assert onde["1384831053"]["minha"] is False
+    assert onde["1384831053"]["outros"] == ["Ana Paula"]
+
+
+def test_a_mesma_SP_em_DOIS_lotes_acusa_os_dois(monkeypatch):
+    """É o caso pior de todos: eu separei, e alguém também. A tag tem de dizer
+    as duas coisas, senão some justamente o aviso."""
+    from app.apps.analisesps import lote
+
+    _lotes(monkeypatch, [("marcelo", "Meu grupo\n1384831053", "Marcelo"),
+                         ("ana", "Pagar hoje\n1384831053", "Ana Paula")])
+    onde = lote.onde_no_lote(["1384831053"], "marcelo")
+
+    assert onde["1384831053"]["minha"] is True
+    assert onde["1384831053"]["grupos"] == ["Meu grupo"]
+    assert onde["1384831053"]["outros"] == ["Ana Paula"]
+
+
+def test_sem_salvo_por_o_nome_cai_na_chave_da_pessoa(monkeypatch):
+    """Lote gravado antes de a tela guardar quem salvou. Dizer "no lote de
+    (ninguém)" seria pior do que dizer a chave."""
+    from app.apps.analisesps import lote
+
+    _lotes(monkeypatch, [("ana", "1384831053", None)])
+    onde = lote.onde_no_lote(["1384831053"], "marcelo")
+
+    assert onde["1384831053"]["outros"] == ["ana"]
+
+
+def test_lote_vazio_e_lista_vazia_nao_consultam_nada(monkeypatch):
+    from app.apps.analisesps import lote
+
+    _lotes(monkeypatch, [("ana", "   \n\n", "Ana Paula")])
+    assert lote.onde_no_lote(["1384831053"], "marcelo") == {}
+    assert lote.onde_no_lote([], "marcelo") == {}
+
+
+def test_banco_fora_nao_derruba_a_tela_de_solicitacoes(monkeypatch):
+    """Sem a marca as Solicitações continuam servindo; com um erro no meio,
+    não. A escolha é perder a tag, nunca a tela."""
+    from app.apps.analisesps import db, lote as mod
+
+    monkeypatch.setattr(mod, "por_pessoa", lambda: True)
+
+    def explode(*a, **k):
+        raise RuntimeError("banco fora")
+
+    monkeypatch.setattr(db, "consultar", explode)
+    assert mod.onde_no_lote(["1384831053"], "marcelo") == {}
+
+
+def test_antes_do_botao_a_marca_so_enxerga_o_lote_de_quem_esta_na_tela(monkeypatch):
+    """Janela entre publicar e apertar "Aplicar atualizações do banco": o lote
+    de cada um está no armário de reserva. Menos informação — nunca informação
+    errada."""
+    from app.apps.analisesps import lote
+
+    monkeypatch.setattr(lote, "por_pessoa", lambda: False)
+    monkeypatch.setattr(lote, "_reserva_ler",
+                        lambda pessoa: {"conteudo": "Pagar amanhã\n1384831053"})
+    onde = lote.onde_no_lote(["1384831053"], "marcelo")
+
+    assert onde["1384831053"]["minha"] is True
+    assert onde["1384831053"]["grupos"] == ["Pagar amanhã"]
+
+
+def test_marcar_nas_linhas_poe_no_lote_em_TODAS_as_linhas(monkeypatch):
+    """Inclusive nas que não estão em lote nenhum: o gabarito lê `l.no_lote`,
+    e uma chave que às vezes existe e às vezes não é o tipo de coisa que passa
+    no teste e quebra na tela."""
+    from app.apps.analisesps import lote
+
+    _lotes(monkeypatch, [("marcelo", "Pagar amanhã\n1384831053", "Marcelo")])
+    linhas = [{"id": "1384831053"}, {"id": "1384844943"}]
+    lote.marcar_nas_linhas(linhas, "marcelo")
+
+    assert linhas[0]["no_lote"]["minha"] is True
+    assert linhas[1]["no_lote"] is None
+
+
+def test_marcar_nas_linhas_com_lote_vazio_ainda_preenche_a_chave(monkeypatch):
+    from app.apps.analisesps import lote
+
+    _lotes(monkeypatch, [])
+    linhas = [{"id": "1384831053"}]
+    lote.marcar_nas_linhas(linhas, "marcelo")
+
+    assert linhas[0]["no_lote"] is None

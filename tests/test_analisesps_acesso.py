@@ -93,6 +93,99 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/lote"),
     ("GET", "/analisesps/relatorio"),
     ("GET", "/analisesps/calendario"),
+    # A CONCILIAÇÃO mostra o extrato bancário inteiro da empresa — é das telas
+    # mais sensíveis do módulo, e este inventário é o que garante que ela não
+    # fique aberta sem querer.
+    ("GET", "/analisesps/conciliacao"),
+    ("GET", "/analisesps/conciliacao/panorama"),
+    ("POST", "/analisesps/api/conciliacao/conferir"),
+    ("POST", "/analisesps/api/conciliacao/importar"),
+    ("POST", "/analisesps/api/conciliacao/marcar"),
+    ("POST", "/analisesps/api/conciliacao/anotar"),
+    ("POST", "/analisesps/api/conciliacao/conta"),
+    ("POST", "/analisesps/api/conciliacao/linha"),
+    ("POST", "/analisesps/api/conciliacao/omie/ensaiar"),
+    ("POST", "/analisesps/api/conciliacao/omie/lancar"),
+    ("POST", "/analisesps/api/conciliacao/omie/tipo"),
+    ("POST", "/analisesps/api/conciliacao/desfazer"),
+    ("POST", "/analisesps/api/conciliacao/soltar-presas"),
+    ("POST", "/analisesps/api/conciliacao/apagar-linha"),
+    ("GET",  "/analisesps/folha/rateio"),
+    # O CADASTRO mostra nome, CPF e o valor dos auxílios de ~3.500 pessoas. É
+    # dado pessoal em volume: esta linha é o que garante que a tela não fique
+    # aberta sem querer.
+    ("GET",  "/analisesps/folha/colaboradores"),
+    # A porta da área: manda para a primeira subtela que a pessoa alcança.
+    ("GET",  "/analisesps/folha"),
+    ("GET",  "/analisesps/folha/importar"),
+    # O ponto dia a dia de uma pessoa (janela do nome): dado pessoal — só logado.
+    ("GET",  "/analisesps/api/folha/123/ponto/99713349334"),
+    # O analítico do funcionário (e a página de imprimir): dado pessoal.
+    ("GET",  "/analisesps/folha/123/pessoa/99713349334"),
+    # Por que uma linha da folha não casou com o cadastro (dado pessoal).
+    ("GET",  "/analisesps/folha/123/pendente/000013"),
+    # A prévia do arquivo de pagamento (nome, CPF e valor): só do mestre.
+    ("GET",  "/analisesps/folha/123/previa-pagamento"),
+    # O relatório da folha em Excel e PDF: dado pessoal.
+    ("GET",  "/analisesps/folha/123/relatorio.pdf"),
+    # Lançar batidas no Mobponto: grava em sistema de terceiro.
+    ("POST", "/analisesps/api/folha/ponto/plano"),
+    ("POST", "/analisesps/api/folha/ponto/lancar"),
+    ("GET",  "/analisesps/api/folha/ponto/lancar/estado"),
+    # A fila do ponto por pessoa (nome e CPF de quem está nela).
+    ("GET",  "/analisesps/api/folha/ponto/fila"),
+    ("GET",  "/analisesps/api/folha/ponto/fila/123"),
+    ("GET",  "/analisesps/folha/ponto"),
+    ("GET",  "/analisesps/folha/calendario"),
+    # Alimentação e transporte: mostra nome, CPF e valor de quem recebe.
+    ("GET",  "/analisesps/folha/auxilios"),
+    ("GET",  "/analisesps/folha/diaristas"),
+    ("GET",  "/analisesps/api/conciliacao/procurar"),
+    ("POST", "/analisesps/api/folha/auxilio/ajuste"),
+    # A gestão da folha da contabilidade: quem entra, quem sai, para qual obra vai
+    # o valor — e o fechamento que autoriza o arquivo a sair.
+    ("POST", "/analisesps/api/folha/apropriacao/ajuste"),
+    ("POST", "/analisesps/api/folha/apropriacao/fechar"),
+    # Trazer o ponto de UMA pessoa, e como terminou.
+    ("POST", "/analisesps/api/folha/ponto/pessoa"),
+    ("GET",  "/analisesps/api/folha/ponto/pessoa/estado"),
+    ("POST", "/analisesps/api/folha/auxilio/selecao"),
+    # Mostra cadastro e ponto de uma pessoa: dado pessoal.
+    ("GET",  "/analisesps/api/folha/pessoa/99713349334"),
+    # ⚠️ A GERAÇÃO DO PAGAMENTO É A ROTA MAIS SENSÍVEL DA ÁREA: daqui sai o arquivo
+    # que vai para o portal do banco. Só do mestre.
+    ("GET",  "/analisesps/folha/pagamento"),
+    ("POST", "/analisesps/api/folha/pagamento/preparar"),
+    ("POST", "/analisesps/api/folha/pagamento/gerar"),
+    ("POST", "/analisesps/api/folha/pipe/conferir"),
+    ("POST", "/analisesps/api/folha/card"),
+    ("GET",  "/analisesps/api/folha/procurar-pessoa"),
+    ("POST", "/analisesps/api/folha/feriado"),
+    ("POST", "/analisesps/api/folha/feriado/apagar"),
+    ("POST", "/analisesps/api/folha/ferias"),
+    ("POST", "/analisesps/api/folha/ferias/apagar"),
+    # Dispara a carga do ponto e apaga carga — trabalho longo e destrutivo.
+    ("POST", "/analisesps/api/folha/ponto"),
+    ("POST", "/analisesps/api/folha/ponto/apagar"),
+    # Mostra a folha pessoa por pessoa: nome, CPF e valor de ~500 gente.
+    ("GET",  "/analisesps/folha/123"),
+    # Recebe a folha de pagamento inteira — nome e valor de ~500 pessoas.
+    ("POST", "/analisesps/api/folha/importar"),
+    ("POST", "/analisesps/api/folha/apagar"),
+    # ⚠️ ESTA SUBSTITUI O RATEIO DO MÊS INTEIRO (desativando o que vale). Rota
+    # sem login aqui deixaria qualquer um trocar para onde vai o salário de todo
+    # mundo.
+    ("POST", "/analisesps/api/folha/rateio/colar"),
+    ("POST", "/analisesps/api/folha/rateio"),
+    ("POST", "/analisesps/api/folha/rateio/apagar"),
+    ("POST", "/analisesps/api/folha/rateio/simular"),
+    ("POST", "/analisesps/api/conciliacao/planilha/abas"),
+    ("POST", "/analisesps/api/conciliacao/planilha/ler"),
+    ("POST", "/analisesps/api/conciliacao/planilha/importar"),
+    # O CADASTRO DE ACESSO (25/09/2026). É a rota que cria acesso — se ela
+    # ficasse aberta, quem descobrisse o endereço criaria um usuário com todas
+    # as telas. Este inventário é o que garante que ninguém a esqueça.
+    ("POST", "/analisesps/usuarios"),
     ("GET", "/analisesps/auditoria"),
     ("GET", "/analisesps/ratear"),
     ("POST", "/analisesps/ratear"),
@@ -188,7 +281,12 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
         if isinstance(exigencia, tuple) or regra.endpoint == auth.ENDPOINT_ESTILO:
             continue                          # pública, com motivo escrito
         caminho = (str(regra).replace("<sp_id>", "123")
+                   .replace("<int:folha_id>", "123")
                    .replace("<path:filename>", "x")
+                   .replace("<cpf>", "99713349334")
+                   .replace("<id_fortes>", "000013")
+                   .replace("<formato>", "pdf")
+                   .replace("<int:item_id>", "123")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)
@@ -306,41 +404,52 @@ def test_login_nao_redireciona_para_fora_do_modulo(app, destino):
     assert resposta.headers["Location"].endswith("/analisesps/solicitacoes")
 
 
-def test_sem_nome_ninguem_entra(app):
-    """O nome não é senha, mas é obrigatório.
+def test_a_entrada_nao_pede_mais_nome(app):
+    """⚠️ A LISTA DE NOMES DA ENTRADA ACABOU em 25/09/2026.
 
-    Sem ele o módulo não sabe de quem é o lote nem de quem são os filtros, e o
-    registro de alterações volta a dizer só o perfil. Deixar entrar sem nome
-    seria criar de novo, e em silêncio, o problema que o dono pediu para
-    resolver."""
+    Pedido do dono: *"elimine do login o login via Nomes na lista da entrada.
+    Vamos ficar somente com os cadastrados."* Quem entra, entra com usuário e
+    senha, e o nome que assina o lote e o registro de alterações vem do
+    cadastro — não de uma escolha na tela, que nunca foi tranca nenhuma."""
+    with app.test_client() as cliente:
+        html = cliente.get("/analisesps/entrar").get_data(as_text=True)
+    assert 'name="nome"' not in html, "o campo de nome voltou para a entrada"
+    assert '<select' not in html, "a lista de nomes voltou para a entrada"
+    assert 'name="usuario"' in html and 'type="password"' in html
+
+
+def test_a_porta_de_emergencia_entra_sem_nome(app):
+    """A senha geral do serviço, com o usuário EM BRANCO.
+
+    Ela existe para um caso só: todos os acessos de mestre se perderem. Sem
+    ela, isso trancaria todo mundo para fora sem volta — não há e-mail de
+    recuperação nem outro administrador."""
     with app.test_client() as cliente:
         resposta = cliente.post("/analisesps/entrar",
-                                data={"senha": SENHA_OPERADOR, "nome": "   "})
-    assert resposta.status_code == 200, "não podia ter entrado"
-    assert "Escolha o seu nome na lista" in resposta.get_data(as_text=True)
+                                data={"senha": SENHA_OPERADOR})
+        assert resposta.status_code in (301, 302), "a emergência não abriu"
+        seguinte = cliente.get("/analisesps/solicitacoes")
+    assert seguinte.status_code == 200
 
+
+def test_quem_entra_pela_emergencia_fica_MARCADO_no_registro(app):
+    """Quem entra por ali não tem cadastro, e portanto não tem nome de gente.
+    Deixar vazio faria a auditoria dizer "—", que não diz nada — escrito assim,
+    quem lê sabe na hora por onde a pessoa entrou."""
+    from app.apps.analisesps import auth as guarda
     with app.test_client() as cliente:
-        cliente.post("/analisesps/entrar",
-                     data={"senha": SENHA_OPERADOR, "nome": ""})
-        # E continua fora: a tela seguinte manda de volta para o login.
+        cliente.post("/analisesps/entrar", data={"senha": SENHA_OPERADOR})
+        with cliente.session_transaction() as sessao:
+            assert "emerg" in sessao[guarda.CHAVE_NOME].lower()
+
+
+def test_senha_errada_sem_usuario_nao_entra(app):
+    with app.test_client() as cliente:
+        resposta = cliente.post("/analisesps/entrar", data={"senha": "chute"})
+        assert resposta.status_code == 200, "não podia ter entrado"
         seguinte = cliente.get("/analisesps/solicitacoes")
     assert seguinte.status_code in (301, 302)
     assert "/analisesps/entrar" in seguinte.headers["Location"]
-
-
-def test_nome_de_fora_da_lista_nao_entra(app):
-    """Desde 09/09/2026 o nome é escolhido numa LISTA, não digitado.
-
-    Um pedido montado à mão poderia mandar qualquer texto no lugar da escolha
-    — e cada texto novo criaria uma pessoa a mais, com lote e filtros
-    próprios, sem ninguém pedir. O que vem da tela é conferido contra a lista;
-    o que não está nela não entra."""
-    with app.test_client() as cliente:
-        resposta = cliente.post(
-            "/analisesps/entrar",
-            data={"senha": SENHA_OPERADOR, "nome": "Fulano de Tal"})
-    assert resposta.status_code == 200, "entrou com nome que não existe"
-    assert "Escolha o seu nome na lista" in resposta.get_data(as_text=True)
 
 
 def test_o_nome_escolhido_volta_com_a_grafia_da_lista(app):
@@ -380,10 +489,9 @@ def test_senha_com_acento_e_recusada_e_nao_derruba_a_tela(app):
     o segredo do agendador e a senha de validação."""
     with app.test_client() as cliente:
         resposta = cliente.post("/analisesps/entrar",
-                                data={"senha": "não-é-a-senha-çãô",
-                                      "nome": "MARCELO"})
+                                data={"senha": "não-é-a-senha-çãô"})
     assert resposta.status_code == 200, "estourou em vez de recusar"
-    assert "Senha incorreta" in resposta.get_data(as_text=True)
+    assert "Digite o seu usuário e a sua senha" in resposta.get_data(as_text=True)
 
 
 def test_a_senha_certa_com_acento_entra(app, monkeypatch):

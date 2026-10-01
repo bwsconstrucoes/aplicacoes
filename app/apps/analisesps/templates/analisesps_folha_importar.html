@@ -1,0 +1,255 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Importar a folha — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Folha da contabilidade <small>{{ folhas|length }} importada(s)</small></h2>
+<p class="cartao-dica" style="margin:0 0 12px">
+  Esta tela é a estante: é aqui que se solta o arquivo e se apaga o que veio
+  errado. <b>O trabalho é dentro da folha</b> — clique na competência para abrir a
+  lista pessoa por pessoa, marcar quem entra e gerar o pagamento.
+</p>
+
+{% if not pronto %}
+  {# A migração 029 ainda não rodou. O código sobe para o Render antes de alguém
+     apertar o botão, e a tela tem de explicar em vez de estourar. #}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui.
+  </div>
+{% else %}
+
+{% if pode_operar %}
+{# ------------------------------------------------------------------------
+   ⚠️ A ÁREA DE SOLTAR É A MESMA DO EXTRATO, de propósito. Pedido do dono em
+   26/09/2026: *"a questão do arquivo de importação, semelhante àquela do extrato
+   bancário, o OFX, aquele retângulozinho para você jogar o arquivo dentro."*
+
+   Duas telas do mesmo módulo com jeitos diferentes de receber arquivo obrigam a
+   pessoa a aprender duas vezes a mesma coisa.
+   ------------------------------------------------------------------------ #}
+<div class="cartao">
+  <div class="solta-arquivo" id="solta-folha">
+    <p><b>Solte aqui a Folha Sintética</b><br>
+      <label class="link-btn" for="arq-folha">ou escolha no computador</label>
+      <br><small>é o <code>.xls</code> que a contabilidade manda</small></p>
+    <input type="file" id="arq-folha" accept=".xls,.XLS" hidden>
+  </div>
+
+  {# O TIPO SÓ APARECE QUANDO PRECISA. O título do relatório costuma dizer se é
+     adiantamento (quinzena) ou fechamento (fim de mês); quando não diz, o
+     servidor recusa pedindo para escolher, e é aí que estes botões servem.
+     Mostrá-los sempre faria a pessoa escolher antes de saber que precisava. #}
+  <div id="escolher-tipo" hidden style="margin-top:12px">
+    <div class="aviso atencao" id="motivo-tipo"></div>
+    <label class="rotulo-campo">Esta folha é de qual período?</label>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      <button class="btn secundario escolhe-tipo" data-tipo="quinzena"
+              >Quinzena (dia 1 ao 15)</button>
+      <button class="btn secundario escolhe-tipo" data-tipo="fim_de_mes"
+              >Fim de mês (16 ao último dia)</button>
+    </div>
+  </div>
+
+  <div id="saida-folha" style="margin-top:10px"></div>
+</div>
+{% endif %}
+
+{# ------------------------------------------------------------------------
+   AS FOLHAS JÁ IMPORTADAS. A tabela é desenhada sempre, com cabeçalho — um
+   "nada aqui" que engole a tabela inteira deixa a pessoa sem referência.
+   ------------------------------------------------------------------------ #}
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps" style="margin-top:16px">
+      <thead>
+        <tr>
+          <th>Competência</th>
+          <th>Período</th>
+          <th class="num">Pessoas</th>
+          <th class="num">Total</th>
+          {# ⚠️ ESTA COLUNA VEM ANTES DO "Confere?", por correção dele em 29/09/2026:
+             *"você tá muito preocupado com os totalizadores do arquivo de importação,
+             quando a preocupação deve ser linha a linha de cada colaborador."*
+
+             "Não fecha" é uma pista; o que decide se dá para pagar é QUANTAS PESSOAS
+             estão sem cadastro, já saíram ou estão saindo.
+
+             ⚠️ O NOME MUDOU no mesmo dia: era "Precisam de olho", e ele disse *"até
+             o termo usado é ruim"*. Está certo — "precisam de olho" descreve o que
+             a PESSOA tem de fazer, não o que a coisa faz. O que a coisa faz é
+             travar o pagamento, e é isso que o cabeçalho diz agora. #}
+          <th class="num">Travam o pagamento</th>
+          <th>Importada</th>
+          <th>Confere?</th>
+          {% if pode_operar %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+      {% for f in folhas %}
+        {# O alerta da linha passa a considerar as PESSOAS — que é o que decide se dá
+           para pagar. "Não fecha" continua acendendo também: é problema de verdade,
+           só não é mais a ÚNICA coisa que acende. #}
+        <tr class="{{ 'linha-alerta' if f.precisa_de_mao or not f.fecha }}">
+          {# ⚠️ A COMPETÊNCIA É A PORTA. Antes, o único caminho para a folha aberta
+             era o número da coluna "travam o pagamento" — que desaparece quando
+             não há ninguém pendente. Quem importava a folha e não achava aquele
+             número não tinha porta nenhuma, e foi exatamente o que aconteceu com
+             ele em 29/09/2026. #}
+          <td><a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
+                 title="abrir esta folha para trabalhar"><b>{{ f.competencia }}</b></a></td>
+          <td>{{ f.rotulo_do_tipo }}</td>
+          <td class="num">{{ f.pessoas }}</td>
+          <td class="num">{{ f.total|moeda }}</td>
+          <td class="num">
+            {% if f.precisa_de_mao is none %}
+              <span class="cartao-dica">não deu para conferir</span>
+            {% elif f.precisa_de_mao %}
+              <a href="{{ url_for('analisesps.tela_folha_aberta', folha_id=f.id) }}"
+                 title="abrir a folha pessoa por pessoa">
+                <b>{{ f.precisa_de_mao }}</b> pessoa(s)</a>
+              <br><span class="cartao-dica">
+                {% if f.pendentes %}{{ f.pendentes }} sem cadastro{% endif %}
+                {% if f.sairam %}{% if f.pendentes %} · {% endif %}{{ f.sairam }} já saiu{% endif %}
+                {% if f.saindo %}{% if f.pendentes or f.sairam %} · {% endif %}{{ f.saindo }} saindo{% endif %}
+              </span>
+            {% else %}
+              <span class="selo no-lote">nenhuma</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="cartao-dica">{{ f.importado_em|momento_br }}{% if f.importado_por %} · {{ f.importado_por }}{% endif %}</span>
+          </td>
+          <td>
+            {% if f.fecha %}
+              <span class="selo no-lote" title="As linhas somam o mesmo que os subtotais do relatório">fecha</span>
+            {% else %}
+              {# ⚠️ NÃO FECHAR NÃO IMPEDE IMPORTAR, e é de propósito: ele precisa
+                 importar a folha que não fecha para DESCOBRIR por que não fecha.
+                 Mas tem de estar na cara, porque é a crítica mais importante daqui. #}
+              <span class="selo cancelado">não fecha</span>
+              <div class="aviso atencao" style="margin:4px 0 0">
+                ⚠️ {{ f.lista_de_avisos|join('; ') }}
+              </div>
+            {% endif %}
+          </td>
+          {% if pode_operar %}
+            <td class="num">
+              <button class="apagar-linha apagar-folha" title="Apagar esta folha importada"
+                      data-id="{{ f.id }}" data-competencia="{{ f.competencia }}"
+                      data-rotulo="{{ f.rotulo_do_tipo }}"
+                      data-pessoas="{{ f.pessoas }}">&times;</button>
+            </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="{{ 8 if pode_operar else 7 }}" class="cartao-dica">
+            Nenhuma folha importada ainda.
+            {% if pode_operar %}Solte o arquivo da contabilidade acima.{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if pode_operar %}
+<script>
+const areaFolha = document.getElementById("solta-folha");
+const campoFolha = document.getElementById("arq-folha");
+const saidaFolha = document.getElementById("saida-folha");
+const blocoTipo = document.getElementById("escolher-tipo");
+const motivoTipo = document.getElementById("motivo-tipo");
+let arquivoGuardado = null;
+
+function recadoFolha(html, classe) {
+  saidaFolha.innerHTML = html
+    ? '<div class="aviso ' + (classe || "") + '">' + html + "</div>" : "";
+}
+
+async function mandarFolha(arquivo, tipo) {
+  const dados = new FormData();
+  dados.append("folha", arquivo);
+  if (tipo) dados.append("tipo", tipo);
+  recadoFolha("lendo <b>" + arquivo.name + "</b>…");
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_importar') }}",
+                          {method: "POST", body: dados});
+    const d = await r.json();
+    if (!d.ok) {
+      // ⚠️ QUANDO FALTA SÓ O TIPO, a resposta diz `pergunte_o_tipo` — e aí a
+      // tela PERGUNTA em vez de mandar a pessoa tentar de novo adivinhando.
+      // O arquivo fica guardado: pedir para soltar de novo seria mesquinho.
+      if (d.pergunte_o_tipo) {
+        arquivoGuardado = arquivo;
+        motivoTipo.innerHTML = d.erro;
+        blocoTipo.hidden = false;
+        recadoFolha("");
+        return;
+      }
+      recadoFolha(d.erro, "erro");
+      return;
+    }
+    location.reload();
+  } catch (e) {
+    recadoFolha("Falhou: " + e, "erro");
+  }
+}
+
+if (areaFolha) {
+  ["dragenter", "dragover"].forEach(ev => areaFolha.addEventListener(ev, e => {
+    e.preventDefault(); areaFolha.classList.add("por-cima");
+  }));
+  ["dragleave", "drop"].forEach(ev => areaFolha.addEventListener(ev, e => {
+    e.preventDefault(); areaFolha.classList.remove("por-cima");
+  }));
+  areaFolha.addEventListener("drop", e => {
+    if (e.dataTransfer.files.length) mandarFolha(e.dataTransfer.files[0], "");
+  });
+  areaFolha.addEventListener("click", e => {
+    if (e.target.tagName !== "LABEL") campoFolha.click();
+  });
+  campoFolha.addEventListener("change", () => {
+    if (campoFolha.files.length) mandarFolha(campoFolha.files[0], "");
+  });
+}
+
+document.querySelectorAll(".escolhe-tipo").forEach(b =>
+  b.addEventListener("click", () => {
+    if (!arquivoGuardado) return;
+    blocoTipo.hidden = true;
+    mandarFolha(arquivoGuardado, b.dataset.tipo);
+  }));
+
+// --- apagar uma folha importada -------------------------------------------
+// ⚠️ APAGAR AQUI É SEGURO, e é a diferença desta tela para a conciliação: o que
+// está guardado é a CÓPIA de um arquivo que a contabilidade tem. Apagar e
+// importar de novo não perde decisão nenhuma. Mesmo assim pergunta, porque
+// apagar 491 pessoas com um clique torto não pode ser fácil.
+document.querySelectorAll(".apagar-folha").forEach(b =>
+  b.addEventListener("click", async () => {
+    if (!confirm("Apagar a folha de " + b.dataset.competencia + " (" +
+                 b.dataset.rotulo + "), com " + b.dataset.pessoas +
+                 " pessoa(s)?\n\nO arquivo original continua com a " +
+                 "contabilidade: dá para importar de novo.")) return;
+    b.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_apagar') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({id: b.dataset.id})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert(d.erro); b.disabled = false; return; }
+      location.reload();
+    } catch (e) { alert("Falhou: " + e); b.disabled = false; }
+  }));
+</script>
+{% endif %}
+
+{% endif %}
+{% endblock %}

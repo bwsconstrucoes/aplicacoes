@@ -747,6 +747,189 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 29/09/2026 — o FITID do Bradesco é um contador do arquivo (aviso para o ERP)
+
+Achado no Análise de SPs (`HISTORICO.md`, leva 123): o Bradesco escreve no
+`<FITID>` um contador que cresce de 22 em 22 dentro do arquivo e **recomeça a
+cada download** — dois extratos baixados em dias diferentes repetem os mesmos
+FITIDs para transações diferentes. O parser compartilhado
+(`app/apps/erp/core/pagamentos/ofx.py`) usa o FITID como identidade sempre que
+ele aparece uma vez só no arquivo, e isso produz dois estragos silenciosos:
+linha nova tratada como "já importada" (36 de 53 num extrato real) e a mesma
+transação importada duas vezes.
+
+**O Análise de SPs deixou de usar a identidade do parser** e calcula a dele
+pelo conteúdo (`conciliacao_ofx.identidade_da_linha`). **O parser do ERP não foi
+tocado** — é outra área, e mudar a identidade lá muda o que o ERP já gravou. O
+chat do ERP precisa decidir se a importação de extrato dele
+(`core/pagamentos/service.py`) sofre do mesmo problema com o Bradesco e, se
+sim, aplicar a mesma regra com uma refeitura das identidades já gravadas.
+
+### 29/09/2026 — a suíte de testes, de inviável a um comando
+
+**Cobrança do dono, e procedente:** *"está demorando meia hora, uma hora para
+fechar alguma coisa relativamente simples (…) está praticamente inviável
+evoluir"*.
+
+Três causas medidas, em ordem de custo:
+
+1. **O schema era reconstruído A CADA TESTE.** Doze arquivos de teste faziam
+   `DROP SCHEMA analisesps` e executavam os 36 arquivos de migração, por teste.
+   São 727 testes de banco — cerca de **26 mil execuções de arquivo SQL por
+   rodada**, todas construindo a mesma coisa. Agora o schema nasce **uma vez por
+   sessão** (`banco_analisesps`, no `tests/conftest.py`) e as tabelas são
+   esvaziadas entre os testes. Os cinco testes que apagam tabela de propósito
+   (para provar que a tela avisa quando falta migração) usam
+   `banco_analisesps_mutilado`, que reconstrói no fim.
+2. **O banco de teste engordava até travar.** Aquele refaz-tudo deixava arquivos
+   órfãos: 1,4 milhão deles. Com tanta coisa no diretório, a consulta que mede o
+   tamanho do banco passou a levar **14 segundos por teste** — 83 s só no
+   `test_saude_banco.py`. Recriado, caiu para 3 s. E a limpeza entre testes virou
+   `DELETE` em vez de `TRUNCATE`, porque o `TRUNCATE` cria um arquivo novo por
+   tabela: a sujeira por rodada caiu de 1,4 milhão para ~47 mil.
+3. **Rodava tudo em um processo só.** Agora roda em paralelo (`pytest-xdist`,
+   dependência NOVA e só de teste), **um banco por trabalhador** — e o que escolhe
+   o banco é a própria **variável de ambiente**, porque vários testes a leem
+   direto em vez de passar pela fixture. Trocar só a fixture derrubou 16 testes do
+   painel na primeira tentativa, nenhum deles com defeito.
+
+**Resultado:** a suíte inteira roda em **um comando, ~5min30s, 7.559 passando e
+145 pulados**. Antes precisava ser quebrada em seis pedaços para caber no limite
+de tempo de um comando.
+
+⚠️ **A regra vale tanto quanto o conserto** (está no `CLAUDE.md`): **conserto
+pequeno roda teste pequeno.** Rodar 7.700 testes para trocar uma linha de CSS não
+é cuidado, é uma hora parada — e ela sai do tempo dele. A suíte inteira roda antes
+de juntar na `main`, e quando se mexe em algo que atravessa áreas.
+
+⚠️ **O Postgres de teste roda sem durabilidade** (`fsync=off`, `synchronous_commit=off`,
+`full_page_writes=off`), no GitHub Actions e no `docker-compose.teste.yml`. É um
+banco descartável: pagar por segurança de disco ali é comprar garantia que ninguém
+usa. **Nunca em produção** — com fsync desligado, uma queda de energia corrompe o
+banco.
+
+⚠️ **E um teste que passava por acidente apareceu quando a suíte ficou rápida:**
+`test_sem_a_tabela_a_tela_recebe_vazio_em_vez_de_estourar` dependia de outro teste
+ter derrubado o schema antes. Agora ele diz a própria condição (sem
+`DATABASE_URL`). Suíte lenta esconde teste frágil.
+
+
+### 28/09/2026 — O FITID nem sempre identifica: 207 lançamentos perdidos em silêncio (atravessa áreas)
+
+**O que o dono viu:** importou um extrato OFX da conta SOMABWS 22005 (banco
+**520**), com período de 01/09 a 28/09, e a tela disse:
+
+> *"Li 4 lançamento(s): 0 já estavam aqui e 4 são novos."*
+
+**O arquivo tinha 211 transações.** 207 foram descartadas, sem nenhum aviso.
+
+**A causa.** O parser (`app/apps/erp/core/pagamentos/ofx.py`) usa o `FITID` como
+identidade da linha quando o banco o manda — premissa correta para Bradesco,
+Itaú, BB, Caixa e Santander. **O banco 520 usa o FITID como CÓDIGO DO TIPO da
+transação:**
+
+| FITID | O que é | Quantas linhas no arquivo |
+|---|---|---|
+| `3121` | "Liberação de folha" | **110**, com valores e datas diferentes |
+| `3029` | "Recebimento Pix" | **95**, idem |
+| `7101` | — | 4 |
+| `3074` | — | 2 |
+
+Quatro FITIDs para 211 transações. O parser via "FITID repetido" e descartava
+como duplicata — comportamento que estava até **escrito num teste** como se
+fosse a verdade (*"quando o banco MANDA o identificador, ele manda a verdade"*).
+
+**A regra nova, e ela é conservadora de propósito:** o FITID continua mandando
+**enquanto se comportar como identificador**. Só quando o MESMO FITID aparece com
+**conteúdo diferente** (outra data, outro valor, outro histórico) é que ele deixa
+de ser identidade — porque aí, por definição, ele não identifica transação
+nenhuma, e vale o mesmo caminho de quem não manda FITID (data+valor+histórico, com
+a ordem da repetição).
+
+⚠️ **Banco de FITID único não sente diferença alguma** — a identidade das linhas
+dele continua byte a byte a mesma. Isso não é detalhe: se mudasse, **todo extrato
+já importado voltaria a entrar em duplicidade** na próxima importação. Há teste
+travando exatamente isso.
+
+### A lição que vale mais que o conserto: a receita estava em DOIS lugares
+
+`conciliacao_ofx.impressao_da_linha`, no Análise de SPs, **recalculava** a
+identidade — `fitid or (data|valor|memo|doc)` — porque na leitura a conta ainda
+não é conhecida. Era uma segunda cópia da regra, com a mesma suposição errada.
+**Consertar só o parser não teria adiantado:** aquela cópia recolapsaria as 211
+linhas em 4 de novo, e o defeito voltaria com cara de outro defeito.
+
+É exatamente o risco registrado na decisão de 24/09/2026 (importar em vez de
+copiar), só que uma cópia havia sobrado. Agora o parser devolve a identidade
+pronta no campo `LancamentoOFX.identidade`, e quem grava só acrescenta a conta.
+**Uma regra, um lugar.**
+
+### E a rede de proteção, que é o que impede a próxima
+
+O que custou a investigação não foi perder as linhas: foi **a tela não avisar**.
+"Li 4 lançamento(s)" com ar de tudo certo é pior que um erro, porque convence.
+
+Entrou `contar_transacoes()` no parser: quantos blocos `<STMTTRN>` o arquivo TEM,
+antes de qualquer decisão. A conferência compara com o que foi reconhecido e,
+quando os dois não batem, a tela mostra **em vermelho, antes de qualquer botão de
+gravar**: *"o arquivo tem 211 transações e eu só reconheci 4"*. Enquanto baterem,
+não aparece nada.
+
+### 27/09/2026 — A regra da FILA no `CLAUDE.md` ganhou dentes (atravessa áreas)
+
+O dono cobrou **três vezes**, em chats diferentes, a mesma coisa: quando ele passa
+três, quatro tarefas num pedido só, aquilo é uma **fila, não um cardápio**. A
+terceira vez foi com irritação explícita:
+
+> *"O que é que eu preciso fazer para não haver essa pausa? Que é irritante e
+> constante."*
+
+A resposta honesta é **nada — a falha é do assistente**. O `CLAUDE.md` já tinha a
+seção da fila; faltava o gatilho concreto, porque a pausa acontece por um motivo que
+parece cuidado: anunciar "agora vou fazer X" **sente-se** como transparência, e é
+uma ida e volta dele, que pode demorar horas.
+
+Entraram no `CLAUDE.md`: dois itens novos em "O que NÃO é motivo para parar"
+(**anunciar o que você vai fazer em seguida** e **ter algo travado**) e um teste
+literal antes de enviar qualquer resposta:
+
+> *"Existe, na minha própria resposta, alguma frase do tipo 'vou fazer X'? Se existe
+> e X não depende dele → NÃO ENCERRE. FAÇA X AGORA."*
+
+Fica aqui, e não só no `CLAUDE.md`, porque **é comportamento das cinco áreas**: o
+mesmo erro foi cobrado no chat do ERP e no do Análise de SPs no mesmo dia.
+
+### 24/09/2026 — O Análise de SPs passou a IMPORTAR código do ERP (atravessa áreas)
+
+A Conciliação Bancária nova (`app/apps/analisesps/conciliacao*.py`) lê extrato
+OFX. Um parser de OFX **já existia**, no ERP:
+`app/apps/erp/core/pagamentos/ofx.py` — funções puras, sem banco, sem
+dependência externa, rodando em produção desde julho.
+
+**A decisão foi IMPORTAR, e não copiar.** O motivo não é economia de linhas: é
+que aquele arquivo já pagou o preço de duas armadilhas que ninguém descobre de
+novo sem se machucar — o FITID como identidade da linha, e a ORDEM da
+repetição quando o banco não manda FITID (sem ela, dois PIX iguais de R$ 1.500
+no mesmo dia viravam UM, e o extrato passava a divergir do banco em silêncio;
+achado em 11/09/2026). Uma cópia começaria certa e divergiria calada na
+primeira correção que só um dos lados recebesse.
+
+**O preço, e ele é real: existe agora uma amarra entre duas áreas.** Se o chat
+do ERP mover, renomear ou mudar a forma daquele arquivo, a tela de Conciliação
+para de ler extrato. Duas proteções:
+
+1. **Um teste guarda o contrato** — `tests/test_analisesps_conciliacao.py`
+   importa o parser e confere os campos que a Conciliação lê. A quebra aparece
+   na suíte do GitHub Actions, e não na tela do dono no meio de uma
+   conferência.
+2. **Está escrito no alto dos dois arquivos** que usam a importação, com o
+   porquê.
+
+**Para quem mexer no `erp/core/pagamentos/ofx.py`:** ele tem um segundo
+consumidor fora do ERP. Mudança de assinatura ou de campo do `LancamentoOFX`
+precisa olhar o `analisesps/conciliacao_ofx.py` junto.
+
+
 ### 22/09/2026 — O CURINGA DO ENCURTADOR NÃO PEGA MAIS TUDO (atravessa áreas)
 
 Achado numa varredura de uso do ERP: a rota `/<codigo>` do encurtador é um

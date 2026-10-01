@@ -1,0 +1,261 @@
+{# ---------------------------------------------------------------------------
+   O ANALÍTICO DE UM FUNCIONÁRIO NA FOLHA — 30/09/2026.
+
+   Pedido dele: *"a informação que veio da contabilidade, a informação que foi
+   extraída do ponto, o ponto dia a dia, o cálculo, o rateio, quanto em cada conta
+   corrente para pagamento, em cada obra, todos os totalizadores, de forma bem
+   completa, para a gente ver o panorama do funcionário. Inclusive poder gerar um
+   relatório, poder imprimir."*
+
+   UM BLOCO SÓ, usado em dois lugares: a janela que abre no nome (`parcial`) e a
+   página de imprimir. Dois desenhos da mesma conta divergiriam um dia.
+   `a` é o que `folha_gestao.ponto_da_pessoa` devolve.
+   --------------------------------------------------------------------------- #}
+<div class="analitico">
+  <div class="analitico-cab">
+    <div>
+      <b class="analitico-nome">{{ a.nome }}</b>
+      <span class="cartao-dica">{{ a.cpf_bonito }} · folha {{ a.competencia }} ·
+        {{ a.rotulo_do_tipo }} · ponto de {{ a.periodo[0] }} a {{ a.periodo[1] }}</span>
+    </div>
+    <div class="analitico-selos">
+      {% if a.fora %}<span class="selo cancelado">fora deste pagamento</span>{% endif %}
+      {% if a.mais_de_uma_conta %}<span class="selo saindo">paga em mais de uma conta</span>{% endif %}
+      {% if a.cadastro.situacao and a.cadastro.situacao != 'ativo' %}
+        <span class="selo risco" title="{{ a.cadastro.motivo }}">{{ a.cadastro.situacao }}</span>{% endif %}
+    </div>
+  </div>
+
+  {% if parcial %}
+  <div class="analitico-acoes">
+    <a class="btn secundario" target="_blank" rel="noopener"
+       href="{{ url_for('analisesps.tela_folha_pessoa', folha_id=a.folha_id, cpf=a.cpf) }}"
+       >Relatório para imprimir</a>
+    {% if pode_operar %}
+      <button type="button" class="btn secundario atualizar-ponto-pessoa"
+              data-cpf="{{ a.cpf }}" data-folha="{{ a.folha_id }}"
+              title="traz de novo do Mobponto só o ponto desta pessoa, e a folha recalcula"
+              >Atualizar o ponto desta pessoa</button>
+    {% endif %}
+    {% if a.cadastro.link_pipefy %}
+      <a class="link-btn" target="_blank" rel="noopener" href="{{ a.cadastro.link_pipefy }}"
+         >card no Pipefy ↗</a>{% endif %}
+    <span class="cartao-dica recado-ponto-pessoa"></span>
+  </div>
+  {# O ÚLTIMO PEDIDO DA FILA DESTA PESSOA (migração 042): quem pediu, saiu e
+     voltou vê aqui o que aconteceu — e, se ainda está na fila, acompanha. #}
+  {% set f = fila_da_pessoa %}
+  <div class="fila-recado aviso {% if f and f.situacao == 'falhou' %}erro{% elif f and f.situacao == 'feito' %}ok{% else %}atencao{% endif %}"
+       data-cpf="{{ a.cpf }}" {% if not f %}hidden{% endif %}
+       {% if f %}data-id="{{ f.id }}" data-pendente="{{ 1 if f.situacao in ('esperando', 'rodando') else 0 }}"{% endif %}>
+    {% if f %}
+      <b>{{ f.rotulo|capitalize }}</b> —
+      {% if f.situacao == 'esperando' %}na fila{% if f.posicao %}, {{ f.posicao }} pedido(s) antes deste{% else %}, é o próximo{% endif %}.
+      {% elif f.situacao == 'rodando' %}trabalhando: {{ f.progresso or 'começando' }}
+      {% elif f.situacao == 'feito' %}pronto ({{ f.fim|momento_br }}): {{ f.mensagem }}
+      {% else %}NÃO DEU ({{ f.fim|momento_br }}): {{ f.mensagem }}{% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# --- DE ONDE VEIO CADA COISA: as três fontes, lado a lado ---------------- #}
+  <div class="analitico-fontes">
+    <div class="cartao">
+      <b class="lateral-titulo">Contabilidade (arquivo do Fortes)</b>
+      <dl class="analitico-dl">
+        <dt>Código</dt><dd>{{ a.contabilidade.id_fortes or '—' }}</dd>
+        <dt>Nome na folha</dt><dd>{{ a.contabilidade.nome or '—' }}</dd>
+        <dt>Obra da contabilidade</dt><dd>{{ a.contabilidade.filial or '—' }}</dd>
+        <dt>Setor</dt><dd>{{ a.contabilidade.setor or '—' }}</dd>
+        <dt>Líquido</dt><dd><b>{{ a.contabilidade.valor|moeda }}</b></dd>
+      </dl>
+    </div>
+    <div class="cartao">
+      <b class="lateral-titulo">Cadastro</b>
+      <dl class="analitico-dl">
+        <dt>Cargo</dt><dd>{{ a.cadastro.cargo or '—' }}</dd>
+        <dt>Fase</dt><dd>{{ a.cadastro.fase or '—' }}</dd>
+        <dt>Obra do cadastro</dt><dd>{{ a.cadastro.obra or '—' }}</dd>
+        <dt>Contrato</dt><dd>{{ a.cadastro.tipo_contrato or '—' }}</dd>
+        <dt>Situação</dt><dd>{{ a.cadastro.situacao or '—' }}{% if a.cadastro.motivo %}
+          <br><span class="cartao-dica">{{ a.cadastro.motivo }}</span>{% endif %}</dd>
+      </dl>
+    </div>
+    <div class="cartao">
+      <b class="lateral-titulo">Ponto (Mobponto)</b>
+      <dl class="analitico-dl">
+        <dt>Dias no período</dt><dd>{{ a.contagem.dias_no_periodo }}</dd>
+        <dt>Dias com obra</dt><dd><b>{{ a.contagem.com_obra }}</b></dd>
+        <dt>Faltas</dt><dd>{{ a.contagem.faltas }}</dd>
+        <dt>Sem batida</dt><dd>{{ a.contagem.sem_marcacao }}</dd>
+        <dt>Sem registro</dt><dd>{{ a.contagem.sem_registro }}</dd>
+        <dt>Empates 2×2</dt><dd>{{ a.contagem.empates }}</dd>
+        <dt>Dias ajustados</dt><dd>{{ a.contagem.ajustados }}</dd>
+      </dl>
+      {% if not a.tem_ponto %}<p class="cartao-dica">O ponto deste mês ainda não foi trazido.</p>{% endif %}
+    </div>
+  </div>
+
+  {# --- O CÁLCULO ------------------------------------------------------------ #}
+  <h4>O cálculo</h4>
+  <p class="analitico-conta">
+    {% if a.origem == 'regra' %}
+      Líquido <b>{{ a.valor|moeda }}</b> dividido pela <b>regra de rateio</b>
+      {% if a.regra %}"{{ a.regra }}"{% endif %} — os dias do ponto abaixo são só
+      para conferência.
+    {% elif a.valor_por_dia %}
+      Líquido <b>{{ a.valor|moeda }}</b> ÷ <b>{{ a.dias_no_ponto }}</b> dia(s) com
+      obra = <b>{{ a.valor_por_dia|moeda }}</b> por dia. Cada obra recebe o valor por
+      dia × os dias dela; o centavo que sobra vai para a obra com mais dias.
+      {% if a.origem == 'mao' %}<br><span class="cartao-dica">A divisão foi ajustada
+        por você.</span>{% endif %}
+    {% else %}
+      Líquido <b>{{ a.valor|moeda }}</b>, <b>sem dia com obra</b> no período e sem
+      regra de rateio: o valor ainda não tem para onde ir.
+    {% endif %}
+  </p>
+
+  {# --- O RATEIO: por obra, e por conta corrente ---------------------------- #}
+  <div class="analitico-rateio">
+    <div>
+      <h4>Por obra</h4>
+      <table class="sps">
+        <thead><tr><th>Obra</th><th class="num">Dias</th><th class="num">%</th>
+          <th class="num">Valor</th><th>Conta</th></tr></thead>
+        <tbody>
+        {% for o in a.por_obra %}
+          <tr><td><b>{{ o.obra }}</b></td><td class="num">{{ o.dias or '—' }}</td>
+            <td class="num">{{ o.percentual }}</td>
+            <td class="num">{{ o.valor|moeda }}</td>
+            <td>{% if o.conta %}{{ o.conta }}{% else %}<span class="selo pagar">sem conta</span>{% endif %}</td></tr>
+        {% else %}
+          <tr><td colspan="5" class="cartao-dica">Nenhuma obra.</td></tr>
+        {% endfor %}
+        </tbody>
+        {% if a.por_obra %}
+        <tfoot><tr><th>Total</th><th class="num">{{ a.dias_no_ponto or '' }}</th>
+          <th class="num">100</th><th class="num">{{ a.valor|moeda }}</th><th></th></tr></tfoot>
+        {% endif %}
+      </table>
+    </div>
+    <div>
+      <h4>Por conta corrente <small>de onde sai o pagamento</small></h4>
+      <table class="sps">
+        <thead><tr><th>Conta</th><th>Obras</th><th class="num">Valor</th></tr></thead>
+        <tbody>
+        {% for c in a.por_conta %}
+          <tr class="{{ 'linha-alerta' if not c.conta }}">
+            <td>{% if c.conta %}<b>{{ c.conta }}</b>{% else %}<span class="selo pagar">sem conta</span>{% endif %}</td>
+            <td><span class="cartao-dica">{{ c.obras|join(', ') }}</span></td>
+            <td class="num">{{ c.valor|moeda }}</td></tr>
+        {% else %}
+          <tr><td colspan="3" class="cartao-dica">Nenhuma conta — sem obra não há conta.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if a.criticas %}
+    <div class="aviso atencao"><b>O que o sistema apontou:</b>
+      <ul class="lista-seca">{% for c in a.criticas %}<li>{{ c }}</li>{% endfor %}</ul></div>
+  {% endif %}
+
+  {# --- O PONTO, DIA A DIA ---------------------------------------------------- #}
+  <h4>O ponto, dia a dia</h4>
+  {# --- LANÇAR O PONTO NO MOBPONTO — 01/10/2026 ------------------------------
+     Pedido dele: *"de forma que eu possa ajustar uma única batida, ou um dia todo
+     ou um período todo (…) se dentro do período já houver batida, não lançar
+     informação que sobreponha o que já existe."*
+
+     Um quadro só: De / Até (o mesmo dia = um dia), a obra e a justificativa.
+     "Ver o que vai ser lançado" mostra dia a dia o que entra e o que fica de
+     fora (fim de semana, feriado, dia completo…). Só então "Lançar". A batida
+     avulsa (uma hora só) é para pequeno ajuste. Horário padrão e regras em
+     `ponto_edicao.py`. #}
+  {% if parcial and editar_ponto %}
+  <div class="cartao lancar-ponto nao-imprimir" id="lancar-ponto"
+       data-cpf="{{ a.cpf }}" data-folha="{{ a.folha_id }}" data-nome="{{ a.nome }}">
+    <b class="lateral-titulo">Lançar ponto no Mobponto</b>
+    {% if falta_para_editar %}
+      <div class="aviso atencao" style="margin:6px 0 0">{{ falta_para_editar }}</div>
+    {% elif not obras_do_mobponto %}
+      <div class="aviso atencao" style="margin:6px 0 0">Não tenho a lista de obras
+        da aba "C. Diários" — atualize as planilhas de apoio em Configurações.
+        Sem ela, nada é lançado.</div>
+    {% else %}
+      <p class="cartao-dica">Completa só o que falta em cada dia, no horário padrão
+        (7h, 12h, 13h e 17h — 16h na sexta). Fim de semana, feriado, férias, falta
+        lançada e dia já completo ficam de fora. <b>O que entra no Mobponto não se
+        desfaz por aqui.</b></p>
+      <div class="lancar-campos">
+        <label>De <input type="date" class="lancar-de" value="{{ a.periodo_iso[0] }}"
+                         min="{{ a.periodo_iso[0][:8] }}01" max="{{ a.periodo_iso[1] }}"></label>
+        <label>Até <input type="date" class="lancar-ate" value="{{ a.periodo_iso[1] }}"
+                          min="{{ a.periodo_iso[0][:8] }}01" max="{{ a.periodo_iso[1] }}"></label>
+        {# A OBRA SAI DA LISTA DA C. DIÁRIOS — as mesmas do Mobponto. Vem
+           escolhida a obra do ponto da pessoa (a de mais dias) ou, sem ponto, a
+           do cadastro, quando estão na lista. #}
+        {% set sugerida = ((a.por_obra|sort(attribute='dias', reverse=true)|first).obra if a.por_obra else (a.cadastro.obra or ''))|upper %}
+        <label class="lancar-obra-campo">Obra (C. Diários)
+          <select class="lancar-obra" data-sem-busca>
+            <option value="">escolha a obra</option>
+            {% for o in obras_do_mobponto %}
+              <option value="{{ o }}" {% if o == sugerida %}selected{% endif %}>{{ o }}</option>
+            {% endfor %}
+          </select></label>
+        <label>Só uma batida às <input type="time" class="lancar-avulsa"
+                         title="deixe vazio para completar o dia inteiro"></label>
+        <label class="lancar-just-campo">Justificativa
+          <input type="text" class="lancar-justificativa" maxlength="500"
+                 placeholder="vai para o Mobponto em cada batida"></label>
+      </div>
+      <div class="analitico-acoes" style="margin-top:8px">
+        <button type="button" class="btn secundario lancar-ver">Ver o que vai ser lançado</button>
+        <button type="button" class="btn lancar-enviar" hidden>Lançar</button>
+        <span class="cartao-dica lancar-recado"></span>
+      </div>
+      <div class="lancar-plano"></div>
+    {% endif %}
+  </div>
+  {% endif %}
+  <div class="tabela-wrap"><div class="tabela-rolagem livre">
+  <table class="sps ponto-dia-a-dia">
+    <thead><tr><th>Dia</th><th>Entrada</th><th>Almoço</th><th>Retorno</th>
+      <th>Saída</th><th>Situação</th><th>Obra do dia</th>
+      <th class="num">Valor do dia</th>
+      {% if parcial and editar_ponto %}<th class="nao-imprimir"></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for x in a.dias %}
+      <tr class="{{ 'dia-sem-obra' if not x.obra_ponto and not x.obra_valeu }}">
+        <td>{{ x.data_br[:5] }} <span class="cartao-dica">{{ x.semana }}</span></td>
+        {% for b in x.batidas %}
+          <td>{% if b.hora or b.obra %}{{ b.hora or '—' }}{% if b.obra %}<br><span class="cartao-dica">{{ b.obra }}</span>{% endif %}{% else %}<span class="cartao-dica">—</span>{% endif %}</td>
+        {% endfor %}
+        <td>{{ x.presenca }}{% if x.falta %}<br>{{ x.falta }}{% endif %}{% if x.horas %}<br><span class="cartao-dica">{{ x.horas }} h</span>{% endif %}{% if not x.presenca and not x.falta %}<span class="cartao-dica">—</span>{% endif %}</td>
+        <td>
+          {% if x.ajustado %}
+            <b>{{ x.obra_valeu }}</b><br><span class="cartao-dica">o ponto dizia {{ x.obra_ponto }} — ajustado por você</span>
+          {% elif x.obra_valeu or x.obra_ponto %}
+            <b>{{ x.obra_valeu or x.obra_ponto }}</b>
+            {% if x.empate %}<br><span class="selo saindo" title="duas batidas em cada obra: valeu a obra em que o dia começou">empate 2×2</span>{% endif %}
+          {% else %}<span class="cartao-dica">{{ x.motivo or 'sem obra' }}</span>{% endif %}
+        </td>
+        <td class="num">{% if x.valor %}{{ x.valor|moeda }}{% else %}—{% endif %}</td>
+        {% if parcial and editar_ponto %}
+          <td class="nao-imprimir">
+            <button type="button" class="link-btn lancar-dia" data-data="{{ x.data }}"
+                    data-data-br="{{ x.data_br }}"
+                    data-horas="{{ x.batidas|map(attribute='hora')|join('|') }}"
+                    title="lançar no Mobponto o que falta neste dia">lançar</button>
+          </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr><th colspan="7">Total dos dias</th>
+      <th class="num">{% if a.dias_no_ponto and a.origem != 'regra' %}{{ a.valor|moeda }}{% else %}—{% endif %}</th>
+      {% if parcial and editar_ponto %}<th class="nao-imprimir"></th>{% endif %}</tr></tfoot>
+  </table>
+  </div></div>
+</div>

@@ -25,11 +25,24 @@ jobs:
           POSTGRES_PASSWORD: erp
           POSTGRES_DB: erp_teste
         ports: ["5432:5432"]
+        # ⚠️ SEM DURABILIDADE, DE PROPÓSITO (29/09/2026). Este banco morre no fim
+        # da rodada: gravar em disco com segurança aqui é pagar caro por uma
+        # garantia que ninguém vai usar. `fsync=off` e companhia cortam a maior
+        # parte do tempo de espera de disco da suíte.
+        #
+        # ⚠️ NUNCA em produção. Com fsync desligado, uma queda de energia corrompe
+        # o banco — o que é irrelevante para um container descartável e
+        # inaceitável para o banco da empresa.
         options: >-
           --health-cmd "pg_isready -U erp -d erp_teste"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+          --tmpfs /var/lib/postgresql/data:rw
+        # O comando do próprio Postgres, com as opções de velocidade.
+        command: >-
+          postgres -c fsync=off -c synchronous_commit=off
+          -c full_page_writes=off -c checkpoint_timeout=1h -c autovacuum=off
 
     env:
       # O nome do banco PRECISA conter "teste" e o host PRECISA ser local:
@@ -53,5 +66,8 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements-dev.txt
 
+      # ⚠️ EM PARALELO, um banco por trabalhador. `-n auto` usa os processadores
+      # que a máquina tiver; `--dist loadfile` mantém os testes de um mesmo
+      # arquivo no mesmo trabalhador, que é o que preserva as fixtures de sessão.
       - name: Rodar a suíte (regras + banco de verdade)
-        run: python -m pytest -rs
+        run: python -m pytest -rs -n auto --dist loadfile

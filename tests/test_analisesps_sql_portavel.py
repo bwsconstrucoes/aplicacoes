@@ -487,8 +487,17 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     # que percorre o arquivo em vez de abri-lo inteiro, e com teto de 20 MB
     # recusado antes de qualquer leitura. Sem as duas coisas, esta liberação
     # não valeria.
+    # E a quarta, de 27/09/2026: os arquivos de pagamento da FOLHA. Mesmo
+    # raciocínio do BeeVale — é planilha que sobe para o portal do banco, e o que
+    # se monta são ~500 linhas por conta, não as 59 mil da base. O teto está no
+    # próprio gerador (`MAXIMO_POR_ARQUIVO`), recusado antes de montar o arquivo.
+    # E a quinta, de 01/10/2026: o relatório da folha aberta em Excel
+    # (`folha_relatorio.py`). Monta a lista da tela — as pessoas de UMA folha,
+    # ~500 — e os agrupamentos, que são dezenas de linhas. Não lê a base de SPs.
     LIBERADO_EM = {"beevale.py": {"openpyxl"},
                    "lote_excel.py": {"openpyxl"},
+                   "folha_geracao.py": {"openpyxl"},
+                   "folha_relatorio.py": {"openpyxl"},
                    "sincronizacao.py": {"openpyxl"}}
 
     achados = []
@@ -553,10 +562,33 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # sem ele. Enquanto houver Flask no requirements, ele está lá. Pedir
         # uma linha só para ele daria a impressão de que é escolha nossa.
         "markupsafe": "flask",
+        # Embaralhar e conferir a senha do cadastro de acesso (migração 023).
+        # ⚠️ Declarado como "flask" pelo mesmo motivo do markupsafe: o werkzeug
+        # É o Flask — não existe Flask sem ele, e é dele que vêm o
+        # `generate_password_hash` e o `check_password_hash` que o painel já
+        # usa. Escrever hash de senha à mão é o tipo de coisa que se erra em
+        # silêncio; usar o que já vem é a decisão certa, não economia.
+        "werkzeug": "flask",
+        # Ler a Folha Sintética que a contabilidade manda: o Fortes Pessoal
+        # gera o formato BIFF do Excel 97 (.xls), e o openpyxl só abre .xlsx.
+        # Pedir para a contabilidade externa mudar o formato do relatório dela
+        # não está na nossa mão. Dependência nova de 26/09/2026, avisada ao dono
+        # no mesmo dia — só leitura, e sem dependência própria nenhuma.
+        "xlrd": "xlrd",
         # A cifra que protege o certificado no banco, e a leitura do
         # .pfx. Já vinha instalada como dependência de outras, mas
         # agora é usada DIRETO — então tem de estar declarada.
         "cryptography": "cryptography",
+        # ⚠️ O PACOTE DE CERTIFICADOS DE CONFIANÇA, declarado como "requests"
+        # porque É do requests: ele não funciona sem certifi, e é o certifi que o
+        # `requests` usa por padrão para verificar TLS.
+        #
+        # O `ponto.py` passou a usá-lo DIRETO em 29/09/2026, quando o ponto do
+        # Mobponto começou a falhar no Render com "unable to get local issuer
+        # certificate": apontar o `verify` para o pacote do certifi, em vez de
+        # deixar no padrão, elimina o depósito do sistema operacional como
+        # variável. Não é dependência nova — só deixou de ser indireta.
+        "certifi": "requests",
         # `app` é o PRÓPRIO repositório, não uma biblioteca — o
         # `comprovantes.py` chama o robô do `baixabradesco` por
         # `from app.apps.baixabradesco...`. Não tem o que conferir no

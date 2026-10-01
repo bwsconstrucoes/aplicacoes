@@ -24,12 +24,16 @@ página. O custo extra é zero.
 
 ```
 web.py             rotas e telas
-auth.py            login por senha, dois perfis, padrão NEGAR
+auth.py            login (senha do Render ou cadastro), telas por pessoa, padrão NEGAR
 consultas.py       as perguntas que as telas fazem ao banco
 auditoria.py       as sete checagens da tela de Auditoria
 lote.py            o lote de trabalho: agrupar, extrair SPs, guardar
 agenda.py          calendário de compromissos que se repetem
 calendario.py      a grade de mês do calendário das SPs (outra coisa da agenda)
+conciliacao.py     a conciliação bancária: contas, extrato, marcar e anotar
+conciliacao_ofx.py a leitura do arquivo OFX (⚠️ usa o parser do ERP — ver dentro)
+conciliacao_planilha.py  a leitura da planilha antiga, aba por aba
+conciliacao_omie.py  lancar tarifa/rentabilidade no OMIE a partir do extrato
 colunas.py         o mapeamento da aba SPsBD (A:AL) — fonte única
 tabela.py          as colunas da lista — espelha o GRID_COLS do Streamlit
 preferencias.py    o que cada pessoa deixou do jeito dela (filtro, colunas)
@@ -44,6 +48,21 @@ exportar.py        o CSV que o Excel em português abre com dois cliques
 lote_excel.py      o lote em .xlsx de verdade — valor somável, código como texto
 pdf.py             os relatórios em PDF (fpdf2, que o serviço já tem)
 migracoes/         .sql numerados; aplicados por botão, nunca no boot
+
+a folha de pagamento (tela "Folha PGT"; ver docs/FOLHA_DE_PAGAMENTO.md):
+  colaboradores.py            o cadastro espelhado da planilha do Pipefy
+  folha_arquivo.py            a Folha Sintética da contabilidade, guardada
+  folha_sintetica.py          a LEITURA do arquivo da contabilidade (sem banco)
+  ponto.py                    a carga do ponto do Mobponto, dia por dia
+  folha_calendario.py         feriados (nacional × por obra) e férias
+  folha_auxilio.py            alimentação e transporte, mês por mês
+  folha_vinculo.py            CTPS × diária, dia por dia
+  folha_rateio.py             as regras de rateio de quem não bate ponto
+  folha_apropriacao.py        ⚠️ a conta pura: de quem é o dinheiro. SEM banco
+  folha_apropriacao_guardada.py  o ajuste dele + o resultado congelado
+  folha_geracao.py            os layouts BeeVale/SomaPay e a divisão em lotes
+  folha_pagamento.py          orquestra: lê, gera, sobe no Drive, registra
+  folha_cards.py              os cards do Pipefy (campos lidos do pipe)
 
 reaproveitados do Streamlit, quase sem mudança:
   pagamentos.py    QR Pix e código de barras
@@ -76,36 +95,69 @@ apontou isso na primeira navegação, e o critério passou a ser este:
 Diferença proposital é bem-vinda — mas é *decidida*, não acidental, e fica
 escrita no `HISTORICO.md`.
 
-## Quem é quem
+## Quem é quem — TODO MUNDO ENTRA PELO CADASTRO
 
-Não há cadastro de usuários: são até quatro pessoas e o módulo tem prazo de
-validade. Mas cada um **informa o nome ao entrar**, ao lado da senha.
+Desde 25/09/2026 a entrada é **só usuário e senha** (migrações 023 e 024). A
+lista de nomes ao lado da senha acabou — pedido do dono: *"elimine do login o
+login via Nomes na lista da entrada. Vamos ficar somente com os cadastrados."*
 
-**O nome não é senha e não dá poder nenhum.** Quem autentica é a senha, e só
-ela: digitar "Diretor" com a senha de Consulta continua sendo Consulta. O nome
-serve para três coisas: separar o **lote** de cada um, guardar os **filtros**
-de cada um, e assinar o **registro de alterações** — que antes sabia só qual
-perfil mexeu.
+### O cadastro
 
-Se um dia for preciso IMPEDIR que alguém se passe por outro, o lugar é o
-cadastro de usuários do ERP. Aqui é etiqueta honesta entre colegas.
+Feito em **Configurações › Quem tem acesso**, por um mestre. Cada pessoa tem
+login, senha (guardada embaralhada, ninguém lê depois — só troca), a marcação
+de **poder alterar** ou só ver, a marcação de **mestre**, e a lista de **telas
+que ela abre**.
 
-## Os dois perfis
+### O MESTRE é uma marcação, não uma senha
+
+Quem é mestre vê **todas** as telas, abre Configurações, aplica migração, mexe
+no certificado digital, lança aporte no OMIE e cadastra gente. As telas
+marcadas para um mestre não importam — ele alcança todas, e por isso entra
+mesmo sem nenhuma marcada.
+
+**O último mestre não pode ser apagado, desativado nem desmarcado.** Ficaria um
+sistema sem ninguém que administre, e o conserto passaria pela porta de
+emergência.
+
+### ⚠️ A PORTA DE EMERGÊNCIA — a senha do Render
 
 | Perfil | O que faz | Variável no Render |
 |---|---|---|
 | **Consulta** | vê tudo e exporta; não altera nada | `ANALISESPS_SENHA_CONSULTA` |
 | **Operador** | tudo o que o Consulta faz, mais alterar | `ANALISESPS_SENHA_OPERADOR` |
 
-Perfil sem senha configurada não existe — ninguém entra por ele. **Sem nenhuma
-das duas, o módulo não abre para ninguém.** Falha fechado, de propósito: são os
-pagamentos da empresa.
+Entra-se por ela na tela de entrada **deixando o campo de usuário em branco**.
+Quem entra assim é mestre, e o registro de alterações marca "MESTRE
+(emergência)" — não há cadastro por trás, logo não há nome de gente.
 
-Não há cadastro de usuários porque são até quatro pessoas e o módulo tem prazo
-de validade — o ERP vai substituí-lo. A consequência, dita com clareza porque
-um dia vai incomodar: **o registro de alterações sabe que PERFIL mexeu, não
-qual PESSOA.** Quando isso passar a importar, o lugar certo é o cadastro de
-usuários do ERP, não um cadastro novo aqui.
+**Ela existe para dois casos, e só:** criar o **primeiro** mestre (logo depois
+da migração, quando ainda não há nenhum) e **destravar** o sistema se todos os
+acessos de mestre se perderem.
+
+Por que não foi eliminada, embora o pedido tenha sido "só os cadastrados": sem
+ela, perder o último mestre tranca todo mundo para fora **sem volta** — não há
+e-mail de recuperação nem outro administrador. Está dita na tela de entrada, e
+tirá-la é decisão do dono, sabendo o preço.
+
+⚠️ **Três regras que falham fechado:**
+
+1. **Sem tela marcada, a pessoa não entra.** Lista vazia quer dizer NENHUMA,
+   nunca "todas".
+2. **Quem tem cadastro não abre Configurações**, não aplica migração, não
+   encosta no certificado, não lança aporte no OMIE e **não cria outro
+   acesso** — a última é a que faz as outras valerem.
+3. **O padrão de "pode alterar" é NÃO.** Subir o poder de alguém é marcação
+   consciente.
+
+As permissões são lidas do banco **a cada pedido**: tirar uma tela de alguém
+vale na hora, não quando ele fechar o navegador.
+
+### Onde a permissão é decidida
+
+Num lugar só: `auth.exigir_login()`, com o mapa `auth.TELA_DA_ROTA` dizendo de
+que tela é cada rota. **Rota que ninguém classificou não abre** para quem tem
+cadastro, e há teste de inventário exigindo que toda rota esteja classificada —
+é o que impede a próxima tela de nascer com brecha ou com 404 inexplicável.
 
 ## Toda rota declara o que exige
 
@@ -188,6 +240,8 @@ seria ou perdido, ou versionado por engano.
 | `ANALISESPS_SENHA_OPERADOR` | senha de quem altera. **Sem ela, ninguém opera** |
 | `ANALISESPS_SENHA_CONSULTA` | senha de quem só olha. **Sem ela, ninguém consulta** |
 | `ANALISESPS_SECRET` | autoriza a chamada do agendador |
+| `ANALISESPS_AVISO_TELEFONE` | para quem vai o WhatsApp quando a carga do ponto PARA (vários números, separados por vírgula). **Opcional**: sem ela valem os dois números do aviso do BaixaBradesco — o financeiro e o dono |
+| `MOBPONTO_RESPONSAVEL_CPF` / `MOBPONTO_RESPONSAVEL_NOME` | quem assina, no Mobponto, a batida incluída pela janela do funcionário na folha ("corrigir" no dia). São os mesmos CPF e nome que o script de ajuste do ponto usa. **Sem elas, o quadro de corrigir diz o que falta e não grava.** Não são senha, mas o CPF é dado pessoal: vão direto no Render |
 | `ANALISESPS_HOOK_OMIE` | gancho do Make dos botões "Consulta" e "Atualizar" da ficha. **Opcional**: sem ela os dois botões não aparecem |
 | `ANALISESPS_CHAVE_COFRE` | frase secreta que cifra os certificados digitais no banco. **Sem ela, o sistema recusa guardar certificado** — e sem certificado a busca de notas na Receita não roda. ⚠️ **Trocar a frase torna ilegível o que já foi guardado**: os certificados teriam de ser subidos de novo |
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |
@@ -262,6 +316,8 @@ cobrável de quem preencheu.
 | Solicitações | a lista, com todos os filtros e as ações em lote |
 | Lote | a remessa que está sendo tratada agora, em grupos |
 | Relatório | quanto, por obra, projeto, tipo, conta e credor |
+| Conciliação › Panorama | o que falta em cada conta: buraco de extrato, atraso, o que falta conciliar. Responde "no que eu não posso confiar" |
+| Conciliação | o extrato bancário conta a conta: solta o OFX (ele descobre a conta sozinho), confere ANTES de gravar, marca o conciliado e anota pendência. Dá para **desfazer uma importação** inteira e para **apagar uma linha solta** (com confirmação e motivo; a que já foi lançada no OMIE não sai). Controle paralelo ao OMIE, a pedido do dono |
 | Calendário | o MESMO filtro do Relatório e das Solicitações (**menos as datas** — quem manda aqui é o mês aberto), espalhado nos dias do mês, com uma linha colorida por situação (vermelho vencido, laranja a vencer, azul pago); o dia clicado abre a lista daquele dia |
 | Auditoria | sete checagens do que está errado na base |
 | Ratear | o JSON que atualiza o título no Omie |
@@ -270,10 +326,93 @@ cobrável de quem preencheu.
 | Log | toda alteração feita por aqui, e se já subiu |
 | Configurações | migrações do banco e a sincronização |
 | Aportes | lançar aporte e devolução de aporte no OMIE (dentro de Configurações) |
+| **Folha PGT** | a folha de pagamento inteira, em subtelas (ver abaixo) |
 
 Mais a **ficha de cada SP** e a tela de **códigos de pagamento**, que monta o
 QR Pix ou o código de barras das SPs marcadas — substitui abrir card por card
 no Pipefy para copiar a chave.
+
+**Nas Solicitações, a SP que já está num lote sai marcada** com um selo
+pequeno colado no número — azul quando é o SEU lote (o balãozinho diz o
+grupo), âmbar quando é o lote de OUTRA PESSOA (e diz de quem). O âmbar é o que
+importa: cada um tem o seu lote desde 04/09, e duas pessoas separarem a mesma
+SP sem saber é o caminho para pagar duas vezes. A marca olha o lote de todo
+mundo, e some sozinha se o banco estiver fora — perder a marca é aceitável,
+perder a tela não.
+
+## Folha PGT — as subtelas
+
+Uma entrada no menu e, por dentro, o caminho do trabalho. Correção do dono em
+27/09/2026: *"eles têm que estar dentro de uma tela só (…) senão vai ficar tela
+demais, fica até misturado com o restante, que tem mais a ver com o financeiro."*
+
+| Subtela | O que responde |
+|---|---|
+| Folha da contabilidade | a folha aberta pessoa por pessoa; na lateral, os números, os alertas, a caixa de trazer outra folha e a lista do que já veio; a divisão por obra (e o já pago do mês, todas as verbas) abre numa janela. Casa com o cadastro pelo **ID Fortes**, nunca pelo nome. (O "Panorama" saiu em 30/09/2026: *"tá sem sentido"*) |
+| Ponto | traz o ponto do Mobponto, mês a mês, e **mostra os nomes dos campos que vieram** — ver "O ponto, sozinho e sem estragar" abaixo |
+| Colaboradores | o cadastro espelhado, com link para o card do Pipefy e botão de atualizar |
+| Feriados e férias | lança feriado (nacional ou por obra) e o período de férias de cada pessoa |
+| Alimentação e transporte | a conta das duas verbas, com o caminho inteiro à vista e o ajuste de mão |
+| Rateio das obras | só do mestre: quem não bate ponto e para quais obras vai o valor |
+| Gerar pagamento | só do mestre: os arquivos BeeVale/SomaPay, o log com o link e o card |
+
+### O ponto: se parar, retoma e avisa; e traz sozinho todo dia (29/09/2026)
+
+Pedido do dono: *"caso a carga pare, que possa ser retomada de onde parou e que
+sejamos avisados"*.
+
+**Se a carga parar no meio** (rede, Mobponto fora do ar, o serviço reiniciando
+numa publicação), **o mês continua valendo a carga anterior** — a nova nasce
+"em andamento" ao lado da antiga e só a substitui quando termina, na mesma
+transação. Cada página é gravada por inteiro, na sua transação, com o andamento
+anotado na carga. **A próxima chamada do mês — botão ou automático — continua
+da página em que parou**, se a tentativa tem menos de 24 horas (depois disso o
+Mobponto mudou demais e recomeça). A página é gravada por pessoa, então quem
+mudar de página entre as duas tentativas não duplica; pode faltar, e isso fica
+escrito nos avisos da carga — a próxima carga completa do mês refaz tudo. Na
+tela do Ponto a tentativa aparece como "parou na página N — retoma na próxima
+carga".
+
+**Quem cuida é avisado por WhatsApp** (`avisos_ponto.py`) quando o ponto para —
+por erro ou porque o serviço reiniciou no meio —, com o mês, a página e o que
+acontece em seguida. Só o que parou avisa. Destinatários em
+`ANALISESPS_AVISO_TELEFONE`; sem ela, o financeiro e o dono, como no aviso do
+BaixaBradesco. A folha também avisa, em vermelho, quando a carga do mês
+terminou com menos páginas do que a API prometeu.
+
+Tudo isso depende da **migração 037**; antes do botão, a carga continua
+entrando do jeito antigo (apaga antes, não retoma) e diz isso num aviso.
+
+**Ninguém precisa apertar o botão todo dia.** O modo `ponto_diario` traz o mês
+corrente — e, até o dia 10, o anterior também (a mesma régua da competência
+sugerida) — em duas tentativas, a segunda retomando de onde a primeira parou.
+É para o agendador, pela mesma porta da sincronização:
+
+```
+POST https://<o serviço>/analisesps/api/sincronizar
+Content-Type: application/json
+{"modo": "ponto_diario", "secret": "<ANALISESPS_SECRET>"}
+```
+
+**De hora em hora** (desde 30/09/2026). Cada chamada, mês a mês: **retoma** a
+carga que parou no meio, **traz** o mês se ele ainda não entrou hoje, e **pula**
+o que já entrou inteiro hoje — então o mês é refeito uma vez por dia, e uma
+queda é retomada em até uma hora, sem ninguém apertar nada. É o "não mata o
+job" do script da planilha (que tenta de novo a cada minuto), com um relógio
+mais folgado. Um mês que falhe não impede o outro, e a falha aparece em
+Configurações e no WhatsApp. **Ele não substitui o botão**: um mês antigo que precise ser
+refeito continua sendo trazido pela tela do Ponto.
+
+⚠️ **Três coisas que não se mexem sem ler o `docs/FOLHA_DE_PAGAMENTO.md`:**
+
+1. **A apropriação é função pura** (`folha_apropriacao.py`): sem banco, sem tela. É
+   a conta que decide o dinheiro de ~500 pessoas por quinzena, e conta que só se
+   verifica abrindo tela não é verificada.
+2. **Só se gera pagamento de apropriação FECHADA**, e o resultado fica congelado.
+   Recalcular mudaria a história de um dinheiro que já saiu.
+3. **O SomaPay não aceita o mesmo CPF duas vezes** — é trava, não preferência. O
+   BeeVale aceita, se a natureza da verba for outra, e é isso que permite juntar
+   alimentação e transporte num pagamento só.
 
 ## Levar o que está na tela
 

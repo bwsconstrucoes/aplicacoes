@@ -1,0 +1,1993 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Conciliação — Análise de SPs{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   A CONCILIAÇÃO BANCÁRIA — pedido do dono em 24/09/2026.
+
+   ⚠️ A BARRA DE FILTROS É PRÓPRIA, e não a de Solicitações. São universos
+   diferentes: lá se filtra SP (credor, obra, projeto); aqui, linha de extrato
+   (conta, período, conciliado, observação). Reusar a mesma barra faria o
+   recorte de uma tela vazar na outra sem sentido nenhum.
+--------------------------------------------------------------------------- #}
+{% block filtros %}
+{% if estado.pronto and contas %}
+<form method="get" class="filtros-form" id="filtros-conciliacao">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_conciliacao',
+                                          conta_id=filtros.conta_id) }}">Limpar</a>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab"><span>Conta</span></div>
+    <div class="filtro-cont">
+      <select class="campo-largo" name="conta_id" onchange="this.form.submit()">
+        {% for c in contas %}
+          <option value="{{ c.id }}" {% if filtros.conta_id == c.id %}selected{% endif %}>
+            {{ c.nome }}{% if c.banco %} · {{ c.banco }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab"><span>Situação</span></div>
+    <div class="filtro-cont">
+      <select class="campo-largo" name="situacao" onchange="this.form.submit()">
+        {% for chave, rotulo in situacoes.items() %}
+          <option value="{{ chave }}" {% if filtros.situacao == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.data_ini or filtros.data_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Período</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label>
+          <input type="date" name="data_ini"
+                 value="{{ filtros.data_ini.isoformat() if filtros.data_ini else '' }}"></div>
+        <div><label>Até</label>
+          <input type="date" name="data_fim"
+                 value="{{ filtros.data_fim.isoformat() if filtros.data_fim else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.busca %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Procurar</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <input class="campo-largo" name="busca" value="{{ filtros.busca }}"
+             placeholder="histórico, documento ou observação">
+      <p class="cartao-dica" style="margin:6px 2px 0">
+        Separe por vírgula para exigir as duas coisas. A busca alcança a
+        <b>observação</b> — é o que a planilha tinha de melhor.
+      </p>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.sentido or filtros.valor_ini or filtros.valor_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Valor</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select class="campo-largo" name="sentido">
+        <option value="">Entradas e saídas</option>
+        <option value="entrada" {% if filtros.sentido == 'entrada' %}selected{% endif %}>Só entradas</option>
+        <option value="saida" {% if filtros.sentido == 'saida' %}selected{% endif %}>Só saídas</option>
+      </select>
+      <div class="faixa" style="margin-top:6px">
+        <div><label>De</label>
+          <input name="valor_ini" value="{{ filtros.valor_ini or '' }}" placeholder="0,00"></div>
+        <div><label>Até</label>
+          <input name="valor_fim" value="{{ filtros.valor_fim or '' }}" placeholder="0,00"></div>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin:12px 2px"><button class="btn" type="submit">Aplicar</button></p>
+</form>
+
+{# ---------------------------------------------------------------------------
+   "ONDE ESTÁ ESSE LANÇAMENTO?" — a busca que ignora TUDO.
+
+   ⚠️ Ela não obedece conta escolhida, período, situação, nem o filtro guardado
+   da visita anterior. Existe porque "não importou" e "não estou vendo" são a
+   mesma coisa na tela e coisas diferentes no banco — e a diferença entre as
+   duas custou a ele duas rodadas em 29/09/2026, procurando um valor que estava
+   gravado. A resposta é um FATO: está, e nesta conta; ou não está.
+
+   ⚠️ FORA DO <form> DOS FILTROS, de propósito: lá dentro, o Enter numa caixa
+   recarregaria a tela com os filtros, em vez de procurar. A resposta aparece
+   no meio da tela (`#achados-gerais`), onde há largura.
+--------------------------------------------------------------------------- #}
+<div class="filtro aberto procura-geral">
+  <div class="filtro-cab"><span>Não acha um lançamento?</span></div>
+  <div class="filtro-cont">
+    <input type="text" id="procura-valor" placeholder="valor, ex.: 56.284,17"
+           aria-label="Valor a procurar em todas as contas">
+    <input type="text" id="procura-texto" placeholder="ou um pedaço do histórico"
+           aria-label="Histórico a procurar em todas as contas">
+    <button class="btn secundario" type="button" id="btn-procurar-tudo"
+            >Procurar em todas as contas</button>
+    <span class="cartao-dica">ignora conta, período e qualquer filtro</span>
+  </div>
+</div>
+
+{% if pode_operar %}
+{# ---------------------------------------------------------------------------
+   O EXTRATO ENTRA POR AQUI — na barra lateral, abaixo dos filtros.
+
+   ⚠️ ELE ESTAVA NO TOPO DA TELA, e o dono pediu para sair: *"o soltar o
+   arquivo OFX, eu queria que ele ficasse no sidebar, abaixo dos filtros.
+   Está a ocupar a parte de cima da tela."* Ele tem razão: trazer extrato é
+   coisa de uma vez por semana; olhar o extrato é o dia inteiro. O que se faz
+   o dia inteiro é que merece o topo.
+--------------------------------------------------------------------------- #}
+<div class="lateral-extrato" id="area-extrato">
+  <h2 style="font-size:13.5px; margin:0 2px 8px">Trazer extrato</h2>
+  <div class="solta-arquivo" id="solta-extrato">
+    <p><b>Solte os OFX aqui</b><br>
+      <label class="link-btn" for="arq-extrato">ou escolha no computador</label>
+      <br><small>pode soltar vários de uma vez</small></p>
+    <input type="file" id="arq-extrato" accept=".ofx,.OFX" multiple hidden>
+  </div>
+  <p class="cartao-dica" style="margin:8px 2px 0">
+    Ele descobre a conta de cada arquivo sozinho e <b>diz o que vai fazer antes
+    de gravar</b>. Mandar o mesmo extrato duas vezes não duplica nada — então
+    dá para jogar a pasta inteira e deixar ele separar o que falta.
+  </p>
+</div>
+
+{# ---------------------------------------------------------------------------
+   AJUSTES — o que se faz UMA vez e não se olha mais.
+
+   ⚠️ ELES ESTAVAM NO RODAPÉ DA TELA e o dono pediu para sair: *"o trazer a
+   planilha antiga e contas está no final da tela, então você vai manuseando e
+   isso vai estar sempre aparecendo. Isso é uma coisa que uma vez feita não é
+   uma coisa que você precisa estar olhando a todo instante."*
+
+   Ele tem razão, e a razão vale como regra nesta tela: **o que se configura
+   uma vez não divide espaço com o que se faz o dia inteiro.** Agora são dois
+   botões aqui, e o conteúdo abre por cima, numa janela.
+--------------------------------------------------------------------------- #}
+<div class="lateral-ajustes">
+  <button class="btn secundario" id="btn-abrir-contas">Contas</button>
+  <button class="btn secundario" id="btn-abrir-planilha">Trazer planilha</button>
+  <button class="btn secundario" id="btn-abrir-tipos">Tipos do OMIE</button>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+{# ⚠️ A MIGRAÇÃO PODE NÃO TER SIDO APLICADA AINDA. O código sobe para o Render
+   antes de o dono apertar o botão, e uma tela que estourasse aqui derrubaria a
+   confiança na publicação inteira. #}
+{% if not estado.pronto %}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>A Conciliação ainda não foi ligada</h3></div>
+    <p>Falta aplicar a atualização do banco — é o botão
+      <b>"Aplicar atualizações do banco"</b>, aqui mesmo em
+      <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a>.
+      Ele cria as três tabelas que esta tela usa.</p>
+    <p class="cartao-dica">Enquanto isso, nada se perde: a planilha continua
+      sendo a fonte, e nenhum extrato foi importado ainda.</p>
+  </div>
+{% elif not contas %}
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Comece cadastrando uma conta</h3></div>
+    <p>A conciliação é por conta bancária. Cadastre a primeira e, na hora de
+      soltar o extrato, o sistema passa a reconhecer sozinho de qual conta ele
+      é — o banco e o número vêm dentro do próprio arquivo.</p>
+    {% if pode_operar %}
+      <p><button class="btn" id="btn-nova-conta">+ Nova conta</button></p>
+    {% endif %}
+  </div>
+{% else %}
+
+<h2>Conciliação <small>{{ conta.nome if conta else '' }}</small>
+  <a class="btn secundario" style="float:right"
+     href="{{ url_for('analisesps.conciliacao_panorama') }}">Panorama de todas as contas</a>
+</h2>
+
+{# O gesto de soltar o arquivo mora na barra lateral; a RESPOSTA aparece aqui,
+   onde há largura para a tabela do que vai entrar ser lida. #}
+<div id="saida-extrato"></div>
+
+{# ---------------------------------------------------------------------------
+   OS NÚMEROS DO TOPO SÃO FILTROS — pedido dele em 24/09/2026: *"se eu clicar
+   em falta conciliar, eu já sei listado imediatamente as que faltam. Isso
+   aqui não está acontecendo."*
+
+   ⚠️ O QUE MUDA E O QUE NÃO MUDA AO CLICAR: o número clicado troca só a
+   SITUAÇÃO; conta, período e busca ficam como estavam. Limpar o resto junto
+   faria o clique parecer um "voltar ao início" — e a pessoa perderia o
+   recorte que levou minutos montando.
+--------------------------------------------------------------------------- #}
+{% macro endereco(situacao) -%}
+  {%- set base = args.to_dict(flat=false) -%}
+  {%- set _ = base.pop('situacao', None) -%}
+  {%- set _ = base.pop('pagina', None) -%}
+  {{ url_for('analisesps.tela_conciliacao', situacao=situacao, **base) }}
+{%- endmacro %}
+
+<div class="kpis">
+  <a class="kpi {{ 'ativo' if filtros.situacao == 'todos' }}"
+     href="{{ endereco('todos') }}" title="ver tudo desta conta">
+    <div class="kpi-rotulo">Saldo da conta</div>
+    <div class="kpi-valor">{{ saldo_total|moeda }}</div>
+    <div class="kpi-sub">
+      {% if conta and conta.saldo_inicial_em %}
+        começa em {{ conta.saldo_inicial|moeda }} no {{ conta.saldo_inicial_em|data_br }}
+      {% else %}
+        <b>sem saldo inicial</b> — é por isso que ele pode não bater
+      {% endif %}
+    </div>
+  </a>
+  <a class="kpi vermelho {{ 'ativo' if filtros.situacao == 'pendentes' }}"
+     href="{{ endereco('pendentes') }}" title="listar só o que falta conciliar">
+    <div class="kpi-rotulo">Falta conciliar</div>
+    <div class="kpi-valor">{{ resumo.pendentes or 0 }}</div>
+    <div class="kpi-sub">{{ (resumo.pendentes_valor or 0)|moeda }} no recorte</div>
+  </a>
+  <a class="kpi laranja {{ 'ativo' if filtros.situacao == 'com_observacao' }}"
+     href="{{ endereco('com_observacao') }}" title="listar só o que tem anotação">
+    <div class="kpi-rotulo">Com observação</div>
+    <div class="kpi-valor">{{ resumo.com_observacao or 0 }}</div>
+    <div class="kpi-sub">pendências anotadas</div>
+  </a>
+  <a class="kpi verde {{ 'ativo' if filtros.situacao == 'conciliados' }}"
+     href="{{ endereco('conciliados') }}" title="listar só o que já foi conciliado">
+    <div class="kpi-rotulo">Já conciliado</div>
+    <div class="kpi-valor">{{ (resumo.quantidade or 0) - (resumo.pendentes or 0) }}</div>
+    <div class="kpi-sub">de {{ resumo.quantidade or 0 }} no recorte</div>
+  </a>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">No recorte</div>
+    <div class="kpi-valor">{{ (resumo.saldo or 0)|moeda }}</div>
+    <div class="kpi-sub">{{ (resumo.entradas or 0)|moeda }} entrou ·
+      {{ (resumo.saidas or 0)|moeda }} saiu</div>
+  </div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Extrato</h3>
+    <small>
+      {{ resumo.quantidade or 0 }} linha(s) neste recorte
+      {% if total_da_conta %}de {{ total_da_conta }} na conta{% endif %}
+    </small>
+  </div>
+
+  {# ------------------------------------------------------------------------
+     ⚠️ O RECORTE TEM DE ANUNCIAR O QUE ESCONDE. Conserto de 29/09/2026: o dono
+     mandou um extrato dizendo *"não foi importado o valor de 56.284,17, não tá
+     sendo reconhecido"*. Importado ele foi — as 53 linhas daquele arquivo entram,
+     conferido com banco de verdade. O que acontecia era a tela: o filtro fica
+     GUARDADO de uma visita para a outra, e um período ou um "só saídas" de ontem
+     esconde hoje uma linha que está gravada.
+
+     "N linhas neste recorte", sozinho, é indistinguível de "N linhas existem" — e
+     a conclusão de quem olha é sempre a pior.
+     ------------------------------------------------------------------------ #}
+  {# ------------------------------------------------------------------------
+     "ONDE ESTÁ ESSE LANÇAMENTO?" — a busca que ignora TUDO.
+
+     ⚠️ Ela não obedece conta escolhida, período, situação, nem o filtro guardado
+     da visita anterior. Existe porque "não importou" e "não estou vendo" são a
+     mesma coisa na tela e coisas diferentes no banco — e a diferença entre as
+     duas custou a ele duas rodadas em 29/09/2026, procurando um valor que estava
+     gravado. Aqui a resposta é um FATO: está, e nesta conta; ou não está.
+     ------------------------------------------------------------------------ #}
+  {# A caixa da busca mora na barra lateral (pedido dele, 29/09/2026: *"essa
+     pesquisa de um lançamento precisa estar no sidebar"*). A RESPOSTA fica aqui,
+     onde há largura para listar conta, data, valor e arquivo. #}
+  <div id="achados-gerais"></div>
+
+  {% set escondidas = (total_da_conta or 0) - (resumo.quantidade or 0) %}
+  {% if escondidas > 0 %}
+    <div class="aviso atencao" style="margin:0 0 10px">
+      <b>O filtro está escondendo {{ escondidas }} linha(s) desta conta.</b>
+      Elas estão gravadas — só não entram neste recorte. O filtro fica guardado de
+      uma visita para a outra, então pode ser de outro dia.
+      {# ⚠️ `tela_conciliacao`, NÃO `conciliacao`. Escrevi o nome errado em
+         29/09/2026 e o estrago foi cirúrgico: este bloco só é desenhado quando o
+         filtro esconde alguma linha — ou seja, a tela quebrava com 500 EXATAMENTE
+         quando ele procurava um valor que não casava com nada. Foi o "Deu erro"
+         que ele viu ao filtrar pela coluna Entrada.
+
+         Endereço montado à mão não teria dado erro nenhum: teria dado uma página
+         de "não encontrado" em silêncio, o que é pior. O `url_for` gritar aqui é
+         o comportamento certo — o que faltou foi eu rodar a tela neste estado. #}
+      <a href="{{ url_for('analisesps.tela_conciliacao', f='1',
+                          conta_id=filtros.conta_id) }}">ver todas</a>
+    </div>
+  {% endif %}
+
+  {# ⚠️ A TABELA É DESENHADA MESMO SEM NENHUMA LINHA, e isto é conserto de um
+     defeito que o dono achou em 26/09/2026:
+
+       *"Se eu colocar uma data que não tem nada, ele some com o extrato —
+       obviamente não tem nada, mas também ele some com os cabeçalhos. Aí você
+       não pode alterar o filtro."*
+
+     E era isso mesmo: o "se não há linhas" engolia a tabela INTEIRA, cabeçalho
+     incluído — e os filtros de cabeçalho moram no cabeçalho. Filtrar por um dia
+     vazio virava um beco sem saída: a única saída era o "Limpar" ou a barra
+     lateral, e quem não soubesse disso concluiria que a tela travou.
+
+     Um filtro que não pode ser desfeito de onde foi feito não é filtro, é
+     armadilha. O cabeçalho fica SEMPRE; o "nada aqui" vira uma linha dentro
+     da tabela. #}
+  {% if pode_operar and linhas %}
+    {# ⚠️ TUDO DENTRO DE `.ba-esquerda`. A barra é uma grade de três colunas
+       (esquerda / total / direita), feita para a tela do lote. Botão solto
+       direto na grade cai numa coluna que ESTICA — foi o que ele viu em
+       29/09/2026: *"os botões lançar no omie e desmarcar estão muito grandes e
+       desalinhados"*. Dentro do grupo, cada botão tem o tamanho do texto. #}
+    <div class="barra-acoes">
+      <div class="ba-esquerda">
+        <label class="opcao"><input type="checkbox" id="marcar-todos">
+          <span class="rotulo">marcar todos da página</span></label>
+        <button class="btn secundario" id="btn-conciliar">Conciliar selecionados</button>
+        <button class="btn secundario" id="btn-desmarcar">Desmarcar selecionados</button>
+        {# ⚠️ ESTE BOTÃO ESCREVE NO OMIE. Ele não lança direto: abre o ensaio,
+           que mostra linha a linha o que vai acontecer. #}
+        <button class="btn secundario" id="btn-omie"
+                {% if not omie_pronto %}disabled
+                title="falta aplicar a atualização do banco que liga a parte do OMIE"
+                {% endif %}>Lançar no OMIE…</button>
+      </div>
+      <span id="recado-acao" class="cartao-dica" style="margin:0"></span>
+    </div>
+  {% endif %}
+
+  {# ⚠️ O FORMULÁRIO FICA FORA DA TABELA, e os campos do cabeçalho apontam
+     para ele pelo atributo `form`. Um `<form>` no meio de `<tr>` não é HTML
+     válido: o navegador o expulsa da tabela e as caixinhas param de enviar,
+     sem erro nenhum na tela. #}
+  <form method="get" id="filtro-colunas" style="display:none">
+    <input type="hidden" name="conta_id" value="{{ filtros.conta_id }}">
+    {# ⚠️ O QUE A BARRA LATERAL JÁ FILTROU VIAJA JUNTO. Antes só `sentido` e
+       `busca` vinham, e por isso digitar no cabeçalho APAGAVA em silêncio a
+       faixa de datas e a de valores que a pessoa tinha posto ao lado — ela
+       via a lista mudar e não fazia ideia de por quê. #}
+    {% for chave, valores in args.lists()
+       if chave in ('sentido', 'busca', 'data_ini', 'data_fim',
+                    'valor_ini', 'valor_fim') %}
+      {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+    {% endfor %}
+    {# ⚠️ ESTE BOTÃO É O QUE FAZ O ENTER FUNCIONAR, e a falta dele era o
+       defeito que o dono relatou em 25/09/2026 (*"os filtros de cabeçalho
+       também não estão funcionando"*).
+
+       A regra do HTML: num formulário SEM botão de enviar, o Enter só envia
+       se houver UM único campo de texto. Aqui são seis (data, histórico,
+       documento, entrada, saída, observação) — então o Enter não fazia
+       absolutamente nada, sem erro nenhum na tela. Só a caixinha de situação
+       funcionava, porque ela envia no `onchange`.
+
+       Não é enfeite escondido: é o botão padrão do formulário. O script
+       abaixo ainda envia no Enter por conta própria, para não depender de
+       navegador nenhum. #}
+    <button type="submit" hidden aria-hidden="true" tabindex="-1">Filtrar</button>
+  </form>
+
+  <div class="rolagem-tabela">
+  {# ⚠️ AS LARGURAS SÃO DECLARADAS, TODAS. Antes, só o Histórico ficava sem
+     largura — e por isso ele engolia toda a sobra da tabela, empurrando a
+     observação para um canto. Com `table-layout: fixed` e uma largura por
+     coluna, a sobra vai para onde ele escreve. #}
+  <table class="sps conciliacao">
+    <colgroup>
+      {% if pode_operar %}<col style="width:32px">{% endif %}
+      <col style="width:84px">
+      <col class="c-historico">
+      <col style="width:96px">
+      <col style="width:106px">
+      <col style="width:106px">
+      <col style="width:118px">
+      <col style="width:76px">
+      {# ⚠️ ESTA LINHA FALTOU quando a coluna "No OMIE" nasceu (29/09/2026), e
+         foi ISSO que desmontou a tela — não a largura. A tabela é
+         `table-layout: fixed`: as larguras vêm DESTA lista, coluna por coluna.
+         Com dez <col> para onze colunas, a largura da observação (26%) caía
+         na "No OMIE", e a observação de verdade ficava com NADA — o campo de
+         anotar virava uma letra por linha. Há um teste que conta <col> contra
+         <th>, para não acontecer de novo. #}
+      <col class="c-no-omie">
+      <col class="c-observacao">
+      {% if pode_operar %}<col style="width:30px">{% endif %}
+    </colgroup>
+    <thead>
+      <tr>
+        {% if pode_operar %}<th></th>{% endif %}
+        <th>Data</th>
+        <th>Histórico</th>
+        <th>Documento</th>
+        <th class="direita">Entrada</th>
+        <th class="direita">Saída</th>
+        <th class="direita">Saldo</th>
+        <th>Conc.</th>
+        {# ⚠️ COLUNA NOVA em 29/09/2026, por cobrança dele: *"não fica nenhuma
+           informação na tabela dizendo que aquela tarifa foi lançada, precisa pra
+           não ser lançada novamente."* O estado já era gravado; a lista é que
+           nunca o lia. #}
+        <th class="no-omie">No OMIE</th>
+        <th class="obs">Observação</th>
+        {% if pode_operar %}<th></th>{% endif %}
+      </tr>
+      {# ---------------------------------------------------------------------
+         O FILTRO EM CADA COLUNA — pedido do dono em 24/09/2026: *"tem data,
+         tem histórico, tem observação, tem entrada, tem saída. Acho que em
+         cada um desses dá para colocar o filtro de cabeçalho."*
+
+         ⚠️ SUBSTITUIU A BARRA DE TRÊS CAMPOS da leva anterior, e é melhor:
+         ali "valor" não distinguia entrada de saída, e "histórico" procurava
+         nas três colunas de texto ao mesmo tempo. Aqui cada caixinha filtra a
+         SUA coluna — que é o que a pessoa quer dizer quando digita embaixo de
+         um título.
+
+         ⚠️ E ELE ALIMENTA O MESMO FILTRO DA BARRA LATERAL. Duas máquinas de
+         filtrar na mesma tela divergiriam, e ninguém saberia qual está
+         valendo. Enter em qualquer caixinha aplica tudo de uma vez.
+      --------------------------------------------------------------------- #}
+      <tr class="filtros-coluna">
+        {% if pode_operar %}<th></th>{% endif %}
+        <th><input type="date" name="data" form="filtro-colunas"
+                   value="{{ filtros.dia.isoformat() if filtros.dia else '' }}"></th>
+        <th><input name="historico" form="filtro-colunas" placeholder="procurar…"
+                   value="{{ filtros.historico }}"></th>
+        <th><input name="documento" form="filtro-colunas" placeholder="procurar…"
+                   value="{{ filtros.documento }}"></th>
+        <th><input name="entrada" form="filtro-colunas" placeholder="valor"
+                   class="direita" value="{{ filtros.entrada or '' }}"></th>
+        <th><input name="saida" form="filtro-colunas" placeholder="valor"
+                   class="direita" value="{{ filtros.saida or '' }}"></th>
+        <th></th>
+        <th></th>
+        <th>
+          <select name="situacao" form="filtro-colunas"
+                  onchange="this.form.submit()">
+            {% for chave, rotulo in situacoes.items() %}
+              <option value="{{ chave }}"
+                {% if filtros.situacao == chave %}selected{% endif %}>
+                {{ {'todos': 'todos', 'pendentes': 'falta',
+                    'conciliados': 'sim', 'com_observacao': 'com obs.'}[chave] }}</option>
+            {% endfor %}
+          </select>
+        </th>
+        <th><input name="observacao" form="filtro-colunas" placeholder="procurar…"
+                   value="{{ filtros.observacao }}"></th>
+        {% if pode_operar %}<th></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+        <tr class="linha-extrato {{ 'conciliada' if l.conciliado }}"
+            data-id="{{ l.id }}">
+          {% if pode_operar %}
+            <td><input type="checkbox" class="marca-linha" value="{{ l.id }}"></td>
+          {% endif %}
+          <td>{{ l.data|data_br }}</td>
+          <td class="historico" title="{{ l.descricao }}">{{ l.descricao }}
+            {%- if l.origem == 'mao' %}
+              <span class="etiqueta" title="linha digitada, não veio do banco">à mão</span>
+            {%- elif l.origem == 'planilha' %}
+              <span class="etiqueta" title="veio da planilha antiga">planilha</span>
+            {%- endif %}</td>
+          <td>{{ l.documento }}</td>
+          <td class="direita valor-entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
+          <td class="direita valor-saida">{{ (-l.valor)|moeda if l.valor < 0 else '' }}</td>
+          <td class="direita saldo">{{ l.saldo|moeda }}</td>
+          <td>
+            {% if pode_operar %}
+              <button class="tique {{ 'ligado' if l.conciliado }}"
+                      data-id="{{ l.id }}"
+                      title="{% if l.conciliado %}conciliado por {{ l.conciliado_por or '—' }}{% else %}clique para conciliar{% endif %}">
+                {{ '✓' if l.conciliado else '—' }}</button>
+            {% else %}
+              {{ '✓' if l.conciliado else '—' }}
+            {% endif %}
+          </td>
+          {# ------------------------------------------------------------------
+             O QUE ACONTECEU COM ESTA LINHA NO OMIE. Quatro estados, e cada um
+             tem consequência diferente para quem olha:
+
+               lançado          já foi, não mande de novo
+               falhou           não entrou; dá para mandar de novo
+               enviando         a resposta se perdeu no caminho — PODE ter
+                                entrado, e mandar de novo arrisca duplicar
+               (vazio)          nunca foi mandada
+             ------------------------------------------------------------------ #}
+          <td class="no-omie">
+            {% if l.omie_situacao in ('gravado', 'sem_baixa') %}
+              <span class="selo aprovado"
+                    title="lançado{% if l.omie_em %} em {{ l.omie_em|momento_br }}{% endif %}{% if l.omie_por %} por {{ l.omie_por }}{% endif %}"
+                    >{{ l.omie_codigo or 'lançado' }}</span>
+            {% elif l.omie_situacao == 'meia_transferencia' %}
+              <span class="selo risco" title="{{ l.omie_erro }}">meia transf.</span>
+            {% elif l.omie_situacao == 'enviando' %}
+              <span class="selo saindo"
+                    title="a resposta do OMIE se perdeu — confira lá antes de mandar de novo"
+                    >sem resposta</span>
+            {% elif l.omie_situacao == 'falhou' %}
+              <span class="selo pagar" title="{{ l.omie_erro }}">falhou</span>
+            {% else %}
+              <span class="cartao-dica">—</span>
+            {% endif %}
+          </td>
+          <td class="obs">
+            {# ⚠️ CAMPO DE VÁRIAS LINHAS, pedido dele em 24/09/2026: *"na
+               observação, permita a quebra de linha"*. Ele cresce sozinho
+               conforme se escreve (está no script), e Enter quebra a linha —
+               quem grava é sair do campo, ou Ctrl+Enter. #}
+            {% if pode_operar %}
+              <textarea class="anotacao" data-id="{{ l.id }}" rows="1"
+                        placeholder="anotar…">{{ l.observacao }}</textarea>
+            {% else %}
+              <span class="anotacao-lida">{{ l.observacao }}</span>
+            {% endif %}
+          </td>
+          {% if pode_operar %}
+            {# ⚠️ APAGAR UMA LINHA — pedido do dono em 26/09/2026, com a
+               ressalva dele junto: *"não é o certo estar excluindo linhas,
+               mas…"*. Por isso é um × discreto no fim da linha, e não um botão
+               convidativo: quem procura acha, quem não procura não tropeça.
+
+               A linha já lançada no OMIE é recusada pela rota, não escondida
+               aqui — esconder faria parecer que a tela não tem o recurso. #}
+            <td class="apagar-cel">
+              <button class="apagar-linha" data-id="{{ l.id }}"
+                      title="apagar esta linha do extrato">×</button>
+            </td>
+          {% endif %}
+        </tr>
+      {% else %}
+        {# O recado que antes ficava no lugar da tabela. Aqui dentro ele
+           responde a mesma coisa e deixa os filtros alcançáveis. #}
+        <tr><td colspan="{{ 11 if pode_operar else 9 }}"
+                style="padding:22px; text-align:center; color:var(--tinta-suave)">
+          Nada neste recorte.
+          {% if resumo.quantidade == 0 and filtros.situacao == 'todos'
+                and not filtros.busca and not filtros.dia %}
+            Esta conta ainda não tem extrato importado.
+          {% else %}
+            Mude o filtro acima, ou use o <b>Limpar</b> na barra ao lado.
+          {% endif %}
+        </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if pagina > 1 or tem_proxima %}
+    <div class="paginacao">
+      {% set base = args.to_dict(flat=false) %}
+      {% set _ = base.pop('pagina', None) %}
+      {% if pagina > 1 %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina-1, **base) }}">‹ anterior</a>
+      {% endif %}
+      <span class="cartao-dica">página {{ pagina }}</span>
+      {% if tem_proxima %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina+1, **base) }}">próxima ›</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+{% if ultimos_arquivos %}
+<details class="cartao">
+  <summary><b>Extratos já trazidos nesta conta</b> — responde "já mandei este mês?"</summary>
+  <table class="sps" style="margin-top:10px">
+    <thead><tr><th>Arquivo</th><th>Período</th><th class="direita">Linhas</th>
+      <th class="direita">Novas</th><th>Quando</th><th>Quem</th>
+      {% if pode_operar %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+      {% for a in ultimos_arquivos %}
+        <tr>
+          <td>{{ a.nome_arquivo or '—' }}</td>
+          <td>{{ a.periodo_ini|data_br }} a {{ a.periodo_fim|data_br }}</td>
+          <td class="direita">{{ a.linhas_lidas }}</td>
+          <td class="direita">{{ a.linhas_novas }}</td>
+          <td>{{ a.importado_em|momento_br }}</td>
+          <td>{{ a.importado_por }}</td>
+          {% if pode_operar %}
+            {# ⚠️ *"Tem que ter alguma forma de retroceder um erro, né?"* —
+               24/09/2026. Ele não apaga direto: conta primeiro o que sumiria,
+               inclusive quantas linhas foram conciliadas e anotadas por
+               gente, e aí ele decide. #}
+            <td><button class="btn secundario desfazer-arquivo"
+                        data-arquivo="{{ a.id }}"
+                        data-nome="{{ a.nome_arquivo }}">Desfazer</button></td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+{% endif %}
+
+{% if estado.pronto and pode_operar %}
+{# ---------------------------------------------------------------------------
+   TRAZER A PLANILHA ANTIGA — uma aba por vez, com amostra antes de gravar.
+
+   ⚠️ FICA FECHADO. É um trabalho que se faz UMA vez, na estreia; deixá-lo
+   aberto no dia a dia poria o botão de importar dois anos de histórico ao
+   lado do tique de conciliar uma linha.
+--------------------------------------------------------------------------- #}
+<dialog class="dialogo" id="cartao-planilha">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Trazer a planilha antiga</h3>
+
+  <p class="cartao-dica" style="margin:10px 0">
+    Uma aba por vez. O sistema lê, mostra <b>uma amostra do que entendeu</b> e
+    só grava depois que você confere. Trazer a mesma aba duas vezes não
+    duplica nada — e o que estiver marcado como <b>Conciliado</b> na planilha
+    chega marcado aqui, com as anotações junto.
+  </p>
+
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+    <input class="campo-largo" id="planilha-id" style="flex:1; min-width:280px"
+           placeholder="cole o endereço da planilha do Google"
+           value="{{ planilha_guardada or '' }}">
+    <button class="btn secundario" id="btn-listar-abas">Ver as abas</button>
+  </div>
+  <div id="saida-planilha"></div>
+</dialog>
+
+{# ---------------------------------------------------------------------------
+   AS CONTAS — uma porta só, como manda a regra da casa (CLAUDE.md, 17/09).
+
+   Não há "cadastrar digitando" de um lado e "cadastrar pelo extrato" do outro.
+   É um formulário só; o EXTRATO é o atalho DENTRO dele: soltando um OFX de
+   conta desconhecida, a tela oferece ligá-lo a uma conta, e o banco e o número
+   ficam guardados a partir dali. Quem tem o arquivo usa; quem não tem, digita.
+--------------------------------------------------------------------------- #}
+{# ---------------------------------------------------------------------------
+   OS TIPOS DE MOVIMENTO — o de-para que o dono pediu:
+
+   *"Dentro dessa parte, uma espécie de configurações relacionada ao OMIE, eu
+   poder gravar a conta do plano financeiro OMIE que está relacionada a cada
+   ação. Se for tarifa, essa conta; se for isso, aquela conta."*
+
+   ⚠️ SEM ISTO NADA É LANÇADO, e é de propósito: chutar a categoria poria
+   tarifa bancária dentro de "material de obra", e no OMIE isso vira relatório
+   errado que ninguém desconfia.
+--------------------------------------------------------------------------- #}
+<dialog class="dialogo" id="cartao-tipos">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Tipos de movimento <small>o que lançar no OMIE, e como</small></h3>
+
+  {# ⚠️ O AVISO VEM ANTES DO FORMULÁRIO, não depois de ele tentar gravar. Em
+     24/09/2026 o dono preencheu o cadastro inteiro e recebeu no Gravar a
+     frase crua do Postgres ("relation ... does not exist"), porque a parte do
+     OMIE é de outra atualização do banco que ainda não tinha sido aplicada. #}
+  {% if not omie_pronto %}
+    <div class="aviso atencao">
+      <b>A parte do OMIE ainda não foi ligada no banco.</b> Aperte
+      <b>"Aplicar atualizações do banco"</b> em
+      <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a> —
+      é a atualização que cria os tipos de movimento. Enquanto isso, o
+      formulário abaixo não grava.
+    </div>
+  {% endif %}
+
+  <p class="cartao-dica">
+    Cada tipo é uma coisa que se repete no extrato e <b>não nasce de uma SP</b>:
+    tarifa bancária, tarifa de PIX, rentabilidade. O sistema reconhece pelo
+    histórico do banco e usa a categoria que você apontar aqui.
+    <b>O que ele não reconhecer, ele não lança</b> — e diz qual foi.
+  </p>
+
+  <table class="sps" style="margin-top:10px">
+    <thead><tr><th>Tipo</th><th>Reconhece pelo histórico</th>
+      <th>Categoria no OMIE</th><th>Fornecedor/cliente</th><th>Obra</th>
+      <th>O que é</th><th></th></tr></thead>
+    <tbody>
+      {% for tp in tipos_omie %}
+        <tr {% if not tp.ativo %}class="apagada"{% endif %}>
+          <td><b>{{ tp.nome }}</b></td>
+          <td><small>{{ tp.palavras }}</small></td>
+          <td><code>{{ tp.codigo_categoria or '—' }}</code></td>
+          <td>{{ tp.codigo_cliente or '—' }}</td>
+          <td>{{ tp.cod_departamento or '—' }}</td>
+          <td>{% if tp.natureza == 'transferencia' %}
+                <span class="etiqueta">transferência</span>
+              {% else %}movimento{% endif %}</td>
+          <td><button class="btn secundario editar-tipo"
+                      data-tipo="{{ tp|tojson|forceescape }}">Editar</button></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form id="form-tipo" style="margin-top:14px">
+    <input type="hidden" name="id" value="">
+    <div class="faixa">
+      <div><label class="rotulo-campo">Nome</label>
+        <input class="campo-largo" name="nome" placeholder="Tarifa bancária" required></div>
+      <div style="flex:2"><label class="rotulo-campo">Palavras que aparecem no histórico</label>
+        <input class="campo-largo" name="palavras"
+               placeholder="TARIFA;TAR PIX"></div>
+    </div>
+    <div class="faixa" style="margin-top:8px">
+      <div style="flex:2"><label class="rotulo-campo">Categoria do OMIE</label>
+        {% if listas_omie.categorias %}
+          <select class="campo-largo" name="codigo_categoria">
+            <option value="">— escolha —</option>
+            {% for cat in listas_omie.categorias %}
+              <option value="{{ cat.codigo }}">{{ cat.codigo }} — {{ cat.descricao }}
+                {%- if cat.inativa %} (inativa){% endif %}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input class="campo-largo" name="codigo_categoria" placeholder="2.01.05">
+        {% endif %}</div>
+      <div><label class="rotulo-campo">Código do fornecedor/cliente</label>
+        <input class="campo-largo" name="codigo_cliente" placeholder="1234567"></div>
+      <div><label class="rotulo-campo">O que é</label>
+        {# ⚠️ TRANSFERÊNCIA MEXE NAS DUAS PONTAS: sai de uma conta e entra na
+           outra. Por isso ela pede a conta de destino na hora de lançar, e a
+           categoria dela tem de ser uma marcada como transferência no plano
+           financeiro do OMIE — é essa marca que a tira do DRE. #}
+        <select class="campo-largo" name="natureza">
+          <option value="normal">Movimento normal (tarifa, rentabilidade…)</option>
+          <option value="transferencia">Transferência entre contas</option>
+        </select></div>
+      <div><label class="rotulo-campo">Obra (opcional)</label>
+        {% if listas_omie.obras %}
+          <select class="campo-largo" name="cod_departamento">
+            <option value="">— nenhuma —</option>
+            {% for o in listas_omie.obras %}
+              <option value="{{ o.codigo }}">{{ o.nome }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input class="campo-largo" name="cod_departamento">
+        {% endif %}</div>
+    </div>
+    <p class="cartao-dica" style="margin:8px 0 0">
+      {% if listas_omie.erro %}
+        <br><b>⚠️ A lista do OMIE não veio:</b> {{ listas_omie.erro }}
+        Dá para digitar o código na mão enquanto isso.
+      {% else %}
+        As listas de contas, categorias e obras vêm da <b>carga do painel</b>,
+        que traz do OMIE toda noite — uma categoria criada hoje só aparece
+        aqui depois que ela rodar.
+      {% endif %}
+      <br><b>Separe as palavras por ponto-e-vírgula.</b> Acento e maiúscula não
+      contam. Quando duas casarem, vale a mais específica — "TARIFA PIX" ganha
+      de "TARIFA".
+      <br><b>O fornecedor/cliente aqui é opcional</b> e serve de reserva: quem
+      vale é o <b>Fornecedor no OMIE da conta</b>, porque quem cobra a tarifa é
+      o banco daquela conta. Só preencha aqui se este tipo for cobrado por
+      alguém que não é o banco.
+    </p>
+    <p style="margin:10px 0 0">
+      <button class="btn" type="submit">Gravar tipo</button>
+      <button class="btn secundario" type="button" id="btn-limpar-tipo">Limpar</button>
+      <span id="recado-tipo" class="cartao-dica"></span>
+    </p>
+  </form>
+</dialog>
+
+<dialog class="dialogo" id="cartao-omie">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Lançar no OMIE</h3>
+  <div id="saida-omie"></div>
+</dialog>
+
+<dialog class="dialogo" id="cartao-contas">
+  <form method="dialog" class="dialogo-fechar"><button class="btn secundario">Fechar</button></form>
+  <h3>Contas <small>{{ contas|length }} cadastrada(s)</small></h3>
+
+  <table class="sps" style="margin-top:10px">
+    <thead><tr><th>Nome</th><th>Banco</th><th>Agência / conta</th>
+      <th>Saldo inicial</th><th>Reconhece o extrato?</th>
+      <th>Lança no OMIE?</th><th></th></tr></thead>
+    <tbody>
+      {% for c in contas %}
+        <tr>
+          <td><b>{{ c.nome }}</b></td>
+          <td>{{ c.banco }}</td>
+          <td>{{ c.agencia }} {{ c.numero }}</td>
+          <td>
+            {% if c.saldo_inicial_em %}
+              {{ c.saldo_inicial|moeda }}<br><small>em {{ c.saldo_inicial_em|data_br }}</small>
+            {% else %}
+              <span class="etiqueta ruim">falta</span>
+              <small>sem ele o saldo não bate</small>
+            {% endif %}
+          </td>
+          <td>
+            {% if c.ofx_bankid and c.ofx_acctid %}
+              <span class="etiqueta boa">sim</span>
+              <small>banco {{ c.ofx_bankid }}, conta {{ c.ofx_acctid }}</small>
+            {% else %}
+              <span class="etiqueta">ainda não</span>
+              <small>solte um extrato dela uma vez, e passa a reconhecer</small>
+            {% endif %}
+          </td>
+          {# ⚠️ ESTA COLUNA EXISTE PARA O PROBLEMA APARECER ANTES. O dono só
+             descobria que faltava configuração quando o lançamento era
+             recusado, com o lote já marcado — a conta diz agora, aqui, o que
+             falta nela. #}
+          <td>
+            {% if c.omie_conta_corrente and c.omie_fornecedor %}
+              <span class="etiqueta boa">sim</span>
+            {% elif not c.omie_conta_corrente and not c.omie_fornecedor %}
+              <span class="etiqueta">ainda não</span>
+              <small>faltam a conta corrente e o fornecedor do OMIE</small>
+            {% elif not c.omie_conta_corrente %}
+              <span class="etiqueta ruim">falta</span>
+              <small>a conta corrente do OMIE</small>
+            {% else %}
+              <span class="etiqueta ruim">falta</span>
+              <small>o fornecedor do OMIE — o banco que cobra a tarifa</small>
+            {% endif %}
+          </td>
+          <td><button class="btn secundario editar-conta"
+                      data-conta="{{ c|tojson|forceescape }}">Editar</button></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form id="form-conta" style="margin-top:14px">
+    <input type="hidden" name="id" value="">
+    <div class="faixa">
+      <div><label class="rotulo-campo">Nome (como você chama)</label>
+        <input class="campo-largo" name="nome" placeholder="BD 7011" required></div>
+      <div><label class="rotulo-campo">Banco</label>
+        <input class="campo-largo" name="banco" placeholder="Bradesco"></div>
+    </div>
+    <div class="faixa" style="margin-top:8px">
+      <div><label class="rotulo-campo">Agência</label>
+        <input class="campo-largo" name="agencia"></div>
+      <div><label class="rotulo-campo">Conta</label>
+        <input class="campo-largo" name="numero"></div>
+      <div><label class="rotulo-campo">Ordem na lista</label>
+        <input class="campo-largo" name="ordem" value="0"></div>
+    </div>
+    {# ⚠️ O SALDO INICIAL É O QUE FAZ O SALDO BATER. O extrato importado começa
+       no dia em que a planilha começou; tudo o que a conta movimentou antes
+       disso não existe aqui. Sem este número, o saldo fica errado exatamente
+       do tamanho do que veio antes — foi o que ele viu. #}
+    {# ⚠️ A CONTA CORRENTE DO OMIE. Sem ela nada é lançado — e é de propósito:
+       lançar uma tarifa do Bradesco dentro da conta do Santander é o erro mais
+       caro possível aqui, e o único jeito de não cometê-lo é não ter onde
+       errar. Ela mora na CONTA, nunca no tipo de movimento. #}
+    <div class="faixa" style="margin-top:8px">
+      <div style="flex:2"><label class="rotulo-campo">Conta corrente no OMIE</label>
+        {# ⚠️ ESCOLHER, E NÃO DIGITAR. O código da conta corrente do OMIE é um
+           número sem significado; digitá-lo errado põe a tarifa do Bradesco
+           dentro da conta do Santander, e nada na tela acusa. A lista vem do
+           espelho do painel, que a carga da noite traz do OMIE. #}
+        {% if listas_omie.contas %}
+          <select class="campo-largo" name="omie_conta_corrente">
+            <option value="">— escolha —</option>
+            {% for cc in listas_omie.contas %}
+              <option value="{{ cc.codigo }}">{{ cc.descricao }}
+                {%- if cc.numero_conta %} · {{ cc.numero_conta }}{% endif %}
+                {%- if cc.inativa %} (inativa){% endif %}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input class="campo-largo" name="omie_conta_corrente"
+                 placeholder="o código dela no OMIE">
+          <small>A lista do OMIE não veio — digite o código.</small>
+        {% endif %}</div>
+      {# ⚠️ O FORNECEDOR MORA NA CONTA, e não no tipo de movimento. Quem cobra
+         a tarifa é o BANCO DESTA CONTA: a do BD 50024 é do Bradesco, a da
+         Sicredi é da Sicredi. No tipo, seria preciso um "Tarifa Bradesco",
+         um "Tarifa Sicredi" e um "Tarifa BB", todos repetindo as mesmas
+         palavras do histórico e brigando entre si na hora de reconhecer.
+         Pedido do dono em 25/09/2026. #}
+      <div style="flex:2"><label class="rotulo-campo">Fornecedor no OMIE
+          <small>(o banco que cobra a tarifa)</small></label>
+        {% if listas_omie.fornecedores %}
+          <select class="campo-largo" name="omie_fornecedor">
+            <option value="">— escolha —</option>
+            {% for f in listas_omie.fornecedores %}
+              <option value="{{ f.codigo }}">{{ f.nome }}
+                {%- if f.documento %} · {{ f.documento }}{% endif %}</option>
+            {% endfor %}
+          </select>
+          <small>Não achou o banco na lista? Ela traz os cadastros do OMIE com
+            cara de banco. Se o seu não estiver aí, me diga.</small>
+        {% else %}
+          <input class="campo-largo" name="omie_fornecedor"
+                 placeholder="o código do banco no OMIE">
+          <small>A lista do OMIE não veio — digite o código.</small>
+        {% endif %}</div>
+    </div>
+    <div class="faixa" style="margin-top:8px">
+      <div><label class="rotulo-campo">Saldo inicial</label>
+        <input class="campo-largo" name="saldo_inicial" placeholder="0,00"></div>
+      <div><label class="rotulo-campo">nesta data</label>
+        <input class="campo-largo" type="date" name="saldo_inicial_em"></div>
+    </div>
+    <p class="cartao-dica" style="margin:8px 0 0">
+      <b>O saldo inicial é o que faz o saldo bater.</b> Ponha quanto a conta
+      tinha no fim do dia anterior ao primeiro lançamento que você trouxe — o
+      que veio antes disso não está aqui, e sem esse número a diferença
+      aparece no saldo sem explicação. O que for daquele dia ou anterior não é
+      somado de novo.
+      <br><br>
+      O banco e o número que <b>reconhecem o extrato</b> não precisam ser
+      digitados: eles vêm do próprio arquivo na primeira vez que você soltar um
+      OFX desta conta.
+    </p>
+    <p style="margin:10px 0 0">
+      <button class="btn" type="submit">Gravar conta</button>
+      <button class="btn secundario" type="button" id="btn-limpar-conta">Limpar</button>
+      <span id="recado-conta" class="cartao-dica"></span>
+    </p>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if estado.pronto and pode_operar %}
+<script>
+// ===========================================================================
+// ⚠️ O MANUSEIO TEM DE SER FLUIDO — foi o que o dono pediu com essas palavras:
+// *"no Excel a gente vai só alterando a coluna e colocando alguma observação"*.
+// Por isso marcar e anotar NÃO recarregam a tela: gravam por trás e devolvem
+// só o recado. Uma recarga a cada tique tornaria a tela mais lenta que a
+// planilha que ela veio substituir — e aí ninguém a usaria.
+// ===========================================================================
+const CONTA_ID = {{ filtros.conta_id or 0 }};
+
+function recado(texto, classe) {
+  const alvo = document.getElementById("recado-acao");
+  if (!alvo) return;
+  alvo.textContent = texto;
+  alvo.className = "cartao-dica " + (classe || "");
+  if (texto) setTimeout(() => { if (alvo.textContent === texto) alvo.textContent = ""; }, 4000);
+}
+
+async function pedir(url, corpo) {
+  const r = await fetch(url, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(corpo)});
+  return await r.json();
+}
+
+// --- marcar/desmarcar uma linha, no tique -----------------------------------
+// ⚠️ CONCILIAR É UM CLIQUE; DESCONCILIAR PEDE CONFIRMAÇÃO — 24/09/2026.
+//
+// O dono perguntou: *"para conciliar é só clicar, né? É prudente deixar
+// assim? Acho que sim, tem que ser fácil. De repente, para desconciliar,
+// precisasse clicar duas vezes, para ninguém fazer acidentalmente."*
+//
+// A ideia dele está certa e a implementação ficou diferente, de propósito:
+// clique duplo NÃO é uma boa trava. Ele não se descobre sozinho (nada na tela
+// diz que existe), e clique duplo acidental acontece justamente com quem está
+// marcando várias linhas em sequência — que é a hora de maior risco.
+//
+// Aqui o botão VIRA UMA PERGUNTA: o primeiro clique numa linha conciliada
+// troca o ✓ por "↺?", e o segundo confirma. A trava é a mesma (dois cliques),
+// mas ela se explica sozinha e some em quatro segundos se ninguém confirmar.
+// Marcar continua sendo um clique só — é o gesto do dia inteiro.
+const ESPERA_DA_CONFIRMACAO = 4000;
+
+document.querySelectorAll(".tique").forEach(b => {
+  let confirmando = null;
+
+  const soltar = () => {
+    clearTimeout(confirmando);
+    confirmando = null;
+    b.classList.remove("perguntando");
+    b.textContent = "✓";
+    b.title = "clique para desconciliar";
+  };
+
+  b.addEventListener("click", async () => {
+    const ligado = b.classList.contains("ligado");
+
+    if (ligado && !confirmando) {
+      b.classList.add("perguntando");
+      b.textContent = "↺?";
+      b.title = "clique de novo para desconciliar";
+      confirmando = setTimeout(soltar, ESPERA_DA_CONFIRMACAO);
+      return;
+    }
+    if (confirmando) { clearTimeout(confirmando); confirmando = null; }
+
+    b.disabled = true;
+    b.classList.remove("perguntando");
+    try {
+      const d = await pedir("{{ url_for('analisesps.conciliacao_marcar') }}",
+                            {ids: [b.dataset.id], conciliado: !ligado});
+      if (!d.ok) { recado(d.erro || "não deu certo", "ruim"); soltar(); return; }
+      b.classList.toggle("ligado", !ligado);
+      b.textContent = ligado ? "—" : "✓";
+      b.title = ligado ? "clique para conciliar"
+                       : "conciliado por " + (d.quem || "");
+      b.closest("tr").classList.toggle("conciliada", !ligado);
+    } catch (e) { recado("falhou: " + e, "ruim"); soltar(); }
+    finally { b.disabled = false; }
+  });
+});
+
+// --- em leva, pelas caixinhas ----------------------------------------------
+function selecionadas() {
+  return [...document.querySelectorAll(".marca-linha:checked")].map(c => c.value);
+}
+const todos = document.getElementById("marcar-todos");
+if (todos) todos.addEventListener("change", () => {
+  document.querySelectorAll(".marca-linha").forEach(c => { c.checked = todos.checked; });
+});
+
+async function emLeva(conciliado) {
+  const ids = selecionadas();
+  if (!ids.length) { recado("Marque as linhas primeiro."); return; }
+  const d = await pedir("{{ url_for('analisesps.conciliacao_marcar') }}",
+                        {ids: ids, conciliado: conciliado});
+  if (!d.ok) { recado(d.erro || "não deu certo", "ruim"); return; }
+  // A tela recarrega aqui, e só aqui: em leva o saldo e os números de cima
+  // mudam junto, e mostrá-los velhos seria pior do que a espera.
+  location.reload();
+}
+const btnC = document.getElementById("btn-conciliar");
+if (btnC) btnC.addEventListener("click", () => emLeva(true));
+const btnD = document.getElementById("btn-desmarcar");
+if (btnD) btnD.addEventListener("click", () => emLeva(false));
+
+// --- a observação, ao sair do campo ----------------------------------------
+document.querySelectorAll(".anotacao").forEach(campo => {
+  let antes = campo.value;
+  campo.addEventListener("blur", async () => {
+    if (campo.value === antes) return;
+    campo.classList.add("gravando");
+    const d = await pedir("{{ url_for('analisesps.conciliacao_anotar') }}",
+                          {id: campo.dataset.id, texto: campo.value});
+    campo.classList.remove("gravando");
+    if (!d.ok) { recado(d.erro || "não gravou", "ruim"); campo.value = antes; return; }
+    antes = campo.value;
+    campo.classList.add("gravou");
+    setTimeout(() => campo.classList.remove("gravou"), 1200);
+  });
+  // ⚠️ ENTER QUEBRA A LINHA, e não grava — foi o pedido. Quem grava é sair do
+  // campo (ou Ctrl+Enter, para quem não quer tirar a mão do teclado).
+  campo.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); campo.blur(); }
+  });
+  // ⚠️ O CAMPO CRESCE COM O TEXTO, MAS NEM UM PIXEL A MAIS. A primeira versão
+  // abria como se houvesse duas ou três linhas com uma só escrita: o
+  // `scrollHeight` de um textarea sem `box-sizing: border-box` não conta o
+  // preenchimento interno do mesmo jeito que a altura, e a soma sobrava. Com
+  // o `border-box` no CSS, `scrollHeight` é a altura certa — e o `auto` antes
+  // da medida é o que impede o campo de só crescer e nunca encolher.
+  const crescer = () => {
+    campo.style.height = "auto";
+    const alvo = Math.min(campo.scrollHeight, 120);
+    campo.style.height = alvo + "px";
+    campo.classList.toggle("cheia", campo.scrollHeight > 120);
+  };
+  campo.addEventListener("input", crescer);
+  crescer();
+});
+
+// --- o extrato: soltar, conferir, e só então gravar -------------------------
+const area = document.getElementById("solta-extrato");
+const campoArq = document.getElementById("arq-extrato");
+const saida = document.getElementById("saida-extrato");
+let arquivoNaMao = null;
+
+if (area) {
+  ["dragenter", "dragover"].forEach(ev => area.addEventListener(ev, e => {
+    e.preventDefault(); area.classList.add("por-cima");
+  }));
+  ["dragleave", "drop"].forEach(ev => area.addEventListener(ev, e => {
+    e.preventDefault(); area.classList.remove("por-cima");
+  }));
+  area.addEventListener("drop", e => {
+    if (e.dataTransfer.files.length) conferirVarios([...e.dataTransfer.files]);
+  });
+  area.addEventListener("click", e => {
+    if (e.target.tagName !== "LABEL") campoArq.click();
+  });
+  campoArq.addEventListener("change", () => {
+    if (campoArq.files.length) conferirVarios([...campoArq.files]);
+  });
+}
+
+function dinheiro(v) {
+  const n = Number(v);
+  if (isNaN(n)) return v;
+  return n.toLocaleString("pt-BR", {minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2});
+}
+
+// ===========================================================================
+// VÁRIOS OFX DE UMA VEZ — pedido do dono em 24/09/2026:
+//
+//   *"Consigo importar vários OFX ao mesmo tempo? Vou jogar vários arquivos de
+//   uma determinada conta, aí o sistema importa eles tudinho. Ou tentar
+//   importar — ele vai barrar quando detectar que já foi importado."*
+//
+// ⚠️ UM ARQUIVO POR VEZ NO SERVIDOR, mesmo com vários na tela. Cada arquivo
+// tem a sua conta, o seu período e a sua resposta; mandar todos juntos numa
+// chamada só faria um arquivo torto derrubar a leva inteira, e a resposta
+// viraria um amontoado sem dizer qual arquivo deu no quê.
+//
+// ⚠️ E A ORDEM É CONFERIR TUDO, DEPOIS GRAVAR TUDO. Gravar cada um assim que
+// é lido tiraria dele a chance de olhar o conjunto antes — que é justamente
+// o ponto desta tela.
+// ===========================================================================
+let leva = [];
+
+async function conferirVarios(arquivos) {
+  const ofx = arquivos.filter(a => /\.ofx$/i.test(a.name));
+  const ignorados = arquivos.length - ofx.length;
+  if (!ofx.length) {
+    saida.innerHTML = '<div class="aviso erro">Nenhum arquivo .OFX no que ' +
+      'você soltou.</div>';
+    return;
+  }
+  if (ofx.length === 1) { conferir(ofx[0]); return; }
+
+  leva = [];
+  saida.innerHTML = '<div class="aviso">Lendo ' + ofx.length + ' arquivos…</div>';
+  for (let i = 0; i < ofx.length; i++) {
+    saida.innerHTML = '<div class="aviso">Lendo ' + (i + 1) + ' de ' +
+      ofx.length + ': ' + ofx[i].name + '…</div>';
+    const corpo = new FormData();
+    corpo.append("extrato", ofx[i]);
+    let d;
+    try {
+      const r = await fetch("{{ url_for('analisesps.conciliacao_conferir') }}",
+                            {method: "POST", body: corpo});
+      d = await r.json();
+    } catch (e) {
+      d = {ok: false, erro: "falhou ao ler: " + e};
+    }
+    leva.push({arquivo: ofx[i], nome: ofx[i].name, d: d});
+  }
+  desenharLeva(ignorados);
+}
+
+function desenharLeva(ignorados) {
+  const bons = leva.filter(x => x.d.ok && (x.d.novas + x.d.adotaveis) > 0);
+  const semNovidade = leva.filter(x => x.d.ok && !x.d.novas && !x.d.adotaveis);
+  const ruins = leva.filter(x => !x.d.ok);
+  const totalNovas = bons.reduce((s, x) => s + x.d.novas, 0);
+
+  let html = '<div class="aviso ' + (ruins.length ? 'atencao' : 'bom') + '">';
+  html += '<b>' + leva.length + ' arquivo(s) lidos.</b> ' + totalNovas +
+    ' lançamento(s) novo(s) ao todo.';
+  if (ignorados) html += ' (' + ignorados + ' que não eram .OFX ficaram de fora.)';
+
+  html += '<table class="sps" style="margin-top:8px"><thead><tr>' +
+    '<th>Arquivo</th><th>Conta</th><th>Período</th>' +
+    '<th class="direita">Já estavam</th><th class="direita">Novos</th>' +
+    '<th>Saldo</th></tr></thead><tbody>';
+  leva.forEach(x => {
+    if (!x.d.ok) {
+      html += '<tr><td>' + x.nome + '</td><td colspan="5" class="ruim">' +
+        (x.d.erro || "não deu certo") + '</td></tr>';
+      return;
+    }
+    html += '<tr><td>' + x.nome + '</td><td>' + x.d.conta + '</td><td>' +
+      x.d.periodo_ini.split("-").reverse().join("/") + ' a ' +
+      x.d.periodo_fim.split("-").reverse().join("/") + '</td>' +
+      '<td class="direita">' + (x.d.ja_estavam + x.d.adotaveis) + '</td>' +
+      '<td class="direita"><b>' + x.d.novas + '</b></td><td>' +
+      (x.d.saldo_banco ? (x.d.saldo_bate ? 'bate' : '⚠️ não bate') : '—') +
+      '</td></tr>';
+  });
+  html += '</tbody></table>';
+
+  if (semNovidade.length) {
+    html += '<p class="cartao-dica">' + semNovidade.length + ' arquivo(s) já ' +
+      'estavam inteiros aqui — nada a fazer com eles.</p>';
+  }
+  html += '<br><button class="btn" id="btn-gravar-leva"' +
+    (totalNovas ? '' : ' disabled title="não há nada novo"') + '>Gravar ' +
+    totalNovas + ' lançamento(s) de ' + bons.length + ' arquivo(s)</button> ' +
+    '<button class="btn secundario" id="btn-cancelar-leva">Deixa pra lá</button>';
+  html += '</div>';
+  saida.innerHTML = html;
+
+  document.getElementById("btn-cancelar-leva").addEventListener("click", () => {
+    saida.innerHTML = ""; leva = []; campoArq.value = "";
+  });
+  const gravar = document.getElementById("btn-gravar-leva");
+  if (gravar && !gravar.disabled) {
+    gravar.addEventListener("click", () => gravarLeva(bons));
+  }
+}
+
+async function gravarLeva(bons) {
+  const gravar = document.getElementById("btn-gravar-leva");
+  gravar.disabled = true;
+  let feitos = 0, erros = [];
+  for (let i = 0; i < bons.length; i++) {
+    gravar.textContent = "Gravando " + (i + 1) + " de " + bons.length + "…";
+    const corpo = new FormData();
+    corpo.append("extrato", bons[i].arquivo);
+    corpo.append("conta_id", bons[i].d.conta_id);
+    corpo.append("lembrar", "1");
+    try {
+      const r = await fetch("{{ url_for('analisesps.conciliacao_importar') }}",
+                            {method: "POST", body: corpo});
+      const f = await r.json();
+      if (f.ok) feitos += (f.gravadas || 0);
+      else erros.push(bons[i].nome + ": " + (f.erro || "não gravou"));
+    } catch (e) { erros.push(bons[i].nome + ": " + e); }
+  }
+  if (erros.length) {
+    saida.innerHTML = '<div class="aviso atencao"><b>Gravei ' + feitos +
+      ' lançamento(s), mas ' + erros.length + ' arquivo(s) falharam:</b><ul><li>' +
+      erros.join("</li><li>") + '</li></ul>A tela vai recarregar.</div>';
+    setTimeout(() => location.reload(), 6000);
+    return;
+  }
+  location.reload();
+}
+
+async function conferir(arquivo, contaEscolhida) {
+  arquivoNaMao = arquivo;
+  saida.innerHTML = '<div class="aviso">Lendo ' + arquivo.name + '…</div>';
+  const corpo = new FormData();
+  corpo.append("extrato", arquivo);
+  if (contaEscolhida) corpo.append("conta_id", contaEscolhida);
+  let d;
+  try {
+    const r = await fetch("{{ url_for('analisesps.conciliacao_conferir') }}",
+                          {method: "POST", body: corpo});
+    d = await r.json();
+  } catch (e) {
+    saida.innerHTML = '<div class="aviso erro">Falhou ao ler: ' + e + '</div>';
+    return;
+  }
+  if (!d.ok) { desenharErro(d); return; }
+  desenharConferencia(d);
+}
+
+function desenharErro(d) {
+  if (!d.desconhecida) {
+    saida.innerHTML = '<div class="aviso erro">' + (d.erro || "não deu certo") + '</div>';
+    return;
+  }
+  // ⚠️ CONTA DESCONHECIDA NÃO É CHUTADA. Jogar o extrato de uma empresa dentro
+  // da conta de outra é um estrago que ninguém percebe olhando a tela.
+  let html = '<div class="aviso atencao"><b>' + d.erro + '</b><br><br>' +
+    '<select id="escolher-conta" class="campo-largo" style="max-width:320px">';
+  {% for c in contas %}
+    html += '<option value="{{ c.id }}">{{ c.nome }}</option>';
+  {% endfor %}
+  html += '</select> <button class="btn" id="btn-conta-escolhida">É esta conta</button>' +
+    '<p class="cartao-dica" style="margin:8px 0 0">Ela passa a ser reconhecida ' +
+    'sozinha da próxima vez.</p></div>';
+  saida.innerHTML = html;
+  document.getElementById("btn-conta-escolhida").addEventListener("click", () => {
+    conferir(arquivoNaMao, document.getElementById("escolher-conta").value);
+  });
+}
+
+function desenharConferencia(d) {
+  let html = '<div class="aviso ' + (d.novas ? 'atencao' : 'bom') + '">';
+
+  if (d.arquivo_repetido) {
+    html += '<b>Este arquivo já foi trazido</b> em ' +
+      d.arquivo_repetido.importado_em + ' por ' +
+      (d.arquivo_repetido.importado_por || '—') + ', na conta ' +
+      d.arquivo_repetido.conta + '.<br>';
+  }
+
+  html += '<b>' + d.conta + '</b> · ' + d.periodo_ini + ' a ' + d.periodo_fim +
+    '<br>Li <b>' + d.lidas + '</b> lançamento(s): <b>' + d.ja_estavam +
+    '</b> já estavam aqui e <b>' + d.novas + '</b> ' +
+    (d.novas === 1 ? 'é novo' : 'são novos') + '.';
+
+  // ⚠️ O ARQUIVO TINHA QUANTAS, E EU RECONHECI QUANTAS.
+  //
+  // Em 28/09/2026 um extrato do banco 520 com 211 transações foi importado com
+  // QUATRO, e esta mesma linha disse "Li 4 lançamento(s)" com ar de tudo certo.
+  // O defeito estava na identidade da linha (aquele banco usa o FITID como
+  // código do tipo, não como identificador) — mas o que fez ele custar uma
+  // investigação inteira foi o SILÊNCIO: nada na tela dizia que 207 linhas
+  // tinham sido jogadas fora.
+  //
+  // Enquanto os dois números baterem, isto não aparece. Quando não baterem, é a
+  // primeira coisa que se lê — em vermelho, antes de qualquer botão de gravar.
+  if (d.descartadas_na_leitura > 0) {
+    html += '<div class="aviso erro" style="margin-top:8px"><b>Atenção: o ' +
+      'arquivo tem ' + d.transacoes_no_arquivo + ' transações e eu só reconheci ' +
+      d.lidas + '.</b> ' + d.descartadas_na_leitura + ' foram descartadas por ' +
+      'parecerem ' +
+      'repetidas. Isso quase sempre quer dizer que este banco identifica as ' +
+      'transações de um jeito que eu ainda não entendo — <b>não grave antes ' +
+      'de conferir</b>, e me mostre este arquivo.</div>';
+  }
+
+  // ⚠️ A TERCEIRA CONTAGEM, e ela existe porque o relatório mentia: linha que
+  // veio da planilha tem identidade própria, e a conferência antiga a contava
+  // como NOVA — quando na gravação ela é ADOTADA, não criada. Dizer "47
+  // novos" e gravar 3 destrói a confiança na tela inteira.
+  if (d.adotaveis) {
+    html += ' Outros <b>' + d.adotaveis + '</b> já estão aqui <b>vindos da ' +
+      'planilha</b>: eles não entram de novo — ganham o identificador do ' +
+      'banco, e o que você marcou e anotou neles continua.';
+  }
+
+  if (!d.novas && !d.adotaveis) {
+    html += '<br><b>Está tudo registrado.</b> Nada a fazer com este arquivo.';
+  } else if (!d.novas) {
+    html += '<br><b>Nenhum lançamento novo</b> — só o reconhecimento das ' +
+      'linhas que vieram da planilha.';
+  }
+
+  // O saldo do banco contra o daqui: a conferência que vale mais que contar
+  // linhas. Se os dois batem, o extrato está completo.
+  if (d.saldo_banco) {
+    html += '<br><br>Saldo que o banco declara: <b>' + dinheiro(d.saldo_banco) +
+      '</b> · aqui: <b>' + dinheiro(d.saldo_aqui) + '</b> — ' +
+      (d.saldo_bate ? '<b>bate.</b>'
+                    : '<b>não bate</b> (pode ser extrato faltando antes deste período).');
+  }
+
+  if (d.amostra.length) {
+    html += '<br><br><b>O que entraria:</b><table class="sps" style="margin-top:6px">' +
+      '<thead><tr><th>Data</th><th>Histórico</th><th class="direita">Valor</th></tr></thead><tbody>';
+    d.amostra.forEach(l => {
+      html += '<tr><td>' + l.data.split("-").reverse().join("/") + '</td><td>' +
+        l.descricao + '</td><td class="direita">' + dinheiro(l.valor) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (d.amostra_parcial) html += '<p class="cartao-dica">…e outros. Mostro os 15 primeiros.</p>';
+  }
+
+  if (d.so_aqui_total) {
+    html += '<br><b>Atenção: ' + d.so_aqui_total + ' linha(s) que estão aqui e ' +
+      'NÃO vêm neste extrato</b>, dentro do mesmo período. Pode ser linha ' +
+      'digitada errada, ou algo que o banco estornou:<ul>';
+    d.so_aqui.forEach(l => {
+      html += '<li>' + l.data.split("-").reverse().join("/") + ' — ' + l.descricao +
+        ' (' + dinheiro(l.valor) + ')' + (l.origem === 'mao' ? ' <i>digitada à mão</i>' : '') +
+        // ⚠️ A LINHA QUE ESTÁ AQUI A MAIS: o extrato traz a mesma transação
+        // menos vezes do que há no banco. É o rastro da identidade por FITID
+        // (até 29/09/2026), que gravou a mesma transação duas vezes. Apagar
+        // é decisão dele, pelo × da linha na lista.
+        (l.repetida ? ' <b class="selo risco">parece repetida — o extrato traz menos vezes do que há aqui</b>' : '') +
+        '</li>';
+    });
+    html += '</ul>';
+    if (d.repetidas_total) {
+      html += '<div class="aviso atencao">' + d.repetidas_total + ' dela(s) parece(m) ' +
+        'a MESMA transação gravada duas vezes. Confira na lista e apague a ' +
+        'sobra pelo × da linha — a identidade antiga (por FITID) fazia isso, ' +
+        'e a de hoje não faz mais.</div>';
+    }
+  }
+
+  // ⚠️ AS LINHAS PRESAS — o aviso mais importante desta tela, e ele vem ANTES
+  // do botão de gravar de propósito: se há linha presa, gravar DUPLICA
+  // lançamento. Relato do dono em 25/09/2026: *"está se tentando colocar
+  // registro que já estão lançados"*.
+  if (d.presas_total) {
+    html += '<div class="aviso erro" style="margin-top:12px">' +
+      '<b>PARE: ' + d.presas_total + ' linha(s) deste extrato já estão aqui, ' +
+      'vindas da planilha, mas estão PRESAS</b> — elas carregam o ' +
+      'identificador de uma importação anterior (às vezes de uma que foi ' +
+      'desfeita), e por isso o sistema não as reconhece nem as aproveita. ' +
+      'Se você gravar agora, elas entram DE NOVO e o lançamento fica em ' +
+      'duplicidade.<br><br>' +
+      'Solte-as primeiro. Soltar não apaga nada e não perde o que você ' +
+      'marcou ou anotou nelas.<ul>';
+    d.presas.forEach(l => {
+      html += '<li>' + l.data.split("-").reverse().join("/") + ' — ' +
+        l.descricao + ' (' + dinheiro(l.valor) + ')</li>';
+    });
+    html += '</ul>' +
+      '<button class="btn" id="btn-soltar-presas">Soltar as ' +
+      d.presas_total + ' linha(s) e conferir de novo</button></div>';
+  }
+
+  // O outro motivo possível para a mesma linha não ser reconhecida: ela está
+  // aqui com o SINAL CONTRÁRIO. A adoção não casa por módulo de propósito
+  // (casar viraria o sinal de um lançamento verdadeiro em silêncio) — mas quem
+  // confere tem de saber, senão a causa fica invisível.
+  if (d.sinal_trocado_total) {
+    html += '<div class="aviso atencao" style="margin-top:12px">' +
+      '<b>Atenção: ' + d.sinal_trocado_total + ' linha(s) deste extrato ' +
+      'existem aqui com o SINAL CONTRÁRIO</b> (o extrato diz entrada e aqui ' +
+      'está como saída, ou o inverso). O sistema não as junta de propósito — ' +
+      'juntar viraria o sinal de um lançamento verdadeiro sem ninguém ver. ' +
+      'Se a aba da planilha entrou com o sinal trocado, desfaça a aba e ' +
+      'traga de novo; se foi o banco que mudou, corrija a linha aqui.<ul>';
+    d.sinal_trocado.forEach(l => {
+      html += '<li>' + l.data.split("-").reverse().join("/") + ' — ' +
+        l.descricao + ' (aqui: ' + dinheiro(l.valor) + ')</li>';
+    });
+    html += '</ul></div>';
+  }
+
+  const aFazer = d.novas + d.adotaveis;
+  html += '<br><button class="btn" id="btn-gravar-extrato"' +
+    (aFazer ? '' : ' disabled title="não há nada a fazer"') + '>' +
+    (d.novas ? 'Gravar ' + d.novas + ' lançamento(s)'
+             : 'Reconhecer ' + d.adotaveis + ' linha(s)') + '</button> ' +
+    '<button class="btn secundario" id="btn-cancelar-extrato">Deixa pra lá</button>';
+  html += '</div>';
+  saida.innerHTML = html;
+
+  document.getElementById("btn-cancelar-extrato").addEventListener("click", () => {
+    saida.innerHTML = ""; arquivoNaMao = null; campoArq.value = "";
+  });
+
+  // Soltar as presas e CONFERIR DE NOVO, não gravar: o número que ele viu
+  // estava errado, então o certo é refazer a pergunta, não agir sobre a
+  // resposta antiga.
+  const soltar = document.getElementById("btn-soltar-presas");
+  if (soltar) soltar.addEventListener("click", async () => {
+    soltar.disabled = true;
+    soltar.textContent = "soltando…";
+    const r = await pedir("{{ url_for('analisesps.conciliacao_soltar_presas') }}",
+                          {conta_id: d.conta_id});
+    if (!r.ok) {
+      soltar.disabled = false;
+      soltar.textContent = "Soltar e conferir de novo";
+      recado(r.erro || "não consegui soltar", "erro");
+      return;
+    }
+    soltar.textContent = r.devolvidas + " soltada(s) — conferindo de novo…";
+    // Reconferir o MESMO arquivo, na MESMA conta: é a resposta que estava
+    // errada, não o arquivo.
+    conferir(arquivoNaMao, d.conta_id);
+  });
+  const gravar = document.getElementById("btn-gravar-extrato");
+  if (gravar && !gravar.disabled) {
+    gravar.addEventListener("click", async () => {
+      gravar.disabled = true;
+      gravar.textContent = "Gravando…";
+      const corpo = new FormData();
+      corpo.append("extrato", arquivoNaMao);
+      corpo.append("conta_id", d.conta_id);
+      corpo.append("lembrar", "1");
+      try {
+        const r = await fetch("{{ url_for('analisesps.conciliacao_importar') }}",
+                              {method: "POST", body: corpo});
+        const f = await r.json();
+        if (!f.ok) {
+          saida.innerHTML = '<div class="aviso erro">' + (f.erro || "não gravou") + '</div>';
+          return;
+        }
+        location.href = "{{ url_for('analisesps.tela_conciliacao') }}?conta_id=" + d.conta_id;
+      } catch (e) {
+        saida.innerHTML = '<div class="aviso erro">Falhou ao gravar: ' + e + '</div>';
+      }
+    });
+  }
+}
+
+// --- as contas --------------------------------------------------------------
+const formConta = document.getElementById("form-conta");
+if (formConta) {
+  document.querySelectorAll(".editar-conta").forEach(b => {
+    b.addEventListener("click", () => {
+      const c = JSON.parse(b.dataset.conta);
+      ["id", "nome", "banco", "agencia", "numero", "ordem",
+       "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente",
+       "omie_fornecedor"].forEach(k => {
+        const campo = formConta.querySelector('[name="' + k + '"]');
+        if (campo) campo.value = c[k] === null || c[k] === undefined ? "" : c[k];
+      });
+      formConta.scrollIntoView({behavior: "smooth", block: "center"});
+    });
+  });
+  const limpar = document.getElementById("btn-limpar-conta");
+  if (limpar) limpar.addEventListener("click", () => {
+    formConta.reset();
+    formConta.querySelector('[name="id"]').value = "";
+  });
+  formConta.addEventListener("submit", async e => {
+    e.preventDefault();
+    const corpo = {};
+    new FormData(formConta).forEach((v, k) => { corpo[k] = v; });
+    if (!corpo.id) delete corpo.id;
+    const alvo = document.getElementById("recado-conta");
+    alvo.textContent = "gravando…";
+    const d = await pedir("{{ url_for('analisesps.conciliacao_gravar_conta') }}", corpo);
+    if (!d.ok) { alvo.textContent = d.erro || "não gravou"; return; }
+    location.reload();
+  });
+}
+
+// --- o histórico comprido abre com um clique --------------------------------
+// ⚠️ Ele quebra em até três linhas; o que passar disso fica escondido, e numa
+// tela estreita não havia como alcançar — o `title` do mouse não existe no
+// celular. Um clique na célula mostra o resto.
+document.querySelectorAll("table.conciliacao .historico").forEach(celula => {
+  celula.addEventListener("click", () => celula.classList.toggle("aberto"));
+});
+
+// --- a planilha antiga ------------------------------------------------------
+const saidaPl = document.getElementById("saida-planilha");
+const btnAbas = document.getElementById("btn-listar-abas");
+
+if (btnAbas) btnAbas.addEventListener("click", async () => {
+  btnAbas.disabled = true;
+  saidaPl.innerHTML = '<div class="aviso">Perguntando ao Google…</div>';
+  const d = await pedir("{{ url_for('analisesps.conciliacao_abas_da_planilha') }}",
+                        {planilha: document.getElementById("planilha-id").value});
+  btnAbas.disabled = false;
+  if (!d.ok) { saidaPl.innerHTML = '<div class="aviso erro">' + d.erro + '</div>'; return; }
+
+  let html = '<div class="aviso"><b>' + d.abas.length + ' aba(s).</b> ' +
+    'Escolha uma e a conta dela:<br><br>' +
+    '<select id="aba-escolhida" class="campo-largo" style="max-width:280px">';
+  d.abas.forEach(a => { html += '<option value="' + a + '">' + a + '</option>'; });
+  html += '</select> ';
+  html += '<select id="conta-da-aba" class="campo-largo" style="max-width:280px">';
+  {% for c in contas %}
+    html += '<option value="{{ c.id }}">{{ c.nome }}</option>';
+  {% endfor %}
+  html += '</select> <button class="btn" id="btn-ler-aba">Ler esta aba</button>';
+  html += '<p class="cartao-dica" style="margin:8px 0 0">Ainda não grava nada.</p></div>';
+  saidaPl.innerHTML = html;
+  document.getElementById("btn-ler-aba").addEventListener("click", lerAba);
+});
+
+async function lerAba() {
+  const aba = document.getElementById("aba-escolhida").value;
+  const conta = document.getElementById("conta-da-aba").value;
+  const planilha = document.getElementById("planilha-id").value;
+  const botao = document.getElementById("btn-ler-aba");
+  botao.disabled = true; botao.textContent = "Lendo…";
+  const d = await pedir("{{ url_for('analisesps.conciliacao_ler_aba') }}",
+                        {planilha: planilha, aba: aba});
+  if (!d.ok) {
+    saidaPl.innerHTML = '<div class="aviso erro">' + d.erro +
+      '</div>' + saidaPl.innerHTML;
+    botao.disabled = false; botao.textContent = "Ler esta aba";
+    return;
+  }
+  desenharAba(d, aba, conta, planilha);
+}
+
+function desenharAba(d, aba, conta, planilha) {
+  const saldo = d.conferencia_do_saldo || {};
+  let html = '<div class="aviso ' + (saldo.deu && !saldo.bate ? 'atencao' : 'bom') + '">';
+  html += '<b>' + d.aba + '</b> — ' + d.total + ' lançamento(s), de ' +
+    d.periodo_ini.split("-").reverse().join("/") + ' a ' +
+    d.periodo_fim.split("-").reverse().join("/") + '. ' +
+    d.conciliadas + ' já conciliado(s).';
+
+  // ⚠️ A CONFERÊNCIA DO SALDO é a única prova de que os sinais foram
+  // entendidos: ler o débito como positivo deixaria todas as linhas lá, com
+  // as datas certas. Só o saldo denuncia.
+  if (saldo.deu) {
+    html += '<br>' + (saldo.bate
+      ? '<b>O saldo da planilha bate com a soma dos valores</b> — os sinais foram entendidos.'
+      : '<b>⚠️ O saldo da planilha NÃO bate com a soma dos valores</b> (variação ' +
+        saldo.variacao + ', soma ' + saldo.soma + '). Pode ser que faltem ' +
+        'linhas no meio, ou que uma coluna tenha sido entendida errada. ' +
+        'Confira a amostra antes de gravar.');
+  }
+
+  if (d.observacao_veio_de.length) {
+    html += '<br>Vira observação: <b>' + d.observacao_veio_de.join(", ") + '</b>.';
+  }
+  if (d.descartadas_total) {
+    html += '<br>' + d.descartadas_total + ' linha(s) de fora: ';
+    html += d.descartadas.map(x => x.porque + ' (' + x.texto + ')').join("; ");
+  }
+
+  html += '<table class="sps" style="margin-top:8px"><thead><tr><th>Data</th>' +
+    '<th>Histórico</th><th>Doc.</th><th class="direita">Valor</th>' +
+    '<th>Conc.</th><th>Observação</th></tr></thead><tbody>';
+  d.amostra.forEach(l => {
+    html += '<tr><td>' + l.data + '</td><td>' + l.descricao + '</td><td>' +
+      l.documento + '</td><td class="direita">' + dinheiro(l.valor) + '</td><td>' +
+      (l.conciliado ? '✓' : '—') + '</td><td>' + l.observacao + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  if (d.total > d.amostra.length) {
+    html += '<p class="cartao-dica">Mostro as ' + d.amostra.length +
+      ' primeiras de ' + d.total + '.</p>';
+  }
+  html += '<button class="btn" id="btn-gravar-aba">Gravar as ' + d.total +
+    ' linhas nesta conta</button> ' +
+    '<button class="btn secundario" id="btn-cancelar-aba">Deixa pra lá</button>';
+  html += '</div>';
+  saidaPl.innerHTML = html;
+
+  document.getElementById("btn-cancelar-aba").addEventListener("click", () => {
+    saidaPl.innerHTML = "";
+  });
+  document.getElementById("btn-gravar-aba").addEventListener("click", async e => {
+    e.target.disabled = true; e.target.textContent = "Gravando…";
+    const f = await pedir("{{ url_for('analisesps.conciliacao_importar_aba') }}",
+                          {planilha: planilha, aba: aba, conta_id: conta});
+    if (!f.ok) {
+      saidaPl.innerHTML = '<div class="aviso erro">' + f.erro + '</div>';
+      return;
+    }
+    location.href = "{{ url_for('analisesps.tela_conciliacao') }}?conta_id=" + conta;
+  });
+}
+
+// A janela que abre por cima. Definida aqui porque o lançamento no OMIE a
+// usa, e ele vem antes no arquivo.
+function abrir(id) {
+  const dialogo = document.getElementById(id);
+  if (dialogo && dialogo.showModal) dialogo.showModal();
+  else if (dialogo) dialogo.setAttribute("open", "");
+}
+
+// ===========================================================================
+// LANÇAR NO OMIE — ⚠️ escreve no OMIE, e lançamento não se desfaz num clique.
+//
+// Por isso são dois passos: ENSAIAR mostra linha a linha o que vai acontecer
+// (e o que NÃO vai, com o motivo), e só o segundo botão manda. É o mesmo
+// desenho dos aportes.
+// ===========================================================================
+const btnOmie = document.getElementById("btn-omie");
+if (btnOmie) btnOmie.addEventListener("click", async () => {
+  const ids = selecionadas();
+  if (!ids.length) { recado("Marque as linhas primeiro."); return; }
+  const alvo = document.getElementById("saida-omie");
+  abrir("cartao-omie");
+  alvo.innerHTML = '<div class="aviso">Conferindo…</div>';
+
+  await ensaiarOmie(ids, {});
+});
+
+// ⚠️ A TRANSFERÊNCIA PEDE A CONTA DE DESTINO, e ela não é chutada: adivinhar
+// poria o dinheiro numa conta que ninguém pediu. Quando o ensaio devolve
+// linhas pedindo destino, a tela mostra um seletor para cada uma e reensaia
+// com a resposta — só então o botão de lançar aparece.
+let destinosEscolhidos = {};
+
+async function ensaiarOmie(ids, destinos) {
+  const alvo = document.getElementById("saida-omie");
+  alvo.innerHTML = '<div class="aviso">Conferindo…</div>';
+  const d = await pedir("{{ url_for('analisesps.conciliacao_omie_ensaiar') }}",
+                        {ids: ids, conta_id: CONTA_ID, destinos: destinos});
+  if (!d.ok) { alvo.innerHTML = '<div class="aviso erro">' + d.erro + '</div>'; return; }
+  desenharEnsaio(d, ids);
+}
+
+function desenharEnsaio(d, ids) {
+  const alvo = document.getElementById("saida-omie");
+
+  let html = '<div class="aviso ' + (d.vai.length ? 'atencao' : 'erro') + '">';
+  html += '<b>' + d.vai.length + ' de ' + (d.vai.length + d.nao_vai.length) +
+    ' linha(s) podem ser lançadas</b> na conta ' + d.conta + '.';
+
+  const pedindo = d.nao_vai.filter(l => l.pede_destino);
+  if (pedindo.length) {
+    html += '<br><br><b>' + pedindo.length + ' é/são transferência — para ' +
+      'qual conta o dinheiro foi?</b><table class="sps" style="margin-top:6px">' +
+      '<tbody>';
+    pedindo.forEach(l => {
+      html += '<tr><td>' + l.descricao + '</td><td class="direita">' +
+        dinheiro(l.valor) + '</td><td><select class="destino-transf" ' +
+        'data-linha="' + l.linha_id + '"><option value="">— escolha —</option>';
+      (d.contas || []).forEach(c => {
+        html += '<option value="' + c.id + '">' + c.nome + '</option>';
+      });
+      html += '</select></td></tr>';
+    });
+    html += '</tbody></table>' +
+      '<button class="btn secundario" id="btn-conferir-destinos">Conferir de novo</button>';
+  }
+
+  if (d.vai.length) {
+    html += '<table class="sps" style="margin-top:8px"><thead><tr><th>Data</th>' +
+      '<th>Histórico</th><th>Tipo</th><th>Categoria</th><th>Vai como</th>' +
+      '<th class="direita">Valor</th></tr></thead><tbody>';
+    d.vai.forEach(l => {
+      html += '<tr><td>' + l.data + '</td><td>' + l.descricao + '</td><td>' +
+        l.tipo + '</td><td><code>' + l.categoria + '</code></td><td>' +
+        (l.transferencia
+          ? '<b>transferência</b> para ' + l.destino + ' — sai daqui e entra lá'
+          : (l.sentido === "pagar" ? "conta a pagar" : "conta a receber")) +
+        '</td><td class="direita">' + dinheiro(l.valor) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  // ⚠️ A LISTA DO QUE NÃO VAI É TÃO IMPORTANTE QUANTO A OUTRA: é ela que diz
+  // o que falta configurar, em vez de o lote inteiro falhar sem explicar.
+  if (d.nao_vai.length) {
+    html += '<br><b>' + d.nao_vai.length + ' ficam de fora:</b><ul>';
+    d.nao_vai.forEach(l => {
+      html += '<li>' + l.descricao + ' (' + dinheiro(l.valor) + ') — ' +
+        l.motivo + '</li>';
+    });
+    html += '</ul>';
+  }
+
+  html += '<br>';
+  if (d.vai.length) {
+    html += '<button class="btn" id="btn-lancar-omie">Lançar ' + d.vai.length +
+      ' no OMIE</button> ';
+  }
+  html += '<button class="btn secundario" id="btn-cancelar-omie">Deixa pra lá</button>';
+  html += '</div>';
+  alvo.innerHTML = html;
+
+  const cancelar = document.getElementById("btn-cancelar-omie");
+  if (cancelar) cancelar.addEventListener("click", () => {
+    document.getElementById("cartao-omie").close();
+  });
+  const conferirDestinos = document.getElementById("btn-conferir-destinos");
+  if (conferirDestinos) conferirDestinos.addEventListener("click", () => {
+    destinosEscolhidos = {};
+    document.querySelectorAll(".destino-transf").forEach(s => {
+      if (s.value) destinosEscolhidos[s.dataset.linha] = s.value;
+    });
+    ensaiarOmie(ids, destinosEscolhidos);
+  });
+  const lancar = document.getElementById("btn-lancar-omie");
+  if (lancar) lancar.addEventListener("click", async () => {
+    lancar.disabled = true;
+    lancar.textContent = "Lançando… (pode levar um tempo)";
+    const f = await pedir("{{ url_for('analisesps.conciliacao_omie_lancar') }}",
+                          {ids: ids, conta_id: CONTA_ID,
+                           destinos: destinosEscolhidos});
+    if (!f.ok) {
+      alvo.innerHTML = '<div class="aviso erro">' + (f.erro || "não deu certo") +
+        '</div>';
+      return;
+    }
+    let fim = '<div class="aviso ' + (f.falhas.length ? 'atencao' : 'bom') +
+      '"><b>' + f.gravados + ' lançamento(s) entraram no OMIE.</b>';
+    if (f.falhas.length) {
+      fim += '<br><b>' + f.falhas.length + ' precisam de você:</b><ul><li>' +
+        f.falhas.map(x => x.descricao + " — " + x.erro).join("</li><li>") +
+        '</li></ul>';
+    }
+    fim += '<br>A tela vai recarregar.</div>';
+    alvo.innerHTML = fim;
+    setTimeout(() => location.reload(), f.falhas.length ? 8000 : 2000);
+  });
+}
+
+// --- os tipos de movimento --------------------------------------------------
+const formTipo = document.getElementById("form-tipo");
+if (formTipo) {
+  document.querySelectorAll(".editar-tipo").forEach(b => {
+    b.addEventListener("click", () => {
+      const tp = JSON.parse(b.dataset.tipo);
+      ["id", "nome", "palavras", "codigo_categoria", "codigo_cliente",
+       "cod_departamento", "natureza"].forEach(k => {
+        const campo = formTipo.querySelector('[name="' + k + '"]');
+        if (campo) campo.value = tp[k] === null || tp[k] === undefined ? "" : tp[k];
+      });
+    });
+  });
+  const limpar = document.getElementById("btn-limpar-tipo");
+  if (limpar) limpar.addEventListener("click", () => {
+    formTipo.reset();
+    formTipo.querySelector('[name="id"]').value = "";
+  });
+  formTipo.addEventListener("submit", async e => {
+    e.preventDefault();
+    const corpo = {};
+    new FormData(formTipo).forEach((v, k) => { corpo[k] = v; });
+    if (!corpo.id) delete corpo.id;
+    const alvo = document.getElementById("recado-tipo");
+    alvo.textContent = "gravando…";
+    const d = await pedir("{{ url_for('analisesps.conciliacao_omie_tipo') }}", corpo);
+    if (!d.ok) { alvo.textContent = d.erro || "não gravou"; return; }
+    location.reload();
+  });
+}
+
+// --- APAGAR UMA LINHA DO EXTRATO -------------------------------------------
+// ⚠️ A CONFIRMAÇÃO FOI PEDIDA JUNTO COM O RECURSO — 26/09/2026: *"a exclusão
+// tem uma confirmação, né? Para garantir que a pessoa está fazendo uma coisa
+// correta. Porque não é o certo estar excluindo linhas."*
+//
+// Duas chamadas: a primeira só diz o que a linha É e se dá para apagar (a
+// lançada no OMIE não dá). A segunda apaga, e exige o MOTIVO — é o que vai
+// explicar, meses depois, por que o saldo mudou. Sem motivo, o servidor recusa.
+document.querySelectorAll(".apagar-linha").forEach(botao => {
+  botao.addEventListener("click", async () => {
+    const linha_id = botao.dataset.id;
+    botao.disabled = true;
+    const d = await pedir("{{ url_for('analisesps.conciliacao_apagar_linha') }}",
+                          {linha_id: linha_id});
+    botao.disabled = false;
+    if (!d.ok) { recado(d.erro || "não consegui conferir", "erro"); return; }
+    if (!d.pode) { alert(d.erro); return; }
+
+    let aviso = "Apagar esta linha do extrato?\n\n" +
+      (d.data || "").split("-").reverse().join("/") + " — " + d.descricao +
+      "\n" + dinheiro(d.valor);
+    if (d.origem === "planilha") aviso += "\n(veio da planilha antiga)";
+    if (d.origem === "mao") aviso += "\n(foi digitada à mão)";
+    if (d.conciliado) aviso += "\n\nATENÇÃO: ela está CONCILIADA" +
+      (d.conciliado_por ? " por " + d.conciliado_por : "") + ".";
+    if (d.observacao) aviso += "\nTem observação escrita: \"" + d.observacao + "\"";
+    aviso += "\n\nO saldo desta tela vai mudar, e isto não tem volta. " +
+      "Se o problema foi a importação inteira, prefira o Desfazer do extrato.";
+    if (!confirm(aviso)) return;
+
+    // O MOTIVO É OBRIGATÓRIO, e a pergunta é a segunda trava: quem clicou sem
+    // querer para aqui.
+    const motivo = prompt("Por que esta linha está saindo? (fica registrado)");
+    if (!motivo || !motivo.trim()) {
+      recado("nada foi apagado — sem motivo, não apago", "");
+      return;
+    }
+
+    botao.disabled = true;
+    const f = await pedir("{{ url_for('analisesps.conciliacao_apagar_linha') }}",
+                          {linha_id: linha_id, confirmar: true, motivo: motivo});
+    if (!f.ok) {
+      botao.disabled = false;
+      recado(f.erro || "não consegui apagar", "erro");
+      return;
+    }
+    recado("linha apagada. A tela vai recarregar.", "");
+    setTimeout(() => location.reload(), 1200);
+  });
+});
+
+// --- DESFAZER UMA IMPORTAÇÃO -----------------------------------------------
+// ⚠️ O BOTÃO EXISTIA E NÃO FAZIA NADA — relato do dono em 25/09/2026: *"o
+// botão desfazer o extrato importado não funciona"*. E não funcionava mesmo:
+// o `<button class="desfazer-arquivo">` foi escrito na tabela dos extratos,
+// a rota `/api/conciliacao/desfazer` foi escrita e testada, e ninguém ligou
+// os dois. Clicar não dava erro, não dava recado, não fazia nada.
+//
+// A ROTA PEDE DUAS CHAMADAS, de propósito: a primeira só CONTA o que sumiria
+// (inclusive quantas linhas foram conciliadas ou anotadas por gente, e
+// quantas já foram lançadas no OMIE), e a segunda executa. É por isso que
+// aqui há duas perguntas e não uma — apagar contando depois não é escolha.
+document.querySelectorAll(".desfazer-arquivo").forEach(botao => {
+  botao.addEventListener("click", async () => {
+    const arquivo_id = botao.dataset.arquivo;
+    const nome = botao.dataset.nome || "este extrato";
+    const antigo = botao.textContent;
+    botao.disabled = true;
+    botao.textContent = "conferindo…";
+
+    const conta = await pedir("{{ url_for('analisesps.conciliacao_desfazer') }}",
+                              {conta_id: CONTA_ID, arquivo_id: arquivo_id});
+    botao.disabled = false;
+    botao.textContent = antigo;
+    if (!conta.ok || !conta.pode) {
+      recado(conta.erro || "não consegui conferir o que sumiria", "erro");
+      return;
+    }
+
+    let aviso = "Desfazer \"" + nome + "\"?\n\n" +
+                conta.quantas + " linha(s) seriam apagadas.";
+    if (conta.conciliadas) aviso += "\n" + conta.conciliadas +
+      " delas estão CONCILIADAS — esse trabalho se perde.";
+    if (conta.anotadas) aviso += "\n" + conta.anotadas +
+      " delas têm OBSERVAÇÃO escrita aqui dentro — o texto se perde.";
+    if (conta.devolvidas) aviso += "\n" + conta.devolvidas +
+      " linha(s) da planilha voltam a ser da planilha (não são apagadas).";
+    if (conta.no_omie) aviso += "\n\n" + conta.no_omie +
+      " já foram lançadas no OMIE e NÃO serão apagadas — o título lá fora " +
+      "continua existindo e tem de ser desfeito por lá.";
+    aviso += "\n\nIsto não tem volta.";
+    if (!confirm(aviso)) return;
+
+    botao.disabled = true;
+    botao.textContent = "desfazendo…";
+    const f = await pedir("{{ url_for('analisesps.conciliacao_desfazer') }}",
+                          {conta_id: CONTA_ID, arquivo_id: arquivo_id,
+                           confirmar: true});
+    if (!f.ok) {
+      botao.disabled = false;
+      botao.textContent = antigo;
+      recado(f.erro || "não consegui desfazer", "erro");
+      return;
+    }
+    recado(f.apagadas + " linha(s) apagada(s)" +
+           (f.devolvidas ? ", " + f.devolvidas + " devolvida(s) à planilha" : "") +
+           ". A tela vai recarregar.", "");
+    setTimeout(() => location.reload(), 1500);
+  });
+});
+
+// --- os filtros de cabeçalho: Enter aplica -----------------------------------
+// O botão escondido dentro do formulário já resolve pela regra do HTML; isto
+// existe para não depender de navegador nenhum, e porque a caixinha de data
+// merece aplicar sozinha quando a pessoa escolhe o dia no calendário.
+const formColunas = document.getElementById("filtro-colunas");
+if (formColunas) {
+  document.querySelectorAll('[form="filtro-colunas"]').forEach(campo => {
+    campo.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); formColunas.submit(); }
+    });
+    if (campo.type === "date") {
+      campo.addEventListener("change", () => formColunas.submit());
+    }
+  });
+}
+
+// --- os dois ajustes, que abrem por cima da tela ----------------------------
+[["btn-abrir-contas", "cartao-contas"],
+ ["btn-nova-conta", "cartao-contas"],
+ ["btn-abrir-tipos", "cartao-tipos"],
+ ["btn-abrir-planilha", "cartao-planilha"]].forEach(([botao, alvo]) => {
+  const b = document.getElementById(botao);
+  if (b) b.addEventListener("click", () => abrir(alvo));
+});
+
+// ---------------------------------------------------------------------------
+// PROCURAR EM TODAS AS CONTAS, SEM FILTRO NENHUM
+//
+// ⚠️ A resposta tem de ser um FATO, não uma impressão: ou a linha existe e a tela
+// diz em qual conta e de qual arquivo veio, ou ela não está no banco. Sem isso,
+// "não importou" e "não estou vendo" são indistinguíveis.
+// ---------------------------------------------------------------------------
+const btnProcurarTudo = document.getElementById("btn-procurar-tudo");
+// Enter em qualquer das duas caixas procura — elas estão fora do formulário
+// dos filtros justamente para o Enter não recarregar a tela.
+["procura-valor", "procura-texto"].forEach(id => {
+  const caixa = document.getElementById(id);
+  if (caixa) caixa.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); btnProcurarTudo.click(); }
+  });
+});
+if (btnProcurarTudo) btnProcurarTudo.addEventListener("click", async () => {
+  const valor = document.getElementById("procura-valor").value.trim();
+  const texto = document.getElementById("procura-texto").value.trim();
+  const caixa = document.getElementById("achados-gerais");
+  if (!valor && !texto) {
+    caixa.innerHTML = '<div class="aviso atencao">Diga um valor ou um pedaço do histórico.</div>';
+    return;
+  }
+  caixa.innerHTML = '<p class="cartao-dica">procurando…</p>';
+  btnProcurarTudo.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.conciliacao_procurar') }}?valor="
+                          + encodeURIComponent(valor) + "&q=" + encodeURIComponent(texto));
+    const d = await r.json();
+    if (!d.ok) { caixa.innerHTML = '<div class="aviso erro">' + d.erro + "</div>"; return; }
+    if (!d.quantos) {
+      // ⚠️ A FRASE IMPORTA: isto é resposta, não falha. Quer dizer que o
+      // lançamento NÃO está no banco — nem nesta conta nem em nenhuma outra.
+      caixa.innerHTML =
+        '<div class="aviso erro"><b>Não existe em conta nenhuma.</b> ' +
+        'Nenhum lançamento com esse valor ou histórico está gravado aqui — ' +
+        'em qualquer conta, em qualquer data, com ou sem filtro. Se você esperava ' +
+        'que estivesse, o problema é na importação e não na tela.</div>';
+      return;
+    }
+    let html = '<div class="aviso atencao"><b>Achei ' + d.quantos +
+      ' lançamento(s)</b>, ignorando conta, período e filtro:<ul class="lista-seca">';
+    d.achados.forEach(a => {
+      html += "<li><b>" + a.conta + "</b> · " + a.data + " · " +
+        Number(a.valor).toLocaleString("pt-BR", {style: "currency", currency: "BRL"}) +
+        " · " + a.descricao +
+        (a.arquivo ? ' <span class="cartao-dica">(de ' + a.arquivo + ")</span>" : "") +
+        (a.conciliado ? " · conciliado" : "") +
+        (a.omie_codigo ? " · no OMIE " + a.omie_codigo : "") +
+        "</li>";
+    });
+    caixa.innerHTML = html + "</ul></div>";
+  } catch (e) {
+    caixa.innerHTML = '<div class="aviso erro">Falhou: ' + e + "</div>";
+  } finally {
+    btnProcurarTudo.disabled = false;
+  }
+});
+
+</script>
+{% endif %}
+{% endblock %}
+

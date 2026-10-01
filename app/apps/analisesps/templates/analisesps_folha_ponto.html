@@ -1,0 +1,316 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Ponto — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Ponto <small>{{ cargas|length }} mês(es) carregado(s)</small></h2>
+
+<p class="cartao-dica" style="margin-bottom:14px">
+  O ponto é o que diz <b>em qual obra cada pessoa trabalhou em cada dia</b> — e é
+  dele que sai o total por obra da folha. Vem do Mobponto, um mês por vez.
+</p>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui ler as cargas do ponto.</b> {{ erro }}</div>
+{% endif %}
+
+{# ⚠️ O ESTADO, DITO AO ABRIR A TELA. Reclamação dele em 28/09/2026: *"se o ponto
+   veio, se o ponto não veio, só Deus sabe o que está acontecendo com essa API. Se
+   ela está carregando, se ela não está."*
+
+   Antes a tela só acompanhava se VOCÊ tivesse apertado o botão naquela aba. Agora
+   o estado vem junto com a página, e ela já abre acompanhando. #}
+{% if andando.rodando %}
+  <div class="aviso" id="aviso-andando">
+    <b>Está trazendo dado agora.</b>
+    <span id="andando-etapa">{{ andando.progresso or andando.etapa or
+      'a carga começou e ainda não disse em que passo está' }}</span>
+    <br><span class="cartao-dica">Esta tela se atualiza sozinha quando terminar —
+      pode fechar a página, o trabalho continua no servidor.</span>
+  </div>
+{% elif ultima %}
+  {# ⚠️ A ÚLTIMA TENTATIVA, DITA NA CARA. Ele reclamou TRÊS VEZES de apertar o
+     botão e não saber o que aconteceu. O registro sempre existiu — com o erro da
+     API dentro — e ficava só no log do serviço, que ele não tem como ler. #}
+  {% if ultima.ok %}
+    <div class="aviso">
+      <b>Última tentativa: deu certo.</b>
+      {{ ultima.fim|momento_br }}, por {{ ultima.disparo or '—' }}.
+      {% if ultima.mensagem %}<br>{{ ultima.mensagem }}{% endif %}
+      {% if not cargas %}
+        <br><span class="cartao-dica">Mas não há mês carregado abaixo — se a
+          mensagem acima diz "0 dia(s)", a API respondeu sem nenhum lançamento
+          para esse mês. Confira o mês escolhido.</span>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="aviso erro">
+      <b>A última tentativa FALHOU.</b>
+      {{ ultima.fim|momento_br }}, por {{ ultima.disparo or '—' }}.
+      {% if ultima.mensagem %}
+        <br><b>O que o sistema respondeu:</b> {{ ultima.mensagem }}
+      {% else %}
+        <br>Não ficou registrado o motivo — o processo morreu antes de escrever.
+      {% endif %}
+      {% set parada = (cargas or [])|selectattr('interrompida')|first %}
+      {% if parada %}
+        <br><b>O que já entrou está guardado:</b> {{ parada.competencia }} parou
+        na página {{ parada.paginas_lidas + 1 }} de {{ parada.paginas }}.
+        Aperte "trazer o ponto" de novo e ele <b>continua dali</b> — não volta ao
+        começo. Enquanto isso, o mês vale a carga anterior.
+      {% endif %}
+      <br><span class="cartao-dica">
+        Se fala de <b>401</b> ou <b>403</b>, as credenciais do Mobponto estão
+        recusadas (é trocar no Render). Se fala de <b>tempo</b> ou de
+        <b>conexão</b>, o Mobponto demorou demais — o sistema já esperou e
+        tentou de novo por alguns minutos antes de parar; tentar mais tarde
+        costuma resolver.
+        Se fala de <b>0 página(s)</b>, ela respondeu sem dado para esse mês.
+      </span>
+    </div>
+  {% endif %}
+{% elif andando.interrompida %}
+  <div class="aviso atencao">
+    <b>A última carga foi interrompida no meio.</b> Isso acontece quando o serviço
+    reinicia (uma publicação, por exemplo). Aperte "Trazer o ponto" de novo do
+    mesmo mês: trazer duas vezes o mesmo mês <b>substitui</b>, não duplica.
+  </div>
+{% endif %}
+
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui.
+  </div>
+{% elif not configurado %}
+  {# ⚠️ O RECADO DIZ O QUE FAZER, e onde. "Não configurado" mandaria adivinhar. #}
+  <div class="aviso atencao">
+    <b>Faltam as credenciais do Mobponto.</b>
+    Crie no Render as duas variáveis <code>MOBPONTO_AUTHORIZATION</code> e
+    <code>MOBPONTO_API_KEY</code>. Os valores estão nos <b>Apps Script</b> das
+    planilhas do ponto, no bloco de cabeçalhos da requisição — copie de lá
+    <b>direto para o Render</b>, sem passar por conversa, e
+    <b>troque a chave na origem depois</b>: chave que já circulou é chave a
+    trocar.
+  </div>
+{% else %}
+
+{% if pode_operar %}
+<div class="cartao">
+  <label class="rotulo-campo">Trazer o ponto de um mês</label>
+  <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
+    <div>
+      <label class="cartao-dica" for="ponto-mes">Mês</label>
+      <select id="ponto-mes" style="width:110px">
+        {% for n in range(1, 13) %}
+          <option value="{{ n }}" {{ 'selected' if n == mes_padrao }}>{{ '%02d'|format(n) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="cartao-dica" for="ponto-ano">Ano</label>
+      <select id="ponto-ano" style="width:110px">
+        {% for a in range(ano_padrao - 2, ano_padrao + 2) %}
+          <option value="{{ a }}" {{ 'selected' if a == ano_padrao }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn" id="btn-trazer-ponto">Trazer o ponto</button>
+    <span id="recado-ponto" class="cartao-dica" style="margin:0"></span>
+  </div>
+  <p class="cartao-dica" style="margin:8px 0 0">
+    Trazer o mesmo mês de novo <b>substitui</b> o que está guardado. Pode demorar:
+    a API do Mobponto entrega o mês em páginas, e um mês tem dezenas de milhares
+    de dias. Você pode fechar a página — o trabalho continua no servidor.
+  </p>
+</div>
+{% endif %}
+
+<div class="tabela-wrap">
+
+  <div class="tabela-rolagem livre">
+
+    <table class="sps" style="margin-top:16px">
+      <thead>
+        <tr><th>Competência</th><th class="num">Pessoas</th><th class="num">Dias</th>
+          <th>Páginas</th><th>Trazido</th>{% if pode_operar %}<th></th>{% endif %}</tr>
+      </thead>
+      <tbody>
+      {% for c in cargas %}
+        <tr class="{{ 'linha-alerta' if not c.completa or c.lista_de_avisos }}">
+          <td><b>{{ c.competencia }}</b></td>
+          <td class="num">{{ c.pessoas }}</td>
+          <td class="num">{{ c.dias }}</td>
+          <td>
+            {{ c.paginas_lidas }} de {{ c.paginas }}
+            {% if c.interrompida %}
+              <span class="selo risco"
+                    title="Esta carga parou no meio e não vale: o mês continua com a carga anterior, se houver. A próxima carga do mês (botão ou automático) continua da página em que parou.">parou na página {{ c.paginas_lidas + 1 }} — retoma na próxima carga</span>
+            {% elif not c.completa %}
+              <span class="selo cancelado"
+                    title="A API disse que havia mais páginas do que foram lidas — o mês pode estar incompleto">veio pela metade</span>
+            {% endif %}
+          </td>
+          <td><span class="cartao-dica">{{ c.carregado_em|momento_br }}{% if c.carregado_por %} · {{ c.carregado_por }}{% endif %}</span></td>
+          {% if pode_operar %}
+            <td class="num">
+              <button class="apagar-linha apagar-ponto" title="Apagar esta carga"
+                      data-id="{{ c.id }}" data-competencia="{{ c.competencia }}"
+                      data-dias="{{ c.dias }}">&times;</button>
+            </td>
+          {% endif %}
+        </tr>
+        {% if c.lista_de_avisos %}
+          <tr><td colspan="{{ 6 if pode_operar else 5 }}">
+            <div class="aviso atencao" style="margin:0">⚠️ {{ c.lista_de_avisos|join('; ') }}</div>
+          </td></tr>
+        {% endif %}
+      {% else %}
+        <tr><td colspan="{{ 6 if pode_operar else 5 }}" class="cartao-dica">
+          Nenhum mês carregado ainda.
+          {% if pode_operar %}Escolha o mês acima e traga.{% endif %}
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+
+</div>
+
+{# ------------------------------------------------------------------------
+   ⚠️ ESTA PARTE É O QUE DESTRAVA A APROPRIAÇÃO, e por isso ela está na tela e
+   não num log.
+
+   A API do Mobponto manda, em cada dia, um conjunto de campos que o próprio
+   script do dono descobre em tempo de execução — ninguém escreveu em lugar
+   nenhum quais são. Eu não vou adivinhar qual deles é a obra e quais são as
+   quatro marcações: palpite aqui decide em qual obra cai o salário de 500
+   pessoas.
+
+   Então: aqui aparecem os campos que vieram DE VERDADE, e um dia de exemplo.
+   Com isso o mapeamento é uma linha de código e nenhuma suposição.
+   ------------------------------------------------------------------------ #}
+{% if cargas and cargas[0].campos %}
+<div class="cartao" style="margin-top:16px">
+  <h3 style="margin:0 0 6px">Os campos que a API manda em cada dia</h3>
+  <p class="cartao-dica">
+    Esta lista é o que falta para o sistema saber <b>qual campo é a obra</b> e
+    <b>quais são as marcações</b>. Ela não estava escrita em lugar nenhum — o
+    script antigo descobria na hora. Me mande esta lista (ou diga qual é qual) e
+    eu ligo o total por obra.
+  </p>
+  <p><code>{{ cargas[0].campos|join('</code> · <code>')|safe }}</code></p>
+
+  {% if amostra %}
+    <h4 style="margin:12px 0 4px">Um dia de exemplo, como veio</h4>
+    <div class="tabela-wrap">
+      <div class="tabela-rolagem livre">
+        <table class="sps">
+          <thead><tr><th>Campo</th><th>O que veio</th></tr></thead>
+          <tbody>
+          {% for campo, valor in amostra[0].campos.items() %}
+            <tr><td><code>{{ campo }}</code></td><td>{{ valor }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <p class="cartao-dica" style="margin-top:6px">
+      É o primeiro dia de <b>{{ amostra[0].nome or amostra[0].cpf }}</b>.
+    </p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if pode_operar %}
+<script>
+const recadoPonto = document.getElementById("recado-ponto");
+function dizPonto(texto, classe) {
+  if (!recadoPonto) return;
+  recadoPonto.textContent = texto || "";
+  recadoPonto.className = "cartao-dica" + (classe ? " " + classe : "");
+}
+
+const btnPonto = document.getElementById("btn-trazer-ponto");
+if (btnPonto) btnPonto.addEventListener("click", async () => {
+  const mes = document.getElementById("ponto-mes").value;
+  const ano = document.getElementById("ponto-ano").value;
+  // ⚠️ AVISA QUE SUBSTITUI antes de fazer: trazer o mesmo mês de novo apaga o
+  // que estava guardado, e quem não souber perde o que já tinha.
+  const jaTem = {{ cargas|map(attribute='competencia')|list|tojson }};
+  const alvo = String(mes).padStart(2, "0") + "/" + ano;
+  if (jaTem.indexOf(alvo) > -1 && !confirm(
+      "O ponto de " + alvo + " já está carregado.\n\n" +
+      "Trazer de novo SUBSTITUI o que está guardado. Continuar?")) return;
+
+  btnPonto.disabled = true;
+  dizPonto("pedindo ao Mobponto…");
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_ponto_carregar') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ano: ano, mes: mes})
+    });
+    const d = await r.json();
+    if (!d.ok) { dizPonto(d.erro, "erro"); btnPonto.disabled = false; return; }
+    dizPonto("trazendo… pode fechar a página, o trabalho continua no servidor.");
+    const relogio = setInterval(async () => {
+      try {
+        const a = await fetch("{{ url_for('analisesps.andamento') }}");
+        const e = await a.json();
+        if (e.rodando) {
+          dizPonto(e.progresso || e.etapa || "trazendo…");
+        } else { clearInterval(relogio); location.reload(); }
+      } catch (err) { /* rede oscilou: a próxima volta resolve */ }
+    }, 4000);
+  } catch (e) {
+    dizPonto("falhou: " + e, "erro");
+    btnPonto.disabled = false;
+  }
+});
+
+// ⚠️ SE JÁ HÁ CARGA RODANDO AO ABRIR A TELA, acompanha sozinho — sem depender de
+// ninguém ter apertado o botão nesta aba. Era isso que faltava para a pergunta
+// "está carregando ou não?" ter resposta.
+{% if andando.rodando %}
+(function acompanharSozinho() {
+  const relogio = setInterval(async () => {
+    try {
+      const a = await fetch("{{ url_for('analisesps.andamento') }}");
+      const e = await a.json();
+      const alvo = document.getElementById("andando-etapa");
+      if (e.rodando) {
+        if (alvo) alvo.textContent = e.progresso || e.etapa || "trabalhando…";
+      } else {
+        clearInterval(relogio);
+        location.reload();
+      }
+    } catch (err) { /* rede oscilou: a próxima volta resolve */ }
+  }, 4000);
+})();
+{% endif %}
+
+document.querySelectorAll(".apagar-ponto").forEach(b =>
+  b.addEventListener("click", async () => {
+    if (!confirm("Apagar o ponto de " + b.dataset.competencia + ", com " +
+                 b.dataset.dias + " dia(s)?\n\n" +
+                 "É cópia do que o Mobponto tem: dá para trazer de novo.")) return;
+    b.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_ponto_apagar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({id: b.dataset.id})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert(d.erro); b.disabled = false; return; }
+      location.reload();
+    } catch (e) { alert("Falhou: " + e); b.disabled = false; }
+  }));
+</script>
+{% endif %}
+
+{% endif %}
+{% endblock %}

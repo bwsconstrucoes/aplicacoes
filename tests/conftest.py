@@ -290,10 +290,70 @@ def url_de_teste_segura(url: str) -> str:
     return url
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _banco_deste_trabalhador(worker_id):
+    """Um banco por trabalhador do xdist — e a VARIÁVEL DE AMBIENTE apontando
+    para ele.
+
+    ⚠️ MEXER NA VARIÁVEL, E NÃO SÓ NA FIXTURE `banco`, é o que faz isto funcionar.
+    Vários testes — os do painel, entre eles — leem `ERP_TEST_DATABASE_URL`
+    DIRETO do ambiente, sem passar pela fixture. Trocando só a fixture, esses
+    continuariam todos no mesmo banco: em paralelo, um apagaria a tabela que o
+    outro está lendo, e a suíte falharia de forma aleatória. Foi exatamente o que
+    aconteceu na primeira tentativa, em 29/09/2026 — dezesseis testes do painel
+    caíram, e nenhum deles tinha defeito.
+
+    ⚠️ AUTOUSE E DE SESSÃO: tem de valer antes de qualquer fixture ler a variável.
+
+    Sem paralelismo, `worker_id` é "master" e nada muda."""
+    if worker_id == "master":
+        yield
+        return
+    bruto = os.environ.get(VARIAVEL_BANCO_TESTE, "").strip()
+    if not bruto:
+        yield
+        return
+    os.environ[VARIAVEL_BANCO_TESTE] = _banco_do_trabalhador(
+        url_de_teste_segura(bruto), worker_id)
+    yield
+
+
+def _banco_do_trabalhador(url: str, worker_id: str) -> str:
+    """Cria (se preciso) e devolve a URL do banco DESTE trabalhador do xdist.
+
+    ⚠️ O nome sai do trabalhador, não de um contador: `gw0`, `gw1`… são estáveis
+    dentro de uma rodada, então repetir a rodada reaproveita os mesmos bancos em
+    vez de encher o disco de bancos órfãos — que foi exatamente o que fez a
+    consulta de tamanho do banco levar 14 segundos por teste até 29/09/2026."""
+    import sqlalchemy
+
+    nome = f"{url.rsplit('/', 1)[1]}_{worker_id}"
+    base = url.rsplit("/", 1)[0]
+    # A criação de banco não roda dentro de transação: `AUTOCOMMIT` é obrigatório.
+    eng = sqlalchemy.create_engine(f"{base}/postgres", isolation_level="AUTOCOMMIT")
+    with eng.connect() as conn:
+        existe = conn.execute(sqlalchemy.text(
+            "SELECT 1 FROM pg_database WHERE datname = :n"), {"n": nome}).first()
+        if not existe:
+            conn.execute(sqlalchemy.text(f'CREATE DATABASE "{nome}"'))
+    eng.dispose()
+    return f"{base}/{nome}"
+
+
 @pytest.fixture(scope="session")
 def banco():
     """Aponta o processo para o banco de teste e o reconstrói do zero:
-    esquema base + todas as migrações, pelos mesmos scripts da produção."""
+    esquema base + todas as migrações, pelos mesmos scripts da produção.
+
+    ⚠️ UM BANCO POR TRABALHADOR quando a suíte roda em paralelo (29/09/2026). O
+    `pytest-xdist` divide os testes entre vários processos; se todos apontassem
+    para o MESMO banco, um apagaria a tabela que o outro está lendo, e a suíte
+    passaria a falhar de forma aleatória — o pior tipo de teste que existe, porque
+    ensina a equipe a rodar de novo em vez de investigar.
+
+    Cada trabalhador ganha o seu (`erp_teste_gw0`, `erp_teste_gw1`, …), criado aqui
+    se ainda não existir. Rodando sem paralelismo, `worker_id` é "master" e o banco
+    é o original — nada muda para quem roda um arquivo só."""
     bruto = os.environ.get(VARIAVEL_BANCO_TESTE, "").strip()
     if not bruto:
         pytest.skip(f"{VARIAVEL_BANCO_TESTE} não definida — testes com banco pulados")
@@ -416,3 +476,158 @@ def hoje():
     """A data de HOJE, lida no momento do uso — nunca no topo do arquivo."""
     from datetime import date as _date
     return _date.today()
+
+
+# ---------------------------------------------------------------------------
+# O SCHEMA DA ANÁLISE DE SPs: CONSTRUÍDO UMA VEZ, ESVAZIADO ENTRE OS TESTES
+#
+# ⚠️ POR QUE ISTO EXISTE, e é a maior conta da suíte. Cobrança do dono em
+# 29/09/2026:
+#
+#     *"Está demorando meia hora, uma hora para fechar alguma coisa relativamente
+#     simples. (…) Está praticamente inviável evoluir."*
+#
+# Ele está certo, e a causa era medível: **doze arquivos de teste refaziam o
+# schema inteiro a cada teste**. Cada um fazia `DROP SCHEMA analisesps CASCADE` e
+# depois executava os 36 arquivos de migração, um por um. São 727 testes com
+# banco — ou seja, cerca de **26 mil execuções de arquivo SQL por rodada**, para
+# construir sempre exatamente a mesma coisa.
+#
+# Agora o schema nasce UMA VEZ por sessão de teste e, entre um teste e outro, as
+# tabelas são apenas ESVAZIADAS. Um `TRUNCATE` de todas as tabelas de um schema é
+# uma instrução só, e o banco a resolve sem tocar em disco de estrutura.
+#
+# ⚠️ O ISOLAMENTO CONTINUA O MESMO, e isso não é negociável: cada teste começa com
+# as tabelas vazias e os contadores de `id` zerados, que é exatamente o estado que
+# ele tinha com o schema recém-criado. `RESTART IDENTITY` é o que garante a
+# segunda parte — sem ele, o primeiro registro de um teste nasceria com id 7 em
+# vez de 1, e teste que confere id quebraria por motivo errado.
+#
+# ⚠️ E A SEMENTE VOLTA. A migração 002 insere uma linha em `analisesps.lote`
+# (id 1, conteúdo vazio) — é a gaveta do lote, que o código espera encontrar. O
+# `TRUNCATE` a levaria junto, e o schema recriado a traria de volta; por isso ela
+# é reposta aqui, explicitamente. Uma diferença silenciosa entre "schema novo" e
+# "schema esvaziado" seria o pior resultado possível deste conserto: testes
+# passando no lugar errado.
+# ---------------------------------------------------------------------------
+_SEMENTES_ANALISESPS = (
+    # (tabela, SQL que repõe o que a migração semeou)
+    # ⚠️ INSERT SECO, sem `ON CONFLICT`: a tabela `lote` não tem chave única no
+    # `id` (ela é uma gaveta de uma linha só), e o `TRUNCATE` logo acima já
+    # garante que não há com o que conflitar.
+    ("lote", "INSERT INTO analisesps.lote (id, conteudo) VALUES (1, '')"),
+)
+
+
+@pytest.fixture(scope="session")
+def _schema_analisesps(banco):
+    """Constrói o schema `analisesps` uma única vez, pelas migrações de verdade.
+
+    São as MESMAS que o botão "Aplicar atualizações do banco" aplica — construir o
+    schema por outro caminho faria a suíte testar um banco que não existe."""
+    import pathlib
+
+    from sqlalchemy import text
+
+    pasta = (RAIZ / "app" / "apps" / "analisesps" / "migracoes")
+    with banco.connect() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
+        for caminho in sorted(pasta.glob("*.sql")):
+            conn.execute(text(caminho.read_text(encoding="utf-8")))
+        conn.commit()
+    yield
+    with banco.connect() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
+        conn.commit()
+
+
+@pytest.fixture
+def banco_analisesps(_schema_analisesps, banco, monkeypatch):
+    """Um banco `analisesps` LIMPO para este teste. Substitui o refaz-tudo.
+
+    Aponta o módulo para o banco de teste e esvazia todas as tabelas do schema —
+    o mesmo estado de um schema recém-criado, sem o custo de recriá-lo."""
+    from sqlalchemy import text
+
+    from app.apps.analisesps import db as db_analisesps
+
+    url = str(banco.url.render_as_string(hide_password=False))
+    monkeypatch.setenv("DATABASE_URL", url)
+    db_analisesps._engine = None
+
+    with banco.connect() as conn:
+        # As tabelas são descobertas, não escritas à mão: tabela nova numa
+        # migração futura entra sozinha na limpeza. Uma lista escrita aqui
+        # esqueceria a próxima, e o teste seguinte herdaria dado do anterior.
+        nomes = [linha[0] for linha in conn.execute(text(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'analisesps'"))]
+        if nomes:
+            # ⚠️ `DELETE`, E NÃO `TRUNCATE` — medido em 29/09/2026 e o motivo
+            # surpreende: o `TRUNCATE` cria um ARQUIVO NOVO para cada tabela que
+            # ele esvazia. Com ~60 tabelas e 727 testes, uma rodada da suíte
+            # deixava mais de um milhão de arquivos no diretório do banco. E
+            # quando eles se acumulam, a consulta que mede o tamanho do banco
+            # passa a levar SEGUNDOS: foram 14 s por teste, em seis testes, antes
+            # de eu descobrir isto.
+            #
+            # `DELETE` em tabela vazia não cria arquivo nenhum e, com poucas
+            # linhas (que é o caso de todo teste), é tão rápido quanto.
+            #
+            # A ordem não importa: `session_replication_role = replica` desliga as
+            # chaves estrangeiras nesta transação, que é o que o `CASCADE` do
+            # `TRUNCATE` fazia.
+            conn.execute(text("SET LOCAL session_replication_role = replica"))
+            for n in nomes:
+                conn.execute(text(f'DELETE FROM analisesps."{n}"'))
+            # ⚠️ OS CONTADORES DE `id` VOLTAM A 1. Sem isto, o primeiro registro
+            # de um teste nasceria com id 7 em vez de 1 — e teste que confere id
+            # quebraria por motivo errado, que é o pior jeito de quebrar.
+            for seq in [l[0] for l in conn.execute(text(
+                    "SELECT sequencename FROM pg_sequences "
+                    " WHERE schemaname = 'analisesps'"))]:
+                conn.execute(text(
+                    f'ALTER SEQUENCE analisesps."{seq}" RESTART WITH 1'))
+        for _tabela, sql in _SEMENTES_ANALISESPS:
+            conn.execute(text(sql))
+        conn.commit()
+
+    yield
+    db_analisesps._engine = None
+
+
+# ⚠️ NÃO EXISTE AQUI UMA FIXTURE DE SCHEMA DO `painel`, e a ausência é decisão.
+#
+# Houve uma, por algumas horas em 29/09/2026, para acelerar os testes de aporte.
+# Ela derrubava e esvaziava o schema `painel` — que é de outra área e tem os seus
+# próprios testes, com as suas próprias fixtures. Rodando em paralelo, os dois
+# caíam um em cima do outro e dezesseis testes do painel falharam sem ter defeito.
+#
+# Os 26 testes de aporte continuam construindo o `painel` do jeito antigo. É lento
+# para eles e é o certo: acelerar 26 testes não vale mexer no chão de outra área.
+
+
+@pytest.fixture
+def banco_analisesps_mutilado(banco_analisesps, banco):
+    """Para o teste que APAGA uma tabela ou coluna de propósito.
+
+    ⚠️ ESTES TESTES SÃO LEGÍTIMOS E IMPORTANTES: eles simulam "a migração ainda não
+    foi aplicada" — o intervalo real entre o código subir para o Render e alguém
+    apertar o botão. É neles que se prova que a tela AVISA em vez de estourar.
+
+    ⚠️ MAS ELES ESTRAGAM O SCHEMA COMPARTILHADO. Enquanto cada teste recriava tudo,
+    o estrago se desfazia sozinho; com o schema construído uma vez por sessão, uma
+    coluna apagada por um teste faltaria para todos os seguintes — e foi exatamente
+    isso que aconteceu quando a troca foi feita: dez testes caíram de uma vez, por
+    um defeito que não era deles.
+
+    Esta fixture reconstrói o schema NO FIM. Custa o preço antigo, mas só para os
+    cinco testes que precisam — e não para os outros 722."""
+    yield
+    from sqlalchemy import text
+
+    pasta = (RAIZ / "app" / "apps" / "analisesps" / "migracoes")
+    with banco.connect() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
+        for caminho in sorted(pasta.glob("*.sql")):
+            conn.execute(text(caminho.read_text(encoding="utf-8")))
+        conn.commit()

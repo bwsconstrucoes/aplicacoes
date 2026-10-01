@@ -387,9 +387,18 @@ def app_fiscal(monkeypatch):
     return a
 
 
-def entrar(app, senha=SENHA_OPERADOR):
+def entrar(app, senha=SENHA_OPERADOR, nome="MARCELO"):
+    """Entra com um NOME, que é o que assina o registro de alterações.
+
+    Desde 25/09/2026 o nome não se digita na entrada: vem do cadastro. Estes
+    testes não sobem banco, então entram pela porta de emergência e põem o nome
+    na sessão na mão — que é o que o cadastro faz quando alguém entra de
+    verdade. O que está sob teste aqui é o que o sistema faz COM o nome."""
+    from app.apps.analisesps import auth as guarda
     cliente = app.test_client()
-    cliente.post("/analisesps/entrar", data={"senha": senha, "nome": "MARCELO"})
+    cliente.post("/analisesps/entrar", data={"senha": senha})
+    with cliente.session_transaction() as sessao:
+        sessao[guarda.CHAVE_NOME] = nome
     return cliente
 
 

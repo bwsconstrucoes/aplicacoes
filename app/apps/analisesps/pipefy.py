@@ -342,3 +342,107 @@ def atualizar_documentacao_fiscal(atualizacoes, token=None) -> dict:
         logger.warning("Análise de SPs: %d card(s) não aceitaram a análise "
                        "fiscal.", len(falhas))
     return {"ok": passaram, "falhas": falhas}
+
+
+# ---------------------------------------------------------------------------
+# OS CAMPOS DE UM PIPE, LIDOS DELE MESMO
+#
+# ⚠️ POR QUE LER EM VEZ DE ESCREVER OS IDs NO CÓDIGO. Os campos do pipe de
+# Despesa com Colaboradores estão hoje espalhados no blueprint do Make, e o
+# blueprint tem defeito conhecido: o par 62 grava em `valor_centro_de_custo_63`
+# (ver `docs/FOLHA_DE_PAGAMENTO.md` §4). Copiar essa lista para cá copiaria o
+# defeito, e um campo trocado num card de despesa põe valor de um centro de custo
+# no vizinho — erro que só aparece no fechamento da obra, meses depois.
+#
+# Lendo do pipe, o mapeamento é o que o Pipefy diz que é HOJE. Campo renomeado
+# passa a aparecer com o nome novo, e campo que eu não reconheço fica DITO em vez
+# de preenchido no escuro.
+# ---------------------------------------------------------------------------
+def campos_do_pipe(pipe_id, token=None) -> dict:
+    """Os campos do formulário inicial do pipe: `{id: {label, tipo, opcoes}}`.
+
+    Só leitura — não cria nem muda nada. É o passo de conferência antes de deixar
+    alguém apertar "lançar no Pipefy"."""
+    pipe = _numero_do_card(pipe_id)
+    dados = graphql(
+        "{ pipe(id: %d) { id name start_form_fields { id label type options } "
+        "  phases { id name } } }" % pipe, token)
+    bruto = (dados or {}).get("pipe") or {}
+    campos = {}
+    for campo in bruto.get("start_form_fields") or []:
+        campos[str(campo.get("id") or "")] = {
+            "label": str(campo.get("label") or ""),
+            "tipo": str(campo.get("type") or ""),
+            "opcoes": campo.get("options") or []}
+    return {"id": str(bruto.get("id") or ""), "nome": bruto.get("name") or "",
+            "campos": campos,
+            "fases": [{"id": str(f.get("id") or ""), "nome": f.get("name") or ""}
+                      for f in (bruto.get("phases") or [])]}
+
+
+def achar_campo(campos: dict, *pedacos, fora=()) -> str:
+    """O id do campo cujo rótulo casa com os pedaços (sem caixa e sem acento).
+
+    ⚠️ O RÓTULO EXATO GANHA DO PARECIDO, e isto não é refinamento: o pipe de
+    Despesa tem um campo "Valor" e setenta e cinco campos "Valor Centro de Custo
+    N". Procurando só por conter "valor", o TOTAL da despesa poderia ser escrito
+    dentro do valor de um centro de custo — e valor de centro de custo trocado só
+    aparece no fechamento da obra, meses depois.
+
+    `fora` lista pedaços que DESQUALIFICAM o campo, para o caso de o rótulo exato
+    não existir e a busca precisar cair na aproximação.
+
+    Devolve "" quando não achou — e quem chama tem de tratar isso dizendo o que
+    ficou de fora, nunca escolhendo um campo parecido."""
+    import unicodedata
+
+    def limpar(texto):
+        sem = unicodedata.normalize("NFKD", str(texto or ""))
+        return "".join(c for c in sem if not unicodedata.combining(c)).lower()
+
+    procurados = [limpar(p) for p in pedacos if p]
+    if not procurados:
+        return ""
+    proibidos = [limpar(p) for p in (fora or ()) if p]
+    alvo = " ".join(procurados)
+
+    # 1ª passada: o rótulo É exatamente o que se procura.
+    for campo_id, dados in (campos or {}).items():
+        if limpar(dados.get("label")).strip() == alvo:
+            return campo_id
+    # 2ª passada: contém todos os pedaços e nenhum dos proibidos.
+    for campo_id, dados in (campos or {}).items():
+        rotulo = limpar(dados.get("label"))
+        if all(p in rotulo for p in procurados) and not any(
+                p in rotulo for p in proibidos):
+            return campo_id
+    return ""
+
+
+def criar_card(pipe_id, titulo: str, valores: list, token=None) -> dict:
+    """Cria um card. `valores`: `[{'campo': id, 'valor': texto}]`.
+
+    ⚠️ CHAMADA SEM VOLTA: card criado no Pipefy não se apaga por aqui — quem
+    cancela é gente, lá. Decisão do dono em 26/09/2026: *"a gente faz o
+    cancelamento no Pipefy e gera de novo quando for necessário"*."""
+    pipe = _numero_do_card(pipe_id)
+    pedacos = []
+    for item in valores or []:
+        campo = str((item or {}).get("campo") or "").strip()
+        if not campo:
+            continue
+        # O id do campo vai entre aspas na consulta, então escapá-lo fecha a porta
+        # de injeção do mesmo jeito que o `_numero_do_card` fecha a dos ids.
+        pedacos.append(f"{{ field_id: {_texto_gql(campo)}, "
+                       f"field_value: {_texto_gql((item or {}).get('valor'))} }}")
+    consulta = ("mutation { createCard(input: { pipe_id: %d, title: %s, "
+                "fields_attributes: [%s] }) { card { id title url } } }"
+                % (pipe, _texto_gql(titulo), " ".join(pedacos)))
+    dados = graphql(consulta, token)
+    card = ((dados or {}).get("createCard") or {}).get("card") or {}
+    if not card.get("id"):
+        raise ErroDoPipefy(
+            "o Pipefy aceitou a chamada mas não devolveu o card criado.")
+    logger.info("Análise de SPs: card %s criado no pipe %s.", card["id"], pipe)
+    return {"id": str(card["id"]), "titulo": card.get("title") or titulo,
+            "link": card.get("url") or f"https://app.pipefy.com/open-cards/{card['id']}"}

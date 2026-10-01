@@ -61,6 +61,43 @@ Nenhum destes justifica devolver a conversa no meio da fila:
 - querer perguntar **por onde começar**. Se ele não disse a ordem, é porque
   tanto faz — escolha (pela maior, ou pela que destrava as outras), siga, e diga
   no fim em que ordem foi.
+- **anunciar o que você vai fazer em seguida.** Escrever "sigo agora para X" e
+  encerrar a resposta É PARAR — só com uma frase educada na frente. Se dá para
+  seguir para X, siga para X **na mesma resposta**, e conte depois de feito.
+- **ter algo travado.** Item travado sai da fila; **o resto da fila continua.**
+  Relatar o travado e encerrar é entregar uma tarefa quando havia cinco.
+
+### ⚠️ A pausa que mais irrita, e ela é reincidente
+
+**27/09/2026 — ele cobrou isto pela TERCEIRA vez no mesmo dia**, depois de já ter
+dito "siga até o fim" duas vezes:
+
+> *"Mais uma vez eu vou fazer essa pergunta, e eu queria entender o que é que eu
+> preciso fazer para isso não acontecer mais. (…) Você simplesmente parou, dizendo
+> que agora vai seguir para alimentação e transporte. E por que que você não já
+> seguiu? Por que está esperando por mim? O que é que está esperando por mim? E o
+> que é que eu preciso fazer para não haver essa pausa? Que é irritante e
+> constante."*
+
+**A resposta à pergunta dele é: NADA. Ele não precisa fazer nada.** A regra já
+estava escrita aqui, e foi quebrada de novo. O erro não é de entendimento, é de
+execução: a resposta fica boa, o relatório fica completo, e **a fila fica parada**.
+
+**O teste antes de encerrar qualquer resposta, e ele é literal:**
+
+> Existe, na minha própria resposta, alguma frase do tipo "vou fazer X",
+> "sigo para X", "o próximo passo é X"?
+>
+> Se existe e X não depende dele → **NÃO ENCERRE. FAÇA X AGORA.**
+
+Só há três saídas legítimas de uma resposta: **(a)** a fila acabou; **(b)** o que
+falta depende de uma decisão ou de um dado que só ele tem; **(c)** é publicar.
+Qualquer outra coisa é continuar trabalhando.
+
+**E o custo é assimétrico, por isso não é perfeccionismo:** ele olha o chat de
+horas em horas, pelo celular. Uma pausa dele custa **horas paradas, garantidas**.
+Seguir numa direção que ele depois ajusta custa **uma tarefa refeita**. O segundo é
+sempre mais barato — e, diferente do primeiro, é incerto.
 
 ### O que É motivo para parar
 
@@ -248,8 +285,33 @@ a memória, não remover a rede de proteção.
 
 ```
 pip install -r requirements-dev.txt
-python -m pytest
+python -m pytest -n auto --dist loadfile
 ```
+
+**⚠️ `-n auto` NÃO É ENFEITE, e a regra abaixo também não.** Em 29/09/2026 o dono
+cobrou, com razão: *"está demorando meia hora, uma hora para fechar alguma coisa
+relativamente simples (…) está praticamente inviável evoluir"*. A suíte rodava a
+construção inteira do schema **a cada teste** — 727 testes de banco × 36 arquivos
+de migração. Agora o schema nasce uma vez por sessão e os testes rodam em
+paralelo, cada trabalhador no seu banco.
+
+### ⚠️ CONSERTO PEQUENO NÃO RODA A SUÍTE INTEIRA
+
+Regra dele, do mesmo dia, e ela vale tanto quanto a de ir até o fim da fila:
+
+| O que você mexeu | O que rodar |
+|---|---|
+| uma tela, um texto, um CSS | os testes daquele arquivo e da tela |
+| uma regra de negócio | o arquivo de teste dela + os que a importam |
+| algo que atravessa áreas (`conftest.py`, `main.py`, `requirements`) | tudo |
+| **antes de juntar na `main`** | **tudo** |
+
+Rodar 7.700 testes para trocar uma linha de CSS não é cuidado — é uma hora
+parada, e ela sai do tempo dele. O oposto também é verdade: publicar sem rodar
+tudo é como o `PAGAR EXTRA` chegou à produção.
+
+**E registro pequeno para conserto pequeno:** commit de três linhas, sem ensaio no
+`HISTORICO.md`. O histórico ganha DECISÃO, não digitação.
 
 São 108 testes sobre os fluxos críticos do ERP, em `tests/`: aval em duas
 pessoas, atribuição ótima da conciliação, medição de empreita consumindo saldo

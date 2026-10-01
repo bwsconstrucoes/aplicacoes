@@ -1,0 +1,476 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Colaboradores — Análise de SPs{% endblock %}
+{# ---------------------------------------------------------------------------
+   ⚠️ REFEITA EM 28/09/2026. O dono: *"na parte de colaboradores, a mesma coisa,
+   tem que ter o filtro, mas está feio essa tabela (…) ninguém entende nem para
+   que serve essa tabela aqui, está horrível. Não tem questão de filtro (…) o que
+   é colaborador desligado não deveria nem estar sendo exibido."*
+
+   O que mudou: filtros na lateral (quem, obra, situação), a obra como CÓDIGO numa
+   coluna própria, o CPF pontuado, a linha clicável abrindo a ficha da pessoa com
+   o ponto do mês, e quem está desligado fora da lista — contado e a um clique.
+   --------------------------------------------------------------------------- #}
+{% block filtros %}
+{% if cadastro.pronto %}
+<form method="get" action="{{ url_for('analisesps.tela_colaboradores') }}"
+      id="form-filtros">
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Quem</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <input type="search" name="q" value="{{ procurado }}" autocomplete="off"
+             placeholder="nome ou CPF…" aria-label="Procurar por nome ou CPF">
+    </div>
+  </div>
+
+  <div class="filtro {% if obra_filtro %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Obra</span>
+      {% if obra_filtro %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="obra" aria-label="Obra">
+        <option value="">todas as obras</option>
+        {% for o in obras_na_lista %}
+          <option value="{{ o }}" {% if obra_filtro == o %}selected{% endif %}>{{ o }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  {# ⚠️ A FASE ATUAL (coluna AX) é o corte mais usado — *"é super importante"*
+     (dono, 29/09/2026). A lista vem do banco, então fase nova no Pipefy aparece
+     aqui sozinha, com quantos em cada uma. #}
+  <div class="filtro {% if fase_filtro %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Fase atual</span>
+      {% if fase_filtro %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="fase" aria-label="Fase atual">
+        <option value="">todas as fases</option>
+        {% for f in lista_de_fases %}
+          <option value="{{ f.fase }}" {% if fase_filtro == f.fase %}selected{% endif %}
+            >{{ f.fase }} ({{ f.quantos }})</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  {# As datas: *"tem tanta informação nos dados que podemos usar também como
+     filtro. Datas por exemplo."* A de ADMISSÃO recorta "quem entrou neste mês". #}
+  <div class="filtro {% if de or ate %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Admissão</span>
+      {% if de or ate %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <label class="cartao-dica" for="de">De</label>
+      <input id="de" name="de" value="{{ de }}" placeholder="dd/mm/aaaa">
+      <label class="cartao-dica" for="ate" style="margin-top:6px">Até</label>
+      <input id="ate" name="ate" value="{{ ate }}" placeholder="dd/mm/aaaa">
+    </div>
+  </div>
+
+  {# ⚠️ Por padrão a lista é de quem está TRABALHANDO. Quem saiu ou está afastado
+     fica fora — mas não desaparece: é uma caixinha aqui, e a conta aparece no
+     aviso do alto. Esconder e não dizer é que seria o erro. #}
+  <div class="filtro {% if incluir_desligados or so_saindo %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Situação</span>
+      {% if incluir_desligados or so_saindo %}<span class="filtro-badge">1</span>{% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        <label class="opcao">
+          <input type="checkbox" name="desligados" value="1"
+                 {{ 'checked' if incluir_desligados }}>
+          <span class="rotulo">incluir quem saiu ou está afastado</span></label>
+        <label class="opcao">
+          <input type="checkbox" name="saindo" value="1"
+                 {{ 'checked' if so_saindo }}>
+          <span class="rotulo">só quem está saindo</span></label>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:6px; margin-top:10px">
+    {% if filtrando %}
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.tela_colaboradores') }}">Limpar</a>
+    {% endif %}
+  </div>
+</form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+{# ⚠️ OS KPIs VÊM PRIMEIRO, no mesmo molde das Solicitações (`.kpi.estatico`).
+   Correção dele em 29/09/2026: *"3531 pessoa(s) trazidas da planilha em 26/09 às
+   18:35. Isso vai aparecer sempre assim? Não tem nada de KPI essa tela."*
+
+   Ele está certo: "quantas linhas vieram e quando" é registro de CARGA, não
+   informação de trabalho. O que decide o que ele faz é quantos estão trabalhando,
+   quantos têm cada auxílio e quantos estão com o cadastro pela metade — que é o
+   que trava pagamento. O registro da carga continua, mas discreto, ao lado do
+   botão. #}
+{% if quadro.pronto %}
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Trabalhando</div>
+    <div class="kpi-valor">{{ quadro.ativos }}</div>
+    <div class="kpi-sub">de {{ quadro.total }} no cadastro</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Com alimentação</div>
+    <div class="kpi-valor">{{ quadro.com_alimentacao }}</div>
+    <div class="kpi-sub">têm categoria ou valor no cadastro</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Com transporte</div>
+    <div class="kpi-valor">{{ quadro.com_transporte }}</div>
+    <div class="kpi-sub">têm categoria ou valor no cadastro</div>
+  </div>
+  {# Os três que TRAVAM pagamento. Ficam âmbar só quando há algum — indicador que
+     grita sempre não é indicador. #}
+  <div class="kpi estatico {{ 'ambar' if quadro.sem_obra }}">
+    <div class="kpi-rotulo">Sem código de obra</div>
+    <div class="kpi-valor">{{ quadro.sem_obra }}</div>
+    <div class="kpi-sub">sem ele não dá para agrupar por obra</div>
+  </div>
+  <div class="kpi estatico {{ 'ambar' if quadro.sem_id_fortes }}">
+    <div class="kpi-rotulo">Sem ID Fortes</div>
+    <div class="kpi-valor">{{ quadro.sem_id_fortes }}</div>
+    <div class="kpi-sub">a folha da contabilidade não acha essas pessoas</div>
+  </div>
+  <div class="kpi estatico {{ 'ambar' if quadro.sem_card }}">
+    <div class="kpi-rotulo">Sem card no Pipefy</div>
+    <div class="kpi-valor">{{ quadro.sem_card }}</div>
+    <div class="kpi-sub">não há onde corrigir o auxílio</div>
+  </div>
+</div>
+{% endif %}
+
+<h3>Colaboradores
+  <small>{{ colaboradores|length }}{{ '+' if no_teto else '' }} na lista</small>
+</h3>
+
+<p class="cartao-dica" style="margin-bottom:14px">
+  <b>Para que serve esta tela:</b> é daqui que a folha tira a categoria e o valor
+  do auxílio de cada pessoa, a obra e as datas que decidem diarista × CTPS. É o
+  <b>espelho</b> do cadastro que nasce no Pipefy — nada se edita aqui, porque o que
+  fosse digitado seria apagado na próxima atualização. <b>Clique na linha</b> para
+  ver a ficha e o ponto do mês; o nome leva ao card, que é onde se corrige.
+  Por padrão a lista mostra <b>só quem está trabalhando</b>.
+</p>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui ler o cadastro.</b> {{ erro }}</div>
+{% endif %}
+
+{% if not cadastro.pronto %}
+  {# A migração 028 ainda não rodou. O código sobe para o Render antes de alguém
+     apertar o botão, e a tela tem de explicar isso em vez de estourar. #}
+  <div class="aviso atencao">
+    <b>Falta uma atualização do banco.</b> Em <b>Configurações</b>, aperte
+    "Aplicar atualizações do banco" e volte aqui.
+  </div>
+{% else %}
+
+<div class="cartao barra-cadastro">
+  <div>
+    {% if cadastro.quando %}
+      <b>{{ cadastro.pessoas }} pessoa(s)</b>
+      <span class="cartao-dica">trazidas da planilha em
+        {{ cadastro.quando[8:10] }}/{{ cadastro.quando[5:7] }} às
+        {{ cadastro.quando[11:16] }}</span>
+    {% else %}
+      <b>O cadastro ainda não foi trazido nenhuma vez.</b>
+      <span class="cartao-dica">Aperte o botão ao lado.</span>
+    {% endif %}
+    {% if cadastro.avisos %}
+      {# ⚠️ O AVISO LEVA A DATA DA CARGA QUE O ESCREVEU, e isto custou uma
+         confusão inteira em 29/09/2026: ele leu um aviso de três dias antes
+         ("não achei a coluna Modalidade…"), escrito pelo código ANTIGO, e
+         concluiu que a correção não havia funcionado. Aviso guardado sem data
+         parece estado de agora. #}
+      <div class="aviso atencao" style="margin-top:8px">
+        ⚠️ <b>Na carga de
+        {% if cadastro.quando %}{{ cadastro.quando[8:10] }}/{{ cadastro.quando[5:7] }}
+          às {{ cadastro.quando[11:16] }}{% else %}antes{% endif %}</b>:
+        {{ cadastro.avisos|join('; ') }}
+        {# ⚠️ ANTES ESTA LINHA EXPLICAVA EPISTEMOLOGIA ("não é o estado de
+           agora"), e ele respondeu *"não entendi essa pergunta"*. Agora diz o que
+           FAZER: corrigir a planilha e reler. A data já está na frase de cima. #}
+        <br><span class="cartao-dica">Corrija o nome da coluna na planilha e
+          aperte <b>Atualizar cadastro</b> para reler.</span>
+      </div>
+    {% endif %}
+  </div>
+  {% if pode_operar %}
+    <button class="btn secundario" id="btn-atualizar-cadastro"
+            >Atualizar cadastro</button>
+  {% endif %}
+</div>
+
+{# ⚠️ O ALERTA DE QUEM ESTÁ SAINDO — pedido do dono em 27/09/2026:
+   *"não podemos pagar esse tipo de verba indenizatória ou ainda pagar salário
+   ou diárias pra quem saiu, tá saindo. Tem que ter cuidados e alerta."*
+
+   O número conta o cadastro INTEIRO, não a lista da tela (que tem teto de
+   200): um número que só contasse o visível diria "3 saindo" havendo trinta. #}
+{% if saindo.com_sinal %}
+  <div class="aviso atencao">
+    <b>{{ saindo.com_sinal }} pessoa(s) com sinal de saída ou afastamento no
+      cadastro.</b>
+    {% if saindo.saiu %}{{ saindo.saiu }} já saiu/saíram.{% endif %}
+    {% if saindo.afastado %}{{ saindo.afastado }} afastada(s).{% endif %}
+    Não se paga folha, diária, auxílio nem rescisão por aqui para quem saiu.
+    {% if not (so_saindo or incluir_desligados) %}
+      <b>Essas pessoas estão fora da lista abaixo</b> — a lista é de quem está
+      trabalhando.
+      <a href="{{ url_for('analisesps.tela_colaboradores', saindo=1) }}"
+         >Ver só quem está saindo</a> ·
+      <a href="{{ url_for('analisesps.tela_colaboradores', desligados=1) }}"
+         >incluir todos</a>.
+    {% endif %}
+  </div>
+{% endif %}
+
+
+{# A TABELA É DESENHADA SEMPRE, com cabeçalho, mesmo sem nenhuma linha. Um
+   filtro que faz o cabeçalho desaparecer junto com as linhas deixa a pessoa sem
+   como desfazer o filtro — foi exatamente a armadilha que a conciliação tinha
+   até 26/09/2026. #}
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>CPF</th>
+          <th>Obra</th>
+          <th>Cargo</th>
+          <th>Contrato</th>
+          <th class="num">Alimentação</th>
+          <th class="num">Transporte</th>
+          <th class="num">Gratificação</th>
+          <th>Situação</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in colaboradores %}
+        <tr class="clicavel {{ 'linha-alerta' if c.alerta }}"
+            data-cpf="{{ c.cpf }}" data-nome="{{ c.nome }}">
+          <td>
+            {% if c.link_pipefy %}
+              <a href="{{ c.link_pipefy }}" target="_blank" rel="noopener"
+                 class="link-pipefy"
+                 title="Abrir o card desta pessoa no Pipefy (nova aba)"
+                 >{{ c.nome or '—' }} <span aria-hidden="true">↗</span></a>
+            {% else %}
+              {{ c.nome or '—' }}
+              <span class="cartao-dica"
+                    title="O cadastro desta pessoa está sem o Nº Registro Pipefy, então não há card para abrir">sem card</span>
+            {% endif %}
+          </td>
+          <td class="cpf">{{ c.cpf_bonito or c.cpf }}</td>
+          <td>{{ c.obra or '—' }}</td>
+          <td>{{ c.cargo or '—' }}</td>
+          <td>{{ c.tipo_contrato or c.tipo or '—' }}</td>
+          {# VALOR EM BRANCO E VALOR ZERO SÃO COISAS DIFERENTES, e a tela não pode
+             confundi-los: "—" quer dizer "o cadastro não diz", e R$ 0,00 quer dizer
+             "o cadastro diz que é zero". Um é pergunta, o outro é resposta. #}
+          <td class="num">{{ c.valor_alimentacao|moeda if c.valor_alimentacao is not none else '—' }}
+            {% if c.modo_alimentacao %}<span class="cartao-dica">{{ c.modo_alimentacao }}</span>{% endif %}
+          </td>
+          <td class="num">{{ c.valor_transporte|moeda if c.valor_transporte is not none else '—' }}
+            {% if c.modo_transporte %}<span class="cartao-dica">{{ c.modo_transporte }}</span>{% endif %}
+          </td>
+          <td class="num">{{ c.valor_gratificacao|moeda if c.valor_gratificacao is not none else '—' }}</td>
+          <td>
+            {# A FRASE INTEIRA vai no title: ela diz o que NÃO pagar, e é o ponto
+               todo do alerta. O selo sozinho ("saiu") não instrui ninguém. #}
+            {% if c.situacao == 'saiu' %}
+              <span class="selo cancelado" title="{{ c.motivo }}">saiu{% if c.data_saida %} em {{ c.data_saida|data_br }}{% endif %}</span>
+            {% elif c.situacao == 'saindo' %}
+              <span class="selo saindo" title="{{ c.motivo }}">está saindo</span>
+            {% elif c.situacao == 'afastado' %}
+              <span class="selo cancelado" title="{{ c.motivo }}">afastado</span>
+            {% else %}
+              <span class="cartao-dica">{{ c.fase or '—' }}</span>
+            {% endif %}
+            {% if c.paga_por_beevale == 'Sim' %}
+              <span class="selo no-lote" title="O cadastro marca pagamento pela BeeVale">BeeVale</span>
+            {% endif %}
+            {% if c.motivo %}<div class="cartao-dica">{{ c.motivo }}</div>{% endif %}
+            {# ⚠️ O DESACORDO ENTRE OS SINAIS é cadastro pela metade — e é por onde
+               se paga quem já saiu. Fica escrito, não escondido. #}
+            {% if c.desacordo %}
+              <div class="aviso atencao" style="margin:4px 0 0">⚠️ {{ c.desacordo }}</div>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="9" class="cartao-dica">
+            {% if not cadastro.quando %}
+              O cadastro ainda não foi trazido. Aperte "Atualizar cadastro" acima.
+            {% elif so_saindo and not procurado %}
+              Ninguém com sinal de saída ou afastamento no cadastro. É a notícia
+              boa: nenhum pagamento em risco por esse motivo.
+            {% elif procurado %}
+              Ninguém com "{{ procurado }}"{{ ' entre quem está saindo' if so_saindo else (' entre quem está na casa' if not incluir_desligados else '') }}.
+              Mude a busca acima{{ ', ou marque "mostrar quem saiu"' if not (incluir_desligados or so_saindo) }}.
+            {% else %}
+              Nenhuma pessoa no cadastro.
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if no_teto %}
+  <p class="cartao-dica">Mostrando as primeiras {{ teto }}. Use a busca para
+    achar quem você procura — o cadastro tem alguns milhares de pessoas.</p>
+{% endif %}
+
+{% if pode_operar %}
+<script>
+// --- atualizar o cadastro --------------------------------------------------
+// ⚠️ MESMO CUIDADO DA TELA DE RATEIO: a leitura roda no processo separado e
+// leva alguns segundos. Sem acompanhar, quem aperta não sabe se começou, e
+// aperta de novo — e conclui que o sistema está quebrado.
+const btnCadastro = document.getElementById("btn-atualizar-cadastro");
+if (btnCadastro) btnCadastro.addEventListener("click", async () => {
+  btnCadastro.disabled = true;
+  const antes = btnCadastro.textContent;
+  btnCadastro.textContent = "trazendo…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.sincronizar') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "Accept": "application/json"},
+      body: JSON.stringify({modo: "colaboradores"})
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      alert(d.erro || "Não deu para começar.");
+      btnCadastro.disabled = false; btnCadastro.textContent = antes; return;
+    }
+    const relogio = setInterval(async () => {
+      try {
+        const a = await fetch("{{ url_for('analisesps.andamento') }}");
+        const e = await a.json();
+        if (e.rodando) {
+          btnCadastro.textContent = (e.progresso || e.etapa || "trazendo…");
+        } else {
+          clearInterval(relogio);
+          location.reload();
+        }
+      } catch (err) { /* rede oscilou: a próxima volta resolve */ }
+    }, 4000);
+  } catch (e) {
+    alert("Falhou: " + e);
+    btnCadastro.disabled = false; btnCadastro.textContent = antes;
+  }
+});
+</script>
+{% endif %}
+
+<dialog class="dialogo" id="ficha-pessoa-modal">
+  <button class="btn secundario dialogo-fechar" type="button"
+          onclick="document.getElementById('ficha-pessoa-modal').close()"
+          >Fechar</button>
+  <h3 id="ficha-pessoa-titulo">Pessoa</h3>
+  <div id="ficha-pessoa-corpo">carregando…</div>
+</dialog>
+
+<script>
+// Clicar na linha abre a ficha: cadastro, observação e o ponto do mês. O link do
+// nome continua levando ao card, e por isso cliques em <a> não abrem o modal.
+document.querySelectorAll("tr.clicavel").forEach(linha =>
+  linha.addEventListener("click", e => {
+    if (e.target.closest("a")) return;
+    abrirFichaDaPessoa(linha.dataset.cpf, linha.dataset.nome);
+  }));
+
+function dinheiro(n) {
+  return n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+}
+
+async function abrirFichaDaPessoa(cpf, nome) {
+  const modal = document.getElementById("ficha-pessoa-modal");
+  document.getElementById("ficha-pessoa-titulo").textContent = nome || "Pessoa";
+  const corpo = document.getElementById("ficha-pessoa-corpo");
+  corpo.innerHTML = '<p class="cartao-dica">carregando…</p>';
+  modal.showModal();
+  try {
+    const r = await fetch("/analisesps/api/folha/pessoa/" + cpf);
+    const d = await r.json();
+    if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + d.erro + "</div>"; return; }
+    const p = d.pessoa;
+    const par = (r, v) => '<div class="par"><span>' + r + "</span><span>" +
+                          (v || "—") + "</span></div>";
+    let html = '<div class="ficha-pessoa"><div>' +
+      par("CPF", p.cpf_bonito) + par("Matrícula", p.matricula) +
+      par("Cargo", p.cargo) +
+      par("Obra", p.obra_codigo + (p.obra_nome ? " — " + p.obra_nome : "")) +
+      par("Fase no cadastro", p.fase) + par("Tipo de contrato", p.tipo_contrato) +
+      par("Categoria alimentação", p.modo_alimentacao) +
+      par("Valor alimentação", p.valor_alimentacao === null ? "" :
+          dinheiro(p.valor_alimentacao)) +
+      par("Categoria transporte", p.modo_transporte) +
+      par("Valor transporte", p.valor_transporte === null ? "" :
+          dinheiro(p.valor_transporte)) +
+      par("Observação do cadastro", p.observacao);
+    if (p.motivo) html += par("Atenção", p.motivo);
+    html += "</div>";
+
+    html += "<div><h4 style='margin:0 0 6px'>Ponto de " + d.ponto.competencia +
+            "</h4>";
+    if (!d.ponto.tem_carga) {
+      html += '<p class="cartao-dica">O ponto deste mês ainda não foi trazido.</p>';
+    } else if (!d.ponto.dias.length) {
+      html += '<p class="cartao-dica">Esta pessoa não tem dia de ponto neste ' +
+              'mês. Pode ser CPF diferente no Mobponto.</p>';
+    } else {
+      const campos = d.ponto.campos;
+      html += '<div class="ponto-dias"><table class="sps"><thead><tr><th>Dia</th>';
+      campos.forEach(c => { html += "<th>" + c + "</th>"; });
+      html += "</tr></thead><tbody>";
+      d.ponto.dias.forEach(dia => {
+        html += "<tr><td>" + (dia.data || "—") + "</td>";
+        campos.forEach(c => {
+          const v = dia.campos[c];
+          html += "<td>" + (v === undefined || v === null ? "" : v) + "</td>";
+        });
+        html += "</tr>";
+      });
+      html += "</tbody></table></div>";
+    }
+    html += "</div>";
+    if (p.link_pipefy) {
+      html += '<p><a class="btn secundario" href="' + p.link_pipefy +
+              '" target="_blank" rel="noopener">Abrir o card no Pipefy</a></p>';
+    }
+    html += "</div>";
+    corpo.innerHTML = html;
+  } catch (e) {
+    corpo.innerHTML = '<div class="aviso erro">falhou: ' + e + "</div>";
+  }
+}
+</script>
+
+{% endif %}
+{% endblock %}

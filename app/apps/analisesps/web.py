@@ -126,6 +126,87 @@ def versao_publicada() -> str:
 
 
 # ---------------------------------------------------------------------------
+# AS SUBTELAS DA FOLHA
+#
+# Uma entrada no menu ("Folha PGT") e, por dentro, as telas de cada trabalho —
+# do jeito que a planilha que ela substitui é organizada: uma aba para
+# alimentação, uma para transporte, uma para diaristas, uma para importar.
+#
+# ⚠️ AS QUE AINDA NÃO EXISTEM NÃO APARECEM AQUI. Aba que abre vazia promete o
+# que não há, e faz a pessoa procurar o que não foi feito — o dono acabou de
+# passar por isso procurando telas que eu não tinha escrito.
+# ⚠️ AGRUPADAS POR ASSUNTO, e a ordem é correção do dono em 28/09/2026:
+#
+#   "Não tem lógica nas telas aqui. Tipo assim, tem folha, depois tem ponto,
+#    depois tem colaboradores, depois tem feriado, depois tem alimentação e
+#    transporte (…) Folha da contabilidade, alimentação, ambos são PAGAMENTOS,
+#    né? Então acho que era para estar junto. O que é CADASTRO é para estar
+#    junto. Ou seja, tem que ter uma lógica aí nas sequências dessas telas."
+#
+# Ele está certo, e o erro era meu: a ordem anterior era a ordem em que EU
+# construí as peças, não a ordem em que ele trabalha. Agora são três grupos:
+#
+#   visão   — onde se olha o resultado
+#   paga    — o que vira dinheiro saindo
+#   base    — o que alimenta o cálculo (cadastro, ponto, calendário, rateio)
+#
+# Cada entrada é (chave, rótulo, rota, grupo).
+# ⚠️ OS RÓTULOS SAÍRAM em 29/09/2026: *"eu não pedi pra colocar Pagamentos e
+# Cadastro e base do cálculo. Era apenas pra reorganizar."* Os grupos continuam
+# existindo — é o que mantém a ordem com lógica — mas não aparecem escritos. Um
+# separador fino entre eles é o suficiente.
+GRUPOS_DA_FOLHA = [("visao", ""), ("paga", ""), ("base", "")]
+
+# ⚠️ O PANORAMA SAIU em 30/09/2026, por decisão dele: *"a tela Panorama tá sem
+# sentido. A tela que precisamos é Folha da Contabilidade."* O que ele tinha de
+# útil — o que já foi pago no mês, por obra e por conta — mora agora na janela
+# "Divisão por obra" da própria folha aberta.
+SUBTELAS_DA_FOLHA = [
+    # OS PAGAMENTOS, na ordem do mês: a folha da contabilidade é a maior e a
+    # primeira; os auxílios saem depois; os diaristas fecham.
+    ("importar", "Folha da contabilidade", "analisesps.tela_folha_importar",
+     "paga"),
+    ("auxilios", "Alimentação e transporte", "analisesps.tela_folha_auxilio",
+     "paga"),
+    ("diaristas", "Diaristas", "analisesps.tela_folha_diaristas", "paga"),
+    ("pagamento", "Arquivos gerados", "analisesps.tela_folha_pagamento", "paga"),
+
+    # A BASE. Vem depois porque é o que se arruma quando algo não fecha — mas é
+    # onde tudo começa.
+    ("colaboradores", "Colaboradores", "analisesps.tela_colaboradores", "base"),
+    ("ponto", "Ponto", "analisesps.tela_folha_ponto", "base"),
+    ("calendario", "Feriados e férias", "analisesps.tela_folha_calendario",
+     "base"),
+    ("rateio", "Rateio das obras", "analisesps.tela_folha_rateio", "base"),
+]
+
+
+def subtelas_da_folha() -> list:
+    """As subtelas que a pessoa logada alcança.
+
+    Mesmo motivo do menu de cima: aba que responde 404 é pior do que aba
+    nenhuma. O Rateio é só do mestre (ele decide para qual obra vai o salário),
+    então quem opera a folha não vê essa aba."""
+    return [s for s in SUBTELAS_DA_FOLHA
+            if not (auth.e_so_do_mestre(s[2]) and not auth.e_mestre())]
+
+
+def subtelas_agrupadas() -> list:
+    """As subtelas em grupos, na ordem dos grupos. `[(rótulo, [subtelas])]`.
+
+    ⚠️ A LÓGICA DOS GRUPOS FICA NO PYTHON, não no HTML: a faixa de abas do alto e
+    o menu de tela pequena desenham a MESMA lista, e duas cópias divergiriam no
+    dia em que uma tela nova entrasse em uma só."""
+    alcancadas = subtelas_da_folha()
+    saida = []
+    for chave, rotulo in GRUPOS_DA_FOLHA:
+        doGrupo = [s for s in alcancadas if s[3] == chave]
+        if doGrupo:
+            saida.append((rotulo, doGrupo))
+    return saida
+
+
+# ---------------------------------------------------------------------------
 # AS TELAS DO MÓDULO, NA ORDEM EM QUE ELE TRABALHA
 #
 # A ordem é do dono, pedida em 13/09/2026: *"eu queria colocar solicitações
@@ -139,6 +220,12 @@ def versao_publicada() -> str:
 # cópias divergiriam no dia em que uma tela nova entrasse em uma só, e a que
 # ficasse de fora seria justamente a do menu, que é o caminho de quem está no
 # celular e não tem como descobrir que faltou.
+# O nome que assina o que for feito pela PORTA DE EMERGÊNCIA. Ela não tem
+# cadastro por trás, então não tem nome de gente — e deixar vazio faria o
+# registro de alterações dizer "—", que não diz nada. Escrito assim, em
+# maiúsculas, quem ler a auditoria sabe na hora por onde a pessoa entrou.
+NOME_DA_EMERGENCIA = "MESTRE (emergência)"
+
 TELAS = [
     ("solicitacoes",  "Solicitações",  "analisesps.solicitacoes"),
     ("lote",          "Lote",          "analisesps.tela_lote"),
@@ -153,8 +240,22 @@ TELAS = [
     # dele. Tela nova entra entre "os demais", que é onde ele mesmo mandou.
     # Ao lado da Agenda também lê bem: são as duas grades de mês do módulo.
     ("calendario",    "Calendário",    "analisesps.calendario"),
+    ("conciliacao",   "Conciliação",   "analisesps.tela_conciliacao"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
+    # ⚠️ UMA ENTRADA SÓ PARA A FOLHA, e por dentro as subtelas. Correção do dono
+    # em 27/09/2026, depois de ver duas entradas novas no menu:
+    #
+    #   "Eles têm que estar dentro de uma tela só. E lá ter as subtelas, porque
+    #    senão vai ficar tela demais, fica até misturado com o restante, que tem
+    #    mais a ver com o financeiro. (…) pode chamar uma tela de folha. Pode
+    #    botar abreviado, Folha PGT."
+    #
+    # Ele está certo, e o erro era de desenho meu: cada peça nova da folha viraria
+    # uma entrada no menu, e o menu deste módulo é de FINANCEIRO. A folha é uma
+    # área com telas próprias por dentro — como as abas da planilha que ela vai
+    # substituir (alimentação, transporte, diaristas, importação).
+    ("folha",         "Folha PGT",     "analisesps.tela_folha"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
     ("log",           "Log",           "analisesps.log"),
     ("configuracoes", "Configurações", "analisesps.configuracoes"),
@@ -163,7 +264,11 @@ TELAS = [
 
 @bp.app_context_processor
 def _versao_para_os_templates():
-    return {"versao_estatica": versao_publicada(), "telas": TELAS}
+    # ⚠️ O MENU MOSTRA SÓ AS TELAS DA PESSOA. Deixar no menu uma tela que
+    # responde 404 é pior do que não mostrá-la: a pessoa clica, não entende e
+    # liga para o dono. O mestre continua vendo todas.
+    return {"versao_estatica": versao_publicada(),
+            "telas": auth.telas_para_o_menu(TELAS)}
 
 
 @bp.after_request
@@ -278,61 +383,109 @@ def _filtro_com_links(texto):
 @bp.route("/entrar", methods=["GET", "POST"])
 @publica("é a própria tela de login; sem ela ninguém consegue entrar")
 def entrar():
-    from . import pessoas
+    """A entrada. SÓ USUÁRIO E SENHA desde 25/09/2026.
 
+    A lista de nomes ao lado da senha acabou — pedido do dono: *"elimine do
+    login o login via Nomes na lista da entrada. Vamos ficar somente com os
+    cadastrados."* Quem entra, entra pelo cadastro, e o nome que assina o lote,
+    os filtros e o registro de alterações é o do cadastro dele.
+
+    ⚠️ SOBROU UMA PORTA DE EMERGÊNCIA: a senha do Render, com o campo de
+    usuário EM BRANCO. Ela não é o caminho do dia a dia, e a tela diz isso.
+    Sem ela, perder o último cadastro de mestre trancaria todo mundo para fora
+    sem volta — não há e-mail de recuperação nem outro administrador.
+    """
     configurados = auth.perfis_configurados()
     erro = None
+    login = (request.form.get("usuario") or "").strip()
 
-    # A entrada é uma LISTA, não um campo livre: o nome é a chave do lote e
-    # dos filtros, e digitar "Marcelo" hoje e "Marcelo Leitão" amanhã dava duas
-    # pessoas — a segunda encontrando o lote vazio sem entender por quê.
-    #
-    # O que a tela manda é conferido contra a lista, e volta com a grafia
-    # oficial: assim um pedido montado à mão não cria uma quinta pessoa por
-    # fora, e a mesma pessoa não se divide em duas por causa de um acento.
-    equipe = pessoas.listar()
-    escolhido = auth.limpar_nome(request.form.get("nome", ""))
-    nome = pessoas.da_lista(escolhido)
+    if request.method == "POST":
+        senha = request.form.get("senha", "")
 
-    if request.method == "POST" and configurados:
-        perfil = auth.identificar(request.form.get("senha", ""))
-        if not nome:
-            erro = ("Escolha o seu nome na lista — é ele que separa o seu lote "
-                    "e os seus filtros dos das outras pessoas.")
-        elif perfil:
-            auth.entrar_na_sessao(perfil, nome)
-            destino = request.args.get("proximo") or ""
-            # Só aceita destino interno: um "proximo" apontando para fora
-            # viraria um jeito de usar o login da empresa como trampolim.
-            alvo = (destino if destino.startswith("/analisesps")
-                    else url_for("analisesps.solicitacoes"))
-            return _lembrar_o_nome(redirect(alvo), nome)
+        # ⚠️ A SENHA DO RENDER DECIDE PRIMEIRO, com o campo de usuário
+        # preenchido ou não. Isto não é conveniência: é o conserto de um jeito
+        # de trancar o dono para fora, que aconteceu de verdade no painel em
+        # 22/09/2026. A tela passou a ter um campo novo, e o gerenciador de
+        # senhas do navegador o preenchia sozinho — o pedido caía no caminho
+        # do cadastro e a resposta era "usuário ou senha incorretos", com a
+        # senha certa digitada.
+        #
+        # Conferir a senha geral antes não afrouxa nada: quem a conhece JÁ vê
+        # tudo. O que se perde é só a chance de o navegador escolher o caminho.
+        perfil = auth.identificar(senha) if configurados else None
+        if perfil:
+            auth.entrar_na_sessao(perfil, NOME_DA_EMERGENCIA)
+            logger.warning("Análise de SPs: entrada pela PORTA DE EMERGÊNCIA "
+                           "(senha geral do serviço, sem cadastro por trás).")
+            return redirect(_para_onde_depois_de_entrar())
+        elif login:
+            # Caminho do CADASTRO PRÓPRIO (migração 023).
+            from . import usuarios
+            pessoa = usuarios.buscar(login)
+            if not pessoa or not usuarios.senha_confere(pessoa, senha):
+                logger.warning("Análise de SPs: entrada recusada para o "
+                               "usuário %r.", login)
+                # A MESMA resposta para usuário que não existe e para senha
+                # errada: dizer qual dos dois falhou entrega metade da
+                # resposta a quem está tentando.
+                erro = ("Usuário ou senha incorretos. Se você entra com a "
+                        "senha geral do sistema, apague o que estiver no campo "
+                        "Usuário — o navegador às vezes preenche sozinho.")
+            elif not pessoa.get("telas") and not pessoa.get("mestre"):
+                # ⚠️ O MESTRE ESCAPA DESTA TRAVA, e tem de escapar: ele alcança
+                # todas as telas por definição, então as caixinhas dele estão
+                # vazias por ser desnecessárias — não por estarem faltando.
+                # Sem esta exceção, o dono cadastraria a si mesmo como mestre e
+                # a própria tela o barraria na entrada seguinte.
+                logger.warning("Análise de SPs: %s entrou sem nenhuma tela "
+                               "liberada.", login)
+                erro = ("O seu acesso ainda não tem nenhuma tela liberada. "
+                        "Fale com quem cuida do sistema.")
+            else:
+                oficial = auth.limpar_nome(pessoa.get("nome") or pessoa["usuario"])
+                auth.entrar_na_sessao(
+                    auth.OPERADOR if pessoa["pode_operar"] else auth.CONSULTA,
+                    oficial, usuario_id=pessoa["id"])
+                usuarios.marcar_acesso(pessoa["id"])
+                return redirect(_para_onde_depois_de_entrar(
+                    None if pessoa.get("mestre") else pessoa["telas"]))
         else:
-            erro = "Senha incorreta."
-            logger.warning("Análise de SPs: tentativa de entrada com senha "
-                           "errada (nome informado: %r).", nome)
+            erro = ("Digite o seu usuário e a sua senha. Se você cuida do "
+                    "sistema e perdeu o acesso, deixe o usuário em branco e "
+                    "use a senha geral do serviço.")
+            logger.warning("Análise de SPs: entrada recusada — sem usuário, e "
+                           "a senha não é a geral.")
 
-    # Na tela, já vem escolhido o nome da última vez NESTE navegador.
-    lembrado = pessoas.da_lista(request.cookies.get(auth.COOKIE_NOME, ""))
+    from . import usuarios
+    try:
+        tem_mestre = usuarios.ha_mestre()
+    except Exception:  # noqa: BLE001 — a tela de entrada nunca cai por isto
+        logger.exception("Análise de SPs: não consegui saber se há mestre")
+        tem_mestre = False
+
     return render_template(
         "analisesps_login.html", sem_senha=not configurados, erro=erro,
-        equipe=equipe, nome=nome or lembrado)
+        usuario=login, tem_mestre=tem_mestre)
 
 
-def _lembrar_o_nome(resposta, nome: str):
-    """Guarda o nome no navegador, para não redigitá-lo todo dia.
+def _para_onde_depois_de_entrar(telas=None) -> str:
+    """Para onde mandar quem acabou de entrar.
 
-    Só o NOME. A sessão continua morrendo quando o navegador fecha — é ela
-    que diz que alguém digitou a senha, e isso não se lembra. Quem abrir
-    amanhã vê a tela de senha com o campo do nome já preenchido, e nada mais.
-
-    `httponly` porque nenhum script da página precisa ler isto, e `samesite`
-    para o cookie não viajar em pedido vindo de outro site."""
-    resposta.set_cookie(
-        auth.COOKIE_NOME, auth.limpar_nome(nome),
-        max_age=auth.DIAS_LEMBRANDO_O_NOME * 24 * 3600,
-        httponly=True, samesite="Lax", secure=request.is_secure)
-    return resposta
+    Quem tem cadastro pode NÃO TER a tela de Solicitações — mandá-lo para ela
+    daria um 404 logo depois de um login que funcionou, e ele concluiria que o
+    acesso não foi criado. Então vai para a primeira tela que ele tem, na
+    ordem do menu."""
+    destino = request.args.get("proximo") or ""
+    # Só aceita destino interno: um "proximo" apontando para fora viraria um
+    # jeito de usar o login da empresa como trampolim.
+    if destino.startswith("/analisesps"):
+        return destino
+    if telas:
+        permitidas = set(telas)
+        primeira = next((t for t in TELAS if t[0] in permitidas), None)
+        if primeira:
+            return url_for(primeira[2])
+    return url_for("analisesps.solicitacoes")
 
 
 @bp.route("/sair")
@@ -476,6 +629,25 @@ def _opcoes_dos_filtros(carimbo=None) -> dict:
     return consultas.opcoes_de_filtro(carimbo)
 
 
+def _recado_dos_filtros(base=None, opcoes=None) -> str:
+    """Por que a barra lateral está sem opção nenhuma. "" quando há opções.
+
+    ⚠️ BARRA VAZIA NÃO EXPLICA NADA, e foi o que ele encontrou em 29/09/2026:
+    *"alguma coisa de errada aconteceu com os filtros da parte de solicitações.
+    Estão todos vazios."* Sem uma frase ali, os três motivos possíveis (carga em
+    andamento, base não carregada, colunas sem valor) têm a mesma cara."""
+    from . import consultas
+    try:
+        if base is None:
+            base = consultas.base_carregada()
+        if opcoes is None:
+            opcoes = _opcoes_dos_filtros(base.get("ultima"))
+        return consultas.por_que_os_filtros_estao_vazios(opcoes, base)
+    except Exception:  # noqa: BLE001 — é um recado, não pode derrubar a tela
+        logger.exception("Análise de SPs: falhou explicar os filtros vazios")
+        return ""
+
+
 def _lembrar_filtro(endpoint: str, gaveta: str = None):
     """Guarda o filtro desta tela, ou traz de volta o da última vez.
 
@@ -563,7 +735,7 @@ def inicio():
 @bp.route("/solicitacoes")
 @exige_consulta
 def solicitacoes():
-    from . import consultas
+    from . import consultas, lote
 
     # O FILTRO GUARDADO É CONFERIDO ANTES DE QUALQUER CONSULTA. Quem clica no
     # menu chega sem filtro na barra de endereço e é redirecionado para o
@@ -588,6 +760,11 @@ def solicitacoes():
         pagina = 1
 
     linhas = consultas.listar(filtros, ordem=ordem, pagina=pagina)
+
+    # A marca de "esta SP já está num lote" — ver `lote.onde_no_lote`. Custa
+    # uma consulta a uma tabela de meia dúzia de linhas, e evita separar duas
+    # vezes o mesmo pagamento.
+    lote.marcar_nas_linhas(linhas, auth.pessoa_atual())
 
     # Os números que o Streamlit mostrava embaixo da tabela. São SQL, não
     # contas sobre as 200 linhas da página: quem soma é o banco, sobre o
@@ -615,6 +792,7 @@ def solicitacoes():
         agendamento=agendamento, por_conta=por_conta, por_forma=por_forma,
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         args=request.args, opcoes=_opcoes_dos_filtros(base.get("ultima")),
+        recado_dos_filtros=_recado_dos_filtros(base),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -1146,11 +1324,26 @@ def configuracoes():
     except Exception:  # noqa: BLE001 — migração 008 ainda não aplicada
         logger.exception("Análise de SPs: não consegui ler o estado da busca")
 
+    # QUEM ENTRA COM CADASTRO PRÓPRIO (migração 023). Dentro de um try porque
+    # esta é a tela que conserta o módulo: ela não pode ser a próxima a cair.
+    from . import usuarios
+    try:
+        pessoas_com_acesso = usuarios.listar()
+        cadastro_pronto = usuarios._pronto()
+    except Exception:  # noqa: BLE001 — a tela abre mesmo sem isto
+        logger.exception("Análise de SPs: não consegui listar quem tem acesso")
+        pessoas_com_acesso, cadastro_pronto = [], False
+
     return render_template(
         "analisesps_config.html",
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
         equipe=equipe, certificados=lista_certificados,
         buscas_por_cnpj=buscas_por_cnpj,
+        pessoas_com_acesso=pessoas_com_acesso,
+        cadastro_pronto=cadastro_pronto,
+        telas_liberaveis=usuarios.telas_liberaveis() if cadastro_pronto else [],
+        erro_usuario=request.args.get("erro_usuario") or None,
+        usuario_ok=request.args.get("usuario_ok") or None,
         cofre_ok=certificados.cofre_configurado(),
         aviso=request.args.get("aviso") or None,
         base=consultas.base_carregada(),
@@ -1159,6 +1352,47 @@ def configuracoes():
         modos=tarefas.MODOS, modos_da_base=tarefas.MODOS_DA_BASE,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
         pode_operar=auth.pode_operar())
+
+
+@bp.route("/usuarios", methods=["POST"])
+@exige_operador
+def usuarios_salvar():
+    """Cadastra, altera ou apaga quem entra com usuário e senha próprios.
+
+    ⚠️ SÓ O MESTRE CHEGA AQUI. Quem tem cadastro próprio é barrado pelo guarda,
+    porque `analisesps.usuarios_` está em `auth.SO_DO_MESTRE_POR_PREFIXO` — sem
+    isso, uma pessoa presa a uma tela poderia criar outro acesso, com todas.
+    Foi um defeito real do painel, pego por teste.
+
+    Responde com redirect e não JSON porque é formulário de tela: quem acabou
+    de cadastrar precisa VER a lista nova, não um `{ok: true}`."""
+    from . import usuarios
+
+    acao = (request.form.get("acao") or "").strip()
+    telas = [t for t in request.form.getlist("tela_do_usuario") if t.strip()]
+    uid = (request.form.get("usuario_id") or "").strip()
+    pode_operar = request.form.get("pode_operar") == "1"
+    mestre = request.form.get("mestre") == "1"
+
+    if acao == "criar":
+        r = usuarios.criar(request.form.get("novo_usuario", ""),
+                           request.form.get("nova_senha", ""),
+                           nome=request.form.get("nome", ""),
+                           telas=telas, pode_operar=pode_operar, mestre=mestre)
+    elif acao == "apagar" and uid.isdigit():
+        r = usuarios.apagar(int(uid))
+    elif acao == "salvar" and uid.isdigit():
+        r = usuarios.atualizar(int(uid), nome=request.form.get("nome"),
+                               senha=request.form.get("nova_senha"),
+                               ativo=request.form.get("ativo") == "1",
+                               telas=telas, pode_operar=pode_operar,
+                               mestre=mestre)
+    else:
+        r = {"ok": False, "erro": "Pedido não reconhecido."}
+
+    return redirect(url_for("analisesps.configuracoes",
+                            **({"erro_usuario": r["erro"]} if not r.get("ok")
+                               else {"usuario_ok": "1"})))
 
 
 @bp.route("/api/pessoas", methods=["POST"])
@@ -1426,6 +1660,7 @@ def relatorio():
         tipos=consultas.TIPOS, periodos=consultas.PERIODOS,
         dimensoes=consultas.DIMENSOES,
         args=request.args, filtros=filtros, opcoes=_opcoes_dos_filtros(),
+        recado_dos_filtros=_recado_dos_filtros(),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -1520,6 +1755,7 @@ def calendario():
         situacoes_possiveis=grade_do_mes.SITUACOES,
         tipo=tipo, tipos=consultas.TIPOS,
         args=request.args, filtros=filtros, opcoes=opcoes,
+        recado_dos_filtros=_recado_dos_filtros(base, opcoes),
         status_do_dia=status_do_dia,
         # A barra de filtros é a mesma das outras telas; estas duas dizem a
         # ela que aqui a data não manda, e se havia alguma marcada.
@@ -1527,6 +1763,2380 @@ def calendario():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+# ---------------------------------------------------------------------------
+# CONCILIAÇÃO BANCÁRIA — 24/09/2026
+#
+# O controle paralelo que vive numa planilha desde sempre, trazido para cá.
+# A conciliação de verdade continua no OMIE; esta é a visão do dono, e o lugar
+# onde cabe a ANOTAÇÃO, que o OMIE não tem.
+#
+# ⚠️ O FILTRO É PRÓPRIO, e NÃO o da barra das Solicitações. São universos
+# diferentes: lá se filtra SP (credor, obra, projeto); aqui se filtra linha de
+# extrato bancário (conta, período, conciliado, observação). Reusar a mesma
+# gaveta faria o recorte de uma tela vazar na outra sem sentido nenhum.
+# ---------------------------------------------------------------------------
+FILTRO_CONCILIACAO = "filtro_conciliacao"
+
+
+@bp.route("/api/conciliacao/procurar")
+@exige_consulta
+def conciliacao_procurar():
+    """Onde está um lançamento — em TODAS as contas, sem filtro nenhum.
+
+    ⚠️ ELA EXISTE PARA ACABAR COM UMA DISCUSSÃO QUE NÃO TEM COMO SER GANHA NA
+    CONVERSA. "Não importou" e "não estou vendo" são a mesma coisa na tela e coisas
+    diferentes no banco — e eu não enxergo o banco dele. Isto enxerga."""
+    from . import conciliacao as conc
+    from .formatos import para_numero
+
+    bruto = (request.args.get("valor") or "").strip()
+    texto = (request.args.get("q") or "").strip()
+    valor = None
+    if bruto:
+        valor = para_numero(bruto)
+        if valor is None:
+            return {"ok": False, "erro": f'não entendi o valor "{bruto}".'}, 400
+    if valor is None and not texto:
+        return {"ok": False, "erro": "diga um valor ou um pedaço do histórico."}, 400
+
+    try:
+        achados = conc.procurar_em_todas(valor=valor, texto=texto)
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou a busca em todas as contas")
+        return {"ok": False, "erro": f"Não consegui procurar: {e}"}, 500
+
+    return {"ok": True, "quantos": len(achados), "achados": [
+        {"conta": a["conta"], "conta_id": a["conta_id"],
+         "data": a["data"].strftime("%d/%m/%Y") if a["data"] else "",
+         "descricao": a["descricao"], "documento": a["documento"] or "",
+         "valor": str(a["valor"]), "origem": a["origem"],
+         "conciliado": bool(a["conciliado"]),
+         "omie": a["omie_situacao"] or "", "omie_codigo": a["omie_codigo"],
+         "arquivo": a["arquivo"]} for a in achados]}
+
+
+def _filtros_da_conciliacao(contas_cadastradas: list) -> dict:
+    """O que a barra desta tela manda, com um padrão sensato para cada coisa."""
+    from . import conciliacao as conc
+    from .formatos import para_data, para_numero
+
+    def data(nome):
+        bruto = (request.args.get(nome) or "").strip()
+        return para_data(bruto) if bruto else None
+
+    def numero(nome):
+        bruto = (request.args.get(nome) or "").strip()
+        return para_numero(bruto) if bruto else None
+
+    # A conta é obrigatória: conciliação sem conta não é conciliação, é uma
+    # lista de lançamentos de bancos misturados. Sem escolha, vale a primeira.
+    try:
+        conta_id = int(request.args.get("conta_id") or 0)
+    except ValueError:
+        conta_id = 0
+    ids = [c["id"] for c in contas_cadastradas]
+    if conta_id not in ids:
+        conta_id = ids[0] if ids else 0
+
+    situacao = request.args.get("situacao") or "todos"
+    if situacao not in conc.SITUACOES:
+        situacao = "todos"
+    sentido = request.args.get("sentido") or ""
+    if sentido not in ("", "entrada", "saida"):
+        sentido = ""
+
+    # ⚠️ A BUSCA RÁPIDA DO TOPO NÃO É UM SEGUNDO FILTRO — ela preenche ESTE.
+    # Pedido do dono em 24/09/2026: *"se na parte superior eu pudesse já
+    # inserir uma data, informação do histórico, um valor, sem precisar ir no
+    # filtro, ajudaria demais."* Duas máquinas de filtrar na mesma tela
+    # divergiriam no dia em que alguém mexesse numa só, e a pessoa não teria
+    # como saber qual das duas está valendo.
+    #
+    # `data` é um DIA (de e até no mesmo), e `valor` é um valor EXATO em
+    # módulo — é assim que se procura numa conciliação: "entrou 1.500 no dia
+    # 10?". A faixa continua existindo na barra lateral, para quem precisa.
+    dia = data("data")
+    exato = numero("valor")
+
+    def texto(nome):
+        return (request.args.get(nome) or "").strip()
+
+    return {"conta_id": conta_id, "situacao": situacao, "sentido": sentido,
+            "busca": texto("busca"),
+            "data_ini": dia or data("data_ini"),
+            "data_fim": dia or data("data_fim"),
+            "valor_ini": abs(exato) if exato is not None else numero("valor_ini"),
+            "valor_fim": abs(exato) if exato is not None else numero("valor_fim"),
+            # Os filtros de cabeçalho, um por coluna.
+            "historico": texto("historico"),
+            "documento": texto("documento"),
+            "observacao": texto("observacao"),
+            "entrada": numero("entrada"),
+            "saida": numero("saida"),
+            # Guardados para a tela redesenhar os campos como estavam.
+            "dia": dia, "valor": exato}
+
+
+def _omie_ligado() -> bool:
+    """A parte do OMIE já existe no banco? (migração 021)
+
+    ⚠️ ELA É SEPARADA DA CONCILIAÇÃO, e o dono pagou por eu não ter separado:
+    a tela se dava por pronta olhando a tabela das CONTAS (migração 019), e o
+    formulário dos tipos aparecia inteiro — só o Gravar quebrava, com a frase
+    crua do Postgres. Cada pedaço confere a SUA tabela.
+    """
+    try:
+        from . import conciliacao_omie as co
+        return co._pronto()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _listas_do_omie() -> dict:
+    """As contas correntes, o plano financeiro e as obras — do espelho.
+
+    ⚠️ NÃO CHAMA A API DO OMIE. A carga do painel já traz tudo isso toda
+    noite; chamar de novo daqui seria mais uma credencial para manter e duas
+    cópias dos mesmos dados. O preço é a idade da última carga, e está dito na
+    tela.
+    """
+    try:
+        from . import conciliacao_omie as co
+        return co.listas_do_omie()
+    except Exception:  # noqa: BLE001 — tela de configuração não pode não abrir
+        return {"contas": [], "categorias": [], "obras": [], "erro": ""}
+
+
+def _tipos_do_omie() -> list:
+    """Os tipos de movimento cadastrados. Nunca derruba a tela."""
+    try:
+        from . import conciliacao_omie as co
+        return co.tipos(so_ativos=False)
+    except Exception:  # noqa: BLE001 — antes da migração é estado normal
+        return []
+
+
+def _planilha_da_conciliacao() -> str:
+    """O identificador da planilha antiga, se já foi colado uma vez."""
+    from . import conciliacao_planilha as cp
+    try:
+        return cp.planilha_guardada()
+    except Exception:  # noqa: BLE001 — é enfeite do campo, não a tela
+        return ""
+
+
+@bp.route("/conciliacao")
+@exige_consulta
+def tela_conciliacao():
+    from . import conciliacao as conc
+
+    estado = conc.estado()
+    if not estado["pronto"]:
+        # ⚠️ A MIGRAÇÃO AINDA NÃO FOI APLICADA. O código sobe antes do botão
+        # ser apertado, e uma tela que estourasse aqui derrubaria a confiança
+        # na publicação inteira. Ela diz o que falta, e como fazer.
+        return render_template("analisesps_conciliacao.html", estado=estado,
+                               contas=[], linhas=[], filtros={}, resumo={},
+                               situacoes=conc.SITUACOES, pagina=1,
+                               pode_operar=auth.pode_operar(),
+                               perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+                               nome=auth.nome_atual())
+
+    contas = conc.contas()
+    filtros = _filtros_da_conciliacao(contas)
+    try:
+        pagina = max(1, int(request.args.get("pagina", 1)))
+    except ValueError:
+        pagina = 1
+
+    linhas = conc.listar(filtros, pagina) if filtros["conta_id"] else []
+    resumo = conc.resumo(filtros) if filtros["conta_id"] else {}
+    conta = next((c for c in contas if c["id"] == filtros["conta_id"]), None)
+
+    return render_template(
+        "analisesps_conciliacao.html", aba="conciliacao", estado=estado,
+        contas=contas, conta=conta, linhas=linhas, filtros=filtros,
+        resumo=resumo, situacoes=conc.SITUACOES, pagina=pagina,
+        # ⚠️ QUANTAS A CONTA TEM NO TOTAL, para a tela poder dizer o que o filtro
+        # está escondendo. O filtro fica guardado de uma visita para a outra, e um
+        # período de ontem esconde hoje uma linha que está gravada — foi o que fez
+        # o dono concluir, em 29/09/2026, que um lançamento "não foi importado".
+        total_da_conta=conc.quantas_na_conta(filtros["conta_id"])
+        if filtros["conta_id"] else 0,
+        por_pagina=conc.POR_PAGINA,
+        tem_proxima=len(linhas) == conc.POR_PAGINA,
+        saldo_total=conc.saldo_da_conta(filtros["conta_id"])
+        if filtros["conta_id"] else 0,
+        ultimos_arquivos=conc.ultimos_arquivos(filtros["conta_id"])
+        if filtros["conta_id"] else [],
+        planilha_guardada=_planilha_da_conciliacao(),
+        tipos_omie=_tipos_do_omie(),
+        omie_pronto=_omie_ligado(),
+        listas_omie=_listas_do_omie(),
+        args=request.args,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/conciliacao/panorama")
+@exige_consulta
+def conciliacao_panorama():
+    """O panorama de todas as contas — "no que eu não posso confiar".
+
+    ⚠️ A PERGUNTA QUE ESTA TELA RESPONDE NÃO É "QUANTO TEM", É ONDE ESTÁ O
+    BURACO. Uma conta 100% conciliada cujo último extrato é de três meses
+    atrás está pior do que uma com pendências e extrato de ontem — e olhando
+    só o percentual ela pareceria a melhor de todas.
+    """
+    from . import conciliacao as conc
+    from .horario import agora
+
+    estado = conc.estado()
+    anos = conc.anos_com_movimento() if estado["pronto"] else []
+    try:
+        ano = int(request.args.get("ano") or 0)
+    except ValueError:
+        ano = 0
+    if ano not in anos:
+        ano = anos[0] if anos else agora().date().year
+
+    dados = conc.panorama(ano) if estado["pronto"] else {"contas": []}
+    fundo = conc.panorama_do_ano(ano) if estado["pronto"] else {}
+    return render_template(
+        "analisesps_conciliacao_panorama.html", aba="conciliacao",
+        estado=estado, ano=ano, anos=anos, panorama=dados, fundo=fundo,
+        meses=conc.MESES_CURTOS,
+        pendencias_omie=_pendencias_do_omie(),
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+def _pendencias_do_omie() -> list:
+    """O que ficou pelo caminho ao lançar no OMIE. Nunca derruba a tela."""
+    try:
+        from . import conciliacao_omie as co
+        return co.pendencias()
+    except Exception:  # noqa: BLE001 — antes da migração é estado normal
+        return []
+
+
+@bp.route("/api/conciliacao/conferir", methods=["POST"])
+@exige_operador
+def conciliacao_conferir():
+    """Lê o OFX e diz o que vai acontecer. NÃO grava nada.
+
+    ⚠️ CONFERIR E GRAVAR SÃO DUAS CHAMADAS, e é o pedido do dono: *"eu quero
+    jogar um OFX e o sistema me dizer: todos os lançamentos já estavam
+    registrados desse período"*. Uma resposta dada DEPOIS de gravar não teria
+    como ser conferida — ela mesma teria mudado o mundo que descreve.
+    """
+    from . import conciliacao as conc
+    from . import conciliacao_ofx
+
+    arquivo = request.files.get("extrato")
+    if not arquivo or not arquivo.filename:
+        return {"ok": False, "erro": "Escolha o arquivo do extrato (.ofx)."}
+    try:
+        lido = conciliacao_ofx.ler(arquivo.read())
+    except conciliacao_ofx.ErroDoExtrato as e:
+        return {"ok": False, "erro": str(e)}
+
+    achada = conc.conta_do_extrato(lido.bankid, lido.acctid)
+    pedida = request.form.get("conta_id")
+    conta_id = int(pedida) if (pedida or "").strip().isdigit() else (
+        achada["id"] if achada else 0)
+    if not conta_id:
+        # ⚠️ NÃO SE CHUTA A CONTA. Jogar o extrato de uma empresa dentro da
+        # conta de outra é um estrago que ninguém percebe olhando a tela.
+        return {"ok": False, "desconhecida": True,
+                "bankid": lido.bankid, "acctid": lido.acctid,
+                "erro": ("Não reconheci de qual conta é este extrato "
+                         f"(banco {lido.bankid or '?'}, conta "
+                         f"{lido.acctid or '?'}). Escolha a conta abaixo — e "
+                         "ela passa a ser reconhecida sozinha da próxima vez.")}
+
+    try:
+        conferido = conc.conferir(conta_id, lido)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+
+    return {"ok": True, **conc.resumo_para_a_tela(conferido, conta_id,
+                                                  arquivo.filename)}
+
+
+@bp.route("/api/conciliacao/importar", methods=["POST"])
+@exige_operador
+def conciliacao_importar():
+    """Grava o que a conferência mostrou. O arquivo vem de novo, de propósito.
+
+    ⚠️ O ARQUIVO É REENVIADO EM VEZ DE FICAR GUARDADO NO SERVIDOR entre as
+    duas chamadas. Guardar exigiria um lugar para ele e uma limpeza depois, e
+    com 1 worker e 4 threads um "guardado na memória" vira do outro usuário no
+    dia em que duas pessoas importarem ao mesmo tempo. Reenviar custa um
+    segundo e não tem esse risco.
+    """
+    from . import conciliacao as conc
+    from . import conciliacao_ofx
+
+    arquivo = request.files.get("extrato")
+    conta_id = (request.form.get("conta_id") or "").strip()
+    if not arquivo or not arquivo.filename:
+        return {"ok": False, "erro": "O arquivo não veio junto."}
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    try:
+        lido = conciliacao_ofx.ler(arquivo.read())
+    except conciliacao_ofx.ErroDoExtrato as e:
+        return {"ok": False, "erro": str(e)}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    # Lembrar a conta do arquivo: da próxima vez ele se reconhece sozinho.
+    if request.form.get("lembrar") == "1":
+        conc.lembrar_conta_do_extrato(int(conta_id), lido.bankid, lido.acctid,
+                                      quem)
+    try:
+        feito = conc.importar(int(conta_id), lido, arquivo.filename, quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    return {"ok": True, **conc.resumo_para_a_tela(feito, int(conta_id),
+                                                  arquivo.filename)}
+
+
+@bp.route("/api/conciliacao/marcar", methods=["POST"])
+@exige_operador
+def conciliacao_marcar():
+    """Marca ou desmarca linhas. É o gesto mais repetido da tela."""
+    from . import conciliacao as conc
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        mudadas = conc.marcar(dados.get("ids") or [],
+                              bool(dados.get("conciliado")), quem)
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou marcar")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "mudadas": mudadas, "quem": quem}
+
+
+@bp.route("/api/conciliacao/anotar", methods=["POST"])
+@exige_operador
+def conciliacao_anotar():
+    """A observação de uma linha — o que a planilha tinha e o OMIE não tem."""
+    from . import conciliacao as conc
+    dados = request.get_json(silent=True) or {}
+    linha_id = dados.get("id")
+    if not str(linha_id or "").isdigit():
+        return {"ok": False, "erro": "Linha não informada."}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        texto = conc.anotar(int(linha_id), dados.get("texto") or "", quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou anotar")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "texto": texto}
+
+
+@bp.route("/api/conciliacao/conta", methods=["POST"])
+@exige_operador
+def conciliacao_gravar_conta():
+    """Cria ou altera uma conta bancária, de dentro da própria tela."""
+    from . import conciliacao as conc
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        conta_id = conc.gravar_conta(dados, quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou gravar conta")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": conta_id}
+
+
+# ---------------------------------------------------------------------------
+# TRAZER A PLANILHA ANTIGA — uma aba por vez, com amostra antes de gravar
+#
+# *"Já tem muita informação aqui, eu quero manter."* São ~20 abas, uma por
+# conta, desde 2024. A associação aba → conta é feita por ele, na tela: é o
+# único que sabe que "BD IFPE 2541" e a conta do Bradesco terminada em 2541
+# são a mesma coisa.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# LANÇAR NO OMIE a partir do extrato — 24/09/2026
+#
+# ⚠️ ISTO ESCREVE NO OMIE. Ensaiar e lançar são DUAS rotas, e a tela chama as
+# duas em ordem: ele vê o que vai acontecer, linha a linha, antes de acontecer.
+# É o mesmo desenho dos aportes, e pela mesma razão — lançamento no OMIE não
+# se desfaz com um clique.
+# ---------------------------------------------------------------------------
+def _linhas_para_o_omie(ids: list, conta_id: int) -> tuple:
+    """As linhas marcadas, lidas do banco — e nunca do que o navegador mandou.
+
+    ⚠️ O NAVEGADOR MANDA SÓ OS NÚMEROS. Aceitar dele o valor, a data ou a
+    descrição deixaria o que vai para o OMIE nas mãos de quem abrir o console
+    do navegador — e o que sai daqui é lançamento contábil.
+    """
+    from . import conciliacao as conc
+    from .db import consultar
+
+    numeros = [int(i) for i in (ids or []) if str(i).strip().isdigit()]
+    if not numeros:
+        return [], None
+    marcas = ",".join(["?"] * len(numeros))
+    linhas = consultar(
+        "SELECT id, conta_id, data, descricao, documento, valor, omie_codigo "
+        f"  FROM analisesps.conciliacao_extrato WHERE id IN ({marcas}) "
+        "   AND conta_id = ? ORDER BY data, id",
+        tuple(numeros + [int(conta_id)]))
+    nomes = ["id", "conta_id", "data", "descricao", "documento", "valor",
+             "omie_codigo"]
+    conta = next((c for c in conc.contas(so_ativas=False)
+                  if c["id"] == int(conta_id)), None)
+    return [dict(zip(nomes, linha)) for linha in linhas], conta
+
+
+def _destinos_pedidos(dados: dict) -> dict:
+    """`{linha_id: conta}` — as contas de destino escolhidas na tela.
+
+    ⚠️ A CONTA VEM DO BANCO PELO NÚMERO, e nunca do que o navegador mandou:
+    o que sai daqui é lançamento contábil em duas contas.
+    """
+    from . import conciliacao as conc
+    cru = dados.get("destinos") or {}
+    if not isinstance(cru, dict) or not cru:
+        return {}
+    todas = {c["id"]: c for c in conc.contas(so_ativas=False)}
+    saida = {}
+    for linha_id, conta_id in cru.items():
+        if str(linha_id).isdigit() and str(conta_id).isdigit():
+            achada = todas.get(int(conta_id))
+            if achada:
+                saida[int(linha_id)] = achada
+    return saida
+
+
+@bp.route("/api/conciliacao/omie/ensaiar", methods=["POST"])
+@exige_operador
+def conciliacao_omie_ensaiar():
+    """O que SERIA lançado. Não fala com o OMIE."""
+    from . import conciliacao as conc
+    from . import conciliacao_omie as co
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    linhas, conta = _linhas_para_o_omie(dados.get("ids") or [], int(conta_id))
+    if not linhas:
+        return {"ok": False, "erro": "Marque as linhas primeiro."}
+    if not conta:
+        return {"ok": False, "erro": "Conta não encontrada."}
+
+    plano = co.planejar(linhas, conta, destinos=_destinos_pedidos(dados))
+    return {"ok": True,
+            "conta": conta["nome"],
+            "contas": [{"id": c["id"], "nome": c["nome"]}
+                       for c in conc.contas() if c["id"] != conta["id"]],
+            "vai": [{"linha_id": x["linha_id"], "tipo": x["tipo"],
+                     "sentido": x["sentido"], "valor": str(x["valor"]),
+                     "data": x["data"].strftime("%d/%m/%Y"),
+                     "categoria": x["codigo_categoria"],
+                     "transferencia": x.get("transferencia", False),
+                     "destino": x.get("destino_nome", ""),
+                     "descricao": x["descricao"][:90]} for x in plano["vai"]],
+            "nao_vai": [{"linha_id": x["id"], "motivo": x["motivo"],
+                         "descricao": x["descricao"],
+                         "pede_destino": x.get("pede_destino", False),
+                         "valor": str(x["valor"] or 0)}
+                        for x in plano["nao_vai"]],
+            "total": str(plano["total"])}
+
+
+@bp.route("/api/conciliacao/omie/lancar", methods=["POST"])
+@exige_operador
+def conciliacao_omie_lancar():
+    """Lança de verdade. ⚠️ Escreve no OMIE."""
+    from . import conciliacao_omie as co
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    linhas, conta = _linhas_para_o_omie(dados.get("ids") or [], int(conta_id))
+    if not linhas or not conta:
+        return {"ok": False, "erro": "Marque as linhas primeiro."}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    plano = co.planejar(linhas, conta, destinos=_destinos_pedidos(dados))
+    if not plano["vai"]:
+        return {"ok": False,
+                "erro": "Nenhuma das linhas marcadas pode ser lançada.",
+                "nao_vai": [{"motivo": x["motivo"],
+                             "descricao": x["descricao"]}
+                            for x in plano["nao_vai"]]}
+    try:
+        feito = co.lancar(plano["vai"], quem)
+    except co.ErroDoLancamento as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou lançar no OMIE")
+        return {"ok": False, "erro": f"Não consegui: {e}"}, 500
+    return {"ok": True, **feito,
+            "nao_foram": len(plano["nao_vai"])}
+
+
+@bp.route("/api/conciliacao/omie/tipo", methods=["POST"])
+@exige_operador
+def conciliacao_omie_tipo():
+    """Cria ou altera um tipo de movimento (tarifa, rentabilidade, PIX)."""
+    from . import conciliacao_omie as co
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        tipo_id = co.gravar_tipo(dados, quem)
+    except co.ErroDoLancamento as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou gravar tipo")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": tipo_id}
+
+
+@bp.route("/api/conciliacao/desfazer", methods=["POST"])
+@exige_operador
+def conciliacao_desfazer():
+    """Desfaz uma importação — pedido do dono: *"tem que ter alguma forma de
+    retroceder um erro, né?"*
+
+    ⚠️ DUAS CHAMADAS, como tudo o que estraga: sem `confirmar`, ela só CONTA o
+    que sumiria (inclusive quantas foram conciliadas e anotadas por gente) e
+    devolve para ele decidir. Apagar contando depois não é escolha, é aviso.
+    """
+    from . import conciliacao as conc
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    arquivo_id = dados.get("arquivo_id")
+    aba = str(dados.get("aba") or "").strip()
+    arquivo_id = int(arquivo_id) if str(arquivo_id or "").isdigit() else None
+    if not arquivo_id and not aba:
+        return {"ok": False, "erro": "Diga o que desfazer."}
+
+    if not dados.get("confirmar"):
+        return {"ok": True, "so_contei": True,
+                **conc.o_que_o_desfazer_apaga(int(conta_id), arquivo_id, aba)}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = conc.desfazer(int(conta_id), arquivo_id, aba,
+                              bool(dados.get("levar_o_que_esta_no_omie")), quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou desfazer")
+        return {"ok": False, "erro": f"Não consegui desfazer: {e}"}, 500
+    return {"ok": True, "so_contei": False, **feito}
+
+
+# ===========================================================================
+# O RATEIO DA FOLHA — para quem o ponto não pode apropriar (26/09/2026)
+#
+# Pedido do dono: *"em algum local a gente eleger as pessoas que vão ser rateadas
+# e, para cada uma — ou para um grupo — definir para quais obras o valor dela vai
+# ser rateado (…) pode ser que uma obra entre mais que a outra."*
+#
+# ⚠️ SÓ DO MESTRE. Isto decide para qual obra vai o salário de alguém, toda
+# quinzena, até alguém mudar. O DP opera a folha; quem define o rateio é o dono
+# (decisão dele em 26/09/2026: *"o usuário do DP faz a leitura, mas o usuário
+# master, que sou eu, eu gero o arquivo"*).
+# ===========================================================================
+@bp.route("/folha/rateio")
+@exige_operador
+def tela_folha_rateio():
+    from . import folha_rateio as fr
+
+    pronto = fr._pronto()
+    # A lista de obras é a MESMA do Ratear — a aba "C. Diários", carregada toda
+    # noite. Uma segunda lista de obras divergiria da primeira no dia em que
+    # alguém cadastrasse obra nova.
+    from . import sincronizacao
+    try:
+        obras = [o["nome"] for o in
+                 (sincronizacao.referencias_rateio().get("obras") or [])]
+    except Exception:  # noqa: BLE001 — a lista é apoio; sem ela dá recado
+        logger.exception("Folha: não consegui ler a lista de obras")
+        obras = []
+    regras = fr.listar() if pronto else []
+
+    # O CADASTRO ENTRA AQUI PARA DUAS COISAS, as duas pedidas em 27/09/2026:
+    #
+    #   1. O LINK PARA O CARD DO PIPEFY de cada pessoa. *"É bom ter um link
+    #      para clicar nele e ser direcionado, abre o card do Pipefy."* O lugar
+    #      de corrigir o auxílio ou a gratificação é o card — daqui só se vai
+    #      até lá.
+    #   2. O NOME DE VERDADE. A regra de rateio guarda o nome que quem cadastrou
+    #      digitou, para reconhecer na tela. Quando a pessoa está no cadastro,
+    #      o nome do cadastro é melhor: é o que a folha e o ponto usam.
+    #
+    # Num `try` porque a migração 028 pode não ter sido aplicada ainda: o código
+    # sobe para o Render antes do botão ser apertado, e esta tela não pode cair
+    # nesse intervalo.
+    from . import colaboradores
+    cadastro = {"quando": "", "pessoas": 0, "avisos": [], "pronto": False}
+    try:
+        cadastro = colaboradores.quando_atualizou()
+        cpfs = [p.get("cpf") for r in regras for p in (r.get("pessoas") or [])]
+        fichas = colaboradores.muitos_por_cpf(cpfs)
+        for regra in regras:
+            for pessoa in (regra.get("pessoas") or []):
+                ficha = fichas.get(pessoa.get("cpf")) or {}
+                pessoa["link_pipefy"] = ficha.get("link_pipefy", "")
+                pessoa["no_cadastro"] = bool(ficha)
+                pessoa["desligado"] = bool(ficha.get("desligado"))
+                # ⚠️ A SITUAÇÃO VEM DA MESMA FUNÇÃO que a tela de Colaboradores
+                # usa, e é o que impede as duas telas de divergirem. Uma regra
+                # de rateio que aponta para quem saiu apropria salário de
+                # ninguém — e o erro fica invisível até a folha não fechar.
+                pessoa["situacao"] = ficha.get("situacao", "")
+                pessoa["motivo_situacao"] = ficha.get("motivo", "")
+                pessoa["desacordo"] = ficha.get("desacordo", "")
+                pessoa["alerta"] = bool(ficha.get("alerta"))
+                if ficha.get("nome"):
+                    pessoa["nome_cadastro"] = ficha["nome"]
+    except Exception:  # noqa: BLE001 — a tela abre mesmo sem o cadastro
+        logger.exception("Folha: não consegui ler o cadastro de colaboradores")
+
+    return render_template(
+        "analisesps_folha_rateio.html", aba="folha", subaba="rateio",
+        grupos=subtelas_agrupadas(),
+        pronto=pronto, regras=regras, obras=obras, cadastro=cadastro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha")
+@exige_consulta
+def tela_folha():
+    """A porta da área da Folha. Manda para a primeira subtela que a pessoa vê.
+
+    POR QUE REDIRECIONA em vez de mostrar um índice: um índice com dois links
+    seria um clique a mais para chegar ao mesmo lugar. A primeira subtela é a
+    folha da contabilidade, que por sua vez abre a última folha importada."""
+    permitidas = subtelas_da_folha()
+    if not permitidas:
+        # Não deve acontecer — quem chega aqui já tem a tela "folha". Mas se
+        # acontecer, a resposta é 404, não 403: dizer "sem permissão" confirma
+        # o que existe do outro lado.
+        return render_template("analisesps_erro.html",
+                               mensagem="Esta tela não existe aqui."), 404
+    return redirect(url_for(permitidas[0][2]))
+
+
+@bp.route("/folha/<int:folha_id>")
+@exige_consulta
+def tela_folha_aberta(folha_id: int):
+    """A FOLHA ABERTA PARA TRABALHAR: pessoa por pessoa, com obra e seleção.
+
+    ⚠️ ESTA TELA FOI REFEITA EM 29/09/2026, e o motivo é uma cobrança dele:
+
+        *"Eu importo o arquivo e não tenho gestão nenhuma sobre as informações
+        dele. Quem vai, quem não vai. (…) Cadê os dados deles, cadê uma tabela
+        mostrando as informações, cadê a possibilidade de seleção de quem entra e
+        quem não entra, cadê onde gera o arquivo de pagamento?"*
+
+    Antes ela era só leitura — nome, código, CPF, filial e valor — e o ÚNICO
+    caminho até aqui era o número embaixo de "Precisam de olho", que desaparece
+    quando não há ninguém pendente. Quem importava a folha e não achava aquele
+    número não tinha porta nenhuma.
+
+    ⚠️ E O TOTAL POR OBRA SAI DO PONTO, dia por dia, como ele disse no mesmo dia:
+    *"aqui já devemos usar a folha de ponto mesmo, visto que tem o rateio diário
+    pra formar os totalizadores por obra."*"""
+    from . import folha_arquivo as fa
+    from . import folha_gestao as fg
+
+    montado = {}
+    erro = None
+    try:
+        # CASA DE NOVO A CADA VISITA: o cadastro pode ter sido atualizado depois
+        # da importação, e aí gente que estava pendente passa a casar sem
+        # ninguém reimportar nada.
+        fa.casar_com_o_cadastro(folha_id)
+        montado = fg.montar(folha_id, _filtros_da_folha())
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui abrir a folha %s", folha_id)
+        erro = str(e)
+
+    if not montado and erro is None:
+        # Fora do escopo responde "não encontrado", nunca "sem permissão".
+        return render_template("analisesps_erro.html",
+                               mensagem="Esta folha não está mais aqui."), 404
+
+    # O QUE JÁ FOI PAGO NO MÊS, todas as verbas, por obra e por conta — era o
+    # Panorama, e continua sendo a entrada do rateio do mês. Sai do que está
+    # FECHADO. É um bloco da janela "Divisão por obra", não a tela: se estourar,
+    # a tela abre sem ele.
+    gerencial = {"pronto": False}
+    if montado:
+        try:
+            from . import folha_pagamento as fpg
+            f = montado.get("folha") or {}
+            gerencial = fpg.gerencial(int(f["ano"]), int(f["mes"]))
+        except Exception:  # noqa: BLE001
+            logger.exception("Folha: não consegui montar o já pago do mês")
+
+    return render_template(
+        "analisesps_folha_aberta.html", aba="folha", subaba="importar",
+        grupos=subtelas_agrupadas(), montado=montado, erro=erro,
+        folha=montado.get("folha"), folhas=fa.listar(teto=24),
+        criticas=fa.criticas(folha_id) if montado else None,
+        filiais=fa.totais_por_filial(folha_id) if montado else [],
+        setores=fa.totais_por_setor(folha_id) if montado else [],
+        gerencial=gerencial,
+        situacoes=[(c, fg.ROTULO_DA_SITUACAO[c]) for c in fg.ORDEM_DAS_SITUACOES],
+        pode_operar=auth.pode_operar(),
+        # A prévia do pagamento é do mestre, como gerar: o arquivo tem nome, CPF
+        # e valor de todo mundo. Quem não é mestre nem vê o botão.
+        pode_gerar=auth.e_mestre(),
+        destinos=_destinos_do_pagamento(),
+        fila_do_ponto=_fila_do_ponto_recente(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+def _filtros_da_folha() -> dict:
+    """Os filtros da lateral, lidos do endereço. Cada bloco é de caixinhas
+    (padrão das Solicitações), então pode vir mais de um valor por chave. O
+    relatório lê daqui também — é o que garante que ele sai igual à tela."""
+    from . import folha_gestao as fg
+    filtros = {"busca": request.args.get("q") or ""}
+    for chave in fg.CHAVES_DE_FILTRO:
+        filtros[chave] = [v for v in request.args.getlist(chave) if v]
+    return filtros
+
+
+@bp.route("/folha/<int:folha_id>/relatorio.<formato>")
+@exige_consulta
+def folha_relatorio(folha_id: int, formato: str):
+    """O relatório do que está na tela — Excel ou PDF —, com os agrupamentos.
+
+    Pedido dele em 01/10/2026: *"o relatório do que eu visualizo em tela, além
+    de poder ver o agrupamento do pagamento. Por obra, por conta e etc."*"""
+    from . import folha_gestao as fg, folha_relatorio as fr
+
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    try:
+        montado = fg.montar(folha_id, _filtros_da_folha())
+        if not montado:
+            return render_template("analisesps_erro.html", titulo="Não encontrado",
+                                   mensagem="Esta folha não está mais aqui."), 404
+        dados = fr.montar(montado, fg._contas_das_obras())
+        if formato == "xlsx":
+            conteudo, tipo = fr.excel(dados), fr.MIME_XLSX
+        else:
+            conteudo, tipo = fr.pdf(dados), "application/pdf"
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou o relatório %s da folha %s", formato, folha_id)
+        return render_template("analisesps_erro.html", titulo="Relatório da folha",
+                               mensagem=f"Não consegui montar o relatório: {e}"), 500
+    nome = fr.nome_do_arquivo(dados, formato)
+    return Response(conteudo, mimetype=tipo, headers={
+        "Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+def _fila_do_ponto_recente() -> list:
+    """Os pedidos recentes da fila do ponto, para a lateral. Vazia se falhar."""
+    from . import ponto_fila
+    try:
+        return [_item_para_a_tela(i) for i in ponto_fila.recentes()]
+    except Exception:  # noqa: BLE001 — bloco da lateral, não a tela
+        logger.exception("Ponto: não consegui ler a fila")
+        return []
+
+
+def _destinos_do_pagamento() -> list:
+    from . import folha_geracao as fger
+    return [(d, fger.ROTULO_DO_DESTINO[d]) for d in fger.DESTINOS]
+
+
+@bp.route("/folha/<int:folha_id>/previa-pagamento")
+@exige_operador
+def folha_previa_pagamento(folha_id: int):
+    """Baixa a PRÉVIA do arquivo de pagamento desta folha, sem fechar nada.
+
+    Pedido dele em 01/10/2026: *"se eu quiser gerar um arquivo de pagamento sem
+    fechar, como fazer? até pra saber como tá saindo"*. Não sobe para o Drive,
+    não entra no log — ver `folha_pagamento.previa_zip`."""
+    from . import folha_geracao as fger, folha_pagamento as fpg
+
+    destino = str(request.args.get("destino") or fger.BEEVALE).strip().lower()
+    try:
+        conteudo, nome = fpg.previa_zip(folha_id, destino)
+    except (fpg.ErroDoPagamento, fger.ErroDaGeracao) as e:
+        return render_template(
+            "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
+            mensagem=f"Não consegui montar a prévia: {e}"), 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou a prévia do pagamento")
+        return render_template(
+            "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
+            mensagem=f"Não consegui montar a prévia: {e}"), 500
+    return Response(
+        conteudo, mimetype="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+@bp.route("/api/folha/apropriacao/ajuste", methods=["POST"])
+@exige_operador
+def folha_apropriacao_ajustar():
+    """Quem entra, quem sai, e para qual obra vai o valor de uma pessoa.
+
+    ⚠️ É A "GESTÃO SOBRE O ARQUIVO" que ele cobrou. Três decisões, uma pessoa por
+    chamada: tirar do pagamento (com motivo, sempre), jogar tudo numa obra, ou
+    dividir entre obras.
+
+    ⚠️ O AJUSTE É DO PAGAMENTO, NÃO DA FOLHA IMPORTADA. Guardar por `folha_id`
+    faria uma reimportação — que é normal, ele corrige e manda de novo — apagar o
+    trabalho mais caro do processo. Por isso a chave é competência + tipo + CPF,
+    igual ao auxílio."""
+    from . import folha_apropriacao_guardada as guardada
+    from . import folha_arquivo as fa
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        folha_id = int(dados.get("folha_id") or 0)
+    except (TypeError, ValueError):
+        folha_id = 0
+    folha = fa.abrir(folha_id) if folha_id else None
+    if not folha:
+        # Número que não existe responde "não encontrado", nunca "sem permissão".
+        return {"ok": False, "erro": "Esta folha não está mais aqui."}, 404
+
+    cpf = str(dados.get("cpf") or "")
+    entra = dados.get("entra")
+    por_obra = dados.get("por_obra") or []
+    obra_unica = str(dados.get("obra") or "").strip()
+
+    # ⚠️ A DIVISÃO ENTRA EM DIAS, E O VALOR É CALCULADO AQUI — nível 3 do ajuste
+    # fino (§7.3): *"bota um dia numa obra, um dia em outra obra."* O valor por dia
+    # é o líquido dividido pelos dias (coluna I da planilha), e a sobra do centavo
+    # segue a mesma regra do ponto. Aceitar valor digitado deixaria a mesma pessoa
+    # com dois valores por dia diferentes no mesmo período.
+    if dados.get("dias_por_obra"):
+        from . import folha_gestao as fg
+        try:
+            por_obra = fg.dividir_por_dias(dados.get("valor"),
+                                           dados.get("dias_por_obra"))
+        except fg.ErroDaGestao as e:
+            return {"ok": False, "erro": str(e)}, 400
+        obra_unica = ""
+
+    try:
+        if dados.get("limpar"):
+            # Volta a seguir o ponto e a regra: é o desfazer da tela.
+            guardada.limpar_ajuste(folha["ano"], folha["mes"], folha["tipo"], cpf)
+        else:
+            guardada.gravar_ajuste(
+                folha["ano"], folha["mes"], folha["tipo"], cpf,
+                nome=str(dados.get("nome") or ""),
+                fora=(entra is False),
+                motivo=str(dados.get("motivo") or ""),
+                obra_unica=obra_unica, por_obra=por_obra,
+                observacao=str(dados.get("observacao") or ""), quem=quem)
+    except guardada.ErroDaApropriacao as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o ajuste da apropriação")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True}
+
+
+@bp.route("/api/folha/ponto/pessoa", methods=["POST"])
+@exige_operador
+def folha_ponto_pessoa_atualizar():
+    """Dispara a atualização do ponto de UMA pessoa (a página dela no Mobponto).
+
+    Roda no processo separado, como o ponto do mês: são pedidos de minutos à API.
+    Quem e de que mês vão para o banco antes de disparar."""
+    from . import folha_arquivo as fa
+    from .folha_rateio import so_digitos
+    dados = request.get_json(silent=True) or {}
+    try:
+        folha = fa.abrir(int(dados.get("folha_id") or 0))
+    except (TypeError, ValueError):
+        folha = None
+    cpf = so_digitos(dados.get("cpf"))
+    if not folha or len(cpf) != 11:
+        return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
+    from . import ponto_fila
+    if ponto_fila._pronto():
+        # A FILA (migração 042): o pedido entra e a tela volta na hora, dizendo
+        # quantos estão na frente. Dá para pedir a próxima pessoa em seguida.
+        quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+        feito = ponto_fila.enfileirar(ponto_fila.PESSOA, folha["ano"], folha["mes"],
+                                      cpf, str(dados.get("nome") or ""), quem=quem)
+        ponto_fila.cutucar()
+        return {"ok": True, "fila_id": feito["id"], "posicao": feito["posicao"]}
+    resultado = _trazer_o_ponto_da_pessoa(folha, cpf, dados.get("nome"))
+    if not resultado.get("ok"):
+        return {"ok": False, "erro": resultado.get("erro")
+                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+    return {"ok": True}
+
+
+def _trazer_o_ponto_da_pessoa(folha: dict, cpf: str, nome) -> dict:
+    """Dispara, no processo separado, a atualização do ponto de UMA pessoa."""
+    from . import sincronizacao, tarefas
+    from .db import conexao
+    ocupada = _pista_da_pessoa_ocupada()
+    if ocupada:
+        return ocupada
+    nome = str(nome or "").replace("|", " ")[:120]
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_pessoa_alvo",
+                                   f"{folha['ano']}|{folha['mes']}|{cpf}|{nome}")
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    return tarefas.disparar("ponto_pessoa", disparo=quem or "ponto de uma pessoa")
+
+
+def _pista_da_pessoa_ocupada() -> dict | None:
+    """Recusa ANTES de escrever o pedido, quando já há tarefa de pessoa rodando.
+
+    ⚠️ O PEDIDO MORA NUM LUGAR SÓ (`ponto_pessoa_alvo`, `ponto_lancar_pedido`), e o
+    processo o lê ao começar. Escrever o pedido de B enquanto o de A está para
+    começar faria o processo de A trabalhar para B — e o de B seria recusado.
+    Por isso a pergunta vem antes da escrita."""
+    from . import tarefas
+    atual = tarefas.estado("pessoa")
+    if atual.get("rodando"):
+        detalhe = atual.get("detalhe") or {}
+        return {"ok": False,
+                "erro": "Já há uma tarefa de ponto de pessoa rodando ("
+                        + (detalhe.get("etapa") or "começando") + "). Ela "
+                        "continua sozinha mesmo se você sair; espere terminar "
+                        "para pedir a próxima."}
+    return None
+
+
+def _pedido_de_lancamento():
+    """Lê e confere o pedido de lançamento. Devolve (folha, cpf, dados) ou a
+    resposta de recusa."""
+    from . import folha_arquivo as fa
+    from .folha_rateio import so_digitos
+    dados = request.get_json(silent=True) or {}
+    try:
+        folha = fa.abrir(int(dados.get("folha_id") or 0))
+    except (TypeError, ValueError):
+        folha = None
+    cpf = so_digitos(dados.get("cpf"))
+    cpfs_da_folha = {so_digitos(l.get("cpf")) for l in ((folha or {}).get("linhas") or [])}
+    if not folha or len(cpf) != 11 or cpf not in cpfs_da_folha:
+        return None, None, None, ({"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404)
+    return folha, cpf, dados, None
+
+
+@bp.route("/api/folha/ponto/plano", methods=["POST"])
+@exige_operador
+def folha_ponto_plano():
+    """O que SERIA lançado no Mobponto, dia a dia, e o que fica de fora — sem
+    lançar nada. É o que a pessoa confere antes de apertar "Lançar".
+
+    ⚠️ SÓ DO MESTRE, como o lançamento: mostra o ponto e prepara a escrita."""
+    from . import ponto_edicao
+    folha, cpf, dados, recusa = _pedido_de_lancamento()
+    if recusa:
+        return recusa
+    try:
+        obra, _ = ponto_edicao.validar_pedido(dados.get("obra"), "x" * 10)
+        plano = ponto_edicao.plano_da_pessoa(
+            folha["ano"], folha["mes"], cpf, dados.get("de") or "",
+            dados.get("ate") or dados.get("de") or "", obra,
+            dados.get("hora_avulsa") or "")
+    except (ponto_edicao.ErroDaEdicao, ValueError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Ponto: falhou montar o plano de lançamento")
+        return {"ok": False, "erro": f"Não consegui montar o plano: {e}"}, 500
+    return {"ok": True, "plano": plano, "falta": ponto_edicao.o_que_falta()}
+
+
+@bp.route("/api/folha/ponto/lancar", methods=["POST"])
+@exige_operador
+def folha_ponto_lancar():
+    """Lança no MOBPONTO as batidas que faltam no período, no processo separado.
+
+    O plano é refeito lá, com o ponto trazido de novo antes — ver
+    `ponto_edicao.lancar`. ⚠️ SÓ DO MESTRE: grava em sistema de terceiro."""
+    import json as _json
+
+    from . import ponto_edicao, sincronizacao, tarefas
+    from .db import conexao
+    folha, cpf, dados, recusa = _pedido_de_lancamento()
+    if recusa:
+        return recusa
+    falta = ponto_edicao.o_que_falta()
+    if falta:
+        return {"ok": False, "erro": falta}, 400
+    try:
+        obra, texto = ponto_edicao.validar_pedido(dados.get("obra"),
+                                                  dados.get("justificativa"))
+        # Confere o período agora, para a recusa sair na tela e não na tarefa.
+        ponto_edicao.plano_da_pessoa(folha["ano"], folha["mes"], cpf,
+                                     dados.get("de") or "",
+                                     dados.get("ate") or dados.get("de") or "",
+                                     obra, dados.get("hora_avulsa") or "")
+    except (ponto_edicao.ErroDaEdicao, ValueError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    pedido = {"ano": folha["ano"], "mes": folha["mes"], "cpf": cpf,
+              "nome": str(dados.get("nome") or "")[:160],
+              "de": str(dados.get("de") or "")[:10],
+              "ate": str(dados.get("ate") or dados.get("de") or "")[:10],
+              "obra": obra, "justificativa": texto,
+              "hora_avulsa": str(dados.get("hora_avulsa") or "")[:5], "quem": quem}
+    from . import ponto_fila
+    if ponto_fila._pronto():
+        feito = ponto_fila.enfileirar(ponto_fila.LANCAR, folha["ano"], folha["mes"],
+                                      cpf, pedido["nome"], pedido, quem=quem)
+        ponto_fila.cutucar()
+        return {"ok": True, "fila_id": feito["id"], "posicao": feito["posicao"]}
+    ocupada = _pista_da_pessoa_ocupada()
+    if ocupada:
+        return ocupada, 409
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_lancar_pedido",
+                                   _json.dumps(pedido, ensure_ascii=False))
+    resultado = tarefas.disparar("ponto_lancar", disparo=quem or "lançar ponto")
+    if not resultado.get("ok"):
+        return {"ok": False, "erro": resultado.get("erro")
+                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+    return {"ok": True}
+
+
+def _item_para_a_tela(item: dict) -> dict:
+    from .formatos import momento_br
+    return {"id": item["id"], "tipo": item["tipo"], "rotulo": item["rotulo"],
+            "cpf": item["cpf"], "nome": item["nome"], "situacao": item["situacao"],
+            "posicao": item.get("posicao", 0), "progresso": item["progresso"],
+            "mensagem": item["mensagem"], "pedido_por": item["pedido_por"],
+            "criado_em": momento_br(item.get("criado_em"))}
+
+
+@bp.route("/api/folha/ponto/fila/<int:item_id>")
+@exige_consulta
+def folha_ponto_fila_item(item_id: int):
+    """Onde está um pedido da fila do ponto — e cutuca a fila (ver `cutucar`)."""
+    from . import ponto_fila
+    ponto_fila.cutucar()
+    item = ponto_fila.item(item_id)
+    if item is None:
+        return {"ok": False, "erro": "Este pedido não está mais na fila."}, 404
+    return {"ok": True, "item": _item_para_a_tela(item)}
+
+
+@bp.route("/api/folha/ponto/fila")
+@exige_consulta
+def folha_ponto_fila():
+    """Os pedidos recentes da fila do ponto, para a lateral da folha."""
+    from . import ponto_fila
+    ponto_fila.cutucar()
+    return {"ok": True, "itens": [_item_para_a_tela(i) for i in ponto_fila.recentes()]}
+
+
+@bp.route("/api/folha/ponto/lancar/estado")
+@exige_consulta
+def folha_ponto_lancar_estado():
+    """Como terminou o último lançamento no Mobponto."""
+    from . import tarefas
+    ultima = tarefas.ultima_do_tipo("ponto_lancar") or {}
+    return {"ok": True, "em_andamento": bool(ultima.get("em_andamento")),
+            "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or "",
+            "etapa": ultima.get("etapa") or "",
+            "progresso": ultima.get("progresso") or ""}
+
+
+@bp.route("/api/folha/ponto/pessoa/estado")
+@exige_consulta
+def folha_ponto_pessoa_estado():
+    """Como terminou a última atualização do ponto de uma pessoa."""
+    from . import tarefas
+    ultima = tarefas.ultima_do_tipo("ponto_pessoa") or {}
+    return {"ok": True, "em_andamento": bool(ultima.get("em_andamento")),
+            "sucesso": ultima.get("ok"), "mensagem": ultima.get("mensagem") or "",
+            "etapa": ultima.get("etapa") or "",
+            "progresso": ultima.get("progresso") or ""}
+
+
+@bp.route("/folha/<int:folha_id>/pendente/<id_fortes>")
+@exige_consulta
+def tela_folha_pendente(folha_id: int, id_fortes: str):
+    """Por que esta linha da folha não casou com o cadastro — o miolo da janela.
+
+    Mostra o que o sistema TEM guardado para o código e para o nome, a data da
+    última atualização do cadastro, e a frase que diz o que fazer."""
+    from . import colaboradores, folha_arquivo as fa
+    folha = fa.abrir(folha_id)
+    if not folha:
+        return '<div class="aviso erro">Esta folha não está mais aqui.</div>', 404
+    alvo = colaboradores.normalizar_id_fortes(id_fortes)
+    linha = next((l for l in folha["linhas"]
+                  if colaboradores.normalizar_id_fortes(l.get("id_fortes")) == alvo), None)
+    if not linha:
+        return '<div class="aviso erro">Este código não está nesta folha.</div>', 404
+    try:
+        d = colaboradores.por_que_nao_casou(alvo, linha.get("nome") or "")
+    except Exception as e:  # noqa: BLE001 — a janela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar o diagnóstico do cadastro")
+        return f'<div class="aviso erro">Não consegui procurar: {e}</div>', 500
+    return render_template("_folha_pendente.html", d=d, linha=linha)
+
+
+@bp.route("/folha/<int:folha_id>/pessoa/<cpf>")
+@exige_consulta
+def tela_folha_pessoa(folha_id: int, cpf: str):
+    """O analítico de um funcionário na folha — página para imprimir, e (com
+    `?parcial=1`) o miolo da janela que abre no nome. Um desenho só para os dois.
+
+    Pessoa ou folha que não existe: 404, "não encontrado"."""
+    from . import folha_gestao as fg
+    from .horario import agora
+    try:
+        a = fg.ponto_da_pessoa(folha_id, cpf)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar o analítico")
+        if request.args.get("parcial"):
+            return (f'<div class="aviso erro">Não consegui montar o analítico: '
+                    f"{e}</div>"), 500
+        return render_template("analisesps_erro.html",
+                               mensagem=f"Não consegui montar o analítico: {e}"), 500
+    if not a or not a.get("achou"):
+        if request.args.get("parcial"):
+            return '<div class="aviso erro">Esta pessoa não está nesta folha.</div>', 404
+        return render_template("analisesps_erro.html",
+                               mensagem="Esta pessoa não está nesta folha."), 404
+    if request.args.get("parcial"):
+        from . import ponto_edicao, ponto_fila
+        try:
+            fila_da_pessoa = ponto_fila.ultimo_da_pessoa(a["cpf"])
+        except Exception:  # noqa: BLE001 — o analítico abre sem isto
+            logger.exception("Ponto: não consegui ler a fila desta pessoa")
+            fila_da_pessoa = None
+        return render_template("_folha_analitico.html", a=a, parcial=True,
+                               fila_da_pessoa=fila_da_pessoa,
+                               pode_operar=auth.pode_operar(),
+                               # Corrigir o ponto grava no Mobponto: só o mestre.
+                               editar_ponto=auth.e_mestre(),
+                               falta_para_editar=ponto_edicao.o_que_falta(),
+                               # A lista de obras é a da C. Diários — as mesmas
+                               # do Mobponto (o dono, 01/10/2026).
+                               obras_do_mobponto=(ponto_edicao.obras_permitidas()
+                                                  if auth.e_mestre() else []))
+    return render_template(
+        "analisesps_folha_pessoa.html", a=a, aba="folha", subaba="importar",
+        gerado_em=agora().strftime("%d/%m/%Y %H:%M"),
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/<int:folha_id>/ponto/<cpf>")
+@exige_consulta
+def folha_ponto_da_pessoa(folha_id: int, cpf: str):
+    """O ponto de uma pessoa, dia a dia, para a janela que abre no nome.
+
+    Sai da mesma conta da tela (`folha_gestao.ponto_da_pessoa`). Folha ou pessoa
+    que não existe responde 404, "não encontrado" — nunca "sem permissão"."""
+    from . import folha_gestao as fg
+    try:
+        visto = fg.ponto_da_pessoa(folha_id, cpf)
+    except Exception as e:  # noqa: BLE001 — a janela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar o ponto da pessoa")
+        return {"ok": False, "erro": f"Não consegui montar o ponto: {e}"}, 500
+    if not visto or not visto.get("achou"):
+        return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
+    return {"ok": True, **visto}
+
+
+@bp.route("/api/folha/apropriacao/fechar", methods=["POST"])
+@exige_operador
+def folha_apropriacao_fechar():
+    """Congela a apropriação desta folha — o passo antes de gerar o arquivo.
+
+    ⚠️ SEM ESTE BOTÃO NÃO HAVIA COMO GERAR O ARQUIVO DA FOLHA. O gerador só paga
+    apropriação fechada (`folha_pagamento.gerar`), e nenhuma tela fechava a verba
+    `folha` — então o arquivo era, na prática, impossível de sair."""
+    from . import folha_gestao as fg
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        folha_id = int(dados.get("folha_id") or 0)
+    except (TypeError, ValueError):
+        folha_id = 0
+    try:
+        feito = fg.fechar(folha_id, quem=quem)
+    except fg.ErroDaGestao as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou fechar a apropriação")
+        return {"ok": False, "erro": f"Não consegui fechar: {e}"}, 500
+    return {"ok": True, **{k: str(v) for k, v in feito.items()}}
+
+
+@bp.route("/folha/importar")
+@exige_consulta
+def tela_folha_importar():
+    """A folha que a contabilidade manda, importada e guardada.
+
+    ⚠️ QUANDO JÁ HÁ FOLHA IMPORTADA, ESTA TELA NÃO É O DESTINO — ela manda direto
+    para a última folha aberta, que é onde se trabalha. Correção do dono em
+    29/09/2026: *"eu estou em Folha Contabilidade e a única coisa que aparece é um
+    botão pra clicar nas pessoas que 'PRECISAM DE OLHO'."*
+
+    Ele estava certo e o erro era de desenho: esta tela é uma ESTANTE (a área de
+    soltar o arquivo e a lista do que já veio), e uma estante não é trabalho. A
+    lista continua alcançável — `?lista=1`, e o seletor de competência da própria
+    folha aberta aponta para cá — mas quem chega pela aba cai onde há o que fazer.
+
+    Sem folha nenhuma, ela é o destino certo: é onde se solta o arquivo."""
+    from . import folha_arquivo as fa
+
+    pronto = fa._pronto()
+    if pronto and not request.args.get("lista"):
+        ultima = (fa.listar(teto=1) or [None])[0]
+        if ultima:
+            return redirect(url_for("analisesps.tela_folha_aberta",
+                                    folha_id=ultima["id"]))
+    folhas = []
+    erro = None
+    try:
+        folhas = fa.listar() if pronto else []
+        # ⚠️ AS PESSOAS PENDENTES ENTRAM NA LISTA, e isso é correção do dono em
+        # 29/09/2026: *"você tá muito preocupado com os totalizadores do arquivo de
+        # importação, quando a preocupação deve ser linha a linha de cada
+        # colaborador."*
+        #
+        # Ele está certo. "Não fecha" é uma pista; o que decide se dá para pagar é
+        # QUANTAS PESSOAS estão sem cadastro, já saíram ou estão saindo. Isso já era
+        # calculado (`criticas`) e só aparecia abrindo a folha.
+        for f in folhas:
+            try:
+                c = fa.criticas(f["id"])
+                f["pendentes"] = len(c.get("pendentes") or [])
+                f["sairam"] = len(c.get("sairam") or [])
+                f["saindo"] = len(c.get("saindo") or [])
+                f["precisa_de_mao"] = (f["pendentes"] + f["sairam"]
+                                       + f["saindo"])
+            except Exception:  # noqa: BLE001 — uma folha torta não derruba a lista
+                logger.exception("Folha: não consegui criticar a folha %s",
+                                 f.get("id"))
+                f["pendentes"] = f["sairam"] = f["saindo"] = None
+                f["precisa_de_mao"] = None
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui listar as folhas importadas")
+        erro = str(e)
+
+    return render_template(
+        "analisesps_folha_importar.html", aba="folha", subaba="importar",
+        grupos=subtelas_agrupadas(), pronto=pronto, folhas=folhas, erro=erro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/importar", methods=["POST"])
+@exige_operador
+def folha_importar():
+    """Recebe o `.xls` da contabilidade, lê e guarda.
+
+    ⚠️ QUANDO NÃO DÁ PARA SABER O PERÍODO pelo título, a resposta volta com
+    `pergunte_o_tipo` — e a tela PERGUNTA, em vez de mandar a pessoa tentar de
+    novo adivinhando. Adivinhar erraria o período do ponto, e o período errado
+    apropria os dias errados nas obras."""
+    from . import folha_arquivo as fa
+
+    arquivo = request.files.get("folha")
+    if arquivo is None or not (arquivo.filename or "").strip():
+        return {"ok": False, "erro": "Nenhum arquivo chegou."}, 400
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        resultado = fa.importar(
+            arquivo.read(), nome_do_arquivo=arquivo.filename,
+            tipo=str(request.form.get("tipo") or ""), quem=quem)
+    except fa.ErroDaImportacao as e:
+        frase = str(e)
+        return {"ok": False, "erro": frase,
+                "pergunte_o_tipo": "Escolha na tela" in frase}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou importar o arquivo da contabilidade")
+        return {"ok": False, "erro": f"Não consegui importar: {e}"}, 500
+    return {"ok": True, **{k: str(v) if k == "total" else v
+                           for k, v in resultado.items()}}
+
+
+@bp.route("/api/folha/apagar", methods=["POST"])
+@exige_operador
+def folha_apagar():
+    """Apaga uma folha importada. O arquivo original continua com a
+    contabilidade, e a apropriação mora em outro lugar — então isto não perde
+    decisão nenhuma."""
+    from . import folha_arquivo as fa
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        apagou = fa.apagar(int(dados.get("id") or 0), quem=quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou apagar a folha importada")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    if not apagou:
+        return {"ok": False, "erro": "Esta folha não está mais aqui."}, 404
+    return {"ok": True}
+
+
+@bp.route("/folha/ponto")
+@exige_consulta
+def tela_folha_ponto():
+    """O ponto do Mobponto, mês por mês.
+
+    ⚠️ É O GARGALO DA FOLHA: sem o ponto não há total por obra, não há diária e
+    não há apropriação. A tela existe para trazer o mês e para MOSTRAR QUAIS
+    CAMPOS a API manda em cada dia — é com essa lista que se mapeia a obra e as
+    marcações, sem palpite."""
+    from . import ponto as _ponto
+
+    pronto = _ponto._pronto()
+    cargas = []
+    amostra = []
+    erro = None
+    try:
+        cargas = _ponto.cargas() if pronto else []
+        if cargas:
+            amostra = _ponto.amostra_de_dias(cargas[0]["id"])
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui listar as cargas do ponto")
+        erro = str(e)
+
+    # ⚠️ O ESTADO DA CARGA AO ABRIR A TELA. Reclamação dele em 28/09/2026: *"a
+    # gente bota aqui trazer o ponto, mas aí se o ponto veio, se o ponto não veio,
+    # só Deus sabe o que está acontecendo com essa API. Se ela está carregando, se
+    # ela não está."*
+    #
+    # Antes a tela só acompanhava uma carga se VOCÊ tivesse apertado o botão
+    # naquela aba. Quem abria depois — ou de outro computador — não via nada. Agora
+    # o estado vem do banco junto com a página, e a tela já abre acompanhando.
+    from . import tarefas
+    andando = {"rodando": False}
+    ultima = None
+    try:
+        estado = tarefas.estado()
+        detalhe = estado.get("detalhe") or {}
+        andando = {"rodando": bool(estado.get("rodando")),
+                   "etapa": detalhe.get("etapa") or "",
+                   "progresso": detalhe.get("progresso") or "",
+                   "interrompida": bool(estado.get("interrompida"))}
+        # ⚠️ A ÚLTIMA TENTATIVA, COM O ERRO DENTRO. É a resposta para a reclamação
+        # que ele já fez três vezes: *"clico em trazer o ponto, sistema diz que vai
+        # trazer e NÃO TRAZ nada. Não sei se conseguiu conectar, ninguém sabe de
+        # nada."* O registro sempre existiu; faltava a tela mostrar.
+        ultima = tarefas.ultima_do_tipo("ponto")
+    except Exception:  # noqa: BLE001 — é informação de apoio
+        logger.exception("Folha: não consegui ler o andamento")
+
+    from .horario import agora
+    hoje = agora().date()
+    return render_template(
+        "analisesps_folha_ponto.html", aba="folha", subaba="ponto",
+        grupos=subtelas_agrupadas(), pronto=pronto, cargas=cargas,
+        amostra=amostra, erro=erro, configurado=_ponto.configurado(),
+        andando=andando, ultima=ultima,
+        ano_padrao=hoje.year, mes_padrao=hoje.month,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/ponto", methods=["POST"])
+@exige_operador
+def folha_ponto_carregar():
+    """Dispara a carga do ponto do mês escolhido.
+
+    A competência vai para o banco antes de disparar: o trabalho roda no processo
+    separado, que pode ser reiniciado, e passar por parâmetro perderia a escolha
+    numa retomada."""
+    from . import ponto as _ponto, sincronizacao, tarefas
+    from .db import conexao
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        ano = int(dados.get("ano") or 0)
+        mes = int(dados.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        return {"ok": False, "erro": "Escolha o mês e o ano."}, 400
+    if not _ponto.configurado():
+        return {"ok": False, "erro":
+                "Faltam as credenciais do Mobponto. Crie "
+                "MOBPONTO_AUTHORIZATION e MOBPONTO_API_KEY no Render — os "
+                "valores estão nos Apps Script das planilhas do ponto."}, 400
+
+    with conexao() as conn:
+        sincronizacao._meta_gravar(conn, "ponto_competencia", f"{ano}-{mes}")
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    resultado = tarefas.disparar("ponto", disparo=quem or "ponto")
+    if not resultado.get("ok"):
+        return {"ok": False, "erro": resultado.get("erro")
+                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+    return {"ok": True}
+
+
+@bp.route("/api/folha/ponto/apagar", methods=["POST"])
+@exige_operador
+def folha_ponto_apagar():
+    """Apaga uma carga do ponto. Seguro: é cópia do que o Mobponto tem."""
+    from . import ponto as _ponto
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        apagou = _ponto.apagar(int(dados.get("id") or 0), quem=quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou apagar a carga do ponto")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    if not apagou:
+        return {"ok": False, "erro": "Esta carga não está mais aqui."}, 404
+    return {"ok": True}
+
+
+@bp.route("/folha/colaboradores")
+@exige_consulta
+def tela_colaboradores():
+    """O cadastro de colaboradores, espelhado da planilha.
+
+    POR QUE ESTA TELA EXISTE, e não é enfeite. Pedido do dono em 27/09/2026:
+    ele precisa achar uma pessoa e **pular para o card dela no Pipefy**, porque
+    é lá que se corrige o valor do auxílio alimentação, do transporte ou da
+    gratificação. Depois de corrigir, aperta "Atualizar cadastro" e o valor novo
+    aparece aqui.
+
+    ELA NÃO EDITA NADA, de propósito. Se editasse, a próxima atualização
+    apagaria a edição — o dado nasce no Pipefy e desce por automação até a
+    planilha. Tela que deixa escrever o que vai ser sobrescrito é armadilha.
+
+    A BUSCA TEM TETO (200): o cadastro tem ~3.500 pessoas, e desenhar todas de
+    uma vez não ajuda ninguém e pesa na instância."""
+    from . import colaboradores
+
+    procurado = " ".join((request.args.get("q") or "").split())
+    # "Mostrar quem saiu" desligado por padrão: quem foi desligado não entra em
+    # pagamento novo, e a lista do dia a dia é de quem está na casa.
+    incluir_desligados = request.args.get("desligados") == "1"
+    # ⚠️ "SÓ QUEM ESTÁ SAINDO" — pedido do dono em 27/09/2026: *"não podemos
+    # pagar (…) salário ou diárias pra quem saiu, tá saindo. Tem que ter
+    # cuidados e alerta."* O alerta sem um lugar para ver a lista seria só
+    # susto; este filtro é o lugar. Ele TRAZ quem saiu junto, senão a lista
+    # esconderia metade do que ela existe para mostrar.
+    so_saindo = request.args.get("saindo") == "1"
+
+    # ⚠️ O FILTRO POR OBRA é pedido dele em 28/09/2026: *"na parte de
+    # colaboradores, a mesma coisa, tem que ter o filtro (…) tem que ter os filtros
+    # certinho, para a gente poder estar tratando esse pessoal aqui."*
+    obra_filtro = " ".join((request.args.get("obra") or "").split())
+    fase_filtro = " ".join((request.args.get("fase") or "").split())
+    from .formatos import para_data
+    admitido_de = para_data(request.args.get("de") or "")
+    admitido_ate = para_data(request.args.get("ate") or "")
+
+    cadastro = {"quando": "", "pessoas": 0, "avisos": [], "pronto": False}
+    lista: list = []
+    saindo = {"com_sinal": 0, "saiu": 0, "afastado": 0}
+    obras_na_lista: list = []
+    quadro = {"pronto": False}
+    lista_de_fases: list = []
+    erro = None
+    try:
+        cadastro = colaboradores.quando_atualizou()
+        if cadastro.get("pronto"):
+            quadro = colaboradores.panorama()
+            lista_de_fases = colaboradores.fases()
+            lista = colaboradores.buscar(
+                procurado,
+                so_ativos=not (incluir_desligados or so_saindo),
+                so_saindo=so_saindo, fase=fase_filtro,
+                admitido_de=admitido_de, admitido_ate=admitido_ate)
+            # O código da obra resolvido de uma vez para a lista inteira.
+            por_nome = colaboradores.codigos_das_obras()
+            for ficha in lista:
+                ficha["obra"] = colaboradores.resolver_obra(ficha, por_nome)
+            obras_na_lista = sorted({f["obra"] for f in lista if f["obra"]})
+            if obra_filtro:
+                lista = [f for f in lista if f["obra"] == obra_filtro]
+            saindo = colaboradores.contar_quem_esta_saindo()
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: não consegui ler o cadastro")
+        erro = str(e)
+
+    return render_template(
+        "analisesps_colaboradores.html", aba="folha", subaba="colaboradores",
+        grupos=subtelas_agrupadas(),
+        cadastro=cadastro, colaboradores=lista, procurado=procurado,
+        incluir_desligados=incluir_desligados, so_saindo=so_saindo,
+        saindo=saindo, erro=erro, obra_filtro=obra_filtro,
+        obras_na_lista=obras_na_lista, quadro=quadro,
+        lista_de_fases=lista_de_fases, fase_filtro=fase_filtro,
+        de=request.args.get("de") or "", ate=request.args.get("ate") or "",
+        filtrando=bool(procurado or obra_filtro or incluir_desligados
+                       or so_saindo or fase_filtro or admitido_de
+                       or admitido_ate),
+        teto=200, no_teto=len(lista) >= 200,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha/calendario")
+@exige_consulta
+def tela_folha_calendario():
+    """Feriados e férias — o que tira dias do auxílio.
+
+    AS DUAS COISAS NUMA TELA SÓ, e é a correção que o dono fez em 27/09/2026
+    sobre tela demais: são dois cadastros pequenos que servem ao mesmo cálculo.
+    Separá-los daria duas entradas para quem procura a mesma resposta."""
+    from . import folha_calendario as fc, sincronizacao
+
+    pronto = fc._pronto()
+    procurado = " ".join((request.args.get("q") or "").split())
+    try:
+        ano = int(request.args.get("ano") or 0)
+    except (TypeError, ValueError):
+        ano = 0
+
+    feriados, ferias, obras = [], [], []
+    erro = None
+    try:
+        if pronto:
+            feriados = fc.listar_feriados(ano or None)
+            ferias = fc.listar_ferias(procurado)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui ler feriados e férias")
+        erro = str(e)
+    try:
+        # A MESMA LISTA DE OBRAS do rateio e do Ratear. Uma segunda lista
+        # divergiria da primeira no dia em que alguém cadastrasse obra nova.
+        obras = [o["nome"] for o in
+                 (sincronizacao.referencias_rateio().get("obras") or [])]
+    except Exception:  # noqa: BLE001 — a lista é apoio; sem ela dá recado
+        logger.exception("Folha: não consegui ler a lista de obras")
+
+    from .horario import agora
+    return render_template(
+        "analisesps_folha_calendario.html", aba="folha", subaba="calendario",
+        grupos=subtelas_agrupadas(), pronto=pronto, feriados=feriados,
+        ferias=ferias, obras=obras, procurado=procurado, ano=ano,
+        ano_padrao=agora().year, erro=erro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha/auxilios")
+@exige_consulta
+def tela_folha_auxilio():
+    """Auxílio alimentação e auxílio transporte, mês por mês.
+
+    ⚠️ A DIFERENÇA ENTRE AS DUAS FICA ESCRITA NA TELA: a alimentação desconta
+    feriado e férias; o transporte desconta férias e não feriado de um dia. É
+    decisão do dono, e quem confere precisa saber qual régua está vendo."""
+    from . import folha_apropriacao, folha_auxilio as fx
+    from .horario import agora
+
+    hoje = agora().date()
+    tipo = (request.args.get("tipo") or fx.ALIMENTACAO).strip().lower()
+    if tipo not in fx.TIPOS:
+        tipo = fx.ALIMENTACAO
+    # ⚠️ ATÉ O DIA 10, ABRE NO MÊS ANTERIOR — e aqui pesa duas vezes: o auxílio é
+    # pago no mês SEGUINTE ao trabalhado, então nos primeiros dias de outubro o que
+    # está sendo pago é setembro. Abrir em outubro mostrava lista vazia.
+    padrao_ano, padrao_mes = folha_apropriacao.competencia_sugerida(hoje)
+    try:
+        ano = int(request.args.get("ano") or padrao_ano)
+        mes = int(request.args.get("mes") or padrao_mes)
+    except (TypeError, ValueError):
+        ano, mes = padrao_ano, padrao_mes
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        ano, mes = padrao_ano, padrao_mes
+
+    pronto = fx._pronto()
+    resultado = None
+    erro = None
+    try:
+        if pronto:
+            resultado = fx.calcular(tipo, ano, mes)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui calcular o auxílio")
+        erro = str(e)
+
+    # ⚠️ OS FILTROS SÃO DE PEDIDO DELE, em 28/09/2026: *"era para ter uma na
+    # lateral aqui, filtro (…) eu preciso às vezes tratar só uma obra, é o filtro,
+    # os auxílios de transporte da obra tal, eu vejo um por um."*
+    #
+    # E eles filtram a LISTA MONTADA, não a consulta: os totais do alto continuam
+    # sendo os da verba inteira. Filtrar a conta faria o total mudar conforme o
+    # filtro, e aí ninguém saberia mais qual é o valor do pagamento.
+    procurado = " ".join((request.args.get("q") or "").split())
+    obra_filtro = " ".join((request.args.get("obra") or "").split())
+    so = (request.args.get("so") or "").strip()
+    # ⚠️ A FASE ATUAL É FILTRO AQUI TAMBÉM, e ele pediu duas vezes: *"havia falado
+    # de colocar a coluna Fase Atual, não foi colocado."* É a coluna que diz em que
+    # ponto do processo a pessoa está, e é o corte mais usado da lista.
+    fase_filtro = " ".join((request.args.get("fase") or "").split())
+    pessoas = list((resultado or {}).get("pessoas") or [])
+    obras_na_lista = sorted({p["obra"] for p in pessoas if p["obra"]})
+    if obra_filtro:
+        pessoas = [p for p in pessoas if p["obra"] == obra_filtro]
+    if fase_filtro:
+        pessoas = [p for p in pessoas if (p.get("fase") or "") == fase_filtro]
+    if procurado:
+        from .folha_rateio import so_digitos
+        digitos = so_digitos(procurado)
+        alvo = procurado.lower()
+        pessoas = [p for p in pessoas
+                   if alvo in (p["nome"] or "").lower()
+                   or (digitos and digitos in (p["cpf"] or ""))]
+    if so == "problema":
+        pessoas = [p for p in pessoas if not p["pagar"]]
+    elif so == "pagar":
+        pessoas = [p for p in pessoas if p["pagar"]]
+
+    return render_template(
+        "analisesps_folha_auxilio.html", aba="folha", subaba="auxilios",
+        grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
+        tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=pessoas,
+        obras_na_lista=obras_na_lista, procurado=procurado,
+        obra_filtro=obra_filtro, so=so, fase_filtro=fase_filtro,
+        fases=(resultado or {}).get("fases") or [],
+        filtrando=bool(procurado or obra_filtro or so or fase_filtro),
+        tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
+        ano_padrao=hoje.year,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/folha/auxilio/selecao", methods=["POST"])
+@exige_operador
+def folha_auxilio_selecao():
+    """Salva DE UMA VEZ quem vai e quem não vai ser pago.
+
+    ⚠️ SUBSTITUI O "GRAVAR" LINHA A LINHA, por correção do dono em 28/09/2026:
+    *"fica muito dificultoso trabalhar da forma que está aqui, a gente vai
+    gravando um por um (…) o que eu faço é só selecionar quem vai e quem não vai
+    ser pago (…) e eu salvar como um todo, não linha a linha."*"""
+    from . import folha_auxilio as fx
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    tipo = str(dados.get("tipo") or "").strip().lower()
+    try:
+        ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if tipo not in fx.TIPOS or not (1 <= mes <= 12) or not (2000 <= ano <= 2100):
+        return {"ok": False, "erro": "Verba ou competência inválida."}, 400
+
+    try:
+        saida = fx.salvar_selecao(tipo, ano, mes, dados.get("decisoes") or [],
+                                  quem=quem)
+    except fx.ErroDoAuxilio as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou salvar a seleção do auxílio")
+        return {"ok": False, "erro": f"Não consegui salvar: {e}"}, 500
+    return {"ok": True, **saida}
+
+
+@bp.route("/api/folha/pessoa/<cpf>")
+@exige_consulta
+def folha_ficha_da_pessoa(cpf: str):
+    """A ficha de uma pessoa: cadastro, observação e o PONTO do mês.
+
+    Pedido do dono em 28/09/2026: *"eu quero também poder visualizar o ponto do
+    mês daquela pessoa. Eu clicar e visualizar o ponto da pessoa no modal"* — e de
+    lá abrir o card do Pipefy."""
+    from . import colaboradores, ponto
+    from .horario import agora
+
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except (TypeError, ValueError):
+        ano, mes = hoje.year, hoje.month
+
+    ficha = None
+    try:
+        ficha = colaboradores.por_cpf(cpf)
+    except Exception:  # noqa: BLE001 — o modal tem de dizer o que houve
+        logger.exception("Folha: não consegui ler a ficha da pessoa")
+    if not ficha:
+        return {"ok": False, "erro": "Não achei esta pessoa no cadastro."}, 404
+
+    do_ponto = {"tem_carga": False, "dias": [], "campos": []}
+    try:
+        do_ponto = ponto.dias_da_pessoa(cpf, ano, mes)
+    except Exception:  # noqa: BLE001 — o ponto é um bloco do modal, não o modal
+        logger.exception("Folha: não consegui ler o ponto da pessoa")
+
+    return {"ok": True, "pessoa": {
+        "cpf": ficha.get("cpf", ""), "cpf_bonito": ficha.get("cpf_bonito", ""),
+        "nome": ficha.get("nome", ""), "cargo": ficha.get("cargo", ""),
+        "matricula": ficha.get("matricula", ""),
+        "obra_codigo": colaboradores.resolver_obra(
+            ficha, colaboradores.codigos_das_obras()),
+        "obra_nome": ficha.get("obra_cadastro", ""),
+        "fase": ficha.get("fase", ""),
+        "tipo_contrato": ficha.get("tipo_contrato", ""),
+        "convencao": ficha.get("convencao", ""),
+        "modo_alimentacao": ficha.get("modo_alimentacao", ""),
+        "modo_transporte": ficha.get("modo_transporte", ""),
+        "valor_alimentacao": (None if ficha.get("valor_alimentacao") is None
+                              else float(ficha["valor_alimentacao"])),
+        "valor_transporte": (None if ficha.get("valor_transporte") is None
+                             else float(ficha["valor_transporte"])),
+        "observacao": ficha.get("observacao_auxilio", ""),
+        "situacao": ficha.get("situacao", ""), "motivo": ficha.get("motivo", ""),
+        "link_pipefy": ficha.get("link_pipefy", ""),
+    }, "ponto": {
+        "tem_carga": bool(do_ponto.get("tem_carga")),
+        "competencia": f"{int(mes):02d}/{int(ano)}",
+        "campos": do_ponto.get("campos") or [],
+        "dias": [{"data": (d["data"].isoformat() if d.get("data") else ""),
+                  "matricula": d.get("matricula", ""),
+                  "campos": d.get("campos") or {}}
+                 for d in (do_ponto.get("dias") or [])],
+    }}
+
+
+@bp.route("/api/folha/auxilio/ajuste", methods=["POST"])
+@exige_operador
+def folha_auxilio_ajustar():
+    """Guarda o que ele mexeu numa pessoa: pagar ou não, dias e obra.
+
+    ⚠️ É O QUE FAZ O AJUSTE SOBREVIVER ao recálculo. Sem isto, cada visita à tela
+    apagaria o que ele decidiu, e ele refaria tudo todo mês."""
+    from . import folha_auxilio as fx
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    tipo = str(dados.get("tipo") or "").strip().lower()
+    try:
+        ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if tipo not in fx.TIPOS or not (1 <= mes <= 12) or not (2000 <= ano <= 2100):
+        return {"ok": False, "erro": "Verba ou competência inválida."}, 400
+
+    # `pagar` vem como true / false / null. NULO é "não mexi": diferente de
+    # false, que é "decidi não pagar".
+    pagar = dados.get("pagar")
+    if pagar not in (True, False, None):
+        pagar = None
+
+    try:
+        if (pagar is None and dados.get("dias") in (None, "", 0)
+                and not str(dados.get("obra") or "").strip()
+                and not str(dados.get("observacao") or "").strip()):
+            # Nada mexido: tira o ajuste em vez de guardar um vazio, para a pessoa
+            # voltar a seguir o cálculo.
+            fx.limpar_ajuste(tipo, ano, mes, str(dados.get("cpf") or ""))
+        else:
+            fx.gravar_ajuste(
+                tipo, ano, mes, str(dados.get("cpf") or ""), pagar=pagar,
+                dias=dados.get("dias") or None,
+                obra=str(dados.get("obra") or ""),
+                observacao=str(dados.get("observacao") or ""), quem=quem)
+    except fx.ErroDoAuxilio as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o ajuste do auxílio")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True}
+
+
+@bp.route("/folha/diaristas")
+@exige_consulta
+def tela_folha_diaristas():
+    """Quem tem dia de DIÁRIA no mês, e quantos.
+
+    *"E cadê os diaristas? Não entrou diaristas."* (dono, 28/09/2026). A regra
+    existia e estava testada; faltava ligá-la ao ponto e ao cadastro."""
+    from . import folha_apropriacao, folha_diaristas as fd
+    from .horario import agora
+
+    hoje = agora().date()
+    # ⚠️ ATÉ O DIA 10, ABRE NO MÊS ANTERIOR — mesma regra da planilha.
+    padrao_ano, padrao_mes = folha_apropriacao.competencia_sugerida(hoje)
+    try:
+        ano = int(request.args.get("ano") or padrao_ano)
+        mes = int(request.args.get("mes") or padrao_mes)
+    except (TypeError, ValueError):
+        ano, mes = padrao_ano, padrao_mes
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        ano, mes = padrao_ano, padrao_mes
+
+    levantamento = {"tem_ponto": False, "pessoas": []}
+    erro = None
+    try:
+        levantamento = fd.levantar(ano, mes)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui levantar os diaristas")
+        erro = str(e)
+
+    procurado = " ".join((request.args.get("q") or "").split())
+    obra_filtro = " ".join((request.args.get("obra") or "").split())
+    pessoas = list(levantamento.get("pessoas") or [])
+    obras_na_lista = sorted({p["obra"] for p in pessoas if p["obra"]})
+    if obra_filtro:
+        pessoas = [p for p in pessoas if p["obra"] == obra_filtro]
+    if procurado:
+        from .folha_rateio import so_digitos
+        digitos = so_digitos(procurado)
+        alvo = procurado.lower()
+        pessoas = [p for p in pessoas
+                   if alvo in (p["nome"] or "").lower()
+                   or (digitos and digitos in (p["cpf"] or ""))]
+
+    return render_template(
+        "analisesps_folha_diaristas.html", aba="folha", subaba="diaristas",
+        grupos=subtelas_agrupadas(), levantamento=levantamento, erro=erro,
+        pessoas=pessoas, obras_na_lista=obras_na_lista, procurado=procurado,
+        obra_filtro=obra_filtro, filtrando=bool(procurado or obra_filtro),
+        ano=ano, mes=mes, ano_padrao=hoje.year,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha/pagamento")
+@exige_operador
+def tela_folha_pagamento():
+    """Gerar o arquivo de pagamento, e o log do que já foi gerado.
+
+    ⚠️ SÓ DO MESTRE (`auth.SO_DO_MESTRE`): é o passo em que o dinheiro sai, e o log
+    mostra o link de arquivos com nome, CPF e valor de ~500 pessoas."""
+    from . import folha_geracao as fg, folha_pagamento as fpg
+    from .horario import agora
+
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except (TypeError, ValueError):
+        ano, mes = hoje.year, hoje.month
+    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
+        ano, mes = hoje.year, hoje.month
+
+    pronto = fpg._pronto()
+    registro, fechados, erro = [], [], None
+    try:
+        registro = fpg.log(teto=100)
+        # As verbas que TÊM apropriação fechada nesta competência: só elas podem
+        # ser pagas, e oferecer o que não pode ser pago só gera erro depois.
+        for fechamento in guardada_fechamentos():
+            if fechamento["ano"] == ano and fechamento["mes"] == mes:
+                fechados.append(fechamento)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar a tela de pagamento")
+        erro = str(e)
+
+    return render_template(
+        "analisesps_folha_pagamento.html", aba="folha", subaba="pagamento",
+        grupos=subtelas_agrupadas(), pronto=pronto, log=registro,
+        fechados=fechados, ano=ano, mes=mes, ano_padrao=hoje.year, erro=erro,
+        destinos=[(d, fg.ROTULO_DO_DESTINO[d]) for d in fg.DESTINOS],
+        rotulo_da_verba=fg.rotulo_da_verba,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+def guardada_fechamentos() -> list:
+    """Os fechamentos da apropriação, para a tela oferecer o que dá para pagar."""
+    from . import folha_apropriacao_guardada as ag
+    try:
+        return ag.fechamentos(teto=60)
+    except Exception:  # noqa: BLE001 — lista de apoio
+        logger.exception("Folha: não consegui ler os fechamentos")
+        return []
+
+
+@bp.route("/api/folha/pagamento/preparar", methods=["POST"])
+@exige_operador
+def folha_pagamento_preparar():
+    """O que vai sair, antes de sair. NÃO grava nada e não sobe nada.
+
+    ⚠️ ESTE PASSO EXISTE PARA ELE CONFERIR: *"mostrar, antes de gerar, quantos
+    arquivos vão sair e com que total cada um"*."""
+    from . import folha_pagamento as fpg
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        plano = fpg.preparar(
+            int(dados.get("ano") or 0), int(dados.get("mes") or 0),
+            str(dados.get("tipo") or ""), dados.get("verbas") or [],
+            str(dados.get("destino") or ""), bool(dados.get("juntar")))
+    except (fpg.ErroDoPagamento, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou preparar o pagamento")
+        return {"ok": False, "erro": f"Não consegui montar: {e}"}, 500
+
+    return {"ok": True, "pode_juntar": plano["pode_juntar"],
+            "motivo_nao_junta": plano["motivo_nao_junta"],
+            "resumo": {"arquivos": plano["resumo"]["arquivos"],
+                       "pessoas": plano["resumo"]["pessoas"],
+                       "total": float(plano["resumo"]["total"]),
+                       "pode_gerar": plano["resumo"]["pode_gerar"]},
+            "lotes": [{"conta": l["conta"], "quantos": l["quantos"],
+                       "total": float(l["total"]),
+                       "verbas": l["verbas"], "criticas": l["criticas"]}
+                      for l in plano["lotes"]]}
+
+
+@bp.route("/api/folha/pagamento/gerar", methods=["POST"])
+@exige_operador
+def folha_pagamento_gerar():
+    """Gera, sobe no Drive e registra no log. ⚠️ É O PASSO QUE PAGA."""
+    from . import folha_pagamento as fpg
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        saida = fpg.gerar(
+            int(dados.get("ano") or 0), int(dados.get("mes") or 0),
+            str(dados.get("tipo") or ""), dados.get("verbas") or [],
+            str(dados.get("destino") or ""), bool(dados.get("juntar")),
+            quem=quem, forcar=bool(dados.get("forcar")))
+    except (fpg.ErroDoPagamento, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gerar o pagamento")
+        return {"ok": False, "erro": f"Não consegui gerar: {e}"}, 500
+
+    return {"ok": True, "competencia": saida["competencia"],
+            "arquivos": [{"id": a["id"], "nome": a["nome"], "link": a["link"],
+                          "conta": a["conta"], "destino": a["destino"],
+                          "total": float(a["total"]), "avisos": a["avisos"]}
+                         for a in saida["arquivos"]]}
+
+
+@bp.route("/api/folha/pipe/conferir", methods=["POST"])
+@exige_operador
+def folha_pipe_conferir():
+    """Lê os campos do pipe de Despesa e diz quais eu reconheço. NÃO CRIA NADA.
+
+    ⚠️ ESTE PASSO É O QUE IMPEDE CARD PREENCHIDO NO ESCURO. O blueprint do Make tem
+    campo trocado (o par 62 grava no campo do 63), e um valor de centro de custo no
+    vizinho só aparece no fechamento da obra, meses depois."""
+    from . import folha_cards as fcd
+
+    try:
+        return {"ok": True, "pipe": fcd.conferir_pipe()}
+    except fcd.ErroDosCards as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou conferir o pipe")
+        return {"ok": False, "erro": f"Não consegui ler o pipe: {e}"}, 500
+
+
+@bp.route("/api/folha/card", methods=["POST"])
+@exige_operador
+def folha_card_lancar():
+    """Cria o card do Pipefy para um arquivo já gerado. ⚠️ SEM VOLTA.
+
+    Passo separado de propósito (decisão do dono em 26/09/2026): gerar o arquivo
+    não cria card, para conferir sem sujar nada lá fora."""
+    from . import folha_cards as fcd
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        return {"ok": True, **fcd.lancar(int(dados.get("arquivo") or 0),
+                                         quem=quem)}
+    except (fcd.ErroDosCards, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou lançar o card")
+        return {"ok": False, "erro": f"Não consegui lançar: {e}"}, 500
+
+
+@bp.route("/api/folha/feriado", methods=["POST"])
+@exige_operador
+def folha_feriado_gravar():
+    """Cadastra um feriado, nacional ou de uma obra."""
+    from . import folha_calendario as fc
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        novo = fc.gravar_feriado(
+            dados.get("data"), str(dados.get("abrangencia") or ""),
+            obra=str(dados.get("obra") or ""),
+            descricao=str(dados.get("descricao") or ""), quem=quem)
+    except fc.ErroDoCalendario as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o feriado")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": novo}
+
+
+@bp.route("/api/folha/feriado/apagar", methods=["POST"])
+@exige_operador
+def folha_feriado_apagar():
+    from . import folha_calendario as fc
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    if not fc.apagar_feriado(int(dados.get("id") or 0), quem=quem):
+        return {"ok": False, "erro": "Este feriado não está mais aqui."}, 404
+    return {"ok": True}
+
+
+@bp.route("/api/folha/ferias", methods=["POST"])
+@exige_operador
+def folha_ferias_gravar():
+    """Cadastra o período de férias de uma pessoa."""
+    from . import folha_calendario as fc
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        novo = fc.gravar_ferias(
+            str(dados.get("cpf") or ""), dados.get("inicio"), dados.get("fim"),
+            nome=str(dados.get("nome") or ""),
+            observacao=str(dados.get("observacao") or ""), quem=quem)
+    except fc.ErroDoCalendario as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar as férias")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": novo}
+
+
+@bp.route("/api/folha/ferias/apagar", methods=["POST"])
+@exige_operador
+def folha_ferias_apagar():
+    from . import folha_calendario as fc
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    if not fc.apagar_ferias(int(dados.get("id") or 0), quem=quem):
+        return {"ok": False, "erro": "Estas férias não estão mais aqui."}, 404
+    return {"ok": True}
+
+
+@bp.route("/api/folha/procurar-pessoa")
+@exige_consulta
+def folha_procurar_pessoa():
+    """Procura no cadastro, para a tela oferecer a pessoa ao lançar férias.
+
+    Pedido do dono: *"eu posso buscar pelo nome, pelo CPF e incluo o período."*
+    Devolve pouco de propósito — a caixa de sugestão não é lugar de mostrar
+    salário nem auxílio."""
+    from . import colaboradores
+
+    procurado = " ".join((request.args.get("q") or "").split())
+    if len(procurado) < 2:
+        return {"ok": True, "pessoas": []}
+    try:
+        achados = colaboradores.buscar(procurado, so_ativos=False, teto=12)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou procurar pessoa")
+        return {"ok": False, "erro": str(e)}, 500
+    return {"ok": True, "pessoas": [
+        {"cpf": p["cpf"], "nome": p["nome"], "cargo": p.get("cargo") or "",
+         "desligado": bool(p.get("desligado"))} for p in achados]}
+
+
+@bp.route("/api/folha/rateio/colar", methods=["POST"])
+@exige_operador
+def folha_rateio_colar():
+    """Grava de uma vez a tabela colada. Uma linha por pessoa.
+
+    ⚠️ ISTO SUBSTITUI O QUE ESTÁ VALENDO (desativando, não apagando). Pedido do
+    dono em 27/09/2026 — o rateio muda todo mês, e preencher campo por campo
+    para dez pessoas em dez obras seriam cem campos."""
+    from . import folha_rateio as fr
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    substituir = dados.get("substituir", True) is not False
+    try:
+        resultado = fr.aplicar_tabela(
+            str(dados.get("tabela") or ""), quem=quem, substituir=substituir)
+    except fr.ErroDoRateio as e:
+        # A frase vai inteira para a tela: ela diz a LINHA e o que consertar.
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou aplicar a tabela de rateio")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, **resultado}
+
+
+@bp.route("/api/folha/rateio", methods=["POST"])
+@exige_operador
+def folha_rateio_gravar():
+    """Cria ou altera uma regra de rateio."""
+    from . import folha_rateio as fr
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        regra_id = fr.gravar(dados, quem)
+    except fr.ErroDoRateio as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Folha: falhou gravar a regra de rateio")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": regra_id}
+
+
+@bp.route("/api/folha/rateio/apagar", methods=["POST"])
+@exige_operador
+def folha_rateio_apagar():
+    """Apaga uma regra. A tela recomenda DESATIVAR antes de oferecer isto."""
+    from . import folha_rateio as fr
+
+    dados = request.get_json(silent=True) or {}
+    regra_id = str(dados.get("id") or "")
+    if not regra_id.isdigit():
+        return {"ok": False, "erro": "Diga qual regra."}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        apagou = fr.apagar(int(regra_id), quem)
+    except fr.ErroDoRateio as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou apagar a regra de rateio")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    if not apagou:
+        return {"ok": False, "erro": "Esta regra não existe mais."}
+    return {"ok": True}
+
+
+@bp.route("/api/folha/rateio/simular", methods=["POST"])
+@exige_operador
+def folha_rateio_simular():
+    """Mostra a divisão ANTES de gravar — o dono vê o valor em cada obra.
+
+    ⚠️ USA A MESMA CONTA DA GRAVAÇÃO (`distribuir`). Uma prévia calculada por
+    outro caminho divergiria no primeiro arredondamento, e aí a tela prometeria
+    um número e o sistema pagaria outro."""
+    from . import folha_rateio as fr
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        partes = fr.distribuir(dados.get("valor") or 0, dados.get("obras"))
+    except fr.ErroDoRateio as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "erro": f"Não consegui calcular: {e}"}, 500
+    return {"ok": True, "partes": [
+        {"obra": p["obra"], "percentual": str(p["percentual"]),
+         "valor": str(p["valor"])} for p in partes]}
+
+
+@bp.route("/api/conciliacao/apagar-linha", methods=["POST"])
+@exige_operador
+def conciliacao_apagar_linha():
+    """Apaga UMA linha do extrato — pedido do dono em 26/09/2026.
+
+    ⚠️ DUAS CHAMADAS, como o desfazer: sem `confirmar`, ela só DIZ o que a linha
+    é (data, valor, se estava conciliada, se tem observação) e se dá para
+    apagar. A segunda executa, e exige o motivo.
+
+    Ele pediu a confirmação junto com o pedido: *"a exclusão tem uma
+    confirmação, né? Para garantir que a pessoa está fazendo uma coisa correta.
+    Porque não é o certo estar excluindo linhas."*
+    """
+    from . import conciliacao as conc
+
+    dados = request.get_json(silent=True) or {}
+    linha_id = str(dados.get("linha_id") or "")
+    if not linha_id.isdigit():
+        return {"ok": False, "erro": "Diga qual linha."}
+
+    if not dados.get("confirmar"):
+        return {"ok": True, "so_contei": True,
+                **conc.o_que_apagar_a_linha_leva(int(linha_id))}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = conc.apagar_linha(int(linha_id), dados.get("motivo") or "", quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou apagar a linha")
+        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+    return {"ok": True, "so_contei": False, **feito}
+
+
+@bp.route("/api/conciliacao/soltar-presas", methods=["POST"])
+@exige_operador
+def conciliacao_soltar_presas():
+    """Solta as linhas da planilha que ficaram presas com um FITID antigo.
+
+    ⚠️ CONSERTA ESTRAGO JÁ FEITO, e por isso existe além da migração 026: as
+    linhas adotadas antes dela não sabem qual arquivo as adotou, e uma
+    importação desfeita deixava-as com o FITID de um arquivo apagado. Presas
+    assim, elas não eram reconhecidas nem adotadas — e o extrato seguinte
+    criava a linha de novo. Ver `conciliacao.presas_da_planilha`.
+
+    Soltar não perde nada: se o arquivo que adotou ainda existir, a próxima
+    importação dele adota outra vez.
+    """
+    from . import conciliacao as conc
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = conc.devolver_presas(int(conta_id), quem)
+    except conc.ErroDaConciliacao as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou soltar as linhas presas")
+        return {"ok": False, "erro": f"Não consegui soltar: {e}"}, 500
+    return {"ok": True, **feito}
+
+
+@bp.route("/api/conciliacao/planilha/abas", methods=["POST"])
+@exige_operador
+def conciliacao_abas_da_planilha():
+    """As abas da planilha, para ele escolher qual trazer."""
+    from . import conciliacao_planilha as cp
+
+    dados = request.get_json(silent=True) or {}
+    bruto = (dados.get("planilha") or "").strip()
+    try:
+        planilha_id = cp.guardar_planilha(bruto) if bruto else cp.planilha_guardada()
+        if not planilha_id:
+            return {"ok": False, "erro": "Cole o endereço da planilha."}
+        return {"ok": True, "planilha": planilha_id, "abas": cp.abas(planilha_id)}
+    except cp.ErroDaPlanilha as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001 — a tela precisa da frase
+        logger.exception("Conciliação: falhou listar abas")
+        return {"ok": False, "erro": f"Não consegui: {e}"}, 500
+
+
+@bp.route("/api/conciliacao/planilha/ler", methods=["POST"])
+@exige_operador
+def conciliacao_ler_aba():
+    """Lê UMA aba e devolve a amostra. NÃO grava nada.
+
+    ⚠️ A AMOSTRA É O PONTO DE CONTROLE: é onde ele vê se as colunas foram
+    entendidas antes de dois anos de histórico entrarem no sistema.
+    """
+    from . import conciliacao_planilha as cp
+
+    dados = request.get_json(silent=True) or {}
+    planilha_id = (dados.get("planilha") or "").strip() or cp.planilha_guardada()
+    try:
+        lido = cp.ler_aba(planilha_id, dados.get("aba") or "")
+    except cp.ErroDaPlanilha as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou ler aba")
+        return {"ok": False, "erro": f"Não consegui ler: {e}"}, 500
+    return {"ok": True, **cp.amostra_para_a_tela(lido)}
+
+
+@bp.route("/api/conciliacao/planilha/importar", methods=["POST"])
+@exige_operador
+def conciliacao_importar_aba():
+    """Grava uma aba na conta escolhida. A aba é lida DE NOVO, de propósito.
+
+    ⚠️ RELER EM VEZ DE GUARDAR o que a amostra leu: com 1 worker e 4 threads,
+    um "guardado na memória" entre duas chamadas vira do outro usuário no dia
+    em que duas pessoas importarem ao mesmo tempo. Reler custa uma ida ao
+    Google e não tem esse risco.
+    """
+    from . import conciliacao as conc
+    from . import conciliacao_planilha as cp
+
+    dados = request.get_json(silent=True) or {}
+    conta_id = str(dados.get("conta_id") or "")
+    if not conta_id.isdigit():
+        return {"ok": False, "erro": "Escolha a conta desta aba."}
+    planilha_id = (dados.get("planilha") or "").strip() or cp.planilha_guardada()
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        lido = cp.ler_aba(planilha_id, dados.get("aba") or "")
+        feito = conc.importar_da_planilha(int(conta_id), lido, quem)
+    except cp.ErroDaPlanilha as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou importar aba")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+
+    # A aba fica anotada na conta: é o que responde "esta conta já veio da
+    # planilha?" quando ninguém lembrar mais.
+    try:
+        conc.gravar_conta({"id": int(conta_id),
+                           **{k: v for k, v in (next(
+                               (c for c in conc.contas(so_ativas=False)
+                                if c["id"] == int(conta_id)), {})).items()
+                              if k != "id"},
+                           "aba_planilha": lido.get("aba", "")}, quem)
+    except Exception:  # noqa: BLE001 — anotar a aba é enfeite, não a entrega
+        logger.exception("Conciliação: não consegui anotar a aba na conta")
+    return {"ok": True, **feito}
+
+
+@bp.route("/api/conciliacao/linha", methods=["POST"])
+@exige_operador
+def conciliacao_linha_a_mao():
+    """Uma linha que o banco não trouxe e precisa existir."""
+    from . import conciliacao as conc
+    from .formatos import para_data, para_numero
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    data = para_data((dados.get("data") or "").strip())
+    valor = para_numero(str(dados.get("valor") or "").strip())
+    if not data:
+        return {"ok": False, "erro": "Informe a data."}
+    if valor is None:
+        return {"ok": False, "erro": "Informe o valor (negativo se for saída)."}
+    if not str(dados.get("conta_id") or "").isdigit():
+        return {"ok": False, "erro": "Escolha a conta."}
+    try:
+        novo = conc.acrescentar_a_mao(
+            int(dados["conta_id"]), data, dados.get("descricao") or "", valor,
+            dados.get("documento") or "", dados.get("observacao") or "", quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou acrescentar linha")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+    return {"ok": True, "id": novo}
 
 
 # ---------------------------------------------------------------------------
@@ -2566,6 +5176,7 @@ def tela_fiscal():
         resumo=resumo, filtros=filtros, args=request.args,
         quadro_categorias=quadro_categorias,
         opcoes=_opcoes_dos_filtros(base.get("ultima")),
+        recado_dos_filtros=_recado_dos_filtros(base),
         pagina=pagina, por_pagina=consultas.POR_PAGINA,
         primeira_linha=(pagina - 1) * consultas.POR_PAGINA + 1,
         ultima_linha=ultima, tem_proxima=ultima < resumo["quantidade"],

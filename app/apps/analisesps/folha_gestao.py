@@ -1,0 +1,914 @@
+# -*- coding: utf-8 -*-
+"""
+A GESTÃO DA FOLHA DA CONTABILIDADE: a tela onde o arquivo importado se trabalha.
+
+⚠️ POR QUE ESTE MÓDULO EXISTE, nas palavras do dono em 29/09/2026:
+
+    *"Eu importo o arquivo e não tenho gestão nenhuma sobre as informações dele.
+    Quem vai, quem não vai. (…) Cadê as informações de cada funcionário, cadê os
+    dados deles, cadê uma tabela mostrando as informações, cadê a possibilidade de
+    seleção deles de quem entra e quem não entra, cadê onde gera o arquivo de
+    pagamento?"*
+
+E, no mesmo dia, o que decide o total por obra:
+
+    *"A informação do arquivo não é absoluta e é toda gerenciável, e ainda tem toda
+    a relação com o ponto. Mas aqui já devemos usar a folha de ponto mesmo, visto
+    que tem o rateio diário pra formar os totalizadores por obra."*
+
+⚠️ O QUE ESTAVA ERRADO NÃO ERA A CONTA — ERA A FALTA DE PORTA. A apropriação pelo
+ponto (`folha_apropriacao.py`), o ajuste à mão (`folha_apropriacao_guardada.py`),
+os layouts de arquivo (`folha_geracao.py`) e o log (`folha_pagamento.py`) já
+estavam escritos e testados. O que não existia era **uma tela onde tudo isso
+aparecesse junto** — e o único caminho para a lista pessoa por pessoa era o número
+embaixo de "Precisam de olho", que some quando não há ninguém pendente. Quem
+importava a folha e não achava aquele número não tinha porta nenhuma.
+
+A DIVISÃO DE TRABALHO, que este módulo NÃO quebra:
+
+    folha_sintetica.py             lê o `.xls` (nenhum banco)
+    folha_arquivo.py               guarda a folha crua
+    ponto.py                       guarda e devolve o ponto, dia por dia
+    folha_apropriacao.py           a conta pura: de qual obra é cada real
+    folha_apropriacao_guardada.py  o ajuste dele e o fechamento
+    folha_geracao.py               o layout dos arquivos
+    folha_pagamento.py             gera, sobe no Drive e registra
+    ESTE                           junta tudo numa tela e filtra
+
+⚠️ NADA DE CONTA NOVA AQUI. Se aparecer aritmética de dinheiro neste arquivo,
+está no lugar errado: a conta é verificável sem banco em `folha_apropriacao.py`, e
+duplicá-la aqui faria a tela e o arquivo de pagamento divergirem no dia em que
+alguém corrigisse só um dos dois.
+"""
+from __future__ import annotations
+
+import logging
+from decimal import Decimal
+
+logger = logging.getLogger("analisesps.folha")
+
+CENTAVO = Decimal("0.01")
+CEM = Decimal("100")
+
+# ---------------------------------------------------------------------------
+# AS SITUAÇÕES DE UMA LINHA DA FOLHA
+#
+# ⚠️ UMA SÓ POR PESSOA, e a ordem abaixo é a ordem de prioridade. Ela existe
+# porque a coluna é lida pela COR: duas situações na mesma linha obrigariam a
+# pessoa a ler o texto de 491 linhas para saber o que fazer.
+#
+# A ordem é a ordem do que IMPEDE pagar, do mais grave para o menos:
+#   1. sem cadastro  — não há CPF, então não há como pagar
+#   2. sem obra      — não há para onde jogar o custo
+#   3. fora          — ele tirou do pagamento de propósito
+#   4. saiu          — não se paga a quem saiu
+#   5. saindo        — pode ter valor devido; é para conferir
+#   6. empate        — dia em duas obras; quase sempre erro de batida
+#   7. paga          — o normal
+# ---------------------------------------------------------------------------
+SEM_CADASTRO = "sem_cadastro"
+SEM_OBRA = "sem_obra"
+FORA = "fora"
+SAIU = "saiu"
+SAINDO = "saindo"
+EMPATE = "empate"
+PAGA = "paga"
+
+ORDEM_DAS_SITUACOES = (SEM_CADASTRO, SEM_OBRA, FORA, SAIU, SAINDO, EMPATE, PAGA)
+
+ROTULO_DA_SITUACAO = {
+    SEM_CADASTRO: "sem cadastro",
+    SEM_OBRA: "sem obra",
+    FORA: "fora do pagamento",
+    SAIU: "já saiu",
+    SAINDO: "está saindo",
+    EMPATE: "dia empatado",
+    PAGA: "vai receber",
+}
+
+# ⚠️ A COR DE CADA SITUAÇÃO, e o `selo.pagar` é VERMELHO neste módulo — é o selo
+# de "pendente/urgente" do padrão das Solicitações, não de "vai pagar". Já usei
+# errado uma vez e o verde de quem recebe é `aprovado`.
+SELO_DA_SITUACAO = {
+    SEM_CADASTRO: "risco",
+    SEM_OBRA: "pagar",
+    FORA: "cancelado",
+    SAIU: "risco",
+    SAINDO: "saindo",
+    EMPATE: "saindo",
+    PAGA: "aprovado",
+}
+
+# Teto de linhas desenhadas de uma vez. A folha tem ~500 pessoas; o teto existe
+# para um filtro torto não montar uma tela de dez mil linhas.
+TETO_DA_LISTA = 2000
+
+
+class ErroDaGestao(RuntimeError):
+    """Não deu para montar. A frase vai inteira para a tela."""
+
+
+def _dinheiro(valor) -> Decimal:
+    try:
+        return Decimal(str(valor or 0)).quantize(CENTAVO)
+    except Exception:  # noqa: BLE001
+        return Decimal("0.00")
+
+
+def _por_dia(valor, dias) -> Decimal | None:
+    """O líquido dividido pelos dias de presença. `None` quando não há dia.
+
+    ⚠️ `None` E NÃO ZERO: quem tem zero dias de ponto é justamente o caso que
+    precisa da mão dele (o "PT" da planilha), e "R$ 0,00 por dia" pareceria um
+    valor calculado. Traço na tela é pergunta aberta; zero é resposta errada."""
+    dias = int(dias or 0)
+    if dias <= 0:
+        return None
+    return (_dinheiro(valor) / dias).quantize(CENTAVO)
+
+
+# ---------------------------------------------------------------------------
+# O RESUMO DAS OBRAS DE UMA PESSOA
+# ---------------------------------------------------------------------------
+def resumo_das_obras(por_obra) -> str:
+    """`"ABC · 10d + DEF · 2d"` — o que cabe numa célula.
+
+    ⚠️ MOSTRA OS DIAS, não o percentual. Pedido do dono, que trabalha por dia:
+    o percentual é consequência, e conferir "10 dias na obra tal" contra o ponto
+    é possível; conferir "83,33%" não é."""
+    partes = []
+    for p in (por_obra or []):
+        dias = int(p.get("dias") or 0)
+        partes.append(f"{p.get('obra')} · {dias}d" if dias else str(p.get("obra")))
+    return " + ".join(partes)
+
+
+def obra_principal(por_obra) -> str:
+    """A obra de mais dias — e, no empate de dias, a de maior valor.
+
+    Serve para FILTRAR e ORDENAR, nunca para pagar: quem paga é a divisão inteira.
+    """
+    melhor = None
+    for p in (por_obra or []):
+        chave = (int(p.get("dias") or 0), _dinheiro(p.get("valor")))
+        if melhor is None or chave > melhor[0]:
+            melhor = (chave, str(p.get("obra") or ""))
+    return melhor[1] if melhor else ""
+
+
+# ---------------------------------------------------------------------------
+# A SITUAÇÃO DE UMA LINHA
+# ---------------------------------------------------------------------------
+def situacao_da_pessoa(pessoa, ficha) -> str:
+    """Uma situação só, pela ordem de prioridade do alto do arquivo."""
+    from . import colaboradores
+
+    if pessoa.get("pendente_cadastro") or not pessoa.get("cpf"):
+        return SEM_CADASTRO
+    if pessoa.get("fora"):
+        return FORA
+    if not pessoa.get("por_obra"):
+        return SEM_OBRA
+    situacao_cadastral = (ficha or {}).get("situacao")
+    if situacao_cadastral == colaboradores.SITUACAO_SAIU:
+        return SAIU
+    if situacao_cadastral == colaboradores.SITUACAO_SAINDO:
+        return SAINDO
+    if any(d.get("empate") for d in (pessoa.get("por_dia") or [])):
+        return EMPATE
+    return PAGA
+
+
+# ---------------------------------------------------------------------------
+# O TOTAL POR OBRA
+# ---------------------------------------------------------------------------
+def totais_por_obra(por_obra) -> list:
+    """Obra por obra: quantas pessoas, quantos dias, quanto e que percentual.
+
+    ⚠️ O PERCENTUAL SAI DE `folha_geracao.percentuais_por_obra`, não de uma divisão
+    escrita aqui: é o mesmo número que vai para o card do Pipefy e para o arquivo de
+    análise, com as mesmas sete casas e o mesmo fechamento de 100%. Duas contas de
+    percentual divergiriam no centavo, e aí a tela e o card diriam coisas
+    diferentes sobre o mesmo rateio."""
+    from . import folha_geracao
+
+    percentuais = {p["obra"]: p["percentual"] for p in
+                   folha_geracao.percentuais_por_obra(
+                       [{"obra": o.get("obra"), "total": o.get("valor")}
+                        for o in (por_obra or [])])}
+    saida = []
+    for o in (por_obra or []):
+        obra = str(o.get("obra") or "")
+        saida.append({
+            "obra": obra,
+            "pessoas": int(o.get("pessoas") or 0),
+            "valor": _dinheiro(o.get("valor")),
+            "origens": list(o.get("origens") or []),
+            "percentual": percentuais.get(obra),
+        })
+    return sorted(saida, key=lambda o: -o["valor"])
+
+
+# ---------------------------------------------------------------------------
+# POR CONTA CORRENTE — o bloco que existia na planilha e faltava aqui
+#
+# ⚠️ ELE NÃO PRECISOU PEDIR: está na planilha (o "bloco da direita", §3), está na
+# fórmula (coluna `AF` das abas Quinzena e Fim de Mês, §7.10.5) e está no desenho
+# que EU escrevi e ele aprovou (§5.2: a prévia mostra "quantas pessoas, quanto, por
+# obra, **por conta corrente**, e a lista de críticas").
+#
+# Para que serve, e é por isso que não é enfeite: cada conta corrente vira uma **SP
+# de Transferência de Recursos** e um arquivo de pagamento próprio. Sem este bloco
+# ele não tem como saber, ANTES de gerar, quantos arquivos vão sair nem quanto sai
+# de cada conta — que é exatamente o que ele confere hoje olhando a planilha.
+# ---------------------------------------------------------------------------
+def totais_por_conta(por_obra) -> list:
+    """Conta corrente por conta corrente: quais obras, quanto, e o que falta.
+
+    Obra sem conta cadastrada entra numa linha própria, marcada — ela é a crítica
+    que segura o arquivo (§7.14.4), e some-la numa conta qualquer seria o padrão
+    silencioso que a planilha tem e que este sistema existe para não repetir."""
+    from . import folha_pagamento
+
+    try:
+        contas = folha_pagamento.conta_por_obra()
+    except Exception:  # noqa: BLE001 — é um bloco da tela, não a tela
+        logger.exception("Folha: não consegui ler as contas das obras")
+        contas = {}
+
+    juntas: dict = {}
+    for o in (por_obra or []):
+        obra = str(o.get("obra") or "").upper()
+        conta = contas.get(obra, "")
+        alvo = juntas.setdefault(conta, {"conta": conta, "obras": [],
+                                         "valor": Decimal("0.00"),
+                                         "pessoas": 0, "sem_conta": not conta})
+        alvo["obras"].append(obra)
+        alvo["valor"] += _dinheiro(o.get("valor"))
+        alvo["pessoas"] += int(o.get("pessoas") or 0)
+    # A sem conta vem PRIMEIRO, porque é a que impede gerar; depois pela maior.
+    return sorted(juntas.values(), key=lambda c: (not c["sem_conta"], -c["valor"]))
+
+
+# ---------------------------------------------------------------------------
+# A CONTA DA FOLHA, NUM LUGAR SÓ
+#
+# ⚠️ A TELA E O FECHAMENTO PASSAM PELOS MESMOS OLHOS. Montar a apropriação em dois
+# lugares é o jeito certo de, um dia, congelar um número diferente do que estava
+# desenhado na tela — e aí o arquivo de pagamento não explicaria mais a tela que o
+# autorizou. Quem precisa da conta chama isto.
+# ---------------------------------------------------------------------------
+def apropriar_a_folha(folha) -> dict:
+    """A apropriação de uma folha inteira, com o que a alimentou.
+
+    ⚠️ SEMPRE A FOLHA INTEIRA, nunca a lista filtrada: apropriar o que está
+    aparecendo na tela congelaria meia folha, e o arquivo sairia faltando gente."""
+    from . import colaboradores, folha_apropriacao, folha_rateio
+    from . import folha_apropriacao_guardada as guardada
+    from . import ponto as mod_ponto
+
+    ano, mes, tipo = folha["ano"], folha["mes"], folha["tipo"]
+    periodo = folha_apropriacao.periodo_do_pagamento(ano, mes, tipo)
+
+    regras_por_cpf = {}
+    for regra in folha_rateio.listar(so_ativas=True):
+        for pessoa in regra.get("pessoas") or []:
+            regras_por_cpf[pessoa["cpf"]] = regra
+
+    ajustes = guardada.ajustes_do_pagamento(ano, mes, tipo)
+    dias_por_cpf = mod_ponto.dias_por_cpf(ano, mes)
+
+    return {
+        "periodo": periodo,
+        "ajustes": ajustes,
+        "dias_por_cpf": dias_por_cpf,
+        # ⚠️ A CONTA NÃO ESTÁ AQUI, e não pode vir para cá: ela é função pura em
+        # `folha_apropriacao.py`, verificável sem subir banco nem tela.
+        "apropriado": folha_apropriacao.apropriar(
+            folha["linhas"], dias_por_cpf=dias_por_cpf,
+            regras_por_cpf=regras_por_cpf, ajustes_por_cpf=ajustes,
+            cadastro_por_id=colaboradores.de_para_do_fortes(),
+            periodo=periodo),
+    }
+
+
+# ---------------------------------------------------------------------------
+# O PONTO DE UMA PESSOA, DIA A DIA — a janela que abre ao clicar no nome
+#
+# Pedido dele em 30/09/2026: *"Eu queria poder clicar e visualizar o ponto dele,
+# para eu saber exatamente, dia após dia, em quais locais ele bateu e qual obra
+# foi considerada daquele dia. E o valor do dia também."*
+#
+# ⚠️ SAI DA MESMA CONTA DA TELA, não de uma conta paralela: a apropriação é
+# feita pela folha inteira (`apropriar_a_folha`) e daqui só se tira a pessoa.
+# Uma segunda conta "só para mostrar" um dia discordaria da primeira, e a janela
+# passaria a mentir sobre o dinheiro que vai sair.
+# ---------------------------------------------------------------------------
+DIAS_DA_SEMANA = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
+
+
+def _contas_das_obras() -> dict:
+    """`{OBRA: conta}` — de onde sai o dinheiro de cada obra. Vazio se falhar:
+    é um bloco da tela, e a obra sem conta já é crítica em outro lugar."""
+    from . import folha_pagamento
+    try:
+        return {str(k).upper(): v for k, v in folha_pagamento.conta_por_obra().items()}
+    except Exception:  # noqa: BLE001
+        logger.exception("Folha: não consegui ler as contas das obras")
+        return {}
+
+
+def ponto_da_pessoa(folha_id: int, cpf: str) -> dict | None:
+    """Todos os dias do período desta pessoa. None quando a folha não existe.
+
+    Para cada dia: as quatro batidas (hora e obra de cada uma), a situação
+    (presença, falta), a obra que o ponto deu ao dia, a obra que VALEU (pode ser
+    outra, se ele ajustou à mão) e o valor do dia. Dia sem registro no ponto
+    também aparece — sumir com ele esconderia justamente o dia que pede pergunta.
+    """
+    import datetime as dt
+
+    from . import folha_apropriacao, folha_arquivo
+    from .folha_rateio import cpf_bonito, so_digitos
+
+    folha = folha_arquivo.abrir(folha_id)
+    if folha is None:
+        return None
+    cpf = so_digitos(cpf)
+    feito = apropriar_a_folha(folha)
+    pessoa = next((p for p in feito["apropriado"]["pessoas"]
+                   if (p.get("cpf") or "") == cpf), None)
+    if pessoa is None:
+        return {"achou": False}
+
+    ini, fim = feito["periodo"]
+    por_data: dict = {}
+    for dia in feito["dias_por_cpf"].get(cpf) or []:
+        if dia.get("data"):
+            por_data.setdefault(dia["data"], []).append(dia)
+    valor_do_dia = {d["data"]: d for d in (pessoa.get("por_dia") or [])}
+
+    dias = []
+    data = ini
+    while data <= fim:
+        registros = por_data.get(data) or []
+        lido = registros[0] if registros else None
+        apropriado = valor_do_dia.get(data)
+        if lido:
+            decidido = folha_apropriacao.obra_do_dia(
+                lido.get("marcacoes"), lido.get("presenca", ""),
+                lido.get("falta", ""))
+            batidas = [{"hora": h, "obra": o} for h, o in
+                       zip(lido.get("horas") or ["", "", "", ""],
+                           lido.get("marcacoes") or ["", "", "", ""])]
+        else:
+            decidido = {"obra": None, "empate": False,
+                        "motivo": "sem registro no ponto"}
+            batidas = [{"hora": "", "obra": ""} for _ in range(4)]
+        obra_ponto = decidido.get("obra") or ""
+        obra_valeu = (apropriado or {}).get("obra") or ""
+        dias.append({
+            "data": data.isoformat(),
+            "data_br": data.strftime("%d/%m/%Y"),
+            "semana": (lido or {}).get("dia_da_semana")
+                      or DIAS_DA_SEMANA[data.weekday()],
+            "batidas": batidas,
+            "presenca": (lido or {}).get("presenca", ""),
+            "falta": (lido or {}).get("falta", ""),
+            "horas": (lido or {}).get("total_de_horas", ""),
+            "obra_ponto": obra_ponto,
+            "empate": bool(decidido.get("empate")),
+            "motivo": "" if obra_ponto else (decidido.get("motivo") or ""),
+            "obra_valeu": obra_valeu,
+            "ajustado": bool(obra_valeu and obra_ponto
+                             and obra_valeu != obra_ponto),
+            "valor": (str(_dinheiro(apropriado["valor"]))
+                      if apropriado else None),
+            "mais_de_um_registro": len(registros) > 1,
+        })
+        data += dt.timedelta(days=1)
+
+    # --- O ANALÍTICO: o que veio de cada fonte, e a conta inteira -----------
+    # Pedido dele em 30/09/2026: *"a informação que veio da contabilidade, a
+    # informação que foi extraída do ponto, o ponto dia a dia, o cálculo, o
+    # rateio, quanto em cada conta corrente para pagamento, em cada obra, todos
+    # os totalizadores (…) para a gente ver o panorama do funcionário."*
+    from . import colaboradores
+    linha_da_folha = next(
+        (l for l in (folha.get("linhas") or [])
+         if (l.get("cpf") or "") == cpf
+         or str(l.get("id_fortes") or "") == str(pessoa.get("id_fortes") or "")),
+        {}) or {}
+    ficha = {}
+    try:
+        ficha = colaboradores.muitos_por_cpf([cpf]).get(cpf) or {}
+    except Exception:  # noqa: BLE001 — o cadastro é um bloco, não o analítico
+        logger.exception("Folha: não consegui ler a ficha para o analítico")
+    try:
+        obra_do_cadastro = colaboradores.resolver_obra(
+            ficha, colaboradores.codigos_das_obras()) if ficha else ""
+    except Exception:  # noqa: BLE001
+        obra_do_cadastro = ficha.get("obra_cadastro", "") if ficha else ""
+    contas = _contas_das_obras()
+    total = _dinheiro(pessoa.get("valor"))
+    por_obra = []
+    por_conta: dict = {}
+    for o in (pessoa.get("por_obra") or []):
+        obra = str(o.get("obra") or "")
+        conta = contas.get(obra.upper(), "")
+        valor = _dinheiro(o.get("valor"))
+        por_obra.append({
+            "obra": obra, "dias": int(o.get("dias") or 0), "valor": str(valor),
+            "percentual": (f"{(valor / total * 100):.1f}".replace(".", ",")
+                           if total else ""),
+            "conta": conta, "origem": o.get("origem") or ""})
+        alvo = por_conta.setdefault(conta, {"conta": conta, "obras": [],
+                                            "valor": Decimal("0.00")})
+        alvo["obras"].append(obra)
+        alvo["valor"] += valor
+    contagem = {
+        "dias_no_periodo": len(dias),
+        "com_obra": sum(1 for x in dias if x["obra_valeu"] or x["obra_ponto"]),
+        "faltas": sum(1 for x in dias if x["motivo"] == "falta"),
+        "sem_registro": sum(1 for x in dias
+                            if x["motivo"] == "sem registro no ponto"),
+        "sem_marcacao": sum(1 for x in dias
+                            if x["motivo"] == "sem marcação e sem falta"),
+        "empates": sum(1 for x in dias if x["empate"]),
+        "ajustados": sum(1 for x in dias if x["ajustado"]),
+    }
+
+    return {
+        "achou": True,
+        "folha_id": int(folha_id),
+        "competencia": folha.get("competencia", ""),
+        "rotulo_do_tipo": folha.get("rotulo_do_tipo", ""),
+        "contabilidade": {
+            "id_fortes": str(pessoa.get("id_fortes") or ""),
+            "nome": linha_da_folha.get("nome") or pessoa.get("nome") or "",
+            "filial": " - ".join(x for x in (
+                str(linha_da_folha.get("filial_codigo") or "").strip(),
+                " ".join(str(linha_da_folha.get("filial_nome") or "").split()))
+                if x),
+            "setor": linha_da_folha.get("setor_nome") or "",
+            "valor": str(total),
+        },
+        "cadastro": {
+            "nome": ficha.get("nome", ""), "cargo": ficha.get("cargo", ""),
+            "fase": ficha.get("fase", ""), "obra": obra_do_cadastro,
+            "situacao": ficha.get("situacao", ""),
+            "motivo": ficha.get("motivo", ""),
+            "link_pipefy": ficha.get("link_pipefy", ""),
+            "tipo_contrato": ficha.get("tipo_contrato", ""),
+        },
+        "contagem": contagem,
+        "por_conta": [{"conta": c["conta"], "obras": c["obras"],
+                       "valor": str(c["valor"])}
+                      for c in sorted(por_conta.values(),
+                                      key=lambda c: -c["valor"])],
+        "mais_de_uma_conta": len([c for c in por_conta if c]) > 1,
+        "criticas": list(pessoa.get("criticas") or []),
+        "nome": pessoa.get("nome_cadastro") or pessoa.get("nome") or "",
+        "cpf": cpf,
+        "cpf_bonito": cpf_bonito(cpf),
+        "periodo": [ini.strftime("%d/%m/%Y"), fim.strftime("%d/%m/%Y")],
+        "periodo_iso": [ini.isoformat(), fim.isoformat()],
+        "valor": str(_dinheiro(pessoa.get("valor"))),
+        "dias_no_ponto": int(pessoa.get("dias_no_ponto") or 0),
+        "valor_por_dia": (None if _por_dia(pessoa.get("valor"),
+                                           pessoa.get("dias_no_ponto")) is None
+                          else str(_por_dia(pessoa.get("valor"),
+                                            pessoa.get("dias_no_ponto")))),
+        "origem": pessoa.get("origem") or "",
+        "regra": pessoa.get("regra") or "",
+        "fora": bool(pessoa.get("fora")),
+        "por_obra": por_obra,
+        "tem_ponto": bool(feito["dias_por_cpf"]),
+        "dias": dias,
+    }
+
+
+# ---------------------------------------------------------------------------
+# MONTAR A TELA
+# ---------------------------------------------------------------------------
+def montar(folha_id: int, filtros=None) -> dict:
+    """Tudo o que a tela da folha desenha, já filtrado.
+
+    ⚠️ OS TOTAIS DE CIMA SÃO DA FOLHA INTEIRA, NÃO DO FILTRO — e isso é decisão,
+    não descuido. O dono marca gente olhando o total andar (*"na planilha à medida
+    que vamos marcando já vamos vendo os valores"*); um total que mudasse ao
+    filtrar diria que ele tirou alguém do pagamento quando ele só escondeu uma
+    linha. O que o filtro mostra tem o seu próprio subtotal, dito como tal.
+    """
+    from . import colaboradores, folha_arquivo, folha_rateio
+    from . import folha_apropriacao_guardada as guardada
+    from . import ponto as mod_ponto
+
+    filtros = filtros or {}
+    folha = folha_arquivo.abrir(folha_id)
+    if folha is None:
+        return {}
+
+    ano, mes, tipo = folha["ano"], folha["mes"], folha["tipo"]
+    feito = apropriar_a_folha(folha)
+    apropriado = feito["apropriado"]
+    periodo = feito["periodo"]
+    ajustes = feito["ajustes"]
+    dias_por_cpf = feito["dias_por_cpf"]
+    carga = mod_ponto.carga_do_mes(ano, mes)
+
+    # --- o cadastro de quem está nesta folha ------------------------------
+    cpfs = [p["cpf"] for p in apropriado["pessoas"] if p.get("cpf")]
+    fichas = colaboradores.muitos_por_cpf(cpfs, ate=periodo[1] if periodo else None)
+    obras_por_nome = colaboradores.codigos_das_obras()
+
+    # --- de qual conta sai o dinheiro de cada obra -------------------------
+    contas_por_obra = _contas_das_obras()
+
+    # --- o setor que a contabilidade deu a cada pessoa (migração 038) ----
+    setor_por_id = {str(l.get("id_fortes") or ""): l.get("setor_nome") or ""
+                    for l in (folha.get("linhas") or [])}
+    # A FILIAL É A OBRA NO CADASTRO DA CONTABILIDADE ("090 - OBRA ESTADIOITA
+    # …"). Ele, em 30/09/2026: *"isso aí é o nome da obra também (…) é o
+    # cadastro da contabilidade. Até para a gente visualizar e entender se o
+    # cadastro da contabilidade está batendo com o ponto."* Mostrada ao lado da
+    # obra do ponto e da do cadastro — sem comparar sozinha: a contabilidade
+    # escreve o NOME da obra e o ponto o CÓDIGO, e casar os dois por palpite
+    # marcaria diferença onde não há.
+    filial_por_id = {
+        str(l.get("id_fortes") or ""):
+            " - ".join(x for x in (str(l.get("filial_codigo") or "").strip(),
+                                   " ".join(str(l.get("filial_nome") or "").split()))
+                       if x)
+        for l in (folha.get("linhas") or [])}
+
+    # --- a linha da tela --------------------------------------------------
+    pessoas = []
+    for pessoa in apropriado["pessoas"]:
+        ficha = fichas.get(pessoa.get("cpf") or "") or {}
+        ajuste = ajustes.get(pessoa.get("cpf") or "") or {}
+        situacao = situacao_da_pessoa(pessoa, ficha)
+        linha = dict(pessoa)
+        setor = setor_por_id.get(str(pessoa.get("id_fortes") or ""), "")
+        linha.update({
+            # O SETOR DO FORTES — pedido dele em 30/09/2026: "vamos guardar essa
+            # informação e expor ela em tela". "AFASTADO INSS" e "DESATIVAR"
+            # ganham destaque: é a contabilidade dizendo que aquela pessoa pede
+            # conferência antes de pagar.
+            "filial": filial_por_id.get(str(pessoa.get("id_fortes") or ""), ""),
+            # VALOR ZERO não se paga: o arquivo de pagamento pula (o portal
+            # recusa). A caixa fica desligada e diz por quê — antes ela ficava
+            # marcável em uns e não em outros, e ele não via o critério
+            # (30/09/2026: *"qual é o critério para umas ficarem manipuláveis e
+            # outras não? Está estranho, já que todas estão zeradas"*).
+            "valor_zero": _dinheiro(pessoa.get("valor")) <= 0,
+            # AS CONTAS DE PAGAMENTO DA PESSOA — pedido dele em 30/09/2026: *"quais
+            # funcionários estão sendo pagos em mais de uma conta. Isso é
+            # importante também até para saber se não tem nada errado no
+            # ponto."* Uma pessoa em duas contas trabalhou em obras de contas
+            # diferentes — às vezes é certo, às vezes é batida no lugar errado.
+            "contas": sorted({contas_por_obra.get(str(o.get("obra") or "").upper(), "")
+                              for o in (pessoa.get("por_obra") or [])}),
+            "setor": setor,
+            "setor_curto": folha_arquivo.setor_curto(setor),
+            "setor_atencao": folha_arquivo.setor_pede_atencao(setor),
+            "mais_de_uma_conta": len({contas_por_obra.get(str(o.get("obra") or "").upper(), "")
+                                      for o in (pessoa.get("por_obra") or [])
+                                      if contas_por_obra.get(str(o.get("obra") or "").upper(), "")}) > 1,
+            "nome_na_tela": (pessoa.get("nome_cadastro")
+                             or pessoa.get("nome") or ""),
+            "nome_contabilidade": pessoa.get("nome") or "",
+            "cpf_bonito": folha_rateio.cpf_bonito(pessoa.get("cpf") or ""),
+            "fase": ficha.get("fase") or "",
+            "cargo": ficha.get("cargo") or "",
+            "link_pipefy": ficha.get("link_pipefy") or "",
+            "motivo_cadastral": ficha.get("motivo") or "",
+            # ⚠️ A OBRA DO CADASTRO É O SEGUNDO RECURSO, e só isso. Decisão do dono
+            # em 29/09/2026: a obra é a do ponto; sem ponto, a do cadastro. Ela
+            # NÃO entra na conta — aparece na tela para ele decidir, porque
+            # apropriar por ela em silêncio poria o custo na obra errada.
+            "obra_do_cadastro": colaboradores.resolver_obra(ficha, obras_por_nome),
+            # ⚠️ O "VALOR X DIA" É COLUNA DA PLANILHA (col I das abas Quinzena e Fim
+            # de Mês: `F/H`, o líquido dividido pelos dias). Anotado em
+            # `docs/FOLHA_DE_PAGAMENTO.md` §3 como o número COM O QUAL o valor é
+            # rateado — e é o que ele confere: "valor por dia × dias na obra" se
+            # verifica de cabeça, o total da obra não.
+            "valor_por_dia": _por_dia(pessoa.get("valor"),
+                                      pessoa.get("dias_no_ponto")),
+            "obras_resumo": resumo_das_obras(pessoa.get("por_obra")),
+            "obra_principal": obra_principal(pessoa.get("por_obra")),
+            # O cadastro diz uma obra e o ponto outra: é o sinal de que a ficha
+            # precisa ser atualizada (pedido dele: *"ver se essa obra de cadastro
+            # precisa ser atualizada, ver se bate com a obra do ponto"*).
+            "obra_diverge": bool(
+                obra_principal(pessoa.get("por_obra"))
+                and colaboradores.resolver_obra(ficha, obras_por_nome)
+                and obra_principal(pessoa.get("por_obra")).upper()
+                != colaboradores.resolver_obra(ficha, obras_por_nome).upper()),
+            "situacao": situacao,
+            "situacao_rotulo": ROTULO_DA_SITUACAO.get(situacao, situacao),
+            "selo": SELO_DA_SITUACAO.get(situacao, ""),
+            # ⚠️ "ENTRA" É "VAI SER PAGO DE VERDADE" — 30/09/2026. Era só "você não
+            # tirou", e quem não casou com o cadastro aparecia MARCADO e travado:
+            # a tela dizia que ia pagar alguém que o arquivo não paga (sem CPF não
+            # há pagamento), e ele não conseguia desmarcar. O dono: *"ele está
+            # marcado e eu não consigo desmarcar. Ou seja, eu não tenho gestão no
+            # pagamento."* Agora sem CPF e valor zero nascem DESMARCADOS, com o
+            # motivo escrito, e não entram no "Vai receber".
+            "entra": (not pessoa.get("fora") and bool(pessoa.get("cpf"))
+                      and _dinheiro(pessoa.get("valor")) > 0),
+            "tem_ajuste": bool(ajuste),
+            "ajuste": ajuste,
+            "dias_empatados": sorted({d["data"] for d in
+                                      (pessoa.get("por_dia") or [])
+                                      if d.get("empate")}),
+        })
+        pessoas.append(linha)
+
+    # --- OS TOTAIS DA FOLHA INTEIRA --------------------------------------
+    contagem = {chave: 0 for chave in ORDEM_DAS_SITUACOES}
+    for p in pessoas:
+        contagem[p["situacao"]] = contagem.get(p["situacao"], 0) + 1
+
+    entram = [p for p in pessoas if p["entra"]]
+    totais = {
+        "pessoas": len(pessoas),
+        "total_da_folha": _dinheiro(apropriado["total_da_folha"]),
+        "entram": len(entram),
+        "valor_entra": sum((_dinheiro(p["valor"]) for p in entram),
+                           Decimal("0.00")),
+        "fora": contagem.get(FORA, 0),
+        # Só quem VOCÊ tirou — quem não pode ser pago (sem cadastro, valor zero)
+        # tem o seu próprio número, e misturar os dois esconderia os dois.
+        "valor_fora": sum((_dinheiro(p["valor"]) for p in pessoas
+                           if p.get("fora")), Decimal("0.00")),
+        "nao_pagaveis": sum(1 for p in pessoas
+                            if not p.get("fora") and not p["entra"]),
+        "valor_nao_pagavel": sum((_dinheiro(p["valor"]) for p in pessoas
+                                  if not p.get("fora") and not p["entra"]),
+                                 Decimal("0.00")),
+        "sem_obra": contagem.get(SEM_OBRA, 0),
+        "sem_cadastro": contagem.get(SEM_CADASTRO, 0),
+        "empatados": contagem.get(EMPATE, 0),
+        "total_apropriado": _dinheiro(apropriado["total_apropriado"]),
+        "fecha": bool(apropriado["fecha"]),
+        # ⚠️ O QUE FALTA APROPRIAR é o número que decide se dá para gerar o
+        # arquivo, e é ele que a tela põe em vermelho.
+        "falta_apropriar": (_dinheiro(apropriado["total_a_pagar"])
+                            - _dinheiro(apropriado["total_apropriado"])),
+    }
+
+    # --- O TOTAL POR OBRA, que é o que ele usa para decidir o rateio ------
+    por_obra = totais_por_obra(apropriado["por_obra"])
+    por_conta = totais_por_conta(por_obra)
+
+    # --- os filtros -------------------------------------------------------
+    mostradas = _filtrar(pessoas, filtros)
+    subtotal = sum((_dinheiro(p["valor"]) for p in mostradas), Decimal("0.00"))
+    # ⚠️ COM A OBRA DO PONTO NO FILTRO, O SUBTOTAL É O DA OBRA, não o das pessoas:
+    # quem trabalhou 2 dias nela e 8 em outra aparece na lista, mas só os 2 dias
+    # dela entram na conta. Somar o valor inteiro da pessoa faria a obra parecer
+    # mais cara do que é — e é olhando esse número que ele decide o rateio.
+    obras_filtradas = _marcados(filtros, "obra", maiusculo=True)
+    subtotal_da_obra = None
+    if obras_filtradas:
+        subtotal_da_obra = sum(
+            (_dinheiro(x.get("valor")) for p in mostradas
+             for x in (p.get("por_obra") or [])
+             if str(x.get("obra") or "").upper() in obras_filtradas),
+            Decimal("0.00"))
+
+    return {
+        "folha": folha,
+        "periodo": periodo,
+        "pessoas": mostradas[:TETO_DA_LISTA],
+        "quantas_mostradas": len(mostradas),
+        "passou_do_teto": len(mostradas) > TETO_DA_LISTA,
+        "subtotal_do_filtro": subtotal,
+        "subtotal_da_obra": subtotal_da_obra,
+        "totais": totais,
+        "contagem": contagem,
+        "por_obra": por_obra,
+        "por_conta": por_conta,
+        "obras_sem_conta": [o for c in por_conta if c["sem_conta"]
+                            for o in c["obras"]],
+        "fases": sorted({p["fase"] for p in pessoas if p["fase"]}),
+        "setores": sorted({p["setor"] for p in pessoas if p.get("setor")}),
+        "filiais": sorted({p["filial"] for p in pessoas if p.get("filial")}),
+        "setores_curtos": {p["setor"]: p["setor_curto"] for p in pessoas
+                           if p.get("setor")},
+        "em_setor_de_atencao": [p for p in pessoas if p.get("setor_atencao")],
+        "em_mais_de_uma_conta": [p for p in pessoas if p.get("mais_de_uma_conta")],
+        "contas_de_pagamento": sorted({c for p in pessoas
+                                       for c in (p.get("contas") or []) if c}),
+        # AS DUAS VISÕES DA OBRA, pedido dele em 30/09/2026: *"tanto a obra do
+        # cadastro (…) e a obra do ponto. Tem que ter essas duas visões."*
+        #
+        # A do PONTO é toda obra em que alguém teve dia apropriado — não só a
+        # principal de cada um: quem procura a obra quer o custo dela inteiro.
+        # Vazia quando o ponto ainda não trouxe obra, e a tela DIZ isso em vez de
+        # oferecer "todas as obras" de uma lista que não tem nenhuma.
+        "obras": sorted({str(x.get("obra") or "") for p in pessoas
+                         for x in (p.get("por_obra") or []) if x.get("obra")}),
+        "obras_do_cadastro": sorted({p["obra_do_cadastro"] for p in pessoas
+                                     if p.get("obra_do_cadastro")}),
+        "ponto": {
+            "tem_carga": bool(carga),
+            "carga": carga,
+            # Carga terminada mas com menos páginas do que a API prometeu: a
+            # folha em cima dela sai com gente faltando dia, e isso tem de
+            # estar escrito na tela, não só na tela do Ponto.
+            "completa": bool(carga.get("completa", True)) if carga else True,
+            "pessoas_no_ponto": len(dias_por_cpf),
+        },
+        "fechamento": guardada.fechamento(ano, mes, tipo),
+        "fora_da_folha": apropriado["fora_da_folha"],
+        "filtros": dict(filtros),
+        "obras_filtradas": sorted(obras_filtradas),
+        "tem_filtro": bool(
+            str(filtros.get("busca") or "").strip()
+            or any(_marcados(filtros, c) for c in CHAVES_DE_FILTRO)),
+    }
+
+
+# Os blocos de caixinha da lateral (a busca é à parte).
+CHAVES_DE_FILTRO = ("conta", "obra", "obra_cadastro", "situacao", "fase",
+                    "filial", "setor", "origem")
+
+
+# O valor do filtro de setor que junta todos os setores que pedem atenção
+# (afastado, desativar…) — é o "ver só elas" do alerta da lateral.
+SETOR_DE_ATENCAO = "__atencao"
+
+# O valor do filtro de conta que junta quem é pago em mais de uma conta.
+CONTA_VARIAS = "__varias"
+
+
+def _marcados(filtros, chave, maiusculo=False) -> set:
+    """Os valores marcados num bloco do filtro, como conjunto.
+
+    ⚠️ ACEITA TEXTO OU LISTA. Desde 01/10/2026 a lateral é de caixinhas de marcar,
+    no padrão das Solicitações (pedido dele: *"ajuste o filtro do sidebar no mesmo
+    padrão que o de solicitações"*) — então cada bloco pode trazer vários valores.
+    Os links "ver só elas" dos alertas continuam mandando um valor só, como texto."""
+    bruto = (filtros or {}).get(chave)
+    if bruto is None:
+        return set()
+    if isinstance(bruto, str):
+        bruto = [bruto]
+    saida = set()
+    for valor in bruto:
+        limpo = " ".join(str(valor or "").split())
+        if maiusculo:
+            limpo = limpo.upper()
+        if limpo:
+            saida.add(limpo)
+    return saida
+
+
+def _filtrar(pessoas, filtros) -> list:
+    """Recorta a lista. Filtro vazio não recorta nada.
+
+    Dentro de um bloco, marcar duas opções mostra quem tem UMA OU OUTRA (duas
+    obras: quem trabalhou numa ou na outra). Entre blocos, vale tudo junto (obra
+    X E fase Y) — como nas Solicitações.
+
+    ⚠️ RECORTA NO SERVIDOR, e é de propósito: esconder linha no navegador faria o
+    subtotal do filtro mentir, porque ele é somado aqui."""
+    from .folha_rateio import so_digitos
+
+    busca = " ".join(str((filtros or {}).get("busca") or "").split()).lower()
+    digitos = so_digitos(busca)
+    obras = _marcados(filtros, "obra", maiusculo=True)
+    obras_cadastro = _marcados(filtros, "obra_cadastro", maiusculo=True)
+    fases = _marcados(filtros, "fase")
+    setores = _marcados(filtros, "setor")
+    filiais = _marcados(filtros, "filial")
+    contas = _marcados(filtros, "conta")
+    situacoes = _marcados(filtros, "situacao")
+    origens = _marcados(filtros, "origem")
+
+    saida = []
+    for p in pessoas:
+        if busca:
+            alvo = f"{p['nome_na_tela']} {p['nome_contabilidade']}".lower()
+            achou = busca in alvo
+            if not achou and len(digitos) >= 3:
+                achou = digitos in (p.get("cpf") or "")
+            if not achou:
+                achou = busca == str(p.get("id_fortes") or "").lower()
+            if not achou:
+                continue
+        if obras_cadastro and str(p.get("obra_do_cadastro") or "").upper() \
+                not in obras_cadastro:
+            continue
+        if obras:
+            # A obra casa em QUALQUER dia da pessoa, não só na principal: quem
+            # procura a obra quer o custo dela inteiro. O subtotal, nesse caso,
+            # soma só os dias nestas obras (ver `subtotal_da_obra`).
+            if not obras & {str(x.get("obra") or "").upper()
+                            for x in (p.get("por_obra") or [])}:
+                continue
+        if fases and (p.get("fase") or "") not in fases:
+            continue
+        if filiais and " ".join(str(p.get("filial") or "").split()) not in filiais:
+            continue
+        if contas:
+            casa = bool(contas & set(p.get("contas") or []))
+            if CONTA_VARIAS in contas and p.get("mais_de_uma_conta"):
+                casa = True
+            if not casa:
+                continue
+        if setores:
+            casa = (p.get("setor") or "") in setores
+            if SETOR_DE_ATENCAO in setores and p.get("setor_atencao"):
+                casa = True
+            if not casa:
+                continue
+        if situacoes and p.get("situacao") not in situacoes:
+            continue
+        if origens and (p.get("origem") or "") not in origens:
+            continue
+        saida.append(p)
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# DIVIDIR OS DIAS DE UMA PESSOA ENTRE OBRAS — o nível 3 do ajuste fino
+#
+# ⚠️ ELE JÁ PEDIU ISTO, com estas palavras (26/09/2026, §7.3):
+#
+#     *"Às vezes eu distribuo em várias obras: bota um dia numa obra, um dia em
+#     outra obra. Aí eu altero a planilha do ponto de onde ela puxa."*
+#
+# ⚠️ ENTRA DIA, NÃO VALOR, e isto não é atalho: o valor por dia é o líquido dividido
+# pelos dias de presença (coluna I da planilha), e é ele que mantém a conta
+# verificável de cabeça. Se ele digitasse valores, duas obras poderiam ficar com
+# valores por dia diferentes para a mesma pessoa no mesmo período — e aí o relatório
+# não explicaria mais nada.
+#
+# A sobra do centavo segue a MESMA regra do ponto (`_repartir`): fica com a obra de
+# mais dias. Duas regras de centavo fariam a tela e o arquivo divergirem em um real
+# a cada quinhentas pessoas, que é o tipo de diferença que ninguém acha.
+# ---------------------------------------------------------------------------
+def dividir_por_dias(valor, partes) -> list:
+    """`[{obra, dias}]` + o valor da pessoa → `[{obra, dias, valor}]`.
+
+    Levanta `ErroDaGestao` quando não há dia nenhum: dividir por zero dias não é
+    divisão, é apagar o valor da pessoa."""
+    from .folha_apropriacao import _repartir
+
+    limpas = []
+    for p in (partes or []):
+        obra = " ".join(str((p or {}).get("obra") or "").split()).upper()
+        dias = int((p or {}).get("dias") or 0)
+        if not obra:
+            raise ErroDaGestao("uma das linhas da divisão está sem obra.")
+        if dias <= 0:
+            raise ErroDaGestao(
+                f'a obra "{obra}" está com zero dia. Tire a linha ou diga os dias.')
+        limpas.append({"obra": obra, "dias": dias})
+    if not limpas:
+        raise ErroDaGestao("diga em quais obras entram os dias desta pessoa.")
+
+    repetida = next((p["obra"] for p in limpas
+                     if [x["obra"] for x in limpas].count(p["obra"]) > 1), "")
+    if repetida:
+        raise ErroDaGestao(
+            f'a obra "{repetida}" aparece mais de uma vez. Junte os dias dela '
+            "numa linha só.")
+
+    valores = _repartir(_dinheiro(valor), [p["dias"] for p in limpas])
+    return [{**p, "valor": v} for p, v in zip(limpas, valores)]
+
+
+# ---------------------------------------------------------------------------
+# FECHAR A APROPRIAÇÃO DESTA FOLHA
+# ---------------------------------------------------------------------------
+def fechar(folha_id: int, quem: str = "") -> dict:
+    """Congela a apropriação desta folha, para o arquivo poder sair.
+
+    ⚠️ É AQUI QUE O BOTÃO "GERAR" COMEÇA A FAZER SENTIDO. `folha_pagamento.gerar`
+    só paga apropriação FECHADA (e o motivo está na docstring dele: arquivo que
+    sai de cálculo em memória muda de explicação quando o ponto é recarregado).
+    Antes desta função não havia nenhum caminho de tela até um fechamento da verba
+    `folha` — então o arquivo da folha da contabilidade era, na prática,
+    impossível de gerar.
+
+    Não decide se PODE: quem recusa por crítica é a tela e o `gerar`. Aqui
+    congela-se o que há, inclusive quando não fecha — ver `guardada.fechar`."""
+    from . import folha_apropriacao_guardada as guardada
+    from . import folha_arquivo
+
+    folha = folha_arquivo.abrir(folha_id)
+    if folha is None:
+        raise ErroDaGestao("esta folha não está mais aqui.")
+    apropriado = apropriar_a_folha(folha)["apropriado"]
+
+    novo = guardada.fechar(folha["ano"], folha["mes"], folha["tipo"],
+                           apropriado, verba=guardada.VERBA_FOLHA, quem=quem)
+    return {"id": novo, "fecha": bool(apropriado["fecha"]),
+            "pessoas": len([p for p in apropriado["pessoas"]
+                            if not p.get("fora")]),
+            "total": _dinheiro(apropriado["total_apropriado"]),
+            "competencia": folha["competencia"]}

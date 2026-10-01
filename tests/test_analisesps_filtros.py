@@ -716,3 +716,187 @@ def test_dimensao_desconhecida_nao_entra_no_sql():
     sem conferência — é a porta aberta clássica."""
     from app.apps.analisesps import consultas
     assert consultas.agregar_varias({}, ["nao_existe; DROP TABLE"]) == {}
+
+
+# ---------------------------------------------------------------------------
+# A BARRA QUE FICOU VAZIA PARA SEMPRE — 29/09/2026
+#
+# Ele abriu Solicitações e encontrou *"os filtros da parte de solicitações todos
+# vazios"*. O motivo não era a tela: a carga da base REESCREVE a tabela `sps`, e
+# quem abrisse qualquer tela no meio disso recebia sete listas vazias — que eram
+# GUARDADAS com o carimbo da sincronização anterior, ainda vigente.
+#
+# A partir daí o cache respondia "já sei, é nada" a cada requisição e nunca mais
+# perguntava ao banco: a barra ficava vazia até a próxima carga. O teste de
+# validade era `if guardado["valores"]`, e um dicionário de sete chaves é
+# verdadeiro mesmo com todas as listas vazias.
+# ---------------------------------------------------------------------------
+def test_lista_de_filtro_VAZIA_nao_entra_no_cache(monkeypatch):
+    """⚠️ Guardar a ausência de resposta como se fosse resposta é o que fazia o
+    estado ruim durar para sempre. Sem guardar, a próxima tela pergunta de novo."""
+    from app.apps.analisesps import consultas
+
+    consultas.esquecer_opcoes_de_filtro()
+    perguntas = []
+
+    def nada(coluna, limite=400):
+        perguntas.append(coluna)
+        return []
+
+    monkeypatch.setattr(consultas, "opcoes", nada)
+    consultas.opcoes_de_filtro(carimbo="2026-09-29T10:00")
+    quantas_na_primeira = len(perguntas)
+    assert quantas_na_primeira > 0
+
+    # A SEGUNDA CHAMADA TEM DE PERGUNTAR DE NOVO. Era aqui que o cache respondia
+    # "nada" para sempre.
+    consultas.opcoes_de_filtro(carimbo="2026-09-29T10:00")
+    assert len(perguntas) == quantas_na_primeira * 2
+
+
+def test_lista_COM_valor_continua_sendo_guardada(monkeypatch):
+    """O cache existe por um motivo medido: montar as sete listas custa 194 ms, e
+    era isso a cada clique no filtro. O conserto não pode custar o cache."""
+    from app.apps.analisesps import consultas
+
+    consultas.esquecer_opcoes_de_filtro()
+    perguntas = []
+
+    def alguma(coluna, limite=400):
+        perguntas.append(coluna)
+        return ["Pagar"]
+
+    monkeypatch.setattr(consultas, "opcoes", alguma)
+    consultas.opcoes_de_filtro(carimbo="2026-09-29T10:00")
+    quantas = len(perguntas)
+    consultas.opcoes_de_filtro(carimbo="2026-09-29T10:00")
+    assert len(perguntas) == quantas, "a segunda vez saiu do cache"
+
+
+def test_o_recado_separa_CARGA_EM_ANDAMENTO_de_base_nao_carregada(monkeypatch):
+    """⚠️ Os três motivos de uma barra vazia têm três respostas diferentes, e a
+    conta que os separa é uma só: a base DECLARA um número (guardado pela última
+    carga) e a tabela RESPONDE outro."""
+    from app.apps.analisesps import consultas
+
+    monkeypatch.setattr("app.apps.analisesps.db.consultar",
+                        lambda *a, **k: [(0,)])
+
+    # Declara 59 mil e a tabela está vazia: é a carga reescrevendo tudo.
+    recado = consultas.por_que_os_filtros_estao_vazios(
+        {}, {"quantidade": 59055})
+    assert "carga" in recado and "59.055" in recado
+
+    # Não declara nada: a base nunca foi carregada.
+    recado = consultas.por_que_os_filtros_estao_vazios({}, {"quantidade": 0})
+    assert "ainda não foi carregada" in recado
+
+
+def test_base_CHEIA_com_filtros_vazios_aponta_para_a_planilha(monkeypatch):
+    """Linhas existem e as colunas de filtro vieram todas em branco: isso é a
+    carga tendo trazido as linhas sem as colunas, e o conserto é na origem."""
+    from app.apps.analisesps import consultas
+
+    monkeypatch.setattr("app.apps.analisesps.db.consultar",
+                        lambda *a, **k: [(59055,)])
+    recado = consultas.por_que_os_filtros_estao_vazios(
+        {}, {"quantidade": 59055})
+    assert "planilha de origem" in recado
+
+
+def test_com_opcoes_o_recado_e_VAZIO_e_nao_custa_consulta(monkeypatch):
+    """⚠️ O caminho normal não pode pagar por este conserto: com opções na tela, a
+    função devolve "" sem encostar no banco."""
+    from app.apps.analisesps import consultas
+
+    def nao_pode_ser_chamado(*a, **k):
+        raise AssertionError("não devia consultar o banco quando há opções")
+
+    monkeypatch.setattr("app.apps.analisesps.db.consultar", nao_pode_ser_chamado)
+    assert consultas.por_que_os_filtros_estao_vazios(
+        {"status_pgt": ["Pagar"]}, {"quantidade": 59055}) == ""
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ A CAIXA DE MARCAR NÃO PODE ESTICAR — 29/09/2026
+#
+# O dono mandou o print: sete blocos de filtro com as caixas soltas no meio da
+# coluna e NENHUM texto ao lado — inclusive em "Situação", cujos rótulos são texto
+# fixo no template. Ele descreveu como *"os filtros de Solicitações estão todos
+# vazios"*, e eu passei duas rodadas procurando no banco um defeito que era de CSS.
+#
+# A causa foi uma regra minha, escrita na mesma manhã para os campos de texto não
+# esticarem: `.filtros input, .filtros select { width: 100% }`. Ela alcançava
+# também as caixas de marcar, e cada `checkbox` virou um retângulo da largura da
+# coluna, empurrando o rótulo para fora da vista.
+#
+# ⚠️ NENHUM TESTE DE TELA PEGARIA ISSO: o texto ESTAVA no HTML. Por isso o teste é
+# sobre o CSS, e é o único jeito honesto de travar essa classe de erro.
+# ---------------------------------------------------------------------------
+def _css():
+    import pathlib
+
+    from app.apps.analisesps import db
+
+    caminho = (pathlib.Path(db.__file__).parent / "static" / "analisesps.css")
+    return caminho.read_text(encoding="utf-8")
+
+
+def _regras(css):
+    """`[(seletor, corpo)]` — sem os comentários, que falam de `input` o tempo
+    todo e envenenariam qualquer busca por texto."""
+    import re
+
+    limpo = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    return [(m.group(1).strip(), m.group(2))
+            for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", limpo)]
+
+
+def test_nenhuma_regra_de_LARGURA_alcanca_a_caixa_de_marcar_do_filtro():
+    """⚠️ O defeito exato do print dele. Uma regra que case `.filtros input` sem
+    excluir `checkbox` e `radio`, e que mexa em largura, apaga o rótulo de todos os
+    filtros do módulo — Solicitações, Relatório, Calendário e Conciliação."""
+    culpadas = []
+    for seletor, corpo in _regras(_css()):
+        if "width" not in corpo:
+            continue
+        for parte in seletor.split(","):
+            parte = parte.strip()
+            if not parte.endswith("input"):
+                continue          # `input[type=text]` e afins já são específicos
+            # ⚠️ `.filtros` COMO CLASSE INTEIRA, e não como pedaço: existe
+            # `tr.filtros-coluna` (os campos de cabeçalho da tabela da
+            # conciliação), que não tem caixa de marcar nenhuma dentro e legitimamente
+            # estica os campos de texto dela. Casar por pedaço acusaria essa regra e
+            # o teste viraria ruído — e teste que acusa o inocente deixa de ser lido.
+            import re as _re
+            tem_filtros = bool(_re.search(r"\.filtros(?![\w-])", parte))
+            if not tem_filtros and ".opcao" not in parte:
+                continue
+            if ".opcao" in parte:
+                continue          # é a regra que DÁ o tamanho certo à caixinha
+            if ":not([type=checkbox])" in parte:
+                continue          # exclui explicitamente — é o conserto
+            culpadas.append(f"{parte} {{{corpo.strip()}}}")
+    assert not culpadas, (
+        "estas regras esticam a caixa de marcar da barra de filtros e apagam o "
+        "rótulo ao lado dela:\n" + "\n".join(culpadas))
+
+
+def test_a_caixa_de_marcar_continua_com_o_tamanho_declarado():
+    """O conserto não pode ter tirado o tamanho dela junto: `.opcao input` é quem
+    define os 15 px e a cor, e tem de continuar sendo a última palavra."""
+    css = _css()
+    assert ".opcao input" in css
+    # Nenhuma regra DEPOIS dela pode redefinir a largura da caixa do filtro —
+    # foi exatamente assim (regra igual, mais abaixo) que o estrago aconteceu.
+    depois = css[css.index(".opcao input"):]
+    assert ".filtros input[type=checkbox]" not in depois
+
+
+def test_o_campo_de_TEXTO_do_filtro_continua_ocupando_a_coluna():
+    """O conserto não pode ter desfeito o que a regra existia para fazer: a caixa
+    de busca e as listas suspensas continuam acompanhando a largura da coluna."""
+    css = _css()
+    assert ".filtros input:not([type=checkbox]):not([type=radio])" in css
+    assert ".filtros select" in css

@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
+import re
 
 from . import colunas, formatos
 from .credenciais import cliente, com_retry
@@ -65,6 +66,102 @@ def achar_coluna(cabecalho_normalizado, aceitos):
         if arrumado in cabecalho_normalizado:
             return cabecalho_normalizado.index(arrumado)
     return None
+
+
+# Os nomes que a coluna do centro de custo e a da conta podem ter na aba
+# "C. Diários". O primeiro de cada lista é o que a planilha usa hoje.
+COLUNAS_CODIGO_DIARIOS = ["Centro de Custo", "Código Primário", "Obra"]
+# "Conta de Pagamento" é o nome que a aba do "Registro de SPs" usa — confirmado
+# pelas fórmulas exportadas em 26/09/2026. Os outros ficam por segurança.
+COLUNAS_CONTA_DIARIOS = ["Conta de Pagamento", "Conta", "Conta Corrente",
+                         "Conta Pagamento"]
+
+
+# A conta dentro do texto da "Conta de Pagamento".
+#
+# ⚠️ A COLUNA NÃO GUARDA A CONTA, GUARDA UM TEXTO COM A CONTA DENTRO. Descoberto
+# em 26/09/2026, lendo as fórmulas que o dono exportou: a coluna vem por
+# IMPORTRANGE da coluna AH da aba "C. Diários" da planilha "Bases de Dados
+# Pipefy", e aquele campo é um texto do Pipefy com a conta entre barras verticais:
+#
+#     BRADESCO ... | 0007011-4 | ...
+#
+# A planilha da folha extrai com este mesmo padrão (`REGEXEXTRACT` na coluna G da
+# aba C. Diários), e a aba SPsBD faz igual na coluna U. Ou seja: o zero à esquerda
+# sai, e o que vale é `7011-4`.
+#
+# Guardar o texto cru — que é o que estava sendo guardado — faz a conta não casar
+# com nada: nem com a conta da conciliação, nem com o que o OMIE conhece.
+CONTA_NO_TEXTO = re.compile(r"\|\s*0*(\d+-[0-9A-Za-z])\s*\|")
+
+
+def conta_do_texto(bruto) -> str:
+    """A conta de pagamento de dentro do texto. "" quando não há.
+
+    Aceita também o texto já limpo (`7011-4`), porque a coluna pode ser arrumada
+    na planilha um dia e aí a carga não pode parar de funcionar."""
+    texto = " ".join(str(bruto or "").split())
+    if not texto:
+        return ""
+    achado = CONTA_NO_TEXTO.search(texto)
+    if achado:
+        return achado.group(1)
+    # Já vem limpo? Aceita. Qualquer outra coisa não é conta.
+    limpo = re.fullmatch(r"0*(\d+-[0-9A-Za-z])", texto)
+    return limpo.group(1) if limpo else ""
+
+
+def _contas_da_aba(valores) -> tuple[list, str | None]:
+    """O de/para centro de custo → conta de pagamento, da aba "C. Diários".
+
+    ⚠️ CORREÇÃO DE UM ALARME FALSO MEU — 26/09/2026, e fica escrito porque eu
+    cheguei a dizer ao dono que a carga lia a coluna errada. **Não lia.**
+
+    Eu tinha lido o cabeçalho de uma CÓPIA da planilha da folha, onde a segunda
+    coluna é o ID do Pipefy, e concluí que a nossa carga (que lia `v[0]` e `v[1]`)
+    pegava o ID em vez da conta. Mas a aba que a nossa carga lê é a do "Registro
+    de SPs", e ela tem quatro colunas só:
+
+        A Código Primário | B Conta de Pagamento | C Projeto | D Código Omie
+
+    Ou seja, a posição estava certa. Procurar pelo NOME continua sendo melhor
+    (coluna que muda de lugar deixa de quebrar a carga, e coluna que falta volta
+    com o motivo escrito), mas não conserta defeito nenhum — e dizer que consertava
+    era errado.
+
+    ⚠️ O DEFEITO DE VERDADE É OUTRO, E ESTAVA NA MESMA COLUNA: ela não guarda a
+    conta, guarda um TEXTO com a conta dentro (ver `conta_do_texto`). A tabela
+    `analisesps.contas_diarios` vinha guardando o texto cru, que não casa com
+    nada — nem com a conta da conciliação, nem com o que o OMIE conhece. Isso sim
+    ia aparecer no primeiro uso, que seria a folha de pagamento."""
+    if not valores:
+        return [], 'a aba "C. Diários" está vazia.'
+    cabecalho = [str(x).strip() for x in valores[0]]
+    normalizado = _normalizar_cabecalho(cabecalho)
+    i_codigo = achar_coluna(normalizado, COLUNAS_CODIGO_DIARIOS)
+    i_conta = achar_coluna(normalizado, COLUNAS_CONTA_DIARIOS)
+    if i_codigo is None or i_conta is None:
+        faltando = ([COLUNAS_CODIGO_DIARIOS] if i_codigo is None else []) + \
+                   ([COLUNAS_CONTA_DIARIOS] if i_conta is None else [])
+        quais = "; ".join(" ou ".join(f'"{n}"' for n in g) for g in faltando)
+        return [], (f'a aba "C. Diários" não tem a(s) coluna(s) {quais}. '
+                    f'O cabeçalho dela é: {", ".join(cabecalho) or "(vazio)"}.')
+
+    # ⚠️ A CONTA PODE VIR VAZIA, e isso é estado legítimo: obra nova cadastrada
+    # antes de alguém dizer de qual conta ela paga. Guardar vazio é melhor que
+    # pular a linha — pular faria a obra desaparecer do de/para, e aí o erro
+    # viraria "obra não existe" em vez de "obra sem conta", que é o problema de
+    # verdade e o que a tela precisa dizer.
+    saida = []
+    for linha in valores[1:]:
+        codigo = str(linha[i_codigo]).strip() if i_codigo < len(linha) else ""
+        bruto = str(linha[i_conta]).strip() if i_conta < len(linha) else ""
+        if codigo:
+            saida.append((codigo, conta_do_texto(bruto)))
+    if not saida:
+        return [], ('a aba "C. Diários" tem as colunas certas, mas nenhuma '
+                    "linha com centro de custo preenchido.")
+    return saida, None
 
 
 # Quantas linhas por ida à planilha na carga inicial.
@@ -527,8 +624,9 @@ def sincronizar_apoios(anotar=None) -> dict:
     anotar("trazendo as contas de pagamento")
     try:
         valores = com_retry(_aba(PLANILHA_SPS, "C. Diários").get_all_values)
-        linhas = [(str(v[0]).strip(), str(v[1]).strip() if len(v) > 1 else "")
-                  for v in valores[1:] if v and str(v[0]).strip()]
+        linhas, motivo = _contas_da_aba(valores)
+        if motivo:
+            avisos.append(motivo)
         if linhas:
             with conexao() as conn:
                 conn.executemany(
@@ -539,7 +637,7 @@ def sincronizar_apoios(anotar=None) -> dict:
                     "       IS DISTINCT FROM EXCLUDED.conta_pagamento", linhas)
                 conn.commit()
             contas = len(linhas)
-        else:
+        elif not motivo:
             avisos.append('a aba "C. Diários" não trouxe nenhuma conta.')
     except Exception as e:  # noqa: BLE001 — apoio que falta não derruba a carga
         logger.exception("Análise de SPs: falhou ler 'C. Diários'")

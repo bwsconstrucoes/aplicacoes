@@ -14,6 +14,16 @@ mexer; atualize este ao encerrar a sessão.
 
 ## Onde o trabalho está
 
+> ⚠️ **ESTE ARQUIVO É CRONOLÓGICO, e o começo dele é de 02/09/2026.** Se você abriu
+> agora para saber em que pé as coisas estão, vá direto à **última leva** (busque
+> "Pendente AGORA" e pegue a ÚLTIMA ocorrência). O que está aqui embaixo é história
+> da estreia do módulo, e boa parte já foi resolvida.
+>
+> **Em 27/09/2026 o trabalho é a folha de pagamento** (tela "Folha PGT"), e o mapa
+> dela é o `docs/FOLHA_DE_PAGAMENTO.md`. O `README.md` desta pasta tem a lista das
+> subtelas e dos módulos.
+
+
 Era um programa em Streamlit no computador do dono, lendo uma base local de
 60 MB (59.055 SPs). Virou módulo Flask em `/analisesps`, no serviço que já
 existe, com login próprio, dados no Postgres do ERP em schema próprio
@@ -6619,6 +6629,4173 @@ nas três telas) e 1 com banco de verdade, porque é no `WHERE` que isto vive e
 o dublê ignora `WHERE` inteiro.
 
 ---
+
+### Octogésima sexta leva (24/09) — a Conciliação Bancária
+
+> *"Eu tenho uma planilha de controle de conciliação. A gente cola o extrato
+> do banco e vai marcando o que já bateu. A conciliação a gente faz no OMIE,
+> mas aqui fica um controle paralelo também, porque é mais fácil de visualizar
+> — e até para fazer uma anotação quando tem uma pendência. Eu queria trazer
+> esse controle para o Análise de SPs."*
+
+A planilha "Controle de Conciliação" tem ~20 abas, uma por conta (Bradesco
+2541/7011/50024/22069/DND 44217/132275, BB, Santander, Cora, BNB, Caixa,
+Sicredi 3008/83289/92945, Soma DND, Soma IFPE, Soma), 8 MB, viva desde 2024.
+
+#### O que entrou nesta leva
+
+Uma tela nova, **Conciliação**, com: cadastro de contas; **soltar o arquivo
+OFX**, que descobre sozinho de qual conta é; conferência **antes** de gravar;
+lista com filtro próprio; marcar conciliado no tique; observação por linha; e
+saldo corrido.
+
+#### ⚠️ O que NÃO é, e precisa ficar dito
+
+**Não é um segundo razão.** Aqui não se lança nada: entra o que o banco diz
+(o OFX) ou o que já estava na planilha. O que a pessoa faz é MARCAR e ANOTAR.
+Confundir os papéis faria disto uma fonte de verdade paralela ao OMIE — e é
+justamente o que ninguém quer manter.
+
+#### Seis decisões, com o motivo
+
+1. **O parser de OFX foi IMPORTADO do ERP, não reescrito.**
+   `erp/core/pagamentos/ofx.py` já pagou o preço de duas armadilhas: o FITID
+   como identidade da linha e a ORDEM da repetição quando o banco não manda
+   FITID — sem ela, dois PIX iguais de R$ 1.500 no mesmo dia viravam UM.
+   **Isso cria uma amarra entre áreas**, registrada em `CONTEXTO.md` §9, com
+   aviso no alto dos dois arquivos e um teste guardando o contrato. Cópia
+   começaria certa e divergiria calada.
+2. **Conferir e gravar são DUAS chamadas.** Foi o pedido mais específico dele:
+   *"jogar um OFX e o sistema me dizer: todos os lançamentos já estavam
+   registrados desse período"*. Uma resposta dada depois de gravar não teria
+   como ser conferida — ela mesma teria mudado o mundo que descreve.
+3. **A conta desconhecida NÃO é chutada.** Jogar o extrato de uma empresa
+   dentro da conta de outra é um estrago que ninguém percebe olhando a tela.
+   A tela pergunta uma vez, e a partir dali reconhece sozinha.
+4. **Zero à esquerda cai dos dois lados** (banco e conta). O mesmo Bradesco
+   manda "237"/"0237" e "0007011-4"/"70114". Comparar cru faria o sistema
+   perguntar a conta toda vez — que é o que ele pediu para não ter de fazer.
+   *Um teste com banco pegou isso; a primeira versão errava.*
+5. **Um valor só, com sinal, no banco.** A planilha tem crédito e débito em
+   colunas separadas, e isso obriga toda soma a lembrar de somar as duas e
+   subtrair uma — o tipo de conta que sai errada uma vez e ninguém percebe. A
+   tela mostra duas colunas; o banco guarda uma.
+6. **O saldo corrido é da CONTA, não da página.** Somar as 300 linhas da tela
+   daria um saldo que recomeça a cada página: um número com cara de certo e
+   sem sentido nenhum. É uma janela sobre a conta inteira; o filtro recorta o
+   que se vê, não o que se soma.
+
+#### A conferência que vale mais que contar linhas
+
+O OFX traz o **saldo que o banco declara**. A tela compara com o saldo daqui e
+diz se bate. Contagem de linhas não prova que o extrato está completo; isso
+prova.
+
+#### O manuseio, que era metade do pedido
+
+*"No Excel a gente vai só alterando a coluna e colocando alguma observação."*
+Por isso o tique e a observação vivem DENTRO da linha e **não recarregam a
+tela** — gravam por trás. A recarga só acontece na marcação em leva, onde o
+saldo e os números de cima mudam junto e mostrá-los velhos seria pior. Uma
+tela mais lenta que a planilha que ela veio substituir não seria usada.
+
+#### ⚠️ O QUE FALTAVA — resolvido no mesmo dia, ver a leva seguinte
+
+**A importação da planilha antiga não foi feita nesta leva.** Ele disse, com
+todas as letras: *"já tem muita informação aqui, eu quero manter"*. O que
+trava:
+
+1. **Daqui não dá para ler as ~20 abas.** A planilha tem 8 MB; a ferramenta
+   desta sessão só mostrou a primeira aba ("Controle Geral"). O layout das
+   abas de conta — quais colunas são data, histórico, crédito, débito, saldo —
+   não foi visto.
+2. **⚠️ EM VÁRIAS ABAS, "CONCILIADO" É UMA COR, NÃO UM DADO.** Ele explicou:
+   no BB é a coluna E pintada de amarelo; no Santander a D; no Cora a E; no
+   BNB e no Sicredi 3008 está tudo pintado; no Sicredi 83289 a D; no Soma DND
+   a E; no Soma IFPE a D. Só Bradesco, Sicredi 92945 (coluna L) e Soma (coluna
+   K) têm a palavra escrita. **Ler cor exige a API de formatação do Google,
+   não a de valores** — é outro caminho de leitura, mais caro, e precisa ser
+   feito por aba e por faixa para não estourar a memória.
+3. **Muita linha está vazia** — *"ninguém nem tratou ainda"*. Vazio não é "não
+   conciliado": é "ninguém olhou". Se a importação transformar os dois na
+   mesma coisa, perde-se a informação de onde o trabalho parou.
+
+**As abas que ele mandou ignorar:** Alelo e as que não citou (anotações).
+
+**Verificado:** 20 testes com banco de verdade (a migração, o OFX achando a
+conta sozinho, reimportar não duplicando, dois PIX iguais sendo dois, o
+arquivo repetido reconhecido, o que está aqui e não vem no extrato, os
+filtros, o saldo corrido, o saldo da conta ignorando o filtro, desmarcar
+apagando quem conciliou, e uma conta não vendo o extrato da outra) e 17 de
+tela.
+
+**NÃO verificado:** a tela não foi aberta num navegador, e **nenhum OFX de
+verdade dos bancos dele passou por aqui** — os testes usam arquivos montados
+à mão. Bancos brasileiros escrevem OFX de jeitos diferentes; o primeiro
+arquivo real é o teste que importa.
+
+---
+
+### Octogésima sétima leva (24/09) — a planilha antiga entra, com as anotações
+
+Ele voltou com o que faltava: **trechos reais de cinco abas**, coladas no chat.
+E com duas notícias que mudaram o trabalho:
+
+> *"Eu padronizei e coloquei conciliado em todas as colunas, na coluna L, de
+> forma padrão."*
+
+**Isso apagou a parte mais arriscada da leva anterior.** Antes, "conciliado"
+era uma célula **pintada de amarelo** em metade das abas, e ler cor exige
+outra API do Google — mais cara, mais frágil, e de resultado incerto. Ele
+resolveu na origem, e o leitor agora depende da palavra em texto. De
+propósito.
+
+> *"Eu excluo todas as abas que são desnecessárias. Os bancos são basicamente
+> Bradesco, Banco do Brasil, Santander, Caixa e Sicredi. O Soma, por enquanto,
+> como ele não gera o OFX e é meio diferente, vou deixar para depois."*
+
+BNB e Cora saíram da lista. Soma fica para depois.
+
+#### Três armadilhas que só o dado REAL revelou
+
+Elas estão nos testes com as amostras dele, e nenhuma teria sido descoberta
+inventando exemplo:
+
+1. **"TIPO" QUER DIZER DUAS COISAS.** No Bradesco a coluna Tipo traz o NÚMERO
+   do documento (1798917); no Sicredi traz o TIPO do lançamento (PIX_DEB). A
+   mesma coluna, o mesmo nome, conteúdos incompatíveis. A decisão passou a ser
+   pelo CONTEÚDO: se 80% dos valores forem numéricos, é documento. Decidir
+   pelo nome poria "PIX_DEB" no campo de documento numa aba e jogaria o número
+   fora na outra.
+2. **O SANTANDER REPETE O BLOCO DE COLUNAS INTEIRO** na mesma linha de
+   cabeçalho (Data|Histórico|Documento|Valor|Saldo aparece duas vezes). Ler os
+   dois como um duplicaria o extrato. Vale o PRIMEIRO.
+3. **O BB TEM LINHAS QUE NÃO SÃO LANÇAMENTO** — "Saldo Anterior" e "Saldo do
+   dia", com valor 0,00. Ele avisou: *"isso aí é ignorável, nem para entrar"*.
+   Elas entrariam caladas e somariam zero: ninguém notaria olhando o saldo.
+
+#### A prova de que a leitura entendeu os sinais
+
+A planilha traz o saldo de cada linha. O leitor confere se a **variação do
+saldo** bate com a **soma dos valores** — e é a única prova que existe. Ler o
+débito como positivo deixaria todas as linhas lá, com datas e históricos
+certos; só o saldo denuncia. A tela mostra o resultado dessa conferência antes
+de gravar.
+
+*O primeiro teste com as amostras reprovou* — porque eu havia montado a
+amostra com linhas salteadas, e aí o saldo realmente não fecha. A conferência
+estava certa e o exemplo errado. Ficou registrado no teste.
+
+**A coluna Débito vale com ou sem o sinal de menos.** O Bradesco dele escreve
+-675,87; outro banco pode escrever 675,87 na coluna "Débito". As duas dizem a
+mesma coisa, e o leitor aceita as duas.
+
+#### ⚠️ O ENCONTRO DAS DUAS FONTES — o problema que só apareceria na segunda semana
+
+Ele importa a planilha (anos de histórico, com o que anotou) e depois solta um
+OFX do mesmo período. **As duas linhas são o MESMO lançamento**, mas a do
+banco tem FITID e a da planilha não — identidades diferentes, e o extrato
+duplicaria inteiro. Pior: a cópia nova viria **sem a anotação dele**.
+
+Agora, antes de inserir uma linha do OFX, procura-se uma linha da planilha
+igual em data e valor que ainda não tenha sido confirmada pelo banco. Achando,
+ela é **adotada**: ganha o FITID e a identidade do banco, e mantém a marca de
+conciliado e a observação. Há teste com banco para isso, e outro garantindo
+que um segundo OFX não rouba a linha que o primeiro já casou.
+
+#### As colunas soltas viram observação
+
+Pedido dele: *"algum dado que tenha entre as colunas da parte numérica e a
+coluna L, a gente vai colocar como observação do lançamento"*. Cada pedaço vem
+com o **nome da coluna** junto ("Obs. 1: conferir · Status Tarifa Omie: tarifa
+ok") — sem isso, "conferir" sozinho não diria nada daqui a um ano.
+
+#### Como a associação aba → conta ficou
+
+Ele perguntou: *"eu acho que cada aba dessa a gente vai associar uma conta. Aí
+eu não sei como é que você imagina para a gente fazer?"*
+
+Na tela, no cartão "Trazer a planilha antiga", **fechado**: cola-se o endereço
+da planilha uma vez, ela lista as abas, e para cada aba ele escolhe a conta,
+**vê uma amostra do que o sistema entendeu** e só então grava. Uma aba por
+vez — abrir as vinte de uma vez traria 8 MB para a memória do serviço, que já
+morreu disso uma vez. A aba fica anotada na conta, para responder "esta conta
+já veio da planilha?" quando ninguém lembrar.
+
+**Verificado:** 28 testes sobre as amostras REAIS dele (os cinco formatos, os
+sinais, o "Tipo" ambíguo, o bloco repetido do Santander, as linhas de saldo do
+BB, as colunas soltas virando observação, a conferência do saldo aprovando e
+reprovando) e 25 com banco de verdade, incluindo a adoção das linhas da
+planilha pelo OFX.
+
+**NÃO verificado, e é o mesmo de antes:** a tela não foi aberta num navegador,
+nenhum OFX real passou por ela, e **nenhuma aba de verdade foi lida do Google**
+— daqui não há credencial. A leitura por gspread segue o mesmo caminho que o
+resto do módulo usa todo dia, mas o primeiro uso real é o teste que importa.
+
+---
+
+### Octogésima oitava leva (24/09) — ⚠️ a classe de CSS que já tinha dono
+
+O dono abriu a Conciliação pela primeira vez:
+
+> *"Isso é bem estranho. Cada linha está ocupando um espaço absurdo — uma
+> única linha está dando mais do que toda a tela. (…) Não gostei também das
+> cores. Ficou um cinza e tem uma parte escura e tem um verdinho de
+> conciliado. Está esquisito."*
+
+**A causa foi uma classe de CSS.** As células de valor usavam
+`class="entrada"` e `class="saida"`. E `.entrada` **já existia** na folha de
+estilo do módulo, para a **TELA DE LOGIN**: `min-height: 100vh` e fundo
+azul-escuro. Cada linha do extrato virou um bloco mais alto que a tela, com um
+pedaço escuro dentro. A "parte escura" que ele viu era o fundo da tela de
+entrada, dentro de uma tabela.
+
+#### ⚠️ E A LIÇÃO JÁ ESTAVA PAGA, NO MESMO REPOSITÓRIO, NO DIA ANTERIOR
+
+O chat do **painel** caiu na **mesma classe** fazendo o calendário deles, e
+escreveu no histórico:
+
+> *"Uma armadilha que custou uma hora: a classe `entrada` já existia no CSS,
+> para a tela de login (ocupa a tela inteira, fundo azul-escuro). Usada num
+> valor do calendário, o quadradinho virou um bloco de 900 px de altura. As
+> classes do calendário levam o prefixo `cal-` por isso."*
+
+Eu não li. **Cinco áreas, cinco chats, e o que uma aprende só chega na outra
+se alguém for ler** — e "ler o histórico da área" quer dizer a minha, não a
+dos outros. Aqui custou uma tela entregue quebrada ao dono.
+
+**A regra, agora com teste:** classe nova nesta folha leva prefixo (`cal-`,
+`conciliacao`, `valor-`). Há um teste que lista as classes com dono e recusa
+que a Conciliação use qualquer uma delas fora dos componentes de reuso
+legítimo (`cartao`, `kpis`, `sps`, `filtro`).
+
+#### As outras três, no mesmo pedido
+
+1. **As cores.** Além do defeito acima, era excesso meu: fundo verde chapado
+   na linha inteira MAIS o texto todo cinza deixava metade da tabela parecendo
+   desligada. Agora a linha conciliada tem só um **traço verde na esquerda** e
+   o dinheiro num tom mais claro, com fundo branco. O que precisa saltar é o
+   que **falta** conciliar, e isso se consegue deixando o resolvido discreto —
+   não pintado.
+2. **A observação aceita quebra de linha** (*"permita a quebra de linha"*).
+   Virou um campo de várias linhas que nasce com a altura de uma e cresce
+   conforme se escreve, até um teto. **Enter agora quebra a linha**; quem
+   grava é sair do campo, ou Ctrl+Enter — se Enter gravasse, não haveria como
+   escrever a segunda linha.
+3. **O soltar o OFX foi para a barra lateral**, abaixo dos filtros (*"está a
+   ocupar a parte de cima da tela"*). Ele tem razão, e a razão vale como
+   regra: **trazer extrato é coisa de uma vez por semana; olhar o extrato é o
+   dia inteiro** — o que se faz o dia inteiro é que merece o topo. **A
+   RESPOSTA da conferência continua no meio da tela**: a barra lateral tem
+   menos de 300 px, e a tabela do que vai entrar ficaria ilegível ali.
+
+E a linha da tabela ganhou **teto de altura**: o histórico do Bradesco vem com
+quebra de linha dentro dele, e com a observação de várias linhas por cima,
+sem teto uma linha empurra as outras para fora da tela.
+
+**Verificado:** 22 testes de tela, incluindo o da colisão de classe, o da
+observação de várias linhas e o da posição do bloco de soltar arquivo.
+
+**NÃO verificado:** a tela continua sem ter sido aberta num navegador daqui —
+e é justamente por isso que este defeito chegou até ele. Uma tela nova deste
+módulo precisa ser vista antes de ser publicada, e eu não tenho como.
+
+---
+
+### Octogésima nona leva (24/09) — o uso de verdade, e o defeito que parecia sucesso
+
+Ele importou a planilha e usou a tela. Voltou com seis coisas, e uma delas era
+grave.
+
+#### ⚠️ NENHUMA OBSERVAÇÃO FOI IMPORTADA — e o sistema disse que deu certo
+
+> *"Tenho a impressão que não foi importada as observações. (…) Confirmo.
+> Nenhuma observação foi importada."*
+
+A regra de quais colunas viram observação só olhava colunas com **cabeçalho
+preenchido**. Nas abas do Bradesco dele, as colunas de anotação (H, J, K)
+**não têm cabeçalho nenhum**. O sistema importou tudo, informou sucesso, e
+deixou dois anos de anotação para trás **em silêncio**.
+
+**É o pior tipo de defeito: o que parece sucesso.** Nada na tela indicava a
+perda — ele só descobriu porque foi procurar uma anotação que sabia existir.
+
+A regra dele, agora implementada: *"a coluna subsequente ao último dado (…)
+porque tem uns que o último dado, o saldo, fica numa coluna e outra coluna.
+Então seria a informação subsequente."* Ou seja: **tudo entre a última coluna
+de dado e a coluna de Conciliado**, com ou sem cabeçalho. Coluna sem nome é
+chamada pela letra dela na planilha ("coluna H"), para a observação dizer de
+onde veio.
+
+**E reimportar agora PREENCHE o que faltou, sem apagar nada.** Sem isso ele
+teria de apagar tudo e recomeçar. A regra: só preenche o que está vazio; a
+observação escrita aqui dentro vale mais que a da planilha, e conciliado só
+sobe de não para sim — desmarcar o que ele conferiu no sistema porque a
+planilha está atrasada seria pior do que não importar.
+
+#### O saldo não batia, e não era defeito
+
+> *"Eu estou vendo o saldo, por exemplo, não está batendo de uma determinada
+> conta. Acho que merece ser colocado o saldo inicial, e uma data."*
+
+**O extrato importado começa no dia em que a planilha dele começou.** Tudo o
+que a conta movimentou antes disso não existe aqui — e a diferença no saldo
+tinha exatamente esse tamanho. A conta ganhou **saldo inicial e data**
+(migração 020), e a soma passa a partir dali.
+
+**⚠️ O que é anterior à data do saldo inicial NÃO é somado de novo:** "no dia
+31/08 a conta tinha 100 mil" quer dizer o saldo no FIM daquele dia. Somar os
+lançamentos daquele dia contaria o mesmo dinheiro duas vezes, e o erro seria
+silencioso. Há teste com banco para os dois lados, e outro garantindo que a
+coluna Saldo da lista concorda com o número do topo — se discordassem, não
+haveria como saber em qual acreditar.
+
+**Enquanto a conta não tiver saldo inicial, o número do topo diz isso**, em
+vez de mostrar um saldo que não bate sem explicação.
+
+#### As quatro de tela
+
+1. **O Histórico esticava a tabela** (*"é o campo que estica a tela (…) o campo
+   de observação está bem diminuto em relação a ele"*). Ele era a única coluna
+   **sem largura declarada**, e por isso engolia toda a sobra. Agora todas as
+   larguras são declaradas, e a sobra vai para a **observação** — que é onde
+   ele escreve, e onde a falta de espaço atrapalha de verdade.
+2. **"Contas" e "Trazer a planilha antiga" saíram do rodapé** (*"você vai
+   manuseando e isso vai estar sempre aparecendo"*). Viraram **dois botões na
+   barra lateral** que abrem uma janela por cima. A regra que fica: **o que se
+   configura uma vez não divide espaço com o que se faz o dia inteiro.**
+3. **Os números do topo viraram filtros** (*"se eu clicar em falta conciliar,
+   eu já sei listado imediatamente as que faltam"*). Clicar troca só a
+   SITUAÇÃO — conta, período e busca ficam. Limpar o resto junto faria o
+   clique parecer um "voltar ao início", e a pessoa perderia o recorte que
+   levou minutos montando. Entrou também um quarto número, "Já conciliado".
+4. O saldo do topo agora explica a própria conta: mostra o saldo inicial e a
+   data quando existem.
+
+**Verificado:** 26 testes de tela e 31 com banco de verdade, incluindo os da
+coluna sem cabeçalho, os do saldo inicial (com e sem data, e a não-dupla
+contagem) e os da reimportação que preenche sem apagar.
+
+**NÃO verificado:** a tela continua sem ser aberta num navegador daqui — e as
+janelas que abrem por cima (`<dialog>`) são a parte nova que mais depende
+disso. E ele ainda não testou o OFX.
+
+---
+
+### Nonagésima leva (24/09) — o que eu escondi para a tabela ficar bonita
+
+Três acertos de tela, e os dois primeiros são correções de decisões MINHAS da
+leva anterior — não de coisas que faltavam.
+
+#### ⚠️ Eu cortei o histórico, e não havia como alcançar o que sumiu
+
+> *"O histórico, da mesma forma que a observação, você tem que permitir a
+> quebra de linha. Porque quando a gente diminui a tela, deixa de aparecer as
+> informações. Mesmo clicando, você não as vê de forma alguma."*
+
+Eu havia posto o histórico numa linha só, com reticências e o texto inteiro no
+`title` do mouse. Numa tela estreita isso **esconde informação sem saída**: o
+`title` não existe no celular, e não havia clique que mostrasse o resto.
+
+**A lição, e ela vale para o módulo inteiro: esconder informação para a tabela
+ficar bonita é a troca errada numa tela de conferência.** Agora o histórico
+quebra em até três linhas — o que cobre o histórico do Bradesco inteiro — e o
+que passar disso abre com um clique na célula. E **a linha perdeu a altura
+travada**: quem decide o tamanho é o conteúdo.
+
+#### ⚠️ O campo de observação crescia sozinho
+
+> *"Se tiver uma linha só dentro da observação, ele já expande. Se tiver duas
+> linhas, ele expande como se tivesse praticamente mais duas linhas abaixo."*
+
+Defeito meu, e a causa é específica: sem `box-sizing: border-box`, o
+`textarea` não conta o preenchimento interno do mesmo jeito na altura e na
+medida — e o script que ajusta o tamanho somava esse preenchimento por cima a
+cada medida. Com uma linha escrita, o campo abria com três.
+
+#### O sublinhado de link nos números do topo
+
+> *"Eu falei de KPI clicáveis, mas não precisa ficar com esse tracinho
+> embaixo, fica feio."*
+
+Consequência de eu ter transformado os números em link para eles filtrarem.
+Saiu o sublinhado e a cor de link; ficou a mão do mouse e o realce ao passar,
+que já dizem que dá para clicar.
+
+**Verificado:** 30 testes de tela, quatro deles novos e escritos contra a
+folha de estilo — eles leem o CSS e cobram as regras, porque é lá que estes
+três defeitos moravam.
+
+**NÃO verificado:** de novo, a tela não foi aberta num navegador daqui. Três
+dos últimos quatro defeitos chegaram até o dono por isso.
+
+---
+
+### Nonagésima primeira leva (24/09) — lançar no OMIE, o panorama, e mais cinco
+
+Uma tanda grande, pedida em mensagens seguidas enquanto o trabalho corria.
+
+#### 1. Lançar no OMIE a partir do extrato
+
+> *"Tarifas bancárias, rentabilidade de investimento. Tem muita tarifa de PIX.
+> Esse aí a gente poder lançar direto no OMIE: selecionar e gravar essa
+> movimentação financeira."*
+
+São lançamentos que aparecem no extrato e **não nascem de uma SP** — ninguém
+pede autorização para pagar tarifa de PIX. Marca-se as linhas, e o sistema
+cria no OMIE conta a pagar (ou a receber) **já baixada**.
+
+**⚠️ Quatro proteções, todas deliberadas:**
+
+1. **Nada é lançado sem TIPO reconhecido.** Uma linha cujo histórico não casa
+   com nenhum tipo configurado é recusada, não chutada. Chutar a categoria
+   poria tarifa bancária dentro de "material de obra" — e no OMIE isso vira
+   relatório errado que ninguém desconfia.
+2. **Nada é lançado duas vezes.** O código de integração sai do número da
+   linha; reenviar faz o OMIE recusar sozinho. **A recusa dele vale mais que
+   qualquer conferência feita deste lado** — uma conferência local não
+   sobrevive a duas pessoas clicando junto.
+3. **A conta corrente do OMIE vem da CONTA BANCÁRIA, nunca do tipo.** Lançar
+   uma tarifa do Bradesco dentro da conta do Santander é o erro mais caro
+   possível aqui, e o único jeito de não o cometer é não ter onde errar.
+4. **Ensaiar antes.** A tela mostra linha a linha o que vai acontecer — e,
+   igualmente importante, **o que NÃO vai e por quê**. É essa segunda lista
+   que diz o que falta configurar, em vez de o lote inteiro falhar sem
+   explicar.
+
+**O sentido não é configurado, é deduzido do sinal:** negativo vira conta a
+pagar, positivo vira conta a receber. Um estorno de tarifa entra sozinho do
+lado certo, e não há um campo a mais para alguém marcar errado.
+
+**E cada linha é independente** — o contrário do aporte. Lá, um título sem o
+outro é meio aporte, e por isso a falha de um desfaz todos. Aqui cada linha é
+uma tarifa isolada: desfazer as que entraram porque a décima falhou faria o
+dono perder trabalho bom por um problema que não é dele.
+
+**Título criado com a baixa falhando vira PENDÊNCIA**, listada no panorama.
+Ele fica em aberto no OMIE dizendo que há algo a pagar que já foi pago, e
+ninguém descobriria isso olhando o extrato daqui.
+
+#### 2. O panorama — "no que eu não posso confiar"
+
+> *"Um dashboard de cada conta (…) inclusive indicar se tem extrato que falta
+> importar. De repente a gente vê 'está tudo conciliado', mas opa, tem muito
+> tempo que não foi importado o extrato. Cadê o extrato dessa conta? Está
+> faltando os meses tais e tais. Para direcionar o operador."*
+
+**⚠️ A pergunta desta tela não é "quanto tem", é ONDE ESTÁ O BURACO.** Uma
+conta 100% conciliada cujo último extrato é de três meses atrás está PIOR do
+que uma com pendências e extrato de ontem — e olhando só o percentual de
+conciliado ela pareceria a melhor de todas.
+
+**A distinção que é o coração da tela:** um mês sem lançamento **entre** dois
+que têm é **buraco** (o extrato pulou um pedaço, e o saldo dali para a frente
+está errado sem ninguém saber); um mês sem lançamento **depois** do último é
+extrato que ainda não veio. São problemas diferentes, o operador faz coisas
+diferentes com cada um, e juntá-los num "faltam 4 meses" esconderia o que
+importa. Uma **fita de doze quadradinhos** mostra isso sem ler número nenhum.
+
+**O atraso é medido pelo último LANÇAMENTO, não pela última importação** —
+importar hoje um extrato velho deixaria "importado há 0 dias" numa conta que
+continua sem o mês passado, e a tela estaria mentindo.
+
+**Cada conta tem UM recado, o mais urgente.** Listar tudo o que está imperfeito
+faria a tela virar um mural que ninguém lê. A ordem é a do estrago: buraco →
+extrato atrasado → falta conciliar → falta o saldo inicial.
+
+#### 3. Vários OFX de uma vez
+
+> *"Vou jogar vários arquivos OFX de uma determinada conta, aí o sistema
+> importa eles tudinho. Ou tentar importar — ele vai barrar quando detectar
+> que já foi importado."*
+
+Solta-se a pasta inteira. **Um arquivo por vez no servidor**, mesmo com vários
+na tela: cada um tem a sua conta e a sua resposta, e mandar todos numa chamada
+só faria um arquivo torto derrubar a leva. **Confere TUDO, depois grava TUDO**
+— gravar cada um assim que é lido tiraria dele a chance de olhar o conjunto.
+
+#### 4. Desconciliar pede confirmação; conciliar não
+
+Ele perguntou: *"para conciliar é só clicar, né? (…) de repente, para
+desconciliar, precisasse clicar duas vezes, para ninguém fazer
+acidentalmente."*
+
+**A ideia está certa e a implementação ficou diferente, de propósito.** Clique
+duplo não é uma boa trava: não se descobre sozinho, e clique duplo acidental
+acontece justamente com quem está marcando várias linhas em sequência — a
+hora de maior risco. Aqui o botão **vira uma pergunta** ("↺?") por quatro
+segundos. Mesma trava, mas ela se explica.
+
+#### 5. Os códigos do OMIE são ESCOLHIDOS, não digitados
+
+> *"Você pode utilizar a própria API dele para atualizar aqui (…) tem a questão
+> do código dos departamentos também."*
+
+**E a resposta é que isso já existe: não se chama a API do OMIE aqui.** A carga
+do painel traz toda noite as contas correntes, o plano financeiro, os cadastros
+e o rateio, e guarda no espelho. Chamar de novo daqui seria mais uma credencial
+para manter, mais uma chance de bater no limite do OMIE, e duas cópias dos
+mesmos dados que um dia divergiriam.
+
+**O preço, dito na própria tela:** as listas têm a idade da última carga do
+painel. Se um dia incomodar, o conserto é rodar a carga — não duplicar a
+integração. E se o espelho estiver vazio, a tela **abre assim mesmo** e deixa
+digitar o código: tela de configuração que não abre é pior que lista vazia.
+
+#### O que ficou de fora, e é escolha do dono
+
+**A transferência entre contas.** Ele perguntou: *"se existe alguma forma a
+gente poderia facilitar essa movimentação entre conta da empresa, transferência
+de uma conta para outra"*. Não foi feita, e a razão é que ela tem uma escolha
+que é dele:
+
+- **Ou** usa-se o endpoint de transferência do OMIE, que este repositório
+  nunca chamou — e escrever contra uma rota que nunca foi exercitada, em
+  produção, com dinheiro, é o tipo de coisa que se faz com o dono olhando;
+- **ou** repete-se o desenho do APORTE, que ele já validou: dois títulos, um
+  em cada conta, com a categoria de transferência. Roda hoje e está provado.
+
+Há ainda um detalhe que precisa de decisão: a transferência aparece nos DOIS
+extratos, e lançar as duas pontas duplicaria. Ou o sistema casa as duas
+linhas, ou ele só aceita lançar pela ponta da saída.
+
+**Verificado:** 43 testes de tela e 43 com banco de verdade, incluindo o
+lançamento no OMIE com cliente dublado (inclusão + baixa, e a baixa falhando
+virando pendência), o buraco de meses, e o atraso medido pelo lançamento.
+
+**NÃO verificado, e é muito:** nada disto foi aberto num navegador, **nenhum
+lançamento de verdade foi para o OMIE**, e nenhum OFX real passou pela tela. O
+primeiro lançamento tem de ser UM, conferido no OMIE antes do segundo — é a
+mesma sequência combinada para os aportes, e pelo mesmo motivo.
+
+---
+
+### Nonagésima segunda leva (24/09) — a transferência entre contas
+
+> *"Transferência no OMIE: você seleciona a conta origem e a conta destino, e
+> já interfere nas duas pontas."*
+
+E ele autorizou testar direto em produção: *"em relação a ser produção, sem
+problema, a gente está sempre acompanhando no sistema."*
+
+#### ⚠️ Foi o espelho do painel que disse COMO o OMIE representa isso
+
+Eu tinha levantado a dúvida na leva anterior — usar uma rota de transferência
+do OMIE que este repositório nunca chamou, ou repetir o desenho do aporte. A
+resposta estava no código do painel: no `sync/fato.py`, **transferência é uma
+CATEGORIA marcada com `transferencia = S`**, e é essa marca que manda o valor
+para o balde TRF em vez do resultado.
+
+Ou seja: **no modelo de dados do OMIE, transferência é um par de títulos com
+categoria de transferência**. Não há rota especial a inventar — é o mesmo
+caminho dos aportes, que roda em produção e que ele já validou.
+
+**O que ele vai ver no OMIE, dito antes para não haver surpresa:** a
+transferência aparece como uma **conta a pagar na origem** e uma **conta a
+receber no destino**, as duas baixadas, as duas com a categoria de
+transferência. O dinheiro fica certo nas duas contas e fora do DRE. Não é a
+tela de "Transferências" do OMIE — se ele quiser exatamente aquela, é outra
+conversa, e eu preciso ver a rota funcionando antes.
+
+#### Três decisões dentro dela
+
+1. **A conta de destino NÃO é chutada.** Linha de transferência sem destino
+   escolhido é recusada, com o motivo, e a tela mostra um seletor para cada
+   uma — depois reensaia. Adivinhar o destino poria o dinheiro numa conta que
+   ninguém pediu.
+2. **A segunda ponta tem código de integração PRÓPRIO** (`CONC42D` contra
+   `CONC42`). Com o mesmo código, o OMIE recusaria a entrada como repetição da
+   saída — e a transferência ficaria pela metade **toda vez**, sem ninguém
+   entender por quê.
+3. **Meia transferência GRITA.** Se a saída entrou e a entrada falhou, o
+   dinheiro saiu de uma conta e não entrou em nenhuma: o saldo das **duas**
+   fica errado. A linha é marcada como `meia_transferencia`, entra na lista de
+   pendências do panorama, e a mensagem diz isso com todas as letras em vez de
+   contar como sucesso parcial.
+
+#### E um teste que faltava, achado escrevendo este
+
+**O JavaScript desta tela nunca era conferido.** Ela tem centenas de linhas
+dele, e um erro de sintaxe **não aparece em teste nenhum**: o HTML monta, a
+tela abre, e simplesmente nada funciona — o tique não marca, o arquivo não
+sobe, e nada avisa. Agora há um teste que extrai o script (tirando o Jinja) e
+passa pelo `node --check`. Se o Node não existir na máquina, ele é pulado: é
+uma rede, não um requisito de ambiente.
+
+**Verificado:** 45 testes de tela (um deles o do JavaScript) e 6 novos do
+lançamento, incluindo as duas pontas, os códigos de integração diferentes e a
+meia transferência gritando.
+
+**NÃO verificado:** nenhum lançamento de verdade foi ao OMIE. O primeiro tem
+de ser UM, conferido lá antes do segundo — e numa transferência isso vale em
+dobro, porque ela mexe em duas contas.
+
+---
+
+### Nonagésima terceira leva (24/09) — o filtro em cada coluna
+
+> *"Tem data, tem histórico, tem observação, tem entrada, tem saída. Acho que
+> em cada um desses dá para colocar o filtro de cabeçalho."*
+
+Uma caixinha embaixo de cada título da tabela, como numa planilha: dia,
+histórico, documento, entrada, saída, conciliado e observação.
+
+**⚠️ ISTO SUBSTITUIU A BARRA DE TRÊS CAMPOS que eu tinha feito minutos antes**
+(descrita abaixo), e a troca é uma melhora de verdade, não gosto: ali "valor"
+não distinguia entrada de saída, e "histórico" procurava nas **três** colunas
+de texto ao mesmo tempo. Procurar "pix" no histórico e procurar "pix" na
+observação são perguntas diferentes — e quem digita embaixo de um título quer
+**aquela** coluna. Duas caixinhas preenchidas se somam, não se substituem.
+
+**Entrada e saída são o mesmo campo do banco, com o sinal decidindo:** quem
+digita 1.500 em "Entrada" quer +1.500; em "Saída", quer −1.500.
+
+**⚠️ O formulário fica FORA da tabela**, e os campos apontam para ele pelo
+atributo `form`. Um `<form>` no meio de `<tr>` não é HTML válido: o navegador
+o expulsa da tabela e as caixinhas param de enviar — **sem erro nenhum na
+tela**.
+
+**Verificado:** 5 testes de tela e 7 com banco de verdade (um por coluna, mais
+o caso das duas caixinhas juntas). *Esse último reprovou na primeira vez
+porque eu havia posto a anotação na linha errada do teste — o código estava
+certo, o dado é que estava trocado.*
+
+---
+
+### A barra de três campos, substituída no mesmo dia
+
+> *"Lá no cabeçalho da conciliação — tudo bem que nós temos os filtros, mas se
+> na parte superior eu pudesse já inserir uma data, informação do histórico,
+> um valor, sem precisar ir no filtro, ajudaria demais."*
+
+Três campos acima da tabela: **um dia, um texto e um valor**.
+
+**⚠️ Ela NÃO é um segundo filtro — preenche o mesmo.** Duas máquinas de
+filtrar na mesma tela divergiriam no dia em que alguém mexesse numa só, e a
+pessoa não teria como saber qual das duas está valendo. Por baixo, `data` vira
+`data_ini = data_fim` e `valor` vira `valor_ini = valor_fim`, em módulo.
+
+**E é assim de propósito:** numa conciliação a pergunta é *"entrou 1.500 no
+dia 10?"*, não *"o que houve entre o dia 1 e o dia 30 com valor entre 1.000 e
+2.000"*. Um dia e um valor exato respondem a primeira em um gesto; a faixa
+continua na barra lateral para quem precisar da segunda. Digitar "-1.500"
+também acha — o módulo resolve os dois lados.
+
+**Verificado:** 4 testes novos, incluindo o que garante que os dois caminhos
+caem no mesmo filtro.
+
+---
+
+### Nonagésima quarta leva (24/09) — ⚠️ a frase do Postgres na cara do dono
+
+Ele preencheu o cadastro de tipos inteiro, apertou Gravar, e recebeu:
+
+> *"Não consegui gravar: relation "analisesps.conciliacao_tipo" does not
+> exist LINE 1: INSERT INTO analisesps.conciliacao_tipo (nome, palavras..."*
+
+**A causa imediata é a migração 021 não aplicada. O defeito é meu, e é
+outro:** a tela deixou ele digitar tudo e só quebrou no fim, com uma frase que
+não é para ele ler — ela não diz o que fazer.
+
+#### ⚠️ POR QUE A GUARDA NÃO PEGOU, e é o que importa
+
+A Conciliação tem uma guarda para exatamente isto (`_pronto()`), e ela
+funciona. Só que ela olha **UMA** tabela — a das contas, da migração 019. A
+parte do OMIE veio depois, na **021**. Entre as duas, o mundo fica num estado
+que eu não tinha previsto: **a tela se dá por pronta, o formulário aparece
+inteiro, e só o Gravar quebra**.
+
+**A regra que fica: cada pedaço confere a SUA tabela.** Uma guarda por módulo
+não basta quando o módulo cresce em mais de uma migração — e ele sempre
+cresce.
+
+#### O que mudou
+
+1. **O aviso vem ANTES de digitar**, dentro do próprio cadastro de tipos, com
+   o caminho do botão. E o botão "Lançar no OMIE" fica desligado.
+2. **Gravar e lançar conferem a própria tabela** e devolvem uma frase em
+   português — nunca a do Postgres.
+3. **O ensaio também.** Sem a migração a lista de tipos vem vazia, e sem esta
+   guarda ele diria *"não reconheci o tipo"* para todas as linhas — mandando o
+   dono cadastrar tipos num lugar que não grava.
+
+**Verificado:** 3 testes novos, um deles garantindo que a frase do Postgres
+não chega à tela.
+
+**A lição além desta tela:** funcionalidade que nasce em duas migrações
+precisa de duas guardas. Quando a próxima área do módulo crescer assim, é aqui
+que está o precedente.
+
+---
+
+### Nonagésima quinta leva (24/09) — o relatório mentia, o desfazer, e o panorama
+
+Três coisas, e a primeira é uma lição sobre como eu errei o diagnóstico duas
+vezes antes de acertar.
+
+#### ⚠️ "A leitura disse que nada havia sido importado, mas veja…"
+
+Ele mostrou o caso:
+
+> *"01/09/2026 PAGTO ELETRON COBRANCA 1423835099 −3.313,21 — e a importação
+> da planilha tem essa mesma linha."*
+
+**As duas estavam certas; a CONFERÊNCIA é que errava.** A linha da planilha tem
+identidade própria (sem FITID); a do OFX tem outra. Olhando só a identidade, a
+conferência via "não existe" e contava como **nova** — quando na gravação ela
+seria **adotada**, não criada.
+
+O resultado final estava certo. **O número estava errado** — e um relatório que
+diz "47 novos" e grava 3 destrói a confiança na tela inteira, justamente a tela
+que existe para responder *"o que falta importar?"*.
+
+Agora há uma **terceira contagem**: nem "novas" nem "já estavam", mas *"já
+estão aqui vindas da planilha — vão ganhar o identificador do banco, e o que
+você marcou e anotou continua"*.
+
+#### ⚠️ E EU ERREI O DIAGNÓSTICO DUAS VEZES NO CAMINHO
+
+**Primeiro** achei que era erro de sinal, porque ele mostrou a planilha com
+`3.313,21` e o extrato com `−3.313,21`. Troquei o casamento para "valor em
+módulo, e o banco decide o sinal" — e escrevi três testes defendendo isso.
+
+**Ele me corrigiu:** *"a do sistema está no canto certo e está em vermelho, é
+débito."* O que ele viu positivo era a **coluna SAÍDA da tela**, que mostra o
+valor sem o sinal **de propósito**. Nunca houve erro de sinal.
+
+**Desfiz.** E a troca era pior do que inútil: casar por módulo faria o OFX de
+uma **saída** de 100 adotar uma **entrada** de 100 do mesmo dia e **virar o
+sinal dela** — trocando um lançamento verdadeiro por outro, em silêncio. Há
+teste travando isso agora.
+
+**Depois**, ao tirar as adotáveis da lista de "novas", esqueci que é essa lista
+que a gravação percorre — e elas deixaram de ser adotadas: nem entravam, nem
+eram reconhecidas. **Os testes com banco pegaram.**
+
+**A lição, e é sobre mim:** o relato dele descreve o SINTOMA. Correr para a
+causa mais parecida e escrever teste defendendo o palpite transforma um palpite
+em regra. Aqui os testes que eu escrevi para a causa errada tiveram de ser
+apagados — e se não tivessem sido, teriam protegido o defeito.
+
+#### O desfazer
+
+> *"Tem que ter alguma forma de retroceder um erro, né?"*
+
+Dá para desfazer uma importação de OFX (por arquivo) ou de planilha. Três
+regras:
+
+1. **Não apaga linha já lançada no OMIE.** Lá fora existe um título com aquele
+   número; sumir com a linha daqui deixaria o OMIE com um lançamento que nada
+   mais explica.
+2. **Conta ANTES o que vai sumir**, inclusive quantas foram conciliadas e
+   anotadas — isso é trabalho de gente, e ele decide sabendo. Apagar contando
+   depois não é escolha, é aviso.
+3. **Não atravessa origens:** desfazer um OFX não leva o que a planilha trouxe.
+
+#### O panorama, segunda camada
+
+> *"Tá legal, mas eu tô achando ainda meio pobre. Dá para ter mais coisa."*
+
+**⚠️ E "mais coisa" não é mais número.** Total ninguém age sobre. O que um
+gestor faz com esta tela é decidir onde mexer — então entrou o que responde
+pergunta:
+
+- **a idade da pendência**: mais de 90 dias separado de 30 a 90. Pendência de
+  ontem é fila; de três meses atrás é problema, e somá-las apagaria a
+  diferença.
+- **os dez maiores sem conferência**, com link para a linha. É onde o risco
+  está concentrado: uma pendência de R$ 200 mil não é igual a cem de R$ 2 mil.
+- **o mês a mês do ano** — o total do ano esconde o mês que saiu da linha.
+- **quem conciliou quanto**, porque conciliação é trabalho de gente e é bom
+  saber se está tudo nas costas de uma pessoa.
+- **quanto já foi lançado no OMIE**, e quantos ficaram com problema.
+
+#### ⚠️ E a suíte inteira pegou um defeito que só aparece de noite
+
+Rodando a suíte completa (6.623 testes, com banco de verdade) apareceu **um**
+vermelho, no panorama: *"importado há **-1** dias"*.
+
+A causa: a hora que o banco guarda é **UTC**; a data que a tela usa é de
+**Brasília**. Depois das 21h daqui, em UTC já é o dia seguinte — e a subtração
+virava negativa. De manhã o defeito desaparecia sozinho, o que é o pior tipo:
+ninguém consegue reproduzir, e quem viu perde a confiança na tela inteira.
+
+Corrigido convertendo a hora antes de comparar, com piso em zero (nos dois
+números: dias sem importar e dias sem extrato — lançamento com data futura
+existe, em agendamento). Teste novo trava os dois.
+
+**A lição, para a próxima área:** número de dias calculado a partir de hora do
+banco passa pela conversão de fuso. Sempre. O repositório já tinha o
+`horario.para_brasilia` pronto para isso desde o início — eu simplesmente não
+usei.
+
+**Verificado:** a suíte inteira do repositório — **6.623 testes passando**, 145
+pulados (os que precisam de coisa que não existe aqui), nada vermelho. A
+aplicação sobe com os 18 blueprints.
+
+**NÃO verificado:** nada disto num navegador, e nenhum lançamento real no OMIE.
+
+---
+
+### Nonagésima sexta leva (25/09) — cada um com a sua senha e as suas telas
+
+> *"Atualmente os usuários eu adiciono, eles estão com senha única. Eu quero
+> fazer similar ao painel. Vou poder cadastrar o operador, definir a senha,
+> definir as telas que ele tem acesso. Aí vai ter um usuário master, e os outros
+> a gente define as permissões."*
+
+Até aqui este módulo tinha **duas senhas só**, iguais para todo mundo: uma de
+Consulta e uma de Operador, nas variáveis do Render. Quem digitava a de Operador
+via e fazia **tudo** — e o nome escolhido na entrada era só uma etiqueta, sem
+tranca nenhuma por trás. Está escrito no histórico, com todas as letras, que
+cadastro de usuário aqui era *"peso sem retorno"* porque o módulo tinha prazo de
+validade. **Deixou de ser verdade quando ele pediu o contrário.**
+
+#### O que existe agora
+
+**Migração 023**: `analisesps.usuarios` (login, nome, senha embaralhada, ativo,
+pode_operar) e `analisesps.usuario_telas` (uma linha por tela liberada).
+
+Em **Configurações › Quem tem acesso**, o dono cadastra a pessoa: login, senha,
+se ela **pode alterar** ou só ver, e quais das **doze telas** ela abre. Trocar a
+senha de quem esqueceu e mudar as telas de quem passou a fazer outra coisa ficam
+a um clique, na própria linha da pessoa.
+
+#### ⚠️ A SENHA DO RENDER CONTINUA SENDO O MESTRE — e isso é decisão, não sobra
+
+É o que impede o dono de **se trancar para fora**. Se a migração não tiver
+rodado, se ele apagar o próprio cadastro sem querer, se o banco cair: a senha do
+Render ainda entra e ainda vê tudo. **Um cadastro capaz de trancar o único
+administrador não é segurança, é armadilha.**
+
+E, pela mesma razão, a senha do Render é **conferida PRIMEIRO**, com o campo de
+usuário preenchido ou não. Isso vem de um defeito real do painel (22/09): a tela
+ganhou um campo novo, o gerenciador de senhas do navegador o preencheu sozinho, o
+pedido caiu no caminho do cadastro e a resposta foi *"usuário ou senha
+incorretos"* — com a senha certa digitada. Há teste travando isso aqui.
+
+#### Três regras que falham FECHADO
+
+1. **Sem tela marcada, a pessoa não entra.** Lista vazia quer dizer NENHUMA,
+   nunca "todas" — senão um cadastro esquecido pela metade viraria acesso total.
+2. **Quem tem cadastro não abre Configurações**, não aplica migração, não
+   encosta no certificado digital, não lança aporte no OMIE e **não cria outro
+   acesso**. A última é a que faz as outras valerem: quem pode criar acesso pode
+   dar a si mesmo tudo — e isso passou batido na primeira versão do painel.
+3. **O padrão de "pode alterar" é NÃO.** Subir o poder de alguém é uma marcação
+   consciente, não o que acontece por descuido.
+
+#### O mapa, e por que ele tem inventário
+
+A permissão é decidida **num lugar só** (`auth.exigir_login`), com uma tabela
+dizendo de que tela é cada uma das 85 rotas do módulo. **Rota que ninguém
+classificou não abre** para quem tem cadastro — e um teste de inventário exige
+que toda rota esteja classificada. Sem esse teste, "o padrão é negar" viraria
+armadilha para quem só quisesse criar uma tela nova: ela nasceria dando 404 para
+metade da equipe, sem nenhuma pista.
+
+Uma armadilha concreta que o mapa evitou: fechar por prefixo `conferir_` teria
+levado `conferir_nota_fiscal` (que é da tela Doc. Fiscal) junto com
+`conferir_certificado` e `conferir_drive`, que são do mestre. Há teste só para
+esse caso.
+
+**O menu mostra só as telas da pessoa.** Deixar no menu uma tela que responde
+404 é pior do que não mostrá-la.
+
+**As permissões são lidas do banco a cada pedido**, de propósito: tirar uma tela
+de alguém vale **na hora**, não quando ele fechar o navegador — que é justamente
+o momento em que se tira o acesso de alguém. Custa duas consultas por chave
+primária, guardadas até o fim do pedido.
+
+#### O que fica de aviso para o dono
+
+- **O nome do cadastro é o que separa o lote e os filtros da pessoa.** Cadastrar
+  Thiago com o nome que ele já escolhia na entrada faz o lote dele continuar
+  sendo o mesmo; com nome diferente, ele abre o Lote e o encontra vazio sem
+  entender por quê. A tela avisa e oferece a lista de nomes que já existe.
+- **Aportes no OMIE e a tela de credores ficaram do mestre.** Quem usa aportes
+  hoje pela senha geral continua usando por ela. Liberar para alguém com
+  cadastro é uma linha — mas é decisão dele, não minha.
+- **A senha não se lê depois, só se troca.** Nem o dono. É PBKDF2 com sal, o
+  mesmo do painel.
+
+**Verificado:** 35 testes com banco de verdade (inclusive o que prova que tirar
+uma tela vale na hora, e o que prova que quem tem cadastro não cria outro
+acesso) e 29 sem banco; conferido por mutação que o guarda realmente barra —
+desligando a checagem, três testes ficam vermelhos.
+
+**NÃO verificado:** nada disto num navegador, e nenhum cadastro real criado.
+
+---
+
+### Nonagésima sétima leva (25/09) — a lista de nomes acabou, e o mestre virou marcação
+
+Poucas horas depois de ver o cadastro no ar:
+
+> *"Elimine do login o login via Nomes na lista da entrada. Vamos ficar somente
+> com os cadastrados. Como ajustar o acesso master?"*
+
+**A entrada agora é só usuário e senha.** Some a lista de nomes, some o cookie
+que lembrava o nome, some o caminho antigo. Quem entra, entra pelo cadastro — e
+o nome que assina o lote, os filtros e o registro de alterações vem de lá.
+
+**O mestre virou uma marcação na pessoa** (migração 024), como "pode alterar".
+Quem é mestre vê todas as telas, abre Configurações, aplica migração, mexe no
+certificado, lança aporte no OMIE e cadastra gente. As telas marcadas para ele
+não importam — e ele **entra sem nenhuma marcada**, o que teve de ser tratado
+de propósito: sem essa exceção, o dono cadastraria a si mesmo como mestre e a
+própria tela o barraria na entrada seguinte, dizendo "sem tela liberada".
+
+#### ⚠️ A PORTA DE EMERGÊNCIA FICOU, e o dono precisa saber disso
+
+O pedido foi "somente com os cadastrados". A senha do Render **continua
+entrando**, com o campo de usuário em branco — e isso é uma diferença
+consciente em relação ao que ele pediu, não um esquecimento.
+
+**O motivo:** sem ela, perder o último cadastro de mestre tranca todo mundo
+para fora **sem volta**. Não há e-mail de recuperação, não há segundo
+administrador, não há suporte. E há um caso em que ela é obrigatória: logo
+depois de aplicar a migração **não existe nenhum mestre** — alguém precisa
+entrar para criar o primeiro.
+
+Ela está escrita na tela de entrada, com todas as letras, e o dono pode mandar
+tirá-la sabendo o preço. Enquanto ela existir, quem entra por ali aparece na
+auditoria como **"MESTRE (emergência)"** — não como uma pessoa.
+
+#### A trava do último mestre
+
+Apagar, desativar ou desmarcar o **único** mestre é recusado, com a frase
+dizendo o que fazer antes ("marque outra pessoa como mestre primeiro"). Com
+dois mestres, qualquer um dos dois sai normalmente — a trava é do último, senão
+trocar de administrador viraria um problema.
+
+#### O que aconteceu com os testes, e por que isso importa
+
+Onze testes ficaram vermelhos na hora — todos sobre o nome na entrada. Não foi
+defeito: era a mudança acontecendo. O que interessa é como foram consertados:
+
+- os que testavam **o que o sistema faz COM o nome** (lote por pessoa, filtros,
+  assinatura da auditoria) continuam existindo e continuam valendo. Eles agora
+  põem o nome na sessão, que é exatamente o que o cadastro faz;
+- os que testavam **a lista de nomes** viraram o contrário: garantem que ela
+  **não** volta — nem o campo, nem o `<select>`, nem o cookie.
+
+A regra que eu sigo aqui: teste que morre com a funcionalidade, morre; teste que
+descreve uma decisão, vira o teste da decisão nova.
+
+**Verificado:** 47 testes com banco de verdade nesta área (11 novos só do
+mestre), a suíte inteira do módulo, e conferido por mutação — desligando a
+marcação de mestre, três testes ficam vermelhos.
+
+**NÃO verificado:** nada num navegador, e nenhum cadastro real criado.
+
+---
+
+### Nonagésima oitava leva (25/09) — o fornecedor do OMIE mora na CONTA
+
+Ele tentou lançar uma tarifa e recebeu:
+
+> *"0 de 1 linha(s) podem ser lançadas na conta BD 50024. 1 fica de fora:
+> TARIFA BANCARIA TRANSF PGTO PIX (−0,35) — o tipo 'Tarifa Bancária' está sem
+> o fornecedor/cliente do OMIE."*
+>
+> *"O código fornecedor tem que estar atrelado à conta bancária."*
+
+**E ele está certo.** Quem cobra a tarifa é o **banco daquela conta**: a do
+BD 50024 é do Bradesco, a da Sicredi é da Sicredi. Guardar o fornecedor no
+TIPO obrigaria a criar um "Tarifa Bradesco", um "Tarifa Sicredi" e um "Tarifa
+BB" — cada um repetindo as mesmas palavras do histórico ("TARIFA"), e todos
+brigando entre si no reconhecimento, que escolhe pela palavra mais específica.
+O desenho estava errado, não a configuração dele.
+
+É a mesma razão pela qual a **conta corrente do OMIE** já morava na conta desde
+o começo. O fornecedor ficou para trás por descuido meu.
+
+#### O que mudou (migração 025)
+
+- A conta ganhou **Fornecedor no OMIE**, com lista para escolher — ela traz do
+  espelho do painel os cadastros com cara de banco, porque a lista inteira tem
+  milhares de linhas e não cabe num campo de escolha. Quem não achar digita o
+  código, como antes.
+- **A conta manda; o tipo é reserva.** Se a conta tem fornecedor, é o dela; se
+  não tem, vale o do tipo. Assim nada do que já estava configurado parou de
+  funcionar, e um tipo cobrado por um terceiro (não pelo banco) continua tendo
+  onde dizer isso.
+- Na **transferência**, a ponta que RECEBE usa o fornecedor da conta de
+  destino quando ela tem um — é o banco dela que está do outro lado.
+- **A recusa passou a dizer onde resolver**: *"a conta X está sem o fornecedor
+  do OMIE — é quem cobra a tarifa. Abra Contas, escolha o banco…"*. A antiga
+  mandava cadastrar no tipo, que é o lugar errado. Há teste exigindo que a
+  palavra "tipo" não volte a essa frase.
+
+#### E uma coluna nova na lista de contas: "Lança no OMIE?"
+
+⚠️ **O problema aparecia tarde demais.** Ele só descobria que faltava
+configuração quando o lançamento era recusado — com o lote já marcado e a
+tela do OMIE aberta. Agora cada conta diz, na própria lista, se está pronta e
+o que falta nela: a conta corrente, o fornecedor, ou os dois.
+
+**Verificado:** 66 testes com banco de verdade na conciliação (4 novos só da
+gravação do fornecedor) e 32 sem banco no lançamento ao OMIE (5 novos), mais a
+suíte do módulo inteira.
+
+#### E a pergunta dele sobre o código de integração
+
+> *"O código de integração tem limite de caracteres, salvo engano. Cheque."*
+
+**Não consegui checar, e digo isso em vez de chutar:** a documentação do OMIE
+não é alcançável do ambiente onde este chat roda — a rede bloqueia o domínio.
+
+O que se **sabe**, porque custou oito tentativas repetidas em 21/09, é que
+`numero_documento` é recusado acima de **20 caracteres**. O que este módulo
+**gera** como código de integração é `CONC` + o número da linha (+ `D` na
+segunda ponta da transferência): **10 a 11 caracteres** com os números de
+hoje, e 13 quando o extrato passar de um milhão de linhas.
+
+Então os dois campos passaram a ser tratados pelo teto de 20, que é o lado
+seguro: se o teto de verdade for maior, nada se perde; se for 20, já está
+respeitado. Há teste travando o tamanho — inclusive o da **segunda ponta**,
+porque um código que estourasse só nela deixaria a transferência pela metade,
+que é o pior estado possível aqui.
+
+**NÃO verificado:** nada num navegador, e **nenhum lançamento real no OMIE** —
+a tarifa de R$ 0,35 dele continua sem ser lançada até ele configurar a conta e
+tentar de novo. E o teto do `codigo_lancamento_integracao` continua sem
+confirmação na fonte.
+
+---
+
+### Nonagésima nona leva (25/09) — a mesma linha em duas listas que se contradizem
+
+Ele soltou um OFX e leu, no MESMO relatório:
+
+> *"Outros **110** já estão aqui vindos da planilha: eles não entram de novo…"*
+>
+> *"Atenção: **110** linha(s) que estão aqui e NÃO vêm neste extrato, dentro do
+> mesmo período."*
+
+E as duas listas traziam **as mesmas linhas** — o PAGAMENTO PIX CEDISA de
+11/09, o W NORTE, o José Soares. *"Veja que tem incoerência aqui, o leitor não
+detectou coisas já importadas."*
+
+#### As duas listas usavam réguas diferentes para a mesma pergunta
+
+- a **adoção** casa por **data e valor exato**, porque a linha que veio da
+  planilha não tem a identidade do arquivo do banco;
+- o **"está aqui e não veio"** comparava pela **impressão** — que é justamente
+  a identidade do arquivo do banco.
+
+Ou seja: **toda linha adotada caía, por construção, na lista das sumidas.** Os
+110 de uma lista eram exatamente os 110 da outra.
+
+#### Por que isso é pior do que um número errado
+
+Essa lista existe para acusar **uma** coisa: linha digitada errada, ou
+lançamento que o banco estornou. São poucas, e são as que importam. Afogá-las
+no meio de centenas de falsas não deixa a lista imprecisa — **faz ninguém ler a
+lista de novo**. E aí a próxima linha digitada errada passa.
+
+#### O conserto
+
+O casador de adoção passou a devolver **também o número da linha do banco** que
+casou, e o "está aqui e não veio" tira essas do caminho. Uma régua só para a
+mesma pergunta.
+
+Três testes novos, com os números que ele viu: a linha adotada **não** aparece
+como sumida; a que de fato sumiu **continua** aparecendo (consertar o falso
+positivo não podia apagar a lista); e, com duas iguais no mesmo dia e o extrato
+trazendo uma, **a outra continua sendo cobrada**. Conferido por mutação —
+desligando o conserto, dois deles ficam vermelhos.
+
+#### ⚠️ O que ele viu e ainda NÃO está explicado
+
+No mesmo relatório: *"Saldo que o banco declara: 966.136,60 · aqui: 1.030.164,39
+— não bate"*. São **R$ 64.027,79** de diferença, e o recado da tela chuta
+"pode ser extrato faltando antes deste período". **Isso não foi investigado.**
+Pode ser o saldo inicial da conta ainda não informado, extrato faltando, ou
+linha a mais/a menos. Fica anotado aqui porque é dinheiro, e porque o chute da
+tela não é resposta.
+
+**Verificado:** 69 testes com banco de verdade na conciliação e a suíte inteira.
+
+**NÃO verificado:** nada num navegador, e a diferença de saldo acima.
+
+---
+
+### Centésima leva (25/09) — a marca de "já está no lote", e o boleto com teto
+
+Dois pedidos dele no mesmo dia, independentes um do outro.
+
+#### 1. A tag de lote nas Solicitações
+
+> *"Se um lançamento em solicitações já estiver no lote, exibir uma tag com
+> essa informação. Não uma coluna a mais senão fica grande demais, mas algo
+> pequeno em algum canto."*
+
+A lista de Solicitações tem centenas de linhas e o lote fica noutra tela: não
+havia como saber, olhando a lista, o que já tinha sido separado. Quem montava
+a remessa ia pela memória — e pôr a mesma SP duas vezes no lote era só questão
+de tempo.
+
+Agora cada linha que já está num lote sai com um selo pequeno **colado no
+número da SP**. Não é coluna: é do tamanho de meia palavra, e quem não tem SP
+em lote nenhum não vê nada de diferente.
+
+**A decisão que vale registrar: a marca olha o lote de TODO MUNDO, não só o de
+quem está na tela.** Desde 04/09 cada pessoa tem o seu lote, e o caso ruim de
+verdade não é repetir no próprio — é duas pessoas separarem a mesma SP sem
+saber, e ela sair duas vezes. Por isso são **duas cores**:
+
+- **azul** — está no SEU lote; o balãozinho diz em que grupo. É lembrete.
+- **âmbar** — está no lote de OUTRA PESSOA, e o balãozinho diz de quem. É
+  aviso, e é a parte que protege dinheiro.
+
+Quando está nos dois, vale o azul e o balãozinho diz as duas coisas.
+
+**Onde ela mora:** colada no número da SP. Quem escondeu a coluna ID recebe a
+marca na primeira célula, ao lado da caixa de marcar — uma escolha de coluna
+não pode apagar um aviso de pagamento em duplicidade. Tem teste para isso.
+
+**Custo:** uma consulta a mais por página de Solicitações, numa tabela de meia
+dúzia de linhas (uma por pessoa). O casamento SP × lote é feito em Python,
+com o mesmo `separar_grupos` que a tela do Lote usa — uma segunda regra de
+leitura divergiria no primeiro formato estranho.
+
+**Nunca derruba a tela:** banco fora ou migração por aplicar devolve "nenhuma
+SP em lote", que é exatamente o que se via antes. Perder a marca é aceitável;
+perder a tela de Solicitações não é.
+
+**Na janela entre publicar e apertar o botão** (`pessoa` ainda sem coluna), a
+marca enxerga só o lote de quem está na tela — o de cada um está no armário de
+reserva, e lê-los todos custaria uma consulta por pessoa. Menos informação,
+nunca informação errada.
+
+#### 2. O código de barras do boleto tinha teto nenhum
+
+> *"Na tela de QR code/Boleto o tamanho do qrcode tá ótimo, mas o do boleto
+> fica muito exagerado numa tela de 34" como a minha. Tem como limitar?"*
+
+O SVG do boleto sai com `width="100%"`, então quem mandava no tamanho era o
+cartão — e numa tela de 34" o cartão passa de 1.500px. O código era desenhado
+com mais do que o dobro do tamanho para o qual foi feito.
+
+O teto agora é o **tamanho nativo do próprio desenho** (855 × 100px, que vem
+do `module_width` e do `module_height` pedidos na geração). Não é número
+escolhido no olho: é o tamanho em que as barras foram pensadas, e por isso não
+há risco de o celular deixar de ler. Abaixo disso ele continua encolhendo com
+a tela, que é o que faz o notebook funcionar. Dentro da ficha (o modal) o teto
+é menor, 560px, porque lá o QR já é menor e o boleto sozinho mandava no
+tamanho da janela.
+
+**O QR não foi tocado** — ele já tinha teto (230px na tela de códigos, 190px
+na ficha), e o dono disse que está ótimo.
+
+**Verificado:** a suíte inteira; os testes novos da marca (9 de regra, 4 de
+tela) e o do teto do boleto; e o de sempre — cada marca nova foi apagada do
+gabarito para conferir que o teste fica vermelho.
+
+**NÃO verificado:** nada num navegador. O tamanho do boleto na tela de 34"
+dele é o único jeito de saber se 855px é confortável — se ainda estiver
+grande, é um número num lugar só.
+
+---
+
+### Centésima primeira leva (25/09) — dois botões mortos e a adoção sem volta
+
+Três relatos dele, no mesmo dia, e o terceiro é o grave.
+
+#### 1. O botão "Desfazer" não fazia nada
+
+> *"O BOTAO DESFAZER o extrato importado nao funciona."*
+
+E não fazia mesmo. O botão estava na tabela dos extratos com a classe
+`desfazer-arquivo`, a rota `/api/conciliacao/desfazer` estava escrita e
+testada — e **ninguém ligou os dois**. Clicar não dava erro, não dava recado,
+não fazia nada.
+
+É o pior tipo de defeito que existe neste repositório: nada estoura, nada
+aparece no log, e a suíte inteira passa verde. Agora há teste exigindo que a
+ligação exista, e que a pergunta de confirmação venha antes da ação e diga o
+que se perde (conciliado, observação, o que já está no OMIE).
+
+#### 2. Os filtros de cabeçalho não funcionavam
+
+> *"os filtros de cabecalho tb nao estao funcionando"*
+
+Causa: **a regra do HTML que ninguém lembra.** Num formulário sem botão de
+enviar, o Enter só envia se houver **um único** campo de texto. O filtro de
+cabeçalho tem seis (data, histórico, documento, entrada, saída, observação) —
+então o Enter não fazia absolutamente nada. Só a caixinha de situação
+funcionava, porque ela envia no `onchange`.
+
+Dois consertos: um botão de enviar (escondido, é o botão padrão do formulário)
+e um tratamento de Enter no script, para não depender de navegador nenhum. A
+caixinha de data passou a aplicar sozinha quando se escolhe o dia.
+
+**E um defeito silencioso que estava junto:** o formulário do cabeçalho só
+levava `sentido` e `busca`. Digitar no cabeçalho **apagava** a faixa de datas e
+a de valores que a pessoa tinha posto na barra lateral — ela via a lista mudar
+e não fazia ideia de por quê. Agora os seis campos da barra viajam junto.
+
+#### 3. ⚠️ A ADOÇÃO DE UMA LINHA DA PLANILHA NÃO TINHA VOLTA
+
+> *"Ainda tá tendo alguma falha na detecção. Está se tentando colocar registro
+> que já estão lançados. (…) BD 50024 · Li 1006 lançamento(s): 0 já estavam
+> aqui e 1006 são novos."* — com oito linhas de PIX da SEFAZ de 01/09 que
+> estavam, as duas listas na tela, uma ao lado da outra.
+
+**O mecanismo, que é o que precisa ficar registrado:** quando um OFX reconhece
+uma linha que já veio da planilha, ele não cria outra — **adota** a que existe,
+gravando nela a identidade do banco e o FITID. Isso é certo, e está assim desde
+24/09.
+
+O que faltava era o caminho de volta, e a falta tem duas consequências:
+
+1. O "Desfazer" apaga só as linhas de origem `ofx`. A linha adotada tem origem
+   `planilha`, então ela **ficava** — carregando o FITID e a identidade de um
+   arquivo que acabou de ser apagado. Um fantasma.
+2. E com FITID preenchido ela deixa de ser adotável (a adoção exige FITID
+   vazio). Da próxima vez que o mesmo período fosse importado, ela não era
+   reconhecida pela identidade (de um arquivo morto) **nem** adotada — e o
+   extrato **criava a linha de novo, em duplicidade**.
+
+**O conserto tem três partes:**
+
+- **Migração 026**: a coluna `impressao_planilha` guarda a identidade que a
+  linha tinha antes de ser adotada, e o `arquivo_id` passa a ser anotado.
+- **O desfazer devolve** essas linhas à planilha (identidade original de volta,
+  FITID limpo) antes de apagar as de origem `ofx`. O conciliado e a observação
+  ficam — aquilo é trabalho de gente, não veio do arquivo. A tela conta as
+  devolvidas **separado** das apagadas: se entrassem juntas, o aviso diria que
+  vai apagar linha da planilha, o que é falso.
+- **As que já estão presas no banco podem ser soltas.** As adotadas antes da
+  026 não sabem quem as adotou — mas a identidade de planilha é calculada a
+  partir dos dados da própria linha (data, valor, descrição e a ordem da
+  repetição), e a adoção não mexe em nenhum deles. Ou seja: é
+  **reconstruível**. A conferência agora acusa "N linha(s) PRESAS" antes do
+  botão de gravar, e há um botão que solta e reconfere.
+
+  Soltar não perde nada: se o arquivo que adotou ainda existir, a próxima
+  importação dele adota de novo.
+
+#### Dois outros defeitos achados no mesmo caminho
+
+**O período declarado pelo banco mente.** O extrato dele dizia
+`DTSTART = DTEND = 25/09` e trazia 1.006 lançamentos, o mais antigo de 01/09 —
+o Bradesco escreveu ali a data do download. E o período é a janela em que a
+conferência procura "o que está aqui e NÃO vem neste extrato". Com a janela de
+um dia, ela não achava nada e a tela passava a impressão de que estava tudo
+conferido. Agora o período é a **união** do declarado com o que o arquivo de
+fato traz: esticar é seguro, encolher nunca.
+
+**O sinal trocado agora é acusado.** Se a linha existe aqui com o sinal
+contrário, a adoção continua **não** juntando — juntar viraria o sinal de um
+lançamento verdadeiro em silêncio, e essa decisão de 24/09 fica. Mas a tela
+passou a avisar, porque sem o aviso a causa era invisível: a aba com sinal
+trocado aparecia como "tudo novo".
+
+#### ⚠️ O que NÃO está confirmado, e é importante dizer
+
+**Não tenho como provar que foi isto que aconteceu na BD 50024.** Não olhei o
+banco de produção — o diagnóstico vem da leitura do código e de bater com o
+que ele viu na tela. Os dois mecanismos possíveis (linha presa e sinal
+trocado) agora **aparecem na conferência com nome e número**. Se os dois vierem
+zero, a causa é outra e o relatório passa a dizer isso em vez de esconder.
+
+**Verificado:** 9 testes novos com banco de verdade (o ciclo inteiro:
+adotar → desfazer → reimportar sem duplicar), 3 da leitura do OFX, 7 de guarda
+das telas; a suíte inteira. Mutação conferida: desligar a devolução deixa dois
+dos testes vermelhos.
+
+**NÃO verificado:** nada num navegador, e o banco de produção.
+
+---
+
+### Centésima segunda leva (25/09) — a tag de lote engordava a linha
+
+> *"Uma coisa não gostei da tag lote. Ela aumenta a linha da tabela de
+> solicitações."*
+
+Ele está certo, e a causa eram DUAS coisas somadas:
+
+1. **A célula do número era a única da tabela que podia quebrar linha.** Todas
+   as outras são `.cortar`, com `nowrap` e corte com "…". Numa tela cheia de
+   colunas, a tag não caberia ao lado do número e caía embaixo dele — a linha
+   dobrava de altura. Agora a célula do número é `nowrap`: número e tag ficam
+   sempre lado a lado, e quem aperta é a coluna, não a altura.
+2. **A altura do selo vinha da entrelinha herdada** (`line-height: 1.45` do
+   corpo), que sobre 9,5px dá quase 14px mais a folga. Travada em 14px, ela
+   cabe na linha de 13px da tabela (caixa de ~18,8px) e não empurra nada.
+
+Tirei também o MAIÚSCULO e o espaçamento entre letras: "lote" em minúscula
+ocupa um terço menos de largura — e largura na célula do número era exatamente
+o que causava a quebra.
+
+**E o caso que ia repetir o defeito:** quem esconde a coluna do número recebia
+a tag na primeira célula, que tem 34px. A palavra ali quebra embaixo da caixa
+de marcar. Lá ela virou um **ponto colorido** (azul/âmbar, mesma leitura), com
+o mesmo balãozinho — a informação não se perde.
+
+**Verificado:** os testes da tela, com uma guarda nova que falha se a célula
+do número voltar a poder quebrar ou se a altura do selo voltar a depender da
+entrelinha.
+
+**NÃO verificado:** nada num navegador — a altura da linha na tela de 34"
+dele é o único jeito de fechar isso.
+
+---
+
+### Centésima terceira leva (26/09) — o filtro que travava a tela, e apagar linha
+
+#### 1. Filtrar por um dia vazio virava beco sem saída
+
+> *"Se eu colocar uma data que não tem nada, ele some com o extrato —
+> obviamente não tem nada, mas também ele some com os cabeçalhos. Aí você não
+> pode alterar o filtro."*
+
+Exato. O "se não há linhas" engolia a tabela **inteira**, cabeçalho incluído — e
+os filtros de cabeçalho moram no cabeçalho. Filtrar um dia sem movimento
+deixava a pessoa sem como voltar: só o "Limpar" da barra lateral salvava, e
+quem não soubesse concluiria que a tela travou.
+
+**A regra que fica:** um filtro que não pode ser desfeito de onde foi feito não
+é filtro, é armadilha. A tabela agora é desenhada sempre, com o cabeçalho, e o
+"nada aqui" virou uma linha dentro dela — dizendo também **o que fazer**
+("mude o filtro acima"). Quando a conta não tem extrato nenhum a frase é outra:
+mandar mexer no filtro faria procurar o que não existe.
+
+A barra de ações ("conciliar selecionados") continua escondida sem linhas —
+botão que não faz nada é pior que botão nenhum.
+
+#### 2. Apagar um lançamento do extrato
+
+> *"Era interessante a gente poder excluir um lançamento do extrato. De repente
+> teve alguma falha na importação e a gente poder excluir aquela linha. E a
+> exclusão tem uma confirmação, né? Para garantir que a pessoa está fazendo uma
+> coisa correta. Porque não é o certo estar excluindo linhas, mas…"*
+
+Ele está certo nas duas pontas, e por isso a operação é **chata de propósito**.
+Apagar linha de extrato é o que há de mais perigoso nesta tela: o extrato é a
+cópia do que o banco diz, e uma linha que sai faz o saldo daqui deixar de bater
+com o banco **sem deixar rastro na conta** — porque a linha sumiu.
+
+O caminho normal continua sendo o **Desfazer da importação** (tira o arquivo
+todo, com contagem antes). Isto é para a linha solta: a digitada errada, a que
+veio duplicada de uma falha.
+
+**Quatro travas:**
+
+1. **Um × discreto no fim da linha**, cinza, que só ganha cor ao passar o
+   mouse. Quem procura acha; quem não procura não tropeça.
+2. **Pergunta antes**, dizendo o que a linha é — data, valor, de onde veio, se
+   está **conciliada** (e por quem) e se tem observação escrita. E aponta o
+   caminho certo: "se o problema foi a importação inteira, prefira o Desfazer".
+3. **Exige o MOTIVO**, e o servidor recusa sem ele. Não é burocracia: quem
+   olhar o saldo em março e vir que não bate precisa conseguir descobrir por
+   quê. Sem o motivo, a única resposta possível seria "alguém apagou uma linha
+   em setembro".
+4. **A linha já lançada no OMIE não sai**, e a recusa diz o número do título.
+   Lá fora existe um lançamento que nada mais explicaria.
+
+**Limitação dita com todas as letras:** o registro vai para o **log do serviço**
+(Render), não para uma tela. É o mesmo lugar onde o desfazer de importação
+registra. Para achar depois, é preciso ir ao log — não há tela de "linhas
+apagadas". Se isso incomodar, é uma tabela nova e uma migração.
+
+**Verificado:** 5 testes com banco de verdade (apaga e o saldo muda; sem motivo
+recusa e a linha fica; a lançada no OMIE recusa e a linha fica; a conferência
+diz o que a linha é; linha que não existe mais responde com frase) e 6 de tela
+(os filtros continuam com zero linhas, a frase certa em cada caso, a barra de
+ações some, o × só para quem opera, e a dupla confirmação com motivo).
+
+**NÃO verificado:** nada num navegador.
+
+---
+---
+
+### Centésima quarta leva (26 e 27/09) — A FOLHA DE PAGAMENTO: o levantamento, e por que nada foi para a tela ainda
+
+Esta leva é diferente de todas as anteriores. O dono pediu a coisa maior que já
+pediu nesta área: **acabar com as planilhas da folha de pagamento**. Receber a
+Folha Sintética da contabilidade, cruzar com o cadastro e com o ponto, apropriar
+o valor de cada pessoa por obra e por dia, gerar o arquivo de pagamento por
+conta corrente, os relatórios em PDF e Excel com várias visões, e os cards do
+Pipefy como passo separado e opcional.
+
+> *"Faça uma varredura criteriosa e profunda… não se acanhe em me perguntar…
+> gostaria que você pensasse aí como gestor de departamento pessoal e sugerisse
+> também novas ideias."*
+
+**O DETALHE TODO MORA EM `docs/FOLHA_DE_PAGAMENTO.md`** — 1.350 linhas, na raiz
+do repositório, não nesta pasta, porque o assunto encosta em Pipefy, Make,
+Dropbox e OMIE. Quem for continuar este trabalho **lê aquele documento antes de
+escrever uma linha de código**. Aqui fica só o estado e o que dói.
+
+#### O que JÁ está escrito e testado (e não tem tela nenhuma)
+
+Sete módulos novos, todos com teste, **nenhum ligado a uma tela**:
+
+| Arquivo | O que faz |
+|---|---|
+| `folha_sintetica.py` | lê o `.xls` da Fortes (BIFF antigo, por isso o `xlrd` novo) |
+| `folha_rateio.py` | as regras de rateio por pessoa e por grupo |
+| `folha_apropriacao.py` | decide para qual obra vai cada real: mão > regra > ponto |
+| `folha_vinculo.py` | CTPS ou DIÁRIA, **por dia**, traduzido da fórmula da planilha |
+| `migracoes/027_folha_rateio.sql` | as três tabelas de rateio |
+| tela `folha_rateio` | a ÚNICA tela desta leva; só do mestre |
+| `docs/EXPORTAR_FORMULAS.md` | script para o dono me mandar as fórmulas das planilhas |
+
+#### As quatro vezes que eu estava errado, e ele me corrigiu
+
+Ficam registradas porque são o padrão do erro, não o erro:
+
+1. **Escondi o problema em vez de mostrar.** Pessoa sem ID Fortes no cadastro eu
+   tinha jogado numa lista lateral. *"Não pode ficar oculto, escondido."* Agora
+   ela fica **na lista principal**, marcada como pendente, e **conta no total** —
+   de propósito, para o total NÃO fechar. Um total que fecha escondendo gente é
+   pior que um total que não fecha.
+2. **Inventei uma crítica que seria só ruído.** Eu ia avisar sobre quem tem ponto
+   e não está na folha. Ele: o ponto tem **mais gente** que a folha da
+   contabilidade, por desenho — o resto entra em outra forma de pagamento. Virou
+   quatro listas separadas, e só uma é aviso de verdade.
+3. **Ia classificar CTPS × DIÁRIA por PESSOA.** A fórmula da coluna AH da
+   planilha classifica **por DIA**. Quem foi admitido no meio da quinzena tem
+   dias dos dois tipos: pela minha versão, metade do dinheiro dessa pessoa sairia
+   pelo método de pagamento errado.
+4. **Reportei um defeito olhando o cabeçalho da planilha errada.** Disse a ele
+   que o carregamento estava pegando o ID do Pipefy no lugar da conta. As
+   fórmulas provaram que não: a aba tem 4 colunas e a leitura por posição estava
+   certa. **O defeito real era outro, na mesma coluna** (veja abaixo).
+
+**A lição, e ele disse a frase que fecha o assunto:**
+
+> *"Mas você precisa ler as fórmulas das planilhas. Nelas foram criados todo o
+> regramento, do contrário você vai criar algo errado."*
+
+Ele está certo. **Sem as fórmulas, o que eu digo sobre essas planilhas é
+palpite.** Por isso existe o `docs/EXPORTAR_FORMULAS.md`: um script que ele roda
+uma vez e que exporta as fórmulas de oito planilhas de uma vez, sem mandar
+nenhum dado de pessoa. Duas já entraram e mudaram o código. Falta o resto — a
+lista está em `docs/FOLHA_DE_PAGAMENTO.md` §7.11.
+
+#### O defeito real que as fórmulas acharam: a conta vinha suja
+
+A aba `C. Diários` traz a conta de pagamento como **texto cru do Pipefy**:
+`BRADESCO S/A - AG 1234 | 0007011-4 | CONS`. O carregamento guardava isso
+inteiro. A própria planilha já resolvia com uma expressão que pega o trecho do
+meio e tira os zeros da frente → `7011-4`. Agora `sincronizacao.conta_do_texto`
+faz o mesmo. **Lugar único**: quem mexer na regra mexe ali.
+
+#### Duas armadilhas de número que quase passaram
+
+1. **O código virou valor.** O leitor da Folha Sintética pegava a primeira coluna
+   numérica da linha — que é o **código** da pessoa. Quem não tinha valor virava
+   "R$ 999". Agora a varredura começa depois do código.
+2. **A multiplicação por 100.** Eu apagava todos os pontos antes de converter:
+   o texto `1.198,84` ficava certo, mas `1198.84` virava `119884`. **A
+   conferência com o total da filial NÃO pegaria isso** — o total infla igual, e
+   os dois lados fecham errado juntos. A regra que ficou: **vírgula manda; sem
+   vírgula, ponto seguido de 1 ou 2 dígitos no fim é decimal; qualquer outro
+   ponto é separador de milhar.**
+
+#### Os outros seis pagamentos (27/09) — lidos, não implementados
+
+Ele mandou os scripts da planilha de **Diaristas, Extras e GM** e o segundo
+blueprint (PJ e Pró-labore). Foram lidos de ponta a ponta. O regramento está em
+`docs/FOLHA_DE_PAGAMENTO.md` §7.12 e §7.13. O que mais importa saber daqui:
+
+- **São seis folhas, não uma:** Folha da contabilidade, Alimentação, Transporte,
+  Gratificados (GM), Diaristas, PJ/Pró-labore — mais as diárias de quem tem
+  carteira assinada. Duas formas de pagar: **SomaPay** e **BeeVale**, e ele quer
+  **escolher** qual usar, porque depende da obra → CNPJ.
+- **BeeVale faz um card por CONTA; PJ faz um card por PESSOA.** Não é
+  inconsistência, é regra de negócio diferente.
+- **Dois defeitos reais nos scripts atuais**, que o sistema novo não deve herdar:
+  a função que marca tudo escreve numa coluna que o gerador não lê (rodada sai
+  vazia); e o PJ decide pessoa física × jurídica pelo **tamanho do texto** do
+  documento — um CNPJ sem pontuação tem 14 caracteres e seria tratado como CPF.
+- **Uma perda silenciosa:** o gerador da BeeVale junta linhas da mesma pessoa e,
+  se elas tiverem obras diferentes, fica com a **primeira** e só escreve um aviso
+  no log técnico. O rateio da segunda obra desaparece sem ninguém saber.
+- **O que copiar de lá:** as três conferências antes de subir o arquivo, incluindo
+  **abrir o próprio .xlsx gerado** e checar se os CPFs de dentro são os
+  esperados. Isso existe porque o Drive **já entregou o arquivo de outra conta**
+  — está escrito no comentário do script.
+
+#### As fórmulas chegaram — e derrubaram duas coisas que eu tinha escrito
+
+O documento de fórmulas da planilha de Diaristas/Extras/GM **estava na pasta**;
+eu tinha dito que faltava. Lido, ele respondeu metade das perguntas abertas e me
+corrigiu duas vezes. Detalhe em `docs/FOLHA_DE_PAGAMENTO.md` §7.14. O que
+importa saber daqui:
+
+- **A "trava de pagamento" que eu descrevi não existe.** Eu vi uma célula com
+  `"OK"` e supus regra de negócio. É só um campo obrigatório: recusa disparar se
+  ninguém escreveu o bloqueio à mão. **Eu supus regra onde havia formulário** —
+  é o mesmo erro do cabeçalho da planilha errada, de véspera.
+- **A marcação "Não Pagar" da GM não funciona por pessoa.** A fórmula que o
+  gerador lê olha **só a linha 4** e copia o resultado para todas as outras. E
+  ela não consulta a marcação que o DP faz: quem decide o pagamento BeeVale da GM
+  é "tem CPF e tem centro de custo". A marcação alimenta **outra** lista, a do
+  SomaPay. Dois portões na mesma aba, e só um obedece a pessoa.
+- **SomaPay × BeeVale já é escolha por pessoa** — é uma coluna do cadastro da GM.
+  Ele pediu essa liberdade achando que era nova.
+- **A conta corrente sai do NOME da obra, por expressão, com padrão silencioso.**
+  Obra cujo nome não casa com nenhum pedaço da lista vai para a `7011-4` **sem
+  avisar**. Paga pela conta errada e ninguém fica sabendo. No sistema novo a conta
+  vem da tabela, e obra sem conta **segura o arquivo**.
+- **Dinheiro que eu não sabia que existia:** a diária extra de quem é CTPS paga
+  **+20 em feriado, +10 no sábado, +20 no domingo**, e **não paga** o dia que tem
+  compensação. E **quem é VIGIA está excluído** — regra que só existe dentro de
+  uma fórmula.
+- **A alimentação desconta feriado e férias; o transporte NÃO.** As colunas de
+  feriado existem na aba do transporte, são calculadas e não entram na conta.
+  Hoje se paga transporte de dia de férias. **É a pergunta mais cara do
+  levantamento**, porque multiplica por ~500 pessoas todo mês — e só o dono
+  decide se é regra do vale-transporte ou fórmula esquecida pela metade.
+- **O link do card do Pipefy por pessoa já existe** nas planilhas: é uma coluna
+  do cadastro. Ele pediu isso; a carga do cadastro só precisa trazer o número.
+
+**A lição, de novo e mais curta:** duas vezes em dois dias eu afirmei uma regra
+que não existia, olhando o sintoma em vez da fórmula. Nesta área, **o que eu digo
+sobre as planilhas sem ter lido a fórmula é palpite** — e palpite que vira código
+custa dinheiro de verdade.
+
+#### ⚠️ Segurança: de três riscos, agora são SEIS
+
+Os três antigos (credencial do Mobponto dentro do script, um Web App aberto para
+qualquer pessoa, planilha de pagamento com link público) continuam. A leitura dos
+scripts da BeeVale achou três novos, e um deles é grave:
+
+4. **As credenciais do Dropbox estão escritas dentro do código** — incluindo o
+   *refresh token*, que não expira. Quem lê o script tem a pasta do Dropbox.
+5. **O token do Z-API também está no código.** Quem tem manda WhatsApp pela BWS.
+6. **O script FORÇA o link do Dropbox a ser público** — se achar um link
+   restrito à equipe, ele **revoga** e cria um aberto. Depois cola esse link na
+   descrição do card e na mensagem de WhatsApp. O arquivo com nome, CPF e valor
+   de ~500 pessoas baixa **sem login**.
+
+Os itens 3 e 6 morrem sozinhos quando o arquivo passar a ser baixado de dentro
+do sistema, com login. **Os itens 1, 4 e 5 são credenciais que já circularam e
+precisam ser trocadas na origem** — vale a mesma regra do `EL_NFSE_TOKEN`
+(`CONTEXTO.md` §9). **Nenhum desses valores entra no chat**: copia-se do editor
+de script direto para o Render ou para o painel do fornecedor.
+
+#### Por que NADA disso está numa tela ainda
+
+Porque o regramento não está completo, e tela feita com regra pela metade é
+retrabalho garantido. Falta:
+
+- as fórmulas das outras seis planilhas (lista em §7.11 do documento);
+- as abas `Página37`, `Feriados`, `Férias`, `Compensação` e `Calendário`;
+- a **trava de pagamento** da aba CTPS — existe uma célula que decide se o
+  pagamento pode sair, e o critério dela é invisível para mim;
+- quatro respostas dele, também em §7.11.
+
+#### Pendente AGORA nesta área
+
+1. **Migrações 019 a 028 não aplicadas** — o botão "Aplicar atualizações do
+   banco" precisa ser apertado no mesmo momento em que este ramo for juntado.
+   (A 028 é a do cadastro de colaboradores, da leva seguinte.)
+2. **Dependência nova: `xlrd`** (ler o `.xls` antigo da Fortes). Está no
+   `requirements.txt` com o motivo escrito.
+3. **Nada foi para a `main`** desde `bf958d9`. Este ramo tem 14 commits
+   esperando o "pode" dele.
+4. **`MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY`** ainda não existem no
+   Render.
+5. **A diferença de saldo da BD 50024** (R$ 64.711,98) continua sem explicação
+   — ninguém investigou.
+6. **Renomear "Análise de SPs" para "Análise de Pagamentos"** foi levantado por
+   ele e não decidido. Minha recomendação: trocar só o que a pessoa lê na tela;
+   **não** mexer em pasta, esquema de banco nem variável de ambiente.
+
+---
+
+### Centésima quinta leva (27/09) — o cadastro vem do Pipefy, e o nome leva ao card
+
+Duas coisas pedidas no mesmo recado, e as duas são a mesma ideia: **o cadastro
+de colaboradores não nasce aqui.**
+
+> *"A planilha de cadastros dos colaboradores, tudo vem do Pipefy, por isso que
+> é importante esse direcionamento para o cadastro do colaborador, porque às
+> vezes é preciso fazer a alteração do auxílio de alimentação, do valor de um
+> auxílio de transporte, ou um valor da gratificação. (…) o nome do colaborador
+> já redireciona, alguma coisa que clica e direcione. (…) eu preciso poder
+> atualizar as informações que estão na análise SP que espelham o que está na
+> planilha (…) um botão fácil para poder atualizar imediatamente os dados."*
+
+#### O caminho do dado, e por que a tela não deixa editar
+
+```
+Pipefy (o card da pessoa)  →  automação dele  →  planilha "Registro de
+Colaboradores", aba "Dados Documentos"  →  botão "Atualizar cadastro"  →  banco
+```
+
+**Nada é digitado no sistema, de propósito.** Uma tela que deixasse corrigir o
+valor do auxílio aqui teria a correção apagada na atualização seguinte — e
+ninguém descobriria por quê. Então o que existe é o contrário: **o nome da
+pessoa é um link para o card dela no Pipefy**, que é onde se corrige. Corrige
+lá, aperta o botão aqui.
+
+Isso vale nos dois lugares onde pessoa aparece: na tela nova de
+**Colaboradores** e na de **Rateio da Folha**.
+
+#### Só 30 das 78 colunas — e não fui eu quem escolheu
+
+A própria planilha respondeu. Ela tem uma aba oculta (`CadastroColaboradores`)
+que é quem alimenta as folhas de alimentação, transporte, GM e diaristas, e ela
+importa exatamente 30 colunas da aba `Dados Documentos`. Lido das fórmulas.
+
+Duas razões para não trazer as outras 48, e a segunda importa mais:
+
+1. **Custo.** Cada botão apertado leria mais que o dobro de células.
+2. **Dado pessoal que não serve para nada aqui.** Endereço, nome da mãe, RG,
+   PIS e salário ficam na planilha. **O que este módulo não busca não pode vazar
+   por ele.**
+
+Para conseguir as duas coisas, a leitura pede **faixas de coluna**, não de A até
+a última — e tem teste que falha se alguém trocar isso por uma faixa só.
+
+#### A armadilha que quase entrou, e o teste que a pega
+
+O Sheets **corta o fim vazio de cada faixa**: uma faixa cujas últimas linhas
+estão em branco volta mais curta que as outras. Juntar as faixas por posição sem
+repor essas linhas faz o dado de uma pessoa encostar na linha de outra — **o
+auxílio de uma pessoa vai para o CPF de outra**, em silêncio.
+
+É o defeito mais caro que este módulo pode ter, e é por isso que existe um teste
+só para ele. Conferido com mutação: trocando a reposição por "repete a última
+linha", o teste fica vermelho apontando exatamente o valor que vazou de uma
+pessoa para a seguinte.
+
+#### A linha 2 da planilha não é gente
+
+A aba tem o cabeçalho na linha 1 e, na **linha 2**, o número de cada coluna
+(1, 2, 3…) — serve a uma fórmula com `INDIRECT` da aba `Dados Gerais`. Lida
+como dado, criaria um colaborador chamado "2", com CPF "1", e ele entraria nas
+listas de pagamento. Os dados começam na **linha 3**, que é o que a própria
+planilha faz nas abas que consultam esta.
+
+#### ⚠️ O que ainda NÃO está confirmado: o nome das colunas de auxílio
+
+De todas as colunas, as **cinco dos auxílios** (valor e modalidade de
+alimentação, valor e modalidade de transporte, e a marcação BeeVale) são as
+únicas cujo TÍTULO eu não tenho. As fórmulas provam que elas existem e o que
+fazem, mas elas chegam na aba oculta por `IMPORTRANGE` de uma faixa
+(`Col65`…`Col70`), sem nome.
+
+Então o módulo tenta os nomes mais prováveis e, **quando não acha, avisa na
+tela** com o cabeçalho de verdade e pede o nome exato. Não grava em branco
+calado: **campo de auxílio em branco vira pagamento a MENOS, e pagamento a
+menos ninguém nota tão rápido quanto um a mais.**
+
+#### O que ficou pronto
+
+| Onde | O que |
+|---|---|
+| `migracoes/028_colaboradores.sql` | a tabela do espelho, com dinheiro em `NUMERIC` |
+| `colaboradores.py` | a leitura por faixas, a busca, e o link do card |
+| tela **Colaboradores** (nova) | procura por nome ou CPF, mostra os três valores, leva ao card |
+| tela **Rateio da Folha** | o nome virou link; marca quem está "fora do cadastro" e quem saiu |
+| modo `colaboradores` em `tarefas.py` | o botão, rodando no processo separado |
+
+**A tela de Colaboradores NÃO é só do mestre**, e isso foi decisão: é leitura, e
+quem opera a folha precisa conferir o auxílio de alguém e chegar ao card. O
+**Rateio**, que decide para qual obra vai o salário, continua só do mestre.
+
+**Verificado:** 38 testes sem banco (incluindo o do alinhamento, com mutação),
+23 com banco de verdade (o `ON CONFLICT` que atualiza em vez de duplicar, o
+`NUMERIC` do centavo, o filtro de quem saiu, a carga inteira com a planilha
+dublada) e 15 de tela. A rede de segurança do inventário de rotas pegou a tela
+nova antes de mim — ela recusou a publicação até a rota entrar na lista de quem
+exige login.
+
+**NÃO verificado:** nada num navegador, e **nada contra a planilha de verdade**
+— a aba foi dublada. Os nomes das colunas de auxílio são a parte que só o
+primeiro clique no botão vai confirmar.
+
+**Variável de ambiente nova, com padrão:** `ANALISESPS_SHEET_COLABORADORES`. Já
+vem com o endereço da planilha atual, então não precisa ser criada no Render —
+existe só para o dia em que a planilha mudar de lugar.
+
+---
+
+### Centésima sexta leva (27/09) — não pagar quem saiu, e a conta das férias decidida
+
+Ele respondeu a pergunta que estava aberta e, no mesmo recado, levantou um
+cuidado maior. As duas coisas estão em `docs/FOLHA_DE_PAGAMENTO.md` §7.16;
+aqui fica o essencial e o estado.
+
+#### A resposta sobre o transporte
+
+> *"O fato de se estar de férias e um feriado em dia de semana poderia sim afetar
+> o cálculo do auxílio transporte. (…) Um único dia não precisaria, mas férias,
+> como são mais dias, sim, deveríamos proporcionalizar."*
+
+**Férias descontam, proporcional. Feriado de um dia não desconta.** E depende da
+modalidade: quem é mensal tem desconto sobre o mês; quem é por dia, sobre os dias
+úteis.
+
+**Não dá para implementar ainda** — o sistema não sabe quem está de férias. Isso
+vive numa aba da planilha que ele vai mandar como relatório. A ordem é:
+relatório → carga → marca na tela → desconto. Nada dos três últimos existe sem o
+primeiro.
+
+⚠️ **E não mexi na alimentação**, que hoje desconta feriado de um dia. Ele falou
+do transporte. Alimentação é refeição: não pagar o feriado faz sentido, porque
+não houve refeição. Inferir dali uma mudança na alimentação seria eu decidindo no
+lugar dele.
+
+#### O cuidado que já deu para fazer: quem saiu não recebe
+
+> *"Não podemos pagar esse tipo de verba indenizatória ou ainda pagar salário ou
+> diárias pra quem saiu, tá saindo. Tem que ter cuidados e alerta."*
+
+**Isto não esperou o relatório de demissão**, porque o cadastro que vem do Pipefy
+já traz aviso prévio, último dia, data de saída e a fase. O relatório que ele vai
+mandar será uma **segunda fonte** para conferir uma contra a outra — não é a
+primeira.
+
+Uma função só (`situacao_no_pagamento`) responde para as duas telas e para o
+gerador de pagamento que vier: **saiu** (trava), **saindo** (alerta),
+**afastado** (trava os auxílios) ou ativo.
+
+**Três coisas do desenho que não são óbvias, e cada uma tem teste:**
+
+1. **A data que manda é o FIM DO PERÍODO pago, não hoje.** Pagar a quinzena de 1
+   a 15 no dia 20 é normal; quem saiu no dia 18 trabalhou a quinzena inteira e
+   **recebe**. Usar "hoje" bloquearia pagamento devido — e bloquear o devido gera
+   reclamação trabalhista, que é o outro lado do mesmo risco.
+2. **A fase do Pipefy manda, e não fui eu quem decidiu.** As abas de alimentação
+   e transporte já excluem quem está `Desligado` ou `Afastado` pela fase. Uma
+   segunda regra aqui criaria duas respostas para a mesma pergunta.
+3. **O desacordo entre os sinais fica ESCRITO.** Fase dizendo desligado sem data
+   de saída, data de saída com a fase dizendo ativo, último dia já passado sem
+   saída lançada. **Cadastro pela metade é por onde se paga quem já saiu** — e
+   quem tem desacordo **continua na lista**, marcado. Esconder o caso
+   inconsistente é o erro que ele me corrigiu em 26/09.
+
+Na tela: aviso no alto com a contagem do **cadastro inteiro** (não da lista, que
+tem teto de 200 — número que conta só o visível diria "3 saindo" havendo trinta),
+filtro "só quem está saindo" que **traz quem já saiu** junto, a frase do que não
+pagar em cada linha, e a linha destacada. Âmbar para "está saindo", cinza para
+"saiu": cor igual faria tratar do mesmo jeito dois casos em que um tem pagamento
+legítimo.
+
+**Rescisão não se calcula nem se paga por este módulo** — está escrito na tela.
+O que ele faz é impedir que folha, diária ou auxílio do período saiam para quem
+já saiu.
+
+**Verificado:** 14 testes novos sem banco (cada caso e cada desacordo, incluindo
+as bordas de data), 6 com banco de verdade (o filtro e a contagem são `WHERE`
+puro, que o dublê ignora) e 5 de tela. O caso que mais importa tem teste próprio:
+**quem tem a fase dizendo desligado sem data continua aparecendo na lista.**
+
+**NÃO verificado:** nada num navegador.
+
+#### Pendente AGORA nesta área (atualizado)
+
+1. **Migração 028 aplicada?** A publicação de 27/09 levou o código; o botão
+   "Aplicar atualizações do banco" tem de ter sido apertado.
+2. **O primeiro clique em "Atualizar cadastro"** é o que confirma se os nomes das
+   cinco colunas de auxílio estão certos. Se não, a tela avisa com o nome de
+   verdade.
+3. **Falta o relatório de férias e o de demissão** para as cargas — e sem o de
+   férias, o desconto no transporte e a marca "está de férias" não existem.
+4. **A diferença de saldo da BD 50024** (R$ 64.711,98) continua sem explicação.
+5. **`MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY`** ainda não existem no Render.
+6. **Três credenciais para trocar na origem** (Mobponto, Dropbox e Z-API) — ver a
+   leva 104.
+
+---
+
+### Nota da mesma conversa (27/09) — onde os arquivos vão ser guardados
+
+Ele perguntou onde eu estou salvando as planilhas e os relatórios, e pediu
+Drive/Dropbox "conforme o cenário do Make" — **mas só para o que é gerado e
+processado completo**; relatório tirado da tela não se guarda em canto nenhum.
+
+**A resposta honesta é que ainda não salvo nada, porque ainda não gero nada.**
+Não existe gerador de arquivo SomaPay, nem PDF, nem Excel da folha. A regra dele
+fica registrada em `docs/FOLHA_DE_PAGAMENTO.md` §7.17 para quando for.
+
+#### ⚠️ Mas conferindo eu achei uma coisa que muda a conversa
+
+**Todo arquivo que este módulo sobe para o Drive fica PÚBLICO por link.** Está em
+`drive.subir_arquivo`: depois de criar e enviar o conteúdo, ele concede
+`{"role": "reader", "type": "anyone"}` — e o link vai para a descrição do card do
+Pipefy. É o caminho que a geração do **BeeVale** usa, em produção, com arquivos
+que têm **nome, CPF e valor**.
+
+Ou seja: é o mesmo risco que eu tinha apontado no script da BeeVale, **só que
+dentro do nosso código**. E não foi descuido: o comentário do próprio
+`subir_arquivo` explica que, sem liberar por link, quem clica no card recebe "sem
+permissão".
+
+**Isso corrige uma frase minha.** Eu havia escrito que esse risco "morre por
+construção" quando o arquivo passa a sair de dentro do sistema. **Só morre se a
+subida deixar de ser pública.** Trocar Dropbox por Drive, do jeito que o upload
+está escrito, trocaria um link aberto por outro.
+
+**Não mexi no `subir_arquivo`.** Mudar a permissão hoje quebraria os links dos
+cards do BeeVale para quem clica sem conta Google na organização — é fluxo que
+funciona, e a decisão é dele. Para a folha, que é nova, o desenho proposto já
+nasce sem link público (§7.17.4).
+
+#### Quatro perguntas esperando ele
+
+1. **Drive ou Dropbox** para os arquivos da folha? (Drive sai agora; Dropbox
+   precisa de credencial nova no Render e da troca da que vazou no script.)
+2. Se Dropbox, **por quê**? Se for porque o DP trabalha naquelas pastas, é motivo
+   bom — só não quero escolher por ele.
+3. **O arquivo pode deixar de ser público por link?** É o que faz o risco morrer.
+4. O card do Pipefy recebe link **da tela** ou **do arquivo**?
+
+---
+
+### Centésima sétima leva (27/09) — uma tela só para a folha, e o rateio colado
+
+Ele abriu o sistema, viu **duas entradas novas no menu** e me corrigiu em quatro
+coisas. Três eram erro de desenho meu, e as três têm a mesma raiz: **eu resolvi o
+caso e ignorei o uso.**
+
+#### 1. Duas entradas no menu viraram UMA
+
+> *"Eles têm que estar dentro de uma tela só. E lá ter as subtelas, porque senão
+> vai ficar tela demais, fica até misturado com o restante, que tem mais a ver
+> com o financeiro. (…) pode botar abreviado, Folha PGT."*
+
+Ele está certo: este menu é de **financeiro**, e cada peça nova da folha ia virar
+um item nele. Agora é **uma entrada, "Folha PGT"**, e por dentro as subtelas —
+como as abas da planilha que ela vai substituir.
+
+**A proteção do rateio não afrouxou, ficou mais estrita.** Antes ela vinha da
+chave de tela `folha_rateio`; agora vem da lista de **rotas** do mestre, que
+nomeia cada uma — e não depende de ninguém lembrar de classificar uma tela nova.
+Quem não é mestre **não vê a aba** do rateio.
+
+#### 2. O formulário do rateio era absurdo, e ele mediu
+
+> *"Imagina, eu tenho 10 funcionários, eu quero ratear em 10 obras diferentes. Aí
+> imagina preencher 10 funcionários 10 vezes cada campozinho. 10 vezes 10 dá 100.
+> Imagina preencher 100 campos. É absurdo."*
+
+Agora se **cola uma tabela**: uma linha por pessoa, `CPF ; nome ; obra, obra,
+obra`. E a ideia dele, que é a melhor parte: **repetir a obra é o peso dela.**
+`A, B, B` é 33,33% e 66,67% — sem ninguém digitar percentual.
+
+Detalhes que valem:
+
+- **Quem tem a mesma distribuição vira UMA regra.** Dez pessoas com o mesmo
+  rateio não são dez cartões na tela.
+- **Aplicar substitui o que está valendo — DESATIVANDO, não apagando.** A regra
+  desativada continua explicando como a folha do mês passado foi rateada. Era o
+  ponto dele: *"o rateio muda todo mês, não existe rateio fixo."*
+- **"Copiar para a tabela"** em cada regra devolve as linhas prontas, com a obra
+  já repetida no peso certo. É o "reaplicar o mês anterior" sem eu inventar um
+  segundo jeito de guardar rateio.
+- **Confere tudo antes de escrever.** Se a linha 28 estiver errada, nada foi
+  mexido — e o erro diz **o número da linha**, não "não entendi a tabela".
+- A mesma pessoa em duas linhas é recusada dizendo **em quais linhas**: só uma
+  regra ativa pode valer para alguém, e a segunda derrubaria a primeira calada.
+
+⚠️ **Um defeito que o primeiro teste pegou:** a sobra do arredondamento estava
+indo para a obra de **menor** peso (66,6666 / 33,3334 em vez de 66,6667 /
+33,3333), porque era a última da lista que fechava a conta. A sobra vai para a de
+**maior** peso — a mesma regra da sobra de centavo que ele decidiu em 26/09.
+
+#### 3. A explicação do card era ênfase demais
+
+> *"Não precisa dar aquela ênfase, porque a gente já sabe, ali a gente clica no
+> nome da pessoa, já abre o card do Pipefy e lá atualiza."*
+
+Tirei o parágrafo e o botão de atualizar da tela de Rateio. O botão mora na
+subtela **Colaboradores**, que é onde o cadastro é mostrado. O mesmo botão em
+duas telas faz a pessoa perguntar se são a mesma coisa.
+
+#### 4. As telas que ele procurou e não achou
+
+Ele procurou as telas de **alimentação, transporte, diaristas e importação** —
+que é como ele trabalha na planilha, uma aba por verba. **Elas não existem**, e
+eu não as tinha anunciado como pendentes com clareza suficiente. A barra de
+subtelas mostra só o que existe, de propósito: aba que abre vazia promete o que
+não há.
+
+#### O que respondi sobre a geração dos arquivos (§7.18 do documento)
+
+Ele cobrou que eu nunca tinha dito se havia **entendido** a geração. Está tudo
+escrito lá — o BeeVale (um card por conta, consolidação por conta+CPF+categoria,
+três conferências antes de subir), o PJ (um card por pessoa) e a **categoria**,
+que é a peça que amarra tudo: ela entra na chave de consolidação, na linha de
+categorias do rateio e no tipo de despesa do card.
+
+**E ele acrescentou uma regra nova, que é dinheiro e é trava:**
+
+| | BeeVale | SomaPay |
+|---|---|---|
+| juntar verbas diferentes num arquivo | **pode** — e ele quer escolher | — |
+| mesmo CPF duas vezes | **pode**, se a natureza da verba for diferente | **NÃO PODE** |
+
+⚠️ O SomaPay **recusa** o arquivo com CPF repetido. Então o gerador tem de
+conferir antes de gravar e dizer quem está repetido — arquivo rejeitado depois de
+subir custa a rodada inteira.
+
+#### E o painel, que não é enfeite
+
+Ele pediu dashboard com os totais por obra, por conta e por verba — **e disse por
+quê**: é olhando o total por obra que ele decide o rateio do mês. Ou seja, o
+painel vem **antes** do rateio na ordem de uso, mesmo tendo sido pedido depois.
+
+**Depende da folha guardada no banco**, que é o próximo passo e o que destrava
+tudo: hoje o cálculo existe em memória, sem lugar para ficar. A ordem está em
+§7.18.3: guardar a folha → telas por verba → painel → geradores → cards.
+
+**Verificado:** 20 testes novos sem banco (a repetição como peso, a tabela colada,
+cada erro com o número da linha) e 8 com banco de verdade (substituir desativando,
+colagem com erro não mexe em nada, dez pessoas em dez obras). Cinco testes antigos
+meus ficaram vermelhos com a mudança do menu e foram atualizados ao desenho novo —
+a rede de segurança das rotas pegou as duas rotas novas antes de mim.
+
+**NÃO verificado:** nada num navegador.
+
+---
+
+### Centésima oitava leva (27/09) — a folha da contabilidade passa a ficar guardada
+
+Ele respondeu as quatro perguntas dos arquivos e, como não mudou a ordem que eu
+havia proposto, comecei pela peça que destrava o resto.
+
+#### As decisões dele
+
+| Pergunta | Resposta |
+|---|---|
+| Drive ou Dropbox? | **Tudo Drive.** O Dropbox sai do desenho — nada de credencial nova. |
+| Link público? | **Continua público**, decisão dele: *"é um simples arquivo de folha de pagamento, isso vai transitar só dentro da empresa."* |
+| O card recebe link de quê? | **Do arquivo.** |
+| Quantos arquivos? | **Dois, no mínimo:** o de pagamento e um de **análise da folha** — agrupado, por obra, por funcionário, com o rateio. |
+
+E acrescentou uma coisa que eu não tinha: **o log fica na aplicação**, com as
+informações e o link para baixar por lá — não só no Drive e no card.
+
+⚠️ **Sobre o link público, dito uma vez e registrado, sem reabrir:** o link do
+Drive **não depende de ter acesso à pasta** — quem recebe a URL baixa sem conta
+nenhuma. O risco é exposição de dado pessoal em volume (nome, CPF e salário de
+~500 pessoas), não alguém pagar no lugar dele. **Segue como ele decidiu**, e sem
+custo: é o que o código já faz. Fechar depois é uma linha.
+
+#### O que foi feito: a folha importada fica no banco (migração 029)
+
+**Sem isto não existe nada do que ele pediu depois.** Não há como somar por obra,
+por conta ou por verba o que morria em memória ao fim da requisição. Painel, tela
+por verba, arquivo de pagamento e log do que foi gerado — todos dependem daqui.
+
+- **`folha`**: a competência, o tipo (quinzena/fim de mês), quem importou, e os
+  totais que o relatório **declara** ao lado dos que nós **somamos**. Guardar os
+  dois é o que permite dizer "não fecha" depois, sem reabrir o arquivo.
+- **`folha_linha`**: uma pessoa como veio — código do Fortes **com os zeros**
+  (como número "000013" viraria 13, e o casamento com o cadastro morreria),
+  nome, valor em `NUMERIC`, filial.
+- **Nova subtela "Folha da contabilidade"**, e ela é a **primeira** da área: a
+  ordem é a do trabalho — entra o arquivo, confere-se o cadastro de quem está
+  nele, decide-se o rateio.
+- A **área de soltar é a mesma do extrato**, como ele pediu em 26/09. Dois jeitos
+  de receber arquivo no mesmo módulo obrigam a aprender duas vezes.
+
+**Três decisões de desenho que importam:**
+
+1. **A APROPRIAÇÃO NÃO ENTRA NESTA TABELA**, de propósito. Ela depende do ponto,
+   do rateio e do ajuste à mão, e muda depois de a folha estar importada.
+   Misturar as duas faria uma reimportação **apagar o ajuste fino** — que é o
+   trabalho mais caro do processo.
+2. **Reimportar a mesma competência SUBSTITUI.** Ele corrige algo na
+   contabilidade e manda de novo; duas folhas de 08/2026 quinzena deixariam
+   qualquer total ambíguo. Quinzena e fim de mês do mesmo mês convivem — a
+   unicidade é por competência **e** tipo.
+3. **Não fechar é aviso, não é recusa.** Ele precisa importar a folha que não
+   fecha para **descobrir por que** não fecha. Recusar deixaria o arquivo do lado
+   de fora, onde ninguém investiga. Mas a linha fica marcada e o motivo escrito.
+
+E **quando o título não diz** se é quinzena ou fim de mês, a tela **pergunta** em
+vez de adivinhar — adivinhar erraria o período do ponto, e o período errado
+apropria os dias errados nas obras. O arquivo fica guardado enquanto ele escolhe:
+pedir para soltar de novo seria mesquinho.
+
+**Verificado:** 19 testes com banco de verdade, incluindo **o arquivo real da
+contabilidade indo do `.xls` até o banco** — 491 pessoas, R$ 430.129,75, 47
+filiais, e a soma do que foi GRAVADO conferindo com o total (se o banco perdesse
+uma linha, é ali que apareceria). Mais 9 de tela. O arquivo real é pulado quando
+o anexo não está na máquina: ele não fica no repositório, porque é folha de
+pagamento com nome e valor de 491 pessoas.
+
+**NÃO verificado:** nada num navegador. E o **painel ainda não existe** — o que
+já dá para responder é o total por **filial** (`totais_por_filial`), porque é o
+que o arquivo traz; por **obra** depende da apropriação, que é o passo seguinte.
+
+---
+
+### Centésima nona leva (27/09) — a folha ligada às pessoas, e o painel
+
+Ele pediu para eu **seguir até o fim**. Isto é o que deu para fazer sem inventar
+dado que não existe; o que ficou travado, e em quê, está em
+`docs/FOLHA_DE_PAGAMENTO.md` §7.21 e repetido no fim desta leva.
+
+#### A ponte que faltava: o ID Fortes
+
+⚠️ **A Folha Sintética não traz CPF** — traz código do empregado e nome. E o
+ponto, o cadastro, o rateio, os auxílios e o pagamento são **todos por CPF**. Sem
+o de/para, a folha importada era uma lista de nomes: não dava para saber de quem
+era cada valor.
+
+O de/para vem da aba `ID Fortes` da planilha de colaboradores, **no mesmo botão
+"Atualizar cadastro"**. Duas atualizações separadas para a mesma planilha seria
+pedir para alguém esquecer uma delas.
+
+**Três cuidados, e o motivo de cada um:**
+
+1. **NÃO casa por nome.** As planilhas cruzam por nome hoje e é frágil: dois "JOSE
+   DA SILVA", um acento, um nome do meio abreviado — e o salário vai para a pessoa
+   errada. Aqui é pelo código; sem código a pessoa **fica pendente, visível**.
+2. **O mesmo código para duas pessoas vira crítica**, e o primeiro vale. É o pior
+   erro possível: o salário de uma iria para a obra da outra.
+3. **Aba vazia ou fora do ar não apaga o que já casou.** Zerar o de/para faria a
+   folha inteira virar "pendente" de uma hora para outra.
+
+E o campo **não entra na lista que a carga principal grava**, porque vem de outra
+aba: se entrasse, cada atualização do cadastro o apagaria, e a folha deixaria de
+achar as pessoas na atualização seguinte. Tem teste só para isso.
+
+#### As críticas passam a valer sobre a folha de verdade
+
+Quem não casou com o cadastro, quem já saiu e quem está saindo — as três com o
+valor que está naquela folha, e o link para o card de cada um.
+
+⚠️ **O período da folha decide "saiu" × "está saindo"**, não hoje: quem saiu no
+dia 20 trabalhou a **quinzena** inteira e recebe; na folha de **fim de mês** do
+mesmo mês, não. Tem teste com as duas folhas do mesmo mês dando respostas
+diferentes para a mesma pessoa.
+
+As críticas ficam **antes da lista**: são o que impede pagar, e ninguém as
+encontraria rolando 491 linhas. E a pessoa pendente **continua na lista**,
+marcada — não numa lista à parte que alguém esquece de abrir.
+
+#### O painel, e por que ele é a PRIMEIRA subtela
+
+Ele explicou o motivo e isso mudou a ordem: **é olhando o total por obra que ele
+decide o rateio.** O painel vem **antes** do rateio na ordem de uso, mesmo tendo
+sido pedido depois. Quem entra na área cai nele.
+
+⚠️ **E a tela diz o que ainda não sabe, em cima, antes dos números.** Um painel
+que mostrasse "total da folha" sem avisar que faltam alimentação, transporte,
+diaristas, gratificações e PJ faria o número parecer o **custo de pessoal
+inteiro**. Número que parece completo e não é vale menos que número nenhum.
+
+#### Dois defeitos que os testes pegaram
+
+1. **`tem_coluna` recebia o nome com o schema junto** (`"analisesps.colaborador"`),
+   e ele já acrescenta o schema — então respondia SEMPRE que a coluna não existe,
+   e o de/para nunca gravava.
+2. **Com o de/para vazio, eu devolvia "0 pendentes" quando TODO MUNDO estava
+   pendente.** Número com o significado errado é pior que número nenhum: esse
+   diria que a folha está pronta para pagar.
+
+#### ⚠️ Pendente AGORA — o que falta e em QUÊ
+
+| Falta | Depende de |
+|---|---|
+| **total por OBRA** | o ponto carregado |
+| **carga do ponto** | `MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY` no Render — **ele ainda não criou** |
+| **telas de alimentação e transporte** | as abas `Feriados` e `Férias` |
+| **marca de férias / desconto no transporte** | o relatório de férias que ele vai mandar |
+| **telas de diaristas e CTPS extra** | o ponto |
+| **gerar arquivo e cards** | a apropriação guardada |
+
+**O que eu NÃO vou fazer sem ele:** escrever a carga do Mobponto adivinhando o
+formato da resposta da API. Já errei duas vezes nesta semana afirmando coisa de
+planilha sem ler a fórmula — **cliente de API escrito sem ver uma resposta de
+verdade é palpite com cara de código.** Com as duas variáveis no Render, eu leio
+uma resposta real e escrevo em cima dela.
+
+**Verificado:** 11 testes novos com banco para o de/para, 15 com banco para o
+casamento, as críticas e o painel, e 10 de tela. As migrações vão até a **030**.
+
+**NÃO verificado:** nada num navegador.
+
+---
+
+### Centésima décima leva (27/09) — o ponto entra, e eu me corrijo outra vez
+
+#### Eu disse que estava travado. Estava errado.
+
+Na leva anterior eu escrevi que não escreveria a carga do Mobponto para não
+adivinhar o formato da API. **O formato não precisava ser adivinhado: está nos
+Apps Script que o dono mandou**, e eu não os havia lido até o fim antes de
+declarar a coisa bloqueada.
+
+**É a terceira vez na semana que eu erro na mesma direção:** afirmar sobre uma
+fonte que eu tinha em mãos e não li inteira. Antes foi o cabeçalho da planilha
+errada, depois a "trava de pagamento" que não era trava. O padrão é o mesmo, e
+fica registrado para quem vier: **nesta área, antes de dizer "não dá", conferir se
+a resposta já não chegou junto com o pedido.**
+
+#### O contrato, lido do script
+
+Três endpoints, e as credenciais nos mesmos três cabeçalhos:
+
+| `type_data` | O que traz |
+|---|---|
+| `FOLHA_BWS_EXCEL` | o ponto **por dia**, paginado por mês/ano — é o que este módulo traz |
+| `REL_PRESENCA_BWS` | o resumo do mês, com o **`local`** (a obra) e um **`mudou`** |
+| `FUNCIONARIOS` | o cadastro do Mobponto |
+
+A resposta do primeiro: `result.total_paginas` e `result.funcionarios[]`, cada um
+com `cpf`, `nome` e `relatorio[]` — uma entrada por dia.
+
+#### ⚠️ O que eu NÃO sei, e não inventei
+
+**Os campos de cada dia são dinâmicos.** O próprio script do dono os descobre em
+tempo de execução. Um deles é a **obra**, outros são as **quatro marcações** — é o
+que a apropriação precisa. **Adivinhar o nome deles decidiria em qual obra cai o
+salário de 500 pessoas com base num palpite.**
+
+Então o módulo:
+
+1. **guarda o dia inteiro como veio**, em JSON;
+2. resolve só o que dá sem adivinhar: data, CPF, matrícula;
+3. deixa `obra`, `presenca` e `falta` **nulas** — coluna vazia é pergunta aberta;
+   preenchida por palpite é resposta errada com cara de certa;
+4. **anota quais campos vieram e mostra na tela**, com um dia de exemplo de
+   verdade.
+
+Com essa lista, ligar o total por obra é uma linha de código. E **não precisa
+recarregar nada da API depois**: o dia inteiro já está guardado, então uma migração
+preenche as colunas a partir do que há.
+
+#### O que o módulo cuida
+
+Página por página (o pico de memória fica em poucos MB); retentativa 1s/2s/4s
+como o script dele; **401 e 403 não são repetidos** (credencial errada não melhora
+na terceira tentativa); **página vazia no meio para a leitura** e a tela marca o
+mês como **"veio pela metade"** — mês incompleto mostrado como completo faria o
+total por obra sair a menos sem ninguém saber; teto de páginas; recarregar o mesmo
+mês substitui, com aviso antes.
+
+**O botão do ponto NÃO está em Configurações**, e é de propósito: ele precisa saber
+qual mês trazer, e um botão sem essa escolha traria sempre o mesmo. Ele fica na
+subtela do Ponto, que pergunta a competência.
+
+#### ⚠️ As credenciais, outra vez em claro
+
+Os dois scripts do Mobponto trazem o `Authorization` e o `api-key` escritos no
+código. Eu os vi ao ler o contrato e **não os escrevi no repositório**. O caminho
+é o de sempre: copiar do editor de script **direto para o Render**
+(`MOBPONTO_AUTHORIZATION` e `MOBPONTO_API_KEY`) e **trocar na origem depois**.
+
+Enquanto não existirem, a tela **não oferece o botão** e explica o que fazer:
+botão que só dá erro é armadilha.
+
+**Verificado:** 22 testes novos — 16 com banco de verdade (páginas, substituição,
+teto, dia sem data, apagar em cascata) e 6 dublando o `requests` para provar a URL,
+os três cabeçalhos, a retentativa e o 401 que não se repete. Mais 9 de tela.
+Migrações até a **031**.
+
+**NÃO verificado:** nada num navegador, e **nada contra a API de verdade** — ela é
+dublada nos testes. O primeiro clique com as credenciais no Render é que confirma
+o formato, e é ele que revela os nomes dos campos.
+
+---
+
+### Centésima décima primeira leva (27/09) — feriados e férias, e três coisas que eu expliquei mal
+
+#### A tela que ele pediu
+
+> *"Você já cria uma telazinha onde eu vou inserir as férias de cada funcionário.
+> Eu posso buscar pelo nome, pelo CPF e incluo o período. Só isso."*
+
+Feita, junto com os feriados: **uma subtela para os dois**, porque são dois
+lançamentos pequenos que servem ao mesmo cálculo — e ele acabou de corrigir tela
+demais. As férias vêm primeiro, porque é o que ele usa todo mês.
+
+⚠️ **A pessoa é ESCOLHIDA da busca, não digitada.** O CPF é a chave de tudo:
+digitado na mão, um número trocado lança as férias de outra pessoa, e o auxílio da
+certa sai errado sem ninguém saber. A busca devolve **só nome, cargo e se saiu** —
+caixa de sugestão não é lugar de mostrar salário.
+
+**Feriado é por OBRA, não por município.** Ele falou dos dois; por município
+exigiria um de/para obra → município que não existe no sistema, e inventá-lo seria
+mais uma peça para dar errado. Por obra ele escolhe da lista que já existe.
+
+#### As travas, e o que cada uma evita
+
+| Trava | Evita |
+|---|---|
+| feriado não entra duas vezes | um 7 de setembro duplicado descontaria **dois** dias de todo mundo |
+| o mesmo dia pode ser feriado em duas obras | cada município tem o seu |
+| férias com fim antes do início | contagem negativa, e auxílio **a mais** |
+| período > 400 dias | é o ano digitado errado, e descontaria meses |
+| dois períodos que se **cruzam** | descontariam o mesmo dia duas vezes |
+| dois períodos **encostados** podem | férias fracionadas são a regra |
+
+**Duas sutilezas saíram de graça** porque a conta é dia a dia, não aritmética de
+semanas: **feriado no fim de semana não desconta** (aquele dia já não contava) e
+**feriado na sexta não desconta de quem é "Segunda à Quinta"**. É a mesma sutileza
+que a planilha resolve contando feriado de sexta à parte.
+
+#### ⚠️ Três coisas que eu expliquei mal, e as respostas
+
+Ele disse, com razão: *"eu não compreendi bem o que você botou falta"*.
+
+**1. "Total por obra".** Ele me explicou a regra achando que era ela que faltava —
+a obra que mais aparece nas quatro marcações, e no empate a primeira. **Essa regra
+está escrita e testada desde 26/09.** O que falta é o **nome do campo**: quando a
+API devolve um dia, ela manda campos com nomes que ninguém documentou (o script
+antigo os descobre na hora). Eu preciso saber qual deles carrega a obra. **Não é a
+regra: é o rótulo da caixa onde o dado vem** — e um clique na tela do Ponto mostra.
+
+**2. "Apropriação guardada" foi jargão meu.** Apropriar é dizer para qual obra vai
+o dinheiro de cada pessoa. O sistema já sabe calcular; o resultado morre na tela.
+Guardar serve para três coisas que ele pediu: o relatório de auditoria ("de onde
+veio este número" precisa de um lugar onde o número esteja), o arquivo de
+pagamento, e — a mais importante — **o ajuste à mão dele sobreviver**: sem
+guardar, cada recálculo apagaria o "um dia nesta obra, um dia naquela" que ele
+fez.
+
+**3. Diaristas.** Ele está certo: é o mesmo ponto, e os critérios estão nas
+fórmulas. **Eles já estão implementados** — `folha_vinculo` decide CTPS × DIÁRIA
+por dia, a diária sai de `PAGAR DIÁRIA` (sem VIGIA), e a extra de CTPS sai de
+`PAGAR EXTRA` com +20 feriado, +10 sábado, +20 domingo. A tela espera o **mesmo
+mapeamento de campos do ponto**. Um clique destrava as duas.
+
+**Verificado:** 30 testes com banco de verdade (cada trava, a sobreposição de
+períodos, a contagem de dias úteis, o feriado de fim de semana e o de sexta) e 10
+de tela. Migrações até a **032**.
+
+**NÃO verificado:** nada num navegador.
+
+---
+
+### Centésima décima segunda leva (27/09) — a folha vira pagamento de verdade
+
+Uma tanda inteira, sem parar no meio: alimentação e transporte, a apropriação
+guardada, os arquivos de pagamento, o log e os cards. Ordem dele: *"a alimentação e
+transporte, siga"* e *"o que é que eu preciso fazer para não haver essa pausa?"*
+
+#### 1. Alimentação e transporte (tela)
+
+Uma subtela com uma aba para cada verba. A diferença fica **escrita na tela**: a
+alimentação desconta feriado e férias; o transporte desconta férias e **não**
+feriado (decisão dele), e quem tem "Cartão" no cadastro não recebe em dinheiro.
+
+A tela mostra o **caminho inteiro da conta** — base da modalidade, feriados, férias,
+ajuste, dias, valor. E o ajuste tem **três estados**: "segue o cálculo" não é "não
+pagar". Se a tela mostrasse os dois iguais, o padrão do sistema pareceria decisão
+dele.
+
+⚠️ **Dois defeitos meus, corrigidos antes de commitar:**
+
+1. O "pagar mesmo assim" **não funcionava** justamente nos casos que mais precisam
+   dele: os dois caminhos de recusa saíam da função antes de consultar o ajuste.
+2. A lista vinha com os **problemas no fim**, onde ninguém rola até — em ~3.500
+   pessoas isso é o mesmo que esconder. Chave de ordenação escrita ao contrário.
+
+#### 2. A apropriação guardada (migração 034)
+
+Duas tabelas, e a diferença entre elas é o ponto:
+
+- `apropriacao_ajuste` — **o que ele mexeu à mão**. Guarda o AJUSTE, não o
+  resultado: guardar o resultado faria uma correção no cadastro parar de aparecer
+  na tela, e ninguém entenderia por quê.
+- `apropriacao` + `apropriacao_linha` — **o resultado congelado** de um pagamento
+  já feito, escrito uma vez e nunca recalculado. Depois que o arquivo foi para o
+  banco, "qual obra pagou o salário do Fulano em 09/2026" tem UMA resposta, para
+  sempre. Recalcular faria recarregar o ponto de setembro, em outubro, mudar a
+  história de um dinheiro que já saiu.
+
+Tirar alguém do pagamento **exige motivo escrito**. Quem abrir o relatório três
+meses depois precisa saber por que faltou gente; "sumiu" é a pior resposta possível
+num pagamento.
+
+#### 3. Os arquivos de pagamento (BeeVale e SomaPay)
+
+A regra dele, implementada: **um arquivo por conta, sempre**; o BeeVale pode
+**juntar verbas** (três pagamentos viram um); o SomaPay **separa sozinho**, porque
+não aceita o mesmo CPF duas vezes — e a tela diz por quê em vez de deixar marcar e
+devolver erro depois.
+
+A trava do CPF repetido é conferida **antes de gravar o arquivo**: um arquivo que o
+portal recusa depois de subir custa a rodada inteira.
+
+**São sempre DOIS arquivos**, como ele pediu: o de pagamento (para o portal) e o de
+análise (para gente) — quatro abas: Resumo, Por obra, Por funcionário e Rateio, com
+percentual de sete casas fechando 100%. **Os avisos entram no arquivo**, não só na
+tela: aviso que só existiu na tela não explica diferença nenhuma meses depois.
+
+⚠️ **O que é suposição no layout, e precisa ser conferido abrindo o primeiro
+arquivo:** o `Centro de Custo` do BeeVale (usei a obra) e o valor do SomaPay como
+número com máscara brasileira. O resto saiu do arquivo que hoje é enviado e do
+`BeeVale.gs`. Está na §7.27.5 do `docs/FOLHA_DE_PAGAMENTO.md`.
+
+#### 4. O log na aplicação (migração 035)
+
+Pedido dele com todas as letras. Hoje o histórico da geração está em três lugares
+que não conversam (pasta do Drive, card do Pipefy, abas da planilha). Agora é uma
+linha: competência, pagamento, destino, verbas, conta, pessoas, total, quem gerou, o
+link do arquivo, o link do card e os avisos que havia na hora.
+
+Gerar duas vezes deixa **duas linhas**, de propósito: apagar a primeira esconderia
+que o portal recebeu dois arquivos.
+
+#### 5. Os cards do Pipefy
+
+Segundo botão, separado de gerar (decisão dele, D14). E uma decisão de desenho que
+vale registrar: **os campos do pipe são lidos do Pipefy na hora, não escritos no
+código**. O blueprint do Make tem defeito conhecido de campo trocado (o par 62 grava
+no campo do 63), e copiar a lista de lá copiaria o defeito — um valor de centro de
+custo caindo no vizinho só aparece no fechamento da obra, meses depois.
+
+Campo que eu não reconheço fica **vazio e dito**. Campo parecido é pior que campo
+vazio: vazio alguém vê e preenche, errado ninguém vê.
+
+⚠️ **Dois defeitos meus achados por teste, os dois da mesma família — o campo
+parecido:**
+
+1. procurar o campo da planilha de análise por "planilha" + "an": "an" está dentro
+   de "**plan**ilha", e o campo da planilha de PAGAMENTO era reconhecido como o da
+   análise. O link errado iria para o campo errado.
+2. procurar o campo do total por conter "valor": o pipe tem **um** "Valor" e
+   **setenta e cinco** "Valor Centro de Custo N". O total da despesa poderia cair
+   dentro do valor de um centro de custo — **o mesmo defeito que o blueprint do Make
+   tem hoje**, e que eu tinha escrito o módulo inteiro para evitar.
+
+Corrigidos: o rótulo **exato** ganha do parecido, e "centro de custo" desqualifica.
+A lição, porque ela se repete: **buscar por pedaço de texto é armadilha quando os
+rótulos se parecem.** O teste que pega isso monta os campos na ordem que faz a busca
+errar.
+
+#### 6. O gerencial no Panorama
+
+Totais da competência por **obra**, por **conta** e por **verba**, no alto do
+Panorama — e o percentual de rateio já calculado. Ele vem primeiro na tela porque é
+a primeira coisa que ele abre para decidir o mês.
+
+Sai do que está **fechado**, não de um recálculo: o rateio do mês seguinte se decide
+sobre o que foi pago. Obra sem conta aparece em "(sem conta)" e marcada — é ela que
+trava a geração depois, e esconder faria a surpresa aparecer na hora de pagar.
+
+#### ⚠️ Pendente AGORA — o que falta e em QUÊ
+
+| Falta | Depende de |
+|---|---|
+| **total por OBRA a partir do ponto** | o **nome dos campos do dia** na resposta do Mobponto — um clique em Folha PGT → Ponto revela |
+| **telas de diaristas e CTPS extra** | o mesmo nome de campos |
+| **conferir o layout do BeeVale e do SomaPay** | abrir o primeiro arquivo gerado antes de subir no portal (§7.27.5) |
+| **o de/para de categoria do card** (`DatabaseBeeVale`, `PlanoFinanceiro`) | são abas ocultas da planilha; precisam virar cadastro |
+| **as migrações 019–035** | o botão "Aplicar atualizações do banco" |
+
+**O que está aberto para ele no sistema:** apertar "Aplicar atualizações do banco";
+"Atualizar cadastro" (confirma os 5 nomes de coluna de auxílio que eu não pude
+confirmar); "Trazer o ponto" e me mandar a lista de campos; **trocar na origem** as
+credenciais de Mobponto, Dropbox e Z-API que estão fixas nos Apps Script; despublicar
+o Web App ANYONE_ANONYMOUS.
+
+**Verificado:** 27 testes com banco para a apropriação guardada, 13 com banco para a
+geração, 32 para os layouts dos arquivos, 12 para os cards e 21 de tela. A aplicação
+sobe com os 18 blueprints. Migrações até a **035**.
+
+**NÃO verificado:** nada num navegador, e nenhum arquivo foi subido ao Drive nem
+nenhum card criado no Pipefy — as duas chamadas de verdade só rodam quando ele
+apertar o botão.
+
+---
+
+### Centésima décima terceira leva (28/09) — o extrato que entrava com 4 de 211
+
+#### O que ele viu
+
+Importou o extrato da conta **SOMABWS 22005** (banco 520), 01/09 a 28/09, e a
+tela disse *"Li 4 lançamento(s)"*. **O arquivo tem 211 transações.**
+
+#### A causa: nem todo banco usa o FITID como identificador
+
+O parser identifica cada linha pelo `FITID` quando o banco o manda — e está certo
+para Bradesco, Itaú, BB, Caixa e Santander. **O banco 520 usa o FITID como código
+do TIPO da transação:** `3121` = "Liberação de folha" (110 linhas, valores
+diferentes), `3029` = "Recebimento Pix" (95 linhas). Quatro FITIDs para 211
+transações. O parser via repetição e descartava.
+
+**A regra nova é conservadora:** o FITID só deixa de ser identidade quando o mesmo
+FITID aparece com **conteúdo diferente** — aí ele não identifica nada, por
+definição. Banco de FITID único **não sente diferença alguma**, e isso está
+travado por teste: se a identidade daquelas linhas mudasse, todo extrato já
+importado voltaria a entrar em duplicidade.
+
+#### A lição, e ela é maior que o conserto: a receita estava em DOIS lugares
+
+`conciliacao_ofx.impressao_da_linha` **recalculava** a identidade, porque na
+leitura a conta ainda não é conhecida. Era uma segunda cópia da regra do parser,
+com a mesma suposição errada. **Consertar só o parser não teria adiantado** — a
+cópia recolapsaria as 211 em 4, e o defeito voltaria com cara de outro defeito.
+
+Agora o parser devolve a identidade pronta (`LancamentoOFX.identidade`) e aqui só
+se acrescenta a conta. Uma regra, um lugar.
+
+#### E o que fez isso custar caro: o silêncio
+
+Perder linha é ruim; **perder linha e dizer "li 4 lançamentos" com ar de tudo
+certo é pior**, porque convence. Entrou `contar_transacoes()`: quantas transações
+o arquivo TEM, antes de qualquer decisão. Quando esse número não bate com o
+reconhecido, a tela avisa em vermelho **antes de qualquer botão de gravar**.
+Enquanto baterem, não aparece nada — indicador que grita sempre não é indicador.
+
+#### ⚠️ O que ele precisa fazer
+
+**Se aquelas 4 linhas chegaram a ser GRAVADAS**, desfaça a importação na própria
+tela (a conciliação tem "desfazer uma importação") e importe o arquivo de novo.
+As 4 antigas foram gravadas com a identidade velha e não seriam reconhecidas —
+virariam duplicidade. Se ele só olhou a conferência e não gravou, é só importar.
+
+**Depois de importar as 211:** o saldo continua sem bater com o que o banco
+declara (−1.249,20 em 25/09), e isso não é defeito — a soma das 211 linhas é
+−66.802,97, então falta o extrato de **antes de 01/09** nesta conta. A tela já diz
+isso.
+
+**Verificado:** 11 testes no parser (o formato real do banco 520, a estabilidade
+ao reimportar, o extrato maior que reconhece o que já entrou, e a garantia de que
+banco de FITID único não muda) e 4 no lado do Análise de SPs. Conferido contra o
+arquivo de verdade que ele mandou: **211 lidas, 211 identidades distintas**, soma
+−66.802,97, e reimportar dá os mesmos identificadores.
+
+**NÃO verificado:** nada num navegador.
+
+---
+
+### Centésima décima quarta leva (28/09) — a primeira vez que ele usou as telas
+
+Ele abriu as telas da folha e disse: *"no geral, eu estou achando tudo muito ruim,
+muito ruim mesmo."* A lista era longa e toda justa. O detalhe de cada item está em
+`docs/FOLHA_DE_PAGAMENTO.md` §7.31; aqui fica o que muda para quem vier depois.
+
+#### O que fazia a tela de auxílio não calcular NADA
+
+Um nome de coluna que eu chutei. O certo é **"Categoria Auxílio Alimentação"** e
+**"Categoria Auxílio Transporte"** (colunas BM e BO), não "Modalidade". Sem a
+categoria, TODA pessoa caía em "o cadastro não diz a modalidade": zero dias, zero
+valor, tudo com cara de ajuste pendente.
+
+⚠️ **A lição:** o aviso "não achei a coluna X" existia e funcionou — mas aparecia só
+na tela de Colaboradores, e ele usou a de auxílio primeiro. **Coluna que o sistema
+não acha tem de aparecer na tela que DEPENDE dela**, não só na de origem.
+
+#### As sete correções de desenho
+
+1. **A barra da competência** usava `.barra-acoes`, que é uma GRADE de três colunas
+   (a barra das Solicitações). Cada campo virou célula e esticou até a largura da
+   tela. Agora existe `.barra-mes`, compacta.
+2. **A obra é o CÓDIGO**, vem do cadastro e **não se digita**. Campo editável ali
+   divergiria do cadastro e do rateio. ⚠️ Mas o **feriado por obra** é cadastrado
+   pelo NOME — passar o código no desconto faria o feriado municipal deixar de
+   descontar em silêncio. O cálculo usa nome para feriado, código para agrupar.
+3. **Seleção em bloco**: caixinha por pessoa, já marcada para quem atende os
+   critérios, e UM botão salvar. Saíram o seletor de três estados ("segue o
+   cálculo" — ele perguntou *"que diabo é"*) e o Gravar por linha.
+   ⚠️ Guarda-se a **exceção**, não a lista: senão o padrão viraria decisão
+   registrada e no mês seguinte ninguém saberia o que ele decidiu.
+   Para isso o cálculo devolve `pagar_calculado` além de `pagar` — antes eu
+   adivinhava a diferença comparando textos de motivo, que quebra sozinho.
+4. **Filtros na lateral** (quem, obra, situação) em auxílios, colaboradores e
+   diaristas. O módulo JÁ tinha o padrão e eu declarei as telas `sem-filtros`.
+   ⚠️ O filtro recorta a LISTA, nunca a CONTA.
+5. **CPF pontuado** na tela, dígitos no banco.
+6. **Clicar na pessoa** abre ficha com cadastro, a observação da coluna BQ, o
+   **ponto do mês dia por dia** e o botão do card. Uma rota serve as duas telas.
+7. **Quem está desligado sai da lista** de colaboradores — ⚠️ isto CONTRARIA a
+   instrução dele de 26/09 (*"não pode ficar oculto"*), e a leitura que atende as
+   duas é: a lista do dia a dia é de quem trabalha, mas a conta aparece no alto e
+   uma caixinha traz de volta. O proibido era esconder **e não dizer**.
+
+#### O ponto: dizer se está carregando
+
+*"Se o ponto veio, se o ponto não veio, só Deus sabe."* A tela só acompanhava se
+VOCÊ tivesse apertado o botão naquela aba. Agora o estado vem do banco junto com a
+página, ela abre acompanhando e avisa quando a carga foi interrompida (publicar
+reinicia o serviço e mata carga longa).
+
+#### Os diaristas entraram
+
+A regra existia e estava testada; faltava ligá-la, e faltavam duas colunas no
+cadastro (**Data de Início** e **Data de Admissão**). A tela mostra por pessoa
+quantos dias de diária e quantos de CTPS — a regra é **por dia**, e a mesma pessoa
+tem dias dos dois tipos no mês em que foi registrada.
+
+⚠️ Ela **não** diz quanto pagar, e diz isso em vez de mostrar zero: falta o valor da
+diária e o nome dos campos do ponto (os acréscimos de sábado/domingo/feriado).
+
+#### A ordem das subtelas passou a ter lógica
+
+Três grupos, com o nome à vista: Panorama · **Pagamentos** (folha da contabilidade,
+alimentação e transporte, diaristas, arquivos gerados) · **Cadastro e base do
+cálculo** (colaboradores, ponto, feriados e férias, rateio). A ordem anterior era a
+ordem em que EU construí as peças.
+
+#### Uma armadilha de teste que custou 15 falhas
+
+Três ajudantes de teste montavam a ficha com `{campo: "" for campo in CAMPOS}` e
+depois listavam **à mão** os campos de data que deviam ser `None`. Ao entrar duas
+colunas de data novas, os três estouraram com "invalid input syntax for type date".
+Agora os três derivam de `col.DATAS + col.NUMEROS` — o ajudante acompanha o módulo
+sozinho. Vale para qualquer ajudante que enumere campos.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o valor do auxílio saindo certo para todos | ele apertar **"Atualizar cadastro"**: é o que traz categoria, valor, código da obra, observação e as duas datas novas |
+| **total por obra vindo do ponto**, diária em dinheiro, CTPS extra | o **nome dos campos de cada dia** do ponto — um clique em Folha PGT → Ponto revela |
+| gerar o arquivo de dentro de cada tela com um clique | a apropriação fechada, que depende do ponto |
+| o de/para de categoria do card (`DatabaseBeeVale`, `PlanoFinanceiro`) | são abas ocultas da planilha; precisam virar cadastro |
+| as migrações 019–036 | o botão "Aplicar atualizações do banco" |
+
+**Verificado:** 7.439 testes passando, zero falhas. A aplicação sobe com os 18
+blueprints. **NÃO verificado:** nada num navegador — e desta vez isso pesa, porque
+o que ele reprovou foi justamente o que só se vê abrindo a tela.
+
+---
+
+### Centésima décima quinta leva (29/09) — segunda rodada de uso, e uma confusão minha
+
+Ele voltou às telas. No fim: *"a verdade é que tem tanta coisa, que até desanima."*
+O detalhe está em `docs/FOLHA_DE_PAGAMENTO.md` §7.32; aqui, o que muda para quem
+vier depois.
+
+#### ⚠️ A confusão que custou a rodada: AVISO GUARDADO SEM DATA
+
+Ele leu na tela *"não achei a coluna de **Modalidade** Auxílio Alimentação"* e
+concluiu, com razão, que a correção não havia pegado. **Mas aquele aviso era de
+26/09 às 18:35**, guardado no banco, escrito pelo código antigo — e "Atualizar
+cadastro" não foi apertado desde a correção.
+
+**A lição vale para qualquer aviso guardado: sem a data da carga que o escreveu, ele
+PARECE o presente.** Agora sai como "Na carga de 26/09 às 18:35: …", dizendo que não
+é o agora. Sem isso, toda correção futura no cadastro geraria a mesma conversa.
+
+#### Os desligados continuavam aparecendo — comparação exata
+
+A regra existia e comparava texto EXATO (`lower(fase) = 'colaboradores desligados'`).
+Qualquer variação na planilha ("Desligados", um espaço a mais) deixava de casar.
+Agora casa por **pedaço** ("desligad", "afastad").
+
+⚠️ E o detalhe que quase escapou: os predicados moram **num lugar só**
+(`fase_diz_desligado` / `fase_diz_afastado`), porque o `WHERE` que ESCONDE e a regra
+que CLASSIFICA tinham de concordar sempre. Eu corrigi um e quase deixei o outro — e
+divergindo, a tela mostraria como ativo quem ela esconde do pagamento.
+
+#### O ponto: TERCEIRA vez que ele reclama do mesmo
+
+*"Clico em trazer o ponto, sistema diz que vai trazer e NÃO TRAZ nada. Ninguém sabe
+de nada."*
+
+⚠️ **O registro da tentativa SEMPRE existiu** — em `execucoes`, com `ok`, mensagem e
+o erro da API dentro. Faltava a TELA MOSTRAR. Falha que só existe no log do serviço
+é falha que o dono não lê, e aí o botão vira caixa preta. Entrou
+`tarefas.ultima_do_tipo("ponto")`, e a tela traduz 401/403 (credencial), tempo/conexão
+(API muda) e 0 página(s) (API sem dado para o mês).
+
+**Vale como regra geral do módulo:** botão que dispara trabalho em segundo plano tem
+de mostrar o resultado da ÚLTIMA tentativa ao abrir a tela — não só enquanto alguém
+está olhando.
+
+#### O resto da lista
+
+- **Colaboradores** ganhou seis KPIs (no molde das Solicitações), filtro por **Fase
+  Atual** (coluna AX, com contagem por fase, vinda do banco) e por **data de
+  admissão**. "3531 linhas em 26/09" é registro de carga, não informação de trabalho.
+- **A importação** passou a mostrar **quantas PESSOAS precisam de olho** antes do
+  "fecha / não fecha" — o número já era calculado e só aparecia abrindo a folha.
+- **O aviso falso `Empregado(s))`** sumiu. ⚠️ Mas o LUGAR da verificação importou: no
+  alto do laço ela engoliu o "Total: Geral (406 Empregado(s))", que é o número da
+  conferência. Dois testes pegaram.
+- **Padrão visual:** os KPIs da folha não tinham `.estatico`, então subiam no hover e
+  mostravam cursor de mão, como se fossem clicáveis.
+- **Campos esticados:** `input`/`select` dentro de `.cartao` não tinham largura. Agora
+  há teto por TIPO de campo. E **cinco barras** ainda usavam `.barra-acoes` — a grade
+  de três colunas das Solicitações — que é o que esticava campo de mês até meia tela.
+- **"Observação Ajuda de Custo"** é o nome completo da coluna BQ; eu havia guardado
+  só "Observação", e a planilha tem mais de uma.
+- Os rótulos "Pagamentos"/"Cadastro e base" saíram: *"era apenas pra reorganizar."*
+
+#### A armadilha de dublê que voltou
+
+`falso_buscar` tinha assinatura fixa. Ao ganhar `fase` e as datas, ele estourou, a
+rota caiu no `except` e o teste falhou **dizendo que o filtro não foi pedido** — quando
+o que houve foi TypeError. É a segunda vez (foi `so_saindo` em 27/09). Agora tem
+`**resto` e o comentário explicando.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o valor do auxílio saindo certo | ele apertar **"Atualizar cadastro"** — sem isso a leitura não é refeita e os nomes novos não valem |
+| o nome da coluna **"Paga por BeeVale"** | só ele tem |
+| total por obra do ponto, diária em dinheiro, CTPS extra | o **nome dos campos de cada dia** do ponto — e agora, se a carga falhar, a tela diz por quê |
+| o de/para de categoria do card | abas ocultas da planilha |
+
+**Verificado:** suíte inteira sem falha. **NÃO verificado:** nada num navegador — e
+pela segunda rodada seguida foi exatamente aí que estavam os problemas.
+
+---
+
+### Centésima décima sexta leva (29/09) — "as cores da tabela", que eu não entendi
+
+Ele cobrou direto: *"tem coisa que você não compreende e não pergunta. Eu falei sobre
+as cores das tabelas, não falei? Você entendeu o quê sobre isso e fez o quê sobre
+isso?"*
+
+**Eu não havia feito nada.** Conferi que as tabelas usavam a mesma classe `sps`,
+concluí "já está igual" e segui. O detalhe está em `docs/FOLHA_DE_PAGAMENTO.md` §7.33.
+
+#### O padrão de tabela do módulo são TRÊS coisas
+
+1. `class="sps"`;
+2. a tabela DENTRO de **`.tabela-wrap`** (cartão branco, cantos, sombra) e
+   **`.tabela-rolagem`** (rolagem horizontal, cabeçalho grudado no topo);
+3. o **estado da linha lido pela COR**, com a paleta que o CSS descreve como dele:
+   *"o dono trabalhou anos com elas e lê a tabela pela cor antes de ler o texto"*.
+
+⚠️ **"Cor da tabela" era a SUPERFÍCIE, não a célula.** A das Solicitações é um cartão
+branco sobre o fundo da página; as minhas eram tabelas nuas *no* fundo. Vinte e uma
+tabelas em nove telas foram para dentro dos invólucros — inclusive as três montadas
+dentro do JavaScript, porque exceção deixa buraco na regra.
+
+⚠️ **`.livre` é diferença deliberada:** nas telas da folha as tabelas são empilhadas
+(o Panorama tem cinco). O teto de altura do original criaria cinco caixas de rolagem
+na mesma tela, pior que uma página comprida.
+
+#### O erro que eu quase publiquei no meio do conserto
+
+Eu ia usar `.selo.pagar` para "vai receber", pelo nome. **`.selo.pagar` é VERMELHO na
+paleta dele** — nas Solicitações "Pagar" quer dizer *pendente, urgente*. Usar vermelho
+para "está tudo certo" faria a mesma cor significar coisas opostas em telas vizinhas.
+Ficou verde (`aprovado`), com teste travando que `pagar` não volta a aparecer ali.
+
+#### A lição, que é sobre mim
+
+O pedido tinha uma palavra que eu não sabia traduzir — "cor" — e eu resolvi com a
+interpretação que exigia menos trabalho, sem conferir e sem perguntar. **"Conferi que
+é a mesma classe" era conferir o que era fácil, não o que foi pedido.** A ordem certa:
+ler o que o padrão faz de verdade; restando dúvida, perguntar UMA coisa precisa.
+
+**Verificado:** 7.452 testes, zero falhas — incluindo um que lê os templates e falha
+se qualquer tela da folha nascer com tabela fora do invólucro.
+
+---
+
+### Centésima décima sétima leva (29/09) — a presunção, e dois avisos que eram lixo
+
+#### ⚠️ A REGRA NOVA, e ela é sobre como responder
+
+Ao explicar a correção das cores eu citei **"Streamlit"** como se fosse palavra dele.
+Não era — está num comentário do CSS. A reação:
+
+> *"Mais uma vez, presunção pura. Se eu falei eu sei o que tô dizendo, isso é
+> irritante. E não conseguimos evoluir. (…) Eu não falei nada de Streamlit. (…)
+> Quando você falou em Streamlit me assustei."*
+
+**NÃO DEVOLVER A ELE UMA PALAVRA QUE ELE NÃO USOU.** Termo que está no código é meu;
+se precisa aparecer, aparece como "está escrito no CSS", nunca como "você disse".
+Atribuir a ele algo que ele não disse o obriga a checar se está maluco — e isso é o
+oposto do trabalho. Some-se a isto o padrão que ele já apontou antes: eu enfeito a
+resposta com coisa que não foi pedida, e o enfeite atrapalha.
+
+**A definição dele de "cor da tabela", que é melhor que a minha:** *"a tabela tem uma
+cor mais clara. E algo em volta. Na folha de PGT não tava assim, tava mais escuro."*
+Em número: fundo da página #F2F4F8, cartão da tabela #FFFFFF, com cantos e sombra. E
+o padrão é o das Solicitações, dito por ele: *"é seguir o padrão de Solicitação, só
+pra deixar bem claro."*
+
+#### Sim, dá para excluir folha importada
+
+Na tela **Folha da contabilidade**, o **×** na ponta de cada linha. Seguro por três
+motivos: o arquivo original fica com a contabilidade; a apropriação mora em outra
+tabela (034), então não se perde decisão; e reimportar a mesma competência
+**substitui**, então nem precisa apagar antes.
+
+#### O aviso de "Paga por BeeVale" era lixo meu
+
+Ele: *"não entendi essa pergunta."* Fui procurar: **`paga_por_beevale` não é lido em
+lugar nenhum**. Eu pedia o nome de uma coluna para preencher campo que nada consulta.
+
+1. **Saiu da lista de avisos.** Volta quando a geração de arquivo precisar dele de
+   verdade. ⚠️ **Aviso sem consequência é o que faz ninguém ler os avisos que
+   importam.**
+2. **O aviso parou de fazer pergunta.** Ele terminava com "me diga o nome exato dela
+   na planilha" — pergunta numa tela sem campo de resposta. Agora diz **o que para de
+   funcionar** ("o auxílio ALIMENTAÇÃO não calcula para ninguém"), com um mapa
+   `EFEITO_DE_FALTAR` e teste obrigando campo-que-avisa a ter efeito escrito.
+3. **A segunda linha explicava epistemologia** ("não é o estado de agora") e ele não
+   entendeu. Agora diz o que fazer: corrigir a planilha e reler.
+
+#### A notícia boa escondida na reclamação
+
+O aviso que ele colou é da carga de **28/09 às 23:15** e lista UMA coluna; antes eram
+três. Ele apertou "Atualizar cadastro" depois da correção e **as duas colunas de
+Categoria foram achadas** — alimentação e transporte passaram a calcular. A que sobrou
+era justamente a que não servia para nada.
+
+**Verificado:** suíte inteira sem falha, e as 21 tabelas da folha no invólucro padrão,
+com teste que lê os templates e falha se uma nascer fora.
+
+---
+
+### Centésima décima sétima leva (29/09) — a folha da contabilidade ganhou gestão, e a obra passou a sair do PONTO
+
+Ele abriu a folha importada e não tinha o que fazer nela:
+
+> *"Eu importo o arquivo e não tenho gestão nenhuma sobre as informações dele. Quem
+> vai, quem não vai. (…) Cadê as informações de cada funcionário, cadê os dados
+> deles, cadê uma tabela mostrando as informações, cadê a possibilidade de seleção
+> deles de quem entra e quem não entra, cadê onde gera o arquivo de pagamento? (…)
+> A planilha era um fundamento. Parece que foi totalmente ignorada."*
+
+E, depois:
+
+> *"A informação do arquivo não é absoluta e é toda gerenciável, e ainda tem toda a
+> relação com o ponto. Mas aqui já devemos usar a folha de ponto mesmo, visto que
+> tem o rateio diário pra formar os totalizadores por obra."*
+
+#### ⚠️ O DEFEITO DE VERDADE ERA A FALTA DE PORTA, e ele é o mais importante desta leva
+
+A tela pessoa por pessoa **existia**. O único caminho até ela era o número embaixo
+da coluna "Precisam de olho" — que **desaparece quando não há ninguém pendente**. A
+competência não era clicável. Quem importava a folha e não adivinhava que aquele
+número era um link não tinha porta nenhuma.
+
+Isto é o tipo de erro que nenhum teste pegava, porque cada peça funcionava. O que
+faltava era o caminho entre elas.
+
+**Consertado:** a aba "Folha da contabilidade" agora **leva direto para a última
+folha aberta**. A tela de importar continua existindo como estante (soltar arquivo,
+apagar o que veio errado), em `?lista=1`, e a competência da lista é um link.
+
+#### Os nomes dos campos do ponto: o gargalo caiu, e a fonte não fui eu
+
+O `ponto.py` dizia, com todas as letras, que **não conhecia os nomes dos campos de
+cada dia** — e era essa falta que travava o total por obra desde 26/09. Ele mandou,
+em 29/09, o programa que já roda em cima do mesmo relatório. Os nomes saíram de lá
+(`analysis_engine.py`, `normalize_folha` e `merge_folha_group`):
+
+    hr_entrada, hr_almoco, hr_retorno, hr_saida     as quatro marcações
+    obra_entrada, obra_almoco, obra_retorno,        a obra DE CADA marcação
+    obra_saida
+    presenca_ausencia, desc_falta                   presença e falta
+    totalHrs, dia_semana                            conferência
+
+⚠️ **NÃO copiei a regra deles para escolher a obra do dia.** Lá a obra do dia é a
+**primeira preenchida** das quatro; aqui é a **mais frequente**, com o empate 2×2
+resolvido pela primeira — que é a decisão dele, de 26/09. A diferença muda dinheiro:
+quem entra numa obra e passa o resto do dia em outra tem o dia contado na segunda.
+
+⚠️ **A interpretação é na LEITURA, não na carga.** O `campos` continua guardado cru.
+Se um nome mudar, conserta-se num lugar e o ponto já gravado continua valendo —
+gravar interpretado obrigaria a recarregar meses de ponto para corrigir uma coluna.
+
+#### A tela nova da folha (`analisesps_folha_aberta.html` + `folha_gestao.py`)
+
+| O que ele pediu | O que está na tela |
+|---|---|
+| "quem entra e quem não entra" | caixa por linha e **um** salvar; desmarcar pede o motivo |
+| "cadê os dados deles" | nome, CPF, código Fortes, cargo, **Fase Atual**, obra, dias, valor, situação |
+| "cadê onde gera o arquivo" | **na lateral**, no alto — não no fim da tela |
+| "à medida que vamos marcando já vamos vendo os valores" | barra grudada embaixo, somando ao marcar |
+| "a lista por obra fica um troço gigantesco no começo" | o total por obra é o **último** bloco |
+| "o rateio diário pra formar os totalizadores por obra" | cada linha abre os **dias do ponto**, obra por obra |
+| "até o termo usado é ruim" | "Precisam de olho" virou **"Travam o pagamento"** |
+
+⚠️ **Nenhuma conta nova foi escrita.** `folha_apropriacao.py` (a conta pura),
+`folha_apropriacao_guardada.py` (o ajuste e o fechamento), `folha_geracao.py` (os
+layouts) e `folha_pagamento.py` (gerar e registrar) já existiam e estavam testados.
+O `folha_gestao.py` só **junta e filtra** — e o `apropriar_a_folha` é o único lugar
+que monta a conta, para a tela e o fechamento nunca divergirem.
+
+#### O fechamento da verba `folha` não tinha caminho de tela
+
+`folha_pagamento.gerar` só paga apropriação **fechada**, e nenhuma tela fechava a
+verba `folha`. Na prática o arquivo da folha da contabilidade era **impossível de
+gerar**. Agora há o botão, na lateral, e ele recusa enquanto houver dinheiro sem
+obra — dizendo quanto falta.
+
+#### Alimentação e transporte: a obra que paga passou a vir do ponto
+
+> *"Em Alimentação a informação de obra deveria ser a do Ponto. Caso não tenha, usar
+> a de cadastro."* / *"A questão da obra que paga é fundamental."*
+
+⚠️ **A REGRA DO AUXÍLIO É DIFERENTE DA DA FOLHA, de propósito.** A folha **divide** o
+valor entre as obras dos dias (salário se rateia). O auxílio **não divide**: o dia é
+valor fechado, e a pergunta é de qual conta sai o dinheiro. Então uma obra ganha — a
+de mais dias, e no empate a primeira do período (`folha_apropriacao.obra_com_mais_dias`).
+
+E a célula **diz de onde a obra veio**: "18 dia(s) no ponto" ou "do cadastro — sem
+ponto no mês". A tabela por obra diz quantas pessoas da linha caíram no cadastro.
+Obra de cadastro desatualizado tiraria dinheiro da conta errada em silêncio.
+
+Também nesta tela: coluna e filtro de **Fase Atual** (pedido duas vezes), o botão de
+gerar foi para a **lateral**, o bloco por obra foi para **depois** da lista, e a barra
+do total **parou de sumir** — antes ela só aparecia quando havia mudança não salva, o
+que resolvia "tem coisa para salvar" e ignorava o que ele usa a barra para fazer.
+
+#### O que o backend que ele mandou respondeu sobre o ponto
+
+Ele mandou o zip perguntando se dava ideia. Respondeu duas coisas:
+
+1. **Não há truque de TLS.** Aquele backend mantém a verificação ligada, igual à
+   nossa, e tem o mesmo botão de desligar. Funciona na máquina dele porque o
+   computador confia no certificado do Mobponto; o Render não confia. O erro
+   "unable to get local issuer certificate" é de **cadeia de confiança**, não de
+   senha nem de instabilidade — e a mensagem da tela dizia as duas coisas erradas.
+2. **Ele não lê o ponto pela API**: lê um **Excel exportado**. O que ele faz pela API
+   é *escrever* — incluir batida (`CAD_EDT_PONTO`) e aplicar falta (`CAD_EDT_FALTA`).
+
+⚠️ **CREDENCIAL NO ARQUIVO, DE NOVO.** O `local_backend.py` traz a chave da API e a
+senha do Mobponto **em texto puro**, mais o CPF e o nome do responsável. O arquivo
+chegou por upload, então essa senha circulou: **tem de ser trocada na origem**, junto
+com as do Dropbox e da Z-API. E esse arquivo não entra no repositório.
+
+#### Pergunta minha que segue aberta, e ela trava trabalho
+
+Pedi a planilha de novo — *"Preciso compartilhar novamente?"*, ele perguntou; a
+resposta é **sim**. O que serve, sem expor dado de ninguém: **nomes das abas,
+cabeçalhos e fórmulas**, principalmente as que somam por obra e as que decidem quem
+entra no arquivo. E quatro perguntas seguem sem resposta:
+
+1. o **arquivo de pagamento da folha da contabilidade é qual layout?** (os auxílios
+   saem em BeeVale e SomaPay; a folha pode ser outro) — **assumi, por ora, os mesmos
+   dois destinos**, porque é o que existe escrito e testado;
+2. **quem não entra** fica para a rodada seguinte, é pago por fora, ou só não sai
+   neste arquivo? — assumi "só não sai neste arquivo", com motivo obrigatório;
+3. o total por obra precisa **bater com algo da planilha**, ou é ele o resultado?
+4. **ponto e folha discordando** (na folha e sem dia de ponto, ou com ponto e fora da
+   folha) — a tela hoje **segura** e marca; não trava o resto.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto de verdade entrar (é ele que alimenta TODA a obra por dia) | o certificado do Mobponto no Render — a tela agora diz que é isso, e existe `MOBPONTO_TLS_INSEGURO=1` como saída, desligada, com o risco escrito |
+| a planilha como norte | ele mandar as abas, os cabeçalhos e as fórmulas |
+| o layout do arquivo de pagamento da folha | só ele tem |
+| o nome da coluna **"Paga por BeeVale"** | só ele tem |
+| o de/para de categoria do card | abas ocultas da planilha |
+| trocar na origem as credenciais do Mobponto, Dropbox e Z-API | ele — e o `local_backend.py` que ele mandou tem a do Mobponto em claro |
+
+**Verificado:** suíte inteira em blocos, sem falha, com 60 casos novos (a gestão da
+folha, os nomes dos campos do ponto, a obra do auxílio, as sete correções de tela) e
+o `app.main` subindo com os 18 blueprints. **NÃO verificado:** nada num navegador
+com dado real — e, principalmente, **a apropriação nunca rodou sobre ponto de
+verdade**, porque a carga do ponto continua falhando por certificado. A conta está
+testada; o dado que ela consome, não chegou.
+
+---
+
+### Centésima décima oitava leva (29/09) — a releitura que ele mandou fazer
+
+Eu fiz cinco perguntas sobre a folha. Ele respondeu as cinco e disse o que elas
+mostravam:
+
+> *"Pelas suas perguntas, vejo que a análise das planilhas foi muito fraca mesmo.
+> (…) Não é melhor você fazer uma releitura do que eu já propus?"*
+
+Era melhor. **Quatro das cinco perguntas já estavam respondidas no
+`docs/FOLHA_DE_PAGAMENTO.md`** — algumas por ele, outras por mim e aprovadas por
+ele. O detalhe inteiro está lá, em §7.35. O que a releitura devolveu:
+
+| O que estava escrito e eu não segui | Onde estava | Por que importa |
+|---|---|---|
+| dia marcado **"PAGAR EXTRA" não é dia da folha** | §7.10.5, col H — e eu havia anotado "eu não tinha isso" | **dinheiro**: o salário era dividido por um dia a mais e uma fatia ia para um destino de pagamento como se fosse obra, em silêncio |
+| coluna **Valor x Dia** (líquido ÷ dias) | §3 e §7.10.5, col I | é o número que ele confere de cabeça |
+| bloco **por conta corrente** | §3, §5.2 e §7.10.5, col AF | cada conta vira um arquivo e uma SP de transferência |
+| a conta vai **até a primeira vírgula** | §7.10.5, col AE | uma obra pode ter duas contas; vale a primeira |
+| **níveis 2 e 3 do ajuste fino** (uma obra só; dia a dia) | §7.3, pedido dele em 26/09 | é o *"bota um dia numa obra, um dia em outra"* |
+| quem sai aparece **riscado** | §7.3 | a lista se lê de relance |
+| até o dia **10 a tela abre no mês anterior** | §7.10.5, achado 4 | nos primeiros dias do mês o trabalho é o fechamento do anterior |
+
+#### E uma regra minha que caiu
+
+Eu exigia **motivo** para tirar alguém do pagamento, e havia escrito que "sumiu é a
+pior resposta possível num pagamento". Ele:
+
+> *"Quem não entra de onde do arquivo de pagamento? Não pago e ponto final. A gestão
+> do pagamento é minha, eu decido."*
+
+Ele está certo: na planilha isso é um tique numa célula (`Pagar QZ` / `Não Pagar`),
+sem campo de justificativa. Exigir motivo virava formulário quatrocentas vezes. O
+campo ficou **opcional**.
+
+#### ⚠️ Um defeito achado ao ligar a conta corrente
+
+`conta_por_obra()` indexava só pelo **nome** da obra, mas a apropriação identifica a
+obra pelo que o **ponto** escreve na marcação — que pode ser o código. Quem
+procurasse por código não achava conta nenhuma, e **toda linha da folha viraria a
+crítica "obra sem conta"**: um arquivo inteiro barrado por um de/para que existia e
+não era consultado. Agora indexa pelas duas pontas.
+
+#### A pergunta sobre a planilha estava mal feita
+
+Perguntei "preciso da planilha de novo?" sem dizer qual. O alvo certo: as
+**fórmulas** da planilha `Folha de Pagamento - Fortes`, abas **`Quinzena`** e **`Fim
+de Mês`**. E o caminho já está escrito desde 26/09 em `docs/EXPORTAR_FORMULAS.md` —
+um Apps Script que manda **só as fórmulas**, sem nome, CPF nem salário. É rodar
+`exportarTodas`.
+
+⚠️ **O custo de não ter as fórmulas ficou medido nesta leva:** o `PAGAR EXTRA` só
+apareceu porque uma fórmula específica havia sido lida. As que não foram lidas podem
+esconder outros erros do mesmo tamanho.
+
+#### A lição, e é a mesma da leva anterior
+
+Pela manhã eu não entendi "as cores da tabela" e **não perguntei**. À tarde eu
+perguntei — e perguntei o que já estava respondido no arquivo. A raiz é a mesma:
+**tratar o que está escrito como se não estivesse.**
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto entrar (alimenta TODA a obra por dia) | o certificado do Mobponto no Render |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` do `docs/EXPORTAR_FORMULAS.md` |
+| o nível 4 do ajuste fino (por proporção) | era sugestão minha; o nível 3 por dias cobre o caso dele |
+| o nome da coluna **"Paga por BeeVale"** | só ele tem |
+| trocar na origem as credenciais do Mobponto, Dropbox e Z-API | ele |
+
+**Verificado:** suíte inteira em blocos, sem falha, com os casos novos desta leva
+(PAGAR EXTRA no rateio, valor por dia, divisão por dias, conta por nome e por
+código, competência sugerida, e as seis da tela). **NÃO verificado:** nada num
+navegador, e a apropriação continua sem nunca ter rodado sobre ponto de verdade.
+
+---
+
+### Centésima décima nona leva (29/09) — o extrato, o OMIE e dois valores guardados que mentiam
+
+Três reclamações dele numa tarde, e as três tinham a mesma raiz: **algo guardado
+que continuou valendo depois de deixar de ser verdade.**
+
+#### 1. "Os filtros de Solicitações estão todos vazios"
+
+⚠️ **E ficariam vazios para sempre.** A carga da base REESCREVE a tabela `sps`.
+Quem abrisse qualquer tela no meio disso fazia as sete consultas de filtro contra
+uma tabela momentaneamente vazia, recebia sete listas vazias — e elas eram
+**guardadas** com o carimbo da sincronização anterior, que ainda era o vigente.
+
+Daí em diante o cache respondia "já sei, é nada" a cada requisição e nunca mais
+perguntava ao banco. O teste de validade era `if guardado["valores"]`, e um
+dicionário de sete chaves é verdadeiro mesmo com todas as listas vazias.
+
+**Conserto:** lista vazia **não entra no cache**. E a barra passou a dizer por que
+está vazia, separando os três casos (carga em andamento, base não carregada,
+colunas sem valor) — barra vazia sem frase é indistinguível de defeito da tela.
+
+#### 2. "Não foi importado o valor de 56.284,17"
+
+**Foi.** Refiz a leitura, a conferência e a gravação daquele arquivo com banco de
+verdade: as 53 linhas entram, a de 56.284,17 fica gravada e aparece na lista.
+
+⚠️ **O que escondia a linha era o FILTRO, que fica guardado de uma visita para a
+outra.** A tela dizia "N linha(s) neste recorte" e nunca dizia quantas havia fora
+dele — recorte que não se anuncia é indistinguível de dado que não existe, e a
+conclusão de quem olha é sempre a pior. Agora ela diz "N de M na conta" e, quando
+esconde algo, um aviso com "ver todas".
+
+#### 3. ⚠️ MAS O TESTE QUE ESCREVI PARA AQUELE ARQUIVO ACHOU UM DEFEITO DE VERDADE
+
+Ao montar um extrato com as **vinte tarifas de PIX de R$ 0,35** daquele arquivo —
+mesmo dia, mesmo histórico, mesmo FITID — o parser leu **uma**.
+
+A regra do conserto de 28/09 dizia: *"FITID que carrega mais de um CONTEÚDO é
+código de tipo"*. Ela cobria o banco 520 (FITIDs repetidos com conteúdos
+diferentes) e deixava passar o caso oposto: FITID repetido em linhas **idênticas**
+carrega um conteúdo só, passava no teste, virava identidade — e dezenove cobranças
+de verdade sumiam em silêncio.
+
+**Agora um FITID só identifica quando aparece UMA VEZ no arquivo.** Continua
+idempotente (a identidade carrega a ordem da repetição). O preço, dito por
+inteiro: se um banco mandar de verdade a mesma transação duas vezes, entram as
+duas — é o lado certo para errar, porque linha a mais aparece na conferência de
+saldo e linha a menos não aparece em lugar nenhum.
+
+#### 4. ⚠️ A tarifa virava CONTA A PAGAR, e devia ser LANÇAMENTO DE CONTA CORRENTE
+
+Ele achou olhando o resultado:
+
+> *"Acho que você criou uma conta a pagar para a tarifa, e não um lançamento de
+> conta corrente."*
+> *"Esse lançamento acho que não precisa de baixa, e ainda assim, acho que isso
+> não existe: `.../financas/contapagarbaixa/`"*
+
+Certo nas duas. Uma linha do extrato é dinheiro que **já se moveu**; título é
+compromisso a vencer. O sistema inventava um título em aberto e precisava dar
+baixa nele em seguida — e a baixa respondia **404**, deixando título criado, baixa
+falhando e um recado mandando ele terminar o serviço na mão.
+
+**O caminho certo ele já usava no Make**, e mandou o blueprint: `IncluirLancCC`,
+em `financas/contacorrentelancamentos/`. Um lançamento, direto na conta corrente,
+**sem título e sem baixa**. A transferência continua com duas pontas, as duas
+como lançamento e as duas com `cTipo` = TRA.
+
+⚠️ **Uma divergência deliberada do blueprint dele, para ele poder discordar:** lá o
+`cTipo` mapeia Receita → "TRA" junto com Transferência; aqui receita vira "CRE".
+Naquele fluxo as receitas eram todas transferência entre contas da empresa; aqui o
+sentido vem do sinal da linha do extrato, e uma entrada que não é transferência
+marcada como TRA apareceria no OMIE como movimento entre contas, sem a outra
+ponta. **Se ele preferir o mapa do Make, é uma linha.**
+
+#### 5. "Não fica nenhuma informação na tabela dizendo que aquela tarifa foi lançada"
+
+Ele estava certo sobre a **tela**, não sobre o banco: o estado era gravado
+(`omie_situacao`, `omie_codigo`, `omie_em`, `omie_por`) desde a migração 021 e a
+**lista nunca o lia**. Quem olhava o extrato não tinha como distinguir uma tarifa
+já lançada de uma que nunca foi — e o único jeito de descobrir era mandar de novo
+e ver o OMIE recusar pelo código de integração repetido.
+
+Agora há a coluna **"No OMIE"**, com quatro estados que têm consequências
+diferentes: `lançado` (não mande de novo), `falhou` (pode mandar), `sem resposta`
+(a resposta se perdeu — PODE ter entrado, confira lá antes) e vazio (nunca foi).
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto entrar | o certificado do Mobponto no Render |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` do `docs/EXPORTAR_FORMULAS.md` |
+| confirmar o `cTipo` de uma RECEITA que não é transferência | só ele — hoje está CRE, o Make dele usava TRA |
+| o nome da coluna **"Paga por BeeVale"** | só ele tem |
+| trocar na origem as credenciais do Mobponto, Dropbox e Z-API | ele |
+
+**Verificado:** suíte inteira em blocos — 7.684 passando, 145 pulados, zero falhas
+—, o arquivo de extrato dele lido e gravado num Postgres de verdade (53 de 53), e
+o `app.main` subindo com os 18 blueprints. **NÃO verificado:** o `IncluirLancCC`
+contra o OMIE de verdade — a forma é a do blueprint dele, mas nenhuma chamada real
+foi feita daqui.
+
+---
+
+### Centésima vigésima leva (29/09) — "os filtros estão vazios" era CSS, e o CSS era meu
+
+Ele mandou o print, e o print encerrou duas rodadas de investigação errada.
+
+**Os blocos de filtro estavam todos lá.** As caixas de marcar estavam lá, algumas
+até marcadas. O que tinha sumido era **o texto ao lado de cada caixa** — inclusive
+em "Situação", cujos rótulos são texto FIXO no template e não vêm do banco.
+
+#### A causa, e ela é de uma linha escrita por mim na mesma manhã
+
+```
+.filtros input, .filtros select { width: 100%; max-width: none; }
+```
+
+Escrita para os campos de TEXTO da lateral não esticarem. Só que `.filtros input`
+alcança também as **caixas de marcar** de cada opção: cada `checkbox` virou um
+retângulo da largura inteira da coluna, e o rótulo ao lado foi empurrado para fora
+da vista. Como a regra estava mais abaixo no arquivo e com a mesma especificidade
+de `.opcao input` (que dá os 15 px), ela venceu.
+
+⚠️ **E ela afetava TODAS as barras laterais do módulo** — Solicitações, Relatório,
+Calendário, Conciliação, Alimentação e transporte, Colaboradores, Diaristas —
+porque `.filtros` é o `<aside>` do template base.
+
+#### ⚠️ Por que eu procurei dois dias no lugar errado
+
+Eu li "os filtros estão todos vazios" como **falta de dado** e fui para o banco.
+Achei lá um defeito real (o cache guardando listas vazias, ver a leva anterior) e
+**parei de procurar**, porque o defeito que achei explicava o sintoma. Explicava,
+mas não era o dele.
+
+**A lição, e é diferente das outras da semana:** achar UMA causa que explica o
+sintoma não prova que é A causa. O print resolveu em dez segundos o que duas
+rodadas de dedução não resolveram — e eu só pedi o print na terceira.
+
+#### O conserto, e o teste que ele exigiu
+
+O seletor agora exclui o tipo: `.filtros input:not([type=checkbox]):not([type=radio])`.
+E **nenhuma regra nova foi escrita para a caixa de marcar** — repetir aqui, ainda
+que com `width: auto`, desfaria os 15 px de `.opcao input` pelo mesmo mecanismo que
+causou o estrago.
+
+⚠️ **Nenhum teste de tela pegaria isto: o texto ESTAVA no HTML.** Por isso o teste
+novo é sobre o CSS — ele varre as regras (sem os comentários, que citam a regra
+errada) e falha se alguma mexer em largura alcançando `checkbox` ou `radio` dentro
+de `.filtros`.
+
+#### E a busca que encerra a discussão "não importou × não estou vendo"
+
+Ele disse duas vezes que o valor de **56.284,17** não entrava. Eu refiz aquele
+arquivo com banco de verdade — 53 de 53 entram, essa inclusive — e mesmo assim não
+consegui responder, **porque eu não enxergo o banco dele**.
+
+Agora a tela de conciliação tem **"Não acha um lançamento?"**: procura por valor ou
+histórico em **todas as contas, ignorando conta escolhida, período, situação e o
+filtro guardado**. Diz em qual conta está e de qual arquivo veio — ou diz, com
+todas as letras, que **não existe em conta nenhuma**, e aí o problema é a
+importação e não a tela.
+
+⚠️ **E é provável que o 56.284,17 seja consequência do mesmo CSS:** com os rótulos
+invisíveis, a barra da conciliação tem as opções de **entrada/saída** ilegíveis — e
+"só saídas" marcado esconde exatamente essa linha, que é a única entrada grande do
+arquivo. A busca nova responde isso sem depender de suposição minha.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| confirmar se o 56.284,17 aparece na busca nova | ele abrir a conciliação e procurar |
+| o ponto entrar | o certificado do Mobponto no Render |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** suíte inteira em blocos — 7.693 passando, 145 pulados, zero falhas.
+**NÃO verificado:** a tela dele depois do conserto.
+
+---
+
+### Centésima vigésima primeira leva (29/09) — a coluna que desmontou a tela, e o certificado que falta
+
+**1. O layout da conciliação quebrou, e a culpa foi minha.**
+
+A coluna "No OMIE" que eu acrescentei horas antes levou a tabela de dez para onze
+colunas. Ela é `width: 100%` sem piso — o navegador espremeu todas. O dono: *"as
+linhas estão quebradas, observação tá achatado, tá todo desmantelado"*.
+
+Agora a tabela tem **piso de largura** (`min-width: 1140px`): abaixo disso o
+invólucro rola na horizontal, que é para isso que ele existe. Espremer é pior que
+rolar — informação ilegível é informação perdida, e esta é tela de conferência. A
+observação tem piso próprio (é campo de escrever) e o selo do OMIE tem teto (é
+selo curto e não pode roubar espaço de quem carrega texto).
+
+⚠️ **E o layout quebrado provavelmente escondia dele duas coisas que eu havia
+acabado de publicar**: a busca "Não acha um lançamento?" e o aviso de quantas
+linhas o filtro está escondendo — que são justamente o que responde sobre o
+lançamento de 56.284,17.
+
+**2. O certificado do Mobponto ganhou a saída CERTA.**
+
+A primeira versão do conserto oferecia uma saída só: `MOBPONTO_TLS_INSEGURO=1`,
+que desliga a verificação. ⚠️ **Oferecer apenas a saída insegura empurra para
+ela.**
+
+Agora existe **`MOBPONTO_CA_EXTRA`**: ele cola ali o certificado do meio da cadeia
+(exportado do cadeado do navegador, em texto ou em base64) e **a verificação
+continua ligada**. O que faltava era só a peça do meio da corrente — é o que o
+navegador vai buscar sozinho e o `requests` não. O desligar continua existindo
+como último recurso, e vence o extra quando ligado: se ele o ligou, é porque o
+extra não resolveu.
+
+A mensagem da tela agora oferece o caminho seguro **primeiro**, com o passo a
+passo de onde exportar o certificado.
+
+**3. ⚠️ Um teste instável que eu criei e matei na mesma hora.**
+
+O teste novo do layout abria `/analisesps/conciliacao` como mestre — e essa tela
+**guarda o filtro de quem a visita**. Rodando antes dos testes da conciliação, ele
+deixava um filtro guardado que mudava o HTML deles: sete testes falharam uma vez e
+passaram na seguinte. Agora ele lê o template, sem sessão e sem efeito. **Teste que
+falha às vezes é pior que teste que falta** — ensina a rodar de novo em vez de
+investigar.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto entrar | ele colar o certificado em `MOBPONTO_CA_EXTRA` (preferido) ou ligar o inseguro |
+| dizer se o 56.284,17 aparece | ele abrir a conciliação com o layout consertado e usar a busca |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** suíte inteira **duas vezes seguidas**, 7.566 passando, 145 pulados,
+zero falhas, 5min30s cada. **NÃO verificado:** a tela dele depois do conserto, e o
+`MOBPONTO_CA_EXTRA` contra o certificado de verdade — a forma está testada, o
+certificado do Mobponto não passa por aqui.
+
+---
+
+### Centésima vigésima segunda leva (29/09) — o "Deu erro" era meu, e o certificado passou a se resolver sozinho
+
+**1. ⚠️ O 56.284,17 SEMPRE ESTEVE IMPORTADO.**
+
+A própria reimportação dele diz: *"Li 53 lançamento(s): 53 já estavam aqui e 0 são
+novos"*. As 53 linhas do arquivo, aquela inclusive, estão gravadas desde 12:08.
+
+A busca respondeu "não existe em conta nenhuma" porque ele procurou por
+**56.284,27** — o arquivo tem **56.284,17**. A busca estava certa; o número
+digitado é que tinha um dígito trocado.
+
+**2. ⚠️ O "Deu erro" ao filtrar pela coluna Entrada era um defeito meu, de horas
+antes — e o estrago era cirúrgico.**
+
+Eu escrevi `url_for('analisesps.conciliacao')` onde a rota se chama
+`tela_conciliacao`. Aquele pedaço da tela só é desenhado **quando o filtro esconde
+alguma linha** — então a conciliação quebrava com 500 **exatamente** quando ele
+procurava um valor que não casava com nada. Filtrar por algo que existe
+funcionava; filtrar por algo que não existe quebrava.
+
+Nenhum teste de tela pegaria: as telas eram exercitadas no estado normal, e o que
+quebrava era o excepcional. Agora há um teste que **lê todos os templates** e
+confere se cada rota citada existe — a classe inteira de erro, travada de uma vez.
+
+⚠️ E `url_for` é o jeito certo justamente porque GRITA. Endereço montado à mão não
+daria erro nenhum: daria "não encontrado" em silêncio, o que é pior.
+
+**3. O certificado do Mobponto passou a se resolver SOZINHO.**
+
+É o que o navegador faz e o `requests` não: o certificado do site carrega dentro
+de si o **endereço de quem o assinou**. Agora, ao levar
+`CERTIFICATE_VERIFY_FAILED`, o sistema lê esse endereço, **baixa a peça que
+falta** e refaz a chamada — com a verificação ligada.
+
+⚠️ **E isso não abre buraco**, ainda que pareça: o certificado baixado entra como
+**candidato**, não como confiança. A verificação continua acontecendo e só passa
+se a corrente terminar numa **raiz que já era confiável** — um intermediário falso
+não chega a raiz nenhuma. O que se ganha é a peça do meio; quem decide continua
+sendo a raiz.
+
+Se não der (o certificado não diz onde está a peça, ou o servidor dela não
+responde), a mensagem agora **diz que já tentou** e aí sim oferece as duas saídas
+manuais, a segura primeiro.
+
+**4. O layout: a tabela ganhou piso de largura** (leva anterior), e a coluna da
+observação tem piso próprio — era ela que quebrava as linhas.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| o ponto entrar | agora talvez de nada: o sistema tenta completar a cadeia sozinho. Se não der, a mensagem diz e as duas saídas manuais continuam |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** suíte inteira, 7.571 passando, 145 pulados, zero falhas, 5min15s.
+**NÃO verificado:** o download do intermediário contra o Mobponto de verdade —
+daqui não dá, porque este ambiente intercepta TLS. A mecânica está testada com
+dublê; o certificado real só o Render alcança.
+
+---
+
+### Centésima vigésima terceira leva (29/09) — o FITID do Bradesco não identifica nada, e a coluna que faltava no template
+
+Relato dele, com a tela na mão: *"Sinceramente, não sei mais o que fazer. Tem
+algo sério e muito errado. (…) veja a imagem da tela de conciliação. Continua
+quebrada. Copiei e colei o extrato que está na tela. Veja se você encontra o
+lançamento a seguir."* E o ponto: *"parece que está baixando. veja a msg: 7500
+dia(s) de 250 pessoa(s)"*.
+
+Ele tinha razão nas duas coisas, e eu tinha errado a causa das duas — na
+conciliação, DUAS VEZES na mesma tarde (leva 121 e 122). Esta leva registra o
+que era de verdade.
+
+**1. A transferência de R$ 56.284,17 NUNCA tinha entrado — e a conferência
+dizia que sim.** Na leva anterior eu concluí, pela mensagem "53 já estavam aqui e
+0 são novos", que ela estava no banco e que a busca falhou por ele ter digitado
+`,27`. Errado. O extrato colado da tela prova: das 53 linhas do arquivo de 29/09,
+**36 não estavam lá** — a transferência, a rentabilidade de R$ 1,00, as 22
+tarifas de 28/09 e doze PIX (CENTERLOC, CERAMICA R&G, TALIA, Fernandes Cosme ×3,
+JAKELINE, KR, ALBERTO…). E duas linhas estavam **em dobro** (o PIX de 146,00
+para ANA E G NOBRE e o de 4.616,22 para Beevale).
+
+A causa é uma só: **o FITID do Bradesco é um contador do arquivo, não o número
+da transação.** N10127, N1013B, N10151, N10165… cresce de 22 em 22 (em
+hexadecimal) a cada lançamento e RECOMEÇA a cada download. O download de sexta
+e o de segunda usam os mesmos FITIDs para transações diferentes. Com o FITID
+como identidade:
+
+- linha nova cujo FITID já existia (vindo de outra linha, de outro download) →
+  "já estava aqui", e nunca entrava — **36 sumidas em silêncio**;
+- a mesma transação em dois downloads, com FITIDs diferentes → "nova" duas
+  vezes — **as duplicadas**.
+
+O banco 520 já tinha mostrado o outro jeito de o FITID mentir (código do tipo,
+28/09). Dos dois bancos que ele usa, nenhum manda FITID que identifique algo.
+
+**Decisão: a identidade da linha passa a ser o CONTEÚDO** — data, valor,
+histórico e documento — mais a ordem da repetição dentro do arquivo (a 1ª e a
+2ª tarifa iguais são #1 e #2). O FITID fica gravado na linha para consulta, mas
+não decide nada. A receita vive em `conciliacao_ofx.identidade_da_linha`, e o
+que vai para o banco (`descricao_da_linha`, `documento_da_linha`) é exatamente o
+que entra na identidade — por isso ela é **reconstruível só com o que está
+gravado**, sem o arquivo original.
+
+**E as 19.926 linhas que já estão lá?** `conciliacao.refazer_identidades(conta)`
+roda antes de toda conferência: recalcula a identidade de cada linha do OFX a
+partir das colunas gravadas (em duas fases, por causa do índice único — a 2ª
+tarifa vira #1 e a 1ª vira #2), e devolve ao estado de planilha as linhas
+adotadas com identidade antiga (a mesma volta do "Desfazer"; a próxima
+importação as adota de novo). Não cria, não apaga, não muda conteúdo. Depois da
+primeira vez não encontra nada a fazer. **Sem migração, sem botão.**
+
+**As duplicadas NÃO são apagadas sozinhas** — é dado dele. A conferência passou
+a apontar: na lista "está aqui e não vem neste extrato", a linha cujo conteúdo o
+arquivo traz MENOS vezes do que há no banco ganha o selo "parece repetida", com a
+contagem no aviso. Ele apaga pelo × da linha.
+
+**O preço, dito por inteiro:** se o banco reescrever o histórico de uma linha
+entre dois downloads (lançamento provisório que vira definitivo), ela entra de
+novo — e aparece como "parece repetida". Linha a mais se vê; linha a menos, não.
+
+**Um teste antigo mudou de premissa** (`test_depois_de_adotada_a_linha_nao_e_adotada_de_novo`):
+ele usava o mesmo histórico e só trocava o FITID para dizer "outro lançamento".
+Isso era a mesma transação em dois downloads. Agora o "outro" tem outro histórico.
+
+**2. A tela quebrada era UMA LINHA faltando no template.** Ao criar a coluna "No
+OMIE" (leva 120) eu não acrescentei o `<col>` dela no `<colgroup>`. A tabela é
+`table-layout: fixed`: a largura vem do `<col>` na mesma posição. Com dez `<col>`
+para onze colunas, os 26% da observação caíam na "No OMIE" (por isso o `todos`
+dela aparecia enorme na imagem) e a observação de verdade ficava com ZERO — o
+campo de anotar virava uma letra por linha, e cada linha da tabela crescia dez
+vezes. As duas tentativas anteriores (piso na tabela, `min-width` na célula)
+**não podiam funcionar**: em `fixed` o navegador ignora `min-width` de célula.
+Agora há o `<col class="c-no-omie">`, a largura está nele, e um teste conta
+`<col>` contra `<th>` para isso não voltar.
+
+**3. O ponto está baixando** — "7500 dia(s) de 250 pessoa(s)". O intermediário
+que o Mobponto esquece de mandar está sendo buscado sozinho (leva 122). Sem
+variável, sem desligar nada.
+
+**Lição, a segunda do dia sobre o mesmo defeito:** eu tinha uma explicação que
+encaixava no sintoma ("ele digitou ,27") e parei nela. O dado dele (o extrato
+colado) desmentia em dois minutos de leitura. **Antes de dizer "está lá", olhar
+onde está.**
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar esta leva** — e o ponto está baixando: publicar reinicia o serviço e mata o download | ele dizer "pode", depois que o ponto terminar |
+| reimportar o extrato de 29/09 depois de publicado: as 36 linhas entram; as 2 duplicadas aparecem como "parece repetida" | ele |
+| apagar as duplicadas (146,00 ANA E G NOBRE e 4.616,22 Beevale, de 28/09 — e as que a conferência apontar em outros períodos) | ele, pelo × da linha |
+| o parser do ERP (`erp/core/pagamentos/ofx.py`) tem o MESMO ponto fraco com o Bradesco — anotado no `CONTEXTO.md` §9 | o chat do ERP |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** suíte inteira — 7.583 passando, 145 pulados, zero falhas,
+5min14s; a aplicação importa.
+**NÃO verificado:** a primeira rodada do `refazer_identidades` nas 19.926 linhas
+de produção — daqui não dá; o que garante é o teste com o índice único e a
+propriedade de ser refazível (o FITID continua na linha).
+
+---
+
+### Centésima vigésima quarta leva (29/09) — o ponto que para retoma de onde parou, avisa, e traz sozinho todo dia
+
+Perguntas dele: *"O que acontece se o ponto der problema pra baixar no meio do
+caminho? Ele já está configurado pra baixar automático diariamente?"* — e, em
+seguida, o pedido: *"Precisa que caso a carga pare que possa ser retomada de
+onde parou e que sejamos avisados."*
+
+**A primeira resposta era ruim.** A carga anterior do mês era apagada ANTES de
+a nova começar. Se a nova caísse no meio — rede, Mobponto fora do ar, o serviço
+reiniciando numa publicação — o mês ficava com um pedaço, e a folha usava o
+pedaço como se fosse o mês inteiro, sem aviso: gente com "menos dias", obra
+errada, e um mês que antes estava certo passava a estar errado. E a tentativa
+seguinte recomeçava da página 1.
+
+**O que ficou:**
+
+- **Migração 037** — `terminada_em` na carga (vazio = em andamento ou caiu);
+  `paginas_lidas` vira o ANDAMENTO; o índice único por competência vale só para
+  cargas terminadas. As cargas que já existem ganham `terminada_em` na própria
+  migração — sem isso todas virariam "em andamento" e sumiriam.
+- **A carga nova nasce ao lado da antiga** e só a substitui quando termina, na
+  mesma transação. `carga_do_mes` (e por ela a folha, o auxílio, as diaristas)
+  só enxerga carga terminada.
+- **Cada página é uma transação** (os dias, o andamento, os campos vistos) e é
+  gravada **por pessoa** — apaga o que a carga já tinha das pessoas da página e
+  grava de novo. É isso que torna a retomada segura: quem mudar de página no
+  Mobponto entre duas tentativas não duplica.
+- **Retomada**: a próxima chamada do mês — botão ou automático — continua da
+  página seguinte à última gravada, se a tentativa tem menos de 24 h
+  (`HORAS_PARA_RETOMAR`); mais velha que isso, recomeça, porque as páginas do
+  Mobponto já não casam. O aviso da carga diz de onde retomou e que quem mudou
+  de página pode faltar — a próxima carga completa refaz tudo.
+- **Aviso por WhatsApp** (`avisos_ponto.py`) quando o ponto para: por erro
+  (a execução falha) ou porque o serviço reiniciou no meio (descoberto quando a
+  próxima tarefa abre, em `_fechar_orfas`). Diz o mês, a página, o motivo e que
+  retoma. Só o ponto avisa — a sincronização roda de 5 em 5 minutos e avisaria
+  demais. Destinatários: `ANALISESPS_AVISO_TELEFONE`; sem ela, os dois números
+  do aviso do BaixaBradesco (financeiro e dono — decisão dele de 11/09), lidos
+  de lá para não haver duas listas. O envio nunca derruba a tarefa.
+- **A folha avisa em vermelho** quando a carga do mês terminou com menos páginas
+  do que a API prometeu ("veio pela metade").
+- **Modo `ponto_diario`** para o agendador (cron-job.org, mesma porta e segredo
+  da sincronização): mês corrente e, até o dia 10, o anterior; duas tentativas
+  por mês, a segunda retomando de onde a primeira parou. Não entra nos botões
+  de Configurações, como o "ponto": é para a máquina. Chamada no `README.md`.
+- Antes do botão da 037, a carga entra do jeito antigo (apaga antes, não
+  retoma) e diz isso num aviso — testado com o índice e a coluna antigos.
+
+**Decisão registrada:** o automático substitui o mês a cada dia. É seguro
+porque a substituição agora é atômica e a queda retoma — sem isso, um
+automático diário seria um jeito de estragar o mês todo dia.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** as levas 123 e 124 — o ponto está baixando: publicar reinicia o serviço e mata o download (agora ele retomaria, mas a 037 ainda não está lá) | ele dizer "pode", depois que o ponto terminar |
+| **apertar "Aplicar atualizações do banco" no mesmo momento da publicação** (migração 037) | ele |
+| configurar no cron-job.org a chamada diária do `ponto_diario` (a chamada está no `README.md`) | ele |
+| conferir que o WhatsApp de aviso chega (`ANALISESPS_AVISO_TELEFONE`, ou os dois números padrão) — o primeiro aviso de verdade só sai quando algo parar | ele |
+| reimportar o extrato de 29/09 e apagar as 2 duplicadas apontadas | ele |
+| as **fórmulas** das abas Quinzena e Fim de Mês | ele rodar o `exportarTodas` |
+| o primeiro `IncluirLancCC` conferido no OMIE | ele |
+
+**Verificado:** suíte inteira — 7.599 passando, 145 pulados, zero falhas —
+com os 45 testes do ponto (retomada, não-duplicação, tentativa velha, avisos,
+execução órfã) e as telas da folha e do ponto.
+**NÃO verificado:** o `ponto_diario` disparado pelo agendador de verdade, e o
+WhatsApp de aviso chegando de verdade — o canal é o mesmo do BaixaBradesco.
+
+---
+
+### Centésima vigésima quinta leva (30/09) — a folha da contabilidade usa a lateral, e o Panorama saiu
+
+Ele, com a tela na mão: *"a tela Panorama tá sem sentido. A tela que precisamos é
+Folha da Contabilidade. Nela quero poder importar nova folha. Põe caixa de anexar
+arquivo de folha. Nela quero poder ver o que tá importado, a divisão por obra
+clicando em algo pra abrir um modal. (…) tá muito poluído a parte superior.
+Aproveite mais o sidebar para informações."*
+
+**O que ficou:**
+
+- **O topo é só a troca de competência.** Os quatro quadros grandes, o bloco
+  "Precisa da sua mão" com lista de nomes e a linha longa de "importada em… ·
+  importar outra ou apagar · ponto lido de…" saíram do meio da tela.
+- **Na lateral, em ordem:** "Gerar o pagamento" (como estava); **"Esta folha"**
+  (importada quando e por quem, o período do ponto, e quatro linhas: a folha
+  inteira, vai receber, fora do pagamento, sem obra — mais o botão "Divisão por
+  obra…" e o link "todas as folhas importadas"); **"Precisa da sua mão antes de
+  pagar"** (as três críticas em curto, cada uma com o "ver só elas", que é o
+  filtro de Situação); **"Trazer outra folha"** (a mesma área de soltar da tela
+  de importar, compacta, com a pergunta quinzena/fim de mês quando o título não
+  diz — só para quem opera); e os filtros. Os botões da lateral são
+  `type="button"`: estão dentro do formulário dos filtros, e um botão comum
+  recarregaria a tela.
+- **A divisão por obra abre numa janela** (`#cartao-divisao`): total por obra,
+  por conta corrente, obra sem conta, por filial — e **"Já pago em MM/AAAA"**,
+  todas as verbas fechadas por obra, que era o que o Panorama tinha de útil.
+  Sai do que está fechado; se estourar, a tela abre sem esse bloco.
+- **O Panorama saiu**: a aba, a rota, o template e os testes dele. A porta
+  `/folha` leva à folha da contabilidade, que leva à última folha importada. A
+  tela de lista (`/folha/importar?lista=1`) continua, é onde se apaga uma folha.
+
+**O que ele ganha:** a lista de 400 pessoas começa logo abaixo do título; tudo
+que é número, alerta ou ação está na lateral, à vista sem rolar; a divisão por
+obra é um clique, e a folha nova entra sem trocar de tela.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** esta leva | ele dizer "pode" |
+| olhar a tela de verdade — a lateral ficou mais longa, e só ele diz se a ordem dos cartões está boa | ele |
+| a 037, o cronjob, as duplicadas da conciliação, as fórmulas, o primeiro `IncluirLancCC` — como na leva 124 | ele |
+
+**Verificado:** suíte inteira — 7.599 passando. 145 pulados. zero falhas —
+incluindo o `url_for` de todos os templates contra as rotas; a aplicação importa.
+**NÃO verificado:** a tela de verdade — daqui não dá.
+
+---
+
+### Centésima vigésima sexta leva (30/09) — o ponto ganha a paciência do script que funciona
+
+Ele: *"ponto não conclui, não sai disso. A última tentativa FALHOU (…) não
+consegui ler a página 7 do ponto de 09/2026: Read timed out. (read
+timeout=60)."*
+
+**A causa:** o Mobponto monta cada página na hora, e algumas levam mais de um
+minuto. O sistema esperava 60 s por página, tentava três vezes em sete segundos
+e desistia do mês inteiro. E pedia as páginas emendadas, sem pausa.
+
+**O script dele que funciona** (o "Relatório Geral Mensal", no Apps Script,
+lido do arquivo que ele mandou) faz o oposto nas duas coisas: pede **uma página
+por minuto** (`batchPagesPerRun: 1`, gatilho de minuto em minuto) e, quando uma
+falha, **não mata o trabalho** — anota o erro e tenta de novo no minuto
+seguinte, indefinidamente.
+
+**O que ficou:**
+
+- **3 minutos por página** para responder (20 s para conectar — servidor que
+  nem atende não merece 3 minutos).
+- **Seis tentativas por página**, com espera crescente: 15 s, 30 s, 1, 2 e 4
+  minutos — uns 8 minutos de paciência antes de parar.
+- **Sinal de vida durante as esperas** (`_mantendo_vivo`, a cada 30 s): sem
+  isso, 3 minutos calado fariam a tarefa ser dada por morta com a carga ainda
+  andando (`SEGUNDOS_ATE_DAR_POR_MORTA = 180`).
+- **Pausa de 3 s entre páginas.** O script dele espera um minuto; 3 s é um meio
+  termo para o mês não levar meia hora. Se o Mobponto continuar engasgando, é o
+  primeiro número a subir.
+- **O botão retoma sozinho uma vez**, como o automático: se ainda assim parar,
+  espera 2 minutos e continua da página em que parou. Credencial recusada,
+  certificado e "mês sem ninguém" não são retomados — esperar não muda nada.
+- **A tela diz de onde continua:** quando a última tentativa falhou e há uma
+  carga parada, o recado diz "parou na página N de M — aperte de novo e ele
+  continua dali".
+
+**O preço:** um mês ruim pode levar bem mais tempo para entrar — até uns 8
+minutos por página difícil. É a troca certa: devagar e completo, em vez de
+rápido e parado.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** esta leva | ele dizer "pode" |
+| **a 037 aplicada** — sem ela, cada nova tentativa volta à página 1, e o mês lento nunca termina | ele confirmar que apertou "Aplicar atualizações do banco" |
+| trazer o ponto de 09/2026 de novo depois de publicar | ele |
+| o cronjob, as duplicadas da conciliação, as fórmulas, o primeiro `IncluirLancCC` | ele |
+
+**NÃO verificado:** o Mobponto de verdade — daqui não se alcança. A mecânica
+(tempo, esperas, sinal de vida, pausa, retomada) está coberta por teste.
+
+---
+
+### Centésima vigésima sétima leva (30/09) — o que se aproveitou do script da planilha
+
+Ele colou o script do Apps Script que atualiza a planilha do ponto ("funciona
+perfeito") e pediu para ver o que dá para aproveitar.
+
+⚠️ **O script traz a credencial do Mobponto por extenso** (`Authorization` e
+`api-key`) e foi colado no chat. Não entrou no repositório nem foi repetida.
+Recomendação feita a ele: trocar as duas no Mobponto e atualizar Render e
+script. O endereço do Web App (`/exec`) também dispara a carga sem senha.
+
+**Comparação, item a item:**
+
+| O script faz | O sistema | Decisão |
+|---|---|---|
+| 1 página por minuto (gatilho de minuto) | pausa de 3 s | **aproveitado, adaptado:** começa em 3 s e, na primeira página que demorar mais de 30 s, passa a 1 por minuto até o fim da carga, com aviso |
+| falha não mata o trabalho: tenta de novo no minuto seguinte, sem fim | 6 tentativas por página (~8 min) e uma retomada | **aproveitado, adaptado:** o automático (`ponto_diario`) pode ser chamado de hora em hora e, mês a mês, **retoma** o que parou, **traz** o que não veio hoje e **pula** o que já entrou inteiro hoje |
+| `total_paginas` ausente = "infinito", para na página vazia | ausente = 1 página (o mês entrava com a primeira página só, dizendo completo) | **aproveitado:** lê até a página vazia; o total gravado é o que foi lido |
+| retoma se a última página foi há menos de 30 min; senão recomeça limpando a aba | retoma se a tentativa tem menos de 24 h, sem apagar o que vale | **o nosso fica:** a página é gravada por pessoa, então retomar tarde não duplica; e o mês antigo continua valendo até o novo terminar — o script apaga a aba antes de começar |
+| cabeçalho a partir das chaves do primeiro dia | o dia inteiro guardado como veio | o nosso fica |
+| trava contra dois trabalhadores ao mesmo tempo | uma execução por vez no banco | equivalente |
+| endereço `?acao=status` | a tela do Ponto e Configurações | equivalente |
+| carrega corrente e anterior sempre | corrente; até o dia 10, o anterior também | fica a regra da planilha (K1) — ver `competencia_sugerida` |
+| verificação de certificado ligada | ligada, completando a cadeia sozinho | o Google busca o certificado do meio; o nosso agora também |
+
+**O cronjob muda de uma vez por dia para de hora em hora** (README). Sem isso a
+retomada automática só acontece no dia seguinte.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** as levas 126 e 127 | ele dizer "pode" |
+| trocar o cronjob para **de hora em hora** (se já criou) | ele |
+| **trocar a credencial do Mobponto** (foi colada no chat) e depois Render + script | ele |
+| trazer o ponto de 09/2026 de novo | ele |
+
+**Verificado:** suíte inteira — 7.612 passando, 145 pulados, zero falhas —
+com os 58 testes do ponto em banco de verdade; a aplicação importa.
+**NÃO verificado:** o Mobponto de verdade.
+
+---
+
+### Centésima vigésima oitava leva (30/09) — o código do Fortes na ficha, e a data do ponto no campo certo
+
+Dois relatos dele, no mesmo dia:
+
+1. *"Vários colaboradores estão no cadastro, mas diz que não tá"* — com a ficha
+   de uma pessoa admitida em 16/09 mostrando o código **004031** na última coluna
+   da aba "Dados Documentos".
+2. *"O ponto foi baixado, mas ninguém foi associado ao ponto."*
+
+**1. O código do Fortes vinha só da aba separada "ID Fortes".** A coluna "ID
+Fortes" da ficha (aba principal) era ignorada — de propósito, numa época em que
+ela não existia. Quem ainda não estava na aba separada (gente admitida há
+poucos dias) aparecia na folha como "fora do cadastro", sem CPF e sem pagamento,
+com o código escrito na própria ficha.
+
+- **A ficha manda:** o código vem da coluna da própria pessoa. A aba separada só
+  **completa** quem não tem código na ficha; quando as duas discordam, vale a
+  ficha e a carga avisa quem ("discordam da ficha").
+- **Vazio na ficha não apaga** o código que a aba separada deu.
+- **Um código, uma pessoa:** o mesmo código em duas fichas vira aviso, vale a
+  primeira; código que mudou de dono na ficha sai do dono antigo.
+- **Seis dígitos com os zeros da frente** (`normalizar_id_fortes`): a planilha às
+  vezes guarda "004031" como o número 4031, que não casaria com a folha.
+- "Matrícula" **não** é código do Fortes na ficha (lá é o CPF com uma letra).
+- Nada muda no banco: é a mesma coluna `id_fortes`.
+
+**2. A data do dia de ponto era lida do campo errado — erro meu, e ele zerava a
+folha.** Eu lia a data de `dia`. O script da planilha dele **descarta** `dia`
+(`filter(c => c !== "dia" && c !== "matricula")`) e o programa dele
+(`analysis_engine.py`) lê a data de **`data`**. Com `dia` sem data completa, todo
+dia do ponto ficava sem data, e dia sem data não entra em período nenhum:
+ninguém casava.
+
+- A data vem de `data`; sem ela, de `dia` como data completa; se `dia` for só o
+  número do dia, do mês da carga.
+- O CPF do ponto ganha os zeros da frente, como no `normalize_cpf` dele
+  (`zfill(11)`).
+- **As cargas já baixadas são consertadas sem baixar de novo**
+  (`consertar_carga`, chamado por `carga_do_mes`): o dia inteiro está guardado
+  em `campos`. Idempotente — da segunda vez não acha nada.
+
+**Lição:** a data do ponto foi decidida em 26/09 lendo o formato de UM arquivo
+("os campos de cada dia são dinâmicos"). O script dele mostrava, desde que
+chegou, que `dia` não era o campo da data. Ler o que já estava na mesa teria
+evitado o dia perdido.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** | ele dizer "pode" |
+| depois de publicar: **apertar "Atualizar cadastro"** (traz o código das fichas) e abrir a folha — ela casa de novo sozinha a cada visita | ele |
+| conferir que o ponto de 09/2026 casou (sem baixar de novo) | ele |
+| trocar a credencial do Mobponto; o cronjob de hora em hora | ele |
+
+**Verificado:** testes do ponto (63), do cadastro, da folha e das telas; a
+aplicação importa. Suíte inteira em andamento no momento do commit.
+**NÃO verificado:** o formato real do dia do Mobponto — a leitura aceita `data`,
+`dia` completo e `dia` só com o número; a tela do Ponto mostra os campos que
+vieram, e é lá que se confirma.
+
+---
+
+### Centésima vigésima nona leva (30/09) — as duas obras na folha, e o separador de setor do Fortes
+
+Um relato longo dele, olhando a folha aberta. Item a item:
+
+1. *"Quem tem 2 dias numa obra também aparece nela. Não compreendi."* — era o
+   texto do filtro de obra. **Saiu.** No lugar: "Mostra quem trabalhou nesta obra
+   em algum dia. O subtotal soma só os dias nesta obra." E o subtotal passou a
+   fazer isso mesmo: com a obra no filtro, a tela diz o total das pessoas **e**
+   quanto disso é dos dias naquela obra (antes somava o valor inteiro da pessoa,
+   o que fazia a obra parecer mais cara).
+2. **A regra da obra do dia foi reafirmada por ele** — cada dia uma obra, a que
+   mais aparece nas quatro batidas; no 2×2, a das duas primeiras; o valor
+   dividido pelos dias. **É o que está implementado** (`obra_do_dia`), inclusive
+   o desempate pela ordem das batidas. Nada mudou na conta.
+3. *"O filtro Obras deve ser as obras do ponto (…) aparece no filtro todas as
+   obras. Se não tem nenhuma, como é que pode?"* — a lista mostrava só a opção
+   "todas as obras" quando o ponto não tinha trazido obra nenhuma. Agora diz
+   **"Nenhuma obra associada ainda — o ponto do mês não trouxe obra para
+   ninguém"**. E a lista é de toda obra em que alguém teve dia, não só da
+   principal de cada um.
+4. **Duas visões:** filtro **"Obra do ponto"** e filtro novo **"Obra do
+   cadastro"**.
+5. **A obra do cadastro aparece sempre**, numa coluna ao lado da do ponto, com o
+   selo **"difere do ponto"** quando as duas não batem — é o sinal de que a ficha
+   precisa ser atualizada.
+6. **Data de saída:** ele mesmo conferiu na conversa ("saiu e aparece aqui, está
+   tudo certo"). O alerta usa a data de saída; nada mudou.
+7. *"De onde veio a obra? Esquisito esse filtro. Os termos estão esquisitos."* —
+   virou **"Como a obra foi definida"**: pelas batidas de ponto / pela regra de
+   rateio (quem não bate ponto) / ajustada por você na linha.
+8. *"Linha que não reconheci: 001.01 - CONSTRUTORA/ESCRITORIO (…) é um separador
+   de informações, e você ainda está considerando como se fosse erro. Isso a
+   gente vê em todas as folhas."* — o leitor do Fortes conhecia a filial ("001 -
+   CONSTRUTORA") mas não o **setor** dentro dela ("001.01 - …", "001.08 -
+   CONSTRUTORA/AFASTADO INSS", "123.01 - OBRA"). Agora reconhece
+   (`PADRAO_SETOR`), e o subtotal do setor não sobrescreve o da filial. **As
+   folhas já importadas deixam de acusar** sem reimportar: o aviso é filtrado na
+   leitura (`folha_arquivo._dicionario`), e com isso elas também passam a
+   "fechar".
+
+**O que ficou de fora, e pode valer a pena:** o setor não é guardado. "AFASTADO
+INSS" e "DESATIVAR" são informação sobre a pessoa que o arquivo da contabilidade
+já traz — guardar exigiria uma coluna nova na linha da folha (migração). Fica
+como sugestão.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| depois de publicar: **"Atualizar cadastro"** (traz o código do Fortes das fichas) e abrir a folha | ele |
+| conferir que o ponto de 09/2026 casou (sem baixar de novo) e que as obras aparecem no filtro | ele |
+| trocar a credencial do Mobponto; o cronjob de hora em hora | ele |
+
+**Verificado:** suíte inteira antes da publicação (ver o commit). A aplicação
+importa.
+**NÃO verificado:** a tela de verdade.
+
+---
+
+### Centésima trigésima leva (30/09) — o setor do Fortes, guardado e na tela
+
+Ele: *"Vamos guardar essa informação e expor ela em tela"* — o setor dentro da
+filial que o arquivo da contabilidade traz ("001.08 - CONSTRUTORA/AFASTADO
+INSS", "001.09 - CONSTRUTORA/DESATIVAR"), que a leva anterior passou a
+reconhecer mas jogava fora.
+
+**O que ficou:**
+
+- **Migração 038:** `setor_codigo` e `setor_nome` em `folha_linha`. Antes do
+  botão, a folha entra sem o setor (testado com as colunas apagadas).
+- **Leitura:** cada pessoa leva o setor da linha de setor acima dela; filial nova
+  zera o setor (a mesma filial repetida depois da quebra de página mantém).
+- **Na linha:** coluna **"Setor"** ao lado do Código, com o nome curto
+  ("AFASTADO INSS", sem repetir a filial — o nome inteiro fica no passar do
+  mouse).
+- **Destaque:** setor com AFASTAD, DESATIV, INSS, LICEN ou DEMIT
+  (`PALAVRAS_DE_ATENCAO`) ganha selo âmbar, e a lateral "Precisa da sua mão"
+  diz quantos são, com "ver só elas".
+- **Filtro "Setor (arquivo da contabilidade)"**, com a opção "só afastados e
+  desativar".
+- **Na janela "Divisão por obra":** o total **por setor**, com "confira" nos
+  que pedem atenção.
+- **As folhas já importadas não têm o setor** — o arquivo não fica guardado. É
+  importar o mesmo arquivo de novo: substitui a folha da mesma competência e
+  tipo, e as decisões dele (quem entra, obra ajustada, fechamento) são guardadas
+  por competência e CPF, então continuam. A tela diz isso quando a folha não
+  tem setor.
+
+**E a filial, na linha, como "obra da contabilidade".** Ele, na mesma
+conversa: *"isso aí é o nome da obra também (…) é o cadastro da contabilidade.
+Até para a gente visualizar e entender se o cadastro da contabilidade está
+batendo com o ponto."* A coluna virou **"Contabilidade"**: a filial ("090 - OBRA
+ESTADIOITA …") e, abaixo, o setor. Filtro **"Obra da contabilidade"**. A linha
+agora tem as três obras lado a lado — ponto, cadastro, contabilidade. **Sem
+marca automática de diferença** entre a da contabilidade e a do ponto: uma
+escreve o nome da obra e a outra o código, e casar os dois por palpite marcaria
+diferença onde não há. Se ele quiser a marca, precisa de uma tabela de/para
+nome → código (a aba "C. Diários" talvez sirva).
+
+**Decisão minha, a confirmar com ele:** a lista de palavras que marcam "pede
+atenção". Tirei das que ele mostrou (AFASTADO INSS, DESATIVAR) e acrescentei
+INSS, LICEN(ÇA) e DEMIT(IDO) por parecerem da mesma família. Se algum setor
+comum cair nisso, é tirar a palavra.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **apertar "Aplicar atualizações do banco"** (migração 038) — publicado em 30/09/2026 com o "pode" dele | ele |
+| importar de novo o arquivo de 09/2026 (quinzena) para trazer o setor | ele |
+| conferir se a lista de palavras de "pede atenção" está boa | ele |
+
+**Verificado:** testes da leitura, do banco (com e sem a 038) e da tela; a
+aplicação importa. Suíte inteira em andamento no momento do commit.
+
+---
+
+### Centésima trigésima primeira leva (30/09) — o nome abre o ponto da pessoa, dia a dia
+
+Ele: *"Quando eu clico em cima do funcionário (…) hoje abre o cadastro do
+Pipefy. Eu queria poder clicar e visualizar o ponto dele, para eu saber
+exatamente, dia após dia, em quais locais ele bateu e qual obra foi considerada
+daquele dia. E o valor do dia também."*
+
+**O que ficou:**
+
+- **O nome abre uma janela** com todos os dias do período (quinzena ou fim de
+  mês), inclusive os sem registro no ponto: as **quatro batidas** com hora e
+  obra de cada uma, a **situação** (presença, falta, horas), a **obra do dia** e
+  o **valor do dia**. Em cima: líquido, dias com obra, valor por dia e a divisão
+  por obra.
+- Dia **2×2** aparece marcado "empate 2×2" (valeu a obra em que o dia começou).
+  Dia **ajustado à mão** mostra as duas: a que valeu e "o ponto dizia X". Dia sem
+  obra diz o porquê (falta, feriado, sem marcação, PAGAR EXTRA, sem registro).
+  Quem é da **regra de rateio** vê um aviso: os dias são só para conferência.
+- **O Pipefy virou a setinha ↗** ao lado do nome. O antigo botão "dias" virou
+  **"ajustar"** (ou "divisão", para quem só consulta) — é a linha com o ajuste
+  de obra.
+- **Mesma conta da tela:** a janela pede ao servidor, que apropria a folha
+  inteira e tira a pessoa (`folha_gestao.ponto_da_pessoa`); não há uma segunda
+  conta. O teste confere que os valores dos dias somam o líquido.
+- Rota nova `/api/folha/<folha>/ponto/<cpf>`, só leitura, para quem vê a folha
+  (inclusive quem só consulta). Pessoa fora da folha responde 404.
+
+**O preço:** cada clique refaz a apropriação da folha inteira no servidor (a
+mesma que a tela faz ao abrir). É o que garante que a janela não discorde da
+tela; se ficar lento com a folha cheia, o caminho é guardar a apropriação da
+visita.
+
+**Verificado:** testes da tela e do acesso, e o JavaScript da tela passou pela
+checagem de sintaxe. Suíte inteira em andamento no momento do commit.
+**NÃO verificado:** a janela com o ponto real — depende do ponto de 09/2026
+casar (leva 128).
+
+---
+
+### Centésima trigésima segunda leva (30/09) — o analítico do funcionário, quem é pago em mais de uma conta, e o ponto de uma pessoa só
+
+Três pedidos dele na mesma mensagem, feitos em fila.
+
+**1. O analítico do funcionário.** *"Nesse quadrinho, um analítico do
+funcionário: a informação que veio da contabilidade, a que foi extraída do
+ponto, o ponto dia a dia, o cálculo, o rateio, quanto em cada conta corrente,
+em cada obra, todos os totalizadores (…) Inclusive poder gerar um relatório,
+poder imprimir."*
+
+- A janela que abre no nome virou o **analítico**: três cartões lado a lado com
+  o que veio de cada fonte — **contabilidade** (código, nome na folha, obra da
+  contabilidade, setor, líquido), **cadastro** (cargo, fase, obra, contrato,
+  situação) e **ponto** (dias no período, com obra, faltas, sem batida, sem
+  registro, empates, ajustados) —, **o cálculo** escrito por extenso (líquido ÷
+  dias = valor por dia), **o rateio por obra** (dias, %, valor, conta),
+  **por conta corrente**, o que o sistema apontou, e **o ponto dia a dia**.
+- **Um desenho só** (`_folha_analitico.html`) para a janela e para a **página de
+  imprimir** (`/folha/<folha>/pessoa/<cpf>`, com botão "Imprimir" — o navegador
+  salva em PDF). A janela carrega o miolo pronto do servidor
+  (`?parcial=1`); o JavaScript que montava a tabela saiu.
+
+**2. Quem é pago em mais de uma conta.** *"Quais funcionários estão sendo pagos
+em mais de uma conta. Isso é importante até para saber se não tem nada errado
+no ponto."*
+
+- Cada pessoa leva as contas de onde sai o dinheiro dela (a conta de cada obra
+  dos dias dela). Na lateral, em "Esta folha": **"Pagas em mais de uma conta:
+  N — ver quem"**. Filtro novo **"Conta de pagamento"** (uma conta, ou "pagas
+  em mais de uma conta"). Na janela da divisão, o número de pessoas de cada
+  conta leva ao filtro daquela conta. No analítico, o selo "paga em mais de uma
+  conta".
+
+**3. O ponto de uma pessoa só.** *"É possível baixar só o ponto de um
+funcionário específico? (…) Se adivinhar qual página ele está, tentar baixar só
+aquela página. Se não encontrar, vai na seguinte ou na anterior. Pelo nome dá
+para entender."*
+
+- É exatamente isso (`ponto.atualizar_pessoa`). A API não filtra por pessoa.
+  **Migração 039** guarda em que página cada pessoa veio; com ela, a busca vai
+  direto à página. Sem ela (cargas antigas), **adivinha pela ordem do nome**
+  (posição entre todos ÷ pessoas por página). Não achou: olha os nomes da página
+  — todos depois do dela, volta; todos antes, avança; se a ordem não ajudar,
+  procura em volta. Desiste depois de 8 páginas, dizendo quais olhou.
+- **Regrava a página inteira**, por pessoa (sem duplicar): os outros daquela
+  página vieram tão atualizados quanto ela. **A carga do mês não muda de
+  andamento** (senão viraria "veio pela metade").
+- Botão **"Atualizar o ponto desta pessoa"** no analítico (só quem opera). Roda
+  no processo separado (tarefa `ponto_pessoa`); a janela acompanha e, no fim,
+  relê o analítico — a folha é recalculada a cada leitura.
+- **Suposição que só o Mobponto de verdade confirma:** que as páginas vêm em
+  ordem de nome. Se não vierem, a busca ainda acha (procura em volta), só gasta
+  mais páginas; e depois da primeira carga com a 039, nem precisa adivinhar.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** e **apertar "Aplicar atualizações do banco" no mesmo momento** (migração 039; a 038 também, se ainda não foi) | ele dizer "pode" |
+| trazer o ponto do mês de novo **depois** da 039 — é o que guarda a página de cada pessoa | ele (ou o automático de hora em hora) |
+| conferir o analítico e a impressão com gente de verdade | ele |
+
+**Verificado:** testes das telas, do acesso e do ponto (68, com banco de
+verdade, incluindo a busca pela página guardada, pelo nome, a desistência e a
+tarefa); JavaScript da tela passou pela checagem de sintaxe; a aplicação importa.
+**NÃO verificado:** a ordem real das páginas do Mobponto, e a impressão num
+navegador de verdade.
+
+---
+
+### Centésima trigésima terceira leva (30/09) — contas das obras (erro meu), o "NI", por que não casou, apagar a folha, valor zero
+
+Cinco relatos dele em sequência, olhando a folha com dado de verdade.
+
+**1. "Várias obras dizendo que não têm conta. Mas é impossível: na C. Diários
+tem."** — **Erro meu, e era dinheiro sem conta.** As duas tabelas vêm da mesma
+aba "C. Diários" (Código Primário | Conta de Pagamento | Projeto | Código Omie):
+`contas_diarios` guarda Código Primário → conta; `referencias_rateio` guarda
+nome = Código Primário e codigo = Código Omie. `conta_por_obra` procurava a
+conta pelo **Código Omie**, que não existe em `contas_diarios` — só achava por
+coincidência. Os testes antigos repetiam a suposição errada (montavam as duas
+tabelas ligadas pelo código do OMIE). Agora a conta é achada pelo código da
+obra, direto; a ponte pelo código do OMIE continua; e obra que está só na
+tabela de contas também entra. Teste novo com o formato real das tabelas.
+
+**2. "NI não é obra. Quando tiver NI no ponto, é para considerar vazio."** —
+`MARCACOES_VAZIAS` em `folha_apropriacao`: a batida "NI" some da contagem como
+batida sem obra (diferente de PAGAR EXTRA, que tira o dia da folha). Dia só de
+NI é dia sem marcação.
+
+**3. "O Abraão continua não casando (…) onde eu olho? Como eu vejo o que o
+sistema está importando?"** — O nome de quem não casou (e um "por que não
+casou?") abre um **diagnóstico** (`colaboradores.por_que_nao_casou`): o que o
+cadastro GUARDADO tem com aquele código, e com o primeiro e o último nome
+(com o código do Fortes gravado de cada um, "vazio" em vermelho), quando o
+cadastro foi trazido pela última vez, o que aquela atualização avisou, e a frase
+do que fazer. O caso provável dele: a pessoa está no cadastro **sem o código**,
+porque o cadastro foi atualizado antes de a leitura da coluna da ficha ser
+publicada — é apertar "Atualizar cadastro". **Não confirmado**: depende de ele
+abrir o diagnóstico.
+
+**4. "Onde eu excluo a folha importada? Não é nenhum pouco claro."** — botão
+**"Apagar esta folha"** no cartão "Esta folha" da lateral (só quem opera), com a
+pergunta dizendo o que some e o que fica.
+
+**5. "Qual o critério para umas ficarem manipuláveis e outras não? Todas estão
+zeradas."** — A caixa só desligava para quem **não casou com o cadastro** (sem
+CPF, a decisão não tem onde ser guardada), e o motivo ficava no passar do mouse.
+Agora **valor zero também desliga** (o arquivo de pagamento já pulava: o portal
+recusa), e a coluna Situação escreve o motivo ("não dá para marcar: sem
+cadastro" / "valor zero").
+
+**6. (mesma leva, relato seguinte) "Um está fora do cadastro, com o nome bem
+vivo, marcado, e eu não consigo desmarcar. Outro está com o nome esmaecido,
+clarinho — parece que não vai entrar — e eu consigo marcar. Não deu para
+entender a lógica."** — Eram dois defeitos meus:
+- **O nome clarinho** era a cor de link (azul-claro) que o nome ganhou quando
+  passou a abrir o analítico. Agora tem a cor do texto, com sublinhado
+  pontilhado.
+- **Quem não casou aparecia MARCADO e travado** — a tela dizia que ia pagar
+  alguém que o arquivo não paga (sem CPF não há pagamento), e ele não tinha
+  como tirar. E o **"Vai receber" somava essa gente**. Agora `entra` quer dizer
+  "vai ser pago de verdade": sem CPF e valor zero nascem **desmarcados**, com o
+  motivo, e não entram no "Vai receber". Na lateral, linha própria **"Não pode
+  ser pago"** (valor e quantos, com "ver quem não casou"). "Fora do pagamento"
+  voltou a ser só quem ele tirou. O fechamento e o arquivo não mudam: eles já
+  não pagavam essa gente.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** esta leva | ele dizer "pode" |
+| abrir o diagnóstico do Abraão e, se for o caso, "Atualizar cadastro" | ele |
+| conferir que as obras "sem conta" sumiram | ele |
+
+**Verificado:** suíte inteira (ver o commit); JavaScript da tela; a aplicação
+importa.
+
+---
+
+### Centésima trigésima quarta leva (01/10) — prévia do pagamento, relatório Excel/PDF, lateral da folha com padrão, corrigir o ponto no Mobponto
+
+Sete pedidos dele, em sequência, olhando a folha aberta.
+
+**1. "O botão Apagar esta folha tá integralmente vermelho, texto e fundo."** —
+`.btn.perigo` pinta o fundo de vermelho e `.btn.secundario.perigo` só trocava a
+cor do texto. Agora o secundário perigoso volta o fundo para branco.
+
+**2. "O Fechar apropriação funciona como? Se eu quiser gerar um arquivo de
+pagamento sem fechar, como fazer? Até pra saber como tá saindo."** — Fechar
+congela a apropriação (para qual obra vai o dinheiro de cada pessoa); o arquivo
+de verdade só sai do que foi fechado (motivo na docstring de
+`folha_pagamento`). Para ver sem fechar: **"Baixar prévia"** no cartão
+Pagamento da lateral (só mestre, como gerar), com a escolha BeeVale/SomaPay.
+Baixa um .zip com os mesmos arquivos que o gerar faria (um por conta + análise)
+e um LEIA-ME com os avisos de cada arquivo.
+- **Decisão: a prévia sai MESMO COM AVISO** (o gerar recusa) — ela existe para
+  mostrar o que está errado antes de fechar.
+- **Não sobe no Drive, não entra no log, não libera nada.**
+- **Risco, dito a ele:** o conteúdo é idêntico ao arquivo de verdade (é o ponto);
+  o que impede subir a prévia no portal é só o nome "PREVIA - NAO SUBIR - …".
+- As linhas da prévia e do fechamento saem da MESMA função
+  (`guardada.linhas_do_apropriado`) — se cada um montasse do seu jeito, a prévia
+  mostraria um arquivo e o fechamento pagaria outro.
+
+**3. "Ajuste o filtro do sidebar no mesmo padrão que o de Solicitações (…) não
+tá uma caixinha pra marcar."** — os filtros da folha viraram **caixinhas de
+marcar** (eram listas de escolha e bolinhas), com o cabeçalho "Filtros" +
+Limpar e a busca com lupa, como nas Solicitações. Dentro de um bloco, marcar
+duas opções mostra quem tem uma OU outra; entre blocos, vale tudo junto.
+`_filtrar` aceita texto ou lista (os links dos alertas mandam um valor só).
+Bloco com 12 opções ou mais ganha a procura interna, igual às Solicitações.
+
+**4. "Pondere o que está no sidebar. Desorganizado, sem padrão, botões com
+sublinhado e outros sem, muitos assuntos desconexos" / "todas as folhas
+importadas é um texto".** — a lateral virou quatro cartões, sempre na mesma
+ordem: **Pagamento** (números + Fechar + Prévia + Divisão por obra e conta),
+**Pendências antes do pagamento**, **Filtros**, **Arquivo da contabilidade**
+(de onde veio, trazer outra, todas as importadas, apagar). Ação é sempre botão
+da largura do cartão; pendência é um bloco inteiro clicável (sem "ver só elas"
+sublinhado). A lista de nomes de quem saiu, com link do Pipefy, saiu da
+lateral: o item filtra a lista, e o link está na linha da pessoa.
+
+**5. "Precisa da sua mão antes de pagar não é termo pra usar em sistema."** —
+virou **"Pendências antes do pagamento"**; "a divisão veio da sua mão" virou
+"do ajuste manual feito na linha".
+
+**6. "Relatórios Excel e PDF (…) o relatório do que eu visualizo em tela, além
+de poder ver o agrupamento do pagamento. Por obra, por conta e etc."** —
+botões **Excel** e **PDF** ao lado de "Pessoa por pessoa", levando os filtros
+marcados (`folha_relatorio.py`, rota `/folha/<id>/relatorio.xlsx|pdf`). Trazem
+a lista da tela e os agrupamentos: por conta, por obra do ponto, por obra da
+contabilidade, por setor e por situação.
+- **Decisão: por obra e por conta somam só quem vai receber**, e cada pessoa é
+  dividida pelos dias em cada obra (a mesma divisão do arquivo). Quem foi
+  tirado, não casou ou tem valor zero aparece na lista e no "por situação".
+- O relatório é da conta de agora, igual à tela — o cabeçalho diz isso e diz
+  os filtros.
+- Qualquer perfil que abre a folha baixa o relatório (a tela já mostra os
+  mesmos dados). A prévia é só do mestre.
+
+**7. "Quero poder fazer a edição da folha do ponto a partir daquela tela onde
+detalha as informações do colaborador (…) altera a obra ou adiciona uma obra que
+não existia, salva e grava."** — e logo depois, mudando o desenho: *"de forma que
+eu possa ajustar uma única batida, ou um dia todo ou um período todo (…) não
+lançar informação que sobreponha o que já existe (…) são dezenas de batidas,
+então não pode ser um a um."*
+
+No analítico do funcionário, em cima do ponto dia a dia, o quadro **"Lançar ponto
+no Mobponto"** (só mestre): De / Até (vem preenchido com o período da folha; o
+"lançar" de cada dia põe De = Até = aquele dia), Obra, Justificativa e,
+opcional, "Só uma batida às" (a batida avulsa, para pequeno ajuste).
+**"Ver o que vai ser lançado"** mostra dia a dia o que já tem, o que vai entrar e
+o que fica de fora, com o motivo. Só então **"Lançar N batidas no Mobponto"**.
+Módulo `ponto_edicao.py`; modo `ponto_lancar` em `tarefas`; migração **040**
+(`ponto_batida_enviada`) registra cada batida mandada e a resposta.
+
+**A regra, escrita no código (`HORARIO_PADRAO`), como ele ditou:** entrada 7h,
+almoço 12h, retorno 13h, saída 17h de segunda a quinta e **16h na sexta**. Só dia
+útil: sábado e domingo ficam fora (a batida avulsa num dia só é a exceção).
+
+**Não sobrepor — como o plano decide cada dia:**
+- dia vazio → as quatro batidas do padrão;
+- dia com parte das batidas → **só as que faltam**. O casamento é por
+  HORÁRIO, não pela posição: quem bateu só às 13h05 bateu o retorno, então
+  faltam 7h, 12h e 17h. Se as batidas que existem não deixam encaixar o padrão
+  em ordem (duas na mesma hora, por exemplo), o dia fica para ajuste à mão;
+- dia completo, fim de semana, feriado cadastrado (nacional ou da obra), férias
+  cadastradas, falta lançada no ponto (atestado etc.) e dia que o ponto chama de
+  feriado/férias/folga/afastamento → **não são tocados**. A ausência sem falta
+  lançada ("FALTA" na presença, sem descrição) É preenchida — é o caso dele.
+
+**O lançamento roda no processo separado** e, antes de mandar, **traz o ponto da
+pessoa de novo e refaz o plano** — o da tela pode estar velho. Manda uma batida
+por vez (meio segundo entre elas), **para na primeira que falhar**, e no fim traz
+o ponto outra vez para a folha recalcular. Sem nova tentativa automática:
+gravar de novo depois de tempo esgotado pode duplicar a batida.
+
+- **A obra é escolhida numa LISTA, a da aba "C. Diários"** (o dono: *"As obras
+  do Mobponto são as mesmas do cadastro C. Diários. Usar elas como base para
+  seleção."*). São os códigos primários de `contas_diarios` e
+  `referencias_rateio` (`ponto_edicao.obras_permitidas`); vem marcada a obra de
+  mais dias do ponto da pessoa, ou a do cadastro. Obra fora da lista é recusada
+  no servidor também, e **sem a lista nada é lançado** — texto livre mandaria ao
+  Mobponto um local que ele não conhece. (Ele escreveu "deleção"; li como
+  "seleção", pelo contexto — dito na resposta.)
+- **O contrato é o do `local_backend.py` dele**: `CAD_EDT_PONTO`, ação `C`
+  (incluir). **Mudar a obra de uma batida que já existe NÃO está feito**: não há,
+  no material dele, a ação de editar nem o identificador da batida. Perguntado.
+- **Novas variáveis no Render:** `MOBPONTO_RESPONSAVEL_CPF` e
+  `MOBPONTO_RESPONSAVEL_NOME`.
+- **Não verificado contra o Mobponto** (não há ambiente de teste dele): se o
+  `local` aceita o código da obra como aparece no ponto, e se o Mobponto põe
+  cada batida no campo certo pela hora. O fluxo da tela foi exercitado em
+  navegador com o Mobponto simulado. **A primeira vez de verdade deve ser um dia
+  de uma pessoa**, conferido no Mobponto.
+- Um período longo é rápido de pedir, mas não instantâneo de gravar: 15 dias
+  úteis são 60 chamadas, cerca de 1 a 2 minutos. A tela mostra "batida 12 de 60".
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| ~~publicar esta leva~~ — **publicada em 01/10/2026** (main em `143a732`). Falta conferir que ele apertou "Aplicar atualizações do banco" (migração 040) | ele |
+| criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
+| primeiro lançamento de verdade: UM dia de UMA pessoa, conferir no Mobponto (obra certa, campo certo) | ele |
+| o trecho do script que EDITA uma batida (para "mudar a obra") | ele |
+| baixar uma prévia e conferir contra o que ele espera | ele |
+| abrir o diagnóstico do Abraão e conferir as obras "sem conta" (leva 133) | ele |
+
+**Verificado:** suíte inteira; JavaScript da tela; a tela e o PDF olhados em
+navegador/visualizador com dados de teste. **Não verificado:** com a folha de
+verdade (≈500 pessoas) — o PDF da lista inteira deve passar de 15 páginas.
+
+---
+
+### Centésima trigésima quinta leva (01/10) — o ponto de uma pessoa não espera a carga do mês; o "lançar" do dia
+
+Primeiro uso dele depois da publicação, três relatos:
+
+**1. "Tentei atualizar um ponto, mas deu: já existe uma atualização em andamento
+(trazendo o ponto). Uma coisa não deveria ter nada a ver com a outra. Ou seja,
+tento lançar e nada acontece."** — Ele está certo. A migração 004 deixava UMA
+execução viva no sistema inteiro, e a carga do mês (que roda de hora em hora e
+leva dezenas de minutos) prendia o "Atualizar o ponto desta pessoa" e o
+"Lançar". **Migração 041**: duas pistas — a GERAL e a DA PESSOA (`ponto_pessoa`,
+`ponto_lancar`, em `tarefas.MODOS_DA_PESSOA`). Cada pista continua com no máximo
+uma viva (o índice agora é sobre "é da pista da pessoa?"). `tarefas.estado()`
+olha a pista geral por padrão (Configurações e a barra de andamento não mudam);
+a tela da pessoa acompanha a PRÓPRIA tarefa pelo estado do tipo dela, com o
+andamento ("batida 12 de 40"). Antes de a 041 ser aplicada, o recado diz para
+apertar o botão.
+- Risco aceito: se a carga do mês terminar no meio de um "ponto da pessoa", a
+  carga antiga é trocada e a gravação da pessoa pode falhar — o recado diz, e a
+  carga nova já traz a pessoa.
+
+**2. "O botão lançar do dia tá sem função."** — Duas causas possíveis, as duas
+consertadas: com o quadro mostrando só o aviso do que falta configurar (as
+variáveis do responsável, ou a lista da C. Diários), o botão saía calado; e,
+funcionando, ele só trocava duas datas lá em cima, sem rolar. Agora o "lançar"
+rola até o quadro e o destaca; com o quadro utilizável, põe o dia e **já mostra o
+que vai ser lançado** (a obra vem marcada). A justificativa vazia é avisada
+antes da confirmação.
+
+**3. "E se eu quiser trocar a obra de um dia que já tenha ponto?" / "Acho que se
+somente gravar o ponto por cima de uma que já existe [não] funciona. Precisaria
+primeiro excluir o que está e depois gravar novamente."** — Concordo, e é o
+desenho: para cada batida do dia, excluir e incluir de novo **na mesma hora**, só
+com a obra nova. **Não feito**: a API que tenho só INCLUI (`CAD_EDT_PONTO`, ação
+`C`). Não há, no `local_backend.py` nem nos Apps Script dele, a chamada de
+excluir batida (conferido: só `incluir-ponto` e `aplicar-falta`). Inventar seria
+apagar ponto no Mobponto às cegas. **Pedido a ele:** o trecho que exclui uma
+batida (ou a documentação do Mobponto), sem credenciais. Até lá: trocar no
+próprio Mobponto e apertar "Atualizar o ponto desta pessoa" — que agora não
+espera a carga do mês.
+
+**O que o suporte do Mobponto mandou (01/10/2026), repassado por ele:** o método
+`CAD_FUNCIONARIO` virou `CAD_EDT_FUNCIONARIO`, com `acao` = `INSERIR` ou
+`ALTERAR`; no ALTERAR **todos os campos têm de ir, mesmo os que não mudam — o
+que faltar é APAGADO** no Mobponto; o CPF não se altera. É o CADASTRO do
+funcionário, não a batida: **não resolve o "trocar a obra do dia"**. Serve de
+pista (as ações de escrita da API são `CAD_EDT_*` com um parâmetro `acao`) e de
+aviso: nada neste repositório usa `CAD_FUNCIONARIO`, mas script dele que
+cadastre funcionário no Mobponto pelo nome antigo parou de funcionar. Pedido a
+ele que pergunte ao suporte, pelo `CAD_EDT_PONTO`, quais `acao` existem além do
+`C` e como se exclui ou altera uma batida.
+
+Também: um teste antigo de pagamento (`NAO_BATE`) dependia do mês corrente e
+quebrou na virada para outubro — passou a pedir 09/2026 explicitamente.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| ~~publicar~~ — **publicada em 01/10/2026** (main em `4a550df`). Conferir que ele apertou "Aplicar atualizações do banco" (041, e a 040 se faltava) | ele |
+| resposta do suporte do Mobponto: como alterar/excluir batida pela API (ele foi perguntar) | ele |
+| a chamada de EXCLUIR batida do Mobponto (para "trocar a obra do dia") | ele |
+| criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
+| primeiro lançamento de verdade: UM dia de UMA pessoa, conferido no Mobponto | ele |
+
+---
+
+### Centésima trigésima sexta leva (01/10) — a fila do ponto por pessoa
+
+Ele perguntou: *"se eu clicar pra ajeitar o ponto de uma pessoa, posso sair do
+analítico dela e ir resolver de outro enquanto o sistema trabalha em segundo
+plano?"* Podia sair (a tarefa roda no servidor), mas não podia PEDIR a próxima
+pessoa: era uma por vez, e o segundo pedido era recusado. Ofereci a fila; *"sim,
+faça uma fila"*.
+
+**Migração 042** (`ponto_fila`) e módulo `ponto_fila.py`. Cada pedido —
+"Atualizar o ponto desta pessoa" ou "Lançar" — vira uma linha (esperando →
+rodando → feito | falhou) e a tela volta na hora: *"Pedido na fila — pode sair e
+pedir a próxima pessoa."* Um trabalhador só (a tarefa `ponto_pessoa`, na pista da
+pessoa da 041) resolve tudo em ordem; **uma falha não para a fila**, fica escrita
+no pedido. O mesmo pedido apertado duas vezes não entra duas vezes.
+- **A janela da pessoa** mostra o último pedido dela (na fila com N antes /
+  trabalhando: andamento / pronto / não deu, com o motivo) — quem saiu e voltou
+  vê o que aconteceu. Ao terminar, o analítico se relê com o ponto novo.
+- **A lateral da folha** ganhou o cartão "Fila do ponto" (só aparece quando há
+  pedido nas últimas 12 h), que se atualiza sozinho enquanto há algo andando.
+- **O trabalhador pode faltar** — pedido que entra quando ele está encerrando,
+  ou publicação que o mata no meio. `cutucar`, chamado a cada consulta de
+  andamento da tela, devolve à fila o que ficou "rodando" sem trabalhador e
+  dispara um. Devolver um LANÇAMENTO interrompido é seguro: o `lancar` traz o
+  ponto de novo antes e não manda o que já entrou.
+- Antes de a 042 ser aplicada, tudo segue pelo caminho anterior (uma por vez).
+
+Junto, conserto do mesmo dia: sem a fila, o pedido da segunda pessoa era gravado
+ANTES de ser recusado e podia fazer a tarefa em curso trabalhar para a pessoa
+errada — agora a pista é conferida antes de gravar.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| apertar "Aplicar atualizações do banco" (042, e 040/041 se faltarem) — publicada com o "pode" dele | ele |
+| criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
+| resposta do suporte do Mobponto sobre alterar/excluir batida | ele |
+| primeiro lançamento de verdade: UM dia de UMA pessoa, conferido no Mobponto | ele |
+
 ---
 
 ## Regras que não se discutem

@@ -1,0 +1,18 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}{{ a.nome }} — folha {{ a.competencia }}{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+{% block conteudo %}
+{# A PÁGINA DE IMPRIMIR do analítico — a mesma coisa que a janela mostra, numa
+   página própria, para imprimir ou salvar como PDF pelo navegador. #}
+<p class="nao-imprimir" style="margin:0 0 12px">
+  <button type="button" class="btn" onclick="window.print()">Imprimir</button>
+  <a class="link-btn" href="{{ url_for('analisesps.tela_folha_aberta', folha_id=a.folha_id) }}"
+     >voltar para a folha</a>
+  <span class="cartao-dica">Para guardar como PDF, escolha "Salvar como PDF" na
+    janela de impressão.</span>
+</p>
+<h2>Analítico do funcionário</h2>
+{% set parcial = False %}
+{% include "_folha_analitico.html" %}
+<p class="cartao-dica">Gerado em {{ gerado_em }}{% if nome %} por {{ nome }}{% endif %}.</p>
+{% endblock %}

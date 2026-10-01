@@ -25,34 +25,16 @@ import pytest
 pytestmark = pytest.mark.banco
 
 
-@pytest.fixture
-def banco_analisesps(banco, monkeypatch):
-    """Cria o schema `analisesps` pela migração de verdade, e o derruba no fim.
-
-    Usa o MESMO arquivo `.sql` que o botão da tela aplica em produção: se a
-    migração tiver erro de sintaxe, é aqui que ele aparece — não no Render."""
-    from sqlalchemy import text
-
-    from app.apps.analisesps import db as db_analisesps
-
-    url = str(banco.url.render_as_string(hide_password=False))
-    monkeypatch.setenv("DATABASE_URL", url)
-    db_analisesps._engine = None          # a engine é preguiçosa; força recriar
-
-    pasta = __import__("pathlib").Path(db_analisesps.__file__).parent / "migracoes"
-    with banco.connect() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
-        # TODAS as migrações, em ordem, pelos mesmos arquivos que o botão da
-        # tela aplica em produção: erro de sintaxe aparece aqui, não no Render.
-        for caminho in sorted(pasta.glob("*.sql")):
-            conn.execute(text(caminho.read_text(encoding="utf-8")))
-        conn.commit()
-    yield
-    with banco.connect() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS analisesps CASCADE"))
-        conn.commit()
-    db_analisesps._engine = None
-
+# ⚠️ A FIXTURE `banco_analisesps` MORA NO `conftest.py` DESDE 29/09/2026.
+#
+# Aqui havia uma cópia que, A CADA TESTE, fazia `DROP SCHEMA` e executava os 36
+# arquivos de migração. Só este arquivo tem 337 testes de banco — sozinho, eram
+# mais de doze mil execuções de arquivo SQL por rodada, todas construindo
+# exatamente a mesma coisa. Era a maior conta do tempo de suíte que o dono cobrou
+# ("está demorando meia hora, uma hora para fechar algo simples").
+#
+# A do `conftest.py` constrói o schema uma vez por sessão e esvazia as tabelas
+# entre os testes, com o mesmo isolamento: tabelas vazias e `id` zerado.
 
 def semear(registros):
     """Grava SPs pelo MESMO caminho que a sincronização usa."""
@@ -1560,7 +1542,7 @@ def test_o_resultado_do_comprovante_fica_GUARDADO(banco_analisesps, monkeypatch,
 
 
 @pytest.mark.banco
-def test_SEM_a_migracao_013_o_comprovante_ainda_BAIXA(banco_analisesps,
+def test_SEM_a_migracao_013_o_comprovante_ainda_BAIXA(banco_analisesps_mutilado, banco_analisesps,
                                                       monkeypatch, tmp_path):
     """⚠️ A JANELA ENTRE PUBLICAR E APERTAR O BOTÃO, de novo — e desta vez doeu.
 
@@ -2966,7 +2948,7 @@ def test_a_tela_das_notas_mostra_a_data_NO_PADRAO_BRASILEIRO(banco_analisesps,
 
 @pytest.mark.banco
 def test_SEM_a_migracao_014_a_tela_e_a_gravacao_continuam_de_pe(
-        banco_analisesps, monkeypatch):
+        banco_analisesps_mutilado, banco_analisesps, monkeypatch):
     """⚠️ A JANELA ENTRE PUBLICAR E APERTAR O BOTÃO. O código sobe para o
     Render antes de alguém aplicar as atualizações do banco. Nessa janela, uma
     tela que peça a coluna nova responde erro, e uma gravação que a exija para
@@ -6313,7 +6295,8 @@ def test_a_LISTA_o_QUADRO_e_o_RECORTE_contam_a_mesma_coisa(banco_analisesps):
 
 
 @pytest.mark.banco
-def test_SEM_a_migracao_012_a_tela_de_notas_continua_de_pe(banco_analisesps):
+def test_SEM_a_migracao_012_a_tela_de_notas_continua_de_pe(
+        banco_analisesps_mutilado, banco_analisesps):
     """A coluna `nf_num` nasce na migração 012. Sem ela vale só o diário — o
     comportamento antigo — e nada quebra."""
     from app.apps.analisesps import db as db_analisesps
@@ -6614,7 +6597,7 @@ def test_o_Drive_fora_do_ar_NAO_derruba_a_busca(banco_analisesps, monkeypatch):
 
 
 @pytest.mark.banco
-def test_SEM_a_migracao_017_nenhuma_ciencia_e_enviada(banco_analisesps,
+def test_SEM_a_migracao_017_nenhuma_ciencia_e_enviada(banco_analisesps_mutilado, banco_analisesps,
                                                       monkeypatch):
     """⚠️ O caso mais perigoso deste módulo inteiro, e é por isso que tem teste.
 
@@ -6996,7 +6979,7 @@ def test_quem_so_CONSULTA_nao_reenvia_comprovante(banco_analisesps,
 
 @pytest.mark.banco
 def test_SEM_a_migracao_a_ciencia_DIZ_o_que_falta_em_vez_de_zero(
-        banco_analisesps, monkeypatch):
+        banco_analisesps_mutilado, banco_analisesps, monkeypatch):
     """⚠️ ERRO EM SILÊNCIO, pego em 18/09/2026 pelo dono: *"não foi preciso
     atualizar o banco, não pediu"*.
 

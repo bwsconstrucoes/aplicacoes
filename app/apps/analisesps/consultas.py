@@ -995,8 +995,71 @@ def opcoes_de_filtro(carimbo=None) -> dict:
 
     valores = {apelido: opcoes(coluna, limite=limite)
                for apelido, (coluna, limite) in COLUNAS_DE_FILTRO.items()}
-    _substituir_listas(carimbo, valores)
+
+    # ⚠️ LISTA VAZIA NÃO SE GUARDA — e este é o conserto de 29/09/2026, depois de
+    # ele abrir Solicitações e encontrar **todos os filtros vazios**.
+    #
+    # O QUE ACONTECIA, e é sutil: a carga da base REESCREVE a tabela `sps`. Quem
+    # abrisse qualquer tela no meio disso fazia estas sete consultas contra uma
+    # tabela momentaneamente vazia, recebia sete listas vazias — e elas eram
+    # guardadas com o carimbo da sincronização ANTERIOR, que ainda era o vigente.
+    #
+    # A partir daí a barra ficava vazia **para sempre**, ou até a próxima carga: o
+    # teste de validade era `if guardado["valores"]`, e um dicionário de sete
+    # chaves é verdadeiro mesmo com todas as listas vazias. O cache respondia
+    # "já sei, é nada" a cada requisição, e nunca mais perguntava ao banco.
+    #
+    # Guardar a ausência de resposta como se fosse resposta é o mesmo erro do aviso
+    # sem data (`docs/FOLHA_DE_PAGAMENTO.md` §7.32.1): o que ficou guardado continua
+    # valendo depois de deixar de ser verdade. Agora o vazio não entra no cache — a
+    # próxima requisição pergunta de novo, e quando a carga terminar a barra volta
+    # sozinha.
+    if any(valores.values()):
+        _substituir_listas(carimbo, valores)
+    else:
+        logger.warning(
+            "Análise de SPs: as sete listas de filtro vieram VAZIAS — não vou "
+            "guardar isso. Ou a base está sendo recarregada agora, ou a tabela "
+            "`sps` está vazia. A próxima tela pergunta de novo.")
     return dict(valores, status_agend=opcoes_agendamento())
+
+
+def por_que_os_filtros_estao_vazios(opcoes, base) -> str:
+    """A frase que a barra mostra quando não há nenhuma opção. "" quando há.
+
+    ⚠️ EXISTE PORQUE BARRA VAZIA NÃO EXPLICA NADA. O dono viu *"os filtros da parte
+    de solicitações estão todos vazios"* e não tinha como saber se era defeito da
+    tela, base fora do ar ou carga em andamento — e são três coisas com três
+    respostas diferentes.
+
+    A conta que ela faz é a única que distingue os casos: a base DECLARA um número
+    (guardado em `meta` pela última carga) e a tabela RESPONDE outro. Quando os dois
+    discordam, o que está guardado é que está velho."""
+    from .db import consultar
+
+    if any((opcoes or {}).get(a) for a in COLUNAS_DE_FILTRO):
+        return ""
+
+    declarada = int((base or {}).get("quantidade") or 0)
+    try:
+        linha = consultar("SELECT count(*) FROM analisesps.sps")
+        real = int(linha[0][0]) if linha else 0
+    except Exception:  # noqa: BLE001 — sem conseguir contar, diga isso
+        return ("não consegui falar com o banco agora. As opções voltam sozinhas "
+                "quando ele responder — atualize a tela daqui a pouco.")
+
+    if real == 0 and declarada > 0:
+        return (f"a base diz ter {declarada:,} SPs, mas a tabela está vazia neste "
+                "momento — é o que acontece enquanto a carga está reescrevendo "
+                "tudo. Espere a carga terminar e atualize a tela."
+                ).replace(",", ".")
+    if real == 0:
+        return ("a base ainda não foi carregada. Em Configurações, traga a "
+                "planilha SPsBD.")
+    return (f"a base tem {real:,} SPs, mas nenhuma delas traz valor nas colunas de "
+            "filtro (status, conta, forma, obra…). Isso é a carga tendo trazido as "
+            "linhas sem as colunas — vale conferir a planilha de origem."
+            ).replace(",", ".")
 
 
 def _substituir_listas(carimbo, valores) -> None:

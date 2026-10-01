@@ -54,6 +54,28 @@ MODOS = {
     "apoios": "Só as planilhas de apoio (contas e documentação fiscal)",
     "fila": "Só devolver para a planilha as alterações pendentes",
     "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
+    # O cadastro vem do Pipefy pela planilha "Registro de Colaboradores". Este
+    # é o botão que o dono pediu em 27/09/2026 para puxar uma alteração de
+    # auxílio ou de gratificação "imediatamente", sem esperar nada.
+    "colaboradores": "Atualizar o cadastro de colaboradores (traz da planilha)",
+    # ⚠️ O PONTO É O GARGALO DA FOLHA: sem ele não há total por obra, não há
+    # diária e não há apropriação. Roda no processo separado porque são várias
+    # páginas da API do Mobponto, e um mês pode ter dezenas de milhares de dias.
+    "ponto": "Trazer o ponto do Mobponto (o mês escolhido na tela da folha)",
+    # ⚠️ O AUTOMÁTICO DO DIA — 29/09/2026. O dono: *"Ele já está configurado
+    # pra baixar automático diariamente?"* Não estava: nada trazia o ponto sem
+    # alguém apertar. Este modo é o que o agendador (cron-job.org) chama, pela
+    # mesma porta `/api/sincronizar` da sincronização, com o segredo do módulo.
+    # Ele decide o mês sozinho (`ponto.meses_do_ponto_diario`), por isso não
+    # precisa da competência escrita pela tela.
+    # O ponto de UMA pessoa — o botão do analítico. Ver `ponto.atualizar_pessoa`.
+    "ponto_pessoa": "Fila do ponto por pessoa (trazer de novo e lançar batidas)",
+    # ⚠️ ESTE ESCREVE NO MOBPONTO (01/10/2026): lança as batidas que faltam
+    # num período, pelo analítico do funcionário. Ver `ponto_edicao.lancar`.
+    "ponto_lancar": "Lançar no Mobponto as batidas que faltam (analítico da folha)",
+    "ponto_diario": "Trazer o ponto sozinho (mês corrente; até o dia 10, o "
+                    "anterior também) — retoma o que parou, pula o que já "
+                    "entrou hoje",
     "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
     "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
     "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
@@ -75,7 +97,21 @@ MODOS = {
 # criasse um modo novo ganhava um botão lá sem querer. Agora a divisão é
 # explícita, e um modo novo só aparece onde alguém escreveu que ele aparece.
 MODOS_DA_BASE = ["sincronizar", "carga_inicial", "apoios", "fila",
-                 "comprovantes"]
+                 "comprovantes", "colaboradores"]
+# ⚠️ "ponto" NÃO ENTRA em MODOS_DA_BASE de propósito: ele precisa saber QUAL MÊS
+# trazer, e um botão em Configurações sem essa escolha traria sempre o mesmo mês.
+# Ele é disparado pela tela da folha, que pergunta a competência.
+
+# Os modos que trazem o ponto: quando um deles para, alguém é avisado
+# (`avisos_ponto`), porque a folha inteira depende dele.
+MODOS_DO_PONTO = ("ponto", "ponto_diario")
+
+# ⚠️ A PISTA DA PESSOA (migração 041, 01/10/2026). O dono: *"tentei atualizar um
+# ponto, mas deu: já existe uma atualização em andamento (trazendo o ponto). Uma
+# coisa não deveria ter nada a ver com a outra."* Estes dois modos mexem em UMA
+# pessoa, levam segundos, e não podem ficar presos atrás da carga do mês. Correm
+# numa pista própria: no máximo uma viva aqui, e uma viva na pista geral.
+MODOS_DA_PESSOA = ("ponto_pessoa", "ponto_lancar")
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
@@ -85,6 +121,11 @@ ETAPAS = {
     "apoios": ["apoios"],
     "fila": ["fila"],
     "comprovantes": ["comprovantes"],
+    "colaboradores": ["colaboradores"],
+    "ponto": ["ponto"],
+    "ponto_diario": ["ponto_diario"],
+    "ponto_pessoa": ["ponto_pessoa"],
+    "ponto_lancar": ["ponto_lancar"],
     "fiscal": ["fiscal"],
     "fiscal_ia": ["fiscal_ia"],
     "notas_receita": ["notas_receita"],
@@ -95,16 +136,33 @@ ETAPAS = {
 # ---------------------------------------------------------------------------
 # O que a tela mostra
 # ---------------------------------------------------------------------------
-def estado() -> dict:
-    """Lido do banco — a única fonte que os dois processos enxergam."""
+def _fila_do_ponto_pronta() -> bool:
+    from . import ponto_fila
+    return ponto_fila._pronto()
+
+
+def pista_do(modo: str) -> str:
+    """"pessoa" para os modos de uma pessoa só; "geral" para o resto."""
+    return "pessoa" if modo in MODOS_DA_PESSOA else "geral"
+
+
+def estado(pista: str = "geral") -> dict:
+    """Lido do banco — a única fonte que os dois processos enxergam.
+
+    `pista`: "geral" (o padrão — o que Configurações e a barra de andamento
+    mostram) ou "pessoa" (ver `MODOS_DA_PESSOA`)."""
+    marcas = ",".join(["?"] * len(MODOS_DA_PESSOA))
+    filtro = (f"tipo IN ({marcas})" if pista == "pessoa"
+              else f"tipo NOT IN ({marcas})")
     try:
         from .db import consultar_um
         linha = consultar_um(
             "SELECT id, tipo, disparo, inicio, etapa, progresso, visto_em, "
             "       (visto_em IS NOT NULL AND "
             "        now() - visto_em < make_interval(secs => ?)) AS viva "
-            "  FROM analisesps.execucoes WHERE fim IS NULL "
-            " ORDER BY inicio DESC LIMIT 1", (SEGUNDOS_ATE_DAR_POR_MORTA,))
+            f"  FROM analisesps.execucoes WHERE fim IS NULL AND {filtro} "
+            " ORDER BY inicio DESC LIMIT 1",
+            (SEGUNDOS_ATE_DAR_POR_MORTA,) + tuple(MODOS_DA_PESSOA))
     except Exception:      # banco fora do ar, ou migração ainda não aplicada
         return {"rodando": False, "detalhe": None, "interrompida": None}
 
@@ -159,16 +217,26 @@ def _fechar_orfas(conn) -> int:
     cur = conn.execute(
         "UPDATE analisesps.execucoes SET fim = now(), ok = FALSE, mensagem = ? "
         " WHERE fim IS NULL "
-        "   AND (visto_em IS NULL OR now() - visto_em >= make_interval(secs => ?))",
+        "   AND (visto_em IS NULL OR now() - visto_em >= make_interval(secs => ?))"
+        " RETURNING tipo",
         ("Interrompida: o serviço reiniciou durante a atualização. Nada foi "
          "corrompido — é só rodar de novo, que ela retoma de onde parou.",
          SEGUNDOS_ATE_DAR_POR_MORTA))
-    quantas = cur.rowcount or 0
+    tipos = [linha[0] for linha in cur.fetchall()]
+    quantas = len(tipos)
     cur.close()
     conn.commit()
     if quantas:
         logger.warning("Análise de SPs: %d execução(ões) órfã(s) encerrada(s).",
                        quantas)
+    if any(t in MODOS_DO_PONTO for t in tipos):
+        # O ponto morreu com o serviço (uma publicação, um reinício do Render).
+        # Só se descobre aqui, quando a próxima tarefa abre — e é aqui que se
+        # avisa. A carga retoma da página em que parou na próxima chamada.
+        from . import avisos_ponto
+        avisos_ponto.avisar_que_parou(
+            "o serviço reiniciou durante a carga (publicação ou reinício do "
+            "Render).")
     return quantas
 
 
@@ -356,6 +424,112 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + (f", {c['sem_arquivo']} sem o arquivo no servidor"
                        if c.get("sem_arquivo") else ""))
 
+            elif etapa == "ponto_pessoa" and _fila_do_ponto_pronta():
+                # A FILA (migração 042): este processo é o trabalhador dela e
+                # resolve todos os pedidos esperando, um por vez. O resultado de
+                # cada um fica no próprio pedido — ver `ponto_fila`.
+                from . import ponto_fila as _fila
+                mudar_etapa("resolvendo a fila do ponto")
+                r = _fila.processar(anotar)
+                total_linhas[0] = r["feitos"]
+                recado_apoios[0] = (
+                    f"fila do ponto: {r['feitos']} pedido(s) resolvido(s)"
+                    + (f", {r['falhas']} com falha (o motivo está em cada um)"
+                       if r["falhas"] else ""))
+
+            elif etapa == "ponto_pessoa":
+                # QUEM e DE QUE MÊS: vem do banco, escrito pela tela antes de
+                # disparar — mesmo motivo do "ponto". (Caminho de antes da fila,
+                # para o intervalo entre publicar e apertar o botão da 042.)
+                from . import ponto as _ponto
+                with conexao() as conn:
+                    alvo = sincronizacao._meta_ler(conn, "ponto_pessoa_alvo", "")
+                partes = str(alvo or "").split("|")
+                if len(partes) < 3 or not partes[0].isdigit() or not partes[1].isdigit():
+                    raise RuntimeError("não sei de quem trazer o ponto. Abra o "
+                                       "analítico da pessoa e aperte de novo.")
+                mudar_etapa("trazendo o ponto de uma pessoa")
+                r = _ponto.atualizar_pessoa(int(partes[0]), int(partes[1]),
+                                            partes[2], partes[3] if len(partes) > 3 else "",
+                                            anotar)
+                if not r["achou"]:
+                    raise RuntimeError(
+                        "não achei esta pessoa no ponto do Mobponto de "
+                        f"{int(partes[1]):02d}/{partes[0]} — olhei as páginas "
+                        f"{', '.join(str(x) for x in r['olhadas'])}. Se ela bateu "
+                        "ponto no mês, traga o mês inteiro de novo.")
+                total_linhas[0] = r["dias"]
+                recado_apoios[0] = (
+                    f"{r['dias']} dia(s) desta pessoa, pela página {r['pagina']} "
+                    f"(olhei {len(r['olhadas'])} página(s)); os outros "
+                    f"{max(0, r['pessoas_da_pagina'] - 1)} dessa página vieram "
+                    "atualizados junto")
+
+            elif etapa == "ponto_lancar":
+                # O PEDIDO vem do banco, escrito pela tela antes de disparar:
+                # quem, que período, que obra. O plano é REFEITO aqui, com o
+                # ponto trazido de novo — ver `ponto_edicao.lancar`.
+                import json as _json
+                from . import ponto_edicao as _edicao
+                with conexao() as conn:
+                    bruto = sincronizacao._meta_ler(conn, "ponto_lancar_pedido", "")
+                try:
+                    pedido = _json.loads(bruto or "{}")
+                except ValueError:
+                    pedido = {}
+                if not pedido.get("cpf"):
+                    raise RuntimeError("não sei o que lançar. Abra o analítico "
+                                       "da pessoa e peça de novo.")
+                mudar_etapa("lançando o ponto no Mobponto")
+                feito = _edicao.lancar(pedido, anotar)
+                total_linhas[0] = len(feito["enviadas"])
+                recado_apoios[0] = _edicao.recado_do_lancamento(feito)
+                if feito["falhou"]:
+                    raise RuntimeError(recado_apoios[0])
+
+            elif etapa == "ponto_diario":
+                # Um mês que falha não impede o outro: os dois são tentados, e
+                # a falha de qualquer um vira falha da execução — visível na
+                # tela — DEPOIS de o outro ter entrado.
+                from . import ponto as _ponto
+                recados, falhas = [], []
+                for ano, mes in _ponto.meses_do_ponto_diario():
+                    # Retomar o que parou, trazer o que ainda não veio hoje,
+                    # pular o que já entrou inteiro hoje — é o que deixa o
+                    # agendador chamar de hora em hora sem martelar o Mobponto.
+                    # Ver `ponto.o_que_fazer_no_automatico`.
+                    decisao = _ponto.o_que_fazer_no_automatico(ano, mes)
+                    if decisao == "pular":
+                        recados.append(f"{mes:02d}/{ano}: já entrou hoje")
+                        continue
+                    # Duas tentativas: a segunda RETOMA da página em que a
+                    # primeira parou (ver `ponto.carregar`), então uma queda
+                    # de rede no meio não custa o dia.
+                    for tentativa in (1, 2):
+                        mudar_etapa(f"trazendo o ponto de {mes:02d}/{ano}"
+                                    + (" (2ª tentativa)" if tentativa == 2 else ""))
+                        try:
+                            p = _ponto.carregar(ano, mes, anotar,
+                                                quem=quem_disparou or "agendador")
+                            total_linhas[0] += p.get("dias", 0)
+                            recados.append(
+                                f"{mes:02d}/{ano}: {p.get('dias', 0)} dia(s) de "
+                                f"{p.get('pessoas', 0)} pessoa(s)"
+                                + (" — " + "; ".join(p["avisos"]) if p.get("avisos") else ""))
+                            break
+                        except Exception as e:  # noqa: BLE001 — o outro mês segue
+                            logger.exception("Análise de SPs: ponto de %02d/%d falhou "
+                                             "(tentativa %d)", mes, ano, tentativa)
+                            if tentativa == 2:
+                                falhas.append(f"{mes:02d}/{ano}: {e}")
+                            else:
+                                time.sleep(30)
+                recado_apoios[0] = " | ".join(recados)
+                if falhas:
+                    raise RuntimeError(
+                        "ponto que NÃO entrou — " + " | ".join(falhas)
+                        + (" (entrou: " + "; ".join(recados) + ")" if recados else ""))
+
             elif etapa == "fiscal":
                 # NO PROCESSO SEPARADO pelo mesmo motivo da baixa: são até
                 # duzentos cards falando com a API do Pipefy, e dentro do
@@ -447,6 +621,75 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + ". O XML de cada uma chega na PRÓXIMA busca na Receita, "
                       "e é guardado no Drive.")
 
+            elif etapa == "colaboradores":
+                # NO PROCESSO SEPARADO como toda leitura de planilha grande:
+                # são ~3.500 linhas em faixas de coluna, várias idas ao Sheets.
+                # Dentro do worker isso seguraria uma das quatro threads do
+                # gunicorn — e o gunicorn recicla o processo a cada 1000
+                # requisições, o que mataria a leitura no meio.
+                mudar_etapa("trazendo o cadastro de colaboradores")
+                from . import colaboradores as _colaboradores
+                c = _colaboradores.atualizar(anotar)
+                total_linhas[0] = c.get("pessoas", 0)
+                # ⚠️ OS AVISOS ENTRAM NO RECADO, e é o ponto todo: se uma
+                # coluna de auxílio não foi encontrada, o campo fica em branco
+                # e o pagamento sai a menos. Pagamento a menos ninguém nota tão
+                # rápido quanto a mais — então isto tem de estar na cara de
+                # quem apertou o botão, não no log do serviço.
+                recado_apoios[0] = (
+                    f"{c.get('pessoas', 0)} pessoa(s) no cadastro"
+                    + (f", {c['com_id_fortes']} com o código do Fortes"
+                       if c.get("com_id_fortes") else "")
+                    + (f", {c['ignoradas']} linha(s) sem CPF válido"
+                       if c.get("ignoradas") else "")
+                    + (" — ATENÇÃO: " + "; ".join(c["avisos"])
+                       if c.get("avisos") else ""))
+
+            elif etapa == "ponto":
+                # QUAL MÊS: vem do banco, escrito pela tela antes de disparar.
+                # Passar pelo banco em vez de por parâmetro é o que faz a
+                # retomada funcionar — o processo separado pode ser reiniciado.
+                mudar_etapa("trazendo o ponto do Mobponto")
+                from . import ponto as _ponto
+                with conexao() as conn:
+                    alvo = sincronizacao._meta_ler(conn, "ponto_competencia", "")
+                partes = str(alvo or "").split("-")
+                if len(partes) != 2 or not all(p.strip().isdigit() for p in partes):
+                    raise RuntimeError(
+                        "não sei de qual mês trazer o ponto. Escolha a "
+                        "competência na tela da folha e dispare de lá.")
+                # Duas tentativas, como no automático: a segunda RETOMA da
+                # página em que a primeira parou (ver `ponto.carregar`). Cada
+                # página já tem uns 8 minutos de paciência lá dentro; isto é
+                # para a queda que passa disso.
+                for tentativa_do_mes in (1, 2):
+                    try:
+                        p = _ponto.carregar(int(partes[0]), int(partes[1]), anotar,
+                                            quem=quem_disparou or "manual")
+                        break
+                    except _ponto.ErroDoPonto as e:
+                        if tentativa_do_mes == 2 or "credencial" in str(e) \
+                                or "certificado" in str(e) or "não devolveu" in str(e):
+                            raise
+                        logger.warning("Análise de SPs: o ponto parou (%s) — "
+                                       "retomo em 2 minutos.", e)
+                        mudar_etapa("o Mobponto parou de responder",
+                                    "retomo de onde parou em 2 minutos")
+                        time.sleep(120)
+                total_linhas[0] = p.get("dias", 0)
+                # ⚠️ OS CAMPOS QUE VIERAM ENTRAM NO RECADO. É a descoberta que
+                # destrava o mapeamento da obra e das marcações: sem eles na
+                # cara de quem apertou, a informação ficaria no log do serviço,
+                # que ele não tem como ler.
+                recado_apoios[0] = (
+                    f"{p.get('dias', 0)} dia(s) de {p.get('pessoas', 0)} "
+                    f"pessoa(s), {p.get('paginas_lidas', 0)} de "
+                    f"{p.get('paginas', 0)} página(s)"
+                    + (" · campos de cada dia: " + ", ".join(p.get("campos") or [])
+                       if p.get("campos") else "")
+                    + (" — ATENÇÃO: " + "; ".join(p["avisos"])
+                       if p.get("avisos") else ""))
+
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
                     logger.info("Análise de SPs: planilhas de apoio ainda "
@@ -516,8 +759,13 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
+        # ⚠️ "colaboradores" ENTROU NESTA LISTA em 27/09/2026, e por pouco não
+        # entrou: sem ele, a tela terminaria dizendo "3.480 SPs em 0,2 min."
+        # depois de atualizar o CADASTRO. Não são SPs, são pessoas — e número
+        # com o nome errado é pior que número nenhum, porque parece certo.
         if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
-                    "notas_receita", "notas_ciencia"):
+                    "notas_receita", "notas_ciencia", "colaboradores", "ponto",
+                    "ponto_pessoa", "ponto_lancar"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]
@@ -539,6 +787,11 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 _fechar_execucao(conn, execucao_id, False, str(e), None)
         except Exception:  # noqa: BLE001
             logger.exception("Análise de SPs: não consegui registrar a falha")
+        if modo in MODOS_DO_PONTO:
+            # *"que sejamos avisados"* — o ponto que para não pode depender de
+            # alguém abrir a tela para ser descoberto.
+            from . import avisos_ponto
+            avisos_ponto.avisar_que_parou(str(e))
         return False
 
 
@@ -646,7 +899,7 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
 
     from .db import conexao
 
-    atual = estado()
+    atual = estado(pista_do(modo))
     if atual["rodando"]:
         etapa = (atual["detalhe"] or {}).get("etapa", "começando")
         return {"ok": False,
@@ -663,6 +916,15 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
         # tela voltou a buscar atualizações de 90 em 90 segundos, com quatro
         # pessoas perguntando quase ao mesmo tempo. Recusar é o certo: a
         # atualização que já começou faz o mesmo trabalho.
+        if ("ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower()) \
+                and modo in MODOS_DA_PESSOA:
+            # Sem a migração 041, o índice antigo ainda deixa UMA viva no
+            # sistema inteiro — e a pista da pessoa esbarra na carga do mês.
+            return {"ok": False,
+                    "erro": "Há outra tarefa rodando e o banco ainda não foi "
+                            'atualizado para rodar as duas juntas: aperte '
+                            '"Aplicar atualizações do banco" em Configurações. '
+                            "Até lá, espere a outra terminar."}
         if "ux_execucao_viva" in str(e) or "duplicate key" in str(e).lower():
             logger.info("Análise de SPs: pedido de atualização recusado — "
                         "outra começou no mesmo instante.")
@@ -742,3 +1004,38 @@ def ultimas_por_tipo(tipos: list) -> dict:
         return {}
     nomes = ["tipo", "fim", "ok", "mensagem", "linhas", "disparo"]
     return {l[0]: dict(zip(nomes, l)) for l in linhas}
+
+
+def ultima_do_tipo(tipo: str) -> dict | None:
+    """A última execução DE UM TIPO, terminada ou em andamento.
+
+    ⚠️ EXISTE POR UMA RECLAMAÇÃO REPETIDA TRÊS VEZES. O dono, sobre o ponto:
+    *"clico em trazer o ponto, sistema diz que vai trazer e NÃO TRAZ nada. Não sei
+    se ele conseguiu conectar, se tá indo, se não tá, ninguém sabe de nada."*
+
+    O registro da tentativa SEMPRE existiu — com `ok`, com a mensagem e com o erro
+    da API dentro dela. O que faltava era a tela mostrar. Falha que só aparece no
+    log do serviço é falha que o dono não tem como ler, e aí o botão vira caixa
+    preta: aperta, nada acontece, e não há como saber por quê.
+
+    Devolve também `em_andamento`, para a tela distinguir "está trabalhando" de
+    "terminou e deu isso"."""
+    try:
+        from .db import consultar_um
+        linha = consultar_um(
+            "SELECT tipo, disparo, inicio, fim, ok, mensagem, linhas, visto_em, "
+            "       etapa, progresso "
+            "  FROM analisesps.execucoes WHERE tipo = ? "
+            " ORDER BY inicio DESC LIMIT 1", (str(tipo),))
+    except Exception:  # noqa: BLE001 — banco atrasado não pode derrubar a tela
+        logger.exception("Análise de SPs: não consegui ler a última execução "
+                         "de %s", tipo)
+        return None
+    if not linha:
+        return None
+    return {"tipo": linha[0], "disparo": linha[1], "inicio": linha[2],
+            "fim": linha[3], "ok": linha[4], "mensagem": linha[5],
+            "linhas": linha[6], "visto_em": linha[7],
+            "etapa": linha[8] if len(linha) > 8 else None,
+            "progresso": linha[9] if len(linha) > 9 else None,
+            "em_andamento": linha[3] is None}
