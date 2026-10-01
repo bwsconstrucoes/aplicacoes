@@ -47,7 +47,9 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from decimal import Decimal
+from pathlib import Path
 
 logger = logging.getLogger("analisesps.folha")
 
@@ -271,45 +273,96 @@ COLUNAS_SOMAPAY = ["Nome do funcionário", "CPF* (obrigatório)",
                    "Valor* (obrigatório)"]
 
 
-def somapay_xlsx(linhas) -> bytes:
-    """A planilha do SomaPay: aba `Valores`, três colunas.
+# ⚠️ O ARQUIVO DO SOMAPAY SAI DO MODELO DELES, PREENCHIDO — NÃO É MONTADO AQUI.
+# Em 01/10/2026 o dono avisou que o arquivo gerado não passava no portal, nem
+# acrescentando as linhas de cabeçalho, nem salvando como .xls, e mandou o modelo
+# que o próprio site do Soma fornece. As diferenças, todas reais:
+#
+#   1. a aba do modelo se chama "Planilha de Folha de Pagamento" (a nossa,
+#      "Valores");
+#   2. os dados começam na LINHA 12 — antes vêm o título, as instruções e o
+#      cabeçalho na linha 11 (a nossa começava na linha 2);
+#   3. o CPF é SÓ OS 11 DÍGITOS, como texto ("Deve conter 11 dígitos. Ex.:
+#      01234567891") — a nossa mandava "997.133.493-34", com ponto e traço;
+#   4. o modelo é um arquivo do Excel novo com o nome terminando em ".xls".
+#
+# Em vez de imitar cada detalhe (e errar o quinto), o sistema abre o modelo e
+# escreve só as três células de cada linha, a partir da 12, com o estilo que o
+# modelo já tem nelas. Todo o resto — aba, instruções, logotipo, formatos — é o
+# arquivo deles, byte a byte. O modelo está em `modelos/somapay_modelo.xlsx` (sem
+# o nome de quem o criou, que vinha nas propriedades).
+MODELO_SOMAPAY = Path(__file__).with_name("modelos") / "somapay_modelo.xlsx"
+PRIMEIRA_LINHA_SOMAPAY = 12
+ABA_SOMAPAY = "Planilha de Folha de Pagamento"
+EXTENSAO_SOMAPAY = ".xls"     # a mesma do modelo (o conteúdo é o do Excel novo)
 
-    ⚠️ O CPF VAI FORMATADO e como TEXTO. As duas coisas importam: o arquivo que
-    hoje é enviado usa `997.133.493-34`, e um CPF que o Excel entenda como número
-    perde o zero da frente — e aí o portal paga outra pessoa, ou ninguém."""
-    from openpyxl import Workbook
-    from openpyxl.utils import get_column_letter
+# As três células vazias de uma linha do modelo, e os estilos de dado dele: 21 é
+# o texto (nome e CPF), 22 é o dinheiro em reais.
+_CELULAS_VAZIAS = re.compile(
+    r'<c r="A(\d+)" s="\d+"/><c r="B\1" s="\d+"/><c r="C\1" s="\d+"/>')
+_ESTILO_TEXTO, _ESTILO_DINHEIRO = "21", "22"
+
+
+def _celulas_somapay(linha: int, nome: str, cpf: str, valor) -> str:
+    from xml.sax.saxutils import escape
+    nome = "".join(c for c in str(nome or "") if c >= " ")
+    return (f'<c r="A{linha}" s="{_ESTILO_TEXTO}" t="inlineStr"><is>'
+            f'<t xml:space="preserve">{escape(nome)}</t></is></c>'
+            f'<c r="B{linha}" s="{_ESTILO_TEXTO}" t="inlineStr"><is>'
+            f"<t>{cpf}</t></is></c>"
+            f'<c r="C{linha}" s="{_ESTILO_DINHEIRO}"><v>{_dinheiro(valor)}</v></c>')
+
+
+def somapay_xlsx(linhas) -> bytes:
+    """O arquivo do SomaPay: o modelo deles, com uma pessoa por linha a partir
+    da linha 12 — nome, CPF (11 dígitos, texto) e valor (número em reais)."""
+    import io
+    import zipfile
 
     from .beevale import formata_cpf
 
-    repetido = _cpf_repetido([{"cpf": _cpf(l.get("cpf"))} for l in linhas or []])
+    itens = [(str(l.get("nome") or ""), _cpf(l.get("cpf")), l.get("valor"))
+             for l in linhas or []]
+    repetido = _cpf_repetido([{"cpf": cpf} for _, cpf, _ in itens])
     if repetido:
         raise ErroDaGeracao(
             f"o CPF {formata_cpf(repetido)} aparece mais de uma vez, e o SomaPay "
             "recusa o arquivo inteiro. Separe as verbas.")
 
-    planilha = Workbook()
-    aba = planilha.active
-    aba.title = "Valores"
-    aba.append(COLUNAS_SOMAPAY)
-    for linha in linhas or []:
-        aba.append([str(linha.get("nome") or ""),
-                    formata_cpf(linha.get("cpf")),
-                    float(_dinheiro(linha.get("valor")))])
-    for coluna in (1, 2):
-        for celula in aba[get_column_letter(coluna)]:
-            celula.number_format = "@"
-    # ⚠️ NÚMERO, não texto, com a máscara brasileira para a conferência na tela.
-    # O arquivo que hoje é enviado mostra "1.126,60"; se o portal exigir o valor
-    # como TEXTO, é aqui que muda — e é uma linha. Não foi possível confirmar sem
-    # subir um arquivo no portal.
-    for celula in aba[get_column_letter(3)][1:]:
-        celula.number_format = "#,##0.00"
-    aba.column_dimensions["A"].width = 40
-    aba.column_dimensions["B"].width = 20
-    aba.column_dimensions["C"].width = 16
-    aba.freeze_panes = "A2"
-    return _fechar(planilha)
+    with zipfile.ZipFile(MODELO_SOMAPAY) as modelo:
+        partes = [(info, modelo.read(info.filename)) for info in modelo.infolist()]
+    caminho_da_aba = "xl/worksheets/sheet1.xml"
+    folha = next(d for i, d in partes if i.filename == caminho_da_aba).decode("utf-8")
+
+    ultima = PRIMEIRA_LINHA_SOMAPAY + len(itens) - 1
+    usadas = set()
+
+    def preencher(achado):
+        linha = int(achado.group(1))
+        if PRIMEIRA_LINHA_SOMAPAY <= linha <= ultima:
+            usadas.add(linha)
+            return _celulas_somapay(linha, *itens[linha - PRIMEIRA_LINHA_SOMAPAY])
+        return achado.group(0)
+
+    folha = _CELULAS_VAZIAS.sub(preencher, folha)
+    # O modelo tem linhas até a 1000. Mais gente que isso ganha linhas novas, no
+    # fim, com o mesmo estilo.
+    extras = "".join(
+        f'<row r="{n}" ht="22.5" customHeight="true">'
+        + _celulas_somapay(n, *itens[n - PRIMEIRA_LINHA_SOMAPAY]) + "</row>"
+        for n in range(PRIMEIRA_LINHA_SOMAPAY, ultima + 1) if n not in usadas)
+    if extras:
+        folha = folha.replace("</sheetData>", extras + "</sheetData>", 1)
+        folha = re.sub(r'<dimension ref="A1:([A-Z]+)\d+"/>',
+                       lambda m: f'<dimension ref="A1:{m.group(1)}{ultima}"/>',
+                       folha, count=1)
+
+    memoria = io.BytesIO()
+    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as saida:
+        for info, dados in partes:
+            saida.writestr(info, folha.encode("utf-8")
+                           if info.filename == caminho_da_aba else dados)
+    return memoria.getvalue()
 
 
 def beevale_xlsx(linhas) -> bytes:
@@ -380,7 +433,8 @@ def nome_do_arquivo(lote, ano: int, mes: int, tipo: str) -> str:
     # Barra no nome vira pasta no Drive; o resto do acento fica, porque
     # "Alimentação" é o que ele procura na pasta.
     limpo = cru.replace("/", "-").replace("\\", "-")
-    return f"{limpo.strip()[:150]}.xlsx"
+    extensao = EXTENSAO_SOMAPAY if lote.get("destino") == SOMAPAY else ".xlsx"
+    return f"{limpo.strip()[:150]}{extensao}"
 
 
 # ---------------------------------------------------------------------------

@@ -11016,6 +11016,35 @@ obras pagas pela mesma conta aparecia só na primeira, com o dinheiro todo nela
 as linhas do fechamento (uma por pessoa e obra, com dias e origem), no `gerar`
 e na prévia.
 
+#### Leva 143 — o arquivo do SomaPay passa a ser o modelo do Soma, preenchido (01/10/2026)
+
+**O que aconteceu.** O arquivo SomaPay gerado não passava no portal — nem
+acrescentando as linhas de cabeçalho à mão, nem salvando como `.xls`. O dono
+mandou o modelo que o site do Soma fornece e pediu para gerar igual.
+
+**As diferenças entre o nosso e o modelo** (todas reais):
+1. aba "Valores" × "Planilha de Folha de Pagamento";
+2. dados a partir da linha 2 × a partir da **linha 12** (título, instruções,
+   dicas na 10, cabeçalho na 11);
+3. CPF "997.133.493-34" × **só os 11 dígitos**, como texto ("Deve conter 11
+   dígitos. Ex.: 01234567891");
+4. o modelo é um arquivo do Excel novo com o nome terminando em `.xls`.
+
+**Decisão:** em vez de imitar cada detalhe, o sistema guarda o modelo
+(`modelos/somapay_modelo.xlsx`, sem o nome da funcionária do Soma que vinha nas
+propriedades) e escreve só as três células de cada linha, com o estilo que o
+modelo já tem. Todo o resto é o arquivo deles, byte a byte — há teste conferindo
+que só a aba de dados difere. O nome do arquivo termina em `.xls`, como o
+modelo. Mais de 989 pessoas ganham linhas novas no fim (o modelo vai até a 1000).
+
+**O que contradiz o que estava escrito:** `docs/FOLHA_DE_PAGAMENTO.md` §2.1
+dizia que o arquivo que funcionava tinha CPF com ponto e traço. Segui o modelo
+(11 dígitos), que é o que o portal pede por escrito. Marcado como superado lá.
+
+**Não verificado:** a subida no portal — só o dono consegue. O LibreOffice deste
+ambiente não abre arquivo nenhum (nem o modelo original), então a conferência
+foi lendo o arquivo gerado com o openpyxl.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11025,6 +11054,7 @@ e na prévia.
 | soltar a folha analítica de 09/2026 | ele |
 | decidir se passa a importar só a analítica | ele |
 | ~~publicar a leva 142~~ — **publicada em 01/10/2026** (main em `23a96dd`), sem migração nova | — |
+| publicar a leva 143 (arquivo SomaPay no modelo do Soma) e o dono gerar de novo e subir no portal | ele |
 | dizer qual valor o link do botão da folha manda em `tipo` (vai no campo `automa_o_2` da SP) | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 

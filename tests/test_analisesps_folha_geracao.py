@@ -163,25 +163,65 @@ def test_o_resumo_de_lista_vazia_nao_libera_a_geracao():
 # ---------------------------------------------------------------------------
 # O ARQUIVO DO SOMAPAY
 # ---------------------------------------------------------------------------
-def test_o_arquivo_do_somapay_tem_a_aba_e_as_colunas_do_que_JA_FUNCIONA():
-    """O layout saiu do arquivo que o Make anexa ao card hoje — o que de fato é
-    enviado e é aceito."""
+def test_o_arquivo_do_somapay_e_o_MODELO_DO_SOMA_preenchido():
+    """⚠️ Em 01/10/2026 o arquivo montado aqui não passou no portal. O modelo do
+    site do Soma tem a aba "Planilha de Folha de Pagamento", título e instruções
+    em cima, cabeçalho na linha 11 e dados a partir da 12."""
     aba = _abrir(g.somapay_xlsx([{"cpf": GERLANIO, "nome": "GERLANIO GOMES LIMA",
                                   "valor": "1126.60"}]))
-    assert aba.title == "Valores"
-    assert [c.value for c in aba[1]] == [
+    assert aba.title == "Planilha de Folha de Pagamento"
+    assert "PLANILHA DE FOLHA DE PAGAMENTO" in aba["A1"].value
+    assert aba["A4"].value == "Instruções:"
+    assert [c.value for c in aba[11]][:3] == [
         "Nome do funcionário", "CPF* (obrigatório)", "Valor* (obrigatório)"]
-    assert aba["A2"].value == "GERLANIO GOMES LIMA"
-    assert aba["B2"].value == "997.133.493-34", "o CPF vai FORMATADO"
-    assert aba["C2"].value == pytest.approx(1126.60)
+    assert aba["A12"].value == "GERLANIO GOMES LIMA"
+    assert aba["B12"].value == "99713349334", "só os 11 dígitos, como no modelo"
+    assert aba["C12"].value == pytest.approx(1126.60)
+    assert aba["C12"].number_format == "[$R$ -416]#,##0.00"
+    assert aba["A13"].value is None
 
 
-def test_o_CPF_vai_como_TEXTO_no_somapay():
+def test_fora_a_aba_de_dados_o_arquivo_e_IGUAL_ao_modelo():
+    """Logotipo, estilos, propriedades: tudo é o arquivo deles."""
+    import zipfile
+    gerado = zipfile.ZipFile(io.BytesIO(g.somapay_xlsx(
+        [{"cpf": ANA, "nome": "ANA", "valor": "10.00"}])))
+    modelo = zipfile.ZipFile(g.MODELO_SOMAPAY)
+    assert gerado.namelist() == modelo.namelist()
+    diferentes = [n for n in modelo.namelist()
+                  if gerado.read(n) != modelo.read(n)]
+    assert diferentes == ["xl/worksheets/sheet1.xml"]
+
+
+def test_o_CPF_vai_como_TEXTO_e_com_o_ZERO_da_frente_no_somapay():
     """⚠️ Como número, um CPF que começa com zero perde o zero — e o portal paga
     outra pessoa, ou ninguém."""
     aba = _abrir(g.somapay_xlsx([{"cpf": ANA, "nome": "ANA", "valor": "10.00"}]))
-    assert aba["B2"].number_format == "@"
-    assert aba["B2"].value == "035.134.413-63"
+    assert aba["B12"].number_format == "@"
+    assert aba["B12"].data_type == "s"
+    assert aba["B12"].value == "03513441363"
+
+
+def test_nome_com_caractere_especial_nao_quebra_o_arquivo():
+    aba = _abrir(g.somapay_xlsx([{"cpf": ANA, "nome": "JOSÉ & <FILHO>",
+                                  "valor": "10.00"}]))
+    assert aba["A12"].value == "JOSÉ & <FILHO>"
+
+
+def test_mais_gente_que_as_linhas_do_modelo_ganha_linhas_novas():
+    """O modelo tem linhas até a 1000; o que passar disso não pode sumir."""
+    linhas = [{"cpf": f"{n:011d}", "nome": f"P{n}", "valor": "1.00"}
+              for n in range(1, 1201)]
+    aba = _abrir(g.somapay_xlsx(linhas))
+    assert aba["A12"].value == "P1"
+    assert aba["A1000"].value == "P989"
+    assert aba["A1211"].value == "P1200"
+    assert aba["B1211"].value == "00000001200"
+
+
+def test_o_arquivo_do_somapay_tem_o_nome_terminando_em_xls_como_o_modelo():
+    lote = g.montar_lotes([_linha(verba="folha")], g.SOMAPAY)[0]
+    assert g.nome_do_arquivo(lote, 2026, 9, "quinzena").endswith(".xls")
 
 
 def test_o_somapay_RECUSA_o_arquivo_com_CPF_repetido():
@@ -263,7 +303,7 @@ def test_arquivo_do_lote_escolhe_o_layout_do_destino():
     lote_bee = g.montar_lotes([_linha()], g.BEEVALE)[0]
     lote_soma = g.montar_lotes([_linha()], g.SOMAPAY)[0]
     assert _abrir(g.arquivo_do_lote(lote_bee)).title == "Pagamento BeeVale"
-    assert _abrir(g.arquivo_do_lote(lote_soma)).title == "Valores"
+    assert _abrir(g.arquivo_do_lote(lote_soma)).title == "Planilha de Folha de Pagamento"
 
 
 # ---------------------------------------------------------------------------

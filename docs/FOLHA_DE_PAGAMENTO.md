@@ -118,6 +118,16 @@ O texto de instrução no alto da planilha diz "deve conter 11 dígitos", mas as
 linhas que vêm sendo enviadas usam o CPF formatado — e funcionam. O sistema vai
 gerar igual ao que já funciona.
 
+> ⚠️ **SUPERADO EM 01/10/2026.** O arquivo montado por essa leitura (aba
+> `Valores`, cabeçalho na linha 1, CPF com ponto e traço) **não passou no
+> portal**, nem com as linhas de cabeçalho acrescentadas à mão, nem salvo como
+> `.xls`. O dono mandou o **modelo que o site do Soma fornece**, e o sistema
+> passou a gerar **o próprio modelo, preenchido**: aba "Planilha de Folha de
+> Pagamento", título e instruções em cima, cabeçalho na linha 11, dados a partir
+> da 12, **CPF só com os 11 dígitos** (como a instrução do modelo pede) e valor
+> como número em reais. O arquivo leva o nome terminando em `.xls`, igual ao
+> modelo (que por dentro é do Excel novo). Ver `folha_geracao.somapay_xlsx`.
+
 ### 2.2 O ponto (Mobponto, três endpoints)
 
 Base: `https://www.mobponto.com.br/ponto/api/endpoint.php`
@@ -2479,7 +2489,7 @@ Isto importa, porque arquivo recusado pelo portal custa a rodada:
 
 | Peça | De onde veio |
 |---|---|
-| SomaPay: aba `Valores`, três colunas, **CPF formatado** | do arquivo que o Make anexa ao card **hoje** — o que de fato é enviado e funciona (§2.1) |
+| SomaPay: ~~aba `Valores`, CPF formatado~~ → **o modelo do Soma preenchido, CPF com 11 dígitos** (01/10/2026, §2.1) | do arquivo que o Make anexa ao card **hoje** — o que de fato é enviado e funciona (§2.1) |
 | BeeVale: as 11 colunas, `Benefício` = Livre, `Tipo de Recarga` = Mensal, `Dias úteis` = 0, e-mail `<cpf>@bwsconstrucoes.com.br`, `Categoria` = BWS | do `BeeVale.gs` |
 | **SUPOSIÇÃO:** o `Centro de Custo` do BeeVale — usei a obra | no fluxo das SPs é o número do card; para a folha a obra é o que faz sentido |
 | **SUPOSIÇÃO:** o valor do SomaPay vai como **número** com máscara brasileira | o arquivo enviado mostra "1.126,60"; se o portal exigir TEXTO, é uma linha |
