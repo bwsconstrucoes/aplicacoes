@@ -10749,7 +10749,8 @@ quebrou na virada para outubro — passou a pedir 09/2026 explicitamente.
 
 | Falta | Depende de |
 |---|---|
-| **publicar** — **com migração 041** (e a 040, se ainda não aplicada): apertar "Aplicar atualizações do banco" na hora | ele dizer "pode" |
+| ~~publicar~~ — **publicada em 01/10/2026** (main em `4a550df`). Conferir que ele apertou "Aplicar atualizações do banco" (041, e a 040 se faltava) | ele |
+| resposta do suporte do Mobponto: como alterar/excluir batida pela API (ele foi perguntar) | ele |
 | a chamada de EXCLUIR batida do Mobponto (para "trocar a obra do dia") | ele |
 | criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
 | primeiro lançamento de verdade: UM dia de UMA pessoa, conferido no Mobponto | ele |
