@@ -60,6 +60,8 @@ VERMELHO = (192, 57, 43)
 # quem precisa da lista inteira baixa a planilha.
 TETO_DE_LINHAS = 2500
 
+CHAVES_DE_IDENTIFICADOR = {"lancamento", "codigo", "codigo_lancamento"}
+
 
 def _texto(valor) -> str:
     """Deixa o texto no que a fonte embutida sabe escrever."""
@@ -95,6 +97,10 @@ def _celula(valor, chave: str, titulo: str) -> tuple[str, str]:
         return valor.strftime("%d/%m/%Y"), "L"
     if excel._e_dinheiro(titulo) and isinstance(valor, (int, float)):
         return brl(valor), "R"
+    # número de título do OMIE é identificador, não quantidade: sem pontos de
+    # milhar, senão quem vai procurá-lo no OMIE digita "11.204.772.585"
+    if chave in CHAVES_DE_IDENTIFICADOR and isinstance(valor, int):
+        return str(valor), "R"
     if isinstance(valor, (int, float)):
         formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return (formatado.removesuffix(",00") if isinstance(valor, int)
@@ -102,19 +108,36 @@ def _celula(valor, chave: str, titulo: str) -> tuple[str, str]:
     return _texto(valor), "L"
 
 
-def _larguras(colunas, linhas) -> list[float]:
-    """Reparte a largura da página na proporção do conteúdo de cada coluna.
+# O que sai do PDF primeiro quando as colunas não cabem na folha deitada — na
+# ordem. São colunas de DETALHE: estão todas na planilha, que não tem limite de
+# largura. Dinheiro, data e o que identifica o lançamento nunca saem.
+#
+# 01/10/2026, o dono: "na parte mais analítica fica muito imprensado e não
+# aparece; em coluna de valor sai só o R$ e não sai o número". O Despesas
+# Analítico tem 23 colunas; repartidas numa folha, a coluna de valor ficava
+# com 11 mm e o corte deixava "-R$ 3." no lugar de "-R$ 3.000,00".
+ORDEM_DE_SAIDA = (
+    "cnpj", "observacao", "pedido", "medicao", "vencimento", "projeto",
+    "situacao", "grupo", "data_vencimento", "data_pagamento", "atraso",
+    "link", "lancamento", "codigo", "conta", "documento", "categoria",
+)
+LARGURA_MINIMA_DE_TEXTO = 21.0     # mm — abaixo disso um nome vira "SH FORM."
+LARGURA_MAXIMA_DE_TEXTO = 70.0
+FOLGA_DA_CELULA = 2.2              # mm — a borda e o respiro dos dois lados
+FONTES_DA_TABELA = (6.5, 6.0, 5.5) # tenta a maior; desce só se não couber
 
-    Amostra de 200 linhas: o suficiente para calibrar sem varrer vinte mil."""
-    pesos = []
-    for chave, titulo in colunas:
-        maior = len(str(titulo))
-        for linha in linhas[:200]:
-            texto, _ = _celula(linha.get(chave), chave, titulo)
-            maior = max(maior, len(texto))
-        pesos.append(min(max(maior, 6), 46))
-    total = sum(pesos) or 1
-    return [LARGURA_UTIL * p / total for p in pesos]
+
+def _e_rigida(chave, titulo, linhas) -> bool:
+    """Coluna que NÃO pode ser cortada: dinheiro, data, número. Cortada, ela
+    mente — "-R$ 3." parece um valor e não é."""
+    from . import excel
+    if excel._e_dinheiro(titulo):
+        return True
+    amostra = [l.get(chave) for l in linhas[:200]
+               if l.get(chave) not in (None, "")]
+    return bool(amostra) and all(
+        isinstance(v, (int, float, dt.date, dt.datetime)) and not isinstance(v, bool)
+        for v in amostra)
 
 
 class Relatorio:
@@ -194,28 +217,50 @@ class Relatorio:
             cortadas = len(linhas) - TETO_DE_LINHAS
             linhas = linhas[:TETO_DE_LINHAS]
 
-        larguras = _larguras(colunas, linhas)
+        colunas, larguras, fonte, omitidas = self._plano(colunas, linhas)
         altura = 4.6
+        if omitidas:
+            self.pdf.set_font("Helvetica", "I", 7)
+            self.pdf.set_text_color(*TINTA_SUAVE)
+            self.pdf.multi_cell(0, 3.8, _texto(
+                "Neste PDF ficaram de fora, por falta de espaço na folha: "
+                + ", ".join(omitidas) + ". Estão na planilha (botão Baixar Excel)."),
+                new_x="LMARGIN", new_y="NEXT")
+            self.pdf.set_text_color(0, 0, 0)
+            self.pdf.ln(1)
+
+        cabecalhos = [self._quebra_em_linhas(_texto(t), l, fonte)
+                      for (_c, t), l in zip(colunas, larguras)]
+        linhas_do_cabecalho = max(len(c) for c in cabecalhos)
+        altura_da_linha_do_cabecalho = 3.1
 
         def _cabecalho():
-            self.pdf.set_font("Helvetica", "B", 7)
+            self.pdf.set_font("Helvetica", "B", fonte)
             self.pdf.set_fill_color(*AZUL)
             self.pdf.set_text_color(255, 255, 255)
             self.pdf.set_draw_color(*CINZA_BORDA)
-            for (_chave, titulo), largura in zip(colunas, larguras):
-                self.pdf.cell(largura, altura + 1, _texto(titulo), border=1,
-                              fill=True, align="C")
-            self.pdf.ln()
+            x0, y0 = self.pdf.get_x(), self.pdf.get_y()
+            alto = linhas_do_cabecalho * altura_da_linha_do_cabecalho + 1.2
+            x = x0
+            for texto, largura in zip(cabecalhos, larguras):
+                self.pdf.rect(x, y0, largura, alto, style="DF")
+                topo = y0 + (alto - len(texto) * altura_da_linha_do_cabecalho) / 2
+                for k, pedaco in enumerate(texto):
+                    self.pdf.set_xy(x, topo + k * altura_da_linha_do_cabecalho)
+                    self.pdf.cell(largura, altura_da_linha_do_cabecalho, pedaco,
+                                  align="C")
+                x += largura
+            self.pdf.set_xy(x0, y0 + alto)
             self.pdf.set_text_color(0, 0, 0)
 
         _cabecalho()
-        self.pdf.set_font("Helvetica", "", 6.5)
+        self.pdf.set_font("Helvetica", "", fonte)
         for i, linha in enumerate(linhas):
             # a folha acabou: nova página e o cabeçalho de novo
             if self.pdf.will_page_break(altura):
                 self.pdf.add_page()
                 _cabecalho()
-                self.pdf.set_font("Helvetica", "", 6.5)
+                self.pdf.set_font("Helvetica", "", fonte)
             listrado = i % 2 == 1
             self.pdf.set_fill_color(*(CINZA_CLARO if listrado else (255, 255, 255)))
             for (chave, titulo), largura in zip(colunas, larguras):
@@ -225,7 +270,12 @@ class Relatorio:
                             and valor.startswith(("http://", "https://")) else "")
                 if endereco:
                     self.pdf.set_text_color(*AZUL)
-                self.pdf.cell(largura, altura, _recorta(texto, largura),
+                if alinhamento == "R" or self._rigida_na_tabela(chave):
+                    # número e data NUNCA são cortados: se por algum motivo não
+                    # couberem, a letra diminui só nesta célula
+                    self._celula_inteira(largura, altura, texto, alinhamento, fonte)
+                    continue
+                self.pdf.cell(largura, altura, self._recorta(texto, largura),
                               border=1, align=alinhamento, fill=True,
                               link=endereco or None)
                 if endereco:
@@ -242,6 +292,134 @@ class Relatorio:
                 f"planilha (botão Baixar Excel).").replace(",", "."),
                 new_x="LMARGIN", new_y="NEXT")
             self.pdf.set_text_color(0, 0, 0)
+
+    # -- medidas da tabela ---------------------------------------------------
+    def _largura_do_texto(self, texto: str, fonte: float, negrito=False) -> float:
+        self.pdf.set_font("Helvetica", "B" if negrito else "", fonte)
+        return self.pdf.get_string_width(texto)
+
+    def _plano(self, colunas, linhas):
+        """Quais colunas entram, com que largura e em que tamanho de letra.
+
+        Rígidas (dinheiro, data, número) ganham a largura do MAIOR valor delas,
+        medida de verdade na fonte do PDF. As de texto dividem o que sobra, na
+        proporção do que precisam, com um mínimo. Se nem assim couber, sai uma
+        coluna de detalhe (ORDEM_DE_SAIDA) e tenta de novo; só no fim a letra
+        diminui."""
+        amostra = linhas[:400]
+        rigidas = {c for c, t in colunas if _e_rigida(c, t, amostra)}
+        self._rigidas = rigidas
+        restantes = list(colunas)
+        omitidas: list[str] = []
+        while True:
+            for fonte in FONTES_DA_TABELA:
+                plano = self._larguras_para(restantes, amostra, rigidas, fonte)
+                if plano is not None:
+                    return restantes, plano, fonte, omitidas
+            fora = next((c for c in ORDEM_DE_SAIDA
+                         if any(k == c for k, _t in restantes)), None)
+            if fora is None or len(restantes) <= 2:
+                # não há mais o que tirar: reparte como der, na menor letra
+                fonte = FONTES_DA_TABELA[-1]
+                return (restantes,
+                        self._larguras_para(restantes, amostra, rigidas, fonte,
+                                            forcar=True),
+                        fonte, omitidas)
+            omitidas.append(next(t for k, t in restantes if k == fora))
+            restantes = [(k, t) for k, t in restantes if k != fora]
+
+    def _larguras_para(self, colunas, amostra, rigidas, fonte, forcar=False):
+        fixas, naturais = {}, {}
+        for chave, titulo in colunas:
+            maior = 0.0
+            for linha in amostra:
+                texto, _ = _celula(linha.get(chave), chave, titulo)
+                if texto:
+                    maior = max(maior, self._largura_do_texto(texto, fonte))
+            # o título quebra em até duas linhas: conta a maior palavra dele
+            palavra = max((self._largura_do_texto(p, fonte, negrito=True)
+                           for p in _texto(titulo).split()), default=0.0)
+            if chave in rigidas:
+                fixas[chave] = max(maior, palavra) + FOLGA_DA_CELULA
+            else:
+                naturais[chave] = min(max(maior, palavra) + FOLGA_DA_CELULA,
+                                      LARGURA_MAXIMA_DE_TEXTO)
+        sobra = LARGURA_UTIL - sum(fixas.values())
+        minimos = {k: min(LARGURA_MINIMA_DE_TEXTO, v) for k, v in naturais.items()}
+        if sobra < sum(minimos.values()) and not forcar:
+            return None
+        larguras = {}
+        if naturais:
+            if sum(naturais.values()) <= sobra:
+                # cabe tudo: o que sobra se espalha por TODAS as colunas, na
+                # proporção de cada uma — senão uma coluna de nome curto vira
+                # uma faixa enorme e os números ficam espremidos ao lado
+                extra = sobra - sum(naturais.values())
+                todas = {**naturais, **fixas}
+                total = sum(todas.values()) or 1
+                larguras = {k: v + extra * v / total for k, v in naturais.items()}
+                fixas = {k: v + extra * v / total for k, v in fixas.items()}
+            else:
+                base = max(sobra, 0.0) - sum(minimos.values())
+                excesso = {k: naturais[k] - minimos[k] for k in naturais}
+                total = sum(excesso.values()) or 1
+                larguras = {k: minimos[k] + max(base, 0.0) * excesso[k] / total
+                            for k in naturais}
+        elif fixas:
+            # só colunas rígidas: espalha a sobra entre elas
+            extra = max(sobra, 0.0) / len(fixas)
+            fixas = {k: v + extra for k, v in fixas.items()}
+        larguras.update(fixas)
+        resultado = [larguras[c] for c, _t in colunas]
+        if forcar and sum(resultado) > LARGURA_UTIL:
+            fator = LARGURA_UTIL / sum(resultado)
+            resultado = [w * fator for w in resultado]
+        return resultado
+
+    def _rigida_na_tabela(self, chave) -> bool:
+        return chave in getattr(self, "_rigidas", set())
+
+    def _quebra_em_linhas(self, titulo: str, largura: float, fonte: float) -> list[str]:
+        """O título da coluna em até duas linhas que caibam nela."""
+        cabe = largura - 1.0
+        linhas, atual = [], ""
+        for palavra in titulo.split():
+            tentativa = (atual + " " + palavra).strip()
+            if self._largura_do_texto(tentativa, fonte, negrito=True) <= cabe or not atual:
+                atual = tentativa
+            else:
+                linhas.append(atual)
+                atual = palavra
+        if atual:
+            linhas.append(atual)
+        if len(linhas) > 2:
+            linhas = [linhas[0], self._recorta(" ".join(linhas[1:]), largura,
+                                               fonte=fonte, negrito=True)]
+        return [self._recorta(l, largura, fonte=fonte, negrito=True) for l in linhas] or [""]
+
+    def _recorta(self, texto: str, largura_mm: float, fonte=None, negrito=False) -> str:
+        """Corta o texto que não cabe, MEDINDO — não estimando por letra.
+
+        Sem isto o fpdf2 escreve por cima da coluna vizinha. Só vale para
+        texto: número e data nunca passam por aqui."""
+        tamanho = fonte or self.pdf.font_size_pt
+        cabe = largura_mm - 1.2
+        if self._largura_do_texto(texto, tamanho, negrito) <= cabe:
+            self.pdf.set_font("Helvetica", "B" if negrito else "", tamanho)
+            return texto
+        while texto and self._largura_do_texto(texto + ".", tamanho, negrito) > cabe:
+            texto = texto[:-1]
+        self.pdf.set_font("Helvetica", "B" if negrito else "", tamanho)
+        return (texto + ".") if texto else ""
+
+    def _celula_inteira(self, largura, altura, texto, alinhamento, fonte):
+        """Escreve sem cortar; se não couber, diminui a letra só aqui."""
+        tamanho = fonte
+        while tamanho > 4.0 and self._largura_do_texto(texto, tamanho) > largura - 1.0:
+            tamanho -= 0.3
+        self.pdf.set_font("Helvetica", "", tamanho)
+        self.pdf.cell(largura, altura, texto, border=1, align=alinhamento, fill=True)
+        self.pdf.set_font("Helvetica", "", fonte)
 
     def grafico_de_barras(self, g, titulo: str):
         """Desenha, com as MESMAS coordenadas que a tela usa no SVG.
@@ -316,18 +494,6 @@ class Relatorio:
     def bytes(self) -> bytes:
         saida = self.pdf.output()
         return bytes(saida) if not isinstance(saida, bytes) else saida
-
-
-def _recorta(texto: str, largura_mm: float) -> str:
-    """Corta o que não cabe na coluna, com reticências.
-
-    Sem isto o `fpdf2` escreve por cima da coluna vizinha — e a tabela inteira
-    vira uma mancha ilegível justamente nas linhas mais longas."""
-    # ~1,55 mm por caractere na Helvetica 6.5, com folga para a borda
-    cabem = max(int((largura_mm - 1.2) / 1.55), 3)
-    if len(texto) <= cabem:
-        return texto
-    return texto[:cabem - 1] + "."
 
 
 def montar(abas, titulo: str, subtitulo: str = "", resumo=None,
