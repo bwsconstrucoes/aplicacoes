@@ -1472,3 +1472,19 @@ def test_a_identidade_refeita_a_partir_do_banco_bate_com_a_do_arquivo():
         "TRANSF CC PARA CC PJ BWS CONSTRUCOES LTDA", "624227"))
     assert do_arquivo == do_banco
 
+
+
+def test_a_barra_de_SELECIONADOS_conta_e_soma_o_que_esta_marcado(app_com_dados):
+    """Pedido dele, 01/10/2026: *"ver em algum canto da tela quantos estão
+    selecionados e o somatório (…) saber quantas tarifas está lançando, o valor
+    em tarifa que está lançando."* Cada caixinha leva o valor da linha, e a barra
+    grudada embaixo soma — entradas e saídas separadas."""
+    import re
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao").get_data(as_text=True)
+    assert 'id="barra-selecao" hidden' in html
+    caixas = re.findall(r'class="marca-linha"[^>]*data-valor="([^"]+)"', html)
+    assert caixas and all(float(v) or True for v in caixas)
+    for campo in ("sel-quantas", "sel-entradas", "sel-saidas", "sel-total", "sel-limpar"):
+        assert f'id="{campo}"' in html
+    assert "function somarSelecao()" in html

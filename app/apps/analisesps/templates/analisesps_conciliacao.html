@@ -473,7 +473,8 @@
         <tr class="linha-extrato {{ 'conciliada' if l.conciliado }}"
             data-id="{{ l.id }}">
           {% if pode_operar %}
-            <td><input type="checkbox" class="marca-linha" value="{{ l.id }}"></td>
+            <td><input type="checkbox" class="marca-linha" value="{{ l.id }}"
+                       data-valor="{{ l.valor }}"></td>
           {% endif %}
           <td>{{ l.data|data_br }}</td>
           <td class="historico" title="{{ l.descricao }}">{{ l.descricao }}
@@ -566,6 +567,28 @@
     </tbody>
   </table>
   </div>
+
+  {# O QUE ESTÁ MARCADO, NA HORA — 01/10/2026. Pedido dele: *"selecionar o que
+     nós selecionarmos, a gente conseguir ver em algum canto da tela a
+     informação de quantos estão selecionados e o somatório (…) lançar tarifas,
+     saber quantas tarifas está lançando, o valor em tarifa que está lançando."*
+     A mesma barra grudada embaixo da folha, que soma enquanto se marca. Some
+     quando não há nada marcado. Entrada e saída separadas: somar as duas num
+     número só esconderia uma atrás da outra. #}
+  {% if pode_operar and linhas %}
+  <div class="barra-salvar" id="barra-selecao" hidden>
+    <span class="conta-selecao">
+      Selecionados: <span class="total-selecao" id="sel-quantas">0</span>
+    </span>
+    <span class="cartao-dica">entradas <b id="sel-entradas" class="valor-entrada">R$ 0,00</b>
+      (<span id="sel-n-entradas">0</span>)</span>
+    <span class="cartao-dica">saídas <b id="sel-saidas" class="valor-saida">R$ 0,00</b>
+      (<span id="sel-n-saidas">0</span>)</span>
+    <span class="conta-selecao">Total <span class="total-selecao" id="sel-total">R$ 0,00</span></span>
+    <span class="sobra"><button type="button" class="btn secundario" id="sel-limpar"
+      >Desmarcar tudo</button></span>
+  </div>
+  {% endif %}
 
   {% if pagina > 1 or tem_proxima %}
     <div class="paginacao">
@@ -1029,7 +1052,41 @@ function selecionadas() {
 const todos = document.getElementById("marcar-todos");
 if (todos) todos.addEventListener("change", () => {
   document.querySelectorAll(".marca-linha").forEach(c => { c.checked = todos.checked; });
+  somarSelecao();
 });
+
+// QUANTOS E QUANTO ESTÁ MARCADO — a barra grudada embaixo (01/10/2026). Soma em
+// centavos inteiros: somar 0,1 + 0,2 em número quebrado dá 0,30000000000000004,
+// e o total errado no centavo é o tipo de coisa que tira a confiança na tela.
+const moedaBr = c => (c / 100).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+function somarSelecao() {
+  const barra = document.getElementById("barra-selecao");
+  if (!barra) return;
+  let n = 0, ent = 0, sai = 0, nEnt = 0, nSai = 0;
+  document.querySelectorAll(".marca-linha:checked").forEach(c => {
+    const centavos = Math.round(parseFloat(c.dataset.valor || "0") * 100);
+    n++;
+    if (centavos >= 0) { ent += centavos; nEnt++; } else { sai += -centavos; nSai++; }
+  });
+  barra.hidden = n === 0;
+  document.getElementById("sel-quantas").textContent = n;
+  document.getElementById("sel-entradas").textContent = moedaBr(ent);
+  document.getElementById("sel-saidas").textContent = moedaBr(sai);
+  document.getElementById("sel-n-entradas").textContent = nEnt;
+  document.getElementById("sel-n-saidas").textContent = nSai;
+  document.getElementById("sel-total").textContent = moedaBr(ent - sai);
+}
+document.addEventListener("change", e => {
+  if (e.target.matches && e.target.matches(".marca-linha")) somarSelecao();
+});
+const limparSel = document.getElementById("sel-limpar");
+if (limparSel) limparSel.addEventListener("click", () => {
+  document.querySelectorAll(".marca-linha:checked").forEach(c => { c.checked = false; });
+  if (todos) todos.checked = false;
+  somarSelecao();
+});
+// O navegador pode devolver caixinhas marcadas ao voltar para a página.
+somarSelecao();
 
 async function emLeva(conciliado) {
   const ids = selecionadas();

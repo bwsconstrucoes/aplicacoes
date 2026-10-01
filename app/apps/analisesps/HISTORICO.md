@@ -10820,6 +10820,18 @@ registrada com quem pediu (`ponto_batida_enviada`, `ponto_fila`).
 
 ---
 
+### Centésima trigésima oitava leva (01/10) — conciliação: quantos e quanto está marcado
+
+Pedido dele: *"selecionar o que nós selecionarmos, a gente conseguir ver em algum
+canto da tela quantos estão selecionados e o somatório (…) lançar tarifas, saber
+quantas tarifas está lançando, o valor em tarifa."* Na tela da conciliação, a
+mesma barra grudada embaixo da folha: aparece ao marcar a primeira caixinha e
+mostra quantas, as entradas e as saídas separadas (com quantas de cada) e o
+total; "Desmarcar tudo" limpa. Soma em centavos inteiros (sem o erro de
+arredondamento do navegador). Só do que está marcado NESTA página.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória
