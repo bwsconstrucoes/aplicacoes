@@ -4893,7 +4893,7 @@ def test_busca_sem_resultado_MANTEM_o_cabecalho_e_diz_o_que_fazer(app, monkeypat
     assert "<thead>" in html, "o cabeçalho da tabela tem de continuar"
     assert 'name="q"' in html, "a caixa de busca tem de continuar na tela"
     assert "zzzz" in html
-    assert "mostrar quem saiu" in html
+    assert "incluir desligados e afastados" in html
 
 
 def test_quem_saiu_so_aparece_quando_se_pede(app, monkeypatch):
@@ -5105,9 +5105,9 @@ def test_a_tela_avisa_quem_esta_saindo_e_oferece_a_lista(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/colaboradores").get_data(as_text=True)
 
-    assert "7 pessoa(s) com sinal de saída" in html
-    assert "3 já saiu" in html
-    assert "1 afastada" in html
+    assert "7 colaborador(es) com indicação de desligamento" in html
+    assert "3 desligado(s)" in html
+    assert "1 afastado(s)" in html
     assert "rescisão" in html.lower()
     assert "saindo=1" in html, "o aviso tem de levar à lista"
 
@@ -5124,7 +5124,7 @@ def test_sem_ninguem_saindo_o_aviso_NAO_aparece(app, monkeypatch):
                                          "afastado": 0})
     html = _como_mestre(app).get(
         "/analisesps/folha/colaboradores").get_data(as_text=True)
-    assert "sinal de saída" not in html
+    assert "colaborador(es) com indicação de desligamento" not in html
 
 
 def test_o_filtro_de_quem_esta_saindo_TRAZ_quem_ja_saiu(app, monkeypatch):
@@ -5207,7 +5207,7 @@ def test_quem_esta_saindo_e_marcado_tambem_na_tela_de_RATEIO(app, monkeypatch):
 
     html = _como_mestre(app).get(
         "/analisesps/folha/rateio").get_data(as_text=True)
-    assert "está saindo" in html
+    assert "em desligamento" in html
     assert "18/09/2026" in html
 
 
@@ -5272,11 +5272,11 @@ def test_a_caixa_de_colar_a_tabela_e_o_caminho_PRINCIPAL_do_rateio(app, monkeypa
         "/analisesps/folha/rateio").get_data(as_text=True)
 
     assert 'id="tabela-rateio"' in html
-    assert "Repetir a obra é o peso dela" in html
+    assert "A repetição da obra define o peso" in html
     # O formato tem de estar escrito na tela: ninguém adivinha um formato.
     assert "CPF ; nome ; obra, obra, obra" in html
     # E o "à mão" continua existindo, mas como caminho secundário.
-    assert "uma regra à mão" in html
+    assert "Incluir regra manualmente" in html
     assert "secundario" in html
     # Substituir avisa que DESATIVA, não apaga.
     assert "desativa" in html
@@ -5353,7 +5353,7 @@ def test_a_folha_que_NAO_FECHA_aparece_marcada_com_o_motivo(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/importar?lista=1").get_data(as_text=True)
 
-    assert "não fecha" in html
+    assert ">divergente</span>" in html
     assert "diferente dos subtotais" in html
     assert "linha-alerta" in html
     assert "430.129,75" in html
@@ -5377,8 +5377,8 @@ def test_a_folha_que_fecha_nao_grita(app, monkeypatch):
     # é ela que está sob teste aqui.
     html = _como_mestre(app).get(
         "/analisesps/folha/importar?lista=1").get_data(as_text=True)
-    assert "fecha" in html
-    assert "não fecha" not in html
+    assert ">conferido</span>" in html
+    assert ">divergente</span>" not in html
     assert "linha-alerta" not in html
 
 
@@ -5515,9 +5515,9 @@ def test_a_folha_aberta_poe_as_CRITICAS_antes_da_lista(app, monkeypatch):
     # em sistema"*.
     assert "Precisa da sua mão" not in html
     assert "Pendências antes do pagamento" in html
-    assert html.index("Pendências antes do pagamento") < html.index("Pessoa por pessoa")
-    assert "não casaram com o cadastro" in html
-    assert "já saíram" in html
+    assert html.index("Pendências antes do pagamento") < html.index("Detalhamento por colaborador")
+    assert "sem correspondência no cadastro" in html
+    assert "colaborador(es) desligado(s)" in html
     assert "Não pague folha" in html
     # A lista de nomes com o link do Pipefy saiu da lateral em 01/10/2026 (ela
     # ficou limpa, pedido dele): o item filtra a lista, e é na linha da pessoa
@@ -5605,7 +5605,7 @@ def test_a_tela_do_ponto_MOSTRA_os_campos_que_a_api_manda(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/ponto").get_data(as_text=True)
 
-    assert "Os campos que a API manda em cada dia" in html
+    assert "Campos enviados pela API para cada dia" in html
     assert "local_trabalho" in html
     assert "hora_entrada" in html
     # E um dia de exemplo, com o que veio de verdade.
@@ -5628,8 +5628,8 @@ def test_sem_credencial_a_tela_do_ponto_diz_ONDE_criar_e_manda_TROCAR(app, monke
     assert "MOBPONTO_AUTHORIZATION" in html
     assert "MOBPONTO_API_KEY" in html
     assert "Apps Script" in html
-    assert "direto para o Render" in html
-    assert "troque a chave na origem" in html
+    assert "diretamente para o Render" in html
+    assert "substitua a chave na origem" in html
     # E sem credencial não oferece o botão: botão que só dá erro é armadilha.
     assert 'id="btn-trazer-ponto"' not in html
 
@@ -5651,7 +5651,7 @@ def test_mes_que_veio_PELA_METADE_e_marcado(app, monkeypatch):
 
     html = _como_mestre(app).get(
         "/analisesps/folha/ponto").get_data(as_text=True)
-    assert "veio pela metade" in html
+    assert ">incompleta</span>" in html
     assert "3 de 9" in html
     assert "linha-alerta" in html
 
@@ -5682,7 +5682,7 @@ def test_o_recado_do_ponto_NAO_diz_SPs(app):
 def test_carregar_o_ponto_SEM_mes_e_recusado(app):
     resposta = _como_mestre(app).post("/analisesps/api/folha/ponto", json={})
     assert resposta.status_code == 400
-    assert "Escolha o mês" in resposta.get_json()["erro"]
+    assert "Selecione o mês" in resposta.get_json()["erro"]
 
 
 def test_carregar_o_ponto_SEM_credencial_e_recusado_com_o_caminho(app, monkeypatch):
@@ -5745,10 +5745,10 @@ def test_a_tela_de_ferias_busca_a_pessoa_em_vez_de_pedir_o_CPF(app, monkeypatch)
 
     assert 'id="ferias-pessoa"' in html
     assert 'id="ferias-cpf"' in html, "o CPF vai escondido, escolhido da lista"
-    assert "comece a digitar o nome" in html
+    assert "Digite o nome do colaborador" in html
     assert "ferias-sugestoes" in html
     # E os dois dias do período.
-    assert "Primeiro dia" in html and "Último dia" in html
+    assert "Data inicial" in html and "Data final" in html
 
 
 def test_a_obra_do_feriado_so_aparece_quando_e_de_obra(app, monkeypatch):
@@ -5767,7 +5767,7 @@ def test_a_obra_do_feriado_so_aparece_quando_e_de_obra(app, monkeypatch):
         "/analisesps/folha/calendario").get_data(as_text=True)
     assert 'id="feriado-obra-bloco" hidden' in html
     assert "CREPEOLINDA" in html, "a lista de obras é a MESMA do rateio"
-    assert "Todo mundo (nacional)" in html
+    assert "Feriado nacional" in html
 
 
 def test_a_lista_de_obras_vazia_explica_o_que_fazer(app, monkeypatch):
@@ -6075,7 +6075,7 @@ def test_quem_precisa_de_mao_aparece_marcado(app, monkeypatch):
 
     assert "linha-alerta" in html
     assert "não diz o valor deste auxílio" in html
-    assert "Travam o pagamento" in html
+    assert '<div class="kpi-rotulo">Pendências</div>' in html
 
 
 def test_a_selecao_e_CAIXINHA_e_salva_de_uma_vez(app, monkeypatch):
@@ -6484,7 +6484,7 @@ def test_sem_apropriacao_fechada_a_tela_EXPLICA_em_vez_de_oferecer(app,
     html = _como_mestre(app).get(
         "/analisesps/folha/pagamento").get_data(as_text=True)
 
-    assert "Nada fechado" in html
+    assert "Nenhuma apropriação fechada" in html
     assert 'id="btn-gerar"' not in html
 
 
@@ -6494,7 +6494,7 @@ def test_a_verba_que_NAO_BATE_aparece_marcada_e_nao_escondida(app, monkeypatch):
     _preparar_pagamento(monkeypatch, fechados=[_fechado(fecha=False)])
     html = _como_mestre(app).get(
         "/analisesps/folha/pagamento?ano=2026&mes=9").get_data(as_text=True)
-    assert "não bate" in html
+    assert ">divergente</span>" in html
     assert "Alimentação" in html
 
 
@@ -6717,7 +6717,7 @@ def test_quem_JA_SAIU_nao_aparece_sem_filtro_mas_fica_contado(app, monkeypatch):
     html = cliente.get("/analisesps/folha/diaristas").get_data(as_text=True)
     assert "GERLANIO" in html
     assert "JASAIU" not in html
-    assert "1 já saiu — fora da lista" in html
+    assert "1 desligado — fora da lista" in html
     com_filtro = cliente.get(
         "/analisesps/folha/diaristas?situacao=saiu").get_data(as_text=True)
     assert "JASAIU" in com_filtro and "GERLANIO" not in com_filtro
@@ -6731,14 +6731,14 @@ def test_sem_o_VALOR_DA_DIARIA_a_pessoa_trava_e_a_lateral_diz(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/diaristas").get_data(as_text=True)
     assert "sem valor da diária" in html
-    assert "falta dado" in html
+    assert "dados incompletos" in html
 
 
 def test_sem_o_ponto_a_tela_de_diaristas_diz_o_que_fazer(app, monkeypatch):
     _preparar_diaristas(monkeypatch)
     html = _como_mestre(app).get(
         "/analisesps/folha/diaristas").get_data(as_text=True)
-    assert "ainda não foi trazido" in html
+    assert "ainda não foi importado" in html
     assert "Trazer o ponto" in html
 
 
@@ -6780,7 +6780,7 @@ def test_a_tela_do_ponto_DIZ_que_esta_carregando_ao_abrir(app, monkeypatch):
 
     html = _como_mestre(app).get(
         "/analisesps/folha/ponto").get_data(as_text=True)
-    assert "Está trazendo dado agora" in html
+    assert "Carga do ponto em andamento" in html
     assert "página 3 de 12" in html
     assert "acompanharSozinho" in html
 
@@ -6798,7 +6798,7 @@ def test_a_tela_do_ponto_avisa_quando_a_carga_foi_INTERROMPIDA(app, monkeypatch)
 
     html = _como_mestre(app).get(
         "/analisesps/folha/ponto").get_data(as_text=True)
-    assert "interrompida no meio" in html
+    assert "A última carga foi interrompida" in html
     assert "substitui" in html
 
 
@@ -6899,7 +6899,7 @@ def test_a_tela_de_colaboradores_tem_KPIs(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/colaboradores").get_data(as_text=True)
 
-    assert "Trabalhando" in html and ">512<" in html
+    assert '<div class="kpi-rotulo">Ativos</div>' in html and ">512<" in html
     assert "de 3531 no cadastro" in html
     assert "Sem código de obra" in html
     assert "Sem ID Fortes" in html
@@ -6987,7 +6987,7 @@ def test_a_tela_do_ponto_MOSTRA_a_ultima_tentativa_que_falhou(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/ponto").get_data(as_text=True)
 
-    assert "última tentativa FALHOU" in html
+    assert "A última tentativa falhou" in html
     assert "HTTP 401" in html
     assert "credenciais do Mobponto estão" in html, (
         "o recado tem de dizer o que fazer com um 401, não só mostrar o erro")
@@ -7016,7 +7016,7 @@ def test_a_tela_do_ponto_mostra_a_ultima_que_DEU_CERTO_mas_veio_vazia(
     html = _como_mestre(app).get(
         "/analisesps/folha/ponto").get_data(as_text=True)
 
-    assert "deu certo" in html
+    assert "Última tentativa concluída com sucesso" in html
     assert "0 dia(s)" in html
     assert "não há mês carregado" in html, (
         "sucesso sem nada carregado tem de ser explicado")
@@ -7044,10 +7044,10 @@ def test_a_folha_importada_mostra_QUANTAS_PESSOAS_precisam_de_olho(app,
     html = _como_mestre(app).get(
         "/analisesps/folha/importar?lista=1").get_data(as_text=True)
 
-    assert "Travam o pagamento" in html
-    assert "3</b> pessoa(s)" in html
+    assert '<th class="num">Pendências</th>' in html
+    assert "3</b> colaborador(es)" in html
     assert "2 sem cadastro" in html
-    assert "1 já saiu" in html
+    assert "1 desligado(s)" in html
 
 
 def test_a_busca_de_ferias_tem_SEMPRE_o_limpar(app, monkeypatch):
@@ -7314,7 +7314,7 @@ def test_a_folha_aberta_tem_CAIXINHA_de_quem_entra_no_pagamento(app, monkeypatch
 
     assert 'class="entra"' in html
     assert 'id="marcar-todos"' in html
-    assert "Salvar quem entra" in html
+    assert "Salvar seleção" in html
 
 
 def test_a_folha_aberta_tem_a_coluna_FASE_ATUAL(app, monkeypatch):
@@ -7350,7 +7350,7 @@ def test_sem_ponto_a_tela_MOSTRA_a_obra_do_cadastro_dizendo_que_e_do_cadastro(
     assert "usar esta" in html
     # E diz, em vermelho, que não há ponto do mês: é o que explica a folha inteira
     # sem obra.
-    assert "Não há ponto de 09/2026 aqui" in html
+    assert "Não há ponto de 09/2026 carregado" in html
 
 
 def test_a_folha_aberta_DIZ_quando_o_ponto_veio_pela_metade(app, monkeypatch):
@@ -7364,13 +7364,13 @@ def test_a_folha_aberta_DIZ_quando_o_ponto_veio_pela_metade(app, monkeypatch):
         "id": 9, "ano": a, "mes": m, "completa": False, "interrompida": False})
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
-    assert "veio pela metade" in html
+    assert "O ponto de 09/2026 está incompleto" in html
     assert "antes de\n    gerar o pagamento" in html or "antes de gerar o pagamento" in html.replace("\n    ", " ")
     # E com a carga completa o aviso NÃO aparece.
     monkeypatch.setattr(ponto, "carga_do_mes", lambda a, m: {
         "id": 9, "ano": a, "mes": m, "completa": True, "interrompida": False})
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
-    assert "veio pela metade" not in html
+    assert "está incompleto" not in html
 
 
 def test_o_total_por_obra_vem_DEPOIS_da_lista_de_pessoas(app, monkeypatch):
@@ -7379,7 +7379,7 @@ def test_o_total_por_obra_vem_DEPOIS_da_lista_de_pessoas(app, monkeypatch):
     _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
-    assert html.index("Pessoa por pessoa") < html.index("Total por obra")
+    assert html.index("Detalhamento por colaborador") < html.index("Total por obra")
 
 
 def test_o_botao_de_gerar_fica_na_LATERAL_e_nao_no_fim_da_tela(app, monkeypatch):
@@ -7401,7 +7401,7 @@ def test_o_total_do_que_vai_receber_fica_GRUDADO_na_tela(app, monkeypatch):
 
     assert 'class="barra-salvar"' in html
     assert 'id="total-marcado"' in html
-    assert "Vai receber" in html
+    assert "Incluído no pagamento:" in html
 
 
 def test_a_aba_da_folha_LEVA_para_a_ultima_folha_aberta(app, monkeypatch):
@@ -7540,7 +7540,7 @@ def test_por_obra_vem_DEPOIS_da_lista_de_pessoas_no_auxilio(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/auxilios").get_data(as_text=True)
 
-    assert html.index("Pessoa por pessoa") < html.index("Por obra")
+    assert html.index("Detalhamento por colaborador") < html.index("Por obra")
 
 
 def test_o_total_do_auxilio_fica_SEMPRE_a_vista(app, monkeypatch):
@@ -7555,7 +7555,7 @@ def test_o_total_do_auxilio_fica_SEMPRE_a_vista(app, monkeypatch):
     # A barra existe e NÃO nasce escondida.
     assert 'class="barra-salvar" id="barra-salvar">' in html
     assert html[barra:barra + 200].count("hidden") == 0
-    assert "Vai receber" in html
+    assert "Selecionados para pagamento:" in html[barra:]
 
 
 def test_o_filtro_de_FASE_do_auxilio_recorta_a_lista_de_verdade(app, monkeypatch):
@@ -7630,7 +7630,7 @@ def test_tirar_alguem_do_pagamento_NAO_pede_motivo_na_tela(app, monkeypatch):
     assert "motivo-fora" not in html
     assert "por que sai do pagamento" not in html
     assert "observacao-ajuste" in html
-    assert "se quiser deixar escrito por quê" in html
+    assert 'placeholder="motivo do ajuste"' in html
 
 
 def test_quem_sai_do_pagamento_aparece_RISCADO(app, monkeypatch):
@@ -7653,9 +7653,9 @@ def test_a_linha_aberta_deixa_TROCAR_A_OBRA_e_dividir_por_dias(app, monkeypatch)
     _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
-    assert "Tudo numa obra só" in html
+    assert "Apropriar em uma única obra" in html
     assert "ou dividir por dias" in html
-    assert "você não digita dinheiro" in html
+    assert "calculado pelo <b>valor por dia</b>" in html
     assert 'id="obras-da-folha"' in html, "as obras conhecidas sugerem o código"
 
 
@@ -7752,7 +7752,7 @@ def test_os_numeros_da_folha_ficam_na_LATERAL_e_nao_no_topo(app, monkeypatch):
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
     principal = html.index('<main class="principal">')
-    for rotulo in ("A folha inteira", "Fora do pagamento", "Sem obra"):
+    for rotulo in ("Total da folha", "Fora do pagamento", "Sem obra"):
         assert html.index(rotulo) < principal, f"{rotulo} continua no topo"
     # E os quadros grandes não existem mais nesta tela.
     assert 'class="kpi estatico"' not in html
@@ -7771,7 +7771,7 @@ def test_os_alertas_da_folha_ficam_na_LATERAL(app, monkeypatch):
 
     principal = html.index('<main class="principal">')
     assert html.index("Pendências antes do pagamento") < principal
-    assert html.index("não casaram com o cadastro") < principal
+    assert html.index("sem correspondência no cadastro") < principal
     assert "situacao=sem_cadastro" in html and "situacao=saindo" in html
 
 
@@ -7798,7 +7798,7 @@ def test_quem_so_consulta_NAO_ve_a_caixa_de_trazer_folha(app, monkeypatch):
     html = como(app, SENHA_CONSULTA).get("/analisesps/folha/1").get_data(as_text=True)
     assert 'id="solta-folha"' not in html
     # Mas vê os números e abre a divisão por obra.
-    assert "A folha inteira" in html
+    assert "Total da folha" in html
     assert 'id="btn-divisao"' in html and 'id="cartao-divisao"' in html
 
 
@@ -7812,7 +7812,7 @@ def test_a_divisao_por_obra_abre_numa_JANELA(app, monkeypatch):
     for bloco in ("Total por obra", "Por conta corrente", "Já pago em"):
         assert bloco in dentro, f"{bloco} ficou fora da janela"
     # Nada dessas tabelas sobrou no corpo da tela, antes da janela.
-    corpo = html[html.index("Pessoa por pessoa"):janela]
+    corpo = html[html.index("Detalhamento por colaborador"):janela]
     assert "Total por obra" not in corpo and "Por conta corrente" not in corpo
     assert 'id="btn-divisao"' in html
 
@@ -7841,7 +7841,7 @@ def test_a_janela_NAO_derruba_a_tela_quando_o_ja_pago_estoura(app, monkeypatch):
     monkeypatch.setattr(fpg, "gerencial", estoura)
     r = _como_mestre(app).get("/analisesps/folha/1")
     assert r.status_code == 200
-    assert "Nada fechado neste mês ainda" in r.get_data(as_text=True)
+    assert "Nenhuma verba fechada nesta competência" in r.get_data(as_text=True)
 
 
 def test_o_topo_da_folha_e_so_a_troca_de_competencia(app, monkeypatch):
@@ -7851,7 +7851,7 @@ def test_o_topo_da_folha_e_so_a_troca_de_competencia(app, monkeypatch):
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
 
     principal = html.index('<main class="principal">')
-    topo = html[principal:html.index("Pessoa por pessoa")]
+    topo = html[principal:html.index("Detalhamento por colaborador")]
     assert "importar outra ou apagar" not in topo
     assert 'class="kpis"' not in topo
     assert "Precisa da sua mão" not in topo
@@ -7886,7 +7886,7 @@ def test_ha_filtro_pela_obra_do_CADASTRO_alem_da_do_ponto(app, monkeypatch):
     so_cre1 = cliente.get("/analisesps/folha/1?obra_cadastro=CRE1").get_data(as_text=True)
     assert "GERLANIO" in so_cre1
     nenhum = cliente.get("/analisesps/folha/1?obra_cadastro=OUTRA").get_data(as_text=True)
-    assert "Nenhuma pessoa com esses filtros" in nenhum
+    assert "Nenhum colaborador encontrado com esses filtros" in nenhum
 
 
 def test_a_obra_do_CADASTRO_aparece_sempre_e_avisa_quando_difere_do_ponto(app, monkeypatch):
@@ -7942,7 +7942,7 @@ def test_o_filtro_de_SETOR_recorta_e_o_de_atencao_junta_os_afastados(app, monkey
     so_atencao = cliente.get("/analisesps/folha/1?setor=__atencao").get_data(as_text=True)
     assert "GERLANIO" in so_atencao
     outro = cliente.get("/analisesps/folha/1?setor=CONSTRUTORA%2FESCRITORIO").get_data(as_text=True)
-    assert "Nenhuma pessoa com esses filtros" in outro
+    assert "Nenhum colaborador encontrado com esses filtros" in outro
 
 
 def test_setor_comum_NAO_vira_alerta(app, monkeypatch):
@@ -7978,7 +7978,7 @@ def test_a_OBRA_DA_CONTABILIDADE_aparece_na_linha_e_tem_filtro(app, monkeypatch)
                          ).get_data(as_text=True)
     assert "GERLANIO" in so_090
     nenhuma = cliente.get("/analisesps/folha/1?filial=999+-+X").get_data(as_text=True)
-    assert "Nenhuma pessoa com esses filtros" in nenhuma
+    assert "Nenhum colaborador encontrado com esses filtros" in nenhuma
 
 
 
@@ -8081,7 +8081,7 @@ def test_o_ANALITICO_traz_contabilidade_cadastro_ponto_calculo_e_rateio(app, mon
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
 
     for bloco in ("Contabilidade (arquivo do Fortes)", "Cadastro", "Ponto (Mobponto)",
-                  "O cálculo", "Por obra", "Por conta corrente", "O ponto, dia a dia"):
+                  "<h4>Cálculo</h4>", "Por obra", "Por conta corrente", "Ponto diário"):
         assert bloco in html, f"faltou: {bloco}"
     assert "000013" in html                        # o código do Fortes
     assert "7011-4" in html and "22069-1" in html  # as duas contas
@@ -8097,8 +8097,8 @@ def test_a_pagina_de_IMPRIMIR_tem_o_mesmo_analitico_e_o_botao(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/1/pessoa/99713349334").get_data(as_text=True)
     assert "window.print()" in html
-    assert "Analítico do funcionário" in html
-    assert "O ponto, dia a dia" in html
+    assert "Analítico do colaborador" in html
+    assert "Ponto diário" in html
     assert "atualizar-cadastro-pessoa" not in html, "na página, o botão é Imprimir"
 
 
@@ -8106,7 +8106,7 @@ def test_quem_so_CONSULTA_ve_o_analitico_mas_nao_o_botao_de_atualizar(app, monke
     _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
     html = como(app, SENHA_CONSULTA).get(
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
-    assert "O cálculo" in html
+    assert "<h4>Cálculo</h4>" in html
     assert ">Atualizar ponto</button>" not in html
     assert ">Atualizar cadastro</button>" not in html
 
@@ -8127,7 +8127,7 @@ def test_o_filtro_de_quem_e_pago_em_MAIS_DE_UMA_CONTA(app, monkeypatch):
     cliente = _como_mestre(app)
 
     html = cliente.get("/analisesps/folha/1").get_data(as_text=True)
-    assert "pagas em mais de uma conta" in html
+    assert "pagos em mais de uma conta" in html
     assert "conta=__varias" in html
 
     varias = cliente.get("/analisesps/folha/1?conta=__varias").get_data(as_text=True)
@@ -8135,7 +8135,7 @@ def test_o_filtro_de_quem_e_pago_em_MAIS_DE_UMA_CONTA(app, monkeypatch):
     por_conta = cliente.get("/analisesps/folha/1?conta=22069-1").get_data(as_text=True)
     assert "GERLANIO" in por_conta
     outra = cliente.get("/analisesps/folha/1?conta=9999-9").get_data(as_text=True)
-    assert "Nenhuma pessoa com esses filtros" in outra
+    assert "Nenhum colaborador encontrado com esses filtros" in outra
 
 
 def test_quem_fica_numa_conta_so_NAO_entra_no_filtro_de_varias(app, monkeypatch):
@@ -8144,7 +8144,7 @@ def test_quem_fica_numa_conta_so_NAO_entra_no_filtro_de_varias(app, monkeypatch)
     monkeypatch.setattr(folha_pagamento, "conta_por_obra",
                         lambda: {"CRE1": "7011-4", "XYZ9": "7011-4"})
     html = _como_mestre(app).get("/analisesps/folha/1?conta=__varias").get_data(as_text=True)
-    assert "Nenhuma pessoa com esses filtros" in html
+    assert "Nenhum colaborador encontrado com esses filtros" in html
 
 
 def test_atualizar_o_ponto_de_uma_pessoa_DISPARA_a_tarefa(app, monkeypatch):
@@ -8212,7 +8212,7 @@ def test_quem_tem_VALOR_ZERO_nao_e_marcavel_e_a_linha_diz_por_que(app, monkeypat
 
     assert ">valor zero</span>" in html
     assert "valor zero não se paga" in html
-    assert "não dá para marcar: sem cadastro" in html, "e quem não casou também diz"
+    assert "seleção indisponível: sem cadastro" in html, "e quem não casou também diz"
 
 
 
@@ -8226,7 +8226,7 @@ def test_quem_NAO_CASOU_tem_o_nome_abrindo_o_diagnostico(app, monkeypatch):
     cliente = _como_mestre(app)
     html = cliente.get("/analisesps/folha/1").get_data(as_text=True)
     assert 'class="link-btn abrir-pendente nome-pessoa"' in html
-    assert "por que não casou?" in html
+    assert ">diagnóstico do cadastro</button>" in html
 
     monkeypatch.setattr(colaboradores, "por_que_nao_casou", lambda c, n: {
         "codigo": c, "nome": n, "pelo_codigo": [], "atualizado": {"quando": "29/09/2026 10:00"},
@@ -8254,9 +8254,9 @@ def test_quem_NAO_CASOU_nasce_DESMARCADO_e_fora_do_vai_receber(app, monkeypatch)
     assert desligadas, "quem não casou tem a caixa desligada"
     assert all("checked" not in c for c in desligadas), "e DESMARCADA"
     assert "Não pode ser pago" in html
-    # O "Vai receber" é só o GERLANIO (1.074,64), não os dois.
+    # O "Incluído no pagamento" é só o GERLANIO (1.074,64), não os dois.
     lateral = html[:html.index('<main class="principal">')]
-    trecho = lateral[lateral.index("Vai receber"):lateral.index("Fora do pagamento")]
+    trecho = lateral[lateral.index("Incluído no pagamento"):lateral.index("Fora do pagamento")]
     assert "1.074,64" in trecho and "2.437,20" not in trecho
 
 

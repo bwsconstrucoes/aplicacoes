@@ -406,7 +406,7 @@ def test_os_AVISOS_entram_no_arquivo_de_analise():
     livro = _analise(lotes, ano=2026, mes=9, tipo="quinzena")
     texto = " ".join(str(c.value) for r in livro["Resumo"].iter_rows()
                      for c in r if c.value)
-    assert "Avisos na hora de gerar" in texto
+    assert "Avisos da geração" in texto
     assert "C. Diários" in texto
 
 

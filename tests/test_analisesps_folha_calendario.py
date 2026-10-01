@@ -90,7 +90,7 @@ def test_feriado_de_obra_SEM_obra_e_recusado(banco_calendario):
     from app.apps.analisesps import folha_calendario as fc
     with pytest.raises(fc.ErroDoCalendario) as erro:
         fc.gravar_feriado("12/09/2026", fc.POR_OBRA, obra="  ")
-    assert "escolha a obra" in str(erro.value).lower()
+    assert "selecione a obra" in str(erro.value).lower()
 
 
 def test_feriado_nacional_IGNORA_a_obra_que_vier(banco_calendario):
@@ -216,7 +216,7 @@ def test_fim_ANTES_do_inicio_e_recusado(banco_calendario):
     from app.apps.analisesps import folha_calendario as fc
     with pytest.raises(fc.ErroDoCalendario) as erro:
         fc.gravar_ferias(GERLANIO, "20/09/2026", "01/09/2026")
-    assert "antes do primeiro" in str(erro.value)
+    assert "anterior à data inicial" in str(erro.value)
 
 
 def test_periodo_ABSURDO_e_recusado_porque_e_ano_digitado_errado(banco_calendario):
@@ -224,7 +224,7 @@ def test_periodo_ABSURDO_e_recusado_porque_e_ano_digitado_errado(banco_calendari
     from app.apps.analisesps import folha_calendario as fc
     with pytest.raises(fc.ErroDoCalendario) as erro:
         fc.gravar_ferias(GERLANIO, "01/09/2026", "01/09/2029")
-    assert "Confira o ano" in str(erro.value)
+    assert "Verifique o ano" in str(erro.value)
 
 
 def test_cpf_com_digito_errado_e_recusado(banco_calendario):

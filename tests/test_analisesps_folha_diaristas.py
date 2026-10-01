@@ -164,7 +164,7 @@ def test_desmarcar_e_salvar_tira_do_pagamento(banco_diaristas):
     fd.salvar_selecao(2026, 9, "mes", [{"cpf": DIARISTA, "pagar": False}], quem="T")
     p = _pessoa(fd.calcular(2026, 9, "mes"), DIARISTA)
     assert p["pagar"] is False
-    assert any("desmarcou" in m for m in p["motivos"])
+    assert any("desmarcado manualmente" in m for m in p["motivos"])
     from app.apps.analisesps import folha_apropriacao_guardada as guardada
     with pytest.raises(guardada.ErroDaApropriacao):
         fd.fechar(2026, 9, "mes")

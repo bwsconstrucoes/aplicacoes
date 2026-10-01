@@ -65,7 +65,7 @@ def test_a_previa_sai_SEM_FECHAR_e_nao_sobe_nem_registra(app, monkeypatch):
     assert all(n.startswith("PREVIA - NAO SUBIR - ") for n in arquivos)
     assert any("7011-4" in n for n in arquivos)
     leia = pacote.read("LEIA-ME.txt").decode("utf-8-sig")
-    assert "NÃO SUBA NO PORTAL" in leia
+    assert "NÃO ENVIAR AO PORTAL" in leia
 
 
 def test_a_previa_respeita_QUEM_VOCE_TIROU(app, monkeypatch):
@@ -88,7 +88,7 @@ def test_a_previa_SAI_MESMO_COM_AVISO_e_o_aviso_vai_no_leia_me(app, monkeypatch)
     assert r.status_code == 200
     leia = zipfile.ZipFile(io.BytesIO(r.data)).read("LEIA-ME.txt").decode("utf-8-sig")
     assert "AVISO" in leia and "sem conta de pagamento" in leia
-    assert "NÃO sairia" in leia
+    assert "NÃO é gerado" in leia
 
 
 def test_a_previa_usa_A_MESMA_REGRA_do_fechamento():
@@ -143,7 +143,7 @@ def test_duas_obras_marcadas_mostram_quem_esta_em_UMA_OU_OUTRA(app, monkeypatch)
     so_uma = cliente.get("/analisesps/folha/1?obra=XYZ9").get_data(as_text=True)
     assert "GERLANIO" in so_uma
     nenhuma = cliente.get("/analisesps/folha/1?obra=NADA").get_data(as_text=True)
-    assert "Nenhuma pessoa com esses filtros" in nenhuma
+    assert "Nenhum colaborador encontrado com esses filtros" in nenhuma
     duas = cliente.get("/analisesps/folha/1?obra=NADA&obra=XYZ9").get_data(as_text=True)
     assert "GERLANIO" in duas
 

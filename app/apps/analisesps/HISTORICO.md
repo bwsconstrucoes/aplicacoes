@@ -11095,6 +11095,32 @@ SomaPay), 3 do fechamento do auxílio, telas e acessos; suíte inteira (7.805);
 as três telas e a janela abertas num navegador com dado de teste. **Não
 verificado:** com dado real — depende da migração 044 e de "Atualizar cadastro".
 
+#### Leva 145 — a linguagem da folha passa a ser técnica (01/10/2026)
+
+O dono, antes de publicar a leva 144: *"ficou uma linguagem muito coloquial (…)
+as informações, os alertas, parece a conversa de dois amigos de rua."*
+
+Varredura de todo texto que aparece nas telas da folha (contabilidade, analítico,
+diaristas, alimentação e transporte, pagamento, ponto, feriados e férias,
+importação, rateio, colaboradores, janela do funcionário) e das mensagens que o
+Python manda para a tela (erros, motivos, avisos, progresso). Regras aplicadas:
+registro técnico e impessoal; o sistema não fala em primeira pessoa ("Não foi
+possível…", não "não consegui"); imperativo formal ("clique em", não "aperte");
+sem gíria, sem exclamação, sem citação do dono na tela; terminologia de DP
+(colaborador, competência, apropriação, desligado, em desligamento, pendência,
+divergente/conferido). Exemplos: "Vai receber" → "A pagar"/"Incluído no
+pagamento"; "Travam o pagamento" → "Pendências"; "Pessoa por pessoa" →
+"Detalhamento por colaborador"; "já saiu" → "desligado"; "veio pela metade" →
+"incompleta"; "não bate" → "divergente".
+
+**Regra daqui em diante:** texto novo de tela segue esse registro. Comentário de
+código continua com a fala do dono — é o registro do porquê.
+
+Ficaram de propósito: "Pendências antes do pagamento" (escolha do dono), o botão
+"Trazer o ponto", e textos que são contrato com sistemas de fora (opções do
+Pipefy, "PAGAR EXTRA", nomes de colunas da planilha). Avisos já gravados no banco
+antes desta leva continuam com o texto antigo.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11105,7 +11131,7 @@ verificado:** com dado real — depende da migração 044 e de "Atualizar cadast
 | decidir se passa a importar só a analítica | ele |
 | ~~publicar a leva 142~~ — **publicada em 01/10/2026** (main em `23a96dd`), sem migração nova | — |
 | ~~publicar a leva 143~~ — **publicada em 01/10/2026**. Falta o dono gerar de novo e subir no portal do Soma | ele |
-| publicar a leva 144 **com a migração 044** (apertar o botão junto) e depois "Atualizar cadastro" | ele |
+| ~~publicar as levas 144 e 145~~ — **publicadas em 01/10/2026**. Apertar "Aplicar atualizações do banco" (044) e depois "Atualizar cadastro" | ele |
 | confirmar o nome da coluna do valor da diária na planilha, a regra da meia diária e se diarista é pago por quinzena ou por mês | ele |
 | dizer qual valor o link do botão da folha manda em `tipo` (vai no campo `automa_o_2` da SP) | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |

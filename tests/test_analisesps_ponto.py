@@ -229,7 +229,7 @@ def test_mes_SEM_NINGUEM_e_recusado_com_frase_util(banco_ponto, monkeypatch):
     dublar(monkeypatch, [resposta([])])
     with pytest.raises(ponto.ErroDoPonto) as erro:
         ponto.carregar(2026, 8)
-    assert "não devolveu ninguém" in str(erro.value)
+    assert "não retornou colaboradores" in str(erro.value)
     assert "ponto lançado" in str(erro.value)
 
 
@@ -539,7 +539,7 @@ def test_a_mensagem_do_erro_oferece_o_caminho_SEGURO_primeiro(monkeypatch):
     frase = str(erro.value)
     assert "MOBPONTO_CA_EXTRA" in frase
     assert frase.index("MOBPONTO_CA_EXTRA") < frase.index("MOBPONTO_TLS_INSEGURO")
-    assert "nada de segurança é perdido" in frase
+    assert "sem perda de segurança" in frase
 
 
 # ---------------------------------------------------------------------------
@@ -640,7 +640,7 @@ def test_a_mensagem_diz_que_JA_TENTOU_sozinho(monkeypatch):
     monkeypatch.setattr(requests, "get", explode)
     with pytest.raises(ponto.ErroDoPonto) as erro:
         ponto._pedir_pagina(2026, 9, 1)
-    assert "JÁ TENTEI BAIXAR ESSA PEÇA SOZINHO" in str(erro.value)
+    assert "O SISTEMA TENTOU OBTÊ-LO AUTOMATICAMENTE" in str(erro.value)
 
 
 def test_quando_o_intermediario_APARECE_a_chamada_e_refeita(monkeypatch):
@@ -1388,7 +1388,7 @@ def test_sem_o_ponto_do_mes_recusa_com_frase_util(banco_ponto, monkeypatch):
     from app.apps.analisesps import ponto
     with pytest.raises(ponto.ErroDoPonto) as erro:
         ponto.atualizar_pessoa(2026, 9, "55555555555")
-    assert "Traga o mês inteiro primeiro" in str(erro.value)
+    assert "Importe primeiro o mês completo" in str(erro.value)
 
 
 def test_a_tarefa_de_UMA_PESSOA_roda_e_diz_o_que_fez(banco_ponto, monkeypatch):

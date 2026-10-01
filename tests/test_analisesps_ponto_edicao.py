@@ -96,8 +96,8 @@ def test_dia_com_UMA_batida_recebe_as_TRES_que_faltam():
 
 @pytest.mark.parametrize("dia,motivo", [
     (_dia(D(2026, 9, 22), falta="Atestado médico"), "falta lançada"),
-    (_dia(D(2026, 9, 22), presenca="Feriado"), "o ponto diz Feriado"),
-    (_dia(D(2026, 9, 22), presenca="Férias"), "o ponto diz Férias"),
+    (_dia(D(2026, 9, 22), presenca="Feriado"), "o ponto registra Feriado"),
+    (_dia(D(2026, 9, 22), presenca="Férias"), "o ponto registra Férias"),
     (_dia(D(2026, 9, 22), ("", "", "", ""), obras=["CRE1", "", "", ""]), "sem hora"),
 ])
 def test_dia_parado_ou_estranho_NAO_E_TOCADO(dia, motivo):
@@ -236,7 +236,8 @@ def test_PARA_na_primeira_que_falha(configurado, monkeypatch):
     assert len(mandados) == 2
     assert feito["falhou"]["talvez_gravou"] is True
     recado = pe.recado_do_lancamento(feito)
-    assert "PAROU em 16/09 12:00" in recado and "confira no Mobponto" in recado
+    assert ("INTERROMPIDO em 16/09 12:00" in recado
+            and "verifique no Mobponto" in recado)
     # A que entrou foi para a cópia; a que não se sabe, não.
     assert aplicadas == [("2026-09-16", [("07:00", "CRE1")])]
 
@@ -405,7 +406,7 @@ def test_quem_opera_SO_A_FOLHA_ve_o_quadro_de_lancar(app, configurado, monkeypat
         s[auth.CHAVE_USUARIO] = 7
         s[auth.CHAVE_NOME] = "ANA"
     html = c.get("/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
-    assert "Ver o que vai ser lançado" in html
+    assert "Pré-visualizar lançamento" in html
     r = c.post("/analisesps/api/folha/ponto/plano", json={
         "folha_id": 1, "cpf": "99713349334", "de": "2026-09-14",
         "ate": "2026-09-14", "obra": "CRE1"})
@@ -417,7 +418,7 @@ def test_o_analitico_tem_o_quadro_de_LANCAR(app, configurado, monkeypatch):
     _dublar(monkeypatch)
     html = _como_mestre(app).get(
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
-    assert 'id="lancar-ponto"' in html and "Ver o que vai ser lançado" in html
+    assert 'id="lancar-ponto"' in html and "Pré-visualizar lançamento" in html
     # A obra é escolhida numa LISTA da C. Diários, com a do ponto já marcada.
     assert '<select class="lancar-obra"' in html
     assert '<option value="CRE1" selected>' in html
@@ -436,7 +437,7 @@ def test_sem_a_lista_da_C_DIARIOS_o_quadro_DIZ_e_nao_oferece(app, configurado, m
     html = _como_mestre(app).get(
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
     assert "planilhas de apoio" in html
-    assert "Ver o que vai ser lançado" not in html
+    assert "Pré-visualizar lançamento" not in html
 
 
 def test_sem_configuracao_o_quadro_DIZ_O_QUE_FALTA(app, monkeypatch):
@@ -445,7 +446,7 @@ def test_sem_configuracao_o_quadro_DIZ_O_QUE_FALTA(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
     assert "MOBPONTO_RESPONSAVEL_CPF" in html
-    assert "Ver o que vai ser lançado" not in html
+    assert "Pré-visualizar lançamento" not in html
 
 
 def test_a_pagina_de_imprimir_NAO_tem_o_lancar(app, configurado, monkeypatch):
@@ -472,7 +473,7 @@ def test_com_tarefa_de_pessoa_rodando_o_pedido_novo_NAO_SOBRESCREVE_o_anterior(
     r = cliente.post("/analisesps/api/folha/ponto/lancar", json={
         "folha_id": 1, "cpf": "99713349334", "de": "2026-09-14",
         "ate": "2026-09-14", "obra": "CRE1", "justificativa": "bateu errado"})
-    assert r.status_code == 409 and "continua sozinha" in r.get_json()["erro"]
+    assert r.status_code == 409 and "prossegue mesmo que a tela seja fechada" in r.get_json()["erro"]
     r = cliente.post("/analisesps/api/folha/ponto/pessoa", json={
         "folha_id": 1, "cpf": "99713349334"})
     assert r.status_code == 409
@@ -517,7 +518,7 @@ def test_o_analitico_mostra_o_ULTIMO_PEDIDO_da_pessoa(app, configurado, monkeypa
     html = _como_mestre(app).get(
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
     assert 'data-pendente="1"' in html and 'data-id="9"' in html
-    assert "1 pedido(s) antes deste" in html
+    assert "1 solicitação(ões) à frente" in html
 
 
 def test_quem_so_tem_a_FOLHA_entra_pelo_endereco_do_modulo_SEM_ERRO(app, monkeypatch):

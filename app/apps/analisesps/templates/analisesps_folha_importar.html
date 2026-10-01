@@ -126,12 +126,12 @@
           </td>
           <td>
             {% if f.fecha %}
-              <span class="selo no-lote" title="A soma das linhas confere com os subtotais do relatório">fecha</span>
+              <span class="selo no-lote" title="A soma das linhas confere com os subtotais do relatório">conferido</span>
             {% else %}
               {# ⚠️ NÃO FECHAR NÃO IMPEDE IMPORTAR, e é de propósito: ele precisa
                  importar a folha que não fecha para DESCOBRIR por que não fecha.
                  Mas tem de estar na cara, porque é a crítica mais importante daqui. #}
-              <span class="selo cancelado">não fecha</span>
+              <span class="selo cancelado">divergente</span>
               <div class="aviso atencao" style="margin:4px 0 0">
                 ⚠️ {{ f.lista_de_avisos|join('; ') }}
               </div>

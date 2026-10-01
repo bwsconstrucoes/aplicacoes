@@ -365,7 +365,7 @@ def test_fechamento_que_MUDOU_depois_de_gerar_bloqueia(banco_cards, monkeypatch)
     analise = _gerar(monkeypatch)
     _fechar(partes=(("CREPEOLINDA", "1200.00"), ("CREPEAREIAS", "500.00")))
     vista = fcd.previa(analise)
-    assert any("fechamento mudou" in b for b in vista["bloqueios"])
+    assert any("fechamento foi alterado" in b for b in vista["bloqueios"])
     assert pipe.criados == []
 
 
@@ -379,7 +379,7 @@ def test_parou_no_meio_CONTINUA_sem_repetir_o_que_ja_foi_criado(banco_cards,
     with pytest.raises(fcd.ErroDosCards) as erro:
         fcd.lancar(analise)
     assert "Já criados" in str(erro.value)
-    assert "continua de onde parou" in str(erro.value)
+    assert "retoma do ponto de parada" in str(erro.value)
     assert len(pipe.criados) == 2          # a Despesa e a primeira SP
 
     fcd.lancar(analise)

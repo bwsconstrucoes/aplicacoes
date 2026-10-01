@@ -100,7 +100,7 @@ def test_resto_sem_nada_sobrando_e_recusado_com_frase():
     with pytest.raises(fr.ErroDoRateio) as erro:
         fr.conferir_obras([{"obra": "A", "percentual": "100"},
                            {"obra": "B", "resto": True}])
-    assert "não sobra nada" in str(erro.value)
+    assert "não há saldo" in str(erro.value)
 
 
 def test_obra_repetida_percentual_zerado_e_regra_vazia_sao_recusados():
@@ -343,7 +343,7 @@ def test_a_MESMA_pessoa_em_duas_linhas_e_recusada_dizendo_onde():
     frase = str(erro.value)
     assert "997.133.493-34" in frase
     assert "1" in frase and "3" in frase, "tem de dizer em quais linhas"
-    assert "repetir a obra é o peso" in frase, "tem de dizer o que fazer"
+    assert "a repetição da obra define o peso" in frase, "tem de dizer o que fazer"
 
 
 def test_tabela_vazia_e_recusada_com_o_formato_explicado():
