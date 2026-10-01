@@ -186,10 +186,10 @@ def _cabecalhos() -> dict:
     chave = (os.getenv("MOBPONTO_API_KEY") or "").strip()
     if not auth or not chave:
         raise ErroDoPonto(
-            "faltam as credenciais do Mobponto. Crie MOBPONTO_AUTHORIZATION e "
-            "MOBPONTO_API_KEY no Render — os valores estão nos Apps Script das "
-            "planilhas do ponto. Copie de lá direto para o Render e troque a "
-            "chave na origem depois.")
+            "credenciais do Mobponto não configuradas. Crie MOBPONTO_AUTHORIZATION e "
+            "MOBPONTO_API_KEY no Render — os valores constam nos Apps Script das "
+            "planilhas do ponto. Copie-os diretamente para o Render e, em seguida, "
+            "substitua a chave na origem.")
     return {"Authorization": auth, "api-key": chave,
             "api-version": VERSAO_DA_API}
 
@@ -422,7 +422,7 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
                   "pagina": str(int(pagina))}
     cabecalhos = _cabecalhos()
     confianca = _confianca_tls()
-    ultimo = "falha desconhecida"
+    ultimo = "falha não identificada"
 
     for tentativa in range(1, TENTATIVAS + 1):
         try:
@@ -457,30 +457,29 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
                             continue
                 raise ErroDoPonto(
                     "o certificado do site do Mobponto não pôde ser verificado "
-                    "(CERTIFICATE_VERIFY_FAILED). Isto NÃO é credencial errada nem "
-                    "instabilidade: falta uma peça do meio da corrente de "
-                    "certificados. EU JÁ TENTEI BAIXAR ESSA PEÇA SOZINHO, do jeito "
-                    "que o navegador faz, e não consegui — ou o certificado do "
-                    "Mobponto não diz onde ela está, ou o servidor dela não "
-                    "respondeu daqui. "
-                    "HÁ DOIS JEITOS DE RESOLVER, e o primeiro é o certo: "
-                    "(1) abra https://www.mobponto.com.br no navegador, clique no "
-                    "cadeado, exporte o certificado do MEIO da cadeia (o que não é "
-                    "o do site nem a raiz) e cole o conteúdo dele na variável "
-                    "MOBPONTO_CA_EXTRA, no Render — a verificação continua ligada e "
-                    "nada de segurança é perdido; "
-                    "(2) se não der, MOBPONTO_TLS_INSEGURO=1 dispensa a "
-                    "verificação — funciona na hora, mas alguém no caminho da rede "
-                    "poderia se passar pelo Mobponto e pegar a credencial. "
-                    "O conserto de vez é o suporte do Mobponto instalar o "
-                    "certificado intermediário no servidor deles.") from e
+                    "(CERTIFICATE_VERIFY_FAILED). NÃO se trata de credencial inválida "
+                    "nem de instabilidade: falta o certificado intermediário da "
+                    "cadeia. O SISTEMA TENTOU OBTÊ-LO AUTOMATICAMENTE, como faz o "
+                    "navegador, sem sucesso — o certificado do Mobponto não indica "
+                    "onde obtê-lo, ou o servidor correspondente não respondeu. "
+                    "HÁ DUAS SOLUÇÕES, sendo a primeira a recomendada: "
+                    "(1) acesse https://www.mobponto.com.br no navegador, clique no "
+                    "cadeado, exporte o certificado INTERMEDIÁRIO da cadeia (nem o "
+                    "do site, nem a raiz) e informe o conteúdo na variável "
+                    "MOBPONTO_CA_EXTRA, no Render — a verificação permanece ativa, "
+                    "sem perda de segurança; "
+                    "(2) como alternativa, MOBPONTO_TLS_INSEGURO=1 dispensa a "
+                    "verificação — o efeito é imediato, mas um terceiro na rede "
+                    "poderia se passar pelo Mobponto e capturar a credencial. "
+                    "A solução definitiva é o suporte do Mobponto instalar o "
+                    "certificado intermediário no servidor.") from e
             ultimo = str(e)
         else:
             if 200 <= resposta.status_code < 300:
                 try:
                     return resposta.json() or {}
                 except Exception as e:  # noqa: BLE001
-                    ultimo = (f"a resposta não é JSON: {e}. Começo dela: "
+                    ultimo = (f"resposta em formato diferente de JSON: {e}. Início da resposta: "
                               f"{resposta.text[:200]}")
             else:
                 # ⚠️ 401 e 403 NÃO SÃO PARA REPETIR: credencial errada não
@@ -488,7 +487,7 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
                 if resposta.status_code in (401, 403):
                     raise ErroDoPonto(
                         f"o Mobponto recusou a credencial (HTTP "
-                        f"{resposta.status_code}). Confira "
+                        f"{resposta.status_code}). Verifique "
                         "MOBPONTO_AUTHORIZATION e MOBPONTO_API_KEY no Render.")
                 ultimo = f"HTTP {resposta.status_code}"
         if tentativa < TENTATIVAS:
@@ -499,10 +498,10 @@ def _pedir_pagina(ano: int, mes: int, pagina: int) -> dict:
             time.sleep(espera)
 
     raise ErroDoPonto(
-        f"não consegui ler a página {pagina} do ponto de {mes:02d}/{ano} depois "
-        f"de {TENTATIVAS} tentativas em uns {sum(ESPERAS_ENTRE_TENTATIVAS) // 60} "
-        f"minutos: {ultimo}. O que já entrou ficou guardado — a próxima carga "
-        f"continua da página {pagina}.")
+        f"não foi possível ler a página {pagina} do ponto de {mes:02d}/{ano} após "
+        f"{TENTATIVAS} tentativas em cerca de {sum(ESPERAS_ENTRE_TENTATIVAS) // 60} "
+        f"minutos: {ultimo}. O que já foi importado permanece gravado — a próxima "
+        f"carga continua a partir da página {pagina}.")
 
 
 def _dias_do_funcionario(bruto) -> tuple:
@@ -638,11 +637,11 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
     anotar = anotar or (lambda *a, **k: None)
     if not _pronto():
         raise ErroDoPonto(
-            "a tabela do ponto ainda não existe. Aperte "
-            '"Aplicar atualizações do banco" em Configurações e tente de novo.')
+            "tabela do ponto não encontrada no banco. Clique em "
+            '"Aplicar atualizações do banco" em Configurações e repita a operação.')
     if not configurado():
         raise ErroDoPonto(
-            "faltam as credenciais do Mobponto. Crie MOBPONTO_AUTHORIZATION e "
+            "credenciais do Mobponto não configuradas. Crie MOBPONTO_AUTHORIZATION e "
             "MOBPONTO_API_KEY no Render.")
 
     avisos = []
@@ -650,9 +649,9 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
     if not segura:
         avisos.append(
             'a atualização 037 do banco ainda não foi aplicada ("Aplicar '
-            'atualizações do banco", em Configurações): a carga anterior deste '
-            "mês foi apagada antes de esta começar, e uma carga que caia no "
-            "meio não retoma. Aplique a atualização.")
+            'atualizações do banco", em Configurações): a carga anterior desta '
+            "competência foi excluída antes do início desta, e uma carga interrompida "
+            "não é retomada. Aplique a atualização.")
 
     retomada = carga_em_andamento(ano, mes) if segura else None
     if retomada and not (retomada["paginas_lidas"] > 0 and _recente(retomada)):
@@ -666,10 +665,10 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
         avisos.append(
             f"retomada da página {pagina} de {total_paginas}: as páginas "
             f"anteriores são da tentativa de "
-            f"{retomada['carregado_em']:%d/%m %H:%M}. Quem mudou de página no "
-            "Mobponto entre as duas tentativas pode faltar — a próxima carga "
-            "completa do mês refaz tudo.")
-        anotar("retomando o ponto", f"da página {pagina} de {total_paginas}")
+            f"{retomada['carregado_em']:%d/%m %H:%M}. Colaboradores que mudaram de página no "
+            "Mobponto entre as duas tentativas podem estar ausentes — a próxima carga "
+            "completa da competência reprocessa todos os dados.")
+        anotar("Retomando a importação do ponto", f"a partir da página {pagina} de {total_paginas}")
         with conexao() as conn:
             # Outras tentativas que também caíram não servem mais.
             conn.execute("DELETE FROM analisesps.ponto_carga "
@@ -679,16 +678,16 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
         logger.info("Análise de SPs: ponto %02d/%d retomado da página %d de %d "
                     "(carga %d).", mes, ano, pagina, total_paginas, carga_id)
     else:
-        anotar("pedindo a primeira página do ponto")
-        with _mantendo_vivo(anotar, "pedindo a primeira página do ponto",
-                            "esperando o Mobponto responder"):
+        anotar("Solicitando a primeira página do ponto")
+        with _mantendo_vivo(anotar, "Solicitando a primeira página do ponto",
+                            "aguardando resposta do Mobponto"):
             primeira = _pedir_pagina(ano, mes, 1)
         resultado = (primeira or {}).get("result") or {}
         funcionarios = resultado.get("funcionarios") or []
         if not funcionarios:
             raise ErroDoPonto(
-                f"o Mobponto não devolveu ninguém para {mes:02d}/{ano}. Confira "
-                "se o mês está certo e se há ponto lançado nele.")
+                f"o Mobponto não retornou colaboradores para {mes:02d}/{ano}. Verifique "
+                "se a competência está correta e se há ponto lançado nela.")
         try:
             total_paginas = int(resultado.get("total_paginas") or 0)
         except (TypeError, ValueError):
@@ -734,10 +733,10 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
                 time.sleep(pausa)
             etapa = (f"página {pagina} de {total_paginas}" if total_paginas
                      else f"página {pagina}")
-            anotar("trazendo o ponto", etapa)
+            anotar("Importando o ponto", etapa)
             comeco = time.monotonic()
-            with _mantendo_vivo(anotar, "trazendo o ponto",
-                                f"{etapa} — esperando o Mobponto responder"):
+            with _mantendo_vivo(anotar, "Importando o ponto",
+                                f"{etapa} — aguardando resposta do Mobponto"):
                 dados = _pedir_pagina(ano, mes, pagina)
             if (pausa < PAUSA_SE_LENTO
                     and time.monotonic() - comeco > SEGUNDOS_PARA_SER_LENTA):
@@ -745,7 +744,7 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
                 logger.warning("Análise de SPs: o Mobponto está lento (página %d "
                                "de %02d/%d) — passo a pedir uma página por "
                                "minuto, como o script da planilha.", pagina, mes, ano)
-                avisos.append("o Mobponto estava lento: a carga passou a pedir "
+                avisos.append("lentidão no Mobponto: a carga passou a solicitar "
                               "uma página por minuto, como o script da planilha.")
         resultado = (dados or {}).get("result") or {}
         funcionarios = resultado.get("funcionarios") or []
@@ -773,7 +772,7 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
         feito = consultar_um(
             "SELECT count(*), count(DISTINCT cpf) FROM analisesps.ponto_dia "
             " WHERE carga_id = ?", (carga_id,)) or (0, 0)
-        anotar("trazendo o ponto",
+        anotar("Importando o ponto",
                f"{feito[0]} dia(s) de {feito[1]} pessoa(s) — página {pagina} "
                f"de {total_paginas}")
         pagina += 1
@@ -785,8 +784,8 @@ def carregar(ano: int, mes: int, anotar=None, quem: str = "") -> dict:
     dias_gravados, pessoas, sem_data = int(totais[0]), int(totais[1]), int(totais[2])
     if sem_data:
         avisos.append(
-            f"{sem_data} dia(s) vieram sem data que eu consiga ler. Eles ficaram "
-            "guardados, com o conteúdo original, para conferência.")
+            f"{sem_data} dia(s) recebido(s) sem data legível. Foram gravados "
+            "com o conteúdo original, para conferência.")
 
     with conexao() as conn:
         # A anterior apagada E esta dada por terminada, numa transação só: ou
@@ -954,10 +953,10 @@ def atualizar_pessoa(ano: int, mes: int, cpf: str, nome: str = "",
     carga = carga_do_mes(ano, mes)
     if not carga:
         raise ErroDoPonto(
-            f"não há ponto de {mes:02d}/{ano} guardado. Traga o mês inteiro "
-            "primeiro — é a partir dele que se acha a página de cada pessoa.")
+            f"não há ponto de {mes:02d}/{ano} gravado. Importe primeiro o mês "
+            "completo — ele é a base para localizar a página de cada colaborador.")
     if not configurado():
-        raise ErroDoPonto("faltam as credenciais do Mobponto.")
+        raise ErroDoPonto("credenciais do Mobponto não configuradas.")
 
     total = max(1, int(carga.get("paginas") or 1))
     chute, nome_guardado = _pagina_chutada(carga, cpf)
@@ -977,12 +976,12 @@ def atualizar_pessoa(ano: int, mes: int, cpf: str, nome: str = "",
         # de 13" num lançamento: *"pq página a página?"* — a API do Mobponto não
         # busca por pessoa, só entrega o mês em páginas; sem a página guardada
         # (carga feita antes da migração 039), ela é procurada pela ordem do nome.
-        anotar("trazendo o ponto de uma pessoa",
-               f"procurando a pessoa no Mobponto: página {pagina} de {total} "
-               f"({len(olhadas)}ª olhada — o Mobponto não busca por pessoa, só "
-               "entrega o mês em páginas)")
-        with _mantendo_vivo(anotar, "trazendo o ponto de uma pessoa",
-                            f"página {pagina} — esperando o Mobponto responder"):
+        anotar("Importando o ponto do colaborador",
+               f"localizando o colaborador no Mobponto: página {pagina} de {total} "
+               f"({len(olhadas)}ª consulta — o Mobponto não permite busca por "
+               "colaborador; o mês é fornecido em páginas)")
+        with _mantendo_vivo(anotar, "Importando o ponto do colaborador",
+                            f"página {pagina} — aguardando resposta do Mobponto"):
             dados = _pedir_pagina(ano, mes, pagina)
         funcionarios = ((dados or {}).get("result") or {}).get("funcionarios") or []
 
@@ -1181,7 +1180,7 @@ def amostra_de_dias(carga_id: int, quantos: int = 5) -> list:
         try:
             conteudo = json.loads(campos or "{}")
         except Exception:  # noqa: BLE001 — JSON torto continua sendo mostrado
-            conteudo = {"(não deu para ler)": campos}
+            conteudo = {"(conteúdo ilegível)": campos}
         saida.append({"cpf": cpf, "nome": nome, "data": data,
                       "matricula": matricula, "campos": conteudo})
     return saida

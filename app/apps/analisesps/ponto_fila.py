@@ -42,7 +42,7 @@ logger = logging.getLogger("analisesps.ponto")
 PESSOA = "pessoa"
 LANCAR = "lancar"
 TIPOS = (PESSOA, LANCAR)
-ROTULO_DO_TIPO = {PESSOA: "Atualização do ponto", LANCAR: "Lançamento de batidas"}
+ROTULO_DO_TIPO = {PESSOA: "atualização do ponto", LANCAR: "lançamento de batidas"}
 
 ESPERANDO, RODANDO, FEITO, FALHOU = "esperando", "rodando", "feito", "falhou"
 

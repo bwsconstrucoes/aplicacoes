@@ -128,8 +128,8 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
     if tipo_final not in TIPOS:
         raise ErroDaImportacao(
             'não foi possível identificar se a folha é de QUINZENA ou de FIM DE MÊS '
-            f'pelo título ("{lida.titulo or "sem título"}"). Selecione o tipo na '
-            "tela e importe novamente — o tipo define o período de apuração do "
+            f'pelo título ("{lida.titulo or "sem título"}"). Escolha na tela o '
+            "tipo e importe novamente — o tipo define o período de apuração do "
             "ponto.")
 
     total = lida.total

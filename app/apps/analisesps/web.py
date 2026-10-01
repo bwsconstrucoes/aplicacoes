@@ -2453,7 +2453,7 @@ def tela_folha():
         # acontecer, a resposta é 404, não 403: dizer "sem permissão" confirma
         # o que existe do outro lado.
         return render_template("analisesps_erro.html",
-                               mensagem="Esta tela não existe aqui."), 404
+                               mensagem="Tela não encontrada."), 404
     return redirect(url_for(permitidas[0][2]))
 
 
@@ -2495,7 +2495,7 @@ def tela_folha_aberta(folha_id: int):
     if not montado and erro is None:
         # Fora do escopo responde "não encontrado", nunca "sem permissão".
         return render_template("analisesps_erro.html",
-                               mensagem="Esta folha não está mais aqui."), 404
+                               mensagem="Folha não encontrada."), 404
 
     # O QUE JÁ FOI PAGO NO MÊS, todas as verbas, por obra e por conta — era o
     # Panorama, e continua sendo a entrada do rateio do mês. Sai do que está
@@ -2559,7 +2559,7 @@ def folha_relatorio(folha_id: int, formato: str):
         montado = fg.montar(folha_id, _filtros_da_folha())
         if not montado:
             return render_template("analisesps_erro.html", titulo="Não encontrado",
-                                   mensagem="Esta folha não está mais aqui."), 404
+                                   mensagem="Folha não encontrada."), 404
         dados = fr.montar(montado, fg._contas_das_obras())
         if formato == "xlsx":
             conteudo, tipo = fr.excel(dados), fr.MIME_XLSX
@@ -2568,7 +2568,7 @@ def folha_relatorio(folha_id: int, formato: str):
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: falhou o relatório %s da folha %s", formato, folha_id)
         return render_template("analisesps_erro.html", titulo="Relatório da folha",
-                               mensagem=f"Não consegui montar o relatório: {e}"), 500
+                               mensagem=f"Não foi possível gerar o relatório: {e}"), 500
     nome = fr.nome_do_arquivo(dados, formato)
     return Response(conteudo, mimetype=tipo, headers={
         "Content-Disposition": f'attachment; filename="{nome}"'})
@@ -2626,12 +2626,12 @@ def folha_previa_pagamento(folha_id: int):
     except (fpg.ErroDoPagamento, fger.ErroDaGeracao) as e:
         return render_template(
             "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
-            mensagem=f"Não consegui montar a prévia: {e}"), 400
+            mensagem=f"Não foi possível gerar a prévia: {e}"), 400
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: falhou a prévia do pagamento")
         return render_template(
             "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
-            mensagem=f"Não consegui montar a prévia: {e}"), 500
+            mensagem=f"Não foi possível gerar a prévia: {e}"), 500
     return Response(
         conteudo, mimetype="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{nome}"'})
@@ -2662,7 +2662,7 @@ def folha_apropriacao_ajustar():
     folha = fa.abrir(folha_id) if folha_id else None
     if not folha:
         # Número que não existe responde "não encontrado", nunca "sem permissão".
-        return {"ok": False, "erro": "Esta folha não está mais aqui."}, 404
+        return {"ok": False, "erro": "Folha não encontrada."}, 404
 
     cpf = str(dados.get("cpf") or "")
     entra = dados.get("entra")
@@ -2699,7 +2699,7 @@ def folha_apropriacao_ajustar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou gravar o ajuste da apropriação")
-        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
     return {"ok": True}
 
 
@@ -2730,7 +2730,7 @@ def folha_ponto_pessoa_atualizar():
         if 2000 <= ano <= 2100 and 1 <= mes <= 12 and colaboradores.por_cpf(cpf):
             folha = {"ano": ano, "mes": mes}
     if not folha or len(cpf) != 11:
-        return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
+        return {"ok": False, "erro": "Colaborador não encontrado nesta folha."}, 404
     from . import ponto_fila
     if ponto_fila._pronto():
         # A FILA (migração 042): o pedido entra e a tela volta na hora, dizendo
@@ -2743,7 +2743,7 @@ def folha_ponto_pessoa_atualizar():
     resultado = _trazer_o_ponto_da_pessoa(folha, cpf, dados.get("nome"))
     if not resultado.get("ok"):
         return {"ok": False, "erro": resultado.get("erro")
-                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+                or "Outra tarefa está em execução. Aguarde a conclusão."}, 409
     return {"ok": True}
 
 
@@ -2759,7 +2759,7 @@ def _trazer_o_ponto_da_pessoa(folha: dict, cpf: str, nome) -> dict:
         sincronizacao._meta_gravar(conn, "ponto_pessoa_alvo",
                                    f"{folha['ano']}|{folha['mes']}|{cpf}|{nome}")
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    return tarefas.disparar("ponto_pessoa", disparo=quem or "ponto de uma pessoa")
+    return tarefas.disparar("ponto_pessoa", disparo=quem or "ponto do colaborador")
 
 
 def _pista_da_pessoa_ocupada() -> dict | None:
@@ -2774,10 +2774,10 @@ def _pista_da_pessoa_ocupada() -> dict | None:
     if atual.get("rodando"):
         detalhe = atual.get("detalhe") or {}
         return {"ok": False,
-                "erro": "Já há uma tarefa de ponto de pessoa rodando ("
-                        + (detalhe.get("etapa") or "começando") + "). Ela "
-                        "continua sozinha mesmo se você sair; espere terminar "
-                        "para pedir a próxima."}
+                "erro": "Já existe uma tarefa de ponto de colaborador em execução ("
+                        + (detalhe.get("etapa") or "iniciando") + "). Ela "
+                        "prossegue mesmo que a tela seja fechada; aguarde a conclusão "
+                        "para solicitar a próxima."}
     return None
 
 
@@ -2794,7 +2794,7 @@ def _pedido_de_lancamento():
     cpf = so_digitos(dados.get("cpf"))
     cpfs_da_folha = {so_digitos(l.get("cpf")) for l in ((folha or {}).get("linhas") or [])}
     if not folha or len(cpf) != 11 or cpf not in cpfs_da_folha:
-        return None, None, None, ({"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404)
+        return None, None, None, ({"ok": False, "erro": "Colaborador não encontrado nesta folha."}, 404)
     return folha, cpf, dados, None
 
 
@@ -2819,7 +2819,7 @@ def folha_ponto_plano():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Ponto: falhou montar o plano de lançamento")
-        return {"ok": False, "erro": f"Não consegui montar o plano: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível montar o plano: {e}"}, 500
     return {"ok": True, "plano": plano, "falta": ponto_edicao.o_que_falta()}
 
 
@@ -2871,10 +2871,10 @@ def folha_ponto_lancar():
     with conexao() as conn:
         sincronizacao._meta_gravar(conn, "ponto_lancar_pedido",
                                    _json.dumps(pedido, ensure_ascii=False))
-    resultado = tarefas.disparar("ponto_lancar", disparo=quem or "lançar ponto")
+    resultado = tarefas.disparar("ponto_lancar", disparo=quem or "lançamento de ponto")
     if not resultado.get("ok"):
         return {"ok": False, "erro": resultado.get("erro")
-                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+                or "Outra tarefa está em execução. Aguarde a conclusão."}, 409
     return {"ok": True}
 
 
@@ -2895,7 +2895,7 @@ def folha_ponto_fila_item(item_id: int):
     ponto_fila.cutucar()
     item = ponto_fila.item(item_id)
     if item is None:
-        return {"ok": False, "erro": "Este pedido não está mais na fila."}, 404
+        return {"ok": False, "erro": "Pedido não encontrado na fila."}, 404
     return {"ok": True, "item": _item_para_a_tela(item)}
 
 
@@ -2942,17 +2942,17 @@ def tela_folha_pendente(folha_id: int, id_fortes: str):
     from . import colaboradores, folha_arquivo as fa
     folha = fa.abrir(folha_id)
     if not folha:
-        return '<div class="aviso erro">Esta folha não está mais aqui.</div>', 404
+        return '<div class="aviso erro">Folha não encontrada.</div>', 404
     alvo = colaboradores.normalizar_id_fortes(id_fortes)
     linha = next((l for l in folha["linhas"]
                   if colaboradores.normalizar_id_fortes(l.get("id_fortes")) == alvo), None)
     if not linha:
-        return '<div class="aviso erro">Este código não está nesta folha.</div>', 404
+        return '<div class="aviso erro">Código não encontrado nesta folha.</div>', 404
     try:
         d = colaboradores.por_que_nao_casou(alvo, linha.get("nome") or "")
     except Exception as e:  # noqa: BLE001 — a janela tem de dizer o que houve
         logger.exception("Folha: não consegui montar o diagnóstico do cadastro")
-        return f'<div class="aviso erro">Não consegui procurar: {e}</div>', 500
+        return f'<div class="aviso erro">Não foi possível realizar a busca: {e}</div>', 500
     return render_template("_folha_pendente.html", d=d, linha=linha)
 
 
@@ -2970,15 +2970,15 @@ def tela_folha_pessoa(folha_id: int, cpf: str):
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui montar o analítico")
         if request.args.get("parcial"):
-            return (f'<div class="aviso erro">Não consegui montar o analítico: '
+            return (f'<div class="aviso erro">Não foi possível montar o analítico: '
                     f"{e}</div>"), 500
         return render_template("analisesps_erro.html",
-                               mensagem=f"Não consegui montar o analítico: {e}"), 500
+                               mensagem=f"Não foi possível montar o analítico: {e}"), 500
     if not a or not a.get("achou"):
         if request.args.get("parcial"):
-            return '<div class="aviso erro">Esta pessoa não está nesta folha.</div>', 404
+            return '<div class="aviso erro">Colaborador não encontrado nesta folha.</div>', 404
         return render_template("analisesps_erro.html",
-                               mensagem="Esta pessoa não está nesta folha."), 404
+                               mensagem="Colaborador não encontrado nesta folha."), 404
     if request.args.get("parcial"):
         from . import ponto_edicao, ponto_fila
         try:
@@ -3021,7 +3021,7 @@ def tela_folha_cadastro_completo(folha_id: int, cpf: str):
     folha = fa.abrir(folha_id)
     digitos = so_digitos(cpf)
     if not folha or digitos not in {so_digitos(l.get("cpf")) for l in folha["linhas"]}:
-        return '<div class="aviso erro">Esta pessoa não está nesta folha.</div>', 404
+        return '<div class="aviso erro">Colaborador não encontrado nesta folha.</div>', 404
     try:
         grupos = colaboradores.ficha_completa(digitos)
     except colaboradores.ErroDoCadastro as e:
@@ -3029,7 +3029,7 @@ def tela_folha_cadastro_completo(folha_id: int, cpf: str):
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou ler a ficha completa")
         return render_template("_folha_cadastro_completo.html", grupos=[],
-                               erro=f"Não consegui ler a planilha de cadastro: {e}")
+                               erro=f"Não foi possível ler a planilha de cadastro: {e}")
     return render_template("_folha_cadastro_completo.html", grupos=grupos, erro="")
 
 
@@ -3050,7 +3050,7 @@ def folha_cadastro_pessoa_atualizar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou atualizar o cadastro de uma pessoa")
-        return {"ok": False, "erro": f"Não consegui atualizar o cadastro: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível atualizar o cadastro: {e}"}, 500
     return {"ok": True, "mensagem": f"Cadastro de {r.get('nome') or cpf} atualizado."}
 
 
@@ -3066,9 +3066,9 @@ def folha_ponto_da_pessoa(folha_id: int, cpf: str):
         visto = fg.ponto_da_pessoa(folha_id, cpf)
     except Exception as e:  # noqa: BLE001 — a janela tem de dizer o que houve
         logger.exception("Folha: não consegui montar o ponto da pessoa")
-        return {"ok": False, "erro": f"Não consegui montar o ponto: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível montar o ponto: {e}"}, 500
     if not visto or not visto.get("achou"):
-        return {"ok": False, "erro": "Esta pessoa não está nesta folha."}, 404
+        return {"ok": False, "erro": "Colaborador não encontrado nesta folha."}, 404
     return {"ok": True, **visto}
 
 
@@ -3094,7 +3094,7 @@ def folha_apropriacao_fechar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou fechar a apropriação")
-        return {"ok": False, "erro": f"Não consegui fechar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível concluir o fechamento: {e}"}, 500
     return {"ok": True, **{k: str(v) for k, v in feito.items()}}
 
 
@@ -3172,7 +3172,7 @@ def folha_importar():
 
     arquivo = request.files.get("folha")
     if arquivo is None or not (arquivo.filename or "").strip():
-        return {"ok": False, "erro": "Nenhum arquivo chegou."}, 400
+        return {"ok": False, "erro": "Nenhum arquivo recebido."}, 400
 
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     conteudo = arquivo.read()
@@ -3188,10 +3188,10 @@ def folha_importar():
             return {"ok": False, "erro": str(e)}, 400
         except Exception as e:  # noqa: BLE001
             logger.exception("Folha: falhou importar a folha analítica")
-            return {"ok": False, "erro": f"Não consegui importar a analítica: {e}"}, 500
+            return {"ok": False, "erro": f"Não foi possível importar a folha analítica: {e}"}, 500
         return {"ok": True, "analitica": True,
                 "ir": url_for("analisesps.tela_folha_aberta", folha_id=feito["folha_id"]),
-                "mensagem": (f"Folha analítica de {feito['competencia']} guardada: "
+                "mensagem": (f"Folha analítica de {feito['competencia']} gravada: "
                              f"{feito['pessoas']} pessoa(s), {feito['batem']} com o "
                              "líquido igual ao da sintética.")}
 
@@ -3205,7 +3205,7 @@ def folha_importar():
                 "pergunte_o_tipo": "Escolha na tela" in frase}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou importar o arquivo da contabilidade")
-        return {"ok": False, "erro": f"Não consegui importar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível importar: {e}"}, 500
     return {"ok": True, **{k: str(v) if k == "total" else v
                            for k, v in resultado.items()}}
 
@@ -3224,9 +3224,9 @@ def folha_apagar():
         apagou = fa.apagar(int(dados.get("id") or 0), quem=quem)
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou apagar a folha importada")
-        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível excluir: {e}"}, 500
     if not apagou:
-        return {"ok": False, "erro": "Esta folha não está mais aqui."}, 404
+        return {"ok": False, "erro": "Folha não encontrada."}, 404
     return {"ok": True}
 
 
@@ -3310,12 +3310,12 @@ def folha_ponto_carregar():
     except (TypeError, ValueError):
         ano = mes = 0
     if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
-        return {"ok": False, "erro": "Escolha o mês e o ano."}, 400
+        return {"ok": False, "erro": "Selecione o mês e o ano."}, 400
     if not _ponto.configurado():
         return {"ok": False, "erro":
-                "Faltam as credenciais do Mobponto. Crie "
+                "Credenciais do Mobponto não configuradas. Crie "
                 "MOBPONTO_AUTHORIZATION e MOBPONTO_API_KEY no Render — os "
-                "valores estão nos Apps Script das planilhas do ponto."}, 400
+                "valores constam nos Apps Script das planilhas do ponto."}, 400
 
     with conexao() as conn:
         sincronizacao._meta_gravar(conn, "ponto_competencia", f"{ano}-{mes}")
@@ -3324,7 +3324,7 @@ def folha_ponto_carregar():
     resultado = tarefas.disparar("ponto", disparo=quem or "ponto")
     if not resultado.get("ok"):
         return {"ok": False, "erro": resultado.get("erro")
-                or "Outra tarefa está rodando agora. Espere ela terminar."}, 409
+                or "Outra tarefa está em execução. Aguarde a conclusão."}, 409
     return {"ok": True}
 
 
@@ -3340,9 +3340,9 @@ def folha_ponto_apagar():
         apagou = _ponto.apagar(int(dados.get("id") or 0), quem=quem)
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou apagar a carga do ponto")
-        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível excluir: {e}"}, 500
     if not apagou:
-        return {"ok": False, "erro": "Esta carga não está mais aqui."}, 404
+        return {"ok": False, "erro": "Carga não encontrada."}, 404
     return {"ok": True}
 
 
@@ -3554,7 +3554,7 @@ def folha_auxilio_fechar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou fechar o auxílio")
-        return {"ok": False, "erro": f"Não consegui fechar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível concluir o fechamento: {e}"}, 500
     return {"ok": True, **{k: str(v) for k, v in feito.items()}}
 
 
@@ -3586,7 +3586,7 @@ def folha_auxilio_selecao():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou salvar a seleção do auxílio")
-        return {"ok": False, "erro": f"Não consegui salvar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
     return {"ok": True, **saida}
 
 
@@ -3614,7 +3614,7 @@ def tela_ficha_do_funcionario(cpf: str):
     digitos = so_digitos(cpf)
     ficha = colaboradores.por_cpf(digitos) if len(digitos) == 11 else None
     if not ficha:
-        return '<div class="aviso erro">Esta pessoa não está no cadastro.</div>', 404
+        return '<div class="aviso erro">Colaborador não encontrado no cadastro.</div>', 404
     try:
         ficha["data_nascimento"] = colaboradores.nascimento_de(digitos)
         ficha["valor_diaria"] = colaboradores.valores_de_diaria([digitos]).get(digitos)
@@ -3640,7 +3640,7 @@ def tela_ficha_cadastro_completo(cpf: str):
     from .folha_rateio import so_digitos
     digitos = so_digitos(cpf)
     if len(digitos) != 11 or not colaboradores.por_cpf(digitos):
-        return '<div class="aviso erro">Esta pessoa não está no cadastro.</div>', 404
+        return '<div class="aviso erro">Colaborador não encontrado no cadastro.</div>', 404
     try:
         grupos = colaboradores.ficha_completa(digitos)
     except colaboradores.ErroDoCadastro as e:
@@ -3648,7 +3648,7 @@ def tela_ficha_cadastro_completo(cpf: str):
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou ler a ficha completa")
         return render_template("_folha_cadastro_completo.html", grupos=[],
-                               erro=f"Não consegui ler a planilha de cadastro: {e}")
+                               erro=f"Não foi possível ler a planilha de cadastro: {e}")
     return render_template("_folha_cadastro_completo.html", grupos=grupos, erro="")
 
 
@@ -3676,7 +3676,7 @@ def folha_ficha_da_pessoa(cpf: str):
     except Exception:  # noqa: BLE001 — o modal tem de dizer o que houve
         logger.exception("Folha: não consegui ler a ficha da pessoa")
     if not ficha:
-        return {"ok": False, "erro": "Não achei esta pessoa no cadastro."}, 404
+        return {"ok": False, "erro": "Colaborador não encontrado no cadastro."}, 404
 
     do_ponto = {"tem_carga": False, "dias": [], "campos": []}
     try:
@@ -3756,7 +3756,7 @@ def folha_auxilio_ajustar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou gravar o ajuste do auxílio")
-        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
     return {"ok": True}
 
 
@@ -3822,7 +3822,7 @@ def folha_diaristas_selecao():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou salvar a seleção dos diaristas")
-        return {"ok": False, "erro": f"Não consegui salvar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
     return {"ok": True, **feito}
 
 
@@ -3841,7 +3841,7 @@ def folha_diaristas_fechar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou fechar a diária")
-        return {"ok": False, "erro": f"Não consegui fechar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível concluir o fechamento: {e}"}, 500
     return {"ok": True, **{k: str(v) for k, v in feito.items()}}
 
 
@@ -3917,7 +3917,7 @@ def folha_pagamento_preparar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou preparar o pagamento")
-        return {"ok": False, "erro": f"Não consegui montar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível montar: {e}"}, 500
 
     return {"ok": True, "pode_juntar": plano["pode_juntar"],
             "motivo_nao_junta": plano["motivo_nao_junta"],
@@ -3949,7 +3949,7 @@ def folha_pagamento_gerar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou gerar o pagamento")
-        return {"ok": False, "erro": f"Não consegui gerar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível gerar: {e}"}, 500
 
     return {"ok": True, "competencia": saida["competencia"],
             "arquivos": [{"id": a["id"], "nome": a["nome"], "link": a["link"],
@@ -3971,7 +3971,7 @@ def folha_pipe_conferir():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou conferir o pipe")
-        return {"ok": False, "erro": f"Não consegui ler o pipe: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível ler o pipe: {e}"}, 500
 
 
 @bp.route("/api/folha/card/preparar", methods=["POST"])
@@ -3995,7 +3995,7 @@ def folha_card_preparar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou montar a prévia dos cards")
-        return {"ok": False, "erro": f"Não consegui montar a prévia: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível gerar a prévia: {e}"}, 500
 
 
 @bp.route("/api/folha/card", methods=["POST"])
@@ -4015,7 +4015,7 @@ def folha_card_lancar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou lançar o card")
-        return {"ok": False, "erro": f"Não consegui lançar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível lançar: {e}"}, 500
 
 
 @bp.route("/api/folha/feriado", methods=["POST"])
@@ -4035,7 +4035,7 @@ def folha_feriado_gravar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou gravar o feriado")
-        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
     return {"ok": True, "id": novo}
 
 
@@ -4047,7 +4047,7 @@ def folha_feriado_apagar():
     dados = request.get_json(silent=True) or {}
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     if not fc.apagar_feriado(int(dados.get("id") or 0), quem=quem):
-        return {"ok": False, "erro": "Este feriado não está mais aqui."}, 404
+        return {"ok": False, "erro": "Feriado não encontrado."}, 404
     return {"ok": True}
 
 
@@ -4068,7 +4068,7 @@ def folha_ferias_gravar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou gravar as férias")
-        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
     return {"ok": True, "id": novo}
 
 
@@ -4080,7 +4080,7 @@ def folha_ferias_apagar():
     dados = request.get_json(silent=True) or {}
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     if not fc.apagar_ferias(int(dados.get("id") or 0), quem=quem):
-        return {"ok": False, "erro": "Estas férias não estão mais aqui."}, 404
+        return {"ok": False, "erro": "Período de férias não encontrado."}, 404
     return {"ok": True}
 
 
@@ -4128,7 +4128,7 @@ def folha_rateio_colar():
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou aplicar a tabela de rateio")
-        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
     return {"ok": True, **resultado}
 
 
@@ -4146,7 +4146,7 @@ def folha_rateio_gravar():
         return {"ok": False, "erro": str(e)}
     except Exception as e:  # noqa: BLE001 — a tela precisa da frase
         logger.exception("Folha: falhou gravar a regra de rateio")
-        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
     return {"ok": True, "id": regra_id}
 
 
@@ -4159,7 +4159,7 @@ def folha_rateio_apagar():
     dados = request.get_json(silent=True) or {}
     regra_id = str(dados.get("id") or "")
     if not regra_id.isdigit():
-        return {"ok": False, "erro": "Diga qual regra."}
+        return {"ok": False, "erro": "Informe a regra."}
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
         apagou = fr.apagar(int(regra_id), quem)
@@ -4167,9 +4167,9 @@ def folha_rateio_apagar():
         return {"ok": False, "erro": str(e)}
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou apagar a regra de rateio")
-        return {"ok": False, "erro": f"Não consegui apagar: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível excluir: {e}"}, 500
     if not apagou:
-        return {"ok": False, "erro": "Esta regra não existe mais."}
+        return {"ok": False, "erro": "Regra não encontrada."}
     return {"ok": True}
 
 
@@ -4189,7 +4189,7 @@ def folha_rateio_simular():
     except fr.ErroDoRateio as e:
         return {"ok": False, "erro": str(e)}
     except Exception as e:  # noqa: BLE001
-        return {"ok": False, "erro": f"Não consegui calcular: {e}"}, 500
+        return {"ok": False, "erro": f"Não foi possível calcular: {e}"}, 500
     return {"ok": True, "partes": [
         {"obra": p["obra"], "percentual": str(p["percentual"]),
          "valor": str(p["valor"])} for p in partes]}
