@@ -973,7 +973,14 @@ def atualizar_pessoa(ano: int, mes: int, cpf: str, nome: str = "",
     while proxima and len(olhadas) < TENTATIVAS_POR_PESSOA:
         pagina = proxima
         olhadas.append(pagina)
-        anotar("trazendo o ponto de uma pessoa", f"olhando a página {pagina} de {total}")
+        # ⚠️ O RECADO DIZ O PORQUÊ. O dono, 01/10/2026, vendo "olhando a página 5
+        # de 13" num lançamento: *"pq página a página?"* — a API do Mobponto não
+        # busca por pessoa, só entrega o mês em páginas; sem a página guardada
+        # (carga feita antes da migração 039), ela é procurada pela ordem do nome.
+        anotar("trazendo o ponto de uma pessoa",
+               f"procurando a pessoa no Mobponto: página {pagina} de {total} "
+               f"({len(olhadas)}ª olhada — o Mobponto não busca por pessoa, só "
+               "entrega o mês em páginas)")
         with _mantendo_vivo(anotar, "trazendo o ponto de uma pessoa",
                             f"página {pagina} — esperando o Mobponto responder"):
             dados = _pedir_pagina(ano, mes, pagina)

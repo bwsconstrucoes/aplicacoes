@@ -433,7 +433,14 @@ def lancar(pedido: dict, anotar=None) -> dict:
     cpf_resp, nome_resp = responsavel()
 
     anotar("lançando o ponto", "conferindo o ponto atual da pessoa no Mobponto")
-    antes = ponto.atualizar_pessoa(ano, mes, cpf, nome, anotar)
+
+    def conferindo(etapa, progresso=""):
+        # Diz que é a CONFERÊNCIA de antes de lançar — sem isto, "página 5 de
+        # 13" parecia o lançamento andando de página em página.
+        anotar("lançando o ponto",
+               "antes de lançar, conferindo o que ela já tem — " + (progresso or etapa))
+
+    antes = ponto.atualizar_pessoa(ano, mes, cpf, nome, conferindo)
     if not antes.get("achou"):
         raise ErroDaEdicao(
             "não achei esta pessoa no ponto do Mobponto deste mês, então não sei "
@@ -469,7 +476,10 @@ def lancar(pedido: dict, anotar=None) -> dict:
     if enviadas:
         anotar("lançando o ponto", "trazendo o ponto de novo, com o que entrou")
         try:
-            ponto.atualizar_pessoa(ano, mes, cpf, nome, anotar)
+            ponto.atualizar_pessoa(
+                ano, mes, cpf, nome,
+                lambda e, p="": anotar("lançando o ponto",
+                                       "lançado; trazendo o ponto de novo — " + (p or e)))
         except Exception:  # noqa: BLE001 — o que entrou, entrou; o recado diz
             logger.exception("Ponto: lancei, mas não consegui trazer de novo")
     return {"plano": plano, "enviadas": enviadas, "falhou": falhou}
