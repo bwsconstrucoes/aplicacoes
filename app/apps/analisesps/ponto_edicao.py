@@ -32,7 +32,10 @@ repositório: tem credencial em texto puro). Lá há UMA ação de ponto:
 
     type_data = CAD_EDT_PONTO, acao = "C"  → INCLUI uma batida
         cpf_responsavel, nome_responsavel, cpf_funcionario,
-        dt_ponto_new = "AAAA-MM-DD HH:MM", justificativa, local
+        dt_ponto_new = "DD/MM/AAAA HH:MM", justificativa, local
+        (o formato o Mobponto disse ao recusar, em 01/10/2026: *"O parâmetro
+        dt_ponto_new [ 2026-09-16 07:00 ] não está no formato correto, informe
+        no padrão DD/MM/AAAA HH:MM!"*)
 
   - **Incluir batida: sim.**
   - **Mudar a obra de uma batida que já existe: NÃO está no que eu tenho.** Não
@@ -513,7 +516,8 @@ def lancar(pedido: dict, anotar=None) -> dict:
                 "type_data": TIPO_EDITAR, "acao": ACAO_INCLUIR,
                 "cpf_responsavel": cpf_resp, "nome_responsavel": nome_resp,
                 "cpf_funcionario": cpf,
-                "dt_ponto_new": f"{dia.isoformat()} {hora}",
+                # DD/MM/AAAA HH:MM — o Mobponto recusa o ano na frente.
+                "dt_ponto_new": f"{dia.strftime('%d/%m/%Y')} {hora}",
                 "justificativa": texto, "local": obra,
             })
             _registrar(cpf, nome, dia, {"hora": hora, "obra": obra}, texto, ok,

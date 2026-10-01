@@ -209,8 +209,9 @@ def test_lancar_NAO_VAI_AO_MOBPONTO_antes_nem_depois_e_aplica_na_copia(configura
     assert p["type_data"] == "CAD_EDT_PONTO" and p["acao"] == "C"
     assert p["cpf_funcionario"] == "99713349334"
     assert p["cpf_responsavel"] == "11122233396" and p["nome_responsavel"] == "MARCELO"
-    assert p["dt_ponto_new"] == "2026-09-16 07:00" and p["local"] == "CRE1"
-    assert mandados[-1]["dt_ponto_new"] == "2026-09-18 16:00"   # sexta
+    # DD/MM/AAAA HH:MM — o Mobponto recusou "2026-09-16 07:00" em 01/10/2026.
+    assert p["dt_ponto_new"] == "16/09/2026 07:00" and p["local"] == "CRE1"
+    assert mandados[-1]["dt_ponto_new"] == "18/09/2026 16:00"   # sexta
     assert feito["falhou"] is None
     assert "12 batida(s) lançada(s) em 3 dia(s)" in pe.recado_do_lancamento(feito)
     # Cada dia lançado foi posto na cópia, com as horas que o Mobponto aceitou.
@@ -224,7 +225,7 @@ def test_o_plano_e_REFEITO_com_o_ponto_novo(configurado, monkeypatch):
     dias = [_dia(D(2026, 9, 17), ("07:00", "12:00", "13:00", "17:00"))]
     mandados, _ = _dublar(monkeypatch, dias_antes=dias)
     pe.lancar(_pedido())
-    assert not any(m["dt_ponto_new"].startswith("2026-09-17") for m in mandados)
+    assert not any(m["dt_ponto_new"].startswith("17/09/2026") for m in mandados)
     assert len(mandados) == 8
 
 
