@@ -15,6 +15,7 @@ dublê da suíte não alcança nenhum dos dois.
     nova não gravada — que mostraria total zero como se fosse verdade.
 """
 import datetime as dt
+import os
 import pathlib
 from decimal import Decimal
 
@@ -318,7 +319,9 @@ def test_o_arquivo_REAL_da_contabilidade_e_guardado_inteiro(banco_folha_arquivo)
     491 pessoas."""
     from app.apps.analisesps import folha_arquivo as fa
 
-    if not pathlib.Path(ARQUIVO_REAL).exists():
+    # `os.path.isfile`, e não `Path.exists()`: no GitHub a pasta do anexo nem
+    # pode ser lida, e `exists()` levanta PermissionError em vez de dizer não.
+    if not os.path.isfile(ARQUIVO_REAL):
         pytest.skip("o arquivo real não está nesta máquina")
 
     resultado = fa.importar(pathlib.Path(ARQUIVO_REAL).read_bytes(),
