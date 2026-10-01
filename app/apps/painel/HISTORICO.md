@@ -2184,6 +2184,11 @@ quando de fato não há bancária.
 
 ## O PDF espremia os números — 01/10/2026
 
+**Publicado em 01/10/2026** (`a374570`), junto com dois consertos da suíte
+que derrubavam o GitHub Actions também na `main` (driver do banco no
+`conftest.py` — ver `CONTEXTO.md` §9 — e o arquivo real da folha do Análise de
+SPs). Pendente: o dono gerar um PDF com dado real e dizer se algo ainda aperta.
+
 O dono: *"na parte mais analítica fica muito imprensado e não aparece; em
 coluna de valor sai só o R$ e não sai o número."* Reproduzido: o Despesas
 Analítico tem 23 colunas, e o PDF repartia a folha deitada entre todas, pela
