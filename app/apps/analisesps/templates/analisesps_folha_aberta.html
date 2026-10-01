@@ -449,7 +449,9 @@
    memória. Não é trava: obra nova pode ser digitada, e obra sem conta cadastrada
    aparece na tabela por conta corrente como crítica. #}
 <datalist id="obras-da-folha">
-  {% for o in montado.obras %}<option value="{{ o }}"></option>{% endfor %}
+  {# As do ponto do mês e as da C. Diários juntas: a sugestão cobre também a
+     obra em que ninguém bateu ainda. #}
+  {% for o in (montado.obras + obras_c_diarios)|unique|sort %}<option value="{{ o }}"></option>{% endfor %}
 </datalist>
 
 <div class="tabela-wrap">
@@ -572,9 +574,18 @@
                 <button type="button" class="link-btn usar-cadastro"
                         data-obra="{{ p.obra_do_cadastro }}"
                         >usar esta</button>
+                {# OUTRA OBRA, NUMA JANELA DE ESCOLHA — pedido dele, 01/10/2026:
+                   *"e se quisermos colocar outra obra? Deveríamos poder abrir algum
+                   modal de seleção."* #}
+                <button type="button" class="link-btn escolher-obra"
+                        data-sugerida="{{ p.obra_do_cadastro }}">outra obra…</button>
               {% endif %}
             {% else %}
               <span class="cartao-dica">—</span>
+              {% if pode_operar and p.cpf and not p.fora %}
+                <button type="button" class="link-btn escolher-obra"
+                        data-sugerida="">escolher obra…</button>
+              {% endif %}
             {% endif %}
           </td>
           <td>
@@ -727,6 +738,37 @@
     {{ montado.quantas_mostradas }}. Use os filtros da lateral para chegar em
     quem você procura.
   </div>
+{% endif %}
+
+{# ------------------------------------------------------------------------
+   ESCOLHER A OBRA DE QUEM NÃO TEM PONTO — 01/10/2026. A lista é a da aba
+   "C. Diários" (as mesmas obras do Mobponto), com procura. Gravar é o mesmo
+   ajuste de mão do "usar esta": o valor inteiro vai para a obra escolhida, e
+   fica marcado como decisão de quem escolheu.
+   ------------------------------------------------------------------------ #}
+{% if pode_operar %}
+<dialog class="dialogo" id="dialogo-obra">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Para qual obra vai o valor?</h3>
+  <p class="cartao-dica" id="dialogo-obra-quem"></p>
+  {% if obras_c_diarios %}
+    <input type="search" id="dialogo-obra-procura" autocomplete="off" data-sem-busca
+           placeholder="procurar a obra…" aria-label="Procurar a obra">
+    <select id="dialogo-obra-lista" size="12" data-sem-busca aria-label="Obras da C. Diários">
+      {% for o in obras_c_diarios %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+    </select>
+    <p class="cartao-dica">As obras da aba "C. Diários". Clique duas vezes para usar.</p>
+  {% else %}
+    <input type="text" id="dialogo-obra-texto" list="obras-da-folha"
+           placeholder="código da obra" aria-label="Código da obra">
+    <p class="cartao-dica">A lista da "C. Diários" não foi carregada — digite o
+      código da obra.</p>
+  {% endif %}
+  <div class="analitico-acoes" style="margin-top:10px">
+    <button type="button" class="btn" id="dialogo-obra-usar">Usar esta obra</button>
+  </div>
+</dialog>
 {% endif %}
 
 {# ------------------------------------------------------------------------
@@ -1457,6 +1499,65 @@ tabela.addEventListener("click", e => {
       .catch(err => { alert(err); e.target.disabled = false; });
   }
 });
+
+// --- "outra obra…" / "escolher obra…": a janela de escolha ----------------
+(function () {
+  const dialogo = document.getElementById("dialogo-obra");
+  if (!dialogo) return;
+  const lista = document.getElementById("dialogo-obra-lista");
+  const procura = document.getElementById("dialogo-obra-procura");
+  const texto = document.getElementById("dialogo-obra-texto");
+  const usar = document.getElementById("dialogo-obra-usar");
+  let linha = null;
+  const semAcento = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+  tabela.addEventListener("click", e => {
+    const b = e.target.closest(".escolher-obra");
+    if (!b) return;
+    linha = b.closest("tr.linha-pessoa");
+    document.getElementById("dialogo-obra-quem").textContent =
+      linha.dataset.nome + " — " + moeda(parseFloat(linha.dataset.valor || 0)) +
+      ". O valor inteiro vai para a obra escolhida.";
+    if (lista) {
+      procura.value = "";
+      [...lista.options].forEach(o => { o.hidden = false; });
+      lista.value = b.dataset.sugerida || "";
+    }
+    if (texto) texto.value = b.dataset.sugerida || "";
+    usar.disabled = false;
+    if (dialogo.showModal) dialogo.showModal(); else dialogo.setAttribute("open", "");
+    (procura || texto).focus();
+  });
+
+  if (procura) procura.addEventListener("input", () => {
+    const alvo = semAcento(procura.value.trim());
+    let primeira = null;
+    [...lista.options].forEach(o => {
+      const casa = !alvo || semAcento(o.value).includes(alvo);
+      o.hidden = !casa;
+      if (casa && !primeira) primeira = o;
+    });
+    if (primeira && (!lista.value || lista.selectedOptions[0].hidden)) lista.value = primeira.value;
+  });
+  if (procura) procura.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); usar.click(); }
+  });
+  if (lista) lista.addEventListener("dblclick", () => usar.click());
+
+  usar.addEventListener("click", async () => {
+    const obra = ((lista ? lista.value : texto.value) || "").trim().toUpperCase();
+    if (!obra || !linha) { alert("Escolha a obra."); return; }
+    usar.disabled = true;
+    try {
+      await mandar([{cpf: linha.dataset.cpf, nome: linha.dataset.nome, entra: true,
+                     obra: obra}]);
+      location.reload();
+    } catch (err) {
+      alert("Não consegui gravar: " + err.message);
+      usar.disabled = false;
+    }
+  });
+})();
 
 async function mandar(mudancas) {
   for (const m of mudancas) {

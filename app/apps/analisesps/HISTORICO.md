@@ -10862,6 +10862,21 @@ gravado** no Mobponto na tentativa que falhou.
 
 ---
 
+### Centésima quadragésima leva (01/10) — escolher outra obra para quem não tem ponto
+
+Pedido dele: *"temos a sugestão de usar a obra de cadastro pra quem não tem ponto,
+mas e se quisermos colocar outra obra? Deveríamos poder abrir algum modal de
+seleção."* Na coluna Obra — do ponto, ao lado do "usar esta", o botão **"outra
+obra…"** (e **"escolher obra…"** para quem não tem nem obra no cadastro) abre uma
+janela com a lista da aba "C. Diários", com procura (sem acento, por pedaço do
+nome) e a obra do cadastro já marcada. "Usar esta obra" (ou duplo clique) grava o
+mesmo ajuste de mão do "usar esta": o valor inteiro vai para a obra escolhida,
+marcado como decisão de quem escolheu. Sem a lista carregada, a janela aceita o
+código digitado. A sugestão do campo de obra do "ajustar" passou a incluir as
+obras da C. Diários, além das do ponto do mês.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

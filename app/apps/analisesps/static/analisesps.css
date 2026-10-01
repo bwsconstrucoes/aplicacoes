@@ -2625,3 +2625,8 @@ a.lat-critica .lat-valor { float: right; font-family: var(--fonte-dados); font-w
 .lista-fila li small { display: block; color: var(--tinta-suave); }
 .lista-fila li.fila-rodando small { color: var(--azul); }
 .fila-recado { margin: 0 0 10px; }
+
+/* A janela de escolher a obra — 01/10/2026. */
+#dialogo-obra { width: min(460px, 94vw); }
+#dialogo-obra-procura, #dialogo-obra-lista, #dialogo-obra-texto { width: 100%; margin-top: 6px; }
+#dialogo-obra-lista { font-family: var(--fonte-dados); font-size: 13px; }

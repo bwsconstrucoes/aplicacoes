@@ -553,3 +553,21 @@ def test_cadastro_SEM_TELA_nenhuma_recebe_recado_e_nao_um_laco(app, monkeypatch)
         s[auth.CHAVE_NOME] = "BIA"
     r = c.get("/analisesps/")
     assert r.status_code == 403 and "Nenhuma tela liberada" in r.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# 01/10/2026 — "e se quisermos colocar outra obra? Deveríamos poder abrir algum
+# modal de seleção" (quem não tem ponto, ao lado do "usar esta")
+# ---------------------------------------------------------------------------
+def test_quem_nao_tem_ponto_ganha_OUTRA_OBRA_com_a_lista_da_C_DIARIOS(app, monkeypatch):
+    from app.apps.analisesps import ponto_edicao
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    monkeypatch.setattr(ponto_edicao, "obras_permitidas",
+                        lambda: ["CRE1", "CREPEIGARASSU1", "SEDE"])
+    html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
+    assert 'class="link-btn escolher-obra"' in html and "outra obra…" in html
+    assert 'id="dialogo-obra"' in html
+    assert '<option value="CREPEIGARASSU1">' in html
+    # A sugestão de digitar a obra (ajustar) também conhece a lista da C. Diários.
+    lista = html[html.index('<datalist id="obras-da-folha">'):]
+    assert '<option value="SEDE">' in lista[:lista.index("</datalist>")]

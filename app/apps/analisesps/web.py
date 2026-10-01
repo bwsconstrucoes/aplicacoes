@@ -2525,6 +2525,7 @@ def tela_folha_aberta(folha_id: int):
         pode_gerar=auth.e_mestre(),
         destinos=_destinos_do_pagamento(),
         fila_do_ponto=_fila_do_ponto_recente(),
+        obras_c_diarios=_obras_c_diarios(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
 
@@ -2569,6 +2570,17 @@ def folha_relatorio(folha_id: int, formato: str):
     nome = fr.nome_do_arquivo(dados, formato)
     return Response(conteudo, mimetype=tipo, headers={
         "Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+def _obras_c_diarios() -> list:
+    """As obras da aba "C. Diários" — a lista de onde se escolhe obra na folha.
+    Vazia se falhar: aí os campos aceitam o código digitado, como antes."""
+    from . import ponto_edicao
+    try:
+        return ponto_edicao.obras_permitidas()
+    except Exception:  # noqa: BLE001
+        logger.exception("Folha: não consegui ler as obras da C. Diários")
+        return []
 
 
 def _fila_do_ponto_recente() -> list:
