@@ -10798,6 +10798,28 @@ errada — agora a pista é conferida antes de gravar.
 
 ---
 
+### Centésima trigésima sétima leva (01/10) — quem só tem a Folha entra sem erro e lança ponto
+
+O dono deu a uma pessoa do DP só a tela Folha, marcada para alterar:
+
+**1. "Quando ela entra dá uma mensagem de erro."** — O login já mandava para a
+primeira tela da pessoa, mas o **endereço do módulo** (`/analisesps/`, o que fica
+salvo no navegador, e a marca do topo) mandava SEMPRE para as Solicitações — que
+ela não tem: 404. Agora `inicio` vai para a primeira tela que a pessoa tem; a
+marca do topo e o "voltar" da página de erro vão para o início. Cadastro sem tela
+nenhuma recebe o recado "Nenhuma tela liberada", em vez de rodar em círculo.
+
+**2. "Ela não está conseguindo editar (…) lançar no ponto."** — O lançamento de
+batidas no Mobponto (e a prévia do plano) era só do mestre. **Decisão do dono:**
+passa a ser de quem OPERA a folha. Saíram de `SO_DO_MESTRE`; o quadro aparece
+para `pode_operar`. Quem só consulta continua sem poder. Cada batida continua
+registrada com quem pediu (`ponto_batida_enviada`, `ponto_fila`).
+- **Continuam só do mestre**, pela decisão de 27/09 (*"o DP faz a leitura, o
+  mestre gera o arquivo"*): a prévia e a geração do arquivo de pagamento, e o
+  rateio das obras. Dito a ele, para mudar se quiser.
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

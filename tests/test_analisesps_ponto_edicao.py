@@ -329,12 +329,36 @@ def test_as_rotas_RECUSAM_quem_nao_esta_na_folha_e_outro_mes(app, configurado, m
     assert outro.status_code == 400
 
 
-def test_lancar_no_mobponto_e_SO_DO_MESTRE(app):
+def test_lancar_no_mobponto_e_de_quem_OPERA_a_folha_nao_so_do_mestre(app, configurado,
+                                                                     monkeypatch):
+    """O dono, 01/10/2026: a pessoa do DP, com a Folha e marcada para alterar, não
+    conseguia lançar no ponto."""
     from app.apps.analisesps import auth
-    assert auth.e_so_do_mestre("analisesps.folha_ponto_lancar") is True
-    assert auth.e_so_do_mestre("analisesps.folha_ponto_plano") is True
+    assert auth.e_so_do_mestre("analisesps.folha_ponto_lancar") is False
+    assert auth.e_so_do_mestre("analisesps.folha_ponto_plano") is False
+    # Quem só CONSULTA continua sem poder.
     r = como(app, SENHA_CONSULTA).post("/analisesps/api/folha/ponto/lancar", json={})
     assert r.status_code in (302, 403, 404)
+
+
+def test_quem_opera_SO_A_FOLHA_ve_o_quadro_de_lancar(app, configurado, monkeypatch):
+    from app.apps.analisesps import auth, usuarios
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _dublar(monkeypatch)
+    monkeypatch.setattr(usuarios, "buscar_por_id", lambda uid: {
+        "id": 7, "login": "ana", "nome": "ANA", "telas": ["folha"],
+        "pode_operar": True, "mestre": False, "ativo": True})
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s[auth.CHAVE_SESSAO] = auth.OPERADOR
+        s[auth.CHAVE_USUARIO] = 7
+        s[auth.CHAVE_NOME] = "ANA"
+    html = c.get("/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
+    assert "Ver o que vai ser lançado" in html
+    r = c.post("/analisesps/api/folha/ponto/plano", json={
+        "folha_id": 1, "cpf": "99713349334", "de": "2026-09-14",
+        "ate": "2026-09-14", "obra": "CRE1"})
+    assert r.status_code == 200 and r.get_json()["plano"]["batidas"] == 4
 
 
 def test_o_analitico_tem_o_quadro_de_LANCAR(app, configurado, monkeypatch):
@@ -443,3 +467,39 @@ def test_o_analitico_mostra_o_ULTIMO_PEDIDO_da_pessoa(app, configurado, monkeypa
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
     assert 'data-pendente="1"' in html and 'data-id="9"' in html
     assert "1 pedido(s) antes deste" in html
+
+
+def test_quem_so_tem_a_FOLHA_entra_pelo_endereco_do_modulo_SEM_ERRO(app, monkeypatch):
+    """O dono, 01/10/2026: *"disponibilizei para uma pessoa uma única tela, Folha
+    de pagamento. Quando ela entra dá uma mensagem de erro."* O endereço do
+    módulo mandava sempre para as Solicitações, que ela não tem."""
+    from app.apps.analisesps import auth, usuarios
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    monkeypatch.setattr(usuarios, "buscar_por_id", lambda uid: {
+        "id": 7, "login": "ana", "nome": "ANA", "telas": ["folha"],
+        "pode_operar": True, "mestre": False, "ativo": True})
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s[auth.CHAVE_SESSAO] = auth.OPERADOR
+        s[auth.CHAVE_USUARIO] = 7
+        s[auth.CHAVE_NOME] = "ANA"
+    r = c.get("/analisesps/")
+    assert r.status_code == 302 and r.headers["Location"].endswith("/analisesps/folha")
+    assert c.get("/analisesps/", follow_redirects=True).status_code == 200
+    # A marca do topo leva ao início, não às Solicitações.
+    html = c.get("/analisesps/folha/1").get_data(as_text=True)
+    assert 'class="topo-marca" href="/analisesps/"' in html
+
+
+def test_cadastro_SEM_TELA_nenhuma_recebe_recado_e_nao_um_laco(app, monkeypatch):
+    from app.apps.analisesps import auth, usuarios
+    monkeypatch.setattr(usuarios, "buscar_por_id", lambda uid: {
+        "id": 8, "login": "bia", "nome": "BIA", "telas": [],
+        "pode_operar": False, "mestre": False, "ativo": True})
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s[auth.CHAVE_SESSAO] = auth.CONSULTA
+        s[auth.CHAVE_USUARIO] = 8
+        s[auth.CHAVE_NOME] = "BIA"
+    r = c.get("/analisesps/")
+    assert r.status_code == 403 and "Nenhuma tela liberada" in r.get_data(as_text=True)

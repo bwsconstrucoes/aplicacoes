@@ -729,7 +729,24 @@ def _filtros_do_pedido() -> dict:
 @bp.route("/")
 @exige_consulta
 def inicio():
-    return redirect(url_for("analisesps.solicitacoes"))
+    """O endereço de entrada do módulo. Vai para a PRIMEIRA tela que a pessoa tem.
+
+    ⚠️ ERA SEMPRE AS SOLICITAÇÕES, e quem só tinha a Folha caía num erro ao abrir
+    o sistema — o dono, 01/10/2026: *"disponibilizei para uma pessoa uma única
+    tela, Folha de pagamento. Quando ela entra dá uma mensagem de erro."* O login
+    já fazia a escolha certa (`_para_onde_depois_de_entrar`); este endereço, que é
+    o que fica salvo no navegador, não fazia."""
+    permitidas = auth.telas_permitidas()
+    if permitidas is None:
+        return redirect(url_for("analisesps.solicitacoes"))
+    primeira = next((t for t in TELAS if t[0] in permitidas), None)
+    if primeira:
+        return redirect(url_for(primeira[2]))
+    return render_template(
+        "analisesps_erro.html", titulo="Nenhuma tela liberada",
+        mensagem="Seu cadastro ainda não tem nenhuma tela liberada. Peça a quem "
+                 "administra o sistema para marcar as telas que você usa.",
+        sem_voltar=True), 403
 
 
 @bp.route("/solicitacoes")
@@ -2752,7 +2769,7 @@ def folha_ponto_plano():
     """O que SERIA lançado no Mobponto, dia a dia, e o que fica de fora — sem
     lançar nada. É o que a pessoa confere antes de apertar "Lançar".
 
-    ⚠️ SÓ DO MESTRE, como o lançamento: mostra o ponto e prepara a escrita."""
+    De quem OPERA a folha (desde 01/10/2026 não é só do mestre)."""
     from . import ponto_edicao
     folha, cpf, dados, recusa = _pedido_de_lancamento()
     if recusa:
@@ -2777,7 +2794,9 @@ def folha_ponto_lancar():
     """Lança no MOBPONTO as batidas que faltam no período, no processo separado.
 
     O plano é refeito lá, com o ponto trazido de novo antes — ver
-    `ponto_edicao.lancar`. ⚠️ SÓ DO MESTRE: grava em sistema de terceiro."""
+    `ponto_edicao.lancar`. ⚠️ De quem OPERA a folha (decisão do dono em
+    01/10/2026; era só do mestre). Grava em sistema de terceiro: cada batida
+    fica registrada com quem pediu (`ponto_batida_enviada`, `ponto_fila`)."""
     import json as _json
 
     from . import ponto_edicao, sincronizacao, tarefas
@@ -2935,13 +2954,17 @@ def tela_folha_pessoa(folha_id: int, cpf: str):
         return render_template("_folha_analitico.html", a=a, parcial=True,
                                fila_da_pessoa=fila_da_pessoa,
                                pode_operar=auth.pode_operar(),
-                               # Corrigir o ponto grava no Mobponto: só o mestre.
-                               editar_ponto=auth.e_mestre(),
+                               # LANÇAR O PONTO É DE QUEM OPERA A FOLHA, não só
+                               # do mestre — o dono, 01/10/2026, sobre a pessoa do
+                               # DP: *"embora eu tenha colocado ela como sendo uma
+                               # pessoa que altera as informações, ela não está
+                               # conseguindo editar (…) lançar no ponto."*
+                               editar_ponto=auth.pode_operar(),
                                falta_para_editar=ponto_edicao.o_que_falta(),
                                # A lista de obras é a da C. Diários — as mesmas
                                # do Mobponto (o dono, 01/10/2026).
                                obras_do_mobponto=(ponto_edicao.obras_permitidas()
-                                                  if auth.e_mestre() else []))
+                                                  if auth.pode_operar() else []))
     return render_template(
         "analisesps_folha_pessoa.html", a=a, aba="folha", subaba="importar",
         gerado_em=agora().strftime("%d/%m/%Y %H:%M"),

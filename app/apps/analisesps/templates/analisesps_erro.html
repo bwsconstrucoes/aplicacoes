@@ -5,6 +5,10 @@
   <div class="recado">
     <h2 style="margin-top:0">{{ titulo }}</h2>
     <p>{{ mensagem }}</p>
-    <a class="btn" href="{{ url_for('analisesps.solicitacoes') }}">Voltar às Solicitações</a>
+    {# Volta ao INÍCIO, que leva à primeira tela da pessoa — "Voltar às
+       Solicitações" mandava quem não tem essa tela para outro erro. #}
+    {% if not sem_voltar %}
+      <a class="btn" href="{{ url_for('analisesps.inicio') }}">Voltar ao início</a>
+    {% endif %}
   </div>
 {% endblock %}
