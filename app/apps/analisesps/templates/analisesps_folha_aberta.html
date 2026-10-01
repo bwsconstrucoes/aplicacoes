@@ -314,9 +314,16 @@
     <b>{{ montado.periodo[0]|data_br }}</b> a
     <b>{{ montado.periodo[1]|data_br }}</b>.{% endif %}
   </p>
+  <p class="cartao-dica">
+    {% if analitica %}Analítica (o detalhe de cada pessoa) importada em
+      {{ analitica.importado_em|momento_br }}.
+    {% else %}A analítica (o detalhe de cada pessoa, evento por evento) ainda não
+      foi importada.{% endif %}
+  </p>
   {% if pode_operar %}
     <div class="solta-arquivo compacta" id="solta-folha">
-      <p><b>Trazer outra folha:</b> solte aqui a Folha Sintética<br>
+      <p><b>Trazer outra folha:</b> solte aqui a Folha Sintética ou a
+        analítica ("Folha de Pagamento")<br>
         <label class="link-btn" for="arq-folha">ou escolha no computador</label>
         <br><small>o .xls da contabilidade</small></p>
       <input type="file" id="arq-folha" accept=".xls,.XLS" hidden>
@@ -411,6 +418,52 @@
     Use o filtro <b>Situação</b> na lateral para ver só elas, e diga na linha para
     onde vai o valor. O ponto de {{ folha.competencia }} trouxe
     {{ montado.ponto.pessoas_no_ponto }} pessoa(s).
+  </div>
+{% endif %}
+
+{# O QUE MUDOU NA REIMPORTAÇÃO — 01/10/2026. Pedido dele: *"o sistema iria
+   criticar: esse veio com valor diferente, esse foi eliminado da folha, esse
+   entrou."* O que ele decidiu (quem entra, obra, divisão) continua valendo:
+   fica guardado por competência e CPF, não pelo arquivo. #}
+{% if mudancas %}
+  {% set m = mudancas %}
+  <div class="aviso {{ 'ok' if m.nada_mudou else 'atencao' }} mudancas-reimportacao">
+    {% if m.nada_mudou %}
+      <b>Folha reimportada: nada mudou</b> em relação à versão anterior.
+    {% else %}
+      <b>O que mudou nesta reimportação</b> —
+      {{ m.mudaram|length }} com valor diferente, {{ m.entraram|length }} entraram,
+      {{ m.sairam|length }} saíram. Total de {{ m.total_antes|moeda }} para
+      <b>{{ m.total_depois|moeda }}</b>. O que você já tinha decidido (quem entra,
+      obra, divisão) continua valendo.
+      {% if m.fechada_antes %}<br><b class="ruim">A apropriação estava fechada antes
+        desta reimportação</b> — refaça o fechamento para o arquivo de pagamento
+        sair com os valores novos.{% endif %}
+      {% if analitica %}<br>A folha analítica é a da versão anterior: se a
+        contabilidade mandou uma nova, solte-a também.{% endif %}
+      <details style="margin-top:6px"><summary>ver quem</summary>
+        <div class="tabela-wrap" style="margin-top:6px"><div class="tabela-rolagem livre">
+        <table class="sps">
+          <thead><tr><th>Código</th><th>Nome</th><th>O que houve</th>
+            <th class="num">Antes</th><th class="num">Agora</th></tr></thead>
+          <tbody>
+          {% for x in m.mudaram %}
+            <tr><td>{{ x.id_fortes }}</td><td>{{ x.nome }}</td><td>valor mudou</td>
+              <td class="num">{{ x.de|moeda }}</td><td class="num"><b>{{ x.para|moeda }}</b></td></tr>
+          {% endfor %}
+          {% for x in m.entraram %}
+            <tr><td>{{ x.id_fortes }}</td><td>{{ x.nome }}</td><td>entrou na folha</td>
+              <td class="num">—</td><td class="num"><b>{{ x.valor|moeda }}</b></td></tr>
+          {% endfor %}
+          {% for x in m.sairam %}
+            <tr><td>{{ x.id_fortes }}</td><td>{{ x.nome }}</td><td class="ruim">saiu da folha</td>
+              <td class="num">{{ x.valor|moeda }}</td><td class="num">—</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div></div>
+      </details>
+    {% endif %}
   </div>
 {% endif %}
 
@@ -774,6 +827,14 @@
 {# ------------------------------------------------------------------------
    O PONTO DE UMA PESSOA, DIA A DIA — abre ao clicar no nome.
    ------------------------------------------------------------------------ #}
+{# O CADASTRO COMPLETO de uma pessoa, por cima do analítico (01/10/2026). #}
+<dialog class="dialogo" id="cartao-cadastro">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3 id="cadastro-titulo">Cadastro</h3>
+  <div id="cadastro-corpo"><p class="cartao-dica">lendo a planilha…</p></div>
+</dialog>
+
 <dialog class="dialogo" id="cartao-ponto">
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
@@ -1145,6 +1206,44 @@
     }
   });
 
+  // O CADASTRO COMPLETO e o ATUALIZAR CADASTRO (01/10/2026).
+  corpo.addEventListener("click", async e => {
+    const b = e.target.closest(".abrir-cadastro-completo");
+    if (!b) return;
+    const caixa = document.getElementById("cartao-cadastro");
+    const miolo = document.getElementById("cadastro-corpo");
+    document.getElementById("cadastro-titulo").textContent = "Cadastro — " + (b.dataset.nome || "");
+    miolo.innerHTML = '<p class="cartao-dica">lendo a planilha de cadastro…</p>';
+    if (caixa.showModal) caixa.showModal(); else caixa.setAttribute("open", "");
+    try {
+      const url = "{{ url_for('analisesps.tela_folha_cadastro_completo', folha_id=folha.id, cpf='CPF') }}"
+        .replace("CPF", encodeURIComponent(b.dataset.cpf));
+      miolo.innerHTML = await (await fetch(url)).text();
+    } catch (erro) {
+      miolo.innerHTML = '<div class="aviso erro">Falhou: ' + esc(erro) + "</div>";
+    }
+  });
+  corpo.addEventListener("click", async e => {
+    const b = e.target.closest(".atualizar-cadastro-pessoa");
+    if (!b) return;
+    const recado = corpo.querySelector(".recado-ponto-pessoa");
+    b.disabled = true;
+    recado.textContent = "lendo a planilha de cadastro…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_cadastro_pessoa_atualizar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({cpf: b.dataset.cpf})});
+      const d = await r.json();
+      if (!d.ok) { recado.textContent = d.erro; b.disabled = false; return; }
+      await carregar(b.dataset.cpf);
+      const novo = corpo.querySelector(".recado-ponto-pessoa");
+      if (novo) novo.textContent = d.mensagem + " A folha já recalculou com ele.";
+    } catch (erro) {
+      recado.textContent = "Falhou: " + erro;
+      b.disabled = false;
+    }
+  });
+
   // LANÇAR O PONTO NO MOBPONTO (01/10/2026). "lançar" no dia põe De = Até =
   // aquele dia; "Ver o que vai ser lançado" pede o plano ao servidor (nada é
   // gravado); "Lançar" põe o pedido na fila, que lança uma batida por vez e
@@ -1296,7 +1395,7 @@
         body: JSON.stringify({id: b.dataset.id})});
       const d = await r.json();
       if (!d.ok) { alert(d.erro); b.disabled = false; return; }
-      location.href = "{{ url_for('analisesps.tela_folha_importar') }}";
+      location.href = d.ir || "{{ url_for('analisesps.tela_folha_importar') }}";
     } catch (e) { alert("Falhou: " + e); b.disabled = false; }
   });
 })();
@@ -1365,7 +1464,7 @@
         return;
       }
       // A folha nova é a última importada: a aba leva até ela.
-      location.href = "{{ url_for('analisesps.tela_folha_importar') }}";
+      location.href = d.ir || "{{ url_for('analisesps.tela_folha_importar') }}";
     } catch (e) {
       recadoFolha("Falhou: " + e, "erro");
     }

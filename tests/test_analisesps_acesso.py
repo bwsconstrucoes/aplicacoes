@@ -134,6 +134,9 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/api/folha/ponto/lancar/estado"),
     # A fila do ponto por pessoa (nome e CPF de quem está nela).
     ("GET",  "/analisesps/api/folha/ponto/fila"),
+    # A ficha completa e o "Atualizar cadastro" de uma pessoa (dado pessoal).
+    ("GET",  "/analisesps/folha/123/pessoa/99713349334/cadastro"),
+    ("POST", "/analisesps/api/folha/cadastro/pessoa"),
     ("GET",  "/analisesps/api/folha/ponto/fila/123"),
     ("GET",  "/analisesps/folha/ponto"),
     ("GET",  "/analisesps/folha/calendario"),

@@ -1,0 +1,23 @@
+{# ---------------------------------------------------------------------------
+   A FICHA INTEIRA DA PESSOA — 01/10/2026. Lida na hora da planilha de cadastro
+   ("Dados Documentos"), agrupada, só os campos preenchidos. Ver
+   `colaboradores.ficha_completa` (o que fica de fora: links, anexos, segredos).
+   --------------------------------------------------------------------------- #}
+{% if erro %}
+  <div class="aviso erro">{{ erro }}</div>
+{% elif not grupos %}
+  <p class="cartao-dica">A ficha desta pessoa está vazia na planilha.</p>
+{% else %}
+  <p class="cartao-dica">Lido agora da planilha de cadastro. Para corrigir, é no
+    card do Pipefy — daqui não se edita.</p>
+  <div class="cadastro-completo">
+    {% for grupo, campos in grupos %}
+      <div class="cartao">
+        <b class="lateral-titulo">{{ grupo }}</b>
+        <dl class="analitico-dl">
+          {% for campo, valor in campos %}<dt>{{ campo }}</dt><dd>{{ valor }}</dd>{% endfor %}
+        </dl>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}

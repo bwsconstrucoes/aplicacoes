@@ -318,6 +318,25 @@ def _contas_das_obras() -> dict:
         return {}
 
 
+def _nascimento(cpf: str):
+    from . import colaboradores
+    try:
+        return colaboradores.nascimento_de(cpf)
+    except Exception:  # noqa: BLE001 — um campo do analítico, não o analítico
+        logger.exception("Folha: não consegui ler a data de nascimento")
+        return None
+
+
+def _contracheque(folha: dict, id_fortes) -> dict | None:
+    from . import folha_analitica_guardada as fag
+    try:
+        return fag.da_pessoa(folha["ano"], folha["mes"], folha["tipo"],
+                             str(id_fortes or ""))
+    except Exception:  # noqa: BLE001 — um bloco do analítico, não o analítico
+        logger.exception("Folha: não consegui ler a folha analítica")
+        return None
+
+
 def ponto_da_pessoa(folha_id: int, cpf: str) -> dict | None:
     """Todos os dias do período desta pessoa. None quando a folha não existe.
 
@@ -460,7 +479,23 @@ def ponto_da_pessoa(folha_id: int, cpf: str) -> dict | None:
             "motivo": ficha.get("motivo", ""),
             "link_pipefy": ficha.get("link_pipefy", ""),
             "tipo_contrato": ficha.get("tipo_contrato", ""),
+            # Pedido dele, 01/10/2026: *"aqui não tem CPF, não tem data de
+            # admissão (…) a data de saída (…) pelo menos a data de nascimento
+            # e o CPF deveriam ter aqui."*
+            "cpf_bonito": cpf_bonito(cpf),
+            "matricula": ficha.get("matricula", ""),
+            "celular": ficha.get("celular", ""),
+            "data_nascimento": _nascimento(cpf),
+            "data_admissao": ficha.get("data_admissao"),
+            "data_inicio": ficha.get("data_inicio"),
+            "aviso_previo": ficha.get("aviso_previo"),
+            "ultimo_dia": ficha.get("ultimo_dia"),
+            "data_saida": ficha.get("data_saida"),
+            "tem_ficha": bool(ficha),
         },
+        # O CONTRACHEQUE, da folha ANALÍTICA da contabilidade (migração 043):
+        # evento por evento, de onde saiu o líquido. None sem a analítica.
+        "contracheque": _contracheque(folha, pessoa.get("id_fortes")),
         "contagem": contagem,
         "por_conta": [{"conta": c["conta"], "obras": c["obras"],
                        "valor": str(c["valor"])}

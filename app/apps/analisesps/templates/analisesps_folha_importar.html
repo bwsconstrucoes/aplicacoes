@@ -32,9 +32,11 @@
    ------------------------------------------------------------------------ #}
 <div class="cartao">
   <div class="solta-arquivo" id="solta-folha">
-    <p><b>Solte aqui a Folha Sintética</b><br>
+    <p><b>Solte aqui a Folha Sintética</b> — ou a analítica ("Folha de
+      Pagamento"), depois da sintética do mesmo mês<br>
       <label class="link-btn" for="arq-folha">ou escolha no computador</label>
-      <br><small>é o <code>.xls</code> que a contabilidade manda</small></p>
+      <br><small>os <code>.xls</code> que a contabilidade manda; o sistema
+      reconhece qual é qual</small></p>
     <input type="file" id="arq-folha" accept=".xls,.XLS" hidden>
   </div>
 
@@ -194,6 +196,8 @@ async function mandarFolha(arquivo, tipo) {
       recadoFolha(d.erro, "erro");
       return;
     }
+    // A analítica vai para a folha que ela explica.
+    if (d.ir) { location.href = d.ir; return; }
     location.reload();
   } catch (e) {
     recadoFolha("Falhou: " + e, "erro");

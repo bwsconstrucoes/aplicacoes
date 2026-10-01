@@ -232,6 +232,15 @@ COLUNAS_DOS_AUXILIOS = {
     "paga_por_beevale": ["Paga por BeeVale", "BeeVale", "Pagamento BeeVale"],
 }
 
+# A DATA DE NASCIMENTO (migração 043, 01/10/2026) — pedida no analítico do
+# funcionário. Fica FORA de `CAMPOS` de propósito: `CAMPOS` monta o INSERT da
+# carga, e uma coluna que só existe depois do botão derrubaria a carga inteira no
+# intervalo entre publicar e apertar. É gravada à parte, quando a coluna existe.
+COLUNAS_OPCIONAIS = {
+    "data_nascimento": ["Data de Nascimento", "Data Nascimento", "Nascimento",
+                        "Dt. Nascimento", "Data de nascimento"],
+}
+
 # ---------------------------------------------------------------------------
 # QUAIS COLUNAS FALTANDO VIRAM AVISO NA TELA — e quais ficam caladas
 #
@@ -449,6 +458,11 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
                 f"então {EFEITO_DE_FALTAR.get(campo, 'este campo fica em branco')}")
         # else: fica em branco calado. Ver COLUNAS_QUE_AVISAM.
 
+    for campo, aceitos in COLUNAS_OPCIONAIS.items():
+        i = achar_coluna(normalizado, aceitos)
+        if i is not None:
+            posicoes[campo] = i
+
     # O código do Fortes na ficha: opcional e calado quando falta — a aba "ID
     # Fortes" continua sendo o caminho de quem não tem a coluna.
     i_id = achar_coluna(normalizado, COLUNAS_DO_ID_NA_FICHA)
@@ -473,6 +487,8 @@ def _registro(linha: dict, posicoes: dict) -> dict | None:
     registro = {"cpf": cpf,
                 # Fora de CAMPOS de propósito: ver `_gravar_ids_da_ficha`.
                 "_id_fortes_ficha": normalizar_id_fortes(cru.get("id_fortes"))}
+    if "data_nascimento" in cru:
+        registro["_data_nascimento"] = _data_de_nascimento(cru.get("data_nascimento"))
     for campo in CAMPOS[1:]:
         valor = cru.get(campo, "")
         if campo in DATAS:
@@ -499,8 +515,45 @@ def _gravar(conn, registros: list) -> int:
     conn.executemany(
         SQL_GRAVAR,
         [tuple(r.get(c) for c in CAMPOS) for r in registros])
+    nascimentos = [(r["_data_nascimento"], r["cpf"]) for r in registros
+                   if r.get("_data_nascimento")]
+    if nascimentos and tem_nascimento():
+        conn.executemany(
+            "UPDATE analisesps.colaborador SET data_nascimento = ? WHERE cpf = ?",
+            nascimentos)
     conn.commit()
     return len(registros)
+
+
+def _data_de_nascimento(valor):
+    """Como `formatos.para_data`, mas aceitando os anos de quem nasceu — o
+    leitor geral recusa data antiga (é feito para vencimento e pagamento)."""
+    import datetime as _dt
+    s = str(valor or "").strip().split(" ")[0]
+    for formato in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            data = _dt.datetime.strptime(s, formato).date()
+        except ValueError:
+            continue
+        return data if 1900 <= data.year <= 2100 else None
+    return None
+
+
+def tem_nascimento() -> bool:
+    """A migração 043 já rodou? (a coluna da data de nascimento)"""
+    from .db import tem_coluna
+    return tem_coluna("colaborador", "data_nascimento")
+
+
+def nascimento_de(cpf: str):
+    """A data de nascimento guardada, ou None (sem a coluna, ou sem a data)."""
+    from .db import consultar_um
+    from .folha_rateio import so_digitos
+    if not tem_nascimento():
+        return None
+    linha = consultar_um("SELECT data_nascimento FROM analisesps.colaborador "
+                         " WHERE cpf = ?", (so_digitos(cpf),))
+    return linha[0] if linha else None
 
 
 def _gravar_ids_da_ficha(da_ficha: dict) -> dict:
@@ -668,6 +721,138 @@ def atualizar(anotar=None) -> dict:
                 "%d aviso(s).", gravadas, len(avisos))
     return {"pessoas": gravadas, "ignoradas": ignoradas, "avisos": avisos,
             "com_id_fortes": ficha.get("gravados", 0) + fortes.get("casados", 0)}
+
+
+# ---------------------------------------------------------------------------
+# UMA PESSOA SÓ — o "Atualizar cadastro" e o "Cadastro completo" do analítico
+# (01/10/2026). Pedidos do dono: *"queria que tivesse aqui o botão atualizar
+# cadastro. De repente eu fiz alguma alteração (…) eu poder clicar"* e *"em algum
+# canto para clicar do cadastro, que abrisse um outro modal mais completo, com o
+# detalhamento do resto das informações."*
+#
+# Lê a coluna do CPF (uma coluna, ~3.500 células) para achar a linha, e depois
+# SÓ a linha da pessoa. Nada da planilha inteira vai para a memória.
+# ---------------------------------------------------------------------------
+def _linha_da_pessoa(cpf: str) -> tuple:
+    """(cabeçalho, linha) da pessoa na aba "Dados Documentos". Levanta
+    ErroDoCadastro quando não acha."""
+    from .folha_rateio import so_digitos
+    digitos = so_digitos(cpf)
+    if len(digitos) != 11:
+        raise ErroDoCadastro("CPF incompleto.")
+    try:
+        aba = _aba(PLANILHA_COLABORADORES, ABA_COLABORADORES)
+    except Exception as e:  # noqa: BLE001
+        raise ErroDoCadastro(
+            _explicar_aba(PLANILHA_COLABORADORES, ABA_COLABORADORES, e)) from e
+    cabecalho = com_retry(lambda: aba.row_values(LINHA_DO_CABECALHO)) or []
+    i_cpf = achar_coluna(_normalizar_cabecalho(cabecalho), COLUNAS["cpf"])
+    if i_cpf is None:
+        raise ErroDoCadastro(
+            f'a aba "{ABA_COLABORADORES}" não tem a coluna do CPF.')
+    coluna = com_retry(lambda: aba.col_values(i_cpf + 1)) or []
+    numero = None
+    for n, valor in enumerate(coluna, start=1):
+        if n >= PRIMEIRA_LINHA_DADOS and so_digitos(valor).zfill(11) == digitos:
+            numero = n
+            break
+    del coluna
+    if numero is None:
+        raise ErroDoCadastro(
+            "esta pessoa não está na planilha de cadastro (procurei pelo CPF).")
+    linha = com_retry(lambda: aba.row_values(numero)) or []
+    return cabecalho, linha
+
+
+def atualizar_uma(cpf: str) -> dict:
+    """Traz de novo da planilha o cadastro de UMA pessoa. Devolve o registro."""
+    from .db import conexao
+    if not _pronto():
+        raise ErroDoCadastro('a tabela do cadastro ainda não existe. Aperte '
+                             '"Aplicar atualizações do banco" em Configurações.')
+    cabecalho, linha = _linha_da_pessoa(cpf)
+    posicoes, _avisos = _achar_colunas(cabecalho)
+    registro = _registro({i: v for i, v in enumerate(linha)}, posicoes)
+    if registro is None:
+        raise ErroDoCadastro("a linha desta pessoa na planilha está sem CPF válido.")
+    with conexao() as conn:
+        _gravar(conn, [registro])
+    if registro.get("_id_fortes_ficha"):
+        _gravar_ids_da_ficha({registro["cpf"]: registro["_id_fortes_ficha"]})
+    logger.info("Análise de SPs: cadastro de %s atualizado sozinho.", registro["cpf"])
+    return registro
+
+
+# O que NÃO entra na janela do cadastro completo: o que não é informação da
+# pessoa (links, anexos, carimbos de sistema) e o que é segredo. Por PEDAÇO do
+# nome da coluna, sem acento e sem caixa. O resto da ficha aparece — o dono
+# pediu "o detalhamento do resto das informações".
+FORA_DO_CADASTRO_COMPLETO = ("senha", "token", "link", "url", "http", "anexo",
+                             "arquivo", "foto", "assinatura", "hash", "carimbo",
+                             "timestamp", "id do card", "col")
+
+# Os grupos da janela, pela palavra no nome da coluna. A ordem é a da tela; o
+# que não cai em grupo nenhum vai para "Outros".
+GRUPOS_DO_CADASTRO = [
+    ("Pessoais", ("nome", "nasc", "natural", "nacional", "sexo", "estado civil",
+                  "escolar", "raça", "raca", "cor", "mãe", "mae", "pai", "deficien")),
+    ("Documentos", ("cpf", "rg", "pis", "ctps", "título", "titulo", "reservista",
+                    "cnh", "orgão", "orgao", "emissor", "série", "serie")),
+    ("Contato e endereço", ("celular", "telefone", "e-mail", "email", "endereço",
+                            "endereco", "rua", "bairro", "cidade", "cep", "uf",
+                            "número", "numero", "complemento")),
+    ("Contrato", ("cargo", "contrato", "admiss", "início", "inicio", "fase",
+                  "obra", "convenção", "convencao", "matrícula", "matricula",
+                  "salário", "salario", "experiência", "experiencia", "tipo",
+                  "sindicato", "jornada", "horário", "horario")),
+    ("Saída", ("aviso", "último dia", "ultimo dia", "saída", "saida",
+               "demiss", "rescis", "deslig")),
+    ("Auxílios e pagamento", ("auxílio", "auxilio", "gratifica", "parcela",
+                              "beevale", "banco", "agência", "agencia", "conta",
+                              "pix", "ajuda de custo")),
+]
+
+
+def _sem_acento(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or "").lower())
+                   if unicodedata.category(c) != "Mn")
+
+
+def _tem_palavra(chave: str, palavra: str) -> bool:
+    """Palavra curta (até 3 letras) só casa INTEIRA — "rg" não pode achar
+    "caRGo", nem "cor" achar "CORreio". As longas casam por pedaço ("nasc"
+    acha "Data de Nascimento")."""
+    import re
+    p = _sem_acento(palavra)
+    if len(p) <= 3:
+        return re.search(r"\b" + re.escape(p) + r"\b", chave) is not None
+    return p in chave
+
+
+def ficha_completa(cpf: str) -> list:
+    """A ficha inteira da pessoa, agrupada: `[(grupo, [(campo, valor)])]`.
+
+    Lida NA HORA da planilha e não guardada: o que este módulo não guarda não
+    vaza por ele (ver o topo do arquivo). Só os campos preenchidos."""
+    cabecalho, linha = _linha_da_pessoa(cpf)
+    grupos: dict = {nome: [] for nome, _ in GRUPOS_DO_CADASTRO}
+    grupos["Outros"] = []
+    for i, titulo in enumerate(cabecalho):
+        titulo = " ".join(str(titulo or "").split())
+        valor = " ".join(str(linha[i] if i < len(linha) else "").split())
+        if not titulo or not valor:
+            continue
+        chave = _sem_acento(titulo)
+        if any(_tem_palavra(chave, p) for p in FORA_DO_CADASTRO_COMPLETO):
+            continue
+        destino = "Outros"
+        for nome, palavras in GRUPOS_DO_CADASTRO:
+            if any(_tem_palavra(chave, p) for p in palavras):
+                destino = nome
+                break
+        grupos[destino].append((titulo, valor[:500]))
+    return [(nome, campos) for nome, campos in grupos.items() if campos]
 
 
 # ---------------------------------------------------------------------------

@@ -10877,6 +10877,83 @@ obras da C. Diários, além das do ponto do mês.
 
 ---
 
+### Centésima quadragésima primeira leva (01/10) — o analítico do funcionário: botões, cadastro, contracheque; reimportação com crítica
+
+Quatro pedidos dele numa mensagem só, mais um no meio do trabalho.
+
+**1. Os botões do analítico** (*"cada um de uma forma diferente (…) não quero
+nada desses botões sublinhados (…) atualizar o ponto desta pessoa, não precisa,
+eu já estou na pessoa (…) vamos botar só Pipefy"*): todos `btn secundario`, sem
+sublinhado — **Relatório**, **Atualizar ponto**, **Atualizar cadastro** (novo),
+**Cadastro completo** (novo), **Pipefy**.
+
+**2. O cadastro no analítico** (*"aqui não tem CPF, não tem data de admissão (…)
+a data de saída (…) pelo menos a data de nascimento e o CPF deveriam ter aqui"*):
+o cartão Cadastro ganhou CPF, nascimento, admissão (e início, quando difere),
+aviso prévio, último dia, saída (em vermelho), matrícula e celular.
+- **Data de nascimento** é campo novo (migração **043**, coluna
+  `colaborador.data_nascimento`), lido da coluna "Data de Nascimento" da aba
+  "Dados Documentos". Fica FORA de `CAMPOS` (gravado à parte, só quando a coluna
+  existe) para a carga do cadastro não quebrar entre publicar e apertar o
+  botão. Precisa de um "Atualizar cadastro" depois do botão para aparecer.
+- **"Atualizar cadastro"** é de UMA pessoa (`colaboradores.atualizar_uma`): lê o
+  cabeçalho, a coluna do CPF e a linha dela — segundos, sem a planilha inteira.
+- **"Cadastro completo"** abre uma janela com a ficha inteira da pessoa,
+  **lida na hora** da planilha (`colaboradores.ficha_completa`), agrupada
+  (Pessoais, Documentos, Contato e endereço, Contrato, Saída, Auxílios e
+  pagamento, Outros), só os campos preenchidos. **Não é guardada** — mantém a
+  decisão de 27/09 de não trazer dado pessoal para o banco (o que não se guarda
+  não vaza). Fica de fora o que não é da pessoa: links, anexos, senha, token.
+  Palavra curta casa inteira ("rg" não pega "cargo").
+
+**3. A folha ANALÍTICA da contabilidade** (*"a contabilidade nos envia dois
+arquivos, um analítico e um resumido (…) visualizar o detalhamento desses
+valores, como se chegou àquele valor"*). Ele mandou os dois arquivos de 09/2026
+(NÃO entram no repositório: nome e salário de ~500 pessoas). **Cruzados:** as
+415 pessoas da sintética estão na analítica com o **mesmo líquido**, e em todas
+as 415 os eventos (proventos − descontos) explicam o líquido no centavo; a
+analítica traz 23 pessoas a mais, todas sem valor (licença, afastamento), e 38
+eventos distintos (salário-base, horas extras, INSS, consignado, faltas,
+adiantamento…).
+- `folha_analitica.py` lê o relatório (bloco por empregado; pula cabeçalho de
+  página e o TOTAL de cada setor, que repete eventos). `folha_analitica_guardada`
+  guarda (migração 043: `folha_analitica` + `folha_analitica_pessoa`, eventos em
+  JSON) ligada por **competência e tipo**, não pelo número da folha.
+- **Entra pela mesma porta da sintética**: o sistema reconhece qual arquivo é.
+  A folha certa (quinzena ou fim de mês) é achada **pelo dinheiro** — a que
+  tem ≥80% dos líquidos iguais; nenhuma batendo, recusa e pede a sintética antes.
+- No analítico, o bloco **Contracheque**: evento por evento (código, nome,
+  referência, provento, desconto), totais, líquido, e a conferência (os eventos
+  explicam o líquido; igual ao da sintética), FGTS, base INSS, horas, dependentes
+  e a situação do arquivo.
+- **Pergunta dele: precisa continuar importando os dois?** Hoje, sim: a
+  sintética é a que diz o tipo e é a base da folha. Como a analítica tem tudo o
+  que a sintética tem (e bate 100%), dá para passar a importar SÓ a analítica —
+  mudança maior, que fica como proposta.
+
+**4. Reimportar a folha** (*"às vezes é necessário reimportar (…) a contabilidade
+esqueceu uma falta, o valor era para ser menor ou maior, uma hora extra (…) e o
+sistema iria criticar: esse veio com valor diferente, esse foi eliminado, esse
+entrou"*). Reimportar já substituía a folha e **mantinha as decisões** (quem
+entra, obra, divisão — guardadas por competência e CPF). Agora a reimportação
+compara com a versão anterior (`folha_arquivo.comparar_versoes`) e guarda o
+resultado na folha (coluna `folha.mudancas`, migração 043). No alto da folha:
+**"O que mudou nesta reimportação"** — quantos mudaram de valor, entraram e
+saíram, total antes e depois, e a lista (antes/agora); aviso para **refazer o
+fechamento** quando a apropriação estava fechada, e para trazer a analítica
+nova quando há uma da versão anterior.
+
+#### ⚠️ Pendente AGORA
+
+| Falta | Depende de |
+|---|---|
+| **publicar** esta leva e as duas anteriores (lançar sem buscar + certificado; escolher outra obra) — **com migração 043** | ele dizer "pode" |
+| depois do botão: "Atualizar cadastro" (geral) para trazer a data de nascimento de todos | ele |
+| soltar a folha analítica de 09/2026 | ele |
+| decidir se passa a importar só a analítica | ele |
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória

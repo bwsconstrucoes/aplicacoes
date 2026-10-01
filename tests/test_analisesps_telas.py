@@ -7997,8 +7997,10 @@ def test_o_ANALITICO_traz_contabilidade_cadastro_ponto_calculo_e_rateio(app, mon
     assert "000013" in html                        # o código do Fortes
     assert "7011-4" in html and "22069-1" in html  # as duas contas
     assert "paga em mais de uma conta" in html
-    assert "Relatório para imprimir" in html
-    assert "Atualizar o ponto desta pessoa" in html
+    # Os nomes curtos dos botões, desde 01/10/2026 (*"eu já estou na pessoa"*).
+    assert ">Relatório</a>" in html
+    assert ">Atualizar ponto</button>" in html
+    assert ">Atualizar cadastro</button>" in html
 
 
 def test_a_pagina_de_IMPRIMIR_tem_o_mesmo_analitico_e_o_botao(app, monkeypatch):
@@ -8008,7 +8010,7 @@ def test_a_pagina_de_IMPRIMIR_tem_o_mesmo_analitico_e_o_botao(app, monkeypatch):
     assert "window.print()" in html
     assert "Analítico do funcionário" in html
     assert "O ponto, dia a dia" in html
-    assert "Relatório para imprimir" not in html, "na página, o botão é Imprimir"
+    assert "atualizar-cadastro-pessoa" not in html, "na página, o botão é Imprimir"
 
 
 def test_quem_so_CONSULTA_ve_o_analitico_mas_nao_o_botao_de_atualizar(app, monkeypatch):
@@ -8016,7 +8018,8 @@ def test_quem_so_CONSULTA_ve_o_analitico_mas_nao_o_botao_de_atualizar(app, monke
     html = como(app, SENHA_CONSULTA).get(
         "/analisesps/folha/1/pessoa/99713349334?parcial=1").get_data(as_text=True)
     assert "O cálculo" in html
-    assert "Atualizar o ponto desta pessoa" not in html
+    assert ">Atualizar ponto</button>" not in html
+    assert ">Atualizar cadastro</button>" not in html
 
 
 def test_analitico_de_quem_NAO_esta_na_folha_responde_404(app, monkeypatch):

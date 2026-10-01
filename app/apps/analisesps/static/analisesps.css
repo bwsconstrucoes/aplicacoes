@@ -2630,3 +2630,11 @@ a.lat-critica .lat-valor { float: right; font-family: var(--fonte-dados); font-w
 #dialogo-obra { width: min(460px, 94vw); }
 #dialogo-obra-procura, #dialogo-obra-lista, #dialogo-obra-texto { width: 100%; margin-top: 6px; }
 #dialogo-obra-lista { font-family: var(--fonte-dados); font-size: 13px; }
+
+/* Os botões do analítico, todos iguais e sem sublinhado — 01/10/2026. */
+.analitico-acoes .btn, .analitico-acoes a.btn { text-decoration: none; }
+table.contracheque td, table.contracheque th { white-space: nowrap; }
+table.contracheque td:first-child { white-space: normal; }
+#cartao-cadastro { width: min(820px, 96vw); }
+.cadastro-completo { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.cadastro-completo .cartao { margin: 0; padding: 12px; }

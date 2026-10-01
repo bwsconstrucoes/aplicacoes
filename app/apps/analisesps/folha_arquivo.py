@@ -154,6 +154,10 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
 
     from .db import conexao
 
+    # A VERSÃO ANTERIOR, para dizer o que mudou (01/10/2026) — lida ANTES de
+    # apagar. Ver `comparar_versoes`.
+    antes = _linhas_da_versao_anterior(int(ano_final), int(mes_final), tipo_final)
+
     with conexao() as conn:
         # SUBSTITUI a folha daquela competência e tipo. O CASCADE leva as linhas
         # junto — e é numa transação só, porque uma folha sem linhas (a antiga
@@ -198,6 +202,14 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
                 " VALUES (?,?,?,?,?,?)",
                 [(folha_id, l.id_fortes, l.nome, l.valor, l.filial_codigo,
                   l.filial_nome) for l in lida.linhas])
+        if antes is not None and tem_mudancas():
+            import json as _json
+            diferencas = comparar_versoes(antes, lida.linhas)
+            diferencas["fechada_antes"] = _estava_fechada(
+                int(ano_final), int(mes_final), tipo_final)
+            conn.execute("UPDATE analisesps.folha SET mudancas = ? WHERE id = ?",
+                         (_json.dumps(diferencas, ensure_ascii=False, default=str),
+                          folha_id))
         conn.commit()
 
     # CASA COM O CADASTRO NA HORA: a tela que vem depois já mostra quem está
@@ -217,6 +229,85 @@ def importar(conteudo: bytes, nome_do_arquivo: str = "", tipo: str = "",
             "id": folha_id, "ano": int(ano_final), "mes": int(mes_final),
             "tipo": tipo_final, "pessoas": pessoas, "total": total,
             "avisos": avisos, "substituiu": substituiu, "fecha": lida.fecha}
+
+
+# ---------------------------------------------------------------------------
+# REIMPORTAR: o que mudou de uma versão para a outra — 01/10/2026
+#
+# O dono: *"às vezes é necessário reimportar o arquivo. Porque de repente eu já
+# defini que aquele fulano seria pago em tal obra, mas precisei mandar para a
+# contabilidade, porque ela esqueceu uma falta, o valor era para ser menor ou
+# maior, uma hora extra que não foi calculada (…) E aí o sistema iria criticar:
+# esse veio com valor diferente, esse foi eliminado da folha, esse entrou."*
+#
+# ⚠️ O QUE ELE DECIDIU NÃO SE PERDE AO REIMPORTAR, e isso já era assim: quem
+# entra, a obra escolhida e a divisão ficam guardados por COMPETÊNCIA E CPF
+# (`folha_apropriacao_guardada`), não pelo arquivo. O que faltava era dizer o que
+# o arquivo novo trouxe de diferente — é isto.
+# ---------------------------------------------------------------------------
+def tem_mudancas() -> bool:
+    from .db import tem_coluna
+    return tem_coluna("folha", "mudancas")
+
+
+def _linhas_da_versao_anterior(ano: int, mes: int, tipo: str):
+    """`[(id_fortes, nome, valor)]` da folha que vai ser substituída, ou None."""
+    from .db import consultar
+    linhas = consultar(
+        "SELECT l.id_fortes, l.nome, l.valor FROM analisesps.folha_linha l "
+        "  JOIN analisesps.folha f ON f.id = l.folha_id "
+        " WHERE f.ano = ? AND f.mes = ? AND f.tipo = ?", (ano, mes, tipo))
+    if not linhas:
+        return None
+    return [(str(l[0] or ""), str(l[1] or ""), l[2]) for l in linhas]
+
+
+def _estava_fechada(ano: int, mes: int, tipo: str) -> bool:
+    try:
+        from . import folha_apropriacao_guardada as guardada
+        return bool(guardada.fechamento(ano, mes, tipo))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def comparar_versoes(antes, depois) -> dict:
+    """Quem entrou, quem saiu e quem mudou de valor. FUNÇÃO PURA.
+
+    `antes`: `[(id_fortes, nome, valor)]`. `depois`: as linhas novas (com
+    `id_fortes`, `nome`, `valor`). A chave é o código do Fortes."""
+    def _d(v):
+        return Decimal(str(v or 0)).quantize(Decimal("0.01"))
+    velho = {str(i).zfill(6): (n, _d(v)) for i, n, v in (antes or [])}
+    novo = {str(getattr(l, "id_fortes", "")).zfill(6):
+            (getattr(l, "nome", ""), _d(getattr(l, "valor", 0))) for l in (depois or [])}
+    entraram = [{"id_fortes": i, "nome": novo[i][0], "valor": str(novo[i][1])}
+                for i in sorted(novo) if i not in velho]
+    sairam = [{"id_fortes": i, "nome": velho[i][0], "valor": str(velho[i][1])}
+              for i in sorted(velho) if i not in novo]
+    mudaram = [{"id_fortes": i, "nome": novo[i][0], "de": str(velho[i][1]),
+                "para": str(novo[i][1]), "diferenca": str(novo[i][1] - velho[i][1])}
+               for i in sorted(novo) if i in velho and novo[i][1] != velho[i][1]]
+    total_antes = sum((v for _n, v in velho.values()), Decimal("0.00"))
+    total_depois = sum((v for _n, v in novo.values()), Decimal("0.00"))
+    return {"entraram": entraram, "sairam": sairam, "mudaram": mudaram,
+            "total_antes": str(total_antes), "total_depois": str(total_depois),
+            "nada_mudou": not (entraram or sairam or mudaram)}
+
+
+def mudancas(folha_id: int) -> dict | None:
+    """O que a última reimportação trouxe de diferente. None na primeira."""
+    import json as _json
+    from .db import consultar_um
+    if not _pronto() or not tem_mudancas():
+        return None
+    linha = consultar_um("SELECT mudancas FROM analisesps.folha WHERE id = ?",
+                         (int(folha_id),))
+    if not linha or not linha[0]:
+        return None
+    try:
+        return _json.loads(linha[0])
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------

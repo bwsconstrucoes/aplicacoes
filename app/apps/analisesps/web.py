@@ -2526,6 +2526,8 @@ def tela_folha_aberta(folha_id: int):
         destinos=_destinos_do_pagamento(),
         fila_do_ponto=_fila_do_ponto_recente(),
         obras_c_diarios=_obras_c_diarios(),
+        mudancas=(fa.mudancas(folha_id) if montado else None),
+        analitica=(_analitica_da_folha(montado.get("folha")) if montado else None),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
 
@@ -2570,6 +2572,16 @@ def folha_relatorio(folha_id: int, formato: str):
     nome = fr.nome_do_arquivo(dados, formato)
     return Response(conteudo, mimetype=tipo, headers={
         "Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+def _analitica_da_folha(folha) -> dict | None:
+    """Se a folha aberta tem a analítica importada. None se não tem (ou falhou)."""
+    from . import folha_analitica_guardada as fag
+    try:
+        return fag.da_folha(folha["ano"], folha["mes"], folha["tipo"]) if folha else None
+    except Exception:  # noqa: BLE001
+        logger.exception("Folha: não consegui ler a analítica da folha")
+        return None
 
 
 def _obras_c_diarios() -> list:
@@ -2985,6 +2997,52 @@ def tela_folha_pessoa(folha_id: int, cpf: str):
         nome=auth.nome_atual())
 
 
+@bp.route("/folha/<int:folha_id>/pessoa/<cpf>/cadastro")
+@exige_consulta
+def tela_folha_cadastro_completo(folha_id: int, cpf: str):
+    """A ficha inteira da pessoa, lida NA HORA da planilha de cadastro.
+
+    Pedido dele, 01/10/2026: *"em algum canto para clicar do cadastro, que
+    abrisse um outro modal mais completo, com o detalhamento do resto das
+    informações."* Só de quem está nesta folha — e fora dela, 404."""
+    from . import colaboradores, folha_arquivo as fa
+    from .folha_rateio import so_digitos
+    folha = fa.abrir(folha_id)
+    digitos = so_digitos(cpf)
+    if not folha or digitos not in {so_digitos(l.get("cpf")) for l in folha["linhas"]}:
+        return '<div class="aviso erro">Esta pessoa não está nesta folha.</div>', 404
+    try:
+        grupos = colaboradores.ficha_completa(digitos)
+    except colaboradores.ErroDoCadastro as e:
+        return render_template("_folha_cadastro_completo.html", grupos=[], erro=str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou ler a ficha completa")
+        return render_template("_folha_cadastro_completo.html", grupos=[],
+                               erro=f"Não consegui ler a planilha de cadastro: {e}")
+    return render_template("_folha_cadastro_completo.html", grupos=grupos, erro="")
+
+
+@bp.route("/api/folha/cadastro/pessoa", methods=["POST"])
+@exige_operador
+def folha_cadastro_pessoa_atualizar():
+    """Traz de novo da planilha o cadastro de UMA pessoa — o "Atualizar
+    cadastro" do analítico. Segundos: lê a coluna do CPF e a linha dela."""
+    from . import colaboradores
+    from .folha_rateio import so_digitos
+    dados = request.get_json(silent=True) or {}
+    cpf = so_digitos(dados.get("cpf"))
+    if len(cpf) != 11:
+        return {"ok": False, "erro": "CPF incompleto."}, 400
+    try:
+        r = colaboradores.atualizar_uma(cpf)
+    except colaboradores.ErroDoCadastro as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou atualizar o cadastro de uma pessoa")
+        return {"ok": False, "erro": f"Não consegui atualizar o cadastro: {e}"}, 500
+    return {"ok": True, "mensagem": f"Cadastro de {r.get('nome') or cpf} atualizado."}
+
+
 @bp.route("/api/folha/<int:folha_id>/ponto/<cpf>")
 @exige_consulta
 def folha_ponto_da_pessoa(folha_id: int, cpf: str):
@@ -3106,9 +3164,29 @@ def folha_importar():
         return {"ok": False, "erro": "Nenhum arquivo chegou."}, 400
 
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    conteudo = arquivo.read()
+
+    # A FOLHA ANALÍTICA ENTRA PELA MESMA PORTA (01/10/2026): o mesmo lugar de
+    # soltar arquivo reconhece qual dos dois chegou. A analítica não vira folha
+    # nova — ela é guardada ao lado da sintética que ela explica.
+    from . import folha_analitica as fan, folha_analitica_guardada as fag
+    if fan.e_analitica(conteudo):
+        try:
+            feito = fag.importar(conteudo, nome_do_arquivo=arquivo.filename, quem=quem)
+        except fag.ErroDaAnalitica as e:
+            return {"ok": False, "erro": str(e)}, 400
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Folha: falhou importar a folha analítica")
+            return {"ok": False, "erro": f"Não consegui importar a analítica: {e}"}, 500
+        return {"ok": True, "analitica": True,
+                "ir": url_for("analisesps.tela_folha_aberta", folha_id=feito["folha_id"]),
+                "mensagem": (f"Folha analítica de {feito['competencia']} guardada: "
+                             f"{feito['pessoas']} pessoa(s), {feito['batem']} com o "
+                             "líquido igual ao da sintética.")}
+
     try:
         resultado = fa.importar(
-            arquivo.read(), nome_do_arquivo=arquivo.filename,
+            conteudo, nome_do_arquivo=arquivo.filename,
             tipo=str(request.form.get("tipo") or ""), quem=quem)
     except fa.ErroDaImportacao as e:
         frase = str(e)
