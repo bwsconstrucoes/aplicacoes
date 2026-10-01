@@ -2679,12 +2679,34 @@ def _trazer_o_ponto_da_pessoa(folha: dict, cpf: str, nome) -> dict:
     """Dispara, no processo separado, a atualização do ponto de UMA pessoa."""
     from . import sincronizacao, tarefas
     from .db import conexao
+    ocupada = _pista_da_pessoa_ocupada()
+    if ocupada:
+        return ocupada
     nome = str(nome or "").replace("|", " ")[:120]
     with conexao() as conn:
         sincronizacao._meta_gravar(conn, "ponto_pessoa_alvo",
                                    f"{folha['ano']}|{folha['mes']}|{cpf}|{nome}")
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     return tarefas.disparar("ponto_pessoa", disparo=quem or "ponto de uma pessoa")
+
+
+def _pista_da_pessoa_ocupada() -> dict | None:
+    """Recusa ANTES de escrever o pedido, quando já há tarefa de pessoa rodando.
+
+    ⚠️ O PEDIDO MORA NUM LUGAR SÓ (`ponto_pessoa_alvo`, `ponto_lancar_pedido`), e o
+    processo o lê ao começar. Escrever o pedido de B enquanto o de A está para
+    começar faria o processo de A trabalhar para B — e o de B seria recusado.
+    Por isso a pergunta vem antes da escrita."""
+    from . import tarefas
+    atual = tarefas.estado("pessoa")
+    if atual.get("rodando"):
+        detalhe = atual.get("detalhe") or {}
+        return {"ok": False,
+                "erro": "Já há uma tarefa de ponto de pessoa rodando ("
+                        + (detalhe.get("etapa") or "começando") + "). Ela "
+                        "continua sozinha mesmo se você sair; espere terminar "
+                        "para pedir a próxima."}
+    return None
 
 
 def _pedido_de_lancamento():
@@ -2746,6 +2768,9 @@ def folha_ponto_lancar():
     falta = ponto_edicao.o_que_falta()
     if falta:
         return {"ok": False, "erro": falta}, 400
+    ocupada = _pista_da_pessoa_ocupada()
+    if ocupada:
+        return ocupada, 409
     try:
         obra, texto = ponto_edicao.validar_pedido(dados.get("obra"),
                                                   dados.get("justificativa"))

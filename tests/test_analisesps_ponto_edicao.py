@@ -376,3 +376,26 @@ def test_a_pagina_de_imprimir_NAO_tem_o_lancar(app, configurado, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/1/pessoa/99713349334").get_data(as_text=True)
     assert "lancar-ponto" not in html and "lancar-dia" not in html
+
+
+def test_com_tarefa_de_pessoa_rodando_o_pedido_novo_NAO_SOBRESCREVE_o_anterior(
+        app, configurado, monkeypatch):
+    """O pedido mora num lugar só e o processo o lê ao começar: escrever o de B
+    enquanto o de A está para começar faria A trabalhar para B."""
+    from app.apps.analisesps import sincronizacao, tarefas
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    _dublar(monkeypatch)
+    gravado = []
+    monkeypatch.setattr(sincronizacao, "_meta_gravar",
+                        lambda conn, k, v: gravado.append(k))
+    monkeypatch.setattr(tarefas, "estado", lambda pista="geral": {
+        "rodando": pista == "pessoa", "detalhe": {"etapa": "lançando o ponto"}})
+    cliente = _como_mestre(app)
+    r = cliente.post("/analisesps/api/folha/ponto/lancar", json={
+        "folha_id": 1, "cpf": "99713349334", "de": "2026-09-14",
+        "ate": "2026-09-14", "obra": "CRE1", "justificativa": "bateu errado"})
+    assert r.status_code == 409 and "continua sozinha" in r.get_json()["erro"]
+    r = cliente.post("/analisesps/api/folha/ponto/pessoa", json={
+        "folha_id": 1, "cpf": "99713349334"})
+    assert r.status_code == 409
+    assert gravado == [], "o pedido de quem está rodando foi sobrescrito"
