@@ -10678,7 +10678,7 @@ gravar de novo depois de tempo esgotado pode duplicar a batida.
 
 | Falta | Depende de |
 |---|---|
-| **publicar** esta leva — **com migração 040**: apertar "Aplicar atualizações do banco" na hora | ele dizer "pode" |
+| ~~publicar esta leva~~ — **publicada em 01/10/2026** (main em `143a732`). Falta conferir que ele apertou "Aplicar atualizações do banco" (migração 040) | ele |
 | criar `MOBPONTO_RESPONSAVEL_CPF` e `MOBPONTO_RESPONSAVEL_NOME` no Render | ele |
 | primeiro lançamento de verdade: UM dia de UMA pessoa, conferir no Mobponto (obra certa, campo certo) | ele |
 | o trecho do script que EDITA uma batida (para "mudar a obra") | ele |
