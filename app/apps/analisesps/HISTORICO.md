@@ -11315,7 +11315,7 @@ card pode mudar depois da primeira geração.
 | ~~confirmar coluna do valor da diária e quinzena~~ — **respondido em 02/10**: coluna 49 de "Dados Documentos"; quinzena. Regra da meia diária: **fórmula recebida e aplicada** (leva 148) | — |
 | ~~adicional no dia de meia diária~~ — **inteiro**, confirmado pela fórmula do valor (02/10) | — |
 | ~~publicar as levas 149 a 151~~ — **publicadas em 02/10/2026** (main em `43c29d5`, suíte inteira com 7.834 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (045) | ele |
-| publicar o conserto da presença com complemento (diaristas "sem diária" com ponto) | ele |
+| ~~publicar o conserto da presença com complemento~~ — **publicado em 02/10/2026** (suíte inteira 7.835 verdes) | — |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
