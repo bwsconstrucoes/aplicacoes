@@ -1431,3 +1431,40 @@ def dias_por_cpf(ano: int, mes: int) -> dict:
             campos = {}    # derrubar o mês inteiro; o dia fica sem obra e cai
         saida.setdefault(cpf, []).append(_dia_lido(data, campos))
     return saida
+
+
+def resumo_por_pessoa(ano: int, mes: int) -> list:
+    """Cada colaborador com ponto na competência, resumido — para a tela do Ponto.
+
+    O dono, 02/10/2026: *"a partir dessa tela pesquisar funcionários, visualizar
+    os pontos de cada um e ainda poder editá-los. Quero uma tela mais limpa."*
+    `[{cpf, nome, dias, com_obra, faltas, sem_marcacao, obras: [(obra, dias)]}]`,
+    em ordem de nome. Uma leitura do mês inteiro (`dias_por_cpf`)."""
+    from .db import consultar
+    from .folha_apropriacao import obra_do_dia
+
+    carga = carga_do_mes(ano, mes)
+    if not _pronto() or not carga:
+        return []
+    nomes = dict(consultar(
+        "SELECT cpf, max(nome) FROM analisesps.ponto_dia "
+        " WHERE carga_id = ? GROUP BY cpf", (carga["id"],)))
+    saida = []
+    for cpf, dias in dias_por_cpf(ano, mes).items():
+        obras: dict = {}
+        com_obra = faltas = sem_marcacao = 0
+        for d in dias:
+            decidido = obra_do_dia(d.get("marcacoes"), d.get("presenca", ""),
+                                   d.get("falta", ""))
+            if decidido.get("obra"):
+                com_obra += 1
+                obras[decidido["obra"]] = obras.get(decidido["obra"], 0) + 1
+            elif decidido.get("motivo") == "falta":
+                faltas += 1
+            elif decidido.get("motivo") == "sem marcação e sem falta":
+                sem_marcacao += 1
+        saida.append({"cpf": cpf, "nome": nomes.get(cpf, ""), "dias": len(dias),
+                      "com_obra": com_obra, "faltas": faltas,
+                      "sem_marcacao": sem_marcacao,
+                      "obras": sorted(obras.items(), key=lambda o: -o[1])})
+    return sorted(saida, key=lambda p: (p["nome"] or "").lower())

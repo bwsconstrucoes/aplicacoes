@@ -2792,6 +2792,17 @@ def _pedido_de_lancamento():
     except (TypeError, ValueError):
         folha = None
     cpf = so_digitos(dados.get("cpf"))
+    if not folha and dados.get("ano") and dados.get("mes") and len(cpf) == 11:
+        # FORA DA FOLHA DA CONTABILIDADE (tela do Ponto, diaristas, auxílio —
+        # 02/10/2026): vale o mês informado, para quem está no cadastro.
+        from . import colaboradores
+        try:
+            ano, mes = int(dados["ano"]), int(dados["mes"])
+        except (TypeError, ValueError):
+            ano = mes = 0
+        if 2000 <= ano <= 2100 and 1 <= mes <= 12 and colaboradores.por_cpf(cpf):
+            return {"ano": ano, "mes": mes, "linhas": []}, cpf, dados, None
+        return None, None, None, ({"ok": False, "erro": "Colaborador não encontrado no cadastro."}, 404)
     cpfs_da_folha = {so_digitos(l.get("cpf")) for l in ((folha or {}).get("linhas") or [])}
     if not folha or len(cpf) != 11 or cpf not in cpfs_da_folha:
         return None, None, None, ({"ok": False, "erro": "Colaborador não encontrado nesta folha."}, 404)
@@ -3239,19 +3250,58 @@ def tela_folha_ponto():
     não há apropriação. A tela existe para trazer o mês e para MOSTRAR QUAIS
     CAMPOS a API manda em cada dia — é com essa lista que se mapeia a obra e as
     marcações, sem palpite."""
-    from . import ponto as _ponto
+    from . import folha_lista, ponto as _ponto
+    from .folha_rateio import so_digitos
 
     pronto = _ponto._pronto()
     cargas = []
-    amostra = []
     erro = None
     try:
         cargas = _ponto.cargas() if pronto else []
-        if cargas:
-            amostra = _ponto.amostra_de_dias(cargas[0]["id"])
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui listar as cargas do ponto")
         erro = str(e)
+
+    # A COMPETÊNCIA VISTA (02/10/2026: a tela passou a listar os colaboradores e
+    # o ponto de cada um). Sem escolha, a carga mais recente.
+    vista = None
+    try:
+        pedido = (int(request.args.get("ano") or 0), int(request.args.get("mes") or 0))
+    except (TypeError, ValueError):
+        pedido = (0, 0)
+    vista = next((c for c in cargas if (c["ano"], c["mes"]) == pedido and not c["interrompida"]),
+                 None) or next((c for c in cargas if not c["interrompida"]), None)
+    pessoas, lista = [], None
+    if vista:
+        try:
+            pessoas = _ponto.resumo_por_pessoa(vista["ano"], vista["mes"])
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Folha: não consegui resumir o ponto")
+            erro = str(e)
+    for p in pessoas:
+        p["obras_nomes"] = [o for o, _ in p["obras"]]
+    busca = " ".join((request.args.get("q") or "").split())
+    obras_marcadas = folha_lista.marcados(request.args, "obra")
+    so = folha_lista.marcados(request.args, "so")
+    filtradas = []
+    for p in pessoas:
+        if busca and not (busca.lower() in (p["nome"] or "").lower()
+                          or (so_digitos(busca) and so_digitos(busca) in p["cpf"])):
+            continue
+        if obras_marcadas and not set(p["obras_nomes"]) & set(obras_marcadas):
+            continue
+        if "faltas" in so and not p["faltas"]:
+            continue
+        if "sem_marcacao" in so and not p["sem_marcacao"]:
+            continue
+        filtradas.append(p)
+    lista = {"q": busca, "obra": obras_marcadas, "so": so,
+             "filtrando": bool(busca or obras_marcadas or so),
+             "opcoes_obra": [(o, o) for o in sorted({o for p in pessoas
+                                                     for o in p["obras_nomes"]})],
+             "opcoes_so": [("faltas", f"com falta ({sum(1 for p in pessoas if p['faltas'])})"),
+                           ("sem_marcacao", "com dia sem batida "
+                            f"({sum(1 for p in pessoas if p['sem_marcacao'])})")]}
 
     # ⚠️ O ESTADO DA CARGA AO ABRIR A TELA. Reclamação dele em 28/09/2026: *"a
     # gente bota aqui trazer o ponto, mas aí se o ponto veio, se o ponto não veio,
@@ -3284,7 +3334,9 @@ def tela_folha_ponto():
     return render_template(
         "analisesps_folha_ponto.html", aba="folha", subaba="ponto",
         grupos=subtelas_agrupadas(), pronto=pronto, cargas=cargas,
-        amostra=amostra, erro=erro, configurado=_ponto.configurado(),
+        vista=vista, pessoas=filtradas, total_de_pessoas=len(pessoas), lista=lista,
+        fila_do_ponto=_fila_do_ponto_recente(),
+        erro=erro, configurado=_ponto.configurado(),
         andando=andando, ultima=ultima,
         ano_padrao=hoje.year, mes_padrao=hoje.month,
         pode_operar=auth.pode_operar(),
@@ -3627,8 +3679,33 @@ def tela_ficha_do_funcionario(cpf: str):
         do_ponto = ponto.dias_da_pessoa(digitos, ano, mes)
     except Exception:  # noqa: BLE001 — o ponto é um bloco da janela
         logger.exception("Folha: não consegui ler o ponto da pessoa")
-    return render_template("_folha_ficha.html", p=ficha, ponto=do_ponto, ano=ano,
-                           mes=mes, pode_operar=auth.pode_operar())
+
+    # LANÇAR BATIDAS DAQUI (02/10/2026): o mesmo lançamento do analítico da folha,
+    # pelo mês da tela. A obra sugerida é a de mais dias no ponto; sem ponto, a do
+    # cadastro — quando estão na lista da C. Diários.
+    import calendar
+    from . import ponto_edicao
+    editar = auth.pode_operar()
+    obras_do_mobponto, falta = [], ""
+    if editar:
+        try:
+            falta = ponto_edicao.o_que_falta()
+            obras_do_mobponto = ponto_edicao.obras_permitidas()
+        except Exception:  # noqa: BLE001
+            logger.exception("Ponto: não consegui preparar o lançamento")
+    contagem: dict = {}
+    for d in do_ponto.get("dias") or []:
+        if d.get("obra"):
+            contagem[d["obra"]] = contagem.get(d["obra"], 0) + 1
+    sugerida = (max(contagem, key=contagem.get) if contagem
+                else (ficha.get("obra_resolvida") or "")).upper()
+    ultimo = calendar.monthrange(ano, mes)[1]
+    return render_template(
+        "_folha_ficha.html", p=ficha, ponto=do_ponto, ano=ano, mes=mes,
+        pode_operar=auth.pode_operar(), editar_ponto=editar,
+        falta_para_editar=falta, obras_do_mobponto=obras_do_mobponto,
+        obra_sugerida=sugerida,
+        periodo_iso=(f"{ano:04d}-{mes:02d}-01", f"{ano:04d}-{mes:02d}-{ultimo:02d}"))
 
 
 @bp.route("/folha/pessoa/<cpf>/cadastro")

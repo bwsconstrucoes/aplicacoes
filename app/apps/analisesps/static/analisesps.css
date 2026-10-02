@@ -2670,3 +2670,12 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
   margin: 0 0 10px; }
 #tabela-rodadas tr.destaque td { background: var(--destaque-fundo, #fff8e1); }
 .gd-destino { width: 100%; margin: 6px 0; }
+
+/* Tela do Ponto (02/10/2026): importação e competências na lateral. */
+.importar-ponto { display: flex; gap: 6px; margin: 6px 0; }
+.importar-ponto select { flex: 1; }
+#ponto-competencia { width: 100%; }
+.lista-cargas { list-style: none; margin: 10px 0 0; padding: 0; }
+.lista-cargas li { display: flex; align-items: center; gap: 6px; padding: 3px 0;
+  border-top: 1px solid var(--borda); }
+.lista-cargas li .apagar-linha { margin-left: auto; }

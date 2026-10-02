@@ -25,6 +25,86 @@
   }
   window.abrirFichaDoFuncionario = carregar;
 
+  // --- LANÇAR BATIDAS (o mesmo pedido do analítico da folha, pelo mês) -------
+  function pedidoLancar(q) {
+    return {cpf: q.dataset.cpf, nome: q.dataset.nome, ano: q.dataset.ano, mes: q.dataset.mes,
+            de: q.querySelector(".lancar-de").value, ate: q.querySelector(".lancar-ate").value,
+            obra: q.querySelector(".lancar-obra").value,
+            hora_avulsa: q.querySelector(".lancar-avulsa").value,
+            justificativa: q.querySelector(".lancar-justificativa").value};
+  }
+  function esc(t) {
+    return String(t == null ? "" : t).replace(/[&<>"]/g,
+      c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  }
+  corpo.addEventListener("input", e => {
+    const q = corpo.querySelector("#ficha-lancar");
+    if (q && q.contains(e.target)) q.querySelector(".lancar-enviar").hidden = true;
+  });
+  async function verLancamento() {
+    const q = corpo.querySelector("#ficha-lancar");
+    const recadoQ = q.querySelector(".lancar-recado");
+    const area = q.querySelector(".lancar-plano");
+    const enviar = q.querySelector(".lancar-enviar");
+    recadoQ.textContent = "Gerando pré-visualização…";
+    enviar.hidden = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_ponto_plano') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(pedidoLancar(q))});
+      const d = await r.json();
+      if (!d.ok) { recadoQ.textContent = d.erro; area.innerHTML = ""; return; }
+      const p = d.plano;
+      recadoQ.textContent = p.batidas
+        ? p.batidas + " batida(s) em " + p.dias_com_lancamento + " dia(s)" +
+          (p.pulados.length ? "; " + p.pulados.length + " dia(s) sem alteração" : "")
+        : "Nenhuma batida a lançar neste período. Confira o motivo de cada dia.";
+      area.innerHTML = '<table class="sps mini"><thead><tr><th>Dia</th><th>Existentes</th>' +
+        "<th>A lançar</th><th>Desconsiderado</th></tr></thead><tbody>" +
+        p.dias.map(x => "<tr><td>" + esc(x.data_br) + ' <span class="cartao-dica">' +
+          esc(x.semana) + "</span></td><td>" + (x.ja.length ? esc(x.ja.join(", ")) : "—") +
+          "</td><td><b>" + (x.lancar.length ? esc(x.lancar.join(", ")) : "") +
+          '</b></td><td><span class="cartao-dica">' + esc(x.motivo || "") +
+          "</span></td></tr>").join("") + "</tbody></table>";
+      if (p.batidas) {
+        enviar.textContent = "Lançar " + p.batidas + " batida(s) no Mobponto";
+        enviar.hidden = false;
+      }
+    } catch (erro) {
+      recadoQ.textContent = "Não foi possível gerar a pré-visualização: " + erro + ".";
+    }
+  }
+  async function enviarLancamento(b) {
+    const q = corpo.querySelector("#ficha-lancar");
+    const recadoQ = q.querySelector(".lancar-recado");
+    const pedido = pedidoLancar(q);
+    if ((pedido.justificativa || "").trim().length < 5) {
+      recadoQ.textContent = "Informe a justificativa (mínimo de 5 caracteres).";
+      q.querySelector(".lancar-justificativa").focus();
+      return;
+    }
+    if (!confirm(b.textContent + " para " + q.dataset.nome + ", na obra " +
+                 pedido.obra.toUpperCase() + "?\n\nAs batidas já registradas não serão " +
+                 "alteradas. Lançamentos enviados ao Mobponto não podem ser desfeitos " +
+                 "por esta tela.")) return;
+    b.disabled = true;
+    recadoQ.textContent = "Iniciando…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_ponto_lancar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(pedido)});
+      const d = await r.json();
+      if (!d.ok) { recadoQ.textContent = d.erro; b.disabled = false; return; }
+      b.hidden = true; b.disabled = false;
+      recadoQ.textContent = d.fila_id
+        ? "Solicitação incluída na fila. A janela pode ser fechada; o resultado aparece na fila do ponto."
+        : "Lançamento iniciado. O resultado aparece na fila do ponto.";
+    } catch (erro) {
+      recadoQ.textContent = "Não foi possível lançar: " + erro + ". Confira no Mobponto antes de reenviar.";
+      b.disabled = false;
+    }
+  }
+
   function recado(texto, ruim) {
     const alvo = corpo.querySelector(".ficha-recado");
     if (alvo) { alvo.textContent = texto; alvo.classList.toggle("ruim", !!ruim); }
@@ -57,6 +137,17 @@
       } catch (err) { recado("Não foi possível atualizar o cadastro: " + err, true); botao.disabled = false; }
       return;
     }
+    if (botao.classList.contains("ficha-lancar-dia")) {
+      const q = corpo.querySelector("#ficha-lancar");
+      if (!q) return;
+      q.querySelector(".lancar-de").value = botao.dataset.data;
+      q.querySelector(".lancar-ate").value = botao.dataset.data;
+      q.scrollIntoView({behavior: "smooth", block: "start"});
+      if (q.querySelector(".lancar-obra").value) q.querySelector(".lancar-ver").click();
+      return;
+    }
+    if (botao.classList.contains("lancar-ver")) { await verLancamento(); return; }
+    if (botao.classList.contains("lancar-enviar")) { await enviarLancamento(botao); return; }
     if (botao.classList.contains("ficha-atualizar-ponto")) {
       botao.disabled = true;
       recado("Solicitando o ponto ao Mobponto…");

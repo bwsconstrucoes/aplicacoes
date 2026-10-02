@@ -11121,6 +11121,68 @@ Ficaram de propósito: "Pendências antes do pagamento" (escolha do dono), o bot
 Pipefy, "PAGAR EXTRA", nomes de colunas da planilha). Avisos já gravados no banco
 antes desta leva continuam com o texto antigo.
 
+#### Leva 146 — as regras da diária, gerar de dentro da folha e os arquivos por geração (02/10/2026)
+
+**O pedido.** O dono mandou a fórmula da aba Diaristas (QUERY com
+`AQ='PAGAR DIÁRIA'`, `AP<>'CORRIGIR VALOR DIÁRIA'`, `W<>'VIGIA'`, `AJ>0`;
+valor = dias × diária, +20 feriado, +10 sábado, +20 domingo), disse que
+*"Valor Diária está na coluna 49 em 'Dados Documentos'"* e que *"diarista é pago
+por quinzena"*. Pediu ainda gerar o arquivo **de dentro de cada folha** (escolher
+BeeVale/SomaPay, ver um resumo, confirmar e cair em Arquivos gerados), e, em
+Arquivos gerados, selecionar para **excluir** e para **lançar no Pipefy**.
+
+**Decisões:**
+- **Vigia** passa a ser só o cargo exatamente "VIGIA" (era "contém vigia") — é o
+  que o `W<>'VIGIA'` da planilha faz.
+- **Período da diária:** só quinzena (1 a 15) e fim de mês (16 ao fim). Sem "mês
+  inteiro". A tela abre sozinha no período mais provável: até o dia 10, o fim do
+  mês anterior; depois, a quinzena do mês corrente.
+- **Valor da diária pela posição:** se o cabeçalho da coluna não tiver um dos
+  nomes conhecidos, vale a **coluna 49 (AW)** de "Dados Documentos" — e o log da
+  carga registra qual cabeçalho estava lá. Era essa a causa de **todos os
+  diaristas aparecerem com "dados incompletos"**: a coluna não era achada pelo
+  nome, o valor ficava vazio. Depois de publicar, é preciso "Atualizar cadastro".
+- **Gerar de dentro da folha** (contabilidade, diaristas, alimentação/transporte):
+  o botão mostra um resumo (pessoas, total, destino), e o OK **refecha** a
+  apropriação com o que está na tela e gera — o mesmo caminho de antes, num clique.
+  Só o mestre vê o botão.
+- **Arquivos gerados agrupados por geração** (os arquivos de pagamento + a
+  análise). Caixas de seleção: **Excluir** manda os arquivos para a lixeira do
+  Drive (recuperáveis por 30 dias) e apaga o registro; **não** apaga card já
+  criado no Pipefy — isso continua sendo feito no Pipefy. **Lançar no Pipefy**
+  aceita várias gerações de uma vez, uma depois da outra, cada uma com a sua
+  prévia.
+- **A fila do ponto se limpa:** pedido concluído some depois de 5 minutos;
+  falha fica 2 horas (para dar tempo de ler o motivo); esperando e rodando ficam
+  sempre.
+
+#### Leva 147 — a tela do Ponto vira lista de colaboradores (02/10/2026)
+
+**O pedido.** *"Quero poder a partir dessa tela pesquisar funcionários,
+visualizar os pontos de cada um e ainda poder editá-los. Quero uma tela mais
+limpa. Tem muita informação. Não precisa dessa informação de API. A informação de
+atualizações do ponto (…) colocar no sidebar, os filtros, seleção de competência."*
+
+**Como ficou:**
+- **Lateral:** competência; importação do Mobponto (situação da última carga,
+  "Trazer o ponto", lista das cargas com ×); a fila do ponto; filtros (nome ou
+  CPF, situação — com falta / sem marcação —, obra).
+- **Centro:** a lista de colaboradores da competência — dias com ponto, dias com
+  obra, faltas, dias sem marcação e as obras do mês. Clicar no nome abre a mesma
+  janela do funcionário das outras folhas.
+- **Editar o ponto pela janela:** o "Lançar ponto no Mobponto" (prévia e envio,
+  com um botão por dia) saiu da janela exclusiva da contabilidade e passou para a
+  janela comum. Vale para quem está no cadastro, mesmo fora de uma folha
+  importada — o mês vem da competência da tela. Com isso, **diaristas e
+  alimentação/transporte também editam ponto**.
+- Saiu da tela: a explicação da API, a configuração técnica e a tabela crua das
+  cargas.
+
+**Verificado:** suíte inteira (7.819 verdes); a tela e a janela abertas num
+navegador com dado de teste. **Não verificado com dado real:** o lançamento no
+Mobponto a partir da janela fora da folha (o caminho é o mesmo de antes, muda só
+de onde vem o mês).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11132,7 +11194,8 @@ antes desta leva continuam com o texto antigo.
 | ~~publicar a leva 142~~ — **publicada em 01/10/2026** (main em `23a96dd`), sem migração nova | — |
 | ~~publicar a leva 143~~ — **publicada em 01/10/2026**. Falta o dono gerar de novo e subir no portal do Soma | ele |
 | ~~publicar as levas 144 e 145~~ — **publicadas em 01/10/2026**. Apertar "Aplicar atualizações do banco" (044) e depois "Atualizar cadastro" | ele |
-| confirmar o nome da coluna do valor da diária na planilha, a regra da meia diária e se diarista é pago por quinzena ou por mês | ele |
+| ~~confirmar coluna do valor da diária e quinzena~~ — **respondido em 02/10**: coluna 49 de "Dados Documentos"; quinzena. Falta confirmar a regra da **meia diária** | ele |
+| publicar as levas 146 e 147 (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | dizer qual valor o link do botão da folha manda em `tipo` (vai no campo `automa_o_2` da SP) | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 

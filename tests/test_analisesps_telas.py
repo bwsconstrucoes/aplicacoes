@@ -5580,37 +5580,36 @@ def test_folha_toda_certa_NAO_mostra_a_faixa_de_criticas(app, monkeypatch):
 # ---------------------------------------------------------------------------
 # A SUBTELA DO PONTO — 27/09/2026
 # ---------------------------------------------------------------------------
-def test_a_tela_do_ponto_MOSTRA_os_campos_que_a_api_manda(app, monkeypatch):
-    """⚠️ É O QUE DESTRAVA A APROPRIAÇÃO, e por isso está na tela e não num log.
-
-    A API manda, em cada dia, campos que o próprio script do dono descobre em
-    tempo de execução — ninguém escreveu em lugar nenhum quais são. Eu não vou
-    adivinhar qual é a obra: palpite aqui decide em qual obra cai o salário de
-    500 pessoas."""
+def test_a_tela_do_ponto_LISTA_os_colaboradores_e_abre_a_janela(app, monkeypatch):
+    """O dono, 02/10/2026: *"a partir dessa tela pesquisar funcionários, visualizar
+    os pontos de cada um e ainda poder editá-los. Quero uma tela mais limpa (…)
+    Não precisa dessa informação de API."*"""
     from app.apps.analisesps import ponto as _ponto
 
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [{
         "id": 1, "ano": 2026, "mes": 8, "competencia": "08/2026",
-        "pessoas": 500, "dias": 15000, "paginas": 5, "paginas_lidas": 5,
-        "completa": True, "campos": ["dia", "local_trabalho", "hora_entrada"],
+        "pessoas": 2, "dias": 40, "paginas": 5, "paginas_lidas": 5,
+        "completa": True, "interrompida": False, "campos": ["dia", "obra_entrada"],
         "lista_de_avisos": [], "carregado_em": None, "carregado_por": "MARCELO"}])
-    monkeypatch.setattr(_ponto, "amostra_de_dias", lambda i, quantos=5: [{
-        "cpf": "99713349334", "nome": "GERLANIO", "data": None,
-        "matricula": "1234",
-        "campos": {"dia": "01/08/2026", "local_trabalho": "CREPEOLINDA",
-                   "hora_entrada": "07:58"}}])
+    monkeypatch.setattr(_ponto, "resumo_por_pessoa", lambda ano, mes: [
+        {"cpf": "99713349334", "nome": "GERLANIO", "dias": 20, "com_obra": 18,
+         "faltas": 2, "sem_marcacao": 0, "obras": [("CREPEOLINDA", 18)]},
+        {"cpf": "03513441363", "nome": "ANA", "dias": 20, "com_obra": 19,
+         "faltas": 0, "sem_marcacao": 1, "obras": [("CREPEAREIAS", 19)]}])
 
-    html = _como_mestre(app).get(
-        "/analisesps/folha/ponto").get_data(as_text=True)
-
-    assert "Campos enviados pela API para cada dia" in html
-    assert "local_trabalho" in html
-    assert "hora_entrada" in html
-    # E um dia de exemplo, com o que veio de verdade.
-    assert "CREPEOLINDA" in html
-    assert "07:58" in html
+    cliente = _como_mestre(app)
+    html = cliente.get("/analisesps/folha/ponto").get_data(as_text=True)
+    assert "GERLANIO" in html and "ANA" in html
+    assert "abrirFichaDoFuncionario" in html
+    assert "Campos enviados pela API" not in html, "a informação de API saiu"
+    assert 'id="btn-trazer-ponto"' in html
+    filtrado = cliente.get("/analisesps/folha/ponto?q=gerl").get_data(as_text=True)
+    assert "GERLANIO" in filtrado and ">ANA<" not in filtrado
+    por_obra = cliente.get(
+        "/analisesps/folha/ponto?obra=CREPEAREIAS").get_data(as_text=True)
+    assert "<b>ANA</b>" in por_obra and "<b>GERLANIO</b>" not in por_obra
 
 
 def test_sem_credencial_a_tela_do_ponto_diz_ONDE_criar_e_manda_TROCAR(app, monkeypatch):
@@ -5629,7 +5628,7 @@ def test_sem_credencial_a_tela_do_ponto_diz_ONDE_criar_e_manda_TROCAR(app, monke
     assert "MOBPONTO_API_KEY" in html
     assert "Apps Script" in html
     assert "diretamente para o Render" in html
-    assert "substitua a chave na origem" in html
+    assert "substitua a chave\n      na origem" in html or "substitua a chave na origem" in html
     # E sem credencial não oferece o botão: botão que só dá erro é armadilha.
     assert 'id="btn-trazer-ponto"' not in html
 
@@ -5641,19 +5640,19 @@ def test_mes_que_veio_PELA_METADE_e_marcado(app, monkeypatch):
 
     monkeypatch.setattr(_ponto, "_pronto", lambda: True)
     monkeypatch.setattr(_ponto, "configurado", lambda: True)
-    monkeypatch.setattr(_ponto, "amostra_de_dias", lambda i, quantos=5: [])
+    monkeypatch.setattr(_ponto, "resumo_por_pessoa", lambda ano, mes: [])
     monkeypatch.setattr(_ponto, "cargas", lambda *a, **k: [{
         "id": 1, "ano": 2026, "mes": 8, "competencia": "08/2026",
         "pessoas": 100, "dias": 1000, "paginas": 9, "paginas_lidas": 3,
-        "completa": False, "campos": [],
+        "completa": False, "interrompida": False, "campos": [],
         "lista_de_avisos": ["a API disse que há 9 páginas e eu li 3"],
         "carregado_em": None, "carregado_por": ""}])
 
     html = _como_mestre(app).get(
         "/analisesps/folha/ponto").get_data(as_text=True)
-    assert ">incompleta</span>" in html
-    assert "3 de 9" in html
-    assert "linha-alerta" in html
+    assert "Importação incompleta" in html
+    assert "3 de 9 página(s)" in html
+    assert '<b class="ruim">incompleta</b>' in html
 
 
 def test_o_ponto_NAO_tem_botao_em_configuracoes(app):
@@ -6990,7 +6989,7 @@ def test_a_tela_do_ponto_MOSTRA_a_ultima_tentativa_que_falhou(app, monkeypatch):
 
     assert "A última tentativa falhou" in html
     assert "HTTP 401" in html
-    assert "credenciais do Mobponto estão" in html, (
+    assert "credenciais do Mobponto estão sendo recusadas" in html, (
         "o recado tem de dizer o que fazer com um 401, não só mostrar o erro")
 
 
@@ -7017,9 +7016,9 @@ def test_a_tela_do_ponto_mostra_a_ultima_que_DEU_CERTO_mas_veio_vazia(
     html = _como_mestre(app).get(
         "/analisesps/folha/ponto").get_data(as_text=True)
 
-    assert "Última tentativa concluída com sucesso" in html
+    assert "Última importação concluída" in html
     assert "0 dia(s)" in html
-    assert "não há mês carregado" in html, (
+    assert "não há competência gravada" in html, (
         "sucesso sem nada carregado tem de ser explicado")
 
 
