@@ -29,7 +29,10 @@ TIPOS = [
      "cod_departamento": "", "ativo": True, "ordem": 2},
 ]
 
-CONTA = {"id": 1, "nome": "BD 7011", "omie_conta_corrente": 9999}
+# ⚠️ DESDE 02/10/2026 O FORNECEDOR E A OBRA SÃO SÓ DA CONTA — o dono tirou os
+# dois do tipo. O fornecedor 111 dos tipos acima fica para provar que NÃO é lido.
+CONTA = {"id": 1, "nome": "BD 7011", "omie_conta_corrente": 9999,
+         "omie_fornecedor": 7777}
 
 
 def linha(id_=10, descricao="TARIFA BANCARIA", valor="-9.00", **extra):
@@ -148,18 +151,32 @@ def test_o_fornecedor_da_conta_GANHA_do_que_estiver_no_tipo():
     assert plano["vai"][0]["codigo_cliente"] == 7777
 
 
-def test_sem_fornecedor_na_conta_vale_o_do_TIPO():
-    """A reserva existe para nada que já estava configurado parar de funcionar
-    quando isto mudou — e para um cobrador que não seja o banco."""
-    plano = co.planejar([linha()], CONTA, TIPOS)     # a conta não tem
-    assert plano["vai"][0]["codigo_cliente"] == 111
+def test_o_fornecedor_do_TIPO_nao_vale_mais():
+    """O dono, 02/10/2026: *"O Código do fornecedor/cliente não pode ser
+    cadastrado em Tipos do OMIE, visto que a associação deve ser a partir da
+    conta."* Conta sem fornecedor é recusada, mesmo com o tipo tendo um."""
+    conta = {k: v for k, v in CONTA.items() if k != "omie_fornecedor"}
+    plano = co.planejar([linha()], conta, TIPOS)
+    assert not plano["vai"]
+    assert "Fornecedor no OMIE" in plano["nao_vai"][0]["motivo"]
+
+
+def test_a_OBRA_vem_da_CONTA_e_nao_do_tipo():
+    """*"Quero (…) definir isso no cadastro da Conta Corrente."* Vale para todo
+    movimento de conta corrente da conta, não só tarifa."""
+    tipos = [dict(TIPOS[0], cod_departamento="OBRA_DO_TIPO")]
+    plano = co.planejar([linha()], dict(CONTA, omie_departamento="DEP9"), tipos)
+    assert plano["vai"][0]["cod_departamento"] == "DEP9"
+    sem = co.planejar([linha()], CONTA, tipos)
+    assert sem["vai"][0]["cod_departamento"] == ""
 
 
 def test_sem_fornecedor_em_LUGAR_NENHUM_a_recusa_manda_para_a_conta():
     """⚠️ ESTA FRASE É O CONSERTO DO QUE ELE VIU. A antiga mandava cadastrar no
     TIPO, que é o lugar errado — e ele teria de criar um tipo por banco."""
     sem_forn = [dict(TIPOS[0], codigo_cliente=None)]
-    plano = co.planejar([linha()], CONTA, sem_forn)
+    conta = {k: v for k, v in CONTA.items() if k != "omie_fornecedor"}
+    plano = co.planejar([linha()], conta, sem_forn)
     motivo = plano["nao_vai"][0]["motivo"]
     assert "conta" in motivo and "BD 7011" in motivo
     assert "Contas" in motivo, "a frase tem de dizer ONDE resolver"
@@ -172,7 +189,7 @@ def test_zero_nao_conta_como_fornecedor():
     é um cadastro do OMIE, e lançar com 0 daria erro lá, não aqui."""
     conta = dict(CONTA, omie_fornecedor=0)
     plano = co.planejar([linha()], conta, TIPOS)
-    assert plano["vai"][0]["codigo_cliente"] == 111
+    assert not plano["vai"] and "Fornecedor no OMIE" in plano["nao_vai"][0]["motivo"]
 
 
 def test_historico_desconhecido_diz_o_que_fazer():

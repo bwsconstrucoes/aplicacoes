@@ -103,6 +103,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/conciliacao/marcar"),
     ("POST", "/analisesps/api/conciliacao/anotar"),
     ("POST", "/analisesps/api/conciliacao/conta"),
+    ("GET", "/analisesps/api/conciliacao/fornecedores"),
     ("POST", "/analisesps/api/conciliacao/linha"),
     ("POST", "/analisesps/api/conciliacao/omie/ensaiar"),
     ("POST", "/analisesps/api/conciliacao/omie/lancar"),

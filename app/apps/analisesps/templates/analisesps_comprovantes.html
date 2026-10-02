@@ -109,7 +109,17 @@
           <span class="cartao-dica">{{ lote.quem }} · {{ lote.recebido_em|momento_br }}</span>
         </summary>
 
-        {% if lote.erro %}<div class="aviso atencao">{{ lote.erro }}</div>{% endif %}
+        {% if lote.erro %}
+          {# O ERRO EM LINGUAGEM DE QUEM OPERA (02/10/2026): *"traduzir melhor os
+             erros (…) pro leigo que tiver operando saber que era só mandar de
+             novo"*. O texto técnico fica atrás de um clique, para diagnóstico. #}
+          <div class="aviso atencao">
+            {% if lote.erro_explicado %}{{ lote.erro_explicado }}
+              <details style="margin-top:6px"><summary class="cartao-dica">Detalhe técnico</summary>
+                <small>{{ lote.erro }}</small></details>
+            {% else %}{{ lote.erro }}{% endif %}
+          </div>
+        {% endif %}
 
         {% set itens = lote.itens %}
         {% if itens %}
@@ -126,7 +136,10 @@
                   <td class="id">{{ i.sp_id or '—' }}</td>
                   <td>{{ i.valor or '—' }}</td>
                   <td>{{ i.recebedor or '—' }}</td>
-                  <td>{{ i.motivo or '' }}
+                  <td>{% if i.motivo_explicado %}{{ i.motivo_explicado }}
+                    <details><summary class="cartao-dica">Detalhe técnico</summary>
+                      <small>{{ i.motivo }}</small></details>
+                    {% else %}{{ i.motivo or '' }}{% endif %}
                     {# ⚠️ A CONVERSA COM O OMIE, a um clique.
 
                        *"A causa raiz é saber POR QUE não está baixando no
@@ -197,6 +210,17 @@
            Formulário comum, não `fetch`: é botão de destravar, e tem de
            funcionar mesmo se o JavaScript não carregar. --------------- #}
         {% if pode_operar and (lote.situacao in ('PRONTO', 'FALHOU')
+                               or lote.parece_parado) and not lote.tem_arquivo %}
+          {# ⚠️ SEM O PDF NO SERVIDOR O BOTÃO NÃO TEM O QUE FAZER — e a tela diz
+             isso antes do clique, em vez de oferecer um botão que falha. #}
+          {% if lote.pendencias or lote.situacao == 'FALHOU' or lote.parece_parado %}
+            <p class="cartao-dica" style="margin-top:10px">
+              O PDF deste envio não está mais no servidor: o sistema foi
+              publicado ou reiniciado depois do envio, ou o envio tem mais de
+              sete dias. Para tentar de novo, arraste o arquivo outra vez — o
+              que já baixou no Omie não baixa duas vezes.</p>
+          {% endif %}
+        {% elif pode_operar and (lote.situacao in ('PRONTO', 'FALHOU')
                                or lote.parece_parado) %}
           <form method="post" style="margin-top:10px"
                 action="{{ url_for('analisesps.reprocessar_comprovante') }}">

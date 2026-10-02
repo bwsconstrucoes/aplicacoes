@@ -415,7 +415,7 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
         "valor": Decimal("0.00"), "por_obra": [], "obra": "",
         "dias_de_ctps": 0, "dias_sem_decidir": 0,
         "motivos": [], "pagar": True, "impossivel": False,
-        "desligado": False, "vigia": e_vigia(ficha),
+        "desligado": False, "vigia": e_vigia(ficha), "sem_diaria": False,
         "ajuste_pagar": ajuste.get("pagar"),
     }
     por_obra: dict = {}
@@ -480,18 +480,42 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
         saida["motivos"].append(
             f"{saida['dias_sem_decidir']} dia(s) sem data de início ou admissão "
             "no cadastro — não é possível determinar se são diária.")
-    # IMPOSSÍVEL — não há valor para pagar, e marcar pagaria zero.
-    if valor_diaria is None:
+    # ⚠️ TRÊS SITUAÇÕES QUE A PRIMEIRA VERSÃO CHAMAVA TODAS DE "DADOS INCOMPLETOS"
+    # (dono, 02/10/2026: *"continua aparecendo gente com dados incompletos"*):
+    #   - SEM DIÁRIA: há dia de diária no período, mas nenhum vale diária pela
+    #     regra (sem presença, falta…). Não é defeito de cadastro; a planilha pula
+    #     (`AJ > 0`). Fica fora da lista sem filtro.
+    #   - CADASTRO SEM DATAS: os dias não puderam ser classificados.
+    #   - SEM VALOR DA DIÁRIA: há diária a pagar, mas o cadastro não diz quanto.
+    # Só as duas últimas são "cadastro incompleto".
+    if not saida["quantidade"]:
+        saida["pagar"] = False
+        if saida["dias_sem_decidir"] and not saida["dias"]:
+            saida["impossivel"] = True
+        else:
+            saida["sem_diaria"] = True
+            saida["motivos"].append(_por_que_sem_diaria(saida, cadastro))
+    elif valor_diaria is None:
         saida["pagar"] = False
         saida["impossivel"] = True
         saida["motivos"].append(
             "o cadastro não informa o valor da diária. Corrija no card do Pipefy e "
             "atualize o cadastro.")
-    elif not saida["quantidade"]:
-        saida["pagar"] = False
-        saida["impossivel"] = True
-        saida["motivos"].append("nenhum dia de diária com presença no período.")
     return _decidir(saida, ajuste)
+
+
+def _por_que_sem_diaria(saida: dict, cadastro: dict) -> str:
+    """O motivo de quem tem dia de diária e nenhuma diária a receber."""
+    com_presenca = [d for d in saida["dias"]
+                    if _sem_acento(d.get("presenca")).startswith(_PRESENCA)]
+    if com_presenca and not e_rpa(cadastro) \
+            and _sem_acento(cadastro.get("tipo")) != _CTPS:
+        return ("há presença no período, mas o tipo de cadastro "
+                f"({cadastro.get('tipo') or 'não informado'} / "
+                f"{cadastro.get('contrato') or 'contrato não informado'}) não gera "
+                "diária pela regra da planilha: somente Prestador de Serviço com "
+                "contrato Autônomo (RPA), ou CTPS antes da admissão.")
+    return "nenhum dia com presença que gere diária no período."
 
 
 def _tipo_do_ajuste(qual: str) -> str:
@@ -509,7 +533,8 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
             "competencia": f"{mes:02d}/{ano}", "inicio": inicio, "fim": fim,
             "tem_ponto": False, "tem_coluna_da_diaria": colaboradores.tem_valor_diaria(),
             "pessoas": [], "sem_cadastro": [], "total": Decimal("0.00"),
-            "quantos_a_pagar": 0, "por_obra": [], "fechamento": None}
+            "quantos_a_pagar": 0, "por_obra": [], "fechamento": None,
+            "quantos_fora": 0, "valor_fora": Decimal("0.00"), "quantos_incompletos": 0}
     carga = None
     try:
         carga = ponto.carga_do_mes(ano, mes)
@@ -541,8 +566,8 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
             ficha, no_periodo, inicio, fim, valores.get(cpf), feriados,
             codigo_por_nome, colaboradores.resolver_obra(ficha, codigo_por_nome),
             ajustes.get(cpf))
-        if not p["dias"]:
-            continue          # nenhum dia de diária: não é diarista neste período
+        if not p["dias"] and not p["dias_sem_decidir"]:
+            continue          # só dias de CTPS: não é diarista neste período
         pessoas.append(p)
 
     if sem_cadastro:
@@ -565,6 +590,15 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
             alvo["pessoas"] += 1
             alvo["dias"] += o["dias"]
             alvo["total"] += o["valor"]
+    # Os números da lateral, no mesmo desenho da folha da contabilidade: incluído,
+    # fora (desmarcado à mão) e o que não pode ser pago (cadastro incompleto).
+    from . import folha_lista
+    fora = [p for p in pessoas if "nao_vai" in folha_lista.situacoes_da_pessoa(p)]
+    base.update({
+        "quantos_fora": len(fora),
+        "valor_fora": sum((p["valor"] for p in fora), Decimal("0.00")),
+        "quantos_incompletos": sum(1 for p in pessoas if p["impossivel"]),
+    })
     base.update({
         "pessoas": pessoas, "sem_cadastro": sem_cadastro,
         "quantos": len(pessoas), "quantos_a_pagar": len(a_pagar),

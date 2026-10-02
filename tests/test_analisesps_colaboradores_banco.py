@@ -901,7 +901,9 @@ def test_a_ficha_MANDA_e_a_aba_separada_so_completa(banco_cadastro, monkeypatch)
     assert de_para["000099"]["cpf"] == "99713349334", "vale a ficha"
     assert "000013" not in de_para, "a aba separada não sobrescreve a ficha"
     assert de_para["000387"]["cpf"] == "03513441363", "a aba separada completa"
-    assert any("discordam da ficha" in a for a in resultado["avisos"])
+    aviso = next(a for a in resultado["avisos"] if "discordam" in a)
+    # O aviso diz DE QUEM é o código nos dois lados — só os números não bastam.
+    assert "000013: na aba, GERLANIO, cuja ficha diz 000099" in aviso
 
 
 def test_ficha_SEM_codigo_nao_apaga_o_que_a_aba_separada_deu(banco_cadastro, monkeypatch):

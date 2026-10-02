@@ -452,3 +452,15 @@ def test_sem_conversa_com_o_omie_a_coluna_fica_vazia_e_nao_quebra():
     from app.apps.analisesps import comprovantes
     linhas = comprovantes.ler_resposta({"planos": [_plano_omie([])]})
     assert linhas[0]["conversa_omie"] == ""
+
+
+def test_o_erro_de_COTA_do_Google_vira_frase_de_quem_opera():
+    """O dono, 02/10/2026: *"traduzir melhor os erros (…) pro leigo que tiver
+    operando saber que era só mandar de novo"*."""
+    bruto = ("Falha ao carregar dados Google Sheets: APIError: [429]: Quota "
+             "exceeded for quota metric 'Read requests'")
+    frase = comprovantes.explicar_erro(bruto)
+    assert "Processar de novo" in frase and "Google" in frase
+    assert "429" not in frase
+    assert comprovantes.explicar_erro("Read timed out (read timeout=60)")
+    assert comprovantes.explicar_erro("título não encontrado no Omie") == ""

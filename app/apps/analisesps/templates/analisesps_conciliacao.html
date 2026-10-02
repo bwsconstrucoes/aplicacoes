@@ -710,11 +710,14 @@
     tarifa bancária, tarifa de PIX, rentabilidade. O sistema reconhece pelo
     histórico do banco e usa a categoria que você apontar aqui.
     <b>O que ele não reconhecer, ele não lança</b> — e diz qual foi.
+    <br>O <b>fornecedor</b> (o banco) e a <b>obra</b> dos movimentos de conta
+    corrente não ficam no tipo: são da <b>conta corrente</b>, em "Contas". O tipo
+    vale para todas as contas.
   </p>
 
   <table class="sps" style="margin-top:10px">
     <thead><tr><th>Tipo</th><th>Reconhece pelo histórico</th>
-      <th>Categoria no OMIE</th><th>Fornecedor/cliente</th><th>Obra</th>
+      <th>Categoria no OMIE</th>
       <th>O que é</th><th></th></tr></thead>
     <tbody>
       {% for tp in tipos_omie %}
@@ -722,8 +725,6 @@
           <td><b>{{ tp.nome }}</b></td>
           <td><small>{{ tp.palavras }}</small></td>
           <td><code>{{ tp.codigo_categoria or '—' }}</code></td>
-          <td>{{ tp.codigo_cliente or '—' }}</td>
-          <td>{{ tp.cod_departamento or '—' }}</td>
           <td>{% if tp.natureza == 'transferencia' %}
                 <span class="etiqueta">transferência</span>
               {% else %}movimento{% endif %}</td>
@@ -756,8 +757,6 @@
         {% else %}
           <input class="campo-largo" name="codigo_categoria" placeholder="2.01.05">
         {% endif %}</div>
-      <div><label class="rotulo-campo">Código do fornecedor/cliente</label>
-        <input class="campo-largo" name="codigo_cliente" placeholder="1234567"></div>
       <div><label class="rotulo-campo">O que é</label>
         {# ⚠️ TRANSFERÊNCIA MEXE NAS DUAS PONTAS: sai de uma conta e entra na
            outra. Por isso ela pede a conta de destino na hora de lançar, e a
@@ -767,17 +766,6 @@
           <option value="normal">Movimento normal (tarifa, rentabilidade…)</option>
           <option value="transferencia">Transferência entre contas</option>
         </select></div>
-      <div><label class="rotulo-campo">Obra (opcional)</label>
-        {% if listas_omie.obras %}
-          <select class="campo-largo" name="cod_departamento">
-            <option value="">— nenhuma —</option>
-            {% for o in listas_omie.obras %}
-              <option value="{{ o.codigo }}">{{ o.nome }}</option>
-            {% endfor %}
-          </select>
-        {% else %}
-          <input class="campo-largo" name="cod_departamento">
-        {% endif %}</div>
     </div>
     <p class="cartao-dica" style="margin:8px 0 0">
       {% if listas_omie.erro %}
@@ -791,10 +779,6 @@
       <br><b>Separe as palavras por ponto-e-vírgula.</b> Acento e maiúscula não
       contam. Quando duas casarem, vale a mais específica — "TARIFA PIX" ganha
       de "TARIFA".
-      <br><b>O fornecedor/cliente aqui é opcional</b> e serve de reserva: quem
-      vale é o <b>Fornecedor no OMIE da conta</b>, porque quem cobra a tarifa é
-      o banco daquela conta. Só preencha aqui se este tipo for cobrado por
-      alguém que não é o banco.
     </p>
     <p style="margin:10px 0 0">
       <button class="btn" type="submit">Gravar tipo</button>
@@ -848,6 +832,8 @@
           <td>
             {% if c.omie_conta_corrente and c.omie_fornecedor %}
               <span class="etiqueta boa">sim</span>
+              <small>{{ c.omie_fornecedor_nome or ('fornecedor ' ~ c.omie_fornecedor) }}
+                · obra dos movimentos: {{ c.omie_departamento_nome or 'não definida' }}</small>
             {% elif not c.omie_conta_corrente and not c.omie_fornecedor %}
               <span class="etiqueta">ainda não</span>
               <small>faltam a conta corrente e o fornecedor do OMIE</small>
@@ -918,20 +904,38 @@
          Pedido do dono em 25/09/2026. #}
       <div style="flex:2"><label class="rotulo-campo">Fornecedor no OMIE
           <small>(o banco que cobra a tarifa)</small></label>
-        {% if listas_omie.fornecedores %}
-          <select class="campo-largo" name="omie_fornecedor">
-            <option value="">— escolha —</option>
-            {% for f in listas_omie.fornecedores %}
-              <option value="{{ f.codigo }}">{{ f.nome }}
-                {%- if f.documento %} · {{ f.documento }}{% endif %}</option>
+        {# ⚠️ BUSCA EM TODOS OS CADASTROS DO OMIE (02/10/2026). Era um campo de
+           escolha só com o que "parecia banco", sem busca — e o dono não achava
+           o dele. Digita-se o nome ou o CNPJ; o código vai no campo escondido. #}
+        <input type="hidden" name="omie_fornecedor">
+        <div class="busca-fornecedor">
+          <input class="campo-largo" type="search" id="procura-fornecedor"
+                 autocomplete="off" data-sem-mascara
+                 placeholder="nome ou CNPJ do banco…"
+                 aria-label="Procurar fornecedor no OMIE">
+          <ul class="achados-fornecedor" id="achados-fornecedor" hidden></ul>
+        </div>
+        <small id="fornecedor-escolhido">Nenhum fornecedor escolhido.</small>
+        </div>
+    </div>
+    {# ⚠️ A OBRA DOS MOVIMENTOS DE CONTA CORRENTE É DA CONTA (02/10/2026): *"como temos várias
+       contas e o TIPO OMIE é meio genérico vai dar erro de apropriação.
+       Quero (…) definir isso no cadastro da Conta Corrente."* #}
+    <div class="faixa" style="margin-top:8px">
+      <div style="flex:2"><label class="rotulo-campo">Obra dos movimentos
+          <small>(departamento do OMIE de todo lançamento de conta corrente desta
+          conta: tarifa, rentabilidade e os demais tipos)</small></label>
+        {% if listas_omie.obras %}
+          <select class="campo-largo" name="omie_departamento">
+            <option value="">— sem obra —</option>
+            {% for o in listas_omie.obras %}
+              <option value="{{ o.codigo }}">{{ o.nome }}</option>
             {% endfor %}
           </select>
-          <small>Não achou o banco na lista? Ela traz os cadastros do OMIE com
-            cara de banco. Se o seu não estiver aí, me diga.</small>
         {% else %}
-          <input class="campo-largo" name="omie_fornecedor"
-                 placeholder="o código do banco no OMIE">
-          <small>A lista do OMIE não veio — digite o código.</small>
+          <input class="campo-largo" name="omie_departamento"
+                 placeholder="o código do departamento no OMIE">
+          <small>A lista de obras do OMIE não veio — digite o código.</small>
         {% endif %}</div>
     </div>
     <div class="faixa" style="margin-top:8px">
@@ -1540,10 +1544,11 @@ if (formConta) {
       const c = JSON.parse(b.dataset.conta);
       ["id", "nome", "banco", "agencia", "numero", "ordem",
        "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente",
-       "omie_fornecedor"].forEach(k => {
+       "omie_fornecedor", "omie_departamento"].forEach(k => {
         const campo = formConta.querySelector('[name="' + k + '"]');
         if (campo) campo.value = c[k] === null || c[k] === undefined ? "" : c[k];
       });
+      mostrarFornecedor(c.omie_fornecedor, c.omie_fornecedor_nome);
       formConta.scrollIntoView({behavior: "smooth", block: "center"});
     });
   });
@@ -1551,6 +1556,57 @@ if (formConta) {
   if (limpar) limpar.addEventListener("click", () => {
     formConta.reset();
     formConta.querySelector('[name="id"]').value = "";
+    mostrarFornecedor("", "");
+  });
+
+  // --- a busca do fornecedor no OMIE ---------------------------------------
+  const campoForn = formConta.querySelector('[name="omie_fornecedor"]');
+  const procura = document.getElementById("procura-fornecedor");
+  const achados = document.getElementById("achados-fornecedor");
+  const escolhido = document.getElementById("fornecedor-escolhido");
+  function mostrarFornecedor(codigo, nome) {
+    campoForn.value = codigo || "";
+    escolhido.textContent = codigo
+      ? "Escolhido: " + (nome || "") + " (código " + codigo + ")"
+      : "Nenhum fornecedor escolhido.";
+  }
+  window.mostrarFornecedor = mostrarFornecedor;
+  let esperaBusca = null;
+  procura.addEventListener("input", () => {
+    clearTimeout(esperaBusca);
+    const termo = procura.value.trim();
+    if (termo.length < 2) { achados.hidden = true; achados.innerHTML = ""; return; }
+    esperaBusca = setTimeout(async () => {
+      let d;
+      try {
+        const r = await fetch("{{ url_for('analisesps.conciliacao_fornecedores') }}?q="
+                              + encodeURIComponent(termo));
+        d = await r.json();
+      } catch (e) { d = {ok: false, erro: String(e)}; }
+      achados.innerHTML = "";
+      if (!d.ok) {
+        achados.innerHTML = '<li class="cartao-dica"></li>';
+        achados.firstChild.textContent = d.erro || "Não foi possível consultar.";
+      } else if (!d.fornecedores.length) {
+        achados.innerHTML = '<li class="cartao-dica">Nenhum cadastro do OMIE com esse nome ou CNPJ.</li>';
+      } else {
+        d.fornecedores.forEach(f => {
+          const li = document.createElement("li");
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "link-btn";
+          b.textContent = f.nome + (f.documento ? " · " + f.documento : "");
+          b.addEventListener("click", () => {
+            mostrarFornecedor(f.codigo, b.textContent);
+            procura.value = "";
+            achados.hidden = true;
+          });
+          li.appendChild(b);
+          achados.appendChild(li);
+        });
+      }
+      achados.hidden = false;
+    }, 300);
   });
   formConta.addEventListener("submit", async e => {
     e.preventDefault();
@@ -1823,8 +1879,7 @@ if (formTipo) {
   document.querySelectorAll(".editar-tipo").forEach(b => {
     b.addEventListener("click", () => {
       const tp = JSON.parse(b.dataset.tipo);
-      ["id", "nome", "palavras", "codigo_categoria", "codigo_cliente",
-       "cod_departamento", "natureza"].forEach(k => {
+      ["id", "nome", "palavras", "codigo_categoria", "natureza"].forEach(k => {
         const campo = formTipo.querySelector('[name="' + k + '"]');
         if (campo) campo.value = tp[k] === null || tp[k] === undefined ? "" : tp[k];
       });

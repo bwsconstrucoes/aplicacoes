@@ -201,22 +201,28 @@ def _codigo_de_integracao(linha_id: int) -> str:
     return f"CONC{int(linha_id)}"
 
 
-def _fornecedor_de(conta: dict, tipo: dict):
-    """Quem é o fornecedor/cliente deste lançamento no OMIE.
+def _fornecedor_de(conta: dict, tipo: dict = None):
+    """Quem é o fornecedor/cliente deste lançamento no OMIE: o da CONTA.
 
-    ⚠️ A CONTA MANDA; o tipo é reserva. Quem cobra a tarifa é o banco da conta
-    — a do BD 50024 é do Bradesco, a da Sicredi é da Sicredi. Guardar isso no
-    tipo obrigaria a um tipo por banco, todos com as mesmas palavras.
-
-    O do tipo continua valendo quando a conta não tem: assim nada do que já
-    estava configurado parou de funcionar quando isto mudou, e um tipo cobrado
-    por um terceiro (não pelo banco) continua tendo onde dizer isso.
+    ⚠️ SÓ A CONTA, desde 02/10/2026. Quem cobra a tarifa é o banco da conta — a
+    do BD 50024 é do Bradesco, a da Sicredi é da Sicredi. O tipo tinha um campo
+    de "reserva", e o dono o tirou: *"O Código do fornecedor/cliente não pode
+    ser cadastrado em Tipos do OMIE, visto que a associação deve ser a partir da
+    conta."* O valor antigo do tipo fica no banco e não é mais lido — usá-lo
+    lançaria a tarifa de uma conta com o banco de outra.
     """
     da_conta = (conta or {}).get("omie_fornecedor")
-    if da_conta:
-        return int(da_conta)
-    do_tipo = (tipo or {}).get("codigo_cliente")
-    return int(do_tipo) if do_tipo else None
+    return int(da_conta) if da_conta else None
+
+
+def _obra_de(conta: dict) -> str:
+    """A obra (departamento do OMIE) de TODO movimento de conta corrente desta
+    conta — tarifa, rentabilidade e os demais tipos.
+
+    ⚠️ DA CONTA, NUNCA DO TIPO (dono, 02/10/2026): *"como temos várias contas e
+    o TIPO OMIE é meio genérico vai dar erro de apropriação. (…) Definir lá pra
+    qual obra vão as tarifas."* Conta sem obra lança sem departamento."""
+    return str((conta or {}).get("omie_departamento") or "").strip()
 
 
 def planejar(linhas: list, conta: dict, lista_tipos: list = None,
@@ -257,8 +263,8 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
                       "Cadastre um tipo com uma palavra que apareça nele")
         elif not str(tipo.get("codigo_categoria") or "").strip():
             motivo = f"o tipo \"{tipo['nome']}\" está sem categoria do OMIE"
-        elif not _fornecedor_de(conta, tipo):
-            # ⚠️ O FORNECEDOR VEM DA CONTA, e o do tipo é só reserva.
+        elif not _fornecedor_de(conta):
+            # ⚠️ O FORNECEDOR VEM DA CONTA — e só dela, desde 02/10/2026.
             #
             # Pedido do dono em 25/09/2026: *"o código fornecedor tem que estar
             # atrelado à conta bancária"*. E ele tem razão — quem cobra a
@@ -271,7 +277,7 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
             # está com a tela aberta e precisa saber para onde ir.
             motivo = (f"a conta \"{conta.get('nome', '?')}\" está sem o "
                       "fornecedor do OMIE — é quem cobra a tarifa. Abra "
-                      "\"Contas\", escolha o banco no campo "
+                      "\"Contas\", procure o banco no campo "
                       "\"Fornecedor no OMIE\" e grave")
         elif not linha.get("valor"):
             motivo = "o valor é zero"
@@ -326,6 +332,7 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
             # A ponta que RECEBE é do banco de destino — se ele tiver
             # fornecedor próprio, é o dele que vale naquele título.
             "destino_fornecedor": (destino or {}).get("omie_fornecedor"),
+            "destino_departamento": _obra_de(destino),
             # ⚠️ O SENTIDO VEM DO SINAL, não de configuração: negativo é conta
             # a pagar, positivo é conta a receber. Um estorno de tarifa entra
             # sozinho do lado certo, e não há campo a mais para errar.
@@ -335,8 +342,8 @@ def planejar(linhas: list, conta: dict, lista_tipos: list = None,
             "descricao": (linha.get("descricao") or "").strip(),
             "documento": (linha.get("documento") or "").strip(),
             "codigo_categoria": str(tipo["codigo_categoria"]).strip(),
-            "codigo_cliente": int(_fornecedor_de(conta, tipo)),
-            "cod_departamento": str(tipo.get("cod_departamento") or "").strip(),
+            "codigo_cliente": int(_fornecedor_de(conta)),
+            "cod_departamento": _obra_de(conta),
             "id_conta_corrente": int(conta["omie_conta_corrente"]),
             "codigo_integracao": _codigo_de_integracao(linha["id"]),
         })
@@ -637,6 +644,8 @@ def _outra_ponta(cli, item: dict, quem: str):
     # próprio, é o dele — senão fica o da origem, que é melhor que nenhum.
     if item.get("destino_fornecedor"):
         entrada["codigo_cliente"] = int(item["destino_fornecedor"])
+    # E a obra da ponta que entra é a da conta de destino (02/10/2026).
+    entrada["cod_departamento"] = item.get("destino_departamento") or ""
     try:
         # ⚠️ AS DUAS PONTAS SÃO LANÇAMENTOS DE CONTA CORRENTE, e as duas com
         # `cTipo` = TRA: no OMIE a transferência é isso — uma saída numa conta e
@@ -777,6 +786,25 @@ def categorias_do_omie(busca: str = "", limite: int = 400) -> list:
             for l in linhas]
 
 
+def nomes_de_fornecedores(codigos) -> dict:
+    """`{codigo: "RAZÃO SOCIAL · documento"}` — para a tela dizer QUEM está
+    gravado na conta, e não só o número. Nunca levanta."""
+    from .aportes_de_para import _consultar
+
+    limpos = sorted({int(c) for c in codigos or [] if str(c or "").strip().isdigit()})
+    if not limpos:
+        return {}
+    try:
+        marcas = ",".join("?" * len(limpos))
+        linhas = _consultar(
+            "SELECT codigo, COALESCE(razao_social, ''), COALESCE(cnpj_cpf, '') "
+            f"  FROM painel.clientes WHERE codigo IN ({marcas})", tuple(limpos))
+    except Exception:  # noqa: BLE001 — sem o espelho, a tela mostra o código
+        logger.exception("Conciliação: não consegui ler os nomes dos fornecedores")
+        return {}
+    return {int(l[0]): " · ".join(x for x in (l[1], l[2]) if x) for l in linhas}
+
+
 def bancos_do_omie(busca: str = "", limite: int = 300) -> list:
     """Cadastros do OMIE que parecem ser bancos, para o campo da conta.
 
@@ -792,13 +820,17 @@ def bancos_do_omie(busca: str = "", limite: int = 300) -> list:
 
     termo = str(busca or "").strip().lower()
     if termo:
+        # O CNPJ é procurado SÓ PELOS DÍGITOS: no espelho ele vem com ponto e
+        # barra, e quem digita "60746948" tem de achar "60.746.948/0001-12".
+        digitos = re.sub(r"\D", "", termo)
         linhas = _consultar(
             "SELECT codigo, COALESCE(razao_social, ''), COALESCE(cnpj_cpf, '') "
             "  FROM painel.clientes "
             " WHERE LOWER(COALESCE(razao_social, '')) LIKE ? "
-            "    OR COALESCE(cnpj_cpf, '') LIKE ? "
+            "    OR LOWER(COALESCE(nome_fantasia, '')) LIKE ? "
+            "    OR (? <> '' AND regexp_replace(COALESCE(cnpj_cpf, ''), '[^0-9]', '', 'g') LIKE ?) "
             " ORDER BY razao_social LIMIT ?",
-            (f"%{termo}%", f"%{termo}%", int(limite)))
+            (f"%{termo}%", f"%{termo}%", digitos, f"%{digitos}%", int(limite)))
     else:
         # As palavras que aparecem na razão social de banco. Não é lista de
         # bancos — é o que basta para o campo nascer útil.

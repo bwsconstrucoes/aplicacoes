@@ -7345,3 +7345,75 @@ def test_o_calendario_ignora_a_data_e_obedece_ao_resto(banco_analisesps):
     assert achado["total"] == Decimal("3000.00")
     assert dt.date(2026, 9, 3) in achado["dias"]
     assert dt.date(2026, 9, 25) in achado["dias"]
+
+
+# ---------------------------------------------------------------------------
+# "PROCESSAR DE NOVO" COM O PDF AINDA LÁ — 02/10/2026
+#
+# O dono: *"sempre que coloco processar de novo o arquivo não tá mais no
+# servidor, essa função funciona mesmo?"* Não funcionava: o PDF era apagado no
+# fim do lote, com sucesso OU com falha.
+# ---------------------------------------------------------------------------
+QUOTA = ("Falha ao carregar dados Google Sheets: APIError: [429]: Quota exceeded "
+         "for quota metric 'Read requests' and limit 'Read requests per minute "
+         "per user' of service 'sheets.googleapis.com'")
+
+
+@pytest.mark.banco
+def test_lote_que_FALHOU_guarda_o_PDF_e_processar_de_novo_funciona(
+        banco_analisesps, monkeypatch, tmp_path):
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "TENTATIVAS_NA_COTA", 1)
+
+    def falha(pedaco, nome):
+        raise RuntimeError("o Omie não respondeu")
+
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", falha)
+    lote_id = comprovantes.guardar(_pdf(2), "x.pdf", "p", "P")
+    assert comprovantes.processar_um(lote_id)["ok"] is False
+    assert comprovantes.historico()[0]["tem_arquivo"], "o PDF tem de ficar"
+
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", _robo_falso(2))
+    assert comprovantes.reprocessar_lote(lote_id)["ok"]
+    assert comprovantes.processar_um(lote_id)["ok"]
+    assert not comprovantes.historico()[0]["tem_arquivo"], (
+        "tudo baixado: o PDF sai do disco")
+
+
+@pytest.mark.banco
+def test_o_PDF_fica_quando_sobra_pagina_NAO_LOCALIZADA(banco_analisesps,
+                                                         monkeypatch, tmp_path):
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", lambda p, n: {
+        "modo_teste": False,
+        "planos": [{"match": {"status": "nao_localizado"}, "pode_executar": False,
+                    "receipt": {"page": 1}}]})
+    lote_id = comprovantes.guardar(_pdf(1), "x.pdf", "p", "P")
+    comprovantes.processar_um(lote_id)
+    assert comprovantes.historico()[0]["tem_arquivo"]
+
+
+@pytest.mark.banco
+def test_a_COTA_DO_GOOGLE_espera_e_tenta_de_novo_sozinha(banco_analisesps,
+                                                          monkeypatch, tmp_path):
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "ESPERA_DA_COTA", 0)
+    chamadas = [0]
+    certo = _robo_falso(1)
+
+    def responder(pedaco, nome):
+        chamadas[0] += 1
+        if chamadas[0] == 1:
+            raise RuntimeError(QUOTA)
+        return certo(pedaco, nome)
+
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", responder)
+    lote_id = comprovantes.guardar(_pdf(1), "x.pdf", "p", "P")
+    assert comprovantes.processar_um(lote_id)["ok"]
+    assert chamadas[0] == 2
