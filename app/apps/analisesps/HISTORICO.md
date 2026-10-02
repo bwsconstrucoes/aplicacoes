@@ -11379,7 +11379,8 @@ pequenininho, os dias que foram trabalhados"*.
 | ~~publicar o conserto da presença com complemento~~ — **publicado em 02/10/2026** (suíte inteira 7.835 verdes) | — |
 | ~~publicar a ordem nova da conciliação~~ — publicada em 02/10/2026 | — |
 | ~~publicar a leva 152~~ — publicada em 02/10/2026 (sem migração) | — |
-| publicar a leva 153 (sem migração) | ele |
+| ~~publicar a leva 153~~ — publicada em 02/10/2026 (main em `4f48c5f`, suíte inteira 7.847 verdes) | — |
+| BeeVale e SomaPay na mesma geração: decidir o critério — por conta (recomendado), por pessoa ou por tipo de folha | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
