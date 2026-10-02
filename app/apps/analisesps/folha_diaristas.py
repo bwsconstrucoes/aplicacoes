@@ -252,8 +252,12 @@ PAGAR_EXTRA = "PAGAR EXTRA"
 
 
 def _segundos(texto) -> int:
-    """"07:30" → 27000. Célula vazia vale ZERO, como na conta da planilha."""
-    partes = str(texto or "").strip().split(":")
+    """"07:30" → 27000. Célula vazia vale ZERO, como na conta da planilha.
+
+    O Mobponto manda "HH:MM" ou "HH:MM:SS" (é o que o programa do dono lê); se
+    vier data junto ("2026-09-08 07:30:00"), vale a parte da hora."""
+    texto = str(texto or "").strip().replace("T", " ").split(" ")[-1]
+    partes = texto.split(":")
     try:
         return (int(partes[0]) * 3600
                 + (int(partes[1]) * 60 if len(partes) > 1 else 0)

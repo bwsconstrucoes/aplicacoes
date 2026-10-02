@@ -41,6 +41,10 @@ def test_AG_e_saida_menos_entrada_e_cai_para_retorno_e_almoco():
     assert fd.horas_trabalhadas(["07:00", "12:00", "13:00", "17:00"]) == D(36000) / 86400
     assert fd.horas_trabalhadas(["07:00", "12:00", "13:00", ""]) == D(21600) / 86400
     assert fd.horas_trabalhadas(["07:00", "12:00", "", ""]) == D(18000) / 86400
+    assert fd.horas_trabalhadas(["07:00:00", "", "13:00:30", ""]) == D(21630) / 86400
+    assert fd.horas_trabalhadas(["2026-09-08 07:00:00", "2026-09-08 12:00:00",
+                                 "2026-09-08 13:00:00", "2026-09-08 17:00:00"]) \
+        == D(36000) / 86400
 
 
 def test_presenca_cheia_vale_UMA_diaria():
