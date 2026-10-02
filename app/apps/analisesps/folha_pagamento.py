@@ -184,13 +184,14 @@ def linhas_para_pagar(ano: int, mes: int, tipo: str, verbas) -> list:
 
 
 def preparar(ano: int, mes: int, tipo: str, verbas, destino: str,
-             juntar_verbas: bool = False) -> dict:
+             juntar_verbas: bool = False, destinos: dict | None = None) -> dict:
     """O que vai sair, ANTES de sair. Nada é gravado nem sobe para o Drive.
 
     É o passo que ele pediu: *"mostrar, antes de gerar, quantos arquivos vão sair e
     com que total cada um"*."""
     linhas = linhas_para_pagar(ano, mes, tipo, verbas)
-    lotes = geracao.montar_lotes(linhas, destino, juntar_verbas)
+    lotes = (geracao.montar_lotes_por_conta(linhas, destinos, destino, juntar_verbas)
+             if destinos else geracao.montar_lotes(linhas, destino, juntar_verbas))
     resumo = geracao.resumo_dos_lotes(lotes)
     return {
         "ano": int(ano), "mes": int(mes), "tipo": tipo,
@@ -275,12 +276,13 @@ def previa_zip(folha_id: int, destino: str) -> tuple:
                           feito["lotes"], feito["resumo"], feito["linhas"], destino)
 
 
-def previa_direta_zip(origem: str, dados: dict, destino: str) -> tuple:
+def previa_direta_zip(origem: str, dados: dict, destino: str,
+                      destinos: dict | None = None) -> tuple:
     """A prévia das diárias e dos auxílios, da situação de AGORA — sem fechar,
     sem subir, sem registro. Pedido do dono em 02/10/2026, para os diaristas:
     *"eu queria o botão também de gerar a prévia (…) antes de gerar os arquivos
     definitivos"*, como na folha da contabilidade."""
-    pedido = resumo_direto(origem, dados, destino)
+    pedido = resumo_direto(origem, dados, destino, destinos)
     return _zip_da_previa(pedido["rotulo"], pedido["ano"], pedido["mes"],
                           pedido["tipo"], pedido["verba"], pedido["lotes"],
                           pedido["resumo"], pedido["linhas"], destino)
@@ -321,7 +323,8 @@ def _zip_da_previa(rotulo: str, ano, mes, tipo, verba, lotes, resumo, linhas,
                          "a opção \"gerar com aviso\" marcada."]
         pacote.writestr("LEIA-ME.txt", "\r\n".join(leia).encode("utf-8-sig"))
 
-    rotulo_destino = geracao.ROTULO_DO_DESTINO.get(destino, destino)
+    usados = sorted({l.get("destino") or destino for l in lotes})
+    rotulo_destino = " + ".join(geracao.ROTULO_DO_DESTINO.get(d, d) for d in usados)
     nome_zip = f"PREVIA - {rotulo_destino} - {int(mes):02d}-{int(ano)}.zip"
     logger.info("Folha: prévia do pagamento de %02d/%d (%s, %s) baixada — %d "
                 "arquivo(s).", int(mes), int(ano), verba, destino, len(lotes))
@@ -379,7 +382,7 @@ def _br(valor) -> str:
 # ---------------------------------------------------------------------------
 def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
           juntar_verbas: bool = False, quem: str = "",
-          forcar: bool = False) -> dict:
+          forcar: bool = False, destinos: dict | None = None) -> dict:
     """Gera os arquivos, sobe no Drive e registra. Devolve os links.
 
     ⚠️ SÃO SEMPRE AO MENOS DOIS ARQUIVOS: o de pagamento (um por conta) e o de
@@ -398,7 +401,7 @@ def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
             'tabela do log não encontrada no banco. Clique em "Aplicar atualizações do '
             'banco" em Configurações e repita a operação.')
 
-    plano = preparar(ano, mes, tipo, verbas, destino, juntar_verbas)
+    plano = preparar(ano, mes, tipo, verbas, destino, juntar_verbas, destinos)
     lotes = plano["lotes"]
     if not lotes:
         raise ErroDoPagamento(
@@ -687,11 +690,14 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
             "rotulo": f"{folha_auxilio.ROTULO_DO_TIPO[origem]} {mes:02d}/{ano}"}
 
 
-def resumo_direto(origem: str, dados: dict, destino: str) -> dict:
-    """O que vai sair, montado da situação atual. NÃO grava nada."""
+def resumo_direto(origem: str, dados: dict, destino: str,
+                  destinos: dict | None = None) -> dict:
+    """O que vai sair, montado da situação atual. NÃO grava nada.
+    `destinos`: o destino de cada conta (`{conta: destino}`); sem ele, todas
+    vão para `destino`."""
     pedido = _pedido_direto(origem, dados)
-    lotes = geracao.montar_lotes([l for l in pedido["linhas"] if l["valor"] > 0],
-                                 destino)
+    lotes = geracao.montar_lotes_por_conta(
+        [l for l in pedido["linhas"] if l["valor"] > 0], destinos or {}, destino)
     if not lotes:
         raise ErroDoPagamento("nenhum colaborador selecionado para pagamento.")
     return {**pedido, "destino": destino, "lotes": lotes,
@@ -700,14 +706,14 @@ def resumo_direto(origem: str, dados: dict, destino: str) -> dict:
 
 
 def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
-                 forcar: bool = False) -> dict:
+                 forcar: bool = False, destinos: dict | None = None) -> dict:
     """Refaz o fechamento com a situação atual e gera os arquivos.
 
     ⚠️ OS DOIS PASSOS JUNTOS, de propósito: gerar de um fechamento antigo
     pagaria o que a tela não mostra mais. O resumo (`resumo_direto`) e o arquivo
     saem do mesmo cálculo."""
     from . import folha_auxilio, folha_diaristas, folha_gestao
-    pedido = resumo_direto(origem, dados, destino)
+    pedido = resumo_direto(origem, dados, destino, destinos)
     if not pedido["resumo"]["pode_gerar"] and not forcar:
         raise ErroDoPagamento(
             "há avisos nos arquivos. Confira o resumo e marque a opção de gerar "
@@ -721,7 +727,7 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
         folha_auxilio.fechar(origem, pedido["ano"], pedido["mes"],
                              pedido["pagamento"], quem=quem)
     return gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
-                 destino, quem=quem, forcar=forcar)
+                 destino, quem=quem, forcar=forcar, destinos=destinos)
 
 
 # ---------------------------------------------------------------------------

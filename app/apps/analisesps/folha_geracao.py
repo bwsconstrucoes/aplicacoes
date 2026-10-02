@@ -135,6 +135,30 @@ def _dinheiro(valor) -> Decimal:
 # ---------------------------------------------------------------------------
 # OS LOTES: quantos arquivos saem, e o que vai em cada um
 # ---------------------------------------------------------------------------
+def montar_lotes_por_conta(linhas, destinos: dict, padrao: str,
+                           juntar_verbas: bool = False) -> list:
+    """Os lotes com o DESTINO ESCOLHIDO POR CONTA. FUNÇÃO PURA.
+
+    O dono, 02/10/2026: *"e se eu quiser gerar uns arquivos Soma e outros
+    BeeVale?"* — e a resposta dele: o agrupamento é por conta, e cada conta tem
+    o seu seletor. `destinos` é `{conta: "beevale"|"somapay"}`; conta fora do
+    mapa vai para o `padrao`."""
+    escolhidos = {" ".join(str(c or "").split()): str(d or "").strip().lower()
+                  for c, d in (destinos or {}).items()}
+    for d in escolhidos.values():
+        if d not in DESTINOS:
+            raise ErroDaGeracao(
+                f'destino "{d}" não reconhecido. Destinos aceitos: BeeVale e SomaPay.')
+    por_destino: dict = {}
+    for linha in linhas or []:
+        conta = " ".join(str(linha.get("conta") or "").split())
+        por_destino.setdefault(escolhidos.get(conta) or padrao, []).append(linha)
+    lotes = []
+    for destino in sorted(por_destino):
+        lotes += montar_lotes(por_destino[destino], destino, juntar_verbas)
+    return sorted(lotes, key=lambda l: (l.get("conta") or "", l.get("destino") or ""))
+
+
 def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
     """Divide as linhas nos arquivos que vão sair. FUNÇÃO PURA.
 

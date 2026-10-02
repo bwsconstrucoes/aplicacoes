@@ -436,3 +436,22 @@ def test_o_RELATORIO_das_diarias_tem_funcao_dias_e_so_quem_recebe(banco_diarista
     assert fr.pdf(dados).startswith(b"%PDF")
     so = fr.montar(montado, contas, "50024")
     assert so["grupos"]["total_pago"] == D("330.00") and "conta 50024" in so["titulo"]
+
+
+@pytest.mark.banco
+def test_cada_CONTA_com_o_seu_DESTINO_na_mesma_geracao(banco_diaristas, monkeypatch):
+    """O dono, 02/10/2026: *"e se eu quiser gerar uns arquivos Soma e outros
+    BeeVale?"* — o destino passa a ser escolhido por conta."""
+    from app.apps.analisesps import folha_geracao as g, folha_pagamento as fp
+    linhas = [{"cpf": "99713349334", "nome": "A", "conta": "50024", "verba": "diaria",
+               "valor": D("100"), "obra": "X"},
+              {"cpf": "03513441363", "nome": "B", "conta": "7011", "verba": "diaria",
+               "valor": D("50"), "obra": "Y"}]
+    lotes = g.montar_lotes_por_conta(linhas, {"7011": "somapay"}, "beevale")
+    assert {(l["conta"], l["destino"]) for l in lotes} == {
+        ("50024", "beevale"), ("7011", "somapay")}
+    with pytest.raises(g.ErroDaGeracao):
+        g.montar_lotes_por_conta(linhas, {"7011": "pix"}, "beevale")
+    plano = fp.resumo_direto("diaria", {"ano": 2026, "mes": 9, "periodo": "quinzena"},
+                             "beevale", {"50024": "somapay"})
+    assert [l["destino"] for l in plano["lotes"]] == ["somapay"]

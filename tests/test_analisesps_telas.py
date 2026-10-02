@@ -8306,4 +8306,5 @@ def test_diaristas_tem_RELATORIO_e_o_destino_no_padrao_da_contabilidade(app, mon
         "/analisesps/folha/diaristas?ano=2026&mes=9&periodo=quinzena").get_data(as_text=True)
     assert 'id="relatorio-xlsx"' in html and "/folha/diaristas/relatorio.xlsx" in html
     assert 'id="relatorio-conta"' in html
-    assert '<div class="lat-previa">' in html and 'id="gd-previa"' in html
+    assert ">Gerar arquivos</button>" in html and 'id="gd-previa"' in html
+    assert 'id="gd-destino"' not in html, "o destino é escolhido por conta, na janela"

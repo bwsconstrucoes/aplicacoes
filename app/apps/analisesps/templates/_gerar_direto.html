@@ -1,45 +1,42 @@
 {# ---------------------------------------------------------------------------
-   GERAR OS ARQUIVOS DEFINITIVOS DE DENTRO DA FOLHA — 02/10/2026.
+   GERAR ARQUIVOS — o mesmo bloco nas quatro folhas (02/10/2026).
 
-   O dono: *"Eu seleciono se é BeeVale, se é Soma. Gerar arquivo definitivo. Aí
-   você dá um modal de resumo, dizendo o que é que vai acontecer (…) Eu dou ok e
-   gera. E me remete para a aba de arquivos gerados."*
+   O dono, primeiro: *"Eu seleciono se é BeeVale, se é Soma. Gerar arquivo
+   definitivo. Aí você dá um modal de resumo (…) Eu dou ok e gera. E me remete
+   para a aba de arquivos gerados."*
+
+   E no mesmo dia, simplificando: *"vamos colocar só gerar arquivos (…) tirar
+   esse seletor BeeVale SomaPay (…) tirar esse baixar prévia (…) abrir um modal.
+   Nesse modal (…) um botão baixar prévia, um botão baixar definitivo. E o
+   agrupamento é por conta (…) o seletor BeeVale ou Soma, aí a conta."* — que
+   também responde *"e se eu quiser gerar uns arquivos Soma e outros BeeVale?"*.
+
+   Por isso: UM botão na lateral; a janela lista as contas, cada uma com o seu
+   destino; "Baixar prévia" (o .zip da situação de agora, sem fechar nem subir)
+   e "Gerar definitivo" (refaz o fechamento, gera e sobe no Drive). A última
+   escolha de cada conta fica lembrada neste navegador.
 
    Quem inclui define antes:
-     gd_origem  — "folha", "diaria", "alimentacao" ou "transporte"
-     gd_dados   — dict com folha_id ou ano/mes/periodo
-     gd_destino — id de um <select> de destino que já exista na tela (opcional;
-                  sem ele, este bloco mostra o seu)
+     gd_origem    — "folha", "diaria", "alimentacao" ou "transporte"
+     gd_dados     — dict com folha_id ou ano/mes/periodo
      gd_pagamento — id do <select> de quinzena/fim de mês do auxílio (opcional)
    --------------------------------------------------------------------------- #}
-{% if not gd_destino %}
-{# ⚠️ O MESMO DESENHO DA FOLHA DA CONTABILIDADE (02/10/2026): o destino e a
-   prévia lado a lado (`lat-previa`), o "Gerar" embaixo. O dono: *"lá está um
-   do lado do outro (…) tem que manter o padrão."* A prévia é o .zip montado da
-   situação de agora — sem fechar, sem subir, sem registro. #}
-<div class="lat-previa">
-  <select id="gd-destino" aria-label="Destino do arquivo de pagamento">
-    <option value="beevale">BeeVale</option>
-    <option value="somapay">SomaPay</option>
-  </select>
-  {% if gd_origem != 'folha' %}
-  <a class="btn secundario" id="gd-previa" href="#"
-     title="Baixa os arquivos conforme a situação atual, sem fechar e sem enviar ao Drive"
-     >Baixar prévia</a>
-  {% endif %}
-</div>
-{% endif %}
-<button type="button" class="btn" id="gd-botao">Gerar arquivos definitivos</button>
+<button type="button" class="btn" id="gd-botao">Gerar arquivos</button>
 
 <dialog class="dialogo" id="gd-dialogo">
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
-  <h3>Gerar arquivos definitivos</h3>
+  <h3>Gerar arquivos</h3>
   <div id="gd-corpo"><p class="cartao-dica">Montando o resumo…</p></div>
   <label class="cartao-dica" id="gd-forcar-rotulo" hidden>
     <input type="checkbox" id="gd-forcar"> Gerar mesmo com os avisos acima</label>
-  <div class="lat-acoes" style="margin-top:12px">
-    <button type="button" class="btn" id="gd-confirmar" hidden>Confirmar e gerar</button>
+  <div class="gd-botoes" id="gd-botoes" hidden>
+    <button type="button" class="btn secundario" id="gd-previa"
+            title="Baixa os arquivos conforme a situação atual, sem fechar e sem enviar ao Drive"
+            >Baixar prévia</button>
+    <button type="button" class="btn" id="gd-confirmar"
+            title="Refaz o fechamento, gera os arquivos e grava no Drive"
+            >Gerar definitivo</button>
   </div>
 </dialog>
 
@@ -47,11 +44,14 @@
 (function () {
   const ORIGEM = {{ gd_origem|tojson }};
   const DADOS = {{ (gd_dados or {})|tojson }};
-  const SELETOR_DESTINO = {{ (gd_destino or 'gd-destino')|tojson }};
   const SELETOR_PAGAMENTO = {{ (gd_pagamento or '')|tojson }};
+  const DESTINOS = [["beevale", "BeeVale"], ["somapay", "SomaPay"]];
+  const MEMORIA = "analisesps.destino_por_conta";
   const dialogo = document.getElementById("gd-dialogo");
   const corpo = document.getElementById("gd-corpo");
+  const botoes = document.getElementById("gd-botoes");
   const confirmar = document.getElementById("gd-confirmar");
+  const previa = document.getElementById("gd-previa");
   const forcar = document.getElementById("gd-forcar");
   const forcarRotulo = document.getElementById("gd-forcar-rotulo");
 
@@ -62,52 +62,95 @@
   function real(v) {
     return Number(v || 0).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
   }
+  // A escolha de cada conta, lembrada neste navegador (conveniência; sem ela,
+  // toda conta começa em BeeVale).
+  function lembrados() {
+    try { return JSON.parse(localStorage.getItem(MEMORIA) || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  function lembrar(mapa) {
+    try { localStorage.setItem(MEMORIA, JSON.stringify(Object.assign(lembrados(), mapa))); }
+    catch (e) { /* sem armazenamento: segue sem lembrar */ }
+  }
+  let escolha = {};
   function pedido() {
-    const dados = Object.assign({}, DADOS, {origem: ORIGEM,
-      destino: document.getElementById(SELETOR_DESTINO).value});
+    const dados = Object.assign({}, DADOS, {origem: ORIGEM, destino: "beevale",
+                                            destinos: escolha});
     if (SELETOR_PAGAMENTO) dados.pagamento = document.getElementById(SELETOR_PAGAMENTO).value;
     return dados;
   }
 
-  const previa = document.getElementById("gd-previa");
-  if (previa) previa.addEventListener("click", e => {
-    e.preventDefault();
-    const q = new URLSearchParams();
-    Object.entries(pedido()).forEach(([k, v]) => { if (v !== null && v !== undefined) q.set(k, v); });
-    location.href = "{{ url_for('analisesps.folha_previa_direta') }}?" + q.toString();
-  });
+  function desenhar(d) {
+    // Uma linha por conta (no SomaPay a conta pode sair em mais de um arquivo,
+    // um por verba — a linha soma os dois).
+    const contas = new Map();
+    d.lotes.forEach(l => {
+      const c = contas.get(l.conta) || {conta: l.conta, destino: l.destino,
+                                         quantos: 0, total: 0, criticas: [], arquivos: 0};
+      c.quantos += l.quantos; c.total += l.total; c.arquivos += 1;
+      c.criticas = c.criticas.concat(l.criticas);
+      contas.set(l.conta, c);
+    });
+    const avisos = d.lotes.some(l => l.criticas.length);
+    corpo.innerHTML =
+      "<p><b>" + esc(d.rotulo) + "</b></p>" +
+      '<div class="tabela-rolagem livre"><table class="sps"><thead><tr><th>Conta</th>' +
+      "<th>Destino</th>" +
+      '<th class="num">Colaboradores</th><th class="num">Total</th><th>Avisos</th>' +
+      "</tr></thead><tbody>" +
+      [...contas.values()].map(c => "<tr><td><b>" + esc(c.conta || "(sem conta)") + "</b></td><td>" +
+        '<select class="gd-destino-conta" data-conta="' + esc(c.conta) + '" aria-label="Destino da conta ' +
+        esc(c.conta) + '">' + DESTINOS.map(([v, r]) => '<option value="' + v + '"' +
+        (v === c.destino ? " selected" : "") + ">" + r + "</option>").join("") + "</select></td>" +
+        '<td class="num">' + c.quantos + '</td><td class="num">' + real(c.total) + "</td><td>" +
+        (c.criticas.length ? '<span class="ruim">' + c.criticas.map(esc).join("<br>") + "</span>" : "—") +
+        "</td></tr>").join("") +
+      '</tbody><tfoot><tr><th>Total</th><th></th><th class="num">' + d.resumo.pessoas +
+      '</th><th class="num">' + real(d.resumo.total) + "</th><th></th></tr></tfoot></table></div>" +
+      '<p class="cartao-dica"><b>Baixar prévia</b>: os arquivos como sairiam agora, num .zip, ' +
+      "sem fechar e sem gravar no Drive. <b>Gerar definitivo</b>: refaz o fechamento com a " +
+      "situação atual da tela, gera " + d.resumo.arquivos + " arquivo(s) de pagamento e o de " +
+      "análise e grava no Drive. Os cards do Pipefy são lançados depois, em Arquivos gerados.</p>";
+    corpo.querySelectorAll(".gd-destino-conta").forEach(sel => sel.addEventListener("change", () => {
+      escolha[sel.dataset.conta] = sel.value;
+      lembrar({[sel.dataset.conta]: sel.value});
+      montar();
+    }));
+    forcarRotulo.hidden = !avisos;
+    botoes.hidden = false;
+  }
 
-  document.getElementById("gd-botao").addEventListener("click", async () => {
-    corpo.innerHTML = '<p class="cartao-dica">Montando o resumo…</p>';
-    confirmar.hidden = true; forcarRotulo.hidden = true; forcar.checked = false;
-    dialogo.showModal();
+  async function montar() {
     try {
       const r = await fetch("{{ url_for('analisesps.folha_gerar_direto_resumo') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify(pedido())});
       const d = await r.json();
-      if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + esc(d.erro) + "</div>"; return; }
-      const avisos = d.lotes.some(l => l.criticas.length);
-      corpo.innerHTML =
-        '<p><b>' + esc(d.rotulo) + "</b> · destino <b>" + esc(d.rotulo_destino) + "</b></p>" +
-        '<div class="tabela-rolagem livre"><table class="sps"><thead><tr><th>Conta</th>' +
-        '<th class="num">Colaboradores</th><th class="num">Total</th><th>Avisos</th>' +
-        "</tr></thead><tbody>" +
-        d.lotes.map(l => "<tr><td>" + esc(l.conta || "(sem conta)") + '</td><td class="num">' +
-          l.quantos + '</td><td class="num">' + real(l.total) + "</td><td>" +
-          (l.criticas.length ? '<span class="ruim">' + l.criticas.map(esc).join("<br>") + "</span>" : "—") +
-          "</td></tr>").join("") +
-        '</tbody><tfoot><tr><th>Total</th><th class="num">' + d.resumo.pessoas +
-        '</th><th class="num">' + real(d.resumo.total) + "</th><th></th></tr></tfoot></table></div>" +
-        '<p class="cartao-dica">Serão gerados ' + d.resumo.arquivos + " arquivo(s) de pagamento " +
-        "(um por conta) e o arquivo de análise, gravados no Drive. O fechamento é refeito " +
-        "com a situação atual da tela antes da geração. Os cards do Pipefy são lançados " +
-        "depois, na aba Arquivos gerados.</p>";
-      forcarRotulo.hidden = !avisos;
-      confirmar.hidden = false;
+      if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + esc(d.erro) + "</div>";
+                   botoes.hidden = true; return; }
+      desenhar(d);
     } catch (e) {
       corpo.innerHTML = '<div class="aviso erro">Não foi possível montar o resumo: ' + esc(e) + "</div>";
+      botoes.hidden = true;
     }
+  }
+
+  document.getElementById("gd-botao").addEventListener("click", () => {
+    corpo.innerHTML = '<p class="cartao-dica">Montando o resumo…</p>';
+    botoes.hidden = true; forcarRotulo.hidden = true; forcar.checked = false;
+    confirmar.disabled = false; confirmar.textContent = "Gerar definitivo";
+    escolha = lembrados();
+    dialogo.showModal();
+    montar();
+  });
+
+  previa.addEventListener("click", () => {
+    const q = new URLSearchParams();
+    Object.entries(pedido()).forEach(([k, v]) => {
+      if (v === null || v === undefined) return;
+      q.set(k, typeof v === "object" ? JSON.stringify(v) : v);
+    });
+    location.href = "{{ url_for('analisesps.folha_previa_direta') }}?" + q.toString();
   });
 
   confirmar.addEventListener("click", async () => {
@@ -120,14 +163,14 @@
       const d = await r.json();
       if (!d.ok) {
         corpo.insertAdjacentHTML("afterbegin", '<div class="aviso erro">' + esc(d.erro) + "</div>");
-        confirmar.disabled = false; confirmar.textContent = "Confirmar e gerar";
+        confirmar.disabled = false; confirmar.textContent = "Gerar definitivo";
         return;
       }
       location.href = d.destino_da_tela;
     } catch (e) {
       corpo.insertAdjacentHTML("afterbegin",
         '<div class="aviso erro">Não foi possível gerar: ' + esc(e) + "</div>");
-      confirmar.disabled = false; confirmar.textContent = "Confirmar e gerar";
+      confirmar.disabled = false; confirmar.textContent = "Gerar definitivo";
     }
   });
 })();

@@ -2689,3 +2689,7 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 }
 .achados-fornecedor li { padding: 4px 10px; }
 .achados-fornecedor li .link-btn { text-align: left; white-space: normal; }
+
+/* A janela "Gerar arquivos" (02/10/2026): prévia e definitivo lado a lado. */
+.gd-botoes { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.gd-destino-conta { padding: 4px 6px; border: 1px solid var(--borda-forte); border-radius: 6px; }

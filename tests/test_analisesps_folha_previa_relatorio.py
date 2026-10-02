@@ -110,14 +110,19 @@ def test_a_previa_e_SO_DO_MESTRE(app):
     assert r.status_code in (302, 403, 404)
 
 
-def test_o_botao_da_previa_esta_na_LATERAL_fora_do_formulario_dos_filtros(app, monkeypatch):
-    """Trocar o destino da prévia não pode recarregar a tela (o formulário dos
-    filtros se aplica sozinho a cada mudança)."""
+def test_GERAR_ARQUIVOS_e_um_botao_so_na_lateral_e_a_janela_tem_prevista_e_definitivo(
+        app, monkeypatch):
+    """O dono, 02/10/2026: *"vamos colocar só gerar arquivos (…) tirar esse
+    seletor (…) tirar esse baixar prévia (…) no modal, um botão baixar prévia,
+    um botão baixar definitivo (…) o seletor BeeVale ou Soma, aí a conta."*"""
     _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
     html = _como_mestre(app).get("/analisesps/folha/1").get_data(as_text=True)
     principal = html.index('<main class="principal">')
-    assert html.index('id="baixar-previa"') < principal
-    assert html.index('id="previa-destino"') < html.index('id="form-filtros"')
+    assert html.index('id="gd-botao"') < principal
+    assert ">Gerar arquivos</button>" in html
+    assert 'id="previa-destino"' not in html and 'id="baixar-previa"' not in html
+    assert 'id="gd-previa"' in html and 'id="gd-confirmar"' in html
+    assert "gd-destino-conta" in html
 
 
 # ---------------------------------------------------------------------------
