@@ -2664,3 +2664,9 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 #cartao-ficha > .dialogo-fechar { position: sticky; top: 14px; z-index: 7; margin-top: 14px; }
 #cartao-ficha .analitico-topo { position: sticky; top: 0; z-index: 6; background: var(--branco);
   padding: 14px 110px 8px 0; margin: 0 0 8px; border-bottom: 1px solid var(--borda); }
+
+/* Arquivos gerados: a barra das ações sobre as gerações selecionadas. */
+.barra-acoes-lista { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin: 0 0 10px; }
+#tabela-rodadas tr.destaque td { background: var(--destaque-fundo, #fff8e1); }
+.gd-destino { width: 100%; margin: 6px 0; }

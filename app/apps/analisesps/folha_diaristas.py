@@ -159,11 +159,21 @@ def levantar(ano: int, mes: int) -> dict:
 # ===========================================================================
 CENTAVO = Decimal("0.01")
 
-PERIODOS = {"mes": "Mês inteiro", "quinzena": "1 a 15", "fim_de_mes": "16 ao fim"}
+# ⚠️ DIARISTA É PAGO POR QUINZENA (dono, 02/10/2026). A primeira versão tinha
+# também "mês inteiro" como padrão — suposição minha, retirada.
+PERIODOS = {"quinzena": "1ª quinzena (1 a 15)", "fim_de_mes": "2ª quinzena (16 ao fim)"}
 # Sob qual pagamento o fechamento fica guardado (a tela de gerar trabalha com
-# quinzena e fim de mês). O mês inteiro é pago junto do fim de mês.
-TIPO_DO_FECHAMENTO = {"mes": "fim_de_mes", "quinzena": "quinzena",
-                      "fim_de_mes": "fim_de_mes"}
+# quinzena e fim de mês).
+TIPO_DO_FECHAMENTO = {"quinzena": "quinzena", "fim_de_mes": "fim_de_mes"}
+
+
+def periodo_sugerido(hoje) -> tuple:
+    """`(ano, mes, periodo)` que a tela abre. Até o dia 10, a 2ª quinzena do mês
+    anterior (paga no início do mês); depois, a 1ª quinzena do mês corrente."""
+    if hoje.day <= 10:
+        anterior = hoje.replace(day=1) - dt.timedelta(days=1)
+        return anterior.year, anterior.month, "fim_de_mes"
+    return hoje.year, hoje.month, "quinzena"
 VERBA = "diaria"
 
 ADICIONAL_FERIADO = Decimal("20.00")
@@ -177,9 +187,7 @@ def periodo(ano: int, mes: int, qual: str) -> tuple:
     ultimo = calendar.monthrange(int(ano), int(mes))[1]
     if qual == "quinzena":
         return dt.date(ano, mes, 1), dt.date(ano, mes, 15)
-    if qual == "fim_de_mes":
-        return dt.date(ano, mes, 16), dt.date(ano, mes, ultimo)
-    return dt.date(ano, mes, 1), dt.date(ano, mes, ultimo)
+    return dt.date(ano, mes, 16), dt.date(ano, mes, ultimo)
 
 
 def _sem_acento(texto) -> str:
@@ -198,7 +206,9 @@ def _minutos(texto) -> int:
 
 
 def e_vigia(ficha: dict) -> bool:
-    return "vigia" in _sem_acento(ficha.get("cargo"))
+    """A função é VIGIA? Igualdade, como a planilha (`W != 'VIGIA'`) — "VIGIA
+    NOTURNO" é outra função e recebe diária."""
+    return _sem_acento(ficha.get("cargo")) == "vigia"
 
 
 def quantidade_do_dia(lido: dict, tem_obra: bool) -> tuple:
@@ -362,11 +372,11 @@ def _tipo_do_ajuste(qual: str) -> str:
     return f"{VERBA}_{qual}"
 
 
-def calcular(ano: int, mes: int, qual: str = "mes") -> dict:
+def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
     """Os diaristas do período, com o valor de cada um e os totais."""
     from . import folha_auxilio
     if qual not in PERIODOS:
-        qual = "mes"
+        qual = "quinzena"
     ano, mes = int(ano), int(mes)
     inicio, fim = periodo(ano, mes, qual)
     base = {"ano": ano, "mes": mes, "qual": qual, "rotulo_periodo": PERIODOS[qual],

@@ -6669,7 +6669,8 @@ def _diaristas_calculado(pessoas=None, **mudancas):
     from decimal import Decimal as D
     pessoas = [_diarista()] if pessoas is None else pessoas
     a_pagar = [p for p in pessoas if p["pagar"]]
-    base = {"ano": 2026, "mes": 9, "qual": "mes", "rotulo_periodo": "Mês inteiro",
+    base = {"ano": 2026, "mes": 9, "qual": "quinzena",
+            "rotulo_periodo": "1ª quinzena (1 a 15)",
             "competencia": "09/2026", "inicio": dt.date(2026, 9, 1),
             "fim": dt.date(2026, 9, 30), "tem_ponto": True,
             "tem_coluna_da_diaria": True, "pessoas": pessoas, "sem_cadastro": [],

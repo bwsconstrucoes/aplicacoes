@@ -34,10 +34,12 @@
     <div class="lat-acoes">
       <button type="button" class="btn" id="fechar-diaria">
         {% if r.fechamento %}Refazer o fechamento{% else %}Fechar a diária{% endif %}</button>
-      {% if r.fechamento %}
-        <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}"
-           >Gerar os arquivos</a>
+      {% if pode_gerar %}
+        {% set gd_origem = 'diaria' %}
+        {% set gd_dados = {'ano': ano, 'mes': mes, 'periodo': qual} %}
+        {% set gd_destino = '' %}
+        {% set gd_pagamento = '' %}
+        {% include "_gerar_direto.html" %}
       {% endif %}
     </div>
   {% endif %}

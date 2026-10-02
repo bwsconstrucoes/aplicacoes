@@ -1,0 +1,115 @@
+{# ---------------------------------------------------------------------------
+   GERAR OS ARQUIVOS DEFINITIVOS DE DENTRO DA FOLHA — 02/10/2026.
+
+   O dono: *"Eu seleciono se é BeeVale, se é Soma. Gerar arquivo definitivo. Aí
+   você dá um modal de resumo, dizendo o que é que vai acontecer (…) Eu dou ok e
+   gera. E me remete para a aba de arquivos gerados."*
+
+   Quem inclui define antes:
+     gd_origem  — "folha", "diaria", "alimentacao" ou "transporte"
+     gd_dados   — dict com folha_id ou ano/mes/periodo
+     gd_destino — id de um <select> de destino que já exista na tela (opcional;
+                  sem ele, este bloco mostra o seu)
+     gd_pagamento — id do <select> de quinzena/fim de mês do auxílio (opcional)
+   --------------------------------------------------------------------------- #}
+{% if not gd_destino %}
+<select id="gd-destino" aria-label="Destino do arquivo de pagamento" class="gd-destino">
+  <option value="beevale">BeeVale</option>
+  <option value="somapay">SomaPay</option>
+</select>
+{% endif %}
+<button type="button" class="btn" id="gd-botao">Gerar arquivos definitivos</button>
+
+<dialog class="dialogo" id="gd-dialogo">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Gerar arquivos definitivos</h3>
+  <div id="gd-corpo"><p class="cartao-dica">Montando o resumo…</p></div>
+  <label class="cartao-dica" id="gd-forcar-rotulo" hidden>
+    <input type="checkbox" id="gd-forcar"> Gerar mesmo com os avisos acima</label>
+  <div class="lat-acoes" style="margin-top:12px">
+    <button type="button" class="btn" id="gd-confirmar" hidden>Confirmar e gerar</button>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  const ORIGEM = {{ gd_origem|tojson }};
+  const DADOS = {{ (gd_dados or {})|tojson }};
+  const SELETOR_DESTINO = {{ (gd_destino or 'gd-destino')|tojson }};
+  const SELETOR_PAGAMENTO = {{ (gd_pagamento or '')|tojson }};
+  const dialogo = document.getElementById("gd-dialogo");
+  const corpo = document.getElementById("gd-corpo");
+  const confirmar = document.getElementById("gd-confirmar");
+  const forcar = document.getElementById("gd-forcar");
+  const forcarRotulo = document.getElementById("gd-forcar-rotulo");
+
+  function esc(t) {
+    return String(t == null ? "" : t).replace(/[&<>"]/g,
+      c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  }
+  function real(v) {
+    return Number(v || 0).toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+  }
+  function pedido() {
+    const dados = Object.assign({}, DADOS, {origem: ORIGEM,
+      destino: document.getElementById(SELETOR_DESTINO).value});
+    if (SELETOR_PAGAMENTO) dados.pagamento = document.getElementById(SELETOR_PAGAMENTO).value;
+    return dados;
+  }
+
+  document.getElementById("gd-botao").addEventListener("click", async () => {
+    corpo.innerHTML = '<p class="cartao-dica">Montando o resumo…</p>';
+    confirmar.hidden = true; forcarRotulo.hidden = true; forcar.checked = false;
+    dialogo.showModal();
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_gerar_direto_resumo') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(pedido())});
+      const d = await r.json();
+      if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + esc(d.erro) + "</div>"; return; }
+      const avisos = d.lotes.some(l => l.criticas.length);
+      corpo.innerHTML =
+        '<p><b>' + esc(d.rotulo) + "</b> · destino <b>" + esc(d.rotulo_destino) + "</b></p>" +
+        '<div class="tabela-rolagem livre"><table class="sps"><thead><tr><th>Conta</th>' +
+        '<th class="num">Colaboradores</th><th class="num">Total</th><th>Avisos</th>' +
+        "</tr></thead><tbody>" +
+        d.lotes.map(l => "<tr><td>" + esc(l.conta || "(sem conta)") + '</td><td class="num">' +
+          l.quantos + '</td><td class="num">' + real(l.total) + "</td><td>" +
+          (l.criticas.length ? '<span class="ruim">' + l.criticas.map(esc).join("<br>") + "</span>" : "—") +
+          "</td></tr>").join("") +
+        '</tbody><tfoot><tr><th>Total</th><th class="num">' + d.resumo.pessoas +
+        '</th><th class="num">' + real(d.resumo.total) + "</th><th></th></tr></tfoot></table></div>" +
+        '<p class="cartao-dica">Serão gerados ' + d.resumo.arquivos + " arquivo(s) de pagamento " +
+        "(um por conta) e o arquivo de análise, gravados no Drive. O fechamento é refeito " +
+        "com a situação atual da tela antes da geração. Os cards do Pipefy são lançados " +
+        "depois, na aba Arquivos gerados.</p>";
+      forcarRotulo.hidden = !avisos;
+      confirmar.hidden = false;
+    } catch (e) {
+      corpo.innerHTML = '<div class="aviso erro">Não foi possível montar o resumo: ' + esc(e) + "</div>";
+    }
+  });
+
+  confirmar.addEventListener("click", async () => {
+    confirmar.disabled = true;
+    confirmar.textContent = "Gerando…";
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_gerar_direto') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(Object.assign(pedido(), {forcar: forcar.checked}))});
+      const d = await r.json();
+      if (!d.ok) {
+        corpo.insertAdjacentHTML("afterbegin", '<div class="aviso erro">' + esc(d.erro) + "</div>");
+        confirmar.disabled = false; confirmar.textContent = "Confirmar e gerar";
+        return;
+      }
+      location.href = d.destino_da_tela;
+    } catch (e) {
+      corpo.insertAdjacentHTML("afterbegin",
+        '<div class="aviso erro">Não foi possível gerar: ' + esc(e) + "</div>");
+      confirmar.disabled = false; confirmar.textContent = "Confirmar e gerar";
+    }
+  });
+})();
+</script>

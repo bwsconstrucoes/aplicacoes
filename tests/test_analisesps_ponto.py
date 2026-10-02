@@ -1569,3 +1569,24 @@ def test_sem_ponto_do_mes_nao_ha_onde_aplicar(banco_ponto):
     from app.apps.analisesps import ponto
     assert ponto.aplicar_batidas_na_copia(2026, 9, "55555555555", "", "2026-09-16",
                                           [("07:00", "A")]) is False
+
+
+def test_a_fila_se_LIMPA_o_concluido_sai_e_a_falha_fica_mais_tempo(banco_ponto):
+    """*"A fila do ponto não limpa. Ela precisa ir limpando."* (02/10/2026)"""
+    from app.apps.analisesps import ponto_fila as fila
+    from app.apps.analisesps.db import conexao
+    velho = fila.enfileirar(fila.PESSOA, 2026, 9, "99713349334", "GERLANIO", quem="M")
+    novo = fila.enfileirar(fila.PESSOA, 2026, 9, "11122233396", "LUELIA", quem="M")
+    falha = fila.enfileirar(fila.PESSOA, 2026, 9, "52998224725", "ANA", quem="M")
+    espera = fila.enfileirar(fila.PESSOA, 2026, 9, "03513441363", "JOSE", quem="M")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.ponto_fila SET situacao = 'feito', "
+                     " fim = now() - interval '10 minutes' WHERE id = ?", (velho["id"],))
+        conn.execute("UPDATE analisesps.ponto_fila SET situacao = 'feito', "
+                     " fim = now() - interval '1 minute' WHERE id = ?", (novo["id"],))
+        conn.execute("UPDATE analisesps.ponto_fila SET situacao = 'falhou', "
+                     " fim = now() - interval '30 minutes' WHERE id = ?", (falha["id"],))
+        conn.commit()
+    nomes = {i["nome"] for i in fila.recentes()}
+    assert nomes == {"LUELIA", "ANA", "JOSE"}, "o concluído há 10 minutos saiu"
+    assert espera["id"]

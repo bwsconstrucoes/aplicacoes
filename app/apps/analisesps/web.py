@@ -3533,7 +3533,7 @@ def tela_folha_auxilio():
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
         pagamentos=list(fx.TIPOS_DO_FECHAMENTO.items()),
         ano_padrao=hoje.year,
-        pode_operar=auth.pode_operar(),
+        pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
 
@@ -3769,12 +3769,13 @@ def tela_folha_diaristas():
     01/10/2026 a tela calcula o valor (a regra da aba "Diaristas" da planilha),
     esconde quem já saiu, filtra por caixinha, guarda quem vai receber e fecha a
     diária para o arquivo sair — o mesmo caminho da folha da contabilidade."""
-    from . import folha_apropriacao, folha_diaristas as fd, folha_lista
+    from . import folha_diaristas as fd, folha_lista
     from .horario import agora
 
     hoje = agora().date()
-    # ⚠️ ATÉ O DIA 10, ABRE NO MÊS ANTERIOR — mesma regra da planilha.
-    padrao_ano, padrao_mes = folha_apropriacao.competencia_sugerida(hoje)
+    # ⚠️ DIARISTA É PAGO POR QUINZENA (02/10/2026). Até o dia 10 a tela abre na
+    # 2ª quinzena do mês anterior; depois, na 1ª do mês corrente.
+    padrao_ano, padrao_mes, padrao_periodo = fd.periodo_sugerido(hoje)
     try:
         ano = int(request.args.get("ano") or padrao_ano)
         mes = int(request.args.get("mes") or padrao_mes)
@@ -3782,9 +3783,9 @@ def tela_folha_diaristas():
         ano, mes = padrao_ano, padrao_mes
     if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
         ano, mes = padrao_ano, padrao_mes
-    qual = request.args.get("periodo") or "mes"
+    qual = request.args.get("periodo") or padrao_periodo
     if qual not in fd.PERIODOS:
-        qual = "mes"
+        qual = padrao_periodo
 
     resultado = {"tem_ponto": False, "pessoas": [], "sem_cadastro": []}
     erro = None
@@ -3800,7 +3801,7 @@ def tela_folha_diaristas():
         grupos=subtelas_agrupadas(), r=resultado, erro=erro, lista=lista,
         pessoas=lista["pessoas"], ano=ano, mes=mes, qual=qual,
         periodos=list(fd.PERIODOS.items()), ano_padrao=hoje.year,
-        pode_operar=auth.pode_operar(),
+        pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
 
@@ -3816,7 +3817,7 @@ def folha_diaristas_selecao():
     try:
         feito = fd.salvar_selecao(int(dados.get("ano") or 0),
                                   int(dados.get("mes") or 0),
-                                  str(dados.get("periodo") or "mes"),
+                                  str(dados.get("periodo") or "quinzena"),
                                   dados.get("decisoes") or [], quem=quem)
     except (fx.ErroDoAuxilio, ValueError, TypeError) as e:
         return {"ok": False, "erro": str(e)}, 400
@@ -3836,7 +3837,7 @@ def folha_diaristas_fechar():
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
         feito = fd.fechar(int(dados.get("ano") or 0), int(dados.get("mes") or 0),
-                          str(dados.get("periodo") or "mes"), quem=quem)
+                          str(dados.get("periodo") or "quinzena"), quem=quem)
     except (guardada.ErroDaApropriacao, ValueError, TypeError) as e:
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
@@ -3867,7 +3868,7 @@ def tela_folha_pagamento():
     pronto = fpg._pronto()
     registro, fechados, erro = [], [], None
     try:
-        registro = fpg.log(teto=100)
+        registro = fpg.rodadas(teto=400)
         # As verbas que TÊM apropriação fechada nesta competência: só elas podem
         # ser pagas, e oferecer o que não pode ser pago só gera erro depois.
         for fechamento in guardada_fechamentos():
@@ -3879,7 +3880,8 @@ def tela_folha_pagamento():
 
     return render_template(
         "analisesps_folha_pagamento.html", aba="folha", subaba="pagamento",
-        grupos=subtelas_agrupadas(), pronto=pronto, log=registro,
+        grupos=subtelas_agrupadas(), pronto=pronto, rodadas=registro,
+        destaque=request.args.get("rodada") or "",
         fechados=fechados, ano=ano, mes=mes, ano_padrao=hoje.year, erro=erro,
         destinos=[(d, fg.ROTULO_DO_DESTINO[d]) for d in fg.DESTINOS],
         rotulo_da_verba=fg.rotulo_da_verba,
@@ -3956,6 +3958,86 @@ def folha_pagamento_gerar():
                           "conta": a["conta"], "destino": a["destino"],
                           "total": float(a["total"]), "avisos": a["avisos"]}
                          for a in saida["arquivos"]]}
+
+
+def _pedido_de_geracao_direta():
+    dados = request.get_json(silent=True) or {}
+    origem = str(dados.get("origem") or "")
+    destino = str(dados.get("destino") or "").strip().lower()
+    return dados, origem, destino
+
+
+@bp.route("/api/folha/gerar-direto/resumo", methods=["POST"])
+@exige_operador
+def folha_gerar_direto_resumo():
+    """O resumo do que vai ser gerado, a partir da folha aberta na tela. NÃO
+    grava nada (02/10/2026: gerar sem sair da folha)."""
+    from . import folha_geracao as geracao, folha_pagamento as fpg
+    dados, origem, destino = _pedido_de_geracao_direta()
+    try:
+        plano = fpg.resumo_direto(origem, dados, destino)
+    except (fpg.ErroDoPagamento, geracao.ErroDaGeracao, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou montar o resumo da geração")
+        return {"ok": False, "erro": f"Não foi possível montar o resumo: {e}"}, 500
+    return {"ok": True, "rotulo": plano["rotulo"], "competencia": plano["competencia"],
+            "tipo": plano["tipo"], "destino": plano["destino"],
+            "rotulo_destino": geracao.ROTULO_DO_DESTINO.get(plano["destino"], ""),
+            "resumo": {"arquivos": plano["resumo"]["arquivos"],
+                       "pessoas": plano["resumo"]["pessoas"],
+                       "total": float(plano["resumo"]["total"]),
+                       "pode_gerar": plano["resumo"]["pode_gerar"]},
+            "lotes": [{"conta": l["conta"], "quantos": l["quantos"],
+                       "total": float(l["total"]), "criticas": l["criticas"]}
+                      for l in plano["lotes"]]}
+
+
+@bp.route("/api/folha/gerar-direto", methods=["POST"])
+@exige_operador
+def folha_gerar_direto():
+    """Refaz o fechamento com a situação atual e gera os arquivos definitivos —
+    de dentro da folha, sem passar pela tela de competência. ⚠️ É O PASSO QUE
+    PAGA."""
+    from . import folha_apropriacao_guardada as guardada
+    from . import folha_auxilio as fx, folha_geracao as geracao
+    from . import folha_gestao as fg, folha_pagamento as fpg
+    dados, origem, destino = _pedido_de_geracao_direta()
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        saida = fpg.gerar_direto(origem, dados, destino, quem=quem,
+                                 forcar=bool(dados.get("forcar")))
+    except (fpg.ErroDoPagamento, geracao.ErroDaGeracao, guardada.ErroDaApropriacao,
+            fx.ErroDoAuxilio, fg.ErroDaGestao, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gerar de dentro da folha")
+        return {"ok": False, "erro": f"Não foi possível gerar: {e}"}, 500
+    analise = next((a["id"] for a in saida["arquivos"] if a["destino"] == fpg.ANALISE), None)
+    return {"ok": True, "competencia": saida["competencia"],
+            "arquivos": len(saida["arquivos"]),
+            "destino_da_tela": url_for("analisesps.tela_folha_pagamento",
+                                       ano=int(saida["competencia"][3:]),
+                                       mes=int(saida["competencia"][:2]),
+                                       rodada=analise or "")}
+
+
+@bp.route("/api/folha/arquivos/excluir", methods=["POST"])
+@exige_operador
+def folha_arquivos_excluir():
+    """Exclui do registro as gerações selecionadas e manda os arquivos para a
+    lixeira do Drive. Cards do Pipefy não são apagados."""
+    from . import folha_pagamento as fpg
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        feito = fpg.excluir_arquivos(dados.get("ids") or [], quem=quem)
+    except (fpg.ErroDoPagamento, ValueError, TypeError) as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou excluir arquivos gerados")
+        return {"ok": False, "erro": f"Não foi possível excluir: {e}"}, 500
+    return {"ok": True, **feito}
 
 
 @bp.route("/api/folha/pipe/conferir", methods=["POST"])
