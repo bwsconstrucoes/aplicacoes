@@ -4240,7 +4240,8 @@ def folha_card_preparar():
 
     dados = request.get_json(silent=True) or {}
     try:
-        vista = fcd.previa(int(dados.get("analise") or 0))
+        vista = fcd.previa(int(dados.get("analise") or 0),
+                           contas=dados.get("contas") or None)
         vista.pop("andamento", None)
         # Dinheiro vira texto: o JSON não tem decimal.
         return {"ok": True, **_json.loads(_json.dumps(vista, default=str))}
@@ -4263,7 +4264,8 @@ def folha_card_lancar():
     dados = request.get_json(silent=True) or {}
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
-        return fcd.lancar(int(dados.get("analise") or 0), quem=quem)
+        return fcd.lancar(int(dados.get("analise") or 0), quem=quem,
+                          contas=dados.get("contas") or None)
     except (fcd.ErroDosCards, ValueError, TypeError) as e:
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001

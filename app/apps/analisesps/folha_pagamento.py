@@ -772,8 +772,13 @@ def _rodada(analise, pagamentos: list) -> dict:
         "pessoas": (analise or {}).get("pessoas")
                    or sum(p["pessoas"] for p in pagamentos),
         "criado_em": base["criado_em"], "criado_por": base["criado_por"],
-        "lancado": bool(analise and analise.get("card_pipefy")),
-        "lancavel": bool(analise and not analise.get("card_pipefy") and pagamentos),
+        # ⚠️ LANÇADA = TODAS AS CONTAS NO PIPEFY. Desde 02/10/2026 dá para lançar
+        # conta por conta: a análise ganha card no primeiro lote, e a geração só
+        # está lançada quando cada arquivo de conta tem a sua SP.
+        "lancado": bool(analise and analise.get("card_pipefy") and pagamentos
+                        and all(p.get("card_pipefy") for p in pagamentos)),
+        "lancavel": bool(analise and pagamentos
+                         and any(not p.get("card_pipefy") for p in pagamentos)),
         "incompleta": analise is None,
         "avisos": [p["avisos"] for p in pagamentos if p["avisos"]],
     }

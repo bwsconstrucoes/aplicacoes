@@ -431,3 +431,35 @@ def test_achar_campo_sem_pedaco_nenhum_devolve_vazio():
     from app.apps.analisesps import pipefy
     assert pipefy.achar_campo({"a": {"label": "Qualquer"}}) == ""
     assert pipefy.achar_campo({}, "valor") == ""
+
+
+@pytest.mark.banco
+def test_lancar_CONTA_POR_CONTA_cria_uma_despesa_por_lote_e_nao_repete(
+        banco_cards, monkeypatch):
+    """O dono, 02/10/2026: *"se eu quiser gerar separado, gerar um, não gerar o
+    outro (…) preciso ter essa liberdade"*."""
+    from app.apps.analisesps import folha_pagamento as fp
+    pipe = PipefyFalso(monkeypatch)
+    _fechar()
+    analise = _gerar(monkeypatch)
+
+    vista = fcd.previa(analise, contas=["50024"])
+    assert vista["bloqueios"] == [] and vista["escolhidas"] == ["50024"]
+    fcd.lancar(analise, quem="MARCELO", contas=["50024"])
+    despesas, sps = pipe.do_pipe(fcd.PIPE_DESPESA), pipe.do_pipe(fcd.PIPE_SP)
+    assert len(despesas) == 1 and len(sps) == 1
+    assert despesas[0]["valores"]["valor"] == "1000.00", "só as obras da 50024"
+
+    rodada = next(r for r in fp.rodadas() if r["analise"]["id"] == analise)
+    assert not rodada["lancado"] and rodada["lancavel"], "falta a 50025"
+
+    # A conta já lançada não entra de novo.
+    assert fcd.previa(analise, contas=["50024", "50025"])["bloqueios"]
+
+    fcd.lancar(analise, quem="MARCELO", contas=["50025"])
+    assert len(pipe.do_pipe(fcd.PIPE_DESPESA)) == 2
+    assert pipe.do_pipe(fcd.PIPE_DESPESA)[1]["valores"]["valor"] == "500.00"
+    rodada = next(r for r in fp.rodadas() if r["analise"]["id"] == analise)
+    assert rodada["lancado"] and not rodada["lancavel"]
+    log = {a["id"]: a for a in fp.log()}
+    assert len(log[analise]["card_pipefy"].split(",")) == 2, "as duas Despesas"
