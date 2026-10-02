@@ -2602,7 +2602,16 @@ def folha_relatorio(folha_id: int, formato: str):
         if not montado:
             return render_template("analisesps_erro.html", titulo="Não encontrado",
                                    mensagem="Folha não encontrada."), 404
-        dados = fr.montar(montado, fg._contas_das_obras())
+        # ⚠️ O RECORTE POR CONTA (02/10/2026): "" = todas as contas num
+        # arquivo; "__cada" = um arquivo por conta, num .zip; outro valor = só
+        # aquela conta. Ver `folha_relatorio.recortar_por_conta`.
+        recorte = (request.args.get("relatorio_conta") or "").strip()
+        contas = fg._contas_das_obras()
+        if recorte == "__cada":
+            conteudo, nome = fr.zip_por_conta(montado, contas, formato)
+            return Response(conteudo, mimetype="application/zip", headers={
+                "Content-Disposition": f'attachment; filename="{nome}"'})
+        dados = fr.montar(montado, contas, recorte)
         if formato == "xlsx":
             conteudo, tipo = fr.excel(dados), fr.MIME_XLSX
         else:

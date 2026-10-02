@@ -195,9 +195,8 @@ def test_o_relatorio_em_EXCEL_traz_a_lista_e_os_agrupamentos(app, monkeypatch):
     assert r.status_code == 200, r.get_data(as_text=True)[:500]
     livro = load_workbook(io.BytesIO(r.data))
     assert livro.sheetnames == ["Resumo", "Pessoas", "Por obra", "Por conta",
-                                "Por obra da contabilidade", "Por setor",
-                                "Por situação"]
-    nomes = [c.value for c in livro["Pessoas"]["B"][1:]]
+                                "Por obra da contabilidade", "Por setor"]
+    nomes = [c.value for c in livro["Pessoas"]["A"][1:]]
     assert any("GERLANIO" in (n or "") for n in nomes)
     contas = {l[0].value for l in livro["Por conta"].iter_rows(min_row=2)}
     assert {"7011-4", "22069-1"} <= contas
@@ -208,12 +207,50 @@ def test_o_relatorio_sai_COM_OS_FILTROS_DA_TELA(app, monkeypatch):
     _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
     r = _como_mestre(app).get("/analisesps/folha/1/relatorio.xlsx?q=LUELIA")
     livro = load_workbook(io.BytesIO(r.data))
-    nomes = [c.value for c in livro["Pessoas"]["B"][1:]]
+    nomes = [c.value for c in livro["Pessoas"]["A"][1:]]
     assert nomes and all("LUELIA" in n for n in nomes)
     resumo = " ".join(str(c.value) for linha in livro["Resumo"].iter_rows()
                       for c in linha if c.value)
     assert 'Procura: "LUELIA"' in resumo
     assert "filtrado" in r.headers["Content-Disposition"]
+
+
+def test_o_relatorio_POR_CONTA_traz_so_a_parte_daquela_conta(app, monkeypatch):
+    """O dono, 02/10/2026: *"e se eu quiser só o PDF de uma determinada conta
+    (…) divididos, ou juntos"* — e sem quem não entra no pagamento."""
+    import zipfile
+    from openpyxl import load_workbook
+    from app.apps.analisesps import folha_pagamento
+    _preparar_folha_aberta(monkeypatch, dias=_dias_em_duas_obras())
+    monkeypatch.setattr(folha_pagamento, "conta_por_obra",
+                        lambda: {"CRE1": "7011-4", "XYZ9": "22069-1"})
+    cliente = _como_mestre(app)
+
+    so = cliente.get("/analisesps/folha/1/relatorio.xlsx?relatorio_conta=7011-4")
+    assert "conta 7011-4" in so.headers["Content-Disposition"]
+    livro = load_workbook(io.BytesIO(so.data))
+    contas = {l[0].value for l in livro["Por conta"].iter_rows(min_row=2)}
+    assert contas == {"7011-4", "Total"}, "só a conta pedida"
+
+    tudo = load_workbook(io.BytesIO(cliente.get(
+        "/analisesps/folha/1/relatorio.xlsx").data))
+    total = [l[3].value for l in tudo["Por conta"].iter_rows(min_row=2)
+             if l[0].value == "Total"][0]
+    soma = 0
+    todas = [l[0].value for l in tudo["Por conta"].iter_rows(min_row=2)
+             if l[0].value != "Total"]
+    for conta in todas:
+        um = load_workbook(io.BytesIO(cliente.get(
+            "/analisesps/folha/1/relatorio.xlsx",
+            query_string={"relatorio_conta": conta}).data))
+        soma += [l[3].value for l in um["Por conta"].iter_rows(min_row=2)
+                 if l[0].value == "Total"][0]
+    assert round(soma, 2) == round(total, 2), "as contas somam o total"
+
+    pacote = cliente.get("/analisesps/folha/1/relatorio.pdf?relatorio_conta=__cada")
+    nomes = zipfile.ZipFile(io.BytesIO(pacote.data)).namelist()
+    assert any("7011-4" in n for n in nomes) and any("22069-1" in n for n in nomes)
+    assert all(n.endswith(".pdf") for n in nomes)
 
 
 def test_o_relatorio_em_PDF_sai(app, monkeypatch):
