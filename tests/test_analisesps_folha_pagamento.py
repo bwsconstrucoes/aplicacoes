@@ -452,3 +452,62 @@ def test_a_conta_e_achada_pelo_CODIGO_DA_OBRA_como_a_C_DIARIOS_guarda(banco_paga
     assert contas["8765432101"] == "50031-2", "pelo código do OMIE também"
     assert contas["CREPESOLTA"] == "7011-4", "a obra que só está na tabela de contas"
 
+
+
+# ---------------------------------------------------------------------------
+# A ABA "ARQUIVOS GERADOS" POR GERAÇÃO, E EXCLUIR (02/10/2026)
+# ---------------------------------------------------------------------------
+def _gerar_com_drive_falso(monkeypatch):
+    from app.apps.analisesps import beevale, drive, folha_geracao as g, folha_pagamento as fp
+    contador = []
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
+    monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k:
+                        contador.append(nome) or {"id": f"d{len(contador)}",
+                                                  "link": f"https://drive/{len(contador)}"})
+    return fp.gerar(2026, 9, "quinzena", ["alimentacao"], g.BEEVALE, quem="MARCELO")
+
+
+def test_cada_GERACAO_vira_uma_linha_com_seus_arquivos(banco_pagamento, monkeypatch):
+    from app.apps.analisesps import folha_pagamento as fp
+    _obras_com_conta()
+    _fechar()
+    _gerar_com_drive_falso(monkeypatch)
+    _gerar_com_drive_falso(monkeypatch)
+    rodadas = fp.rodadas()
+    assert len(rodadas) == 2
+    assert all(len(r["pagamentos"]) == 1 and r["analise"] for r in rodadas)
+    assert rodadas[0]["ordem"] > rodadas[1]["ordem"], "a mais recente primeiro"
+    assert rodadas[0]["lancavel"] and rodadas[0]["total"] == D("330.00")
+
+
+def test_EXCLUIR_tira_do_registro_e_manda_para_a_lixeira(banco_pagamento, monkeypatch):
+    from app.apps.analisesps import drive, folha_pagamento as fp
+    _obras_com_conta()
+    _fechar()
+    _gerar_com_drive_falso(monkeypatch)
+    lixeira = []
+    monkeypatch.setattr(drive, "mover_para_lixeira", lambda i: lixeira.append(i))
+    rodada = fp.rodadas()[0]
+    feito = fp.excluir_arquivos(rodada["ids"], quem="MARCELO")
+    assert feito["excluidos"] == 2 and feito["falhas_no_drive"] == []
+    assert sorted(lixeira) == ["d1", "d2"]
+    assert fp.rodadas() == []
+
+
+def test_falha_no_DRIVE_nao_impede_tirar_da_lista_e_fica_dita(banco_pagamento, monkeypatch):
+    from app.apps.analisesps import drive, folha_pagamento as fp
+    _obras_com_conta()
+    _fechar()
+    _gerar_com_drive_falso(monkeypatch)
+
+    def recusa(i):
+        raise drive.ErroDoDrive("sem permissão")
+    monkeypatch.setattr(drive, "mover_para_lixeira", recusa)
+    feito = fp.excluir_arquivos(fp.rodadas()[0]["ids"])
+    assert feito["excluidos"] == 2 and len(feito["falhas_no_drive"]) == 2
+
+
+def test_excluir_sem_nada_selecionado_e_recusado(banco_pagamento):
+    from app.apps.analisesps import folha_pagamento as fp
+    with pytest.raises(fp.ErroDoPagamento):
+        fp.excluir_arquivos([])

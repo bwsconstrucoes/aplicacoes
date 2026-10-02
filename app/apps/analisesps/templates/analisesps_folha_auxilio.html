@@ -57,9 +57,12 @@
     <div class="lat-acoes">
       <button type="button" class="btn" id="fechar-auxilio">
         {% if resultado.fechamento %}Refazer o fechamento{% else %}Fechar {{ 'a alimentação' if tipo == 'alimentacao' else 'o transporte' }}{% endif %}</button>
-      {% if resultado.fechamento %}
-        <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_folha_pagamento', ano=ano, mes=mes) }}">Gerar os arquivos</a>
+      {% if pode_gerar %}
+        {% set gd_origem = tipo %}
+        {% set gd_dados = {'ano': ano, 'mes': mes} %}
+        {% set gd_destino = '' %}
+        {% set gd_pagamento = 'pagamento-do-auxilio' %}
+        {% include "_gerar_direto.html" %}
       {% endif %}
     </div>
   {% endif %}

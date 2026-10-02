@@ -1061,14 +1061,19 @@ uso — está. O que talvez não esteja em uso é a aba `Feriados` estar preench
 
 ### 7.10.4 `AJ` — QTD DIÁRIAS, e a MEIA diária
 
-A fórmula devolve **1**, **0,5** ou vazio. Vale 1 quando há presença cheia; vale
-**0,5** quando é `PRESENÇA PARCIAL` com horas acima de `0,2916` (= **7h00**, que
-em fração de dia é 0,29166…), ou quando é falta justificada em sábado/domingo com
-mais de `0,2708` (= **6h30**).
+~~A fórmula devolve 1 com presença cheia e 0,5 em presença parcial acima de 7h.~~
+**ERRADO — corrigido em 02/10/2026**, quando o dono mandou a fórmula inteira (a
+leitura de 27/09 tinha trocado os blocos). O certo, para os dias de DIÁRIA:
 
-⚠️ **Dois limites de hora escritos como fração de dia, sem explicação na planilha.**
-7h e 6h30. Vou implementar com o número e o motivo escritos; e é candidato a
-pergunta: são esses mesmo?
+- **1** — presença cheia; ou `PRESENÇA PARCIAL` com `AG > 0,2916` (7h).
+- **0,5** — `PRESENÇA PARCIAL` com `AG < 0,2916`; ou prestador em dia de DIÁRIA
+  com presença e "Falta não justificada".
+- o caso de 6h30 (`0,2708`) é de CTPS em dia de CTPS com `PAGAR EXTRA` e falta
+  justificada no fim de semana — não alcança o diarista.
+
+`AG` (horas trabalhadas) = saída − entrada; sem saída, retorno − entrada; sem
+retorno, almoço − entrada. O almoço não é descontado. A tradução termo a termo,
+com a fórmula transcrita, está em `folha_diaristas.quantidade_da_planilha`.
 
 ### 7.10.5 As abas `Quinzena` e `Fim de Mês` — como o pagamento é montado
 

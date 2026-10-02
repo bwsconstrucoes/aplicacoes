@@ -247,6 +247,10 @@ COLUNAS_OPCIONAIS = {
                      "Valor Diaria", "Valor do Dia", "Diária", "Diaria"],
 }
 
+# A posição de uma opcional quando o NOME não casa (índice a partir de zero). O
+# valor da diária está na coluna 49 da aba "Dados Documentos" (dono, 02/10/2026).
+POSICAO_CONHECIDA = {"valor_diaria": 48}
+
 # As opcionais que AVISAM quando faltam — só as que mudam dinheiro.
 OPCIONAIS_QUE_AVISAM = {
     "valor_diaria":
@@ -473,6 +477,14 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
 
     for campo, aceitos in COLUNAS_OPCIONAIS.items():
         i = achar_coluna(normalizado, aceitos)
+        if i is None and campo in POSICAO_CONHECIDA \
+                and POSICAO_CONHECIDA[campo] < len(cabecalho):
+            # Informada pelo dono (02/10/2026): "Valor Diária está na coluna 49
+            # em 'Dados Documentos'". Vale quando o nome não casa com nenhum
+            # dos procurados; o cabeçalho da posição fica no log.
+            i = POSICAO_CONHECIDA[campo]
+            logger.info("Cadastro: %s lido da coluna %d (\"%s\").", campo, i + 1,
+                        cabecalho[i])
         if i is not None:
             posicoes[campo] = i
         elif campo in OPCIONAIS_QUE_AVISAM:

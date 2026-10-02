@@ -156,11 +156,13 @@
            title="Baixa os arquivos conforme a situação atual, sem fechar a apropriação e sem enviar ao Drive"
            >Baixar prévia</a>
       </div>
-      {% if montado.fechamento %}
-        <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_folha_pagamento') }}">Gerar
-          arquivos definitivos</a>
-      {% endif %}
+      {# GERAR SEM SAIR DA FOLHA (02/10/2026): o destino é o mesmo seletor da
+         prévia; o resumo abre aqui e o "ok" fecha e gera. #}
+      {% set gd_origem = 'folha' %}
+      {% set gd_dados = {'folha_id': folha.id} %}
+      {% set gd_destino = 'previa-destino' %}
+      {% set gd_pagamento = '' %}
+      {% include "_gerar_direto.html" %}
     {% endif %}
     <button type="button" class="btn secundario" id="btn-divisao"
             >Divisão por obra e conta</button>
@@ -1132,6 +1134,10 @@
     if (caixa.querySelector(".fila-esperando, .fila-rodando")) {
       const ainda = await atualizarLateralFila();
       if (ainda) setTimeout(vigiarLateral, 4000);
+      else setTimeout(vigiarLateral, 60000);
+    } else {
+      // Só concluídos e falhas: confere a cada minuto, e o que expirou sai.
+      setTimeout(async () => { await atualizarLateralFila(); vigiarLateral(); }, 60000);
     }
   })();
 

@@ -1,81 +1,148 @@
 {% extends "analisesps_base.html" %}
+{% from "_folha_macros.html" import bloco %}
 {% block titulo %}Ponto — Análise de SPs{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   REFEITA EM 02/10/2026. O dono: *"a partir dessa tela pesquisar funcionários,
+   visualizar os pontos de cada um e ainda poder editá-los. Quero uma tela mais
+   limpa. Tem muita informação. Não precisa dessa informação de API. A
+   informação de atualizações do ponto (…) colocar no sidebar, os filtros,
+   seleção de competência."*
+
+   A lateral: a competência vista, a importação (com o estado da última) e as
+   competências carregadas; depois os filtros. O centro: os colaboradores da
+   competência; o nome abre a janela do funcionário, com o ponto dia a dia e o
+   lançamento de batidas. A lista de campos da API saiu — o mapeamento já foi
+   feito (`ponto.CAMPOS_DAS_OBRAS` etc.).
+   --------------------------------------------------------------------------- #}
+
+{% block filtros %}
+{% if pronto %}
+{% set url_tela = url_for('analisesps.tela_folha_ponto') %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Competência</b>
+  {% if cargas %}
+    <form method="get" action="{{ url_tela }}" id="form-competencia">
+      <select name="competencia" id="ponto-competencia" aria-label="Competência"
+              onchange="const [m, a] = this.value.split('/'); location.href = '{{ url_tela }}?mes=' + Number(m) + '&ano=' + a;">
+        {% for c in cargas if not c.interrompida %}
+          <option value="{{ c.competencia }}" {% if vista and c.id == vista.id %}selected{% endif %}>{{ c.competencia }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% if vista %}
+      <p class="cartao-dica" style="margin:6px 0 0">
+        {{ vista.pessoas }} colaborador(es) · {{ vista.dias }} dia(s).
+        Importado em {{ vista.carregado_em|momento_br }}{% if vista.carregado_por %} por {{ vista.carregado_por }}{% endif %}.
+        {% if not vista.completa %}<br><b class="ruim">Importação incompleta</b> ({{ vista.paginas_lidas }} de {{ vista.paginas }} página(s)).{% endif %}
+      </p>
+    {% endif %}
+  {% else %}
+    <p class="cartao-dica">Nenhuma competência importada.</p>
+  {% endif %}
+</div>
+
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Importação do Mobponto</b>
+  {% if andando.rodando %}
+    <p class="cartao-dica" id="aviso-andando"><b>Carga do ponto em andamento:</b>
+      <span id="andando-etapa">{{ andando.progresso or andando.etapa or 'iniciada' }}</span>.
+      A tela é atualizada ao término.</p>
+  {% elif ultima and not ultima.ok %}
+    <p class="cartao-dica"><b class="ruim">A última tentativa falhou</b>
+      ({{ ultima.fim|momento_br }}){% if ultima.mensagem %}: {{ ultima.mensagem }}{% endif %}.
+      Erro 401 ou 403: as credenciais do Mobponto estão sendo recusadas.</p>
+  {% elif ultima %}
+    <p class="cartao-dica">Última importação concluída em {{ ultima.fim|momento_br }}{% if ultima.disparo %} por {{ ultima.disparo }}{% endif %}{% if not cargas and ultima.mensagem %} — {{ ultima.mensagem }}; não há competência gravada{% endif %}.</p>
+  {% elif andando.interrompida %}
+    <p class="cartao-dica"><b>A última carga foi interrompida.</b> Importe a
+      competência novamente: a nova carga substitui a anterior, sem duplicar.</p>
+  {% endif %}
+  {% if not configurado %}
+    <div class="aviso atencao" style="margin:6px 0 0">Credenciais do Mobponto não
+      configuradas. Crie no Render <code>MOBPONTO_AUTHORIZATION</code> e
+      <code>MOBPONTO_API_KEY</code>, com os valores dos Apps Script das planilhas
+      do ponto, copiados diretamente para o Render; em seguida, substitua a chave
+      na origem.</div>
+  {% elif pode_operar %}
+    <div class="importar-ponto">
+      <select id="ponto-mes" aria-label="Mês">
+        {% for n in range(1, 13) %}
+          <option value="{{ n }}" {{ 'selected' if n == mes_padrao }}>{{ '%02d'|format(n) }}</option>
+        {% endfor %}
+      </select>
+      <select id="ponto-ano" aria-label="Ano">
+        {% for a in range(ano_padrao - 2, ano_padrao + 2) %}
+          <option value="{{ a }}" {{ 'selected' if a == ano_padrao }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="lat-acoes"><button class="btn" id="btn-trazer-ponto">Trazer o ponto</button></div>
+    <span id="recado-ponto" class="cartao-dica"></span>
+    <p class="cartao-dica" style="margin:6px 0 0">Importar novamente uma competência
+      substitui os dados gravados.</p>
+  {% endif %}
+  {% if cargas %}
+    <ul class="lista-cargas">
+      {% for c in cargas %}
+        <li>{{ c.competencia }} <span class="cartao-dica">{{ c.pessoas }} colab.
+          {% if c.interrompida %} · <b class="ruim">interrompida</b>{% elif not c.completa %} · <b class="ruim">incompleta</b>{% endif %}</span>
+          {% if pode_operar %}<button class="apagar-linha apagar-ponto" title="Excluir esta competência"
+                  data-id="{{ c.id }}" data-competencia="{{ c.competencia }}"
+                  data-dias="{{ c.dias }}">&times;</button>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+
+{% if fila_do_ponto %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Fila do ponto</b>
+  <ul class="lista-fila">
+    {% for i in fila_do_ponto %}
+      <li class="fila-{{ i.situacao }}">{{ i.nome or i.cpf }}
+        <small>{{ i.rotulo }} —
+          {% if i.situacao == 'esperando' %}em fila
+          {% elif i.situacao == 'rodando' %}em processamento{% if i.progresso %}: {{ i.progresso }}{% endif %}
+          {% elif i.situacao == 'feito' %}concluído
+          {% else %}<b class="ruim">falha</b>{% if i.mensagem %}: {{ i.mensagem }}{% endif %}{% endif %}</small>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if vista %}
+<form method="get" action="{{ url_tela }}" id="form-filtros" class="lateral-filtros">
+  <input type="hidden" name="ano" value="{{ vista.ano }}">
+  <input type="hidden" name="mes" value="{{ vista.mes }}">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_tela }}?ano={{ vista.ano }}&mes={{ vista.mes }}">Limpar</a>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="q" value="{{ lista.q }}" autocomplete="off"
+           placeholder="Nome ou CPF…" aria-label="Pesquisar colaborador">
+  </div>
+  {{ bloco('Situação', 'so', lista.opcoes_so, lista.so) }}
+  {{ bloco('Obra', 'obra', lista.opcoes_obra, lista.obra,
+           'Colaboradores com pelo menos um dia na obra.') }}
+  <noscript><button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button></noscript>
+</form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
+{% endif %}
+{% endif %}
+{% endblock %}
 
 {% block conteudo %}
 {% include "analisesps_folha_abas.html" %}
 
-<h2>Ponto <small>{{ cargas|length }} competência(s) carregada(s)</small></h2>
-
-<p class="cartao-dica" style="margin-bottom:14px">
-  O ponto registra <b>a obra em que cada colaborador trabalhou em cada dia</b> e é a
-  base da apropriação da folha por obra. A importação do Mobponto é feita por competência.
-</p>
+<h2>Ponto{% if vista %} <small>{{ vista.competencia }}</small>{% endif %}</h2>
 
 {% if erro %}
-  <div class="aviso erro"><b>Não foi possível ler as cargas do ponto.</b> {{ erro }}</div>
-{% endif %}
-
-{# ⚠️ O ESTADO, DITO AO ABRIR A TELA. Reclamação dele em 28/09/2026: *"se o ponto
-   veio, se o ponto não veio, só Deus sabe o que está acontecendo com essa API. Se
-   ela está carregando, se ela não está."*
-
-   Antes a tela só acompanhava se VOCÊ tivesse apertado o botão naquela aba. Agora
-   o estado vem junto com a página, e ela já abre acompanhando. #}
-{% if andando.rodando %}
-  <div class="aviso" id="aviso-andando">
-    <b>Carga do ponto em andamento.</b>
-    <span id="andando-etapa">{{ andando.progresso or andando.etapa or
-      'carga iniciada; etapa ainda não informada' }}</span>
-    <br><span class="cartao-dica">A tela é atualizada automaticamente ao término.
-      É possível fechar a página; o processamento continua no servidor.</span>
-  </div>
-{% elif ultima %}
-  {# ⚠️ A ÚLTIMA TENTATIVA, DITA NA CARA. Ele reclamou TRÊS VEZES de apertar o
-     botão e não saber o que aconteceu. O registro sempre existiu — com o erro da
-     API dentro — e ficava só no log do serviço, que ele não tem como ler. #}
-  {% if ultima.ok %}
-    <div class="aviso">
-      <b>Última tentativa concluída com sucesso.</b>
-      {{ ultima.fim|momento_br }}, por {{ ultima.disparo or '—' }}.
-      {% if ultima.mensagem %}<br>{{ ultima.mensagem }}{% endif %}
-      {% if not cargas %}
-        <br><span class="cartao-dica">Entretanto, não há mês carregado na tabela
-          abaixo. Se a mensagem acima indica "0 dia(s)", a API não retornou
-          lançamentos para a competência. Confira a competência selecionada.</span>
-      {% endif %}
-    </div>
-  {% else %}
-    <div class="aviso erro">
-      <b>A última tentativa falhou.</b>
-      {{ ultima.fim|momento_br }}, por {{ ultima.disparo or '—' }}.
-      {% if ultima.mensagem %}
-        <br><b>Retorno do sistema:</b> {{ ultima.mensagem }}
-      {% else %}
-        <br>O motivo não foi registrado: o processo foi encerrado antes da gravação.
-      {% endif %}
-      {% set parada = (cargas or [])|selectattr('interrompida')|first %}
-      {% if parada %}
-        <br><b>Os dados já importados foram preservados:</b> a carga de
-        {{ parada.competencia }} foi interrompida na página {{ parada.paginas_lidas + 1 }}
-        de {{ parada.paginas }}. Clique em "Trazer o ponto" para <b>retomar a partir
-        dessa página</b>. Até a conclusão, prevalece a carga anterior da competência.
-      {% endif %}
-      <br><span class="cartao-dica">
-        Erro <b>401</b> ou <b>403</b>: as credenciais do Mobponto estão sendo
-        recusadas; atualize-as no Render. Erro de <b>tempo esgotado</b> ou de
-        <b>conexão</b>: o Mobponto não respondeu no prazo, mesmo após as novas
-        tentativas automáticas; tente novamente mais tarde.
-        Retorno com <b>0 página(s)</b>: a API não retornou dados para a competência.
-      </span>
-    </div>
-  {% endif %}
-{% elif andando.interrompida %}
-  <div class="aviso atencao">
-    <b>A última carga foi interrompida.</b> Isso ocorre quando o serviço é
-    reiniciado (por exemplo, em uma publicação). Clique em "Trazer o ponto" para a
-    mesma competência: a nova carga <b>substitui</b> a anterior, sem duplicar.
-  </div>
+  <div class="aviso erro"><b>Não foi possível ler o ponto.</b> {{ erro }}</div>
 {% endif %}
 
 {% if not pronto %}
@@ -83,146 +150,48 @@
     <b>Atualização do banco pendente.</b> Em <b>Configurações</b>, clique em
     "Aplicar atualizações do banco" e retorne a esta tela.
   </div>
-{% elif not configurado %}
-  {# ⚠️ O RECADO DIZ O QUE FAZER, e onde. "Não configurado" mandaria adivinhar. #}
+{% elif not vista %}
   <div class="aviso atencao">
-    <b>Credenciais do Mobponto não configuradas.</b>
-    Crie no Render as variáveis <code>MOBPONTO_AUTHORIZATION</code> e
-    <code>MOBPONTO_API_KEY</code>. Os valores constam nos <b>Apps Script</b> das
-    planilhas do ponto, no bloco de cabeçalhos da requisição. Copie-os
-    <b>diretamente para o Render</b>, sem transmiti-los por mensagem, e
-    <b>substitua a chave na origem em seguida</b>: chave já compartilhada deve ser
-    trocada.
+    <b>Nenhuma competência importada.</b> Selecione o mês e o ano na lateral e
+    clique em "Trazer o ponto".
   </div>
 {% else %}
-
-{% if pode_operar %}
-<div class="cartao">
-  <label class="rotulo-campo">Importar o ponto de uma competência</label>
-  <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
-    <div>
-      <label class="cartao-dica" for="ponto-mes">Mês</label>
-      <select id="ponto-mes" style="width:110px">
-        {% for n in range(1, 13) %}
-          <option value="{{ n }}" {{ 'selected' if n == mes_padrao }}>{{ '%02d'|format(n) }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div>
-      <label class="cartao-dica" for="ponto-ano">Ano</label>
-      <select id="ponto-ano" style="width:110px">
-        {% for a in range(ano_padrao - 2, ano_padrao + 2) %}
-          <option value="{{ a }}" {{ 'selected' if a == ano_padrao }}>{{ a }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <button class="btn" id="btn-trazer-ponto">Trazer o ponto</button>
-    <span id="recado-ponto" class="cartao-dica" style="margin:0"></span>
-  </div>
-  <p class="cartao-dica" style="margin:8px 0 0">
-    Importar novamente a mesma competência <b>substitui</b> os dados gravados. O
-    processamento pode ser demorado: a API do Mobponto entrega a competência em
-    páginas, com dezenas de milhares de registros diários. É possível fechar a
-    página; o processamento continua no servidor.
-  </p>
-</div>
-{% endif %}
-
+<p class="cartao-dica" style="margin:0 0 10px">
+  {{ pessoas|length }}{% if lista.filtrando %} de {{ total_de_pessoas }}{% endif %}
+  colaborador(es). Clique no nome para ver o ponto dia a dia
+  {%- if pode_operar %} e lançar batidas no Mobponto{% endif %}.
+</p>
 <div class="tabela-wrap">
-
   <div class="tabela-rolagem livre">
-
-    <table class="sps" style="margin-top:16px">
-      <thead>
-        <tr><th>Competência</th><th class="num">Colaboradores</th><th class="num">Dias</th>
-          <th>Páginas</th><th>Importado em</th>{% if pode_operar %}<th></th>{% endif %}</tr>
-      </thead>
+    <table class="sps" id="tabela-ponto">
+      <thead><tr><th>Colaborador</th><th>CPF</th><th class="num">Dias</th>
+        <th class="num">Com obra</th><th class="num">Faltas</th>
+        <th class="num">Sem batida</th><th>Obras</th></tr></thead>
       <tbody>
-      {% for c in cargas %}
-        <tr class="{{ 'linha-alerta' if not c.completa or c.lista_de_avisos }}">
-          <td><b>{{ c.competencia }}</b></td>
-          <td class="num">{{ c.pessoas }}</td>
-          <td class="num">{{ c.dias }}</td>
-          <td>
-            {{ c.paginas_lidas }} de {{ c.paginas }}
-            {% if c.interrompida %}
-              <span class="selo risco"
-                    title="Carga interrompida e sem validade: a competência mantém a carga anterior, se houver. A próxima carga (manual ou automática) retoma a partir da página em que parou.">interrompida na página {{ c.paginas_lidas + 1 }}; retomada na próxima carga</span>
-            {% elif not c.completa %}
-              <span class="selo cancelado"
-                    title="A API informou mais páginas do que as lidas; a competência pode estar incompleta.">incompleta</span>
-            {% endif %}
-          </td>
-          <td><span class="cartao-dica">{{ c.carregado_em|momento_br }}{% if c.carregado_por %} · {{ c.carregado_por }}{% endif %}</span></td>
-          {% if pode_operar %}
-            <td class="num">
-              <button class="apagar-linha apagar-ponto" title="Excluir esta carga"
-                      data-id="{{ c.id }}" data-competencia="{{ c.competencia }}"
-                      data-dias="{{ c.dias }}">&times;</button>
-            </td>
-          {% endif %}
+      {% for p in pessoas %}
+        <tr class="{{ 'linha-alerta' if p.sem_marcacao }}">
+          <td><button type="button" class="link-btn nome-pessoa abrir-ficha"
+                      data-cpf="{{ p.cpf }}"><b>{{ p.nome or p.cpf }}</b></button></td>
+          <td class="cpf">{{ p.cpf[:3] }}.{{ p.cpf[3:6] }}.{{ p.cpf[6:9] }}-{{ p.cpf[9:] }}</td>
+          <td class="num">{{ p.dias }}</td>
+          <td class="num">{{ p.com_obra }}</td>
+          <td class="num">{{ p.faltas or '' }}</td>
+          <td class="num">{{ p.sem_marcacao or '' }}</td>
+          <td>{% for o, n in p.obras[:3] %}{{ o }} <span class="cartao-dica">{{ n }}</span>{% if not loop.last %} · {% endif %}{% endfor %}{% if p.obras|length > 3 %} <span class="cartao-dica">+{{ p.obras|length - 3 }}</span>{% endif %}</td>
         </tr>
-        {% if c.lista_de_avisos %}
-          <tr><td colspan="{{ 6 if pode_operar else 5 }}">
-            <div class="aviso atencao" style="margin:0">⚠️ {{ c.lista_de_avisos|join('; ') }}</div>
-          </td></tr>
-        {% endif %}
       {% else %}
-        <tr><td colspan="{{ 6 if pode_operar else 5 }}" class="cartao-dica">
-          Nenhuma competência carregada.
-          {% if pode_operar %}Selecione a competência acima e clique em "Trazer o ponto".{% endif %}
-        </td></tr>
+        <tr><td colspan="7" class="cartao-dica">Nenhum colaborador encontrado com esses filtros.</td></tr>
       {% endfor %}
       </tbody>
     </table>
-
   </div>
-
 </div>
 
-{# ------------------------------------------------------------------------
-   ⚠️ ESTA PARTE É O QUE DESTRAVA A APROPRIAÇÃO, e por isso ela está na tela e
-   não num log.
-
-   A API do Mobponto manda, em cada dia, um conjunto de campos que o próprio
-   script do dono descobre em tempo de execução — ninguém escreveu em lugar
-   nenhum quais são. Eu não vou adivinhar qual deles é a obra e quais são as
-   quatro marcações: palpite aqui decide em qual obra cai o salário de 500
-   pessoas.
-
-   Então: aqui aparecem os campos que vieram DE VERDADE, e um dia de exemplo.
-   Com isso o mapeamento é uma linha de código e nenhuma suposição.
-   ------------------------------------------------------------------------ #}
-{% if cargas and cargas[0].campos %}
-<div class="cartao" style="margin-top:16px">
-  <h3 style="margin:0 0 6px">Campos enviados pela API para cada dia</h3>
-  <p class="cartao-dica">
-    Esta lista é necessária para definir <b>qual campo identifica a obra</b> e
-    <b>quais campos correspondem às batidas</b>. Os campos não estão documentados.
-    Informe à equipe de desenvolvimento a correspondência de cada campo para
-    habilitar o total por obra.
-  </p>
-  <p><code>{{ cargas[0].campos|join('</code> · <code>')|safe }}</code></p>
-
-  {% if amostra %}
-    <h4 style="margin:12px 0 4px">Exemplo de um dia, conforme recebido</h4>
-    <div class="tabela-wrap">
-      <div class="tabela-rolagem livre">
-        <table class="sps">
-          <thead><tr><th>Campo</th><th>Valor recebido</th></tr></thead>
-          <tbody>
-          {% for campo, valor in amostra[0].campos.items() %}
-            <tr><td><code>{{ campo }}</code></td><td>{{ valor }}</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <p class="cartao-dica" style="margin-top:6px">
-      Registro do primeiro dia de <b>{{ amostra[0].nome or amostra[0].cpf }}</b>.
-    </p>
-  {% endif %}
-</div>
+{% include "_folha_ficha_js.html" %}
+<script>
+document.querySelectorAll(".abrir-ficha").forEach(b => b.addEventListener("click",
+  () => abrirFichaDoFuncionario(b.dataset.cpf, {{ vista.ano }}, {{ vista.mes }})));
+</script>
 {% endif %}
 
 {% if pode_operar %}
@@ -312,5 +281,4 @@ document.querySelectorAll(".apagar-ponto").forEach(b =>
 </script>
 {% endif %}
 
-{% endif %}
 {% endblock %}

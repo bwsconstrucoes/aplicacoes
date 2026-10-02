@@ -573,3 +573,25 @@ def test_quem_nao_tem_ponto_ganha_OUTRA_OBRA_com_a_lista_da_C_DIARIOS(app, monke
     # A sugestão de digitar a obra (ajustar) também conhece a lista da C. Diários.
     lista = html[html.index('<datalist id="obras-da-folha">'):]
     assert '<option value="SEDE">' in lista[:lista.index("</datalist>")]
+
+
+def test_o_PLANO_funciona_FORA_da_folha_pelo_mes_para_quem_esta_no_cadastro(
+        app, configurado, monkeypatch):
+    """A tela do Ponto, os diaristas e o auxílio lançam batidas pelo mês da tela
+    (02/10/2026) — sem arquivo da contabilidade."""
+    from app.apps.analisesps import colaboradores
+    _preparar_folha_aberta(monkeypatch, dias=_dias_do_mes())
+    mandados, _ = _dublar(monkeypatch)
+    monkeypatch.setattr(colaboradores, "por_cpf",
+                        lambda cpf, *a, **k: {"cpf": cpf} if cpf == "99713349334" else None)
+    cliente = _como_mestre(app)
+    r = cliente.post("/analisesps/api/folha/ponto/plano", json={
+        "ano": 2026, "mes": 9, "cpf": "99713349334", "de": "2026-09-14",
+        "ate": "2026-09-15", "obra": "CRE1"})
+    d = r.get_json()
+    assert r.status_code == 200 and d["ok"], d
+    assert d["plano"]["batidas"] == 8
+    assert mandados == []
+    fora = cliente.post("/analisesps/api/folha/ponto/plano", json={
+        "ano": 2026, "mes": 9, "cpf": "52998224725", "de": "2026-09-14", "obra": "A"})
+    assert fora.status_code == 404

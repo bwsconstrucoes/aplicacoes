@@ -455,7 +455,7 @@ def log(teto: int = 100, ano: int = 0, mes: int = 0) -> list:
     linhas = consultar(
         "SELECT id, ano, mes, tipo, destino, verbas, conta, nome_arquivo, "
         "       pessoas, total, link, card_pipefy, link_card, avisos, "
-        "       criado_em, criado_por "
+        "       criado_em, criado_por, drive_id "
         "  FROM analisesps.folha_arquivo_gerado" + onde +
         " ORDER BY criado_em DESC, id DESC LIMIT ?", tuple(params + [int(teto)]))
     return [{
@@ -466,7 +466,7 @@ def log(teto: int = 100, ano: int = 0, mes: int = 0) -> list:
         "conta": l[6], "nome": l[7], "pessoas": int(l[8] or 0),
         "total": Decimal(str(l[9] or 0)).quantize(CENTAVO), "link": l[10],
         "card_pipefy": l[11], "link_card": l[12], "avisos": l[13],
-        "criado_em": l[14], "criado_por": l[15],
+        "criado_em": l[14], "criado_por": l[15], "drive_id": l[16] or "",
         "competencia": f"{int(l[2] or 0):02d}/{int(l[1] or 0)}",
     } for l in linhas]
 
@@ -575,3 +575,187 @@ def gerencial(ano: int, mes: int) -> dict:
             [{"obra": o["obra"], "total": o["total"]}
              for o in por_obra.values()]),
     }
+
+
+# ---------------------------------------------------------------------------
+# GERAR DE DENTRO DA FOLHA — 02/10/2026
+#
+# O dono: *"quando eu clico em gerar arquivos definitivos, ele ainda me leva para
+# outra tela, que nessa tela eu vou selecionar a competência (…) eu já estou na
+# competência certa. (…) Eu seleciono se é BeeVale, se é Soma. Gerar arquivo
+# definitivo. Aí você dá um modal de resumo (…) Eu dou ok e gera. E me remete
+# para a aba de arquivos gerados."*
+#
+# Então cada folha (contabilidade, diaristas, alimentação, transporte) gera os
+# seus arquivos sem sair dela. O resumo é montado da situação ATUAL da tela, sem
+# gravar nada; o "ok" refaz o fechamento com essa mesma situação e gera — os dois
+# passos juntos, para o arquivo nunca sair de um fechamento antigo.
+# ---------------------------------------------------------------------------
+ORIGENS = ("folha", "diaria", "alimentacao", "transporte")
+
+
+def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
+    contas = conta_por_obra()
+    return [{"cpf": cpf, "nome": nome, "obra": obra, "conta": contas.get(obra, ""),
+             "verba": verba, "dias": dias, "origem": origem,
+             "valor": Decimal(str(valor or 0)).quantize(CENTAVO)}
+            for cpf, nome, obra, dias, valor, origem
+            in guardada.linhas_do_apropriado(apropriado)]
+
+
+def _pedido_direto(origem: str, dados: dict) -> dict:
+    """Competência, pagamento, verba e as linhas de AGORA — sem gravar nada."""
+    from . import folha_auxilio, folha_diaristas
+    if origem not in ORIGENS:
+        raise ErroDoPagamento(f'origem "{origem}" não reconhecida.')
+    if origem == "folha":
+        folha, _apropriado, linhas = linhas_da_previa(int(dados.get("folha_id") or 0))
+        return {"ano": folha["ano"], "mes": folha["mes"], "tipo": folha["tipo"],
+                "verba": guardada.VERBA_FOLHA, "linhas": linhas,
+                "rotulo": f"Folha da contabilidade {folha.get('competencia') or ''}"}
+    ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    if origem == "diaria":
+        periodo = str(dados.get("periodo") or "quinzena")
+        calculado = folha_diaristas.calcular(ano, mes, periodo)
+        tipo = folha_diaristas.TIPO_DO_FECHAMENTO[calculado["qual"]]
+        return {"ano": ano, "mes": mes, "tipo": tipo, "verba": "diaria",
+                "periodo": calculado["qual"],
+                "linhas": _linhas_do_apropriado(
+                    folha_diaristas.apropriado(calculado), "diaria"),
+                "rotulo": f"Diárias {mes:02d}/{ano} — {calculado['rotulo_periodo']}"}
+    pagamento = str(dados.get("pagamento") or "fim_de_mes")
+    if pagamento not in folha_auxilio.TIPOS_DO_FECHAMENTO:
+        raise ErroDoPagamento("selecione se o auxílio sai na quinzena ou no fim de mês.")
+    calculado = folha_auxilio.calcular(origem, ano, mes)
+    return {"ano": ano, "mes": mes, "tipo": pagamento, "verba": origem,
+            "pagamento": pagamento,
+            "linhas": _linhas_do_apropriado(folha_auxilio.apropriado(calculado), origem),
+            "rotulo": f"{folha_auxilio.ROTULO_DO_TIPO[origem]} {mes:02d}/{ano}"}
+
+
+def resumo_direto(origem: str, dados: dict, destino: str) -> dict:
+    """O que vai sair, montado da situação atual. NÃO grava nada."""
+    pedido = _pedido_direto(origem, dados)
+    lotes = geracao.montar_lotes([l for l in pedido["linhas"] if l["valor"] > 0],
+                                 destino)
+    if not lotes:
+        raise ErroDoPagamento("nenhum colaborador selecionado para pagamento.")
+    return {**pedido, "destino": destino, "lotes": lotes,
+            "resumo": geracao.resumo_dos_lotes(lotes),
+            "competencia": f"{int(pedido['mes']):02d}/{int(pedido['ano'])}"}
+
+
+def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
+                 forcar: bool = False) -> dict:
+    """Refaz o fechamento com a situação atual e gera os arquivos.
+
+    ⚠️ OS DOIS PASSOS JUNTOS, de propósito: gerar de um fechamento antigo
+    pagaria o que a tela não mostra mais. O resumo (`resumo_direto`) e o arquivo
+    saem do mesmo cálculo."""
+    from . import folha_auxilio, folha_diaristas, folha_gestao
+    pedido = resumo_direto(origem, dados, destino)
+    if not pedido["resumo"]["pode_gerar"] and not forcar:
+        raise ErroDoPagamento(
+            "há avisos nos arquivos. Confira o resumo e marque a opção de gerar "
+            "com aviso, se for o caso.")
+    if origem == "folha":
+        folha_gestao.fechar(int(dados.get("folha_id") or 0), quem=quem)
+    elif origem == "diaria":
+        folha_diaristas.fechar(pedido["ano"], pedido["mes"], pedido["periodo"],
+                               quem=quem)
+    else:
+        folha_auxilio.fechar(origem, pedido["ano"], pedido["mes"],
+                             pedido["pagamento"], quem=quem)
+    return gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
+                 destino, quem=quem, forcar=forcar)
+
+
+# ---------------------------------------------------------------------------
+# A ABA "ARQUIVOS GERADOS", POR GERAÇÃO — 02/10/2026
+#
+# O dono: *"tem uns aqui que estão lançados pela linha da análise, e aí tem um
+# outro que tem lançar Pipefy e outros não (…) eu queria poder excluir também
+# esses arquivos (…) eles têm que ter seleção para eu poder excluir e (…) lançar
+# no Pipefy a partir daqui."*
+#
+# A unidade da tela passa a ser a GERAÇÃO (rodada): os arquivos de pagamento de
+# uma vez, mais o de análise que os fecha. É ela que vira card no Pipefy, e é ela
+# que se seleciona.
+# ---------------------------------------------------------------------------
+def rodadas(teto: int = 400) -> list:
+    """As gerações, da mais nova para a mais antiga.
+
+    `gerar` registra os arquivos de pagamento e, por último, o de análise; então
+    uma rodada é o que entrou entre a análise anterior (da mesma competência e
+    pagamento) e esta. Arquivos sem análise depois deles (geração que parou no
+    meio) formam uma rodada "incompleta"."""
+    arquivos = sorted(log(teto=teto), key=lambda a: a["id"])
+    abertos: dict = {}
+    saida = []
+    for a in arquivos:
+        chave = (a["ano"], a["mes"], a["tipo"])
+        if a["destino"] != ANALISE:
+            abertos.setdefault(chave, []).append(a)
+            continue
+        saida.append(_rodada(a, abertos.pop(chave, [])))
+    for soltos in abertos.values():
+        saida.append(_rodada(None, soltos))
+    return sorted(saida, key=lambda r: r["ordem"], reverse=True)
+
+
+def _rodada(analise, pagamentos: list) -> dict:
+    base = analise or pagamentos[-1]
+    verbas = (analise or {}).get("rotulo_verbas") or " + ".join(
+        sorted({p["rotulo_verbas"] for p in pagamentos if p["rotulo_verbas"]}))
+    return {
+        "chave": f"a{analise['id']}" if analise else f"s{pagamentos[0]['id']}",
+        "ordem": base["id"], "analise": analise, "pagamentos": pagamentos,
+        "ids": [p["id"] for p in pagamentos] + ([analise["id"]] if analise else []),
+        "competencia": base["competencia"], "tipo": base["tipo"],
+        "verbas": verbas,
+        "destino": " + ".join(sorted({p["rotulo_destino"] for p in pagamentos})),
+        "total": sum((p["total"] for p in pagamentos), Decimal("0.00")),
+        "pessoas": (analise or {}).get("pessoas")
+                   or sum(p["pessoas"] for p in pagamentos),
+        "criado_em": base["criado_em"], "criado_por": base["criado_por"],
+        "lancado": bool(analise and analise.get("card_pipefy")),
+        "lancavel": bool(analise and not analise.get("card_pipefy") and pagamentos),
+        "incompleta": analise is None,
+        "avisos": [p["avisos"] for p in pagamentos if p["avisos"]],
+    }
+
+
+def excluir_arquivos(ids, quem: str = "") -> dict:
+    """Tira arquivos do registro e manda cada um para a lixeira do Drive.
+
+    ⚠️ O CARD NO PIPEFY NÃO É APAGADO — card não se apaga por aqui (decisão de
+    26/09/2026); a tela avisa antes. O andamento do lançamento da rodada é
+    apagado junto, para uma nova geração não herdar cards de uma excluída."""
+    from . import drive
+    from .db import conexao
+    ids = sorted({int(i) for i in (ids or []) if str(i).strip().isdigit()})
+    if not ids:
+        raise ErroDoPagamento("nenhum arquivo selecionado.")
+    alvos = [a for a in log(teto=1000) if a["id"] in set(ids)]
+    falhas = []
+    for a in alvos:
+        if not a.get("drive_id"):
+            continue
+        try:
+            drive.mover_para_lixeira(a["drive_id"])
+        except drive.ErroDoDrive as e:
+            falhas.append(f"{a['nome']}: {e}")
+    marcadores = ", ".join(["?"] * len(alvos))
+    with conexao() as conn:
+        if alvos:
+            conn.execute(
+                f"DELETE FROM analisesps.folha_arquivo_gerado WHERE id IN ({marcadores})",
+                tuple(a["id"] for a in alvos))
+            conn.executemany("DELETE FROM analisesps.meta WHERE chave = ?",
+                             [(f"folha_cards_rodada:{a['id']}",) for a in alvos
+                              if a["destino"] == ANALISE])
+        conn.commit()
+    logger.info("Folha: %d arquivo(s) excluído(s) do registro por %s (%d falha(s) "
+                "no Drive).", len(alvos), quem or "(sem nome)", len(falhas))
+    return {"excluidos": len(alvos), "falhas_no_drive": falhas,
+            "com_card": sum(1 for a in alvos if a.get("card_pipefy"))}

@@ -609,6 +609,21 @@ def fechamento(tipo: str, ano: int, mes: int) -> dict | None:
     return None
 
 
+def apropriado(calculado: dict) -> dict:
+    """O auxílio no formato que `folha_apropriacao_guardada` guarda: cada
+    colaborador com o valor na obra que paga."""
+    pessoas = [{"cpf": p["cpf"], "nome": p["nome"], "nome_cadastro": p["nome"],
+                "fora": not (p["pagar"] and p["valor"] > 0),
+                "por_obra": ([{"obra": p["obra"], "dias": int(p["dias"] or 0),
+                               "valor": p["valor"],
+                               "origem": p.get("obra_de_onde") or ""}]
+                             if p["pagar"] and p["valor"] > 0 else [])}
+               for p in calculado["pessoas"]]
+    total = calculado["total"]
+    return {"pessoas": pessoas, "total_da_folha": total,
+            "total_apropriado": total, "fecha": True}
+
+
 def fechar(tipo: str, ano: int, mes: int, pagamento: str = "fim_de_mes",
            quem: str = "") -> dict:
     """Congela o auxílio do mês: quem recebe, quanto e de qual obra sai."""
@@ -629,16 +644,7 @@ def fechar(tipo: str, ano: int, mes: int, pagamento: str = "fim_de_mes",
     for outro in TIPOS_DO_FECHAMENTO:
         if outro != pagamento:
             guardada.reabrir(ano, mes, outro, tipo, quem=quem)
-    pessoas = [{"cpf": p["cpf"], "nome": p["nome"], "nome_cadastro": p["nome"],
-                "fora": not (p["pagar"] and p["valor"] > 0),
-                "por_obra": ([{"obra": p["obra"], "dias": int(p["dias"] or 0),
-                               "valor": p["valor"],
-                               "origem": p.get("obra_de_onde") or ""}]
-                             if p["pagar"] and p["valor"] > 0 else [])}
-               for p in calculado["pessoas"]]
-    total = calculado["total"]
-    novo = guardada.fechar(ano, mes, pagamento, {
-        "pessoas": pessoas, "total_da_folha": total, "total_apropriado": total,
-        "fecha": True}, verba=tipo, quem=quem)
-    return {"id": novo, "pessoas": len(a_pagar), "total": total,
+    novo = guardada.fechar(ano, mes, pagamento, apropriado(calculado),
+                           verba=tipo, quem=quem)
+    return {"id": novo, "pessoas": len(a_pagar), "total": calculado["total"],
             "pagamento": pagamento}

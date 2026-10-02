@@ -200,6 +200,24 @@ def subir_arquivo(conteudo: bytes, nome: str, pasta_id: str,
             "link": f"https://drive.google.com/uc?export=download&id={arquivo_id}"}
 
 
+def mover_para_lixeira(arquivo_id: str) -> None:
+    """Manda um arquivo que este módulo subiu para a LIXEIRA do Drive — de onde
+    ainda é possível recuperá-lo. Levanta `ErroDoDrive`."""
+    arquivo_id = str(arquivo_id or "").strip()
+    if not arquivo_id:
+        return
+    sessao = _sessao()
+    try:
+        resposta = sessao.patch(
+            f"https://www.googleapis.com/drive/v3/files/{arquivo_id}",
+            params={"supportsAllDrives": "true"}, json={"trashed": True}, timeout=60)
+    except Exception as e:  # noqa: BLE001
+        raise ErroDoDrive(f"Não foi possível acessar o Drive: {e}") from e
+    if resposta.status_code >= 300 and resposta.status_code != 404:
+        raise ErroDoDrive("Não foi possível mover o arquivo para a lixeira do Drive. "
+                          + _explicar(resposta))
+
+
 def baixar_arquivo(arquivo_id: str) -> bytes:
     """O conteúdo de um arquivo que este módulo subiu. Levanta `ErroDoDrive`.
 

@@ -117,16 +117,30 @@ def item(item_id: int) -> dict | None:
     return saida
 
 
-def recentes(horas: int = 12, teto: int = 30) -> list:
-    """Os pedidos das últimas horas, o mais novo primeiro — para a lateral."""
+# ⚠️ A FILA SE LIMPA SOZINHA (02/10/2026). O dono: *"a fila do ponto não limpa.
+# Ela precisa ir limpando."* Ficavam na lateral todos os pedidos das últimas 12
+# horas, inclusive os concluídos. Agora: o que está em fila ou em processamento
+# fica sempre; o concluído some alguns minutos depois de terminar; a falha fica
+# mais tempo, porque pede ação.
+MINUTOS_DO_CONCLUIDO = 5
+MINUTOS_DA_FALHA = 120
+
+
+def recentes(teto: int = 30) -> list:
+    """Os pedidos que interessam à lateral, o mais novo primeiro."""
     from .db import consultar
     if not _pronto():
         return []
     linhas = consultar(
         f"SELECT {_CAMPOS} FROM analisesps.ponto_fila "
-        " WHERE criado_em > now() - make_interval(hours => ?) "
-        "    OR situacao IN (?, ?) "
-        " ORDER BY id DESC LIMIT ?", (int(horas), ESPERANDO, RODANDO, int(teto)))
+        " WHERE situacao IN (?, ?) "
+        "    OR (situacao = ? AND coalesce(fim, criado_em) "
+        "        > now() - make_interval(mins => ?)) "
+        "    OR (situacao = ? AND coalesce(fim, criado_em) "
+        "        > now() - make_interval(mins => ?)) "
+        " ORDER BY id DESC LIMIT ?",
+        (ESPERANDO, RODANDO, FEITO, MINUTOS_DO_CONCLUIDO, FALHOU,
+         MINUTOS_DA_FALHA, int(teto)))
     return [_linha(l) for l in linhas]
 
 

@@ -1,11 +1,11 @@
 {% extends "analisesps_base.html" %}
-{% block titulo %}Gerar pagamento — Análise de SPs{% endblock %}
+{% block titulo %}Arquivos gerados — Análise de SPs{% endblock %}
 {% block classe_corpo %}sem-filtros{% endblock %}
 
 {% block conteudo %}
 {% include "analisesps_folha_abas.html" %}
 
-<h2>Gerar pagamento</h2>
+<h2>Arquivos gerados</h2>
 
 {% if erro %}
   <div class="aviso erro"><b>Não foi possível carregar a tela.</b> {{ erro }}</div>
@@ -18,6 +18,88 @@
   </div>
 {% else %}
 
+{# ======================================================================
+   OS ARQUIVOS GERADOS, POR GERAÇÃO — 02/10/2026. Ele: *"eles têm que ter
+   seleção para eu poder excluir e (…) lançar no Pipefy a partir daqui."* A
+   unidade é a geração (os arquivos de pagamento de uma vez + o de análise):
+   é ela que vira card e é ela que se seleciona.
+   ====================================================================== #}
+<p class="cartao-dica" id="arquivos-gerados" style="margin:0 0 10px">
+  {{ rodadas|length }} geração(ões), da mais recente para a mais antiga. Cada linha
+  reúne os arquivos de pagamento (um por conta) e o arquivo de análise de uma geração.
+</p>
+{% if pode_operar and rodadas %}
+<div class="barra-acoes-lista">
+  <label class="cartao-dica"><input type="checkbox" id="rodadas-todas"> Selecionar todas</label>
+  <span class="cartao-dica" id="rodadas-contagem">nenhuma selecionada</span>
+  <button type="button" class="btn" id="rodadas-pipefy" disabled>Lançar no Pipefy</button>
+  <button type="button" class="btn secundario" id="rodadas-excluir" disabled>Excluir</button>
+</div>
+{% endif %}
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps" id="tabela-rodadas">
+      <thead>
+        <tr>{% if pode_operar %}<th class="marca"></th>{% endif %}
+          <th>Gerado em</th><th>Competência</th><th>Verbas</th><th>Destino</th>
+          <th>Arquivos</th><th class="num">Colaboradores</th><th class="num">Total</th>
+          <th>Pipefy</th><th>Por</th></tr>
+      </thead>
+      <tbody>
+      {% for r in rodadas %}
+        <tr class="{{ 'destaque' if destaque and r.analise and destaque == (r.analise.id|string) }} {{ 'linha-alerta' if r.avisos or r.incompleta }}"
+            data-ids="{{ r.ids|join(',') }}"
+            data-analise="{{ r.analise.id if r.lancavel else '' }}"
+            data-com-card="{{ '1' if r.lancado else '' }}">
+          {% if pode_operar %}<td class="marca"><input type="checkbox" class="marca-rodada"
+              aria-label="Selecionar a geração de {{ r.competencia }}"></td>{% endif %}
+          <td>{{ r.criado_em|momento_br }}</td>
+          <td>{{ r.competencia }}
+            <span class="cartao-dica">{{ "quinzena" if r.tipo == "quinzena" else "fim de mês" }}</span></td>
+          <td>{{ r.verbas or '—' }}</td>
+          <td>{{ r.destino or '—' }}</td>
+          <td>
+            {% for a in r.pagamentos %}
+              {% if a.link %}<a href="{{ a.link }}" target="_blank" rel="noopener" title="{{ a.nome }}"
+                >conta {{ a.conta or '—' }}</a>{% else %}conta {{ a.conta or '—' }}{% endif %}
+              <span class="cartao-dica">{{ a.pessoas }} · {{ a.total|moeda }}</span><br>
+            {% endfor %}
+            {% if r.analise and r.analise.link %}
+              <a href="{{ r.analise.link }}" target="_blank" rel="noopener"
+                 title="{{ r.analise.nome }}">análise</a>
+            {% elif r.incompleta %}<span class="cartao-dica">geração incompleta — sem arquivo de análise</span>{% endif %}
+            {% for av in r.avisos %}<br><span class="cartao-dica">⚠ {{ av }}</span>{% endfor %}
+          </td>
+          <td class="num">{{ r.pessoas }}</td>
+          <td class="num">{{ r.total|moeda }}</td>
+          <td>
+            {% if r.lancado %}
+              {% if r.analise.link_card %}<a href="{{ r.analise.link_card }}" target="_blank"
+                 rel="noopener">Despesa {{ r.analise.card_pipefy }}</a>{% else %}Despesa {{ r.analise.card_pipefy }}{% endif %}
+              {% for a in r.pagamentos if a.card_pipefy %}<br>
+                {% if a.link_card %}<a href="{{ a.link_card }}" target="_blank" rel="noopener"
+                  >SP {{ a.card_pipefy }}</a>{% else %}SP {{ a.card_pipefy }}{% endif %}
+                <span class="cartao-dica">conta {{ a.conta }}</span>
+              {% endfor %}
+            {% elif r.lancavel %}<span class="cartao-dica">não lançado</span>
+            {% else %}<span class="cartao-dica">—</span>{% endif %}
+          </td>
+          <td><span class="cartao-dica">{{ r.criado_por or '—' }}</span></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10" class="cartao-dica">
+          Nenhum arquivo gerado. Os arquivos são gerados em cada folha, pelo botão
+          "Gerar arquivos definitivos", e ficam listados aqui.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<details class="cartao" style="margin-top:18px">
+  <summary><b>Gerar por competência</b> <span class="cartao-dica">— alternativa ao botão
+    "Gerar arquivos definitivos" de cada folha; usa apenas o que já está fechado</span></summary>
 {# ---------------------------------------------------------------------------
    ⚠️ A TELA DIZ AS DUAS REGRAS ANTES DE OFERECER O BOTÃO. Elas mudam quantos
    arquivos saem, e descobrir isso depois de subir no portal custa a rodada
@@ -136,69 +218,7 @@
 </div>
 
 {% endif %}
-
-{# ======================================================================
-   O LOG — pedido dele com todas as letras: *"que tenha também o log na
-   aplicação, com as informações e o link que a gente quer baixar por lá"*.
-   ====================================================================== #}
-<h3 style="margin-top:24px">
-  Arquivos gerados <small>{{ log|length }} · do mais novo para o mais antigo</small>
-</h3>
-<div class="tabela-wrap">
-  <div class="tabela-rolagem livre">
-    <table class="sps">
-      <thead>
-        <tr><th>Data</th><th>Competência</th><th>Destino</th><th>Verbas</th>
-          <th>Conta</th><th class="num">Colaboradores</th><th class="num">Total</th>
-          <th>Arquivo</th><th>Card</th><th>Responsável</th></tr>
-      </thead>
-      <tbody>
-      {% for a in log %}
-        <tr class="{{ 'linha-alerta' if a.avisos }}">
-          <td>{{ a.criado_em|momento_br }}</td>
-          <td>{{ a.competencia }}
-            <span class="cartao-dica">
-              {{ "quinzena" if a.tipo == "quinzena" else "fim de mês" }}</span></td>
-          <td>{{ a.rotulo_destino }}</td>
-          <td>{{ a.rotulo_verbas or '—' }}</td>
-          <td>{{ a.conta or '—' }}</td>
-          <td class="num">{{ a.pessoas }}</td>
-          <td class="num">{{ a.total|moeda }}</td>
-          <td>
-            {% if a.link %}
-              <a href="{{ a.link }}" target="_blank" rel="noopener"
-                 title="{{ a.nome }}">Baixar</a>
-            {% else %}—{% endif %}
-            {% if a.avisos %}
-              <br><span class="cartao-dica">⚠ {{ a.avisos }}</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if a.link_card %}
-              <a href="{{ a.link_card }}" target="_blank" rel="noopener"
-                 >{{ ("Despesa " if a.destino == 'analise' else "SP ") ~ (a.card_pipefy or '') }}</a>
-            {% elif a.destino == 'analise' and pode_operar %}
-              {# O LANÇAMENTO SAI PELA ANÁLISE, como no Make: UM card de Despesa
-                 para o pagamento inteiro e UMA SP por conta de origem. #}
-              <button class="btn secundario btn-lancar-card" type="button"
-                      data-analise="{{ a.id }}"
-                      >Lançar no Pipefy</button>
-            {% elif a.destino != 'analise' %}
-              <span class="cartao-dica">lançado pela linha da análise</span>
-            {% else %}<span class="cartao-dica">—</span>{% endif %}
-          </td>
-          <td><span class="cartao-dica">{{ a.criado_por or '—' }}</span></td>
-        </tr>
-      {% else %}
-        <tr><td colspan="10" class="cartao-dica">
-          Nenhum arquivo gerado. Os arquivos gerados são listados aqui com o link
-          para download.
-        </td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+</details>
 
 {% if pode_operar %}
 <div class="cartao" style="margin-top:14px">
@@ -207,8 +227,8 @@
     Cria <b>um card de Despesa com Colaboradores</b> para o pagamento completo, com
     cada obra como centro de custo e o código do OMIE da aba "C. Diários", e <b>uma
     SP de Transferência de Recursos para cada conta de origem</b>, vinculada à
-    Despesa (mesmo procedimento do Make). O botão fica na linha do arquivo de
-    análise e exibe uma prévia antes da criação. ⚠️ <b>Card criado no Pipefy não
+    Despesa (mesmo procedimento do Make). Selecione as gerações na lista e clique
+    em "Lançar no Pipefy"; a prévia é exibida antes da criação. ⚠️ <b>Card criado no Pipefy não
     pode ser excluído pelo sistema</b> — o cancelamento é feito no Pipefy.
   </p>
   <button class="btn secundario" id="btn-conferir-pipe" type="button">
@@ -294,32 +314,83 @@ function desenhaPrevia(d) {
       g.sps.map(s => "<li>Conta " + escapa(s.conta || "(sem conta)") + " — R$ " +
         moedaBr(s.valor) + "</li>").join("") + "</ul></div>";
   });
-  corpoCards.innerHTML = html;
-  criarCards.hidden = !!(d.bloqueios.length || d.ja_lancado);
-  criarCards.dataset.analise = d.analise;
+  return html;
 }
 
-document.querySelectorAll(".btn-lancar-card").forEach(botao =>
-  botao.addEventListener("click", async () => {
-    corpoCards.innerHTML = '<p class="cartao-dica">Gerando a prévia: consultando ' +
-      "os pipes e os centros de custo no Pipefy…</p>";
-    criarCards.hidden = true;
-    dialogoCards.showModal();
+// --- a seleção das gerações -------------------------------------------------
+const marcas = [...document.querySelectorAll(".marca-rodada")];
+const botaoPipefy = document.getElementById("rodadas-pipefy");
+const botaoExcluir = document.getElementById("rodadas-excluir");
+function selecionadas() { return marcas.filter(m => m.checked).map(m => m.closest("tr")); }
+function atualizarSelecao() {
+  const linhas = selecionadas();
+  const lancaveis = linhas.filter(l => l.dataset.analise);
+  const contagem = document.getElementById("rodadas-contagem");
+  if (contagem) contagem.textContent = linhas.length
+    ? linhas.length + " selecionada(s) · " + lancaveis.length + " a lançar no Pipefy"
+    : "nenhuma selecionada";
+  if (botaoPipefy) botaoPipefy.disabled = !lancaveis.length;
+  if (botaoExcluir) botaoExcluir.disabled = !linhas.length;
+}
+marcas.forEach(m => m.addEventListener("change", atualizarSelecao));
+const todas = document.getElementById("rodadas-todas");
+if (todas) todas.addEventListener("change", () => {
+  marcas.forEach(m => { m.checked = todas.checked; });
+  atualizarSelecao();
+});
+atualizarSelecao();
+
+// --- excluir ------------------------------------------------------------------
+if (botaoExcluir) botaoExcluir.addEventListener("click", async () => {
+  const linhas = selecionadas();
+  const ids = linhas.flatMap(l => l.dataset.ids.split(",").filter(Boolean));
+  const comCard = linhas.filter(l => l.dataset.comCard).length;
+  if (!confirm("Excluir " + linhas.length + " geração(ões) — " + ids.length +
+               " arquivo(s)?\n\nOs arquivos saem da lista e vão para a lixeira do Drive." +
+               (comCard ? "\n\n⚠️ " + comCard + " geração(ões) já lançada(s) no Pipefy: " +
+                          "os cards NÃO são excluídos e devem ser cancelados no Pipefy." : ""))) return;
+  botaoExcluir.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_arquivos_excluir') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ids: ids})});
+    const d = await r.json();
+    if (!d.ok) { alert(d.erro); botaoExcluir.disabled = false; return; }
+    if (d.falhas_no_drive && d.falhas_no_drive.length) {
+      alert("Excluído(s) da lista. Não foi possível mover para a lixeira do Drive:\n" +
+            d.falhas_no_drive.join("\n"));
+    }
+    location.reload();
+  } catch (e) { alert("Não foi possível excluir: " + e); botaoExcluir.disabled = false; }
+});
+
+// --- lançar no Pipefy (uma ou várias gerações) ----------------------------------
+let aLancar = [];
+if (botaoPipefy) botaoPipefy.addEventListener("click", async () => {
+  aLancar = selecionadas().filter(l => l.dataset.analise).map(l => l.dataset.analise);
+  corpoCards.innerHTML = '<p class="cartao-dica">Gerando a prévia: consultando ' +
+    "os pipes e os centros de custo no Pipefy…</p>";
+  criarCards.hidden = true;
+  dialogoCards.showModal();
+  let html = "", bloqueado = false;
+  for (const analise of aLancar) {
     try {
       const r = await fetch("{{ url_for('analisesps.folha_card_preparar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({analise: botao.dataset.analise})
-      });
+        body: JSON.stringify({analise: analise})});
       const d = await r.json();
-      if (!d.ok) {
-        corpoCards.innerHTML = '<div class="aviso erro">' + escapa(d.erro) + "</div>";
-        return;
-      }
-      desenhaPrevia(d);
+      if (!d.ok) { html += '<div class="aviso erro">' + escapa(d.erro) + "</div>"; bloqueado = true; continue; }
+      if (d.bloqueios.length || d.ja_lancado) bloqueado = true;
+      html += (aLancar.length > 1 ? "<h4 style=\"margin:14px 0 4px\">Geração " +
+               escapa(d.competencia) + "</h4>" : "") + desenhaPrevia(d);
     } catch (e) {
-      corpoCards.innerHTML = '<div class="aviso erro">Não foi possível gerar a prévia: ' + escapa(e) + "</div>";
+      html += '<div class="aviso erro">Não foi possível gerar a prévia: ' + escapa(e) + "</div>";
+      bloqueado = true;
     }
-  }));
+    corpoCards.innerHTML = html;
+  }
+  criarCards.hidden = bloqueado || !aLancar.length;
+});
 
 criarCards.addEventListener("click", async () => {
   // ⚠️ CONFIRMA: card criado no Pipefy não se apaga por aqui.
@@ -327,33 +398,30 @@ criarCards.addEventListener("click", async () => {
                "sistema; o cancelamento deve ser feito no Pipefy.")) return;
   criarCards.disabled = true;
   criarCards.textContent = "Criando…";
-  try {
-    const r = await fetch("{{ url_for('analisesps.folha_card_lancar') }}", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({analise: criarCards.dataset.analise})
-    });
-    const d = await r.json();
-    if (!d.ok) {
-      corpoCards.insertAdjacentHTML("afterbegin",
-        '<div class="aviso erro">' + escapa(d.erro) + "</div>");
-      criarCards.disabled = false;
-      criarCards.textContent = "Tentar novamente";
-      return;
+  let resultado = "", falhou = false;
+  for (const analise of aLancar) {
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_card_lancar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({analise: analise})});
+      const d = await r.json();
+      if (!d.ok) { resultado += '<div class="aviso erro">' + escapa(d.erro) + "</div>"; falhou = true; continue; }
+      resultado += '<div class="aviso">Cards criados (' + escapa(d.competencia) + "): " +
+        d.despesas.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
+          'rel="noopener">Despesa ' + escapa(x.id) + "</a>").join(", ") + " · " +
+        d.sps.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
+          'rel="noopener">SP ' + escapa(x.id) + "</a> (conta " + escapa(x.conta) +
+          ")").join(", ") + "</div>";
+    } catch (e) {
+      resultado += '<div class="aviso erro">Não foi possível criar os cards: ' + escapa(e) + "</div>";
+      falhou = true;
     }
-    corpoCards.innerHTML = '<div class="aviso">Cards criados: ' +
-      d.despesas.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
-        'rel="noopener">Despesa ' + escapa(x.id) + "</a>").join(", ") + " · " +
-      d.sps.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
-        'rel="noopener">SP ' + escapa(x.id) + "</a> (conta " + escapa(x.conta) +
-        ")").join(", ") + "</div>";
-    criarCards.hidden = true;
-    dialogoCards.addEventListener("close", () => location.reload(), {once: true});
-  } catch (e) {
-    corpoCards.insertAdjacentHTML("afterbegin",
-      '<div class="aviso erro">Não foi possível criar os cards: ' + escapa(e) + "</div>");
-    criarCards.disabled = false;
-    criarCards.textContent = "Tentar novamente";
   }
+  corpoCards.innerHTML = resultado;
+  criarCards.disabled = false;
+  criarCards.textContent = "Tentar novamente";
+  criarCards.hidden = !falhou;
+  dialogoCards.addEventListener("close", () => location.reload(), {once: true});
 });
 </script>
 {% endif %}

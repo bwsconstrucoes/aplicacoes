@@ -69,6 +69,50 @@
 
   <div class="ficha-cadastro-completo-caixa" hidden></div>
 
+  {# --- LANÇAR BATIDAS NO MOBPONTO (02/10/2026) — o mesmo do analítico da
+     folha: completa só as batidas ausentes, no horário padrão. #}
+  {% if editar_ponto %}
+  <div class="cartao lancar-ponto" id="ficha-lancar" style="margin-top:12px"
+       data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}" data-ano="{{ ano }}" data-mes="{{ mes }}">
+    <b class="lateral-titulo">Lançar ponto no Mobponto</b>
+    {% if falta_para_editar %}
+      <div class="aviso atencao" style="margin:6px 0 0">{{ falta_para_editar }}</div>
+    {% elif not obras_do_mobponto %}
+      <div class="aviso atencao" style="margin:6px 0 0">Lista de obras da aba
+        "C. Diários" indisponível. Atualize as planilhas de apoio em Configurações.</div>
+    {% else %}
+      <p class="cartao-dica">Completa apenas as batidas ausentes de cada dia, no
+        horário padrão (7h, 12h, 13h e 17h; 16h às sextas). Fins de semana, feriados,
+        férias, faltas lançadas e dias completos são desconsiderados.
+        <b>Lançamentos enviados ao Mobponto não podem ser desfeitos por esta tela.</b></p>
+      <div class="lancar-campos">
+        <label>De <input type="date" class="lancar-de" value="{{ periodo_iso[0] }}"
+                         min="{{ periodo_iso[0] }}" max="{{ periodo_iso[1] }}"></label>
+        <label>Até <input type="date" class="lancar-ate" value="{{ periodo_iso[1] }}"
+                          min="{{ periodo_iso[0] }}" max="{{ periodo_iso[1] }}"></label>
+        <label class="lancar-obra-campo">Obra (C. Diários)
+          <select class="lancar-obra" data-sem-busca>
+            <option value="">Selecione a obra</option>
+            {% for o in obras_do_mobponto %}
+              <option value="{{ o }}" {% if o == obra_sugerida %}selected{% endif %}>{{ o }}</option>
+            {% endfor %}
+          </select></label>
+        <label>Batida avulsa às <input type="time" class="lancar-avulsa"
+                         title="Deixe em branco para completar o dia inteiro"></label>
+        <label class="lancar-just-campo">Justificativa
+          <input type="text" class="lancar-justificativa" maxlength="500"
+                 placeholder="Enviada ao Mobponto em cada batida"></label>
+      </div>
+      <div class="analitico-acoes" style="margin-top:8px">
+        <button type="button" class="btn secundario lancar-ver">Pré-visualizar lançamento</button>
+        <button type="button" class="btn lancar-enviar" hidden>Lançar</button>
+        <span class="cartao-dica lancar-recado"></span>
+      </div>
+      <div class="lancar-plano"></div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <h4 style="margin:14px 0 6px">Ponto de {{ '%02d'|format(mes) }}/{{ ano }}</h4>
   {% if not ponto.tem_carga %}
     <p class="cartao-dica">O ponto deste mês ainda não foi importado. A importação é feita na aba <b>Ponto</b>.</p>
@@ -78,7 +122,8 @@
     <div class="tabela-wrap"><div class="tabela-rolagem livre">
       <table class="sps mini">
         <thead><tr><th>Dia</th><th>Entrada</th><th>Almoço</th><th>Retorno</th>
-          <th>Saída</th><th>Situação</th><th>Horas</th><th>Obra do dia</th></tr></thead>
+          <th>Saída</th><th>Situação</th><th>Horas</th><th>Obra do dia</th>
+          {% if editar_ponto and not falta_para_editar and obras_do_mobponto %}<th></th>{% endif %}</tr></thead>
         <tbody>
         {% for d in ponto.dias %}
           <tr>
@@ -91,6 +136,10 @@
             <td>{{ d.presenca or d.falta or '—' }}</td>
             <td>{{ d.total_de_horas or '' }}</td>
             <td><b>{{ d.obra or '—' }}</b>{% if d.empate %} <span class="cartao-dica">empate</span>{% endif %}</td>
+            {% if editar_ponto and not falta_para_editar and obras_do_mobponto %}
+              <td>{% if d.data %}<button type="button" class="link-btn ficha-lancar-dia"
+                    data-data="{{ d.data.isoformat() }}">lançar</button>{% endif %}</td>
+            {% endif %}
           </tr>
         {% endfor %}
         </tbody>
