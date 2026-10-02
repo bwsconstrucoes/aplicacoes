@@ -3241,3 +3241,16 @@ fornecedor, no caso da troca), e trocar na origem em seguida.
   do que a §4 registra.
 - **Qualquer teste em produção.** Nada foi executado; nada foi escrito no Pipefy,
   no Drive, no Dropbox ou no OMIE.
+
+
+## Pipefy desde 02/10/2026 — só a Solicitação de Pagamento
+
+O card de **Despesa com Colaboradores deixou de ser criado** (decisão do dono).
+Cada conta de origem vira uma **Solicitação de Pagamento** com **rateio
+múltiplo** no padrão do script do BeeVale: o campo "Rateio múltiplo" leva o JSON
+do OMIE (`distribuicao` por obra, com o código do departamento da "C. Diários" e
+percentual de 7 casas fechando 100%; `categorias` com a categoria da verba).
+Tipo de despesa e categoria são procurados pelo nome da verba ("Salários e
+Ordenados" para folha e diárias). Pix, chave aleatória "Atualizar Chave". O
+código está em `app/apps/analisesps/folha_cards.py`; a decisão, no
+`HISTORICO.md` da área (leva 155).

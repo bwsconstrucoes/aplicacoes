@@ -79,9 +79,7 @@
           <td class="num">{{ r.total|moeda }}</td>
           <td>
             {% if r.analise and r.analise.card_pipefy %}
-              {% if r.analise.link_card %}<a href="{{ r.analise.link_card }}" target="_blank"
-                 rel="noopener">Despesa {{ r.analise.card_pipefy }}</a>{% else %}Despesa {{ r.analise.card_pipefy }}{% endif %}
-              {% for a in r.pagamentos %}<br>
+              {% for a in r.pagamentos %}{% if not loop.first %}<br>{% endif %}
                 {% if a.card_pipefy %}
                   {% if a.link_card %}<a href="{{ a.link_card }}" target="_blank" rel="noopener"
                     >SP {{ a.card_pipefy }}</a>{% else %}SP {{ a.card_pipefy }}{% endif %}
@@ -231,10 +229,11 @@
 <div class="cartao" style="margin-top:14px">
   <label class="rotulo-campo">Lançar no Pipefy</label>
   <p class="cartao-dica" style="margin:4px 0 8px">
-    Cria <b>um card de Despesa com Colaboradores</b> para o pagamento completo, com
-    cada obra como centro de custo e o código do OMIE da aba "C. Diários", e <b>uma
-    SP de Transferência de Recursos para cada conta de origem</b>, vinculada à
-    Despesa (mesmo procedimento do Make). Selecione as gerações na lista e clique
+    Cria <b>uma Solicitação de Pagamento para cada conta de origem</b>, com
+    <b>rateio múltiplo</b> por obra (código do OMIE da aba "C. Diários"), Pix com
+    chave aleatória "Atualizar Chave", e a descrição com a competência, o valor por
+    obra e os links dos arquivos. O card de Despesa com Colaboradores não é mais
+    criado. Selecione as contas na lista e clique
     em "Lançar no Pipefy"; a prévia é exibida antes da criação. ⚠️ <b>Card criado no Pipefy não
     pode ser excluído pelo sistema</b> — o cancelamento é feito no Pipefy.
   </p>
@@ -292,9 +291,11 @@ const corpoCards = document.getElementById("dialogo-cards-corpo");
 const criarCards = document.getElementById("dialogo-cards-criar");
 
 function desenhaPrevia(d) {
+  // Desde 02/10/2026: só a Solicitação de Pagamento, uma por conta, com o
+  // rateio múltiplo por obra (o card de Despesa deixou de existir).
   let html = '<p class="cartao-dica">' + escapa(d.competencia) + " · " +
     (d.tipo === "quinzena" ? "quinzena" : "fim de mês") +
-    ". Centro de custo no Pipefy: " + escapa(d.como_centro) + ".</p>";
+    ". Tipo de despesa no Pipefy: " + escapa(d.como_tipo) + ".</p>";
   if (d.ja_lancado) {
     html += '<div class="aviso">Este pagamento já foi lançado no Pipefy.</div>';
   }
@@ -304,22 +305,28 @@ function desenhaPrevia(d) {
       "</ul></div>";
   }
   d.grupos.forEach(g => {
-    html += '<div class="cartao" style="margin-top:10px"><b>Card de Despesa — ' +
-      escapa(g.grupo) + "</b> · R$ " + moedaBr(g.total) + " · " + g.pessoas +
-      " colaborador(es) · " + g.centros.length + " centro(s) de custo" +
-      '<div class="tabela-rolagem livre" style="margin-top:6px">' +
-      '<table class="sps"><thead><tr><th>Obra</th>' +
-      '<th>Centro de custo no Pipefy</th><th>Código OMIE</th><th class="num">Valor</th>' +
-      "</tr></thead><tbody>" +
-      g.centros.map(c => "<tr><td>" + escapa(c.obra) + "</td><td>" +
-        (c.centro ? escapa(c.centro) : '<b class="ruim">não encontrado</b>') + "</td><td>" +
-        (c.omie ? escapa(c.omie) : '<b class="ruim">ausente</b>') +
-        '</td><td class="num">' + moedaBr(c.valor) + "</td></tr>").join("") +
-      "</tbody></table></div>" +
-      "<p style=\"margin:8px 0 4px\"><b>SPs de Transferência de Recursos</b> (" +
-      g.sps.length + ")</p><ul>" +
-      g.sps.map(s => "<li>Conta " + escapa(s.conta || "(sem conta)") + " — R$ " +
-        moedaBr(s.valor) + "</li>").join("") + "</ul></div>";
+    html += '<div class="cartao" style="margin-top:10px"><b>' + escapa(g.grupo) +
+      "</b> · R$ " + moedaBr(g.total) + " · " + g.pessoas + " colaborador(es)" +
+      '<br><span class="cartao-dica">Tipo de despesa: ' + escapa(g.tipo_despesa) +
+      (g.tipo_sp ? "" : ' <b class="ruim">(não encontrado)</b>') +
+      " · categoria OMIE " + (g.categoria ? escapa(g.categoria) : '<b class="ruim">ausente</b>') +
+      " · Pix, chave aleatória “Atualizar Chave”</span>";
+    g.sps.forEach(s => {
+      html += '<p style="margin:10px 0 4px"><b>Solicitação de Pagamento — conta ' +
+        escapa(s.conta || "(sem conta)") + "</b> · R$ " + moedaBr(s.valor) +
+        (s.destino ? " · " + escapa(s.destino === "somapay" ? "SomaPay" : "BeeVale") : "") +
+        '</p><div class="tabela-rolagem livre"><table class="sps"><thead><tr>' +
+        '<th>Obra (rateio múltiplo)</th><th>Código OMIE</th><th class="num">Valor</th>' +
+        "</tr></thead><tbody>" +
+        s.obras.map(o => "<tr><td>" + escapa(o.obra) + "</td><td>" +
+          (o.omie ? escapa(o.omie) : '<b class="ruim">ausente</b>') +
+          '</td><td class="num">' + moedaBr(o.valor) + "</td></tr>").join("") +
+        "</tbody></table></div>" +
+        '<details><summary class="cartao-dica">Descrição e rateio que vão no card</summary>' +
+        '<pre style="white-space:pre-wrap;font-size:12px">' + escapa(s.descricao) +
+        "\n\n" + escapa(s.rateio) + "</pre></details>";
+    });
+    html += "</div>";
   });
   return html;
 }
@@ -408,7 +415,7 @@ if (botaoPipefy) botaoPipefy.addEventListener("click", async () => {
       html += "<h4 style=\"margin:14px 0 4px\">Geração " + escapa(d.competencia) +
               ' <small>conta(s) ' + escapa(d.escolhidas.join(", ")) +
               (d.escolhidas.length < d.contas.length
-                ? " de " + d.contas.length + " — uma Despesa só para estas" : "") +
+                ? " de " + d.contas.length : "") +
               "</small></h4>" + desenhaPrevia(d);
     } catch (e) {
       html += '<div class="aviso erro">Não foi possível gerar a prévia: ' + escapa(e) + "</div>";
@@ -433,9 +440,7 @@ criarCards.addEventListener("click", async () => {
         body: JSON.stringify(lote)});
       const d = await r.json();
       if (!d.ok) { resultado += '<div class="aviso erro">' + escapa(d.erro) + "</div>"; falhou = true; continue; }
-      resultado += '<div class="aviso">Cards criados (' + escapa(d.competencia) + "): " +
-        d.despesas.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
-          'rel="noopener">Despesa ' + escapa(x.id) + "</a>").join(", ") + " · " +
+      resultado += '<div class="aviso">Solicitações criadas (' + escapa(d.competencia) + "): " +
         d.sps.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
           'rel="noopener">SP ' + escapa(x.id) + "</a> (conta " + escapa(x.conta) +
           ")").join(", ") + "</div>";
