@@ -1,4 +1,35 @@
 {% extends "analisesps_base.html" %}
+{# A PAGINAÇÃO, em cima e embaixo da lista (02/10/2026). A ordem é a do
+   extrato: o mais antigo no alto, o mais recente no fim — por isso "mais
+   antigos" fica à esquerda e "mais recentes" à direita. A página 1 são os
+   200 mais recentes. #}
+{% macro paginacao() %}
+  {% set total_paginas = (((resumo.quantidade or 0) + por_pagina - 1) // por_pagina) if resumo else 1 %}
+  {% if pagina > 1 or tem_proxima %}
+    <div class="paginacao">
+      {% set base = args.to_dict(flat=false) %}
+      {% set _ = base.pop('pagina', None) %}
+      {% if tem_proxima %}
+        {% if total_paginas > pagina + 1 %}
+          <a class="btn secundario" title="Ir para os lançamentos mais antigos"
+             href="{{ url_for('analisesps.tela_conciliacao', pagina=total_paginas, **base) }}">« os mais antigos</a>
+        {% endif %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina+1, **base) }}">‹ {{ por_pagina }} mais antigos</a>
+      {% endif %}
+      <span class="cartao-dica">página {{ pagina }}{% if total_paginas > 1 %} de {{ total_paginas }}{% endif %}{% if pagina == 1 %} · os {{ por_pagina }} mais recentes{% endif %}</span>
+      {% if pagina > 1 %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina-1, **base) }}">{{ por_pagina }} mais recentes ›</a>
+        {% if pagina > 2 %}
+          <a class="btn secundario" title="Voltar aos lançamentos mais recentes"
+             href="{{ url_for('analisesps.tela_conciliacao', **base) }}">os mais recentes »</a>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endif %}
+{% endmacro %}
+
 {% block titulo %}Conciliação — Análise de SPs{% endblock %}
 
 {# ---------------------------------------------------------------------------
@@ -379,6 +410,7 @@
     <button type="submit" hidden aria-hidden="true" tabindex="-1">Filtrar</button>
   </form>
 
+  {{ paginacao() }}
   <div class="rolagem-tabela">
   {# ⚠️ AS LARGURAS SÃO DECLARADAS, TODAS. Antes, só o Histórico ficava sem
      largura — e por isso ele engolia toda a sobra da tabela, empurrando a
@@ -590,23 +622,7 @@
   </div>
   {% endif %}
 
-  {% if pagina > 1 or tem_proxima %}
-    <div class="paginacao">
-      {% set base = args.to_dict(flat=false) %}
-      {% set _ = base.pop('pagina', None) %}
-      {# A ordem é a do extrato: o mais antigo no alto, o mais recente no fim.
-         Por isso "mais antigos" fica à esquerda e "mais recentes" à direita. #}
-      {% if tem_proxima %}
-        <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina+1, **base) }}">‹ {{ por_pagina }} mais antigos</a>
-      {% endif %}
-      <span class="cartao-dica">página {{ pagina }}{% if pagina == 1 %} · os {{ por_pagina }} mais recentes{% endif %}</span>
-      {% if pagina > 1 %}
-        <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina-1, **base) }}">mais recentes ›</a>
-      {% endif %}
-    </div>
-  {% endif %}
+  {{ paginacao() }}
 </div>
 
 {% if ultimos_arquivos %}
@@ -968,6 +984,21 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+// ⚠️ A TELA ABRE NO FIM DA LISTA (02/10/2026): o mais recente fica por último,
+// como no extrato do banco, e é por ele que a conferência começa. Só na
+// navegação nova — num recarregar (depois de marcar ou anotar) o navegador
+// devolve a posição em que a pessoa estava, e pular para o fim a perderia.
+(function () {
+  let tipo = "";
+  try { tipo = (performance.getEntriesByType("navigation")[0] || {}).type || ""; }
+  catch (e) { tipo = ""; }
+  if (tipo === "reload" || tipo === "back_forward" || location.hash) return;
+  const ultima = document.querySelector("table.conciliacao tbody tr:last-child");
+  if (ultima) window.addEventListener("load", () =>
+    ultima.scrollIntoView({block: "center"}));
+})();
+</script>
 {% if estado.pronto and pode_operar %}
 <script>
 // ===========================================================================

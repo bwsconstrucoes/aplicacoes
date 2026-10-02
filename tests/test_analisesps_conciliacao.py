@@ -1488,3 +1488,21 @@ def test_a_barra_de_SELECIONADOS_conta_e_soma_o_que_esta_marcado(app_com_dados):
     for campo in ("sel-quantas", "sel-entradas", "sel-saidas", "sel-total", "sel-limpar"):
         assert f'id="{campo}"' in html
     assert "function somarSelecao()" in html
+
+
+def test_a_PAGINACAO_diz_de_quantas_e_salta_para_as_pontas(app_com_dados,
+                                                            monkeypatch):
+    """O dono, 02/10/2026: *"nela tem paginação né? tá fácil mudar a página?"*
+    — "página X de N", em cima e embaixo, e atalho para as duas pontas."""
+    monkeypatch.setattr(conciliacao, "POR_PAGINA", 2)
+    monkeypatch.setattr(conciliacao, "resumo", lambda f: {
+        "quantidade": 7, "entradas": 0, "saidas": 0, "saldo": 0, "pendentes": 0,
+        "pendentes_valor": 0, "com_observacao": 0})
+    html = como(app_com_dados).get(
+        "/analisesps/conciliacao?conta=1").get_data(as_text=True)
+    assert "página 1 de 4" in html
+    assert html.count("2 mais antigos") == 2, "em cima e embaixo da lista"
+    assert "pagina=4" in html and "os mais antigos" in html
+    meio = como(app_com_dados).get(
+        "/analisesps/conciliacao?conta=1&pagina=3").get_data(as_text=True)
+    assert "página 3 de 4" in meio and "os mais recentes" in meio
