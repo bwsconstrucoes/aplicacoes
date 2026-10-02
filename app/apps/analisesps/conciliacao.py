@@ -84,6 +84,10 @@ def contas(so_ativas: bool = True) -> list[dict]:
     tem_fornecedor = tem_coluna("conciliacao_conta", "omie_fornecedor")
     extra += (", omie_fornecedor" if tem_fornecedor
               else ", NULL AS omie_fornecedor")
+    # A OBRA DOS MOVIMENTOS DE CONTA CORRENTE (migração 045), mesma proteção.
+    extra += (", omie_departamento"
+              if tem_coluna("conciliacao_conta", "omie_departamento")
+              else ", '' AS omie_departamento")
     linhas = consultar(
         "SELECT id, nome, banco, agencia, numero, ofx_bankid, ofx_acctid, "
         f"       aba_planilha, ativa, ordem, observacao{extra} "
@@ -92,7 +96,7 @@ def contas(so_ativas: bool = True) -> list[dict]:
     nomes = ["id", "nome", "banco", "agencia", "numero", "ofx_bankid",
              "ofx_acctid", "aba_planilha", "ativa", "ordem", "observacao",
              "saldo_inicial", "saldo_inicial_em", "omie_conta_corrente",
-             "omie_fornecedor"]
+             "omie_fornecedor", "omie_departamento"]
     return [dict(zip(nomes, linha)) for linha in linhas]
 
 
@@ -127,6 +131,9 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
     # 25/09/2026, depois de ver a tarifa do BD 50024 ser recusada.
     bruto_forn = re.sub(r"\D", "", str(dados.get("omie_fornecedor") or ""))
     campos["omie_fornecedor"] = int(bruto_forn) if bruto_forn else None
+    # ⚠️ A OBRA DOS MOVIMENTOS TAMBÉM É DA CONTA (dono, 02/10/2026): o tipo é
+    # genérico e vale para todas as contas; a obra no tipo apropriaria errado.
+    campos["omie_departamento"] = str(dados.get("omie_departamento") or "").strip()
     conta_id = dados.get("id")
     from .db import tem_coluna
     with conexao() as con:
@@ -142,6 +149,9 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
             if tem_coluna("conciliacao_conta", "omie_fornecedor"):
                 saldo_sql += ", omie_fornecedor=?"
                 extras += (campos["omie_fornecedor"],)
+            if tem_coluna("conciliacao_conta", "omie_departamento"):
+                saldo_sql += ", omie_departamento=?"
+                extras += (campos["omie_departamento"],)
             con.execute(
                 "UPDATE analisesps.conciliacao_conta SET nome=?, banco=?, "
                 "       agencia=?, numero=?, ofx_bankid=?, ofx_acctid=?, "
@@ -173,6 +183,10 @@ def gravar_conta(dados: dict, quem: str = "") -> int:
             colunas_saldo += ", omie_fornecedor"
             marcas_saldo += ", ?"
             extras += (campos["omie_fornecedor"],)
+        if tem_coluna("conciliacao_conta", "omie_departamento"):
+            colunas_saldo += ", omie_departamento"
+            marcas_saldo += ", ?"
+            extras += (campos["omie_departamento"],)
         cur = con.execute(
             "INSERT INTO analisesps.conciliacao_conta "
             "  (nome, banco, agencia, numero, ofx_bankid, ofx_acctid, "

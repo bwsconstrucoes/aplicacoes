@@ -11238,6 +11238,31 @@ aquele código vai para a pessoa da ficha. E a linha de baixo do aviso dizia
 "corrija o nome da coluna" para qualquer aviso — virou "corrija na planilha de
 colaboradores".
 
+#### Leva 150 — conciliação: fornecedor e obra só na CONTA; o fornecedor se procura (02/10/2026)
+
+O dono, sobre o lançamento de movimentos no OMIE: *"O Código do fornecedor/cliente
+não pode ser cadastrado em Tipos do OMIE. Visto que a associação deve ser a partir
+da conta. O campo Fornecedor no OMIE (…) do cadastro de conta não tá exibindo
+todos os fornecedores e nem tá permitindo buscar. (…) no cadastro do Tipo pede
+Obra (opcional) (…) vai dar erro de apropriação. Quero (…) definir isso no
+cadastro da Conta Corrente."* E corrigiu em seguida: a obra não é só das tarifas,
+*"é pros movimentos de conta corrente"*.
+
+- **Tipo**: saíram os campos "Código do fornecedor/cliente" e "Obra". Os valores
+  antigos ficam no banco e **não são mais lidos** — a reserva do fornecedor no
+  tipo foi retirada (conta sem fornecedor é recusada, com o motivo).
+- **Conta**: campo novo **"Obra dos movimentos"** (migração **045**,
+  `conciliacao_conta.omie_departamento`). Vai em todo lançamento de conta
+  corrente que sai da conta; na transferência, a ponta que entra leva a obra da
+  conta de destino. Conta sem obra lança sem departamento, como antes.
+- **Fornecedor no OMIE**: virou busca por nome, nome fantasia ou CNPJ (só os
+  dígitos) em **todos** os cadastros do espelho do OMIE (`painel.clientes`) — a
+  lista antiga só trazia o que "parecia banco", sem busca. A tabela de contas
+  passa a mostrar o nome do fornecedor e a obra gravados.
+
+⚠️ **Migração 045**: apertar "Aplicar atualizações do banco" no momento da
+publicação. Até lá a tela abre e grava sem a obra.
+
 **Cards:** diaristas e alimentação eram pagos pelo BeeVale (o script marcava a SP
 com "BeeVale" no campo de automação). Com o SomaPay, o dono decidiu que os cards
 seguem o modelo da folha da contabilidade, como já estão; a categoria do segundo
@@ -11256,7 +11281,8 @@ card pode mudar depois da primeira geração.
 | ~~publicar as levas 144 e 145~~ — **publicadas em 01/10/2026**. Apertar "Aplicar atualizações do banco" (044) e depois "Atualizar cadastro" | ele |
 | ~~confirmar coluna do valor da diária e quinzena~~ — **respondido em 02/10**: coluna 49 de "Dados Documentos"; quinzena. Regra da meia diária: **fórmula recebida e aplicada** (leva 148) | — |
 | ~~adicional no dia de meia diária~~ — **inteiro**, confirmado pela fórmula do valor (02/10) | — |
-| publicar a leva 149 (sem migração nova) | ele |
+| publicar as levas 149 e 150 — **com a migração 045** (apertar "Aplicar atualizações do banco" na hora) | ele |
+| depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |

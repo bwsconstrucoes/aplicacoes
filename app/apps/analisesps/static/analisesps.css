@@ -2679,3 +2679,13 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 .lista-cargas li { display: flex; align-items: center; gap: 6px; padding: 3px 0;
   border-top: 1px solid var(--borda); }
 .lista-cargas li .apagar-linha { margin-left: auto; }
+
+/* A busca do fornecedor do OMIE na conta da conciliação (02/10/2026). */
+.busca-fornecedor { position: relative; }
+.achados-fornecedor {
+  list-style: none; margin: 4px 0 0; padding: 4px 0; max-height: 240px;
+  overflow-y: auto; border: 1px solid var(--borda, #d0d5dd); border-radius: 6px;
+  background: var(--fundo-cartao, #fff);
+}
+.achados-fornecedor li { padding: 4px 10px; }
+.achados-fornecedor li .link-btn { text-align: left; white-space: normal; }

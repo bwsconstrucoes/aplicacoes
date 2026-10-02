@@ -687,7 +687,7 @@ def test_lancar_no_OMIE_marca_a_linha_e_nao_deixa_lancar_de_novo(banco_conc):
     Esta é a primeira: a linha já lançada nem chega a ser oferecida."""
     from app.apps.analisesps import (conciliacao, conciliacao_ofx,
                                      conciliacao_omie)
-    conta_id = conta_de_teste(omie_conta_corrente="1234567")
+    conta_id = conta_de_teste(omie_conta_corrente="1234567", omie_fornecedor="111")
     conciliacao.importar(conta_id, conciliacao_ofx.ler(
         ofx([("20260910", "-9.00", "A1", "TARIFA BANCARIA")])), "x.ofx", "T")
     linha = conciliacao.listar({"conta_id": conta_id})[0]
@@ -735,7 +735,7 @@ def test_o_lancamento_QUE_FALHA_vira_pendencia(banco_conc):
     pelo caminho."""
     from app.apps.analisesps import (conciliacao, conciliacao_ofx,
                                      conciliacao_omie)
-    conta_id = conta_de_teste(omie_conta_corrente="1234567")
+    conta_id = conta_de_teste(omie_conta_corrente="1234567", omie_fornecedor="111")
     conciliacao.importar(conta_id, conciliacao_ofx.ler(
         ofx([("20260910", "-9.00", "A1", "TARIFA BANCARIA")])), "x.ofx", "T")
     linha = conciliacao.listar({"conta_id": conta_id})[0]
@@ -768,7 +768,7 @@ def test_a_linha_lancada_GUARDA_o_numero_e_a_hora(banco_conc):
     pontas: o que é gravado e o que a listagem devolve."""
     from app.apps.analisesps import (conciliacao, conciliacao_ofx,
                                      conciliacao_omie)
-    conta_id = conta_de_teste(omie_conta_corrente="1234567")
+    conta_id = conta_de_teste(omie_conta_corrente="1234567", omie_fornecedor="111")
     conciliacao.importar(conta_id, conciliacao_ofx.ler(
         ofx([("20260910", "-9.00", "A1", "TARIFA BANCARIA")])), "x.ofx", "T")
     linha = conciliacao.listar({"conta_id": conta_id})[0]
@@ -1878,3 +1878,14 @@ def test_a_linha_que_esta_aqui_A_MAIS_e_apontada_como_repetida(banco_conc):
     # O que simplesmente não vem no arquivo não é "repetida" — é só sumida.
     outro = conciliacao.conferir(conta_id, _ler([("20260928", "-999.00", "N9", "OUTRA COISA")]))
     assert [l["repetida"] for l in outro["so_aqui"]] == [False, False]
+
+
+def test_a_OBRA_DOS_MOVIMENTOS_e_gravada_na_conta(banco_conc):
+    """Migração 045 (02/10/2026): a obra dos movimentos de conta corrente mora
+    na conta — nunca no tipo, que é genérico e vale para todas as contas."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste(omie_departamento="DEP1")
+    assert conciliacao.contas()[0]["omie_departamento"] == "DEP1"
+    conciliacao.gravar_conta({"id": conta_id, "nome": "BD 7011",
+                              "omie_departamento": ""}, quem="T")
+    assert conciliacao.contas()[0]["omie_departamento"] == ""

@@ -1926,6 +1926,47 @@ def _listas_do_omie() -> dict:
         return {"contas": [], "categorias": [], "obras": [], "erro": ""}
 
 
+def _nomear_fornecedores_e_obras(contas: list) -> None:
+    """Põe em cada conta o NOME do fornecedor e da obra do OMIE gravados nela —
+    a busca do campo mostra nome, e o número sozinho não diz nada a quem lê."""
+    try:
+        from . import aportes_de_para as dp, conciliacao_omie as co
+        nomes = co.nomes_de_fornecedores([c.get("omie_fornecedor") for c in contas])
+        try:
+            obras = {str(o["codigo"]): o["nome"] for o in dp.obras()}
+        except Exception:  # noqa: BLE001
+            obras = {}
+    except Exception:  # noqa: BLE001 — enfeite, não derruba a tela
+        nomes, obras = {}, {}
+    for c in contas:
+        cod = c.get("omie_fornecedor")
+        c["omie_fornecedor_nome"] = nomes.get(int(cod), "") if cod else ""
+        dep = str(c.get("omie_departamento") or "")
+        c["omie_departamento_nome"] = obras.get(dep, dep)
+
+
+@bp.route("/api/conciliacao/fornecedores")
+@exige_operador
+def conciliacao_fornecedores():
+    """Procura em TODOS os cadastros do OMIE (fornecedores e clientes), pelo nome
+    ou pelo CNPJ — o campo "Fornecedor no OMIE" da conta.
+
+    O dono, 02/10/2026: *"O campo Fornecedor no OMIE (…) não tá exibindo todos os
+    fornecedores e nem tá permitindo buscar."* A lista antiga só trazia o que
+    tinha cara de banco, num campo de escolha sem busca."""
+    from . import conciliacao_omie as co
+    termo = " ".join((request.args.get("q") or "").split())
+    if len(termo) < 2:
+        return {"ok": True, "fornecedores": []}
+    try:
+        achados = co.bancos_do_omie(termo, limite=40)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Conciliação: falhou procurar fornecedor")
+        return {"ok": False, "erro": f"Não foi possível consultar os cadastros do "
+                                     f"OMIE: {e}"}, 503
+    return {"ok": True, "fornecedores": achados}
+
+
 def _tipos_do_omie() -> list:
     """Os tipos de movimento cadastrados. Nunca derruba a tela."""
     try:
@@ -1962,6 +2003,7 @@ def tela_conciliacao():
                                nome=auth.nome_atual())
 
     contas = conc.contas()
+    _nomear_fornecedores_e_obras(contas)
     filtros = _filtros_da_conciliacao(contas)
     try:
         pagina = max(1, int(request.args.get("pagina", 1)))
