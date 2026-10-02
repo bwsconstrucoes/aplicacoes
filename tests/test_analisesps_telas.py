@@ -6916,7 +6916,7 @@ def test_o_aviso_do_cadastro_LEVA_A_DATA_da_carga(app, monkeypatch):
     # entendi essa pergunta"*. A data já está na frase de cima; o que faltava era
     # dizer o que FAZER.
     assert "não é o estado" not in html
-    assert "Corrija o nome da coluna na planilha" in html
+    assert "Corrija na planilha de colaboradores" in html
     assert "Atualizar cadastro" in html
 
 

@@ -1022,6 +1022,7 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
     casados = 0
     sem_cadastro: list = []
     divergentes: list = []
+    detalhe: list = []
     with conexao() as conn:
         for id_fortes, cpf in de_para.items():
             # A ficha manda: quem tem código lá não é tocado, e um código que a
@@ -1029,6 +1030,7 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
             if cpf in da_ficha or id_fortes in codigos_da_ficha:
                 if da_ficha.get(cpf) != id_fortes:
                     divergentes.append(id_fortes)
+                    detalhe.append((id_fortes, cpf))
                 continue
             cur = conn.execute(
                 "UPDATE analisesps.colaborador SET id_fortes = ? WHERE cpf = ?",
@@ -1053,11 +1055,19 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
             "cadastro. A folha não localizará o colaborador correspondente a "
             "esses códigos.")
     if divergentes:
+        # ⚠️ O AVISO DIZ DE QUEM É CADA CÓDIGO NOS DOIS LUGARES (dono, 02/10/2026,
+        # diante da lista só com números: *"me explica essa divergência"*). Sem
+        # os nomes não há como saber qual lado está certo — e um dos casos é
+        # dinheiro: o código que a ficha deu a OUTRA pessoa leva a linha da
+        # folha para ela.
+        casos = _explicar_divergencias(detalhe, da_ficha)
         avisos.append(
             f"{len(divergentes)} código(s) da aba \"{ABA_ID_FORTES}\" discordam "
-            f"da ficha da pessoa ({', '.join(sorted(divergentes)[:5])}"
-            f"{'…' if len(divergentes) > 5 else ''}). Prevaleceu a ficha; corrija "
-            "a aba para eliminar a divergência.")
+            f"da coluna ID Fortes da ficha (aba \"{ABA_COLABORADORES}\"): "
+            f"{'; '.join(casos[:6])}{' …' if len(casos) > 6 else ''}. Prevaleceu a "
+            "ficha. Confira o código no arquivo do Fortes e corrija o lado errado.")
+        for caso in casos:
+            logger.warning("Cadastro: divergência de ID Fortes — %s", caso)
 
     logger.info("Análise de SPs: de/para do ID Fortes — %d casado(s), "
                 "%d sem cadastro, %d repetido(s).",
@@ -1065,6 +1075,37 @@ def atualizar_ids_fortes(anotar=None, da_ficha: dict | None = None) -> dict:
     return {"casados": casados, "sem_cadastro": sem_cadastro,
             "repetidos": repetidos, "divergentes": sorted(divergentes),
             "avisos": avisos}
+
+
+def _explicar_divergencias(detalhe: list, da_ficha: dict) -> list:
+    """Uma frase por código divergente, com os nomes dos dois lados."""
+    from .db import consultar
+    dono_na_ficha = {codigo: cpf for cpf, codigo in da_ficha.items()}
+    cpfs = {cpf for _, cpf in detalhe} | {dono_na_ficha[c] for c, _ in detalhe
+                                          if c in dono_na_ficha}
+    nomes: dict = {}
+    if cpfs:
+        try:
+            marcas = ",".join("?" * len(cpfs))
+            nomes = dict(consultar(
+                f"SELECT cpf, nome FROM analisesps.colaborador WHERE cpf IN ({marcas})",
+                tuple(cpfs)))
+        except Exception:  # noqa: BLE001 — sem nome, o aviso sai com o CPF
+            logger.exception("Cadastro: não consegui ler os nomes da divergência")
+
+    def quem(cpf):
+        return (nomes.get(cpf) or "").strip() or f"CPF {cpf}"
+
+    casos = []
+    for codigo, cpf in sorted(detalhe):
+        partes = [f"{codigo}: na aba, {quem(cpf)}"]
+        if da_ficha.get(cpf):
+            partes.append(f"cuja ficha diz {da_ficha[cpf]}")
+        dono = dono_na_ficha.get(codigo)
+        if dono and dono != cpf:
+            partes.append(f"e a ficha de {quem(dono)} diz {codigo}")
+        casos.append(", ".join(partes))
+    return casos
 
 
 def tem_id_fortes() -> bool:

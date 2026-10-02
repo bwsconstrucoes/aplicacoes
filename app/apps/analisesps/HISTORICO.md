@@ -11230,6 +11230,14 @@ Filtros com Situação, Obra do ponto, Obra do cadastro (novo) e Fase. Tabela co
 situações valem também para alimentação e transporte ("sem pagamento" virou
 "fora do pagamento", como na contabilidade).
 
+**Junto — o aviso de ID Fortes divergente passa a dar nomes.** Dizia só "12
+código(s) da aba ID Fortes discordam da ficha (002462, …)". Agora cada código diz
+quem a aba aponta, o que a ficha dessa pessoa diz e, quando é o caso, de quem é a
+ficha que tem o mesmo código. O caso perigoso é esse último: a linha da folha com
+aquele código vai para a pessoa da ficha. E a linha de baixo do aviso dizia
+"corrija o nome da coluna" para qualquer aviso — virou "corrija na planilha de
+colaboradores".
+
 **Cards:** diaristas e alimentação eram pagos pelo BeeVale (o script marcava a SP
 com "BeeVale" no campo de automação). Com o SomaPay, o dono decidiu que os cards
 seguem o modelo da folha da contabilidade, como já estão; a categoria do segundo
