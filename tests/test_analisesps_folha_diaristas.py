@@ -353,3 +353,17 @@ def test_prestador_SEM_RPA_diz_por_que_nao_recebe_diaria():
     p = _calc(_ficha(tipo_contrato="PJ"), [_dia_lido(TERCA)])
     assert p["sem_diaria"]
     assert "Autônomo (RPA)" in p["motivos"][-1]
+
+
+def test_a_PRESENCA_com_o_complemento_do_Mobponto_conta_diaria():
+    """O dono, 02/10/2026: ponto completo (07–12–13–17, AREITAIBA) e a tela
+    dizia "nenhum dia com presença que gere diária". O Mobponto cola as
+    justificativas na situação: "PRESENÇA -[Falta de Equipamento…/…]"."""
+    sujo = ("PRESENÇA -[Falta de Equipamento1790619613/Falta de Equipamento"
+            "1790619613/Falta de Equipamento1790619613/Falta de Equipamento"
+            "1790619613]")
+    assert fd.situacao_do_ponto(sujo) == "PRESENÇA"
+    assert fd.situacao_do_ponto("PRESENÇA PARCIAL -[x/y]") == "PRESENÇA PARCIAL"
+    assert _qtd(_lido(TERCA, sujo)) == D("1")
+    parcial = _lido(TERCA, "PRESENÇA PARCIAL -[x]", ("07:00", "12:00", "13:00", "13:00"))
+    assert _qtd(parcial) == D("0.5")

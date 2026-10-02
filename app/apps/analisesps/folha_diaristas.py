@@ -251,6 +251,18 @@ PAGAR_DIARIA = "PAGAR DIÁRIA"
 PAGAR_EXTRA = "PAGAR EXTRA"
 
 
+def situacao_do_ponto(texto) -> str:
+    """A situação do dia sem o complemento que o Mobponto cola nela.
+
+    O Mobponto manda, por exemplo, "PRESENÇA -[Falta de Equipamento1790619613/
+    …]" — a situação seguida das justificativas de cada marcação. A fórmula da
+    planilha compara `Q = "PRESENÇA"`; com o complemento, nenhum dia casava e o
+    diarista aparecia sem diária com ponto completo (dono, 02/10/2026). Vale o
+    que vem antes do "[" (e do traço que o antecede)."""
+    bruto = str(texto or "").split("[", 1)[0]
+    return " ".join(bruto.split()).rstrip(" -")
+
+
 def _segundos(texto) -> int:
     """"07:30" → 27000. Célula vazia vale ZERO, como na conta da planilha.
 
@@ -291,7 +303,8 @@ def quantidade_da_planilha(tipo, contrato, vinculo, aq, presenca, falta,
                            ag: Decimal, fim_de_semana: bool) -> Decimal:
     """A coluna AJ, termo a termo. Devolve 1, 0,5 ou 0 (o "vazio")."""
     x, aa = _sem_acento(tipo), _sem_acento(contrato)
-    q, m = _sem_acento(presenca), _sem_acento(falta)
+    q = _sem_acento(situacao_do_ponto(presenca))
+    m = _sem_acento(situacao_do_ponto(falta))
     ah = vinculo
     extra = _sem_acento(aq) == _sem_acento(PAGAR_EXTRA)
     rpa = x == _PRESTADOR and aa == _RPA
@@ -334,7 +347,8 @@ def quantidade_do_dia(lido: dict, cadastro: dict, vinculo: str,
     qtd = quantidade_da_planilha(
         cadastro.get("tipo"), cadastro.get("contrato"), vinculo, aq,
         lido.get("presenca"), lido.get("falta"), ag, fim_de_semana)
-    q, m = _sem_acento(lido.get("presenca")), _sem_acento(lido.get("falta"))
+    q = _sem_acento(situacao_do_ponto(lido.get("presenca")))
+    m = _sem_acento(situacao_do_ponto(lido.get("falta")))
     horas = _hhmm(ag)
     if qtd == 1:
         if q == _PRESENCA_PARCIAL:
@@ -507,7 +521,7 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
 def _por_que_sem_diaria(saida: dict, cadastro: dict) -> str:
     """O motivo de quem tem dia de diária e nenhuma diária a receber."""
     com_presenca = [d for d in saida["dias"]
-                    if _sem_acento(d.get("presenca")).startswith(_PRESENCA)]
+                    if _sem_acento(situacao_do_ponto(d.get("presenca"))).startswith(_PRESENCA)]
     if com_presenca and not e_rpa(cadastro) \
             and _sem_acento(cadastro.get("tipo")) != _CTPS:
         return ("há presença no período, mas o tipo de cadastro "
