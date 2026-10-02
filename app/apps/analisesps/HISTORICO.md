@@ -11198,8 +11198,10 @@ diária extra da CTPS.
 **Duas consequências que mudam valor:** a fórmula **não olha a obra** — dia com
 presença e sem obra marcada passa a contar, atribuído à obra do cadastro e marcado
 no detalhamento; e o prestador RPA é diária em todo dia (coluna AQ), mesmo com
-data de admissão no cadastro. **Mantido sem confirmação:** o adicional de
-sábado/domingo/feriado entra inteiro também no dia de meia diária.
+data de admissão no cadastro. **Confirmado pela fórmula do valor** (enviada pelo
+dono no mesmo dia: `SE(feriado="SIM"; I*J+20; SE(Sábado; I*J+10; SE(Domingo;
+I*J+20; I*J)))`): o adicional entra inteiro também no dia de meia diária, e o
+feriado vence o sábado e o domingo. Era o que o sistema já fazia.
 
 **Cards:** diaristas e alimentação eram pagos pelo BeeVale (o script marcava a SP
 com "BeeVale" no campo de automação). Com o SomaPay, o dono decidiu que os cards
@@ -11218,7 +11220,7 @@ card pode mudar depois da primeira geração.
 | ~~publicar a leva 143~~ — **publicada em 01/10/2026**. Falta o dono gerar de novo e subir no portal do Soma | ele |
 | ~~publicar as levas 144 e 145~~ — **publicadas em 01/10/2026**. Apertar "Aplicar atualizações do banco" (044) e depois "Atualizar cadastro" | ele |
 | ~~confirmar coluna do valor da diária e quinzena~~ — **respondido em 02/10**: coluna 49 de "Dados Documentos"; quinzena. Regra da meia diária: **fórmula recebida e aplicada** (leva 148) | — |
-| confirmar se o adicional de fim de semana/feriado entra inteiro no dia de meia diária | ele |
+| ~~adicional no dia de meia diária~~ — **inteiro**, confirmado pela fórmula do valor (02/10) | — |
 | publicar as levas 146 a 148 (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
