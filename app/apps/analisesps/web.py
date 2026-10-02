@@ -2625,6 +2625,79 @@ def folha_relatorio(folha_id: int, formato: str):
         "Content-Disposition": f'attachment; filename="{nome}"'})
 
 
+def _resposta_do_relatorio(montado: dict, contas: dict, formato: str):
+    """O relatório (Excel ou PDF) de qualquer folha, com o recorte por conta da
+    tela (`relatorio_conta`): "" = todas, "__cada" = .zip, outro = uma conta."""
+    from . import folha_relatorio as fr
+    recorte = (request.args.get("relatorio_conta") or "").strip()
+    if recorte == "__cada":
+        conteudo, nome = fr.zip_por_conta(montado, contas, formato)
+        return Response(conteudo, mimetype="application/zip", headers={
+            "Content-Disposition": f'attachment; filename="{nome}"'})
+    dados = fr.montar(montado, contas, recorte)
+    if formato == "xlsx":
+        conteudo, tipo = fr.excel(dados), fr.MIME_XLSX
+    else:
+        conteudo, tipo = fr.pdf(dados), "application/pdf"
+    return Response(conteudo, mimetype=tipo, headers={
+        "Content-Disposition": f'attachment; filename="{fr.nome_do_arquivo(dados, formato)}"'})
+
+
+@bp.route("/folha/diaristas/relatorio.<formato>")
+@exige_consulta
+def folha_diaristas_relatorio(formato: str):
+    """O relatório das diárias — o mesmo da folha da contabilidade (dono,
+    02/10/2026: *"Preciso dos relatórios também, PDF, Excel, por conta, total,
+    do mesmo jeito"*). Sai com os filtros da tela."""
+    from . import folha_diaristas as fd, folha_lista, folha_pagamento as fpg
+    from . import folha_relatorio as fr
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    try:
+        ano, mes = int(request.args.get("ano") or 0), int(request.args.get("mes") or 0)
+        calculado = fd.calcular(ano, mes, request.args.get("periodo") or "quinzena")
+        lista = folha_lista.filtrar(calculado.get("pessoas") or [], request.args,
+                                    escondidas=folha_lista.ESCONDIDAS_NOS_DIARISTAS)
+        contas = fpg.conta_por_obra()
+        montado = fr.montado_das_diarias(calculado, lista["pessoas"],
+                                         lista["filtros"], contas)
+        return _resposta_do_relatorio(montado, contas, formato)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou o relatório das diárias")
+        return render_template("analisesps_erro.html", titulo="Relatório das diárias",
+                               mensagem=f"Não foi possível gerar o relatório: {e}"), 500
+
+
+@bp.route("/folha/auxilio/relatorio.<formato>")
+@exige_consulta
+def folha_auxilio_relatorio(formato: str):
+    """O relatório da alimentação ou do transporte — o mesmo das outras folhas."""
+    from . import folha_auxilio as fx, folha_lista, folha_pagamento as fpg
+    from . import folha_relatorio as fr
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    tipo = request.args.get("tipo") or ""
+    if tipo not in fx.TIPOS:
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Auxílio não reconhecido."), 404
+    try:
+        ano, mes = int(request.args.get("ano") or 0), int(request.args.get("mes") or 0)
+        resultado = fx.calcular(tipo, ano, mes)
+        lista = folha_lista.filtrar(list(resultado.get("pessoas") or []),
+                                    request.args, campo_da_obra="obra")
+        contas = fpg.conta_por_obra()
+        montado = fr.montado_do_auxilio(resultado, lista["pessoas"], lista["filtros"],
+                                        contas, fx.ROTULO_DO_TIPO[tipo],
+                                        f"{mes:02d}/{ano}")
+        return _resposta_do_relatorio(montado, contas, formato)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou o relatório do auxílio")
+        return render_template("analisesps_erro.html", titulo="Relatório do auxílio",
+                               mensagem=f"Não foi possível gerar o relatório: {e}"), 500
+
+
 def _analitica_da_folha(folha) -> dict | None:
     """Se a folha aberta tem a analítica importada. None se não tem (ou falhou)."""
     from . import folha_analitica_guardada as fag

@@ -128,6 +128,8 @@ TODAS_AS_TELAS = [
     # A prévia do arquivo de pagamento (nome, CPF e valor): só do mestre.
     ("GET",  "/analisesps/folha/123/previa-pagamento"),
     ("GET",  "/analisesps/folha/previa-direta"),
+    ("GET",  "/analisesps/folha/diaristas/relatorio.pdf"),
+    ("GET",  "/analisesps/folha/auxilio/relatorio.pdf"),
     # O relatório da folha em Excel e PDF: dado pessoal.
     ("GET",  "/analisesps/folha/123/relatorio.pdf"),
     # Lançar batidas no Mobponto: grava em sistema de terceiro.

@@ -8296,3 +8296,14 @@ def test_o_NOME_nao_tem_cor_de_esmaecido():
     bloco = bloco[:bloco.index("}")]
     assert "color: var(--tinta)" in bloco
 
+
+
+def test_diaristas_tem_RELATORIO_e_o_destino_no_padrao_da_contabilidade(app, monkeypatch):
+    """O dono, 02/10/2026: *"é para ser tudo no mesmo padrão"* — relatório com
+    recorte por conta e o destino ao lado da prévia, como na contabilidade."""
+    _preparar_diaristas(monkeypatch, _diaristas_calculado())
+    html = _como_mestre(app).get(
+        "/analisesps/folha/diaristas?ano=2026&mes=9&periodo=quinzena").get_data(as_text=True)
+    assert 'id="relatorio-xlsx"' in html and "/folha/diaristas/relatorio.xlsx" in html
+    assert 'id="relatorio-conta"' in html
+    assert '<div class="lat-previa">' in html and 'id="gd-previa"' in html

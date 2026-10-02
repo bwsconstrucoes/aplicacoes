@@ -11338,6 +11338,30 @@ antes; lançar parte cria uma Despesa daquele lote, e o resto sai depois, noutra
 Conta já lançada não entra de novo. A geração só aparece como lançada quando
 todas as contas têm SP.
 
+#### Leva 153 — as quatro folhas no mesmo padrão: destino, prévia e relatório (02/10/2026)
+
+O dono: *"o acionador de BeeVale e SomaPay na parte de diaristas está diferente da
+folha da contabilidade (…) lá está um do lado do outro (…) tem que manter o
+padrão"*; *"a parte de diaristas não tem os relatórios. Preciso (…) PDF, Excel,
+por conta, total, do mesmo jeito (…) replicar também para alimentação e
+transporte"*; e, no relatório, *"não precisa ter a informação de obra da
+contabilidade (…) nem o setor (…) adicionada a função da pessoa (…) e embaixo,
+pequenininho, os dias que foram trabalhados"*.
+
+- **Destino e prévia**: diárias, alimentação e transporte com o mesmo bloco da
+  contabilidade (`lat-previa`: seletor e "Baixar prévia" lado a lado; "Gerar"
+  embaixo).
+- **Relatório nas quatro folhas** — um bloco só (`_relatorio_acoes.html`), com
+  Excel, PDF e o recorte por conta. As diárias e os auxílios passam pelos
+  adaptadores `montado_das_diarias` / `montado_do_auxilio` e usam o MESMO código
+  do relatório da contabilidade (agrupamentos, recorte, Excel, PDF). Saem com os
+  filtros da tela.
+- **Colunas do relatório**: saíram "Obra da contabilidade", "Setor" e a coluna
+  "Contabilidade"; entrou "Função". No PDF, os dias trabalhados vão embaixo do
+  nome, em letra pequena ("Dias: 16, 17, 18/09"); no Excel, numa coluna. Dias
+  agora aceitam meia diária (2,5). O auxílio guarda só a QUANTIDADE de dias, não
+  as datas — no relatório dele a linha das datas fica vazia.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11355,6 +11379,7 @@ todas as contas têm SP.
 | ~~publicar o conserto da presença com complemento~~ — **publicado em 02/10/2026** (suíte inteira 7.835 verdes) | — |
 | ~~publicar a ordem nova da conciliação~~ — publicada em 02/10/2026 | — |
 | ~~publicar a leva 152~~ — publicada em 02/10/2026 (sem migração) | — |
+| publicar a leva 153 (sem migração) | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

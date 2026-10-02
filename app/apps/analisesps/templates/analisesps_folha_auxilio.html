@@ -221,7 +221,8 @@
 {# ======================================================================
    A LISTA — já calculada, e ele só marca quem vai.
    ====================================================================== #}
-<h3 style="margin-top:24px">
+<div class="cab-com-acoes" style="margin-top:24px">
+<h3>
   Detalhamento por colaborador
   <small>
     {% if filtrando %}{{ pessoas|length }} de {{ resultado.quantos }} · filtrado
@@ -230,6 +231,13 @@
     · pendências listadas primeiro
   </small>
 </h3>
+  {% set args_da_tela = request.args.to_dict(flat=false) %}
+  {% set _ = args_da_tela.update({'tipo': [tipo], 'ano': [ano], 'mes': [mes]}) %}
+  {% set rel_xlsx = url_for('analisesps.folha_auxilio_relatorio', formato='xlsx', **args_da_tela) %}
+  {% set rel_pdf = url_for('analisesps.folha_auxilio_relatorio', formato='pdf', **args_da_tela) %}
+  {% set rel_contas = (divisao.por_conta|map(attribute='conta')|list) if divisao else [] %}
+  {% include "_relatorio_acoes.html" %}
+</div>
 
 {% if pode_operar %}
 <p class="cartao-dica" style="margin:0 0 8px">

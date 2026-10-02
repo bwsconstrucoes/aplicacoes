@@ -67,6 +67,36 @@ MIME_XLSX = ("application/vnd.openxmlformats-officedocument"
              ".spreadsheetml.sheet")
 
 
+def _dias(valor) -> Decimal:
+    """Dias podem ser meia diária (0,5) — nunca truncar para inteiro."""
+    try:
+        return Decimal(str(valor or 0))
+    except Exception:  # noqa: BLE001
+        return Decimal("0")
+
+
+def dias_txt(valor) -> str:
+    """7 → "7"; 2.5 → "2,5"."""
+    d = _dias(valor)
+    texto = f"{d.normalize():f}" if d else "0"
+    return texto.replace(".", ",")
+
+
+def datas_txt(pessoa) -> str:
+    """Os dias trabalhados, curtos: "Dias: 01, 02, 05, 08/09". Vazio quando a
+    folha não guarda o dia a dia (o auxílio guarda só a quantidade)."""
+    import datetime as _dt
+    datas = sorted({d.get("data") for d in (pessoa.get("por_dia") or [])
+                    if isinstance(d.get("data"), _dt.date)})
+    if not datas:
+        return ""
+    por_mes: dict = {}
+    for d in datas:
+        por_mes.setdefault((d.year, d.month), []).append(f"{d.day:02d}")
+    partes = [", ".join(dias) + f"/{mes:02d}" for (ano, mes), dias in sorted(por_mes.items())]
+    return "Dias: " + "; ".join(partes)
+
+
 def _dinheiro(valor) -> Decimal:
     try:
         return Decimal(str(valor or 0)).quantize(CENTAVO)
@@ -123,9 +153,9 @@ def agrupamentos(pessoas, contas_por_obra) -> dict:
             valor = _dinheiro(parte.get("valor"))
             o = obras.setdefault(obra or SEM_OBRA, {
                 "obra": obra or SEM_OBRA, "conta": conta or SEM_CONTA,
-                "pessoas": set(), "dias": 0, "valor": Decimal("0.00")})
+                "pessoas": set(), "dias": Decimal("0"), "valor": Decimal("0.00")})
             o["pessoas"].add(p.get("cpf") or p.get("id_fortes"))
-            o["dias"] += int(parte.get("dias") or 0)
+            o["dias"] += _dias(parte.get("dias"))
             o["valor"] += valor
             c = contas.setdefault(conta or SEM_CONTA, {
                 "conta": conta or SEM_CONTA, "obras": set(), "pessoas": set(),
@@ -171,8 +201,6 @@ def agrupamentos(pessoas, contas_por_obra) -> dict:
         "pessoas_pagas": len(pagas),
         "por_obra": por_obra,
         "por_conta": por_conta,
-        "por_filial": juntar("filial", "(sem filial)"),
-        "por_setor": juntar("setor_curto", "(sem setor)"),
         "por_situacao": sorted(situacoes.values(),
                                key=lambda s: (-s["pessoas"], s["nome"])),
     }
@@ -208,11 +236,15 @@ def recortar_por_conta(pessoas, conta: str, contas_por_obra) -> list:
         if not dela:
             continue
         valor = sum((_dinheiro(x.get("valor")) for x in dela), Decimal("0.00"))
+        obras_dela = {" ".join(str(x.get("obra") or "").split()).upper() for x in dela}
         saida.append({
             **p, "por_obra": dela, "valor": valor,
-            "dias_no_ponto": sum(int(x.get("dias") or 0) for x in dela),
+            "dias_no_ponto": sum((_dias(x.get("dias")) for x in dela), Decimal("0")),
             "obras_resumo": ", ".join(
-                f"{x.get('obra') or SEM_OBRA} ({int(x.get('dias') or 0)})" for x in dela),
+                f"{x.get('obra') or SEM_OBRA} ({dias_txt(x.get('dias'))})" for x in dela),
+            "por_dia": [d for d in (p.get("por_dia") or [])
+                        if " ".join(str(d.get("obra") or "").split()).upper()
+                        in obras_dela],
             "contas": [conta]})
     return saida
 
@@ -227,13 +259,15 @@ def montar(montado: dict, contas_por_obra: dict, conta: str = "") -> dict:
     if conta:
         pessoas = recortar_por_conta(pessoas, conta, contas_por_obra)
     lista = sum((_dinheiro(p.get("valor")) for p in pessoas), Decimal("0.00"))
+    titulo = montado.get("titulo") or f"Folha da contabilidade {folha.get('competencia', '')}"
     return {
         "conta": conta,
-        "titulo": f"Folha da contabilidade {folha.get('competencia', '')}"
-                  + (f" — conta {conta}" if conta else ""),
+        "prefixo_arquivo": montado.get("prefixo_arquivo") or "Folha",
+        "titulo": titulo + (f" — conta {conta}" if conta else ""),
         "subtitulo": str(folha.get("rotulo_do_tipo") or ""),
         "competencia": str(folha.get("competencia") or ""),
-        "filtros": filtros_em_texto(montado.get("filtros"), ROTULO_DA_SITUACAO),
+        "filtros": (montado["filtros_texto"] if "filtros_texto" in montado
+                    else filtros_em_texto(montado.get("filtros"), ROTULO_DA_SITUACAO)),
         "fechada": bool(montado.get("fechamento")),
         "pessoas": pessoas,
         "quantas": len(pessoas),
@@ -304,30 +338,34 @@ def excel(dados: dict) -> bytes:
 
     # --- A LISTA DA TELA ----------------------------------------------
     from .folha_rateio import cpf_bonito
+    # ⚠️ SEM AS COLUNAS DA CONTABILIDADE, COM A FUNÇÃO (dono, 02/10/2026):
+    # *"Não precisa ter a informação de obra da contabilidade (…) nem o setor
+    # (…) eu quero que seja adicionada a função da pessoa (…) para facilitar a
+    # identificação"*, e os dias trabalhados.
     lista = aba_nova("Pessoas", [
-        "Nome", "CPF", "Código Fortes", "Obra da contabilidade",
-        "Setor", "Fase Atual", "Obra do ponto (dias)", "Obra do cadastro",
-        "Conta(s)", "Dias", "Valor x dia", "Valor", "Situação"])
+        "Nome", "Função", "CPF", "Fase Atual", "Obra do ponto (dias)",
+        "Obra do cadastro", "Conta(s)", "Dias", "Dias trabalhados", "Valor x dia",
+        "Valor", "Situação"])
     for p in dados["pessoas"]:
         lista.append([
-            p.get("nome_na_tela") or "",
+            p.get("nome_na_tela") or "", p.get("cargo") or "",
             cpf_bonito(p.get("cpf") or "") if p.get("cpf") else "",
-            p.get("id_fortes") or "", p.get("filial") or "",
-            p.get("setor_curto") or "", p.get("fase") or "",
+            p.get("fase") or "",
             p.get("obras_resumo") or "", p.get("obra_do_cadastro") or "",
             ", ".join(c for c in (p.get("contas") or []) if c),
-            int(p.get("dias_no_ponto") or 0),
+            float(_dias(p.get("dias_no_ponto"))),
+            datas_txt(p).replace("Dias: ", ""),
             float(p["valor_por_dia"]) if p.get("valor_por_dia") is not None else None,
             float(_dinheiro(p.get("valor"))), p.get("situacao_rotulo") or ""])
-    moeda(lista, (10, 11))
-    larguras(lista, [38, 15, 12, 30, 22, 18, 34, 18, 18, 6, 12, 13, 18])
+    moeda(lista, (9, 10))
+    larguras(lista, [38, 22, 15, 18, 34, 18, 18, 6, 30, 12, 13, 18])
 
     # --- OS AGRUPAMENTOS ----------------------------------------------
     g = dados["grupos"]
     aba = aba_nova("Por obra", ["Obra", "Conta", "Pessoas", "Dias", "Valor",
                                 "% do total a pagar"])
     for o in g["por_obra"]:
-        aba.append([o["obra"], o["conta"], o["pessoas"], o["dias"],
+        aba.append([o["obra"], o["conta"], o["pessoas"], float(o["dias"]),
                     float(o["valor"]), float(o["percentual"])])
     aba.append(["Total", "", "", "", float(g["total_pago"]), 100.0])
     moeda(aba, (4,))
@@ -341,16 +379,6 @@ def excel(dados: dict) -> bytes:
     aba.append(["Total", "", "", float(g["total_pago"]), 100.0])
     moeda(aba, (3,))
     larguras(aba, [16, 60, 10, 15, 20])
-
-    for titulo, chave, rotulo in (("Por obra da contabilidade", "por_filial", "Filial"),
-                                  ("Por setor", "por_setor", "Setor")):
-        aba = aba_nova(titulo[:31], [rotulo, "Pessoas", "Valor",
-                                     "% do total a pagar"])
-        for linha in g[chave]:
-            aba.append([linha["nome"], linha["pessoas"], float(linha["valor"]),
-                        float(linha["percentual"])])
-        moeda(aba, (2,))
-        larguras(aba, [40, 10, 15, 20])
 
     memoria = io.BytesIO()
     planilha.save(memoria)
@@ -394,28 +422,19 @@ def pdf(dados: dict) -> bytes:
 
     doc.titulo_secao("Por obra (do ponto)")
     doc.tabela(["Obra", "Conta", "Pessoas", "Dias", "Valor", "%"],
-               [[o["obra"], o["conta"], str(o["pessoas"]), str(o["dias"]),
+               [[o["obra"], o["conta"], str(o["pessoas"]), dias_txt(o["dias"]),
                  _moeda_br(o["valor"]), _pct_br(o["percentual"])]
                 for o in g["por_obra"]]
                + [["Total", "", "", "", _moeda_br(g["total_pago"]), "100,00%"]],
                larguras=[62, 30, 20, 18, 34, 26], direita=(2, 3, 4, 5))
 
-    for titulo, chave in (("Por obra da contabilidade", "por_filial"),
-                          ("Por setor da contabilidade", "por_setor")):
-        if g[chave]:
-            doc.titulo_secao(titulo)
-            doc.tabela([titulo.split(" ", 1)[1].capitalize(), "Pessoas", "Valor", "%"],
-                       [[l["nome"], str(l["pessoas"]), _moeda_br(l["valor"]),
-                         _pct_br(l["percentual"])] for l in g[chave]],
-                       larguras=[110, 22, 34, 24], direita=(1, 2, 3))
-
     doc.titulo_secao(f"Pessoa por pessoa ({dados['quantas']})")
-    doc.tabela(["Nome", "Contabilidade", "Obra do ponto", "Conta",
+    doc.tabela(["Nome", "Função", "Obra do ponto", "Conta",
                 "Dias", "Valor", "Situação"],
-               [[p.get("nome_na_tela") or "", p.get("filial") or "",
+               [[(p.get("nome_na_tela") or "", datas_txt(p)), p.get("cargo") or "",
                  p.get("obras_resumo") or "-",
                  ", ".join(c for c in (p.get("contas") or []) if c) or "-",
-                 str(int(p.get("dias_no_ponto") or 0)),
+                 dias_txt(p.get("dias_no_ponto")),
                  _moeda_br(p.get("valor")), p.get("situacao_rotulo") or ""]
                 for p in dados["pessoas"]],
                larguras=[54, 32, 40, 18, 10, 20, 16], direita=(4, 5),
@@ -428,7 +447,8 @@ def nome_do_arquivo(dados: dict, extensao: str) -> str:
     conta = (" - conta " + dados["conta"].replace("(", "").replace(")", "")
              if dados.get("conta") else "")
     filtrado = " - filtrado" if dados["filtros"] else ""
-    return f"Folha {competencia}{conta}{filtrado}.{extensao}"
+    prefixo = dados.get("prefixo_arquivo") or "Folha"
+    return f"{prefixo} {competencia}{conta}{filtrado}.{extensao}"
 
 
 def zip_por_conta(montado: dict, contas_por_obra: dict, extensao: str) -> tuple:
@@ -442,4 +462,113 @@ def zip_por_conta(montado: dict, contas_por_obra: dict, extensao: str) -> tuple:
             conteudo = excel(dados) if extensao == "xlsx" else pdf(dados)
             pacote.writestr(nome_do_arquivo(dados, extensao), conteudo)
     competencia = str((montado.get("folha") or {}).get("competencia") or "").replace("/", "-")
-    return memoria.getvalue(), f"Folha {competencia} - por conta ({extensao}).zip"
+    prefixo = montado.get("prefixo_arquivo") or "Folha"
+    return memoria.getvalue(), f"{prefixo} {competencia} - por conta ({extensao}).zip"
+
+
+# ---------------------------------------------------------------------------
+# AS OUTRAS FOLHAS — diárias e auxílios no mesmo relatório (02/10/2026)
+#
+# O dono: *"a parte de diaristas não tem os relatórios. Preciso dos relatórios
+# também, PDF, Excel, por conta, total, do mesmo jeito (…) replicar também para
+# alimentação e transporte, porque é para ser tudo no mesmo padrão."* Os
+# adaptadores abaixo põem a pessoa de cada folha no formato da linha da folha da
+# contabilidade, e o resto (agrupamentos, recorte por conta, Excel, PDF) é o
+# mesmo código.
+# ---------------------------------------------------------------------------
+def _sem_acento(texto) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", str(texto or ""))
+                   if not unicodedata.combining(c))
+
+
+def _filtros_da_lista(filtros: dict) -> list:
+    from .folha_lista import SITUACOES
+    rotulos = dict(SITUACOES)
+    saida = []
+    if (filtros or {}).get("q"):
+        saida.append(f'Procura: "{filtros["q"]}"')
+    for chave, rotulo in (("situacao", "Situação"), ("obra", "Obra do ponto"),
+                          ("obra_cadastro", "Obra do cadastro"), ("fase", "Fase Atual")):
+        valores = (filtros or {}).get(chave) or []
+        if valores:
+            legiveis = [rotulos.get(v, v) if chave == "situacao" else v for v in valores]
+            saida.append(f"{rotulo}: " + ", ".join(legiveis))
+    return saida
+
+
+def _contas_de(por_obra, contas_por_obra) -> list:
+    contas_por_obra = {str(k).upper(): v for k, v in (contas_por_obra or {}).items()}
+    return sorted({contas_por_obra.get(" ".join(str(o.get("obra") or "").split()).upper(), "")
+                   for o in por_obra or []})
+
+
+def _situacao_da_outra(p) -> str:
+    from .folha_lista import SITUACOES, situacoes_da_pessoa
+    dele = situacoes_da_pessoa(p)
+    for chave, rotulo in SITUACOES:
+        if chave in dele and chave not in ("saiu", "saindo", "afastado"):
+            if "saiu" in dele:
+                return rotulo + " (desligado)"
+            return rotulo
+    return ""
+
+
+def montado_das_diarias(calculado: dict, pessoas: list, filtros: dict,
+                        contas_por_obra: dict) -> dict:
+    """As diárias no formato do relatório. `pessoas`: a lista da tela."""
+    linhas = []
+    for p in pessoas or []:
+        por_obra = [{"obra": o["obra"], "dias": o["dias"], "valor": o["valor"]}
+                    for o in p.get("por_obra") or []]
+        linhas.append({
+            "entra": bool(p.get("pagar") and _dinheiro(p.get("valor")) > 0),
+            "cpf": p.get("cpf") or "", "nome_na_tela": p.get("nome") or "",
+            "cargo": p.get("cargo") or "", "fase": p.get("fase") or "",
+            "por_obra": por_obra,
+            "por_dia": [{"data": d["data"], "obra": d.get("obra")}
+                        for d in p.get("dias") or [] if d.get("quantidade")],
+            "dias_no_ponto": p.get("quantidade") or 0,
+            "valor": p.get("valor"), "valor_por_dia": p.get("valor_diaria"),
+            "obras_resumo": ", ".join(f"{o['obra']} ({dias_txt(o['dias'])})"
+                                      for o in por_obra),
+            "obra_do_cadastro": p.get("obra_cadastro") or "",
+            "contas": _contas_de(por_obra, contas_por_obra),
+            "situacao_rotulo": _situacao_da_outra(p)})
+    return {
+        "titulo": f"Diárias {calculado.get('competencia', '')} — "
+                  f"{calculado.get('rotulo_periodo', '')}",
+        "prefixo_arquivo": "Diarias",
+        "folha": {"competencia": calculado.get("competencia", ""),
+                  "rotulo_do_tipo": calculado.get("rotulo_periodo", "")},
+        "pessoas": linhas, "filtros_texto": _filtros_da_lista(filtros),
+        "totais": {"pessoas": len(calculado.get("pessoas") or [])},
+        "fechamento": calculado.get("fechamento")}
+
+
+def montado_do_auxilio(resultado: dict, pessoas: list, filtros: dict,
+                       contas_por_obra: dict, rotulo: str, competencia: str) -> dict:
+    """O auxílio (alimentação ou transporte) no formato do relatório."""
+    linhas = []
+    for p in pessoas or []:
+        entra = bool(p.get("pagar") and _dinheiro(p.get("valor")) > 0)
+        por_obra = ([{"obra": p.get("obra") or "", "dias": p.get("dias") or 0,
+                      "valor": p.get("valor")}] if p.get("obra") or entra else [])
+        linhas.append({
+            "entra": entra, "cpf": p.get("cpf") or "",
+            "nome_na_tela": p.get("nome") or "", "cargo": p.get("cargo") or "",
+            "fase": p.get("fase") or "", "por_obra": por_obra, "por_dia": [],
+            "dias_no_ponto": p.get("dias") or 0, "valor": p.get("valor"),
+            "valor_por_dia": p.get("valor_unitario"),
+            "obras_resumo": ", ".join(f"{o['obra'] or SEM_OBRA} ({dias_txt(o['dias'])})"
+                                      for o in por_obra),
+            "obra_do_cadastro": p.get("obra_nome") or p.get("obra_cadastro") or "",
+            "contas": _contas_de(por_obra, contas_por_obra),
+            "situacao_rotulo": _situacao_da_outra(p)})
+    return {
+        "titulo": f"{rotulo} {competencia}",
+        "prefixo_arquivo": _sem_acento(rotulo),
+        "folha": {"competencia": competencia, "rotulo_do_tipo": rotulo},
+        "pessoas": linhas, "filtros_texto": _filtros_da_lista(filtros),
+        "totais": {"pessoas": len((resultado or {}).get("pessoas") or [])},
+        "fechamento": (resultado or {}).get("fechamento")}

@@ -194,8 +194,12 @@ def test_o_relatorio_em_EXCEL_traz_a_lista_e_os_agrupamentos(app, monkeypatch):
     r = _como_mestre(app).get("/analisesps/folha/1/relatorio.xlsx")
     assert r.status_code == 200, r.get_data(as_text=True)[:500]
     livro = load_workbook(io.BytesIO(r.data))
-    assert livro.sheetnames == ["Resumo", "Pessoas", "Por obra", "Por conta",
-                                "Por obra da contabilidade", "Por setor"]
+    # Sem as abas da contabilidade (dono, 02/10/2026: *"não precisa ter a
+    # informação de obra da contabilidade (…) nem o setor"*), com a Função.
+    assert livro.sheetnames == ["Resumo", "Pessoas", "Por obra", "Por conta"]
+    cabecalho = [c.value for c in livro["Pessoas"][1]]
+    assert "Função" in cabecalho and "Dias trabalhados" in cabecalho
+    assert "Obra da contabilidade" not in cabecalho and "Setor" not in cabecalho
     nomes = [c.value for c in livro["Pessoas"]["A"][1:]]
     assert any("GERLANIO" in (n or "") for n in nomes)
     contas = {l[0].value for l in livro["Por conta"].iter_rows(min_row=2)}
@@ -296,7 +300,7 @@ def test_agrupamentos_SO_SOMAM_QUEM_VAI_RECEBER_e_dividem_por_dia():
     # Por situação conta TODO MUNDO da lista.
     situacoes = {s["nome"]: s for s in g["por_situacao"]}
     assert situacoes["fora do pagamento"]["valor"] == D("500.00")
-    assert g["por_filial"][0]["valor"] == D("100.00")
+    assert "por_filial" not in g and "por_setor" not in g
 
 
 def test_obra_sem_conta_aparece_PRIMEIRO_no_por_conta():

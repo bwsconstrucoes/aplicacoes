@@ -1,0 +1,34 @@
+{# ---------------------------------------------------------------------------
+   O RELATÓRIO DA LISTA — Excel e PDF, com o recorte por conta. O MESMO bloco
+   nas quatro folhas (contabilidade, diárias, alimentação e transporte): pedido
+   do dono em 02/10/2026, *"é para ser tudo no mesmo padrão"*.
+
+   Quem inclui define: rel_xlsx, rel_pdf (os endereços, já com os filtros da
+   tela) e rel_contas (as contas de pagamento, para o recorte).
+   O recorte (02/10/2026): *"e se eu quiser só o PDF de uma determinada conta
+   (…) divididos, ou juntos"*. A escolha vai no endereço dos dois botões.
+   --------------------------------------------------------------------------- #}
+<div class="cab-acoes">
+  <span class="cartao-dica">Relatório de quem está incluído no pagamento:</span>
+  <select id="relatorio-conta" aria-label="Contas do relatório">
+    <option value="">todas as contas, um arquivo</option>
+    <option value="__cada">um arquivo por conta (.zip)</option>
+    {% for c in rel_contas or [] %}{% if c %}
+      <option value="{{ c }}">só a conta {{ c }}</option>
+    {% endif %}{% endfor %}
+  </select>
+  <a class="btn secundario" id="relatorio-xlsx" href="{{ rel_xlsx }}">Excel</a>
+  <a class="btn secundario" id="relatorio-pdf" href="{{ rel_pdf }}">PDF</a>
+</div>
+<script>
+(function () {
+  const escolha = document.getElementById("relatorio-conta");
+  const links = ["relatorio-xlsx", "relatorio-pdf"].map(i => document.getElementById(i));
+  links.forEach(l => { l.dataset.base = l.getAttribute("href"); });
+  escolha.addEventListener("change", () => links.forEach(l => {
+    l.href = l.dataset.base + (escolha.value
+      ? (l.dataset.base.includes("?") ? "&" : "?") + "relatorio_conta="
+        + encodeURIComponent(escolha.value) : "");
+  }));
+})();
+</script>

@@ -196,9 +196,17 @@
     <div class="kpi-valor">{{ r.por_obra|length }}</div></div>
 </div>
 
-<h3 style="margin-top:24px">Detalhamento por colaborador
+<div class="cab-com-acoes" style="margin-top:24px">
+<h3>Detalhamento por colaborador
   <small>{{ pessoas|length }}{% if lista.filtrando %} · filtrado{% endif %}
     · selecione os incluídos neste pagamento</small></h3>
+  {% set args_da_tela = request.args.to_dict(flat=false) %}
+  {% set _ = args_da_tela.update({'ano': [ano], 'mes': [mes], 'periodo': [qual]}) %}
+  {% set rel_xlsx = url_for('analisesps.folha_diaristas_relatorio', formato='xlsx', **args_da_tela) %}
+  {% set rel_pdf = url_for('analisesps.folha_diaristas_relatorio', formato='pdf', **args_da_tela) %}
+  {% set rel_contas = (divisao.por_conta|map(attribute='conta')|list) if divisao else [] %}
+  {% include "_relatorio_acoes.html" %}
+</div>
 {% if lista.escondidos_por %}
 <p class="cartao-dica" style="margin:0 0 8px">
   Fora da lista (sem diária a pagar):

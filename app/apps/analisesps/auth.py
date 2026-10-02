@@ -482,6 +482,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_pagamento_preparar": ("folha",),
     "analisesps.folha_previa_pagamento": ("folha",),
     "analisesps.folha_previa_direta": ("folha",),
+    "analisesps.folha_diaristas_relatorio": ("folha",),
+    "analisesps.folha_auxilio_relatorio": ("folha",),
     "analisesps.folha_relatorio": ("folha",),
     "analisesps.folha_ponto_plano": ("folha",),
     "analisesps.folha_ponto_lancar": ("folha",),
