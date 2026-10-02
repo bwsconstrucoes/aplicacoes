@@ -146,16 +146,15 @@ def levantar(ano: int, mes: int) -> dict:
 #   - VIGIA fica fora (a planilha exclui pela função);
 #   - quem está sem valor de diária no cadastro não é pago ("CORRIGIR VALOR
 #     DIÁRIA") — aqui fica na lista, marcado, em vez de sumir;
-#   - a quantidade do dia: 1 com presença; 0,5 em PRESENÇA PARCIAL acima de 7h;
-#     0,5 em falta justificada de sábado ou domingo acima de 6h30;
+#   - a quantidade do dia: a coluna AJ, traduzida termo a termo mais abaixo
+#     (fórmula enviada pelo dono em 02/10/2026);
 #   - o valor do dia: quantidade × valor da diária, mais 20 no feriado, 10 no
 #     sábado e 20 no domingo;
 #   - o diarista NÃO tem desconto de dia compensado (só a diária extra de quem é
 #     CTPS tem).
 #
-# ⚠️ A REGRA DA MEIA DIÁRIA FOI ESCRITA A PARTIR DA LEITURA DA FÓRMULA, que não
-# está mais à mão. Por isso cada dia mostra quanto contou e por quê — quem
-# confere vê a regra funcionando e acha o caso que não bate.
+# Cada dia mostra quanto contou e por quê — quem confere vê a regra funcionando e
+# acha o caso que não bate.
 # ===========================================================================
 CENTAVO = Decimal("0.01")
 
@@ -179,8 +178,6 @@ VERBA = "diaria"
 ADICIONAL_FERIADO = Decimal("20.00")
 ADICIONAL_SABADO = Decimal("10.00")
 ADICIONAL_DOMINGO = Decimal("20.00")
-MINUTOS_MEIA_PARCIAL = 7 * 60          # PRESENÇA PARCIAL acima de 7h → 0,5
-MINUTOS_MEIA_FIM_DE_SEMANA = 6 * 60 + 30   # falta justificada sáb/dom > 6h30
 
 
 def periodo(ano: int, mes: int, qual: str) -> tuple:
@@ -196,42 +193,160 @@ def _sem_acento(texto) -> str:
                     .lower().split())
 
 
-def _minutos(texto) -> int:
-    """"07:30" → 450. Aceita "7:30", "07:30:00"; o que não ler vira 0."""
-    partes = str(texto or "").strip().split(":")
-    try:
-        return int(partes[0]) * 60 + (int(partes[1]) if len(partes) > 1 else 0)
-    except (ValueError, IndexError):
-        return 0
-
-
 def e_vigia(ficha: dict) -> bool:
     """A função é VIGIA? Igualdade, como a planilha (`W != 'VIGIA'`) — "VIGIA
     NOTURNO" é outra função e recebe diária."""
     return _sem_acento(ficha.get("cargo")) == "vigia"
 
 
-def quantidade_do_dia(lido: dict, tem_obra: bool) -> tuple:
-    """`(quantidade, motivo)` — 1, 0,5 ou 0 diária neste dia."""
-    presenca = _sem_acento(lido.get("presenca"))
-    falta = _sem_acento(lido.get("falta"))
-    minutos = _minutos(lido.get("total_de_horas"))
+# ===========================================================================
+# A QUANTIDADE DO DIA — tradução da coluna AJ ("QTD DIÁRIAS") da aba MobPonto.
+#
+# O dono mandou a fórmula em 02/10/2026, junto com a da AG (horas trabalhadas).
+# A primeira versão fora escrita de memória da leitura de 27/09 e estava ERRADA
+# no essencial: presença parcial com 7h ou mais vale UMA diária (não meia), e
+# abaixo de 7h vale MEIA (não zero).
+#
+#   I, J, K, L = hr_entrada, hr_almoco, hr_retorno, hr_saida
+#   AG = SE(K="";J-I;SE(L="";K-I;L-I))           (fração do dia)
+#   X = Tipo de Cadastro   AA = Tipo de Contrato   AH = vínculo do dia
+#   Q = presença           M = descrição da falta  AQ = PAGAR DIÁRIA / EXTRA
+#   D = dia da semana
+#
+#   1   — Prestador RPA, PRESENÇA, M ≠ "Falta não justificada"
+#       — CTPS em dia de DIÁRIA, PRESENÇA
+#       — CTPS em dia de CTPS, PRESENÇA, PAGAR EXTRA, M ≠ "Falta Justificada"
+#   1   — Prestador RPA, PRESENÇA PARCIAL, AG > 0,2916 (7h)
+#       — CTPS em dia de DIÁRIA, PRESENÇA PARCIAL, AG > 0,2916
+#       — CTPS em dia de CTPS, PRESENÇA, PAGAR EXTRA, "Falta Justificada",
+#         sábado ou domingo, AG > 0,2708 (6h30)
+#       — CTPS em dia de CTPS, PRESENÇA PARCIAL, PAGAR EXTRA, AG > 0,2916
+#   0,5 — Prestador RPA, PRESENÇA PARCIAL, AG < 0,2916
+#       — Prestador em dia de DIÁRIA, PRESENÇA, "Falta não justificada"
+#       — CTPS em dia de DIÁRIA, PRESENÇA PARCIAL, AG < 0,2916
+#       — CTPS em dia de CTPS, PRESENÇA, PAGAR EXTRA, "Falta Justificada"
+#       — CTPS em dia de CTPS, PRESENÇA PARCIAL, PAGAR EXTRA, AG < 0,2916
+#   vazio no resto (e a aba Diaristas só pega AJ > 0).
+#
+# ⚠️ OS LIMITES SÃO OS NÚMEROS DA FÓRMULA, em fração do dia, e não "7h" redondo:
+# 0,2916 dia = 6h59min56s. Comparar em minutos inteiros com 420 daria o mesmo na
+# prática, mas o número da planilha é o que vale — e fica aqui para conferência.
+# A ordem dos blocos também é a da fórmula: o primeiro que casa decide.
+#
+# ⚠️ A FÓRMULA NÃO OLHA A OBRA. Dia com presença e sem obra marcada conta; a
+# obra cai na do cadastro, e o dia fica marcado para conferência.
+# ===========================================================================
+LIMITE_PARCIAL = Decimal("0.2916")
+LIMITE_FIM_DE_SEMANA = Decimal("0.2708")
+SEGUNDOS_DO_DIA = 86400
+
+_PRESTADOR = "prestador de servico"
+_RPA = "autonomo (rpa)"
+_CTPS = "ctps"
+_PRESENCA = "presenca"
+_PRESENCA_PARCIAL = "presenca parcial"
+_FALTA_JUSTIFICADA = "falta justificada"
+_FALTA_NAO_JUSTIFICADA = "falta nao justificada"
+PAGAR_DIARIA = "PAGAR DIÁRIA"
+PAGAR_EXTRA = "PAGAR EXTRA"
+
+
+def _segundos(texto) -> int:
+    """"07:30" → 27000. Célula vazia vale ZERO, como na conta da planilha."""
+    partes = str(texto or "").strip().split(":")
+    try:
+        return (int(partes[0]) * 3600
+                + (int(partes[1]) * 60 if len(partes) > 1 else 0)
+                + (int(partes[2]) if len(partes) > 2 else 0))
+    except (ValueError, IndexError):
+        return 0
+
+
+def horas_trabalhadas(horas) -> Decimal:
+    """Coluna AG, em fração do dia: saída − entrada; sem saída, retorno −
+    entrada; sem retorno, almoço − entrada. Tradução literal — inclusive o
+    intervalo do almoço, que a fórmula não desconta."""
+    i, j, k, l = (list(horas or []) + ["", "", "", ""])[:4]
+    if not str(k or "").strip():
+        segundos = _segundos(j) - _segundos(i)
+    elif not str(l or "").strip():
+        segundos = _segundos(k) - _segundos(i)
+    else:
+        segundos = _segundos(l) - _segundos(i)
+    return Decimal(segundos) / Decimal(SEGUNDOS_DO_DIA)
+
+
+def _hhmm(fracao: Decimal) -> str:
+    segundos = int(fracao * SEGUNDOS_DO_DIA)
+    if segundos <= 0:
+        return ""
+    return f"{segundos // 3600:02d}:{segundos % 3600 // 60:02d}"
+
+
+def quantidade_da_planilha(tipo, contrato, vinculo, aq, presenca, falta,
+                           ag: Decimal, fim_de_semana: bool) -> Decimal:
+    """A coluna AJ, termo a termo. Devolve 1, 0,5 ou 0 (o "vazio")."""
+    x, aa = _sem_acento(tipo), _sem_acento(contrato)
+    q, m = _sem_acento(presenca), _sem_acento(falta)
+    ah = vinculo
+    extra = _sem_acento(aq) == _sem_acento(PAGAR_EXTRA)
+    rpa = x == _PRESTADOR and aa == _RPA
+    ctps_diaria = x == _CTPS and ah == folha_vinculo.DIARIA
+    ctps_ctps = x == _CTPS and ah == folha_vinculo.CTPS
+    presenca_cheia, parcial = q == _PRESENCA, q == _PRESENCA_PARCIAL
+    fj, fnj = m == _FALTA_JUSTIFICADA, m == _FALTA_NAO_JUSTIFICADA
+
+    if ((rpa and presenca_cheia and not fnj)
+            or (ctps_diaria and presenca_cheia)
+            or (ctps_ctps and presenca_cheia and extra and not fj)):
+        return Decimal("1")
+    if ((rpa and parcial and ag > LIMITE_PARCIAL)
+            or (ctps_diaria and parcial and ag > LIMITE_PARCIAL)
+            or (ctps_ctps and presenca_cheia and extra and fj and fim_de_semana
+                and ag > LIMITE_FIM_DE_SEMANA)
+            or (ctps_ctps and parcial and extra and ag > LIMITE_PARCIAL)):
+        return Decimal("1")
+    if ((rpa and parcial and ag < LIMITE_PARCIAL)
+            or (x == _PRESTADOR and ah == folha_vinculo.DIARIA and presenca_cheia
+                and fnj)
+            or (ctps_diaria and parcial and ag < LIMITE_PARCIAL)
+            or (ctps_ctps and presenca_cheia and extra and fj)
+            or (ctps_ctps and parcial and extra and ag < LIMITE_PARCIAL)):
+        return Decimal("0.5")
+    return Decimal("0")
+
+
+def e_rpa(cadastro: dict) -> bool:
+    return (_sem_acento(cadastro.get("tipo")) == _PRESTADOR
+            and _sem_acento(cadastro.get("contrato")) == _RPA)
+
+
+def quantidade_do_dia(lido: dict, cadastro: dict, vinculo: str,
+                      aq: str = PAGAR_DIARIA) -> tuple:
+    """`(quantidade, motivo)` de um dia — a AJ com o motivo escrito para a tela."""
     data = lido.get("data")
     fim_de_semana = isinstance(data, dt.date) and data.weekday() >= 5
-    if "parcial" in presenca:
-        if minutos > MINUTOS_MEIA_PARCIAL:
-            return Decimal("0.5"), "presença parcial acima de 7h: meia diária"
-        return Decimal("0"), "presença parcial de até 7h: não computada"
-    if fim_de_semana and "justific" in (presenca + " " + falta) \
-            and minutos > MINUTOS_MEIA_FIM_DE_SEMANA:
-        return Decimal("0.5"), "falta justificada no fim de semana acima de 6h30"
-    if tem_obra and (not presenca or presenca.startswith("presenca")):
-        return Decimal("1"), ""
-    if falta:
-        return Decimal("0"), "falta"
-    if presenca:
-        return Decimal("0"), lido.get("presenca") or ""
-    return Decimal("0"), "sem marcação de obra"
+    ag = horas_trabalhadas(lido.get("horas"))
+    qtd = quantidade_da_planilha(
+        cadastro.get("tipo"), cadastro.get("contrato"), vinculo, aq,
+        lido.get("presenca"), lido.get("falta"), ag, fim_de_semana)
+    q, m = _sem_acento(lido.get("presenca")), _sem_acento(lido.get("falta"))
+    horas = _hhmm(ag)
+    if qtd == 1:
+        if q == _PRESENCA_PARCIAL:
+            return qtd, f"presença parcial com {horas or '0h'} (acima de 7h): diária integral"
+        return qtd, ""
+    if qtd:
+        if q == _PRESENCA_PARCIAL:
+            return qtd, f"presença parcial com {horas or '0h'} (abaixo de 7h): meia diária"
+        if m == _FALTA_NAO_JUSTIFICADA:
+            return qtd, "presença com falta não justificada: meia diária"
+        return qtd, "meia diária"
+    if m:
+        return qtd, lido.get("falta") or "falta"
+    if q:
+        return qtd, f"{lido.get('presenca')}: não computado"
+    return qtd, "sem presença registrada"
 
 
 def _feriados(inicio, fim) -> list:
@@ -279,6 +394,7 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
 
     ajuste = ajuste or {}
     cadastro = _cadastro_para_a_regra(ficha)
+    rpa = e_rpa(cadastro)
     valor_diaria = (None if valor_diaria is None
                     else Decimal(str(valor_diaria)).quantize(CENTAVO))
     saida = {
@@ -304,18 +420,23 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
         if not isinstance(data, dt.date) or not (inicio <= data <= fim):
             continue
         vinculo = folha_vinculo.classificar_dia(data, cadastro)
-        if vinculo == folha_vinculo.CTPS:
-            saida["dias_de_ctps"] += 1
-            continue
-        if vinculo != folha_vinculo.DIARIA:
-            saida["dias_sem_decidir"] += 1
-            continue
+        # A coluna AQ: o prestador RPA é sempre PAGAR DIÁRIA; os outros, só no
+        # dia que a AH diz DIÁRIA (§7.10.3 do docs/FOLHA_DE_PAGAMENTO.md).
+        if not rpa:
+            if vinculo == folha_vinculo.CTPS:
+                saida["dias_de_ctps"] += 1
+                continue
+            if vinculo != folha_vinculo.DIARIA:
+                saida["dias_sem_decidir"] += 1
+                continue
         decidido = folha_apropriacao.obra_do_dia(
             lido.get("marcacoes"), lido.get("presenca", ""), lido.get("falta", ""))
         obra = decidido.get("obra") or ""
-        qtd, motivo = quantidade_do_dia(lido, bool(obra))
+        qtd, motivo = quantidade_do_dia(lido, cadastro, vinculo)
         if qtd and not obra:
             obra = obra_do_cadastro
+            motivo = "; ".join(x for x in (
+                motivo, "obra não informada no ponto: atribuída à obra do cadastro") if x)
         feriado = _e_feriado(data, obra, feriados, codigo_por_nome)
         adicional, porque = adicional_do_dia(data, feriado) if qtd else (Decimal("0.00"), "")
         valor = ((qtd * valor_diaria + adicional).quantize(CENTAVO)
@@ -324,7 +445,8 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
             "data": data, "obra": obra, "quantidade": qtd, "motivo": motivo,
             "adicional": adicional, "porque_adicional": porque, "valor": valor,
             "presenca": lido.get("presenca", ""),
-            "horas": lido.get("total_de_horas", ""),
+            "horas": _hhmm(horas_trabalhadas(lido.get("horas")))
+                     or lido.get("total_de_horas", ""),
             "batidas": list(zip(lido.get("horas") or [], lido.get("marcacoes") or []))})
         if qtd:
             saida["quantidade"] += qtd

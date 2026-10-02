@@ -4,8 +4,8 @@ O pagamento dos diaristas — 01/10/2026.
 
 O dono: *"a prioridade agora é a de diaristas, que é o próximo que eu vou
 gerar"*. A regra é a da aba "Diaristas" da planilha (`docs/FOLHA_DE_PAGAMENTO.md`
-§7.10.4 e §7.14.12): só dia de DIÁRIA, vigia fora, meia diária em presença
-parcial acima de 7h, +20 feriado, +10 sábado, +20 domingo. E o que a folha da
+§7.10.4 e §7.14.12): só dia de DIÁRIA, vigia fora, a quantidade do dia pela
+coluna AJ (fórmula enviada em 02/10/2026), +20 feriado, +10 sábado, +20 domingo. E o que a folha da
 contabilidade já fazia: quem saiu não paga, quem está sem valor no cadastro
 trava, e o fechamento é o que libera o arquivo.
 """
@@ -21,35 +21,68 @@ from app.apps.analisesps import folha_diaristas as fd
 # ---------------------------------------------------------------------------
 # A CONTA DE UM DIA — sem banco
 # ---------------------------------------------------------------------------
-def _lido(data, presenca="PRESENÇA", horas="08:00", falta=""):
-    return {"data": data, "presenca": presenca, "total_de_horas": horas,
+RPA = {"tipo": "Prestador de Serviço", "contrato": "Autônomo (RPA)"}
+CTPS_ANTES = {"tipo": "CTPS", "contrato": "CLT (tempo Indeterminado)"}
+TERCA, SABADO = dt.date(2026, 9, 8), dt.date(2026, 9, 5)
+
+
+def _lido(data, presenca="PRESENÇA", horas=("07:00", "12:00", "13:00", "17:00"),
+          falta=""):
+    return {"data": data, "presenca": presenca, "horas": list(horas),
             "falta": falta}
 
 
+def _qtd(lido, cadastro=RPA, vinculo="DIÁRIA", aq=fd.PAGAR_DIARIA):
+    return fd.quantidade_do_dia(lido, cadastro, vinculo, aq)[0]
+
+
+def test_AG_e_saida_menos_entrada_e_cai_para_retorno_e_almoco():
+    """`SE(K="";J-I;SE(L="";K-I;L-I))` — o almoço não é descontado."""
+    assert fd.horas_trabalhadas(["07:00", "12:00", "13:00", "17:00"]) == D(36000) / 86400
+    assert fd.horas_trabalhadas(["07:00", "12:00", "13:00", ""]) == D(21600) / 86400
+    assert fd.horas_trabalhadas(["07:00", "12:00", "", ""]) == D(18000) / 86400
+
+
 def test_presenca_cheia_vale_UMA_diaria():
-    assert fd.quantidade_do_dia(_lido(dt.date(2026, 9, 8)), True)[0] == D("1")
+    assert _qtd(_lido(TERCA)) == D("1")
+    assert _qtd(_lido(TERCA), CTPS_ANTES) == D("1")
 
 
-def test_presenca_PARCIAL_acima_de_7h_vale_MEIA_e_ate_7h_nao_conta():
-    acima = fd.quantidade_do_dia(_lido(dt.date(2026, 9, 8), "PRESENÇA PARCIAL",
-                                       "07:30"), True)
-    ate = fd.quantidade_do_dia(_lido(dt.date(2026, 9, 8), "PRESENÇA PARCIAL",
-                                     "07:00"), True)
-    assert acima[0] == D("0.5") and "meia" in acima[1]
-    assert ate[0] == D("0")
+def test_presenca_PARCIAL_de_7h_ou_mais_vale_UMA_e_abaixo_vale_MEIA():
+    """A fórmula do dono (02/10/2026): AG > 0,2916 → 1; AG < 0,2916 → 0,5."""
+    sete = _lido(TERCA, "PRESENÇA PARCIAL", ("07:00", "12:00", "13:00", "14:00"))
+    seis = _lido(TERCA, "PRESENÇA PARCIAL", ("07:00", "12:00", "13:00", "13:59"))
+    for cadastro in (RPA, CTPS_ANTES):
+        assert _qtd(sete, cadastro) == D("1")
+        assert _qtd(seis, cadastro) == D("0.5")
+    assert "meia" in fd.quantidade_do_dia(seis, RPA, "DIÁRIA")[1]
 
 
-def test_falta_justificada_no_fim_de_semana_acima_de_6h30_vale_meia():
-    sabado = dt.date(2026, 9, 5)
-    assert fd.quantidade_do_dia(
-        _lido(sabado, "FALTA JUSTIFICADA", "06:45"), False)[0] == D("0.5")
-    assert fd.quantidade_do_dia(
-        _lido(sabado, "FALTA JUSTIFICADA", "06:00"), False)[0] == D("0")
+def test_falta_NAO_justificada_com_presenca_vale_meia_para_o_prestador():
+    dia = _lido(TERCA, falta="Falta não justificada")
+    assert _qtd(dia) == D("0.5")
+    assert _qtd(dia, CTPS_ANTES) == D("1"), "o termo da CTPS não olha a falta"
 
 
-def test_falta_nao_conta():
-    assert fd.quantidade_do_dia(_lido(dt.date(2026, 9, 9), "", "", "FALTA"),
-                                False)[0] == D("0")
+def test_sem_presenca_nao_conta():
+    assert _qtd(_lido(TERCA, "", ("", "", "", ""), "Falta Justificada")) == D("0")
+    assert _qtd(_lido(TERCA, "AUSÊNCIA", ("", "", "", ""))) == D("0")
+
+
+def test_CTPS_em_dia_de_CTPS_nao_e_diaria():
+    assert _qtd(_lido(TERCA), CTPS_ANTES, "CTPS") == D("0")
+
+
+def test_os_termos_de_PAGAR_EXTRA_da_formula_estao_traduzidos():
+    """Não servem aos diaristas (a aba filtra PAGAR DIÁRIA), mas são a mesma
+    coluna — e a diária extra da CTPS vai usá-los."""
+    fj = _lido(SABADO, falta="Falta Justificada",
+               horas=("07:00", "12:00", "13:00", "13:45"))
+    curto = _lido(SABADO, falta="Falta Justificada",
+                  horas=("07:00", "12:00", "13:00", "13:00"))
+    assert _qtd(fj, CTPS_ANTES, "CTPS", fd.PAGAR_EXTRA) == D("1")
+    assert _qtd(curto, CTPS_ANTES, "CTPS", fd.PAGAR_EXTRA) == D("0.5")
+    assert _qtd(_lido(TERCA), CTPS_ANTES, "CTPS", fd.PAGAR_EXTRA) == D("1")
 
 
 def test_os_ADICIONAIS_sao_20_no_feriado_10_no_sabado_20_no_domingo():
@@ -135,7 +168,7 @@ def banco_diaristas(banco_analisesps):
             (DIARISTA, dt.date(2026, 9, 5), _campos()),                 # sábado
             (DIARISTA, dt.date(2026, 9, 7), _campos()),                 # feriado
             (DIARISTA, dt.date(2026, 9, 8), _campos(presenca="PRESENÇA PARCIAL",
-                                                    horas="08:00")),    # meia
+                                                    horas="08:00")),    # parcial de 10h: 1
             (DIARISTA, dt.date(2026, 9, 9), json.dumps({"desc_falta": "FALTA"})),
             (VIGIA, dt.date(2026, 9, 8), _campos()),
             (SAIU, dt.date(2026, 9, 8), _campos()),
@@ -159,14 +192,14 @@ def _pessoa(calculado, cpf):
 def test_a_conta_do_diarista_dia_a_dia(banco_diaristas):
     calculado = fd.calcular(2026, 9, "quinzena")
     p = _pessoa(calculado, DIARISTA)
-    # sábado 100+10, feriado 100+20, meia 50, falta 0.
-    assert p["valor"] == D("280.00")
-    assert p["quantidade"] == D("2.5")
+    # sábado 100+10, feriado 100+20, parcial de 10h 100, falta 0.
+    assert p["valor"] == D("330.00")
+    assert p["quantidade"] == D("3")
     assert p["adicionais"] == D("30.00")
     assert p["pagar"] is True
-    assert p["por_obra"] == [{"obra": "CREPEOLINDA", "dias": D("2.5"),
-                              "valor": D("280.00")}]
-    assert calculado["total"] == D("280.00")
+    assert p["por_obra"] == [{"obra": "CREPEOLINDA", "dias": D("3"),
+                              "valor": D("330.00")}]
+    assert calculado["total"] == D("330.00")
     assert calculado["quantos_a_pagar"] == 1
 
 
@@ -199,7 +232,7 @@ def test_FECHAR_libera_o_arquivo_de_pagamento_da_diaria(banco_diaristas, monkeyp
     assert feito["tipo"] == "quinzena"
     linhas = fp.linhas_para_pagar(2026, 9, "quinzena", ["diaria"])
     assert [(l["cpf"], l["obra"], l["conta"], l["valor"]) for l in linhas] == [
-        (DIARISTA, "CREPEOLINDA", "50024", D("280.00"))]
+        (DIARISTA, "CREPEOLINDA", "50024", D("330.00"))]
 
     monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
     monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k:
@@ -207,14 +240,14 @@ def test_FECHAR_libera_o_arquivo_de_pagamento_da_diaria(banco_diaristas, monkeyp
     saida = fp.gerar(2026, 9, "quinzena", ["diaria"], g.SOMAPAY, quem="MARCELO")
     pagamento = [a for a in saida["arquivos"] if a["destino"] == "somapay"]
     assert pagamento[0]["conta"] == "50024"
-    assert pagamento[0]["total"] == D("280.00")
-    assert fd.calcular(2026, 9, "quinzena")["fechamento"]["total_apropriado"] == D("280.00")
+    assert pagamento[0]["total"] == D("330.00")
+    assert fd.calcular(2026, 9, "quinzena")["fechamento"]["total_apropriado"] == D("330.00")
 
 
 @pytest.mark.banco
 def test_a_QUINZENA_so_conta_os_dias_de_1_a_15(banco_diaristas):
     """Todos os dias do teste caem na primeira quinzena; a segunda fica vazia."""
-    assert fd.calcular(2026, 9, "quinzena")["total"] == D("280.00")
+    assert fd.calcular(2026, 9, "quinzena")["total"] == D("330.00")
     assert fd.calcular(2026, 9, "fim_de_mes")["pessoas"] == []
 
 
@@ -237,7 +270,7 @@ def test_o_RESUMO_da_geracao_direta_nao_grava_nada(banco_diaristas, monkeypatch)
     _drive_falso(monkeypatch)
     plano = fp.resumo_direto("diaria", {"ano": 2026, "mes": 9, "periodo": "quinzena"},
                              "somapay")
-    assert plano["resumo"]["total"] == D("280.00")
+    assert plano["resumo"]["total"] == D("330.00")
     assert [l["conta"] for l in plano["lotes"]] == ["50024"]
     assert fd.calcular(2026, 9, "quinzena")["fechamento"] is None
     assert fp.log() == []
@@ -250,10 +283,10 @@ def test_GERAR_DIRETO_fecha_e_gera_de_uma_vez(banco_diaristas, monkeypatch):
     saida = fp.gerar_direto("diaria", {"ano": 2026, "mes": 9, "periodo": "quinzena"},
                             "somapay", quem="MARCELO")
     assert len(subidos) == 2, "o de pagamento e o de análise"
-    assert fd.calcular(2026, 9, "quinzena")["fechamento"]["total_apropriado"] == D("280.00")
+    assert fd.calcular(2026, 9, "quinzena")["fechamento"]["total_apropriado"] == D("330.00")
     rodada = fp.rodadas()[0]
     assert rodada["lancavel"] and not rodada["incompleta"]
-    assert rodada["total"] == D("280.00")
+    assert rodada["total"] == D("330.00")
     assert saida["competencia"] == "09/2026"
 
 

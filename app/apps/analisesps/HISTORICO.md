@@ -11183,6 +11183,29 @@ navegador com dado de teste. **Não verificado com dado real:** o lançamento no
 Mobponto a partir da janela fora da folha (o caminho é o mesmo de antes, muda só
 de onde vem o mês).
 
+#### Leva 148 — a quantidade do dia do diarista, pela fórmula (02/10/2026)
+
+O dono mandou as fórmulas das colunas AG (horas trabalhadas), AH (vínculo) e AJ
+(quantidade de diárias). A regra que estava no sistema, escrita da leitura de
+27/09, **estava errada**: dava meia diária à presença parcial acima de 7h e zero
+abaixo. O certo é **uma diária** com 7h ou mais e **meia** abaixo de 7h; e meia
+para o prestador com presença e "Falta não justificada". As horas são da entrada
+até a última marcação, sem descontar o almoço (é o que a AG faz). A AH já estava
+traduzida (`folha_vinculo`), sem mudança. A AJ virou tradução termo a termo
+(`quantidade_da_planilha`), incluindo os termos de PAGAR EXTRA, que servirão à
+diária extra da CTPS.
+
+**Duas consequências que mudam valor:** a fórmula **não olha a obra** — dia com
+presença e sem obra marcada passa a contar, atribuído à obra do cadastro e marcado
+no detalhamento; e o prestador RPA é diária em todo dia (coluna AQ), mesmo com
+data de admissão no cadastro. **Mantido sem confirmação:** o adicional de
+sábado/domingo/feriado entra inteiro também no dia de meia diária.
+
+**Cards:** diaristas e alimentação eram pagos pelo BeeVale (o script marcava a SP
+com "BeeVale" no campo de automação). Com o SomaPay, o dono decidiu que os cards
+seguem o modelo da folha da contabilidade, como já estão; a categoria do segundo
+card pode mudar depois da primeira geração.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11194,9 +11217,10 @@ de onde vem o mês).
 | ~~publicar a leva 142~~ — **publicada em 01/10/2026** (main em `23a96dd`), sem migração nova | — |
 | ~~publicar a leva 143~~ — **publicada em 01/10/2026**. Falta o dono gerar de novo e subir no portal do Soma | ele |
 | ~~publicar as levas 144 e 145~~ — **publicadas em 01/10/2026**. Apertar "Aplicar atualizações do banco" (044) e depois "Atualizar cadastro" | ele |
-| ~~confirmar coluna do valor da diária e quinzena~~ — **respondido em 02/10**: coluna 49 de "Dados Documentos"; quinzena. Falta confirmar a regra da **meia diária** | ele |
-| publicar as levas 146 e 147 (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
-| dizer qual valor o link do botão da folha manda em `tipo` (vai no campo `automa_o_2` da SP) | ele |
+| ~~confirmar coluna do valor da diária e quinzena~~ — **respondido em 02/10**: coluna 49 de "Dados Documentos"; quinzena. Regra da meia diária: **fórmula recebida e aplicada** (leva 148) | — |
+| confirmar se o adicional de fim de semana/feriado entra inteiro no dia de meia diária | ele |
+| publicar as levas 146 a 148 (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
+| campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 
 ---
