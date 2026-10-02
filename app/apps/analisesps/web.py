@@ -2771,9 +2771,11 @@ def folha_previa_direta():
 
     origem = str(request.args.get("origem") or "").strip()
     destino = str(request.args.get("destino") or fger.BEEVALE).strip().lower()
-    dados = {k: request.args.get(k) for k in ("ano", "mes", "periodo", "pagamento")}
+    dados = {k: request.args.get(k)
+             for k in ("ano", "mes", "periodo", "pagamento", "folha_id")}
     try:
-        conteudo, nome = fpg.previa_direta_zip(origem, dados, destino)
+        conteudo, nome = fpg.previa_direta_zip(
+            origem, dados, destino, _destinos_por_conta(request.args.get("destinos")))
     except (fpg.ErroDoPagamento, fger.ErroDaGeracao) as e:
         return render_template(
             "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
@@ -4204,10 +4206,26 @@ def folha_pagamento_gerar():
                          for a in saida["arquivos"]]}
 
 
+def _destinos_por_conta(bruto) -> dict:
+    """`{conta: destino}` do pedido — o seletor de cada conta na janela de
+    gerar (02/10/2026). Aceita dict ou o JSON dele (vindo da URL da prévia)."""
+    import json as _json
+    if isinstance(bruto, str):
+        try:
+            bruto = _json.loads(bruto or "{}")
+        except ValueError:
+            bruto = {}
+    if not isinstance(bruto, dict):
+        return {}
+    return {" ".join(str(c or "").split()): str(d or "").strip().lower()
+            for c, d in bruto.items() if str(d or "").strip()}
+
+
 def _pedido_de_geracao_direta():
+    from . import folha_geracao as geracao
     dados = request.get_json(silent=True) or {}
     origem = str(dados.get("origem") or "")
-    destino = str(dados.get("destino") or "").strip().lower()
+    destino = str(dados.get("destino") or "").strip().lower() or geracao.BEEVALE
     return dados, origem, destino
 
 
@@ -4219,7 +4237,8 @@ def folha_gerar_direto_resumo():
     from . import folha_geracao as geracao, folha_pagamento as fpg
     dados, origem, destino = _pedido_de_geracao_direta()
     try:
-        plano = fpg.resumo_direto(origem, dados, destino)
+        plano = fpg.resumo_direto(origem, dados, destino,
+                                  _destinos_por_conta(dados.get("destinos")))
     except (fpg.ErroDoPagamento, geracao.ErroDaGeracao, ValueError, TypeError) as e:
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001
@@ -4233,6 +4252,8 @@ def folha_gerar_direto_resumo():
                        "total": float(plano["resumo"]["total"]),
                        "pode_gerar": plano["resumo"]["pode_gerar"]},
             "lotes": [{"conta": l["conta"], "quantos": l["quantos"],
+                       "destino": l["destino"],
+                       "rotulo_destino": geracao.ROTULO_DO_DESTINO.get(l["destino"], ""),
                        "total": float(l["total"]), "criticas": l["criticas"]}
                       for l in plano["lotes"]]}
 
@@ -4250,7 +4271,8 @@ def folha_gerar_direto():
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
         saida = fpg.gerar_direto(origem, dados, destino, quem=quem,
-                                 forcar=bool(dados.get("forcar")))
+                                 forcar=bool(dados.get("forcar")),
+                                 destinos=_destinos_por_conta(dados.get("destinos")))
     except (fpg.ErroDoPagamento, geracao.ErroDaGeracao, guardada.ErroDaApropriacao,
             fx.ErroDoAuxilio, fg.ErroDaGestao, ValueError, TypeError) as e:
         return {"ok": False, "erro": str(e)}, 400

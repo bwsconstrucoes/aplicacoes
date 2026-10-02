@@ -141,26 +141,12 @@
       </button>
     {% endif %}
     {% if pode_gerar %}
-      {# A PRÉVIA, pedido dele em 01/10/2026: *"se eu quiser gerar um arquivo de
-         pagamento sem fechar, como fazer? até pra saber como tá saindo"*. Fora
-         do formulário dos filtros: trocar o destino não pode recarregar a tela. #}
-      <div class="lat-previa">
-        <select id="previa-destino" aria-label="Destino da prévia">
-          {% for chave, rotulo in destinos %}
-            <option value="{{ chave }}">{{ rotulo }}</option>
-          {% endfor %}
-        </select>
-        <a class="btn secundario" id="baixar-previa"
-           data-base="{{ url_for('analisesps.folha_previa_pagamento', folha_id=folha.id) }}"
-           href="{{ url_for('analisesps.folha_previa_pagamento', folha_id=folha.id) }}"
-           title="Baixa os arquivos conforme a situação atual, sem fechar a apropriação e sem enviar ao Drive"
-           >Baixar prévia</a>
-      </div>
-      {# GERAR SEM SAIR DA FOLHA (02/10/2026): o destino é o mesmo seletor da
-         prévia; o resumo abre aqui e o "ok" fecha e gera. #}
+      {# GERAR ARQUIVOS (02/10/2026): um botão só; a janela traz cada conta com
+         o seu destino (BeeVale ou SomaPay) e os dois caminhos — prévia ou
+         definitivo. Substituiu o seletor e o "Baixar prévia" soltos na lateral. #}
       {% set gd_origem = 'folha' %}
       {% set gd_dados = {'folha_id': folha.id} %}
-      {% set gd_destino = 'previa-destino' %}
+      {% set gd_destino = '' %}
       {% set gd_pagamento = '' %}
       {% include "_gerar_direto.html" %}
     {% endif %}
@@ -1402,18 +1388,6 @@
       location.href = d.ir || "{{ url_for('analisesps.tela_folha_importar') }}";
     } catch (e) { alert("Não foi possível apagar a folha: " + e + "."); b.disabled = false; }
   });
-})();
-
-// A PRÉVIA DO PAGAMENTO: o destino escolhido vai no endereço do download.
-(function () {
-  const destino = document.getElementById("previa-destino");
-  const link = document.getElementById("baixar-previa");
-  if (!destino || !link) return;
-  const ajustar = () => {
-    link.href = link.dataset.base + "?destino=" + encodeURIComponent(destino.value);
-  };
-  destino.addEventListener("change", ajustar);
-  ajustar();
 })();
 
 // A janela "Divisão por obra": abre por cima, para qualquer perfil.

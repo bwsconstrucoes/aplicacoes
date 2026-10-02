@@ -11362,6 +11362,29 @@ pequenininho, os dias que foram trabalhados"*.
   agora aceitam meia diária (2,5). O auxílio guarda só a QUANTIDADE de dias, não
   as datas — no relatório dele a linha das datas fica vazia.
 
+#### Leva 154 — "Gerar arquivos": um botão, e o destino escolhido por conta (02/10/2026)
+
+O dono perguntou *"e se eu quiser gerar uns arquivos Soma e outros BeeVale?"* e
+respondeu ele mesmo, simplificando: *"vamos colocar só gerar arquivos (…) tirar
+esse seletor BeeVale SomaPay (…) tirar esse baixar prévia (…) no modal, um botão
+baixar prévia, um botão baixar definitivo. E o agrupamento é por conta (…) o
+seletor BeeVale ou Soma, aí a conta"* — e *"replicar para todas as outras
+gerações de arquivo"*.
+
+- Nas quatro folhas, a lateral tem só **"Gerar arquivos"**. A janela lista as
+  contas, cada uma com o seu **destino** (BeeVale ou SomaPay), colaboradores,
+  total e avisos; trocar o destino refaz o resumo. Embaixo, **"Baixar prévia"**
+  (o .zip de agora, sem fechar nem subir) e **"Gerar definitivo"** (refaz o
+  fechamento, gera e grava no Drive). A última escolha de cada conta fica
+  lembrada no navegador.
+- Por dentro: `folha_geracao.montar_lotes_por_conta` monta os lotes com o
+  destino de cada conta; `preparar`, `gerar`, `resumo_direto`, `gerar_direto` e a
+  prévia recebem `destinos` (`{conta: destino}`). Uma geração pode ter arquivos
+  BeeVale e SomaPay; a análise é uma só. Os cards do Pipefy não mudam (já eram
+  uma SP por conta).
+- **Ficou como estava:** a alternativa "Gerar por competência", na aba Arquivos
+  gerados, ainda escolhe um destino só para tudo.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11379,7 +11402,9 @@ pequenininho, os dias que foram trabalhados"*.
 | ~~publicar o conserto da presença com complemento~~ — **publicado em 02/10/2026** (suíte inteira 7.835 verdes) | — |
 | ~~publicar a ordem nova da conciliação~~ — publicada em 02/10/2026 | — |
 | ~~publicar a leva 152~~ — publicada em 02/10/2026 (sem migração) | — |
-| publicar a leva 153 (sem migração) | ele |
+| ~~publicar a leva 153~~ — publicada em 02/10/2026 (main em `4f48c5f`, suíte inteira 7.847 verdes) | — |
+| ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
+| publicar a leva 154 (sem migração) | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
