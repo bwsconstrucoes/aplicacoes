@@ -11467,7 +11467,7 @@ Pedido do dono, antes de publicar a 155:
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | decidir o "Gerar por competência" (aba Arquivos gerados): tirar, ou dar a ele a mesma janela | ele |
-| publicar as levas 155 e 156 (sem migração) e, no primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
+| ~~publicar as levas 155 e 156~~ — **publicadas em 02/10/2026** (main em `c2f7676`, suíte inteira 7.852 verdes, sem migração). No primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
 | confirmar o favorecido da SP quando o arquivo é SomaPay (hoje: CNPJ da BWS) | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
