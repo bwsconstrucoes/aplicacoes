@@ -15,11 +15,20 @@
 {% set url_tela = url_for('analisesps.tela_folha_diaristas') %}
 {% set base_qs = '?ano=' ~ ano ~ '&mes=' ~ mes ~ '&periodo=' ~ qual %}
 
+{# --- 1. PAGAMENTO — os mesmos números da folha da contabilidade ---------- #}
 <div class="cartao lateral-folha">
   <b class="lateral-titulo">Pagamento <small>{{ r.competencia }} · {{ r.rotulo_periodo }}</small></b>
-  <div class="lat-num"><span>A pagar</span>
+  <div class="lat-num"><span>Incluído no pagamento</span>
     <b>{{ r.total|moeda }}</b>
-    <small>{{ r.quantos_a_pagar }} colaborador(es) selecionado(s)</small></div>
+    <small>{{ r.quantos_a_pagar }} selecionado(s)</small></div>
+  <div class="lat-num"><span>Fora do pagamento</span>
+    <b>{{ (r.valor_fora or 0)|moeda }}</b>
+    <small>{{ r.quantos_fora or 0 }} excluído(s) manualmente</small></div>
+  {% if r.quantos_incompletos %}
+    <div class="lat-num ruim"><span>Não pode ser pago</span>
+      <b>{{ r.quantos_incompletos }}</b>
+      <small>cadastro incompleto</small></div>
+  {% endif %}
   <p class="cartao-dica lat-estado">
     {% if r.fechamento %}
       <b>Diária fechada</b> em {{ r.fechamento.fechado_em|momento_br }}{% if r.fechamento.fechado_por %}
@@ -33,7 +42,7 @@
   {% if pode_operar %}
     <div class="lat-acoes">
       <button type="button" class="btn" id="fechar-diaria">
-        {% if r.fechamento %}Refazer o fechamento{% else %}Fechar a diária{% endif %}</button>
+        {% if r.fechamento %}Refazer fechamento{% else %}Fechar a diária{% endif %}</button>
       {% if pode_gerar %}
         {% set gd_origem = 'diaria' %}
         {% set gd_dados = {'ano': ano, 'mes': mes, 'periodo': qual} %}
@@ -45,27 +54,29 @@
   {% endif %}
 </div>
 
+{# --- 2. PENDÊNCIAS — cada item filtra a lista --------------------------- #}
 {% set c = lista.contagem %}
-{% if c.get('falta_dado') or lista.escondidos or r.sem_cadastro %}
+{% if c.get('falta_dado') or c.get('saiu') or r.sem_cadastro %}
 <div class="cartao lateral-folha">
   <b class="lateral-titulo">Pendências antes do pagamento</b>
   {% if c.get('falta_dado') %}
     <a class="lat-critica erro" href="{{ url_tela }}{{ base_qs }}&situacao=falta_dado">
-      <b>{{ c.falta_dado }} sem valor da diária ou sem dia válido</b>
-      <small>Sem o valor da diária no cadastro, não há valor a pagar. Corrija no
-        card do Pipefy e clique em "Atualizar cadastro".</small>
+      <b>{{ c.falta_dado }} com cadastro incompleto</b>
+      <small>Têm diária no período, mas o cadastro não informa o valor da diária ou
+        as datas de início e admissão. Corrija no card do Pipefy e clique em
+        "Atualizar cadastro".</small>
     </a>
   {% endif %}
-  {% if lista.escondidos %}
+  {% if c.get('saiu') %}
     <a class="lat-critica atencao" href="{{ url_tela }}{{ base_qs }}&situacao=saiu">
-      <b>{{ lista.escondidos }} {{ 'desligado' if lista.escondidos == 1 else 'desligados' }} — fora da lista</b>
+      <b>{{ c.saiu }} {{ 'desligado' if c.saiu == 1 else 'desligados' }}</b>
       <small>Possuem dias de diária no período, mas constam como desligados no
-        cadastro. Não entram no pagamento. Clique para consultar.</small>
+        cadastro. Não entram no pagamento.</small>
     </a>
   {% endif %}
   {% if r.sem_cadastro %}
     <div class="lat-critica atencao">
-      <b>{{ r.sem_cadastro|length }} colaboradores com batida de ponto que não estão no cadastro</b>
+      <b>{{ r.sem_cadastro|length }} com batida de ponto e sem cadastro</b>
       <small>{% for s in r.sem_cadastro[:6] %}{{ s.nome or s.cpf }} ({{ s.dias }} dia(s)){% if not loop.last %}, {% endif %}{% endfor %}{% if r.sem_cadastro|length > 6 %}…{% endif %}.
         Sem cadastro, não é possível identificar o vínculo de diarista.</small>
     </div>
@@ -73,6 +84,7 @@
 </div>
 {% endif %}
 
+{# --- 3. FILTROS — o padrão das Solicitações e da folha da contabilidade --- #}
 <form method="get" action="{{ url_tela }}" id="form-filtros" class="lateral-filtros">
   <input type="hidden" name="ano" value="{{ ano }}">
   <input type="hidden" name="mes" value="{{ mes }}">
@@ -84,12 +96,14 @@
   <div class="busca">
     <span class="lupa">⌕</span>
     <input type="search" name="q" value="{{ lista.filtros.q }}" autocomplete="off"
-           placeholder="Nome ou CPF…" aria-label="Pesquisar colaborador">
+           placeholder="nome ou CPF…" aria-label="Procurar colaborador">
   </div>
   {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao,
-           'Sem seleção, os desligados ficam fora da lista.') }}
+           'Sem seleção, a lista mostra somente quem tem diária a pagar (incluídos e fora do pagamento).') }}
   {{ bloco('Obra do ponto', 'obra', lista.opcoes_obra, lista.filtros.obra,
-           'Colaboradores com diária nesta obra.') }}
+           'Mostra quem tem diária nestas obras em algum dia.') }}
+  {{ bloco('Obra do cadastro', 'obra_cadastro', lista.opcoes_obra_cadastro,
+           lista.filtros.obra_cadastro) }}
   {{ bloco('Fase Atual', 'fase', lista.opcoes_fase, lista.filtros.fase) }}
   <noscript><button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button></noscript>
 </form>
@@ -179,13 +193,19 @@
 
 <h3 style="margin-top:24px">Detalhamento por colaborador
   <small>{{ pessoas|length }}{% if lista.filtrando %} · filtrado{% endif %}
-    {% if lista.escondidos %} · {{ lista.escondidos }} {{ 'desligado' if lista.escondidos == 1 else 'desligados' }} fora da lista{% endif %}
-    · pendências listadas primeiro</small></h3>
+    · selecione os incluídos neste pagamento</small></h3>
+{% if lista.escondidos_por %}
+<p class="cartao-dica" style="margin:0 0 8px">
+  Fora da lista (sem diária a pagar):
+  {% for chave, rotulo, n in lista.escondidos_por %}<a class="link-btn" href="{{ url_for('analisesps.tela_folha_diaristas') }}?ano={{ ano }}&mes={{ mes }}&periodo={{ qual }}&situacao={{ chave }}">{{ n }} {{ rotulo }}</a>{% if not loop.last %} · {% endif %}{% endfor %}.
+  Para consultar, utilize o filtro Situação.
+</p>
+{% endif %}
 
 {% if pode_operar %}
 <p class="cartao-dica" style="margin:0 0 8px">
-  Os colaboradores que atendem à regra vêm <b>selecionados para pagamento</b>.
-  Desmarque os que não devem ser pagos e clique em <b>Salvar seleção</b> ao final.
+  Os colaboradores com diária a pagar vêm <b>selecionados</b>. Desmarque os que não
+  devem ser pagos e clique em <b>Salvar seleção</b> na barra inferior.
 </p>
 {% endif %}
 
@@ -193,11 +213,12 @@
   <div class="tabela-rolagem livre">
     <table class="sps" id="tabela-diaristas">
       <thead><tr>
-        {% if pode_operar %}<th class="marca"><input type="checkbox" id="marcar-todos"
-            title="Selecionar ou desmarcar todos os visíveis" aria-label="Selecionar todos"></th>{% endif %}
-        <th>Colaborador</th><th>Situação</th><th>CPF</th><th>Fase Atual</th><th>Obra(s)</th>
+        {% if pode_operar %}<th class="marca" title="Incluído no pagamento"><input type="checkbox" id="marcar-todos"
+            aria-label="Selecionar todos os exibidos"></th>{% endif %}
+        <th>Nome</th><th>CPF</th><th>Fase Atual</th><th>Obra — do ponto</th>
+        <th>Obra — cadastro</th>
         <th class="num">Diárias</th><th class="num">Valor da diária</th>
-        <th class="num">Adicionais</th><th class="num">Valor</th>
+        <th class="num">Adicionais</th><th class="num">Valor</th><th>Situação</th>
       </tr></thead>
       <tbody>
       {% for p in pessoas %}
@@ -240,25 +261,28 @@
               {% endif %}
             </details>
           </td>
-          <td>
-            {% if p.impossivel %}<span class="selo risco">dados incompletos</span>
-            {% elif p.desligado %}<span class="selo cancelado">desligado</span>
-            {% elif not p.pagar %}<span class="selo cancelado">não selecionado</span>
-            {% elif p.motivos %}<span class="selo saindo">atenção</span>
-            {% else %}<span class="selo aprovado">a pagar</span>{% endif %}
-          </td>
           <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
           <td>{{ p.fase or '—' }}</td>
           <td>{% for o in p.por_obra %}<b>{{ o.obra }}</b> <span class="cartao-dica">{{ qtd(o.dias) }}</span>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
+          <td>{{ p.obra_cadastro or '—' }}</td>
           <td class="num"><b>{{ qtd(p.quantidade) }}</b></td>
           <td class="num">{% if p.valor_diaria is none %}—{% else %}{{ p.valor_diaria|moeda }}{% endif %}</td>
           <td class="num">{{ p.adicionais|moeda if p.adicionais else '' }}</td>
           <td class="num valor-final"><b>{{ p.valor|moeda }}</b></td>
+          <td>
+            {% if p.desligado %}<span class="selo cancelado">desligado</span>
+            {% elif p.vigia %}<span class="selo cancelado">vigia</span>
+            {% elif p.sem_diaria %}<span class="selo cancelado">sem diária no período</span>
+            {% elif p.impossivel %}<span class="selo risco">cadastro incompleto</span>
+            {% elif not p.pagar %}<span class="selo cancelado">fora do pagamento</span>
+            {% elif p.motivos %}<span class="selo saindo">atenção</span>
+            {% else %}<span class="selo aprovado">a pagar</span>{% endif %}
+          </td>
         </tr>
       {% else %}
-        <tr><td colspan="10" class="cartao-dica">
+        <tr><td colspan="12" class="cartao-dica">
           {% if lista.filtrando %}Nenhum colaborador corresponde ao filtro.{% else %}Nenhum
-          dia de diária neste período.{% endif %}</td></tr>
+          colaborador com diária a pagar neste período.{% endif %}</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -287,13 +311,13 @@
 
 {% if pode_operar %}
 <div class="barra-salvar" id="barra-salvar">
-  <span class="conta-selecao">Selecionados para pagamento:
-    <span id="quantos-marcados">{{ r.quantos_a_pagar }}</span>
-    <span class="total-selecao" id="total-marcado">{{ r.total|moeda }}</span></span>
+  <span class="conta-selecao">Incluído no pagamento:
+    <span class="total-selecao" id="total-marcado">{{ r.total|moeda }}</span>
+    <span class="cartao-dica"><span id="quantos-marcados">{{ r.quantos_a_pagar }}</span> colaborador(es)</span></span>
   <span class="cartao-dica" id="recado-selecao"></span>
   <span class="sobra">
-    <button class="btn secundario" type="button" id="btn-desfazer">Desfazer</button>
-    <button class="btn" type="button" id="btn-salvar-selecao">Salvar seleção</button>
+    <button class="btn secundario" type="button" id="btn-desfazer" hidden>Desfazer</button>
+    <button class="btn" type="button" id="btn-salvar-selecao" disabled>Salvar seleção</button>
   </span>
 </div>
 {% endif %}

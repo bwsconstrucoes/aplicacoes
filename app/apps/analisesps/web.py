@@ -3871,7 +3871,8 @@ def tela_folha_diaristas():
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui calcular os diaristas")
         erro = str(e)
-    lista = folha_lista.filtrar(resultado.get("pessoas") or [], request.args)
+    lista = folha_lista.filtrar(resultado.get("pessoas") or [], request.args,
+                                escondidas=folha_lista.ESCONDIDAS_NOS_DIARISTAS)
 
     return render_template(
         "analisesps_folha_diaristas.html", aba="folha", subaba="diaristas",

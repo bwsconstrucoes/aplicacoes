@@ -6717,7 +6717,7 @@ def test_quem_JA_SAIU_nao_aparece_sem_filtro_mas_fica_contado(app, monkeypatch):
     html = cliente.get("/analisesps/folha/diaristas").get_data(as_text=True)
     assert "GERLANIO" in html
     assert "JASAIU" not in html
-    assert "1 desligado — fora da lista" in html
+    assert "1 desligado</b>" in html and "1 desligado</a>" in html
     com_filtro = cliente.get(
         "/analisesps/folha/diaristas?situacao=saiu").get_data(as_text=True)
     assert "JASAIU" in com_filtro and "GERLANIO" not in com_filtro
@@ -6728,10 +6728,40 @@ def test_sem_o_VALOR_DA_DIARIA_a_pessoa_trava_e_a_lateral_diz(app, monkeypatch):
                     pagar=False, pagar_calculado=False, impossivel=True,
                     motivos=["o cadastro não tem o valor da diária."])
     _preparar_diaristas(monkeypatch, _diaristas_calculado([sem]))
-    html = _como_mestre(app).get(
-        "/analisesps/folha/diaristas").get_data(as_text=True)
-    assert "sem valor da diária" in html
-    assert "dados incompletos" in html
+    cliente = _como_mestre(app)
+    html = cliente.get("/analisesps/folha/diaristas").get_data(as_text=True)
+    # Fora da lista sem filtro (a planilha pula "CORRIGIR VALOR DIÁRIA"), mas a
+    # lateral diz quantos e o filtro mostra quem.
+    assert "1 com cadastro incompleto" in html
+    assert "GERLANIO" not in html
+    filtrado = cliente.get(
+        "/analisesps/folha/diaristas?situacao=falta_dado").get_data(as_text=True)
+    assert "GERLANIO" in filtrado and "cadastro incompleto" in filtrado
+
+
+def test_SEM_DIARIA_e_VIGIA_ficam_fora_da_lista_e_o_filtro_mostra(app, monkeypatch):
+    """O dono, 02/10/2026: *"tem aparecendo gente que não tem nenhum ponto pra
+    pagar diária (…) Se não tem não precisa aparecer"*, e o vigia também não —
+    *"na tela, a princípio aparecer somente quem tem a pagar"*."""
+    D = __import__("decimal").Decimal
+    sem = _diarista(cpf="33333333333", nome="SEMDIARIA", sem_diaria=True,
+                    pagar=False, pagar_calculado=False, valor=D("0.00"),
+                    motivos=["nenhum dia com presença que gere diária no período."])
+    vigia = _diarista(cpf="44444444444", nome="OVIGIA", vigia=True, pagar=False,
+                      pagar_calculado=False)
+    fora = _diarista(cpf="55555555555", nome="DESMARCADO", pagar=False,
+                     pagar_calculado=True)
+    _preparar_diaristas(monkeypatch, _diaristas_calculado(
+        [_diarista(), sem, vigia, fora]))
+    cliente = _como_mestre(app)
+    html = cliente.get("/analisesps/folha/diaristas").get_data(as_text=True)
+    assert "GERLANIO" in html and "DESMARCADO" in html
+    assert "SEMDIARIA" not in html and "OVIGIA" not in html
+    assert "1 sem diária no período" in html and "1 vigia" in html
+    assert "fora do pagamento" in html
+    com_filtro = cliente.get(
+        "/analisesps/folha/diaristas?situacao=sem_diaria").get_data(as_text=True)
+    assert "SEMDIARIA" in com_filtro and "GERLANIO" not in com_filtro
 
 
 def test_sem_o_ponto_a_tela_de_diaristas_diz_o_que_fazer(app, monkeypatch):
@@ -6749,7 +6779,7 @@ def test_quem_bate_ponto_e_NAO_esta_no_cadastro_aparece(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/diaristas").get_data(as_text=True)
     assert "JOAO DO PONTO" in html
-    assert "não estão no cadastro" in html
+    assert "com batida de ponto e sem cadastro" in html
 
 
 def test_os_filtros_dos_diaristas_sao_de_CAIXINHA(app, monkeypatch):
@@ -6758,6 +6788,7 @@ def test_os_filtros_dos_diaristas_sao_de_CAIXINHA(app, monkeypatch):
         "/analisesps/folha/diaristas").get_data(as_text=True)
     assert 'type="checkbox" name="situacao"' in html
     assert 'type="checkbox" name="obra"' in html
+    assert 'type="checkbox" name="obra_cadastro"' in html
 
 
 # ---------------------------------------------------------------------------

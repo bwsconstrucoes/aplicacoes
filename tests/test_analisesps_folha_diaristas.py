@@ -304,3 +304,52 @@ def test_gerar_de_novo_refaz_o_fechamento_com_a_SITUACAO_ATUAL(banco_diaristas, 
     with pytest.raises(fp.ErroDoPagamento):
         fp.gerar_direto("diaria", {"ano": 2026, "mes": 9, "periodo": "quinzena"},
                         "somapay")
+
+
+# ---------------------------------------------------------------------------
+# SEM DIÁRIA × CADASTRO INCOMPLETO (02/10/2026) — eram o mesmo "dados incompletos"
+# ---------------------------------------------------------------------------
+def _ficha(**m):
+    base = {"cpf": "99713349334", "nome": "X", "cargo": "SERVENTE",
+            "tipo": "Prestador de Serviço", "tipo_contrato": "Autônomo (RPA)",
+            "data_inicio": dt.date(2026, 8, 1), "data_admissao": None,
+            "situacao": "ativo"}
+    base.update(m)
+    return base
+
+
+def _dia_lido(data, presenca="PRESENÇA", falta=""):
+    return {"data": data, "presenca": presenca, "falta": falta,
+            "horas": ["07:00", "12:00", "13:00", "17:00"],
+            "marcacoes": ["OBRA1"] * 4 if presenca else ["", "", "", ""]}
+
+
+def _calc(ficha, dias, valor="100"):
+    return fd.calcular_pessoa(ficha, dias, dt.date(2026, 9, 1), dt.date(2026, 9, 15),
+                              D(valor) if valor else None, [], {}, "OBRA1")
+
+
+def test_dia_de_diaria_SEM_PRESENCA_e_sem_diaria_e_nao_cadastro_incompleto():
+    p = _calc(_ficha(), [_dia_lido(TERCA, "", "Falta não justificada")])
+    assert p["sem_diaria"] and not p["impossivel"] and not p["pagar"]
+    from app.apps.analisesps import folha_lista
+    assert folha_lista.situacoes_da_pessoa(p) == {"sem_diaria"}
+
+
+def test_sem_VALOR_com_diaria_e_cadastro_incompleto():
+    p = _calc(_ficha(), [_dia_lido(TERCA)], valor=None)
+    assert p["impossivel"] and not p["sem_diaria"]
+    assert any("valor da diária" in m for m in p["motivos"])
+
+
+def test_sem_DATAS_no_cadastro_aparece_como_cadastro_incompleto():
+    """O RPA é diária em todo dia (coluna AQ); o caso é de quem é CTPS."""
+    p = _calc(_ficha(tipo="CTPS", tipo_contrato="CLT (tempo Indeterminado)",
+                     data_inicio=None), [_dia_lido(TERCA)])
+    assert p["impossivel"] and p["dias_sem_decidir"] == 1
+
+
+def test_prestador_SEM_RPA_diz_por_que_nao_recebe_diaria():
+    p = _calc(_ficha(tipo_contrato="PJ"), [_dia_lido(TERCA)])
+    assert p["sem_diaria"]
+    assert "Autônomo (RPA)" in p["motivos"][-1]

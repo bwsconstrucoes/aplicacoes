@@ -11203,6 +11203,33 @@ dono no mesmo dia: `SE(feriado="SIM"; I*J+20; SE(Sábado; I*J+10; SE(Domingo;
 I*J+20; I*J)))`): o adicional entra inteiro também no dia de meia diária, e o
 feriado vence o sábado e o domingo. Era o que o sistema já fazia.
 
+#### Leva 149 — a lista dos diaristas abre só com quem tem a pagar (02/10/2026)
+
+O dono, depois da publicação das levas 146–148: *"continua aparecendo gente com
+dados incompletos (…) tem aparecendo gente que não tem nenhum ponto pra pagar
+diária (…) Se não tem não precisa aparecer (…) a princípio aparecer somente quem
+tem a pagar"*, e a lateral compatível com a da folha de pagamento.
+
+**A causa do "dados incompletos":** o selo juntava três coisas. Quem tinha dia de
+diária sem nenhuma presença que gerasse diária caía como "impossível" — e era a
+maioria. Agora são três situações separadas:
+- **sem diária no período** — não é defeito; a planilha pula (`AJ > 0`);
+- **cadastro incompleto** — tem diária e falta o valor, ou faltam as datas de
+  início/admissão (antes esse caso SUMIA da lista sem aviso: era um dos "não
+  aparece alguns");
+- e o prestador que não é "Autônomo (RPA)" ganha o motivo escrito: pela regra da
+  planilha, não gera diária.
+
+**A lista abre só com quem tem diária a pagar** (incluídos e desmarcados à mão).
+Ficam fora sem filtro, cada grupo com contagem e link: sem diária, vigia,
+desligado e cadastro incompleto (este e os desligados também em Pendências). É o
+que a QUERY da aba Diaristas faz. **Lateral** no desenho da folha da
+contabilidade: Incluído / Fora do pagamento / Não pode ser pago; Pendências;
+Filtros com Situação, Obra do ponto, Obra do cadastro (novo) e Fase. Tabela com
+"Obra — do ponto" e "Obra — cadastro" lado a lado e a Situação no fim. As
+situações valem também para alimentação e transporte ("sem pagamento" virou
+"fora do pagamento", como na contabilidade).
+
 **Cards:** diaristas e alimentação eram pagos pelo BeeVale (o script marcava a SP
 com "BeeVale" no campo de automação). Com o SomaPay, o dono decidiu que os cards
 seguem o modelo da folha da contabilidade, como já estão; a categoria do segundo
@@ -11221,6 +11248,7 @@ card pode mudar depois da primeira geração.
 | ~~publicar as levas 144 e 145~~ — **publicadas em 01/10/2026**. Apertar "Aplicar atualizações do banco" (044) e depois "Atualizar cadastro" | ele |
 | ~~confirmar coluna do valor da diária e quinzena~~ — **respondido em 02/10**: coluna 49 de "Dados Documentos"; quinzena. Regra da meia diária: **fórmula recebida e aplicada** (leva 148) | — |
 | ~~adicional no dia de meia diária~~ — **inteiro**, confirmado pela fórmula do valor (02/10) | — |
+| publicar a leva 149 (sem migração nova) | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |

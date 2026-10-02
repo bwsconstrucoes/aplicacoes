@@ -25,21 +25,34 @@ from . import colaboradores
 
 SITUACOES = [
     ("vai", "a pagar"),
-    ("nao_vai", "sem pagamento"),
+    ("nao_vai", "fora do pagamento"),
     ("falta_dado", "cadastro incompleto"),
+    ("sem_diaria", "sem diária no período"),
     ("saindo", "em desligamento"),
     ("afastado", "afastado"),
-    ("vigia", "vigia (sem direito a diária)"),
+    ("vigia", "vigia"),
     ("saiu", "desligado"),
 ]
 ESCONDIDAS_SEM_FILTRO = {"saiu"}
 
+# ⚠️ NOS DIARISTAS A LISTA ABRE SÓ COM QUEM TEM VALOR A PAGAR (dono, 02/10/2026):
+# *"na tela, a princípio aparecer somente quem tem a pagar"*. É o que a aba
+# Diaristas da planilha faz — a QUERY pula vigia (`W <> 'VIGIA'`), quem está sem
+# valor (`AP <> 'CORRIGIR VALOR DIÁRIA'`) e quem não tem diária (`AJ > 0`). Nada
+# disso some: cada grupo é uma opção do filtro Situação, com a contagem, e o
+# cadastro incompleto e os desligados ficam ditos em Pendências.
+ESCONDIDAS_NOS_DIARISTAS = {"saiu", "vigia", "sem_diaria", "falta_dado"}
+
 
 def situacoes_da_pessoa(p: dict) -> set:
-    """Em quais situações a pessoa entra. Pode ser mais de uma."""
+    """Em quais situações a pessoa entra. Pode ser mais de uma.
+
+    "Fora do pagamento" é quem tem valor e foi desmarcado; desligado, vigia,
+    cadastro incompleto e sem diária têm situação própria e não contam ali."""
     saida = set()
     situacao = p.get("situacao") or ""
-    if situacao == colaboradores.SITUACAO_SAIU or p.get("desligado"):
+    saiu = situacao == colaboradores.SITUACAO_SAIU or bool(p.get("desligado"))
+    if saiu:
         saida.add("saiu")
     if situacao == colaboradores.SITUACAO_SAINDO:
         saida.add("saindo")
@@ -47,11 +60,13 @@ def situacoes_da_pessoa(p: dict) -> set:
         saida.add("afastado")
     if p.get("vigia"):
         saida.add("vigia")
-    if p.get("impossivel"):
+    if p.get("sem_diaria"):
+        saida.add("sem_diaria")
+    elif p.get("impossivel"):
         saida.add("falta_dado")
     elif p.get("pagar"):
         saida.add("vai")
-    else:
+    elif not (saiu or p.get("vigia")):
         saida.add("nao_vai")
     return saida
 
@@ -61,11 +76,13 @@ def marcados(args, chave: str) -> list:
     return [" ".join(v.split()) for v in args.getlist(chave) if v and v.strip()]
 
 
-def filtrar(pessoas: list, args, campo_da_obra: str = "obras") -> dict:
+def filtrar(pessoas: list, args, campo_da_obra: str = "obras",
+            escondidas=None) -> dict:
     """A lista filtrada e as contagens para a lateral.
 
     `campo_da_obra`: a chave da pessoa com as obras dela — uma lista
-    (diaristas, que podem ter dias em várias) ou um texto (auxílio)."""
+    (diaristas, que podem ter dias em várias) ou um texto (auxílio).
+    `escondidas`: as situações que ficam fora da lista sem filtro marcado."""
     from .folha_rateio import so_digitos
 
     busca = " ".join((args.get("q") or "").split())
@@ -77,7 +94,9 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras") -> dict:
     elif not situacao and antigo == "problema":
         situacao = ["nao_vai", "falta_dado"]
     obra = marcados(args, "obra")
+    obra_cadastro = marcados(args, "obra_cadastro")
     fase = marcados(args, "fase")
+    escondidas = set(ESCONDIDAS_SEM_FILTRO if escondidas is None else escondidas)
 
     contagem: dict = {}
     for p in pessoas:
@@ -98,9 +117,11 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras") -> dict:
         if situacao:
             if not dele & set(situacao):
                 continue
-        elif dele & ESCONDIDAS_SEM_FILTRO:
+        elif dele & escondidas:
             continue
         if obra and not set(obras_de(p)) & set(obra):
+            continue
+        if obra_cadastro and (p.get("obra_cadastro") or "") not in obra_cadastro:
             continue
         if fase and (p.get("fase") or "") not in fase:
             continue
@@ -110,17 +131,26 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras") -> dict:
         lista.append(p)
 
     todas_as_obras = sorted({o for p in pessoas for o in obras_de(p)})
+    escondidos_por: dict = {}
+    if not situacao:
+        for p in pessoas:
+            for s_ in situacoes_da_pessoa(p) & escondidas:
+                escondidos_por[s_] = escondidos_por.get(s_, 0) + 1
     return {
         "pessoas": lista,
-        "filtros": {"q": busca, "situacao": situacao, "obra": obra, "fase": fase},
-        "filtrando": bool(busca or situacao or obra or fase),
+        "filtros": {"q": busca, "situacao": situacao, "obra": obra,
+                    "obra_cadastro": obra_cadastro, "fase": fase},
+        "filtrando": bool(busca or situacao or obra or obra_cadastro or fase),
         "contagem": contagem,
         "escondidos": sum(1 for p in pessoas
-                          if not situacao and situacoes_da_pessoa(p)
-                          & ESCONDIDAS_SEM_FILTRO),
+                          if not situacao and situacoes_da_pessoa(p) & escondidas),
+        "escondidos_por": [(k, r, escondidos_por[k]) for k, r in SITUACOES
+                           if escondidos_por.get(k)],
         "opcoes_situacao": [(k, f"{r} ({contagem.get(k, 0)})")
                             for k, r in SITUACOES if contagem.get(k)],
         "opcoes_obra": [(o, o) for o in todas_as_obras],
+        "opcoes_obra_cadastro": [(o, o) for o in sorted(
+            {p.get("obra_cadastro") for p in pessoas if p.get("obra_cadastro")})],
         "opcoes_fase": [(f, f) for f in sorted({p.get("fase") for p in pessoas
                                                  if p.get("fase")})],
     }
