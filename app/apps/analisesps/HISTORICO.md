@@ -11404,7 +11404,8 @@ gerações de arquivo"*.
 | ~~publicar a leva 152~~ — publicada em 02/10/2026 (sem migração) | — |
 | ~~publicar a leva 153~~ — publicada em 02/10/2026 (main em `4f48c5f`, suíte inteira 7.847 verdes) | — |
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
-| publicar a leva 154 (sem migração) | ele |
+| ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
+| decidir o "Gerar por competência" (aba Arquivos gerados): tirar, ou dar a ele a mesma janela | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
