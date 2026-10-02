@@ -594,14 +594,16 @@
     <div class="paginacao">
       {% set base = args.to_dict(flat=false) %}
       {% set _ = base.pop('pagina', None) %}
-      {% if pagina > 1 %}
-        <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina-1, **base) }}">‹ anterior</a>
-      {% endif %}
-      <span class="cartao-dica">página {{ pagina }}</span>
+      {# A ordem é a do extrato: o mais antigo no alto, o mais recente no fim.
+         Por isso "mais antigos" fica à esquerda e "mais recentes" à direita. #}
       {% if tem_proxima %}
         <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina+1, **base) }}">próxima ›</a>
+           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina+1, **base) }}">‹ {{ por_pagina }} mais antigos</a>
+      {% endif %}
+      <span class="cartao-dica">página {{ pagina }}{% if pagina == 1 %} · os {{ por_pagina }} mais recentes{% endif %}</span>
+      {% if pagina > 1 %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_conciliacao', pagina=pagina-1, **base) }}">mais recentes ›</a>
       {% endif %}
     </div>
   {% endif %}

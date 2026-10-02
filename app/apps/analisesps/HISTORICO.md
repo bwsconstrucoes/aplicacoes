@@ -11296,6 +11296,11 @@ lado do Análise de SPs, que é quem chama o robô.
 "PRESENÇA". Agora vale o que vem antes do "[" (`situacao_do_ponto`), na presença
 e na falta.
 
+**Conciliação, ordem da lista (02/10):** a tela mostra os **últimos 200**
+lançamentos (eram 300) com o **mais recente no fim**, como o extrato do banco e o
+OMIE — pedido do dono para a conferência visual. A paginação virou "‹ 200 mais
+antigos" / "mais recentes ›".
+
 **Cards:** diaristas e alimentação eram pagos pelo BeeVale (o script marcava a SP
 com "BeeVale" no campo de automação). Com o SomaPay, o dono decidiu que os cards
 seguem o modelo da folha da contabilidade, como já estão; a categoria do segundo
@@ -11316,6 +11321,7 @@ card pode mudar depois da primeira geração.
 | ~~adicional no dia de meia diária~~ — **inteiro**, confirmado pela fórmula do valor (02/10) | — |
 | ~~publicar as levas 149 a 151~~ — **publicadas em 02/10/2026** (main em `43c29d5`, suíte inteira com 7.834 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (045) | ele |
 | ~~publicar o conserto da presença com complemento~~ — **publicado em 02/10/2026** (suíte inteira 7.835 verdes) | — |
+| publicar a ordem nova da conciliação (sem migração) | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

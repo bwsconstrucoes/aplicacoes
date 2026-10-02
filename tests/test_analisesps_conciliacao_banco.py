@@ -512,8 +512,25 @@ def test_a_coluna_saldo_da_lista_concorda_com_o_numero_do_topo(banco_conc):
         ("20260901", "-1000.00", "A1"), ("20260902", "500.00", "A2")])),
         "x.ofx", "T")
 
-    linhas = conciliacao.listar({"conta_id": conta_id})   # mais nova primeiro
-    assert linhas[0]["saldo"] == conciliacao.saldo_da_conta(conta_id)
+    # Desde 02/10/2026 a mais nova vem por ÚLTIMO, como no extrato do banco.
+    linhas = conciliacao.listar({"conta_id": conta_id})
+    assert linhas[-1]["saldo"] == conciliacao.saldo_da_conta(conta_id)
+    assert [l["data"] for l in linhas] == sorted(l["data"] for l in linhas)
+
+
+def test_a_pagina_1_sao_os_ULTIMOS_200_com_o_mais_recente_no_fim(banco_conc,
+                                                                  monkeypatch):
+    """O dono, 02/10/2026: *"exibir os últimos 200 lançamentos (…) o mais
+    recente ao final da tela pra casar com a visualização do extrato"*."""
+    from app.apps.analisesps import conciliacao, conciliacao_ofx
+    monkeypatch.setattr(conciliacao, "POR_PAGINA", 2)
+    conta_id = conta_de_teste()
+    conciliacao.importar(conta_id, conciliacao_ofx.ler(ofx([
+        ("20260901", "-1.00", "A1"), ("20260902", "-2.00", "A2"),
+        ("20260903", "-3.00", "A3")])), "x.ofx", "T")
+    pagina1 = conciliacao.listar({"conta_id": conta_id}, 1)
+    assert [l["data"].day for l in pagina1] == [2, 3], "os últimos, em ordem crescente"
+    assert [l["data"].day for l in conciliacao.listar({"conta_id": conta_id}, 2)] == [1]
 
 
 def test_sem_saldo_inicial_nada_muda(banco_conc):
