@@ -492,7 +492,17 @@
      pagamento. Por obra, por conta e etc."*). O endereço leva os filtros. #}
   {% set args_da_tela = request.args.to_dict(flat=false) %}
   <div class="cab-acoes">
-    <span class="cartao-dica">Relatório desta lista, com agrupamentos:</span>
+    <span class="cartao-dica">Relatório de quem está incluído no pagamento:</span>
+    {# O RECORTE POR CONTA (02/10/2026): *"e se eu quiser só o PDF de uma
+       determinada conta (…) divididos, ou juntos"*. A escolha vai no endereço
+       dos dois botões. #}
+    <select id="relatorio-conta" aria-label="Contas do relatório">
+      <option value="">todas as contas, um arquivo</option>
+      <option value="__cada">um arquivo por conta (.zip)</option>
+      {% for c in montado.contas_de_pagamento %}{% if c %}
+        <option value="{{ c }}">só a conta {{ c }}</option>
+      {% endif %}{% endfor %}
+    </select>
     <a class="btn secundario" id="relatorio-xlsx"
        href="{{ url_for('analisesps.folha_relatorio', folha_id=folha.id, formato='xlsx', **args_da_tela) }}"
        >Excel</a>
@@ -500,6 +510,18 @@
        href="{{ url_for('analisesps.folha_relatorio', folha_id=folha.id, formato='pdf', **args_da_tela) }}"
        >PDF</a>
   </div>
+  <script>
+  (function () {
+    const escolha = document.getElementById("relatorio-conta");
+    const links = ["relatorio-xlsx", "relatorio-pdf"].map(i => document.getElementById(i));
+    links.forEach(l => { l.dataset.base = l.getAttribute("href"); });
+    escolha.addEventListener("change", () => links.forEach(l => {
+      l.href = l.dataset.base + (escolha.value
+        ? (l.dataset.base.includes("?") ? "&" : "?") + "relatorio_conta="
+          + encodeURIComponent(escolha.value) : "");
+    }));
+  })();
+  </script>
 </div>
 {# As obras que a folha já conhece, para o campo de obra sugerir em vez de exigir
    memória. Não é trava: obra nova pode ser digitada, e obra sem conta cadastrada

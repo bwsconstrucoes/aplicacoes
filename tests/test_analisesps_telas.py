@@ -6705,22 +6705,18 @@ def test_a_tela_de_diaristas_mostra_QUANTO_e_explica_a_regra(app, monkeypatch):
     assert 'id="fechar-diaria"' in html
 
 
-def test_quem_JA_SAIU_nao_aparece_sem_filtro_mas_fica_contado(app, monkeypatch):
-    """*"Está aparecendo colaboradores desligados (…) já saiu. Ou seja, é uma fase
-    que não se utiliza."* (01/10/2026) — e esconder sem dizer faria quem
-    trabalhou e saiu no meio do mês não receber sem ninguém ver."""
+def test_DESLIGADO_com_diaria_aparece_A_PAGAR_com_o_alerta(app, monkeypatch):
+    """O dono, 02/10/2026: o desligado que continuou trabalhando tem direito à
+    diária — entra no pagamento, com o alerta (o contrário da contabilidade)."""
     saiu = _diarista(cpf="22222222222", nome="JASAIU", situacao="saiu",
-                     desligado=True, pagar=False, pagar_calculado=False,
-                     motivos=["saiu em 20/09/2026."])
+                     desligado=True, pagar=True, pagar_calculado=True,
+                     motivos=["colaborador desligado no cadastro — diária devida "
+                              "pelos dias trabalhados; confira."])
     _preparar_diaristas(monkeypatch, _diaristas_calculado([_diarista(), saiu]))
-    cliente = _como_mestre(app)
-    html = cliente.get("/analisesps/folha/diaristas").get_data(as_text=True)
-    assert "GERLANIO" in html
-    assert "JASAIU" not in html
-    assert "1 desligado</b>" in html and "1 desligado</a>" in html
-    com_filtro = cliente.get(
-        "/analisesps/folha/diaristas?situacao=saiu").get_data(as_text=True)
-    assert "JASAIU" in com_filtro and "GERLANIO" not in com_filtro
+    html = _como_mestre(app).get("/analisesps/folha/diaristas").get_data(as_text=True)
+    assert "GERLANIO" in html and "JASAIU" in html
+    assert "desligado · a pagar" in html
+    assert "1 desligado com diária" in html
 
 
 def test_sem_o_VALOR_DA_DIARIA_a_pessoa_trava_e_a_lateral_diz(app, monkeypatch):

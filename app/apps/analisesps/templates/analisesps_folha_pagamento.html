@@ -60,6 +60,11 @@
           <td>{{ r.destino or '—' }}</td>
           <td>
             {% for a in r.pagamentos %}
+              {# LANÇAR CONTA POR CONTA (02/10/2026): cada arquivo ainda sem SP
+                 tem a sua caixa; a da geração marca todas de uma vez. #}
+              {% if pode_operar and r.analise and not a.card_pipefy %}<input type="checkbox"
+                  class="marca-arquivo" data-analise="{{ r.analise.id }}" data-conta="{{ a.conta }}"
+                  aria-label="Selecionar a conta {{ a.conta }} para lançar no Pipefy">{% endif %}
               {% if a.link %}<a href="{{ a.link }}" target="_blank" rel="noopener" title="{{ a.nome }}"
                 >conta {{ a.conta or '—' }}</a>{% else %}conta {{ a.conta or '—' }}{% endif %}
               <span class="cartao-dica">{{ a.pessoas }} · {{ a.total|moeda }}</span><br>
@@ -73,13 +78,15 @@
           <td class="num">{{ r.pessoas }}</td>
           <td class="num">{{ r.total|moeda }}</td>
           <td>
-            {% if r.lancado %}
+            {% if r.analise and r.analise.card_pipefy %}
               {% if r.analise.link_card %}<a href="{{ r.analise.link_card }}" target="_blank"
                  rel="noopener">Despesa {{ r.analise.card_pipefy }}</a>{% else %}Despesa {{ r.analise.card_pipefy }}{% endif %}
-              {% for a in r.pagamentos if a.card_pipefy %}<br>
-                {% if a.link_card %}<a href="{{ a.link_card }}" target="_blank" rel="noopener"
-                  >SP {{ a.card_pipefy }}</a>{% else %}SP {{ a.card_pipefy }}{% endif %}
-                <span class="cartao-dica">conta {{ a.conta }}</span>
+              {% for a in r.pagamentos %}<br>
+                {% if a.card_pipefy %}
+                  {% if a.link_card %}<a href="{{ a.link_card }}" target="_blank" rel="noopener"
+                    >SP {{ a.card_pipefy }}</a>{% else %}SP {{ a.card_pipefy }}{% endif %}
+                  <span class="cartao-dica">conta {{ a.conta }}</span>
+                {% else %}<span class="cartao-dica">conta {{ a.conta }}: não lançada</span>{% endif %}
               {% endfor %}
             {% elif r.lancavel %}<span class="cartao-dica">não lançado</span>
             {% else %}<span class="cartao-dica">—</span>{% endif %}
@@ -319,23 +326,40 @@ function desenhaPrevia(d) {
 
 // --- a seleção das gerações -------------------------------------------------
 const marcas = [...document.querySelectorAll(".marca-rodada")];
+const marcasArquivo = [...document.querySelectorAll(".marca-arquivo")];
 const botaoPipefy = document.getElementById("rodadas-pipefy");
 const botaoExcluir = document.getElementById("rodadas-excluir");
 function selecionadas() { return marcas.filter(m => m.checked).map(m => m.closest("tr")); }
+// O que vai para o Pipefy: as contas marcadas, agrupadas por geração.
+function lotesParaLancar() {
+  const porAnalise = new Map();
+  marcasArquivo.filter(m => m.checked).forEach(m => {
+    if (!porAnalise.has(m.dataset.analise)) porAnalise.set(m.dataset.analise, []);
+    porAnalise.get(m.dataset.analise).push(m.dataset.conta);
+  });
+  return [...porAnalise.entries()].map(([analise, contas]) => ({analise, contas}));
+}
 function atualizarSelecao() {
   const linhas = selecionadas();
-  const lancaveis = linhas.filter(l => l.dataset.analise);
+  const lotes = lotesParaLancar();
+  const nContas = lotes.reduce((n, l) => n + l.contas.length, 0);
   const contagem = document.getElementById("rodadas-contagem");
-  if (contagem) contagem.textContent = linhas.length
-    ? linhas.length + " selecionada(s) · " + lancaveis.length + " a lançar no Pipefy"
+  if (contagem) contagem.textContent = (linhas.length || nContas)
+    ? linhas.length + " geração(ões) selecionada(s) · " + nContas + " conta(s) a lançar no Pipefy"
     : "nenhuma selecionada";
-  if (botaoPipefy) botaoPipefy.disabled = !lancaveis.length;
+  if (botaoPipefy) botaoPipefy.disabled = !nContas;
   if (botaoExcluir) botaoExcluir.disabled = !linhas.length;
 }
-marcas.forEach(m => m.addEventListener("change", atualizarSelecao));
+// Marcar a geração marca as contas dela ainda não lançadas; desmarcar desmarca.
+marcas.forEach(m => m.addEventListener("change", () => {
+  m.closest("tr").querySelectorAll(".marca-arquivo").forEach(c => { c.checked = m.checked; });
+  atualizarSelecao();
+}));
+marcasArquivo.forEach(m => m.addEventListener("change", atualizarSelecao));
 const todas = document.getElementById("rodadas-todas");
 if (todas) todas.addEventListener("change", () => {
   marcas.forEach(m => { m.checked = todas.checked; });
+  marcasArquivo.forEach(m => { m.checked = todas.checked; });
   atualizarSelecao();
 });
 atualizarSelecao();
@@ -367,22 +391,25 @@ if (botaoExcluir) botaoExcluir.addEventListener("click", async () => {
 // --- lançar no Pipefy (uma ou várias gerações) ----------------------------------
 let aLancar = [];
 if (botaoPipefy) botaoPipefy.addEventListener("click", async () => {
-  aLancar = selecionadas().filter(l => l.dataset.analise).map(l => l.dataset.analise);
+  aLancar = lotesParaLancar();
   corpoCards.innerHTML = '<p class="cartao-dica">Gerando a prévia: consultando ' +
     "os pipes e os centros de custo no Pipefy…</p>";
   criarCards.hidden = true;
   dialogoCards.showModal();
   let html = "", bloqueado = false;
-  for (const analise of aLancar) {
+  for (const lote of aLancar) {
     try {
       const r = await fetch("{{ url_for('analisesps.folha_card_preparar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({analise: analise})});
+        body: JSON.stringify(lote)});
       const d = await r.json();
       if (!d.ok) { html += '<div class="aviso erro">' + escapa(d.erro) + "</div>"; bloqueado = true; continue; }
       if (d.bloqueios.length || d.ja_lancado) bloqueado = true;
-      html += (aLancar.length > 1 ? "<h4 style=\"margin:14px 0 4px\">Geração " +
-               escapa(d.competencia) + "</h4>" : "") + desenhaPrevia(d);
+      html += "<h4 style=\"margin:14px 0 4px\">Geração " + escapa(d.competencia) +
+              ' <small>conta(s) ' + escapa(d.escolhidas.join(", ")) +
+              (d.escolhidas.length < d.contas.length
+                ? " de " + d.contas.length + " — uma Despesa só para estas" : "") +
+              "</small></h4>" + desenhaPrevia(d);
     } catch (e) {
       html += '<div class="aviso erro">Não foi possível gerar a prévia: ' + escapa(e) + "</div>";
       bloqueado = true;
@@ -399,11 +426,11 @@ criarCards.addEventListener("click", async () => {
   criarCards.disabled = true;
   criarCards.textContent = "Criando…";
   let resultado = "", falhou = false;
-  for (const analise of aLancar) {
+  for (const lote of aLancar) {
     try {
       const r = await fetch("{{ url_for('analisesps.folha_card_lancar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({analise: analise})});
+        body: JSON.stringify(lote)});
       const d = await r.json();
       if (!d.ok) { resultado += '<div class="aviso erro">' + escapa(d.erro) + "</div>"; falhou = true; continue; }
       resultado += '<div class="aviso">Cards criados (' + escapa(d.competencia) + "): " +

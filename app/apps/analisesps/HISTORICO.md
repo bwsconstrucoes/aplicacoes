@@ -11308,6 +11308,36 @@ com "BeeVale" no campo de automação). Com o SomaPay, o dono decidiu que os car
 seguem o modelo da folha da contabilidade, como já estão; a categoria do segundo
 card pode mudar depois da primeira geração.
 
+#### Leva 152 — diaristas desligados recebem; prévia e divisão; relatório e Pipefy por conta (02/10/2026)
+
+**Diaristas desligados.** O dono: *"são pessoas que saíram da empresa (…) e eles
+continuaram trabalhando. Então, eles têm direito à diária. (…) Coloque eles no
+rol de pessoas que serão pagas. Todavia, deixar o alerta."* Era o contrário: o
+desligado ficava fora. Agora entra no pagamento com o selo "desligado · a pagar"
+e o motivo escrito; a lateral conta quantos são. (Na folha da contabilidade e no
+auxílio, desligado continua fora — a regra é só da diária.)
+
+**Prévia e divisão nas diárias e nos auxílios** — como na folha da contabilidade:
+"Baixar prévia" (o .zip, montado da situação de agora, sem fechar nem subir) ao
+lado de "Gerar arquivos definitivos", e "Divisão por obra e conta" (total por
+obra, por conta, obras sem conta).
+
+**Relatório da folha da contabilidade.** *"se não entra, não entra, não precisa
+sair desse relatório"* e *"só o PDF de uma determinada conta (…) divididos, ou
+juntos"*. O relatório leva só quem recebe (saíram a coluna "Recebe" e o
+agrupamento por situação) e ganhou a escolha: todas as contas num arquivo, só uma
+conta, ou um arquivo por conta (.zip). No recorte por conta, quem trabalhou em
+obras de duas contas aparece nas duas, cada uma com a sua parte; as contas somam
+o total.
+
+**Pipefy por conta.** *"se eu quiser gerar separado, gerar um, não gerar o
+outro"*. Em Arquivos gerados, cada arquivo de conta ainda sem SP tem a sua caixa
+(a da geração marca todas). Cada envio cria, por verba, uma Despesa com as obras
+das contas escolhidas e uma SP por conta. Lançar todas de uma vez é o mesmo de
+antes; lançar parte cria uma Despesa daquele lote, e o resto sai depois, noutra.
+Conta já lançada não entra de novo. A geração só aparece como lançada quando
+todas as contas têm SP.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11324,6 +11354,7 @@ card pode mudar depois da primeira geração.
 | ~~publicar as levas 149 a 151~~ — **publicadas em 02/10/2026** (main em `43c29d5`, suíte inteira com 7.834 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (045) | ele |
 | ~~publicar o conserto da presença com complemento~~ — **publicado em 02/10/2026** (suíte inteira 7.835 verdes) | — |
 | ~~publicar a ordem nova da conciliação~~ — publicada em 02/10/2026 | — |
+| ~~publicar a leva 152~~ — publicada em 02/10/2026 (sem migração) | — |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

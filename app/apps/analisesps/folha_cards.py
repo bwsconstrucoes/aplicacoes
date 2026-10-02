@@ -281,19 +281,55 @@ def conferir_pipe() -> dict:
 # ---------------------------------------------------------------------------
 # A PRÉVIA — exatamente o que vai ser criado. NÃO CRIA NADA.
 # ---------------------------------------------------------------------------
-def previa(analise_id: int) -> dict:
+def previa(analise_id: int, contas=None) -> dict:
     """Os cards que vão ser criados, com cada valor, e o que impede de criar.
 
-    `bloqueios` vazio é a única situação em que `lancar` cria alguma coisa."""
-    return _previa(analise_id)[0]
+    `bloqueios` vazio é a única situação em que `lancar` cria alguma coisa.
+    `contas`: só os arquivos dessas contas (None = todos) — ver `_chave_do_lote`."""
+    return _previa(analise_id, contas=contas)[0]
 
 
-def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
+# ---------------------------------------------------------------------------
+# LANÇAR CONTA POR CONTA — 02/10/2026
+#
+# O dono: *"Lançar no Pipefy, eu seleciono e gero. Só que só dá para eu gerar
+# tudo junto, mas se eu quiser gerar separado, gerar um, não gerar o outro (…)
+# eu preciso ter essa liberdade."*
+#
+# Cada lançamento cria, por verba, UM card de Despesa com as obras das contas
+# escolhidas e uma SP por conta escolhida — o mesmo desenho do Make, recortado.
+# Lançar todas de uma vez continua sendo exatamente o de antes (a chave do
+# andamento é a verba). Lançar só parte cria uma Despesa daquele lote, guardada
+# sob "verba@contas"; o que falta sai depois, noutra Despesa. Uma conta já
+# lançada não entra de novo em lote nenhum.
+# ---------------------------------------------------------------------------
+def _chave_do_lote(verba: str, contas, todas) -> str:
+    if not contas or set(contas) >= set(todas):
+        return verba
+    return f"{verba}@{'+'.join(sorted(contas))}"
+
+
+def contas_lancadas(andamento: dict, verba: str) -> dict:
+    """`{conta: sp}` de tudo o que já foi lançado desta verba, em qualquer lote."""
+    saida = {}
+    for chave, estado in (andamento or {}).items():
+        if chave == verba or chave.startswith(verba + "@"):
+            for conta, sp in ((estado or {}).get("sps") or {}).items():
+                if (sp or {}).get("id"):
+                    saida[conta] = sp
+    return saida
+
+
+def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
     """(prévia, pipe de Despesa, pipe de SP) — os pipes lidos uma vez só."""
     from . import folha_pagamento as fpg
 
     r = rodada(analise_id)
     analise, arquivos = r["analise"], r["arquivos"]
+    todas_as_contas = sorted({" ".join(str(a["conta"] or "").split()) for a in arquivos})
+    escolhidas = ([" ".join(str(c or "").split()) for c in contas]
+                  if contas else list(todas_as_contas))
+    andamento_atual = _andamento(analise["id"])
     ano, mes, tipo = analise["ano"], analise["mes"], analise["tipo"]
     bloqueios: list = []
 
@@ -323,9 +359,21 @@ def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
             continue
         try:
             linhas = [l for l in fpg.linhas_para_pagar(ano, mes, tipo, [verba])
-                      if l["valor"] > 0]
+                      if l["valor"] > 0
+                      and " ".join(str(l.get("conta") or "").split()) in escolhidas]
         except fpg.ErroDoPagamento as e:
             bloqueios.append(str(e))
+            continue
+        chave = _chave_do_lote(verba, escolhidas, todas_as_contas)
+        ja = contas_lancadas(andamento_atual, verba)
+        repetidas = [c for c in escolhidas
+                     if c in ja and ((andamento_atual.get(chave) or {}).get("sps") or {}).get(c) is None]
+        if repetidas:
+            bloqueios.append(
+                f"{geracao.rotulo_da_verba(verba)}: a(s) conta(s) "
+                + ", ".join(repetidas) + " já foi(ram) lançada(s) no Pipefy. "
+                "Desmarque-a(s) para lançar as demais.")
+        if not linhas:
             continue
 
         por_obra: dict = {}
@@ -377,7 +425,8 @@ def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
                 f"e o card de Despesa comporta apenas {MAXIMO_DE_SPS} SPs.")
 
         grupos.append({
-            "verba": verba, "rotulo_verba": geracao.rotulo_da_verba(verba),
+            "verba": verba, "chave": chave,
+            "rotulo_verba": geracao.rotulo_da_verba(verba),
             "grupo": nome_grupo, "tipo_dc": tipo_dc, "tipo_sp": tipo_sp,
             "total": total, "pessoas": len(pessoas), "centros": centros,
             "sps": sps, "links_pagamento": links,
@@ -389,6 +438,8 @@ def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
     # fechamento depois de gerar, o card contaria uma história e o arquivo outra.
     gerado_por_conta: dict = {}
     for a in arquivos:
+        if " ".join(str(a["conta"] or "").split()) not in escolhidas:
+            continue
         gerado_por_conta[a["conta"]] = gerado_por_conta.get(
             a["conta"], Decimal("0.00")) + Decimal(str(a["total"]))
     if grupos and gerado_por_conta != esperado_por_conta:
@@ -396,8 +447,13 @@ def _previa(analise_id: int, ler_pipes: bool = True) -> tuple:
             "o fechamento foi alterado após a geração destes arquivos (divergência "
             "nos valores por conta). Gere os arquivos novamente antes de lançar.")
 
-    andamento = _andamento(analise["id"])
+    andamento = andamento_atual
+    if not grupos and not bloqueios:
+        bloqueios.append("nenhum valor a lançar nas contas selecionadas.")
+    lancadas = sorted({c for v in r["verbas"] for c in contas_lancadas(andamento, v)})
     return {"analise": analise["id"], "competencia": analise["competencia"],
+            "contas": todas_as_contas, "escolhidas": escolhidas,
+            "contas_lancadas": lancadas,
             "tipo": tipo, "link_analise": analise["link"],
             "como_centro": como_centro, "grupos": grupos,
             "bloqueios": list(dict.fromkeys(bloqueios)),
@@ -434,7 +490,8 @@ def _guardar_andamento(analise_id: int, andamento: dict) -> None:
 
 def _completo(andamento: dict, grupos: list) -> bool:
     return bool(grupos) and all(
-        (andamento.get(g["verba"]) or {}).get("ligado") for g in grupos)
+        (andamento.get(g.get("chave") or g["verba"]) or {}).get("ligado")
+        for g in grupos)
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +558,7 @@ def _separar(valores: list, inicio: dict) -> tuple:
 # ---------------------------------------------------------------------------
 # LANÇAR — sem volta
 # ---------------------------------------------------------------------------
-def lancar(analise_id: int, quem: str = "") -> dict:
+def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
     """Cria o card de Despesa e as SPs de cada conta, como o Make.
 
     ⚠️ CHAMADA SEM VOLTA: card criado no Pipefy não se apaga por aqui. Por isso só
@@ -509,7 +566,7 @@ def lancar(analise_id: int, quem: str = "") -> dict:
     apertar de novo continua de onde parou."""
     from . import folha_pagamento as fpg
 
-    vista, despesa, sp_pipe = _previa(analise_id)
+    vista, despesa, sp_pipe = _previa(analise_id, contas=contas)
     if vista["bloqueios"]:
         raise ErroDosCards("nenhum card foi criado: " + " ".join(vista["bloqueios"]))
     if vista["ja_lancado"]:
@@ -523,7 +580,7 @@ def lancar(analise_id: int, quem: str = "") -> dict:
     criados = []
     try:
         for grupo in vista["grupos"]:
-            estado = andamento.setdefault(grupo["verba"], {"sps": {}})
+            estado = andamento.setdefault(grupo["chave"], {"sps": {}})
             if not estado.get("despesa"):
                 na_criacao, depois = _separar(campos_da_despesa(grupo, agora),
                                               despesa["inicio"])
@@ -578,15 +635,18 @@ def lancar(analise_id: int, quem: str = "") -> dict:
     # Amarra no log: cada arquivo de conta à(s) SP(s) dela; a análise à(s)
     # Despesa(s).
     for arquivo in r["arquivos"]:
-        sps = [((andamento.get(v) or {}).get("sps") or {}).get(arquivo["conta"])
+        sps = [contas_lancadas(andamento, v).get(arquivo["conta"])
                for v in (arquivo["verbas"] or "").split("+")]
         sps = [s for s in sps if s]
         if sps:
             fpg.registrar_card(arquivo["id"], ",".join(s["id"] for s in sps),
                                sps[0]["link"])
-    despesas = [andamento[g["verba"]] for g in vista["grupos"]]
-    fpg.registrar_card(analise_id, ",".join(d["despesa"] for d in despesas),
-                       despesas[0]["link"])
+    despesas = [andamento[g["chave"]] for g in vista["grupos"]]
+    # A análise guarda TODAS as Despesas da geração (de todos os lotes).
+    todas_despesas = [e for e in andamento.values()
+                      if isinstance(e, dict) and e.get("despesa")]
+    fpg.registrar_card(analise_id, ",".join(d["despesa"] for d in todas_despesas),
+                       todas_despesas[0]["link"])
     logger.info("Folha: %s lançado no Pipefy por %s — %s.",
                 vista["competencia"], quem or "(sem nome)",
                 ", ".join(criados) or "nada novo")

@@ -2602,7 +2602,16 @@ def folha_relatorio(folha_id: int, formato: str):
         if not montado:
             return render_template("analisesps_erro.html", titulo="Não encontrado",
                                    mensagem="Folha não encontrada."), 404
-        dados = fr.montar(montado, fg._contas_das_obras())
+        # ⚠️ O RECORTE POR CONTA (02/10/2026): "" = todas as contas num
+        # arquivo; "__cada" = um arquivo por conta, num .zip; outro valor = só
+        # aquela conta. Ver `folha_relatorio.recortar_por_conta`.
+        recorte = (request.args.get("relatorio_conta") or "").strip()
+        contas = fg._contas_das_obras()
+        if recorte == "__cada":
+            conteudo, nome = fr.zip_por_conta(montado, contas, formato)
+            return Response(conteudo, mimetype="application/zip", headers={
+                "Content-Disposition": f'attachment; filename="{nome}"'})
+        dados = fr.montar(montado, contas, recorte)
         if formato == "xlsx":
             conteudo, tipo = fr.excel(dados), fr.MIME_XLSX
         else:
@@ -2677,6 +2686,45 @@ def folha_previa_pagamento(folha_id: int):
     return Response(
         conteudo, mimetype="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+@bp.route("/folha/previa-direta")
+@exige_operador
+def folha_previa_direta():
+    """A PRÉVIA das diárias e dos auxílios, sem fechar nada — o mesmo .zip da
+    prévia da folha da contabilidade (dono, 02/10/2026: *"eu queria o botão
+    também de gerar a prévia"*). Não sobe para o Drive, não entra no registro."""
+    from . import folha_geracao as fger, folha_pagamento as fpg
+
+    origem = str(request.args.get("origem") or "").strip()
+    destino = str(request.args.get("destino") or fger.BEEVALE).strip().lower()
+    dados = {k: request.args.get(k) for k in ("ano", "mes", "periodo", "pagamento")}
+    try:
+        conteudo, nome = fpg.previa_direta_zip(origem, dados, destino)
+    except (fpg.ErroDoPagamento, fger.ErroDaGeracao) as e:
+        return render_template(
+            "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
+            mensagem=f"Não foi possível gerar a prévia: {e}"), 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: falhou a prévia direta do pagamento")
+        return render_template(
+            "analisesps_erro.html", aba="folha", titulo="Prévia do pagamento",
+            mensagem=f"Não foi possível gerar a prévia: {e}"), 500
+    return Response(
+        conteudo, mimetype="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+def _divisao_da_tela(calculado: dict, verba: str, apropriar) -> dict:
+    """A divisão por obra e conta do que a tela mostra agora. Nunca derruba."""
+    from . import folha_pagamento as fpg
+    try:
+        if not calculado or not calculado.get("pessoas"):
+            return {}
+        return fpg.divisao(fpg._linhas_do_apropriado(apropriar(calculado), verba))
+    except Exception:  # noqa: BLE001 — a janela é apoio, não a tela
+        logger.exception("Folha: não consegui montar a divisão por obra (%s)", verba)
+        return {}
 
 
 @bp.route("/api/folha/apropriacao/ajuste", methods=["POST"])
@@ -3624,6 +3672,7 @@ def tela_folha_auxilio():
         grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
         tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=lista["pessoas"],
         lista=lista, filtrando=lista["filtrando"],
+        divisao=_divisao_da_tela(resultado, tipo, fx.apropriado) if resultado else {},
         tipos=[(t, fx.ROTULO_DO_TIPO[t]) for t in fx.TIPOS],
         pagamentos=list(fx.TIPOS_DO_FECHAMENTO.items()),
         ano_padrao=hoje.year,
@@ -3915,11 +3964,13 @@ def tela_folha_diaristas():
         erro = str(e)
     lista = folha_lista.filtrar(resultado.get("pessoas") or [], request.args,
                                 escondidas=folha_lista.ESCONDIDAS_NOS_DIARISTAS)
+    divisao = (_divisao_da_tela(resultado, "diaria", fd.apropriado)
+               if resultado.get("tem_ponto") else {})
 
     return render_template(
         "analisesps_folha_diaristas.html", aba="folha", subaba="diaristas",
         grupos=subtelas_agrupadas(), r=resultado, erro=erro, lista=lista,
-        pessoas=lista["pessoas"], ano=ano, mes=mes, qual=qual,
+        pessoas=lista["pessoas"], ano=ano, mes=mes, qual=qual, divisao=divisao,
         periodos=list(fd.PERIODOS.items()), ano_padrao=hoje.year,
         pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -4189,7 +4240,8 @@ def folha_card_preparar():
 
     dados = request.get_json(silent=True) or {}
     try:
-        vista = fcd.previa(int(dados.get("analise") or 0))
+        vista = fcd.previa(int(dados.get("analise") or 0),
+                           contas=dados.get("contas") or None)
         vista.pop("andamento", None)
         # Dinheiro vira texto: o JSON não tem decimal.
         return {"ok": True, **_json.loads(_json.dumps(vista, default=str))}
@@ -4212,7 +4264,8 @@ def folha_card_lancar():
     dados = request.get_json(silent=True) or {}
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
     try:
-        return fcd.lancar(int(dados.get("analise") or 0), quem=quem)
+        return fcd.lancar(int(dados.get("analise") or 0), quem=quem,
+                          contas=dados.get("contas") or None)
     except (fcd.ErroDosCards, ValueError, TypeError) as e:
         return {"ok": False, "erro": str(e)}, 400
     except Exception as e:  # noqa: BLE001

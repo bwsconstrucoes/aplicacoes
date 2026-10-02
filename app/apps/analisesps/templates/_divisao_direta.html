@@ -1,0 +1,71 @@
+{# ---------------------------------------------------------------------------
+   DIVISÃO POR OBRA E CONTA — a mesma janela da folha da contabilidade, para as
+   diárias e os auxílios (dono, 02/10/2026: *"para eu visualizar e entender como
+   é que está a situação (…) antes de gerar os arquivos definitivos"*).
+   Mostra o que está selecionado AGORA, sem fechar nada.
+   Quem inclui define `divisao` (de `folha_pagamento.divisao`) e `dv_titulo`.
+   --------------------------------------------------------------------------- #}
+<button type="button" class="btn secundario" id="btn-divisao"
+        {% if not divisao %}disabled title="Nada selecionado para pagamento"{% endif %}
+        >Divisão por obra e conta</button>
+<dialog class="dialogo" id="cartao-divisao">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Divisão por obra e conta <small>{{ dv_titulo }}</small></h3>
+  {% if divisao %}
+  <p class="cartao-dica">Colaboradores selecionados para pagamento, conforme a
+    situação atual. Total: <b>{{ divisao.total|moeda }}</b>.</p>
+  <h4>Total por obra</h4>
+  <div class="tabela-wrap"><div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Obra</th><th class="num">Colaboradores</th>
+        <th class="num">Valor</th><th class="num">%</th></tr></thead>
+      <tbody>
+      {% for o in divisao.por_obra %}
+        <tr><td><b>{{ o.obra }}</b></td><td class="num">{{ o.pessoas }}</td>
+          <td class="num">{{ o.valor|moeda }}</td><td class="num">{{ o.percentual }}</td></tr>
+      {% endfor %}
+      </tbody>
+      <tfoot><tr><th>Total</th><th></th><th class="num">{{ divisao.total|moeda }}</th>
+        <th class="num">100</th></tr></tfoot>
+    </table>
+  </div></div>
+  <h4>Por conta corrente <small>cada conta gera um arquivo e uma SP de transferência</small></h4>
+  <div class="tabela-wrap"><div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Conta</th><th>Obras</th><th class="num">Colaboradores</th>
+        <th class="num">Valor</th></tr></thead>
+      <tbody>
+      {% for c in divisao.por_conta %}
+        <tr class="{{ 'linha-alerta' if c.sem_conta }}">
+          <td>{% if c.sem_conta %}<span class="selo risco"
+                title="Sem conta cadastrada, o arquivo de pagamento não é gerado">sem conta</span>
+              {% else %}<b>{{ c.conta }}</b>{% endif %}</td>
+          <td><span class="cartao-dica">{{ c.obras|join(', ') }}</span></td>
+          <td class="num">{{ c.pessoas }}</td>
+          <td class="num">{{ c.valor|moeda }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  {% if divisao.obras_sem_conta %}
+    <div class="aviso erro">
+      <b>{{ divisao.obras_sem_conta|length }} obra(s) sem conta de pagamento
+      cadastrada:</b> {{ divisao.obras_sem_conta|join(', ') }}. Nesta condição, o
+      arquivo de pagamento não é gerado. A conta de cada obra provém da aba
+      <b>C. Diários</b> da planilha de apoio.
+    </div>
+  {% endif %}
+  {% else %}
+    <p class="cartao-dica">Nenhum colaborador selecionado para pagamento.</p>
+  {% endif %}
+</dialog>
+<script>
+(function () {
+  const b = document.getElementById("btn-divisao");
+  const d = document.getElementById("cartao-divisao");
+  if (b && d) b.addEventListener("click", () => {
+    if (d.showModal) d.showModal(); else d.setAttribute("open", "");
+  });
+})();
+</script>

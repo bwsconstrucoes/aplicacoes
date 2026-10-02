@@ -18,6 +18,14 @@
   <option value="somapay">SomaPay</option>
 </select>
 {% endif %}
+{% if gd_origem != 'folha' %}
+{# A PRÉVIA (02/10/2026): o mesmo .zip da folha da contabilidade, montado da
+   situação de agora — sem fechar, sem subir, sem registro. A folha da
+   contabilidade tem o seu botão próprio, ao lado do seletor de destino. #}
+<a class="btn secundario" id="gd-previa" href="#"
+   title="Baixa os arquivos conforme a situação atual, sem fechar e sem enviar ao Drive"
+   >Baixar prévia</a>
+{% endif %}
 <button type="button" class="btn" id="gd-botao">Gerar arquivos definitivos</button>
 
 <dialog class="dialogo" id="gd-dialogo">
@@ -57,6 +65,14 @@
     if (SELETOR_PAGAMENTO) dados.pagamento = document.getElementById(SELETOR_PAGAMENTO).value;
     return dados;
   }
+
+  const previa = document.getElementById("gd-previa");
+  if (previa) previa.addEventListener("click", e => {
+    e.preventDefault();
+    const q = new URLSearchParams();
+    Object.entries(pedido()).forEach(([k, v]) => { if (v !== null && v !== undefined) q.set(k, v); });
+    location.href = "{{ url_for('analisesps.folha_previa_direta') }}?" + q.toString();
+  });
 
   document.getElementById("gd-botao").addEventListener("click", async () => {
     corpo.innerHTML = '<p class="cartao-dica">Montando o resumo…</p>';

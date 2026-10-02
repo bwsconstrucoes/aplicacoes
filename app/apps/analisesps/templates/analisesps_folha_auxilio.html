@@ -66,6 +66,10 @@
       {% endif %}
     </div>
   {% endif %}
+  <div class="lat-acoes">
+    {% set dv_titulo = ('%02d/%d'|format(mes, ano)) ~ ' · ' ~ ('alimentação' if tipo == 'alimentacao' else 'transporte') %}
+    {% include "_divisao_direta.html" %}
+  </div>
 </div>
 
 {% set c = lista.contagem %}

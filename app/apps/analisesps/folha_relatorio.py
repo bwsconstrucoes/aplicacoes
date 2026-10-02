@@ -23,6 +23,16 @@ mesma divisão do arquivo de pagamento.
 ⚠️ NÃO É O FECHAMENTO. Sai da conta de agora: recarregar o ponto ou mexer nas
 marcações muda o relatório. O cabeçalho diz isso.
 
+⚠️ SÓ QUEM RECEBE, desde 02/10/2026. O dono: *"está aparecendo as pessoas que
+não entram, que se não entra, não entra, não precisa sair desse relatório. Faz é
+confundir."* A lista e os agrupamentos levam só quem está incluído no pagamento.
+
+⚠️ E O RELATÓRIO PODE SAIR POR CONTA (mesmo dia): *"e se eu quiser só o PDF de
+uma determinada conta (…) se eu precisar desses relatórios divididos, ou se eu
+precisar juntos"*. `recortar_por_conta` deixa em cada pessoa só a parte paga
+pela conta pedida — quem trabalhou em obras de duas contas aparece nas duas, cada
+uma com a sua parte, e a soma das contas fecha com o total.
+
 Este módulo não lê banco: recebe o que `folha_gestao.montar` já montou para a tela
 e as contas das obras. Por isso a tela e o relatório não têm como divergir.
 """
@@ -168,15 +178,59 @@ def agrupamentos(pessoas, contas_por_obra) -> dict:
     }
 
 
-def montar(montado: dict, contas_por_obra: dict) -> dict:
-    """Tudo o que os dois formatos precisam, a partir do que a tela montou."""
+def _conta_da_obra(obra, contas_por_obra) -> str:
+    obra = " ".join(str(obra or "").split()).upper()
+    return (contas_por_obra.get(obra, "") if obra else "") or SEM_CONTA
+
+
+def contas_da_folha(pessoas, contas_por_obra) -> list:
+    """As contas que pagam alguém nesta lista — as opções do relatório."""
+    contas_por_obra = {str(k).upper(): v for k, v in (contas_por_obra or {}).items()}
+    achadas = set()
+    for p in pessoas or []:
+        if not p.get("entra"):
+            continue
+        for parte in (p.get("por_obra") or [{"obra": ""}]):
+            achadas.add(_conta_da_obra(parte.get("obra"), contas_por_obra))
+    return sorted(achadas, key=lambda c: (c == SEM_CONTA, c))
+
+
+def recortar_por_conta(pessoas, conta: str, contas_por_obra) -> list:
+    """Cada pessoa só com a parte paga pela `conta`. Quem não tem parte nela
+    sai da lista."""
+    contas_por_obra = {str(k).upper(): v for k, v in (contas_por_obra or {}).items()}
+    saida = []
+    for p in pessoas or []:
+        partes = p.get("por_obra") or [{"obra": "", "dias": p.get("dias_no_ponto") or 0,
+                                        "valor": p.get("valor")}]
+        dela = [x for x in partes
+                if _conta_da_obra(x.get("obra"), contas_por_obra) == conta]
+        if not dela:
+            continue
+        valor = sum((_dinheiro(x.get("valor")) for x in dela), Decimal("0.00"))
+        saida.append({
+            **p, "por_obra": dela, "valor": valor,
+            "dias_no_ponto": sum(int(x.get("dias") or 0) for x in dela),
+            "obras_resumo": ", ".join(
+                f"{x.get('obra') or SEM_OBRA} ({int(x.get('dias') or 0)})" for x in dela),
+            "contas": [conta]})
+    return saida
+
+
+def montar(montado: dict, contas_por_obra: dict, conta: str = "") -> dict:
+    """Tudo o que os dois formatos precisam, a partir do que a tela montou.
+    `conta`: recorta o relatório numa conta de pagamento (vazio = todas)."""
     from .folha_gestao import ROTULO_DA_SITUACAO
 
     folha = montado.get("folha") or {}
-    pessoas = list(montado.get("pessoas") or [])
+    pessoas = [p for p in (montado.get("pessoas") or []) if p.get("entra")]
+    if conta:
+        pessoas = recortar_por_conta(pessoas, conta, contas_por_obra)
     lista = sum((_dinheiro(p.get("valor")) for p in pessoas), Decimal("0.00"))
     return {
-        "titulo": f"Folha da contabilidade {folha.get('competencia', '')}",
+        "conta": conta,
+        "titulo": f"Folha da contabilidade {folha.get('competencia', '')}"
+                  + (f" — conta {conta}" if conta else ""),
         "subtitulo": str(folha.get("rotulo_do_tipo") or ""),
         "competencia": str(folha.get("competencia") or ""),
         "filtros": filtros_em_texto(montado.get("filtros"), ROTULO_DA_SITUACAO),
@@ -235,11 +289,9 @@ def excel(dados: dict) -> bytes:
 
     # --- RESUMO --------------------------------------------------------
     resumo = aba_nova("Resumo", [dados["titulo"], dados["subtitulo"]], primeira=True)
-    resumo.append(["Pessoas na lista", dados["quantas"]])
+    resumo.append(["Pessoas a pagar", dados["quantas"]])
     resumo.append(["Total de pessoas na folha", dados["de_quantas"]])
-    resumo.append(["Total da lista", float(dados["total_da_lista"])])
-    resumo.append(["A pagar (pessoas)", dados["grupos"]["pessoas_pagas"]])
-    resumo.append(["A pagar (valor)", float(dados["grupos"]["total_pago"])])
+    resumo.append(["Total a pagar", float(dados["grupos"]["total_pago"])])
     resumo.append([])
     resumo.append(["Filtros"])
     resumo.cell(row=resumo.max_row, column=1).font = negrito
@@ -247,19 +299,18 @@ def excel(dados: dict) -> bytes:
         resumo.append([texto])
     resumo.append([])
     resumo.append([_aviso_de_origem(dados)])
-    for linha in (4, 6):
-        resumo.cell(row=linha, column=2).number_format = MOEDA
+    resumo.cell(row=4, column=2).number_format = MOEDA
     larguras(resumo, [34, 40])
 
     # --- A LISTA DA TELA ----------------------------------------------
     from .folha_rateio import cpf_bonito
     lista = aba_nova("Pessoas", [
-        "Recebe", "Nome", "CPF", "Código Fortes", "Obra da contabilidade",
+        "Nome", "CPF", "Código Fortes", "Obra da contabilidade",
         "Setor", "Fase Atual", "Obra do ponto (dias)", "Obra do cadastro",
         "Conta(s)", "Dias", "Valor x dia", "Valor", "Situação"])
     for p in dados["pessoas"]:
         lista.append([
-            _sim_nao(p), p.get("nome_na_tela") or "",
+            p.get("nome_na_tela") or "",
             cpf_bonito(p.get("cpf") or "") if p.get("cpf") else "",
             p.get("id_fortes") or "", p.get("filial") or "",
             p.get("setor_curto") or "", p.get("fase") or "",
@@ -268,8 +319,8 @@ def excel(dados: dict) -> bytes:
             int(p.get("dias_no_ponto") or 0),
             float(p["valor_por_dia"]) if p.get("valor_por_dia") is not None else None,
             float(_dinheiro(p.get("valor"))), p.get("situacao_rotulo") or ""])
-    moeda(lista, (11, 12))
-    larguras(lista, [8, 38, 15, 12, 30, 22, 18, 34, 18, 18, 6, 12, 13, 18])
+    moeda(lista, (10, 11))
+    larguras(lista, [38, 15, 12, 30, 22, 18, 34, 18, 18, 6, 12, 13, 18])
 
     # --- OS AGRUPAMENTOS ----------------------------------------------
     g = dados["grupos"]
@@ -301,12 +352,6 @@ def excel(dados: dict) -> bytes:
         moeda(aba, (2,))
         larguras(aba, [40, 10, 15, 20])
 
-    aba = aba_nova("Por situação", ["Situação", "Pessoas", "Valor"])
-    for s in g["por_situacao"]:
-        aba.append([s["nome"], s["pessoas"], float(s["valor"])])
-    moeda(aba, (2,))
-    larguras(aba, [26, 10, 15])
-
     memoria = io.BytesIO()
     planilha.save(memoria)
     return memoria.getvalue()
@@ -331,10 +376,8 @@ def pdf(dados: dict) -> bytes:
     doc = Folha(dados["titulo"], dados["subtitulo"])
     g = dados["grupos"]
     doc.numeros([
-        ("Pessoas na lista", f"{dados['quantas']} de {dados['de_quantas']}"),
-        ("Total da lista", "R$ " + _moeda_br(dados["total_da_lista"])),
-        ("A pagar", f"{g['pessoas_pagas']} pessoa(s), R$ "
-                        + _moeda_br(g["total_pago"])),
+        ("Pessoas a pagar", f"{dados['quantas']}"),
+        ("Total a pagar", "R$ " + _moeda_br(g["total_pago"])),
     ])
     doc.observacao("Filtros: " + ("; ".join(dados["filtros"])
                                   if dados["filtros"] else
@@ -366,27 +409,37 @@ def pdf(dados: dict) -> bytes:
                          _pct_br(l["percentual"])] for l in g[chave]],
                        larguras=[110, 22, 34, 24], direita=(1, 2, 3))
 
-    doc.titulo_secao("Por situação (todas as pessoas da lista)")
-    doc.tabela(["Situação", "Pessoas", "Valor"],
-               [[s["nome"], str(s["pessoas"]), _moeda_br(s["valor"])]
-                for s in g["por_situacao"]],
-               larguras=[110, 30, 50], direita=(1, 2))
-
     doc.titulo_secao(f"Pessoa por pessoa ({dados['quantas']})")
-    doc.tabela(["Recebe", "Nome", "Contabilidade", "Obra do ponto", "Conta",
+    doc.tabela(["Nome", "Contabilidade", "Obra do ponto", "Conta",
                 "Dias", "Valor", "Situação"],
-               [[_sim_nao(p), p.get("nome_na_tela") or "", p.get("filial") or "",
+               [[p.get("nome_na_tela") or "", p.get("filial") or "",
                  p.get("obras_resumo") or "-",
                  ", ".join(c for c in (p.get("contas") or []) if c) or "-",
                  str(int(p.get("dias_no_ponto") or 0)),
                  _moeda_br(p.get("valor")), p.get("situacao_rotulo") or ""]
                 for p in dados["pessoas"]],
-               larguras=[12, 46, 30, 36, 18, 10, 20, 18], direita=(5, 6),
+               larguras=[54, 32, 40, 18, 10, 20, 16], direita=(4, 5),
                fonte=7, linhas_max=2)
     return doc.bytes()
 
 
 def nome_do_arquivo(dados: dict, extensao: str) -> str:
     competencia = dados["competencia"].replace("/", "-")
+    conta = (" - conta " + dados["conta"].replace("(", "").replace(")", "")
+             if dados.get("conta") else "")
     filtrado = " - filtrado" if dados["filtros"] else ""
-    return f"Folha {competencia}{filtrado}.{extensao}"
+    return f"Folha {competencia}{conta}{filtrado}.{extensao}"
+
+
+def zip_por_conta(montado: dict, contas_por_obra: dict, extensao: str) -> tuple:
+    """Um relatório por conta de pagamento, num .zip. Devolve (bytes, nome)."""
+    import zipfile
+    contas = contas_da_folha(montado.get("pessoas"), contas_por_obra)
+    memoria = io.BytesIO()
+    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as pacote:
+        for conta in contas:
+            dados = montar(montado, contas_por_obra, conta)
+            conteudo = excel(dados) if extensao == "xlsx" else pdf(dados)
+            pacote.writestr(nome_do_arquivo(dados, extensao), conteudo)
+    competencia = str((montado.get("folha") or {}).get("competencia") or "").replace("/", "-")
+    return memoria.getvalue(), f"Folha {competencia} - por conta ({extensao}).zip"

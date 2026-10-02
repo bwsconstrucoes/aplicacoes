@@ -175,7 +175,9 @@ def banco_diaristas(banco_analisesps):
                                                     horas="08:00")),    # parcial de 10h: 1
             (DIARISTA, dt.date(2026, 9, 9), json.dumps({"desc_falta": "FALTA"})),
             (VIGIA, dt.date(2026, 9, 8), _campos()),
-            (SAIU, dt.date(2026, 9, 8), _campos()),
+            # O desligado SEM presença no período: fica fora (sem diária). O
+            # desligado COM diária recebe — ver o teste próprio, mais abaixo.
+            (SAIU, dt.date(2026, 9, 8), _campos(presenca="")),
             (SEM_VALOR, dt.date(2026, 9, 8), _campos()),
         ]
         conn.executemany(
@@ -212,7 +214,7 @@ def test_vigia_desligado_e_sem_valor_NAO_pagam_e_cada_um_diz_por_que(banco_diari
     calculado = fd.calcular(2026, 9, "quinzena")
     vigia, saiu, sem = (_pessoa(calculado, c) for c in (VIGIA, SAIU, SEM_VALOR))
     assert not vigia["pagar"] and vigia["vigia"]
-    assert not saiu["pagar"] and saiu["desligado"]
+    assert not saiu["pagar"] and saiu["desligado"] and saiu["sem_diaria"]
     assert not sem["pagar"] and sem["impossivel"]
     assert any("valor da diária" in m for m in sem["motivos"])
 
@@ -367,3 +369,45 @@ def test_a_PRESENCA_com_o_complemento_do_Mobponto_conta_diaria():
     assert _qtd(_lido(TERCA, sujo)) == D("1")
     parcial = _lido(TERCA, "PRESENÇA PARCIAL -[x]", ("07:00", "12:00", "13:00", "13:00"))
     assert _qtd(parcial) == D("0.5")
+
+
+
+def test_DESLIGADO_com_diaria_RECEBE_e_leva_o_alerta():
+    """O dono, 02/10/2026: *"são pessoas que saíram da empresa (…) e eles
+    continuaram trabalhando. Então, eles têm direito à diária. (…) Coloque eles
+    no rol de pessoas que serão pagas. Todavia, deixar o alerta."*"""
+    from app.apps.analisesps import colaboradores, folha_lista
+    p = _calc(_ficha(situacao=colaboradores.SITUACAO_SAIU), [_dia_lido(TERCA)])
+    assert p["pagar"] and p["desligado"] and p["valor"] == D("100.00")
+    assert any("desligado" in m for m in p["motivos"])
+    assert {"vai", "saiu"} <= folha_lista.situacoes_da_pessoa(p)
+    assert "saiu" not in folha_lista.ESCONDIDAS_NOS_DIARISTAS
+
+
+@pytest.mark.banco
+def test_a_PREVIA_das_diarias_sai_sem_fechar_e_sem_registro(banco_diaristas):
+    """O dono, 02/10/2026: *"eu queria o botão também de gerar a prévia"*."""
+    import io
+    import zipfile
+    from app.apps.analisesps import folha_pagamento as fp
+    conteudo, nome = fp.previa_direta_zip(
+        "diaria", {"ano": 2026, "mes": 9, "periodo": "quinzena"}, "somapay")
+    nomes = zipfile.ZipFile(io.BytesIO(conteudo)).namelist()
+    assert "LEIA-ME.txt" in nomes and any("PREVIA" in n for n in nomes)
+    assert nome.startswith("PREVIA")
+    assert fd.calcular(2026, 9, "quinzena")["fechamento"] is None
+    assert fp.log() == []
+
+
+def test_a_DIVISAO_por_obra_e_conta_soma_o_que_vai_ser_pago():
+    from app.apps.analisesps import folha_pagamento as fp
+    linhas = [{"cpf": "1", "obra": "A", "conta": "50024", "valor": D("100")},
+              {"cpf": "2", "obra": "A", "conta": "50024", "valor": D("50")},
+              {"cpf": "3", "obra": "B", "conta": "", "valor": D("50")},
+              {"cpf": "4", "obra": "C", "conta": "7011", "valor": D("0")}]
+    d = fp.divisao(linhas)
+    assert d["total"] == D("200")
+    assert [(o["obra"], o["pessoas"], o["valor"]) for o in d["por_obra"]] == [
+        ("A", 2, D("150")), ("B", 1, D("50"))]
+    assert d["obras_sem_conta"] == ["B"]
+    assert d["por_obra"][0]["percentual"] == "75,0"
