@@ -11422,6 +11422,30 @@ descrição, Pix e chave aleatória "Atualizar Chave".
   contabilidade, diárias, alimentação e transporte. O lançamento por conta (leva
   152) continua.
 
+#### Leva 156 — a tela do Lote: relatório por grupo, a janela "Lote" e a barra (02/10/2026)
+
+Pedido do dono, antes de publicar a 155:
+
+- **Relatório e exportação de UM grupo**, ao lado do "QR / Código deste grupo":
+  "Relatório do grupo (PDF)" e "Exportar grupo (Excel)". O PDF traz no topo os
+  mesmos números da tela — SPs, total, a pagar, pagas, agendadas, falha ao
+  agendar, com o valor de cada um (`pdf.numeros_do_lote`); o relatório do lote
+  inteiro também ganhou esse topo. Grupo vazio (só números que não existem)
+  não tem os botões; pela rota responde 404 em vez de arquivo em branco.
+- **O bloco grande do lote (colar IDs, extrair mensagens, Salvar, Remover…)
+  saiu da página** e virou o botão **"Lote"**, que abre uma janela: o campo dos
+  IDs largo e alto, o da extração menor ao lado, e os botões "Extrair SPs" e
+  "Salvar lote". Quem é Consulta vê o texto do lote, sem botões.
+- **Na barra, na linha do Agendar:** "Lote", "Remover pagos", "Remover
+  cancelados" (e "Remover duplicados", quando houver) e "Remover do lote". Os
+  "Remover…" enviam o formulário da janela, que leva o texto do lote — por isso
+  funcionam com a janela fechada (conferido no navegador).
+- **Saiu o aviso "Este lote é seu".** O lote continua sendo de cada pessoa; o
+  aviso de quando existe lote salvo com outro nome ficou, mais curto.
+- Em tela de 1.400 px os botões do lote quebram para uma segunda linha logo
+  abaixo do Agendar — não cabe tudo numa linha com o total e os botões da
+  direita.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11443,7 +11467,7 @@ descrição, Pix e chave aleatória "Atualizar Chave".
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | decidir o "Gerar por competência" (aba Arquivos gerados): tirar, ou dar a ele a mesma janela | ele |
-| publicar a leva 155 (sem migração) e, no primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
+| publicar as levas 155 e 156 (sem migração) e, no primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
 | confirmar o favorecido da SP quando o arquivo é SomaPay (hoje: CNPJ da BWS) | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |

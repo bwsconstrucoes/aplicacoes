@@ -243,6 +243,8 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/lote/exportar"),
     ("GET", "/analisesps/relatorio/pdf"),
     ("GET", "/analisesps/lote/pdf"),
+    ("GET", "/analisesps/lote/grupo/1/pdf"),
+    ("GET", "/analisesps/lote/grupo/1/excel"),
     ("GET", "/analisesps/lote/excel"),
     ("GET", "/analisesps/lote/excel/todos"),
     ("GET", "/analisesps/api/andamento"),
@@ -303,6 +305,7 @@ def test_a_lista_de_telas_cobre_todas_as_rotas(app):
                    .replace("<id_fortes>", "000013")
                    .replace("<formato>", "pdf")
                    .replace("<int:item_id>", "123")
+                   .replace("<int:n>", "1")
                    .replace("<chave>", CHAVE_DE_EXEMPLO))
         if caminho not in testadas:
             faltando.append(caminho)

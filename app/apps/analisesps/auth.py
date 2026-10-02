@@ -416,6 +416,8 @@ TELA_DA_ROTA = {
     "analisesps.lote_excel_rota": ("lote",),
     "analisesps.lote_excel_todos": ("lote",),
     "analisesps.lote_pdf": ("lote",),
+    "analisesps.lote_grupo_pdf": ("lote",),
+    "analisesps.lote_grupo_excel": ("lote",),
     "analisesps.tela_comprovantes": ("comprovantes",),
     "analisesps.enviar_comprovantes": ("comprovantes",),
     "analisesps.estado_comprovantes": ("comprovantes",),
