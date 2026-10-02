@@ -264,23 +264,38 @@ def previa_zip(folha_id: int, destino: str) -> tuple:
     ⚠️ GERA MESMO COM AVISO — ao contrário do `gerar`. A prévia existe justamente
     para ver o que está errado antes de fechar; recusar por aviso tiraria dela o
     seu único uso. Os avisos vão no LEIA-ME, por arquivo."""
-    import io
-    import zipfile
-
     feito = previa(folha_id, destino)
-    folha, lotes, resumo = feito["folha"], feito["lotes"], feito["resumo"]
-    ano, mes, tipo = folha["ano"], folha["mes"], folha["tipo"]
-    if not lotes:
+    folha = feito["folha"]
+    if not feito["lotes"]:
         raise ErroDoPagamento(
             "nenhum colaborador a pagar nesta folha — verifique se os "
             "colaboradores estão marcados e se os valores são diferentes de zero.")
+    return _zip_da_previa(f"Folha {folha.get('competencia') or ''}", folha["ano"],
+                          folha["mes"], folha["tipo"], guardada.VERBA_FOLHA,
+                          feito["lotes"], feito["resumo"], feito["linhas"], destino)
+
+
+def previa_direta_zip(origem: str, dados: dict, destino: str) -> tuple:
+    """A prévia das diárias e dos auxílios, da situação de AGORA — sem fechar,
+    sem subir, sem registro. Pedido do dono em 02/10/2026, para os diaristas:
+    *"eu queria o botão também de gerar a prévia (…) antes de gerar os arquivos
+    definitivos"*, como na folha da contabilidade."""
+    pedido = resumo_direto(origem, dados, destino)
+    return _zip_da_previa(pedido["rotulo"], pedido["ano"], pedido["mes"],
+                          pedido["tipo"], pedido["verba"], pedido["lotes"],
+                          pedido["resumo"], pedido["linhas"], destino)
+
+
+def _zip_da_previa(rotulo: str, ano, mes, tipo, verba, lotes, resumo, linhas,
+                   destino) -> tuple:
+    import io
+    import zipfile
 
     memoria = io.BytesIO()
     leia = [
         "PRÉVIA DO ARQUIVO DE PAGAMENTO — NÃO ENVIAR AO PORTAL",
         "",
-        f"Folha {folha.get('competencia') or ''}, gerada com os valores atuais "
-        "(apropriação não fechada).",
+        f"{rotulo}, gerada com os valores atuais (sem fechamento).",
         "Não enviada ao Drive e não incluída no registro de arquivos gerados.",
         "Alterações no ponto, no cadastro ou nas marcações alteram a prévia.",
         "",
@@ -297,21 +312,60 @@ def previa_zip(folha_id: int, destino: str) -> tuple:
             for critica in lote.get("criticas") or []:
                 leia.append(f"    AVISO: {critica}")
         nome_analise = PREFIXO_DA_PREVIA + geracao.nome_do_arquivo(
-            {"destino": ANALISE, "conta": "", "verbas": [guardada.VERBA_FOLHA]},
-            ano, mes, tipo)
+            {"destino": ANALISE, "conta": "", "verbas": [verba]}, ano, mes, tipo)
         pacote.writestr(nome_analise,
                         geracao.analise_xlsx(lotes, ano=ano, mes=mes, tipo=tipo,
-                                             detalhe=feito["linhas"]))
+                                             detalhe=linhas))
         if not resumo["pode_gerar"]:
             leia += ["", "Com estes avisos, o arquivo definitivo NÃO é gerado sem "
                          "a opção \"gerar com aviso\" marcada."]
         pacote.writestr("LEIA-ME.txt", "\r\n".join(leia).encode("utf-8-sig"))
 
-    rotulo = geracao.ROTULO_DO_DESTINO.get(destino, destino)
-    nome_zip = f"PREVIA - {rotulo} - {int(mes):02d}-{int(ano)}.zip"
-    logger.info("Folha: prévia do pagamento de %02d/%d (%s) baixada — %d "
-                "arquivo(s).", int(mes), int(ano), destino, len(lotes))
+    rotulo_destino = geracao.ROTULO_DO_DESTINO.get(destino, destino)
+    nome_zip = f"PREVIA - {rotulo_destino} - {int(mes):02d}-{int(ano)}.zip"
+    logger.info("Folha: prévia do pagamento de %02d/%d (%s, %s) baixada — %d "
+                "arquivo(s).", int(mes), int(ano), verba, destino, len(lotes))
     return memoria.getvalue(), nome_zip
+
+
+def divisao(linhas: list) -> dict:
+    """A divisão por obra e por conta das linhas a pagar — a mesma janela da
+    folha da contabilidade, para as diárias e os auxílios (dono, 02/10/2026:
+    *"o botão daquela divisão por obra e conta (…) para eu visualizar e
+    entender como está a situação antes de gerar os arquivos definitivos"*)."""
+    validas = [l for l in linhas or [] if Decimal(str(l.get("valor") or 0)) > 0]
+    total = sum((Decimal(str(l["valor"])) for l in validas), Decimal("0.00"))
+    por_obra: dict = {}
+    por_conta: dict = {}
+    for l in validas:
+        obra = l.get("obra") or "(SEM OBRA)"
+        o = por_obra.setdefault(obra, {"obra": obra, "cpfs": set(),
+                                       "valor": Decimal("0.00")})
+        o["cpfs"].add(l.get("cpf"))
+        o["valor"] += Decimal(str(l["valor"]))
+        conta = l.get("conta") or ""
+        c = por_conta.setdefault(conta, {"conta": conta, "obras": set(),
+                                         "cpfs": set(), "valor": Decimal("0.00"),
+                                         "sem_conta": not conta})
+        c["obras"].add(obra)
+        c["cpfs"].add(l.get("cpf"))
+        c["valor"] += Decimal(str(l["valor"]))
+
+    def pct(v):
+        return (f"{(v * 100 / total):.1f}".replace(".", ",") if total else "0")
+
+    return {
+        "total": total,
+        "por_obra": [{"obra": o["obra"], "pessoas": len(o["cpfs"]),
+                      "valor": o["valor"], "percentual": pct(o["valor"])}
+                     for o in sorted(por_obra.values(), key=lambda x: -x["valor"])],
+        "por_conta": [{"conta": c["conta"], "obras": sorted(c["obras"]),
+                       "pessoas": len(c["cpfs"]), "valor": c["valor"],
+                       "sem_conta": c["sem_conta"]}
+                      for c in sorted(por_conta.values(), key=lambda x: -x["valor"])],
+        "obras_sem_conta": sorted({l.get("obra") or "(SEM OBRA)" for l in validas
+                                   if not l.get("conta")}),
+    }
 
 
 def _br(valor) -> str:

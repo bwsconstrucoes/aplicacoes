@@ -479,11 +479,17 @@ def calcular_pessoa(ficha: dict, dias_lidos: list, inicio, fim,
     saida["obra"] = saida["por_obra"][0]["obra"] if saida["por_obra"] else ""
     saida["obras"] = [o["obra"] for o in saida["por_obra"]]
 
-    # POLÍTICA — dá para calcular; o que se decidiu é não pagar.
+    # ⚠️ DESLIGADO COM DIÁRIA RECEBE — o contrário da folha da contabilidade.
+    # O dono, 02/10/2026: *"são pessoas que saíram da empresa, ou seja,
+    # encerrou o contrato de trabalho formal, e eles continuaram trabalhando.
+    # Então eles têm direito à diária. (…) Coloque eles no rol de pessoas que
+    # serão pagas. Todavia, deixar o alerta."* A primeira versão os tirava do
+    # pagamento. Agora entram, marcados como desligados, com o motivo escrito.
     if saida["situacao"] == colaboradores.SITUACAO_SAIU:
         saida["desligado"] = True
-        saida["pagar"] = False
-        saida["motivos"].append(ficha.get("motivo") or "colaborador desligado.")
+        saida["motivos"].append(
+            (ficha.get("motivo") or "colaborador desligado no cadastro")
+            .rstrip(".") + " — diária devida pelos dias trabalhados; confira.")
     elif saida["situacao"] == colaboradores.SITUACAO_SAINDO:
         saida["motivos"].append(ficha.get("motivo") or "em processo de desligamento.")
     if saida["vigia"]:

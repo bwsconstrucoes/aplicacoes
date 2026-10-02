@@ -41,7 +41,9 @@ ESCONDIDAS_SEM_FILTRO = {"saiu"}
 # valor (`AP <> 'CORRIGIR VALOR DIÁRIA'`) e quem não tem diária (`AJ > 0`). Nada
 # disso some: cada grupo é uma opção do filtro Situação, com a contagem, e o
 # cadastro incompleto e os desligados ficam ditos em Pendências.
-ESCONDIDAS_NOS_DIARISTAS = {"saiu", "vigia", "sem_diaria", "falta_dado"}
+# Desligado NÃO fica de fora nos diaristas (02/10/2026): quem saiu do contrato e
+# continuou trabalhando tem direito à diária — entra na lista, com o alerta.
+ESCONDIDAS_NOS_DIARISTAS = {"vigia", "sem_diaria", "falta_dado"}
 
 
 def situacoes_da_pessoa(p: dict) -> set:
@@ -66,7 +68,10 @@ def situacoes_da_pessoa(p: dict) -> set:
         saida.add("falta_dado")
     elif p.get("pagar"):
         saida.add("vai")
-    elif not (saiu or p.get("vigia")):
+    # Desmarcado à mão = "fora do pagamento". O desligado que a POLÍTICA tira
+    # (auxílio) não é desmarcado à mão; o diarista desligado, que entra pela
+    # regra (`pagar_calculado`), é — e quando desmarcado, conta aqui.
+    elif not (p.get("vigia") or (saiu and not p.get("pagar_calculado"))):
         saida.add("nao_vai")
     return saida
 

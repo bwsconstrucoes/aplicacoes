@@ -357,6 +357,7 @@ SO_DO_MESTRE = frozenset({
     "analisesps.folha_pagamento_preparar",
     "analisesps.folha_pagamento_gerar",
     "analisesps.folha_previa_pagamento",  # mesmo arquivo, só não sobe
+    "analisesps.folha_previa_direta",     # a prévia das diárias e auxílios
     "analisesps.folha_pipe_conferir",
     "analisesps.folha_card_lancar",     # cria card no Pipefy: sem volta
     "analisesps.folha_gerar_direto",    # gera o pagamento de dentro da folha
@@ -480,6 +481,7 @@ TELA_DA_ROTA = {
     "analisesps.tela_folha_pagamento": ("folha",),
     "analisesps.folha_pagamento_preparar": ("folha",),
     "analisesps.folha_previa_pagamento": ("folha",),
+    "analisesps.folha_previa_direta": ("folha",),
     "analisesps.folha_relatorio": ("folha",),
     "analisesps.folha_ponto_plano": ("folha",),
     "analisesps.folha_ponto_lancar": ("folha",),
