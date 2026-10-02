@@ -27,8 +27,9 @@ from decimal import Decimal
 logger = logging.getLogger("analisesps.conciliacao")
 
 # Quantas linhas a tela mostra de uma vez. A conciliação se faz olhando uma
-# conta num período — não varrendo 60 mil linhas.
-POR_PAGINA = 300
+# conta num período — não varrendo 60 mil linhas. 200 desde 02/10/2026, pedido
+# do dono: *"exibir os últimos 200 lançamentos"*.
+POR_PAGINA = 200
 
 # O teto de linhas de um arquivo só. Um OFX de um ano tem alguns milhares.
 MAX_LINHAS_POR_ARQUIVO = 20000
@@ -926,7 +927,12 @@ def listar(f: dict, pagina: int = 1) -> list[dict]:
     nomes = ["id", "data", "descricao", "documento", "valor", "conciliado",
              "observacao", "origem", "conciliado_por", "conciliado_em", "saldo",
              "omie_situacao", "omie_codigo", "omie_em", "omie_por", "omie_erro"]
-    return [dict(zip(nomes, linha)) for linha in linhas]
+    # ⚠️ A PÁGINA É ESCOLHIDA DO MAIS RECENTE PARA TRÁS (a 1 são os últimos 200),
+    # MAS EXIBIDA EM ORDEM CRESCENTE, com o mais recente no fim — como o extrato
+    # do banco e o OMIE mostram. O dono, 02/10/2026: *"colocar o mais recente ao
+    # final da tela pra casar com a visualização do extrato bancário e com o
+    # sistema. Dessa forma facilita a conferência visual."*
+    return [dict(zip(nomes, linha)) for linha in reversed(linhas)]
 
 
 def resumo(f: dict) -> dict:
