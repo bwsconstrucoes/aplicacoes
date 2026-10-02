@@ -11263,6 +11263,33 @@ cadastro da Conta Corrente."* E corrigiu em seguida: a obra não é só das tari
 ⚠️ **Migração 045**: apertar "Aplicar atualizações do banco" no momento da
 publicação. Até lá a tela abre e grava sem a obra.
 
+#### Leva 151 — Comprovantes: "Processar de novo" passa a ter o PDF; erros traduzidos (02/10/2026)
+
+O dono: *"traduzir melhor os erros (…) pro leigo que tiver operando saber que era
+só mandar de novo"* (o exemplo foi o 429 de cota do Google Sheets) e *"sempre que
+coloco processar de novo o arquivo não tá mais no servidor, essa função funciona
+mesmo?"*
+
+**Não funcionava, e a causa era nossa:** o PDF era apagado no fim do lote — com
+sucesso ou com falha. O lote que precisava do botão era exatamente o que já não
+tinha arquivo. Agora:
+- o PDF **fica** quando o lote falha ou termina com página não localizada,
+  recusada, com erro ou à espera de validação; sai quando tudo baixou (ou
+  duplicou), e qualquer PDF com mais de **7 dias** é apagado. No banco ele
+  continua não indo (1 GB, já usando 430 MB);
+- o que ainda apaga: **publicar ou reiniciar o serviço** (disco temporário do
+  Render). A tela agora sabe se o PDF está lá: sem ele, no lugar do botão diz
+  para arrastar o arquivo de novo;
+- **a cota do Google se resolve sozinha:** com o 429, o processamento espera
+  65 s e tenta de novo, até 3 vezes, em vez de derrubar o lote;
+- **erros conhecidos viram frase de quem opera** (cota do Google, demora, serviço
+  fora do ar, bloqueio do Omie por chamadas repetidas), com o texto técnico
+  atrás de "Detalhe técnico". Vale para o erro do lote e o motivo de cada página,
+  inclusive os já gravados.
+
+Não mexe no `baixabradesco` (outra área): a tradução e a nova tentativa ficam do
+lado do Análise de SPs, que é quem chama o robô.
+
 **Cards:** diaristas e alimentação eram pagos pelo BeeVale (o script marcava a SP
 com "BeeVale" no campo de automação). Com o SomaPay, o dono decidiu que os cards
 seguem o modelo da folha da contabilidade, como já estão; a categoria do segundo
@@ -11281,7 +11308,7 @@ card pode mudar depois da primeira geração.
 | ~~publicar as levas 144 e 145~~ — **publicadas em 01/10/2026**. Apertar "Aplicar atualizações do banco" (044) e depois "Atualizar cadastro" | ele |
 | ~~confirmar coluna do valor da diária e quinzena~~ — **respondido em 02/10**: coluna 49 de "Dados Documentos"; quinzena. Regra da meia diária: **fórmula recebida e aplicada** (leva 148) | — |
 | ~~adicional no dia de meia diária~~ — **inteiro**, confirmado pela fórmula do valor (02/10) | — |
-| publicar as levas 149 e 150 — **com a migração 045** (apertar "Aplicar atualizações do banco" na hora) | ele |
+| publicar as levas 149 a 151 — **com a migração 045** (apertar "Aplicar atualizações do banco" na hora) | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

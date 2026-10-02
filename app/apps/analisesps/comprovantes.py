@@ -51,6 +51,93 @@ class ErroDeComprovante(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
+# O PDF FICA ENQUANTO PODE SER PRECISO — 02/10/2026
+#
+# O dono: *"sempre que coloco processar de novo o arquivo não tá mais no
+# servidor, essa função funciona mesmo?"* Não funcionava: o PDF era apagado
+# assim que o lote terminava — com sucesso OU COM FALHA. Justamente o lote que
+# precisa de "Processar de novo" era o que já não tinha arquivo.
+#
+# Agora o PDF só sai do disco quando o lote termina SEM NADA a refazer. Com
+# falha, ou com página não localizada, recusada, com erro ou à espera de
+# validação, ele fica — por até DIAS_GUARDANDO_O_PDF dias. O limite que sobra é
+# do Render: publicar ou reiniciar o serviço apaga o disco, e a tela diz isso.
+# (No banco ele não vai: o banco tem 1 GB — ver PASTA.)
+# ---------------------------------------------------------------------------
+DIAS_GUARDANDO_O_PDF = 7
+PEDEM_NOVA_TENTATIVA = {"NAO_LOCALIZADO", "PENDENTE_VALIDACAO", "RECUSADO", "ERRO"}
+
+# A cota do Google: 60 leituras por minuto. Quando estoura, espera-se o minuto
+# virar e tenta-se de novo, sozinho — é o que o dono faria apertando o botão.
+ESPERA_DA_COTA = 65
+TENTATIVAS_NA_COTA = 3
+
+
+def e_limite_de_cota(texto) -> bool:
+    t = str(texto or "")
+    return ("429" in t or "Quota exceeded" in t or "RESOURCE_EXHAUSTED" in t
+            or "Rate Limit" in t or "rateLimitExceeded" in t)
+
+
+# O erro técnico → o que a pessoa faz. O detalhe técnico continua guardado e
+# aparece atrás de um clique; o que se lê primeiro é isto.
+_EXPLICACOES = (
+    (e_limite_de_cota,
+     "O Google limitou temporariamente as leituras da planilha (excesso de "
+     "acessos no mesmo minuto). Não há problema no comprovante: aguarde um ou "
+     "dois minutos e clique em \"Processar de novo\"."),
+    (lambda t: any(x in t for x in ("timed out", "Timeout", "timeout",
+                                    "Read timed out", "ConnectTimeout")),
+     "Um dos serviços (Google, Omie, Pipefy ou Dropbox) demorou demais para "
+     "responder. Costuma ser momentâneo: clique em \"Processar de novo\" em "
+     "alguns minutos."),
+    (lambda t: any(x in t for x in ("502", "503", "504", "Bad Gateway",
+                                    "Service Unavailable", "Connection reset",
+                                    "Connection aborted", "ConnectionError",
+                                    "Max retries exceeded")),
+     "Um dos serviços (Google, Omie, Pipefy ou Dropbox) ficou fora do ar por um "
+     "instante. Clique em \"Processar de novo\" em alguns minutos."),
+    (lambda t: "Consumo redundante" in t or "REDUNDANT" in t.upper()
+     or "bloqueada" in t.lower(),
+     "O Omie bloqueou temporariamente as consultas por excesso de chamadas "
+     "repetidas. Aguarde alguns minutos e clique em \"Processar de novo\"."),
+)
+
+
+def explicar_erro(texto) -> str:
+    """O erro em linguagem de quem opera, ou "" quando não é um erro conhecido
+    (aí a tela mostra o texto original, que já é a melhor informação)."""
+    t = str(texto or "")
+    if not t:
+        return ""
+    for casa, explicacao in _EXPLICACOES:
+        try:
+            if casa(t):
+                return explicacao
+        except Exception:  # noqa: BLE001
+            continue
+    return ""
+
+
+def limpar_pdfs_antigos(dias: int = DIAS_GUARDANDO_O_PDF) -> int:
+    """Apaga da pasta os PDFs com mais de `dias` dias. Devolve quantos."""
+    import time
+    if not os.path.isdir(PASTA):
+        return 0
+    limite = time.time() - dias * 86400
+    apagados = 0
+    for nome in os.listdir(PASTA):
+        caminho = os.path.join(PASTA, nome)
+        try:
+            if os.path.isfile(caminho) and os.path.getmtime(caminho) < limite:
+                os.remove(caminho)
+                apagados += 1
+        except OSError:
+            logger.exception("Análise de SPs: não consegui apagar %r", caminho)
+    return apagados
+
+
+# ---------------------------------------------------------------------------
 # Partir o PDF
 # ---------------------------------------------------------------------------
 def contar_paginas(conteudo: bytes) -> int:
@@ -489,6 +576,30 @@ def _apagar_arquivo(caminho: str) -> None:
 # ---------------------------------------------------------------------------
 # O trabalho
 # ---------------------------------------------------------------------------
+def _mandar_com_paciencia(pedaco: bytes, nome: str, anotar, onde: str) -> dict:
+    """`_mandar_ao_robo`, esperando o minuto virar quando o Google limita.
+
+    O erro 429 do Google ("Quota exceeded … Read requests per minute") não diz
+    nada sobre o comprovante: é a cota de leituras do minuto. Antes ele
+    derrubava o lote, e a pessoa tinha de apertar "Processar de novo"; agora o
+    próprio processamento espera e tenta de novo, até TENTATIVAS_NA_COTA vezes."""
+    import time
+    for tentativa in range(1, TENTATIVAS_NA_COTA + 1):
+        try:
+            return _mandar_ao_robo(pedaco, nome)
+        except Exception as e:  # noqa: BLE001
+            if not e_limite_de_cota(e) or tentativa == TENTATIVAS_NA_COTA:
+                raise
+            logger.warning("Análise de SPs: cota do Google em %s — nova tentativa "
+                           "em %d s (%d/%d).", onde, ESPERA_DA_COTA, tentativa,
+                           TENTATIVAS_NA_COTA)
+            anotar("dando baixa nos comprovantes",
+                   f"{onde}: o Google limitou as leituras; nova tentativa em "
+                   f"{ESPERA_DA_COTA} s")
+            time.sleep(ESPERA_DA_COTA)
+    raise RuntimeError("inalcançável")
+
+
 def _mandar_ao_robo(pedaco: bytes, nome: str) -> dict:
     """Entrega uma leva ao `baixabradesco` e devolve a resposta dele.
 
@@ -629,7 +740,8 @@ def processar_um(lote_id: int, anotar=None) -> dict:
         for primeira, pedaco in separar_em_levas(conteudo):
             anotar("dando baixa nos comprovantes",
                    f"{nome}: leva {feitas + 1} de {levas}")
-            resposta = _mandar_ao_robo(pedaco, nome)
+            resposta = _mandar_com_paciencia(pedaco, nome, anotar,
+                                             f"{nome}: leva {feitas + 1} de {levas}")
             itens = ler_resposta(resposta, primeira)
             with conexao() as conn:
                 _gravar_itens(conn, lote_id, itens)
@@ -648,7 +760,7 @@ def processar_um(lote_id: int, anotar=None) -> dict:
                 "  erro = ?, terminado_em = now() WHERE id = ?",
                 (str(e)[:1000], lote_id))
             conn.commit()
-        _apagar_arquivo(caminho)
+        # ⚠️ O PDF FICA: é este lote que vai precisar de "Processar de novo".
         return {"ok": False, "erro": str(e), "levas_feitas": feitas}
 
     with conexao() as conn:
@@ -656,7 +768,10 @@ def processar_um(lote_id: int, anotar=None) -> dict:
             "UPDATE analisesps.comprovantes_lote SET situacao = 'PRONTO', "
             "  terminado_em = now() WHERE id = ?", (lote_id,))
         conn.commit()
-    _apagar_arquivo(caminho)
+    # Só sai do disco quando não sobrou nada a refazer.
+    if not any(contagem.get(s) for s in PEDEM_NOVA_TENTATIVA):
+        _apagar_arquivo(caminho)
+    limpar_pdfs_antigos()
 
     logger.info("Análise de SPs: lote %d pronto — %s.", lote_id,
                 ", ".join(f"{ROTULOS.get(s, s)}: {q}"
@@ -782,9 +897,11 @@ def reprocessar_lote(lote_id: int) -> dict:
             conn.execute(
                 "UPDATE analisesps.comprovantes_lote SET situacao = 'FALHOU', "
                 "  erro = ?, terminado_em = now() WHERE id = ?",
-                ("O PDF não está mais no servidor — o serviço reiniciou e o "
-                 "disco foi junto. Arraste o arquivo de novo; o que já baixou "
-                 "no Omie não baixa duas vezes.", int(lote_id)))
+                ("O PDF não está mais no servidor: o sistema foi publicado ou "
+                 "reiniciado depois do envio (o que apaga os arquivos "
+                 "temporários), ou o envio tem mais de "
+                 f"{DIAS_GUARDANDO_O_PDF} dias. Arraste o arquivo de novo; o que "
+                 "já baixou no Omie não baixa duas vezes.", int(lote_id)))
             conn.commit()
         return {"ok": False, "arquivo": nome, "sem_arquivo": True,
                 "erro": ("O PDF de %s não está mais no servidor. Arraste o "
@@ -888,6 +1005,8 @@ def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
             "situacao": l[4], "levas": l[5], "levas_feitas": l[6],
             "erro": l[7], "recebido_em": l[8], "terminado_em": l[9],
             "parado_ha": parado_ha,
+            "tem_arquivo": _tem_arquivo(l[0]),
+            "erro_explicado": explicar_erro(l[7]),
             # Quinze minutos é folgado: um PDF de cinquenta páginas leva
             # poucos minutos. Passou disso sem terminar, alguma coisa houve.
             "parece_parado": bool(parado_ha is not None and parado_ha >= 15),
@@ -898,6 +1017,12 @@ def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
                               if s not in (BAIXADO, DUPLICADO)),
         })
     return saida
+
+
+def _tem_arquivo(lote_id: int) -> bool:
+    """O PDF do lote ainda está no disco? O caminho é sempre o mesmo (ver
+    `guardar`), então não é preciso ler a coluna."""
+    return os.path.exists(os.path.join(PASTA, f"lote-{int(lote_id)}.pdf"))
 
 
 def itens_do_lote(lote_id: int) -> list[dict]:
@@ -925,6 +1050,7 @@ def itens_do_lote(lote_id: int) -> list[dict]:
             " ORDER BY pagina NULLS LAST", (lote_id,))]
     itens = [{"pagina": l[0], "situacao": l[1], "rotulo": ROTULOS.get(l[1], l[1]),
               "sp_id": l[2], "valor": l[3], "recebedor": l[4], "motivo": l[5],
+              "motivo_explicado": explicar_erro(l[5]),
               "conversa_omie": l[6] if len(l) > 6 else ""}
              for l in linhas]
     itens.sort(key=lambda i: (ordem.get(i["situacao"], 99),
