@@ -51,6 +51,23 @@
                 title="Apaga o campo Agendado na planilha">Desagendar</button>
       </div>
       {% if origem == 'lote' and tela != 'codigos' %}
+        {# O LOTE NA BARRA (02/10/2026): o botão "Lote" abre a janela de colar e
+           extrair, e os "Remover…" vêm para a mesma linha do Agendar. Os
+           "Remover pagos/cancelados/duplicados" enviam o formulário da janela
+           (`form="form-lote"`), que leva o texto do lote. #}
+        <div class="ba-grupo">
+          <button type="button" class="btn" onclick="abrirLote()">Lote</button>
+          <button class="btn secundario" type="submit" form="form-lote"
+                  name="acao" value="remover_pagos">Remover pagos</button>
+          <button class="btn secundario" type="submit" form="form-lote"
+                  name="acao" value="remover_cancelados">Remover cancelados</button>
+          {% if duplicados %}
+            <button class="btn secundario" type="submit" form="form-lote"
+                    name="acao" value="remover_duplicados"
+                    title="Fica a primeira aparição de cada SP; as de baixo saem"
+                    >Remover duplicados ({{ duplicados }})</button>
+          {% endif %}
+        </div>
         {# Tirar do lote o que estiver marcado, em qualquer grupo. Fica aqui,
            com os outros, porque é a mesma seleção e o mesmo gesto — e porque
            antes só dava para editar o texto do lote na mão, achando o número

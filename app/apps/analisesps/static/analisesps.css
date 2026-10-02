@@ -2693,3 +2693,9 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 /* A janela "Gerar arquivos" (02/10/2026): prévia e definitivo lado a lado. */
 .gd-botoes { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
 .gd-destino-conta { padding: 4px 6px; border: 1px solid var(--borda-forte); border-radius: 6px; }
+
+/* A janela do Lote (02/10/2026): o campo dos IDs grande, o de colar menor. */
+.dialogo-lote { width: min(1100px, 96vw); }
+.lote-campos { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+.lote-campos textarea { font-family: ui-monospace, monospace; }
+@media (max-width: 760px) { .lote-campos { grid-template-columns: 1fr; } }

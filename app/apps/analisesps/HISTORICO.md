@@ -11385,6 +11385,67 @@ gerações de arquivo"*.
 - **Ficou como estava:** a alternativa "Gerar por competência", na aba Arquivos
   gerados, ainda escolhe um destino só para tudo.
 
+#### Leva 155 — Pipefy: só a Solicitação de Pagamento, com rateio múltiplo (02/10/2026)
+
+O dono: *"para a folha da contabilidade, a gente gerava dois cards (…) um dentro
+do processo do financeiro, outro dentro do processo do despesa colaborador. Eu
+quero matar um. Eu quero deixar só o do financeiro (…) gerar um card com rateio
+múltiplo, nesse padrão aí que você já identificou"* (o do script do BeeVale), com
+tipo de despesa "Salários e Ordenados", a descrição completa no campo de
+descrição, Pix e chave aleatória "Atualizar Chave".
+
+- **O card de Despesa com Colaboradores deixou de ser criado.** Cada conta vira
+  UMA Solicitação de Pagamento (pipe 301426645) com "Rateio múltiplo entre centros
+  de custo" = Sim e o campo "Rateio múltiplo" com o JSON do OMIE — `distribuicao`
+  (código do departamento no OMIE da aba "C. Diários", nome da obra, percentual
+  com 7 casas fechando 100%, pelo mesmo cálculo da tela Ratear) e `categorias`
+  (a categoria da verba, 100%). Formato igual ao `_formatRateioText_` do BeeVale.
+- **Campos** no padrão do `_createPipefyCard_` do BeeVale: Pix, tipo "Aleatória",
+  chave "Atualizar Chave", procedimento "Solicitar Pagamento", sem nota fiscal,
+  não é de terceiro, 1x parcela, validação/anuência/autorização dupla. Data de
+  pagamento = hoje (o Make punha amanhã).
+- **Favorecido conforme o destino do arquivo da conta**: BeeVale → a BeeVale
+  (razão social e CNPJ do script); SomaPay → o CNPJ da BWS, como a SP do Make
+  fazia (a transferência vai para a conta Somapay da própria BWS). ⚠️ Escolha
+  minha, a confirmar.
+- **Os códigos são procurados pelo NOME**, não escritos no código: o tipo de
+  despesa no próprio Pipefy (registro do campo "Tipo de Despesa") e a categoria
+  no plano financeiro do OMIE (espelho do painel), pela descrição da verba —
+  "Salários e Ordenados" (folha e diárias), "Despesas com Alimentação",
+  "Despesas com Transporte", "Gratificações e Extras", as mesmas da aba
+  "PlanoFinanceiro" da planilha. Não achou, ou achou dois: a prévia diz e nada é
+  criado.
+- **Descrição** (`descri_o`): verba e competência, pagamento, conta de origem,
+  destino do arquivo, colaboradores, total, valor por obra e os links da planilha
+  de pagamento e da análise.
+- **Vale para todas as folhas** — o lançamento é o mesmo código para
+  contabilidade, diárias, alimentação e transporte. O lançamento por conta (leva
+  152) continua.
+
+#### Leva 156 — a tela do Lote: relatório por grupo, a janela "Lote" e a barra (02/10/2026)
+
+Pedido do dono, antes de publicar a 155:
+
+- **Relatório e exportação de UM grupo**, ao lado do "QR / Código deste grupo":
+  "Relatório do grupo (PDF)" e "Exportar grupo (Excel)". O PDF traz no topo os
+  mesmos números da tela — SPs, total, a pagar, pagas, agendadas, falha ao
+  agendar, com o valor de cada um (`pdf.numeros_do_lote`); o relatório do lote
+  inteiro também ganhou esse topo. Grupo vazio (só números que não existem)
+  não tem os botões; pela rota responde 404 em vez de arquivo em branco.
+- **O bloco grande do lote (colar IDs, extrair mensagens, Salvar, Remover…)
+  saiu da página** e virou o botão **"Lote"**, que abre uma janela: o campo dos
+  IDs largo e alto, o da extração menor ao lado, e os botões "Extrair SPs" e
+  "Salvar lote". Quem é Consulta vê o texto do lote, sem botões.
+- **Na barra, na linha do Agendar:** "Lote", "Remover pagos", "Remover
+  cancelados" (e "Remover duplicados", quando houver) e "Remover do lote". Os
+  "Remover…" enviam o formulário da janela, que leva o texto do lote — por isso
+  funcionam com a janela fechada (conferido no navegador).
+- **Saiu o aviso "Este lote é seu".** O lote continua sendo de cada pessoa; o
+  aviso de quando existe lote salvo com outro nome ficou, mais curto.
+- Em tela de 1.400 px os botões do lote quebram para uma segunda linha logo
+  abaixo do Agendar — não cabe tudo numa linha com o total e os botões da
+  direita.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11404,7 +11465,10 @@ gerações de arquivo"*.
 | ~~publicar a leva 152~~ — publicada em 02/10/2026 (sem migração) | — |
 | ~~publicar a leva 153~~ — publicada em 02/10/2026 (main em `4f48c5f`, suíte inteira 7.847 verdes) | — |
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
-| publicar a leva 154 (sem migração) | ele |
+| ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
+| decidir o "Gerar por competência" (aba Arquivos gerados): tirar, ou dar a ele a mesma janela | ele |
+| publicar as levas 155 e 156 (sem migração) e, no primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
+| confirmar o favorecido da SP quando o arquivo é SomaPay (hoje: CNPJ da BWS) | ele |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

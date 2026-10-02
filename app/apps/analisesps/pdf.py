@@ -355,16 +355,42 @@ def relatorio(filtros: dict, tipo: str, periodo: str) -> bytes:
     return folha.bytes()
 
 
-def relatorio_do_lote(montado: dict) -> bytes:
+def numeros_do_lote(montado: dict) -> list:
+    """Os indicadores do lote (ou de um grupo), os mesmos da tela: SPs, total,
+    a pagar, pagas, agendadas e falha ao agendar — com o valor de cada um."""
+    from .formatos import moeda
+    linhas = [l for g in montado["grupos"] for l in g["linhas"]]
+
+    def conta(campo, valor):
+        achadas = [l for l in linhas if (l.get(campo) or "").strip().lower() == valor]
+        return (f"{len(achadas)} SP(s) - R$ "
+                + moeda(sum((l.get("valor_num") or 0) for l in achadas)))
+    return [
+        ("SPs", str(len(linhas))),
+        ("Total", "R$ " + moeda(montado["total_geral"])),
+        ("A pagar", conta("status_pgt", "pagar")),
+        ("Pagas", conta("status_pgt", "pago")),
+        ("Agendadas", conta("status_agend", "agendado")),
+        ("Falha ao agendar", conta("status_agend", "falha agendar")),
+    ]
+
+
+def relatorio_do_lote(montado: dict, titulo: str = "") -> bytes:
     """O lote, grupo a grupo, com o total de cada um.
 
     É o papel que acompanha a remessa: quem vai efetivar os pagamentos confere
-    por aqui, na mesma organização que quem montou o lote escolheu."""
+    por aqui, na mesma organização que quem montou o lote escolheu.
+
+    `titulo`: o nome do GRUPO, quando o relatório é de um grupo só (pedido do
+    dono em 02/10/2026: *"o relatório PDF desse grupo (…) bonitinho, com os KPIs
+    também, total do grupo, a pagar, paga"*). Os indicadores vão no topo, iguais
+    aos da tela."""
     from .formatos import data_br, moeda
 
     folha = Folha(
-        "Análise de SPs - Relatório do Lote",
+        ("Análise de SPs - " + titulo) if titulo else "Análise de SPs - Relatório do Lote",
         f"{montado['quantidade']} SP(s) · total R$ {moeda(montado['total_geral'])}")
+    folha.numeros(numeros_do_lote(montado))
 
     for grupo in montado["grupos"]:
         if not grupo["linhas"] and not grupo["nao_encontrados"]:

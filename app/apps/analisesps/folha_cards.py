@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-OS CARDS DO PIPEFY PARA A FOLHA — cópia fiel do cenário do Make.
+OS CARDS DO PIPEFY PARA A FOLHA.
+
+⚠️ DESDE 02/10/2026 É SÓ A SOLICITAÇÃO DE PAGAMENTO, COM RATEIO MÚLTIPLO — uma SP
+por conta, no padrão do script do BeeVale. O card de Despesa com Colaboradores
+deixou de ser criado (decisão do dono). Ver o bloco "SÓ A SOLICITAÇÃO DE
+PAGAMENTO" mais abaixo. O histórico abaixo conta como se chegou ao desenho do
+Make, que valeu até essa data.
 
 ⚠️ A FORMA DO CARD NÃO É DECISÃO MINHA: É A DO MAKE, QUE FUNCIONA. Em 01/10/2026 o
 primeiro lançamento de verdade foi recusado pelo Pipefy ("Data de Vencimento",
@@ -89,6 +95,48 @@ _VALOR_DO_PAR = {62: "valor_centro_de_custo_63", 63: "valor_centro_de_custo_63_1
 FUSO = "America/Fortaleza"
 
 CHAVE_DO_ANDAMENTO = "folha_cards_rodada:{}"
+
+
+# ===========================================================================
+# ⚠️ DESDE 02/10/2026: SÓ A SOLICITAÇÃO DE PAGAMENTO, COM RATEIO MÚLTIPLO
+#
+# O dono: *"para a folha da contabilidade, a gente gerava dois cards (…) um
+# dentro do processo do financeiro, outro dentro do processo do despesa
+# colaborador. Então, eu quero matar um. Eu quero deixar só o do financeiro (…)
+# gerar um card com rateio múltiplo, nesse padrão aí que você já identificou."*
+#
+# O padrão é o do script do BeeVale (planilha de Diaristas): uma SP por conta,
+# "Rateio múltiplo entre centros de custo" = Sim, e o campo "Rateio múltiplo" com
+# o trecho de JSON do OMIE — a distribuição por obra (código do departamento no
+# OMIE, nome, percentual com 7 casas fechando 100%) e a categoria. Pix, chave
+# aleatória "Atualizar Chave". A descrição diz tudo: competência, obras, valor
+# por obra, os links. O card de Despesa com Colaboradores NÃO é mais criado.
+#
+# ⚠️ OS CÓDIGOS NÃO SÃO ESCRITOS AQUI, SÃO PROCURADOS PELO NOME: o tipo de
+# despesa (registro do Pipefy, no campo "Tipo de Despesa" da SP) e a categoria
+# do OMIE (no plano financeiro que a carga do painel traz). Na planilha eles
+# vinham da aba oculta "PlanoFinanceiro", pela descrição da verba — a mesma
+# descrição usada aqui. Não achou, ou achou dois: a prévia diz e nada é criado.
+# ===========================================================================
+DESCRICAO_DA_VERBA = {
+    "folha": "Salários e Ordenados",
+    "diaria": "Salários e Ordenados",
+    "gratificacao": "Gratificações e Extras",
+    "alimentacao": "Despesas com Alimentação",
+    "transporte": "Despesas com Transporte",
+}
+
+# Quem recebe, conforme o destino do arquivo daquela conta. BeeVale: os dados do
+# script do BeeVale. SomaPay: a transferência vai para a conta Somapay da própria
+# BWS (as contas Somapay usam o CNPJ da Somapay — ver baixabradesco/README), então
+# fica o CNPJ da BWS, como a SP do Make já fazia.
+FAVORECIDO = {
+    "beevale": {"local": "BEE VALE PAGAMENTOS E BENEFICIOS LTDA",
+                "cnpj": "31.749.082/0001-03", "documentacao": "BeeVale"},
+    "somapay": {"local": "", "cnpj": CNPJ_DA_BWS, "documentacao": ""},
+}
+CHAVE_PIX_A_ATUALIZAR = "Atualizar Chave"
+CASAS_DO_PERCENTUAL = 7
 
 
 class ErroDosCards(RuntimeError):
@@ -208,46 +256,82 @@ def _codigos_omie() -> dict:
     return saida
 
 
-def _centros_do_pipefy(campos: dict) -> tuple:
-    """Como o campo "Centro de Custo" do pipe de Despesa recebe a obra.
+def _achador(campo: dict) -> tuple:
+    """Como um campo do Pipefy recebe um valor escolhido pelo NOME.
 
-    Devolve (função obra → valor ou None, descrição do campo). Se o campo é uma
-    conexão com uma tabela, a obra vira o id do registro de mesmo nome; se é
-    lista de opções, a opção de mesmo nome; se é texto, o próprio código."""
-    campo = campos.get("centro_de_custo_1") or {}
+    Devolve (função nome → valor ou None, descrição do campo). Conexão com tabela:
+    o id do registro de mesmo nome; lista de opções: a opção de mesmo nome; texto:
+    o próprio nome. Dois registros com o mesmo nome não casam — nada é escolhido
+    no escuro."""
+    campo = campo or {}
     tipo = campo.get("tipo") or ""
     ligado = campo.get("ligado_a") or {}
     if tipo == "connector":
         if ligado.get("tipo") != "tabela" or not ligado.get("id"):
-            return (lambda obra: None), "conexão de tipo não suportado"
+            return (lambda nome: None), "conexão de tipo não suportado"
         registros = pipefy.registros_da_tabela(ligado["id"])
         por_nome: dict = {}
         for r in registros:
             por_nome.setdefault(_chave(r["nome"]), []).append(r["id"])
 
-        def achar(obra):
-            achados = por_nome.get(_chave(obra)) or []
+        def achar(nome):
+            achados = por_nome.get(_chave(nome)) or []
             return achados[0] if len(achados) == 1 else None
         return achar, f'tabela "{ligado.get("nome") or ligado["id"]}"'
     if tipo in ("select", "radio_vertical", "radio_horizontal"):
         opcoes = {_chave(o): o for o in campo.get("opcoes") or []}
-        return (lambda obra: opcoes.get(_chave(obra))), "lista de opções"
-    return (lambda obra: _chave(obra) or None), "texto"
+        return (lambda nome: opcoes.get(_chave(nome))), "lista de opções"
+    return (lambda nome: str(nome or "").strip() or None), "texto"
+
+
+def _categoria_do_omie(descricao: str) -> tuple:
+    """(código, erro) da categoria do OMIE com esta descrição, no espelho do
+    painel. Exige UMA, ativa, com a descrição igual (sem acento e caixa)."""
+    from .conciliacao_omie import categorias_do_omie
+    try:
+        # O plano inteiro (poucas centenas de linhas), comparado sem acento: no
+        # OMIE a descrição pode estar em maiúsculas e sem acento.
+        candidatas = categorias_do_omie(busca="", limite=5000)
+    except Exception as e:  # noqa: BLE001
+        return "", f"não foi possível ler o plano financeiro do OMIE: {e}"
+    iguais = [c for c in candidatas
+              if _chave(c["descricao"]) == _chave(descricao) and not c["inativa"]]
+    if len(iguais) == 1:
+        return str(iguais[0]["codigo"]), ""
+    if not iguais:
+        return "", (f'categoria "{descricao}" não encontrada no plano financeiro do '
+                    "OMIE (espelho da carga do painel).")
+    return "", (f'há {len(iguais)} categorias "{descricao}" ativas no OMIE ('
+                + ", ".join(c["codigo"] for c in iguais) + ") — não é possível escolher.")
+
+
+def rateio_multiplo(obras: list, codigo_categoria: str) -> str:
+    """O texto do campo "Rateio múltiplo": o JSON do OMIE, como o script do
+    BeeVale escreve (`_formatRateioText_`). `obras`: [{obra, omie, valor}]."""
+    from .rateio import _percentuais_min_erro
+    validas = [o for o in obras if Decimal(str(o["valor"])) > 0]
+    pct = _percentuais_min_erro([float(o["valor"]) for o in validas],
+                                CASAS_DO_PERCENTUAL)
+    distribuicao = [{"cCodDep": o["omie"], "cDesDep": o["obra"], "nPerDep": p,
+                     "nValDep": None} for o, p in zip(validas, pct)]
+    total = sum((Decimal(str(o["valor"])) for o in validas), Decimal("0.00"))
+    categorias = [{"codigo_categoria": codigo_categoria, "percentual": 100,
+                   "valor": float(total.quantize(CENTAVO))}]
+    compacto = {"separators": (",", ":"), "ensure_ascii": False}
+    return ('"distribuicao": ' + json.dumps(distribuicao, **compacto) + "\n"
+            + '"categorias": ' + json.dumps(categorias, **compacto))
 
 
 # Os campos que o Make usa em cada pipe. Se algum sumir ou mudar de id no Pipefy,
 # a prévia diz qual — em vez de o card sair com o valor caindo em lugar nenhum.
-CAMPOS_DA_DESPESA = (
-    "data", "data_de_pagamento", "descri_o", "valor", "tipo_de_despesa", "op_o",
-    "respons_vel_pela_solicita_ox", "banco_do_pagamento", "valor_total_pago",
-    "valida_o_dc", "link_para_planilha_de_pagamento",
-    "link_para_planilha_de_an_lise", "conex_o_sp")
 CAMPOS_DA_SP = (
     "data", "data_de_pagamento", "descri_o", "valor", "colaborador_solicitante",
     "tipo_de_pagamento", "link_planilha_de_an_lise", "tipo_de_despesa",
     "selecione_o_procedimento", "alimenta_o_de_equipe", "parcelas",
     "chave_pix_aleat_ria", "radio_horizontal_t_tulo", "tipo", "cnpj",
-    "valida_o_sp_1", "conex_o_dc_id", "etiquetas", "conex_o_dc")
+    "rateio_m_ltiplo_entre_centros_de_custo", "rateio_m_ltiplo",
+    "a_despesa_gerou_emiss_o_de_nota_fiscal",
+    "requisi_o_solicitada_por_um_terceiro", "valida_o_sp_1", "etiquetas")
 
 
 def _ler_pipe(pipe_id: str) -> dict:
@@ -262,20 +346,14 @@ def _ler_pipe(pipe_id: str) -> dict:
 
 
 def conferir_pipe() -> dict:
-    """Confere que os dois pipes têm todos os campos que o Make usa. NÃO CRIA NADA."""
-    saida = []
-    for pipe_id, usados in ((PIPE_DESPESA, CAMPOS_DA_DESPESA), (PIPE_SP, CAMPOS_DA_SP)):
-        pipe = _ler_pipe(pipe_id)
-        exigidos = list(usados)
-        if pipe_id == PIPE_DESPESA:
-            exigidos += list(campos_do_par(1))
-        faltam = [c for c in exigidos if c not in pipe["todos"]]
-        saida.append({"pipe": pipe_id, "nome": pipe["nome"],
-                      "quantos_campos": len(pipe["todos"]), "faltam": faltam,
-                      "obrigatorios": [d.get("label") or cid
-                                       for cid, d in pipe["inicio"].items()
-                                       if d.get("obrigatorio")]})
-    return {"pipes": saida}
+    """Confere que o pipe de SP tem todos os campos usados. NÃO CRIA NADA."""
+    pipe = _ler_pipe(PIPE_SP)
+    faltam = [c for c in CAMPOS_DA_SP if c not in pipe["todos"]]
+    return {"pipes": [{"pipe": PIPE_SP, "nome": pipe["nome"],
+                       "quantos_campos": len(pipe["todos"]), "faltam": faltam,
+                       "obrigatorios": [d.get("label") or cid
+                                        for cid, d in pipe["inicio"].items()
+                                        if d.get("obrigatorio")]}]}
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +399,7 @@ def contas_lancadas(andamento: dict, verba: str) -> dict:
 
 
 def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
-    """(prévia, pipe de Despesa, pipe de SP) — os pipes lidos uma vez só."""
+    """(prévia, pipe de SP) — o pipe lido uma vez só."""
     from . import folha_pagamento as fpg
 
     r = rodada(analise_id)
@@ -333,27 +411,26 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
     ano, mes, tipo = analise["ano"], analise["mes"], analise["tipo"]
     bloqueios: list = []
 
-    despesa = _ler_pipe(PIPE_DESPESA) if ler_pipes else None
     sp = _ler_pipe(PIPE_SP) if ler_pipes else None
-    centro_de, como_centro = (lambda obra: _chave(obra)), "texto"
+    achar_tipo, como_tipo = (lambda nome: nome), "texto"
     if ler_pipes:
-        for pipe, usados in ((despesa, CAMPOS_DA_DESPESA), (sp, CAMPOS_DA_SP)):
-            faltam = [c for c in usados if c not in pipe["todos"]]
-            if faltam:
-                bloqueios.append(
-                    f'o pipe "{pipe["nome"]}" não tem mais o(s) campo(s) '
-                    + ", ".join(faltam) + " utilizados pelo Make. O pipe foi alterado — "
-                    "nenhum card foi criado.")
+        faltam = [c for c in CAMPOS_DA_SP if c not in sp["todos"]]
+        if faltam:
+            bloqueios.append(
+                f'o pipe "{sp["nome"]}" não tem o(s) campo(s) ' + ", ".join(faltam)
+                + ". O pipe foi alterado — nenhum card foi criado.")
         try:
-            centro_de, como_centro = _centros_do_pipefy(despesa["inicio"])
+            achar_tipo, como_tipo = _achador(sp["todos"].get("tipo_de_despesa"))
         except pipefy.ErroDoPipefy as e:
-            bloqueios.append(f"não foi possível ler os centros de custo do Pipefy: {e}")
+            bloqueios.append(f"não foi possível ler os tipos de despesa do Pipefy: {e}")
 
     omie = _codigos_omie()
+    destino_da_conta = {" ".join(str(a["conta"] or "").split()): a.get("destino") or ""
+                        for a in arquivos}
     grupos, esperado_por_conta = [], {}
     for verba in r["verbas"]:
         try:
-            nome_grupo, tipo_dc, tipo_sp = grupo_da_verba(verba, tipo)
+            nome_grupo, _tipo_dc, _tipo_sp = grupo_da_verba(verba, tipo)
         except ErroDosCards as e:
             bloqueios.append(str(e))
             continue
@@ -376,63 +453,61 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
         if not linhas:
             continue
 
-        por_obra: dict = {}
-        por_conta: dict = {}
-        pessoas = set()
-        for l in linhas:
-            obra = _chave(l["obra"]) or "(SEM OBRA)"
-            por_obra[obra] = por_obra.get(obra, Decimal("0.00")) + l["valor"]
-            conta = " ".join(str(l.get("conta") or "").split())
-            por_conta[conta] = por_conta.get(conta, Decimal("0.00")) + l["valor"]
-            pessoas.add(l["cpf"])
-        for conta, valor in por_conta.items():
-            esperado_por_conta[conta] = esperado_por_conta.get(
-                conta, Decimal("0.00")) + valor
-        total = sum(por_obra.values(), Decimal("0.00"))
-
-        centros = []
-        for obra, valor in sorted(por_obra.items()):
-            centro = centro_de(obra)
-            codigo = omie.get(obra, "")
-            if not codigo:
-                bloqueios.append(
-                    f'a obra "{obra}" não tem Código Omie na aba "C. Diários".')
-            if not centro:
-                bloqueios.append(
-                    f'a obra "{obra}" não tem centro de custo no Pipefy '
-                    f"({como_centro}) com esse nome.")
-            centros.append({"obra": obra, "valor": valor, "centro": centro or "",
-                            "omie": codigo})
-        if len(centros) > MAXIMO_DE_CENTROS:
+        # O tipo de despesa e a categoria do OMIE, pelo nome da verba.
+        descricao_verba = DESCRICAO_DA_VERBA.get(verba, "")
+        tipo_sp = achar_tipo(descricao_verba) if descricao_verba else None
+        if ler_pipes and not tipo_sp:
             bloqueios.append(
-                f"{geracao.rotulo_da_verba(verba)}: {len(centros)} obras, e o card "
-                f"de Despesa comporta apenas {MAXIMO_DE_CENTROS} pares de centro de custo.")
+                f'tipo de despesa "{descricao_verba}" não encontrado no Pipefy '
+                f"(campo Tipo de Despesa da SP, {como_tipo}).")
+        categoria, erro_categoria = (_categoria_do_omie(descricao_verba)
+                                     if descricao_verba else ("", "verba sem categoria"))
+        if erro_categoria:
+            bloqueios.append(erro_categoria)
 
-        links = [a["link"] for a in arquivos
-                 if verba in (a["verbas"] or "").split("+") and a["link"]]
-        sps = []
-        for conta, valor in sorted(por_conta.items()):
+        por_conta: dict = {}
+        for l in linhas:
+            conta = " ".join(str(l.get("conta") or "").split())
+            obra = _chave(l["obra"]) or "(SEM OBRA)"
+            c = por_conta.setdefault(conta, {"obras": {}, "pessoas": set(),
+                                             "valor": Decimal("0.00")})
+            c["obras"][obra] = c["obras"].get(obra, Decimal("0.00")) + l["valor"]
+            c["pessoas"].add(l["cpf"])
+            c["valor"] += l["valor"]
+        sps, pessoas = [], set()
+        for conta, c in sorted(por_conta.items()):
+            esperado_por_conta[conta] = esperado_por_conta.get(
+                conta, Decimal("0.00")) + c["valor"]
+            pessoas |= c["pessoas"]
             if not conta:
                 bloqueios.append(
-                    f"{geracao.rotulo_da_verba(verba)}: R$ {formatos.moeda(valor)} "
+                    f"{geracao.rotulo_da_verba(verba)}: R$ {formatos.moeda(c['valor'])} "
                     'sem conta de origem (obra sem conta na aba "C. Diários").')
-            link = next((a["link"] for a in arquivos if a["conta"] == conta
-                         and verba in (a["verbas"] or "").split("+")), "")
-            sps.append({"conta": conta, "valor": valor, "link": link})
-        if len(sps) > MAXIMO_DE_SPS:
-            bloqueios.append(
-                f"{geracao.rotulo_da_verba(verba)}: {len(sps)} contas de origem, "
-                f"e o card de Despesa comporta apenas {MAXIMO_DE_SPS} SPs.")
+            obras = []
+            for obra, valor in sorted(c["obras"].items(), key=lambda x: -x[1]):
+                codigo = omie.get(obra, "")
+                if not codigo:
+                    bloqueios.append(
+                        f'a obra "{obra}" não tem Código Omie na aba "C. Diários".')
+                obras.append({"obra": obra, "valor": valor, "omie": codigo})
+            arquivo = next((a for a in arquivos if a["conta"] == conta
+                            and verba in (a["verbas"] or "").split("+")), {})
+            destino = destino_da_conta.get(conta) or ""
+            sp_item = {"conta": conta, "valor": c["valor"], "pessoas": len(c["pessoas"]),
+                       "link": arquivo.get("link") or "", "destino": destino,
+                       "obras": obras,
+                       "rateio": rateio_multiplo(obras, categoria) if obras else ""}
+            sp_item["descricao"] = descricao_da_sp(
+                analise["competencia"], tipo, verba, sp_item, analise.get("link") or "")
+            sps.append(sp_item)
 
         grupos.append({
             "verba": verba, "chave": chave,
             "rotulo_verba": geracao.rotulo_da_verba(verba),
-            "grupo": nome_grupo, "tipo_dc": tipo_dc, "tipo_sp": tipo_sp,
-            "total": total, "pessoas": len(pessoas), "centros": centros,
-            "sps": sps, "links_pagamento": links,
-            "descricao": descricao_do_card(
-                analise["competencia"], tipo, [verba], "", len(pessoas), total,
-                " ; ".join(links), analise["link"])})
+            "grupo": nome_grupo, "tipo_sp": tipo_sp or "",
+            "tipo_despesa": descricao_verba, "categoria": categoria,
+            "total": sum((x["valor"] for x in sps), Decimal("0.00")),
+            "pessoas": len(pessoas), "sps": sps})
 
     # ⚠️ O QUE ESTÁ FECHADO TEM DE SER O QUE FOI GERADO. Se alguém refez o
     # fechamento depois de gerar, o card contaria uma história e o arquivo outra.
@@ -455,10 +530,43 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             "contas": todas_as_contas, "escolhidas": escolhidas,
             "contas_lancadas": lancadas,
             "tipo": tipo, "link_analise": analise["link"],
-            "como_centro": como_centro, "grupos": grupos,
+            "como_tipo": como_tipo, "grupos": grupos,
             "bloqueios": list(dict.fromkeys(bloqueios)),
             "andamento": andamento, "ja_lancado": _completo(andamento, grupos),
-            "arquivos": [a["id"] for a in arquivos]}, despesa, sp
+            "arquivos": [a["id"] for a in arquivos]}, sp
+
+
+def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
+                    link_analise: str) -> str:
+    """O texto do campo "Descrição da despesa" (`descri_o`). ⚠️ ELE É A PROVA:
+    quem abrir o card meses depois precisa saber de que competência é, de qual
+    conta saiu, quanto foi para cada obra e onde estão os arquivos — sem depender
+    de ninguém lembrar (dono, 02/10/2026: *"colocar as informações da folha,
+    colocar as obras, colocar valor por obra, colocar os links (…) a
+    competência"*)."""
+    rotulo_tipo = {"quinzena": "Quinzena (dias 1 a 15)",
+                   "fim_de_mes": "Fim de mês (16 ao último dia)"}.get(
+                       str(tipo or ""), str(tipo or ""))
+    destino = geracao.ROTULO_DO_DESTINO.get(sp.get("destino") or "", "")
+    linhas = [
+        f"{geracao.rotulo_da_verba(verba)} — competência {competencia}",
+        f"Pagamento: {rotulo_tipo}" if rotulo_tipo else "",
+        f"Conta de origem: {sp['conta']}" if sp.get("conta") else "",
+        f"Arquivo de pagamento: {destino}" if destino else "",
+        f"Colaboradores: {sp.get('pessoas', 0)}",
+        f"Total: R$ {formatos.moeda(sp['valor'])}",
+        "",
+        "Valor por obra:",
+    ]
+    linhas += [f"- {o['obra']}: R$ {formatos.moeda(o['valor'])}"
+               for o in sp.get("obras") or []]
+    linhas.append("")
+    if sp.get("link"):
+        linhas.append(f"Planilha de pagamento: {sp['link']}")
+    if link_analise:
+        linhas.append(f"Planilha de análise: {link_analise}")
+    return "\n".join([l for i, l in enumerate(linhas)
+                      if l or (i and linhas[i - 1])] + ["", "Gerado pelo Análise de SPs."])
 
 
 # ---------------------------------------------------------------------------
@@ -497,51 +605,35 @@ def _completo(andamento: dict, grupos: list) -> bool:
 # ---------------------------------------------------------------------------
 # OS CAMPOS DE CADA CARD — os do Make, valor por valor
 # ---------------------------------------------------------------------------
-def campos_da_despesa(grupo: dict, agora: _dt.datetime) -> list:
-    """Os campos do card de Despesa, na forma do módulo 2 do cenário."""
-    quando = agora.strftime("%d/%m/%Y %H:%M")
-    campos = [
-        ("data", quando), ("data_de_pagamento", quando),
-        ("descri_o", grupo["descricao"]), ("valor", _valor(grupo["total"])),
-        ("tipo_de_despesa", grupo["tipo_dc"]),
-        ("op_o", "Pgt Conjunto"), ("respons_vel_pela_solicita_ox", RESPONSAVEL),
-    ]
-    for n, centro in enumerate(grupo["centros"], start=1):
-        id_centro, id_valor, id_omie = campos_do_par(n)
-        campos += [(id_centro, centro["centro"]), (id_valor, _valor(centro["valor"])),
-                   (id_omie, centro["omie"])]
-    campos += [("banco_do_pagamento", BANCO_DO_PAGAMENTO),
-               ("valor_total_pago", _valor(grupo["total"])), ("valida_o_dc", "Sim")]
-    return [{"campo": c, "valor": v} for c, v in campos]
-
-
-def campos_depois_da_despesa(grupo: dict, link_analise: str) -> list:
-    """Os links das planilhas — que no Make entram depois de o card existir."""
-    return [{"campo": "link_para_planilha_de_pagamento",
-             "valor": " ; ".join(grupo["links_pagamento"])},
-            {"campo": "link_para_planilha_de_an_lise", "valor": link_analise}]
-
-
-def campos_da_sp(grupo: dict, sp: dict, id_despesa: str, link_analise: str,
+def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
                  agora: _dt.datetime) -> list:
-    """Os campos da SP de Transferência de Recursos, na forma do módulo 165."""
-    descricao = f"Conta Origem: {sp['conta']}\n{grupo['descricao']}"
-    if sp.get("link"):
-        descricao += f"\nPlanilha de pagamento desta conta: {sp['link']}"
+    """Os campos da Solicitação de Pagamento, no padrão do script do BeeVale
+    (`_createPipefyCard_`), com Pix e chave aleatória "Atualizar Chave"."""
+    favorecido = FAVORECIDO.get(sp.get("destino") or "", FAVORECIDO["somapay"])
     campos = [
-        ("data", agora.strftime("%d/%m/%Y")),
-        ("data_de_pagamento", (agora + _dt.timedelta(days=1)).strftime("%d/%m/%Y")),
-        ("descri_o", descricao), ("valor", _valor(sp["valor"])),
-        ("colaborador_solicitante", RESPONSAVEL), ("tipo_de_pagamento", "Pix"),
-        ("link_planilha_de_an_lise", link_analise),
+        ("data", agora.strftime("%d/%m/%Y %H:%M")),
+        ("data_de_pagamento", agora.strftime("%d/%m/%Y")),
+        ("descri_o", sp["descricao"]), ("valor", _valor(sp["valor"])),
+        ("radio_horizontal_t_tulo", "Pessoa Jurídica"),
+        ("local", favorecido["local"]),
+        ("tipo_de_pagamento", "Pix"),
+        ("rateio_m_ltiplo_entre_centros_de_custo", "Sim"),
+        ("rateio_m_ltiplo", sp["rateio"]),
+        ("a_despesa_gerou_emiss_o_de_nota_fiscal", "Não"),
+        ("tipo", "Aleatória"),
+        ("selecione_o_procedimento", "Solicitar Pagamento"),
+        ("cnpj", favorecido["cnpj"]),
+        ("requisi_o_solicitada_por_um_terceiro", "Não"),
+        ("alimenta_o_de_equipe", "Não"),
+        ("colaborador_solicitante", RESPONSAVEL),
+        ("parcelas", "1x Parcela"),
         ("tipo_de_despesa", grupo["tipo_sp"]),
-        ("selecione_o_procedimento", "Transferência de Recursos"),
-        ("alimenta_o_de_equipe", "Não"), ("parcelas", "1x Parcela"),
-        ("chave_pix_aleat_ria", PIX_DA_BWS),
-        ("radio_horizontal_t_tulo", "Pessoa Jurídica"), ("tipo", "Aleatória"),
-        ("cnpj", CNPJ_DA_BWS),
-        ("valida_o_sp_1", "Sim"), ("conex_o_dc_id", str(id_despesa)),
+        ("chave_pix_aleat_ria", CHAVE_PIX_A_ATUALIZAR),
+        ("documenta_o_fiscal", favorecido["documentacao"]),
+        ("link_planilha_de_an_lise", link_analise),
+        ("valida_o_sp_1", "Sim"), ("lan_amento_via_api", "Sim"),
         ("etiquetas", ETIQUETA_DA_SP),
+        ("autoriza_o_dupla", "SIM"), ("anu_ncia_sp", "Sim"),
     ]
     return [{"campo": c, "valor": v} for c, v in campos]
 
@@ -559,14 +651,14 @@ def _separar(valores: list, inicio: dict) -> tuple:
 # LANÇAR — sem volta
 # ---------------------------------------------------------------------------
 def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
-    """Cria o card de Despesa e as SPs de cada conta, como o Make.
+    """Cria uma SP por conta, com o rateio múltiplo por obra. ⚠️ SEM VOLTA.
 
-    ⚠️ CHAMADA SEM VOLTA: card criado no Pipefy não se apaga por aqui. Por isso só
-    roda com a prévia limpa, e grava o andamento a cada card — se cair no meio,
-    apertar de novo continua de onde parou."""
+    Card criado no Pipefy não se apaga por aqui. Por isso só roda com a prévia
+    limpa, e grava o andamento a cada card — se cair no meio, apertar de novo
+    continua de onde parou."""
     from . import folha_pagamento as fpg
 
-    vista, despesa, sp_pipe = _previa(analise_id, contas=contas)
+    vista, sp_pipe = _previa(analise_id, contas=contas)
     if vista["bloqueios"]:
         raise ErroDosCards("nenhum card foi criado: " + " ".join(vista["bloqueios"]))
     if vista["ja_lancado"]:
@@ -578,53 +670,31 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
     andamento = vista["andamento"]
     agora = _agora()
     criados = []
+    # Só os campos que o pipe tem: um campo opcional que não exista (o "local",
+    # por exemplo) não pode derrubar o card inteiro.
+    existentes = sp_pipe["todos"]
     try:
         for grupo in vista["grupos"]:
             estado = andamento.setdefault(grupo["chave"], {"sps": {}})
-            if not estado.get("despesa"):
-                na_criacao, depois = _separar(campos_da_despesa(grupo, agora),
-                                              despesa["inicio"])
-                card = pipefy.criar_card(PIPE_DESPESA, agora.strftime("%d/%m/%Y"),
-                                         na_criacao)
-                estado.update({"despesa": card["id"], "link": card["link"],
-                               "depois": depois})
-                _guardar_andamento(analise_id, andamento)
-                criados.append(f"Despesa {card['id']}")
-            if not estado.get("despesa_completa"):
-                pipefy.atualizar_campos(
-                    estado["despesa"], (estado.get("depois") or [])
-                    + campos_depois_da_despesa(grupo, vista["link_analise"]))
-                estado["despesa_completa"] = True
-                estado.pop("depois", None)
-                _guardar_andamento(analise_id, andamento)
-
             for sp in grupo["sps"]:
                 feito = (estado["sps"].get(sp["conta"]) or {})
                 if not feito.get("id"):
-                    na_criacao, depois = _separar(
-                        campos_da_sp(grupo, sp, estado["despesa"],
-                                     vista["link_analise"], agora),
-                        sp_pipe["inicio"])
+                    valores = [v for v in campos_da_sp(grupo, sp, vista["link_analise"], agora)
+                               if v["campo"] in existentes]
+                    na_criacao, depois = _separar(valores, sp_pipe["inicio"])
                     card = pipefy.criar_card(PIPE_SP, grupo["grupo"], na_criacao)
-                    feito = {"id": card["id"], "link": card["link"],
-                             "depois": depois}
+                    feito = {"id": card["id"], "link": card["link"], "depois": depois}
                     estado["sps"][sp["conta"]] = feito
                     _guardar_andamento(analise_id, andamento)
                     criados.append(f"SP {card['id']}")
-                if not feito.get("ligada"):
-                    pipefy.atualizar_campos(
-                        feito["id"], (feito.get("depois") or [])
-                        + [{"campo": "conex_o_dc", "valor": [estado["despesa"]]}])
-                    feito["ligada"] = True
+                if not feito.get("completa"):
+                    if feito.get("depois"):
+                        pipefy.atualizar_campos(feito["id"], feito["depois"])
+                    feito["completa"] = True
                     feito.pop("depois", None)
                     _guardar_andamento(analise_id, andamento)
-
-            if not estado.get("ligado"):
-                pipefy.atualizar_campos(estado["despesa"], [{
-                    "campo": "conex_o_sp",
-                    "valor": [s["id"] for s in estado["sps"].values()]}])
-                estado["ligado"] = True
-                _guardar_andamento(analise_id, andamento)
+            estado["ligado"] = True
+            _guardar_andamento(analise_id, andamento)
     except pipefy.ErroDoPipefy as e:
         logger.exception("Folha: lançamento no Pipefy parou no meio")
         ja = (" Já criados: " + ", ".join(criados) + "." if criados else "")
@@ -632,8 +702,7 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
             f"o Pipefy recusou a operação durante o lançamento: {e}.{ja} Uma nova "
             "tentativa retoma do ponto de parada, sem duplicar o que já foi criado.") from e
 
-    # Amarra no log: cada arquivo de conta à(s) SP(s) dela; a análise à(s)
-    # Despesa(s).
+    # Amarra no log: cada arquivo de conta à(s) SP(s) dele; a análise a todas.
     for arquivo in r["arquivos"]:
         sps = [contas_lancadas(andamento, v).get(arquivo["conta"])
                for v in (arquivo["verbas"] or "").split("+")]
@@ -641,17 +710,15 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
         if sps:
             fpg.registrar_card(arquivo["id"], ",".join(s["id"] for s in sps),
                                sps[0]["link"])
-    despesas = [andamento[g["chave"]] for g in vista["grupos"]]
-    # A análise guarda TODAS as Despesas da geração (de todos os lotes).
-    todas_despesas = [e for e in andamento.values()
-                      if isinstance(e, dict) and e.get("despesa")]
-    fpg.registrar_card(analise_id, ",".join(d["despesa"] for d in todas_despesas),
-                       todas_despesas[0]["link"])
+    todas = [sp for v in r["verbas"] for sp in contas_lancadas(andamento, v).values()]
+    if todas:
+        fpg.registrar_card(analise_id, ",".join(s["id"] for s in todas), todas[0]["link"])
     logger.info("Folha: %s lançado no Pipefy por %s — %s.",
                 vista["competencia"], quem or "(sem nome)",
                 ", ".join(criados) or "nada novo")
-    return {"ok": True, "competencia": vista["competencia"],
-            "despesas": [{"id": d["despesa"], "link": d["link"]} for d in despesas],
-            "sps": [{"conta": conta, "id": s["id"], "link": s["link"]}
-                    for d in despesas for conta, s in d["sps"].items()],
+    return {"ok": True, "competencia": vista["competencia"], "despesas": [],
+            "sps": [{"conta": sp["conta"],
+                     "id": (andamento[g["chave"]]["sps"][sp["conta"]])["id"],
+                     "link": (andamento[g["chave"]]["sps"][sp["conta"]])["link"]}
+                    for g in vista["grupos"] for sp in g["sps"]],
             "criados": criados}

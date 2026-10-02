@@ -7014,6 +7014,70 @@ def lote_pdf():
                              f'attachment; filename="{nome}"'})
 
 
+def _grupo_do_lote(n: int):
+    """(montado só com o grupo `n` — 1, 2, 3… na ordem da tela —, título) ou
+    (None, mensagem)."""
+    from . import lote
+    montado = lote.montar(lote.ler(auth.pessoa_atual())["conteudo"])
+    grupos = montado["grupos"]
+    if not (1 <= int(n) <= len(grupos)) or not grupos[int(n) - 1]["linhas"]:
+        return None, "Este grupo não existe mais no lote, ou está sem SPs."
+    g = grupos[int(n) - 1]
+    so = {**montado, "grupos": [g], "quantidade": len(g["linhas"]),
+          "total_geral": g["total"]}
+    return so, g["titulo_exibido"]
+
+
+def _nome_do_grupo(titulo: str) -> str:
+    import re as _re
+    limpo = _re.sub(r"[^\w\- ]+", "", str(titulo or "grupo"), flags=_re.UNICODE)
+    return (" ".join(limpo.split()) or "grupo")[:60]
+
+
+@bp.route("/lote/grupo/<int:n>/pdf")
+@exige_consulta
+def lote_grupo_pdf(n: int):
+    """O relatório de UM grupo do lote, em PDF — ao lado do QR do grupo (dono,
+    02/10/2026)."""
+    from flask import Response
+
+    from . import pdf
+    from .horario import agora
+    try:
+        so, titulo = _grupo_do_lote(n)
+        if so is None:
+            return render_template("analisesps_erro.html", titulo="Grupo não encontrado",
+                                   mensagem=titulo), 404
+        conteudo = pdf.relatorio_do_lote(so, titulo=titulo)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou o PDF do grupo do lote")
+        return render_template("analisesps_erro.html", titulo="Não consegui gerar o PDF",
+                               mensagem=f"{e}"), 500
+    nome = f"lote_{_nome_do_grupo(titulo)}_{agora().strftime('%Y-%m-%d_%H%M')}.pdf"
+    return Response(conteudo, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+@bp.route("/lote/grupo/<int:n>/excel")
+@exige_consulta
+def lote_grupo_excel(n: int):
+    """UM grupo do lote, em Excel."""
+    from . import lote_excel
+    from .horario import agora
+    try:
+        so, titulo = _grupo_do_lote(n)
+        if so is None:
+            return render_template("analisesps_erro.html", titulo="Grupo não encontrado",
+                                   mensagem=titulo), 404
+        conteudo = lote_excel.de_um_lote(so, titulo)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou o Excel do grupo do lote")
+        return render_template("analisesps_erro.html", titulo="Não consegui gerar o Excel",
+                               mensagem=f"{e}"), 500
+    return _responder_xlsx(
+        conteudo, f"lote_{_nome_do_grupo(titulo)}_{agora().strftime('%Y-%m-%d_%H%M')}.xlsx")
+
+
 # ---------------------------------------------------------------------------
 # O LOTE EM EXCEL — .xlsx de verdade, não CSV
 #

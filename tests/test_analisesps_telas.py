@@ -1275,7 +1275,7 @@ def test_nome_novo_com_lote_vazio_avisa_em_vez_de_deixar_a_pessoa_no_escuro(
         "/analisesps/lote").get_data(as_text=True)
     assert "ainda não tem lote aqui" in html
     assert "MARCELO</b>" in html
-    assert "Maiúscula e acento não fazem diferença" in html
+    assert "escrevendo o nome igual" in html
 
 
 # ---------------------------------------------------------------------------
@@ -2177,8 +2177,10 @@ def test_o_lote_e_de_cada_um_e_a_tela_diz_isso(app_lote):
     nome com que entrou — e a tela precisa dizer de quem é aquele lote, senão
     a pessoa continua com medo de mexer."""
     html = como(app_lote, SENHA_OPERADOR).get("/analisesps/lote").get_data(as_text=True)
-    assert "Este lote é <b>seu</b>" in html
-    assert "sobrescreve" in html.lower(), "tem de dizer que ninguém apaga o do outro"
+    # O aviso "Este lote é seu" saiu a pedido do dono (02/10/2026: *"isso aqui
+    # é desnecessário"*); o lote continua sendo de cada um.
+    assert "Este lote é <b>seu</b>" not in html
+    assert 'id="dialogo-lote"' in html, "o lote abre numa janela, pelo botão Lote"
 
 
 def test_o_lote_aponta_os_numeros_que_nao_existem(app_lote):
@@ -2913,6 +2915,37 @@ def test_o_pdf_do_lote_sai_valido(app_lote):
     resposta = como(app_lote, SENHA_CONSULTA).get("/analisesps/lote/pdf")
     assert resposta.status_code == 200
     assert resposta.get_data().startswith(b"%PDF-")
+
+
+def test_cada_grupo_do_lote_sai_em_pdf_e_em_excel(app_lote):
+    """Ao lado do QR do grupo, o relatório e a exportação SÓ daquele grupo
+    (dono, 02/10/2026). O grupo vazio responde 404 em vez de um arquivo em
+    branco."""
+    cliente = como(app_lote, SENHA_CONSULTA)
+    html = cliente.get("/analisesps/lote").get_data(as_text=True)
+    assert "/analisesps/lote/grupo/1/pdf" in html
+    assert "/analisesps/lote/grupo/1/excel" in html
+    pdf = cliente.get("/analisesps/lote/grupo/1/pdf")
+    assert pdf.status_code == 200
+    assert pdf.get_data().startswith(b"%PDF-")
+    assert "Pagar amanh" in pdf.headers["Content-Disposition"]
+    xlsx = cliente.get("/analisesps/lote/grupo/1/excel")
+    assert xlsx.status_code == 200
+    assert xlsx.get_data().startswith(b"PK")
+    assert cliente.get("/analisesps/lote/grupo/2/pdf").status_code == 404
+    assert cliente.get("/analisesps/lote/grupo/9/excel").status_code == 404
+
+
+def test_os_numeros_do_grupo_vao_no_topo_do_relatorio():
+    from app.apps.analisesps import pdf
+    montado = {"grupos": [{"titulo_exibido": "G", "linhas": [
+        linha_falsa("1"), linha_falsa("2")], "total": Decimal("13500.00"),
+        "nao_encontrados": []}], "total_geral": Decimal("13500.00"),
+        "quantidade": 2, "nao_encontrados": []}
+    numeros = dict(pdf.numeros_do_lote(montado))
+    assert numeros["SPs"] == "2"
+    assert numeros["Total"] == "R$ 13.500,00"
+    assert {"A pagar", "Pagas", "Agendadas", "Falha ao agendar"} <= set(numeros)
 
 
 def test_o_pdf_do_lote_vazio_avisa_em_vez_de_sair_em_branco(app, monkeypatch):
