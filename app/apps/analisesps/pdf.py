@@ -184,10 +184,26 @@ class Folha:
 
         escrever_cabecalho()
         self.pdf.set_font("Helvetica", "", fonte)
+        # ⚠️ UMA CÉLULA PODE TER UMA LINHA PEQUENA EMBAIXO (02/10/2026): o valor
+        # vem como tupla `(principal, pequeno)`. Pedido do dono para o relatório
+        # da folha: *"embaixo [do nome] pode ser pequenininho, colocar os dias
+        # que foram trabalhados"*. O pequeno quebra em até 3 linhas.
+        fonte_pequena = max(5.5, fonte - 2)
+        altura_pequena = fonte_pequena * 0.45
         for linha in linhas:
-            celulas = [self._quebrar(valor, larguras[i], linhas_max)
-                       for i, valor in enumerate(linha)]
-            alta = max(len(c) for c in celulas) * altura + 1
+            celulas, pequenas = [], []
+            for i, valor in enumerate(linha):
+                principal, pequeno = (valor if isinstance(valor, tuple)
+                                      else (valor, ""))
+                celulas.append(self._quebrar(principal, larguras[i], linhas_max))
+                if pequeno:
+                    self.pdf.set_font("Helvetica", "", fonte_pequena)
+                    pequenas.append(self._quebrar(pequeno, larguras[i], 3))
+                    self.pdf.set_font("Helvetica", "", fonte)
+                else:
+                    pequenas.append([])
+            alta = max(len(c) * altura + len(p_) * altura_pequena
+                       for c, p_ in zip(celulas, pequenas)) + 1
 
             # Quebrou a página? O cabeçalho precisa reaparecer, senão a segunda
             # página vira uma tabela de colunas sem nome.
@@ -203,6 +219,16 @@ class Folha:
                     self.pdf.set_xy(x, topo + n * altura)
                     self.pdf.cell(larguras[i], altura, pedaco,
                                   align="R" if i in direita else "L")
+                if pequenas[i]:
+                    self.pdf.set_font("Helvetica", "", fonte_pequena)
+                    self.pdf.set_text_color(90, 90, 90)
+                    for n, pedaco in enumerate(pequenas[i]):
+                        self.pdf.set_xy(x, topo + len(pedacos) * altura
+                                        + n * altura_pequena)
+                        self.pdf.cell(larguras[i], altura_pequena, pedaco,
+                                      align="R" if i in direita else "L")
+                    self.pdf.set_text_color(0, 0, 0)
+                    self.pdf.set_font("Helvetica", "", fonte)
                 x += larguras[i]
             # A régua vai embaixo da linha INTEIRA, depois de escrever tudo:
             # com alturas diferentes por célula, a borda de cada `cell` sairia

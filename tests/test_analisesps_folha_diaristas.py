@@ -411,3 +411,28 @@ def test_a_DIVISAO_por_obra_e_conta_soma_o_que_vai_ser_pago():
         ("A", 2, D("150")), ("B", 1, D("50"))]
     assert d["obras_sem_conta"] == ["B"]
     assert d["por_obra"][0]["percentual"] == "75,0"
+
+
+@pytest.mark.banco
+def test_o_RELATORIO_das_diarias_tem_funcao_dias_e_so_quem_recebe(banco_diaristas):
+    """O dono, 02/10/2026: relatório PDF/Excel nas diárias, por conta e total,
+    com a função da pessoa e os dias trabalhados embaixo do nome."""
+    import io
+    from openpyxl import load_workbook
+    from app.apps.analisesps import folha_lista, folha_pagamento as fp
+    from app.apps.analisesps import folha_relatorio as fr
+    calculado = fd.calcular(2026, 9, "quinzena")
+    contas = fp.conta_por_obra()
+    montado = fr.montado_das_diarias(calculado, calculado["pessoas"], {}, contas)
+    dados = fr.montar(montado, contas)
+    assert [p["nome_na_tela"] for p in dados["pessoas"]] == ["DIARISTA UM"]
+    p = dados["pessoas"][0]
+    assert p["cargo"] == "SERVENTE"
+    assert fr.datas_txt(p) == "Dias: 05, 07, 08/09"
+    assert dados["grupos"]["total_pago"] == D("330.00")
+    livro = load_workbook(io.BytesIO(fr.excel(dados)))
+    linha = [c.value for c in livro["Pessoas"][2]]
+    assert "SERVENTE" in linha and "05, 07, 08/09" in linha
+    assert fr.pdf(dados).startswith(b"%PDF")
+    so = fr.montar(montado, contas, "50024")
+    assert so["grupos"]["total_pago"] == D("330.00") and "conta 50024" in so["titulo"]

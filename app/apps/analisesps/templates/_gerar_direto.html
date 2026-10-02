@@ -13,18 +13,21 @@
      gd_pagamento — id do <select> de quinzena/fim de mês do auxílio (opcional)
    --------------------------------------------------------------------------- #}
 {% if not gd_destino %}
-<select id="gd-destino" aria-label="Destino do arquivo de pagamento" class="gd-destino">
-  <option value="beevale">BeeVale</option>
-  <option value="somapay">SomaPay</option>
-</select>
-{% endif %}
-{% if gd_origem != 'folha' %}
-{# A PRÉVIA (02/10/2026): o mesmo .zip da folha da contabilidade, montado da
-   situação de agora — sem fechar, sem subir, sem registro. A folha da
-   contabilidade tem o seu botão próprio, ao lado do seletor de destino. #}
-<a class="btn secundario" id="gd-previa" href="#"
-   title="Baixa os arquivos conforme a situação atual, sem fechar e sem enviar ao Drive"
-   >Baixar prévia</a>
+{# ⚠️ O MESMO DESENHO DA FOLHA DA CONTABILIDADE (02/10/2026): o destino e a
+   prévia lado a lado (`lat-previa`), o "Gerar" embaixo. O dono: *"lá está um
+   do lado do outro (…) tem que manter o padrão."* A prévia é o .zip montado da
+   situação de agora — sem fechar, sem subir, sem registro. #}
+<div class="lat-previa">
+  <select id="gd-destino" aria-label="Destino do arquivo de pagamento">
+    <option value="beevale">BeeVale</option>
+    <option value="somapay">SomaPay</option>
+  </select>
+  {% if gd_origem != 'folha' %}
+  <a class="btn secundario" id="gd-previa" href="#"
+     title="Baixa os arquivos conforme a situação atual, sem fechar e sem enviar ao Drive"
+     >Baixar prévia</a>
+  {% endif %}
+</div>
 {% endif %}
 <button type="button" class="btn" id="gd-botao">Gerar arquivos definitivos</button>
 
