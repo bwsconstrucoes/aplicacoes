@@ -354,8 +354,6 @@ SO_DO_MESTRE = frozenset({
     # portal do banco e o dinheiro sai. A tela também é do mestre porque o log
     # mostra o link de arquivos com nome, CPF e valor de ~500 pessoas.
     "analisesps.tela_folha_pagamento",
-    "analisesps.folha_pagamento_preparar",
-    "analisesps.folha_pagamento_gerar",
     "analisesps.folha_previa_pagamento",  # mesmo arquivo, só não sobe
     "analisesps.folha_previa_direta",     # a prévia das diárias e auxílios
     "analisesps.folha_pipe_conferir",
@@ -481,7 +479,6 @@ TELA_DA_ROTA = {
     # A geração do arquivo mora na mesma tela, e além disto é só do mestre
     # (SO_DO_MESTRE): a tela decide quem entra, o mestre decide quem paga.
     "analisesps.tela_folha_pagamento": ("folha",),
-    "analisesps.folha_pagamento_preparar": ("folha",),
     "analisesps.folha_previa_pagamento": ("folha",),
     "analisesps.folha_previa_direta": ("folha",),
     "analisesps.folha_diaristas_relatorio": ("folha",),
@@ -494,7 +491,6 @@ TELA_DA_ROTA = {
     "analisesps.tela_folha_cadastro_completo": ("folha",),
     "analisesps.folha_cadastro_pessoa_atualizar": ("folha",),
     "analisesps.folha_ponto_fila_item": ("folha",),
-    "analisesps.folha_pagamento_gerar": ("folha",),
     "analisesps.folha_pipe_conferir": ("folha",),
     "analisesps.folha_card_lancar": ("folha",),
     "analisesps.folha_card_preparar": ("folha",),
