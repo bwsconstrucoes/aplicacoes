@@ -61,3 +61,21 @@ def test_fechar_num_pagamento_TIRA_o_fechamento_do_outro(banco_auxilio):
     fx.fechar(fx.ALIMENTACAO, 2026, 9, "fim_de_mes")
     assert guardada.fechamento(2026, 9, "quinzena", "alimentacao") is None
     assert guardada.fechamento(2026, 9, "fim_de_mes", "alimentacao") is not None
+
+
+def test_gerar_o_auxilio_sobe_o_RELATORIO_em_PDF_da_conta(banco_auxilio, monkeypatch):
+    """Dono, 03/10/2026: o relatório em PDF gerado junto, baixável em Arquivos
+    gerados e com link no card."""
+    from app.apps.analisesps import beevale, drive, folha_pagamento as fp
+    subidos = []
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
+    monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k:
+                        subidos.append((nome, k.get("mime"), conteudo[:5]))
+                        or {"id": f"d{len(subidos)}", "link": f"https://drive/{len(subidos)}"})
+    fp.gerar_direto("alimentacao", {"ano": 2026, "mes": 9, "pagamento": "fim_de_mes"},
+                    "beevale", quem="MARCELO")
+    pdfs = [s for s in subidos if s[1] == fp.MIME_PDF]
+    assert len(pdfs) == 1 and pdfs[0][2] == b"%PDF-" and "50024" in pdfs[0][0]
+    rodada = fp.rodadas()[0]
+    assert rodada["relatorios"]["50024"]["link"]
+    assert rodada["total"] == D("300.00")

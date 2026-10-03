@@ -235,11 +235,16 @@ def rodada(analise_id: int) -> dict:
     piso = max((a["id"] for a in mesmos
                 if a["destino"] == fpg.ANALISE and a["id"] < analise["id"]),
                default=0)
-    arquivos = sorted((a for a in mesmos if a["destino"] != fpg.ANALISE
-                       and piso < a["id"] < analise["id"]), key=lambda a: a["id"])
+    da_rodada = [a for a in mesmos if a["destino"] != fpg.ANALISE
+                 and piso < a["id"] < analise["id"]]
+    # O PDF do relatório de cada conta é da rodada, mas não é arquivo de
+    # pagamento: não soma no total nem vira SP — vai como link no card.
+    arquivos = sorted((a for a in da_rodada if a["destino"] != fpg.RELATORIO),
+                      key=lambda a: a["id"])
+    relatorios = {a["conta"]: a for a in da_rodada if a["destino"] == fpg.RELATORIO}
     if not arquivos:
         raise ErroDosCards("arquivos de pagamento desta rodada não encontrados.")
-    return {"analise": analise, "arquivos": arquivos,
+    return {"analise": analise, "arquivos": arquivos, "relatorios": relatorios,
             "verbas": [v for v in (analise["verbas"] or "").split("+") if v]}
 
 
@@ -608,6 +613,8 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             destino = destino_da_conta.get(conta) or ""
             sp_item = {"conta": conta, "valor": c["valor"], "pessoas": len(c["pessoas"]),
                        "link": arquivo.get("link") or "", "destino": destino,
+                       "link_relatorio": ((r.get("relatorios") or {}).get(conta)
+                                          or {}).get("link") or "",
                        "obras": obras,
                        "rateio": rateio_multiplo(obras, categoria) if obras else ""}
             sp_item["descricao"] = descricao_da_sp(
@@ -676,6 +683,10 @@ def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
     linhas.append("")
     if sp.get("link"):
         linhas.append(f"Planilha de pagamento: {sp['link']}")
+    # O relatório em PDF da conta (dono, 03/10/2026: *"colocar o link tanto do
+    # arquivo de pagamento quanto o relatório também"*).
+    if sp.get("link_relatorio"):
+        linhas.append(f"Relatório (PDF): {sp['link_relatorio']}")
     if link_analise:
         linhas.append(f"Planilha de análise: {link_analise}")
     return "\n".join([l for i, l in enumerate(linhas)

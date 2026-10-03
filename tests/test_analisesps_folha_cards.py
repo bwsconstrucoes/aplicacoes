@@ -145,6 +145,15 @@ def test_campo_de_fase_vai_DEPOIS_da_criacao():
     assert [v["campo"] for v in depois] == ["etiquetas"]
 
 
+def test_a_DESCRICAO_traz_o_link_do_RELATORIO_em_PDF():
+    """Dono, 03/10/2026: *"colocar o link tanto do arquivo de pagamento quanto o
+    relatório também"*."""
+    sp = dict(_sp(), link_relatorio="https://drive/rel1")
+    texto = fcd.descricao_da_sp("09/2026", "quinzena", "folha", sp, "https://drive/ana")
+    assert "Relatório (PDF): https://drive/rel1" in texto
+    assert "https://drive/pag1" in texto
+
+
 def test_LANCAMENTO_VIA_API_vai_na_criacao_mesmo_sendo_de_fase():
     """03/10/2026: o Pipefy recusou por "Anexos" obrigatório. "Lançamento via
     API" = Sim dispensa o anexo, mas só se for na criação — como o Make fazia."""

@@ -552,7 +552,7 @@ def _ajustes_do_auxilio(p: dict) -> str:
     partes = []
     if p.get("desconto_aplicado"):
         partes.append(f"desconto de {len(p.get('ausencias') or [])} ausência(s) "
-                      f"(−{_moeda_br(p.get("desconto_proposto"))})")
+                      f"(−{_moeda_br(p.get('desconto_proposto'))})")
     if p.get("valor_extra"):
         partes.append(f"+{_moeda_br(p.get('valor_extra'))}"
                       + (f" ({p.get('motivo_extra')})" if p.get("motivo_extra") else ""))

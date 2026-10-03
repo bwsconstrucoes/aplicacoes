@@ -11577,6 +11577,22 @@ Pedido do dono, quatro coisas:
 - Ícone BWS (o brasão amarelo do topo) na aba do navegador, na entrada e em
   todas as telas do Análise de SPs.
 
+#### Leva 163 — o relatório em PDF de cada conta sai junto com o arquivo (03/10/2026)
+
+O dono: *"quando a gente gera esse arquivo, ele tem o arquivo relatório, o PDF
+também, gerar associado (…) se eu quiser baixar o relatório, quero poder baixar
+por aqui. E (…) toda vida que for gerar o card, colocar o link tanto do arquivo
+de pagamento quanto o relatório também."*
+
+- **"Gerar arquivos" sobe também o PDF do relatório de cada conta** — o mesmo da
+  tela (quem entra no pagamento, por conta), para as quatro folhas
+  (`folha_pagamento._relatorio_por_conta`). Fica no log com destino
+  `relatorio` e a conta; **não soma no total e não vira SP**.
+- **Arquivos gerados:** ao lado de cada "conta X", o link "relatório PDF".
+- **Card:** a descrição da SP ganha "Relatório (PDF): link".
+- Uma falha no relatório **não** desfaz o pagamento (fica no log do serviço).
+- **Gerações antigas não têm o PDF** — só as novas.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
