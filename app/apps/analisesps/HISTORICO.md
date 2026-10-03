@@ -11648,7 +11648,7 @@ anexar esse arquivo. O arquivo fica mais completo, mais robusto."*
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
-| publicar as levas 160 a 165 — **com migração 046**: apertar "Aplicar atualizações do banco" no mesmo momento | ele |
+| ~~publicar as levas 160 a 165~~ — **publicadas em 03/10/2026** (main em `6f4207d`, suíte inteira 7.874 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (046) e relançar no Pipefy a 09/2026 | ele |
 | confirmar o valor do dia ausente no "Mês"/"Mensal" (mês ÷ dias úteis) | ele |
 | decidir se o rateio das obras passa a valer também para diárias e auxílios (hoje só a folha da contabilidade) | ele |
 | decidir se a coluna BU é a única verdade do código do Fortes (vazio = sem código) | ele |
