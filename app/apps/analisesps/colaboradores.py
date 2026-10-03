@@ -250,6 +250,10 @@ COLUNAS_OPCIONAIS = {
 # A posição de uma opcional quando o NOME não casa (índice a partir de zero). O
 # valor da diária está na coluna 49 da aba "Dados Documentos" (dono, 02/10/2026).
 POSICAO_CONHECIDA = {"valor_diaria": 48}
+# A coluna BU (73ª; 72 contando do zero) — onde o dono disse que está o código do
+# Fortes (03/10/2026). Vale quando o cabeçalho não tem nenhum dos nomes de
+# `COLUNAS_DO_ID_NA_FICHA`.
+POSICAO_DO_ID_FORTES = 72
 
 # As opcionais que AVISAM quando faltam — só as que mudam dinheiro.
 OPCIONAIS_QUE_AVISAM = {
@@ -492,9 +496,13 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
                 f'a coluna "{aceitos[0]}" não existe na planilha com esse nome. '
                 f"Consequência: {OPCIONAIS_QUE_AVISAM[campo]}")
 
-    # O código do Fortes na ficha: opcional e calado quando falta — a aba "ID
-    # Fortes" continua sendo o caminho de quem não tem a coluna.
+    # O código do Fortes na ficha — a coluna BU de "Dados Documentos" (dono,
+    # 03/10/2026), procurada pelo nome e, sem o nome, pela posição.
     i_id = achar_coluna(normalizado, COLUNAS_DO_ID_NA_FICHA)
+    if i_id is None and POSICAO_DO_ID_FORTES < len(cabecalho):
+        i_id = POSICAO_DO_ID_FORTES
+        logger.info("Cadastro: código do Fortes lido da coluna BU (\"%s\").",
+                    cabecalho[i_id])
     if i_id is not None:
         posicoes["id_fortes"] = i_id
 
@@ -764,12 +772,11 @@ def atualizar(anotar=None) -> dict:
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou gravar o ID Fortes da ficha")
         avisos.append(f"não foi possível gravar o código do Fortes das fichas: {e}")
-    try:
-        fortes = atualizar_ids_fortes(anotar, da_ficha=da_ficha)
-        avisos.extend(fortes.get("avisos") or [])
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Análise de SPs: falhou o de/para do ID Fortes")
-        avisos.append(f"não foi possível importar o de/para do ID Fortes: {e}")
+    # ⚠️ A ABA "ID FORTES" NÃO É MAIS LIDA (dono, 03/10/2026): *"O local correto
+    # de coletar o ID é na coluna BU da aba Dados Documentos. Aba ID Fortes deve
+    # ser ignorada."* Ela gerava o aviso de "códigos que discordam da ficha" a
+    # cada carga. O código vem só da ficha; quem não tem código na ficha mantém
+    # o que já estava gravado (não se apaga no escuro).
 
     with conexao() as conn:
         from .sincronizacao import _meta_gravar

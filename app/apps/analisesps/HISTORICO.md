@@ -11593,6 +11593,23 @@ de pagamento quanto o relatório também."*
 - Uma falha no relatório **não** desfaz o pagamento (fica no log do serviço).
 - **Gerações antigas não têm o PDF** — só as novas.
 
+#### Leva 164 — a aba "ID Fortes" deixou de ser lida (03/10/2026)
+
+O dono, vendo o aviso de "12 códigos da aba ID Fortes discordam da ficha": *"O
+local correto de coletar o ID é na coluna BU da aba Dados Documentos. Aba ID
+Fortes deve ser ignorada."*
+
+- "Atualizar cadastro" **não abre mais** a aba "ID Fortes"; o aviso de
+  divergência some. O código vem só da ficha: pelo nome da coluna ("ID Fortes",
+  "Código Fortes"…) e, sem o nome, pela posição **BU** (73ª coluna,
+  `colaboradores.POSICAO_DO_ID_FORTES`).
+- **Quem não tem código na ficha mantém o que já estava gravado** (vindo da aba,
+  numa carga antiga). Não se apaga no escuro: apagar faria a folha da
+  contabilidade deixar de achar essas pessoas de uma vez. ⚠️ Se ele quiser que a
+  coluna BU seja a ÚNICA verdade (vazio na BU = sem código), é uma linha.
+- A função que lia a aba (`atualizar_ids_fortes`) ficou no código, sem uso pela
+  carga.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
