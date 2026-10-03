@@ -55,7 +55,7 @@
               aria-label="Selecionar a geração de {{ r.competencia }}"></td>{% endif %}
           <td>{{ r.criado_em|momento_br }}</td>
           <td>{{ r.competencia }}
-            <span class="cartao-dica">{{ "quinzena" if r.tipo == "quinzena" else "fim de mês" }}</span></td>
+            <span class="cartao-dica">{{ "quinzena" if r.tipo == "quinzena" else ("despesas com colaboradores" if r.tipo == "dc" else "fim de mês") }}</span></td>
           <td>{{ r.verbas or '—' }}</td>
           <td>{{ r.destino or '—' }}</td>
           <td>
@@ -180,7 +180,7 @@ function desenhaPrevia(d) {
   // Desde 02/10/2026: só a Solicitação de Pagamento, uma por conta, com o
   // rateio múltiplo por obra (o card de Despesa deixou de existir).
   let html = '<p class="cartao-dica">' + escapa(d.competencia) + " · " +
-    (d.tipo === "quinzena" ? "quinzena" : "fim de mês") +
+    (d.tipo === "quinzena" ? "quinzena" : (d.tipo === "dc" ? "despesas com colaboradores" : "fim de mês")) +
     ". Tipo de despesa: " + escapa(d.como_tipo) + ".</p>";
   if (d.ja_lancado) {
     html += '<div class="aviso">Este pagamento já foi lançado no Pipefy.</div>';
@@ -209,6 +209,11 @@ function desenhaPrevia(d) {
           (o.omie ? escapa(o.omie) : '<b class="ruim">ausente</b>') +
           '</td><td class="num">' + moedaBr(o.valor) + "</td></tr>").join("") +
         "</tbody></table></div>" +
+        (s.observacao ? '<p class="cartao-dica">⚠ ' + escapa(s.observacao) + "</p>" : "") +
+        (s.cards_de_origem && s.cards_de_origem.length
+          ? '<p class="cartao-dica">Depois de criada a SP, ' + s.cards_de_origem.length +
+            " card(s) de origem serão marcados (mover_card = Sim) e movidos para a fase de processados.</p>"
+          : "") +
         '<details><summary class="cartao-dica">Descrição e rateio que vão no card</summary>' +
         '<pre style="white-space:pre-wrap;font-size:12px">' + escapa(s.descricao) +
         "\n\n" + escapa(s.rateio) + "</pre></details>";
@@ -331,6 +336,14 @@ criarCards.addEventListener("click", async () => {
         d.sps.map(x => '<a href="' + escapa(x.link) + '" target="_blank" ' +
           'rel="noopener">SP ' + escapa(x.id) + "</a> (conta " + escapa(x.conta) +
           ")").join(", ") + "</div>";
+      // A DC: os cards de origem movidos para a fase de processados.
+      if (d.cards_movidos && d.cards_movidos.length) {
+        resultado += '<div class="aviso">' + d.cards_movidos.length +
+          " card(s) de origem marcados e movidos para a fase de processados.</div>";
+      }
+      (d.avisos || []).forEach(a => {
+        resultado += '<div class="aviso erro">' + escapa(a) + "</div>"; falhou = true;
+      });
     } catch (e) {
       resultado += '<div class="aviso erro">Não foi possível criar os cards: ' + escapa(e) + "</div>";
       falhou = true;

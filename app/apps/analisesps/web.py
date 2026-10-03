@@ -169,6 +169,8 @@ SUBTELAS_DA_FOLHA = [
     ("auxilios", "Alimentação e transporte", "analisesps.tela_folha_auxilio",
      "paga"),
     ("diaristas", "Diaristas", "analisesps.tela_folha_diaristas", "paga"),
+    # As solicitações de despesa com colaboradores do Pipefy (03/10/2026).
+    ("dc", "Despesas com colaboradores", "analisesps.tela_folha_dc", "paga"),
     ("pagamento", "Arquivos gerados", "analisesps.tela_folha_pagamento", "paga"),
 
     # A BASE. Vem depois porque é o que se arruma quando algo não fecha — mas é
@@ -3963,6 +3965,35 @@ def folha_ficha_da_pessoa(cpf: str):
     }}
 
 
+@bp.route("/folha/cadastro-planilha", methods=["POST"])
+@exige_operador
+def folha_cadastro_planilha():
+    """A planilha de CADASTRO do BeeVale ou da SomaPay das pessoas escolhidas
+    (dono, 03/10/2026: *"às vezes tem pessoas novas que não têm cadastro (…) a
+    gente gera a planilha dessas duas pessoas, cadastra, e processa
+    novamente"*). Os avisos (dado faltando na ficha) vão no cabeçalho
+    `X-Avisos`, para a tela dizer."""
+    import json as _json
+    from urllib.parse import quote
+    from . import cadastro_planilha as cp
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        conteudo, nome, avisos = cp.gerar(
+            dados.get("destino"), dados.get("cpfs") or [],
+            {str(k): str(v) for k, v in (dados.get("nomes") or {}).items()})
+    except cp.ErroDoCadastro as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou a planilha de cadastro")
+        return {"ok": False, "erro": f"Não foi possível gerar a planilha: {e}"}, 500
+    tipo = ("application/vnd.ms-excel" if nome.endswith(".xls")
+            else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return Response(conteudo, mimetype=tipo, headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(nome)}",
+        "X-Avisos": quote(_json.dumps(avisos[:200], ensure_ascii=False))})
+
+
 @bp.route("/api/folha/auxilio/extras", methods=["POST"])
 @exige_operador
 def folha_auxilio_extras():
@@ -3990,6 +4021,127 @@ def folha_auxilio_extras():
         logger.exception("Folha: falhou gravar o ajuste do auxílio")
         return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
     return {"ok": True, "gravados": n}
+
+
+# ---------------------------------------------------------------------------
+# DESPESAS COM COLABORADORES (DC) — 03/10/2026. As solicitações do Pipefy que
+# chegam à aba "Data" da planilha DC, no padrão das outras folhas (`dc.py`).
+# ---------------------------------------------------------------------------
+def _dc_lista(calculado: dict, args) -> dict:
+    """A lista da DC com os filtros da lateral (os mesmos das outras folhas,
+    mais o tipo de despesa e a conta)."""
+    from . import folha_lista
+    pessoas = list((calculado or {}).get("pessoas") or [])
+    tipos = folha_lista.marcados(args, "tipo_despesa")
+    contas = folha_lista.marcados(args, "conta")
+    lista = folha_lista.filtrar(pessoas, args, campo_da_obra="obra", escondidas=set())
+    if tipos:
+        lista["pessoas"] = [p for p in lista["pessoas"] if p["tipo_despesa"] in tipos]
+    if contas:
+        lista["pessoas"] = [p for p in lista["pessoas"] if (p["conta"] or "(sem conta)") in contas]
+    lista["filtros"].update({"tipo_despesa": tipos, "conta": contas})
+    lista["filtrando"] = bool(lista["filtrando"] or tipos or contas)
+    lista["opcoes_tipo_despesa"] = [(t, t) for t in sorted(
+        {p["tipo_despesa"] for p in pessoas if p["tipo_despesa"]})]
+    lista["opcoes_conta"] = [(c, c) for c in sorted(
+        {p["conta"] or "(sem conta)" for p in pessoas})]
+    return lista
+
+
+@bp.route("/folha/dc")
+@exige_consulta
+def tela_folha_dc():
+    """Despesas com colaboradores: a aba "Data" da planilha DC, enriquecida
+    pelo cadastro, pronta para gerar o BeeVale ou a SomaPay."""
+    from . import dc, folha_pagamento as fpg
+    recarregar = request.args.get("recarregar") == "1"
+    mostrar_geradas = request.args.get("geradas") == "1"
+    calculado, erro = None, None
+    try:
+        calculado = dc.calcular(recarregar=recarregar, mostrar_geradas=mostrar_geradas)
+    except dc.ErroDaDC as e:
+        erro = str(e)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Folha: não consegui montar a DC")
+        erro = f"não foi possível montar a lista: {e}"
+    lista = _dc_lista(calculado, request.args)
+    try:
+        divisao = fpg.divisao(dc.linhas_a_pagar(calculado)) if calculado and calculado["quantos_a_pagar"] else {}
+    except Exception:  # noqa: BLE001 — a janela é apoio
+        logger.exception("Folha: não consegui montar a divisão da DC")
+        divisao = {}
+    agrupamento = request.args.get("agrupar", dc.AGRUPAMENTO_PADRAO)
+    if agrupamento not in {c for c, _ in dc.AGRUPAMENTOS}:
+        agrupamento = dc.AGRUPAMENTO_PADRAO
+    return render_template(
+        "analisesps_folha_dc.html", aba="folha", subaba="dc",
+        agrupamento=agrupamento, agrupamentos=dc.AGRUPAMENTOS,
+        grupos_da_lista=dc.agrupar(lista["pessoas"], agrupamento),
+        grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
+        pronto=dc._pronto(), pessoas=lista["pessoas"], lista=lista,
+        filtrando=lista["filtrando"], divisao=divisao,
+        mostrar_geradas=mostrar_geradas, obras_c_diarios=_obras_c_diarios(),
+        planilha_dc=dc.PLANILHA_DC,
+        pode_operar=auth.pode_operar(), pode_gerar=auth.e_mestre(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/folha/dc/relatorio.<formato>")
+@exige_consulta
+def folha_dc_relatorio(formato: str):
+    """O relatório da DC — o mesmo das outras folhas, com os filtros da tela."""
+    from . import dc, folha_pagamento as fpg
+    if formato not in ("xlsx", "pdf"):
+        return render_template("analisesps_erro.html", titulo="Não encontrado",
+                               mensagem="Este formato de relatório não existe."), 404
+    try:
+        calculado = dc.calcular()
+        lista = _dc_lista(calculado, request.args)
+        contas = fpg.conta_por_obra()
+        montado = dc.montado_do_relatorio(calculado, lista["pessoas"], lista["filtros"])
+        return _resposta_do_relatorio(montado, contas, formato)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou o relatório da DC")
+        return render_template("analisesps_erro.html", titulo="Relatório da DC",
+                               mensagem=f"Não foi possível gerar o relatório: {e}"), 500
+
+
+@bp.route("/api/folha/dc/selecao", methods=["POST"])
+@exige_operador
+def folha_dc_selecao():
+    """Salva de uma vez quem vai e quem não vai (como no auxílio)."""
+    from . import dc
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        saida = dc.salvar_selecao(dados.get("decisoes") or [], quem=quem)
+    except dc.ErroDaDC as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou salvar a seleção da DC")
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
+    return {"ok": True, **saida}
+
+
+@bp.route("/api/folha/dc/obra", methods=["POST"])
+@exige_operador
+def folha_dc_obra():
+    """A obra que paga uma linha da DC, trocada à mão (vazio = a da solicitação)."""
+    from . import dc
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    chave = str(dados.get("chave") or "").strip()
+    if not chave:
+        return {"ok": False, "erro": "Linha não informada."}, 400
+    try:
+        dc.escolher_obra(chave, dados.get("obra") or "", quem=quem)
+    except dc.ErroDaDC as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou trocar a obra da DC")
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
+    return {"ok": True}
 
 
 @bp.route("/api/folha/auxilio/ajuste", methods=["POST"])

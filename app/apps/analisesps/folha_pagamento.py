@@ -191,12 +191,15 @@ def linhas_para_pagar(ano: int, mes: int, tipo: str, verbas) -> list:
 
 
 def preparar(ano: int, mes: int, tipo: str, verbas, destino: str,
-             juntar_verbas: bool = False, destinos: dict | None = None) -> dict:
+             juntar_verbas: bool = False, destinos: dict | None = None,
+             linhas=None) -> dict:
     """O que vai sair, ANTES de sair. Nada é gravado nem sobe para o Drive.
 
     É o passo que ele pediu: *"mostrar, antes de gerar, quantos arquivos vão sair e
-    com que total cada um"*."""
-    linhas = linhas_para_pagar(ano, mes, tipo, verbas)
+    com que total cada um"*. `linhas`: já prontas (a DC, que não tem fechamento
+    de competência); sem elas, vêm do fechamento guardado."""
+    if linhas is None:
+        linhas = linhas_para_pagar(ano, mes, tipo, verbas)
     lotes = (geracao.montar_lotes_por_conta(linhas, destinos, destino, juntar_verbas)
              if destinos else geracao.montar_lotes(linhas, destino, juntar_verbas))
     resumo = geracao.resumo_dos_lotes(lotes)
@@ -390,7 +393,7 @@ def _br(valor) -> str:
 def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
           juntar_verbas: bool = False, quem: str = "",
           forcar: bool = False, destinos: dict | None = None,
-          relatorio=None) -> dict:
+          relatorio=None, linhas=None) -> dict:
     """Gera os arquivos, sobe no Drive e registra. Devolve os links.
 
     ⚠️ SÃO SEMPRE AO MENOS DOIS ARQUIVOS: o de pagamento (um por conta) e o de
@@ -409,7 +412,7 @@ def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
             'tabela do log não encontrada no banco. Clique em "Aplicar atualizações do '
             'banco" em Configurações e repita a operação.')
 
-    plano = preparar(ano, mes, tipo, verbas, destino, juntar_verbas, destinos)
+    plano = preparar(ano, mes, tipo, verbas, destino, juntar_verbas, destinos, linhas)
     lotes = plano["lotes"]
     if not lotes:
         raise ErroDoPagamento(
@@ -678,7 +681,7 @@ def gerencial(ano: int, mes: int) -> dict:
 # gravar nada; o "ok" refaz o fechamento com essa mesma situação e gera — os dois
 # passos juntos, para o arquivo nunca sair de um fechamento antigo.
 # ---------------------------------------------------------------------------
-ORIGENS = ("folha", "diaria", "alimentacao", "transporte")
+ORIGENS = ("folha", "diaria", "alimentacao", "transporte", "dc")
 
 
 def _linhas_do_apropriado(apropriado: dict, verba: str) -> list:
@@ -695,6 +698,15 @@ def _pedido_direto(origem: str, dados: dict) -> dict:
     from . import folha_auxilio, folha_diaristas
     if origem not in ORIGENS:
         raise ErroDoPagamento(f'origem "{origem}" não reconhecida.')
+    if origem == "dc":
+        # As despesas com colaboradores (aba "Data"): sem competência — o mês é
+        # o da geração — e cada linha com a sua categoria e carteira.
+        from . import dc
+        from .horario import agora
+        hoje = agora().date()
+        return {"ano": hoje.year, "mes": hoje.month, "tipo": dc.TIPO, "verba": dc.VERBA,
+                "linhas": dc.linhas_a_pagar(),
+                "rotulo": f"Despesas com colaboradores {hoje.strftime('%d/%m/%Y')}"}
     if origem == "folha":
         folha, _apropriado, linhas = linhas_da_previa(int(dados.get("folha_id") or 0))
         return {"ano": folha["ano"], "mes": folha["mes"], "tipo": folha["tipo"],
@@ -748,6 +760,20 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
         raise ErroDoPagamento(
             "há avisos nos arquivos. Confira o resumo e marque a opção de gerar "
             "com aviso, se for o caso.")
+    if origem == "dc":
+        # Sem fechamento: as linhas vão direto, e o lote fica guardado (é o que
+        # tira as linhas da tela e alimenta a SP do Pipefy).
+        from . import dc
+        saida = gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
+                      destino, quem=quem, forcar=forcar, destinos=destinos,
+                      relatorio=_relatorio_por_conta(origem, dados, pedido),
+                      linhas=pedido["linhas"])
+        analise = next((a["id"] for a in saida["arquivos"] if a["destino"] == ANALISE),
+                       None)
+        destino_da_conta = {a["conta"]: a["destino"] for a in saida["arquivos"]
+                            if a["destino"] not in (ANALISE, RELATORIO)}
+        dc.registrar_lote(analise, pedido["linhas"], destino_da_conta, quem=quem)
+        return saida
     if origem == "folha":
         folha_gestao.fechar(int(dados.get("folha_id") or 0), quem=quem)
     elif origem == "diaria":
@@ -769,7 +795,11 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
     from . import folha_auxilio, folha_diaristas, folha_lista
     from . import folha_relatorio as fr
     try:
-        if origem == "folha":
+        if origem == "dc":
+            from . import dc
+            contas = conta_por_obra()
+            montado = dc.montado_do_relatorio(dc.calcular(), so_a_pagar=True)
+        elif origem == "folha":
             from . import folha_gestao
             montado = fr.com_contracheques(
                 folha_gestao.montar(int(dados.get("folha_id") or 0), {}))
@@ -904,6 +934,12 @@ def excluir_arquivos(ids, quem: str = "") -> dict:
                              [(f"folha_cards_rodada:{a['id']}",) for a in alvos
                               if a["destino"] == ANALISE])
         conn.commit()
+    # A DC: excluir a geração devolve as linhas para a tela (o lote some).
+    try:
+        from . import dc
+        dc.apagar_lotes([a["id"] for a in alvos if a["destino"] == ANALISE])
+    except Exception:  # noqa: BLE001 — o registro já foi apagado
+        logger.exception("Folha: não consegui apagar o lote da DC")
     logger.info("Folha: %d arquivo(s) excluído(s) do registro por %s (%d falha(s) "
                 "no Drive).", len(alvos), quem or "(sem nome)", len(falhas))
     return {"excluidos": len(alvos), "falhas_no_drive": falhas,

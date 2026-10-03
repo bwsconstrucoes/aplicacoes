@@ -11698,6 +11698,107 @@ pendência, conforme funciona na folha da contabilidade."*
   negativo. Na linha, o valor que reduz aparece em vermelho.
 - **"Aplicar desconto"** ganhou destaque (botão âmbar cheio).
 
+#### Leva 170 — planilhas de cadastro do BeeVale e da SomaPay, em todas as folhas (03/10/2026)
+
+O dono: *"às vezes pode acontecer de eu querer pagar um arquivo, aí, opa, dois
+não estão cadastrados ainda. Aí vou lá, cadastro, a gente gera a planilha dessas
+duas pessoas, cadastra, e processa novamente."* E: *"a planilha Model Import é a
+do BeeVale. E a modelo de registro de funcionário é a do SomaPay."*
+
+- Botão **"Planilha de cadastro"** na lateral da folha da contabilidade, das
+  diárias e da alimentação/transporte (e na DC): uma janela com as pessoas da
+  lista da tela (nenhuma marcada, com busca), BeeVale ou SomaPay, e "Gerar
+  planilha" (`cadastro_planilha.py`, rota `/folha/cadastro-planilha`).
+- **BeeVale:** Nome completo, Nome impresso no cartão (primeiro e último nome, até
+  26 letras — ⚠️ escolha minha), CPF, Email (`<cpf>@bwsconstrucoes.com.br`, o
+  mesmo do arquivo de pagamento), Data de nascimento, DDI (55), Celular.
+- **SomaPay:** o modelo do portal (`modelos/somapay_cadastro_modelo.xlsx`, sem o
+  nome de quem o criou), preenchido da linha 12, como o arquivo de pagamento. Tipo
+  de contrato convertido para a lista do modelo (CTPS → CLT tempo
+  indeterminado; RPA/prestador → Autônomo (RPA)…).
+- **Os documentos da ficha** (RG, emissão, órgão, UF, nome da mãe, sexo,
+  endereço, e-mail) passam a ser lidos na carga do cadastro e guardados num JSON
+  (`colaborador.documentos`, migração **047**). Os nomes das colunas são os
+  prováveis; o que faltar fica em branco e a tela avisa, pessoa por pessoa, ao
+  gerar.
+
+#### Leva 171 — Despesas com colaboradores (DC): tela, arquivo e SP no Pipefy (03/10/2026)
+
+O dono mandou os scripts antigos (`gerasp.gs`, `geraspbeevale.gs`, `moverfase.gs`)
+e pediu: *"a gente vai criar uma tela (…) em tudo que for compatível, no mesmo
+padrão das que a gente criou (…) o objetivo é gerar a planilha de pagamento do
+BeeVale. E permitir também pagar via SomaPay."* E: *"faz uma movimentação dos
+cards para uma outra fase (…) e gera uma solicitação de pagamento (…) colocar os
+links (…) do arquivo de pagamento"*. A planilha é a
+`124EVrS86jBdGS7KzTJ5qI1MuiU25W9QguMAPFqhj1iM` (confirmada por ele).
+
+- **Tela nova "Despesas com colaboradores"** (subtela da Folha PGT, depois de
+  Diaristas; `dc.py`, `analisesps_folha_dc.html`, rota `/folha/dc`). Fonte: a aba
+  **"Data"** (colunas A…N, na ordem do `doPost` do script — um colaborador por
+  linha de cada card). Lida na hora, guardada por 60 s; "Atualizar da planilha"
+  força.
+- **O que a aba "DC" fazia, agora do banco:** nome, função e tipo pelo CPF; a
+  diária cadastrada; a conta pela obra (centro de custo) na "C. Diários"; o
+  código OMIE da obra; a categoria e o Record ID pelo tipo de despesa na aba
+  "Plano Financeiro"; a **carteira do BeeVale** pela aba **"Data base BeeVale"**
+  (colunas achadas pelo nome — "plano/categoria/despesa" e "carteira/BeeVale";
+  sem a aba, "Produção" e um aviso na tela).
+- **⚠️ O valor de cada linha é REGRA MINHA, a confirmar:** o valor informado na
+  solicitação; sem ele, quantidade × diária (a informada, ou a do cadastro). As
+  fórmulas da aba "DC" não vieram.
+- Tudo no padrão das outras folhas: caixinha por linha + "Salvar seleção" (só as
+  exceções, em `dc_ajuste`), "trocar…" a obra da linha, filtros (situação, tipo
+  de despesa, obra, conta), pendências na lateral (fora do cadastro / sem valor,
+  sem conta, duplicidade), relatório Excel/PDF por conta, Divisão por obra e
+  conta, Planilha de cadastro, Gerar arquivos (BeeVale ou SomaPay por conta).
+- **Duplicidade**, como o script: mesmo CPF e tipo de despesa gerado nos últimos
+  10 dias vira aviso na linha (não bloqueia).
+- **Gerar** grava um **lote** (`dc_lote`/`dc_linha`, migração 047): é o que tira
+  as linhas da tela ("mostrar as já geradas" traz de volta para consulta), o que
+  alimenta a SP e a duplicidade. **Excluir a geração** em Arquivos gerados apaga o
+  lote e as linhas voltam. **A aba Data NÃO é apagada** (o script apagava) —
+  nada é escrito na planilha.
+- **Arquivo BeeVale:** a carteira de cada linha vai na coluna da carteira; a
+  consolidação passa a ser CPF + natureza + carteira (as outras folhas não mudam:
+  a carteira delas segue "Produção"). Nome do arquivo com dia e hora (a DC sai
+  várias vezes no mês).
+- **No Pipefy** (Arquivos gerados → lançar, como as outras): **uma SP por conta**,
+  título = a data (como o script), rateio por obra **e por categoria** (cada tipo
+  de despesa com o seu percentual), tipo de despesa da SP = o da maior parte (o
+  script usava o primeiro e avisava; a prévia avisa), etiqueta da DC
+  (`317521565`) e, no BeeVale, o campo de automação "BeeVale" — os dois do
+  script. Descrição do script: conta, valor, **"Valor BeeVale (+1,5%)"** só
+  informado (a SP vai pelo valor original, como no script), IDs de origem, valor
+  por obra e por tipo, links do pagamento, do relatório PDF e da análise.
+- **Depois da SP, os cards de origem:** `mover_card` = Sim e movidos para a fase
+  `340593562`. Cada card movido fica guardado; se o Pipefy recusar, a SP não se
+  desfaz, a tela avisa e lançar de novo só termina a mudança.
+- A suíte inteira acusou que a leva 170 usava `openpyxl` num arquivo fora da
+  lista de liberados (`test_o_modulo_nao_depende_de_pandas_nem_de_streamlit`):
+  liberado com o motivo (planilha só das pessoas marcadas). Suíte inteira depois:
+  **8.000 verdes**. Não testado contra a planilha e o Pipefy reais.
+
+#### Leva 172 — DC: o valor pela diária cadastrada, e a lista agrupada (03/10/2026)
+
+O dono: *"A DC pode vir com valor ou não quando se trata de diária. Ela pode
+pedir que seja paga pelo valor de diária cadastrada, nesse caso o sistema
+calcula. Seria interessante podermos visualizar de forma mais agrupada o que
+está para ser pago. Agrupar por obra etc."*
+
+- **O valor da linha** (substitui a regra minha da leva 171), em ordem: a
+  solicitação pede a diária cadastrada (coluna G da aba Data) → quantidade ×
+  diária do cadastro, mesmo que traga outro valor (dito na linha); senão o valor
+  informado; senão quantidade × diária informada; senão quantidade × diária do
+  cadastro. Sem nada disso, a linha fica sem valor e não entra. A coluna Valor
+  diz de onde veio. ⚠️ **SUPOSIÇÃO:** "pede a cadastrada" = a coluna G contém
+  "cadastr" ou "sim" — o texto exato do formulário não foi visto.
+- **Lista agrupada:** "Agrupar por" obra (padrão), conta, tipo de despesa,
+  solicitação, colaborador ou sem agrupar. Cada grupo tem cabeçalho com linhas,
+  quantas a pagar, pendências e o total — que acompanham a marcação —, caixinha
+  para marcar/desmarcar o grupo inteiro, e abre/fecha no clique ("fechar todos").
+- **Resumo do que vai ser pago**, embaixo: por obra, por conta e por tipo de
+  despesa (linhas, pessoas, total), no lugar do antigo "Por obra".
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11719,7 +11820,7 @@ pendência, conforme funciona na folha da contabilidade."*
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
-| publicar as levas 168 e 169 (sem migração) | ele |
+| ~~publicar as levas 168 e 169~~ — **publicadas em 03/10/2026** (main em `598588e`, suíte inteira 7.879 verdes, sem migração). ⚠️ A main tinha andado (módulo de ponto eletrônico, de outro chat) e a junção foi feita antes de rodar a suíte no ramo — falha minha; a suíte inteira rodou logo depois sobre o que foi ao ar: 7.976 verdes. Falta ele resolver as pendências "sem obra do ponto" do mês | ele |
 | ~~publicar as levas 166 e 167~~ — **publicadas em 03/10/2026** (main em `eb206ea`, suíte inteira 7.877 verdes, sem migração) | — |
 | ~~publicar as levas 160 a 165~~ — **publicadas em 03/10/2026** (main em `6f4207d`, suíte inteira 7.874 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (046) e relançar no Pipefy a 09/2026 | ele |
 | ~~valor do dia ausente no mensal~~ — **dias úteis**, confirmado (03/10/2026) | — |
@@ -11732,7 +11833,12 @@ pendência, conforme funciona na folha da contabilidade."*
 | ~~confirmar o favorecido da SP quando o arquivo é SomaPay~~ — **confirmado em 03/10/2026: CNPJ da BWS**; e a data de pagamento = hoje, também confirmada | — |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
-| campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
+| **publicar as levas 170 a 172** (migração **047**: apertar "Aplicar atualizações do banco" no mesmo momento) e depois "Atualizar cadastro" para trazer os documentos da ficha | ele |
+| DC: compartilhar a planilha da DC com a conta de serviço do Google, se a tela disser "permissão" | ele |
+| DC: confirmar o texto da coluna G ("valor da diária") quando a solicitação pede a diária cadastrada (leva 172 supõe "cadastr" ou "sim") e as colunas da aba "Data base BeeVale" | ele |
+| DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
+| decidir se a alimentação e o transporte no BeeVale também usam a carteira da "Data base BeeVale" (hoje "Produção") | ele |
+| campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 
 ---

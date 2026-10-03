@@ -74,6 +74,8 @@ ROTULO_DA_VERBA = {
     "transporte": "Transporte",
     "diaria": "Diárias",
     "gratificacao": "Gratificação",
+    # As solicitações de despesa com colaboradores do Pipefy (03/10/2026).
+    "dc": "Despesas com colaboradores",
 }
 
 # ⚠️ O QUE O BEEVALE CHAMA DE "NATUREZA" da verba. É o que autoriza o mesmo CPF a
@@ -204,10 +206,15 @@ def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
         if verba and verba not in lote["verbas"]:
             lote["verbas"].append(verba)
         # A chave da consolidação, igual à do script: conta + CPF + natureza.
-        chave_item = (cpf, natureza(verba))
+        # A linha pode trazer a própria natureza e a carteira do BeeVale — é o
+        # caso da DC, em que cada solicitação tem o seu tipo de despesa (o
+        # `geraspbeevale.gs` consolida por CPF + carteira + categoria).
+        nat = str(bruta.get("natureza") or "").strip() or natureza(verba)
+        carteira = str(bruta.get("carteira") or "").strip()
+        chave_item = (cpf, nat, carteira)
         item = lote["itens"].setdefault(chave_item, {
             "cpf": cpf, "nome": " ".join(str(bruta.get("nome") or "").split()),
-            "verba": verba, "natureza": natureza(verba),
+            "verba": verba, "natureza": nat, "carteira": carteira,
             "obra": str(bruta.get("obra") or "").strip(),
             "valor": Decimal("0.00"), "juntou": 0})
         item["valor"] += valor
@@ -409,7 +416,8 @@ def beevale_xlsx(linhas) -> bytes:
     for linha in linhas or []:
         nome = str(linha.get("nome") or "")
         aba.append([
-            nome, email_do_cpf(linha.get("cpf")), CARTEIRA, BENEFICIO,
+            nome, email_do_cpf(linha.get("cpf")),
+            str(linha.get("carteira") or "").strip() or CARTEIRA, BENEFICIO,
             float(_dinheiro(linha.get("valor"))), TIPO_DE_RECARGA, 0,
             formata_cpf(linha.get("cpf")), nome,
             # ⚠️ SUPOSIÇÃO: uso a OBRA como centro de custo, porque é o que faz
@@ -446,8 +454,13 @@ def nome_do_arquivo(lote, ano: int, mes: int, tipo: str) -> str:
     aconteceu: está escrito no comentário do script do dono)."""
     partes = [ROTULO_DO_DESTINO.get(lote.get("destino"), "Pagamento"),
               f"{int(mes):02d}-{int(ano)}"]
-    rotulo_tipo = {"quinzena": "Quinzena", "fim_de_mes": "Fim de mes"}.get(
-        str(tipo or ""), str(tipo or ""))
+    if str(tipo or "") == "dc":
+        # A DC não tem competência e pode sair várias vezes no mês: o nome leva
+        # o dia e a hora da geração, para um arquivo não se confundir com outro.
+        from .horario import agora
+        partes[1] = agora().strftime("%d-%m-%Y %Hh%M")
+    rotulo_tipo = {"quinzena": "Quinzena", "fim_de_mes": "Fim de mes",
+                   "dc": ""}.get(str(tipo or ""), str(tipo or ""))
     if rotulo_tipo:
         partes.append(rotulo_tipo)
     verbas = [rotulo_da_verba(v) for v in (lote.get("verbas") or [])]

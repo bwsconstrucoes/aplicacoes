@@ -152,6 +152,7 @@
     {% endif %}
     <button type="button" class="btn secundario" id="btn-divisao"
             >Divisão por obra e conta</button>
+    {% if pode_operar %}{% include "_cadastro_planilha.html" %}{% endif %}
   </div>
 </div>
 
