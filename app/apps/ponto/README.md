@@ -23,6 +23,7 @@ migracoes/001_ponto_base.sql
 core/cadastros.py        obras e pessoas: lê o ERP, afina com as tabelas do ponto
 core/dispositivos.py     registrar, aprovar, bloquear, autorizar; regra por perfil
 core/geo.py              distância e cerca (função pura)
+core/apuracao.py         o cálculo do dia pela CLT: falta, atraso, extra, intervalo, noturno (função pura)
 core/marcacoes.py        a batida: validações, NSR, hash encadeado, foto, ajuste
 core/consultas.py        marcações por período, no formato do ponto
 core/fotos.py            base64 → JPEG reduzido → Google Drive (ficha no banco)
@@ -32,7 +33,8 @@ scripts/migrar.py                    estado / aplicar migrações
 scripts/importar_obras.py            planilha → ERP obras + ponto.obra_config
 scripts/importar_colaboradores.py    planilha → ERP colaboradores + ponto.colaborador_config
 scripts/enviar_fotos.py              leva ao Drive as fotos que ficaram na fila
-PLANO.md                 o plano aprovado, com as decisões e o porquê
+PLANO.md                 o plano aprovado da fase 1, com as decisões e o porquê
+PLANO_FASE2.md           gestão, app do colaborador, ocorrências, banco de horas e alertas
 HISTORICO.md             a memória da área — leia antes de mexer
 ```
 

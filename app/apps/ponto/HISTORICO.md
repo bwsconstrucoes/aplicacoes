@@ -17,9 +17,33 @@ junto com o `README.md` e o `PLANO.md`.
 2. **Confirmar com a contabilidade/advogado** o que o REP-P exige além do
    software (registro do programa, termo de responsabilidade, AFD/AEJ) antes de
    desligar o Mobponto. Não dá para confirmar daqui.
-3. **Fase 2**: PWA de bater ponto e telas no ERP (aprovar aparelho, analisar
-   batida EM_ANALISE, decidir ajuste). **Fase 3**: iDFace, AFD/AEJ, espelho,
-   horas, expurgo de fotos por prazo.
+3. **Fase 2 — o plano está em `PLANO_FASE2.md`**, esperando as 7 decisões da
+   §8 de lá (horários reais, gestão dentro do ERP, quem aprova, login por PIN,
+   banco de horas, quem vê atestado, obra do piloto). Já pronto no ramo
+   `feature/modulo-ponto`: o cálculo do dia (`core/apuracao.py`).
+
+## 03/10/2026 — Pedido do ambiente completo de gestão e o cálculo do dia
+
+O dono pediu, depois da publicação, o que faltava ficar explícito: gestão
+completa (cadastros, consulta), app simples no celular para o colaborador ver o
+próprio ponto e mandar atestado, ocorrências com aprovação, compensação, banco de
+horas só para quem pode e alertas com inteligência. O plano é o
+`PLANO_FASE2.md`. Decisões tomadas sem ele, com o motivo:
+
+- **O cálculo do dia veio antes de tudo**, porque gestão, app e alertas leem
+  dele, e ele não depende de decisão: são as regras da CLT (tolerância de 5/10
+  min com a Súmula 366, intervalo do art. 71, 2 h de extra do art. 59,
+  interjornada do art. 66, hora noturna do art. 73, 12x36 do art. 59-A). Função
+  pura, sem banco, 13 testes em `tests/test_ponto_apuracao.py`. **Não calcula**:
+  a prorrogação do noturno depois das 5 h (Súmula 60, II) nem o adicional em
+  dinheiro — isso é da folha.
+- **Batida faltando não vira extra nem débito**: o dia fica INCOMPLETO e o
+  ajuste resolve. Inventar o par faltante seria número errado com cara de certo.
+- **Sem escala, o cálculo não julga** (não marca falta). Até o DP mandar os
+  horários reais, o espelho mostra "sem escala".
+- **"Pessoal de obra não tem banco, mas pessoal de obra tem"** saiu assim no
+  ditado; entendido como "obra não, escritório sim", e o banco é marcado por
+  pessoa — a regra muda sem código.
 
 ## 03/10/2026 — Publicado
 
