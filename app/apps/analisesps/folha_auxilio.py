@@ -299,11 +299,23 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         saida["dias"] = 1
         saida["valor"] = valor_unitario
         if saida["saida_no_mes"]:
-            # Valor do mês, proporcional aos dias corridos até a saída.
-            do_mes = calendar.monthrange(inicio.year, inicio.month)[1]
-            corridos = (fim - inicio).days + 1
-            saida["valor"] = (valor_unitario * corridos / do_mes).quantize(CENTAVO)
-            saida["proporcao"] = f"{corridos}/{do_mes} dias"
+            ini_mes = inicio.replace(day=1)
+            fim_mes = ini_mes.replace(
+                day=calendar.monthrange(ini_mes.year, ini_mes.month)[1])
+            if tipo == TRANSPORTE:
+                # Transporte: pelos DIAS ÚTEIS (dono, 03/10/2026: *"Transporte
+                # valor mensal, vamos considerar os dias úteis"*) — a mesma
+                # régua do desconto de ausências.
+                feitos = folha_calendario.dias_uteis(inicio, fim)
+                do_mes = folha_calendario.dias_uteis(ini_mes, fim_mes) or 1
+                rotulo = "dias úteis"
+            else:
+                # Alimentação "Mês": dias corridos até a saída.
+                feitos = (fim - inicio).days + 1
+                do_mes = (fim_mes - ini_mes).days + 1
+                rotulo = "dias"
+            saida["valor"] = (valor_unitario * feitos / do_mes).quantize(CENTAVO)
+            saida["proporcao"] = f"{feitos}/{do_mes} {rotulo}"
         if saida["dias_ajuste"]:
             saida["motivos"].append(
                 "o ajuste de dias não se aplica à modalidade de valor fixo "

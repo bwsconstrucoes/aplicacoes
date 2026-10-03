@@ -656,22 +656,37 @@ def test_o_codigo_vem_junto_na_ficha_da_pessoa(banco_cadastro, monkeypatch):
     assert col.buscar()[0]["id_fortes"] == "000013"
 
 
-def test_atualizar_o_cadastro_NAO_apaga_o_codigo_ja_gravado(banco_cadastro,
-                                                           monkeypatch):
-    """⚠️ Quem não tem código na ficha mantém o que já estava gravado: apagar no
-    escuro faria a folha deixar de achar a pessoa sem nada na tela explicando.
-    (Desde 03/10/2026 a aba "ID Fortes" não é lida; o código antigo veio dela.)"""
+def test_a_COLUNA_BU_e_a_UNICA_fonte_do_codigo(banco_cadastro, monkeypatch):
+    """Dono, 03/10/2026: *"Coluna BU é a única fonte correta"*. Quem veio sem
+    código na ficha perde o código antigo (de uma carga da aba "ID Fortes"), e o
+    aviso diz quem."""
+    from app.apps.analisesps import colaboradores as col
+
+    aba = _aba_com_id({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"},
+                      {I_CPF: "035.134.413-63", I_NOME: "LUELIA", I_ID: "000387"})
+    monkeypatch.setattr(col, "_aba", abas_falsas(aba))
+    col.atualizar()
+    col.atualizar_ids_fortes()          # código antigo para GERLANIO (000013)
+    assert col.por_cpf("99713349334")["id_fortes"] == "000013"
+
+    resultado = col.atualizar()
+    assert col.por_cpf("99713349334")["id_fortes"] == "", "sem BU, sem código"
+    assert col.por_cpf("03513441363")["id_fortes"] == "000387"
+    assert any("GERLANIO" in a and "coluna BU" in a for a in resultado["avisos"])
+
+
+def test_coluna_BU_que_veio_VAZIA_para_todos_nao_apaga_ninguem(banco_cadastro,
+                                                               monkeypatch):
+    """Uma leitura em que a coluna não trouxe código nenhum é suspeita: não pode
+    zerar a folha inteira."""
     from app.apps.analisesps import colaboradores as col
 
     aba = _aba_com({I_CPF: "997.133.493-34", I_NOME: "GERLANIO"})
     monkeypatch.setattr(col, "_aba", abas_falsas(aba))
     col.atualizar()
-    col.atualizar_ids_fortes()          # um código gravado por uma carga antiga
-    assert col.por_cpf("99713349334")["id_fortes"] == "000013"
-
+    col.atualizar_ids_fortes()
     col.atualizar()
     assert col.por_cpf("99713349334")["id_fortes"] == "000013"
-
 
 def test_a_aba_ID_FORTES_NAO_e_mais_lida(banco_cadastro, monkeypatch):
     """Dono, 03/10/2026: *"O local correto de coletar o ID é na coluna BU da aba
