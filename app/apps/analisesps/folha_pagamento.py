@@ -771,7 +771,8 @@ def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
     try:
         if origem == "folha":
             from . import folha_gestao
-            montado = folha_gestao.montar(int(dados.get("folha_id") or 0), {})
+            montado = fr.com_contracheques(
+                folha_gestao.montar(int(dados.get("folha_id") or 0), {}))
             contas = folha_gestao._contas_das_obras()
         elif origem == "diaria":
             calculado = folha_diaristas.calcular(pedido["ano"], pedido["mes"],

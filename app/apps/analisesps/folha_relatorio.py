@@ -274,7 +274,32 @@ def montar(montado: dict, contas_por_obra: dict, conta: str = "") -> dict:
         "de_quantas": int((montado.get("totais") or {}).get("pessoas") or 0),
         "total_da_lista": lista,
         "grupos": agrupamentos(pessoas, contas_por_obra),
+        # O contracheque de cada pessoa (folha da contabilidade com analítica
+        # importada) — ver `com_contracheques`.
+        "contracheques": montado.get("contracheques") or {},
     }
+
+
+def com_contracheques(montado: dict) -> dict:
+    """Junta ao montado da FOLHA DA CONTABILIDADE o contracheque de cada pessoa,
+    da folha analítica importada. O dono, 03/10/2026: *"além do resumo (…) o
+    detalhamento de cada colaborador, como se fosse a folha (…) todas as
+    informações do contracheque (…) para a gente poder também anexar esse
+    arquivo"*. Sem analítica, o montado volta como estava."""
+    from . import folha_analitica_guardada as fag
+    folha = (montado or {}).get("folha") or {}
+    if not folha.get("ano") or not folha.get("mes"):
+        return montado
+    try:
+        todos = fag.contracheques_da_folha(folha["ano"], folha["mes"], folha.get("tipo"))
+    except Exception:  # noqa: BLE001 — o relatório sai sem o detalhamento
+        import logging
+        logging.getLogger("analisesps.folha").exception(
+            "Folha: não consegui ler os contracheques da analítica")
+        return montado
+    if todos:
+        montado = dict(montado, contracheques=todos)
+    return montado
 
 
 def _aviso_de_origem(dados) -> str:
@@ -439,6 +464,42 @@ def pdf(dados: dict) -> bytes:
                 for p in dados["pessoas"]],
                larguras=[54, 32, 40, 18, 10, 20, 16], direita=(4, 5),
                fonte=7, linhas_max=2)
+
+    # O CONTRACHEQUE DE CADA PESSOA (03/10/2026) — só a folha da contabilidade
+    # com a analítica importada traz. É o que torna o PDF anexável ao card.
+    contracheques = dados.get("contracheques") or {}
+    com = [(p, contracheques.get(str(p.get("id_fortes") or "").zfill(6)))
+           for p in dados["pessoas"]]
+    if any(cc for _, cc in com):
+        doc.titulo_secao("Detalhamento por colaborador (contracheque)")
+        doc.observacao("Eventos da folha analítica da contabilidade e a "
+                       "apropriação por obra de cada colaborador.")
+        for p, cc in com:
+            if not cc:
+                continue
+            obras = "; ".join(
+                f"{o.get('obra') or '-'}: {dias_txt(o.get('dias'))} dia(s), "
+                f"R$ {_moeda_br(o.get('valor'))}" for o in (p.get("por_obra") or []))
+            doc.subtitulo_secao(
+                f"{p.get('nome_na_tela') or ''} - código {p.get('id_fortes') or '-'}",
+                " · ".join(x for x in [
+                    cc.get("cargo") or p.get("cargo") or "",
+                    f"admissão {cc['admissao']}" if cc.get("admissao") else "",
+                    cc.get("situacao") or "",
+                    f"Apropriação: {obras}" if obras else ""] if x))
+            eventos = cc.get("eventos") or []
+            doc.tabela(["Código", "Descrição", "Ref.", "Proventos", "Descontos"],
+                       [[e.get("codigo") or "", e.get("descricao") or "",
+                         e.get("referencia") or "",
+                         _moeda_br(e["provento"]) if e.get("provento") else "",
+                         _moeda_br(e["desconto"]) if e.get("desconto") else ""]
+                        for e in eventos]
+                       + [["", "Totais", "",
+                           _moeda_br(cc.get("total_proventos")),
+                           _moeda_br(cc.get("total_descontos"))],
+                          ["", "Líquido", "", _moeda_br(cc.get("liquido")), ""]],
+                       larguras=[16, 86, 22, 28, 28], direita=(3, 4), fonte=7,
+                       linhas_max=1)
     return doc.bytes()
 
 

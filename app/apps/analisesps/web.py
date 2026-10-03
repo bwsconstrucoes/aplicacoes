@@ -2607,6 +2607,9 @@ def folha_relatorio(folha_id: int, formato: str):
         # aquela conta. Ver `folha_relatorio.recortar_por_conta`.
         recorte = (request.args.get("relatorio_conta") or "").strip()
         contas = fg._contas_das_obras()
+        if formato == "pdf":
+            # O contracheque de cada pessoa no PDF (03/10/2026).
+            montado = fr.com_contracheques(montado)
         if recorte == "__cada":
             conteudo, nome = fr.zip_por_conta(montado, contas, formato)
             return Response(conteudo, mimetype="application/zip", headers={

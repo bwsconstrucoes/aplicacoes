@@ -11610,6 +11610,23 @@ Fortes deve ser ignorada."*
 - A função que lia a aba (`atualizar_ids_fortes`) ficou no código, sem uso pela
   carga.
 
+#### Leva 165 — o PDF da folha traz o contracheque de cada colaborador (03/10/2026)
+
+O dono: *"além do resumo (…) o detalhamento de cada colaborador, como se fosse a
+folha (…) todas as informações do contracheque (…) para a gente poder também
+anexar esse arquivo. O arquivo fica mais completo, mais robusto."*
+
+- O PDF da **folha da contabilidade** (o da tela e o gerado junto com o arquivo
+  de pagamento, por conta) ganha a seção **"Detalhamento por colaborador
+  (contracheque)"**: nome e código, função, admissão, situação, a apropriação
+  por obra (dias e valor), e os eventos da folha analítica (código, descrição,
+  referência, proventos, descontos), com totais e líquido.
+- Sai da **folha analítica importada** (`folha_analitica_guardada.
+  contracheques_da_folha`, uma consulta para a folha inteira). Sem analítica,
+  o PDF sai como antes. Processamento pequeno: tudo já está no banco.
+- Só no PDF (o Excel continua como estava). Diárias e auxílios não têm
+  contracheque — o PDF deles não muda.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
