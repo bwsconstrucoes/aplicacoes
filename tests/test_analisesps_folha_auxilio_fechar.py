@@ -79,3 +79,26 @@ def test_gerar_o_auxilio_sobe_o_RELATORIO_em_PDF_da_conta(banco_auxilio, monkeyp
     rodada = fp.rodadas()[0]
     assert rodada["relatorios"]["50024"]["link"]
     assert rodada["total"] == D("300.00")
+
+
+def test_a_REGRA_DE_RATEIO_divide_o_auxilio_entre_as_obras(banco_auxilio):
+    """Dono, 03/10/2026: *"o rateio das obras serve sim para alimentação e
+    transporte e diaristas"*. A regra manda sobre o ponto, como na folha."""
+    from app.apps.analisesps import folha_auxilio as fx, folha_rateio as fr
+    fr.gravar({"nome": "Supervisores", "obras": [
+        {"obra": "CREPEOLINDA", "percentual": "60"},
+        {"obra": "CREPEAREIAS", "percentual": "40"}],
+        "pessoas": [{"cpf": ATIVO}]}, "MARCELO")
+    calculado = fx.calcular(fx.ALIMENTACAO, 2026, 9)
+    p = next(x for x in calculado["pessoas"] if x["cpf"] == ATIVO)
+    assert p["obra_de_onde"] == "regra" and p["regra"] == "Supervisores"
+    assert [(x["obra"], x["valor"]) for x in p["rateio"]] == [
+        ("CREPEOLINDA", D("180.00")), ("CREPEAREIAS", D("120.00"))]
+    por_obra = {o["obra"]: o["total"] for o in calculado["por_obra"]}
+    assert por_obra == {"CREPEOLINDA": D("180.00"), "CREPEAREIAS": D("120.00")}
+
+    fx.fechar(fx.ALIMENTACAO, 2026, 9, "fim_de_mes", quem="MARCELO")
+    from app.apps.analisesps import folha_pagamento as fp
+    pagas = fp.linhas_para_pagar(2026, 9, "fim_de_mes", ["alimentacao"])
+    assert sorted((l["obra"], l["valor"]) for l in pagas) == [
+        ("CREPEAREIAS", D("120.00")), ("CREPEOLINDA", D("180.00"))]

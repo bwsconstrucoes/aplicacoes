@@ -677,6 +677,14 @@ def test_quem_SAIU_NO_MEIO_DO_MES_recebe_ate_a_data_de_saida(banco_auxilio):
     assert fixo["valor"] == D("150.00"), "valor do mês × 15/30"
     assert fixo["proporcao"] == "15/30 dias"
 
+    # Transporte de valor mensal: pelos dias úteis (dono, 03/10/2026) — de 01 a
+    # 15/09/2026 há 11 dos 22 dias úteis do mês.
+    mensal = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
+        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 9, 15),
+        modo_transporte="Mensal", valor_transporte=D("220.00")), INICIO, FIM)
+    assert mensal["valor"] == D("110.00")
+    assert mensal["proporcao"] == "11/22 dias úteis"
+
 
 def test_quem_saiu_ANTES_do_mes_continua_sem_receber(banco_auxilio):
     from app.apps.analisesps import colaboradores as col, folha_auxilio as fx

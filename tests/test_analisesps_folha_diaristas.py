@@ -459,3 +459,24 @@ def test_cada_CONTA_com_o_seu_DESTINO_na_mesma_geracao(banco_diaristas, monkeypa
     plano = fp.resumo_direto("diaria", {"ano": 2026, "mes": 9, "periodo": "quinzena"},
                              "beevale", {"50024": "somapay"})
     assert [l["destino"] for l in plano["lotes"]] == ["somapay"]
+
+
+@pytest.mark.banco
+def test_a_REGRA_DE_RATEIO_divide_a_diaria_entre_as_obras(banco_diaristas):
+    """Dono, 03/10/2026: *"o rateio das obras serve sim para (…) diaristas"*. A
+    regra manda sobre a obra do dia, como na folha da contabilidade."""
+    from app.apps.analisesps import folha_pagamento as fp, folha_rateio as fr
+    fr.gravar({"nome": "Rateio A/B", "obras": [
+        {"obra": "CREPEOLINDA", "percentual": "50"},
+        {"obra": "CREPEAREIAS", "percentual": "50"}],
+        "pessoas": [{"cpf": DIARISTA}]}, "MARCELO")
+    calculado = fd.calcular(2026, 9, "quinzena")
+    p = next(x for x in calculado["pessoas"] if x["cpf"] == DIARISTA)
+    assert p["regra"] == "Rateio A/B"
+    assert sorted((o["obra"], o["valor"]) for o in p["por_obra"]) == [
+        ("CREPEAREIAS", D("165.00")), ("CREPEOLINDA", D("165.00"))]
+    assert sum(o["valor"] for o in p["por_obra"]) == p["valor"]
+    fd.fechar(2026, 9, "quinzena", quem="MARCELO")
+    pagas = fp.linhas_para_pagar(2026, 9, "quinzena", ["diaria"])
+    assert sorted((l["obra"], l["valor"]) for l in pagas) == [
+        ("CREPEAREIAS", D("165.00")), ("CREPEOLINDA", D("165.00"))]

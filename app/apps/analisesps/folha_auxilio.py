@@ -299,11 +299,23 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         saida["dias"] = 1
         saida["valor"] = valor_unitario
         if saida["saida_no_mes"]:
-            # Valor do mês, proporcional aos dias corridos até a saída.
-            do_mes = calendar.monthrange(inicio.year, inicio.month)[1]
-            corridos = (fim - inicio).days + 1
-            saida["valor"] = (valor_unitario * corridos / do_mes).quantize(CENTAVO)
-            saida["proporcao"] = f"{corridos}/{do_mes} dias"
+            ini_mes = inicio.replace(day=1)
+            fim_mes = ini_mes.replace(
+                day=calendar.monthrange(ini_mes.year, ini_mes.month)[1])
+            if tipo == TRANSPORTE:
+                # Transporte: pelos DIAS ÚTEIS (dono, 03/10/2026: *"Transporte
+                # valor mensal, vamos considerar os dias úteis"*) — a mesma
+                # régua do desconto de ausências.
+                feitos = folha_calendario.dias_uteis(inicio, fim)
+                do_mes = folha_calendario.dias_uteis(ini_mes, fim_mes) or 1
+                rotulo = "dias úteis"
+            else:
+                # Alimentação "Mês": dias corridos até a saída.
+                feitos = (fim - inicio).days + 1
+                do_mes = (fim_mes - ini_mes).days + 1
+                rotulo = "dias"
+            saida["valor"] = (valor_unitario * feitos / do_mes).quantize(CENTAVO)
+            saida["proporcao"] = f"{feitos}/{do_mes} {rotulo}"
         if saida["dias_ajuste"]:
             saida["motivos"].append(
                 "o ajuste de dias não se aplica à modalidade de valor fixo "
@@ -562,6 +574,9 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
                                                    ponto_do_mes)
     janela_da_obra = obra_do_ponto_por_cpf.pop("_janela", None)
 
+    from . import folha_rateio
+    regras = folha_rateio.regras_ativas_por_cpf()
+
     pessoas = []
     for ficha in fichas:
         # SÓ QUEM TEM ESTE AUXÍLIO NO CADASTRO entra na lista. É o que a planilha
@@ -584,6 +599,8 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
             # As ausências só descontam no TRANSPORTE (dono, 03/10/2026).
             ausencias=(ponto_do_mes.get(ficha["cpf"]) if tipo == TRANSPORTE
                        else None)))
+        if regras.get(ficha["cpf"]):
+            aplicar_regra_de_rateio(pessoas[-1], regras[ficha["cpf"]])
 
     # ⚠️ QUEM PRECISA DE MÃO VEM PRIMEIRO. `False` ordena antes de `True`, então a
     # chave é `pagar` direto — na primeira versão eu escrevi `not pagar`, e a
@@ -594,17 +611,20 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
 
     por_obra: dict = {}
     for p in a_pagar:
-        chave = p["obra"] or "(sem obra)"
-        atual = por_obra.setdefault(chave, {"obra": chave, "pessoas": 0,
-                                            "total": Decimal("0.00"),
-                                            "do_cadastro": 0})
-        atual["pessoas"] += 1
-        atual["total"] += p["valor"]
-        # ⚠️ QUANTAS PESSOAS DESTA OBRA VIERAM DO CADASTRO, não do ponto. É a
-        # medida de confiança da linha: obra que paga sustentada em cadastro
-        # desatualizado tira dinheiro da conta errada.
-        if p.get("obra_de_onde") == "cadastro":
-            atual["do_cadastro"] += 1
+        for parte in partes_por_obra(p):
+            chave = parte["obra"] or "(sem obra)"
+            atual = por_obra.setdefault(chave, {"obra": chave, "pessoas": 0,
+                                                "total": Decimal("0.00"),
+                                                "do_cadastro": 0, "da_regra": 0})
+            atual["pessoas"] += 1
+            atual["total"] += parte["valor"]
+            # ⚠️ QUANTAS PESSOAS DESTA OBRA VIERAM DO CADASTRO, não do ponto. É a
+            # medida de confiança da linha: obra que paga sustentada em cadastro
+            # desatualizado tira dinheiro da conta errada.
+            if p.get("obra_de_onde") == "cadastro":
+                atual["do_cadastro"] += 1
+            elif p.get("obra_de_onde") == "regra":
+                atual["da_regra"] += 1
 
     return {
         "tipo": tipo,
@@ -921,14 +941,40 @@ def fechamento(tipo: str, ano: int, mes: int) -> dict | None:
     return None
 
 
+def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
+    """O auxílio de quem tem REGRA DE RATEIO ativa vai para as obras da regra,
+    nos percentuais dela — a regra manda sobre o ponto, como na folha da
+    contabilidade. Dono, 03/10/2026: *"o rateio das obras serve sim para
+    alimentação e transporte e diaristas"*."""
+    from . import folha_rateio
+    partes = folha_rateio.distribuir(p["valor"], regra.get("obras") or [])
+    if not partes:
+        return p
+    p["rateio"] = sorted(partes, key=lambda x: -x["valor"])
+    p["obra"] = p["rateio"][0]["obra"]
+    p["obra_de_onde"] = "regra"
+    p["regra"] = regra.get("nome") or ""
+    return p
+
+
+def partes_por_obra(p: dict) -> list:
+    """`[{obra, valor}]` — de onde sai o dinheiro desta pessoa: as obras da
+    regra de rateio, ou a obra que paga inteira."""
+    if p.get("rateio"):
+        return [{"obra": x["obra"], "valor": x["valor"],
+                 "percentual": x.get("percentual")} for x in p["rateio"]]
+    return [{"obra": p.get("obra") or "", "valor": p["valor"]}]
+
+
 def apropriado(calculado: dict) -> dict:
     """O auxílio no formato que `folha_apropriacao_guardada` guarda: cada
-    colaborador com o valor na obra que paga."""
+    colaborador com o valor na obra que paga (ou nas obras da regra)."""
     pessoas = [{"cpf": p["cpf"], "nome": p["nome"], "nome_cadastro": p["nome"],
                 "fora": not (p["pagar"] and p["valor"] > 0),
-                "por_obra": ([{"obra": p["obra"], "dias": int(p["dias"] or 0),
-                               "valor": p["valor"],
-                               "origem": p.get("obra_de_onde") or ""}]
+                "por_obra": ([{"obra": x["obra"], "dias": int(p["dias"] or 0),
+                               "valor": x["valor"],
+                               "origem": p.get("obra_de_onde") or ""}
+                              for x in partes_por_obra(p)]
                              if p["pagar"] and p["valor"] > 0 else [])}
                for p in calculado["pessoas"]]
     total = calculado["total"]
