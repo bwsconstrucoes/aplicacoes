@@ -489,9 +489,23 @@ def _ponto_do_mes(ano: int, mes: int) -> dict:
         return {}
 
 
+# ⚠️ A OBRA QUE PAGA É A DOS ÚLTIMOS 15 DIAS DO PONTO (dono, 03/10/2026): *"a
+# obra que vai pagar, que é a obra do ponto anterior. Vamos considerar aí os
+# últimos 15 dias, a obra que a pessoa mais trabalhou, é a obra que vai pagar a
+# alimentação e o transporte do colaborador."* Antes era a de mais dias no mês
+# inteiro.
+DIAS_DA_JANELA_DA_OBRA = 15
+
+
 def _obra_do_ponto_por_cpf(ano: int, mes: int, inicio, fim,
                            dias_por_cpf=None) -> dict:
-    """`{cpf: {"obra", "dias"}}` — a obra em que cada pessoa mais trabalhou.
+    """`{cpf: {"obra", "dias"}}` — a obra em que cada pessoa mais trabalhou nos
+    ÚLTIMOS 15 DIAS do ponto (`DIAS_DA_JANELA_DA_OBRA`).
+
+    A janela termina no último dia com ponto carregado (até o fim do mês). Sem
+    ponto da competência, usa o do mês anterior. Quem não tem dia com obra na
+    janela fica com a obra de mais dias do mês; sem nenhuma, cai no cadastro.
+    A chave especial `"_janela"` diz qual janela valeu, para a tela mostrar.
 
     ⚠️ NÃO ESTOURA SEM PONTO, e não pode: o auxílio é calculado todo mês, e um mês
     cujo ponto ainda não foi trazido tem de mostrar a lista com a obra do cadastro,
@@ -500,11 +514,25 @@ def _obra_do_ponto_por_cpf(ano: int, mes: int, inicio, fim,
 
     if dias_por_cpf is None:
         dias_por_cpf = _ponto_do_mes(ano, mes)
+    if not dias_por_cpf:
+        # Sem ponto da competência: o mês anterior, que é o "ponto anterior".
+        ano_ant, mes_ant = (int(ano) - 1, 12) if int(mes) == 1 else (int(ano), int(mes) - 1)
+        dias_por_cpf = _ponto_do_mes(ano_ant, mes_ant)
+        inicio, fim = periodo_do_mes(ano_ant, mes_ant)
+    datas = [d.get("data") for dias in (dias_por_cpf or {}).values() for d in dias
+             if isinstance(d.get("data"), dt.date) and inicio <= d.get("data") <= fim]
+    if not datas:
+        return {}
+    ultimo = max(datas)
+    janela_ini = max(inicio, ultimo - dt.timedelta(days=DIAS_DA_JANELA_DA_OBRA - 1))
 
-    saida = {}
+    saida = {"_janela": (janela_ini, ultimo)}
     for cpf, dias in (dias_por_cpf or {}).items():
-        uteis = folha_apropriacao._dias_uteis_do_ponto(dias, inicio, fim)
-        achado = folha_apropriacao.obra_com_mais_dias(uteis)
+        achado = folha_apropriacao.obra_com_mais_dias(
+            folha_apropriacao._dias_uteis_do_ponto(dias, janela_ini, ultimo))
+        if not achado["obra"]:
+            achado = folha_apropriacao.obra_com_mais_dias(
+                folha_apropriacao._dias_uteis_do_ponto(dias, inicio, fim))
         if achado["obra"]:
             saida[cpf] = achado
     return saida
@@ -532,6 +560,7 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
     ponto_do_mes = _ponto_do_mes(ano, mes)
     obra_do_ponto_por_cpf = _obra_do_ponto_por_cpf(ano, mes, inicio, fim,
                                                    ponto_do_mes)
+    janela_da_obra = obra_do_ponto_por_cpf.pop("_janela", None)
 
     pessoas = []
     for ficha in fichas:
@@ -599,6 +628,8 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         # A tela avisa quando NÃO houve ponto: sem isso, a coluna Obra mostraria
         # cadastro para todo mundo sem dizer que é cadastro.
         "tem_ponto": bool(obra_do_ponto_por_cpf),
+        # Os 15 dias do ponto que decidiram a obra que paga (início, fim).
+        "janela_da_obra": janela_da_obra,
         "quantos_do_ponto": len([p for p in pessoas
                                  if p.get("obra_de_onde") == "ponto"]),
         "fases": sorted({p["fase"] for p in pessoas if p.get("fase")}),

@@ -197,6 +197,12 @@
     O <b>transporte</b> desconta <b>férias</b> e <b>não</b> desconta feriado.
     Colaboradores com categoria <b>"Cartão"</b> no cadastro não recebem em dinheiro.
   {% endif %}
+  {% if resultado and resultado.janela_da_obra %}
+    A <b>obra que paga</b> é a de mais dias no ponto dos últimos 15 dias
+    (<b>{{ resultado.janela_da_obra[0]|data_br }}</b> a
+    <b>{{ resultado.janela_da_obra[1]|data_br }}</b>); sem ponto nesse período,
+    a do cadastro.
+  {% endif %}
   A categoria e o valor de cada colaborador são obtidos do
   <a href="{{ url_for('analisesps.tela_colaboradores') }}">cadastro</a>;
   os feriados e as férias, da tela de
@@ -285,7 +291,7 @@
                   aria-label="Selecionar todos"></th>
           {% endif %}
           <th>Colaborador</th><th>Situação</th><th>CPF</th><th>Fase Atual</th>
-          <th>Obra — do ponto</th><th>Categoria</th>
+          <th title="A de mais dias no ponto dos últimos 15 dias; sem ponto, a do cadastro">Obra que paga</th><th>Categoria</th>
           {# "Valor do dia" virou "Valor" (dono, 03/10/2026): no "Mês" e no
              "Mensal" do transporte o cadastro guarda o valor do MÊS. #}
           <th class="num" title="O valor do cadastro: por dia ou por mês, conforme a categoria">Valor</th>
@@ -351,7 +357,7 @@
             {% if p.obra %}
               <b>{{ p.obra }}</b>
               {% if p.obra_de_onde == 'ponto' %}
-                <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto</span>
+                <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto{% if resultado.janela_da_obra %} de {{ resultado.janela_da_obra[0].strftime('%d/%m') }} a {{ resultado.janela_da_obra[1].strftime('%d/%m') }}{% endif %}</span>
               {% else %}
                 <br><span class="cartao-dica">do cadastro — sem ponto no mês</span>
               {% endif %}
@@ -426,8 +432,7 @@
    linha foram apropriadas pelo PONTO e quantas caíram no cadastro. Obra que paga
    sustentada em cadastro desatualizado tira dinheiro da conta errada.
    ====================================================================== #}
-<h3 style="margin-top:24px">Por obra
-  <small>obra responsável pelo pagamento</small></h3>
+<h3 style="margin-top:24px">Por obra responsável pelo pagamento</h3>
 <div class="tabela-wrap">
   <div class="tabela-rolagem livre">
     <table class="sps">

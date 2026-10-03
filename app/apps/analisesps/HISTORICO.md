@@ -11564,6 +11564,19 @@ Pedido do dono, quatro coisas:
    - Voltar a seleção ao cálculo **não apaga** o valor acrescentado nem o
      desconto (o ajuste só some quando fica vazio).
 
+#### Leva 162 — auxílio: a obra que paga é a dos últimos 15 dias do ponto; ícone na aba (03/10/2026)
+
+- O dono: *"a obra que vai pagar, que é a obra do ponto anterior. Vamos
+  considerar aí os últimos 15 dias, a obra que a pessoa mais trabalhou"*. Era a
+  de mais dias no mês inteiro. Agora: a janela são os 15 dias que terminam no
+  último dia com ponto carregado (até o fim do mês); sem ponto da competência,
+  o mês anterior. Quem não tem dia com obra na janela fica com a de mais dias
+  do mês; sem nenhuma, o cadastro (a linha diz). A tela diz a janela, a coluna
+  virou "Obra que paga" e o título de baixo, "Por obra responsável pelo
+  pagamento".
+- Ícone BWS (o brasão amarelo do topo) na aba do navegador, na entrada e em
+  todas as telas do Análise de SPs.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

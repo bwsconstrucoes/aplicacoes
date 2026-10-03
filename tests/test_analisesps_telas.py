@@ -7520,7 +7520,7 @@ def test_a_obra_do_auxilio_diz_que_veio_do_PONTO_com_os_dias(app, monkeypatch):
     html = _como_mestre(app).get(
         "/analisesps/folha/auxilios").get_data(as_text=True)
 
-    assert "Obra — do ponto" in html
+    assert "Obra que paga" in html
     assert "18 dia(s) no ponto" in html
 
 

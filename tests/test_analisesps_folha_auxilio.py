@@ -559,7 +559,40 @@ def test_a_obra_do_ponto_e_lida_do_mes_e_recortada_pelo_PERIODO(monkeypatch):
 
     achado = fx._obra_do_ponto_por_cpf(
         2026, 9, dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+    assert achado.pop("_janela") == (dt.date(2026, 9, 1), dt.date(2026, 9, 3))
     assert achado == {"99713349334": {"obra": "AAA", "dias": 2}}
+
+
+def test_a_obra_que_paga_e_a_dos_ULTIMOS_15_DIAS_do_ponto(monkeypatch):
+    """Dono, 03/10/2026: *"considerar aí os últimos 15 dias, a obra que a pessoa
+    mais trabalhou, é a obra que vai pagar"*. No mês inteiro AAA tem mais dias;
+    nos últimos 15, BBB."""
+    import datetime as dt
+
+    from app.apps.analisesps import folha_auxilio as fx, ponto
+
+    def dia(d, obra):
+        return {"data": dt.date(2026, 9, d), "marcacoes": [obra] * 4,
+                "presenca": "Presença", "falta": ""}
+    monkeypatch.setattr(ponto, "dias_por_cpf", lambda a, m: {
+        "1": [dia(d, "AAA") for d in (1, 2, 3, 4, 7, 8, 9)]
+             + [dia(d, "BBB") for d in (21, 22, 23)]})
+    achado = fx._obra_do_ponto_por_cpf(2026, 9, dt.date(2026, 9, 1),
+                                       dt.date(2026, 9, 30))
+    assert achado["_janela"] == (dt.date(2026, 9, 9), dt.date(2026, 9, 23))
+    assert achado["1"]["obra"] == "BBB"
+
+
+def test_sem_ponto_da_competencia_vale_o_ponto_do_MES_ANTERIOR(monkeypatch):
+    import datetime as dt
+
+    from app.apps.analisesps import folha_auxilio as fx, ponto
+    monkeypatch.setattr(ponto, "dias_por_cpf", lambda a, m: {} if m == 10 else {
+        "1": [{"data": dt.date(2026, 9, 30), "marcacoes": ["CCC"] * 4,
+               "presenca": "Presença", "falta": ""}]})
+    achado = fx._obra_do_ponto_por_cpf(2026, 10, dt.date(2026, 10, 1),
+                                       dt.date(2026, 10, 31))
+    assert achado["1"]["obra"] == "CCC"
 
 
 def test_sem_ponto_do_mes_o_auxilio_NAO_ESTOURA_e_cai_no_cadastro(monkeypatch):
