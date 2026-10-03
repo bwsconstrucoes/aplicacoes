@@ -145,7 +145,8 @@ def _valor(bruto) -> Decimal | None:
 def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
                     ajuste: dict | None = None,
                     codigo_da_obra: str = "",
-                    obra_do_ponto: str = "", dias_na_obra: int = 0) -> dict:
+                    obra_do_ponto: str = "", dias_na_obra: int = 0,
+                    ausencias=None) -> dict:
     """A conta de uma pessoa. Devolve tudo o que a tela mostra, passo a passo.
 
     ⚠️ DEVOLVE O CAMINHO INTEIRO, não só o valor: base, feriados, férias, ajuste e
@@ -196,6 +197,15 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         "situacao": ficha.get("situacao") or "",
         "desligado": ficha.get("situacao") == colaboradores.SITUACAO_SAIU,
         "dias_base": 0, "feriados": 0, "ferias": 0, "valor_fechado": False,
+        # Saída no meio do mês: proporcional até a data (dono, 03/10/2026).
+        "saida_no_mes": None, "proporcao": "",
+        # As ausências do ponto (só transporte) e o desconto que elas propõem.
+        # O desconto só vale quando ele aplica (`desconto_aplicado`).
+        "ausencias": [], "desconto_proposto": Decimal("0.00"),
+        "desconto_aplicado": False,
+        # O valor acrescentado à mão neste mês, e o porquê.
+        "valor_extra": Decimal("0.00"), "motivo_extra": "",
+        "valor_calculado": Decimal("0.00"),
         "dias_ajuste": int(ajuste.get("dias") or 0),
         "dias": 0, "valor": Decimal("0.00"),
         "observacao": ajuste.get("observacao", ""),
@@ -227,12 +237,27 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     # ajuste, e o "pagar mesmo assim" não funcionava justamente nos casos que mais
     # precisam dele.
     situacao = ficha.get("situacao")
-    if situacao in (colaboradores.SITUACAO_SAIU,
-                    colaboradores.SITUACAO_AFASTADO):
+    # ⚠️ SAIU NO MEIO DO MÊS RECEBE ATÉ A DATA DE SAÍDA (dono, 03/10/2026: *"tanto
+    # para alimentação quanto para transporte, proporcionalize o pagamento
+    # considerando data de saída do colaborador"*). Quem saiu ANTES do mês
+    # continua sem receber; quem saiu depois dele recebe o mês inteiro.
+    data_saida = ficha.get("data_saida")
+    if (situacao == colaboradores.SITUACAO_SAIU and data_saida
+            and inicio <= data_saida <= fim):
+        fim = data_saida
+        situacao = colaboradores.SITUACAO_SAINDO
+        saida["situacao"] = situacao
+        saida["desligado"] = False
+        saida["saida_no_mes"] = data_saida
+        saida["motivos"].append(
+            f"desligado em {data_saida.strftime('%d/%m/%Y')} — pago proporcional "
+            "até a data de saída.")
+    elif situacao in (colaboradores.SITUACAO_SAIU,
+                      colaboradores.SITUACAO_AFASTADO):
         saida["pagar"] = False
         saida["motivos"].append(ficha.get("motivo")
                                 or "colaborador inativo no cadastro.")
-    elif situacao == colaboradores.SITUACAO_SAINDO:
+    elif situacao == colaboradores.SITUACAO_SAINDO and not saida["saida_no_mes"]:
         # Não trava: pode haver valor devido até o último dia. Mas fica dito.
         saida["motivos"].append(ficha.get("motivo") or "em processo de desligamento.")
 
@@ -273,6 +298,12 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         saida["valor_fechado"] = True
         saida["dias"] = 1
         saida["valor"] = valor_unitario
+        if saida["saida_no_mes"]:
+            # Valor do mês, proporcional aos dias corridos até a saída.
+            do_mes = calendar.monthrange(inicio.year, inicio.month)[1]
+            corridos = (fim - inicio).days + 1
+            saida["valor"] = (valor_unitario * corridos / do_mes).quantize(CENTAVO)
+            saida["proporcao"] = f"{corridos}/{do_mes} dias"
         if saida["dias_ajuste"]:
             saida["motivos"].append(
                 "o ajuste de dias não se aplica à modalidade de valor fixo "
@@ -289,7 +320,8 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
             saida["motivos"].append(
                 f"{ferias} dia(s) útil(eis) de férias no mês: o valor mensal sai "
                 "cheio. Se não for para pagar, desmarque.")
-        return _decidir(saida, ajuste)
+        return _decidir(_acrescimos(saida, ajuste, tipo, modo, inicio, fim,
+                                    ausencias), ajuste)
 
     # OS DESCONTOS, com a MESMA régua da modalidade.
     if e_alimentacao:
@@ -308,7 +340,113 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     saida["valor"] = (valor_unitario * saida["dias"]).quantize(CENTAVO)
     if saida["dias"] == 0:
         saida["motivos"].append("nenhum dia a pagar nesta competência.")
-    return _decidir(saida, ajuste)
+    if saida["saida_no_mes"]:
+        saida["proporcao"] = f"até {fim.strftime('%d/%m')}"
+    return _decidir(_acrescimos(saida, ajuste, tipo, modo, inicio, fim,
+                                ausencias), ajuste)
+
+
+# ---------------------------------------------------------------------------
+# AUSÊNCIAS NO PONTO E VALOR ACRESCENTADO — 03/10/2026
+#
+# O dono: *"se a pessoa no mês anterior faltou algum dia, aquele dia deveria ser
+# descontado. Proporcional (…) que isso fosse uma opção de aplicar ou não o
+# desconto (…) a alimentação não pode fazer essa dedução, mas o transporte sim
+# (…) um botão confirmar, aplicar desconto (…) visualizar o motivo daquele
+# desconto, que são tantas faltas, tantas ausências."*
+#
+# E: *"mês anterior esquecemos de colocar um determinado valor (…) onde eu
+# pudesse adicionar um valor ao pagamento daquele mês do funcionário."*
+# ---------------------------------------------------------------------------
+# O que o ponto escreve num dia em que a pessoa NÃO FALTOU, apesar de não ter
+# marcação: não entra como ausência (férias já são descontadas à parte).
+NAO_E_AUSENCIA = ("ferias", "folga", "feriado", "dsr", "compens", "presenca",
+                  "pagar extra")
+
+
+def ausencia_do_dia(dia: dict) -> str:
+    """O motivo da ausência num dia do ponto, ou "" quando não é ausência.
+
+    Ausência é dia SEM MARCAÇÃO com falta declarada ou com uma situação que não
+    seja presença (atestado, falta justificada ou não, licença…). Dia sem
+    marcação e sem nada escrito NÃO conta: pode ser folga, e descontar no
+    escuro tiraria dinheiro devido."""
+    from .folha_apropriacao import obra_do_dia
+    from .folha_diaristas import situacao_do_ponto
+    decidido = obra_do_dia(dia.get("marcacoes"), dia.get("presenca", ""),
+                           dia.get("falta", ""))
+    if decidido.get("obra") or decidido.get("marcou"):
+        return ""
+    texto = (" ".join(str(dia.get("falta") or "").split())
+             or situacao_do_ponto(dia.get("presenca")))
+    if not texto:
+        return ""
+    limpo = _sem_acento(texto)
+    if "falta" not in limpo and any(p in limpo for p in NAO_E_AUSENCIA):
+        return ""
+    return texto
+
+
+def ausencias_do_mes(dias, inicio, fim, modo: str) -> list:
+    """`[{"data", "motivo"}]` — as ausências dentro do período, só nos dias que a
+    modalidade paga (quem é "Segunda à Quinta" não tem a sexta descontada)."""
+    limpo = _sem_acento(modo)
+    ultimo_dia_da_semana = 3 if limpo == MODO_SEG_QUI else 4   # seg=0 … sex=4
+    saida = []
+    for dia in dias or []:
+        data = dia.get("data")
+        if not isinstance(data, dt.date) or not (inicio <= data <= fim):
+            continue
+        if data.weekday() > ultimo_dia_da_semana:
+            continue
+        motivo = ausencia_do_dia(dia)
+        if motivo:
+            saida.append({"data": data, "motivo": motivo})
+    return sorted(saida, key=lambda a: a["data"])
+
+
+def resumo_das_ausencias(ausencias) -> str:
+    """"2 FALTA NÃO JUSTIFICADA, 1 ATESTADO" — o motivo, contado."""
+    contagem: dict = {}
+    for a in ausencias or []:
+        contagem[a["motivo"]] = contagem.get(a["motivo"], 0) + 1
+    return ", ".join(f"{n} {m}" for m, n in sorted(contagem.items(),
+                                                     key=lambda x: -x[1]))
+
+
+def _acrescimos(saida: dict, ajuste: dict, tipo: str, modo: str, inicio, fim,
+                ausencias) -> dict:
+    """O desconto das ausências (só transporte, só se aplicado) e o valor
+    acrescentado à mão, sobre o valor calculado."""
+    saida["valor_calculado"] = saida["valor"]
+    if tipo == TRANSPORTE and ausencias:
+        lista = ausencias_do_mes(ausencias, inicio, fim, modo)
+        saida["ausencias"] = lista
+        if lista and saida["valor_unitario"] is not None:
+            n = len(lista)
+            if saida["valor_fechado"]:
+                # Valor do mês: o dia vale o mês dividido pelos dias úteis
+                # (segunda a sexta) do mês inteiro.
+                ini_mes = inicio.replace(day=1)
+                fim_mes = ini_mes.replace(
+                    day=calendar.monthrange(ini_mes.year, ini_mes.month)[1])
+                uteis = folha_calendario.dias_uteis(ini_mes, fim_mes) or 1
+                por_dia = saida["valor_unitario"] / uteis
+            else:
+                por_dia = saida["valor_unitario"]
+            proposto = min(saida["valor"], (por_dia * n).quantize(CENTAVO))
+            saida["desconto_proposto"] = proposto
+            saida["ausencias_resumo"] = resumo_das_ausencias(lista)
+            # O motivo fica na coluna Ajustes da tela (não se repete aqui).
+            if ajuste.get("desconto_ausencias"):
+                saida["desconto_aplicado"] = True
+                saida["valor"] = (saida["valor"] - proposto).quantize(CENTAVO)
+    extra = ajuste.get("valor_extra")
+    if extra:
+        saida["valor_extra"] = Decimal(str(extra)).quantize(CENTAVO)
+        saida["motivo_extra"] = ajuste.get("motivo_extra") or ""
+        saida["valor"] = (saida["valor"] + saida["valor_extra"]).quantize(CENTAVO)
+    return saida
 
 
 def _decidir(saida: dict, ajuste: dict) -> dict:
@@ -341,24 +479,60 @@ def _decidir(saida: dict, ajuste: dict) -> dict:
     return saida
 
 
-def _obra_do_ponto_por_cpf(ano: int, mes: int, inicio, fim) -> dict:
-    """`{cpf: {"obra", "dias"}}` — a obra em que cada pessoa mais trabalhou.
-
-    ⚠️ NÃO ESTOURA SEM PONTO, e não pode: o auxílio é calculado todo mês, e um mês
-    cujo ponto ainda não foi trazido tem de mostrar a lista com a obra do cadastro,
-    não uma tela de erro. Devolve `{}` e quem chama cai no cadastro."""
-    from . import folha_apropriacao, ponto
-
+def _ponto_do_mes(ano: int, mes: int) -> dict:
+    """`{cpf: [dias]}` do ponto do mês — `{}` sem ponto (nunca estoura)."""
+    from . import ponto
     try:
-        dias_por_cpf = ponto.dias_por_cpf(ano, mes)
+        return ponto.dias_por_cpf(ano, mes) or {}
     except Exception:  # noqa: BLE001 — o ponto é apoio aqui, não o cálculo
         logger.exception("Auxílio: não consegui ler o ponto de %02d/%s", mes, ano)
         return {}
 
-    saida = {}
+
+# ⚠️ A OBRA QUE PAGA É A DOS ÚLTIMOS 15 DIAS DO PONTO (dono, 03/10/2026): *"a
+# obra que vai pagar, que é a obra do ponto anterior. Vamos considerar aí os
+# últimos 15 dias, a obra que a pessoa mais trabalhou, é a obra que vai pagar a
+# alimentação e o transporte do colaborador."* Antes era a de mais dias no mês
+# inteiro.
+DIAS_DA_JANELA_DA_OBRA = 15
+
+
+def _obra_do_ponto_por_cpf(ano: int, mes: int, inicio, fim,
+                           dias_por_cpf=None) -> dict:
+    """`{cpf: {"obra", "dias"}}` — a obra em que cada pessoa mais trabalhou nos
+    ÚLTIMOS 15 DIAS do ponto (`DIAS_DA_JANELA_DA_OBRA`).
+
+    A janela termina no último dia com ponto carregado (até o fim do mês). Sem
+    ponto da competência, usa o do mês anterior. Quem não tem dia com obra na
+    janela fica com a obra de mais dias do mês; sem nenhuma, cai no cadastro.
+    A chave especial `"_janela"` diz qual janela valeu, para a tela mostrar.
+
+    ⚠️ NÃO ESTOURA SEM PONTO, e não pode: o auxílio é calculado todo mês, e um mês
+    cujo ponto ainda não foi trazido tem de mostrar a lista com a obra do cadastro,
+    não uma tela de erro. Devolve `{}` e quem chama cai no cadastro."""
+    from . import folha_apropriacao
+
+    if dias_por_cpf is None:
+        dias_por_cpf = _ponto_do_mes(ano, mes)
+    if not dias_por_cpf:
+        # Sem ponto da competência: o mês anterior, que é o "ponto anterior".
+        ano_ant, mes_ant = (int(ano) - 1, 12) if int(mes) == 1 else (int(ano), int(mes) - 1)
+        dias_por_cpf = _ponto_do_mes(ano_ant, mes_ant)
+        inicio, fim = periodo_do_mes(ano_ant, mes_ant)
+    datas = [d.get("data") for dias in (dias_por_cpf or {}).values() for d in dias
+             if isinstance(d.get("data"), dt.date) and inicio <= d.get("data") <= fim]
+    if not datas:
+        return {}
+    ultimo = max(datas)
+    janela_ini = max(inicio, ultimo - dt.timedelta(days=DIAS_DA_JANELA_DA_OBRA - 1))
+
+    saida = {"_janela": (janela_ini, ultimo)}
     for cpf, dias in (dias_por_cpf or {}).items():
-        uteis = folha_apropriacao._dias_uteis_do_ponto(dias, inicio, fim)
-        achado = folha_apropriacao.obra_com_mais_dias(uteis)
+        achado = folha_apropriacao.obra_com_mais_dias(
+            folha_apropriacao._dias_uteis_do_ponto(dias, janela_ini, ultimo))
+        if not achado["obra"]:
+            achado = folha_apropriacao.obra_com_mais_dias(
+                folha_apropriacao._dias_uteis_do_ponto(dias, inicio, fim))
         if achado["obra"]:
             saida[cpf] = achado
     return saida
@@ -383,7 +557,10 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
     # Uma leitura do mês inteiro, não uma por pessoa: são centenas de linhas. Sem
     # carga do mês o dicionário sai vazio e TODO MUNDO cai no cadastro — a tela diz
     # isso, em vez de mostrar obra de cadastro como se fosse do ponto.
-    obra_do_ponto_por_cpf = _obra_do_ponto_por_cpf(ano, mes, inicio, fim)
+    ponto_do_mes = _ponto_do_mes(ano, mes)
+    obra_do_ponto_por_cpf = _obra_do_ponto_por_cpf(ano, mes, inicio, fim,
+                                                   ponto_do_mes)
+    janela_da_obra = obra_do_ponto_por_cpf.pop("_janela", None)
 
     pessoas = []
     for ficha in fichas:
@@ -403,7 +580,10 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
             # O ponto manda; o cadastro é o segundo recurso.
             codigo_da_obra=do_ponto.get("obra") or do_cadastro,
             obra_do_ponto=do_ponto.get("obra") or "",
-            dias_na_obra=do_ponto.get("dias") or 0))
+            dias_na_obra=do_ponto.get("dias") or 0,
+            # As ausências só descontam no TRANSPORTE (dono, 03/10/2026).
+            ausencias=(ponto_do_mes.get(ficha["cpf"]) if tipo == TRANSPORTE
+                       else None)))
 
     # ⚠️ QUEM PRECISA DE MÃO VEM PRIMEIRO. `False` ordena antes de `True`, então a
     # chave é `pagar` direto — na primeira versão eu escrevi `not pagar`, e a
@@ -448,9 +628,15 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         # A tela avisa quando NÃO houve ponto: sem isso, a coluna Obra mostraria
         # cadastro para todo mundo sem dizer que é cadastro.
         "tem_ponto": bool(obra_do_ponto_por_cpf),
+        # Os 15 dias do ponto que decidiram a obra que paga (início, fim).
+        "janela_da_obra": janela_da_obra,
         "quantos_do_ponto": len([p for p in pessoas
                                  if p.get("obra_de_onde") == "ponto"]),
         "fases": sorted({p["fase"] for p in pessoas if p.get("fase")}),
+        # Descontos de ausência ainda não decididos — a lateral os aponta.
+        "com_ausencia": [p for p in pessoas if p.get("ausencias")
+                         and not p.get("desconto_aplicado")
+                         and p.get("desconto_proposto")],
         "fechamento": fechamento(tipo, ano, mes),
     }
 
@@ -463,13 +649,93 @@ def ajustes_do_mes(tipo: str, ano: int, mes: int) -> dict:
     from .db import consultar
     if not _pronto():
         return {}
+    extras = _tem_extras()
     linhas = consultar(
-        "SELECT cpf, pagar, dias, obra, observacao, alterado_por "
-        "  FROM analisesps.auxilio_ajuste "
+        "SELECT cpf, pagar, dias, obra, observacao, alterado_por"
+        + (", valor_extra, motivo_extra, desconto_ausencias" if extras else "")
+        + "  FROM analisesps.auxilio_ajuste "
         " WHERE tipo = ? AND ano = ? AND mes = ?",
         (tipo, int(ano), int(mes)))
-    return {l[0]: {"pagar": l[1], "dias": l[2], "obra": l[3],
-                   "observacao": l[4], "alterado_por": l[5]} for l in linhas}
+    saida = {}
+    for l in linhas:
+        saida[l[0]] = {"pagar": l[1], "dias": l[2], "obra": l[3],
+                       "observacao": l[4], "alterado_por": l[5]}
+        if extras:
+            saida[l[0]].update(valor_extra=l[6], motivo_extra=l[7] or "",
+                               desconto_ausencias=l[8])
+    return saida
+
+
+def _tem_extras() -> bool:
+    """A migração 046 já rodou? (valor acrescentado e desconto de ausências)"""
+    from .db import tem_coluna
+    return tem_coluna("auxilio_ajuste", "desconto_ausencias")
+
+
+def gravar_extras(tipo: str, ano: int, mes: int, cpfs, quem: str = "",
+                  **mudancas) -> int:
+    """Grava o valor acrescentado (`valor_extra`, `motivo_extra`) e/ou a decisão
+    do desconto de ausências (`desconto_ausencias`) — SEM tocar no resto do
+    ajuste. `cpfs`: um ou vários (o "aplicar todos"). Devolve quantos."""
+    from .db import conexao
+    from .folha_rateio import so_digitos
+
+    if tipo not in TIPOS:
+        raise ErroDoAuxilio(f'verba "{tipo}" não reconhecida.')
+    if not _pronto() or not _tem_extras():
+        raise ErroDoAuxilio(
+            'atualização do banco pendente (046). Clique em "Aplicar atualizações '
+            'do banco" em Configurações.')
+    colunas = {}
+    if "valor_extra" in mudancas:
+        bruto = mudancas["valor_extra"]
+        if bruto in (None, ""):
+            valor = None
+        else:
+            try:
+                valor = Decimal(str(bruto).replace(".", "").replace(",", ".")
+                                if "," in str(bruto) else str(bruto)).quantize(CENTAVO)
+            except Exception:  # noqa: BLE001
+                raise ErroDoAuxilio("o valor acrescentado deve ser numérico.")
+            if valor <= 0:
+                valor = None
+            elif valor > Decimal("5000"):
+                raise ErroDoAuxilio(
+                    f"valor de R$ {valor} acima de R$ 5.000,00 — verifique o número.")
+        colunas["valor_extra"] = valor
+        colunas["motivo_extra"] = " ".join(
+            str(mudancas.get("motivo_extra") or "").split())[:300] if valor else ""
+    if "desconto_ausencias" in mudancas:
+        d = mudancas["desconto_ausencias"]
+        colunas["desconto_ausencias"] = None if d is None else bool(d)
+    if not colunas:
+        return 0
+    if tipo != TRANSPORTE and colunas.get("desconto_ausencias"):
+        raise ErroDoAuxilio("o desconto de ausências vale só para o transporte.")
+
+    lista = [so_digitos(c) for c in (cpfs if isinstance(cpfs, (list, tuple))
+                                      else [cpfs])]
+    lista = [c for c in lista if len(c) == 11]
+    if not lista:
+        raise ErroDoAuxilio("CPF do colaborador não reconhecido.")
+    nomes = list(colunas)
+    sets = ", ".join(f"{c} = EXCLUDED.{c}" for c in nomes)
+    with conexao() as conn:
+        for cpf in lista:
+            conn.execute(
+                "INSERT INTO analisesps.auxilio_ajuste "
+                f"  (tipo, ano, mes, cpf, alterado_por, {', '.join(nomes)}) "
+                f"VALUES (?,?,?,?,?, {', '.join('?' for _ in nomes)}) "
+                " ON CONFLICT (tipo, ano, mes, cpf) DO UPDATE SET "
+                f"  {sets}, alterado_em = now(), "
+                "   alterado_por = EXCLUDED.alterado_por",
+                (tipo, int(ano), int(mes), cpf, str(quem or "")[:120],
+                 *[colunas[c] for c in nomes]))
+        conn.commit()
+    logger.info("Folha: %s de %02d/%d — %s gravado(s) para %d pessoa(s) por %s",
+                tipo, int(mes), int(ano), ", ".join(nomes), len(lista),
+                quem or "(sem nome)")
+    return len(lista)
 
 
 def gravar_ajuste(tipo: str, ano: int, mes: int, cpf: str, pagar=None,
@@ -523,10 +789,26 @@ def limpar_ajuste(tipo: str, ano: int, mes: int, cpf: str) -> bool:
     if not _pronto():
         return False
     with conexao() as conn:
-        cur = conn.execute(
-            "DELETE FROM analisesps.auxilio_ajuste "
-            " WHERE tipo = ? AND ano = ? AND mes = ? AND cpf = ?",
-            (tipo, int(ano), int(mes), so_digitos(cpf)))
+        if _tem_extras():
+            # ⚠️ O valor acrescentado e o desconto são OUTRA decisão: voltar a
+            # seleção ao cálculo não pode apagá-los. Tira-se a escolha de pagar
+            # e só se apaga a linha que ficar vazia.
+            conn.execute(
+                "UPDATE analisesps.auxilio_ajuste SET pagar = NULL, dias = NULL, "
+                "       obra = '', observacao = '' "
+                " WHERE tipo = ? AND ano = ? AND mes = ? AND cpf = ? "
+                "   AND (valor_extra IS NOT NULL OR desconto_ausencias IS NOT NULL)",
+                (tipo, int(ano), int(mes), so_digitos(cpf)))
+            cur = conn.execute(
+                "DELETE FROM analisesps.auxilio_ajuste "
+                " WHERE tipo = ? AND ano = ? AND mes = ? AND cpf = ? "
+                "   AND valor_extra IS NULL AND desconto_ausencias IS NULL",
+                (tipo, int(ano), int(mes), so_digitos(cpf)))
+        else:
+            cur = conn.execute(
+                "DELETE FROM analisesps.auxilio_ajuste "
+                " WHERE tipo = ? AND ano = ? AND mes = ? AND cpf = ?",
+                (tipo, int(ano), int(mes), so_digitos(cpf)))
         apagou = bool(cur.rowcount and cur.rowcount > 0)
         cur.close()
         conn.commit()
@@ -593,7 +875,9 @@ def salvar_selecao(tipo: str, ano: int, mes: int, decisoes, quem: str = "") -> d
 
         if querido == do_calculo:
             # Bate com o cálculo: não é exceção. Tira o ajuste se havia um.
-            if ajuste_atual:
+            # (Linha só com valor acrescentado ou desconto não é escolha de pagar.)
+            if (ajuste_atual.get("pagar") is not None or ajuste_atual.get("dias")
+                    or ajuste_atual.get("obra") or ajuste_atual.get("observacao")):
                 limpar_ajuste(tipo, ano, mes, cpf)
                 limpos += 1
             continue

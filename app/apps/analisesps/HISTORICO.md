@@ -11513,6 +11513,120 @@ também: quem tinha transporte Mensal recebia o valor do mês multiplicado por ~
   a última coluna virou **"Total"**. No relatório, "Valor x dia" fica em branco
   para quem tem valor fechado.
 
+#### Leva 160 — Pipefy recusou: Nome do Credor e Anexos (03/10/2026)
+
+O lançamento de 09/2026 voltou com *"O campo "Nome do Credor" é obrigatório (…)
+O campo "Anexos" é obrigatório"*. Duas causas, conferidas no blueprint 2 do Make
+(os ids dos campos, sem credenciais):
+
+- **"Nome do Credor" é o campo `local`.** Na SomaPay ele ia vazio (e campo vazio
+  não é enviado). Agora vai **BWS CONSTRUCOES LTDA** (dono: *"o credor é BWS
+  CONSTRUCOES LTDA"*), com o CNPJ 00.079.526/0001-09 em `cnpj` e `cnpj_1`, como o
+  Make, e "Pessoa Jurídica". Na BeeVale, a BeeVale.
+- **"Anexos" é dispensado por "Lançamento via API" = Sim** — mas só se for na
+  CRIAÇÃO. O sistema mandava campo de fase depois de criar o card; o Make mandava
+  `lan_amento_via_api` e `valida_o_sp_1` na criação. Agora vão na criação
+  (`folha_cards.NA_CRIACAO_SEMPRE`).
+
+O lançamento é retomável: nada foi criado na tentativa recusada.
+
+#### Leva 161 — auxílio: valor acrescentado, sem "Base", saída proporcional, desconto de ausências (03/10/2026)
+
+Pedido do dono, quatro coisas:
+
+1. **Valor acrescentado** (*"mês anterior esquecemos de colocar um determinado
+   valor (…) adicionar um valor ao pagamento daquele mês"*): na linha, "+ valor"
+   abre uma janela com valor e **motivo (obrigatório)**; soma ao total, aparece na
+   coluna Ajustes e no relatório. Até R$ 5.000 por pessoa (acima, recusa — é
+   quase sempre digitação). Vale nas duas verbas.
+2. **A coluna "Base" saiu.** Os dias que valem continuam.
+3. **Saída no meio do mês — proporcional**, nas duas verbas: dias da modalidade
+   até a data de saída; valor fechado ("Mês"; "Mensal" do transporte) × dias
+   corridos ÷ dias do mês. A pessoa aparece como "em desligamento", com a
+   proporção embaixo dos dias. Quem saiu antes do mês continua sem receber; quem
+   sai depois recebe o mês inteiro. Usa a **data de saída**, não o "último dia".
+4. **Desconto de ausências — só transporte**, *"tem que ser analisado e
+   confirmado (…) um botão confirmar, aplicar desconto"*:
+   - Ausência = dia **sem marcação** com falta declarada ou situação que não é
+     presença (falta justificada ou não, atestado, licença…). **Não conta:** dia
+     sem nada escrito (pode ser folga), férias (já descontadas à parte), folga,
+     feriado, DSR, compensação. Só nos dias que a modalidade paga (Seg-Qui não
+     desconta sexta). Lê o ponto da **mesma competência** — a que é paga no mês
+     seguinte.
+   - Valor: por dia, o valor do cadastro × ausências; no valor do mês, o mês ÷
+     dias úteis (seg-sex) do mês × ausências. ⚠️ Escolha minha, a confirmar.
+   - **Proposto, nunca automático:** a coluna Ajustes mostra quantas, os motivos
+     contados e as datas, e o botão "Aplicar desconto" (desfazível). A lateral
+     soma o proposto e tem "Aplicar todos os descontos". Filtro Situação →
+     "ausência a descontar".
+   - Migração **046**: `valor_extra`, `motivo_extra`, `desconto_ausencias` no
+     ajuste do auxílio. Antes do botão, a tela funciona e só não grava.
+   - Voltar a seleção ao cálculo **não apaga** o valor acrescentado nem o
+     desconto (o ajuste só some quando fica vazio).
+
+#### Leva 162 — auxílio: a obra que paga é a dos últimos 15 dias do ponto; ícone na aba (03/10/2026)
+
+- O dono: *"a obra que vai pagar, que é a obra do ponto anterior. Vamos
+  considerar aí os últimos 15 dias, a obra que a pessoa mais trabalhou"*. Era a
+  de mais dias no mês inteiro. Agora: a janela são os 15 dias que terminam no
+  último dia com ponto carregado (até o fim do mês); sem ponto da competência,
+  o mês anterior. Quem não tem dia com obra na janela fica com a de mais dias
+  do mês; sem nenhuma, o cadastro (a linha diz). A tela diz a janela, a coluna
+  virou "Obra que paga" e o título de baixo, "Por obra responsável pelo
+  pagamento".
+- Ícone BWS (o brasão amarelo do topo) na aba do navegador, na entrada e em
+  todas as telas do Análise de SPs.
+
+#### Leva 163 — o relatório em PDF de cada conta sai junto com o arquivo (03/10/2026)
+
+O dono: *"quando a gente gera esse arquivo, ele tem o arquivo relatório, o PDF
+também, gerar associado (…) se eu quiser baixar o relatório, quero poder baixar
+por aqui. E (…) toda vida que for gerar o card, colocar o link tanto do arquivo
+de pagamento quanto o relatório também."*
+
+- **"Gerar arquivos" sobe também o PDF do relatório de cada conta** — o mesmo da
+  tela (quem entra no pagamento, por conta), para as quatro folhas
+  (`folha_pagamento._relatorio_por_conta`). Fica no log com destino
+  `relatorio` e a conta; **não soma no total e não vira SP**.
+- **Arquivos gerados:** ao lado de cada "conta X", o link "relatório PDF".
+- **Card:** a descrição da SP ganha "Relatório (PDF): link".
+- Uma falha no relatório **não** desfaz o pagamento (fica no log do serviço).
+- **Gerações antigas não têm o PDF** — só as novas.
+
+#### Leva 164 — a aba "ID Fortes" deixou de ser lida (03/10/2026)
+
+O dono, vendo o aviso de "12 códigos da aba ID Fortes discordam da ficha": *"O
+local correto de coletar o ID é na coluna BU da aba Dados Documentos. Aba ID
+Fortes deve ser ignorada."*
+
+- "Atualizar cadastro" **não abre mais** a aba "ID Fortes"; o aviso de
+  divergência some. O código vem só da ficha: pelo nome da coluna ("ID Fortes",
+  "Código Fortes"…) e, sem o nome, pela posição **BU** (73ª coluna,
+  `colaboradores.POSICAO_DO_ID_FORTES`).
+- **Quem não tem código na ficha mantém o que já estava gravado** (vindo da aba,
+  numa carga antiga). Não se apaga no escuro: apagar faria a folha da
+  contabilidade deixar de achar essas pessoas de uma vez. ⚠️ Se ele quiser que a
+  coluna BU seja a ÚNICA verdade (vazio na BU = sem código), é uma linha.
+- A função que lia a aba (`atualizar_ids_fortes`) ficou no código, sem uso pela
+  carga.
+
+#### Leva 165 — o PDF da folha traz o contracheque de cada colaborador (03/10/2026)
+
+O dono: *"além do resumo (…) o detalhamento de cada colaborador, como se fosse a
+folha (…) todas as informações do contracheque (…) para a gente poder também
+anexar esse arquivo. O arquivo fica mais completo, mais robusto."*
+
+- O PDF da **folha da contabilidade** (o da tela e o gerado junto com o arquivo
+  de pagamento, por conta) ganha a seção **"Detalhamento por colaborador
+  (contracheque)"**: nome e código, função, admissão, situação, a apropriação
+  por obra (dias e valor), e os eventos da folha analítica (código, descrição,
+  referência, proventos, descontos), com totais e líquido.
+- Sai da **folha analítica importada** (`folha_analitica_guardada.
+  contracheques_da_folha`, uma consulta para a folha inteira). Sem analítica,
+  o PDF sai como antes. Processamento pequeno: tudo já está no banco.
+- Só no PDF (o Excel continua como estava). Diárias e auxílios não têm
+  contracheque — o PDF deles não muda.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11534,7 +11648,11 @@ também: quem tinha transporte Mensal recebia o valor do mês multiplicado por ~
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
-| publicar a leva 159 (sem migração); confirmar se a alimentação "Mensal" também é valor do mês | ele |
+| publicar as levas 160 a 165 — **com migração 046**: apertar "Aplicar atualizações do banco" no mesmo momento | ele |
+| confirmar o valor do dia ausente no "Mês"/"Mensal" (mês ÷ dias úteis) | ele |
+| decidir se o rateio das obras passa a valer também para diárias e auxílios (hoje só a folha da contabilidade) | ele |
+| decidir se a coluna BU é a única verdade do código do Fortes (vazio = sem código) | ele |
+| ~~publicar a leva 159~~ — **publicada em 03/10/2026** (main em `b5a795b`, suíte inteira 7.856 verdes). Falta confirmar se a alimentação "Mensal" também é valor do mês | ele |
 | ~~publicar as levas 157 e 158~~ — **publicadas em 03/10/2026** (main em `4c97938`, suíte inteira 7.854 verdes, sem migração). Falta refazer a prévia de 09/2026: conferir o Record ID e a categoria mostrados | ele |
 | ~~publicar a retirada do "Gerar por competência"~~ — **publicada em 03/10/2026** (main em `dddfd6c`, suíte inteira 7.845 verdes, sem migração) | — |
 | ~~publicar as levas 155 e 156~~ — **publicadas em 02/10/2026** (main em `c2f7676`, suíte inteira 7.852 verdes, sem migração). No primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |

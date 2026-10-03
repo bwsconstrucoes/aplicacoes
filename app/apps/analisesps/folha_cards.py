@@ -133,7 +133,11 @@ DESCRICAO_DA_VERBA = {
 FAVORECIDO = {
     "beevale": {"local": "BEE VALE PAGAMENTOS E BENEFICIOS LTDA",
                 "cnpj": "31.749.082/0001-03", "documentacao": "BeeVale"},
-    "somapay": {"local": "", "cnpj": CNPJ_DA_BWS, "documentacao": ""},
+    # ⚠️ O "local" É O "NOME DO CREDOR", obrigatório no pipe. Ia vazio e o Pipefy
+    # recusou o primeiro lançamento (03/10/2026). O dono: *"o credor é BWS
+    # CONSTRUCOES LTDA"*.
+    "somapay": {"local": "BWS CONSTRUCOES LTDA", "cnpj": CNPJ_DA_BWS,
+                "documentacao": ""},
 }
 CHAVE_PIX_A_ATUALIZAR = "Atualizar Chave"
 CASAS_DO_PERCENTUAL = 7
@@ -231,11 +235,16 @@ def rodada(analise_id: int) -> dict:
     piso = max((a["id"] for a in mesmos
                 if a["destino"] == fpg.ANALISE and a["id"] < analise["id"]),
                default=0)
-    arquivos = sorted((a for a in mesmos if a["destino"] != fpg.ANALISE
-                       and piso < a["id"] < analise["id"]), key=lambda a: a["id"])
+    da_rodada = [a for a in mesmos if a["destino"] != fpg.ANALISE
+                 and piso < a["id"] < analise["id"]]
+    # O PDF do relatório de cada conta é da rodada, mas não é arquivo de
+    # pagamento: não soma no total nem vira SP — vai como link no card.
+    arquivos = sorted((a for a in da_rodada if a["destino"] != fpg.RELATORIO),
+                      key=lambda a: a["id"])
+    relatorios = {a["conta"]: a for a in da_rodada if a["destino"] == fpg.RELATORIO}
     if not arquivos:
         raise ErroDosCards("arquivos de pagamento desta rodada não encontrados.")
-    return {"analise": analise, "arquivos": arquivos,
+    return {"analise": analise, "arquivos": arquivos, "relatorios": relatorios,
             "verbas": [v for v in (analise["verbas"] or "").split("+") if v]}
 
 
@@ -604,6 +613,8 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             destino = destino_da_conta.get(conta) or ""
             sp_item = {"conta": conta, "valor": c["valor"], "pessoas": len(c["pessoas"]),
                        "link": arquivo.get("link") or "", "destino": destino,
+                       "link_relatorio": ((r.get("relatorios") or {}).get(conta)
+                                          or {}).get("link") or "",
                        "obras": obras,
                        "rateio": rateio_multiplo(obras, categoria) if obras else ""}
             sp_item["descricao"] = descricao_da_sp(
@@ -672,6 +683,10 @@ def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
     linhas.append("")
     if sp.get("link"):
         linhas.append(f"Planilha de pagamento: {sp['link']}")
+    # O relatório em PDF da conta (dono, 03/10/2026: *"colocar o link tanto do
+    # arquivo de pagamento quanto o relatório também"*).
+    if sp.get("link_relatorio"):
+        linhas.append(f"Relatório (PDF): {sp['link_relatorio']}")
     if link_analise:
         linhas.append(f"Planilha de análise: {link_analise}")
     return "\n".join([l for i, l in enumerate(linhas)
@@ -732,6 +747,8 @@ def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
         ("tipo", "Aleatória"),
         ("selecione_o_procedimento", "Solicitar Pagamento"),
         ("cnpj", favorecido["cnpj"]),
+        # O Make preenchia os dois campos de CNPJ do pipe (blueprint 2).
+        ("cnpj_1", favorecido["cnpj"]),
         ("requisi_o_solicitada_por_um_terceiro", "Não"),
         ("alimenta_o_de_equipe", "Não"),
         ("colaborador_solicitante", RESPONSAVEL),
@@ -747,12 +764,20 @@ def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
     return [{"campo": c, "valor": v} for c, v in campos]
 
 
+# ⚠️ VÃO NA CRIAÇÃO MESMO SENDO DE FASE. "Lançamento via API" = Sim é o que
+# dispensa os Anexos obrigatórios: mandado depois, o Pipefy recusava a criação
+# por falta de anexo (03/10/2026). O Make mandava os dois na criação (blueprint 2).
+NA_CRIACAO_SEMPRE = ("lan_amento_via_api", "valida_o_sp_1")
+
+
 def _separar(valores: list, inicio: dict) -> tuple:
     """(os que vão na criação, os que vão depois). Campo do formulário inicial vai
     na criação — é ali que o Pipefy cobra os obrigatórios; campo de fase vai
-    depois, gravado no card já criado."""
-    na_criacao = [v for v in valores if v["campo"] in inicio and v["valor"] != ""]
-    depois = [v for v in valores if v["campo"] not in inicio and v["valor"] != ""]
+    depois, gravado no card já criado (salvo `NA_CRIACAO_SEMPRE`)."""
+    def na(v):
+        return v["campo"] in inicio or v["campo"] in NA_CRIACAO_SEMPRE
+    na_criacao = [v for v in valores if na(v) and v["valor"] != ""]
+    depois = [v for v in valores if not na(v) and v["valor"] != ""]
     return na_criacao, depois
 
 

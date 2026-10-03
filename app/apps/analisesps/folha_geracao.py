@@ -62,7 +62,9 @@ DESTINOS = (BEEVALE, SOMAPAY)
 # "analise" não é destino de pagamento: é a etiqueta do segundo arquivo, o de
 # conferência. Fica junto porque é o mesmo nome de arquivo e o mesmo log.
 ROTULO_DO_DESTINO = {BEEVALE: "BeeVale", SOMAPAY: "SomaPay",
-                     "analise": "Analise da folha"}
+                     "analise": "Analise da folha",
+                     # O relatório em PDF de cada conta, gerado junto (03/10/2026).
+                     "relatorio": "Relatório (PDF)"}
 
 # As verbas que geram arquivo. O rótulo é o que aparece na tela e no nome do
 # arquivo; a chave é a que vem da apropriação guardada.

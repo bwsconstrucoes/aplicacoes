@@ -67,7 +67,11 @@
                   aria-label="Selecionar a conta {{ a.conta }} para lançar no Pipefy">{% endif %}
               {% if a.link %}<a href="{{ a.link }}" target="_blank" rel="noopener" title="{{ a.nome }}"
                 >conta {{ a.conta or '—' }}</a>{% else %}conta {{ a.conta or '—' }}{% endif %}
-              <span class="cartao-dica">{{ a.pessoas }} · {{ a.total|moeda }}</span><br>
+              <span class="cartao-dica">{{ a.pessoas }} · {{ a.total|moeda }}</span>
+              {# O RELATÓRIO EM PDF DA CONTA, gerado junto (03/10/2026). #}
+              {% set rel = (r.relatorios or {}).get(a.conta) %}
+              {% if rel and rel.link %} · <a href="{{ rel.link }}" target="_blank" rel="noopener"
+                  title="{{ rel.nome }}">relatório PDF</a>{% endif %}<br>
             {% endfor %}
             {% if r.analise and r.analise.link %}
               <a href="{{ r.analise.link }}" target="_blank" rel="noopener"

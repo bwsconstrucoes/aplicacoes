@@ -32,6 +32,8 @@ SITUACOES = [
     ("afastado", "afastado"),
     ("vigia", "vigia"),
     ("saiu", "desligado"),
+    # Transporte: ausências no ponto com desconto ainda não aplicado (03/10/2026).
+    ("ausencia", "ausência a descontar"),
 ]
 ESCONDIDAS_SEM_FILTRO = {"saiu"}
 
@@ -70,6 +72,8 @@ def situacoes_da_pessoa(p: dict) -> set:
         saida.add("afastado")
     if p.get("vigia"):
         saida.add("vigia")
+    if p.get("ausencias") and not p.get("desconto_aplicado"):
+        saida.add("ausencia")
     if p.get("sem_diaria"):
         saida.add("sem_diaria")
     elif p.get("impossivel"):

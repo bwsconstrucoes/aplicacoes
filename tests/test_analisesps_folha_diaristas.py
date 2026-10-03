@@ -288,11 +288,15 @@ def test_GERAR_DIRETO_fecha_e_gera_de_uma_vez(banco_diaristas, monkeypatch):
     subidos = _drive_falso(monkeypatch)
     saida = fp.gerar_direto("diaria", {"ano": 2026, "mes": 9, "periodo": "quinzena"},
                             "somapay", quem="MARCELO")
-    assert len(subidos) == 2, "o de pagamento e o de análise"
+    # O de pagamento, o RELATÓRIO EM PDF da conta (03/10/2026) e o de análise.
+    assert len(subidos) == 3, subidos
+    assert any(n.endswith(".pdf") and "50024" in n for n in subidos)
     assert fd.calcular(2026, 9, "quinzena")["fechamento"]["total_apropriado"] == D("330.00")
     rodada = fp.rodadas()[0]
     assert rodada["lancavel"] and not rodada["incompleta"]
-    assert rodada["total"] == D("330.00")
+    assert rodada["total"] == D("330.00"), "o PDF não soma no total"
+    assert "50024" in rodada["relatorios"], "o PDF da conta fica na geração"
+    assert len(rodada["pagamentos"]) == 1
     assert saida["competencia"] == "09/2026"
 
 
