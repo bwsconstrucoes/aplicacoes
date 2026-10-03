@@ -39,6 +39,17 @@ except Exception as _erro_analisesps:                     # noqa: BLE001
         "Análise de SPs não carregou (%s). Os demais módulos seguem normalmente.",
         _erro_analisesps)
 
+# Mesma proteção: o ponto eletrônico (REP-P) fala com o banco do ERP e com o
+# Google Drive. Se algo faltar, ele fica fora do ar sozinho — não leva os
+# outros 16 módulos junto.
+try:
+    from app.apps.ponto import bp as ponto_bp               # ← Ponto eletrônico (REP-P)
+except Exception as _erro_ponto:                           # noqa: BLE001
+    ponto_bp = None
+    logging.getLogger(__name__).exception(
+        "Ponto eletrônico não carregou (%s). Os demais módulos seguem normalmente.",
+        _erro_ponto)
+
 
 def create_app():
     app = Flask(__name__)
@@ -72,6 +83,9 @@ def create_app():
     # SEM url_prefix: as rotas já trazem /analisesps embutido no módulo.
     if analisesps_bp is not None:
         app.register_blueprint(analisesps_bp)
+    # SEM url_prefix: as rotas já trazem /ponto embutido no módulo.
+    if ponto_bp is not None:
+        app.register_blueprint(ponto_bp)
 
     @app.route("/")
     def index():
@@ -84,6 +98,7 @@ def create_app():
                 "emissao", "whatsapp_gateway", "telegram", "erp",
             ] + (["painel"] if painel_bp is not None else [])
               + (["analisesps"] if analisesps_bp is not None else [])
+              + (["ponto"] if ponto_bp is not None else [])
         }
 
     return app

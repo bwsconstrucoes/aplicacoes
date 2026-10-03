@@ -73,6 +73,8 @@ aplicacoes/
         ├── emissaonf/        ← /emissao/* (emissão de NFS-e; ver `emissaonf/README.md` e `HISTORICO.md`)
         ├── telegram/         ← /telegram/* (bot / autocadastro; ⚠️ ainda não documentado aqui)
         ├── notificador.py    ← helper `enviar_telegram`, usado pelo ERP para avisar baixas
+        ├── ponto/            ← /ponto/* — ponto eletrônico próprio (REP-P); schema `ponto`
+                                no banco do ERP, cadastros do ERP (ver §5.13 e `ponto/README.md`)
         └── erp/              ← /erp/* — ERP (ver §2.1 e §5.12). NÃO é um blueprint
                                 de arquivo único: tem camadas próprias
 ```
@@ -442,6 +444,11 @@ que parece falar da chave do TÍTULO. Os três módulos que falam com o Omie
 - `BAIXABRADESCO_DEBUG` (opcional, "1"/"true"/"sim"/"yes")
 - `CHATBOT_WEBHOOK_SECRET`
 - `CHATBOT_MASTER_PHONE` (default `5585987846225`)
+- `PONTO_API_KEY` — chave dos sistemas que falam com o ponto (`X-API-Key`). Sem
+  ela, toda rota com chave responde 503 (falha fechado)
+- `PONTO_DRIVE_PASTA` — pasta do Drive para as fotos de batida; sem ela as fotos
+  esperam na fila do banco. `PONTO_DRIVE_IMPERSONAR` (padrão
+  `contato@bwsconstrucoes.com.br`) é em nome de quem a conta de serviço grava
 
 ### 4.8 Outros
 
@@ -636,6 +643,30 @@ tela, não máquina chamando.
 ficam no Postgres, comprimidos — decisão consciente, diferente do resto do
 monorepo (§6.2). Ao mexer em anexo do ERP, não procure `storage.py`.
 
+### 5.13 Ponto eletrônico (sem prefixo — as rotas já trazem `/ponto`)
+
+Ponto eletrônico próprio (REP-P, Portaria 671/2021), substituto do Mobponto.
+Detalhe completo em `app/apps/ponto/README.md`. Fase 1 (03/10/2026): schema,
+API e importadores — sem tela.
+
+| Método | Rota | Credencial | Função |
+|---|---|---|---|
+| GET | `/ponto/health` | — | módulo no ar, fuso, chave, migrações pendentes, fotos na fila |
+| POST | `/ponto/api/dispositivo/registrar` | — (teto por IP) | celular entra como PENDENTE e recebe o token dele |
+| POST | `/ponto/api/marcacao` | token do aparelho ou `X-API-Key` | a batida (cerca, NSR, hash encadeado, foto) |
+| GET | `/ponto/api/marcacoes` | `X-API-Key` | marcações por período/CPF/obra/status (até 62 dias) |
+| GET | `/ponto/api/colaboradores`, `/ponto/api/obras` | `X-API-Key` | cadastros, lidos do ERP |
+| GET/POST | `/ponto/api/dispositivos[...]` | `X-API-Key` | fila de aparelhos; aprovar, bloquear, autorizar |
+| POST | `/ponto/api/ajustes` | `X-API-Key` | pedido de ajuste com justificativa |
+| GET | `/ponto/api/recusas` | `X-API-Key` | batidas recusadas e o motivo |
+| GET/POST | `/ponto/api/admin/migracoes`, `/migrar`, `/fotos/enviar-pendentes` | `X-API-Key` | migrações do schema `ponto`; fila de fotos para o Drive |
+
+**Cadastros são do ERP**: o ponto lê `obras` e `colaboradores` e guarda só o que
+o ERP não tem (raio da cerca, jornada, aparelhos, marcações). **Foto vai para o
+Google Drive** pela rotina de anexos do ERP (`erp/core/documentos/drive.py`,
+importada); no banco fica só a ficha. **Juntar na `main` publica**, e o módulo
+precisa de `PONTO_API_KEY` no Render e da migração aplicada depois do deploy.
+
 ---
 
 ## 6. Recursos externos
@@ -746,6 +777,40 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 03/10/2026 — O PONTO ELETRÔNICO virou a sexta área, e os cadastros são do ERP (atravessa áreas)
+
+A empresa vai sair do Mobponto e bater ponto num sistema próprio (REP-P,
+Portaria 671/2021). A especificação de partida pedia um módulo com cadastros
+próprios de obra e de pessoa (`ponto_obras`, `ponto_colaboradores`). Foi
+confrontada com o repositório antes do código, e três coisas mudaram o desenho:
+
+1. **Obras e colaboradores já existem no ERP** (`obras` com latitude/longitude
+   desde a migração 024; `colaboradores` desde a 026). Criar cópias seria a
+   segunda cópia de obras e a TERCEIRA de pessoas (a Análise de SPs espelha o
+   Pipefy em `analisesps.colaborador`). Com a decisão de 18/09 ("100% no ERP,
+   nada de sistema paralelo"), o ponto **lê os cadastros do ERP** e guarda só o
+   que o ERP não tem, no schema `ponto`. É a segunda amarra entre áreas depois
+   do OFX de 24/09, protegida do mesmo jeito: um teste de contrato
+   (`tests/test_ponto_banco.py::test_contrato_com_o_erp`) acusa se o ERP
+   renomear uma coluna lida — ou mudar `erp/core/documentos/drive.py`, que o
+   ponto também importa para as fotos. **Para quem mexer nesses arquivos: há um
+   consumidor fora do ERP.**
+2. **O ponto é a fonte da verdade do ponto** — decisão do dono, com todas as
+   letras: *"não temos que adaptar o que temos ao Mobponto; é o inverso. Criamos
+   uma solução robusta, definitiva, e as outras se conectam a ela."* A consulta
+   da API devolve o formato do ponto (uma linha por batida); a folha da Análise
+   de SPs vai se adaptar a ler daqui quando chegar a hora de migrar.
+3. **Foto no Google Drive, não no banco** — decisão dele no mesmo dia ("lá o
+   espaço é virtualmente infinito; na base de dados não"), e o disco do Render
+   nunca foi opção. Se o Drive falhar, a batida não falha: a foto espera numa
+   fila no banco e é reenviada depois.
+
+O que a lei muda no desenho, e vale saber: a Portaria 671 veda impedir a
+marcação do empregado. Por isso **batida fora da cerca da obra é ACEITA e
+marcada "em análise"**, não recusada; recusa só por identidade (aparelho não
+aprovado, pessoa não autorizada). E a marcação já nasce com NSR sem furo e hash
+encadeado — o que o arquivo fiscal (AFD, fase 3) vai exigir.
 
 ### 01/10/2026 — a suíte em paralelo caía inteira no GitHub (driver do banco)
 
