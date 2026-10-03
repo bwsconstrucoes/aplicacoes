@@ -11773,6 +11773,10 @@ links (…) do arquivo de pagamento"*. A planilha é a
 - **Depois da SP, os cards de origem:** `mover_card` = Sim e movidos para a fase
   `340593562`. Cada card movido fica guardado; se o Pipefy recusar, a SP não se
   desfaz, a tela avisa e lançar de novo só termina a mudança.
+- A suíte inteira acusou que a leva 170 usava `openpyxl` num arquivo fora da
+  lista de liberados (`test_o_modulo_nao_depende_de_pandas_nem_de_streamlit`):
+  liberado com o motivo (planilha só das pessoas marcadas). Suíte inteira depois:
+  **8.000 verdes**. Não testado contra a planilha e o Pipefy reais.
 
 #### ⚠️ Pendente AGORA
 
