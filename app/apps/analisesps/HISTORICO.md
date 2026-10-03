@@ -11477,6 +11477,23 @@ Pipefy seria o Record ID."*
   título. O bloqueio agora diz o que o Pipefy respondeu.
 - **A prévia mostra o Record ID** ao lado do tipo de despesa, para conferir.
 
+#### Leva 158 — alimentação e transporte: quem não tem o auxílio no cadastro sai da lista (03/10/2026)
+
+O dono: *"Havia sido corrigido para Diaristas a situação das pessoas que ficavam
+aparecendo muitos com dados incompletos. E isso tá aparecendo em alimentação e
+transporte (…) Se não tem, não precisa ser exibido, o que precisaria era um
+filtro que exiba eles. A princípio eles não aparecem."*
+
+- **Sim, eram eles:** no auxílio, "cadastro incompleto" é quem não tem **valor**
+  ou **modalidade** deste auxílio na ficha — na maioria, quem não recebe.
+- **Saem da lista sem filtro marcado**, como os desligados
+  (`folha_lista.ESCONDIDAS_NOS_AUXILIOS`). Na lateral, o bloco virou "Fora da
+  lista", com "N sem este auxílio no cadastro" e os desligados — cada um abre o
+  filtro. O filtro Situação → "cadastro incompleto" mostra quem é. O relatório
+  segue a tela.
+- **Ficou como estava:** quem tem "Cartão" no transporte continua na lista como
+  "fora do pagamento" — é decisão do cadastro, não falta de dado.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11498,7 +11515,7 @@ Pipefy seria o Record ID."*
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
-| publicar a leva 157 (sem migração) e refazer a prévia de 09/2026: conferir o Record ID e a categoria mostrados | ele |
+| publicar as levas 157 e 158 (sem migração) e refazer a prévia de 09/2026: conferir o Record ID e a categoria mostrados | ele |
 | ~~publicar a retirada do "Gerar por competência"~~ — **publicada em 03/10/2026** (main em `dddfd6c`, suíte inteira 7.845 verdes, sem migração) | — |
 | ~~publicar as levas 155 e 156~~ — **publicadas em 02/10/2026** (main em `c2f7676`, suíte inteira 7.852 verdes, sem migração). No primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
 | ~~confirmar o favorecido da SP quando o arquivo é SomaPay~~ — **confirmado em 03/10/2026: CNPJ da BWS**; e a data de pagamento = hoje, também confirmada | — |
