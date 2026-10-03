@@ -188,6 +188,7 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         "dias_na_obra": int(dias_na_obra or 0),
         "obra_de_onde": ("ponto" if obra_do_ponto
                          else ("cadastro" if codigo_da_obra else "")),
+        "obra_do_cadastro": "", "sem_obra": False,
         "obra_nome": ficha.get("obra_cadastro") or "",
         # A Fase Atual, que ele pediu duas vezes. Vem do cadastro (coluna AX da
         # planilha) e é o corte mais usado da lista.
@@ -465,7 +466,8 @@ def _acrescimos(saida: dict, ajuste: dict, tipo: str, modo: str, inicio, fim,
     if extra:
         saida["valor_extra"] = Decimal(str(extra)).quantize(CENTAVO)
         saida["motivo_extra"] = ajuste.get("motivo_extra") or ""
-        saida["valor"] = (saida["valor"] + saida["valor_extra"]).quantize(CENTAVO)
+        saida["valor"] = max(Decimal("0.00"),
+                             (saida["valor"] + saida["valor_extra"]).quantize(CENTAVO))
     return saida
 
 
@@ -600,15 +602,31 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
         do_cadastro = colaboradores.resolver_obra(ficha, obras_por_nome)
         pessoas.append(calcular_pessoa(
             tipo, ficha, inicio, fim, ajustes.get(ficha["cpf"]),
-            # O ponto manda; o cadastro é o segundo recurso.
-            codigo_da_obra=do_ponto.get("obra") or do_cadastro,
+            # ⚠️ SÓ O PONTO, desde 03/10/2026. O dono: *"Não utilizar obra de
+            # cadastro automático, precisa ser ajustado, isso porque o correto
+            # seria corrigir o ponto. Mas se não for, vamos selecionar e isso
+            # precisa ter destaque, já que é pendência, conforme funciona na
+            # folha da contabilidade."* Sem ponto, a obra fica vazia — pendência
+            # — e o cadastro vai como SUGESTÃO para ele escolher.
+            codigo_da_obra=do_ponto.get("obra") or "",
             obra_do_ponto=do_ponto.get("obra") or "",
             dias_na_obra=do_ponto.get("dias") or 0,
             # As ausências só descontam no TRANSPORTE (dono, 03/10/2026).
             ausencias=(ponto_do_mes.get(ficha["cpf"]) if tipo == TRANSPORTE
                        else None)))
-        if regras.get(ficha["cpf"]):
-            aplicar_regra_de_rateio(pessoas[-1], regras[ficha["cpf"]])
+        p = pessoas[-1]
+        p["obra_do_cadastro"] = do_cadastro or ""
+        # A ordem de quem manda, como na folha da contabilidade: a obra
+        # escolhida à mão, a regra de rateio, o ponto.
+        escolhida = str((ajustes.get(ficha["cpf"]) or {}).get("obra") or "").strip()
+        if escolhida:
+            p["obra"], p["obra_de_onde"] = escolhida, "mao"
+        elif regras.get(ficha["cpf"]):
+            aplicar_regra_de_rateio(p, regras[ficha["cpf"]])
+        # SEM OBRA = PENDÊNCIA (só de quem vai receber): não há conta de onde o
+        # dinheiro saia, e o fechamento não passa.
+        p["sem_obra"] = bool(p["pagar"] and p["valor"] > 0 and not p.get("obra")
+                             and not p.get("rateio"))
 
     # ⚠️ QUEM PRECISA DE MÃO VEM PRIMEIRO. `False` ordena antes de `True`, então a
     # chave é `pagar` direto — na primeira versão eu escrevi `not pagar`, e a
@@ -662,6 +680,7 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
                                  if p.get("obra_de_onde") == "ponto"]),
         "fases": sorted({p["fase"] for p in pessoas if p.get("fase")}),
         # Descontos de ausência ainda não decididos — a lateral os aponta.
+        "sem_obra": [p for p in pessoas if p.get("sem_obra")],
         "com_ausencia": [p for p in pessoas if p.get("ausencias")
                          and not p.get("desconto_aplicado")
                          and p.get("desconto_proposto")],
@@ -725,9 +744,11 @@ def gravar_extras(tipo: str, ano: int, mes: int, cpfs, quem: str = "",
                                 if "," in str(bruto) else str(bruto)).quantize(CENTAVO)
             except Exception:  # noqa: BLE001
                 raise ErroDoAuxilio("o valor acrescentado deve ser numérico.")
-            if valor <= 0:
+            # Negativo REDUZ (dono, 03/10/2026: *"deve aceitar também número
+            # negativo pra reduzir valor"*); zero tira o ajuste.
+            if valor == 0:
                 valor = None
-            elif valor > Decimal("5000"):
+            elif abs(valor) > Decimal("5000"):
                 raise ErroDoAuxilio(
                     f"valor de R$ {valor} acima de R$ 5.000,00 — verifique o número.")
         colunas["valor_extra"] = valor
@@ -736,6 +757,9 @@ def gravar_extras(tipo: str, ano: int, mes: int, cpfs, quem: str = "",
     if "desconto_ausencias" in mudancas:
         d = mudancas["desconto_ausencias"]
         colunas["desconto_ausencias"] = None if d is None else bool(d)
+    if "obra" in mudancas:
+        # A obra escolhida à mão para quem não tem ponto (vazio = tira).
+        colunas["obra"] = " ".join(str(mudancas["obra"] or "").split()).upper()[:60]
     if not colunas:
         return 0
     if tipo != TRANSPORTE and colunas.get("desconto_ausencias"):
@@ -822,15 +846,14 @@ def limpar_ajuste(tipo: str, ano: int, mes: int, cpf: str) -> bool:
             # seleção ao cálculo não pode apagá-los. Tira-se a escolha de pagar
             # e só se apaga a linha que ficar vazia.
             conn.execute(
-                "UPDATE analisesps.auxilio_ajuste SET pagar = NULL, dias = NULL, "
-                "       obra = '', observacao = '' "
-                " WHERE tipo = ? AND ano = ? AND mes = ? AND cpf = ? "
-                "   AND (valor_extra IS NOT NULL OR desconto_ausencias IS NOT NULL)",
+                "UPDATE analisesps.auxilio_ajuste SET pagar = NULL, dias = NULL "
+                " WHERE tipo = ? AND ano = ? AND mes = ? AND cpf = ?",
                 (tipo, int(ano), int(mes), so_digitos(cpf)))
             cur = conn.execute(
                 "DELETE FROM analisesps.auxilio_ajuste "
                 " WHERE tipo = ? AND ano = ? AND mes = ? AND cpf = ? "
-                "   AND valor_extra IS NULL AND desconto_ausencias IS NULL",
+                "   AND valor_extra IS NULL AND desconto_ausencias IS NULL "
+                "   AND coalesce(obra, '') = '' AND coalesce(observacao, '') = ''",
                 (tipo, int(ano), int(mes), so_digitos(cpf)))
         else:
             cur = conn.execute(
@@ -904,8 +927,7 @@ def salvar_selecao(tipo: str, ano: int, mes: int, decisoes, quem: str = "") -> d
         if querido == do_calculo:
             # Bate com o cálculo: não é exceção. Tira o ajuste se havia um.
             # (Linha só com valor acrescentado ou desconto não é escolha de pagar.)
-            if (ajuste_atual.get("pagar") is not None or ajuste_atual.get("dias")
-                    or ajuste_atual.get("obra") or ajuste_atual.get("observacao")):
+            if ajuste_atual.get("pagar") is not None or ajuste_atual.get("dias"):
                 limpar_ajuste(tipo, ano, mes, cpf)
                 limpos += 1
             continue
@@ -1003,8 +1025,10 @@ def fechar(tipo: str, ano: int, mes: int, pagamento: str = "fim_de_mes",
     sem_obra = [p["nome"] for p in a_pagar if not p.get("obra")]
     if sem_obra:
         raise ErroDoAuxilio(
-            "há colaboradores a receber sem obra (nem no ponto nem no cadastro): "
-            + ", ".join(sem_obra[:5]) + ". Sem obra não há conta de pagamento.")
+            f"{len(sem_obra)} colaborador(es) a receber sem obra do ponto: "
+            + ", ".join(sem_obra[:5]) + ("…" if len(sem_obra) > 5 else "")
+            + '. Corrija o ponto ou escolha a obra na linha ("usar esta obra" / '
+            '"outra obra…"). Sem obra não há conta de pagamento.')
     # Fechar um pagamento tira o fechamento do outro — senão a mesma verba do
     # mês sairia duas vezes.
     for outro in TIPOS_DO_FECHAMENTO:

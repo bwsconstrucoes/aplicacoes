@@ -486,8 +486,17 @@ def test_a_verba_inteira_soma_POR_OBRA(banco_auxilio):
                                  "valor_alimentacao": D("50.00"),
                                  "obra_codigo": "OBRAA"}),
     )
+    # Sem ponto, a obra do cadastro NÃO entra sozinha (03/10/2026): é pendência,
+    # e quem escolhe é ele ("usar esta obra").
+    resultado = fx.calcular(fx.ALIMENTACAO, 2026, 9)
+    assert len(resultado["sem_obra"]) == 3
+    assert [o["obra"] for o in resultado["por_obra"]] == ["(sem obra)"]
+    for cpf, obra in ((GERLANIO, "OBRAA"), ("03513441363", "OBRAB"),
+                      ("11144477735", "OBRAA")):
+        fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, cpf, obra=obra)
     resultado = fx.calcular(fx.ALIMENTACAO, 2026, 9)
     assert resultado["total"] == D("450.00")
+    assert resultado["sem_obra"] == []
     # Da maior para a menor.
     assert [o["obra"] for o in resultado["por_obra"]] == ["OBRAB", "OBRAA"]
     assert resultado["por_obra"][1]["total"] == D("150.00")
@@ -775,3 +784,39 @@ def test_desconto_de_ausencia_na_ALIMENTACAO_e_recusado(banco_auxilio):
     from app.apps.analisesps import folha_auxilio as fx
     with pytest.raises(fx.ErroDoAuxilio):
         fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, GERLANIO, desconto_ausencias=True)
+
+
+def test_SEM_PONTO_e_PENDENCIA_e_a_obra_do_cadastro_e_so_SUGESTAO(banco_auxilio):
+    """Dono, 03/10/2026: *"Não utilizar obra de cadastro automático, precisa ser
+    ajustado (…) vamos selecionar e isso precisa ter destaque, já que é
+    pendência."*"""
+    from app.apps.analisesps import folha_auxilio as fx
+    cadastrar((GERLANIO, "UM", {"modo_alimentacao": "Mês",
+                                "valor_alimentacao": D("100.00"),
+                                "obra_codigo": "OBRAA"}))
+    p = fx.calcular(fx.ALIMENTACAO, 2026, 9)["pessoas"][0]
+    assert p["obra"] == "" and p["sem_obra"] is True
+    assert p["obra_do_cadastro"] == "OBRAA", "vai como sugestão"
+    with pytest.raises(fx.ErroDoAuxilio, match="sem obra do ponto"):
+        fx.fechar(fx.ALIMENTACAO, 2026, 9, "fim_de_mes")
+
+    fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, GERLANIO, obra="obrab")
+    p = fx.calcular(fx.ALIMENTACAO, 2026, 9)["pessoas"][0]
+    assert p["obra"] == "OBRAB" and p["obra_de_onde"] == "mao" and not p["sem_obra"]
+    # Salvar a seleção (voltar ao cálculo) NÃO apaga a obra escolhida.
+    fx.salvar_selecao(fx.ALIMENTACAO, 2026, 9, [{"cpf": GERLANIO, "pagar": True}])
+    assert fx.calcular(fx.ALIMENTACAO, 2026, 9)["pessoas"][0]["obra"] == "OBRAB"
+
+
+def test_VALOR_NEGATIVO_reduz_e_o_total_nunca_fica_negativo(banco_auxilio):
+    """*"O botão mais valor deve aceitar também número negativo pra reduzir."*"""
+    from app.apps.analisesps import folha_auxilio as fx
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM,
+                           {"valor_extra": D("-30.00"), "motivo_extra": "devolução"})
+    assert r["valor"] == D("300.00")
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM,
+                           {"valor_extra": D("-999.00")})
+    assert r["valor"] == D("0.00")
+    fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, GERLANIO, valor_extra="-50,00",
+                     motivo_extra="pago a mais em agosto")
+    assert fx.ajustes_do_mes(fx.ALIMENTACAO, 2026, 9)[GERLANIO]["valor_extra"] == D("-50.00")

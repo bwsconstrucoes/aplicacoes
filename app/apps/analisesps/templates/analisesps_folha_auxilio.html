@@ -72,6 +72,18 @@
   </div>
 </div>
 
+{% if resultado and resultado.sem_obra %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pendências antes do pagamento</b>
+  <a class="lat-critica erro" href="{{ url_tela }}{{ base_qs }}&situacao=sem_obra">
+    <b>{{ resultado.sem_obra|length }} sem obra do ponto</b>
+    <small>Sem obra não há conta de pagamento e o fechamento não passa. O certo é
+      corrigir o ponto; senão, escolha a obra na linha ("usar esta obra" ou
+      "outra obra…"). Clique para ver quem é.</small>
+  </a>
+</div>
+{% endif %}
+
 {% if resultado and resultado.com_ausencia %}
 {% set aus = resultado.com_ausencia %}
 <div class="cartao lateral-folha">
@@ -241,7 +253,7 @@
        usado é ruim"*. O rótulo agora diz o que a coisa FAZ — travar o pagamento —
        em vez de descrever o que a pessoa deveria sentir. #}
     <div class="kpi-rotulo">Pendências</div>
-    <div class="kpi-valor">{{ resultado.com_problema|length }}</div>
+    <div class="kpi-valor">{{ resultado.com_problema|length + (resultado.sem_obra or [])|length }}</div>
   </div>
   <div class="kpi estatico">
     <div class="kpi-rotulo">Obras</div>
@@ -291,7 +303,7 @@
                   aria-label="Selecionar todos"></th>
           {% endif %}
           <th>Colaborador</th><th>Situação</th><th>CPF</th><th>Fase Atual</th>
-          <th title="A de mais dias no ponto dos últimos 15 dias; sem ponto, a do cadastro">Obra que paga</th><th>Categoria</th>
+          <th title="A de mais dias no ponto dos últimos 15 dias, a regra de rateio ou a escolhida por você; sem nenhuma, pendência">Obra que paga</th><th>Categoria</th>
           {# "Valor do dia" virou "Valor" (dono, 03/10/2026): no "Mês" e no
              "Mensal" do transporte o cadastro guarda o valor do MÊS. #}
           <th class="num" title="O valor do cadastro: por dia ou por mês, conforme a categoria">Valor</th>
@@ -305,7 +317,7 @@
       </thead>
       <tbody>
       {% for p in pessoas %}
-        <tr class="clicavel {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel }}"
+        <tr class="clicavel {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or p.sem_obra }}"
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}"
             data-valor="{{ p.valor }}"
             data-impossivel="{{ '1' if p.impossivel else '' }}">
@@ -361,8 +373,24 @@
                   {% for x in p.rateio %}<br>{{ x.obra }} {{ '%.0f'|format(x.percentual) }}% · {{ x.valor|moeda }}{% endfor %}</span>
               {% elif p.obra_de_onde == 'ponto' %}
                 <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto{% if resultado.janela_da_obra %} de {{ resultado.janela_da_obra[0].strftime('%d/%m') }} a {{ resultado.janela_da_obra[1].strftime('%d/%m') }}{% endif %}</span>
-              {% else %}
-                <br><span class="cartao-dica">do cadastro — sem ponto no mês</span>
+              {% elif p.obra_de_onde == 'mao' %}
+                <br><span class="cartao-dica">escolhida por você — sem ponto</span>
+                {% if pode_operar %}<br><button type="button" class="link-btn escolher-obra"
+                    data-sugerida="{{ p.obra }}">trocar…</button>
+                  <button type="button" class="link-btn usar-obra" data-obra="">tirar</button>{% endif %}
+              {% endif %}
+            {% elif p.sem_obra %}
+              {# ⚠️ SEM PONTO = PENDÊNCIA (03/10/2026): *"Não utilizar obra de
+                 cadastro automático (…) o correto seria corrigir o ponto. Mas se
+                 não for, vamos selecionar e isso precisa ter destaque."* O
+                 cadastro vai como sugestão, com um clique. #}
+              <span class="selo risco">sem obra do ponto</span>
+              {% if p.obra_do_cadastro %}<br><span class="cartao-dica">no cadastro: <b>{{ p.obra_do_cadastro }}</b></span>{% endif %}
+              {% if pode_operar %}<br>
+                {% if p.obra_do_cadastro %}<button type="button" class="link-btn usar-obra"
+                    data-obra="{{ p.obra_do_cadastro }}">usar esta obra</button>{% endif %}
+                <button type="button" class="link-btn escolher-obra"
+                    data-sugerida="{{ p.obra_do_cadastro }}">{{ 'outra obra…' if p.obra_do_cadastro else 'selecionar obra…' }}</button>
               {% endif %}
             {% else %}—{% endif %}
           </td>
@@ -393,20 +421,20 @@
                     <span class="selo aprovado">desconto aplicado</span>
                     <button type="button" class="link-btn aj-desconto" data-aplicar="">desfazer</button>
                   {% else %}
-                    <button type="button" class="btn secundario btn-mini aj-desconto" data-aplicar="1">Aplicar desconto</button>
+                    <button type="button" class="btn btn-mini btn-desconto aj-desconto" data-aplicar="1">Aplicar desconto</button>
                   {% endif %}
                 {% elif p.desconto_aplicado %}<br><span class="selo aprovado">desconto aplicado</span>{% endif %}
               </div>
             {% endif %}
             {% if p.valor_extra %}
-              <div class="aj-extra"><b>+{{ p.valor_extra|moeda }}</b>
+              <div class="aj-extra {{ 'reduz' if p.valor_extra < 0 }}"><b>{{ '+' if p.valor_extra > 0 }}{{ p.valor_extra|moeda }}</b>
                 {% if p.motivo_extra %}<br><span class="cartao-dica">{{ p.motivo_extra }}</span>{% endif %}
                 {% if pode_operar %}<br><button type="button" class="link-btn aj-extra-btn"
                   data-valor="{{ p.valor_extra }}" data-motivo="{{ p.motivo_extra }}">alterar</button>{% endif %}
               </div>
             {% elif pode_operar and not p.impossivel %}
               <button type="button" class="link-btn aj-extra-btn" data-valor="" data-motivo=""
-                      title="Acrescentar um valor ao pagamento deste mês">+ valor</button>
+                      title="Acrescentar (ou, com valor negativo, reduzir) o pagamento deste mês">± valor</button>
             {% endif %}
           </td>
           <td class="num valor-final"><b>{{ p.valor|moeda }}</b>
@@ -498,9 +526,10 @@
 <dialog class="dialogo" id="dialogo-extra">
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
-  <h3>Acrescentar valor <small id="extra-nome"></small></h3>
+  <h3>Ajustar valor <small id="extra-nome"></small></h3>
   <p class="cartao-dica">Soma ao pagamento de {{ '%02d'|format(mes) }}/{{ ano }} —
-    por exemplo, um valor esquecido no mês anterior. Fica registrado com o motivo.</p>
+    por exemplo, um valor esquecido no mês anterior. <b>Valor negativo reduz</b>
+    (ex.: −50,00). Fica registrado com o motivo.</p>
   <label class="rotulo-campo" for="extra-valor">Valor (R$)</label>
   <input id="extra-valor" inputmode="decimal" placeholder="0,00" data-sem-mascara>
   <label class="rotulo-campo" for="extra-motivo" style="margin-top:8px">Motivo</label>
@@ -508,6 +537,29 @@
   <div class="lat-acoes" style="margin-top:12px">
     <button type="button" class="btn secundario" id="extra-tirar" hidden>Tirar o valor</button>
     <button type="button" class="btn" id="extra-salvar">Salvar</button>
+  </div>
+</dialog>
+{% endif %}
+
+{% if pode_operar %}
+<dialog class="dialogo" id="dialogo-obra">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Selecionar obra que paga</h3>
+  <p class="cartao-dica" id="dialogo-obra-quem"></p>
+  {% if obras_c_diarios %}
+    <input type="search" id="dialogo-obra-procura" autocomplete="off" data-sem-busca
+           placeholder="Procurar obra…" aria-label="Procurar obra">
+    <select id="dialogo-obra-lista" size="12" data-sem-busca aria-label="Obras da C. Diários">
+      {% for o in obras_c_diarios %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+    </select>
+    <p class="cartao-dica">Obras da aba "C. Diários". Clique duas vezes para selecionar.</p>
+  {% else %}
+    <input type="text" id="dialogo-obra-texto" placeholder="código da obra"
+           aria-label="Código da obra">
+  {% endif %}
+  <div class="lat-acoes" style="margin-top:10px">
+    <button type="button" class="btn" id="dialogo-obra-usar">Usar esta obra</button>
   </div>
 </dialog>
 {% endif %}
@@ -680,6 +732,62 @@ if (dialogoExtra) {
     if (await gravarExtras({cpfs: [cpfDoExtra], valor_extra: null})) location.reload();
   });
 }
+
+// --- a obra de quem não tem ponto: usar a do cadastro ou escolher (03/10/2026)
+document.querySelectorAll(".usar-obra").forEach(b => b.addEventListener("click", async () => {
+  if (avisarSeHaSelecaoPorSalvar()) return;
+  b.disabled = true;
+  if (await gravarExtras({cpfs: [b.closest("tr").dataset.cpf], obra: b.dataset.obra}))
+    location.reload();
+  else b.disabled = false;
+}));
+(function () {
+  const dialogo = document.getElementById("dialogo-obra");
+  if (!dialogo) return;
+  const lista = document.getElementById("dialogo-obra-lista");
+  const procura = document.getElementById("dialogo-obra-procura");
+  const texto = document.getElementById("dialogo-obra-texto");
+  const usar = document.getElementById("dialogo-obra-usar");
+  const semAcento = t => (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  let cpf = "";
+  document.querySelectorAll(".escolher-obra").forEach(b => b.addEventListener("click", () => {
+    if (avisarSeHaSelecaoPorSalvar()) return;
+    const linha = b.closest("tr");
+    cpf = linha.dataset.cpf;
+    document.getElementById("dialogo-obra-quem").textContent =
+      linha.dataset.nome + " — o valor inteiro sai da obra selecionada.";
+    if (lista) {
+      procura.value = "";
+      [...lista.options].forEach(o => { o.hidden = false; });
+      lista.value = b.dataset.sugerida || "";
+    }
+    if (texto) texto.value = b.dataset.sugerida || "";
+    usar.disabled = false;
+    dialogo.showModal();
+    (procura || texto).focus();
+  }));
+  if (procura) procura.addEventListener("input", () => {
+    const alvo = semAcento(procura.value.trim());
+    let primeira = null;
+    [...lista.options].forEach(o => {
+      const casa = !alvo || semAcento(o.value).includes(alvo);
+      o.hidden = !casa;
+      if (casa && !primeira) primeira = o;
+    });
+    if (primeira && (!lista.value || lista.selectedOptions[0].hidden)) lista.value = primeira.value;
+  });
+  if (procura) procura.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); usar.click(); }
+  });
+  if (lista) lista.addEventListener("dblclick", () => usar.click());
+  usar.addEventListener("click", async () => {
+    const obra = ((lista ? lista.value : texto.value) || "").trim().toUpperCase();
+    if (!obra) { alert("Selecione a obra."); return; }
+    usar.disabled = true;
+    if (await gravarExtras({cpfs: [cpf], obra: obra})) location.reload();
+    else usar.disabled = false;
+  });
+})();
 
 // --- fechar o auxílio do mês -------------------------------------------------
 const fecharAux = document.getElementById("fechar-auxilio");
