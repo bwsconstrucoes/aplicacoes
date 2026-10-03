@@ -71,7 +71,7 @@ Testes: `tests/test_ponto.py` (regras puras, sem banco) e
 |---|---|
 | `DATABASE_URL` | a do ERP; o ponto não tem conexão própria |
 | `PONTO_API_KEY` | a chave dos sistemas (`X-API-Key`). **Sem ela, toda rota com chave responde 503** — falha fechado. Gere com `python -c "import secrets; print(secrets.token_urlsafe(32))"` e guarde só no Render |
-| `PONTO_DRIVE_PASTA` | id da pasta do Google Drive onde as fotos de batida ficam (subpastas `AAAA-MM` são criadas sozinhas). Pasta comum serve, desde que compartilhada com o e-mail personificado. Sem ela, as fotos esperam na fila do banco |
+| `PONTO_DRIVE_PASTA` | id da pasta do Google Drive onde as fotos de batida ficam (subpastas `AAAA-MM` são criadas sozinhas). Pasta comum serve, desde que compartilhada com o e-mail personificado. Sem ela, as fotos esperam na fila do banco. **Pode ser uma pasta `Ponto` dentro da pasta do Drive do ERP** (conferido em 03/10/2026): o ERP só procura e mexe nas pastas `Obras` e `Arquivo` e nos arquivos que ele mesmo registrou; não lista nem move o resto. Só não use os nomes `Obras` ou `Arquivo` |
 | `PONTO_DRIVE_IMPERSONAR` | em nome de quem a conta de serviço grava (padrão `contato@bwsconstrucoes.com.br`, o mesmo da emissão de NFS-e e da Análise de SPs). Vazio = a própria conta de serviço, que só funciona em Drive Compartilhado |
 | `GOOGLE_CREDENTIALS_BASE64` | a credencial Google de toda a casa; nada novo |
 
