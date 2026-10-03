@@ -268,6 +268,16 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantas batidas foram recusadas esta semana, e de que aparelho?
 - Qual foi a última batida da Maria? Em que obra?
 - Quais fotos de batida ainda não subiram para o Drive?
+- Quantas horas extras a obra X fez no mês? 🔒 ⚠️ ("extra" = o que passou da escala, depois da tolerância de 5/10 min da CLT; o adicional em dinheiro é da folha)
+- Quem faltou ontem sem justificativa? 🔒
+- Quem está de atestado / de férias esta semana? 🔒 (o motivo médico só o DP vê)
+- Quantos atestados esperam o DP? Quantos ajustes esperam o encarregado? 🔒
+- Qual o saldo do banco de horas do Fulano? O que vence nos próximos 30 dias? 🔒 (só quem tem banco; falta de dia inteiro não entra no banco)
+- Quem atrasa sempre no mesmo dia da semana? 🔒
+- Quem bateu ponto em dois lugares longe em poucos minutos? 🔒
+- O mês de setembro do ponto já foi fechado? Quem fechou?
+- Quem ainda não criou o PIN do celular? 🔒
+- Quais aparelhos estão bloqueados, e por quê?
 
 ### Conciliação e banco
 
@@ -334,9 +344,9 @@ nunca chutar.
 | "Quanto tempo leva do pedido até a entrega?" | o recebimento existe, mas não há medida de prazo montada |
 | "Quem é o melhor fornecedor?" | não há nota de desempenho (prazo, qualidade, recusa) |
 | "Quanto vou precisar de caixa nos próximos 90 dias?" | previsão existe por título; falta juntar com o previsto a receber |
-| "Quantas horas o Fulano trabalhou este mês?" / "Quem chegou atrasado?" / "Quem faltou?" | o ponto só registra batidas (fase 1); a regra de jornada, horas, atraso e falta é a fase 3 do módulo `ponto` |
-| "Quem está na obra agora?" | precisa da regra de entrada/saída por jornada — fase 3 do ponto |
-| "Qual o espelho de ponto do Fulano?" | AFD/AEJ e espelho são fase 3 do ponto |
+| "Quanto o Fulano vai receber de extra / adicional noturno em reais?" | o ponto dá os MINUTOS (extra, noturno reduzido); o valor em dinheiro é regra da folha e da convenção coletiva |
+| "Qual o arquivo AFD/AEJ do mês para a fiscalização?" | os arquivos fiscais são a fase 3 do ponto; a estrutura já guarda o que eles precisam |
+| "Quem está na obra agora?" (presença física) | o ponto sabe quem bateu, não quem saiu sem bater; "bateu e ainda não saiu" é o mais perto disso |
 
 ---
 

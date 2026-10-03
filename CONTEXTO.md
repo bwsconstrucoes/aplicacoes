@@ -661,6 +661,12 @@ API e importadores — sem tela.
 | GET | `/ponto/api/recusas` | `X-API-Key` | batidas recusadas e o motivo |
 | GET/POST | `/ponto/api/admin/migracoes`, `/migrar`, `/fotos/enviar-pendentes` | `X-API-Key` | migrações do schema `ponto`; fila de fotos para o Drive |
 
+**Fase 2 (03/10/2026):** a GESTÃO é o módulo **Ponto** do menu do ERP
+(`/erp/ponto`, `/erp/api/ponto/*`, rotas em `ponto/gestao.py`, ações
+`ver_ponto` · `tratar_ponto` · `aprovar_afastamento` · `fechar_competencia` ·
+`configurar_ponto`), e o colaborador usa o **Meu ponto** em `/ponto/app`
+(CPF + PIN criado com código por WhatsApp). Ver `ponto/README.md`.
+
 **Cadastros são do ERP**: o ponto lê `obras` e `colaboradores` e guarda só o que
 o ERP não tem (raio da cerca, jornada, aparelhos, marcações). **Foto vai para o
 Google Drive** pela rotina de anexos do ERP (`erp/core/documentos/drive.py`,
@@ -777,6 +783,34 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 03/10/2026 — A GESTÃO DO PONTO ENTROU NO ERP, e quem aprova o quê virou cadastro (atravessa áreas)
+
+O dono pediu o ambiente completo: gestão (cadastros, espelho, pendências),
+"meu ponto" no celular, atestado com documento e aprovação, compensação, banco
+de horas só para quem pode e alertas. Decisões dele: horários configuráveis,
+**gestão dentro do ERP**, "gestão de competências — permissões de aprovações",
+**só o DP vê atestado**. Plano em `app/apps/ponto/PLANO_FASE2.md`.
+
+O que isso mexeu FORA da pasta do ponto, e por quê:
+
+1. **As telas do ponto são rotas do blueprint do ERP**, registradas por
+   `app/apps/ponto/gestao.py` através de uma importação protegida no fim de
+   `erp/routes.py`. Assim herdam login, guarda NEGAR, menu e recorte por obra
+   sem recriar nada; se o ponto falhar ao carregar, o ERP sobe sem o menu dele.
+2. **Cinco ações e quatro seções novas** (`permissoes.py`, `secoes.py`) e a
+   migração **082** do ERP, que dá as seções aos perfis semeados. É o que torna
+   "quem aprova o quê" configurável perfil a perfil e pessoa a pessoa, como o
+   resto do ERP — em vez de uma regra fixa no código do ponto.
+3. **Atestado tem rota própria** de quem aprova afastamento: a ação declarada
+   decide sozinha quem entra (regra do CLAUDE.md), e o papel de saúde não passa
+   pela porta comum de documentos.
+
+⚠️ **DUAS ATUALIZAÇÕES DE BANCO NA PUBLICAÇÃO**, em telas diferentes: a 082 do
+ERP (Configurações › Aplicar atualizações do banco) e a 002 do ponto (Ponto ›
+Configuração › Aplicar atualizações do ponto). Sem a 082, a tela do ponto não
+abre para ninguém que tenha perfil cadastrado; sem a 002 do ponto, as telas
+respondem "aplique as atualizações" em vez de quebrar.
 
 ### 03/10/2026 — O PONTO ELETRÔNICO virou a sexta área, e os cadastros são do ERP (atravessa áreas)
 

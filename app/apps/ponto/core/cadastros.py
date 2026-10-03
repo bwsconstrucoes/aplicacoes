@@ -25,9 +25,12 @@ from ..horario import JORNADA_PADRAO, JORNADAS
 RAIO_PADRAO_METROS = 200
 
 _SQL_COLABORADOR = """
-    SELECT c.id, c.nome, c.cpf, c.matricula, c.obra_id, c.situacao, c.demissao,
+    SELECT c.id, c.nome, c.cpf, c.matricula, c.obra_id, c.situacao, c.admissao, c.demissao,
+           c.telefone,
            COALESCE(pc.tipo_jornada, :jornada_padrao) AS tipo_jornada,
            pc.centro_custo, pc.foto_cadastral_id,
+           COALESCE(pc.regime_banco, 'SEM_BANCO') AS regime_banco, pc.banco_inicio,
+           pc.acordo_documento_id,
            COALESCE(pc.ativo, TRUE) AS ativo_no_ponto,
            (pc.colaborador_id IS NOT NULL) AS tem_config,
            o.codigo AS obra_codigo, o.nome AS obra_nome
@@ -247,4 +250,6 @@ def colaborador_para_json(c: dict) -> dict:
         "obras_adicionais": c.get("obras_adicionais", []),
         "tipo_jornada": c["tipo_jornada"], "centro_custo": c.get("centro_custo"),
         "situacao": c["situacao"], "ativo_no_ponto": bool(c["ativo_no_ponto"]),
+        "regime_banco": c.get("regime_banco", "SEM_BANCO"),
+        "banco_inicio": c["banco_inicio"].isoformat() if c.get("banco_inicio") else None,
     }

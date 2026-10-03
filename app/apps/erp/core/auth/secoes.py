@@ -175,6 +175,24 @@ SECOES: list[dict[str, Any]] = [
      "explicacao": "o catálogo de materiais e o cadastro de fornecedores",
      "ler": ["ver_suprimentos"],
      "editar": ["administrar_insumos", "administrar_fornecedores"]},
+    # --------------------------------------------------------------- Ponto
+    # O módulo `ponto` (03/10/2026). Quatro seções, e não uma, porque são quatro
+    # pessoas diferentes na BWS: o encarregado trata o ponto da obra dele; o DP
+    # aprova afastamento e enxerga o atestado; quem fecha o mês; quem configura.
+    {"chave": "pon_gestao", "area": "Ponto", "nome": "Gestão do ponto",
+     "explicacao": ("quem bateu, o espelho, as pendências e os alertas das obras "
+                    "da pessoa; mexer decide batida em análise e ajuste de batida"),
+     "ler": ["ver_ponto"], "editar": ["tratar_ponto"]},
+    {"chave": "pon_dp", "area": "Ponto", "nome": "Afastamentos e banco de horas (DP)",
+     "explicacao": ("aprovar atestado, licença e férias, abrir o atestado e "
+                    "lançar no banco de horas"),
+     "ler": ["ver_ponto"], "editar": ["aprovar_afastamento"]},
+    {"chave": "pon_competencia", "area": "Ponto", "nome": "Fechamento do mês",
+     "explicacao": "fechar o mês do ponto para a folha, e reabrir com motivo",
+     "ler": ["ver_ponto"], "editar": ["fechar_competencia"]},
+    {"chave": "pon_config", "area": "Ponto", "nome": "Configuração do ponto",
+     "explicacao": "escalas, feriados, aparelhos e as atualizações do banco do ponto",
+     "ler": ["ver_ponto"], "editar": ["configurar_ponto"]},
     # -------------------------------------------------------------- Geral
     {"chave": "ger_arquivo", "area": "Geral", "nome": "Arquivo de documentos",
      "explicacao": "o acervo da empresa — contrato, certidão, ART",

@@ -215,6 +215,33 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "tocar_processo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
                            P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
                            P.DEPARTAMENTO_PESSOAL},
+    # ---------------------------------------------------------------------
+    # PONTO ELETRÔNICO (03/10/2026) — a gestão do módulo `ponto` dentro do ERP.
+    #
+    # Pedido do dono: "gestão de competências — permissões de aprovações". Quem
+    # aprova o quê é decidido aqui por cargo e, como todo o resto, ajustado
+    # pessoa a pessoa e perfil a perfil (seções "Ponto" em secoes.py):
+    #
+    #   ver_ponto            ver quem bateu, o espelho, as pendências e os
+    #                        alertas — sempre recortado pelas obras da pessoa
+    #   tratar_ponto         decidir batida em análise, ajuste de batida e a
+    #                        1ª etapa de compensação e folga; mexer na escala e
+    #                        nas obras do colaborador; tratar alerta
+    #   aprovar_afastamento  o DP: atestado, licença, férias, afastamento e a
+    #                        2ª etapa de compensação/folga; banco de horas; e
+    #                        ABRIR O ATESTADO (dado de saúde — "só o DP vê")
+    #   fechar_competencia   fechar e reabrir o mês do ponto
+    #   configurar_ponto     escalas, feriados, aparelhos, telefones do resumo
+    #                        e as atualizações do banco do ponto
+    # ---------------------------------------------------------------------
+    "ver_ponto":          {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                           P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                           P.DEPARTAMENTO_PESSOAL},
+    "tratar_ponto":       {P.ADMIN, P.GESTOR_OBRA, P.SUPERVISOR_OBRA,
+                           P.DEPARTAMENTO_PESSOAL},
+    "aprovar_afastamento": {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
+    "fechar_competencia": {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
+    "configurar_ponto":   {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -294,6 +321,11 @@ ACAO_ROTULOS = {
     "tratar_agenda":        "Resolver, dispensar e anotar na agenda",
     "ver_acompanhamento":   "Ver o acompanhamento de processos da obra",
     "tocar_processo":       "Abrir processo, lançar andamento e assumir",
+    "ver_ponto":            "Ver o ponto: quem bateu, espelho e alertas",
+    "tratar_ponto":         "Tratar o ponto da obra: batida em análise, ajuste e escala",
+    "aprovar_afastamento":  "Aprovar atestado, licença e férias e ver o atestado (DP)",
+    "fechar_competencia":   "Fechar e reabrir o mês do ponto",
+    "configurar_ponto":     "Configurar o ponto: escalas, feriados e aparelhos",
 }
 
 ROTULOS = {

@@ -1,0 +1,2199 @@
+{% extends "erp_base.html" %}
+{#
+  A GESTÃO DO PONTO, dentro do ERP — uma página só para as sete abas.
+
+  Por que um arquivo só: as sete abas dividem os mesmos ajudantes (hora em
+  h:mm, a "pílula" da batida, a foto, o rótulo dos alertas). Sete arquivos
+  seriam sete cópias desses ajudantes, e no dia em que alguém corrigisse uma
+  as outras seis continuariam erradas. Cada aba entra por um `if aba_ponto`,
+  e o script só leva o código da aba aberta.
+
+  O `pode` aqui só esconde botão que a pessoa não pode usar. A trava de verdade
+  é o @permissao de cada rota em `app/apps/ponto/gestao.py`.
+#}
+{% block titulo %}Ponto — {{ {
+  "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Pendências",
+  "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
+  "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
+{% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_banco", "ponto_config") %}sem-filtros{% endif %}{% endblock %}
+
+{# =========================================================================
+   BARRA DA ESQUERDA (filtros)
+   ========================================================================= #}
+{% block filtros %}
+{% if aba_ponto == "ponto_hoje" %}
+  <div class="filtros-cab"><h2>Dia</h2>
+    <button class="link-btn" id="h-hoje" type="button">Hoje</button></div>
+  <div class="campo"><label for="h-data">Data</label><input type="date" id="h-data"></div>
+  <div class="campo" style="margin-top:10px"><label for="h-obra">Obra</label>
+    <select id="h-obra"><option value="">Todas as minhas obras</option></select></div>
+  <button class="btn" id="h-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    <b>Como ler.</b> "Não bateu" só aparece <b>15 minutos depois</b> da entrada
+    prevista na escala — antes disso a pessoa está em "Ainda não é hora".
+    Vendo o dia de hoje, a tela se atualiza sozinha a cada 2 minutos.
+  </div>
+
+{% elif aba_ponto == "ponto_espelho" %}
+  <div class="filtros-cab"><h2>Espelho do mês</h2></div>
+  <div class="campo"><label for="e-pessoa">Pessoa</label>
+    <select id="e-pessoa"><option value="">carregando…</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="e-mes">Mês</label>
+    <input type="month" id="e-mes"></div>
+  <button class="btn" id="e-ver" type="button" style="width:100%; margin-top:14px">Ver espelho</button>
+  <button class="btn secundario" id="e-imprimir" type="button" style="width:100%; margin-top:8px"
+          title="Abre o espelho em outra aba, pronto para imprimir e assinar">Imprimir</button>
+  <a class="btn secundario" id="e-csv" href="/erp/api/ponto/exportar.csv"
+     style="display:block; text-align:center; text-decoration:none; margin-top:8px"
+     title="Totais do mês de todas as pessoas que você enxerga">Exportar mês (CSV)</a>
+  <div class="cartao-dica" style="margin-top:16px">
+    O CSV traz os <b>totais do mês de todas as pessoas</b> que você enxerga,
+    em horas decimais — é o que vai para a folha. O espelho da tela é de uma
+    pessoa só.
+  </div>
+
+{% elif aba_ponto == "ponto_pessoas" %}
+  <div class="filtros-cab"><h2>Pessoas</h2></div>
+  <div class="campo"><label for="pe-busca">Buscar</label>
+    <input id="pe-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
+  <label class="opcao" style="margin-top:10px"><input type="checkbox" id="pe-todos">
+    <span class="rotulo">Incluir quem não bate ponto</span></label>
+  <button class="btn" id="pe-ver" type="button" style="width:100%; margin-top:14px">Buscar</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    O cadastro da pessoa (nome, CPF, obra principal) é o do ERP, em
+    Colaboradores. Aqui fica só o que é do ponto: escala, jornada, obras
+    extras e banco de horas.
+  </div>
+
+{% elif aba_ponto == "ponto_alertas" %}
+  <div class="filtros-cab"><h2>Alertas</h2></div>
+  <div class="campo"><label for="a-situacao">Situação</label>
+    <select id="a-situacao">
+      <option value="ABERTO" selected>Abertos</option>
+      <option value="RESOLVIDO">Resolvidos</option>
+      <option value="DISPENSADO">Dispensados</option>
+      <option value="">Todos</option>
+    </select></div>
+  <div class="campo" style="margin-top:10px"><label for="a-gravidade">Gravidade</label>
+    <select id="a-gravidade">
+      <option value="">Todas</option>
+      <option value="URGENTE">Urgente</option>
+      <option value="ATENCAO">Atenção</option>
+      <option value="INFO">Para saber</option>
+    </select></div>
+  <button class="btn" id="a-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    <b>Alerta não é palpite.</b> Cada um sai de uma <b>regra escrita</b> (da CLT
+    ou do nosso processo: falta, intervalo curto, extra acima de 2 h…) ou de um
+    <b>padrão contado no histórico</b> (atrasa toda segunda, bate fora da cerca
+    dia após dia, duas batidas longe uma da outra em poucos minutos). Nenhum
+    número aqui é escrito por inteligência artificial.
+  </div>
+{% endif %}
+{% endblock %}
+
+{# =========================================================================
+   CONTEÚDO
+   ========================================================================= #}
+{% block conteudo %}
+<style>
+  /* A batida como "pílula": a hora, e a marca do que ela tem de diferente. */
+  .chip { display:inline-block; font-family:var(--fonte-dados); font-size:12.5px;
+          padding:1px 7px; margin:0 4px 4px 0; border-radius:999px;
+          background:#E7EDF7; color:var(--azul); border:1px solid transparent;
+          white-space:nowrap; line-height:1.6; }
+  button.chip { cursor:pointer; font-weight:600; }
+  button.chip:hover { border-color:var(--azul-claro); }
+  .chip.ajustada { background:#fff; border:1px dashed var(--azul-claro); }
+  .chip.analise  { background:#FDF1DC; color:var(--ambar); }
+  .chip.fora     { border-color:var(--vermelho); color:var(--vermelho); }
+  .chip.com-foto::after { content:" 📷"; font-size:10px; }
+  .alerta-dia { display:inline-block; font-size:11px; font-weight:600; color:var(--ambar);
+                background:#FFF4D6; border-radius:6px; padding:0 6px; margin:3px 4px 0 0; }
+  tr.apagada td { color:var(--tinta-suave); background:#FAFBFD; }
+  tr.apagada .chip { opacity:.7; }
+  td small, .cel small { display:block; color:var(--tinta-suave); font-size:11.5px; margin-top:1px; }
+  .suave { color:var(--tinta-suave); }
+  .acoes { display:flex; gap:6px; flex-wrap:wrap; }
+  .barra-acoes { display:flex; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
+  .leitura-grade { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));
+                   gap:8px 14px; margin:8px 0; }
+  .leitura-grade small { display:block; color:var(--tinta-suave); font-size:11px; }
+  .semana td { padding:4px 6px; }
+  .semana input[type=time] { padding:4px 6px; border:1px solid var(--borda-forte);
+                             border-radius:6px; font-family:var(--fonte-dados); }
+  .cartao-alerta { border-left:6px solid var(--vermelho); }
+  .grupo-cab { display:flex; align-items:center; gap:8px; margin:0 0 8px; }
+  pre.resumo-texto { white-space:pre-wrap; font-family:var(--fonte-dados); font-size:12.5px;
+                     background:var(--papel); border-radius:var(--raio-p); padding:10px 12px;
+                     margin:0; max-height:360px; overflow:auto; }
+  .endereco-app { font-family:var(--fonte-dados); font-size:15px; font-weight:700;
+                  background:var(--papel); padding:8px 12px; border-radius:var(--raio-p);
+                  word-break:break-all; }
+  @media (max-width: 720px) {
+    .barra-acoes .btn { flex:1 1 auto; }
+  }
+</style>
+
+{# --- A foto da batida: um diálogo só, usado pelo Espelho e pelas Pendências. #}
+<dialog id="dlg-foto"><div class="dlg-topo"><h3 id="foto-legenda">Foto da batida</h3>
+  <button class="topo-btn" style="margin-left:auto" type="button"
+          onclick="els('dlg-foto').close()">Fechar</button></div>
+  <div class="dlg-corpo" style="text-align:center">
+    <div id="foto-erro"></div>
+    <img id="foto-img" alt="Foto tirada na hora da batida"
+         style="max-width:100%; max-height:66vh; border-radius:8px">
+    <div class="cartao-dica">A foto é tirada pelo aparelho na hora da batida e
+      guardada sem alteração.</div>
+  </div></dialog>
+
+{% if aba_ponto == "ponto_hoje" %}
+{# ------------------------------------------------------------------ HOJE #}
+<h2>Ponto do dia <small id="h-sub"></small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="h-kpis"></div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>Por obra</h3>
+    <small>a obra do dia é a da primeira batida; sem batida, a obra principal</small></div>
+  <div class="tabela-rolagem" style="max-height:none"><div id="h-obras"></div></div>
+</div>
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <input id="h-busca" placeholder="filtrar por nome…" autocomplete="off" data-sem-mascara
+           style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; min-width:220px">
+    <span class="resumo" id="h-resumo"></span>
+    <span class="espaco"></span>
+    <button class="link-btn" id="h-limpar" type="button" hidden>mostrar todos</button>
+  </div>
+  <div class="tabela-rolagem"><table>
+    <thead><tr><th class="sem-ordem">Pessoa</th><th class="sem-ordem">Obra</th>
+      <th class="sem-ordem">Situação</th><th class="sem-ordem">Batidas</th>
+      <th class="sem-ordem">Escala</th><th class="sem-ordem">Ocorrência</th></tr></thead>
+    <tbody id="h-corpo"></tbody></table></div>
+  <div class="vazio oculto" id="h-vazio"></div>
+</div>
+<div class="cartao-dica">
+  <span class="chip">07:02</span> batida normal ·
+  <span class="chip analise">07:02</span> em análise (ainda pode ser rejeitada) ·
+  <span class="chip ajustada">07:02</span> incluída por ajuste aprovado ·
+  <span class="chip fora">07:02 ⌖</span> fora da cerca da obra.
+  Clique no nome para abrir o espelho do mês da pessoa.
+</div>
+
+{% elif aba_ponto == "ponto_espelho" %}
+{# --------------------------------------------------------------- ESPELHO #}
+<h2 id="e-titulo">Espelho de ponto <small id="e-sub"></small></h2>
+<div id="mensagem"></div>
+<div id="e-fechado"></div>
+<div class="barra-acoes" id="e-acoes" hidden>
+  {% if pode.tratar_ponto %}
+  <button class="btn" id="e-btn-ajuste" type="button">Pedir ajuste de batida</button>
+  <button class="btn secundario" id="e-btn-compensacao" type="button">Registrar compensação</button>
+  {% endif %}
+  {% if pode.aprovar_afastamento %}
+  <button class="btn amarelo" id="e-btn-afastamento" type="button">Lançar afastamento</button>
+  {% endif %}
+</div>
+<div class="kpis" id="e-kpis"></div>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem"><table>
+    <thead><tr><th class="sem-ordem">Dia</th><th class="sem-ordem">Escala</th>
+      <th class="sem-ordem">Batidas</th><th class="sem-ordem dados">Previsto</th>
+      <th class="sem-ordem dados">Trabalhado</th><th class="sem-ordem dados">Extra</th>
+      <th class="sem-ordem dados">Débito</th><th class="sem-ordem">Situação</th>
+      <th class="sem-ordem">Ocorrência</th>{% if pode.tratar_ponto %}<th class="sem-ordem"></th>{% endif %}
+    </tr></thead>
+    <tbody id="e-corpo"></tbody></table></div>
+  <div class="vazio" id="e-vazio"><b>Escolha uma pessoa</b>e o mês, na barra da esquerda.</div>
+</div>
+<div class="cartao-dica">
+  <span class="chip">07:02</span> batida normal ·
+  <span class="chip analise">07:02 <b>?</b></span> em análise ·
+  <span class="chip ajustada">07:02 <b>✎</b></span> incluída por ajuste aprovado ·
+  <span class="chip fora">07:02 ⌖</span> fora da cerca ·
+  <span class="chip com-foto">07:02</span> tem foto (clique para ver).
+  Horas em h:mm (9h05 = nove horas e cinco minutos). Dia futuro, o dia de hoje
+  e os dias fora do contrato aparecem apagados e não entram nos totais. A batida
+  original nunca é apagada nem mudada: o ajuste entra como uma batida a mais,
+  marcada (Portaria 671/2021).
+</div>
+
+{% elif aba_ponto == "ponto_pendencias" %}
+{# ------------------------------------------------------------ PENDÊNCIAS #}
+<h2>Pendências <small>o que espera uma decisão sua</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="p-kpis"></div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Pedidos</h3>
+    <small>ajuste de batida, compensação, folga, atestado, licença, férias</small></div>
+  <div class="tabela-rolagem" style="max-height:none"><div id="p-pedidos">carregando…</div></div>
+  <div class="cartao-dica">Ajuste de batida é decidido pelo supervisor da obra.
+    Compensação e folga passam pelo supervisor e depois pelo DP. Atestado,
+    licença e férias vão direto ao DP — e só o DP abre o documento de saúde.</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Batidas em análise</h3>
+    <small>entraram, mas com algo a conferir</small></div>
+  <div class="tabela-rolagem" style="max-height:none"><div id="p-batidas">carregando…</div></div>
+  <div class="cartao-dica">Enquanto está em análise, a batida já conta no
+    espelho, marcada. Validar confirma; rejeitar tira do cálculo — mas ela
+    continua guardada, com o motivo e o nome de quem rejeitou.</div>
+</div>
+
+{% if pode.configurar_ponto %}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Aparelhos esperando aprovação</h3>
+    <small>celulares e tablets que pediram para bater ponto</small></div>
+  <div class="tabela-rolagem" style="max-height:none"><div id="p-aparelhos">carregando…</div></div>
+  <div class="cartao-dica">Aparelho só bate ponto depois de aprovado. Aprove
+    apenas o que você reconhece: um celular aprovado como "tablet da obra"
+    deixa qualquer pessoa da obra bater por ele.</div>
+</div>
+{% endif %}
+
+{% elif aba_ponto == "ponto_pessoas" %}
+{# ---------------------------------------------------------------- PESSOAS #}
+<h2>Pessoas no ponto <small id="pe-sub"></small></h2>
+<div id="mensagem"></div>
+<div class="cartao" id="pe-ficha" hidden></div>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem"><table>
+    <thead><tr><th class="sem-ordem">Nome</th><th class="sem-ordem">CPF</th>
+      <th class="sem-ordem">Obra principal</th><th class="sem-ordem">Obras extras</th>
+      <th class="sem-ordem">Jornada</th><th class="sem-ordem">Escala</th>
+      <th class="sem-ordem">Banco de horas</th><th class="sem-ordem">Senha (PIN)</th></tr></thead>
+    <tbody id="pe-corpo"></tbody></table></div>
+  <div class="vazio oculto" id="pe-vazio"></div>
+</div>
+
+{% elif aba_ponto == "ponto_banco" %}
+{# ------------------------------------------------------------------ BANCO #}
+<h2>Banco de horas <small>só de quem tem banco ou compensação no mês</small></h2>
+<div id="mensagem"></div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>Como o saldo é contado</h3></div>
+  <div class="cartao-dica" style="margin-top:0">
+    O saldo é a soma do que cada dia deu (hora extra menos atraso e saída
+    antes da hora), desde o início do banco, mais os lançamentos feitos à mão.
+    <b>Falta de dia inteiro não entra no banco</b>: é desconto em folha, não
+    hora devida. Quando a pessoa usa o banco, <b>o crédito mais antigo é usado
+    primeiro</b> — e o que sobra de cada mês vence no fim do prazo do acordo
+    (6 ou 12 meses). Hoje ainda não conta: o saldo vai até ontem.
+  </div>
+</div>
+<div class="cartao" id="b-ficha" hidden></div>
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <input id="b-busca" placeholder="filtrar por nome…" autocomplete="off" data-sem-mascara
+           style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; min-width:220px">
+    <span class="resumo" id="b-resumo"></span>
+  </div>
+  <div class="tabela-rolagem"><table>
+    <thead><tr><th class="sem-ordem">Pessoa</th><th class="sem-ordem">Obra</th>
+      <th class="sem-ordem">Regime</th><th class="sem-ordem direita">Saldo</th>
+      <th class="sem-ordem">Vence nos próximos 30 dias</th></tr></thead>
+    <tbody id="b-corpo"></tbody></table></div>
+  <div class="vazio oculto" id="b-vazio"></div>
+</div>
+
+{% elif aba_ponto == "ponto_alertas" %}
+{# ---------------------------------------------------------------- ALERTAS #}
+<h2>Alertas do ponto <small id="a-sub"></small></h2>
+<div id="mensagem"></div>
+{% if pode.tratar_ponto %}
+<div class="barra-acoes">
+  <button class="btn secundario" id="a-gerar" type="button"
+          title="O sistema já faz isso sozinho uma vez por dia">Gerar alertas agora</button>
+</div>
+<div id="a-gerado"></div>
+{% endif %}
+<div id="a-grupos">carregando…</div>
+<div class="cartao">
+  <div class="cartao-cab"><h3>Resumo de hoje</h3>
+    <small>o texto que vai por WhatsApp para a gestão</small></div>
+  <pre class="resumo-texto" id="a-resumo">carregando…</pre>
+  {% if pode.configurar_ponto %}
+  <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <button class="btn secundario" id="a-enviar" type="button">Enviar por WhatsApp agora</button>
+    <small class="suave">vai para os telefones cadastrados em Configuração › Resumo diário</small>
+  </div>
+  {% endif %}
+  <div id="a-enviado"></div>
+</div>
+
+{% elif aba_ponto == "ponto_config" %}
+{# ----------------------------------------------------------- CONFIGURAÇÃO #}
+<h2>Configuração do ponto</h2>
+<div id="mensagem"></div>
+
+<div class="cartao" id="c-migracoes">carregando…</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Escalas de trabalho</h3>
+    {% if pode.configurar_ponto %}<button class="btn" id="c-nova-escala" type="button">+ Nova escala</button>{% endif %}</div>
+  <div id="c-escalas">carregando…</div>
+  <div class="cartao-dica">A escala é o modelo de horário. Cada pessoa recebe
+    uma escala a partir de uma data (em Pessoas). Mudar uma escala aqui vale para
+    todos que estão nela; trocar a escala de uma pessoa não muda o passado dela.</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Feriados</h3>
+    <div style="display:flex; gap:8px; align-items:center">
+      <select id="c-ano" data-sem-busca style="padding:6px 8px; border:1px solid var(--borda-forte); border-radius:8px"></select>
+      {% if pode.configurar_ponto %}<button class="btn" id="c-novo-feriado" type="button">+ Novo feriado</button>{% endif %}
+    </div></div>
+  <div id="c-feriados">carregando…</div>
+  <div class="cartao-dica"><b>Carnaval, Paixão de Cristo e Corpus Christi não
+    vêm cadastrados</b> — a data muda todo ano e nem toda cidade dá folga.
+    Cadastre aqui os que valem para a empresa. Feriado estadual vale para as
+    obras daquela UF; municipal, para as obras daquele município.</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Fechamento do mês</h3>
+    <small>os últimos 12 meses</small></div>
+  <div id="c-competencias">carregando…</div>
+  <div class="cartao-dica">Mês fechado fica travado: ninguém registra pedido,
+    decide batida em análise ou lança no banco de horas daquele mês. Dá para
+    reabrir, com motivo escrito — e fica registrado quem reabriu.</div>
+</div>
+
+{% if pode.configurar_ponto %}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Aparelhos</h3><small>todos os celulares e tablets do ponto</small></div>
+  <div class="tabela-rolagem" style="max-height:none"><div id="c-aparelhos">carregando…</div></div>
+</div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Resumo diário por WhatsApp</h3></div>
+  <div id="c-resumo">carregando…</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Google Drive e fila de envio</h3></div>
+  <div id="c-drive">carregando…</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>App do colaborador</h3></div>
+  <div class="endereco-app" id="c-app">…</div>
+  <div style="margin-top:8px"><button class="btn secundario" id="c-copiar-app" type="button">Copiar o endereço</button></div>
+  <div class="cartao-dica">
+    Como a pessoa começa: <b>1.</b> abre esse endereço no celular;
+    <b>2.</b> digita o CPF; <b>3.</b> recebe um código no WhatsApp e cria a
+    senha (PIN) dela. O celular aparece em <b>Pendências › Aparelhos</b> e só
+    bate ponto depois de aprovado lá.
+  </div>
+</div>
+
+{# O editor de escala é próprio (e não o perguntar): a semana tem sete dias
+   com até dois períodos cada, e isso não cabe numa lista de campos. #}
+<dialog id="dlg-escala"><div class="dlg-topo"><h3 id="esc-titulo">Nova escala</h3>
+  <button class="topo-btn" style="margin-left:auto" type="button"
+          onclick="els('dlg-escala').close()">Fechar</button></div>
+  <div class="dlg-corpo">
+    <div id="esc-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label for="esc-nome">Nome *</label>
+        <input id="esc-nome" placeholder="ex.: Obra seg–qui 7h–17h, sex 7h–16h" data-sem-mascara></div>
+      <div class="campo"><label for="esc-tipo">Tipo</label>
+        <select id="esc-tipo" data-sem-busca>
+          <option value="SEMANAL">Semanal (dias fixos)</option>
+          <option value="CICLO_12X36">12x36 (trabalha um dia, folga o seguinte)</option>
+        </select></div>
+    </div>
+    <div id="esc-semana" style="margin-top:12px">
+      <table class="semana"><thead><tr><th class="sem-ordem">Dia</th>
+        <th class="sem-ordem">Entra</th><th class="sem-ordem">Sai</th>
+        <th class="sem-ordem">Volta</th><th class="sem-ordem">Sai</th><th class="sem-ordem"></th></tr></thead>
+        <tbody id="esc-dias"></tbody></table>
+      <div style="margin-top:8px"><button class="link-btn" id="esc-copiar" type="button">Copiar o horário da segunda para terça a sexta</button></div>
+      <div class="cartao-dica">Deixe em branco o dia de descanso. O segundo
+        período (Volta/Sai) é a volta do almoço; quem não tem intervalo deixa em
+        branco. Saída menor que a entrada é no dia seguinte (turno da noite).</div>
+    </div>
+    <div id="esc-ciclo" hidden style="margin-top:12px">
+      <div class="form-grade">
+        <div class="campo"><label for="esc-ciclo-entrada">Entra *</label><input type="time" id="esc-ciclo-entrada"></div>
+        <div class="campo"><label for="esc-ciclo-saida">Sai *</label><input type="time" id="esc-ciclo-saida"></div>
+      </div>
+      <div class="cartao-dica">A pessoa trabalha um dia e folga o seguinte. O
+        dia em que o ciclo começa é dito ao dar a escala a cada pessoa (em
+        Pessoas), porque metade da equipe começa num dia e metade no outro.</div>
+    </div>
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 2"><label for="esc-desc">Descrição</label>
+        <input id="esc-desc" placeholder="opcional" data-sem-mascara></div>
+      <div class="campo"><label class="opcao" style="margin-top:20px">
+        <input type="checkbox" id="esc-ativo" checked><span class="rotulo">Ativa (aparece para escolher)</span></label></div>
+    </div>
+    <div class="cartao-dica" id="esc-horas"></div>
+    <div style="margin-top:14px; display:flex; gap:8px">
+      <button class="btn" id="esc-salvar" type="button">Salvar escala</button>
+      <button class="btn secundario" type="button" onclick="els('dlg-escala').close()">Cancelar</button>
+    </div>
+  </div></dialog>
+{% endif %}
+{% endblock %}
+
+{# =========================================================================
+   SCRIPT — os ajudantes comuns e, depois, só o código da aba aberta
+   ========================================================================= #}
+{% block scripts %}
+<script>
+const ABA = {{ aba_ponto|tojson }};
+const PODE_TRATAR = {{ 'true' if pode.tratar_ponto else 'false' }};
+const PODE_DP = {{ 'true' if pode.aprovar_afastamento else 'false' }};
+const PODE_FECHAR = {{ 'true' if pode.fechar_competencia else 'false' }};
+const PODE_CONFIGURAR = {{ 'true' if pode.configurar_ponto else 'false' }};
+
+// ---------------------------------------------------------------------------
+// HORA EM h:mm — 545 minutos viram "9h05". O cálculo do ponto é todo em
+// minutos; mostrar "545" ou "9,08" faz a pessoa fazer conta de cabeça, e é aí
+// que nasce a reclamação de hora errada que não está errada.
+// ---------------------------------------------------------------------------
+function hm(min) {
+  if (min === null || min === undefined || min === "" || isNaN(Number(min))) return "—";
+  const n = Math.round(Number(min));
+  const a = Math.abs(n);
+  return `${n < 0 ? "-" : ""}${Math.floor(a / 60)}h${String(a % 60).padStart(2, "0")}`;
+}
+// Na célula da tabela, zero vira traço: uma coluna de "0h00" esconde o dia
+// que tem número de verdade.
+const hmCelula = min => (Number(min) ? hm(min) : "—");
+
+// Datas pelo relógio LOCAL. `toISOString()` é em UTC e, depois das 21h em
+// Fortaleza, já devolve o dia seguinte.
+const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-`
+  + `${String(d.getDate()).padStart(2, "0")}`;
+const hojeISO = () => isoLocal(new Date());
+const mesAtual = () => hojeISO().slice(0, 7);
+function somarDias(iso, n) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return isoLocal(d);
+}
+const ddmm = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—";
+const mesBR = comp => comp ? `${comp.slice(5, 7)}/${comp.slice(0, 4)}` : "—";
+// O servidor manda o instante já na hora de Fortaleza
+// ("2026-10-03T07:58:00-03:00"). Ler o texto, em vez de converter, garante a
+// mesma hora num navegador configurado em outro fuso.
+const quando = iso => iso ? `${dataBR(String(iso).slice(0, 10))} ${String(iso).slice(11, 16)}` : "—";
+const distancia = m => (m === null || m === undefined) ? "—"
+  : m < 1000 ? `${Math.round(m)} m`
+  : `${(m / 1000).toLocaleString("pt-BR", {maximumFractionDigits: 1})} km`;
+
+// Mensagem de erro do servidor pode trazer o que a pessoa digitou ("obra não
+// cadastrada: …"): vai escapada para a tela.
+const falhou = (e, alvo = "mensagem") => aviso(alvo, escapar(e.message), "erro");
+
+async function postar(url, corpo) {
+  return api(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                   body: JSON.stringify(corpo || {})});
+}
+
+// Arquivo para o servidor, como "data URL" (o servidor aceita com o prefixo).
+const LIMITE_ARQUIVO = 8 * 1024 * 1024;
+function lerArquivo(arquivo) {
+  return new Promise((resolve, reject) => {
+    if (!arquivo) { resolve(null); return; }
+    if (arquivo.size > LIMITE_ARQUIVO) {
+      reject(new Error("O arquivo passa de 8 MB. Mande uma foto menor ou o PDF."));
+      return;
+    }
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(leitor.result);
+    leitor.onerror = () => reject(new Error("Não consegui ler o arquivo escolhido."));
+    leitor.readAsDataURL(arquivo);
+  });
+}
+// "OB1, OB2; OB3" → ["OB1", "OB2", "OB3"]
+const listaDeTexto = t => String(t || "").split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+
+// Os nomes que o cálculo do dia usa, em português.
+const ROTULO_ALERTA_DIA = {
+  FALTA: "falta", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
+  SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
+  INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
+  TRABALHO_EM_DESCANSO: "trabalho em dia de descanso", TRABALHO_EM_FERIADO: "trabalho em feriado",
+  BATIDA_EM_DIA_ABONADO: "bateu em dia abonado", SEM_ESCALA: "sem escala",
+};
+// A situação do dia no espelho: [classe do selo, rótulo].
+const SITUACAO_DIA = {
+  OK: ["aprovado", "Normal"], FALTA: ["bloqueado", "Falta"], ABONADO: ["pago", "Abonado"],
+  INCOMPLETO: ["aguardando", "Batida faltando"], DESCANSO: ["outro", "Descanso"],
+  SEM_ESCALA: ["aguardando", "Sem escala"], COMPENSADO: ["pago", "Compensado"],
+  FUTURO: ["outro", "A vir"], EM_ANDAMENTO: ["outro", "Hoje (em andamento)"],
+  FORA_DO_CONTRATO: ["outro", "Fora do contrato"],
+};
+const NAO_CONTA = ["FUTURO", "EM_ANDAMENTO", "FORA_DO_CONTRATO"];
+const JORNADAS = [
+  {valor: "PADRAO_4", rotulo: "Padrão (4 batidas)"},
+  {valor: "VIGIA_DIURNO_2", rotulo: "Vigia diurno (2 batidas)"},
+  {valor: "VIGIA_NOTURNO_2", rotulo: "Vigia noturno (2 batidas)"},
+];
+const rotuloJornada = v => (JORNADAS.find(j => j.valor === v) || {rotulo: v || "—"}).rotulo;
+const REGIMES = [
+  {valor: "SEM_BANCO", rotulo: "Sem banco de horas (extra paga no mês)"},
+  {valor: "COMPENSACAO_MENSAL", rotulo: "Compensação dentro do mês"},
+  {valor: "BANCO_6_MESES", rotulo: "Banco de 6 meses (acordo individual)"},
+  {valor: "BANCO_12_MESES", rotulo: "Banco de 12 meses (acordo coletivo)"},
+];
+const rotuloRegime = v => (REGIMES.find(r => r.valor === v) || {rotulo: v || "—"}).rotulo;
+const PERFIS_APARELHO = [
+  {valor: "COMPARTILHADO", rotulo: "Tablet da obra (todos)"},
+  {valor: "INDIVIDUAL", rotulo: "Celular de uma pessoa"},
+  {valor: "LISTA", rotulo: "Grupo de pessoas"},
+];
+const rotuloPerfil = v => (PERFIS_APARELHO.find(p => p.valor === v) || {rotulo: v || "—"}).rotulo;
+const SELO_APARELHO = {PENDENTE: ["aguardando", "esperando aprovação"],
+                       APROVADO: ["aprovado", "aprovado"], BLOQUEADO: ["bloqueado", "bloqueado"]};
+const seloAparelho = s => {
+  const [c, t] = SELO_APARELHO[s] || ["outro", s || "—"];
+  return `<span class="selo ${c}">${escapar(t)}</span>`;
+};
+
+// A batida como pílula. `comFoto` liga o clique para abrir a foto (o painel
+// Hoje não recebe o número da batida, então lá ela não abre).
+function chipBatida(b, comFoto) {
+  const classes = ["chip"], dicas = [];
+  let marca = "";
+  if (b.status === "AJUSTADA") { classes.push("ajustada"); marca = "✎"; dicas.push("incluída por ajuste aprovado"); }
+  if (b.status === "EM_ANALISE") {
+    classes.push("analise"); marca = "?";
+    dicas.push("em análise — ainda pode ser rejeitada" + (b.motivo_analise ? `: ${b.motivo_analise}` : ""));
+  }
+  if (b.fora_da_cerca) {
+    classes.push("fora");
+    dicas.push("fora da cerca da obra" + (b.distancia_metros != null ? ` (${distancia(b.distancia_metros)})` : ""));
+  }
+  if (b.obra) dicas.push(`obra ${b.obra}`);
+  if (b.nsr) dicas.push(`NSR ${b.nsr}`);
+  if (b.registrado_por) dicas.push(`registrada por ${b.registrado_por}`);
+  const texto = `${escapar(b.hora)}${b.fora_da_cerca ? " ⌖" : ""}${marca ? ` <b>${marca}</b>` : ""}`;
+  if (comFoto && b.tem_foto && b.id) {
+    classes.push("com-foto");
+    dicas.push("clique para ver a foto");
+    return `<button type="button" class="${classes.join(" ")}" title="${escapar(dicas.join(" · "))}"
+      data-foto="${b.id}" data-legenda="${escapar("Batida das " + b.hora)}">${texto}</button>`;
+  }
+  return `<span class="${classes.join(" ")}" title="${escapar(dicas.join(" · "))}">${texto}</span>`;
+}
+
+function verFoto(marcacaoId, legenda) {
+  const img = els("foto-img");
+  els("foto-legenda").textContent = legenda || "Foto da batida";
+  els("foto-erro").innerHTML = "";
+  img.hidden = false;
+  img.onerror = () => {
+    img.hidden = true;
+    els("foto-erro").innerHTML = `<div class="aviso erro">A foto não abriu. Ela pode
+      ainda estar na fila de envio ao Drive — tente de novo daqui a pouco.</div>`;
+  };
+  img.src = `/erp/api/ponto/marcacoes/${encodeURIComponent(marcacaoId)}/foto`;
+  els("dlg-foto").showModal();
+}
+document.addEventListener("click", ev => {
+  const alvo = ev.target.closest("[data-foto]");
+  if (alvo) verFoto(alvo.dataset.foto, alvo.dataset.legenda);
+});
+
+const linkEspelho = (id, competencia) =>
+  `/erp/ponto/espelho?colaborador_id=${encodeURIComponent(id)}`
+  + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
+
+// --- Aparelhos: aprovar e bloquear (usados em Pendências e em Configuração).
+async function aprovarAparelho(a, depois) {
+  const r = await perguntar({
+    titulo: "Aprovar aparelho",
+    aviso: `Aparelho: <b>${escapar(a.descricao || "sem nome")}</b>. Diga como ele vai ser
+      usado. Na dúvida entre "tablet da obra" e "celular de uma pessoa", escolha o
+      celular de uma pessoa: é o que fecha mais portas.`,
+    campos: [
+      {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: "INDIVIDUAL",
+       opcoes: PERFIS_APARELHO, largura: 3, obrigatorio: true},
+      {nome: "cpf", rotulo: "CPF do dono (celular de uma pessoa)", largura: 3,
+       dica: "Só para \"celular de uma pessoa\": só esse CPF bate por este aparelho."},
+      {nome: "autorizados", rotulo: "CPFs do grupo (grupo de pessoas)", tipo: "textarea", linhas: 2,
+       largura: 3, dica: "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
+      {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas",
+       dica: "Códigos das obras separados por vírgula. Vazio = vale em todas."},
+      {nome: "descricao", rotulo: "Nome do aparelho", valor: escapar(a.descricao || ""), largura: 3,
+       exemplo: "ex.: tablet do portão — obra Alfa"},
+    ],
+    textoOk: "Aprovar aparelho",
+  });
+  if (!r) return;
+  if (r.perfil === "INDIVIDUAL" && !r.cpf) { aviso("mensagem", "Diga o CPF do dono do celular.", "erro"); return; }
+  if (r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length) {
+    aviso("mensagem", "Diga os CPFs do grupo de pessoas.", "erro"); return;
+  }
+  try {
+    await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
+      perfil: r.perfil, cpf: r.perfil === "INDIVIDUAL" ? r.cpf : "",
+      autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [],
+      obras: listaDeTexto(r.obras), descricao: r.descricao});
+    aviso("mensagem", "Aparelho aprovado. Ele já pode bater ponto.", "ok");
+    if (depois) await depois();
+  } catch (e) { falhou(e); }
+}
+
+async function bloquearAparelho(a, depois) {
+  const r = await perguntar({
+    titulo: "Bloquear aparelho",
+    aviso: `Bloqueado, <b>${escapar(a.descricao || "o aparelho")}</b> não bate mais
+      nenhum ponto. As batidas que ele já fez continuam valendo.`,
+    campos: [{nome: "motivo", rotulo: "Motivo", tipo: "textarea", linhas: 2, largura: 3,
+              obrigatorio: true, exemplo: "ex.: celular perdido; pessoa saiu da empresa"}],
+    textoOk: "Bloquear",
+  });
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/dispositivos/${a.id}/bloquear`, {motivo: r.motivo});
+    aviso("mensagem", "Aparelho bloqueado.", "ok");
+    if (depois) await depois();
+  } catch (e) { falhou(e); }
+}
+
+{% if aba_ponto == "ponto_hoje" %}
+// ===========================================================================
+// HOJE — quem bateu, quem não bateu, por obra. A tela do encarregado às 7h30.
+// ===========================================================================
+const KPIS_HOJE = [
+  ["PRESENTE", "Bateram", "verde", "bateram ponto no dia"],
+  ["AUSENTE", "Não bateram", "vermelho", "passou da hora da entrada"],
+  ["INCOMPLETO", "Batida faltando", "ambar", "o dia acabou com batida ímpar"],
+  ["AFASTADO", "Afastados", "ciano", "atestado, férias, licença, folga"],
+  ["AGUARDANDO", "Ainda não é hora", "", "a entrada deles não chegou"],
+  ["SEM_ESCALA", "Sem escala", "roxo", "o sistema não sabe se deviam bater"],
+  ["FOLGA_FERIADO", "Folga ou feriado", "", "dia de descanso deles"],
+];
+const SELO_HOJE = {PRESENTE: "aprovado", AUSENTE: "bloqueado", INCOMPLETO: "aguardando",
+                   AFASTADO: "pago", AGUARDANDO: "outro", SEM_ESCALA: "aguardando",
+                   FOLGA: "outro", FERIADO: "outro"};
+const COLUNAS_OBRA = [["PRESENTE", "Bateram"], ["AUSENTE", "Não bateram"],
+  ["INCOMPLETO", "Batida faltando"], ["AFASTADO", "Afastados"], ["AGUARDANDO", "Ainda não é hora"],
+  ["SEM_ESCALA", "Sem escala"], ["FOLGA", "Folga"], ["FERIADO", "Feriado"]];
+let HOJE = null, FILTRO_SITUACAO = "";
+
+const casaFiltro = (situacao, filtro) => !filtro || situacao === filtro
+  || (filtro === "FOLGA_FERIADO" && (situacao === "FOLGA" || situacao === "FERIADO"));
+
+async function carregarObrasDoHoje() {
+  try {
+    const d = await api("/erp/api/ponto/obras");
+    els("h-obra").innerHTML = `<option value="">Todas as minhas obras</option>`
+      + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+  } catch (e) { falhou(e); }
+}
+
+async function carregarHoje() {
+  const p = new URLSearchParams();
+  if (els("h-data").value) p.set("data", els("h-data").value);
+  if (els("h-obra").value) p.set("obra", els("h-obra").value);
+  try {
+    HOJE = await api(`/erp/api/ponto/hoje?${p}`);
+    desenharHoje();
+  } catch (e) { falhou(e); }
+}
+
+function desenharHoje() {
+  const t = HOJE.totais || {};
+  const ehHoje = HOJE.data === hojeISO();
+  els("h-sub").textContent = `${dataBR(HOJE.data)}` + (ehHoje ? ` · atualizado às ${HOJE.agora}` : "");
+  els("h-kpis").innerHTML = KPIS_HOJE.map(([chave, rot, cor, sub]) => {
+    const n = chave === "FOLGA_FERIADO" ? (t.FOLGA || 0) + (t.FERIADO || 0) : (t[chave] || 0);
+    return `<div class="kpi ${cor} ${FILTRO_SITUACAO === chave ? "ativo" : ""}" data-kpi="${chave}"
+        title="Clique para ver só estas pessoas">
+      <div class="kpi-rotulo">${rot}</div><div class="kpi-valor">${n}</div>
+      <div class="kpi-sub">${sub}</div></div>`;
+  }).join("");
+  els("h-kpis").querySelectorAll("[data-kpi]").forEach(k => k.addEventListener("click", () => {
+    FILTRO_SITUACAO = FILTRO_SITUACAO === k.dataset.kpi ? "" : k.dataset.kpi;
+    desenharHoje();
+  }));
+
+  const obras = HOJE.obras || [];
+  els("h-obras").innerHTML = obras.length ? `<table><thead><tr><th class="sem-ordem">Obra</th>
+      ${COLUNAS_OBRA.map(([, r]) => `<th class="sem-ordem direita">${r}</th>`).join("")}
+      <th class="sem-ordem direita">Total</th></tr></thead><tbody>
+      ${obras.map(o => {
+        const total = COLUNAS_OBRA.reduce((s, [c]) => s + (o[c] || 0), 0);
+        return `<tr><td class="dados"><b>${escapar(o.obra)}</b></td>
+          ${COLUNAS_OBRA.map(([c]) => `<td class="dados direita" ${c === "AUSENTE" && o[c]
+              ? `style="color:var(--vermelho); font-weight:700"` : ""}>${o[c] || "—"}</td>`).join("")}
+          <td class="dados direita"><b>${total}</b></td></tr>`;
+      }).join("")}</tbody></table>`
+    : `<div class="cartao-dica">Nenhuma pessoa ativa no ponto nas suas obras.</div>`;
+
+  const busca = (els("h-busca").value || "").toLowerCase();
+  const lista = (HOJE.pessoas || []).filter(p => casaFiltro(p.situacao, FILTRO_SITUACAO)
+    && (!busca || p.nome.toLowerCase().includes(busca)));
+  els("h-limpar").hidden = !FILTRO_SITUACAO;
+  els("h-resumo").innerHTML = `<b>${lista.length}</b> de <b>${(HOJE.pessoas || []).length}</b> pessoa(s)`;
+  els("h-vazio").classList.toggle("oculto", lista.length > 0);
+  if (!lista.length) els("h-vazio").innerHTML = "<b>Ninguém aqui</b>Mude o filtro ou a obra.";
+  const comp = HOJE.data.slice(0, 7);
+  els("h-corpo").innerHTML = lista.map(p => {
+    const ocorr = [
+      p.ocorrencia ? `<span class="selo pago">${escapar(p.ocorrencia)}</span>` : "",
+      p.pendente ? `<span class="selo aguardando">${escapar(p.pendente)} esperando aprovação</span>` : "",
+      p.feriado ? `<small>Feriado: ${escapar(p.feriado)}</small>` : "",
+    ].filter(Boolean).join(" ");
+    return `<tr>
+      <td><a class="elo" href="${linkEspelho(p.colaborador_id, comp)}"
+             title="Abrir o espelho do mês"><b>${escapar(p.nome)}</b></a>
+        <small>${escapar(documento(p.cpf))}</small></td>
+      <td class="dados">${escapar(p.obra)}</td>
+      <td><span class="selo ${SELO_HOJE[p.situacao] || "outro"}">${escapar(p.situacao_rotulo)}</span>
+        ${p.em_analise ? `<small>${p.em_analise} batida(s) em análise</small>` : ""}</td>
+      <td>${p.batidas.length ? p.batidas.map(b => chipBatida(b, false)).join("") : `<span class="suave">—</span>`}</td>
+      <td>${p.escala ? escapar(p.escala) : `<span class="suave">sem escala</span>`}
+        ${p.previsto_entrada ? `<small>entrada às ${escapar(p.previsto_entrada)}</small>` : ""}</td>
+      <td>${ocorr || `<span class="suave">—</span>`}</td></tr>`;
+  }).join("");
+}
+
+els("h-data").value = hojeISO();
+els("h-ver").addEventListener("click", carregarHoje);
+els("h-obra").addEventListener("change", carregarHoje);
+els("h-data").addEventListener("change", carregarHoje);
+els("h-hoje").addEventListener("click", () => { els("h-data").value = hojeISO(); carregarHoje(); });
+els("h-busca").addEventListener("input", () => HOJE && desenharHoje());
+els("h-limpar").addEventListener("click", () => { FILTRO_SITUACAO = ""; desenharHoje(); });
+// Atualiza sozinha a cada 2 minutos — só olhando o dia de hoje e com a aba à
+// vista. Atualizar o dia de ontem não muda nada e só gasta o servidor.
+setInterval(() => {
+  if (els("h-data").value === hojeISO() && document.visibilityState === "visible") carregarHoje();
+}, 120000);
+carregarObrasDoHoje().then(carregarHoje);
+
+{% elif aba_ponto == "ponto_espelho" %}
+// ===========================================================================
+// ESPELHO — o mês de uma pessoa, dia a dia.
+// ===========================================================================
+let ESP = null, OBRAS = null;
+const doUrl = nome => new URLSearchParams(location.search).get(nome);
+
+function atualizarLinksDoEspelho() {
+  const comp = els("e-mes").value || mesAtual();
+  els("e-csv").href = `/erp/api/ponto/exportar.csv?competencia=${encodeURIComponent(comp)}`;
+}
+
+async function carregarPessoasDoEspelho() {
+  try {
+    const d = await api("/erp/api/ponto/pessoas");
+    els("e-pessoa").innerHTML = `<option value="">— escolha a pessoa —</option>`
+      + d.pessoas.map(p => `<option value="${p.id}">${escapar(p.nome)} · ${escapar(documento(p.cpf))}</option>`).join("");
+  } catch (e) { falhou(e); }
+}
+
+function semPessoa() {
+  ESP = null;
+  els("e-titulo").childNodes[0].textContent = "Espelho de ponto ";
+  els("e-sub").textContent = "";
+  els("e-kpis").innerHTML = "";
+  els("e-corpo").innerHTML = "";
+  els("e-fechado").innerHTML = "";
+  els("e-acoes").hidden = true;
+  els("e-vazio").classList.remove("oculto");
+}
+
+async function carregarEspelho() {
+  atualizarLinksDoEspelho();
+  const id = els("e-pessoa").value;
+  const comp = els("e-mes").value || mesAtual();
+  if (!id) { semPessoa(); return; }
+  history.replaceState(null, "", `?colaborador_id=${encodeURIComponent(id)}&competencia=${encodeURIComponent(comp)}`);
+  try {
+    ESP = await api(`/erp/api/ponto/espelho/${encodeURIComponent(id)}?competencia=${encodeURIComponent(comp)}`);
+    // Pessoa que não está na lista (já não bate ponto) ganha a opção, para o
+    // seletor não mostrar um nome e a tabela outro.
+    const sel = els("e-pessoa");
+    let opcao = [...sel.options].find(o => o.value === String(ESP.pessoa.id));
+    if (!opcao) {
+      opcao = document.createElement("option");
+      opcao.value = String(ESP.pessoa.id);
+      sel.appendChild(opcao);
+    }
+    opcao.textContent = `${ESP.pessoa.nome} · ${documento(ESP.pessoa.cpf)}`;
+    sel.value = String(ESP.pessoa.id);
+    desenharEspelho();
+  } catch (e) { semPessoa(); falhou(e); }
+}
+
+function desenharEspelho() {
+  const p = ESP.pessoa, r = ESP.resumo;
+  els("e-titulo").childNodes[0].textContent = `${p.nome} `;
+  els("e-sub").textContent = [documento(p.cpf), p.obra ? `obra ${p.obra}` : "sem obra principal",
+    rotuloJornada(p.tipo_jornada), mesBR(ESP.competencia)].join(" · ");
+  els("e-vazio").classList.add("oculto");
+  els("e-fechado").innerHTML = ESP.competencia_fechada
+    ? `<div class="aviso info"><b>Mês fechado.</b> Os números deste mês estão travados:
+        não dá para pedir ajuste, lançar afastamento nem decidir batida. Para mudar,
+        quem fecha o mês precisa reabrir (Configuração › Fechamento do mês).</div>` : "";
+  els("e-acoes").hidden = ESP.competencia_fechada || !(PODE_TRATAR || PODE_DP);
+
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}">
+    <div class="kpi-rotulo">${rot}</div><div class="kpi-valor">${valor}</div>
+    <div class="kpi-sub">${sub}</div></div>`;
+  els("e-kpis").innerHTML = [
+    kpi("Trabalhado", hm(r.trabalhado), "", `em ${r.dias} dia(s) contados`),
+    kpi("Previsto", hm(r.previsto), "", "o que a escala pedia"),
+    kpi("Extra", hm(r.extra), "verde", "acima do previsto"),
+    kpi("Débito", hm(r.debito), "vermelho", "atraso e saída antes da hora"),
+    kpi("Faltas", r.faltas, "vermelho", "dias sem batida e sem justificativa"),
+    kpi("Abonados", r.abonados, "ciano", "atestado, férias, folga aprovada"),
+    kpi("Batida faltando", r.incompletos, "ambar", "dias com batida ímpar"),
+    kpi("Em análise", r.em_analise, "ambar", "batidas esperando decisão"),
+    kpi("Noturno", hm(r.noturno), "roxo", "entre 22h e 5h, já com a hora reduzida"),
+  ].join("");
+
+  const podeAjustar = PODE_TRATAR && !ESP.competencia_fechada;
+  els("e-corpo").innerHTML = ESP.dias.map(d => {
+    const [classe, rot] = SITUACAO_DIA[d.situacao] || ["outro", d.situacao];
+    // O alerta que só repete a situação ("falta" num dia de Falta) fica de fora.
+    const repete = a => (a === "FALTA" && d.situacao === "FALTA")
+      || (a === "SEM_ESCALA" && d.situacao === "SEM_ESCALA")
+      || (a === "BATIDA_FALTANDO" && d.situacao === "INCOMPLETO");
+    const alertas = (d.alertas || []).filter(a => !repete(a))
+      .map(a => `<span class="alerta-dia">${escapar(ROTULO_ALERTA_DIA[a] || a)}</span>`).join("");
+    const ocorr = [
+      d.ocorrencia ? `<span class="selo pago">${escapar(d.ocorrencia.rotulo)}</span>` : "",
+      d.compensacao ? `<small>trabalhou no lugar de uma folga</small>` : "",
+      ...(d.pendentes || []).map(o => `<span class="selo aguardando"
+        title="${o.status === "AGUARDANDO_DP" ? "espera o DP" : "espera o supervisor"}">${escapar(o.rotulo)} pendente</span>`),
+    ].filter(Boolean).join(" ");
+    const apagada = NAO_CONTA.includes(d.situacao);
+    return `<tr class="${apagada ? "apagada" : ""}">
+      <td class="dados"><b>${ddmm(d.data)}</b><small>${escapar(d.dia_semana)}</small></td>
+      <td>${d.escala ? escapar(d.escala) : `<span class="suave">—</span>`}
+        ${d.feriado ? `<small>Feriado: ${escapar(d.feriado)}</small>` : ""}</td>
+      <td>${d.batidas.length ? d.batidas.map(b => chipBatida(b, true)).join("") : `<span class="suave">—</span>`}</td>
+      <td class="dados">${hmCelula(d.previsto)}</td>
+      <td class="dados">${hmCelula(d.trabalhado)}</td>
+      <td class="dados" ${d.extra ? `style="color:var(--verde); font-weight:700"` : ""}>${hmCelula(d.extra)}</td>
+      <td class="dados" ${d.debito ? `style="color:var(--vermelho); font-weight:700"` : ""}>${hmCelula(d.debito)}</td>
+      <td><span class="selo ${classe}">${escapar(rot)}</span>${alertas ? `<div>${alertas}</div>` : ""}</td>
+      <td>${ocorr || `<span class="suave">—</span>`}</td>
+      ${PODE_TRATAR ? `<td>${podeAjustar && d.situacao !== "FUTURO" && d.situacao !== "FORA_DO_CONTRATO"
+        ? `<button class="link-btn" type="button" data-ajuste="${d.data}"
+             title="Pedir a inclusão de uma batida que faltou neste dia">ajustar</button>` : ""}</td>` : ""}
+    </tr>`;
+  }).join("");
+  els("e-corpo").querySelectorAll("[data-ajuste]").forEach(b =>
+    b.addEventListener("click", () => pedirAjuste(b.dataset.ajuste)));
+}
+
+async function obrasParaEscolher() {
+  if (!OBRAS) OBRAS = (await api("/erp/api/ponto/obras")).obras;
+  return OBRAS;
+}
+
+async function pedirAjuste(dia) {
+  if (!ESP) return;
+  const p = ESP.pessoa;
+  let obras = [];
+  try { obras = await obrasParaEscolher(); } catch (e) { falhou(e); return; }
+  const r = await perguntar({
+    titulo: `Pedir ajuste de batida — ${escapar(p.nome)}`,
+    aviso: `Use quando a pessoa trabalhou e a batida não ficou registrada (celular
+      sem bateria, esqueceu de bater). A batida original nunca é apagada: a nova
+      entra marcada como ajustada, depois que o supervisor da obra aprovar.`,
+    campos: [
+      {nome: "data_inicio", rotulo: "Dia de trabalho", tipo: "date", valor: dia || hojeISO(),
+       obrigatorio: true, largura: 1},
+      {nome: "hora", rotulo: "Horário da batida", tipo: "time", obrigatorio: true, largura: 1},
+      {nome: "quando", rotulo: "A batida foi", tipo: "select", valor: "0", largura: 1,
+       opcoes: [{valor: "0", rotulo: "No próprio dia"},
+                {valor: "1", rotulo: "No dia seguinte (turno da noite)"}]},
+      {nome: "obra", rotulo: "Obra da batida", tipo: "select", valor: "", largura: 3,
+       opcoes: [{valor: "", rotulo: `A obra principal da pessoa${p.obra ? ` (${escapar(p.obra)})` : ""}`},
+                ...obras.map(o => ({valor: String(o.id), rotulo: escapar(rotuloObra(o))}))]},
+      {nome: "descricao", rotulo: "O que aconteceu", tipo: "textarea", obrigatorio: true, largura: 3,
+       exemplo: "ex.: o celular descarregou na volta do almoço; o encarregado confirma"},
+    ],
+    textoOk: "Enviar pedido",
+  });
+  if (!r) return;
+  const diaDaBatida = r.quando === "1" ? somarDias(r.data_inicio, 1) : r.data_inicio;
+  try {
+    await postar("/erp/api/ponto/ocorrencias", {
+      tipo: "AJUSTE_BATIDA", colaborador_id: p.id, data_inicio: r.data_inicio,
+      horario: `${diaDaBatida}T${r.hora}`, obra: r.obra, descricao: r.descricao});
+    aviso("mensagem", "Pedido de ajuste registrado. Ele aparece em Pendências até o supervisor decidir.", "ok");
+    await carregarEspelho();
+  } catch (e) { falhou(e); }
+}
+
+async function registrarCompensacao() {
+  if (!ESP) return;
+  const p = ESP.pessoa;
+  const r = await perguntar({
+    titulo: `Registrar compensação — ${escapar(p.nome)}`,
+    aviso: `A pessoa trabalhou num dia de descanso para folgar em outro. O pedido
+      passa pelo supervisor e depois pelo DP. Aprovado, a folga fica abonada e o
+      dia trabalhado deixa de contar como hora extra.`,
+    campos: [
+      {nome: "data_inicio", rotulo: "Dia de folga (vai ser abonado)", tipo: "date",
+       obrigatorio: true, largura: 1},
+      {nome: "dia_trabalhado", rotulo: "Dia trabalhado no lugar", tipo: "date",
+       obrigatorio: true, largura: 1},
+      {nome: "descricao", rotulo: "O que foi combinado", tipo: "textarea", obrigatorio: true, largura: 3,
+       exemplo: "ex.: trabalhou no sábado da concretagem para folgar na segunda"},
+    ],
+    textoOk: "Registrar",
+  });
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ocorrencias", {
+      tipo: "COMPENSACAO", colaborador_id: p.id, data_inicio: r.data_inicio,
+      dia_trabalhado: r.dia_trabalhado, descricao: r.descricao});
+    aviso("mensagem", "Compensação registrada. Ela segue para o supervisor e depois para o DP.", "ok");
+    await carregarEspelho();
+  } catch (e) { falhou(e); }
+}
+
+async function lancarAfastamento() {
+  if (!ESP) return;
+  const p = ESP.pessoa;
+  const r = await perguntar({
+    titulo: `Lançar afastamento — ${escapar(p.nome)}`,
+    aviso: `Lançado por você, já entra aprovado e abona os dias. O documento de
+      saúde (atestado) fica em sigilo: só quem aprova afastamento abre.`,
+    campos: [
+      {nome: "tipo", rotulo: "Tipo", tipo: "select", valor: "ATESTADO", largura: 3, opcoes: [
+        {valor: "ATESTADO", rotulo: "Atestado médico"},
+        {valor: "LICENCA", rotulo: "Licença (maternidade, paternidade, casamento, luto…)"},
+        {valor: "FERIAS", rotulo: "Férias"},
+        {valor: "AFASTAMENTO", rotulo: "Afastamento (INSS, acidente)"},
+        {valor: "ABONO", rotulo: "Abono (dia dispensado pela empresa)"}]},
+      {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "data_fim", rotulo: "Último dia", tipo: "date", largura: 1,
+       dica: "Vazio = um dia só."},
+      {nome: "cid", rotulo: "CID", largura: 1, exemplo: "opcional"},
+      {nome: "medico", rotulo: "Médico", largura: 2, exemplo: "opcional"},
+      {nome: "crm", rotulo: "CRM", largura: 1, exemplo: "opcional"},
+      {nome: "descricao", rotulo: "Observação", tipo: "textarea", linhas: 2, largura: 3},
+      {nome: "documento", rotulo: "Documento (foto ou PDF)", tipo: "arquivo", largura: 3,
+       aceita: ".pdf,.jpg,.jpeg,.png,.webp"},
+    ],
+    textoOk: "Lançar e aprovar",
+  });
+  if (!r) return;
+  try {
+    const conteudo = await lerArquivo(r.documento);
+    await postar("/erp/api/ponto/afastamentos", {
+      tipo: r.tipo, colaborador_id: p.id, data_inicio: r.data_inicio,
+      data_fim: r.data_fim || r.data_inicio, descricao: r.descricao, cid: r.cid,
+      medico: r.medico, crm: r.crm, documento_base64: conteudo,
+      documento_nome: r.documento ? r.documento.name : "", aprovar_ja: true});
+    aviso("mensagem", "Afastamento lançado e aprovado. Os dias já aparecem abonados.", "ok");
+    await carregarEspelho();
+  } catch (e) { falhou(e); }
+}
+
+els("e-mes").value = /^\d{4}-\d{2}$/.test(doUrl("competencia") || "") ? doUrl("competencia") : mesAtual();
+atualizarLinksDoEspelho();
+els("e-ver").addEventListener("click", carregarEspelho);
+els("e-pessoa").addEventListener("change", carregarEspelho);
+els("e-mes").addEventListener("change", carregarEspelho);
+els("e-imprimir").addEventListener("click", () => {
+  const id = els("e-pessoa").value;
+  if (!id) { aviso("mensagem", "Escolha a pessoa antes de imprimir.", "erro"); return; }
+  const comp = els("e-mes").value || mesAtual();
+  window.open(`/erp/ponto/espelho/${encodeURIComponent(id)}/imprimir?competencia=${encodeURIComponent(comp)}`, "_blank");
+});
+if (els("e-btn-ajuste")) els("e-btn-ajuste").addEventListener("click", () => pedirAjuste(null));
+if (els("e-btn-compensacao")) els("e-btn-compensacao").addEventListener("click", registrarCompensacao);
+if (els("e-btn-afastamento")) els("e-btn-afastamento").addEventListener("click", lancarAfastamento);
+carregarPessoasDoEspelho().then(() => {
+  const id = doUrl("colaborador_id");
+  if (id && /^\d+$/.test(id)) {
+    const sel = els("e-pessoa");
+    if (![...sel.options].some(o => o.value === id)) {
+      sel.insertAdjacentHTML("beforeend", `<option value="${id}">pessoa nº ${id}</option>`);
+    }
+    sel.value = id;
+    carregarEspelho();
+  }
+});
+
+{% elif aba_ponto == "ponto_pendencias" %}
+// ===========================================================================
+// PENDÊNCIAS — pedidos, batidas em análise e aparelhos novos.
+// ===========================================================================
+let PEND = null;
+
+const etapaTexto = p => p.etapa_atual === "SUPERVISOR" ? "espera o supervisor"
+  : p.etapa_atual === "DP" ? "espera o DP" : rotulo(p.status);
+
+function periodoDoPedido(p) {
+  if (p.tipo === "AJUSTE_BATIDA") {
+    return `${dataBR(p.data_inicio)}<small>batida de ${escapar(quando(p.horario))}</small>`;
+  }
+  if (p.tipo === "COMPENSACAO") {
+    return `folga em ${dataBR(p.data_inicio)}<small>trabalhou em ${dataBR(p.dia_trabalhado)}</small>`;
+  }
+  return p.dias > 1 ? `${dataBR(p.data_inicio)} a ${dataBR(p.data_fim)}<small>${p.dias} dias</small>`
+                    : dataBR(p.data_inicio);
+}
+
+function efeitoDaAprovacao(p) {
+  const depois = p.etapa_atual === "SUPERVISOR" && (p.etapas || []).includes("DP");
+  if (depois) return "Depois de você, o pedido ainda passa pelo DP.";
+  if (p.tipo === "AJUSTE_BATIDA") return `A batida de ${escapar(quando(p.horario))} entra no espelho, marcada como ajustada.`;
+  if (p.tipo === "COMPENSACAO") return "A folga fica abonada e o dia trabalhado deixa de contar como extra.";
+  if (p.tipo === "FOLGA_BANCO") return "A folga fica abonada e as horas saem do banco de horas da pessoa.";
+  return "Os dias ficam abonados no espelho.";
+}
+
+async function carregarPendencias() {
+  try {
+    PEND = await api("/erp/api/ponto/pendencias");
+    const decidir = (PEND.pedidos || []).filter(p => p.pode_decidir).length;
+    const batidas = (PEND.batidas || []).filter(b => b.pode_decidir).length;
+    els("p-kpis").innerHTML = `
+      <div class="kpi estatico ambar"><div class="kpi-rotulo">Pedidos</div>
+        <div class="kpi-valor">${(PEND.pedidos || []).length}</div>
+        <div class="kpi-sub">${decidir} esperando você</div></div>
+      <div class="kpi estatico ambar"><div class="kpi-rotulo">Batidas em análise</div>
+        <div class="kpi-valor">${(PEND.batidas || []).length}</div>
+        <div class="kpi-sub">${batidas} que você pode decidir</div></div>
+      ${PODE_CONFIGURAR ? `<div class="kpi estatico"><div class="kpi-rotulo">Aparelhos novos</div>
+        <div class="kpi-valor">${(PEND.aparelhos || []).length}</div>
+        <div class="kpi-sub">esperando aprovação</div></div>` : ""}`;
+    desenharPedidos();
+    desenharBatidas();
+    if (PODE_CONFIGURAR) desenharAparelhos();
+  } catch (e) { falhou(e); }
+}
+
+function desenharPedidos() {
+  const lista = PEND.pedidos || [];
+  if (!lista.length) { els("p-pedidos").innerHTML = `<div class="cartao-dica">Nenhum pedido esperando decisão.</div>`; return; }
+  els("p-pedidos").innerHTML = `<table><thead><tr><th class="sem-ordem">Pessoa</th>
+      <th class="sem-ordem">Pedido</th><th class="sem-ordem">Quando</th><th class="sem-ordem">Descrição</th>
+      <th class="sem-ordem">Pedido por</th><th class="sem-ordem">Etapa</th><th class="sem-ordem"></th></tr></thead>
+    <tbody>${lista.map(p => {
+      const saude = p.sigiloso && PODE_DP && (p.cid || p.medico || p.crm)
+        ? `<small>${[p.cid && `CID ${escapar(p.cid)}`, p.medico && escapar(p.medico),
+                     p.crm && `CRM ${escapar(p.crm)}`].filter(Boolean).join(" · ")}</small>` : "";
+      const trilha = p.supervisor ? `<small>supervisor: ${escapar(p.supervisor)}, ${escapar(quando(p.supervisor_em))}</small>` : "";
+      const acoes = [];
+      if (p.pode_decidir) {
+        acoes.push(`<button class="btn" type="button" data-aprovar="${p.id}">Aprovar</button>`);
+        acoes.push(`<button class="btn secundario" type="button" data-negar="${p.id}">Negar</button>`);
+      }
+      if (PODE_DP && p.sigiloso && p.documento_id) {
+        acoes.push(`<a class="btn secundario" style="text-decoration:none" target="_blank" rel="noopener"
+          href="/erp/api/ponto/afastamentos/documento/${p.documento_id}">Ver atestado</a>`);
+        acoes.push(`<button class="btn secundario" type="button" data-ler="${p.id}"
+          title="A IA lê o documento e mostra o que achou; você confere">Ler com IA</button>`);
+      }
+      if (PODE_DP && p.sigiloso && p.etapa_atual === "DP" && p.pode_decidir) {
+        acoes.push(`<button class="link-btn" type="button" data-corrigir="${p.id}">corrigir dados</button>`);
+      }
+      return `<tr>
+        <td><a class="elo" href="${linkEspelho(p.colaborador_id, p.data_inicio.slice(0, 7))}"><b>${escapar(p.colaborador)}</b></a>
+          <small>${escapar(p.obra || "—")}</small></td>
+        <td>${escapar(p.rotulo)}${p.sigiloso && !PODE_DP ? `<small>documento só o DP vê</small>` : ""}${saude}</td>
+        <td class="dados">${periodoDoPedido(p)}</td>
+        <td class="desc">${escapar(p.descricao || "—")}</td>
+        <td>${escapar(p.solicitado_por || "—")}<small>${p.origem === "APP" ? "pelo celular · " : ""}${escapar(quando(p.criado_em))}</small></td>
+        <td><span class="selo aguardando">${escapar(etapaTexto(p))}</span>${trilha}</td>
+        <td><div class="acoes">${acoes.join("")}</div></td></tr>
+      <tr id="leitura-${p.id}" hidden><td colspan="7"></td></tr>`;
+    }).join("")}</tbody></table>`;
+  const achar = id => (PEND.pedidos || []).find(p => p.id === Number(id));
+  els("p-pedidos").querySelectorAll("[data-aprovar]").forEach(b =>
+    b.addEventListener("click", () => decidirPedido(achar(b.dataset.aprovar), true)));
+  els("p-pedidos").querySelectorAll("[data-negar]").forEach(b =>
+    b.addEventListener("click", () => decidirPedido(achar(b.dataset.negar), false)));
+  els("p-pedidos").querySelectorAll("[data-ler]").forEach(b =>
+    b.addEventListener("click", () => lerAtestado(achar(b.dataset.ler), b)));
+  els("p-pedidos").querySelectorAll("[data-corrigir]").forEach(b =>
+    b.addEventListener("click", () => corrigirPedido(achar(b.dataset.corrigir), false)));
+  lista.filter(p => p.leitura_ia && PODE_DP).forEach(mostrarLeitura);
+}
+
+async function decidirPedido(p, aprovar) {
+  if (!p) return;
+  const url = p.etapa_atual === "SUPERVISOR"
+    ? `/erp/api/ponto/ocorrencias/${p.id}/etapa-supervisor`
+    : `/erp/api/ponto/afastamentos/${p.id}/etapa-dp`;
+  let motivo = "";
+  if (aprovar) {
+    const r = await perguntar({titulo: `Aprovar: ${escapar(p.rotulo)} de ${escapar(p.colaborador)}`,
+      aviso: efeitoDaAprovacao(p), campos: [], textoOk: "Aprovar"});
+    if (!r) return;
+  } else {
+    const r = await perguntar({titulo: `Negar: ${escapar(p.rotulo)} de ${escapar(p.colaborador)}`,
+      aviso: "O motivo fica registrado no pedido, com o seu nome.",
+      campos: [{nome: "motivo", rotulo: "Por que está negando", tipo: "textarea", linhas: 3,
+                largura: 3, obrigatorio: true}],
+      textoOk: "Negar pedido"});
+    if (!r) return;
+    motivo = r.motivo;
+  }
+  try {
+    await postar(url, {aprovar, motivo});
+    aviso("mensagem", aprovar ? "Pedido aprovado." : "Pedido negado.", "ok");
+    await carregarPendencias();
+  } catch (e) { falhou(e); }
+}
+
+async function lerAtestado(p, botao) {
+  if (!p) return;
+  botao.disabled = true;
+  botao.textContent = "Lendo…";
+  try {
+    const d = await postar(`/erp/api/ponto/afastamentos/${p.id}/ler`);
+    p.leitura_ia = d.leitura;
+    mostrarLeitura(p);
+  } catch (e) { falhou(e); }
+  botao.disabled = false;
+  botao.textContent = "Ler com IA";
+}
+
+function mostrarLeitura(p) {
+  const l = p.leitura_ia, linha = els(`leitura-${p.id}`);
+  if (!l || !linha) return;
+  const tipo = l.tipo === "DECLARACAO_DE_COMPARECIMENTO" ? "Declaração de comparecimento"
+             : l.tipo === "ATESTADO" ? "Atestado" : l.tipo ? "Outro documento" : "—";
+  const fimLido = l.data_inicio && l.dias_afastamento ? somarDias(l.data_inicio, Number(l.dias_afastamento) - 1) : null;
+  const diverge = (l.data_inicio && l.data_inicio !== p.data_inicio) || (fimLido && fimLido !== p.data_fim);
+  const campos = [
+    ["Tipo", tipo], ["Emitido em", dataBR(l.data_emissao)], ["A partir de", dataBR(l.data_inicio)],
+    ["Dias de repouso", l.dias_afastamento ?? "—"],
+    ["Horário", l.horario_inicio ? `${l.horario_inicio} às ${l.horario_fim || "?"}` : "—"],
+    ["Médico", l.medico || "—"], ["CRM", l.crm || "—"], ["CID", l.cid || "—"],
+    ["Paciente", l.paciente || "—"],
+  ];
+  linha.hidden = false;
+  linha.querySelector("td").innerHTML = `<div class="aviso info" style="margin:0">
+    <b>O que a leitura achou no documento</b> — confira com o papel antes de aprovar.
+    ${l.legivel === false ? ` <span class="selo bloqueado">documento pouco legível</span>` : ""}
+    <div class="leitura-grade">${campos.map(([r, v]) =>
+      `<div><small>${r}</small><b>${escapar(v)}</b></div>`).join("")}</div>
+    ${l.observacao ? `<div><i>${escapar(l.observacao)}</i></div>` : ""}
+    ${diverge ? `<div style="margin-top:6px; color:var(--ambar)"><b>Os dias do documento não batem
+      com os do pedido</b> (pedido: ${dataBR(p.data_inicio)} a ${dataBR(p.data_fim)}).</div>` : ""}
+    ${p.pode_decidir && p.etapa_atual === "DP"
+      ? `<div style="margin-top:8px"><button class="btn secundario" type="button" data-corrigir-lido="${p.id}">Corrigir dados com a leitura</button></div>` : ""}
+  </div>`;
+  const b = linha.querySelector("[data-corrigir-lido]");
+  if (b) b.addEventListener("click", () => corrigirPedido(p, true));
+}
+
+async function corrigirPedido(p, daLeitura) {
+  if (!p) return;
+  const l = p.leitura_ia || {};
+  const usarLeitura = daLeitura && l.data_inicio;
+  const inicio = usarLeitura ? l.data_inicio : p.data_inicio;
+  const fim = usarLeitura && l.dias_afastamento
+    ? somarDias(l.data_inicio, Number(l.dias_afastamento) - 1) : p.data_fim;
+  const valor = campo => escapar((daLeitura ? (l[campo] || p[campo]) : (p[campo] || l[campo])) || "");
+  const r = await perguntar({
+    titulo: `Corrigir os dados — ${escapar(p.colaborador)}`,
+    aviso: daLeitura ? "Já preenchido com o que a leitura achou. Confira com o papel antes de gravar." : "",
+    campos: [
+      {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", valor: inicio, obrigatorio: true, largura: 1},
+      {nome: "data_fim", rotulo: "Último dia", tipo: "date", valor: fim, obrigatorio: true, largura: 1},
+      {nome: "cid", rotulo: "CID", valor: valor("cid"), largura: 1},
+      {nome: "medico", rotulo: "Médico", valor: valor("medico"), largura: 2},
+      {nome: "crm", rotulo: "CRM", valor: valor("crm"), largura: 1},
+    ],
+    textoOk: "Gravar correção",
+  });
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/afastamentos/${p.id}/corrigir`, r);
+    aviso("mensagem", "Dados corrigidos. O pedido continua esperando a sua aprovação.", "ok");
+    await carregarPendencias();
+  } catch (e) { falhou(e); }
+}
+
+function desenharBatidas() {
+  const lista = PEND.batidas || [];
+  if (!lista.length) { els("p-batidas").innerHTML = `<div class="cartao-dica">Nenhuma batida em análise.</div>`; return; }
+  els("p-batidas").innerHTML = `<table><thead><tr><th class="sem-ordem">Pessoa</th>
+      <th class="sem-ordem">Obra</th><th class="sem-ordem">Horário</th><th class="sem-ordem">Por que está em análise</th>
+      <th class="sem-ordem">Distância da obra</th><th class="sem-ordem">Foto</th><th class="sem-ordem"></th></tr></thead>
+    <tbody>${lista.map(b => `<tr>
+      <td><a class="elo" href="${linkEspelho(b.colaborador_id, b.data.slice(0, 7))}"><b>${escapar(b.nome)}</b></a>
+        <small>NSR ${escapar(b.nsr)}</small></td>
+      <td class="dados">${escapar(b.obra)}</td>
+      <td class="dados">${escapar(quando(b.horario))}</td>
+      <td class="desc">${escapar(b.motivo || "—")}</td>
+      <td class="dados">${distancia(b.distancia_metros)}</td>
+      <td>${b.tem_foto ? `<button class="link-btn" type="button" data-foto="${b.id}"
+            data-legenda="${escapar(`${b.nome} — ${quando(b.horario)}`)}">ver foto</button>`
+          : `<span class="suave">sem foto</span>`}</td>
+      <td>${b.pode_decidir ? `<div class="acoes">
+          <button class="btn" type="button" data-validar="${b.id}">Validar</button>
+          <button class="btn secundario" type="button" data-rejeitar="${b.id}">Rejeitar</button></div>` : ""}</td>
+    </tr>`).join("")}</tbody></table>`;
+  const achar = id => lista.find(b => b.id === Number(id));
+  els("p-batidas").querySelectorAll("[data-validar]").forEach(x =>
+    x.addEventListener("click", () => decidirBatida(achar(x.dataset.validar), "VALIDA")));
+  els("p-batidas").querySelectorAll("[data-rejeitar]").forEach(x =>
+    x.addEventListener("click", () => decidirBatida(achar(x.dataset.rejeitar), "REJEITADA")));
+}
+
+async function decidirBatida(b, para) {
+  if (!b) return;
+  let motivo = "";
+  if (para === "REJEITADA") {
+    const r = await perguntar({titulo: `Rejeitar a batida de ${escapar(b.nome)}`,
+      aviso: `Batida de ${escapar(quando(b.horario))}. Rejeitada, ela sai do cálculo do
+        dia, mas continua guardada com o motivo e o seu nome.`,
+      campos: [{nome: "motivo", rotulo: "Por que está rejeitando", tipo: "textarea", linhas: 3,
+                largura: 3, obrigatorio: true,
+                exemplo: "ex.: a pessoa não estava na obra; a foto é de outra pessoa"}],
+      textoOk: "Rejeitar batida"});
+    if (!r) return;
+    motivo = r.motivo;
+  }
+  try {
+    await postar(`/erp/api/ponto/marcacoes/${b.id}/decidir`, {para, motivo});
+    aviso("mensagem", para === "VALIDA" ? "Batida validada." : "Batida rejeitada.", "ok");
+    await carregarPendencias();
+  } catch (e) { falhou(e); }
+}
+
+function desenharAparelhos() {
+  const lista = PEND.aparelhos || [];
+  if (!lista.length) { els("p-aparelhos").innerHTML = `<div class="cartao-dica">Nenhum aparelho esperando aprovação.</div>`; return; }
+  els("p-aparelhos").innerHTML = `<table><thead><tr><th class="sem-ordem">Aparelho</th>
+      <th class="sem-ordem">Pediu em</th><th class="sem-ordem"></th></tr></thead>
+    <tbody>${lista.map(a => `<tr>
+      <td><b>${escapar(a.descricao || "sem nome")}</b><small class="dados">${escapar(a.device_uuid)}</small></td>
+      <td class="dados">${escapar(quando(a.criado_em))}</td>
+      <td><div class="acoes"><button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>
+        <button class="btn secundario" type="button" data-bloquear-ap="${a.id}">Bloquear</button></div></td>
+    </tr>`).join("")}</tbody></table>`;
+  const achar = id => lista.find(a => a.id === Number(id));
+  els("p-aparelhos").querySelectorAll("[data-aprovar-ap]").forEach(b =>
+    b.addEventListener("click", () => aprovarAparelho(achar(b.dataset.aprovarAp), carregarPendencias)));
+  els("p-aparelhos").querySelectorAll("[data-bloquear-ap]").forEach(b =>
+    b.addEventListener("click", () => bloquearAparelho(achar(b.dataset.bloquearAp), carregarPendencias)));
+}
+
+carregarPendencias();
+
+{% elif aba_ponto == "ponto_pessoas" %}
+// ===========================================================================
+// PESSOAS — escala, jornada, obras extras e banco de horas de cada pessoa.
+// ===========================================================================
+let PESSOAS = [], ESCALAS = null, ESPERA = null;
+
+async function carregarPessoas() {
+  const p = new URLSearchParams();
+  const busca = (els("pe-busca").value || "").trim();
+  if (busca) p.set("busca", busca);
+  if (els("pe-todos").checked) p.set("todos", "1");
+  try {
+    const d = await api(`/erp/api/ponto/pessoas?${p}`);
+    PESSOAS = d.pessoas;
+    desenharPessoas();
+  } catch (e) { falhou(e); }
+}
+
+function desenharPessoas() {
+  els("pe-sub").textContent = `${PESSOAS.length} pessoa(s)`;
+  els("pe-vazio").classList.toggle("oculto", PESSOAS.length > 0);
+  if (!PESSOAS.length) els("pe-vazio").innerHTML = "<b>Ninguém encontrado</b>Mude a busca.";
+  els("pe-corpo").innerHTML = PESSOAS.map(p => `<tr style="cursor:pointer" data-pessoa="${p.id}">
+    <td><b>${escapar(p.nome)}</b>${!p.ativo_no_ponto ? `<small>não bate ponto</small>` : ""}
+      ${p.situacao && p.situacao !== "ATIVO" ? `<small>${escapar(rotulo(p.situacao))}</small>` : ""}</td>
+    <td class="dados">${escapar(documento(p.cpf))}</td>
+    <td class="dados">${p.obra_principal ? escapar(p.obra_principal.codigo) : `<span class="suave">—</span>`}</td>
+    <td class="dados">${(p.obras_adicionais || []).map(o => escapar(o.codigo)).join(", ") || `<span class="suave">—</span>`}</td>
+    <td>${escapar(rotuloJornada(p.tipo_jornada))}</td>
+    <td>${p.escala ? escapar(p.escala) : `<span class="selo aguardando">sem escala</span>`}</td>
+    <td>${escapar(p.regime_banco_rotulo || "—")}</td>
+    <td>${p.tem_pin ? `<span class="selo aprovado">sim</span>` : `<span class="selo outro">não</span>`}</td>
+  </tr>`).join("");
+  els("pe-corpo").querySelectorAll("[data-pessoa]").forEach(tr =>
+    tr.addEventListener("click", () => abrirPessoa(Number(tr.dataset.pessoa))));
+}
+
+async function abrirPessoa(id) {
+  try {
+    const {pessoa: p} = await api(`/erp/api/ponto/pessoas/${id}`);
+    const atual = (p.escalas || [])[0];
+    const ficha = els("pe-ficha");
+    ficha.hidden = false;
+    ficha.innerHTML = `<div class="cartao-cab"><h3>${escapar(p.nome)}
+        <small>${escapar(documento(p.cpf))}${p.matricula ? ` · mat. ${escapar(p.matricula)}` : ""}</small></h3>
+      <button class="link-btn" type="button" id="pe-fechar">fechar</button></div>
+      <div id="pe-msg"></div>
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Obra principal</div>
+          <div class="kpi-valor" style="font-size:16px">${p.obra_principal ? escapar(p.obra_principal.codigo) : "—"}</div>
+          <div class="kpi-sub">${(p.obras_adicionais || []).length
+            ? `também: ${(p.obras_adicionais || []).map(o => escapar(o.codigo)).join(", ")}` : "sem obras extras"}</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Escala de hoje</div>
+          <div class="kpi-valor" style="font-size:16px">${atual ? escapar(atual.escala) : "sem escala"}</div>
+          <div class="kpi-sub">${atual ? `desde ${dataBR(atual.desde)}` : "o espelho não julga falta sem escala"}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Jornada</div>
+          <div class="kpi-valor" style="font-size:16px">${escapar(rotuloJornada(p.tipo_jornada))}</div>
+          <div class="kpi-sub">${p.ativo_no_ponto ? "bate ponto" : "não bate ponto"}</div></div>
+        <div class="kpi estatico roxo"><div class="kpi-rotulo">Banco de horas</div>
+          <div class="kpi-valor" style="font-size:16px">${escapar(rotuloRegime(p.regime_banco))}</div>
+          <div class="kpi-sub">${p.banco_inicio ? `desde ${dataBR(p.banco_inicio)}` : ""}
+            ${p.acordo_banco ? " · acordo anexado" : ""}</div></div>
+      </div>
+      <div class="barra-acoes">
+        ${PODE_TRATAR ? `<button class="btn" type="button" id="pe-escala">Trocar escala</button>
+          <button class="btn secundario" type="button" id="pe-jornada">Jornada e obras</button>` : ""}
+        ${PODE_DP ? `<button class="btn secundario" type="button" id="pe-banco">Banco de horas</button>` : ""}
+        <a class="btn secundario" style="text-decoration:none" href="${linkEspelho(p.id)}">Ver espelho</a>
+      </div>
+      <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave)">Histórico de escalas</h4>
+      ${(p.escalas || []).length ? `<table><thead><tr><th class="sem-ordem">Desde</th><th class="sem-ordem">Escala</th>
+          <th class="sem-ordem">Início do ciclo 12x36</th><th class="sem-ordem">Definida por</th></tr></thead><tbody>
+        ${p.escalas.map(h => `<tr><td class="dados">${dataBR(h.desde)}</td><td>${escapar(h.escala)}</td>
+          <td class="dados">${h.ciclo_data_base ? dataBR(h.ciclo_data_base) : "—"}</td>
+          <td>${escapar(h.por || "—")}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="cartao-dica">Nenhuma escala ainda. Sem escala, o espelho não sabe
+            o que era previsto e não aponta falta nem atraso.</div>`}
+      <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave)">Aparelhos da pessoa</h4>
+      ${(p.aparelhos || []).length ? `<table><thead><tr><th class="sem-ordem">Aparelho</th>
+          <th class="sem-ordem">Uso</th><th class="sem-ordem">Situação</th><th class="sem-ordem">Último uso</th></tr></thead><tbody>
+        ${p.aparelhos.map(a => `<tr><td>${escapar(a.descricao || "sem nome")}</td>
+          <td>${escapar(rotuloPerfil(a.perfil))}</td><td>${seloAparelho(a.status)}</td>
+          <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="cartao-dica">Nenhum celular registrado em nome desta pessoa. Ela
+            pode bater pelo tablet da obra.</div>`}`;
+    els("pe-fechar").addEventListener("click", () => { ficha.hidden = true; });
+    if (els("pe-escala")) els("pe-escala").addEventListener("click", () => trocarEscala(p));
+    if (els("pe-jornada")) els("pe-jornada").addEventListener("click", () => jornadaEObras(p));
+    if (els("pe-banco")) els("pe-banco").addEventListener("click", () => regimeDoBanco(p));
+    ficha.scrollIntoView({behavior: "smooth", block: "start"});
+  } catch (e) { falhou(e); }
+}
+
+async function trocarEscala(p) {
+  try {
+    if (!ESCALAS) ESCALAS = (await api("/erp/api/ponto/escalas")).escalas.filter(e => e.ativo);
+  } catch (e) { falhou(e, "pe-msg"); return; }
+  if (!ESCALAS.length) {
+    aviso("pe-msg", "Nenhuma escala ativa cadastrada. Cadastre em Configuração › Escalas.", "erro");
+    return;
+  }
+  const atual = (p.escalas || [])[0];
+  const atualId = atual ? (ESCALAS.find(e => e.nome === atual.escala) || {}).id : null;
+  const r = await perguntar({
+    titulo: `Trocar a escala — ${escapar(p.nome)}`,
+    aviso: "A nova escala vale a partir da data escolhida. O que veio antes continua calculado pela escala antiga.",
+    campos: [
+      {nome: "escala_id", rotulo: "Escala", tipo: "select", largura: 3, obrigatorio: true,
+       valor: atualId ? String(atualId) : String(ESCALAS[0].id),
+       opcoes: ESCALAS.map(e => ({valor: String(e.id),
+         rotulo: `${escapar(e.nome)} (${e.tipo === "CICLO_12X36" ? "12x36" : `${String(e.horas_semanais).replace(".", ",")} h por semana`})`}))},
+      {nome: "vigencia_inicio", rotulo: "Vale a partir de", tipo: "date", valor: hojeISO(),
+       obrigatorio: true, largura: 1},
+    ],
+    textoOk: "Continuar",
+  });
+  if (!r) return;
+  const escolhida = ESCALAS.find(e => String(e.id) === r.escala_id);
+  let base = null;
+  if (escolhida && escolhida.tipo === "CICLO_12X36") {
+    const c = await perguntar({
+      titulo: "Em que dia o ciclo 12x36 começa?",
+      aviso: "Diga um dia em que a pessoa TRABALHA. A partir dele o sistema conta: trabalha, folga, trabalha…",
+      campos: [{nome: "ciclo_data_base", rotulo: "Um dia de trabalho", tipo: "date",
+                valor: r.vigencia_inicio, obrigatorio: true, largura: 1}],
+      textoOk: "Trocar escala",
+    });
+    if (!c) return;
+    base = c.ciclo_data_base;
+  }
+  try {
+    await postar(`/erp/api/ponto/pessoas/${p.id}/escala`, {
+      escala_id: Number(r.escala_id), vigencia_inicio: r.vigencia_inicio, ciclo_data_base: base});
+    await abrirPessoa(p.id);
+    aviso("pe-msg", "Escala trocada.", "ok");
+    carregarPessoas();
+  } catch (e) { falhou(e, "pe-msg"); }
+}
+
+async function jornadaEObras(p) {
+  const r = await perguntar({
+    titulo: `Jornada e obras — ${escapar(p.nome)}`,
+    campos: [
+      {nome: "tipo_jornada", rotulo: "Jornada", tipo: "select", valor: p.tipo_jornada, largura: 3,
+       opcoes: JORNADAS,
+       dica: "Vigia noturno: a batida antes das 10h da manhã conta para o dia em que o turno começou."},
+      {nome: "obras_adicionais", rotulo: "Obras extras (além da principal)", largura: 3,
+       valor: escapar((p.obras_adicionais || []).map(o => o.codigo).join(", ")),
+       exemplo: "códigos separados por vírgula",
+       dica: "Obras onde a pessoa também pode bater ponto. A obra principal é a do cadastro do ERP."},
+      {nome: "ativo", rotulo: "Bate ponto?", tipo: "select", valor: p.ativo_no_ponto ? "1" : "0", largura: 3,
+       opcoes: [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não (some do painel e dos alertas)"}]},
+    ],
+    textoOk: "Salvar",
+  });
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/pessoas/${p.id}/ponto`, {
+      tipo_jornada: r.tipo_jornada, obras_adicionais: listaDeTexto(r.obras_adicionais),
+      ativo: r.ativo === "1"});
+    await abrirPessoa(p.id);
+    aviso("pe-msg", "Jornada e obras salvas.", "ok");
+    carregarPessoas();
+  } catch (e) { falhou(e, "pe-msg"); }
+}
+
+async function regimeDoBanco(p) {
+  const r = await perguntar({
+    titulo: `Banco de horas — ${escapar(p.nome)}`,
+    aviso: `Nem todo mundo pode ter banco de horas. O de 6 meses exige acordo
+      individual escrito; o de 12, acordo ou convenção coletiva. Nos dois casos o
+      acordo assinado tem de ser anexado.`,
+    campos: [
+      {nome: "regime_banco", rotulo: "Regime", tipo: "select", valor: p.regime_banco || "SEM_BANCO",
+       largura: 3, opcoes: REGIMES},
+      {nome: "banco_inicio", rotulo: "Início do banco", tipo: "date", valor: p.banco_inicio || "",
+       largura: 1, dica: "Só para banco de 6 ou 12 meses."},
+      {nome: "acordo", rotulo: p.acordo_banco ? "Acordo assinado (já anexado — mande outro só para trocar)"
+                                             : "Acordo assinado (foto ou PDF)",
+       tipo: "arquivo", largura: 3, aceita: ".pdf,.jpg,.jpeg,.png,.webp"},
+    ],
+    textoOk: "Salvar",
+  });
+  if (!r) return;
+  const precisaAcordo = r.regime_banco === "BANCO_6_MESES" || r.regime_banco === "BANCO_12_MESES";
+  if (precisaAcordo && !r.banco_inicio) { aviso("pe-msg", "Diga a data de início do banco.", "erro"); return; }
+  if (precisaAcordo && !r.acordo && !p.acordo_banco) {
+    aviso("pe-msg", "Banco de 6 ou 12 meses exige o acordo assinado anexado.", "erro"); return;
+  }
+  try {
+    const conteudo = await lerArquivo(r.acordo);
+    await postar(`/erp/api/ponto/pessoas/${p.id}/banco`, {
+      regime_banco: r.regime_banco, banco_inicio: r.banco_inicio || null,
+      acordo_base64: conteudo, acordo_nome: r.acordo ? r.acordo.name : ""});
+    await abrirPessoa(p.id);
+    aviso("pe-msg", "Banco de horas salvo.", "ok");
+    carregarPessoas();
+  } catch (e) { falhou(e, "pe-msg"); }
+}
+
+els("pe-ver").addEventListener("click", carregarPessoas);
+els("pe-todos").addEventListener("change", carregarPessoas);
+els("pe-busca").addEventListener("input", () => {
+  clearTimeout(ESPERA);
+  ESPERA = setTimeout(carregarPessoas, 350);
+});
+carregarPessoas();
+
+{% elif aba_ponto == "ponto_banco" %}
+// ===========================================================================
+// BANCO DE HORAS — saldo de cada pessoa, extrato e vencimentos.
+// ===========================================================================
+let BANCO = [];
+const TIPOS_LANCAMENTO = {SALDO_INICIAL: "Saldo inicial", PAGAMENTO: "Pagamento (horas pagas)",
+  DESCONTO: "Desconto em folha", CORRECAO: "Correção", FOLGA: "Folga aprovada"};
+const corDoSaldo = m => m > 0 ? "var(--verde)" : m < 0 ? "var(--vermelho)" : "var(--tinta)";
+
+// "1:30", "-1h30", "2h", "1,5" → horas em número (1.5). O servidor só entende
+// o decimal; quem pensa em hora escreve "1:30", e as duas formas valem.
+function horasDigitadas(texto) {
+  const t = String(texto || "").trim().replace(/\s+/g, "").toLowerCase();
+  const m = t.match(/^([+-]?)(\d{1,4})(?:[:h](\d{1,2})?)?(?:min)?$/);
+  if (m && (t.includes(":") || t.includes("h"))) {
+    const minutos = Number(m[2]) * 60 + Number(m[3] || 0);
+    return (m[1] === "-" ? -1 : 1) * minutos / 60;
+  }
+  const n = Number(t.replace(",", "."));
+  return isFinite(n) ? n : NaN;
+}
+
+async function carregarBanco() {
+  try {
+    BANCO = (await api("/erp/api/ponto/banco")).pessoas;
+    desenharBanco();
+  } catch (e) { falhou(e); }
+}
+
+function desenharBanco() {
+  const busca = (els("b-busca").value || "").toLowerCase();
+  const lista = BANCO.filter(p => !busca || p.nome.toLowerCase().includes(busca));
+  const total = lista.reduce((s, p) => s + (p.saldo || 0), 0);
+  els("b-resumo").innerHTML = `<b>${lista.length}</b> pessoa(s) · saldo somado <b>${hm(total)}</b>`;
+  els("b-vazio").classList.toggle("oculto", lista.length > 0);
+  if (!lista.length) els("b-vazio").innerHTML = `<b>Ninguém com banco de horas</b>O regime
+    de cada pessoa é marcado pelo DP, em Pessoas › Banco de horas.`;
+  els("b-corpo").innerHTML = lista.map(p => `<tr style="cursor:pointer" data-banco="${p.colaborador_id}">
+    <td><b>${escapar(p.nome)}</b>${p.aviso ? `<small>${escapar(p.aviso)}</small>` : ""}</td>
+    <td class="dados">${escapar(p.obra || "—")}</td>
+    <td>${escapar(p.regime)}</td>
+    <td class="dados direita" style="color:${corDoSaldo(p.saldo)}; font-weight:700">${hm(p.saldo)}</td>
+    <td>${(p.vence_logo || []).length ? p.vence_logo.map(v =>
+        `<span class="selo aguardando" style="margin:0 4px 3px 0">${hm(v.minutos)} em ${dataBR(v.vence_em)}</span>`).join("")
+      : `<span class="suave">—</span>`}</td>
+  </tr>`).join("");
+  els("b-corpo").querySelectorAll("[data-banco]").forEach(tr =>
+    tr.addEventListener("click", () => abrirBanco(Number(tr.dataset.banco))));
+}
+
+async function abrirBanco(id) {
+  const pessoa = BANCO.find(p => p.colaborador_id === id) || {nome: ""};
+  try {
+    const s = await api(`/erp/api/ponto/banco/${id}`);
+    const ficha = els("b-ficha");
+    ficha.hidden = false;
+    ficha.innerHTML = `<div class="cartao-cab"><h3>${escapar(pessoa.nome)} <small>${escapar(s.regime_rotulo)}</small></h3>
+        <button class="link-btn" type="button" id="b-fechar">fechar</button></div>
+      <div id="b-msg"></div>
+      ${s.aviso ? `<div class="aviso info">${escapar(s.aviso)}</div>` : ""}
+      <div class="kpis">
+        <div class="kpi estatico ${s.saldo < 0 ? "vermelho" : "verde"}"><div class="kpi-rotulo">Saldo até ontem</div>
+          <div class="kpi-valor" style="color:${corDoSaldo(s.saldo)}">${hm(s.saldo)}</div>
+          <div class="kpi-sub">${s.inicio ? `contado desde ${dataBR(s.inicio)}` : ""}</div></div>
+        <div class="kpi estatico ambar"><div class="kpi-rotulo">A vencer</div>
+          <div class="kpi-valor">${hm((s.vencimentos || []).reduce((t, v) => t + v.minutos, 0))}</div>
+          <div class="kpi-sub">crédito que ainda sobra, por mês de origem</div></div>
+      </div>
+      ${PODE_DP ? `<div class="barra-acoes"><button class="btn" type="button" id="b-lancar">Lançar à mão</button></div>` : ""}
+      <div class="form-grade" style="grid-template-columns:repeat(auto-fit, minmax(260px, 1fr))">
+        <div><h4 style="font-size:12px; text-transform:uppercase; color:var(--tinta-suave)">Mês a mês</h4>
+          ${(s.meses || []).length ? `<table><thead><tr><th class="sem-ordem">Mês</th>
+              <th class="sem-ordem direita">Resultado do mês</th></tr></thead><tbody>
+            ${s.meses.map(m => `<tr><td class="dados">${mesBR(m.mes)}</td>
+              <td class="dados direita" style="color:${corDoSaldo(m.liquido)}">${hm(m.liquido)}</td></tr>`).join("")}
+            </tbody></table>` : `<div class="cartao-dica">Nada contado ainda.</div>`}</div>
+        <div><h4 style="font-size:12px; text-transform:uppercase; color:var(--tinta-suave)">Vencimentos</h4>
+          ${(s.vencimentos || []).length ? `<table><thead><tr><th class="sem-ordem">Crédito de</th>
+              <th class="sem-ordem direita">Sobra</th><th class="sem-ordem">Vence em</th></tr></thead><tbody>
+            ${s.vencimentos.map(v => `<tr><td class="dados">${mesBR(v.mes)}</td>
+              <td class="dados direita">${hm(v.minutos)}</td><td class="dados">${dataBR(v.vence_em)}</td></tr>`).join("")}
+            </tbody></table>` : `<div class="cartao-dica">Nenhum crédito a vencer.</div>`}</div>
+      </div>
+      <h4 style="font-size:12px; text-transform:uppercase; color:var(--tinta-suave)">Lançamentos à mão</h4>
+      ${(s.lancamentos || []).length ? `<table><thead><tr><th class="sem-ordem">Data</th><th class="sem-ordem">Tipo</th>
+          <th class="sem-ordem direita">Horas</th><th class="sem-ordem">Descrição</th><th class="sem-ordem">Por</th></tr></thead><tbody>
+        ${s.lancamentos.map(l => `<tr><td class="dados">${dataBR(l.data)}</td>
+          <td>${escapar(TIPOS_LANCAMENTO[l.tipo] || l.tipo)}</td>
+          <td class="dados direita" style="color:${corDoSaldo(l.minutos)}">${hm(l.minutos)}</td>
+          <td class="desc">${escapar(l.descricao || "—")}</td>
+          <td>${escapar(l.usuario_nome || "—")}<small>${escapar(quando(l.criado_em))}</small></td></tr>`).join("")}
+        </tbody></table>` : `<div class="cartao-dica">Nenhum lançamento à mão.</div>`}`;
+    els("b-fechar").addEventListener("click", () => { ficha.hidden = true; });
+    if (els("b-lancar")) els("b-lancar").addEventListener("click", () => lancarNoBanco(id, pessoa.nome));
+    ficha.scrollIntoView({behavior: "smooth", block: "start"});
+  } catch (e) { falhou(e); }
+}
+
+async function lancarNoBanco(id, nome) {
+  const r = await perguntar({
+    titulo: `Lançar no banco de horas — ${escapar(nome)}`,
+    aviso: `Use sinal de menos para TIRAR do banco. Exemplos: saldo que a pessoa
+      trouxe de antes = <b>12:30</b>; pagamento de 10 horas = <b>-10</b>.`,
+    campos: [
+      {nome: "data", rotulo: "Data", tipo: "date", valor: hojeISO(), obrigatorio: true, largura: 1},
+      {nome: "horas", rotulo: "Horas", obrigatorio: true, largura: 1, exemplo: "ex.: 1:30 ou -2,5"},
+      {nome: "tipo", rotulo: "Tipo", tipo: "select", valor: "CORRECAO", largura: 1, opcoes: [
+        {valor: "SALDO_INICIAL", rotulo: "Saldo inicial"},
+        {valor: "PAGAMENTO", rotulo: "Pagamento (horas pagas)"},
+        {valor: "DESCONTO", rotulo: "Desconto em folha"},
+        {valor: "CORRECAO", rotulo: "Correção"}]},
+      {nome: "descricao", rotulo: "Descrição", tipo: "textarea", linhas: 2, largura: 3, obrigatorio: true},
+    ],
+    textoOk: "Lançar",
+  });
+  if (!r) return;
+  const horas = horasDigitadas(r.horas);
+  if (!isFinite(horas) || horas === 0) {
+    aviso("b-msg", "Não entendi as horas. Escreva assim: 1:30, -2 ou 2,5.", "erro"); return;
+  }
+  try {
+    await postar(`/erp/api/ponto/banco/${id}/lancamentos`, {
+      data: r.data, horas: Math.round(horas * 10000) / 10000, tipo: r.tipo, descricao: r.descricao});
+    await carregarBanco();
+    await abrirBanco(id);
+    aviso("b-msg", "Lançamento feito.", "ok");
+  } catch (e) { falhou(e, "b-msg"); }
+}
+
+els("b-busca").addEventListener("input", desenharBanco);
+carregarBanco();
+
+{% elif aba_ponto == "ponto_alertas" %}
+// ===========================================================================
+// ALERTAS — regras e padrões contados pelo sistema.
+// ===========================================================================
+let ALERTAS = [], ROTULOS = {};
+const GRUPOS = [["URGENTE", "Urgente", "bloqueado"], ["ATENCAO", "Atenção", "aguardando"],
+                ["INFO", "Para saber", "pago"]];
+const SELO_SITUACAO = {ABERTO: ["aguardando", "aberto"], RESOLVIDO: ["aprovado", "resolvido"],
+                       DISPENSADO: ["outro", "dispensado"]};
+
+async function carregarAlertas() {
+  const p = new URLSearchParams();
+  p.set("situacao", els("a-situacao").value);
+  if (els("a-gravidade").value) p.set("gravidade", els("a-gravidade").value);
+  try {
+    const d = await api(`/erp/api/ponto/alertas?${p}`);
+    ALERTAS = d.alertas;
+    ROTULOS = d.rotulos || {};
+    desenharAlertas();
+  } catch (e) { falhou(e); }
+}
+
+function desenharAlertas() {
+  els("a-sub").textContent = `${ALERTAS.length} alerta(s)`;
+  if (!ALERTAS.length) {
+    els("a-grupos").innerHTML = `<div class="cartao"><div class="vazio"><b>Nenhum alerta</b>
+      com estes filtros.</div></div>`;
+    return;
+  }
+  els("a-grupos").innerHTML = GRUPOS.map(([g, nome, classe]) => {
+    const do_grupo = ALERTAS.filter(a => a.gravidade === g);
+    if (!do_grupo.length) return "";
+    return `<div class="cartao"><div class="grupo-cab"><span class="selo ${classe}">${nome}</span>
+        <small class="suave">${do_grupo.length} alerta(s)</small></div>
+      <div class="tabela-rolagem" style="max-height:none"><table><thead><tr><th class="sem-ordem">Alerta</th>
+        <th class="sem-ordem">O que aconteceu</th><th class="sem-ordem">Obra</th><th class="sem-ordem">Dia</th>
+        <th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
+      ${do_grupo.map(a => {
+        const [c, t] = SELO_SITUACAO[a.situacao] || ["outro", a.situacao];
+        const nome = a.colaborador_id
+          ? `<a class="elo" href="${linkEspelho(a.colaborador_id, (a.data_referencia || hojeISO()).slice(0, 7))}">abrir espelho</a>` : "";
+        return `<tr>
+          <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
+          <td class="desc">${escapar(a.mensagem)}${nome ? `<small>${nome}</small>` : ""}</td>
+          <td class="dados">${escapar(a.obra || "—")}</td>
+          <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
+          <td><span class="selo ${c}">${escapar(t)}</span>
+            ${a.tratado_por ? `<small>${escapar(a.tratado_por)}, ${escapar(quando(a.tratado_em))}</small>` : ""}
+            ${a.nota ? `<small>“${escapar(a.nota)}”</small>` : ""}</td>
+          <td>${PODE_TRATAR ? (a.situacao === "ABERTO"
+            ? `<div class="acoes"><button class="btn secundario" type="button" data-resolver="${a.id}">Resolvido</button>
+                <button class="link-btn" type="button" data-dispensar="${a.id}">dispensar</button></div>`
+            : `<button class="link-btn" type="button" data-reabrir="${a.id}">reabrir</button>`) : ""}</td>
+        </tr>`;
+      }).join("")}</tbody></table></div></div>`;
+  }).join("");
+  const achar = id => ALERTAS.find(a => a.id === Number(id));
+  document.querySelectorAll("[data-resolver]").forEach(b =>
+    b.addEventListener("click", () => tratarAlerta(achar(b.dataset.resolver), "RESOLVIDO")));
+  document.querySelectorAll("[data-dispensar]").forEach(b =>
+    b.addEventListener("click", () => tratarAlerta(achar(b.dataset.dispensar), "DISPENSADO")));
+  document.querySelectorAll("[data-reabrir]").forEach(b =>
+    b.addEventListener("click", () => tratarAlerta(achar(b.dataset.reabrir), "ABERTO")));
+}
+
+async function tratarAlerta(a, situacao) {
+  if (!a) return;
+  const titulos = {RESOLVIDO: "Marcar como resolvido", DISPENSADO: "Dispensar o alerta",
+                   ABERTO: "Reabrir o alerta"};
+  const botoes = {RESOLVIDO: "Marcar resolvido", DISPENSADO: "Dispensar", ABERTO: "Reabrir"};
+  const r = await perguntar({
+    titulo: titulos[situacao],
+    aviso: escapar(a.mensagem),
+    campos: [{nome: "nota", rotulo: situacao === "DISPENSADO" ? "Por que não precisa de ação" : "Nota",
+              tipo: "textarea", linhas: 2, largura: 3, obrigatorio: situacao === "DISPENSADO",
+              exemplo: situacao === "RESOLVIDO" ? "opcional — ex.: conversei com a pessoa" : ""}],
+    textoOk: botoes[situacao],
+  });
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/alertas/${a.id}/tratar`, {situacao, nota: r.nota});
+    aviso("mensagem", "Alerta atualizado.", "ok");
+    await carregarAlertas();
+  } catch (e) { falhou(e); }
+}
+
+async function gerarAlertas() {
+  const b = els("a-gerar");
+  b.disabled = true;
+  b.textContent = "Gerando… (pode levar um minuto)";
+  try {
+    const d = await postar("/erp/api/ponto/alertas/gerar");
+    const contas = Object.entries(d.alertas || {}).sort((x, y) => y[1] - x[1]);
+    els("a-gerado").innerHTML = `<div class="aviso ok">
+      <b>Pronto.</b> Conferidas ${d.pessoas} pessoa(s), até ${dataBR(d.ate)}.
+      ${contas.length ? `<br>${contas.map(([c, n]) => `${escapar(ROTULOS[c] || c)}: <b>${n}</b>`).join(" · ")}`
+                      : "<br>Nenhum alerta novo."}
+      ${d.resolvidos_sozinhos ? `<br>${d.resolvidos_sozinhos} alerta(s) deixaram de valer e foram resolvidos sozinhos
+        (ex.: a falta virou atestado aprovado).` : ""}</div>`;
+    await carregarAlertas();
+  } catch (e) { falhou(e); }
+  b.disabled = false;
+  b.textContent = "Gerar alertas agora";
+}
+
+async function carregarResumo() {
+  try {
+    els("a-resumo").textContent = (await api("/erp/api/ponto/resumo")).texto;
+  } catch (e) { els("a-resumo").textContent = `Não deu para montar o resumo: ${e.message}`; }
+}
+
+async function enviarResumo() {
+  const b = els("a-enviar");
+  b.disabled = true;
+  try {
+    const d = await postar("/erp/api/ponto/resumo/enviar");
+    const enviados = d.enviados || [];
+    els("a-enviado").innerHTML = enviados.length
+      ? `<div class="aviso ${enviados.every(x => x.ok) ? "ok" : "alerta"}" style="margin-top:10px">
+          ${enviados.map(x => `final ${escapar(x.telefone)}: ${x.ok ? "enviado" : "<b>falhou</b>"}`).join(" · ")}</div>`
+      : `<div class="aviso alerta" style="margin-top:10px">Nenhum telefone cadastrado para receber o
+          resumo. Cadastre em Configuração › Resumo diário.</div>`;
+  } catch (e) { falhou(e, "a-enviado"); }
+  b.disabled = false;
+}
+
+els("a-ver").addEventListener("click", carregarAlertas);
+els("a-situacao").addEventListener("change", carregarAlertas);
+els("a-gravidade").addEventListener("change", carregarAlertas);
+if (els("a-gerar")) els("a-gerar").addEventListener("click", gerarAlertas);
+if (els("a-enviar")) els("a-enviar").addEventListener("click", enviarResumo);
+carregarAlertas();
+carregarResumo();
+
+{% elif aba_ponto == "ponto_config" %}
+// ===========================================================================
+// CONFIGURAÇÃO — atualizações do banco, escalas, feriados, fechamento do mês,
+// aparelhos, resumo diário, Drive e o endereço do app.
+//
+// Cada cartão carrega sozinho e mostra o próprio erro: com atualização
+// pendente, a tabela de feriados pode nem existir ainda, e isso não pode
+// esconder o cartão que diz como resolver.
+// ===========================================================================
+const DIAS_SEMANA = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+const ABRANGENCIAS = [{valor: "NACIONAL", rotulo: "Nacional"}, {valor: "ESTADUAL", rotulo: "Estadual (de uma UF)"},
+  {valor: "MUNICIPAL", rotulo: "Municipal (de um município)"}, {valor: "OBRA", rotulo: "Só de uma obra"}];
+let CONFIG = null, ESCALAS = [], OBRAS = null, ESCALA_ABERTA = null;
+const erroNoCartao = (alvo, e) => { els(alvo).innerHTML = `<div class="aviso erro" style="margin:0">${escapar(e.message)}</div>`; };
+
+// ------------------------------------------------ 1. atualizações do banco
+async function carregarConfig() {
+  try {
+    CONFIG = await api("/erp/api/ponto/configuracao");
+  } catch (e) { erroNoCartao("c-migracoes", e); return; }
+  desenharMigracoes();
+  desenharResumoDiario();
+  desenharDrive();
+  els("c-app").textContent = location.origin + (CONFIG.endereco_app || "/ponto/app");
+}
+
+function desenharMigracoes() {
+  const m = CONFIG.migracoes || {aplicadas: [], pendentes: []};
+  const cartao = els("c-migracoes");
+  if (m.pendentes.length) {
+    cartao.classList.add("cartao-alerta");
+    cartao.innerHTML = `<div class="cartao-cab"><h3 style="color:var(--vermelho); font-size:16px">
+        O banco do ponto precisa de ${m.pendentes.length} atualização(ões)</h3></div>
+      <div>Até aplicar, as outras telas do ponto podem dar erro. Falta:
+        <b class="dados">${m.pendentes.map(escapar).join(", ")}</b>.</div>
+      ${PODE_CONFIGURAR ? `<div style="margin-top:12px"><button class="btn amarelo" type="button" id="c-migrar"
+          style="font-size:15px; padding:10px 18px">Aplicar atualizações do ponto</button></div>
+        <div class="cartao-dica">Leva poucos segundos e não apaga nada. Cada atualização roda
+          inteira ou não roda; se uma falhar, as anteriores ficam e o erro aparece aqui.</div>`
+        : `<div class="cartao-dica">Peça a quem configura o ponto para aplicar.</div>`}
+      <div id="c-migrar-msg" style="margin-top:10px"></div>`;
+    if (els("c-migrar")) els("c-migrar").addEventListener("click", aplicarMigracoes);
+  } else {
+    cartao.classList.remove("cartao-alerta");
+    const ultimas = m.aplicadas.slice(-3).reverse();
+    cartao.innerHTML = `<div class="cartao-cab"><h3>Atualizações do banco do ponto</h3>
+        <span class="selo aprovado">em dia</span></div>
+      <details><summary class="suave" style="cursor:pointer; font-size:12.5px">ver as ${m.aplicadas.length} aplicadas</summary>
+        <table style="margin-top:6px"><tbody>${m.aplicadas.slice().reverse().map(a =>
+          `<tr><td class="dados">${escapar(a.nome)}</td><td class="dados">${escapar(quando(a.em))}</td></tr>`).join("")}
+        </tbody></table></details>
+      ${ultimas.length ? `<div class="cartao-dica">Última: ${escapar(ultimas[0].nome)}, ${escapar(quando(ultimas[0].em))}.</div>` : ""}
+      <div id="c-migrar-msg"></div>`;
+  }
+}
+
+async function aplicarMigracoes() {
+  const b = els("c-migrar");
+  b.disabled = true;
+  b.textContent = "Aplicando…";
+  let d = null;
+  try {
+    d = await postar("/erp/api/ponto/migrar");
+  } catch (e) {
+    // A rota responde 500 com ok=true quando UMA atualização falha (o resumo
+    // vem junto); aqui chega só o que não deu nem para tentar.
+    falhou(e, "c-migrar-msg");
+    b.disabled = false;
+    b.textContent = "Aplicar atualizações do ponto";
+    return;
+  }
+  await carregarConfig();
+  await carregarTudoMenosConfig();
+  const msg = els("c-migrar-msg");
+  if (d.erro) {
+    msg.innerHTML = `<div class="aviso erro">${d.aplicadas.length ? `Aplicadas: ${d.aplicadas.map(escapar).join(", ")}.<br>` : ""}
+      <b>Falhou em ${escapar(d.erro.migracao)}</b>: ${escapar(d.erro.erro)}</div>`;
+  } else {
+    msg.innerHTML = `<div class="aviso ok">Pronto. Aplicadas: ${d.aplicadas.map(escapar).join(", ") || "nenhuma (já estava em dia)"}.</div>`;
+  }
+}
+
+// ------------------------------------------------------------- 2. escalas
+async function carregarEscalas() {
+  try {
+    ESCALAS = (await api("/erp/api/ponto/escalas")).escalas;
+  } catch (e) { erroNoCartao("c-escalas", e); return; }
+  els("c-escalas").innerHTML = ESCALAS.length ? `<table><thead><tr><th class="sem-ordem">Nome</th>
+      <th class="sem-ordem">Tipo</th><th class="sem-ordem direita">Horas por semana</th>
+      <th class="sem-ordem direita">Pessoas</th><th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
+    ${ESCALAS.map(e => `<tr>
+      <td><b>${escapar(e.nome)}</b>${e.descricao ? `<small>${escapar(e.descricao)}</small>` : ""}</td>
+      <td>${e.tipo === "CICLO_12X36" ? `12x36 <small>${escapar(e.ciclo_entrada || "")} às ${escapar(e.ciclo_saida || "")}</small>` : "Semanal"}</td>
+      <td class="dados direita">${String(e.horas_semanais ?? "—").replace(".", ",")}${e.tipo === "CICLO_12X36" ? " <small>em média</small>" : ""}</td>
+      <td class="dados direita">${e.pessoas ?? "—"}</td>
+      <td>${e.ativo ? `<span class="selo aprovado">ativa</span>` : `<span class="selo outro">inativa</span>`}</td>
+      <td>${PODE_CONFIGURAR ? `<button class="link-btn" type="button" data-editar-escala="${e.id}">editar</button>` : ""}</td>
+    </tr>`).join("")}</tbody></table>`
+    : `<div class="cartao-dica">Nenhuma escala cadastrada. Sem escala o espelho não sabe o
+        que era previsto — comece por aqui.</div>`;
+  els("c-escalas").querySelectorAll("[data-editar-escala]").forEach(b =>
+    b.addEventListener("click", () => abrirEscala(ESCALAS.find(e => e.id === Number(b.dataset.editarEscala)))));
+}
+
+function linhaDoDia(i, periodos) {
+  const p = periodos || [];
+  const v = (k, j) => escapar(((p[k] || [])[j]) || "");
+  return `<tr><td><b>${DIAS_SEMANA[i]}</b></td>
+    <td><input type="time" data-dia="${i}" data-p="0" data-l="0" value="${v(0, 0)}"></td>
+    <td><input type="time" data-dia="${i}" data-p="0" data-l="1" value="${v(0, 1)}"></td>
+    <td><input type="time" data-dia="${i}" data-p="1" data-l="0" value="${v(1, 0)}"></td>
+    <td><input type="time" data-dia="${i}" data-p="1" data-l="1" value="${v(1, 1)}"></td>
+    <td><button class="link-btn" type="button" data-limpar-dia="${i}" title="Dia de descanso">descanso</button></td></tr>`;
+}
+
+function abrirEscala(e) {
+  ESCALA_ABERTA = e || null;
+  els("esc-msg").innerHTML = "";
+  els("esc-titulo").textContent = e ? `Editar escala — ${e.nome}` : "Nova escala";
+  els("esc-nome").value = e ? e.nome : "";
+  els("esc-tipo").value = e ? e.tipo : "SEMANAL";
+  els("esc-desc").value = e ? (e.descricao || "") : "";
+  els("esc-ativo").checked = e ? !!e.ativo : true;
+  els("esc-ciclo-entrada").value = e ? (e.ciclo_entrada || "") : "07:00";
+  els("esc-ciclo-saida").value = e ? (e.ciclo_saida || "") : "19:00";
+  // Escala nova já vem com o horário mais comum da obra, para editar em vez de digitar tudo.
+  const semana = e ? (e.semana || {}) : {"0": [["07:00", "11:00"], ["12:00", "17:00"]],
+    "1": [["07:00", "11:00"], ["12:00", "17:00"]], "2": [["07:00", "11:00"], ["12:00", "17:00"]],
+    "3": [["07:00", "11:00"], ["12:00", "17:00"]], "4": [["07:00", "11:00"], ["12:00", "16:00"]]};
+  els("esc-dias").innerHTML = DIAS_SEMANA.map((_, i) => linhaDoDia(i, semana[String(i)])).join("");
+  els("esc-dias").querySelectorAll("[data-limpar-dia]").forEach(b => b.addEventListener("click", () => {
+    els("esc-dias").querySelectorAll(`[data-dia="${b.dataset.limparDia}"]`).forEach(x => { x.value = ""; });
+    horasDaEscala();
+  }));
+  alternarTipoDeEscala();
+  els("dlg-escala").showModal();
+}
+
+function alternarTipoDeEscala() {
+  const ciclo = els("esc-tipo").value === "CICLO_12X36";
+  els("esc-semana").hidden = ciclo;
+  els("esc-ciclo").hidden = !ciclo;
+  horasDaEscala();
+}
+
+const minutosDe = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+const duracao = (e, s) => { let d = minutosDe(s) - minutosDe(e); if (d <= 0) d += 1440; return d; };
+
+// Lê a semana do editor. Devolve {semana} ou {erro}.
+function semanaDoEditor() {
+  const semana = {};
+  for (let i = 0; i < 7; i++) {
+    const periodos = [];
+    for (let p = 0; p < 2; p++) {
+      const ent = els("esc-dias").querySelector(`[data-dia="${i}"][data-p="${p}"][data-l="0"]`).value;
+      const sai = els("esc-dias").querySelector(`[data-dia="${i}"][data-p="${p}"][data-l="1"]`).value;
+      if (!ent && !sai) continue;
+      if (!ent || !sai) return {erro: `${DIAS_SEMANA[i]}: preencha a entrada e a saída do ${p + 1}º período.`};
+      periodos.push([ent, sai]);
+    }
+    if (periodos.length) semana[String(i)] = periodos;
+  }
+  return {semana};
+}
+
+function horasDaEscala() {
+  if (els("esc-tipo").value === "CICLO_12X36") {
+    const e = els("esc-ciclo-entrada").value, s = els("esc-ciclo-saida").value;
+    els("esc-horas").textContent = e && s ? `Turno de ${hm(duracao(e, s))}; em média ${hm(Math.round(duracao(e, s) * 3.5))} por semana.` : "";
+    return;
+  }
+  const {semana, erro} = semanaDoEditor();
+  if (erro) { els("esc-horas").textContent = ""; return; }
+  const total = Object.values(semana).reduce((t, ps) => t + ps.reduce((u, [e, s]) => u + duracao(e, s), 0), 0);
+  els("esc-horas").textContent = `Total da semana: ${hm(total)} em ${Object.keys(semana).length} dia(s).`;
+}
+
+async function salvarEscala() {
+  const tipo = els("esc-tipo").value;
+  const corpo = {nome: els("esc-nome").value.trim(), tipo, descricao: els("esc-desc").value.trim(),
+                 ativo: els("esc-ativo").checked};
+  if (corpo.nome.length < 3) { aviso("esc-msg", "Dê um nome à escala (ex.: Obra seg–sex 7h–17h).", "erro"); return; }
+  if (tipo === "SEMANAL") {
+    const {semana, erro} = semanaDoEditor();
+    if (erro) { aviso("esc-msg", escapar(erro), "erro"); return; }
+    if (!Object.keys(semana).length) { aviso("esc-msg", "A escala precisa de ao menos um dia com horário.", "erro"); return; }
+    corpo.semana = semana;
+  } else {
+    corpo.ciclo_entrada = els("esc-ciclo-entrada").value;
+    corpo.ciclo_saida = els("esc-ciclo-saida").value;
+    if (!corpo.ciclo_entrada || !corpo.ciclo_saida) { aviso("esc-msg", "Diga a hora de entrada e de saída do turno.", "erro"); return; }
+  }
+  const b = els("esc-salvar");
+  b.disabled = true;
+  try {
+    await postar(ESCALA_ABERTA ? `/erp/api/ponto/escalas/${ESCALA_ABERTA.id}` : "/erp/api/ponto/escalas", corpo);
+    els("dlg-escala").close();
+    aviso("mensagem", ESCALA_ABERTA ? "Escala salva. Vale para todos que estão nela." : "Escala criada. Dê a escala às pessoas em Pessoas.", "ok");
+    await carregarEscalas();
+  } catch (e) { falhou(e, "esc-msg"); }
+  b.disabled = false;
+}
+
+// ------------------------------------------------------------ 3. feriados
+async function carregarFeriados() {
+  const ano = els("c-ano").value;
+  let lista;
+  try {
+    lista = (await api(`/erp/api/ponto/feriados?ano=${encodeURIComponent(ano)}`)).feriados;
+  } catch (e) { erroNoCartao("c-feriados", e); return; }
+  const onde = f => f.abrangencia === "ESTADUAL" ? escapar(f.uf || "")
+    : f.abrangencia === "MUNICIPAL" ? `${escapar(f.municipio || "")}/${escapar(f.uf || "")}`
+    : f.abrangencia === "OBRA" ? escapar(f.obra_codigo || "") : "todas as obras";
+  els("c-feriados").innerHTML = lista.length ? `<table><thead><tr><th class="sem-ordem">Data</th>
+      <th class="sem-ordem">Feriado</th><th class="sem-ordem">Vale para</th><th class="sem-ordem">Onde</th><th class="sem-ordem"></th></tr></thead><tbody>
+    ${lista.map(f => `<tr><td class="dados">${dataBR(f.data)}</td><td>${escapar(f.nome)}</td>
+      <td>${escapar((ABRANGENCIAS.find(a => a.valor === f.abrangencia) || {rotulo: f.abrangencia}).rotulo)}</td>
+      <td class="dados">${onde(f)}</td>
+      <td>${PODE_CONFIGURAR ? `<button class="link-btn" type="button" data-apagar-feriado="${f.id}">apagar</button>` : ""}</td></tr>`).join("")}
+    </tbody></table>` : `<div class="cartao-dica">Nenhum feriado cadastrado em ${escapar(ano)}.</div>`;
+  els("c-feriados").querySelectorAll("[data-apagar-feriado]").forEach(b => b.addEventListener("click", () =>
+    apagarFeriado(lista.find(f => f.id === Number(b.dataset.apagarFeriado)))));
+}
+
+async function novoFeriado() {
+  try { if (!OBRAS) OBRAS = (await api("/erp/api/ponto/obras")).obras; } catch (e) { falhou(e); return; }
+  const r = await perguntar({
+    titulo: "Novo feriado",
+    aviso: "No feriado ninguém leva falta, e quem trabalha tem as horas marcadas como trabalho em feriado.",
+    campos: [
+      {nome: "data", rotulo: "Data", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "nome", rotulo: "Nome", obrigatorio: true, largura: 2, exemplo: "ex.: Carnaval"},
+      {nome: "abrangencia", rotulo: "Vale para", tipo: "select", valor: "NACIONAL", largura: 1, opcoes: ABRANGENCIAS},
+      {nome: "uf", rotulo: "UF", largura: 1, exemplo: "CE", dica: "Para estadual e municipal."},
+      {nome: "municipio", rotulo: "Município", largura: 1, exemplo: "Fortaleza", dica: "Só para municipal."},
+      {nome: "obra_id", rotulo: "Obra", tipo: "select", valor: "", largura: 3, dica: "Só para \"só de uma obra\".",
+       opcoes: [{valor: "", rotulo: "—"}, ...OBRAS.map(o => ({valor: String(o.id), rotulo: escapar(rotuloObra(o))}))]},
+    ],
+    textoOk: "Cadastrar feriado",
+  });
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/feriados", {...r, obra_id: r.obra_id ? Number(r.obra_id) : null});
+    aviso("mensagem", "Feriado cadastrado.", "ok");
+    if (r.data && r.data.slice(0, 4) !== els("c-ano").value) els("c-ano").value = r.data.slice(0, 4);
+    await carregarFeriados();
+  } catch (e) { falhou(e); }
+}
+
+async function apagarFeriado(f) {
+  if (!f) return;
+  const r = await perguntar({titulo: "Apagar feriado",
+    aviso: `Apagar <b>${escapar(f.nome)}</b> de ${dataBR(f.data)}? O espelho daquele dia passa a contar falta para quem não bateu.`,
+    campos: [], textoOk: "Apagar"});
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/feriados/${f.id}/apagar`);
+    aviso("mensagem", "Feriado apagado.", "ok");
+    await carregarFeriados();
+  } catch (e) { falhou(e); }
+}
+
+// ------------------------------------------------- 4. fechamento do mês
+async function carregarCompetencias() {
+  let lista;
+  try {
+    lista = (await api("/erp/api/ponto/competencias")).competencias;
+  } catch (e) { erroNoCartao("c-competencias", e); return; }
+  els("c-competencias").innerHTML = `<table><thead><tr><th class="sem-ordem">Mês</th>
+      <th class="sem-ordem">Situação</th><th class="sem-ordem">Fechado por</th><th class="sem-ordem">Reaberto por</th>
+      <th class="sem-ordem"></th></tr></thead><tbody>
+    ${lista.map(c => `<tr><td class="dados"><b>${mesBR(c.competencia)}</b></td>
+      <td>${c.situacao === "FECHADA" ? `<span class="selo bloqueado">fechado</span>` : `<span class="selo aprovado">aberto</span>`}</td>
+      <td>${c.fechada_por ? `${escapar(c.fechada_por)}<small>${escapar(quando(c.fechada_em))}</small>` : `<span class="suave">—</span>`}</td>
+      <td>${c.reaberta_por ? `${escapar(c.reaberta_por)}<small>${escapar(quando(c.reaberta_em))}</small>
+          ${c.motivo ? `<small>“${escapar(c.motivo)}”</small>` : ""}` : `<span class="suave">—</span>`}</td>
+      <td>${PODE_FECHAR ? (c.situacao === "FECHADA"
+        ? `<button class="link-btn" type="button" data-reabrir-mes="${escapar(c.competencia)}">reabrir</button>`
+        : `<button class="btn secundario" type="button" data-fechar-mes="${escapar(c.competencia)}">Fechar</button>`) : ""}</td>
+    </tr>`).join("")}</tbody></table>`;
+  els("c-competencias").querySelectorAll("[data-fechar-mes]").forEach(b =>
+    b.addEventListener("click", () => fecharMes(b.dataset.fecharMes)));
+  els("c-competencias").querySelectorAll("[data-reabrir-mes]").forEach(b =>
+    b.addEventListener("click", () => reabrirMes(b.dataset.reabrirMes)));
+}
+
+async function fecharMes(comp) {
+  const r = await perguntar({titulo: `Fechar ${mesBR(comp)}`,
+    aviso: `Fechado, ninguém registra pedido, decide batida em análise ou lança no banco
+      de horas de ${mesBR(comp)}. Confira antes se não há pendência do mês. Dá para reabrir depois, com motivo.`,
+    campos: [], textoOk: "Fechar o mês"});
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/competencias/${encodeURIComponent(comp)}/fechar`);
+    aviso("mensagem", `${mesBR(comp)} fechado.`, "ok");
+    await carregarCompetencias();
+  } catch (e) { falhou(e); }
+}
+
+async function reabrirMes(comp) {
+  const r = await perguntar({titulo: `Reabrir ${mesBR(comp)}`,
+    aviso: "Reabrir fica registrado com o seu nome, a data e o motivo.",
+    campos: [{nome: "motivo", rotulo: "Por que está reabrindo", tipo: "textarea", linhas: 3, largura: 3,
+              obrigatorio: true, exemplo: "ex.: atestado entregue depois do fechamento"}],
+    textoOk: "Reabrir"});
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/competencias/${encodeURIComponent(comp)}/reabrir`, {motivo: r.motivo});
+    aviso("mensagem", `${mesBR(comp)} reaberto.`, "ok");
+    await carregarCompetencias();
+  } catch (e) { falhou(e); }
+}
+
+// ------------------------------------------------------------ 5. aparelhos
+async function carregarAparelhos() {
+  if (!PODE_CONFIGURAR) return;
+  let lista;
+  try {
+    lista = (await api("/erp/api/ponto/dispositivos")).dispositivos;
+  } catch (e) { erroNoCartao("c-aparelhos", e); return; }
+  els("c-aparelhos").innerHTML = lista.length ? `<table><thead><tr><th class="sem-ordem">Aparelho</th>
+      <th class="sem-ordem">Situação</th><th class="sem-ordem">Uso</th><th class="sem-ordem">Dono / grupo</th>
+      <th class="sem-ordem">Obras</th><th class="sem-ordem">Último uso</th><th class="sem-ordem"></th></tr></thead><tbody>
+    ${lista.map(a => `<tr>
+      <td><b>${escapar(a.descricao || "sem nome")}</b>${a.aprovado_por ? `<small>aprovado por ${escapar(a.aprovado_por)}</small>` : ""}</td>
+      <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}</td>
+      <td>${a.status === "PENDENTE" ? `<span class="suave">—</span>` : escapar(rotuloPerfil(a.perfil))}</td>
+      <td>${a.dono ? `${escapar(a.dono.nome)}<small>${escapar(documento(a.dono.cpf))}</small>`
+          : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)` : `<span class="suave">—</span>`}</td>
+      <td class="dados">${a.obras ? escapar(a.obras) : `<span class="suave">todas</span>`}</td>
+      <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
+      <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>` : ""}
+        ${a.status !== "BLOQUEADO" ? `<button class="link-btn" type="button" data-bloquear-ap="${a.id}">bloquear</button>` : ""}</div></td>
+    </tr>`).join("")}</tbody></table>`
+    : `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`;
+  const achar = id => lista.find(a => a.id === Number(id));
+  els("c-aparelhos").querySelectorAll("[data-aprovar-ap]").forEach(b =>
+    b.addEventListener("click", () => aprovarAparelho(achar(b.dataset.aprovarAp), carregarAparelhos)));
+  els("c-aparelhos").querySelectorAll("[data-bloquear-ap]").forEach(b =>
+    b.addEventListener("click", () => bloquearAparelho(achar(b.dataset.bloquearAp), carregarAparelhos)));
+}
+
+// ------------------------------------------------------- 6. resumo diário
+function desenharResumoDiario() {
+  els("c-resumo").innerHTML = `
+    <div class="campo"><label for="c-telefones-resumo">Telefones que recebem o resumo do dia</label>
+      <input id="c-telefones-resumo" data-sem-mascara value="${escapar(CONFIG.telefones_resumo || "")}"
+             placeholder="85 99999-0000, 85 98888-0000" ${PODE_CONFIGURAR ? "" : "disabled"}>
+      <div class="dica">Com DDD, separados por vírgula. O resumo sai uma vez por dia, com os números
+        contados pelo sistema (quem bateu, pedidos e batidas esperando, alertas).</div></div>
+    ${PODE_CONFIGURAR ? `<div style="margin-top:10px"><button class="btn" type="button" id="c-salvar-telefones">Salvar</button></div>` : ""}
+    <div class="cartao-dica">A rotina do dia (alertas e resumo) rodou pela última vez em:
+      <b>${CONFIG.ultima_rotina ? dataBR(String(CONFIG.ultima_rotina).slice(0, 10)) : "ainda não rodou"}</b>.</div>
+    <div id="c-resumo-msg"></div>`;
+  if (els("c-salvar-telefones")) els("c-salvar-telefones").addEventListener("click", async () => {
+    try {
+      await postar("/erp/api/ponto/configuracao", {telefones_resumo: els("c-telefones-resumo").value.trim()});
+      aviso("c-resumo-msg", "Telefones salvos.", "ok");
+    } catch (e) { falhou(e, "c-resumo-msg"); }
+  });
+}
+
+// ------------------------------------------------------ 7. Drive e fila
+function desenharDrive() {
+  const fila = (CONFIG.fila_fotos || 0) + (CONFIG.fila_documentos || 0);
+  els("c-drive").innerHTML = `
+    <div class="kpis">
+      <div class="kpi estatico ${CONFIG.drive_configurado ? "verde" : "vermelho"}"><div class="kpi-rotulo">Google Drive</div>
+        <div class="kpi-valor" style="font-size:16px">${CONFIG.drive_configurado ? "ligado" : "não configurado"}</div>
+        <div class="kpi-sub">onde ficam as fotos e os documentos</div></div>
+      <div class="kpi estatico ${CONFIG.fila_fotos ? "ambar" : ""}"><div class="kpi-rotulo">Fotos na fila</div>
+        <div class="kpi-valor">${CONFIG.fila_fotos || 0}</div><div class="kpi-sub">esperando ir para o Drive</div></div>
+      <div class="kpi estatico ${CONFIG.fila_documentos ? "ambar" : ""}"><div class="kpi-rotulo">Documentos na fila</div>
+        <div class="kpi-valor">${CONFIG.fila_documentos || 0}</div><div class="kpi-sub">atestados e acordos</div></div>
+    </div>
+    <div class="cartao-dica" style="margin-top:0">Quando o Drive não responde, a foto ou o
+      documento fica guardado no banco e entra nesta fila — nada se perde. A fila é
+      enviada sozinha; o botão só adianta.</div>
+    ${PODE_CONFIGURAR ? `<div style="margin-top:10px"><button class="btn secundario" type="button" id="c-fila"
+        ${fila ? "" : "disabled"}>Enviar a fila agora</button></div>` : ""}
+    <div id="c-fila-msg" style="margin-top:8px"></div>`;
+  if (els("c-fila")) els("c-fila").addEventListener("click", async () => {
+    const b = els("c-fila");
+    b.disabled = true;
+    b.textContent = "Enviando…";
+    try {
+      const d = await postar("/erp/api/ponto/fila/enviar");
+      const f = d.fotos || {}, doc = d.documentos || {};
+      const falhas = (f.falhas || 0) + (doc.falhas || 0);
+      const resultado = `Fotos: ${f.enviadas || 0} enviada(s), ${f.falhas || 0} falha(s), ${f.restantes || 0} na fila.
+        Documentos: ${doc.enviados || 0} enviado(s), ${doc.falhas || 0} falha(s), ${doc.restantes || 0} na fila.`;
+      await carregarConfig();
+      aviso("c-fila-msg", resultado, falhas ? "alerta" : "ok");
+    } catch (e) {
+      falhou(e, "c-fila-msg");
+      b.disabled = false;
+      b.textContent = "Enviar a fila agora";
+    }
+  });
+}
+
+// ------------------------------------------------------------------ tela
+function anosParaEscolher() {
+  const atual = new Date().getFullYear();
+  els("c-ano").innerHTML = [atual - 1, atual, atual + 1, atual + 2]
+    .map(a => `<option value="${a}" ${a === atual ? "selected" : ""}>${a}</option>`).join("");
+}
+
+async function carregarTudoMenosConfig() {
+  await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos()]);
+}
+
+anosParaEscolher();
+els("c-ano").addEventListener("change", carregarFeriados);
+if (els("c-nova-escala")) els("c-nova-escala").addEventListener("click", () => abrirEscala(null));
+if (els("c-novo-feriado")) els("c-novo-feriado").addEventListener("click", novoFeriado);
+els("esc-tipo").addEventListener("change", alternarTipoDeEscala);
+els("esc-dias").addEventListener("input", horasDaEscala);
+els("esc-ciclo-entrada").addEventListener("input", horasDaEscala);
+els("esc-ciclo-saida").addEventListener("input", horasDaEscala);
+els("esc-salvar").addEventListener("click", salvarEscala);
+els("esc-copiar").addEventListener("click", () => {
+  const pegar = (d, p, l) => els("esc-dias").querySelector(`[data-dia="${d}"][data-p="${p}"][data-l="${l}"]`);
+  for (let d = 1; d <= 4; d++) for (let p = 0; p < 2; p++) for (let l = 0; l < 2; l++) pegar(d, p, l).value = pegar(0, p, l).value;
+  horasDaEscala();
+});
+els("c-copiar-app").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(els("c-app").textContent);
+    aviso("mensagem", "Endereço copiado. Mande para a pessoa pelo WhatsApp.", "ok");
+  } catch (e) { aviso("mensagem", "Não deu para copiar sozinho. Selecione o endereço e copie.", "erro"); }
+});
+carregarConfig();
+carregarTudoMenosConfig();
+{% endif %}
+</script>
+{% endblock %}

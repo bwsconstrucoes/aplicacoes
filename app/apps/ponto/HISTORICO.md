@@ -5,45 +5,78 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
-1. **Aplicar a migração 001 do ponto em produção** — a única coisa que falta
-   para o módulo funcionar. O código foi publicado em 03/10/2026 com o "pode"
-   do dono; o Claude não tem a `PONTO_API_KEY` (ela não passa pelo chat), então
-   quem aplica é o dono, por um dos dois caminhos:
-   - **Shell do Render**: `python -m app.apps.ponto.scripts.migrar --aplicar`
-   - ou `POST /ponto/api/admin/migrar` com o cabeçalho `X-API-Key`.
-   Confere-se em `/ponto/health`: `migracoes_pendentes` deve ser 0 e
-   `chave_configurada` e `drive_configurado`, `true`. **Até a migração rodar**,
-   as rotas do ponto respondem erro e nada fora do ponto é afetado.
-2. **Confirmar com a contabilidade/advogado** o que o REP-P exige além do
-   software (registro do programa, termo de responsabilidade, AFD/AEJ) antes de
-   desligar o Mobponto. Não dá para confirmar daqui.
-3. **Fase 2 — o plano está em `PLANO_FASE2.md`**, esperando as 7 decisões da
-   §8 de lá (horários reais, gestão dentro do ERP, quem aprova, login por PIN,
-   banco de horas, quem vê atestado, obra do piloto). Já pronto no ramo
-   `feature/modulo-ponto`: o cálculo do dia (`core/apuracao.py`).
+1. **Publicar a fase 2** (ramo `feature/modulo-ponto`) — espera o "pode" do dono
+   e a confirmação de que não há carga do painel nem sincronização da Análise de
+   SPs rodando. **No mesmo momento da publicação, DUAS atualizações de banco:**
+   - ERP › Configurações › "Aplicar atualizações do banco" (a **082**, que dá as
+     seções do ponto aos perfis). Sem ela, quem tem perfil cadastrado não vê o
+     menu Ponto;
+   - ERP › Ponto › Configuração › "Aplicar atualizações do ponto" (a 001, se
+     ainda não rodou, e a **002**). Sem ela, as telas do ponto respondem "aplique
+     as atualizações" em vez de quebrar.
+2. **A migração 001 em produção**: na publicação da fase 1 ficou com o dono
+   (Shell do Render). Se ainda não rodou, o botão do item 1 aplica as duas.
+3. **Configurar para começar a usar**: cadastrar as escalas reais e atribuir a
+   cada pessoa (sem escala, o espelho não julga falta); conferir os feriados
+   estaduais e municipais das obras; marcar o regime de banco de horas de quem
+   tem (com o acordo anexado); pôr os telefones do resumo diário; marcar "todas
+   as obras" no cadastro do DP no ERP.
+4. **Escolher a obra do piloto** (Mobponto e ponto novo juntos por um mês).
+5. **Contabilidade/advogado**: registro do REP-P, termo de responsabilidade,
+   convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
+6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
+   de fotos por prazo, desligar o Mobponto.
 
-## 03/10/2026 — Pedido do ambiente completo de gestão e o cálculo do dia
+## 03/10/2026 — Fase 2 construída: gestão no ERP, Meu ponto, pedidos, banco, alertas
 
-O dono pediu, depois da publicação, o que faltava ficar explícito: gestão
-completa (cadastros, consulta), app simples no celular para o colaborador ver o
-próprio ponto e mandar atestado, ocorrências com aprovação, compensação, banco de
-horas só para quem pode e alertas com inteligência. O plano é o
-`PLANO_FASE2.md`. Decisões tomadas sem ele, com o motivo:
+Decisões do dono (ver `PLANO_FASE2.md`): horários configuráveis; gestão no ERP;
+"gestão de competências — permissões de aprovações"; quem tem banco de horas,
+ok; só o DP vê atestado; "pode seguir". Decisões tomadas sem ele, com motivo:
 
-- **O cálculo do dia veio antes de tudo**, porque gestão, app e alertas leem
-  dele, e ele não depende de decisão: são as regras da CLT (tolerância de 5/10
-  min com a Súmula 366, intervalo do art. 71, 2 h de extra do art. 59,
-  interjornada do art. 66, hora noturna do art. 73, 12x36 do art. 59-A). Função
-  pura, sem banco, 13 testes em `tests/test_ponto_apuracao.py`. **Não calcula**:
-  a prorrogação do noturno depois das 5 h (Súmula 60, II) nem o adicional em
-  dinheiro — isso é da folha.
-- **Batida faltando não vira extra nem débito**: o dia fica INCOMPLETO e o
-  ajuste resolve. Inventar o par faltante seria número errado com cara de certo.
-- **Sem escala, o cálculo não julga** (não marca falta). Até o DP mandar os
-  horários reais, o espelho mostra "sem escala".
-- **"Pessoal de obra não tem banco, mas pessoal de obra tem"** saiu assim no
-  ditado; entendido como "obra não, escritório sim", e o banco é marcado por
-  pessoa — a regra muda sem código.
+- **"Gestão de competências" lida de dois jeitos, e as duas estão feitas**:
+  quem aprova o quê (ações e seções do ERP, configuráveis por perfil e pessoa) e
+  o fechamento do mês (competência = o mês da folha), que trava o ponto daquele
+  mês até alguém reabrir com motivo.
+- **A gestão é rota do blueprint do ERP**, não blueprint paralelo: herda login,
+  guarda, menu e recorte por obra. Código na pasta do ponto; no ERP, só ações,
+  seções, a migração 082 e uma importação protegida no fim do `routes.py`.
+- **Cada etapa de aprovação tem rota própria** (supervisor / DP), e o atestado
+  também: a ação declarada decide sozinha quem entra.
+- **Telas lidas pelo caminho do arquivo** (`gestao._render`), não pelo
+  carregador do Flask: abrem até num ERP montado sem o blueprint do ponto — que
+  é como a homologação automática do ERP as desenha.
+- **Banco do ponto atrasado responde 409 com o recado**, não 500: entre publicar
+  e apertar o botão, a tela diz o que fazer.
+- **PIN por WhatsApp** (proposta §8.4, seguida com o "pode seguir").
+- **Aparelho continua precisando de aprovação**, mesmo o celular de quem entrou
+  com PIN: o celular se identifica ("Celular de Fulano") e o DP aprova num toque.
+  Aprovar sozinho seria mais rápido e mais fraco — fica para o dono decidir.
+- **A IA só lê o atestado** (pelo leitor de documentos do ERP, com a chave e o
+  registro de consumo que já existem), e o DP confere. Alerta é regra e padrão
+  calculados, nunca texto inventado — o resumo do WhatsApp é contado, não escrito
+  por IA.
+- **Rotina diária sem agendador**: dispara na primeira requisição do ponto
+  depois das 6h (toda manhã alguém bate ponto), com trava em memória e no Postgres.
+- **A tela de gestão foi escrita por um agente** em paralelo e conferida: as 43
+  chamadas que ela faz existem; as lacunas que ele apontou foram corrigidas
+  (foto no painel Hoje, horas ilegíveis no banco, id da escala atual, mês pelo
+  fuso de Fortaleza, falha de atualização respondendo `ok: false`).
+
+**Incidentes durante a construção** (para não repetir):
+- O PIN errado não contava: o registro da tentativa era desfeito junto com a
+  recusa. Igual ao caso das recusas da fase 1 — escrita que precisa sobreviver
+  a um erro vai em **transação própria**. Vale para o código do WhatsApp também.
+- Telefones do resumo eram cortados no espaço de "(85) 99999-1111".
+- Lançamento de banco feito hoje não entrava no saldo (o cálculo vai até ontem).
+- A homologação do ERP (cada tela desenhada com o banco vazio) pegou as telas do
+  ponto dando 500 sem as tabelas do ponto — daí o 409 com recado.
+
+**Como foi verificado:** 122 testes do ponto (`test_ponto*.py`), entre eles 17
+fluxos com banco de verdade e três operadores de perfis diferentes; os testes de
+permissão e de homologação do ERP; o `app.main` de verdade com login real abrindo
+as sete telas, as consultas e o app; a tela de gestão percorrida num navegador
+com respostas simuladas (pelo agente). **Não verificado:** WhatsApp e Drive de
+verdade (sem credenciais aqui), e uso num celular real.
 
 ## 03/10/2026 — Publicado
 

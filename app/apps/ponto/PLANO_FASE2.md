@@ -1,5 +1,13 @@
 # Ponto eletrônico — PLANO da fase 2: gestão, app do colaborador, ocorrências, banco de horas e alertas
 
+> **Estado em 03/10/2026: CONSTRUÍDO no ramo `feature/modulo-ponto`, ainda não
+> publicado.** Decisões do dono no mesmo dia: horários configuráveis (§8.1);
+> gestão no ERP (§8.2); "gestão de competências — permissões de aprovações"
+> (§8.3: quem aprova o quê é configurável no cadastro de perfis do ERP); quem tem
+> banco de horas, ok (§8.5); só o DP vê atestado (§8.6); "pode seguir". Os itens
+> §8.4 (PIN por WhatsApp) e §8.7 (obra do piloto) seguiram a proposta / ficaram
+> em aberto. O que foi entregue está no `README.md` e no `HISTORICO.md`.
+
 Escrito em 03/10/2026, a partir do pedido do dono no mesmo dia (resumo fiel):
 
 > Precisa de um ambiente de **gestão** completo do ponto: ver os cadastros, consultar

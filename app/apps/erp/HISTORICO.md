@@ -21,6 +21,29 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ⏱ O MÓDULO PONTO MORA DENTRO DO ERP (03/10/2026) — feito pelo chat do ponto
+
+A gestão do ponto eletrônico (`app/apps/ponto/`) é um módulo do menu do ERP:
+**Ponto**, com sete abas. As rotas moram em `app/apps/ponto/gestao.py` e se
+penduram no blueprint do ERP por uma importação protegida no FIM de
+`erp/routes.py` — se o ponto quebrar ao carregar, o ERP sobe sem ele. O que mudou
+nos arquivos do ERP, e só isto:
+
+- `core/auth/permissoes.py`: cinco ações novas (`ver_ponto`, `tratar_ponto`,
+  `aprovar_afastamento`, `fechar_competencia`, `configurar_ponto`) com rótulo;
+- `core/auth/secoes.py`: área "Ponto" com quatro seções (`pon_gestao`, `pon_dp`,
+  `pon_competencia`, `pon_config`);
+- migração **082** (`082_secoes_do_ponto.sql`): os perfis semeados ganham as
+  seções do ponto iguais ao cargo. **Próxima migração do ERP é a 083.**
+- `routes.py`: a importação protegida no fim, e só.
+
+**Para quem mexer nesses arquivos:** o ponto chama `routes._contexto`,
+`routes._pode_agora`, `routes._usuario_logado`, `routes._exigir_saldo_de_ia`,
+`routes.MODULOS`/`_MODULO_DA_ABA`, `permissoes.obras_de_registro_sem_autor` e
+`core/documentos/drive.py` / `leitor.py`. Renomear qualquer um quebra o ponto —
+os testes `tests/test_ponto_*` acusam.
+
+
 ### UM CADASTRO, UMA PORTA — o documento é atalho DENTRO do formulário
 
 17/09/2026, depois de eu ter posto um botão "Cadastrar pelo Cartão CNPJ" ao lado

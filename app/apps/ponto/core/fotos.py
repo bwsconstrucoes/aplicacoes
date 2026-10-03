@@ -164,7 +164,8 @@ def _pasta_do_mes(conn: Connection, svc, momento: dt.datetime) -> str:
     return achada
 
 
-def _subir_no_drive(conn: Connection, dados: bytes, nome: str, momento: dt.datetime) -> str:
+def _subir_no_drive(conn: Connection, dados: bytes, nome: str, momento: dt.datetime,
+                    mime: str = "image/jpeg") -> str:
     """Sobe e devolve o id do arquivo. Levanta RuntimeError se não der.
     Tenta até TENTATIVAS_NA_HORA vezes com pausa curta: falha passageira de
     rede não pode mandar a foto para a fila à toa."""
@@ -177,7 +178,7 @@ def _subir_no_drive(conn: Connection, dados: bytes, nome: str, momento: dt.datet
         try:
             svc = drive_erp._servico(quem_personificar())
             pasta = _pasta_do_mes(conn, svc, momento)
-            return drive_erp.enviar(dados, nome, "image/jpeg", pasta=pasta,
+            return drive_erp.enviar(dados, nome, mime, pasta=pasta,
                                     impersonar=quem_personificar())
         except Exception as e:  # noqa: BLE001 — qualquer falha conta como tentativa
             ultimo = e
@@ -213,6 +214,20 @@ def guardar(conn: Connection, foto: FotoPronta, *, nome: str, momento: dt.dateti
     else:
         logger.warning("Ponto: foto %s ficou na fila de reenvio — %s", nome, erro)
     return int(linha["id"])
+
+
+def baixar(conn: Connection, foto_id: int) -> tuple[bytes, str]:
+    """Os bytes da foto (do Drive, ou da sala de espera). Levanta LookupError."""
+    f = db.um(conn, "SELECT drive_file_id, conteudo, mime FROM ponto.fotos WHERE id = :id",
+              id=foto_id)
+    if not f:
+        raise LookupError("foto não encontrada")
+    if f["conteudo"] is not None:
+        return bytes(f["conteudo"]), f["mime"]
+    if not f["drive_file_id"]:
+        raise LookupError("foto expurgada")
+    from app.apps.erp.core.documentos import drive as drive_erp
+    return drive_erp.baixar(f["drive_file_id"], impersonar=quem_personificar()), f["mime"]
 
 
 def pendentes(conn: Connection) -> int:

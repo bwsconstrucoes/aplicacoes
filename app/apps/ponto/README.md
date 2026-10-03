@@ -33,6 +33,10 @@ scripts/migrar.py                    estado / aplicar migrações
 scripts/importar_obras.py            planilha → ERP obras + ponto.obra_config
 scripts/importar_colaboradores.py    planilha → ERP colaboradores + ponto.colaborador_config
 scripts/enviar_fotos.py              leva ao Drive as fotos que ficaram na fila
+gestao.py                as telas e consultas da gestão, dentro do ERP (fase 2)
+app_colaborador.py       o "Meu ponto" do celular, em /ponto/app (fase 2)
+core/escalas.py · feriados.py · espelho.py · painel.py · ocorrencias.py · banco.py
+core/competencias.py · alertas.py · rotina.py · acesso.py · documentos.py · leitura_atestado.py
 PLANO.md                 o plano aprovado da fase 1, com as decisões e o porquê
 PLANO_FASE2.md           gestão, app do colaborador, ocorrências, banco de horas e alertas
 HISTORICO.md             a memória da área — leia antes de mexer
@@ -66,6 +70,59 @@ Testes: `tests/test_ponto.py` (regras puras, sem banco) e
    Se o Drive falhar na hora, a batida não falha: a foto espera na fila do
    banco e a rota de reenvio (ou o script) a leva depois. O `health` mostra
    quantas esperam.
+
+## Fase 2 — a gestão no ERP e o "Meu ponto" do celular (03/10/2026)
+
+**Gestão: ERP › Ponto** (rotas em `gestao.py`, penduradas no blueprint do ERP;
+telas em `templates/ponto/gestao.html`). Sete abas:
+
+| Aba | O que faz |
+|---|---|
+| Hoje | por obra: quem bateu, quem não bateu, afastados, folga; atualiza sozinha |
+| Espelho | o mês da pessoa, dia a dia; ajuste, compensação, afastamento; imprimir para assinar; CSV para a folha |
+| Pendências | pedidos (com a etapa de cada um), batidas em análise, aparelhos esperando aprovação |
+| Pessoas | escala com data de início, jornada, obras adicionais, banco de horas (DP) |
+| Banco de horas | saldo, meses, vencimentos, lançamentos (DP) |
+| Alertas | regras da CLT e padrões do histórico; resolver/dispensar; resumo do dia |
+| Configuração | atualizações do banco do ponto, escalas, feriados, fechamento do mês, aparelhos, telefones do resumo, fila do Drive, endereço do app |
+
+**Quem pode o quê** — ações do ERP, ajustáveis em Configurações › Perfis (área
+"Ponto") e pessoa a pessoa:
+
+| Ação | Padrão por cargo | Libera |
+|---|---|---|
+| `ver_ponto` | admin, diretor, gestor, supervisor, administrativo de obra, DP | olhar, sempre nas obras da pessoa |
+| `tratar_ponto` | admin, gestor, supervisor, DP | batida em análise, ajuste de batida, 1ª etapa de compensação/folga, escala, alertas |
+| `aprovar_afastamento` | admin, DP | atestado, licença, férias; ABRIR o atestado; banco de horas; 2ª etapa |
+| `fechar_competencia` | admin, DP | fechar e reabrir o mês |
+| `configurar_ponto` | admin, DP | escalas, feriados, aparelhos, resumo, atualizações |
+
+⚠️ O DP só enxerga todo mundo se o cadastro dele no ERP estiver com **"todas as
+obras"** marcado — o recorte por obra é do ERP e vale para o ponto também.
+
+**Fluxo dos pedidos** (`core/ocorrencias.py`): atestado/licença/férias → DP;
+ajuste de batida → supervisor; compensação e folga do banco → supervisor e
+depois DP. Negar exige motivo. Mês fechado não aceita pedido nem decisão.
+
+**Meu ponto: `/ponto/app`** (`app_colaborador.py`, `templates/ponto/app.html`).
+No celular da pessoa: CPF + PIN (criado com código de 6 números pelo WhatsApp do
+cadastro do ERP; 5 erros bloqueiam 15 min); bater com foto e localização (a obra
+mais perto vem escolhida); comprovante de cada batida; "Meu mês"; pedidos com
+foto do atestado. No **tablet da obra** (aparelho COMPARTILHADO aprovado): só
+bater, com CPF — não mostra nada de ninguém. Todo aparelho novo espera
+aprovação em Pendências; o celular se identifica como "Celular de Fulano" depois
+que a pessoa entra.
+
+**Regras novas do cálculo** (`core/apuracao.py`, `espelho.py`, `banco.py`):
+tolerância de 5 min por batida e 10 no dia (passou, conta tudo — Súmula 366);
+intervalo mínimo; extra acima de 2 h; menos de 11 h entre jornadas; hora noturna
+reduzida; 12x36 atravessando a meia-noite; batida faltando não vira extra nem
+débito; sem escala não se julga falta; falta de dia inteiro não entra no banco;
+o crédito mais antigo do banco é o primeiro a ser usado.
+
+**Rotina do dia** (`core/rotina.py`): a primeira requisição do ponto depois das
+6h gera os alertas e manda o resumo por WhatsApp aos telefones da Configuração —
+uma vez por dia, numa linha separada, sem ninguém apertar botão.
 
 ## Variáveis de ambiente
 

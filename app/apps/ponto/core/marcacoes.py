@@ -75,6 +75,19 @@ def decidir(*, origem: str, dentro_da_cerca: Optional[bool], motivo_cerca: Optio
     return ("VALIDA" if not motivos else "EM_ANALISE"), motivos
 
 
+def _proximo_nsr(conn: Connection, colaborador_id: int, obra_id: int,
+                 momento: dt.datetime, origem: str) -> tuple[int, str]:
+    """O próximo NSR e o hash encadeado, sob a trava do Postgres: dois pedidos
+    ao mesmo tempo não pegam o mesmo número. A trava é da TRANSAÇÃO, e solta
+    sozinha no fim dela."""
+    conn.exec_driver_sql("SELECT pg_advisory_xact_lock(%s)", (_TRAVA_NSR,))
+    anterior = db.um(conn, "SELECT nsr, hash_encadeado FROM ponto.marcacoes "
+                           "ORDER BY nsr DESC LIMIT 1")
+    nsr = int(anterior["nsr"]) + 1 if anterior else 1
+    hash_anterior = anterior["hash_encadeado"] if anterior else "0" * 64
+    return nsr, hash_da_marcacao(hash_anterior, nsr, colaborador_id, obra_id, momento, origem)
+
+
 def hash_da_marcacao(hash_anterior: str, nsr: int, colaborador_id: int, obra_id: int,
                      momento: dt.datetime, origem: str) -> str:
     base = f"{hash_anterior}|{nsr}|{colaborador_id}|{obra_id}|" \
@@ -233,13 +246,7 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
     foto = fotos.preparar(foto_base64) if foto_base64 else None
 
     # --- NSR e corrente -----------------------------------------------------
-    conn.exec_driver_sql("SELECT pg_advisory_xact_lock(%s)", (_TRAVA_NSR,))
-    anterior = db.um(conn, "SELECT nsr, hash_encadeado FROM ponto.marcacoes "
-                           "ORDER BY nsr DESC LIMIT 1")
-    nsr = int(anterior["nsr"]) + 1 if anterior else 1
-    hash_anterior = anterior["hash_encadeado"] if anterior else "0" * 64
-    corrente = hash_da_marcacao(hash_anterior, nsr, int(pessoa["id"]), int(obra_ok["id"]),
-                                momento, origem_ok)
+    nsr, corrente = _proximo_nsr(conn, int(pessoa["id"]), int(obra_ok["id"]), momento, origem_ok)
 
     linha = db.um(conn, """
         INSERT INTO ponto.marcacoes (nsr, colaborador_id, obra_id, timestamp_servidor,
@@ -315,3 +322,62 @@ def solicitar_ajuste(conn: Connection, *, cpf, data_referencia: str, tipo: str,
     logger.info("Ponto: ajuste %s pedido para cpf %s em %s (%s)", tipo_ok,
                 recusas.mascarar_cpf(pessoa["cpf"]), data, solicitado_por)
     return dict(linha)
+
+
+# ---------------------------------------------------------------------------
+# Tratamento (fase 2): incluir a batida de um ajuste aprovado e decidir a
+# batida em análise. Nenhum dos dois altera hora, lugar ou corrente de uma
+# batida que já existe.
+# ---------------------------------------------------------------------------
+STATUS_DECIDIVEIS = ("VALIDA", "REJEITADA")
+
+
+def registrar_ajustada(conn: Connection, *, colaborador_id: int, obra_id: int,
+                       momento: dt.datetime, ocorrencia_id: int, aprovado_por: str) -> dict:
+    """Inclui a batida que a pessoa esqueceu, como AJUSTADA. Ganha NSR próprio
+    (o NSR é a ordem do REGISTRO, não do relógio) e a hora é a do pedido."""
+    pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
+    if not pessoa:
+        raise ErroDeValidacao("pessoa não cadastrada", campo="colaborador_id")
+    data_ref = horario.data_referencia(momento, pessoa["tipo_jornada"])
+    nsr, corrente = _proximo_nsr(conn, colaborador_id, obra_id, momento, "MANUAL")
+    linha = db.um(conn, """
+        INSERT INTO ponto.marcacoes (nsr, colaborador_id, obra_id, timestamp_servidor,
+            data_referencia, origem, status, motivo_analise, hash_encadeado, registrado_por)
+        VALUES (:nsr, :c, :o, :ts, :dref, 'MANUAL', 'AJUSTADA', :motivo, :hash, :por)
+        RETURNING id
+    """, nsr=nsr, c=colaborador_id, o=obra_id, ts=momento, dref=data_ref,
+         motivo=f"inclusão pelo pedido de ajuste nº {ocorrencia_id}", hash=corrente,
+         por=f"ajuste aprovado por {aprovado_por}"[:120])
+    logger.info("Ponto: batida AJUSTADA NSR %d incluída (pedido %d, por %s)",
+                nsr, ocorrencia_id, aprovado_por)
+    return por_id(conn, int(linha["id"]))
+
+
+def decidir_em_analise(conn: Connection, marcacao_id: int, *, para: str, motivo: str,
+                       usuario_id: int | None, usuario_nome: str) -> dict:
+    """Valida ou rejeita uma batida EM_ANALISE. Rejeitar exige motivo."""
+    from . import competencias
+    para_ok = str(para or "").strip().upper()
+    if para_ok not in STATUS_DECIDIVEIS:
+        raise ErroDeValidacao("decida VALIDA ou REJEITADA", campo="para")
+    m = por_id(conn, marcacao_id)
+    if not m:
+        from ..erros import NaoEncontrado
+        raise NaoEncontrado("batida não encontrada")
+    if m["status"] != "EM_ANALISE":
+        raise ErroDeValidacao(f"esta batida não está em análise (está {m['status'].lower()})",
+                              campo="status")
+    if para_ok == "REJEITADA" and len((motivo or "").strip()) < 5:
+        raise ErroDeValidacao("diga por que a batida foi rejeitada", campo="motivo")
+    competencias.exigir_aberta(conn, m["data_referencia"])
+    db.executar(conn, "UPDATE ponto.marcacoes SET status = :s WHERE id = :id",
+                s=para_ok, id=marcacao_id)
+    db.executar(conn, """
+        INSERT INTO ponto.marcacao_decisoes (marcacao_id, de_status, para_status, motivo,
+                                             usuario_id, usuario_nome)
+        VALUES (:m, 'EM_ANALISE', :p, :mot, :u, :n)
+    """, m=marcacao_id, p=para_ok, mot=(motivo or "").strip()[:500], u=usuario_id,
+         n=usuario_nome[:120])
+    logger.info("Ponto: batida NSR %s %s por %s", m["nsr"], para_ok, usuario_nome)
+    return por_id(conn, marcacao_id)

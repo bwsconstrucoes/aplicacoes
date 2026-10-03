@@ -21,8 +21,20 @@ from .erros import ErroDoPonto
 
 logger = logging.getLogger("ponto.routes")
 
-bp = Blueprint("ponto", __name__, url_prefix="/ponto")
+bp = Blueprint("ponto", __name__, url_prefix="/ponto", template_folder="templates")
 bp.before_request(auth.exigir_credencial)
+
+
+@bp.before_request
+def _rotina_do_dia():
+    """A primeira requisição do ponto depois das 6h dispara a rotina do dia
+    (alertas + resumo por WhatsApp) numa linha separada — ver core/rotina.py."""
+    try:
+        from .core import rotina
+        rotina.disparar_se_preciso()
+    except Exception:  # noqa: BLE001 — rotina nunca derruba batida
+        logger.warning("Ponto: a rotina do dia não disparou", exc_info=True)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -310,4 +322,10 @@ def enviar_fotos_pendentes():
 @auth.exige_chave
 def aplicar_migracoes():
     resultado = migracoes_runner.aplicar_pendentes()
-    return _ok(**resultado), (200 if not resultado["erro"] else 500)
+    if resultado["erro"]:
+        return jsonify({"ok": False, "erro": "uma atualização falhou", **resultado}), 500
+    return _ok(**resultado)
+
+
+# O "Meu ponto" do celular pendura as rotas dele neste mesmo blueprint.
+from . import app_colaborador  # noqa: E402,F401
