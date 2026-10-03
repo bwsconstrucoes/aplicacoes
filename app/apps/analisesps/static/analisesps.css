@@ -2699,3 +2699,11 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 .lote-campos { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
 .lote-campos textarea { font-family: ui-monospace, monospace; }
 @media (max-width: 760px) { .lote-campos { grid-template-columns: 1fr; } }
+
+/* Auxílio: a coluna Ajustes (03/10/2026) — ausências e valor acrescentado. */
+#tabela-auxilio td.ajustes { min-width: 150px; max-width: 220px; font-size: 13px; }
+#tabela-auxilio .aj-ausencia { color: #92400e; }
+#tabela-auxilio .aj-ausencia.aplicado { color: inherit; }
+#tabela-auxilio .aj-extra { margin-top: 4px; color: #166534; }
+#tabela-auxilio .btn-mini { padding: 2px 8px; font-size: 12px; margin-top: 3px; }
+#dialogo-extra input { width: 100%; }

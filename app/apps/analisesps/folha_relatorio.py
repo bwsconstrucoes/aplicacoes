@@ -546,6 +546,19 @@ def montado_das_diarias(calculado: dict, pessoas: list, filtros: dict,
         "fechamento": calculado.get("fechamento")}
 
 
+def _ajustes_do_auxilio(p: dict) -> str:
+    """O desconto de ausências aplicado e o valor acrescentado, para o relatório
+    dizer por que o valor difere do calculado (03/10/2026)."""
+    partes = []
+    if p.get("desconto_aplicado"):
+        partes.append(f"desconto de {len(p.get('ausencias') or [])} ausência(s) "
+                      f"(−{_moeda_br(p.get("desconto_proposto"))})")
+    if p.get("valor_extra"):
+        partes.append(f"+{_moeda_br(p.get('valor_extra'))}"
+                      + (f" ({p.get('motivo_extra')})" if p.get("motivo_extra") else ""))
+    return (" · " + "; ".join(partes)) if partes else ""
+
+
 def montado_do_auxilio(resultado: dict, pessoas: list, filtros: dict,
                        contas_por_obra: dict, rotulo: str, competencia: str) -> dict:
     """O auxílio (alimentação ou transporte) no formato do relatório."""
@@ -565,7 +578,7 @@ def montado_do_auxilio(resultado: dict, pessoas: list, filtros: dict,
                                       for o in por_obra),
             "obra_do_cadastro": p.get("obra_nome") or p.get("obra_cadastro") or "",
             "contas": _contas_de(por_obra, contas_por_obra),
-            "situacao_rotulo": _situacao_da_outra(p)})
+            "situacao_rotulo": _situacao_da_outra(p) + _ajustes_do_auxilio(p)})
     return {
         "titulo": f"{rotulo} {competencia}",
         "prefixo_arquivo": _sem_acento(rotulo),

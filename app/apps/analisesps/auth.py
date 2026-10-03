@@ -472,6 +472,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_ponto_pessoa_estado": ("folha",),
     "analisesps.folha_apropriacao_fechar": ("folha",),
     "analisesps.folha_auxilio_selecao": ("folha",),
+    # Valor acrescentado e desconto de ausências do auxílio (03/10/2026).
+    "analisesps.folha_auxilio_extras": ("folha",),
     # A ficha da pessoa no modal: cadastro + ponto do mês. É da folha, e mostra
     # dado pessoal — quem não alcança a folha não alcança isto.
     "analisesps.folha_ficha_da_pessoa": ("folha",),

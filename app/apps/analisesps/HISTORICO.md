@@ -11513,6 +11513,57 @@ também: quem tinha transporte Mensal recebia o valor do mês multiplicado por ~
   a última coluna virou **"Total"**. No relatório, "Valor x dia" fica em branco
   para quem tem valor fechado.
 
+#### Leva 160 — Pipefy recusou: Nome do Credor e Anexos (03/10/2026)
+
+O lançamento de 09/2026 voltou com *"O campo "Nome do Credor" é obrigatório (…)
+O campo "Anexos" é obrigatório"*. Duas causas, conferidas no blueprint 2 do Make
+(os ids dos campos, sem credenciais):
+
+- **"Nome do Credor" é o campo `local`.** Na SomaPay ele ia vazio (e campo vazio
+  não é enviado). Agora vai **BWS CONSTRUCOES LTDA** (dono: *"o credor é BWS
+  CONSTRUCOES LTDA"*), com o CNPJ 00.079.526/0001-09 em `cnpj` e `cnpj_1`, como o
+  Make, e "Pessoa Jurídica". Na BeeVale, a BeeVale.
+- **"Anexos" é dispensado por "Lançamento via API" = Sim** — mas só se for na
+  CRIAÇÃO. O sistema mandava campo de fase depois de criar o card; o Make mandava
+  `lan_amento_via_api` e `valida_o_sp_1` na criação. Agora vão na criação
+  (`folha_cards.NA_CRIACAO_SEMPRE`).
+
+O lançamento é retomável: nada foi criado na tentativa recusada.
+
+#### Leva 161 — auxílio: valor acrescentado, sem "Base", saída proporcional, desconto de ausências (03/10/2026)
+
+Pedido do dono, quatro coisas:
+
+1. **Valor acrescentado** (*"mês anterior esquecemos de colocar um determinado
+   valor (…) adicionar um valor ao pagamento daquele mês"*): na linha, "+ valor"
+   abre uma janela com valor e **motivo (obrigatório)**; soma ao total, aparece na
+   coluna Ajustes e no relatório. Até R$ 5.000 por pessoa (acima, recusa — é
+   quase sempre digitação). Vale nas duas verbas.
+2. **A coluna "Base" saiu.** Os dias que valem continuam.
+3. **Saída no meio do mês — proporcional**, nas duas verbas: dias da modalidade
+   até a data de saída; valor fechado ("Mês"; "Mensal" do transporte) × dias
+   corridos ÷ dias do mês. A pessoa aparece como "em desligamento", com a
+   proporção embaixo dos dias. Quem saiu antes do mês continua sem receber; quem
+   sai depois recebe o mês inteiro. Usa a **data de saída**, não o "último dia".
+4. **Desconto de ausências — só transporte**, *"tem que ser analisado e
+   confirmado (…) um botão confirmar, aplicar desconto"*:
+   - Ausência = dia **sem marcação** com falta declarada ou situação que não é
+     presença (falta justificada ou não, atestado, licença…). **Não conta:** dia
+     sem nada escrito (pode ser folga), férias (já descontadas à parte), folga,
+     feriado, DSR, compensação. Só nos dias que a modalidade paga (Seg-Qui não
+     desconta sexta). Lê o ponto da **mesma competência** — a que é paga no mês
+     seguinte.
+   - Valor: por dia, o valor do cadastro × ausências; no valor do mês, o mês ÷
+     dias úteis (seg-sex) do mês × ausências. ⚠️ Escolha minha, a confirmar.
+   - **Proposto, nunca automático:** a coluna Ajustes mostra quantas, os motivos
+     contados e as datas, e o botão "Aplicar desconto" (desfazível). A lateral
+     soma o proposto e tem "Aplicar todos os descontos". Filtro Situação →
+     "ausência a descontar".
+   - Migração **046**: `valor_extra`, `motivo_extra`, `desconto_ausencias` no
+     ajuste do auxílio. Antes do botão, a tela funciona e só não grava.
+   - Voltar a seleção ao cálculo **não apaga** o valor acrescentado nem o
+     desconto (o ajuste só some quando fica vazio).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11534,6 +11585,8 @@ também: quem tinha transporte Mensal recebia o valor do mês multiplicado por ~
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
+| publicar as levas 160 e 161 — **com migração 046**: apertar "Aplicar atualizações do banco" no mesmo momento | ele |
+| confirmar o valor do dia ausente no "Mês"/"Mensal" (mês ÷ dias úteis) | ele |
 | ~~publicar a leva 159~~ — **publicada em 03/10/2026** (main em `b5a795b`, suíte inteira 7.856 verdes). Falta confirmar se a alimentação "Mensal" também é valor do mês | ele |
 | ~~publicar as levas 157 e 158~~ — **publicadas em 03/10/2026** (main em `4c97938`, suíte inteira 7.854 verdes, sem migração). Falta refazer a prévia de 09/2026: conferir o Record ID e a categoria mostrados | ele |
 | ~~publicar a retirada do "Gerar por competência"~~ — **publicada em 03/10/2026** (main em `dddfd6c`, suíte inteira 7.845 verdes, sem migração) | — |

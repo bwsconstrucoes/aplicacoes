@@ -6042,10 +6042,10 @@ def test_a_tela_do_auxilio_mostra_o_CAMINHO_da_conta(app, monkeypatch):
     assert "GERLANIO GOMES LIMA" in html
     assert "Segunda à Sexta" in html
     assert "CREPEOLINDA" in html
-    # A base, o desconto e o resultado, todos à vista na mesma linha.
-    assert ">22<" in html, "os dias da modalidade"
+    # O desconto e o resultado à vista na mesma linha. A "Base" saiu em
+    # 03/10/2026 (dono: *"ocupando espaço"*); os dias que valem continuam.
     assert "315,00" in html
-    assert "Base" in html and "Feriados" in html and "Férias" in html
+    assert "Feriados" in html and "Férias" in html and ">Dias<" in html
 
 
 def test_a_tela_do_auxilio_diz_QUAL_REGUA_esta_vendo(app, monkeypatch):
@@ -6194,6 +6194,31 @@ def test_quem_NAO_TEM_O_AUXILIO_no_cadastro_fica_FORA_da_lista(app, monkeypatch)
     filtrado = cliente.get(
         "/analisesps/folha/auxilios?situacao=falta_dado").get_data(as_text=True)
     assert "SEMAUXILIO" in filtrado and "GERLANIO GOMES LIMA" not in filtrado
+
+
+def test_a_coluna_BASE_saiu_e_os_AJUSTES_aparecem(app, monkeypatch):
+    """Dono, 03/10/2026: a Base *"está ocupando espaço"*; e as ausências do ponto
+    (transporte) com o desconto a confirmar, e o valor acrescentado."""
+    import datetime as dt
+    from decimal import Decimal as D
+    pessoa = dict(_auxilio_calculado()["pessoas"][0],
+                  ausencias=[{"data": dt.date(2026, 9, 8),
+                              "motivo": "FALTA NÃO JUSTIFICADA"}],
+                  ausencias_resumo="1 FALTA NÃO JUSTIFICADA",
+                  desconto_proposto=D("15.00"), desconto_aplicado=False,
+                  valor_extra=D("40.00"), motivo_extra="esquecido em agosto",
+                  valor_calculado=D("315.00"), valor=D("355.00"))
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(
+        tipo="transporte", pessoas=[pessoa], com_ausencia=[pessoa]))
+    html = _como_mestre(app).get(
+        "/analisesps/folha/auxilios?tipo=transporte").get_data(as_text=True)
+    assert ">Base<" not in html
+    assert ">Ajustes<" in html
+    assert "1 ausência(s)" in html and "08/09" in html
+    assert "Aplicar desconto" in html
+    assert "Aplicar todos os descontos (1)" in html
+    assert "esquecido em agosto" in html and "40,00" in html
+    assert 'id="dialogo-extra"' in html
 
 def test_o_CPF_sai_PONTUADO(app, monkeypatch):
     """*"O CPF não está com a pontuação, isso facilita visualmente."*"""
