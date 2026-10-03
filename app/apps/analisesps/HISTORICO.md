@@ -11534,7 +11534,7 @@ também: quem tinha transporte Mensal recebia o valor do mês multiplicado por ~
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
-| publicar a leva 159 (sem migração); confirmar se a alimentação "Mensal" também é valor do mês | ele |
+| ~~publicar a leva 159~~ — **publicada em 03/10/2026** (main em `b5a795b`, suíte inteira 7.856 verdes). Falta confirmar se a alimentação "Mensal" também é valor do mês | ele |
 | ~~publicar as levas 157 e 158~~ — **publicadas em 03/10/2026** (main em `4c97938`, suíte inteira 7.854 verdes, sem migração). Falta refazer a prévia de 09/2026: conferir o Record ID e a categoria mostrados | ele |
 | ~~publicar a retirada do "Gerar por competência"~~ — **publicada em 03/10/2026** (main em `dddfd6c`, suíte inteira 7.845 verdes, sem migração) | — |
 | ~~publicar as levas 155 e 156~~ — **publicadas em 02/10/2026** (main em `c2f7676`, suíte inteira 7.852 verdes, sem migração). No primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
