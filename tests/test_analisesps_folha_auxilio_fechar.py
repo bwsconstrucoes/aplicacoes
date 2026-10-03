@@ -33,6 +33,10 @@ def banco_auxilio(banco_analisesps):
                 "   modo_alimentacao) VALUES (?,?,?,?,?,?,?)",
                 (cpf, nome, fase, saida, "CREPEOLINDA", D("300.00"), "Mês"))
         conn.commit()
+    # Sem ponto, a obra é escolhida por ele (03/10/2026) — a do cadastro não
+    # entra sozinha.
+    from app.apps.analisesps import folha_auxilio as fx
+    fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, ATIVO, obra="CREPEOLINDA")
     return banco_analisesps
 
 
@@ -85,6 +89,8 @@ def test_a_REGRA_DE_RATEIO_divide_o_auxilio_entre_as_obras(banco_auxilio):
     """Dono, 03/10/2026: *"o rateio das obras serve sim para alimentação e
     transporte e diaristas"*. A regra manda sobre o ponto, como na folha."""
     from app.apps.analisesps import folha_auxilio as fx, folha_rateio as fr
+    # A obra escolhida à mão manda sobre a regra; tirada, vale a regra.
+    fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, ATIVO, obra="")
     fr.gravar({"nome": "Supervisores", "obras": [
         {"obra": "CREPEOLINDA", "percentual": "60"},
         {"obra": "CREPEAREIAS", "percentual": "40"}],

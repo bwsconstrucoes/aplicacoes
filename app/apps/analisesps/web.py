@@ -3749,6 +3749,7 @@ def tela_folha_auxilio():
 
     return render_template(
         "analisesps_folha_auxilio.html", aba="folha", subaba="auxilios",
+        obras_c_diarios=_obras_c_diarios(),
         grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
         tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=lista["pessoas"],
         lista=lista, filtrando=lista["filtrando"],
