@@ -1,5 +1,13 @@
 # Ponto eletrônico próprio (REP-P) — PLANO da fase 1
 
+> **Estado em 03/10/2026: EXECUTADO.** O dono respondeu ao plano com uma
+> correção de princípio — *"não temos que adaptar o que temos ao Mobponto; é o
+> inverso: criamos uma solução robusta, definitiva, e as outras se conectam a
+> ela"* — e as recomendações abaixo seguiram como padrão. O que mudou com a
+> correção: a consulta da API devolve o formato DO PONTO (uma linha por batida
+> + resumo por dia), não as 4 colunas do Mobponto; quem consome se adapta. O
+> que foi entregue está no `README.md` e no `HISTORICO.md`.
+
 Escrito em 03/10/2026, no ramo `feature/modulo-ponto`, **antes de qualquer
 código**, para o dono aprovar. A especificação de partida veio de outro chat
 (do Vitor); o que está aqui é ela confrontada com o que o repositório já tem.
@@ -13,7 +21,7 @@ código em 03/10/2026.
 
 | Achado | Onde | Efeito no ponto |
 |---|---|---|
-| **A empresa já bate ponto no Mobponto**, e a Análise de SPs carrega esse ponto mês a mês (4 batidas por dia, obra de cada batida) para apropriar a folha por obra. É "o gargalo de tudo na folha". | `analisesps/ponto.py`, tabelas `analisesps.ponto_carga` / `ponto_dia` | O ponto próprio é o **substituto** do Mobponto. A consulta da API tem de devolver o que a folha precisa: por pessoa e dia, as batidas em ordem com a obra de cada uma. |
+| **A empresa já bate ponto no Mobponto**, e a Análise de SPs carrega esse ponto mês a mês (4 batidas por dia, obra de cada batida) para apropriar a folha por obra. É "o gargalo de tudo na folha". | `analisesps/ponto.py`, tabelas `analisesps.ponto_carga` / `ponto_dia` | O ponto próprio é o **substituto** do Mobponto — e a fonte da verdade. A folha vai passar a ler daqui (uma linha por batida, com obra e status); o formato é o do ponto, não o do Mobponto. |
 | **A Análise de SPs não é mais Streamlit.** Ela virou blueprint deste monorepo (`/analisesps`), no mesmo processo e no mesmo Postgres. | `analisesps/__init__.py` | Ela pode ler o ponto **direto no banco**, sem API nem chave. A API REST continua útil para o PWA, o iDFace e sistemas de fora — não para ela. |
 | **Obras já existem no ERP, com latitude e longitude** (migração 024). | tabela `obras` | Criar `ponto_obras` seria a 2ª cópia do cadastro de obras. |
 | **Colaboradores já existem no ERP** (CPF único, obra principal, situação, função), e há uma 3ª cópia espelhada do Pipefy em `analisesps.colaborador`. | tabela `colaboradores` (migração 026); `analisesps` 028 | Criar `ponto_colaboradores` seria a **3ª cópia** do cadastro de pessoas. Pessoa que troca de obra no ERP não trocaria no ponto. |
