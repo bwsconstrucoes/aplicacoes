@@ -11698,6 +11698,30 @@ pendência, conforme funciona na folha da contabilidade."*
   negativo. Na linha, o valor que reduz aparece em vermelho.
 - **"Aplicar desconto"** ganhou destaque (botão âmbar cheio).
 
+#### Leva 170 — planilhas de cadastro do BeeVale e da SomaPay, em todas as folhas (03/10/2026)
+
+O dono: *"às vezes pode acontecer de eu querer pagar um arquivo, aí, opa, dois
+não estão cadastrados ainda. Aí vou lá, cadastro, a gente gera a planilha dessas
+duas pessoas, cadastra, e processa novamente."* E: *"a planilha Model Import é a
+do BeeVale. E a modelo de registro de funcionário é a do SomaPay."*
+
+- Botão **"Planilha de cadastro"** na lateral da folha da contabilidade, das
+  diárias e da alimentação/transporte (e na DC): uma janela com as pessoas da
+  lista da tela (nenhuma marcada, com busca), BeeVale ou SomaPay, e "Gerar
+  planilha" (`cadastro_planilha.py`, rota `/folha/cadastro-planilha`).
+- **BeeVale:** Nome completo, Nome impresso no cartão (primeiro e último nome, até
+  26 letras — ⚠️ escolha minha), CPF, Email (`<cpf>@bwsconstrucoes.com.br`, o
+  mesmo do arquivo de pagamento), Data de nascimento, DDI (55), Celular.
+- **SomaPay:** o modelo do portal (`modelos/somapay_cadastro_modelo.xlsx`, sem o
+  nome de quem o criou), preenchido da linha 12, como o arquivo de pagamento. Tipo
+  de contrato convertido para a lista do modelo (CTPS → CLT tempo
+  indeterminado; RPA/prestador → Autônomo (RPA)…).
+- **Os documentos da ficha** (RG, emissão, órgão, UF, nome da mãe, sexo,
+  endereço, e-mail) passam a ser lidos na carga do cadastro e guardados num JSON
+  (`colaborador.documentos`, migração **047**). Os nomes das colunas são os
+  prováveis; o que faltar fica em branco e a tela avisa, pessoa por pessoa, ao
+  gerar.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

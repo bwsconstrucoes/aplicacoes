@@ -2712,3 +2712,12 @@ table.sps.mini th, table.sps.mini td { padding: 4px 8px; }
 #tabela-auxilio .btn-desconto { background: #b45309; border-color: #b45309; color: #fff; }
 #tabela-auxilio .btn-desconto:hover { background: #92400e; }
 #tabela-auxilio .aj-extra.reduz { color: #b91c1c; }
+
+/* Planilha de cadastro BeeVale/SomaPay (03/10/2026). */
+#cp-dialogo { width: min(560px, 94vw); }
+#cp-dialogo .cp-destino { display: flex; gap: 18px; margin: 8px 0; }
+#cp-dialogo input[type=search] { width: 100%; }
+#cp-dialogo .cp-lista { max-height: 48vh; overflow-y: auto; border: 1px solid #e2e8f0;
+  border-radius: 8px; padding: 6px 8px; margin-top: 6px; }
+#cp-dialogo .cp-item { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+#cp-dialogo .cp-item small { color: #64748b; margin-left: auto; }

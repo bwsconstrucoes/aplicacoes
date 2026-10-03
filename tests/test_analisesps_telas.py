@@ -8305,3 +8305,22 @@ def test_diaristas_tem_RELATORIO_e_o_destino_no_padrao_da_contabilidade(app, mon
     assert 'id="relatorio-conta"' in html
     assert ">Gerar arquivos</button>" in html and 'id="gd-previa"' in html
     assert 'id="gd-destino"' not in html, "o destino é escolhido por conta, na janela"
+
+
+def test_a_PLANILHA_DE_CADASTRO_sai_pela_rota_com_os_avisos(app, monkeypatch):
+    """Dono, 03/10/2026: a planilha de cadastro do BeeVale/SomaPay das pessoas
+    escolhidas, em todas as folhas."""
+    import json
+    from urllib.parse import unquote
+    from app.apps.analisesps import colaboradores
+    monkeypatch.setattr(colaboradores, "documentos_de", lambda cpfs: {})
+    r = _como_mestre(app).post("/analisesps/folha/cadastro-planilha", json={
+        "destino": "beevale", "cpfs": ["99713349334"],
+        "nomes": {"99713349334": "GERLANIO"}})
+    assert r.status_code == 200
+    assert r.get_data()[:2] == b"PK"
+    assert "Cadastro%20BeeVale" in r.headers["Content-Disposition"]
+    avisos = json.loads(unquote(r.headers["X-Avisos"]))
+    assert avisos and "GERLANIO" in avisos[0]
+    assert _como_mestre(app).post("/analisesps/folha/cadastro-planilha",
+                                  json={"destino": "x", "cpfs": []}).status_code == 400

@@ -158,6 +158,7 @@ TODAS_AS_TELAS = [
     ("GET",  "/analisesps/api/folha/ponto/pessoa/estado"),
     ("POST", "/analisesps/api/folha/auxilio/selecao"),
     ("POST", "/analisesps/api/folha/auxilio/extras"),
+    ("POST", "/analisesps/folha/cadastro-planilha"),
     # Mostra cadastro e ponto de uma pessoa: dado pessoal.
     ("GET",  "/analisesps/api/folha/pessoa/99713349334"),
     # ⚠️ A GERAÇÃO DO PAGAMENTO É A ROTA MAIS SENSÍVEL DA ÁREA: daqui sai o arquivo

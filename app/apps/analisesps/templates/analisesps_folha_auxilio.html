@@ -69,6 +69,7 @@
   <div class="lat-acoes">
     {% set dv_titulo = ('%02d/%d'|format(mes, ano)) ~ ' · ' ~ ('alimentação' if tipo == 'alimentacao' else 'transporte') %}
     {% include "_divisao_direta.html" %}
+    {% if pode_operar %}{% include "_cadastro_planilha.html" %}{% endif %}
   </div>
 </div>
 

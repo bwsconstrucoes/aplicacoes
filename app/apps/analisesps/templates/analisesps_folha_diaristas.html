@@ -55,6 +55,7 @@
   <div class="lat-acoes">
     {% set dv_titulo = r.competencia ~ ' · ' ~ r.rotulo_periodo %}
     {% include "_divisao_direta.html" %}
+    {% if pode_operar %}{% include "_cadastro_planilha.html" %}{% endif %}
   </div>
 </div>
 
@@ -236,7 +237,7 @@
       <tbody>
       {% for p in pessoas %}
         <tr class="{{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel }}"
-            data-cpf="{{ p.cpf }}" data-valor="{{ p.valor }}">
+            data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}" data-valor="{{ p.valor }}">
           {% if pode_operar %}
             <td class="marca"><input type="checkbox" class="marca-pessoa"
                 {% if p.pagar %}checked{% endif %} {% if p.impossivel %}disabled{% endif %}

@@ -3963,6 +3963,35 @@ def folha_ficha_da_pessoa(cpf: str):
     }}
 
 
+@bp.route("/folha/cadastro-planilha", methods=["POST"])
+@exige_operador
+def folha_cadastro_planilha():
+    """A planilha de CADASTRO do BeeVale ou da SomaPay das pessoas escolhidas
+    (dono, 03/10/2026: *"às vezes tem pessoas novas que não têm cadastro (…) a
+    gente gera a planilha dessas duas pessoas, cadastra, e processa
+    novamente"*). Os avisos (dado faltando na ficha) vão no cabeçalho
+    `X-Avisos`, para a tela dizer."""
+    import json as _json
+    from urllib.parse import quote
+    from . import cadastro_planilha as cp
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        conteudo, nome, avisos = cp.gerar(
+            dados.get("destino"), dados.get("cpfs") or [],
+            {str(k): str(v) for k, v in (dados.get("nomes") or {}).items()})
+    except cp.ErroDoCadastro as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou a planilha de cadastro")
+        return {"ok": False, "erro": f"Não foi possível gerar a planilha: {e}"}, 500
+    tipo = ("application/vnd.ms-excel" if nome.endswith(".xls")
+            else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return Response(conteudo, mimetype=tipo, headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(nome)}",
+        "X-Avisos": quote(_json.dumps(avisos[:200], ensure_ascii=False))})
+
+
 @bp.route("/api/folha/auxilio/extras", methods=["POST"])
 @exige_operador
 def folha_auxilio_extras():

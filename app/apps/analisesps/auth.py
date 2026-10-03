@@ -474,6 +474,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_auxilio_selecao": ("folha",),
     # Valor acrescentado e desconto de ausências do auxílio (03/10/2026).
     "analisesps.folha_auxilio_extras": ("folha",),
+    # A planilha de cadastro BeeVale/SomaPay das pessoas escolhidas (03/10/2026).
+    "analisesps.folha_cadastro_planilha": ("folha",),
     # A ficha da pessoa no modal: cadastro + ponto do mês. É da folha, e mostra
     # dado pessoal — quem não alcança a folha não alcança isto.
     "analisesps.folha_ficha_da_pessoa": ("folha",),
