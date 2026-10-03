@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}Análise de SPs — BWS{% endblock %}</title>
-<link rel="icon" href="data:,">
+{# O ícone da aba do navegador (dono, 03/10/2026: *"para identificar mais fácil
+   que é a aplicação da BWS"*). O mesmo brasão do topo da tela. #}
+<link rel="icon" type="image/png" href="{{ url_for('analisesps.static', filename='icone-64.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('analisesps.static', filename='icone-180.png') }}">
 <link rel="stylesheet" href="{{ url_for('analisesps.static', filename='analisesps.css', v=versao_estatica) }}">
 </head>
 <body>
