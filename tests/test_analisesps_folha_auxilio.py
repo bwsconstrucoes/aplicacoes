@@ -72,6 +72,18 @@ def test_mensal_e_todos_os_dias_MENOS_TRES():
     assert (dias, sabado, sexta) == (27, True, True)
 
 
+def test_MENSAL_no_TRANSPORTE_e_valor_do_mes_e_conta_UM_dia():
+    """O dono, 03/10/2026: *"Mensal é mensal. Aquele valor que está lá já é o
+    valor mensal. Aí você está multiplicando a base, quantidade de dias, pelo
+    valor que é mensal."* Na alimentação, a regra da planilha continua."""
+    from app.apps.analisesps import folha_auxilio as fx
+    assert fx.dias_da_modalidade("Mensal", INICIO, FIM, fx.TRANSPORTE)[0] == 1
+    assert fx.dias_da_modalidade("Mensal", INICIO, FIM, fx.ALIMENTACAO)[0] == 27
+    assert fx.valor_fechado("Mensal", fx.TRANSPORTE) is True
+    assert fx.valor_fechado("Mensal", fx.ALIMENTACAO) is False
+    assert fx.valor_fechado("Mês", fx.ALIMENTACAO) is True
+
+
 def test_mes_e_valor_fechado_e_conta_UM_dia():
     from app.apps.analisesps import folha_auxilio as fx
     assert fx.dias_da_modalidade("Mês", INICIO, FIM)[0] == 1
@@ -135,6 +147,18 @@ def test_o_TRANSPORTE_NAO_desconta_feriado(banco_auxilio):
     assert r["feriados"] == 0, "o transporte não desconta feriado"
     assert r["dias"] == 22
     assert r["valor"] == D("220.00")
+
+
+def test_TRANSPORTE_MENSAL_paga_o_valor_do_cadastro_CHEIO(banco_auxilio):
+    """Era 27 × o valor do mês. Agora é o valor do mês, e a base é 1."""
+    from app.apps.analisesps import folha_auxilio as fx
+    r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(modo_transporte="Mensal",
+                                                  valor_transporte=D("180.00")),
+                           INICIO, FIM)
+    assert r["dias_base"] == 1 and r["dias"] == 1
+    assert r["valor"] == D("180.00")
+    assert r["valor_fechado"] is True
+    assert r["pagar"] is True
 
 
 def test_as_DUAS_verbas_descontam_FERIAS(banco_auxilio):

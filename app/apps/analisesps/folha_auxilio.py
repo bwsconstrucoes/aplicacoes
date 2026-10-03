@@ -21,7 +21,8 @@ passam a descontar. Isto aqui é a decisão dele, não o que a planilha fazia.
 A CONTA, do jeito que a planilha faz (§7.14.6), por modalidade:
 
     Mês               valor fixo, não conta dia
-    Mensal            todos os dias do mês − 3
+    Mensal            todos os dias do mês − 3 (alimentação); no TRANSPORTE,
+                      valor fixo do mês, como "Mês" — correção do dono, 03/10/2026
     Segunda à Sexta   dias úteis (sábado e domingo fora)
     Segunda à Quinta  dias úteis menos as sextas
 
@@ -54,7 +55,7 @@ CENTAVO = Decimal("0.01")
 # As modalidades que o cadastro usa, como a planilha as escreve. A comparação é
 # sem acento e sem caixa — o cadastro é digitado por gente.
 MODO_FIXO = "mes"                    # "Mês": valor fechado, não conta dia
-MODO_MENSAL = "mensal"               # todos os dias do mês − 3
+MODO_MENSAL = "mensal"               # alimentação: dias do mês − 3; transporte: fixo
 MODO_SEG_SEX = "segunda a sexta"
 MODO_SEG_QUI = "segunda a quinta"
 
@@ -95,14 +96,28 @@ def periodo_do_mes(ano: int, mes: int) -> tuple:
     return dt.date(int(ano), int(mes), 1), dt.date(int(ano), int(mes), ultimo)
 
 
-def dias_da_modalidade(modo: str, inicio, fim) -> tuple:
+def valor_fechado(modo: str, tipo: str = "") -> bool:
+    """O valor do cadastro já é o do MÊS — não se multiplica por dia.
+
+    ⚠️ "MENSAL" NO TRANSPORTE É VALOR DO MÊS (dono, 03/10/2026): *"Mensal é
+    mensal. Aquele valor que está lá já é o valor mensal. Aí você está
+    multiplicando a base, quantidade de dias, pelo valor que é mensal."* A conta
+    "dias do mês − 3" veio da aba de alimentação da planilha (§7.14.6) e foi
+    aplicada ao transporte também; no transporte ela multiplicava o valor do mês
+    por ~27. Na alimentação a regra da planilha continua (lá "Mês" e "Mensal"
+    convivem e são coisas diferentes)."""
+    limpo = _sem_acento(modo)
+    return limpo == MODO_FIXO or (tipo == TRANSPORTE and limpo == MODO_MENSAL)
+
+
+def dias_da_modalidade(modo: str, inicio, fim, tipo: str = "") -> tuple:
     """`(dias, conta_sabado, conta_sexta)` da modalidade, antes dos descontos.
 
     Devolve também COMO contar, porque o desconto de feriado e de férias tem de
     usar a mesma régua: descontar um feriado de sexta de quem não trabalha sexta
     tiraria um dia que ninguém ia pagar."""
     limpo = _sem_acento(modo)
-    if limpo == MODO_FIXO:
+    if valor_fechado(modo, tipo):
         # Valor fechado: um "dia" só, que multiplica o valor inteiro.
         return 1, False, True
     if limpo == MODO_MENSAL:
@@ -180,7 +195,7 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         # (`folha_lista`), como a planilha faz.
         "situacao": ficha.get("situacao") or "",
         "desligado": ficha.get("situacao") == colaboradores.SITUACAO_SAIU,
-        "dias_base": 0, "feriados": 0, "ferias": 0,
+        "dias_base": 0, "feriados": 0, "ferias": 0, "valor_fechado": False,
         "dias_ajuste": int(ajuste.get("dias") or 0),
         "dias": 0, "valor": Decimal("0.00"),
         "observacao": ajuste.get("observacao", ""),
@@ -243,7 +258,7 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
             "Segunda à Quinta).")
         return _decidir(saida, ajuste)
 
-    base, sabado, sexta = dias_da_modalidade(modo, inicio, fim)
+    base, sabado, sexta = dias_da_modalidade(modo, inicio, fim, tipo)
     if base <= 0:
         saida["pagar"] = False
         saida["impossivel"] = True
@@ -253,14 +268,27 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         return _decidir(saida, ajuste)
     saida["dias_base"] = base
 
-    # VALOR FIXO ("Mês") não desconta dia: é valor fechado.
-    if _sem_acento(modo) == MODO_FIXO:
+    # VALOR FIXO ("Mês"; "Mensal" no transporte) não desconta dia: é valor fechado.
+    if valor_fechado(modo, tipo):
+        saida["valor_fechado"] = True
         saida["dias"] = 1
         saida["valor"] = valor_unitario
         if saida["dias_ajuste"]:
             saida["motivos"].append(
                 "o ajuste de dias não se aplica à modalidade de valor fixo "
-                '("Mês").')
+                f'("{modo}").')
+        # Férias no mês: o valor fechado sai CHEIO, e fica dito — o desconto
+        # proporcional (§7.16.1) ainda não tem regra decidida.
+        try:
+            ferias = folha_calendario.dias_de_ferias_no_periodo(
+                saida["cpf"], inicio, fim, sabado=False, sexta=True)
+        except Exception:  # noqa: BLE001 — aviso, não conta
+            logger.exception("Folha: não consegui ler as férias de %s", saida["cpf"])
+            ferias = 0
+        if ferias:
+            saida["motivos"].append(
+                f"{ferias} dia(s) útil(eis) de férias no mês: o valor mensal sai "
+                "cheio. Se não for para pagar, desmarque.")
         return _decidir(saida, ajuste)
 
     # OS DESCONTOS, com a MESMA régua da modalidade.

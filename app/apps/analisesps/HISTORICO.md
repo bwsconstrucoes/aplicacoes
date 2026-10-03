@@ -11494,6 +11494,25 @@ filtro que exiba eles. A princípio eles não aparecem."*
 - **Ficou como estava:** quem tem "Cartão" no transporte continua na lista como
   "fora do pagamento" — é decisão do cadastro, não falta de dado.
 
+#### Leva 159 — transporte "Mensal" é valor do mês, não valor do dia × 27 (03/10/2026)
+
+**O erro, achado por ele:** *"se é mensal, não pode calcular o valor do dia (…)
+Aquele valor que está lá já é o valor mensal. Aí você está multiplicando a base,
+quantidade de dias, pelo valor que é mensal."* A conta "Mensal = dias do mês − 3"
+veio da aba de alimentação da planilha (§7.14.6) e foi aplicada ao transporte
+também: quem tinha transporte Mensal recebia o valor do mês multiplicado por ~27.
+
+- **Transporte "Mensal" = valor fixo do mês**, como "Mês": base 1, dias 1, valor
+  = o do cadastro (`folha_auxilio.valor_fechado`).
+- **Alimentação "Mensal" ficou como estava** (dias do mês − 3 × valor): lá "Mês"
+  e "Mensal" convivem na planilha e são regras diferentes. ⚠️ A confirmar com ele.
+- **Férias** no mês de quem tem valor fechado: o valor sai cheio e a linha diz
+  quantos dias de férias houve ("se não for para pagar, desmarque") — o desconto
+  proporcional (§7.16.1) não tem regra decidida.
+- **Tela:** "Valor do dia" virou **"Valor"**, com "por dia" ou "por mês" embaixo;
+  a última coluna virou **"Total"**. No relatório, "Valor x dia" fica em branco
+  para quem tem valor fechado.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11515,6 +11534,7 @@ filtro que exiba eles. A princípio eles não aparecem."*
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
+| publicar a leva 159 (sem migração); confirmar se a alimentação "Mensal" também é valor do mês | ele |
 | ~~publicar as levas 157 e 158~~ — **publicadas em 03/10/2026** (main em `4c97938`, suíte inteira 7.854 verdes, sem migração). Falta refazer a prévia de 09/2026: conferir o Record ID e a categoria mostrados | ele |
 | ~~publicar a retirada do "Gerar por competência"~~ — **publicada em 03/10/2026** (main em `dddfd6c`, suíte inteira 7.845 verdes, sem migração) | — |
 | ~~publicar as levas 155 e 156~~ — **publicadas em 02/10/2026** (main em `c2f7676`, suíte inteira 7.852 verdes, sem migração). No primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
