@@ -266,10 +266,12 @@
           {% endif %}
           <th>Colaborador</th><th>Situação</th><th>CPF</th><th>Fase Atual</th>
           <th>Obra — do ponto</th><th>Categoria</th>
-          <th class="num">Valor do dia</th>
+          {# "Valor do dia" virou "Valor" (dono, 03/10/2026): no "Mês" e no
+             "Mensal" do transporte o cadastro guarda o valor do MÊS. #}
+          <th class="num" title="O valor do cadastro: por dia ou por mês, conforme a categoria">Valor</th>
           <th class="num" title="Dias da categoria no mês">Base</th>
           <th class="num">Feriados</th><th class="num">Férias</th>
-          <th class="num">Dias</th><th class="num">Valor</th>
+          <th class="num">Dias</th><th class="num">Total</th>
         </tr>
       </thead>
       <tbody>
@@ -334,7 +336,8 @@
           </td>
           <td>{{ p.modo or '—' }}</td>
           <td class="num">
-            {% if p.valor_unitario is none %}—{% else %}{{ p.valor_unitario|moeda }}{% endif %}
+            {% if p.valor_unitario is none %}—{% else %}{{ p.valor_unitario|moeda }}
+              <br><span class="cartao-dica">{{ 'por mês' if p.valor_fechado else 'por dia' }}</span>{% endif %}
           </td>
           <td class="num">{{ p.dias_base or '—' }}</td>
           <td class="num">

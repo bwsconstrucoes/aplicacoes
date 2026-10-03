@@ -559,7 +559,8 @@ def montado_do_auxilio(resultado: dict, pessoas: list, filtros: dict,
             "nome_na_tela": p.get("nome") or "", "cargo": p.get("cargo") or "",
             "fase": p.get("fase") or "", "por_obra": por_obra, "por_dia": [],
             "dias_no_ponto": p.get("dias") or 0, "valor": p.get("valor"),
-            "valor_por_dia": p.get("valor_unitario"),
+            # Valor fechado ("Mês"; "Mensal" no transporte) não tem valor por dia.
+            "valor_por_dia": (None if p.get("valor_fechado") else p.get("valor_unitario")),
             "obras_resumo": ", ".join(f"{o['obra'] or SEM_OBRA} ({dias_txt(o['dias'])})"
                                       for o in por_obra),
             "obra_do_cadastro": p.get("obra_nome") or p.get("obra_cadastro") or "",
