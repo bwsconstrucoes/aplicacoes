@@ -11722,6 +11722,58 @@ do BeeVale. E a modelo de registro de funcionário é a do SomaPay."*
   prováveis; o que faltar fica em branco e a tela avisa, pessoa por pessoa, ao
   gerar.
 
+#### Leva 171 — Despesas com colaboradores (DC): tela, arquivo e SP no Pipefy (03/10/2026)
+
+O dono mandou os scripts antigos (`gerasp.gs`, `geraspbeevale.gs`, `moverfase.gs`)
+e pediu: *"a gente vai criar uma tela (…) em tudo que for compatível, no mesmo
+padrão das que a gente criou (…) o objetivo é gerar a planilha de pagamento do
+BeeVale. E permitir também pagar via SomaPay."* E: *"faz uma movimentação dos
+cards para uma outra fase (…) e gera uma solicitação de pagamento (…) colocar os
+links (…) do arquivo de pagamento"*. A planilha é a
+`124EVrS86jBdGS7KzTJ5qI1MuiU25W9QguMAPFqhj1iM` (confirmada por ele).
+
+- **Tela nova "Despesas com colaboradores"** (subtela da Folha PGT, depois de
+  Diaristas; `dc.py`, `analisesps_folha_dc.html`, rota `/folha/dc`). Fonte: a aba
+  **"Data"** (colunas A…N, na ordem do `doPost` do script — um colaborador por
+  linha de cada card). Lida na hora, guardada por 60 s; "Atualizar da planilha"
+  força.
+- **O que a aba "DC" fazia, agora do banco:** nome, função e tipo pelo CPF; a
+  diária cadastrada; a conta pela obra (centro de custo) na "C. Diários"; o
+  código OMIE da obra; a categoria e o Record ID pelo tipo de despesa na aba
+  "Plano Financeiro"; a **carteira do BeeVale** pela aba **"Data base BeeVale"**
+  (colunas achadas pelo nome — "plano/categoria/despesa" e "carteira/BeeVale";
+  sem a aba, "Produção" e um aviso na tela).
+- **⚠️ O valor de cada linha é REGRA MINHA, a confirmar:** o valor informado na
+  solicitação; sem ele, quantidade × diária (a informada, ou a do cadastro). As
+  fórmulas da aba "DC" não vieram.
+- Tudo no padrão das outras folhas: caixinha por linha + "Salvar seleção" (só as
+  exceções, em `dc_ajuste`), "trocar…" a obra da linha, filtros (situação, tipo
+  de despesa, obra, conta), pendências na lateral (fora do cadastro / sem valor,
+  sem conta, duplicidade), relatório Excel/PDF por conta, Divisão por obra e
+  conta, Planilha de cadastro, Gerar arquivos (BeeVale ou SomaPay por conta).
+- **Duplicidade**, como o script: mesmo CPF e tipo de despesa gerado nos últimos
+  10 dias vira aviso na linha (não bloqueia).
+- **Gerar** grava um **lote** (`dc_lote`/`dc_linha`, migração 047): é o que tira
+  as linhas da tela ("mostrar as já geradas" traz de volta para consulta), o que
+  alimenta a SP e a duplicidade. **Excluir a geração** em Arquivos gerados apaga o
+  lote e as linhas voltam. **A aba Data NÃO é apagada** (o script apagava) —
+  nada é escrito na planilha.
+- **Arquivo BeeVale:** a carteira de cada linha vai na coluna da carteira; a
+  consolidação passa a ser CPF + natureza + carteira (as outras folhas não mudam:
+  a carteira delas segue "Produção"). Nome do arquivo com dia e hora (a DC sai
+  várias vezes no mês).
+- **No Pipefy** (Arquivos gerados → lançar, como as outras): **uma SP por conta**,
+  título = a data (como o script), rateio por obra **e por categoria** (cada tipo
+  de despesa com o seu percentual), tipo de despesa da SP = o da maior parte (o
+  script usava o primeiro e avisava; a prévia avisa), etiqueta da DC
+  (`317521565`) e, no BeeVale, o campo de automação "BeeVale" — os dois do
+  script. Descrição do script: conta, valor, **"Valor BeeVale (+1,5%)"** só
+  informado (a SP vai pelo valor original, como no script), IDs de origem, valor
+  por obra e por tipo, links do pagamento, do relatório PDF e da análise.
+- **Depois da SP, os cards de origem:** `mover_card` = Sim e movidos para a fase
+  `340593562`. Cada card movido fica guardado; se o Pipefy recusar, a SP não se
+  desfaz, a tela avisa e lançar de novo só termina a mudança.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11756,7 +11808,12 @@ do BeeVale. E a modelo de registro de funcionário é a do SomaPay."*
 | ~~confirmar o favorecido da SP quando o arquivo é SomaPay~~ — **confirmado em 03/10/2026: CNPJ da BWS**; e a data de pagamento = hoje, também confirmada | — |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
-| campo de automação da SP (`automa_o_2`): segue vazio; ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
+| **publicar as levas 170 e 171** (migração **047**: apertar "Aplicar atualizações do banco" no mesmo momento) e depois "Atualizar cadastro" para trazer os documentos da ficha | ele |
+| DC: compartilhar a planilha da DC com a conta de serviço do Google, se a tela disser "permissão" | ele |
+| DC: confirmar a regra do valor da linha (informado; sem ele, qtd × diária) e as colunas da aba "Data base BeeVale" | ele |
+| DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
+| decidir se a alimentação e o transporte no BeeVale também usam a carteira da "Data base BeeVale" (hoje "Produção") | ele |
+| campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 
 ---

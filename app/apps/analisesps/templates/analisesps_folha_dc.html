@@ -1,0 +1,488 @@
+{% extends "analisesps_base.html" %}
+{% from "_folha_macros.html" import bloco %}
+{% block titulo %}Despesas com colaboradores — Análise de SPs{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   DESPESAS COM COLABORADORES (DC) — 03/10/2026, no padrão das outras folhas.
+
+   O dono: *"são solicitações que a gente chama de despesa com colaboradores.
+   Elas entram no Pipefy (…) quando elas chegam a uma determinada fase, aparecem
+   na aba Data da planilha (…) o objetivo é gerar a planilha de pagamento do
+   BeeVale. E permitir também pagar via SomaPay."*
+
+   Uma linha por colaborador de cada solicitação (card). Nada é escrito na
+   planilha: o que foi gerado sai da lista porque fica guardado no lote.
+   --------------------------------------------------------------------------- #}
+
+{% block filtros %}
+{% if resultado %}
+{% set url_tela = url_for('analisesps.tela_folha_dc') %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pagamento</b>
+  <div class="lat-num"><span>A pagar</span>
+    <b>{{ resultado.total|moeda }}</b>
+    <small>{{ resultado.quantos_a_pagar }} linha(s) · {{ resultado.cards }} solicitação(ões)</small></div>
+  <p class="cartao-dica lat-estado">
+    Sem fechamento: o arquivo sai das linhas selecionadas agora. Depois de
+    gerado, as linhas saem desta lista e vão para <b>Arquivos gerados</b>, de
+    onde se lança a SP no Pipefy.
+  </p>
+  <div class="lat-acoes">
+    {% if pode_operar and pode_gerar and resultado.pronto %}
+      {% set gd_origem = 'dc' %}
+      {% set gd_dados = {} %}
+      {% set gd_destino = '' %}
+      {% set gd_pagamento = '' %}
+      {% include "_gerar_direto.html" %}
+    {% endif %}
+    {% set dv_titulo = 'despesas com colaboradores' %}
+    {% include "_divisao_direta.html" %}
+    {% if pode_operar %}{% include "_cadastro_planilha.html" %}{% endif %}
+  </div>
+</div>
+
+{% if resultado.com_problema or resultado.duplicadas %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Pendências antes do pagamento</b>
+  {% set fora_do_cadastro = resultado.com_problema|selectattr('impossivel')|list %}
+  {% set sem_conta = resultado.com_problema|rejectattr('impossivel')|list %}
+  {% if fora_do_cadastro %}
+    <a class="lat-critica erro" href="{{ url_tela }}?situacao=falta_dado">
+      <b>{{ fora_do_cadastro|length }} sem cadastro ou sem valor</b>
+      <small>CPF fora do cadastro de colaboradores, ou solicitação sem valor.
+        Não entram no arquivo. Clique para ver quais são.</small>
+    </a>
+  {% endif %}
+  {% if sem_conta %}
+    <a class="lat-critica erro" href="{{ url_tela }}?conta=%28sem+conta%29">
+      <b>{{ sem_conta|length }} sem conta de pagamento</b>
+      <small>A obra (centro de custo) não tem conta na aba "C. Diários". Corrija a
+        aba ou troque a obra na linha.</small>
+    </a>
+  {% endif %}
+  {% if resultado.duplicadas %}
+    <div class="lat-critica atencao">
+      <b>{{ resultado.duplicadas|length }} possível(is) duplicidade(s)</b>
+      <small>Mesmo CPF e tipo de despesa gerado nos últimos 10 dias. O motivo está
+        na linha; desmarque se já foi pago.</small>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="get" action="{{ url_tela }}" id="form-filtros" class="lateral-filtros">
+  {% if mostrar_geradas %}<input type="hidden" name="geradas" value="1">{% endif %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_tela }}">Limpar</a>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="q" value="{{ lista.filtros.q }}" autocomplete="off"
+           placeholder="Nome ou CPF…" aria-label="Pesquisar colaborador">
+  </div>
+  {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao) }}
+  {{ bloco('Tipo de despesa', 'tipo_despesa', lista.opcoes_tipo_despesa, lista.filtros.tipo_despesa) }}
+  {{ bloco('Obra', 'obra', lista.opcoes_obra, lista.filtros.obra) }}
+  {{ bloco('Conta', 'conta', lista.opcoes_conta, lista.filtros.conta) }}
+  <noscript><button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button></noscript>
+</form>
+{% include "analisesps_filtros_aplicam_sozinhos.html" %}
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+{% include "analisesps_folha_abas.html" %}
+
+<h2>Despesas com colaboradores</h2>
+
+<div class="barra-mes">
+  <a class="btn secundario" style="text-decoration:none" href="{{ url_for('analisesps.tela_folha_dc', recarregar=1) }}"
+     title="Ler de novo a aba Data da planilha">Atualizar da planilha</a>
+  <a class="btn secundario" style="text-decoration:none" href="https://docs.google.com/spreadsheets/d/{{ planilha_dc }}"
+     target="_blank" rel="noopener">Abrir a planilha</a>
+  {% if mostrar_geradas %}
+    <a class="link-btn" href="{{ url_for('analisesps.tela_folha_dc') }}">esconder as já geradas</a>
+  {% elif resultado and resultado.geradas %}
+    <a class="link-btn" href="{{ url_for('analisesps.tela_folha_dc', geradas=1) }}">mostrar as {{ resultado.geradas }} já geradas</a>
+  {% endif %}
+  <span class="barra-mes-dica">Fonte: aba <b>Data</b> da planilha da DC (as
+    solicitações que chegaram à fase do Pipefy). A lista é lida de novo a cada minuto.</span>
+</div>
+
+<p class="cartao-dica" style="margin:0 0 14px">
+  Para cada linha: o <b>nome</b>, a <b>função</b> e a <b>diária</b> vêm do
+  <a href="{{ url_for('analisesps.tela_colaboradores') }}">cadastro</a> pelo CPF;
+  a <b>conta</b> e o <b>código OMIE</b>, da obra (centro de custo) na aba
+  "C. Diários"; a <b>categoria</b>, do tipo de despesa na aba "Plano Financeiro";
+  a <b>carteira do BeeVale</b>, da aba "Data base BeeVale" (sem ela, "Produção").
+  O <b>valor</b> é o informado na solicitação; sem ele, quantidade × diária.
+</p>
+
+{% if erro %}
+  <div class="aviso erro"><b>Não foi possível montar a lista.</b> {{ erro }}</div>
+{% endif %}
+{% if resultado and resultado.avisos %}
+  {% for a in resultado.avisos %}<div class="aviso atencao">{{ a }}</div>{% endfor %}
+{% endif %}
+
+{% if not pronto %}
+  <div class="aviso atencao">
+    <b>Atualização do banco pendente.</b> Em <b>Configurações</b>, clique em
+    "Aplicar atualizações do banco" e retorne a esta tela. Até lá a lista aparece,
+    mas a seleção e a geração ficam travadas.
+  </div>
+{% endif %}
+
+{% if resultado and not resultado.pessoas %}
+  <div class="aviso atencao">
+    <b>Nenhuma solicitação pendente.</b> A aba Data não tem linhas que ainda não
+    foram geradas{% if resultado.geradas %} ({{ resultado.geradas }} já geradas){% endif %}.
+  </div>
+{% elif resultado %}
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">A pagar</div>
+    <div class="kpi-valor">{{ resultado.total|moeda }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Linhas selecionadas</div>
+    <div class="kpi-valor">{{ resultado.quantos_a_pagar }}</div>
+  </div>
+  <div class="kpi estatico {{ 'ambar' if resultado.com_problema or resultado.duplicadas }}">
+    <div class="kpi-rotulo">Pendências</div>
+    <div class="kpi-valor">{{ resultado.com_problema|length + resultado.duplicadas|length }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Solicitações</div>
+    <div class="kpi-valor">{{ resultado.cards }}</div>
+  </div>
+</div>
+
+<div class="cab-com-acoes" style="margin-top:24px">
+<h3>
+  Detalhamento por solicitação
+  <small>
+    {% if filtrando %}{{ pessoas|length }} de {{ resultado.quantos }} · filtrado
+    {% else %}{{ pessoas|length }}{% endif %}
+    · pendências listadas primeiro
+  </small>
+</h3>
+  {% set args_da_tela = request.args.to_dict(flat=false) %}
+  {% set rel_xlsx = url_for('analisesps.folha_dc_relatorio', formato='xlsx', **args_da_tela) %}
+  {% set rel_pdf = url_for('analisesps.folha_dc_relatorio', formato='pdf', **args_da_tela) %}
+  {% set rel_contas = (divisao.por_conta|map(attribute='conta')|list) if divisao else [] %}
+  {% include "_relatorio_acoes.html" %}
+</div>
+
+{% if pode_operar %}
+<p class="cartao-dica" style="margin:0 0 8px">
+  As linhas que atendem aos critérios vêm <b>selecionadas para pagamento</b>.
+  Desmarque as que não devem ser pagas e clique em <b>Salvar seleção</b> ao final.
+  Clique na linha para consultar a ficha do colaborador.
+</p>
+{% endif %}
+
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps" id="tabela-dc">
+      <thead>
+        <tr>
+          {% if pode_operar %}
+            <th class="marca"><input type="checkbox" id="marcar-todos"
+                  title="Selecionar ou desmarcar todos os visíveis"
+                  aria-label="Selecionar todos"></th>
+          {% endif %}
+          <th>Colaborador</th><th>Situação</th><th>CPF</th>
+          <th>Solicitação</th><th>Tipo de despesa</th>
+          <th title="O centro de custo da solicitação, ou a obra trocada por você">Obra que paga</th>
+          <th>Conta</th><th>Carteira BeeVale</th>
+          <th class="num">Qtd × diária</th>
+          <th class="num">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in pessoas %}
+        <tr class="{{ 'clicavel' if p.nome }} {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or not p.conta or p.duplicidade }}"
+            data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}" data-chave="{{ p.chave }}"
+            data-valor="{{ p.valor }}">
+          {% if pode_operar %}
+            <td class="marca">
+              <input type="checkbox" class="marca-pessoa"
+                     {% if p.pagar %}checked{% endif %}
+                     {% if p.impossivel or p.gerada %}disabled{% endif %}
+                     aria-label="Selecionar {{ p.nome or p.cpf_bonito }} para pagamento">
+            </td>
+          {% endif %}
+          <td>
+            <b>{{ p.nome or 'fora do cadastro' }}</b>
+            {% if p.cargo %}<br><span class="cartao-dica">{{ p.cargo }}{% if p.tipo_contrato %} · {{ p.tipo_contrato }}{% endif %}</span>{% endif %}
+            {% for motivo in p.motivos %}
+              <br><span class="cartao-dica">⚠ {{ motivo }}</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% if p.gerada %}
+              <span class="selo cancelado">já gerada</span>
+            {% elif p.impossivel %}
+              <span class="selo risco" title="{{ p.motivos|join(' ') }}">dados incompletos</span>
+            {% elif not p.pagar %}
+              <span class="selo cancelado" title="{{ p.motivos|join(' ') }}">não selecionado</span>
+            {% elif p.motivos %}
+              <span class="selo saindo" title="{{ p.motivos|join(' ') }}">atenção</span>
+            {% else %}
+              <span class="selo aprovado">a pagar</span>
+            {% endif %}
+          </td>
+          <td class="cpf">{{ p.cpf_bonito }}</td>
+          <td>
+            <a href="{{ p.link_card }}" target="_blank" rel="noopener">card {{ p.card_id }}</a>
+            {% if p.data_solicitacao %}<br><span class="cartao-dica">{{ p.data_solicitacao }}</span>{% endif %}
+            {% if p.requerente %}<br><span class="cartao-dica">por {{ p.requerente }}</span>{% endif %}
+            {% if p.descricao %}<br><span class="cartao-dica" title="{{ p.descricao }}">{{ p.descricao|truncate(80) }}</span>{% endif %}
+          </td>
+          <td>{{ p.tipo_despesa or '—' }}
+            {% if p.periodo %}<br><span class="cartao-dica">{{ p.periodo }}</span>{% endif %}</td>
+          <td>
+            {% if p.obra %}<b>{{ p.obra }}</b>{% else %}<span class="selo risco">sem obra</span>{% endif %}
+            {% if p.obra_trocada %}<br><span class="cartao-dica">trocada por você (solicitação: {{ p.obra_solicitada or '—' }})</span>{% endif %}
+            {% if pode_operar and not p.gerada %}<br>
+              <button type="button" class="link-btn escolher-obra" data-sugerida="{{ p.obra }}">trocar…</button>
+              {% if p.obra_trocada %}<button type="button" class="link-btn usar-obra" data-obra="">voltar à da solicitação</button>{% endif %}
+            {% endif %}
+          </td>
+          <td>{{ p.conta or '—' }}</td>
+          <td>{{ p.carteira }}</td>
+          <td class="num">
+            {% if p.quantidade %}{{ p.quantidade|int if p.quantidade == p.quantidade|int else p.quantidade }}
+              × {{ (p.valor_diaria_informada or p.valor_diaria_cadastrada or 0)|moeda }}{% else %}—{% endif %}
+          </td>
+          <td class="num valor-final"><b>{{ p.valor|moeda }}</b>
+            {% if p.valor_informado %}<br><span class="cartao-dica">informado</span>{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="11" class="cartao-dica">
+          Nenhuma linha corresponde ao filtro. Ajuste os filtros na lateral.
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h3 style="margin-top:24px">Por obra</h3>
+<div class="tabela-wrap">
+  <div class="tabela-rolagem livre">
+    <table class="sps">
+      <thead><tr><th>Obra</th><th>Conta</th><th class="num">Linhas</th>
+        <th class="num">Total</th></tr></thead>
+      <tbody>
+      {% for o in resultado.por_obra %}
+        <tr><td><b>{{ o.obra }}</b></td><td>{{ o.conta or '—' }}</td>
+          <td class="num">{{ o.pessoas }}</td><td class="num">{{ o.total|moeda }}</td></tr>
+      {% else %}
+        <tr><td colspan="4" class="cartao-dica">Nada selecionado para pagamento.</td></tr>
+      {% endfor %}
+      </tbody>
+      {% if resultado.por_obra %}
+      <tfoot><tr><th>Total</th><th></th>
+        <th class="num">{{ resultado.quantos_a_pagar }}</th>
+        <th class="num">{{ resultado.total|moeda }}</th></tr></tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{% if pode_operar %}
+<div class="barra-salvar" id="barra-salvar">
+  <span class="conta-selecao">
+    Selecionados para pagamento: <span id="quantos-marcados">{{ resultado.quantos_a_pagar }}</span>
+    <span class="total-selecao" id="total-marcado">{{ resultado.total|moeda }}</span>
+  </span>
+  <span class="cartao-dica" id="recado-selecao"></span>
+  <span class="sobra">
+    <button class="btn secundario" type="button" id="btn-desfazer">Desfazer</button>
+    <button class="btn" type="button" id="btn-salvar-selecao">Salvar seleção</button>
+  </span>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% if pode_operar %}
+<dialog class="dialogo" id="dialogo-obra">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Trocar a obra que paga</h3>
+  <p class="cartao-dica" id="dialogo-obra-quem"></p>
+  {% if obras_c_diarios %}
+    <input type="search" id="dialogo-obra-procura" autocomplete="off" data-sem-busca
+           placeholder="Procurar obra…" aria-label="Procurar obra">
+    <select id="dialogo-obra-lista" size="12" data-sem-busca aria-label="Obras da C. Diários">
+      {% for o in obras_c_diarios %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+    </select>
+    <p class="cartao-dica">Obras da aba "C. Diários". Clique duas vezes para selecionar.</p>
+  {% else %}
+    <input type="text" id="dialogo-obra-texto" placeholder="código da obra"
+           aria-label="Código da obra">
+  {% endif %}
+  <div class="lat-acoes" style="margin-top:10px">
+    <button type="button" class="btn" id="dialogo-obra-usar">Usar esta obra</button>
+  </div>
+</dialog>
+{% endif %}
+
+{% include "_folha_ficha_js.html" %}
+
+<script>
+const tabela = document.getElementById("tabela-dc");
+const caixas = [...document.querySelectorAll(".marca-pessoa")];
+const inicial = caixas.map(c => c.checked);
+
+function dinheiro(n) {
+  return n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+}
+
+function atualizar() {
+  let quantos = 0, total = 0, mudou = false;
+  caixas.forEach((caixa, i) => {
+    const linha = caixa.closest("tr");
+    linha.classList.toggle("nao-vai", !caixa.checked);
+    if (caixa.checked) {
+      quantos += 1;
+      total += parseFloat(linha.dataset.valor || "0") || 0;
+    }
+    if (caixa.checked !== inicial[i]) mudou = true;
+  });
+  const q = document.getElementById("quantos-marcados");
+  const t = document.getElementById("total-marcado");
+  if (q) q.textContent = quantos;
+  if (t) t.textContent = dinheiro(total);
+  const salvar = document.getElementById("btn-salvar-selecao");
+  const desfazer = document.getElementById("btn-desfazer");
+  if (salvar) salvar.disabled = !mudou;
+  if (desfazer) desfazer.hidden = !mudou;
+  const recado = document.getElementById("recado-selecao");
+  if (recado && !mudou) recado.textContent = "";
+}
+caixas.forEach(caixa => caixa.addEventListener("change", atualizar));
+atualizar();
+
+// Clicar na linha abre a ficha (quem está no cadastro); caixinha, link e botão não.
+if (tabela) tabela.addEventListener("click", e => {
+  if (e.target.closest(".marca, a, button")) return;
+  const linha = e.target.closest("tr.clicavel");
+  if (linha) abrirFichaDoFuncionario(linha.dataset.cpf);
+});
+
+const marcarTodos = document.getElementById("marcar-todos");
+if (marcarTodos) marcarTodos.addEventListener("change", () => {
+  caixas.forEach(c => { if (!c.disabled) c.checked = marcarTodos.checked; });
+  atualizar();
+});
+
+const desfazer = document.getElementById("btn-desfazer");
+if (desfazer) desfazer.addEventListener("click", () => {
+  caixas.forEach((c, i) => { c.checked = inicial[i]; });
+  atualizar();
+});
+
+const salvar = document.getElementById("btn-salvar-selecao");
+if (salvar) salvar.addEventListener("click", async () => {
+  const decisoes = caixas.map(c => ({chave: c.closest("tr").dataset.chave, pagar: c.checked}));
+  salvar.disabled = true;
+  const recado = document.getElementById("recado-selecao");
+  recado.textContent = "Salvando…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.folha_dc_selecao') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({decisoes: decisoes})});
+    const d = await r.json();
+    if (!d.ok) {
+      recado.textContent = d.erro;
+      recado.className = "cartao-dica erro";
+      salvar.disabled = false;
+      return;
+    }
+    location.reload();
+  } catch (e) {
+    recado.textContent = "Não foi possível salvar: " + e;
+    salvar.disabled = false;
+  }
+});
+
+function haSelecaoPorSalvar() {
+  if (caixas.some((c, i) => c.checked !== inicial[i])) {
+    alert("Salve a seleção antes: a tela será recarregada.");
+    return true;
+  }
+  return false;
+}
+
+async function gravarObra(chave, obra) {
+  const r = await fetch("{{ url_for('analisesps.folha_dc_obra') }}", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({chave: chave, obra: obra})});
+  const d = await r.json();
+  if (!d.ok) { alert(d.erro); return false; }
+  return true;
+}
+
+document.querySelectorAll(".usar-obra").forEach(b => b.addEventListener("click", async () => {
+  if (haSelecaoPorSalvar()) return;
+  b.disabled = true;
+  if (await gravarObra(b.closest("tr").dataset.chave, b.dataset.obra)) location.reload();
+  else b.disabled = false;
+}));
+
+(function () {
+  const dialogo = document.getElementById("dialogo-obra");
+  if (!dialogo) return;
+  const lista = document.getElementById("dialogo-obra-lista");
+  const procura = document.getElementById("dialogo-obra-procura");
+  const texto = document.getElementById("dialogo-obra-texto");
+  const usar = document.getElementById("dialogo-obra-usar");
+  const semAcento = t => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+  let chave = "";
+  document.querySelectorAll(".escolher-obra").forEach(b => b.addEventListener("click", () => {
+    if (haSelecaoPorSalvar()) return;
+    const linha = b.closest("tr");
+    chave = linha.dataset.chave;
+    document.getElementById("dialogo-obra-quem").textContent =
+      (linha.dataset.nome || linha.dataset.cpf) + " — o valor desta linha sai da obra selecionada.";
+    if (lista) {
+      procura.value = "";
+      [...lista.options].forEach(o => { o.hidden = false; });
+      lista.value = b.dataset.sugerida || "";
+    }
+    if (texto) texto.value = b.dataset.sugerida || "";
+    usar.disabled = false;
+    dialogo.showModal();
+    (procura || texto).focus();
+  }));
+  if (procura) procura.addEventListener("input", () => {
+    const alvo = semAcento(procura.value.trim());
+    let primeira = null;
+    [...lista.options].forEach(o => {
+      const casa = !alvo || semAcento(o.value).includes(alvo);
+      o.hidden = !casa;
+      if (casa && !primeira) primeira = o;
+    });
+    if (primeira && (!lista.value || lista.selectedOptions[0].hidden)) lista.value = primeira.value;
+  });
+  if (procura) procura.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); usar.click(); }
+  });
+  if (lista) lista.addEventListener("dblclick", () => usar.click());
+  usar.addEventListener("click", async () => {
+    const obra = ((lista ? lista.value : texto.value) || "").trim().toUpperCase();
+    if (!obra) { alert("Selecione a obra."); return; }
+    usar.disabled = true;
+    if (await gravarObra(chave, obra)) location.reload();
+    else usar.disabled = false;
+  });
+})();
+</script>
+{% endblock %}

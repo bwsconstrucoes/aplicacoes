@@ -5932,7 +5932,7 @@ def test_as_subtelas_ficam_AGRUPADAS_POR_ASSUNTO(app):
     from app.apps.analisesps import web
 
     assert [s[0] for s in web.SUBTELAS_DA_FOLHA] == [
-        "importar", "auxilios", "diaristas", "pagamento",     # pagamentos
+        "importar", "auxilios", "diaristas", "dc", "pagamento",  # pagamentos
         "colaboradores", "ponto", "calendario", "rateio"]      # base
 
     # E cada uma declara a que grupo pertence — é o que a faixa de abas desenha.
