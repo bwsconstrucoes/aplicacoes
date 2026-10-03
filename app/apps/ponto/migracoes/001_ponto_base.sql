@@ -29,23 +29,42 @@
 CREATE SCHEMA IF NOT EXISTS ponto;
 
 -- ---------------------------------------------------------------------------
--- Fotos (da batida e cadastral). No banco, e não no disco: o disco do Render
--- apaga tudo a cada publicação ou reinício. `conteudo` fica NULO quando a foto
--- é expurgada pelo prazo de guarda — o hash fica, como prova de que existiu.
+-- Fotos (da batida e cadastral): a FICHA fica aqui; o ARQUIVO fica no Google
+-- Drive, pela mesma rotina dos anexos do ERP. Decisão do dono, 03/10/2026:
+-- "no Drive o espaço é virtualmente infinito; na base de dados não".
+--
+-- `conteudo` é a SALA DE ESPERA, não armazenamento: só tem bytes enquanto a
+-- subida ao Drive não aconteceu (rede, cota, pasta não configurada). Quando
+-- sobe, vira NULL. `sha256` fica para sempre — é a prova de que a foto existiu
+-- e não foi trocada. `expurgada_em` é para a rotina futura de apagar do Drive
+-- pelo prazo de guarda; o hash continua.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS ponto.fotos (
-    id            BIGSERIAL PRIMARY KEY,
-    sha256        TEXT        NOT NULL,
-    conteudo      BYTEA,
-    tamanho       INTEGER     NOT NULL,
-    mime          TEXT        NOT NULL DEFAULT 'image/jpeg',
-    largura       INTEGER,
-    altura        INTEGER,
-    criado_em     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expurgada_em  TIMESTAMPTZ
+    id             BIGSERIAL PRIMARY KEY,
+    sha256         TEXT        NOT NULL,
+    tamanho        INTEGER     NOT NULL,
+    mime           TEXT        NOT NULL DEFAULT 'image/jpeg',
+    largura        INTEGER,
+    altura         INTEGER,
+    nome_arquivo   TEXT,
+    drive_file_id  TEXT,
+    enviada_em     TIMESTAMPTZ,
+    conteudo       BYTEA,
+    tentativas     INTEGER     NOT NULL DEFAULT 0,
+    ultimo_erro    TEXT,
+    criado_em      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expurgada_em   TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS ix_ponto_fotos_expurgo
-    ON ponto.fotos (criado_em) WHERE expurgada_em IS NULL;
+CREATE INDEX IF NOT EXISTS ix_ponto_fotos_fila
+    ON ponto.fotos (id) WHERE drive_file_id IS NULL AND conteudo IS NOT NULL;
+
+-- As subpastas por mês (AAAA-MM) dentro da pasta do ponto no Drive, lembradas
+-- para não perguntar ao Google a cada batida.
+CREATE TABLE IF NOT EXISTS ponto.drive_pastas (
+    nome       TEXT PRIMARY KEY,
+    file_id    TEXT NOT NULL,
+    criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- ---------------------------------------------------------------------------
 -- O que o ponto precisa saber de uma obra além do que o ERP já guarda.

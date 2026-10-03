@@ -205,6 +205,19 @@ class TestFoto:
         b64 = "data:image/png;base64," + base64.b64encode(_imagem_png(10, 10)).decode()
         assert fotos.decodificar_base64(b64) == _imagem_png(10, 10)
 
+    def test_preparar_devolve_hash_do_que_sera_guardado(self):
+        pronta = fotos.preparar(base64.b64encode(_imagem_png(900, 300)).decode())
+        assert (pronta.largura, pronta.altura) == (800, 267)
+        assert pronta.hash == fotos.sha256(pronta.dados) and len(pronta.hash) == 64
+
+    def test_nome_do_arquivo_nao_leva_cpf(self):
+        m = dt.datetime(2026, 10, 3, 11, 5, 9, tzinfo=dt.timezone.utc)
+        assert fotos.nome_do_arquivo(m, 42, 7) == "2026-10-03_080509_colab42_nsr7.jpg"
+
+    def test_sem_pasta_configurada_o_drive_nao_esta_configurado(self, monkeypatch):
+        monkeypatch.delenv(fotos.VARIAVEL_PASTA, raising=False)
+        assert fotos.drive_configurado() is False
+
     def test_recusa_lixo(self):
         with pytest.raises(ErroDeValidacao):
             fotos.decodificar_base64("isto não é base64!!")

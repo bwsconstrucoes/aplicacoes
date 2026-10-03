@@ -229,10 +229,8 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         obra_na_lista_da_pessoa=int(obra_ok["id"]) in cadastros.obras_da_pessoa(conn, pessoa["id"]))
     data_ref = horario.data_referencia(momento, pessoa["tipo_jornada"])
 
-    # --- foto ---------------------------------------------------------------
-    foto_id, foto_hash = None, None
-    if foto_base64:
-        foto_id, foto_hash = fotos.guardar(conn, foto_base64)
+    # --- foto: valida e reduz ANTES de gravar (foto ilegível é 400 limpo) ----
+    foto = fotos.preparar(foto_base64) if foto_base64 else None
 
     # --- NSR e corrente -----------------------------------------------------
     conn.exec_driver_sql("SELECT pg_advisory_xact_lock(%s)", (_TRAVA_NSR,))
@@ -254,9 +252,16 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
     """, nsr=nsr, c=pessoa["id"], o=obra_ok["id"], ts=momento, tsd=momento_aparelho,
          dref=data_ref, lat=geo.decimal_ou_none(latitude), lon=geo.decimal_ou_none(longitude),
          dentro=dentro, dist=distancia, disp=(aparelho["id"] if aparelho else None),
-         foto=foto_id, fhash=foto_hash, origem=origem_ok, status=status,
+         foto=None, fhash=(foto.hash if foto else None), origem=origem_ok, status=status,
          motivo=("; ".join(motivos) if motivos else None), hash=corrente,
          por=((registrado_por or "").strip()[:120] or None))
+    if foto:
+        # Depois do NSR, para o nome do arquivo carregar o número da batida.
+        # `guardar` nunca levanta erro: Drive fora do ar manda para a fila.
+        foto_id = fotos.guardar(conn, foto, nome=fotos.nome_do_arquivo(
+            momento, int(pessoa["id"]), nsr), momento=momento)
+        db.executar(conn, "UPDATE ponto.marcacoes SET foto_id = :f WHERE id = :id",
+                    f=foto_id, id=linha["id"])
     if aparelho:
         dispositivos.marcar_uso(conn, aparelho["id"])
 

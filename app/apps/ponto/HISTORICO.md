@@ -6,16 +6,19 @@ junto com o `README.md` e o `PLANO.md`.
 ## Pendente AGORA
 
 1. **Juntar na `main`** — espera o "pode" do dono. A junção exige:
-   - as 2 linhas no `app/main.py` (importação protegida + `register_blueprint`,
-     como o painel e a Análise de SPs) — o ramo NÃO as tem, por pedido dele de
-     não mexer fora do módulo;
    - `PONTO_API_KEY` criada no Render **antes** da junção (sem ela a API
      responde 503, de propósito);
+   - `PONTO_DRIVE_PASTA` com o id da pasta do Drive para as fotos, compartilhada
+     com `contato@bwsconstrucoes.com.br` (quem a conta de serviço personifica;
+     muda em `PONTO_DRIVE_IMPERSONAR`). Sem ela, as fotos esperam na fila do
+     banco até a pasta existir — a batida funciona do mesmo jeito;
    - rodar as migrações do ponto logo depois: `POST /ponto/api/admin/migrar`
      com a chave, ou `python -m app.apps.ponto.scripts.migrar --aplicar` no
      Shell;
-   - uma linha na tabela de áreas do `CLAUDE.md` e as seções do `CONTEXTO.md`
-     (§2, §4, §5, §9).
+   - ✔ as 2 linhas no `main.py`, a linha no `CLAUDE.md`, as seções do
+     `CONTEXTO.md` e o `PERGUNTAS.md` do ERP **já estão no ramo** desde a
+     segunda rodada de 03/10/2026 — o dono pediu para juntar, e sem elas a
+     junção não ligaria nada.
 2. **Confirmar com a contabilidade/advogado** o que o REP-P exige além do
    software (registro do programa, termo de responsabilidade, AFD/AEJ) antes de
    desligar o Mobponto. Não dá para confirmar daqui.
@@ -31,8 +34,9 @@ com banco), README. Nada fora da pasta `app/apps/ponto/` e dos dois arquivos de
 teste. O serviço de verdade (`app.main`) foi carregado com o blueprint
 registrado e todas as rotas respondem; o curinga do encurtador não as engole.
 
-**A especificação de partida veio de outro chat (do Vitor)**, e foi confrontada
-com o repositório antes de qualquer código — o `PLANO.md` registra os achados.
+**A especificação de partida foi colada pelo dono de outro chat** (o nome
+"Vitor" que apareceu na mensagem dele era erro de ditado — ninguém com esse nome
+desenhou nada), e foi confrontada com o repositório antes de qualquer código — o `PLANO.md` registra os achados.
 Decisões, com o motivo:
 
 1. **Obras e pessoas são do ERP, não do ponto.** A especificação pedia
@@ -45,9 +49,16 @@ Decisões, com o motivo:
    O importador cria no ERP pessoa/obra que não existe (única escrita do ponto
    em tabela do ERP) e **não altera** pessoa que já existe — obra divergente é
    aviso, porque o ERP manda.
-2. **Foto no banco, reduzida, opcional.** O disco do Render é apagado a cada
-   publicação; "salvar localmente" perderia tudo. JPEG de 800 px, teto de
-   300 KB. Drive e expurgo por prazo vêm depois (a coluna já existe).
+2. **Foto no Google Drive, reduzida, opcional.** O disco do Render é apagado
+   a cada publicação; "salvar localmente" perderia tudo. A primeira versão
+   guardava no banco; o dono corrigiu no mesmo dia: *"as fotos a gente pode
+   armazenar no Google Drive, lá o espaço é virtualmente infinito; na base de
+   dados não"*. Sobe pela rotina de Drive do ERP (`erp/core/documentos/drive.py`,
+   importada), fechada (nunca pública por link), em subpasta por mês, na pasta
+   `PONTO_DRIVE_PASTA`. No banco fica só a ficha (hash, tamanho, id no Drive).
+   Se o Drive falhar na hora, a batida NÃO falha: os bytes esperam em
+   `ponto.fotos.conteudo` até a rota/script de reenvio levá-los. JPEG de
+   800 px, teto de 300 KB. Expurgo por prazo é rotina futura (coluna já existe).
 3. **Identidade recusa; lugar e relógio vão para análise.** A especificação
    dizia "fora das regras é rejeitada". A Portaria 671 veda impedir a marcação
    do empregado; recusar quem está a 250 m da obra cria passivo. Recusa só por
@@ -74,10 +85,27 @@ Decisões, com o motivo:
   a consulta detalhada.
 - O Flask não aceita rota nova num blueprint já registrado; o teste do guarda
   usa um blueprint de mentira com o mesmo `before_request`.
+- Os testes com banco gravam de verdade e deixavam três obras `PT-*` no banco
+  ao terminar; com a suíte em paralelo, outro arquivo do mesmo trabalhador
+  (`test_obra_do_documento_banco.py`) contava obras esperando zero e caía. A
+  fixture passou a limpar também na SAÍDA. Regra para teste novo com banco neste
+  módulo: o que grava, apaga ao sair.
 
-**O que ficou de fora e por quê:** `PERGUNTAS.md` do ERP não foi tocado (fora
-da pasta); as perguntas estão no README do ponto até o "pode". `conftest.py`
-não foi tocado: as fixtures de banco do ponto moram no próprio arquivo de teste.
+**O que ficou de fora e por quê:** `conftest.py` não foi tocado: as fixtures
+de banco do ponto moram no próprio arquivo de teste. Expurgo de fotos por prazo
+e o conector do iDFace ficam para as próximas fases.
+
+**Esclarecimentos dados ao dono em 03/10/2026, para constar:**
+- **REP-P** = Registrador Eletrônico de Ponto via Programa. É a categoria da
+  Portaria 671/2021 para ponto feito por software (celular, computador), em
+  vez da máquina de parede (REP-C). O que a lei pede do REP-P: registrar cada
+  marcação com número sequencial sem furo, não permitir alterar nem apagar,
+  gerar o arquivo fiscal (AFD) e o espelho (AEJ), dar comprovante ao
+  empregado e ter registro do programa com termo de responsabilidade do
+  empregador. O schema já nasce com o que os arquivos precisam; os arquivos e
+  o registro são fase 3 e assunto da contabilidade.
+- **Juntar na `main` É publicar**: o Render publica na hora. Não existe
+  "juntar sem publicar" neste repositório.
 
 **Como foi verificado:** `tests/test_ponto.py` + `tests/test_ponto_banco.py`
 (71 passando contra Postgres 16 local); os três scripts rodados de ponta a

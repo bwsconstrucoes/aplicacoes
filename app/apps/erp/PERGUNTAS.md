@@ -255,6 +255,20 @@ contando.
 - Quais colaboradores estão com exame ocupacional vencido?
 - Quanto foi gasto com EPI na obra X?
 
+### Ponto eletrônico (módulo `ponto`, fase 1 — 03/10/2026)
+
+O dia de uma batida é a `data_referencia`, não a hora do relógio: para o vigia
+noturno, batida antes das 10h pertence ao dia anterior. "Trabalhou" aqui quer
+dizer "tem batida"; presença, horas e faltas são regra da fase 3.
+
+- Quem bateu ponto hoje na obra X? 🔒
+- Quantos dias o Fulano trabalhou em setembro? ⚠️ (dia com batida, não jornada cumprida)
+- Quais batidas estão em análise, e por quê? (fora da cerca, obra sem coordenada, relógio, pessoa afastada)
+- Quais aparelhos estão pendentes de aprovação?
+- Quantas batidas foram recusadas esta semana, e de que aparelho?
+- Qual foi a última batida da Maria? Em que obra?
+- Quais fotos de batida ainda não subiram para o Drive?
+
 ### Conciliação e banco
 
 - Quantos títulos ainda não estão conciliados? Quanto somam?
@@ -320,6 +334,9 @@ nunca chutar.
 | "Quanto tempo leva do pedido até a entrega?" | o recebimento existe, mas não há medida de prazo montada |
 | "Quem é o melhor fornecedor?" | não há nota de desempenho (prazo, qualidade, recusa) |
 | "Quanto vou precisar de caixa nos próximos 90 dias?" | previsão existe por título; falta juntar com o previsto a receber |
+| "Quantas horas o Fulano trabalhou este mês?" / "Quem chegou atrasado?" / "Quem faltou?" | o ponto só registra batidas (fase 1); a regra de jornada, horas, atraso e falta é a fase 3 do módulo `ponto` |
+| "Quem está na obra agora?" | precisa da regra de entrada/saída por jornada — fase 3 do ponto |
+| "Qual o espelho de ponto do Fulano?" | AFD/AEJ e espelho são fase 3 do ponto |
 
 ---
 

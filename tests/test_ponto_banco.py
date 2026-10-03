@@ -57,14 +57,8 @@ def ponto(_schema_ponto, banco, monkeypatch):
     monkeypatch.setenv("PONTO_API_KEY", CHAVE)
     from app.apps.ponto import auth
     auth._registros.clear()
+    _limpar(banco)
     with banco.connect() as conn:
-        tabelas = [r[0] for r in conn.execute(text(
-            "SELECT tablename FROM pg_tables WHERE schemaname = 'ponto' AND tablename <> '_migracoes'"))]
-        conn.execute(text("TRUNCATE " + ", ".join(f'ponto."{t}"' for t in tabelas)
-                          + " RESTART IDENTITY CASCADE"))
-        conn.execute(text("DELETE FROM colaboradores WHERE cpf IN (:a, :b, :c)"),
-                     {"a": CPF_JOAO, "b": CPF_MARIA, "c": CPF_DESLIGADO})
-        conn.execute(text("DELETE FROM obras WHERE codigo LIKE 'PT-%'"))
         obra = conn.execute(text(
             "INSERT INTO obras (codigo, nome, latitude, longitude, status) "
             "VALUES ('PT-01', 'Escola do Bairro', :lat, :lon, 'ATIVA') RETURNING id"),
@@ -88,6 +82,24 @@ def ponto(_schema_ponto, banco, monkeypatch):
         conn.commit()
     yield {"obra": obra, "obra_sem_geo": obra_sem_geo, "obra_encerrada": obra_encerrada,
            "joao": joao, "maria": maria, "desligado": desligado}
+    # ⚠️ LIMPA NA SAÍDA, não só na entrada. Estes testes gravam DE VERDADE (as
+    # rotas confirmam a transação), e outros arquivos do mesmo trabalhador do
+    # xdist contam as obras do banco esperando zero. Em 03/10/2026 as três obras
+    # PT-* que sobravam derrubaram 11 testes de `test_obra_do_documento_banco.py`.
+    _limpar(banco)
+
+
+def _limpar(banco):
+    with banco.connect() as conn:
+        tabelas = [r[0] for r in conn.execute(text(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'ponto' AND tablename <> '_migracoes'"))]
+        if tabelas:
+            conn.execute(text("TRUNCATE " + ", ".join(f'ponto."{t}"' for t in tabelas)
+                              + " RESTART IDENTITY CASCADE"))
+        conn.execute(text("DELETE FROM colaboradores WHERE cpf IN (:a, :b, :c, :d)"),
+                     {"a": CPF_JOAO, "b": CPF_MARIA, "c": CPF_DESLIGADO, "d": "39053344705"})
+        conn.execute(text("DELETE FROM obras WHERE codigo LIKE 'PT-%'"))
+        conn.commit()
 
 
 @pytest.fixture
@@ -145,6 +157,9 @@ def test_contrato_com_o_erp(banco, ponto):
         colunas = {(r[0], r[1]) for r in conn.execute(text(
             "SELECT table_name, column_name FROM information_schema.columns "
             "WHERE table_schema = 'public' AND table_name IN ('obras', 'colaboradores')"))}
+    from app.apps.erp.core.documentos import drive as drive_erp
+    for nome in ("enviar", "_servico", "_procurar_pasta", "ErroDrive"):
+        assert hasattr(drive_erp, nome), f"o ponto usa erp.core.documentos.drive.{nome}"
     for esperada in [("obras", "id"), ("obras", "codigo"), ("obras", "nome"), ("obras", "status"),
                      ("obras", "latitude"), ("obras", "longitude"),
                      ("colaboradores", "id"), ("colaboradores", "nome"), ("colaboradores", "cpf"),
@@ -324,22 +339,59 @@ def test_entrada_ruim_e_400_com_o_campo(cliente):
     assert sem_token.status_code == 401
 
 
-def test_batida_com_foto_guarda_reduzida_e_com_hash(cliente, banco):
+def _foto_base64(largura=1200, altura=1600) -> str:
     from PIL import Image
     saida = io.BytesIO()
-    Image.new("RGB", (1200, 1600), (200, 150, 100)).save(saida, format="JPEG")
-    foto = "data:image/jpeg;base64," + base64.b64encode(saida.getvalue()).decode()
+    Image.new("RGB", (largura, altura), (200, 150, 100)).save(saida, format="JPEG")
+    return "data:image/jpeg;base64," + base64.b64encode(saida.getvalue()).decode()
+
+
+def test_batida_com_foto_sobe_para_o_drive_e_so_a_ficha_fica_no_banco(cliente, banco, monkeypatch):
+    from app.apps.ponto.core import fotos
+    enviados = []
+
+    def drive_falso(conn, dados, nome, momento):
+        enviados.append((nome, len(dados)))
+        return "drive-abc123"
+    monkeypatch.setattr(fotos, "_subir_no_drive", drive_falso)
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
-    r = bater(cliente, token, foto_base64=foto)
+    r = bater(cliente, token, foto_base64=_foto_base64())
     assert r.status_code == 201, r.get_json()
     m = r.get_json()["marcacao"]
     assert m["tem_foto"] is True and len(m["foto_hash"]) == 64
+    assert len(enviados) == 1 and enviados[0][0].endswith(f"_colab{m['colaborador_id']}_nsr{m['nsr']}.jpg")
     with banco.connect() as conn:
-        f = conn.execute(text("SELECT tamanho, largura, altura, sha256 FROM ponto.fotos")).one()
+        f = conn.execute(text("SELECT tamanho, largura, altura, sha256, drive_file_id, conteudo, "
+                              "enviada_em FROM ponto.fotos")).one()
     assert f[0] <= 300 * 1024 and (f[1], f[2]) == (600, 800) and f[3] == m["foto_hash"]
+    assert f[4] == "drive-abc123" and f[5] is None and f[6] is not None
     r = bater(cliente, token, cpf=CPF_MARIA, foto_base64="isto não é foto")
     assert r.status_code == 400 and r.get_json()["campo"] == "foto_base64"
+
+
+def test_drive_fora_do_ar_nao_derruba_a_batida_e_a_foto_espera_na_fila(cliente, banco, monkeypatch):
+    from app.apps.ponto.core import fotos
+    monkeypatch.setattr(fotos, "TENTATIVAS_NA_HORA", 1)
+    monkeypatch.delenv(fotos.VARIAVEL_PASTA, raising=False)      # Drive não configurado
+    dispositivo_id, token = registrar_aparelho(cliente)
+    aprovar(cliente, dispositivo_id)
+    r = bater(cliente, token, foto_base64=_foto_base64())
+    assert r.status_code == 201 and r.get_json()["marcacao"]["tem_foto"] is True
+    with banco.connect() as conn:
+        f = conn.execute(text("SELECT drive_file_id, conteudo, tentativas, ultimo_erro "
+                              "FROM ponto.fotos")).one()
+    assert f[0] is None and f[1] is not None and f[2] == 1 and "não configurado" in f[3]
+    assert cliente.get("/ponto/health").get_json()["fotos_na_fila"] == 1
+
+    # o Drive volta: a fila esvazia e os bytes somem do banco
+    monkeypatch.setattr(fotos, "_subir_no_drive", lambda conn, dados, nome, momento: "drive-xyz")
+    r = cliente.post("/ponto/api/admin/fotos/enviar-pendentes", headers=com_chave())
+    assert r.status_code == 200 and r.get_json()["enviadas"] == 1 and r.get_json()["restantes"] == 0
+    with banco.connect() as conn:
+        f = conn.execute(text("SELECT drive_file_id, conteudo FROM ponto.fotos")).one()
+    assert f[0] == "drive-xyz" and f[1] is None
+    assert cliente.get("/ponto/health").get_json()["fotos_na_fila"] == 0
 
 
 def test_idface_e_manual_entram_pela_chave(cliente):
@@ -510,9 +562,6 @@ def test_importar_colaboradores_cria_no_erp_e_configura_no_ponto(banco, ponto):
         assert carlos["situacao"] == "ATIVO"
         de_novo = importacao.importar_colaboradores(conn, registros, gravar=True)
         assert de_novo["criados"] == [] and len(de_novo["atualizados"]) == 2
-    with banco.connect() as conn:
-        conn.execute(text("DELETE FROM colaboradores WHERE cpf = '39053344705'"))
-        conn.commit()
 
 
 def test_sem_chave_configurada_tudo_fecha_menos_o_registro(cliente, monkeypatch):

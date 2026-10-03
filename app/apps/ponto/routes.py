@@ -16,7 +16,7 @@ import logging
 from flask import Blueprint, g, jsonify, request
 
 from . import auth, db, horario, migracoes_runner
-from .core import cadastros, consultas, dispositivos, marcacoes, recusas
+from .core import cadastros, consultas, dispositivos, fotos, marcacoes, recusas
 from .erros import ErroDoPonto
 
 logger = logging.getLogger("ponto.routes")
@@ -68,10 +68,14 @@ def _corpo() -> dict:
 def health():
     estado = {"ok": True, "modulo": "ponto", "fuso": horario.NOME_DO_FUSO,
               "agora": horario.texto(horario.agora()),
-              "chave_configurada": bool(auth.chave_configurada())}
+              "chave_configurada": bool(auth.chave_configurada()),
+              "drive_configurado": fotos.drive_configurado()}
     try:
         migracoes = migracoes_runner.listar_estado()
         estado["migracoes_pendentes"] = len(migracoes["pendentes"])
+        if not migracoes["pendentes"]:
+            with db.conexao() as conn:
+                estado["fotos_na_fila"] = fotos.pendentes(conn)
         estado["banco"] = "ok"
     except Exception as e:  # noqa: BLE001 — health não derruba, informa
         estado["banco"] = f"indisponível: {type(e).__name__}"
@@ -290,6 +294,16 @@ def listar_recusas():
 @auth.exige_chave
 def estado_das_migracoes():
     return _ok(**migracoes_runner.listar_estado())
+
+
+@bp.route("/api/admin/fotos/enviar-pendentes", methods=["POST"])
+@auth.exige_chave
+def enviar_fotos_pendentes():
+    """Leva para o Drive as fotos que ficaram na sala de espera."""
+    limite = request.args.get("limite") or _corpo().get("limite") or 50
+    with db.conexao() as conn:
+        resultado = fotos.enviar_pendentes(conn, limite=int(limite))
+    return _ok(**resultado)
 
 
 @bp.route("/api/admin/migrar", methods=["POST"])

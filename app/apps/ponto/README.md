@@ -25,12 +25,13 @@ core/dispositivos.py     registrar, aprovar, bloquear, autorizar; regra por perf
 core/geo.py              distância e cerca (função pura)
 core/marcacoes.py        a batida: validações, NSR, hash encadeado, foto, ajuste
 core/consultas.py        marcações por período, no formato do ponto
-core/fotos.py            base64 → JPEG reduzido → banco
+core/fotos.py            base64 → JPEG reduzido → Google Drive (ficha no banco)
 core/recusas.py          batida recusada vira registro
 core/importacao.py       leitura de xlsx/csv e as regras dos importadores
 scripts/migrar.py                    estado / aplicar migrações
 scripts/importar_obras.py            planilha → ERP obras + ponto.obra_config
 scripts/importar_colaboradores.py    planilha → ERP colaboradores + ponto.colaborador_config
+scripts/enviar_fotos.py              leva ao Drive as fotos que ficaram na fila
 PLANO.md                 o plano aprovado, com as decisões e o porquê
 HISTORICO.md             a memória da área — leia antes de mexer
 ```
@@ -58,6 +59,11 @@ Testes: `tests/test_ponto.py` (regras puras, sem banco) e
    nova com status `AJUSTADA` apontando para a original.
 5. **Mesma pessoa em menos de 60 s não gera batida nova**: a resposta devolve a
    que já existe, com `repetida: true`.
+6. **A foto vai para o Google Drive**, fechada, em subpasta por mês, pela
+   rotina de Drive do ERP. No banco fica a ficha (hash, tamanho, id no Drive).
+   Se o Drive falhar na hora, a batida não falha: a foto espera na fila do
+   banco e a rota de reenvio (ou o script) a leva depois. O `health` mostra
+   quantas esperam.
 
 ## Variáveis de ambiente
 
@@ -65,6 +71,9 @@ Testes: `tests/test_ponto.py` (regras puras, sem banco) e
 |---|---|
 | `DATABASE_URL` | a do ERP; o ponto não tem conexão própria |
 | `PONTO_API_KEY` | a chave dos sistemas (`X-API-Key`). **Sem ela, toda rota com chave responde 503** — falha fechado. Gere com `python -c "import secrets; print(secrets.token_urlsafe(32))"` e guarde só no Render |
+| `PONTO_DRIVE_PASTA` | id da pasta do Google Drive onde as fotos de batida ficam (subpastas `AAAA-MM` são criadas sozinhas). Pasta comum serve, desde que compartilhada com o e-mail personificado. Sem ela, as fotos esperam na fila do banco |
+| `PONTO_DRIVE_IMPERSONAR` | em nome de quem a conta de serviço grava (padrão `contato@bwsconstrucoes.com.br`, o mesmo da emissão de NFS-e e da Análise de SPs). Vazio = a própria conta de serviço, que só funciona em Drive Compartilhado |
+| `GOOGLE_CREDENTIALS_BASE64` | a credencial Google de toda a casa; nada novo |
 
 ## Endpoints (todos em JSON `{"ok": true|false, ...}`)
 
@@ -83,6 +92,7 @@ Testes: `tests/test_ponto.py` (regras puras, sem banco) e
 | `POST /ponto/api/ajustes` | chave | pedido de ajuste com justificativa (decisão é fase 2) |
 | `GET /ponto/api/recusas?limite=` | chave | as batidas recusadas e o motivo |
 | `GET /ponto/api/admin/migracoes` · `POST /ponto/api/admin/migrar` | chave | estado / aplicar migrações do schema `ponto` |
+| `POST /ponto/api/admin/fotos/enviar-pendentes?limite=50` | chave | leva ao Drive as fotos que ficaram na fila |
 
 `obra` aceita número, código ou nome exato. CPF com ou sem máscara.
 
@@ -104,8 +114,7 @@ manda). Coordenada que já existe no ERP só troca com `--sobrescrever-coordenad
 
 ## Perguntas que o ponto passa a responder (para o assistente do ERP)
 
-Ficam aqui até o módulo entrar no `app/apps/erp/PERGUNTAS.md`, o que depende do
-"pode" do dono para mexer fora da pasta.
+Também estão no `app/apps/erp/PERGUNTAS.md`, seção "Ponto eletrônico".
 
 - Quem bateu ponto hoje na obra X? *(pela `data_referencia`, não pela hora — vigia noturno conta no dia anterior)*
 - Quantos dias o Fulano trabalhou em setembro? *("trabalhou" = dia com batida; a regra de presença/jornada é fase 3)*
@@ -118,6 +127,6 @@ Ficam aqui até o módulo entrar no `app/apps/erp/PERGUNTAS.md`, o que depende d
 ## O que NÃO está na fase 1
 
 PWA e tela de bater; conector do iDFace (a API já aceita `origem=IDFACE`);
-telas no ERP (aprovar aparelho, analisar batida, decidir ajuste); Drive para
-fotos; AFD/AEJ e comprovante do empregado; espelho de ponto e horas; expurgo
-automático de fotos (a coluna `expurgada_em` já existe).
+telas no ERP (aprovar aparelho, analisar batida, decidir ajuste); AFD/AEJ e
+comprovante do empregado; espelho de ponto e horas; expurgo automático de fotos
+do Drive pelo prazo de guarda (a coluna `expurgada_em` já existe).

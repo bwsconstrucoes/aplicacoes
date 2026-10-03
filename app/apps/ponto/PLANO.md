@@ -6,11 +6,15 @@
 > ela"* — e as recomendações abaixo seguiram como padrão. O que mudou com a
 > correção: a consulta da API devolve o formato DO PONTO (uma linha por batida
 > + resumo por dia), não as 4 colunas do Mobponto; quem consome se adapta. O
-> que foi entregue está no `README.md` e no `HISTORICO.md`.
+> que foi entregue está no `README.md` e no `HISTORICO.md`. Segunda correção
+> dele, no mesmo dia: **foto no Google Drive, não no banco** ("lá o espaço é
+> virtualmente infinito; na base de dados não") — a §2.2 abaixo ficou superada
+> e a decisão vale como está no `README.md`.
 
 Escrito em 03/10/2026, no ramo `feature/modulo-ponto`, **antes de qualquer
-código**, para o dono aprovar. A especificação de partida veio de outro chat
-(do Vitor); o que está aqui é ela confrontada com o que o repositório já tem.
+código**, para o dono aprovar. A especificação de partida foi a que o dono
+colou de outro chat; o que está aqui é ela confrontada com o que o repositório
+já tem.
 Quando a fase 1 estiver pronta, este arquivo vira `README.md` + `HISTORICO.md`,
 no padrão das outras áreas.
 
@@ -55,13 +59,13 @@ seu "pode". E o ponto fica amarrado ao ERP: se o ERP renomear uma coluna, o
 ponto sente. O teste de contrato (como o de 24/09) avisa antes de chegar à
 produção.
 
-**Alternativa (a da especificação de partida):** tabelas próprias
+**Alternativa (a da especificação colada):** tabelas próprias
 `ponto_obras` e `ponto_colaboradores`, chave pelo CPF. Mais rápido de fazer,
 zero toque no ERP — e três cadastros de pessoa para manter em sincronia à mão.
 
-### 2.2 Foto da batida: onde guardar?
+### 2.2 Foto da batida: onde guardar? — SUPERADA: vai para o Drive
 
-**Recomendação:** guardar a foto **no banco** (`ponto.marcacao_foto`, bytes +
+**Recomendação original:** guardar a foto **no banco** (`ponto.marcacao_foto`, bytes +
 hash SHA-256, teto de 300 KB por foto, redimensionada no servidor), porque o
 disco do Render não guarda nada. Drive vem em fase futura, como a especificação
 já previa. Só o hash, sem a foto, deixa a prova de identidade sem conteúdo.
@@ -74,7 +78,7 @@ nenhuma por enquanto, é tirar uma tabela.
 
 ### 2.3 Batida fora da cerca: recusar ou aceitar e marcar?
 
-A especificação diz "batida fora das regras é rejeitada". Proponho separar:
+A especificação colada diz "batida fora das regras é rejeitada". Proponho separar:
 
 - **Recusar** quando o problema é de **identidade**: aparelho não aprovado,
   aparelho não autorizado para a pessoa, pessoa inativa, obra não permitida
@@ -93,7 +97,7 @@ para celular**: um PWA não tem onde esconder segredo — a chave vazaria no
 primeiro aparelho inspecionado. Proposta: ao registrar, o aparelho recebe um
 **token próprio** (devolvido uma vez, guardado no banco só o hash). A batida
 exige `device_uuid` + token. Aparelho bloqueado → token morre na hora. Isso não
-está na especificação de partida; é acréscimo de segurança, e dá para tirar.
+está na especificação colada; é acréscimo de segurança, e dá para tirar.
 
 ### 2.5 Portaria 671 desde o primeiro dia (sem retrabalho depois)
 
