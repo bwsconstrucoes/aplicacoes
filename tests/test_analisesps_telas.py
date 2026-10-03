@@ -7524,24 +7524,25 @@ def test_a_obra_do_auxilio_diz_que_veio_do_PONTO_com_os_dias(app, monkeypatch):
     assert "18 dia(s) no ponto" in html
 
 
-def test_obra_que_veio_do_CADASTRO_e_dita_como_tal(app, monkeypatch):
-    """⚠️ *"A questão da obra que paga é fundamental."* Mostrar obra de cadastro
-    com cara de obra do ponto tiraria dinheiro da conta errada em silêncio."""
+def test_SEM_OBRA_DO_PONTO_e_pendencia_destacada_com_a_escolha(app, monkeypatch):
+    """Dono, 03/10/2026: *"Não utilizar obra de cadastro automático (…) vamos
+    selecionar e isso precisa ter destaque, já que é pendência."*"""
     from decimal import Decimal as D
 
     pessoa = dict(_auxilio_calculado()["pessoas"][0])
-    pessoa.update({"obra_do_ponto": "", "dias_na_obra": 0,
-                   "obra_de_onde": "cadastro"})
+    pessoa.update({"obra": "", "obra_do_ponto": "", "dias_na_obra": 0,
+                   "obra_de_onde": "", "obra_do_cadastro": "1042", "sem_obra": True})
     _preparar_auxilio(monkeypatch, _auxilio_calculado(
-        pessoas=[pessoa], tem_ponto=False, quantos_do_ponto=0,
-        por_obra=[{"obra": "1042", "pessoas": 1, "total": D("315.00"),
-                   "do_cadastro": 1}]))
+        pessoas=[pessoa], tem_ponto=False, quantos_do_ponto=0, sem_obra=[pessoa],
+        por_obra=[{"obra": "(sem obra)", "pessoas": 1, "total": D("315.00"),
+                   "do_cadastro": 0}]))
     html = _como_mestre(app).get(
         "/analisesps/folha/auxilios").get_data(as_text=True)
 
-    assert "do cadastro — sem ponto no mês" in html
-    assert "1 do cadastro" in html, "a tabela por obra diz quantas não são do ponto"
-
+    assert "sem obra do ponto" in html
+    assert "usar esta obra" in html and "outra obra…" in html
+    assert "1 sem obra do ponto" in html, "a lateral aponta a pendência"
+    assert 'id="dialogo-obra"' in html
 
 def test_o_botao_de_gerar_do_auxilio_fica_na_LATERAL(app, monkeypatch):
     """*"O botão de gerar folha deveria ser no side bar ao invés de ser no final
