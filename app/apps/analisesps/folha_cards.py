@@ -256,19 +256,54 @@ def _codigos_omie() -> dict:
     return saida
 
 
-def _achador(campo: dict) -> tuple:
+def _achador(campo: dict, sondas=(), recusas=()) -> tuple:
     """Como um campo do Pipefy recebe um valor escolhido pelo NOME.
 
     Devolve (função nome → valor ou None, descrição do campo). Conexão com tabela:
-    o id do registro de mesmo nome; lista de opções: a opção de mesmo nome; texto:
-    o próprio nome. Dois registros com o mesmo nome não casam — nada é escolhido
-    no escuro."""
+    o id do registro de mesmo nome; conexão com pipe: o card de mesmo título;
+    lista de opções: a opção de mesmo nome; texto: o próprio nome. Dois
+    registros com o mesmo nome não casam — nada é escolhido no escuro.
+
+    ⚠️ QUANDO O PIPEFY NÃO DIZ A QUE A CONEXÃO ESTÁ LIGADA (03/10/2026: a prévia
+    de 09/2026 parou em "conexão de tipo não suportado"), a tabela é descoberta
+    a partir de `sondas` — ids de registros que sabidamente estão nela (os que o
+    cenário do Make gravava no Tipo de Despesa). `recusas`: o que o Pipefy
+    respondeu à pergunta completa, para a tela dizer o porquê."""
     campo = campo or {}
     tipo = campo.get("tipo") or ""
     ligado = campo.get("ligado_a") or {}
     if tipo == "connector":
+        if ligado.get("tipo") == "pipe" and ligado.get("id"):
+            pipe_ligado = ligado["id"]
+
+            def achar_card(nome):
+                try:
+                    cards = pipefy.cards_por_titulo(pipe_ligado, nome)
+                except pipefy.ErroDoPipefy:
+                    logger.exception("Folha: não consegui procurar %r no pipe %s",
+                                     nome, pipe_ligado)
+                    return None
+                achados = [c for c in cards if _chave(c["nome"]) == _chave(nome)]
+                return achados[0]["id"] if len(achados) == 1 else None
+            return achar_card, f'pipe "{ligado.get("nome") or pipe_ligado}"'
+        como = ""
         if ligado.get("tipo") != "tabela" or not ligado.get("id"):
-            return (lambda nome: None), "conexão de tipo não suportado"
+            ligado, falhas = {}, []
+            for sonda in sondas or ():
+                try:
+                    tabela = pipefy.tabela_do_registro(sonda)
+                except pipefy.ErroDoPipefy as e:
+                    falhas.append(str(e))
+                    continue
+                if tabela:
+                    ligado = {"tipo": "tabela", **tabela}
+                    como = " — descoberta pelo registro que o Make usava"
+                    break
+            if not ligado:
+                porque = "; ".join(list(recusas or ()) + falhas)[:600]
+                return (lambda nome: None), (
+                    "o Pipefy não informou a que tabela a conexão está ligada"
+                    + (f" ({porque})" if porque else ""))
         registros = pipefy.registros_da_tabela(ligado["id"])
         por_nome: dict = {}
         for r in registros:
@@ -277,7 +312,7 @@ def _achador(campo: dict) -> tuple:
         def achar(nome):
             achados = por_nome.get(_chave(nome)) or []
             return achados[0] if len(achados) == 1 else None
-        return achar, f'tabela "{ligado.get("nome") or ligado["id"]}"'
+        return achar, f'tabela "{ligado.get("nome") or ligado["id"]}"{como}'
     if tipo in ("select", "radio_vertical", "radio_horizontal"):
         opcoes = {_chave(o): o for o in campo.get("opcoes") or []}
         return (lambda nome: opcoes.get(_chave(nome))), "lista de opções"
@@ -303,6 +338,79 @@ def _categoria_do_omie(descricao: str) -> tuple:
                     "OMIE (espelho da carga do painel).")
     return "", (f'há {len(iguais)} categorias "{descricao}" ativas no OMIE ('
                 + ", ".join(c["codigo"] for c in iguais) + ") — não é possível escolher.")
+
+
+# ---------------------------------------------------------------------------
+# O PLANO FINANCEIRO DA PLANILHA — 03/10/2026
+#
+# O dono: *"Nessa planilha temos essa informação (…) Record ID | Plano
+# Financeiro | Record ID | Código Omie T | Código Omie, e o ID para lançar no
+# Pipefy seria o Record ID."* É a aba "Plano Financeiro" da planilha das SPs (a
+# mesma que o rateio já lê). Dela saem o registro do Tipo de Despesa (Record ID)
+# e a categoria do OMIE (Código Omie). O Pipefy e o espelho do painel ficam como
+# reserva, para o nome que a aba não tiver.
+# ---------------------------------------------------------------------------
+def _plano_financeiro() -> tuple:
+    """(`{nome sem acento: [{'record_id', 'codigo_omie'}]}`, aviso). Lê a aba na
+    hora; se a leitura falhar, usa o que a última sincronização guardou."""
+    from . import sincronizacao
+    por_nome: dict = {}
+    try:
+        linhas = sincronizacao.ler_plano_financeiro()
+        aviso = ""
+    except Exception as e:  # noqa: BLE001 — cai no guardado
+        logger.warning("Folha: não consegui ler a aba Plano Financeiro: %s", e)
+        aviso = f'aba "Plano Financeiro" não lida ({e})'
+        try:
+            linhas = [{"nome": n, "record_id": r, "codigo_omie": ""}
+                      for n, r in sincronizacao.plano_pipefy_guardado().items()]
+        except Exception:  # noqa: BLE001
+            logger.exception("Folha: não consegui ler o Plano Financeiro guardado")
+            linhas = []
+    for l in linhas:
+        por_nome.setdefault(_chave(l["nome"]), []).append(l)
+    return por_nome, aviso
+
+
+def _unico(plano: dict, nome: str, campo: str) -> str:
+    """O valor de `campo` da linha com este nome — só se for UM só."""
+    valores = {str(l.get(campo) or "").strip() for l in plano.get(_chave(nome)) or []}
+    valores.discard("")
+    return valores.pop() if len(valores) == 1 else ""
+
+
+def _achador_do_plano(plano: dict, aviso: str, sp: dict) -> tuple:
+    """O Tipo de Despesa pelo Record ID da aba; o nome que não estiver nela (ou
+    estiver com dois ids diferentes) é procurado no próprio Pipefy."""
+    reserva: list = []
+
+    def pelo_pipefy(nome):
+        if not reserva:
+            try:
+                # As sondas: os registros de Tipo de Despesa que o Make gravava.
+                sondas = list(dict.fromkeys(g[2] for g in GRUPOS.values() if g[2]))
+                reserva.append(_achador(sp["todos"].get("tipo_de_despesa"),
+                                        sondas, sp.get("recusas") or ()))
+            except pipefy.ErroDoPipefy as e:
+                reserva.append(((lambda n: None),
+                                f"não foi possível ler os tipos de despesa do Pipefy: {e}"))
+        return reserva[0][0](nome)
+
+    def achar(nome):
+        return _unico(plano, nome, "record_id") or pelo_pipefy(nome)
+    # Para a frase do bloqueio dizer o que o Pipefy respondeu na reserva.
+    achar.reserva = reserva
+
+    como = 'Record ID da aba "Plano Financeiro"' + (f" — {aviso}" if aviso else "")
+    return achar, como
+
+
+def _categoria_da_verba(descricao: str, plano: dict) -> tuple:
+    """(código, erro): o Código Omie da aba; sem ele, o espelho do painel."""
+    codigo = _unico(plano, descricao, "codigo_omie")
+    if codigo:
+        return codigo, ""
+    return _categoria_do_omie(descricao)
 
 
 def rateio_multiplo(obras: list, codigo_categoria: str) -> str:
@@ -342,7 +450,7 @@ def _ler_pipe(pipe_id: str) -> dict:
     inicio = pipe.get("campos") or {}
     fases = pipe.get("campos_das_fases") or {}
     return {"nome": pipe.get("nome") or pipe_id, "inicio": inicio,
-            "todos": {**fases, **inicio}}
+            "todos": {**fases, **inicio}, "recusas": pipe.get("recusas") or []}
 
 
 def conferir_pipe() -> dict:
@@ -413,16 +521,14 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
 
     sp = _ler_pipe(PIPE_SP) if ler_pipes else None
     achar_tipo, como_tipo = (lambda nome: nome), "texto"
+    plano, aviso_plano = _plano_financeiro()
     if ler_pipes:
         faltam = [c for c in CAMPOS_DA_SP if c not in sp["todos"]]
         if faltam:
             bloqueios.append(
                 f'o pipe "{sp["nome"]}" não tem o(s) campo(s) ' + ", ".join(faltam)
                 + ". O pipe foi alterado — nenhum card foi criado.")
-        try:
-            achar_tipo, como_tipo = _achador(sp["todos"].get("tipo_de_despesa"))
-        except pipefy.ErroDoPipefy as e:
-            bloqueios.append(f"não foi possível ler os tipos de despesa do Pipefy: {e}")
+        achar_tipo, como_tipo = _achador_do_plano(plano, aviso_plano, sp)
 
     omie = _codigos_omie()
     destino_da_conta = {" ".join(str(a["conta"] or "").split()): a.get("destino") or ""
@@ -457,10 +563,13 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
         descricao_verba = DESCRICAO_DA_VERBA.get(verba, "")
         tipo_sp = achar_tipo(descricao_verba) if descricao_verba else None
         if ler_pipes and not tipo_sp:
+            reserva = getattr(achar_tipo, "reserva", None)
             bloqueios.append(
-                f'tipo de despesa "{descricao_verba}" não encontrado no Pipefy '
-                f"(campo Tipo de Despesa da SP, {como_tipo}).")
-        categoria, erro_categoria = (_categoria_do_omie(descricao_verba)
+                f'tipo de despesa "{descricao_verba}" sem Record ID na aba "Plano '
+                'Financeiro" da planilha das SPs (ou com dois ids diferentes)'
+                + (f"; no Pipefy também não: {reserva[0][1]}" if reserva else "")
+                + (f" — {como_tipo}" if "não lida" in como_tipo else "") + ".")
+        categoria, erro_categoria = (_categoria_da_verba(descricao_verba, plano)
                                      if descricao_verba else ("", "verba sem categoria"))
         if erro_categoria:
             bloqueios.append(erro_categoria)

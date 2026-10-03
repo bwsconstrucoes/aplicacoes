@@ -2686,7 +2686,8 @@ def folha_auxilio_relatorio(formato: str):
         ano, mes = int(request.args.get("ano") or 0), int(request.args.get("mes") or 0)
         resultado = fx.calcular(tipo, ano, mes)
         lista = folha_lista.filtrar(list(resultado.get("pessoas") or []),
-                                    request.args, campo_da_obra="obra")
+                                    request.args, campo_da_obra="obra",
+                                    escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
         contas = fpg.conta_por_obra()
         montado = fr.montado_do_auxilio(resultado, lista["pessoas"], lista["filtros"],
                                         contas, fx.ROTULO_DO_TIPO[tipo],
@@ -3740,7 +3741,8 @@ def tela_folha_auxilio():
     # sendo os da verba inteira.
     from . import folha_lista
     lista = folha_lista.filtrar(list((resultado or {}).get("pessoas") or []),
-                                request.args, campo_da_obra="obra")
+                                request.args, campo_da_obra="obra",
+                                escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
 
     return render_template(
         "analisesps_folha_auxilio.html", aba="folha", subaba="auxilios",

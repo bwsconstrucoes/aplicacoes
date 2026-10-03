@@ -73,19 +73,24 @@
 </div>
 
 {% set c = lista.contagem %}
-{% if c.get('falta_dado') or lista.escondidos %}
+{% set fora = {} %}
+{% for chave, rotulo, n in lista.escondidos_por %}{% set _ = fora.update({chave: n}) %}{% endfor %}
+{% if c.get('falta_dado') or fora %}
 <div class="cartao lateral-folha">
-  <b class="lateral-titulo">Pendências antes do pagamento</b>
+  <b class="lateral-titulo">Fora da lista</b>
+  {# 03/10/2026: quem não tem este auxílio no cadastro sai da lista, como nos
+     diaristas — contado aqui, e consultável pelo filtro Situação. #}
   {% if c.get('falta_dado') %}
-    <a class="lat-critica erro" href="{{ url_tela }}{{ base_qs }}&situacao=falta_dado">
-      <b>{{ c.falta_dado }} com dados incompletos no cadastro</b>
-      <small>Sem valor ou categoria do auxílio, não há valor a pagar. Corrija no
-        card do Pipefy e clique em "Atualizar cadastro".</small>
+    <a class="lat-critica atencao" href="{{ url_tela }}{{ base_qs }}&situacao=falta_dado">
+      <b>{{ c.falta_dado }} sem este auxílio no cadastro</b>
+      <small>Sem valor ou modalidade do auxílio na ficha — em geral, quem não
+        recebe. Se alguém deveria receber, corrija no card do Pipefy e clique em
+        "Atualizar cadastro". Clique para consultar.</small>
     </a>
   {% endif %}
-  {% if lista.escondidos %}
+  {% if fora.get('saiu') %}
     <a class="lat-critica atencao" href="{{ url_tela }}{{ base_qs }}&situacao=saiu">
-      <b>{{ lista.escondidos }} {{ 'desligado' if lista.escondidos == 1 else 'desligados' }} — fora da lista</b>
+      <b>{{ fora.saiu }} {{ 'desligado' if fora.saiu == 1 else 'desligados' }}</b>
       <small>Desligados não recebem auxílio. Clique para consultar.</small>
     </a>
   {% endif %}
@@ -106,7 +111,7 @@
            placeholder="Nome ou CPF…" aria-label="Pesquisar colaborador">
   </div>
   {{ bloco('Situação', 'situacao', lista.opcoes_situacao, lista.filtros.situacao,
-           'Sem seleção, os desligados ficam fora da lista.') }}
+           'Sem seleção, ficam fora da lista os desligados e quem não tem este auxílio no cadastro.') }}
   {# A obra é o primeiro corte de verdade: *"eu preciso às vezes tratar só uma
      obra (…) os auxílios de transporte da obra tal, eu vejo um por um."* #}
   {{ bloco('Obra', 'obra', lista.opcoes_obra, lista.filtros.obra) }}
@@ -227,7 +232,7 @@
   <small>
     {% if filtrando %}{{ pessoas|length }} de {{ resultado.quantos }} · filtrado
     {% else %}{{ pessoas|length }}{% endif %}
-    {% if lista.escondidos %} · {{ lista.escondidos }} {{ 'desligado' if lista.escondidos == 1 else 'desligados' }} fora da lista{% endif %}
+    {% if lista.escondidos %} · {{ lista.escondidos }} fora da lista{% endif %}
     · pendências listadas primeiro
   </small>
 </h3>

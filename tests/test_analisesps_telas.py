@@ -6103,7 +6103,7 @@ def test_quem_precisa_de_mao_aparece_marcado(app, monkeypatch):
         com_problema=[problema], por_obra=[]))
 
     html = _como_mestre(app).get(
-        "/analisesps/folha/auxilios").get_data(as_text=True)
+        "/analisesps/folha/auxilios?situacao=falta_dado").get_data(as_text=True)
 
     assert "linha-alerta" in html
     assert "não diz o valor deste auxílio" in html
@@ -6166,10 +6166,34 @@ def test_quem_NAO_TEM_VALOR_no_cadastro_nao_da_para_marcar(app, monkeypatch):
         com_problema=[problema], por_obra=[]))
 
     html = _como_mestre(app).get(
-        "/analisesps/folha/auxilios").get_data(as_text=True)
+        "/analisesps/folha/auxilios?situacao=falta_dado").get_data(as_text=True)
     assert "disabled" in html
     assert "não diz o valor deste auxílio" in html
 
+
+
+def test_quem_NAO_TEM_O_AUXILIO_no_cadastro_fica_FORA_da_lista(app, monkeypatch):
+    """O dono, 03/10/2026: *"deve ser pessoas que não têm dado de alimentação e
+    transporte (…) Se não tem, não precisa ser exibido, o que precisaria era um
+    filtro que exiba eles. A princípio eles não aparecem."* — como nos diaristas."""
+    from decimal import Decimal as D
+
+    vai = dict(_auxilio_calculado()["pessoas"][0])
+    sem = dict(vai, cpf="22222222222", nome="SEMAUXILIO", pagar=False,
+               pagar_calculado=False, impossivel=True, valor=D("0.00"), dias=0,
+               valor_unitario=None, motivos=["o cadastro não diz o valor"])
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(pessoas=[vai, sem]))
+    cliente = _como_mestre(app)
+
+    html = cliente.get("/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "GERLANIO GOMES LIMA" in html
+    assert "SEMAUXILIO" not in html, "sem o auxílio no cadastro: fora da lista"
+    assert "1 sem este auxílio no cadastro" in html, "mas contado na lateral"
+    assert "situacao=falta_dado" in html
+
+    filtrado = cliente.get(
+        "/analisesps/folha/auxilios?situacao=falta_dado").get_data(as_text=True)
+    assert "SEMAUXILIO" in filtrado and "GERLANIO GOMES LIMA" not in filtrado
 
 def test_o_CPF_sai_PONTUADO(app, monkeypatch):
     """*"O CPF não está com a pontuação, isso facilita visualmente."*"""
@@ -7137,7 +7161,7 @@ def test_a_COR_diz_o_estado_da_linha_do_auxilio(app, monkeypatch):
                      "motivos": ["o cadastro não diz o valor"]})
     _preparar_auxilio(monkeypatch, _auxilio_calculado(pessoas=[problema]))
     ruim = _como_mestre(app).get(
-        "/analisesps/folha/auxilios").get_data(as_text=True)
+        "/analisesps/folha/auxilios?situacao=falta_dado").get_data(as_text=True)
     assert "selo risco" in ruim, "falta de dado no cadastro é vermelho forte"
 
 

@@ -45,6 +45,14 @@ ESCONDIDAS_SEM_FILTRO = {"saiu"}
 # continuou trabalhando tem direito à diária — entra na lista, com o alerta.
 ESCONDIDAS_NOS_DIARISTAS = {"vigia", "sem_diaria", "falta_dado"}
 
+# ⚠️ NA ALIMENTAÇÃO E NO TRANSPORTE, O MESMO (dono, 03/10/2026): *"deve ser
+# pessoas que não têm dado de alimentação e transporte (…) Se não tem, não
+# precisa ser exibido, o que precisaria era um filtro que exiba eles."* O
+# "cadastro incompleto" do auxílio é quem não tem valor ou modalidade DESTE
+# auxílio na ficha — na maioria, quem simplesmente não recebe. Fica fora da
+# lista, contado na lateral e no filtro Situação, como os desligados.
+ESCONDIDAS_NOS_AUXILIOS = {"saiu", "falta_dado"}
+
 
 def situacoes_da_pessoa(p: dict) -> set:
     """Em quais situações a pessoa entra. Pode ser mais de uma.
