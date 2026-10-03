@@ -11658,6 +11658,24 @@ Respostas do dono às duas escolhas que deixei abertas:
   **dias úteis** até a saída (antes, dias corridos). A alimentação "Mês" segue
   pelos dias corridos.
 
+#### Leva 168 — auxílio: quem saiu na competência NÃO recebe; o proporcional é no mês do pagamento (03/10/2026)
+
+O dono, vendo na alimentação de 09/2026 alguém com *"desligado em 19/09/2026 —
+pago proporcional até a data de saída"*: *"Se ele já saiu, ele não recebe
+mais."*
+
+**O erro foi meu (leva 161):** tratei a competência como "dias trabalhados" e
+paguei proporcional a quem saiu DENTRO dela. Mas o auxílio da competência é
+pago no mês seguinte e é o benefício daquele mês (é também por isso que as
+ausências do mês anterior viram desconto).
+
+- Saiu até o fim da competência → **não recebe** (some da lista sem filtro,
+  como os demais desligados).
+- Sai **dentro do mês do pagamento** → proporcional até a saída: dias úteis no
+  transporte e na alimentação por dia (sem a sexta no Seg-Qui), dias corridos
+  na alimentação "Mês"/"Mensal". A linha diz "11/22 dias úteis até 15/10".
+- Sai depois → recebe inteiro, com o aviso de desligamento.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11679,6 +11697,7 @@ Respostas do dono às duas escolhas que deixei abertas:
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
+| publicar a leva 168 (sem migração) | ele |
 | ~~publicar as levas 166 e 167~~ — **publicadas em 03/10/2026** (main em `eb206ea`, suíte inteira 7.877 verdes, sem migração) | — |
 | ~~publicar as levas 160 a 165~~ — **publicadas em 03/10/2026** (main em `6f4207d`, suíte inteira 7.874 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (046) e relançar no Pipefy a 09/2026 | ele |
 | ~~valor do dia ausente no mensal~~ — **dias úteis**, confirmado (03/10/2026) | — |

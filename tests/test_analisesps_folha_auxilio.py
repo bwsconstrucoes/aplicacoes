@@ -658,40 +658,37 @@ def _dia(data, presenca="", falta="", obras=()):
             "presenca": presenca, "falta": falta}
 
 
-def test_quem_SAIU_NO_MEIO_DO_MES_recebe_ate_a_data_de_saida(banco_auxilio):
-    """O dono: *"proporcionalize o pagamento considerando data de saída do
-    colaborador quando for o caso"* — nas duas verbas."""
+def test_quem_SAIU_durante_a_competencia_NAO_recebe(banco_auxilio):
+    """Dono, 03/10/2026, vendo alguém desligado em 19/09 na alimentação de
+    09/2026: *"Se ele já saiu, ele não recebe mais."* O auxílio da competência é
+    pago no mês seguinte e é o benefício daquele mês."""
     from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
-    # Saída em 15/09/2026 (terça): de 01 a 15 há 11 dias úteis.
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(
+        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 9, 19)), INICIO, FIM)
+    assert r["pagar"] is False
+    assert r["saida_no_mes"] is None
+
+
+def test_quem_SAI_no_MES_DO_PAGAMENTO_recebe_proporcional(banco_auxilio):
+    """*"Proporcionalize o pagamento considerando data de saída"* — a parte do
+    mês do pagamento (10/2026) até a saída."""
+    from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
+    # Outubro/2026: 22 dias úteis; até 15/10 (quinta), 11.
     r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
-        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 9, 15)), INICIO, FIM)
+        situacao=col.SITUACAO_SAINDO, data_saida=dt.date(2026, 10, 15)), INICIO, FIM)
     assert r["pagar"] is True
-    assert r["dias"] == 11 and r["valor"] == D("110.00")
-    assert r["saida_no_mes"] == dt.date(2026, 9, 15)
-    assert any("proporcional" in m for m in r["motivos"])
-    assert r["situacao"] == col.SITUACAO_SAINDO, "aparece na lista, não some"
+    assert r["valor"] == D("110.00"), "220 (22 dias × 10) × 11/22"
+    assert r["proporcao"] == "11/22 dias úteis até 15/10"
+    assert any("mês do pagamento" in m for m in r["motivos"])
 
     fixo = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(
-        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 9, 15),
-        modo_alimentacao="Mês", valor_alimentacao=D("300.00")), INICIO, FIM)
-    assert fixo["valor"] == D("150.00"), "valor do mês × 15/30"
-    assert fixo["proporcao"] == "15/30 dias"
+        situacao=col.SITUACAO_SAINDO, data_saida=dt.date(2026, 10, 15),
+        modo_alimentacao="Mês", valor_alimentacao=D("310.00")), INICIO, FIM)
+    assert fixo["valor"] == D("150.00"), "310 × 15/31 dias corridos"
 
-    # Transporte de valor mensal: pelos dias úteis (dono, 03/10/2026) — de 01 a
-    # 15/09/2026 há 11 dos 22 dias úteis do mês.
-    mensal = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
-        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 9, 15),
-        modo_transporte="Mensal", valor_transporte=D("220.00")), INICIO, FIM)
-    assert mensal["valor"] == D("110.00")
-    assert mensal["proporcao"] == "11/22 dias úteis"
-
-
-def test_quem_saiu_ANTES_do_mes_continua_sem_receber(banco_auxilio):
-    from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
-    r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
-        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 8, 20)), INICIO, FIM)
-    assert r["pagar"] is False
-
+    depois = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
+        situacao=col.SITUACAO_SAINDO, data_saida=dt.date(2026, 11, 20)), INICIO, FIM)
+    assert depois["valor"] == D("220.00"), "sai depois do mês do pagamento: inteiro"
 
 def test_AUSENCIA_e_falta_ou_atestado_sem_marcacao_e_nao_folga():
     from app.apps.analisesps import folha_auxilio as fx

@@ -237,27 +237,30 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     # ajuste, e o "pagar mesmo assim" não funcionava justamente nos casos que mais
     # precisam dele.
     situacao = ficha.get("situacao")
-    # ⚠️ SAIU NO MEIO DO MÊS RECEBE ATÉ A DATA DE SAÍDA (dono, 03/10/2026: *"tanto
-    # para alimentação quanto para transporte, proporcionalize o pagamento
-    # considerando data de saída do colaborador"*). Quem saiu ANTES do mês
-    # continua sem receber; quem saiu depois dele recebe o mês inteiro.
+    # ⚠️ A SAÍDA, CORRIGIDA EM 03/10/2026. O auxílio da competência é pago no
+    # mês SEGUINTE e é o benefício daquele mês. O dono: *"Se ele já saiu, ele não
+    # recebe mais."* Então:
+    #   - saiu ATÉ o fim da competência  → não recebe (situação "saiu");
+    #   - sai DENTRO do mês do pagamento → proporcional até a data de saída
+    #     (*"proporcionalize o pagamento considerando data de saída"*);
+    #   - sai depois                     → recebe inteiro, com o aviso.
+    # Na primeira versão (leva 161) quem saiu no meio da competência recebia
+    # proporcional — e ele viu alguém desligado em 19/09 aparecendo para pagar.
     data_saida = ficha.get("data_saida")
-    if (situacao == colaboradores.SITUACAO_SAIU and data_saida
-            and inicio <= data_saida <= fim):
-        fim = data_saida
-        situacao = colaboradores.SITUACAO_SAINDO
-        saida["situacao"] = situacao
-        saida["desligado"] = False
-        saida["saida_no_mes"] = data_saida
-        saida["motivos"].append(
-            f"desligado em {data_saida.strftime('%d/%m/%Y')} — pago proporcional "
-            "até a data de saída.")
-    elif situacao in (colaboradores.SITUACAO_SAIU,
-                      colaboradores.SITUACAO_AFASTADO):
+    pag_ini = fim + dt.timedelta(days=1)
+    pag_fim = pag_ini.replace(day=calendar.monthrange(pag_ini.year, pag_ini.month)[1])
+    if situacao in (colaboradores.SITUACAO_SAIU,
+                    colaboradores.SITUACAO_AFASTADO):
         saida["pagar"] = False
         saida["motivos"].append(ficha.get("motivo")
                                 or "colaborador inativo no cadastro.")
-    elif situacao == colaboradores.SITUACAO_SAINDO and not saida["saida_no_mes"]:
+    elif (situacao == colaboradores.SITUACAO_SAINDO and data_saida
+            and pag_ini <= data_saida <= pag_fim):
+        saida["saida_no_mes"] = data_saida
+        saida["motivos"].append(
+            f"sai em {data_saida.strftime('%d/%m/%Y')}, no mês do pagamento — "
+            "pago proporcional até a data de saída.")
+    elif situacao == colaboradores.SITUACAO_SAINDO:
         # Não trava: pode haver valor devido até o último dia. Mas fica dito.
         saida["motivos"].append(ficha.get("motivo") or "em processo de desligamento.")
 
@@ -298,24 +301,6 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         saida["valor_fechado"] = True
         saida["dias"] = 1
         saida["valor"] = valor_unitario
-        if saida["saida_no_mes"]:
-            ini_mes = inicio.replace(day=1)
-            fim_mes = ini_mes.replace(
-                day=calendar.monthrange(ini_mes.year, ini_mes.month)[1])
-            if tipo == TRANSPORTE:
-                # Transporte: pelos DIAS ÚTEIS (dono, 03/10/2026: *"Transporte
-                # valor mensal, vamos considerar os dias úteis"*) — a mesma
-                # régua do desconto de ausências.
-                feitos = folha_calendario.dias_uteis(inicio, fim)
-                do_mes = folha_calendario.dias_uteis(ini_mes, fim_mes) or 1
-                rotulo = "dias úteis"
-            else:
-                # Alimentação "Mês": dias corridos até a saída.
-                feitos = (fim - inicio).days + 1
-                do_mes = (fim_mes - ini_mes).days + 1
-                rotulo = "dias"
-            saida["valor"] = (valor_unitario * feitos / do_mes).quantize(CENTAVO)
-            saida["proporcao"] = f"{feitos}/{do_mes} {rotulo}"
         if saida["dias_ajuste"]:
             saida["motivos"].append(
                 "o ajuste de dias não se aplica à modalidade de valor fixo "
@@ -332,6 +317,7 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
             saida["motivos"].append(
                 f"{ferias} dia(s) útil(eis) de férias no mês: o valor mensal sai "
                 "cheio. Se não for para pagar, desmarque.")
+        _proporcional_a_saida(saida, tipo, modo, pag_ini, pag_fim)
         return _decidir(_acrescimos(saida, ajuste, tipo, modo, inicio, fim,
                                     ausencias), ajuste)
 
@@ -352,10 +338,32 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     saida["valor"] = (valor_unitario * saida["dias"]).quantize(CENTAVO)
     if saida["dias"] == 0:
         saida["motivos"].append("nenhum dia a pagar nesta competência.")
-    if saida["saida_no_mes"]:
-        saida["proporcao"] = f"até {fim.strftime('%d/%m')}"
+    _proporcional_a_saida(saida, tipo, modo, pag_ini, pag_fim)
     return _decidir(_acrescimos(saida, ajuste, tipo, modo, inicio, fim,
                                 ausencias), ajuste)
+
+
+def _proporcional_a_saida(saida: dict, tipo: str, modo: str, pag_ini, pag_fim) -> None:
+    """Quem sai DENTRO do mês do pagamento recebe a parte do mês até a saída.
+
+    A régua: dias úteis (sem a sexta, no "Segunda à Quinta") no transporte e na
+    alimentação por dia — *"Transporte valor mensal, vamos considerar os dias
+    úteis"* (03/10/2026); dias corridos na alimentação de valor fechado."""
+    data = saida.get("saida_no_mes")
+    if not data or not saida.get("valor"):
+        return
+    limpo = _sem_acento(modo)
+    if tipo == TRANSPORTE or limpo in (MODO_SEG_SEX, MODO_SEG_QUI):
+        sexta = limpo != MODO_SEG_QUI
+        feitos = folha_calendario.dias_uteis(pag_ini, data, sexta=sexta)
+        total = folha_calendario.dias_uteis(pag_ini, pag_fim, sexta=sexta) or 1
+        rotulo = "dias úteis"
+    else:
+        feitos = (data - pag_ini).days + 1
+        total = (pag_fim - pag_ini).days + 1
+        rotulo = "dias"
+    saida["valor"] = (saida["valor"] * feitos / total).quantize(CENTAVO)
+    saida["proporcao"] = f"{feitos}/{total} {rotulo} até {data.strftime('%d/%m')}"
 
 
 # ---------------------------------------------------------------------------
