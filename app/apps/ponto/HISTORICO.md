@@ -5,26 +5,29 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
-1. **Juntar na `main`** — espera o "pode" do dono. A junção exige:
-   - `PONTO_API_KEY` criada no Render **antes** da junção (sem ela a API
-     responde 503, de propósito);
-   - `PONTO_DRIVE_PASTA` com o id da pasta do Drive para as fotos, compartilhada
-     com `contato@bwsconstrucoes.com.br` (quem a conta de serviço personifica;
-     muda em `PONTO_DRIVE_IMPERSONAR`). Sem ela, as fotos esperam na fila do
-     banco até a pasta existir — a batida funciona do mesmo jeito;
-   - rodar as migrações do ponto logo depois: `POST /ponto/api/admin/migrar`
-     com a chave, ou `python -m app.apps.ponto.scripts.migrar --aplicar` no
-     Shell;
-   - ✔ as 2 linhas no `main.py`, a linha no `CLAUDE.md`, as seções do
-     `CONTEXTO.md` e o `PERGUNTAS.md` do ERP **já estão no ramo** desde a
-     segunda rodada de 03/10/2026 — o dono pediu para juntar, e sem elas a
-     junção não ligaria nada.
+1. **Aplicar a migração 001 do ponto em produção** — a única coisa que falta
+   para o módulo funcionar. O código foi publicado em 03/10/2026 com o "pode"
+   do dono; o Claude não tem a `PONTO_API_KEY` (ela não passa pelo chat), então
+   quem aplica é o dono, por um dos dois caminhos:
+   - **Shell do Render**: `python -m app.apps.ponto.scripts.migrar --aplicar`
+   - ou `POST /ponto/api/admin/migrar` com o cabeçalho `X-API-Key`.
+   Confere-se em `/ponto/health`: `migracoes_pendentes` deve ser 0 e
+   `chave_configurada` e `drive_configurado`, `true`. **Até a migração rodar**,
+   as rotas do ponto respondem erro e nada fora do ponto é afetado.
 2. **Confirmar com a contabilidade/advogado** o que o REP-P exige além do
    software (registro do programa, termo de responsabilidade, AFD/AEJ) antes de
    desligar o Mobponto. Não dá para confirmar daqui.
 3. **Fase 2**: PWA de bater ponto e telas no ERP (aprovar aparelho, analisar
    batida EM_ANALISE, decidir ajuste). **Fase 3**: iDFace, AFD/AEJ, espelho,
-   horas, Drive.
+   horas, expurgo de fotos por prazo.
+
+## 03/10/2026 — Publicado
+
+O dono criou no Render a `PONTO_API_KEY` e a `PONTO_DRIVE_PASTA` (uma pasta
+`Ponto` dentro da pasta do Drive do ERP — conferido que o ERP não mexe nela) e
+disse "pode prosseguir". Antes da junção a `main` tinha andado 14 commits (só
+Análise de SPs, sem conflito); trazida para o ramo, a suíte inteira passou
+(7.972 testes, nenhuma falha) e o `app.main` subiu com os 17 módulos.
 
 ## 03/10/2026 — Fase 1 entregue no ramo `feature/modulo-ponto`
 
