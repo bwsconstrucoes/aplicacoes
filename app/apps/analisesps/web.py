@@ -4095,31 +4095,19 @@ def folha_diaristas_fechar():
 @bp.route("/folha/pagamento")
 @exige_operador
 def tela_folha_pagamento():
-    """Gerar o arquivo de pagamento, e o log do que já foi gerado.
+    """Os arquivos gerados (por geração), excluir e lançar no Pipefy.
 
-    ⚠️ SÓ DO MESTRE (`auth.SO_DO_MESTRE`): é o passo em que o dinheiro sai, e o log
-    mostra o link de arquivos com nome, CPF e valor de ~500 pessoas."""
-    from . import folha_geracao as fg, folha_pagamento as fpg
-    from .horario import agora
+    Os arquivos nascem no botão "Gerar arquivos" de cada folha; o "Gerar por
+    competência" que ficava aqui saiu em 03/10/2026.
 
-    hoje = agora().date()
-    try:
-        ano = int(request.args.get("ano") or hoje.year)
-        mes = int(request.args.get("mes") or hoje.month)
-    except (TypeError, ValueError):
-        ano, mes = hoje.year, hoje.month
-    if not (2000 <= ano <= 2100) or not (1 <= mes <= 12):
-        ano, mes = hoje.year, hoje.month
+    ⚠️ SÓ DO MESTRE (`auth.SO_DO_MESTRE`): o log mostra o link de arquivos com
+    nome, CPF e valor de ~500 pessoas."""
+    from . import folha_pagamento as fpg
 
     pronto = fpg._pronto()
-    registro, fechados, erro = [], [], None
+    registro, erro = [], None
     try:
         registro = fpg.rodadas(teto=400)
-        # As verbas que TÊM apropriação fechada nesta competência: só elas podem
-        # ser pagas, e oferecer o que não pode ser pago só gera erro depois.
-        for fechamento in guardada_fechamentos():
-            if fechamento["ano"] == ano and fechamento["mes"] == mes:
-                fechados.append(fechamento)
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Folha: não consegui montar a tela de pagamento")
         erro = str(e)
@@ -4128,82 +4116,10 @@ def tela_folha_pagamento():
         "analisesps_folha_pagamento.html", aba="folha", subaba="pagamento",
         grupos=subtelas_agrupadas(), pronto=pronto, rodadas=registro,
         destaque=request.args.get("rodada") or "",
-        fechados=fechados, ano=ano, mes=mes, ano_padrao=hoje.year, erro=erro,
-        destinos=[(d, fg.ROTULO_DO_DESTINO[d]) for d in fg.DESTINOS],
-        rotulo_da_verba=fg.rotulo_da_verba,
+        erro=erro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
-
-
-def guardada_fechamentos() -> list:
-    """Os fechamentos da apropriação, para a tela oferecer o que dá para pagar."""
-    from . import folha_apropriacao_guardada as ag
-    try:
-        return ag.fechamentos(teto=60)
-    except Exception:  # noqa: BLE001 — lista de apoio
-        logger.exception("Folha: não consegui ler os fechamentos")
-        return []
-
-
-@bp.route("/api/folha/pagamento/preparar", methods=["POST"])
-@exige_operador
-def folha_pagamento_preparar():
-    """O que vai sair, antes de sair. NÃO grava nada e não sobe nada.
-
-    ⚠️ ESTE PASSO EXISTE PARA ELE CONFERIR: *"mostrar, antes de gerar, quantos
-    arquivos vão sair e com que total cada um"*."""
-    from . import folha_pagamento as fpg
-
-    dados = request.get_json(silent=True) or {}
-    try:
-        plano = fpg.preparar(
-            int(dados.get("ano") or 0), int(dados.get("mes") or 0),
-            str(dados.get("tipo") or ""), dados.get("verbas") or [],
-            str(dados.get("destino") or ""), bool(dados.get("juntar")))
-    except (fpg.ErroDoPagamento, ValueError, TypeError) as e:
-        return {"ok": False, "erro": str(e)}, 400
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Folha: falhou preparar o pagamento")
-        return {"ok": False, "erro": f"Não foi possível montar: {e}"}, 500
-
-    return {"ok": True, "pode_juntar": plano["pode_juntar"],
-            "motivo_nao_junta": plano["motivo_nao_junta"],
-            "resumo": {"arquivos": plano["resumo"]["arquivos"],
-                       "pessoas": plano["resumo"]["pessoas"],
-                       "total": float(plano["resumo"]["total"]),
-                       "pode_gerar": plano["resumo"]["pode_gerar"]},
-            "lotes": [{"conta": l["conta"], "quantos": l["quantos"],
-                       "total": float(l["total"]),
-                       "verbas": l["verbas"], "criticas": l["criticas"]}
-                      for l in plano["lotes"]]}
-
-
-@bp.route("/api/folha/pagamento/gerar", methods=["POST"])
-@exige_operador
-def folha_pagamento_gerar():
-    """Gera, sobe no Drive e registra no log. ⚠️ É O PASSO QUE PAGA."""
-    from . import folha_pagamento as fpg
-
-    dados = request.get_json(silent=True) or {}
-    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    try:
-        saida = fpg.gerar(
-            int(dados.get("ano") or 0), int(dados.get("mes") or 0),
-            str(dados.get("tipo") or ""), dados.get("verbas") or [],
-            str(dados.get("destino") or ""), bool(dados.get("juntar")),
-            quem=quem, forcar=bool(dados.get("forcar")))
-    except (fpg.ErroDoPagamento, ValueError, TypeError) as e:
-        return {"ok": False, "erro": str(e)}, 400
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Folha: falhou gerar o pagamento")
-        return {"ok": False, "erro": f"Não foi possível gerar: {e}"}, 500
-
-    return {"ok": True, "competencia": saida["competencia"],
-            "arquivos": [{"id": a["id"], "nome": a["nome"], "link": a["link"],
-                          "conta": a["conta"], "destino": a["destino"],
-                          "total": float(a["total"]), "avisos": a["avisos"]}
-                         for a in saida["arquivos"]]}
 
 
 def _destinos_por_conta(bruto) -> dict:

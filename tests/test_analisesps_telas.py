@@ -6496,38 +6496,20 @@ def _fechado(verba="alimentacao", fecha=True, ano=2026, mes=9):
             "fechado_em": None, "fechado_por": "MARCELO"}
 
 
-def test_a_tela_de_pagamento_diz_AS_DUAS_REGRAS_antes_do_botao(app, monkeypatch):
-    """Descobrir a regra do SomaPay depois de subir no portal custa a rodada
-    inteira: já se gerou, subiu, criou o card e avisou a equipe."""
+def test_GERAR_POR_COMPETENCIA_saiu_da_tela_de_arquivos(app, monkeypatch):
+    """Saiu em 03/10/2026 (dono: "ok, tira"): era um segundo caminho para gerar,
+    com um destino só para todas as contas. O caminho é o botão "Gerar arquivos"
+    de cada folha, com o destino por conta."""
     _preparar_pagamento(monkeypatch, fechados=[_fechado()])
-    html = _como_mestre(app).get(
-        "/analisesps/folha/pagamento").get_data(as_text=True)
-
-    assert "Um arquivo por conta, sempre" in html
-    assert "mesmo CPF duas vezes" in html
-    assert "BeeVale" in html and "SomaPay" in html
-
-
-def test_sem_apropriacao_fechada_a_tela_EXPLICA_em_vez_de_oferecer(app,
-                                                                   monkeypatch):
-    """Oferecer o botão sem ter o que pagar só gera erro depois de ele escolher
-    tudo."""
-    _preparar_pagamento(monkeypatch, fechados=[])
-    html = _como_mestre(app).get(
-        "/analisesps/folha/pagamento").get_data(as_text=True)
-
-    assert "Nenhuma apropriação fechada" in html
+    cliente = _como_mestre(app)
+    html = cliente.get("/analisesps/folha/pagamento").get_data(as_text=True)
+    assert "Gerar por competência" not in html
     assert 'id="btn-gerar"' not in html
-
-
-def test_a_verba_que_NAO_BATE_aparece_marcada_e_nao_escondida(app, monkeypatch):
-    """Um fechamento que não batia continua dizendo que não batia, e quem gera
-    decide sabendo. Esconder faria a folha sair com gente de fora."""
-    _preparar_pagamento(monkeypatch, fechados=[_fechado(fecha=False)])
-    html = _como_mestre(app).get(
-        "/analisesps/folha/pagamento?ano=2026&mes=9").get_data(as_text=True)
-    assert ">divergente</span>" in html
-    assert "Alimentação" in html
+    assert 'class="marca-verba"' not in html
+    assert "Gerar arquivos definitivos" not in html
+    for rota in ("preparar", "gerar"):
+        assert cliente.post(f"/analisesps/api/folha/pagamento/{rota}",
+                            json={}).status_code in (403, 404, 405)
 
 
 def test_a_tela_de_pagamento_e_SO_DO_MESTRE(app):
@@ -6535,8 +6517,6 @@ def test_a_tela_de_pagamento_e_SO_DO_MESTRE(app):
     from app.apps.analisesps import auth
 
     assert auth.e_so_do_mestre("analisesps.tela_folha_pagamento") is True
-    assert auth.e_so_do_mestre("analisesps.folha_pagamento_gerar") is True
-    assert auth.e_so_do_mestre("analisesps.folha_pagamento_preparar") is True
 
     resposta = como(app, SENHA_CONSULTA).get("/analisesps/folha/pagamento")
     assert resposta.status_code in (302, 403, 404)
@@ -6592,72 +6572,6 @@ def test_sem_a_migracao_a_tela_de_pagamento_AVISA(app, monkeypatch):
     html = resposta.get_data(as_text=True)
     assert "Aplicar atualizações do banco" in html
     assert 'id="btn-gerar"' not in html
-
-
-def test_conferir_NAO_gera_nada(app, monkeypatch):
-    """Conferir é o passo que ele pediu para ver antes: não grava e não sobe."""
-    from app.apps.analisesps import folha_pagamento as fpg
-    from decimal import Decimal as D
-    chamou = {}
-
-    monkeypatch.setattr(fpg, "gerar",
-                        lambda *a, **k: chamou.setdefault("gerou", True))
-    monkeypatch.setattr(fpg, "preparar", lambda *a, **k: {
-        "pode_juntar": True, "motivo_nao_junta": "",
-        "resumo": {"arquivos": 2, "pessoas": 5, "total": D("100.00"),
-                   "pode_gerar": True, "com_critica": []},
-        "lotes": [{"conta": "50024", "quantos": 5, "total": D("100.00"),
-                   "verbas": ["alimentacao"], "criticas": []}]})
-
-    corpo = _como_mestre(app).post(
-        "/analisesps/api/folha/pagamento/preparar",
-        json={"ano": 2026, "mes": 9, "tipo": "quinzena",
-              "verbas": ["alimentacao"], "destino": "beevale"}).get_json()
-
-    assert corpo["ok"] is True
-    assert corpo["resumo"]["arquivos"] == 2
-    assert "gerou" not in chamou
-
-
-def test_gerar_devolve_os_LINKS_dos_arquivos(app, monkeypatch):
-    from app.apps.analisesps import folha_pagamento as fpg
-    from decimal import Decimal as D
-
-    monkeypatch.setattr(fpg, "gerar", lambda *a, **k: {
-        "ok": True, "competencia": "09/2026",
-        "resumo": {"arquivos": 1},
-        "arquivos": [{"id": 1, "nome": "BeeVale.xlsx", "link": "https://drive/1",
-                      "conta": "50024", "destino": "beevale",
-                      "total": D("100.00"), "avisos": ""},
-                     {"id": 2, "nome": "Analise.xlsx", "link": "https://drive/2",
-                      "conta": "", "destino": "analise", "total": D("100.00"),
-                      "avisos": ""}]})
-
-    corpo = _como_mestre(app).post(
-        "/analisesps/api/folha/pagamento/gerar",
-        json={"ano": 2026, "mes": 9, "tipo": "quinzena",
-              "verbas": ["alimentacao"], "destino": "beevale"}).get_json()
-
-    assert corpo["ok"] is True
-    assert [a["link"] for a in corpo["arquivos"]] == ["https://drive/1",
-                                                      "https://drive/2"]
-
-
-def test_gerar_devolve_a_frase_do_erro_para_a_tela(app, monkeypatch):
-    """A frase diz o que consertar — é o que evita gerar de novo errado."""
-    from app.apps.analisesps import folha_pagamento as fpg
-
-    def explode(*a, **k):
-        raise fpg.ErroDoPagamento(
-            "Transporte não tem apropriação fechada em 09/2026.")
-
-    monkeypatch.setattr(fpg, "gerar", explode)
-    resposta = _como_mestre(app).post(
-        "/analisesps/api/folha/pagamento/gerar",
-        json={"ano": 2026, "mes": 9, "tipo": "quinzena",
-              "verbas": ["transporte"], "destino": "somapay"})
-    assert resposta.status_code == 400
-    assert "apropriação fechada" in resposta.get_json()["erro"]
 
 
 def test_nao_existe_mais_obra_editavel_na_tela_de_auxilio(app, monkeypatch):
