@@ -900,3 +900,35 @@ def test_o_campo_de_TEXTO_do_filtro_continua_ocupando_a_coluna():
     css = _css()
     assert ".filtros input:not([type=checkbox]):not([type=radio])" in css
     assert ".filtros select" in css
+
+
+def test_o_PLANO_FINANCEIRO_traz_o_RECORD_ID_do_Pipefy(monkeypatch):
+    """Cabeçalho informado pelo dono em 03/10/2026: Record ID | Plano Financeiro |
+    Record ID | Código Omie T | Código Omie. Vale o PRIMEIRO Record ID (o do
+    lado do nome) e o "Código Omie" exato (não o "T")."""
+    from app.apps.analisesps import sincronizacao
+    _sem_rede(monkeypatch, {"Plano Financeiro": [
+        ["Record ID", "Plano Financeiro", "Record ID", "Código Omie T", "Código Omie"],
+        ["383928967", "Salários e Ordenados", "999", "x", "2.01.01"],
+        ["", "", "", "", ""]]})
+    assert sincronizacao.ler_plano_financeiro() == [
+        {"nome": "Salários e Ordenados", "record_id": "383928967",
+         "codigo_omie": "2.01.01"}]
+
+
+def test_sem_Record_ID_na_aba_le_a_planilha_de_ORIGEM(monkeypatch):
+    from app.apps.analisesps import sincronizacao
+    _sem_rede(monkeypatch, {
+        "Plano Financeiro": [["Plano Financeiro", "Código Omie"], ["A", "1"]],
+        "PlanoFinanceiro": [["Record ID", "Plano Financeiro", "Código Omie"],
+                            ["7", "A", "1"]]})
+    assert sincronizacao.ler_plano_financeiro()[0]["record_id"] == "7"
+
+
+def test_o_RECORD_ID_nao_entra_nas_categorias_do_rateio(monkeypatch):
+    from app.apps.analisesps import db, sincronizacao
+    monkeypatch.setattr(db, "consultar", lambda *a, **k: [
+        ("categoria", "Material", "10"), ("plano_pipefy", "Material", "383"),
+        ("obra", "OBRA-1", "5001")])
+    saida = sincronizacao.referencias_rateio()
+    assert saida["categorias"] == [{"nome": "Material", "codigo": "10"}]

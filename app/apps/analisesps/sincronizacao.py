@@ -1403,7 +1403,91 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
             logger.exception("Análise de SPs: falhou ler a aba '%s'", aba_nome)
             avisos.append(f'falhou gravar o que veio da aba "{aba_nome}": {e}')
 
+    # O RECORD ID DO PIPEFY de cada linha do Plano Financeiro (03/10/2026): é o
+    # registro que vai no campo "Tipo de Despesa" da SP da folha. Guardado com
+    # tipo próprio, sem migração; quem lê as categorias do rateio não o vê.
+    try:
+        plano = ler_plano_financeiro()
+        com_id = [(l["nome"], l["record_id"]) for l in plano if l["record_id"]]
+        if com_id:
+            with conexao() as conn:
+                conn.execute("DELETE FROM analisesps.referencias_rateio "
+                             " WHERE tipo = 'plano_pipefy'")
+                conn.executemany(
+                    "INSERT INTO analisesps.referencias_rateio (tipo, nome, codigo) "
+                    "VALUES ('plano_pipefy', ?, ?) ON CONFLICT (tipo, nome) DO "
+                    "UPDATE SET codigo = EXCLUDED.codigo", com_id)
+                conn.commit()
+    except Exception as e:  # noqa: BLE001 — não derruba as listas do rateio
+        # Só no log: quem precisa do Record ID é a prévia dos cards da folha, e
+        # ela lê a aba na hora e diz o motivo na tela.
+        logger.warning("Análise de SPs: Record ID do Plano Financeiro — %s", e)
+
     return {"obras": obras, "categorias": categorias, "avisos": avisos}
+
+
+# Os nomes de coluna da aba "Plano Financeiro" (cabeçalho informado pelo dono em
+# 03/10/2026: Record ID | Plano Financeiro | Record ID | Código Omie T | Código
+# Omie). Há DOIS "Record ID": vale o PRIMEIRO, o que está ao lado do nome — é o
+# registro do Plano Financeiro no Pipefy.
+ABA_PLANO_FINANCEIRO = "Plano Financeiro"
+
+
+# Onde está o Plano Financeiro original: a aba da planilha das SPs o traz por
+# IMPORTRANGE desta (informado pelo dono em 03/10/2026). Lida direto quando a aba
+# da planilha das SPs não estiver acessível ou não tiver o Record ID.
+PLANILHA_PLANO_FINANCEIRO = "1C7MWQmr5uFGWuJ18osUNDapiojVXzQ_GxMMDQqxPsBk"
+ABA_PLANO_ORIGINAL = "PlanoFinanceiro"
+
+
+def ler_plano_financeiro() -> list:
+    """`[{'nome', 'record_id', 'codigo_omie'}]` — a aba "Plano Financeiro" da
+    planilha das SPs; se ela falhar, a aba "PlanoFinanceiro" da planilha de
+    origem. Abas curtas (~200 linhas). Levanta ValueError com os motivos."""
+    motivos = []
+    for planilha, aba in ((PLANILHA_SPS, ABA_PLANO_FINANCEIRO),
+                          (PLANILHA_PLANO_FINANCEIRO, ABA_PLANO_ORIGINAL)):
+        try:
+            return _ler_plano_de(planilha, aba)
+        except ValueError as e:
+            motivos.append(str(e))
+    raise ValueError(" / ".join(motivos))
+
+
+def _ler_plano_de(planilha: str, aba: str) -> list:
+    try:
+        valores = com_retry(_aba(planilha, aba).get_all_values)
+    except Exception as e:  # noqa: BLE001
+        raise ValueError(_explicar_aba(planilha, aba, e)) from e
+    if not valores:
+        raise ValueError(f'a aba "{aba}" está vazia.')
+    cabecalho = _normalizar_cabecalho(valores[0])
+    i_nome = achar_coluna(cabecalho, ["Plano Financeiro", "Categoria"])
+    i_id = achar_coluna(cabecalho, ["Record ID", "RecordID"])
+    i_omie = achar_coluna(cabecalho, ["Código Omie", "Codigo Omie", "Código Omie T"])
+    if i_nome is None or i_id is None:
+        raise ValueError(
+            f'a aba "{aba}" não tem as colunas "Plano Financeiro" e "Record ID" '
+            "(cabeçalho: " + (", ".join(str(c) for c in valores[0]) or "vazio") + ")")
+
+    def celula(linha, i):
+        return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+
+    saida = []
+    for linha in valores[1:]:
+        nome = celula(linha, i_nome)
+        if nome:
+            saida.append({"nome": nome, "record_id": celula(linha, i_id),
+                          "codigo_omie": celula(linha, i_omie)})
+    return saida
+
+
+def plano_pipefy_guardado() -> dict:
+    """`{nome: record_id}` — o que a última sincronização guardou."""
+    from .db import consultar
+    return {nome: codigo for nome, codigo in consultar(
+        "SELECT nome, coalesce(codigo, '') FROM analisesps.referencias_rateio "
+        " WHERE tipo = 'plano_pipefy'")}
 
 
 def referencias_rateio() -> dict:
@@ -1414,6 +1498,8 @@ def referencias_rateio() -> dict:
         " ORDER BY tipo, nome")
     saida = {"obras": [], "categorias": []}
     for tipo, nome, codigo in linhas:
+        if tipo not in ("obra", "categoria"):
+            continue  # 'plano_pipefy' é do lançamento da folha, não do rateio
         chave = "obras" if tipo == "obra" else "categorias"
         saida[chave].append({"nome": nome, "codigo": codigo})
     return saida

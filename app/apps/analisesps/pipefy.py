@@ -368,6 +368,7 @@ def atualizar_documentacao_fiscal(atualizacoes, token=None) -> dict:
 _CONSULTAS_DOS_CAMPOS = (
     "id label type options required "
     "connectedRepo { __typename ... on Table { id name } ... on Pipe { id name } }",
+    "id label type options required connectedRepo { __typename ... on Table { id name } }",
     "id label type options required",
     "id label type options",
 )
@@ -386,7 +387,7 @@ def campos_do_pipe(pipe_id, token=None) -> dict:
     são obrigatórios no pipe, e o card saía sem eles. Sabendo quais são, a tela
     pergunta antes de criar, em vez de o Pipefy recusar depois."""
     pipe = _numero_do_card(pipe_id)
-    dados, ultimo_erro = None, None
+    dados, ultimo_erro, recusas = None, None, []
     for pedaco in _CONSULTAS_DOS_CAMPOS:
         try:
             dados = graphql(
@@ -398,6 +399,9 @@ def campos_do_pipe(pipe_id, token=None) -> dict:
             if "devolveu erro" not in str(e):
                 raise
             ultimo_erro = e
+            # Guardada para a tela: sem ela, "a conexão não diz a que tabela
+            # está ligada" não tem explicação (03/10/2026).
+            recusas.append(str(e))
     if dados is None:
         raise ultimo_erro
     bruto = (dados or {}).get("pipe") or {}
@@ -429,7 +433,7 @@ def campos_do_pipe(pipe_id, token=None) -> dict:
     except ErroDoPipefy:
         logger.exception("Análise de SPs: não consegui ler os campos das fases")
     return {"id": str(bruto.get("id") or ""), "nome": bruto.get("name") or "",
-            "campos": campos, "campos_das_fases": das_fases,
+            "campos": campos, "campos_das_fases": das_fases, "recusas": recusas,
             "fases": [{"id": str(f.get("id") or ""), "nome": f.get("name") or ""}
                       for f in (bruto.get("phases") or [])]}
 
@@ -501,6 +505,36 @@ def registros_da_tabela(tabela_id, token=None) -> list:
             break
         depois = pagina["endCursor"]
     return sorted(saida, key=lambda x: x["nome"].lower())
+
+
+def tabela_do_registro(registro_id, token=None) -> dict | None:
+    """`{'id', 'nome'}` da tabela a que um registro pertence — ou None.
+
+    Serve para descobrir a tabela de um campo de conexão quando o Pipefy não
+    diz a que ela está ligada: parte-se de um registro conhecido (os ids que o
+    cenário do Make usava) e pergunta-se de que tabela ele é. Só leitura."""
+    registro = _texto_gql(str(registro_id or "").strip())
+    dados = graphql("{ table_record(id: %s) { id title table { id name } } }"
+                    % registro, token)
+    tabela = ((dados or {}).get("table_record") or {}).get("table") or {}
+    if not tabela.get("id"):
+        return None
+    return {"id": str(tabela["id"]), "nome": str(tabela.get("name") or "")}
+
+
+def cards_por_titulo(pipe_id, titulo: str, token=None) -> list:
+    """`[{'id', 'nome'}]` — os cards de um pipe com este título (campo de
+    conexão ligado a um PIPE, e não a uma tabela). Só leitura."""
+    pipe = _numero_do_card(pipe_id)
+    dados = graphql(
+        "{ cards(pipe_id: %d, first: 50, search: { title: %s }) { "
+        "  edges { node { id title } } } }" % (pipe, _texto_gql(titulo)), token)
+    saida = []
+    for aresta in ((dados or {}).get("cards") or {}).get("edges") or []:
+        no = (aresta or {}).get("node") or {}
+        if no.get("id"):
+            saida.append({"id": str(no["id"]), "nome": str(no.get("title") or "")})
+    return saida
 
 
 def criar_card(pipe_id, titulo: str, valores: list, token=None) -> dict:

@@ -67,6 +67,48 @@ def _sp(**m):
     return base
 
 
+# ---------------------------------------------------------------------------
+# O TIPO DE DESPESA QUANDO O PIPEFY NÃO DIZ A QUE A CONEXÃO ESTÁ LIGADA
+# 03/10/2026: a prévia de 09/2026 parou em "conexão de tipo não suportado".
+# ---------------------------------------------------------------------------
+def test_sem_a_tabela_da_conexao_ela_e_DESCOBERTA_pelo_registro_do_Make(monkeypatch):
+    from app.apps.analisesps import pipefy
+    perguntados = []
+    monkeypatch.setattr(pipefy, "tabela_do_registro", lambda rid, *a, **k: (
+        perguntados.append(rid) or {"id": "T9", "nome": "Tipos de Despesa"}))
+    monkeypatch.setattr(pipefy, "registros_da_tabela", lambda tid, *a, **k: [
+        {"id": "777", "nome": "Salários e Ordenados"}] if tid == "T9" else [])
+    achar, como = fcd._achador({"tipo": "connector", "ligado_a": None},
+                               ["383928967"])
+    assert achar("SALARIOS E ORDENADOS") == "777"
+    assert perguntados == ["383928967"]
+    assert "Tipos de Despesa" in como and "Make" in como
+
+
+def test_sem_tabela_e_sem_sonda_a_tela_diz_O_QUE_o_Pipefy_respondeu(monkeypatch):
+    from app.apps.analisesps import pipefy
+
+    def recusa(*a, **k):
+        raise pipefy.ErroDoPipefy("O Pipefy devolveu erro: registro não existe")
+    monkeypatch.setattr(pipefy, "tabela_do_registro", recusa)
+    achar, como = fcd._achador({"tipo": "connector"}, ["1"],
+                               ["O Pipefy devolveu erro: Field 'connectedRepo'"])
+    assert achar("Salários e Ordenados") is None
+    assert "não informou a que tabela" in como
+    assert "connectedRepo" in como and "registro não existe" in como
+
+
+def test_conexao_com_PIPE_procura_o_card_pelo_titulo(monkeypatch):
+    from app.apps.analisesps import pipefy
+    monkeypatch.setattr(pipefy, "cards_por_titulo", lambda pipe, titulo, *a, **k: [
+        {"id": "55", "nome": "Salários e Ordenados"},
+        {"id": "56", "nome": "Salários e Ordenados - antigo"}])
+    achar, como = fcd._achador({"tipo": "connector", "ligado_a": {
+        "tipo": "pipe", "id": "300", "nome": "Tipos"}})
+    assert achar("Salários e Ordenados") == "55"
+    assert 'pipe "Tipos"' in como
+
+
 def test_a_SP_tem_os_campos_do_padrao_BeeVale_com_PIX_e_ATUALIZAR_CHAVE():
     grupo = {"tipo_sp": "999"}
     campos = {c["campo"]: c["valor"] for c in fcd.campos_da_sp(
@@ -118,8 +160,9 @@ def _campos_de(ids, obrigatorios=()):
 class PipefyFalso:
     """O pipe de SP com os campos usados, e o registro do que foi criado."""
 
-    def __init__(self, monkeypatch, tipos=None, falhar_na=None, categorias=None):
-        from app.apps.analisesps import conciliacao_omie, pipefy
+    def __init__(self, monkeypatch, tipos=None, falhar_na=None, categorias=None,
+                 plano=None):
+        from app.apps.analisesps import conciliacao_omie, pipefy, sincronizacao
         self.criados, self.atualizados = [], []
         self.falhar_na = falhar_na
         inicio = _campos_de([c for c in fcd.CAMPOS_DA_SP
@@ -144,6 +187,11 @@ class PipefyFalso:
         monkeypatch.setattr(pipefy, "atualizar_campos", self.atualizar)
         monkeypatch.setattr(conciliacao_omie, "categorias_do_omie",
                             lambda busca="", limite=400: list(self.categorias))
+        # A aba "Plano Financeiro" da planilha das SPs. Vazia por padrão: os
+        # testes antigos exercitam a reserva (Pipefy e espelho do painel).
+        self.plano = plano or []
+        monkeypatch.setattr(sincronizacao, "ler_plano_financeiro",
+                            lambda: list(self.plano))
 
     def criar(self, pipe, titulo, valores, **k):
         from app.apps.analisesps import pipefy
@@ -274,9 +322,47 @@ def test_TIPO_DE_DESPESA_ou_CATEGORIA_nao_encontrados_bloqueiam(banco_cards, mon
     _fechar()
     analise = _gerar(monkeypatch)
     vista = fcd.previa(analise)
-    assert any("Salários e Ordenados" in b and "Pipefy" in b for b in vista["bloqueios"])
+    assert any("Salários e Ordenados" in b and "Plano Financeiro" in b and "Pipefy" in b
+               for b in vista["bloqueios"])
     assert any("plano financeiro do OMIE" in b for b in vista["bloqueios"])
     assert pipe.criados == []
+
+
+@pytest.mark.banco
+def test_o_RECORD_ID_e_o_CODIGO_OMIE_vem_da_aba_PLANO_FINANCEIRO(banco_cards,
+                                                                monkeypatch):
+    """O dono, 03/10/2026: *"o ID para lançar no Pipefy seria o Record ID"* da
+    aba Plano Financeiro. Com a aba respondendo, o Pipefy nem é consultado para
+    o tipo — nem quando ele não diz a que tabela a conexão está ligada."""
+    from app.apps.analisesps import pipefy as _pipefy
+    pipe = PipefyFalso(monkeypatch, tipos=[], categorias=[], plano=[
+        {"nome": "SALÁRIOS E ORDENADOS", "record_id": "383928967",
+         "codigo_omie": "2.01.99"},
+        {"nome": "Despesas com Alimentação", "record_id": "1", "codigo_omie": "3"}])
+    pipe.pipes[fcd.PIPE_SP]["campos"]["tipo_de_despesa"]["ligado_a"] = None
+    monkeypatch.setattr(_pipefy, "tabela_do_registro", lambda *a, **k: pytest.fail(
+        "com a aba respondendo, o Pipefy não é consultado"))
+    _fechar()
+    analise = _gerar(monkeypatch)
+    vista = fcd.previa(analise)
+    assert vista["bloqueios"] == []
+    assert vista["grupos"][0]["tipo_sp"] == "383928967"
+    assert vista["grupos"][0]["categoria"] == "2.01.99"
+    assert "Plano Financeiro" in vista["como_tipo"]
+    fcd.lancar(analise, quem="MARCELO")
+    assert {s["valores"]["tipo_de_despesa"] for s in pipe.do_pipe(fcd.PIPE_SP)} == {
+        "383928967"}
+
+
+@pytest.mark.banco
+def test_nome_REPETIDO_com_ids_diferentes_na_aba_nao_e_escolhido(banco_cards,
+                                                                monkeypatch):
+    PipefyFalso(monkeypatch, tipos=[], plano=[
+        {"nome": "Salários e Ordenados", "record_id": "1", "codigo_omie": "2.01.01"},
+        {"nome": "Salários e Ordenados", "record_id": "2", "codigo_omie": "2.01.01"}])
+    _fechar()
+    vista = fcd.previa(_gerar(monkeypatch))
+    assert any("Record ID" in b and "dois ids" in b for b in vista["bloqueios"])
 
 
 @pytest.mark.banco

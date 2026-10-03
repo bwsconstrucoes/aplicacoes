@@ -11446,6 +11446,37 @@ Pedido do dono, antes de publicar a 155:
   abaixo do Agendar — não cabe tudo numa linha com o total e os botões da
   direita.
 
+#### Leva 157 — o Tipo de Despesa e a categoria vêm da aba "Plano Financeiro" (03/10/2026)
+
+**O incidente.** A primeira prévia de verdade (09/2026, fim de mês, conta
+22069-8) parou em *"tipo de despesa "Salários e Ordenados" não encontrado no
+Pipefy (campo Tipo de Despesa da SP, conexão de tipo não suportado)"*. A leva 155
+procurava o registro pelo nome na tabela ligada ao campo, e o Pipefy **não
+informou a que tabela o campo está ligado** — a leitura dos campos caiu na
+consulta reduzida, sem a ligação, e o motivo da recusa era jogado fora.
+
+**A correção, pela fonte que o dono indicou:** *"Nessa planilha temos essa
+informação: IMPORTRANGE(…1C7MWQ…; "PlanoFinanceiro!A1:E200") (…) Record ID |
+Plano Financeiro | Record ID | Código Omie T | Código Omie, e o ID para lançar no
+Pipefy seria o Record ID."*
+
+- **O Tipo de Despesa vai com o Record ID** da linha cujo "Plano Financeiro" é
+  o nome da verba ("Salários e Ordenados" etc.). Vale o **primeiro** "Record ID"
+  (o do lado do nome). ⚠️ Escolha minha: há dois "Record ID" no cabeçalho; se o
+  certo for o segundo, é trocar uma linha (`sincronizacao._ler_plano_de`).
+- **A categoria do OMIE vem do "Código Omie"** da mesma linha (o exato, não o
+  "Código Omie T"). O espelho do painel ficou como reserva.
+- **De onde se lê:** a aba "Plano Financeiro" da planilha das SPs, na hora da
+  prévia (aba curta); se ela falhar ou não tiver o Record ID, a aba
+  "PlanoFinanceiro" da planilha de origem; se as duas falharem, o que a última
+  sincronização guardou (`referencias_rateio`, tipo `plano_pipefy` — sem
+  migração; não aparece nas categorias do Ratear).
+- **Reserva no Pipefy, melhorada:** o nome que a aba não tiver é procurado no
+  Pipefy; quando ele não diz a tabela, ela é descoberta pelo registro que o
+  Make gravava (`tabela_do_registro`), e conexão com pipe procura o card pelo
+  título. O bloqueio agora diz o que o Pipefy respondeu.
+- **A prévia mostra o Record ID** ao lado do tipo de despesa, para conferir.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11467,6 +11498,7 @@ Pedido do dono, antes de publicar a 155:
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
+| publicar a leva 157 (sem migração) e refazer a prévia de 09/2026: conferir o Record ID e a categoria mostrados | ele |
 | ~~publicar a retirada do "Gerar por competência"~~ — **publicada em 03/10/2026** (main em `dddfd6c`, suíte inteira 7.845 verdes, sem migração) | — |
 | ~~publicar as levas 155 e 156~~ — **publicadas em 02/10/2026** (main em `c2f7676`, suíte inteira 7.852 verdes, sem migração). No primeiro lançamento, conferir na prévia o tipo de despesa e a categoria encontrados | ele |
 | ~~confirmar o favorecido da SP quando o arquivo é SomaPay~~ — **confirmado em 03/10/2026: CNPJ da BWS**; e a data de pagamento = hoje, também confirmada | — |

@@ -177,7 +177,7 @@ function desenhaPrevia(d) {
   // rateio múltiplo por obra (o card de Despesa deixou de existir).
   let html = '<p class="cartao-dica">' + escapa(d.competencia) + " · " +
     (d.tipo === "quinzena" ? "quinzena" : "fim de mês") +
-    ". Tipo de despesa no Pipefy: " + escapa(d.como_tipo) + ".</p>";
+    ". Tipo de despesa: " + escapa(d.como_tipo) + ".</p>";
   if (d.ja_lancado) {
     html += '<div class="aviso">Este pagamento já foi lançado no Pipefy.</div>';
   }
@@ -190,7 +190,8 @@ function desenhaPrevia(d) {
     html += '<div class="cartao" style="margin-top:10px"><b>' + escapa(g.grupo) +
       "</b> · R$ " + moedaBr(g.total) + " · " + g.pessoas + " colaborador(es)" +
       '<br><span class="cartao-dica">Tipo de despesa: ' + escapa(g.tipo_despesa) +
-      (g.tipo_sp ? "" : ' <b class="ruim">(não encontrado)</b>') +
+      (g.tipo_sp ? " (Record ID " + escapa(g.tipo_sp) + ")"
+                 : ' <b class="ruim">(não encontrado)</b>') +
       " · categoria OMIE " + (g.categoria ? escapa(g.categoria) : '<b class="ruim">ausente</b>') +
       " · Pix, chave aleatória “Atualizar Chave”</span>";
     g.sps.forEach(s => {
