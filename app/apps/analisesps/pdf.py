@@ -101,6 +101,20 @@ class Folha:
                       fill=True)
         self.pdf.ln(1)
 
+    def subtitulo_secao(self, texto: str, detalhe: str = "") -> None:
+        """Um título menor, para blocos dentro de uma seção (o contracheque de
+        cada pessoa). Começa página nova se sobrar pouco espaço."""
+        if self.pdf.get_y() > self.pdf.h - 60:
+            self.pdf.add_page()
+        self.pdf.ln(2)
+        self.pdf.set_font("Helvetica", "B", 9)
+        self.pdf.cell(0, 5, _texto(texto), new_x="LMARGIN", new_y="NEXT")
+        if detalhe:
+            self.pdf.set_font("Helvetica", "", 7.5)
+            self.pdf.set_text_color(90, 104, 131)
+            self.pdf.multi_cell(0, 3.6, _texto(detalhe), new_x="LMARGIN", new_y="NEXT")
+            self.pdf.set_text_color(0, 0, 0)
+
     def observacao(self, texto: str) -> None:
         self.pdf.set_font("Helvetica", "I", 8)
         self.pdf.set_text_color(90, 104, 131)

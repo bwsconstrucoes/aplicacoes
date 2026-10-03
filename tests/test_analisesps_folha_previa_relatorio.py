@@ -315,3 +315,45 @@ def test_obra_sem_conta_aparece_PRIMEIRO_no_por_conta():
                              {"obra": "Z", "dias": 1, "valor": D("5")}]}]
     g = fr.agrupamentos(pessoas, {"A": "111"})
     assert g["por_conta"][0]["conta"] == fr.SEM_CONTA
+
+
+def test_o_PDF_da_folha_traz_o_CONTRACHEQUE_de_cada_colaborador(monkeypatch):
+    """Dono, 03/10/2026: *"além do resumo (…) o detalhamento de cada
+    colaborador, como se fosse a folha (…) todas as informações do
+    contracheque"* — para anexar ao card."""
+    import io
+    import pypdf
+    from app.apps.analisesps import folha_analitica_guardada as fag
+    from app.apps.analisesps import folha_relatorio as fr
+
+    pessoa = {"cpf": "1", "entra": True, "valor": D("1500.00"), "id_fortes": "000013",
+              "nome_na_tela": "GERLANIO GOMES", "cargo": "PEDREIRO",
+              "dias_no_ponto": 11, "obras_resumo": "OBRA-A (11)",
+              "por_obra": [{"obra": "OBRA-A", "dias": 11, "valor": D("1500.00")}]}
+    monkeypatch.setattr(fag, "contracheques_da_folha", lambda a, m, t: {
+        "000013": {"cargo": "PEDREIRO", "admissao": "01/02/2024",
+                   "total_proventos": D("1800.00"), "total_descontos": D("300.00"),
+                   "liquido": D("1500.00"), "situacao": "",
+                   "eventos": [
+                       {"codigo": "001", "descricao": "SALARIO BASE",
+                        "referencia": "15,00", "provento": D("1800.00"),
+                        "desconto": D("0")},
+                       {"codigo": "310", "descricao": "INSS", "referencia": "7,5",
+                        "provento": D("0"), "desconto": D("300.00")}]}})
+    montado = {"folha": {"ano": 2026, "mes": 9, "tipo": "quinzena",
+                         "competencia": "09/2026", "rotulo_do_tipo": "Quinzena"},
+               "pessoas": [pessoa], "filtros": {}, "totais": {"pessoas": 1}}
+    dados = fr.montar(fr.com_contracheques(montado), {"OBRA-A": "50024"})
+    texto = "".join(pg.extract_text() for pg in
+                    pypdf.PdfReader(io.BytesIO(fr.pdf(dados))).pages)
+    assert "contracheque" in texto
+    assert "SALARIO BASE" in texto and "INSS" in texto
+    assert "1.800,00" in texto and "Líquido" in texto
+    assert "OBRA-A" in texto
+
+    # Sem analítica, o PDF sai como antes, sem a seção.
+    monkeypatch.setattr(fag, "contracheques_da_folha", lambda a, m, t: {})
+    sem = fr.montar(fr.com_contracheques(montado), {"OBRA-A": "50024"})
+    texto = "".join(pg.extract_text() for pg in
+                    pypdf.PdfReader(io.BytesIO(fr.pdf(sem))).pages)
+    assert "contracheque" not in texto

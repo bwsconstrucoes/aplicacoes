@@ -2607,6 +2607,9 @@ def folha_relatorio(folha_id: int, formato: str):
         # aquela conta. Ver `folha_relatorio.recortar_por_conta`.
         recorte = (request.args.get("relatorio_conta") or "").strip()
         contas = fg._contas_das_obras()
+        if formato == "pdf":
+            # O contracheque de cada pessoa no PDF (03/10/2026).
+            montado = fr.com_contracheques(montado)
         if recorte == "__cada":
             conteudo, nome = fr.zip_por_conta(montado, contas, formato)
             return Response(conteudo, mimetype="application/zip", headers={
@@ -3957,6 +3960,35 @@ def folha_ficha_da_pessoa(cpf: str):
                   "campos": d.get("campos") or {}}
                  for d in (do_ponto.get("dias") or [])],
     }}
+
+
+@bp.route("/api/folha/auxilio/extras", methods=["POST"])
+@exige_operador
+def folha_auxilio_extras():
+    """O valor acrescentado e o desconto das ausências, por pessoa (ou de vários
+    de uma vez, no "aplicar todos"). Dono, 03/10/2026."""
+    from . import folha_auxilio as fx
+
+    dados = request.get_json(silent=True) or {}
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    tipo = str(dados.get("tipo") or "").strip().lower()
+    try:
+        ano, mes = int(dados.get("ano") or 0), int(dados.get("mes") or 0)
+    except (TypeError, ValueError):
+        ano = mes = 0
+    if tipo not in fx.TIPOS or not (1 <= mes <= 12) or not (2000 <= ano <= 2100):
+        return {"ok": False, "erro": "Verba ou competência inválida."}, 400
+    mudancas = {k: dados[k] for k in ("valor_extra", "motivo_extra",
+                                      "desconto_ausencias") if k in dados}
+    try:
+        n = fx.gravar_extras(tipo, ano, mes, dados.get("cpfs") or dados.get("cpf") or [],
+                             quem=quem, **mudancas)
+    except fx.ErroDoAuxilio as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou gravar o ajuste do auxílio")
+        return {"ok": False, "erro": f"Não foi possível salvar: {e}"}, 500
+    return {"ok": True, "gravados": n}
 
 
 @bp.route("/api/folha/auxilio/ajuste", methods=["POST"])

@@ -72,6 +72,26 @@
   </div>
 </div>
 
+{% if resultado and resultado.com_ausencia %}
+{% set aus = resultado.com_ausencia %}
+<div class="cartao lateral-folha">
+  <b class="lateral-titulo">Ausências no ponto</b>
+  {# Transporte, 03/10/2026: *"tem que ser analisado e confirmado (…) um botão
+     confirmar, aplicar desconto"*. Nada é descontado sem ele aplicar. #}
+  <a class="lat-critica atencao" href="{{ url_tela }}{{ base_qs }}&situacao=ausencia">
+    <b>{{ aus|length }} com ausência — desconto a confirmar</b>
+    <small>Total proposto: −{{ aus|sum(attribute='desconto_proposto')|moeda }}.
+      Faltas, atestados e ausências do ponto do mês. Clique para ver quem é;
+      o motivo está na coluna Ajustes.</small>
+  </a>
+  {% if pode_operar %}
+    <button type="button" class="btn secundario" id="aplicar-todos-descontos"
+            data-cpfs="{{ aus|map(attribute='cpf')|join(',') }}"
+            style="margin-top:6px">Aplicar todos os descontos ({{ aus|length }})</button>
+  {% endif %}
+</div>
+{% endif %}
+
 {% set c = lista.contagem %}
 {% set fora = {} %}
 {% for chave, rotulo, n in lista.escondidos_por %}{% set _ = fora.update({chave: n}) %}{% endfor %}
@@ -177,6 +197,12 @@
     O <b>transporte</b> desconta <b>férias</b> e <b>não</b> desconta feriado.
     Colaboradores com categoria <b>"Cartão"</b> no cadastro não recebem em dinheiro.
   {% endif %}
+  {% if resultado and resultado.janela_da_obra %}
+    A <b>obra que paga</b> é a de mais dias no ponto dos últimos 15 dias
+    (<b>{{ resultado.janela_da_obra[0]|data_br }}</b> a
+    <b>{{ resultado.janela_da_obra[1]|data_br }}</b>); sem ponto nesse período,
+    a do cadastro.
+  {% endif %}
   A categoria e o valor de cada colaborador são obtidos do
   <a href="{{ url_for('analisesps.tela_colaboradores') }}">cadastro</a>;
   os feriados e as férias, da tela de
@@ -265,13 +291,16 @@
                   aria-label="Selecionar todos"></th>
           {% endif %}
           <th>Colaborador</th><th>Situação</th><th>CPF</th><th>Fase Atual</th>
-          <th>Obra — do ponto</th><th>Categoria</th>
+          <th title="A de mais dias no ponto dos últimos 15 dias; sem ponto, a do cadastro">Obra que paga</th><th>Categoria</th>
           {# "Valor do dia" virou "Valor" (dono, 03/10/2026): no "Mês" e no
              "Mensal" do transporte o cadastro guarda o valor do MÊS. #}
           <th class="num" title="O valor do cadastro: por dia ou por mês, conforme a categoria">Valor</th>
-          <th class="num" title="Dias da categoria no mês">Base</th>
+          {# A coluna "Base" saiu (dono, 03/10/2026: *"está ocupando espaço e eu
+             não vejo muito sentido nela"*). #}
           <th class="num">Feriados</th><th class="num">Férias</th>
-          <th class="num">Dias</th><th class="num">Total</th>
+          <th class="num">Dias</th>
+          <th title="Ausências no ponto (transporte) e valor acrescentado à mão">Ajustes</th>
+          <th class="num">Total</th>
         </tr>
       </thead>
       <tbody>
@@ -327,8 +356,11 @@
           <td>
             {% if p.obra %}
               <b>{{ p.obra }}</b>
-              {% if p.obra_de_onde == 'ponto' %}
-                <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto</span>
+              {% if p.obra_de_onde == 'regra' %}
+                <br><span class="cartao-dica" title="Regra de rateio das obras">rateio: {{ p.regra }}
+                  {% for x in p.rateio %}<br>{{ x.obra }} {{ '%.0f'|format(x.percentual) }}% · {{ x.valor|moeda }}{% endfor %}</span>
+              {% elif p.obra_de_onde == 'ponto' %}
+                <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto{% if resultado.janela_da_obra %} de {{ resultado.janela_da_obra[0].strftime('%d/%m') }} a {{ resultado.janela_da_obra[1].strftime('%d/%m') }}{% endif %}</span>
               {% else %}
                 <br><span class="cartao-dica">do cadastro — sem ponto no mês</span>
               {% endif %}
@@ -339,16 +371,50 @@
             {% if p.valor_unitario is none %}—{% else %}{{ p.valor_unitario|moeda }}
               <br><span class="cartao-dica">{{ 'por mês' if p.valor_fechado else 'por dia' }}</span>{% endif %}
           </td>
-          <td class="num">{{ p.dias_base or '—' }}</td>
           <td class="num">
             {% if tipo == 'alimentacao' %}{{ p.feriados or '' }}{% else %}—{% endif %}
           </td>
           <td class="num">{{ p.ferias or '' }}</td>
-          <td class="num"><b>{{ p.dias }}</b></td>
-          <td class="num valor-final"><b>{{ p.valor|moeda }}</b></td>
+          <td class="num"><b>{{ p.dias }}</b>
+            {% if p.proporcao %}<br><span class="cartao-dica" title="Desligado no mês: proporcional até a data de saída">{{ p.proporcao }}</span>{% endif %}
+          </td>
+          {# AJUSTES (03/10/2026): as ausências do ponto, com o desconto proposto
+             e o botão de aplicar — só vale depois de aplicado —, e o valor
+             acrescentado à mão. #}
+          <td class="ajustes">
+            {% if p.ausencias %}
+              <div class="aj-ausencia {{ 'aplicado' if p.desconto_aplicado }}"
+                   title="{% for a in p.ausencias %}{{ a.data.strftime('%d/%m') }} {{ a.motivo }}{{ '; ' if not loop.last }}{% endfor %}">
+                <b>{{ p.ausencias|length }} ausência(s)</b> −{{ p.desconto_proposto|moeda }}
+                <br><span class="cartao-dica">{{ p.ausencias_resumo }}
+                  ({% for a in p.ausencias %}{{ a.data.strftime('%d/%m') }}{{ ', ' if not loop.last }}{% endfor %})</span>
+                {% if pode_operar %}
+                  <br>{% if p.desconto_aplicado %}
+                    <span class="selo aprovado">desconto aplicado</span>
+                    <button type="button" class="link-btn aj-desconto" data-aplicar="">desfazer</button>
+                  {% else %}
+                    <button type="button" class="btn secundario btn-mini aj-desconto" data-aplicar="1">Aplicar desconto</button>
+                  {% endif %}
+                {% elif p.desconto_aplicado %}<br><span class="selo aprovado">desconto aplicado</span>{% endif %}
+              </div>
+            {% endif %}
+            {% if p.valor_extra %}
+              <div class="aj-extra"><b>+{{ p.valor_extra|moeda }}</b>
+                {% if p.motivo_extra %}<br><span class="cartao-dica">{{ p.motivo_extra }}</span>{% endif %}
+                {% if pode_operar %}<br><button type="button" class="link-btn aj-extra-btn"
+                  data-valor="{{ p.valor_extra }}" data-motivo="{{ p.motivo_extra }}">alterar</button>{% endif %}
+              </div>
+            {% elif pode_operar and not p.impossivel %}
+              <button type="button" class="link-btn aj-extra-btn" data-valor="" data-motivo=""
+                      title="Acrescentar um valor ao pagamento deste mês">+ valor</button>
+            {% endif %}
+          </td>
+          <td class="num valor-final"><b>{{ p.valor|moeda }}</b>
+            {% if p.valor != p.valor_calculado and p.valor_calculado %}<br><span class="cartao-dica">calculado {{ p.valor_calculado|moeda }}</span>{% endif %}
+          </td>
         </tr>
       {% else %}
-        <tr><td colspan="12" class="cartao-dica">
+        <tr><td colspan="13" class="cartao-dica">
           Nenhum colaborador corresponde ao filtro. Ajuste os filtros na lateral.
         </td></tr>
       {% endfor %}
@@ -369,8 +435,7 @@
    linha foram apropriadas pelo PONTO e quantas caíram no cadastro. Obra que paga
    sustentada em cadastro desatualizado tira dinheiro da conta errada.
    ====================================================================== #}
-<h3 style="margin-top:24px">Por obra
-  <small>obra responsável pelo pagamento</small></h3>
+<h3 style="margin-top:24px">Por obra responsável pelo pagamento</h3>
 <div class="tabela-wrap">
   <div class="tabela-rolagem livre">
     <table class="sps">
@@ -381,11 +446,13 @@
         <tr><td><b>{{ o.obra }}</b></td><td class="num">{{ o.pessoas }}</td>
           <td class="num">{{ o.total|moeda }}</td>
           <td>
-            {% if o.do_cadastro %}
-              <span class="cartao-dica">{{ o.pessoas - o.do_cadastro }} do ponto ·
-                <b>{{ o.do_cadastro }} do cadastro</b></span>
-            {% else %}
+            {% set do_ponto = (o.pessoas or 0) - (o.do_cadastro or 0) - (o.da_regra or 0) %}
+            {% if not o.do_cadastro and not o.da_regra %}
               <span class="cartao-dica">todos do ponto</span>
+            {% else %}
+              <span class="cartao-dica">{{ do_ponto }} do ponto
+                {%- if o.da_regra %} · {{ o.da_regra }} pela regra de rateio{% endif %}
+                {%- if o.do_cadastro %} · <b>{{ o.do_cadastro }} do cadastro</b>{% endif %}</span>
             {% endif %}
           </td></tr>
       {% else %}
@@ -425,6 +492,24 @@
 
 
 
+{% endif %}
+
+{% if pode_operar %}
+<dialog class="dialogo" id="dialogo-extra">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Acrescentar valor <small id="extra-nome"></small></h3>
+  <p class="cartao-dica">Soma ao pagamento de {{ '%02d'|format(mes) }}/{{ ano }} —
+    por exemplo, um valor esquecido no mês anterior. Fica registrado com o motivo.</p>
+  <label class="rotulo-campo" for="extra-valor">Valor (R$)</label>
+  <input id="extra-valor" inputmode="decimal" placeholder="0,00" data-sem-mascara>
+  <label class="rotulo-campo" for="extra-motivo" style="margin-top:8px">Motivo</label>
+  <input id="extra-motivo" maxlength="300" placeholder="Ex.: transporte de agosto não pago">
+  <div class="lat-acoes" style="margin-top:12px">
+    <button type="button" class="btn secundario" id="extra-tirar" hidden>Tirar o valor</button>
+    <button type="button" class="btn" id="extra-salvar">Salvar</button>
+  </div>
+</dialog>
 {% endif %}
 
 {% include "_folha_ficha_js.html" %}
@@ -476,10 +561,11 @@ function atualizar() {
 caixas.forEach(caixa => caixa.addEventListener("change", atualizar));
 atualizar();
 
-// Clicar na linha abre a ficha; clicar na caixinha só marca.
+// Clicar na linha abre a ficha; clicar na caixinha (ou num botão) só marca.
 if (tabela) tabela.addEventListener("click", e => {
   if (e.target.closest(".marca")) return;
   if (e.target.closest("a")) return;
+  if (e.target.closest("button")) return;
   const linha = e.target.closest("tr.clicavel");
   if (linha) abrirFichaDoFuncionario(linha.dataset.cpf, {{ ano }}, {{ mes }});
 });
@@ -526,6 +612,74 @@ if (salvar) salvar.addEventListener("click", async () => {
     salvar.disabled = false;
   }
 });
+
+// --- ajustes: desconto de ausências e valor acrescentado (03/10/2026) --------
+async function gravarExtras(corpo) {
+  const r = await fetch("{{ url_for('analisesps.folha_auxilio_extras') }}", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(Object.assign(
+      {tipo: "{{ tipo }}", ano: {{ ano }}, mes: {{ mes }}}, corpo))});
+  const d = await r.json();
+  if (!d.ok) { alert(d.erro); return false; }
+  return true;
+}
+
+function avisarSeHaSelecaoPorSalvar() {
+  if (caixas.some((c, i) => c.checked !== inicial[i])) {
+    alert("Salve a seleção antes: a tela será recarregada.");
+    return true;
+  }
+  return false;
+}
+
+document.querySelectorAll(".aj-desconto").forEach(b => b.addEventListener("click", async () => {
+  if (avisarSeHaSelecaoPorSalvar()) return;
+  const cpf = b.closest("tr").dataset.cpf;
+  b.disabled = true;
+  if (await gravarExtras({cpfs: [cpf],
+                          desconto_ausencias: b.dataset.aplicar ? true : null})) {
+    location.reload();
+  } else { b.disabled = false; }
+}));
+
+const todosDescontos = document.getElementById("aplicar-todos-descontos");
+if (todosDescontos) todosDescontos.addEventListener("click", async () => {
+  if (avisarSeHaSelecaoPorSalvar()) return;
+  const cpfs = todosDescontos.dataset.cpfs.split(",").filter(Boolean);
+  if (!confirm("Aplicar o desconto das ausências de " + cpfs.length +
+               " colaborador(es)? Cada um pode ser desfeito na linha.")) return;
+  todosDescontos.disabled = true;
+  if (await gravarExtras({cpfs: cpfs, desconto_ausencias: true})) location.reload();
+  else todosDescontos.disabled = false;
+});
+
+const dialogoExtra = document.getElementById("dialogo-extra");
+let cpfDoExtra = "";
+document.querySelectorAll(".aj-extra-btn").forEach(b => b.addEventListener("click", () => {
+  if (avisarSeHaSelecaoPorSalvar()) return;
+  const linha = b.closest("tr");
+  cpfDoExtra = linha.dataset.cpf;
+  document.getElementById("extra-nome").textContent = linha.dataset.nome;
+  document.getElementById("extra-valor").value =
+    b.dataset.valor ? String(b.dataset.valor).replace(".", ",") : "";
+  document.getElementById("extra-motivo").value = b.dataset.motivo || "";
+  document.getElementById("extra-tirar").hidden = !b.dataset.valor;
+  dialogoExtra.showModal();
+  document.getElementById("extra-valor").focus();
+}));
+if (dialogoExtra) {
+  document.getElementById("extra-salvar").addEventListener("click", async () => {
+    const valor = document.getElementById("extra-valor").value.trim();
+    const motivo = document.getElementById("extra-motivo").value.trim();
+    if (!valor) { alert("Informe o valor."); return; }
+    if (!motivo) { alert("Informe o motivo — ele aparece na linha e no relatório."); return; }
+    if (await gravarExtras({cpfs: [cpfDoExtra], valor_extra: valor,
+                            motivo_extra: motivo})) location.reload();
+  });
+  document.getElementById("extra-tirar").addEventListener("click", async () => {
+    if (await gravarExtras({cpfs: [cpfDoExtra], valor_extra: null})) location.reload();
+  });
+}
 
 // --- fechar o auxílio do mês -------------------------------------------------
 const fecharAux = document.getElementById("fechar-auxilio");

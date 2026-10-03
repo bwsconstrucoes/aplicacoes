@@ -152,6 +152,36 @@ def da_pessoa(ano: int, mes: int, tipo: str, id_fortes: str) -> dict | None:
             "importado_em": l[17], "nome_arquivo": l[18]}
 
 
+def contracheques_da_folha(ano: int, mes: int, tipo: str) -> dict:
+    """`{id_fortes: contracheque}` de toda a folha, numa consulta só — para o PDF
+    da folha com o detalhamento de cada colaborador (dono, 03/10/2026). `{}` sem
+    analítica importada."""
+    from .db import consultar
+    if not _pronto():
+        return {}
+    saida = {}
+    for l in consultar(
+            "SELECT p.id_fortes, p.cargo, p.admissao, p.total_proventos, "
+            "       p.total_descontos, p.liquido, p.fgts, p.base_inss, p.situacao, "
+            "       p.eventos "
+            "  FROM analisesps.folha_analitica a "
+            "  JOIN analisesps.folha_analitica_pessoa p ON p.analitica_id = a.id "
+            " WHERE a.ano = ? AND a.mes = ? AND a.tipo = ?",
+            (int(ano), int(mes), str(tipo))):
+        try:
+            eventos = json.loads(l[9] or "[]")
+        except ValueError:
+            eventos = []
+        for e in eventos:
+            e["provento"] = Decimal(str(e.get("provento") or "0"))
+            e["desconto"] = Decimal(str(e.get("desconto") or "0"))
+        saida[str(l[0] or "").zfill(6)] = {
+            "cargo": l[1], "admissao": l[2], "total_proventos": l[3],
+            "total_descontos": l[4], "liquido": l[5], "fgts": l[6],
+            "base_inss": l[7], "situacao": l[8], "eventos": eventos}
+    return saida
+
+
 def da_folha(ano: int, mes: int, tipo: str) -> dict | None:
     """Se a folha tem analítica importada, e quando. Para a lateral."""
     from .db import consultar_um

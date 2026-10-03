@@ -559,7 +559,40 @@ def test_a_obra_do_ponto_e_lida_do_mes_e_recortada_pelo_PERIODO(monkeypatch):
 
     achado = fx._obra_do_ponto_por_cpf(
         2026, 9, dt.date(2026, 9, 1), dt.date(2026, 9, 30))
+    assert achado.pop("_janela") == (dt.date(2026, 9, 1), dt.date(2026, 9, 3))
     assert achado == {"99713349334": {"obra": "AAA", "dias": 2}}
+
+
+def test_a_obra_que_paga_e_a_dos_ULTIMOS_15_DIAS_do_ponto(monkeypatch):
+    """Dono, 03/10/2026: *"considerar aí os últimos 15 dias, a obra que a pessoa
+    mais trabalhou, é a obra que vai pagar"*. No mês inteiro AAA tem mais dias;
+    nos últimos 15, BBB."""
+    import datetime as dt
+
+    from app.apps.analisesps import folha_auxilio as fx, ponto
+
+    def dia(d, obra):
+        return {"data": dt.date(2026, 9, d), "marcacoes": [obra] * 4,
+                "presenca": "Presença", "falta": ""}
+    monkeypatch.setattr(ponto, "dias_por_cpf", lambda a, m: {
+        "1": [dia(d, "AAA") for d in (1, 2, 3, 4, 7, 8, 9)]
+             + [dia(d, "BBB") for d in (21, 22, 23)]})
+    achado = fx._obra_do_ponto_por_cpf(2026, 9, dt.date(2026, 9, 1),
+                                       dt.date(2026, 9, 30))
+    assert achado["_janela"] == (dt.date(2026, 9, 9), dt.date(2026, 9, 23))
+    assert achado["1"]["obra"] == "BBB"
+
+
+def test_sem_ponto_da_competencia_vale_o_ponto_do_MES_ANTERIOR(monkeypatch):
+    import datetime as dt
+
+    from app.apps.analisesps import folha_auxilio as fx, ponto
+    monkeypatch.setattr(ponto, "dias_por_cpf", lambda a, m: {} if m == 10 else {
+        "1": [{"data": dt.date(2026, 9, 30), "marcacoes": ["CCC"] * 4,
+               "presenca": "Presença", "falta": ""}]})
+    achado = fx._obra_do_ponto_por_cpf(2026, 10, dt.date(2026, 10, 1),
+                                       dt.date(2026, 10, 31))
+    assert achado["1"]["obra"] == "CCC"
 
 
 def test_sem_ponto_do_mes_o_auxilio_NAO_ESTOURA_e_cai_no_cadastro(monkeypatch):
@@ -615,3 +648,133 @@ def test_a_pessoa_guarda_DE_ONDE_veio_a_obra():
     sem_nada = fx.calcular_pessoa(
         fx.ALIMENTACAO, ficha, dt.date(2026, 9, 1), dt.date(2026, 9, 30))
     assert sem_nada["obra_de_onde"] == ""
+
+
+# ---------------------------------------------------------------------------
+# 03/10/2026 — SAÍDA PROPORCIONAL, AUSÊNCIAS NO PONTO E VALOR ACRESCENTADO
+# ---------------------------------------------------------------------------
+def _dia(data, presenca="", falta="", obras=()):
+    return {"data": data, "marcacoes": list(obras) or ["", "", "", ""],
+            "presenca": presenca, "falta": falta}
+
+
+def test_quem_SAIU_NO_MEIO_DO_MES_recebe_ate_a_data_de_saida(banco_auxilio):
+    """O dono: *"proporcionalize o pagamento considerando data de saída do
+    colaborador quando for o caso"* — nas duas verbas."""
+    from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
+    # Saída em 15/09/2026 (terça): de 01 a 15 há 11 dias úteis.
+    r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
+        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 9, 15)), INICIO, FIM)
+    assert r["pagar"] is True
+    assert r["dias"] == 11 and r["valor"] == D("110.00")
+    assert r["saida_no_mes"] == dt.date(2026, 9, 15)
+    assert any("proporcional" in m for m in r["motivos"])
+    assert r["situacao"] == col.SITUACAO_SAINDO, "aparece na lista, não some"
+
+    fixo = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(
+        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 9, 15),
+        modo_alimentacao="Mês", valor_alimentacao=D("300.00")), INICIO, FIM)
+    assert fixo["valor"] == D("150.00"), "valor do mês × 15/30"
+    assert fixo["proporcao"] == "15/30 dias"
+
+    # Transporte de valor mensal: pelos dias úteis (dono, 03/10/2026) — de 01 a
+    # 15/09/2026 há 11 dos 22 dias úteis do mês.
+    mensal = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
+        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 9, 15),
+        modo_transporte="Mensal", valor_transporte=D("220.00")), INICIO, FIM)
+    assert mensal["valor"] == D("110.00")
+    assert mensal["proporcao"] == "11/22 dias úteis"
+
+
+def test_quem_saiu_ANTES_do_mes_continua_sem_receber(banco_auxilio):
+    from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
+    r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
+        situacao=col.SITUACAO_SAIU, data_saida=dt.date(2026, 8, 20)), INICIO, FIM)
+    assert r["pagar"] is False
+
+
+def test_AUSENCIA_e_falta_ou_atestado_sem_marcacao_e_nao_folga():
+    from app.apps.analisesps import folha_auxilio as fx
+    d = dt.date(2026, 9, 8)
+    assert fx.ausencia_do_dia(_dia(d, "FALTA NÃO JUSTIFICADA")) == "FALTA NÃO JUSTIFICADA"
+    assert fx.ausencia_do_dia(_dia(d, "", "ATESTADO MÉDICO")) == "ATESTADO MÉDICO"
+    assert fx.ausencia_do_dia(_dia(d, "FÉRIAS")) == "", "férias já descontam à parte"
+    assert fx.ausencia_do_dia(_dia(d, "FOLGA")) == ""
+    assert fx.ausencia_do_dia(_dia(d, "")) == "", "sem nada escrito não se desconta"
+    assert fx.ausencia_do_dia(_dia(d, "PRESENÇA", obras=["1042", "1042", "", ""])) == ""
+
+
+def test_as_ausencias_contam_so_nos_dias_da_modalidade():
+    from app.apps.analisesps import folha_auxilio as fx
+    sexta, segunda = dt.date(2026, 9, 11), dt.date(2026, 9, 14)
+    dias = [_dia(sexta, "FALTA NÃO JUSTIFICADA"), _dia(segunda, "ATESTADO")]
+    assert len(fx.ausencias_do_mes(dias, INICIO, FIM, "Segunda à Sexta")) == 2
+    assert len(fx.ausencias_do_mes(dias, INICIO, FIM, "Segunda à Quinta")) == 1
+
+
+def test_o_desconto_das_ausencias_e_PROPOSTO_e_so_vale_APLICADO(banco_auxilio):
+    """*"que isso fosse uma opção de aplicar ou não o desconto"* — e só no
+    transporte."""
+    from app.apps.analisesps import folha_auxilio as fx
+    ponto = [_dia(dt.date(2026, 9, 8), "FALTA NÃO JUSTIFICADA"),
+             _dia(dt.date(2026, 9, 9), "ATESTADO")]
+    proposto = fx.calcular_pessoa(fx.TRANSPORTE, ficha(), INICIO, FIM,
+                                  ausencias=ponto)
+    assert proposto["valor"] == D("220.00"), "sem aplicar, não desconta"
+    assert proposto["desconto_proposto"] == D("20.00")
+    assert len(proposto["ausencias"]) == 2
+
+    aplicado = fx.calcular_pessoa(fx.TRANSPORTE, ficha(), INICIO, FIM,
+                                  {"desconto_ausencias": True}, ausencias=ponto)
+    assert aplicado["valor"] == D("200.00")
+    assert aplicado["desconto_aplicado"] is True
+
+    alimentacao = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM,
+                                     {"desconto_ausencias": True}, ausencias=ponto)
+    assert alimentacao["ausencias"] == [] and alimentacao["valor"] == D("330.00")
+
+
+def test_no_MENSAL_o_dia_ausente_vale_o_mes_pelos_dias_uteis(banco_auxilio):
+    from app.apps.analisesps import folha_auxilio as fx
+    r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(
+        modo_transporte="Mensal", valor_transporte=D("220.00")), INICIO, FIM,
+        {"desconto_ausencias": True},
+        ausencias=[_dia(dt.date(2026, 9, 8), "FALTA")])
+    assert r["desconto_proposto"] == D("10.00"), "220 ÷ 22 dias úteis"
+    assert r["valor"] == D("210.00")
+
+
+def test_o_VALOR_ACRESCENTADO_soma_e_diz_o_motivo(banco_auxilio):
+    from app.apps.analisesps import folha_auxilio as fx
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM,
+                           {"valor_extra": D("50.00"), "motivo_extra": "agosto"})
+    assert r["valor"] == D("380.00") and r["valor_calculado"] == D("330.00")
+    assert r["motivo_extra"] == "agosto"
+
+
+def test_gravar_extras_NAO_apaga_a_selecao_e_a_selecao_nao_apaga_o_extra(banco_auxilio):
+    from app.apps.analisesps import folha_auxilio as fx
+    fx.gravar_ajuste(fx.TRANSPORTE, 2026, 9, GERLANIO, pagar=False)
+    fx.gravar_extras(fx.TRANSPORTE, 2026, 9, [GERLANIO], valor_extra="1.234,50",
+                     motivo_extra="esquecido em agosto")
+    fx.gravar_extras(fx.TRANSPORTE, 2026, 9, GERLANIO, desconto_ausencias=True)
+    g = fx.ajustes_do_mes(fx.TRANSPORTE, 2026, 9)[GERLANIO]
+    assert g["pagar"] is False
+    assert g["valor_extra"] == D("1234.50") and g["motivo_extra"] == "esquecido em agosto"
+    assert g["desconto_ausencias"] is True
+
+    fx.limpar_ajuste(fx.TRANSPORTE, 2026, 9, GERLANIO)
+    g = fx.ajustes_do_mes(fx.TRANSPORTE, 2026, 9)[GERLANIO]
+    assert g["pagar"] is None, "a escolha de pagar volta ao cálculo"
+    assert g["valor_extra"] == D("1234.50"), "o valor acrescentado fica"
+
+    fx.gravar_extras(fx.TRANSPORTE, 2026, 9, GERLANIO, valor_extra=None,
+                     desconto_ausencias=None)
+    fx.limpar_ajuste(fx.TRANSPORTE, 2026, 9, GERLANIO)
+    assert fx.ajustes_do_mes(fx.TRANSPORTE, 2026, 9) == {}
+
+
+def test_desconto_de_ausencia_na_ALIMENTACAO_e_recusado(banco_auxilio):
+    from app.apps.analisesps import folha_auxilio as fx
+    with pytest.raises(fx.ErroDoAuxilio):
+        fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, GERLANIO, desconto_ausencias=True)

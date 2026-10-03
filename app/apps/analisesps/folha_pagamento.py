@@ -41,6 +41,13 @@ CENTAVO = Decimal("0.01")
 # A etiqueta do arquivo de conferência no log. Não é destino de pagamento — é o
 # segundo arquivo, o que gente lê.
 ANALISE = "analise"
+# O relatório em PDF de cada conta, gerado junto com o arquivo de pagamento. O
+# dono, 03/10/2026: *"quando a gente gera esse arquivo, ele tem o arquivo
+# relatório, o PDF também, gerar associado (…) se eu quiser baixar o relatório,
+# eu quero poder baixar por aqui"*. Fica no log como um arquivo da rodada, com a
+# conta, mas NÃO é arquivo de pagamento: não entra em total nem vira SP.
+RELATORIO = "relatorio"
+MIME_PDF = "application/pdf"
 
 
 class ErroDoPagamento(RuntimeError):
@@ -382,7 +389,8 @@ def _br(valor) -> str:
 # ---------------------------------------------------------------------------
 def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
           juntar_verbas: bool = False, quem: str = "",
-          forcar: bool = False, destinos: dict | None = None) -> dict:
+          forcar: bool = False, destinos: dict | None = None,
+          relatorio=None) -> dict:
     """Gera os arquivos, sobe no Drive e registra. Devolve os links.
 
     ⚠️ SÃO SEMPRE AO MENOS DOIS ARQUIVOS: o de pagamento (um por conta) e o de
@@ -431,6 +439,28 @@ def gerar(ano: int, mes: int, tipo: str, verbas, destino: str,
             "+".join(lote.get("verbas") or []), lote.get("conta", ""),
             nome, lote.get("quantos", 0), lote.get("total") or 0,
             subido, "; ".join(lote.get("criticas") or []), quem))
+
+    # O RELATÓRIO EM PDF DE CADA CONTA (03/10/2026), antes da análise — a
+    # análise fecha a rodada. `relatorio(conta)` devolve (bytes, nome). Uma falha
+    # aqui NÃO desfaz o pagamento: fica no log e no aviso da rodada.
+    if relatorio:
+        contas_dos_lotes = list(dict.fromkeys(l.get("conta", "") for l in lotes))
+        for conta in contas_dos_lotes:
+            dos_lotes = [l for l in lotes if l.get("conta", "") == conta]
+            try:
+                conteudo_pdf, nome_pdf = relatorio(conta)
+                subido_pdf = drive.subir_arquivo(conteudo_pdf, nome_pdf, pasta,
+                                                 mime=MIME_PDF)
+                gerados.append(_registrar(
+                    ano, mes, tipo, RELATORIO,
+                    "+".join(dict.fromkeys(v for l in dos_lotes
+                                           for v in (l.get("verbas") or []))),
+                    conta, nome_pdf, sum(l.get("quantos", 0) for l in dos_lotes),
+                    sum((l.get("total") or 0) for l in dos_lotes), subido_pdf, "",
+                    quem))
+            except Exception:  # noqa: BLE001 — o pagamento já está no Drive
+                logger.exception("Folha: não consegui gerar o relatório da conta %s",
+                                 conta or "(sem conta)")
 
     # O ARQUIVO DE ANÁLISE, sempre, e por último: se algo falhar antes, ninguém
     # fica com um relatório de um pagamento que não foi gerado.
@@ -727,7 +757,52 @@ def gerar_direto(origem: str, dados: dict, destino: str, quem: str = "",
         folha_auxilio.fechar(origem, pedido["ano"], pedido["mes"],
                              pedido["pagamento"], quem=quem)
     return gerar(pedido["ano"], pedido["mes"], pedido["tipo"], [pedido["verba"]],
-                 destino, quem=quem, forcar=forcar, destinos=destinos)
+                 destino, quem=quem, forcar=forcar, destinos=destinos,
+                 relatorio=_relatorio_por_conta(origem, dados, pedido))
+
+
+def _relatorio_por_conta(origem: str, dados: dict, pedido: dict):
+    """A função que faz o PDF do relatório de UMA conta — o mesmo da tela
+    (`folha_relatorio`), recortado pela conta. None se não der para montar (a
+    geração segue sem o relatório)."""
+    from werkzeug.datastructures import MultiDict
+    from . import folha_auxilio, folha_diaristas, folha_lista
+    from . import folha_relatorio as fr
+    try:
+        if origem == "folha":
+            from . import folha_gestao
+            montado = fr.com_contracheques(
+                folha_gestao.montar(int(dados.get("folha_id") or 0), {}))
+            contas = folha_gestao._contas_das_obras()
+        elif origem == "diaria":
+            calculado = folha_diaristas.calcular(pedido["ano"], pedido["mes"],
+                                                 pedido["periodo"])
+            lista = folha_lista.filtrar(
+                calculado.get("pessoas") or [], MultiDict(),
+                escondidas=folha_lista.ESCONDIDAS_NOS_DIARISTAS)
+            contas = conta_por_obra()
+            montado = fr.montado_das_diarias(calculado, lista["pessoas"],
+                                             lista["filtros"], contas)
+        else:
+            resultado = folha_auxilio.calcular(origem, pedido["ano"], pedido["mes"])
+            lista = folha_lista.filtrar(
+                list(resultado.get("pessoas") or []), MultiDict(),
+                campo_da_obra="obra", escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
+            contas = conta_por_obra()
+            montado = fr.montado_do_auxilio(
+                resultado, lista["pessoas"], lista["filtros"], contas,
+                folha_auxilio.ROTULO_DO_TIPO[origem],
+                f"{int(pedido['mes']):02d}/{int(pedido['ano'])}")
+    except Exception:  # noqa: BLE001 — sem relatório, o pagamento sai mesmo assim
+        logger.exception("Folha: não consegui montar o relatório da geração")
+        return None
+    if not montado:
+        return None
+
+    def fazer(conta: str):
+        dados_conta = fr.montar(montado, contas, conta or "")
+        return fr.pdf(dados_conta), fr.nome_do_arquivo(dados_conta, "pdf")
+    return fazer
 
 
 # ---------------------------------------------------------------------------
@@ -754,23 +829,32 @@ def rodadas(teto: int = 400) -> list:
     saida = []
     for a in arquivos:
         chave = (a["ano"], a["mes"], a["tipo"])
+        if a["destino"] == RELATORIO:
+            abertos.setdefault(("rel",) + chave, []).append(a)
+            continue
         if a["destino"] != ANALISE:
             abertos.setdefault(chave, []).append(a)
             continue
-        saida.append(_rodada(a, abertos.pop(chave, [])))
-    for soltos in abertos.values():
-        saida.append(_rodada(None, soltos))
+        saida.append(_rodada(a, abertos.pop(chave, []),
+                             abertos.pop(("rel",) + chave, [])))
+    for chave, soltos in abertos.items():
+        if chave[0] != "rel":
+            saida.append(_rodada(None, soltos, abertos.get(("rel",) + chave) or []))
     return sorted(saida, key=lambda r: r["ordem"], reverse=True)
 
 
-def _rodada(analise, pagamentos: list) -> dict:
+def _rodada(analise, pagamentos: list, relatorios=None) -> dict:
+    relatorios = relatorios or []
     base = analise or pagamentos[-1]
     verbas = (analise or {}).get("rotulo_verbas") or " + ".join(
         sorted({p["rotulo_verbas"] for p in pagamentos if p["rotulo_verbas"]}))
     return {
         "chave": f"a{analise['id']}" if analise else f"s{pagamentos[0]['id']}",
         "ordem": base["id"], "analise": analise, "pagamentos": pagamentos,
-        "ids": [p["id"] for p in pagamentos] + ([analise["id"]] if analise else []),
+        "ids": ([p["id"] for p in pagamentos] + [r["id"] for r in relatorios]
+                + ([analise["id"]] if analise else [])),
+        # O PDF do relatório de cada conta: `{conta: arquivo}`.
+        "relatorios": {r["conta"]: r for r in relatorios},
         "competencia": base["competencia"], "tipo": base["tipo"],
         "verbas": verbas,
         "destino": " + ".join(sorted({p["rotulo_destino"] for p in pagamentos})),

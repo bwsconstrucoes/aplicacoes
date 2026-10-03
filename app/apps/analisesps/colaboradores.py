@@ -250,6 +250,10 @@ COLUNAS_OPCIONAIS = {
 # A posição de uma opcional quando o NOME não casa (índice a partir de zero). O
 # valor da diária está na coluna 49 da aba "Dados Documentos" (dono, 02/10/2026).
 POSICAO_CONHECIDA = {"valor_diaria": 48}
+# A coluna BU (73ª; 72 contando do zero) — onde o dono disse que está o código do
+# Fortes (03/10/2026). Vale quando o cabeçalho não tem nenhum dos nomes de
+# `COLUNAS_DO_ID_NA_FICHA`.
+POSICAO_DO_ID_FORTES = 72
 
 # As opcionais que AVISAM quando faltam — só as que mudam dinheiro.
 OPCIONAIS_QUE_AVISAM = {
@@ -492,9 +496,13 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
                 f'a coluna "{aceitos[0]}" não existe na planilha com esse nome. '
                 f"Consequência: {OPCIONAIS_QUE_AVISAM[campo]}")
 
-    # O código do Fortes na ficha: opcional e calado quando falta — a aba "ID
-    # Fortes" continua sendo o caminho de quem não tem a coluna.
+    # O código do Fortes na ficha — a coluna BU de "Dados Documentos" (dono,
+    # 03/10/2026), procurada pelo nome e, sem o nome, pela posição.
     i_id = achar_coluna(normalizado, COLUNAS_DO_ID_NA_FICHA)
+    if i_id is None and POSICAO_DO_ID_FORTES < len(cabecalho):
+        i_id = POSICAO_DO_ID_FORTES
+        logger.info("Cadastro: código do Fortes lido da coluna BU (\"%s\").",
+                    cabecalho[i_id])
     if i_id is not None:
         posicoes["id_fortes"] = i_id
 
@@ -652,6 +660,30 @@ def _gravar_ids_da_ficha(da_ficha: dict) -> dict:
     return {"gravados": len(dono), "repetidos": sorted(set(repetidos))}
 
 
+def _tirar_ids_sem_ficha(sem_codigo: dict) -> list:
+    """Apaga o código do Fortes de quem não tem código na ficha (coluna BU).
+    `sem_codigo`: `{cpf: nome}`. Devolve os nomes de quem tinha e perdeu."""
+    from .db import conexao, consultar
+    if not sem_codigo or not tem_id_fortes():
+        return []
+    cpfs = list(sem_codigo)
+    com_codigo = []
+    for i in range(0, len(cpfs), 500):
+        bloco = cpfs[i:i + 500]
+        marcas = ", ".join("?" for _ in bloco)
+        com_codigo += [l[0] for l in consultar(
+            f"SELECT cpf FROM analisesps.colaborador WHERE cpf IN ({marcas}) "
+            "   AND coalesce(id_fortes, '') <> ''", tuple(bloco))]
+    if not com_codigo:
+        return []
+    with conexao() as conn:
+        conn.executemany(
+            "UPDATE analisesps.colaborador SET id_fortes = '' WHERE cpf = ?",
+            [(c,) for c in com_codigo])
+        conn.commit()
+    return sorted(sem_codigo[c] or c for c in com_codigo)
+
+
 def atualizar(anotar=None) -> dict:
     """Traz o cadastro da planilha para a tabela. É o que o botão chama.
 
@@ -704,6 +736,7 @@ def atualizar(anotar=None) -> dict:
     gravadas = 0
     ignoradas = 0
     da_ficha: dict = {}
+    lidos: dict = {}            # {cpf: nome} de quem veio nesta carga
     linha = PRIMEIRA_LINHA_DADOS
     while linha <= total_linhas:
         fim = min(linha + LINHAS_POR_BLOCO - 1, total_linhas)
@@ -727,6 +760,7 @@ def atualizar(anotar=None) -> dict:
                 continue
             if r.get("_id_fortes_ficha"):
                 da_ficha.setdefault(r["cpf"], r["_id_fortes_ficha"])
+            lidos.setdefault(r["cpf"], r.get("nome") or "")
             registros.append(r)
 
         if registros:
@@ -764,12 +798,28 @@ def atualizar(anotar=None) -> dict:
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou gravar o ID Fortes da ficha")
         avisos.append(f"não foi possível gravar o código do Fortes das fichas: {e}")
-    try:
-        fortes = atualizar_ids_fortes(anotar, da_ficha=da_ficha)
-        avisos.extend(fortes.get("avisos") or [])
-    except Exception as e:  # noqa: BLE001
-        logger.exception("Análise de SPs: falhou o de/para do ID Fortes")
-        avisos.append(f"não foi possível importar o de/para do ID Fortes: {e}")
+    # ⚠️ A COLUNA BU É A ÚNICA FONTE (dono, 03/10/2026: *"Coluna BU é a única
+    # fonte correta"*): quem veio nesta carga SEM código na ficha perde o código
+    # antigo (que viera da aba "ID Fortes"). Só quando a coluna foi achada e
+    # trouxe algum código — uma leitura que falhou não pode zerar todo mundo.
+    if "id_fortes" in posicoes and da_ficha:
+        try:
+            tirados = _tirar_ids_sem_ficha(
+                {c: n for c, n in lidos.items() if c not in da_ficha})
+            if tirados:
+                avisos.append(
+                    f"{len(tirados)} colaborador(es) sem código do Fortes na coluna BU "
+                    f"perderam o código antigo: {', '.join(tirados[:5])}"
+                    f"{'…' if len(tirados) > 5 else ''}. Sem código, a folha da "
+                    "contabilidade não os encontra — preencha a coluna BU.")
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Análise de SPs: falhou tirar os códigos sem ficha")
+            avisos.append(f"não foi possível conferir os códigos sem ficha: {e}")
+    # ⚠️ A ABA "ID FORTES" NÃO É MAIS LIDA (dono, 03/10/2026): *"O local correto
+    # de coletar o ID é na coluna BU da aba Dados Documentos. Aba ID Fortes deve
+    # ser ignorada."* Ela gerava o aviso de "códigos que discordam da ficha" a
+    # cada carga. O código vem só da ficha; quem não tem código na ficha mantém
+    # o que já estava gravado (não se apaga no escuro).
 
     with conexao() as conn:
         from .sincronizacao import _meta_gravar
