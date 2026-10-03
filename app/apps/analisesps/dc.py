@@ -272,28 +272,65 @@ def escolher_obra(chave: str, obra: str, quem: str = "") -> None:
 # ---------------------------------------------------------------------------
 # O CÁLCULO
 # ---------------------------------------------------------------------------
-def valor_da_linha(linha: dict, diaria_cadastrada) -> tuple:
-    """(valor, motivos) — o valor a pagar de uma linha da aba Data.
+# O que a coluna G da aba Data ("valor da diária") traz quando a solicitação
+# pede o pagamento pela diária CADASTRADA. Lido por pedaço de palavra, porque o
+# texto exato vem do formulário do Pipefy.
+PEDE_DIARIA_CADASTRADA = ("cadastr", "sim")
 
-    ⚠️ A REGRA É MINHA, a confirmar com o dono (as fórmulas da aba "DC" não
-    vieram): vale o **valor informado** na solicitação; sem ele, **quantidade ×
-    diária** — a informada na solicitação ou, sem ela, a do cadastro. A
-    diferença entre a diária informada e a cadastrada fica dita."""
+
+def pede_diaria_cadastrada(flag) -> bool:
+    texto = _sem_acento(flag)
+    return bool(texto) and any(p in texto for p in PEDE_DIARIA_CADASTRADA)
+
+
+def valor_da_linha(linha: dict, diaria_cadastrada) -> tuple:
+    """(valor, motivos, de onde veio) — o valor a pagar de uma linha da aba Data.
+
+    O dono, 03/10/2026: *"A DC pode vir com valor ou não quando se trata de
+    diária. Ela pode pedir que seja paga pelo valor de diária cadastrada, nesse
+    caso o sistema calcula."* Então, em ordem:
+
+    1. a solicitação pede a diária CADASTRADA (coluna G) → quantidade × diária
+       do cadastro — mesmo que traga outro valor, que fica dito;
+    2. o valor informado;
+    3. quantidade × diária informada na solicitação;
+    4. quantidade × diária do cadastro (a solicitação de diária sem valor);
+    5. nada disso → sem valor, a linha não entra."""
     motivos = []
     qtd = formatos.para_numero(linha.get("quantidade")) or Decimal("0")
     informado = formatos.para_numero(linha.get("valor")) or Decimal("0")
     diaria_inf = formatos.para_numero(linha.get("valor_diaria")) or Decimal("0")
     diaria_cad = Decimal(str(diaria_cadastrada)) if diaria_cadastrada else Decimal("0")
+
+    if pede_diaria_cadastrada(linha.get("valor_diaria_flag")):
+        if qtd > 0 and diaria_cad > 0:
+            if informado > 0 or diaria_inf > 0:
+                motivos.append("a solicitação pede a diária cadastrada: o valor "
+                               "informado nela foi desconsiderado.")
+            return (qtd * diaria_cad).quantize(CENTAVO), motivos, "cadastro"
+        motivos.append("a solicitação pede a diária cadastrada, mas "
+                       + ("o colaborador não tem diária no cadastro."
+                          if qtd > 0 else "não informa a quantidade de diárias."))
+        return Decimal("0.00"), motivos, ""
+
     if diaria_inf and diaria_cad and diaria_inf != diaria_cad:
         motivos.append(f"diária informada R$ {formatos.moeda(diaria_inf)} difere da "
                        f"cadastrada R$ {formatos.moeda(diaria_cad)}.")
     if informado > 0:
-        return informado.quantize(CENTAVO), motivos
-    diaria = diaria_inf or diaria_cad
-    if qtd > 0 and diaria > 0:
-        return (qtd * diaria).quantize(CENTAVO), motivos
-    motivos.append("sem valor: a solicitação não informa o valor nem quantidade × diária.")
-    return Decimal("0.00"), motivos
+        return informado.quantize(CENTAVO), motivos, "informado"
+    if qtd > 0 and diaria_inf > 0:
+        return (qtd * diaria_inf).quantize(CENTAVO), motivos, "informada"
+    if qtd > 0 and diaria_cad > 0:
+        return (qtd * diaria_cad).quantize(CENTAVO), motivos, "cadastro"
+    motivos.append("sem valor: a solicitação não informa o valor, e não há "
+                   + ("diária (nem na solicitação, nem no cadastro)." if qtd > 0
+                      else "quantidade de diárias para calcular."))
+    return Decimal("0.00"), motivos, ""
+
+
+ORIGEM_DO_VALOR = {"informado": "informado",
+                   "informada": "diária informada",
+                   "cadastro": "diária do cadastro"}
 
 
 def _chaves(linhas) -> list:
@@ -339,7 +376,7 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
                 continue
         ficha = fichas.get(linha["cpf"]) or {}
         aj = mao.get(chave) or {}
-        valor, motivos = valor_da_linha(linha, diarias.get(linha["cpf"]))
+        valor, motivos, origem_valor = valor_da_linha(linha, diarias.get(linha["cpf"]))
         obra_solicitada = " ".join(linha["centro_custo"].split()).upper()
         obra = aj.get("obra") or obra_solicitada
         tipo = " ".join(linha["tipo_despesa"].split())
@@ -365,6 +402,9 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
             "carteira": mapa_carteiras.get(chave_tipo) or CARTEIRA_PADRAO,
             "quantidade": formatos.para_numero(linha["quantidade"]) or Decimal("0"),
             "valor_informado": formatos.para_numero(linha["valor"]),
+            "origem_valor": origem_valor,
+            "rotulo_origem_valor": ORIGEM_DO_VALOR.get(origem_valor, ""),
+            "pede_diaria_cadastrada": pede_diaria_cadastrada(linha["valor_diaria_flag"]),
             "valor_diaria_informada": formatos.para_numero(linha["valor_diaria"]),
             "valor_diaria_cadastrada": diarias.get(linha["cpf"]),
             "valor": valor, "descricao": linha["descricao"],
@@ -411,6 +451,8 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
             "conta": p["conta"]})
         o["pessoas"] += 1
         o["total"] += p["valor"]
+    base["resumos"] = {campo: resumo_por(a_pagar, campo)
+                       for campo in ("obra", "conta", "tipo_despesa")}
     base.update({
         "pessoas": pessoas, "quantos": len(pessoas), "quantos_a_pagar": len(a_pagar),
         "total": sum((p["valor"] for p in a_pagar), Decimal("0.00")),
@@ -420,6 +462,59 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
         "cards": len({p["card_id"] for p in pessoas}),
     })
     return base
+
+
+# A VISÃO AGRUPADA (dono, 03/10/2026: *"seria interessante podermos visualizar
+# de forma mais agrupada o que está para ser pago. Agrupar por obra etc."*).
+AGRUPAMENTOS = [("obra", "Obra"), ("conta", "Conta"),
+                ("tipo_despesa", "Tipo de despesa"), ("card_id", "Solicitação"),
+                ("cpf", "Colaborador"), ("", "Sem agrupar")]
+AGRUPAMENTO_PADRAO = "obra"
+
+
+def _rotulo_do_grupo(p: dict, campo: str) -> str:
+    if campo == "card_id":
+        return f"card {p['card_id']}"
+    if campo == "cpf":
+        return p["nome"] or p["cpf_bonito"]
+    return p.get(campo) or {"obra": "(sem obra)", "conta": "(sem conta)"}.get(
+        campo, "(sem tipo)")
+
+
+def resumo_por(linhas, campo: str) -> list:
+    """`[{rotulo, linhas, pessoas, total}]` do que vai ser pago, por `campo`,
+    do maior para o menor."""
+    grupos: dict = {}
+    for p in linhas:
+        rotulo = _rotulo_do_grupo(p, campo)
+        g = grupos.setdefault(rotulo, {"rotulo": rotulo, "linhas": 0, "cpfs": set(),
+                                       "total": Decimal("0.00")})
+        g["linhas"] += 1
+        g["cpfs"].add(p["cpf"])
+        g["total"] += p["valor"]
+    return [{"rotulo": g["rotulo"], "linhas": g["linhas"], "pessoas": len(g["cpfs"]),
+             "total": g["total"]}
+            for g in sorted(grupos.values(), key=lambda g: (-g["total"], g["rotulo"]))]
+
+
+def agrupar(pessoas, campo: str) -> list:
+    """A lista da tela em grupos: `[{rotulo, pessoas, linhas, a_pagar, total}]`.
+    Sem campo, um grupo só (sem cabeçalho). A ordem dentro do grupo é a da lista
+    (pendências primeiro); os grupos vão do maior valor a pagar para o menor."""
+    if not campo:
+        return [{"rotulo": "", "pessoas": list(pessoas)}]
+    grupos: dict = {}
+    for p in pessoas:
+        grupos.setdefault(_rotulo_do_grupo(p, campo), []).append(p)
+    saida = []
+    for rotulo, membros in grupos.items():
+        vai = [p for p in membros if p["pagar"] and p["valor"] > 0 and not p["gerada"]]
+        saida.append({"rotulo": rotulo, "pessoas": membros, "linhas": len(membros),
+                      "a_pagar": len(vai),
+                      "total": sum((p["valor"] for p in vai), Decimal("0.00")),
+                      "pendencias": sum(1 for p in membros
+                                        if p["impossivel"] or not p["conta"])})
+    return sorted(saida, key=lambda g: (-g["total"], g["rotulo"]))
 
 
 def linhas_a_pagar(calculado: dict | None = None) -> list:

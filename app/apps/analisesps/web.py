@@ -4070,8 +4070,13 @@ def tela_folha_dc():
     except Exception:  # noqa: BLE001 — a janela é apoio
         logger.exception("Folha: não consegui montar a divisão da DC")
         divisao = {}
+    agrupamento = request.args.get("agrupar", dc.AGRUPAMENTO_PADRAO)
+    if agrupamento not in {c for c, _ in dc.AGRUPAMENTOS}:
+        agrupamento = dc.AGRUPAMENTO_PADRAO
     return render_template(
         "analisesps_folha_dc.html", aba="folha", subaba="dc",
+        agrupamento=agrupamento, agrupamentos=dc.AGRUPAMENTOS,
+        grupos_da_lista=dc.agrupar(lista["pessoas"], agrupamento),
         grupos=subtelas_agrupadas(), resultado=calculado, erro=erro,
         pronto=dc._pronto(), pessoas=lista["pessoas"], lista=lista,
         filtrando=lista["filtrando"], divisao=divisao,

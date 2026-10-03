@@ -11778,6 +11778,27 @@ links (…) do arquivo de pagamento"*. A planilha é a
   liberado com o motivo (planilha só das pessoas marcadas). Suíte inteira depois:
   **8.000 verdes**. Não testado contra a planilha e o Pipefy reais.
 
+#### Leva 172 — DC: o valor pela diária cadastrada, e a lista agrupada (03/10/2026)
+
+O dono: *"A DC pode vir com valor ou não quando se trata de diária. Ela pode
+pedir que seja paga pelo valor de diária cadastrada, nesse caso o sistema
+calcula. Seria interessante podermos visualizar de forma mais agrupada o que
+está para ser pago. Agrupar por obra etc."*
+
+- **O valor da linha** (substitui a regra minha da leva 171), em ordem: a
+  solicitação pede a diária cadastrada (coluna G da aba Data) → quantidade ×
+  diária do cadastro, mesmo que traga outro valor (dito na linha); senão o valor
+  informado; senão quantidade × diária informada; senão quantidade × diária do
+  cadastro. Sem nada disso, a linha fica sem valor e não entra. A coluna Valor
+  diz de onde veio. ⚠️ **SUPOSIÇÃO:** "pede a cadastrada" = a coluna G contém
+  "cadastr" ou "sim" — o texto exato do formulário não foi visto.
+- **Lista agrupada:** "Agrupar por" obra (padrão), conta, tipo de despesa,
+  solicitação, colaborador ou sem agrupar. Cada grupo tem cabeçalho com linhas,
+  quantas a pagar, pendências e o total — que acompanham a marcação —, caixinha
+  para marcar/desmarcar o grupo inteiro, e abre/fecha no clique ("fechar todos").
+- **Resumo do que vai ser pago**, embaixo: por obra, por conta e por tipo de
+  despesa (linhas, pessoas, total), no lugar do antigo "Por obra".
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11812,9 +11833,9 @@ links (…) do arquivo de pagamento"*. A planilha é a
 | ~~confirmar o favorecido da SP quando o arquivo é SomaPay~~ — **confirmado em 03/10/2026: CNPJ da BWS**; e a data de pagamento = hoje, também confirmada | — |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
-| **publicar as levas 170 e 171** (migração **047**: apertar "Aplicar atualizações do banco" no mesmo momento) e depois "Atualizar cadastro" para trazer os documentos da ficha | ele |
+| **publicar as levas 170 a 172** (migração **047**: apertar "Aplicar atualizações do banco" no mesmo momento) e depois "Atualizar cadastro" para trazer os documentos da ficha | ele |
 | DC: compartilhar a planilha da DC com a conta de serviço do Google, se a tela disser "permissão" | ele |
-| DC: confirmar a regra do valor da linha (informado; sem ele, qtd × diária) e as colunas da aba "Data base BeeVale" | ele |
+| DC: confirmar o texto da coluna G ("valor da diária") quando a solicitação pede a diária cadastrada (leva 172 supõe "cadastr" ou "sim") e as colunas da aba "Data base BeeVale" | ele |
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir se a alimentação e o transporte no BeeVale também usam a carteira da "Data base BeeVale" (hoje "Produção") | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

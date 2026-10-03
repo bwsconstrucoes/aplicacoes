@@ -98,6 +98,46 @@ def test_a_aba_Data_vira_LINHAS_enriquecidas_pelo_cadastro(banco_dc):
     assert calculado["cards"] == 2
 
 
+@pytest.mark.parametrize("linha,cadastrada,esperado,origem", [
+    # Pede a diária cadastrada: quantidade × cadastro, mesmo com valor informado.
+    ({"valor_diaria_flag": "Valor da diária cadastrada", "quantidade": "2",
+      "valor": "500,00"}, D("90.00"), D("180.00"), "cadastro"),
+    ({"valor_diaria_flag": "Sim", "quantidade": "1,5"}, D("90.00"), D("135.00"), "cadastro"),
+    # Pede a cadastrada e o cadastro não tem: sem valor (não entra).
+    ({"valor_diaria_flag": "Sim", "quantidade": "2"}, None, D("0.00"), ""),
+    # Sem pedido: o informado manda; sem ele, qtd × diária informada; sem ela,
+    # qtd × diária do cadastro.
+    ({"valor_diaria_flag": "Não", "valor": "70,00", "quantidade": "2"}, D("90.00"),
+     D("70.00"), "informado"),
+    ({"quantidade": "2", "valor_diaria": "80,00"}, D("90.00"), D("160.00"), "informada"),
+    ({"quantidade": "2"}, D("90.00"), D("180.00"), "cadastro"),
+    ({"quantidade": "2"}, None, D("0.00"), ""),
+])
+def test_o_VALOR_da_linha_pela_diaria_cadastrada_ou_informada(linha, cadastrada,
+                                                               esperado, origem):
+    """Dono, 03/10/2026: *"A DC pode vir com valor ou não quando se trata de
+    diária. Ela pode pedir que seja paga pelo valor de diária cadastrada, nesse
+    caso o sistema calcula."*"""
+    from app.apps.analisesps import dc
+    valor, motivos, de_onde = dc.valor_da_linha(linha, cadastrada)
+    assert (valor, de_onde) == (esperado, origem)
+    if not valor:
+        assert motivos
+
+
+def test_a_lista_AGRUPA_por_obra_com_o_total_a_pagar(banco_dc):
+    from app.apps.analisesps import dc
+    calculado = dc.calcular()
+    grupos = dc.agrupar(calculado["pessoas"], "tipo_despesa")
+    assert [(g["rotulo"], g["linhas"], g["a_pagar"], g["total"]) for g in grupos] == [
+        ("Despesas com Alimentação", 2, 2, D("270.00")),
+        ("Diárias de Viagem", 1, 0, D("0.00"))]
+    assert grupos[1]["pendencias"] == 1
+    assert dc.agrupar(calculado["pessoas"], "")[0]["rotulo"] == ""
+    assert calculado["resumos"]["conta"] == [
+        {"rotulo": "50024", "linhas": 2, "pessoas": 2, "total": D("270.00")}]
+
+
 def test_a_SELECAO_guarda_so_a_excecao(banco_dc):
     from app.apps.analisesps import dc
     chave = next(p["chave"] for p in dc.calcular()["pessoas"] if p["cpf"] == OUTRO)
@@ -192,6 +232,16 @@ def test_a_TELA_mostra_as_linhas_e_os_blocos_da_lateral(banco_dc, cliente_mestre
     assert "Gerar arquivos" in html and "Planilha de cadastro" in html
     assert "Divisão por obra e conta" in html
     assert "Auxílio Alimentação" in html
+
+
+def test_a_tela_abre_AGRUPADA_por_obra_e_troca_o_agrupamento(banco_dc, cliente_mestre):
+    html = cliente_mestre.get("/analisesps/folha/dc").get_data(as_text=True)
+    assert html.count('class="grupo-cab"') == 1          # uma obra só
+    assert "Resumo do que vai ser pago" in html and "Tipo de despesa</th>" in html
+    html = cliente_mestre.get("/analisesps/folha/dc?agrupar=card_id").get_data(as_text=True)
+    assert html.count('class="grupo-cab"') == 2          # dois cards
+    html = cliente_mestre.get("/analisesps/folha/dc?agrupar=").get_data(as_text=True)
+    assert 'class="grupo-cab"' not in html and "card 900100" in html
 
 
 def test_a_tela_filtra_por_TIPO_DE_DESPESA(banco_dc, cliente_mestre):
