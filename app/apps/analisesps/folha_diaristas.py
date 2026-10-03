@@ -571,6 +571,8 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
     codigo_por_nome = colaboradores.codigos_das_obras()
     feriados = _feriados(inicio, fim)
     ajustes = folha_auxilio.ajustes_do_mes(_tipo_do_ajuste(qual), ano, mes)
+    from . import folha_rateio
+    regras = folha_rateio.regras_ativas_por_cpf()
 
     pessoas, sem_cadastro = [], []
     for cpf, dias in dias_por_cpf.items():
@@ -588,6 +590,8 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
             ajustes.get(cpf))
         if not p["dias"] and not p["dias_sem_decidir"]:
             continue          # só dias de CTPS: não é diarista neste período
+        if regras.get(cpf):
+            aplicar_regra_de_rateio(p, regras[cpf])
         pessoas.append(p)
 
     if sem_cadastro:
@@ -627,6 +631,27 @@ def calcular(ano: int, mes: int, qual: str = "quinzena") -> dict:
         "fechamento": _fechamento(ano, mes, qual),
     })
     return base
+
+
+def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
+    """A diária de quem tem REGRA DE RATEIO ativa vai para as obras da regra,
+    nos percentuais dela — como na folha da contabilidade (a regra manda sobre
+    o ponto). Dono, 03/10/2026: *"o rateio das obras serve sim para alimentação
+    e transporte e diaristas"*. Os dias são repartidos na mesma proporção, só
+    para a apropriação; o valor de cada obra é o que paga."""
+    from . import folha_rateio
+    partes = folha_rateio.distribuir(p["valor"], regra.get("obras") or [])
+    if not partes:
+        return p
+    dias = Decimal(str(p.get("quantidade") or 0))
+    p["por_obra"] = sorted(
+        [{"obra": x["obra"], "valor": x["valor"], "percentual": x["percentual"],
+          "dias": (dias * x["percentual"] / 100).quantize(Decimal("0.01"))}
+         for x in partes], key=lambda o: -o["valor"])
+    p["obra"] = p["por_obra"][0]["obra"]
+    p["obras"] = [o["obra"] for o in p["por_obra"]]
+    p["regra"] = regra.get("nome") or ""
+    return p
 
 
 def _fechamento(ano: int, mes: int, qual: str):

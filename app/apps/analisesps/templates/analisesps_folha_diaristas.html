@@ -276,7 +276,8 @@
           </td>
           <td class="cpf">{{ p.cpf_bonito or p.cpf }}</td>
           <td>{{ p.fase or '—' }}</td>
-          <td>{% for o in p.por_obra %}<b>{{ o.obra }}</b> <span class="cartao-dica">{{ qtd(o.dias) }}</span>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
+          <td>{% if p.regra %}<span class="cartao-dica" title="Regra de rateio das obras">rateio: {{ p.regra }}</span><br>{% endif %}
+            {% for o in p.por_obra %}<b>{{ o.obra }}</b> <span class="cartao-dica">{% if o.percentual is defined and p.regra %}{{ '%.0f'|format(o.percentual) }}% · {{ o.valor|moeda }}{% else %}{{ qtd(o.dias) }}{% endif %}</span>{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
           <td>{{ p.obra_cadastro or '—' }}</td>
           <td class="num"><b>{{ qtd(p.quantidade) }}</b></td>
           <td class="num">{% if p.valor_diaria is none %}—{% else %}{{ p.valor_diaria|moeda }}{% endif %}</td>

@@ -11627,6 +11627,23 @@ anexar esse arquivo. O arquivo fica mais completo, mais robusto."*
 - Só no PDF (o Excel continua como estava). Diárias e auxílios não têm
   contracheque — o PDF deles não muda.
 
+#### Leva 166 — o rateio das obras vale também para diárias, alimentação e transporte (03/10/2026)
+
+O dono: *"o rateio das obras serve sim para alimentação e transporte e
+diaristas"*. Antes só a folha da contabilidade usava a regra.
+
+- Quem está numa **regra ativa** tem o valor dividido pelas obras da regra, nos
+  percentuais dela (`folha_rateio.distribuir` — a soma das partes é sempre o
+  valor). A regra manda sobre a obra do ponto, como na folha.
+- **Diárias:** a linha mostra "rateio: NOME" e cada obra com % e valor; os dias
+  são repartidos na mesma proporção só para a apropriação.
+- **Alimentação e transporte:** a coluna "Obra que paga" mostra a regra e as
+  obras; o "Por obra" soma cada parte na sua obra e diz quantos vieram da regra.
+  O desconto de ausências e o valor acrescentado entram antes da divisão.
+- Fechamento, arquivo de pagamento (conta de cada obra), relatório e card usam
+  as partes. Uma leitura das regras por cálculo (`regras_ativas_por_cpf`).
+- A tela de Rateio diz que a regra vale nas quatro folhas.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11648,9 +11665,10 @@ anexar esse arquivo. O arquivo fica mais completo, mais robusto."*
 | ~~BeeVale e SomaPay na mesma geração~~ — **por conta**, na janela "Gerar arquivos" (leva 154) | — |
 | ~~publicar a leva 154~~ — publicada em 02/10/2026 (suíte inteira 7.848 verdes) | — |
 | ~~decidir o "Gerar por competência"~~ — **tirado em 03/10/2026** (dono: "ok, tira"). Saíram o bloco da aba Arquivos gerados e as rotas `/api/folha/pagamento/preparar` e `/gerar`; `folha_pagamento.preparar`/`gerar` ficam, porque a geração de cada folha usa os dois. Junto foi a opção de unificar alimentação e transporte num arquivo só da BeeVale, que só existia ali | — |
+| publicar a leva 166 (sem migração) | ele |
 | ~~publicar as levas 160 a 165~~ — **publicadas em 03/10/2026** (main em `6f4207d`, suíte inteira 7.874 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (046) e relançar no Pipefy a 09/2026 | ele |
 | confirmar o valor do dia ausente no "Mês"/"Mensal" (mês ÷ dias úteis) | ele |
-| decidir se o rateio das obras passa a valer também para diárias e auxílios (hoje só a folha da contabilidade) | ele |
+| ~~rateio nas diárias e auxílios~~ — **sim** (03/10/2026), leva 166 | — |
 | decidir se a coluna BU é a única verdade do código do Fortes (vazio = sem código) | ele |
 | ~~publicar a leva 159~~ — **publicada em 03/10/2026** (main em `b5a795b`, suíte inteira 7.856 verdes). Falta confirmar se a alimentação "Mensal" também é valor do mês | ele |
 | ~~publicar as levas 157 e 158~~ — **publicadas em 03/10/2026** (main em `4c97938`, suíte inteira 7.854 verdes, sem migração). Falta refazer a prévia de 09/2026: conferir o Record ID e a categoria mostrados | ele |

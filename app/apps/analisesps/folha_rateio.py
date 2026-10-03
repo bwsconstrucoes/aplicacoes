@@ -418,6 +418,22 @@ def buscar(regra_id: int) -> dict | None:
     return None
 
 
+def regras_ativas_por_cpf() -> dict:
+    """`{cpf: regra}` de todas as regras ATIVAS — uma leitura para a folha
+    inteira. Desde 03/10/2026 vale também para diárias, alimentação e
+    transporte (dono: *"o rateio das obras serve sim para alimentação e
+    transporte e diaristas"*). Nunca levanta: sem regras, `{}`."""
+    try:
+        saida = {}
+        for regra in listar(so_ativas=True):
+            for pessoa in regra.get("pessoas") or []:
+                saida[so_digitos(pessoa.get("cpf"))] = regra
+        return saida
+    except Exception:  # noqa: BLE001 — sem rateio, vale o ponto
+        logger.exception("Rateio: não consegui ler as regras ativas")
+        return {}
+
+
 def regra_da_pessoa(cpf: str) -> dict | None:
     """A regra ATIVA desta pessoa, se houver. É o que a folha pergunta."""
     if not _pronto():

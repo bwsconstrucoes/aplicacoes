@@ -356,7 +356,10 @@
           <td>
             {% if p.obra %}
               <b>{{ p.obra }}</b>
-              {% if p.obra_de_onde == 'ponto' %}
+              {% if p.obra_de_onde == 'regra' %}
+                <br><span class="cartao-dica" title="Regra de rateio das obras">rateio: {{ p.regra }}
+                  {% for x in p.rateio %}<br>{{ x.obra }} {{ '%.0f'|format(x.percentual) }}% · {{ x.valor|moeda }}{% endfor %}</span>
+              {% elif p.obra_de_onde == 'ponto' %}
                 <br><span class="cartao-dica">{{ p.dias_na_obra }} dia(s) no ponto{% if resultado.janela_da_obra %} de {{ resultado.janela_da_obra[0].strftime('%d/%m') }} a {{ resultado.janela_da_obra[1].strftime('%d/%m') }}{% endif %}</span>
               {% else %}
                 <br><span class="cartao-dica">do cadastro — sem ponto no mês</span>
@@ -443,11 +446,13 @@
         <tr><td><b>{{ o.obra }}</b></td><td class="num">{{ o.pessoas }}</td>
           <td class="num">{{ o.total|moeda }}</td>
           <td>
-            {% if o.do_cadastro %}
-              <span class="cartao-dica">{{ o.pessoas - o.do_cadastro }} do ponto ·
-                <b>{{ o.do_cadastro }} do cadastro</b></span>
-            {% else %}
+            {% set do_ponto = (o.pessoas or 0) - (o.do_cadastro or 0) - (o.da_regra or 0) %}
+            {% if not o.do_cadastro and not o.da_regra %}
               <span class="cartao-dica">todos do ponto</span>
+            {% else %}
+              <span class="cartao-dica">{{ do_ponto }} do ponto
+                {%- if o.da_regra %} · {{ o.da_regra }} pela regra de rateio{% endif %}
+                {%- if o.do_cadastro %} · <b>{{ o.do_cadastro }} do cadastro</b>{% endif %}</span>
             {% endif %}
           </td></tr>
       {% else %}

@@ -626,8 +626,13 @@ def montado_do_auxilio(resultado: dict, pessoas: list, filtros: dict,
     linhas = []
     for p in pessoas or []:
         entra = bool(p.get("pagar") and _dinheiro(p.get("valor")) > 0)
-        por_obra = ([{"obra": p.get("obra") or "", "dias": p.get("dias") or 0,
-                      "valor": p.get("valor")}] if p.get("obra") or entra else [])
+        # Com regra de rateio, as obras da regra (03/10/2026).
+        if p.get("rateio"):
+            por_obra = [{"obra": x["obra"], "dias": p.get("dias") or 0,
+                         "valor": x["valor"]} for x in p["rateio"]]
+        else:
+            por_obra = ([{"obra": p.get("obra") or "", "dias": p.get("dias") or 0,
+                          "valor": p.get("valor")}] if p.get("obra") or entra else [])
         linhas.append({
             "entra": entra, "cpf": p.get("cpf") or "",
             "nome_na_tela": p.get("nome") or "", "cargo": p.get("cargo") or "",
