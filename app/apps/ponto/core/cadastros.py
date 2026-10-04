@@ -25,20 +25,39 @@ from ..horario import JORNADA_PADRAO, JORNADAS
 RAIO_PADRAO_METROS = 200
 
 _SQL_COLABORADOR = """
-    SELECT c.id, c.nome, c.cpf, c.matricula, c.obra_id, c.situacao, c.admissao, c.demissao,
-           c.telefone,
+    SELECT c.id, {nome} AS nome, c.cpf, c.matricula, {obra_id} AS obra_id, {situacao} AS situacao,
+           {admissao} AS admissao, {demissao} AS demissao, {telefone} AS telefone,
            COALESCE(pc.tipo_jornada, :jornada_padrao) AS tipo_jornada,
            pc.centro_custo, pc.foto_cadastral_id,
            COALESCE(pc.regime_banco, 'SEM_BANCO') AS regime_banco, pc.banco_inicio,
            pc.acordo_documento_id,
            COALESCE(pc.ativo, TRUE) AS ativo_no_ponto,
            (pc.colaborador_id IS NOT NULL) AS tem_config,
-           o.codigo AS obra_codigo, o.nome AS obra_nome, f.nome AS funcao
+           o.codigo AS obra_codigo, o.nome AS obra_nome, {funcao} AS funcao,
+           {no_registro} AS no_registro, {fase} AS fase_registro
       FROM public.colaboradores c
+      {join}
       LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = c.id
-      LEFT JOIN public.obras o ON o.id = c.obra_id
+      LEFT JOIN public.obras o ON o.id = {obra_id}
       LEFT JOIN public.funcoes f ON f.id = c.funcao_id
 """
+# O cadastro do ERP puro. Com o Registro de Colaboradores como base (registro.py),
+# os mesmos campos vêm de lá quando a pessoa está nele.
+_DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
+           "admissao": "c.admissao", "demissao": "c.demissao", "telefone": "c.telefone",
+           "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": ""}
+
+
+def _sql_colaborador(conn: Connection) -> str:
+    from . import registro
+    trechos = registro.trechos_sql(conn) or _DO_ERP
+    return _SQL_COLABORADOR.format(**trechos)
+
+
+def _expr(conn: Connection, campo: str) -> str:
+    from . import registro
+    return (registro.trechos_sql(conn) or _DO_ERP)[campo]
+
 
 _SQL_OBRA = """
     SELECT o.id, o.codigo, o.nome, o.status, o.municipio, o.uf,
@@ -75,37 +94,39 @@ def validar_jornada(tipo: str | None) -> str:
 def colaborador_por_cpf(conn: Connection, cpf: str) -> Optional[dict]:
     """A pessoa pelo CPF (só dígitos). O ERP guarda o CPF só com dígitos; a
     comparação tira a máscara dos dois lados por garantia."""
-    return db.um(conn, _SQL_COLABORADOR +
+    return db.um(conn, _sql_colaborador(conn) +
                  " WHERE regexp_replace(c.cpf, '\\D', '', 'g') = :cpf",
                  cpf=somente_digitos(cpf), jornada_padrao=JORNADA_PADRAO)
 
 
 def colaborador_por_id(conn: Connection, colaborador_id: int) -> Optional[dict]:
-    return db.um(conn, _SQL_COLABORADOR + " WHERE c.id = :id",
+    return db.um(conn, _sql_colaborador(conn) + " WHERE c.id = :id",
                  id=colaborador_id, jornada_padrao=JORNADA_PADRAO)
 
 
 def obras_da_pessoa(conn: Connection, colaborador_id: int) -> set[int]:
     """A principal (do ERP) mais as adicionais (do ponto)."""
     linhas = db.todos(conn, """
-        SELECT obra_id FROM public.colaboradores WHERE id = :id AND obra_id IS NOT NULL
-        UNION
         SELECT obra_id FROM ponto.colaborador_obras WHERE colaborador_id = :id
     """, id=colaborador_id)
-    return {int(l["obra_id"]) for l in linhas}
+    obras = {int(l["obra_id"]) for l in linhas}
+    p = colaborador_por_id(conn, colaborador_id)          # a principal: do Registro, ou do ERP
+    if p and p.get("obra_id"):
+        obras.add(int(p["obra_id"]))
+    return obras
 
 
 def listar_colaboradores(conn: Connection, *, so_ativos: bool = True,
                          obra_id: int | None = None) -> list[dict]:
-    sql = _SQL_COLABORADOR + " WHERE 1 = 1"
+    sql = _sql_colaborador(conn) + " WHERE 1 = 1"
     params: dict = {"jornada_padrao": JORNADA_PADRAO}
     if so_ativos:
-        sql += " AND c.situacao <> 'DESLIGADO' AND COALESCE(pc.ativo, TRUE)"
+        sql += f" AND ({_expr(conn, 'situacao')}) <> 'DESLIGADO' AND COALESCE(pc.ativo, TRUE)"
     if obra_id is not None:
-        sql += (" AND (c.obra_id = :obra_id OR EXISTS (SELECT 1 FROM ponto.colaborador_obras co"
+        sql += (f" AND (({_expr(conn, 'obra_id')}) = :obra_id OR EXISTS (SELECT 1 FROM ponto.colaborador_obras co"
                 " WHERE co.colaborador_id = c.id AND co.obra_id = :obra_id))")
         params["obra_id"] = obra_id
-    sql += " ORDER BY c.nome, c.id"
+    sql += f" ORDER BY {_expr(conn, 'nome')}, c.id"
     pessoas = db.todos(conn, sql, **params)
     adicionais = db.todos(conn, """
         SELECT co.colaborador_id, o.id, o.codigo, o.nome
@@ -251,6 +272,8 @@ def colaborador_para_json(c: dict) -> dict:
         "obras_adicionais": c.get("obras_adicionais", []),
         "tipo_jornada": c["tipo_jornada"], "centro_custo": c.get("centro_custo"),
         "situacao": c["situacao"], "ativo_no_ponto": bool(c["ativo_no_ponto"]),
+        "funcao": c.get("funcao"), "no_registro": c.get("no_registro"),
+        "fase_registro": c.get("fase_registro"),
         "regime_banco": c.get("regime_banco", "SEM_BANCO"),
         "banco_inicio": c["banco_inicio"].isoformat() if c.get("banco_inicio") else None,
     }

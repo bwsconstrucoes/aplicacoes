@@ -126,6 +126,27 @@ o crédito mais antigo do banco é o primeiro a ser usado.
 6h gera os alertas e manda o resumo por WhatsApp aos telefones da Configuração —
 uma vez por dia, numa linha separada, sem ninguém apertar botão.
 
+## A base de pessoas: o Registro de Colaboradores (04/10/2026)
+
+Pedido do dono: *"por enquanto utilizar como base de colaboradores a planilha de
+Registro de Colaboradores (…) tem critério de uso dela de exibição no processo de
+Análise de SPs."* (`core/registro.py`)
+
+- **De onde:** a cópia que a Análise de SPs guarda no banco (`analisesps.colaborador`,
+  atualizada pelo botão "Atualizar cadastro" de lá). O ponto só lê.
+- **O que vem de lá:** nome, celular (WhatsApp do PIN e do QR), cargo (a função no
+  tablet), obra pelo código, admissão, saída e a situação.
+- **O critério, igual ao da Análise de SPs:** DESLIGADO = data de saída já chegou ou
+  "Fase Atual" com "desligad" → batida recusada; AFASTADO = fase com "afastad" →
+  bate, para conferência; o resto, ATIVO (aviso prévio inclusive).
+- **Quem está só no ERP:** bate, mas para conferência ("fora do Registro de
+  Colaboradores").
+- **Quem está só no Registro:** precisa existir no ERP para ter onde pendurar a
+  batida — botão "Cadastrar no ERP os que faltam" na Configuração (nome, CPF, obra;
+  CPF com dígito errado fica de fora).
+- **Chave** na Configuração para voltar ao cadastro do ERP. Sem a cópia no banco, o
+  ponto usa o ERP sozinho.
+
 ## Validações: tudo o que espera alguém, e quem valida o quê (04/10/2026)
 
 **Quem valida** (`core/validacao.py`, Ponto › Configuração › Quem valida cada

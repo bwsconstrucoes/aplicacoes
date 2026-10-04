@@ -186,17 +186,20 @@ def planejar(conn: Connection, *, agora: Optional[dt.datetime] = None,
     momento = agora or horario.agora()
     rng = rng or random.Random()
     hoje = horario.para_local(momento).date()
-    pessoas = db.todos(conn, """
-        SELECT c.id, c.telefone, pc.qr_proxima_troca,
-               EXISTS (SELECT 1 FROM ponto.qr_codigos q WHERE q.colaborador_id = c.id
-                        AND q.revogado_em IS NULL) AS tem_qr,
-               EXISTS (SELECT 1 FROM ponto.envios e WHERE e.colaborador_id = c.id AND e.tipo = 'QR'
-                        AND e.status IN ('PENDENTE', 'ENVIANDO')) AS na_fila
-          FROM public.colaboradores c
-          LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = c.id
-         WHERE c.situacao <> 'DESLIGADO' AND COALESCE(pc.ativo, TRUE)
-         ORDER BY c.id
-    """)
+    # As pessoas pelo cadastro do ponto (Registro de Colaboradores ou ERP —
+    # cadastros.py decide), e não direto da tabela do ERP: o celular que vale é
+    # o da base em uso.
+    ativos = [p for p in cadastros.listar_colaboradores(conn, so_ativos=True)
+              if p["situacao"] in ("ATIVO", "AFASTADO", "FORA_DO_REGISTRO")]
+    com_qr = {r["colaborador_id"] for r in db.todos(
+        conn, "SELECT DISTINCT colaborador_id FROM ponto.qr_codigos WHERE revogado_em IS NULL")}
+    na_fila = {r["colaborador_id"] for r in db.todos(
+        conn, "SELECT DISTINCT colaborador_id FROM ponto.envios WHERE tipo = 'QR' "
+              "AND status IN ('PENDENTE', 'ENVIANDO')")}
+    trocas = {r["colaborador_id"]: r["qr_proxima_troca"] for r in db.todos(
+        conn, "SELECT colaborador_id, qr_proxima_troca FROM ponto.colaborador_config")}
+    pessoas = [{"id": p["id"], "telefone": p.get("telefone"), "qr_proxima_troca": trocas.get(p["id"]),
+                "tem_qr": p["id"] in com_qr, "na_fila": p["id"] in na_fila} for p in ativos]
     sem_qr = [p for p in pessoas if not p["na_fila"] and not p["tem_qr"]
               and telefone_valido(p["telefone"])]
     vencendo = [p for p in pessoas if not p["na_fila"] and p["tem_qr"]

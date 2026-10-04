@@ -679,6 +679,8 @@ fraude por foto. **Primeira biblioteca de navegador do ponto:** jsQR (Apache
 **Desde 04/10/2026 a cerca BLOQUEIA** (decisão do dono): a obra da batida é a da
 cerca em que o aparelho está, e fora de todas a batida é recusada — por obra dá
 para voltar ao jeito antigo (ANALISAR). Obra sem coordenada no ERP não bloqueia.
+**Base de pessoas, desde 04/10/2026: o Registro de Colaboradores** (a cópia em
+`analisesps.colaborador`), com o cadastro do ERP de reserva — ver §9.
 
 **Cadastros são do ERP**: o ponto lê `obras` e `colaboradores` e guarda só o que
 o ERP não tem (raio da cerca, jornada, aparelhos, marcações). **Foto vai para o
@@ -796,6 +798,30 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 04/10/2026 — O PONTO PASSA A LER AS PESSOAS DO REGISTRO DE COLABORADORES, pela cópia da Análise de SPs (atravessa áreas)
+
+Pedido do dono: *"gostaria por enquanto de utilizar como base de colaboradores a
+planilha de Registro de Colaboradores. Tem critério de uso dela de exibição no
+processo de Análise de SPs."*
+
+O ponto **lê** `analisesps.colaborador` — a cópia da aba "Dados Documentos" que
+o botão "Atualizar cadastro" da Análise de SPs mantém — e não a planilha: ler
+3.500 linhas a cada pergunta não cabe na instância. Nome, celular, cargo, obra
+(pelo código), admissão, saída e a situação passam a vir de lá quando a pessoa
+está nela, com o **mesmo critério** da Análise de SPs (desligado = saída já
+chegou ou fase "desligad"; afastado = fase "afastad"). A identidade continua
+sendo a linha de `public.colaboradores` (batidas, escalas e pedidos penduram
+nela); quem falta no ERP entra por um botão na Configuração do ponto, que cria
+só nome, CPF e obra — a mesma escrita do importador do Mobponto.
+
+⚠️ **AMARRA ENTRE ÁREAS:** se a Análise de SPs renomear a tabela ou as colunas
+`cpf`, `nome`, `celular`, `cargo`, `fase`, `data_saida` (e, opcionais,
+`obra_codigo`, `data_admissao`, `data_inicio`), o ponto volta sozinho para o
+cadastro do ERP — as colunas são conferidas antes de usar (`ponto/core/registro.py`)
+— e `tests/test_ponto_registro_banco.py` acusa. O ponto não escreve nada no schema
+`analisesps`. A chave na Configuração do ponto devolve a base ao ERP quando ele
+quiser.
 
 ### 03/10/2026 — A GESTÃO DO PONTO ENTROU NO ERP, e quem aprova o quê virou cadastro (atravessa áreas)
 

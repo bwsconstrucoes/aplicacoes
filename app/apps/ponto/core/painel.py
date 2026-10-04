@@ -74,7 +74,7 @@ def hoje(conn: Connection, *, dia: Optional[dt.date] = None, obras: Optional[lis
         aprovada = next((o for o in ocorr.get(p["id"], []) if o["status"] == "APROVADA"
                          and o["tipo"] in espelho.ABONO_POR_TIPO), None)
         pendente = next((o for o in ocorr.get(p["id"], []) if o["status"].startswith("AGUARDANDO")), None)
-        if aprovada:
+        if aprovada or p.get("situacao") == "AFASTADO":     # atestado aprovado, ou afastado no cadastro
             situacao = "AFASTADO"
         elif do_dia:
             # Número ímpar de batidas durante o dia é normal (entrou e ainda não

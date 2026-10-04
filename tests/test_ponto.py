@@ -168,7 +168,7 @@ class TestDecisao:
     def test_pessoa_afastada_e_obra_fora_da_lista_acumulam_motivos(self):
         status, motivos = self.decidir(situacao_pessoa="AFASTADO", obra_na_lista_da_pessoa=False)
         assert status == "EM_ANALISE"
-        assert motivos == ["pessoa afastado no cadastro", "obra fora da lista da pessoa"]
+        assert motivos == ["pessoa afastada no cadastro", "obra fora da lista da pessoa"]
 
     def test_hash_encadeado_muda_com_qualquer_campo(self):
         m = dt.datetime(2026, 10, 3, 11, 0, tzinfo=dt.timezone.utc)

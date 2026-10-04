@@ -315,6 +315,10 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem valida o ajuste de batida? E a compensação? (a regra está na Configuração;
   atestado é sempre do DP)
 - Qual pedido está parado há mais de 3 dias? 🔒
+- Quantas pessoas estão ativas no Registro de Colaboradores? Quantas faltam no ERP?
+  ⚠️ ("ativo" = critério da Análise de SPs: sem saída já chegada e sem fase
+  "desligado"; a resposta é tão nova quanto o último "Atualizar cadastro")
+- Quem bateu ponto e não está no Registro? 🔒
 - Qual o raio da cerca da obra X? Ela bloqueia ou manda para conferência?
 - **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
   reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas

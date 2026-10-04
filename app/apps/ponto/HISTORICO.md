@@ -38,6 +38,26 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/10/2026 — O Registro de Colaboradores vira a base de pessoas do ponto
+
+Pedido do dono (ver README, "A base de pessoas"). **O que foi feito:** o ponto lê
+a cópia da Análise de SPs, com o mesmo critério de lá; quem está só no ERP bate
+para conferência; botão para cadastrar no ERP quem falta; chave para voltar ao ERP.
+
+**Decisões tomadas sem ele, com motivo:**
+- **Ler a cópia, não a planilha:** a Análise de SPs já guarda a aba no banco, e ler
+  3.500 linhas por pergunta não cabe na instância. O preço: o ponto fica tão
+  atualizado quanto o último "Atualizar cadastro" de lá (a Configuração mostra a hora).
+- **A linha do ERP continua sendo a identidade:** batida, escala e pedido estão
+  pendurados nela desde a fase 1; trocar isso seria refazer o banco do ponto.
+- **Cadastrar no ERP é por botão, não sozinho:** cria gente no cadastro de outra
+  área; quem aperta vê antes quantos são.
+- **Só no ERP não recusa, vai para conferência:** recusar barraria quem trabalha e
+  ainda não chegou à planilha.
+
+**Pendente com o dono:** apertar "Atualizar cadastro" na Análise de SPs antes de
+usar, e depois "Cadastrar no ERP os que faltam" no ponto.
+
 ## 04/10/2026 — Validações numa tela só, e quem valida configurável
 
 Pedido do dono: *"todas essas solicitações precisam ser validadas (…) a gente vai

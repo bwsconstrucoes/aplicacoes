@@ -95,7 +95,9 @@ def decidir(*, origem: str, dentro_da_cerca: Optional[bool], motivo_cerca: Optio
     if diferenca_relogio_s is not None and abs(diferenca_relogio_s) > TOLERANCIA_RELOGIO_SEGUNDOS:
         motivos.append(f"relógio do aparelho difere do servidor em {abs(diferenca_relogio_s):.0f} s")
     if situacao_pessoa and situacao_pessoa != "ATIVO":
-        motivos.append(f"pessoa {situacao_pessoa.lower()} no cadastro")
+        motivos.append({"FORA_DO_REGISTRO": "pessoa fora do Registro de Colaboradores",
+                        "AFASTADO": "pessoa afastada no cadastro"}.get(
+            situacao_pessoa, f"pessoa {situacao_pessoa.lower()} no cadastro"))
     if not obra_na_lista_da_pessoa:
         motivos.append("obra fora da lista da pessoa")
     return ("VALIDA" if not motivos else "EM_ANALISE"), motivos

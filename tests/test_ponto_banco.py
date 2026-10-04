@@ -50,6 +50,16 @@ def _schema_ponto(banco):
         conn.commit()
 
 
+def _base_erp():
+    """Estes testes são sobre o cadastro do ERP: a base de pessoas fica no ERP,
+    exista ou não a cópia do Registro de Colaboradores neste banco de teste."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import parametros, registro
+    with db.conexao() as conn:
+        parametros.gravar(conn, registro.PARAMETRO_FONTE, registro.FONTE_ERP, "teste")
+    registro.esquecer()
+
+
 @pytest.fixture
 def ponto(_schema_ponto, banco, monkeypatch):
     """Tabelas do ponto vazias, cadastro mínimo no ERP e a chave configurada.
@@ -64,6 +74,7 @@ def ponto(_schema_ponto, banco, monkeypatch):
     monkeypatch.setattr(envios, "disparar_se_preciso", lambda: False)
     monkeypatch.setattr(fotos, "disparar_envio", lambda: False)
     _limpar(banco)
+    _base_erp()
     with banco.connect() as conn:
         obra = conn.execute(text(
             "INSERT INTO obras (codigo, nome, latitude, longitude, status) "

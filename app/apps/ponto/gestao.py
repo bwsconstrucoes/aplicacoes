@@ -602,6 +602,51 @@ def ponto_api_validacoes():
     return _ok(**r)
 
 
+@bp.route("/erp/api/ponto/registro")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_registro():
+    """A base de pessoas do ponto: o Registro de Colaboradores (a cópia que a
+    Análise de SPs guarda) ou o cadastro do ERP — e o retrato da base."""
+    from .core import registro
+    with db.conexao() as conn:
+        r = registro.retrato(conn)
+        faltam = registro.faltam_no_erp(conn, limite=20) if r.get("disponivel") else []
+    return _ok(**r, exemplos_faltam=[{"nome": f["nome"], "cpf_final": f["cpf"][-3:]} for f in faltam])
+
+
+@bp.route("/erp/api/ponto/registro/fonte", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_registro_fonte():
+    from .core import registro
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        registro.gravar_fonte(conn, d.get("fonte"), quem.nome)
+        r = registro.retrato(conn)
+    logger.info("Ponto: base de pessoas passou a ser %s (%s)", d.get("fonte"), quem.nome)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/registro/cadastrar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_registro_cadastrar():
+    """Cadastra no ERP, com o mínimo (nome, CPF, obra), quem está ativo no
+    Registro e falta lá — sem isso a pessoa não tem onde pendurar a batida."""
+    from .core import registro
+    quem = _quem()
+    with db.conexao() as conn:
+        if not registro.estado(conn, fresco=True)["disponivel"]:
+            raise ErroDeValidacao("o Registro de Colaboradores não está disponível neste banco")
+        r = registro.cadastrar_faltantes(conn, quem.nome)
+        retrato = registro.retrato(conn)
+    return _ok(**r, retrato=retrato)
+
+
 @bp.route("/erp/api/ponto/quem-valida")
 @login_obrigatorio
 @permissao("ver_ponto")

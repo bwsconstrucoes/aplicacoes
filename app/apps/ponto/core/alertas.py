@@ -357,12 +357,12 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
     import random
     rng = random.Random()
     for r in db.todos(conn, f"""
-        SELECT m.colaborador_id, m.data_referencia, min(m.obra_id) AS obra_id, c.nome, c.telefone,
+        SELECT m.colaborador_id, m.data_referencia, min(m.obra_id) AS obra_id, c.nome,
                array_agg(m.timestamp_servidor ORDER BY m.timestamp_servidor) AS horas
           FROM ponto.marcacoes m JOIN public.colaboradores c ON c.id = m.colaborador_id
          WHERE m.data_referencia BETWEEN :i AND :f AND m.origem = 'PWA' AND m.foto_id IS NULL
            AND m.status <> 'REJEITADA' {filtro}
-         GROUP BY m.colaborador_id, m.data_referencia, c.nome, c.telefone""", **params):
+         GROUP BY m.colaborador_id, m.data_referencia, c.nome""", **params):
         d = r["data_referencia"]
         _registrar(conn, vistos, chave=f"SEM_FOTO:{r['colaborador_id']}:{d.isoformat()}",
                    codigo="SEM_FOTO",
@@ -370,7 +370,10 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
                             f"({_horas(r['horas'])})",
                    colaborador_id=r["colaborador_id"], obra_id=r["obra_id"], data=d)
         contagem["SEM_FOTO"] += 1
-        telefone = envios.telefone_valido(r["telefone"])
+        telefone = None
+        if avisar and d == fim:          # o celular da base em uso (Registro ou ERP)
+            pessoa = cadastros.colaborador_por_id(conn, r["colaborador_id"])
+            telefone = envios.telefone_valido((pessoa or {}).get("telefone"))
         if avisar and d == fim and telefone:
             plural = len(r["horas"]) > 1
             texto = (f"BWS Ponto — {r['nome'].split(' ')[0].title()}, no dia {d:%d/%m} "

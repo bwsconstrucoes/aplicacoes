@@ -88,6 +88,11 @@ def mundo(_schema_ponto2, banco, monkeypatch):
     monkeypatch.setattr(fotos, "disparar_envio", lambda: False)
     monkeypatch.setattr(fotos, "TENTATIVAS_NA_HORA", 1)
     _limpar(banco)
+    from app.apps.ponto import db as _db
+    from app.apps.ponto.core import parametros as _par, registro as _reg
+    with _db.conexao() as _c:       # a base destes testes é o cadastro do ERP
+        _par.gravar(_c, _reg.PARAMETRO_FONTE, _reg.FONTE_ERP, "teste")
+    _reg.esquecer()
     with banco.connect() as conn:
         obra_a = conn.execute(text("INSERT INTO obras (codigo, nome, latitude, longitude, status, uf, municipio) "
                                    "VALUES ('PG-A', 'Escola A', :la, :lo, 'ATIVA', 'CE', 'Fortaleza') RETURNING id"),
