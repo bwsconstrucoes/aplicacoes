@@ -5,10 +5,8 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
-1. **Publicar a fase 2 e o QR/mosaico** (ramo `feature/modulo-ponto`) — espera
-   o "pode" do dono e a confirmação de que não há carga do painel nem
-   sincronização da Análise de SPs rodando. **No mesmo momento da publicação,
-   DUAS atualizações de banco:**
+1. **Fase 2 e QR/mosaico PUBLICADOS em 04/10/2026** (com o "pode" do dono).
+   Falta o dono apertar, se ainda não apertou, **os dois botões de banco**:
    - ERP › Configurações › "Aplicar atualizações do banco" (a **082**, que dá as
      seções do ponto aos perfis). Sem ela, quem tem perfil cadastrado não vê o
      menu Ponto;
