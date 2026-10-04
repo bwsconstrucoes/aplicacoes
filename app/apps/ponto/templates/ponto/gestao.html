@@ -485,6 +485,19 @@
 
 {% if pode.configurar_ponto %}
 <div class="cartao">
+  <div class="cartao-cab"><h3>Cerca das obras</h3></div>
+  <div class="cartao-dica" style="margin-top:0">A obra da batida é a da cerca em que o celular ou
+    o tablet está — a pessoa não escolhe. Fora da cerca, a batida é recusada e fica registrada (o
+    alerta “Tentou bater fora da área da obra” aparece no dia seguinte, para quem estava em serviço
+    fora receber o ajuste). Quem está na borda, com GPS impreciso (até 150 m de folga), bate e a
+    batida vai para conferência. Obra sem coordenada não bloqueia ninguém: a batida vai para
+    conferência. Use “Aceitar e mandar para conferência” em obra espalhada (estrada, rede) ou
+    aumente o raio.</div>
+  <div id="c-cercas-msg"></div>
+  <div class="tabela-rolagem" style="max-height:420px"><div id="c-cercas">carregando…</div></div>
+</div>
+
+<div class="cartao">
   <div class="cartao-cab"><h3>Mosaico de fotos por obra</h3></div>
   <div class="cartao-dica" style="margin-top:0"><b>Opcional:</b> o mosaico fica sempre
     disponível na aba Mosaico. <b>Obrigatório:</b> na manhã seguinte o responsável recebe
@@ -2825,7 +2838,75 @@ async function gravarMosaicoDaObra(linha, botao) {
   } catch (e) { botao.disabled = false; falhou(e, "c-mosaico-msg"); }
 }
 
-// ------------------------------------------------------ 9. Drive e fila
+// ---------------------------------------------- 9. cerca das obras
+// Decisão do dono, 04/10/2026: ninguém bate fora da área da obra, e a obra é
+// detectada pela localização. Aqui se ajusta o raio e o que fazer fora dele.
+const MODOS_CERCA = [{valor: "BLOQUEAR", rotulo: "Bloquear a batida"},
+                     {valor: "ANALISAR", rotulo: "Aceitar e mandar para conferência"}];
+let CERCAS = null;
+
+async function carregarCercas() {
+  const alvo = els("c-cercas");
+  if (!alvo) return;
+  try {
+    CERCAS = await api("/erp/api/ponto/cercas");
+  } catch (e) { erroNoCartao("c-cercas", e); return; }
+  desenharCercas();
+}
+
+function desenharCercas() {
+  const alvo = els("c-cercas"), obras = CERCAS.obras || [], modo = !!CERCAS.modo_disponivel;
+  if (!obras.length) { alvo.innerHTML = `<div class="cartao-dica">Nenhuma obra ativa.</div>`; return; }
+  const coordenada = o => o.tem_coordenada
+    ? `ok<small><a class="elo" target="_blank" rel="noopener"
+        href="https://www.google.com/maps?q=${encodeURIComponent(o.latitude)},${encodeURIComponent(o.longitude)}">ver no mapa</a></small>`
+    : `<span style="color:var(--vermelho); font-weight:600">sem coordenada</span>
+       <small>cadastre em <a class="elo" href="/erp/obras">ERP › Obras</a></small>`;
+  const campo = "padding:6px 8px; border:1px solid var(--borda-forte); border-radius:8px";
+  alvo.innerHTML = `${modo ? "" : `<div class="aviso alerta" style="margin:0 0 10px">Aplique as atualizações
+      do ponto para escolher bloquear ou analisar; até lá, fora da cerca vai para conferência.</div>`}
+    <table><thead><tr><th class="sem-ordem">Obra</th><th class="sem-ordem">Coordenada</th>
+      <th class="sem-ordem">Raio (metros)</th><th class="sem-ordem">Fora da cerca</th>
+      <th class="sem-ordem direita">Barradas (7 dias)</th><th class="sem-ordem"></th></tr></thead><tbody>
+    ${obras.map(o => `<tr data-cerca-obra="${o.id}">
+      <td><b>${escapar(rotuloObra(o))}</b></td>
+      <td>${coordenada(o)}</td>
+      <td><input type="number" data-cerca-raio min="20" max="5000" step="10" data-sem-mascara
+           value="${escapar(o.raio_metros ?? "")}" style="${campo}; width:96px"></td>
+      <td><select data-cerca-modo data-sem-busca style="${campo}" ${modo ? "" : "disabled"}>
+        ${MODOS_CERCA.map(m => `<option value="${m.valor}" ${m.valor === o.fora_da_cerca ? "selected" : ""}>${m.rotulo}</option>`).join("")}
+        </select></td>
+      <td class="dados direita" ${o.barradas_7_dias ? `style="color:var(--vermelho); font-weight:700"` : ""}>${o.barradas_7_dias || "—"}</td>
+      <td><button class="btn secundario" type="button" data-cerca-gravar>Gravar</button></td></tr>`).join("")}
+    </tbody></table>`;
+  alvo.querySelectorAll("[data-cerca-gravar]").forEach(b =>
+    b.addEventListener("click", () => gravarCerca(b.closest("tr"), b)));
+}
+
+async function gravarCerca(linha, botao) {
+  const id = Number(linha.dataset.cercaObra);
+  const raio = linha.querySelector("[data-cerca-raio]").value.trim();
+  if (raio && (!/^\d+$/.test(raio) || Number(raio) < 20 || Number(raio) > 5000)) {
+    aviso("c-cercas-msg", "O raio vai de 20 a 5000 metros, só números.", "erro");
+    return;
+  }
+  const corpo = {raio_metros: raio ? Number(raio) : null};
+  // Sem a atualização do ponto o servidor recusa a escolha do modo: nem manda.
+  if (CERCAS.modo_disponivel) corpo.fora_da_cerca = linha.querySelector("[data-cerca-modo]").value;
+  botao.disabled = true;
+  try {
+    const {obra: c} = await postar(`/erp/api/ponto/cercas/${id}`, corpo);
+    const i = CERCAS.obras.findIndex(o => o.id === id);
+    // A resposta não traz a coordenada conferida nem as barradas: ficam as da lista.
+    if (i >= 0 && c) CERCAS.obras[i] = {...CERCAS.obras[i], raio_metros: c.raio_metros, fora_da_cerca: c.fora_da_cerca};
+    desenharCercas();
+    const o = (i >= 0 ? CERCAS.obras[i] : c) || {codigo: String(id)};
+    aviso("c-cercas-msg", `${escapar(rotuloObra(o))}: raio de ${escapar(o.raio_metros ?? "—")} m; fora da cerca,
+      ${o.fora_da_cerca === "BLOQUEAR" ? "a batida é bloqueada" : "a batida vai para conferência"}.`, "ok");
+  } catch (e) { botao.disabled = false; falhou(e, "c-cercas-msg"); }
+}
+
+// ------------------------------------------------------ 10. Drive e fila
 function desenharDrive() {
   const fila = (CONFIG.fila_fotos || 0) + (CONFIG.fila_documentos || 0);
   els("c-drive").innerHTML = `
@@ -2872,7 +2953,8 @@ function anosParaEscolher() {
 }
 
 async function carregarTudoMenosConfig() {
-  await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos()]);
+  await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
+                    carregarCercas()]);
 }
 
 anosParaEscolher();

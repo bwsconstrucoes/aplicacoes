@@ -182,7 +182,8 @@
     <div id="aviso-aparelho"></div>
     <div class="cartao">
       <h2 id="ola">Olá</h2>
-      <label for="i-obra">Obra</label>
+      <div id="i-local" class="aviso info">📍 Procurando a sua localização…</div>
+      <label for="i-obra">Obra (escolhida pela localização)</label>
       <select id="i-obra"></select>
       <button class="btn grande" id="btn-bater" type="button">Tirar foto e bater ponto</button>
       <button class="link" id="btn-sem-foto" type="button">A câmera não abre? Bater sem foto</button>
@@ -414,6 +415,33 @@ function preencherObras(select, obras, principal) {
   select.innerHTML = obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === escolhida ? "selected" : ""}>${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("");
 }
 
+// Onde a pessoa está, em relação às obras dela. É só AVISO: quem decide a obra
+// e se a batida entra é o servidor, pela cerca (fora da área da obra, não entra).
+function mostrarLocal(l) {
+  const caixa = $("i-local"); if (!caixa) return;
+  if (!l) {
+    caixa.className = "aviso erro";
+    caixa.textContent = "📍 Localização desligada. Ligue a localização do celular: fora da área da obra o ponto não é registrado.";
+    return;
+  }
+  const medidas = (OBRAS || []).filter(o => o.latitude !== null && o.longitude !== null)
+    .map(o => ({o, d: distancia(l, o)})).sort((x, y) => x.d - y.d);
+  const dentro = medidas.find(m => m.d <= m.o.raio_metros);
+  const folga = Math.min(l.precisao || 0, 150);
+  if (dentro) {
+    caixa.className = "aviso ok"; caixa.textContent = `📍 Você está na obra ${dentro.o.codigo} — ${dentro.o.nome}.`;
+    $("i-obra").value = dentro.o.codigo;
+  } else if (medidas.length && medidas[0].d - folga <= medidas[0].o.raio_metros) {
+    caixa.className = "aviso ambar"; caixa.textContent = `📍 Você está na borda da obra ${medidas[0].o.codigo}. Pode bater; a batida vai para conferência. Se puder, chegue mais perto.`;
+    $("i-obra").value = medidas[0].o.codigo;
+  } else if (medidas.length) {
+    const d = medidas[0].d, txt = d >= 1000 ? `${(d / 1000).toFixed(1).replace(".", ",")} km` : `${Math.round(d)} m`;
+    caixa.className = "aviso erro"; caixa.textContent = `📍 Você está a ${txt} da obra ${medidas[0].o.codigo}. Fora da área da obra o ponto não é registrado.`;
+  } else {
+    caixa.className = "aviso info"; caixa.textContent = "📍 Localização encontrada.";
+  }
+}
+
 // --- foto ------------------------------------------------------------------
 function tirarFoto() {
   return new Promise(resolve => {
@@ -448,8 +476,9 @@ async function bater({obra, comFoto}) {
     if (comFoto && !foto) { aviso("A foto não foi tirada. Tente de novo ou use “bater sem foto”.", "ambar"); return; }
     aviso("Registrando…", "info");
     const local = await localizacao();
+    if (local) { LOCAL = local; mostrarLocal(local); obra = $("i-obra").value; } else mostrarLocal(null);
     const corpo = {obra, timestamp_dispositivo: new Date().toISOString(), foto_base64: foto || undefined};
-    if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; }
+    if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; corpo.precisao = local.precisao; }
     const d = await chamar("/ponto/app/api/bater", corpo);
     aviso("");
     mostrarComprovante(d.comprovante, d.repetida, d.status, d.motivo_analise);
@@ -491,7 +520,7 @@ async function carregarInicio() {
   $("ola").textContent = `Olá, ${EU.primeiro_nome}`;
   OBRAS = EU.obras;
   preencherObras($("i-obra"), OBRAS, EU.obra_principal);
-  localizacao().then(l => { LOCAL = l; preencherObras($("i-obra"), OBRAS, $("i-obra").value); });
+  localizacao().then(l => { LOCAL = l; preencherObras($("i-obra"), OBRAS, $("i-obra").value); mostrarLocal(l); });
 
   // o aparelho
   let avisoAparelho = "", podeBater = true;
@@ -873,7 +902,7 @@ async function identificar(quem) {
     const local = TB.local;
     const corpo = {bilhete: d.bilhete, obra: $("t-obra").value, timestamp_dispositivo: new Date().toISOString(),
                    foto_base64: foto || undefined};
-    if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; }
+    if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; corpo.precisao = local.precisao; }
     const r = await chamar("/ponto/app/api/bater", corpo);
     const c = r.comprovante;
     if (r.status === "EM_ANALISE") {

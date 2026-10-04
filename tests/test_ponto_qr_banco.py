@@ -365,3 +365,61 @@ def test_foto_de_cadastro_sai_de_uma_batida_da_propria_pessoa(app, mundo, banco)
     assert hoje.get_json()["pessoas"][0]["tem_foto_cadastral"] is True
     mini = sup.get(f"/erp/api/ponto/marcacoes/{mid}/miniatura")
     assert mini.status_code == 200 and "max-age=86400" in mini.headers["Cache-Control"]
+
+
+# ---------------------------------------------------------------------------
+# A cerca que bloqueia e a obra detectada sozinha (04/10/2026)
+# ---------------------------------------------------------------------------
+def test_celular_a_obra_e_detectada_e_fora_da_area_nao_bate(app, mundo, banco, monkeypatch):
+    from app.apps.ponto import db
+    from app.apps.ponto.core import alertas
+    from tests.test_ponto_gestao_banco import _entrar_no_app
+    with banco.connect() as conn:          # a obra B ganha coordenada, 1,4 km ao sul da A
+        conn.execute(text("UPDATE obras SET latitude = -3.7400, longitude = -38.5270 WHERE id = :o"),
+                     {"o": mundo["obra_b"]})
+        conn.commit()
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    uuid = "celular-do-joao-cerca-0123456789"
+    token = cel.post("/ponto/api/dispositivo/registrar", json={"device_uuid": uuid}).get_json()["token"]
+    h = {"X-Device-UUID": uuid, "X-Device-Token": token}
+    cel.post("/ponto/app/api/aparelho/identificar", json={}, headers=h)
+    dp = como(app, mundo["dp"])
+    aparelho = dp.get("/erp/api/ponto/pendencias").get_json()["aparelhos"][0]
+    dp.post(f"/erp/api/ponto/dispositivos/{aparelho['id']}/aprovar", json={"perfil": "INDIVIDUAL", "cpf": CPF_JOAO})
+
+    # escolheu a obra A, mas está dentro da cerca da B: a batida é da B
+    r = cel.post("/ponto/app/api/bater", json={"obra": "PG-A", "latitude": -3.7401, "longitude": -38.5270,
+                                               "precisao": 15}, headers=h)
+    assert r.status_code == 201, r.get_json()
+    assert r.get_json()["comprovante"]["local"].startswith("PG-B")
+    assert "fora da lista da pessoa" in r.get_json()["motivo_analise"]     # B não é obra do João
+
+    # longe das duas: recusada, com a distância
+    longe = cel.post("/ponto/app/api/bater", json={"obra": "PG-A", "latitude": -3.80, "longitude": -38.5270},
+                     headers=h)
+    assert longe.status_code == 403 and "fora da área da obra" in longe.get_json()["erro"]
+    # localização desligada no celular: recusada
+    sem = cel.post("/ponto/app/api/bater", json={"obra": "PG-A"}, headers=h)
+    assert sem.status_code == 403 and "ligue a localização" in sem.get_json()["erro"]
+
+    with db.conexao() as conn:
+        alertas.gerar(conn, ate=_hoje())
+        recusada = [a for a in alertas.listar(conn) if a["codigo"] == "BATIDA_RECUSADA_FORA_DA_OBRA"]
+    assert len(recusada) == 1 and "2 tentativa(s)" in recusada[0]["mensagem"]
+
+
+def test_gestao_ajusta_a_cerca_de_cada_obra(app, mundo):
+    dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])
+    lista = dp.get("/erp/api/ponto/cercas").get_json()
+    a = next(o for o in lista["obras"] if o["id"] == mundo["obra_a"])
+    b = next(o for o in lista["obras"] if o["id"] == mundo["obra_b"])
+    assert lista["modo_disponivel"] is True
+    assert a["tem_coordenada"] is True and a["fora_da_cerca"] == "BLOQUEAR" and a["raio_metros"] == 200
+    assert b["tem_coordenada"] is False
+    assert sup.get("/erp/api/ponto/cercas").status_code == 403
+    assert sup.post(f"/erp/api/ponto/cercas/{mundo['obra_a']}", json={"raio_metros": 400}).status_code == 403
+    r = dp.post(f"/erp/api/ponto/cercas/{mundo['obra_a']}", json={"raio_metros": 400, "fora_da_cerca": "ANALISAR"})
+    assert r.status_code == 200 and r.get_json()["obra"]["raio_metros"] == 400
+    assert r.get_json()["obra"]["fora_da_cerca"] == "ANALISAR"
+    assert dp.post(f"/erp/api/ponto/cercas/{mundo['obra_a']}", json={"raio_metros": 10}).status_code == 400
+    assert dp.post(f"/erp/api/ponto/cercas/{mundo['obra_a']}", json={"fora_da_cerca": "TALVEZ"}).status_code == 400

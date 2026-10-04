@@ -299,6 +299,11 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Algum tablet teve fila rápida demais (5 ou mais pessoas com menos de 10 s entre
   uma e outra)? 🔒 ⚠️ (é convite a abrir o mosaico, não prova de fraude)
 - Algum tablet recebeu muitos CPFs que não são de ninguém? 🔒
+- Quem tentou bater ponto fora da área da obra esta semana? A quantos metros?
+  🔒 ⚠️ ("fora da área" = fora da cerca de TODAS as obras ativas com
+  coordenada; desde 04/10/2026 essa batida é recusada, não entra no espelho)
+- Quais obras estão sem coordenada (e por isso não detectam nem bloqueiam)?
+- Qual o raio da cerca da obra X? Ela bloqueia ou manda para conferência?
 - **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
   reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas
   usaram o QR de outra" — o sistema vê o QR antigo e o rosto no mosaico, não a

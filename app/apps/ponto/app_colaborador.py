@@ -288,7 +288,7 @@ def app_api_bater():
             conn, cpf=cpf, obra=d.get("obra"), origem="PWA",
             device_uuid=request.headers.get("X-Device-UUID") or d.get("device_uuid"),
             device_token=request.headers.get(auth.CABECALHO_TOKEN), via_chave=False,
-            latitude=d.get("latitude"), longitude=d.get("longitude"),
+            latitude=d.get("latitude"), longitude=d.get("longitude"), precisao=d.get("precisao"),
             timestamp_dispositivo=d.get("timestamp_dispositivo"),
             foto_base64=d.get("foto_base64"), ip=auth.ip_de_quem_chama(),
             identificacao=identificacao)

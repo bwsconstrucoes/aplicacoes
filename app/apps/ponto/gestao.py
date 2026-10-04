@@ -719,6 +719,70 @@ def ponto_api_mosaico_obra_gravar(obra_id: int):
     return _ok(obra=c)
 
 
+@bp.route("/erp/api/ponto/cercas")
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_cercas():
+    """A cerca de cada obra: coordenada (do cadastro do ERP), raio e o que
+    fazer fora dela. Mostra quantas batidas a cerca barrou na última semana."""
+    from .core import marcacoes as marc
+    with db.conexao() as conn:
+        obras = cadastros.listar_obras(conn, so_ativas=True)
+        tem_modo = db.tem_coluna(conn, "obra_config", "fora_da_cerca")
+        barradas = {r["obra"]: int(r["n"]) for r in db.todos(conn, """
+            SELECT obra_informada AS obra, count(*) AS n FROM ponto.recusas
+             WHERE (motivo LIKE 'fora da área da obra%' OR motivo LIKE 'localização desligada%')
+               AND criado_em > now() - interval '7 days'
+             GROUP BY obra_informada""")}
+        saida = []
+        for o in obras:
+            j = cadastros.obra_para_json(o)
+            j["tem_coordenada"] = j["latitude"] is not None and j["longitude"] is not None
+            j["fora_da_cerca"] = marc.modo_fora_da_cerca(conn, int(o["id"])) if tem_modo else "ANALISAR"
+            j["barradas_7_dias"] = barradas.get(o["codigo"], 0)
+            saida.append(j)
+    return _ok(obras=saida, modo_disponivel=tem_modo)
+
+
+@bp.route("/erp/api/ponto/cercas/<int:obra_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_cerca_gravar(obra_id: int):
+    """Raio da cerca (20 m a 5 km) e o que fazer fora dela: BLOQUEAR (o padrão)
+    ou ANALISAR (aceita e manda para conferência — obra espalhada, estrada)."""
+    from .core import marcacoes as marc
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        if not cadastros.obra_por_id(conn, obra_id):
+            raise NaoEncontrado("obra não encontrada")
+        raio = d.get("raio_metros")
+        if raio not in (None, ""):
+            try:
+                raio = int(raio)
+            except (TypeError, ValueError):
+                raise ErroDeValidacao("raio em metros, só números", campo="raio_metros")
+        else:
+            raio = None
+        cadastros.gravar_config_obra(conn, obra_id, raio_metros=raio)
+        if "fora_da_cerca" in d:
+            modo = str(d.get("fora_da_cerca") or "").upper()
+            if modo not in marc.MODOS_FORA_DA_CERCA:
+                raise ErroDeValidacao("use BLOQUEAR ou ANALISAR", campo="fora_da_cerca")
+            if not db.tem_coluna(conn, "obra_config", "fora_da_cerca"):
+                raise ErroDeValidacao("aplique as atualizações do ponto antes de mudar isto")
+            db.executar(conn, "UPDATE ponto.obra_config SET fora_da_cerca = :m, atualizado_em = now() "
+                              "WHERE obra_id = :o", m=modo, o=obra_id)
+        logger.info("Ponto: cerca da obra %s ajustada por %s (raio %s, fora: %s)",
+                    obra_id, quem.nome, raio, d.get("fora_da_cerca"))
+        o = cadastros.obra_por_id(conn, obra_id)
+        j = cadastros.obra_para_json(o)
+        j["fora_da_cerca"] = marc.modo_fora_da_cerca(conn, obra_id)
+        j["tem_coordenada"] = j["latitude"] is not None and j["longitude"] is not None
+    return _ok(obra=j)
+
+
 @bp.route("/erp/api/ponto/envios")
 @login_obrigatorio
 @permissao("configurar_ponto")

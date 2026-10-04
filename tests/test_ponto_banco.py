@@ -234,8 +234,9 @@ def test_lista_e_obras_do_aparelho(cliente, ponto):
     aprovar(cliente, dispositivo_id, perfil="LISTA", autorizados=[CPF_MARIA], obras=["PT-01"])
     assert bater(cliente, token, cpf=CPF_MARIA).status_code == 201
     assert "fora da lista" in bater(cliente, token, cpf=CPF_JOAO).get_json()["erro"]
+    # Escolher outra obra não adianta: a obra é a da cerca em que o aparelho está.
     r = bater(cliente, token, cpf=CPF_MARIA, obra="PT-02")
-    assert r.status_code == 403 and "não vale nesta obra" in r.get_json()["erro"]
+    assert r.status_code in (200, 201) and r.get_json()["marcacao"]["obra"]["codigo"] == "PT-01"
     # troca a lista: agora João entra, Maria sai
     r = cliente.post(f"/ponto/api/dispositivos/{dispositivo_id}/autorizar",
                      json={"autorizados": [CPF_JOAO]}, headers=com_chave())
@@ -296,20 +297,42 @@ def test_batida_repetida_em_60s_devolve_a_mesma(cliente):
     assert segunda.get_json()["marcacao"]["nsr"] == primeira.get_json()["marcacao"]["nsr"]
 
 
-def test_fora_da_cerca_e_aceita_em_analise(cliente):
+def test_fora_da_cerca_e_recusada_e_na_obra_que_analisa_vai_para_analise(cliente, banco, ponto):
+    """Decisão do dono, 04/10/2026: fora da área da obra não se bate ponto.
+    A obra pode ser marcada para ANALISAR (o jeito antigo)."""
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
     r = bater(cliente, token, lat=-3.7400, lon=-38.5270)   # ~1,4 km ao sul
+    assert r.status_code == 403 and "fora da área da obra" in r.get_json()["erro"]
+    assert "1,4 km" in r.get_json()["erro"]
+    recusa = cliente.get("/ponto/api/recusas", headers=com_chave()).get_json()["recusas"][0]
+    assert recusa["motivo"].startswith("fora da área da obra")
+    with banco.connect() as conn:
+        conn.execute(text("INSERT INTO ponto.obra_config (obra_id, fora_da_cerca) VALUES (:o, 'ANALISAR') "
+                          "ON CONFLICT (obra_id) DO UPDATE SET fora_da_cerca = 'ANALISAR'"), {"o": ponto["obra"]})
+        conn.commit()
+    r = bater(cliente, token, lat=-3.7400, lon=-38.5270)
     assert r.status_code == 201
     m = r.get_json()["marcacao"]
     assert m["status"] == "EM_ANALISE" and m["dentro_da_cerca"] is False
     assert "fora da cerca" in m["motivo_analise"] and m["distancia_metros"] > 1000
 
 
+def test_gps_impreciso_na_borda_entra_para_analise(cliente):
+    dispositivo_id, token = registrar_aparelho(cliente)
+    aprovar(cliente, dispositivo_id)
+    # ~250 m da obra (raio 200 m), com o GPS dizendo que erra até 80 m
+    r = bater(cliente, token, lat=-3.72985, lon=-38.5271, precisao=80)
+    assert r.status_code == 201, r.get_json()
+    m = r.get_json()["marcacao"]
+    assert m["status"] == "EM_ANALISE" and "na borda da cerca" in m["motivo_analise"]
+
+
 def test_obra_sem_coordenada_e_celular_sem_localizacao_vao_para_analise(cliente):
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
-    r = bater(cliente, token, obra="PT-02")
+    # longe da PT-01, escolhendo a PT-02 (sem coordenada): não há como saber
+    r = bater(cliente, token, obra="PT-02", lat=-3.80, lon=-38.60)
     assert r.status_code == 201
     m = r.get_json()["marcacao"]
     assert m["status"] == "EM_ANALISE" and "sem coordenada" in m["motivo_analise"]
@@ -332,7 +355,7 @@ def test_pessoa_desligada_e_obra_encerrada_sao_recusadas(cliente):
     aprovar(cliente, dispositivo_id)
     r = bater(cliente, token, cpf=CPF_DESLIGADO)
     assert r.status_code == 403 and "desligada" in r.get_json()["erro"]
-    r = bater(cliente, token, obra="PT-03")
+    r = bater(cliente, token, obra="PT-03", lat=None, lon=None)
     assert r.status_code == 403 and "encerrada" in r.get_json()["erro"]
     r = bater(cliente, token, cpf="39053344705")   # CPF válido, ninguém com ele
     assert r.status_code == 403 and "não cadastrada" in r.get_json()["erro"]
@@ -464,7 +487,7 @@ def test_consulta_por_periodo_cpf_obra_e_status(cliente):
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
     bater(cliente, token)
-    bater(cliente, token, cpf=CPF_MARIA, lat=-3.75, lon=-38.5270)   # fora da cerca
+    bater(cliente, token, cpf=CPF_MARIA, lat=None, lon=None)   # tablet sem localização: análise
     hoje = dt.date.today()
     ini, fim = (hoje - dt.timedelta(days=1)).isoformat(), (hoje + dt.timedelta(days=1)).isoformat()
     todas = cliente.get(f"/ponto/api/marcacoes?data_inicio={ini}&data_fim={fim}",

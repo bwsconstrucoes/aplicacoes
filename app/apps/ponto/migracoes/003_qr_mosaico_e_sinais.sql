@@ -143,3 +143,21 @@ CREATE TABLE IF NOT EXISTS ponto.mosaicos (
 );
 CREATE INDEX IF NOT EXISTS ix_ponto_mosaicos_pendentes
     ON ponto.mosaicos (data) WHERE situacao = 'PENDENTE';
+
+-- ---------------------------------------------------------------------------
+-- A CERCA PASSA A BLOQUEAR (decisão do dono, 04/10/2026: "não queremos
+-- permitir que a pessoa bata ponto fora das áreas de obra"). Por obra, porque
+-- há obra que precisa do contrário (estrada, rede, serviço espalhado):
+--   BLOQUEAR  fora da cerca, a batida é recusada e registrada em `recusas`
+--   ANALISAR  fora da cerca, a batida entra e vai para conferência (o jeito de
+--             antes)
+-- ---------------------------------------------------------------------------
+ALTER TABLE ponto.obra_config
+    ADD COLUMN IF NOT EXISTS fora_da_cerca TEXT NOT NULL DEFAULT 'BLOQUEAR';
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_ponto_obra_fora_da_cerca') THEN
+        ALTER TABLE ponto.obra_config ADD CONSTRAINT ck_ponto_obra_fora_da_cerca
+            CHECK (fora_da_cerca IN ('BLOQUEAR', 'ANALISAR'));
+    END IF;
+END $$;

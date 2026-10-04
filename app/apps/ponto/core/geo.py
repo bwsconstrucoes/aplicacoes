@@ -47,3 +47,59 @@ def decimal_ou_none(valor) -> Optional[Decimal]:
     if valor is None or str(valor).strip() == "":
         return None
     return Decimal(str(valor).strip().replace(",", "."))
+
+
+# ---------------------------------------------------------------------------
+# Em que obra a pessoa está (04/10/2026)
+#
+# Decisão do dono: "não queremos permitir que a pessoa bata ponto fora das
+# áreas de obra. E quero ainda que a obra seja detectada automaticamente." A
+# obra da batida passa a ser a da CERCA em que o celular está — não a que a
+# pessoa escolheu numa lista.
+#
+# A PRECISÃO DO GPS entra na conta, porque dentro de prédio ou debaixo de laje o
+# celular pode errar 50, 100 m. Quem está fora do raio, mas a menos da precisão
+# informada (no máximo 150 m de folga), está "na borda": a batida é aceita e
+# vai para conferência. Mais longe que isso, está fora.
+# ---------------------------------------------------------------------------
+FOLGA_MAXIMA_DA_PRECISAO_M = 150.0
+
+DENTRO, BORDA, FORA, SEM_LOCAL = "DENTRO", "BORDA", "FORA", "SEM_LOCAL"
+
+
+def localizar_obra(lat, lon, precisao, obras: list[dict]) -> tuple[str, Optional[dict], Optional[float]]:
+    """PURA. Devolve (situação, obra, distância em metros).
+
+    `obras` traz id, latitude, longitude e raio_metros. Só entram na conta as
+    que têm coordenada. DENTRO/BORDA devolvem a obra da cerca (a de centro mais
+    perto, se houver duas); FORA devolve a obra mais perto, para a mensagem
+    dizer a quantos metros ela está; SEM_LOCAL, quando o celular não mandou
+    localização válida."""
+    if not coordenada_valida(lat, lon):
+        return SEM_LOCAL, None, None
+    try:
+        folga = min(max(float(precisao or 0), 0.0), FOLGA_MAXIMA_DA_PRECISAO_M)
+    except (TypeError, ValueError):
+        folga = 0.0
+    medidas = []
+    for o in obras:
+        if not coordenada_valida(o.get("latitude"), o.get("longitude")):
+            continue
+        d = distancia_metros(lat, lon, o["latitude"], o["longitude"])
+        medidas.append((d, o))
+    if not medidas:
+        return FORA, None, None
+    medidas.sort(key=lambda x: x[0])
+    dentro = [(d, o) for d, o in medidas if d <= float(o.get("raio_metros") or 0)]
+    if dentro:
+        return DENTRO, dentro[0][1], round(dentro[0][0], 1)
+    borda = [(d, o) for d, o in medidas if d - folga <= float(o.get("raio_metros") or 0)]
+    if borda:
+        return BORDA, borda[0][1], round(borda[0][0], 1)
+    return FORA, medidas[0][1], round(medidas[0][0], 1)
+
+
+def distancia_legivel(metros: Optional[float]) -> str:
+    if metros is None:
+        return "?"
+    return f"{metros / 1000:.1f} km".replace(".", ",") if metros >= 1000 else f"{metros:.0f} m"

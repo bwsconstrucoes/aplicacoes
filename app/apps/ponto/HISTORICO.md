@@ -19,6 +19,10 @@ junto com o `README.md` e o `PLANO.md`.
    para todo mundo com telefone, espalhado em dias); "Avisar a pessoa quando a
    batida ficar sem foto"; e quais obras têm o **mosaico obrigatório**, com que
    responsável. Sugestão: ligar o QR só depois do piloto numa obra.
+1c. **Coordenadas das obras no ERP**: a cerca agora BLOQUEIA e a obra é
+   detectada pela localização — obra ativa sem latitude/longitude no cadastro
+   do ERP não detecta (vai para conferência). Conferir em Ponto › Configuração
+   › Cerca das obras.
 2. **A migração 001 em produção**: na publicação da fase 1 ficou com o dono
    (Shell do Render). Se ainda não rodou, o botão do item 1 aplica as duas.
 3. **Configurar para começar a usar**: cadastrar as escalas reais e atribuir a
@@ -31,6 +35,42 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 04/10/2026 — A cerca passa a BLOQUEAR, e a obra é detectada pela localização
+
+Pedido do dono: *"não queremos permitir que a pessoa bata ponto fora das áreas
+de obra. E quero ainda que a obra seja detectada automaticamente."* Muda a
+decisão da fase 1 (fora da cerca entrava para análise).
+
+**O que foi feito:** a obra da batida é a da cerca em que o aparelho está;
+fora de todas, a batida é recusada com a distância; borda do GPS (até 150 m de
+folga) e obra sem coordenada entram para conferência; celular sem localização é
+recusado, tablet sem localização não; o modo é por obra (BLOQUEAR, padrão, ou
+ANALISAR) e o raio também, num cartão novo da Configuração; alerta novo
+"Tentou bater fora da área da obra". No celular, a tela diz onde a pessoa está
+("Você está na obra X" / "Você está a 850 m da obra X") antes de ela bater. A
+coluna nova entrou na migração **003**, que ainda não foi aplicada em lugar
+nenhum.
+
+**Correção de um exagero meu, registrada para não se repetir:** o código e o
+README diziam que "a Portaria 671 veda impedir a marcação". Não é bem isso: ela
+proíbe restringir o HORÁRIO da marcação, marcar sozinho e exigir autorização
+para hora extra; restringir o LUGAR não está na lista. O risco que fica é
+trabalhista, não de norma: quem trabalhou fora da obra e foi barrado tem as
+horas reclamáveis — daí o alerta e o ajuste.
+
+**Decisões tomadas sem ele, com motivo:**
+- **Folga da borda de até 150 m** pela precisão do GPS: dentro de prédio o
+  celular erra; sem folga, quem está na obra seria barrado.
+- **Obra sem coordenada não bloqueia**: bloquear deixaria a obra inteira sem
+  ponto. O cartão da cerca mostra em vermelho quem está sem coordenada.
+- **Tablet sem localização entra para análise**: tablet de wi-fi muitas vezes
+  não tem GPS, e ele já está preso às obras dele.
+- **Identidade é conferida antes do lugar**: aparelho de outra pessoa é recusado
+  por isso, não por estar sem localização (um teste antigo pegou a ordem errada).
+
+**Pendente com o dono:** conferir se as obras ativas têm latitude e longitude
+no ERP — obra sem coordenada não bloqueia, mas também não detecta.
 
 ## 03/10/2026 — QR Code pessoal, tablet de câmera ligada, mosaico e sinais de fraude
 

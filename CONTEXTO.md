@@ -676,6 +676,9 @@ WhatsApp da casa não é a oficial. O envio automático nasce **desligado**.
 Mosaico de fotos por obra (opcional; obrigatório com responsável) e alertas de
 fraude por foto. **Primeira biblioteca de navegador do ponto:** jsQR (Apache
 2.0), servida pelo próprio módulo (`ponto/static/jsQR.js`), sem CDN.
+**Desde 04/10/2026 a cerca BLOQUEIA** (decisão do dono): a obra da batida é a da
+cerca em que o aparelho está, e fora de todas a batida é recusada — por obra dá
+para voltar ao jeito antigo (ANALISAR). Obra sem coordenada no ERP não bloqueia.
 
 **Cadastros são do ERP**: o ponto lê `obras` e `colaboradores` e guarda só o que
 o ERP não tem (raio da cerca, jornada, aparelhos, marcações). **Foto vai para o

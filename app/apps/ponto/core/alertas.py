@@ -45,7 +45,7 @@ GRAVIDADE = {
     # Sinais de fraude e de foto (migração 003)
     "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE",
     "SEQUENCIA_RAPIDA": "ATENCAO", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
-    "MOSAICO_PENDENTE": "ATENCAO",
+    "MOSAICO_PENDENTE": "ATENCAO", "BATIDA_RECUSADA_FORA_DA_OBRA": "ATENCAO",
 }
 ROTULO = {
     "FALTA": "Falta sem justificativa", "BATIDA_FALTANDO": "Batida faltando",
@@ -63,6 +63,7 @@ ROTULO = {
     "SEQUENCIA_RAPIDA": "Muitas pessoas em sequência rápida no mesmo aparelho",
     "QR_ANTIGO_USADO": "QR Code antigo usado", "TENTATIVAS_DE_CPF": "CPFs errados em sequência no tablet",
     "MOSAICO_PENDENTE": "Mosaico de fotos sem conferência",
+    "BATIDA_RECUSADA_FORA_DA_OBRA": "Tentou bater fora da área da obra",
 }
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
 DO_DIA = {"FALTA", "BATIDA_FALTANDO", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
@@ -484,6 +485,28 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
                             f"ninguém da obra em {r['dia']:%d/%m} — alguém testando CPFs, ou cadastro faltando",
                    data=r["dia"])
         contagem["TENTATIVAS_DE_CPF"] += 1
+
+    # --- tentou bater fora da área da obra (a cerca bloqueia desde 04/10/2026)
+    # Quem foi barrado pode estar em serviço externo de verdade: o alerta é
+    # para alguém confirmar e, se for o caso, lançar o ajuste da batida.
+    for r in db.todos(conn, """
+        SELECT c.id AS colaborador_id, c.nome, c.obra_id,
+               (r.criado_em AT TIME ZONE 'America/Fortaleza')::date AS dia, count(*) AS n,
+               min(r.motivo) AS exemplo
+          FROM ponto.recusas r JOIN public.colaboradores c
+            ON regexp_replace(c.cpf, '\\D', '', 'g') = r.cpf_informado
+         WHERE (r.motivo LIKE 'fora da área da obra%' OR r.motivo LIKE 'localização desligada%')
+           AND r.criado_em >= :a AND r.criado_em < :b
+         GROUP BY c.id, c.nome, c.obra_id, dia""", a=inicio_ts, b=fim_ts):
+        if colaborador_ids is not None and r["colaborador_id"] not in colaborador_ids:
+            continue
+        _registrar(conn, vistos, chave=f"BATIDA_RECUSADA_FORA_DA_OBRA:{r['colaborador_id']}:{r['dia'].isoformat()}",
+                   codigo="BATIDA_RECUSADA_FORA_DA_OBRA",
+                   mensagem=f"{r['nome']}: {r['n']} tentativa(s) de bater ponto fora da área da obra em "
+                            f"{r['dia']:%d/%m} ({r['exemplo']}) — se estava em serviço fora, lançar o ajuste "
+                            "da batida",
+                   colaborador_id=r["colaborador_id"], obra_id=r["obra_id"], data=r["dia"])
+        contagem["BATIDA_RECUSADA_FORA_DA_OBRA"] += 1
 
     # --- mosaico obrigatório sem conferência ---------------------------------
     for m in db.todos(conn, """

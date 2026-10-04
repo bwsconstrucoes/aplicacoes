@@ -51,12 +51,14 @@ Testes: `tests/test_ponto.py` (regras puras, sem banco) e
    `public.colaboradores` (CPF único, obra principal, situação). O ponto guarda
    só o que o ERP não tem: raio da cerca, tipo de jornada, obras adicionais.
    Pessoa sem linha no ponto bate com os padrões (PADRAO_4, ativa).
-2. **Identidade recusa; lugar e relógio vão para análise.** Aparelho não
-   aprovado, pessoa não autorizada, pessoa desligada, obra encerrada → 403 e
-   linha em `ponto.recusas`. Fora da cerca, obra sem coordenada, celular sem
-   localização, relógio errado, pessoa afastada, obra fora da lista da pessoa →
-   batida ACEITA com status `EM_ANALISE` e o motivo. A Portaria 671 veda impedir
-   a marcação do empregado.
+2. **Identidade e lugar recusam; relógio e cadastro vão para análise.**
+   Aparelho não aprovado, pessoa não autorizada, pessoa desligada, obra
+   encerrada → 403 e linha em `ponto.recusas`. **Desde 04/10/2026 (decisão do
+   dono), fora da área de qualquer obra também é 403** — e a obra da batida é a
+   da cerca em que o aparelho está, detectada sozinha (ver a seção "A cerca que
+   bloqueia"). Relógio errado, pessoa afastada, obra fora da lista da pessoa,
+   obra sem coordenada, GPS na borda da cerca, tablet sem localização ou sem
+   foto → batida ACEITA com status `EM_ANALISE` e o motivo.
 3. **A hora oficial é a do servidor**, em UTC no banco e em Fortaleza na saída.
    `data_referencia` é o dia de trabalho: para `VIGIA_NOTURNO_2`, batida antes
    das 10h pertence ao dia anterior.
@@ -123,6 +125,33 @@ o crédito mais antigo do banco é o primeiro a ser usado.
 **Rotina do dia** (`core/rotina.py`): a primeira requisição do ponto depois das
 6h gera os alertas e manda o resumo por WhatsApp aos telefones da Configuração —
 uma vez por dia, numa linha separada, sem ninguém apertar botão.
+
+## A cerca que bloqueia e a obra detectada sozinha (04/10/2026)
+
+Decisão do dono: *"não queremos permitir que a pessoa bata ponto fora das áreas
+de obra. E quero ainda que a obra seja detectada automaticamente."*
+
+- **A obra é a da cerca** (`core/geo.py::localizar_obra`): o servidor mede a
+  distância do celular a todas as obras ativas com coordenada (no tablet, só às
+  obras do aparelho) e fica com a cerca em que ele está. A obra que vem da tela
+  é só sugestão — escolher outra não muda nada.
+- **Fora de todas as cercas: recusada**, com a distância na mensagem ("fora da
+  área da obra: 1,4 km da obra PG-A"), linha em `recusas` e, no dia seguinte, o
+  alerta "Tentou bater fora da área da obra" — quem estava em serviço fora
+  recebe o ajuste da batida pelo encarregado.
+- **Na borda** (fora do raio, mas dentro da precisão que o GPS informou, até
+  150 m de folga): entra, para conferência. Debaixo de laje o GPS erra.
+- **Obra sem coordenada não bloqueia ninguém** (vai para conferência), senão a
+  obra inteira ficaria sem bater. As coordenadas são do cadastro da obra no ERP.
+- **Celular sem localização: recusado** ("ligue a localização"). Tablet da obra
+  sem localização: aceito para conferência — o aparelho já é da obra.
+- **Por obra** (Ponto › Configuração › Cerca das obras): raio (20 m a 5 km) e
+  "fora da cerca": BLOQUEAR (padrão) ou ANALISAR (o jeito de antes — para obra
+  espalhada, estrada, rede).
+- **Antes de apertar o botão da 003**, vale o jeito antigo (fora da cerca vai
+  para análise): o código não muda de comportamento pela metade.
+- **O que a cerca não pega:** celular com GPS falsificado (aplicativo de
+  "localização falsa"). Quem pega isso é a foto e o mosaico.
 
 ## QR Code, tablet de câmera ligada, mosaico e sinais de fraude (03/10/2026)
 

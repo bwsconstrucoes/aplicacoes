@@ -232,6 +232,7 @@ def registrar_marcacao():
             origem=dados.get("origem", "PWA"), device_uuid=dados.get("device_uuid"),
             device_token=request.headers.get(auth.CABECALHO_TOKEN), via_chave=via_chave,
             latitude=dados.get("latitude"), longitude=dados.get("longitude"),
+            precisao=dados.get("precisao"),
             timestamp_dispositivo=dados.get("timestamp_dispositivo"),
             foto_base64=dados.get("foto_base64"), registrado_por=dados.get("registrado_por"),
             ip=auth.ip_de_quem_chama())

@@ -9,12 +9,27 @@ DUAS FAMÍLIAS DE PROBLEMA, DOIS DESTINOS — e a diferença é jurídica, não 
     RECUSADA, com linha em `ponto.recusas` e resposta 403. Sem a identidade
     não há o que registrar.
 
-  - **LUGAR OU RELÓGIO** (fora da cerca, obra sem coordenada, celular sem
-    localização, relógio do aparelho muito diferente do servidor, pessoa
-    afastada no cadastro, obra fora da lista da pessoa): a batida é ACEITA e
-    marcada EM_ANALISE, com o motivo. A Portaria 671/2021 veda ao empregador
-    impedir a marcação; recusar quem está a 250 m da obra cria passivo
-    trabalhista. Quem decide é gente, na tela da fase 2.
+  - **LUGAR** — mudou em 04/10/2026, por decisão do dono: "não queremos
+    permitir que a pessoa bata ponto fora das áreas de obra. E quero ainda que
+    a obra seja detectada automaticamente." A OBRA É A DA CERCA em que o
+    aparelho está (`geo.localizar_obra`), não a escolhida na lista. FORA da
+    área de qualquer obra, a batida é RECUSADA (com a distância na mensagem e
+    linha em `recusas`) — salvo obra marcada ANALISAR. Na BORDA (fora do raio,
+    mas dentro da precisão do GPS, até 150 m), entra para análise. Obra sem
+    coordenada não bloqueia ninguém. Celular sem localização é recusado; o
+    tablet da obra sem localização, não (o aparelho já é da obra). A regra
+    pura é `decidir_lugar`.
+    Sobre a lei, dito sem rodeio porque a primeira versão deste texto exagerou:
+    a Portaria 671/2021 proíbe restringir o HORÁRIO da marcação, marcar
+    sozinho e exigir autorização para hora extra; restringir o LUGAR não está
+    nessa lista. O risco que fica é outro: quem trabalhou fora da obra e foi
+    barrado tem as horas reclamáveis — por isso a recusa vira alerta para
+    alguém lançar o ajuste.
+
+  - **RELÓGIO E CADASTRO** (relógio do aparelho muito diferente do servidor,
+    pessoa afastada no cadastro, obra fora da lista da pessoa, sem foto no
+    tablet): a batida é ACEITA e marcada EM_ANALISE, com o motivo. Quem decide
+    é gente, na tela de pendências.
 
 NSR E HASH ENCADEADO: cada marcação recebe o próximo número da sequência (sem
 furo, sob trava do Postgres para dois pedidos simultâneos não pegarem o mesmo)
@@ -84,6 +99,60 @@ def decidir(*, origem: str, dentro_da_cerca: Optional[bool], motivo_cerca: Optio
     if not obra_na_lista_da_pessoa:
         motivos.append("obra fora da lista da pessoa")
     return ("VALIDA" if not motivos else "EM_ANALISE"), motivos
+
+
+MODOS_FORA_DA_CERCA = ("BLOQUEAR", "ANALISAR")
+
+
+def modo_fora_da_cerca(conn: Connection, obra_id: int) -> str:
+    """BLOQUEAR (o padrão desde 04/10/2026) ou ANALISAR. Antes da migração 003
+    ser aplicada, o jeito antigo (ANALISAR): o código chega ao servidor antes
+    do botão, e nada pode mudar de comportamento pela metade."""
+    if not db.tem_coluna(conn, "obra_config", "fora_da_cerca"):
+        return "ANALISAR"
+    linha = db.um(conn, "SELECT fora_da_cerca FROM ponto.obra_config WHERE obra_id = :o", o=obra_id)
+    return (linha or {}).get("fora_da_cerca") or "BLOQUEAR"
+
+
+def decidir_lugar(*, situacao: str, detectada: Optional[dict], distancia: Optional[float],
+                  enviada: Optional[dict], no_tablet: bool, precisao, modo,
+                  latitude=None, longitude=None) -> tuple[Optional[dict], Optional[str], Optional[str]]:
+    """PURA (o `modo` é uma função da obra). Devolve (obra, motivo da RECUSA,
+    motivo de ANÁLISE). Decisão do dono, 04/10/2026: fora da área da obra não
+    se bate ponto; e a obra é a da cerca, detectada sozinha.
+
+      DENTRO     a obra da cerca, sem motivo nenhum
+      BORDA      a obra da cerca, para conferência (o GPS impreciso não recusa)
+      SEM_LOCAL  no tablet da obra: aceita, para conferência (o aparelho já é
+                 da obra); no celular: recusa se a obra bloqueia
+      FORA       recusa se a obra bloqueia; se a obra escolhida NÃO TEM
+                 coordenada, não há como saber, e vai para conferência
+    """
+    if situacao == geo.DENTRO:
+        return detectada, None, None
+    if situacao == geo.BORDA:
+        return detectada, None, (f"na borda da cerca: {geo.distancia_legivel(distancia)} da obra "
+                                 f"(raio {detectada['raio_metros']} m; GPS com precisão de "
+                                 f"{geo.distancia_legivel(float(precisao or 0))})")
+    if situacao == geo.SEM_LOCAL:
+        alvo = enviada
+        if not alvo:
+            return None, "sem localização não dá para saber a obra — ligue a localização", None
+        if no_tablet or modo(alvo) == "ANALISAR":
+            return alvo, None, None          # o motivo "sem localização" sai da avaliação da cerca
+        return None, "localização desligada — ligue a localização do celular para bater o ponto", None
+    # FORA
+    if enviada and not geo.coordenada_valida(enviada.get("latitude"), enviada.get("longitude")):
+        return enviada, None, None           # "obra sem coordenada cadastrada" vai para análise
+    alvo = enviada or detectada
+    if not alvo:
+        return None, "nenhuma obra com coordenada cadastrada perto daqui", None
+    d = (geo.distancia_metros(latitude, longitude, alvo["latitude"], alvo["longitude"])
+         if alvo is not detectada else distancia)
+    if modo(alvo) == "BLOQUEAR":
+        return None, (f"fora da área da obra: {geo.distancia_legivel(d)} da obra {alvo['codigo']} "
+                      f"(raio {alvo['raio_metros']} m)"), None
+    return alvo, None, None                  # ANALISAR: o motivo "fora da cerca" sai da avaliação
 
 
 def _proximo_nsr(conn: Connection, colaborador_id: int, obra_id: int,
@@ -172,7 +241,7 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
               timestamp_dispositivo: str | None = None, foto_base64: str | None = None,
               registrado_por: str | None = None, ip: str | None = None,
               agora: dt.datetime | None = None,
-              identificacao: str | None = None) -> tuple[dict, bool]:
+              identificacao: str | None = None, precisao=None) -> tuple[dict, bool]:
     """Registra a batida. Devolve (marcação, repetida).
 
     Levanta ErroDeValidacao (400) para entrada ruim, Recusada (403) para
@@ -205,34 +274,67 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         raise ErroDeValidacao("timestamp_dispositivo ilegível (use ISO 8601)",
                               campo="timestamp_dispositivo") from e
 
-    # --- pessoa e obra ------------------------------------------------------
+    # --- pessoa -------------------------------------------------------------
     pessoa = cadastros.colaborador_por_cpf(conn, cpf_ok)
     if not pessoa:
         _recusar(conn, "pessoa não cadastrada", **contexto)
     if pessoa["situacao"] == "DESLIGADO" or not pessoa["ativo_no_ponto"]:
         _recusar(conn, "pessoa desligada ou inativa no ponto", **contexto)
-    obra_ok = cadastros.resolver_obra(conn, obra)
-    if not obra_ok:
-        _recusar(conn, "obra não cadastrada", **contexto)
-    if obra_ok["status"] != "ATIVA" or not obra_ok["ativo_no_ponto"]:
-        _recusar(conn, "obra encerrada ou inativa no ponto", **contexto)
 
-    # --- aparelho -----------------------------------------------------------
-    aparelho = None
+    # --- aparelho (quem é; a obra ele confere depois) ------------------------
+    aparelho, obras_do_aparelho = None, set()
     if device_uuid and not via_chave:
         try:
             aparelho = dispositivos.autenticar(conn, device_uuid, device_token)
         except Exception:  # noqa: BLE001 — uuid desconhecido ou token errado: mesma recusa
             _recusar(conn, "aparelho desconhecido ou token inválido", **contexto)
+        obras_do_aparelho = dispositivos.obras_de(conn, aparelho["id"])
+        # Identidade ANTES do lugar: aparelho bloqueado, celular de outra
+        # pessoa ou pessoa fora da lista é recusado pelo que é — não por estar
+        # sem localização. (A obra do aparelho é conferida depois da cerca.)
         motivo = dispositivos.autorizado_para(
-            aparelho, int(pessoa["id"]), int(obra_ok["id"]),
-            dispositivos.autorizados_de(conn, aparelho["id"]),
-            dispositivos.obras_de(conn, aparelho["id"]))
+            aparelho, int(pessoa["id"]), -1, dispositivos.autorizados_de(conn, aparelho["id"]), set())
         if motivo:
             _recusar(conn, motivo, **contexto)
     elif device_uuid and via_chave:
         # Sistema informando por qual aparelho veio (iDFace): só registra a referência.
         aparelho = dispositivos.por_uuid(conn, device_uuid)
+    no_tablet = bool(aparelho) and not via_chave and aparelho.get("perfil") in ("COMPARTILHADO", "LISTA")
+
+    # --- obra: a da cerca em que o celular está -------------------------------
+    enviada = cadastros.resolver_obra(conn, obra) if obra not in (None, "") else None
+    if obra not in (None, "") and not enviada:
+        _recusar(conn, "obra não cadastrada", **contexto)
+    motivo_borda = None
+    if origem_ok == "PWA" and not via_chave:
+        candidatas = [o for o in cadastros.listar_obras(conn, so_ativas=True)
+                      if not obras_do_aparelho or int(o["id"]) in obras_do_aparelho]
+        situacao, detectada, distancia_detectada = geo.localizar_obra(
+            latitude, longitude, precisao, candidatas)
+        obra_ok, recusa, motivo_borda = decidir_lugar(
+            situacao=situacao, detectada=detectada, distancia=distancia_detectada,
+            enviada=enviada, no_tablet=no_tablet, precisao=precisao,
+            modo=lambda o: modo_fora_da_cerca(conn, int(o["id"])),
+            latitude=latitude, longitude=longitude)
+        if recusa:
+            _recusar(conn, recusa, situacao=situacao, distancia_metros=distancia_detectada,
+                     precisao=precisao, **contexto)
+        if enviada and obra_ok and int(obra_ok["id"]) != int(enviada["id"]):
+            logger.info("Ponto: obra detectada pela cerca (%s) no lugar da escolhida (%s)",
+                        obra_ok["codigo"], enviada["codigo"])
+    else:
+        obra_ok = enviada
+        if not obra_ok:
+            _recusar(conn, "obra não cadastrada", **contexto)
+    contexto["obra"] = obra_ok["codigo"]
+    if obra_ok["status"] != "ATIVA" or not obra_ok["ativo_no_ponto"]:
+        _recusar(conn, "obra encerrada ou inativa no ponto", **contexto)
+    if aparelho and not via_chave:
+        motivo = dispositivos.autorizado_para(
+            aparelho, int(pessoa["id"]), int(obra_ok["id"]),
+            dispositivos.autorizados_de(conn, aparelho["id"]), obras_do_aparelho)
+        if motivo:
+            _recusar(conn, motivo, **contexto)
 
     # --- repetição ----------------------------------------------------------
     ultima = db.um(conn, _SQL_MARCACAO + """
@@ -247,9 +349,10 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
     # --- cerca, relógio, decisão -------------------------------------------
     dentro, distancia, motivo_cerca = geo.avaliar_cerca(
         latitude, longitude, obra_ok["latitude"], obra_ok["longitude"], obra_ok["raio_metros"])
+    if motivo_borda:
+        motivo_cerca = motivo_borda
     diferenca = ((momento_aparelho - momento).total_seconds()
                  if momento_aparelho is not None else None)
-    no_tablet = bool(aparelho) and not via_chave and aparelho.get("perfil") in ("COMPARTILHADO", "LISTA")
     status, motivos = decidir(
         origem=origem_ok, dentro_da_cerca=dentro, motivo_cerca=motivo_cerca,
         diferenca_relogio_s=diferenca, situacao_pessoa=pessoa["situacao"],
