@@ -11796,6 +11796,10 @@ está para ser pago. Agrupar por obra etc."*
   Documentos") — confirmado pelo dono em 04/10/2026. Quando o texto da coluna G
   não é reconhecido como "pede a cadastrada", a linha mostra o que veio escrito,
   para conferir no primeiro uso.
+  **Publicado em 04/10/2026** (main em `3ff7ace`, suíte inteira 8.007 verdes, sem
+  migração). ⚠️ Lição: a sessão reabriu num contêiner novo cujo ramo local estava
+  na cópia da `main`, não no ramo remoto — a primeira rodada da suíte foi sobre o
+  código errado. Ao retomar, conferir `git log origin/<ramo>` antes de testar.
 - **Lista agrupada:** "Agrupar por" obra (padrão), conta, tipo de despesa,
   solicitação, colaborador ou sem agrupar. Cada grupo tem cabeçalho com linhas,
   quantas a pagar, pendências e o total — que acompanham a marcação —, caixinha
