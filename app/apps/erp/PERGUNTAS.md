@@ -303,6 +303,12 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   🔒 ⚠️ ("fora da área" = fora da cerca de TODAS as obras ativas com
   coordenada; desde 04/10/2026 essa batida é recusada, não entra no espelho)
 - Quais obras estão sem coordenada (e por isso não detectam nem bloqueiam)?
+- Quais pedidos de ajuste de batida estão esperando o encarregado, e por qual
+  motivo (celular quebrado, sem internet, esqueci…)? 🔒
+- Quem mais pede ajuste de batida no mês? 🔒 ⚠️ ("pedido" conta os horários:
+  um dia com duas batidas esquecidas são dois pedidos)
+- Quais batidas foram feitas com a obra escolhida na lista (não detectada), e
+  com que justificativa? 🔒
 - Qual o raio da cerca da obra X? Ela bloqueia ou manda para conferência?
 - **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
   reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas

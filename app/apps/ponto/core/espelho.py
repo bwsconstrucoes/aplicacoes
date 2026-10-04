@@ -25,7 +25,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
-from . import apuracao, cadastros, escalas, feriados
+from . import ajustes, apuracao, cadastros, escalas, feriados
 
 MAX_DIAS = 400
 
@@ -76,7 +76,7 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
         por_dia.setdefault(b["data_referencia"], []).append(b)
 
     ocorrencias = db.todos(conn, """
-        SELECT id, tipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos
+        SELECT id, tipo, status, data_inicio, data_fim, dia_trabalhado, descricao, minutos, horario
           FROM ponto.ocorrencias
          WHERE colaborador_id = :c AND status NOT IN ('NEGADA', 'CANCELADA')
            AND ((data_fim >= :i AND data_inicio <= :f)
@@ -131,8 +131,23 @@ def montar(conn: Connection, colaborador_id: int, inicio: dt.date, fim: dt.date,
             r.falta, r.debito, r.extra = False, 0, 0
             r.alertas = []
 
+        # O que a escala espera e o que falta — é isto que o "Meu mês" mostra
+        # no "corrigir este dia", em vez de um formulário em branco (ajustes.py).
+        previstas = ajustes.marcas_previstas(escala.periodos(dia)) if escala is not None else []
+        faltando = []
+        if previstas and not aprovadas and (julgavel or dia == hoje):
+            # o horário que já tem pedido esperando decisão também não "falta"
+            ja_pedidos = [o["horario"] for o in pendentes if o["tipo"] == "AJUSTE_BATIDA" and o["horario"]]
+            faltando = ajustes.faltantes(previstas, [
+                ajustes.minutos_do_dia(horario.para_local(m), dia)
+                for m in [b["timestamp_servidor"] for b in do_dia] + ja_pedidos])
+            if dia == hoje:      # hoje: só o que já devia ter sido batido
+                agora_min = ajustes.minutos_do_dia(horario.para_local(agora), dia)
+                faltando = [f for f in faltando if f["minuto"] <= agora_min]
         dias.append({
             "data": dia.isoformat(),
+            "previstas": [{"hora": p["hora"], "rotulo": p["rotulo"]} for p in previstas],
+            "faltando": [{"rotulo": f["rotulo"], "sugestao": f["sugestao"]} for f in faltando],
             "dia_semana": escalas.DIAS[dia.weekday()],
             "escala": vigencia["nome"] if vigencia else None,
             "feriado": nome_feriado,

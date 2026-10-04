@@ -126,6 +126,25 @@ o crédito mais antigo do banco é o primeiro a ser usado.
 6h gera os alertas e manda o resumo por WhatsApp aos telefones da Configuração —
 uma vez por dia, numa linha separada, sem ninguém apertar botão.
 
+## Ajuste de batida a partir do dia, e a batida fora do normal (04/10/2026)
+
+**"Corrigir este dia"** (`core/ajustes.py`): no "Meu mês", o dia com batida
+faltando tem o botão, e o pedido abre com o que já foi batido, o que a escala
+previa e **só o que falta** ("Volta do intervalo — 12:00"), com o horário
+sugerido para conferir. A pessoa marca, escolhe o motivo (celular quebrado ou
+sem bateria, sem internet, aparelho da obra com problema, esqueci, serviço fora
+da obra, outro) e manda: um pedido por horário, todos de uma vez ou nenhum
+(`POST /ponto/app/api/pedidos/ajuste-do-dia`). Na aba Pedidos, "Esqueci de bater"
+pede só o dia e abre o mesmo quadro. O servidor recusa o que no Pipefy passava:
+horário a menos de 30 min de batida que já existe ou de pedido esperando, dia já
+completo, dia justificado por atestado/férias/licença, dia ou horário futuro, mês
+fechado. Quem decide é o encarregado (`tratar_ponto`); aprovado, a batida entra
+como AJUSTADA, e o espelho original continua lá.
+
+**Batida fora do normal**: quando a obra não é detectada e a lista aparece, a tela
+avisa em amarelo e, ao bater, pede a explicação (mínimo 10 letras). A batida vai
+para conferência com "justificativa da pessoa: …" no motivo.
+
 ## A cerca que bloqueia e a obra detectada sozinha (04/10/2026)
 
 Decisão do dono: *"não queremos permitir que a pessoa bata ponto fora das áreas

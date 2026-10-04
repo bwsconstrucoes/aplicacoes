@@ -35,7 +35,7 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
-from . import banco, cadastros, competencias, documentos, escalas, marcacoes
+from . import ajustes, banco, cadastros, competencias, documentos, escalas, marcacoes
 
 logger = logging.getLogger("ponto.ocorrencias")
 
@@ -93,6 +93,46 @@ def exigir_pessoa_no_alcance(conn: Connection, quem: Quem, colaborador_id: int) 
 # ---------------------------------------------------------------------------
 # Criar
 # ---------------------------------------------------------------------------
+def _conferir_ajuste(conn: Connection, colaborador_id: int, dia: dt.date, momento: dt.datetime) -> None:
+    """As travas do pedido de ajuste (ver ajustes.py): o dia como o espelho o
+    vê, as batidas que já existem e os pedidos que esperam decisão."""
+    from . import espelho
+    d = espelho.montar(conn, colaborador_id, dia, dia)["dias"][0]
+    existentes = [ajustes.minutos_do_dia(horario.ler_iso(b["data_hora"]), dia) for b in d["batidas"]]
+    pendentes = [ajustes.minutos_do_dia(horario.para_local(o["horario"]), dia) for o in db.todos(conn, """
+        SELECT horario FROM ponto.ocorrencias
+         WHERE colaborador_id = :c AND tipo = 'AJUSTE_BATIDA' AND data_inicio = :d
+           AND status IN ('AGUARDANDO_SUPERVISOR', 'AGUARDANDO_DP') AND horario IS NOT NULL
+    """, c=colaborador_id, d=dia)]
+    previstas = [{"minuto": int(p["hora"][:2]) * 60 + int(p["hora"][3:]), **p} for p in d["previstas"]]
+    # turno da noite: o previsto que "volta" no relógio é da madrugada seguinte
+    for i in range(1, len(previstas)):
+        while previstas[i]["minuto"] < previstas[i - 1]["minuto"]:
+            previstas[i]["minuto"] += 1440
+    hoje = horario.hoje()
+    agora_min = (ajustes.minutos_do_dia(horario.para_local(horario.agora()), dia)
+                 if dia >= hoje - dt.timedelta(days=1) else None)
+    ajustes.conferir_pedido(dia=d, data=dia, novos_min=[ajustes.minutos_do_dia(horario.para_local(momento), dia)],
+                            existentes_min=existentes, pendentes_min=pendentes, previstas=previstas,
+                            agora_min=agora_min)
+
+
+def criar_ajuste_do_dia(conn: Connection, quem: Quem, dados: dict, *, origem: str = "APP") -> list[dict]:
+    """Os horários que faltaram num dia, de uma vez ("o celular quebrou, fiquei
+    o dia sem bater"). Um pedido por horário — cada um é decidido e vira uma
+    batida —, todos na mesma transação: ou entram todos, ou nenhum."""
+    horarios = dados.get("horarios") or []
+    if not isinstance(horarios, list) or not horarios:
+        raise ErroDeValidacao("marque ao menos um horário que faltou", campo="horarios")
+    if len(horarios) > ajustes.MAX_SEM_ESCALA:
+        raise ErroDeValidacao("horários demais num pedido só", campo="horarios")
+    criados = []
+    for h in sorted(str(x) for x in horarios):
+        criados.append(criar(conn, quem, {**dados, "tipo": "AJUSTE_BATIDA", "horario": h,
+                                          "data_inicio": str(h)[:10]}, origem=origem))
+    return criados
+
+
 def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") -> dict:
     tipo = str(dados.get("tipo") or "").strip().upper()
     if tipo not in ETAPAS:
@@ -133,8 +173,17 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
         if obra["id"] not in cadastros.obras_da_pessoa(conn, colaborador_id):
             raise ErroDeValidacao("essa obra não é da pessoa", campo="obra")
         obra_id = int(obra["id"])
+        motivo = str(dados.get("motivo") or "").strip().upper()
+        if motivo:
+            if motivo not in ajustes.MOTIVOS:
+                raise ErroDeValidacao("motivo desconhecido", campo="motivo")
+            if motivo == "OUTRO" and len(descricao) < 10:
+                raise ErroDeValidacao("conte o que aconteceu (ao menos 10 letras)", campo="descricao")
+            descricao = f"[{ajustes.MOTIVOS[motivo]}] {descricao}".strip()
         if len(descricao) < 10:
             raise ErroDeValidacao("explique o que aconteceu (ao menos 10 letras)", campo="descricao")
+        inicio = fim = horario.data_referencia(horario_ajuste, pessoa["tipo_jornada"])
+        _conferir_ajuste(conn, colaborador_id, inicio, horario_ajuste)
     elif tipo == "COMPENSACAO":
         dia_trabalhado = _data(dados.get("dia_trabalhado"), "dia_trabalhado")
         if dia_trabalhado == inicio:

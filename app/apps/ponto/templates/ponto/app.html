@@ -184,6 +184,9 @@
       <h2 id="ola">Olá</h2>
       <div id="i-local" class="aviso info">📍 Procurando a sua localização…</div>
       <div id="i-escolha" class="oculto">
+        <div class="aviso ambar"><b>⚠️ Batida fora do normal.</b> A obra não foi encontrada pela
+          localização: se você bater escolhendo a obra na lista, a batida vai para a conferência do
+          encarregado, e você vai precisar dizer por quê.</div>
         <label for="i-obra">Em que obra você está?</label>
         <select id="i-obra"></select>
         <p class="pequeno">A lista só aparece quando o celular não acha você dentro de uma obra. Vale para
@@ -479,16 +482,45 @@ function tirarFoto() {
 }
 
 // --- bater -------------------------------------------------------------------
+// A explicação de quem bate com a obra escolhida na lista (não detectada).
+function pedirJustificativa() {
+  return new Promise(resolve => {
+    $("dlg-corpo").innerHTML = `
+      <h2 style="margin:0 0 6px">Batida fora do normal</h2>
+      <div class="aviso ambar">A obra não foi encontrada pela localização. A batida vai para a conferência do encarregado.</div>
+      <label for="j-texto">Por que a localização não achou a obra?</label>
+      <textarea id="j-texto" placeholder="Ex.: o GPS do celular não funciona; estou no almoxarifado da obra"></textarea>
+      <button class="btn" type="button" id="j-ok">Bater e mandar para conferência</button>
+      <button class="btn sec" type="button" id="j-cancelar">Não bater agora</button>`;
+    let respondido = false;
+    const fim = v => { respondido = true; $("dlg").close(); resolve(v); };
+    $("j-ok").onclick = () => {
+      const t = $("j-texto").value.trim();
+      if (t.length < 10) { $("j-texto").focus(); return aviso("Explique em poucas palavras (ao menos 10 letras).", "erro"); }
+      fim(t);
+    };
+    $("j-cancelar").onclick = () => fim(null);
+    $("dlg").addEventListener("close", () => { if (!respondido) resolve(null); }, {once: true});
+    $("dlg").showModal();
+  });
+}
+
 async function bater({obra, comFoto}) {
   const botao = $("btn-bater");
   botao.disabled = true;
   try {
+    let justificativa = null;
+    if (!$("i-escolha").classList.contains("oculto")) {
+      justificativa = await pedirJustificativa();
+      if (!justificativa) return;
+    }
     const foto = comFoto ? await tirarFoto() : null;
     if (comFoto && !foto) { aviso("A foto não foi tirada. Tente de novo ou use “bater sem foto”.", "ambar"); return; }
     aviso("Registrando…", "info");
     const local = await localizacao();
     if (local) { LOCAL = local; mostrarLocal(local); obra = $("i-obra").value; } else mostrarLocal(null);
-    const corpo = {obra, timestamp_dispositivo: new Date().toISOString(), foto_base64: foto || undefined};
+    const corpo = {obra, timestamp_dispositivo: new Date().toISOString(), foto_base64: foto || undefined,
+                   justificativa: justificativa || undefined};
     if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; corpo.precisao = local.precisao; }
     const d = await chamar("/ponto/app/api/bater", corpo);
     aviso("");
@@ -599,9 +631,78 @@ async function carregarMes() {
             ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>
           ${alertas ? `<div class="pequeno">${esc(alertas)}</div>` : ""}
           ${x.pendentes.length ? `<div class="pequeno">Pedido esperando: ${esc(x.pendentes.map(p => p.rotulo).join(", "))}</div>` : ""}
+          ${podeCorrigir(x, d) ? `<button class="link" type="button" data-corrigir="${x.data}">Corrigir este dia — faltou ${esc(x.faltando.map(f => f.rotulo.toLowerCase()).join(", ")) || "batida"}</button>` : ""}
         </div></div>`;
     }).join("") || "<p>Nada neste mês ainda.</p>";
+    MES_DADOS = d;
+    $("mes-dias").querySelectorAll("[data-corrigir]").forEach(b =>
+      b.addEventListener("click", () => abrirCorrecao(d.dias.find(x => x.data === b.dataset.corrigir))));
   } catch (e) { if (e.status === 401) return mostrar("entrar"); aviso(e.message, "erro"); }
+}
+
+// --- corrigir um dia --------------------------------------------------------
+// Pedido do dono, 04/10/2026: no Pipefy "o pessoal errava muito" — pedia dia que
+// já tinha ponto, período com batida no meio, dia já justificado. Aqui não há
+// formulário em branco: o dia mostra o que tem e o que FALTA, e só o que falta
+// pode ser pedido. O servidor confere tudo de novo (core/ajustes.py).
+let MES_DADOS = null;
+const MOTIVOS_AJUSTE = [["CELULAR", "Celular quebrado, sem bateria ou sem crédito"],
+  ["INTERNET", "Sem internet ou sem sinal na obra"], ["APARELHO", "Tablet ou aparelho da obra com problema"],
+  ["ESQUECI", "Esqueci de bater"], ["FORA", "Estava em serviço fora da obra"], ["OUTRO", "Outro motivo"]];
+function podeCorrigir(x, mes) {
+  if (mes.competencia_fechada || x.ocorrencia || x.situacao === "FUTURO") return false;
+  if (x.faltando && x.faltando.length) return true;
+  // sem escala cadastrada não dá para saber o que falta: deixa pedir no dia de falta ou incompleto
+  return !x.previstas.length && ["FALTA", "INCOMPLETO", "SEM_ESCALA"].includes(x.situacao) && x.batidas.length < 4;
+}
+function abrirCorrecao(x) {
+  if (!x) return;
+  const obras = (EU && EU.obras) || [];
+  const obraDoDia = (x.batidas[0] && x.batidas[0].obra) || EU.obra_principal;
+  const linhas = x.faltando.length
+    ? x.faltando.map((f, i) => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
+        <input type="checkbox" data-i="${i}" checked style="width:auto">
+        <span style="flex:1">${esc(f.rotulo)}</span>
+        <input type="time" data-hora="${i}" value="${esc(f.sugestao)}" style="width:130px"></label>`).join("")
+    : [0, 1].map(i => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
+        <input type="checkbox" data-i="${i}" ${i === 0 ? "checked" : ""} style="width:auto">
+        <span style="flex:1">Batida ${i + 1}</span><input type="time" data-hora="${i}" style="width:130px"></label>`).join("");
+  $("dlg-corpo").innerHTML = `
+    <h2 style="margin:0 0 6px">Corrigir ${dataBR(x.data)}</h2>
+    <p class="pequeno">Já batido: ${x.batidas.length ? x.batidas.map(b => esc(b.hora)).join(", ") : "nada"}.
+      ${x.previstas.length ? `Previsto: ${x.previstas.map(p => esc(p.hora)).join(", ")}.` : "Sem escala cadastrada."}</p>
+    <p style="margin:10px 0 4px"><b>O que faltou?</b> Confira o horário de cada uma.</p>
+    <div id="c-linhas">${linhas}</div>
+    <label for="c-motivo">Por quê?</label>
+    <select id="c-motivo">${MOTIVOS_AJUSTE.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select>
+    <label for="c-obra">Obra</label>
+    <select id="c-obra">${obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === obraDoDia ? "selected" : ""}>${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}</select>
+    <label for="c-desc">Conte em poucas palavras</label>
+    <textarea id="c-desc" placeholder="Ex.: o celular descarregou depois do almoço"></textarea>
+    <p class="pequeno">O encarregado confere e aprova. Aprovado, a batida entra no seu ponto marcada como ajustada.</p>
+    <button class="btn" type="button" id="c-enviar">Enviar o pedido</button>`;
+  $("dlg").showModal();
+  $("c-enviar").onclick = async () => {
+    const marcados = [...$("c-linhas").querySelectorAll("[data-i]")].filter(c => c.checked)
+      .map(c => $("c-linhas").querySelector(`[data-hora="${c.dataset.i}"]`).value).filter(Boolean);
+    if (!marcados.length) return aviso("Marque o que faltou e confira o horário.", "erro");
+    // turno da noite: horário antes da primeira batida prevista é da madrugada seguinte
+    const primeira = x.previstas.length ? x.previstas[0].hora : null;
+    const atravessa = x.previstas.some((p, i) => i && p.hora < x.previstas[i - 1].hora);
+    const proximo = (() => { const d = new Date(x.data + "T12:00:00"); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+    const horarios = marcados.map(h => `${atravessa && primeira && h < primeira ? proximo : x.data}T${h}:00`);
+    $("c-enviar").disabled = true;
+    try {
+      const r = await chamar("/ponto/app/api/pedidos/ajuste-do-dia", {horarios, motivo: $("c-motivo").value,
+        descricao: $("c-desc").value, obra: $("c-obra").value});
+      $("dlg").close();
+      aviso(`Pedido enviado: ${r.quantidade} batida(s) para o encarregado conferir. Você acompanha em Pedidos.`, "ok");
+      carregarMes();
+    } catch (e) {
+      $("c-enviar").disabled = false;
+      aviso(e.message, "erro"); $("dlg").close();
+    }
+  };
 }
 
 // --- pedidos -------------------------------------------------------------------
@@ -615,10 +716,9 @@ function montarCamposPedido() {
       <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="pc-doc">Escolher foto ou arquivo</button>
       <p class="pequeno" id="pc-doc-nome">Nenhum arquivo escolhido.</p>
       <p class="pequeno">Só o DP vê o seu atestado.</p>`,
-    AJUSTE_BATIDA: `<label>Dia</label><input type="date" id="pc-inicio" value="${hojeISO()}">
-      <label>Que horas você bateria?</label><input type="time" id="pc-hora">
-      <label>Obra</label><select id="pc-obra">${obras.map(o => `<option value="${esc(o.codigo)}">${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}</select>
-      <label>O que aconteceu?</label><textarea id="pc-descricao" placeholder="Ex.: o celular estava sem bateria na saída"></textarea>`,
+    AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="pc-inicio" value="${hojeISO()}">
+      <p class="pequeno">O dia abre com o que já foi batido e o que falta — você marca só o que esqueceu.</p>
+      <button class="btn sec" type="button" id="pc-abrir-dia">Abrir o dia</button>`,
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="pc-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="pc-inicio">
       <label>Motivo</label><textarea id="pc-descricao"></textarea>`,
@@ -632,6 +732,19 @@ function montarCamposPedido() {
       <label>Observação</label><textarea id="pc-descricao"></textarea>`,
   };
   $("ped-campos").innerHTML = campos[t];
+  $("btn-pedir").classList.toggle("oculto", t === "AJUSTE_BATIDA");
+  if (t === "AJUSTE_BATIDA") $("pc-abrir-dia").addEventListener("click", async () => {
+    const dia = $("pc-inicio").value; if (!dia) return;
+    try {
+      const m = await chamar(`/ponto/app/api/mes?competencia=${dia.slice(0, 7)}`);
+      const x = m.dias.find(z => z.data === dia);
+      if (!x || x.situacao === "FUTURO") return aviso("Esse dia ainda não chegou.", "erro");
+      if (!podeCorrigir(x, m)) return aviso(m.competencia_fechada ? "Esse mês já foi fechado para a folha; fale com o DP."
+        : x.ocorrencia ? `Esse dia já está justificado (${x.ocorrencia.rotulo}).`
+        : "Esse dia não tem batida faltando. Se alguma está errada, fale com o encarregado.", "info");
+      abrirCorrecao(x);
+    } catch (e) { aviso(e.message, "erro"); }
+  });
   DOC = null;
   const botaoDoc = $("pc-doc");
   if (botaoDoc) botaoDoc.addEventListener("click", () => {

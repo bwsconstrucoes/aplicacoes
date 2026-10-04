@@ -291,7 +291,7 @@ def app_api_bater():
             latitude=d.get("latitude"), longitude=d.get("longitude"), precisao=d.get("precisao"),
             timestamp_dispositivo=d.get("timestamp_dispositivo"),
             foto_base64=d.get("foto_base64"), ip=auth.ip_de_quem_chama(),
-            identificacao=identificacao)
+            identificacao=identificacao, justificativa=d.get("justificativa"))
         comprovante = _comprovante(conn, marcacao["id"])
     fotos.disparar_envio()
     return _ok(repetida=repetida, comprovante=comprovante,
@@ -488,6 +488,21 @@ def app_api_pedir():
         quem = _quem(conn)
         o = ocorrencias.criar(conn, quem, d, origem="APP")
     return _ok(pedido=o), 201
+
+
+@bp.route("/app/api/pedidos/ajuste-do-dia", methods=["POST"])
+@auth.exige_colaborador
+def app_api_ajuste_do_dia():
+    """"Corrigir este dia": os horários que faltaram, de uma vez, com o motivo.
+    As travas (batida que já existe, dia justificado, pedido repetido) estão em
+    core/ajustes.py."""
+    d = _corpo()
+    d.pop("aprovar_ja", None)
+    d["colaborador_id"] = _eu()
+    with db.conexao() as conn:
+        quem = _quem(conn)
+        criados = ocorrencias.criar_ajuste_do_dia(conn, quem, d, origem="APP")
+    return _ok(pedidos=criados, quantidade=len(criados)), 201
 
 
 @bp.route("/app/api/pedidos/<int:ocorrencia_id>/cancelar", methods=["POST"])

@@ -241,7 +241,8 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
               timestamp_dispositivo: str | None = None, foto_base64: str | None = None,
               registrado_por: str | None = None, ip: str | None = None,
               agora: dt.datetime | None = None,
-              identificacao: str | None = None, precisao=None) -> tuple[dict, bool]:
+              identificacao: str | None = None, precisao=None,
+              justificativa: str | None = None) -> tuple[dict, bool]:
     """Registra a batida. Devolve (marcação, repetida).
 
     Levanta ErroDeValidacao (400) para entrada ruim, Recusada (403) para
@@ -358,6 +359,11 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         diferenca_relogio_s=diferenca, situacao_pessoa=pessoa["situacao"],
         obra_na_lista_da_pessoa=int(obra_ok["id"]) in cadastros.obras_da_pessoa(conn, pessoa["id"]),
         sem_foto_no_tablet=(no_tablet and origem_ok == "PWA" and not foto_base64))
+    # A obra escolhida na lista (não detectada) vem com a explicação da pessoa:
+    # a batida não é a regular, e quem confere precisa saber por quê.
+    justificativa_ok = " ".join(str(justificativa or "").split())[:300]
+    if status == "EM_ANALISE" and justificativa_ok:
+        motivos.append(f"justificativa da pessoa: {justificativa_ok}")
     if identificacao is None:
         identificacao = "CHAVE" if via_chave else ("CPF" if no_tablet else "SESSAO")
     if identificacao not in IDENTIFICACOES:

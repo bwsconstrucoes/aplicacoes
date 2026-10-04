@@ -36,6 +36,30 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 04/10/2026 — Ajuste de batida pelo dia, e aviso de batida fora do normal
+
+Pedidos do dono no mesmo dia: (1) quando a lista de obras aparece, deixar claro
+que "aquele não é o ponto regular (…) vai ter que ser analisado, algum erro
+justificado"; (2) "como é que tá para uma pessoa solicitar um ajuste de ponto?
+(…) no Mobponto, a gente fazia a solicitação via Pipefy. E o pessoal errava
+muito: botava período que já tem ponto no meio batido, solicitava dia que já
+tinha ponto (…) correção de um dia que é falta, já tinha sido registrada a
+falta"; (3) se o encaminhamento de atestado já existe (existe, desde a fase 2).
+
+**O que foi feito:** "Corrigir este dia" no Meu mês (só o que falta, com o
+horário da escala sugerido, motivo de uma lista); o "Esqueci de bater" da aba
+Pedidos passou a abrir o dia em vez do formulário em branco; travas no servidor
+(ver README); aviso amarelo e justificativa obrigatória quando a obra é
+escolhida na lista; o espelho do dia ganhou `previstas` e `faltando`.
+
+**Decisões tomadas sem ele:** 30 min como "o mesmo horário"; um pedido por
+horário (cada um vira uma batida e é decidido sozinho), mas enviados juntos e
+recusados juntos; motivo de uma lista fixa (a lista é o que mais aparece numa
+obra; "outro" exige texto). **Ficou de fora:** pedir para APAGAR uma batida
+errada (bateu duas vezes, obra errada) — batida não se apaga; hoje o caminho é
+o encarregado rejeitá-la quando estiver em análise. Se for comum, vale um
+pedido "batida errada" próprio.
+
 ## 04/10/2026 — A cerca passa a BLOQUEAR, e a obra é detectada pela localização
 
 Pedido do dono: *"não queremos permitir que a pessoa bata ponto fora das áreas
