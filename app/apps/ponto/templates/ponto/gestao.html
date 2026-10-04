@@ -12,7 +12,7 @@
   é o @permissao de cada rota em `app/apps/ponto/gestao.py`.
 #}
 {% block titulo %}Ponto — {{ {
-  "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Pendências",
+  "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Validações",
   "ponto_mosaico": "Mosaico", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
 {% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_mosaico", "ponto_banco", "ponto_config") %}sem-filtros{% endif %}{% endblock %}
@@ -165,6 +165,17 @@
   .barra-conferir { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
   .barra-conferir .campo { flex:1 1 260px; min-width:0; }
   .barra-conferir textarea { width:100%; box-sizing:border-box; }
+  /* Validações: filtros em linha que quebram, tipos como chips de ligar. */
+  .validacoes-filtro { display:flex; gap:10px 14px; flex-wrap:wrap; align-items:flex-end; }
+  .validacoes-filtro .campo { flex:1 1 200px; min-width:0; }
+  .validacoes-filtro .campo.estreito { flex:0 1 160px; }
+  .validacoes-tipos { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:12px; }
+  .validacoes-tipos #v-tipos { display:contents; }
+  .chip.ligado { background:var(--azul); color:#fff; }
+  .barra-lote { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:0 0 12px;
+                padding:10px 12px; background:#FFF4D6; border-radius:var(--raio-p); }
+  .validacoes-lista { overflow-x:auto; }
+  .validacoes-tabela td { vertical-align:top; }
   /* Interruptor de liga/desliga com explicação embaixo (Configuração). O
      `.rotulo` do ERP corta o texto numa linha; aqui o texto é longo e quebra. */
   .interruptor { display:flex; gap:10px; align-items:flex-start; margin:6px 0 0; cursor:pointer; }
@@ -177,10 +188,18 @@
     .mosaico-nome { flex:0 0 auto; width:100%; }
     .mosaico-fotos { width:100%; }
     .foto-vazia .so-largo { display:none; }
+    /* No celular, cada linha da lista vira um cartão: rótulo e valor. */
+    .validacoes-tabela thead { display:none; }
+    .validacoes-tabela, .validacoes-tabela tbody { display:block; }
+    .validacoes-tabela tr { display:block; padding:10px 12px; border-top:1px solid var(--borda); }
+    .validacoes-tabela td { display:block; border:0; padding:2px 0; }
+    .validacoes-tabela td[data-rotulo]:not([data-rotulo=""])::before { content:attr(data-rotulo) ": ";
+      color:var(--tinta-suave); font-size:11.5px; }
+    .validacoes-tabela tr.linha-leitura { padding-top:0; border-top:0; }
   }
 </style>
 
-{# --- A foto da batida: um diálogo só, usado pelo Espelho e pelas Pendências. #}
+{# --- A foto da batida: um diálogo só, usado pelo Espelho, pelas Validações e pelo Mosaico. #}
 <dialog id="dlg-foto"><div class="dlg-topo"><h3 id="foto-legenda">Foto da batida</h3>
   <button class="topo-btn" style="margin-left:auto" type="button"
           onclick="els('dlg-foto').close()">Fechar</button></div>
@@ -265,39 +284,55 @@
 </div>
 
 {% elif aba_ponto == "ponto_pendencias" %}
-{# ------------------------------------------------------------ PENDÊNCIAS #}
-<h2>Pendências <small>o que espera uma decisão sua</small></h2>
+{# ------------------------------------------------------------ VALIDAÇÕES #}
+{# Pedido do dono, 04/10/2026: tudo o que espera validação numa tela só, em
+   lista ("fulano tem ajuste, ciclano tem atestado"), com filtro por obra e
+   período e o caminho para os mosaicos. A aba mantém a chave e o endereço de
+   antes (ponto_pendencias, /erp/ponto/pendencias): link antigo continua abrindo. #}
+<h2>Validações <small>tudo o que espera uma decisão, numa lista só</small></h2>
 <div id="mensagem"></div>
-<div class="kpis" id="p-kpis"></div>
-
 <div class="cartao">
-  <div class="cartao-cab"><h3>Pedidos</h3>
-    <small>ajuste de batida, compensação, folga, atestado, licença, férias</small></div>
-  <div class="tabela-rolagem" style="max-height:none"><div id="p-pedidos">carregando…</div></div>
-  <div class="cartao-dica">Ajuste de batida é decidido pelo supervisor da obra.
-    Compensação e folga passam pelo supervisor e depois pelo DP. Atestado,
-    licença e férias vão direto ao DP — e só o DP abre o documento de saúde.</div>
+  <div class="validacoes-filtro">
+    <div class="campo"><label for="v-obra">Obra</label>
+      <select id="v-obra"><option value="">Todas</option></select></div>
+    <div class="campo estreito"><label for="v-de">De</label><input type="date" id="v-de"></div>
+    <div class="campo estreito"><label for="v-ate">Até</label><input type="date" id="v-ate"></div>
+    <div class="campo"><label for="v-busca">Pessoa</label>
+      <input id="v-busca" placeholder="nome ou CPF" autocomplete="off" data-sem-mascara></div>
+  </div>
+  <div class="validacoes-tipos">
+    <label class="opcao" style="padding:3px 6px"><input type="checkbox" id="v-so-minhas">
+      <span>Só o que eu valido <span class="qtd" id="v-minhas"></span></span></label>
+    <span id="v-tipos"></span>
+    <button class="link-btn" id="v-limpar" type="button">limpar filtros</button>
+  </div>
 </div>
 
-<div class="cartao">
-  <div class="cartao-cab"><h3>Batidas em análise</h3>
-    <small>entraram, mas com algo a conferir</small></div>
-  <div class="tabela-rolagem" style="max-height:none"><div id="p-batidas">carregando…</div></div>
-  <div class="cartao-dica">Enquanto está em análise, a batida já conta no
-    espelho, marcada. Validar confirma; rejeitar tira do cálculo — mas ela
-    continua guardada, com o motivo e o nome de quem rejeitou.</div>
+<div class="barra-lote" id="v-lote" hidden>
+  <button class="btn" id="v-lote-btn" type="button">Aprovar / validar selecionados (0)</button>
+  <button class="link-btn" id="v-lote-limpar" type="button">desmarcar</button>
+  <small class="suave">em lote só se aprova; negar e rejeitar pedem o motivo de cada um</small>
 </div>
+<div id="v-lote-msg"></div>
 
-{% if pode.configurar_ponto %}
-<div class="cartao">
-  <div class="cartao-cab"><h3>Aparelhos esperando aprovação</h3>
-    <small>celulares e tablets que pediram para bater ponto</small></div>
-  <div class="tabela-rolagem" style="max-height:none"><div id="p-aparelhos">carregando…</div></div>
-  <div class="cartao-dica">Aparelho só bate ponto depois de aprovado. Aprove
-    apenas o que você reconhece: um celular aprovado como "tablet da obra"
-    deixa qualquer pessoa da obra bater por ele.</div>
+<div class="tabela-wrap">
+  <div class="tabela-barra"><span class="resumo" id="v-resumo">carregando…</span></div>
+  <div class="validacoes-lista"><table class="validacoes-tabela">
+    <thead><tr><th class="sem-ordem" style="width:28px"><input type="checkbox" id="v-todos"
+        title="Marcar tudo o que dá para aprovar em lote"></th>
+      <th class="sem-ordem">Tipo</th><th class="sem-ordem">Pessoa</th><th class="sem-ordem">Obra</th>
+      <th class="sem-ordem">Quando</th><th class="sem-ordem">Detalhe</th><th class="sem-ordem">Esperando</th>
+      <th class="sem-ordem">Quem valida</th><th class="sem-ordem"></th></tr></thead>
+    <tbody id="v-corpo"></tbody></table></div>
+  <div class="vazio oculto" id="v-vazio"><b>Nada esperando validação</b>com estes filtros.</div>
 </div>
-{% endif %}
+<div class="cartao-dica">
+  Quem valida cada tipo se escolhe em <b>Configuração › Quem valida cada pedido</b>.
+  Enquanto está em conferência, a batida já conta no espelho, marcada. Validar
+  confirma; rejeitar tira do cálculo — mas ela continua guardada, com o motivo e o
+  nome de quem rejeitou. Atestado e afastamento: só o DP abre o documento de saúde.
+  Aparelho só bate ponto depois de aprovado — aprove apenas o que você reconhece.
+</div>
 
 {% elif aba_ponto == "ponto_mosaico" %}
 {# ---------------------------------------------------------------- MOSAICO #}
@@ -322,7 +357,7 @@
     está <b>escura ou tampada</b>; é <b>foto de uma foto</b> ou de uma tela de
     celular; ou <b>não há ninguém</b> na frente da câmera.<br>
     <b>3.</b> Aperte <b>Confirmar conferência</b>. As batidas marcadas vão para
-    <b>Pendências › Batidas em análise</b>, para quem trata o ponto decidir.
+    <b>Validações</b>, como batida em conferência, para quem valida decidir.
     <b>Nada é apagado</b>: a batida continua guardada, com a hora e a foto.<br>
     Borda vermelha = o sistema achou algo estranho na foto (escura, sem rosto
     visível). É só um aviso: quem decide é você.
@@ -430,6 +465,14 @@
 <div class="cartao" id="c-migracoes">carregando…</div>
 
 <div class="cartao">
+  <div class="cartao-cab"><h3>Quem valida cada pedido</h3></div>
+  <div class="cartao-dica" style="margin-top:0">Encarregado da obra = quem trata o ponto da obra
+    (só as obras dele). DP = quem aprova afastamento. “Encarregado e depois o DP” = os dois,
+    nessa ordem. Ao trocar, o que já está na fila passa para quem valida agora.</div>
+  <div id="c-quem-valida">carregando…</div>
+</div>
+
+<div class="cartao">
   <div class="cartao-cab"><h3>Escalas de trabalho</h3>
     {% if pode.configurar_ponto %}<button class="btn" id="c-nova-escala" type="button">+ Nova escala</button>{% endif %}</div>
   <div id="c-escalas">carregando…</div>
@@ -521,7 +564,7 @@
   <div class="cartao-dica">
     Como a pessoa começa: <b>1.</b> abre esse endereço no celular;
     <b>2.</b> digita o CPF; <b>3.</b> recebe um código no WhatsApp e cria a
-    senha (PIN) dela. O celular aparece em <b>Pendências › Aparelhos</b> e só
+    senha (PIN) dela. O celular aparece em <b>Validações</b> e só
     bate ponto depois de aprovado lá.
   </div>
 </div>
@@ -770,7 +813,7 @@ const linkEspelho = (id, competencia) =>
   `/erp/ponto/espelho?colaborador_id=${encodeURIComponent(id)}`
   + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
 
-// --- Aparelhos: aprovar e bloquear (usados em Pendências e em Configuração).
+// --- Aparelhos: aprovar e bloquear (usados em Validações e em Configuração).
 async function aprovarAparelho(a, depois) {
   const r = await perguntar({
     titulo: "Aprovar aparelho",
@@ -1089,7 +1132,7 @@ async function pedirAjuste(dia) {
     await postar("/erp/api/ponto/ocorrencias", {
       tipo: "AJUSTE_BATIDA", colaborador_id: p.id, data_inicio: r.data_inicio,
       horario: `${diaDaBatida}T${r.hora}`, obra: r.obra, descricao: r.descricao});
-    aviso("mensagem", "Pedido de ajuste registrado. Ele aparece em Pendências até o supervisor decidir.", "ok");
+    aviso("mensagem", "Pedido de ajuste registrado. Ele aparece em Validações até ser decidido.", "ok");
     await carregarEspelho();
   } catch (e) { falhou(e); }
 }
@@ -1189,148 +1232,316 @@ carregarPessoasDoEspelho().then(() => {
 
 {% elif aba_ponto == "ponto_pendencias" %}
 // ===========================================================================
-// PENDÊNCIAS — pedidos, batidas em análise e aparelhos novos.
+// VALIDAÇÕES — tudo o que espera uma decisão: pedidos, batidas em conferência,
+// mosaicos sem conferência e aparelhos novos. Cada linha já vem do servidor
+// dizendo QUEM valida, se quem está olhando pode decidir e o endereço da
+// decisão (`decidir_em`) — a tela não escolhe rota sozinha.
+//
+// Obra, período e pessoa vão para o servidor; tipo e "só o que eu valido" são
+// filtrados aqui, para as contagens de cada tipo não sumirem ao filtrar.
 // ===========================================================================
-let PEND = null;
+let VAL = null, ESPERA_BUSCA = null, PEDIDOS_COMPLETOS = null;
+const TIPOS_VAL = {AJUSTE_BATIDA: "Ajuste de batida", ATESTADO: "Atestado", LICENCA: "Licença",
+  COMPENSACAO: "Compensação", FOLGA_BANCO: "Folga do banco", FERIAS: "Férias",
+  AFASTAMENTO: "Afastamento", ABONO: "Abono", BATIDA_EM_ANALISE: "Batida em conferência",
+  MOSAICO: "Mosaico", APARELHO: "Aparelho"};
+const SELO_CATEGORIA = {PEDIDO: "pago", BATIDA: "aguardando", MOSAICO: "outro", APARELHO: "outro"};
+const doUrl = nome => new URLSearchParams(location.search).get(nome);
+const chaveDoItem = i => `${i.categoria}:${i.id}`;
+const emLote = i => i.pode_decidir && (i.categoria === "PEDIDO" || i.categoria === "BATIDA");
+const FILTRO = {
+  tipos: new Set(listaDeTexto(doUrl("tipos")).map(t => t.toUpperCase())),
+  // Sem nada no endereço, o padrão sai da primeira carga: ligado para quem
+  // decide alguma coisa.
+  soMinhas: doUrl("so_minhas") === null ? null : doUrl("so_minhas") === "1",
+};
+const MARCADOS = new Set();
 
-const etapaTexto = p => p.etapa_atual === "SUPERVISOR" ? "espera o supervisor"
-  : p.etapa_atual === "DP" ? "espera o DP" : rotulo(p.status);
-
-function periodoDoPedido(p) {
-  if (p.tipo === "AJUSTE_BATIDA") {
-    return `${dataBR(p.data_inicio)}<small>batida de ${escapar(quando(p.horario))}</small>`;
-  }
-  if (p.tipo === "COMPENSACAO") {
-    return `folga em ${dataBR(p.data_inicio)}<small>trabalhou em ${dataBR(p.dia_trabalhado)}</small>`;
-  }
-  return p.dias > 1 ? `${dataBR(p.data_inicio)} a ${dataBR(p.data_fim)}<small>${p.dias} dias</small>`
-                    : dataBR(p.data_inicio);
+function esperandoTexto(d) {
+  if (d === null || d === undefined) return `<span class="suave">—</span>`;
+  const t = d === 0 ? "hoje" : d === 1 ? "1 dia" : `${d} dias`;
+  return d >= 3 ? `<b style="color:var(--vermelho)">${t}</b>` : t;
 }
 
-function efeitoDaAprovacao(p) {
-  const depois = p.etapa_atual === "SUPERVISOR" && (p.etapas || []).includes("DP");
-  if (depois) return "Depois de você, o pedido ainda passa pelo DP.";
-  if (p.tipo === "AJUSTE_BATIDA") return `A batida de ${escapar(quando(p.horario))} entra no espelho, marcada como ajustada.`;
-  if (p.tipo === "COMPENSACAO") return "A folga fica abonada e o dia trabalhado deixa de contar como extra.";
-  if (p.tipo === "FOLGA_BANCO") return "A folga fica abonada e as horas saem do banco de horas da pessoa.";
-  return "Os dias ficam abonados no espelho.";
+function quemValidaTexto(i) {
+  if ((i.etapas || []).length > 1) {
+    return i.etapas.map(e => e === i.etapa ? `<b>${escapar(e)}</b>` : `<span class="suave">${escapar(e)}</span>`).join(" → ");
+  }
+  return escapar(i.etapa || "—");
 }
 
-async function carregarPendencias() {
+function guardarFiltrosNoEndereco() {
+  const p = new URLSearchParams();
+  if (els("v-obra").value) p.set("obra", els("v-obra").value);
+  if (els("v-de").value) p.set("de", els("v-de").value);
+  if (els("v-ate").value) p.set("ate", els("v-ate").value);
+  if (els("v-busca").value.trim()) p.set("busca", els("v-busca").value.trim());
+  if (FILTRO.tipos.size) p.set("tipos", [...FILTRO.tipos].join(","));
+  if (FILTRO.soMinhas !== null) p.set("so_minhas", FILTRO.soMinhas ? "1" : "0");
+  history.replaceState(null, "", p.toString() ? `?${p}` : location.pathname);
+}
+
+async function carregarObrasDasValidacoes() {
   try {
-    PEND = await api("/erp/api/ponto/pendencias");
-    const decidir = (PEND.pedidos || []).filter(p => p.pode_decidir).length;
-    const batidas = (PEND.batidas || []).filter(b => b.pode_decidir).length;
-    els("p-kpis").innerHTML = `
-      <div class="kpi estatico ambar"><div class="kpi-rotulo">Pedidos</div>
-        <div class="kpi-valor">${(PEND.pedidos || []).length}</div>
-        <div class="kpi-sub">${decidir} esperando você</div></div>
-      <div class="kpi estatico ambar"><div class="kpi-rotulo">Batidas em análise</div>
-        <div class="kpi-valor">${(PEND.batidas || []).length}</div>
-        <div class="kpi-sub">${batidas} que você pode decidir</div></div>
-      ${PODE_CONFIGURAR ? `<div class="kpi estatico"><div class="kpi-rotulo">Aparelhos novos</div>
-        <div class="kpi-valor">${(PEND.aparelhos || []).length}</div>
-        <div class="kpi-sub">esperando aprovação</div></div>` : ""}`;
-    desenharPedidos();
-    desenharBatidas();
-    if (PODE_CONFIGURAR) desenharAparelhos();
+    const d = await api("/erp/api/ponto/obras");
+    els("v-obra").innerHTML = `<option value="">Todas</option>`
+      + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+  } catch (e) { falhou(e); }
+  const pedida = doUrl("obra");
+  if (pedida && /^\d+$/.test(pedida)) {
+    if (![...els("v-obra").options].some(o => o.value === pedida)) {
+      els("v-obra").insertAdjacentHTML("beforeend", `<option value="${pedida}">obra nº ${pedida}</option>`);
+    }
+    els("v-obra").value = pedida;
+  }
+}
+
+async function carregarValidacoes() {
+  const p = new URLSearchParams();
+  if (els("v-obra").value) p.set("obra", els("v-obra").value);
+  if (els("v-de").value) p.set("de", els("v-de").value);
+  if (els("v-ate").value) p.set("ate", els("v-ate").value);
+  if (els("v-busca").value.trim()) p.set("busca", els("v-busca").value.trim());
+  try {
+    VAL = await api(`/erp/api/ponto/validacoes?${p}`);
+    PEDIDOS_COMPLETOS = null;
+    if (FILTRO.soMinhas === null) FILTRO.soMinhas = (VAL.minhas || 0) > 0;
+    MARCADOS.clear();
+    guardarFiltrosNoEndereco();
+    desenharValidacoes();
   } catch (e) { falhou(e); }
 }
 
-function desenharPedidos() {
-  const lista = PEND.pedidos || [];
-  if (!lista.length) { els("p-pedidos").innerHTML = `<div class="cartao-dica">Nenhum pedido esperando decisão.</div>`; return; }
-  els("p-pedidos").innerHTML = `<table><thead><tr><th class="sem-ordem">Pessoa</th>
-      <th class="sem-ordem">Pedido</th><th class="sem-ordem">Quando</th><th class="sem-ordem">Descrição</th>
-      <th class="sem-ordem">Pedido por</th><th class="sem-ordem">Etapa</th><th class="sem-ordem"></th></tr></thead>
-    <tbody>${lista.map(p => {
-      const saude = p.sigiloso && PODE_DP && (p.cid || p.medico || p.crm)
-        ? `<small>${[p.cid && `CID ${escapar(p.cid)}`, p.medico && escapar(p.medico),
-                     p.crm && `CRM ${escapar(p.crm)}`].filter(Boolean).join(" · ")}</small>` : "";
-      const trilha = p.supervisor ? `<small>supervisor: ${escapar(p.supervisor)}, ${escapar(quando(p.supervisor_em))}</small>` : "";
-      const acoes = [];
-      if (p.pode_decidir) {
-        acoes.push(`<button class="btn" type="button" data-aprovar="${p.id}">Aprovar</button>`);
-        acoes.push(`<button class="btn secundario" type="button" data-negar="${p.id}">Negar</button>`);
-      }
-      if (PODE_DP && p.sigiloso && p.documento_id) {
-        acoes.push(`<a class="btn secundario" style="text-decoration:none" target="_blank" rel="noopener"
-          href="/erp/api/ponto/afastamentos/documento/${p.documento_id}">Ver atestado</a>`);
-        acoes.push(`<button class="btn secundario" type="button" data-ler="${p.id}"
-          title="A IA lê o documento e mostra o que achou; você confere">Ler com IA</button>`);
-      }
-      if (PODE_DP && p.sigiloso && p.etapa_atual === "DP" && p.pode_decidir) {
-        acoes.push(`<button class="link-btn" type="button" data-corrigir="${p.id}">corrigir dados</button>`);
-      }
-      return `<tr>
-        <td><a class="elo" href="${linkEspelho(p.colaborador_id, p.data_inicio.slice(0, 7))}"><b>${escapar(p.colaborador)}</b></a>
-          <small>${escapar(p.obra || "—")}</small></td>
-        <td>${escapar(p.rotulo)}${p.sigiloso && !PODE_DP ? `<small>documento só o DP vê</small>` : ""}${saude}</td>
-        <td class="dados">${periodoDoPedido(p)}</td>
-        <td class="desc">${escapar(p.descricao || "—")}</td>
-        <td>${escapar(p.solicitado_por || "—")}<small>${p.origem === "APP" ? "pelo celular · " : ""}${escapar(quando(p.criado_em))}</small></td>
-        <td><span class="selo aguardando">${escapar(etapaTexto(p))}</span>${trilha}</td>
-        <td><div class="acoes">${acoes.join("")}</div></td></tr>
-      <tr id="leitura-${p.id}" hidden><td colspan="7"></td></tr>`;
-    }).join("")}</tbody></table>`;
-  const achar = id => (PEND.pedidos || []).find(p => p.id === Number(id));
-  els("p-pedidos").querySelectorAll("[data-aprovar]").forEach(b =>
-    b.addEventListener("click", () => decidirPedido(achar(b.dataset.aprovar), true)));
-  els("p-pedidos").querySelectorAll("[data-negar]").forEach(b =>
-    b.addEventListener("click", () => decidirPedido(achar(b.dataset.negar), false)));
-  els("p-pedidos").querySelectorAll("[data-ler]").forEach(b =>
-    b.addEventListener("click", () => lerAtestado(achar(b.dataset.ler), b)));
-  els("p-pedidos").querySelectorAll("[data-corrigir]").forEach(b =>
-    b.addEventListener("click", () => corrigirPedido(achar(b.dataset.corrigir), false)));
-  lista.filter(p => p.leitura_ia && PODE_DP).forEach(mostrarLeitura);
+function itensVisiveis() {
+  return (VAL.itens || []).filter(i => (!FILTRO.soMinhas || i.pode_decidir)
+    && (!FILTRO.tipos.size || FILTRO.tipos.has(i.tipo)));
 }
 
-async function decidirPedido(p, aprovar) {
-  if (!p) return;
-  const url = p.etapa_atual === "SUPERVISOR"
-    ? `/erp/api/ponto/ocorrencias/${p.id}/etapa-supervisor`
-    : `/erp/api/ponto/afastamentos/${p.id}/etapa-dp`;
-  let motivo = "";
-  if (aprovar) {
-    const r = await perguntar({titulo: `Aprovar: ${escapar(p.rotulo)} de ${escapar(p.colaborador)}`,
-      aviso: efeitoDaAprovacao(p), campos: [], textoOk: "Aprovar"});
-    if (!r) return;
+function desenharTipos() {
+  // A contagem de cada tipo respeita "só o que eu valido", mas não o próprio
+  // filtro de tipo — senão o tipo desligado sumiria e não daria para religar.
+  const base = (VAL.itens || []).filter(i => !FILTRO.soMinhas || i.pode_decidir);
+  const conta = {};
+  base.forEach(i => { conta[i.tipo] = (conta[i.tipo] || 0) + 1; });
+  const tipos = Object.keys(TIPOS_VAL).filter(t => conta[t] || FILTRO.tipos.has(t));
+  els("v-tipos").innerHTML = tipos.map(t => `<button type="button" class="chip ${FILTRO.tipos.has(t) ? "ligado" : ""}"
+      data-tipo="${t}" aria-pressed="${FILTRO.tipos.has(t)}">${escapar(TIPOS_VAL[t])} <b>${conta[t] || 0}</b></button>`).join("");
+  els("v-tipos").querySelectorAll("[data-tipo]").forEach(b => b.addEventListener("click", () => {
+    const t = b.dataset.tipo;
+    if (FILTRO.tipos.has(t)) FILTRO.tipos.delete(t); else FILTRO.tipos.add(t);
+    guardarFiltrosNoEndereco();
+    desenharValidacoes();
+  }));
+}
+
+function detalheDoItem(i) {
+  const partes = [];
+  if (i.tipo === "ATESTADO" && i.sigiloso && !i.documento_id) partes.push("atestado — só o DP vê o documento");
+  else partes.push(escapar(i.detalhe || "—"));
+  if (i.cid && PODE_DP) partes.push(`<small>CID ${escapar(i.cid)}</small>`);
+  if (i.leitura_ia && PODE_DP) partes.push(`<small>leitura automática feita — confira abaixo</small>`);
+  if (i.categoria === "PEDIDO" && i.origem === "APP") partes.push(`<small>pedido pelo celular</small>`);
+  return partes.join("");
+}
+
+function acoesDoItem(i) {
+  const a = [], k = escapar(chaveDoItem(i));
+  if (i.categoria === "PEDIDO") {
+    if (i.pode_decidir) {
+      a.push(`<button class="btn" type="button" data-acao="aprovar" data-item="${k}">Aprovar</button>`);
+      a.push(`<button class="btn secundario" type="button" data-acao="negar" data-item="${k}">Negar</button>`);
+    }
+    if (i.tem_documento && i.documento_id) {
+      a.push(`<a class="link-btn" target="_blank" rel="noopener"
+        href="/erp/api/ponto/afastamentos/documento/${encodeURIComponent(i.documento_id)}">ver documento</a>`);
+    }
+    if (PODE_DP && i.sigiloso && i.documento_id) {
+      a.push(`<button class="link-btn" type="button" data-acao="ler" data-item="${k}"
+        title="A IA lê o documento e mostra o que achou; você confere">ler com IA</button>`);
+    }
+    if (PODE_DP && i.sigiloso && i.etapa === "DP" && i.pode_decidir) {
+      a.push(`<button class="link-btn" type="button" data-acao="corrigir" data-item="${k}">corrigir dados</button>`);
+    }
+  } else if (i.categoria === "BATIDA") {
+    if (i.pode_decidir) {
+      a.push(`<button class="btn" type="button" data-acao="validar" data-item="${k}">Validar</button>`);
+      a.push(`<button class="btn secundario" type="button" data-acao="rejeitar" data-item="${k}">Rejeitar</button>`);
+    }
+    if (i.tem_foto) {
+      a.push(`<button class="link-btn" type="button" data-foto="${i.id}"
+        data-legenda="${escapar(`${i.pessoa} — ${i.quando}`)}">ver foto</button>`);
+    }
+    if (i.obra_id && i.data) {
+      a.push(`<a class="link-btn" href="/erp/ponto/mosaico?obra=${encodeURIComponent(i.obra_id)}&data=${encodeURIComponent(i.data)}">mosaico do dia</a>`);
+    }
+  } else if (i.categoria === "MOSAICO") {
+    a.push(`<a class="btn ${i.pode_decidir ? "" : "secundario"}" style="text-decoration:none" href="${escapar(i.abrir_em)}">Abrir mosaico</a>`);
+  } else if (i.categoria === "APARELHO" && i.pode_decidir) {
+    a.push(`<button class="btn" type="button" data-acao="aparelho" data-item="${k}">Aprovar aparelho</button>`);
+    a.push(`<button class="link-btn" type="button" data-acao="bloquear" data-item="${k}">bloquear</button>`);
+  }
+  if (!i.pode_decidir) a.unshift(`<span class="suave">aguardando ${escapar(i.etapa || "—")}</span>`);
+  return `<div class="acoes">${a.join("")}</div>`;
+}
+
+function desenharValidacoes() {
+  desenharTipos();
+  const lista = itensVisiveis();
+  els("v-so-minhas").checked = !!FILTRO.soMinhas;
+  els("v-minhas").textContent = `(${VAL.minhas || 0})`;
+  els("v-resumo").innerHTML = `<b>${VAL.quantidade || 0}</b> esperando validação · <b>${VAL.minhas || 0}</b> são suas`
+    + (lista.length !== (VAL.quantidade || 0) ? ` · mostrando ${lista.length}` : "");
+  els("v-vazio").classList.toggle("oculto", lista.length > 0);
+  els("v-corpo").innerHTML = lista.map(i => {
+    const k = escapar(chaveDoItem(i));
+    const pessoa = i.pessoa
+      ? (i.colaborador_id
+        ? `<a class="elo" href="${linkEspelho(i.colaborador_id, (i.data || hojeISO()).slice(0, 7))}"><b>${escapar(i.pessoa)}</b></a>`
+        : `<b>${escapar(i.pessoa)}</b>`)
+      : `<span class="suave">—</span>`;
+    return `<tr data-linha="${k}">
+      <td data-rotulo="">${emLote(i) ? `<input type="checkbox" data-marcar="${k}" ${MARCADOS.has(chaveDoItem(i)) ? "checked" : ""}
+          title="Marcar para aprovar em lote">` : ""}</td>
+      <td data-rotulo="Tipo"><span class="selo ${SELO_CATEGORIA[i.categoria] || "outro"}">${escapar(i.rotulo || TIPOS_VAL[i.tipo] || i.tipo)}</span></td>
+      <td data-rotulo="Pessoa">${pessoa}</td>
+      <td data-rotulo="Obra" class="dados">${escapar(i.obra || "—")}</td>
+      <td data-rotulo="Quando" class="dados">${escapar(i.categoria === "APARELHO" ? quando(i.quando) : (i.quando || "—"))}</td>
+      <td data-rotulo="Detalhe" class="desc">${detalheDoItem(i)}</td>
+      <td data-rotulo="Esperando">${esperandoTexto(i.dias_esperando)}</td>
+      <td data-rotulo="Quem valida">${quemValidaTexto(i)}</td>
+      <td data-rotulo="">${acoesDoItem(i)}</td></tr>
+      ${i.categoria === "PEDIDO" ? `<tr id="leitura-${i.id}" class="linha-leitura" hidden><td colspan="9"></td></tr>` : ""}`;
+  }).join("");
+  const achar = k => (VAL.itens || []).find(i => chaveDoItem(i) === k);
+  els("v-corpo").querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => {
+    const i = achar(b.dataset.item);
+    if (!i) return;
+    const acao = b.dataset.acao;
+    if (acao === "aprovar") decidirItem(i, true);
+    else if (acao === "negar") decidirItem(i, false);
+    else if (acao === "validar") decidirItem(i, true);
+    else if (acao === "rejeitar") decidirItem(i, false);
+    else if (acao === "ler") lerAtestado(i, b);
+    else if (acao === "corrigir") corrigirPedido(i, false);
+    else if (acao === "aparelho") aprovarAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
+    else if (acao === "bloquear") bloquearAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
+  }));
+  els("v-corpo").querySelectorAll("[data-marcar]").forEach(c => c.addEventListener("change", () => {
+    if (c.checked) MARCADOS.add(c.dataset.marcar); else MARCADOS.delete(c.dataset.marcar);
+    desenharLote();
+  }));
+  lista.filter(i => i.categoria === "PEDIDO" && i.leitura_ia && PODE_DP).forEach(mostrarLeitura);
+  desenharLote();
+}
+
+function desenharLote() {
+  // O que foi marcado e saiu da vista (filtro de tipo) não vai junto no lote.
+  const visiveis = new Set(itensVisiveis().filter(emLote).map(chaveDoItem));
+  [...MARCADOS].forEach(k => { if (!visiveis.has(k)) MARCADOS.delete(k); });
+  els("v-lote").hidden = MARCADOS.size === 0;
+  els("v-lote-btn").textContent = `Aprovar / validar selecionados (${MARCADOS.size})`;
+  els("v-todos").checked = visiveis.size > 0 && MARCADOS.size === visiveis.size;
+  els("v-todos").disabled = visiveis.size === 0;
+}
+
+// Motivo de negar ou rejeitar: ao menos 5 letras. Curto demais reabre o
+// diálogo com o que já foi escrito.
+async function pedirMotivo(titulo, avisoTexto, rotuloCampo, exemplo) {
+  let motivo = "", falta = "";
+  for (;;) {
+    const r = await perguntar({titulo, aviso: falta + avisoTexto,
+      campos: [{nome: "motivo", rotulo: rotuloCampo, tipo: "textarea", linhas: 3, largura: 3,
+                obrigatorio: true, valor: escapar(motivo), exemplo}],
+      textoOk: titulo.split(":")[0]});
+    if (!r) return null;
+    motivo = (r.motivo || "").trim();
+    if (motivo.length >= 5) return motivo;
+    falta = "<b>Escreva ao menos 5 letras.</b><br>";
+  }
+}
+
+async function decidirItem(i, sim) {
+  let corpo;
+  if (i.categoria === "PEDIDO") {
+    corpo = {aprovar: sim, motivo: ""};
+    if (!sim) {
+      const motivo = await pedirMotivo(`Negar: ${escapar(i.rotulo)} de ${escapar(i.pessoa)}`,
+        "O motivo fica registrado no pedido, com o seu nome.", "Por que está negando",
+        "ex.: a pessoa não estava na obra nesse dia");
+      if (motivo === null) return;
+      corpo.motivo = motivo;
+    }
   } else {
-    const r = await perguntar({titulo: `Negar: ${escapar(p.rotulo)} de ${escapar(p.colaborador)}`,
-      aviso: "O motivo fica registrado no pedido, com o seu nome.",
-      campos: [{nome: "motivo", rotulo: "Por que está negando", tipo: "textarea", linhas: 3,
-                largura: 3, obrigatorio: true}],
-      textoOk: "Negar pedido"});
-    if (!r) return;
-    motivo = r.motivo;
+    corpo = {para: sim ? "VALIDA" : "REJEITADA", motivo: ""};
+    if (!sim) {
+      const motivo = await pedirMotivo(`Rejeitar: batida de ${escapar(i.pessoa)}`,
+        `Batida de ${escapar(i.quando)}. Rejeitada, ela sai do cálculo do dia, mas continua
+         guardada com o motivo e o seu nome.`, "Por que está rejeitando",
+        "ex.: a pessoa não estava na obra; a foto é de outra pessoa");
+      if (motivo === null) return;
+      corpo.motivo = motivo;
+    }
   }
   try {
-    await postar(url, {aprovar, motivo});
-    aviso("mensagem", aprovar ? "Pedido aprovado." : "Pedido negado.", "ok");
-    await carregarPendencias();
+    await postar(i.decidir_em, corpo);
+    const texto = i.categoria === "PEDIDO" ? (sim ? "Pedido aprovado." : "Pedido negado.")
+                                          : (sim ? "Batida validada." : "Batida rejeitada.");
+    aviso("mensagem", `${texto} ${escapar(i.pessoa || "")}`, "ok");
+    await carregarValidacoes();
   } catch (e) { falhou(e); }
 }
 
-async function lerAtestado(p, botao) {
-  if (!p) return;
+async function aprovarEmLote() {
+  const itens = [...MARCADOS].map(k => (VAL.itens || []).find(i => chaveDoItem(i) === k)).filter(Boolean);
+  if (!itens.length) return;
+  const r = await perguntar({titulo: `Aprovar / validar ${itens.length} item(ns)`,
+    aviso: `Os pedidos marcados são aprovados e as batidas marcadas, validadas — um de cada
+      vez, com o seu nome. Pedido que ainda passa pelo DP segue para o DP.`,
+    campos: [], textoOk: "Aprovar / validar"});
+  if (!r) return;
+  const botao = els("v-lote-btn");
   botao.disabled = true;
-  botao.textContent = "Lendo…";
+  let certos = 0;
+  const erros = [];
+  for (let n = 0; n < itens.length; n++) {
+    const i = itens[n];
+    aviso("v-lote-msg", `Aprovando ${n + 1} de ${itens.length}…`, "info");
+    try {
+      await postar(i.decidir_em, i.categoria === "PEDIDO" ? {aprovar: true, motivo: ""} : {para: "VALIDA", motivo: ""});
+      certos++;
+    } catch (e) { erros.push(`${escapar(i.pessoa || "—")} — ${escapar(i.rotulo)}: ${escapar(e.message)}`); }
+  }
+  botao.disabled = false;
+  await carregarValidacoes();
+  aviso("v-lote-msg", `<b>${certos} aprovado(s), ${erros.length} com erro.</b>`
+    + (erros.length ? `<br>${erros.join("<br>")}` : ""), erros.length ? "alerta" : "ok");
+}
+
+// --- Atestado: a leitura com IA e a correção dos dados (só o DP). A lista de
+// validações traz o essencial; datas, médico e CRM vêm da lista de pedidos.
+async function pedidoCompleto(id) {
+  if (!PEDIDOS_COMPLETOS) PEDIDOS_COMPLETOS = (await api("/erp/api/ponto/pendencias")).pedidos || [];
+  return PEDIDOS_COMPLETOS.find(p => p.id === id) || null;
+}
+
+async function lerAtestado(i, botao) {
+  botao.disabled = true;
+  botao.textContent = "lendo…";
   try {
-    const d = await postar(`/erp/api/ponto/afastamentos/${p.id}/ler`);
-    p.leitura_ia = d.leitura;
-    mostrarLeitura(p);
+    const d = await postar(`/erp/api/ponto/afastamentos/${i.id}/ler`);
+    i.leitura_ia = d.leitura;
+    mostrarLeitura(i);
   } catch (e) { falhou(e); }
   botao.disabled = false;
-  botao.textContent = "Ler com IA";
+  botao.textContent = "ler com IA";
 }
 
-function mostrarLeitura(p) {
-  const l = p.leitura_ia, linha = els(`leitura-${p.id}`);
+function mostrarLeitura(i) {
+  const l = i.leitura_ia, linha = els(`leitura-${i.id}`);
   if (!l || !linha) return;
   const tipo = l.tipo === "DECLARACAO_DE_COMPARECIMENTO" ? "Declaração de comparecimento"
              : l.tipo === "ATESTADO" ? "Atestado" : l.tipo ? "Outro documento" : "—";
-  const fimLido = l.data_inicio && l.dias_afastamento ? somarDias(l.data_inicio, Number(l.dias_afastamento) - 1) : null;
-  const diverge = (l.data_inicio && l.data_inicio !== p.data_inicio) || (fimLido && fimLido !== p.data_fim);
+  const diverge = l.data_inicio && i.data && l.data_inicio !== i.data;
   const campos = [
     ["Tipo", tipo], ["Emitido em", dataBR(l.data_emissao)], ["A partir de", dataBR(l.data_inicio)],
     ["Dias de repouso", l.dias_afastamento ?? "—"],
@@ -1345,18 +1556,20 @@ function mostrarLeitura(p) {
     <div class="leitura-grade">${campos.map(([r, v]) =>
       `<div><small>${r}</small><b>${escapar(v)}</b></div>`).join("")}</div>
     ${l.observacao ? `<div><i>${escapar(l.observacao)}</i></div>` : ""}
-    ${diverge ? `<div style="margin-top:6px; color:var(--ambar)"><b>Os dias do documento não batem
-      com os do pedido</b> (pedido: ${dataBR(p.data_inicio)} a ${dataBR(p.data_fim)}).</div>` : ""}
-    ${p.pode_decidir && p.etapa_atual === "DP"
-      ? `<div style="margin-top:8px"><button class="btn secundario" type="button" data-corrigir-lido="${p.id}">Corrigir dados com a leitura</button></div>` : ""}
+    ${diverge ? `<div style="margin-top:6px; color:var(--ambar)"><b>O primeiro dia do documento não
+      bate com o do pedido</b> (pedido: a partir de ${dataBR(i.data)}).</div>` : ""}
+    ${i.pode_decidir && i.etapa === "DP"
+      ? `<div style="margin-top:8px"><button class="btn secundario" type="button" data-corrigir-lido="${i.id}">Corrigir dados com a leitura</button></div>` : ""}
   </div>`;
   const b = linha.querySelector("[data-corrigir-lido]");
-  if (b) b.addEventListener("click", () => corrigirPedido(p, true));
+  if (b) b.addEventListener("click", () => corrigirPedido(i, true));
 }
 
-async function corrigirPedido(p, daLeitura) {
-  if (!p) return;
-  const l = p.leitura_ia || {};
+async function corrigirPedido(i, daLeitura) {
+  let p;
+  try { p = await pedidoCompleto(i.id); } catch (e) { falhou(e); return; }
+  if (!p) { aviso("mensagem", "Este pedido já não está esperando decisão.", "erro"); return; }
+  const l = i.leitura_ia || p.leitura_ia || {};
   const usarLeitura = daLeitura && l.data_inicio;
   const inicio = usarLeitura ? l.data_inicio : p.data_inicio;
   const fim = usarLeitura && l.dias_afastamento
@@ -1378,77 +1591,42 @@ async function corrigirPedido(p, daLeitura) {
   try {
     await postar(`/erp/api/ponto/afastamentos/${p.id}/corrigir`, r);
     aviso("mensagem", "Dados corrigidos. O pedido continua esperando a sua aprovação.", "ok");
-    await carregarPendencias();
+    await carregarValidacoes();
   } catch (e) { falhou(e); }
 }
 
-function desenharBatidas() {
-  const lista = PEND.batidas || [];
-  if (!lista.length) { els("p-batidas").innerHTML = `<div class="cartao-dica">Nenhuma batida em análise.</div>`; return; }
-  els("p-batidas").innerHTML = `<table><thead><tr><th class="sem-ordem">Pessoa</th>
-      <th class="sem-ordem">Obra</th><th class="sem-ordem">Horário</th><th class="sem-ordem">Por que está em análise</th>
-      <th class="sem-ordem">Distância da obra</th><th class="sem-ordem">Foto</th><th class="sem-ordem"></th></tr></thead>
-    <tbody>${lista.map(b => `<tr>
-      <td><a class="elo" href="${linkEspelho(b.colaborador_id, b.data.slice(0, 7))}"><b>${escapar(b.nome)}</b></a>
-        <small>NSR ${escapar(b.nsr)}</small></td>
-      <td class="dados">${escapar(b.obra)}</td>
-      <td class="dados">${escapar(quando(b.horario))}</td>
-      <td class="desc">${escapar(b.motivo || "—")}</td>
-      <td class="dados">${distancia(b.distancia_metros)}</td>
-      <td>${b.tem_foto ? `<button class="link-btn" type="button" data-foto="${b.id}"
-            data-legenda="${escapar(`${b.nome} — ${quando(b.horario)}`)}">ver foto</button>`
-          : `<span class="suave">sem foto</span>`}</td>
-      <td>${b.pode_decidir ? `<div class="acoes">
-          <button class="btn" type="button" data-validar="${b.id}">Validar</button>
-          <button class="btn secundario" type="button" data-rejeitar="${b.id}">Rejeitar</button></div>` : ""}</td>
-    </tr>`).join("")}</tbody></table>`;
-  const achar = id => lista.find(b => b.id === Number(id));
-  els("p-batidas").querySelectorAll("[data-validar]").forEach(x =>
-    x.addEventListener("click", () => decidirBatida(achar(x.dataset.validar), "VALIDA")));
-  els("p-batidas").querySelectorAll("[data-rejeitar]").forEach(x =>
-    x.addEventListener("click", () => decidirBatida(achar(x.dataset.rejeitar), "REJEITADA")));
-}
-
-async function decidirBatida(b, para) {
-  if (!b) return;
-  let motivo = "";
-  if (para === "REJEITADA") {
-    const r = await perguntar({titulo: `Rejeitar a batida de ${escapar(b.nome)}`,
-      aviso: `Batida de ${escapar(quando(b.horario))}. Rejeitada, ela sai do cálculo do
-        dia, mas continua guardada com o motivo e o seu nome.`,
-      campos: [{nome: "motivo", rotulo: "Por que está rejeitando", tipo: "textarea", linhas: 3,
-                largura: 3, obrigatorio: true,
-                exemplo: "ex.: a pessoa não estava na obra; a foto é de outra pessoa"}],
-      textoOk: "Rejeitar batida"});
-    if (!r) return;
-    motivo = r.motivo;
-  }
-  try {
-    await postar(`/erp/api/ponto/marcacoes/${b.id}/decidir`, {para, motivo});
-    aviso("mensagem", para === "VALIDA" ? "Batida validada." : "Batida rejeitada.", "ok");
-    await carregarPendencias();
-  } catch (e) { falhou(e); }
-}
-
-function desenharAparelhos() {
-  const lista = PEND.aparelhos || [];
-  if (!lista.length) { els("p-aparelhos").innerHTML = `<div class="cartao-dica">Nenhum aparelho esperando aprovação.</div>`; return; }
-  els("p-aparelhos").innerHTML = `<table><thead><tr><th class="sem-ordem">Aparelho</th>
-      <th class="sem-ordem">Pediu em</th><th class="sem-ordem"></th></tr></thead>
-    <tbody>${lista.map(a => `<tr>
-      <td><b>${escapar(a.descricao || "sem nome")}</b><small class="dados">${escapar(a.device_uuid)}</small></td>
-      <td class="dados">${escapar(quando(a.criado_em))}</td>
-      <td><div class="acoes"><button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>
-        <button class="btn secundario" type="button" data-bloquear-ap="${a.id}">Bloquear</button></div></td>
-    </tr>`).join("")}</tbody></table>`;
-  const achar = id => lista.find(a => a.id === Number(id));
-  els("p-aparelhos").querySelectorAll("[data-aprovar-ap]").forEach(b =>
-    b.addEventListener("click", () => aprovarAparelho(achar(b.dataset.aprovarAp), carregarPendencias)));
-  els("p-aparelhos").querySelectorAll("[data-bloquear-ap]").forEach(b =>
-    b.addEventListener("click", () => bloquearAparelho(achar(b.dataset.bloquearAp), carregarPendencias)));
-}
-
-carregarPendencias();
+// ------------------------------------------------------------------ tela
+els("v-de").value = /^\d{4}-\d{2}-\d{2}$/.test(doUrl("de") || "") ? doUrl("de") : "";
+els("v-ate").value = /^\d{4}-\d{2}-\d{2}$/.test(doUrl("ate") || "") ? doUrl("ate") : "";
+els("v-busca").value = doUrl("busca") || "";
+["v-obra", "v-de", "v-ate"].forEach(id => els(id).addEventListener("change", carregarValidacoes));
+els("v-busca").addEventListener("input", () => {
+  clearTimeout(ESPERA_BUSCA);
+  ESPERA_BUSCA = setTimeout(carregarValidacoes, 350);
+});
+els("v-so-minhas").addEventListener("change", () => {
+  FILTRO.soMinhas = els("v-so-minhas").checked;
+  guardarFiltrosNoEndereco();
+  desenharValidacoes();
+});
+els("v-limpar").addEventListener("click", () => {
+  els("v-obra").value = ""; els("v-de").value = ""; els("v-ate").value = ""; els("v-busca").value = "";
+  FILTRO.tipos.clear();
+  carregarValidacoes();
+});
+els("v-todos").addEventListener("change", () => {
+  const ligar = els("v-todos").checked;
+  itensVisiveis().filter(emLote).forEach(i => { if (ligar) MARCADOS.add(chaveDoItem(i)); else MARCADOS.delete(chaveDoItem(i)); });
+  els("v-corpo").querySelectorAll("[data-marcar]").forEach(c => { c.checked = MARCADOS.has(c.dataset.marcar); });
+  desenharLote();
+});
+els("v-lote-btn").addEventListener("click", aprovarEmLote);
+els("v-lote-limpar").addEventListener("click", () => {
+  MARCADOS.clear();
+  els("v-corpo").querySelectorAll("[data-marcar]").forEach(c => { c.checked = false; });
+  desenharLote();
+});
+carregarObrasDasValidacoes().then(carregarValidacoes);
 
 {% elif aba_ponto == "ponto_mosaico" %}
 // ===========================================================================
@@ -1552,7 +1730,7 @@ function detalheDaConferencia() {
   if (!c) return "";
   if (c.situacao === "CONFERIDO") {
     return `<div class="cartao-dica">${c.suspeitas
-        ? `${contar(c.suspeitas, "foto marcada", "fotos marcadas")} como suspeita — as batidas foram para Pendências.`
+        ? `${contar(c.suspeitas, "foto marcada", "fotos marcadas")} como suspeita — as batidas foram para Validações.`
         : "Nenhuma foto marcada como suspeita."}
       ${c.nota ? `<br>Observação: “${escapar(c.nota)}”` : ""}</div>`;
   }
@@ -1690,8 +1868,8 @@ async function confirmarConferencia() {
     for (;;) {
       const r = await perguntar({
         titulo: `${contar(marcadas.length, "foto suspeita", "fotos suspeitas")}`,
-        aviso: `${falta}As batidas marcadas vão para <b>Pendências › Batidas em análise</b>, para
-          quem trata o ponto decidir. Nada é apagado.`,
+        aviso: `${falta}As batidas marcadas vão para <b>Validações</b>, como batida em
+          conferência, para quem valida decidir. Nada é apagado.`,
         campos: marcadas.map(({p, b}) => ({nome: `m${b.id}`, tipo: "textarea", linhas: 2, largura: 3,
           rotulo: `${escapar(p.nome)} — ${escapar(b.hora)}: o que a foto tem de estranho?`,
           obrigatorio: true, valor: escapar(motivos[b.id] || ""),
@@ -1719,7 +1897,7 @@ async function confirmarConferencia() {
     MOS = d;   // a resposta não traz `pode_conferir`: vale o que já se sabia
     desenharMosaico();
     aviso("m-conferir-msg", "Conferência registrada."
-      + (suspeitas.length ? ` ${contar(suspeitas.length, "batida foi", "batidas foram")} para análise, em Pendências.` : ""), "ok");
+      + (suspeitas.length ? ` ${contar(suspeitas.length, "batida foi", "batidas foram")} para conferência, em Validações.` : ""), "ok");
     carregarPendentesDoMosaico();
   } catch (e) { falhou(e, "m-conferir-msg"); }
   botao.disabled = false;
@@ -2292,7 +2470,7 @@ carregarResumo();
 
 {% elif aba_ponto == "ponto_config" %}
 // ===========================================================================
-// CONFIGURAÇÃO — atualizações do banco, escalas, feriados, fechamento do mês,
+// CONFIGURAÇÃO — atualizações do banco, quem valida cada pedido, escalas, feriados, fechamento do mês,
 // aparelhos, resumo diário, QR Code e avisos pelo WhatsApp, mosaico por obra,
 // Drive e o endereço do app.
 //
@@ -2838,7 +3016,48 @@ async function gravarMosaicoDaObra(linha, botao) {
   } catch (e) { botao.disabled = false; falhou(e, "c-mosaico-msg"); }
 }
 
-// ---------------------------------------------- 9. cerca das obras
+// ------------------------------------------ 9. quem valida cada pedido
+// Pedido do dono, 04/10/2026: escolher quem valida cada tipo — o encarregado
+// da obra ou o DP (o padrão). Todos veem; só quem configura o ponto muda.
+async function carregarQuemValida() {
+  let d;
+  try { d = await api("/erp/api/ponto/quem-valida"); } catch (e) { erroNoCartao("c-quem-valida", e); return; }
+  desenharQuemValida(d);
+}
+
+function desenharQuemValida(d, mensagem) {
+  const conf = d.configuraveis || [], fixos = d.fixos || [];
+  const campo = "padding:6px 8px; border:1px solid var(--borda-forte); border-radius:8px; max-width:100%";
+  els("c-quem-valida").innerHTML = `<table><tbody>
+      ${conf.map(c => `<tr><td>${escapar(c.rotulo)}</td>
+        <td><select data-regra="${escapar(c.tipo)}" data-sem-busca style="${campo}" ${PODE_CONFIGURAR ? "" : "disabled"}>
+          ${(c.opcoes || []).map(o => `<option value="${escapar(o.valor)}" ${o.valor === c.valor ? "selected" : ""}>${escapar(o.rotulo)}</option>`).join("")}
+        </select></td></tr>`).join("")}
+    </tbody></table>
+    ${PODE_CONFIGURAR ? `<div style="margin-top:10px"><button class="btn" type="button" id="c-quem-gravar">Gravar</button></div>`
+      : `<div class="cartao-dica">Só quem configura o ponto muda quem valida.</div>`}
+    <div id="c-quem-msg" style="margin-top:8px"></div>
+    ${fixos.length ? `<div class="cartao-dica"><b>O que não se escolhe:</b>
+      ${fixos.map(f => `<div>${escapar(TIPOS_PEDIDO_FIXOS[f.tipo] || f.tipo)}: ${escapar(f.explicacao)}</div>`).join("")}</div>` : ""}`;
+  if (mensagem) aviso("c-quem-msg", mensagem, "ok");
+  if (els("c-quem-gravar")) els("c-quem-gravar").addEventListener("click", gravarQuemValida);
+}
+const TIPOS_PEDIDO_FIXOS = {ATESTADO: "Atestado", AFASTAMENTO: "Afastamento", FERIAS: "Férias",
+                            ABONO: "Abono", MOSAICO: "Mosaico de fotos"};
+
+async function gravarQuemValida() {
+  const regra = {};
+  els("c-quem-valida").querySelectorAll("[data-regra]").forEach(s => { regra[s.dataset.regra] = s.value; });
+  const b = els("c-quem-gravar");
+  b.disabled = true;
+  try {
+    const d = await postar("/erp/api/ponto/quem-valida", {regra});
+    const n = d.pedidos_realinhados || 0;
+    desenharQuemValida(d, n > 0 ? `Gravado. ${n} pedido(s) na fila mudaram de etapa.` : "Gravado.");
+  } catch (e) { b.disabled = false; falhou(e, "c-quem-msg"); }
+}
+
+// --------------------------------------------- 10. cerca das obras
 // Decisão do dono, 04/10/2026: ninguém bate fora da área da obra, e a obra é
 // detectada pela localização. Aqui se ajusta o raio e o que fazer fora dele.
 const MODOS_CERCA = [{valor: "BLOQUEAR", rotulo: "Bloquear a batida"},
@@ -2906,7 +3125,7 @@ async function gravarCerca(linha, botao) {
   } catch (e) { botao.disabled = false; falhou(e, "c-cercas-msg"); }
 }
 
-// ------------------------------------------------------ 10. Drive e fila
+// ------------------------------------------------------ 11. Drive e fila
 function desenharDrive() {
   const fila = (CONFIG.fila_fotos || 0) + (CONFIG.fila_documentos || 0);
   els("c-drive").innerHTML = `
@@ -2954,7 +3173,7 @@ function anosParaEscolher() {
 
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
-                    carregarCercas()]);
+                    carregarCercas(), carregarQuemValida()]);
 }
 
 anosParaEscolher();
