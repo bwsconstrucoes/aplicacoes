@@ -248,6 +248,9 @@ def _entrar_no_app(app, cpf, monkeypatch):
 
 
 def test_ajuste_de_batida_pelo_celular_aprovado_pelo_supervisor(app, mundo, monkeypatch):
+    # O padrão é o DP (04/10/2026); aqui a regra põe o ajuste com o encarregado.
+    assert como(app, mundo["dp"]).post("/erp/api/ponto/quem-valida",
+                                       json={"regra": {"AJUSTE_BATIDA": "ENCARREGADO"}}).status_code == 200
     seg = _segunda_passada()
     for h in ((7, 0), (11, 0), (12, 0)):                    # esqueceu a saída
         bater_via_chave(app, CPF_JOAO, local(seg, *h))
@@ -330,6 +333,8 @@ def test_negar_exige_motivo_e_ferias_so_o_dp_lanca(app, mundo):
 
 
 def test_compensacao_passa_pelo_supervisor_e_pelo_dp(app, mundo):
+    assert como(app, mundo["dp"]).post("/erp/api/ponto/quem-valida",
+                                       json={"regra": {"COMPENSACAO": "ENCARREGADO_E_DP"}}).status_code == 200
     seg = _segunda_passada()
     sabado, sexta = dia_util(seg, 5), dia_util(seg, 4)
     for h in ((7, 0), (11, 0), (12, 0), (16, 0)):
@@ -370,11 +375,15 @@ def test_batida_em_analise_validada_e_rejeitada(app, mundo):
     assert all(b["id"] != m1["id"] for b in pend["batidas"])     # é da obra B: fora do alcance dele
     assert sup.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir", json={"para": "VALIDA"}).status_code == 404
     dp = como(app, mundo["dp"])
-    assert dp.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir", json={"para": "REJEITADA"}).status_code == 400
-    ok = dp.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir",
+    # padrão: quem confere batida é o DP, pela rota dele; a do encarregado diz isso
+    errado = dp.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir", json={"para": "VALIDA"})
+    assert errado.status_code == 400 and "DP" in errado.get_json()["erro"]
+    assert sup.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir-dp", json={"para": "VALIDA"}).status_code == 403
+    assert dp.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir-dp", json={"para": "REJEITADA"}).status_code == 400
+    ok = dp.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir-dp",
                  json={"para": "REJEITADA", "motivo": "não estava nessa obra"})
     assert ok.status_code == 200 and ok.get_json()["marcacao"]["status"] == "REJEITADA"
-    assert dp.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir",
+    assert dp.post(f"/erp/api/ponto/marcacoes/{m1['id']}/decidir-dp",
                    json={"para": "VALIDA"}).status_code == 400            # já decidida
 
 

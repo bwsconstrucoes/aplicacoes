@@ -45,7 +45,7 @@ from app.apps.erp.routes import bp, login_obrigatorio, permissao
 from . import db, horario, migracoes_runner
 from .core import (alertas, banco, cadastros, competencias, dispositivos, documentos,
                    envios, escalas, espelho, feriados, fotos, leitura_atestado, mosaico,
-                   ocorrencias, painel, parametros, qr, rotina)
+                   ocorrencias, painel, parametros, qr, rotina, validacao)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, ErroDoPonto, NaoEncontrado
 
@@ -57,7 +57,7 @@ logger = logging.getLogger("ponto.gestao")
 ABAS = [
     ("ponto_hoje", "Hoje", "erp.ponto_pagina_hoje"),
     ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
-    ("ponto_pendencias", "Pendências", "erp.ponto_pagina_pendencias"),
+    ("ponto_pendencias", "Validações", "erp.ponto_pagina_pendencias"),
     ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
     ("ponto_pessoas", "Pessoas", "erp.ponto_pagina_pessoas"),
     ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
@@ -524,6 +524,7 @@ def ponto_api_pendencias():
         em_analise = db.todos(conn, sql + " ORDER BY m.timestamp_servidor DESC LIMIT 500", **params)
         aparelhos = (dispositivos.listar(conn, "PENDENTE")
                      if quem.extras.get("configurar_ponto") else [])
+        regra_batida = validacao.quem_valida_batida(conn)
     return _ok(
         pedidos=pedidos,
         batidas=[{"id": m["id"], "nsr": m["nsr"], "colaborador_id": m["colaborador_id"],
@@ -531,9 +532,29 @@ def ponto_api_pendencias():
                   "horario": horario.texto(m["timestamp_servidor"]), "motivo": m["motivo_analise"],
                   "distancia_metros": float(m["distancia_metros"]) if m["distancia_metros"] is not None else None,
                   "tem_foto": m["foto_id"] is not None,
-                  "pode_decidir": quem.supervisor and quem.alcanca_obra(m["obra_id"])}
+                  "pode_decidir": ((quem.dp if regra_batida == validacao.DP else quem.supervisor)
+                                   and quem.alcanca_obra(m["obra_id"])),
+                  "quem_valida": regra_batida}
                  for m in em_analise],
         aparelhos=[dispositivos.para_json(a) for a in aparelhos])
+
+
+def _decidir_batida(marcacao_id: int, quem_valida: str):
+    """A batida em conferência. Quem decide é o da regra (Configuração › Quem
+    valida): cada um pela sua rota, e a rota do outro responde o que fazer."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        m = db.um(conn, "SELECT obra_id FROM ponto.marcacoes WHERE id = :id", id=marcacao_id)
+        if not m or not quem.alcanca_obra(m["obra_id"]):
+            raise NaoEncontrado("batida não encontrada")
+        regra = validacao.quem_valida_batida(conn)
+        if regra != quem_valida:
+            raise ErroDeValidacao("a conferência das batidas está com " + validacao.ROTULO_OPCAO[regra]
+                                  + " (Ponto › Configuração › Quem valida)", campo="etapa")
+        from .core import marcacoes as marc
+        r = marc.decidir_em_analise(conn, marcacao_id, para=d.get("para"), motivo=d.get("motivo", ""),
+                                    usuario_id=quem.usuario_id, usuario_nome=quem.nome)
+    return _ok(marcacao=marc.para_json(r))
 
 
 @bp.route("/erp/api/ponto/marcacoes/<int:marcacao_id>/decidir", methods=["POST"])
@@ -541,15 +562,66 @@ def ponto_api_pendencias():
 @permissao("tratar_ponto")
 @_api
 def ponto_api_decidir_batida(marcacao_id: int):
+    """O encarregado valida ou rejeita a batida em conferência."""
+    return _decidir_batida(marcacao_id, validacao.ENCARREGADO)
+
+
+@bp.route("/erp/api/ponto/marcacoes/<int:marcacao_id>/decidir-dp", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_decidir_batida_dp(marcacao_id: int):
+    """O DP valida ou rejeita a batida em conferência."""
+    return _decidir_batida(marcacao_id, validacao.DP)
+
+
+# ---------------------------------------------------------------------------
+# VALIDAÇÕES: tudo o que espera alguém, numa lista só (pedido do dono,
+# 04/10/2026: "uma tela onde liste tudo que está pendente para validação (…)
+# filtrar por obra, período (…) poder ver os mosaicos também").
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/ponto/validacoes")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_validacoes():
+    quem = _quem()
+    a = request.args
+    with db.conexao() as conn:
+        obra_id = None
+        if a.get("obra"):
+            o = cadastros.resolver_obra(conn, a.get("obra"))
+            if not o or not quem.alcanca_obra(o["id"]):
+                raise NaoEncontrado("obra não encontrada")
+            obra_id = int(o["id"])
+        from .core import validacoes as val
+        r = val.listar(conn, quem, obra_id=obra_id, de=a.get("de"), ate=a.get("ate"),
+                       tipos=[t for t in (a.get("tipos") or "").split(",") if t],
+                       busca=a.get("busca") or "", so_minhas=a.get("so_minhas") in ("1", "true"),
+                       ver_aparelhos=bool(quem.extras.get("configurar_ponto")))
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/quem-valida")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_quem_valida():
+    with db.conexao() as conn:
+        r = validacao.para_tela(conn)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/quem-valida", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_quem_valida_gravar():
     quem, d = _quem(), _corpo()
     with db.conexao() as conn:
-        m = db.um(conn, "SELECT obra_id FROM ponto.marcacoes WHERE id = :id", id=marcacao_id)
-        if not m or not quem.alcanca_obra(m["obra_id"]):
-            raise NaoEncontrado("batida não encontrada")
-        from .core import marcacoes as marc
-        r = marc.decidir_em_analise(conn, marcacao_id, para=d.get("para"), motivo=d.get("motivo", ""),
-                                    usuario_id=quem.usuario_id, usuario_nome=quem.nome)
-    return _ok(marcacao=marc.para_json(r))
+        r = validacao.gravar(conn, d.get("regra") or {}, quem.nome)
+        tela = validacao.para_tela(conn)
+    return _ok(pedidos_realinhados=r["pedidos_realinhados"], **tela)
 
 
 @bp.route("/erp/api/ponto/marcacoes/<int:marcacao_id>/foto")

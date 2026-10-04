@@ -45,8 +45,9 @@ class TestEscalas:
 class TestEtapas:
     def test_cada_tipo_tem_caminho_e_efeito_conhecido(self):
         assert ocorrencias.ETAPAS["ATESTADO"] == ("DP",)
-        assert ocorrencias.ETAPAS["AJUSTE_BATIDA"] == ("SUPERVISOR",)
-        assert ocorrencias.ETAPAS["COMPENSACAO"] == ("SUPERVISOR", "DP")
+        # o PADRÃO é tudo no DP (04/10/2026); a regra em vigor é a da tela (validacao.py)
+        assert ocorrencias.ETAPAS["AJUSTE_BATIDA"] == ("DP",)
+        assert ocorrencias.ETAPAS["COMPENSACAO"] == ("DP",)
         assert set(espelho.ABONO_POR_TIPO) <= set(ocorrencias.ETAPAS)
         assert set(espelho.ROTULO_TIPO) == set(ocorrencias.ETAPAS)
 

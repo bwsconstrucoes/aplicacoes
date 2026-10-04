@@ -19,6 +19,8 @@ junto com o `README.md` e o `PLANO.md`.
    para todo mundo com telefone, espalhado em dias); "Avisar a pessoa quando a
    batida ficar sem foto"; e quais obras têm o **mosaico obrigatório**, com que
    responsável. Sugestão: ligar o QR só depois do piloto numa obra.
+1d. **Quem valida cada pedido** (Ponto › Configuração): nasce tudo no DP. Se
+   algo deve ir para o encarregado (ajuste de batida, por exemplo), trocar lá.
 1c. **Coordenadas das obras no ERP**: a cerca agora BLOQUEIA e a obra é
    detectada pela localização — obra ativa sem latitude/longitude no cadastro
    do ERP não detecta (vai para conferência). Conferir em Ponto › Configuração
@@ -35,6 +37,28 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 04/10/2026 — Validações numa tela só, e quem valida configurável
+
+Pedido do dono: *"todas essas solicitações precisam ser validadas (…) a gente vai
+definir quem é que vai validar. Provavelmente (…) o próprio DP (…) uma tela onde
+liste tudo que está pendente para validação (…) filtrar por obra, período (…) ver
+os mosaicos também (…) umas coisas a gente põe para o encarregado de obra, outras
+para o próprio RH, dependendo do que seja."*
+
+**O que foi feito:** regra de quem valida, por tipo, na Configuração (padrão: DP);
+a aba "Pendências" virou "Validações", com tudo numa lista, filtros, aprovação em
+lote e o endereço da decisão em cada linha; rota própria do DP para batida em
+conferência.
+
+**Decisões tomadas sem ele, com motivo:**
+- **O padrão mudou para o DP em tudo**, seguindo o "provavelmente o próprio DP".
+  Antes, ajuste era do encarregado e compensação/folga passavam pelos dois. Os
+  testes antigos agora configuram a regra antes de testar o caminho do encarregado.
+- **Atestado e afastamento não se configuram**: só o DP vê dado de saúde.
+- **Trocar a regra mexe na fila** (o que esperava uma etapa que sumiu vai para a
+  que vale agora): sem isso, pedido ficaria preso esperando quem não decide mais.
+- **Lote só aprova**: negar e rejeitar exigem motivo, um a um.
 
 ## 04/10/2026 — Ajuste de batida pelo dia, e aviso de batida fora do normal
 

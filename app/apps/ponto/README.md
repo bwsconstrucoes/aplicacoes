@@ -82,7 +82,7 @@ telas em `templates/ponto/gestao.html`). Sete abas:
 |---|---|
 | Hoje | por obra: quem bateu, quem não bateu, afastados, folga; atualiza sozinha |
 | Espelho | o mês da pessoa, dia a dia; ajuste, compensação, afastamento; imprimir para assinar; CSV para a folha |
-| Pendências | pedidos (com a etapa de cada um), batidas em análise, aparelhos esperando aprovação |
+| Validações | tudo o que espera decisão, numa lista com filtros (ver "Validações", abaixo) |
 | Pessoas | escala com data de início, jornada, obras adicionais, banco de horas (DP) |
 | Banco de horas | saldo, meses, vencimentos, lançamentos (DP) |
 | Alertas | regras da CLT e padrões do histórico; resolver/dispensar; resumo do dia |
@@ -125,6 +125,25 @@ o crédito mais antigo do banco é o primeiro a ser usado.
 **Rotina do dia** (`core/rotina.py`): a primeira requisição do ponto depois das
 6h gera os alertas e manda o resumo por WhatsApp aos telefones da Configuração —
 uma vez por dia, numa linha separada, sem ninguém apertar botão.
+
+## Validações: tudo o que espera alguém, e quem valida o quê (04/10/2026)
+
+**Quem valida** (`core/validacao.py`, Ponto › Configuração › Quem valida cada
+pedido): para ajuste de batida, compensação, folga do banco, licença e batida em
+conferência, escolhe-se **Encarregado da obra**, **DP**, ou **Encarregado e
+depois o DP**. **Padrão: DP em tudo** (sugestão do dono). Fixos: atestado e
+afastamento só no DP (saúde); férias e abono nascem no DP; o mosaico é do
+responsável de cada obra. Trocar a regra realinha a fila: o que esperava uma
+etapa que deixou de existir passa para quem valida agora.
+
+**A aba Validações** (antes "Pendências"; `core/validacoes.py`,
+`GET /erp/api/ponto/validacoes`): pedidos, batidas em conferência, mosaicos
+obrigatórios sem conferência e aparelhos esperando, numa lista só, do mais antigo
+para o mais novo. Filtros: obra, período, pessoa (nome ou CPF), tipo e "só o que
+eu valido". Cada linha diz quem valida, há quantos dias espera, e traz os botões
+de quem pode decidir; aprovar em lote; negar e rejeitar pedem motivo, um por um.
+Batida em conferência tem duas rotas — `/decidir` (encarregado) e `/decidir-dp`
+(DP) — e só a da regra em vigor aceita.
 
 ## Ajuste de batida a partir do dia, e a batida fora do normal (04/10/2026)
 

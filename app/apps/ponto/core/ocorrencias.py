@@ -3,9 +3,11 @@
 Ocorrências: atestado, licença, férias, afastamento, abono, ajuste de batida,
 compensação e folga do banco de horas — e o caminho de aprovação de cada uma.
 
-QUEM APROVA O QUÊ (proposta aceita pelo dono em 03/10/2026; o PODER de cada
-etapa é configurável pessoa a pessoa no cadastro de perfis do ERP — seções
-"Ponto"):
+QUEM APROVA O QUÊ — desde 04/10/2026 CONFIGURÁVEL pela tela (core/validacao.py:
+encarregado, DP, ou os dois), com o DP como padrão, a pedido do dono. A tabela
+abaixo era a proposta de 03/10/2026, e hoje é só uma das combinações possíveis;
+atestado e afastamento continuam só no DP (saúde). O PODER de cada etapa segue
+configurável pessoa a pessoa no cadastro de perfis do ERP — seções "Ponto":
 
   tipo                          etapas                    efeito ao aprovar
   ----------------------------  ------------------------  --------------------------------
@@ -35,15 +37,16 @@ from sqlalchemy.engine import Connection
 
 from .. import db, horario
 from ..erros import ErroDeValidacao, NaoEncontrado
-from . import ajustes, banco, cadastros, competencias, documentos, escalas, marcacoes
+from . import ajustes, banco, cadastros, competencias, documentos, escalas, marcacoes, validacao
 
 logger = logging.getLogger("ponto.ocorrencias")
 
 SUPERVISOR, DP = "SUPERVISOR", "DP"
+# Os tipos, com as etapas do PADRÃO (tudo no DP). A regra em vigor é a da tela:
+# `validacao.etapas_do_tipo`.
 ETAPAS = {
     "ATESTADO": (DP,), "LICENCA": (DP,), "FERIAS": (DP,), "AFASTAMENTO": (DP,), "ABONO": (DP,),
-    "AJUSTE_BATIDA": (SUPERVISOR,),
-    "COMPENSACAO": (SUPERVISOR, DP), "FOLGA_BANCO": (SUPERVISOR, DP),
+    "AJUSTE_BATIDA": (DP,), "COMPENSACAO": (DP,), "FOLGA_BANCO": (DP,),
 }
 STATUS_DA_ETAPA = {SUPERVISOR: "AGUARDANDO_SUPERVISOR", DP: "AGUARDANDO_DP"}
 SAUDE = ("ATESTADO", "AFASTAMENTO")
@@ -213,7 +216,7 @@ def criar(conn: Connection, quem: Quem, dados: dict, *, origem: str = "GESTAO") 
             conn, dados["documento_base64"], colaborador_id=colaborador_id, tipo_ocorrencia=tipo,
             nome_original=str(dados.get("documento_nome") or ""), sigiloso=tipo in SAUDE)
 
-    etapas = ETAPAS[tipo]
+    etapas = validacao.etapas_do_tipo(conn, tipo)
     linha = db.um(conn, """
         INSERT INTO ponto.ocorrencias (colaborador_id, tipo, data_inicio, data_fim, horario,
             obra_id, dia_trabalhado, minutos, descricao, cid, medico, crm, documento_id, status,
@@ -256,7 +259,7 @@ _SQL = """
 """
 
 
-def _para_json(o: dict, quem: Quem) -> dict:
+def _para_json(o: dict, quem: Quem, etapas: tuple | None = None) -> dict:
     sigilo = o["tipo"] in SAUDE and not quem.dp and quem.colaborador_id != o["colaborador_id"]
     from .espelho import ROTULO_TIPO
     return {
@@ -279,7 +282,7 @@ def _para_json(o: dict, quem: Quem) -> dict:
         "supervisor": o.get("supervisor_nome"), "supervisor_em": horario.texto(o.get("supervisor_em")),
         "dp": o.get("dp_nome"), "dp_em": horario.texto(o.get("dp_em")),
         "motivo_negativa": o.get("motivo_negativa"),
-        "etapas": list(ETAPAS[o["tipo"]]), "etapa_atual": _etapa_atual(o),
+        "etapas": list(etapas or ETAPAS[o["tipo"]]), "etapa_atual": _etapa_atual(o),
         "criado_em": horario.texto(o["criado_em"]),
     }
 
@@ -295,7 +298,7 @@ def obter(conn: Connection, ocorrencia_id: int, quem: Quem) -> dict:
     o = _bruta(conn, ocorrencia_id)
     if not pessoa_no_alcance(conn, quem, o["colaborador_id"]):
         raise NaoEncontrado("pedido não encontrado")
-    j = _para_json(o, quem)
+    j = _para_json(o, quem, validacao.etapas_do_tipo(conn, o["tipo"]))
     j["pode_decidir"] = (j["etapa_atual"] is not None
                          and _pode_na_etapa(conn, quem, o, j["etapa_atual"]))
     return j
@@ -322,8 +325,9 @@ def listar(conn: Connection, quem: Quem, *, status: str | None = None,
         params["obras"] = list(quem.obras) or [0]
     sql += " ORDER BY oc.id DESC LIMIT :lim"
     saida = []
+    regra = {t: validacao.etapas_do_tipo(conn, t) for t in ETAPAS}
     for o in db.todos(conn, sql, **params):
-        j = _para_json(o, quem)
+        j = _para_json(o, quem, regra[o["tipo"]])
         j["pode_decidir"] = (j["etapa_atual"] is not None
                              and _pode_na_etapa(conn, quem, o, j["etapa_atual"]))
         saida.append(j)
@@ -375,8 +379,11 @@ def decidir(conn: Connection, ocorrencia_id: int, quem: Quem, *, aprovar: bool,
         logger.info("Ponto: pedido %d NEGADO por %s", ocorrencia_id, quem.nome)
         return obter(conn, ocorrencia_id, quem)
 
-    etapas = ETAPAS[o["tipo"]]
-    seguinte = etapas[etapas.index(etapa) + 1] if etapas.index(etapa) + 1 < len(etapas) else None
+    etapas = validacao.etapas_do_tipo(conn, o["tipo"])
+    if etapa in etapas:
+        seguinte = etapas[etapas.index(etapa) + 1] if etapas.index(etapa) + 1 < len(etapas) else None
+    else:   # a regra mudou com o pedido na fila: depois do encarregado, só o DP, se houver
+        seguinte = DP if etapa == SUPERVISOR and DP in etapas else None
     novo_status = STATUS_DA_ETAPA[seguinte] if seguinte else "APROVADA"
     db.executar(conn, f"""
         UPDATE ponto.ocorrencias SET status = :s, {campos[0]} = :u, {campos[1]} = :n,

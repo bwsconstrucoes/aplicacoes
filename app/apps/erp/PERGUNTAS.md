@@ -309,6 +309,12 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   um dia com duas batidas esquecidas são dois pedidos)
 - Quais batidas foram feitas com a obra escolhida na lista (não detectada), e
   com que justificativa? 🔒
+- O que está esperando validação hoje? De quem? Há quanto tempo? 🔒 ⚠️ (depende de
+  quem pergunta: o encarregado vê só as obras dele; "esperando validação" junta
+  pedidos, batidas em conferência, mosaicos e aparelhos)
+- Quem valida o ajuste de batida? E a compensação? (a regra está na Configuração;
+  atestado é sempre do DP)
+- Qual pedido está parado há mais de 3 dias? 🔒
 - Qual o raio da cerca da obra X? Ela bloqueia ou manda para conferência?
 - **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
   reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas

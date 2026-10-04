@@ -65,10 +65,10 @@ def test_corrigir_o_dia_mostra_o_que_falta_e_barra_o_pedido_errado(app, mundo, b
     with banco.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM ponto.ocorrencias WHERE tipo = 'AJUSTE_BATIDA'")).scalar() == 2
 
-    # o supervisor aprova os dois e o dia fecha
-    sup = como(app, mundo["sup"])
+    # o DP (o padrão de quem valida) aprova os dois e o dia fecha
+    dp = como(app, mundo["dp"])
     for p in r.get_json()["pedidos"]:
-        ok = sup.post(f"/erp/api/ponto/ocorrencias/{p['id']}/etapa-supervisor", json={"aprovar": True})
+        ok = dp.post(f"/erp/api/ponto/afastamentos/{p['id']}/etapa-dp", json={"aprovar": True})
         assert ok.status_code == 200, ok.get_json()
     d = _dia(cel, seg)
     assert d["situacao"] == "OK" and [b["status"] for b in d["batidas"]][-2:] == ["AJUSTADA", "AJUSTADA"]
