@@ -11792,6 +11792,10 @@ está para ser pago. Agrupar por obra etc."*
   cadastro. Sem nada disso, a linha fica sem valor e não entra. A coluna Valor
   diz de onde veio. ⚠️ **SUPOSIÇÃO:** "pede a cadastrada" = a coluna G contém
   "cadastr" ou "sim" — o texto exato do formulário não foi visto.
+- **A diária do cadastro é a mesma coluna dos Diaristas** (coluna 49 de "Dados
+  Documentos") — confirmado pelo dono em 04/10/2026. Quando o texto da coluna G
+  não é reconhecido como "pede a cadastrada", a linha mostra o que veio escrito,
+  para conferir no primeiro uso.
 - **Lista agrupada:** "Agrupar por" obra (padrão), conta, tipo de despesa,
   solicitação, colaborador ou sem agrupar. Cada grupo tem cabeçalho com linhas,
   quantas a pagar, pendências e o total — que acompanham a marcação —, caixinha
@@ -11833,7 +11837,7 @@ está para ser pago. Agrupar por obra etc."*
 | ~~confirmar o favorecido da SP quando o arquivo é SomaPay~~ — **confirmado em 03/10/2026: CNPJ da BWS**; e a data de pagamento = hoje, também confirmada | — |
 | depois: em Conciliação → Contas, escolher o fornecedor (busca) e a obra dos movimentos de cada conta | ele |
 | ~~publicar as levas 146 a 148~~ — **publicadas em 02/10/2026** (main em `c9fdb79`, suíte inteira com 7.822 verdes) (sem migração nova) e, em seguida, "Atualizar cadastro" em Colaboradores para trazer o valor da diária | ele |
-| **publicar as levas 170 a 172** (migração **047**: apertar "Aplicar atualizações do banco" no mesmo momento) e depois "Atualizar cadastro" para trazer os documentos da ficha | ele |
+| ~~publicar as levas 170 a 172~~ — **publicadas em 03/10/2026** (main em `ec7977f`, suíte inteira 8.009 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (**047**) e depois "Atualizar cadastro" para trazer os documentos da ficha | ele |
 | DC: compartilhar a planilha da DC com a conta de serviço do Google, se a tela disser "permissão" | ele |
 | DC: confirmar o texto da coluna G ("valor da diária") quando a solicitação pede a diária cadastrada (leva 172 supõe "cadastr" ou "sim") e as colunas da aba "Data base BeeVale" | ele |
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
