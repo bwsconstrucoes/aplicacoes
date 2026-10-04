@@ -183,8 +183,13 @@
     <div class="cartao">
       <h2 id="ola">Olá</h2>
       <div id="i-local" class="aviso info">📍 Procurando a sua localização…</div>
-      <label for="i-obra">Obra (escolhida pela localização)</label>
-      <select id="i-obra"></select>
+      <div id="i-escolha" class="oculto">
+        <label for="i-obra">Em que obra você está?</label>
+        <select id="i-obra"></select>
+        <p class="pequeno">A lista só aparece quando o celular não acha você dentro de uma obra. Vale para
+          obra ainda sem localização cadastrada (a batida vai para conferência). Obra com cerca só aceita
+          quem está dentro dela.</p>
+      </div>
       <button class="btn grande" id="btn-bater" type="button">Tirar foto e bater ponto</button>
       <button class="link" id="btn-sem-foto" type="button">A câmera não abre? Bater sem foto</button>
     </div>
@@ -417,11 +422,15 @@ function preencherObras(select, obras, principal) {
 
 // Onde a pessoa está, em relação às obras dela. É só AVISO: quem decide a obra
 // e se a batida entra é o servidor, pela cerca (fora da área da obra, não entra).
+// A LISTA DE OBRAS SÓ APARECE QUANDO A OBRA NÃO FOI DETECTADA (pedido do dono,
+// 04/10/2026): achou a cerca, a obra é aquela e pronto; não achou, a pessoa escolhe.
 function mostrarLocal(l) {
   const caixa = $("i-local"); if (!caixa) return;
+  const escolha = mostrar => $("i-escolha").classList.toggle("oculto", !mostrar);
   if (!l) {
     caixa.className = "aviso erro";
     caixa.textContent = "📍 Localização desligada. Ligue a localização do celular: fora da área da obra o ponto não é registrado.";
+    escolha(true);
     return;
   }
   const medidas = (OBRAS || []).filter(o => o.latitude !== null && o.longitude !== null)
@@ -430,15 +439,17 @@ function mostrarLocal(l) {
   const folga = Math.min(l.precisao || 0, 150);
   if (dentro) {
     caixa.className = "aviso ok"; caixa.textContent = `📍 Você está na obra ${dentro.o.codigo} — ${dentro.o.nome}.`;
-    $("i-obra").value = dentro.o.codigo;
+    $("i-obra").value = dentro.o.codigo; escolha(false);
   } else if (medidas.length && medidas[0].d - folga <= medidas[0].o.raio_metros) {
     caixa.className = "aviso ambar"; caixa.textContent = `📍 Você está na borda da obra ${medidas[0].o.codigo}. Pode bater; a batida vai para conferência. Se puder, chegue mais perto.`;
-    $("i-obra").value = medidas[0].o.codigo;
+    $("i-obra").value = medidas[0].o.codigo; escolha(false);
   } else if (medidas.length) {
     const d = medidas[0].d, txt = d >= 1000 ? `${(d / 1000).toFixed(1).replace(".", ",")} km` : `${Math.round(d)} m`;
     caixa.className = "aviso erro"; caixa.textContent = `📍 Você está a ${txt} da obra ${medidas[0].o.codigo}. Fora da área da obra o ponto não é registrado.`;
+    escolha(true);
   } else {
-    caixa.className = "aviso info"; caixa.textContent = "📍 Localização encontrada.";
+    caixa.className = "aviso info"; caixa.textContent = "📍 Nenhuma obra sua tem localização cadastrada: escolha a obra abaixo.";
+    escolha(true);
   }
 }
 

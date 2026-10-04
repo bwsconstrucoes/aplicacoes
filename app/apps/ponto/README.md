@@ -134,7 +134,9 @@ de obra. E quero ainda que a obra seja detectada automaticamente."*
 - **A obra é a da cerca** (`core/geo.py::localizar_obra`): o servidor mede a
   distância do celular a todas as obras ativas com coordenada (no tablet, só às
   obras do aparelho) e fica com a cerca em que ele está. A obra que vem da tela
-  é só sugestão — escolher outra não muda nada.
+  é só sugestão — escolher outra não muda nada. No celular, **a lista de obras só
+  aparece quando a obra não foi detectada** (fora das cercas, sem localização, ou
+  obra sem coordenada); achou a cerca, a tela diz "Você está na obra X" e pronto.
 - **Fora de todas as cercas: recusada**, com a distância na mensagem ("fora da
   área da obra: 1,4 km da obra PG-A"), linha em `recusas` e, no dia seguinte, o
   alerta "Tentou bater fora da área da obra" — quem estava em serviço fora
