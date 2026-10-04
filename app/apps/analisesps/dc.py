@@ -286,6 +286,10 @@ def pede_diaria_cadastrada(flag) -> bool:
 def valor_da_linha(linha: dict, diaria_cadastrada) -> tuple:
     """(valor, motivos, de onde veio) — o valor a pagar de uma linha da aba Data.
 
+    A diária "do cadastro" é a MESMA coluna que a tela de Diaristas usa
+    (`colaboradores.valores_de_diaria` — coluna 49 de "Dados Documentos");
+    confirmado pelo dono em 04/10/2026.
+
     O dono, 03/10/2026: *"A DC pode vir com valor ou não quando se trata de
     diária. Ela pode pedir que seja paga pelo valor de diária cadastrada, nesse
     caso o sistema calcula."* Então, em ordem:
@@ -405,6 +409,7 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
             "origem_valor": origem_valor,
             "rotulo_origem_valor": ORIGEM_DO_VALOR.get(origem_valor, ""),
             "pede_diaria_cadastrada": pede_diaria_cadastrada(linha["valor_diaria_flag"]),
+            "texto_da_diaria": " ".join(linha["valor_diaria_flag"].split())[:60],
             "valor_diaria_informada": formatos.para_numero(linha["valor_diaria"]),
             "valor_diaria_cadastrada": diarias.get(linha["cpf"]),
             "valor": valor, "descricao": linha["descricao"],

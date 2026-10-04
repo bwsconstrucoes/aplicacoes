@@ -304,7 +304,8 @@
             {% if p.quantidade %}{{ p.quantidade|int if p.quantidade == p.quantidade|int else p.quantidade }}
               {% set diaria = p.valor_diaria_cadastrada if p.origem_valor == 'cadastro' else (p.valor_diaria_informada or p.valor_diaria_cadastrada) %}
               {% if diaria %}× {{ diaria|moeda }}{% endif %}{% else %}—{% endif %}
-            {% if p.pede_diaria_cadastrada %}<br><span class="cartao-dica">pede a cadastrada</span>{% endif %}
+            {% if p.pede_diaria_cadastrada %}<br><span class="cartao-dica">pede a cadastrada</span>
+            {% elif p.texto_da_diaria %}<br><span class="cartao-dica" title="O que a solicitação escreveu no campo do valor da diária">“{{ p.texto_da_diaria }}”</span>{% endif %}
           </td>
           <td class="num valor-final"><b>{{ p.valor|moeda }}</b>
             {% if p.rotulo_origem_valor %}<br><span class="cartao-dica">{{ p.rotulo_origem_valor }}</span>{% endif %}
