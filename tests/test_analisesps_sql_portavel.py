@@ -494,7 +494,11 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     # E a quinta, de 01/10/2026: o relatório da folha aberta em Excel
     # (`folha_relatorio.py`). Monta a lista da tela — as pessoas de UMA folha,
     # ~500 — e os agrupamentos, que são dezenas de linhas. Não lê a base de SPs.
+    # E a sexta, de 03/10/2026: a planilha de CADASTRO do BeeVale/SomaPay
+    # (`cadastro_planilha.py`) — só as pessoas marcadas na janela, um punhado.
+    # Não lê a base de SPs.
     LIBERADO_EM = {"beevale.py": {"openpyxl"},
+                   "cadastro_planilha.py": {"openpyxl"},
                    "lote_excel.py": {"openpyxl"},
                    "folha_geracao.py": {"openpyxl"},
                    "folha_relatorio.py": {"openpyxl"},

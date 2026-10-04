@@ -1,0 +1,116 @@
+{# ---------------------------------------------------------------------------
+   PLANILHA DE CADASTRO (BeeVale / SomaPay) — 03/10/2026, igual em todas as
+   folhas. O dono: *"às vezes pode acontecer de eu querer pagar um arquivo, aí,
+   opa, dois não estão cadastrados ainda. Aí vou lá, gera a planilha dessas duas
+   pessoas, cadastra, e processa novamente."*
+
+   A lista da janela sai das linhas da tabela da tela (`tr[data-cpf]`), com o
+   nome de `data-nome` (ou do texto da linha). Ninguém vem marcado: é escolher
+   quem cadastrar, à parte de quem vai ser pago.
+   --------------------------------------------------------------------------- #}
+<button type="button" class="btn secundario" id="cp-abrir"
+        title="Gerar a planilha de cadastro do BeeVale ou da SomaPay das pessoas escolhidas">
+  Planilha de cadastro</button>
+
+<dialog class="dialogo" id="cp-dialogo">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Planilha de cadastro</h3>
+  <p class="cartao-dica">Para cadastrar no portal quem ainda não tem cadastro.
+    Os dados vêm da ficha do colaborador.</p>
+  <div class="cp-destino">
+    <label><input type="radio" name="cp-destino" value="beevale" checked> BeeVale</label>
+    <label><input type="radio" name="cp-destino" value="somapay"> SomaPay</label>
+  </div>
+  <input type="search" id="cp-procura" placeholder="Procurar nome ou CPF…"
+         autocomplete="off" data-sem-busca aria-label="Procurar colaborador">
+  <div class="cp-lista" id="cp-lista"></div>
+  <p class="cartao-dica" id="cp-contagem">nenhum selecionado</p>
+  <div class="lat-acoes">
+    <button type="button" class="btn" id="cp-gerar" disabled>Gerar planilha</button>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  const abrir = document.getElementById("cp-abrir");
+  const dialogo = document.getElementById("cp-dialogo");
+  if (!abrir || !dialogo) return;
+  const lista = document.getElementById("cp-lista");
+  const procura = document.getElementById("cp-procura");
+  const contagem = document.getElementById("cp-contagem");
+  const gerar = document.getElementById("cp-gerar");
+  const semAcento = t => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+  function pessoasDaTela() {
+    const vistas = new Map();
+    document.querySelectorAll("main tr[data-cpf]").forEach(tr => {
+      const cpf = (tr.dataset.cpf || "").replace(/\D/g, "");
+      if (cpf.length !== 11 || vistas.has(cpf)) return;
+      const nome = tr.dataset.nome
+        || ((tr.querySelector("b") || {}).textContent || "").trim() || cpf;
+      vistas.set(cpf, nome);
+    });
+    return [...vistas.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }
+  function contar() {
+    const n = lista.querySelectorAll("input:checked").length;
+    contagem.textContent = n ? n + " selecionado(s)" : "nenhum selecionado";
+    gerar.disabled = !n;
+  }
+  abrir.addEventListener("click", () => {
+    lista.innerHTML = "";
+    pessoasDaTela().forEach(([cpf, nome]) => {
+      const rotulo = document.createElement("label");
+      rotulo.className = "cp-item";
+      rotulo.dataset.busca = semAcento(nome + " " + cpf);
+      rotulo.innerHTML = '<input type="checkbox"> <span></span> <small></small>';
+      rotulo.querySelector("input").value = cpf;
+      rotulo.querySelector("input").dataset.nome = nome;
+      rotulo.querySelector("span").textContent = nome;
+      rotulo.querySelector("small").textContent = cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+      lista.appendChild(rotulo);
+    });
+    if (!lista.children.length) lista.innerHTML = '<p class="cartao-dica">Nenhum colaborador na lista da tela.</p>';
+    procura.value = "";
+    contar();
+    dialogo.showModal();
+    procura.focus();
+  });
+  lista.addEventListener("change", contar);
+  procura.addEventListener("input", () => {
+    const alvo = semAcento(procura.value.trim());
+    lista.querySelectorAll(".cp-item").forEach(l => { l.hidden = alvo && !l.dataset.busca.includes(alvo); });
+  });
+  gerar.addEventListener("click", async () => {
+    const marcados = [...lista.querySelectorAll("input:checked")];
+    const destino = dialogo.querySelector('input[name="cp-destino"]:checked').value;
+    const nomes = {};
+    marcados.forEach(c => { nomes[c.value] = c.dataset.nome; });
+    gerar.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.folha_cadastro_planilha') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({destino: destino, cpfs: marcados.map(c => c.value), nomes: nomes})});
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert(d.erro || "Não foi possível gerar a planilha.");
+        return;
+      }
+      const avisos = JSON.parse(decodeURIComponent(r.headers.get("X-Avisos") || "%5B%5D"));
+      const nome = decodeURIComponent((r.headers.get("Content-Disposition") || "").split("''")[1] || "cadastro.xlsx");
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = nome;
+      document.body.appendChild(a); a.click(); a.remove();
+      if (avisos.length) {
+        alert("Planilha gerada, mas faltam dados na ficha de " + avisos.length +
+              " colaborador(es) — complete no portal ou na ficha:\n\n" + avisos.join("\n"));
+      }
+      dialogo.close();
+    } catch (e) {
+      alert("Não foi possível gerar a planilha: " + e);
+    } finally { contar(); }
+  });
+})();
+</script>

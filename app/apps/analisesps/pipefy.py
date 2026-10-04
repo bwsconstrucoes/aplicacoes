@@ -578,6 +578,17 @@ def criar_card(pipe_id, titulo: str, valores: list, token=None) -> dict:
 CAMPOS_POR_VEZ = 30
 
 
+def mover_card(card_id, fase_id, token=None) -> None:
+    """Move um card para outra fase. ⚠️ SEM VOLTA por aqui (volta-se no Pipefy).
+
+    Existe para a DC (03/10/2026): depois de gerar, os cards de origem vão para
+    a fase de processados, como o script do dono fazia."""
+    card = _numero_do_card(card_id)
+    fase = _numero_do_card(fase_id)
+    graphql("mutation { moveCardToPhase(input: {card_id: %d, destination_phase_id: %d}) "
+            "{ clientMutationId } }" % (card, fase), token)
+
+
 def atualizar_campos(card_id, valores: list, token=None) -> int:
     """Grava vários campos de um card já criado, em poucas idas à API.
 

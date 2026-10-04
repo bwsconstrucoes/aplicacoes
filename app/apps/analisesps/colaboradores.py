@@ -41,6 +41,7 @@ bloco só as faixas de coluna que interessam — ver `_faixas_das_colunas`.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 
@@ -246,6 +247,30 @@ COLUNAS_OPCIONAIS = {
     "valor_diaria": ["Valor da Diária", "Valor Diária", "Valor da Diaria",
                      "Valor Diaria", "Valor do Dia", "Diária", "Diaria"],
 }
+
+# OS DOCUMENTOS DA FICHA (migração 047, 03/10/2026) — só para a planilha de
+# cadastro da SomaPay, que pede RG, órgão, nome da mãe, endereço… Ficam num JSON
+# (`colaborador.documentos`); os nomes são os prováveis e a falta de um deles NÃO
+# avisa na carga — quem avisa é a planilha de cadastro, na hora de gerar.
+COLUNAS_DOCUMENTOS = {
+    "rg": ["RG", "Nº RG", "Número do RG", "Numero do RG", "RG Número", "Identidade"],
+    "rg_emissao": ["Data Emissão RG", "Data de Emissão do RG", "Data Emissao RG",
+                   "Emissão RG", "Data de Expedição", "Data Expedição RG"],
+    "rg_orgao": ["Órgão Emissor RG", "Órgão Emissor", "Orgao Emissor",
+                 "Órgão Expedidor", "Orgao Expedidor"],
+    "rg_uf": ["UF Emissão", "UF Emissão RG", "UF do RG", "UF RG", "UF Emissor"],
+    "nome_mae": ["Nome da Mãe", "Nome da Mae", "Mãe", "Filiação Mãe"],
+    "sexo": ["Sexo", "Gênero", "Genero"],
+    "cep": ["CEP"],
+    "logradouro": ["Logradouro", "Endereço", "Endereco", "Rua"],
+    "bairro": ["Bairro"],
+    "numero": ["Número", "Numero", "Nº"],
+    "complemento": ["Complemento"],
+    "cidade": ["Cidade", "Município", "Municipio"],
+    "estado": ["Estado", "UF"],
+    "email": ["E-mail", "Email", "E-mail pessoal"],
+}
+
 
 # A posição de uma opcional quando o NOME não casa (índice a partir de zero). O
 # valor da diária está na coluna 49 da aba "Dados Documentos" (dono, 02/10/2026).
@@ -496,6 +521,11 @@ def _achar_colunas(cabecalho: list) -> tuple[dict, list]:
                 f'a coluna "{aceitos[0]}" não existe na planilha com esse nome. '
                 f"Consequência: {OPCIONAIS_QUE_AVISAM[campo]}")
 
+    for campo, aceitos in COLUNAS_DOCUMENTOS.items():
+        i = achar_coluna(normalizado, aceitos)
+        if i is not None and i not in posicoes.values():
+            posicoes["doc_" + campo] = i
+
     # O código do Fortes na ficha — a coluna BU de "Dados Documentos" (dono,
     # 03/10/2026), procurada pelo nome e, sem o nome, pela posição.
     i_id = achar_coluna(normalizado, COLUNAS_DO_ID_NA_FICHA)
@@ -528,6 +558,10 @@ def _registro(linha: dict, posicoes: dict) -> dict | None:
         registro["_data_nascimento"] = _data_de_nascimento(cru.get("data_nascimento"))
     if "valor_diaria" in cru:
         registro["_valor_diaria"] = formatos.para_numero(cru.get("valor_diaria"))
+    docs = {c[4:]: str(v or "").strip() for c, v in cru.items()
+            if c.startswith("doc_") and str(v or "").strip()}
+    if any(c.startswith("doc_") for c in cru):
+        registro["_documentos"] = docs
     for campo in CAMPOS[1:]:
         valor = cru.get(campo, "")
         if campo in DATAS:
@@ -563,6 +597,12 @@ def _gravar(conn, registros: list) -> int:
     # O valor da diária: só quando a coluna veio na planilha. Vazio na planilha
     # LIMPA o valor guardado — a diária que saiu do cadastro não pode continuar
     # sendo paga pelo valor antigo.
+    documentos = [(json.dumps(r["_documentos"], ensure_ascii=False), r["cpf"])
+                  for r in registros if "_documentos" in r]
+    if documentos and tem_documentos():
+        conn.executemany(
+            "UPDATE analisesps.colaborador SET documentos = ? WHERE cpf = ?",
+            documentos)
     diarias = [(r["_valor_diaria"], r["cpf"]) for r in registros
                if "_valor_diaria" in r]
     if diarias and tem_valor_diaria():
@@ -591,6 +631,43 @@ def tem_nascimento() -> bool:
     """A migração 043 já rodou? (a coluna da data de nascimento)"""
     from .db import tem_coluna
     return tem_coluna("colaborador", "data_nascimento")
+
+
+def tem_documentos() -> bool:
+    """A migração 047 já rodou? (os documentos da ficha)"""
+    from .db import tem_coluna
+    return tem_coluna("colaborador", "documentos")
+
+
+def documentos_de(cpfs) -> dict:
+    """`{cpf: {nascimento, celular, matricula, tipo_contrato, obra_codigo,
+    data_admissao, nome, cargo, documentos: {...}}}` — o que as planilhas de
+    cadastro (BeeVale e SomaPay) pedem. Uma consulta para todos."""
+    from .db import consultar
+    from .folha_rateio import so_digitos
+    lista = sorted({so_digitos(c) for c in cpfs or [] if len(so_digitos(c)) == 11})
+    if not lista:
+        return {}
+    extras = (", data_nascimento" if tem_nascimento() else ", NULL") + \
+             (", documentos" if tem_documentos() else ", ''")
+    saida = {}
+    for i in range(0, len(lista), 500):
+        bloco = lista[i:i + 500]
+        marcas = ", ".join("?" for _ in bloco)
+        for l in consultar(
+                "SELECT cpf, nome, celular, matricula, tipo_contrato, obra_codigo, "
+                "       data_admissao, cargo" + extras +
+                f"  FROM analisesps.colaborador WHERE cpf IN ({marcas})", tuple(bloco)):
+            try:
+                docs = json.loads(l[9] or "{}") if l[9] else {}
+            except ValueError:
+                docs = {}
+            saida[l[0]] = {"cpf": l[0], "nome": l[1] or "", "celular": l[2] or "",
+                           "matricula": l[3] or "", "tipo_contrato": l[4] or "",
+                           "obra_codigo": l[5] or "", "data_admissao": l[6],
+                           "cargo": l[7] or "", "nascimento": l[8],
+                           "documentos": docs if isinstance(docs, dict) else {}}
+    return saida
 
 
 def tem_valor_diaria() -> bool:

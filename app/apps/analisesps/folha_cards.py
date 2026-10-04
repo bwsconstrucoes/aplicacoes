@@ -51,7 +51,7 @@ import datetime as _dt
 import json
 import logging
 import unicodedata
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from . import folha_geracao as geracao
 from . import formatos, pipefy
@@ -80,7 +80,15 @@ GRUPOS = {
     ("alimentacao", ""): ("Auxílio Alimentação", "386045055", "383846061"),
     ("diaria", ""): ("Pagamento de Diárias", "404847566", "383928967"),
     ("gratificacao", ""): ("Gratificados e Mensalistas", "386045084", "383928967"),
+    # A DC (03/10/2026): o tipo de despesa vem de cada linha (o Record ID do
+    # tipo de despesa na aba "Plano Financeiro"), não do grupo.
+    ("dc", ""): ("Despesas com Colaboradores", "", ""),
 }
+
+# O que o `geraspbeevale.gs` do dono punha na SP da DC e as outras não têm: a
+# etiqueta própria e o campo de automação "BeeVale".
+ETIQUETA_DA_DC = "317521565"
+AUTOMACAO_DA_DC = "BeeVale"
 
 # Os tetos do cenário: 75 pares de centro de custo no card de Despesa, e a conexão
 # de volta liga até 10 SPs.
@@ -422,9 +430,11 @@ def _categoria_da_verba(descricao: str, plano: dict) -> tuple:
     return _categoria_do_omie(descricao)
 
 
-def rateio_multiplo(obras: list, codigo_categoria: str) -> str:
+def rateio_multiplo(obras: list, codigo_categoria: str, categorias=None) -> str:
     """O texto do campo "Rateio múltiplo": o JSON do OMIE, como o script do
-    BeeVale escreve (`_formatRateioText_`). `obras`: [{obra, omie, valor}]."""
+    BeeVale escreve (`_formatRateioText_`). `obras`: [{obra, omie, valor}].
+    `categorias`: [{codigo, valor}] quando a SP tem mais de uma (a DC, em que
+    cada solicitação tem o seu tipo de despesa); sem elas, uma só, 100%."""
     from .rateio import _percentuais_min_erro
     validas = [o for o in obras if Decimal(str(o["valor"])) > 0]
     pct = _percentuais_min_erro([float(o["valor"]) for o in validas],
@@ -432,8 +442,16 @@ def rateio_multiplo(obras: list, codigo_categoria: str) -> str:
     distribuicao = [{"cCodDep": o["omie"], "cDesDep": o["obra"], "nPerDep": p,
                      "nValDep": None} for o, p in zip(validas, pct)]
     total = sum((Decimal(str(o["valor"])) for o in validas), Decimal("0.00"))
-    categorias = [{"codigo_categoria": codigo_categoria, "percentual": 100,
-                   "valor": float(total.quantize(CENTAVO))}]
+    cats = [c for c in categorias or [] if Decimal(str(c["valor"])) > 0]
+    if len(cats) > 1:
+        pct_cat = _percentuais_min_erro([float(c["valor"]) for c in cats],
+                                        CASAS_DO_PERCENTUAL)
+        categorias = [{"codigo_categoria": c["codigo"], "percentual": p,
+                       "valor": float(Decimal(str(c["valor"])).quantize(CENTAVO))}
+                      for c, p in zip(cats, pct_cat)]
+    else:
+        categorias = [{"codigo_categoria": cats[0]["codigo"] if cats else codigo_categoria,
+                       "percentual": 100, "valor": float(total.quantize(CENTAVO))}]
     compacto = {"separators": (",", ":"), "ensure_ascii": False}
     return ('"distribuicao": ' + json.dumps(distribuicao, **compacto) + "\n"
             + '"categorias": ' + json.dumps(categorias, **compacto))
@@ -549,6 +567,13 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
         except ErroDosCards as e:
             bloqueios.append(str(e))
             continue
+        if verba == "dc":
+            grupo_dc = _grupo_da_dc(analise, r, escolhidas, todas_as_contas,
+                                    andamento_atual, achar_tipo, ler_pipes, omie,
+                                    destino_da_conta, bloqueios, esperado_por_conta)
+            if grupo_dc:
+                grupos.append(grupo_dc)
+            continue
         try:
             linhas = [l for l in fpg.linhas_para_pagar(ano, mes, tipo, [verba])
                       if l["valor"] > 0
@@ -656,6 +681,155 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             "arquivos": [a["id"] for a in arquivos]}, sp
 
 
+# ---------------------------------------------------------------------------
+# A DC — DESPESAS COM COLABORADORES (03/10/2026)
+#
+# O dono: *"faz uma movimentação dos cards para uma outra fase (…) e gera uma
+# solicitação de pagamento (…) colocar os links (…) do arquivo de pagamento"*.
+# É o que o `geraspbeevale.gs` fazia, conta por conta: uma SP com o rateio por
+# obra E por categoria (cada solicitação tem o seu tipo de despesa), o tipo de
+# despesa da SP = o da maior categoria, e depois os cards de origem marcados
+# (`mover_card` = Sim) e movidos para a fase de processados.
+#
+# As linhas vêm do LOTE guardado na geração (`dc.lote_da_analise`), não da
+# planilha: o que vai para o Pipefy é exatamente o que foi para o arquivo.
+# ---------------------------------------------------------------------------
+def _grupo_da_dc(analise, r, escolhidas, todas_as_contas, andamento_atual,
+                 achar_tipo, ler_pipes, omie, destino_da_conta, bloqueios,
+                 esperado_por_conta):
+    from . import dc
+    lote = dc.lote_da_analise(analise["id"])
+    if not lote:
+        bloqueios.append(
+            "Despesas com colaboradores: o registro do que esta geração levou não foi "
+            "encontrado (gerada antes da atualização do banco?). Exclua e gere de novo.")
+        return None
+    chave = _chave_do_lote("dc", escolhidas, todas_as_contas)
+    ja = contas_lancadas(andamento_atual, "dc")
+    repetidas = [c for c in escolhidas
+                 if c in ja and ((andamento_atual.get(chave) or {}).get("sps") or {}).get(c) is None]
+    if repetidas:
+        bloqueios.append("Despesas com colaboradores: a(s) conta(s) " + ", ".join(repetidas)
+                         + " já foi(ram) lançada(s) no Pipefy. Desmarque-a(s) para lançar "
+                         "as demais.")
+    linhas = [l for l in lote["linhas"] if l["valor"] > 0
+              and " ".join(str(l.get("conta") or "").split()) in escolhidas]
+    if not linhas:
+        return None
+
+    por_conta: dict = {}
+    for l in linhas:
+        conta = " ".join(str(l.get("conta") or "").split())
+        c = por_conta.setdefault(conta, {"obras": {}, "categorias": {}, "tipos": {},
+                                         "pessoas": set(), "cards": set(),
+                                         "valor": Decimal("0.00")})
+        obra = _chave(l["obra"]) or "(SEM OBRA)"
+        c["obras"][obra] = c["obras"].get(obra, Decimal("0.00")) + l["valor"]
+        cat = str(l.get("categoria") or "").strip()
+        c["categorias"][cat] = c["categorias"].get(cat, Decimal("0.00")) + l["valor"]
+        nome_tipo = l.get("tipo_despesa") or ""
+        t = c["tipos"].setdefault(nome_tipo, {"valor": Decimal("0.00"),
+                                              "record_id": l.get("record_id") or ""})
+        t["valor"] += l["valor"]
+        c["pessoas"].add(l["cpf"])
+        if l.get("card_id"):
+            c["cards"].add(str(l["card_id"]))
+        c["valor"] += l["valor"]
+        if not cat:
+            bloqueios.append(f'tipo de despesa "{nome_tipo}" sem Código Omie na aba '
+                             '"Plano Financeiro" (categoria do rateio).')
+
+    sps, pessoas, nomes_dos_tipos = [], set(), set()
+    for conta, c in sorted(por_conta.items()):
+        esperado_por_conta[conta] = esperado_por_conta.get(conta, Decimal("0.00")) + c["valor"]
+        pessoas |= c["pessoas"]
+        if not conta:
+            bloqueios.append(f"Despesas com colaboradores: R$ {formatos.moeda(c['valor'])} "
+                             'sem conta de origem (obra sem conta na aba "C. Diários").')
+        obras = []
+        for obra, valor in sorted(c["obras"].items(), key=lambda x: -x[1]):
+            codigo = omie.get(obra, "")
+            if not codigo:
+                bloqueios.append(f'a obra "{obra}" não tem Código Omie na aba "C. Diários".')
+            obras.append({"obra": obra, "valor": valor, "omie": codigo})
+        # O tipo de despesa da SP: o da MAIOR parte (o script usava o primeiro e
+        # avisava); o detalhe por categoria fica no rateio.
+        maior_nome, maior = max(c["tipos"].items(), key=lambda x: x[1]["valor"])
+        nomes_dos_tipos |= set(c["tipos"])
+        tipo_sp = maior["record_id"] or (achar_tipo(maior_nome) if ler_pipes else "")
+        if ler_pipes and not tipo_sp:
+            bloqueios.append(f'tipo de despesa "{maior_nome}" sem Record ID na aba "Plano '
+                             'Financeiro" da planilha das SPs.')
+        categorias = [{"codigo": k, "valor": v} for k, v in
+                      sorted(c["categorias"].items(), key=lambda x: -x[1]) if k]
+        arquivo = next((a for a in r["arquivos"] if a["conta"] == conta), {})
+        destino = destino_da_conta.get(conta) or ""
+        sp_item = {"conta": conta, "valor": c["valor"], "pessoas": len(c["pessoas"]),
+                   "link": arquivo.get("link") or "", "destino": destino,
+                   "link_relatorio": ((r.get("relatorios") or {}).get(conta)
+                                      or {}).get("link") or "",
+                   "obras": obras, "tipo_sp": tipo_sp or "",
+                   "cards_de_origem": sorted(c["cards"]),
+                   "tipos": [{"nome": k, "valor": v["valor"]} for k, v in
+                             sorted(c["tipos"].items(), key=lambda x: -x[1]["valor"])],
+                   "rateio": rateio_multiplo(obras, "", categorias) if obras else ""}
+        if len(c["tipos"]) > 1:
+            sp_item["observacao"] = (
+                f"Mais de um tipo de despesa nesta conta: a SP vai como "
+                f'"{maior_nome}" (o de maior valor); o detalhe por categoria vai no rateio.')
+        sp_item["descricao"] = descricao_da_dc(sp_item, analise.get("link") or "")
+        sps.append(sp_item)
+
+    return {
+        "verba": "dc", "chave": chave, "rotulo_verba": geracao.rotulo_da_verba("dc"),
+        # O título da SP: a data, como o script fazia.
+        "grupo": _agora().strftime("%d/%m/%Y"),
+        "tipo_sp": sps[0]["tipo_sp"] if sps else "",
+        "tipo_despesa": ", ".join(sorted(nomes_dos_tipos)),
+        "categoria": ", ".join(sorted({k for c in por_conta.values()
+                                       for k in c["categorias"] if k})),
+        "total": sum((x["valor"] for x in sps), Decimal("0.00")),
+        "pessoas": len(pessoas), "sps": sps, "dc_lote": lote["id"],
+        "cards_de_origem": sorted({x for sp in sps for x in sp["cards_de_origem"]}),
+    }
+
+
+def descricao_da_dc(sp: dict, link_analise: str) -> str:
+    """A descrição da SP da DC — a do script (`_buildCardDescription_`), com o
+    valor por obra e por tipo de despesa e o relatório."""
+    from . import dc
+    destino = geracao.ROTULO_DO_DESTINO.get(sp.get("destino") or "", "")
+    linhas = [
+        "Despesas com colaboradores",
+        f"Conta Origem: {sp['conta']}" if sp.get("conta") else "",
+        f"Arquivo de pagamento: {destino}" if destino else "",
+        f"Valor: R$ {formatos.moeda(sp['valor'])}",
+    ]
+    if sp.get("destino") == "beevale":
+        # Só informado, como no script: a SP vai pelo valor original.
+        com_taxa = (Decimal(str(sp["valor"])) * (1 + dc.ACRESCIMO_BEEVALE / 100)
+                    ).quantize(CENTAVO, rounding=ROUND_DOWN)
+        linhas.append(f"Valor BeeVale (+{formatos.moeda(dc.ACRESCIMO_BEEVALE)}%): "
+                      f"R$ {formatos.moeda(com_taxa)}")
+    cards = sp.get("cards_de_origem") or []
+    linhas += [f"Colaboradores: {sp.get('pessoas', 0)}",
+               f"Qtd IDs de origem: {len(cards)}",
+               f"IDs de origem: {', '.join(cards)}", "", "Valor por obra:"]
+    linhas += [f"- {o['obra']}: R$ {formatos.moeda(o['valor'])}" for o in sp.get("obras") or []]
+    if sp.get("tipos"):
+        linhas += ["", "Valor por tipo de despesa:"]
+        linhas += [f"- {t['nome']}: R$ {formatos.moeda(t['valor'])}" for t in sp["tipos"]]
+    linhas.append("")
+    if sp.get("link"):
+        linhas.append(f"Planilha de pagamento: {sp['link']}")
+    if sp.get("link_relatorio"):
+        linhas.append(f"Relatório (PDF): {sp['link_relatorio']}")
+    if link_analise:
+        linhas.append(f"Planilha de análise: {link_analise}")
+    return "\n".join([l for i, l in enumerate(linhas)
+                      if l or (i and linhas[i - 1])] + ["", "Gerado pelo Análise de SPs."])
+
+
 def descricao_da_sp(competencia: str, tipo: str, verba: str, sp: dict,
                     link_analise: str) -> str:
     """O texto do campo "Descrição da despesa" (`descri_o`). ⚠️ ELE É A PROVA:
@@ -753,14 +927,16 @@ def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
         ("alimenta_o_de_equipe", "Não"),
         ("colaborador_solicitante", RESPONSAVEL),
         ("parcelas", "1x Parcela"),
-        ("tipo_de_despesa", grupo["tipo_sp"]),
+        ("tipo_de_despesa", sp.get("tipo_sp") or grupo["tipo_sp"]),
         ("chave_pix_aleat_ria", CHAVE_PIX_A_ATUALIZAR),
         ("documenta_o_fiscal", favorecido["documentacao"]),
         ("link_planilha_de_an_lise", link_analise),
         ("valida_o_sp_1", "Sim"), ("lan_amento_via_api", "Sim"),
-        ("etiquetas", ETIQUETA_DA_SP),
+        ("etiquetas", ETIQUETA_DA_DC if grupo.get("verba") == "dc" else ETIQUETA_DA_SP),
         ("autoriza_o_dupla", "SIM"), ("anu_ncia_sp", "Sim"),
     ]
+    if grupo.get("verba") == "dc" and sp.get("destino") == "beevale":
+        campos.append(("automa_o_2", AUTOMACAO_DA_DC))
     return [{"campo": c, "valor": v} for c, v in campos]
 
 
@@ -795,6 +971,15 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
     vista, sp_pipe = _previa(analise_id, contas=contas)
     if vista["bloqueios"]:
         raise ErroDosCards("nenhum card foi criado: " + " ".join(vista["bloqueios"]))
+    if vista["ja_lancado"] and _cards_da_dc_a_mover(vista):
+        # A SP já existe e só falta mover os cards de origem (o Pipefy recusou
+        # da outra vez): apertar de novo termina isso, sem criar nada.
+        movidos = _mover_cards_da_dc(analise_id, vista["grupos"], vista["andamento"])
+        if movidos["falhas"]:
+            raise ErroDosCards("as SPs já existem, mas o Pipefy recusou mover "
+                               + "; ".join(movidos["falhas"]) + ".")
+        return {"ok": True, "competencia": vista["competencia"], "despesas": [],
+                "sps": [], "criados": [], "cards_movidos": movidos["movidos"]}
     if vista["ja_lancado"]:
         raise ErroDosCards(
             "este pagamento já foi lançado no Pipefy. Para relançar, cancele os cards "
@@ -850,9 +1035,56 @@ def lancar(analise_id: int, quem: str = "", contas=None) -> dict:
     logger.info("Folha: %s lançado no Pipefy por %s — %s.",
                 vista["competencia"], quem or "(sem nome)",
                 ", ".join(criados) or "nada novo")
+    # A DC: com a SP criada, os cards de origem vão para a fase de processados.
+    # Uma recusa aqui NÃO desfaz a SP — vai como aviso, e lançar de novo termina.
+    movidos = _mover_cards_da_dc(analise_id, vista["grupos"], andamento)
     return {"ok": True, "competencia": vista["competencia"], "despesas": [],
+            "cards_movidos": movidos["movidos"],
+            "avisos": ([f"SP criada, mas o Pipefy recusou mover {'; '.join(movidos['falhas'])}. "
+                        "Clique em lançar de novo para terminar."] if movidos["falhas"] else []),
             "sps": [{"conta": sp["conta"],
                      "id": (andamento[g["chave"]]["sps"][sp["conta"]])["id"],
                      "link": (andamento[g["chave"]]["sps"][sp["conta"]])["link"]}
                     for g in vista["grupos"] for sp in g["sps"]],
             "criados": criados}
+
+
+def _cards_da_dc_a_mover(vista: dict) -> list:
+    feitos = set((vista.get("andamento") or {}).get("_dc_movidos") or [])
+    return [c for g in vista.get("grupos") or [] if g.get("verba") == "dc"
+            for c in g.get("cards_de_origem") or [] if c not in feitos]
+
+
+def _mover_cards_da_dc(analise_id: int, grupos: list, andamento: dict) -> dict:
+    """Move os cards de origem das SPs da DC já criadas. Guarda cada card movido
+    no andamento: se cair no meio, a próxima vez continua de onde parou."""
+    from . import dc
+    feitos = set(andamento.get("_dc_movidos") or [])
+    saida = {"movidos": [], "falhas": []}
+    for g in grupos:
+        if g.get("verba") != "dc":
+            continue
+        estado = (andamento.get(g["chave"]) or {}).get("sps") or {}
+        for sp in g["sps"]:
+            if not (estado.get(sp["conta"]) or {}).get("completa"):
+                continue
+            for card in sp.get("cards_de_origem") or []:
+                if card in feitos:
+                    continue
+                try:
+                    dc.mover_card_de_origem(card)
+                except pipefy.ErroDoPipefy as e:
+                    saida["falhas"].append(f"o card {card} ({e})")
+                    continue
+                feitos.add(card)
+                saida["movidos"].append(card)
+                andamento["_dc_movidos"] = sorted(feitos)
+                _guardar_andamento(analise_id, andamento)
+        lote = dc.lote_da_analise(analise_id)
+        if lote and not lote["cards_movidos"] and all(
+                str(l["card_id"]) in feitos for l in lote["linhas"] if l.get("card_id")):
+            dc.marcar_cards_movidos(lote["id"])
+    if saida["movidos"]:
+        logger.info("DC: %d card(s) de origem movidos para a fase de processados.",
+                    len(saida["movidos"]))
+    return saida
