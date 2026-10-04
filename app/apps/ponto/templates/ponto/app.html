@@ -68,6 +68,37 @@
   .comprovante dd { margin:0; font-weight:700; font-size:16px; word-break:break-word; }
   .pequeno { font-size:13px; color:var(--suave); }
   .linha { display:flex; gap:8px; } .linha > * { flex:1; }
+
+  /* ---- O TABLET DA OBRA: tela cheia, câmera sempre ligada, teclado grande ---- */
+  #tela-tablet { position:fixed; inset:0; z-index:50; background:#0A1B2E; color:#fff; display:flex; flex-direction:column;
+                 padding:calc(10px + env(safe-area-inset-top)) 14px calc(10px + env(safe-area-inset-bottom)); gap:10px; }
+  .kq-topo { display:flex; align-items:center; gap:10px; }
+  .kq-topo select { flex:1; font-size:15px; padding:8px; background:#12385C; color:#fff; border:1px solid #2B5A86; }
+  .kq-relogio { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .kq-corpo { flex:1; display:flex; gap:14px; min-height:0; }
+  .kq-camera { flex:1.2; position:relative; background:#000; border-radius:18px; overflow:hidden; min-height:200px; }
+  .kq-camera video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); display:block; }
+  .kq-mira { position:absolute; inset:18% 22%; border:4px dashed rgba(255,255,255,.55); border-radius:18px; pointer-events:none; }
+  .kq-legenda { position:absolute; left:0; right:0; bottom:0; padding:12px; text-align:center; font-size:18px; font-weight:700;
+                background:linear-gradient(transparent, rgba(0,0,0,.75)); }
+  .kq-teclado { flex:1; display:flex; flex-direction:column; gap:8px; min-width:0; }
+  .kq-visor { background:#fff; color:var(--tinta); border-radius:14px; padding:12px; font-size:30px; font-weight:800; text-align:center;
+              letter-spacing:1px; min-height:62px; font-variant-numeric:tabular-nums; }
+  .kq-visor small { display:block; font-size:14px; font-weight:400; color:var(--suave); letter-spacing:0; }
+  .kq-teclas { flex:1; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .kq-teclas button { border:0; border-radius:14px; background:#1E3F63; color:#fff; font-size:34px; font-weight:800; min-height:58px; }
+  .kq-teclas button:active { background:#2B5A86; }
+  .kq-teclas button.apagar { font-size:24px; background:#3A2B2B; }
+  .kq-esqueci { background:none; border:0; color:#9EC3EA; font-size:16px; text-decoration:underline; padding:6px; }
+  .kq-cobre { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center;
+              text-align:center; padding:24px; gap:10px; background:rgba(10,27,46,.86); }
+  .kq-cobre h2 { font-size:34px; margin:0; } .kq-cobre p { font-size:20px; margin:0; }
+  .kq-cobre .contagem { font-size:80px; font-weight:900; line-height:1; }
+  .kq-cobre.ok { background:rgba(27,127,59,.94); } .kq-cobre.ambar { background:rgba(166,91,0,.94); }
+  .kq-cobre.erro { background:rgba(179,38,30,.94); }
+  .kq-cobre button { border:2px solid #fff; background:transparent; color:#fff; border-radius:12px; padding:12px 22px; font-size:18px; font-weight:700; }
+  @media (max-width: 760px) and (orientation: portrait) { .kq-corpo { flex-direction:column; } .kq-camera { flex:1; } .kq-teclas button { min-height:52px; font-size:28px; } }
+  .qr-grande { display:block; width:100%; max-width:340px; margin:0 auto; image-rendering:pixelated; }
 </style>
 </head>
 <body>
@@ -94,8 +125,8 @@
     </div>
     <div class="cartao oculto" id="cartao-tablet">
       <h2>Bater ponto neste aparelho da obra</h2>
-      <p class="pequeno">Este aparelho é da obra. Digite o seu CPF e tire a foto.</p>
-      <button class="btn grande" id="btn-ir-tablet" type="button">Bater ponto</button>
+      <p class="pequeno">Este aparelho é da obra: QR Code ou CPF, e a foto sai sozinha.</p>
+      <button class="btn grande" id="btn-ir-tablet" type="button">Abrir o ponto da obra</button>
     </div>
   </section>
 
@@ -120,16 +151,29 @@
     </div>
   </section>
 
-  <!-- TABLET -->
-  <section id="tela-tablet" class="oculto">
-    <div class="cartao">
-      <h2>Bater ponto</h2>
-      <label for="t-cpf">Seu CPF</label>
-      <input id="t-cpf" inputmode="numeric" placeholder="000.000.000-00">
-      <label for="t-obra">Obra</label>
-      <select id="t-obra"></select>
-      <button class="btn grande" id="btn-bater-tablet" type="button">Tirar foto e bater</button>
-      <button class="link" id="btn-voltar-tablet" type="button">Voltar</button>
+  <!-- TABLET DA OBRA (tela cheia) -->
+  <section id="tela-tablet" class="oculto" aria-label="Bater ponto no aparelho da obra">
+    <div class="kq-topo">
+      <select id="t-obra" aria-label="Obra"></select>
+      <div class="kq-relogio" id="t-relogio">--:--</div>
+    </div>
+    <div class="kq-corpo">
+      <div class="kq-camera">
+        <video id="t-video" autoplay muted playsinline></video>
+        <div class="kq-mira" id="t-mira"></div>
+        <div class="kq-legenda" id="t-legenda">Mostre o QR Code do seu celular aqui — ou digite o CPF</div>
+        <div class="kq-cobre oculto" id="t-cobre"></div>
+      </div>
+      <div class="kq-teclado">
+        <div class="kq-visor" id="t-visor"><small>Digite o seu CPF</small>&nbsp;</div>
+        <div class="kq-teclas" id="t-teclas">
+          <button type="button" data-t="1">1</button><button type="button" data-t="2">2</button><button type="button" data-t="3">3</button>
+          <button type="button" data-t="4">4</button><button type="button" data-t="5">5</button><button type="button" data-t="6">6</button>
+          <button type="button" data-t="7">7</button><button type="button" data-t="8">8</button><button type="button" data-t="9">9</button>
+          <button type="button" data-t="limpar" class="apagar">Limpar</button><button type="button" data-t="0">0</button><button type="button" data-t="apagar" class="apagar">⌫</button>
+        </div>
+        <button type="button" class="kq-esqueci" id="t-esqueci">Esqueci meu QR Code — receber no WhatsApp</button>
+      </div>
     </div>
   </section>
 
@@ -146,6 +190,11 @@
     <div class="cartao">
       <h2>Hoje</h2>
       <div id="hoje"></div>
+    </div>
+    <div class="cartao">
+      <h2>Meu QR Code</h2>
+      <p class="pequeno">Para bater no tablet da obra sem digitar o CPF: mostre o QR na câmera dele. Este muda a cada 30 segundos — foto de tela não serve.</p>
+      <button class="btn sec" id="btn-meu-qr" type="button">Mostrar meu QR Code</button>
     </div>
     <div class="cartao oculto" id="cartao-banco">
       <h2>Banco de horas</h2>
@@ -271,6 +320,7 @@ async function garantirRegistro(descricao) {
 // --- telas -----------------------------------------------------------------
 const TELAS = ["carregando", "entrar", "primeiro", "tablet", "inicio", "mes", "pedidos"];
 function mostrar(tela) {
+  if (tela !== "tablet" && typeof pararTablet === "function") pararTablet();
   TELAS.forEach(t => $("tela-" + t).classList.toggle("oculto", t !== tela));
   const logado = ["inicio", "mes", "pedidos"].includes(tela);
   $("abas").classList.toggle("oculto", !logado);
@@ -299,6 +349,8 @@ async function iniciar() {
     EU = null;
     const compartilhado = APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL";
     $("cartao-tablet").classList.toggle("oculto", !compartilhado);
+    // O aparelho da obra abre direto na batida: câmera ligada, sem toque nenhum.
+    if (compartilhado) return abrirTablet();
     mostrar("entrar");
   }
 }
@@ -388,8 +440,8 @@ function tirarFoto() {
 }
 
 // --- bater -------------------------------------------------------------------
-async function bater({cpf, obra, comFoto}) {
-  const botao = cpf ? $("btn-bater-tablet") : $("btn-bater");
+async function bater({obra, comFoto}) {
+  const botao = $("btn-bater");
   botao.disabled = true;
   try {
     const foto = comFoto ? await tirarFoto() : null;
@@ -398,28 +450,17 @@ async function bater({cpf, obra, comFoto}) {
     const local = await localizacao();
     const corpo = {obra, timestamp_dispositivo: new Date().toISOString(), foto_base64: foto || undefined};
     if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; }
-    if (cpf) corpo.cpf = cpf;
     const d = await chamar("/ponto/app/api/bater", corpo);
     aviso("");
     mostrarComprovante(d.comprovante, d.repetida, d.status, d.motivo_analise);
-    if (!cpf) carregarInicio(); else $("t-cpf").value = "";
+    carregarInicio();
   } catch (e) {
     aviso(e.status === 403 ? `Batida recusada: ${e.message}.` : e.message, "erro");
   } finally { botao.disabled = false; }
 }
 $("btn-bater").addEventListener("click", () => bater({obra: $("i-obra").value, comFoto: true}));
 $("btn-sem-foto").addEventListener("click", () => bater({obra: $("i-obra").value, comFoto: false}));
-$("btn-ir-tablet").addEventListener("click", () => {
-  preencherObras($("t-obra"), (APARELHO && APARELHO.obras) || [], null);
-  mostrar("tablet");
-  localizacao().then(l => { LOCAL = l; preencherObras($("t-obra"), (APARELHO && APARELHO.obras) || [], $("t-obra").value); });
-});
-$("btn-voltar-tablet").addEventListener("click", () => mostrar("entrar"));
-$("btn-bater-tablet").addEventListener("click", () => {
-  const cpf = soDigitos($("t-cpf").value);
-  if (cpf.length !== 11) return aviso("Digite o CPF inteiro (11 números).", "erro");
-  bater({cpf, obra: $("t-obra").value, comFoto: true});
-});
+$("btn-ir-tablet").addEventListener("click", () => abrirTablet());
 
 function mostrarComprovante(c, repetida, status, motivo) {
   const analise = status === "EM_ANALISE"
@@ -615,10 +656,283 @@ async function carregarPedidos() {
 }
 
 // Máscara de CPF nos campos.
-["e-cpf", "p-cpf", "t-cpf"].forEach(id => $(id).addEventListener("input", ev => {
+["e-cpf", "p-cpf"].forEach(id => $(id).addEventListener("input", ev => {
   const d = soDigitos(ev.target.value).slice(0, 11);
   ev.target.value = d.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 }));
+
+// =============================================================================
+// O TABLET DA OBRA
+//
+// A câmera fica SEMPRE ligada. Se ela vê um QR Code do ponto (BWSP…), identifica
+// a pessoa; se a pessoa digita o CPF no teclado, identifica pelo CPF — sem
+// trocar de modo. Identificada, a tela mostra nome e função, conta 2 segundos
+// e tira a foto do próprio vídeo (sem abrir o aplicativo de câmera: é isso que
+// deixa rápido), manda a batida e volta sozinha para a próxima pessoa.
+//
+// O leitor de QR: o embutido do navegador (BarcodeDetector, no Android) e, onde
+// ele não existe (iPhone), o jsQR, uma biblioteca aberta servida pelo próprio
+// sistema.
+// =============================================================================
+const TB = {fluxo: null, detector: null, jsqr: false, ocupado: false, cpf: "", esqueci: false,
+            ultimoQr: "", ultimoQrEm: 0, timer: null, relogio: null, pulso: null, trava: null,
+            local: null, localEm: 0, canvas: document.createElement("canvas")};
+const TABLET_IGNORA_MESMO_QR_MS = 15000;
+
+function cpfValido(c) {
+  c = soDigitos(c);
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false;
+  const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += +c[i] * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === +c[9] && dv(10) === +c[10];
+}
+function cpfComMascara(d) {
+  return d.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+async function abrirTablet() {
+  mostrar("tablet");
+  $("titulo").textContent = "BWS Ponto";
+  const obras = (APARELHO && APARELHO.obras) || [];
+  let guardada = null; try { guardada = localStorage.getItem("ponto_tablet_obra"); } catch (e) {}
+  preencherObras($("t-obra"), obras, guardada);
+  if (guardada && obras.some(o => o.codigo === guardada)) $("t-obra").value = guardada;
+  $("t-obra").onchange = () => { try { localStorage.setItem("ponto_tablet_obra", $("t-obra").value); } catch (e) {} };
+  atualizarRelogio(); TB.relogio = setInterval(atualizarRelogio, 1000);
+  // Pulso a cada 5 min: o servidor confere se o aparelho continua aprovado.
+  TB.pulso = setInterval(async () => {
+    await estadoDoAparelho();
+    if (!APARELHO || APARELHO.status !== "APROVADO") { pararTablet(); location.reload(); }
+  }, 5 * 60 * 1000);
+  manterTelaAcesa();
+  atualizarLocalTablet();
+  visor();
+  await ligarCamera();
+}
+function pararTablet() {
+  clearInterval(TB.relogio); clearInterval(TB.pulso); clearTimeout(TB.timer);
+  if (TB.fluxo) { TB.fluxo.getTracks().forEach(t => t.stop()); TB.fluxo = null; }
+  if (TB.trava) { try { TB.trava.release(); } catch (e) {} TB.trava = null; }
+}
+function atualizarRelogio() {
+  // Sempre a hora de Fortaleza, que é a hora do ponto — mesmo num tablet com o
+  // fuso configurado errado.
+  try {
+    $("t-relogio").textContent = new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit", timeZone: "America/Fortaleza"});
+  } catch (e) {
+    const d = new Date();
+    $("t-relogio").textContent = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+}
+async function manterTelaAcesa() {
+  try { if ("wakeLock" in navigator) TB.trava = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !$("tela-tablet").classList.contains("oculto")) manterTelaAcesa();
+});
+async function atualizarLocalTablet() {
+  // O tablet não sai da obra: a localização é lida de 10 em 10 minutos, e não
+  // a cada batida (o GPS levaria segundos em cada pessoa da fila).
+  if (TB.local && Date.now() - TB.localEm < 10 * 60 * 1000) return TB.local;
+  const l = await localizacao();
+  if (l) { TB.local = l; TB.localEm = Date.now(); LOCAL = l; }
+  return TB.local;
+}
+
+async function ligarCamera() {
+  $("t-legenda").textContent = "Ligando a câmera…";
+  try {
+    TB.fluxo = await navigator.mediaDevices.getUserMedia({audio: false,
+      video: {facingMode: "user", width: {ideal: 1280}, height: {ideal: 720}}});
+    $("t-video").srcObject = TB.fluxo;
+    await $("t-video").play().catch(() => {});
+  } catch (e) {
+    TB.fluxo = null;
+    $("t-legenda").textContent = "Câmera indisponível — digite o CPF. A batida sem foto vai para conferência.";
+    return;
+  }
+  if ("BarcodeDetector" in window) {
+    try { TB.detector = new BarcodeDetector({formats: ["qr_code"]}); } catch (e) { TB.detector = null; }
+  }
+  if (!TB.detector && !TB.jsqr) {
+    await new Promise(ok => { const sc = document.createElement("script"); sc.src = "/ponto/app/jsQR.js";
+      sc.onload = () => { TB.jsqr = true; ok(); }; sc.onerror = ok; document.head.appendChild(sc); });
+  }
+  $("t-legenda").textContent = "Mostre o QR Code do seu celular aqui — ou digite o CPF";
+  procurarQr();
+}
+
+async function procurarQr() {
+  clearTimeout(TB.timer);
+  if ($("tela-tablet").classList.contains("oculto") || !TB.fluxo) return;
+  if (!TB.ocupado && !TB.esqueci) {
+    const v = $("t-video");
+    if (v.readyState >= 2 && v.videoWidth) {
+      try {
+        let texto = null;
+        if (TB.detector) {
+          const achados = await TB.detector.detect(v);
+          texto = achados.length ? achados[0].rawValue : null;
+        } else if (TB.jsqr && window.jsQR) {
+          const k = Math.min(1, 640 / v.videoWidth), c = TB.canvas;
+          c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+          const ctx = c.getContext("2d", {willReadFrequently: true});
+          ctx.drawImage(v, 0, 0, c.width, c.height);
+          const img = ctx.getImageData(0, 0, c.width, c.height);
+          const r = window.jsQR(img.data, c.width, c.height, {inversionAttempts: "dontInvert"});
+          texto = r ? r.data : null;
+        }
+        // Só os QR do ponto. Qualquer outro QR que passe na frente é ignorado.
+        if (texto && texto.startsWith("BWSP") &&
+            !(texto === TB.ultimoQr && Date.now() - TB.ultimoQrEm < TABLET_IGNORA_MESMO_QR_MS)) {
+          TB.ultimoQr = texto; TB.ultimoQrEm = Date.now();
+          identificar({qr: texto});
+        }
+      } catch (e) {}
+    }
+  }
+  TB.timer = setTimeout(procurarQr, 160);
+}
+
+// --- o teclado ------------------------------------------------------------------
+function visor(mensagem) {
+  const d = TB.cpf;
+  const titulo = TB.esqueci ? "CPF para receber o QR Code no WhatsApp" : "Digite o seu CPF";
+  $("t-visor").innerHTML = `<small>${esc(mensagem || titulo)}</small>${d ? esc(cpfComMascara(d)) : "&nbsp;"}`;
+}
+$("t-teclas").addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-t]"); if (!b || TB.ocupado) return;
+  const t = b.dataset.t;
+  if (t === "apagar") TB.cpf = TB.cpf.slice(0, -1);
+  else if (t === "limpar") TB.cpf = "";
+  else if (TB.cpf.length < 11) TB.cpf += t;
+  if (TB.cpf.length === 11) {
+    if (!cpfValido(TB.cpf)) return visor("CPF inválido — confira os números");
+    const cpf = TB.cpf;
+    if (TB.esqueci) return pedirQrPeloTablet(cpf);
+    TB.cpf = ""; visor();
+    return identificar({cpf});
+  }
+  visor();
+});
+$("t-esqueci").addEventListener("click", () => {
+  TB.esqueci = !TB.esqueci; TB.cpf = "";
+  $("t-esqueci").textContent = TB.esqueci ? "Voltar para bater o ponto" : "Esqueci meu QR Code — receber no WhatsApp";
+  visor();
+});
+async function pedirQrPeloTablet(cpf) {
+  TB.ocupado = true;
+  try {
+    const d = await chamar("/ponto/app/api/tablet/esqueci-qr", {cpf});
+    cobrir("ok", `<h2>Pedido feito</h2><p>${esc(d.mensagem)}</p>`, 4000);
+  } catch (e) { cobrir("erro", `<h2>Não deu certo</h2><p>${esc(e.message)}</p>`, 4000); }
+  TB.esqueci = false; TB.cpf = "";
+  $("t-esqueci").textContent = "Esqueci meu QR Code — receber no WhatsApp";
+  visor();
+}
+
+// --- identificar, confirmar, fotografar, bater -----------------------------------
+let COBRE_VEZ = 0;
+function cobrir(tipo, html, ms) {
+  const c = $("t-cobre");
+  c.className = "kq-cobre " + (tipo || "");
+  c.innerHTML = html;
+  // Cada aviso tem a sua vez: o temporizador de um aviso velho não apaga o novo.
+  const vez = ++COBRE_VEZ;
+  if (ms) setTimeout(() => { if (vez === COBRE_VEZ) { c.className = "kq-cobre oculto"; TB.ocupado = false; } }, ms);
+}
+function descobrir() { COBRE_VEZ++; $("t-cobre").className = "kq-cobre oculto"; TB.ocupado = false; }
+
+async function identificar(quem) {
+  if (TB.ocupado) return;
+  TB.ocupado = true;
+  cobrir("", `<p>Identificando…</p>`);
+  let d;
+  try {
+    d = await chamar("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value});
+  } catch (e) {
+    return cobrir("erro", `<h2>${quem.qr ? "QR Code não aceito" : "Não identificado"}</h2><p>${esc(e.message)}</p>`, 3500);
+  }
+  // A confirmação: nome e função, e 2 segundos para olhar para a câmera.
+  let cancelado = false, n = TB.fluxo ? 2 : 0;
+  const tela = () => `<h2>${esc(d.nome)}</h2><p>${esc(d.funcao || "")}</p>
+    ${TB.fluxo ? `<p>Olhe para a câmera</p><div class="contagem">${n}</div>` : `<p>Sem câmera: a batida vai sem foto, para conferência.</p>`}
+    <button type="button" id="t-nao-sou">Não sou eu</button>`;
+  cobrir("", tela());
+  $("t-cobre").style.background = "rgba(10,27,46,.55)";
+  const ligarNaoSou = () => { const b = $("t-nao-sou"); if (b) b.onclick = () => { cancelado = true; $("t-cobre").style.background = ""; descobrir(); }; };
+  ligarNaoSou();
+  while (n > 0 && !cancelado) {
+    await new Promise(ok => setTimeout(ok, 1000));
+    n -= 1; if (!cancelado && n > 0) { cobrir("", tela()); ligarNaoSou(); }
+  }
+  $("t-cobre").style.background = "";
+  if (cancelado) return;
+  const foto = fotoDoVideo();
+  cobrir("", `<h2>${esc(d.primeiro_nome)}</h2><p>Registrando…</p>`);
+  try {
+    const local = TB.local;
+    const corpo = {bilhete: d.bilhete, obra: $("t-obra").value, timestamp_dispositivo: new Date().toISOString(),
+                   foto_base64: foto || undefined};
+    if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; }
+    const r = await chamar("/ponto/app/api/bater", corpo);
+    const c = r.comprovante;
+    if (r.status === "EM_ANALISE") {
+      cobrir("ambar", `<h2>Ponto registrado — ${esc(c.hora.slice(0, 5))}</h2><p>${esc(d.primeiro_nome)}, a batida vai para conferência: ${esc(r.motivo_analise || "")}.</p><p>NSR ${esc(c.nsr)}</p>`, 4500);
+    } else {
+      cobrir("ok", `<h2>${r.repetida ? "Já registrado" : "Ponto registrado"} — ${esc(c.hora.slice(0, 5))}</h2><p>${esc(d.primeiro_nome)} · NSR ${esc(c.nsr)} · código ${esc(c.codigo_de_verificacao)}</p>`, 3000);
+    }
+  } catch (e) {
+    cobrir("erro", `<h2>Batida não registrada</h2><p>${esc(e.message)}</p>`, 4500);
+  }
+  atualizarLocalTablet();
+}
+
+function fotoDoVideo() {
+  const v = $("t-video");
+  if (!TB.fluxo || !v.videoWidth) return null;
+  const k = Math.min(1, 800 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.8);
+}
+
+// =============================================================================
+// O MEU QR CODE (celular de quem entrou com CPF + PIN)
+// =============================================================================
+let QR_TIMER = null;
+async function mostrarMeuQr() {
+  clearTimeout(QR_TIMER);
+  let d;
+  try { d = await chamar("/ponto/app/api/meu-qr"); }
+  catch (e) { return aviso(e.message, "erro"); }
+  const w = d.whatsapp;
+  const status = !w ? "" : w.na_fila ? "Um QR Code novo está saindo para o seu WhatsApp."
+    : w.tem_qr ? `O último QR do WhatsApp chegou em ${esc(dataBR(w.enviado_em))}.` : "Você ainda não recebeu o QR Code no WhatsApp.";
+  $("dlg-corpo").innerHTML = `
+    <h2 style="margin:0 0 8px">Meu QR Code</h2>
+    <img class="qr-grande" src="${d.imagem}" alt="QR Code pessoal para bater o ponto">
+    <p class="pequeno" style="text-align:center">Aumente o brilho da tela e mostre para a câmera do tablet. Troca em <b id="qr-seg">${d.troca_em_segundos}</b> s.</p>
+    ${w ? `<p class="pequeno">${status}</p><button class="btn sec" type="button" id="btn-qr-whats">Receber um QR no WhatsApp</button>` : ""}`;
+  if (!$("dlg").open) $("dlg").showModal();
+  const b = $("btn-qr-whats");
+  if (b) b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { const r = await chamar("/ponto/app/api/meu-qr/whatsapp", {}); b.textContent = r.mensagem; }
+    catch (e) { b.textContent = e.message; }
+  });
+  let seg = d.troca_em_segundos;
+  const contar = () => {
+    if (!$("dlg").open) return;
+    seg -= 1;
+    if (seg <= 0) return mostrarMeuQr();
+    const el = $("qr-seg"); if (el) el.textContent = seg;
+    QR_TIMER = setTimeout(contar, 1000);
+  };
+  QR_TIMER = setTimeout(contar, 1000);
+}
+$("btn-meu-qr").addEventListener("click", mostrarMeuQr);
+$("dlg").addEventListener("close", () => clearTimeout(QR_TIMER));
 
 // Primeiro: garantir que o aparelho existe no sistema (só o identificador dele).
 garantirRegistro("Aparelho sem nome").catch(() => {}).finally(iniciar);

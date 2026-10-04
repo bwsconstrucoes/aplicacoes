@@ -11,8 +11,11 @@ DOIS MODOS NO MESMO ENDEREÇO:
   · CELULAR DA PESSOA — entra com CPF + PIN (criado com código pelo WhatsApp).
     Bate ponto, vê o próprio mês, manda atestado, pede ajuste e compensação,
     acompanha os pedidos e vê o comprovante de cada batida.
-  · TABLET DA OBRA — sem login. Só bate: CPF + foto. Não mostra nada de
-    ninguém, porque o aparelho é de todos.
+  · TABLET DA OBRA — sem login, câmera sempre ligada. A pessoa mostra o QR
+    Code no próprio celular OU digita o CPF no teclado grande da tela — sem
+    trocar de modo (decisão do dono, 03/10/2026: "deixar só o CPF e QR Code").
+    A tela confirma nome e função e tira a foto sozinha. Não mostra nada de
+    ninguém além disso, porque o aparelho é de todos.
 
 O APARELHO continua precisando de aprovação na gestão (fase 1): o celular gera
 o identificador dele, se registra e espera. A batida só passa por aparelho
@@ -31,16 +34,22 @@ import os
 from flask import Response, g, jsonify, render_template, request, send_from_directory, session
 
 from . import auth, db, horario
-from .core import (banco, cadastros, competencias, dispositivos, espelho, marcacoes, acesso,
-                   ocorrencias)
+from .core import (banco, cadastros, competencias, dispositivos, envios, espelho, fotos,
+                   marcacoes, acesso, ocorrencias, qr, recusas)
 from .core.ocorrencias import Quem
-from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado
+from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
 from .routes import bp
 
 logger = logging.getLogger("ponto.app")
 
 ENTRADAS_POR_HORA_POR_IP = 60
 CODIGOS_POR_HORA_POR_IP = 20
+# Tablet: uma obra de 80 pessoas faz 80 identificações em 15 minutos às 7h; o
+# teto é folgado para isso e baixo para quem quisesse varrer CPFs.
+IDENTIFICACOES_POR_HORA_POR_APARELHO = 400
+PEDIDOS_DE_QR_POR_HORA_POR_APARELHO = 30
+RESPOSTA_DO_QR = ("Se o CPF estiver cadastrado com telefone, o QR Code chega no WhatsApp "
+                  "em instantes.")
 PASTA_ESTATICA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 
@@ -101,6 +110,14 @@ def app_service_worker():
     resposta = send_from_directory(PASTA_ESTATICA, "sw.js", mimetype="application/javascript")
     resposta.headers["Service-Worker-Allowed"] = "/ponto/app"
     resposta.headers["Cache-Control"] = "no-cache"
+    return resposta
+
+
+@bp.route("/app/jsQR.js")
+@auth.publica("o leitor de QR Code do tablet (biblioteca aberta, Apache 2.0)")
+def app_jsqr():
+    resposta = send_from_directory(PASTA_ESTATICA, "jsQR.js", mimetype="application/javascript")
+    resposta.headers["Cache-Control"] = "public, max-age=604800"
     return resposta
 
 
@@ -246,14 +263,24 @@ def app_api_banco():
 @auth.exige_colaborador_ou_aparelho
 def app_api_bater():
     """No celular da pessoa, o CPF é o da sessão — não se bate por outro. No
-    tablet da obra (sem sessão), o CPF vem digitado e o aparelho tem de ser
-    compartilhado ou de lista (a regra do aparelho decide)."""
+    tablet da obra (sem sessão), quem bate é quem o tablet IDENTIFICOU: vem o
+    bilhete de `/app/api/tablet/identificar` (QR ou CPF), que vale 2 minutos e
+    só neste aparelho. O CPF solto continua aceito, para o tablet de versão
+    anterior que ainda estiver aberto em alguma obra."""
     d = _corpo()
+    identificacao = None
     with db.conexao() as conn:
         if g.get("ponto_via") == "colaborador":
             p = cadastros.colaborador_por_id(conn, _eu())
             if not p:
                 raise NaoAutenticado("entre com o seu CPF e PIN")
+            cpf, identificacao = p["cpf"], "SESSAO"
+        elif d.get("bilhete"):
+            aparelho = _aparelho_da_obra(conn)
+            colaborador_id, identificacao = qr.conferir_bilhete(d["bilhete"], aparelho["id"])
+            p = cadastros.colaborador_por_id(conn, colaborador_id)
+            if not p:
+                raise ErroDeValidacao("identifique-se de novo", campo="bilhete")
             cpf = p["cpf"]
         else:
             cpf = d.get("cpf")
@@ -263,11 +290,142 @@ def app_api_bater():
             device_token=request.headers.get(auth.CABECALHO_TOKEN), via_chave=False,
             latitude=d.get("latitude"), longitude=d.get("longitude"),
             timestamp_dispositivo=d.get("timestamp_dispositivo"),
-            foto_base64=d.get("foto_base64"), ip=auth.ip_de_quem_chama())
+            foto_base64=d.get("foto_base64"), ip=auth.ip_de_quem_chama(),
+            identificacao=identificacao)
         comprovante = _comprovante(conn, marcacao["id"])
+    fotos.disparar_envio()
     return _ok(repetida=repetida, comprovante=comprovante,
                status=marcacao["status"], motivo_analise=marcacao.get("motivo_analise")), \
         (200 if repetida else 201)
+
+
+# ---------------------------------------------------------------------------
+# O tablet da obra: identificar por QR ou CPF, e "esqueci meu QR"
+# ---------------------------------------------------------------------------
+def _aparelho_da_obra(conn) -> dict:
+    """O aparelho que chama, conferido: aprovado e de obra (compartilhado ou de
+    lista). Celular de uma pessoa não identifica os outros."""
+    try:
+        a = dispositivos.autenticar(conn, request.headers.get("X-Device-UUID", ""),
+                                    request.headers.get(auth.CABECALHO_TOKEN))
+    except Exception:  # noqa: BLE001 — uuid desconhecido ou token velho
+        raise NaoAutenticado("aparelho não reconhecido — peça para a gestão aprovar de novo")
+    if a["status"] != "APROVADO":
+        raise Recusada(f"aparelho {a['status'].lower()}")
+    if a["perfil"] == "INDIVIDUAL":
+        raise Recusada("este é o celular de uma pessoa, não o aparelho da obra")
+    return a
+
+
+def _recusar_em_separado(motivo: str, *, cpf: str | None, obra, **detalhes) -> None:
+    """A recusa sobrevive ao erro que vem depois (mesma regra da batida)."""
+    with db.conexao() as separada:
+        recusas.registrar(separada, motivo=motivo, device_uuid=request.headers.get("X-Device-UUID"),
+                          cpf=cpf, obra=obra, origem="PWA", ip=auth.ip_de_quem_chama(), **detalhes)
+
+
+@bp.route("/app/api/tablet/identificar", methods=["POST"])
+@auth.exige_aparelho
+def app_api_tablet_identificar():
+    """Quem está na frente do tablet: pelo QR Code que a câmera leu ou pelo CPF
+    digitado. Devolve nome, função e o bilhete da batida. Não registra batida."""
+    d = _corpo()
+    with db.conexao() as conn:
+        aparelho = _aparelho_da_obra(conn)
+        if not auth.dentro_do_limite("identificar", str(aparelho["id"]),
+                                     IDENTIFICACOES_POR_HORA_POR_APARELHO):
+            return jsonify({"ok": False, "erro": "muitas identificações neste aparelho; "
+                                                 "espere alguns minutos"}), 429
+        obra = cadastros.resolver_obra(conn, d.get("obra")) if d.get("obra") else None
+        conteudo = str(d.get("qr") or "").strip()
+        lido = None
+        if conteudo:
+            if conteudo.startswith(qr.PREFIXO_WHATSAPP) and not db.tem_003(conn):
+                raise Recusada("o QR Code ainda não foi ativado — digite o CPF")
+            lido = qr.ler(conn, conteudo)
+            if lido.problema:
+                dono = cadastros.colaborador_por_id(conn, lido.colaborador_id) if lido.colaborador_id else None
+                motivo = ("QR Code antigo (" + lido.identificacao + ")") if lido.antigo else "QR Code desconhecido"
+                _recusar_em_separado(motivo, cpf=(dono or {}).get("cpf"), obra=d.get("obra"))
+                raise Recusada(lido.problema)
+            pessoa = cadastros.colaborador_por_id(conn, lido.colaborador_id)
+            identificacao = lido.identificacao
+        else:
+            cpf = cadastros.normalizar_cpf(d.get("cpf"))
+            pessoa = cadastros.colaborador_por_cpf(conn, cpf)
+            if not pessoa:
+                _recusar_em_separado("CPF não identificado no tablet", cpf=cpf, obra=d.get("obra"))
+                raise Recusada("CPF não encontrado — confira os números")
+            identificacao = qr.IDENT_CPF
+        if not pessoa or pessoa["situacao"] == "DESLIGADO" or not pessoa["ativo_no_ponto"]:
+            raise Recusada("cadastro inativo no ponto — procure o encarregado")
+        if obra:
+            motivo = dispositivos.autorizado_para(
+                aparelho, int(pessoa["id"]), int(obra["id"]),
+                dispositivos.autorizados_de(conn, aparelho["id"]),
+                dispositivos.obras_de(conn, aparelho["id"]))
+            if motivo:
+                _recusar_em_separado(motivo, cpf=pessoa["cpf"], obra=d.get("obra"))
+                raise Recusada(motivo)
+        if lido and lido.qr_id:
+            qr.registrar_uso(conn, lido.qr_id)
+        bilhete = qr.emitir_bilhete(int(pessoa["id"]), int(aparelho["id"]), identificacao)
+        dispositivos.marcar_uso(conn, aparelho["id"])
+    partes = pessoa["nome"].split()
+    return _ok(bilhete=bilhete, nome=pessoa["nome"], primeiro_nome=partes[0].title() if partes else "",
+               funcao=pessoa.get("funcao"), identificacao=identificacao,
+               validade_segundos=qr.BILHETE_VALIDADE_S)
+
+
+@bp.route("/app/api/tablet/esqueci-qr", methods=["POST"])
+@auth.exige_aparelho
+def app_api_tablet_esqueci_qr():
+    """"Esqueci meu QR": digita o CPF e o QR vai para o WhatsApp do cadastro.
+    A resposta é a MESMA exista o CPF ou não."""
+    d = _corpo()
+    with db.conexao() as conn:
+        aparelho = _aparelho_da_obra(conn)
+        if not auth.dentro_do_limite("pedir_qr", str(aparelho["id"]), PEDIDOS_DE_QR_POR_HORA_POR_APARELHO):
+            return jsonify({"ok": False, "erro": "muitos pedidos neste aparelho; tente mais tarde"}), 429
+        if not db.tem_003(conn):
+            raise Recusada("o QR Code ainda não foi ativado — digite o CPF")
+        pessoa = cadastros.colaborador_por_cpf(conn, cadastros.normalizar_cpf(d.get("cpf")))
+        if pessoa:
+            envios.pedir_qr(conn, int(pessoa["id"]), motivo="PEDIDO",
+                            por=f"a própria pessoa, no aparelho {aparelho['id']}")
+    return _ok(mensagem=RESPOSTA_DO_QR)
+
+
+# ---------------------------------------------------------------------------
+# O meu QR, no celular de quem entrou com CPF + PIN
+# ---------------------------------------------------------------------------
+@bp.route("/app/api/meu-qr")
+@auth.exige_colaborador
+def app_api_meu_qr():
+    """O QR que muda a cada 30 segundos. Print de tela não serve depois."""
+    import base64 as _b64
+    with db.conexao() as conn:
+        quem = _quem(conn)
+        situacao = qr.situacao_da_pessoa(conn, quem.colaborador_id) if db.tem_003(conn) else None
+    conteudo = qr.conteudo_do_app(quem.colaborador_id)
+    png = qr.imagem(conteudo)
+    return _ok(imagem="data:image/png;base64," + _b64.b64encode(png).decode("ascii"),
+               troca_em_segundos=qr.segundos_ate_trocar(), whatsapp=situacao)
+
+
+@bp.route("/app/api/meu-qr/whatsapp", methods=["POST"])
+@auth.exige_colaborador
+def app_api_meu_qr_whatsapp():
+    with db.conexao() as conn:
+        quem = _quem(conn)
+        if not db.tem_003(conn):
+            raise ErroDeValidacao("o QR Code por WhatsApp ainda não foi ativado")
+        r = envios.pedir_qr(conn, quem.colaborador_id, motivo="PEDIDO", por="a própria pessoa")
+    if not r.get("enfileirado"):
+        mensagens = {"sem telefone no cadastro": "seu cadastro está sem telefone — avise o DP",
+                     "teto de pedidos do dia": "você já pediu 3 vezes hoje; use o QR desta tela"}
+        raise ErroDeValidacao(mensagens.get(r.get("motivo"), "não foi possível pedir agora"))
+    return _ok(mensagem="O QR Code chega no seu WhatsApp em instantes.")
 
 
 def _comprovante(conn, marcacao_id: int) -> dict:

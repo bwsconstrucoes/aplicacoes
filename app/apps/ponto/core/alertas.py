@@ -42,6 +42,10 @@ GRAVIDADE = {
     "FORA_DA_CERCA_REPETIDO": "ATENCAO", "DOIS_LUGARES": "URGENTE",
     "PEDIDO_PARADO": "ATENCAO", "BATIDA_EM_ANALISE_PARADA": "ATENCAO",
     "APARELHO_PENDENTE": "INFO", "BANCO_VENCENDO": "ATENCAO", "BANCO_NEGATIVO": "ATENCAO",
+    # Sinais de fraude e de foto (migração 003)
+    "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE",
+    "SEQUENCIA_RAPIDA": "ATENCAO", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
+    "MOSAICO_PENDENTE": "ATENCAO",
 }
 ROTULO = {
     "FALTA": "Falta sem justificativa", "BATIDA_FALTANDO": "Batida faltando",
@@ -54,6 +58,11 @@ ROTULO = {
     "DOIS_LUGARES": "Dois lugares ao mesmo tempo", "PEDIDO_PARADO": "Pedido esperando decisão",
     "BATIDA_EM_ANALISE_PARADA": "Batida em análise esperando", "APARELHO_PENDENTE": "Aparelho esperando aprovação",
     "BANCO_VENCENDO": "Banco de horas vencendo", "BANCO_NEGATIVO": "Banco de horas negativo",
+    "SEM_FOTO": "Batida sem foto", "FOTO_ESCURA": "Foto escura ou sem rosto",
+    "FOTO_REPETIDA": "A mesma foto em batidas diferentes",
+    "SEQUENCIA_RAPIDA": "Muitas pessoas em sequência rápida no mesmo aparelho",
+    "QR_ANTIGO_USADO": "QR Code antigo usado", "TENTATIVAS_DE_CPF": "CPFs errados em sequência no tablet",
+    "MOSAICO_PENDENTE": "Mosaico de fotos sem conferência",
 }
 # Os que nascem do cálculo de UM dia — podem ser resolvidos sozinhos.
 DO_DIA = {"FALTA", "BATIDA_FALTANDO", "ATRASO", "SAIDA_ANTECIPADA", "EXTRA_ACIMA_DE_2H",
@@ -70,6 +79,10 @@ DOIS_LUGARES_MIN = 30
 PARADO_DIAS = 2
 BANCO_AVISO_DIAS = 30
 BANCO_NEGATIVO_MIN = -600  # −10 h
+# Sinais de fraude — calibrar no piloto; são convite a olhar, não prova.
+SEQUENCIA_SEGUNDOS = 10    # batidas de pessoas DIFERENTES, no mesmo aparelho, com menos que isto
+SEQUENCIA_MIN_PESSOAS = 5  # … em fila de pelo menos tantas pessoas
+TENTATIVAS_CPF_MIN = 5     # CPFs que não identificam ninguém, no mesmo tablet, no mesmo dia
 
 
 def _hhmm(minutos: int) -> str:
@@ -196,6 +209,9 @@ def gerar(conn: Connection, *, ate: Optional[dt.date] = None,
 
     contagem.update(_dois_lugares(conn, vistos, inicio_dia, ate))
     contagem.update(_parados(conn, vistos))
+    if db.tem_003(conn):
+        contagem.update(sinais_de_fraude(conn, vistos, inicio_dia, ate,
+                                         colaborador_ids=colaborador_ids))
 
     # O que era alerta de dia na janela e não apareceu de novo deixou de ser verdade.
     abertos = db.todos(conn, """
@@ -276,6 +292,214 @@ def _parados(conn: Connection, vistos: set) -> Counter:
         _registrar(conn, vistos, chave=f"APARELHO_PENDENTE:{d['id']}", codigo="APARELHO_PENDENTE",
                    mensagem=f"Aparelho “{d['descricao'] or 'sem nome'}” esperando aprovação")
         contagem["APARELHO_PENDENTE"] += 1
+    return contagem
+
+
+# ---------------------------------------------------------------------------
+# Sinais de fraude e de foto (03/10/2026). Pedido do dono: "tudo que for coisas
+# estranhas (…) batidas muito rápidas (…) se alguém não está tirando foto, a
+# gente vai ter que fazer essa crítica e de repente até comunicar a pessoa".
+# ---------------------------------------------------------------------------
+def sequencias_rapidas(batidas: list[dict], *, segundos: int = SEQUENCIA_SEGUNDOS,
+                       minimo: int = SEQUENCIA_MIN_PESSOAS) -> list[list[dict]]:
+    """PURA. `batidas` de UM aparelho, em ordem de hora. Devolve as filas em que
+    pessoas diferentes bateram uma atrás da outra com menos de `segundos` entre
+    cada, com pelo menos `minimo` pessoas. Uma fila de verdade, com a câmera
+    reconhecendo e fotografando, leva mais que isso por pessoa."""
+    filas, atual = [], []
+    for b in batidas:
+        if atual and (b["colaborador_id"] == atual[-1]["colaborador_id"]
+                      or (b["timestamp_servidor"] - atual[-1]["timestamp_servidor"]).total_seconds() > segundos):
+            if len({x["colaborador_id"] for x in atual}) >= minimo:
+                filas.append(atual)
+            atual = []
+        atual.append(b)
+    if len({x["colaborador_id"] for x in atual}) >= minimo:
+        filas.append(atual)
+    return filas
+
+
+def fotos_repetidas(fotos_: list[dict], limiar: int = 3) -> list[tuple[dict, dict]]:
+    """PURA. Pares de fotos (de batidas diferentes) com a mesma impressão —
+    a mesma imagem mandada de novo. `fotos_` traz marcacao_id, colaborador_id,
+    sha256, dhash e `nova` (se é da janela que está sendo julgada)."""
+    from .fotos import distancia_dhash
+    pares = []
+    for i, a in enumerate(fotos_):
+        for b in fotos_[i + 1:]:
+            if not (a["nova"] or b["nova"]) or a["marcacao_id"] == b["marcacao_id"]:
+                continue
+            if a["sha256"] == b["sha256"]:
+                pares.append((a, b))
+                continue
+            d = distancia_dhash(a.get("dhash"), b.get("dhash"))
+            if d is not None and d <= limiar:
+                pares.append((a, b))
+    return pares
+
+
+def _horas(momentos) -> str:
+    return ", ".join(f"{horario.para_local(m):%H:%M}" for m in momentos)
+
+
+def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.date, *,
+                     colaborador_ids: Optional[list[int]] = None) -> Counter:
+    from . import envios, mosaico, parametros
+    contagem: Counter = Counter()
+    filtro, params = "", {"i": inicio, "f": fim}
+    if colaborador_ids is not None:
+        filtro = " AND m.colaborador_id = ANY(:ids)"
+        params["ids"] = list(colaborador_ids) or [0]
+
+    # --- batida sem foto, e o aviso à pessoa ---------------------------------
+    avisar = parametros.ler(conn, envios.AVISO_SEM_FOTO, "") == "1"
+    import random
+    rng = random.Random()
+    for r in db.todos(conn, f"""
+        SELECT m.colaborador_id, m.data_referencia, min(m.obra_id) AS obra_id, c.nome, c.telefone,
+               array_agg(m.timestamp_servidor ORDER BY m.timestamp_servidor) AS horas
+          FROM ponto.marcacoes m JOIN public.colaboradores c ON c.id = m.colaborador_id
+         WHERE m.data_referencia BETWEEN :i AND :f AND m.origem = 'PWA' AND m.foto_id IS NULL
+           AND m.status <> 'REJEITADA' {filtro}
+         GROUP BY m.colaborador_id, m.data_referencia, c.nome, c.telefone""", **params):
+        d = r["data_referencia"]
+        _registrar(conn, vistos, chave=f"SEM_FOTO:{r['colaborador_id']}:{d.isoformat()}",
+                   codigo="SEM_FOTO",
+                   mensagem=f"{r['nome']}: {len(r['horas'])} batida(s) sem foto em {d:%d/%m} "
+                            f"({_horas(r['horas'])})",
+                   colaborador_id=r["colaborador_id"], obra_id=r["obra_id"], data=d)
+        contagem["SEM_FOTO"] += 1
+        telefone = envios.telefone_valido(r["telefone"])
+        if avisar and d == fim and telefone:
+            plural = len(r["horas"]) > 1
+            texto = (f"BWS Ponto — {r['nome'].split(' ')[0].title()}, no dia {d:%d/%m} "
+                     f"{'suas batidas' if plural else 'sua batida'} das {_horas(r['horas'])} "
+                     f"{'ficaram' if plural else 'ficou'} sem foto. A foto faz parte do registro "
+                     "do ponto: ao bater, deixe a câmera ver o seu rosto. Se a câmera do aparelho "
+                     "não funcionou, avise o encarregado.")
+            envios.enfileirar(conn, tipo="AVISO_FOTO",
+                              referencia=f"AVISO_FOTO:{r['colaborador_id']}:{d.isoformat()}",
+                              telefone=telefone, texto=texto, colaborador_id=r["colaborador_id"],
+                              agendado_para=max(envios.sortear_horario(rng, horario.hoje()),
+                                                horario.agora()), pedido_por="rotina")
+
+    # --- foto escura ou lisa -------------------------------------------------
+    for r in db.todos(conn, f"""
+        SELECT m.colaborador_id, m.data_referencia, min(m.obra_id) AS obra_id, c.nome,
+               array_agg(m.timestamp_servidor ORDER BY m.timestamp_servidor) AS horas
+          FROM ponto.marcacoes m JOIN public.colaboradores c ON c.id = m.colaborador_id
+          JOIN ponto.fotos fo ON fo.id = m.foto_id
+         WHERE m.data_referencia BETWEEN :i AND :f AND m.status <> 'REJEITADA'
+           AND (fo.luminancia < {mosaico.LIMIAR_ESCURA} OR fo.contraste < {mosaico.LIMIAR_LISA}) {filtro}
+         GROUP BY m.colaborador_id, m.data_referencia, c.nome""", **params):
+        d = r["data_referencia"]
+        _registrar(conn, vistos, chave=f"FOTO_ESCURA:{r['colaborador_id']}:{d.isoformat()}",
+                   codigo="FOTO_ESCURA",
+                   mensagem=f"{r['nome']}: foto escura ou sem rosto visível em {d:%d/%m} "
+                            f"({_horas(r['horas'])}) — câmera tampada, ou batida sem a pessoa na frente",
+                   colaborador_id=r["colaborador_id"], obra_id=r["obra_id"], data=d)
+        contagem["FOTO_ESCURA"] += 1
+
+    # --- a mesma foto de novo --------------------------------------------------
+    linhas = db.todos(conn, f"""
+        SELECT m.id AS marcacao_id, m.colaborador_id, m.obra_id, m.data_referencia,
+               m.timestamp_servidor, fo.sha256, fo.dhash, c.nome,
+               (m.data_referencia >= :i) AS nova
+          FROM ponto.marcacoes m JOIN ponto.fotos fo ON fo.id = m.foto_id
+          JOIN public.colaboradores c ON c.id = m.colaborador_id
+         WHERE m.data_referencia BETWEEN :h AND :f AND m.status <> 'REJEITADA' {filtro}
+         ORDER BY m.colaborador_id, m.timestamp_servidor""",
+                      h=inicio - dt.timedelta(days=JANELA_PADRAO), **params)
+    por_pessoa: dict[int, list] = {}
+    por_obra_dia: dict[tuple, list] = {}
+    for l in linhas:
+        por_pessoa.setdefault(l["colaborador_id"], []).append(l)
+        if l["nova"]:
+            por_obra_dia.setdefault((l["obra_id"], l["data_referencia"]), []).append(l)
+    pares = [p for grupo in por_pessoa.values() for p in fotos_repetidas(grupo)]
+    pares += [p for grupo in por_obra_dia.values() for p in fotos_repetidas(grupo)
+              if p[0]["colaborador_id"] != p[1]["colaborador_id"]]
+    for a, b in pares:
+        a, b = sorted((a, b), key=lambda x: x["timestamp_servidor"])
+        outra = "" if a["colaborador_id"] == b["colaborador_id"] else f" (a outra é de {a['nome']})"
+        _registrar(conn, vistos, chave=f"FOTO_REPETIDA:{b['marcacao_id']}:{a['marcacao_id']}",
+                   codigo="FOTO_REPETIDA",
+                   mensagem=f"{b['nome']}: a foto da batida de "
+                            f"{horario.para_local(b['timestamp_servidor']):%d/%m %H:%M} é a mesma de "
+                            f"{horario.para_local(a['timestamp_servidor']):%d/%m %H:%M}{outra} — "
+                            "foto reaproveitada, não tirada na hora",
+                   colaborador_id=b["colaborador_id"], obra_id=b["obra_id"], data=b["data_referencia"])
+        contagem["FOTO_REPETIDA"] += 1
+
+    # --- fila rápida no mesmo aparelho ----------------------------------------
+    por_aparelho: dict[int, list] = {}
+    for l in db.todos(conn, """
+        SELECT m.id, m.colaborador_id, m.obra_id, m.dispositivo_id, m.timestamp_servidor,
+               m.data_referencia, d.descricao
+          FROM ponto.marcacoes m JOIN ponto.dispositivos d ON d.id = m.dispositivo_id
+         WHERE m.data_referencia BETWEEN :i AND :f AND m.status <> 'REJEITADA'
+         ORDER BY m.dispositivo_id, m.timestamp_servidor""", i=inicio, f=fim):
+        por_aparelho.setdefault(l["dispositivo_id"], []).append(l)
+    for batidas in por_aparelho.values():
+        for fila in sequencias_rapidas(batidas):
+            primeira = fila[0]
+            pessoas = len({x["colaborador_id"] for x in fila})
+            _registrar(conn, vistos, chave=f"SEQUENCIA_RAPIDA:{primeira['dispositivo_id']}:{primeira['id']}",
+                       codigo="SEQUENCIA_RAPIDA",
+                       mensagem=f"Aparelho “{primeira['descricao'] or 'sem nome'}”: {pessoas} pessoas "
+                                f"bateram em sequência, com menos de {SEQUENCIA_SEGUNDOS} s entre uma e "
+                                f"outra, às {horario.para_local(primeira['timestamp_servidor']):%H:%M} de "
+                                f"{primeira['data_referencia']:%d/%m} — confira as fotos no mosaico",
+                       obra_id=primeira["obra_id"], data=primeira["data_referencia"])
+            contagem["SEQUENCIA_RAPIDA"] += 1
+
+    # --- QR antigo e CPFs errados (o que o tablet recusou) ---------------------
+    inicio_ts = dt.datetime.combine(inicio, dt.time(0), tzinfo=horario.FUSO)
+    fim_ts = dt.datetime.combine(fim + dt.timedelta(days=1), dt.time(0), tzinfo=horario.FUSO)
+    for r in db.todos(conn, """
+        SELECT c.id AS colaborador_id, c.nome, c.obra_id,
+               (r.criado_em AT TIME ZONE 'America/Fortaleza')::date AS dia, count(*) AS n
+          FROM ponto.recusas r JOIN public.colaboradores c
+            ON regexp_replace(c.cpf, '\\D', '', 'g') = r.cpf_informado
+         WHERE r.motivo LIKE 'QR Code antigo%' AND r.criado_em >= :a AND r.criado_em < :b
+         GROUP BY c.id, c.nome, c.obra_id, dia""", a=inicio_ts, b=fim_ts):
+        if colaborador_ids is not None and r["colaborador_id"] not in colaborador_ids:
+            continue
+        _registrar(conn, vistos, chave=f"QR_ANTIGO_USADO:{r['colaborador_id']}:{r['dia'].isoformat()}",
+                   codigo="QR_ANTIGO_USADO",
+                   mensagem=f"{r['nome']}: QR Code antigo mostrado {r['n']} vez(es) em {r['dia']:%d/%m} "
+                            "— pode haver cópia do QR com outra pessoa",
+                   colaborador_id=r["colaborador_id"], obra_id=r["obra_id"], data=r["dia"])
+        contagem["QR_ANTIGO_USADO"] += 1
+    for r in db.todos(conn, """
+        SELECT r.device_uuid, (r.criado_em AT TIME ZONE 'America/Fortaleza')::date AS dia,
+               count(*) AS n, max(d.descricao) AS descricao
+          FROM ponto.recusas r LEFT JOIN ponto.dispositivos d ON d.device_uuid = r.device_uuid
+         WHERE r.motivo = 'CPF não identificado no tablet' AND r.criado_em >= :a AND r.criado_em < :b
+         GROUP BY r.device_uuid, dia HAVING count(*) >= :m""", a=inicio_ts, b=fim_ts,
+                         m=TENTATIVAS_CPF_MIN):
+        _registrar(conn, vistos, chave=f"TENTATIVAS_DE_CPF:{r['device_uuid']}:{r['dia'].isoformat()}",
+                   codigo="TENTATIVAS_DE_CPF",
+                   mensagem=f"Aparelho “{r['descricao'] or 'sem nome'}”: {r['n']} CPFs que não são de "
+                            f"ninguém da obra em {r['dia']:%d/%m} — alguém testando CPFs, ou cadastro faltando",
+                   data=r["dia"])
+        contagem["TENTATIVAS_DE_CPF"] += 1
+
+    # --- mosaico obrigatório sem conferência ---------------------------------
+    for m in db.todos(conn, """
+        SELECT mo.obra_id, mo.data, mo.avisado_em, o.codigo, u.nome AS responsavel
+          FROM ponto.mosaicos mo JOIN public.obras o ON o.id = mo.obra_id
+          LEFT JOIN public.usuarios u ON u.id = mo.responsavel_id
+         WHERE mo.situacao = 'PENDENTE' AND mo.obrigatorio AND mo.data <= :f""",
+                      f=fim - dt.timedelta(days=1)):
+        quem = m["responsavel"] or "sem responsável definido"
+        extra = "" if m["avisado_em"] else " (o responsável não recebeu o aviso: falta telefone no cadastro)"
+        _registrar(conn, vistos, chave=mosaico.chave_do_alerta(m["obra_id"], m["data"]),
+                   codigo="MOSAICO_PENDENTE",
+                   mensagem=f"Obra {m['codigo']}: o mosaico de fotos de {m['data']:%d/%m} está sem "
+                            f"conferência — responsável: {quem}{extra}",
+                   obra_id=m["obra_id"], data=m["data"])
+        contagem["MOSAICO_PENDENTE"] += 1
     return contagem
 
 

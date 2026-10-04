@@ -124,6 +124,80 @@ o crédito mais antigo do banco é o primeiro a ser usado.
 6h gera os alertas e manda o resumo por WhatsApp aos telefones da Configuração —
 uma vez por dia, numa linha separada, sem ninguém apertar botão.
 
+## QR Code, tablet de câmera ligada, mosaico e sinais de fraude (03/10/2026)
+
+Migração **003** (`migracoes/003_qr_mosaico_e_sinais.sql`). Decisão do dono: no
+tablet da obra a pessoa se identifica **só por CPF ou QR Code** — sem número de
+funcionário e **sem crachá impresso** (crachá se empresta).
+
+**O tablet** (`/ponto/app` num aparelho COMPARTILHADO ou de LISTA): abre direto na
+batida, tela cheia, câmera frontal sempre ligada e teclado numérico grande. A
+câmera procura QR Code o tempo todo (leitor do navegador, `BarcodeDetector`, ou o
+**jsQR** — biblioteca aberta, Apache 2.0, em `static/jsQR.js`); ao mesmo tempo, quem
+quiser digita o CPF — 11 números com dígito certo já identificam, sem apertar OK.
+Identificada, a tela mostra **nome e função**, conta 2 segundos, tira a foto do
+próprio vídeo (sem abrir o aplicativo de câmera), bate, mostra o comprovante e
+volta sozinha. "Não sou eu" cancela. A localização é lida de 10 em 10 minutos, não
+a cada pessoa. A tela fica acesa (`wakeLock`). Rotas:
+`POST /ponto/app/api/tablet/identificar` (devolve o **bilhete**: assinado, 2 min,
+só naquele aparelho) e `POST /ponto/app/api/bater` com o bilhete.
+**No tablet, batida sem foto é aceita e vai para análise** ("sem foto no aparelho
+da obra"). No celular da própria pessoa, não (vira só o alerta "batida sem foto").
+
+**Dois QR, os dois aceitos** (`core/qr.py`):
+- **o do WhatsApp** (`BWSP1.…`): imagem que vai para o WhatsApp do cadastro. O banco
+  guarda **só o hash**. Troca a cada **7 a 14 dias, sorteado por pessoa**; o antigo
+  vale até o novo ser usado pela 1ª vez, ou 3 dias. QR antigo mostrado no tablet é
+  recusado, registrado e vira alerta (pode haver cópia com outra pessoa).
+  "Cancelar QR (celular perdido)" em Pessoas mata todos os da pessoa.
+- **o do "Meu ponto"** (`BWSP2.…`): na tela do celular de quem entrou com CPF+PIN,
+  muda a cada 30 s — print de tela não serve.
+
+**"Esqueci meu QR"**: no próprio tablet (digita o CPF, resposta igual exista ou
+não) ou no "Meu ponto". Até 3 pedidos por dia por pessoa.
+
+**A fila de WhatsApp com ritmo** (`core/envios.py`, tabela `ponto.envios`) — a API
+de WhatsApp da casa não é a oficial, e lote derruba o número:
+
+| Regra | Valor | Por quê |
+|---|---|---|
+| troca do QR | 7 a 14 dias, sorteado por pessoa | ~38 mensagens/dia com 400 pessoas, espalhadas |
+| janela automática | seg. a sáb., 7h30–17h30, hora sorteada | mensagem de madrugada é padrão de robô |
+| entre uma e outra | 30 a 90 s, sorteado | nada de rajada |
+| teto | 40 por hora, 200 por dia (150 automáticas) | sobra para pedido e aviso de mosaico |
+| pedido da pessoa | na hora, 6h–22h, qualquer dia | quem esqueceu não espera |
+| primeiro envio a todos | no máximo 120 por dia | 400 pessoas viram 4 dias |
+
+**Nada sai sozinho até alguém ligar** "Enviar e trocar o QR Code automaticamente"
+em Ponto › Configuração (desligado de fábrica). O envio roda numa linha separada,
+acordada pelas próprias batidas (uma olhada por minuto, no máximo); se o serviço
+reiniciar, a fila está no banco. O QR é gerado na hora do envio; se o WhatsApp
+falhar (3 tentativas, de 10 em 10 min), nenhum QR fica valendo.
+
+**Mosaico** (`core/mosaico.py`, aba **Mosaico**): uma linha por pessoa — foto de
+cadastro, depois as batidas do dia — por obra e dia. Opcional sempre; **obrigatório**
+por obra, com um responsável (usuário do ERP com `tratar_ponto`): na manhã seguinte
+ele recebe o link pelo WhatsApp; sem conferência até o fim do dia seguinte, abre o
+alerta "Mosaico de fotos sem conferência". Conferir pode marcar foto **suspeita** →
+a batida volta para análise (decisão em `marcacao_decisoes`, nada se apaga). As
+miniaturas ficam na memória do serviço (32 MB), não no banco.
+
+**A batida não espera o Drive**: a foto entra na sala de espera e sobe numa linha
+separada logo depois da resposta (antes, 1 a 3 s por pessoa na fila).
+
+**Sinais medidos em cada foto** (sem IA, sem custo): brilho, contraste e uma
+impressão de 256 bits (`dhash`). **Alertas novos**: batida sem foto (e, se ligado,
+aviso por WhatsApp à pessoa no dia seguinte), foto escura ou sem rosto, a mesma foto
+em batidas diferentes (da mesma pessoa em 4 semanas, ou de pessoas diferentes na
+mesma obra e dia), 5+ pessoas em sequência com menos de 10 s no mesmo aparelho, QR
+antigo usado, 5+ CPFs que não são de ninguém no mesmo tablet no dia, mosaico
+obrigatório sem conferência. **São convite a olhar, não prova** — os limiares estão
+no topo de `core/alertas.py` e `core/mosaico.py`, para calibrar no piloto.
+
+**Antes de apertar o botão da 003**, o código já publicado funciona: a batida
+confere se a coluna nova existe (`db.tem_coluna`) antes de usá-la, e o QR do
+WhatsApp responde "ainda não foi ativado — digite o CPF".
+
 ## Variáveis de ambiente
 
 | Variável | Para quê |

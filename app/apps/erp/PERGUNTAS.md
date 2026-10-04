@@ -279,6 +279,31 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem ainda não criou o PIN do celular? 🔒
 - Quais aparelhos estão bloqueados, e por quê?
 
+**QR Code, mosaico e sinais de fraude (migração 003 do ponto, 03/10/2026):**
+
+- Quem bateu por QR Code e quem digitou o CPF hoje na obra X? 🔒 (a batida guarda
+  como a pessoa foi identificada: celular dela, CPF no tablet, QR do WhatsApp ou QR
+  do "Meu ponto")
+- Quem ainda não recebeu o QR Code? Quando troca o QR do Fulano? 🔒
+- Quantas mensagens de QR saíram hoje? Quantas estão na fila? Alguma falhou?
+- Alguém mostrou QR Code antigo no tablet esta semana? 🔒 ⚠️ (QR antigo = já
+  trocado por um mais novo que a pessoa usou, ou vencido há 3 dias; é sinal de
+  cópia, não prova)
+- O mosaico de ontem da obra X foi conferido? Por quem? Quantas fotos foram
+  marcadas como suspeitas? 🔒
+- Quais obras têm mosaico obrigatório, e quem é o responsável de cada uma?
+- Quem bateu sem foto esta semana? Quem teve foto escura ou sem rosto? 🔒
+- Tem foto repetida (a mesma imagem em batidas diferentes)? 🔒 ⚠️ ("repetida" =
+  a mesma imagem mandada de novo, não "parecida"; foto nova da mesma pessoa no
+  mesmo lugar não conta)
+- Algum tablet teve fila rápida demais (5 ou mais pessoas com menos de 10 s entre
+  uma e outra)? 🔒 ⚠️ (é convite a abrir o mosaico, não prova de fraude)
+- Algum tablet recebeu muitos CPFs que não são de ninguém? 🔒
+- **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
+  reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas
+  usaram o QR de outra" — o sistema vê o QR antigo e o rosto no mosaico, não a
+  troca de celular em si.
+
 ### Conciliação e banco
 
 - Quantos títulos ainda não estão conciliados? Quanto somam?

@@ -1,11 +1,11 @@
 {% extends "erp_base.html" %}
 {#
-  A GESTÃO DO PONTO, dentro do ERP — uma página só para as sete abas.
+  A GESTÃO DO PONTO, dentro do ERP — uma página só para as oito abas.
 
-  Por que um arquivo só: as sete abas dividem os mesmos ajudantes (hora em
-  h:mm, a "pílula" da batida, a foto, o rótulo dos alertas). Sete arquivos
-  seriam sete cópias desses ajudantes, e no dia em que alguém corrigisse uma
-  as outras seis continuariam erradas. Cada aba entra por um `if aba_ponto`,
+  Por que um arquivo só: as oito abas dividem os mesmos ajudantes (hora em
+  h:mm, a "pílula" da batida, a foto, o rótulo dos alertas). Oito arquivos
+  seriam oito cópias desses ajudantes, e no dia em que alguém corrigisse uma
+  as outras sete continuariam erradas. Cada aba entra por um `if aba_ponto`,
   e o script só leva o código da aba aberta.
 
   O `pode` aqui só esconde botão que a pessoa não pode usar. A trava de verdade
@@ -13,9 +13,9 @@
 #}
 {% block titulo %}Ponto — {{ {
   "ponto_hoje": "Hoje", "ponto_espelho": "Espelho", "ponto_pendencias": "Pendências",
-  "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
+  "ponto_mosaico": "Mosaico", "ponto_pessoas": "Pessoas", "ponto_banco": "Banco de horas", "ponto_alertas": "Alertas",
   "ponto_config": "Configuração"}.get(aba_ponto, "Ponto") }} — ERP BWS{% endblock %}
-{% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_banco", "ponto_config") %}sem-filtros{% endif %}{% endblock %}
+{% block classe_corpo %}{% if aba_ponto in ("ponto_pendencias", "ponto_mosaico", "ponto_banco", "ponto_config") %}sem-filtros{% endif %}{% endblock %}
 
 {# =========================================================================
    BARRA DA ESQUERDA (filtros)
@@ -130,8 +130,53 @@
   .endereco-app { font-family:var(--fonte-dados); font-size:15px; font-weight:700;
                   background:var(--papel); padding:8px 12px; border-radius:var(--raio-p);
                   word-break:break-all; }
+  /* Mosaico: uma linha por pessoa. A linha de fotos rola de lado dentro dela
+     mesma — a página nunca ganha rolagem lateral, nem no celular. */
+  .mosaico-filtro { display:flex; gap:10px 14px; flex-wrap:wrap; align-items:flex-end; }
+  .mosaico-filtro .campo { flex:1 1 200px; min-width:0; }
+  .mosaico-filtro .campo.estreito { flex:0 1 170px; }
+  .mosaico-grade { min-width:0; max-width:100%; }
+  .mosaico-linha { display:flex; gap:12px; align-items:flex-start; padding:12px 0;
+                   border-top:1px solid var(--borda); min-width:0; }
+  .mosaico-linha:first-child { border-top:0; }
+  .mosaico-nome { flex:0 0 150px; min-width:0; overflow-wrap:anywhere; }
+  .mosaico-nome small { display:block; color:var(--tinta-suave); font-size:11.5px; }
+  .mosaico-fotos { display:flex; gap:10px; overflow-x:auto; flex:1 1 auto; min-width:0;
+                   padding-bottom:6px; -webkit-overflow-scrolling:touch; }
+  .mosaico-cel { flex:0 0 130px; width:130px; font-size:12px; text-align:center; }
+  .mosaico-cel .foto, .mosaico-cel .foto-vazia { width:130px; height:130px; border-radius:8px;
+                   box-sizing:border-box; display:block; }
+  .mosaico-cel img.foto { object-fit:cover; background:#EDEFF3; border:2px solid transparent;
+                          cursor:zoom-in; }
+  .mosaico-cel.cadastro img.foto { border-color:var(--azul-claro); }
+  .mosaico-cel.com-sinal img.foto, .mosaico-cel.com-sinal .foto-vazia { border:2px solid var(--vermelho); }
+  .mosaico-cel.marcada img.foto, .mosaico-cel.marcada .foto-vazia { outline:3px solid var(--ambar);
+                                                                    outline-offset:1px; }
+  .foto-vazia { display:flex; align-items:center; justify-content:center; padding:8px;
+                background:#EDEFF3; color:var(--cinza); font-size:12px; line-height:1.3; }
+  .mosaico-hora { font-family:var(--fonte-dados); font-weight:700; margin-top:4px; }
+  .mosaico-cel .selo { font-size:10.5px; padding:0 6px; margin:2px 2px 0; }
+  .sinal-texto { display:block; color:var(--vermelho); font-weight:600; font-size:11.5px; }
+  .mosaico-suspeita { display:inline-flex; align-items:center; gap:4px; margin-top:4px;
+                      font-size:12px; cursor:pointer; }
+  .mosaico-suspeita input { accent-color:var(--ambar); width:15px; height:15px; margin:0; }
+  .foto-vazia .so-largo { font-size:11px; }
+  .mosaico-pendentes { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+  .barra-conferir { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .barra-conferir .campo { flex:1 1 260px; min-width:0; }
+  .barra-conferir textarea { width:100%; box-sizing:border-box; }
+  /* Interruptor de liga/desliga com explicação embaixo (Configuração). O
+     `.rotulo` do ERP corta o texto numa linha; aqui o texto é longo e quebra. */
+  .interruptor { display:flex; gap:10px; align-items:flex-start; margin:6px 0 0; cursor:pointer; }
+  .interruptor input { accent-color:var(--azul); width:18px; height:18px; margin:2px 0 0; flex:0 0 auto; }
+  .interruptor b { display:block; }
+  .interruptor .explica { display:block; color:var(--tinta-suave); font-size:13px; margin-top:2px; }
   @media (max-width: 720px) {
     .barra-acoes .btn { flex:1 1 auto; }
+    .mosaico-linha { flex-direction:column; gap:6px; }
+    .mosaico-nome { flex:0 0 auto; width:100%; }
+    .mosaico-fotos { width:100%; }
+    .foto-vazia .so-largo { display:none; }
   }
 </style>
 
@@ -143,6 +188,7 @@
     <div id="foto-erro"></div>
     <img id="foto-img" alt="Foto tirada na hora da batida"
          style="max-width:100%; max-height:66vh; border-radius:8px">
+    <div id="foto-acoes"></div>
     <div class="cartao-dica">A foto é tirada pelo aparelho na hora da batida e
       guardada sem alteração.</div>
   </div></dialog>
@@ -250,6 +296,59 @@
   <div class="cartao-dica">Aparelho só bate ponto depois de aprovado. Aprove
     apenas o que você reconhece: um celular aprovado como "tablet da obra"
     deixa qualquer pessoa da obra bater por ele.</div>
+</div>
+{% endif %}
+
+{% elif aba_ponto == "ponto_mosaico" %}
+{# ---------------------------------------------------------------- MOSAICO #}
+<h2>Mosaico de fotos <small id="m-sub">as fotos do dia, lado a lado, por pessoa</small></h2>
+<div id="mensagem"></div>
+<div class="cartao">
+  <div class="mosaico-filtro">
+    <div class="campo"><label for="m-obra">Obra</label>
+      <select id="m-obra"><option value="">carregando…</option></select></div>
+    <div class="campo estreito"><label for="m-data">Dia</label><input type="date" id="m-data"></div>
+    <button class="btn" id="m-ver" type="button">Ver mosaico</button>
+  </div>
+  <div id="m-pendentes"></div>
+</div>
+
+<details class="cartao">
+  <summary style="cursor:pointer; font-weight:700">Como conferir</summary>
+  <div class="cartao-dica">
+    <b>1.</b> Em cada linha, a primeira foto (borda azul) é a do cadastro da
+    pessoa. Compare o rosto de cada batida com ela.<br>
+    <b>2.</b> Marque <b>suspeita</b> quando: o rosto é de <b>outra pessoa</b>; a foto
+    está <b>escura ou tampada</b>; é <b>foto de uma foto</b> ou de uma tela de
+    celular; ou <b>não há ninguém</b> na frente da câmera.<br>
+    <b>3.</b> Aperte <b>Confirmar conferência</b>. As batidas marcadas vão para
+    <b>Pendências › Batidas em análise</b>, para quem trata o ponto decidir.
+    <b>Nada é apagado</b>: a batida continua guardada, com a hora e a foto.<br>
+    Borda vermelha = o sistema achou algo estranho na foto (escura, sem rosto
+    visível). É só um aviso: quem decide é você.
+  </div>
+</details>
+
+<div class="cartao" id="m-painel" hidden>
+  <div class="cartao-cab"><h3 id="m-titulo">Mosaico</h3><span id="m-situacao"></span></div>
+  <div class="suave" id="m-totais" style="font-size:13px"></div>
+  <div id="m-conferencia"></div>
+  <div class="mosaico-grade" id="m-grade"></div>
+</div>
+<div class="cartao" id="m-vazio">
+  <div class="vazio"><b>Escolha a obra e o dia</b>As fotos aparecem aqui, uma linha por pessoa.</div>
+</div>
+
+{% if pode.tratar_ponto %}
+<div class="cartao" id="m-conferir" hidden>
+  <div class="cartao-cab"><h3>Confirmar a conferência</h3>
+    <small id="m-marcadas">nenhuma foto marcada como suspeita</small></div>
+  <div class="barra-conferir">
+    <div class="campo"><label for="m-nota">Observação (opcional)</label>
+      <textarea id="m-nota" rows="2" placeholder="ex.: conferi com o encarregado; a equipe nova ainda não tem foto de cadastro"></textarea></div>
+    <button class="btn" id="m-confirmar" type="button">Confirmar conferência</button>
+  </div>
+  <div id="m-conferir-msg"></div>
 </div>
 {% endif %}
 
@@ -372,6 +471,30 @@
   <div class="cartao-cab"><h3>Resumo diário por WhatsApp</h3></div>
   <div id="c-resumo">carregando…</div>
 </div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>QR Code pelo WhatsApp</h3></div>
+  <div id="c-qr">carregando…</div>
+  {% if pode.configurar_ponto %}
+  <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave); margin-top:18px">
+    Fila de mensagens
+    <button class="link-btn" id="c-envios-atualizar" type="button" style="text-transform:none; letter-spacing:0">atualizar</button></h4>
+  <div id="c-envios">carregando…</div>
+  {% endif %}
+</div>
+
+{% if pode.configurar_ponto %}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Mosaico de fotos por obra</h3></div>
+  <div class="cartao-dica" style="margin-top:0"><b>Opcional:</b> o mosaico fica sempre
+    disponível na aba Mosaico. <b>Obrigatório:</b> na manhã seguinte o responsável recebe
+    no WhatsApp o link do mosaico do dia; se ninguém conferir até o fim do dia seguinte,
+    abre o alerta “Mosaico de fotos sem conferência”. Quem confere precisa ter a permissão
+    de tratar o ponto da obra.</div>
+  <div id="c-mosaico-msg"></div>
+  <div class="tabela-rolagem" style="max-height:420px"><div id="c-mosaico">carregando…</div></div>
+</div>
+{% endif %}
 
 <div class="cartao">
   <div class="cartao-cab"><h3>Google Drive e fila de envio</h3></div>
@@ -556,6 +679,20 @@ const seloAparelho = s => {
   const [c, t] = SELO_APARELHO[s] || ["outro", s || "—"];
   return `<span class="selo ${c}">${escapar(t)}</span>`;
 };
+// A fila de mensagens do WhatsApp (QR Code e avisos), em português. Usada na
+// Configuração (a fila) e em Pessoas (o QR de cada um).
+const TIPO_ENVIO = {QR: "QR Code", MOSAICO: "Aviso do mosaico", AVISO_FOTO: "Aviso de batida sem foto"};
+const MOTIVO_ENVIO = {INICIAL: "primeiro envio", ROTACAO: "troca", PEDIDO: "pedido da pessoa",
+                      GESTAO: "pela gestão"};
+const STATUS_ENVIO = {PENDENTE: ["aguardando", "na fila"], ENVIANDO: ["pago", "enviando"],
+                      ENVIADO: ["aprovado", "enviado"], FALHOU: ["bloqueado", "falhou"],
+                      CANCELADO: ["outro", "cancelado"]};
+const seloEnvio = s => {
+  const [c, t] = STATUS_ENVIO[s] || ["outro", s || "—"];
+  return `<span class="selo ${c}">${escapar(t)}</span>`;
+};
+// "1 pessoa", "3 pessoas" — o número primeiro, a palavra no plural certo.
+const contar = (n, um, varios) => `${Number(n) || 0} ${Number(n) === 1 ? um : varios}`;
 
 // A batida como pílula. `comFoto` liga o clique para abrir a foto (o painel
 // Hoje não recebe o número da batida, então lá ela não abre).
@@ -584,23 +721,37 @@ function chipBatida(b, comFoto) {
   return `<span class="${classes.join(" ")}" title="${escapar(dicas.join(" · "))}">${texto}</span>`;
 }
 
-function verFoto(marcacaoId, legenda) {
+// `url` é para a foto que não é de batida (a do cadastro, no Mosaico).
+function verFoto(marcacaoId, legenda, url) {
   const img = els("foto-img");
   els("foto-legenda").textContent = legenda || "Foto da batida";
   els("foto-erro").innerHTML = "";
+  els("foto-acoes").innerHTML = "";
   img.hidden = false;
   img.onerror = () => {
     img.hidden = true;
     els("foto-erro").innerHTML = `<div class="aviso erro">A foto não abriu. Ela pode
       ainda estar na fila de envio ao Drive — tente de novo daqui a pouco.</div>`;
   };
-  img.src = `/erp/api/ponto/marcacoes/${encodeURIComponent(marcacaoId)}/foto`;
+  img.src = url || `/erp/api/ponto/marcacoes/${encodeURIComponent(marcacaoId)}/foto`;
   els("dlg-foto").showModal();
 }
 document.addEventListener("click", ev => {
   const alvo = ev.target.closest("[data-foto]");
-  if (alvo) verFoto(alvo.dataset.foto, alvo.dataset.legenda);
+  if (!alvo) return;
+  verFoto(alvo.dataset.foto, alvo.dataset.legenda, alvo.dataset.fotoUrl);
+  // A aba aberta pode pôr botões no diálogo da foto (o Mosaico põe "Usar como
+  // foto de cadastro"). As outras abas não definem a função.
+  if (typeof acoesDaFoto === "function") acoesDaFoto(alvo);
 });
+// Miniatura que não abriu (foto expurgada, Drive fora do ar) vira um quadro
+// cinza dizendo isso — e não o ícone de imagem quebrada do navegador.
+function fotoQuebrada(img) {
+  const caixa = document.createElement("div");
+  caixa.className = "foto foto-vazia";
+  caixa.textContent = "foto indisponível";
+  img.replaceWith(caixa);
+}
 
 const linkEspelho = (id, competencia) =>
   `/erp/ponto/espelho?colaborador_id=${encodeURIComponent(id)}`
@@ -1286,6 +1437,294 @@ function desenharAparelhos() {
 
 carregarPendencias();
 
+{% elif aba_ponto == "ponto_mosaico" %}
+// ===========================================================================
+// MOSAICO — as fotos do dia de uma obra, lado a lado, por pessoa. Comparar
+// rostos é o que gente faz melhor que máquina: numa linha (foto do cadastro,
+// depois as batidas do dia) o rosto diferente salta aos olhos em segundos.
+//
+// O link que vai no WhatsApp do responsável abre esta tela já com a obra e o
+// dia (?obra=<id>&data=AAAA-MM-DD) e carrega na hora.
+// ===========================================================================
+let MOS = null, PODE_CONFERIR_MOSAICO = false;
+const VERSAO_CADASTRO = {};
+const doUrl = nome => new URLSearchParams(location.search).get(nome);
+const IDENTIFICACAO = {QR_WHATSAPP: "QR", QR_APP: "QR app", CPF: "CPF", SESSAO: "celular"};
+const DICA_IDENTIFICACAO = {QR_WHATSAPP: "pelo QR Code recebido no WhatsApp",
+  QR_APP: "pelo QR Code do app da pessoa", CPF: "digitou o CPF no tablet",
+  SESSAO: "pelo celular da própria pessoa"};
+
+async function carregarObrasDoMosaico() {
+  try {
+    const d = await api("/erp/api/ponto/obras");
+    els("m-obra").innerHTML = `<option value="">— escolha a obra —</option>`
+      + d.obras.map(o => `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+    return d.obras;
+  } catch (e) { falhou(e); return []; }
+}
+
+async function carregarPendentesDoMosaico() {
+  const alvo = els("m-pendentes");
+  let lista;
+  try {
+    lista = (await api("/erp/api/ponto/mosaico/pendentes")).pendentes || [];
+  } catch (e) {
+    alvo.innerHTML = `<div class="aviso erro" style="margin:12px 0 0">${escapar(e.message)}</div>`;
+    return;
+  }
+  alvo.innerHTML = lista.length
+    ? `<div style="margin-top:12px; font-size:13px"><b>Conferências pendentes</b>
+         <span class="suave">— obras em que a conferência é obrigatória; clique para abrir</span></div>
+       <div class="mosaico-pendentes">${lista.map(p => `<button type="button" class="chip"
+           data-pend-obra="${p.obra_id}" data-pend-data="${escapar(p.data)}"
+           title="${escapar(`${rotuloObra(p)} — ${contar(p.batidas, "batida", "batidas")}`
+             + (p.avisado_em ? `; responsável avisado em ${quando(p.avisado_em)}` : "; responsável não avisado"))}">
+           ${escapar(p.codigo)} · ${ddmm(p.data)} · ${contar(p.batidas, "batida", "batidas")}</button>`).join("")}</div>`
+    : `<div class="cartao-dica">Nenhuma conferência obrigatória esperando.</div>`;
+  alvo.querySelectorAll("[data-pend-obra]").forEach(b => b.addEventListener("click", () => {
+    escolherObra(b.dataset.pendObra);
+    els("m-data").value = b.dataset.pendData;
+    carregarMosaico();
+  }));
+}
+
+// Põe a obra no seletor. A obra que não está na lista (o link do WhatsApp de
+// uma obra já encerrada, por exemplo) ganha a opção, para o seletor não
+// mostrar uma obra e o mosaico outra.
+function escolherObra(id, rotulo) {
+  const sel = els("m-obra");
+  let opcao = [...sel.options].find(o => o.value === String(id));
+  if (!opcao) {
+    opcao = document.createElement("option");
+    opcao.value = String(id);
+    opcao.textContent = `obra nº ${id}`;
+    sel.appendChild(opcao);
+  }
+  if (rotulo) opcao.textContent = rotulo;
+  sel.value = String(id);
+}
+
+function semMosaico() {
+  MOS = null;
+  els("m-painel").hidden = true;
+  els("m-vazio").hidden = false;
+  if (els("m-conferir")) els("m-conferir").hidden = true;
+}
+
+async function carregarMosaico() {
+  const obra = els("m-obra").value;
+  const data = els("m-data").value || somarDias(hojeISO(), -1);
+  if (!obra) { semMosaico(); return; }
+  history.replaceState(null, "", `?obra=${encodeURIComponent(obra)}&data=${encodeURIComponent(data)}`);
+  try {
+    const d = await api(`/erp/api/ponto/mosaico?obra=${encodeURIComponent(obra)}&data=${encodeURIComponent(data)}`);
+    PODE_CONFERIR_MOSAICO = !!d.pode_conferir;
+    MOS = d;
+    escolherObra(MOS.obra.id, rotuloObra(MOS.obra));
+    desenharMosaico();
+  } catch (e) { semMosaico(); falhou(e); }
+}
+
+function situacaoDoMosaico() {
+  const c = MOS.conferencia, obrigatoria = c ? !!(c.obrigatorio || MOS.obra.obrigatorio) : !!MOS.obra.obrigatorio;
+  if (c && c.situacao === "CONFERIDO") {
+    return `<span class="selo aprovado">Conferido por ${escapar(c.conferido_por || "—")} em ${escapar(quando(c.conferido_em))}</span>`;
+  }
+  if (obrigatoria) return `<span class="selo aguardando">Esperando conferência (obra obrigatória)</span>`;
+  return `<span class="selo outro">Conferência opcional</span>`;
+}
+
+function detalheDaConferencia() {
+  const c = MOS.conferencia;
+  if (!c) return "";
+  if (c.situacao === "CONFERIDO") {
+    return `<div class="cartao-dica">${c.suspeitas
+        ? `${contar(c.suspeitas, "foto marcada", "fotos marcadas")} como suspeita — as batidas foram para Pendências.`
+        : "Nenhuma foto marcada como suspeita."}
+      ${c.nota ? `<br>Observação: “${escapar(c.nota)}”` : ""}</div>`;
+  }
+  if (c.situacao === "PENDENTE" && c.obrigatorio) {
+    return `<div class="cartao-dica">${c.avisado_em
+      ? `O responsável foi avisado pelo WhatsApp em ${escapar(quando(c.avisado_em))}.`
+      : "O responsável não foi avisado pelo WhatsApp (falta telefone no cadastro dele)."}</div>`;
+  }
+  return "";
+}
+
+function celulaDoCadastro(p) {
+  // A foto de cadastro fica guardada no navegador por uma hora. Depois de
+  // trocá-la, a versão no endereço obriga a buscar a nova.
+  const versao = VERSAO_CADASTRO[p.colaborador_id];
+  const url = `/erp/api/ponto/pessoas/${encodeURIComponent(p.colaborador_id)}/foto-cadastral`
+    + (versao ? `?v=${versao}` : "");
+  const foto = p.tem_foto_cadastral
+    ? `<img class="foto" loading="lazy" src="${url}" alt="${escapar(`Foto do cadastro de ${p.nome}`)}"
+         onerror="fotoQuebrada(this)" data-foto="cadastro" data-foto-url="${url}"
+         data-legenda="${escapar(`${p.nome} — foto do cadastro`)}">`
+    : `<div class="foto foto-vazia">${PODE_TRATAR
+        ? `<span>sem foto de cadastro<span class="so-largo"> — abra uma foto boa e toque em “Usar como
+            foto de cadastro”</span></span>` : "sem foto de cadastro"}</div>`;
+  return `<div class="mosaico-cel cadastro">${foto}<div class="mosaico-hora">cadastro</div></div>`;
+}
+
+function celulaDaBatida(p, b) {
+  const sinais = b.sinais || [];
+  const foto = b.tem_foto
+    ? `<img class="foto" loading="lazy" src="/erp/api/ponto/marcacoes/${encodeURIComponent(b.id)}/miniatura"
+         alt="${escapar(`Foto da batida das ${b.hora}`)}" onerror="fotoQuebrada(this)"
+         data-foto="${b.id}" data-colaborador="${p.colaborador_id}" data-legenda="${escapar(`${p.nome} — batida das ${b.hora}`)}">`
+    : `<div class="foto foto-vazia">sem foto</div>`;
+  const selos = [
+    b.identificacao ? `<span class="selo pago" title="${escapar(DICA_IDENTIFICACAO[b.identificacao] || "")}">${
+      escapar(IDENTIFICACAO[b.identificacao] || b.identificacao)}</span>` : "",
+    b.status === "EM_ANALISE" ? `<span class="selo aguardando"
+      title="${escapar(b.motivo_analise ? `em análise: ${b.motivo_analise}` : "em análise")}">em análise</span>` : "",
+  ].join("");
+  // Só a batida válida pode ser marcada: a que já está em análise já está na
+  // fila de quem trata o ponto.
+  const marcar = PODE_CONFERIR_MOSAICO && els("m-conferir") && b.status === "VALIDA"
+    ? `<label class="mosaico-suspeita" title="Marque se a foto não confere com a do cadastro">
+         <input type="checkbox" data-suspeita="${b.id}"> suspeita</label>` : "";
+  return `<div class="mosaico-cel ${sinais.length ? "com-sinal" : ""}" data-celula="${b.id}">${foto}
+    <div class="mosaico-hora" title="${escapar(`NSR ${b.nsr}`)}">${escapar(b.hora)}</div>
+    ${selos ? `<div>${selos}</div>` : ""}
+    ${sinais.map(s => `<span class="sinal-texto">${escapar(s)}</span>`).join("")}
+    ${marcar}</div>`;
+}
+
+function desenharMosaico() {
+  const t = MOS.totais || {};
+  els("m-vazio").hidden = true;
+  els("m-painel").hidden = false;
+  els("m-titulo").textContent = `${rotuloObra(MOS.obra)} — ${dataBR(MOS.data)}`;
+  els("m-situacao").innerHTML = situacaoDoMosaico();
+  els("m-totais").textContent = [contar(t.pessoas, "pessoa", "pessoas"), contar(t.batidas, "batida", "batidas"),
+    `${t.sem_foto || 0} sem foto`, `${t.com_sinal || 0} com sinal estranho`].join(" · ");
+  els("m-conferencia").innerHTML = detalheDaConferencia();
+  const pessoas = MOS.pessoas || [];
+  const comp = MOS.data.slice(0, 7);
+  els("m-grade").innerHTML = pessoas.length ? pessoas.map(p => `<div class="mosaico-linha">
+      <div class="mosaico-nome"><a class="elo" href="${linkEspelho(p.colaborador_id, comp)}"
+          title="Abrir o espelho do mês"><b>${escapar(p.nome)}</b></a>
+        <small>${escapar(p.funcao || "função não informada")}</small>
+        <small>${contar((p.batidas || []).length, "batida", "batidas")}</small></div>
+      <div class="mosaico-fotos">${celulaDoCadastro(p)}${(p.batidas || []).map(b => celulaDaBatida(p, b)).join("")}</div>
+    </div>`).join("")
+    : `<div class="vazio"><b>Ninguém bateu ponto nesta obra neste dia</b>As batidas incluídas
+        por ajuste não entram no mosaico, porque não têm foto.</div>`;
+  els("m-grade").querySelectorAll("[data-suspeita]").forEach(c => c.addEventListener("change", () => {
+    const cel = els("m-grade").querySelector(`[data-celula="${c.dataset.suspeita}"]`);
+    if (cel) cel.classList.toggle("marcada", c.checked);
+    contarMarcadas();
+  }));
+  const barra = els("m-conferir");
+  if (barra) {
+    barra.hidden = !(PODE_CONFERIR_MOSAICO && pessoas.length);
+    els("m-nota").value = (MOS.conferencia && MOS.conferencia.nota) || "";
+    els("m-conferir-msg").innerHTML = "";
+    contarMarcadas();
+  }
+}
+
+function contarMarcadas() {
+  if (!els("m-marcadas")) return;
+  const n = els("m-grade").querySelectorAll("[data-suspeita]:checked").length;
+  const ja = MOS && MOS.conferencia && MOS.conferencia.situacao === "CONFERIDO";
+  els("m-marcadas").textContent = (n ? `${contar(n, "foto marcada", "fotos marcadas")} como suspeita`
+    : "nenhuma foto marcada como suspeita") + (ja ? " · este dia já foi conferido; confirmar de novo registra você" : "");
+}
+
+// Foto de batida aberta grande: quem trata o ponto pode fazer dela a foto de
+// cadastro da pessoa — a referência da primeira coluna.
+function acoesDaFoto(alvo) {
+  if (!PODE_TRATAR || !alvo.dataset.colaborador || !/^\d+$/.test(alvo.dataset.foto || "")) return;
+  els("foto-acoes").innerHTML = `<div style="margin-top:10px">
+      <button class="btn secundario" type="button" id="foto-usar-cadastro">Usar como foto de cadastro</button></div>
+    <div id="foto-acoes-msg"></div>`;
+  els("foto-usar-cadastro").addEventListener("click", () =>
+    usarComoFotoDeCadastro(Number(alvo.dataset.colaborador), Number(alvo.dataset.foto)));
+}
+
+async function usarComoFotoDeCadastro(colaboradorId, marcacaoId) {
+  const b = els("foto-usar-cadastro");
+  b.disabled = true;
+  try {
+    await postar(`/erp/api/ponto/pessoas/${colaboradorId}/foto-cadastral`, {marcacao_id: marcacaoId});
+    VERSAO_CADASTRO[colaboradorId] = Date.now();
+    els("dlg-foto").close();
+    aviso("mensagem", "Foto de cadastro definida.", "ok");
+    await carregarMosaico();
+  } catch (e) { b.disabled = false; falhou(e, "foto-acoes-msg"); }
+}
+
+async function confirmarConferencia() {
+  if (!MOS) return;
+  const achar = id => {
+    for (const p of MOS.pessoas || []) {
+      const b = (p.batidas || []).find(x => x.id === id);
+      if (b) return {p, b};
+    }
+    return null;
+  };
+  const marcadas = [...els("m-grade").querySelectorAll("[data-suspeita]:checked")]
+    .map(c => achar(Number(c.dataset.suspeita))).filter(Boolean);
+  let suspeitas = [];
+  if (marcadas.length) {
+    // Uma pergunta por batida marcada. Motivo curto demais reabre o diálogo
+    // com o que já foi escrito, em vez de perder tudo.
+    const motivos = {};
+    let falta = "";
+    for (;;) {
+      const r = await perguntar({
+        titulo: `${contar(marcadas.length, "foto suspeita", "fotos suspeitas")}`,
+        aviso: `${falta}As batidas marcadas vão para <b>Pendências › Batidas em análise</b>, para
+          quem trata o ponto decidir. Nada é apagado.`,
+        campos: marcadas.map(({p, b}) => ({nome: `m${b.id}`, tipo: "textarea", linhas: 2, largura: 3,
+          rotulo: `${escapar(p.nome)} — ${escapar(b.hora)}: o que a foto tem de estranho?`,
+          obrigatorio: true, valor: escapar(motivos[b.id] || ""),
+          exemplo: "ex.: é outra pessoa; foto de uma foto; câmera tampada"})),
+        textoOk: "Confirmar conferência",
+      });
+      if (!r) return;
+      marcadas.forEach(({b}) => { motivos[b.id] = (r[`m${b.id}`] || "").trim(); });
+      if (marcadas.every(({b}) => motivos[b.id].length >= 5)) break;
+      falta = `<b>Escreva ao menos 5 letras em cada motivo.</b><br>`;
+    }
+    suspeitas = marcadas.map(({b}) => ({marcacao_id: b.id, motivo: motivos[b.id]}));
+  } else {
+    const r = await perguntar({titulo: "Confirmar conferência",
+      aviso: `Nenhuma foto marcada como suspeita. Confirma que conferiu os rostos de
+        ${contar((MOS.pessoas || []).length, "pessoa", "pessoas")} em ${dataBR(MOS.data)}?`,
+      campos: [], textoOk: "Confirmar conferência"});
+    if (!r) return;
+  }
+  const botao = els("m-confirmar");
+  botao.disabled = true;
+  try {
+    const d = await postar("/erp/api/ponto/mosaico/conferir", {
+      obra: MOS.obra.id, data: MOS.data, nota: els("m-nota").value.trim(), suspeitas});
+    MOS = d;   // a resposta não traz `pode_conferir`: vale o que já se sabia
+    desenharMosaico();
+    aviso("m-conferir-msg", "Conferência registrada."
+      + (suspeitas.length ? ` ${contar(suspeitas.length, "batida foi", "batidas foram")} para análise, em Pendências.` : ""), "ok");
+    carregarPendentesDoMosaico();
+  } catch (e) { falhou(e, "m-conferir-msg"); }
+  botao.disabled = false;
+}
+
+els("m-data").value = /^\d{4}-\d{2}-\d{2}$/.test(doUrl("data") || "") ? doUrl("data") : somarDias(hojeISO(), -1);
+els("m-data").max = hojeISO();
+els("m-ver").addEventListener("click", carregarMosaico);
+els("m-obra").addEventListener("change", carregarMosaico);
+els("m-data").addEventListener("change", () => { if (els("m-obra").value) carregarMosaico(); });
+if (els("m-confirmar")) els("m-confirmar").addEventListener("click", confirmarConferencia);
+carregarPendentesDoMosaico();
+carregarObrasDoMosaico().then(obras => {
+  const pedida = doUrl("obra");
+  if (pedida && /^\d+$/.test(pedida)) { escolherObra(pedida); carregarMosaico(); }
+  else if (obras.length === 1) { escolherObra(obras[0].id); carregarMosaico(); }
+});
+
 {% elif aba_ponto == "ponto_pessoas" %}
 // ===========================================================================
 // PESSOAS — escala, jornada, obras extras e banco de horas de cada pessoa.
@@ -1330,7 +1769,7 @@ async function abrirPessoa(id) {
     const ficha = els("pe-ficha");
     ficha.hidden = false;
     ficha.innerHTML = `<div class="cartao-cab"><h3>${escapar(p.nome)}
-        <small>${escapar(documento(p.cpf))}${p.matricula ? ` · mat. ${escapar(p.matricula)}` : ""}</small></h3>
+        <small>${p.funcao ? `${escapar(p.funcao)} · ` : ""}${escapar(documento(p.cpf))}${p.matricula ? ` · mat. ${escapar(p.matricula)}` : ""}</small></h3>
       <button class="link-btn" type="button" id="pe-fechar">fechar</button></div>
       <div id="pe-msg"></div>
       <div class="kpis">
@@ -1355,6 +1794,8 @@ async function abrirPessoa(id) {
         ${PODE_DP ? `<button class="btn secundario" type="button" id="pe-banco">Banco de horas</button>` : ""}
         <a class="btn secundario" style="text-decoration:none" href="${linkEspelho(p.id)}">Ver espelho</a>
       </div>
+      <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave)">QR Code</h4>
+      <div id="pe-qr"></div>
       <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave)">Histórico de escalas</h4>
       ${(p.escalas || []).length ? `<table><thead><tr><th class="sem-ordem">Desde</th><th class="sem-ordem">Escala</th>
           <th class="sem-ordem">Início do ciclo 12x36</th><th class="sem-ordem">Definida por</th></tr></thead><tbody>
@@ -1375,8 +1816,79 @@ async function abrirPessoa(id) {
     if (els("pe-escala")) els("pe-escala").addEventListener("click", () => trocarEscala(p));
     if (els("pe-jornada")) els("pe-jornada").addEventListener("click", () => jornadaEObras(p));
     if (els("pe-banco")) els("pe-banco").addEventListener("click", () => regimeDoBanco(p));
+    desenharQrDaPessoa(p);
     ficha.scrollIntoView({behavior: "smooth", block: "start"});
   } catch (e) { falhou(e); }
+}
+
+// --- QR Code da pessoa: o que ela tem valendo, e os dois botões da gestão.
+function textoDoQr(q) {
+  const linhas = [];
+  if (q.tem_qr) {
+    linhas.push(`QR enviado em ${escapar(quando(q.enviado_em))}, usado ${contar(q.usos, "vez", "vezes")}`
+      + (q.ultimo_uso_em ? ` (último uso em ${escapar(quando(q.ultimo_uso_em))})` : "")
+      + (q.proxima_troca ? `, próxima troca em ${escapar(quando(q.proxima_troca))}` : "") + ".");
+  } else if (!q.na_fila) {
+    // A situação não diz se houve um QR antes; "ainda não recebeu" mentiria
+    // logo depois de um cancelamento.
+    linhas.push("Nenhum QR Code valendo — ainda não recebeu, ou o último foi cancelado.");
+  }
+  if (q.na_fila) {
+    const f = q.na_fila;
+    linhas.push(`Na fila de envio (${escapar(MOTIVO_ENVIO[f.motivo] || f.motivo || "—")}) — `
+      + (f.status === "ENVIANDO" ? "saindo agora." : `programado para ${escapar(quando(f.agendado_para))}.`));
+  }
+  return linhas;
+}
+
+function desenharQrDaPessoa(p) {
+  const alvo = els("pe-qr"), q = p.qr;
+  if (!alvo) return;
+  if (!q) {
+    alvo.innerHTML = `<div class="cartao-dica" style="margin-top:0">O QR Code ainda não está ligado:
+      falta aplicar as atualizações do ponto (Configuração).</div>`;
+    return;
+  }
+  alvo.innerHTML = `${textoDoQr(q).map(t => `<div>${t}</div>`).join("")}
+    ${PODE_TRATAR ? `<div class="barra-acoes" style="margin-top:8px">
+        <button class="btn secundario" type="button" id="pe-qr-enviar" ${p.tem_telefone ? "" : "disabled"}
+          title="O QR novo substitui o antigo e vai na frente da fila">Mandar QR novo no WhatsApp</button>
+        <button class="btn secundario" type="button" id="pe-qr-revogar">Cancelar QR (celular perdido)</button>
+      </div>
+      ${p.tem_telefone ? "" : `<div class="cartao-dica" style="margin-top:0">Sem telefone no cadastro
+        do ERP: não há para onde mandar o QR Code. O celular se cadastra em Colaboradores.</div>`}` : ""}
+    <div id="pe-qr-msg"></div>`;
+  if (els("pe-qr-enviar")) els("pe-qr-enviar").addEventListener("click", () => enviarQr(p));
+  if (els("pe-qr-revogar")) els("pe-qr-revogar").addEventListener("click", () => revogarQr(p));
+}
+
+async function enviarQr(p) {
+  const b = els("pe-qr-enviar");
+  b.disabled = true;
+  try {
+    const d = await postar(`/erp/api/ponto/pessoas/${p.id}/qr/enviar`);
+    p.qr = d.qr;
+    desenharQrDaPessoa(p);
+    if (d.whatsapp_configurado) aviso("pe-qr-msg", "Na fila — sai em instantes.", "ok");
+    else aviso("pe-qr-msg", `Ficou na fila, mas o WhatsApp da empresa não está configurado neste
+      servidor: a mensagem só sai depois que alguém configurar.`, "alerta");
+  } catch (e) { b.disabled = false; falhou(e, "pe-qr-msg"); }
+}
+
+async function revogarQr(p) {
+  const r = await perguntar({
+    titulo: `Cancelar o QR Code — ${escapar(p.nome)}`,
+    aviso: `Nenhum QR desta pessoa vale mais até o próximo envio. O CPF continua
+      funcionando no tablet.`,
+    campos: [], textoOk: "Cancelar o QR Code"});
+  if (!r) return;
+  try {
+    const d = await postar(`/erp/api/ponto/pessoas/${p.id}/qr/revogar`);
+    p.qr = d.qr;
+    desenharQrDaPessoa(p);
+    aviso("pe-qr-msg", (d.revogados ? `${contar(d.revogados, "QR Code cancelado", "QR Codes cancelados")}.`
+      : "Não havia QR Code valendo.") + " Para a pessoa voltar a usar o QR, mande um novo.", "ok");
+  } catch (e) { falhou(e, "pe-qr-msg"); }
 }
 
 async function trocarEscala(p) {
@@ -1635,6 +2147,7 @@ const GRUPOS = [["URGENTE", "Urgente", "bloqueado"], ["ATENCAO", "Atenção", "a
                 ["INFO", "Para saber", "pago"]];
 const SELO_SITUACAO = {ABERTO: ["aguardando", "aberto"], RESOLVIDO: ["aprovado", "resolvido"],
                        DISPENSADO: ["outro", "dispensado"]};
+const ALERTAS_DO_MOSAICO = ["MOSAICO_PENDENTE", "SEQUENCIA_RAPIDA"];
 
 async function carregarAlertas() {
   const p = new URLSearchParams();
@@ -1667,9 +2180,13 @@ function desenharAlertas() {
         const [c, t] = SELO_SITUACAO[a.situacao] || ["outro", a.situacao];
         const nome = a.colaborador_id
           ? `<a class="elo" href="${linkEspelho(a.colaborador_id, (a.data_referencia || hojeISO()).slice(0, 7))}">abrir espelho</a>` : "";
+        // Mosaico pendente e sequência rápida no mesmo aparelho se resolvem
+        // olhando as fotos daquele dia, daquela obra.
+        const mosaico = ALERTAS_DO_MOSAICO.includes(a.codigo) && a.obra_id && a.data_referencia
+          ? `<a class="elo" href="/erp/ponto/mosaico?obra=${encodeURIComponent(a.obra_id)}&data=${encodeURIComponent(a.data_referencia)}">Abrir mosaico</a>` : "";
         return `<tr>
           <td><b>${escapar(a.rotulo || ROTULOS[a.codigo] || a.codigo)}</b></td>
-          <td class="desc">${escapar(a.mensagem)}${nome ? `<small>${nome}</small>` : ""}</td>
+          <td class="desc">${escapar(a.mensagem)}${[nome, mosaico].filter(Boolean).map(x => `<small>${x}</small>`).join("")}</td>
           <td class="dados">${escapar(a.obra || "—")}</td>
           <td class="dados">${a.data_referencia ? dataBR(a.data_referencia) : "—"}</td>
           <td><span class="selo ${c}">${escapar(t)}</span>
@@ -1763,7 +2280,8 @@ carregarResumo();
 {% elif aba_ponto == "ponto_config" %}
 // ===========================================================================
 // CONFIGURAÇÃO — atualizações do banco, escalas, feriados, fechamento do mês,
-// aparelhos, resumo diário, Drive e o endereço do app.
+// aparelhos, resumo diário, QR Code e avisos pelo WhatsApp, mosaico por obra,
+// Drive e o endereço do app.
 //
 // Cada cartão carrega sozinho e mostra o próprio erro: com atualização
 // pendente, a tabela de feriados pode nem existir ainda, e isso não pode
@@ -1772,18 +2290,23 @@ carregarResumo();
 const DIAS_SEMANA = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 const ABRANGENCIAS = [{valor: "NACIONAL", rotulo: "Nacional"}, {valor: "ESTADUAL", rotulo: "Estadual (de uma UF)"},
   {valor: "MUNICIPAL", rotulo: "Municipal (de um município)"}, {valor: "OBRA", rotulo: "Só de uma obra"}];
-let CONFIG = null, ESCALAS = [], OBRAS = null, ESCALA_ABERTA = null;
+let CONFIG = null, ESCALAS = [], OBRAS = null, ESCALA_ABERTA = null, MOSAICO_OBRAS = null;
 const erroNoCartao = (alvo, e) => { els(alvo).innerHTML = `<div class="aviso erro" style="margin:0">${escapar(e.message)}</div>`; };
 
 // ------------------------------------------------ 1. atualizações do banco
 async function carregarConfig() {
   try {
     CONFIG = await api("/erp/api/ponto/configuracao");
-  } catch (e) { erroNoCartao("c-migracoes", e); return; }
+  } catch (e) { erroNoCartao("c-migracoes", e); erroNoCartao("c-qr", e); return; }
   desenharMigracoes();
   desenharResumoDiario();
+  desenharQrEAvisos();
   desenharDrive();
   els("c-app").textContent = location.origin + (CONFIG.endereco_app || "/ponto/app");
+  // A fila de mensagens e o mosaico por obra dependem da atualização 003:
+  // esperam a configuração dizer se ela já está aplicada.
+  carregarEnvios();
+  carregarMosaicoDasObras();
 }
 
 function desenharMigracoes() {
@@ -2122,7 +2645,187 @@ function desenharResumoDiario() {
   });
 }
 
-// ------------------------------------------------------ 7. Drive e fila
+// ------------------------------------- 7. QR Code e avisos pelo WhatsApp
+const SEM_003 = `<div class="aviso alerta" style="margin:0 0 10px">Aplique as atualizações do ponto
+  para ligar o QR Code e o mosaico.</div>`;
+
+function desenharQrEAvisos() {
+  const pronto = !!CONFIG.recursos_003, mexe = pronto && PODE_CONFIGURAR;
+  els("c-qr").innerHTML = `${pronto ? "" : SEM_003}
+    ${pronto && !CONFIG.whatsapp_configurado ? `<div class="aviso alerta" style="margin:0 0 10px">O WhatsApp
+      da empresa não está configurado neste servidor; nada será enviado.</div>` : ""}
+    <label class="interruptor"><input type="checkbox" id="c-qr-auto"
+        ${CONFIG.qr_envio_automatico ? "checked" : ""} ${mexe ? "" : "disabled"}>
+      <span><b>Enviar e trocar o QR Code automaticamente</b>
+        <span class="explica">Cada pessoa recebe o próprio QR Code no WhatsApp e ele troca sozinho
+          a cada 7 a 14 dias (sorteado por pessoa, em dias e horários diferentes). As mensagens saem
+          espaçadas — de 30 a 90 segundos entre uma e outra, no máximo 40 por hora e 150 automáticas
+          por dia, de segunda a sábado das 7h30 às 17h30 — para o número do WhatsApp da empresa não
+          ser bloqueado. O primeiro envio para todo mundo se espalha por alguns dias. Quem esquece
+          pode pedir de novo no próprio tablet.</span></span></label>
+    <label class="interruptor" style="margin-top:14px"><input type="checkbox" id="c-aviso-foto"
+        ${CONFIG.aviso_sem_foto ? "checked" : ""} ${mexe ? "" : "disabled"}>
+      <span><b>Avisar a pessoa por WhatsApp quando a batida ficar sem foto</b>
+        <span class="explica">No dia seguinte, quem bateu sem foto recebe uma mensagem curta pedindo
+          para deixar a câmera ver o rosto. Uma mensagem por dia, no máximo.</span></span></label>
+    ${pronto && !PODE_CONFIGURAR ? `<div class="cartao-dica">Só quem configura o ponto liga ou desliga.</div>` : ""}
+    <div id="c-qr-msg" style="margin-top:8px"></div>`;
+  if (!mexe) return;
+  els("c-qr-auto").addEventListener("change", ligarQrAutomatico);
+  els("c-aviso-foto").addEventListener("change", ligarAvisoSemFoto);
+}
+
+async function ligarQrAutomatico(ev) {
+  const caixa = ev.target, ligar = caixa.checked;
+  if (ligar) {
+    const r = await perguntar({
+      titulo: "Ligar o envio automático do QR Code",
+      aviso: `O sistema vai começar a mandar mensagens no WhatsApp para <b>todas as pessoas que
+        têm telefone no cadastro</b>: primeiro o QR Code de cada uma, depois a troca a cada 7 a 14
+        dias. O primeiro envio se espalha por alguns dias.
+        ${CONFIG.whatsapp_configurado ? "" : `<br><b>O WhatsApp da empresa não está configurado neste
+          servidor: as mensagens ficam na fila e nada sai até alguém configurar.</b>`}`,
+      campos: [], textoOk: "Ligar e começar a enviar"});
+    if (!r) { caixa.checked = false; return; }
+  }
+  caixa.disabled = true;
+  try {
+    await postar("/erp/api/ponto/configuracao", {qr_envio_automatico: ligar});
+    CONFIG.qr_envio_automatico = ligar;
+    aviso("c-qr-msg", ligar
+      ? "Envio automático ligado. Os primeiros envios são agendados na próxima rotina do dia e se espalham por alguns dias."
+      : "Envio automático desligado. As trocas agendadas ficam paradas na fila; quem pedir o QR no tablet ou no app continua recebendo.", "ok");
+    carregarEnvios();
+  } catch (e) { caixa.checked = !ligar; falhou(e, "c-qr-msg"); }
+  caixa.disabled = false;
+}
+
+async function ligarAvisoSemFoto(ev) {
+  const caixa = ev.target, ligar = caixa.checked;
+  caixa.disabled = true;
+  try {
+    await postar("/erp/api/ponto/configuracao", {aviso_sem_foto: ligar});
+    CONFIG.aviso_sem_foto = ligar;
+    aviso("c-qr-msg", ligar ? "Aviso de batida sem foto ligado." : "Aviso de batida sem foto desligado.", "ok");
+  } catch (e) { caixa.checked = !ligar; falhou(e, "c-qr-msg"); }
+  caixa.disabled = false;
+}
+
+// A fila de mensagens: o que saiu, o que espera e o ritmo. Só para quem
+// configura o ponto (o cartão nem existe para os outros).
+async function carregarEnvios() {
+  const alvo = els("c-envios");
+  if (!alvo || !CONFIG) return;
+  if (!CONFIG.recursos_003) {
+    alvo.innerHTML = `<div class="cartao-dica" style="margin-top:0">Aparece depois de aplicar as atualizações do ponto.</div>`;
+    return;
+  }
+  let d;
+  try { d = await api("/erp/api/ponto/envios"); } catch (e) { erroNoCartao("c-envios", e); return; }
+  const somar = (...st) => (d.por_tipo || []).filter(x => st.includes(x.status))
+    .reduce((t, x) => t + Number(x.n || 0), 0);
+  const r = d.ritmo || {};
+  const naFila = somar("PENDENTE", "ENVIANDO"), falhas = somar("FALHOU");
+  const lista = d.envios || [];
+  alvo.innerHTML = `<div class="kpis">
+      <div class="kpi estatico verde"><div class="kpi-rotulo">Enviadas hoje</div>
+        <div class="kpi-valor">${d.hoje || 0}</div>
+        <div class="kpi-sub">até ${r.por_dia ?? "—"} por dia (${r.automaticos_por_dia ?? "—"} automáticas)</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Na última hora</div>
+        <div class="kpi-valor">${d.na_ultima_hora || 0}</div><div class="kpi-sub">até ${r.por_hora ?? "—"} por hora</div></div>
+      <div class="kpi estatico ${naFila ? "ambar" : ""}"><div class="kpi-rotulo">Na fila</div>
+        <div class="kpi-valor">${naFila}</div>
+        <div class="kpi-sub">${d.proximo ? `próxima: ${escapar(quando(d.proximo))}` : "nada agendado"}</div></div>
+      <div class="kpi estatico ${falhas ? "vermelho" : ""}"><div class="kpi-rotulo">Falharam</div>
+        <div class="kpi-valor">${falhas}</div><div class="kpi-sub">nos últimos 14 dias</div></div>
+    </div>
+    ${lista.length ? `<div class="tabela-rolagem" style="max-height:360px"><table><thead><tr>
+        <th class="sem-ordem">Quando</th><th class="sem-ordem">Para</th><th class="sem-ordem">Mensagem</th>
+        <th class="sem-ordem">Situação</th></tr></thead><tbody>
+      ${lista.map(e => `<tr>
+        <td class="dados">${e.enviado_em ? escapar(quando(e.enviado_em))
+          : `${escapar(quando(e.agendado_para))}<small>programada</small>`}</td>
+        <td>${e.colaborador ? escapar(e.colaborador) : `<span class="suave">gestão</span>`}
+          <small class="dados">${escapar(e.telefone || "")}</small></td>
+        <td>${escapar(TIPO_ENVIO[e.tipo] || e.tipo)}${e.motivo ? `<small>${escapar(MOTIVO_ENVIO[e.motivo] || e.motivo)}</small>` : ""}</td>
+        <td>${seloEnvio(e.status)}${e.tentativas > 1 ? `<small>${e.tentativas} tentativas</small>` : ""}
+          ${e.status === "FALHOU" && e.resultado ? `<small>${escapar(e.resultado)}</small>` : ""}</td>
+      </tr>`).join("")}</tbody></table></div>`
+      : `<div class="cartao-dica">Nenhuma mensagem ainda.</div>`}`;
+}
+
+// ------------------------------------------------ 8. mosaico por obra
+async function carregarMosaicoDasObras() {
+  const alvo = els("c-mosaico");
+  if (!alvo || !CONFIG) return;
+  if (!CONFIG.recursos_003) { alvo.innerHTML = SEM_003; return; }
+  try {
+    MOSAICO_OBRAS = await api("/erp/api/ponto/mosaico/obras");
+  } catch (e) { erroNoCartao("c-mosaico", e); return; }
+  desenharMosaicoDasObras();
+}
+
+function rotuloDoResponsavel(u) {
+  return u.nome + (u.pode_conferir ? "" : " — sem permissão de tratar o ponto")
+    + (u.tem_telefone ? "" : " — sem telefone");
+}
+
+function desenharMosaicoDasObras() {
+  const obras = MOSAICO_OBRAS.obras || [], usuarios = MOSAICO_OBRAS.usuarios || [];
+  const alvo = els("c-mosaico");
+  if (!obras.length) { alvo.innerHTML = `<div class="cartao-dica">Nenhuma obra ativa.</div>`; return; }
+  const opcoes = o => {
+    // Responsável que deixou de ser usuário ativo some da lista; ganha a
+    // opção, para o seletor não esconder quem está gravado lá.
+    const fora = o.responsavel_id && !usuarios.some(u => u.id === o.responsavel_id)
+      ? `<option value="${o.responsavel_id}" selected>${escapar(`${o.responsavel || "usuário"} — inativo`)}</option>` : "";
+    return `<option value="">— ninguém —</option>${fora}` + usuarios.map(u =>
+      `<option value="${u.id}" ${u.id === o.responsavel_id ? "selected" : ""}>${escapar(rotuloDoResponsavel(u))}</option>`).join("");
+  };
+  const alertaDaObra = o => {
+    if (!o.obrigatorio || !o.responsavel_id) return "";
+    const u = usuarios.find(x => x.id === o.responsavel_id);
+    const falta = [];
+    if (!o.responsavel_tem_telefone) falta.push("sem telefone: não recebe o aviso no WhatsApp");
+    if (u && !u.pode_conferir) falta.push("sem permissão de tratar o ponto: não consegue confirmar");
+    return falta.map(f => `<small style="color:var(--ambar)">${escapar(f)}</small>`).join("");
+  };
+  alvo.innerHTML = `<table><thead><tr><th class="sem-ordem">Obra</th><th class="sem-ordem">Obrigatório</th>
+      <th class="sem-ordem">Responsável</th><th class="sem-ordem"></th></tr></thead><tbody>
+    ${obras.map(o => `<tr data-mos-obra="${o.id}">
+      <td><b>${escapar(rotuloObra(o))}</b></td>
+      <td><label class="opcao" style="padding:0"><input type="checkbox" data-mos-obrigatorio
+          ${o.obrigatorio ? "checked" : ""}><span>obrigatório</span></label></td>
+      <td><select data-mos-responsavel data-sem-busca
+          style="padding:6px 8px; border:1px solid var(--borda-forte); border-radius:8px; max-width:320px">${opcoes(o)}</select>
+        ${alertaDaObra(o)}</td>
+      <td><button class="btn secundario" type="button" data-mos-gravar>Gravar</button></td></tr>`).join("")}
+    </tbody></table>`;
+  alvo.querySelectorAll("[data-mos-gravar]").forEach(b =>
+    b.addEventListener("click", () => gravarMosaicoDaObra(b.closest("tr"), b)));
+}
+
+async function gravarMosaicoDaObra(linha, botao) {
+  const id = Number(linha.dataset.mosObra);
+  const obrigatorio = linha.querySelector("[data-mos-obrigatorio]").checked;
+  const resp = linha.querySelector("[data-mos-responsavel]").value;
+  botao.disabled = true;
+  try {
+    const {obra: c} = await postar(`/erp/api/ponto/mosaico/obras/${id}`, {
+      obrigatorio, responsavel_id: resp ? Number(resp) : null});
+    const i = MOSAICO_OBRAS.obras.findIndex(o => o.id === id);
+    if (i >= 0 && c) MOSAICO_OBRAS.obras[i] = c;
+    desenharMosaicoDasObras();
+    const o = c || {codigo: String(id)};
+    const semTelefone = o.obrigatorio && !o.responsavel_tem_telefone;
+    aviso("c-mosaico-msg", `${escapar(rotuloObra(o))}: mosaico ${o.obrigatorio
+        ? `obrigatório, responsável ${escapar(o.responsavel || "—")}` : "opcional"}.`
+      + (semTelefone ? " O responsável não tem telefone no cadastro do ERP e não vai receber o aviso." : ""),
+      semTelefone ? "alerta" : "ok");
+  } catch (e) { botao.disabled = false; falhou(e, "c-mosaico-msg"); }
+}
+
+// ------------------------------------------------------ 9. Drive e fila
 function desenharDrive() {
   const fila = (CONFIG.fila_fotos || 0) + (CONFIG.fila_documentos || 0);
   els("c-drive").innerHTML = `
@@ -2174,6 +2877,7 @@ async function carregarTudoMenosConfig() {
 
 anosParaEscolher();
 els("c-ano").addEventListener("change", carregarFeriados);
+if (els("c-envios-atualizar")) els("c-envios-atualizar").addEventListener("click", carregarEnvios);
 if (els("c-nova-escala")) els("c-nova-escala").addEventListener("click", () => abrirEscala(null));
 if (els("c-novo-feriado")) els("c-novo-feriado").addEventListener("click", novoFeriado);
 els("esc-tipo").addEventListener("change", alternarTipoDeEscala);

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 A rotina do dia: gerar os alertas e mandar o resumo por WhatsApp — uma vez por
-dia, sem ninguém apertar botão.
+dia, sem ninguém apertar botão. Desde a migração 003, também abre a conferência
+do mosaico de ontem nas obras obrigatórias e agenda as trocas de QR Code que
+vencem (espalhadas na fila de envios — ver envios.py).
 
 POR QUE ELA SE DISPARA SOZINHA NA PRIMEIRA REQUISIÇÃO DO DIA: o serviço não tem
 relógio próprio (o Render roda o gunicorn, não um agendador), e o ERP só tem
@@ -73,7 +75,16 @@ def enviar_resumo(conn, *, forcar: bool = False) -> dict:
 
 
 def rodar(conn) -> dict:
+    import datetime as dt
+    extras = {}
+    if db.tem_003(conn):
+        # Antes dos alertas: a conferência de ontem nasce agora, e o alerta de
+        # "mosaico sem conferência" só abre para a de anteontem para trás.
+        from . import envios, mosaico
+        extras["mosaicos"] = mosaico.preparar_do_dia(conn, horario.hoje() - dt.timedelta(days=1))
+        extras["qr"] = envios.planejar(conn)
     resultado = alertas.gerar(conn)
+    resultado.update(extras)
     resultado["resumo"] = enviar_resumo(conn)
     parametros.gravar(conn, parametros.ULTIMA_ROTINA, horario.hoje().isoformat(), "rotina")
     return resultado

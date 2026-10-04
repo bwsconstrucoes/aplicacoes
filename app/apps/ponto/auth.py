@@ -43,6 +43,7 @@ CHAVE = "chave"
 APARELHO_OU_CHAVE = "aparelho_ou_chave"
 COLABORADOR = "colaborador"
 COLABORADOR_OU_APARELHO = "colaborador_ou_aparelho"
+APARELHO = "aparelho"
 
 # A sessão do colaborador no celular ("Meu ponto"). Mora no MESMO cookie de
 # sessão do Flask que o ERP usa, com chaves próprias — uma não enxerga a outra.
@@ -78,6 +79,13 @@ def exige_colaborador(f):
 def exige_colaborador_ou_aparelho(f):
     """O colaborador logado, OU um aparelho com token (o tablet da obra)."""
     setattr(f, _EXIGENCIA, COLABORADOR_OU_APARELHO)
+    return f
+
+
+def exige_aparelho(f):
+    """Só um aparelho com token (o tablet da obra). A rota confere o token e o
+    perfil do aparelho com o banco; aqui só se exige que ele se apresente."""
+    setattr(f, _EXIGENCIA, APARELHO)
     return f
 
 
@@ -176,6 +184,12 @@ def exigir_credencial():
     if isinstance(exigencia, tuple):          # @publica("motivo")
         g.ponto_via = "publica"
         return None
+
+    if exigencia == APARELHO:
+        if request.headers.get(CABECALHO_TOKEN) and request.headers.get("X-Device-UUID"):
+            g.ponto_via = "aparelho"
+            return None
+        return _negar(401, "aparelho não identificado")
 
     # O colaborador do celular vem ANTES da chave: rota do colaborador não
     # aceita a chave dos sistemas no lugar da pessoa — a chave não é ninguém.

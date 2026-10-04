@@ -27,6 +27,12 @@ celular não vira ponto duplo.
 
 `decidir` é função PURA: recebe o que se sabe e devolve (status, motivos). É
 ela que o teste sem banco percorre.
+
+COMO A PESSOA FOI IDENTIFICADA fica na batida (`identificacao`, migração 003):
+no celular dela (SESSAO), CPF digitado no tablet (CPF), QR do WhatsApp
+(QR_WHATSAPP), QR do "Meu ponto" (QR_APP) ou sistema (CHAVE). E no APARELHO DA
+OBRA a foto é parte da identificação: sem ela, a batida é aceita, mas vai para
+análise — com a câmera sempre ligada, foto que falta é exceção a ser olhada.
 """
 from __future__ import annotations
 
@@ -44,6 +50,8 @@ from . import cadastros, dispositivos, fotos, geo, recusas
 logger = logging.getLogger("ponto.marcacoes")
 
 ORIGENS = ("PWA", "IDFACE", "MANUAL")
+IDENTIFICACOES = ("SESSAO", "CPF", "QR_WHATSAPP", "QR_APP", "CHAVE")
+MOTIVO_SEM_FOTO_NO_TABLET = "sem foto no aparelho da obra"
 JANELA_REPETICAO_SEGUNDOS = 60
 TOLERANCIA_RELOGIO_SEGUNDOS = 300
 
@@ -56,9 +64,12 @@ _TRAVA_NSR = 7_671_2021
 # ---------------------------------------------------------------------------
 def decidir(*, origem: str, dentro_da_cerca: Optional[bool], motivo_cerca: Optional[str],
             diferenca_relogio_s: Optional[float], situacao_pessoa: str,
-            obra_na_lista_da_pessoa: bool) -> tuple[str, list[str]]:
+            obra_na_lista_da_pessoa: bool,
+            sem_foto_no_tablet: bool = False) -> tuple[str, list[str]]:
     """Devolve (status, motivos). Só VALIDA quando não há motivo nenhum."""
     motivos: list[str] = []
+    if sem_foto_no_tablet:
+        motivos.append(MOTIVO_SEM_FOTO_NO_TABLET)
     if dentro_da_cerca is False and motivo_cerca:
         motivos.append(motivo_cerca)
     elif dentro_da_cerca is None and motivo_cerca:
@@ -138,6 +149,7 @@ def para_json(m: dict) -> dict:
         "origem": m["origem"], "status": m["status"], "motivo_analise": m.get("motivo_analise"),
         "marcacao_origem_id": m.get("marcacao_origem_id"),
         "registrado_por": m.get("registrado_por"),
+        "identificacao": m.get("identificacao"),
         "hash": m["hash_encadeado"],
     }
 
@@ -159,7 +171,8 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
               via_chave: bool = False, latitude=None, longitude=None,
               timestamp_dispositivo: str | None = None, foto_base64: str | None = None,
               registrado_por: str | None = None, ip: str | None = None,
-              agora: dt.datetime | None = None) -> tuple[dict, bool]:
+              agora: dt.datetime | None = None,
+              identificacao: str | None = None) -> tuple[dict, bool]:
     """Registra a batida. Devolve (marcação, repetida).
 
     Levanta ErroDeValidacao (400) para entrada ruim, Recusada (403) para
@@ -236,10 +249,16 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         latitude, longitude, obra_ok["latitude"], obra_ok["longitude"], obra_ok["raio_metros"])
     diferenca = ((momento_aparelho - momento).total_seconds()
                  if momento_aparelho is not None else None)
+    no_tablet = bool(aparelho) and not via_chave and aparelho.get("perfil") in ("COMPARTILHADO", "LISTA")
     status, motivos = decidir(
         origem=origem_ok, dentro_da_cerca=dentro, motivo_cerca=motivo_cerca,
         diferenca_relogio_s=diferenca, situacao_pessoa=pessoa["situacao"],
-        obra_na_lista_da_pessoa=int(obra_ok["id"]) in cadastros.obras_da_pessoa(conn, pessoa["id"]))
+        obra_na_lista_da_pessoa=int(obra_ok["id"]) in cadastros.obras_da_pessoa(conn, pessoa["id"]),
+        sem_foto_no_tablet=(no_tablet and origem_ok == "PWA" and not foto_base64))
+    if identificacao is None:
+        identificacao = "CHAVE" if via_chave else ("CPF" if no_tablet else "SESSAO")
+    if identificacao not in IDENTIFICACOES:
+        raise ErroDeValidacao("identificação desconhecida", campo="identificacao")
     data_ref = horario.data_referencia(momento, pessoa["tipo_jornada"])
 
     # --- foto: valida e reduz ANTES de gravar (foto ilegível é 400 limpo) ----
@@ -262,11 +281,16 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
          foto=None, fhash=(foto.hash if foto else None), origem=origem_ok, status=status,
          motivo=("; ".join(motivos) if motivos else None), hash=corrente,
          por=((registrado_por or "").strip()[:120] or None))
+    if db.tem_003(conn):
+        db.executar(conn, "UPDATE ponto.marcacoes SET identificacao = :i WHERE id = :id",
+                    i=identificacao, id=linha["id"])
     if foto:
         # Depois do NSR, para o nome do arquivo carregar o número da batida.
-        # `guardar` nunca levanta erro: Drive fora do ar manda para a fila.
+        # Sem subir agora: a foto entra na sala de espera e a rota chama
+        # `fotos.disparar_envio()` depois de a batida estar confirmada — quem
+        # está na fila do tablet não espera o Drive.
         foto_id = fotos.guardar(conn, foto, nome=fotos.nome_do_arquivo(
-            momento, int(pessoa["id"]), nsr), momento=momento)
+            momento, int(pessoa["id"]), nsr), momento=momento, subir=False)
         db.executar(conn, "UPDATE ponto.marcacoes SET foto_id = :f WHERE id = :id",
                     f=foto_id, id=linha["id"])
     if aparelho:

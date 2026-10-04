@@ -5,15 +5,22 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
-1. **Publicar a fase 2** (ramo `feature/modulo-ponto`) — espera o "pode" do dono
-   e a confirmação de que não há carga do painel nem sincronização da Análise de
-   SPs rodando. **No mesmo momento da publicação, DUAS atualizações de banco:**
+1. **Publicar a fase 2 e o QR/mosaico** (ramo `feature/modulo-ponto`) — espera
+   o "pode" do dono e a confirmação de que não há carga do painel nem
+   sincronização da Análise de SPs rodando. **No mesmo momento da publicação,
+   DUAS atualizações de banco:**
    - ERP › Configurações › "Aplicar atualizações do banco" (a **082**, que dá as
      seções do ponto aos perfis). Sem ela, quem tem perfil cadastrado não vê o
      menu Ponto;
    - ERP › Ponto › Configuração › "Aplicar atualizações do ponto" (a 001, se
-     ainda não rodou, e a **002**). Sem ela, as telas do ponto respondem "aplique
-     as atualizações" em vez de quebrar.
+     ainda não rodou, a **002** e a **003**). Sem ela, as telas do ponto
+     respondem "aplique as atualizações" em vez de quebrar, e o tablet aceita
+     só CPF (o QR do WhatsApp responde "ainda não foi ativado").
+1b. **Três chaves que nascem DESLIGADAS e são decisão do dono** (Ponto ›
+   Configuração): "Enviar e trocar o QR Code automaticamente" (manda WhatsApp
+   para todo mundo com telefone, espalhado em dias); "Avisar a pessoa quando a
+   batida ficar sem foto"; e quais obras têm o **mosaico obrigatório**, com que
+   responsável. Sugestão: ligar o QR só depois do piloto numa obra.
 2. **A migração 001 em produção**: na publicação da fase 1 ficou com o dono
    (Shell do Render). Se ainda não rodou, o botão do item 1 aplica as duas.
 3. **Configurar para começar a usar**: cadastrar as escalas reais e atribuir a
@@ -26,6 +33,93 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 03/10/2026 — QR Code pessoal, tablet de câmera ligada, mosaico e sinais de fraude
+
+Pedido do dono, depois de discutir leitura facial, crachá e número de
+funcionário: **"deixar só o CPF e QR Code"** — sem número de funcionário ("o
+dígito verificador não muda nada, é só um número a mais") e **sem crachá
+impresso** (crachá se empresta: 20 crachás na mão de uma pessoa batem 20
+pontos). O QR vai para o WhatsApp da pessoa, ela mostra no próprio celular,
+pode pedir de novo se esquecer, e ele **muda com frequência**, com envio
+espaçado — "a API do WhatsApp não é oficial, isso pode gerar bloqueio". No
+tablet, câmera sempre ativa: viu o QR, segue; ou digita o CPF em teclas
+grandes; sem trocar de modo; confirmação com nome e função e foto. Mosaico das
+fotos do dia por obra — opcional, obrigatório nas obras escolhidas, com um
+responsável que recebe e confirma, e alerta de "falta validação". E: "tudo que
+for coisas estranhas (…) batidas muito rápidas (…) o que você pensa que possa
+designar fraude, você me diz", além de criticar e avisar quem não tira foto.
+
+**O que foi feito** (migração **003**; ver README, seção do QR):
+tablet em tela cheia com câmera ligada e teclado; QR do WhatsApp (troca 7–14
+dias por pessoa) e QR do "Meu ponto" (muda a cada 30 s); bilhete assinado entre
+identificar e bater; "esqueci meu QR" no tablet e no app; fila de WhatsApp com
+ritmo; mosaico com conferência e foto suspeita; sinais medidos em cada foto;
+sete alertas novos; a foto sobe para o Drive DEPOIS da resposta da batida.
+
+**Decisões tomadas sem ele, com o motivo** (todas trocáveis):
+- **O intervalo sugerido** (era pedido dele): QR troca a cada **7 a 14 dias**,
+  sorteado por pessoa; envio automático de **seg. a sáb., 7h30–17h30**, hora
+  sorteada; **30 a 90 s** entre mensagens; teto de **40/hora e 200/dia** (150
+  automáticas); primeiro envio a todos espalhado em até **120 por dia**. Mais
+  curto que 7 dias aumenta volume sem ganho (quem empresta o QR empresta o novo
+  também — o que pega esse caso é a foto).
+- **Envio automático nasce DESLIGADO.** Mandar WhatsApp para 400 pessoas é
+  escrever em sistema de terceiro, e a hora de começar é do dono.
+- **O QR antigo vale até o novo ser usado, ou 3 dias** — quem não abriu o
+  WhatsApp não fica sem bater no dia da troca.
+- **Dois QR em vez de um**: o do WhatsApp (pedido dele) e o do "Meu ponto", que
+  muda a cada 30 s — quem tem o app não precisa do WhatsApp, e print não serve.
+- **No tablet, batida sem foto vai para análise**; no celular da pessoa, só
+  alerta. A câmera fica sempre ligada no tablet; foto faltando ali é exceção.
+  Recusar a batida seria impedir a marcação (Portaria 671), por isso não recusa.
+- **Foto ruim (escura, repetida) é alerta, não análise automática**: os limiares
+  ainda não foram calibrados com foto de obra de verdade, e mandar batida para
+  análise por palpite enche a fila de quem trata.
+- **Quem confere o mosaico precisa de `tratar_ponto`** (não uma ação nova): é
+  tratamento do ponto da obra, e a regra "a ação declarada decide sozinha quem
+  entra" fica de pé. A tela de configuração avisa quando o responsável escolhido
+  não tem a permissão ou não tem telefone.
+- **O link do aviso do mosaico** usa o endereço de quem abre a gestão, aprendido
+  sozinho (padrão `https://aplicacoes.bwsconstrucoes.com.br`) — sem variável nova.
+- **jsQR** (Apache 2.0) é a primeira biblioteca de navegador do ponto: o iPhone
+  não tem leitor de QR embutido no navegador. Servida pelo próprio sistema, sem
+  CDN, e guardada pelo service worker. **Dependência nova — avisada ao dono.**
+
+**Sinais de fraude: o que entrou e o que ficou de fora.** Entraram: sem foto,
+foto escura/sem rosto, a mesma foto de novo (da pessoa em 4 semanas, ou de
+pessoas diferentes na mesma obra e dia), fila rápida (5+ pessoas com menos de
+10 s no mesmo aparelho), QR antigo, CPFs que não são de ninguém no tablet (5+
+no dia), mosaico obrigatório sem conferência — além dos que já existiam (dois
+lugares longe em poucos minutos, fora da cerca repetido). **Ficaram de fora:**
+reconhecimento facial automático (custo, e foto de rosto para comparar é dado
+biométrico — LGPD, dado sensível, pede consentimento e cuidado próprio; o
+mosaico faz a comparação com olho humano), e "batida fora do horário da
+escala" (o espelho já acusa trabalho em dia de descanso e extra acima de 2 h).
+
+**Como foi verificado:** 23 testes puros (`test_ponto_qr.py`) e 11 com banco de
+verdade (`test_ponto_qr_banco.py`: CPF e bilhete, QR do WhatsApp com troca,
+convivência, QR antigo e revogação, "esqueci", QR do app, fila ligada/desligada
+com teto, falha do WhatsApp sem QR valendo, mosaico obrigatório com aviso,
+alerta, conferência e suspeita, foto escura/repetida/sem foto com aviso, foto de
+cadastro escolhida de uma batida); a suíte inteira do repositório; e um ENSAIO
+num navegador de verdade (Chromium) com câmera simulada mostrando um QR Code: o
+tablet abriu direto na batida, o jsQR leu o QR em meio segundo, mostrou nome e
+função, contou 2 s, fotografou e registrou (≈2,4 s da leitura ao "Ponto
+registrado"); o mesmo pelo teclado com CPF. A aba Mosaico e os cartões novos da
+Configuração foram fotografados no computador e no celular, sem erro de tela
+nem rolagem lateral. Os
+122 testes antigos do ponto (três ajustados ao comportamento novo: o teste de
+cerca agora manda foto, e a foto sobe ao Drive depois da resposta).
+**Não verificado:** WhatsApp e Drive de verdade (sem credenciais aqui), e o
+tablet com câmera real — QR mostrado na tela de um celular tem reflexo e brilho
+que a câmera simulada não tem; é a primeira coisa a olhar no piloto.
+
+**Armadilha encontrada no ensaio, para quem for testar:** batida lançada com
+hora no PASSADO (`agora=`) é tratada como repetição de qualquer batida da mesma
+pessoa feita depois dela — a regra dos 60 s olha "depois de", não "perto de".
+Na vida real a hora é sempre a do servidor, então não acontece; em teste e
+importação com hora antiga, lançar em ordem de horário.
 
 ## 03/10/2026 — Fase 2 construída: gestão no ERP, Meu ponto, pedidos, banco, alertas
 

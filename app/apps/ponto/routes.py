@@ -34,6 +34,11 @@ def _rotina_do_dia():
         rotina.disparar_se_preciso()
     except Exception:  # noqa: BLE001 — rotina nunca derruba batida
         logger.warning("Ponto: a rotina do dia não disparou", exc_info=True)
+    try:
+        from .core import envios
+        envios.disparar_se_preciso()
+    except Exception:  # noqa: BLE001 — a fila de mensagens também não
+        logger.warning("Ponto: a fila de envios não disparou", exc_info=True)
     return None
 
 
@@ -230,6 +235,7 @@ def registrar_marcacao():
             timestamp_dispositivo=dados.get("timestamp_dispositivo"),
             foto_base64=dados.get("foto_base64"), registrado_por=dados.get("registrado_por"),
             ip=auth.ip_de_quem_chama())
+    fotos.disparar_envio()
     return _ok(marcacao=marcacoes.para_json(marcacao), repetida=repetida), (200 if repetida else 201)
 
 

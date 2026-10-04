@@ -83,6 +83,9 @@ def mundo(_schema_ponto2, banco, monkeypatch):
     from app.apps.ponto.core import fotos, rotina
     auth._registros.clear()
     monkeypatch.setattr(rotina, "disparar_se_preciso", lambda: False)
+    from app.apps.ponto.core import envios
+    monkeypatch.setattr(envios, "disparar_se_preciso", lambda: False)
+    monkeypatch.setattr(fotos, "disparar_envio", lambda: False)
     monkeypatch.setattr(fotos, "TENTATIVAS_NA_HORA", 1)
     _limpar(banco)
     with banco.connect() as conn:
@@ -171,7 +174,8 @@ def test_migracoes_do_ponto_e_feriados_nacionais(banco, mundo):
         natal = conn.execute(text("SELECT nome FROM ponto.feriados WHERE data = '2026-12-25'")).scalar()
         secoes = conn.execute(text("""SELECT ps.secao, ps.nivel FROM perfil_secoes ps JOIN perfis p ON p.id = ps.perfil_id
                                        WHERE p.nome = 'Departamento pessoal' AND ps.secao LIKE 'pon_%' ORDER BY 1""")).all()
-    assert nomes == ["001_ponto_base.sql", "002_gestao.sql"] and natal == "Natal"
+    assert nomes == ["001_ponto_base.sql", "002_gestao.sql", "003_qr_mosaico_e_sinais.sql"]
+    assert natal == "Natal"
     assert [s[0] for s in secoes] == ["pon_competencia", "pon_config", "pon_dp", "pon_gestao"]
 
 

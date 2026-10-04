@@ -33,10 +33,11 @@ _SQL_COLABORADOR = """
            pc.acordo_documento_id,
            COALESCE(pc.ativo, TRUE) AS ativo_no_ponto,
            (pc.colaborador_id IS NOT NULL) AS tem_config,
-           o.codigo AS obra_codigo, o.nome AS obra_nome
+           o.codigo AS obra_codigo, o.nome AS obra_nome, f.nome AS funcao
       FROM public.colaboradores c
       LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = c.id
       LEFT JOIN public.obras o ON o.id = c.obra_id
+      LEFT JOIN public.funcoes f ON f.id = c.funcao_id
 """
 
 _SQL_OBRA = """

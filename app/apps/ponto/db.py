@@ -65,3 +65,37 @@ def executar(conn: Connection, sql: str, **params: Any) -> int:
 def schema_existe(conn: Connection) -> bool:
     return um(conn, "SELECT 1 AS ok FROM information_schema.schemata "
                     "WHERE schema_name = :s", s=SCHEMA) is not None
+
+
+# ---------------------------------------------------------------------------
+# O código chega ao Render ANTES de alguém apertar "Aplicar atualizações do
+# ponto". Nesse intervalo a batida NÃO pode quebrar por causa de uma coluna que
+# ainda não existe: quem usa coluna nova pergunta aqui primeiro. O "sim" fica
+# guardado para sempre (coluna não some); o "não" é perguntado de novo a cada
+# minuto, para o recurso ligar sozinho logo depois do botão.
+# ---------------------------------------------------------------------------
+_colunas_sim: set[tuple[str, str]] = set()
+_colunas_nao: dict[tuple[str, str], float] = {}
+
+
+def tem_coluna(conn: Connection, tabela: str, coluna: str) -> bool:
+    import time
+    chave = (tabela, coluna)
+    if chave in _colunas_sim:
+        return True
+    if time.time() - _colunas_nao.get(chave, 0.0) < 60:
+        return False
+    existe = um(conn, """SELECT 1 AS x FROM information_schema.columns
+                          WHERE table_schema = :s AND table_name = :t AND column_name = :c""",
+                s=SCHEMA, t=tabela, c=coluna) is not None
+    if existe:
+        _colunas_sim.add(chave)
+        _colunas_nao.pop(chave, None)
+    else:
+        _colunas_nao[chave] = time.time()
+    return existe
+
+
+def tem_003(conn: Connection) -> bool:
+    """A migração 003 (QR, fila de envios, mosaico, sinais da foto) já rodou?"""
+    return tem_coluna(conn, "marcacoes", "identificacao")

@@ -667,6 +667,16 @@ API e importadores — sem tela.
 `configurar_ponto`), e o colaborador usa o **Meu ponto** em `/ponto/app`
 (CPF + PIN criado com código por WhatsApp). Ver `ponto/README.md`.
 
+**QR Code e mosaico (migração 003 do ponto, 03/10/2026):** no tablet da obra a
+pessoa se identifica por **CPF ou QR Code** (câmera sempre ligada, foto tirada
+sozinha; sem foto, a batida vai para análise). O QR vai para o WhatsApp da
+pessoa e troca a cada 7–14 dias, por uma **fila com ritmo** (`ponto.envios`:
+30–90 s entre mensagens, 40/hora, 200/dia, seg.–sáb. 7h30–17h30) — a API de
+WhatsApp da casa não é a oficial. O envio automático nasce **desligado**.
+Mosaico de fotos por obra (opcional; obrigatório com responsável) e alertas de
+fraude por foto. **Primeira biblioteca de navegador do ponto:** jsQR (Apache
+2.0), servida pelo próprio módulo (`ponto/static/jsQR.js`), sem CDN.
+
 **Cadastros são do ERP**: o ponto lê `obras` e `colaboradores` e guarda só o que
 o ERP não tem (raio da cerca, jornada, aparelhos, marcações). **Foto vai para o
 Google Drive** pela rotina de anexos do ERP (`erp/core/documentos/drive.py`,

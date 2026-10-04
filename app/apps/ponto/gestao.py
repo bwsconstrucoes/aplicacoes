@@ -44,8 +44,8 @@ from app.apps.erp.routes import bp, login_obrigatorio, permissao
 
 from . import db, horario, migracoes_runner
 from .core import (alertas, banco, cadastros, competencias, dispositivos, documentos,
-                   escalas, espelho, feriados, fotos, leitura_atestado, ocorrencias, painel,
-                   parametros, rotina)
+                   envios, escalas, espelho, feriados, fotos, leitura_atestado, mosaico,
+                   ocorrencias, painel, parametros, qr, rotina)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, ErroDoPonto, NaoEncontrado
 
@@ -58,6 +58,7 @@ ABAS = [
     ("ponto_hoje", "Hoje", "erp.ponto_pagina_hoje"),
     ("ponto_espelho", "Espelho", "erp.ponto_pagina_espelho"),
     ("ponto_pendencias", "Pendências", "erp.ponto_pagina_pendencias"),
+    ("ponto_mosaico", "Mosaico", "erp.ponto_pagina_mosaico"),
     ("ponto_pessoas", "Pessoas", "erp.ponto_pagina_pessoas"),
     ("ponto_banco", "Banco de horas", "erp.ponto_pagina_banco"),
     ("ponto_alertas", "Alertas", "erp.ponto_pagina_alertas"),
@@ -166,6 +167,14 @@ def _pagina(aba: str):
         rotina.disparar_se_preciso()
     except Exception:  # noqa: BLE001 — rotina nunca derruba tela
         logger.warning("Ponto: rotina não disparou", exc_info=True)
+    try:
+        # O endereço público vai no link do aviso do mosaico. Aprendido de quem
+        # abre a gestão (é o endereço que essa pessoa usa), sem variável nova.
+        with db.conexao() as conn:
+            if db.tem_003(conn):
+                envios.lembrar_endereco(conn, request.url_root)
+    except Exception:  # noqa: BLE001
+        pass
     ctx = R._contexto(aba)
     ctx["pode"] = {**ctx.get("pode", {}), **R._pode_agora(*ACOES_DA_TELA)}
     return _render("gestao.html", aba_ponto=aba, **ctx)
@@ -198,6 +207,13 @@ def ponto_pagina_espelho():
 @permissao("ver_ponto")
 def ponto_pagina_pendencias():
     return _pagina("ponto_pendencias")
+
+
+@bp.route("/erp/ponto/mosaico")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_pagina_mosaico():
+    return _pagina("ponto_mosaico")
 
 
 @bp.route("/erp/ponto/pessoas")
@@ -339,7 +355,42 @@ def ponto_api_pessoa(colaborador_id: int):
                      "por": h["definido_por"]} for h in historico]
     j["aparelhos"] = [{**a, "ultimo_uso_em": horario.texto(a["ultimo_uso_em"])} for a in aparelhos]
     j["acordo_banco"] = bool(p.get("acordo_documento_id"))
+    j["funcao"] = p.get("funcao")
+    j["tem_telefone"] = bool(envios.telefone_valido(p.get("telefone")))
+    with db.conexao() as conn:
+        j["qr"] = qr.situacao_da_pessoa(conn, colaborador_id) if db.tem_003(conn) else None
     return _ok(pessoa=j)
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/qr/enviar", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_pessoa_qr_enviar(colaborador_id: int):
+    """Manda um QR Code novo para o WhatsApp da pessoa, na frente da fila."""
+    quem = _quem()
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        r = envios.pedir_qr(conn, colaborador_id, motivo="GESTAO", por=quem.nome)
+        if not r.get("enfileirado"):
+            raise ErroDeValidacao(f"não foi possível: {r.get('motivo')}")
+        situacao = qr.situacao_da_pessoa(conn, colaborador_id)
+    return _ok(qr=situacao, whatsapp_configurado=envios.whatsapp_pronto())
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/qr/revogar", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_pessoa_qr_revogar(colaborador_id: int):
+    """Celular perdido ou roubado: nenhum QR da pessoa vale mais, até o próximo
+    envio. O CPF continua funcionando no tablet."""
+    quem = _quem()
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        n = qr.revogar_todos(conn, colaborador_id, quem.nome)
+        situacao = qr.situacao_da_pessoa(conn, colaborador_id)
+    return _ok(revogados=n, qr=situacao)
 
 
 @bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/escala", methods=["POST"])
@@ -515,6 +566,177 @@ def ponto_api_foto(marcacao_id: int):
         except LookupError:
             return jsonify({"ok": False, "erro": "foto não disponível"}), 404
     return Response(dados, mimetype=mime, headers={"Cache-Control": "private, max-age=3600"})
+
+
+@bp.route("/erp/api/ponto/marcacoes/<int:marcacao_id>/miniatura")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_api_miniatura(marcacao_id: int):
+    """A foto pequena, para o mosaico. A foto de uma batida nunca muda: o
+    navegador pode guardar por um dia."""
+    quem = _quem()
+    with db.conexao() as conn:
+        m = db.um(conn, "SELECT obra_id, foto_id FROM ponto.marcacoes WHERE id = :id", id=marcacao_id)
+        if not m or not m["foto_id"] or not quem.alcanca_obra(m["obra_id"]):
+            return jsonify({"ok": False, "erro": "não encontrado"}), 404
+        try:
+            dados = fotos.miniatura(conn, m["foto_id"])
+        except Exception:  # noqa: BLE001 — expurgada, Drive fora do ar
+            return jsonify({"ok": False, "erro": "foto não disponível"}), 404
+    return Response(dados, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/foto-cadastral")
+@login_obrigatorio
+@permissao("ver_ponto")
+def ponto_api_foto_cadastral(colaborador_id: int):
+    quem = _quem()
+    with db.conexao() as conn:
+        try:
+            _exigir_pessoa(conn, quem, colaborador_id)
+            dados = mosaico.foto_cadastral(conn, colaborador_id)
+        except (NaoEncontrado, LookupError):
+            return jsonify({"ok": False, "erro": "não encontrado"}), 404
+        except Exception:  # noqa: BLE001
+            return jsonify({"ok": False, "erro": "foto não disponível"}), 404
+    return Response(dados, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/foto-cadastral", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_definir_foto_cadastral(colaborador_id: int):
+    """"Usar como foto de cadastro": a foto de uma batida da própria pessoa vira
+    a referência do mosaico."""
+    quem, d = _quem(), _corpo()
+    try:
+        marcacao_id = int(d.get("marcacao_id"))
+    except (TypeError, ValueError):
+        raise ErroDeValidacao("diga de qual batida é a foto", campo="marcacao_id")
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        mosaico.definir_foto_cadastral(conn, colaborador_id, marcacao_id)
+    logger.info("Ponto: foto de cadastro da pessoa %s definida por %s (batida %s)",
+                colaborador_id, quem.nome, marcacao_id)
+    return _ok()
+
+
+# ---------------------------------------------------------------------------
+# Mosaico de fotos
+# ---------------------------------------------------------------------------
+def _obra_no_alcance(conn, quem: Quem, referencia) -> dict:
+    o = cadastros.resolver_obra(conn, referencia)
+    if not o or not quem.alcanca_obra(o["id"]):
+        raise NaoEncontrado("obra não encontrada")
+    return o
+
+
+def _data(valor, padrao: dt.date) -> dt.date:
+    if not valor:
+        return padrao
+    try:
+        return dt.date.fromisoformat(str(valor))
+    except ValueError as e:
+        raise ErroDeValidacao("data ilegível (AAAA-MM-DD)", campo="data") from e
+
+
+@bp.route("/erp/api/ponto/mosaico")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_mosaico():
+    quem = _quem()
+    with db.conexao() as conn:
+        o = _obra_no_alcance(conn, quem, request.args.get("obra"))
+        r = mosaico.montar(conn, int(o["id"]), _data(request.args.get("data"),
+                                                     horario.hoje() - dt.timedelta(days=1)))
+    r["pode_conferir"] = bool(quem.supervisor)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/mosaico/pendentes")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_mosaico_pendentes():
+    quem = _quem()
+    with db.conexao() as conn:
+        lista = mosaico.pendentes(conn, quem.obras)
+    return _ok(pendentes=lista)
+
+
+@bp.route("/erp/api/ponto/mosaico/conferir", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_mosaico_conferir():
+    """Confirma o dia. Foto marcada como suspeita manda a batida para análise."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        o = _obra_no_alcance(conn, quem, d.get("obra"))
+        r = mosaico.conferir(conn, int(o["id"]), _data(d.get("data"), horario.hoje()),
+                             usuario_id=quem.usuario_id, usuario_nome=quem.nome,
+                             nota=d.get("nota", ""), suspeitas=d.get("suspeitas") or [])
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/mosaico/obras")
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_mosaico_obras():
+    """Quais obras têm o mosaico obrigatório, e quem pode ser o responsável:
+    os usuários do ERP que tratam o ponto (são eles que conseguem confirmar)."""
+    from app.apps.erp.core.auth.permissoes import pode_com_banco
+    from app.apps.erp.db.models.cadastros import Usuario
+    with db.conexao() as conn:
+        obras = mosaico.configuracao_das_obras(conn)
+    candidatos = []
+    with R.get_session() as s:
+        for u in s.query(Usuario).filter(Usuario.ativo.is_(True)).order_by(Usuario.nome).all():
+            try:
+                pode_conferir = pode_com_banco(s, u, "tratar_ponto")
+            except Exception:  # noqa: BLE001 — perfil mal configurado não derruba a tela
+                pode_conferir = False
+            candidatos.append({"id": u.id, "nome": u.nome, "pode_conferir": pode_conferir,
+                               "tem_telefone": bool(envios.telefone_valido(u.telefone))})
+    return _ok(obras=obras, usuarios=candidatos)
+
+
+@bp.route("/erp/api/ponto/mosaico/obras/<int:obra_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_mosaico_obra_gravar(obra_id: int):
+    d = _corpo()
+    with db.conexao() as conn:
+        if not cadastros.obra_por_id(conn, obra_id):
+            raise NaoEncontrado("obra não encontrada")
+        resp = d.get("responsavel_id")
+        c = mosaico.configurar_obra(conn, obra_id, obrigatorio=bool(d.get("obrigatorio")),
+                                    responsavel_id=(int(resp) if resp not in (None, "", 0, "0") else None))
+    return _ok(obra=c)
+
+
+@bp.route("/erp/api/ponto/envios")
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_envios():
+    """A fila de mensagens: o ritmo, o que saiu e o que espera."""
+    with db.conexao() as conn:
+        r = envios.resumo(conn)
+        ultimos = db.todos(conn, """
+            SELECT e.id, e.tipo, e.motivo, e.status, e.agendado_para, e.enviado_em, e.tentativas,
+                   e.resultado, e.telefone, c.nome AS colaborador
+              FROM ponto.envios e LEFT JOIN public.colaboradores c ON c.id = e.colaborador_id
+             ORDER BY e.id DESC LIMIT 60""")
+    for e in ultimos:
+        e["telefone"] = "***" + (e["telefone"] or "")[-4:]
+        e["agendado_para"] = horario.texto(e["agendado_para"])
+        e["enviado_em"] = horario.texto(e["enviado_em"])
+    return _ok(**r, envios=ultimos)
 
 
 @bp.route("/erp/api/ponto/ocorrencias")
@@ -944,10 +1166,15 @@ def ponto_api_configuracao():
         fila_fotos = fotos.pendentes(conn) if tem_parametros else 0
         fila_docs = (db.um(conn, "SELECT count(*) AS n FROM ponto.documentos WHERE drive_file_id IS NULL "
                                  "AND conteudo IS NOT NULL")["n"] if tem_parametros else 0)
+        tem_003 = tem_parametros and db.tem_003(conn)
+        qr_auto = parametros.ler(conn, envios.QR_AUTOMATICO, "") == "1" if tem_003 else False
+        aviso_foto = parametros.ler(conn, envios.AVISO_SEM_FOTO, "") == "1" if tem_003 else False
     return _ok(migracoes=estado, telefones_resumo=telefones, ultima_rotina=ultima,
                drive_configurado=fotos.drive_configurado(), fila_fotos=fila_fotos,
                fila_documentos=int(fila_docs),
-               endereco_app="/ponto/app")
+               endereco_app="/ponto/app",
+               qr_envio_automatico=qr_auto, aviso_sem_foto=aviso_foto,
+               whatsapp_configurado=envios.whatsapp_pronto(), recursos_003=tem_003)
 
 
 @bp.route("/erp/api/ponto/configuracao", methods=["POST"])
@@ -959,6 +1186,14 @@ def ponto_api_configuracao_gravar():
     with db.conexao() as conn:
         if "telefones_resumo" in d:
             parametros.gravar(conn, parametros.TELEFONES_RESUMO, str(d["telefones_resumo"])[:500],
+                              quem.nome)
+        if "qr_envio_automatico" in d:
+            parametros.gravar(conn, envios.QR_AUTOMATICO, envios.validar_ligado(d["qr_envio_automatico"]),
+                              quem.nome)
+            logger.info("Ponto: envio automático de QR %s por %s",
+                        "LIGADO" if d["qr_envio_automatico"] else "desligado", quem.nome)
+        if "aviso_sem_foto" in d:
+            parametros.gravar(conn, envios.AVISO_SEM_FOTO, envios.validar_ligado(d["aviso_sem_foto"]),
                               quem.nome)
     return _ok()
 
