@@ -11792,6 +11792,10 @@ está para ser pago. Agrupar por obra etc."*
   cadastro. Sem nada disso, a linha fica sem valor e não entra. A coluna Valor
   diz de onde veio. ⚠️ **SUPOSIÇÃO:** "pede a cadastrada" = a coluna G contém
   "cadastr" ou "sim" — o texto exato do formulário não foi visto.
+- **A diária do cadastro é a mesma coluna dos Diaristas** (coluna 49 de "Dados
+  Documentos") — confirmado pelo dono em 04/10/2026. Quando o texto da coluna G
+  não é reconhecido como "pede a cadastrada", a linha mostra o que veio escrito,
+  para conferir no primeiro uso.
 - **Lista agrupada:** "Agrupar por" obra (padrão), conta, tipo de despesa,
   solicitação, colaborador ou sem agrupar. Cada grupo tem cabeçalho com linhas,
   quantas a pagar, pendências e o total — que acompanham a marcação —, caixinha
