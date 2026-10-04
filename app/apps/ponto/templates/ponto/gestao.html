@@ -473,6 +473,14 @@
 </div>
 
 <div class="cartao">
+  <div class="cartao-cab"><h3>Base de pessoas do ponto</h3></div>
+  <div class="cartao-dica" style="margin-top:0">Critério igual ao da Análise de SPs: desligado =
+    data de saída já chegou ou a Fase Atual do Pipefy diz desligado; afastado = a fase diz
+    afastado (bate, mas para conferência); o resto está ativo.</div>
+  <div id="c-registro">carregando…</div>
+</div>
+
+<div class="cartao">
   <div class="cartao-cab"><h3>Escalas de trabalho</h3>
     {% if pode.configurar_ponto %}<button class="btn" id="c-nova-escala" type="button">+ Nova escala</button>{% endif %}</div>
   <div id="c-escalas">carregando…</div>
@@ -2470,7 +2478,8 @@ carregarResumo();
 
 {% elif aba_ponto == "ponto_config" %}
 // ===========================================================================
-// CONFIGURAÇÃO — atualizações do banco, quem valida cada pedido, escalas, feriados, fechamento do mês,
+// CONFIGURAÇÃO — atualizações do banco, quem valida cada pedido, base de
+// pessoas (Registro ou ERP), escalas, feriados, fechamento do mês,
 // aparelhos, resumo diário, QR Code e avisos pelo WhatsApp, mosaico por obra,
 // Drive e o endereço do app.
 //
@@ -3057,7 +3066,99 @@ async function gravarQuemValida() {
   } catch (e) { b.disabled = false; falhou(e, "c-quem-msg"); }
 }
 
-// --------------------------------------------- 10. cerca das obras
+// --------------------------------------- 10. base de pessoas do ponto
+// Decisão do dono, 04/10/2026: por ora a base do ponto é a planilha
+// "Registro de Colaboradores" (a cópia que a Análise de SPs guarda no banco),
+// com o mesmo critério de quem está trabalhando.
+const ROTULO_FONTE = {REGISTRO: "Registro de Colaboradores (planilha)", ERP: "Cadastro do ERP"};
+
+async function carregarRegistro(mensagem, tipo) {
+  let d;
+  try { d = await api("/erp/api/ponto/registro"); } catch (e) { erroNoCartao("c-registro", e); return; }
+  desenharRegistro(d);
+  if (mensagem) aviso("c-registro-msg", mensagem, tipo || "ok");
+}
+
+function desenharRegistro(d) {
+  const alvo = els("c-registro");
+  const emUso = d.usando ? "REGISTRO" : "ERP";
+  const escolha = PODE_CONFIGURAR && d.disponivel ? `<div class="campo" style="margin-top:12px; max-width:420px">
+      <label for="c-registro-fonte">Base que o ponto usa</label>
+      <select id="c-registro-fonte" data-sem-busca>${["REGISTRO", "ERP"].map(f =>
+        `<option value="${f}" ${f === (d.fonte || emUso) ? "selected" : ""}>${ROTULO_FONTE[f]}</option>`).join("")}</select></div>` : "";
+  if (!d.disponivel) {
+    alvo.innerHTML = `<div><b>Em uso:</b> ${ROTULO_FONTE.ERP}</div>
+      <div class="cartao-dica">A cópia do Registro de Colaboradores não está neste banco; o ponto usa o
+        cadastro do ERP.</div><div id="c-registro-msg"></div>`;
+    return;
+  }
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor">${valor ?? 0}</div><div class="kpi-sub">${sub}</div></div>`;
+  const exemplos = d.exemplos_faltam || [];
+  alvo.innerHTML = `<div><b>Em uso:</b> ${ROTULO_FONTE[emUso]}
+      ${d.fonte === "REGISTRO" && !d.usando ? `<small class="suave">(o Registro foi escolhido, mas não pôde ser usado)</small>` : ""}</div>
+    <div class="suave" style="font-size:13px; margin-top:2px">Cópia da planilha atualizada em
+      <b>${escapar(quando(d.atualizado_em))}</b> — a cópia é atualizada pelo botão Atualizar cadastro da
+      Análise de SPs › Colaboradores.</div>
+    <div class="kpis" style="margin-top:10px">
+      ${kpi("Ativos no Registro", d.ativos, "verde", `de ${d.total ?? 0} linha(s) na planilha`)}
+      ${kpi("Afastados", d.afastados, "ambar", "batem, mas para conferência")}
+      ${kpi("Faltam no ERP", d.faltam_no_erp, d.faltam_no_erp ? "vermelho" : "", "ativos no Registro sem cadastro no ERP")}
+      ${kpi("Estão só no ERP", d.so_no_erp, d.so_no_erp ? "ambar" : "", "batem para conferência")}
+      ${kpi("Sem obra reconhecida", d.ativos_sem_obra_reconhecida, d.ativos_sem_obra_reconhecida ? "ambar" : "",
+            "código da obra do Registro que não existe no ERP")}
+    </div>
+    ${escolha}
+    ${d.faltam_no_erp ? `<div style="margin-top:12px"><b>Faltam no ERP</b>${exemplos.length ? ` — por exemplo:` : ""}
+        ${exemplos.length ? `<div class="suave" style="font-size:13px">${exemplos.map(x =>
+          `${escapar(x.nome)} (CPF final ${escapar(x.cpf_final)})`).join(" · ")}${d.faltam_no_erp > exemplos.length ? " · …" : ""}</div>` : ""}
+        ${PODE_CONFIGURAR ? `<div style="margin-top:8px"><button class="btn secundario" type="button" id="c-registro-cadastrar">
+          Cadastrar no ERP os ${d.faltam_no_erp} que faltam</button></div>` : ""}</div>` : ""}
+    <div id="c-registro-msg" style="margin-top:8px"></div>`;
+  if (els("c-registro-fonte")) els("c-registro-fonte").addEventListener("change", ev => trocarFonte(ev.target, d));
+  if (els("c-registro-cadastrar")) els("c-registro-cadastrar").addEventListener("click", cadastrarFaltantes);
+}
+
+async function trocarFonte(sel, d) {
+  const fonte = sel.value, antes = d.fonte || (d.usando ? "REGISTRO" : "ERP");
+  const r = await perguntar({titulo: `Usar ${ROTULO_FONTE[fonte]} como base do ponto`,
+    aviso: `<b>Registro:</b> nome, celular, cargo, obra e situação vêm da planilha; quem não está nela
+      bate, mas a batida vai para conferência. <b>ERP:</b> tudo vem do cadastro do ERP.`,
+    campos: [], textoOk: "Trocar a base"});
+  if (!r) { sel.value = antes; return; }
+  sel.disabled = true;
+  try {
+    await postar("/erp/api/ponto/registro/fonte", {fonte});
+    await carregarRegistro(`Base trocada: o ponto agora usa ${ROTULO_FONTE[fonte]}.`);
+  } catch (e) { sel.value = antes; sel.disabled = false; falhou(e, "c-registro-msg"); }
+}
+
+async function cadastrarFaltantes() {
+  const r = await perguntar({titulo: "Cadastrar no ERP quem falta",
+    aviso: `Cria no cadastro de colaboradores do ERP, só com nome, CPF e obra, quem está ativo no
+      Registro e ainda não existe lá. CPF com dígito errado não entra.`,
+    campos: [], textoOk: "Cadastrar"});
+  if (!r) return;
+  const b = els("c-registro-cadastrar");
+  b.disabled = true;
+  b.textContent = "Cadastrando…";
+  try {
+    const d = await postar("/erp/api/ponto/registro/cadastrar");
+    const ruins = d.exemplos_cpf_invalido || [];
+    const texto = `${d.criados || 0} cadastrado(s).` + (d.cpf_invalido
+      ? ` ${d.cpf_invalido} com CPF inválido ficaram de fora: corrija no Pipefy.`
+        + (ruins.length ? `<br><small>${ruins.map(escapar).join(" · ")}</small>` : "") : "");
+    // O `retrato` da resposta não traz os exemplos de quem ainda falta:
+    // recarrega o cartão inteiro, que traz.
+    await carregarRegistro(texto, d.cpf_invalido ? "alerta" : "ok");
+  } catch (e) {
+    b.disabled = false;
+    b.textContent = "Cadastrar no ERP os que faltam";
+    falhou(e, "c-registro-msg");
+  }
+}
+
+// --------------------------------------------- 11. cerca das obras
 // Decisão do dono, 04/10/2026: ninguém bate fora da área da obra, e a obra é
 // detectada pela localização. Aqui se ajusta o raio e o que fazer fora dele.
 const MODOS_CERCA = [{valor: "BLOQUEAR", rotulo: "Bloquear a batida"},
@@ -3125,7 +3226,7 @@ async function gravarCerca(linha, botao) {
   } catch (e) { botao.disabled = false; falhou(e, "c-cercas-msg"); }
 }
 
-// ------------------------------------------------------ 11. Drive e fila
+// ------------------------------------------------------ 12. Drive e fila
 function desenharDrive() {
   const fila = (CONFIG.fila_fotos || 0) + (CONFIG.fila_documentos || 0);
   els("c-drive").innerHTML = `
@@ -3173,7 +3274,7 @@ function anosParaEscolher() {
 
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
-                    carregarCercas(), carregarQuemValida()]);
+                    carregarCercas(), carregarQuemValida(), carregarRegistro()]);
 }
 
 anosParaEscolher();
