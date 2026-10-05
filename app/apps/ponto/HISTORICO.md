@@ -27,6 +27,8 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1f. **Modo de teste no ramo, esperando o "pode"** — traz a migração **005**:
+   apertar "Aplicar atualizações do ponto" ao publicar.
 1e. **PUBLICADO em 05/10/2026** (com o "pode" do dono, `main` em `efd509b`):
    base de pessoas em dia sozinha, período de contrato, base de obras da
    C. Diários, forma de bater por exceção e as travas do aparelho da obra.
@@ -46,6 +48,32 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 05/10/2026 — O modo de teste
+
+Pedido do dono: *"queria fazer teste comigo mesmo (…) se tivesse algum canto que
+eu pudesse gravar uma geolocalização e colocar meu nome e CPF"*. Sem isso,
+testar exigia uma obra falsa na C. Diários (que o painel, a emissão de NFS-e e a
+Análise de SPs também leem) e a pessoa no Registro.
+
+**O que foi feito** (`core/ensaio.py`, migração **005**, cartão "Modo de teste"
+em Ponto › Configuração, só para quem configura o ponto):
+- **Obra de teste** `TESTE-PONTO`, gravada no lugar onde a pessoa está ao
+  apertar o botão (a localização do navegador; aviso quando a precisão passa de
+  100 m). Status `TESTE_PONTO` no ERP — as listas de obra ATIVA não a mostram;
+  no ponto ela vale em qualquer base (`obra_config.ensaio`).
+- **Pessoa de teste**: nome, CPF, celular. CPF novo é criado no cadastro de
+  colaboradores do ERP; CPF existente só ganha a obra de teste. Bate como ATIVA
+  fora do Registro (`colaborador_config.ensaio`) e também no próprio celular.
+- **Código de primeiro acesso na tela**, sem WhatsApp, só para pessoa de teste
+  (404 para as demais). Vale o ÚLTIMO código gerado: pedir no celular primeiro,
+  depois apertar o botão.
+- **Desligar o teste** tira a obra do ponto; as batidas ficam (registro de ponto
+  não se apaga).
+
+**Fica com ele:** o celular de teste ainda precisa ser aprovado em Validações
+(de propósito: é o fluxo real); a pessoa de teste aparece no cadastro de
+colaboradores do ERP.
 
 ## 05/10/2026 — As obras vêm da C. Diários, só o aparelho da obra bate, e a revisão de brechas
 

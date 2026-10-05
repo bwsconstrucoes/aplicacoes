@@ -762,6 +762,69 @@ def ponto_api_pessoa_forma_de_bater(colaborador_id: int):
     return _ok(bate_no_celular=bool(d.get("bate_no_celular")))
 
 
+@bp.route("/erp/api/ponto/ensaio")
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_ensaio():
+    """O modo de teste: a obra de teste e as pessoas de teste."""
+    from .core import ensaio
+    with db.conexao() as conn:
+        return _ok(**ensaio.situacao(conn))
+
+
+@bp.route("/erp/api/ponto/ensaio/obra", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_ensaio_obra():
+    """Grava a obra de teste no lugar onde quem configura está agora."""
+    from .core import ensaio
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        r = ensaio.gravar_obra(conn, latitude=d.get("latitude"), longitude=d.get("longitude"),
+                               raio_metros=d.get("raio_metros"), por=quem.nome)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/ensaio/desligar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_ensaio_desligar():
+    from .core import ensaio
+    quem = _quem()
+    with db.conexao() as conn:
+        return _ok(**ensaio.desligar(conn, quem.nome))
+
+
+@bp.route("/erp/api/ponto/ensaio/pessoa", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_ensaio_pessoa():
+    from .core import ensaio
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        r = ensaio.gravar_pessoa(conn, nome=d.get("nome") or "", cpf=d.get("cpf") or "",
+                                 celular=d.get("celular") or "", por=quem.nome)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/ensaio/pessoa/<int:colaborador_id>/codigo", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_ensaio_codigo(colaborador_id: int):
+    """O código de primeiro acesso da pessoa de teste, na tela (sem WhatsApp).
+    Pessoa que não é de teste responde 404."""
+    from .core import ensaio
+    quem = _quem()
+    with db.conexao() as conn:
+        codigo = ensaio.codigo_de_acesso(conn, colaborador_id, quem.nome)
+    return _ok(codigo=codigo)
+
+
 @bp.route("/erp/api/ponto/quem-valida")
 @login_obrigatorio
 @permissao("ver_ponto")

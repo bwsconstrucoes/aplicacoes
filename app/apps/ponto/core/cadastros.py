@@ -49,17 +49,26 @@ _DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
            "funcao": "f.nome", "no_registro": "NULL::boolean", "fase": "NULL::text", "join": ""}
 
 
-def _sql_colaborador(conn: Connection) -> str:
+def _trechos_colaborador(conn: Connection) -> dict:
     from . import registro
-    trechos = registro.trechos_sql(conn) or _DO_ERP
+    trechos = dict(registro.trechos_sql(conn) or _DO_ERP)
+    # A pessoa de teste (modo de teste, ensaio.py) bate como ativa mesmo fora
+    # do Registro de Colaboradores.
+    if db.tem_coluna(conn, "colaborador_config", "ensaio"):
+        trechos["situacao"] = (f"CASE WHEN COALESCE(pc.ensaio, FALSE) AND c.situacao = 'ATIVO' THEN 'ATIVO' "
+                               f"ELSE ({trechos['situacao']}) END")
+    return trechos
+
+
+def _sql_colaborador(conn: Connection) -> str:
+    trechos = _trechos_colaborador(conn)
     bate = ("COALESCE(pc.bate_no_celular, FALSE)" if db.tem_coluna(conn, "colaborador_config", "bate_no_celular")
             else "NULL::boolean")
     return _SQL_COLABORADOR.format(**trechos, bate_no_celular=bate)
 
 
 def _expr(conn: Connection, campo: str) -> str:
-    from . import registro
-    return (registro.trechos_sql(conn) or _DO_ERP)[campo]
+    return _trechos_colaborador(conn)[campo]
 
 
 # O SELECT da obra vira uma subconsulta com o apelido `o`: quem acrescenta
@@ -85,7 +94,10 @@ _OBRA_DO_ERP = {"nome": "o.nome", "status": "o.status", "latitude": "o.latitude"
 
 def _sql_obra(conn: Connection) -> str:
     from . import base_obras
-    trechos = base_obras.trechos_sql(conn) or _OBRA_DO_ERP
+    trechos = dict(base_obras.trechos_sql(conn) or _OBRA_DO_ERP)
+    # A obra de teste (modo de teste, ensaio.py) vale no ponto em qualquer base.
+    if db.tem_coluna(conn, "obra_config", "ensaio"):
+        trechos["status"] = f"CASE WHEN COALESCE(oc.ensaio, FALSE) THEN 'ATIVA' ELSE ({trechos['status']}) END"
     return "SELECT * FROM (" + _SQL_OBRA_DENTRO.format(**trechos) + ") o"
 
 

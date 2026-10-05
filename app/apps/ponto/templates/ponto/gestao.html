@@ -494,6 +494,21 @@
   <div id="c-obras-base">carregando…</div>
 </div>
 
+{% if pode.configurar_ponto %}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Modo de teste</h3></div>
+  <div class="cartao-dica" style="margin-top:0">Para testar o ponto com você mesmo, sem mexer na planilha
+    C. Diários nem no Registro de Colaboradores. <b>1.</b> Vá ao lugar do teste (o escritório, por
+    exemplo) e grave a obra de teste com a sua localização — de preferência pelo celular, que tem GPS.
+    <b>2.</b> Cadastre a pessoa de teste (o seu nome, CPF e celular). <b>3.</b> No celular, abra
+    <b>/ponto/app</b>, toque em “Primeiro acesso”, peça o código e, em seguida, aperte aqui “Mostrar código
+    de primeiro acesso” — use esse código para criar o PIN (o WhatsApp não é necessário). A obra de
+    teste (TESTE-PONTO) não aparece nas listas de obras ativas do ERP; as batidas de teste ficam
+    registradas nela.</div>
+  <div id="c-ensaio">carregando…</div>
+</div>
+{% endif %}
+
 <div class="cartao">
   <div class="cartao-cab"><h3>Exceções ao padrão</h3></div>
   <div class="cartao-dica" style="margin-top:0">O padrão vale para todos e não se cadastra: <b>só o
@@ -3365,6 +3380,113 @@ async function ligarObrasAutomatico(ev) {
   caixa.disabled = false;
 }
 
+// --------------------------------------- 10d. modo de teste
+// Pedido do dono, 05/10/2026: testar com ele mesmo, gravando a localização ali
+// e pondo nome e CPF, sem depender da planilha nem do Registro.
+async function carregarEnsaio(mensagem, tipo) {
+  const alvo = els("c-ensaio");
+  if (!alvo) return;
+  let d;
+  try { d = await api("/erp/api/ponto/ensaio"); } catch (e) { erroNoCartao("c-ensaio", e); return; }
+  if (!d.disponivel) {
+    alvo.innerHTML = `<div class="aviso alerta">Aplique as atualizações do ponto (acima) para ligar o modo de teste.</div>`;
+    return;
+  }
+  const o = d.obra;
+  const pessoas = d.pessoas || [];
+  alvo.innerHTML = `<div><b>Obra de teste:</b> ${o && o.latitude !== null
+      ? `${o.ligada ? `<span style="color:var(--verde); font-weight:600">ligada</span>` : `<span class="suave">desligada</span>`}
+         — ${escapar(o.latitude.toFixed(6))}, ${escapar(o.longitude.toFixed(6))}, raio de ${o.raio_metros} m
+         <small><a class="elo" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${o.latitude},${o.longitude}">ver no mapa</a></small>`
+      : `<span class="suave">ainda não gravada</span>`}</div>
+    <div class="barra-acoes" style="margin-top:8px">
+      <button class="btn" type="button" id="ens-aqui">${o ? "Mover a obra de teste para onde estou agora" : "Gravar a obra de teste onde estou agora"}</button>
+      ${o && o.ligada ? `<button class="btn secundario" type="button" id="ens-desligar">Desligar o teste</button>` : ""}
+      ${o ? `<button class="btn secundario" type="button" id="ens-pessoa">+ Pessoa de teste</button>` : ""}
+    </div>
+    ${pessoas.length ? `<table style="margin-top:10px"><thead><tr><th class="sem-ordem">Pessoa de teste</th>
+        <th class="sem-ordem">PIN</th><th class="sem-ordem direita">Batidas no teste</th><th class="sem-ordem"></th></tr></thead><tbody>
+      ${pessoas.map(p => `<tr><td><b>${escapar(p.nome)}</b><small>CPF final ${escapar(p.cpf_final)}</small></td>
+        <td>${p.tem_pin ? "criado" : `<span class="suave">ainda não</span>`}</td>
+        <td class="dados direita">${p.batidas}</td>
+        <td><button class="btn secundario" type="button" data-ens-codigo="${p.id}" ${p.tem_telefone ? "" : "disabled"}>
+          Mostrar código de primeiro acesso</button></td></tr>`).join("")}</tbody></table>` : ""}
+    <div id="c-ensaio-msg" style="margin-top:8px"></div>`;
+  els("ens-aqui").addEventListener("click", gravarObraDeTeste);
+  if (els("ens-desligar")) els("ens-desligar").addEventListener("click", desligarTeste);
+  if (els("ens-pessoa")) els("ens-pessoa").addEventListener("click", pessoaDeTeste);
+  alvo.querySelectorAll("[data-ens-codigo]").forEach(b => b.addEventListener("click", () => codigoDeTeste(b.dataset.ensCodigo)));
+  if (mensagem) aviso("c-ensaio-msg", mensagem, tipo || "ok");
+}
+
+function minhaLocalizacao() {
+  return new Promise((ok, falha) => {
+    if (!navigator.geolocation) return falha(new Error("este navegador não dá a localização"));
+    navigator.geolocation.getCurrentPosition(
+      p => ok({latitude: p.coords.latitude, longitude: p.coords.longitude, precisao: Math.round(p.coords.accuracy)}),
+      e => falha(new Error(e.code === 1 ? "a localização foi negada — permita no navegador e tente de novo"
+                                        : "não consegui a localização agora; tente de novo")),
+      {enableHighAccuracy: true, timeout: 20000, maximumAge: 0});
+  });
+}
+
+async function gravarObraDeTeste() {
+  const b = els("ens-aqui");
+  b.disabled = true; b.textContent = "Pegando a localização…";
+  let l;
+  try { l = await minhaLocalizacao(); }
+  catch (e) { b.disabled = false; b.textContent = "Gravar a obra de teste onde estou agora"; falhou(e, "c-ensaio-msg"); return; }
+  b.disabled = false;
+  const r = await perguntar({titulo: "Obra de teste aqui",
+    aviso: `Localização: <b>${l.latitude.toFixed(6)}, ${l.longitude.toFixed(6)}</b>, com precisão de
+      <b>${l.precisao} m</b>.${l.precisao > 100 ? ` <br>⚠️ Precisão fraca (computador sem GPS?). Grave pelo
+      celular, no lugar do teste, para a cerca ficar certa.` : ""}`,
+    campos: [{nome: "raio", rotulo: "Raio da cerca (metros)", valor: "200", largura: 1}],
+    textoOk: "Gravar aqui"});
+  if (!r) { carregarEnsaio(); return; }
+  try {
+    await postar("/erp/api/ponto/ensaio/obra", {latitude: l.latitude, longitude: l.longitude,
+                                                 raio_metros: Number(r.raio) || 200});
+    await carregarEnsaio("Obra de teste gravada e ligada.");
+    if (typeof carregarCercas === "function") carregarCercas();
+  } catch (e) { falhou(e, "c-ensaio-msg"); carregarEnsaio(); }
+}
+
+async function desligarTeste() {
+  const r = await perguntar({titulo: "Desligar o teste",
+    aviso: "A obra de teste sai do ponto: ninguém bate mais nela. As batidas feitas no teste continuam registradas.",
+    campos: [], textoOk: "Desligar"});
+  if (!r) return;
+  try { await postar("/erp/api/ponto/ensaio/desligar"); await carregarEnsaio("Teste desligado."); }
+  catch (e) { falhou(e, "c-ensaio-msg"); }
+}
+
+async function pessoaDeTeste() {
+  const r = await perguntar({titulo: "Pessoa de teste",
+    aviso: `Se o CPF já existe no cadastro do ERP, a pessoa só ganha a obra de teste. Senão, é criada no
+      cadastro de colaboradores do ERP com nome, CPF, celular e a obra de teste. Ela bate também no
+      próprio celular, e como ativa, mesmo fora do Registro de Colaboradores.`,
+    campos: [{nome: "nome", rotulo: "Nome", largura: 3, obrigatorio: true},
+             {nome: "cpf", rotulo: "CPF", largura: 2, obrigatorio: true},
+             {nome: "telefone", rotulo: "Celular com DDD", largura: 1, obrigatorio: true}],
+    textoOk: "Cadastrar"});
+  if (!r) return;
+  try {
+    await postar("/erp/api/ponto/ensaio/pessoa", {nome: r.nome, cpf: r.cpf, celular: r.telefone});
+    await carregarEnsaio("Pessoa de teste cadastrada. Agora: “Mostrar código de primeiro acesso”.");
+  } catch (e) { falhou(e, "c-ensaio-msg"); }
+}
+
+async function codigoDeTeste(id) {
+  try {
+    const d = await postar(`/erp/api/ponto/ensaio/pessoa/${id}/codigo`);
+    aviso("c-ensaio-msg", `Código de primeiro acesso: <b class="dados" style="font-size:20px; letter-spacing:.15em">${escapar(d.codigo)}</b>
+      — vale 15 minutos e só o último gerado vale. Ordem: no celular, <b>/ponto/app</b> › “Primeiro acesso ou
+      esqueci o PIN” › CPF › “Mandar o código”; DEPOIS aperte este botão e digite no celular o código daqui
+      (não o do WhatsApp) e o PIN novo.`, "ok");
+  } catch (e) { falhou(e, "c-ensaio-msg"); }
+}
+
 // --------------------------------------- 10c. exceções ao padrão
 async function carregarExcecoes() {
   const alvo = els("c-excecoes");
@@ -3500,7 +3622,7 @@ function anosParaEscolher() {
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
                     carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
-                    carregarExcecoes()]);
+                    carregarExcecoes(), carregarEnsaio()]);
 }
 
 anosParaEscolher();
