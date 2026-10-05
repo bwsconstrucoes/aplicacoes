@@ -65,14 +65,17 @@ aplicacoes/
         ├── sheets_sync/      ← /api/sheets_sync/sincronizar
         ├── atualizaspbotao/  ← /api/atualizaspbotao/executar
         ├── validasp/         ← /api/validasp/*
-        ├── chatbot/          ← /api/chatbot/* (WhatsApp via Z-API)
-        ├── whatsapp_gateway/ ← /instances/... (espelha Z-API → Evolution API)
+        ├── chatbot/          ← /api/chatbot/* (WhatsApp via Z-API; memória em `mensageria/`)
+        ├── whatsapp_gateway/ ← /instances/... (espelha Z-API → Evolution API; memória em `mensageria/`)
         ├── baixabradesco/    ← /api/baixabradesco/* (routes, core, sheets, parser_*, omie, pipefy, zapi, storage, fila, matcher, models, utils, diagnostico)
         ├── processarnovasp/  ← /api/processarnovasp/executar (⚠️ existe em produção, ainda não documentado aqui)
         ├── sync_logs/        ← /api/sync_logs/* (⚠️ ainda não documentado aqui)
         ├── emissaonf/        ← /emissao/* (emissão de NFS-e; ver `emissaonf/README.md` e `HISTORICO.md`)
-        ├── telegram/         ← /telegram/* (bot / autocadastro; ⚠️ ainda não documentado aqui)
-        ├── notificador.py    ← helper `enviar_telegram`, usado pelo ERP para avisar baixas
+        ├── telegram/         ← /telegram/* (bot / autocadastro / envio; memória em `mensageria/`)
+        ├── notificador.py    ← `notificar()` / `enviar_telegram()`, usado por ERP, ponto, analisesps,
+                                baixabradesco, processarnovasp e validasp (memória em `mensageria/`)
+        ├── mensageria/       ← SÓ MEMÓRIA (README.md + HISTORICO.md) das quatro peças acima — sétima
+                                área do CLAUDE.md desde 05/10/2026; não é blueprint
         ├── ponto/            ← /ponto/* — ponto eletrônico próprio (REP-P); schema `ponto`
                                 no banco do ERP, cadastros do ERP (ver §5.13 e `ponto/README.md`)
         └── erp/              ← /erp/* — ERP (ver §2.1 e §5.12). NÃO é um blueprint
@@ -417,8 +420,14 @@ por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
 ### 4.4 Z-API (WhatsApp) — legado, em migração p/ Evolution
 
 - `ZAPI_INSTANCE_ID`
-- `ZAPI_API_TOKEN`
+- `ZAPI_API_TOKEN` — lido por `chatbot`, `validasp`, `baixabradesco`, `emissaonf`
+- `ZAPI_INSTANCE_TOKEN` — ⚠️ **o MESMO token, com outro nome**, lido por
+  `notificador.py`, `ponto` e pelo aviso de cadastro do `telegram`. Até os
+  dois nomes convergirem no código, os dois precisam existir no Render (ver
+  `mensageria/HISTORICO.md`, 05/10/2026)
 - `ZAPI_CLIENT_TOKEN`
+- `NOTIFICAR_WHATSAPP` / `NOTIFICAR_TELEGRAM` — `"0"` desliga o canal no
+  notificador e nos módulos que o espelham (não no chatbot)
 
 ### 4.5 Omie
 
@@ -560,7 +569,9 @@ Retorna `response` com HTML pronto pra exibir.
 
 ### 5.8 Chatbot (`/api/chatbot`)
 
-⚠️ Detalhar quando precisar mexer. WhatsApp via Z-API.
+WhatsApp via Z-API — assistente de contracheque. Rotas, fluxo, variáveis e
+riscos em `app/apps/mensageria/README.md` (desde 05/10/2026). Lá também estão
+o bot do Telegram (`/telegram/*`) e o notificador.
 
 ### 5.9 BaixaBradesco (`/api/baixabradesco`)
 
@@ -798,6 +809,44 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 05/10/2026 — A MENSAGERIA VIROU A SÉTIMA ÁREA, e ganhou memória antes de código (atravessa áreas)
+
+O dono abriu um chat para o chatbot, o bot do Telegram e o gateway de WhatsApp,
+pediu para trazê-los ao jeito de trabalhar das outras áreas e uma análise
+sobre juntar os três numa aplicação só. Entraram na tabela do `CLAUDE.md`
+como **Mensageria**, com a memória numa pasta própria,
+`app/apps/mensageria/` (só `README.md` e `HISTORICO.md`; o código continua em
+`chatbot/`, `telegram/`, `whatsapp_gateway/` e `notificador.py`).
+
+**Por que uma pasta só de memória:** a área cobre quatro peças em quatro
+lugares, e a quarta — o `notificador.py` — é a mais usada do grupo (seis
+módulos importam). Pôr a memória dentro de uma das três pastas de código
+esconderia as outras. E, se um dia as pastas forem unidas, é para
+`mensageria/` que vêm.
+
+**O que a leitura do código mostrou, e que muda a conversa:**
+
+- O chatbot é de **WhatsApp**; o Telegram tem uma cópia do fluxo de
+  contracheque que importa os módulos do chatbot.
+- Há **seis** códigos de envio de WhatsApp no repositório, e **dois nomes**
+  para o mesmo token do Z-API (`ZAPI_API_TOKEN` em quatro módulos,
+  `ZAPI_INSTANCE_TOKEN` em três, o ponto entre eles). O que faltar no Render
+  deixa metade dos envios falhando em silêncio. A §4.4 abaixo lista só o
+  primeiro nome — corrigida nesta mesma data.
+- O botão `NOTIFICAR_WHATSAPP` é **um só para tudo**, e o chatbot e o aviso
+  de cadastro do Telegram **não o respeitam**.
+- O gateway Evolution **não tem cliente dentro do repositório** — só o Make,
+  e só quando a Evolution estiver no ar (sem registro de que esteja).
+- **Nenhuma das três aplicações tem teste automatizado.**
+
+**Recomendação registrada (decisão é do dono):** não juntar as pastas agora.
+Juntar não exige mudar endereço externo nenhum (as rotas podem ser mantidas),
+mas só arruma; o que organiza é concentrar o envio por canal num lugar só,
+ter botão por tipo de aviso em vez de um global, e decidir o provedor de
+WhatsApp (Z-API × Evolution). Fases e perguntas em `mensageria/HISTORICO.md`.
+
+Nada de código mudou. Só o `CLAUDE.md`, este arquivo e a pasta nova.
 
 ### 04/10/2026 — O PONTO PASSA A LER AS PESSOAS DO REGISTRO DE COLABORADORES, pela cópia da Análise de SPs (atravessa áreas)
 
@@ -2222,7 +2271,8 @@ verdade ninguém acredita nele.
 - **WhatsApp/Evolution:** deploy da Evolution, criar as 2 instâncias + QR,
   preencher `WHATSAPP_GATEWAY_INSTANCES` e trocar as URLs no make. Depois,
   migrar `chatbot`/`validasp`/`baixabradesco` pra apontar ao gateway em vez do
-  Z-API direto (ou aposentar `ZAPI_*`).
+  Z-API direto (ou aposentar `ZAPI_*`). **05/10/2026:** sem registro de que
+  algum passo tenha acontecido; é a pergunta 4 de `mensageria/HISTORICO.md`.
 - **`processarnovasp`:** módulo existe em produção mas não está documentado nem
   foi auditado pra memória. Documentar/auditar na próxima vez que mexer.
 - **`validasp`:** não auditado pra memória.
@@ -2238,8 +2288,9 @@ verdade ninguém acredita nele.
   A árvore do §2 foi conferida contra o `app/main.py` real em 2026-09-01 e hoje
   são **14 blueprints** registrados; `sync_logs`, `emissaonf`, `telegram` e
   `erp` faltavam aqui.
-- **`sync_logs` e `telegram`:** registrados em produção, mas sem seção própria
-  no §5. Documentar na próxima vez que mexer.
+- **`sync_logs`:** registrado em produção, mas sem seção própria no §5.
+  Documentar na próxima vez que mexer. (O `telegram` saiu desta lista em
+  05/10/2026 — está em `mensageria/README.md`.)
 - **`emissaonf`:** continua sem seção própria no §5, mas a dívida maior está
   paga — ele ganhou `README.md` e `HISTORICO.md` em 21/09/2026, e a lista de
   rotas está no README da área. A ligação com o ERP já existe desde 10/09/2026
