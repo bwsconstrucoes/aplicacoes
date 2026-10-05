@@ -97,3 +97,52 @@ def test_configuracao_mostra_a_base_cadastra_quem_falta_e_volta_para_o_erp(app, 
     assert dp.post("/erp/api/ponto/registro/fonte", json={"fonte": "ERP"}).get_json()["usando"] is False
     with db.conexao() as conn:
         assert cadastros.colaborador_por_cpf(conn, CPF_JOAO)["nome"] == "João Obra A"     # o do ERP
+
+
+# ---------------------------------------------------------------------------
+# Período de contrato e a base em dia sozinha (05/10/2026)
+# ---------------------------------------------------------------------------
+def test_nao_se_bate_antes_do_inicio_nem_depois_da_saida(app, mundo, registro, banco):
+    import datetime as dt
+    from app.apps.ponto import db, horario
+    from app.apps.ponto.core import cadastros, marcacoes
+    from app.apps.ponto.erros import Recusada
+    hoje = horario.hoje()
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE analisesps.colaborador SET data_inicio = :d WHERE cpf = :c"),
+                     {"d": hoje + dt.timedelta(days=3), "c": CPF_JOAO})
+        conn.execute(text("UPDATE analisesps.colaborador SET data_saida = :d, fase = 'Colaboradores Ativos' "
+                          "WHERE cpf = :c"), {"d": hoje, "c": CPF_MARIA})
+        conn.commit()
+    with pytest.raises(Recusada, match="antes da data de início"):
+        with db.conexao() as conn:
+            marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-B", origem="IDFACE", via_chave=True)
+    with db.conexao() as conn:           # o dia da saída ainda se bate
+        assert cadastros.colaborador_por_cpf(conn, CPF_MARIA)["situacao"] == "ATIVO"
+        m, _ = marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-B", origem="IDFACE", via_chave=True)
+        assert m["id"]
+    with pytest.raises(Recusada, match="depois da data de saída"):
+        with db.conexao() as conn:
+            marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-B", origem="IDFACE", via_chave=True,
+                                agora=horario.agora() + dt.timedelta(days=1))
+    # o início é a MENOR entre início e admissão (o diarista começa antes da carteira)
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE analisesps.colaborador SET data_inicio = :i, data_admissao = :a WHERE cpf = :c"),
+                     {"i": hoje - dt.timedelta(days=10), "a": hoje + dt.timedelta(days=5), "c": CPF_JOAO})
+        conn.commit()
+    with db.conexao() as conn:
+        assert cadastros.colaborador_por_cpf(conn, CPF_JOAO)["admissao"] == hoje - dt.timedelta(days=10)
+
+
+def test_a_base_se_mantem_sozinha_cadastrando_quem_falta(app, mundo, registro):
+    from app.apps.ponto import db
+    from app.apps.ponto.core import cadastros, registro as reg
+    dp = como(app, mundo["dp"])
+    info = dp.get("/erp/api/ponto/registro").get_json()
+    assert info["automatico"] is True and info["ritmo"]["horas_entre_copias"] == 2
+    assert reg._trabalhando.acquire(blocking=False)
+    reg._trabalhar()                       # o que a linha separada faz
+    with db.conexao() as conn:
+        assert cadastros.colaborador_por_cpf(conn, CPF_NOVO)["nome"] == "NOVO DO REGISTRO"
+    assert dp.post("/erp/api/ponto/registro/automatico", json={"ligado": False}).get_json()["automatico"] is False
+    assert como(app, mundo["sup"]).post("/erp/api/ponto/registro/automatico", json={"ligado": True}).status_code == 403

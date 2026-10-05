@@ -168,6 +168,11 @@ def _pagina(aba: str):
     except Exception:  # noqa: BLE001 — rotina nunca derruba tela
         logger.warning("Ponto: rotina não disparou", exc_info=True)
     try:
+        from .core import registro
+        registro.manter_em_dia()
+    except Exception:  # noqa: BLE001
+        logger.warning("Ponto: a base de pessoas não foi conferida", exc_info=True)
+    try:
         # O endereço público vai no link do aviso do mosaico. Aprendido de quem
         # abre a gestão (é o endereço que essa pessoa usa), sem variável nova.
         with db.conexao() as conn:
@@ -613,7 +618,28 @@ def ponto_api_registro():
     with db.conexao() as conn:
         r = registro.retrato(conn)
         faltam = registro.faltam_no_erp(conn, limite=20) if r.get("disponivel") else []
-    return _ok(**r, exemplos_faltam=[{"nome": f["nome"], "cpf_final": f["cpf"][-3:]} for f in faltam])
+        automatico = registro.automatico(conn)
+    return _ok(**r, exemplos_faltam=[{"nome": f["nome"], "cpf_final": f["cpf"][-3:]} for f in faltam],
+               automatico=automatico, ultima_copia=registro.ultima_copia(),
+               ritmo={"horas_entre_copias": registro.HORAS_ENTRE_COPIAS,
+                      "janela": list(registro.JANELA_DA_COPIA),
+                      "minutos_entre_checagens": registro.MINUTOS_ENTRE_CHECAGENS})
+
+
+@bp.route("/erp/api/ponto/registro/automatico", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_registro_automatico():
+    """Liga ou desliga a base em dia sozinha (cópia da planilha de 2 em 2 h e
+    cadastro no ERP de quem falta)."""
+    from .core import registro
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        parametros.gravar(conn, registro.PARAMETRO_AUTOMATICO, "1" if d.get("ligado") else "0", quem.nome)
+        ligado = registro.automatico(conn)
+    logger.info("Ponto: base de pessoas em dia sozinha %s por %s", "LIGADA" if ligado else "desligada", quem.nome)
+    return _ok(automatico=ligado)
 
 
 @bp.route("/erp/api/ponto/registro/fonte", methods=["POST"])

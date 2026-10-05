@@ -87,6 +87,8 @@ def mundo(_schema_ponto2, banco, monkeypatch):
     monkeypatch.setattr(envios, "disparar_se_preciso", lambda: False)
     monkeypatch.setattr(fotos, "disparar_envio", lambda: False)
     monkeypatch.setattr(fotos, "TENTATIVAS_NA_HORA", 1)
+    from app.apps.ponto.core import registro as _registro_bg
+    monkeypatch.setattr(_registro_bg, "manter_em_dia", lambda: False)
     _limpar(banco)
     from app.apps.ponto import db as _db
     from app.apps.ponto.core import parametros as _par, registro as _reg

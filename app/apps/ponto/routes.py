@@ -39,6 +39,11 @@ def _rotina_do_dia():
         envios.disparar_se_preciso()
     except Exception:  # noqa: BLE001 — a fila de mensagens também não
         logger.warning("Ponto: a fila de envios não disparou", exc_info=True)
+    try:
+        from .core import registro
+        registro.manter_em_dia()
+    except Exception:  # noqa: BLE001 — nem a base de pessoas
+        logger.warning("Ponto: a base de pessoas não foi conferida", exc_info=True)
     return None
 
 

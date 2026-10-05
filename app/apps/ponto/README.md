@@ -146,6 +146,15 @@ Análise de SPs."* (`core/registro.py`)
   CPF com dígito errado fica de fora).
 - **Chave** na Configuração para voltar ao cadastro do ERP. Sem a cópia no banco, o
   ponto usa o ERP sozinho.
+- **A base se mantém sozinha** (05/10/2026, "é algo que precisa ser contínuo"): de
+  2 em 2 horas, das 6h às 20h, o ponto pede à Análise de SPs a tarefa do botão
+  "Atualizar cadastro" (`tarefas.disparar("colaboradores")`, processo separado,
+  com a trava de lá); e a cada 15 minutos cadastra no ERP quem falta. Acordado
+  pelas requisições do ponto. Chave "Manter a base em dia sozinha" na Configuração.
+- **Período de contrato:** antes da data de início (a MENOR entre "Data de Início"
+  e "Data de Admissão" — o diarista começa antes da carteira) e depois da data de
+  saída, a batida é recusada (no tablet, já na identificação); o próprio dia da
+  saída ainda se bate. Pedido de ajuste em dia fora do contrato também é recusado.
 
 ## Validações: tudo o que espera alguém, e quem valida o quê (04/10/2026)
 

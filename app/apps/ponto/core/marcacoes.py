@@ -103,6 +103,18 @@ def decidir(*, origem: str, dentro_da_cerca: Optional[bool], motivo_cerca: Optio
     return ("VALIDA" if not motivos else "EM_ANALISE"), motivos
 
 
+def fora_do_contrato(pessoa: dict, dia: dt.date) -> Optional[str]:
+    """PURA. O motivo da recusa quando `dia` está antes do início ou depois da
+    saída da pessoa (do Registro de Colaboradores, ou do ERP). O próprio dia da
+    saída ainda se bate."""
+    inicio, saida = pessoa.get("admissao"), pessoa.get("demissao")
+    if inicio and dia < inicio:
+        return f"antes da data de início ({inicio:%d/%m/%Y}) — o ponto começa nesse dia"
+    if saida and dia > saida:
+        return f"depois da data de saída ({saida:%d/%m/%Y})"
+    return None
+
+
 MODOS_FORA_DA_CERCA = ("BLOQUEAR", "ANALISAR")
 
 
@@ -283,6 +295,12 @@ def registrar(conn: Connection, *, cpf, obra, origem: str = "PWA",
         _recusar(conn, "pessoa não cadastrada", **contexto)
     if pessoa["situacao"] == "DESLIGADO" or not pessoa["ativo_no_ponto"]:
         _recusar(conn, "pessoa desligada ou inativa no ponto", **contexto)
+
+    # --- período de contrato (pedido do dono, 05/10/2026: "não se pode bater
+    # ponto antes da data de início nem depois da data de saída") -------------
+    motivo_periodo = fora_do_contrato(pessoa, horario.data_referencia(momento, pessoa["tipo_jornada"]))
+    if motivo_periodo:
+        _recusar(conn, motivo_periodo, **contexto)
 
     # --- aparelho (quem é; a obra ele confere depois) ------------------------
     aparelho, obras_do_aparelho = None, set()

@@ -97,6 +97,9 @@ def conferir_pedido(*, dia: dict, data: dt.date, novos_min: list[int], existente
     é o agora em minutos do mesmo dia (None se o dia já passou)."""
     if dia.get("situacao") == "FUTURO":
         raise ErroDeValidacao("esse dia ainda não chegou", campo="data")
+    if dia.get("situacao") == "FORA_DO_CONTRATO":
+        raise ErroDeValidacao("esse dia está fora do período de contrato (antes do início ou depois "
+                              "da saída)", campo="data")
     if dia.get("ocorrencia"):
         o = dia["ocorrencia"]
         raise ErroDeValidacao(f"esse dia já está justificado ({o['rotulo'].lower()} nº {o['id']}); "

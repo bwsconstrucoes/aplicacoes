@@ -38,6 +38,30 @@ junto com o `README.md` e o `PLANO.md`.
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
 
+## 05/10/2026 — A base de pessoas se atualiza sozinha, e o ponto respeita o período de contrato
+
+Pedidos do dono: *"como atualizo a base das pessoas? É algo que precisa ser
+contínuo"* e *"não se pode bater ponto antes da data de início nem depois da data
+de saída"*.
+
+**O que foi feito:** o ponto pede à Análise de SPs, de 2 em 2 horas das 6h às 20h,
+a mesma atualização do botão "Atualizar cadastro" (a leitura da planilha continua
+lá, no processo separado e com a trava de lá), e cadastra no ERP quem falta a cada
+15 minutos; a batida antes do início ou depois da saída é recusada.
+
+**Decisões tomadas sem ele, com motivo:**
+- **2 horas** entre cópias: admissão nova aparece no mesmo turno, sem ler a
+  planilha de 3.500 linhas a toda hora. Fora das 6h–20h, nada.
+- **O início é a menor data** entre "Data de Início" e "Data de Admissão": o
+  diarista começa antes da carteira, e barrá-lo seria barrar trabalho de verdade.
+- **O dia da saída ainda se bate** (desligado é saída que já PASSOU). A Análise de
+  SPs, para pagamento, trata a saída "já chegou"; para ponto, o último dia é dia
+  de trabalho. O "Último dia trabalhado" do Registro não foi usado — se for ele o
+  certo para o ponto, é uma linha.
+- **O pedido de cópia esbarra na trava da Análise de SPs**: se houver outra tarefa
+  de lá rodando (a sincronização do dia, a carga do ponto), o ponto não insiste e
+  tenta na rodada seguinte. Não toca em nada que esteja em andamento lá.
+
 ## 04/10/2026 — O Registro de Colaboradores vira a base de pessoas do ponto
 
 Pedido do dono (ver README, "A base de pessoas"). **O que foi feito:** o ponto lê
@@ -55,8 +79,8 @@ para conferência; botão para cadastrar no ERP quem falta; chave para voltar ao
 - **Só no ERP não recusa, vai para conferência:** recusar barraria quem trabalha e
   ainda não chegou à planilha.
 
-**Pendente com o dono:** apertar "Atualizar cadastro" na Análise de SPs antes de
-usar, e depois "Cadastrar no ERP os que faltam" no ponto.
+**Pendente com o dono:** nada a apertar desde 05/10/2026 — a base se atualiza
+sozinha (ver a entrada de 05/10).
 
 ## 04/10/2026 — Validações numa tela só, e quem valida configurável
 

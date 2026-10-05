@@ -73,3 +73,27 @@ class TestDecidirLugar:
     def test_sem_obra_e_sem_localizacao(self):
         obra, recusa, _ = _lugar(None, None, enviada=None)
         assert obra is None and recusa
+
+
+class TestPeriodoDeContrato:
+    def test_antes_do_inicio_e_depois_da_saida(self):
+        import datetime as dt
+        p = {"admissao": dt.date(2026, 10, 5), "demissao": dt.date(2026, 10, 20)}
+        assert "antes da data de início (05/10/2026)" in marcacoes.fora_do_contrato(p, dt.date(2026, 10, 4))
+        assert marcacoes.fora_do_contrato(p, dt.date(2026, 10, 5)) is None
+        assert marcacoes.fora_do_contrato(p, dt.date(2026, 10, 20)) is None      # o dia da saída se bate
+        assert "depois da data de saída" in marcacoes.fora_do_contrato(p, dt.date(2026, 10, 21))
+        assert marcacoes.fora_do_contrato({}, dt.date(2026, 10, 21)) is None
+
+
+class TestCopiaDoRegistro:
+    def test_de_duas_em_duas_horas_e_so_de_dia(self):
+        import datetime as dt
+        from app.apps.ponto import horario
+        from app.apps.ponto.core import registro
+        dez = dt.datetime(2026, 10, 5, 10, 0, tzinfo=horario.FUSO)
+        assert registro.precisa_copiar(None, dez) is True
+        assert registro.precisa_copiar({"inicio": dez - dt.timedelta(hours=1), "fim": dez}, dez) is False
+        assert registro.precisa_copiar({"inicio": dez - dt.timedelta(hours=3), "fim": dez}, dez) is True
+        assert registro.precisa_copiar({"inicio": dez - dt.timedelta(hours=3), "fim": None}, dez) is False
+        assert registro.precisa_copiar(None, dez.replace(hour=22)) is False

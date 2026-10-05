@@ -75,6 +75,8 @@ def ponto(_schema_ponto, banco, monkeypatch):
     monkeypatch.setattr(fotos, "disparar_envio", lambda: False)
     _limpar(banco)
     _base_erp()
+    from app.apps.ponto.core import registro as _registro_bg
+    monkeypatch.setattr(_registro_bg, "manter_em_dia", lambda: False)
     with banco.connect() as conn:
         obra = conn.execute(text(
             "INSERT INTO obras (codigo, nome, latitude, longitude, status) "

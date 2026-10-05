@@ -359,6 +359,10 @@ def app_api_tablet_identificar():
             identificacao = qr.IDENT_CPF
         if not pessoa or pessoa["situacao"] == "DESLIGADO" or not pessoa["ativo_no_ponto"]:
             raise Recusada("cadastro inativo no ponto — procure o encarregado")
+        periodo = marcacoes.fora_do_contrato(pessoa, horario.data_referencia(horario.agora(), pessoa["tipo_jornada"]))
+        if periodo:
+            _recusar_em_separado(periodo, cpf=pessoa["cpf"], obra=d.get("obra"))
+            raise Recusada(periodo)
         if obra:
             motivo = dispositivos.autorizado_para(
                 aparelho, int(pessoa["id"]), int(obra["id"]),

@@ -823,6 +823,13 @@ cadastro do ERP — as colunas são conferidas antes de usar (`ponto/core/regist
 `analisesps`. A chave na Configuração do ponto devolve a base ao ERP quando ele
 quiser.
 
+**05/10/2026 — e o ponto passa a PEDIR a atualização da cópia.** De 2 em 2 horas
+(6h–20h) o ponto chama `analisesps.tarefas.disparar("colaboradores")` — a mesma
+tarefa do botão "Atualizar cadastro", no processo separado e com a trava do
+banco de lá. Se outra tarefa da Análise de SPs estiver rodando, o pedido é
+recusado e o ponto tenta depois; nada do que está em andamento é interrompido.
+Desliga em Ponto › Configuração › "Manter a base em dia sozinha".
+
 ### 03/10/2026 — A GESTÃO DO PONTO ENTROU NO ERP, e quem aprova o quê virou cadastro (atravessa áreas)
 
 O dono pediu o ambiente completo: gestão (cadastros, espelho, pendências),
