@@ -242,6 +242,16 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "aprovar_afastamento": {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
     "fechar_competencia": {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
     "configurar_ponto":   {P.ADMIN, P.DEPARTAMENTO_PESSOAL},
+    # ---------------------------------------------------------------------
+    # MENSAGERIA (05/10/2026) — a tela "Mensagens": por onde cada tipo de
+    # aviso sai (Telegram, WhatsApp, os dois, desligado), o teto do WhatsApp e
+    # o registro do que foi enviado. Pedido do dono: "eu preciso ter gestão
+    # sobre quais mensagens vão para o WhatsApp e quais não vão".
+    #   ver_mensagens         ver o registro de envios e as políticas
+    #   configurar_mensagens  mudar política, ligar o WhatsApp, mexer no teto
+    # ---------------------------------------------------------------------
+    "ver_mensagens":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
+    "configurar_mensagens": {P.ADMIN},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -272,6 +282,8 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # nem conciliou. Sem esta linha, corrigir o próprio engano dependeria de
     # interromper o financeiro, e o erro ficaria no ar até alguém ter tempo.
     "cancelar_titulo": ("aprovar", "lancar"),
+    # Quem configura as mensagens enxerga a tela delas.
+    "ver_mensagens": ("configurar_mensagens",),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -326,6 +338,8 @@ ACAO_ROTULOS = {
     "aprovar_afastamento":  "Aprovar atestado, licença e férias e ver o atestado (DP)",
     "fechar_competencia":   "Fechar e reabrir o mês do ponto",
     "configurar_ponto":     "Configurar o ponto: escalas, feriados e aparelhos",
+    "ver_mensagens":        "Ver as mensagens enviadas e por onde cada tipo sai",
+    "configurar_mensagens": "Decidir por onde cada tipo de mensagem sai e o teto do WhatsApp",
 }
 
 ROTULOS = {
