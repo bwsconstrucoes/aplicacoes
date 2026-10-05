@@ -210,6 +210,10 @@ SECOES: list[dict[str, Any]] = [
     {"chave": "adm_operadores", "area": "Administração", "nome": "Operadores e perfis",
      "explicacao": "quem entra no sistema e o que cada um pode",
      "ler": [], "editar": ["gerir_usuarios"]},
+    {"chave": "adm_mensagens", "area": "Administração", "nome": "Mensagens",
+     "explicacao": ("por onde cada tipo de aviso sai (Telegram ou WhatsApp), o teto do "
+                    "WhatsApp e o registro do que foi enviado"),
+     "ler": ["ver_mensagens"], "editar": ["configurar_mensagens"]},
 ]
 
 POR_CHAVE = {s["chave"]: s for s in SECOES}

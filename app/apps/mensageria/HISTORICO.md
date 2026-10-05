@@ -38,7 +38,75 @@ no próprio código.
 
 ## Onde o trabalho está
 
-**05/10/2026, tarde — o dono respondeu, e a área ganhou código.** As respostas,
+**05/10/2026, noite — a TELA MENSAGENS existe, no ramo `claude/amazing-wright-f8g0bm`
+(não publicado).** O dono disse "pode fazer assim, vamos criar essa tela de
+mensageria, vamos para frente", com três condições: não mexer em nada que
+impacte o Análise de SPs e o Make; começar usando o WhatsApp pelo ponto; e
+testar. O que foi feito:
+
+1. **Módulo `mensageria` com código** (`core.py`, `gestao.py`, `db.py`, tela
+   `templates/mensagens.html`), pendurado no ERP como o ponto: menu
+   **Mensagens**, abas *Tipos e canais* e *Enviadas*. Ações `ver_mensagens`
+   (Administrador, Diretor financeiro, DP) e `configurar_mensagens`
+   (Administrador); seção `adm_mensagens`; **migração 083 do ERP** (schema
+   `mensageria`: `tipos`, `envios`, `parametros`, e as seções nos perfis).
+2. **Política por tipo** (Só Telegram · Telegram, WhatsApp para quem não tem ·
+   Só WhatsApp · Desligado), **chave geral do WhatsApp** (nasce desligada) e
+   **teto** por hora/dia para a empresa inteira, com aviso aos ADMIN por
+   Telegram uma vez por hora. **Registro** de 90 dias de tudo que o
+   notificador tentou, inclusive o que não saiu e por quê.
+3. **O notificador obedece à tela.** Com `finalidade=` e a mensageria no
+   banco, a política manda; sem ela (antes da 083, sem banco, módulos
+   antigos sem tipo), valem as variáveis como antes — nada muda para o
+   Análise de SPs, a baixa Bradesco, o ValidaSP, o ProcessarNovaSP e o Make,
+   que não foram tocados. Os envios deles ainda assim aparecem no registro
+   como "sem_tipo".
+4. **O ponto e o ERP dizem o tipo de cada mensagem** (`ponto.qr`,
+   `ponto.codigo_acesso`, `ponto.mosaico`, `ponto.aviso_foto`,
+   `ponto.resumo_dia`; `erp.titulo_pago`, `erp.encaminhamento`,
+   `erp.agente_cobranca`, `erp.pergunta_agendada`, `erp.teto_ia`,
+   `erp.insumos`). A fila do ponto só liga se a mensageria liberar o QR por
+   WhatsApp. Mudança de UMA linha em cada chamada do ERP.
+5. **A Evolution saiu** (detalhe mais abaixo).
+6. **Testes**: `tests/test_mensageria.py` (sem banco) e
+   `tests/test_mensageria_banco.py` (com banco; roda no GitHub Actions — este
+   contêiner não tem Postgres). A suíte inteira rodou e o monorepo sobe.
+
+**A tela foi testada aqui só por código** (as páginas abrem com sessão dublada,
+as rotas negam quem não pode, a decisão e o teto têm teste). **Não foi aberta
+num navegador com banco de verdade** — isso é o passo 3 do dono, abaixo.
+
+### O que está pendente AGORA
+
+**Pelo dono, nesta ordem:**
+
+1. Dizer "pode" para juntar na `main`. Antes eu pergunto se há carga do
+   painel ou sincronização do Análise de SPs em andamento.
+2. **No mesmo momento da junção**, ERP › Configurações › "Aplicar atualizações
+   do banco" (a **083**). Até apertar, a tela Mensagens abre e explica o que
+   falta, e os envios seguem as variáveis (WhatsApp desligado).
+3. Abrir **ERP › Mensagens**: conferir que os tipos aparecem, que o ponto está
+   "Só WhatsApp", **ligar a chave geral do WhatsApp** e mandar uma mensagem de
+   teste para o próprio celular, pelos dois canais. Depois pedir um QR Code ou
+   o código do PIN pela tela do ponto e conferir na aba *Enviadas*.
+4. A variável `NOTIFICAR_WHATSAPP_PONTO` que foi sugerida de manhã **não é
+   mais necessária** — a tela substitui. `NOTIFICAR_WHATSAPP=0` pode ficar: só
+   vale quando a mensageria não alcança.
+
+**Próximos passos de código (ordem sugerida):**
+
+- **O cadastro do Telegram no ERP** (entrega 2 do plano): o bot reconhecer a
+  pessoa pelo cadastro do ERP e gravar o id do chat lá, com a planilha
+  `TelegramID` como reserva na transição. Hoje "Só Telegram" para quem não se
+  cadastrou vira "sem destinatário" e o ERP não sabe quem falta.
+- Quando os módulos antigos forem desligados, a camada das variáveis e os
+  envios próprios de Z-API deles somem junto.
+
+---
+
+## Como a tarde começou — 05/10/2026, tarde: o dono respondeu, e a área ganhou código
+
+**O dono respondeu, e a área ganhou código.** As respostas,
 nas palavras dele: o Z-API está ativo; `NOTIFICAR_WHATSAPP` está em `0`; a
 Evolution "eu nem sei o que é isso (…) vamos excluir"; o Z-API bloqueava
 porque eram muitas mensagens, por isso os avisos migraram para o Telegram e o
@@ -232,6 +300,26 @@ Isso se faz **em fases, cada uma segura sozinha, sem mexer em pasta**:
   = segue a geral, para não mudar comportamento de quem não pediu.
 - **05/10/2026 — O token do Z-API tem um nome, `ZAPI_API_TOKEN`.** O outro é
   apelido aceito, não documentado como opção. Novo código lê o nome do Render.
+- **05/10/2026 — A gestão é uma TELA, não variável.** Variável no Render é
+  invisível: não se vê a lista, não se vê o que saiu. A tela mostra os tipos,
+  decide por tipo, e o registro mostra o que aconteceu. As variáveis viram
+  rede de segurança.
+- **05/10/2026 — A mensageria mora no ERP, não numa função solta.** Porque é
+  no ERP que tudo vai se concentrar (palavras do dono: "vamos concentrar e
+  focar tudo no ERP"); os módulos antigos vão sumir e não ganharam adaptação.
+- **05/10/2026 — Política por tipo, com a opção "Telegram; WhatsApp para quem
+  não tem".** É a que gasta WhatsApp só com quem ainda não se cadastrou — o
+  jeito de alcançar todo mundo sem alimentar o bloqueio do Z-API.
+- **05/10/2026 — A chave geral do WhatsApp nasce DESLIGADA.** Mandar WhatsApp
+  é escrever em sistema de terceiro, e o Z-API bloqueia; quem liga é o dono,
+  na tela, com confirmação.
+- **05/10/2026 — O aviso de teto vai aos ADMIN do ERP, não ao telefone master
+  da variável.** O papel já existe no cadastro; e vai direto pelo Telegram,
+  sem passar pela política, para nunca cair no próprio teto.
+- **05/10/2026 — Os módulos antigos não foram tocados** (condição do dono:
+  "não quero mexer em absolutamente nada que impacte no Análise de SPs, tudo
+  que está no Make"). Eles continuam decidindo pelas variáveis; só o registro
+  passou a vê-los.
 
 ---
 

@@ -1065,13 +1065,13 @@ def _wa_aviso_cadastro(telefone):
 
     # Desde 05/10/2026 o envio é o do notificador comum: mesmas credenciais
     # (ZAPI_API_TOKEN) e mesmo liga/desliga de todo mundo. A finalidade
-    # "aviso_cadastro_telegram" permite ligar só este aviso
-    # (NOTIFICAR_WHATSAPP_AVISO_CADASTRO_TELEGRAM=1) com o geral desligado.
+    # "telegram.aviso_cadastro" é o tipo na tela Mensagens do ERP (nasce
+    # DESLIGADO); sem mensageria, NOTIFICAR_WHATSAPP_TELEGRAM_AVISO_CADASTRO=1.
     # Importação tardia: o notificador importa este módulo no topo.
     from app.apps.notificador import enviar_whatsapp
     mensagem = MSG_AVISO_CADASTRO_WA.format(link=TELEGRAM_BOT_LINK)
     try:
-        r = enviar_whatsapp(tel, mensagem, finalidade="aviso_cadastro_telegram")
+        r = enviar_whatsapp(tel, mensagem, finalidade="telegram.aviso_cadastro")
     except Exception as e:  # noqa: BLE001 — avisar nunca derruba o envio principal
         return {"ok": False, "detalhe": f"erro ao avisar via WhatsApp: {e}"}
     if r.get("ok"):

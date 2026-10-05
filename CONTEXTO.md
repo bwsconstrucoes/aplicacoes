@@ -73,8 +73,9 @@ aplicacoes/
         ├── telegram/         ← /telegram/* (bot / autocadastro / envio; memória em `mensageria/`)
         ├── notificador.py    ← `notificar()` / `enviar_telegram()`, usado por ERP, ponto, analisesps,
                                 baixabradesco, processarnovasp e validasp (memória em `mensageria/`)
-        ├── mensageria/       ← SÓ MEMÓRIA (README.md + HISTORICO.md) das quatro peças acima — sétima
-                                área do CLAUDE.md desde 05/10/2026; não é blueprint
+        ├── mensageria/       ← por onde cada aviso sai: catálogo de tipos, política, teto do WhatsApp,
+                                registro (schema `mensageria`, migração 083 do ERP) e a tela ERP › Mensagens
+                                (pendurada no blueprint do ERP, como o ponto). Memória da área em README/HISTORICO
         ├── ponto/            ← /ponto/* — ponto eletrônico próprio (REP-P); schema `ponto`
                                 no banco do ERP, cadastros do ERP (ver §5.13 e `ponto/README.md`)
         └── erp/              ← /erp/* — ERP (ver §2.1 e §5.12). NÃO é um blueprint
@@ -425,11 +426,12 @@ por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
   notificador e nos módulos que o espelham (não nas respostas do chatbot).
   **Em produção `NOTIFICAR_WHATSAPP=0`** desde que o Z-API passou a bloquear
   pelo volume e os avisos foram para o Telegram.
-- `NOTIFICAR_WHATSAPP_<FINALIDADE>` / `NOTIFICAR_TELEGRAM_<FINALIDADE>` —
-  desde 05/10/2026, liga/desliga **por uso**, e manda sobre a geral quando
-  existe. Finalidades hoje: `PONTO` (QR, PIN e resumo do ponto) e
-  `AVISO_CADASTRO_TELEGRAM`. Ex.: `NOTIFICAR_WHATSAPP_PONTO=1` com
-  `NOTIFICAR_WHATSAPP=0` = WhatsApp só para o ponto.
+- `NOTIFICAR_WHATSAPP_<TIPO>` / `NOTIFICAR_TELEGRAM_<TIPO>` — liga/desliga
+  por tipo de mensagem (`ponto.qr` → `NOTIFICAR_WHATSAPP_PONTO_QR`), mandando
+  sobre a geral quando existe. ⚠️ **Desde a tela ERP › Mensagens (05/10/2026,
+  migração 083) estas variáveis e a geral só valem quando a mensageria não
+  alcança** — sem banco, antes da migração, ou para módulos que não dizem o
+  tipo. A gestão é a tela (`mensageria/README.md`).
 
 ### 4.5 Omie
 
@@ -794,6 +796,42 @@ Quando eu pedir nova feature ou adaptação:
 ---
 
 ## 9. Histórico de decisões arquiteturais
+
+### 05/10/2026 (noite) — A TELA MENSAGENS: a gestão de por onde cada aviso sai mora no ERP (atravessa áreas)
+
+O dono, de tarde: *"eu preciso ter gestão sobre quais mensagens vão para o
+WhatsApp e quais não vão (…) a prioridade de envio é Telegram; por enquanto,
+ponto permitido no WhatsApp"*, e depois: *"vamos concentrar e focar tudo no
+ERP (…) o Make vai sumir"*. E, ao aprovar: não mexer em nada do Análise de SPs
+e do Make; começar pelo ponto; testar.
+
+**O que nasceu:** o módulo `app/apps/mensageria/` com código, pendurado no ERP
+como o ponto (menu **Mensagens**, abas *Tipos e canais* e *Enviadas*). Um
+**catálogo de tipos** de mensagem declarado no código, com a **política**
+escolhida na tela para cada um (Só Telegram · Telegram, WhatsApp para quem não
+tem · Só WhatsApp · Desligado), a **chave geral do WhatsApp** (nasce desligada),
+o **teto** por hora/dia para a empresa inteira com aviso aos ADMIN, e o
+**registro** de 90 dias de tudo que o notificador tentou. Migração **083** do
+ERP (schema `mensageria`, e a seção `adm_mensagens` nos perfis). Ações
+`ver_mensagens` e `configurar_mensagens`.
+
+**O que mudou fora da área, e só isto:** `notificador.py` pergunta à
+mensageria antes de mandar (com `finalidade=`; sem ela ou sem banco, valem as
+variáveis, como antes); o ponto diz o tipo de cada mensagem e a fila só liga
+se a mensageria liberar; seis chamadas do ERP ganharam `finalidade=` (uma
+linha cada); `erp/routes.py` ganhou a importação protegida no fim;
+`permissoes.py` e `secoes.py` ganharam as duas ações e a seção. **Análise de
+SPs, BaixaBradesco, ProcessarNovaSP, ValidaSP e Make: intocados** — seus
+envios só passaram a aparecer no registro como "sem_tipo".
+
+**A regra que isto cria:** aviso novo no ERP ou no ponto nasce com um tipo no
+catálogo da mensageria e passa `finalidade=` ao notificador. Nada de ler
+`NOTIFICAR_*` em módulo novo. As variáveis são rede de segurança, não gestão.
+
+**O que o dono precisa fazer ao publicar:** apertar "Aplicar atualizações do
+banco" (083) no mesmo momento; abrir ERP › Mensagens, ligar a chave do
+WhatsApp e testar; a variável `NOTIFICAR_WHATSAPP_PONTO` sugerida de manhã não
+é mais necessária.
 
 ### 05/10/2026 (tarde) — O WHATSAPP GANHOU LIGA/DESLIGA POR FINALIDADE, e a Evolution saiu (atravessa áreas)
 

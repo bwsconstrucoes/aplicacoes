@@ -365,7 +365,8 @@ def _enviar_aos_administradores(s: Session, texto: str) -> int:
         if not (u.telefone or u.cpf):
             continue
         try:
-            r = enviar_telegram(telefone=u.telefone, cpf=u.cpf, mensagem=texto)
+            r = enviar_telegram(telefone=u.telefone, cpf=u.cpf, mensagem=texto,
+                                finalidade="erp.teto_ia")
             if r and r.get("ok"):
                 enviados += 1
         except Exception as e:

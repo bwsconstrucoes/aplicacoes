@@ -1,0 +1,215 @@
+{% extends "erp_base.html" %}
+{#
+  MENSAGENS — por onde cada aviso sai, o teto do WhatsApp e o registro.
+  Duas abas num arquivo só (mesma razão do ponto): dividem os ajudantes.
+  O `pode` aqui só esconde controle que a pessoa não pode usar; a trava de
+  verdade é o @permissao de cada rota em app/apps/mensageria/gestao.py.
+#}
+{% block titulo %}Mensagens — {{ "Enviadas" if aba_msg == "msg_envios" else "Tipos e canais" }} — ERP BWS{% endblock %}
+{% block classe_corpo %}{% if aba_msg == "msg_tipos" %}sem-filtros{% endif %}{% endblock %}
+
+{% block filtros %}
+{% if aba_msg == "msg_envios" %}
+  <div class="filtros-cab"><h2>Enviadas</h2></div>
+  <div class="campo"><label for="f-dias">Período</label>
+    <select id="f-dias" data-sem-busca>
+      <option value="1">Hoje</option><option value="7" selected>7 dias</option>
+      <option value="30">30 dias</option><option value="90">90 dias</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="f-canal">Canal</label>
+    <select id="f-canal" data-sem-busca><option value="">Todos</option>
+      <option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="f-status">Situação</label>
+    <select id="f-status" data-sem-busca><option value="">Todas</option>
+      <option value="ENVIADO">Enviada</option><option value="FALHOU">Falhou</option>
+      <option value="SEM_DESTINO">Sem destinatário</option><option value="DESLIGADO">Tipo desligado</option>
+      <option value="LIMITE">Teto do WhatsApp</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="f-tipo">Tipo</label>
+    <select id="f-tipo" data-sem-busca><option value="">Todos</option></select></div>
+  <div class="campo" style="margin-top:10px"><label for="f-busca">Buscar</label>
+    <input id="f-busca" placeholder="telefone, CPF ou trecho do texto" autocomplete="off" data-sem-mascara></div>
+  <button class="btn" id="f-ver" type="button" style="width:100%; margin-top:14px">Ver</button>
+  <div class="cartao-dica" style="margin-top:16px">
+    O registro guarda <b>90 dias</b> de tudo que o sistema tentou mandar: por onde, para quem,
+    o texto e o que aconteceu. Depois disso é apagado sozinho.
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+<div id="banco-atrasado"></div>
+
+{% if aba_msg == "msg_tipos" %}
+<h2>Por onde cada mensagem sai</h2>
+
+<div class="cartao" id="c-whatsapp">
+  <div class="cartao-cab"><h3>WhatsApp</h3><small id="wa-credenciais"></small></div>
+  <div class="cartao-dica" style="margin-top:0">
+    O WhatsApp da empresa não é a API oficial e <b>bloqueia quando o volume sobe</b> — foi por isso
+    que os avisos migraram para o Telegram. Esta chave geral vale para TODOS os tipos: desligada,
+    nada sai por WhatsApp, seja qual for a política do tipo. O teto conta todas as mensagens de
+    WhatsApp da empresa; ao bater nele, a mensagem espera e os administradores são avisados pelo
+    Telegram.
+  </div>
+  <div id="wa-corpo">carregando…</div>
+</div>
+
+<div class="cartao" id="c-tipos">
+  <div class="cartao-cab"><h3>Tipos de mensagem</h3><small>tipo novo no sistema aparece aqui sozinho, nascendo "Só Telegram"</small></div>
+  <div class="cartao-dica" style="margin-top:0">
+    <b>Só Telegram</b>: quem não tem Telegram cadastrado não recebe (fica no registro como "sem
+    destinatário"). <b>Telegram; WhatsApp para quem não tem Telegram</b>: o WhatsApp só é gasto com
+    quem ainda não se cadastrou. <b>Só WhatsApp</b>: para o que a pessoa precisa receber antes de ter
+    Telegram, como o QR Code do ponto. <b>Desligado</b>: o sistema não manda, e anota que não mandou.
+  </div>
+  <div class="tabela-rolagem" style="max-height:none"><div id="tipos">carregando…</div></div>
+</div>
+
+{% if pode.configurar_mensagens %}
+<div class="cartao" id="c-teste">
+  <div class="cartao-cab"><h3>Mandar uma mensagem de teste</h3></div>
+  <div class="cartao-dica" style="margin-top:0">Para conferir que o canal está funcionando. Pelo
+    Telegram, a pessoa precisa estar cadastrada no bot. Pelo WhatsApp, a chave geral acima precisa
+    estar ligada, e o envio conta no teto. Fica no registro como "mensageria.teste".</div>
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+    <div class="campo" style="min-width:220px"><label for="t-telefone">Telefone com DDD</label>
+      <input id="t-telefone" name="telefone" placeholder="(85) 9 9999-9999"></div>
+    <div class="campo"><label for="t-canal">Canal</label>
+      <select id="t-canal" data-sem-busca><option value="telegram">Telegram</option><option value="whatsapp">WhatsApp</option></select></div>
+    <button class="btn" id="t-enviar" type="button">Enviar teste</button>
+  </div>
+</div>
+{% endif %}
+
+{% elif aba_msg == "msg_envios" %}
+<h2>Mensagens enviadas</h2>
+<div class="tabela-wrap">
+  <div class="tabela-barra"><span class="resumo" id="e-resumo">carregando…</span><span class="espaco"></span></div>
+  <div class="tabela-rolagem"><div id="envios"></div></div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PODE_CONFIGURAR = {{ "true" if pode.configurar_mensagens else "false" }};
+const POLITICAS = {{ politicas | tojson }};
+const hora = iso => { if (!iso) return ""; const d = new Date(iso);
+  return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"}); };
+const telefoneBonito = t => { const d = (t || "").replace(/\D/g, "");
+  if (d.length === 13) return `(${d.slice(2,4)}) ${d.slice(4,5)} ${d.slice(5,9)}-${d.slice(9)}`;
+  if (d.length === 12) return `(${d.slice(2,4)}) ${d.slice(4,8)}-${d.slice(8)}`; return t || ""; };
+const SITUACAO = {ENVIADO: ["Enviada", "ok"], FALHOU: ["Falhou", "erro"], SEM_DESTINO: ["Sem destinatário", "alerta"],
+                  DESLIGADO: ["Tipo desligado", "info"], LIMITE: ["Teto do WhatsApp", "alerta"]};
+const CANAL = {telegram: "Telegram", whatsapp: "WhatsApp", "": "—"};
+function etiqueta(status){ const [r, c] = SITUACAO[status] || [status, "info"];
+  return `<span class="aviso ${c}" style="display:inline-block; padding:2px 8px; margin:0; font-size:12px">${escapar(r)}</span>`; }
+function bancoAtrasado(d){ if (!d.banco_atrasado) return false;
+  els("banco-atrasado").innerHTML = `<div class="aviso alerta">${escapar(d.erro)}</div>`; return true; }
+
+{% if aba_msg == "msg_tipos" %}
+async function carregar(){
+  try {
+    const d = await api("/erp/api/mensagens/tipos");
+    if (bancoAtrasado(d)) { els("wa-corpo").innerHTML = ""; els("tipos").innerHTML = ""; return; }
+    desenharWhatsapp(d); desenharTipos(d.tipos);
+  } catch (e) { els("tipos").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`; }
+}
+function desenharWhatsapp(d){
+  const r = d.resumo, c = d.contagem || r.contagem_whatsapp;
+  els("wa-credenciais").textContent = d.credenciais.whatsapp ? "credenciais do Z-API presentes" : "SEM credenciais do Z-API no servidor";
+  const hoje = {}; (r.hoje || []).forEach(l => { hoje[l.canal + ":" + l.status] = l.n; });
+  els("wa-corpo").innerHTML = `
+    <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-end">
+      <label class="opcao" style="margin:0"><input type="checkbox" id="wa-ligado" ${r.whatsapp_ligado ? "checked" : ""} ${PODE_CONFIGURAR ? "" : "disabled"}>
+        <span class="rotulo"><b>Envio por WhatsApp ${r.whatsapp_ligado ? "LIGADO" : "desligado"}</b></span></label>
+      <div class="campo" style="margin:0"><label for="wa-hora">Teto por hora</label>
+        <input id="wa-hora" value="${r.teto_por_hora}" style="width:90px" inputmode="numeric" data-sem-mascara ${PODE_CONFIGURAR ? "" : "disabled"}></div>
+      <div class="campo" style="margin:0"><label for="wa-dia">Teto por dia</label>
+        <input id="wa-dia" value="${r.teto_por_dia}" style="width:90px" inputmode="numeric" data-sem-mascara ${PODE_CONFIGURAR ? "" : "disabled"}></div>
+      ${PODE_CONFIGURAR ? '<button class="btn secundario" id="wa-gravar" type="button">Gravar teto</button>' : ""}
+    </div>
+    <div class="cartao-dica">Hoje: <b>${c.dia}</b> de WhatsApp enviadas (teto ${r.teto_por_dia || "sem teto"}),
+      <b>${c.hora}</b> na última hora (teto ${r.teto_por_hora || "sem teto"}).
+      Telegram hoje: <b>${hoje["telegram:ENVIADO"] || 0}</b> enviadas, ${hoje["telegram:SEM_DESTINO"] || 0} sem destinatário.
+      ${!d.credenciais.telegram ? "<br><b>O token do bot do Telegram não está no servidor.</b>" : ""}</div>`;
+  if (!PODE_CONFIGURAR) return;
+  els("wa-ligado").addEventListener("change", async ev => {
+    const ligar = ev.target.checked;
+    if (ligar && !confirm("Ligar o envio por WhatsApp para a empresa inteira? Só os tipos com política de WhatsApp vão usar, dentro do teto.")) { ev.target.checked = false; return; }
+    try { await api("/erp/api/mensagens/parametros", {method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({whatsapp_ligado: ligar})});
+      aviso("mensagem", ligar ? "WhatsApp ligado." : "WhatsApp desligado.", "ok"); carregar();
+    } catch (e) { aviso("mensagem", e.message, "erro"); ev.target.checked = !ligar; }
+  });
+  els("wa-gravar").addEventListener("click", async () => {
+    try { await api("/erp/api/mensagens/parametros", {method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({por_hora: els("wa-hora").value, por_dia: els("wa-dia").value})});
+      aviso("mensagem", "Teto gravado.", "ok"); carregar();
+    } catch (e) { aviso("mensagem", e.message, "erro"); }
+  });
+}
+function desenharTipos(tipos){
+  if (!tipos.length) { els("tipos").innerHTML = '<div class="aviso info">Nenhum tipo cadastrado.</div>'; return; }
+  let modulo = null, html = '<table><thead><tr><th>Mensagem</th><th>O que é</th><th style="width:300px">Por onde sai</th><th>Mudado por</th></tr></thead><tbody>';
+  tipos.forEach(t => {
+    if (t.modulo !== modulo) { modulo = t.modulo; html += `<tr><td colspan="4" style="background:var(--fundo); font-weight:700">${escapar(modulo)}</td></tr>`; }
+    const opcoes = Object.entries(POLITICAS).map(([v, r]) => `<option value="${v}" ${v === t.politica ? "selected" : ""}>${escapar(r)}</option>`).join("");
+    html += `<tr><td><b>${escapar(t.nome)}</b><br><small style="color:var(--tinta-suave)">${escapar(t.chave)}</small></td>
+      <td style="white-space:normal; max-width:420px">${escapar(t.descricao)}</td>
+      <td><select data-chave="${escapar(t.chave)}" data-sem-busca class="politica" ${PODE_CONFIGURAR ? "" : "disabled"} style="width:100%">${opcoes}</select></td>
+      <td><small>${t.atualizado_por ? escapar(t.atualizado_por) + "<br>" + hora(t.atualizado_em) : "—"}</small></td></tr>`;
+  });
+  els("tipos").innerHTML = html + "</tbody></table>";
+  if (!PODE_CONFIGURAR) return;
+  els("tipos").querySelectorAll("select.politica").forEach(sel => sel.addEventListener("change", async ev => {
+    const chave = ev.target.dataset.chave, politica = ev.target.value;
+    try { await api("/erp/api/mensagens/politica", {method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({chave, politica})});
+      aviso("mensagem", `“${chave}” agora sai: ${POLITICAS[politica]}.`, "ok"); carregar();
+    } catch (e) { aviso("mensagem", e.message, "erro"); carregar(); }
+  }));
+}
+{% if pode.configurar_mensagens %}
+els("t-enviar").addEventListener("click", async () => {
+  const b = els("t-enviar"); b.disabled = true;
+  try { const d = await api("/erp/api/mensagens/teste", {method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({telefone: els("t-telefone").value, canal: els("t-canal").value})});
+    if (!bancoAtrasado(d)) aviso("mensagem", "Teste enviado. Confira o celular e a aba Enviadas.", "ok");
+  } catch (e) { aviso("mensagem", e.message, "erro"); } finally { b.disabled = false; }
+});
+{% endif %}
+carregar();
+
+{% elif aba_msg == "msg_envios" %}
+async function tiposNoFiltro(){
+  try { const d = await api("/erp/api/mensagens/tipos"); if (d.banco_atrasado) return;
+    els("f-tipo").innerHTML = '<option value="">Todos</option>' + d.tipos.map(t => `<option value="${escapar(t.chave)}">${escapar(t.nome)}</option>`).join("")
+      + '<option value="mensageria.teste">Teste da tela</option><option value="sem_tipo">Sem tipo (módulos antigos)</option>';
+  } catch (e) { /* o filtro fica só com "Todos" */ }
+}
+async function ver(){
+  const q = new URLSearchParams({dias: els("f-dias").value, canal: els("f-canal").value, status: els("f-status").value,
+                                 tipo: els("f-tipo").value, busca: els("f-busca").value});
+  els("e-resumo").textContent = "carregando…";
+  try {
+    const d = await api("/erp/api/mensagens/enviadas?" + q);
+    if (bancoAtrasado(d)) { els("e-resumo").textContent = ""; els("envios").innerHTML = ""; return; }
+    const L = d.envios;
+    els("e-resumo").innerHTML = `<b>${L.length}</b> ${L.length === 1 ? "registro" : "registros"}${L.length >= 300 ? " (os 300 mais recentes — refine o filtro)" : ""}`;
+    if (!L.length) { els("envios").innerHTML = '<div class="aviso info" style="margin:12px">Nada no período com esses filtros.</div>'; return; }
+    els("envios").innerHTML = '<table><thead><tr><th>Quando</th><th>Mensagem</th><th>Canal</th><th>Para</th><th>Situação</th><th>Texto</th></tr></thead><tbody>'
+      + L.map(l => `<tr><td style="white-space:nowrap">${hora(l.criado_em)}</td><td>${escapar(l.tipo_nome)}</td>
+          <td>${CANAL[l.canal] ?? escapar(l.canal)}</td>
+          <td style="white-space:nowrap">${escapar(telefoneBonito(l.destinatario))}${l.cpf ? "<br><small>CPF " + escapar(l.cpf) + "</small>" : ""}</td>
+          <td>${etiqueta(l.status)}${l.detalhe ? "<br><small>" + escapar(l.detalhe) + "</small>" : ""}</td>
+          <td style="white-space:normal; max-width:460px"><small>${escapar((l.texto || "").slice(0, 240))}${(l.texto || "").length > 240 ? "…" : ""}${l.nome_arquivo ? "<br>📎 " + escapar(l.nome_arquivo) : ""}</small></td></tr>`).join("")
+      + "</tbody></table>";
+  } catch (e) { els("e-resumo").textContent = ""; els("envios").innerHTML = `<div class="aviso erro" style="margin:12px">${escapar(e.message)}</div>`; }
+}
+els("f-ver").addEventListener("click", ver);
+els("f-busca").addEventListener("keydown", ev => { if (ev.key === "Enter") ver(); });
+tiposNoFiltro().then(ver);
+{% endif %}
+</script>
+{% endblock %}

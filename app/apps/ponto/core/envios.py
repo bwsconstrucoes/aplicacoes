@@ -284,9 +284,15 @@ def _texto_do_qr(nome: str, motivo: str) -> str:
             "Se perder o celular, avise o encarregado.")
 
 
+# O TIPO de cada mensagem na mensageria (tela Mensagens do ERP): é lá que o
+# dono decide se sai por WhatsApp. Pedido dele em 05/10/2026: ponto liberado.
+FINALIDADE = {"QR": "ponto.qr", "MOSAICO": "ponto.mosaico", "AVISO_FOTO": "ponto.aviso_foto"}
+
+
 def _notificar_padrao(**kw) -> dict:
     from app.apps.notificador import notificar
-    return notificar(canais=("whatsapp",), finalidade="ponto", **kw)
+    kw.setdefault("finalidade", "ponto.qr")
+    return notificar(canais=("whatsapp",), **kw)
 
 
 def preparar(conn: Connection, item: dict) -> tuple[Optional[dict], Optional[str], str]:
@@ -301,8 +307,9 @@ def preparar(conn: Connection, item: dict) -> tuple[Optional[dict], Optional[str
         jpeg = qr.imagem(token, formato="JPEG", legenda=p["nome"].split(" ")[0].upper())
         return ({"telefone": item["telefone"], "mensagem": _texto_do_qr(p["nome"], item["motivo"]),
                  "arquivo_base64": base64.b64encode(jpeg).decode("ascii"),
-                 "nome_arquivo": "qr-ponto.jpg", "tipo": "imagem"}, token, "")
-    return {"telefone": item["telefone"], "mensagem": item["texto"]}, None, ""
+                 "nome_arquivo": "qr-ponto.jpg", "tipo": "imagem", "finalidade": "ponto.qr"}, token, "")
+    return {"telefone": item["telefone"], "mensagem": item["texto"],
+            "finalidade": FINALIDADE.get(item["tipo"], "ponto.qr")}, None, ""
 
 
 def mandar(argumentos: dict, enviar: Optional[Callable] = None) -> tuple[bool, str]:
@@ -369,13 +376,14 @@ _ultima_verificacao = 0.0
 
 
 def whatsapp_pronto() -> bool:
-    """Credenciais do Z-API presentes E o WhatsApp ligado para o ponto.
-    A decisão é do notificador comum: a variável NOTIFICAR_WHATSAPP_PONTO
-    manda; sem ela, vale a NOTIFICAR_WHATSAPP geral. (Até 05/10/2026 este
-    teste lia um nome de token que não existia no Render e a fila nunca
-    saía do lugar.)"""
+    """Credenciais do Z-API presentes E o WhatsApp liberado para o QR do ponto.
+    Quem decide é a mensageria (tela Mensagens do ERP: política do tipo
+    "QR Code do ponto" e a chave geral do WhatsApp); sem ela no banco, as
+    variáveis NOTIFICAR_WHATSAPP / NOTIFICAR_WHATSAPP_PONTO_QR. (Até
+    05/10/2026 este teste lia um nome de token que não existia no Render e a
+    fila nunca saía do lugar.)"""
     from app.apps.notificador import canal_ativo, whatsapp_configurado
-    return whatsapp_configurado() and canal_ativo("whatsapp", "ponto")
+    return whatsapp_configurado() and canal_ativo("whatsapp", "ponto.qr")
 
 
 def _trabalhar() -> None:

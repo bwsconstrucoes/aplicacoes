@@ -14,13 +14,15 @@ from app.apps import notificador
 
 VARS = ("ZAPI_INSTANCE_ID", "ZAPI_API_TOKEN", "ZAPI_INSTANCE_TOKEN", "ZAPI_CLIENT_TOKEN",
         "NOTIFICAR_WHATSAPP", "NOTIFICAR_TELEGRAM", "NOTIFICAR_WHATSAPP_PONTO",
-        "NOTIFICAR_WHATSAPP_AVISO_CADASTRO_TELEGRAM")
+        "NOTIFICAR_WHATSAPP_PONTO_QR", "NOTIFICAR_WHATSAPP_TELEGRAM_AVISO_CADASTRO")
 
 
 @pytest.fixture(autouse=True)
 def ambiente_limpo(monkeypatch):
     for v in VARS:
         monkeypatch.delenv(v, raising=False)
+    # Estes testes são da camada das VARIÁVEIS: a mensageria fica "fora do ar".
+    monkeypatch.setattr(notificador, "_mensageria", lambda: None)
 
 
 @pytest.fixture
@@ -143,7 +145,7 @@ def test_ponto_so_dispara_a_fila_com_credencial_e_finalidade_ligada(monkeypatch)
     assert envios.whatsapp_pronto() is True
     monkeypatch.setenv("NOTIFICAR_WHATSAPP", "0")                 # geral desligado...
     assert envios.whatsapp_pronto() is False
-    monkeypatch.setenv("NOTIFICAR_WHATSAPP_PONTO", "1")           # ...mas o ponto ligado
+    monkeypatch.setenv("NOTIFICAR_WHATSAPP_PONTO_QR", "1")        # ...mas o QR do ponto ligado
     assert envios.whatsapp_pronto() is True
 
 
@@ -155,7 +157,7 @@ def test_aviso_de_cadastro_do_telegram_passa_pelo_notificador(monkeypatch, zapi_
     monkeypatch.setenv("NOTIFICAR_WHATSAPP", "0")
     assert tb._wa_aviso_cadastro("5585999990000")["ok"] is None   # desligado: cala
     assert zapi_dublado == []
-    monkeypatch.setenv("NOTIFICAR_WHATSAPP_AVISO_CADASTRO_TELEGRAM", "1")
+    monkeypatch.setenv("NOTIFICAR_WHATSAPP_TELEGRAM_AVISO_CADASTRO", "1")
     assert tb._wa_aviso_cadastro("5585999990000")["ok"] is True
     assert "t.me/" in zapi_dublado[0]["json"]["message"]
     assert tb._wa_aviso_cadastro("5585999990000")["ok"] is None   # 6 h de silêncio depois
