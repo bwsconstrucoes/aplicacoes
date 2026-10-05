@@ -184,6 +184,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/folha/feriado/apagar"),
     ("POST", "/analisesps/api/folha/ferias"),
     ("POST", "/analisesps/api/folha/ferias/apagar"),
+    ("POST", "/analisesps/api/folha/ferias/importar"),
     # Dispara a carga do ponto e apaga carga — trabalho longo e destrutivo.
     ("POST", "/analisesps/api/folha/ponto"),
     ("POST", "/analisesps/api/folha/ponto/apagar"),

@@ -31,6 +31,34 @@
 <h3>Férias <small>{{ ferias|length }} período(s)</small></h3>
 
 {% if pode_operar %}
+{# A LISTAGEM DE FÉRIAS DO FORTES (05/10/2026): *"eu quero também aquela caixinha
+   para importação de arquivos (…) jogar dois arquivos, ele faz a leitura,
+   compreende se aquela informação já foi cadastrada (…) e verifica se tem alguma
+   mudança"*. Nada é gravado sem a janela de conferência. #}
+<div class="cartao">
+  <label class="rotulo-campo">Importar a Listagem de Férias do Fortes</label>
+  <div class="solta-arquivo compacta" id="solta-ferias">
+    <p><b>Solte aqui os arquivos da contabilidade</b> (mês anterior e mês atual, por exemplo)
+      <br><label class="link-btn" for="arq-ferias">ou escolha no computador</label></p>
+    <input type="file" id="arq-ferias" accept=".xls,.xlsx" multiple hidden>
+  </div>
+  <p class="cartao-dica" style="margin:8px 0 0">
+    O sistema lê cada colaborador (pelo código do Fortes da ficha) e o período de
+    <b>gozo</b>, e mostra antes de gravar o que é novo, o que já estava cadastrado
+    e o que mudou. Jogar o mesmo arquivo de novo não duplica nada.
+  </p>
+</div>
+
+<dialog class="dialogo" id="dialogo-ferias-import">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Listagem de Férias do Fortes</h3>
+  <div id="ferias-import-corpo"><p class="cartao-dica">Lendo…</p></div>
+  <div class="lat-acoes" style="margin-top:10px">
+    <button type="button" class="btn" id="ferias-import-gravar" hidden>Gravar</button>
+  </div>
+</dialog>
+
 <div class="cartao">
   <label class="rotulo-campo">Lançar férias de colaborador</label>
   <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
@@ -90,7 +118,7 @@
     <table class="sps">
       <thead>
         <tr><th>Colaborador</th><th>CPF</th><th>Início</th><th>Fim</th><th class="num">Dias</th>
-          <th>Lançado por</th>{% if pode_operar %}<th></th>{% endif %}</tr>
+          <th>Origem</th><th>Lançado por</th>{% if pode_operar %}<th></th>{% endif %}</tr>
       </thead>
       <tbody>
       {% for f in ferias %}
@@ -100,6 +128,11 @@
           <td>{{ f.inicio|data_br }}</td>
           <td>{{ f.fim|data_br }}</td>
           <td class="num">{{ f.dias }}</td>
+          <td>{% if f.origem %}<span class="cartao-dica" title="{{ f.observacao }}">{{ f.origem }}
+              {% if f.retorno %}<br>retorno {{ f.retorno|data_br }}{% endif %}
+              {% if f.abono_dias %} · abono {{ f.abono_dias }} dia(s){% endif %}
+              {% if f.liquido is not none %} · líquido {{ f.liquido|moeda }}{% endif %}</span>
+            {% else %}<span class="cartao-dica">lançado à mão</span>{% endif %}</td>
           <td><span class="cartao-dica">{{ f.criado_por or '—' }}</span></td>
           {% if pode_operar %}
             <td class="num">
@@ -111,7 +144,7 @@
           {% endif %}
         </tr>
       {% else %}
-        <tr><td colspan="{{ 7 if pode_operar else 6 }}" class="cartao-dica">
+        <tr><td colspan="{{ 8 if pode_operar else 7 }}" class="cartao-dica">
           {% if procurado %}Nenhum resultado para "{{ procurado }}". Altere os critérios de pesquisa.
           {% else %}Nenhum período de férias lançado.{% endif %}
         </td></tr>
@@ -379,6 +412,102 @@ document.querySelectorAll(".apagar-feriado").forEach(b =>
     if (!d.ok) { alert(d.erro); b.disabled = false; return; }
     location.reload();
   }));
+
+// --- A LISTAGEM DE FÉRIAS DO FORTES (05/10/2026) ---------------------------
+(function () {
+  const zona = document.getElementById("solta-ferias");
+  if (!zona) return;
+  const entrada = document.getElementById("arq-ferias");
+  const dialogo = document.getElementById("dialogo-ferias-import");
+  const corpo = document.getElementById("ferias-import-corpo");
+  const gravar = document.getElementById("ferias-import-gravar");
+  const URL_IMPORTAR = "{{ url_for('analisesps.folha_ferias_importar') }}";
+  let arquivos = [];
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g,
+    c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+  function tabela(titulo, dica, linhas, comAntes) {
+    if (!linhas.length) return "";
+    return "<h4>" + esc(titulo) + " <small>" + linhas.length + "</small></h4>" +
+      (dica ? '<p class="cartao-dica">' + dica + "</p>" : "") +
+      '<div class="tabela-rolagem livre"><table class="sps"><thead><tr><th>Colaborador</th>' +
+      "<th>Código</th><th>Gozo</th><th class=\"num\">Dias</th>" +
+      (comAntes ? "<th>Cadastrado antes</th>" : "") + "<th>Aquisitivo / abono</th></tr></thead><tbody>" +
+      linhas.map(r => "<tr><td><b>" + esc(r.nome) + "</b>" + (r.cpf ? "<br><span class=\"cartao-dica\">" +
+        esc(r.cpf) + (r.casou_por === "nome" ? " · achado pelo NOME" : "") + "</span>" : "") +
+        "</td><td>" + esc(r.codigo) + "</td><td>" + esc(r.inicio) + " a " + esc(r.fim) +
+        '</td><td class="num">' + r.dias + "</td>" +
+        (comAntes ? "<td>" + r.antes.map(esc).join("<br>") + "</td>" : "") +
+        '<td><span class="cartao-dica">' + esc(r.aquisitivo) + (r.abono ? " · abono " + r.abono + " dia(s)" : "") +
+        "</span></td></tr>").join("") + "</tbody></table></div>";
+  }
+
+  function desenhar(d, gravado) {
+    let html = '<p class="cartao-dica">' + d.arquivos.map(a => "<b>" + esc(a.nome) + "</b>: " +
+      a.quantos + " colaborador(es)" + (a.periodo ? ", férias iniciadas de " + esc(a.periodo) : "") +
+      (a.sem_gozo.length ? " · sem período de gozo: " + a.sem_gozo.map(esc).join(", ") : "")).join("<br>") + "</p>";
+    if (gravado) {
+      html += '<div class="aviso">' + d.gravadas + " período(s) gravado(s)" +
+        (d.substituidas ? ", " + d.substituidas + " período(s) antigo(s) substituído(s)" : "") + ".</div>";
+    }
+    d.conflitos.forEach(c => { html += '<div class="aviso atencao">' + esc(c) + "</div>"; });
+    html += tabela("Novas", "Entram no cadastro de férias.", d.novas, false);
+    html += tabela("Mudaram", "A pessoa já tinha férias cadastradas que se cruzam com estas, com datas diferentes. " +
+                   "O período antigo é substituído pelo do arquivo.", d.alteradas, true);
+    html += tabela("Sem cadastro", "O código do Fortes e o nome não acham ninguém no cadastro de colaboradores. " +
+                   "Não entram — confira a coluna BU da ficha e clique em \"Atualizar cadastro\".", d.sem_cadastro, false);
+    if (d.sumiram.length) {
+      html += "<h4>Não estão mais no arquivo <small>" + d.sumiram.length + "</small></h4>" +
+        '<p class="cartao-dica">Importadas antes, com início no mesmo mês, e que o arquivo não traz mais ' +
+        "(férias canceladas ou remarcadas?). Nada é apagado: confira e exclua na lista, se for o caso.</p><ul>" +
+        d.sumiram.map(p => "<li>" + esc(p.nome) + " — " + esc(p.inicio) + " a " + esc(p.fim) + "</li>").join("") + "</ul>";
+    }
+    html += tabela("Já cadastradas", "Mesmas datas do cadastro: ficam como estão.", d.iguais, false);
+    corpo.innerHTML = html;
+    gravar.hidden = gravado || !d.a_gravar;
+    gravar.textContent = "Gravar " + d.a_gravar + " período(s)";
+  }
+
+  async function mandar(confirmar) {
+    const f = new FormData();
+    arquivos.forEach(a => f.append("arquivos", a, a.name));
+    if (confirmar) f.append("confirmar", "1");
+    const r = await fetch(URL_IMPORTAR, {method: "POST", body: f});
+    return r.json();
+  }
+
+  async function ler(lista) {
+    arquivos = [...lista];
+    if (!arquivos.length) return;
+    corpo.innerHTML = '<p class="cartao-dica">Lendo ' + arquivos.length + " arquivo(s)…</p>";
+    gravar.hidden = true;
+    dialogo.showModal();
+    try {
+      const d = await mandar(false);
+      if (!d.ok) { corpo.innerHTML = '<div class="aviso erro">' + esc(d.erro) + "</div>"; return; }
+      desenhar(d, false);
+    } catch (e) { corpo.innerHTML = '<div class="aviso erro">Não foi possível ler: ' + esc(e) + "</div>"; }
+  }
+
+  gravar.addEventListener("click", async () => {
+    gravar.disabled = true;
+    try {
+      const d = await mandar(true);
+      if (!d.ok) { alert(d.erro); return; }
+      desenhar(d, true);
+      dialogo.addEventListener("close", () => location.reload(), {once: true});
+    } catch (e) { alert("Não foi possível gravar: " + e); }
+    finally { gravar.disabled = false; }
+  });
+
+  entrada.addEventListener("change", () => { ler(entrada.files); entrada.value = ""; });
+  zona.addEventListener("dragover", e => { e.preventDefault(); zona.classList.add("por-cima"); });
+  zona.addEventListener("dragleave", () => zona.classList.remove("por-cima"));
+  zona.addEventListener("drop", e => {
+    e.preventDefault(); zona.classList.remove("por-cima");
+    ler(e.dataTransfer.files);
+  });
+})();
 </script>
 {% endif %}
 

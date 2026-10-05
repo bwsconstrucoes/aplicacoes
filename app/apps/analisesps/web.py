@@ -3749,8 +3749,19 @@ def tela_folha_auxilio():
                                 request.args, campo_da_obra="obra",
                                 escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
 
+    from . import folha_pagamento as fpg
+    agrupamento = request.args.get("agrupar", fx.AGRUPAMENTO_PADRAO)
+    if agrupamento not in {c for c, _ in fx.AGRUPAMENTOS}:
+        agrupamento = fx.AGRUPAMENTO_PADRAO
+    try:
+        contas = fpg.conta_por_obra() if lista["pessoas"] else {}
+    except Exception:  # noqa: BLE001 — sem contas, o grupo "Conta" fica vazio
+        logger.exception("Folha: não consegui ler as contas para agrupar o auxílio")
+        contas = {}
     return render_template(
         "analisesps_folha_auxilio.html", aba="folha", subaba="auxilios",
+        agrupamento=agrupamento, agrupamentos=fx.AGRUPAMENTOS,
+        grupos_da_lista=fx.agrupar(lista["pessoas"], agrupamento, contas),
         obras_c_diarios=_obras_c_diarios(),
         grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
         tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=lista["pessoas"],
@@ -4010,8 +4021,15 @@ def folha_auxilio_extras():
         ano = mes = 0
     if tipo not in fx.TIPOS or not (1 <= mes <= 12) or not (2000 <= ano <= 2100):
         return {"ok": False, "erro": "Verba ou competência inválida."}, 400
+    # ⚠️ A OBRA ESTAVA FORA DESTA LISTA até 05/10/2026: a tela mandava a obra
+    # escolhida, o servidor a descartava e respondia "ok" — o dono escolhia a
+    # obra e nada gravava. Pedido sem nada a gravar agora é recusado.
     mudancas = {k: dados[k] for k in ("valor_extra", "motivo_extra",
-                                      "desconto_ausencias") if k in dados}
+                                      "desconto_ausencias", "obra",
+                                      "ausencias_relevadas", "motivo_relevadas")
+                if k in dados}
+    if not mudancas:
+        return {"ok": False, "erro": "Nada a gravar."}, 400
     try:
         n = fx.gravar_extras(tipo, ano, mes, dados.get("cpfs") or dados.get("cpf") or [],
                              quem=quem, **mudancas)
@@ -4523,6 +4541,31 @@ def folha_ferias_gravar():
         logger.exception("Folha: falhou gravar as férias")
         return {"ok": False, "erro": f"Não foi possível gravar: {e}"}, 500
     return {"ok": True, "id": novo}
+
+
+@bp.route("/api/folha/ferias/importar", methods=["POST"])
+@exige_operador
+def folha_ferias_importar():
+    """A "Listagem de Férias" do Fortes — um ou mais arquivos (dono, 05/10/2026:
+    *"jogar dois arquivos, ele faz a leitura, compreende se já foi cadastrado
+    (…) e verifica se tem alguma mudança"*). Sem `confirmar`, só a análise; com
+    ele, grava as novas e as alteradas."""
+    from . import ferias_fortes as ff
+
+    arquivos = [(a.filename or "arquivo", a.read())
+                for a in request.files.getlist("arquivos") if a and a.filename]
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        if request.form.get("confirmar") == "1":
+            saida = ff.importar(arquivos, quem=quem)
+        else:
+            saida = ff.analisar(arquivos)
+    except ff.ErroDasFerias as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou importar a listagem de férias")
+        return {"ok": False, "erro": f"Não foi possível ler os arquivos: {e}"}, 500
+    return {"ok": True, **ff.para_tela(saida)}
 
 
 @bp.route("/api/folha/ferias/apagar", methods=["POST"])

@@ -405,6 +405,23 @@ def excel(dados: dict) -> bytes:
     moeda(aba, (3,))
     larguras(aba, [16, 60, 10, 15, 20])
 
+    # --- AS AUSÊNCIAS (auxílio transporte, 05/10/2026) ----------------
+    com_ausencia = [p for p in dados["pessoas"] if p.get("ausencias_detalhe")]
+    if com_ausencia:
+        aba = aba_nova("Ausências", ["Nome", "CPF", "Obra", "Dia", "Motivo no ponto",
+                                     "Situação do desconto", "Valor do dia",
+                                     "Descontado"])
+        for p in com_ausencia:
+            for a in p["ausencias_detalhe"]:
+                aba.append([p.get("nome_na_tela") or "",
+                            cpf_bonito(p.get("cpf") or "") if p.get("cpf") else "",
+                            p.get("obras_resumo") or "",
+                            a["data"].strftime("%d/%m/%Y"), a["motivo"], a["situacao"],
+                            float(_dinheiro(a["valor_dia"])),
+                            float(_dinheiro(a["descontado"]))])
+        moeda(aba, (6, 7))
+        larguras(aba, [38, 15, 30, 11, 30, 40, 12, 12])
+
     memoria = io.BytesIO()
     planilha.save(memoria)
     return memoria.getvalue()
@@ -464,6 +481,30 @@ def pdf(dados: dict) -> bytes:
                 for p in dados["pessoas"]],
                larguras=[54, 32, 40, 18, 10, 20, 16], direita=(4, 5),
                fonte=7, linhas_max=2)
+
+    # AS AUSÊNCIAS E O DESCONTO (05/10/2026) — para quem vai analisar se há ou
+    # não desconto: cada dia, o motivo do ponto e o que se decidiu.
+    com_ausencia = [p for p in dados["pessoas"] if p.get("ausencias_detalhe")]
+    if com_ausencia:
+        doc.titulo_secao("Ausências no ponto e desconto")
+        doc.observacao("Ausências do ponto do mês trabalhado. \"A confirmar\": "
+                       "desconto ainda não aplicado; \"não descontada\": dia "
+                       "relevado, com a justificativa.")
+        linhas_aus = []
+        for p in com_ausencia:
+            for a in p["ausencias_detalhe"]:
+                linhas_aus.append([p.get("nome_na_tela") or "",
+                                   a["data"].strftime("%d/%m/%Y"), a["motivo"],
+                                   a["situacao"], _moeda_br(a["valor_dia"]),
+                                   _moeda_br(a["descontado"]) if a["descontado"] else "-"])
+        total_desc = sum((_dinheiro(a["descontado"]) for p in com_ausencia
+                          for a in p["ausencias_detalhe"]), Decimal("0.00"))
+        doc.tabela(["Nome", "Dia", "Motivo no ponto", "Situação", "Valor dia",
+                    "Descontado"],
+                   linhas_aus + [["Total descontado", "", "", "", "",
+                                  _moeda_br(total_desc)]],
+                   larguras=[48, 18, 36, 48, 20, 20], direita=(4, 5), fonte=7,
+                   linhas_max=2)
 
     # O CONTRACHEQUE DE CADA PESSOA (03/10/2026) — só a folha da contabilidade
     # com a analítica importada traz. É o que torna o PDF anexável ao card.
@@ -612,13 +653,41 @@ def _ajustes_do_auxilio(p: dict) -> str:
     dizer por que o valor difere do calculado (03/10/2026)."""
     partes = []
     if p.get("desconto_aplicado"):
-        partes.append(f"desconto de {len(p.get('ausencias') or [])} ausência(s) "
-                      f"(−{_moeda_br(p.get('desconto_proposto'))})")
+        total = len(p.get("ausencias") or [])
+        n = p.get("dias_descontados", total)
+        partes.append(f"desconto de {n} de {total} ausência(s) "
+                      f"(−{_moeda_br(p.get('desconto_valor') or p.get('desconto_proposto'))})")
+    elif p.get("ausencias"):
+        partes.append(f"{len(p['ausencias'])} ausência(s) — desconto a confirmar "
+                      f"(−{_moeda_br(p.get('desconto_proposto'))} proposto)")
     if p.get("valor_extra"):
         sinal = "+" if _dinheiro(p.get("valor_extra")) > 0 else ""
         partes.append(f"{sinal}{_moeda_br(p.get('valor_extra'))}"
                       + (f" ({p.get('motivo_extra')})" if p.get("motivo_extra") else ""))
     return (" · " + "; ".join(partes)) if partes else ""
+
+
+def _ausencias_do_auxilio(p: dict) -> list:
+    """Cada ausência do ponto, com o que se decidiu (dono, 05/10/2026: *"é
+    importante que as informações e detalhamento estejam nos relatórios, visto
+    que talvez precisemos encaminhar a alguém para analisar se terá ou não
+    desconto"*). `situacao`: descontada, não descontada (com a justificativa)
+    ou a confirmar."""
+    saida = []
+    for a in p.get("ausencias") or []:
+        if not p.get("desconto_aplicado"):
+            situacao = "a confirmar"
+        elif a.get("descontar", True):
+            situacao = "descontada"
+        else:
+            situacao = "não descontada" + (f" — {p['motivo_relevadas']}"
+                                           if p.get("motivo_relevadas") else "")
+        saida.append({"data": a["data"], "motivo": a.get("motivo") or "",
+                      "situacao": situacao,
+                      "valor_dia": p.get("valor_ausencia_dia") or Decimal("0.00"),
+                      "descontado": (p.get("valor_ausencia_dia") or Decimal("0.00"))
+                      if situacao == "descontada" else Decimal("0.00")})
+    return saida
 
 
 def montado_do_auxilio(resultado: dict, pessoas: list, filtros: dict,
@@ -645,6 +714,7 @@ def montado_do_auxilio(resultado: dict, pessoas: list, filtros: dict,
                                       for o in por_obra),
             "obra_do_cadastro": p.get("obra_nome") or p.get("obra_cadastro") or "",
             "contas": _contas_de(por_obra, contas_por_obra),
+            "ausencias_detalhe": _ausencias_do_auxilio(p),
             "situacao_rotulo": _situacao_da_outra(p) + _ajustes_do_auxilio(p)})
     return {
         "titulo": f"{rotulo} {competencia}",
