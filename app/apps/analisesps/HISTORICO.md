@@ -11994,8 +11994,9 @@ Ordenados → Diárias.
   Alimentação, transporte → Despesas com Transporte, diária → Diárias,
   gratificação → "Gratiticações e Extras" (grafia da tabela). A DC continua
   lendo a aba na hora.
-- ⚠️ A folha da contabilidade segue "Produção" (pela tabela seria "Diárias",
-  via Salários e Ordenados) — perguntado a ele.
+- A folha da contabilidade segue "Produção" (pela tabela seria "Diárias", via
+  Salários e Ordenados) — confirmado por ele. E "Gratiticações e Extras" é como
+  o portal escreve: não corrigir a grafia.
 
 #### ⚠️ Pendente AGORA
 
@@ -12037,7 +12038,7 @@ Ordenados → Diárias.
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir a CARTEIRA do BeeVale da alimentação e do transporte (hoje "Produção"; os diaristas já saem em "Diárias") | ele |
 | ~~publicar as levas 177 a 179~~ — **publicadas em 05/10/2026** (main em `b18f6f0`, suíte inteira verde salvo o teste do painel que falha igual na main). Carteira da alimentação e do transporte decidida (leva 180) | — |
-| publicar a leva 180; confirmar a carteira da FOLHA (Produção ou Diárias?) e a grafia "Gratiticações e Extras" | ele |
+| ~~publicar a leva 180~~ — **publicada em 05/10/2026** (main em `5f21ffe`). Confirmado por ele: a folha da contabilidade segue "Produção", e "Gratiticações e Extras" é a grafia do PORTAL (*"tá errado mesmo, gratiti"*) — não corrigir | — |
 | ~~publicar as levas 174 a 176~~ — **publicadas em 05/10/2026** (main em `02c26af`; suíte inteira verde, salvo `test_painel_cenario::test_quem_esta_preso_nao_abre_nem_grava_os_parametros`, que falha igual na main — área do painel, depende da ordem). Conferir que ele apertou "Aplicar atualizações do banco" (**048** e **049**) e importar a Listagem de Férias de 09 e 10/2026 | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
