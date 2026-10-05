@@ -63,6 +63,7 @@ def sinais_da_foto(luminancia: Optional[int], contraste: Optional[int]) -> list[
 # Configuração da obra
 # ---------------------------------------------------------------------------
 def configuracao_das_obras(conn: Connection, obras: Optional[list[int]] = None) -> list[dict]:
+    from . import base_obras
     sql = """
         SELECT o.id, o.codigo, o.nome, COALESCE(oc.mosaico_obrigatorio, FALSE) AS obrigatorio,
                oc.mosaico_responsavel_id AS responsavel_id, u.nome AS responsavel,
@@ -70,7 +71,7 @@ def configuracao_das_obras(conn: Connection, obras: Optional[list[int]] = None) 
           FROM public.obras o
           LEFT JOIN ponto.obra_config oc ON oc.obra_id = o.id
           LEFT JOIN public.usuarios u ON u.id = oc.mosaico_responsavel_id
-         WHERE o.status = 'ATIVA'"""
+         WHERE """ + base_obras.condicao_ativa(conn)
     params: dict = {}
     if obras is not None:
         sql += " AND o.id = ANY(:obras)"
@@ -229,6 +230,7 @@ def chave_do_alerta(obra_id: int, data: dt.date) -> str:
 def preparar_do_dia(conn: Connection, data: dt.date) -> dict:
     """Para cada obra OBRIGATÓRIA que teve batida em `data`: abre a conferência
     PENDENTE e põe na fila o aviso ao responsável."""
+    from . import base_obras
     obras = db.todos(conn, """
         SELECT o.id, o.codigo, o.nome, oc.mosaico_responsavel_id, u.nome AS responsavel,
                u.telefone, (SELECT count(*) FROM ponto.marcacoes m
@@ -236,8 +238,7 @@ def preparar_do_dia(conn: Connection, data: dt.date) -> dict:
                                AND m.status <> 'REJEITADA' AND m.origem <> 'MANUAL') AS batidas
           FROM ponto.obra_config oc JOIN public.obras o ON o.id = oc.obra_id
           LEFT JOIN public.usuarios u ON u.id = oc.mosaico_responsavel_id
-         WHERE oc.mosaico_obrigatorio AND o.status = 'ATIVA'
-    """, d=data)
+         WHERE oc.mosaico_obrigatorio AND """ + base_obras.condicao_ativa(conn), d=data)
     abertas, avisos = 0, 0
     base = envios.endereco_publico(conn)
     for o in obras:

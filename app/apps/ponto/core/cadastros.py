@@ -34,7 +34,8 @@ _SQL_COLABORADOR = """
            COALESCE(pc.ativo, TRUE) AS ativo_no_ponto,
            (pc.colaborador_id IS NOT NULL) AS tem_config,
            o.codigo AS obra_codigo, o.nome AS obra_nome, {funcao} AS funcao,
-           {no_registro} AS no_registro, {fase} AS fase_registro
+           {no_registro} AS no_registro, {fase} AS fase_registro,
+           {bate_no_celular} AS bate_no_celular
       FROM public.colaboradores c
       {join}
       LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = c.id
@@ -51,7 +52,9 @@ _DO_ERP = {"nome": "c.nome", "obra_id": "c.obra_id", "situacao": "c.situacao",
 def _sql_colaborador(conn: Connection) -> str:
     from . import registro
     trechos = registro.trechos_sql(conn) or _DO_ERP
-    return _SQL_COLABORADOR.format(**trechos)
+    bate = ("COALESCE(pc.bate_no_celular, FALSE)" if db.tem_coluna(conn, "colaborador_config", "bate_no_celular")
+            else "NULL::boolean")
+    return _SQL_COLABORADOR.format(**trechos, bate_no_celular=bate)
 
 
 def _expr(conn: Connection, campo: str) -> str:
@@ -59,16 +62,31 @@ def _expr(conn: Connection, campo: str) -> str:
     return (registro.trechos_sql(conn) or _DO_ERP)[campo]
 
 
-_SQL_OBRA = """
-    SELECT o.id, o.codigo, o.nome, o.status, o.municipio, o.uf,
-           o.latitude, o.longitude,
+# O SELECT da obra vira uma subconsulta com o apelido `o`: quem acrescenta
+# " WHERE o.id = :id" filtra pelos campos JÁ resolvidos (status e coordenada da
+# planilha C. Diários, quando ela é a base — `base_obras.py`).
+_SQL_OBRA_DENTRO = """
+    SELECT o.id, o.codigo, {nome} AS nome, {status} AS status, o.municipio, o.uf,
+           {latitude} AS latitude, {longitude} AS longitude,
+           {origem_coordenada} AS origem_coordenada, {status_planilha} AS status_planilha,
            COALESCE(oc.raio_metros, :raio_padrao) AS raio_metros,
            oc.centro_custo,
            COALESCE(oc.ativo, TRUE) AS ativo_no_ponto,
            (oc.obra_id IS NOT NULL) AS tem_config
       FROM public.obras o
       LEFT JOIN ponto.obra_config oc ON oc.obra_id = o.id
+      {join}
 """
+_OBRA_DO_ERP = {"nome": "o.nome", "status": "o.status", "latitude": "o.latitude",
+                "longitude": "o.longitude",
+                "origem_coordenada": "CASE WHEN o.latitude IS NOT NULL THEN 'ERP' END",
+                "status_planilha": "NULL::text", "join": ""}
+
+
+def _sql_obra(conn: Connection) -> str:
+    from . import base_obras
+    trechos = base_obras.trechos_sql(conn) or _OBRA_DO_ERP
+    return "SELECT * FROM (" + _SQL_OBRA_DENTRO.format(**trechos) + ") o"
 
 
 def normalizar_cpf(cpf) -> str:
@@ -185,17 +203,17 @@ def criar_colaborador_no_erp(conn: Connection, *, nome: str, cpf: str,
 # Obras
 # ---------------------------------------------------------------------------
 def obra_por_id(conn: Connection, obra_id: int) -> Optional[dict]:
-    return db.um(conn, _SQL_OBRA + " WHERE o.id = :id", id=obra_id,
+    return db.um(conn, _sql_obra(conn) + " WHERE o.id = :id", id=obra_id,
                  raio_padrao=RAIO_PADRAO_METROS)
 
 
 def obra_por_codigo(conn: Connection, codigo: str) -> Optional[dict]:
-    return db.um(conn, _SQL_OBRA + " WHERE upper(trim(o.codigo)) = upper(trim(:codigo))",
+    return db.um(conn, _sql_obra(conn) + " WHERE upper(trim(o.codigo)) = upper(trim(:codigo))",
                  codigo=str(codigo), raio_padrao=RAIO_PADRAO_METROS)
 
 
 def obra_por_nome(conn: Connection, nome: str) -> Optional[dict]:
-    return db.um(conn, _SQL_OBRA + " WHERE upper(trim(o.nome)) = upper(trim(:nome))",
+    return db.um(conn, _sql_obra(conn) + " WHERE upper(trim(o.nome)) = upper(trim(:nome))",
                  nome=str(nome), raio_padrao=RAIO_PADRAO_METROS)
 
 
@@ -212,9 +230,9 @@ def resolver_obra(conn: Connection, referencia) -> Optional[dict]:
 
 
 def listar_obras(conn: Connection, *, so_ativas: bool = True) -> list[dict]:
-    sql = _SQL_OBRA + " WHERE 1 = 1"
+    sql = _sql_obra(conn) + " WHERE 1 = 1"
     if so_ativas:
-        sql += " AND o.status = 'ATIVA' AND COALESCE(oc.ativo, TRUE)"
+        sql += " AND o.status = 'ATIVA' AND o.ativo_no_ponto"
     sql += " ORDER BY o.codigo"
     return db.todos(conn, sql, raio_padrao=RAIO_PADRAO_METROS)
 
@@ -261,6 +279,8 @@ def obra_para_json(o: dict) -> dict:
         "raio_metros": int(o["raio_metros"]),
         "centro_custo": o.get("centro_custo"),
         "ativa": bool(o.get("status") == "ATIVA" and o.get("ativo_no_ponto", True)),
+        "origem_coordenada": o.get("origem_coordenada"),
+        "status_planilha": o.get("status_planilha"),
     }
 
 
@@ -274,6 +294,7 @@ def colaborador_para_json(c: dict) -> dict:
         "situacao": c["situacao"], "ativo_no_ponto": bool(c["ativo_no_ponto"]),
         "funcao": c.get("funcao"), "no_registro": c.get("no_registro"),
         "fase_registro": c.get("fase_registro"),
+        "bate_no_celular": c.get("bate_no_celular"),
         "regime_banco": c.get("regime_banco", "SEM_BANCO"),
         "banco_inicio": c["banco_inicio"].isoformat() if c.get("banco_inicio") else None,
     }

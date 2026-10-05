@@ -150,12 +150,24 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
 
     # --- aparelhos ----------------------------------------------------------
     if ver_aparelhos and quer("APARELHO") and obra_id is None and not busca:
+        # O celular de quem NÃO é exceção não entra na fila: o padrão é só o
+        # aparelho da obra bater, e 400 celulares esperando aprovação esconderiam
+        # o tablet que precisa dela. Continua em Configuração › Aparelhos.
+        from . import forma_de_bater
+        excecoes = None
+        if forma_de_bater.em_vigor(conn):
+            excecoes = {int(l["colaborador_id"]) for l in db.todos(
+                conn, "SELECT colaborador_id FROM ponto.colaborador_config WHERE bate_no_celular")}
         for a in dispositivos.listar(conn, "PENDENTE"):
+            if excecoes is not None and a.get("colaborador_id") and int(a["colaborador_id"]) not in excecoes:
+                continue
             j = dispositivos.para_json(a)
             itens.append({
                 "categoria": "APARELHO", "tipo": "APARELHO", "rotulo": ROTULO["APARELHO"], "id": j["id"],
                 "pessoa": None, "obra": None, "data": None, "quando": j.get("criado_em"),
-                "detalhe": j.get("descricao") or "aparelho sem nome", "etapa": "Quem configura o ponto",
+                "detalhe": f"{j.get('descricao') or 'aparelho sem nome'} — código {j.get('codigo')}",
+                "codigo": j.get("codigo"), "descricao": j.get("descricao"), "dono": j.get("dono"),
+                "etapa": "Quem configura o ponto",
                 "pode_decidir": True, "abrir_em": "/erp/ponto/configuracao",
                 "desde": j.get("criado_em"), "dias_esperando": None,
             })

@@ -156,6 +156,48 @@ Análise de SPs."* (`core/registro.py`)
   saída, a batida é recusada (no tablet, já na identificação); o próprio dia da
   saída ainda se bate. Pedido de ajuste em dia fora do contrato também é recusado.
 
+## A base de obras: a aba "C. Diários" (05/10/2026)
+
+Pedido do dono: *"utilizar temporariamente as obras de C. Diários. Depois vamos
+usar o cadastro do ERP."* (`core/base_obras.py`, tabela `ponto.obras_planilha`,
+migração 004)
+
+- **De onde:** aba "C. Diários" da planilha "Bases de Dados Pipefy"
+  (`PAINEL_SHEET_PROJETOS`, a mesma do painel), faixa A:AZ. Copiada para o banco
+  e lida por cima de `public.obras`.
+- **Colunas:** status na **V** (pela posição); coordenada na coluna de título
+  **"Coordenadas Geográficas"** (hoje a AM); código = "Código Primário" (senão a
+  coluna A); nome = "Centro de Custo"/"Obra".
+- **Escondidas:** status começando por "Conclu" ou "Distrat" (Concluída, Concluída
+  com Dívida, Distratada). Obra do ERP fora da planilha também some do ponto.
+- **Formato da coordenada:** `-3.731862, -38.526670` (latitude, vírgula,
+  longitude; ponto nas casas decimais — o que o Google Maps copia com o botão
+  direito). Aceita também `-3,731862; -38,526670`, link do Maps e
+  `3°43'54.7"S 38°31'36.0"W`. Recusa menos de 4 casas, fora do Brasil, longitude
+  positiva; desvira lat/lon trocados.
+- **Obra ativa que falta no ERP** é criada lá (código e nome). A coordenada da
+  planilha vence a do ERP; o raio fica no ponto.
+- **Em dia sozinha:** lida de 2 em 2 horas, das 6h às 20h, e pelo botão "Ler a
+  planilha agora". Chave para voltar ao ERP. Nunca lida = vale o ERP.
+
+## A forma de bater: só o aparelho da obra, e as exceções (05/10/2026)
+
+Decisão do dono: *"é só o aparelho da obra que bate. Vamos cadastrar apenas as
+exceções. Banco de horas, mesma coisa."* (`core/forma_de_bater.py`)
+
+- **Padrão:** bate no aparelho da obra (QR ou CPF). O celular serve para ver o
+  mês, mandar atestado, pedir ajuste e mostrar o QR.
+- **Exceção "também no próprio celular"** (`colaborador_config.bate_no_celular`):
+  Pessoas › Forma de bater, ou sozinha ao aprovar o celular como INDIVIDUAL.
+  Desmarcar para o celular na hora. Celular de quem não é exceção não entra em
+  Validações.
+- **Alguém bate por outros:** aparelho de LISTA (exceção do aparelho).
+- **Banco de horas:** padrão "sem banco"; exceção em Pessoas › Banco de horas.
+- Cartão **"Exceções ao padrão"** na Configuração lista as três.
+- **O aparelho da obra:** mostra um código de 6 letras enquanto espera aprovação
+  (a gestão confere o mesmo código antes de aprovar); sempre abre na batida; não
+  aceita login com CPF e PIN.
+
 ## Validações: tudo o que espera alguém, e quem valida o quê (04/10/2026)
 
 **Quem valida** (`core/validacao.py`, Ponto › Configuração › Quem valida cada

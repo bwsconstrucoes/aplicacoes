@@ -320,6 +320,18 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   "desligado"; a resposta é tão nova quanto o último "Atualizar cadastro")
 - Quem bateu ponto e não está no Registro? 🔒
 - Qual o raio da cerca da obra X? Ela bloqueia ou manda para conferência?
+- Quais obras aparecem no ponto hoje? E quais foram escondidas? ⚠️ ("aparecer" =
+  está na aba C. Diários com status que não começa por "Conclu"/"Distrat",
+  enquanto a planilha for a base de obras; com o ERP como base, status ATIVA)
+- Quais obras ativas estão sem coordenada, ou com a coordenada escrita errada?
+  (a tela da Base de obras lista, com a linha da planilha e o motivo)
+- A coordenada da obra X veio da planilha ou do ERP?
+- Quando a C. Diários foi lida pela última vez? Deu erro?
+- Quem pode bater no próprio celular? Quem tem banco de horas? Em que aparelho
+  alguém bate por outros? 🔒 (o padrão não se cadastra: a resposta é a lista de
+  EXCEÇÕES; quem não está nela bate só no aparelho da obra e não tem banco)
+- Quais celulares tentaram bater sem ser exceção? (recusas "celular próprio sem
+  exceção cadastrada")
 - **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
   reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas
   usaram o QR de outra" — o sistema vê o QR antigo e o rosto no mosaico, não a

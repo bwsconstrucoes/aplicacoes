@@ -34,8 +34,8 @@ import os
 from flask import Response, g, jsonify, render_template, request, send_from_directory, session
 
 from . import auth, db, horario
-from .core import (banco, cadastros, competencias, dispositivos, envios, espelho, fotos,
-                   marcacoes, acesso, ocorrencias, qr, recusas)
+from .core import (banco, cadastros, competencias, dispositivos, envios, espelho, forma_de_bater,
+                   fotos, marcacoes, acesso, ocorrencias, qr, recusas)
 from .core.ocorrencias import Quem
 from .erros import ErroDeValidacao, NaoAutenticado, NaoEncontrado, Recusada
 from .routes import bp
@@ -153,6 +153,17 @@ def app_api_entrar():
         return jsonify({"ok": False, "erro": "muitas tentativas deste lugar; tente mais tarde"}), 429
     d = _corpo()
     with db.conexao() as conn:
+        # No aparelho da obra ninguém entra com CPF e PIN: com a sessão aberta,
+        # o tablet deixaria de ser da obra e mostraria o mês daquela pessoa a
+        # quem passasse na frente.
+        uuid, token = request.headers.get("X-Device-UUID", ""), request.headers.get(auth.CABECALHO_TOKEN, "")
+        if uuid and token:
+            try:
+                a = dispositivos.autenticar(conn, uuid, token)
+            except Exception:  # noqa: BLE001 — aparelho desconhecido: segue como celular comum
+                a = None
+            if a and a["status"] == "APROVADO" and a["perfil"] != "INDIVIDUAL":
+                raise Recusada("este é o aparelho da obra — entre no “Meu ponto” pelo seu celular")
         pessoa = acesso.entrar(conn, d.get("cpf"), d.get("pin"))
     _abrir_sessao(pessoa)
     return _ok(nome=pessoa["nome"])
@@ -231,7 +242,8 @@ def app_api_eu():
         pedidos = ocorrencias.listar(conn, quem, status="PENDENTES")
         saldo = banco.saldo(conn, p["id"]) if p.get("regime_banco") not in (None, "SEM_BANCO") else None
         obras = _obras_da_pessoa(conn, p["id"])
-    return _ok(nome=p["nome"], primeiro_nome=p["nome"].split(" ")[0],
+        no_celular = forma_de_bater.pode_no_celular(p, forma_de_bater.em_vigor(conn))
+    return _ok(nome=p["nome"], primeiro_nome=p["nome"].split(" ")[0], bate_no_celular=no_celular,
                cpf_final=p["cpf"][-3:], obra_principal=p.get("obra_codigo"),
                obras=obras, hoje=esp["dias"][0], pedidos_pendentes=len(pedidos),
                banco=({"saldo": saldo["saldo"], "regime": saldo["regime_rotulo"]} if saldo else None))
@@ -274,6 +286,10 @@ def app_api_bater():
             p = cadastros.colaborador_por_id(conn, _eu())
             if not p:
                 raise NaoAutenticado("entre com o seu CPF e PIN")
+            recusa = forma_de_bater.recusa_no_celular(p, forma_de_bater.em_vigor(conn))
+            if recusa:
+                _recusar_em_separado("celular próprio sem exceção cadastrada", cpf=p["cpf"], obra=d.get("obra"))
+                raise Recusada(recusa)
             cpf, identificacao = p["cpf"], "SESSAO"
         elif d.get("bilhete"):
             aparelho = _aparelho_da_obra(conn)

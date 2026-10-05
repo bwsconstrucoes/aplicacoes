@@ -95,6 +95,8 @@ def mundo(_schema_ponto2, banco, monkeypatch):
     with _db.conexao() as _c:       # a base destes testes é o cadastro do ERP
         _par.gravar(_c, _reg.PARAMETRO_FONTE, _reg.FONTE_ERP, "teste")
     _reg.esquecer()
+    from app.apps.ponto.core import base_obras as _bo
+    _bo.esquecer()                   # e a de obras, o ERP (a cópia da C. Diários está vazia)
     with banco.connect() as conn:
         obra_a = conn.execute(text("INSERT INTO obras (codigo, nome, latitude, longitude, status, uf, municipio) "
                                    "VALUES ('PG-A', 'Escola A', :la, :lo, 'ATIVA', 'CE', 'Fortaleza') RETURNING id"),
@@ -181,7 +183,8 @@ def test_migracoes_do_ponto_e_feriados_nacionais(banco, mundo):
         natal = conn.execute(text("SELECT nome FROM ponto.feriados WHERE data = '2026-12-25'")).scalar()
         secoes = conn.execute(text("""SELECT ps.secao, ps.nivel FROM perfil_secoes ps JOIN perfis p ON p.id = ps.perfil_id
                                        WHERE p.nome = 'Departamento pessoal' AND ps.secao LIKE 'pon_%' ORDER BY 1""")).all()
-    assert nomes == ["001_ponto_base.sql", "002_gestao.sql", "003_qr_mosaico_e_sinais.sql"]
+    assert nomes == ["001_ponto_base.sql", "002_gestao.sql", "003_qr_mosaico_e_sinais.sql",
+                     "004_obras_da_planilha_e_forma_de_bater.sql"]
     assert natal == "Natal"
     assert [s[0] for s in secoes] == ["pon_competencia", "pon_config", "pon_dp", "pon_gestao"]
 
@@ -528,8 +531,13 @@ def test_celular_bate_so_aprovado_e_so_para_o_dono_com_comprovante(app, mundo, m
     assert eu["hoje"]["batidas"] and eu["primeiro_nome"] == "João"
     marc_id = eu["hoje"]["batidas"][0]["id"]
     assert cel.get(f"/ponto/app/api/comprovante/{marc_id}").status_code == 200
-    # Maria, no celular do João, não bate
+    # Maria, no celular do João, não bate: nem sem exceção (o padrão é o aparelho
+    # da obra), nem com ela (o celular é de outra pessoa)
     cel_maria = _entrar_no_app(app, CPF_MARIA, monkeypatch)
+    alheio = cel_maria.post("/ponto/app/api/bater", json={"obra": "PG-B"}, headers=h)
+    assert alheio.status_code == 403 and "aparelho da obra" in alheio.get_json()["erro"]
+    assert dp.post(f"/erp/api/ponto/pessoas/{mundo['maria']}/forma-de-bater",
+                   json={"bate_no_celular": True}).status_code == 200
     alheio = cel_maria.post("/ponto/app/api/bater", json={"obra": "PG-B"}, headers=h)
     assert alheio.status_code == 403 and "outra pessoa" in alheio.get_json()["erro"]
     assert cel_maria.get(f"/ponto/app/api/comprovante/{marc_id}").status_code == 404

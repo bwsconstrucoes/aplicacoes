@@ -146,3 +146,27 @@ def test_a_base_se_mantem_sozinha_cadastrando_quem_falta(app, mundo, registro):
         assert cadastros.colaborador_por_cpf(conn, CPF_NOVO)["nome"] == "NOVO DO REGISTRO"
     assert dp.post("/erp/api/ponto/registro/automatico", json={"ligado": False}).get_json()["automatico"] is False
     assert como(app, mundo["sup"]).post("/erp/api/ponto/registro/automatico", json={"ligado": True}).status_code == 403
+
+
+def test_obra_do_registro_casa_pelo_codigo_primario_da_planilha(app, mundo, registro, banco):
+    """O Registro traz o Código Primário da C. Diários; o ERP pode ter o outro
+    código da mesma obra (coluna A). Com a planilha como base de obras, casa."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import base_obras, cadastros
+    from tests.test_ponto_base_obras_banco import _aba
+    with banco.connect() as conn:
+        conn.execute(text("UPDATE analisesps.colaborador SET obra_codigo = 'PG-ESCA' WHERE cpf = :c"),
+                     {"c": CPF_JOAO})
+        conn.execute(text("UPDATE colaboradores SET obra_id = :o WHERE id = :j"),
+                     {"o": mundo["obra_b"], "j": mundo["joao"]})          # o ERP diz outra obra
+        conn.commit()
+    with db.conexao() as conn:                    # sem a planilha, o código não casa: vale o ERP
+        assert cadastros.colaborador_por_cpf(conn, CPF_JOAO)["obra_codigo"] == "PG-B"
+    try:
+        with db.conexao() as conn:
+            base_obras.gravar(conn, base_obras.interpretar(_aba()), "teste")
+        with db.conexao() as conn:
+            assert cadastros.colaborador_por_cpf(conn, CPF_JOAO)["obra_codigo"] == "PG-A"
+            assert base_obras.retrato(conn)["usar"] is True
+    finally:
+        base_obras.esquecer()

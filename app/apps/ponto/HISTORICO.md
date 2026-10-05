@@ -21,10 +21,18 @@ junto com o `README.md` e o `PLANO.md`.
    responsável. Sugestão: ligar o QR só depois do piloto numa obra.
 1d. **Quem valida cada pedido** (Ponto › Configuração): nasce tudo no DP. Se
    algo deve ir para o encarregado (ajuste de batida, por exemplo), trocar lá.
-1c. **Coordenadas das obras no ERP**: a cerca agora BLOQUEIA e a obra é
-   detectada pela localização — obra ativa sem latitude/longitude no cadastro
-   do ERP não detecta (vai para conferência). Conferir em Ponto › Configuração
-   › Cerca das obras.
+1c. **Coordenadas das obras na coluna AM ("Coordenadas Geográficas") da aba
+   C. Diários**, no formato `-3.731862, -38.526670` (o que o Google Maps copia).
+   A cerca BLOQUEIA e a obra é detectada pela localização; obra ativa sem
+   coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
+   Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
+   "Coordenadas que não deu para ler".
+1e. **Ainda não publicado (ramo `feature/modulo-ponto`)**: base de pessoas em
+   dia sozinha, período de contrato, base de obras da C. Diários, forma de
+   bater por exceção e as travas do aparelho da obra. Traz a migração **004** do
+   ponto: ao juntar, apertar "Aplicar atualizações do ponto" **no mesmo
+   momento**. Até o botão, vale o comportamento antigo (obras do ERP; celular
+   aprovado bate).
 2. **A migração 001 em produção**: na publicação da fase 1 ficou com o dono
    (Shell do Render). Se ainda não rodou, o botão do item 1 aplica as duas.
 3. **Configurar para começar a usar**: cadastrar as escalas reais e atribuir a
@@ -37,6 +45,84 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 05/10/2026 — As obras vêm da C. Diários, só o aparelho da obra bate, e a revisão de brechas
+
+Pedidos do dono, no mesmo dia: *"Quero utilizar temporariamente as obras de
+C. Diários. Depois vamos usar o cadastro do ERP. Vou adicionar uma última coluna
+com as coordenadas (…). Na coluna V tem o status da obra. Não exiba obra que
+estão como 'Concluída', 'Concluída com Dívida' ou 'Distratada' (…) O cadastro das
+obras precisa estar sempre atualizado"*; *"Coluna AM, o cabeçalho é
+'Coordenadas Geográficas'"*; e *"em relação ao padrão de batida é só o aparelho
+da obra que bate. Vamos cadastrar apenas as exceções. Banco de horas, mesma
+coisa: a princípio ninguém tem, vamos cadastrar as exceções."*
+
+**Base de obras (`core/base_obras.py`, migração 004 `ponto.obras_planilha`).**
+Mesmo desenho da base de pessoas: a aba "C. Diários" da planilha "Bases de
+Dados Pipefy" (a mesma do painel, `PAINEL_SHEET_PROJETOS`, com o id conhecido de
+reserva) é copiada para o banco e o ponto lê a cópia por cima do ERP. Lida de 2
+em 2 horas (6h–20h) numa linha separada, e pelo botão "Ler a planilha agora".
+Chave para voltar ao ERP. Enquanto a planilha não foi lida nenhuma vez, vale o
+ERP — nunca esvazia a lista.
+
+**Decisões tomadas sem ele, com motivo:**
+- **Status pela POSIÇÃO (coluna V)**, porque foi o que ele disse; a coordenada
+  pelo TÍTULO ("Coordenadas Geográficas"), com a AM de reserva. A tela mostra de
+  qual coluna e título cada coisa foi lida — se a V não for o status, aparece ali
+  (lista "Status encontrados").
+- **Escondida = status começando por "Conclu" ou "Distrat"**, sem acento e sem
+  caixa: cobre as três palavras e variações ("Concluída c/ Dívida"). Status vazio
+  APARECE.
+- **Obra do ERP que não está na planilha some do ponto** ("usar as obras de
+  C. Diários"). O cartão conta quantas são ("Ativas no ERP fora da planilha").
+- **Obra ativa da planilha que falta no ERP é CRIADA no ERP** com código e nome
+  (a escrita que o importador já fazia): a batida precisa de uma linha de obra
+  para se pendurar. ⚠️ Ela aparece no cadastro de obras do ERP. Encerrada que
+  falta não é criada.
+- **O casamento planilha → ERP**: pelo Código Primário, senão pelo código da
+  coluna A (a emissão de NFS-e já aprendeu que a mesma obra tem os dois). O
+  código da obra do Registro de Colaboradores também casa pelos dois.
+- **Coordenada da planilha vence a do ERP**; sem ela, vale a do ERP. Nada é
+  escrito na coordenada do ERP. O raio e o "bloquear/analisar" continuam no
+  ponto.
+- **Formato da coordenada**: graus decimais `lat, lon`. Aceita vírgula decimal
+  com `;`, link do Google Maps e graus-minutos-segundos; desvira lat/lon trocados
+  (com aviso). Recusa menos de 4 casas decimais (erro > 10 m), fora do Brasil e
+  longitude sem o sinal de menos — cada recusa com o motivo na tela.
+
+**Forma de bater (`core/forma_de_bater.py`, coluna `colaborador_config.
+bate_no_celular`).** O padrão, que não se cadastra: só o aparelho da obra bate.
+Exceção "também no próprio celular", marcada em Pessoas › Forma de bater — ou
+sozinha ao aprovar o celular da pessoa como INDIVIDUAL. Desmarcar faz o celular
+parar de bater na hora. Quem não é exceção não vê o botão de bater no "Meu
+ponto" (vê "você bate no aparelho da obra"), não tem a localização pedida, e o
+celular dele NÃO entra na fila de Validações (continua em Configuração ›
+Aparelhos). A migração 004 marca como exceção quem já tinha celular aprovado —
+ninguém perde o que funcionava. "Outra pessoa bate por ela" continua sendo o
+aparelho de LISTA (exceção do aparelho). Banco de horas: o padrão já era "sem
+banco". Cartão novo "Exceções ao padrão" lista as três exceções num lugar só.
+
+**Revisão de brechas — fechadas agora:**
+- **Aprovar o aparelho errado**: todo aparelho que abre o endereço entra como
+  "Aparelho sem nome"; o celular de um funcionário aprovado como aparelho da obra
+  bateria por todo mundo. Agora a tela do aparelho mostra um **código de 6
+  letras** e a gestão vê o mesmo código antes de aprovar, com o aviso para
+  conferir — e o alerta quando alguém entrou nele como pessoa.
+- **Login no tablet da obra**: se alguém entrasse com CPF e PIN no tablet, ele
+  deixava de ser da obra e mostrava o mês da pessoa a quem passasse. Agora o
+  aparelho da obra abre sempre na batida (fecha a sessão) e o servidor recusa o
+  login nele.
+- **A fila de Validações inundada** por 400 celulares pendentes (acima).
+
+**Brechas que ficam, e são decisão dele** (respondidas na conversa): tablet sem
+GPS vai para conferência (não bloqueia); aparelho aprovado sem obra vale em
+todas; status errado na planilha esconde a obra em até 2 h; batida sem internet
+não existe ainda; limpar os dados do navegador do tablet o faz pedir aprovação de
+novo (aprovar o novo, bloquear o antigo).
+
+**Não verificado:** a leitura real da planilha (aqui não há credencial do Google;
+o painel já lê a mesma planilha com a mesma conta, então o acesso deve existir);
+o título real da coluna V.
 
 ## 05/10/2026 — A base de pessoas se atualiza sozinha, e o ponto respeita o período de contrato
 

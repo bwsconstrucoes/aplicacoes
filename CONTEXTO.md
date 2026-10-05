@@ -830,6 +830,21 @@ banco de lá. Se outra tarefa da Análise de SPs estiver rodando, o pedido é
 recusado e o ponto tenta depois; nada do que está em andamento é interrompido.
 Desliga em Ponto › Configuração › "Manter a base em dia sozinha".
 
+**05/10/2026 — AS OBRAS DO PONTO VÊM DA ABA "C. DIÁRIOS" (atravessa áreas).**
+Pedido do dono: usar temporariamente as obras da C. Diários (planilha "Bases de
+Dados Pipefy", a mesma que o painel lê por `PAINEL_SHEET_PROJETOS` e a emissão de
+NFS-e lê para a tributação), escondendo as de status (coluna V) "Concluída",
+"Concluída com Dívida" e "Distratada", com a coordenada na coluna AM
+("Coordenadas Geográficas"). O ponto lê a faixa A:AZ de 2 em 2 horas e guarda
+uma cópia em `ponto.obras_planilha`, por cima de `public.obras`.
+⚠️ **Escrita no ERP:** obra ATIVA na planilha que não existe em `public.obras` é
+**criada lá** com código, nome e status ATIVA (a escrita que o importador do
+ponto já fazia) — a batida precisa de uma linha de obra. Nada mais do ERP é
+alterado: nem status, nem coordenada (a da planilha vence só na leitura do
+ponto). Inserir coluna antes da V na aba muda o status lido — a tela do ponto
+mostra o título da coluna usada. A chave em Ponto › Configuração › Base de obras
+devolve a base ao ERP.
+
 ### 03/10/2026 — A GESTÃO DO PONTO ENTROU NO ERP, e quem aprova o quê virou cadastro (atravessa áreas)
 
 O dono pediu o ambiente completo: gestão (cadastros, espelho, pendências),

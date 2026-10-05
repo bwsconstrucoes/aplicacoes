@@ -44,6 +44,11 @@ def _rotina_do_dia():
         registro.manter_em_dia()
     except Exception:  # noqa: BLE001 — nem a base de pessoas
         logger.warning("Ponto: a base de pessoas não foi conferida", exc_info=True)
+    try:
+        from .core import base_obras
+        base_obras.manter_em_dia()
+    except Exception:  # noqa: BLE001 — nem a base de obras
+        logger.warning("Ponto: a base de obras não foi conferida", exc_info=True)
     return None
 
 

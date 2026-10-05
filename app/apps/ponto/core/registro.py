@@ -92,6 +92,11 @@ def esquecer() -> None:
     _cache["colunas"] = None
 
 
+def _obra_pela_planilha(conn: Connection) -> Optional[str]:
+    from . import base_obras
+    return base_obras.obra_pelo_codigo_sql(conn, "r.obra_codigo")
+
+
 def trechos_sql(conn: Connection) -> Optional[dict]:
     """Os pedaços de SQL que trocam o cadastro do ERP pelo Registro, ou None
     quando a base é o ERP (ou o Registro não está disponível)."""
@@ -106,7 +111,11 @@ def trechos_sql(conn: Connection) -> Optional[dict]:
     admissao = (f"COALESCE(LEAST({', '.join(datas)}), c.admissao)" if datas else "c.admissao")
     obra_join = ("LEFT JOIN public.obras ro ON r.obra_codigo <> '' "
                  "AND upper(btrim(ro.codigo)) = upper(btrim(r.obra_codigo))") if "obra_codigo" in col else ""
-    obra_id = "COALESCE(ro.id, c.obra_id)" if obra_join else "c.obra_id"
+    # O código da obra do Registro casa com o código do ERP ou, com a planilha
+    # C. Diários como base de obras, com qualquer dos dois códigos dela.
+    pela_planilha = _obra_pela_planilha(conn) if obra_join else None
+    obra_id = (f"COALESCE(ro.id, {pela_planilha}, c.obra_id)" if pela_planilha
+               else "COALESCE(ro.id, c.obra_id)" if obra_join else "c.obra_id")
     situacao = f"""CASE
         WHEN r.cpf IS NULL THEN CASE WHEN c.situacao = 'ATIVO' THEN 'FORA_DO_REGISTRO' ELSE c.situacao END
         WHEN r.data_saida IS NOT NULL AND r.data_saida < {hoje} THEN 'DESLIGADO'
@@ -159,10 +168,12 @@ def retrato(conn: Connection) -> dict:
                             WHERE r.cpf = regexp_replace(c.cpf, '\\D', '', 'g'))""")["n"]
     sem_obra = 0
     if "obra_codigo" in col:
+        pela_planilha = _obra_pela_planilha(conn)
         sem_obra = db.um(conn, f"""
             SELECT count(*) AS n FROM analisesps.colaborador r
              WHERE {ativos} AND NOT EXISTS (SELECT 1 FROM public.obras o
-                    WHERE r.obra_codigo <> '' AND upper(btrim(o.codigo)) = upper(btrim(r.obra_codigo)))""")["n"]
+                    WHERE r.obra_codigo <> '' AND upper(btrim(o.codigo)) = upper(btrim(r.obra_codigo)))
+               {f"AND {pela_planilha} IS NULL" if pela_planilha else ""}""")["n"]
     from .. import horario
     return {"disponivel": True, "fonte": e["fonte"], "usando": e["usar"],
             "total": int(linha["total"]), "ativos": int(linha["ativos"]),
@@ -179,6 +190,9 @@ def faltam_no_erp(conn: Connection, limite: int = 5000) -> list[dict]:
     col = e["colunas"]
     obra = ("(SELECT o.id FROM public.obras o WHERE r.obra_codigo <> '' "
             "AND upper(btrim(o.codigo)) = upper(btrim(r.obra_codigo)) LIMIT 1)") if "obra_codigo" in col else "NULL"
+    pela_planilha = _obra_pela_planilha(conn) if "obra_codigo" in col else None
+    if pela_planilha:
+        obra = f"COALESCE({obra}, {pela_planilha})"
     return db.todos(conn, f"""
         SELECT r.cpf, btrim(r.nome) AS nome, {obra} AS obra_id
           FROM analisesps.colaborador r

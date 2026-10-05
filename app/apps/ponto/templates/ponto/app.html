@@ -123,6 +123,7 @@
       <button class="btn" id="btn-entrar" type="button">Entrar</button>
       <button class="link" id="btn-ir-primeiro" type="button">Primeiro acesso ou esqueci o PIN</button>
     </div>
+    <p class="pequeno" id="codigo-aparelho" style="text-align:center"></p>
     <div class="cartao oculto" id="cartao-tablet">
       <h2>Bater ponto neste aparelho da obra</h2>
       <p class="pequeno">Este aparelho é da obra: QR Code ou CPF, e a foto sai sozinha.</p>
@@ -180,7 +181,12 @@
   <!-- INÍCIO -->
   <section id="tela-inicio" class="oculto">
     <div id="aviso-aparelho"></div>
-    <div class="cartao">
+    <div class="cartao oculto" id="cartao-so-na-obra">
+      <h2 id="ola-obra">Olá</h2>
+      <div class="aviso info">Você bate o ponto no <b>aparelho da obra</b>: mostre o seu QR Code na câmera
+        dele ou digite o CPF. Por aqui você vê o seu mês, manda atestado e pede ajuste.</div>
+    </div>
+    <div class="cartao" id="cartao-bater">
       <h2 id="ola">Olá</h2>
       <div id="i-local" class="aviso info">📍 Procurando a sua localização…</div>
       <div id="i-escolha" class="oculto">
@@ -351,15 +357,25 @@ async function estadoDoAparelho() {
 async function iniciar() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/ponto/app/sw.js", {scope: "/ponto/app"}).catch(() => {});
   await estadoDoAparelho();
+  // O código que a gestão confere antes de aprovar este aparelho (Validações ›
+  // Aparelho, coluna "código"): é o fim do identificador dele.
+  const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
+  $("codigo-aparelho").textContent = APARELHO && APARELHO.status === "APROVADO" ? "" :
+    `Código deste aparelho: ${cod}. Se ele for o aparelho da obra, passe este código a quem aprova.`;
+  // O aparelho da obra abre direto na batida, câmera ligada, sem toque nenhum —
+  // mesmo que alguém tenha entrado com CPF e PIN nele antes: a sessão é fechada.
+  const compartilhado = APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL";
+  $("cartao-tablet").classList.toggle("oculto", !compartilhado);
+  if (compartilhado) {
+    chamar("/ponto/app/api/sair", {}).catch(() => {});
+    EU = null;
+    return abrirTablet();
+  }
   try {
     EU = await chamar("/ponto/app/api/eu");
     mostrar("inicio");
   } catch (e) {
     EU = null;
-    const compartilhado = APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL";
-    $("cartao-tablet").classList.toggle("oculto", !compartilhado);
-    // O aparelho da obra abre direto na batida: câmera ligada, sem toque nenhum.
-    if (compartilhado) return abrirTablet();
     mostrar("entrar");
   }
 }
@@ -563,17 +579,26 @@ async function carregarInicio() {
   $("ola").textContent = `Olá, ${EU.primeiro_nome}`;
   OBRAS = EU.obras;
   preencherObras($("i-obra"), OBRAS, EU.obra_principal);
-  localizacao().then(l => { LOCAL = l; preencherObras($("i-obra"), OBRAS, $("i-obra").value); mostrarLocal(l); });
+  // A forma de bater (decisão do dono, 05/10/2026): o padrão é só o aparelho da
+  // obra. Quem não é exceção não vê o botão de bater (nem o pedido de
+  // localização), e o celular dele não entra na fila de aprovação.
+  const soNaObra = EU.bate_no_celular === false;
+  $("cartao-bater").classList.toggle("oculto", soNaObra);
+  $("cartao-so-na-obra").classList.toggle("oculto", !soNaObra);
+  $("ola-obra").textContent = `Olá, ${EU.primeiro_nome}`;
+  if (!soNaObra) localizacao().then(l => { LOCAL = l; preencherObras($("i-obra"), OBRAS, $("i-obra").value); mostrarLocal(l); });
 
   // o aparelho
-  let avisoAparelho = "", podeBater = true;
-  if (!APARELHO) {
+  let avisoAparelho = "", podeBater = !soNaObra;
+  if (!soNaObra && !APARELHO) {
     try { await garantirRegistro(`Celular de ${EU.nome}`); await estadoDoAparelho(); } catch (e) {}
   }
-  if (!APARELHO) {
+  if (APARELHO && APARELHO.status === "PENDENTE") chamar("/ponto/app/api/aparelho/identificar", {}).catch(() => {});
+  if (soNaObra) {
+    // nada a dizer do aparelho: por aqui ela não bate
+  } else if (!APARELHO) {
     avisoAparelho = `<div class="aviso erro">Não consegui registrar este celular. Feche e abra de novo.</div>`; podeBater = false;
   } else if (APARELHO.status === "PENDENTE") {
-    chamar("/ponto/app/api/aparelho/identificar", {}).catch(() => {});
     avisoAparelho = `<div class="aviso ambar">Este celular está esperando aprovação do DP ou do encarregado. Enquanto isso você vê o seu ponto, mas ainda não bate por aqui.</div>`;
     podeBater = false;
   } else if (APARELHO.status === "BLOQUEADO") {

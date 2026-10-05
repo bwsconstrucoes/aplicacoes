@@ -173,6 +173,11 @@ def _pagina(aba: str):
     except Exception:  # noqa: BLE001
         logger.warning("Ponto: a base de pessoas não foi conferida", exc_info=True)
     try:
+        from .core import base_obras
+        base_obras.manter_em_dia()
+    except Exception:  # noqa: BLE001
+        logger.warning("Ponto: a base de obras não foi conferida", exc_info=True)
+    try:
         # O endereço público vai no link do aviso do mosaico. Aprendido de quem
         # abre a gestão (é o endereço que essa pessoa usa), sem variável nova.
         with db.conexao() as conn:
@@ -673,6 +678,90 @@ def ponto_api_registro_cadastrar():
     return _ok(**r, retrato=retrato)
 
 
+@bp.route("/erp/api/ponto/obras-base")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_obras_base():
+    """A base de obras do ponto: a planilha C. Diários (a cópia que o ponto
+    guarda) ou o cadastro do ERP — com o que a última leitura encontrou."""
+    from .core import base_obras
+    with db.conexao() as conn:
+        r = base_obras.retrato(conn)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/obras-base/atualizar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_obras_base_atualizar():
+    """Lê a aba C. Diários agora (segundos: algumas centenas de linhas)."""
+    from .core import base_obras
+    quem = _quem()
+    r = base_obras.atualizar(quem.nome)
+    if not r.get("ok"):
+        raise ErroDeValidacao(f"não deu para ler a planilha: {r.get('erro')}")
+    with db.conexao() as conn:
+        retrato = base_obras.retrato(conn)
+    return _ok(leitura=r, retrato=retrato)
+
+
+@bp.route("/erp/api/ponto/obras-base/fonte", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_obras_base_fonte():
+    from .core import base_obras
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        base_obras.gravar_fonte(conn, d.get("fonte"), quem.nome)
+        r = base_obras.retrato(conn)
+    logger.info("Ponto: base de obras passou a ser %s (%s)", d.get("fonte"), quem.nome)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/obras-base/automatico", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_obras_base_automatico():
+    from .core import base_obras
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        parametros.gravar(conn, base_obras.PARAMETRO_AUTOMATICO, "1" if d.get("ligado") else "0", quem.nome)
+        ligado = base_obras.automatico(conn)
+    logger.info("Ponto: base de obras em dia sozinha %s por %s", "LIGADA" if ligado else "desligada", quem.nome)
+    return _ok(automatico=ligado)
+
+
+@bp.route("/erp/api/ponto/excecoes")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_excecoes():
+    """Quem foge do padrão (só o aparelho da obra bate; ninguém tem banco)."""
+    from .core import forma_de_bater
+    quem = _quem()
+    with db.conexao() as conn:
+        r = forma_de_bater.excecoes(conn, quem.obras)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/pessoas/<int:colaborador_id>/forma-de-bater", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_ponto")
+@_api
+def ponto_api_pessoa_forma_de_bater(colaborador_id: int):
+    """Exceção: a pessoa também bate no próprio celular."""
+    from .core import forma_de_bater
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        _exigir_pessoa(conn, quem, colaborador_id)
+        forma_de_bater.definir(conn, colaborador_id, bool(d.get("bate_no_celular")), quem.nome)
+    return _ok(bate_no_celular=bool(d.get("bate_no_celular")))
+
+
 @bp.route("/erp/api/ponto/quem-valida")
 @login_obrigatorio
 @permissao("ver_ponto")
@@ -885,7 +974,9 @@ def ponto_api_cercas():
             j["fora_da_cerca"] = marc.modo_fora_da_cerca(conn, int(o["id"])) if tem_modo else "ANALISAR"
             j["barradas_7_dias"] = barradas.get(o["codigo"], 0)
             saida.append(j)
-    return _ok(obras=saida, modo_disponivel=tem_modo)
+        from .core import base_obras
+        base_planilha = base_obras.usando(conn)
+    return _ok(obras=saida, modo_disponivel=tem_modo, base_planilha=base_planilha)
 
 
 @bp.route("/erp/api/ponto/cercas/<int:obra_id>", methods=["POST"])

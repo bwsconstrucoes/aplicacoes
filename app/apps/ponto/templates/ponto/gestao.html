@@ -483,6 +483,27 @@
 </div>
 
 <div class="cartao">
+  <div class="cartao-cab"><h3>Base de obras do ponto</h3>
+    {% if pode.configurar_ponto %}<button class="btn secundario" id="c-obras-ler" type="button">Ler a planilha agora</button>{% endif %}</div>
+  <div class="cartao-dica" style="margin-top:0">Por ora as obras vêm da aba <b>C. Diários</b> (planilha
+    “Bases de Dados Pipefy”). Não aparecem as de status (coluna V) <b>Concluída</b>, <b>Concluída com
+    Dívida</b> e <b>Distratada</b>. A coordenada vem da coluna <b>Coordenadas Geográficas</b> (AM), no
+    formato que o Google Maps copia: <code>-3.731862, -38.526670</code> (latitude, vírgula, longitude,
+    com ponto nas casas decimais). Obra ativa na planilha que falta no ERP é criada lá com código e
+    nome. O raio e o que fazer fora da cerca continuam aqui, em “Cerca das obras”.</div>
+  <div id="c-obras-base">carregando…</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Exceções ao padrão</h3></div>
+  <div class="cartao-dica" style="margin-top:0">O padrão vale para todos e não se cadastra: <b>só o
+    aparelho da obra bate</b> e <b>ninguém tem banco de horas</b>. Aqui aparecem só as exceções, para
+    conferir de olho. Celular próprio e banco se marcam em Pessoas (na ficha da pessoa); o aparelho em
+    que alguém bate por outros (de lista) se cadastra na aprovação do aparelho.</div>
+  <div id="c-excecoes">carregando…</div>
+</div>
+
+<div class="cartao">
   <div class="cartao-cab"><h3>Escalas de trabalho</h3>
     {% if pode.configurar_ponto %}<button class="btn" id="c-nova-escala" type="button">+ Nova escala</button>{% endif %}</div>
   <div id="c-escalas">carregando…</div>
@@ -827,8 +848,12 @@ const linkEspelho = (id, competencia) =>
 async function aprovarAparelho(a, depois) {
   const r = await perguntar({
     titulo: "Aprovar aparelho",
-    aviso: `Aparelho: <b>${escapar(a.descricao || "sem nome")}</b>. Diga como ele vai ser
-      usado. Na dúvida entre "tablet da obra" e "celular de uma pessoa", escolha o
+    aviso: `Aparelho: <b>${escapar(a.descricao || "sem nome")}</b> — código <b class="dados">${escapar(a.codigo || "?")}</b>.
+      <b>Confira o código na tela do aparelho antes de aprovar</b>: “sem nome” pode ser o celular de
+      qualquer pessoa que abriu o endereço, e aprovado como aparelho da obra ele bateria por todo mundo.
+      ${a.dono ? `<br>⚠️ Alguém entrou neste aparelho como <b>${escapar(a.dono.nome)}</b>: só aprove como
+        aparelho da obra se o código bater com o do tablet.` : ""}
+      Na dúvida entre "tablet da obra" e "celular de uma pessoa", escolha o
       celular de uma pessoa: é o que fecha mais portas.`,
     campos: [
       {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: "INDIVIDUAL",
@@ -838,7 +863,7 @@ async function aprovarAparelho(a, depois) {
       {nome: "autorizados", rotulo: "CPFs do grupo (grupo de pessoas)", tipo: "textarea", linhas: 2,
        largura: 3, dica: "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
       {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas",
-       dica: "Códigos das obras separados por vírgula. Vazio = vale em todas."},
+       dica: "Códigos das obras separados por vírgula. Para o tablet da obra, diga a obra dele: sem GPS, a batida dele só pode cair nela."},
       {nome: "descricao", rotulo: "Nome do aparelho", valor: escapar(a.descricao || ""), largura: 3,
        exemplo: "ex.: tablet do portão — obra Alfa"},
     ],
@@ -1433,7 +1458,7 @@ function desenharValidacoes() {
     else if (acao === "rejeitar") decidirItem(i, false);
     else if (acao === "ler") lerAtestado(i, b);
     else if (acao === "corrigir") corrigirPedido(i, false);
-    else if (acao === "aparelho") aprovarAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
+    else if (acao === "aparelho") aprovarAparelho({id: i.id, descricao: i.descricao, codigo: i.codigo, dono: i.dono}, carregarValidacoes);
     else if (acao === "bloquear") bloquearAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
   }));
   els("v-corpo").querySelectorAll("[data-marcar]").forEach(c => c.addEventListener("change", () => {
@@ -1984,6 +2009,9 @@ async function abrirPessoa(id) {
         <div class="kpi estatico"><div class="kpi-rotulo">Jornada</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloJornada(p.tipo_jornada))}</div>
           <div class="kpi-sub">${p.ativo_no_ponto ? "bate ponto" : "não bate ponto"}</div></div>
+        <div class="kpi estatico ${p.bate_no_celular ? "ambar" : ""}"><div class="kpi-rotulo">Forma de bater</div>
+          <div class="kpi-valor" style="font-size:16px">${p.bate_no_celular ? "Obra e celular próprio" : "Aparelho da obra"}</div>
+          <div class="kpi-sub">${p.bate_no_celular ? "exceção cadastrada" : "o padrão"}</div></div>
         <div class="kpi estatico roxo"><div class="kpi-rotulo">Banco de horas</div>
           <div class="kpi-valor" style="font-size:16px">${escapar(rotuloRegime(p.regime_banco))}</div>
           <div class="kpi-sub">${p.banco_inicio ? `desde ${dataBR(p.banco_inicio)}` : ""}
@@ -1991,7 +2019,8 @@ async function abrirPessoa(id) {
       </div>
       <div class="barra-acoes">
         ${PODE_TRATAR ? `<button class="btn" type="button" id="pe-escala">Trocar escala</button>
-          <button class="btn secundario" type="button" id="pe-jornada">Jornada e obras</button>` : ""}
+          <button class="btn secundario" type="button" id="pe-jornada">Jornada e obras</button>
+          <button class="btn secundario" type="button" id="pe-forma">Forma de bater</button>` : ""}
         ${PODE_DP ? `<button class="btn secundario" type="button" id="pe-banco">Banco de horas</button>` : ""}
         <a class="btn secundario" style="text-decoration:none" href="${linkEspelho(p.id)}">Ver espelho</a>
       </div>
@@ -2017,6 +2046,7 @@ async function abrirPessoa(id) {
     if (els("pe-escala")) els("pe-escala").addEventListener("click", () => trocarEscala(p));
     if (els("pe-jornada")) els("pe-jornada").addEventListener("click", () => jornadaEObras(p));
     if (els("pe-banco")) els("pe-banco").addEventListener("click", () => regimeDoBanco(p));
+    if (els("pe-forma")) els("pe-forma").addEventListener("click", () => formaDeBater(p));
     desenharQrDaPessoa(p);
     ficha.scrollIntoView({behavior: "smooth", block: "start"});
   } catch (e) { falhou(e); }
@@ -2165,6 +2195,27 @@ async function jornadaEObras(p) {
   } catch (e) { falhou(e, "pe-msg"); }
 }
 
+async function formaDeBater(p) {
+  const r = await perguntar({
+    titulo: `Forma de bater — ${escapar(p.nome)}`,
+    aviso: `O padrão é bater <b>só no aparelho da obra</b> (QR Code ou CPF). Marque a exceção para quem
+      também precisa bater no próprio celular (quem trabalha fora da obra, por exemplo). O celular dela
+      ainda precisa ser aprovado em Validações depois de ela entrar nele.`,
+    campos: [{nome: "forma", rotulo: "Forma de bater", tipo: "select", valor: p.bate_no_celular ? "1" : "0",
+              largura: 3, opcoes: [{valor: "0", rotulo: "Só no aparelho da obra (padrão)"},
+                                   {valor: "1", rotulo: "No aparelho da obra e no próprio celular (exceção)"}]}],
+    textoOk: "Salvar",
+  });
+  if (!r) return;
+  try {
+    await postar(`/erp/api/ponto/pessoas/${p.id}/forma-de-bater`, {bate_no_celular: r.forma === "1"});
+    await abrirPessoa(p.id);
+    aviso("pe-msg", r.forma === "1" ? "Exceção cadastrada: também bate no próprio celular."
+      : "Voltou ao padrão: só bate no aparelho da obra.", "ok");
+    if (typeof carregarExcecoes === "function") carregarExcecoes();
+  } catch (e) { falhou(e, "pe-msg"); }
+}
+
 async function regimeDoBanco(p) {
   const r = await perguntar({
     titulo: `Banco de horas — ${escapar(p.nome)}`,
@@ -2206,6 +2257,8 @@ els("pe-busca").addEventListener("input", () => {
   ESPERA = setTimeout(carregarPessoas, 350);
 });
 carregarPessoas();
+// Vindo do cartão "Exceções ao padrão" (Configuração): abre a ficha direto.
+{ const alvo = Number(new URLSearchParams(location.search).get("pessoa")); if (alvo) abrirPessoa(alvo); }
 
 {% elif aba_ponto == "ponto_banco" %}
 // ===========================================================================
@@ -2809,7 +2862,7 @@ async function carregarAparelhos() {
       <th class="sem-ordem">Situação</th><th class="sem-ordem">Uso</th><th class="sem-ordem">Dono / grupo</th>
       <th class="sem-ordem">Obras</th><th class="sem-ordem">Último uso</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${lista.map(a => `<tr>
-      <td><b>${escapar(a.descricao || "sem nome")}</b>${a.aprovado_por ? `<small>aprovado por ${escapar(a.aprovado_por)}</small>` : ""}</td>
+      <td><b>${escapar(a.descricao || "sem nome")}</b><small>código <span class="dados">${escapar(a.codigo || "?")}</span></small>${a.aprovado_por ? `<small>aprovado por ${escapar(a.aprovado_por)}</small>` : ""}</td>
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}</td>
       <td>${a.status === "PENDENTE" ? `<span class="suave">—</span>` : escapar(rotuloPerfil(a.perfil))}</td>
       <td>${a.dono ? `${escapar(a.dono.nome)}<small>${escapar(documento(a.dono.cpf))}</small>`
@@ -3195,6 +3248,139 @@ async function cadastrarFaltantes() {
   }
 }
 
+// --------------------------------------- 10b. base de obras (C. Diários)
+// Decisão do dono, 05/10/2026: por ora as obras do ponto são as da aba
+// "C. Diários"; depois, o cadastro do ERP.
+const ROTULO_FONTE_OBRAS = {PLANILHA: "Planilha C. Diários", ERP: "Cadastro do ERP"};
+
+async function carregarObrasBase(mensagem, tipo) {
+  const alvo = els("c-obras-base");
+  if (!alvo) return;
+  let d;
+  try { d = await api("/erp/api/ponto/obras-base"); } catch (e) { erroNoCartao("c-obras-base", e); return; }
+  desenharObrasBase(d);
+  if (mensagem) aviso("c-obras-msg", mensagem, tipo || "ok");
+}
+
+function desenharObrasBase(d) {
+  const alvo = els("c-obras-base");
+  const u = d.ultima || {};
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor">${valor ?? 0}</div><div class="kpi-sub">${sub}</div></div>`;
+  if (!d.disponivel) {
+    alvo.innerHTML = `<div><b>Em uso:</b> ${ROTULO_FONTE_OBRAS.ERP}</div>
+      <div class="aviso alerta" style="margin-top:8px">Aplique as atualizações do ponto (migração 004) para
+        ligar a planilha C. Diários como base de obras.</div><div id="c-obras-msg"></div>`;
+    return;
+  }
+  const emUso = d.usar ? "PLANILHA" : "ERP";
+  const r = d.ritmo || {}, j = r.janela || [];
+  const col = (u.colunas || {});
+  const colTxt = c => c ? `coluna ${escapar(c.letra || "?")}${c.titulo ? ` (“${escapar(c.titulo)}”)` : " (sem título)"}` : "?";
+  const ruins = d.coordenada_ruim_lista || [], semCoord = d.sem_coordenada_lista || [];
+  const statusVistos = (d.status_vistos || []).map(s =>
+    `${escapar(s.status)}: ${s.n}${s.encerrada ? " <small class='suave'>(escondida)</small>" : ""}`).join(" · ");
+  alvo.innerHTML = `<div><b>Em uso:</b> ${ROTULO_FONTE_OBRAS[emUso]}
+      ${d.fonte === "PLANILHA" && !d.usar ? `<small class="suave">(a planilha ainda não foi lida — vale o ERP até a primeira leitura)</small>` : ""}</div>
+    <div class="suave" style="font-size:13px; margin-top:2px">Última leitura: <b>${escapar(quando(u.em))}</b>
+      ${u.por ? `por ${escapar(u.por)}` : ""}
+      ${u.falha ? `<br><span style="color:var(--vermelho)">A última tentativa falhou (${escapar(quando(u.falha_em))}): ${escapar(u.falha)}</span>` : ""}</div>
+    ${u.colunas ? `<div class="suave" style="font-size:13px">Status lido da ${colTxt(col.status)}; coordenada da
+      ${colTxt(col.coordenada)}; código da ${colTxt(col.codigo)}; nome da ${colTxt(col.nome)}.</div>` : ""}
+    <label class="interruptor" style="margin-top:12px"><input type="checkbox" id="c-obras-auto"
+        ${d.automatico ? "checked" : ""} ${PODE_CONFIGURAR ? "" : "disabled"}>
+      <span><b>Manter a base de obras em dia sozinha</b>
+        <span class="explica">De ${r.horas ?? "?"} em ${r.horas ?? "?"} horas, das ${j[0] ?? "?"}h às ${j[1] ?? "?"}h,
+          a aba C. Diários é lida de novo: obra nova aparece, obra concluída some, coordenada
+          corrigida passa a valer.</span></span></label>
+    <div class="kpis" style="margin-top:10px">
+      ${kpi("Obras ativas", d.ativas, "verde", "aparecem no ponto")}
+      ${kpi("Escondidas", d.encerradas, "", "concluídas ou distratadas")}
+      ${kpi("Com coordenada", d.com_coordenada, "ciano", "têm cerca")}
+      ${kpi("Sem coordenada", d.sem_coordenada, d.sem_coordenada ? "ambar" : "", "não bloqueiam: vão para conferência")}
+      ${kpi("Coordenada com erro", d.coordenada_ruim, d.coordenada_ruim ? "vermelho" : "", "corrija na coluna AM")}
+      ${kpi("Ativas no ERP fora da planilha", d.ativas_no_erp_fora_da_planilha, d.ativas_no_erp_fora_da_planilha ? "ambar" : "",
+            "não aparecem no ponto")}
+    </div>
+    ${statusVistos ? `<div class="suave" style="font-size:13px; margin-top:8px"><b>Status encontrados:</b> ${statusVistos}</div>` : ""}
+    ${PODE_CONFIGURAR ? `<div class="campo" style="margin-top:12px; max-width:420px">
+      <label for="c-obras-fonte">Base de obras que o ponto usa</label>
+      <select id="c-obras-fonte" data-sem-busca>${["PLANILHA", "ERP"].map(f =>
+        `<option value="${f}" ${f === (d.fonte || emUso) ? "selected" : ""}>${ROTULO_FONTE_OBRAS[f]}</option>`).join("")}</select></div>` : ""}
+    ${ruins.length ? `<div style="margin-top:12px"><b>Coordenadas que não deu para ler</b> — corrija na planilha:
+      <table><thead><tr><th class="sem-ordem">Linha</th><th class="sem-ordem">Obra</th><th class="sem-ordem">Escrito</th>
+        <th class="sem-ordem">Problema</th></tr></thead><tbody>${ruins.map(x => `<tr><td class="dados">${x.linha}</td>
+        <td>${escapar(x.codigo)}</td><td class="dados">${escapar(x.texto || "")}</td><td>${escapar(x.problema)}</td></tr>`).join("")}
+      </tbody></table></div>` : ""}
+    ${semCoord.length ? `<div class="suave" style="font-size:13px; margin-top:8px"><b>Sem coordenada:</b>
+      ${semCoord.map(escapar).join(", ")}${d.sem_coordenada > semCoord.length ? ", …" : ""}</div>` : ""}
+    ${(u.problemas || []).filter(x => !String(x.problema).startsWith("coordenada")).length ? `<div class="suave" style="font-size:13px; margin-top:8px">
+      <b>Outros avisos da leitura:</b> ${(u.problemas || []).filter(x => !String(x.problema).startsWith("coordenada"))
+        .map(x => `linha ${x.linha} (${escapar(x.codigo)}): ${escapar(x.problema)}`).join(" · ")}</div>` : ""}
+    ${(u.criadas_no_erp || []).length ? `<div class="suave" style="font-size:13px; margin-top:8px"><b>Criadas no ERP na
+      última leitura (${u.quantidade_criadas}):</b> ${(u.criadas_no_erp || []).map(escapar).join(" · ")}</div>` : ""}
+    <div id="c-obras-msg" style="margin-top:8px"></div>`;
+  if (els("c-obras-fonte")) els("c-obras-fonte").addEventListener("change", ev => trocarFonteObras(ev.target, d));
+  if (PODE_CONFIGURAR) els("c-obras-auto").addEventListener("change", ligarObrasAutomatico);
+}
+
+async function lerObrasAgora() {
+  const b = els("c-obras-ler");
+  b.disabled = true; b.textContent = "Lendo…";
+  try {
+    const d = await postar("/erp/api/ponto/obras-base/atualizar");
+    const l = d.leitura || {};
+    await carregarObrasBase(`${l.lidas || 0} obra(s) lida(s): ${l.ativas || 0} ativa(s), ${l.encerradas || 0} escondida(s)`
+      + (l.quantidade_criadas ? `, ${l.quantidade_criadas} criada(s) no ERP` : "")
+      + (l.quantidade_problemas ? `. ${l.quantidade_problemas} aviso(s) — veja abaixo.` : "."),
+      l.quantidade_problemas ? "alerta" : "ok");
+    carregarCercas();
+  } catch (e) { falhou(e, "c-obras-msg"); }
+  b.disabled = false; b.textContent = "Ler a planilha agora";
+}
+
+async function trocarFonteObras(sel, d) {
+  const fonte = sel.value, antes = d.fonte || (d.usar ? "PLANILHA" : "ERP");
+  const r = await perguntar({titulo: `Usar ${ROTULO_FONTE_OBRAS[fonte]} como base de obras`,
+    aviso: `<b>Planilha:</b> aparecem só as obras ativas da C. Diários, com a coordenada da coluna AM.
+      <b>ERP:</b> as obras ativas e as coordenadas do cadastro do ERP.`, campos: [], textoOk: "Trocar a base"});
+  if (!r) { sel.value = antes; return; }
+  sel.disabled = true;
+  try {
+    await postar("/erp/api/ponto/obras-base/fonte", {fonte});
+    await carregarObrasBase(`Base de obras trocada: ${ROTULO_FONTE_OBRAS[fonte]}.`);
+    carregarCercas();
+  } catch (e) { sel.value = antes; sel.disabled = false; falhou(e, "c-obras-msg"); }
+}
+
+async function ligarObrasAutomatico(ev) {
+  const caixa = ev.target, ligar = caixa.checked;
+  caixa.disabled = true;
+  try {
+    const d = await postar("/erp/api/ponto/obras-base/automatico", {ligado: ligar});
+    caixa.checked = !!d.automatico;
+    aviso("c-obras-msg", d.automatico ? "A base de obras passa a se manter em dia sozinha."
+      : "Desligado: a planilha só é lida pelo botão.", "ok");
+  } catch (e) { caixa.checked = !ligar; falhou(e, "c-obras-msg"); }
+  caixa.disabled = false;
+}
+
+// --------------------------------------- 10c. exceções ao padrão
+async function carregarExcecoes() {
+  const alvo = els("c-excecoes");
+  if (!alvo) return;
+  let d;
+  try { d = await api("/erp/api/ponto/excecoes"); } catch (e) { erroNoCartao("c-excecoes", e); return; }
+  const lista = (itens, f) => itens.length ? itens.map(f).join(" · ") : `<span class="suave">nenhuma</span>`;
+  const pessoa = p => `<a class="elo" href="/erp/ponto/pessoas?pessoa=${p.id}">${escapar(p.nome)}</a>${p.obra ? ` <small class="suave">${escapar(p.obra)}</small>` : ""}`;
+  alvo.innerHTML = `${d.em_vigor ? "" : `<div class="aviso alerta" style="margin:0 0 10px">A regra “só o aparelho da obra
+      bate” passa a valer quando as atualizações do ponto forem aplicadas (migração 004). Até lá, celular aprovado bate.</div>`}
+    <div><b>Também batem no próprio celular (${d.celular.length}):</b> ${lista(d.celular, pessoa)}</div>
+    <div style="margin-top:6px"><b>Têm banco de horas (${d.banco.length}):</b> ${lista(d.banco, p => `${pessoa(p)} <small>(${escapar(p.regime)})</small>`)}</div>
+    <div style="margin-top:6px"><b>Aparelhos em que alguém bate por outros (${d.aparelhos_de_lista.length}):</b>
+      ${lista(d.aparelhos_de_lista, a => `${escapar(a.descricao || "sem nome")} <small>(${a.pessoas} pessoa(s), ${escapar(a.status.toLowerCase())})</small>`)}</div>`;
+}
+
 // --------------------------------------------- 11. cerca das obras
 // Decisão do dono, 04/10/2026: ninguém bate fora da área da obra, e a obra é
 // detectada pela localização. Aqui se ajusta o raio e o que fazer fora dele.
@@ -3214,11 +3400,13 @@ async function carregarCercas() {
 function desenharCercas() {
   const alvo = els("c-cercas"), obras = CERCAS.obras || [], modo = !!CERCAS.modo_disponivel;
   if (!obras.length) { alvo.innerHTML = `<div class="cartao-dica">Nenhuma obra ativa.</div>`; return; }
+  const origem = {PLANILHA: "da C. Diários (AM)", ERP: "do ERP"};
   const coordenada = o => o.tem_coordenada
-    ? `ok<small><a class="elo" target="_blank" rel="noopener"
+    ? `ok <small class="suave">${escapar(origem[o.origem_coordenada] || "")}</small><small><a class="elo" target="_blank" rel="noopener"
         href="https://www.google.com/maps?q=${encodeURIComponent(o.latitude)},${encodeURIComponent(o.longitude)}">ver no mapa</a></small>`
     : `<span style="color:var(--vermelho); font-weight:600">sem coordenada</span>
-       <small>cadastre em <a class="elo" href="/erp/obras">ERP › Obras</a></small>`;
+       <small>${CERCAS.base_planilha ? "escreva na coluna AM (Coordenadas Geográficas) da C. Diários"
+         : `cadastre em <a class="elo" href="/erp/obras">ERP › Obras</a>`}</small>`;
   const campo = "padding:6px 8px; border:1px solid var(--borda-forte); border-radius:8px";
   alvo.innerHTML = `${modo ? "" : `<div class="aviso alerta" style="margin:0 0 10px">Aplique as atualizações
       do ponto para escolher bloquear ou analisar; até lá, fora da cerca vai para conferência.</div>`}
@@ -3311,12 +3499,14 @@ function anosParaEscolher() {
 
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
-                    carregarCercas(), carregarQuemValida(), carregarRegistro()]);
+                    carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
+                    carregarExcecoes()]);
 }
 
 anosParaEscolher();
 els("c-ano").addEventListener("change", carregarFeriados);
 if (els("c-envios-atualizar")) els("c-envios-atualizar").addEventListener("click", carregarEnvios);
+if (els("c-obras-ler")) els("c-obras-ler").addEventListener("click", lerObrasAgora);
 if (els("c-nova-escala")) els("c-nova-escala").addEventListener("click", () => abrirEscala(null));
 if (els("c-novo-feriado")) els("c-novo-feriado").addEventListener("click", novoFeriado);
 els("esc-tipo").addEventListener("change", alternarTipoDeEscala);
