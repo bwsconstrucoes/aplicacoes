@@ -286,7 +286,7 @@ def _texto_do_qr(nome: str, motivo: str) -> str:
 
 def _notificar_padrao(**kw) -> dict:
     from app.apps.notificador import notificar
-    return notificar(canais=("whatsapp",), **kw)
+    return notificar(canais=("whatsapp",), finalidade="ponto", **kw)
 
 
 def preparar(conn: Connection, item: dict) -> tuple[Optional[dict], Optional[str], str]:
@@ -369,11 +369,13 @@ _ultima_verificacao = 0.0
 
 
 def whatsapp_pronto() -> bool:
-    import os
-    if not (os.environ.get("ZAPI_INSTANCE_ID") and os.environ.get("ZAPI_INSTANCE_TOKEN")):
-        return False
-    return (os.environ.get("NOTIFICAR_WHATSAPP", "1").strip().lower()
-            not in ("0", "false", "nao", "não", "off"))
+    """Credenciais do Z-API presentes E o WhatsApp ligado para o ponto.
+    A decisão é do notificador comum: a variável NOTIFICAR_WHATSAPP_PONTO
+    manda; sem ela, vale a NOTIFICAR_WHATSAPP geral. (Até 05/10/2026 este
+    teste lia um nome de token que não existia no Render e a fila nunca
+    saía do lugar.)"""
+    from app.apps.notificador import canal_ativo, whatsapp_configurado
+    return whatsapp_configurado() and canal_ativo("whatsapp", "ponto")
 
 
 def _trabalhar() -> None:

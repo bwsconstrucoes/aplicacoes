@@ -40,10 +40,19 @@ Liga/desliga por canal SEM mexer em código (env vars no Render):
 Canal desativado retorna {"ok": None, "detalhe": "canal desativado"} —
 não conta como falha, apenas não envia.
 
+Liga/desliga por FINALIDADE (desde 05/10/2026): o chamador pode dizer para
+que serve o aviso — notificar(..., finalidade="ponto") — e aí a variável
+NOTIFICAR_<CANAL>_<FINALIDADE> (ex.: NOTIFICAR_WHATSAPP_PONTO) decide
+sozinha para aquela finalidade. Se ela não existir, vale a geral. É o que
+permite deixar o WhatsApp desligado para tudo (o Z-API bloqueia quando o
+volume sobe) e ligado só para o ponto, sem publicar código.
+
 Canal WhatsApp: HTTP direto para a API do Z-API (api.z-api.io).
 Variáveis de ambiente:
   ZAPI_INSTANCE_ID   -> id da instância (o mesmo dos teus cenários)
-  ZAPI_INSTANCE_TOKEN-> token da instância
+  ZAPI_API_TOKEN     -> token da instância. ZAPI_INSTANCE_TOKEN é aceito
+                        como apelido (foi o nome usado aqui até 05/10/2026;
+                        o Render só tem ZAPI_API_TOKEN)
   ZAPI_CLIENT_TOKEN  -> Account Security Token do painel Z-API
                         (header Client-Token; deixe vazio se a conta não exigir)
 """
@@ -67,22 +76,38 @@ from app.apps.telegram.telegram_bot import (
 # ---------------------------------------------------------------------------
 
 WA_BASE = "https://api.z-api.io"
-WA_INSTANCE = os.environ.get("ZAPI_INSTANCE_ID", "")
-WA_TOKEN = os.environ.get("ZAPI_INSTANCE_TOKEN", "")
-WA_CLIENT_TOKEN = os.environ.get("ZAPI_CLIENT_TOKEN", "")
+
+
+def _wa_credenciais():
+    """Lê as credenciais do Z-API a cada chamada (trocar variável no Render
+    passa a valer sem reiniciar). Aceita os dois nomes do token."""
+    return {
+        "instancia": os.environ.get("ZAPI_INSTANCE_ID", "").strip(),
+        "token": (os.environ.get("ZAPI_API_TOKEN", "").strip()
+                  or os.environ.get("ZAPI_INSTANCE_TOKEN", "").strip()),
+        "client_token": os.environ.get("ZAPI_CLIENT_TOKEN", "").strip(),
+    }
 
 
 def _wa_url(sufixo):
-    return f"{WA_BASE}/instances/{WA_INSTANCE}/token/{WA_TOKEN}/{sufixo}"
+    c = _wa_credenciais()
+    return f"{WA_BASE}/instances/{c['instancia']}/token/{c['token']}/{sufixo}"
 
 
 def _wa_configurado():
-    return bool(WA_INSTANCE and WA_TOKEN)
+    c = _wa_credenciais()
+    return bool(c["instancia"] and c["token"])
+
+
+def whatsapp_configurado():
+    """Há credenciais do Z-API no ambiente? (não olha o liga/desliga)"""
+    return _wa_configurado()
 
 
 def _wa_post(url, payload, timeout=60):
     """POST ao Z-API com retry e checagem de status."""
-    headers = {"Client-Token": WA_CLIENT_TOKEN} if WA_CLIENT_TOKEN else {}
+    client_token = _wa_credenciais()["client_token"]
+    headers = {"Client-Token": client_token} if client_token else {}
     for tentativa in range(3):
         try:
             r = requests.post(url, json=payload, headers=headers,
@@ -103,7 +128,7 @@ def _wa_post(url, payload, timeout=60):
 def _wa_enviar_texto(telefone, mensagem):
     if not _wa_configurado():
         return {"ok": False, "erro": "whatsapp_nao_configurado",
-                "detalhe": "defina ZAPI_INSTANCE_ID/ZAPI_INSTANCE_TOKEN"}
+                "detalhe": "defina ZAPI_INSTANCE_ID/ZAPI_API_TOKEN"}
     ok, detalhe = _wa_post(_wa_url("send-text"),
                            {"phone": telefone, "message": mensagem})
     return {"ok": ok, "detalhe": detalhe}
@@ -113,7 +138,7 @@ def _wa_enviar_arquivo(telefone, tipo, arquivo_url=None, arquivo_base64=None,
                        nome_arquivo=None, legenda=""):
     if not _wa_configurado():
         return {"ok": False, "erro": "whatsapp_nao_configurado",
-                "detalhe": "defina ZAPI_INSTANCE_ID/ZAPI_INSTANCE_TOKEN"}
+                "detalhe": "defina ZAPI_INSTANCE_ID/ZAPI_API_TOKEN"}
 
     if tipo == "imagem":
         payload = {"phone": telefone,
@@ -175,31 +200,51 @@ def _tg_notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
 _DESLIGADO = ("0", "false", "nao", "não", "off")
 
 
-def _canal_ativo(canal):
-    if canal == "telegram":
-        valor = os.environ.get("NOTIFICAR_TELEGRAM", "1")
-    elif canal == "whatsapp":
-        valor = os.environ.get("NOTIFICAR_WHATSAPP", "1")
-    else:
+def _nome_finalidade(finalidade):
+    """'ponto' -> 'PONTO'; 'aviso-cadastro' -> 'AVISO_CADASTRO'."""
+    return re.sub(r"[^A-Z0-9]+", "_", str(finalidade or "").strip().upper()).strip("_")
+
+
+def _canal_ativo(canal, finalidade=None):
+    if canal not in ("telegram", "whatsapp"):
         return True
-    return valor.strip().lower() not in _DESLIGADO
+    geral = f"NOTIFICAR_{canal.upper()}"
+    nome = _nome_finalidade(finalidade)
+    if nome:
+        especifico = os.environ.get(f"{geral}_{nome}")
+        if especifico is not None and especifico.strip() != "":
+            return especifico.strip().lower() not in _DESLIGADO
+    return os.environ.get(geral, "1").strip().lower() not in _DESLIGADO
 
 
 # ---------------------------------------------------------------------------
 # Funções públicas auxiliares (usadas pelos zapi.py dos módulos)
 # ---------------------------------------------------------------------------
 
-def canal_ativo(canal):
-    """Exposição pública do toggle por canal (env NOTIFICAR_*)."""
-    return _canal_ativo(canal)
+def canal_ativo(canal, finalidade=None):
+    """Exposição pública do toggle por canal (env NOTIFICAR_*), com a
+    variável por finalidade (NOTIFICAR_<CANAL>_<FINALIDADE>) mandando
+    quando existir."""
+    return _canal_ativo(canal, finalidade)
+
+
+def enviar_whatsapp(telefone, mensagem, finalidade=None):
+    """Envio SÓ de texto pelo WhatsApp, respeitando o toggle (geral ou da
+    finalidade). Para os módulos que não precisam do Telegram junto."""
+    if not _canal_ativo("whatsapp", finalidade):
+        return {"ok": None, "detalhe": "canal desativado (env NOTIFICAR_*)"}
+    tel = re.sub(r"\D", "", telefone or "")
+    if not tel:
+        return {"ok": False, "erro": "sem_telefone"}
+    return _wa_enviar_texto(tel, mensagem)
 
 
 def enviar_telegram(telefone=None, cpf=None, chat_id=None, mensagem="",
                     arquivo_url=None, arquivo_base64=None, nome_arquivo=None,
-                    tipo=None):
+                    tipo=None, finalidade=None):
     """Envio SÓ pelo canal Telegram, respeitando o toggle NOTIFICAR_TELEGRAM.
     Usado como espelho pelos módulos que mantêm o envio Z-API próprio."""
-    if not _canal_ativo("telegram"):
+    if not _canal_ativo("telegram", finalidade):
         return {"ok": None, "detalhe": "canal desativado (env NOTIFICAR_*)"}
     return _tg_notificar(telefone=telefone, cpf=cpf, chat_id=chat_id,
                          mensagem=mensagem, arquivo_url=arquivo_url,
@@ -214,9 +259,13 @@ def enviar_telegram(telefone=None, cpf=None, chat_id=None, mensagem="",
 def notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
               arquivo_url=None, arquivo_base64=None, nome_arquivo=None,
               tipo=None, canais=("telegram", "whatsapp"),
-              politica="ambos"):
+              politica="ambos", finalidade=None):
     """
     Envia a notificação pelos canais indicados.
+
+    finalidade: nome curto do que o aviso é ("ponto", "titulo_pago"...). Com
+      ele, NOTIFICAR_<CANAL>_<FINALIDADE> decide o liga/desliga daquele uso;
+      sem a variável, vale a geral.
 
     politica:
       "ambos"    -> envia por todos os canais listados (padrão da transição)
@@ -237,7 +286,7 @@ def notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
 
     resultados = {}
     for canal in canais:
-        if not _canal_ativo(canal):
+        if not _canal_ativo(canal, finalidade):
             resultados[canal] = {"ok": None,
                                  "detalhe": "canal desativado "
                                             "(env NOTIFICAR_*)"}

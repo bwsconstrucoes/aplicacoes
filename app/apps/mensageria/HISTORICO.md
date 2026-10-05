@@ -2,7 +2,7 @@
 
 Este arquivo existe para uma sessão nova pegar o trabalho sem repetir o que já
 foi lido e discutido. O `README.md` ao lado explica **como** o chatbot, o bot
-do Telegram, o gateway de WhatsApp e o notificador funcionam. Este aqui explica
+do Telegram e o notificador funcionam. Este aqui explica
 **em que pé estão**, o que o dono quer deles e o que ainda depende dele.
 
 ---
@@ -38,10 +38,74 @@ no próprio código.
 
 ## Onde o trabalho está
 
-**Nada de código mudou nesta sessão.** O que existe foi lido, posto para subir
-(o monorepo sobe com os 19 blueprints e as rotas de saúde respondem) e
-escrito aqui. O que o dono acredita sobre as aplicações e o que o código diz
-diverge em três pontos, e vale corrigir a imagem antes de decidir:
+**05/10/2026, tarde — o dono respondeu, e a área ganhou código.** As respostas,
+nas palavras dele: o Z-API está ativo; `NOTIFICAR_WHATSAPP` está em `0`; a
+Evolution "eu nem sei o que é isso (…) vamos excluir"; o Z-API bloqueava
+porque eram muitas mensagens, por isso os avisos migraram para o Telegram e o
+WhatsApp ficou em poucos cenários do Make; e o ponto precisa de WhatsApp, mas
+no teste dele "não chegou nada". As variáveis que existem no Render (só os
+nomes): `NOTIFICAR_TELEGRAM`, `NOTIFICAR_WHATSAPP`, `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_SECRET_TOKEN`, `ZAPI_API_TOKEN`, `ZAPI_CLIENT_TOKEN`,
+`ZAPI_INSTANCE_ID`, `CHATBOT_MASTER_PHONE`, `CHATBOT_WEBHOOK_SECRET`.
+**Não existe** `ZAPI_INSTANCE_TOKEN`, nem variável da Evolution, nem
+`TELEGRAM_BOT_LINK` (vale o padrão `t.me/bwsconstrucoesbotbot`).
+
+O que foi feito, no ramo `claude/amazing-wright-f8g0bm` (não publicado):
+
+1. **A Evolution saiu.** A pasta `whatsapp_gateway/` foi apagada e o
+   `app/main.py` deixou de registrá-la (18 blueprints). Era isto: uma
+   alternativa ao Z-API, de código aberto, que rodaria como um segundo
+   serviço no Render; o gateway era a peça que faria o Make falar com ela sem
+   mudar de endereço. Nunca saiu do plano, ninguém a usava, nenhuma variável
+   dela existia. Código morto com cinco rotas públicas só confunde.
+2. **O WhatsApp do ponto não chegava por DOIS motivos, e os dois estão
+   tratados.** O ponto conferia o token pelo nome `ZAPI_INSTANCE_TOKEN`, que
+   não existe no Render — então a fila de QR Code nem ligava, e o código do
+   PIN saía com "não configurado". E, mesmo que ligasse, `NOTIFICAR_WHATSAPP=0`
+   calaria tudo. Agora o notificador aceita os dois nomes de token, lê as
+   credenciais a cada chamada, e o ponto pergunta a ele.
+3. **Liga/desliga por finalidade.** `NOTIFICAR_WHATSAPP_PONTO=1` liga o
+   WhatsApp só para o ponto, com o geral em `0`. Vale para qualquer canal e
+   qualquer finalidade (`NOTIFICAR_<CANAL>_<FINALIDADE>`); a decisão fica num
+   lugar só, o `notificador.py`. O aviso "cadastre-se no Telegram" que saía
+   por WhatsApp sem olhar botão nenhum passou a obedecer também
+   (`AVISO_CADASTRO_TELEGRAM`).
+4. **Primeiros testes da área**, `tests/test_notificador.py` (12 casos). A
+   suíte inteira passou (o `main.py` mudou, então rodou tudo), e o monorepo
+   sobe.
+
+### O que está pendente AGORA
+
+**No Render, pelo dono (nada disso dá para fazer daqui):**
+
+1. Criar a variável **`NOTIFICAR_WHATSAPP_PONTO` = `1`**. Sem ela, mesmo
+   depois de publicar, o ponto continua calado — e é o certo: a geral está em
+   `0` de propósito.
+2. Publicar o ramo (juntar na `main`), com o "pode" dele. Não há migração de
+   banco.
+3. **Testar de novo o envio do ponto** — pedir um QR Code ou o código do PIN
+   pela tela do ponto. Se não chegar, os lugares para olhar, nesta ordem: a
+   tela de gestão do ponto diz "WhatsApp configurado"? (é o `whatsapp_pronto()`),
+   o `resultado` da fila `ponto.envios` (mostra a resposta do Z-API), e a cota
+   do Z-API.
+
+**Cuidado que continua valendo, dito pelo dono:** o Z-API bloqueia pelo
+volume. A fila do ponto já tem ritmo (30–90 s entre mensagens, 40/hora,
+200/dia, seg.–sáb. 7h30–17h30). Ligar outras finalidades no WhatsApp é
+decisão caso a caso, e cada uma ganha a sua variável.
+
+**Próximo passo de código (decisão tomada, execução pendente):** unificar no
+notificador os envios próprios de Z-API do `validasp`, `baixabradesco`,
+`emissaonf` e `chatbot`, dando a cada um a sua finalidade. Hoje eles obedecem
+só à variável geral e cada um tem a sua cópia do envio. É mudança em quatro
+áreas de uma vez; vale um pedido próprio, com os testes de cada módulo.
+
+---
+
+## Como a sessão começou — a leitura (05/10/2026, manhã)
+
+O que o dono acreditava sobre as aplicações e o que o código dizia divergiam
+em três pontos, e isso foi corrigido antes de decidir:
 
 | O dono lembra | O que o código mostra |
 |---|---|
@@ -49,10 +113,7 @@ diverge em três pontos, e vale corrigir a imagem antes de decidir:
 | "Tem algo em algum canto que desativa o WhatsApp, e acho que está desativado" | O botão é a variável **`NOTIFICAR_WHATSAPP=0`** no Render. Ela desliga o WhatsApp no notificador, no ValidaSP, no BaixaBradesco, na emissão de NFS-e e no ponto. **Não** desliga as respostas do chatbot nem o aviso "cadastre-se no Telegram" — esses dois não olham a variável. Se está em `0` hoje, só o Render diz |
 | "São três aplicações separadas que trabalham juntas" | São **quatro peças**, e a quarta é a mais usada: o `notificador.py`, importado por seis módulos. E o gateway **não trabalha com ninguém** por enquanto: nenhum módulo Python o chama, e ele só tem efeito se a Evolution estiver no ar e o Make apontar para ele |
 
-### O que está pendente AGORA
-
-**Decisões e dados que só o dono tem** — enquanto não vierem, o trabalho de
-código desta área está parado por escolha, não por falta do que fazer:
+### As perguntas feitas ao dono (respondidas no mesmo dia — ver acima)
 
 1. **O Z-API continua contratado e ativo?** Todo envio de WhatsApp do
    repositório passa por ele. Se foi cancelado, "usar o WhatsApp" começa por
@@ -161,6 +222,16 @@ Isso se faz **em fases, cada uma segura sozinha, sem mexer em pasta**:
   unidas, é para cá que vêm.
 - **05/10/2026 — Recomendação: não juntar as pastas agora.** Motivos na
   análise acima. A decisão é do dono.
+- **05/10/2026 — A Evolution foi removida, não guardada.** O dono não a
+  reconheceu e pediu para excluir. Fica no git se um dia o Z-API bloquear de
+  vez; o `CONTEXTO.md` §9 (10/07/2026) guarda o porquê da escolha original.
+- **05/10/2026 — Liga/desliga por finalidade, não por módulo.** A variável
+  leva o nome do uso (`PONTO`), não do módulo que envia, porque é assim que o
+  dono pensa ("o ponto precisa de WhatsApp"). E fica no notificador, para
+  que todo canal e todo uso obedeça à mesma regra. Variável ausente ou vazia
+  = segue a geral, para não mudar comportamento de quem não pediu.
+- **05/10/2026 — O token do Z-API tem um nome, `ZAPI_API_TOKEN`.** O outro é
+  apelido aceito, não documentado como opção. Novo código lê o nome do Render.
 
 ---
 

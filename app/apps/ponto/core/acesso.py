@@ -101,7 +101,8 @@ def pedir_codigo(conn: Connection, cpf, *, ip: str = "", enviar=None) -> dict:
     try:
         if enviar is None:
             from app.apps.notificador import notificar
-            enviar = lambda tel, msg: notificar(telefone=tel, mensagem=msg, canais=("whatsapp",))  # noqa: E731
+            enviar = lambda tel, msg: notificar(telefone=tel, mensagem=msg, canais=("whatsapp",),  # noqa: E731
+                                                finalidade="ponto")
         enviar(telefone if telefone.startswith("55") else "55" + telefone, texto)
     except Exception:  # noqa: BLE001 — falha de envio não revela nada a quem pediu
         logger.exception("Ponto: não consegui mandar o código por WhatsApp")

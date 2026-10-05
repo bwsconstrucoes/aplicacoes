@@ -1063,27 +1063,23 @@ def _wa_aviso_cadastro(telefone):
     if agora - ultimo < _AVISOS_WA_JANELA:
         return {"ok": None, "detalhe": "aviso já enviado nas últimas 6h"}
 
-    instancia = os.environ.get("ZAPI_INSTANCE_ID", "")
-    token = os.environ.get("ZAPI_INSTANCE_TOKEN", "")
-    client_token = os.environ.get("ZAPI_CLIENT_TOKEN", "")
-    if not instancia or not token:
-        return {"ok": False,
-                "detalhe": "ZAPI_INSTANCE_ID/ZAPI_INSTANCE_TOKEN não configurados"}
-
-    url = (f"https://api.z-api.io/instances/{instancia}"
-           f"/token/{token}/send-text")
-    headers = {"Client-Token": client_token} if client_token else {}
+    # Desde 05/10/2026 o envio é o do notificador comum: mesmas credenciais
+    # (ZAPI_API_TOKEN) e mesmo liga/desliga de todo mundo. A finalidade
+    # "aviso_cadastro_telegram" permite ligar só este aviso
+    # (NOTIFICAR_WHATSAPP_AVISO_CADASTRO_TELEGRAM=1) com o geral desligado.
+    # Importação tardia: o notificador importa este módulo no topo.
+    from app.apps.notificador import enviar_whatsapp
     mensagem = MSG_AVISO_CADASTRO_WA.format(link=TELEGRAM_BOT_LINK)
     try:
-        r = requests.post(url, json={"phone": tel, "message": mensagem},
-                          headers=headers, timeout=20)
-        if r.status_code == 200:
-            _AVISOS_WA[tel] = agora
-            return {"ok": True, "detalhe": "aviso enviado via WhatsApp"}
-        return {"ok": False,
-                "detalhe": f"Z-API HTTP {r.status_code}: {r.text[:150]}"}
-    except requests.RequestException as e:
-        return {"ok": False, "detalhe": f"erro de rede Z-API: {e}"}
+        r = enviar_whatsapp(tel, mensagem, finalidade="aviso_cadastro_telegram")
+    except Exception as e:  # noqa: BLE001 — avisar nunca derruba o envio principal
+        return {"ok": False, "detalhe": f"erro ao avisar via WhatsApp: {e}"}
+    if r.get("ok"):
+        _AVISOS_WA[tel] = agora
+        return {"ok": True, "detalhe": "aviso enviado via WhatsApp"}
+    if r.get("ok") is None:
+        return {"ok": None, "detalhe": "WhatsApp desligado (NOTIFICAR_WHATSAPP*)"}
+    return {"ok": False, "detalhe": str(r.get("detalhe") or r.get("erro") or r)[:200]}
 
 
 def _inferir_tipo(nome_ou_url):

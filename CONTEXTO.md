@@ -66,7 +66,6 @@ aplicacoes/
         ├── atualizaspbotao/  ← /api/atualizaspbotao/executar
         ├── validasp/         ← /api/validasp/*
         ├── chatbot/          ← /api/chatbot/* (WhatsApp via Z-API; memória em `mensageria/`)
-        ├── whatsapp_gateway/ ← /instances/... (espelha Z-API → Evolution API; memória em `mensageria/`)
         ├── baixabradesco/    ← /api/baixabradesco/* (routes, core, sheets, parser_*, omie, pipefy, zapi, storage, fila, matcher, models, utils, diagnostico)
         ├── processarnovasp/  ← /api/processarnovasp/executar (⚠️ existe em produção, ainda não documentado aqui)
         ├── sync_logs/        ← /api/sync_logs/* (⚠️ ainda não documentado aqui)
@@ -105,9 +104,8 @@ from app.apps.<nome> import bp as <nome>_bp
 app.register_blueprint(<nome>_bp, url_prefix="/api/<nome>")
 ```
 
-⚠️ **`pdf_processor`, `encurtador`, `whatsapp_gateway`, `telegram` e `erp` são
-registrados SEM `url_prefix`** — expõem rotas na raiz (`/compilar`, `/<codigo>`,
-`/instances/...`). No caso do `telegram` e do `erp` isso é deliberado: as rotas
+⚠️ **`pdf_processor`, `encurtador`, `telegram` e `erp` são
+registrados SEM `url_prefix`** — expõem rotas na raiz (`/compilar`, `/<codigo>`). No caso do `telegram` e do `erp` isso é deliberado: as rotas
 já trazem o prefixo (`/telegram`, `/erp`) embutido no próprio módulo, então o
 `url_prefix` duplicaria o caminho.
 
@@ -246,10 +244,8 @@ return jsonify({'ok': False, 'erro': str(e)}), 500
 `atualizaspbotao` adicionalmente retorna campo `response` com HTML (resposta
 visual pra exibir no portal) — não é padrão obrigatório.
 
-⚠️ **Exceção deliberada:** o `whatsapp_gateway` NÃO usa `{'ok': ...}` nas rotas
-espelhadas — devolve o formato do Z-API (`{zaapId, messageId, id}` / `{error}`)
-justamente pra ser drop-in do Z-API. Rotas internas dele (webhook/health) seguem
-o padrão da casa.
+(O `whatsapp_gateway`, que devolvia o formato do Z-API de propósito, foi
+removido em 05/10/2026 — ver §9.)
 
 ### 3.6 Idioma e estilo
 
@@ -417,17 +413,23 @@ por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
 - `DROPBOX_APP_SECRET`
 - `DROPBOX_REFRESH_TOKEN`
 
-### 4.4 Z-API (WhatsApp) — legado, em migração p/ Evolution
+### 4.4 Z-API (WhatsApp) — o único provedor de WhatsApp (a migração p/ Evolution foi abandonada em 05/10/2026)
 
 - `ZAPI_INSTANCE_ID`
-- `ZAPI_API_TOKEN` — lido por `chatbot`, `validasp`, `baixabradesco`, `emissaonf`
-- `ZAPI_INSTANCE_TOKEN` — ⚠️ **o MESMO token, com outro nome**, lido por
-  `notificador.py`, `ponto` e pelo aviso de cadastro do `telegram`. Até os
-  dois nomes convergirem no código, os dois precisam existir no Render (ver
-  `mensageria/HISTORICO.md`, 05/10/2026)
+- `ZAPI_API_TOKEN` — **o nome que existe no Render.** O `notificador.py` aceita
+  `ZAPI_INSTANCE_TOKEN` como apelido, porque ele, o `ponto` e o aviso de
+  cadastro do `telegram` liam só esse outro nome até 05/10/2026 — e por isso o
+  WhatsApp do ponto nunca saiu (ver `mensageria/HISTORICO.md`)
 - `ZAPI_CLIENT_TOKEN`
 - `NOTIFICAR_WHATSAPP` / `NOTIFICAR_TELEGRAM` — `"0"` desliga o canal no
-  notificador e nos módulos que o espelham (não no chatbot)
+  notificador e nos módulos que o espelham (não nas respostas do chatbot).
+  **Em produção `NOTIFICAR_WHATSAPP=0`** desde que o Z-API passou a bloquear
+  pelo volume e os avisos foram para o Telegram.
+- `NOTIFICAR_WHATSAPP_<FINALIDADE>` / `NOTIFICAR_TELEGRAM_<FINALIDADE>` —
+  desde 05/10/2026, liga/desliga **por uso**, e manda sobre a geral quando
+  existe. Finalidades hoje: `PONTO` (QR, PIN e resumo do ponto) e
+  `AVISO_CADASTRO_TELEGRAM`. Ex.: `NOTIFICAR_WHATSAPP_PONTO=1` com
+  `NOTIFICAR_WHATSAPP=0` = WhatsApp só para o ponto.
 
 ### 4.5 Omie
 
@@ -463,12 +465,7 @@ que parece falar da chave do TÍTULO. Os três módulos que falam com o Omie
 
 - `OCR_ENABLED` ("TRUE"/"FALSE", email_financeiro)
 
-### 4.9 WhatsApp Gateway (Evolution API) — ver doc `whatsapp_gateway.md`
-
-- `EVOLUTION_BASE_URL` — URL pública do serviço Evolution (Docker separado no Render)
-- `WHATSAPP_GATEWAY_INSTANCES` — JSON: mapa `instance/token` do Z-API → instância + apikey Evolution + webhook do make
-- `WHATSAPP_GATEWAY_WEBHOOK_SECRET` — valida webhooks vindos da Evolution
-- `WHATSAPP_GATEWAY_CLIENT_TOKEN` — (opcional) espelha o header Client-Token do Z-API
+### 4.9 (vago — era o WhatsApp Gateway/Evolution, removido em 05/10/2026)
 
 ### 4.10 ERP
 
@@ -609,17 +606,7 @@ Pontos de memória (pós-correção 2026-07-14):
 |---|---|---|
 | POST | `/executar` | ⚠️ Existe em produção (logs 2026-07) mas ainda não documentado; detalhar quando mexer |
 
-### 5.11 WhatsApp Gateway (sem prefixo — espelha Z-API)
-
-| Método | Rota | Função |
-|---|---|---|
-| POST | `/instances/<id>/token/<tk>/send-text` | Texto → Evolution sendText |
-| POST | `/instances/<id>/token/<tk>/send-image` | Imagem → Evolution sendMedia |
-| POST | `/instances/<id>/token/<tk>/send-document/<ext>` | Documento → Evolution sendMedia |
-| POST | `/instances/<id>/token/<tk>/send-audio` | Áudio → Evolution sendWhatsAppAudio |
-| POST | `/instances/<id>/token/<tk>/send-link` | Link → Evolution sendText (preview) |
-| POST | `/api/whatsapp_gateway/webhook/<instance>` | Evolution → traduz p/ Z-API → make |
-| GET | `/api/whatsapp_gateway/health` | Lista instâncias configuradas |
+### 5.11 (vago — era o WhatsApp Gateway/Evolution, removido em 05/10/2026; ver §9)
 
 ### 5.12 ERP (sem prefixo — as rotas já trazem `/erp`)
 
@@ -723,8 +710,7 @@ precisa de `PONTO_API_KEY` no Render e da migração aplicada depois do deploy.
 |---|---|---|
 | **Omie** | Cadastro/atualização de títulos a pagar | `atualizaspbotao`, `baixabradesco` |
 | **Pipefy** | Movimentação de cards, criação de SPs | `atualizaspbotao`, `baixabradesco` |
-| **Z-API** | Envio de WhatsApp (legado, em migração) | `chatbot`, `validasp`, `baixabradesco` |
-| **Evolution API** | Envio/recebimento WhatsApp (self-hosted, substitui Z-API) | `whatsapp_gateway` |
+| **Z-API** | Envio de WhatsApp (único provedor; bloqueia quando o volume sobe) | `notificador.py` (ERP, ponto, analisesps, processarnovasp), `chatbot`, `validasp`, `baixabradesco`, `emissaonf`, `telegram` (aviso de cadastro) |
 | **Dropbox** | Armazenamento PDFs | `pdf_processor`, `chatbot`, `baixabradesco`, `app.py` legado |
 | **Google Drive** | Armazenamento PDFs | `pdf_processor`, `email_financeiro` |
 | **OpenAI** | Leitura de documento (foto/PDF), sugestão de categoria, leitura de contrato | `erp` |
@@ -745,9 +731,8 @@ estruturado"; hoje convivem três situações **diferentes** no mesmo serviço:
   `atualizaspbotao`, `baixabradesco` e companhia continuam com a SPsBD como
   fonte da verdade. **O ERP não lê nem escreve nessas planilhas** — são dois
   mundos, ligados só pelo importador do Pipefy e pelo trabalho de migração.
-- **Postgres externo (Neon/Supabase)** — segue exclusivo da **Evolution API**
-  (serviço separado), pra sessão do WhatsApp. Não é o banco do ERP e não é
-  acessado pelo Flask.
+- **Postgres externo (Neon/Supabase)** — foi planejado só para a Evolution API,
+  que nunca foi instalada (removida em 05/10/2026). Não existe.
 
 O "considerar Supabase pro app no futuro" foi respondido pelo caminho: o ERP
 resolveu com Postgres no próprio Render.
@@ -810,6 +795,41 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 05/10/2026 (tarde) — O WHATSAPP GANHOU LIGA/DESLIGA POR FINALIDADE, e a Evolution saiu (atravessa áreas)
+
+Com as respostas do dono (Z-API ativo; `NOTIFICAR_WHATSAPP=0` em produção
+porque o Z-API bloqueava pelo volume e os avisos migraram para o Telegram;
+Evolution nunca instalada; o ponto precisa de WhatsApp e "não chegou nada" no
+teste dele), a área ganhou código:
+
+- **A Evolution/`whatsapp_gateway` foi removida.** Era uma alternativa ao
+  Z-API que ficou só no plano: nenhum módulo a usava, nenhuma variável dela
+  existia no Render, e manter código morto com cinco rotas públicas só
+  confunde. O `app/main.py` registra 18 blueprints. A decisão de 10/07/2026
+  (mais abaixo) fica como história. Se um dia o Z-API bloquear de vez, o
+  caminho segue válido — mas começa do zero, conscientemente.
+- **Por que o WhatsApp do ponto não chegava, e são DOIS motivos:** o ponto
+  conferia um nome de token (`ZAPI_INSTANCE_TOKEN`) que **não existe no
+  Render** (lá só há `ZAPI_API_TOKEN`), então a fila nem ligava; e, mesmo que
+  ligasse, `NOTIFICAR_WHATSAPP=0` calaria o envio. O `notificador.py` agora
+  aceita os dois nomes e lê as credenciais a cada chamada, e o ponto pergunta
+  a ele em vez de olhar as variáveis por conta própria.
+- **Liga/desliga por finalidade** (`NOTIFICAR_<CANAL>_<FINALIDADE>`), decidido
+  num lugar só, o `notificador.py`. É o que o dono pediu: WhatsApp desligado
+  para tudo e ligado só para o ponto, **sem publicar código** — basta
+  `NOTIFICAR_WHATSAPP_PONTO=1` no Render. O aviso "cadastre-se no Telegram"
+  que saía por WhatsApp também passou a obedecer (finalidade
+  `AVISO_CADASTRO_TELEGRAM`); antes ignorava o botão.
+- **A área ganhou os primeiros testes** (`tests/test_notificador.py`):
+  credenciais pelos dois nomes, finalidade vencendo a geral nos dois
+  sentidos, o ponto seguindo o notificador, o aviso do Telegram calando com o
+  botão desligado. O POST ao Z-API é dublado — nada sai do contêiner.
+
+O que ficou de fora de propósito: os envios próprios de Z-API do `validasp`,
+`baixabradesco`, `emissaonf` e `chatbot` continuam como estão. Funcionam, e
+unificá-los é mexer em quatro áreas de uma vez por ganho de arrumação.
+Registrado como próximo passo em `mensageria/HISTORICO.md`.
+
 ### 05/10/2026 — A MENSAGERIA VIROU A SÉTIMA ÁREA, e ganhou memória antes de código (atravessa áreas)
 
 O dono abriu um chat para o chatbot, o bot do Telegram e o gateway de WhatsApp,
@@ -817,7 +837,7 @@ pediu para trazê-los ao jeito de trabalhar das outras áreas e uma análise
 sobre juntar os três numa aplicação só. Entraram na tabela do `CLAUDE.md`
 como **Mensageria**, com a memória numa pasta própria,
 `app/apps/mensageria/` (só `README.md` e `HISTORICO.md`; o código continua em
-`chatbot/`, `telegram/`, `whatsapp_gateway/` e `notificador.py`).
+`chatbot/`, `telegram/`, `whatsapp_gateway/` — removido horas depois, acima — e `notificador.py`).
 
 **Por que uma pasta só de memória:** a área cobre quatro peças em quatro
 lugares, e a quarta — o `notificador.py` — é a mais usada do grupo (seis
@@ -2268,11 +2288,10 @@ verdade ninguém acredita nele.
 - Field `last_row` em `sync.py:105` referencia método `getLastRow()` (camelCase
   típico de Apps Script, não gspread). Provavelmente é dead code, conferir.
 - IDs das 4 outras Análises de Pagamentos não registrados aqui.
-- **WhatsApp/Evolution:** deploy da Evolution, criar as 2 instâncias + QR,
-  preencher `WHATSAPP_GATEWAY_INSTANCES` e trocar as URLs no make. Depois,
-  migrar `chatbot`/`validasp`/`baixabradesco` pra apontar ao gateway em vez do
-  Z-API direto (ou aposentar `ZAPI_*`). **05/10/2026:** sem registro de que
-  algum passo tenha acontecido; é a pergunta 4 de `mensageria/HISTORICO.md`.
+- ~~**WhatsApp/Evolution**~~ — encerrado em 05/10/2026: a Evolution nunca foi
+  instalada e o gateway foi removido. O Z-API é o provedor. Pendência que
+  sobrou (em `mensageria/HISTORICO.md`): unificar os envios próprios de Z-API
+  de `validasp`, `baixabradesco`, `emissaonf` e `chatbot` no `notificador`.
 - **`processarnovasp`:** módulo existe em produção mas não está documentado nem
   foi auditado pra memória. Documentar/auditar na próxima vez que mexer.
 - **`validasp`:** não auditado pra memória.
