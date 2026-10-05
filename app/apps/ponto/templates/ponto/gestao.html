@@ -475,8 +475,10 @@
 <div class="cartao">
   <div class="cartao-cab"><h3>Base de pessoas do ponto</h3></div>
   <div class="cartao-dica" style="margin-top:0">Critério igual ao da Análise de SPs: desligado =
-    data de saída já chegou ou a Fase Atual do Pipefy diz desligado; afastado = a fase diz
-    afastado (bate, mas para conferência); o resto está ativo.</div>
+    a data de saída já passou (o dia da saída ainda se bate) ou a Fase Atual do Pipefy diz
+    desligado; afastado = a fase diz afastado (bate, mas para conferência); o resto está ativo.
+    Antes da data de início (a menor entre início e admissão) e depois da data de saída, a
+    batida é recusada.</div>
   <div id="c-registro">carregando…</div>
 </div>
 
@@ -3079,6 +3081,38 @@ async function carregarRegistro(mensagem, tipo) {
   if (mensagem) aviso("c-registro-msg", mensagem, tipo || "ok");
 }
 
+// A base em dia sozinha (a cópia da planilha e o cadastro de quem falta) e a
+// última cópia feita pela Análise de SPs. Vale nos dois casos do cartão.
+function blocoAutomatico(d) {
+  const r = d.ritmo || {}, j = r.janela || [];
+  const h = n => (n === undefined || n === null) ? "?" : `${n}h`;
+  const u = d.ultima_copia;
+  const situacao = !u ? "" : u.ok ? "concluída" : u.fim ? `falhou: ${u.mensagem || "sem detalhe"}` : "em andamento";
+  return `<label class="interruptor" style="margin-top:14px"><input type="checkbox" id="c-registro-auto"
+        ${d.automatico ? "checked" : ""} ${PODE_CONFIGURAR ? "" : "disabled"}>
+      <span><b>Manter a base em dia sozinha</b>
+        <span class="explica">De ${r.horas_entre_copias ?? "?"} em ${r.horas_entre_copias ?? "?"} horas, das
+          ${h(j[0])} às ${h(j[1])}, o ponto pede à Análise de SPs a mesma atualização do botão
+          “Atualizar cadastro” (a planilha é lida lá, num processo separado). E a cada
+          ${r.minutos_entre_checagens ?? "?"} minutos cadastra no ERP quem está ativo no Registro e
+          ainda não existe lá.</span></span></label>
+    ${u ? `<div class="suave" style="font-size:13px; margin-top:8px">Última atualização da cópia:
+        <b>${escapar(quando(u.inicio))}</b> — <span style="${u.ok ? "" : u.fim ? "color:var(--vermelho)" : "color:var(--ambar)"}">${escapar(situacao)}</span>
+        ${u.disparo ? `(${escapar(u.disparo)})` : ""}</div>` : ""}`;
+}
+
+async function ligarRegistroAutomatico(ev) {
+  const caixa = ev.target, ligar = caixa.checked;
+  caixa.disabled = true;
+  try {
+    const d = await postar("/erp/api/ponto/registro/automatico", {ligado: ligar});
+    caixa.checked = !!d.automatico;
+    aviso("c-registro-msg", d.automatico ? "A base passa a se manter em dia sozinha."
+      : "Desligado: a cópia e o cadastro de quem falta só acontecem pelos botões.", "ok");
+  } catch (e) { caixa.checked = !ligar; falhou(e, "c-registro-msg"); }
+  caixa.disabled = false;
+}
+
 function desenharRegistro(d) {
   const alvo = els("c-registro");
   const emUso = d.usando ? "REGISTRO" : "ERP";
@@ -3089,7 +3123,8 @@ function desenharRegistro(d) {
   if (!d.disponivel) {
     alvo.innerHTML = `<div><b>Em uso:</b> ${ROTULO_FONTE.ERP}</div>
       <div class="cartao-dica">A cópia do Registro de Colaboradores não está neste banco; o ponto usa o
-        cadastro do ERP.</div><div id="c-registro-msg"></div>`;
+        cadastro do ERP.</div>${blocoAutomatico(d)}<div id="c-registro-msg"></div>`;
+    if (PODE_CONFIGURAR) els("c-registro-auto").addEventListener("change", ligarRegistroAutomatico);
     return;
   }
   const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${rot}</div>
@@ -3100,6 +3135,7 @@ function desenharRegistro(d) {
     <div class="suave" style="font-size:13px; margin-top:2px">Cópia da planilha atualizada em
       <b>${escapar(quando(d.atualizado_em))}</b> — a cópia é atualizada pelo botão Atualizar cadastro da
       Análise de SPs › Colaboradores.</div>
+    ${blocoAutomatico(d)}
     <div class="kpis" style="margin-top:10px">
       ${kpi("Ativos no Registro", d.ativos, "verde", `de ${d.total ?? 0} linha(s) na planilha`)}
       ${kpi("Afastados", d.afastados, "ambar", "batem, mas para conferência")}
@@ -3116,6 +3152,7 @@ function desenharRegistro(d) {
           Cadastrar no ERP os ${d.faltam_no_erp} que faltam</button></div>` : ""}</div>` : ""}
     <div id="c-registro-msg" style="margin-top:8px"></div>`;
   if (els("c-registro-fonte")) els("c-registro-fonte").addEventListener("change", ev => trocarFonte(ev.target, d));
+  if (PODE_CONFIGURAR) els("c-registro-auto").addEventListener("change", ligarRegistroAutomatico);
   if (els("c-registro-cadastrar")) els("c-registro-cadastrar").addEventListener("click", cadastrarFaltantes);
 }
 
