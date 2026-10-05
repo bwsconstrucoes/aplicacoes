@@ -772,9 +772,15 @@ def test_o_desconto_das_ausencias_e_PROPOSTO_e_so_vale_APLICADO(banco_auxilio):
     assert aplicado["valor"] == D("200.00")
     assert aplicado["desconto_aplicado"] is True
 
+    # NAS DUAS VERBAS desde 05/10/2026 (dono: *"é meio que espelho uma coisa da
+    # outra"*): a alimentação também propõe e só desconta aplicado.
     alimentacao = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM,
-                                     {"desconto_ausencias": True}, ausencias=ponto)
-    assert alimentacao["ausencias"] == [] and alimentacao["valor"] == D("330.00")
+                                     ausencias=ponto)
+    assert len(alimentacao["ausencias"]) == 2 and alimentacao["valor"] == D("330.00")
+    assert alimentacao["desconto_proposto"] == D("30.00")
+    aplicada = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(), INICIO, FIM,
+                                  {"desconto_ausencias": True}, ausencias=ponto)
+    assert aplicada["valor"] == D("300.00") and aplicada["desconto_aplicado"]
 
 
 def test_no_MENSAL_o_dia_ausente_vale_o_mes_pelos_dias_uteis(banco_auxilio):
@@ -880,10 +886,12 @@ def test_o_RELATORIO_detalha_cada_ausencia_e_o_que_se_decidiu(banco_auxilio):
     assert "desconto a confirmar" in m2["pessoas"][0]["situacao_rotulo"]
 
 
-def test_desconto_de_ausencia_na_ALIMENTACAO_e_recusado(banco_auxilio):
+def test_desconto_de_ausencia_na_ALIMENTACAO_tambem_grava(banco_auxilio):
+    """Era recusado até 05/10/2026 (*"só para o transporte"*); agora as duas
+    verbas são espelho."""
     from app.apps.analisesps import folha_auxilio as fx
-    with pytest.raises(fx.ErroDoAuxilio):
-        fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, GERLANIO, desconto_ausencias=True)
+    fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, GERLANIO, desconto_ausencias=True)
+    assert fx.ajustes_do_mes(fx.ALIMENTACAO, 2026, 9)[GERLANIO]["desconto_ausencias"] is True
 
 
 def test_SEM_PONTO_e_PENDENCIA_e_a_obra_do_cadastro_e_so_SUGESTAO(banco_auxilio):
