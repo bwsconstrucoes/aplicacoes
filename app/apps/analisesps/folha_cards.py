@@ -667,6 +667,17 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             "o fechamento foi alterado após a geração destes arquivos (divergência "
             "nos valores por conta). Gere os arquivos novamente antes de lançar.")
 
+    # O RELATÓRIO EM PDF (05/10/2026): a SP leva o link dele; geração sem PDF
+    # (de antes de 03/10/2026, ou cujo PDF falhou) iria sem, calada. O dono:
+    # *"o relatório em PDF também está indo junto? (…) aqui não está informando
+    # nada"*. Não bloqueia — avisa, e diz como resolver.
+    sem_pdf = sorted({sp["conta"] or "(sem conta)" for g in grupos for sp in g["sps"]
+                      if not sp.get("link_relatorio")})
+    avisos = ([f"A(s) conta(s) {', '.join(sem_pdf)} não têm o relatório em PDF nesta "
+               "geração (gerada antes de 03/10/2026, ou o PDF falhou): a SP vai sem o "
+               "link do relatório. Para ir com ele, exclua esta geração em Arquivos "
+               "gerados e gere de novo."] if sem_pdf else [])
+
     andamento = andamento_atual
     if not grupos and not bloqueios:
         bloqueios.append("nenhum valor a lançar nas contas selecionadas.")
@@ -676,7 +687,7 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
             "contas_lancadas": lancadas,
             "tipo": tipo, "link_analise": analise["link"],
             "como_tipo": como_tipo, "grupos": grupos,
-            "bloqueios": list(dict.fromkeys(bloqueios)),
+            "bloqueios": list(dict.fromkeys(bloqueios)), "avisos": avisos,
             "andamento": andamento, "ja_lancado": _completo(andamento, grupos),
             "arquivos": [a["id"] for a in arquivos]}, sp
 

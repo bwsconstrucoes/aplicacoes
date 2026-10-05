@@ -190,6 +190,9 @@ function desenhaPrevia(d) {
       "criado:</b><ul>" + d.bloqueios.map(b => "<li>" + escapa(b) + "</li>").join("") +
       "</ul></div>";
   }
+  (d.avisos || []).forEach(a => {
+    html += '<div class="aviso atencao">' + escapa(a) + "</div>";
+  });
   d.grupos.forEach(g => {
     html += '<div class="cartao" style="margin-top:10px"><b>' + escapa(g.grupo) +
       "</b> · R$ " + moedaBr(g.total) + " · " + g.pessoas + " colaborador(es)" +

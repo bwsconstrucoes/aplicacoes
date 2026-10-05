@@ -130,6 +130,17 @@ def ler_data(recarregar: bool = False) -> list:
     return linhas
 
 
+def lida_em():
+    """Quando a aba "Data" foi lida pela última vez (horário de Brasília), ou
+    None se ainda não foi."""
+    guardado = _cache.get("data")
+    if not guardado:
+        return None
+    from .horario import FUSO
+    import datetime as _dt
+    return _dt.datetime.fromtimestamp(guardado[0], tz=_dt.timezone.utc).astimezone(FUSO)
+
+
 def carteiras(recarregar: bool = False) -> tuple:
     """(`{tipo de despesa sem acento: carteira}`, aviso) — da aba "Data base
     BeeVale" da planilha da DC (dono: *"converte a categoria do plano financeiro
@@ -357,6 +368,9 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
             "quantos_a_pagar": 0, "por_obra": [], "com_problema": [],
             "geradas": 0, "pronto": _pronto()}
     linhas = ler_data(recarregar)
+    # QUANDO A ABA FOI LIDA (dono, 05/10/2026: *"seria interessante ter a
+    # informação do momento em que ela foi atualizada, data e hora"*).
+    base["lida_em"] = lida_em()
     cpfs = sorted({l["cpf"] for l in linhas})
     fichas = colaboradores.muitos_por_cpf(cpfs) if cpfs else {}
     diarias = colaboradores.valores_de_diaria(cpfs) if cpfs else {}

@@ -244,6 +244,15 @@ def test_a_tela_abre_AGRUPADA_por_obra_e_troca_o_agrupamento(banco_dc, cliente_m
     assert 'class="grupo-cab"' not in html and "card 900100" in html
 
 
+def test_a_tela_diz_QUANDO_a_aba_foi_lida(banco_dc, cliente_mestre):
+    """Dono, 05/10/2026: *"seria interessante ter a informação do momento em que
+    ela foi atualizada, data e hora"*."""
+    from app.apps.analisesps import dc
+    html = cliente_mestre.get("/analisesps/folha/dc").get_data(as_text=True)
+    assert "lida em <b>" in html
+    assert dc.calcular()["lida_em"] is not None
+
+
 def test_a_tela_filtra_por_TIPO_DE_DESPESA(banco_dc, cliente_mestre):
     html = cliente_mestre.get(
         "/analisesps/folha/dc?tipo_despesa=Di%C3%A1rias+de+Viagem").get_data(as_text=True)
@@ -297,6 +306,7 @@ def test_a_SP_da_DC_tem_RATEIO_POR_CATEGORIA_e_move_os_cards(com_duas_categorias
 
     vista = fcd.previa(analise)
     assert vista["bloqueios"] == []
+    assert vista["avisos"] == [], "gerada com o relatório em PDF: nada a avisar"
     grupo = vista["grupos"][0]
     assert grupo["verba"] == "dc" and grupo["cards_de_origem"] == ["900100", "900300"]
     sp = grupo["sps"][0]

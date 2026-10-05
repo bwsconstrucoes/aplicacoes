@@ -304,6 +304,8 @@ def test_lancar_cria_SO_SPS_uma_por_conta_com_RATEIO_MULTIPLO(banco_cards, monke
 
     vista = fcd.previa(analise)
     assert vista["bloqueios"] == []
+    # Gerada sem o relatório em PDF: a prévia AVISA (05/10/2026), não bloqueia.
+    assert vista["avisos"] and "relatório em PDF" in vista["avisos"][0]
     assert vista["grupos"][0]["tipo_sp"] == "777"
     assert vista["grupos"][0]["categoria"] == "2.01.01"
 
