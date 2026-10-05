@@ -109,8 +109,14 @@
   {% elif resultado and resultado.geradas %}
     <a class="link-btn" href="{{ url_for('analisesps.tela_folha_dc', geradas=1) }}">mostrar as {{ resultado.geradas }} já geradas</a>
   {% endif %}
-  <span class="barra-mes-dica">Fonte: aba <b>Data</b> da planilha da DC (as
-    solicitações que chegaram à fase do Pipefy). A lista é lida de novo a cada minuto.</span>
+  {# QUANDO FOI LIDA (05/10/2026): *"qual é o momento que essa planilha é
+     atualizada? (…) seria interessante ter a informação (…) data e hora"*. #}
+  <span class="barra-mes-dica">
+    {% if resultado and resultado.lida_em %}
+      Aba <b>Data</b> lida em <b>{{ resultado.lida_em.strftime('%d/%m/%Y às %H:%M') }}</b>.
+    {% endif %}
+    A tela relê a planilha ao ser aberta (se a última leitura passou de 1
+    minuto); "Atualizar da planilha" lê na hora.</span>
 </div>
 
 <p class="cartao-dica" style="margin:0 0 14px">

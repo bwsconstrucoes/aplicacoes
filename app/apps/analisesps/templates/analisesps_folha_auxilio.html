@@ -90,8 +90,9 @@
 {% set aus = resultado.com_ausencia %}
 <div class="cartao lateral-folha">
   <b class="lateral-titulo">Ausências no ponto</b>
-  {# Transporte, 03/10/2026: *"tem que ser analisado e confirmado (…) um botão
-     confirmar, aplicar desconto"*. Nada é descontado sem ele aplicar. #}
+  {# 03/10/2026 (transporte) e 05/10/2026 (alimentação também): *"tem que ser
+     analisado e confirmado (…) um botão confirmar, aplicar desconto"*. Nada é
+     descontado sem ele aplicar. #}
   <a class="lat-critica atencao" href="{{ url_tela }}{{ base_qs }}&situacao=ausencia">
     <b>{{ aus|length }} com ausência — desconto a confirmar</b>
     <small>Total proposto: −{{ aus|sum(attribute='desconto_proposto')|moeda }}.
@@ -319,7 +320,7 @@
              não vejo muito sentido nela"*). #}
           <th class="num">Feriados</th><th class="num">Férias</th>
           <th class="num">Dias</th>
-          <th title="Ausências no ponto (transporte) e valor acrescentado à mão">Ajustes</th>
+          <th title="Ausências no ponto e valor acrescentado à mão">Ajustes</th>
           <th class="num">Total</th>
         </tr>
       </thead>
@@ -581,7 +582,7 @@
   <label class="rotulo-campo" for="extra-valor">Valor (R$)</label>
   <input id="extra-valor" inputmode="decimal" placeholder="0,00" data-sem-mascara>
   <label class="rotulo-campo" for="extra-motivo" style="margin-top:8px">Motivo</label>
-  <input id="extra-motivo" maxlength="300" placeholder="Ex.: transporte de agosto não pago">
+  <input id="extra-motivo" maxlength="300" placeholder="Ex.: valor de agosto não pago">
   <div class="lat-acoes" style="margin-top:12px">
     <button type="button" class="btn secundario" id="extra-tirar" hidden>Tirar o valor</button>
     <button type="button" class="btn" id="extra-salvar">Salvar</button>

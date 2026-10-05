@@ -472,10 +472,17 @@ def resumo_das_ausencias(ausencias) -> str:
 
 def _acrescimos(saida: dict, ajuste: dict, tipo: str, modo: str, inicio, fim,
                 ausencias) -> dict:
-    """O desconto das ausências (só transporte, só se aplicado) e o valor
-    acrescentado à mão, sobre o valor calculado."""
+    """O desconto das ausências (só se aplicado) e o valor acrescentado à mão,
+    sobre o valor calculado.
+
+    ⚠️ NAS DUAS VERBAS desde 05/10/2026. Era só no transporte (dono,
+    03/10/2026: *"isso serve só para o transporte"*); dois dias depois: *"é meio
+    que espelho uma coisa da outra (…) a única coisa que difere é o valor, a
+    categoria, o método de cálculo (…) no resto, na exibição das informações, é
+    para ser tudo muito igual"*. Na alimentação de valor fechado ("Mês"), o dia
+    ausente vale o mês dividido pelos dias úteis, como no transporte."""
     saida["valor_calculado"] = saida["valor"]
-    if tipo == TRANSPORTE and ausencias:
+    if ausencias:
         lista = ausencias_do_mes(ausencias, inicio, fim, modo)
         saida["ausencias"] = lista
         if lista and saida["valor_unitario"] is not None:
@@ -659,9 +666,8 @@ def calcular(tipo: str, ano: int, mes: int) -> dict:
             codigo_da_obra=do_ponto.get("obra") or "",
             obra_do_ponto=do_ponto.get("obra") or "",
             dias_na_obra=do_ponto.get("dias") or 0,
-            # As ausências só descontam no TRANSPORTE (dono, 03/10/2026).
-            ausencias=(ponto_do_mes.get(ficha["cpf"]) if tipo == TRANSPORTE
-                       else None)))
+            # As ausências do ponto, nas duas verbas (05/10/2026).
+            ausencias=ponto_do_mes.get(ficha["cpf"])))
         p = pessoas[-1]
         p["obra_do_cadastro"] = do_cadastro or ""
         # A ordem de quem manda, como na folha da contabilidade: a obra
@@ -840,8 +846,6 @@ def gravar_extras(tipo: str, ano: int, mes: int, cpfs, quem: str = "",
         colunas["obra"] = " ".join(str(mudancas["obra"] or "").split()).upper()[:60]
     if not colunas:
         return 0
-    if tipo != TRANSPORTE and colunas.get("desconto_ausencias"):
-        raise ErroDoAuxilio("o desconto de ausências vale só para o transporte.")
 
     lista = [so_digitos(c) for c in (cpfs if isinstance(cpfs, (list, tuple))
                                       else [cpfs])]
