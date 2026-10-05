@@ -11812,10 +11812,20 @@ está para ser pago. Agrupar por obra etc."*
 O dono: *"além do botão Marcar Pago, preciso de um botão Marcar Pago Parcial,
 pra escrever 'Pago Parcial'"*. Na barra das Solicitações e na ficha da SP (no
 Lote não, como o "Marcar Pago" — decisão antiga dele). Escreve "Pago Parcial" no
-Status Pgt da planilha, pelo mesmo caminho dos outros botões; selo azul só no
-contorno na lista. ⚠️ Efeito: as contas do sistema só tratam "Pagar" como em
-aberto, então a SP marcada SAI dos totais a pagar, dos vencidos e das
-pendências (como uma paga). Não há campo para o saldo que falta.
+Status Pgt da planilha, pelo mesmo caminho dos outros botões.
+
+**O status JÁ EXISTIA** (o dono corrigiu: *"o pago parcial é algo que já existe,
+só não existia esse botão"*): é uma fase do pipe de SPs no Pipefy ("Pago
+Parcial", ver `app/apps/erp/DE_PARA_PIPEFY.md`) que chega à planilha pela
+sincronização. O texto do botão é o mesmo da fase. Como o sistema já o tratava
+(e continua tratando): fora dos totais a pagar, dos vencidos e das pendências
+(só "Pagar" conta como aberto); no calendário, faixa cinza "em outra situação";
+na ficha, o aviso "esta SP está como Pago Parcial" ao lado do código de
+pagamento. O que mudou além do botão:
+- na lista, o selo era o CINZA do cancelado — agora é o azul do pago, só no
+  contorno;
+- a conferência do Bradesco não dizia nada de uma SP paga em parte — agora
+  avisa "PAGO PARCIAL (confira o saldo)", como já avisava "JÁ PAGO".
 
 #### ⚠️ Pendente AGORA
 

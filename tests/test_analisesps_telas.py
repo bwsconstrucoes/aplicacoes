@@ -538,6 +538,14 @@ def test_MARCAR_PAGO_PARCIAL_nas_solicitacoes_e_na_ficha(app, monkeypatch):
     assert 'data-valor="Pago Parcial">Marcar Pago Parcial</button>' in html
 
 
+def test_a_conferencia_do_BRADESCO_avisa_o_PAGO_PARCIAL():
+    from app.apps.analisesps import bradesco
+    assert "⚠️ PAGO PARCIAL (confira o saldo)" in bradesco._alertas_status(
+        {"status_pgt": "Pago Parcial"}, "", "")
+    assert "⚠️ JÁ PAGO (risco de duplicidade)" in bradesco._alertas_status(
+        {"status_pgt": "Pago"}, "", "")
+
+
 def test_o_lote_nao_tem_marcar_pago(app_lote):
     """O dono mandou tirar, e o Streamlit nunca teve esse botão nesta tela.
     Marcar como pago no meio da remessa é o erro que não tem volta."""
