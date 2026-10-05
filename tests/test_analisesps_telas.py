@@ -6166,6 +6166,22 @@ def test_o_auxilio_AGRUPA_por_obra_conta_categoria_e_desagrupa(app, monkeypatch)
     assert 'class="grupo-cab"' not in html and "OUTRA PESSOA" in html
 
 
+def test_escolher_a_OBRA_do_auxilio_pela_tela_GRAVA(app, monkeypatch):
+    """05/10/2026: *"ao gravar outra obra para ser a obra pagante, não está
+    gravando"*. A rota descartava a obra e respondia ok."""
+    from app.apps.analisesps import folha_auxilio as fx
+    chamadas = []
+    monkeypatch.setattr(fx, "gravar_extras",
+                        lambda tipo, ano, mes, cpfs, quem="", **m: chamadas.append(m) or 1)
+    r = _como_mestre(app).post("/analisesps/api/folha/auxilio/extras", json={
+        "tipo": "alimentacao", "ano": 2026, "mes": 9, "cpfs": ["99713349334"],
+        "obra": "CREPEAREIAS"})
+    assert r.get_json()["ok"] and chamadas == [{"obra": "CREPEAREIAS"}]
+    r = _como_mestre(app).post("/analisesps/api/folha/auxilio/extras", json={
+        "tipo": "alimentacao", "ano": 2026, "mes": 9, "cpfs": ["99713349334"]})
+    assert r.status_code == 400, "pedido sem nada a gravar não responde ok"
+
+
 def test_a_selecao_e_CAIXINHA_e_salva_de_uma_vez(app, monkeypatch):
     """⚠️ REFEITO EM 28/09/2026. O desenho anterior tinha um seletor de três
     estados ("segue o cálculo" / pagar / não pagar) e um botão Gravar POR LINHA.

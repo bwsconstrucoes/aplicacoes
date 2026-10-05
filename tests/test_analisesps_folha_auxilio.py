@@ -699,6 +699,43 @@ def test_quem_SAI_no_MES_DO_PAGAMENTO_recebe_proporcional(banco_auxilio):
         situacao=col.SITUACAO_SAINDO, data_saida=dt.date(2026, 11, 20)), INICIO, FIM)
     assert depois["valor"] == D("220.00"), "sai depois do mês do pagamento: inteiro"
 
+def test_ULTIMO_DIA_trabalhado_na_competencia_sem_saida_NAO_recebe():
+    """05/10/2026: sem data de saída, mas com o último dia trabalhado dentro da
+    competência, a pessoa já saiu — *"se ele já saiu, ele não recebe mais"*. Ela
+    ficava "em desligamento", recebendo, e aparecia entre os "sem obra"."""
+    from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(
+        situacao=col.SITUACAO_SAINDO, ultimo_dia=dt.date(2026, 9, 18)), INICIO, FIM)
+    assert r["pagar"] is False and r["desligado"]
+    assert "18/09/2026" in " ".join(r["motivos"])
+    # Último dia DEPOIS da competência: segue recebendo, com o aviso.
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(
+        situacao=col.SITUACAO_SAINDO, ultimo_dia=dt.date(2026, 10, 3)), INICIO, FIM)
+    assert r["pagar"] is True
+
+
+def test_o_filtro_SEM_OBRA_nao_traz_os_DESLIGADOS():
+    """05/10/2026: *"quero tratar somente os que devem receber, mas estão sem obra.
+    O filtro que tem exibe os que estão desligados."* O escondido continua
+    escondido quando se filtra outra situação; aparece se ele for marcado."""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps import folha_lista
+    vai_sem_obra = {"cpf": "1", "nome": "A", "pagar": True, "sem_obra": True,
+                    "pagar_calculado": True}
+    saiu_sem_obra = {"cpf": "2", "nome": "B", "pagar": True, "sem_obra": True,
+                     "desligado": True, "pagar_calculado": False}
+    pessoas = [vai_sem_obra, saiu_sem_obra]
+    lista = folha_lista.filtrar(pessoas, MultiDict([("situacao", "sem_obra")]),
+                                campo_da_obra="obra",
+                                escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
+    assert [p["cpf"] for p in lista["pessoas"]] == ["1"]
+    lista = folha_lista.filtrar(pessoas, MultiDict([("situacao", "sem_obra"),
+                                                    ("situacao", "saiu")]),
+                                campo_da_obra="obra",
+                                escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
+    assert [p["cpf"] for p in lista["pessoas"]] == ["1", "2"]
+
+
 def test_AUSENCIA_e_falta_ou_atestado_sem_marcacao_e_nao_folga():
     from app.apps.analisesps import folha_auxilio as fx
     d = dt.date(2026, 9, 8)

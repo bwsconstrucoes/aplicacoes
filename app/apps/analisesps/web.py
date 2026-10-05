@@ -4021,8 +4021,13 @@ def folha_auxilio_extras():
         ano = mes = 0
     if tipo not in fx.TIPOS or not (1 <= mes <= 12) or not (2000 <= ano <= 2100):
         return {"ok": False, "erro": "Verba ou competência inválida."}, 400
+    # ⚠️ A OBRA ESTAVA FORA DESTA LISTA até 05/10/2026: a tela mandava a obra
+    # escolhida, o servidor a descartava e respondia "ok" — o dono escolhia a
+    # obra e nada gravava. Pedido sem nada a gravar agora é recusado.
     mudancas = {k: dados[k] for k in ("valor_extra", "motivo_extra",
-                                      "desconto_ausencias") if k in dados}
+                                      "desconto_ausencias", "obra") if k in dados}
+    if not mudancas:
+        return {"ok": False, "erro": "Nada a gravar."}, 400
     try:
         n = fx.gravar_extras(tipo, ano, mes, dados.get("cpfs") or dados.get("cpf") or [],
                              quem=quem, **mudancas)

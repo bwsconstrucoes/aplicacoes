@@ -250,11 +250,23 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     data_saida = ficha.get("data_saida")
     pag_ini = fim + dt.timedelta(days=1)
     pag_fim = pag_ini.replace(day=calendar.monthrange(pag_ini.year, pag_ini.month)[1])
+    ultimo_dia = ficha.get("ultimo_dia")
     if situacao in (colaboradores.SITUACAO_SAIU,
                     colaboradores.SITUACAO_AFASTADO):
         saida["pagar"] = False
         saida["motivos"].append(ficha.get("motivo")
                                 or "colaborador inativo no cadastro.")
+    elif (situacao == colaboradores.SITUACAO_SAINDO and not data_saida
+            and ultimo_dia and ultimo_dia <= fim):
+        # ⚠️ O ÚLTIMO DIA TRABALHADO DENTRO DA COMPETÊNCIA, sem data de saída
+        # lançada (05/10/2026): a pessoa já saiu — e *"se ele já saiu, ele não
+        # recebe mais"*. Até aqui ela ficava "em desligamento", recebendo, e
+        # aparecia entre os "sem obra" que ele queria tratar.
+        saida["pagar"] = False
+        saida["desligado"] = True
+        saida["motivos"].append(
+            f"último dia trabalhado em {ultimo_dia.strftime('%d/%m/%Y')}, dentro da "
+            "competência (sem data de saída lançada) — não recebe.")
     elif (situacao == colaboradores.SITUACAO_SAINDO and data_saida
             and pag_ini <= data_saida <= pag_fim):
         saida["saida_no_mes"] = data_saida

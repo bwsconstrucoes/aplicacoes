@@ -138,6 +138,12 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras",
         if situacao:
             if not dele & set(situacao):
                 continue
+            # ⚠️ O ESCONDIDO CONTINUA ESCONDIDO quando se filtra por OUTRA
+            # situação (dono, 05/10/2026: filtrando "sem obra" para tratar quem
+            # vai receber, apareciam os desligados). Ele aparece só quando a
+            # própria situação dele é marcada.
+            if (dele & escondidas) - set(situacao):
+                continue
         elif dele & escondidas:
             continue
         if obra and not set(obras_de(p)) & set(obra):

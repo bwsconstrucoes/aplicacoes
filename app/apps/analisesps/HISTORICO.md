@@ -11845,6 +11845,25 @@ agrupamento e desagrupamento das informações, por conta, por obra, e etc."*
   parte, com o valor inteiro; o rateio continua dito na linha.
 - O agrupamento escolhido sobrevive aos filtros da lateral (nas duas telas).
 
+**No mesmo pedido (05/10/2026), dois consertos do auxílio:**
+
+- ⚠️ **INCIDENTE — a obra escolhida à mão NÃO GRAVAVA** (desde a leva 169, em
+  produção): *"ao gravar outra obra para ser a obra pagante, não está gravando
+  a informação, mesmo dando refresh"*. A rota `/api/folha/auxilio/extras` só
+  repassava valor extra, motivo e desconto — descartava a `obra` e respondia
+  "ok". Os testes da leva 169 chamavam `gravar_extras` direto, sem passar pela
+  rota, e não pegaram. Conserto: a rota repassa a obra, e pedido sem nada a
+  gravar responde erro. Teste novo pela ROTA. Lição: o que a tela manda se
+  testa pela rota.
+- **O filtro "sem obra do ponto" trazia desligados.** Duas causas: (1) marcar
+  uma situação no filtro desligava o "esconder desligados/sem auxílio" — agora
+  o escondido continua escondido, a menos que a situação DELE seja marcada
+  (vale para todas as folhas, `folha_lista.filtrar`); (2) quem tinha o último
+  dia trabalhado DENTRO da competência, sem data de saída lançada, ficava "em
+  desligamento" e RECEBIA — pela regra dele (*"se ele já saiu, não recebe
+  mais"*) agora não recebe e vai para os desligados. Quem sai no MÊS DO
+  PAGAMENTO continua recebendo proporcional e continua na lista.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
