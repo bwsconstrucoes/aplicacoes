@@ -21,8 +21,35 @@ from .erros import ErroDoPonto
 
 logger = logging.getLogger("ponto.routes")
 
-bp = Blueprint("ponto", __name__, url_prefix="/ponto")
+bp = Blueprint("ponto", __name__, url_prefix="/ponto", template_folder="templates")
 bp.before_request(auth.exigir_credencial)
+
+
+@bp.before_request
+def _rotina_do_dia():
+    """A primeira requisição do ponto depois das 6h dispara a rotina do dia
+    (alertas + resumo por WhatsApp) numa linha separada — ver core/rotina.py."""
+    try:
+        from .core import rotina
+        rotina.disparar_se_preciso()
+    except Exception:  # noqa: BLE001 — rotina nunca derruba batida
+        logger.warning("Ponto: a rotina do dia não disparou", exc_info=True)
+    try:
+        from .core import envios
+        envios.disparar_se_preciso()
+    except Exception:  # noqa: BLE001 — a fila de mensagens também não
+        logger.warning("Ponto: a fila de envios não disparou", exc_info=True)
+    try:
+        from .core import registro
+        registro.manter_em_dia()
+    except Exception:  # noqa: BLE001 — nem a base de pessoas
+        logger.warning("Ponto: a base de pessoas não foi conferida", exc_info=True)
+    try:
+        from .core import base_obras
+        base_obras.manter_em_dia()
+    except Exception:  # noqa: BLE001 — nem a base de obras
+        logger.warning("Ponto: a base de obras não foi conferida", exc_info=True)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -215,9 +242,11 @@ def registrar_marcacao():
             origem=dados.get("origem", "PWA"), device_uuid=dados.get("device_uuid"),
             device_token=request.headers.get(auth.CABECALHO_TOKEN), via_chave=via_chave,
             latitude=dados.get("latitude"), longitude=dados.get("longitude"),
+            precisao=dados.get("precisao"),
             timestamp_dispositivo=dados.get("timestamp_dispositivo"),
             foto_base64=dados.get("foto_base64"), registrado_por=dados.get("registrado_por"),
             ip=auth.ip_de_quem_chama())
+    fotos.disparar_envio()
     return _ok(marcacao=marcacoes.para_json(marcacao), repetida=repetida), (200 if repetida else 201)
 
 
@@ -310,4 +339,10 @@ def enviar_fotos_pendentes():
 @auth.exige_chave
 def aplicar_migracoes():
     resultado = migracoes_runner.aplicar_pendentes()
-    return _ok(**resultado), (200 if not resultado["erro"] else 500)
+    if resultado["erro"]:
+        return jsonify({"ok": False, "erro": "uma atualização falhou", **resultado}), 500
+    return _ok(**resultado)
+
+
+# O "Meu ponto" do celular pendura as rotas dele neste mesmo blueprint.
+from . import app_colaborador  # noqa: E402,F401

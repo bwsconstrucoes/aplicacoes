@@ -1,0 +1,196 @@
+{#
+  O ESPELHO DE PONTO PARA IMPRIMIR E ASSINAR — uma página A4 em pé por pessoa
+  e por mês. O navegador salva em PDF pelo próprio "Imprimir".
+
+  Página solta (não herda o erp_base): o papel não leva menu, botão de
+  assistente nem barra do topo. A única coisa da tela que aparece é o botão
+  "Imprimir", e ele some na impressão.
+
+  Contexto: `e` (o dicionário de `espelho.do_mes`), `gerado_em`, `gerado_por`.
+  As horas vêm em MINUTOS; a macro `hm` é a mesma regra do `hm()` da tela
+  (545 → 9h05; negativo com sinal; vazio vira traço).
+#}
+{%- macro hm(m) -%}
+  {%- if m is none or m == "" -%}—
+  {%- else -%}{%- set n = m|int -%}{{ "-" if n < 0 else "" }}{{ (n|abs) // 60 }}h{{ "%02d"|format((n|abs) % 60) }}
+  {%- endif -%}
+{%- endmacro -%}
+{#- Na célula, zero vira vazio: uma coluna de "0h00" esconde o dia que importa. -#}
+{%- macro hmz(m) -%}{%- if m -%}{{ hm(m) }}{%- endif -%}{%- endmacro -%}
+{%- set SITUACAO = {
+  "OK": "Normal", "FALTA": "Falta", "ABONADO": "Abonado", "INCOMPLETO": "Batida faltando",
+  "DESCANSO": "Descanso", "SEM_ESCALA": "Sem escala", "COMPENSADO": "Compensado",
+  "FUTURO": "", "EM_ANDAMENTO": "Em andamento", "FORA_DO_CONTRATO": "Fora do contrato"} -%}
+{%- set ALERTA = {
+  "ATRASO": "atraso", "SAIDA_ANTECIPADA": "saída antecipada", "EXTRA_ACIMA_DE_2H": "extra acima de 2 h",
+  "INTERVALO_CURTO": "intervalo curto", "INTERJORNADA_CURTA": "menos de 11 h de descanso",
+  "TRABALHO_EM_DESCANSO": "trabalho em descanso", "TRABALHO_EM_FERIADO": "trabalho em feriado",
+  "BATIDA_EM_DIA_ABONADO": "bateu em dia abonado"} -%}
+{%- set JORNADA = {"PADRAO_4": "Padrão (4 batidas)", "VIGIA_DIURNO_2": "Vigia diurno (2 batidas)",
+                   "VIGIA_NOTURNO_2": "Vigia noturno (2 batidas)"} -%}
+{%- set comp = e.competencia|string -%}
+{%- set mes_ano = comp[5:7] ~ "/" ~ comp[0:4] -%}
+{%- set cpf = (e.pessoa.cpf or "")|string -%}
+{%- set r = e.resumo -%}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Espelho de ponto — {{ mes_ano }} — {{ e.pessoa.nome }}</title>
+<style>
+  @page { size: A4 portrait; margin: 11mm 10mm 12mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #F2F4F8; color: #14213A;
+               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+  .folha { width: 210mm; min-height: 297mm; margin: 12px auto; background: #fff; padding: 11mm 10mm 12mm;
+           box-shadow: 0 6px 20px rgba(11,44,92,.12); }
+  .barra { width: 210mm; margin: 12px auto 0; display: flex; gap: 8px; align-items: center; }
+  .barra button { background: #12385C; color: #fff; border: 0; border-radius: 8px; padding: 9px 16px;
+                  font-size: 14px; font-weight: 600; cursor: pointer; }
+  .barra span { font-size: 12.5px; color: #5A6883; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+           border-bottom: 2px solid #12385C; padding-bottom: 6px; margin-bottom: 8px; }
+  h1 { font-size: 16px; margin: 0 0 3px; }
+  .pessoa { font-size: 12px; line-height: 1.45; }
+  .pessoa b { font-size: 13.5px; }
+  .marca { text-align: right; font-size: 11px; color: #5A6883; }
+  .marca .brasao { display: inline-block; background: #12385C; color: #fff; font-weight: 800;
+                   padding: 3px 8px; border-radius: 6px; font-size: 12px; letter-spacing: .05em; }
+  .situacao-mes { display: inline-block; margin-top: 4px; font-weight: 700; font-size: 10.5px;
+                  padding: 1px 7px; border-radius: 999px; }
+  .situacao-mes.fechado { background: #E7EDF7; color: #12385C; }
+  .situacao-mes.aberto { background: #FDF1DC; color: #A65B00; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.6px; }
+  th, td { border: 1px solid #C9D1DF; padding: 2.4px 4px; vertical-align: top; text-align: left; }
+  th { background: #EEF2F8; font-size: 8.6px; text-transform: uppercase; letter-spacing: .04em; }
+  td.n, th.n { text-align: right; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+  td.hora { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  tr.apagada td { color: #8792A8; }
+  tr.descanso td { background: #FAFBFD; }
+  tr.total td { font-weight: 800; background: #EEF2F8; }
+  .obs { color: #5A6883; }
+  .resumo { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin: 8px 0 6px; }
+  .resumo div { border: 1px solid #C9D1DF; border-radius: 5px; padding: 3px 6px; font-size: 9px; color: #5A6883; }
+  .resumo b { display: block; font-size: 12px; color: #14213A; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .legenda { font-size: 8.6px; color: #5A6883; line-height: 1.45; margin-top: 4px; }
+  .assinaturas { display: grid; grid-template-columns: 1fr 1fr; gap: 18mm; margin-top: 16mm; }
+  .assinaturas div { border-top: 1px solid #14213A; padding-top: 3px; font-size: 10px; text-align: center; }
+  .assinaturas small { display: block; color: #5A6883; font-size: 9px; }
+  footer { margin-top: 8mm; font-size: 8.4px; color: #5A6883; display: flex; justify-content: space-between;
+           gap: 10px; border-top: 1px solid #D9DFEA; padding-top: 4px; }
+  @media print {
+    html, body { background: #fff; }
+    .barra { display: none; }
+    .folha { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+    tr { break-inside: avoid; }
+    th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tr.total td, tr.descanso td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+  @media screen and (max-width: 820px) {
+    .folha, .barra { width: auto; margin-left: 8px; margin-right: 8px; }
+    .folha { padding: 12px; overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="barra">
+  <button type="button" onclick="window.print()">Imprimir</button>
+  <span>Para guardar em PDF, escolha "Salvar como PDF" no lugar da impressora.</span>
+</div>
+
+<div class="folha">
+  <header>
+    <div>
+      <h1>Espelho de ponto — {{ mes_ano }}</h1>
+      <div class="pessoa">
+        <b>{{ e.pessoa.nome }}</b><br>
+        CPF {% if cpf|length == 11 %}{{ cpf[0:3] }}.{{ cpf[3:6] }}.{{ cpf[6:9] }}-{{ cpf[9:11] }}{% else %}{{ cpf }}{% endif %}
+        · Obra {{ e.pessoa.obra or "—" }}
+        · Jornada {{ JORNADA.get(e.pessoa.tipo_jornada, e.pessoa.tipo_jornada or "—") }}<br>
+        Período {{ e.inicio[8:10] }}/{{ e.inicio[5:7] }}/{{ e.inicio[0:4] }} a {{ e.fim[8:10] }}/{{ e.fim[5:7] }}/{{ e.fim[0:4] }}
+      </div>
+    </div>
+    <div class="marca">
+      <span class="brasao">BWS</span><br>
+      Ponto eletrônico (REP-P)<br>
+      {% if e.competencia_fechada %}<span class="situacao-mes fechado">Mês fechado</span>
+      {% else %}<span class="situacao-mes aberto">Mês aberto — os números ainda podem mudar</span>{% endif %}
+    </div>
+  </header>
+
+  <table>
+    <thead><tr>
+      <th>Data</th><th>Dia</th><th>Batidas</th>
+      <th class="n">Previsto</th><th class="n">Trabalhado</th><th class="n">Extra</th><th class="n">Débito</th>
+      <th>Situação / ocorrência</th>
+    </tr></thead>
+    <tbody>
+    {% for d in e.dias %}
+      {%- set apagada = d.situacao in ("FUTURO", "EM_ANDAMENTO", "FORA_DO_CONTRATO") -%}
+      <tr class="{{ 'apagada' if apagada else '' }} {{ 'descanso' if d.situacao == 'DESCANSO' or d.feriado else '' }}">
+        <td class="hora">{{ d.data[8:10] }}/{{ d.data[5:7] }}</td>
+        <td>{{ d.dia_semana[0:3] }}</td>
+        <td class="hora">
+          {%- for b in d.batidas -%}
+            {{ b.hora }}{% if b.status == "AJUSTADA" %} (aj){% elif b.status == "EM_ANALISE" %} (an){% endif %}
+            {%- if not loop.last %} · {% endif -%}
+          {%- else -%}—{%- endfor -%}
+        </td>
+        <td class="n">{{ hmz(d.previsto) }}</td>
+        <td class="n">{{ hmz(d.trabalhado) }}</td>
+        <td class="n">{{ hmz(d.extra) }}</td>
+        <td class="n">{{ hmz(d.debito) }}</td>
+        <td>
+          {{- SITUACAO.get(d.situacao, d.situacao) -}}
+          {%- if d.feriado %} · Feriado: {{ d.feriado }}{% endif -%}
+          {%- if d.ocorrencia %} · {{ d.ocorrencia.rotulo }}{% endif -%}
+          {%- if d.compensacao %} · trabalhado no lugar de uma folga{% endif -%}
+          {%- for o in d.pendentes %} · <span class="obs">{{ o.rotulo }} pendente</span>{% endfor -%}
+          {%- set extras = [] -%}
+          {%- for a in d.alertas if a in ALERTA -%}{%- set _ = extras.append(ALERTA[a]) -%}{%- endfor -%}
+          {%- if extras %} <span class="obs">({{ extras|join(", ") }})</span>{% endif -%}
+        </td>
+      </tr>
+    {% endfor %}
+      <tr class="total">
+        <td colspan="3">Totais do mês ({{ r.dias }} dia(s) contados)</td>
+        <td class="n">{{ hm(r.previsto) }}</td>
+        <td class="n">{{ hm(r.trabalhado) }}</td>
+        <td class="n">{{ hm(r.extra) }}</td>
+        <td class="n">{{ hm(r.debito) }}</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="resumo">
+    <div>Faltas<b>{{ r.faltas }}</b></div>
+    <div>Dias abonados<b>{{ r.abonados }}</b></div>
+    <div>Batida faltando<b>{{ r.incompletos }}</b></div>
+    <div>Atrasos<b>{{ r.atrasos if r.atrasos is defined else "—" }}</b></div>
+    <div>Em análise<b>{{ r.em_analise }}</b></div>
+    <div>Noturno<b>{{ hm(r.noturno) }}</b></div>
+  </div>
+
+  <div class="legenda">
+    <b>Legenda.</b> Horas em h:mm (9h05 = nove horas e cinco minutos).
+    <b>(aj)</b> batida incluída por ajuste aprovado — a original, quando existe, continua guardada.
+    <b>(an)</b> batida em análise: entra na conta, mas ainda pode ser rejeitada.
+    <b>Extra</b> é o que passou do previsto na escala; <b>débito</b> é atraso e saída antes da hora.
+    <b>Noturno</b> são as horas entre 22h e 5h, já com a hora noturna reduzida.
+    Dias apagados (futuros, o dia de hoje e fora do contrato) não entram nos totais.
+  </div>
+
+  <div class="assinaturas">
+    <div>Colaborador<small>{{ e.pessoa.nome }}</small></div>
+    <div>Empresa<small>BWS — responsável pelo ponto</small></div>
+  </div>
+
+  <footer>
+    <span>Gerado em {{ gerado_em }} por {{ gerado_por }}.</span>
+    <span>Batidas originais preservadas; ajustes aparecem marcados (Portaria 671/2021).</span>
+  </footer>
+</div>
+</body>
+</html>

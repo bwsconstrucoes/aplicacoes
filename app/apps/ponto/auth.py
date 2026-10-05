@@ -41,6 +41,14 @@ CABECALHO_TOKEN = "X-Device-Token"
 _EXIGENCIA = "_ponto_exigencia"
 CHAVE = "chave"
 APARELHO_OU_CHAVE = "aparelho_ou_chave"
+COLABORADOR = "colaborador"
+COLABORADOR_OU_APARELHO = "colaborador_ou_aparelho"
+APARELHO = "aparelho"
+
+# A sessão do colaborador no celular ("Meu ponto"). Mora no MESMO cookie de
+# sessão do Flask que o ERP usa, com chaves próprias — uma não enxerga a outra.
+SESSAO_COLABORADOR = "ponto_colaborador_id"
+SESSAO_NOME = "ponto_colaborador_nome"
 
 # Registro de aparelho é a única rota sem credencial; este é o teto por IP.
 REGISTROS_POR_HORA_POR_IP = 30
@@ -59,6 +67,25 @@ def exige_chave(f):
 def exige_aparelho_ou_chave(f):
     """Celular com token do aparelho, OU sistema com chave (iDFace, manual)."""
     setattr(f, _EXIGENCIA, APARELHO_OU_CHAVE)
+    return f
+
+
+def exige_colaborador(f):
+    """O colaborador logado no celular (CPF + PIN)."""
+    setattr(f, _EXIGENCIA, COLABORADOR)
+    return f
+
+
+def exige_colaborador_ou_aparelho(f):
+    """O colaborador logado, OU um aparelho com token (o tablet da obra)."""
+    setattr(f, _EXIGENCIA, COLABORADOR_OU_APARELHO)
+    return f
+
+
+def exige_aparelho(f):
+    """Só um aparelho com token (o tablet da obra). A rota confere o token e o
+    perfil do aparelho com o banco; aqui só se exige que ele se apresente."""
+    setattr(f, _EXIGENCIA, APARELHO)
     return f
 
 
@@ -122,13 +149,22 @@ def ip_de_quem_chama() -> str:
 def registro_permitido(ip: str, agora: float | None = None) -> bool:
     """Teto de registros de aparelho por IP e hora. Em memória: a produção roda
     com UM processo, então a conta é a mesma para todas as linhas de atendimento."""
+    return dentro_do_limite("registro", ip, REGISTROS_POR_HORA_POR_IP, agora)
+
+
+def dentro_do_limite(tipo: str, chave: str, por_hora: int, agora: float | None = None) -> bool:
+    """Teto genérico por hora (registro de aparelho, entrada por PIN, pedido de
+    código). Atrás de um proxy, vários colaboradores da mesma obra podem sair
+    pelo mesmo IP — por isso os tetos são folgados; a trava fina é por CPF,
+    no banco (acesso.py)."""
     agora = agora if agora is not None else time.time()
-    janela = [t for t in _registros.get(ip, []) if agora - t < 3600]
-    if len(janela) >= REGISTROS_POR_HORA_POR_IP:
-        _registros[ip] = janela
+    k = f"{tipo}:{chave}"
+    janela = [t for t in _registros.get(k, []) if agora - t < 3600]
+    if len(janela) >= por_hora:
+        _registros[k] = janela
         return False
     janela.append(agora)
-    _registros[ip] = janela
+    _registros[k] = janela
     return True
 
 
@@ -148,6 +184,26 @@ def exigir_credencial():
     if isinstance(exigencia, tuple):          # @publica("motivo")
         g.ponto_via = "publica"
         return None
+
+    if exigencia == APARELHO:
+        if request.headers.get(CABECALHO_TOKEN) and request.headers.get("X-Device-UUID"):
+            g.ponto_via = "aparelho"
+            return None
+        return _negar(401, "aparelho não identificado")
+
+    # O colaborador do celular vem ANTES da chave: rota do colaborador não
+    # aceita a chave dos sistemas no lugar da pessoa — a chave não é ninguém.
+    if exigencia in (COLABORADOR, COLABORADOR_OU_APARELHO):
+        from flask import session
+        if session.get(SESSAO_COLABORADOR):
+            g.ponto_via = "colaborador"
+            g.ponto_colaborador_id = int(session[SESSAO_COLABORADOR])
+            return None
+        if exigencia == COLABORADOR_OU_APARELHO and request.headers.get(CABECALHO_TOKEN):
+            g.ponto_via = "aparelho"
+            return None
+        return _negar(401, "entre com o seu CPF e PIN")
+
 
     if not chave_configurada() and exigencia == CHAVE:
         logger.error("Ponto: %s não está configurada; a rota '%s' fica fechada.",

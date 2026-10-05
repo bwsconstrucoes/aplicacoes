@@ -268,6 +268,74 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quantas batidas foram recusadas esta semana, e de que aparelho?
 - Qual foi a última batida da Maria? Em que obra?
 - Quais fotos de batida ainda não subiram para o Drive?
+- Quantas horas extras a obra X fez no mês? 🔒 ⚠️ ("extra" = o que passou da escala, depois da tolerância de 5/10 min da CLT; o adicional em dinheiro é da folha)
+- Quem faltou ontem sem justificativa? 🔒
+- Quem está de atestado / de férias esta semana? 🔒 (o motivo médico só o DP vê)
+- Quantos atestados esperam o DP? Quantos ajustes esperam o encarregado? 🔒
+- Qual o saldo do banco de horas do Fulano? O que vence nos próximos 30 dias? 🔒 (só quem tem banco; falta de dia inteiro não entra no banco)
+- Quem atrasa sempre no mesmo dia da semana? 🔒
+- Quem bateu ponto em dois lugares longe em poucos minutos? 🔒
+- O mês de setembro do ponto já foi fechado? Quem fechou?
+- Quem ainda não criou o PIN do celular? 🔒
+- Quais aparelhos estão bloqueados, e por quê?
+
+**QR Code, mosaico e sinais de fraude (migração 003 do ponto, 03/10/2026):**
+
+- Quem bateu por QR Code e quem digitou o CPF hoje na obra X? 🔒 (a batida guarda
+  como a pessoa foi identificada: celular dela, CPF no tablet, QR do WhatsApp ou QR
+  do "Meu ponto")
+- Quem ainda não recebeu o QR Code? Quando troca o QR do Fulano? 🔒
+- Quantas mensagens de QR saíram hoje? Quantas estão na fila? Alguma falhou?
+- Alguém mostrou QR Code antigo no tablet esta semana? 🔒 ⚠️ (QR antigo = já
+  trocado por um mais novo que a pessoa usou, ou vencido há 3 dias; é sinal de
+  cópia, não prova)
+- O mosaico de ontem da obra X foi conferido? Por quem? Quantas fotos foram
+  marcadas como suspeitas? 🔒
+- Quais obras têm mosaico obrigatório, e quem é o responsável de cada uma?
+- Quem bateu sem foto esta semana? Quem teve foto escura ou sem rosto? 🔒
+- Tem foto repetida (a mesma imagem em batidas diferentes)? 🔒 ⚠️ ("repetida" =
+  a mesma imagem mandada de novo, não "parecida"; foto nova da mesma pessoa no
+  mesmo lugar não conta)
+- Algum tablet teve fila rápida demais (5 ou mais pessoas com menos de 10 s entre
+  uma e outra)? 🔒 ⚠️ (é convite a abrir o mosaico, não prova de fraude)
+- Algum tablet recebeu muitos CPFs que não são de ninguém? 🔒
+- Quem tentou bater ponto fora da área da obra esta semana? A quantos metros?
+  🔒 ⚠️ ("fora da área" = fora da cerca de TODAS as obras ativas com
+  coordenada; desde 04/10/2026 essa batida é recusada, não entra no espelho)
+- Quais obras estão sem coordenada (e por isso não detectam nem bloqueiam)?
+- Quais pedidos de ajuste de batida estão esperando o encarregado, e por qual
+  motivo (celular quebrado, sem internet, esqueci…)? 🔒
+- Quem mais pede ajuste de batida no mês? 🔒 ⚠️ ("pedido" conta os horários:
+  um dia com duas batidas esquecidas são dois pedidos)
+- Quais batidas foram feitas com a obra escolhida na lista (não detectada), e
+  com que justificativa? 🔒
+- O que está esperando validação hoje? De quem? Há quanto tempo? 🔒 ⚠️ (depende de
+  quem pergunta: o encarregado vê só as obras dele; "esperando validação" junta
+  pedidos, batidas em conferência, mosaicos e aparelhos)
+- Quem valida o ajuste de batida? E a compensação? (a regra está na Configuração;
+  atestado é sempre do DP)
+- Qual pedido está parado há mais de 3 dias? 🔒
+- Quantas pessoas estão ativas no Registro de Colaboradores? Quantas faltam no ERP?
+  ⚠️ ("ativo" = critério da Análise de SPs: sem saída já chegada e sem fase
+  "desligado"; a resposta é tão nova quanto o último "Atualizar cadastro")
+- Quem bateu ponto e não está no Registro? 🔒
+- Qual o raio da cerca da obra X? Ela bloqueia ou manda para conferência?
+- Quais obras aparecem no ponto hoje? E quais foram escondidas? ⚠️ ("aparecer" =
+  está na aba C. Diários com status que não começa por "Conclu"/"Distrat",
+  enquanto a planilha for a base de obras; com o ERP como base, status ATIVA)
+- Quais obras ativas estão sem coordenada, ou com a coordenada escrita errada?
+  (a tela da Base de obras lista, com a linha da planilha e o motivo)
+- A coordenada da obra X veio da planilha ou do ERP?
+- Quando a C. Diários foi lida pela última vez? Deu erro?
+- Quem pode bater no próprio celular? Quem tem banco de horas? Em que aparelho
+  alguém bate por outros? 🔒 (o padrão não se cadastra: a resposta é a lista de
+  EXCEÇÕES; quem não está nela bate só no aparelho da obra e não tem banco)
+- Quais celulares tentaram bater sem ser exceção? (recusas "celular próprio sem
+  exceção cadastrada")
+- **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
+  reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas
+  usaram o QR de outra" — o sistema vê o QR antigo e o rosto no mosaico, não a
+  troca de celular em si.
 
 ### Conciliação e banco
 
@@ -334,9 +402,9 @@ nunca chutar.
 | "Quanto tempo leva do pedido até a entrega?" | o recebimento existe, mas não há medida de prazo montada |
 | "Quem é o melhor fornecedor?" | não há nota de desempenho (prazo, qualidade, recusa) |
 | "Quanto vou precisar de caixa nos próximos 90 dias?" | previsão existe por título; falta juntar com o previsto a receber |
-| "Quantas horas o Fulano trabalhou este mês?" / "Quem chegou atrasado?" / "Quem faltou?" | o ponto só registra batidas (fase 1); a regra de jornada, horas, atraso e falta é a fase 3 do módulo `ponto` |
-| "Quem está na obra agora?" | precisa da regra de entrada/saída por jornada — fase 3 do ponto |
-| "Qual o espelho de ponto do Fulano?" | AFD/AEJ e espelho são fase 3 do ponto |
+| "Quanto o Fulano vai receber de extra / adicional noturno em reais?" | o ponto dá os MINUTOS (extra, noturno reduzido); o valor em dinheiro é regra da folha e da convenção coletiva |
+| "Qual o arquivo AFD/AEJ do mês para a fiscalização?" | os arquivos fiscais são a fase 3 do ponto; a estrutura já guarda o que eles precisam |
+| "Quem está na obra agora?" (presença física) | o ponto sabe quem bateu, não quem saiu sem bater; "bateu e ainda não saiu" é o mais perto disso |
 
 ---
 

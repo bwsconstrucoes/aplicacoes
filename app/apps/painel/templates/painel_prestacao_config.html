@@ -6,7 +6,8 @@
 <div class="chips" style="margin-bottom:16px">
   {% for chave, rotulo in [('socios','Sócios'), ('participacoes','Participações'),
                            ('regras','Regras de rateio'), ('ajustes','Ajustes'),
-                           ('fora','Fora da análise'), ('geral','Parâmetros gerais')] %}
+                           ('fora','Fora da análise'), ('projetos','Projeto das obras'),
+                           ('geral','Parâmetros gerais')] %}
     <a class="modulo-btn {% if aba == chave %}ativo{% endif %}"
        style="background:{{ 'var(--amarelo)' if aba == chave else 'var(--branco)' }};
               color:{{ 'var(--azul)' if aba == chave else 'var(--tinta-suave)' }};
@@ -404,6 +405,111 @@
   </div>
   {% else %}
   <p class="cartao-dica">Nada fora: toda obra da base entra na conta.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ======================= PROJETO DAS OBRAS ======================= #}
+{# 05/10/2026, o dono: "quero poder corrigir isso dentro de parâmetros e
+   regras" — as obras que apareciam como "(sem projeto)". #}
+{% if aba == 'projetos' %}
+{% set sem = obras_projetos|selectattr('efetivo', 'equalto', '')|list %}
+{% set da_tela = obras_projetos|selectattr('tela')|list %}
+{% set conhecidos = (obras_projetos|map(attribute='efetivo')|select|unique|list
+                     + projetos_do_painel)|unique|sort %}
+<datalist id="lista-projetos">
+  {% for p in conhecidos %}<option value="{{ p }}">{% endfor %}
+</datalist>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Obras sem projeto</h3>
+    <small>{{ sem|length }} obra(s) — aparecem como "(sem projeto)"</small>
+  </div>
+  <p class="cartao-dica" style="margin-top:0">
+    O projeto de cada obra vem da planilha <b>"C. Diários"</b> (código da obra
+    na coluna AJ, projeto na AK), lida a cada atualização. A obra que não está
+    lá fica sem projeto. <b>O que você marcar aqui vale na hora</b> — os
+    lançamentos dela mudam de projeto já — e vale por cima da planilha, também
+    nas próximas atualizações. Escolha um projeto da lista ou digite um novo.
+  </p>
+  {% if sem %}
+  <div class="tabela-rolagem" style="max-height:480px">
+    <table>
+      <thead><tr><th class="sem-ordem">Obra</th>
+                 <th class="sem-ordem">Código no OMIE</th>
+                 <th class="sem-ordem">Projeto</th></tr></thead>
+      <tbody>
+        {% for o in sem %}
+        <tr>
+          <td class="desc">{{ o.obra }}</td>
+          <td>{{ o.codigo }}</td>
+          <td>
+            <form method="post" style="display:flex; gap:6px">
+              <input type="hidden" name="acao" value="projeto_da_obra">
+              <input type="hidden" name="aba" value="projetos">
+              <input type="hidden" name="codigo" value="{{ o.codigo }}">
+              <input name="projeto" list="lista-projetos" required
+                     placeholder="escolha ou digite" style="min-width:180px">
+              <button class="btn" type="submit">Gravar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="cartao-dica">Toda obra tem projeto.</p>
+  {% endif %}
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Projetos dados aqui</h3>
+    <small>o que vale por cima da planilha</small>
+  </div>
+  {% if da_tela %}
+  <div class="tabela-rolagem" style="max-height:480px">
+    <table>
+      <thead><tr><th class="sem-ordem">Obra</th>
+                 <th class="sem-ordem">Projeto</th>
+                 <th class="sem-ordem">A planilha diz</th>
+                 <th class="sem-ordem"></th></tr></thead>
+      <tbody>
+        {% for o in da_tela %}
+        <tr>
+          <td class="desc">{{ o.obra }}</td>
+          <td>
+            <form method="post" style="display:flex; gap:6px">
+              <input type="hidden" name="acao" value="projeto_da_obra">
+              <input type="hidden" name="aba" value="projetos">
+              <input type="hidden" name="codigo" value="{{ o.codigo }}">
+              <input name="projeto" list="lista-projetos" required
+                     value="{{ o.tela }}" style="min-width:180px">
+              <button class="btn secundario" type="submit">Trocar</button>
+            </form>
+          </td>
+          <td>{% if not o.planilha %}<span class="cartao-dica">nada</span>
+              {% elif o.planilha == o.tela %}o mesmo
+              {% else %}<b>{{ o.planilha }}</b>{% endif %}</td>
+          <td>
+            <form method="post">
+              <input type="hidden" name="acao" value="projeto_da_obra">
+              <input type="hidden" name="aba" value="projetos">
+              <input type="hidden" name="codigo" value="{{ o.codigo }}">
+              <input type="hidden" name="tirar" value="1">
+              <button class="btn secundario" type="submit"
+                      title="A obra volta ao projeto da planilha (ou a nenhum)">Tirar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="cartao-dica">Nenhum: todo projeto vem da planilha.</p>
   {% endif %}
 </div>
 {% endif %}

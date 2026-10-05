@@ -50,14 +50,38 @@ def _schema_ponto(banco):
         conn.commit()
 
 
+def _base_erp():
+    """Estes testes são sobre o cadastro do ERP: a base de pessoas fica no ERP,
+    exista ou não a cópia do Registro de Colaboradores neste banco de teste."""
+    from app.apps.ponto import db
+    from app.apps.ponto.core import parametros, registro
+    with db.conexao() as conn:
+        parametros.gravar(conn, registro.PARAMETRO_FONTE, registro.FONTE_ERP, "teste")
+    # O "não existe" guardado por 60 s, de quando outro arquivo do mesmo
+    # trabalhador recriava o schema do ponto, faria valer o padrão (Registro).
+    db.esquecer_colunas()
+    registro.esquecer()
+    from app.apps.ponto.core import base_obras
+    base_obras.esquecer()
+
+
 @pytest.fixture
 def ponto(_schema_ponto, banco, monkeypatch):
     """Tabelas do ponto vazias, cadastro mínimo no ERP e a chave configurada.
     Devolve um dicionário com os ids criados."""
     monkeypatch.setenv("PONTO_API_KEY", CHAVE)
     from app.apps.ponto import auth
+    from app.apps.ponto.core import envios, fotos, rotina
     auth._registros.clear()
+    # Nada em segundo plano durante o teste: a linha separada disputaria as
+    # tabelas com a limpeza do teste seguinte.
+    monkeypatch.setattr(rotina, "disparar_se_preciso", lambda: False)
+    monkeypatch.setattr(envios, "disparar_se_preciso", lambda: False)
+    monkeypatch.setattr(fotos, "disparar_envio", lambda: False)
     _limpar(banco)
+    _base_erp()
+    from app.apps.ponto.core import registro as _registro_bg
+    monkeypatch.setattr(_registro_bg, "manter_em_dia", lambda: False)
     with banco.connect() as conn:
         obra = conn.execute(text(
             "INSERT INTO obras (codigo, nome, latitude, longitude, status) "
@@ -134,8 +158,13 @@ def aprovar(cliente, dispositivo_id, **dados):
 
 def bater(cliente, token, uuid=UUID_TABLET, cpf=CPF_JOAO, obra="PT-01",
           lat=-3.7276, lon=-38.5271, **extra):
-    corpo = {"device_uuid": uuid, "cpf": cpf, "obra": obra, "latitude": lat, "longitude": lon}
+    # Com foto por padrão: no aparelho da obra, batida sem foto vai para
+    # análise (migração 003) — e o teste da regra de cerca não é sobre foto.
+    corpo = {"device_uuid": uuid, "cpf": cpf, "obra": obra, "latitude": lat, "longitude": lon,
+             "foto_base64": _foto_base64(64, 64)}
     corpo.update(extra)
+    if corpo.get("foto_base64") is None:
+        corpo.pop("foto_base64")
     return cliente.post("/ponto/api/marcacao", json=corpo, headers={"X-Device-Token": token})
 
 
@@ -223,8 +252,9 @@ def test_lista_e_obras_do_aparelho(cliente, ponto):
     aprovar(cliente, dispositivo_id, perfil="LISTA", autorizados=[CPF_MARIA], obras=["PT-01"])
     assert bater(cliente, token, cpf=CPF_MARIA).status_code == 201
     assert "fora da lista" in bater(cliente, token, cpf=CPF_JOAO).get_json()["erro"]
+    # Escolher outra obra não adianta: a obra é a da cerca em que o aparelho está.
     r = bater(cliente, token, cpf=CPF_MARIA, obra="PT-02")
-    assert r.status_code == 403 and "não vale nesta obra" in r.get_json()["erro"]
+    assert r.status_code in (200, 201) and r.get_json()["marcacao"]["obra"]["codigo"] == "PT-01"
     # troca a lista: agora João entra, Maria sai
     r = cliente.post(f"/ponto/api/dispositivos/{dispositivo_id}/autorizar",
                      json={"autorizados": [CPF_JOAO]}, headers=com_chave())
@@ -285,20 +315,42 @@ def test_batida_repetida_em_60s_devolve_a_mesma(cliente):
     assert segunda.get_json()["marcacao"]["nsr"] == primeira.get_json()["marcacao"]["nsr"]
 
 
-def test_fora_da_cerca_e_aceita_em_analise(cliente):
+def test_fora_da_cerca_e_recusada_e_na_obra_que_analisa_vai_para_analise(cliente, banco, ponto):
+    """Decisão do dono, 04/10/2026: fora da área da obra não se bate ponto.
+    A obra pode ser marcada para ANALISAR (o jeito antigo)."""
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
     r = bater(cliente, token, lat=-3.7400, lon=-38.5270)   # ~1,4 km ao sul
+    assert r.status_code == 403 and "fora da área da obra" in r.get_json()["erro"]
+    assert "1,4 km" in r.get_json()["erro"]
+    recusa = cliente.get("/ponto/api/recusas", headers=com_chave()).get_json()["recusas"][0]
+    assert recusa["motivo"].startswith("fora da área da obra")
+    with banco.connect() as conn:
+        conn.execute(text("INSERT INTO ponto.obra_config (obra_id, fora_da_cerca) VALUES (:o, 'ANALISAR') "
+                          "ON CONFLICT (obra_id) DO UPDATE SET fora_da_cerca = 'ANALISAR'"), {"o": ponto["obra"]})
+        conn.commit()
+    r = bater(cliente, token, lat=-3.7400, lon=-38.5270)
     assert r.status_code == 201
     m = r.get_json()["marcacao"]
     assert m["status"] == "EM_ANALISE" and m["dentro_da_cerca"] is False
     assert "fora da cerca" in m["motivo_analise"] and m["distancia_metros"] > 1000
 
 
+def test_gps_impreciso_na_borda_entra_para_analise(cliente):
+    dispositivo_id, token = registrar_aparelho(cliente)
+    aprovar(cliente, dispositivo_id)
+    # ~250 m da obra (raio 200 m), com o GPS dizendo que erra até 80 m
+    r = bater(cliente, token, lat=-3.72985, lon=-38.5271, precisao=80)
+    assert r.status_code == 201, r.get_json()
+    m = r.get_json()["marcacao"]
+    assert m["status"] == "EM_ANALISE" and "na borda da cerca" in m["motivo_analise"]
+
+
 def test_obra_sem_coordenada_e_celular_sem_localizacao_vao_para_analise(cliente):
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
-    r = bater(cliente, token, obra="PT-02")
+    # longe da PT-01, escolhendo a PT-02 (sem coordenada): não há como saber
+    r = bater(cliente, token, obra="PT-02", lat=-3.80, lon=-38.60)
     assert r.status_code == 201
     m = r.get_json()["marcacao"]
     assert m["status"] == "EM_ANALISE" and "sem coordenada" in m["motivo_analise"]
@@ -321,7 +373,7 @@ def test_pessoa_desligada_e_obra_encerrada_sao_recusadas(cliente):
     aprovar(cliente, dispositivo_id)
     r = bater(cliente, token, cpf=CPF_DESLIGADO)
     assert r.status_code == 403 and "desligada" in r.get_json()["erro"]
-    r = bater(cliente, token, obra="PT-03")
+    r = bater(cliente, token, obra="PT-03", lat=None, lon=None)
     assert r.status_code == 403 and "encerrada" in r.get_json()["erro"]
     r = bater(cliente, token, cpf="39053344705")   # CPF válido, ninguém com ele
     assert r.status_code == 403 and "não cadastrada" in r.get_json()["erro"]
@@ -347,6 +399,7 @@ def _foto_base64(largura=1200, altura=1600) -> str:
 
 
 def test_batida_com_foto_sobe_para_o_drive_e_so_a_ficha_fica_no_banco(cliente, banco, monkeypatch):
+    from app.apps.ponto import db as ponto_db
     from app.apps.ponto.core import fotos
     enviados = []
 
@@ -360,6 +413,11 @@ def test_batida_com_foto_sobe_para_o_drive_e_so_a_ficha_fica_no_banco(cliente, b
     assert r.status_code == 201, r.get_json()
     m = r.get_json()["marcacao"]
     assert m["tem_foto"] is True and len(m["foto_hash"]) == 64
+    # A batida NÃO espera o Drive: a foto fica na sala de espera e sobe logo
+    # depois, em segundo plano (aqui, chamado direto).
+    assert enviados == []
+    with ponto_db.conexao() as conn:
+        assert fotos.enviar_pendentes(conn)["enviadas"] == 1
     assert len(enviados) == 1 and enviados[0][0].endswith(f"_colab{m['colaborador_id']}_nsr{m['nsr']}.jpg")
     with banco.connect() as conn:
         f = conn.execute(text("SELECT tamanho, largura, altura, sha256, drive_file_id, conteudo, "
@@ -381,8 +439,14 @@ def test_drive_fora_do_ar_nao_derruba_a_batida_e_a_foto_espera_na_fila(cliente, 
     with banco.connect() as conn:
         f = conn.execute(text("SELECT drive_file_id, conteudo, tentativas, ultimo_erro "
                               "FROM ponto.fotos")).one()
-    assert f[0] is None and f[1] is not None and f[2] == 1 and "não configurado" in f[3]
+    assert f[0] is None and f[1] is not None and f[2] == 0 and f[3] is None
     assert cliente.get("/ponto/health").get_json()["fotos_na_fila"] == 1
+    # a tentativa com o Drive fora do ar conta e fica anotada
+    r = cliente.post("/ponto/api/admin/fotos/enviar-pendentes", headers=com_chave())
+    assert r.get_json()["enviadas"] == 0 and r.get_json()["restantes"] == 1
+    with banco.connect() as conn:
+        f = conn.execute(text("SELECT tentativas, ultimo_erro FROM ponto.fotos")).one()
+    assert f[0] == 1 and "não configurado" in f[1]
 
     # o Drive volta: a fila esvazia e os bytes somem do banco
     monkeypatch.setattr(fotos, "_subir_no_drive", lambda conn, dados, nome, momento: "drive-xyz")
@@ -441,7 +505,7 @@ def test_consulta_por_periodo_cpf_obra_e_status(cliente):
     dispositivo_id, token = registrar_aparelho(cliente)
     aprovar(cliente, dispositivo_id)
     bater(cliente, token)
-    bater(cliente, token, cpf=CPF_MARIA, lat=-3.75, lon=-38.5270)   # fora da cerca
+    bater(cliente, token, cpf=CPF_MARIA, lat=None, lon=None)   # tablet sem localização: análise
     hoje = dt.date.today()
     ini, fim = (hoje - dt.timedelta(days=1)).isoformat(), (hoje + dt.timedelta(days=1)).isoformat()
     todas = cliente.get(f"/ponto/api/marcacoes?data_inicio={ini}&data_fim={fim}",

@@ -22,6 +22,16 @@ espera. O `health` mostra quantas estão esperando.
 
 Por que redimensionar: um celular manda 3 a 8 MB; a 800 px e JPEG 80 a foto
 fica em ~60 a 120 KB e o rosto continua reconhecível — que é para o que serve.
+
+A BATIDA NÃO ESPERA O DRIVE (03/10/2026, junto com o tablet de câmera sempre
+ligada): a foto entra na sala de espera e uma linha separada leva para o Drive
+logo depois da resposta. Subir no Drive leva de 1 a 3 segundos — numa fila de
+40 pessoas às 7h, seriam 2 minutos de espera somados por nada.
+
+OS SINAIS DA FOTO (migração 003), medidos aqui, sem IA e sem custo: brilho
+médio (câmera tampada fica perto de zero), contraste (parede lisa, dedo na
+lente) e uma impressão da imagem (`dhash`, 256 bits) — duas fotos com
+impressão quase igual são a MESMA foto mandada de novo. Os alertas usam os três.
 """
 from __future__ import annotations
 
@@ -32,7 +42,9 @@ import io
 import logging
 import os
 import re
+import threading
 import time
+from collections import OrderedDict
 from typing import Optional
 
 from sqlalchemy.engine import Connection
@@ -89,9 +101,34 @@ def decodificar_base64(texto: str) -> bytes:
         raise ErroDeValidacao("foto em base64 ilegível", campo="foto_base64") from e
 
 
-def reduzir(conteudo: bytes) -> tuple[bytes, int, int]:
+def sinais(imagem) -> tuple[int, int, str]:
+    """(brilho médio 0–255, contraste, dhash de 256 bits em hexadecimal)."""
+    from PIL import ImageStat
+    cinza = imagem.convert("L")
+    est = ImageStat.Stat(cinza)
+    luminancia, contraste = int(round(est.mean[0])), int(round(est.stddev[0]))
+    pequena = cinza.resize((17, 16))
+    px = pequena.tobytes()
+    bits = 0
+    for linha in range(16):
+        for coluna in range(16):
+            esquerda, direita = px[linha * 17 + coluna], px[linha * 17 + coluna + 1]
+            bits = (bits << 1) | (1 if esquerda > direita else 0)
+    return luminancia, contraste, f"{bits:064x}"
+
+
+def distancia_dhash(a: Optional[str], b: Optional[str]) -> Optional[int]:
+    """Quantos dos 256 bits diferem. 0–3 = a mesma foto; foto nova de verdade,
+    mesmo da mesma pessoa no mesmo lugar, fica bem acima disso."""
+    if not a or not b:
+        return None
+    return bin(int(a, 16) ^ int(b, 16)).count("1")
+
+
+def reduzir(conteudo: bytes, com_sinais: bool = False):
     """Abre, corrige a orientação, reduz e regrava como JPEG. Devolve
-    (bytes, largura, altura). Levanta ErroDeValidacao se não for imagem."""
+    (bytes, largura, altura) — e os sinais, com `com_sinais`. Levanta
+    ErroDeValidacao se não for imagem."""
     try:
         from PIL import Image, ImageOps
         imagem = Image.open(io.BytesIO(conteudo))
@@ -110,6 +147,8 @@ def reduzir(conteudo: bytes) -> tuple[bytes, int, int]:
         if len(dados) <= MAX_GUARDADO_BYTES or qualidade <= 40:
             break
         qualidade -= 10
+    if com_sinais:
+        return dados, imagem.width, imagem.height, sinais(imagem)
     return dados, imagem.width, imagem.height
 
 
@@ -119,17 +158,19 @@ def sha256(conteudo: bytes) -> str:
 
 class FotoPronta:
     """A foto já reduzida e com hash, antes de ir para o Drive."""
-    __slots__ = ("dados", "largura", "altura", "hash")
+    __slots__ = ("dados", "largura", "altura", "hash", "luminancia", "contraste", "dhash")
 
-    def __init__(self, dados: bytes, largura: int, altura: int):
+    def __init__(self, dados: bytes, largura: int, altura: int,
+                 sinais_da_foto: tuple | None = None):
         self.dados, self.largura, self.altura = dados, largura, altura
         self.hash = sha256(dados)
+        self.luminancia, self.contraste, self.dhash = sinais_da_foto or (None, None, None)
 
 
 def preparar(foto_base64: str) -> FotoPronta:
     """Valida e reduz. É chamada ANTES de gravar a marcação, para uma foto
     ilegível virar 400 sem deixar marcação pela metade."""
-    return FotoPronta(*reduzir(decodificar_base64(foto_base64)))
+    return FotoPronta(*reduzir(decodificar_base64(foto_base64), com_sinais=True))
 
 
 def nome_do_arquivo(momento: dt.datetime, colaborador_id: int, nsr: int) -> str:
@@ -164,7 +205,8 @@ def _pasta_do_mes(conn: Connection, svc, momento: dt.datetime) -> str:
     return achada
 
 
-def _subir_no_drive(conn: Connection, dados: bytes, nome: str, momento: dt.datetime) -> str:
+def _subir_no_drive(conn: Connection, dados: bytes, nome: str, momento: dt.datetime,
+                    mime: str = "image/jpeg") -> str:
     """Sobe e devolve o id do arquivo. Levanta RuntimeError se não der.
     Tenta até TENTATIVAS_NA_HORA vezes com pausa curta: falha passageira de
     rede não pode mandar a foto para a fila à toa."""
@@ -177,7 +219,7 @@ def _subir_no_drive(conn: Connection, dados: bytes, nome: str, momento: dt.datet
         try:
             svc = drive_erp._servico(quem_personificar())
             pasta = _pasta_do_mes(conn, svc, momento)
-            return drive_erp.enviar(dados, nome, "image/jpeg", pasta=pasta,
+            return drive_erp.enviar(dados, nome, mime, pasta=pasta,
                                     impersonar=quem_personificar())
         except Exception as e:  # noqa: BLE001 — qualquer falha conta como tentativa
             ultimo = e
@@ -191,28 +233,122 @@ def _subir_no_drive(conn: Connection, dados: bytes, nome: str, momento: dt.datet
 # ---------------------------------------------------------------------------
 # Gravação
 # ---------------------------------------------------------------------------
-def guardar(conn: Connection, foto: FotoPronta, *, nome: str, momento: dt.datetime) -> int:
-    """Sobe para o Drive e grava a ficha. Se o Drive falhar, a ficha entra com
-    os bytes na sala de espera. Devolve o id da ficha. NUNCA levanta erro: a
-    batida já foi aceita, e a foto não pode desfazê-la."""
+def guardar(conn: Connection, foto: FotoPronta, *, nome: str, momento: dt.datetime,
+            subir: bool = True) -> int:
+    """Grava a ficha e (com `subir`) sobe para o Drive na hora. Sem `subir`, ou
+    se o Drive falhar, os bytes ficam na sala de espera — a batida chama
+    `disparar_envio()` depois de confirmada, e a linha separada leva. Devolve o
+    id da ficha. NUNCA levanta erro: a batida já foi aceita, e a foto não pode
+    desfazê-la."""
     file_id, erro = None, None
-    try:
-        file_id = _subir_no_drive(conn, foto.dados, nome, momento)
-    except Exception as e:  # noqa: BLE001
-        erro = str(e)[:500]
-    linha = db.um(conn, """
+    if subir:
+        try:
+            file_id = _subir_no_drive(conn, foto.dados, nome, momento)
+        except Exception as e:  # noqa: BLE001
+            erro = str(e)[:500]
+    sinais_ok = db.tem_coluna(conn, "fotos", "dhash")
+    linha = db.um(conn, f"""
         INSERT INTO ponto.fotos (sha256, conteudo, tamanho, mime, largura, altura, nome_arquivo,
-                                 drive_file_id, enviada_em, tentativas, ultimo_erro)
+                                 drive_file_id, enviada_em, tentativas, ultimo_erro
+                                 {', luminancia, contraste, dhash' if sinais_ok else ''})
         VALUES (:h, :c, :t, 'image/jpeg', :w, :a, :nome, :fid,
-                CASE WHEN :fid IS NULL THEN NULL ELSE now() END, 1, :erro)
+                CASE WHEN :fid IS NULL THEN NULL ELSE now() END, :tent, :erro
+                {', :lum, :con, :dh' if sinais_ok else ''})
         RETURNING id
     """, h=foto.hash, c=(None if file_id else foto.dados), t=len(foto.dados),
-         w=foto.largura, a=foto.altura, nome=nome, fid=file_id, erro=erro)
+         w=foto.largura, a=foto.altura, nome=nome, fid=file_id, erro=erro,
+         tent=(1 if subir else 0), lum=foto.luminancia, con=foto.contraste, dh=foto.dhash)
     if file_id:
         logger.info("Ponto: foto %s no Drive (%s, %d bytes)", nome, file_id, len(foto.dados))
-    else:
+    elif subir:
         logger.warning("Ponto: foto %s ficou na fila de reenvio — %s", nome, erro)
     return int(linha["id"])
+
+
+# ---------------------------------------------------------------------------
+# A subida em segundo plano
+# ---------------------------------------------------------------------------
+_subindo = threading.Lock()
+
+
+def _subir_em_segundo_plano() -> None:
+    try:
+        for _ in range(20):                  # no máximo 20 rodadas de 10 por vez
+            with db.conexao() as conn:
+                r = enviar_pendentes(conn, limite=10)
+            if not r["enviadas"] or not r["restantes"]:
+                return
+    except Exception:  # noqa: BLE001 — a fila fica para a próxima batida
+        logger.warning("Ponto: subida das fotos em segundo plano parou", exc_info=True)
+    finally:
+        _subindo.release()
+
+
+def disparar_envio() -> bool:
+    """Leva a sala de espera para o Drive numa linha separada. Chamada pela
+    rota DEPOIS de a batida estar confirmada no banco."""
+    if not drive_configurado():
+        return False
+    if not _subindo.acquire(blocking=False):
+        return False
+    threading.Thread(target=_subir_em_segundo_plano, name="ponto-fotos", daemon=True).start()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Miniaturas, para o mosaico: guardadas na MEMÓRIA do serviço (não no banco),
+# até 32 MB. Mosaico de 60 pessoas × 4 batidas = 240 fotos; do Drive, uma a
+# uma, demora — na segunda abertura, sai daqui.
+# ---------------------------------------------------------------------------
+LADO_MINIATURA = 240
+_MINIATURAS_MAX_BYTES = 32 * 1024 * 1024
+_miniaturas: "OrderedDict[int, bytes]" = OrderedDict()
+_miniaturas_bytes = 0
+_miniaturas_trava = threading.Lock()
+
+
+def _reduzir_miniatura(dados: bytes) -> bytes:
+    from PIL import Image
+    imagem = Image.open(io.BytesIO(dados))
+    imagem.load()
+    if imagem.mode not in ("RGB", "L"):
+        imagem = imagem.convert("RGB")
+    imagem.thumbnail((LADO_MINIATURA, LADO_MINIATURA))
+    saida = io.BytesIO()
+    imagem.save(saida, format="JPEG", quality=72)
+    return saida.getvalue()
+
+
+def miniatura(conn: Connection, foto_id: int) -> bytes:
+    """A miniatura (240 px). Levanta LookupError como `baixar`."""
+    global _miniaturas_bytes
+    with _miniaturas_trava:
+        if foto_id in _miniaturas:
+            _miniaturas.move_to_end(foto_id)
+            return _miniaturas[foto_id]
+    dados, _mime = baixar(conn, foto_id)
+    pequena = _reduzir_miniatura(dados)
+    with _miniaturas_trava:
+        _miniaturas[foto_id] = pequena
+        _miniaturas_bytes += len(pequena)
+        while _miniaturas_bytes > _MINIATURAS_MAX_BYTES and _miniaturas:
+            _, saiu = _miniaturas.popitem(last=False)
+            _miniaturas_bytes -= len(saiu)
+    return pequena
+
+
+def baixar(conn: Connection, foto_id: int) -> tuple[bytes, str]:
+    """Os bytes da foto (do Drive, ou da sala de espera). Levanta LookupError."""
+    f = db.um(conn, "SELECT drive_file_id, conteudo, mime FROM ponto.fotos WHERE id = :id",
+              id=foto_id)
+    if not f:
+        raise LookupError("foto não encontrada")
+    if f["conteudo"] is not None:
+        return bytes(f["conteudo"]), f["mime"]
+    if not f["drive_file_id"]:
+        raise LookupError("foto expurgada")
+    from app.apps.erp.core.documentos import drive as drive_erp
+    return drive_erp.baixar(f["drive_file_id"], impersonar=quem_personificar()), f["mime"]
 
 
 def pendentes(conn: Connection) -> int:

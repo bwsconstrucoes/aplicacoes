@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12385C">
+<link rel="manifest" href="/ponto/app/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/erp/static/icone-apple.png">
+<title>BWS Ponto</title>
+<style>
+  :root { --azul:#12385C; --azul-claro:#1E5F94; --fundo:#F2F4F8; --branco:#fff; --tinta:#14213A;
+          --suave:#5A6883; --borda:#D9DFEA; --verde:#1B7F3B; --vermelho:#B3261E; --ambar:#A65B00;
+          --raio:14px; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--fundo); color:var(--tinta);
+              font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; font-size:16px; }
+  header { background:var(--azul); color:#fff; padding:14px 16px calc(14px) 16px; display:flex; align-items:center; gap:10px;
+           padding-top:calc(14px + env(safe-area-inset-top)); }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  header button { background:none; border:1px solid rgba(255,255,255,.4); color:#fff; border-radius:10px; padding:6px 10px; font-size:14px; }
+  main { padding:14px 14px calc(90px + env(safe-area-inset-bottom)); max-width:560px; margin:0 auto; }
+  .cartao { background:var(--branco); border-radius:var(--raio); padding:16px; margin-bottom:12px;
+            box-shadow:0 1px 3px rgba(11,44,92,.10); }
+  .cartao h2 { font-size:16px; margin:0 0 10px; }
+  label { display:block; font-size:14px; color:var(--suave); margin:10px 0 4px; }
+  input, select, textarea { width:100%; font-size:18px; padding:12px; border:1px solid var(--borda); border-radius:10px;
+                            background:#fff; color:var(--tinta); }
+  textarea { font-size:16px; min-height:80px; }
+  .btn { display:block; width:100%; border:0; border-radius:12px; padding:15px; font-size:17px; font-weight:700;
+         background:var(--azul); color:#fff; margin-top:12px; }
+  .btn:active { transform:scale(.99); }
+  .btn.sec { background:#fff; color:var(--azul); border:1px solid var(--borda); }
+  .btn.grande { padding:26px 15px; font-size:22px; border-radius:18px; background:var(--verde); }
+  .btn:disabled { opacity:.5; }
+  .link { background:none; border:0; color:var(--azul-claro); font-size:15px; padding:10px 0; text-decoration:underline; }
+  .aviso { border-radius:10px; padding:12px; font-size:15px; margin:10px 0; }
+  .aviso.erro { background:#FBE6E4; color:var(--vermelho); }
+  .aviso.ok { background:#E3F3E8; color:var(--verde); }
+  .aviso.info { background:#E7EDF7; color:var(--azul); }
+  .aviso.ambar { background:#FDF1DC; color:var(--ambar); }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { background:#E7EDF7; color:var(--azul); border-radius:999px; padding:6px 12px; font-weight:700; font-size:15px; border:0; }
+  .chip.analise { background:#FDF1DC; color:var(--ambar); }
+  .chip.ajustada { background:#EDE7F6; color:#5B4B8A; }
+  .numeros { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .numero { background:var(--fundo); border-radius:10px; padding:10px; text-align:center; }
+  .numero b { display:block; font-size:20px; }
+  .numero span { font-size:12px; color:var(--suave); }
+  .dia { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--borda); }
+  .dia:last-child { border-bottom:0; }
+  .dia .data { width:64px; flex:none; font-weight:700; }
+  .dia .data small { display:block; color:var(--suave); font-weight:400; font-size:12px; }
+  .dia .corpo { flex:1; font-size:14px; }
+  .selo { display:inline-block; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; background:#EDEFF3; color:#6B7690; }
+  .selo.falta { background:#FBE6E4; color:var(--vermelho); }
+  .selo.ok { background:#E3F3E8; color:var(--verde); }
+  .selo.ambar { background:#FDF1DC; color:var(--ambar); }
+  nav.abas { position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--borda);
+             display:flex; padding-bottom:env(safe-area-inset-bottom); }
+  nav.abas button { flex:1; background:none; border:0; padding:10px 4px; font-size:13px; color:var(--suave); }
+  nav.abas button.ativa { color:var(--azul); font-weight:700; }
+  nav.abas button span { display:block; font-size:22px; }
+  .oculto { display:none !important; }
+  dialog { border:0; border-radius:var(--raio); padding:0; max-width:520px; width:calc(100% - 24px); }
+  dialog::backdrop { background:rgba(7,30,64,.5); }
+  .dlg { padding:18px; }
+  .comprovante dt { color:var(--suave); font-size:13px; margin-top:8px; }
+  .comprovante dd { margin:0; font-weight:700; font-size:16px; word-break:break-word; }
+  .pequeno { font-size:13px; color:var(--suave); }
+  .linha { display:flex; gap:8px; } .linha > * { flex:1; }
+
+  /* ---- O TABLET DA OBRA: tela cheia, câmera sempre ligada, teclado grande ---- */
+  #tela-tablet { position:fixed; inset:0; z-index:50; background:#0A1B2E; color:#fff; display:flex; flex-direction:column;
+                 padding:calc(10px + env(safe-area-inset-top)) 14px calc(10px + env(safe-area-inset-bottom)); gap:10px; }
+  .kq-topo { display:flex; align-items:center; gap:10px; }
+  .kq-topo select { flex:1; font-size:15px; padding:8px; background:#12385C; color:#fff; border:1px solid #2B5A86; }
+  .kq-relogio { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .kq-corpo { flex:1; display:flex; gap:14px; min-height:0; }
+  .kq-camera { flex:1.2; position:relative; background:#000; border-radius:18px; overflow:hidden; min-height:200px; }
+  .kq-camera video { width:100%; height:100%; object-fit:cover; transform:scaleX(-1); display:block; }
+  .kq-mira { position:absolute; inset:18% 22%; border:4px dashed rgba(255,255,255,.55); border-radius:18px; pointer-events:none; }
+  .kq-legenda { position:absolute; left:0; right:0; bottom:0; padding:12px; text-align:center; font-size:18px; font-weight:700;
+                background:linear-gradient(transparent, rgba(0,0,0,.75)); }
+  .kq-teclado { flex:1; display:flex; flex-direction:column; gap:8px; min-width:0; }
+  .kq-visor { background:#fff; color:var(--tinta); border-radius:14px; padding:12px; font-size:30px; font-weight:800; text-align:center;
+              letter-spacing:1px; min-height:62px; font-variant-numeric:tabular-nums; }
+  .kq-visor small { display:block; font-size:14px; font-weight:400; color:var(--suave); letter-spacing:0; }
+  .kq-teclas { flex:1; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .kq-teclas button { border:0; border-radius:14px; background:#1E3F63; color:#fff; font-size:34px; font-weight:800; min-height:58px; }
+  .kq-teclas button:active { background:#2B5A86; }
+  .kq-teclas button.apagar { font-size:24px; background:#3A2B2B; }
+  .kq-esqueci { background:none; border:0; color:#9EC3EA; font-size:16px; text-decoration:underline; padding:6px; }
+  .kq-cobre { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center;
+              text-align:center; padding:24px; gap:10px; background:rgba(10,27,46,.86); }
+  .kq-cobre h2 { font-size:34px; margin:0; } .kq-cobre p { font-size:20px; margin:0; }
+  .kq-cobre .contagem { font-size:80px; font-weight:900; line-height:1; }
+  .kq-cobre.ok { background:rgba(27,127,59,.94); } .kq-cobre.ambar { background:rgba(166,91,0,.94); }
+  .kq-cobre.erro { background:rgba(179,38,30,.94); }
+  .kq-cobre button { border:2px solid #fff; background:transparent; color:#fff; border-radius:12px; padding:12px 22px; font-size:18px; font-weight:700; }
+  @media (max-width: 760px) and (orientation: portrait) { .kq-corpo { flex-direction:column; } .kq-camera { flex:1; } .kq-teclas button { min-height:52px; font-size:28px; } }
+  .qr-grande { display:block; width:100%; max-width:340px; margin:0 auto; image-rendering:pixelated; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="titulo">BWS Ponto</h1>
+  <button id="btn-sair" class="oculto" type="button">Sair</button>
+</header>
+<main>
+  <div id="mensagem"></div>
+
+  <!-- CARREGANDO -->
+  <section id="tela-carregando" class="cartao">Abrindo…</section>
+
+  <!-- ENTRAR -->
+  <section id="tela-entrar" class="oculto">
+    <div class="cartao">
+      <h2>Entrar no meu ponto</h2>
+      <label for="e-cpf">CPF</label>
+      <input id="e-cpf" inputmode="numeric" autocomplete="username" placeholder="000.000.000-00">
+      <label for="e-pin">PIN (6 números)</label>
+      <input id="e-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password">
+      <button class="btn" id="btn-entrar" type="button">Entrar</button>
+      <button class="link" id="btn-ir-primeiro" type="button">Primeiro acesso ou esqueci o PIN</button>
+    </div>
+    <p class="pequeno" id="codigo-aparelho" style="text-align:center"></p>
+    <div class="cartao oculto" id="cartao-tablet">
+      <h2>Bater ponto neste aparelho da obra</h2>
+      <p class="pequeno">Este aparelho é da obra: QR Code ou CPF, e a foto sai sozinha.</p>
+      <button class="btn grande" id="btn-ir-tablet" type="button">Abrir o ponto da obra</button>
+    </div>
+  </section>
+
+  <!-- PRIMEIRO ACESSO -->
+  <section id="tela-primeiro" class="oculto">
+    <div class="cartao">
+      <h2>Criar ou trocar o PIN</h2>
+      <p class="pequeno">Vamos mandar um código por WhatsApp para o telefone do seu cadastro.</p>
+      <label for="p-cpf">CPF</label>
+      <input id="p-cpf" inputmode="numeric" placeholder="000.000.000-00">
+      <button class="btn" id="btn-codigo" type="button">Mandar o código</button>
+      <div id="p-passo2" class="oculto">
+        <label for="p-codigo">Código que chegou no WhatsApp</label>
+        <input id="p-codigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
+        <label for="p-pin">Novo PIN (6 números)</label>
+        <input id="p-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password">
+        <label for="p-pin2">Repita o PIN</label>
+        <input id="p-pin2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password">
+        <button class="btn" id="btn-criar-pin" type="button">Criar PIN e entrar</button>
+      </div>
+      <button class="link" id="btn-voltar-entrar" type="button">Voltar</button>
+    </div>
+  </section>
+
+  <!-- TABLET DA OBRA (tela cheia) -->
+  <section id="tela-tablet" class="oculto" aria-label="Bater ponto no aparelho da obra">
+    <div class="kq-topo">
+      <select id="t-obra" aria-label="Obra"></select>
+      <div class="kq-relogio" id="t-relogio">--:--</div>
+    </div>
+    <div class="kq-corpo">
+      <div class="kq-camera">
+        <video id="t-video" autoplay muted playsinline></video>
+        <div class="kq-mira" id="t-mira"></div>
+        <div class="kq-legenda" id="t-legenda">Mostre o QR Code do seu celular aqui — ou digite o CPF</div>
+        <div class="kq-cobre oculto" id="t-cobre"></div>
+      </div>
+      <div class="kq-teclado">
+        <div class="kq-visor" id="t-visor"><small>Digite o seu CPF</small>&nbsp;</div>
+        <div class="kq-teclas" id="t-teclas">
+          <button type="button" data-t="1">1</button><button type="button" data-t="2">2</button><button type="button" data-t="3">3</button>
+          <button type="button" data-t="4">4</button><button type="button" data-t="5">5</button><button type="button" data-t="6">6</button>
+          <button type="button" data-t="7">7</button><button type="button" data-t="8">8</button><button type="button" data-t="9">9</button>
+          <button type="button" data-t="limpar" class="apagar">Limpar</button><button type="button" data-t="0">0</button><button type="button" data-t="apagar" class="apagar">⌫</button>
+        </div>
+        <button type="button" class="kq-esqueci" id="t-esqueci">Esqueci meu QR Code — receber no WhatsApp</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- INÍCIO -->
+  <section id="tela-inicio" class="oculto">
+    <div id="aviso-aparelho"></div>
+    <div class="cartao oculto" id="cartao-so-na-obra">
+      <h2 id="ola-obra">Olá</h2>
+      <div class="aviso info">Você bate o ponto no <b>aparelho da obra</b>: mostre o seu QR Code na câmera
+        dele ou digite o CPF. Por aqui você vê o seu mês, manda atestado e pede ajuste.</div>
+    </div>
+    <div class="cartao" id="cartao-bater">
+      <h2 id="ola">Olá</h2>
+      <div id="i-local" class="aviso info">📍 Procurando a sua localização…</div>
+      <div id="i-escolha" class="oculto">
+        <div class="aviso ambar"><b>⚠️ Batida fora do normal.</b> A obra não foi encontrada pela
+          localização: se você bater escolhendo a obra na lista, a batida vai para a conferência do
+          encarregado, e você vai precisar dizer por quê.</div>
+        <label for="i-obra">Em que obra você está?</label>
+        <select id="i-obra"></select>
+        <p class="pequeno">A lista só aparece quando o celular não acha você dentro de uma obra. Vale para
+          obra ainda sem localização cadastrada (a batida vai para conferência). Obra com cerca só aceita
+          quem está dentro dela.</p>
+      </div>
+      <button class="btn grande" id="btn-bater" type="button">Tirar foto e bater ponto</button>
+      <button class="link" id="btn-sem-foto" type="button">A câmera não abre? Bater sem foto</button>
+    </div>
+    <div class="cartao">
+      <h2>Hoje</h2>
+      <div id="hoje"></div>
+    </div>
+    <div class="cartao">
+      <h2>Meu QR Code</h2>
+      <p class="pequeno">Para bater no tablet da obra sem digitar o CPF: mostre o QR na câmera dele. Este muda a cada 30 segundos — foto de tela não serve.</p>
+      <button class="btn sec" id="btn-meu-qr" type="button">Mostrar meu QR Code</button>
+    </div>
+    <div class="cartao oculto" id="cartao-banco">
+      <h2>Banco de horas</h2>
+      <div id="banco"></div>
+    </div>
+  </section>
+
+  <!-- MEU MÊS -->
+  <section id="tela-mes" class="oculto">
+    <div class="cartao">
+      <div class="linha">
+        <button class="btn sec" id="mes-ant" type="button">‹ Mês anterior</button>
+        <button class="btn sec" id="mes-prox" type="button">Próximo ›</button>
+      </div>
+      <h2 id="mes-titulo" style="margin-top:12px">Meu mês</h2>
+      <div id="mes-resumo"></div>
+    </div>
+    <div class="cartao"><div id="mes-dias"></div></div>
+  </section>
+
+  <!-- PEDIDOS -->
+  <section id="tela-pedidos" class="oculto">
+    <div class="cartao">
+      <h2>Fazer um pedido</h2>
+      <label for="ped-tipo">O que você precisa?</label>
+      <select id="ped-tipo">
+        <option value="ATESTADO">Mandar atestado médico</option>
+        <option value="AJUSTE_BATIDA">Esqueci de bater o ponto</option>
+        <option value="COMPENSACAO">Trabalhar num dia no lugar de outro</option>
+        <option value="LICENCA">Licença (casamento, luto, paternidade…)</option>
+        <option value="FOLGA_BANCO">Folga do banco de horas</option>
+      </select>
+      <div id="ped-campos"></div>
+      <button class="btn" id="btn-pedir" type="button">Enviar pedido</button>
+    </div>
+    <div class="cartao">
+      <h2>Meus pedidos</h2>
+      <div id="pedidos"></div>
+    </div>
+  </section>
+</main>
+
+<nav class="abas oculto" id="abas">
+  <button type="button" data-tela="inicio" class="ativa"><span>⏱</span>Bater</button>
+  <button type="button" data-tela="mes"><span>📅</span>Meu mês</button>
+  <button type="button" data-tela="pedidos"><span>📝</span>Pedidos</button>
+</nav>
+
+<input type="file" id="camera" accept="image/*" capture="user" class="oculto">
+<input type="file" id="arquivo-doc" accept="image/*,application/pdf" class="oculto">
+
+<dialog id="dlg">
+  <div class="dlg">
+    <div id="dlg-corpo"></div>
+    <button class="btn" type="button" id="dlg-fechar">Fechar</button>
+  </div>
+</dialog>
+
+<script>
+// ---------------------------------------------------------------------------
+// O "Meu ponto". Tudo o que aparece vem do servidor na hora; nada de dado fica
+// guardado no aparelho além do identificador e do token DO APARELHO.
+// ---------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const soDigitos = v => String(v ?? "").replace(/\D/g, "");
+const dataBR = iso => iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—";
+const hm = m => { if (m === null || m === undefined) return "—"; const s = m < 0 ? "-" : ""; m = Math.abs(m);
+                  return `${s}${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`; };
+const ROTULO_ALERTA = { FALTA: "falta", BATIDA_FALTANDO: "batida faltando", ATRASO: "atraso",
+  SAIDA_ANTECIPADA: "saída antecipada", EXTRA_ACIMA_DE_2H: "extra acima de 2 h",
+  INTERVALO_CURTO: "intervalo curto", INTERJORNADA_CURTA: "menos de 11 h de descanso",
+  TRABALHO_EM_DESCANSO: "trabalho em dia de descanso", TRABALHO_EM_FERIADO: "trabalho em feriado",
+  BATIDA_EM_DIA_ABONADO: "bateu em dia abonado", SEM_ESCALA: "sem escala cadastrada" };
+const SITUACAO = { OK: ["ok", "Certo"], FALTA: ["falta", "Falta"], ABONADO: ["ok", "Abonado"],
+  INCOMPLETO: ["ambar", "Batida faltando"], DESCANSO: ["", "Descanso"], SEM_ESCALA: ["", "Sem escala"],
+  COMPENSADO: ["ok", "Compensado"], FUTURO: ["", "—"], EM_ANDAMENTO: ["", "Hoje"],
+  FORA_DO_CONTRATO: ["", "—"] };
+const STATUS_PEDIDO = { AGUARDANDO_SUPERVISOR: ["ambar", "Esperando o encarregado"],
+  AGUARDANDO_DP: ["ambar", "Esperando o DP"], APROVADA: ["ok", "Aprovado"],
+  NEGADA: ["falta", "Negado"], CANCELADA: ["", "Cancelado"] };
+
+function aviso(texto, tipo = "info") {
+  $("mensagem").innerHTML = texto ? `<div class="aviso ${tipo}">${esc(texto)}</div>` : "";
+  if (texto) window.scrollTo({top: 0, behavior: "smooth"});
+  if (tipo === "ok") setTimeout(() => { if ($("mensagem").textContent === texto) aviso(""); }, 6000);
+}
+
+// --- o aparelho ------------------------------------------------------------
+function aparelho() {
+  let uuid = localStorage.getItem("ponto_device_uuid");
+  if (!uuid) {
+    uuid = (crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2) + "xxxxxxxxxxxxxxxx")).replace(/[^A-Za-z0-9_-]/g, "");
+    localStorage.setItem("ponto_device_uuid", uuid);
+  }
+  return {uuid, token: localStorage.getItem("ponto_device_token") || ""};
+}
+function cabecalhos(json = true) {
+  const a = aparelho();
+  const h = {"X-Device-UUID": a.uuid};
+  if (a.token) h["X-Device-Token"] = a.token;
+  if (json) h["Content-Type"] = "application/json";
+  return h;
+}
+async function chamar(url, corpo, metodo) {
+  let r;
+  try {
+    r = await fetch(url, {method: metodo || (corpo ? "POST" : "GET"), headers: cabecalhos(!!corpo),
+                          body: corpo ? JSON.stringify(corpo) : undefined, credentials: "same-origin"});
+  } catch (e) { throw new Error("Sem internet agora. Tente de novo em instantes."); }
+  let d = {};
+  try { d = await r.json(); } catch (e) { d = {ok: false, erro: "Resposta inesperada do servidor."}; }
+  if (!d.ok) { const err = new Error(d.erro || "Não deu certo."); err.status = r.status; throw err; }
+  return d;
+}
+async function garantirRegistro(descricao) {
+  const a = aparelho();
+  if (a.token) return;
+  const d = await chamar("/ponto/api/dispositivo/registrar", {device_uuid: a.uuid, descricao});
+  if (d.token) localStorage.setItem("ponto_device_token", d.token);
+}
+
+// --- telas -----------------------------------------------------------------
+const TELAS = ["carregando", "entrar", "primeiro", "tablet", "inicio", "mes", "pedidos"];
+function mostrar(tela) {
+  if (tela !== "tablet" && typeof pararTablet === "function") pararTablet();
+  TELAS.forEach(t => $("tela-" + t).classList.toggle("oculto", t !== tela));
+  const logado = ["inicio", "mes", "pedidos"].includes(tela);
+  $("abas").classList.toggle("oculto", !logado);
+  $("btn-sair").classList.toggle("oculto", !logado);
+  document.querySelectorAll("nav.abas button").forEach(b => b.classList.toggle("ativa", b.dataset.tela === tela));
+  if (tela === "mes") carregarMes();
+  if (tela === "pedidos") { montarCamposPedido(); carregarPedidos(); }
+  if (tela === "inicio") carregarInicio();
+}
+document.querySelectorAll("nav.abas button").forEach(b => b.addEventListener("click", () => mostrar(b.dataset.tela)));
+
+let EU = null, APARELHO = null, OBRAS = [], LOCAL = null;
+
+async function estadoDoAparelho() {
+  try { APARELHO = (await chamar("/ponto/app/api/aparelho")).aparelho; } catch (e) { APARELHO = null; }
+  return APARELHO;
+}
+
+async function iniciar() {
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/ponto/app/sw.js", {scope: "/ponto/app"}).catch(() => {});
+  await estadoDoAparelho();
+  // O código que a gestão confere antes de aprovar este aparelho (Validações ›
+  // Aparelho, coluna "código"): é o fim do identificador dele.
+  const cod = aparelho().uuid.replace(/[^A-Za-z0-9]/g, "").slice(-6).toUpperCase();
+  $("codigo-aparelho").textContent = APARELHO && APARELHO.status === "APROVADO" ? "" :
+    `Código deste aparelho: ${cod}. Se ele for o aparelho da obra, passe este código a quem aprova.`;
+  // O aparelho da obra abre direto na batida, câmera ligada, sem toque nenhum —
+  // mesmo que alguém tenha entrado com CPF e PIN nele antes: a sessão é fechada.
+  const compartilhado = APARELHO && APARELHO.status === "APROVADO" && APARELHO.perfil !== "INDIVIDUAL";
+  $("cartao-tablet").classList.toggle("oculto", !compartilhado);
+  if (compartilhado) {
+    chamar("/ponto/app/api/sair", {}).catch(() => {});
+    EU = null;
+    return abrirTablet();
+  }
+  try {
+    EU = await chamar("/ponto/app/api/eu");
+    mostrar("inicio");
+  } catch (e) {
+    EU = null;
+    mostrar("entrar");
+  }
+}
+
+// --- entrar / PIN ----------------------------------------------------------
+$("btn-entrar").addEventListener("click", async () => {
+  try {
+    await chamar("/ponto/app/api/entrar", {cpf: soDigitos($("e-cpf").value), pin: soDigitos($("e-pin").value)});
+    $("e-pin").value = ""; aviso("");
+    EU = await chamar("/ponto/app/api/eu");
+    mostrar("inicio");
+  } catch (e) { aviso(e.message, "erro"); }
+});
+$("btn-ir-primeiro").addEventListener("click", () => { $("p-cpf").value = $("e-cpf").value; mostrar("primeiro"); });
+$("btn-voltar-entrar").addEventListener("click", () => mostrar("entrar"));
+$("btn-codigo").addEventListener("click", async () => {
+  try {
+    const d = await chamar("/ponto/app/api/codigo", {cpf: soDigitos($("p-cpf").value)});
+    aviso(d.mensagem, "info");
+    $("p-passo2").classList.remove("oculto");
+    $("p-codigo").focus();
+  } catch (e) { aviso(e.message, "erro"); }
+});
+$("btn-criar-pin").addEventListener("click", async () => {
+  if ($("p-pin").value !== $("p-pin2").value) return aviso("Os dois PINs não são iguais.", "erro");
+  try {
+    await chamar("/ponto/app/api/pin", {cpf: soDigitos($("p-cpf").value), codigo: soDigitos($("p-codigo").value),
+                                        pin: soDigitos($("p-pin").value)});
+    aviso("PIN criado. Pronto!", "ok");
+    EU = await chamar("/ponto/app/api/eu");
+    mostrar("inicio");
+  } catch (e) { aviso(e.message, "erro"); }
+});
+$("btn-sair").addEventListener("click", async () => {
+  try { await chamar("/ponto/app/api/sair", {}); } catch (e) {}
+  EU = null; mostrar("entrar");
+});
+
+// --- localização e obra mais perto --------------------------------------------
+function localizacao() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({latitude: p.coords.latitude, longitude: p.coords.longitude, precisao: p.coords.accuracy}),
+      () => resolve(null), {enableHighAccuracy: true, timeout: 15000, maximumAge: 60000});
+  });
+}
+function distancia(a, b) {
+  const R = 6371008.8, r = x => x * Math.PI / 180;
+  const dLat = r(b.latitude - a.latitude), dLon = r(b.longitude - a.longitude);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.latitude)) * Math.cos(r(b.latitude)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function preencherObras(select, obras, principal) {
+  let escolhida = principal;
+  if (LOCAL) {
+    const comCoord = obras.filter(o => o.latitude !== null && o.longitude !== null)
+      .map(o => ({o, d: distancia(LOCAL, o)})).sort((x, y) => x.d - y.d);
+    if (comCoord.length && comCoord[0].d < 5000) escolhida = comCoord[0].o.codigo;
+  }
+  select.innerHTML = obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === escolhida ? "selected" : ""}>${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("");
+}
+
+// Onde a pessoa está, em relação às obras dela. É só AVISO: quem decide a obra
+// e se a batida entra é o servidor, pela cerca (fora da área da obra, não entra).
+// A LISTA DE OBRAS SÓ APARECE QUANDO A OBRA NÃO FOI DETECTADA (pedido do dono,
+// 04/10/2026): achou a cerca, a obra é aquela e pronto; não achou, a pessoa escolhe.
+function mostrarLocal(l) {
+  const caixa = $("i-local"); if (!caixa) return;
+  const escolha = mostrar => $("i-escolha").classList.toggle("oculto", !mostrar);
+  if (!l) {
+    caixa.className = "aviso erro";
+    caixa.textContent = "📍 Localização desligada. Ligue a localização do celular: fora da área da obra o ponto não é registrado.";
+    escolha(true);
+    return;
+  }
+  const medidas = (OBRAS || []).filter(o => o.latitude !== null && o.longitude !== null)
+    .map(o => ({o, d: distancia(l, o)})).sort((x, y) => x.d - y.d);
+  const dentro = medidas.find(m => m.d <= m.o.raio_metros);
+  const folga = Math.min(l.precisao || 0, 150);
+  if (dentro) {
+    caixa.className = "aviso ok"; caixa.textContent = `📍 Você está na obra ${dentro.o.codigo} — ${dentro.o.nome}.`;
+    $("i-obra").value = dentro.o.codigo; escolha(false);
+  } else if (medidas.length && medidas[0].d - folga <= medidas[0].o.raio_metros) {
+    caixa.className = "aviso ambar"; caixa.textContent = `📍 Você está na borda da obra ${medidas[0].o.codigo}. Pode bater; a batida vai para conferência. Se puder, chegue mais perto.`;
+    $("i-obra").value = medidas[0].o.codigo; escolha(false);
+  } else if (medidas.length) {
+    const d = medidas[0].d, txt = d >= 1000 ? `${(d / 1000).toFixed(1).replace(".", ",")} km` : `${Math.round(d)} m`;
+    caixa.className = "aviso erro"; caixa.textContent = `📍 Você está a ${txt} da obra ${medidas[0].o.codigo}. Fora da área da obra o ponto não é registrado.`;
+    escolha(true);
+  } else {
+    caixa.className = "aviso info"; caixa.textContent = "📍 Nenhuma obra sua tem localização cadastrada: escolha a obra abaixo.";
+    escolha(true);
+  }
+}
+
+// --- foto ------------------------------------------------------------------
+function tirarFoto() {
+  return new Promise(resolve => {
+    const cam = $("camera");
+    cam.value = "";
+    cam.onchange = () => {
+      const f = cam.files && cam.files[0];
+      if (!f) return resolve(null);
+      const img = new Image();
+      const url = URL.createObjectURL(f);
+      img.onload = () => {
+        const lado = 1024, k = Math.min(1, lado / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL("image/jpeg", 0.8));
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    };
+    cam.click();
+  });
+}
+
+// --- bater -------------------------------------------------------------------
+// A explicação de quem bate com a obra escolhida na lista (não detectada).
+function pedirJustificativa() {
+  return new Promise(resolve => {
+    $("dlg-corpo").innerHTML = `
+      <h2 style="margin:0 0 6px">Batida fora do normal</h2>
+      <div class="aviso ambar">A obra não foi encontrada pela localização. A batida vai para a conferência do encarregado.</div>
+      <label for="j-texto">Por que a localização não achou a obra?</label>
+      <textarea id="j-texto" placeholder="Ex.: o GPS do celular não funciona; estou no almoxarifado da obra"></textarea>
+      <button class="btn" type="button" id="j-ok">Bater e mandar para conferência</button>
+      <button class="btn sec" type="button" id="j-cancelar">Não bater agora</button>`;
+    let respondido = false;
+    const fim = v => { respondido = true; $("dlg").close(); resolve(v); };
+    $("j-ok").onclick = () => {
+      const t = $("j-texto").value.trim();
+      if (t.length < 10) { $("j-texto").focus(); return aviso("Explique em poucas palavras (ao menos 10 letras).", "erro"); }
+      fim(t);
+    };
+    $("j-cancelar").onclick = () => fim(null);
+    $("dlg").addEventListener("close", () => { if (!respondido) resolve(null); }, {once: true});
+    $("dlg").showModal();
+  });
+}
+
+async function bater({obra, comFoto}) {
+  const botao = $("btn-bater");
+  botao.disabled = true;
+  try {
+    let justificativa = null;
+    if (!$("i-escolha").classList.contains("oculto")) {
+      justificativa = await pedirJustificativa();
+      if (!justificativa) return;
+    }
+    const foto = comFoto ? await tirarFoto() : null;
+    if (comFoto && !foto) { aviso("A foto não foi tirada. Tente de novo ou use “bater sem foto”.", "ambar"); return; }
+    aviso("Registrando…", "info");
+    const local = await localizacao();
+    if (local) { LOCAL = local; mostrarLocal(local); obra = $("i-obra").value; } else mostrarLocal(null);
+    const corpo = {obra, timestamp_dispositivo: new Date().toISOString(), foto_base64: foto || undefined,
+                   justificativa: justificativa || undefined};
+    if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; corpo.precisao = local.precisao; }
+    const d = await chamar("/ponto/app/api/bater", corpo);
+    aviso("");
+    mostrarComprovante(d.comprovante, d.repetida, d.status, d.motivo_analise);
+    carregarInicio();
+  } catch (e) {
+    aviso(e.status === 403 ? `Batida recusada: ${e.message}.` : e.message, "erro");
+  } finally { botao.disabled = false; }
+}
+$("btn-bater").addEventListener("click", () => bater({obra: $("i-obra").value, comFoto: true}));
+$("btn-sem-foto").addEventListener("click", () => bater({obra: $("i-obra").value, comFoto: false}));
+$("btn-ir-tablet").addEventListener("click", () => abrirTablet());
+
+function mostrarComprovante(c, repetida, status, motivo) {
+  const analise = status === "EM_ANALISE"
+    ? `<div class="aviso ambar">Batida registrada e enviada para conferência: ${esc(motivo || "")}.</div>` : "";
+  $("dlg-corpo").innerHTML = `
+    <h2 style="margin:0 0 6px">${repetida ? "Esta batida já tinha sido registrada" : "Ponto registrado ✔"}</h2>
+    ${analise}
+    <dl class="comprovante">
+      <dt>Data e hora</dt><dd>${esc(c.data)} às ${esc(c.hora)}</dd>
+      <dt>Empregado</dt><dd>${esc(c.empregado)} · CPF ${esc(c.cpf)}</dd>
+      <dt>Local</dt><dd>${esc(c.local)}</dd>
+      <dt>Empregador</dt><dd>${esc(c.empregador)}${c.cnpj ? " · CNPJ " + esc(c.cnpj) : ""}</dd>
+      <dt>NSR (número do registro)</dt><dd>${esc(c.nsr)}</dd>
+      <dt>Código de verificação</dt><dd>${esc(c.codigo_de_verificacao)}</dd>
+    </dl>
+    <p class="pequeno">Comprovante de registro de ponto (${esc(c.registro)}). Fica guardado no sistema; você pode abrir de novo em “Hoje”.</p>`;
+  $("dlg").showModal();
+}
+$("dlg-fechar").addEventListener("click", () => $("dlg").close());
+
+// --- início ------------------------------------------------------------------
+async function carregarInicio() {
+  try {
+    EU = await chamar("/ponto/app/api/eu");
+    await estadoDoAparelho();
+  } catch (e) { if (e.status === 401) return mostrar("entrar"); return aviso(e.message, "erro"); }
+  $("titulo").textContent = "Meu ponto";
+  $("ola").textContent = `Olá, ${EU.primeiro_nome}`;
+  OBRAS = EU.obras;
+  preencherObras($("i-obra"), OBRAS, EU.obra_principal);
+  // A forma de bater (decisão do dono, 05/10/2026): o padrão é só o aparelho da
+  // obra. Quem não é exceção não vê o botão de bater (nem o pedido de
+  // localização), e o celular dele não entra na fila de aprovação.
+  const soNaObra = EU.bate_no_celular === false;
+  $("cartao-bater").classList.toggle("oculto", soNaObra);
+  $("cartao-so-na-obra").classList.toggle("oculto", !soNaObra);
+  $("ola-obra").textContent = `Olá, ${EU.primeiro_nome}`;
+  if (!soNaObra) localizacao().then(l => { LOCAL = l; preencherObras($("i-obra"), OBRAS, $("i-obra").value); mostrarLocal(l); });
+
+  // o aparelho
+  let avisoAparelho = "", podeBater = !soNaObra;
+  if (!soNaObra && !APARELHO) {
+    try { await garantirRegistro(`Celular de ${EU.nome}`); await estadoDoAparelho(); } catch (e) {}
+  }
+  if (APARELHO && APARELHO.status === "PENDENTE") chamar("/ponto/app/api/aparelho/identificar", {}).catch(() => {});
+  if (soNaObra) {
+    // nada a dizer do aparelho: por aqui ela não bate
+  } else if (!APARELHO) {
+    avisoAparelho = `<div class="aviso erro">Não consegui registrar este celular. Feche e abra de novo.</div>`; podeBater = false;
+  } else if (APARELHO.status === "PENDENTE") {
+    avisoAparelho = `<div class="aviso ambar">Este celular está esperando aprovação do DP ou do encarregado. Enquanto isso você vê o seu ponto, mas ainda não bate por aqui.</div>`;
+    podeBater = false;
+  } else if (APARELHO.status === "BLOQUEADO") {
+    avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto. Fale com o DP.</div>`; podeBater = false;
+  }
+  $("aviso-aparelho").innerHTML = avisoAparelho;
+  $("btn-bater").disabled = !podeBater; $("btn-sem-foto").disabled = !podeBater;
+
+  // hoje
+  const d = EU.hoje;
+  const chips = d.batidas.map(b => `<button type="button" class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}" data-id="${b.id}">${esc(b.hora)}</button>`).join("");
+  const previsto = d.previsto ? `Previsto hoje: ${hm(d.previsto)}${d.escala ? " · " + esc(d.escala) : ""}` :
+    (d.feriado ? `Feriado: ${esc(d.feriado)}` : (d.escala ? "Hoje é dia de descanso" : "Sem escala cadastrada"));
+  $("hoje").innerHTML = `
+    ${chips ? `<div class="chips">${chips}</div><p class="pequeno">Toque num horário para ver o comprovante.</p>` : `<p>Nenhuma batida hoje.</p>`}
+    <p class="pequeno">${previsto}</p>
+    ${d.ocorrencia ? `<div class="aviso ok">${esc(d.ocorrencia.rotulo)} aprovado para hoje.</div>` : ""}
+    ${EU.pedidos_pendentes ? `<p class="pequeno">Você tem ${EU.pedidos_pendentes} pedido(s) esperando resposta.</p>` : ""}`;
+  $("hoje").querySelectorAll("[data-id]").forEach(b => b.addEventListener("click", async () => {
+    try { const r = await chamar(`/ponto/app/api/comprovante/${b.dataset.id}`); mostrarComprovante(r.comprovante, false, "", ""); }
+    catch (e) { aviso(e.message, "erro"); }
+  }));
+  $("cartao-banco").classList.toggle("oculto", !EU.banco);
+  if (EU.banco) $("banco").innerHTML = `<div class="numeros"><div class="numero"><b>${hm(EU.banco.saldo)}</b><span>saldo até ontem</span></div></div><p class="pequeno">${esc(EU.banco.regime)}</p>`;
+}
+
+// --- meu mês -----------------------------------------------------------------
+let MES = new Date().toISOString().slice(0, 7);
+function mudarMes(n) { const [a, m] = MES.split("-").map(Number); const d = new Date(a, m - 1 + n, 1);
+  MES = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; carregarMes(); }
+$("mes-ant").addEventListener("click", () => mudarMes(-1));
+$("mes-prox").addEventListener("click", () => mudarMes(1));
+async function carregarMes() {
+  try {
+    const d = await chamar(`/ponto/app/api/mes?competencia=${MES}`);
+    const [a, m] = MES.split("-");
+    $("mes-titulo").textContent = `Meu mês — ${m}/${a}` + (d.competencia_fechada ? " (fechado)" : "");
+    const r = d.resumo;
+    $("mes-resumo").innerHTML = `<div class="numeros">
+      <div class="numero"><b>${hm(r.trabalhado)}</b><span>trabalhado</span></div>
+      <div class="numero"><b>${hm(r.extra)}</b><span>extra</span></div>
+      <div class="numero"><b>${hm(r.debito)}</b><span>a menos</span></div>
+      <div class="numero"><b>${r.faltas}</b><span>faltas</span></div>
+      <div class="numero"><b>${r.abonados}</b><span>abonados</span></div>
+      <div class="numero"><b>${r.incompletos}</b><span>batida faltando</span></div></div>
+      ${r.sem_escala ? `<p class="pequeno">Sua escala ainda não foi cadastrada; os dias aparecem sem julgamento de falta.</p>` : ""}`;
+    $("mes-dias").innerHTML = d.dias.filter(x => x.situacao !== "FUTURO").reverse().map(x => {
+      const [cls, rot] = SITUACAO[x.situacao] || ["", x.situacao];
+      const alertas = x.alertas.filter(a => a !== "FALTA").map(a => ROTULO_ALERTA[a] || a).join(", ");
+      return `<div class="dia"><div class="data">${dataBR(x.data).slice(0, 5)}<small>${esc(x.dia_semana)}</small></div>
+        <div class="corpo">
+          <div class="chips">${x.batidas.map(b => `<span class="chip ${b.status === "EM_ANALISE" ? "analise" : b.status === "AJUSTADA" ? "ajustada" : ""}">${esc(b.hora)}</span>`).join("")}</div>
+          <div style="margin-top:6px"><span class="selo ${cls}">${esc(x.ocorrencia ? x.ocorrencia.rotulo : rot)}</span>
+            ${x.trabalhado ? ` trabalhou ${hm(x.trabalhado)}` : ""}${x.extra ? ` · extra ${hm(x.extra)}` : ""}${x.debito && !x.falta ? ` · a menos ${hm(x.debito)}` : ""}
+            ${x.feriado ? ` · ${esc(x.feriado)}` : ""}</div>
+          ${alertas ? `<div class="pequeno">${esc(alertas)}</div>` : ""}
+          ${x.pendentes.length ? `<div class="pequeno">Pedido esperando: ${esc(x.pendentes.map(p => p.rotulo).join(", "))}</div>` : ""}
+          ${podeCorrigir(x, d) ? `<button class="link" type="button" data-corrigir="${x.data}">Corrigir este dia — faltou ${esc(x.faltando.map(f => f.rotulo.toLowerCase()).join(", ")) || "batida"}</button>` : ""}
+        </div></div>`;
+    }).join("") || "<p>Nada neste mês ainda.</p>";
+    MES_DADOS = d;
+    $("mes-dias").querySelectorAll("[data-corrigir]").forEach(b =>
+      b.addEventListener("click", () => abrirCorrecao(d.dias.find(x => x.data === b.dataset.corrigir))));
+  } catch (e) { if (e.status === 401) return mostrar("entrar"); aviso(e.message, "erro"); }
+}
+
+// --- corrigir um dia --------------------------------------------------------
+// Pedido do dono, 04/10/2026: no Pipefy "o pessoal errava muito" — pedia dia que
+// já tinha ponto, período com batida no meio, dia já justificado. Aqui não há
+// formulário em branco: o dia mostra o que tem e o que FALTA, e só o que falta
+// pode ser pedido. O servidor confere tudo de novo (core/ajustes.py).
+let MES_DADOS = null;
+const MOTIVOS_AJUSTE = [["CELULAR", "Celular quebrado, sem bateria ou sem crédito"],
+  ["INTERNET", "Sem internet ou sem sinal na obra"], ["APARELHO", "Tablet ou aparelho da obra com problema"],
+  ["ESQUECI", "Esqueci de bater"], ["FORA", "Estava em serviço fora da obra"], ["OUTRO", "Outro motivo"]];
+function podeCorrigir(x, mes) {
+  if (mes.competencia_fechada || x.ocorrencia || x.situacao === "FUTURO") return false;
+  if (x.faltando && x.faltando.length) return true;
+  // sem escala cadastrada não dá para saber o que falta: deixa pedir no dia de falta ou incompleto
+  return !x.previstas.length && ["FALTA", "INCOMPLETO", "SEM_ESCALA"].includes(x.situacao) && x.batidas.length < 4;
+}
+function abrirCorrecao(x) {
+  if (!x) return;
+  const obras = (EU && EU.obras) || [];
+  const obraDoDia = (x.batidas[0] && x.batidas[0].obra) || EU.obra_principal;
+  const linhas = x.faltando.length
+    ? x.faltando.map((f, i) => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
+        <input type="checkbox" data-i="${i}" checked style="width:auto">
+        <span style="flex:1">${esc(f.rotulo)}</span>
+        <input type="time" data-hora="${i}" value="${esc(f.sugestao)}" style="width:130px"></label>`).join("")
+    : [0, 1].map(i => `<label style="display:flex;gap:10px;align-items:center;color:var(--tinta)">
+        <input type="checkbox" data-i="${i}" ${i === 0 ? "checked" : ""} style="width:auto">
+        <span style="flex:1">Batida ${i + 1}</span><input type="time" data-hora="${i}" style="width:130px"></label>`).join("");
+  $("dlg-corpo").innerHTML = `
+    <h2 style="margin:0 0 6px">Corrigir ${dataBR(x.data)}</h2>
+    <p class="pequeno">Já batido: ${x.batidas.length ? x.batidas.map(b => esc(b.hora)).join(", ") : "nada"}.
+      ${x.previstas.length ? `Previsto: ${x.previstas.map(p => esc(p.hora)).join(", ")}.` : "Sem escala cadastrada."}</p>
+    <p style="margin:10px 0 4px"><b>O que faltou?</b> Confira o horário de cada uma.</p>
+    <div id="c-linhas">${linhas}</div>
+    <label for="c-motivo">Por quê?</label>
+    <select id="c-motivo">${MOTIVOS_AJUSTE.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select>
+    <label for="c-obra">Obra</label>
+    <select id="c-obra">${obras.map(o => `<option value="${esc(o.codigo)}" ${o.codigo === obraDoDia ? "selected" : ""}>${esc(o.codigo)} — ${esc(o.nome)}</option>`).join("")}</select>
+    <label for="c-desc">Conte em poucas palavras</label>
+    <textarea id="c-desc" placeholder="Ex.: o celular descarregou depois do almoço"></textarea>
+    <p class="pequeno">O encarregado confere e aprova. Aprovado, a batida entra no seu ponto marcada como ajustada.</p>
+    <button class="btn" type="button" id="c-enviar">Enviar o pedido</button>`;
+  $("dlg").showModal();
+  $("c-enviar").onclick = async () => {
+    const marcados = [...$("c-linhas").querySelectorAll("[data-i]")].filter(c => c.checked)
+      .map(c => $("c-linhas").querySelector(`[data-hora="${c.dataset.i}"]`).value).filter(Boolean);
+    if (!marcados.length) return aviso("Marque o que faltou e confira o horário.", "erro");
+    // turno da noite: horário antes da primeira batida prevista é da madrugada seguinte
+    const primeira = x.previstas.length ? x.previstas[0].hora : null;
+    const atravessa = x.previstas.some((p, i) => i && p.hora < x.previstas[i - 1].hora);
+    const proximo = (() => { const d = new Date(x.data + "T12:00:00"); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+    const horarios = marcados.map(h => `${atravessa && primeira && h < primeira ? proximo : x.data}T${h}:00`);
+    $("c-enviar").disabled = true;
+    try {
+      const r = await chamar("/ponto/app/api/pedidos/ajuste-do-dia", {horarios, motivo: $("c-motivo").value,
+        descricao: $("c-desc").value, obra: $("c-obra").value});
+      $("dlg").close();
+      aviso(`Pedido enviado: ${r.quantidade} batida(s) para o encarregado conferir. Você acompanha em Pedidos.`, "ok");
+      carregarMes();
+    } catch (e) {
+      $("c-enviar").disabled = false;
+      aviso(e.message, "erro"); $("dlg").close();
+    }
+  };
+}
+
+// --- pedidos -------------------------------------------------------------------
+const hojeISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+function montarCamposPedido() {
+  const t = $("ped-tipo").value;
+  const obras = (EU && EU.obras) || [];
+  const campos = {
+    ATESTADO: `<label>Primeiro dia de afastamento</label><input type="date" id="pc-inicio" value="${hojeISO()}">
+      <label>Quantos dias o médico deu?</label><input type="number" id="pc-dias" min="1" max="120" value="1">
+      <label>Foto ou PDF do atestado</label><button class="btn sec" type="button" id="pc-doc">Escolher foto ou arquivo</button>
+      <p class="pequeno" id="pc-doc-nome">Nenhum arquivo escolhido.</p>
+      <p class="pequeno">Só o DP vê o seu atestado.</p>`,
+    AJUSTE_BATIDA: `<label>Que dia?</label><input type="date" id="pc-inicio" value="${hojeISO()}">
+      <p class="pequeno">O dia abre com o que já foi batido e o que falta — você marca só o que esqueceu.</p>
+      <button class="btn sec" type="button" id="pc-abrir-dia">Abrir o dia</button>`,
+    COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="pc-trabalhado">
+      <label>Dia da folga no lugar</label><input type="date" id="pc-inicio">
+      <label>Motivo</label><textarea id="pc-descricao"></textarea>`,
+    LICENCA: `<label>Primeiro dia</label><input type="date" id="pc-inicio" value="${hojeISO()}">
+      <label>Último dia</label><input type="date" id="pc-fim" value="${hojeISO()}">
+      <label>Tipo de licença e observação</label><textarea id="pc-descricao" placeholder="Ex.: casamento; luto (pai)"></textarea>
+      <label>Documento (opcional)</label><button class="btn sec" type="button" id="pc-doc">Escolher foto ou arquivo</button>
+      <p class="pequeno" id="pc-doc-nome">Nenhum arquivo escolhido.</p>`,
+    FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="pc-inicio">
+      <label>Último dia (se mais de um)</label><input type="date" id="pc-fim">
+      <label>Observação</label><textarea id="pc-descricao"></textarea>`,
+  };
+  $("ped-campos").innerHTML = campos[t];
+  $("btn-pedir").classList.toggle("oculto", t === "AJUSTE_BATIDA");
+  if (t === "AJUSTE_BATIDA") $("pc-abrir-dia").addEventListener("click", async () => {
+    const dia = $("pc-inicio").value; if (!dia) return;
+    try {
+      const m = await chamar(`/ponto/app/api/mes?competencia=${dia.slice(0, 7)}`);
+      const x = m.dias.find(z => z.data === dia);
+      if (!x || x.situacao === "FUTURO") return aviso("Esse dia ainda não chegou.", "erro");
+      if (!podeCorrigir(x, m)) return aviso(m.competencia_fechada ? "Esse mês já foi fechado para a folha; fale com o DP."
+        : x.ocorrencia ? `Esse dia já está justificado (${x.ocorrencia.rotulo}).`
+        : "Esse dia não tem batida faltando. Se alguma está errada, fale com o encarregado.", "info");
+      abrirCorrecao(x);
+    } catch (e) { aviso(e.message, "erro"); }
+  });
+  DOC = null;
+  const botaoDoc = $("pc-doc");
+  if (botaoDoc) botaoDoc.addEventListener("click", () => {
+    const f = $("arquivo-doc"); f.value = "";
+    f.onchange = () => {
+      const arq = f.files && f.files[0]; if (!arq) return;
+      if (arq.size > 10 * 1024 * 1024) return aviso("O arquivo passa de 10 MB.", "erro");
+      const leitor = new FileReader();
+      leitor.onload = () => { DOC = {base64: leitor.result, nome: arq.name}; $("pc-doc-nome").textContent = arq.name; };
+      leitor.readAsDataURL(arq);
+    };
+    f.click();
+  });
+}
+let DOC = null;
+$("ped-tipo").addEventListener("change", montarCamposPedido);
+$("btn-pedir").addEventListener("click", async () => {
+  const t = $("ped-tipo").value, v = id => ($(id) ? $(id).value : "");
+  const corpo = {tipo: t, descricao: v("pc-descricao")};
+  if (t === "ATESTADO") {
+    const inicio = v("pc-inicio"), dias = Math.max(1, parseInt(v("pc-dias") || "1", 10));
+    const fim = new Date(inicio + "T12:00:00"); fim.setDate(fim.getDate() + dias - 1);
+    Object.assign(corpo, {data_inicio: inicio, data_fim: fim.toISOString().slice(0, 10)});
+    if (!DOC) return aviso("Escolha a foto ou o PDF do atestado.", "erro");
+  } else if (t === "AJUSTE_BATIDA") {
+    if (!v("pc-hora")) return aviso("Diga o horário da batida.", "erro");
+    Object.assign(corpo, {data_inicio: v("pc-inicio"), horario: `${v("pc-inicio")}T${v("pc-hora")}:00`, obra: v("pc-obra")});
+  } else if (t === "COMPENSACAO") {
+    Object.assign(corpo, {data_inicio: v("pc-inicio"), dia_trabalhado: v("pc-trabalhado")});
+  } else {
+    Object.assign(corpo, {data_inicio: v("pc-inicio"), data_fim: v("pc-fim") || v("pc-inicio")});
+  }
+  if (DOC) { corpo.documento_base64 = DOC.base64; corpo.documento_nome = DOC.nome; }
+  $("btn-pedir").disabled = true;
+  try {
+    await chamar("/ponto/app/api/pedidos", corpo);
+    aviso("Pedido enviado. Você acompanha a resposta aqui embaixo.", "ok");
+    montarCamposPedido(); carregarPedidos();
+  } catch (e) { aviso(e.message, "erro"); }
+  finally { $("btn-pedir").disabled = false; }
+});
+async function carregarPedidos() {
+  try {
+    const d = await chamar("/ponto/app/api/pedidos");
+    $("pedidos").innerHTML = d.pedidos.map(p => {
+      const [cls, rot] = STATUS_PEDIDO[p.status] || ["", p.status];
+      const quando = p.tipo === "AJUSTE_BATIDA" ? `${dataBR(p.data_inicio)} às ${esc((p.horario || "").slice(11, 16))}`
+        : p.tipo === "COMPENSACAO" ? `trabalha ${dataBR(p.dia_trabalhado)}, folga ${dataBR(p.data_inicio)}`
+        : (p.data_inicio === p.data_fim ? dataBR(p.data_inicio) : `${dataBR(p.data_inicio)} a ${dataBR(p.data_fim)}`);
+      const podeCancelar = (p.status === "AGUARDANDO_SUPERVISOR" || p.status === "AGUARDANDO_DP") && !p.supervisor && !p.dp;
+      return `<div class="dia"><div class="corpo"><b>${esc(p.rotulo)}</b> — ${quando}<br>
+        <span class="selo ${cls}">${esc(rot)}</span>
+        ${p.motivo_negativa ? `<div class="pequeno">Motivo: ${esc(p.motivo_negativa)}</div>` : ""}
+        ${podeCancelar ? `<button class="link" type="button" data-cancelar="${p.id}">Cancelar pedido</button>` : ""}
+        </div></div>`;
+    }).join("") || "<p>Nenhum pedido ainda.</p>";
+    $("pedidos").querySelectorAll("[data-cancelar]").forEach(b => b.addEventListener("click", async () => {
+      try { await chamar(`/ponto/app/api/pedidos/${b.dataset.cancelar}/cancelar`, {}); carregarPedidos(); }
+      catch (e) { aviso(e.message, "erro"); }
+    }));
+  } catch (e) { if (e.status === 401) return mostrar("entrar"); aviso(e.message, "erro"); }
+}
+
+// Máscara de CPF nos campos.
+["e-cpf", "p-cpf"].forEach(id => $(id).addEventListener("input", ev => {
+  const d = soDigitos(ev.target.value).slice(0, 11);
+  ev.target.value = d.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}));
+
+// =============================================================================
+// O TABLET DA OBRA
+//
+// A câmera fica SEMPRE ligada. Se ela vê um QR Code do ponto (BWSP…), identifica
+// a pessoa; se a pessoa digita o CPF no teclado, identifica pelo CPF — sem
+// trocar de modo. Identificada, a tela mostra nome e função, conta 2 segundos
+// e tira a foto do próprio vídeo (sem abrir o aplicativo de câmera: é isso que
+// deixa rápido), manda a batida e volta sozinha para a próxima pessoa.
+//
+// O leitor de QR: o embutido do navegador (BarcodeDetector, no Android) e, onde
+// ele não existe (iPhone), o jsQR, uma biblioteca aberta servida pelo próprio
+// sistema.
+// =============================================================================
+const TB = {fluxo: null, detector: null, jsqr: false, ocupado: false, cpf: "", esqueci: false,
+            ultimoQr: "", ultimoQrEm: 0, timer: null, relogio: null, pulso: null, trava: null,
+            local: null, localEm: 0, canvas: document.createElement("canvas")};
+const TABLET_IGNORA_MESMO_QR_MS = 15000;
+
+function cpfValido(c) {
+  c = soDigitos(c);
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false;
+  const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += +c[i] * (n + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; };
+  return dv(9) === +c[9] && dv(10) === +c[10];
+}
+function cpfComMascara(d) {
+  return d.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+async function abrirTablet() {
+  mostrar("tablet");
+  $("titulo").textContent = "BWS Ponto";
+  const obras = (APARELHO && APARELHO.obras) || [];
+  let guardada = null; try { guardada = localStorage.getItem("ponto_tablet_obra"); } catch (e) {}
+  preencherObras($("t-obra"), obras, guardada);
+  if (guardada && obras.some(o => o.codigo === guardada)) $("t-obra").value = guardada;
+  $("t-obra").onchange = () => { try { localStorage.setItem("ponto_tablet_obra", $("t-obra").value); } catch (e) {} };
+  atualizarRelogio(); TB.relogio = setInterval(atualizarRelogio, 1000);
+  // Pulso a cada 5 min: o servidor confere se o aparelho continua aprovado.
+  TB.pulso = setInterval(async () => {
+    await estadoDoAparelho();
+    if (!APARELHO || APARELHO.status !== "APROVADO") { pararTablet(); location.reload(); }
+  }, 5 * 60 * 1000);
+  manterTelaAcesa();
+  atualizarLocalTablet();
+  visor();
+  await ligarCamera();
+}
+function pararTablet() {
+  clearInterval(TB.relogio); clearInterval(TB.pulso); clearTimeout(TB.timer);
+  if (TB.fluxo) { TB.fluxo.getTracks().forEach(t => t.stop()); TB.fluxo = null; }
+  if (TB.trava) { try { TB.trava.release(); } catch (e) {} TB.trava = null; }
+}
+function atualizarRelogio() {
+  // Sempre a hora de Fortaleza, que é a hora do ponto — mesmo num tablet com o
+  // fuso configurado errado.
+  try {
+    $("t-relogio").textContent = new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit", timeZone: "America/Fortaleza"});
+  } catch (e) {
+    const d = new Date();
+    $("t-relogio").textContent = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+}
+async function manterTelaAcesa() {
+  try { if ("wakeLock" in navigator) TB.trava = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !$("tela-tablet").classList.contains("oculto")) manterTelaAcesa();
+});
+async function atualizarLocalTablet() {
+  // O tablet não sai da obra: a localização é lida de 10 em 10 minutos, e não
+  // a cada batida (o GPS levaria segundos em cada pessoa da fila).
+  if (TB.local && Date.now() - TB.localEm < 10 * 60 * 1000) return TB.local;
+  const l = await localizacao();
+  if (l) { TB.local = l; TB.localEm = Date.now(); LOCAL = l; }
+  return TB.local;
+}
+
+async function ligarCamera() {
+  $("t-legenda").textContent = "Ligando a câmera…";
+  try {
+    TB.fluxo = await navigator.mediaDevices.getUserMedia({audio: false,
+      video: {facingMode: "user", width: {ideal: 1280}, height: {ideal: 720}}});
+    $("t-video").srcObject = TB.fluxo;
+    await $("t-video").play().catch(() => {});
+  } catch (e) {
+    TB.fluxo = null;
+    $("t-legenda").textContent = "Câmera indisponível — digite o CPF. A batida sem foto vai para conferência.";
+    return;
+  }
+  if ("BarcodeDetector" in window) {
+    try { TB.detector = new BarcodeDetector({formats: ["qr_code"]}); } catch (e) { TB.detector = null; }
+  }
+  if (!TB.detector && !TB.jsqr) {
+    await new Promise(ok => { const sc = document.createElement("script"); sc.src = "/ponto/app/jsQR.js";
+      sc.onload = () => { TB.jsqr = true; ok(); }; sc.onerror = ok; document.head.appendChild(sc); });
+  }
+  $("t-legenda").textContent = "Mostre o QR Code do seu celular aqui — ou digite o CPF";
+  procurarQr();
+}
+
+async function procurarQr() {
+  clearTimeout(TB.timer);
+  if ($("tela-tablet").classList.contains("oculto") || !TB.fluxo) return;
+  if (!TB.ocupado && !TB.esqueci) {
+    const v = $("t-video");
+    if (v.readyState >= 2 && v.videoWidth) {
+      try {
+        let texto = null;
+        if (TB.detector) {
+          const achados = await TB.detector.detect(v);
+          texto = achados.length ? achados[0].rawValue : null;
+        } else if (TB.jsqr && window.jsQR) {
+          const k = Math.min(1, 640 / v.videoWidth), c = TB.canvas;
+          c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+          const ctx = c.getContext("2d", {willReadFrequently: true});
+          ctx.drawImage(v, 0, 0, c.width, c.height);
+          const img = ctx.getImageData(0, 0, c.width, c.height);
+          const r = window.jsQR(img.data, c.width, c.height, {inversionAttempts: "dontInvert"});
+          texto = r ? r.data : null;
+        }
+        // Só os QR do ponto. Qualquer outro QR que passe na frente é ignorado.
+        if (texto && texto.startsWith("BWSP") &&
+            !(texto === TB.ultimoQr && Date.now() - TB.ultimoQrEm < TABLET_IGNORA_MESMO_QR_MS)) {
+          TB.ultimoQr = texto; TB.ultimoQrEm = Date.now();
+          identificar({qr: texto});
+        }
+      } catch (e) {}
+    }
+  }
+  TB.timer = setTimeout(procurarQr, 160);
+}
+
+// --- o teclado ------------------------------------------------------------------
+function visor(mensagem) {
+  const d = TB.cpf;
+  const titulo = TB.esqueci ? "CPF para receber o QR Code no WhatsApp" : "Digite o seu CPF";
+  $("t-visor").innerHTML = `<small>${esc(mensagem || titulo)}</small>${d ? esc(cpfComMascara(d)) : "&nbsp;"}`;
+}
+$("t-teclas").addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-t]"); if (!b || TB.ocupado) return;
+  const t = b.dataset.t;
+  if (t === "apagar") TB.cpf = TB.cpf.slice(0, -1);
+  else if (t === "limpar") TB.cpf = "";
+  else if (TB.cpf.length < 11) TB.cpf += t;
+  if (TB.cpf.length === 11) {
+    if (!cpfValido(TB.cpf)) return visor("CPF inválido — confira os números");
+    const cpf = TB.cpf;
+    if (TB.esqueci) return pedirQrPeloTablet(cpf);
+    TB.cpf = ""; visor();
+    return identificar({cpf});
+  }
+  visor();
+});
+$("t-esqueci").addEventListener("click", () => {
+  TB.esqueci = !TB.esqueci; TB.cpf = "";
+  $("t-esqueci").textContent = TB.esqueci ? "Voltar para bater o ponto" : "Esqueci meu QR Code — receber no WhatsApp";
+  visor();
+});
+async function pedirQrPeloTablet(cpf) {
+  TB.ocupado = true;
+  try {
+    const d = await chamar("/ponto/app/api/tablet/esqueci-qr", {cpf});
+    cobrir("ok", `<h2>Pedido feito</h2><p>${esc(d.mensagem)}</p>`, 4000);
+  } catch (e) { cobrir("erro", `<h2>Não deu certo</h2><p>${esc(e.message)}</p>`, 4000); }
+  TB.esqueci = false; TB.cpf = "";
+  $("t-esqueci").textContent = "Esqueci meu QR Code — receber no WhatsApp";
+  visor();
+}
+
+// --- identificar, confirmar, fotografar, bater -----------------------------------
+let COBRE_VEZ = 0;
+function cobrir(tipo, html, ms) {
+  const c = $("t-cobre");
+  c.className = "kq-cobre " + (tipo || "");
+  c.innerHTML = html;
+  // Cada aviso tem a sua vez: o temporizador de um aviso velho não apaga o novo.
+  const vez = ++COBRE_VEZ;
+  if (ms) setTimeout(() => { if (vez === COBRE_VEZ) { c.className = "kq-cobre oculto"; TB.ocupado = false; } }, ms);
+}
+function descobrir() { COBRE_VEZ++; $("t-cobre").className = "kq-cobre oculto"; TB.ocupado = false; }
+
+async function identificar(quem) {
+  if (TB.ocupado) return;
+  TB.ocupado = true;
+  cobrir("", `<p>Identificando…</p>`);
+  let d;
+  try {
+    d = await chamar("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value});
+  } catch (e) {
+    return cobrir("erro", `<h2>${quem.qr ? "QR Code não aceito" : "Não identificado"}</h2><p>${esc(e.message)}</p>`, 3500);
+  }
+  // A confirmação: nome e função, e 2 segundos para olhar para a câmera.
+  let cancelado = false, n = TB.fluxo ? 2 : 0;
+  const tela = () => `<h2>${esc(d.nome)}</h2><p>${esc(d.funcao || "")}</p>
+    ${TB.fluxo ? `<p>Olhe para a câmera</p><div class="contagem">${n}</div>` : `<p>Sem câmera: a batida vai sem foto, para conferência.</p>`}
+    <button type="button" id="t-nao-sou">Não sou eu</button>`;
+  cobrir("", tela());
+  $("t-cobre").style.background = "rgba(10,27,46,.55)";
+  const ligarNaoSou = () => { const b = $("t-nao-sou"); if (b) b.onclick = () => { cancelado = true; $("t-cobre").style.background = ""; descobrir(); }; };
+  ligarNaoSou();
+  while (n > 0 && !cancelado) {
+    await new Promise(ok => setTimeout(ok, 1000));
+    n -= 1; if (!cancelado && n > 0) { cobrir("", tela()); ligarNaoSou(); }
+  }
+  $("t-cobre").style.background = "";
+  if (cancelado) return;
+  const foto = fotoDoVideo();
+  cobrir("", `<h2>${esc(d.primeiro_nome)}</h2><p>Registrando…</p>`);
+  try {
+    const local = TB.local;
+    const corpo = {bilhete: d.bilhete, obra: $("t-obra").value, timestamp_dispositivo: new Date().toISOString(),
+                   foto_base64: foto || undefined};
+    if (local) { corpo.latitude = local.latitude; corpo.longitude = local.longitude; corpo.precisao = local.precisao; }
+    const r = await chamar("/ponto/app/api/bater", corpo);
+    const c = r.comprovante;
+    if (r.status === "EM_ANALISE") {
+      cobrir("ambar", `<h2>Ponto registrado — ${esc(c.hora.slice(0, 5))}</h2><p>${esc(d.primeiro_nome)}, a batida vai para conferência: ${esc(r.motivo_analise || "")}.</p><p>NSR ${esc(c.nsr)}</p>`, 4500);
+    } else {
+      cobrir("ok", `<h2>${r.repetida ? "Já registrado" : "Ponto registrado"} — ${esc(c.hora.slice(0, 5))}</h2><p>${esc(d.primeiro_nome)} · NSR ${esc(c.nsr)} · código ${esc(c.codigo_de_verificacao)}</p>`, 3000);
+    }
+  } catch (e) {
+    cobrir("erro", `<h2>Batida não registrada</h2><p>${esc(e.message)}</p>`, 4500);
+  }
+  atualizarLocalTablet();
+}
+
+function fotoDoVideo() {
+  const v = $("t-video");
+  if (!TB.fluxo || !v.videoWidth) return null;
+  const k = Math.min(1, 800 / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+  c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.8);
+}
+
+// =============================================================================
+// O MEU QR CODE (celular de quem entrou com CPF + PIN)
+// =============================================================================
+let QR_TIMER = null;
+async function mostrarMeuQr() {
+  clearTimeout(QR_TIMER);
+  let d;
+  try { d = await chamar("/ponto/app/api/meu-qr"); }
+  catch (e) { return aviso(e.message, "erro"); }
+  const w = d.whatsapp;
+  const status = !w ? "" : w.na_fila ? "Um QR Code novo está saindo para o seu WhatsApp."
+    : w.tem_qr ? `O último QR do WhatsApp chegou em ${esc(dataBR(w.enviado_em))}.` : "Você ainda não recebeu o QR Code no WhatsApp.";
+  $("dlg-corpo").innerHTML = `
+    <h2 style="margin:0 0 8px">Meu QR Code</h2>
+    <img class="qr-grande" src="${d.imagem}" alt="QR Code pessoal para bater o ponto">
+    <p class="pequeno" style="text-align:center">Aumente o brilho da tela e mostre para a câmera do tablet. Troca em <b id="qr-seg">${d.troca_em_segundos}</b> s.</p>
+    ${w ? `<p class="pequeno">${status}</p><button class="btn sec" type="button" id="btn-qr-whats">Receber um QR no WhatsApp</button>` : ""}`;
+  if (!$("dlg").open) $("dlg").showModal();
+  const b = $("btn-qr-whats");
+  if (b) b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { const r = await chamar("/ponto/app/api/meu-qr/whatsapp", {}); b.textContent = r.mensagem; }
+    catch (e) { b.textContent = e.message; }
+  });
+  let seg = d.troca_em_segundos;
+  const contar = () => {
+    if (!$("dlg").open) return;
+    seg -= 1;
+    if (seg <= 0) return mostrarMeuQr();
+    const el = $("qr-seg"); if (el) el.textContent = seg;
+    QR_TIMER = setTimeout(contar, 1000);
+  };
+  QR_TIMER = setTimeout(contar, 1000);
+}
+$("btn-meu-qr").addEventListener("click", mostrarMeuQr);
+$("dlg").addEventListener("close", () => clearTimeout(QR_TIMER));
+
+// Primeiro: garantir que o aparelho existe no sistema (só o identificador dele).
+garantirRegistro("Aparelho sem nome").catch(() => {}).finally(iniciar);
+</script>
+</body>
+</html>

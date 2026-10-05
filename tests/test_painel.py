@@ -135,6 +135,8 @@ class ConexaoFalsa:
             return self.clientes
         if "FROM depto_projeto" in sql:
             return self.obras
+        if "FROM config WHERE chave" in sql:
+            return []                 # nenhum projeto dado pela tela
         if "FROM contas_correntes" in sql:
             return self.contas
         if "FROM movimentos" in sql:
@@ -172,6 +174,9 @@ class CursorFalso:
     def fetchmany(self, n):
         pedaco, self._linhas = self._linhas[:n], self._linhas[n:]
         return pedaco
+
+    def fetchone(self):
+        return self._linhas.pop(0) if self._linhas else None
 
     def close(self):
         pass

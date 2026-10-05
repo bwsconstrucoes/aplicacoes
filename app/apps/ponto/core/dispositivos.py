@@ -129,10 +129,21 @@ def listar(conn: Connection, status: str | None = None) -> list[dict]:
     return db.todos(conn, sql, **params)
 
 
+def codigo_curto(device_uuid: str) -> str:
+    """Os 6 últimos caracteres do identificador, em maiúsculas: o MESMO código
+    que a tela do aparelho mostra. Quem aprova confere o código na tela do
+    tablet antes de aprovar — senão "Aparelho sem nome" pode ser o celular de
+    qualquer funcionário que abriu o endereço, e aprovado como aparelho da obra
+    ele bateria por todo mundo."""
+    limpo = "".join(ch for ch in str(device_uuid or "") if ch.isalnum())
+    return limpo[-6:].upper()
+
+
 def para_json(d: dict) -> dict:
     from ..horario import texto
     return {
-        "id": d["id"], "device_uuid": d["device_uuid"], "descricao": d.get("descricao", ""),
+        "id": d["id"], "device_uuid": d["device_uuid"], "codigo": codigo_curto(d["device_uuid"]),
+        "descricao": d.get("descricao", ""),
         "perfil": d["perfil"], "status": d["status"],
         "dono": ({"id": d["colaborador_id"], "nome": d.get("dono_nome"),
                   "cpf": d.get("dono_cpf")} if d.get("colaborador_id") else None),
@@ -205,6 +216,11 @@ def aprovar(conn: Connection, dispositivo_id: int, *, perfil: str, aprovado_por:
          id=dispositivo_id)
     definir_autorizados(conn, dispositivo_id, autorizados or [])
     definir_obras(conn, dispositivo_id, obras or [])
+    # Aprovar o celular de uma pessoa É cadastrar a exceção dela: o padrão é só
+    # o aparelho da obra bater (forma_de_bater.py, decisão do dono de 05/10/2026).
+    from . import forma_de_bater
+    if perfil_ok == "INDIVIDUAL" and forma_de_bater.em_vigor(conn):
+        forma_de_bater.definir(conn, int(colaborador_id), True, f"aprovação do aparelho por {aprovado_por}")
     logger.info("Ponto: aparelho %s APROVADO como %s por %s", d["device_uuid"], perfil_ok,
                 aprovado_por)
     return detalhado(conn, dispositivo_id)

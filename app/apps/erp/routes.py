@@ -10636,3 +10636,16 @@ def health():
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         return jsonify({"ok": False, "modulo": "erp", "erro": str(e)}), 503
+
+
+# ---------------------------------------------------------------------------
+# PONTO ELETRÔNICO (03/10/2026) — a gestão do ponto entra no ERP como mais um
+# módulo do menu. As rotas moram em `app/apps/ponto/gestao.py` e se penduram
+# neste mesmo blueprint, para herdar login, guarda de permissão e recorte por
+# obra. IMPORTAÇÃO PROTEGIDA, no fim do arquivo de propósito: se o ponto falhar
+# ao carregar, o ERP sobe inteiro, só sem o menu do ponto.
+# ---------------------------------------------------------------------------
+try:
+    from app.apps.ponto import gestao as _gestao_do_ponto  # noqa: F401,E402
+except Exception:  # noqa: BLE001
+    logger.exception("ERP: a gestão do ponto não carregou; o ERP segue sem ela")
