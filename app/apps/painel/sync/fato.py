@@ -148,6 +148,10 @@ def carregar_catalogos(conn):
     cur = conn.execute("SELECT ccoddep, projeto FROM depto_projeto")
     proj = dict(cur.fetchall())
     cur.close()
+    # O projeto marcado na tela (Parâmetros › Projeto das obras) vale por cima
+    # da planilha "C. Diários" — ver `projetos.CHAVE_PROJETO_DA_OBRA`.
+    from . import projetos
+    proj.update(projetos.projetos_da_tela(conn))
 
     cur = conn.execute("SELECT codigo, descricao FROM contas_correntes")
     ccorr = {cod: (desc or "").strip() for cod, desc in cur.fetchall() if (desc or "").strip()}
