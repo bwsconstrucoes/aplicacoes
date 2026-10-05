@@ -4543,6 +4543,31 @@ def folha_ferias_gravar():
     return {"ok": True, "id": novo}
 
 
+@bp.route("/api/folha/ferias/importar", methods=["POST"])
+@exige_operador
+def folha_ferias_importar():
+    """A "Listagem de Férias" do Fortes — um ou mais arquivos (dono, 05/10/2026:
+    *"jogar dois arquivos, ele faz a leitura, compreende se já foi cadastrado
+    (…) e verifica se tem alguma mudança"*). Sem `confirmar`, só a análise; com
+    ele, grava as novas e as alteradas."""
+    from . import ferias_fortes as ff
+
+    arquivos = [(a.filename or "arquivo", a.read())
+                for a in request.files.getlist("arquivos") if a and a.filename]
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        if request.form.get("confirmar") == "1":
+            saida = ff.importar(arquivos, quem=quem)
+        else:
+            saida = ff.analisar(arquivos)
+    except ff.ErroDasFerias as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Folha: falhou importar a listagem de férias")
+        return {"ok": False, "erro": f"Não foi possível ler os arquivos: {e}"}, 500
+    return {"ok": True, **ff.para_tela(saida)}
+
+
 @bp.route("/api/folha/ferias/apagar", methods=["POST"])
 @exige_operador
 def folha_ferias_apagar():

@@ -516,6 +516,8 @@ TELA_DA_ROTA = {
     "analisesps.folha_feriado_apagar": ("folha",),
     "analisesps.folha_ferias_gravar": ("folha",),
     "analisesps.folha_ferias_apagar": ("folha",),
+    # A Listagem de Férias do Fortes (05/10/2026).
+    "analisesps.folha_ferias_importar": ("folha",),
     "analisesps.folha_procurar_pessoa": ("folha",),
     # Trazer o ponto é trabalho do DP, como trazer a folha da contabilidade.
     "analisesps.folha_ponto_carregar": ("folha",),

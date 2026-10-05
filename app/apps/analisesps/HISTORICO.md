@@ -11885,6 +11885,41 @@ pode ser que de 5 dias, um tenha justificativa e vamos descontar somente 4."*
   ausência(s)" ou "desconto a confirmar (R$ X proposto)". Vale também para o
   relatório por conta gerado junto com os arquivos.
 
+#### Leva 176 — importar a "Listagem de Férias" do Fortes (05/10/2026)
+
+O dono mandou a `Listagem de Férias 09-2026.xls` (não está no repositório — dado
+pessoal) e pediu: *"identifique o padrão do arquivo e permita que a gente
+importe (…) eu vou pedir do mês anterior e do mês atual (…) jogar dois arquivos,
+ele faz a leitura, compreende se já foi cadastrado (…) e verifica se tem alguma
+mudança nas férias de alguém."* O objetivo: o auxílio alimentação e o transporte
+descontarem as férias proporcionalmente (o mês para trás e para a frente).
+
+- **O arquivo** (Fortes Pessoal, `.xls` BIFF): um bloco por colaborador —
+  código e nome; "Cargo:"; as verbas (110 remuneração, 111 1/3, 113 abono, 310
+  INSS…); "Líquido a receber"; e a linha "Período Aquisitivo … Gozo: x a y
+  Retorno: z Abono: N dia(s)". O cabeçalho "Iniciadas entre…" diz o mês. Várias
+  páginas; termina em "Total Geral". Leitor: `ferias_fortes.py` (aceita também
+  `.xlsx`). Conferido com o arquivo dele: os 9 colaboradores, gozo, retorno,
+  abono (10 dias vendidos encurtam o gozo) e líquido.
+- **Vale o GOZO** — é o que já alimenta o desconto do auxílio, na mesma tabela
+  de férias da tela "Feriados e férias" (dias úteis dentro do mês trabalhado).
+- **A pessoa:** pelo código do Fortes (coluna BU); sem ele, pelo nome, só se
+  houver UM igual. Quem não for achado não entra, e a tela diz quem é.
+- **A caixa** na tela Feriados e férias: soltar um ou mais arquivos → janela de
+  conferência (NADA é gravado antes): Novas; Mudaram (a pessoa já tinha férias
+  que se CRUZAM com datas diferentes — o antigo é substituído, com o "antes"
+  à vista); Sem cadastro; Não estão mais no arquivo (importadas antes, com
+  início no mesmo mês, e o arquivo não traz — só aviso, nada é apagado); Já
+  cadastradas. O mesmo período em dois arquivos conta uma vez; datas diferentes
+  para a mesma pessoa entre dois arquivos: vale o do mês mais recente, e a tela
+  diz.
+- **Guardado** (migração **049**): origem ("Fortes — férias iniciadas de …"),
+  código, aquisitivo, retorno, abono, líquido e as verbas (JSON). A lista de
+  férias ganhou a coluna Origem ("lançado à mão" para os manuais).
+- ⚠️ Fica para depois: mostrar as férias e as verbas delas na folha da
+  contabilidade (ele citou *"tudo que tem interferência com a folha"*) — hoje
+  elas entram no desconto dos auxílios.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11924,7 +11959,7 @@ pode ser que de 5 dias, um tenha justificativa e vamos descontar somente 4."*
 | DC: confirmar o texto da coluna G ("valor da diária") quando a solicitação pede a diária cadastrada (leva 172 supõe "cadastr" ou "sim") e as colunas da aba "Data base BeeVale" | ele |
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir se a alimentação e o transporte no BeeVale também usam a carteira da "Data base BeeVale" (hoje "Produção") | ele |
-| publicar as levas 174 e 175 (migração **048**: apertar "Aplicar atualizações do banco" no mesmo momento) | ele |
+| publicar as levas 174 a 176 (migrações **048** e **049**: apertar "Aplicar atualizações do banco" no mesmo momento) e importar a Listagem de Férias de 09 e 10/2026 | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 
