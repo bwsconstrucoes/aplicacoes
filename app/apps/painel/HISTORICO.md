@@ -2182,7 +2182,51 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## Projeto das obras em Parâmetros — 05/10/2026
+
+O dono, diante do aviso "Obras sem projeto no OMIE: AREACA · ARESOBRAL · …
+(24 obras)": *"quero poder corrigir isso dentro de parâmetros e regras"*.
+
+**O aviso estava errado sobre a origem.** O projeto de cada obra NÃO vem do
+cadastro do OMIE: vem da planilha "C. Diários" (AJ = código da obra no OMIE,
+AK = projeto), lida a cada atualização (`sync/projetos.py`). O texto mandava
+corrigir no OMIE, onde mexer não muda nada. Corrigido nas duas telas
+(prestação e resultado do cenário).
+
+**O que entrou:** aba **Parâmetros › Projeto das obras**. Lista as obras sem
+projeto, com um campo para escolher um projeto existente ou digitar um novo, e
+a lista do que foi dado ali (trocar, tirar, e o que a planilha diz ao lado).
+
+**Decisões, com o motivo:**
+- **A tela vale por cima da planilha.** É decisão tomada por alguém olhando o
+  painel; se a planilha disser outra coisa, a tela mostra as duas.
+- **Guardado na `config` (chave `projeto_da_obra`, JSON {código: projeto}),
+  não na `depto_projeto`.** Assim não se mistura com o que a planilha disse, e
+  a leitura da planilha nunca apaga a escolha. **Sem migração** — nada de
+  botão para apertar ao publicar.
+- **Por código da obra no OMIE, não pelo nome.** O nome muda (há obra com dois
+  nomes no rateio); o código não.
+- **Vale na hora:** grava e já troca o projeto no `fato` e no
+  `fato_recebimentos` em todos os nomes daquele código, e esquece as listas
+  guardadas em memória. Sem isso a correção só apareceria no dia seguinte. A
+  carga seguinte chega ao mesmo resultado (`fato.carregar_catalogos`).
+- **Tirar** devolve a obra ao projeto da planilha (ou a nenhum).
+
+**Brecha fechada junto:** `prestacao_parametros` e `prestacao_cenarios` não
+estavam na lista do administrador nem nas abas — quem tinha acesso a uma obra
+abria e GRAVAVA sócios, participações e regras da empresa inteira. Com o
+projeto das obras ficaria pior (mudar o projeto muda quem enxerga a obra pelo
+acesso por projeto). Agora respondem 404 para quem está preso; há teste.
+
+**Não verificado com dado real:** a lista vem do rateio inteiro agrupado por
+obra — rápida no banco de teste; na produção, conferir se a aba abre ligeiro.
+
 ## O PDF espremia os números — 01/10/2026
+
+**Publicado em 01/10/2026** (`a374570`), junto com dois consertos da suíte
+que derrubavam o GitHub Actions também na `main` (driver do banco no
+`conftest.py` — ver `CONTEXTO.md` §9 — e o arquivo real da folha do Análise de
+SPs). Pendente: o dono gerar um PDF com dado real e dizer se algo ainda aperta.
 
 O dono: *"na parte mais analítica fica muito imprensado e não aparece; em
 coluna de valor sai só o R$ e não sai o número."* Reproduzido: o Despesas

@@ -126,6 +126,42 @@ def construir_mapa(linhas):
     return mapa, conflitos
 
 
+# --------------------------------------------------------------------------- 
+# O projeto dado à obra pela TELA (Parâmetros › Projeto das obras)
+# --------------------------------------------------------------------------- 
+# 05/10/2026, o dono: *"quero poder corrigir isso dentro de parâmetros e
+# regras"* — sobre as obras que apareciam como "(sem projeto)". O projeto vem
+# da planilha "C. Diários" (colunas AJ e AK), não do cadastro do OMIE; a obra
+# que não está lá ficava sem projeto até alguém mexer na planilha.
+#
+# O que se marca na tela fica na tabela `config` (chave abaixo), como um JSON
+# {código da obra no OMIE: projeto}, e VALE POR CIMA da planilha: foi uma
+# decisão tomada de propósito, por alguém olhando o painel. Fica separado da
+# `depto_projeto` para nunca se confundir com o que a planilha disse — e para a
+# leitura da planilha, que regrava aquela tabela, nunca apagar a escolha.
+CHAVE_PROJETO_DA_OBRA = "projeto_da_obra"
+
+
+def ler_projetos_da_tela(texto) -> dict:
+    """O JSON guardado, como {código da obra: projeto}. Texto estragado não
+    derruba a carga: vale como "nada definido"."""
+    import json
+    try:
+        dados = json.loads(texto or "{}")
+    except (TypeError, ValueError):
+        log.warning("Projeto das obras: valor guardado ilegível; ignorado.")
+        return {}
+    if not isinstance(dados, dict):
+        return {}
+    return {_s(k): _s(v) for k, v in dados.items() if _s(k) and _s(v)}
+
+
+def projetos_da_tela(conn) -> dict:
+    linha = conn.execute("SELECT valor FROM config WHERE chave = ?",
+                         (CHAVE_PROJETO_DA_OBRA,)).fetchone()
+    return ler_projetos_da_tela(linha[0] if linha else "")
+
+
 def gravar(conn, mapa):
     agora = dt.datetime.now().isoformat(timespec="seconds")
     conn.executemany(

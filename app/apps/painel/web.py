@@ -1819,10 +1819,15 @@ def prestacao_parametros():
                                 aba=request.form.get("aba", "socios")))
 
     listas = consultas.grupos_e_categorias() if not consultas.base_vazia() else         {"grupos": [], "categorias": []}
+    aba = request.args.get("aba", "socios")
+    # Só na aba dela: a lista de obras agrupa o rateio inteiro, e as outras
+    # abas não precisam disso.
+    obras_projetos = prestacao_dados.obras_e_projetos() if aba == "projetos" else []
     return render_template(
         "painel_prestacao_config.html",
         **_contexto_comum("prestacao"),
-        aba=request.args.get("aba", "socios"),
+        aba=aba,
+        obras_projetos=obras_projetos,
         config=prestacao_dados.config(),
         socios=prestacao_dados.socios(),
         socios_ativos=prestacao_dados.socios(apenas_ativos=True),
@@ -1874,6 +1879,10 @@ def _aplicar_mudanca_da_prestacao(dados, form):
         dados.tirar_da_analise(form.getlist("item"))
     elif acao == "voltar_para_analise":
         dados.voltar_para_analise(form.get("item", ""))
+    elif acao == "projeto_da_obra":
+        # Vazio TIRA o projeto dado aqui (a obra volta ao da planilha).
+        dados.definir_projeto_da_obra(form.get("codigo", ""),
+                                      "" if form.get("tirar") else form.get("projeto", ""))
     elif acao == "config":
         for chave in ("projeto_matriz", "depto_admin_matriz", "depto_admin_filial",
                       "grupo_pessoal", "taxa_adm_pct", "residual",

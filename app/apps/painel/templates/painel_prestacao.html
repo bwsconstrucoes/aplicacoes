@@ -106,10 +106,11 @@
 {% if sem_projeto %}
 <div class="aviso info">
   {% if sem_projeto %}
-  <b>Obras sem projeto no OMIE:</b> {{ sem_projeto|join(' · ') }}.
-  Aparecem como "(sem projeto)". Toda obra pertence a um projeto — isto é dado
-  para corrigir no cadastro da obra no OMIE; na próxima atualização ela entra
-  no projeto certo sozinha.<br>
+  <b>Obras sem projeto:</b> {{ sem_projeto|join(' · ') }}.
+  Aparecem como "(sem projeto)". O projeto vem da planilha "C. Diários" —
+  corrija lá, ou direto em
+  <a href="{{ url_for('painel.prestacao_parametros', aba='projetos') }}">Parâmetros › Projeto das obras</a>,
+  que vale na hora.<br>
   {% endif %}
   <b>"{{ nao_apropriado }}"</b> é outra coisa: lançamento <b>sem obra
   nenhuma</b>. O conserto é apropriar o lançamento (no OMIE, ou pelo Explorador).

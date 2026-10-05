@@ -82,7 +82,78 @@ def fora_da_analise(config_lida: dict | None = None) -> list[str]:
     return prestacao.itens_fora_da_analise(dados.get(CHAVE_FORA_DA_ANALISE, ""))
 
 
+def obras_e_projetos(config_lida: dict | None = None) -> list[dict]:
+    """Toda obra que o OMIE conhece, com o projeto da planilha e o da tela.
+
+    `efetivo` é o que o painel usa: o da tela, se houver; senão o da planilha
+    "C. Diários"; senão nenhum — e aí a obra aparece como "(sem projeto)"."""
+    from .sync.projetos import CHAVE_PROJETO_DA_OBRA, ler_projetos_da_tela
+    dados = config_lida if config_lida is not None else config()
+    da_tela = ler_projetos_da_tela(dados.get(CHAVE_PROJETO_DA_OBRA, ""))
+    saida = []
+    for codigo, obra, planilha in consultar(
+            "SELECT r.ccoddep, MAX(COALESCE(r.cdesdep, '')),"
+            "       MAX(COALESCE(d.projeto, ''))"
+            "  FROM rateio r LEFT JOIN depto_projeto d ON d.ccoddep = r.ccoddep"
+            " WHERE COALESCE(r.ccoddep, '') <> ''"
+            " GROUP BY r.ccoddep ORDER BY 2"):
+        codigo, planilha = str(codigo).strip(), (planilha or "").strip()
+        tela = da_tela.get(codigo, "")
+        saida.append({"codigo": codigo, "obra": (obra or "").strip() or codigo,
+                      "planilha": planilha, "tela": tela,
+                      "efetivo": tela or planilha})
+    return saida
+
+
 # --------------------------------------------------------------------- escrita
+def definir_projeto_da_obra(codigo: str, projeto: str) -> dict:
+    """Dá (ou tira, com projeto vazio) o projeto de uma obra pela tela.
+
+    ⚠️ VALE NA HORA, sem esperar a próxima atualização: os lançamentos dessa
+    obra que já estão no painel mudam de projeto junto. Sem isso o dono
+    corrigiria aqui e continuaria vendo "(sem projeto)" até o dia seguinte —
+    e concluiria, com razão, que a correção não funcionou. A próxima carga
+    chega ao mesmo resultado por conta própria (`fato.carregar_catalogos`).
+
+    Devolve quantas linhas mudaram em cada tabela, para a tela poder dizer."""
+    from .sync.projetos import CHAVE_PROJETO_DA_OBRA, ler_projetos_da_tela
+    codigo, projeto = str(codigo or "").strip(), " ".join(str(projeto or "").split())
+    if not codigo:
+        raise ValueError("Obra não informada.")
+    da_tela = ler_projetos_da_tela(config().get(CHAVE_PROJETO_DA_OBRA, ""))
+    if projeto:
+        da_tela[codigo] = projeto
+    else:
+        da_tela.pop(codigo, None)
+
+    mudou = {}
+    with conexao() as conn:
+        conn.execute("INSERT INTO config (chave, valor) VALUES (?,?) "
+                     "ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
+                     (CHAVE_PROJETO_DA_OBRA,
+                      json.dumps(da_tela, ensure_ascii=False, sort_keys=True)))
+        # Tirar o da tela devolve a obra ao que a planilha diz (ou a nenhum).
+        if not projeto:
+            linha = conn.execute("SELECT projeto FROM depto_projeto WHERE ccoddep = ?",
+                                 (codigo,)).fetchone()
+            projeto = ((linha[0] if linha else "") or "").strip()
+        # O fato guarda o NOME da obra (como veio no rateio do título), não o
+        # código: todos os nomes que esse código já teve mudam juntos.
+        nomes = [n for (n,) in conn.execute(
+            "SELECT DISTINCT cdesdep FROM rateio"
+            " WHERE ccoddep = ? AND COALESCE(cdesdep, '') <> ''", (codigo,)).fetchall()]
+        nomes.append(codigo)
+        for tabela in ("fato", "fato_recebimentos"):
+            cur = conn.execute(f"UPDATE {tabela} SET projeto = ?"
+                               f" WHERE departamento = ANY(?)", (projeto, nomes))
+            mudou[tabela] = cur.rowcount
+        conn.commit()
+
+    from . import consultas
+    consultas.esquecer_listas()
+    return mudou
+
+
 def salvar_config(chave: str, valor: str) -> None:
     with conexao() as conn:
         conn.execute("INSERT INTO config (chave, valor) VALUES (?,?) "

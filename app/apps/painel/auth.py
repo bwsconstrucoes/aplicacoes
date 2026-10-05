@@ -60,6 +60,13 @@ SO_DO_ADMINISTRADOR = (
     # Conferir um dia com o OMIE: le a empresa inteira do dia e chama a API do
     # OMIE; "trazer" regrava o espelho. Do dono (23/09/2026).
     "painel.conferir_",
+    # Parametros da prestacao e o simulador de regras. Achado em 05/10/2026, ao
+    # pôr ali o projeto das obras: as duas ficavam FORA desta lista e fora das
+    # abas, e quem estava preso a uma obra abria — e gravava — socios,
+    # participacoes e regras da empresa inteira. Com o projeto das obras a
+    # brecha ficava pior: mudar o projeto de uma obra muda quem a enxerga pelo
+    # acesso por projeto.
+    "painel.prestacao_parametros", "painel.prestacao_cenarios",
 )
 
 # Rotas que podem responder sem login. Cada uma com o motivo escrito.

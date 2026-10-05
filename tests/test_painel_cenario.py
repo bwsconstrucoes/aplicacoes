@@ -377,6 +377,22 @@ def test_quem_esta_preso_a_uma_obra_nao_alcanca_o_cenario(preso, monkeypatch):
     assert cliente.get("/painel/prestacao/resultado").status_code == 404
 
 
+def test_quem_esta_preso_nao_abre_nem_grava_os_parametros(preso, monkeypatch):
+    """Achado em 05/10/2026, ao pôr o projeto das obras em Parâmetros: a tela e
+    o simulador de regras estavam fora da lista do administrador, e quem tinha
+    uma obra gravava sócios, participações e regras da empresa inteira — e,
+    com o projeto das obras, poderia mudar quem enxerga cada obra."""
+    cliente = _cliente_preso(monkeypatch)
+    assert cliente.get("/painel/prestacao/parametros?aba=projetos").status_code == 404
+    assert cliente.get("/painel/prestacao/cenarios").status_code == 404
+    resposta = cliente.post("/painel/prestacao/parametros", data={
+        "acao": "projeto_da_obra", "aba": "projetos",
+        "codigo": "1", "projeto": "DELE"})
+    assert resposta.status_code == 404
+    from app.apps.painel import prestacao_dados
+    assert "projeto_da_obra" not in prestacao_dados.config()
+
+
 # ===========================================================================
 # 6. O download passava por fora da proteção das telas
 # ===========================================================================
