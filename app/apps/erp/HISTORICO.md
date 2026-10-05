@@ -21,6 +21,29 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### ✉️ A TELA MENSAGENS ENTROU NO ERP (05/10/2026) — feita pelo chat da Mensageria
+
+Mesmo encaixe do ponto: as rotas moram em `app/apps/mensageria/gestao.py` e se
+penduram no blueprint do ERP por importação protegida no fim de `routes.py`.
+Menu **Mensagens** (antes de Administração), abas *Tipos e canais* e
+*Enviadas*. O que mudou nos arquivos do ERP, e só isto:
+
+- `core/auth/permissoes.py`: duas ações novas, `ver_mensagens` (Administrador,
+  Diretor financeiro, DP) e `configurar_mensagens` (Administrador), com rótulo
+  e implicação; `core/auth/secoes.py`: seção `adm_mensagens`;
+- migração **083** (`083_mensageria.sql`): schema `mensageria` (tipos, envios,
+  parametros) e a seção nos perfis semeados. **Próxima migração do ERP é a 084.**
+  ⚠️ Ao publicar, apertar "Aplicar atualizações do banco" no mesmo momento;
+- seis chamadas ao notificador (`core/notificacoes.py`, `agente`, `encaminhar`,
+  `perguntas/agendadas`, `comum/ia_custo`, `suprimentos/insumos`) ganharam
+  `finalidade="erp.<tipo>"` — uma linha cada. **Aviso novo no ERP nasce com
+  um tipo no catálogo** (`mensageria/core.py`, `CATALOGO`) e passa
+  `finalidade=`; nada de ler `NOTIFICAR_*`.
+- `routes.py`: a importação protegida no fim, e só.
+
+Quem decide por onde cada aviso sai é a tela, não mais a variável do Render.
+Detalhe em `app/apps/mensageria/README.md`.
+
 ### ⏱ O MÓDULO PONTO MORA DENTRO DO ERP (03/10/2026) — feito pelo chat do ponto
 
 A gestão do ponto eletrônico (`app/apps/ponto/`) é um módulo do menu do ERP:
@@ -34,7 +57,7 @@ nos arquivos do ERP, e só isto:
 - `core/auth/secoes.py`: área "Ponto" com quatro seções (`pon_gestao`, `pon_dp`,
   `pon_competencia`, `pon_config`);
 - migração **082** (`082_secoes_do_ponto.sql`): os perfis semeados ganham as
-  seções do ponto iguais ao cargo. **Próxima migração do ERP é a 083.**
+  seções do ponto iguais ao cargo. (A 083 é a mensageria — ver acima.)
 - `routes.py`: a importação protegida no fim, e só.
 
 **Para quem mexer nesses arquivos:** o ponto chama `routes._contexto`,

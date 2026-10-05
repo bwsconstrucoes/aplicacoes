@@ -5,6 +5,20 @@ junto com o `README.md` e o `PLANO.md`.
 
 ## Pendente AGORA
 
+0. **O WhatsApp do ponto passou a ser decidido em ERP › Mensagens (05/10/2026,
+   chat da Mensageria, ramo não publicado).** Por que "não chegou nada" no teste
+   do dono: a fila conferia o token do Z-API por um nome de variável que não
+   existe no Render (`ZAPI_INSTANCE_TOKEN`), e a chave geral `NOTIFICAR_WHATSAPP`
+   está em `0`. Agora `whatsapp_pronto()` pergunta à mensageria: credenciais
+   presentes **e** o tipo "QR Code do ponto" liberado por WhatsApp (política
+   "Só WhatsApp", que é como nasce) **e** a chave geral do WhatsApp **ligada na
+   tela** (nasce desligada). Cada mensagem da fila diz o seu tipo (`ponto.qr`,
+   `ponto.mosaico`, `ponto.aviso_foto`); o código do PIN é `ponto.codigo_acesso`
+   e o resumo do dia `ponto.resumo_dia`. O ritmo da fila continua aqui; a
+   mensageria é a segunda cerca (teto da empresa inteira) e o registro. Para
+   voltar a enviar: publicar, aplicar a 083 do ERP, ligar o WhatsApp em
+   ERP › Mensagens, e a chave "Enviar e trocar o QR automaticamente" aqui.
+
 1. **Fase 2 e QR/mosaico PUBLICADOS em 04/10/2026** (com o "pode" do dono).
    Falta o dono apertar, se ainda não apertou, **os dois botões de banco**:
    - ERP › Configurações › "Aplicar atualizações do banco" (a **082**, que dá as

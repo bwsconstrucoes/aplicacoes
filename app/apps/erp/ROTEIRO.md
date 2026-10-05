@@ -1136,8 +1136,8 @@ que é a estratégia de manter isso rápido?"*. A resposta longa está no
 Palavras do dono: *"eu tenho algumas ideias de utilização de inteligência
 artificial para dialogar com os colaboradores, assistente virtual, coisas desse
 tipo"*. Ainda não foi detalhado e **não está na fila** — está aqui para não se
-perder. Quando ele retomar, o que já existe e serve de base: o `chatbot` e o
-`whatsapp_gateway` (canal), o `notificador` (envio), o controle de consumo de
+perder. Quando ele retomar, o que já existe e serve de base: o `chatbot`
+(conversa), o `notificador` (envio pelos dois canais), o controle de consumo de
 IA com teto (migração 030) e o agente de cobrança (migração 040), que já é um
 robô que fala com pessoas por WhatsApp a partir de pendência do banco.
 

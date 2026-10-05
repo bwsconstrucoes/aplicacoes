@@ -60,7 +60,8 @@ def enviar_resumo(conn, *, forcar: bool = False) -> dict:
             continue
         try:
             from app.apps.notificador import notificar
-            resultado = notificar(telefone=tel, mensagem=texto, canais=("whatsapp",))
+            resultado = notificar(telefone=tel, mensagem=texto, canais=("whatsapp",),
+                                  finalidade="ponto.resumo_dia")
             ok = bool((resultado.get("whatsapp") or {}).get("ok"))
         except Exception as e:  # noqa: BLE001
             resultado, ok = {"erro": str(e)[:200]}, False

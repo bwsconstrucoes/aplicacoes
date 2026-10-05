@@ -196,7 +196,8 @@ def avisar_baixa(s: Session, pagamento_id: int, *, forcar: bool = False,
             from app.apps.notificador import enviar_telegram
             resultado = enviar_telegram(
                 telefone=pessoa.telefone, cpf=pessoa.cpf, mensagem=mensagem,
-                arquivo_base64=arquivo_b64, nome_arquivo=nome_arquivo, tipo=tipo)
+                arquivo_base64=arquivo_b64, nome_arquivo=nome_arquivo, tipo=tipo,
+                finalidade="erp.titulo_pago")
             ok = bool(resultado and resultado.get("ok"))
             detalhe = str(resultado.get("detalhe") or resultado.get("erro") or "") if resultado else ""
         except Exception as e:               # falha de aviso não derruba a baixa
@@ -311,7 +312,7 @@ def avisar_cancelamento(s: Session, titulo_id: int, *, motivo: str,
         try:
             from app.apps.notificador import enviar_telegram
             resultado = enviar_telegram(telefone=pessoa.telefone, cpf=pessoa.cpf,
-                                        mensagem=mensagem)
+                                        mensagem=mensagem, finalidade="erp.titulo_pago")
             ok = bool(resultado and resultado.get("ok"))
             detalhe = str(resultado.get("detalhe") or resultado.get("erro") or "") if resultado else ""
         except Exception as e:

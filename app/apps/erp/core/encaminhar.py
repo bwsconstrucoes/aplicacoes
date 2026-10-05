@@ -379,7 +379,7 @@ def enviar(s: Session, usuario: Usuario, *, tipo: str, registro_id: int,
             resultado = notificar(
                 telefone=alvo.get("telefone") or None, cpf=alvo.get("cpf") or None,
                 mensagem=mensagem, arquivo_base64=b64,
-                nome_arquivo=nome_arquivo, tipo=tipo_arquivo)
+                nome_arquivo=nome_arquivo, tipo=tipo_arquivo, finalidade="erp.encaminhamento")
             # Um canal basta: o dono pediu WhatsApp, e quem tem Telegram
             # cadastrado recebe pelos dois — o que não é problema nenhum.
             ok = any((resultado or {}).get(c, {}).get("ok")

@@ -10649,3 +10649,12 @@ try:
     from app.apps.ponto import gestao as _gestao_do_ponto  # noqa: F401,E402
 except Exception:  # noqa: BLE001
     logger.exception("ERP: a gestão do ponto não carregou; o ERP segue sem ela")
+
+# MENSAGERIA (05/10/2026) — a tela "Mensagens" (por onde cada aviso sai, teto
+# do WhatsApp, registro) entra do mesmo jeito: rotas em
+# `app/apps/mensageria/gestao.py`, penduradas neste blueprint, importação
+# protegida. Se falhar, o ERP sobe sem o menu Mensagens.
+try:
+    from app.apps.mensageria import gestao as _gestao_de_mensagens  # noqa: F401,E402
+except Exception:  # noqa: BLE001
+    logger.exception("ERP: a tela de mensagens não carregou; o ERP segue sem ela")
