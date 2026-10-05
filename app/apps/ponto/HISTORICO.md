@@ -27,12 +27,13 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1e. **Ainda não publicado (ramo `feature/modulo-ponto`)**: base de pessoas em
-   dia sozinha, período de contrato, base de obras da C. Diários, forma de
-   bater por exceção e as travas do aparelho da obra. Traz a migração **004** do
-   ponto: ao juntar, apertar "Aplicar atualizações do ponto" **no mesmo
-   momento**. Até o botão, vale o comportamento antigo (obras do ERP; celular
-   aprovado bate).
+1e. **PUBLICADO em 05/10/2026** (com o "pode" do dono, `main` em `efd509b`):
+   base de pessoas em dia sozinha, período de contrato, base de obras da
+   C. Diários, forma de bater por exceção e as travas do aparelho da obra.
+   Confirmar com o dono se ele apertou "Aplicar atualizações do ponto" (a
+   **004**) e se a primeira leitura da C. Diários deu certo (Configuração ›
+   Base de obras). Até o botão, vale o comportamento antigo (obras do ERP;
+   celular aprovado bate).
 2. **A migração 001 em produção**: na publicação da fase 1 ficou com o dono
    (Shell do Render). Se ainda não rodou, o botão do item 1 aplica as duas.
 3. **Configurar para começar a usar**: cadastrar as escalas reais e atribuir a
