@@ -987,6 +987,24 @@ def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
     return p
 
 
+# A lista agrupada da tela (dono, 05/10/2026: *"tanto em alimentação como em
+# transporte, possa ser realizado o agrupamento e desagrupamento (…) por conta,
+# por obra, etc."*). Quem tem rateio entra no grupo da obra da MAIOR parte.
+AGRUPAMENTOS = [("obra", "Obra"), ("conta", "Conta"), ("modo", "Categoria"),
+                ("fase", "Fase Atual"), ("", "Sem agrupar")]
+AGRUPAMENTO_PADRAO = "obra"
+
+
+def agrupar(pessoas, campo: str, contas: dict) -> list:
+    """`folha_lista.agrupar` com a conta de cada pessoa (a da obra que paga, na
+    aba "C. Diários") e a pendência do auxílio (dado faltando ou sem obra)."""
+    from . import folha_lista
+    for p in pessoas:
+        p["conta"] = contas.get(" ".join(str(p.get("obra") or "").split()).upper(), "")
+    return folha_lista.agrupar(
+        pessoas, campo, pendente=lambda p: bool(p.get("impossivel") or p.get("sem_obra")))
+
+
 def partes_por_obra(p: dict) -> list:
     """`[{obra, valor}]` — de onde sai o dinheiro desta pessoa: as obras da
     regra de rateio, ou a obra que paga inteira."""

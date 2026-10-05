@@ -1,0 +1,95 @@
+{# ---------------------------------------------------------------------------
+   A LISTA AGRUPADA — a mesma na DC, na alimentação e no transporte.
+
+   O dono, 03/10/2026 (DC): *"visualizar de forma mais agrupada o que está para
+   ser pago. Agrupar por obra etc."*; 05/10/2026: *"tanto em alimentação como em
+   transporte, possa ser realizado o agrupamento e desagrupamento (…) por conta,
+   por obra, etc."*
+
+   Duas partes, incluídas com `ag_parte`:
+     "barra"  — a escolha "Agrupar por" (antes da tabela);
+     "script" — subtotal que acompanha a marcação, caixinha do grupo, abrir e
+                fechar (depois da tabela).
+   Quem inclui define: ag_endpoint, ag_tabela (id da tabela), agrupamento,
+   agrupamentos. A tabela tem um `<tbody class="grupo-lista">` por grupo, com
+   o cabeçalho do macro `cabecalho_do_grupo` (em `_agrupar_macros.html`).
+   --------------------------------------------------------------------------- #}
+{% if ag_parte == 'barra' %}
+<form class="agrupar-lista" method="get" action="{{ url_for(ag_endpoint) }}">
+  {% for chave, valores in request.args.lists() %}{% if chave != 'agrupar' %}
+    {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+  {% endif %}{% endfor %}
+  <span class="cartao-dica">Agrupar por</span>
+  {% for chave, rotulo in agrupamentos %}
+    <button type="submit" name="agrupar" value="{{ chave }}"
+            class="aba-folha {{ 'ativa' if agrupamento == chave }}"
+            {% if agrupamento == chave %}aria-current="true"{% endif %}>{{ rotulo }}</button>
+  {% endfor %}
+  {% if agrupamento %}
+    <button type="button" class="link-btn" id="abrir-fechar-grupos">fechar todos</button>
+  {% endif %}
+</form>
+<style>
+  .agrupar-lista { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; margin:4px 0 10px; }
+  .agrupar-lista .aba-folha { border:0; background:none; cursor:pointer; font:inherit; }
+  #{{ ag_tabela }} tr.grupo-cab > td { background: rgba(127,127,127,.08); cursor:pointer; }
+  #{{ ag_tabela }} tr.grupo-cab .grupo-seta { display:inline-block; width:1em; transition:transform .15s; }
+  #{{ ag_tabela }} tbody.fechado tr.grupo-cab .grupo-seta { transform: rotate(-90deg); }
+  #{{ ag_tabela }} tbody.fechado tr:not(.grupo-cab) { display:none; }
+</style>
+{% else %}
+<script>
+(function () {
+  const tabela = document.getElementById({{ ag_tabela|tojson }});
+  if (!tabela) return;
+  const brl = n => n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+  // O subtotal de cada grupo acompanha a marcação, como a barra de baixo.
+  function recalcular() {
+    tabela.querySelectorAll("tbody.grupo-lista").forEach(corpo => {
+      const dele = [...corpo.querySelectorAll(".marca-pessoa")];
+      const marcadas = dele.filter(c => c.checked);
+      const total = marcadas.reduce(
+        (t, c) => t + (parseFloat(c.closest("tr").dataset.valor || "0") || 0), 0);
+      const q = corpo.querySelector(".grupo-quantos");
+      const t = corpo.querySelector(".grupo-total");
+      const g = corpo.querySelector(".marca-grupo");
+      if (q) q.textContent = marcadas.length;
+      if (t) t.textContent = brl(total);
+      if (g) {
+        const livres = dele.filter(c => !c.disabled);
+        g.checked = livres.length > 0 && livres.every(c => c.checked);
+        g.indeterminate = !g.checked && livres.some(c => c.checked);
+        g.disabled = !livres.length;
+      }
+    });
+  }
+  // A caixinha do grupo marca/desmarca as linhas dele; o "change" de cada uma
+  // é disparado para a barra de baixo (o total da seleção) acompanhar.
+  tabela.addEventListener("change", e => {
+    if (e.target.classList.contains("marca-grupo")) {
+      const valor = e.target.checked;
+      e.target.closest("tbody").querySelectorAll(".marca-pessoa").forEach(c => {
+        if (!c.disabled && c.checked !== valor) {
+          c.checked = valor;
+          c.dispatchEvent(new Event("change", {bubbles: true}));
+        }
+      });
+    }
+    setTimeout(recalcular, 0);
+  });
+  // "Marcar todos" e "Desfazer" mudam as caixinhas sem evento: recalcula a cada clique.
+  document.addEventListener("click", () => setTimeout(recalcular, 0));
+  tabela.querySelectorAll("tr.grupo-cab").forEach(cab => cab.addEventListener("click", e => {
+    if (e.target.closest(".marca, a, button")) return;
+    cab.closest("tbody").classList.toggle("fechado");
+  }));
+  const abrirFechar = document.getElementById("abrir-fechar-grupos");
+  if (abrirFechar) abrirFechar.addEventListener("click", () => {
+    const fechar = abrirFechar.textContent.startsWith("fechar");
+    tabela.querySelectorAll("tbody.grupo-lista").forEach(c => c.classList.toggle("fechado", fechar));
+    abrirFechar.textContent = fechar ? "abrir todos" : "fechar todos";
+  });
+  recalcular();
+})();
+</script>
+{% endif %}

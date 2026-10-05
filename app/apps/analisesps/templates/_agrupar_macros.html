@@ -1,0 +1,16 @@
+{# O cabeçalho de um grupo da lista agrupada (ver `_agrupar_lista.html`).
+   `colunas`: quantas colunas há entre a caixinha e a do total. #}
+{% macro cabecalho_do_grupo(g, pode_operar, colunas) %}
+<tr class="grupo-cab">
+  {% if pode_operar %}
+    <td class="marca"><input type="checkbox" class="marca-grupo"
+          title="Selecionar ou desmarcar o grupo"
+          aria-label="Selecionar o grupo {{ g.rotulo }}"></td>
+  {% endif %}
+  <td colspan="{{ colunas }}"><span class="grupo-seta">▾</span>
+    <b>{{ g.rotulo }}</b>
+    <span class="cartao-dica">· {{ g.linhas }} linha(s) · <span class="grupo-quantos">{{ g.a_pagar }}</span> a pagar
+      {% if g.pendencias %} · <b class="ruim">{{ g.pendencias }} pendência(s)</b>{% endif %}</span></td>
+  <td class="num"><b class="grupo-total">{{ g.total|moeda }}</b></td>
+</tr>
+{% endmacro %}

@@ -175,3 +175,48 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras",
         "opcoes_fase": [(f, f) for f in sorted({p.get("fase") for p in pessoas
                                                  if p.get("fase")})],
     }
+
+
+# ---------------------------------------------------------------------------
+# A LISTA AGRUPADA — a mesma nas folhas que a têm (DC, alimentação e
+# transporte). O dono, 03/10/2026, na DC: *"visualizar de forma mais agrupada o
+# que está para ser pago. Agrupar por obra etc."*; e 05/10/2026: *"tanto em
+# alimentação como em transporte, possa ser realizado o agrupamento e
+# desagrupamento das informações, por conta, por obra, etc."*
+# ---------------------------------------------------------------------------
+VAZIO_DO_GRUPO = {"obra": "(sem obra)", "conta": "(sem conta)",
+                  "modo": "(sem categoria)", "fase": "(sem fase)",
+                  "tipo_despesa": "(sem tipo)"}
+
+
+def _vai(p: dict) -> bool:
+    from decimal import Decimal
+    return bool(p.get("pagar") and Decimal(str(p.get("valor") or 0)) > 0
+                and not p.get("gerada"))
+
+
+def rotulo_do_grupo(p: dict, campo: str) -> str:
+    return str(p.get(campo) or "").strip() or VAZIO_DO_GRUPO.get(campo, "(vazio)")
+
+
+def agrupar(pessoas, campo: str, rotulo=None, pendente=None) -> list:
+    """A lista em grupos: `[{rotulo, pessoas, linhas, a_pagar, total, pendencias}]`.
+    Sem campo, um grupo só (sem cabeçalho). Dentro do grupo, a ordem da lista
+    (pendências primeiro); os grupos, do maior valor a pagar para o menor."""
+    from decimal import Decimal
+    if not campo:
+        return [{"rotulo": "", "pessoas": list(pessoas)}]
+    rotulo = rotulo or rotulo_do_grupo
+    pendente = pendente or (lambda p: bool(p.get("impossivel")))
+    grupos: dict = {}
+    for p in pessoas:
+        grupos.setdefault(rotulo(p, campo), []).append(p)
+    saida = []
+    for nome, membros in grupos.items():
+        vao = [p for p in membros if _vai(p)]
+        saida.append({"rotulo": nome, "pessoas": membros, "linhas": len(membros),
+                      "a_pagar": len(vao),
+                      "total": sum((Decimal(str(p["valor"])) for p in vao), Decimal("0.00")),
+                      "pendencias": sum(1 for p in membros if pendente(p))})
+    return sorted(saida, key=lambda g: (-g["total"], g["rotulo"]))
+

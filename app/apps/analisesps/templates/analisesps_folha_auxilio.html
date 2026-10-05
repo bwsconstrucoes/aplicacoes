@@ -1,5 +1,6 @@
 {% extends "analisesps_base.html" %}
 {% from "_folha_macros.html" import bloco %}
+{% from "_agrupar_macros.html" import cabecalho_do_grupo %}
 {% block titulo %}{{ resultado.rotulo if resultado else 'Alimentação e transporte' }} — Análise de SPs{% endblock %}
 
 {# ---------------------------------------------------------------------------
@@ -134,6 +135,8 @@
   <input type="hidden" name="tipo" value="{{ tipo }}">
   <input type="hidden" name="ano" value="{{ ano }}">
   <input type="hidden" name="mes" value="{{ mes }}">
+  {# O agrupamento escolhido sobrevive ao filtro. #}
+  {% if 'agrupar' in request.args %}<input type="hidden" name="agrupar" value="{{ agrupamento }}">{% endif %}
   <div class="filtros-cab">
     <h2>Filtros</h2>
     <a class="link-btn" href="{{ url_tela }}{{ base_qs }}">Limpar</a>
@@ -283,9 +286,13 @@
   {% include "_relatorio_acoes.html" %}
 </div>
 
+{% set ag_parte = 'barra' %}{% set ag_endpoint = 'analisesps.tela_folha_auxilio' %}{% set ag_tabela = 'tabela-auxilio' %}
+{% include "_agrupar_lista.html" %}
+
 {% if pode_operar %}
 <p class="cartao-dica" style="margin:0 0 8px">
-  Os colaboradores que atendem aos critérios vêm <b>selecionados para pagamento</b>.
+  Os colaboradores que atendem aos critérios vêm <b>selecionados para pagamento</b>
+  (no agrupamento, a caixinha do grupo marca ou desmarca o grupo inteiro).
   Desmarque os que não devem ser pagos e clique em <b>Salvar seleção</b> ao final.
   Clique na linha para consultar a observação do cadastro e o ponto do mês.
 </p>
@@ -316,8 +323,10 @@
           <th class="num">Total</th>
         </tr>
       </thead>
-      <tbody>
-      {% for p in pessoas %}
+      {% for g in grupos_da_lista %}
+      <tbody class="grupo-lista">
+        {% if agrupamento %}{{ cabecalho_do_grupo(g, pode_operar, 11) }}{% endif %}
+      {% for p in g.pessoas %}
         <tr class="clicavel {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or p.sem_obra }}"
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}"
             data-valor="{{ p.valor }}"
@@ -442,12 +451,14 @@
             {% if p.valor != p.valor_calculado and p.valor_calculado %}<br><span class="cartao-dica">calculado {{ p.valor_calculado|moeda }}</span>{% endif %}
           </td>
         </tr>
-      {% else %}
-        <tr><td colspan="13" class="cartao-dica">
-          Nenhum colaborador corresponde ao filtro. Ajuste os filtros na lateral.
-        </td></tr>
       {% endfor %}
       </tbody>
+      {% endfor %}
+      {% if not pessoas %}
+      <tbody><tr><td colspan="13" class="cartao-dica">
+          Nenhum colaborador corresponde ao filtro. Ajuste os filtros na lateral.
+      </td></tr></tbody>
+      {% endif %}
     </table>
 
   </div>
@@ -814,4 +825,6 @@ if (fecharAux) fecharAux.addEventListener("click", async () => {
 });
 
 </script>
+{% set ag_parte = 'script' %}{% set ag_tabela = 'tabela-auxilio' %}
+{% include "_agrupar_lista.html" %}
 {% endblock %}

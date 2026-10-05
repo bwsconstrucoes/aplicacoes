@@ -11829,6 +11829,22 @@ pagamento. O que mudou além do botão:
 
 **Publicada em 05/10/2026** (main em `4b41750`, suíte inteira 8.376 verdes, sem migração).
 
+#### Leva 174 — alimentação e transporte agrupados, como a DC (05/10/2026)
+
+O dono: *"tanto em alimentação como em transporte, possa ser realizado o
+agrupamento e desagrupamento das informações, por conta, por obra, e etc."*
+
+- O "Agrupar por" da DC virou peça única (`_agrupar_lista.html`,
+  `_agrupar_macros.html` e `folha_lista.agrupar`), usada pela DC e pelos dois
+  auxílios — as telas não divergem.
+- No auxílio: Obra (padrão, como na DC), Conta (a da obra que paga, na "C.
+  Diários"), Categoria, Fase Atual ou Sem agrupar. Cabeçalho do grupo com
+  linhas, a pagar, pendências (dado faltando ou sem obra) e total, que
+  acompanham a marcação; caixinha do grupo; abrir/fechar.
+- ⚠️ Quem tem **regra de rateio** entra no grupo da obra (e da conta) da MAIOR
+  parte, com o valor inteiro; o rateio continua dito na linha.
+- O agrupamento escolhido sobrevive aos filtros da lateral (nas duas telas).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

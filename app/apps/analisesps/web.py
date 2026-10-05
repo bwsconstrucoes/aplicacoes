@@ -3749,8 +3749,19 @@ def tela_folha_auxilio():
                                 request.args, campo_da_obra="obra",
                                 escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
 
+    from . import folha_pagamento as fpg
+    agrupamento = request.args.get("agrupar", fx.AGRUPAMENTO_PADRAO)
+    if agrupamento not in {c for c, _ in fx.AGRUPAMENTOS}:
+        agrupamento = fx.AGRUPAMENTO_PADRAO
+    try:
+        contas = fpg.conta_por_obra() if lista["pessoas"] else {}
+    except Exception:  # noqa: BLE001 — sem contas, o grupo "Conta" fica vazio
+        logger.exception("Folha: não consegui ler as contas para agrupar o auxílio")
+        contas = {}
     return render_template(
         "analisesps_folha_auxilio.html", aba="folha", subaba="auxilios",
+        agrupamento=agrupamento, agrupamentos=fx.AGRUPAMENTOS,
+        grupos_da_lista=fx.agrupar(lista["pessoas"], agrupamento, contas),
         obras_c_diarios=_obras_c_diarios(),
         grupos=subtelas_agrupadas(), pronto=pronto, resultado=resultado,
         tipo=tipo, ano=ano, mes=mes, erro=erro, pessoas=lista["pessoas"],
