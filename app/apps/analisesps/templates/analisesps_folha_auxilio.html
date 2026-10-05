@@ -429,7 +429,7 @@
                    data-motivo-relevadas="{{ p.motivo_relevadas }}"
                    data-ausencias='{{ p.ausencias|map(attribute="data")|map("string")|list|tojson }}'
                    data-motivos='{{ p.ausencias|map(attribute="motivo")|list|tojson }}'
-                   data-descontar='{{ p.ausencias|map(attribute="descontar")|list|tojson }}'
+                   data-descontar='{{ p.ausencias|map(attribute="descontar", default=true)|list|tojson }}'
                    title="{% for a in p.ausencias %}{{ a.data.strftime('%d/%m') }} {{ a.motivo }}{{ '; ' if not loop.last }}{% endfor %}">
                 {% if p.desconto_aplicado %}
                   <b>{{ p.dias_descontados }} de {{ p.ausencias|length }} ausência(s)</b> −{{ p.desconto_valor|moeda }}
