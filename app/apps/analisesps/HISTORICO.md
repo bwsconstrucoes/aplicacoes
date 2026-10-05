@@ -11807,6 +11807,16 @@ está para ser pago. Agrupar por obra etc."*
 - **Resumo do que vai ser pago**, embaixo: por obra, por conta e por tipo de
   despesa (linhas, pessoas, total), no lugar do antigo "Por obra".
 
+#### Leva 173 — botão "Marcar Pago Parcial" (05/10/2026)
+
+O dono: *"além do botão Marcar Pago, preciso de um botão Marcar Pago Parcial,
+pra escrever 'Pago Parcial'"*. Na barra das Solicitações e na ficha da SP (no
+Lote não, como o "Marcar Pago" — decisão antiga dele). Escreve "Pago Parcial" no
+Status Pgt da planilha, pelo mesmo caminho dos outros botões; selo azul só no
+contorno na lista. ⚠️ Efeito: as contas do sistema só tratam "Pagar" como em
+aberto, então a SP marcada SAI dos totais a pagar, dos vencidos e das
+pendências (como uma paga). Não há campo para o saldo que falta.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

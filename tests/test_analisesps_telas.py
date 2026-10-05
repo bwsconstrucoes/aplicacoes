@@ -520,6 +520,24 @@ def test_os_quatro_do_agendamento_sao_os_do_streamlit(app):
     assert ">Desagendar</button>" in html
 
 
+def test_MARCAR_PAGO_PARCIAL_nas_solicitacoes_e_na_ficha(app, monkeypatch):
+    """Dono, 05/10/2026: *"além do botão Marcar Pago, preciso de um botão Marcar
+    Pago Parcial, pra escrever 'Pago Parcial'"*. E a lista mostra o selo dele."""
+    from app.apps.analisesps import colunas
+    monkeypatch.setattr(consultas, "listar", lambda f, **k: [
+        linha_falsa("1", status_pgt="Pago Parcial", vencido=False)])
+    html = como(app, SENHA_OPERADOR).get("/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'data-coluna="status_pgt" data-valor="Pago Parcial"' in html
+    assert ">Marcar Pago Parcial</button>" in html
+    assert '<span class="selo parcial">' in html
+
+    ficha = {c: "" for c in colunas.CHAVES}
+    ficha.update({"id": "1", "valor_num": Decimal("10.00")})
+    monkeypatch.setattr(consultas, "uma", lambda sp_id: ficha)
+    html = como(app, SENHA_OPERADOR).get("/analisesps/sp/1").get_data(as_text=True)
+    assert 'data-valor="Pago Parcial">Marcar Pago Parcial</button>' in html
+
+
 def test_o_lote_nao_tem_marcar_pago(app_lote):
     """O dono mandou tirar, e o Streamlit nunca teve esse botão nesta tela.
     Marcar como pago no meio da remessa é o erro que não tem volta."""
