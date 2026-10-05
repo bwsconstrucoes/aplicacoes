@@ -94,6 +94,30 @@ DOMINIO = "@bwsconstrucoes.com.br"
 BENEFICIO = "Livre"
 TIPO_DE_RECARGA = "Mensal"
 CARTEIRA = "Produção"
+
+# ⚠️ A CARTEIRA DO BEEVALE POR VERBA (05/10/2026). Era "Produção" para tudo —
+# a constante do `BeeVale.gs`, que só gerava a folha. O dono: *"eu gerei os
+# diaristas, e a informação da carteira deveria vir Diárias. E ao invés disso,
+# veio Produção."* E, no mesmo dia, a tabela dele (a aba "Data base BeeVale"
+# da planilha da DC — Tipo DC → Tipo BeeVale):
+#
+#     Despesas com Alimentação → Auxílio Alimentação
+#     Despesas com Transporte  → Despesas com Transporte
+#     Diárias                  → Diárias
+#     Gratificações e Extras   → Gratiticações e Extras   (⚠️ assim na tabela)
+#     Produção                 → Produção
+#     Salários e Ordenados     → Diárias
+#
+# Escrita aqui (e não lida da planilha a cada geração) para o arquivo não
+# depender do Google no meio da geração. ⚠️ A FOLHA DA CONTABILIDADE SEGUE
+# "Produção": a tabela diria "Diárias" (Salários e Ordenados), mas a carteira da
+# folha nunca foi assunto dele — fica a pergunta. A DC lê a aba na hora.
+CARTEIRA_DA_VERBA = {
+    "diaria": "Diárias",
+    "alimentacao": "Auxílio Alimentação",
+    "transporte": "Despesas com Transporte",
+    "gratificacao": "Gratiticações e Extras",
+}
 CATEGORIA_BEEVALE = "BWS"
 
 MIME_XLSX = ("application/vnd.openxmlformats-officedocument"
@@ -114,6 +138,11 @@ class ErroDaGeracao(RuntimeError):
 def rotulo_da_verba(verba: str) -> str:
     verba = str(verba or "").strip().lower()
     return ROTULO_DA_VERBA.get(verba, verba.capitalize() or "(sem verba)")
+
+
+def carteira_da_verba(verba: str) -> str:
+    """A carteira do BeeVale desta verba (ver `CARTEIRA_DA_VERBA`)."""
+    return CARTEIRA_DA_VERBA.get(str(verba or "").strip().lower(), CARTEIRA)
 
 
 def natureza(verba: str) -> str:
@@ -210,7 +239,8 @@ def montar_lotes(linhas, destino: str, juntar_verbas: bool = False) -> list:
         # caso da DC, em que cada solicitação tem o seu tipo de despesa (o
         # `geraspbeevale.gs` consolida por CPF + carteira + categoria).
         nat = str(bruta.get("natureza") or "").strip() or natureza(verba)
-        carteira = str(bruta.get("carteira") or "").strip()
+        carteira = (str(bruta.get("carteira") or "").strip()
+                    or carteira_da_verba(verba))
         chave_item = (cpf, nat, carteira)
         item = lote["itens"].setdefault(chave_item, {
             "cpf": cpf, "nome": " ".join(str(bruta.get("nome") or "").split()),

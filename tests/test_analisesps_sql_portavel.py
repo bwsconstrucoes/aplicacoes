@@ -497,8 +497,12 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     # E a sexta, de 03/10/2026: a planilha de CADASTRO do BeeVale/SomaPay
     # (`cadastro_planilha.py`) — só as pessoas marcadas na janela, um punhado.
     # Não lê a base de SPs.
+    # E a sétima, de 05/10/2026: a Listagem de Férias do Fortes
+    # (`ferias_fortes.py`), quando vier em .xlsx — dezenas de linhas, aberta com
+    # `read_only=True`, com teto de 10 MB recusado antes.
     LIBERADO_EM = {"beevale.py": {"openpyxl"},
                    "cadastro_planilha.py": {"openpyxl"},
+                   "ferias_fortes.py": {"openpyxl"},
                    "lote_excel.py": {"openpyxl"},
                    "folha_geracao.py": {"openpyxl"},
                    "folha_relatorio.py": {"openpyxl"},

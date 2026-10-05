@@ -144,7 +144,7 @@ def _enviar(texto: str, telefone: str) -> dict[str, Any]:
     uma pessoa sem telefone não pode impedir as outras de serem avisadas."""
     try:
         from app.apps.notificador import notificar
-        ack = notificar(telefone=telefone, mensagem=texto)
+        ack = notificar(telefone=telefone, mensagem=texto, finalidade="erp.agente_cobranca")
         return {"ok": any(bool(r.get("ok")) for r in ack.values()), "canais": ack}
     except Exception as e:                                  # pragma: no cover
         logger.warning("ERP/agente: envio falhou para %s: %s", telefone, e)

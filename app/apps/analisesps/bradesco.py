@@ -332,6 +332,10 @@ def _alertas_status(reg, conta_b, diff_str) -> list:
     stp = str(reg.get("status_pgt", "")).strip().lower()
     if stp == "pago":
         al.append("⚠️ JÁ PAGO (risco de duplicidade)")
+    elif stp == "pago parcial":
+        # A fase "Pago Parcial" do Pipefy (dono, 05/10/2026): parte já saiu —
+        # pagar de novo pode ser o saldo ou pode ser duplicidade.
+        al.append("⚠️ PAGO PARCIAL (confira o saldo)")
     elif stp == "cancelado":
         al.append("⚠️ SP CANCELADA")
     ac = _alerta_conta(conta_b, reg)

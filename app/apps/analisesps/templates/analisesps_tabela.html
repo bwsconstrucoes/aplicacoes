@@ -122,7 +122,7 @@
 
             {% elif c.tipo == 'status' %}
               {% set st = (l.status_pgt or '')|trim|lower %}
-              <td><span class="selo {{ 'pagar' if st == 'pagar' else ('pago' if st == 'pago' else 'cancelado') }}">
+              <td><span class="selo {{ 'pagar' if st == 'pagar' else ('pago' if st == 'pago' else ('parcial' if st == 'pago parcial' else 'cancelado')) }}">
                 {{ l.status_pgt or '—' }}</span></td>
 
             {% elif c.tipo == 'agend' %}

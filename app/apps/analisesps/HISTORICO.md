@@ -11796,12 +11796,206 @@ está para ser pago. Agrupar por obra etc."*
   Documentos") — confirmado pelo dono em 04/10/2026. Quando o texto da coluna G
   não é reconhecido como "pede a cadastrada", a linha mostra o que veio escrito,
   para conferir no primeiro uso.
+  **Publicado em 04/10/2026** (main em `3ff7ace`, suíte inteira 8.007 verdes, sem
+  migração). ⚠️ Lição: a sessão reabriu num contêiner novo cujo ramo local estava
+  na cópia da `main`, não no ramo remoto — a primeira rodada da suíte foi sobre o
+  código errado. Ao retomar, conferir `git log origin/<ramo>` antes de testar.
 - **Lista agrupada:** "Agrupar por" obra (padrão), conta, tipo de despesa,
   solicitação, colaborador ou sem agrupar. Cada grupo tem cabeçalho com linhas,
   quantas a pagar, pendências e o total — que acompanham a marcação —, caixinha
   para marcar/desmarcar o grupo inteiro, e abre/fecha no clique ("fechar todos").
 - **Resumo do que vai ser pago**, embaixo: por obra, por conta e por tipo de
   despesa (linhas, pessoas, total), no lugar do antigo "Por obra".
+
+#### Leva 173 — botão "Marcar Pago Parcial" (05/10/2026)
+
+O dono: *"além do botão Marcar Pago, preciso de um botão Marcar Pago Parcial,
+pra escrever 'Pago Parcial'"*. Na barra das Solicitações e na ficha da SP (no
+Lote não, como o "Marcar Pago" — decisão antiga dele). Escreve "Pago Parcial" no
+Status Pgt da planilha, pelo mesmo caminho dos outros botões.
+
+**O status JÁ EXISTIA** (o dono corrigiu: *"o pago parcial é algo que já existe,
+só não existia esse botão"*): é uma fase do pipe de SPs no Pipefy ("Pago
+Parcial", ver `app/apps/erp/DE_PARA_PIPEFY.md`) que chega à planilha pela
+sincronização. O texto do botão é o mesmo da fase. Como o sistema já o tratava
+(e continua tratando): fora dos totais a pagar, dos vencidos e das pendências
+(só "Pagar" conta como aberto); no calendário, faixa cinza "em outra situação";
+na ficha, o aviso "esta SP está como Pago Parcial" ao lado do código de
+pagamento. O que mudou além do botão:
+- na lista, o selo era o CINZA do cancelado — agora é o azul do pago, só no
+  contorno;
+- a conferência do Bradesco não dizia nada de uma SP paga em parte — agora
+  avisa "PAGO PARCIAL (confira o saldo)", como já avisava "JÁ PAGO".
+
+**Publicada em 05/10/2026** (main em `4b41750`, suíte inteira 8.376 verdes, sem migração).
+
+#### Leva 174 — alimentação e transporte agrupados, como a DC (05/10/2026)
+
+O dono: *"tanto em alimentação como em transporte, possa ser realizado o
+agrupamento e desagrupamento das informações, por conta, por obra, e etc."*
+
+- O "Agrupar por" da DC virou peça única (`_agrupar_lista.html`,
+  `_agrupar_macros.html` e `folha_lista.agrupar`), usada pela DC e pelos dois
+  auxílios — as telas não divergem.
+- No auxílio: Obra (padrão, como na DC), Conta (a da obra que paga, na "C.
+  Diários"), Categoria, Fase Atual ou Sem agrupar. Cabeçalho do grupo com
+  linhas, a pagar, pendências (dado faltando ou sem obra) e total, que
+  acompanham a marcação; caixinha do grupo; abrir/fechar.
+- ⚠️ Quem tem **regra de rateio** entra no grupo da obra (e da conta) da MAIOR
+  parte, com o valor inteiro; o rateio continua dito na linha.
+- O agrupamento escolhido sobrevive aos filtros da lateral (nas duas telas).
+
+**No mesmo pedido (05/10/2026), dois consertos do auxílio:**
+
+- ⚠️ **INCIDENTE — a obra escolhida à mão NÃO GRAVAVA** (desde a leva 169, em
+  produção): *"ao gravar outra obra para ser a obra pagante, não está gravando
+  a informação, mesmo dando refresh"*. A rota `/api/folha/auxilio/extras` só
+  repassava valor extra, motivo e desconto — descartava a `obra` e respondia
+  "ok". Os testes da leva 169 chamavam `gravar_extras` direto, sem passar pela
+  rota, e não pegaram. Conserto: a rota repassa a obra, e pedido sem nada a
+  gravar responde erro. Teste novo pela ROTA. Lição: o que a tela manda se
+  testa pela rota.
+- **O filtro "sem obra do ponto" trazia desligados.** Duas causas: (1) marcar
+  uma situação no filtro desligava o "esconder desligados/sem auxílio" — agora
+  o escondido continua escondido, a menos que a situação DELE seja marcada
+  (vale para todas as folhas, `folha_lista.filtrar`); (2) quem tinha o último
+  dia trabalhado DENTRO da competência, sem data de saída lançada, ficava "em
+  desligamento" e RECEBIA — pela regra dele (*"se ele já saiu, não recebe
+  mais"*) agora não recebe e vai para os desligados. Quem sai no MÊS DO
+  PAGAMENTO continua recebendo proporcional e continua na lista.
+
+#### Leva 175 — desconto de ausências parcial, e detalhado nos relatórios (05/10/2026)
+
+O dono: *"é importante que as informações e detalhamento estejam nos relatórios,
+visto que talvez precisemos encaminhar a alguém para analisar se terá ou não
+desconto. (…) precisamos poder aplicar o desconto integralmente ou não, pois
+pode ser que de 5 dias, um tenha justificativa e vamos descontar somente 4."*
+
+- **"Aplicar desconto"** (na linha) abre uma janela com cada dia de ausência
+  marcado; desmarca-se o dia justificado e escreve-se a justificativa
+  (obrigatória quando há dia relevado). O desconto é só dos dias marcados.
+  "alterar" reabre a janela; "desfazer" tira o desconto e a escolha. O
+  "Aplicar todos os descontos" da lateral continua integral.
+- Guardado em `auxilio_ajuste.ausencias_relevadas` / `motivo_relevadas`
+  (migração **048**). Sem a 048, o desconto integral segue funcionando e o
+  parcial avisa que falta a atualização do banco.
+- **Relatórios (PDF e Excel):** seção/aba "Ausências" com cada dia — motivo no
+  ponto, situação (descontada / não descontada — justificativa / a confirmar),
+  valor do dia e o descontado; e a coluna Situação diz "desconto de 4 de 5
+  ausência(s)" ou "desconto a confirmar (R$ X proposto)". Vale também para o
+  relatório por conta gerado junto com os arquivos.
+
+#### Leva 176 — importar a "Listagem de Férias" do Fortes (05/10/2026)
+
+O dono mandou a `Listagem de Férias 09-2026.xls` (não está no repositório — dado
+pessoal) e pediu: *"identifique o padrão do arquivo e permita que a gente
+importe (…) eu vou pedir do mês anterior e do mês atual (…) jogar dois arquivos,
+ele faz a leitura, compreende se já foi cadastrado (…) e verifica se tem alguma
+mudança nas férias de alguém."* O objetivo: o auxílio alimentação e o transporte
+descontarem as férias proporcionalmente (o mês para trás e para a frente).
+
+- **O arquivo** (Fortes Pessoal, `.xls` BIFF): um bloco por colaborador —
+  código e nome; "Cargo:"; as verbas (110 remuneração, 111 1/3, 113 abono, 310
+  INSS…); "Líquido a receber"; e a linha "Período Aquisitivo … Gozo: x a y
+  Retorno: z Abono: N dia(s)". O cabeçalho "Iniciadas entre…" diz o mês. Várias
+  páginas; termina em "Total Geral". Leitor: `ferias_fortes.py` (aceita também
+  `.xlsx`). Conferido com o arquivo dele: os 9 colaboradores, gozo, retorno,
+  abono (10 dias vendidos encurtam o gozo) e líquido.
+- **Vale o GOZO** — é o que já alimenta o desconto do auxílio, na mesma tabela
+  de férias da tela "Feriados e férias" (dias úteis dentro do mês trabalhado).
+- **A pessoa:** pelo código do Fortes (coluna BU); sem ele, pelo nome, só se
+  houver UM igual. Quem não for achado não entra, e a tela diz quem é.
+- **A caixa** na tela Feriados e férias: soltar um ou mais arquivos → janela de
+  conferência (NADA é gravado antes): Novas; Mudaram (a pessoa já tinha férias
+  que se CRUZAM com datas diferentes — o antigo é substituído, com o "antes"
+  à vista); Sem cadastro; Não estão mais no arquivo (importadas antes, com
+  início no mesmo mês, e o arquivo não traz — só aviso, nada é apagado); Já
+  cadastradas. O mesmo período em dois arquivos conta uma vez; datas diferentes
+  para a mesma pessoa entre dois arquivos: vale o do mês mais recente, e a tela
+  diz.
+- **Guardado** (migração **049**): origem ("Fortes — férias iniciadas de …"),
+  código, aquisitivo, retorno, abono, líquido e as verbas (JSON). A lista de
+  férias ganhou a coluna Origem ("lançado à mão" para os manuais).
+- ⚠️ Fica para depois: mostrar as férias e as verbas delas na folha da
+  contabilidade (ele citou *"tudo que tem interferência com a folha"*) — hoje
+  elas entram no desconto dos auxílios.
+
+#### Leva 177 — ausências e desconto também na ALIMENTAÇÃO (05/10/2026)
+
+O dono, vendo a coluna Ajustes do transporte com as ausências e o desconto
+sugerido, e a da alimentação sem: *"é meio que espelho uma coisa da outra (…) a
+única coisa que difere (…) é o valor, a categoria, o método de cálculo daquele
+valor (…) mas no resto, na exibição das informações, os filtros, é para ser
+tudo muito igual."*
+
+- ⚠️ **DECISÃO REVISTA:** em 03/10/2026 ele disse *"isso serve só para o
+  transporte"*, e o desconto de ausências ficou travado na alimentação (no
+  cálculo, na gravação e na tela). Agora vale nas duas verbas: as ausências do
+  ponto aparecem na coluna Ajustes da alimentação, com o desconto proposto, a
+  janela dos dias (desconto parcial), a lateral "Ausências no ponto" e o
+  detalhamento nos relatórios.
+- Alimentação "Mês" (valor fechado): o dia ausente vale o mês ÷ dias úteis,
+  como no transporte. ⚠️ Escolha minha; a alternativa seria ÷ dias corridos.
+- Fora isso, as duas telas já eram a mesma (template, filtros, agrupamento,
+  lateral); o que muda é só o cálculo (feriado desconta na alimentação, não no
+  transporte; "Mensal" é valor do mês só no transporte; "Cartão" só no
+  transporte).
+- Alimentação já FECHADA: o desconto aparece proposto; para valer no arquivo,
+  aplicar e refazer o fechamento.
+
+#### Leva 178 — carteira "Diárias", hora da leitura da DC, aviso de SP sem PDF (05/10/2026)
+
+- **Carteira do BeeVale por verba.** *"Eu gerei os diaristas, e a informação da
+  carteira deveria vir Diárias. E ao invés disso, veio Produção."* Era a
+  constante do `BeeVale.gs` para tudo. Agora `CARTEIRA_DA_VERBA` (diária →
+  "Diárias"); o resto segue "Produção" (alimentação e transporte em aberto com
+  ele — a DC traz a sua, da aba "Data base BeeVale").
+- **DC: quando a aba Data foi lida.** *"Qual é o momento que essa planilha é
+  atualizada? (…) seria interessante ter (…) data e hora."* A tela relê ao ser
+  aberta, se a última leitura passou de 1 minuto; "Atualizar da planilha" lê na
+  hora. A barra mostra "Aba Data lida em dd/mm/aaaa às hh:mm". ⚠️ Dito a ele: a
+  aba Data só RECEBE linhas (o `doPost` do Make acrescenta); mover o card no
+  Pipefy para não pagar NÃO tira a linha da aba — tira-se desmarcando na tela
+  (Salvar seleção) ou apagando a linha na planilha.
+- **Lançar no Pipefy: aviso de geração sem o relatório em PDF.** *"O relatório
+  em PDF também está indo junto? (…) eu gerei o arquivo antes (…) aqui não está
+  informando nada."* O PDF (com o contracheque, na folha da contabilidade) é
+  gerado junto com os arquivos desde 03/10/2026 e vai como LINK na descrição da
+  SP (não como anexo). Geração anterior não tem PDF: a prévia do lançamento
+  agora avisa e diz para excluir e gerar de novo.
+
+#### Leva 179 — lançar várias gerações juntas; as duas etiquetas da SP (05/10/2026)
+
+- **Misturar gerações no lançamento.** *"Quando eu mixo, seleciono arquivos da
+  folha e arquivo de diárias, ele não exibe todos (…) só está exibindo o do mais
+  recente."* O servidor montava as duas prévias (reproduzido em teste), mas a
+  tela as buscava UMA ATRÁS DA OUTRA — cada uma lendo o pipe e o plano
+  financeiro — e mostrava só a primeira (a mais recente) enquanto a segunda
+  carregava, sem dizer que havia outra, e com o "Criar" escondido. Agora as
+  prévias saem ao mesmo tempo, cada uma no seu lugar com "consultando o
+  Pipefy…" até chegar, e o título diz a verba ("Diárias — Geração 09/2026",
+  "Folha — Geração 09/2026").
+- **Etiquetas.** *"Está lançando uma etiqueta (…) transferência de recurso. Eu
+  não quero mais (…) você vai sempre colocar duas etiquetas"*: "Folha de Pgt"
+  (318116255) em toda SP das folhas (folha, alimentação, transporte, DC,
+  diaristas) + a do destino do arquivo da conta: "BeeVale" (317521565) ou
+  "Somapay" (318116254). A prévia mostra as etiquetas de cada SP. A de antes
+  (307726886) saiu do código. SP já criada não muda.
+
+#### Leva 180 — a carteira do BeeVale pela tabela dele (05/10/2026)
+
+O dono mandou a tabela da aba "Data base BeeVale" (Tipo DC → Tipo BeeVale):
+Despesas com Alimentação → Auxílio Alimentação; Despesas com Transporte →
+Despesas com Transporte; Diárias → Diárias; Gratificações e Extras →
+"Gratiticações e Extras" (⚠️ assim na tabela); Produção → Produção; Salários e
+Ordenados → Diárias.
+
+- Escrita em `folha_geracao.CARTEIRA_DA_VERBA`: alimentação → Auxílio
+  Alimentação, transporte → Despesas com Transporte, diária → Diárias,
+  gratificação → "Gratiticações e Extras" (grafia da tabela). A DC continua
+  lendo a aba na hora.
+- ⚠️ A folha da contabilidade segue "Produção" (pela tabela seria "Diárias",
+  via Salários e Ordenados) — perguntado a ele.
 
 #### ⚠️ Pendente AGORA
 
@@ -11841,7 +12035,10 @@ está para ser pago. Agrupar por obra etc."*
 | DC: compartilhar a planilha da DC com a conta de serviço do Google, se a tela disser "permissão" | ele |
 | DC: confirmar o texto da coluna G ("valor da diária") quando a solicitação pede a diária cadastrada (leva 172 supõe "cadastr" ou "sim") e as colunas da aba "Data base BeeVale" | ele |
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
-| decidir se a alimentação e o transporte no BeeVale também usam a carteira da "Data base BeeVale" (hoje "Produção") | ele |
+| decidir a CARTEIRA do BeeVale da alimentação e do transporte (hoje "Produção"; os diaristas já saem em "Diárias") | ele |
+| ~~publicar as levas 177 a 179~~ — **publicadas em 05/10/2026** (main em `b18f6f0`, suíte inteira verde salvo o teste do painel que falha igual na main). Carteira da alimentação e do transporte decidida (leva 180) | — |
+| publicar a leva 180; confirmar a carteira da FOLHA (Produção ou Diárias?) e a grafia "Gratiticações e Extras" | ele |
+| ~~publicar as levas 174 a 176~~ — **publicadas em 05/10/2026** (main em `02c26af`; suíte inteira verde, salvo `test_painel_cenario::test_quem_esta_preso_nao_abre_nem_grava_os_parametros`, que falha igual na main — área do painel, depende da ordem). Conferir que ele apertou "Aplicar atualizações do banco" (**048** e **049**) e importar a Listagem de Férias de 09 e 10/2026 | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 

@@ -12,7 +12,6 @@ from app.apps.baixabradesco import bp as baixabradesco_bp
 from app.apps.sync_logs        import bp as sync_logs_bp
 from app.apps.processarnovasp  import bp as processarnovasp_bp
 from app.apps.emissaonf        import bp as emissao_bp            # ← emissão NFS-e
-from app.apps.whatsapp_gateway import bp as whatsapp_gateway_bp   # ← gateway WhatsApp / Evolution
 from app.apps.telegram         import bp as telegram_bp           # ← NOVO (bot Telegram / autocadastro)
 from app.apps.erp              import bp as erp_bp               # ← ERP financeiro (Postgres)
 
@@ -67,10 +66,6 @@ def create_app():
     app.register_blueprint(sync_logs_bp,          url_prefix="/api/sync_logs")
     app.register_blueprint(processarnovasp_bp,    url_prefix="/api/processarnovasp")
     app.register_blueprint(emissao_bp,            url_prefix="/emissao")
-    # SEM url_prefix: as rotas /instances/<id>/token/<tk>/send-* espelham o Z-API.
-    # As rotas internas (/api/whatsapp_gateway/webhook e /health) já trazem o
-    # prefixo embutido no próprio módulo.
-    app.register_blueprint(whatsapp_gateway_bp)
     # SEM url_prefix: as rotas já trazem o prefixo /telegram embutido no módulo
     # (/telegram/webhook e /telegram/health).
     app.register_blueprint(telegram_bp)                                             # ← NOVO
@@ -95,7 +90,7 @@ def create_app():
                 "pdf_processor", "encurtador", "email_financeiro",
                 "sheets_sync", "atualizaspbotao", "validasp",
                 "chatbot", "baixabradesco", "sync_logs", "processarnovasp",
-                "emissao", "whatsapp_gateway", "telegram", "erp",
+                "emissao", "telegram", "erp",
             ] + (["painel"] if painel_bp is not None else [])
               + (["analisesps"] if analisesps_bp is not None else [])
               + (["ponto"] if ponto_bp is not None else [])

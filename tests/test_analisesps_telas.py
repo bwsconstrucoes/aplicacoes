@@ -520,6 +520,32 @@ def test_os_quatro_do_agendamento_sao_os_do_streamlit(app):
     assert ">Desagendar</button>" in html
 
 
+def test_MARCAR_PAGO_PARCIAL_nas_solicitacoes_e_na_ficha(app, monkeypatch):
+    """Dono, 05/10/2026: *"além do botão Marcar Pago, preciso de um botão Marcar
+    Pago Parcial, pra escrever 'Pago Parcial'"*. E a lista mostra o selo dele."""
+    from app.apps.analisesps import colunas
+    monkeypatch.setattr(consultas, "listar", lambda f, **k: [
+        linha_falsa("1", status_pgt="Pago Parcial", vencido=False)])
+    html = como(app, SENHA_OPERADOR).get("/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'data-coluna="status_pgt" data-valor="Pago Parcial"' in html
+    assert ">Marcar Pago Parcial</button>" in html
+    assert '<span class="selo parcial">' in html
+
+    ficha = {c: "" for c in colunas.CHAVES}
+    ficha.update({"id": "1", "valor_num": Decimal("10.00")})
+    monkeypatch.setattr(consultas, "uma", lambda sp_id: ficha)
+    html = como(app, SENHA_OPERADOR).get("/analisesps/sp/1").get_data(as_text=True)
+    assert 'data-valor="Pago Parcial">Marcar Pago Parcial</button>' in html
+
+
+def test_a_conferencia_do_BRADESCO_avisa_o_PAGO_PARCIAL():
+    from app.apps.analisesps import bradesco
+    assert "⚠️ PAGO PARCIAL (confira o saldo)" in bradesco._alertas_status(
+        {"status_pgt": "Pago Parcial"}, "", "")
+    assert "⚠️ JÁ PAGO (risco de duplicidade)" in bradesco._alertas_status(
+        {"status_pgt": "Pago"}, "", "")
+
+
 def test_o_lote_nao_tem_marcar_pago(app_lote):
     """O dono mandou tirar, e o Streamlit nunca teve esse botão nesta tela.
     Marcar como pago no meio da remessa é o erro que não tem volta."""
@@ -6108,6 +6134,52 @@ def test_quem_precisa_de_mao_aparece_marcado(app, monkeypatch):
     assert "linha-alerta" in html
     assert "não diz o valor deste auxílio" in html
     assert '<div class="kpi-rotulo">Pendências</div>' in html
+
+
+def test_o_auxilio_AGRUPA_por_obra_conta_categoria_e_desagrupa(app, monkeypatch):
+    """Dono, 05/10/2026: *"tanto em alimentação como em transporte, possa ser
+    realizado o agrupamento e desagrupamento das informações, por conta, por
+    obra, etc."* — o mesmo "Agrupar por" da DC."""
+    from decimal import Decimal as D
+    from app.apps.analisesps import folha_pagamento as fpg
+    base = _auxilio_calculado()["pessoas"][0]
+    outra = dict(base, cpf="03513441363", nome="OUTRA PESSOA", obra="CREPEAREIAS",
+                 modo="Mês", valor=D("200.00"))
+    _preparar_auxilio(monkeypatch, _auxilio_calculado(pessoas=[base, outra], quantos=2,
+                                                      quantos_a_pagar=2, total=D("515.00")))
+    monkeypatch.setattr(fpg, "conta_por_obra",
+                        lambda: {"1042": "50024", "CREPEAREIAS": "50024"})
+    cliente = _como_mestre(app)
+
+    html = cliente.get("/analisesps/folha/auxilios").get_data(as_text=True)
+    assert "Agrupar por" in html and html.count('class="grupo-cab"') == 2   # por obra
+    assert 'class="marca-grupo"' in html
+
+    html = cliente.get("/analisesps/folha/auxilios?agrupar=conta").get_data(as_text=True)
+    assert html.count('class="grupo-cab"') == 1 and "<b>50024</b>" in html
+    assert "515,00" in html                                  # o total do grupo
+
+    html = cliente.get("/analisesps/folha/auxilios?agrupar=modo").get_data(as_text=True)
+    assert html.count('class="grupo-cab"') == 2
+
+    html = cliente.get("/analisesps/folha/auxilios?agrupar=").get_data(as_text=True)
+    assert 'class="grupo-cab"' not in html and "OUTRA PESSOA" in html
+
+
+def test_escolher_a_OBRA_do_auxilio_pela_tela_GRAVA(app, monkeypatch):
+    """05/10/2026: *"ao gravar outra obra para ser a obra pagante, não está
+    gravando"*. A rota descartava a obra e respondia ok."""
+    from app.apps.analisesps import folha_auxilio as fx
+    chamadas = []
+    monkeypatch.setattr(fx, "gravar_extras",
+                        lambda tipo, ano, mes, cpfs, quem="", **m: chamadas.append(m) or 1)
+    r = _como_mestre(app).post("/analisesps/api/folha/auxilio/extras", json={
+        "tipo": "alimentacao", "ano": 2026, "mes": 9, "cpfs": ["99713349334"],
+        "obra": "CREPEAREIAS"})
+    assert r.get_json()["ok"] and chamadas == [{"obra": "CREPEAREIAS"}]
+    r = _como_mestre(app).post("/analisesps/api/folha/auxilio/extras", json={
+        "tipo": "alimentacao", "ano": 2026, "mes": 9, "cpfs": ["99713349334"]})
+    assert r.status_code == 400, "pedido sem nada a gravar não responde ok"
 
 
 def test_a_selecao_e_CAIXINHA_e_salva_de_uma_vez(app, monkeypatch):

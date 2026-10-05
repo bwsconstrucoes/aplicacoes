@@ -619,6 +619,9 @@ a.kpi { display: block; }
 
 .selo.pagar     { background: #FFEAEA; color: var(--sl-vermelho); }
 .selo.pago      { background: #E9E9FF; color: var(--sl-azul); }
+/* Pago Parcial (05/10/2026): o azul do pago, só no contorno — pago, mas não todo. */
+.selo.parcial   { background: transparent; color: var(--sl-azul);
+                  box-shadow: inset 0 0 0 1px var(--sl-azul); }
 .selo.cancelado { background: #F0F0F3; color: var(--cinza); }
 .selo.agendar   { background: #F5E8FF; color: var(--sl-roxo); }
 .selo.agendado  { background: #E7F3E1; color: var(--sl-verde); }

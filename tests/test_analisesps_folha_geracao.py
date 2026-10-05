@@ -236,6 +236,21 @@ def test_o_somapay_RECUSA_o_arquivo_com_CPF_repetido():
 # ---------------------------------------------------------------------------
 # O ARQUIVO DO BEEVALE
 # ---------------------------------------------------------------------------
+def test_a_CARTEIRA_dos_diaristas_e_DIARIAS_e_a_da_folha_PRODUCAO():
+    """Dono, 05/10/2026: *"eu gerei os diaristas, e a informação da carteira
+    deveria vir Diárias. E ao invés disso, veio Produção."*"""
+    lotes = g.montar_lotes([
+        {"cpf": GERLANIO, "nome": "GERLANIO", "conta": "50024", "verba": "diaria",
+         "valor": "100.00", "obra": "X"},
+        {"cpf": GERLANIO, "nome": "GERLANIO", "conta": "50024", "verba": "folha",
+         "valor": "900.00", "obra": "X"}], g.BEEVALE)
+    carteiras = {l["verbas"][0]: _abrir(g.arquivo_do_lote(l))["C2"].value for l in lotes}
+    assert carteiras == {"diaria": "Diárias", "folha": "Produção"}
+    # E a tabela dele (Data base BeeVale), na alimentação e no transporte.
+    assert g.carteira_da_verba("alimentacao") == "Auxílio Alimentação"
+    assert g.carteira_da_verba("transporte") == "Despesas com Transporte"
+
+
 def test_o_arquivo_do_beevale_usa_as_MESMAS_colunas_do_fluxo_das_SPs():
     """Duas listas de colunas divergiriam no dia em que o portal mudasse uma — e só
     uma seria corrigida."""

@@ -259,7 +259,8 @@ def _mandar(s: Session, a: PerguntaAgendada, dono: Usuario, texto: str) -> bool:
             return False
         if not (dono.telefone or dono.cpf):
             return False
-        r = enviar_telegram(telefone=dono.telefone, cpf=dono.cpf, mensagem=texto)
+        r = enviar_telegram(telefone=dono.telefone, cpf=dono.cpf, mensagem=texto,
+                            finalidade="erp.pergunta_agendada")
         return bool(r and r.get("ok"))
 
     # E-mail: ver CANAIS_LIGADOS. Chegar aqui quer dizer que alguém ligou o

@@ -1,5 +1,6 @@
 {% extends "analisesps_base.html" %}
 {% from "_folha_macros.html" import bloco %}
+{% from "_agrupar_macros.html" import cabecalho_do_grupo %}
 {% block titulo %}Despesas com colaboradores — Análise de SPs{% endblock %}
 
 {# ---------------------------------------------------------------------------
@@ -72,6 +73,8 @@
 
 <form method="get" action="{{ url_tela }}" id="form-filtros" class="lateral-filtros">
   {% if mostrar_geradas %}<input type="hidden" name="geradas" value="1">{% endif %}
+  {# O agrupamento escolhido sobrevive ao filtro. #}
+  {% if 'agrupar' in request.args %}<input type="hidden" name="agrupar" value="{{ agrupamento }}">{% endif %}
   <div class="filtros-cab">
     <h2>Filtros</h2>
     <a class="link-btn" href="{{ url_tela }}">Limpar</a>
@@ -106,8 +109,14 @@
   {% elif resultado and resultado.geradas %}
     <a class="link-btn" href="{{ url_for('analisesps.tela_folha_dc', geradas=1) }}">mostrar as {{ resultado.geradas }} já geradas</a>
   {% endif %}
-  <span class="barra-mes-dica">Fonte: aba <b>Data</b> da planilha da DC (as
-    solicitações que chegaram à fase do Pipefy). A lista é lida de novo a cada minuto.</span>
+  {# QUANDO FOI LIDA (05/10/2026): *"qual é o momento que essa planilha é
+     atualizada? (…) seria interessante ter a informação (…) data e hora"*. #}
+  <span class="barra-mes-dica">
+    {% if resultado and resultado.lida_em %}
+      Aba <b>Data</b> lida em <b>{{ resultado.lida_em.strftime('%d/%m/%Y às %H:%M') }}</b>.
+    {% endif %}
+    A tela relê a planilha ao ser aberta (se a última leitura passou de 1
+    minuto); "Atualizar da planilha" lê na hora.</span>
 </div>
 
 <p class="cartao-dica" style="margin:0 0 14px">
@@ -181,20 +190,8 @@
 {# A VISÃO AGRUPADA (03/10/2026): *"seria interessante podermos visualizar de
    forma mais agrupada o que está para ser pago. Agrupar por obra etc."* O
    grupo mostra quantas linhas e quanto vai ser pago, e fecha/abre no clique. #}
-<form class="agrupar-dc" method="get" action="{{ url_for('analisesps.tela_folha_dc') }}">
-  {% for chave, valores in request.args.lists() %}{% if chave != 'agrupar' %}
-    {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
-  {% endif %}{% endfor %}
-  <span class="cartao-dica">Agrupar por</span>
-  {% for chave, rotulo in agrupamentos %}
-    <button type="submit" name="agrupar" value="{{ chave }}"
-            class="aba-folha {{ 'ativa' if agrupamento == chave }}"
-            {% if agrupamento == chave %}aria-current="true"{% endif %}>{{ rotulo }}</button>
-  {% endfor %}
-  {% if agrupamento %}
-    <button type="button" class="link-btn" id="abrir-fechar-grupos">fechar todos</button>
-  {% endif %}
-</form>
+{% set ag_parte = 'barra' %}{% set ag_endpoint = 'analisesps.tela_folha_dc' %}{% set ag_tabela = 'tabela-dc' %}
+{% include "_agrupar_lista.html" %}
 
 {% if pode_operar %}
 <p class="cartao-dica" style="margin:0 0 8px">
@@ -206,12 +203,6 @@
 {% endif %}
 
 <style>
-  .agrupar-dc { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; margin:4px 0 10px; }
-  .agrupar-dc .aba-folha { border:0; background:none; cursor:pointer; font:inherit; }
-  #tabela-dc tr.grupo-cab > td { background: rgba(127,127,127,.08); cursor:pointer; }
-  #tabela-dc tr.grupo-cab .grupo-seta { display:inline-block; width:1em; transition:transform .15s; }
-  #tabela-dc tbody.fechado tr.grupo-cab .grupo-seta { transform: rotate(-90deg); }
-  #tabela-dc tbody.fechado tr:not(.grupo-cab) { display:none; }
   #tabela-dc td.num .cartao-dica { white-space:normal; font-family:inherit; }
 </style>
 
@@ -234,21 +225,8 @@
         </tr>
       </thead>
       {% for g in grupos_da_lista %}
-      <tbody class="grupo-dc">
-        {% if agrupamento %}
-        <tr class="grupo-cab">
-          {% if pode_operar %}
-            <td class="marca"><input type="checkbox" class="marca-grupo"
-                  title="Selecionar ou desmarcar o grupo"
-                  aria-label="Selecionar o grupo {{ g.rotulo }}"></td>
-          {% endif %}
-          <td colspan="9"><span class="grupo-seta">▾</span>
-            <b>{{ g.rotulo }}</b>
-            <span class="cartao-dica">· {{ g.linhas }} linha(s) · <span class="grupo-quantos">{{ g.a_pagar }}</span> a pagar
-              {% if g.pendencias %} · <b class="ruim">{{ g.pendencias }} pendência(s)</b>{% endif %}</span></td>
-          <td class="num"><b class="grupo-total">{{ g.total|moeda }}</b></td>
-        </tr>
-        {% endif %}
+      <tbody class="grupo-lista">
+        {% if agrupamento %}{{ cabecalho_do_grupo(g, pode_operar, 9) }}{% endif %}
       {% for p in g.pessoas %}
         <tr class="{{ 'clicavel' if p.nome }} {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or not p.conta or p.duplicidade }}"
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}" data-chave="{{ p.chave }}"
@@ -428,45 +406,8 @@ function atualizar() {
   const recado = document.getElementById("recado-selecao");
   if (recado && !mudou) recado.textContent = "";
 }
-// O subtotal de cada grupo acompanha a marcação, como a barra de baixo.
-function atualizarGrupos() {
-  document.querySelectorAll("#tabela-dc tbody.grupo-dc").forEach(corpo => {
-    const dele = [...corpo.querySelectorAll(".marca-pessoa")];
-    const marcadas = dele.filter(c => c.checked);
-    const total = marcadas.reduce((t, c) => t + (parseFloat(c.closest("tr").dataset.valor || "0") || 0), 0);
-    const q = corpo.querySelector(".grupo-quantos");
-    const t = corpo.querySelector(".grupo-total");
-    const g = corpo.querySelector(".marca-grupo");
-    if (q) q.textContent = marcadas.length;
-    if (t) t.textContent = dinheiro(total);
-    if (g) {
-      const livres = dele.filter(c => !c.disabled);
-      g.checked = livres.length > 0 && livres.every(c => c.checked);
-      g.indeterminate = !g.checked && livres.some(c => c.checked);
-      g.disabled = !livres.length;
-    }
-  });
-}
-caixas.forEach(caixa => caixa.addEventListener("change", () => { atualizar(); atualizarGrupos(); }));
+caixas.forEach(caixa => caixa.addEventListener("change", atualizar));
 atualizar();
-atualizarGrupos();
-
-document.querySelectorAll(".marca-grupo").forEach(g => g.addEventListener("change", () => {
-  g.closest("tbody").querySelectorAll(".marca-pessoa").forEach(c => {
-    if (!c.disabled) c.checked = g.checked;
-  });
-  atualizar(); atualizarGrupos();
-}));
-document.querySelectorAll("#tabela-dc tr.grupo-cab").forEach(cab => cab.addEventListener("click", e => {
-  if (e.target.closest(".marca")) return;
-  cab.closest("tbody").classList.toggle("fechado");
-}));
-const abrirFechar = document.getElementById("abrir-fechar-grupos");
-if (abrirFechar) abrirFechar.addEventListener("click", () => {
-  const fechar = abrirFechar.textContent.startsWith("fechar");
-  document.querySelectorAll("#tabela-dc tbody.grupo-dc").forEach(c => c.classList.toggle("fechado", fechar));
-  abrirFechar.textContent = fechar ? "abrir todos" : "fechar todos";
-});
 
 // Clicar na linha abre a ficha (quem está no cadastro); caixinha, link e botão não.
 if (tabela) tabela.addEventListener("click", e => {
@@ -478,13 +419,13 @@ if (tabela) tabela.addEventListener("click", e => {
 const marcarTodos = document.getElementById("marcar-todos");
 if (marcarTodos) marcarTodos.addEventListener("change", () => {
   caixas.forEach(c => { if (!c.disabled) c.checked = marcarTodos.checked; });
-  atualizar(); atualizarGrupos();
+  atualizar();
 });
 
 const desfazer = document.getElementById("btn-desfazer");
 if (desfazer) desfazer.addEventListener("click", () => {
   caixas.forEach((c, i) => { c.checked = inicial[i]; });
-  atualizar(); atualizarGrupos();
+  atualizar();
 });
 
 const salvar = document.getElementById("btn-salvar-selecao");
@@ -583,4 +524,6 @@ document.querySelectorAll(".usar-obra").forEach(b => b.addEventListener("click",
   });
 })();
 </script>
+{% set ag_parte = 'script' %}{% set ag_tabela = 'tabela-dc' %}
+{% include "_agrupar_lista.html" %}
 {% endblock %}

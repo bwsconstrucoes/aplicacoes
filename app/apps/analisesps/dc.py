@@ -130,6 +130,17 @@ def ler_data(recarregar: bool = False) -> list:
     return linhas
 
 
+def lida_em():
+    """Quando a aba "Data" foi lida pela última vez (horário de Brasília), ou
+    None se ainda não foi."""
+    guardado = _cache.get("data")
+    if not guardado:
+        return None
+    from .horario import FUSO
+    import datetime as _dt
+    return _dt.datetime.fromtimestamp(guardado[0], tz=_dt.timezone.utc).astimezone(FUSO)
+
+
 def carteiras(recarregar: bool = False) -> tuple:
     """(`{tipo de despesa sem acento: carteira}`, aviso) — da aba "Data base
     BeeVale" da planilha da DC (dono: *"converte a categoria do plano financeiro
@@ -357,6 +368,9 @@ def calcular(recarregar: bool = False, mostrar_geradas: bool = False) -> dict:
             "quantos_a_pagar": 0, "por_obra": [], "com_problema": [],
             "geradas": 0, "pronto": _pronto()}
     linhas = ler_data(recarregar)
+    # QUANDO A ABA FOI LIDA (dono, 05/10/2026: *"seria interessante ter a
+    # informação do momento em que ela foi atualizada, data e hora"*).
+    base["lida_em"] = lida_em()
     cpfs = sorted({l["cpf"] for l in linhas})
     fichas = colaboradores.muitos_por_cpf(cpfs) if cpfs else {}
     diarias = colaboradores.valores_de_diaria(cpfs) if cpfs else {}
@@ -503,23 +517,10 @@ def resumo_por(linhas, campo: str) -> list:
 
 
 def agrupar(pessoas, campo: str) -> list:
-    """A lista da tela em grupos: `[{rotulo, pessoas, linhas, a_pagar, total}]`.
-    Sem campo, um grupo só (sem cabeçalho). A ordem dentro do grupo é a da lista
-    (pendências primeiro); os grupos vão do maior valor a pagar para o menor."""
-    if not campo:
-        return [{"rotulo": "", "pessoas": list(pessoas)}]
-    grupos: dict = {}
-    for p in pessoas:
-        grupos.setdefault(_rotulo_do_grupo(p, campo), []).append(p)
-    saida = []
-    for rotulo, membros in grupos.items():
-        vai = [p for p in membros if p["pagar"] and p["valor"] > 0 and not p["gerada"]]
-        saida.append({"rotulo": rotulo, "pessoas": membros, "linhas": len(membros),
-                      "a_pagar": len(vai),
-                      "total": sum((p["valor"] for p in vai), Decimal("0.00")),
-                      "pendencias": sum(1 for p in membros
-                                        if p["impossivel"] or not p["conta"])})
-    return sorted(saida, key=lambda g: (-g["total"], g["rotulo"]))
+    """A lista da tela em grupos (`folha_lista.agrupar`, a mesma dos auxílios)."""
+    from . import folha_lista
+    return folha_lista.agrupar(pessoas, campo, rotulo=_rotulo_do_grupo,
+                               pendente=lambda p: p["impossivel"] or not p["conta"])
 
 
 def linhas_a_pagar(calculado: dict | None = None) -> list:

@@ -174,7 +174,8 @@ def avisar_solicitante(s: Session, pedido: InsumoSolicitacao) -> bool:
                  f"Motivo: {pedido.motivo}")
     try:
         from app.apps.notificador import enviar_telegram
-        r = enviar_telegram(telefone=quem.telefone, cpf=quem.cpf, mensagem=texto)
+        r = enviar_telegram(telefone=quem.telefone, cpf=quem.cpf, mensagem=texto,
+                            finalidade="erp.insumos")
     except Exception as e:
         logger.warning("ERP/suprimentos: aviso de cadastro não saiu (%s)", e)
         return False
