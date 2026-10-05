@@ -1,5 +1,6 @@
 {% extends "analisesps_base.html" %}
 {% from "_folha_macros.html" import bloco %}
+{% from "_agrupar_macros.html" import cabecalho_do_grupo %}
 {% block titulo %}{{ resultado.rotulo if resultado else 'Alimentação e transporte' }} — Análise de SPs{% endblock %}
 
 {# ---------------------------------------------------------------------------
@@ -134,6 +135,8 @@
   <input type="hidden" name="tipo" value="{{ tipo }}">
   <input type="hidden" name="ano" value="{{ ano }}">
   <input type="hidden" name="mes" value="{{ mes }}">
+  {# O agrupamento escolhido sobrevive ao filtro. #}
+  {% if 'agrupar' in request.args %}<input type="hidden" name="agrupar" value="{{ agrupamento }}">{% endif %}
   <div class="filtros-cab">
     <h2>Filtros</h2>
     <a class="link-btn" href="{{ url_tela }}{{ base_qs }}">Limpar</a>
@@ -283,9 +286,13 @@
   {% include "_relatorio_acoes.html" %}
 </div>
 
+{% set ag_parte = 'barra' %}{% set ag_endpoint = 'analisesps.tela_folha_auxilio' %}{% set ag_tabela = 'tabela-auxilio' %}
+{% include "_agrupar_lista.html" %}
+
 {% if pode_operar %}
 <p class="cartao-dica" style="margin:0 0 8px">
-  Os colaboradores que atendem aos critérios vêm <b>selecionados para pagamento</b>.
+  Os colaboradores que atendem aos critérios vêm <b>selecionados para pagamento</b>
+  (no agrupamento, a caixinha do grupo marca ou desmarca o grupo inteiro).
   Desmarque os que não devem ser pagos e clique em <b>Salvar seleção</b> ao final.
   Clique na linha para consultar a observação do cadastro e o ponto do mês.
 </p>
@@ -316,8 +323,10 @@
           <th class="num">Total</th>
         </tr>
       </thead>
-      <tbody>
-      {% for p in pessoas %}
+      {% for g in grupos_da_lista %}
+      <tbody class="grupo-lista">
+        {% if agrupamento %}{{ cabecalho_do_grupo(g, pode_operar, 11) }}{% endif %}
+      {% for p in g.pessoas %}
         <tr class="clicavel {{ 'nao-vai' if not p.pagar }} {{ 'linha-alerta' if p.impossivel or p.sem_obra }}"
             data-cpf="{{ p.cpf }}" data-nome="{{ p.nome }}"
             data-valor="{{ p.valor }}"
@@ -412,17 +421,33 @@
              acrescentado à mão. #}
           <td class="ajustes">
             {% if p.ausencias %}
+              {# DESCONTO PARCIAL (05/10/2026): *"pode ser que de 5 dias, um
+                 tenha justificativa e vamos descontar somente 4"*. O botão abre
+                 a janela com os dias; os dias relevados vão com justificativa. #}
               <div class="aj-ausencia {{ 'aplicado' if p.desconto_aplicado }}"
+                   data-valor-dia="{{ p.valor_ausencia_dia }}"
+                   data-motivo-relevadas="{{ p.motivo_relevadas }}"
+                   data-ausencias='{{ p.ausencias|map(attribute="data")|map("string")|list|tojson }}'
+                   data-motivos='{{ p.ausencias|map(attribute="motivo")|list|tojson }}'
+                   data-descontar='{{ p.ausencias|map(attribute="descontar", default=true)|list|tojson }}'
                    title="{% for a in p.ausencias %}{{ a.data.strftime('%d/%m') }} {{ a.motivo }}{{ '; ' if not loop.last }}{% endfor %}">
-                <b>{{ p.ausencias|length }} ausência(s)</b> −{{ p.desconto_proposto|moeda }}
+                {% if p.desconto_aplicado %}
+                  <b>{{ p.dias_descontados }} de {{ p.ausencias|length }} ausência(s)</b> −{{ p.desconto_valor|moeda }}
+                {% else %}
+                  <b>{{ p.ausencias|length }} ausência(s)</b> −{{ p.desconto_proposto|moeda }}
+                {% endif %}
                 <br><span class="cartao-dica">{{ p.ausencias_resumo }}
-                  ({% for a in p.ausencias %}{{ a.data.strftime('%d/%m') }}{{ ', ' if not loop.last }}{% endfor %})</span>
+                  ({% for a in p.ausencias %}<span class="{{ 'relevada' if p.desconto_aplicado and not a.descontar }}">{{ a.data.strftime('%d/%m') }}</span>{{ ', ' if not loop.last }}{% endfor %})</span>
+                {% if p.desconto_aplicado and p.motivo_relevadas %}
+                  <br><span class="cartao-dica">não descontado(s): {% for a in p.ausencias if not a.descontar %}{{ a.data.strftime('%d/%m') }}{{ ', ' if not loop.last }}{% endfor %} — {{ p.motivo_relevadas }}</span>
+                {% endif %}
                 {% if pode_operar %}
                   <br>{% if p.desconto_aplicado %}
                     <span class="selo aprovado">desconto aplicado</span>
+                    <button type="button" class="link-btn aj-desconto-dias">alterar</button>
                     <button type="button" class="link-btn aj-desconto" data-aplicar="">desfazer</button>
                   {% else %}
-                    <button type="button" class="btn btn-mini btn-desconto aj-desconto" data-aplicar="1">Aplicar desconto</button>
+                    <button type="button" class="btn btn-mini btn-desconto aj-desconto-dias">Aplicar desconto</button>
                   {% endif %}
                 {% elif p.desconto_aplicado %}<br><span class="selo aprovado">desconto aplicado</span>{% endif %}
               </div>
@@ -442,12 +467,14 @@
             {% if p.valor != p.valor_calculado and p.valor_calculado %}<br><span class="cartao-dica">calculado {{ p.valor_calculado|moeda }}</span>{% endif %}
           </td>
         </tr>
-      {% else %}
-        <tr><td colspan="13" class="cartao-dica">
-          Nenhum colaborador corresponde ao filtro. Ajuste os filtros na lateral.
-        </td></tr>
       {% endfor %}
       </tbody>
+      {% endfor %}
+      {% if not pessoas %}
+      <tbody><tr><td colspan="13" class="cartao-dica">
+          Nenhum colaborador corresponde ao filtro. Ajuste os filtros na lateral.
+      </td></tr></tbody>
+      {% endif %}
     </table>
 
   </div>
@@ -524,6 +551,26 @@
 {% endif %}
 
 {% if pode_operar %}
+<dialog class="dialogo" id="dialogo-desconto">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Desconto das ausências <small id="desconto-nome"></small></h3>
+  <p class="cartao-dica">Marcados = descontados. Desmarque o dia que tem
+    justificativa e escreva o motivo — os dias e o motivo vão para o relatório.
+    Valor de um dia: <b id="desconto-valor-dia"></b>.</p>
+  <div id="desconto-dias" class="desconto-dias"></div>
+  <label class="rotulo-campo" for="desconto-motivo" style="margin-top:8px">Justificativa dos dias não descontados</label>
+  <input id="desconto-motivo" maxlength="300" placeholder="Ex.: atestado entregue ao DP" style="width:100%">
+  <p class="cartao-dica" id="desconto-total"></p>
+  <div class="lat-acoes" style="margin-top:10px">
+    <button type="button" class="btn" id="desconto-aplicar">Aplicar desconto</button>
+  </div>
+</dialog>
+<style>
+  .desconto-dias label { display:flex; gap:8px; align-items:baseline; padding:3px 0; }
+  .aj-ausencia .relevada { text-decoration: line-through; }
+</style>
+
 <dialog class="dialogo" id="dialogo-extra">
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
@@ -695,6 +742,61 @@ document.querySelectorAll(".aj-desconto").forEach(b => b.addEventListener("click
   } else { b.disabled = false; }
 }));
 
+// --- desconto parcial: escolher os dias (05/10/2026) ---------------------
+(function () {
+  const dialogo = document.getElementById("dialogo-desconto");
+  if (!dialogo) return;
+  const lista = document.getElementById("desconto-dias");
+  const motivo = document.getElementById("desconto-motivo");
+  const total = document.getElementById("desconto-total");
+  const aplicar = document.getElementById("desconto-aplicar");
+  let cpf = "", porDia = 0;
+  const brl = n => n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+  const br = iso => iso.split("-").reverse().join("/");
+  function contar() {
+    const caixas = [...lista.querySelectorAll("input")];
+    const n = caixas.filter(c => c.checked).length;
+    total.textContent = "Descontar " + n + " de " + caixas.length + " dia(s): −" + brl(n * porDia);
+    aplicar.textContent = n ? "Aplicar desconto de " + n + " dia(s)" : "Não descontar nenhum dia";
+  }
+  document.querySelectorAll(".aj-desconto-dias").forEach(b => b.addEventListener("click", () => {
+    if (avisarSeHaSelecaoPorSalvar()) return;
+    const linha = b.closest("tr");
+    const caixa = b.closest(".aj-ausencia");
+    cpf = linha.dataset.cpf;
+    porDia = parseFloat(caixa.dataset.valorDia || "0") || 0;
+    const datas = JSON.parse(caixa.dataset.ausencias || "[]");
+    const motivos = JSON.parse(caixa.dataset.motivos || "[]");
+    const descontar = JSON.parse(caixa.dataset.descontar || "[]");
+    const jaAplicado = caixa.classList.contains("aplicado");
+    document.getElementById("desconto-nome").textContent = linha.dataset.nome;
+    document.getElementById("desconto-valor-dia").textContent = brl(porDia);
+    lista.innerHTML = "";
+    datas.forEach((d, i) => {
+      const rot = document.createElement("label");
+      rot.innerHTML = '<input type="checkbox"> <b></b> <span class="cartao-dica"></span>';
+      rot.querySelector("input").value = d;
+      rot.querySelector("input").checked = jaAplicado ? descontar[i] !== false : true;
+      rot.querySelector("b").textContent = br(d);
+      rot.querySelector("span").textContent = motivos[i] || "";
+      lista.appendChild(rot);
+    });
+    motivo.value = jaAplicado ? (caixa.dataset.motivoRelevadas || "") : "";
+    contar();
+    dialogo.showModal();
+  }));
+  lista.addEventListener("change", contar);
+  aplicar.addEventListener("click", async () => {
+    const relevadas = [...lista.querySelectorAll("input")].filter(c => !c.checked).map(c => c.value);
+    const m = motivo.value.trim();
+    if (relevadas.length && !m) { alert("Informe a justificativa dos dias que não serão descontados."); motivo.focus(); return; }
+    aplicar.disabled = true;
+    if (await gravarExtras({cpfs: [cpf], desconto_ausencias: true,
+                            ausencias_relevadas: relevadas, motivo_relevadas: m})) location.reload();
+    else aplicar.disabled = false;
+  });
+})();
+
 const todosDescontos = document.getElementById("aplicar-todos-descontos");
 if (todosDescontos) todosDescontos.addEventListener("click", async () => {
   if (avisarSeHaSelecaoPorSalvar()) return;
@@ -814,4 +916,6 @@ if (fecharAux) fecharAux.addEventListener("click", async () => {
 });
 
 </script>
+{% set ag_parte = 'script' %}{% set ag_tabela = 'tabela-auxilio' %}
+{% include "_agrupar_lista.html" %}
 {% endblock %}

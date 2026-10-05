@@ -699,6 +699,43 @@ def test_quem_SAI_no_MES_DO_PAGAMENTO_recebe_proporcional(banco_auxilio):
         situacao=col.SITUACAO_SAINDO, data_saida=dt.date(2026, 11, 20)), INICIO, FIM)
     assert depois["valor"] == D("220.00"), "sai depois do mês do pagamento: inteiro"
 
+def test_ULTIMO_DIA_trabalhado_na_competencia_sem_saida_NAO_recebe():
+    """05/10/2026: sem data de saída, mas com o último dia trabalhado dentro da
+    competência, a pessoa já saiu — *"se ele já saiu, ele não recebe mais"*. Ela
+    ficava "em desligamento", recebendo, e aparecia entre os "sem obra"."""
+    from app.apps.analisesps import colaboradores as col, folha_auxilio as fx
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(
+        situacao=col.SITUACAO_SAINDO, ultimo_dia=dt.date(2026, 9, 18)), INICIO, FIM)
+    assert r["pagar"] is False and r["desligado"]
+    assert "18/09/2026" in " ".join(r["motivos"])
+    # Último dia DEPOIS da competência: segue recebendo, com o aviso.
+    r = fx.calcular_pessoa(fx.ALIMENTACAO, ficha(
+        situacao=col.SITUACAO_SAINDO, ultimo_dia=dt.date(2026, 10, 3)), INICIO, FIM)
+    assert r["pagar"] is True
+
+
+def test_o_filtro_SEM_OBRA_nao_traz_os_DESLIGADOS():
+    """05/10/2026: *"quero tratar somente os que devem receber, mas estão sem obra.
+    O filtro que tem exibe os que estão desligados."* O escondido continua
+    escondido quando se filtra outra situação; aparece se ele for marcado."""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps import folha_lista
+    vai_sem_obra = {"cpf": "1", "nome": "A", "pagar": True, "sem_obra": True,
+                    "pagar_calculado": True}
+    saiu_sem_obra = {"cpf": "2", "nome": "B", "pagar": True, "sem_obra": True,
+                     "desligado": True, "pagar_calculado": False}
+    pessoas = [vai_sem_obra, saiu_sem_obra]
+    lista = folha_lista.filtrar(pessoas, MultiDict([("situacao", "sem_obra")]),
+                                campo_da_obra="obra",
+                                escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
+    assert [p["cpf"] for p in lista["pessoas"]] == ["1"]
+    lista = folha_lista.filtrar(pessoas, MultiDict([("situacao", "sem_obra"),
+                                                    ("situacao", "saiu")]),
+                                campo_da_obra="obra",
+                                escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)
+    assert [p["cpf"] for p in lista["pessoas"]] == ["1", "2"]
+
+
 def test_AUSENCIA_e_falta_ou_atestado_sem_marcacao_e_nao_folga():
     from app.apps.analisesps import folha_auxilio as fx
     d = dt.date(2026, 9, 8)
@@ -778,6 +815,69 @@ def test_gravar_extras_NAO_apaga_a_selecao_e_a_selecao_nao_apaga_o_extra(banco_a
                      desconto_ausencias=None)
     fx.limpar_ajuste(fx.TRANSPORTE, 2026, 9, GERLANIO)
     assert fx.ajustes_do_mes(fx.TRANSPORTE, 2026, 9) == {}
+
+
+def test_DESCONTO_PARCIAL_releva_os_dias_justificados(banco_auxilio):
+    """Dono, 05/10/2026: *"pode ser que de 5 dias, um tenha justificativa e vamos
+    descontar somente 4"*."""
+    from app.apps.analisesps import folha_auxilio as fx
+    ponto = [_dia(dt.date(2026, 9, 8), "FALTA NÃO JUSTIFICADA"),
+             _dia(dt.date(2026, 9, 9), "ATESTADO"),
+             _dia(dt.date(2026, 9, 10), "FALTA")]
+    r = fx.calcular_pessoa(fx.TRANSPORTE, ficha(), INICIO, FIM,
+                           {"desconto_ausencias": True,
+                            "ausencias_relevadas": "2026-09-09",
+                            "motivo_relevadas": "atestado entregue"}, ausencias=ponto)
+    assert r["desconto_proposto"] == D("30.00"), "o proposto é de todos os dias"
+    assert r["dias_descontados"] == 2 and r["desconto_valor"] == D("20.00")
+    assert r["valor"] == D("200.00")
+    assert [a["descontar"] for a in r["ausencias"]] == [True, False, True]
+    assert r["motivo_relevadas"] == "atestado entregue"
+
+    # Gravado pela tela: os dias e a justificativa; sem justificativa, recusa.
+    with pytest.raises(fx.ErroDoAuxilio):
+        fx.gravar_extras(fx.TRANSPORTE, 2026, 9, GERLANIO, desconto_ausencias=True,
+                         ausencias_relevadas=["2026-09-09"])
+    fx.gravar_extras(fx.TRANSPORTE, 2026, 9, GERLANIO, desconto_ausencias=True,
+                     ausencias_relevadas=["2026-09-09"], motivo_relevadas="atestado")
+    g = fx.ajustes_do_mes(fx.TRANSPORTE, 2026, 9)[GERLANIO]
+    assert g["ausencias_relevadas"] == "2026-09-09" and g["motivo_relevadas"] == "atestado"
+    # Desfazer o desconto limpa a escolha dos dias.
+    fx.gravar_extras(fx.TRANSPORTE, 2026, 9, GERLANIO, desconto_ausencias=None)
+    g = fx.ajustes_do_mes(fx.TRANSPORTE, 2026, 9)[GERLANIO]
+    assert g["ausencias_relevadas"] == "" and g["desconto_ausencias"] is None
+
+
+def test_o_RELATORIO_detalha_cada_ausencia_e_o_que_se_decidiu(banco_auxilio):
+    """Dono, 05/10/2026: *"é importante que as informações e detalhamento estejam
+    nos relatórios, visto que talvez precisemos encaminhar a alguém para
+    analisar"*."""
+    import io
+    import openpyxl
+    from app.apps.analisesps import folha_auxilio as fx, folha_relatorio as fr
+    ponto = [_dia(dt.date(2026, 9, 8), "FALTA NÃO JUSTIFICADA"),
+             _dia(dt.date(2026, 9, 9), "ATESTADO")]
+    p = fx.calcular_pessoa(fx.TRANSPORTE, ficha(), INICIO, FIM,
+                           {"desconto_ausencias": True, "ausencias_relevadas": "2026-09-09",
+                            "motivo_relevadas": "atestado entregue"}, ausencias=ponto)
+    p["obra"] = "CREPEOLINDA"
+    montado = fr.montado_do_auxilio({"pessoas": [p]}, [p], {}, {}, "Auxílio transporte",
+                                    "09/2026")
+    dados = fr.montar(montado, {})
+    detalhe = dados["pessoas"][0]["ausencias_detalhe"]
+    assert [a["situacao"] for a in detalhe] == [
+        "descontada", "não descontada — atestado entregue"]
+    assert "desconto de 1 de 2 ausência(s)" in dados["pessoas"][0]["situacao_rotulo"]
+    aba = openpyxl.load_workbook(io.BytesIO(fr.excel(dados)))["Ausências"]
+    assert aba["D2"].value == "08/09/2026" and aba["F3"].value.startswith("não descontada")
+    assert fr.pdf(dados)[:5] == b"%PDF-"
+
+    # Sem aplicar: "a confirmar", e o rótulo diz o proposto.
+    p2 = fx.calcular_pessoa(fx.TRANSPORTE, ficha(), INICIO, FIM, ausencias=ponto)
+    p2["obra"] = "CREPEOLINDA"
+    m2 = fr.montado_do_auxilio({"pessoas": [p2]}, [p2], {}, {}, "Auxílio transporte", "09/2026")
+    assert {a["situacao"] for a in m2["pessoas"][0]["ausencias_detalhe"]} == {"a confirmar"}
+    assert "desconto a confirmar" in m2["pessoas"][0]["situacao_rotulo"]
 
 
 def test_desconto_de_ausencia_na_ALIMENTACAO_e_recusado(banco_auxilio):

@@ -204,6 +204,11 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
         # O desconto só vale quando ele aplica (`desconto_aplicado`).
         "ausencias": [], "desconto_proposto": Decimal("0.00"),
         "desconto_aplicado": False,
+        # Desconto parcial (05/10/2026): o valor de UM dia de ausência, quantos
+        # dias foram descontados, o valor descontado e a justificativa dos dias
+        # relevados.
+        "valor_ausencia_dia": Decimal("0.00"), "dias_descontados": 0,
+        "desconto_valor": Decimal("0.00"), "motivo_relevadas": "",
         # O valor acrescentado à mão neste mês, e o porquê.
         "valor_extra": Decimal("0.00"), "motivo_extra": "",
         "valor_calculado": Decimal("0.00"),
@@ -250,11 +255,23 @@ def calcular_pessoa(tipo: str, ficha: dict, inicio, fim,
     data_saida = ficha.get("data_saida")
     pag_ini = fim + dt.timedelta(days=1)
     pag_fim = pag_ini.replace(day=calendar.monthrange(pag_ini.year, pag_ini.month)[1])
+    ultimo_dia = ficha.get("ultimo_dia")
     if situacao in (colaboradores.SITUACAO_SAIU,
                     colaboradores.SITUACAO_AFASTADO):
         saida["pagar"] = False
         saida["motivos"].append(ficha.get("motivo")
                                 or "colaborador inativo no cadastro.")
+    elif (situacao == colaboradores.SITUACAO_SAINDO and not data_saida
+            and ultimo_dia and ultimo_dia <= fim):
+        # ⚠️ O ÚLTIMO DIA TRABALHADO DENTRO DA COMPETÊNCIA, sem data de saída
+        # lançada (05/10/2026): a pessoa já saiu — e *"se ele já saiu, ele não
+        # recebe mais"*. Até aqui ela ficava "em desligamento", recebendo, e
+        # aparecia entre os "sem obra" que ele queria tratar.
+        saida["pagar"] = False
+        saida["desligado"] = True
+        saida["motivos"].append(
+            f"último dia trabalhado em {ultimo_dia.strftime('%d/%m/%Y')}, dentro da "
+            "competência (sem data de saída lançada) — não recebe.")
     elif (situacao == colaboradores.SITUACAO_SAINDO and data_saida
             and pag_ini <= data_saida <= pag_fim):
         saida["saida_no_mes"] = data_saida
@@ -426,6 +443,24 @@ def ausencias_do_mes(dias, inicio, fim, modo: str) -> list:
     return sorted(saida, key=lambda a: a["data"])
 
 
+def datas_relevadas(texto) -> set:
+    """As datas guardadas em `ausencias_relevadas` ("2026-09-12,2026-09-15")."""
+    saida = set()
+    for parte in str(texto or "").replace(";", ",").split(","):
+        parte = parte.strip()
+        if not parte:
+            continue
+        try:
+            if "/" in parte:
+                d, m, a = parte.split("/")
+                saida.add(dt.date(int(a), int(m), int(d)))
+            else:
+                saida.add(dt.date.fromisoformat(parte))
+        except (ValueError, TypeError):
+            continue
+    return saida
+
+
 def resumo_das_ausencias(ausencias) -> str:
     """"2 FALTA NÃO JUSTIFICADA, 1 ATESTADO" — o motivo, contado."""
     contagem: dict = {}
@@ -457,11 +492,24 @@ def _acrescimos(saida: dict, ajuste: dict, tipo: str, modo: str, inicio, fim,
                 por_dia = saida["valor_unitario"]
             proposto = min(saida["valor"], (por_dia * n).quantize(CENTAVO))
             saida["desconto_proposto"] = proposto
+            saida["valor_ausencia_dia"] = por_dia.quantize(CENTAVO)
             saida["ausencias_resumo"] = resumo_das_ausencias(lista)
+            # DESCONTO PARCIAL (dono, 05/10/2026: *"pode ser que de 5 dias, um
+            # tenha justificativa e vamos descontar somente 4"*): os dias
+            # relevados ficam fora do desconto, com a justificativa.
+            relevadas = datas_relevadas(ajuste.get("ausencias_relevadas"))
+            for a in lista:
+                a["descontar"] = a["data"] not in relevadas
             # O motivo fica na coluna Ajustes da tela (não se repete aqui).
             if ajuste.get("desconto_ausencias"):
+                n_desc = sum(1 for a in lista if a["descontar"])
+                valor_desc = min(saida["valor"], (por_dia * n_desc).quantize(CENTAVO))
                 saida["desconto_aplicado"] = True
-                saida["valor"] = (saida["valor"] - proposto).quantize(CENTAVO)
+                saida["dias_descontados"] = n_desc
+                saida["desconto_valor"] = valor_desc
+                saida["motivo_relevadas"] = (ajuste.get("motivo_relevadas") or ""
+                                             if n_desc < n else "")
+                saida["valor"] = (saida["valor"] - valor_desc).quantize(CENTAVO)
     extra = ajuste.get("valor_extra")
     if extra:
         saida["valor_extra"] = Decimal(str(extra)).quantize(CENTAVO)
@@ -697,9 +745,11 @@ def ajustes_do_mes(tipo: str, ano: int, mes: int) -> dict:
     if not _pronto():
         return {}
     extras = _tem_extras()
+    relevadas = extras and _tem_relevadas()
     linhas = consultar(
         "SELECT cpf, pagar, dias, obra, observacao, alterado_por"
         + (", valor_extra, motivo_extra, desconto_ausencias" if extras else "")
+        + (", ausencias_relevadas, motivo_relevadas" if relevadas else "")
         + "  FROM analisesps.auxilio_ajuste "
         " WHERE tipo = ? AND ano = ? AND mes = ?",
         (tipo, int(ano), int(mes)))
@@ -710,7 +760,16 @@ def ajustes_do_mes(tipo: str, ano: int, mes: int) -> dict:
         if extras:
             saida[l[0]].update(valor_extra=l[6], motivo_extra=l[7] or "",
                                desconto_ausencias=l[8])
+        if relevadas:
+            saida[l[0]].update(ausencias_relevadas=l[9] or "",
+                               motivo_relevadas=l[10] or "")
     return saida
+
+
+def _tem_relevadas() -> bool:
+    """A migração 048 já rodou? (desconto parcial das ausências)"""
+    from .db import tem_coluna
+    return tem_coluna("auxilio_ajuste", "ausencias_relevadas")
 
 
 def _tem_extras() -> bool:
@@ -757,6 +816,25 @@ def gravar_extras(tipo: str, ano: int, mes: int, cpfs, quem: str = "",
     if "desconto_ausencias" in mudancas:
         d = mudancas["desconto_ausencias"]
         colunas["desconto_ausencias"] = None if d is None else bool(d)
+        # Os dias relevados (desconto parcial, 048). Desfazer o desconto limpa a
+        # escolha; aplicar sem dizer quais relevar = desconta todos.
+        relevadas = mudancas.get("ausencias_relevadas") or []
+        if isinstance(relevadas, str):
+            relevadas = relevadas.split(",")
+        datas = sorted(datas_relevadas(",".join(str(x) for x in relevadas)))
+        motivo = " ".join(str(mudancas.get("motivo_relevadas") or "").split())[:300]
+        if datas and not d:
+            datas, motivo = [], ""
+        if datas and not motivo:
+            raise ErroDoAuxilio("informe a justificativa dos dias que não serão "
+                                "descontados — ela vai para o relatório.")
+        if _tem_relevadas():
+            colunas["ausencias_relevadas"] = ",".join(x.isoformat() for x in datas)
+            colunas["motivo_relevadas"] = motivo
+        elif datas:
+            raise ErroDoAuxilio(
+                'atualização do banco pendente (048) para o desconto parcial. Clique '
+                'em "Aplicar atualizações do banco" em Configurações.')
     if "obra" in mudancas:
         # A obra escolhida à mão para quem não tem ponto (vazio = tira).
         colunas["obra"] = " ".join(str(mudancas["obra"] or "").split()).upper()[:60]
@@ -985,6 +1063,24 @@ def aplicar_regra_de_rateio(p: dict, regra: dict) -> dict:
     p["obra_de_onde"] = "regra"
     p["regra"] = regra.get("nome") or ""
     return p
+
+
+# A lista agrupada da tela (dono, 05/10/2026: *"tanto em alimentação como em
+# transporte, possa ser realizado o agrupamento e desagrupamento (…) por conta,
+# por obra, etc."*). Quem tem rateio entra no grupo da obra da MAIOR parte.
+AGRUPAMENTOS = [("obra", "Obra"), ("conta", "Conta"), ("modo", "Categoria"),
+                ("fase", "Fase Atual"), ("", "Sem agrupar")]
+AGRUPAMENTO_PADRAO = "obra"
+
+
+def agrupar(pessoas, campo: str, contas: dict) -> list:
+    """`folha_lista.agrupar` com a conta de cada pessoa (a da obra que paga, na
+    aba "C. Diários") e a pendência do auxílio (dado faltando ou sem obra)."""
+    from . import folha_lista
+    for p in pessoas:
+        p["conta"] = contas.get(" ".join(str(p.get("obra") or "").split()).upper(), "")
+    return folha_lista.agrupar(
+        pessoas, campo, pendente=lambda p: bool(p.get("impossivel") or p.get("sem_obra")))
 
 
 def partes_por_obra(p: dict) -> list:

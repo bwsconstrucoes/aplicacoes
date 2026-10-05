@@ -268,14 +268,23 @@ def listar_ferias(texto: str = "", teto: int = 200) -> list:
             params.append(f"%{procurado.lower()}%")
 
     onde = (" WHERE " + " AND ".join(condicoes)) if condicoes else ""
+    # De onde veio (049): importada da Listagem de Férias do Fortes, com
+    # retorno, abono e líquido; lançada à mão fica com a origem vazia.
+    from .db import tem_coluna
+    importadas = tem_coluna("ferias", "origem")
     linhas = consultar(
-        "SELECT id, cpf, nome, inicio, fim, observacao, criado_por "
-        "  FROM analisesps.ferias " + onde +
+        "SELECT id, cpf, nome, inicio, fim, observacao, criado_por"
+        + (", origem, retorno, abono_dias, liquido" if importadas else "")
+        + "  FROM analisesps.ferias " + onde +
         " ORDER BY inicio DESC, lower(nome) LIMIT ?",
         tuple(params) + (int(teto),))
     return [{"id": l[0], "cpf": l[1], "cpf_bonito": cpf_bonito(l[1]),
              "nome": l[2], "inicio": l[3], "fim": l[4], "observacao": l[5],
-             "criado_por": l[6], "dias": (l[4] - l[3]).days + 1}
+             "criado_por": l[6], "dias": (l[4] - l[3]).days + 1,
+             "origem": l[7] if importadas else "",
+             "retorno": l[8] if importadas else None,
+             "abono_dias": l[9] if importadas else 0,
+             "liquido": l[10] if importadas else None}
             for l in linhas]
 
 

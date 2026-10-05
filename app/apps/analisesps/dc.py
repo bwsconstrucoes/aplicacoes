@@ -503,23 +503,10 @@ def resumo_por(linhas, campo: str) -> list:
 
 
 def agrupar(pessoas, campo: str) -> list:
-    """A lista da tela em grupos: `[{rotulo, pessoas, linhas, a_pagar, total}]`.
-    Sem campo, um grupo só (sem cabeçalho). A ordem dentro do grupo é a da lista
-    (pendências primeiro); os grupos vão do maior valor a pagar para o menor."""
-    if not campo:
-        return [{"rotulo": "", "pessoas": list(pessoas)}]
-    grupos: dict = {}
-    for p in pessoas:
-        grupos.setdefault(_rotulo_do_grupo(p, campo), []).append(p)
-    saida = []
-    for rotulo, membros in grupos.items():
-        vai = [p for p in membros if p["pagar"] and p["valor"] > 0 and not p["gerada"]]
-        saida.append({"rotulo": rotulo, "pessoas": membros, "linhas": len(membros),
-                      "a_pagar": len(vai),
-                      "total": sum((p["valor"] for p in vai), Decimal("0.00")),
-                      "pendencias": sum(1 for p in membros
-                                        if p["impossivel"] or not p["conta"])})
-    return sorted(saida, key=lambda g: (-g["total"], g["rotulo"]))
+    """A lista da tela em grupos (`folha_lista.agrupar`, a mesma dos auxílios)."""
+    from . import folha_lista
+    return folha_lista.agrupar(pessoas, campo, rotulo=_rotulo_do_grupo,
+                               pendente=lambda p: p["impossivel"] or not p["conta"])
 
 
 def linhas_a_pagar(calculado: dict | None = None) -> list:
