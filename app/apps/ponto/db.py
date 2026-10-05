@@ -96,6 +96,13 @@ def tem_coluna(conn: Connection, tabela: str, coluna: str) -> bool:
     return existe
 
 
+def esquecer_colunas() -> None:
+    """Esquece o que se sabia das colunas. Chamado depois de aplicar migração:
+    o recurso novo liga na hora, sem esperar o minuto do "não" guardado."""
+    _colunas_sim.clear()
+    _colunas_nao.clear()
+
+
 def tem_003(conn: Connection) -> bool:
     """A migração 003 (QR, fila de envios, mosaico, sinais da foto) já rodou?"""
     return tem_coluna(conn, "marcacoes", "identificacao")

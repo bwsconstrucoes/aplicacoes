@@ -57,7 +57,12 @@ def _base_erp():
     from app.apps.ponto.core import parametros, registro
     with db.conexao() as conn:
         parametros.gravar(conn, registro.PARAMETRO_FONTE, registro.FONTE_ERP, "teste")
+    # O "não existe" guardado por 60 s, de quando outro arquivo do mesmo
+    # trabalhador recriava o schema do ponto, faria valer o padrão (Registro).
+    db.esquecer_colunas()
     registro.esquecer()
+    from app.apps.ponto.core import base_obras
+    base_obras.esquecer()
 
 
 @pytest.fixture

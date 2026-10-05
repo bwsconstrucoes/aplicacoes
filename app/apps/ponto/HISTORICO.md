@@ -120,6 +120,13 @@ todas; status errado na planilha esconde a obra em até 2 h; batida sem internet
 não existe ainda; limpar os dados do navegador do tablet o faz pedir aprovação de
 novo (aprovar o novo, bloquear o antigo).
 
+**Incidente de teste (resolvido):** depois de trazer a `main`, 4 testes do
+ponto falharam só pela ORDEM dos arquivos: o "esta tabela não existe" que o ponto
+guarda por 60 s (para ligar recurso novo sozinho depois do botão) ficava de um
+arquivo que recriava o schema, e a base de pessoas caía no padrão. Agora aplicar
+as atualizações do ponto zera essa memória — o que também faz o recurso novo
+ligar na hora em produção, sem esperar o minuto.
+
 **Não verificado:** a leitura real da planilha (aqui não há credencial do Google;
 o painel já lê a mesma planilha com a mesma conta, então o acesso deve existir);
 o título real da coluna V.

@@ -94,6 +94,7 @@ def mundo(_schema_ponto2, banco, monkeypatch):
     from app.apps.ponto.core import parametros as _par, registro as _reg
     with _db.conexao() as _c:       # a base destes testes é o cadastro do ERP
         _par.gravar(_c, _reg.PARAMETRO_FONTE, _reg.FONTE_ERP, "teste")
+    _db.esquecer_colunas()           # o "não existe" guardado de outro arquivo (ver test_ponto_banco)
     _reg.esquecer()
     from app.apps.ponto.core import base_obras as _bo
     _bo.esquecer()                   # e a de obras, o ERP (a cópia da C. Diários está vazia)

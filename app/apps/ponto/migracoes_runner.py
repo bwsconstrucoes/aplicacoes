@@ -70,6 +70,10 @@ def aplicar_pendentes() -> dict[str, Any]:
             erro = {"migracao": nome, "erro": str(e)[:800]}
             logger.exception("Ponto: falha na migração %s", nome)
             break
+    db.esquecer_colunas()
+    from .core import base_obras, registro
+    base_obras.esquecer()
+    registro.esquecer()
     return {
         "aplicadas": aplicadas,
         "erro": erro,
