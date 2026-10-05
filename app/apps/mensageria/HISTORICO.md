@@ -38,8 +38,8 @@ no próprio código.
 
 ## Onde o trabalho está
 
-**05/10/2026, noite — a TELA MENSAGENS existe, no ramo `claude/amazing-wright-f8g0bm`
-(não publicado).** O dono disse "pode fazer assim, vamos criar essa tela de
+**05/10/2026, noite — a TELA MENSAGENS está PUBLICADA** (junção `25cf488`, com o
+"pode" do dono; suíte verde local e no GitHub Actions com banco). O dono disse "pode fazer assim, vamos criar essa tela de
 mensageria, vamos para frente", com três condições: não mexer em nada que
 impacte o Análise de SPs e o Make; começar usando o WhatsApp pelo ponto; e
 testar. O que foi feito:
@@ -80,9 +80,8 @@ num navegador com banco de verdade** — isso é o passo 3 do dono, abaixo.
 
 **Pelo dono, nesta ordem:**
 
-1. Dizer "pode" para juntar na `main`. Antes eu pergunto se há carga do
-   painel ou sincronização do Análise de SPs em andamento.
-2. **No mesmo momento da junção**, ERP › Configurações › "Aplicar atualizações
+1. ~~Dizer "pode"~~ — feito; publicado em 05/10/2026.
+2. **Agora**, ERP › Configurações › "Aplicar atualizações
    do banco" (a **083**). Até apertar, a tela Mensagens abre e explica o que
    falta, e os envios seguem as variáveis (WhatsApp desligado).
 3. Abrir **ERP › Mensagens**: conferir que os tipos aparecem, que o ponto está

@@ -799,6 +799,8 @@ Quando eu pedir nova feature ou adaptação:
 
 ### 05/10/2026 (noite) — A TELA MENSAGENS: a gestão de por onde cada aviso sai mora no ERP (atravessa áreas)
 
+**Publicado em 05/10/2026** (junção `25cf488`). Migração 083 a aplicar pelo botão.
+
 O dono, de tarde: *"eu preciso ter gestão sobre quais mensagens vão para o
 WhatsApp e quais não vão (…) a prioridade de envio é Telegram; por enquanto,
 ponto permitido no WhatsApp"*, e depois: *"vamos concentrar e focar tudo no
