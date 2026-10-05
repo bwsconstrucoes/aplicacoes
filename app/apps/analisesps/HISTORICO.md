@@ -11827,6 +11827,8 @@ pagamento. O que mudou além do botão:
 - a conferência do Bradesco não dizia nada de uma SP paga em parte — agora
   avisa "PAGO PARCIAL (confira o saldo)", como já avisava "JÁ PAGO".
 
+**Publicada em 05/10/2026** (main em `4b41750`, suíte inteira 8.376 verdes, sem migração).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
