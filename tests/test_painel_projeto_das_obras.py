@@ -70,6 +70,13 @@ def obras(base):
         conn.commit()
     consultas.esquecer_listas()
     yield
+    # ⚠️ LIMPAR NA SAÍDA TAMBÉM: a `config` mora no banco do trabalhador e
+    # sobrevive ao arquivo. O projeto dado aqui ficava para o próximo arquivo
+    # do mesmo trabalhador — e o teste do cenário que prova que o preso NÃO
+    # grava o projeto falhava conforme a ordem (05/10/2026).
+    with base.conexao() as conn:
+        conn.execute("DELETE FROM config WHERE chave = 'projeto_da_obra'")
+        conn.commit()
     consultas.esquecer_listas()
 
 

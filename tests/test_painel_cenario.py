@@ -69,7 +69,8 @@ def base():
         conn.execute("DELETE FROM cenario")
         conn.execute("DELETE FROM socios")
         conn.execute("DELETE FROM usuarios")
-        conn.execute("DELETE FROM config WHERE chave = 'fora_da_analise'")
+        conn.execute("DELETE FROM config WHERE chave IN"
+                     " ('fora_da_analise', 'projeto_da_obra')")
         # pessoal: 2.000 numa, 1.000 na outra
         _por_pagar(conn, 801, "MUITA GENTE", -2000, grupo="Despesas com Pessoal",
                    categoria="Salários")
@@ -94,7 +95,8 @@ def base():
         conn.execute("DELETE FROM cenario")
         conn.execute("DELETE FROM socios")
         conn.execute("DELETE FROM usuarios")
-        conn.execute("DELETE FROM config WHERE chave = 'fora_da_analise'")
+        conn.execute("DELETE FROM config WHERE chave IN"
+                     " ('fora_da_analise', 'projeto_da_obra')")
         conn.commit()
 
 
@@ -382,6 +384,11 @@ def test_quem_esta_preso_nao_abre_nem_grava_os_parametros(preso, monkeypatch):
     o simulador de regras estavam fora da lista do administrador, e quem tinha
     uma obra gravava sócios, participações e regras da empresa inteira — e,
     com o projeto das obras, poderia mudar quem enxerga cada obra."""
+    from app.apps.painel import prestacao_dados
+    # O ponto de partida é "ninguém deu projeto a obra nenhuma" — senão a
+    # conferência do fim não provaria nada (ou falharia por herança de outro
+    # arquivo, como falhou em 05/10/2026).
+    assert "projeto_da_obra" not in prestacao_dados.config()
     cliente = _cliente_preso(monkeypatch)
     assert cliente.get("/painel/prestacao/parametros?aba=projetos").status_code == 404
     assert cliente.get("/painel/prestacao/cenarios").status_code == 404
@@ -389,7 +396,6 @@ def test_quem_esta_preso_nao_abre_nem_grava_os_parametros(preso, monkeypatch):
         "acao": "projeto_da_obra", "aba": "projetos",
         "codigo": "1", "projeto": "DELE"})
     assert resposta.status_code == 404
-    from app.apps.painel import prestacao_dados
     assert "projeto_da_obra" not in prestacao_dados.config()
 
 

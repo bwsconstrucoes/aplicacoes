@@ -2221,6 +2221,27 @@ acesso por projeto). Agora respondem 404 para quem está preso; há teste.
 **Não verificado com dado real:** a lista vem do rateio inteiro agrupado por
 obra — rápida no banco de teste; na produção, conferir se a aba abre ligeiro.
 
+### O teste do preso falhava conforme a ordem — 05/10/2026
+
+`test_quem_esta_preso_nao_abre_nem_grava_os_parametros` passava sozinho e
+falhava às vezes com a suíte do painel em paralelo — também na `main`. **Não
+era cache em memória:** a `config` é tabela, e o banco de teste de cada
+trabalhador vive a sessão inteira. Os testes do projeto das obras gravam
+`projeto_da_obra` e só limpavam a chave na ENTRADA; quando o arquivo do
+cenário caía no mesmo trabalhador depois deles, encontrava o projeto de outro
+teste e acusava o preso de ter gravado. Reproduzido sem paralelismo, rodando
+os dois arquivos nessa ordem.
+
+**Conserto, só nos testes (nenhum código do painel mudou):** o arquivo do
+projeto das obras limpa a chave também na SAÍDA; a fixture do cenário zera
+`projeto_da_obra` junto com `fora_da_analise`; e o teste confere, antes do
+pedido, que a chave não existe — assim a conferência do fim prova o que diz.
+A conferência não foi afrouxada. Verificado: a ordem que falhava passa, e
+`tests/test_painel*.py` em paralelo passou 6 vezes seguidas (652 testes).
+
+**Regra para teste novo do painel com banco:** o que grava na `config`, limpa
+na saída também. A tabela não volta sozinha ao estado inicial.
+
 ## O PDF espremia os números — 01/10/2026
 
 **Publicado em 01/10/2026** (`a374570`), junto com dois consertos da suíte
