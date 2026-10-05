@@ -98,9 +98,26 @@ CARTEIRA = "Produção"
 # ⚠️ A CARTEIRA DO BEEVALE POR VERBA (05/10/2026). Era "Produção" para tudo —
 # a constante do `BeeVale.gs`, que só gerava a folha. O dono: *"eu gerei os
 # diaristas, e a informação da carteira deveria vir Diárias. E ao invés disso,
-# veio Produção."* Verba fora deste mapa segue "Produção" (a alimentação e o
-# transporte estão em aberto com ele). A DC traz a carteira em cada linha.
-CARTEIRA_DA_VERBA = {"diaria": "Diárias"}
+# veio Produção."* E, no mesmo dia, a tabela dele (a aba "Data base BeeVale"
+# da planilha da DC — Tipo DC → Tipo BeeVale):
+#
+#     Despesas com Alimentação → Auxílio Alimentação
+#     Despesas com Transporte  → Despesas com Transporte
+#     Diárias                  → Diárias
+#     Gratificações e Extras   → Gratiticações e Extras   (⚠️ assim na tabela)
+#     Produção                 → Produção
+#     Salários e Ordenados     → Diárias
+#
+# Escrita aqui (e não lida da planilha a cada geração) para o arquivo não
+# depender do Google no meio da geração. ⚠️ A FOLHA DA CONTABILIDADE SEGUE
+# "Produção": a tabela diria "Diárias" (Salários e Ordenados), mas a carteira da
+# folha nunca foi assunto dele — fica a pergunta. A DC lê a aba na hora.
+CARTEIRA_DA_VERBA = {
+    "diaria": "Diárias",
+    "alimentacao": "Auxílio Alimentação",
+    "transporte": "Despesas com Transporte",
+    "gratificacao": "Gratiticações e Extras",
+}
 CATEGORIA_BEEVALE = "BWS"
 
 MIME_XLSX = ("application/vnd.openxmlformats-officedocument"

@@ -246,6 +246,9 @@ def test_a_CARTEIRA_dos_diaristas_e_DIARIAS_e_a_da_folha_PRODUCAO():
          "valor": "900.00", "obra": "X"}], g.BEEVALE)
     carteiras = {l["verbas"][0]: _abrir(g.arquivo_do_lote(l))["C2"].value for l in lotes}
     assert carteiras == {"diaria": "Diárias", "folha": "Produção"}
+    # E a tabela dele (Data base BeeVale), na alimentação e no transporte.
+    assert g.carteira_da_verba("alimentacao") == "Auxílio Alimentação"
+    assert g.carteira_da_verba("transporte") == "Despesas com Transporte"
 
 
 def test_o_arquivo_do_beevale_usa_as_MESMAS_colunas_do_fluxo_das_SPs():
