@@ -205,6 +205,7 @@ function desenhaPrevia(d) {
       html += '<p style="margin:10px 0 4px"><b>Solicitação de Pagamento — conta ' +
         escapa(s.conta || "(sem conta)") + "</b> · R$ " + moedaBr(s.valor) +
         (s.destino ? " · " + escapa(s.destino === "somapay" ? "SomaPay" : "BeeVale") : "") +
+        (s.etiquetas ? ' · <span class="cartao-dica">etiquetas: ' + escapa(s.etiquetas) + "</span>" : "") +
         '</p><div class="tabela-rolagem livre"><table class="sps"><thead><tr>' +
         '<th>Obra (rateio múltiplo)</th><th>Código OMIE</th><th class="num">Valor</th>' +
         "</tr></thead><tbody>" +
@@ -294,30 +295,36 @@ if (botaoExcluir) botaoExcluir.addEventListener("click", async () => {
 let aLancar = [];
 if (botaoPipefy) botaoPipefy.addEventListener("click", async () => {
   aLancar = lotesParaLancar();
-  corpoCards.innerHTML = '<p class="cartao-dica">Gerando a prévia: consultando ' +
-    "os pipes e os centros de custo no Pipefy…</p>";
   criarCards.hidden = true;
   dialogoCards.showModal();
-  let html = "", bloqueado = false;
-  for (const lote of aLancar) {
+  // ⚠️ AS PRÉVIAS SAEM AO MESMO TEMPO, cada uma no seu lugar (05/10/2026). Uma
+  // atrás da outra, a janela mostrava só a primeira (a mais recente) enquanto a
+  // segunda consultava o Pipefy — e o dono leu como "só exibe a mais recente,
+  // como se houvesse um bloqueio" ao misturar folha e diárias.
+  const total = aLancar.length;
+  corpoCards.innerHTML = aLancar.map((l, i) => '<div id="previa-lote-' + i + '">' +
+    '<p class="cartao-dica">Geração ' + (i + 1) + " de " + total +
+    ": consultando os pipes e os centros de custo no Pipefy…</p></div>").join("");
+  let bloqueado = false;
+  await Promise.all(aLancar.map(async (lote, i) => {
+    const lugar = document.getElementById("previa-lote-" + i);
     try {
       const r = await fetch("{{ url_for('analisesps.folha_card_preparar') }}", {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify(lote)});
       const d = await r.json();
-      if (!d.ok) { html += '<div class="aviso erro">' + escapa(d.erro) + "</div>"; bloqueado = true; continue; }
+      if (!d.ok) { lugar.innerHTML = '<div class="aviso erro">' + escapa(d.erro) + "</div>"; bloqueado = true; return; }
       if (d.bloqueios.length || d.ja_lancado) bloqueado = true;
-      html += "<h4 style=\"margin:14px 0 4px\">Geração " + escapa(d.competencia) +
-              ' <small>conta(s) ' + escapa(d.escolhidas.join(", ")) +
-              (d.escolhidas.length < d.contas.length
-                ? " de " + d.contas.length : "") +
+      const verbas = [...new Set(d.grupos.map(g => g.rotulo_verba))].join(" + ");
+      lugar.innerHTML = "<h4 style=\"margin:14px 0 4px\">" + (verbas ? escapa(verbas) + " — " : "") +
+              "Geração " + escapa(d.competencia) + ' <small>conta(s) ' + escapa(d.escolhidas.join(", ")) +
+              (d.escolhidas.length < d.contas.length ? " de " + d.contas.length : "") +
               "</small></h4>" + desenhaPrevia(d);
     } catch (e) {
-      html += '<div class="aviso erro">Não foi possível gerar a prévia: ' + escapa(e) + "</div>";
+      lugar.innerHTML = '<div class="aviso erro">Não foi possível gerar a prévia: ' + escapa(e) + "</div>";
       bloqueado = true;
     }
-    corpoCards.innerHTML = html;
-  }
+  }));
   criarCards.hidden = bloqueado || !aLancar.length;
 });
 

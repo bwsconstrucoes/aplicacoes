@@ -67,7 +67,13 @@ PIPE_SP = "301426645"             # Solicitações Financeiro (SP)
 # Os números fixos do blueprint. São ids de registros do Pipefy.
 RESPONSAVEL = "383926874"         # responsável pela solicitação / solicitante
 BANCO_DO_PAGAMENTO = "395832004"
-ETIQUETA_DA_SP = "307726886"
+# ⚠️ AS ETIQUETAS DA SP (05/10/2026). Era UMA, "Transferência de recurso"
+# (307726886), e o dono mandou trocar: *"eu não quero mais utilizar essa
+# etiqueta (…) você vai sempre colocar duas etiquetas"* — "Folha de Pgt" em
+# toda SP das folhas (folha, alimentação, transporte, DC e diaristas), mais a
+# do destino do arquivo daquela conta: "BeeVale" ou "Somapay".
+ETIQUETA_FOLHA = "318116255"
+ETIQUETA_DO_DESTINO = {"beevale": "317521565", "somapay": "318116254"}
 PIX_DA_BWS = "a7398865-d869-4437-b7a9-fc6fe904c4d7"   # chave aleatória
 CNPJ_DA_BWS = "00.079.526/0001-09"
 
@@ -85,9 +91,9 @@ GRUPOS = {
     ("dc", ""): ("Despesas com Colaboradores", "", ""),
 }
 
-# O que o `geraspbeevale.gs` do dono punha na SP da DC e as outras não têm: a
-# etiqueta própria e o campo de automação "BeeVale".
-ETIQUETA_DA_DC = "317521565"
+# O que o `geraspbeevale.gs` do dono punha na SP da DC e as outras não têm: o
+# campo de automação "BeeVale". (A etiqueta dele, 317521565, é a "BeeVale" —
+# hoje entra pela regra geral das etiquetas, `etiquetas_da_sp`.)
 AUTOMACAO_DA_DC = "BeeVale"
 
 # Os tetos do cenário: 75 pares de centro de custo no card de Despesa, e a conexão
@@ -642,6 +648,7 @@ def _previa(analise_id: int, ler_pipes: bool = True, contas=None) -> tuple:
                                           or {}).get("link") or "",
                        "obras": obras,
                        "rateio": rateio_multiplo(obras, categoria) if obras else ""}
+            sp_item["etiquetas"] = rotulo_das_etiquetas(sp_item)
             sp_item["descricao"] = descricao_da_sp(
                 analise["competencia"], tipo, verba, sp_item, analise.get("link") or "")
             sps.append(sp_item)
@@ -788,6 +795,7 @@ def _grupo_da_dc(analise, r, escolhidas, todas_as_contas, andamento_atual,
             sp_item["observacao"] = (
                 f"Mais de um tipo de despesa nesta conta: a SP vai como "
                 f'"{maior_nome}" (o de maior valor); o detalhe por categoria vai no rateio.')
+        sp_item["etiquetas"] = rotulo_das_etiquetas(sp_item)
         sp_item["descricao"] = descricao_da_dc(sp_item, analise.get("link") or "")
         sps.append(sp_item)
 
@@ -914,6 +922,21 @@ def _completo(andamento: dict, grupos: list) -> bool:
 # ---------------------------------------------------------------------------
 # OS CAMPOS DE CADA CARD — os do Make, valor por valor
 # ---------------------------------------------------------------------------
+ROTULO_DA_ETIQUETA = {"318116255": "Folha de Pgt", "317521565": "BeeVale",
+                      "318116254": "Somapay"}
+
+
+def rotulo_das_etiquetas(sp: dict) -> str:
+    return " + ".join(ROTULO_DA_ETIQUETA.get(e, e) for e in etiquetas_da_sp(sp))
+
+
+def etiquetas_da_sp(sp: dict) -> list:
+    """`["Folha de Pgt", "BeeVale" | "Somapay"]` (os ids) — ver ETIQUETA_FOLHA.
+    Destino desconhecido: só a da folha."""
+    destino = ETIQUETA_DO_DESTINO.get(str(sp.get("destino") or "").strip().lower())
+    return [ETIQUETA_FOLHA] + ([destino] if destino else [])
+
+
 def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
                  agora: _dt.datetime) -> list:
     """Os campos da Solicitação de Pagamento, no padrão do script do BeeVale
@@ -943,7 +966,7 @@ def campos_da_sp(grupo: dict, sp: dict, link_analise: str,
         ("documenta_o_fiscal", favorecido["documentacao"]),
         ("link_planilha_de_an_lise", link_analise),
         ("valida_o_sp_1", "Sim"), ("lan_amento_via_api", "Sim"),
-        ("etiquetas", ETIQUETA_DA_DC if grupo.get("verba") == "dc" else ETIQUETA_DA_SP),
+        ("etiquetas", etiquetas_da_sp(sp)),
         ("autoriza_o_dupla", "SIM"), ("anu_ncia_sp", "Sim"),
     ]
     if grupo.get("verba") == "dc" and sp.get("destino") == "beevale":

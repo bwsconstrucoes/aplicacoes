@@ -11964,6 +11964,24 @@ tudo muito igual."*
   SP (não como anexo). Geração anterior não tem PDF: a prévia do lançamento
   agora avisa e diz para excluir e gerar de novo.
 
+#### Leva 179 — lançar várias gerações juntas; as duas etiquetas da SP (05/10/2026)
+
+- **Misturar gerações no lançamento.** *"Quando eu mixo, seleciono arquivos da
+  folha e arquivo de diárias, ele não exibe todos (…) só está exibindo o do mais
+  recente."* O servidor montava as duas prévias (reproduzido em teste), mas a
+  tela as buscava UMA ATRÁS DA OUTRA — cada uma lendo o pipe e o plano
+  financeiro — e mostrava só a primeira (a mais recente) enquanto a segunda
+  carregava, sem dizer que havia outra, e com o "Criar" escondido. Agora as
+  prévias saem ao mesmo tempo, cada uma no seu lugar com "consultando o
+  Pipefy…" até chegar, e o título diz a verba ("Diárias — Geração 09/2026",
+  "Folha — Geração 09/2026").
+- **Etiquetas.** *"Está lançando uma etiqueta (…) transferência de recurso. Eu
+  não quero mais (…) você vai sempre colocar duas etiquetas"*: "Folha de Pgt"
+  (318116255) em toda SP das folhas (folha, alimentação, transporte, DC,
+  diaristas) + a do destino do arquivo da conta: "BeeVale" (317521565) ou
+  "Somapay" (318116254). A prévia mostra as etiquetas de cada SP. A de antes
+  (307726886) saiu do código. SP já criada não muda.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -12003,7 +12021,7 @@ tudo muito igual."*
 | DC: confirmar o texto da coluna G ("valor da diária") quando a solicitação pede a diária cadastrada (leva 172 supõe "cadastr" ou "sim") e as colunas da aba "Data base BeeVale" | ele |
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir a CARTEIRA do BeeVale da alimentação e do transporte (hoje "Produção"; os diaristas já saem em "Diárias") | ele |
-| publicar as levas 177 e 178 (sem migração) | ele |
+| publicar as levas 177 a 179 (sem migração) | ele |
 | ~~publicar as levas 174 a 176~~ — **publicadas em 05/10/2026** (main em `02c26af`; suíte inteira verde, salvo `test_painel_cenario::test_quem_esta_preso_nao_abre_nem_grava_os_parametros`, que falha igual na main — área do painel, depende da ordem). Conferir que ele apertou "Aplicar atualizações do banco" (**048** e **049**) e importar a Listagem de Férias de 09 e 10/2026 | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |

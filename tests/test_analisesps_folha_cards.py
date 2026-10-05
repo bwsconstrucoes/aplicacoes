@@ -304,6 +304,7 @@ def test_lancar_cria_SO_SPS_uma_por_conta_com_RATEIO_MULTIPLO(banco_cards, monke
 
     vista = fcd.previa(analise)
     assert vista["bloqueios"] == []
+    assert vista["grupos"][0]["sps"][0]["etiquetas"] == "Folha de Pgt + Somapay"
     # Gerada sem o relatório em PDF: a prévia AVISA (05/10/2026), não bloqueia.
     assert vista["avisos"] and "relatório em PDF" in vista["avisos"][0]
     assert vista["grupos"][0]["tipo_sp"] == "777"
@@ -323,7 +324,8 @@ def test_lancar_cria_SO_SPS_uma_por_conta_com_RATEIO_MULTIPLO(banco_cards, monke
     assert sp["valores"]["chave_pix_aleat_ria"] == "Atualizar Chave"
     assert "CREPEOLINDA: R$ 1.000,00" in sp["valores"]["descri_o"]
     # Campo de fase vai depois.
-    assert pipe.atualizacoes_de(sp["id"])["etiquetas"] == fcd.ETIQUETA_DA_SP
+    # As DUAS etiquetas (05/10/2026): "Folha de Pgt" + a do destino (SomaPay aqui).
+    assert pipe.atualizacoes_de(sp["id"])["etiquetas"] == ["318116255", "318116254"]
 
     log = {a["id"]: a for a in fp.log()}
     assert set(log[analise]["card_pipefy"].split(",")) == {s["id"] for s in sps}
