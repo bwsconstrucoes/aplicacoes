@@ -421,17 +421,33 @@
              acrescentado à mão. #}
           <td class="ajustes">
             {% if p.ausencias %}
+              {# DESCONTO PARCIAL (05/10/2026): *"pode ser que de 5 dias, um
+                 tenha justificativa e vamos descontar somente 4"*. O botão abre
+                 a janela com os dias; os dias relevados vão com justificativa. #}
               <div class="aj-ausencia {{ 'aplicado' if p.desconto_aplicado }}"
+                   data-valor-dia="{{ p.valor_ausencia_dia }}"
+                   data-motivo-relevadas="{{ p.motivo_relevadas }}"
+                   data-ausencias='{{ p.ausencias|map(attribute="data")|map("string")|list|tojson }}'
+                   data-motivos='{{ p.ausencias|map(attribute="motivo")|list|tojson }}'
+                   data-descontar='{{ p.ausencias|map(attribute="descontar")|list|tojson }}'
                    title="{% for a in p.ausencias %}{{ a.data.strftime('%d/%m') }} {{ a.motivo }}{{ '; ' if not loop.last }}{% endfor %}">
-                <b>{{ p.ausencias|length }} ausência(s)</b> −{{ p.desconto_proposto|moeda }}
+                {% if p.desconto_aplicado %}
+                  <b>{{ p.dias_descontados }} de {{ p.ausencias|length }} ausência(s)</b> −{{ p.desconto_valor|moeda }}
+                {% else %}
+                  <b>{{ p.ausencias|length }} ausência(s)</b> −{{ p.desconto_proposto|moeda }}
+                {% endif %}
                 <br><span class="cartao-dica">{{ p.ausencias_resumo }}
-                  ({% for a in p.ausencias %}{{ a.data.strftime('%d/%m') }}{{ ', ' if not loop.last }}{% endfor %})</span>
+                  ({% for a in p.ausencias %}<span class="{{ 'relevada' if p.desconto_aplicado and not a.descontar }}">{{ a.data.strftime('%d/%m') }}</span>{{ ', ' if not loop.last }}{% endfor %})</span>
+                {% if p.desconto_aplicado and p.motivo_relevadas %}
+                  <br><span class="cartao-dica">não descontado(s): {% for a in p.ausencias if not a.descontar %}{{ a.data.strftime('%d/%m') }}{{ ', ' if not loop.last }}{% endfor %} — {{ p.motivo_relevadas }}</span>
+                {% endif %}
                 {% if pode_operar %}
                   <br>{% if p.desconto_aplicado %}
                     <span class="selo aprovado">desconto aplicado</span>
+                    <button type="button" class="link-btn aj-desconto-dias">alterar</button>
                     <button type="button" class="link-btn aj-desconto" data-aplicar="">desfazer</button>
                   {% else %}
-                    <button type="button" class="btn btn-mini btn-desconto aj-desconto" data-aplicar="1">Aplicar desconto</button>
+                    <button type="button" class="btn btn-mini btn-desconto aj-desconto-dias">Aplicar desconto</button>
                   {% endif %}
                 {% elif p.desconto_aplicado %}<br><span class="selo aprovado">desconto aplicado</span>{% endif %}
               </div>
@@ -535,6 +551,26 @@
 {% endif %}
 
 {% if pode_operar %}
+<dialog class="dialogo" id="dialogo-desconto">
+  <button type="button" class="btn secundario dialogo-fechar"
+          onclick="this.closest('dialog').close()">Fechar</button>
+  <h3>Desconto das ausências <small id="desconto-nome"></small></h3>
+  <p class="cartao-dica">Marcados = descontados. Desmarque o dia que tem
+    justificativa e escreva o motivo — os dias e o motivo vão para o relatório.
+    Valor de um dia: <b id="desconto-valor-dia"></b>.</p>
+  <div id="desconto-dias" class="desconto-dias"></div>
+  <label class="rotulo-campo" for="desconto-motivo" style="margin-top:8px">Justificativa dos dias não descontados</label>
+  <input id="desconto-motivo" maxlength="300" placeholder="Ex.: atestado entregue ao DP" style="width:100%">
+  <p class="cartao-dica" id="desconto-total"></p>
+  <div class="lat-acoes" style="margin-top:10px">
+    <button type="button" class="btn" id="desconto-aplicar">Aplicar desconto</button>
+  </div>
+</dialog>
+<style>
+  .desconto-dias label { display:flex; gap:8px; align-items:baseline; padding:3px 0; }
+  .aj-ausencia .relevada { text-decoration: line-through; }
+</style>
+
 <dialog class="dialogo" id="dialogo-extra">
   <button type="button" class="btn secundario dialogo-fechar"
           onclick="this.closest('dialog').close()">Fechar</button>
@@ -705,6 +741,61 @@ document.querySelectorAll(".aj-desconto").forEach(b => b.addEventListener("click
     location.reload();
   } else { b.disabled = false; }
 }));
+
+// --- desconto parcial: escolher os dias (05/10/2026) ---------------------
+(function () {
+  const dialogo = document.getElementById("dialogo-desconto");
+  if (!dialogo) return;
+  const lista = document.getElementById("desconto-dias");
+  const motivo = document.getElementById("desconto-motivo");
+  const total = document.getElementById("desconto-total");
+  const aplicar = document.getElementById("desconto-aplicar");
+  let cpf = "", porDia = 0;
+  const brl = n => n.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
+  const br = iso => iso.split("-").reverse().join("/");
+  function contar() {
+    const caixas = [...lista.querySelectorAll("input")];
+    const n = caixas.filter(c => c.checked).length;
+    total.textContent = "Descontar " + n + " de " + caixas.length + " dia(s): −" + brl(n * porDia);
+    aplicar.textContent = n ? "Aplicar desconto de " + n + " dia(s)" : "Não descontar nenhum dia";
+  }
+  document.querySelectorAll(".aj-desconto-dias").forEach(b => b.addEventListener("click", () => {
+    if (avisarSeHaSelecaoPorSalvar()) return;
+    const linha = b.closest("tr");
+    const caixa = b.closest(".aj-ausencia");
+    cpf = linha.dataset.cpf;
+    porDia = parseFloat(caixa.dataset.valorDia || "0") || 0;
+    const datas = JSON.parse(caixa.dataset.ausencias || "[]");
+    const motivos = JSON.parse(caixa.dataset.motivos || "[]");
+    const descontar = JSON.parse(caixa.dataset.descontar || "[]");
+    const jaAplicado = caixa.classList.contains("aplicado");
+    document.getElementById("desconto-nome").textContent = linha.dataset.nome;
+    document.getElementById("desconto-valor-dia").textContent = brl(porDia);
+    lista.innerHTML = "";
+    datas.forEach((d, i) => {
+      const rot = document.createElement("label");
+      rot.innerHTML = '<input type="checkbox"> <b></b> <span class="cartao-dica"></span>';
+      rot.querySelector("input").value = d;
+      rot.querySelector("input").checked = jaAplicado ? descontar[i] !== false : true;
+      rot.querySelector("b").textContent = br(d);
+      rot.querySelector("span").textContent = motivos[i] || "";
+      lista.appendChild(rot);
+    });
+    motivo.value = jaAplicado ? (caixa.dataset.motivoRelevadas || "") : "";
+    contar();
+    dialogo.showModal();
+  }));
+  lista.addEventListener("change", contar);
+  aplicar.addEventListener("click", async () => {
+    const relevadas = [...lista.querySelectorAll("input")].filter(c => !c.checked).map(c => c.value);
+    const m = motivo.value.trim();
+    if (relevadas.length && !m) { alert("Informe a justificativa dos dias que não serão descontados."); motivo.focus(); return; }
+    aplicar.disabled = true;
+    if (await gravarExtras({cpfs: [cpf], desconto_ausencias: true,
+                            ausencias_relevadas: relevadas, motivo_relevadas: m})) location.reload();
+    else aplicar.disabled = false;
+  });
+})();
 
 const todosDescontos = document.getElementById("aplicar-todos-descontos");
 if (todosDescontos) todosDescontos.addEventListener("click", async () => {

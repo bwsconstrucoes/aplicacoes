@@ -4025,7 +4025,9 @@ def folha_auxilio_extras():
     # escolhida, o servidor a descartava e respondia "ok" — o dono escolhia a
     # obra e nada gravava. Pedido sem nada a gravar agora é recusado.
     mudancas = {k: dados[k] for k in ("valor_extra", "motivo_extra",
-                                      "desconto_ausencias", "obra") if k in dados}
+                                      "desconto_ausencias", "obra",
+                                      "ausencias_relevadas", "motivo_relevadas")
+                if k in dados}
     if not mudancas:
         return {"ok": False, "erro": "Nada a gravar."}, 400
     try:

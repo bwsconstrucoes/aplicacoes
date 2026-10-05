@@ -11864,6 +11864,27 @@ agrupamento e desagrupamento das informações, por conta, por obra, e etc."*
   mais"*) agora não recebe e vai para os desligados. Quem sai no MÊS DO
   PAGAMENTO continua recebendo proporcional e continua na lista.
 
+#### Leva 175 — desconto de ausências parcial, e detalhado nos relatórios (05/10/2026)
+
+O dono: *"é importante que as informações e detalhamento estejam nos relatórios,
+visto que talvez precisemos encaminhar a alguém para analisar se terá ou não
+desconto. (…) precisamos poder aplicar o desconto integralmente ou não, pois
+pode ser que de 5 dias, um tenha justificativa e vamos descontar somente 4."*
+
+- **"Aplicar desconto"** (na linha) abre uma janela com cada dia de ausência
+  marcado; desmarca-se o dia justificado e escreve-se a justificativa
+  (obrigatória quando há dia relevado). O desconto é só dos dias marcados.
+  "alterar" reabre a janela; "desfazer" tira o desconto e a escolha. O
+  "Aplicar todos os descontos" da lateral continua integral.
+- Guardado em `auxilio_ajuste.ausencias_relevadas` / `motivo_relevadas`
+  (migração **048**). Sem a 048, o desconto integral segue funcionando e o
+  parcial avisa que falta a atualização do banco.
+- **Relatórios (PDF e Excel):** seção/aba "Ausências" com cada dia — motivo no
+  ponto, situação (descontada / não descontada — justificativa / a confirmar),
+  valor do dia e o descontado; e a coluna Situação diz "desconto de 4 de 5
+  ausência(s)" ou "desconto a confirmar (R$ X proposto)". Vale também para o
+  relatório por conta gerado junto com os arquivos.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -11903,6 +11924,7 @@ agrupamento e desagrupamento das informações, por conta, por obra, e etc."*
 | DC: confirmar o texto da coluna G ("valor da diária") quando a solicitação pede a diária cadastrada (leva 172 supõe "cadastr" ou "sim") e as colunas da aba "Data base BeeVale" | ele |
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir se a alimentação e o transporte no BeeVale também usam a carteira da "Data base BeeVale" (hoje "Produção") | ele |
+| publicar as levas 174 e 175 (migração **048**: apertar "Aplicar atualizações do banco" no mesmo momento) | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |
 | primeiro lançamento: conferir na prévia se cada obra achou o centro de custo, e no Pipefy os dois cards | ele |
 
