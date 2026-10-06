@@ -394,7 +394,12 @@ def test_entrada_ruim_e_400_com_o_campo(cliente):
 def _foto_base64(largura=1200, altura=1600) -> str:
     from PIL import Image
     saida = io.BytesIO()
-    Image.new("RGB", (largura, altura), (200, 150, 100)).save(saida, format="JPEG")
+    img = Image.new("RGB", (largura, altura), (200, 150, 100))
+    from PIL import ImageDraw                 # listras: foto lisa vai para conferência ("sem rosto visível")
+    desenho = ImageDraw.Draw(img)
+    for x in range(0, largura, 40):
+        desenho.rectangle([x, 0, x + 19, altura], fill=(40, 30, 20))
+    img.save(saida, format="JPEG")
     return "data:image/jpeg;base64," + base64.b64encode(saida.getvalue()).decode()
 
 

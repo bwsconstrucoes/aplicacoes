@@ -437,9 +437,9 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
 
     # --- fila rápida no mesmo aparelho ----------------------------------------
     por_aparelho: dict[int, list] = {}
-    for l in db.todos(conn, """
+    for l in db.todos(conn, f"""
         SELECT m.id, m.colaborador_id, m.obra_id, m.dispositivo_id, m.timestamp_servidor,
-               m.data_referencia, d.descricao
+               m.data_referencia, d.descricao, {"m.identificacao" if db.tem_003(conn) else "NULL::text"} AS identificacao
           FROM ponto.marcacoes m JOIN ponto.dispositivos d ON d.id = m.dispositivo_id
          WHERE m.data_referencia BETWEEN :i AND :f AND m.status <> 'REJEITADA'
          ORDER BY m.dispositivo_id, m.timestamp_servidor""", i=inicio, f=fim):
@@ -456,6 +456,14 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
                                 f"{primeira['data_referencia']:%d/%m} — confira as fotos no mosaico",
                        obra_id=primeira["obra_id"], data=primeira["data_referencia"])
             contagem["SEQUENCIA_RAPIDA"] += 1
+            # Encerrada a coleta (a rotina roda no dia seguinte), o QR do WhatsApp
+            # de quem passou pela fila é TROCADO: se alguém juntou prints de QR
+            # dos colegas, eles param de valer (pedido do dono, 06/10/2026).
+            if db.tem_003(conn):
+                from . import envios
+                for cid in sorted({x["colaborador_id"] for x in fila if x.get("identificacao") == "QR_WHATSAPP"}):
+                    envios.pedir_qr(conn, int(cid), motivo="GESTAO", por="sinal de fraude: fila rápida no aparelho")
+                    contagem["QR_TROCADO"] += 1
 
     # --- QR antigo e CPFs errados (o que o tablet recusou) ---------------------
     inicio_ts = dt.datetime.combine(inicio, dt.time(0), tzinfo=horario.FUSO)

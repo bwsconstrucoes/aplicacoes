@@ -157,3 +157,39 @@ def test_so_quem_bate_faz_pedido(app, mundo, monkeypatch):
     assert r.status_code == 201 and r.get_json()["ocorrencia"]["etapa_atual"] == "DP"
     assert sup.post("/erp/api/ponto/ocorrencias", json={"tipo": "FERIAS", "colaborador_id": mundo["joao"],
                                                        "data_inicio": d1}).status_code == 400
+
+
+def test_fila_rapida_no_tablet_vai_para_conferencia_na_hora(app, mundo, banco):
+    """Cinco pessoas diferentes, uma a cada 3 s, no mesmo tablet: a quinta já
+    entra em conferência (antes, só o alerta do dia seguinte via isso)."""
+    from app.apps.ponto import db, horario
+    from app.apps.ponto.core import dispositivos, marcacoes
+    from tests.test_ponto_registro_banco import _cpf
+    cpfs = [CPF_JOAO] + [_cpf(b) for b in ("135792468", "246813570", "975318642", "864297531")]
+    with banco.connect() as conn:
+        for i, c in enumerate(cpfs[1:]):
+            conn.execute(text("INSERT INTO colaboradores (nome, cpf, obra_id) VALUES (:n, :c, :o)"),
+                         {"n": f"Pessoa {i}", "c": c, "o": mundo["obra_a"]})
+        conn.commit()
+    try:
+        tab, h = _aparelho(app, "tablet-da-fila-rapida-0123456789")
+        dp = como(app, mundo["dp"])
+        with db.conexao() as conn:
+            dispositivos.aprovar(conn, _id_do_aparelho(dp, "tablet-da-fila-rapida-0123456789"),
+                                 perfil="COMPARTILHADO", aprovado_por="teste", obras=[mundo["obra_a"]])
+        t0 = horario.agora() - dt.timedelta(minutes=5)
+        status = []
+        for i, c in enumerate(cpfs):
+            with db.conexao() as conn:
+                m, _ = marcacoes.registrar(conn, cpf=c, obra="PG-A", origem="PWA", device_uuid=h["X-Device-UUID"],
+                                           device_token=h["X-Device-Token"], latitude=OBRA_A[0],
+                                           longitude=OBRA_A[1], precisao=10, foto_base64=None,
+                                           agora=t0 + dt.timedelta(seconds=3 * i))
+            status.append((m["status"], m.get("motivo_analise") or ""))
+        assert "fila rápida" in status[-1][1] and "fila rápida" not in status[3][1]
+    finally:
+        with banco.connect() as conn:
+            conn.execute(text("DELETE FROM ponto.marcacoes WHERE colaborador_id IN "
+                              "(SELECT id FROM colaboradores WHERE cpf = ANY(:c))"), {"c": cpfs[1:]})
+            conn.execute(text("DELETE FROM colaboradores WHERE cpf = ANY(:c)"), {"c": cpfs[1:]})
+            conn.commit()
