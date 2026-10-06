@@ -478,6 +478,7 @@
   <button type="button" data-secao="pessoas">Pessoas</button>
   <button type="button" data-secao="obras">Obras e cerca</button>
   <button type="button" data-secao="aparelhos">Aparelhos</button>
+  <button type="button" data-secao="fotos">Fotos</button>
   <button type="button" data-secao="jornada">Jornada e licenças</button>
   <button type="button" data-secao="validacao">Quem valida</button>
   <button type="button" data-secao="mensagens">Mensagens</button>
@@ -617,7 +618,18 @@
   <div class="tabela-rolagem" style="max-height:420px"><div id="c-cercas">carregando…</div></div>
 </div>
 
-<div class="cartao" data-secao-card="obras">
+<div class="cartao" data-secao-card="fotos">
+  <div class="cartao-cab"><h3>Conferência do rosto (AWS)</h3>
+    <button class="btn secundario" id="c-rosto-rodar" type="button">Conferir agora</button></div>
+  <div class="cartao-dica" style="margin-top:0">A foto de cada batida é comparada com a foto cadastral da pessoa
+    pelo Amazon Rekognition. Rosto de outra pessoa ou foto sem rosto → a batida vai para conferência e abre o
+    alerta urgente. Quem ainda não tem foto cadastral ganha a da primeira batida (confira no mosaico). O padrão é
+    conferir todas; exclua obras, dias ou horários para gastar menos. O teto do mês é o freio: chegou nele, para
+    até o mês seguinte.</div>
+  <div id="c-rosto">carregando…</div>
+</div>
+
+<div class="cartao" data-secao-card="fotos">
   <div class="cartao-cab"><h3>Mosaico de fotos por obra</h3></div>
   <div class="cartao-dica" style="margin-top:0"><b>Opcional:</b> o mosaico fica sempre
     disponível na aba Mosaico. <b>Obrigatório:</b> na manhã seguinte o responsável recebe
@@ -3797,11 +3809,87 @@ function anosParaEscolher() {
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
                     carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
-                    carregarExcecoes(), carregarEnsaio(), carregarLicencas()]);
+                    carregarExcecoes(), carregarEnsaio(), carregarLicencas(), carregarRosto()]);
+}
+
+// --------------------------------------------- conferência do rosto (06/10/2026)
+const DIAS_DA_SEMANA = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+let ROSTO = null;
+async function carregarRosto(mensagem, tipo) {
+  const alvo = els("c-rosto");
+  if (!alvo) return;
+  try { ROSTO = await api("/erp/api/ponto/rosto"); } catch (e) { erroNoCartao("c-rosto", e); return; }
+  const d = ROSTO;
+  if (!d.disponivel) { alvo.innerHTML = `<div class="aviso alerta">Aplique as atualizações do ponto (migração 007).</div>`; return; }
+  const c = d.config, mes = d.mes || {}, est = d.estimativa || {};
+  const real = v => `US$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+  const falta = [!d.credenciais ? "as chaves da AWS no Render (AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY)" : "",
+                 !d.biblioteca ? "a biblioteca da AWS no servidor" : ""].filter(Boolean);
+  const kpi = (rot, valor, cor, sub) => `<div class="kpi estatico ${cor}"><div class="kpi-rotulo">${rot}</div>
+    <div class="kpi-valor">${valor}</div><div class="kpi-sub">${sub}</div></div>`;
+  alvo.innerHTML = `${falta.length ? `<div class="aviso alerta" style="margin:0 0 10px">Para funcionar, falta: ${falta.join(" e ")}.</div>` : ""}
+    <label class="interruptor"><input type="checkbox" id="ros-ligado" ${c.ligado ? "checked" : ""}>
+      <span><b>Conferir o rosto</b><span class="explica">Roda sozinha a cada 10 minutos, nas batidas com foto dos últimos 3 dias.</span></span></label>
+    <div class="kpis" style="margin-top:10px">
+      ${kpi("Gasto do mês", real(mes.custo_usd), "", `${mes.cobradas || 0} foto(s) cobradas · teto ${real(c.teto_mensal_usd)}`)}
+      ${kpi("Rostos que não conferem", mes.suspeitas || 0, mes.suspeitas ? "vermelho" : "", "no mês")}
+      ${kpi("Estimativa com esta regra", real(est.custo_estimado_usd), "ciano", `${est.entrariam || 0} de ${est.fotos_30_dias || 0} fotos dos últimos 30 dias`)}
+      ${kpi("Sem foto cadastral", d.sem_cadastral || 0, d.sem_cadastral ? "ambar" : "", "ganham a da 1ª batida")}
+    </div>
+    <div class="grade-campos" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-top:12px">
+      <div class="campo"><label for="ros-teto">Teto do mês (US$)</label><input id="ros-teto" data-sem-mascara value="${escapar(c.teto_mensal_usd)}"></div>
+      <div class="campo"><label for="ros-min">Semelhança mínima (%)</label><input id="ros-min" data-sem-mascara value="${escapar(c.semelhanca_minima)}"></div>
+      <div class="campo"><label for="ros-regiao">Região da AWS</label><input id="ros-regiao" data-sem-mascara value="${escapar(c.regiao)}"></div>
+    </div>
+    <label class="interruptor" style="margin-top:10px"><input type="checkbox" id="ros-primeira" ${c.so_primeira_do_dia ? "checked" : ""}>
+      <span><b>Só a primeira batida de cada dia</b><span class="explica">Confere 1 em cada 4 batidas: o custo cai uns 75 %.</span></span></label>
+    <div style="margin-top:10px"><b>Dias que não conferem:</b>
+      ${DIAS_DA_SEMANA.map((n, i) => `<label style="margin-right:10px"><input type="checkbox" data-ros-dia="${i}" ${(c.dias_excluidos || []).includes(i) ? "checked" : ""}> ${n}</label>`).join("")}</div>
+    <div class="campo" style="margin-top:10px"><label for="ros-horarios">Horários que não conferem</label>
+      <input id="ros-horarios" data-sem-mascara value="${escapar((c.horarios_excluidos || []).map(f => `${f.de}-${f.ate}`).join(", "))}"
+             placeholder="ex.: 11:00-13:30, 22:00-05:00"></div>
+    <div class="campo" style="margin-top:10px"><label>Obras que não conferem</label>
+      <div style="max-height:160px; overflow:auto; border:1px solid var(--borda); border-radius:8px; padding:6px 10px">
+        ${(d.obras || []).map(o => `<label style="display:block"><input type="checkbox" data-ros-obra="${o.id}" ${(c.obras_excluidas || []).includes(o.id) ? "checked" : ""}> ${escapar(o.codigo)} — ${escapar(o.nome)}</label>`).join("")
+          || `<span class="suave">nenhuma obra ativa</span>`}</div></div>
+    <div style="margin-top:10px"><button class="btn" type="button" id="ros-salvar">Salvar a regra</button></div>
+    <div id="c-rosto-msg" style="margin-top:8px"></div>`;
+  els("ros-salvar").addEventListener("click", salvarRosto);
+  if (mensagem) aviso("c-rosto-msg", mensagem, tipo || "ok");
+}
+
+async function salvarRosto() {
+  const horarios = els("ros-horarios").value.split(",").map(t => t.trim()).filter(Boolean).map(t => {
+    const [de, ate] = t.split("-").map(x => x.trim()); return {de, ate};
+  });
+  if (horarios.some(f => !/^\d{1,2}:\d{2}$/.test(f.de || "") || !/^\d{1,2}:\d{2}$/.test(f.ate || ""))) {
+    aviso("c-rosto-msg", "Horários no formato 11:00-13:30, separados por vírgula.", "erro"); return;
+  }
+  try {
+    await postar("/erp/api/ponto/rosto", {
+      ligado: els("ros-ligado").checked, teto_mensal_usd: els("ros-teto").value,
+      semelhanca_minima: els("ros-min").value, regiao: els("ros-regiao").value,
+      so_primeira_do_dia: els("ros-primeira").checked,
+      dias_excluidos: [...document.querySelectorAll("[data-ros-dia]:checked")].map(x => Number(x.dataset.rosDia)),
+      obras_excluidas: [...document.querySelectorAll("[data-ros-obra]:checked")].map(x => Number(x.dataset.rosObra)),
+      horarios_excluidos: horarios});
+    await carregarRosto("Regra salva. A estimativa acima já usa a regra nova.");
+  } catch (e) { falhou(e, "c-rosto-msg"); }
+}
+
+async function rodarRostoAgora() {
+  const b = els("c-rosto-rodar");
+  b.disabled = true;
+  try {
+    const r = (await postar("/erp/api/ponto/rosto/rodar")).rodada;
+    await carregarRosto(`${r.conferidas} conferida(s), ${r.suspeitas} suspeita(s), ${r.viraram_cadastral} virou(aram) foto cadastral`
+      + (r.parou ? ` — parou: ${r.parou}.` : "."), r.parou && r.parou !== "desligada" ? "alerta" : "ok");
+  } catch (e) { falhou(e, "c-rosto-msg"); }
+  b.disabled = false;
 }
 
 // --------------------------------------------- o submenu (06/10/2026)
-const SECOES = ["geral", "pessoas", "obras", "aparelhos", "jornada", "validacao", "mensagens", "teste"];
+const SECOES = ["geral", "pessoas", "obras", "aparelhos", "fotos", "jornada", "validacao", "mensagens", "teste"];
 function mostrarSecao(secao) {
   if (!SECOES.includes(secao)) secao = "geral";
   document.querySelectorAll("[data-secao-card]").forEach(c => { c.hidden = c.dataset.secaoCard !== secao; });
@@ -3867,6 +3955,7 @@ anosParaEscolher();
 els("c-ano").addEventListener("change", carregarFeriados);
 if (els("c-envios-atualizar")) els("c-envios-atualizar").addEventListener("click", carregarEnvios);
 if (els("c-obras-ler")) els("c-obras-ler").addEventListener("click", lerObrasAgora);
+if (els("c-rosto-rodar")) els("c-rosto-rodar").addEventListener("click", rodarRostoAgora);
 if (els("c-nova-escala")) els("c-nova-escala").addEventListener("click", () => abrirEscala(null));
 if (els("c-novo-feriado")) els("c-novo-feriado").addEventListener("click", novoFeriado);
 els("esc-tipo").addEventListener("change", alternarTipoDeEscala);

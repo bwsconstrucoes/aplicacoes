@@ -346,6 +346,11 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
 - Quem foi desligado e ainda tinha celular aprovado ou QR valendo? (o ponto fecha
   sozinho; a resposta é o que foi fechado e quando)
 - Quem não tem escala própria e está sendo julgado pela escala padrão? 🔒
+- Quanto a conferência do rosto gastou este mês? Quantas fotos não conferiram?
+  De quem? ⚠️ ("este mês" = mês civil, horário de Fortaleza; o custo é o gravado
+  em cada conferência, não a fatura da AWS) 🔒
+- Quais obras, dias e horários estão fora da conferência do rosto?
+- Quem ainda não tem foto cadastral (e vai ganhar a da primeira batida)?
 - **Ainda não responde:** "a pessoa da foto é mesmo o Fulano?" — não há
   reconhecimento facial; quem confere é gente, no mosaico. E "quantas pessoas
   usaram o QR de outra" — o sistema vê o QR antigo e o rosto no mosaico, não a

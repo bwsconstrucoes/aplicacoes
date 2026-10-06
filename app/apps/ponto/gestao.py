@@ -173,8 +173,9 @@ def _pagina(aba: str):
     except Exception:  # noqa: BLE001
         logger.warning("Ponto: a base de pessoas não foi conferida", exc_info=True)
     try:
-        from .core import base_obras
+        from .core import base_obras, rosto
         base_obras.manter_em_dia()
+        rosto.manter_em_dia()
     except Exception:  # noqa: BLE001
         logger.warning("Ponto: a base de obras não foi conferida", exc_info=True)
     try:
@@ -853,6 +854,46 @@ def ponto_api_licenca_gravar(codigo: str):
     oc._NOME_SUBTIPO.clear()
     logger.info("Ponto: licença %s ajustada por %s — %s", codigo, quem.nome, t)
     return _ok(licenca=t)
+
+
+@bp.route("/erp/api/ponto/rosto")
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_rosto():
+    """A conferência do rosto (AWS): a regra, o gasto do mês e a estimativa."""
+    from .core import rosto
+    with db.conexao() as conn:
+        r = rosto.retrato(conn)
+        obras = [{"id": o["id"], "codigo": o["codigo"], "nome": o["nome"]} for o in cadastros.listar_obras(conn)]
+    return _ok(**r, obras=obras)
+
+
+@bp.route("/erp/api/ponto/rosto", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_rosto_gravar():
+    from .core import rosto
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        if not rosto.disponivel(conn):
+            raise ErroDeValidacao("aplique as atualizações do ponto (migração 007) antes")
+        rosto.gravar(conn, d, quem.nome)
+        r = rosto.retrato(conn)
+    return _ok(**r)
+
+
+@bp.route("/erp/api/ponto/rosto/rodar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_rosto_rodar():
+    """Uma rodada agora (normalmente roda sozinha a cada 10 minutos)."""
+    from .core import rosto
+    with db.conexao() as conn:
+        feito = rosto.conferir(conn)
+    return _ok(rodada=feito)
 
 
 @bp.route("/erp/api/ponto/quem-valida")

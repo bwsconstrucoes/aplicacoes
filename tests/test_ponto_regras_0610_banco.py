@@ -229,3 +229,41 @@ def test_todo_aparelho_vence_em_90_dias_e_avisa_antes(app, mundo, banco):
     assert dp.post(f"/erp/api/ponto/dispositivos/{t}/renovar", json={}).get_json()["dispositivo"]["valido_ate"] == \
         (horario.hoje() + dt.timedelta(days=90)).isoformat()
     assert tab.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO}, headers=h).status_code == 200
+
+
+def test_conferencia_do_rosto_com_a_aws_de_mentira(app, mundo):
+    """A primeira foto vira a cadastral (sem custo); a mesma pessoa passa; outra
+    pessoa vai para conferência e abre o alerta; o teto do mês para a rodada."""
+    from app.apps.ponto import db, horario
+    from app.apps.ponto.core import alertas, marcacoes, rosto
+    from tests.test_ponto_banco import _foto_base64
+
+    class Aws:
+        def __init__(self):
+            self.respostas = [{"FaceMatches": [{"Similarity": 97.0}]}, {"FaceMatches": [{"Similarity": 40.0}]},
+                              {"FaceMatches": [{"Similarity": 99.0}]}]
+
+        def compare_faces(self, **_):
+            return self.respostas.pop(0)
+
+    dp = como(app, mundo["dp"])
+    assert dp.post("/erp/api/ponto/rosto", json={"ligado": True, "teto_mensal_usd": "0,002"}).status_code == 200
+    t0 = horario.agora() - dt.timedelta(hours=6)
+    with db.conexao() as conn:
+        for i in range(4):
+            marcacoes.registrar(conn, cpf=CPF_JOAO, obra="PG-A", origem="IDFACE", via_chave=True,
+                                foto_base64=_foto_base64(), agora=t0 + dt.timedelta(hours=i))
+    aws = Aws()
+    with db.conexao() as conn:
+        r = rosto.conferir(conn, cliente=aws)
+    assert r["viraram_cadastral"] == 1 and r["conferidas"] == 2 and r["suspeitas"] == 1
+    assert "teto" in r["parou"]                                    # a quarta ficou para o mês seguinte
+    with db.conexao() as conn:
+        st = [l["status"] for l in db.todos(conn, "SELECT status FROM ponto.marcacoes ORDER BY timestamp_servidor")]
+        mot = [l["motivo_analise"] for l in db.todos(conn, "SELECT motivo_analise FROM ponto.marcacoes ORDER BY timestamp_servidor")]
+        assert st.count("EM_ANALISE") == 1, mot
+        alertas.gerar(conn, ate=horario.hoje())
+        assert "ROSTO_NAO_CONFERE" in {a["codigo"] for a in alertas.listar(conn)}
+    t = dp.get("/erp/api/ponto/rosto").get_json()
+    assert t["mes"]["cobradas"] == 2 and round(t["mes"]["custo_usd"], 3) == 0.002 and t["mes"]["suspeitas"] == 1
+    assert t["estimativa"]["fotos_30_dias"] == 4

@@ -41,9 +41,10 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1h. **No ramo, esperando o "pode" (06/10/2026)**: os oito pedidos acima, com a
-   migração **006** — apertar "Aplicar atualizações do ponto" ao publicar, e
-   escolher a **escala padrão da empresa** (Configuração › Jornada).
+1h. **No ramo, esperando o "pode" (06/10/2026)**: os pedidos de 06/10 (itens 1
+   a 10 abaixo), com as migrações **006 e 007** — apertar "Aplicar atualizações
+   do ponto" ao publicar, escolher a **escala padrão da empresa** (Configuração ›
+   Jornada) e, para a conferência do rosto, as chaves da AWS (item 10).
 1g. **Três decisões em aberto com o dono (06/10/2026, "vou pensar")**:
    (a) prazo para entregar atestado (hoje: qualquer tempo, com o mês aberto;
    sugerido 48 h); (b) atestado de HORAS / declaração de comparecimento (hoje
@@ -143,12 +144,29 @@ Pedidos do dono no mesmo dia (todos feitos, migração **006**):
    dias aparece com a sugestão de desativar. A migração 006 dá 90 dias a quem já
    está aprovado.
 
-**Em aberto, decisão do dono — leitura das fotos:** a AWS Rekognition compara a
-foto da batida com a cadastral (US$ 0,001 por imagem no primeiro milhão do mês,
-preço público consultado em 06/10/2026): ~1.600 fotos/dia ≈ 42 mil/mês ≈ US$ 42.
-Precisa de conta AWS e chave nova (o dono cria; nunca no chat), da biblioteca
-`boto3` (dependência nova) e de base legal/aviso para dado biométrico (LGPD
-art. 11). Proposta: piloto numa obra com teto de gasto.
+10. **Conferência do rosto pela AWS — decidida pelo dono** (*"acho que devemos
+   ativar a análise via AWS. Hoje pago 2 mil reais pelo ponto que usamos (…)
+   devemos permitir colocar padrão para tudo, excluir alguma obra ou algum
+   horário ou dia"*). `core/rosto.py`, migração **007**
+   (`ponto.conferencias_rosto`), cartão Configuração › Fotos:
+   - Amazon Rekognition CompareFaces, foto da batida × foto cadastral; de 10 em
+     10 minutos, nas batidas com foto dos últimos 3 dias;
+   - padrão: TODAS; exclui obras, dias da semana, faixas de horário (inclusive a
+     que vira a noite) e "só a primeira batida do dia";
+   - outra pessoa (semelhança < 90 %, ajustável) ou sem rosto → batida vai para
+     conferência + alerta urgente "Rosto não confere";
+   - sem foto cadastral → a da 1ª batida vira a cadastral (grátis, "confira no
+     mosaico");
+   - teto do mês (padrão US$ 10), gasto do mês e estimativa da regra na tela.
+   **Custo (preço público de 06/10/2026):** US$ 0,001 por foto; 1.000 grátis/mês
+   no 1º ano. 100 % das fotos ≈ 42 mil/mês ≈ US$ 42 (≈ R$ 230). "Só a primeira
+   do dia" ≈ US$ 10 (≈ R$ 55) — é o que fica perto dos R$ 50 que o dono citou.
+   **Depende do dono:** criar a conta AWS, desligar o uso de conteúdo para
+   treino (opt-out de IA), gerar a chave só com permissão de Rekognition, pôr
+   AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY no Render (nunca no chat), ligar a
+   chave na tela; e o aviso de dado biométrico no termo do ponto (LGPD art. 11).
+   Dependência nova `boto3` (avisada). Não verificado: a chamada real à AWS (sem
+   conta aqui) — o formato foi conferido com o simulador da própria biblioteca.
 
 **Testes:** `tests/test_ponto_regras_0610_banco.py`. A limpeza dos testes não
 apaga mais `tipos_licenca` (é dado de migração).

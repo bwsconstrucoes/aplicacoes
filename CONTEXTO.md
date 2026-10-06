@@ -954,6 +954,14 @@ ponto). Inserir coluna antes da V na aba muda o status lido — a tela do ponto
 mostra o título da coluna usada. A chave em Ponto › Configuração › Base de obras
 devolve a base ao ERP.
 
+**06/10/2026 — DEPENDÊNCIA NOVA `boto3` (atravessa áreas: `requirements.txt`).**
+Pedido do dono: conferir o rosto das batidas do ponto pelo Amazon Rekognition
+(`ponto/core/rosto.py`). Credencial PRÓPRIA da AWS — `AWS_ACCESS_KEY_ID` e
+`AWS_SECRET_ACCESS_KEY`, os nomes padrão da biblioteca — porque não há como usar
+a credencial do Google para isso. Importada só quando a conferência roda; sem a
+biblioteca ou sem as chaves, nada muda nas outras áreas. Custo por foto, com teto
+mensal na tela do ponto.
+
 ### 03/10/2026 — A GESTÃO DO PONTO ENTROU NO ERP, e quem aprova o quê virou cadastro (atravessa áreas)
 
 O dono pediu o ambiente completo: gestão (cadastros, espelho, pendências),

@@ -44,7 +44,7 @@ GRAVIDADE = {
     "APARELHO_PENDENTE": "INFO", "APARELHO_VENCENDO": "ATENCAO", "BANCO_VENCENDO": "ATENCAO", "BANCO_NEGATIVO": "ATENCAO",
     # Sinais de fraude e de foto (migração 003)
     "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE",
-    "SEQUENCIA_RAPIDA": "ATENCAO", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
+    "SEQUENCIA_RAPIDA": "ATENCAO", "ROSTO_NAO_CONFERE": "URGENTE", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
     "MOSAICO_PENDENTE": "ATENCAO", "BATIDA_RECUSADA_FORA_DA_OBRA": "ATENCAO",
 }
 ROTULO = {
@@ -62,6 +62,7 @@ ROTULO = {
     "SEM_FOTO": "Batida sem foto", "FOTO_ESCURA": "Foto escura ou sem rosto",
     "FOTO_REPETIDA": "A mesma foto em batidas diferentes",
     "SEQUENCIA_RAPIDA": "Muitas pessoas em sequência rápida no mesmo aparelho",
+    "ROSTO_NAO_CONFERE": "Rosto não confere com a foto cadastral",
     "QR_ANTIGO_USADO": "QR Code antigo usado", "TENTATIVAS_DE_CPF": "CPFs errados em sequência no tablet",
     "MOSAICO_PENDENTE": "Mosaico de fotos sem conferência",
     "BATIDA_RECUSADA_FORA_DA_OBRA": "Tentou bater fora da área da obra",
@@ -480,6 +481,24 @@ def sinais_de_fraude(conn: Connection, vistos: set, inicio: dt.date, fim: dt.dat
                 for cid in sorted({x["colaborador_id"] for x in fila if x.get("identificacao") == "QR_WHATSAPP"}):
                     envios.pedir_qr(conn, int(cid), motivo="GESTAO", por="sinal de fraude: fila rápida no aparelho")
                     contagem["QR_TROCADO"] += 1
+
+    # --- o rosto que não confere (Amazon Rekognition, rosto.py) ----------------
+    if db.tem_coluna(conn, "conferencias_rosto", "marcacao_id"):
+        for r in db.todos(conn, """
+            SELECT m.id, m.colaborador_id, m.obra_id, m.data_referencia, m.timestamp_servidor, c.nome,
+                   r.resultado, r.detalhe
+              FROM ponto.conferencias_rosto r JOIN ponto.marcacoes m ON m.id = r.marcacao_id
+              JOIN public.colaboradores c ON c.id = m.colaborador_id
+             WHERE r.resultado IN ('OUTRA_PESSOA', 'SEM_ROSTO') AND m.data_referencia BETWEEN :i AND :f""",
+                i=inicio, f=fim):
+            _registrar(conn, vistos, chave=f"ROSTO_NAO_CONFERE:{r['id']}", codigo="ROSTO_NAO_CONFERE",
+                       mensagem=(f"{r['nome']}: a foto da batida de "
+                                 f"{horario.para_local(r['timestamp_servidor']):%d/%m às %H:%M} "
+                                 + ("não confere com a foto cadastral" if r["resultado"] == "OUTRA_PESSOA"
+                                    else "não mostra rosto")
+                                 + (f" ({r['detalhe']})" if r["detalhe"] else "") + " — confira no mosaico"),
+                       colaborador_id=r["colaborador_id"], obra_id=r["obra_id"], data=r["data_referencia"])
+            contagem["ROSTO_NAO_CONFERE"] += 1
 
     # --- QR antigo e CPFs errados (o que o tablet recusou) ---------------------
     inicio_ts = dt.datetime.combine(inicio, dt.time(0), tzinfo=horario.FUSO)
