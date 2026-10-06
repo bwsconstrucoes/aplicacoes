@@ -30,7 +30,7 @@ from . import dispositivos, mosaico, ocorrencias, validacao
 from .ocorrencias import Quem
 
 ROTULO = {"BATIDA_EM_ANALISE": "Batida em conferência", "MOSAICO": "Mosaico sem conferência",
-          "APARELHO": "Aparelho esperando aprovação"}
+          "APARELHO": "Aparelho esperando aprovação", "GRUPO": "Aparelho de grupo a rever"}
 ETAPA_ROTULO = {"SUPERVISOR": "Encarregado", "DP": "DP"}
 
 
@@ -170,6 +170,18 @@ def listar(conn: Connection, quem: Quem, *, obra_id: Optional[int] = None, de=No
                 "etapa": "Quem configura o ponto",
                 "pode_decidir": True, "abrir_em": "/erp/ponto/configuracao",
                 "desde": j.get("criado_em"), "dias_esperando": None,
+            })
+
+    # --- aparelhos de grupo a rever (temporários; o sistema sugere cancelar) ---
+    if ver_aparelhos and quer("GRUPO") and obra_id is None and not busca:
+        for g in dispositivos.grupos_a_rever(conn):
+            itens.append({
+                "categoria": "GRUPO", "tipo": "GRUPO", "rotulo": ROTULO["GRUPO"], "id": g["id"],
+                "pessoa": None, "obra": None, "data": None,
+                "quando": f"vale até {dt.date.fromisoformat(g['valido_ate']):%d/%m/%Y}" if g["valido_ate"] else "—",
+                "detalhe": f"{g['descricao']} — código {g['codigo']}, {g['pessoas']} pessoa(s): " + "; ".join(g["motivos"]),
+                "sugestao": g["sugestao"], "etapa": "Quem configura o ponto", "pode_decidir": True,
+                "desde": None, "dias_esperando": None,
             })
 
     if so_minhas:

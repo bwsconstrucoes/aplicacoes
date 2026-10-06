@@ -826,6 +826,35 @@ def ponto_api_ensaio_codigo(colaborador_id: int):
     return _ok(codigo=codigo)
 
 
+@bp.route("/erp/api/ponto/licencas")
+@login_obrigatorio
+@permissao("ver_ponto")
+@_api
+def ponto_api_licencas():
+    """As licenças da lei (CLT art. 473 e leis próprias), para escolher no pedido."""
+    from .core import licencas
+    with db.conexao() as conn:
+        return _ok(licencas=licencas.listar(conn, so_ativos=request.args.get("todas") not in ("1", "true")),
+                   disponivel=licencas.disponivel(conn))
+
+
+@bp.route("/erp/api/ponto/licencas/<codigo>", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar_afastamento")
+@_api
+def ponto_api_licenca_gravar(codigo: str):
+    """O DP ajusta dias, limite e documento (a convenção pode dar mais que a lei)."""
+    from .core import licencas, ocorrencias as oc
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        if not licencas.disponivel(conn):
+            raise ErroDeValidacao("aplique as atualizações do ponto (migração 006) antes")
+        t = licencas.gravar(conn, codigo, d, quem.nome)
+    oc._NOME_SUBTIPO.clear()
+    logger.info("Ponto: licença %s ajustada por %s — %s", codigo, quem.nome, t)
+    return _ok(licenca=t)
+
+
 @bp.route("/erp/api/ponto/quem-valida")
 @login_obrigatorio
 @permissao("ver_ponto")
@@ -1118,11 +1147,13 @@ def ponto_api_ocorrencias():
 @permissao("tratar_ponto")
 @_api
 def ponto_api_criar_ocorrencia():
-    """Ajuste de batida, compensação e folga — registrados pela gestão da obra."""
+    """Ajuste de batida, compensação, folga — e, desde 06/10/2026, atestado e
+    licença com o documento — registrados pelo responsável da obra; quem valida
+    é a regra de "Quem valida o quê" (atestado: sempre o DP)."""
     quem, d = _quem(), _corpo()
-    if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO"):
-        raise ErroDeValidacao("atestado, licença e férias são registrados em Afastamentos (DP)",
-                              campo="tipo")
+    if str(d.get("tipo") or "").upper() not in ("AJUSTE_BATIDA", "COMPENSACAO", "FOLGA_BANCO",
+                                                "ATESTADO", "LICENCA"):
+        raise ErroDeValidacao("férias, afastamento e abono são lançados pelo DP", campo="tipo")
     with db.conexao() as conn:
         o = ocorrencias.criar(conn, quem, d, origem="GESTAO")
     return _ok(ocorrencia=o), 201
@@ -1376,7 +1407,21 @@ def _escala_json(e: dict) -> dict:
 def ponto_api_escalas():
     with db.conexao() as conn:
         lista = escalas.listar(conn)
-    return _ok(escalas=[_escala_json(e) for e in lista])
+        padrao = escalas.escala_padrao(conn)
+    return _ok(escalas=[_escala_json(e) for e in lista], padrao_id=(padrao or {}).get("id"))
+
+
+@bp.route("/erp/api/ponto/escalas/padrao", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_escala_padrao():
+    """A escala de quem ainda não tem escala própria — sem ela não há falta."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        e = escalas.gravar_padrao(conn, d.get("escala_id"), quem.nome)
+    logger.info("Ponto: escala padrão da empresa = %s (%s)", (e or {}).get("nome"), quem.nome)
+    return _ok(padrao_id=(e or {}).get("id"))
 
 
 @bp.route("/erp/api/ponto/escalas", methods=["POST"])
@@ -1506,8 +1551,34 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
             autorizados = sorted(dispositivos.autorizados_de(conn, dispositivo_id))
         a = dispositivos.aprovar(conn, dispositivo_id, perfil=d.get("perfil", "COMPARTILHADO"),
                                  aprovado_por=quem.nome, colaborador_id=colaborador_id,
-                                 descricao=d.get("descricao"), autorizados=autorizados, obras=obras)
+                                 descricao=d.get("descricao"), autorizados=autorizados, obras=obras,
+                                 valido_ate=d.get("valido_ate"))
     return _ok(dispositivo=dispositivos.para_json(a), substituidos=len(a.get("substituidos") or []))
+
+
+@bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/renovar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_dispositivo_renovar(dispositivo_id: int):
+    """Renova a permissão de grupo (temporária, no máximo 90 dias)."""
+    quem, d = _quem(), _corpo()
+    with db.conexao() as conn:
+        a = dispositivos.renovar_grupo(conn, dispositivo_id, valido_ate=d.get("valido_ate"), por=quem.nome)
+    return _ok(dispositivo=dispositivos.para_json(a))
+
+
+@bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/tirar-sem-uso", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar_ponto")
+@_api
+def ponto_api_dispositivo_tirar_sem_uso(dispositivo_id: int):
+    """Tira do grupo quem não bate mais por este aparelho."""
+    quem = _quem()
+    with db.conexao() as conn:
+        dispositivos.por_id(conn, dispositivo_id)
+        n = dispositivos.tirar_sem_uso(conn, dispositivo_id, quem.nome)
+    return _ok(retirados=n)
 
 
 @bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/bloquear", methods=["POST"])

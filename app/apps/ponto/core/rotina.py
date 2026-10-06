@@ -77,7 +77,8 @@ def enviar_resumo(conn, *, forcar: bool = False) -> dict:
 
 def rodar(conn) -> dict:
     import datetime as dt
-    extras = {}
+    from . import desligamentos
+    extras = {"desligados": desligamentos.aplicar(conn)}       # antes do QR do dia
     if db.tem_003(conn):
         # Antes dos alertas: a conferência de ontem nasce agora, e o alerta de
         # "mosaico sem conferência" só abre para a de anteontem para trás.

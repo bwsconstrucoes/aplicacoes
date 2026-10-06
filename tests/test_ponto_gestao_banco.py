@@ -61,7 +61,7 @@ def _limpar(banco):
     with banco.connect() as conn:
         tabelas = [r[0] for r in conn.execute(text(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'ponto' "
-            "AND tablename NOT IN ('_migracoes', 'feriados')"))]
+            "AND tablename NOT IN ('_migracoes', 'feriados', 'tipos_licenca')"))]
         conn.execute(text("TRUNCATE " + ", ".join(f'ponto."{t}"' for t in tabelas)
                           + " RESTART IDENTITY CASCADE"))
         conn.execute(text("DELETE FROM ponto.feriados WHERE abrangencia <> 'NACIONAL'"))
@@ -185,7 +185,8 @@ def test_migracoes_do_ponto_e_feriados_nacionais(banco, mundo):
         secoes = conn.execute(text("""SELECT ps.secao, ps.nivel FROM perfil_secoes ps JOIN perfis p ON p.id = ps.perfil_id
                                        WHERE p.nome = 'Departamento pessoal' AND ps.secao LIKE 'pon_%' ORDER BY 1""")).all()
     assert nomes == ["001_ponto_base.sql", "002_gestao.sql", "003_qr_mosaico_e_sinais.sql",
-                     "004_obras_da_planilha_e_forma_de_bater.sql", "005_modo_de_teste.sql"]
+                     "004_obras_da_planilha_e_forma_de_bater.sql", "005_modo_de_teste.sql",
+                     "006_grupo_temporario_e_licencas_da_lei.sql"]
     assert natal == "Natal"
     assert [s[0] for s in secoes] == ["pon_competencia", "pon_config", "pon_dp", "pon_gestao"]
 
@@ -245,9 +246,15 @@ def test_escala_so_quem_configura_cria_e_supervisor_so_mexe_na_obra_dele(app, mu
 # ---------------------------------------------------------------------------
 # Pedidos: ajuste (supervisor), atestado (DP, sigilo), compensação (dois passos)
 # ---------------------------------------------------------------------------
-def _entrar_no_app(app, cpf, monkeypatch):
+def _entrar_no_app(app, cpf, monkeypatch, *, excecao: bool = False):
+    """`excecao=True`: a pessoa também bate no próprio celular — só assim ela faz
+    pedido por ele (decisão do dono, 06/10/2026)."""
     from app.apps.ponto import db
     from app.apps.ponto.core import acesso
+    if excecao:
+        from app.apps.ponto.core import cadastros, forma_de_bater
+        with db.conexao() as conn:
+            forma_de_bater.definir(conn, int(cadastros.colaborador_por_cpf(conn, cpf)["id"]), True, "teste")
     enviados = []
     with db.conexao() as conn:
         acesso.pedir_codigo(conn, cpf, enviar=lambda tel, msg: enviados.append((tel, msg)))
@@ -265,7 +272,7 @@ def test_ajuste_de_batida_pelo_celular_aprovado_pelo_supervisor(app, mundo, monk
     seg = _segunda_passada()
     for h in ((7, 0), (11, 0), (12, 0)):                    # esqueceu a saída
         bater_via_chave(app, CPF_JOAO, local(seg, *h))
-    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
     r = cel.post("/ponto/app/api/pedidos", json={
         "tipo": "AJUSTE_BATIDA", "data_inicio": seg.isoformat(), "horario": f"{seg.isoformat()}T17:00:00",
         "obra": "PG-A", "descricao": "celular sem bateria na saída"})
@@ -295,7 +302,7 @@ def test_ajuste_de_batida_pelo_celular_aprovado_pelo_supervisor(app, mundo, monk
 
 def test_atestado_pelo_celular_so_o_dp_ve_e_aprova(app, mundo, monkeypatch):
     seg = _segunda_passada()
-    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
     r = cel.post("/ponto/app/api/pedidos", json={
         "tipo": "ATESTADO", "data_inicio": seg.isoformat(), "data_fim": dia_util(seg, 1).isoformat(),
         "documento_base64": _png(), "documento_nome": "atestado.png", "cid": "J11"})

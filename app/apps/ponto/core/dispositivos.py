@@ -51,11 +51,20 @@ def validar_perfil(perfil) -> str:
 # A regra, pura
 # ---------------------------------------------------------------------------
 def autorizado_para(dispositivo: dict, colaborador_id: int, obra_id: int,
-                    autorizados: set[int], obras_do_aparelho: set[int]) -> Optional[str]:
+                    autorizados: set[int], obras_do_aparelho: set[int], hoje=None) -> Optional[str]:
     """None se o aparelho pode registrar esta pessoa nesta obra; senão o motivo."""
     if dispositivo.get("status") != "APROVADO":
         return f"aparelho {str(dispositivo.get('status', '')).lower() or 'desconhecido'}"
     perfil = dispositivo.get("perfil")
+    # O aparelho de grupo é TEMPORÁRIO (decisão do dono, 06/10/2026): vencido,
+    # para de bater por todos até alguém renovar.
+    if perfil == "LISTA" and dispositivo.get("valido_ate"):
+        if hoje is None:
+            from ..horario import hoje as _hoje
+            hoje = _hoje()
+        if dispositivo["valido_ate"] < hoje:
+            return (f"a permissão de grupo deste aparelho venceu em {dispositivo['valido_ate']:%d/%m/%Y} "
+                    "— peça a renovação a quem configura o ponto")
     if perfil == "INDIVIDUAL":
         if dispositivo.get("colaborador_id") != colaborador_id:
             return "aparelho individual de outra pessoa"
@@ -148,6 +157,7 @@ def para_json(d: dict) -> dict:
         "dono": ({"id": d["colaborador_id"], "nome": d.get("dono_nome"),
                   "cpf": d.get("dono_cpf")} if d.get("colaborador_id") else None),
         "qtd_autorizados": int(d.get("qtd_autorizados") or 0),
+        "valido_ate": d["valido_ate"].isoformat() if d.get("valido_ate") else None,
         "obras": d.get("obras"),
         "aprovado_por": d.get("aprovado_por"), "aprovado_em": texto(d.get("aprovado_em")),
         "bloqueado_em": texto(d.get("bloqueado_em")), "motivo_bloqueio": d.get("motivo_bloqueio"),
@@ -191,9 +201,35 @@ def autenticar(conn: Connection, device_uuid: str, token: str | None) -> dict:
     return d
 
 
+GRUPO_DIAS_PADRAO, GRUPO_DIAS_MAXIMO = 15, 90
+GRUPO_DIAS_SEM_USO = 7          # pessoa ou aparelho sem batida há tantos dias → sugere tirar
+
+
+def validade_do_grupo(valido_ate, hoje=None):
+    """PURA. A data em que a permissão de grupo vence: o padrão é 15 dias, o
+    máximo 90 — é uma situação passageira (equipe que voltou a uma obra)."""
+    import datetime as _dt
+    if hoje is None:
+        from ..horario import hoje as _hoje
+        hoje = _hoje()
+    if valido_ate in (None, ""):
+        return hoje + _dt.timedelta(days=GRUPO_DIAS_PADRAO)
+    try:
+        data = valido_ate if isinstance(valido_ate, _dt.date) else _dt.date.fromisoformat(str(valido_ate))
+    except ValueError:
+        raise ErroDeValidacao("data de validade ilegível", campo="valido_ate")
+    if data < hoje:
+        raise ErroDeValidacao("a validade do grupo já passou", campo="valido_ate")
+    if data > hoje + _dt.timedelta(days=GRUPO_DIAS_MAXIMO):
+        raise ErroDeValidacao(f"o grupo vale no máximo {GRUPO_DIAS_MAXIMO} dias — é para situação passageira",
+                              campo="valido_ate")
+    return data
+
+
 def aprovar(conn: Connection, dispositivo_id: int, *, perfil: str, aprovado_por: str,
             colaborador_id: int | None = None, descricao: str | None = None,
-            autorizados: list[int] | None = None, obras: list[int] | None = None) -> dict:
+            autorizados: list[int] | None = None, obras: list[int] | None = None,
+            valido_ate=None) -> dict:
     d = por_id(conn, dispositivo_id)
     perfil_ok = validar_perfil(perfil)
     if perfil_ok == "INDIVIDUAL" and not colaborador_id:
@@ -216,6 +252,9 @@ def aprovar(conn: Connection, dispositivo_id: int, *, perfil: str, aprovado_por:
          id=dispositivo_id)
     definir_autorizados(conn, dispositivo_id, autorizados or [])
     definir_obras(conn, dispositivo_id, obras or [])
+    if db.tem_coluna(conn, "dispositivos", "valido_ate"):
+        db.executar(conn, "UPDATE ponto.dispositivos SET valido_ate = :v WHERE id = :id",
+                    v=(validade_do_grupo(valido_ate) if perfil_ok == "LISTA" else None), id=dispositivo_id)
     # Aprovar o celular de uma pessoa É cadastrar a exceção dela: o padrão é só
     # o aparelho da obra bater (forma_de_bater.py, decisão do dono de 05/10/2026).
     from . import forma_de_bater
@@ -238,6 +277,77 @@ def aprovar(conn: Connection, dispositivo_id: int, *, perfil: str, aprovado_por:
     logger.info("Ponto: aparelho %s APROVADO como %s por %s", d["device_uuid"], perfil_ok,
                 aprovado_por)
     return {**detalhado(conn, dispositivo_id), "substituidos": substituidos}
+
+
+def renovar_grupo(conn: Connection, dispositivo_id: int, *, valido_ate, por: str) -> dict:
+    d = por_id(conn, dispositivo_id)
+    if d["perfil"] != "LISTA":
+        raise ErroDeValidacao("só o aparelho de grupo tem validade")
+    data = validade_do_grupo(valido_ate)
+    db.executar(conn, "UPDATE ponto.dispositivos SET valido_ate = :v WHERE id = :id", v=data, id=dispositivo_id)
+    logger.info("Ponto: grupo do aparelho %s renovado até %s por %s", dispositivo_id, data, por)
+    return detalhado(conn, dispositivo_id)
+
+
+def sem_uso_no_grupo(conn: Connection, dispositivo_id: int, dias: int = GRUPO_DIAS_SEM_USO) -> list[dict]:
+    """Quem está no grupo e não bate por este aparelho há `dias` dias."""
+    return db.todos(conn, """
+        SELECT a.colaborador_id, c.nome FROM ponto.dispositivo_autorizados a
+          JOIN public.colaboradores c ON c.id = a.colaborador_id
+         WHERE a.dispositivo_id = :d
+           AND NOT EXISTS (SELECT 1 FROM ponto.marcacoes m WHERE m.dispositivo_id = :d
+                            AND m.colaborador_id = a.colaborador_id
+                            AND m.timestamp_servidor > now() - make_interval(days => :n))
+         ORDER BY c.nome""", d=dispositivo_id, n=dias)
+
+
+def tirar_sem_uso(conn: Connection, dispositivo_id: int, por: str) -> int:
+    fora = sem_uso_no_grupo(conn, dispositivo_id)
+    for p in fora:
+        db.executar(conn, "DELETE FROM ponto.dispositivo_autorizados WHERE dispositivo_id = :d AND colaborador_id = :c",
+                    d=dispositivo_id, c=p["colaborador_id"])
+    logger.info("Ponto: %d pessoa(s) sem uso tiradas do grupo do aparelho %s por %s", len(fora), dispositivo_id, por)
+    return len(fora)
+
+
+def grupos_a_rever(conn: Connection) -> list[dict]:
+    """O que o sistema SUGERE cancelar (pedido do dono, 06/10/2026: "o sistema
+    deveria detectar que aquela situação já não está acontecendo mais e já
+    sugerir o cancelamento da permissão"): aparelho de grupo vencido ou perto de
+    vencer, sem batida nenhuma há 7 dias, ou com gente que não bate mais nele."""
+    import datetime as _dt
+    from ..horario import hoje as _hoje
+    if not db.tem_coluna(conn, "dispositivos", "valido_ate"):
+        return []
+    hoje = _hoje()
+    saida = []
+    for g in db.todos(conn, """
+            SELECT d.*, (SELECT count(*) FROM ponto.dispositivo_autorizados a WHERE a.dispositivo_id = d.id) AS pessoas,
+                   (SELECT max(m.timestamp_servidor) FROM ponto.marcacoes m WHERE m.dispositivo_id = d.id) AS ultima_batida
+              FROM ponto.dispositivos d WHERE d.perfil = 'LISTA' AND d.status = 'APROVADO'"""):
+        motivos = []
+        vence = g.get("valido_ate")
+        if vence and vence < hoje:
+            motivos.append(f"venceu em {vence:%d/%m/%Y} — ninguém bate mais nele")
+        elif vence and vence <= hoje + _dt.timedelta(days=3):
+            motivos.append(f"vence em {vence:%d/%m/%Y}")
+        aprovado_ha = (hoje - (g["aprovado_em"].date() if g.get("aprovado_em") else hoje)).days
+        if aprovado_ha >= GRUPO_DIAS_SEM_USO:
+            ultima = g.get("ultima_batida")
+            if ultima is None or (hoje - ultima.date()).days >= GRUPO_DIAS_SEM_USO:
+                motivos.append(f"nenhuma batida há {GRUPO_DIAS_SEM_USO} dias ou mais — a situação parece ter acabado")
+            else:
+                fora = sem_uso_no_grupo(conn, g["id"])
+                if fora:
+                    motivos.append(f"{len(fora)} pessoa(s) do grupo não batem nele há {GRUPO_DIAS_SEM_USO} dias: "
+                                   + ", ".join(p["nome"].split(" ")[0].title() for p in fora[:5])
+                                   + ("…" if len(fora) > 5 else ""))
+        if motivos:
+            saida.append({"id": g["id"], "descricao": g["descricao"] or "aparelho de grupo",
+                          "codigo": codigo_curto(g["device_uuid"]), "pessoas": int(g["pessoas"]),
+                          "valido_ate": vence.isoformat() if vence else None, "motivos": motivos,
+                          "sugestao": "CANCELAR" if any("ninguém" in m or "acabado" in m for m in motivos) else "REVER"})
+    return saida
 
 
 def bloquear(conn: Connection, dispositivo_id: int, *, motivo: str, por: str) -> dict:

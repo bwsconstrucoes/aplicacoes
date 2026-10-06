@@ -229,11 +229,26 @@ def registrar_uso(conn: Connection, qr_id: int, agora: Optional[dt.datetime] = N
 # ---------------------------------------------------------------------------
 # O bilhete do tablet
 # ---------------------------------------------------------------------------
+# O bilhete do PEDIDO no aparelho da obra (atestado, licença, ajuste) dura mais:
+# fotografar o documento e preencher as datas leva minutos. Ele não serve para
+# bater (`bilhete_de_pedido`), para a batida continuar sendo de quem está ali.
+BILHETE_PEDIDO_S = 600
+
+
 def emitir_bilhete(colaborador_id: int, dispositivo_id: int, identificacao: str,
-                   agora: Optional[float] = None) -> str:
-    validade = int((agora if agora is not None else time.time()) + BILHETE_VALIDADE_S)
+                   agora: Optional[float] = None, *, para_pedido: bool = False) -> str:
+    validade = int((agora if agora is not None else time.time())
+                   + (BILHETE_PEDIDO_S if para_pedido else BILHETE_VALIDADE_S))
     corpo = f"{int(colaborador_id)}.{int(dispositivo_id)}.{validade}.{_CODIGO_IDENT[identificacao]}"
     return f"{corpo}.{_assinar('bilhete|' + corpo)}"
+
+
+def bilhete_de_pedido(bilhete: str, agora: Optional[float] = None) -> bool:
+    """O bilhete dura mais que o da batida? (então é de pedido, e não bate)"""
+    partes = str(bilhete or "").strip().split(".")
+    if len(partes) != 5 or not partes[2].isdigit():
+        return False
+    return int(partes[2]) - (agora if agora is not None else time.time()) > BILHETE_VALIDADE_S + 5
 
 
 def conferir_bilhete(bilhete: str, dispositivo_id: int,

@@ -96,6 +96,14 @@
   .kq-cobre .contagem { font-size:80px; font-weight:900; line-height:1; }
   .kq-cobre.ok { background:rgba(27,127,59,.94); } .kq-cobre.ambar { background:rgba(166,91,0,.94); }
   .kq-cobre.erro { background:rgba(179,38,30,.94); }
+  .kq-form { position:fixed; inset:0; z-index:20; overflow:auto; background:#F4F6F9; color:#0A1B2E; padding:18px; }
+  .kq-form .caixa { max-width:640px; margin:0 auto; background:#fff; border-radius:14px; padding:18px; }
+  .kq-form h2 { margin:0 0 4px; font-size:24px; } .kq-form label { display:block; margin-top:12px; font-weight:700; }
+  .kq-form input, .kq-form select, .kq-form textarea { width:100%; font-size:18px; padding:10px; border:1px solid #B9C4D0; border-radius:10px; box-sizing:border-box; }
+  .kq-form .linha { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+  .kq-form .linha button { flex:1; min-width:160px; font-size:18px; padding:14px; border-radius:12px; border:0; font-weight:700; }
+  .kq-form .principal { background:#0F3B66; color:#fff; } .kq-form .secundario { background:#E3E8EF; color:#0A1B2E; }
+  .kq-form .foto-doc { max-width:100%; max-height:240px; margin-top:8px; border-radius:8px; display:block; }
   .kq-cobre button { border:2px solid #fff; background:transparent; color:#fff; border-radius:12px; padding:12px 22px; font-size:18px; font-weight:700; }
   @media (max-width: 760px) and (orientation: portrait) { .kq-corpo { flex-direction:column; } .kq-camera { flex:1; } .kq-teclas button { min-height:52px; font-size:28px; } }
   .qr-grande { display:block; width:100%; max-width:340px; margin:0 auto; image-rendering:pixelated; }
@@ -174,8 +182,10 @@
           <button type="button" data-t="limpar" class="apagar">Limpar</button><button type="button" data-t="0">0</button><button type="button" data-t="apagar" class="apagar">⌫</button>
         </div>
         <button type="button" class="kq-esqueci" id="t-esqueci">Esqueci meu QR Code — receber no WhatsApp</button>
+        <button type="button" class="kq-esqueci" id="t-pedido">Entregar atestado, licença ou pedir ajuste</button>
       </div>
     </div>
+    <div class="kq-form oculto" id="t-form"></div>
   </section>
 
   <!-- INÍCIO -->
@@ -184,7 +194,8 @@
     <div class="cartao oculto" id="cartao-so-na-obra">
       <h2 id="ola-obra">Olá</h2>
       <div class="aviso info">Você bate o ponto no <b>aparelho da obra</b>: mostre o seu QR Code na câmera
-        dele ou digite o CPF. Por aqui você vê o seu mês, manda atestado e pede ajuste.</div>
+        dele ou digite o CPF. Atestado, licença e ajuste também são entregues lá (ou pelo responsável da obra).
+        Por aqui você vê o seu mês e acompanha os pedidos.</div>
     </div>
     <div class="cartao" id="cartao-bater">
       <h2 id="ola">Olá</h2>
@@ -232,7 +243,13 @@
 
   <!-- PEDIDOS -->
   <section id="tela-pedidos" class="oculto">
-    <div class="cartao">
+    <div class="cartao oculto" id="cartao-pedido-na-obra">
+      <h2>Atestado, licença, ajuste</h2>
+      <div class="aviso info">São entregues <b>no aparelho da obra</b> (toque em “Entregar atestado, licença ou
+        pedir ajuste” e mostre o seu QR Code) ou pelo <b>responsável da obra</b>. Aqui você acompanha a
+        resposta.</div>
+    </div>
+    <div class="cartao" id="cartao-fazer-pedido">
       <h2>Fazer um pedido</h2>
       <label for="ped-tipo">O que você precisa?</label>
       <select id="ped-tipo">
@@ -342,7 +359,15 @@ function mostrar(tela) {
   $("btn-sair").classList.toggle("oculto", !logado);
   document.querySelectorAll("nav.abas button").forEach(b => b.classList.toggle("ativa", b.dataset.tela === tela));
   if (tela === "mes") carregarMes();
-  if (tela === "pedidos") { montarCamposPedido(); carregarPedidos(); }
+  if (tela === "pedidos") {
+    // Quem não é exceção (não bate no celular) não faz pedido por aqui: entrega
+    // no aparelho da obra ou pelo responsável (decisão do dono, 06/10/2026).
+    const podePedir = !EU || EU.bate_no_celular !== false;
+    $("cartao-fazer-pedido").classList.toggle("oculto", !podePedir);
+    $("cartao-pedido-na-obra").classList.toggle("oculto", podePedir);
+    if (podePedir) carregarLicencas().then(montarCamposPedido);
+    carregarPedidos();
+  }
   if (tela === "inicio") carregarInicio();
 }
 document.querySelectorAll("nav.abas button").forEach(b => b.addEventListener("click", () => mostrar(b.dataset.tela)));
@@ -676,6 +701,7 @@ const MOTIVOS_AJUSTE = [["CELULAR", "Celular quebrado, sem bateria ou sem crédi
   ["INTERNET", "Sem internet ou sem sinal na obra"], ["APARELHO", "Tablet ou aparelho da obra com problema"],
   ["ESQUECI", "Esqueci de bater"], ["FORA", "Estava em serviço fora da obra"], ["OUTRO", "Outro motivo"]];
 function podeCorrigir(x, mes) {
+  if (EU && EU.bate_no_celular === false) return false;   // pede no aparelho da obra
   if (mes.competencia_fechada || x.ocorrencia || x.situacao === "FUTURO") return false;
   if (x.faltando && x.faltando.length) return true;
   // sem escala cadastrada não dá para saber o que falta: deixa pedir no dia de falta ou incompleto
@@ -733,6 +759,31 @@ function abrirCorrecao(x) {
 
 // --- pedidos -------------------------------------------------------------------
 const hojeISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+// --- as licenças da lei (06/10/2026): o tipo sai da lista, o último dia sai dos dias da lei
+let LICENCAS = [];
+async function carregarLicencas() {
+  try { LICENCAS = (await chamar("/ponto/app/api/licencas")).licencas || []; } catch (e) { LICENCAS = []; }
+  return LICENCAS;
+}
+function opcoesLicenca() {
+  return LICENCAS.length ? LICENCAS.map(l => `<option value="${esc(l.codigo)}">${esc(l.nome)}</option>`).join("")
+    : `<option value="">(a lista de licenças não carregou)</option>`;
+}
+function somarDiasISO(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function ligarLicenca(idTipo, idInicio, idFim, idInfo) {
+  const ajustar = () => {
+    const l = LICENCAS.find(x => x.codigo === $(idTipo).value);
+    if (!l) { $(idInfo).textContent = ""; return; }
+    if (l.dias && $(idInicio).value) $(idFim).value = somarDiasISO($(idInicio).value, l.dias - 1);
+    $(idInfo).textContent = [l.dias ? `A lei dá ${l.dias} dia(s)` : "Os dias do documento",
+      l.limite_ano ? `até ${l.limite_ano} vez(es) por ano` : "", l.exige_documento ? `documento: ${l.documento}` : "documento, se houver",
+      l.base_legal].filter(Boolean).join(" · ") + ".";
+  };
+  $(idTipo).addEventListener("change", ajustar);
+  $(idInicio).addEventListener("change", ajustar);
+  ajustar();
+}
+
 function montarCamposPedido() {
   const t = $("ped-tipo").value;
   const obras = (EU && EU.obras) || [];
@@ -748,10 +799,12 @@ function montarCamposPedido() {
     COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="pc-trabalhado">
       <label>Dia da folga no lugar</label><input type="date" id="pc-inicio">
       <label>Motivo</label><textarea id="pc-descricao"></textarea>`,
-    LICENCA: `<label>Primeiro dia</label><input type="date" id="pc-inicio" value="${hojeISO()}">
+    LICENCA: `<label>Tipo de licença</label><select id="pc-subtipo">${opcoesLicenca()}</select>
+      <p class="pequeno" id="pc-licenca-info"></p>
+      <label>Primeiro dia</label><input type="date" id="pc-inicio" value="${hojeISO()}">
       <label>Último dia</label><input type="date" id="pc-fim" value="${hojeISO()}">
-      <label>Tipo de licença e observação</label><textarea id="pc-descricao" placeholder="Ex.: casamento; luto (pai)"></textarea>
-      <label>Documento (opcional)</label><button class="btn sec" type="button" id="pc-doc">Escolher foto ou arquivo</button>
+      <label>Observação</label><textarea id="pc-descricao" placeholder="Ex.: luto (pai)"></textarea>
+      <label>Documento</label><button class="btn sec" type="button" id="pc-doc">Escolher foto ou arquivo</button>
       <p class="pequeno" id="pc-doc-nome">Nenhum arquivo escolhido.</p>`,
     FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="pc-inicio">
       <label>Último dia (se mais de um)</label><input type="date" id="pc-fim">
@@ -771,6 +824,7 @@ function montarCamposPedido() {
       abrirCorrecao(x);
     } catch (e) { aviso(e.message, "erro"); }
   });
+  if (t === "LICENCA") ligarLicenca("pc-subtipo", "pc-inicio", "pc-fim", "pc-licenca-info");
   DOC = null;
   const botaoDoc = $("pc-doc");
   if (botaoDoc) botaoDoc.addEventListener("click", () => {
@@ -802,6 +856,7 @@ $("btn-pedir").addEventListener("click", async () => {
     Object.assign(corpo, {data_inicio: v("pc-inicio"), dia_trabalhado: v("pc-trabalhado")});
   } else {
     Object.assign(corpo, {data_inicio: v("pc-inicio"), data_fim: v("pc-fim") || v("pc-inicio")});
+    if (t === "LICENCA") corpo.subtipo = v("pc-subtipo");
   }
   if (DOC) { corpo.documento_base64 = DOC.base64; corpo.documento_nome = DOC.nome; }
   $("btn-pedir").disabled = true;
@@ -993,8 +1048,17 @@ $("t-teclas").addEventListener("click", ev => {
   }
   visor();
 });
+$("t-pedido").addEventListener("click", () => {
+  TB.pedido = !TB.pedido; TB.esqueci = false; TB.cpf = "";
+  $("t-pedido").textContent = TB.pedido ? "Voltar para bater o ponto" : "Entregar atestado, licença ou pedir ajuste";
+  $("t-esqueci").textContent = "Esqueci meu QR Code — receber no WhatsApp";
+  $("t-legenda").textContent = TB.pedido ? "PEDIDO: mostre o QR Code de quem vai entregar — ou digite o CPF"
+                                         : "Mostre o QR Code do seu celular aqui — ou digite o CPF";
+  visor();
+});
 $("t-esqueci").addEventListener("click", () => {
-  TB.esqueci = !TB.esqueci; TB.cpf = "";
+  TB.esqueci = !TB.esqueci; TB.cpf = ""; TB.pedido = false;
+  $("t-pedido").textContent = "Entregar atestado, licença ou pedir ajuste";
   $("t-esqueci").textContent = TB.esqueci ? "Voltar para bater o ponto" : "Esqueci meu QR Code — receber no WhatsApp";
   visor();
 });
@@ -1022,6 +1086,7 @@ function cobrir(tipo, html, ms) {
 function descobrir() { COBRE_VEZ++; $("t-cobre").className = "kq-cobre oculto"; TB.ocupado = false; }
 
 async function identificar(quem) {
+  if (TB.pedido) return identificarParaPedido(quem);
   if (TB.ocupado) return;
   TB.ocupado = true;
   cobrir("", `<p>Identificando…</p>`);
@@ -1064,6 +1129,117 @@ async function identificar(quem) {
     cobrir("erro", `<h2>Batida não registrada</h2><p>${esc(e.message)}</p>`, 4500);
   }
   atualizarLocalTablet();
+}
+
+// --- o pedido no aparelho da obra (06/10/2026): atestado, licença, ajuste e
+// compensação são entregues aqui (ou pelo responsável da obra no ERP), não no
+// celular de cada um. A pessoa se identifica, e o documento é fotografado aqui.
+async function identificarParaPedido(quem) {
+  if (TB.ocupado) return;
+  TB.ocupado = true;
+  cobrir("", `<p>Identificando…</p>`);
+  let d;
+  try {
+    d = await chamar("/ponto/app/api/tablet/identificar", {...quem, obra: $("t-obra").value, para_pedido: true});
+  } catch (e) {
+    return cobrir("erro", `<h2>Não identificado</h2><p>${esc(e.message)}</p>`, 3500);
+  }
+  descobrir();
+  TB.ocupado = true;                   // o formulário segura o aparelho até enviar ou desistir
+  await carregarLicencas();
+  abrirFormularioDoTablet(d, "ATESTADO");
+}
+
+function abrirFormularioDoTablet(d, tipo) {
+  const f = $("t-form");
+  const hoje = hojeISO();
+  const opcoes = [["ATESTADO", "Atestado médico"], ["LICENCA", "Licença (casamento, luto, paternidade…)"],
+                  ["AJUSTE_BATIDA", "Esqueceu de bater (ajuste)"], ["COMPENSACAO", "Compensação (trabalhar num dia no lugar de outro)"]]
+    .concat(d.tem_banco ? [["FOLGA_BANCO", "Folga do banco de horas"]] : []);
+  const campos = {
+    ATESTADO: `<label>Primeiro dia de afastamento</label><input type="date" id="tf-inicio" value="${hoje}">
+      <label>Quantos dias o médico deu?</label><input type="number" id="tf-dias" min="1" max="120" value="1">`,
+    LICENCA: `<label>Tipo de licença</label><select id="tf-subtipo">${opcoesLicenca()}</select>
+      <p id="tf-licenca-info" style="margin:6px 0 0; font-size:15px"></p>
+      <label>Primeiro dia</label><input type="date" id="tf-inicio" value="${hoje}">
+      <label>Último dia</label><input type="date" id="tf-fim" value="${hoje}">`,
+    AJUSTE_BATIDA: `<label>Dia</label><input type="date" id="tf-inicio" value="${hoje}">
+      <label>Horário que faltou</label><input type="time" id="tf-hora">
+      <label>Motivo</label><select id="tf-motivo">${MOTIVOS_AJUSTE.map(m => `<option value="${m[0]}">${esc(m[1])}</option>`).join("")}</select>`,
+    COMPENSACAO: `<label>Dia em que vai trabalhar (ou trabalhou)</label><input type="date" id="tf-trabalhado">
+      <label>Dia da folga no lugar</label><input type="date" id="tf-inicio">`,
+    FOLGA_BANCO: `<label>Dia da folga</label><input type="date" id="tf-inicio"><label>Último dia (se mais de um)</label><input type="date" id="tf-fim">`,
+  };
+  const temDoc = tipo === "ATESTADO" || tipo === "LICENCA";
+  f.innerHTML = `<div class="caixa">
+    <h2>${esc(d.nome)}</h2><p style="margin:0">${esc(d.funcao || "")}</p>
+    <label for="tf-tipo">O que vai entregar ou pedir?</label>
+    <select id="tf-tipo">${opcoes.map(o => `<option value="${o[0]}" ${o[0] === tipo ? "selected" : ""}>${esc(o[1])}</option>`).join("")}</select>
+    ${campos[tipo]}
+    <label>Observação${tipo === "AJUSTE_BATIDA" || tipo === "COMPENSACAO" ? " (obrigatória)" : ""}</label>
+    <textarea id="tf-descricao" rows="2"></textarea>
+    ${temDoc ? `<label>Documento</label>
+      <div class="linha" style="margin-top:6px">
+        <button type="button" class="secundario" id="tf-fotografar">📷 Fotografar com a câmera</button>
+        <button type="button" class="secundario" id="tf-arquivo">Escolher arquivo</button></div>
+      <p id="tf-doc-nome" style="margin:6px 0 0; font-size:15px">Nenhum documento ainda.</p>
+      <img id="tf-doc-previa" class="foto-doc oculto" alt="documento">` : ""}
+    <div id="tf-msg" style="margin-top:10px; font-weight:700"></div>
+    <div class="linha">
+      <button type="button" class="principal" id="tf-enviar">Enviar</button>
+      <button type="button" class="secundario" id="tf-cancelar">Desistir</button></div>
+    <p style="font-size:14px; margin-top:12px">O atestado só é visto pelo DP. O pedido vai para validação.</p></div>`;
+  f.classList.remove("oculto");
+  let doc = null;
+  $("tf-tipo").addEventListener("change", ev => abrirFormularioDoTablet(d, ev.target.value));
+  if (tipo === "LICENCA") ligarLicenca("tf-subtipo", "tf-inicio", "tf-fim", "tf-licenca-info");
+  const guardar = (base64, nome) => {
+    doc = {base64, nome}; $("tf-doc-nome").textContent = nome;
+    const img = $("tf-doc-previa");
+    if (base64.startsWith("data:image")) { img.src = base64; img.classList.remove("oculto"); } else img.classList.add("oculto");
+  };
+  if (temDoc) {
+    $("tf-fotografar").addEventListener("click", () => {
+      const foto = fotoDoVideo();
+      if (!foto) return ($("tf-msg").textContent = "A câmera não está ligada — escolha um arquivo.");
+      guardar(foto, "foto do documento");
+    });
+    $("tf-arquivo").addEventListener("click", () => {
+      const a = $("arquivo-doc"); a.value = "";
+      a.onchange = () => {
+        const arq = a.files && a.files[0]; if (!arq) return;
+        if (arq.size > 10 * 1024 * 1024) return ($("tf-msg").textContent = "O arquivo passa de 10 MB.");
+        const leitor = new FileReader(); leitor.onload = () => guardar(leitor.result, arq.name); leitor.readAsDataURL(arq);
+      };
+      a.click();
+    });
+  }
+  const fechar = () => { f.classList.add("oculto"); f.innerHTML = ""; TB.ocupado = false; };
+  $("tf-cancelar").addEventListener("click", fechar);
+  $("tf-enviar").addEventListener("click", async () => {
+    const v = id => ($(id) ? $(id).value : "");
+    const corpo = {bilhete: d.bilhete, tipo, descricao: v("tf-descricao"), obra_do_aparelho: $("t-obra").value};
+    if (tipo === "ATESTADO") {
+      const dias = Math.max(1, parseInt(v("tf-dias") || "1", 10));
+      Object.assign(corpo, {data_inicio: v("tf-inicio"), data_fim: somarDiasISO(v("tf-inicio"), dias - 1)});
+      if (!doc) return ($("tf-msg").textContent = "Fotografe o atestado ou escolha o arquivo.");
+    } else if (tipo === "AJUSTE_BATIDA") {
+      if (!v("tf-hora")) return ($("tf-msg").textContent = "Diga o horário que faltou.");
+      Object.assign(corpo, {data_inicio: v("tf-inicio"), horario: `${v("tf-inicio")}T${v("tf-hora")}:00`, motivo: v("tf-motivo")});
+    } else if (tipo === "COMPENSACAO") {
+      Object.assign(corpo, {data_inicio: v("tf-inicio"), dia_trabalhado: v("tf-trabalhado")});
+    } else {
+      Object.assign(corpo, {data_inicio: v("tf-inicio"), data_fim: v("tf-fim") || v("tf-inicio")});
+      if (tipo === "LICENCA") corpo.subtipo = v("tf-subtipo");
+    }
+    if (doc) { corpo.documento_base64 = doc.base64; corpo.documento_nome = doc.nome; }
+    $("tf-enviar").disabled = true;
+    try {
+      const r = await chamar("/ponto/app/api/tablet/pedido", corpo);
+      fechar();
+      cobrir("ok", `<h2>Pedido entregue</h2><p>${esc(r.pedido.rotulo)} nº ${esc(r.pedido.id)} — vai para validação.</p>`, 4000);
+    } catch (e) { $("tf-msg").textContent = e.message; $("tf-enviar").disabled = false; }
+  });
 }
 
 function fotoDoVideo() {

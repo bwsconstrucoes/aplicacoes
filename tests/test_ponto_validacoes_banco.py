@@ -29,7 +29,7 @@ def test_a_lista_junta_tudo_filtra_e_diz_quem_valida(app, mundo, monkeypatch):
     seg = _segunda_passada()
     for h in ((7, 0), (11, 0), (12, 0)):
         bater_via_chave(app, CPF_JOAO, local(seg, *h))
-    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
     pedido = _pedir_ajuste(cel, seg, "17:00")
     with db.conexao() as conn:                     # Maria (obra B, sem coordenada): batida em conferência
         m, _ = marcacoes.registrar(conn, cpf=CPF_MARIA, obra="PG-A", origem="IDFACE", via_chave=True)
@@ -74,7 +74,7 @@ def test_trocar_quem_valida_realinha_a_fila(app, mundo, monkeypatch):
     seg = _segunda_passada()
     for h in ((7, 0), (11, 0), (12, 0)):
         bater_via_chave(app, CPF_JOAO, local(seg, *h))
-    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch)
+    cel = _entrar_no_app(app, CPF_JOAO, monkeypatch, excecao=True)
     pedido = _pedir_ajuste(cel, seg, "17:00")
     assert pedido["status"] == "AGUARDANDO_DP"
     dp, sup = como(app, mundo["dp"]), como(app, mundo["sup"])

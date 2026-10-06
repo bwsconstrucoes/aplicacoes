@@ -257,6 +257,8 @@
   {% endif %}
   {% if pode.aprovar_afastamento %}
   <button class="btn amarelo" id="e-btn-afastamento" type="button">Lançar afastamento</button>
+  {% elif pode.tratar_ponto %}
+  <button class="btn amarelo" id="e-btn-documento" type="button">Entregar atestado ou licença</button>
   {% endif %}
 </div>
 <div class="kpis" id="e-kpis"></div>
@@ -860,6 +862,23 @@ const linkEspelho = (id, competencia) =>
   + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
 
 // --- Aparelhos: aprovar e bloquear (usados em Validações e em Configuração).
+async function renovarGrupo(id, depois) {
+  const r = await perguntar({titulo: "Renovar a permissão de grupo",
+    aviso: "O grupo é passageiro: renove só se a situação continua (no máximo 90 dias a partir de hoje).",
+    campos: [{nome: "valido_ate", rotulo: "Vale até", tipo: "date", valor: somarDias(hojeISO(), 15), largura: 1, obrigatorio: true}],
+    textoOk: "Renovar"});
+  if (!r) return;
+  try { await postar(`/erp/api/ponto/dispositivos/${id}/renovar`, {valido_ate: r.valido_ate});
+        aviso("mensagem", "Permissão de grupo renovada.", "ok"); if (depois) await depois(); }
+  catch (e) { falhou(e); }
+}
+
+async function tirarSemUso(id, depois) {
+  try { const d = await postar(`/erp/api/ponto/dispositivos/${id}/tirar-sem-uso`);
+        aviso("mensagem", `${d.retirados} pessoa(s) que não batiam mais nele saíram do grupo.`, "ok"); if (depois) await depois(); }
+  catch (e) { falhou(e); }
+}
+
 async function aprovarAparelho(a, depois) {
   // Aparelho já aprovado (ou bloqueado) abre com o que ele tem: trocar o uso,
   // o dono, as obras ou o nome é aprovar de novo (pedido do dono, 06/10/2026).
@@ -887,6 +906,9 @@ async function aprovarAparelho(a, depois) {
        largura: 3, dica: jaAprovado && a.perfil === "LISTA"
          ? `Hoje são ${a.qtd_autorizados} pessoa(s). Deixe vazio para manter o grupo; preencha para trocá-lo inteiro.`
          : "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
+      {nome: "valido_ate", rotulo: "Grupo vale até", tipo: "date", largura: 1,
+       valor: a.valido_ate || somarDias(hojeISO(), 15),
+       dica: "Só para \"grupo de pessoas\": é passageiro (equipe que voltou a uma obra) — no máximo 90 dias. Vencido, para de bater."},
       {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas",
        valor: jaAprovado && a.obras ? a.obras : "",
        dica: "Códigos das obras separados por vírgula. Para o tablet da obra, diga a obra dele: sem GPS, a batida dele só pode cair nela."},
@@ -905,6 +927,7 @@ async function aprovarAparelho(a, depois) {
     const resp = await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
       perfil: r.perfil, cpf: r.perfil === "INDIVIDUAL" ? r.cpf : "",
       autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [], manter_grupo: manterGrupo,
+      valido_ate: r.perfil === "LISTA" ? (r.valido_ate || null) : null,
       obras: listaDeTexto(r.obras), descricao: r.descricao});
     aviso("mensagem", (jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.")
       + (resp.substituidos ? " O celular que essa pessoa usava antes foi bloqueado: vale um celular por pessoa." : ""), "ok");
@@ -1228,9 +1251,57 @@ async function registrarCompensacao() {
   } catch (e) { falhou(e); }
 }
 
+// As licenças da lei (06/10/2026), para escolher o tipo em vez de escrever.
+let LICENCAS_LEI = null;
+async function licencasDaLei() {
+  if (LICENCAS_LEI === null) {
+    try { LICENCAS_LEI = (await api("/erp/api/ponto/licencas")).licencas || []; } catch (e) { LICENCAS_LEI = []; }
+  }
+  return LICENCAS_LEI;
+}
+const opcoesDeLicenca = l => [{valor: "", rotulo: "— (só para licença)"},
+  ...l.map(x => ({valor: x.codigo, rotulo: escapar(`${x.nome}${x.dias ? ` — ${x.dias} dia(s)` : ""}`)}))];
+
+// O responsável da obra entrega atestado ou licença com o documento; quem
+// valida é o DP (atestado, sempre) — pedido do dono, 06/10/2026.
+async function entregarDocumento() {
+  if (!ESP) return;
+  const p = ESP.pessoa;
+  const lic = await licencasDaLei();
+  const r = await perguntar({
+    titulo: `Entregar atestado ou licença — ${escapar(p.nome)}`,
+    aviso: `O documento vai para o DP validar. O atestado fica em sigilo: depois de enviado, só o DP abre.`,
+    campos: [
+      {nome: "tipo", rotulo: "O que é", tipo: "select", valor: "ATESTADO", largura: 3, opcoes: [
+        {valor: "ATESTADO", rotulo: "Atestado médico"}, {valor: "LICENCA", rotulo: "Licença da lei"}]},
+      {nome: "subtipo", rotulo: "Tipo de licença", tipo: "select", valor: "", largura: 3, opcoes: opcoesDeLicenca(lic)},
+      {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 1},
+      {nome: "data_fim", rotulo: "Último dia", tipo: "date", largura: 1, dica: "Vazio = um dia só (na licença, os dias da lei)."},
+      {nome: "descricao", rotulo: "Observação", tipo: "textarea", linhas: 2, largura: 3},
+      {nome: "documento", rotulo: "Documento (foto ou PDF)", tipo: "arquivo", largura: 3, obrigatorio: true,
+       aceita: ".pdf,.jpg,.jpeg,.png,.webp"},
+    ],
+    textoOk: "Enviar para o DP",
+  });
+  if (!r) return;
+  let fim = r.data_fim;
+  const l = lic.find(x => x.codigo === r.subtipo);
+  if (!fim && r.tipo === "LICENCA" && l && l.dias) fim = somarDias(r.data_inicio, l.dias - 1);
+  try {
+    const conteudo = await lerArquivo(r.documento);
+    await postar("/erp/api/ponto/ocorrencias", {
+      tipo: r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : "", colaborador_id: p.id,
+      data_inicio: r.data_inicio, data_fim: fim || r.data_inicio, descricao: r.descricao,
+      documento_base64: conteudo, documento_nome: r.documento ? r.documento.name : ""});
+    aviso("mensagem", "Enviado. O pedido aparece em Validações até o DP decidir.", "ok");
+    await carregarEspelho();
+  } catch (e) { falhou(e); }
+}
+
 async function lancarAfastamento() {
   if (!ESP) return;
   const p = ESP.pessoa;
+  const lic = await licencasDaLei();
   const r = await perguntar({
     titulo: `Lançar afastamento — ${escapar(p.nome)}`,
     aviso: `Lançado por você, já entra aprovado e abona os dias. O documento de
@@ -1238,10 +1309,11 @@ async function lancarAfastamento() {
     campos: [
       {nome: "tipo", rotulo: "Tipo", tipo: "select", valor: "ATESTADO", largura: 3, opcoes: [
         {valor: "ATESTADO", rotulo: "Atestado médico"},
-        {valor: "LICENCA", rotulo: "Licença (maternidade, paternidade, casamento, luto…)"},
+        {valor: "LICENCA", rotulo: "Licença da lei (casamento, luto, paternidade…)"},
         {valor: "FERIAS", rotulo: "Férias"},
-        {valor: "AFASTAMENTO", rotulo: "Afastamento (INSS, acidente)"},
+        {valor: "AFASTAMENTO", rotulo: "Afastamento (INSS, acidente, maternidade)"},
         {valor: "ABONO", rotulo: "Abono (dia dispensado pela empresa)"}]},
+      {nome: "subtipo", rotulo: "Tipo de licença", tipo: "select", valor: "", largura: 3, opcoes: opcoesDeLicenca(lic)},
       {nome: "data_inicio", rotulo: "Primeiro dia", tipo: "date", obrigatorio: true, largura: 1},
       {nome: "data_fim", rotulo: "Último dia", tipo: "date", largura: 1,
        dica: "Vazio = um dia só."},
@@ -1257,9 +1329,12 @@ async function lancarAfastamento() {
   if (!r) return;
   try {
     const conteudo = await lerArquivo(r.documento);
+    let fim = r.data_fim;
+    const l = lic.find(x => x.codigo === r.subtipo);
+    if (!fim && r.tipo === "LICENCA" && l && l.dias) fim = somarDias(r.data_inicio, l.dias - 1);
     await postar("/erp/api/ponto/afastamentos", {
-      tipo: r.tipo, colaborador_id: p.id, data_inicio: r.data_inicio,
-      data_fim: r.data_fim || r.data_inicio, descricao: r.descricao, cid: r.cid,
+      tipo: r.tipo, subtipo: r.tipo === "LICENCA" ? r.subtipo : "", colaborador_id: p.id, data_inicio: r.data_inicio,
+      data_fim: fim || r.data_inicio, descricao: r.descricao, cid: r.cid,
       medico: r.medico, crm: r.crm, documento_base64: conteudo,
       documento_nome: r.documento ? r.documento.name : "", aprovar_ja: true});
     aviso("mensagem", "Afastamento lançado e aprovado. Os dias já aparecem abonados.", "ok");
@@ -1281,6 +1356,7 @@ els("e-imprimir").addEventListener("click", () => {
 if (els("e-btn-ajuste")) els("e-btn-ajuste").addEventListener("click", () => pedirAjuste(null));
 if (els("e-btn-compensacao")) els("e-btn-compensacao").addEventListener("click", registrarCompensacao);
 if (els("e-btn-afastamento")) els("e-btn-afastamento").addEventListener("click", lancarAfastamento);
+if (els("e-btn-documento")) els("e-btn-documento").addEventListener("click", entregarDocumento);
 carregarPessoasDoEspelho().then(() => {
   const id = doUrl("colaborador_id");
   if (id && /^\d+$/.test(id)) {
@@ -1307,8 +1383,8 @@ let VAL = null, ESPERA_BUSCA = null, PEDIDOS_COMPLETOS = null;
 const TIPOS_VAL = {AJUSTE_BATIDA: "Ajuste de batida", ATESTADO: "Atestado", LICENCA: "Licença",
   COMPENSACAO: "Compensação", FOLGA_BANCO: "Folga do banco", FERIAS: "Férias",
   AFASTAMENTO: "Afastamento", ABONO: "Abono", BATIDA_EM_ANALISE: "Batida em conferência",
-  MOSAICO: "Mosaico", APARELHO: "Aparelho"};
-const SELO_CATEGORIA = {PEDIDO: "pago", BATIDA: "aguardando", MOSAICO: "outro", APARELHO: "outro"};
+  MOSAICO: "Mosaico", APARELHO: "Aparelho", GRUPO: "Grupo a rever"};
+const SELO_CATEGORIA = {PEDIDO: "pago", BATIDA: "aguardando", MOSAICO: "outro", APARELHO: "outro", GRUPO: "aguardando"};
 const doUrl = nome => new URLSearchParams(location.search).get(nome);
 const chaveDoItem = i => `${i.categoria}:${i.id}`;
 const emLote = i => i.pode_decidir && (i.categoria === "PEDIDO" || i.categoria === "BATIDA");
@@ -1439,6 +1515,10 @@ function acoesDoItem(i) {
     }
   } else if (i.categoria === "MOSAICO") {
     a.push(`<a class="btn ${i.pode_decidir ? "" : "secundario"}" style="text-decoration:none" href="${escapar(i.abrir_em)}">Abrir mosaico</a>`);
+  } else if (i.categoria === "GRUPO") {
+    a.push(`<button class="btn ${i.sugestao === "CANCELAR" ? "" : "secundario"}" type="button" data-acao="grupo-cancelar" data-item="${k}">Cancelar a permissão</button>`);
+    a.push(`<button class="btn secundario" type="button" data-acao="grupo-renovar" data-item="${k}">Renovar</button>`);
+    a.push(`<button class="link-btn" type="button" data-acao="grupo-tirar" data-item="${k}">tirar quem não usa</button>`);
   } else if (i.categoria === "APARELHO" && i.pode_decidir) {
     a.push(`<button class="btn" type="button" data-acao="aparelho" data-item="${k}">Aprovar aparelho</button>`);
     a.push(`<button class="link-btn" type="button" data-acao="bloquear" data-item="${k}">bloquear</button>`);
@@ -1488,6 +1568,9 @@ function desenharValidacoes() {
     else if (acao === "corrigir") corrigirPedido(i, false);
     else if (acao === "aparelho") aprovarAparelho({id: i.id, descricao: i.descricao, codigo: i.codigo, dono: i.dono}, carregarValidacoes);
     else if (acao === "bloquear") bloquearAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
+    else if (acao === "grupo-cancelar") bloquearAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
+    else if (acao === "grupo-renovar") renovarGrupo(i.id, carregarValidacoes);
+    else if (acao === "grupo-tirar") tirarSemUso(i.id, carregarValidacoes);
   }));
   els("v-corpo").querySelectorAll("[data-marcar]").forEach(c => c.addEventListener("change", () => {
     if (c.checked) MARCADOS.add(c.dataset.marcar); else MARCADOS.delete(c.dataset.marcar);
@@ -2650,10 +2733,24 @@ async function aplicarMigracoes() {
 
 // ------------------------------------------------------------- 2. escalas
 async function carregarEscalas() {
+  let resp;
   try {
-    ESCALAS = (await api("/erp/api/ponto/escalas")).escalas;
+    resp = await api("/erp/api/ponto/escalas");
+    ESCALAS = resp.escalas;
   } catch (e) { erroNoCartao("c-escalas", e); return; }
-  els("c-escalas").innerHTML = ESCALAS.length ? `<table><thead><tr><th class="sem-ordem">Nome</th>
+  // A escala padrão da empresa (06/10/2026): quem não tem escala própria é
+  // julgado por ela — e a falta aparece no dia seguinte.
+  const semanais = ESCALAS.filter(e => e.ativo && e.tipo !== "CICLO_12X36");
+  const padrao = `<div class="campo" style="max-width:520px; margin-bottom:12px">
+      <label for="c-escala-padrao">Escala padrão da empresa (para quem não tem escala própria)</label>
+      <select id="c-escala-padrao" data-sem-busca ${PODE_CONFIGURAR ? "" : "disabled"}>
+        <option value="">Nenhuma — sem escala, o dia não é julgado (não aparece falta)</option>
+        ${semanais.map(e => `<option value="${e.id}" ${e.id === resp.padrao_id ? "selected" : ""}>${escapar(e.nome)}</option>`).join("")}
+      </select>
+      <div class="cartao-dica" style="margin-top:4px">Com ela escolhida, o dia sem batida aparece como falta já no dia
+        seguinte para todo mundo. Quem tem escala própria continua com a dela.</div>
+      <div id="c-escala-padrao-msg"></div></div>`;
+  els("c-escalas").innerHTML = padrao + (ESCALAS.length ? `<table><thead><tr><th class="sem-ordem">Nome</th>
       <th class="sem-ordem">Tipo</th><th class="sem-ordem direita">Horas por semana</th>
       <th class="sem-ordem direita">Pessoas</th><th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
     ${ESCALAS.map(e => `<tr>
@@ -2665,7 +2762,14 @@ async function carregarEscalas() {
       <td>${PODE_CONFIGURAR ? `<button class="link-btn" type="button" data-editar-escala="${e.id}">editar</button>` : ""}</td>
     </tr>`).join("")}</tbody></table>`
     : `<div class="cartao-dica">Nenhuma escala cadastrada. Sem escala o espelho não sabe o
-        que era previsto — comece por aqui.</div>`;
+        que era previsto — comece por aqui.</div>`);
+  els("c-escala-padrao").addEventListener("change", async ev => {
+    try {
+      await postar("/erp/api/ponto/escalas/padrao", {escala_id: ev.target.value || null});
+      aviso("c-escala-padrao-msg", ev.target.value ? "Escala padrão gravada: quem não tem escala própria passa a ser julgado por ela."
+        : "Sem escala padrão: quem não tem escala própria não tem o dia julgado.", "ok");
+    } catch (e) { falhou(e, "c-escala-padrao-msg"); }
+  });
   els("c-escalas").querySelectorAll("[data-editar-escala]").forEach(b =>
     b.addEventListener("click", () => abrirEscala(ESCALAS.find(e => e.id === Number(b.dataset.editarEscala)))));
 }
@@ -2894,7 +2998,7 @@ async function carregarAparelhos() {
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}</td>
       <td>${a.status === "PENDENTE" ? `<span class="suave">—</span>` : escapar(rotuloPerfil(a.perfil))}</td>
       <td>${a.dono ? `${escapar(a.dono.nome)}<small>${escapar(documento(a.dono.cpf))}</small>`
-          : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)` : `<span class="suave">—</span>`}</td>
+          : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)${a.valido_ate ? `<small>vale até ${dataBR(a.valido_ate)}</small>` : ""}` : `<span class="suave">—</span>`}</td>
       <td class="dados">${a.obras ? escapar(a.obras) : `<span class="suave">todas</span>`}</td>
       <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
       <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>`

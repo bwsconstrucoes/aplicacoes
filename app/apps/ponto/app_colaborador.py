@@ -68,7 +68,7 @@ def _eu() -> int:
 
 def _quem(conn) -> Quem:
     p = cadastros.colaborador_por_id(conn, _eu())
-    if not p or p["situacao"] == "DESLIGADO":
+    if not p or p["situacao"] == "DESLIGADO" or not p["ativo_no_ponto"]:
         session.pop(auth.SESSAO_COLABORADOR, None)
         raise NaoAutenticado("entre com o seu CPF e PIN")
     return Quem(nome=f"{p['nome']} (pelo celular)", colaborador_id=p["id"])
@@ -293,6 +293,8 @@ def app_api_bater():
             cpf, identificacao = p["cpf"], "SESSAO"
         elif d.get("bilhete"):
             aparelho = _aparelho_da_obra(conn)
+            if qr.bilhete_de_pedido(d["bilhete"]):
+                raise Recusada("esta identificação é de pedido — para bater, identifique-se de novo")
             colaborador_id, identificacao = qr.conferir_bilhete(d["bilhete"], aparelho["id"])
             p = cadastros.colaborador_por_id(conn, colaborador_id)
             if not p:
@@ -389,12 +391,50 @@ def app_api_tablet_identificar():
                 raise Recusada(motivo)
         if lido and lido.qr_id:
             qr.registrar_uso(conn, lido.qr_id)
-        bilhete = qr.emitir_bilhete(int(pessoa["id"]), int(aparelho["id"]), identificacao)
+        bilhete = qr.emitir_bilhete(int(pessoa["id"]), int(aparelho["id"]), identificacao,
+                                    para_pedido=bool(d.get("para_pedido")))
         dispositivos.marcar_uso(conn, aparelho["id"])
     partes = pessoa["nome"].split()
     return _ok(bilhete=bilhete, nome=pessoa["nome"], primeiro_nome=partes[0].title() if partes else "",
                funcao=pessoa.get("funcao"), identificacao=identificacao,
-               validade_segundos=qr.BILHETE_VALIDADE_S)
+               validade_segundos=qr.BILHETE_PEDIDO_S if d.get("para_pedido") else qr.BILHETE_VALIDADE_S,
+               tem_banco=pessoa.get("regime_banco") not in (None, "SEM_BANCO"))
+
+
+@bp.route("/app/api/tablet/pedido", methods=["POST"])
+@auth.exige_aparelho
+def app_api_tablet_pedido():
+    """Atestado, licença, ajuste e compensação entregues NO APARELHO DA OBRA
+    (ou no de grupo): a pessoa se identifica (QR ou CPF, o mesmo bilhete da
+    batida) e o documento é fotografado ali. Decisão do dono, 06/10/2026: quem
+    faz pedido é quem tem permissão de bater o ponto."""
+    from .core import licencas
+    d = _corpo()
+    with db.conexao() as conn:
+        aparelho = _aparelho_da_obra(conn)
+        colaborador_id, _ = qr.conferir_bilhete(d.get("bilhete"), aparelho["id"])
+        pessoa = cadastros.colaborador_por_id(conn, colaborador_id)
+        if not pessoa:
+            raise ErroDeValidacao("identifique-se de novo", campo="bilhete")
+        nome_ap = (aparelho.get("descricao") or "aparelho da obra")[:60]
+        quem = Quem(nome=f"{pessoa['nome']} — no aparelho {nome_ap}"[:120], colaborador_id=colaborador_id)
+        dados = {k: v for k, v in d.items() if k not in ("bilhete", "aprovar_ja", "colaborador_id")}
+        dados["colaborador_id"] = colaborador_id
+        if not dados.get("obra") and str(dados.get("tipo") or "").upper() == "AJUSTE_BATIDA":
+            dados["obra"] = d.get("obra_do_aparelho")
+        if not licencas.disponivel(conn):
+            raise Recusada("aplique as atualizações do ponto para fazer pedidos no aparelho da obra")
+        o = ocorrencias.criar(conn, quem, dados, origem="APARELHO")
+    return _ok(pedido={"id": o["id"], "rotulo": o["rotulo"], "etapa": o.get("etapa_atual")}), 201
+
+
+@bp.route("/app/api/licencas")
+@auth.exige_colaborador_ou_aparelho
+def app_api_licencas():
+    """A lista das licenças da lei, para o formulário."""
+    from .core import licencas
+    with db.conexao() as conn:
+        return _ok(licencas=licencas.listar(conn))
 
 
 @bp.route("/app/api/tablet/esqueci-qr", methods=["POST"])

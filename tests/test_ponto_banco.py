@@ -116,7 +116,7 @@ def ponto(_schema_ponto, banco, monkeypatch):
 def _limpar(banco):
     with banco.connect() as conn:
         tabelas = [r[0] for r in conn.execute(text(
-            "SELECT tablename FROM pg_tables WHERE schemaname = 'ponto' AND tablename <> '_migracoes'"))]
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'ponto' AND tablename NOT IN ('_migracoes', 'tipos_licenca')"))]
         if tabelas:
             conn.execute(text("TRUNCATE " + ", ".join(f'ponto."{t}"' for t in tabelas)
                               + " RESTART IDENTITY CASCADE"))
