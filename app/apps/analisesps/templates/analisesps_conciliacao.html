@@ -121,6 +121,21 @@
     </div>
   </div>
 
+  {# A ORDEM DO EXTRATO (06/10/2026): *"eu havia pedido pra ordenar com o mais
+     recente embaixo, mas acho que isso deveria ser uma opção de visualização,
+     pode ser definido no sidebar"*. Fica guardada como os filtros. #}
+  <div class="filtro aberto">
+    <div class="filtro-cab"><span>Visualização</span></div>
+    <div class="filtro-cont">
+      <select class="campo-largo" name="ordem" onchange="this.form.submit()"
+              aria-label="Ordem do extrato">
+        {% for chave, rotulo in (ordens or {}).items() %}
+          <option value="{{ chave }}" {% if filtros.ordem == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
   <p style="margin:12px 2px"><button class="btn" type="submit">Aplicar</button></p>
 </form>
 
@@ -391,7 +406,7 @@
        via a lista mudar e não fazia ideia de por quê. #}
     {% for chave, valores in args.lists()
        if chave in ('sentido', 'busca', 'data_ini', 'data_fim',
-                    'valor_ini', 'valor_fim') %}
+                    'valor_ini', 'valor_fim', 'ordem') %}
       {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
     {% endfor %}
     {# ⚠️ ESTE BOTÃO É O QUE FAZ O ENTER FUNCIONAR, e a falta dele era o
@@ -483,10 +498,13 @@
         <th><input name="saida" form="filtro-colunas" placeholder="valor"
                    class="direita" value="{{ filtros.saida or '' }}"></th>
         <th></th>
-        <th></th>
+        {# ⚠️ O FILTRO DA CONCILIAÇÃO FICA EMBAIXO DE "CONC." — quando a coluna
+           "No OMIE" entrou (29/09/2026), esta linha não ganhou a casa dela, e
+           o seletor escorregou para baixo de "No OMIE" (o dono, 06/10/2026:
+           *"o filtro de conciliação no header sumiu"*). Uma casa por coluna. #}
         <th>
           <select name="situacao" form="filtro-colunas"
-                  onchange="this.form.submit()">
+                  onchange="this.form.submit()" aria-label="Filtrar pela conciliação">
             {% for chave, rotulo in situacoes.items() %}
               <option value="{{ chave }}"
                 {% if filtros.situacao == chave %}selected{% endif %}>
@@ -495,6 +513,7 @@
             {% endfor %}
           </select>
         </th>
+        <th></th>
         <th><input name="observacao" form="filtro-colunas" placeholder="procurar…"
                    value="{{ filtros.observacao }}"></th>
         {% if pode_operar %}<th></th>{% endif %}
@@ -509,12 +528,15 @@
                        data-valor="{{ l.valor }}"></td>
           {% endif %}
           <td>{{ l.data|data_br }}</td>
-          <td class="historico" title="{{ l.descricao }}">{{ l.descricao }}
+          {# O CORTE EM TRÊS LINHAS MORA NUM BLOCO DENTRO DA CÉLULA (06/10/2026):
+             feito na própria célula, ela deixava de ser célula de tabela, e a
+             linha dela descolava das vizinhas (o degrau que o dono viu). #}
+          <td class="historico" title="{{ l.descricao }}"><div class="historico-texto">{{ l.descricao }}
             {%- if l.origem == 'mao' %}
               <span class="etiqueta" title="linha digitada, não veio do banco">à mão</span>
             {%- elif l.origem == 'planilha' %}
               <span class="etiqueta" title="veio da planilha antiga">planilha</span>
-            {%- endif %}</td>
+            {%- endif %}</div></td>
           <td>{{ l.documento }}</td>
           <td class="direita valor-entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
           <td class="direita valor-saida">{{ (-l.valor)|moeda if l.valor < 0 else '' }}</td>
@@ -994,6 +1016,8 @@
   try { tipo = (performance.getEntriesByType("navigation")[0] || {}).type || ""; }
   catch (e) { tipo = ""; }
   if (tipo === "reload" || tipo === "back_forward" || location.hash) return;
+  // Com o mais recente EM CIMA (escolha da lateral), a tela fica no topo.
+  if ({{ (filtros.ordem == 'recente_em_cima')|tojson }}) return;
   const ultima = document.querySelector("table.conciliacao tbody tr:last-child");
   if (ultima) window.addEventListener("load", () =>
     ultima.scrollIntoView({block: "center"}));
@@ -1179,6 +1203,14 @@ document.querySelectorAll(".anotacao").forEach(campo => {
 const area = document.getElementById("solta-extrato");
 const campoArq = document.getElementById("arq-extrato");
 const saida = document.getElementById("saida-extrato");
+// ⚠️ A RESPOSTA DO EXTRATO SOBE À VISTA (06/10/2026): *"toda vida que incluo um
+// novo extrato, o sistema deveria subir a tela para eu visualizar as mensagens
+// de alerta"*. A tela abre no fim da lista, e a resposta aparece no alto — quem
+// soltava o arquivo lá embaixo não via os alertas. Cada vez que a resposta
+// muda, ela é trazida para a vista.
+if (saida) new MutationObserver(() => {
+  if (saida.childElementCount) saida.scrollIntoView({behavior: "smooth", block: "start"});
+}).observe(saida, {childList: true});
 let arquivoNaMao = null;
 
 if (area) {

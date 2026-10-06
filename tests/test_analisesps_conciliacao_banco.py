@@ -91,6 +91,27 @@ def test_a_conta_casa_mesmo_escrita_de_outro_jeito(banco_conc):
     assert conciliacao.conta_do_extrato("0237", "00070114")["id"] == conta_id
 
 
+def test_um_JEITO_NOVO_de_escrever_a_conta_fica_GUARDADO(banco_conc):
+    """06/10/2026: *"com frequência extratos de conta que já haviam sido
+    detectados, ele não detecta a conta novamente"*. O cadastro guardava um
+    jeito só (o do primeiro extrato) e descartava o novo — a pergunta voltava a
+    cada extrato. O jeito novo vai para os "outros" (050); o do cadastro fica."""
+    from app.apps.analisesps import conciliacao
+    conta_id = conta_de_teste()
+    outra = conta_de_teste(nome="OUTRA", ofx_acctid="55555")
+    assert conciliacao.conta_do_extrato("237", "3311-00070114") is None
+    conciliacao.lembrar_conta_do_extrato(conta_id, "237", "3311-00070114", "TESTE")
+    assert conciliacao.conta_do_extrato("237", "331100070114")["id"] == conta_id
+    assert conciliacao.conta_do_extrato("237", "70114")["id"] == conta_id, "o antigo vale"
+    # Lembrar de novo não duplica; e um extrato já de OUTRA conta não é ensinado.
+    conciliacao.lembrar_conta_do_extrato(conta_id, "237", "3311-00070114", "TESTE")
+    conciliacao.lembrar_conta_do_extrato(conta_id, "237", "55555", "TESTE")
+    assert conciliacao.conta_do_extrato("237", "55555")["id"] == outra
+    from app.apps.analisesps.db import consultar_um
+    assert consultar_um("SELECT ofx_outros FROM analisesps.conciliacao_conta WHERE id = ?",
+                        (conta_id,))[0] == "237:331100070114"
+
+
 def test_conta_desconhecida_nao_e_chutada(banco_conc):
     """⚠️ Escolher a conta errada joga o extrato de uma empresa dentro de
     outra conta. Na dúvida, o sistema pergunta — não adivinha."""
@@ -531,6 +552,12 @@ def test_a_pagina_1_sao_os_ULTIMOS_200_com_o_mais_recente_no_fim(banco_conc,
     pagina1 = conciliacao.listar({"conta_id": conta_id}, 1)
     assert [l["data"].day for l in pagina1] == [2, 3], "os últimos, em ordem crescente"
     assert [l["data"].day for l in conciliacao.listar({"conta_id": conta_id}, 2)] == [1]
+    # A ORDEM É ESCOLHA DELE (06/10/2026): "mais recente em cima" mostra a mesma
+    # página ao contrário — e o saldo de cada linha continua o dela.
+    em_cima = conciliacao.listar({"conta_id": conta_id,
+                                  "ordem": conciliacao.ORDEM_RECENTE_EM_CIMA}, 1)
+    assert [l["data"].day for l in em_cima] == [3, 2]
+    assert [l["saldo"] for l in em_cima] == [l["saldo"] for l in pagina1][::-1]
 
 
 def test_sem_saldo_inicial_nada_muda(banco_conc):
