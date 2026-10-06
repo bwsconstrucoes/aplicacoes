@@ -12175,6 +12175,9 @@ somente Solicitações de uma conta especifica"*.
 - **E a diferença de 1 pessoa (R$ 220) entre barra e lateral:** suspeita de o
   navegador devolver, ao recarregar, a marcação de antes. As caixinhas agora
   abrem sempre no estado salvo (`defaultChecked`). Não confirmado.
+- **Publicada em 06/10/2026** (sem migração; suíte inteira 8.542 verdes). Falta
+  ele: conferir os desligados marcados na alimentação e no transporte e
+  desmarcar quem não deve receber; a barra deve ficar igual ao "A pagar".
 
 #### ⚠️ Pendente AGORA
 
