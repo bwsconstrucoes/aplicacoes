@@ -2004,9 +2004,10 @@ table.conciliacao .saldo   { font-family: var(--fonte-dados); color: var(--tinta
    O traço sozinho era discreto demais. Agora a linha ganha um FUNDO VERDE BEM
    CLARO e o traço engrossa — mas o texto continua na cor normal: o que o dono
    recusou em 24/09 foi o verde chapado JUNTO do texto cinza, que deixava a
-   linha com cara de desligada. */
-tr.linha-extrato.conciliada td { background: #EDF7E8; }
-tr.linha-extrato.conciliada:hover td { background: #E2F1DB; }
+   linha com cara de desligada. Mesmo dia: o primeiro tom (#EDF7E8) ficou
+   "muito forte" na tela dele — clareado para quase branco. */
+tr.linha-extrato.conciliada td { background: #F7FCF4; }
+tr.linha-extrato.conciliada:hover td { background: #EFF8EA; }
 tr.linha-extrato.conciliada td:first-child {
   box-shadow: inset 4px 0 0 var(--verde);
 }
