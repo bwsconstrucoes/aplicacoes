@@ -198,6 +198,20 @@ exceções. Banco de horas, mesma coisa."* (`core/forma_de_bater.py`)
   (a gestão confere o mesmo código antes de aprovar); sempre abre na batida; não
   aceita login com CPF e PIN.
 
+## As regras de 06/10/2026 (migração 006)
+
+- **Quem sai perde o acesso** sozinho (`core/desligamentos.py`).
+- **Escala padrão da empresa**: quem não tem escala própria é julgado por ela —
+  a falta aparece no dia seguinte.
+- **Aparelho de grupo temporário** (`dispositivos.valido_ate`, 15 dias, máx. 90),
+  com "Aparelho de grupo a rever" em Validações.
+- **Licenças da lei** (`ponto.tipos_licenca`, `core/licencas.py`).
+- **Quem faz pedido**: aparelho da obra/grupo (`/app/api/tablet/pedido`), o
+  responsável no ERP; no próprio celular só a exceção.
+- **Fraude na hora**: foto escura/lisa e fila rápida → conferência; QR trocado de
+  quem passou por fila rápida.
+- **Configuração em seções** (submenu).
+
 ## O modo de teste (05/10/2026)
 
 Ponto › Configuração › "Modo de teste" (`core/ensaio.py`, migração 005): grava a

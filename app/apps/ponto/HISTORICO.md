@@ -41,6 +41,9 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
+1h. **No ramo, esperando o "pode" (06/10/2026)**: os oito pedidos acima, com a
+   migração **006** — apertar "Aplicar atualizações do ponto" ao publicar, e
+   escolher a **escala padrão da empresa** (Configuração › Jornada).
 1g. **Três decisões em aberto com o dono (06/10/2026, "vou pensar")**:
    (a) prazo para entregar atestado (hoje: qualquer tempo, com o mês aberto;
    sugerido 48 h); (b) atestado de HORAS / declaração de comparecimento (hoje
@@ -76,6 +79,62 @@ junto com o `README.md` e o `PLANO.md`.
    convenção coletiva da construção (pode mudar tolerância, banco e intervalo).
 6. **Fase 3**: AFD/AEJ, iDFace, a folha da Análise de SPs lendo daqui, expurgo
    de fotos por prazo, desligar o Mobponto.
+
+## 06/10/2026 — Oito pedidos de uma vez: acesso de quem sai, falta no dia seguinte, grupo temporário, licenças da lei, quem faz pedido, fraude na hora, submenu
+
+Pedidos do dono no mesmo dia (todos feitos, migração **006**):
+
+1. **"O acesso precisa ser bloqueado automaticamente quando o colaborador for
+   desligado."** (`core/desligamentos.py`) A entrada e a batida de desligado já
+   eram recusadas; agora, a cada 15 min e na rotina do dia, o celular pessoal é
+   BLOQUEADO, os QR são cancelados, os WhatsApps de QR na fila cancelados e a
+   pessoa sai dos aparelhos de grupo. A sessão aberta cai também para quem foi
+   marcado "não bate ponto".
+2. **"Falta de batida de um dia, no dia seguinte o sistema já deveria apresentar
+   como falta."** Já apresentava — para quem TEM escala. Faltava a escala: agora
+   há a **escala padrão da empresa** (Configuração › Jornada), que vale para quem
+   não tem escala própria (só semanal; 12x36 depende do dia de início).
+3. **Grupo ("bater ponto de algumas pessoas") com caráter precário.** Vale até
+   uma data (padrão 15 dias, máximo 90); vencido, para de bater. Validações
+   mostra "Aparelho de grupo a rever" e SUGERE cancelar quando: venceu ou vence
+   em 3 dias; nenhuma batida há 7 dias; gente do grupo que não bate nele há 7
+   dias. Botões: cancelar, renovar, tirar quem não usa.
+4. **"Base de dados de afastamentos permitidos por lei."** `ponto.tipos_licenca`
+   com o CLT art. 473 (casamento 3, luto 2, doação de sangue 1/ano, alistamento
+   2, pré-natal 2/ano, filho ao médico 1/ano, exame de câncer 3/ano, juízo,
+   serviço militar, vestibular), paternidade 5 (CF) e mesário (Lei 9.504). O
+   pedido escolhe o tipo; dias, limite e documento conferidos. O DP ajusta e
+   cria tipo da convenção (Configuração › Jornada e licenças). Maternidade e
+   INSS ficaram como AFASTAMENTO (DP).
+5. **"Só quem pode anexar esses documentos são os responsáveis da obra, os
+   mesmos que batem o ponto da obra, ou o celular da obra (…) ou aquele que bate
+   ponto de algumas pessoas"** e **"o ajuste só pode ser solicitado por quem tem
+   permissão de bater ponto; mesma coisa para compensações"**:
+   - no próprio celular, pedido só de quem é EXCEÇÃO (bate nele); os outros veem
+     "entregue no aparelho da obra ou pelo responsável";
+   - no aparelho da obra e no de grupo: botão "Entregar atestado, licença ou
+     pedir ajuste" → identifica por QR/CPF (bilhete de 10 min que NÃO bate) →
+     formulário com o documento fotografado pela câmera (`/app/api/tablet/pedido`,
+     origem APARELHO);
+   - no ERP, o encarregado (tratar ponto) entrega atestado e licença com
+     documento (Espelho › "Entregar atestado ou licença"); o DP valida.
+     Férias, afastamento e abono continuam só do DP.
+6. **Fraude** (pergunta do dono, respondida na conversa): a foto escura/lisa e a
+   fila rápida no mesmo aparelho (5 pessoas diferentes, menos de 10 s entre
+   cada) passam a mandar a batida para conferência NA HORA (antes, só o alerta
+   do dia seguinte). Quem passou por fila rápida identificado por QR do WhatsApp
+   tem o QR TROCADO na rotina do dia seguinte. ⚠️ Mudança de decisão: antes,
+   "foto ruim é alerta, não análise"; agora vai para análise.
+   **Em aberto, decisão dele:** a leitura das fotos por IA (pessoa diferente da
+   foto cadastral, foto que não é de gente) — custo por foto; proposta de piloto
+   numa obra com teto de gasto.
+7. **Submenu da Configuração** (Geral, Pessoas, Obras e cerca, Aparelhos, Jornada
+   e licenças, Quem valida, Mensagens, Teste), com a seção no endereço (#aparelhos).
+8. Um celular pessoal por pessoa (aprovar o novo bloqueia o anterior);
+   "Alterar"/"Reativar" aparelho; CPF do dono já preenchido.
+
+**Testes:** `tests/test_ponto_regras_0610_banco.py`. A limpeza dos testes não
+apaga mais `tipos_licenca` (é dado de migração).
 
 ## 05/10/2026 — O modo de teste
 

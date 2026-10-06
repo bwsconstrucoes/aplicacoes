@@ -97,6 +97,13 @@
    ========================================================================= #}
 {% block conteudo %}
 <style>
+  /* O submenu da Configuração (06/10/2026). */
+  .sub-abas { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 14px; padding-bottom:10px;
+              border-bottom:1px solid var(--borda); }
+  .sub-abas button { border:1px solid var(--borda-forte); background:var(--fundo-cartao, #fff); color:var(--tinta);
+                     border-radius:999px; padding:6px 14px; font-weight:600; font-size:13.5px; cursor:pointer; }
+  .sub-abas button.ativa { background:var(--azul); border-color:var(--azul); color:#fff; }
+  [data-secao-card][hidden] { display:none !important; }
   /* A batida como "pílula": a hora, e a marca do que ela tem de diferente. */
   .chip { display:inline-block; font-family:var(--fonte-dados); font-size:12.5px;
           padding:1px 7px; margin:0 4px 4px 0; border-radius:999px;
@@ -462,11 +469,33 @@
 {% elif aba_ponto == "ponto_config" %}
 {# ----------------------------------------------------------- CONFIGURAÇÃO #}
 <h2>Configuração do ponto</h2>
+{# O SUBMENU (pedido do dono, 06/10/2026: "acho que tem que ter um submenu
+   simples, tipo como tem em Análise de SPs (…) está bagunçado, tudo na mesma
+   tela"). Cada cartão diz de que seção é (`data-secao-card`); a seção escolhida
+   fica no endereço (#aparelhos), para voltar nela e mandar o link. #}
+<nav class="sub-abas" id="c-secoes" aria-label="Seções da configuração">
+  <button type="button" data-secao="geral">Geral</button>
+  <button type="button" data-secao="pessoas">Pessoas</button>
+  <button type="button" data-secao="obras">Obras e cerca</button>
+  <button type="button" data-secao="aparelhos">Aparelhos</button>
+  <button type="button" data-secao="jornada">Jornada e licenças</button>
+  <button type="button" data-secao="validacao">Quem valida</button>
+  <button type="button" data-secao="mensagens">Mensagens</button>
+  <button type="button" data-secao="teste">Teste</button>
+</nav>
 <div id="mensagem"></div>
 
-<div class="cartao" id="c-migracoes">carregando…</div>
+<div class="cartao" id="c-migracoes" data-secao-card="geral">carregando…</div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="jornada">
+  <div class="cartao-cab"><h3>Licenças da lei</h3></div>
+  <div class="cartao-dica" style="margin-top:0">As licenças que a lei garante (CLT art. 473 e leis próprias), para
+    escolher no pedido em vez de escrever: o último dia sai dos dias da lei, o documento exigido aparece, e o
+    sistema confere o limite por ano. A convenção coletiva pode dar mais — ajuste os dias aqui.</div>
+  <div class="tabela-rolagem"><div id="c-licencas">carregando…</div></div>
+</div>
+
+<div class="cartao" data-secao-card="validacao">
   <div class="cartao-cab"><h3>Quem valida cada pedido</h3></div>
   <div class="cartao-dica" style="margin-top:0">Encarregado da obra = quem trata o ponto da obra
     (só as obras dele). DP = quem aprova afastamento. “Encarregado e depois o DP” = os dois,
@@ -474,7 +503,7 @@
   <div id="c-quem-valida">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="pessoas">
   <div class="cartao-cab"><h3>Base de pessoas do ponto</h3></div>
   <div class="cartao-dica" style="margin-top:0">Critério igual ao da Análise de SPs: desligado =
     a data de saída já passou (o dia da saída ainda se bate) ou a Fase Atual do Pipefy diz
@@ -484,7 +513,7 @@
   <div id="c-registro">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="obras">
   <div class="cartao-cab"><h3>Base de obras do ponto</h3>
     {% if pode.configurar_ponto %}<button class="btn secundario" id="c-obras-ler" type="button">Ler a planilha agora</button>{% endif %}</div>
   <div class="cartao-dica" style="margin-top:0">Por ora as obras vêm da aba <b>C. Diários</b> (planilha
@@ -497,7 +526,7 @@
 </div>
 
 {% if pode.configurar_ponto %}
-<div class="cartao">
+<div class="cartao" data-secao-card="teste">
   <div class="cartao-cab"><h3>Modo de teste</h3></div>
   <div class="cartao-dica" style="margin-top:0">Para testar o ponto com você mesmo, sem mexer na planilha
     C. Diários nem no Registro de Colaboradores. <b>1.</b> Vá ao lugar do teste (o escritório, por
@@ -511,7 +540,7 @@
 </div>
 {% endif %}
 
-<div class="cartao">
+<div class="cartao" data-secao-card="pessoas">
   <div class="cartao-cab"><h3>Exceções ao padrão</h3></div>
   <div class="cartao-dica" style="margin-top:0">O padrão vale para todos e não se cadastra: <b>só o
     aparelho da obra bate</b> e <b>ninguém tem banco de horas</b>. Aqui aparecem só as exceções, para
@@ -520,7 +549,7 @@
   <div id="c-excecoes">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Escalas de trabalho</h3>
     {% if pode.configurar_ponto %}<button class="btn" id="c-nova-escala" type="button">+ Nova escala</button>{% endif %}</div>
   <div id="c-escalas">carregando…</div>
@@ -529,7 +558,7 @@
     todos que estão nela; trocar a escala de uma pessoa não muda o passado dela.</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Feriados</h3>
     <div style="display:flex; gap:8px; align-items:center">
       <select id="c-ano" data-sem-busca style="padding:6px 8px; border:1px solid var(--borda-forte); border-radius:8px"></select>
@@ -542,7 +571,7 @@
     obras daquela UF; municipal, para as obras daquele município.</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="jornada">
   <div class="cartao-cab"><h3>Fechamento do mês</h3>
     <small>os últimos 12 meses</small></div>
   <div id="c-competencias">carregando…</div>
@@ -552,18 +581,18 @@
 </div>
 
 {% if pode.configurar_ponto %}
-<div class="cartao">
+<div class="cartao" data-secao-card="aparelhos">
   <div class="cartao-cab"><h3>Aparelhos</h3><small>todos os celulares e tablets do ponto</small></div>
   <div class="tabela-rolagem" style="max-height:none"><div id="c-aparelhos">carregando…</div></div>
 </div>
 {% endif %}
 
-<div class="cartao">
+<div class="cartao" data-secao-card="mensagens">
   <div class="cartao-cab"><h3>Resumo diário por WhatsApp</h3></div>
   <div id="c-resumo">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="mensagens">
   <div class="cartao-cab"><h3>QR Code pelo WhatsApp</h3></div>
   <div id="c-qr">carregando…</div>
   {% if pode.configurar_ponto %}
@@ -575,7 +604,7 @@
 </div>
 
 {% if pode.configurar_ponto %}
-<div class="cartao">
+<div class="cartao" data-secao-card="obras">
   <div class="cartao-cab"><h3>Cerca das obras</h3></div>
   <div class="cartao-dica" style="margin-top:0">A obra da batida é a da cerca em que o celular ou
     o tablet está — a pessoa não escolhe. Fora da cerca, a batida é recusada e fica registrada (o
@@ -588,7 +617,7 @@
   <div class="tabela-rolagem" style="max-height:420px"><div id="c-cercas">carregando…</div></div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="obras">
   <div class="cartao-cab"><h3>Mosaico de fotos por obra</h3></div>
   <div class="cartao-dica" style="margin-top:0"><b>Opcional:</b> o mosaico fica sempre
     disponível na aba Mosaico. <b>Obrigatório:</b> na manhã seguinte o responsável recebe
@@ -600,12 +629,12 @@
 </div>
 {% endif %}
 
-<div class="cartao">
+<div class="cartao" data-secao-card="geral">
   <div class="cartao-cab"><h3>Google Drive e fila de envio</h3></div>
   <div id="c-drive">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao-card="geral">
   <div class="cartao-cab"><h3>App do colaborador</h3></div>
   <div class="endereco-app" id="c-app">…</div>
   <div style="margin-top:8px"><button class="btn secundario" id="c-copiar-app" type="button">Copiar o endereço</button></div>
@@ -2680,6 +2709,7 @@ function desenharMigracoes() {
   const cartao = els("c-migracoes");
   if (m.pendentes.length) {
     cartao.classList.add("cartao-alerta");
+    cartao.hidden = false;        // aparece em toda seção do submenu
     cartao.innerHTML = `<div class="cartao-cab"><h3 style="color:var(--vermelho); font-size:16px">
         O banco do ponto precisa de ${m.pendentes.length} atualização(ões)</h3></div>
       <div>Até aplicar, as outras telas do ponto podem dar erro. Falta:
@@ -3759,7 +3789,70 @@ function anosParaEscolher() {
 async function carregarTudoMenosConfig() {
   await Promise.all([carregarEscalas(), carregarFeriados(), carregarCompetencias(), carregarAparelhos(),
                     carregarCercas(), carregarQuemValida(), carregarRegistro(), carregarObrasBase(),
-                    carregarExcecoes(), carregarEnsaio()]);
+                    carregarExcecoes(), carregarEnsaio(), carregarLicencas()]);
+}
+
+// --------------------------------------------- o submenu (06/10/2026)
+const SECOES = ["geral", "pessoas", "obras", "aparelhos", "jornada", "validacao", "mensagens", "teste"];
+function mostrarSecao(secao) {
+  if (!SECOES.includes(secao)) secao = "geral";
+  document.querySelectorAll("[data-secao-card]").forEach(c => { c.hidden = c.dataset.secaoCard !== secao; });
+  // Atualização do banco pendente aparece em toda seção: sem ela, nada funciona.
+  const mig = els("c-migracoes");
+  if (mig && mig.classList.contains("cartao-alerta")) mig.hidden = false;
+  document.querySelectorAll("#c-secoes [data-secao]").forEach(b => b.classList.toggle("ativa", b.dataset.secao === secao));
+  try { history.replaceState(null, "", `#${secao}`); } catch (e) {}
+}
+document.querySelectorAll("#c-secoes [data-secao]").forEach(b => b.addEventListener("click", () => mostrarSecao(b.dataset.secao)));
+mostrarSecao((location.hash || "").slice(1));
+
+// --------------------------------------------- licenças da lei (06/10/2026)
+async function carregarLicencas() {
+  const alvo = els("c-licencas");
+  if (!alvo) return;
+  let d;
+  try { d = await api("/erp/api/ponto/licencas?todas=1"); } catch (e) { erroNoCartao("c-licencas", e); return; }
+  if (!d.disponivel) { alvo.innerHTML = `<div class="aviso alerta">Aplique as atualizações do ponto para ter a lista.</div>`; return; }
+  const lista = d.licencas || [];
+  alvo.innerHTML = `<table><thead><tr><th class="sem-ordem">Licença</th><th class="sem-ordem">Base legal</th>
+      <th class="sem-ordem direita">Dias</th><th class="sem-ordem direita">Vezes em 12 meses</th>
+      <th class="sem-ordem">Documento</th><th class="sem-ordem">Situação</th><th class="sem-ordem"></th></tr></thead><tbody>
+    ${lista.map(l => `<tr><td><b>${escapar(l.nome)}</b></td><td>${escapar(l.base_legal || "—")}</td>
+      <td class="dados direita">${l.dias ?? "o do documento"}</td><td class="dados direita">${l.limite_ano ?? "—"}</td>
+      <td>${l.exige_documento ? escapar(l.documento) : `<span class="suave">opcional</span>`}</td>
+      <td>${l.ativo ? `<span class="selo aprovado">em uso</span>` : `<span class="selo outro">desligada</span>`}</td>
+      <td>${PODE_DP ? `<button class="link-btn" type="button" data-licenca="${escapar(l.codigo)}">ajustar</button>` : ""}</td></tr>`).join("")}
+    </tbody></table>
+    ${PODE_DP ? `<div style="margin-top:8px"><button class="btn secundario" type="button" id="c-licenca-nova">+ Licença da convenção</button></div>` : ""}`;
+  alvo.querySelectorAll("[data-licenca]").forEach(b => b.addEventListener("click", () =>
+    ajustarLicenca(lista.find(l => l.codigo === b.dataset.licenca))));
+  if (els("c-licenca-nova")) els("c-licenca-nova").addEventListener("click", () => ajustarLicenca(null));
+}
+
+async function ajustarLicenca(l) {
+  const r = await perguntar({titulo: l ? `Ajustar — ${escapar(l.nome)}` : "Nova licença (convenção ou acordo)",
+    aviso: "Os dias são o máximo por pedido; vazio = o que o documento disser.",
+    campos: [
+      ...(l ? [] : [{nome: "codigo", rotulo: "Código curto", largura: 1, obrigatorio: true, exemplo: "ex.: ANIVERSARIO"}]),
+      {nome: "nome", rotulo: "Nome", valor: l ? l.nome : "", largura: 3, obrigatorio: !l},
+      {nome: "base_legal", rotulo: "Base legal", valor: l ? l.base_legal : "", largura: 2, exemplo: "ex.: CCT 2026, cláusula 30"},
+      {nome: "dias", rotulo: "Dias", valor: l && l.dias ? String(l.dias) : "", largura: 1},
+      {nome: "limite_ano", rotulo: "Vezes em 12 meses", valor: l && l.limite_ano ? String(l.limite_ano) : "", largura: 1},
+      {nome: "documento", rotulo: "Documento exigido", valor: l ? l.documento : "", largura: 2},
+      {nome: "exige_documento", rotulo: "O documento é obrigatório?", tipo: "select", valor: !l || l.exige_documento ? "1" : "0",
+       largura: 1, opcoes: [{valor: "1", rotulo: "Sim"}, {valor: "0", rotulo: "Não"}]},
+      {nome: "ativo", rotulo: "Situação", tipo: "select", valor: !l || l.ativo ? "1" : "0", largura: 1,
+       opcoes: [{valor: "1", rotulo: "Em uso"}, {valor: "0", rotulo: "Desligada"}]},
+    ], textoOk: "Salvar"});
+  if (!r) return;
+  const codigo = l ? l.codigo : r.codigo;
+  try {
+    await postar(`/erp/api/ponto/licencas/${encodeURIComponent(codigo)}`, {
+      nome: r.nome, base_legal: r.base_legal, dias: r.dias, limite_ano: r.limite_ano, documento: r.documento,
+      exige_documento: r.exige_documento === "1", ativo: r.ativo === "1"});
+    aviso("mensagem", "Licença salva.", "ok");
+    carregarLicencas();
+  } catch (e) { falhou(e); }
 }
 
 anosParaEscolher();
