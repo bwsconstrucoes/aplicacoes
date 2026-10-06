@@ -278,6 +278,28 @@ def test_conta_desconhecida_nao_e_chutada_pela_rota(app_com_dados, monkeypatch):
     assert "237" in dados["erro"]
 
 
+def test_a_conta_ESCOLHIDA_para_extrato_desconhecido_e_lembrada_JA_na_conferencia(
+        app_com_dados, monkeypatch):
+    """06/10/2026: o extrato sem nada novo (gravar desligado) nunca ensinava a
+    conta escolhida — e a pergunta voltava. Agora ela é lembrada ao conferir."""
+    lembradas = []
+    monkeypatch.setattr(conciliacao, "conta_do_extrato", lambda bankid, acctid: None)
+    monkeypatch.setattr(conciliacao, "lembrar_conta_do_extrato",
+                        lambda conta_id, b, a, quem="": lembradas.append((conta_id, b)))
+    monkeypatch.setattr(conciliacao, "conferir", lambda conta_id, lido: {
+        "conta_id": conta_id, "periodo_ini": lido.periodo_ini,
+        "periodo_fim": lido.periodo_fim, "saldo": lido.saldo,
+        "saldo_em": lido.saldo_em, "lidas": 2, "novas": [], "ja_estavam": 2,
+        "so_aqui": [], "arquivo_repetido": None})
+    from io import BytesIO
+    resposta = como(app_com_dados).post(
+        "/analisesps/api/conciliacao/conferir",
+        data={"extrato": (BytesIO(EXTRATO.encode("utf-8")), "set.ofx"), "conta_id": "1"},
+        content_type="multipart/form-data")
+    assert resposta.get_json()["ok"] is True
+    assert lembradas == [(1, "237")]
+
+
 def test_conferir_NAO_grava(app_com_dados, monkeypatch):
     """A resposta "estava tudo lá" não pode ser dada por quem acabou de mudar
     o mundo que está descrevendo."""

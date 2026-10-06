@@ -513,12 +513,15 @@
                        data-valor="{{ l.valor }}"></td>
           {% endif %}
           <td>{{ l.data|data_br }}</td>
-          <td class="historico" title="{{ l.descricao }}">{{ l.descricao }}
+          {# O CORTE EM TRÊS LINHAS MORA NUM BLOCO DENTRO DA CÉLULA (06/10/2026):
+             feito na própria célula, ela deixava de ser célula de tabela, e a
+             linha dela descolava das vizinhas (o degrau que o dono viu). #}
+          <td class="historico" title="{{ l.descricao }}"><div class="historico-texto">{{ l.descricao }}
             {%- if l.origem == 'mao' %}
               <span class="etiqueta" title="linha digitada, não veio do banco">à mão</span>
             {%- elif l.origem == 'planilha' %}
               <span class="etiqueta" title="veio da planilha antiga">planilha</span>
-            {%- endif %}</td>
+            {%- endif %}</div></td>
           <td>{{ l.documento }}</td>
           <td class="direita valor-entrada">{{ l.valor|moeda if l.valor > 0 else '' }}</td>
           <td class="direita valor-saida">{{ (-l.valor)|moeda if l.valor < 0 else '' }}</td>

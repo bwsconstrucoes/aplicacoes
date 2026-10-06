@@ -2120,6 +2120,16 @@ def conciliacao_conferir():
                          f"{lido.acctid or '?'}). Escolha a conta abaixo — e "
                          "ela passa a ser reconhecida sozinha da próxima vez.")}
 
+    # ⚠️ A CONTA ESCOLHIDA PARA UM EXTRATO NÃO RECONHECIDO É GUARDADA JÁ AQUI
+    # (06/10/2026). Antes só se guardava ao GRAVAR — e o extrato sem nada novo
+    # (o botão de gravar desligado) nunca ensinava a conta: a pergunta voltava.
+    if not achada and (pedida or "").strip().isdigit():
+        quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+        try:
+            conc.lembrar_conta_do_extrato(conta_id, lido.bankid, lido.acctid, quem)
+        except Exception:  # noqa: BLE001 — a conferência segue sem lembrar
+            logger.exception("Conciliação: não consegui lembrar a conta do extrato")
+
     try:
         conferido = conc.conferir(conta_id, lido)
     except conc.ErroDaConciliacao as e:

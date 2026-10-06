@@ -11998,6 +11998,27 @@ Ordenados → Diárias.
   Salários e Ordenados) — confirmado por ele. E "Gratiticações e Extras" é como
   o portal escreve: não corrigir a grafia.
 
+#### Leva 181 — Conciliação: filtro "Conc.", alinhamento das linhas, conta do extrato (06/10/2026)
+
+- **O filtro da conciliação no cabeçalho "Conc." tinha sumido.** A coluna "No
+  OMIE" (29/09) entrou sem a casa dela na linha de filtros, e o seletor
+  (todos/falta/sim/com obs.) escorregou para baixo de "No OMIE". Voltou para
+  baixo de "Conc."; teste novo confere uma casa por coluna, na ordem.
+- **As linhas desalinhadas** (o degrau na imagem dele): o corte do histórico em
+  três linhas (`display: -webkit-box`) estava na própria `<td>`, que deixava de
+  ser célula de tabela. O corte foi para um bloco dentro dela
+  (`.historico-texto`); conferido no navegador — altura igual em todas.
+- **"Extratos de conta que já haviam sido detectados, ele não detecta a conta
+  novamente."** Duas causas: (1) a conta guardava UM jeito de o OFX escrevê-la e
+  descartava os outros (o mesmo banco escreve com/sem agência, outro dígito…);
+  agora os outros vão para `ofx_outros` (migração **050**) e também casam — o do
+  cadastro continua não sendo sobrescrito, e extrato já reconhecido como de
+  OUTRA conta não é ensinado em silêncio; (2) a conta escolhida só era lembrada
+  ao GRAVAR — extrato sem nada novo (gravar desligado) nunca a ensinava; agora
+  é lembrada já na conferência.
+- Ele perguntou se dá para importar vários extratos de uma vez: sim, a caixa
+  "Trazer extrato" aceita vários OFX juntos (já aceitava).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -12038,6 +12059,7 @@ Ordenados → Diárias.
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir a CARTEIRA do BeeVale da alimentação e do transporte (hoje "Produção"; os diaristas já saem em "Diárias") | ele |
 | ~~publicar as levas 177 a 179~~ — **publicadas em 05/10/2026** (main em `b18f6f0`, suíte inteira verde salvo o teste do painel que falha igual na main). Carteira da alimentação e do transporte decidida (leva 180) | — |
+| publicar a leva 181 (migração **050**: apertar "Aplicar atualizações do banco" no mesmo momento) | ele |
 | ~~publicar a leva 180~~ — **publicada em 05/10/2026** (main em `5f21ffe`). Confirmado por ele: a folha da contabilidade segue "Produção", e "Gratiticações e Extras" é a grafia do PORTAL (*"tá errado mesmo, gratiti"*) — não corrigir | — |
 | ~~publicar as levas 174 a 176~~ — **publicadas em 05/10/2026** (main em `02c26af`; suíte inteira verde, salvo `test_painel_cenario::test_quem_esta_preso_nao_abre_nem_grava_os_parametros`, que falha igual na main — área do painel, depende da ordem). Conferir que ele apertou "Aplicar atualizações do banco" (**048** e **049**) e importar a Listagem de Férias de 09 e 10/2026 | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

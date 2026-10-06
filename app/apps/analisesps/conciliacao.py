@@ -226,14 +226,39 @@ def conta_do_extrato(bankid: str, acctid: str) -> dict | None:
     alvo_conta = _so_digitos(acctid).lstrip("0")
     if not alvo_conta:
         return None
+    outros = _outros_numeros()
     for conta in contas(so_ativas=False):
-        guardado_banco = _so_digitos(conta["ofx_bankid"]).lstrip("0")
-        if alvo_banco and guardado_banco and guardado_banco != alvo_banco:
-            continue
-        guardada = _so_digitos(conta["ofx_acctid"]).lstrip("0")
-        if guardada and guardada == alvo_conta:
-            return conta
+        # O jeito do cadastro e os OUTROS jeitos já confirmados (migração 050).
+        pares = [(_so_digitos(conta["ofx_bankid"]).lstrip("0"),
+                  _so_digitos(conta["ofx_acctid"]).lstrip("0"))]
+        pares += outros.get(conta["id"], [])
+        for guardado_banco, guardada in pares:
+            if alvo_banco and guardado_banco and guardado_banco != alvo_banco:
+                continue
+            if guardada and guardada == alvo_conta:
+                return conta
     return None
+
+
+def _par(bankid, acctid) -> tuple:
+    return (_so_digitos(bankid).lstrip("0"), _so_digitos(acctid).lstrip("0"))
+
+
+def _outros_numeros() -> dict:
+    """`{conta_id: [(banco, conta)]}` — os outros jeitos de o extrato escrever
+    cada conta (050). Vazio sem a migração."""
+    from .db import consultar, tem_coluna
+    if not tem_coluna("conciliacao_conta", "ofx_outros"):
+        return {}
+    saida: dict = {}
+    for conta_id, texto in consultar(
+            "SELECT id, ofx_outros FROM analisesps.conciliacao_conta "
+            " WHERE ofx_outros <> ''"):
+        for item in str(texto or "").split(","):
+            banco, _, numero = item.strip().partition(":")
+            if numero:
+                saida.setdefault(conta_id, []).append((banco, numero))
+    return saida
 
 
 # ---------------------------------------------------------------------------
@@ -1379,7 +1404,22 @@ def lembrar_conta_do_extrato(conta_id: int, bankid: str, acctid: str,
     """
     if not (bankid or acctid):
         return
-    from .db import conexao
+    from .db import conexao, tem_coluna
+    # ⚠️ UM JEITO NOVO DE ESCREVER A MESMA CONTA É GUARDADO À PARTE (06/10/2026).
+    # Antes, com o cadastro já preenchido, o jeito novo era descartado — e o
+    # mesmo extrato voltava a perguntar a conta toda vez. O do cadastro continua
+    # não sendo sobrescrito; o novo vai para `ofx_outros` (050).
+    achada = conta_do_extrato(bankid, acctid)
+    if achada and achada["id"] == int(conta_id):
+        return                                   # já se reconhece
+    if achada:
+        # O arquivo já é reconhecido como de OUTRA conta: não se ensina o
+        # contrário em silêncio — vale o cadastro, e fica no log.
+        logger.warning("Conciliação: %s apontou o extrato %s/%s para a conta %s, mas ele "
+                       "é reconhecido como da conta %s — nada gravado.",
+                       quem or "?", bankid, acctid, conta_id, achada["id"])
+        return
+    banco, numero = _par(bankid, acctid)
     with conexao() as con:
         con.execute(
             "UPDATE analisesps.conciliacao_conta "
@@ -1387,6 +1427,14 @@ def lembrar_conta_do_extrato(conta_id: int, bankid: str, acctid: str,
             "       ofx_acctid = CASE WHEN ofx_acctid = '' THEN ? ELSE ofx_acctid END "
             " WHERE id = ?",
             (_so_digitos(bankid), str(acctid or "").strip(), int(conta_id)))
+        if numero and tem_coluna("conciliacao_conta", "ofx_outros"):
+            con.execute(
+                "UPDATE analisesps.conciliacao_conta "
+                "   SET ofx_outros = CASE WHEN ofx_outros = '' THEN ? "
+                "                         ELSE ofx_outros || ',' || ? END "
+                " WHERE id = ? AND ofx_acctid <> ? ",
+                (f"{banco}:{numero}", f"{banco}:{numero}", int(conta_id),
+                 str(acctid or "").strip()))
         con.commit()
     logger.info("Conciliação: %s apontou o extrato %s/%s para a conta %s.",
                 quem or "?", bankid, acctid, conta_id)
