@@ -12112,9 +12112,13 @@ somente Solicitações de uma conta especifica"*.
   "SP nº" que a pagou (`dc.sps_das_linhas`: linha → lote → geração → andamento
   do lançamento). E o relatório da tela, com as geradas à mostra, passa a
   incluí-las (antes saíam de fora, porque só entrava o que falta pagar).
-- Fica de fora: lançamentos feitos ANTES desta leva não têm o PDF refeito
-  sozinhos. Apertar "Lançar" de novo numa geração já lançada refaz (o caminho
-  de "só terminar" cobre isso).
+- Lançamentos feitos ANTES desta leva não têm o PDF refeito sozinhos: a prévia
+  deles diz "já lançado, mas falta terminar" e libera o botão, que só refaz o
+  PDF (nenhuma SP nova).
+- **Conserto de carona:** com o pagamento "já lançado", a tela ESCONDIA o botão
+  "Lançar" — então o "aperte de novo para terminar" (cards que o Pipefy recusou
+  mover) não tinha por onde ser feito. Agora a prévia traz `so_terminar`, e o
+  botão aparece só nesse caso.
 
 #### ⚠️ Pendente AGORA
 

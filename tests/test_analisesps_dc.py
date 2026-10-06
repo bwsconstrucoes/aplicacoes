@@ -393,9 +393,12 @@ def test_se_o_Pipefy_recusa_MOVER_lancar_de_novo_so_termina_a_mudanca(banco_dc, 
     assert len(pipe.do_pipe(fcd.PIPE_SP)) == 1
     assert "automa_o_2" not in pipe.do_pipe(fcd.PIPE_SP)[0]["valores"]   # só no BeeVale
     assert not dc.lote_da_analise(analise)["cards_movidos"]
+    # A tela libera o botão só para terminar (antes ficava escondido).
+    assert fcd.previa(analise)["so_terminar"]
 
     recusar["vez"] = False
     saida = fcd.lancar(analise, quem="MARCELO")
     assert saida["cards_movidos"] == ["900100"] and movidos == ["900100"]
     assert len(pipe.do_pipe(fcd.PIPE_SP)) == 1, "nenhuma SP a mais"
     assert dc.lote_da_analise(analise)["cards_movidos"]
+    assert not fcd.previa(analise)["so_terminar"], "tudo terminado: botão fechado"

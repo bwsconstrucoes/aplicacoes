@@ -520,7 +520,13 @@ def previa(analise_id: int, contas=None) -> dict:
 
     `bloqueios` vazio é a única situação em que `lancar` cria alguma coisa.
     `contas`: só os arquivos dessas contas (None = todos) — ver `_chave_do_lote`."""
-    return _previa(analise_id, contas=contas)[0]
+    vista = _previa(analise_id, contas=contas)[0]
+    # JÁ LANÇADO, MAS FALTOU TERMINAR (DC): mover algum card de origem que o
+    # Pipefy recusou, ou pôr o número da SP no relatório. A tela libera o botão
+    # só para isso — `lancar` não cria SP nenhuma nesse caminho.
+    vista["so_terminar"] = bool(vista["ja_lancado"] and (
+        _cards_da_dc_a_mover(vista) or _relatorio_da_dc_pendente(vista["andamento"])))
+    return vista
 
 
 # ---------------------------------------------------------------------------
