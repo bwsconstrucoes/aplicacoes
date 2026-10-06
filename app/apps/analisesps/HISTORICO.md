@@ -12148,6 +12148,9 @@ somente Solicitações de uma conta especifica"*.
   gerados (`folha_pagamento.ja_gerado`). Auxílio: um por mês (quinzena ou fim
   de mês contam juntos). Diárias e folha: por período. DC fica fora (as linhas
   geradas já saem da lista).
+- **Levas 185 e 186 publicadas em 06/10/2026** (sem migração; suíte inteira
+  8.538 verdes). Falta ele conferir: o próximo arquivo de alimentação sai com o
+  total da barra; o PDF da próxima DC lançada traz o número da SP.
 
 #### ⚠️ Pendente AGORA
 
