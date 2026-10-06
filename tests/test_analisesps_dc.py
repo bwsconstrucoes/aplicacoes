@@ -265,13 +265,29 @@ def test_o_RELATORIO_da_DC_sai_em_pdf(banco_dc, cliente_mestre):
     assert resposta.data[:5] == b"%PDF-"
 
 
+def test_o_RELATORIO_da_tela_com_as_GERADAS_traz_a_SP(banco_dc, monkeypatch):
+    """Com "mostrar as já geradas", elas entram no relatório — cada uma com a SP."""
+    from app.apps.analisesps import dc
+    calculado = dc.calcular()
+    for p in calculado["pessoas"]:
+        p["gerada"], p["sp"] = True, {"id": "1234567", "link": ""}
+    montado = dc.montado_do_relatorio(calculado, geradas_entram=True)
+    entram = [p for p in montado["pessoas"] if p["entra"]]
+    assert entram and all("SP 1234567" in p["situacao_rotulo"] for p in entram)
+    assert not any(p["entra"] for p in dc.montado_do_relatorio(calculado)["pessoas"]), \
+        "sem pedir, gerada não entra (é o relatório do que falta pagar)"
+
+
 # ---------------------------------------------------------------------------
 # NO PIPEFY: uma SP por conta, rateio por obra e por categoria, e os cards de
 # origem marcados e movidos (o que o `geraspbeevale.gs` fazia).
 # ---------------------------------------------------------------------------
-def _gerar_dc(monkeypatch, destino="beevale"):
+def _gerar_dc(monkeypatch, destino="beevale", trocados=None):
     from app.apps.analisesps import beevale, drive, folha_pagamento as fp
     subidos = []
+    trocados = [] if trocados is None else trocados
+    monkeypatch.setattr(drive, "substituir_conteudo", lambda arquivo, conteudo, mime:
+                        trocados.append((arquivo, mime)))
     monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
     monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k:
                         subidos.append(nome)
@@ -295,14 +311,18 @@ def com_duas_categorias(banco_dc, monkeypatch):
 
 
 def test_a_SP_da_DC_tem_RATEIO_POR_CATEGORIA_e_move_os_cards(com_duas_categorias,
-                                                             monkeypatch):
+                                                             monkeypatch, cliente_mestre):
     from app.apps.analisesps import dc, folha_cards as fcd, pipefy
     from tests.test_analisesps_folha_cards import PipefyFalso
     pipe = PipefyFalso(monkeypatch)
-    movidos = []
+    movidos, trocados, desenhados = [], [], []
     monkeypatch.setattr(pipefy, "mover_card", lambda card, fase, *a, **k:
                         movidos.append((str(card), int(fase))))
-    analise = _gerar_dc(monkeypatch)
+    analise = _gerar_dc(monkeypatch, trocados=trocados)
+    from app.apps.analisesps import folha_relatorio as fr
+    original_pdf = fr.pdf
+    monkeypatch.setattr(fr, "pdf", lambda dados: desenhados.append(dados)
+                        or original_pdf(dados))
 
     vista = fcd.previa(analise)
     assert vista["bloqueios"] == []
@@ -335,9 +355,24 @@ def test_a_SP_da_DC_tem_RATEIO_POR_CATEGORIA_e_move_os_cards(com_duas_categorias
     assert pipe.atualizacoes_de("900100") == {dc.CAMPO_MOVER: "Sim"}
     assert dc.lote_da_analise(analise)["cards_movidos"]
 
+    # O RELATÓRIO EM PDF ganha o número da SP (dono, 06/10/2026), gravado POR
+    # CIMA do arquivo da geração — o link que está no card continua valendo.
+    numero = criada[0]["id"]
+    from app.apps.analisesps import folha_pagamento as fp
+    pdf_da_conta = next(a for a in fp.log() if a["destino"] == fp.RELATORIO)
+    assert trocados == [(pdf_da_conta["drive_id"], "application/pdf")]
+    assert f"SP nº {numero}" in desenhados[-1]["subtitulo"]
+    assert desenhados[-1]["quantas"] == 3, "as três linhas pagas (dois cards), não zero"
+    assert all(f"SP {numero}" in p["situacao_rotulo"] for p in desenhados[-1]["pessoas"])
+    # E na tela, com as geradas à mostra, cada linha diz a SP que a pagou.
+    assert {p["sp"]["id"] for p in dc.calcular(mostrar_geradas=True)["pessoas"]
+            if p["gerada"]} == {numero}
+    tela = cliente_mestre.get("/analisesps/folha/dc?geradas=1").get_data(as_text=True)
+    assert f">SP {numero}</a>" in tela
+
     with pytest.raises(fcd.ErroDosCards):
         fcd.lancar(analise)
-    assert len(pipe.criados) == 1 and len(movidos) == 2
+    assert len(pipe.criados) == 1 and len(movidos) == 2 and len(trocados) == 1
 
 
 def test_se_o_Pipefy_recusa_MOVER_lancar_de_novo_so_termina_a_mudanca(banco_dc, monkeypatch):

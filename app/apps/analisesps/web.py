@@ -4197,10 +4197,14 @@ def folha_dc_relatorio(formato: str):
         return render_template("analisesps_erro.html", titulo="Não encontrado",
                                mensagem="Este formato de relatório não existe."), 404
     try:
-        calculado = dc.calcular()
+        # Com as já geradas à mostra, elas entram no relatório — e cada uma leva
+        # o número da SP que a pagou (dono, 06/10/2026).
+        geradas = request.args.get("geradas") == "1"
+        calculado = dc.calcular(mostrar_geradas=geradas)
         lista = _dc_lista(calculado, request.args)
         contas = fpg.conta_por_obra()
-        montado = dc.montado_do_relatorio(calculado, lista["pessoas"], lista["filtros"])
+        montado = dc.montado_do_relatorio(calculado, lista["pessoas"], lista["filtros"],
+                                          geradas_entram=geradas)
         return _resposta_do_relatorio(montado, contas, formato)
     except Exception as e:  # noqa: BLE001
         logger.exception("Folha: falhou o relatório da DC")

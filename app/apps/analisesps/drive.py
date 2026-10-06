@@ -200,6 +200,28 @@ def subir_arquivo(conteudo: bytes, nome: str, pasta_id: str,
             "link": f"https://drive.google.com/uc?export=download&id={arquivo_id}"}
 
 
+def substituir_conteudo(arquivo_id: str, conteudo: bytes, mime: str) -> None:
+    """Troca o CONTEÚDO de um arquivo que este módulo subiu, mantendo o arquivo:
+    o mesmo identificador, o mesmo link e a mesma permissão. É o que deixa o
+    link já gravado num card do Pipefy continuar apontando para o certo.
+    Levanta `ErroDoDrive`."""
+    arquivo_id = str(arquivo_id or "").strip()
+    if not arquivo_id:
+        raise ErroDoDrive("Arquivo do Drive sem identificador.")
+    sessao = _sessao()
+    try:
+        resposta = sessao.patch(
+            f"https://www.googleapis.com/upload/drive/v3/files/{arquivo_id}",
+            params={"uploadType": "media", "supportsAllDrives": "true"},
+            headers={"Content-Type": mime}, data=conteudo, timeout=180)
+    except Exception as e:  # noqa: BLE001
+        raise ErroDoDrive(f"Não foi possível acessar o Drive: {e}") from e
+    if resposta.status_code >= 300:
+        raise ErroDoDrive("Não consegui atualizar o arquivo no Drive. "
+                          + _explicar(resposta))
+    logger.info("Análise de SPs: conteúdo de %s substituído no Drive.", arquivo_id)
+
+
 def mover_para_lixeira(arquivo_id: str) -> None:
     """Manda um arquivo que este módulo subiu para a LIXEIRA do Drive — de onde
     ainda é possível recuperá-lo. Levanta `ErroDoDrive`."""

@@ -249,6 +249,8 @@
           <td>
             {% if p.gerada %}
               <span class="selo cancelado">já gerada</span>
+              {% if p.sp %}<br><a href="{{ p.sp.link or ('https://app.pipefy.com/open-cards/' ~ p.sp.id) }}"
+                 target="_blank" rel="noopener" title="a SP do Pipefy que pagou esta solicitação">SP {{ p.sp.id }}</a>{% endif %}
             {% elif p.impossivel %}
               <span class="selo risco" title="{{ p.motivos|join(' ') }}">dados incompletos</span>
             {% elif not p.pagar %}

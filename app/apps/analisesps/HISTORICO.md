@@ -12095,6 +12095,27 @@ somente Solicitações de uma conta especifica"*.
 - **Publicada em 06/10/2026** (sem migração). O dono confirmou que a "C.
   Diários" tem a conta com o dígito.
 
+#### Leva 185 — DC: o número da SP no relatório (06/10/2026)
+
+- Pergunta dele: *"após gerar os arquivos e lançado no Pipefy, o card é movido de
+  fase?"* — **sim, já era** (leva 172): com a SP criada, cada card de origem
+  ganha `mover_card` = Sim e vai para a fase de processados (340593562); se o
+  Pipefy recusar, "Lançar" de novo só termina a mudança.
+- *"No relatório dela é importante que saia o registro da SP."* O PDF da conta
+  nasce NA GERAÇÃO, antes de a SP existir. Agora, logo depois do lançamento, o
+  PDF é **refeito com o número da SP** (no subtítulo e em cada linha) e gravado
+  **por cima do mesmo arquivo do Drive** (`drive.substituir_conteudo`) — o link
+  que está no card continua o mesmo. Falha aqui não desfaz nada: vira aviso, e
+  "Lançar" de novo refaz. O andamento guarda o que já foi refeito
+  (`_dc_relatorio_sp`); geração sem PDF é anotada e pulada.
+- Na tela da DC, com "mostrar as já geradas", cada linha gerada mostra o link
+  "SP nº" que a pagou (`dc.sps_das_linhas`: linha → lote → geração → andamento
+  do lançamento). E o relatório da tela, com as geradas à mostra, passa a
+  incluí-las (antes saíam de fora, porque só entrava o que falta pagar).
+- Fica de fora: lançamentos feitos ANTES desta leva não têm o PDF refeito
+  sozinhos. Apertar "Lançar" de novo numa geração já lançada refaz (o caminho
+  de "só terminar" cobre isso).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
