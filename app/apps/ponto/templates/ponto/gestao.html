@@ -873,7 +873,11 @@ async function aprovarAparelho(a, depois) {
     campos: [
       {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: "INDIVIDUAL",
        opcoes: PERFIS_APARELHO, largura: 3, obrigatorio: true},
-      {nome: "cpf", rotulo: "CPF do dono (celular de uma pessoa)", largura: 3,
+      // Quem entrou com CPF e PIN neste celular já disse de quem ele é: o campo
+      // vem preenchido (pedido do dono, 06/10/2026 — "não é redundante?").
+      {nome: "cpf", rotulo: a.dono ? `CPF do dono — já preenchido: ${a.dono.nome} entrou neste celular`
+                                   : "CPF do dono (celular de uma pessoa)", largura: 3,
+       valor: a.dono && a.dono.cpf ? a.dono.cpf : "",
        dica: "Só para \"celular de uma pessoa\": só esse CPF bate por este aparelho."},
       {nome: "autorizados", rotulo: "CPFs do grupo (grupo de pessoas)", tipo: "textarea", linhas: 2,
        largura: 3, dica: "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
@@ -885,7 +889,7 @@ async function aprovarAparelho(a, depois) {
     textoOk: "Aprovar aparelho",
   });
   if (!r) return;
-  if (r.perfil === "INDIVIDUAL" && !r.cpf) { aviso("mensagem", "Diga o CPF do dono do celular.", "erro"); return; }
+  if (r.perfil === "INDIVIDUAL" && !r.cpf && !a.dono) { aviso("mensagem", "Diga o CPF do dono do celular.", "erro"); return; }
   if (r.perfil === "LISTA" && !listaDeTexto(r.autorizados).length) {
     aviso("mensagem", "Diga os CPFs do grupo de pessoas.", "erro"); return;
   }

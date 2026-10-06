@@ -89,8 +89,9 @@ def test_modo_de_teste_de_ponta_a_ponta(app, mundo, com_planilha_e_registro, lim
     h = {"X-Device-UUID": uuid, "X-Device-Token": token}
     cel.post("/ponto/app/api/aparelho/identificar", json={}, headers=h)
     item = next(i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["tipo"] == "APARELHO")
+    assert item["dono"]["cpf"] == CPF_DONO                        # a tela já sabe de quem é
     assert dp.post(f"/erp/api/ponto/dispositivos/{item['id']}/aprovar",
-                   json={"perfil": "INDIVIDUAL", "cpf": CPF_DONO}).status_code == 200
+                   json={"perfil": "INDIVIDUAL"}).status_code == 200      # sem redigitar o CPF
     ok = cel.post("/ponto/app/api/bater", json={"latitude": AQUI[0] + 0.0003, "longitude": AQUI[1],
                                                 "precisao": 15}, headers=h)
     assert ok.status_code == 201, ok.get_json()

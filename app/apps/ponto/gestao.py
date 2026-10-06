@@ -1486,6 +1486,9 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
             if not p:
                 raise ErroDeValidacao("pessoa não cadastrada", campo="cpf")
             colaborador_id = int(p["id"])
+        elif str(d.get("perfil") or "").upper() == "INDIVIDUAL":
+            # Sem CPF: vale quem entrou com CPF e PIN neste celular, se alguém entrou.
+            colaborador_id = dispositivos.por_id(conn, dispositivo_id).get("colaborador_id")
         autorizados = []
         for cpf in d.get("autorizados") or []:
             p = cadastros.colaborador_por_cpf(conn, cadastros.normalizar_cpf(cpf))
