@@ -41,10 +41,14 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1h. **No ramo, esperando o "pode" (06/10/2026)**: os pedidos de 06/10 (itens 1
-   a 10 abaixo), com as migrações **006 e 007** — apertar "Aplicar atualizações
-   do ponto" ao publicar, escolher a **escala padrão da empresa** (Configuração ›
-   Jornada) e, para a conferência do rosto, as chaves da AWS (item 10).
+1h. **PUBLICADO em 06/10/2026** (com o "pode" do dono): os pedidos de 06/10
+   (itens 1 a 10 abaixo), com as migrações **006 e 007**. Confirmar com o dono:
+   apertou "Aplicar atualizações do ponto"? escolheu a **escala padrão da
+   empresa** (Configuração › Jornada)? Para a conferência do rosto: criou a
+   conta AWS, desligou o uso para treino (opt-out), criou o usuário só com
+   `rekognition:CompareFaces`, pôs AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY no
+   Render e ligou a chave em Configuração › Fotos? Regra configurável ("só a
+   primeira batida do dia" ou todas, exclusões, teto).
 1g. **Três decisões em aberto com o dono (06/10/2026, "vou pensar")**:
    (a) prazo para entregar atestado (hoje: qualquer tempo, com o mês aberto;
    sugerido 48 h); (b) atestado de HORAS / declaração de comparecimento (hoje
