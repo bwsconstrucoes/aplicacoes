@@ -41,8 +41,11 @@ junto com o `README.md` e o `PLANO.md`.
    coordenada não detecta (vai para conferência). Depois de preencher: Ponto ›
    Configuração › Base de obras › "Ler a planilha agora" e conferir a tabela
    "Coordenadas que não deu para ler".
-1f. **Modo de teste no ramo, esperando o "pode"** — traz a migração **005**:
-   apertar "Aplicar atualizações do ponto" ao publicar.
+1f. **Modo de teste PUBLICADO em 06/10/2026** (com o "pode" do dono). Traz a
+   migração **005**: confirmar com o dono se ele apertou "Aplicar atualizações
+   do ponto". Combinado: no dia de começar o ponto com a equipe, apagar tudo do
+   teste (obra TESTE-PONTO, pessoa e aparelhos de teste, batidas) e recomeçar a
+   numeração das batidas do 1 — só com o "pode" dele nesse dia.
 1e. **PUBLICADO em 05/10/2026** (com o "pode" do dono, `main` em `efd509b`):
    base de pessoas em dia sozinha, período de contrato, base de obras da
    C. Diários, forma de bater por exceção e as travas do aparelho da obra.
