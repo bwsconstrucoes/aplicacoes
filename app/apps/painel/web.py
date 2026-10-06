@@ -585,9 +585,10 @@ def dre():
         quebra=quebra, visao=visao, medida=medida,
         bloco=bloco, blocos=BLOCOS_DRE,
         dre=consultas.dre_linhas(f),
-        # os ultimos 36 meses no grafico; alem disso as barras ficam ilegiveis
+        # os ultimos 36 meses no grafico; alem disso as barras ficam ilegiveis.
+        # E no maximo um ano a frente (06/10/2026), como no PDF.
         grafico_mensal=graficos.barras_agrupadas(
-            mensal[-36:],
+            consultas.ate_um_ano_a_frente(mensal)[-36:],
             [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")],
             campo_rotulo="rotulo", campo_linha="acumulado"),
         **extra,
@@ -2556,10 +2557,10 @@ def _graficos_do_relatorio(f) -> list:
     if not mensal:
         return []
     return [(graficos.barras_agrupadas(
-        mensal[-36:],
+        consultas.ate_um_ano_a_frente(mensal)[-36:],
         [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")],
         campo_rotulo="rotulo", campo_linha="acumulado"),
-        "Fluxo Financeiro mensal — comprometido")]
+        "Fluxo Financeiro mensal — comprometido, até 12 meses à frente")]
 
 
 @bp.route("/baixar/<assunto>")
@@ -2938,6 +2939,9 @@ def baixar(assunto):
             ("Fluxo de Caixa", C["fluxo"], consultas.caixa_por_mes(f)),
             ("Resultado por Obra", C["obras"],
              consultas.resultado_por(f, nivel="obra", limite=1000)),
+            # aportes e dividendos no mesmo relatório (dono, 06/10/2026: "aí
+            # fica completíssimo") — as mesmas abas do arquivo de aportes
+            *_abas_de_aporte(),
         ],
     }
     if assunto in ("quotas", "posicao"):

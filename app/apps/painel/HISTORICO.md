@@ -2182,6 +2182,30 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## A releitura "interrompida" que talvez estivesse viva; o vigia; o PDF do DRE — 06/10/2026
+
+**O alarme.** O dono disparou "Reler todos os pagamentos" às 19:05 e a tela
+disse "interrompida, parou de dar sinal há 14,6 min, na etapa baixando o que
+mudou no OMIE". **Causa provável (não confirmada):** a atualização do dia não
+dava sinal de vida DURANTE a leitura dos títulos e dos pagamentos — só ao
+mudar de etapa. A releitura inteira passa de 10 minutos nessa leitura, e a
+tela dá por morta a execução sem sinal há 10 min. A publicação daquela tarde
+não foi: o botão só existia na versão nova, já no ar às 19:05.
+
+**Consertos:** sinal de vida a cada página na leitura de títulos e
+pagamentos, na varredura de excluídos e no recálculo dos números (que também
+não dava); o aviso diz QUAL atualização era (`tarefas.ROTULOS`); e um **vigia**
+(thread no serviço, só sob o gunicorn, de 5 em 5 min) retoma sozinho a
+execução sem sinal, com o mesmo modo, `disparo = 'retomada'`, **no máximo duas
+vezes seguidas** — a terceira morte para de insistir (`RETOMADAS_SEGUIDAS`).
+Seguro porque toda etapa grava numa transação só.
+
+**PDF do relatório completo (DRE):** o gráfico do comprometido ia até 2031
+(títulos com vencimento longe). Agora vai **no máximo 12 meses à frente** —
+no PDF e no gráfico da tela, que é o mesmo (`ate_um_ano_a_frente`). As contas
+e tabelas não mudam. E o relatório completo (PDF e Excel) ganhou as seis abas
+de **aportes e dividendos**.
+
 ## "Reler todos os pagamentos" — baixa de mais de 6 meses — 06/10/2026
 
 O dono fez muitos lançamentos e ajustes de aportes, rodou a completa (terminou

@@ -236,6 +236,22 @@ def base_vazia() -> bool:
     return not consultar("SELECT 1 FROM fato LIMIT 1")
 
 
+# O gráfico do comprometido vai até um ano à frente (dono, 06/10/2026: *"está
+# aparecendo até 2031, a gente está em 2026 — apresentar no máximo um ano para
+# frente"*). Título com vencimento lá longe continua nas contas e nas tabelas;
+# só não estica o gráfico até virar uma régua de meses vazios.
+MESES_A_FRENTE_NO_GRAFICO = 12
+
+
+def ate_um_ano_a_frente(mensal: list[dict], hoje=None) -> list[dict]:
+    """Os meses do gráfico mensal até MESES_A_FRENTE_NO_GRAFICO depois de hoje.
+    O acumulado de cada mês que fica não muda: ele vem de trás."""
+    hoje = hoje or dt.date.today()
+    total = hoje.year * 12 + (hoje.month - 1) + MESES_A_FRENTE_NO_GRAFICO
+    limite = f"{total // 12:04d}-{total % 12 + 1:02d}"
+    return [m for m in mensal if (m.get("mes") or "") <= limite]
+
+
 # ---------------------------------------------------------------------------
 # Visao Geral
 # ---------------------------------------------------------------------------
