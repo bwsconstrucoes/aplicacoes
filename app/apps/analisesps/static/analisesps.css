@@ -1999,14 +1999,17 @@ table.conciliacao .saldo   { font-family: var(--fonte-dados); color: var(--tinta
    Agora a linha conciliada tem so um TRACO VERDE na esquerda e o dinheiro um
    tom mais claro. O fundo continua branco: o que precisa saltar e o que falta
    conciliar, e isso se consegue deixando o resolvido discreto — nao pintado. */
-tr.linha-extrato.conciliada { background: var(--branco); }
+/* 06/10/2026 — *"quero um pouquinho mais de destaque nas linhas que estão
+   conciliadas. Fica ticado verde, mas a linha fica da mesma cor. Diferencia."*
+   O traço sozinho era discreto demais. Agora a linha ganha um FUNDO VERDE BEM
+   CLARO e o traço engrossa — mas o texto continua na cor normal: o que o dono
+   recusou em 24/09 foi o verde chapado JUNTO do texto cinza, que deixava a
+   linha com cara de desligada. */
+tr.linha-extrato.conciliada td { background: #EDF7E8; }
+tr.linha-extrato.conciliada:hover td { background: #E2F1DB; }
 tr.linha-extrato.conciliada td:first-child {
-  box-shadow: inset 3px 0 0 var(--verde);
+  box-shadow: inset 4px 0 0 var(--verde);
 }
-tr.linha-extrato.conciliada .historico,
-tr.linha-extrato.conciliada .saldo { color: var(--tinta-suave); }
-tr.linha-extrato.conciliada .valor-entrada,
-tr.linha-extrato.conciliada .valor-saida { font-weight: 500; }
 
 /* O tique: um alvo grande o suficiente para acertar sem mirar, inclusive no
    celular, porque e o gesto mais repetido da tela. */
