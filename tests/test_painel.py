@@ -1733,6 +1733,19 @@ def test_o_analitico_e_as_medicoes_exportam_a_coluna_do_pipefy():
 # ===========================================================================
 # O Calendario — o caixa dia a dia (22/09/2026)
 # ===========================================================================
+def test_o_dia_vazio_abre_para_o_dono_conferir_com_o_omie(painel):
+    """06/10/2026, o dono: "quando não tem nada lançado, você não consegue abrir
+    o dia pra trazer este dia, então não funciona." O dia vazio é justamente o
+    caso em que o OMIE tem e o painel não."""
+    import re
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/calendario?mes=2025-04").get_data(as_text=True)
+    vazio = re.search(r'<button type="button"\s+class="cal-dia vazio[^"]*"\s+'
+                      r'data-dia="2025-04-02"[^>]*>', html)
+    assert vazio and "disabled" not in vazio.group(0)
+    assert "clique para conferir com o OMIE" in vazio.group(0)
+
+
 def test_o_calendario_abre_com_o_mes_pedido_e_os_kpis(painel):
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
     r = painel.get("/painel/calendario?mes=2025-04")
