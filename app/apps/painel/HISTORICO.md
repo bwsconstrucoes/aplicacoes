@@ -2182,6 +2182,31 @@ tinha — era a mensagem da regra "consolidada", e a regra saía consolidada
 mesmo com bancária presente. Com a decisão separada, "consolidada" só aparece
 quando de fato não há bancária.
 
+## ⚠️ INCIDENTE: a janela de pagamentos NÃO era atômica — 06/10/2026
+
+**Eu (Claude) afirmei ao dono, mais de uma vez, que a leitura de pagamentos
+"apaga e regrava na mesma transação: se cair no meio, nada se perde". Era
+falso.** `_apagar_movimentos_janela` e `gravar_movimentos` davam `commit` cada
+um: a janela era apagada e confirmada, e regravada página a página. A releitura
+desde 2015, cortada na página 247 de 2716 (pela publicação que ele autorizou),
+deixou o espelho SEM a maior parte dos pagamentos desde 2015. Os números das
+telas não chegaram a ser refeitos com isso (o fato da 18:44 seguia de pé), mas
+qualquer "Só refazer os números" — ou a atualização da madrugada — mostraria
+título pago como em aberto. A lição é a de sempre: afirmar só o que foi lido
+no código, não o que o comentário promete.
+
+**Consertos:**
+- `confirmar=False` nas duas funções quando são parte de uma janela; quem
+  chama confirma no fim (atualização do dia, releitura, "Trazer este dia").
+- **Releitura ano a ano** (`reler_pagamentos_por_ano`): cada ano é a sua
+  janela, gravada e marcada junto (`config.releitura_pagamentos_anos`); a
+  próxima tentativa pula os anos feitos. Pergunta do dono: *"não aproveita o
+  que já tinha lido?"* — agora aproveita, por ano.
+- **Trava** (`tarefas._releitura_pendente`): nenhuma atualização refaz os
+  números com releitura incompleta — termina a releitura antes. Reconhece a
+  campanha pela marca e, para a de 06/10 (de antes da marca), por uma "Reler
+  todos os pagamentos" não concluída sem nenhuma concluída depois.
+
 ## "O que aconteceu nas atualizações" — a história de cada uma — 06/10/2026
 
 O dono: *"essa tela de atualizar os dados era para ter mais informativo (…) o

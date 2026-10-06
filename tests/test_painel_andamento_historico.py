@@ -102,6 +102,12 @@ def banco():
         conn.execute("TRUNCATE TABLE execucao_passos")
         conn.commit()
     yield painel_db
+    # uma "Reler todos os pagamentos" não terminada faria as outras
+    # atualizações do mesmo banco de teste irem terminar a releitura
+    with painel_db.conexao() as conn:
+        conn.execute("TRUNCATE TABLE execucoes")
+        conn.execute("TRUNCATE TABLE execucao_passos")
+        conn.commit()
     painel_db._engine = None
 
 

@@ -59,6 +59,9 @@ def banco_do_painel():
     def _limpar():
         with painel_db.conexao() as conn:
             conn.execute("TRUNCATE TABLE execucoes")
+            # releitura de pagamentos aberta faria toda atualização ir
+            # terminá-la antes de recalcular (06/10/2026)
+            conn.execute("DELETE FROM config WHERE chave = 'releitura_pagamentos_anos'")
             conn.commit()
 
     _limpar()
@@ -261,14 +264,14 @@ def test_a_atualizacao_que_morreu_e_retomada_com_o_mesmo_modo(banco_do_painel,
     iniciados = []
     monkeypatch.setattr(tarefas, "_iniciar_processo",
                         lambda modo, eid: iniciados.append(modo))
-    assert tarefas.disparar("pagamentos")["ok"]
+    assert tarefas.disparar("completa")["ok"]
     # viva: o vigia não mexe
     assert tarefas.retomar_se_interrompida() is None
 
     with conexao() as conn:
         _matar(conn)
     r = tarefas.retomar_se_interrompida()
-    assert r["ok"] and iniciados == ["pagamentos", "pagamentos"]
+    assert r["ok"] and iniciados == ["completa", "completa"]
     disparos = [d for (d,) in consultar(
         "SELECT disparo FROM execucoes ORDER BY inicio")]
     assert disparos == ["manual", "retomada"]

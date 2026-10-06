@@ -37,11 +37,12 @@ CADASTROS = "atualizando o plano de contas e os cadastros"
 PLANILHA = "lendo a planilha de projetos"
 EXCLUIDOS = "procurando títulos excluídos no OMIE"
 RECALCULO = "recalculando os números do painel"
+PAGAMENTOS_ANTIGOS = "relendo os pagamentos no OMIE, ano a ano"
 
 _LEITURA = [TITULOS_A_PAGAR, TITULOS_A_RECEBER, PAGAMENTOS, CADASTROS, PLANILHA]
 PASSOS_POR_MODO = {
     "rapida": _LEITURA + [RECALCULO],
-    "pagamentos": _LEITURA + [RECALCULO],
+    "pagamentos": _LEITURA + [PAGAMENTOS_ANTIGOS, RECALCULO],
     "completa": _LEITURA + [EXCLUIDOS, RECALCULO],
     "so_numeros": [RECALCULO],
 }

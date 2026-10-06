@@ -184,6 +184,30 @@ def _carimbar(execucao_id: int, etapa: str, detalhe: str) -> None:
 # ---------------------------------------------------------------------------
 # O trabalho
 # ---------------------------------------------------------------------------
+def _releitura_pendente(execucao_id: int) -> bool:
+    """Há uma releitura de pagamentos começada e não terminada?
+
+    Duas fontes: a marca dos anos (gravada desde o início de cada releitura,
+    apagada só quando ela termina) e — para a releitura de antes de existir a
+    marca, a de 06/10/2026 — uma execução "Reler todos os pagamentos" que não
+    terminou bem e depois da qual nenhuma terminou. Na dúvida, relê: custa
+    tempo; recalcular com pagamentos faltando custa o painel inteiro errado."""
+    from .db import consultar
+    from .sync.espelho import CHAVE_ANOS_RELIDOS
+    try:
+        if consultar("SELECT 1 FROM config WHERE chave = ?", [CHAVE_ANOS_RELIDOS]):
+            return True
+        return bool(consultar(
+            "SELECT 1 FROM execucoes e"
+            " WHERE e.tipo = 'pagamentos' AND e.id <> ? AND e.ok IS NOT TRUE"
+            "   AND NOT EXISTS (SELECT 1 FROM execucoes o WHERE o.tipo = 'pagamentos'"
+            "                     AND o.ok AND o.inicio > e.inicio)"
+            " LIMIT 1", [int(execucao_id)]))
+    except Exception:  # noqa: BLE001 — banco fora: o recálculo também cairia
+        logger.exception("Painel: não consegui saber se há releitura pendente")
+        return False
+
+
 def executar_trabalho(modo: str, execucao_id: int) -> bool:
     """Faz a atualização inteira. Chamado pelo processo separado.
 
@@ -260,9 +284,15 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             espelho.sync_incremental(
                 revisar_dias=(espelho.DIAS_REVISADOS_NA_COMPLETA
                               if modo == "completa"
-                              else espelho.dias_desde_o_primeiro_pagamento()
-                              if modo == "pagamentos"
                               else espelho.DIAS_REVISADOS_NA_ATUALIZACAO))
+            if modo == "pagamentos":
+                # Ano a ano, cada um gravado ao terminar: um corte no meio não
+                # manda de volta à página 1 (dono, 06/10/2026).
+                _etapa(andamento.PAGAMENTOS_ANTIGOS)
+                relidos = espelho.reler_pagamentos_por_ano()
+                if relidos["pulados"]:
+                    logger.info("Painel: releitura pulou %s (já feitos antes).",
+                                relidos["pulados"])
             # O de-para obra -> projeto vem da planilha "C. Diários" e
             # até 23/09/2026 só era lido na primeira carga. Obra nova
             # ficava "(sem projeto)" — e, com o acesso por projeto, fora
@@ -301,6 +331,15 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                         f"a varredura de títulos excluídos falhou ({e})")
                     logger.exception("Painel: %s — sigo para o recálculo",
                                      falha_parcial)
+
+        # ---- a trava da releitura incompleta (06/10/2026) ------------------
+        # Uma releitura de pagamentos cortada no meio deixou anos SEM
+        # pagamento no espelho. Refazer os números assim mostraria títulos
+        # pagos como em aberto — o painel inteiro errado, com cara de certo.
+        # Então NENHUMA atualização recalcula antes de terminar a releitura.
+        if modo not in ("carga_inicial", "observacoes") and _releitura_pendente(execucao_id):
+            _etapa(andamento.PAGAMENTOS_ANTIGOS, "terminando a releitura que ficou pela metade")
+            espelho.reler_pagamentos_por_ano()
 
         # ---- etapa 2: refazer os números que as telas leem ---------------
         # O relator continua ligado aqui: o recálculo também dá sinal de vida.
