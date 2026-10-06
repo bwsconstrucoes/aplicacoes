@@ -872,7 +872,8 @@ async function aprovarAparelho(a, depois) {
       ${a.dono ? `<br>⚠️ Alguém entrou neste aparelho como <b>${escapar(a.dono.nome)}</b>: só aprove como
         aparelho da obra se o código bater com o do tablet.` : ""}
       Na dúvida entre "tablet da obra" e "celular de uma pessoa", escolha o
-      celular de uma pessoa: é o que fecha mais portas.`,
+      celular de uma pessoa: é o que fecha mais portas. Cada pessoa tem um celular só: aprovar
+      um novo bloqueia o anterior dela.`,
     campos: [
       {nome: "perfil", rotulo: "Como vai ser usado", tipo: "select", valor: jaAprovado ? a.perfil : "INDIVIDUAL",
        opcoes: PERFIS_APARELHO, largura: 3, obrigatorio: true},
@@ -901,11 +902,12 @@ async function aprovarAparelho(a, depois) {
     aviso("mensagem", "Diga os CPFs do grupo de pessoas.", "erro"); return;
   }
   try {
-    await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
+    const resp = await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
       perfil: r.perfil, cpf: r.perfil === "INDIVIDUAL" ? r.cpf : "",
       autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [], manter_grupo: manterGrupo,
       obras: listaDeTexto(r.obras), descricao: r.descricao});
-    aviso("mensagem", jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.", "ok");
+    aviso("mensagem", (jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.")
+      + (resp.substituidos ? " O celular que essa pessoa usava antes foi bloqueado: vale um celular por pessoa." : ""), "ok");
     if (depois) await depois();
   } catch (e) { falhou(e); }
 }

@@ -221,9 +221,23 @@ def aprovar(conn: Connection, dispositivo_id: int, *, perfil: str, aprovado_por:
     from . import forma_de_bater
     if perfil_ok == "INDIVIDUAL" and forma_de_bater.em_vigor(conn):
         forma_de_bater.definir(conn, int(colaborador_id), True, f"aprovação do aparelho por {aprovado_por}")
+    # UM CELULAR PESSOAL POR PESSOA (pergunta do dono, 06/10/2026: "uma pessoa
+    # consegue cadastrar mais de um aparelho no seu CPF?"). Aprovar o novo
+    # bloqueia o anterior: celular trocado não fica valendo na mão de outro.
+    substituidos = []
+    if perfil_ok == "INDIVIDUAL":
+        substituidos = [int(l["id"]) for l in db.todos(conn, """
+            UPDATE ponto.dispositivos SET status = 'BLOQUEADO', bloqueado_em = now(),
+                   motivo_bloqueio = :m
+             WHERE colaborador_id = :c AND perfil = 'INDIVIDUAL' AND status = 'APROVADO' AND id <> :id
+            RETURNING id""", c=colaborador_id, id=dispositivo_id,
+            m=f"trocado por outro celular da mesma pessoa (por {aprovado_por.strip()[:80]})")]
+        if substituidos:
+            logger.info("Ponto: celular(es) %s bloqueado(s) — a pessoa %s passou a usar o %s",
+                        substituidos, colaborador_id, dispositivo_id)
     logger.info("Ponto: aparelho %s APROVADO como %s por %s", d["device_uuid"], perfil_ok,
                 aprovado_por)
-    return detalhado(conn, dispositivo_id)
+    return {**detalhado(conn, dispositivo_id), "substituidos": substituidos}
 
 
 def bloquear(conn: Connection, dispositivo_id: int, *, motivo: str, por: str) -> dict:

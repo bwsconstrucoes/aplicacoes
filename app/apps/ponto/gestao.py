@@ -1507,7 +1507,7 @@ def ponto_api_dispositivo_aprovar(dispositivo_id: int):
         a = dispositivos.aprovar(conn, dispositivo_id, perfil=d.get("perfil", "COMPARTILHADO"),
                                  aprovado_por=quem.nome, colaborador_id=colaborador_id,
                                  descricao=d.get("descricao"), autorizados=autorizados, obras=obras)
-    return _ok(dispositivo=dispositivos.para_json(a))
+    return _ok(dispositivo=dispositivos.para_json(a), substituidos=len(a.get("substituidos") or []))
 
 
 @bp.route("/erp/api/ponto/dispositivos/<int:dispositivo_id>/bloquear", methods=["POST"])
