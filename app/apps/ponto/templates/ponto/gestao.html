@@ -891,14 +891,17 @@ const linkEspelho = (id, competencia) =>
   + (competencia ? `&competencia=${encodeURIComponent(competencia)}` : "");
 
 // --- Aparelhos: aprovar e bloquear (usados em Validações e em Configuração).
-async function renovarGrupo(id, depois) {
-  const r = await perguntar({titulo: "Renovar a permissão de grupo",
-    aviso: "O grupo é passageiro: renove só se a situação continua (no máximo 90 dias a partir de hoje).",
-    campos: [{nome: "valido_ate", rotulo: "Vale até", tipo: "date", valor: somarDias(hojeISO(), 15), largura: 1, obrigatorio: true}],
+async function renovarGrupo(id, depois, perfil) {
+  const grupo = perfil === "LISTA";
+  const r = await perguntar({titulo: grupo ? "Renovar a permissão de grupo" : "Renovar a liberação do aparelho",
+    aviso: grupo ? "O grupo é passageiro: renove só se a situação continua (no máximo 90 dias a partir de hoje)."
+                 : "Todo aparelho se renova a cada 90 dias. Confira que ele ainda é usado e está com quem deve.",
+    campos: [{nome: "valido_ate", rotulo: "Liberado até", tipo: "date", valor: somarDias(hojeISO(), grupo ? 15 : 90),
+              largura: 1, obrigatorio: true}],
     textoOk: "Renovar"});
   if (!r) return;
   try { await postar(`/erp/api/ponto/dispositivos/${id}/renovar`, {valido_ate: r.valido_ate});
-        aviso("mensagem", "Permissão de grupo renovada.", "ok"); if (depois) await depois(); }
+        aviso("mensagem", "Liberação renovada.", "ok"); if (depois) await depois(); }
   catch (e) { falhou(e); }
 }
 
@@ -935,9 +938,9 @@ async function aprovarAparelho(a, depois) {
        largura: 3, dica: jaAprovado && a.perfil === "LISTA"
          ? `Hoje são ${a.qtd_autorizados} pessoa(s). Deixe vazio para manter o grupo; preencha para trocá-lo inteiro.`
          : "Só para \"grupo de pessoas\": os CPFs separados por vírgula."},
-      {nome: "valido_ate", rotulo: "Grupo vale até", tipo: "date", largura: 1,
-       valor: a.valido_ate || somarDias(hojeISO(), 15),
-       dica: "Só para \"grupo de pessoas\": é passageiro (equipe que voltou a uma obra) — no máximo 90 dias. Vencido, para de bater."},
+      {nome: "valido_ate", rotulo: "Liberado até", tipo: "date", largura: 1,
+       valor: a.valido_ate && a.valido_ate >= hojeISO() ? a.valido_ate : "",
+       dica: "Todo aparelho vence e se renova: vazio = 90 dias (o de grupo, 15 — é passageiro). No máximo 90. Vencido, para de bater."},
       {nome: "obras", rotulo: "Obras onde vale", largura: 3, exemplo: "deixe vazio para todas",
        valor: jaAprovado && a.obras ? a.obras : "",
        dica: "Códigos das obras separados por vírgula. Para o tablet da obra, diga a obra dele: sem GPS, a batida dele só pode cair nela."},
@@ -956,7 +959,7 @@ async function aprovarAparelho(a, depois) {
     const resp = await postar(`/erp/api/ponto/dispositivos/${a.id}/aprovar`, {
       perfil: r.perfil, cpf: r.perfil === "INDIVIDUAL" ? r.cpf : "",
       autorizados: r.perfil === "LISTA" ? listaDeTexto(r.autorizados) : [], manter_grupo: manterGrupo,
-      valido_ate: r.perfil === "LISTA" ? (r.valido_ate || null) : null,
+      valido_ate: r.valido_ate || null,
       obras: listaDeTexto(r.obras), descricao: r.descricao});
     aviso("mensagem", (jaAprovado ? "Aparelho alterado." : "Aparelho aprovado. Ele já pode bater ponto.")
       + (resp.substituidos ? " O celular que essa pessoa usava antes foi bloqueado: vale um celular por pessoa." : ""), "ok");
@@ -1412,8 +1415,8 @@ let VAL = null, ESPERA_BUSCA = null, PEDIDOS_COMPLETOS = null;
 const TIPOS_VAL = {AJUSTE_BATIDA: "Ajuste de batida", ATESTADO: "Atestado", LICENCA: "Licença",
   COMPENSACAO: "Compensação", FOLGA_BANCO: "Folga do banco", FERIAS: "Férias",
   AFASTAMENTO: "Afastamento", ABONO: "Abono", BATIDA_EM_ANALISE: "Batida em conferência",
-  MOSAICO: "Mosaico", APARELHO: "Aparelho", GRUPO: "Grupo a rever"};
-const SELO_CATEGORIA = {PEDIDO: "pago", BATIDA: "aguardando", MOSAICO: "outro", APARELHO: "outro", GRUPO: "aguardando"};
+  MOSAICO: "Mosaico", APARELHO: "Aparelho", RENOVAR: "Aparelho a renovar"};
+const SELO_CATEGORIA = {PEDIDO: "pago", BATIDA: "aguardando", MOSAICO: "outro", APARELHO: "outro", RENOVAR: "aguardando"};
 const doUrl = nome => new URLSearchParams(location.search).get(nome);
 const chaveDoItem = i => `${i.categoria}:${i.id}`;
 const emLote = i => i.pode_decidir && (i.categoria === "PEDIDO" || i.categoria === "BATIDA");
@@ -1544,10 +1547,11 @@ function acoesDoItem(i) {
     }
   } else if (i.categoria === "MOSAICO") {
     a.push(`<a class="btn ${i.pode_decidir ? "" : "secundario"}" style="text-decoration:none" href="${escapar(i.abrir_em)}">Abrir mosaico</a>`);
-  } else if (i.categoria === "GRUPO") {
-    a.push(`<button class="btn ${i.sugestao === "CANCELAR" ? "" : "secundario"}" type="button" data-acao="grupo-cancelar" data-item="${k}">Cancelar a permissão</button>`);
-    a.push(`<button class="btn secundario" type="button" data-acao="grupo-renovar" data-item="${k}">Renovar</button>`);
-    a.push(`<button class="link-btn" type="button" data-acao="grupo-tirar" data-item="${k}">tirar quem não usa</button>`);
+  } else if (i.categoria === "RENOVAR") {
+    // Todo aparelho vence (06/10/2026): renovar para continuar batendo, ou desativar de vez.
+    a.push(`<button class="btn ${i.sugestao === "DESATIVAR" ? "secundario" : ""}" type="button" data-acao="grupo-renovar" data-item="${k}">Renovar</button>`);
+    a.push(`<button class="btn ${i.sugestao === "DESATIVAR" ? "" : "secundario"}" type="button" data-acao="grupo-cancelar" data-item="${k}">Desativar</button>`);
+    if (i.perfil === "LISTA") a.push(`<button class="link-btn" type="button" data-acao="grupo-tirar" data-item="${k}">tirar quem não usa</button>`);
   } else if (i.categoria === "APARELHO" && i.pode_decidir) {
     a.push(`<button class="btn" type="button" data-acao="aparelho" data-item="${k}">Aprovar aparelho</button>`);
     a.push(`<button class="link-btn" type="button" data-acao="bloquear" data-item="${k}">bloquear</button>`);
@@ -1598,7 +1602,7 @@ function desenharValidacoes() {
     else if (acao === "aparelho") aprovarAparelho({id: i.id, descricao: i.descricao, codigo: i.codigo, dono: i.dono}, carregarValidacoes);
     else if (acao === "bloquear") bloquearAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
     else if (acao === "grupo-cancelar") bloquearAparelho({id: i.id, descricao: i.detalhe}, carregarValidacoes);
-    else if (acao === "grupo-renovar") renovarGrupo(i.id, carregarValidacoes);
+    else if (acao === "grupo-renovar") renovarGrupo(i.id, carregarValidacoes, i.perfil);
     else if (acao === "grupo-tirar") tirarSemUso(i.id, carregarValidacoes);
   }));
   els("v-corpo").querySelectorAll("[data-marcar]").forEach(c => c.addEventListener("change", () => {
@@ -3028,17 +3032,21 @@ async function carregarAparelhos() {
       <td>${seloAparelho(a.status)}${a.motivo_bloqueio ? `<small>${escapar(a.motivo_bloqueio)}</small>` : ""}</td>
       <td>${a.status === "PENDENTE" ? `<span class="suave">—</span>` : escapar(rotuloPerfil(a.perfil))}</td>
       <td>${a.dono ? `${escapar(a.dono.nome)}<small>${escapar(documento(a.dono.cpf))}</small>`
-          : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)${a.valido_ate ? `<small>vale até ${dataBR(a.valido_ate)}</small>` : ""}` : `<span class="suave">—</span>`}</td>
+          : a.perfil === "LISTA" ? `${a.qtd_autorizados} pessoa(s)` : `<span class="suave">—</span>`}
+          ${a.valido_ate && a.status === "APROVADO" ? `<small style="${a.valido_ate < hojeISO() ? "color:var(--vermelho); font-weight:700" : ""}">liberado até ${dataBR(a.valido_ate)}</small>` : ""}</td>
       <td class="dados">${a.obras ? escapar(a.obras) : `<span class="suave">todas</span>`}</td>
       <td class="dados">${escapar(quando(a.ultimo_uso_em))}</td>
       <td><div class="acoes">${a.status === "PENDENTE" ? `<button class="btn" type="button" data-aprovar-ap="${a.id}">Aprovar</button>`
           : `<button class="btn secundario" type="button" data-aprovar-ap="${a.id}">${a.status === "BLOQUEADO" ? "Reativar" : "Alterar"}</button>`}
+        ${a.status === "APROVADO" ? `<button class="link-btn" type="button" data-renovar-ap="${a.id}">renovar</button>` : ""}
         ${a.status !== "BLOQUEADO" ? `<button class="link-btn" type="button" data-bloquear-ap="${a.id}">bloquear</button>` : ""}</div></td>
     </tr>`).join("")}</tbody></table>`
     : `<div class="cartao-dica">Nenhum aparelho registrado ainda. O primeiro aparece quando alguém abrir o app do colaborador.</div>`;
   const achar = id => lista.find(a => a.id === Number(id));
   els("c-aparelhos").querySelectorAll("[data-aprovar-ap]").forEach(b =>
     b.addEventListener("click", () => aprovarAparelho(achar(b.dataset.aprovarAp), carregarAparelhos)));
+  els("c-aparelhos").querySelectorAll("[data-renovar-ap]").forEach(b =>
+    b.addEventListener("click", () => renovarGrupo(Number(b.dataset.renovarAp), carregarAparelhos, achar(b.dataset.renovarAp).perfil)));
   els("c-aparelhos").querySelectorAll("[data-bloquear-ap]").forEach(b =>
     b.addEventListener("click", () => bloquearAparelho(achar(b.dataset.bloquearAp), carregarAparelhos)));
 }

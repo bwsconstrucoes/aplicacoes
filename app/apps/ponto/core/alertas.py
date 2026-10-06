@@ -41,7 +41,7 @@ GRAVIDADE = {
     "FALTAS_SEGUIDAS": "URGENTE", "ATRASO_RECORRENTE": "ATENCAO",
     "FORA_DA_CERCA_REPETIDO": "ATENCAO", "DOIS_LUGARES": "URGENTE",
     "PEDIDO_PARADO": "ATENCAO", "BATIDA_EM_ANALISE_PARADA": "ATENCAO",
-    "APARELHO_PENDENTE": "INFO", "BANCO_VENCENDO": "ATENCAO", "BANCO_NEGATIVO": "ATENCAO",
+    "APARELHO_PENDENTE": "INFO", "APARELHO_VENCENDO": "ATENCAO", "BANCO_VENCENDO": "ATENCAO", "BANCO_NEGATIVO": "ATENCAO",
     # Sinais de fraude e de foto (migração 003)
     "SEM_FOTO": "ATENCAO", "FOTO_ESCURA": "ATENCAO", "FOTO_REPETIDA": "URGENTE",
     "SEQUENCIA_RAPIDA": "ATENCAO", "QR_ANTIGO_USADO": "ATENCAO", "TENTATIVAS_DE_CPF": "ATENCAO",
@@ -57,6 +57,7 @@ ROTULO = {
     "ATRASO_RECORRENTE": "Atraso que se repete", "FORA_DA_CERCA_REPETIDO": "Fora da cerca várias vezes",
     "DOIS_LUGARES": "Dois lugares ao mesmo tempo", "PEDIDO_PARADO": "Pedido esperando decisão",
     "BATIDA_EM_ANALISE_PARADA": "Batida em análise esperando", "APARELHO_PENDENTE": "Aparelho esperando aprovação",
+    "APARELHO_VENCENDO": "Aparelho com a liberação vencendo",
     "BANCO_VENCENDO": "Banco de horas vencendo", "BANCO_NEGATIVO": "Banco de horas negativo",
     "SEM_FOTO": "Batida sem foto", "FOTO_ESCURA": "Foto escura ou sem rosto",
     "FOTO_REPETIDA": "A mesma foto em batidas diferentes",
@@ -293,6 +294,21 @@ def _parados(conn: Connection, vistos: set) -> Counter:
         _registrar(conn, vistos, chave=f"APARELHO_PENDENTE:{d['id']}", codigo="APARELHO_PENDENTE",
                    mensagem=f"Aparelho “{d['descricao'] or 'sem nome'}” esperando aprovação")
         contagem["APARELHO_PENDENTE"] += 1
+    # Todo aparelho vence (06/10/2026): o RH vê "vai parar de bater em X dias"
+    # e decide renovar ou desativar — um alerta por prazo de cada aparelho.
+    from . import dispositivos
+    for a in dispositivos.aparelhos_a_rever(conn):
+        if not a["valido_ate"]:
+            continue
+        venc = dt.date.fromisoformat(a["valido_ate"])
+        if venc > horario.hoje() + dt.timedelta(days=dispositivos.dias_de_aviso(a["perfil"])):
+            continue
+        dono = f" de {a['dono']}" if a["dono"] else ""
+        _registrar(conn, vistos, chave=f"APARELHO_VENCENDO:{a['id']}:{a['valido_ate']}", codigo="APARELHO_VENCENDO",
+                   mensagem=(f"Aparelho “{a['descricao']}”{dono} (código {a['codigo']}): "
+                             + ("a liberação venceu" if venc < horario.hoje() else "a liberação vence")
+                             + f" em {venc:%d/%m/%Y} — renove ou desative em Validações"))
+        contagem["APARELHO_VENCENDO"] += 1
     return contagem
 
 

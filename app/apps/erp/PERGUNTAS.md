@@ -332,8 +332,10 @@ dizer "tem batida"; presença, horas e faltas são regra da fase 3.
   EXCEÇÕES; quem não está nela bate só no aparelho da obra e não tem banco)
 - Quais celulares tentaram bater sem ser exceção? (recusas "celular próprio sem
   exceção cadastrada")
-- Quais aparelhos de grupo estão vencidos, vencendo ou sem uso? Quem está num
-  grupo e não bate mais nele? (Validações › "Aparelho de grupo a rever")
+- Quais aparelhos param de bater nos próximos 15 dias? Quais já pararam por
+  liberação vencida? Quais estão sem batida há 30 dias? (todo aparelho se renova
+  a cada 90 dias; o de grupo, 15) — Validações › "Aparelho a renovar ou desativar"
+- Quem está num grupo e não bate mais nele?
 - Quantas licenças de casamento/luto/doação de sangue houve no ano? Quem já usou
   a doação de sangue nos últimos 12 meses? ⚠️ ("no ano" = últimos 12 meses para o
   limite da lei; "ano civil" é outra conta)

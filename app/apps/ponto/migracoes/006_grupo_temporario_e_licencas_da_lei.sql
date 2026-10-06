@@ -10,11 +10,14 @@
 --     facilitar a inclusão."
 -- ===========================================================================
 
--- A permissão de grupo vence. Aparelho de grupo já aprovado ganha 15 dias a
--- partir de hoje, para ninguém ficar sem bater no dia da atualização.
+-- TODO APARELHO VENCE (pedido do dono, 06/10/2026: "renovar a licença de quem
+-- bate a cada 90 dias, inclusive do celular da empresa"). O de grupo vale 15
+-- dias de início; os outros, 90. Quem já está aprovado ganha o prazo a partir
+-- de hoje, para ninguém ficar sem bater no dia da atualização.
 ALTER TABLE ponto.dispositivos ADD COLUMN IF NOT EXISTS valido_ate DATE;
-UPDATE ponto.dispositivos SET valido_ate = (now() AT TIME ZONE 'America/Fortaleza')::date + 15
- WHERE perfil = 'LISTA' AND valido_ate IS NULL;
+UPDATE ponto.dispositivos SET valido_ate = (now() AT TIME ZONE 'America/Fortaleza')::date
+                                           + CASE WHEN perfil = 'LISTA' THEN 15 ELSE 90 END
+ WHERE status = 'APROVADO' AND valido_ate IS NULL;
 
 -- O tipo de licença do pedido (casamento, luto…), da lista abaixo.
 ALTER TABLE ponto.ocorrencias ADD COLUMN IF NOT EXISTS subtipo TEXT;

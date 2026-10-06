@@ -96,6 +96,8 @@
   .kq-cobre .contagem { font-size:80px; font-weight:900; line-height:1; }
   .kq-cobre.ok { background:rgba(27,127,59,.94); } .kq-cobre.ambar { background:rgba(166,91,0,.94); }
   .kq-cobre.erro { background:rgba(179,38,30,.94); }
+  .kq-vencimento { background:#A65B00; color:#fff; text-align:center; font-weight:700; font-size:17px; padding:8px; }
+  .kq-vencimento.vencido { background:#B3261E; }
   .kq-form { position:fixed; inset:0; z-index:20; overflow:auto; background:#F4F6F9; color:#0A1B2E; padding:18px; }
   .kq-form .caixa { max-width:640px; margin:0 auto; background:#fff; border-radius:14px; padding:18px; }
   .kq-form h2 { margin:0 0 4px; font-size:24px; } .kq-form label { display:block; margin-top:12px; font-weight:700; }
@@ -166,6 +168,7 @@
       <select id="t-obra" aria-label="Obra"></select>
       <div class="kq-relogio" id="t-relogio">--:--</div>
     </div>
+    <div class="kq-vencimento oculto" id="t-vencimento"></div>
     <div class="kq-corpo">
       <div class="kq-camera">
         <video id="t-video" autoplay muted playsinline></video>
@@ -629,6 +632,11 @@ async function carregarInicio() {
     podeBater = false;
   } else if (APARELHO.status === "BLOQUEADO") {
     avisoAparelho = `<div class="aviso erro">Este celular foi bloqueado para bater ponto. Fale com o DP.</div>`; podeBater = false;
+  } else if (APARELHO.vencimento && APARELHO.vencimento.vencido) {
+    avisoAparelho = `<div class="aviso erro">A liberação deste celular venceu em ${dataBR(APARELHO.vencimento.valido_ate)}: ele parou de bater. Peça a renovação ao RH.</div>`;
+    podeBater = false;
+  } else if (APARELHO.vencimento && APARELHO.vencimento.avisar) {
+    avisoAparelho = `<div class="aviso ambar">Este celular para de bater em ${APARELHO.vencimento.dias} dia(s), em ${dataBR(APARELHO.vencimento.valido_ate)}. Peça a renovação ao RH.</div>`;
   }
   $("aviso-aparelho").innerHTML = avisoAparelho;
   $("btn-bater").disabled = !podeBater; $("btn-sem-foto").disabled = !podeBater;
@@ -923,6 +931,18 @@ function cpfComMascara(d) {
   return d.replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 }
 
+// Todo aparelho vence (06/10/2026): quem está na frente do tablet vê que ele
+// vai parar de bater, para avisar o RH a tempo.
+function mostrarVencimentoDoTablet() {
+  const faixa = $("t-vencimento"), v = APARELHO && APARELHO.vencimento;
+  if (!v || !v.avisar) { faixa.classList.add("oculto"); return; }
+  faixa.classList.remove("oculto");
+  faixa.classList.toggle("vencido", !!v.vencido);
+  faixa.textContent = v.vencido
+    ? `A liberação deste aparelho venceu em ${dataBR(v.valido_ate)}: ele parou de bater. Avise o RH.`
+    : `Este aparelho para de bater em ${v.dias} dia(s), em ${dataBR(v.valido_ate)}. Avise o RH para renovar.`;
+}
+
 async function abrirTablet() {
   mostrar("tablet");
   $("titulo").textContent = "BWS Ponto";
@@ -932,10 +952,12 @@ async function abrirTablet() {
   if (guardada && obras.some(o => o.codigo === guardada)) $("t-obra").value = guardada;
   $("t-obra").onchange = () => { try { localStorage.setItem("ponto_tablet_obra", $("t-obra").value); } catch (e) {} };
   atualizarRelogio(); TB.relogio = setInterval(atualizarRelogio, 1000);
+  mostrarVencimentoDoTablet();
   // Pulso a cada 5 min: o servidor confere se o aparelho continua aprovado.
   TB.pulso = setInterval(async () => {
     await estadoDoAparelho();
     if (!APARELHO || APARELHO.status !== "APROVADO") { pararTablet(); location.reload(); }
+    mostrarVencimentoDoTablet();
   }, 5 * 60 * 1000);
   manterTelaAcesa();
   atualizarLocalTablet();

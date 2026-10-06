@@ -133,6 +133,23 @@ Pedidos do dono no mesmo dia (todos feitos, migração **006**):
 8. Um celular pessoal por pessoa (aprovar o novo bloqueia o anterior);
    "Alterar"/"Reativar" aparelho; CPF do dono já preenchido.
 
+9. **"Renovar a licença de quem bate a cada 90 dias, inclusive do celular da
+   empresa"**, com o aviso para quem tem o aparelho e para o RH. TODO aparelho
+   ganha `valido_ate` (90 dias; o de grupo, 15) e se renova em Validações
+   ("Aparelho a renovar ou desativar"), em Configuração › Aparelhos ("renovar")
+   ou no alerta "Aparelho com a liberação vencendo" (vai no resumo diário). O
+   próprio aparelho mostra a faixa "para de bater em X dias" a partir de 15 dias
+   (o de grupo, 3); vencido, para de bater. Celular ou tablet sem batida há 30
+   dias aparece com a sugestão de desativar. A migração 006 dá 90 dias a quem já
+   está aprovado.
+
+**Em aberto, decisão do dono — leitura das fotos:** a AWS Rekognition compara a
+foto da batida com a cadastral (US$ 0,001 por imagem no primeiro milhão do mês,
+preço público consultado em 06/10/2026): ~1.600 fotos/dia ≈ 42 mil/mês ≈ US$ 42.
+Precisa de conta AWS e chave nova (o dono cria; nunca no chat), da biblioteca
+`boto3` (dependência nova) e de base legal/aviso para dado biométrico (LGPD
+art. 11). Proposta: piloto numa obra com teto de gasto.
+
 **Testes:** `tests/test_ponto_regras_0610_banco.py`. A limpeza dos testes não
 apaga mais `tipos_licenca` (é dado de migração).
 

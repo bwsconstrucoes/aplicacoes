@@ -91,10 +91,10 @@ def test_grupo_e_temporario_e_o_sistema_sugere_cancelar(app, mundo, banco):
     with db.conexao() as conn:
         a = dispositivos.por_id(conn, g)
         assert "venceu" in dispositivos.autorizado_para(a, mundo["joao"], mundo["obra_a"], {mundo["joao"]}, set())
-    item = next(i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["tipo"] == "GRUPO")
-    assert item["sugestao"] == "CANCELAR" and "venceu" in item["detalhe"]
+    item = next(i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["tipo"] == "RENOVAR")
+    assert "venceu" in item["detalhe"]
     assert dp.post(f"/erp/api/ponto/dispositivos/{g}/renovar", json={}).status_code == 200
-    assert not [i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["tipo"] == "GRUPO"]
+    assert not [i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["tipo"] == "RENOVAR"]
 
 
 def test_licencas_da_lei_conferem_dias_documento_e_limite(app, mundo):
@@ -193,3 +193,39 @@ def test_fila_rapida_no_tablet_vai_para_conferencia_na_hora(app, mundo, banco):
                               "(SELECT id FROM colaboradores WHERE cpf = ANY(:c))"), {"c": cpfs[1:]})
             conn.execute(text("DELETE FROM colaboradores WHERE cpf = ANY(:c)"), {"c": cpfs[1:]})
             conn.commit()
+
+
+
+def test_todo_aparelho_vence_em_90_dias_e_avisa_antes(app, mundo, banco):
+    """Pedido do dono, 06/10/2026: "renovar a licença de quem bate a cada 90 dias,
+    inclusive do celular da empresa", com o aviso de que vai parar para quem tem
+    o aparelho e para o RH."""
+    from app.apps.ponto import db, horario
+    from app.apps.ponto.core import alertas, dispositivos
+    dp = como(app, mundo["dp"])
+    tab, h = _aparelho(app, "tablet-que-vence-em-90-dias-0123")
+    t = _id_do_aparelho(dp, "tablet-que-vence-em-90-dias-0123")
+    j = dp.post(f"/erp/api/ponto/dispositivos/{t}/aprovar",
+                json={"perfil": "COMPARTILHADO", "obras": ["PG-A"]}).get_json()["dispositivo"]
+    assert j["valido_ate"] == (horario.hoje() + dt.timedelta(days=90)).isoformat()
+    assert tab.get("/ponto/app/api/aparelho", headers=h).get_json()["aparelho"]["vencimento"]["avisar"] is False
+    with banco.connect() as conn:                   # faltam 10 dias
+        conn.execute(text("UPDATE ponto.dispositivos SET valido_ate = :v WHERE id = :t"),
+                     {"v": horario.hoje() + dt.timedelta(days=10), "t": t})
+        conn.commit()
+    v = tab.get("/ponto/app/api/aparelho", headers=h).get_json()["aparelho"]["vencimento"]
+    assert v["avisar"] is True and v["dias"] == 10 and v["vencido"] is False
+    item = next(i for i in dp.get("/erp/api/ponto/validacoes").get_json()["itens"] if i["tipo"] == "RENOVAR")
+    assert "10 dia(s)" in item["detalhe"] and item["sugestao"] == "RENOVAR"
+    with db.conexao() as conn:
+        alertas.gerar(conn)
+        assert "APARELHO_VENCENDO" in {a["codigo"] for a in alertas.listar(conn)}
+    with banco.connect() as conn:                   # venceu
+        conn.execute(text("UPDATE ponto.dispositivos SET valido_ate = :v WHERE id = :t"),
+                     {"v": horario.hoje() - dt.timedelta(days=1), "t": t})
+        conn.commit()
+    r = tab.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO}, headers=h)
+    assert r.status_code == 403 and "venceu" in r.get_json()["erro"]
+    assert dp.post(f"/erp/api/ponto/dispositivos/{t}/renovar", json={}).get_json()["dispositivo"]["valido_ate"] == \
+        (horario.hoje() + dt.timedelta(days=90)).isoformat()
+    assert tab.post("/ponto/app/api/tablet/identificar", json={"cpf": CPF_JOAO}, headers=h).status_code == 200

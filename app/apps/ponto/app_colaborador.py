@@ -197,6 +197,7 @@ def app_api_aparelho():
         lista_obras = [cadastros.obra_para_json(o) for o in cadastros.listar_obras(conn)
                        if not obras or o["id"] in obras]
     return _ok(aparelho={"status": a["status"], "perfil": a["perfil"], "descricao": a["descricao"],
+                         "vencimento": dispositivos.vencimento(a) if a["status"] == "APROVADO" else None,
                          "dono": (dono["nome"].split(" ")[0] if dono else None),
                          "obras": lista_obras})
 
@@ -332,6 +333,10 @@ def _aparelho_da_obra(conn) -> dict:
         raise Recusada(f"aparelho {a['status'].lower()}")
     if a["perfil"] == "INDIVIDUAL":
         raise Recusada("este é o celular de uma pessoa, não o aparelho da obra")
+    v = dispositivos.vencimento(a)
+    if v and v["vencido"]:
+        raise Recusada(f"a liberação deste aparelho venceu em {dt.date.fromisoformat(v['valido_ate']):%d/%m/%Y} "
+                       "— peça a renovação ao RH")
     return a
 
 
