@@ -12179,6 +12179,24 @@ somente Solicitações de uma conta especifica"*.
   ele: conferir os desligados marcados na alimentação e no transporte e
   desmarcar quem não deve receber; a barra deve ficar igual ao "A pagar".
 
+#### Leva 188 — desligado NÃO recebe auxílio, nem marcado (06/10/2026)
+
+- Ele viu o aviso da 187 ("77 desligados marcados para receber") e respondeu:
+  *"nós já havíamos combinado essa regra. A princípio não aparece pra pagar"* —
+  a de 03/10, *"se ele já saiu, ele não recebe mais"*. O código tratava
+  desligado como POLÍTICA ("a última palavra é dele": marcado, recebia), e um
+  "marcar todos" salvo bastava para pôr os 77 no arquivo.
+- **Agora desligado é como cadastro incompleto:** marcação à mão não vale
+  (`_decidir`), "Salvar seleção" ignora (`salvar_selecao`), a caixinha fica
+  travada (e o "marcar todos" pula as travadas). A marcação antiga dos 77 fica
+  no banco, SEM efeito — não foi apagada (decisão: não mexer em dado; ela só
+  deixou de valer). Vale na alimentação e no transporte.
+- O aviso "Desligados marcados para receber" e o botão "Desmarcar" da 187
+  saíram (perderam o sentido). Ficou da 187: quem vai ser pago nunca some da
+  lista, e as caixinhas abrem no estado salvo.
+- **Afastado continua política** (marcado, recebe) — ele não falou de afastado.
+  **Diaristas não mudam:** lá o desligado que trabalhou recebe (02/10/2026).
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

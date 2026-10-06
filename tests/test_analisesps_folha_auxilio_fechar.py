@@ -174,19 +174,21 @@ def test_o_DESMARCADO_e_salvo_NAO_sai_no_arquivo(banco_auxilio, monkeypatch, tip
     assert [l["cpf"] for l in fp.linhas_para_pagar(2026, 9, "fim_de_mes", [tipo])] == [ATIVO]
 
 
-def test_DESLIGADO_marcado_a_mao_APARECE_na_lista(banco_auxilio):
-    """Os 77 de 06/10/2026: desligados marcados à mão para receber ficavam
-    escondidos (a lista esconde desligados) e saíam no arquivo. Quem vai ser
-    pago nunca fica escondido; o desligado que não vai, continua escondido."""
-    from werkzeug.datastructures import MultiDict
-    from app.apps.analisesps import folha_auxilio as fx, folha_lista
+def test_DESLIGADO_marcado_a_mao_NAO_vai_no_arquivo(banco_auxilio, monkeypatch):
+    """Os 77 de 06/10/2026: desligados marcados à mão (um "marcar todos" salvo)
+    ficavam escondidos da lista e saíam no arquivo. Agora a marcação não vale:
+    desligado não recebe auxílio — e salvar a seleção não grava a marcação."""
+    from app.apps.analisesps import folha_auxilio as fx, folha_pagamento as fp
+    from app.apps.analisesps.db import conexao
     fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, SAIU, obra="CREPEOLINDA")
-
-    def na_lista():
-        calculado = fx.calcular(fx.ALIMENTACAO, 2026, 9)
-        return {p["cpf"] for p in folha_lista.filtrar(
-            calculado["pessoas"], MultiDict(), campo_da_obra="obra",
-            escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)["pessoas"]}
-    assert SAIU not in na_lista(), "desligado sem marcação: escondido"
-    fx.salvar_selecao(fx.ALIMENTACAO, 2026, 9, [{"cpf": SAIU, "pagar": True}], quem="X")
-    assert SAIU in na_lista(), "marcado para receber: aparece"
+    # A marcação antiga, gravada antes da regra (direto, como estava no banco).
+    fx.gravar_ajuste(fx.ALIMENTACAO, 2026, 9, SAIU, pagar=True, quem="ANTES")
+    calculado = fx.calcular(fx.ALIMENTACAO, 2026, 9)
+    saiu = next(p for p in calculado["pessoas"] if p["cpf"] == SAIU)
+    assert not saiu["pagar"] and calculado["quantos_a_pagar"] == 1
+    linhas = fp.resumo_direto(fx.ALIMENTACAO, {"ano": 2026, "mes": 9,
+                                               "pagamento": "fim_de_mes"}, "beevale")["linhas"]
+    assert SAIU not in {l["cpf"] for l in linhas}
+    # E pela tela também não marca.
+    r = fx.salvar_selecao(fx.ALIMENTACAO, 2026, 9, [{"cpf": SAIU, "pagar": True}], quem="X")
+    assert SAIU in r["ignorados"]
