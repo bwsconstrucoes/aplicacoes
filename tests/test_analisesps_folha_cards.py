@@ -131,9 +131,23 @@ def test_a_SP_tem_os_campos_do_padrao_BeeVale_com_PIX_e_ATUALIZAR_CHAVE():
 def test_a_DESCRICAO_diz_competencia_obras_valores_e_links():
     texto = _sp()["descricao"]
     assert "Folha" in texto and "competência 09/2026" in texto
-    assert "Conta de origem: 50024" in texto and "BeeVale" in texto
+    assert "BeeVale" in texto
     assert "- CREPEOLINDA: R$ 1.000,00" in texto and "- CREPEAREIAS: R$ 500,00" in texto
     assert "https://drive/pag1" in texto and "https://drive/ana" in texto
+
+
+def test_a_PRIMEIRA_LINHA_e_a_conta_de_saida_no_padrao_que_e_lido():
+    """O dono, 06/10/2026: "Conta Origem: 92945-8" na primeira linha, exatamente
+    assim — é lida por máquina para trocar a conta. Vale nas duas descrições."""
+    assert _sp()["descricao"].split("\n")[0] == "Conta Origem: 50024"
+    dc = fcd.descricao_da_dc({"conta": "92945-8", "valor": D("10.00"), "pessoas": 1,
+                              "obras": [], "cards_de_origem": ["1"]}, "")
+    assert dc.split("\n")[:2] == ["Conta Origem: 92945-8", "Despesas com colaboradores"]
+    assert dc.count("Conta Origem") == 1
+    # sem conta, a linha não vai vazia (o lançamento já é barrado por isso)
+    sem = fcd.descricao_da_dc({"conta": "", "valor": D("10.00"), "pessoas": 1,
+                               "obras": [], "cards_de_origem": []}, "")
+    assert not sem.startswith("Conta Origem")
 
 
 def test_campo_de_fase_vai_DEPOIS_da_criacao():
