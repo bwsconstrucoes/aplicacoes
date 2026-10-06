@@ -12018,6 +12018,17 @@ Ordenados → Diárias.
   é lembrada já na conferência.
 - Ele perguntou se dá para importar vários extratos de uma vez: sim, a caixa
   "Trazer extrato" aceita vários OFX juntos (já aceitava).
+- **Diagnóstico pedido por ele ("tenta entender por que eles não batem"):** três
+  PIX de abril/2026 apareciam como "o que entraria" e, ao mesmo tempo, como
+  "estão aqui e não vêm neste extrato". As linhas guardadas (histórico no
+  formato da planilha antiga, "PAGAMENTO PIX 33231372000188 BR-SUL") têm os
+  VALORES GIRADOS entre as três datas (BR-SUL 300.000 × 22.000 no banco;
+  MATHEUS 22.000 × 3.500; e no dia 27 outro favorecido, JOSE EDVALDO 3.500 ×
+  BAZZE 300.000). Erro de digitação na planilha antiga — não do leitor. A
+  identidade exige data + valor + histórico, e casar só pelo dia esconderia
+  justamente isso. Recomendado a ele: apagar as três antigas (× da linha) e
+  gravar as do extrato. Oferecido, não feito: um "trocar pela do extrato" que
+  preserve conciliado e observação.
 
 #### ⚠️ Pendente AGORA
 
