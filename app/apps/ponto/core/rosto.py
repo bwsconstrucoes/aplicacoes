@@ -223,11 +223,12 @@ def comparar(cliente, cadastral: bytes, batida: bytes, minima: int) -> tuple[str
 def _pendentes(conn: Connection, cfg: dict, limite: int) -> list[dict]:
     linhas = db.todos(conn, """
         SELECT m.id, m.colaborador_id, m.obra_id, m.foto_id, m.status, m.timestamp_servidor, m.motivo_analise,
-               m.data_referencia, pc.foto_cadastral_id,
+               m.data_referencia, pc.foto_cadastral_id, fo.luminancia, fo.contraste,
                (SELECT count(*) FROM ponto.marcacoes m2 WHERE m2.colaborador_id = m.colaborador_id
                   AND m2.data_referencia = m.data_referencia AND m2.timestamp_servidor < m.timestamp_servidor) AS antes
           FROM ponto.marcacoes m
           LEFT JOIN ponto.colaborador_config pc ON pc.colaborador_id = m.colaborador_id
+          LEFT JOIN ponto.fotos fo ON fo.id = m.foto_id
          WHERE m.foto_id IS NOT NULL AND m.status <> 'REJEITADA'
            AND m.timestamp_servidor > now() - make_interval(days => :d)
            AND NOT EXISTS (SELECT 1 FROM ponto.conferencias_rosto r WHERE r.marcacao_id = m.id)
@@ -274,7 +275,18 @@ def conferir(conn: Connection, *, cliente=None, limite: int = LOTE) -> dict:
         cid = int(m["colaborador_id"])
         m["foto_cadastral_id"] = cadastrais.get(cid) or m["foto_cadastral_id"]
         if not m["foto_cadastral_id"]:
-            # A primeira foto boa da pessoa vira a cadastral (sem custo).
+            # Sem foto cadastral, as fotos das batidas servem (pergunta do dono,
+            # 06/10/2026: "podemos usar as fotos que vêm sendo batidas?"). Vira a
+            # cadastral a PRIMEIRA FOTO BOA: batida aceita (não em conferência) e
+            # foto que deixa ver (nem escura, nem lisa). As seguintes já são
+            # comparadas com ela — se ela própria estiver errada, as outras não
+            # conferem e a pessoa cai em conferência, onde o RH troca a foto.
+            ruim = mosaico.sinais_da_foto(m.get("luminancia"), m.get("contraste"))
+            if m["status"] != "VALIDA" or ruim:
+                _gravar(conn, m["id"], "SEM_CADASTRAL", None, 0,
+                        "sem foto cadastral; esta não serve para ser a cadastral"
+                        + (f" (foto {', '.join(ruim)})" if ruim else " (batida em conferência)"))
+                continue
             mosaico.definir_foto_cadastral(conn, cid, int(m["id"]))
             cadastrais[cid] = int(m["foto_id"])
             _gravar(conn, m["id"], "VIROU_CADASTRAL", None, 0, "foto cadastral automática — confira no mosaico")
