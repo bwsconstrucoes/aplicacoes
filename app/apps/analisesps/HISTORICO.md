@@ -12152,6 +12152,30 @@ somente Solicitações de uma conta especifica"*.
   8.538 verdes). Falta ele conferir: o próximo arquivo de alimentação sai com o
   total da barra; o PDF da próxima DC lançada traz o número da SP.
 
+#### Leva 187 — a causa de verdade: desligados marcados à mão, ESCONDIDOS (06/10/2026)
+
+- Depois da 186 a barra dele mostrou: *"Selecionados para pagamento: 179 R$
+  43.229,99 — inclui 77 marcado(s) fora do filtro (R$ 17.779,73)"*, sem filtro
+  nenhum. E: *"o que eu tô selecionando pra pagar não tá afetando o que eu gero
+  pra pagar. Revisa tanto alimentação quanto transporte."*
+- **Reproduzido com banco, nas duas verbas: o desmarcado e SALVO sai do
+  arquivo** (teste `test_o_DESMARCADO_e_salvo_NAO_sai_no_arquivo`). A conta dele
+  fecha por outro lado: 43.229,99 − 17.779,73 = 25.450,26 — os "24 mil
+  selecionados" que ele via. Os 77 escondidos é que viravam "o todo".
+- **Quem são (pelo código, não pelo dado dele):** a lista esconde por padrão
+  desligados e cadastro incompleto (`ESCONDIDAS_NOS_AUXILIOS`, 03/10 e 05/10).
+  Cadastro incompleto nunca vai pago; desligado vai SÓ se marcado à mão — o
+  caminho provável é um "marcar todos" + "Salvar seleção" de quando os
+  desligados ainda apareciam: o ajuste "pagar = sim" ficou, e a lista passou a
+  escondê-los.
+- **Conserto:** `folha_lista.filtrar` — QUEM VAI SER PAGO NUNCA FICA ESCONDIDO;
+  escondido só quem não vai receber (vale nas três folhas). E a lateral do
+  auxílio ganhou "Desligados marcados para receber" (quantos, quanto, link para
+  listá-los) com o botão "Desmarcar os N desligados" (grava pela seleção).
+- **E a diferença de 1 pessoa (R$ 220) entre barra e lateral:** suspeita de o
+  navegador devolver, ao recarregar, a marcação de antes. As caixinhas agora
+  abrem sempre no estado salvo (`defaultChecked`). Não confirmado.
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |

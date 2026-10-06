@@ -140,3 +140,53 @@ def test_A_TRAVA_E_O_ARQUIVO_gerar_de_novo_pede_confirmacao(banco_auxilio, monke
     fp.excluir_arquivos([a["id"] for a in fp.log()], quem="MARCELO")
     assert fp.resumo_direto("alimentacao", pedido, "beevale")["resumo"]["ja_gerado"] == []
     assert primeira
+
+
+@pytest.mark.parametrize("tipo", ["alimentacao", "transporte"])
+def test_o_DESMARCADO_e_salvo_NAO_sai_no_arquivo(banco_auxilio, monkeypatch, tipo):
+    """O dono, 06/10/2026: *"o que eu tô selecionando pra pagar não tá afetando o
+    que eu gero pra pagar. Revisa tanto alimentação quanto transporte."*"""
+    from app.apps.analisesps import beevale, drive, folha_auxilio as fx, folha_pagamento as fp
+    from app.apps.analisesps.db import conexao
+    OUTRO = "11144477735"
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.colaborador SET valor_transporte = 200, "
+                     " modo_transporte = 'Mensal' WHERE cpf = ?", (ATIVO,))
+        conn.execute(
+            "INSERT INTO analisesps.colaborador (cpf, nome, fase, obra_codigo, "
+            "  valor_alimentacao, modo_alimentacao, valor_transporte, modo_transporte) "
+            " VALUES (?, 'OUTRO DOIS', 'Colaboradores Ativos', 'CREPEOLINDA', 300, "
+            "  'Mês', 200, 'Mensal')", (OUTRO,))
+        conn.commit()
+    for cpf in (ATIVO, OUTRO):
+        fx.gravar_extras(tipo, 2026, 9, cpf, obra="CREPEOLINDA")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("PASTA", "teste"))
+    subidos = []
+    monkeypatch.setattr(drive, "subir_arquivo", lambda conteudo, nome, pasta, **k:
+                        subidos.append(nome) or {"id": f"d{len(subidos)}", "link": "x"})
+    assert {p["cpf"] for p in fx.calcular(tipo, 2026, 9)["pessoas"] if p["pagar"]} == {ATIVO, OUTRO}
+
+    fx.salvar_selecao(tipo, 2026, 9, [{"cpf": ATIVO, "pagar": True},
+                                      {"cpf": OUTRO, "pagar": False}], quem="MARCELO")
+    pedido = {"ano": 2026, "mes": 9, "pagamento": "fim_de_mes"}
+    assert fp.resumo_direto(tipo, pedido, "beevale")["resumo"]["pessoas"] == 1
+    fp.gerar_direto(tipo, pedido, "beevale", quem="MARCELO")
+    assert [l["cpf"] for l in fp.linhas_para_pagar(2026, 9, "fim_de_mes", [tipo])] == [ATIVO]
+
+
+def test_DESLIGADO_marcado_a_mao_APARECE_na_lista(banco_auxilio):
+    """Os 77 de 06/10/2026: desligados marcados à mão para receber ficavam
+    escondidos (a lista esconde desligados) e saíam no arquivo. Quem vai ser
+    pago nunca fica escondido; o desligado que não vai, continua escondido."""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps import folha_auxilio as fx, folha_lista
+    fx.gravar_extras(fx.ALIMENTACAO, 2026, 9, SAIU, obra="CREPEOLINDA")
+
+    def na_lista():
+        calculado = fx.calcular(fx.ALIMENTACAO, 2026, 9)
+        return {p["cpf"] for p in folha_lista.filtrar(
+            calculado["pessoas"], MultiDict(), campo_da_obra="obra",
+            escondidas=folha_lista.ESCONDIDAS_NOS_AUXILIOS)["pessoas"]}
+    assert SAIU not in na_lista(), "desligado sem marcação: escondido"
+    fx.salvar_selecao(fx.ALIMENTACAO, 2026, 9, [{"cpf": SAIU, "pagar": True}], quem="X")
+    assert SAIU in na_lista(), "marcado para receber: aparece"

@@ -130,6 +130,14 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras",
             return [o for o in valor if o]
         return [valor] if valor else []
 
+    # ⚠️ QUEM VAI SER PAGO NUNCA FICA ESCONDIDO (06/10/2026). A lista escondia,
+    # por padrão, desligados e cadastro incompleto — inclusive quem estava
+    # MARCADO para receber (o desligado marcado à mão, por exemplo). Esses saíam
+    # no arquivo sem aparecer na lista: o dono viu "inclui 77 marcados fora do
+    # filtro" sem ter filtrado nada. Escondido, só quem não vai receber.
+    def escondido(p, dele) -> set:
+        return set() if _vai(p) else (dele & escondidas)
+
     lista = []
     digitos = so_digitos(busca)
     alvo = busca.lower()
@@ -142,9 +150,9 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras",
             # situação (dono, 05/10/2026: filtrando "sem obra" para tratar quem
             # vai receber, apareciam os desligados). Ele aparece só quando a
             # própria situação dele é marcada.
-            if (dele & escondidas) - set(situacao):
+            if escondido(p, dele) - set(situacao):
                 continue
-        elif dele & escondidas:
+        elif escondido(p, dele):
             continue
         if obra and not set(obras_de(p)) & set(obra):
             continue
@@ -161,7 +169,7 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras",
     escondidos_por: dict = {}
     if not situacao:
         for p in pessoas:
-            for s_ in situacoes_da_pessoa(p) & escondidas:
+            for s_ in escondido(p, situacoes_da_pessoa(p)):
                 escondidos_por[s_] = escondidos_por.get(s_, 0) + 1
     return {
         "pessoas": lista,
@@ -170,7 +178,7 @@ def filtrar(pessoas: list, args, campo_da_obra: str = "obras",
         "filtrando": bool(busca or situacao or obra or obra_cadastro or fase),
         "contagem": contagem,
         "escondidos": sum(1 for p in pessoas
-                          if not situacao and situacoes_da_pessoa(p) & escondidas),
+                          if not situacao and escondido(p, situacoes_da_pessoa(p))),
         "escondidos_por": [(k, r, escondidos_por[k]) for k, r in SITUACOES
                            if escondidos_por.get(k)],
         "opcoes_situacao": [(k, f"{r} ({contagem.get(k, 0)})")
