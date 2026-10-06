@@ -8,7 +8,8 @@
   <div class="kpi estatico">
     <div class="kpi-rotulo">SPs no filtro</div>
     <div class="kpi-valor">{{ '{:,}'.format(resumo.quantidade)|replace(',', '.') }}</div>
-    <div class="kpi-sub">de {{ '{:,}'.format(base.quantidade)|replace(',', '.') }} na base</div>
+    <div class="kpi-sub">de {{ '{:,}'.format(base.quantidade)|replace(',', '.') }}
+      {%- if base.recorte %} na conta {{ base.recorte }}{% else %} na base{% endif %}</div>
   </div>
   <div class="kpi estatico">
     <div class="kpi-rotulo">Valor total</div>

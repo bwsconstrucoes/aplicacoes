@@ -574,7 +574,49 @@ def _condicoes(f: dict) -> tuple[list[str], list]:
             onde.append(f"{coluna} {operador} ?")
             params.append(valor)
 
+    # ⚠️ O RECORTE DE CONTA DE QUEM ESTÁ PRESO A UMA (migração 051) — por
+    # último, e aqui DENTRO, não na rota: toda pergunta sobre SPs passa por
+    # esta função, e uma tela que esquecesse de pedir o recorte mostraria as
+    # contas dos outros sem ninguém notar. Ver `auth.contas_permitidas`.
+    contas = _contas_do_recorte()
+    if contas is not None:
+        onde.append(f"trim(coalesce(conta,'')) IN ({','.join(['?'] * len(contas))})")
+        params.extend(sorted(contas))
+
     return onde, params
+
+
+def _contas_do_recorte() -> set[str] | None:
+    """As contas que a pessoa logada enxerga, ou None (todas).
+
+    Fora de uma requisição — a sincronização, as tarefas de fundo, os testes de
+    consulta — não há pessoa, e o recorte não se aplica."""
+    from flask import has_request_context
+    if not has_request_context():
+        return None
+    from . import auth
+    return auth.contas_permitidas()
+
+
+def fora_do_recorte(ids) -> list[str]:
+    """Os números de SP que a pessoa logada NÃO alcança — inclusive os que não
+    existem, que para ela dão no mesmo. Vazio quando não há recorte.
+
+    É a conferência das ações que recebem números (alterar, validar, mandar ao
+    lote, gerar o BeeVale): o filtro da lista não basta, porque o pedido pode
+    ser montado à mão com o número de uma SP de outra conta."""
+    contas = _contas_do_recorte()
+    ids = [str(i).strip() for i in (ids or []) if str(i).strip()]
+    if contas is None or not ids:
+        return []
+    from .db import consultar
+    marcas_ids = ",".join(["?"] * len(ids))
+    marcas_contas = ",".join(["?"] * len(contas))
+    dentro = {str(i) for (i,) in consultar(
+        f"SELECT id FROM analisesps.sps WHERE id IN ({marcas_ids})"
+        f"   AND trim(coalesce(conta,'')) IN ({marcas_contas})",
+        tuple(ids) + tuple(sorted(contas)))}
+    return [i for i in ids if i not in dentro]
 
 
 def _where(f: dict) -> tuple[str, list]:
@@ -833,7 +875,13 @@ def uma(sp_id: str) -> dict | None:
     nomes = list(colunas.CHAVES) + [
         "valor_num", "solicitacao_d", "vencimento_d", "data_pagamento_d",
         "dt_autorizacao_d", "status_agend"]
-    return dict(zip(nomes, linhas[0]))
+    registro = dict(zip(nomes, linhas[0]))
+    # A SP de outra conta, para quem está preso a uma, NÃO EXISTE — e responde
+    # igual à que não existe mesmo, para varrer números não mapear nada.
+    contas = _contas_do_recorte()
+    if contas is not None and str(registro.get("conta") or "").strip() not in contas:
+        return None
+    return registro
 
 
 def painel_por_agendamento(rotulos: list, quantos: int = 20) -> list[dict]:
@@ -897,7 +945,7 @@ def painel_por_agendamento(rotulos: list, quantos: int = 20) -> list[dict]:
     return saida
 
 
-def opcoes(coluna: str, limite: int = 400) -> list[str]:
+def opcoes(coluna: str, limite: int = 400, contas=None) -> list[str]:
     """Os valores distintos de uma coluna, para montar as listas de filtro.
 
     Limitado de propósito: uma coluna com milhares de valores diferentes
@@ -908,6 +956,12 @@ def opcoes(coluna: str, limite: int = 400) -> list[str]:
     if coluna not in permitidas:
         raise ValueError(f"Coluna não permitida em filtro: {coluna}")
     from .db import consultar
+
+    # Quem está preso a uma conta só vê as opções que existem nela: a lista de
+    # credores, obras e contas dos outros também é dado dos outros.
+    valores = tuple(sorted(contas)) if contas else ()
+    recorte = (f" AND trim(coalesce(conta,'')) IN ({','.join(['?'] * len(valores))})"
+               if valores else "")
 
     if coluna in MULTIPLAS_NA_CELULA:
         # A célula pode trazer MAIS DE UMA obra, separadas por vírgula
@@ -922,14 +976,15 @@ def opcoes(coluna: str, limite: int = 400) -> list[str]:
             "  SELECT btrim(unnest(regexp_split_to_array("
             f"           {coluna}, '{SEPARADOR_DE_OBRAS}'))) AS obra "
             f"    FROM analisesps.sps WHERE trim(coalesce({coluna},'')) <> ''"
+            f"{recorte}"
             ") AS abertas WHERE obra <> '' "
-            " GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?", (limite,))
+            " GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?", (*valores, limite))
         return [linha[0] for linha in linhas]
 
     linhas = consultar(
         f"SELECT trim({coluna}), count(*) FROM analisesps.sps "
-        f" WHERE trim(coalesce({coluna},'')) <> '' "
-        f" GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?", (limite,))
+        f" WHERE trim(coalesce({coluna},'')) <> ''{recorte} "
+        f" GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?", (*valores, limite))
     return [linha[0] for linha in linhas]
 
 
@@ -989,6 +1044,15 @@ def opcoes_de_filtro(carimbo=None) -> dict:
         except Exception:  # noqa: BLE001 — sem carimbo, recalcula; não quebra
             carimbo = None
 
+    # O RECORTE DE CONTA NÃO PASSA PELO GUARDADO: as listas guardadas são de
+    # todas as contas, e servem a todo mundo. Quem está preso a uma recebe as
+    # dele, perguntadas na hora — são poucas SPs, e é pouca gente.
+    contas = _contas_do_recorte()
+    if contas is not None:
+        return dict({apelido: opcoes(coluna, limite=limite, contas=contas)
+                     for apelido, (coluna, limite) in COLUNAS_DE_FILTRO.items()},
+                    status_agend=opcoes_agendamento())
+
     guardado = _LISTAS_GUARDADAS
     if guardado["carimbo"] == carimbo and guardado["valores"]:
         return dict(guardado["valores"], status_agend=opcoes_agendamento())
@@ -1039,6 +1103,13 @@ def por_que_os_filtros_estao_vazios(opcoes, base) -> str:
 
     if any((opcoes or {}).get(a) for a in COLUNAS_DE_FILTRO):
         return ""
+
+    # Preso a uma conta: a conta da base inteira não é a dele, e nem é para ele.
+    contas = _contas_do_recorte()
+    if contas is not None:
+        return (f"não há nenhuma SP na conta {', '.join(sorted(contas))}. Se "
+                "devia haver, confira com quem administra o sistema como a "
+                "conta está escrita no seu cadastro.")
 
     declarada = int((base or {}).get("quantidade") or 0)
     try:

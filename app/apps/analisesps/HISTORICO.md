@@ -12044,6 +12044,42 @@ Ordenados → Diárias.
   GUARDADA por pessoa (preferência `conciliacao_ordem`), vale no filtro do
   cabeçalho e na paginação; com "em cima", a tela não pula para o fim.
 
+#### Leva 183 — usuário preso a uma conta bancária (06/10/2026)
+
+Pedido: *"quero poder criar um usuario e definir às informacoes que ele tem
+acesso por conta bancaria. No caso quero criar um usuario que vai poder acessar
+somente Solicitações de uma conta especifica"*.
+
+- **Migração 051** (`usuario_contas`): uma linha por conta liberada, como as
+  telas. ⚠️ **Lista vazia = TODAS as contas** — o contrário das telas, de
+  propósito: quem já tem cadastro continua vendo tudo, e prender a uma conta é
+  marcação consciente. Mestre não pode ser preso (recusa, não ignora).
+- Em Configurações › cadastro, bloco **"Contas bancárias que ele enxerga"**
+  (as contas que existem na coluna Conta das SPs). Na lista de pessoas aparece
+  "🔒 só a conta X".
+- **O recorte vive em `consultas._condicoes`**, por onde passa toda pergunta
+  sobre SPs — não na rota, para tela nova não esquecer. Vale na lista, nos
+  totais (inclusive o "de N na conta X", que antes mostrava o total da base),
+  nas somas por conta e forma, na exportação e nas opções dos filtros (as
+  listas guardadas para todos NÃO são usadas por quem está preso, nem
+  envenenadas por ele — há teste).
+- **Ficha de SP de outra conta = "não encontrada"** (404, igual à que não
+  existe); QR/código idem. **Ações com números** (alterar, marcar pago,
+  validar, tirar risco, mandar ao lote, gerar BeeVale) recusam o pedido
+  INTEIRO se algum número estiver fora (`_ids_do_pedido` → `fora_do_recorte`).
+- ⚠️ **Decisão: quem está preso só abre as telas que respeitam o recorte**
+  (`auth.TELAS_COM_RECORTE_DE_CONTA`, hoje só Solicitações). Relatório, Lote,
+  Agenda, Conciliação, Folha etc. somam as contas juntas; marcadas no cadastro
+  de quem está preso, somem do menu e respondem 404. O "Cadastro BeeVale"
+  (procura gente por CPF em todas as SPs) também fecha, e o botão some. Tela
+  nova só entra na lista quando todas as consultas dela passarem pelo recorte.
+- Fora do recorte, de propósito: a sincronização e as tarefas de fundo (não há
+  pessoa logada) e a porta de emergência (é o mestre).
+- Testes com banco: `tests/test_analisesps_recorte_conta_banco.py` (13).
+  Conferido que, desligando o recorte, 6 deles falham.
+- De carona: a lista de telas no cadastro deixava uma vírgula sobrando
+  ("1: Solicitações,").
+
 #### ⚠️ Pendente AGORA
 
 | Falta | Depende de |
@@ -12084,7 +12120,9 @@ Ordenados → Diárias.
 | DC: no primeiro lançamento, conferir na prévia o tipo de despesa e as categorias, e no Pipefy se os cards de origem foram para a fase certa | ele |
 | decidir a CARTEIRA do BeeVale da alimentação e do transporte (hoje "Produção"; os diaristas já saem em "Diárias") | ele |
 | ~~publicar as levas 177 a 179~~ — **publicadas em 05/10/2026** (main em `b18f6f0`, suíte inteira verde salvo o teste do painel que falha igual na main). Carteira da alimentação e do transporte decidida (leva 180) | — |
-| publicar as levas 181 e 182 (migração **050**: apertar "Aplicar atualizações do banco" no mesmo momento) | ele |
+| ~~publicar as levas 181 e 182~~ — **publicadas em 06/10/2026** (main em `a851fdd`, suíte inteira 8.490 verdes). Conferir que ele apertou "Aplicar atualizações do banco" (**050**) | ele |
+| publicar a leva 183 (usuário preso a uma conta) e o fundo verde-claro das linhas conciliadas (06/10). ⚠️ **Tem migração (051)**: apertar "Aplicar atualizações do banco" no mesmo momento; depois, em Configurações, cadastrar a pessoa marcando "Solicitações" e a conta | ele |
+| decidir se quer o botão "trocar pela do extrato" (linha antiga da planilha com valor errado → a do banco, guardando conciliado e observação) | ele |
 | ~~publicar a leva 180~~ — **publicada em 05/10/2026** (main em `5f21ffe`). Confirmado por ele: a folha da contabilidade segue "Produção", e "Gratiticações e Extras" é a grafia do PORTAL (*"tá errado mesmo, gratiti"*) — não corrigir | — |
 | ~~publicar as levas 174 a 176~~ — **publicadas em 05/10/2026** (main em `02c26af`; suíte inteira verde, salvo `test_painel_cenario::test_quem_esta_preso_nao_abre_nem_grava_os_parametros`, que falha igual na main — área do painel, depende da ordem). Conferir que ele apertou "Aplicar atualizações do banco" (**048** e **049**) e importar a Listagem de Férias de 09 e 10/2026 | ele |
 | campo de automação da SP (`automa_o_2`): segue vazio nas outras folhas (na DC vai "BeeVale", como no script); ver no primeiro lançamento se faz falta, junto com a categoria do segundo card | ele |

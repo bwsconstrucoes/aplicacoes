@@ -133,7 +133,7 @@ def listar() -> list[dict]:
     campo = "mestre" if tem_mestre else "FALSE"
     pessoas = [{"id": i, "usuario": u, "nome": n, "ativo": bool(a),
                 "pode_operar": bool(op), "mestre": bool(m),
-                "ultimo_acesso": ult, "telas": []}
+                "ultimo_acesso": ult, "telas": [], "contas": []}
                for i, u, n, a, op, m, ult in consultar(
         f"SELECT id, usuario, nome, ativo, pode_operar, {campo}, ultimo_acesso"
         "  FROM analisesps.usuarios ORDER BY lower(usuario)")]
@@ -142,6 +142,11 @@ def listar() -> list[dict]:
                                "  FROM analisesps.usuario_telas ORDER BY tela"):
         if uid in por_id:
             por_id[uid]["telas"].append(tela)
+    if _tem_contas():
+        for uid, conta in consultar("SELECT usuario_id, conta FROM"
+                                    " analisesps.usuario_contas ORDER BY conta"):
+            if uid in por_id:
+                por_id[uid]["contas"].append(conta)
     return pessoas
 
 
@@ -173,7 +178,32 @@ def buscar(login: str) -> dict | None:
         "telas": [t for (t,) in consultar(
             "SELECT tela FROM analisesps.usuario_telas WHERE usuario_id = ?",
             (uid,))],
+        # As contas bancárias a que a pessoa está presa (migração 051). Vazio
+        # quer dizer TODAS — ver `auth.contas_permitidas`.
+        "contas": _contas_de(uid),
     }
+
+
+def _tem_contas() -> bool:
+    """A migração 051 já rodou? Antes dela ninguém está preso a conta."""
+    from .db import tem_coluna
+    return tem_coluna("usuario_contas", "conta")
+
+
+def _contas_de(uid) -> list[str]:
+    if not _tem_contas():
+        return []
+    from .db import consultar
+    return [c for (c,) in consultar(
+        "SELECT conta FROM analisesps.usuario_contas WHERE usuario_id = ?"
+        " ORDER BY conta", (int(uid),))]
+
+
+def _limpar_contas(contas) -> list[str]:
+    """As contas como a coluna "Conta" das SPs as escreve: sem espaço nas
+    pontas, sem repetição, e sem texto gigante vindo de pedido montado à mão."""
+    return sorted({str(c).strip()[:120] for c in (contas or [])
+                   if str(c).strip()})
 
 
 def buscar_por_id(uid) -> dict | None:
@@ -222,7 +252,7 @@ def _conferir_senha(senha) -> str:
 
 
 def criar(login: str, senha: str, nome: str = "", telas=(),
-          pode_operar: bool = False, mestre: bool = False) -> dict:
+          pode_operar: bool = False, mestre: bool = False, contas=()) -> dict:
     """Cadastra. Devolve {'ok': True, 'id': n} ou o erro em português."""
     if not _pronto():
         return {"ok": False, "erro": FALTA_MIGRAR}
@@ -244,6 +274,10 @@ def criar(login: str, senha: str, nome: str = "", telas=(),
     tem_mestre = tem_coluna("usuarios", "mestre")
     if mestre and not tem_mestre:
         return {"ok": False, "erro": FALTA_MIGRAR_MESTRE}
+    contas = _limpar_contas(contas)
+    erro = _conferir_contas(contas, mestre)
+    if erro:
+        return {"ok": False, "erro": erro}
 
     with conexao() as conn:
         colunas = "usuario, nome, senha_hash, pode_operar"
@@ -259,11 +293,14 @@ def criar(login: str, senha: str, nome: str = "", telas=(),
         uid = int(cur.fetchone()[0])
         cur.close()
         _gravar_telas(conn, uid, telas)
+        if contas:
+            _gravar_contas(conn, uid, contas)
         conn.commit()
-    logger.info("Análise de SPs: usuário %s criado (%s) com %d tela(s).",
+    logger.info("Análise de SPs: usuário %s criado (%s) com %d tela(s)%s.",
                 chave,
                 "MESTRE" if mestre else ("operador" if pode_operar else "consulta"),
-                len(set(telas or [])))
+                len(set(telas or [])),
+                f", preso às contas {', '.join(contas)}" if contas else "")
     return {"ok": True, "id": uid}
 
 
@@ -279,8 +316,38 @@ def _gravar_telas(conn, uid: int, telas) -> None:
                      " VALUES (?,?)", (int(uid), tela))
 
 
+FALTA_MIGRAR_CONTAS = ("Prender alguém a uma conta precisa da atualização do "
+                       "banco (a 051). Aperte “Aplicar atualizações do banco” "
+                       "aqui mesmo, nesta tela, e tente de novo.")
+
+ERRO_MESTRE_COM_CONTA = ("O mestre vê todas as contas, sempre. Para prender "
+                         "alguém a uma conta, tire a marcação de mestre.")
+
+
+def _conferir_contas(contas, mestre) -> str:
+    """Devolve o erro em português, ou "" quando as contas servem."""
+    if not contas:
+        return ""
+    # ⚠️ RECUSA, E NÃO IGNORA: gravar a conta e deixá-la sem efeito (o mestre
+    # vê tudo) faria a tela de cadastro mostrar uma trava que não trava.
+    if mestre:
+        return ERRO_MESTRE_COM_CONTA
+    if not _tem_contas():
+        return FALTA_MIGRAR_CONTAS
+    return ""
+
+
+def _gravar_contas(conn, uid: int, contas) -> None:
+    """Regrava as contas a que a pessoa está presa. Vazio solta: todas."""
+    conn.execute("DELETE FROM analisesps.usuario_contas WHERE usuario_id = ?",
+                 (int(uid),))
+    for conta in _limpar_contas(contas):
+        conn.execute("INSERT INTO analisesps.usuario_contas (usuario_id, conta)"
+                     " VALUES (?,?)", (int(uid), conta))
+
+
 def atualizar(uid, *, nome=None, senha=None, ativo=None, telas=None,
-              pode_operar=None, mestre=None) -> dict:
+              pode_operar=None, mestre=None, contas=None) -> dict:
     """Muda o que foi pedido e só isso. Senha em branco mantém a que existe."""
     if not _pronto():
         return {"ok": False, "erro": FALTA_MIGRAR}
@@ -306,6 +373,11 @@ def atualizar(uid, *, nome=None, senha=None, ativo=None, telas=None,
         erro = _conferir_senha(senha)
         if erro:
             return {"ok": False, "erro": erro}
+    if contas is not None:
+        contas = _limpar_contas(contas)
+        erro = _conferir_contas(contas, mestre)
+        if erro:
+            return {"ok": False, "erro": erro}
 
     with conexao() as conn:
         if nome is not None:
@@ -329,6 +401,8 @@ def atualizar(uid, *, nome=None, senha=None, ativo=None, telas=None,
             logger.info("Análise de SPs: senha do usuário %s trocada.", uid)
         if telas is not None:
             _gravar_telas(conn, int(uid), telas)
+        if contas is not None and _tem_contas():
+            _gravar_contas(conn, int(uid), contas)
         conn.commit()
     return {"ok": True}
 
